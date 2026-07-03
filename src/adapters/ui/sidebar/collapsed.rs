@@ -59,6 +59,14 @@ pub fn draw_collapsed_sidebar(
             &engine.settings.keybindings,
         )
     };
+    // 카테고리 quick-switch(Alt+Shift) — folders 기능 on 일 때만.
+    let category_switch_held = engine.settings.general.workspace_categories_enabled && {
+        let mods = ctx.input(|i| i.modifiers);
+        crate::adapters::ui::switch_overlay::category_switch_held(
+            mods,
+            &engine.settings.keybindings,
+        )
+    };
 
     let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
@@ -73,6 +81,7 @@ pub fn draw_collapsed_sidebar(
                 tools_hover,
                 plugin_alert,
                 workspace_switch_held,
+                category_switch_held,
             };
             deferred_actions = draw_collapsed_sidebar_view(ui, &props);
         });

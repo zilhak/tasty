@@ -160,6 +160,11 @@ pub fn category_digit(kb: &KeybindingSettings, index: usize) -> Option<&str> {
     kb.category_slot_key(index).filter(|s| !s.is_empty())
 }
 
+/// 키캡 한 변(px) — 우측정렬·중앙정렬 배치 계산용(카테고리 헤더/레일 키캡).
+pub fn keycap_size() -> f32 {
+    KEYCAP_SIZE
+}
+
 /// 한 자리 숫자 키캡을 `center` 기준 16px slot 에 그린다.
 ///
 /// `active`(현재 탭/워크스페이스) = `accent_primary()` fill + `text_on_accent()` 숫자,

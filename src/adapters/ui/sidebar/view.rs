@@ -69,6 +69,10 @@ pub struct SidebarFullProps<'a> {
     /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
     /// 각 워크스페이스의 leading status dot 을 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
     pub workspace_switch_held: bool,
+    /// 카테고리 quick-switch overlay — `workspace_switch_modifier`+Shift(기본 Alt+Shift) 홀드
+    /// 시 true(folders 기능 on 전제). 카테고리 헤더 우측에 섹션 번호 키캡을 표시. Workspace
+    /// 와 상호 배타(Shift 유무) — 동시 true 아님.
+    pub category_switch_held: bool,
 }
 
 /// 진행 중인 workspace drag-and-drop 의 스냅샷. 호출처가 매 프레임 view 에 전달.
@@ -93,6 +97,9 @@ pub struct SidebarCollapsedProps<'a> {
     /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
     /// 각 워크스페이스의 leading letter avatar 를 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
     pub workspace_switch_held: bool,
+    /// 카테고리 quick-switch overlay — `workspace_switch_modifier`+Shift 홀드 시 true. 각
+    /// 카테고리 경계 `---` 슬롯 중앙에 섹션 번호 키캡을 표시(디자인 C). folders 기능 on 전제.
+    pub category_switch_held: bool,
 }
 
 /// Full sidebar view 가 보고하는 사용자 의도. wrapper 가 state mutation 으로 변환.
@@ -329,6 +336,34 @@ pub fn draw_full_sidebar_view(
                         ui.add_space(th.spacing_sm.value());
                     }
                     let header = draw_category_header(ui, th, &section.label, section.collapsed);
+                    // 디자인 B: Alt+Shift 홀드 시 헤더 행 **우측 정렬** 키캡(섹션 번호). chevron
+                    // 대체 아님 — chevron 은 접힘상태·auto-expand 회전 담당(load-bearing). 11번째+
+                    // 카테고리(슬롯 밖)는 키캡 없음. active = 이 섹션이 현재 워크스페이스 소유.
+                    if props.category_switch_held {
+                        if let Some(digit) =
+                            crate::adapters::ui::switch_overlay::category_digit(props.kb, sec_i)
+                        {
+                            let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
+                            let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                                ui.ctx(),
+                                th,
+                                ("cat_header", u64::from(section.id)),
+                                props.category_switch_held,
+                            );
+                            let pad = th.spacing_sm.value();
+                            let half = crate::adapters::ui::switch_overlay::keycap_size() / 2.0;
+                            let center =
+                                egui::pos2(header.rect.max.x - pad - half, header.rect.center().y);
+                            crate::adapters::ui::switch_overlay::paint_keycap(
+                                ui.painter(),
+                                th,
+                                center,
+                                digit,
+                                active_sec,
+                                fade,
+                            );
+                        }
+                    }
                     if header.toggled {
                         actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
                     }
@@ -634,8 +669,24 @@ pub fn draw_collapsed_sidebar_view(
         if let Some(sections) = props.categories {
             // 그룹 렌더(토글 on) — 카테고리마다 `---` 버튼 + (접힘 아니면) 소속 아바타.
             // 접힌/빈 카테고리는 `---` 버튼만. normal 항상 맨 위(sections 순서).
-            for section in sections {
-                if let Some(anchor) = draw_rail_category_button(ui, th) {
+            for (sec_i, section) in sections.iter().enumerate() {
+                // 디자인 C: Alt+Shift 홀드 시 `---` 슬롯 중앙에 섹션 번호 키캡. 11번째+ 없음.
+                // active = 이 섹션이 현재 워크스페이스 소유. (접힘/빈 카테고리도 `---` 존재 → 키캡.)
+                let cat_keycap = if props.category_switch_held {
+                    crate::adapters::ui::switch_overlay::category_digit(props.kb, sec_i).map(|d| {
+                        let active = section.entries.iter().any(|(_, ws)| ws.is_active);
+                        let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                            ui.ctx(),
+                            th,
+                            ("cat_rail", u64::from(section.id)),
+                            props.category_switch_held,
+                        );
+                        (d, active, fade)
+                    })
+                } else {
+                    None
+                };
+                if let Some(anchor) = draw_rail_category_button(ui, th, cat_keycap) {
                     actions.push(SidebarCollapsedAction::RailCategoryClicked {
                         cat_id: section.id,
                         anchor,
@@ -1025,7 +1076,13 @@ fn paint_icon_button(
 /// rect 를 반환(우측 앵커 팝업 위치 계산용). 폭=slot_width(디자인 size-36 자리, 아바타
 /// 열 정렬), 높이=spacing_lg(=size-16), 내부 선 폭=slot_width-spacing_sm(=size-24)·
 /// 높이=border_width, idle=separator / hover=text-muted.
-fn draw_rail_category_button(ui: &mut egui::Ui, th: &Theme) -> Option<egui::Rect> {
+/// `keycap` = `Some((digit, active, fade))` 이면 디자인 C 대로 `---` 라인 대신 그 슬롯
+/// 중앙에 카테고리 번호 키캡을 그린다(Alt+Shift 홀드). `None` 이면 기존 `---` 라인.
+fn draw_rail_category_button(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    keycap: Option<(&str, bool, f32)>,
+) -> Option<egui::Rect> {
     let w = th.sidebar_collapsed_slot_width.value();
     let h = th.spacing_lg.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
@@ -1034,15 +1091,30 @@ fn draw_rail_category_button(ui: &mut egui::Ui, th: &Theme) -> Option<egui::Rect
         ui.painter()
             .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
-    let line_w = (w - th.spacing_sm.value()).max(0.0);
-    let line_h = th.border_width.value();
-    let line_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h));
-    let line_color: egui::Color32 = if resp.hovered() {
-        th.text_muted().into()
-    } else {
-        th.separator.to_egui_premultiplied()
-    };
-    ui.painter().rect_filled(line_rect, 0.0, line_color);
+    match keycap {
+        // 디자인 C: `---` 슬롯 자리가 그대로 키캡이 된다(라인 대체).
+        Some((digit, active, fade)) => {
+            crate::adapters::ui::switch_overlay::paint_keycap(
+                ui.painter(),
+                th,
+                rect.center(),
+                digit,
+                active,
+                fade,
+            );
+        }
+        None => {
+            let line_w = (w - th.spacing_sm.value()).max(0.0);
+            let line_h = th.border_width.value();
+            let line_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h));
+            let line_color: egui::Color32 = if resp.hovered() {
+                th.text_muted().into()
+            } else {
+                th.separator.to_egui_premultiplied()
+            };
+            ui.painter().rect_filled(line_rect, 0.0, line_color);
+        }
+    }
     resp.clicked().then_some(rect)
 }
 
