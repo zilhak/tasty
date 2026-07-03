@@ -757,6 +757,14 @@ pub fn pages() -> Vec<Page> {
                             Some("Alt held · keycap replaces status dot / letter avatar"),
                             components::switch_overlay::draw_workspace,
                         ),
+                        spec(
+                            "switch-cat",
+                            "Category switch — Alt+Shift held",
+                            Some(
+                                "Alt+Shift held · keycap right-aligned on headers / centered on rail --- (modifier-exclusive with Alt)",
+                            ),
+                            components::switch_overlay::draw_category,
+                        ),
                     ],
                 ),
                 section(

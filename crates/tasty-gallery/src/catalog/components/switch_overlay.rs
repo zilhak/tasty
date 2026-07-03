@@ -15,7 +15,7 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::num_keycap;
 
-use crate::catalog::icons::{FILE, MockGlyph, TERMINAL};
+use crate::catalog::icons::{CHEVRON_DOWN, CHEVRON_RIGHT, FILE, MockGlyph, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // 키캡 slot 의 디자인 고정 px = switch-overlay-size = kbd-size = size-16.
@@ -443,5 +443,325 @@ pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "라벨을 덮지 말고 leading indicator 를 교체한다 — 키캡 자체의 surface-raised \
          fill + border 가 탭/사이드바 배경 위에서 4.5:1 을 확보해 scrim 이 필요 없다.",
+    );
+}
+
+// ── Category switch overlay (Alt+Shift) ─────────────────────────────
+//
+// 디자인 B/C (`overlays-shared.jsx` CatSwitchSidebarMock / CatSwitchRailMock).
+// workspace-switch(Alt) 와 **modifier-exclusive** — Alt+Shift 홀드 중에는 카테고리
+// 헤더만 키캡을 얻고, 워크스페이스 행은 status dot 을 그대로 유지한다.
+//
+// - Full: 키캡은 카테고리 헤더 행 **우측 정렬**(`[chevron] LABEL … [cap]`). chevron
+//   은 접힘/자동확장(D) 을 나타내는 load-bearing 요소라 교체하지 않는다.
+// - Rail: 라벨이 없으니 각 경계선(`---`) 슬롯 **중앙**에 키캡을 얹는다(선의 자리가
+//   키캡의 자리). 접힌/빈 카테고리도 `---` 를 유지하므로 키캡을 받는다.
+// - 번호: reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 키캡 없음.
+
+/// 카테고리 헤더 한 줄(chevron + 라벨 + 우측 키캡). `n=None` → 11번째+ (키캡 없음).
+struct CatHead {
+    n: Option<&'static str>,
+    label: &'static str,
+    collapsed: bool,
+    active: bool,
+}
+
+/// (헤더, 그 카테고리에 속한 행들) — 행은 (digit 없음) ws 행이라 status dot 유지.
+const CAT_GROUPS: &[(CatHead, &[(&str, WsStatus, bool)])] = &[
+    (
+        CatHead {
+            n: Some("1"),
+            label: "Workspaces",
+            collapsed: false,
+            active: true,
+        },
+        &[
+            ("tasty-core", WsStatus::Running, true),
+            ("scratch", WsStatus::Idle, false),
+        ],
+    ),
+    (
+        CatHead {
+            n: Some("2"),
+            label: "Services",
+            collapsed: false,
+            active: false,
+        },
+        &[
+            ("api-gateway", WsStatus::Agent, false),
+            ("data-pipeline", WsStatus::Running, false),
+        ],
+    ),
+    (
+        CatHead {
+            n: Some("3"),
+            label: "Archived",
+            collapsed: true,
+            active: false,
+        },
+        &[],
+    ),
+];
+
+fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
+    let w = theme.field_width_lg.value() - theme.spacing_md.value(); // ≈188
+    let pad = theme.spacing_sm.value(); // 8 (행 padding)
+    let gap = theme.spacing_sm.value(); // 8
+    let bw = theme.border_width.value();
+    let lead = KEYCAP_SIZE; // 16 status-dot slot
+    let text_x_off = pad + lead + gap; // 32 — divider margin-left
+
+    let chev = theme.spacing_md.value(); // 12 chevron slot 폭
+    let head_gap = theme.spacing_xs.value(); // 4 chevron↔label
+    let head_pad_v = theme.spacing_xs.value(); // 4
+    let head_margin_top = theme.spacing_sm.value(); // 8
+    let head_line = theme.sidebar_section_heading_font_size.value(); // 10
+    let head_h = head_margin_top + head_pad_v * 2.0 + head_line;
+
+    let name_lh = theme.font_size_body.value() + theme.spacing_xs.value(); // ≈17
+    let row_h = pad + name_lh + pad;
+
+    // 전체 높이 = Σ(헤더 + 행들) + 아래 패딩.
+    let mut total = theme.spacing_sm.value(); // paddingBottom 8
+    for (_, rows) in CAT_GROUPS {
+        total += head_h + row_h * rows.len() as f32;
+    }
+
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let mut y = rect.min.y;
+    for (head, rows) in CAT_GROUPS {
+        // ── 카테고리 헤더 ──
+        let hrect = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, head_h));
+        let hcy = hrect.min.y + head_margin_top + head_pad_v + head_line * 0.5;
+        // chevron (load-bearing — 교체 금지). 접힘=우향, 확장=하향.
+        let chev_c = egui::pos2(rect.min.x + pad + chev * 0.5, hcy);
+        let glyph = if head.collapsed {
+            CHEVRON_RIGHT
+        } else {
+            CHEVRON_DOWN
+        };
+        paint_glyph(
+            ui,
+            glyph,
+            chev_c,
+            theme.font_size_body.value(),
+            egui::Color32::from(theme.text_muted()),
+        );
+        // 라벨 (mono uppercase micro).
+        p.text(
+            egui::pos2(rect.min.x + pad + chev + head_gap, hcy),
+            egui::Align2::LEFT_CENTER,
+            head.label.to_uppercase(),
+            egui::FontId::monospace(head_line),
+            egui::Color32::from(theme.text_muted()),
+        );
+        // 우측 정렬 키캡 (held + n 있을 때만).
+        if held && let Some(d) = head.n {
+            let cap_c = egui::pos2(rect.max.x - pad - KEYCAP_SIZE * 0.5, hcy);
+            keycap_at(ui, theme, cap_c, d, head.active);
+        }
+        y += head_h;
+
+        // ── 워크스페이스 행 (status dot 유지 — modifier-exclusive) ──
+        for (i, (name, status, active)) in rows.iter().enumerate() {
+            let row = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, row_h));
+            if *active {
+                p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
+                let bar = egui::Rect::from_min_size(
+                    row.min,
+                    egui::vec2(theme.focus_ring_width.value(), row.height()),
+                );
+                p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+            } else if i > 0 {
+                p.hline(
+                    (rect.min.x + text_x_off)..=rect.max.x,
+                    row.min.y,
+                    egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+                );
+            }
+            let cy = row.center().y;
+            let slot_c = egui::pos2(row.min.x + pad + lead * 0.5, cy);
+            p.circle_filled(
+                slot_c,
+                theme.status_dot_size.value() * 0.5,
+                status_color(theme, *status),
+            );
+            p.text(
+                egui::pos2(row.min.x + text_x_off, cy),
+                egui::Align2::LEFT_CENTER,
+                name,
+                egui::FontId::proportional(theme.font_size_body.value()),
+                egui::Color32::from(if *active {
+                    theme.text_primary()
+                } else {
+                    theme.text_secondary()
+                }),
+            );
+            y += row_h;
+        }
+    }
+
+    p.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 레일 항목: 경계선(`---`)이면 `Boundary(digit, active)`, 아바타면 `Avatar(letter, active)`.
+enum RailCat {
+    Boundary(&'static str, bool),
+    Avatar(&'static str, bool),
+}
+
+const RAIL_CAT: &[RailCat] = &[
+    RailCat::Boundary("1", true),
+    RailCat::Avatar("T", true),
+    RailCat::Avatar("S", false),
+    RailCat::Boundary("2", false),
+    RailCat::Avatar("A", false),
+    RailCat::Avatar("D", false),
+    RailCat::Boundary("3", false),
+];
+
+fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
+    let slot = theme.item_height_interactive.value(); // 28 아바타
+    let bound_h = theme.spacing_lg.value() + theme.spacing_xs.value() + theme.spacing_xs.value(); // ≈24 경계 슬롯
+    let pad = theme.spacing_sm.value(); // 8
+    let gap = theme.spacing_xs.value(); // 4
+    let bw = theme.border_width.value();
+    let w = slot + theme.spacing_lg.value(); // ≈44
+    let line_w = theme.spacing_lg.value() + theme.spacing_sm.value(); // 24 `---` 길이
+
+    let mut total = pad * 2.0;
+    for item in RAIL_CAT {
+        total += match item {
+            RailCat::Boundary(..) => bound_h,
+            RailCat::Avatar(..) => slot,
+        } + gap;
+    }
+    total -= gap; // 마지막 gap 제거
+
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let cx = rect.center().x;
+    let mut y = rect.min.y + pad;
+    for item in RAIL_CAT {
+        match item {
+            RailCat::Boundary(d, active) => {
+                let c = egui::pos2(cx, y + bound_h * 0.5);
+                if held {
+                    keycap_at(ui, theme, c, d, *active);
+                } else {
+                    let line = egui::Rect::from_center_size(c, egui::vec2(line_w, bw));
+                    p.rect_filled(line, 0.0, egui::Color32::from(theme.separator));
+                }
+                y += bound_h + gap;
+            }
+            RailCat::Avatar(letter, active) => {
+                let area = egui::Rect::from_center_size(
+                    egui::pos2(cx, y + slot * 0.5),
+                    egui::vec2(slot, slot),
+                );
+                if *active {
+                    p.rect_filled(
+                        area,
+                        theme.corner_radius.value(),
+                        egui::Color32::from(theme.surface_active()),
+                    );
+                    p.rect_stroke(
+                        area,
+                        theme.corner_radius.value(),
+                        egui::Stroke::new(bw, egui::Color32::from(theme.accent_primary())),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                p.text(
+                    area.center(),
+                    egui::Align2::CENTER_CENTER,
+                    letter,
+                    egui::FontId::monospace(theme.font_size_body.value()),
+                    egui::Color32::from(theme.text_secondary()),
+                );
+                y += slot + gap;
+            }
+        }
+    }
+}
+
+pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "released — full sidebar", |ui| {
+            full_cat(ui, theme, false)
+        });
+        spec::cluster(
+            ui,
+            theme,
+            "Alt+Shift held — keycap right-aligned on each header",
+            |ui| full_cat(ui, theme, true),
+        );
+        spec::cluster(ui, theme, "released — collapsed rail", |ui| {
+            rail_cat(ui, theme, false)
+        });
+        spec::cluster(
+            ui,
+            theme,
+            "Alt+Shift held — keycap centered on each --- boundary",
+            |ui| rail_cat(ui, theme, true),
+        );
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("widget", "Kbd keycap · 16px"),
+            ("content", "digit · 1–9 then 0 (10th)"),
+            ("full placement", "right-aligned on header (keeps chevron)"),
+            ("rail placement", "centered on the --- boundary"),
+            ("range", "reserved normal = 1; 11th onward: none"),
+            ("exclusivity", "Alt+Shift ⇒ headers only; rows keep dots"),
+            ("on switch", "auto-expand collapsed + land on last-active"),
+        ],
+        &[
+            TokenChip::new(
+                "switch-overlay-bg",
+                "keycap fill",
+                theme.surface_raised().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-active-bg",
+                "active-category keycap",
+                theme.accent_primary().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-border",
+                "keycap edge",
+                theme.border_strong().into(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Alt = 워크스페이스, Alt+Shift = 카테고리 — 두 오버레이는 상호 배타라 동시에 \
+         그려지지 않는다. 카테고리 헤더엔 교체할 status dot 이 없고 chevron 은 접힘/자동확장 \
+         을 나타내는 load-bearing 요소이므로, 키캡은 헤더 우측에 덧붙고 chevron 을 건드리지 \
+         않는다. reserved normal(\"Workspaces\")도 전환 대상(1) 이다.",
     );
 }
