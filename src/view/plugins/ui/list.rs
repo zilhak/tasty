@@ -287,7 +287,10 @@ pub(super) fn draw_list_tab(
                 } else {
                     "plugins.uninstall_warning"
                 };
-                ui.label(egui::RichText::new(t(warn_key)).color(egui::Color32::from(th.peach)));
+                ui.label(
+                    egui::RichText::new(t(warn_key))
+                        .color(egui::Color32::from(th.accent_attention())),
+                );
                 ui.horizontal(|ui| {
                     if ui.button(t("plugins.uninstall_confirm")).clicked() {
                         actions.push(PluginsAction::Uninstall {

@@ -462,7 +462,7 @@ where
 
 /// 점유된 surface 의 **주황 테두리 + force-detach 오버레이**(attach/detach 작업 J-3).
 ///
-/// 서버측에서 client 가 점유한 surface 를 "알림이 온 것처럼" 주황(`th.peach`) 1px
+/// 서버측에서 client 가 점유한 surface 를 "알림이 온 것처럼" 주황(`accent-attention`) 1px
 /// 테두리로 표시한다. **focus 와 무관**하게 점유 중이면 항상 그린다(focus 해도 사라지지
 /// 않음). readonly 정정으로 내용은 보이므로(render_pass/egui), 테두리는 *점유 표식* +
 /// force-detach 진입점 역할만 한다. 색은 Theme 토큰(하드코딩 없음).
@@ -532,11 +532,12 @@ fn draw_occupied_overlays(
                 ui.set_min_size(egui::vec2(o.w, o.h));
                 ui.set_max_size(egui::vec2(o.w, o.h));
                 let rect = ui.max_rect();
-                // 1px 주황 테두리(focus 무관, Theme 토큰).
+                // 1px 주황 테두리(focus 무관, Theme 토큰). 점유(occupancy) 주의환기 =
+                // accent-attention role(peach).
                 ui.painter().rect_stroke(
                     rect,
                     0.0,
-                    egui::Stroke::new(1.0, th.peach),
+                    egui::Stroke::new(1.0, th.accent_attention()),
                     egui::StrokeKind::Inside,
                 );
                 // 우상단 force-detach 버튼(작게). readonly 점유를 회수하는 진입점.

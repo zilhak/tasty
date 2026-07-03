@@ -105,6 +105,12 @@ impl crate::theme::Theme {
         self.yellow
     }
 
+    /// `semantic.accent-attention` → `{primitive.color-peach}`
+    #[inline]
+    pub fn accent_attention(&self) -> HexColor {
+        self.peach
+    }
+
     /// `semantic.accent-danger` → `{primitive.color-red}`
     #[inline]
     pub fn accent_danger(&self) -> HexColor {

@@ -688,6 +688,10 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-remote", "accent_remote", "sky"),
     ("semantic.accent-success", "accent_success", "green"),
     ("semantic.accent-warning", "accent_warning", "yellow"),
+    // accent-attention: plugin/occupancy "needs-attention" notice role. accent-warning
+    // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분
+    // (2026-07-03-accent-attention 디자인 판정).
+    ("semantic.accent-attention", "accent_attention", "peach"),
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),

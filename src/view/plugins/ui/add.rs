@@ -150,7 +150,9 @@ fn draw_add_preview(
 
             if let Some(msg) = &preview.already_installed {
                 vspace(ui, th.spacing_md);
-                ui.label(egui::RichText::new(msg).color(egui::Color32::from(th.peach)));
+                ui.label(
+                    egui::RichText::new(msg).color(egui::Color32::from(th.accent_attention())),
+                );
             }
         });
 

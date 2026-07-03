@@ -230,7 +230,9 @@ pub fn draw_plugins_panel(
                 // 10→12 스냅 (디자인 Request 3 판정 — 헤더 좌 패딩).
                 hspace(ui, th.spacing_md);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
-                ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.peach)));
+                // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
+                // 값 보존 전사. "notice/주의환기"가 아니라 헤더 강조라 role 은 살짝 어긋남.
+                ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.accent_attention())));
                 hspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t("plugins.title"))
