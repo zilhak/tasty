@@ -61,6 +61,8 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
 | `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
 | `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
+| `CatSwitchSidebarMock` | `full_cat` → `draw_category` (`switch-cat` specimen, full) | ✅ `sidebar/view.rs` (헤더 우측 키캡, `category_switch_held`) |
+| `CatSwitchRailMock` | `rail_cat` → `draw_category` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_rail_category_button` (`---` 중앙 키캡) |
 
 **본체 배선 (P2a 탭 + P2b 사이드바 모두 구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs`
 — modifier↔대상 판정(`switch_target_for`, numeric.rs 규칙 1:1) + 키캡
@@ -76,9 +78,17 @@ indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_k
 in-place 교체라 리플로 0, release 시 원복. 사용자 입력 modifier 만 보므로 IPC/에이전트 강제
 표시 불가(사용자 입력 전용).
 
+**카테고리 quick-switch (Alt+Shift, `draw_category`)**: workspace 오버레이(Alt 단독)와 **modifier-exclusive**
+— `switch_target_for` 가 `workspace_switch_modifier`+Shift 를 `SwitchTarget::Category` 로 판정한다. full 은
+카테고리 헤더 **우측**에 키캡(chevron 은 load-bearing 이라 교체 안 함, status dot 없음), rail 은 `---` 경계
+**중앙**에 키캡. 번호는 reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 없음. 전환 시 접힘이면 자동
+확장(layout.json 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`). folders 토글
+게이트. discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 글리프, folders on).
+
 **등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",
-…, draw_tab), spec("switch-ws", …, draw_workspace)])` — search 와 approval 사이(디자인 순서와 동일).
-2 specimen(tab / workspace), workspace 는 released / held-full / held-rail 3 cluster.
+…, draw_tab), spec("switch-ws", …, draw_workspace), spec("switch-cat", …, draw_category)])` — search 와
+approval 사이(디자인 순서와 동일). 3 specimen(tab / workspace / category), workspace·category 는 released /
+held-full / released-rail / held-rail cluster.
 
 **키캡 형상 재현 근거**: 본체 `kbd()` 는 inline egui 위젯(자체 allocate)이라 탭 스트립/사이드바
 중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서 tab_bar/sidebar specimen 과 동일하게
