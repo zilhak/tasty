@@ -62,10 +62,22 @@ pub struct Manifest {
     /// registry에 머지한다.
     #[serde(default = "default_lang_dir")]
     pub lang_dir: String,
+    /// 배포 패키징(DMG/AppImage/MSIX) 스테이징 포함 여부. 기본 `true`.
+    /// `false`면 dist 빌드 스크립트(`scripts/build-*.{sh,ps1}`)가 이 plugin을
+    /// 번들에서 제외한다 — dev 빌드(`just build-plugins`/`link-plugins`)는 영향
+    /// 없이 그대로 스테이징하므로 데모/PoC plugin을 로컬에선 쓰되 출하판엔 빼는
+    /// 용도. 스크립트는 매니페스트를 직접 파싱하므로 이 필드는 스키마 문서화 +
+    /// 오타 방지(정확한 키명 고정)를 위해 존재한다.
+    #[serde(default = "default_bundle")]
+    pub bundle: bool,
 }
 
 fn default_lang_dir() -> String {
     "lang".to_string()
+}
+
+fn default_bundle() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]

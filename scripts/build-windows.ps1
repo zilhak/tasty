@@ -118,10 +118,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Discover bundled plugin crates (any `crates\tasty-plugin-*` with a manifest).
-# Matches justfile `build-plugins` recipe and build-macos-dmg.sh — keep in sync.
+# Matches build-linux.sh / build-macos-dmg.sh — keep in sync. A manifest with
+# `bundle = false` (demo/PoC plugins) is skipped from distribution; dev staging
+# (`just build-plugins`/`link-plugins`) still includes it.
 $PluginCrates = @()
 foreach ($d in (Get-ChildItem -Path "crates" -Filter "tasty-plugin-*" -Directory)) {
-    if (Test-Path (Join-Path $d.FullName "tasty-plugin.toml")) {
+    $manifest = Join-Path $d.FullName "tasty-plugin.toml"
+    if (Test-Path $manifest) {
+        if (Select-String -Path $manifest -Pattern '^\s*bundle\s*=\s*false' -Quiet) {
+            Write-Host "==> Skipping $($d.Name) (bundle = false)"
+            continue
+        }
         $PluginCrates += $d.Name
     }
 }

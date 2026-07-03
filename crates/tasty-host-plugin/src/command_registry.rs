@@ -224,6 +224,7 @@ mod tests {
             },
             extends: None,
             lang_dir: "lang".to_string(),
+            bundle: true,
         }
     }
 

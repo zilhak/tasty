@@ -20,6 +20,12 @@
 
 plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페스트) · `tasty-plugin.toml.sig`(서명 sidecar, non-debug 필수) · `lang/{en,ja,ko}.toml`.
 
+### 배포 제외 플래그 (`bundle = false`)
+
+매니페스트 최상위 `bundle` 키(기본 `true`, 스키마: `crates/tasty-plugin-manifest/src/types.rs`)로 **개별 plugin 을 배포 패키징에서만 제외**할 수 있다. `false` 면 dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)의 plugin 탐색 glob 이 그 crate 를 건너뛰어 DMG/AppImage/deb/rpm/MSIX 산출물에 넣지 않는다. **dev 스테이징**(`just build-plugins`/`link-plugins`)은 이 플래그를 보지 않으므로 로컬 빌드에는 그대로 포함된다 — 데모/PoC plugin 을 개발 중엔 쓰되 출하판엔 빼는 용도.
+
+런타임 `BUILTINS`(`builtin.rs`)에는 그대로 남겨둔다: `install_builtins_if_needed` 가 번들에 없는 builtin 을 debug 로그만 남기고 **graceful skip** 하므로, dev(스테이징됨)는 설치·dist(미스테이징)는 무시로 자연히 갈린다. 현재 `com.tasty.mesh-demo`(egui-mesh PoC)가 유일한 `bundle = false` — Windows WiX(`wix/main.wxs`)는 애초에 명시 컴포넌트 목록에 mesh-demo 가 없어 이 변경 전부터 MSI 에는 빠져 있었고, 이제 세 스크립트가 그 omission 과 정합한다.
+
 ## 서명
 
 | 항목 | 값 |

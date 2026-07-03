@@ -160,10 +160,16 @@ echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
 # Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
-# Matches justfile `build-plugins` recipe and build-macos-dmg.sh — keep in sync.
+# Matches build-macos-dmg.sh / build-windows.ps1 — keep in sync. A manifest with
+# `bundle = false` (demo/PoC plugins) is skipped from distribution; dev staging
+# (`just build-plugins`/`link-plugins`) still includes it.
 PLUGIN_CRATES=()
 for d in crates/tasty-plugin-*; do
     [ -f "$d/tasty-plugin.toml" ] || continue
+    if grep -Eq '^[[:space:]]*bundle[[:space:]]*=[[:space:]]*false' "$d/tasty-plugin.toml"; then
+        echo "==> Skipping $(basename "$d") (bundle = false)"
+        continue
+    fi
     PLUGIN_CRATES+=("$(basename "$d")")
 done
 

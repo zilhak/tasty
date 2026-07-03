@@ -9,6 +9,36 @@ fn parse(src: &str) -> anyhow::Result<Manifest> {
 }
 
 #[test]
+fn bundle_defaults_true_and_parses_false() {
+    // 미지정 → true (기존 매니페스트가 배포에서 빠지지 않는다).
+    let base = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    assert!(parse(base).expect("parses").bundle);
+
+    // bundle = false → 배포 제외 플래그.
+    let excluded = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        bundle = false
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    assert!(!parse(excluded).expect("parses").bundle);
+}
+
+#[test]
 fn rejects_unsupported_api() {
     let s = r#"
         manifest_version = 1

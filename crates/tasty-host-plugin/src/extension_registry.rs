@@ -283,6 +283,7 @@ mod tests {
             contributes: Contributes::default(),
             extends,
             lang_dir: "lang".to_string(),
+            bundle: true,
         }
     }
 
