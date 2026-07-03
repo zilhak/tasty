@@ -129,7 +129,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 기본 테마 | Mocha(fallback 보장) + Latte(first-run 자동) |
 | 색 팔레트 | Catppuccin Mocha 톤 기준 |
 | 간격 | **4px 그리드** — `spacing_xs/sm/md/lg/xl` 만 |
-| 간격 API | **`add_space`/`inner_margin`/`Margin::same|symmetric` 에 숫자 리터럴 직접 전달 금지** — `tasty-ui-widgets` 의 typed 헬퍼(`vspace`/`hspace`/`margin_all`/`margin_sym`)에 `th.spacing_*`(LogicalPx)를 넘긴다. 그리드 밖 미세 구조 간격(1/2/3px)은 `tasty_ui_widgets::tokens::STRUCT_GAP_1/2/3` (DTCG `primitive.size-1/2/3` 대응). 시리즈 03 에서 lint/guard 게이트로 강제 예정 |
+| 간격 API | **`add_space`/`inner_margin`/`Margin::same|symmetric` 에 숫자 리터럴 직접 전달 금지** — `tasty-ui-widgets` 의 typed 헬퍼(`vspace`/`hspace`/`margin_all`/`margin_sym`)에 `th.spacing_*`(LogicalPx)를 넘긴다. 그리드 밖 미세 구조 간격(1~4px)은 `tasty_ui_widgets::tokens::STRUCT_GAP_1/2/3/4` (DTCG `primitive.size-1/2/3/4` 대응). **`tests/design_token_adherence.rs` 가드가 인라인 리터럴 재유입을 `cargo test --workspace`(CI)로 강제**한다. 명명 구조 상수(`const NAME: LogicalPx = LogicalPx(N)`, 예: 사이드바 폭·카드 크기·control nudge)는 스코프 밖(권장 해결책이라 금지 아님) |
 | UI 폰트 최대 | **14px**(`font_size_body`) |
 | 보더 | 항상 **1px**(`border_width`) |
 | 포커스 링 | 2px accent-primary(`focus_ring_width`) |
