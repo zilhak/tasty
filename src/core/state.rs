@@ -859,6 +859,17 @@ impl CoreState {
         }
     }
 
+    /// 모든 카테고리(normal 포함)의 접힘 상태를 일괄 토글한다. **하나라도 펼쳐져 있으면
+    /// 전부 접고, 전부 접혀 있으면 전부 편다** — "전체 접기/펴기" 단축키용. `set_category_collapsed`
+    /// 와 동일하게 접힘은 layout.json 영속 대상이므로 호출자가 `mark_layout_dirty` 를 책임진다.
+    /// 카테고리가 normal 하나뿐이어도 그 하나를 토글한다.
+    pub fn toggle_all_categories_collapsed(&mut self) {
+        let target = self.categories.iter().any(|c| !c.collapsed);
+        for cat in &mut self.categories {
+            cat.collapsed = target;
+        }
+    }
+
     /// 이름(대소문자 무시) 또는 정확 id 로 카테고리를 해석한다. CLI/IPC 가
     /// `--category <name|id>` 를 받을 때 사용. 숫자 문자열은 id 로 우선 해석한다.
     pub fn resolve_category(&self, token: &str) -> Option<crate::model::WorkspaceCategoryId> {
@@ -1117,6 +1128,28 @@ mod category_tests {
                 .unwrap()
                 .collapsed
         );
+    }
+
+    #[test]
+    fn toggle_all_collapses_when_any_expanded_then_expands_when_all_collapsed() {
+        let mut e = engine();
+        let a = e.create_category("A").unwrap();
+        let b = e.create_category("B").unwrap();
+        // 하나만 접힌 초기 상태 → "하나라도 펼쳐짐" 이므로 전부 접혀야 한다.
+        e.set_category_collapsed(a, true);
+        e.toggle_all_categories_collapsed();
+        assert!(
+            e.categories().iter().all(|c| c.collapsed),
+            "하나라도 펼쳐져 있으면 전부 접힌다(normal 포함)"
+        );
+        // 전부 접힌 상태 → 전부 펴져야 한다.
+        e.toggle_all_categories_collapsed();
+        assert!(
+            e.categories().iter().all(|c| !c.collapsed),
+            "전부 접혀 있으면 전부 펴진다"
+        );
+        // b 도 개별 확인(루프 전체 반영 여부).
+        assert!(!e.categories().iter().find(|c| c.id == b).unwrap().collapsed);
     }
 
     #[test]

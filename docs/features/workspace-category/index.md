@@ -32,6 +32,7 @@
   - `workspace.create` / `workspace.update` 의 `category`(id 또는 이름) 파라미터 — `tasty new/set workspace --category <name|id>`
   - `workspace.list` 응답에 `category` / `category_name`
 - **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. on 이면 사이드바가 카테고리 섹션으로 그룹 렌더되고, 헤더 클릭(접힘 토글)·우클릭 컨텍스트 메뉴(빈 배경 → 새 카테고리, 헤더 → 워크스페이스 추가(그 카테고리 소속 생성, normal 포함)/이름변경/삭제/새 카테고리 — normal 은 추가·새 카테고리만, 워크스페이스 행 → 카테고리로 이동/새 카테고리)·축소 레일 `---` 팝업(Add workspace/Collapse/Rename/Delete)·드래그 앤 드롭(다른 카테고리로 이동)으로 조작한다. 생성/이름변경은 360px 단일필드 다이얼로그(라이브 검증), 삭제는 destructive confirm 을 거친다.
+- **전체 접기/펴기 단축키**: `KeybindingSettings.toggle_categories_collapsed`(기본 빈 binding — 사용자가 Settings › Keybindings 에서 지정). 하나라도 펼쳐져 있으면 전부 접고, 전부 접혀 있으면 전부 편다(normal 포함, `CoreState::toggle_all_categories_collapsed`). 카테고리 토글 off 면 매칭·consume 하지 않아 키가 다른 binding 으로 흐른다. Command Palette 파리티는 `dispatch_action_by_id("toggle_categories_collapsed")`.
 
 ## 비-목표 (Out of scope)
 
@@ -46,6 +47,7 @@
 - [x] Given `workspace_category.move {from:0}` 또는 `{to:0}` Then 거부(normal 0번 고정).
 - [x] Given 토글 on Then 사이드바가 카테고리 섹션(chevron 헤더 + 소속 행)으로 그룹 렌더, 토글 off 면 평면 렌더(회귀 없음).
 - [x] Given 카테고리 헤더 클릭 When 접힘 토글 Then 접힘 상태가 layout.json 에 영속되고 확장↔레일이 공유.
+- [x] Given `toggle_categories_collapsed` 바인딩 When 하나라도 펼쳐진 상태에서 누름 Then 전부 접힘, 다시 누르면 전부 펴짐(normal 포함). 카테고리 토글 off 면 no-op(키 흐름).
 - [x] Given 워크스페이스를 다른 카테고리 섹션으로 드래그 Then 소속이 그 카테고리로 변경(전역 인덱스 불변).
 - [x] Given 카테고리 생성/이름변경 다이얼로그 When 빈/normal/중복 입력 Then 인라인 danger 에러 + 확인 비활성.
 - [x] Given 카테고리 삭제 When destructive confirm 확인 Then 카테고리 제거 + 워크스페이스 normal 귀속.

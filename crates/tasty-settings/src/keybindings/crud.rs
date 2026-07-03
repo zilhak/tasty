@@ -41,6 +41,10 @@ impl KeybindingSettings {
             "settings.keybindings.close_workspace_label",
         ),
         (
+            "toggle_categories_collapsed",
+            "settings.keybindings.toggle_categories_collapsed_label",
+        ),
+        (
             "focus_pane_next",
             "settings.keybindings.focus_pane_next_label",
         ),
@@ -163,6 +167,7 @@ impl KeybindingSettings {
             "focus_surface_prev" => self.focus_surface_prev.as_slice(),
             "toggle_sidebar" => self.toggle_sidebar.as_slice(),
             "toggle_sidebar_collapse" => self.toggle_sidebar_collapse.as_slice(),
+            "toggle_categories_collapsed" => self.toggle_categories_collapsed.as_slice(),
             "restore_closed" => self.restore_closed.as_slice(),
             "quit" => self.quit.as_slice(),
             "quit_immediate" => self.quit_immediate.as_slice(),
@@ -223,6 +228,7 @@ impl KeybindingSettings {
             "focus_surface_prev" => &mut self.focus_surface_prev,
             "toggle_sidebar" => &mut self.toggle_sidebar,
             "toggle_sidebar_collapse" => &mut self.toggle_sidebar_collapse,
+            "toggle_categories_collapsed" => &mut self.toggle_categories_collapsed,
             "restore_closed" => &mut self.restore_closed,
             "quit" => &mut self.quit,
             "quit_immediate" => &mut self.quit_immediate,

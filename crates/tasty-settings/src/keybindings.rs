@@ -36,6 +36,9 @@ pub struct KeybindingSettings {
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
     pub toggle_sidebar_collapse: Vec<String>,
+    /// Collapse/expand all workspace categories at once (any expanded → collapse all,
+    /// all collapsed → expand all). No-op when workspace categories are disabled.
+    pub toggle_categories_collapsed: Vec<String>,
     /// Restore the most recently closed surface/tab/workspace.
     pub restore_closed: Vec<String>,
     /// Quit: follows close_behavior setting (ask/minimize/quit).

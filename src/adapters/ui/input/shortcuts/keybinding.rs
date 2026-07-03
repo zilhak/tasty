@@ -182,6 +182,15 @@ impl MainView {
             state.sidebar_collapsed = !state.sidebar_collapsed;
             return true;
         }
+        // 카테고리 토글이 켜져 있을 때만 매칭·consume — 꺼져 있으면 키를 다른 binding 으로
+        // 흘려보낸다(표시=동작: 비활성 기능은 단축키도 비활성).
+        if engine.settings.general.workspace_categories_enabled
+            && matches_any_binding(&kb.toggle_categories_collapsed, key, mods)
+        {
+            engine.toggle_all_categories_collapsed();
+            engine.mark_layout_dirty();
+            return true;
+        }
         if matches_any_binding(&kb.restore_closed, key, mods) {
             state.dispatch_intent(
                 crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),

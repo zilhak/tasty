@@ -150,6 +150,13 @@ impl MainView {
             "toggle_sidebar_collapse" => {
                 state.sidebar_collapsed = !state.sidebar_collapsed;
             }
+            "toggle_categories_collapsed" => {
+                // Command Palette 경로. 카테고리 토글이 꺼져 있으면 무해한 no-op.
+                if engine.settings.general.workspace_categories_enabled {
+                    engine.toggle_all_categories_collapsed();
+                    engine.mark_layout_dirty();
+                }
+            }
             "close_workspace" => {
                 state.close_active_workspace(engine);
                 if engine.workspaces.is_empty() {
