@@ -58,6 +58,16 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 
 로컬 IPC method `remote.attach` { `remote_workspace`, `profile?`/`ssh?` } — 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**(호스트가 워커 스레드에서 SSH 터널을 세우고 mirror 를 재구성). **focus 중립**이 핵심: 이 IPC/에이전트 경로는 mirror workspace 를 *조용히 생성만* 하고 focus 를 그 ws 로 옮기지 않는다(`active_workspace` 불변). 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**(RA02 팝업에서 사용자가 확정할 때)이며, release IPC 에는 focus 변경 API 가 없다(원칙 3). 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로 나타나고 `list workspaces`(mirror 플래그)로 확인한다.
 
+### 원격 워크스페이스 추가 팝업 (GUI picker — 사용자 경로)
+
+위 브라우징/attach 능력을 **로컬 사용자가 직접 조작**하는 GUI 표면. 사이드바에서 **워크스페이스 카드 우클릭 / 새 워크스페이스(+) 버튼 우클릭 → "원격 워크스페이스 추가"** 로 연다(`remote_attach` headless 팝업, 680×460 2-pane). 좌측은 `tasty-attach` 프로필 목록(remote_tool 이 편집하는 같은 스토어를 **소비만** 함), 우측은 선택 프로필의 원격 워크스페이스를 **4상태**(initial / connecting / error+retry / loaded[+empty])로 표시한다. 조회는 위 browse 코어(`tasty_cli::remote_browse`)를 **워커 스레드**로 돌려(폴링 슬롯) UI 를 막지 않는다. 이미 타 client 가 점유한 원격 ws 는 lavender `in use` 배지 + 선택 불가(중복 mirror 방지).
+
+**Connect 확정 = 사용자 동작 → focus 이동**: 원격 ws 를 골라 Connect 하면 조회에 쓴 SSH 터널을 재사용해 mirror 로 attach 하고, **새 mirror ws 로 focus 가 이동**한다(사용자가 확정한 결과). 이 focus 이동은 IPC/에이전트 경로(위 `remote.attach`, focus 중립)와 분리된 **사용자 입력 전용 큐**(`CoreState.pending_gui_attach_user`)를 통해서만 일어난다 — release IPC 는 이 큐에 push 하지 못한다(원칙 1②). 컨텍스트 메뉴 진입은 `from_user_context_menu()` 로 마킹하고, self(loopback) attach 는 release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다. Cancel/Esc/× 는 진행 중 조회(터널)를 정리하며 닫는다.
+
+### mirror workspace 비영속
+
+원격 attach 로 생긴 mirror workspace(`Workspace.mirror`)는 **원격 점유가 살아있는 세션 동안만** 유효하다. layout.json 에 저장하면 재시작 시 원격 없는 **죽은 일반 workspace** 로 복원되므로, `SavedLayout::capture`(`src/engine/layout_persistence/capture.rs`)가 캡처 순회에서 mirror workspace 를 **제외**하고 `active_workspace` 인덱스도 필터 후 위치로 remap 한다(자동 attach mirror·GUI picker mirror 공통). 팝업 세션 상태(선택 프로필/조회 결과/선택 ws)도 egui temp 메모리(비영속)라 tasty 종료 시 함께 사라진다.
+
 ## 인터페이스
 
 - **AI Agent / 원격 (CLI)**:
@@ -99,7 +109,9 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 - 점유 레지스트리: `src/core/attach.rs` `AttachRegistry`(`surface_locks` / `workspace_locks` / `surface_to_workspace`, acquire/release/force_detach/release_all_for_client). 휘발성.
 - 런타임/스냅샷: `src/core/attach_runtime.rs`(서버측 수신, transport 무관 loopback), `src/core/attach_readonly.rs`(서버측 readonly mirror), `src/app/attach_poll.rs`(3초 tick).
 - 자동 매핑: `src/app/auto_attach.rs`(`Workspace.attach_mapping` 활성화 시 SSH 터널 + GUI mirror).
-- IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC(`remote.workspaces`/`remote.attach`)는 `src/app/ipc/app_methods.rs`(워커 스레드+지연 회신). focus 중립 mirror 생성은 `src/app/auto_attach.rs`(수동 트리거 `anchor=None` 재사용) → `src/app/attach_client.rs::start_gui_attach`(`workspaces.push` 만, `active_workspace` 불변).
+- IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC(`remote.workspaces`/`remote.attach`)는 `src/app/ipc/app_methods.rs`(워커 스레드+지연 회신). focus 중립 mirror 생성은 `src/app/auto_attach.rs`(수동 트리거 `anchor=None` 재사용) → `src/app/attach_client.rs::start_gui_attach`(`workspaces.push` 만, `active_workspace` 불변; 새 mirror ws id 반환).
+- GUI picker 팝업(사용자 경로): `src/adapters/ui/popup/remote_attach.rs`(2-pane 상태머신 + browse 워커 폴링), `defs.rs`(headless PopupDef), 진입 컨텍스트 메뉴 2곳 `src/view/main/redraw.rs`(NewWorkspaceButton / Workspace). Connect → `CoreState.pending_gui_attach_user` 큐 → `App::dispatch_pending_gui_attach`(사용자 경로 drain) → `start_gui_attach` + `focus_mirror_workspace`(새 mirror 로 focus 이동, 사용자 경로 전용). 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/remote_attach.rs`(4상태).
+- mirror 비영속: `src/engine/layout_persistence/capture.rs`(`SavedLayout::capture` 가 `ws.mirror` 제외 + active 인덱스 remap). 회귀 테스트 `core::state` `mirror_workspace_not_persisted`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-cli/src/remote_browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선).
 - trait marker: `AttachedSurface`(`kind:"attached"`, placeholder/mirror) — [work-area Surface 종류](../work-area/index.md#surface-종류).

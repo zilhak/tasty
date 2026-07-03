@@ -9,6 +9,7 @@ pub(crate) mod file_open;
 pub(crate) mod port_scanner;
 pub(crate) mod preset_apply;
 pub(crate) mod rail_category;
+pub(crate) mod remote_attach;
 pub(crate) mod remote_tool;
 pub(crate) mod script_confirm;
 pub(crate) mod size_confirm;
@@ -271,7 +272,10 @@ impl PopupState {
         // 디자인상 컨테이너 패딩이 0 이고 각 구역이 자체 패딩을 가지는 popup 은
         // content_margin 을 0 으로 둬 draw_fn 이 popup 가장자리부터 구역별 패딩을
         // 직접 준다 (design-parity: 통짜 패딩으로 뭉개지 않기 위함).
-        let margin = if matches!(self.id, "remote_tool" | "command_palette" | "port_scanner") {
+        let margin = if matches!(
+            self.id,
+            "remote_tool" | "remote_attach" | "command_palette" | "port_scanner"
+        ) {
             0.0
         } else {
             content_margin()

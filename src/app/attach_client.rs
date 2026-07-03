@@ -95,6 +95,36 @@ impl App {
                 tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
             }
         }
+
+        // 사용자 경로(remote_attach 팝업 Connect) — 조회 터널을 재사용해 attach 하고,
+        // 성공 시 새 mirror ws 로 **focus 이동**(사용자 확정 동작 — 원칙 1②). IPC 경로와
+        // 분리된 별도 큐라 release IPC/에이전트가 이 focus 이동 경로를 탈 수 없다.
+        let mut user_reqs: Vec<crate::core::GuiAttachUserReq> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            user_reqs.append(&mut main.core_state.pending_gui_attach_user);
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            user_reqs.append(&mut e.pending_gui_attach_user);
+        }
+        for req in user_reqs {
+            // self(loopback) attach 는 release 에서 차단(원칙 1②) — IPC 경로와 동일 게이트.
+            #[cfg(not(debug_assertions))]
+            if self_port == Some(req.port) {
+                tracing::warn!(
+                    "self(loopback) remote-attach (port={}) 는 release 빌드에서 차단됩니다.",
+                    req.port
+                );
+                continue;
+            }
+            match self.start_gui_attach(req.port, req.workspace, req.tunnel, None) {
+                Ok(ws_id) => self.focus_mirror_workspace(ws_id),
+                Err(e) => tracing::warn!(
+                    "remote-attach failed (port={}, ws={}): {e}",
+                    req.port,
+                    req.workspace
+                ),
+            }
+        }
     }
 
     /// 원격 tasty(loopback `port`)의 `workspace` 를 mirror 로 재구성해 GUI 에 띄운다.
@@ -104,13 +134,16 @@ impl App {
     /// 를 `port` 로 넘기고 `tunnel` 핸들을 세션에 실어 Drop 을 막는다. `anchor_ws_id` 는
     /// 매핑된 로컬 워크스페이스 id(세션 정리 시 재attach 게이트 해제용). 수동 트리거는
     /// 둘 다 None.
+    ///
+    /// 반환값은 새로 만든 로컬 mirror workspace 의 id — 사용자 경로(remote_attach 팝업)
+    /// 가 이 id 로 focus 를 옮기는 데 쓴다(IPC/자동 경로는 반환값을 무시해 focus 중립).
     pub(crate) fn start_gui_attach(
         &mut self,
         port: u16,
         workspace: u32,
         tunnel: Option<tasty_cli::ssh::SshTunnel>,
         anchor_ws_id: Option<u32>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<u32> {
         // 1. 연결 + 핸드셰이크 + 디스크립터 수신.
         let sock = TcpStream::connect(("127.0.0.1", port))?;
         let (mut conn, client_id) =
@@ -270,7 +303,25 @@ impl App {
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
         );
-        Ok(())
+        Ok(local_ws_id)
+    }
+
+    /// 사용자 경로 전용 — 새 mirror workspace 로 focus 를 옮긴다(원격 워크스페이스 추가
+    /// 팝업의 Connect 확정). mirror 를 호스팅한 창의 `active_workspace` 를 그 ws 인덱스로
+    /// 설정한다. IPC/자동 attach 경로는 이 함수를 호출하지 않아 focus 중립을 유지한다.
+    fn focus_mirror_workspace(&mut self, ws_id: u32) {
+        for main in self.main_windows_iter_mut() {
+            if let Some(idx) = main
+                .core_state
+                .workspaces
+                .iter()
+                .position(|ws| ws.id == ws_id)
+            {
+                main.state.active_workspace = idx;
+                main.mark_dirty();
+                break;
+            }
+        }
     }
 
     /// `AttachClientData`(reader wake)마다 — 누적 원격 출력을 mirror Terminal 에

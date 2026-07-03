@@ -222,6 +222,22 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::remote_tool::draw_remote_tool_popup,
             },
             PopupDef {
+                id: super::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                title_key: "remote_attach.heading",
+                title_fn: None,
+                default_size: egui::vec2(680.0, 460.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: true,
+                sticky_focus: false,
+                // 모달 성격 — 중앙 정렬, 이동/리사이즈 없음(디자인 Scrim 위 고정 프레임).
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::remote_attach::draw_remote_attach_popup,
+            },
+            PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                 title_key: "preset.popup.apply_workspace_title",
                 title_fn: None,

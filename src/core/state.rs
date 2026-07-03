@@ -122,6 +122,17 @@ pub struct ExplorerClipboard {
     pub cut: bool,
 }
 
+/// N-RA02 — 원격 워크스페이스 추가 팝업의 Connect 가 메인 루프로 넘기는 사용자-경로
+/// GUI attach 요청. `port`/`workspace` 는 attach 대상, `tunnel` 은 조회에 쓴 SSH 터널을
+/// 재사용(loopback 이면 None). `App::dispatch_pending_gui_attach` 가 drain 해
+/// `start_gui_attach` 로 mirror 를 띄우고, 성공 시 새 mirror ws 로 focus 를 옮긴다.
+/// `Clone`/`Debug` 불가(SshTunnel = 자식 process 핸들) — 큐로 단발 이동한다.
+pub(crate) struct GuiAttachUserReq {
+    pub(crate) port: u16,
+    pub(crate) workspace: u32,
+    pub(crate) tunnel: Option<tasty_cli::ssh::SshTunnel>,
+}
+
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
 ///
@@ -244,6 +255,14 @@ pub struct CoreState {
     /// (focus 비의존, plan §5). headless 는 GUI 가 없어 drain 되지 않는다.
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
 
+    /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
+    /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
+    /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
+    /// attach 성공 시 새 mirror ws 로 **focus 를 이동**하는데(사용자 확정 동작), 그 focus
+    /// 이동은 사용자 입력 경로에서만 허용된다(원칙 1②). release IPC/CLI 는 이 큐에 push
+    /// 하지 않는다.
+    pub(crate) pending_gui_attach_user: Vec<GuiAttachUserReq>,
+
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
@@ -360,6 +379,7 @@ impl CoreState {
             attach: crate::core::attach::AttachRegistry::new(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
+            pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();
@@ -1132,6 +1152,55 @@ mod category_tests {
         assert!(
             cat.collapsed,
             "collapsed 상태가 왕복 후에도 유지되어야 한다"
+        );
+    }
+
+    #[test]
+    fn mirror_workspace_not_persisted() {
+        use crate::engine::layout_persistence::SavedLayout;
+        // N-RA02 회귀: 원격 attach 가 만드는 mirror workspace 는 layout.json 에 저장되면
+        // 안 된다(재시작 시 원격 없는 죽은 일반 ws 로 복원되는 버그). capture 가 제외하고
+        // active 인덱스도 필터 후 위치로 remap 하는지 확인.
+        let mut e = engine();
+        let base_count = e.workspaces.len();
+        assert!(base_count >= 1, "엔진은 기본 workspace 를 하나 이상 가진다");
+        // 원격 attach 가 만드는 mirror workspace 를 흉내 — 새 ws 를 만들고 mirror 플래그를 세운다.
+        let idx = match crate::core::apply_create_workspace_inner(
+            &mut e,
+            None,
+            "terminal".to_string(),
+            serde_json::Value::Null,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        {
+            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            _ => panic!("expected WorkspaceCreated"),
+        };
+        e.workspaces[idx].mirror = true;
+        assert_eq!(e.workspaces.len(), base_count + 1);
+
+        // active 를 mirror 로 둔 채 capture — mirror 는 저장 제외 + active 는 클램프.
+        let saved = SavedLayout::capture(&mut e, idx);
+        assert_eq!(
+            saved.workspaces.len(),
+            base_count,
+            "mirror workspace 는 저장에서 제외돼야 한다"
+        );
+        assert!(
+            saved.active_workspace < saved.workspaces.len(),
+            "remap 된 active 인덱스가 저장 목록 범위 안이어야 한다"
+        );
+
+        // 왕복 복원 후에도 mirror 는 되살아나지 않는다.
+        let mut restored = engine();
+        assert!(saved.restore(&mut restored));
+        assert!(
+            restored.workspaces.iter().all(|w| !w.mirror),
+            "복원본에 mirror workspace 가 없어야 한다"
         );
     }
 

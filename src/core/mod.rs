@@ -24,7 +24,7 @@ pub(crate) mod session;
 pub(crate) mod state;
 pub(crate) mod terminal_store;
 
-pub(crate) use state::CoreState;
+pub(crate) use state::{CoreState, GuiAttachUserReq};
 
 use std::sync::{Arc, Mutex, OnceLock};
 

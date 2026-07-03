@@ -695,6 +695,8 @@ impl MainView {
                     move_down,
                     MenuItem::separator(),
                     MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
+                    MenuItem::separator(),
+                    MenuItem::new(7, crate::i18n::t("context_menu.add_remote_workspace")),
                 ];
 
                 // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
@@ -799,6 +801,16 @@ impl MainView {
                             {
                                 self.request_close();
                             }
+                        }
+                        Some(7) => {
+                            // 원격 워크스페이스 추가 팝업 — 사용자 컨텍스트 메뉴 진입(원칙 1).
+                            self.state.dispatch_intent(
+                                crate::intent::UiIntent::OpenPopup {
+                                    id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                                    mode: crate::intent::OpenPopupMode::CenteredFocused,
+                                }
+                                .from_user_context_menu(),
+                            );
                         }
                         Some(100) => {
                             // 새 카테고리 생성 다이얼로그.
@@ -1266,21 +1278,34 @@ impl MainView {
                 self.mark_dirty();
             }
             PendingNativeMenu::NewWorkspaceButton { x, y } => {
-                let items = [MenuItem::new(
-                    1,
-                    crate::i18n::t("preset.context.apply_workspace_preset"),
-                )];
+                let items = [
+                    MenuItem::new(1, crate::i18n::t("preset.context.apply_workspace_preset")),
+                    MenuItem::separator(),
+                    MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
+                ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if let Some(1) = result {
-                    self.state.dialogs.preset_picker_selected = None;
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
-                            mode: crate::intent::OpenPopupMode::CenteredFocused,
-                        }
-                        .from_user_context_menu(),
-                    );
+                match result {
+                    Some(1) => {
+                        self.state.dialogs.preset_picker_selected = None;
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                    Some(2) => {
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                    _ => {}
                 }
                 self.mark_dirty();
             }
