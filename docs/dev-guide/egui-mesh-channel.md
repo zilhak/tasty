@@ -41,14 +41,17 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 
 ## set_context 송신 정책
 
-정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp, theme) 를
-추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 미paint(bootstrap)** 중 하나일 때만
-보낸다. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
-frame 이 사라지면 다시 bootstrap 한다.
+정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp, theme,
+focused) 를 추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 미paint(bootstrap) ·
+포커스 변화** 중 하나일 때만 보낸다. 포커스 변화를 트리거에 넣는 이유: markdown 등이
+focused/unfocused 로 배경을 바꾸므로, 입력 없이 포커스만 잃는 경우(다른 surface 클릭)에도
+재전송돼야 배경이 즉시 전환된다. focused 를 안 쓰는 plugin 은 출력 바이트가 불변이라 SDK
+출력 해시 dedup 이 PaintFrame 을 흡수 — 스퍼리어스 재합성 없음. plugin 이 paint 를 보낸
+뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로 frame 이 사라지면 다시 bootstrap 한다.
 
 ## plugin self-repaint (out-of-band 상태 변경)
 
-위 4개 트리거(크기/ppp · 입력 · 테마 · bootstrap)는 전부 **host-side** 요인이라, plugin 이
+위 5개 트리거(크기/ppp · 입력 · 테마 · bootstrap · 포커스)는 전부 **host-side** 요인이라, plugin 이
 IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바꿔도** host 는 새 set_context 를
 보내지 않는다. 이 경우 plugin 은 SDK 의 `EguiMeshSurface::repaint_last`(popup/banner 동형)로
 스스로 재-paint 한다:

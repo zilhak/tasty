@@ -66,6 +66,9 @@ pub(crate) struct MeshForwardState {
     /// 이 surface 의 owning plugin id (첫 forward 시 기록). 비가시 상태에서 full
     /// 재전송 요청을 보낼 때 대상 plugin 을 알기 위해 보관한다.
     plugin_id: Option<String>,
+    /// 직전 forward 의 focused 상태. 포커스만 바뀌어도(입력·크기·테마 무변) set_context
+    /// 재전송을 트리거하기 위해 추적한다 — markdown 등 focused/unfocused 배경 즉시 전환.
+    last_focused: Option<bool>,
 }
 
 impl MeshForwardState {
@@ -253,19 +256,30 @@ impl MainView {
                 // 건강 상태 — 이후 crash 로 frame 이 사라지면 재bootstrap 하도록 무장.
                 st.bootstrap_sent = false;
             }
+            let is_focused = focused == Some(sid);
             let geom_changed = st.last_geom != Some(geom);
             let has_input = !st.events.is_empty();
             let need_bootstrap = !has_frame && !st.bootstrap_sent;
             let theme_changed = st.last_theme.as_ref() != Some(&current_theme);
             let need_full = st.pending_full;
+            // 포커스 변화만으로도 재forward — 입력 없이 포커스만 잃는 경우(다른 surface
+            // 클릭 등)에 markdown 배경이 focused 로 잔류하지 않도록 (B).
+            let focus_changed = st.last_focused != Some(is_focused);
 
-            if !(geom_changed || has_input || need_bootstrap || theme_changed || need_full) {
+            if !(geom_changed
+                || has_input
+                || need_bootstrap
+                || theme_changed
+                || need_full
+                || focus_changed)
+            {
                 continue;
             }
 
             let events = std::mem::take(&mut st.events);
             st.last_geom = Some(geom);
             st.last_theme = Some(current_theme.clone());
+            st.last_focused = Some(is_focused);
             st.pending_full = false;
             if !has_frame {
                 st.bootstrap_sent = true;
@@ -291,7 +305,7 @@ impl MainView {
                 pixels_per_point: ppp,
                 raw_input: RawInputWire {
                     time: None,
-                    focused: focused == Some(sid),
+                    focused: is_focused,
                     modifiers,
                     events,
                 },
