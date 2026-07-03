@@ -581,7 +581,10 @@ mod tests {
 
         // 되쓰기로 영속화 — 디스크 파일에 id 가 기록되고, 재로드 시 같은 값.
         let on_disk = std::fs::read_to_string(&path).unwrap();
-        assert!(on_disk.contains("id ="), "migration persisted to disk: {on_disk}");
+        assert!(
+            on_disk.contains("id ="),
+            "migration persisted to disk: {on_disk}"
+        );
         let s2 = PresetStore::load_from(tmp.path().into());
         assert_eq!(leaf_id(s2.get_workspace("legacy").unwrap()), leaf_id(got));
     }

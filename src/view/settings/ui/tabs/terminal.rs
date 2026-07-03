@@ -143,7 +143,9 @@ pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         &th,
         t("settings.terminal.allow_clipboard_read_notice"),
         &|ui, rect, c| {
-            icons::ALERT_TRIANGLE.image(rect.height(), c).paint_at(ui, rect);
+            icons::ALERT_TRIANGLE
+                .image(rect.height(), c)
+                .paint_at(ui, rect);
         },
     );
 }

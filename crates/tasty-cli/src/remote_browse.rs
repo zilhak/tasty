@@ -137,7 +137,11 @@ pub fn resolve_endpoint(
 /// `remote_check` 의 `probe_system_info` 와 같은 이유로 [`crate::transport::IpcConnection`]
 /// 을 쓰지 않는다 — 그 구현은 빈 줄(EOF)에서 무한 루프에 빠져 stale 포트에서 행이
 /// 걸린다. 여기서는 read/write 타임아웃을 걸고 EOF/빈 응답을 명시적 에러로 변환한다.
-pub fn probe_method(port: u16, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+pub fn probe_method(
+    port: u16,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value> {
     let stream = TcpStream::connect(("127.0.0.1", port))
         .with_context(|| format!("터널 localport 127.0.0.1:{port} 연결 실패"))?;
     stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
@@ -181,8 +185,8 @@ pub fn browse_via_port(port: u16) -> Result<Vec<RemoteWorkspace>> {
     let ws_list = probe_method(port, "workspace.list", serde_json::json!({}))
         .context("원격 workspace.list 조회 실패")?;
     // attach.list 는 병합용 부가 정보 — 실패해도 목록 자체는 반환(점유 표시만 생략).
-    let attach_list = probe_method(port, "attach.list", serde_json::json!({}))
-        .unwrap_or(serde_json::Value::Null);
+    let attach_list =
+        probe_method(port, "attach.list", serde_json::json!({})).unwrap_or(serde_json::Value::Null);
 
     // attach.list.workspaces 에서 workspace_id → holder(AttachClientId=u32) 맵 구성.
     // 점유 판정은 **workspace 단위 lock** 기준 — workspace.list 응답이 멤버 surface id
@@ -194,10 +198,7 @@ pub fn browse_via_port(port: u16) -> Result<Vec<RemoteWorkspace>> {
     if let Some(arr) = attach_list.get("workspaces").and_then(|v| v.as_array()) {
         for w in arr {
             if let Some(wid) = w.get("workspace_id").and_then(|v| v.as_u64()) {
-                let holder = w
-                    .get("holder")
-                    .and_then(|v| v.as_u64())
-                    .map(|h| h as u32);
+                let holder = w.get("holder").and_then(|v| v.as_u64()).map(|h| h as u32);
                 ws_holders.insert(wid as u32, holder);
             }
         }

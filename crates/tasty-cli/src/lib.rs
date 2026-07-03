@@ -395,9 +395,15 @@ mod attach_surface_tests {
     /// `tasty remote workspaces --ssh user@host` 가 Workspaces 변형으로 파싱된다.
     #[test]
     fn remote_workspaces_parses() {
-        let cli =
-            Cli::try_parse_from(["tasty", "remote", "workspaces", "--ssh", "user@host", "--json"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "workspaces",
+            "--ssh",
+            "user@host",
+            "--json",
+        ])
+        .unwrap();
         let Some(Commands::Remote {
             command:
                 RemoteCommands::Workspaces {
@@ -421,9 +427,16 @@ mod attach_surface_tests {
     /// 런타임 가드: `remote workspaces` 의 `--ssh` 와 `--profile` 는 상호배타.
     #[test]
     fn remote_workspaces_ssh_profile_rejected() {
-        let cli =
-            Cli::try_parse_from(["tasty", "remote", "workspaces", "--ssh", "h", "--profile", "p"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "workspaces",
+            "--ssh",
+            "h",
+            "--profile",
+            "p",
+        ])
+        .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
             err.to_string().contains("--ssh 와 --profile"),

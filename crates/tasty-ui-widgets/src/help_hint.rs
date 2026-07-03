@@ -147,8 +147,10 @@ fn paint_help_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Colo
     for i in 1..=CUB_SEG {
         let t = i as f32 / CUB_SEG as f32;
         let u = 1.0 - t;
-        let x = u * u * u * p0.0 + 3.0 * u * u * t * c1.0 + 3.0 * u * t * t * c2.0 + t * t * t * p3.0;
-        let y = u * u * u * p0.1 + 3.0 * u * u * t * c1.1 + 3.0 * u * t * t * c2.1 + t * t * t * p3.1;
+        let x =
+            u * u * u * p0.0 + 3.0 * u * u * t * c1.0 + 3.0 * u * t * t * c2.0 + t * t * t * p3.0;
+        let y =
+            u * u * u * p0.1 + 3.0 * u * u * t * c1.1 + 3.0 * u * t * t * c2.1 + t * t * t * p3.1;
         pts.push(map(x, y));
     }
     // round cap 근사(spinner 전례) — 양 끝에 반경 stroke/2 원.

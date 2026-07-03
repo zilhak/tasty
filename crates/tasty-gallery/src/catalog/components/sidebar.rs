@@ -31,7 +31,10 @@ const CATEGORY_SECTIONS: &[(&str, bool, &[(&str, Option<&str>, bool, bool)])] = 
     (
         "WORKSPACES",
         false,
-        &[("main", None, true, false), ("review", Some("3"), false, false)],
+        &[
+            ("main", None, true, false),
+            ("review", Some("3"), false, false),
+        ],
     ),
     ("SERVICES", false, &[("agent", None, false, true)]),
     // 빈 + 접힌 카테고리 — 헤더(chevron ▶)만.
@@ -60,7 +63,13 @@ fn paint_icon(
 /// Full 행 — 이름 앞 leading mirror glyph(`>_→`, workspace_mirror_fg). glyph 를
 /// `name_x` 중앙에 그리고, 이름이 시작할 x(글리프 폭 + gap 만큼 우측)를 돌려준다.
 /// mirror 가 아니면 `name_x` 를 그대로 반환(리플로 없음).
-fn mirror_leading_glyph(ui: &mut egui::Ui, theme: &Theme, name_x: f32, cy: f32, mirror: bool) -> f32 {
+fn mirror_leading_glyph(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    name_x: f32,
+    cy: f32,
+    mirror: bool,
+) -> f32 {
     if !mirror {
         return name_x;
     }

@@ -385,8 +385,13 @@ mod tests {
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
-        let mut ws =
-            Workspace::new_with_terminal_marker(ws_id, name.to_string(), pane_id, tab_id, surface_id);
+        let mut ws = Workspace::new_with_terminal_marker(
+            ws_id,
+            name.to_string(),
+            pane_id,
+            tab_id,
+            surface_id,
+        );
         ws.mirror = mirror;
         ws
     }
@@ -410,10 +415,13 @@ mod tests {
     #[test]
     fn capture_excludes_mirror_and_remaps_active() {
         // 라이브: [n0, m1(mirror), n2, m3(mirror), n4], active = 2 (n2).
-        let mut engine =
-            engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false), ("m3", true), (
-                "n4", false,
-            )]);
+        let mut engine = engine_with_workspaces(&[
+            ("n0", false),
+            ("m1", true),
+            ("n2", false),
+            ("m3", true),
+            ("n4", false),
+        ]);
         let saved = SavedLayout::capture(&mut engine, 2);
 
         let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();

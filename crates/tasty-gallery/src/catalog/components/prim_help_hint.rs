@@ -37,22 +37,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .show(ui, theme);
         });
 
-        cluster(ui, theme, "placement — top · bottom · left · right", |ui| {
-            // 강제 open 4종 — Area id 를 placement 별로 고유화(동시 표시 충돌 방지).
-            ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
-            for (place, key) in [
-                (TooltipPlacement::Top, "hh_top"),
-                (TooltipPlacement::Bottom, "hh_bottom"),
-                (TooltipPlacement::Left, "hh_left"),
-                (TooltipPlacement::Right, "hh_right"),
-            ] {
-                HelpHint::new(SAMPLE)
-                    .placement(place)
-                    .open(true)
-                    .id_source(key)
-                    .show(ui, theme);
-            }
-        });
+        cluster(
+            ui,
+            theme,
+            "placement — top · bottom · left · right",
+            |ui| {
+                // 강제 open 4종 — Area id 를 placement 별로 고유화(동시 표시 충돌 방지).
+                ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
+                for (place, key) in [
+                    (TooltipPlacement::Top, "hh_top"),
+                    (TooltipPlacement::Bottom, "hh_bottom"),
+                    (TooltipPlacement::Left, "hh_left"),
+                    (TooltipPlacement::Right, "hh_right"),
+                ] {
+                    HelpHint::new(SAMPLE)
+                        .placement(place)
+                        .open(true)
+                        .id_source(key)
+                        .show(ui, theme);
+                }
+            },
+        );
     });
 
     note(

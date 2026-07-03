@@ -1306,7 +1306,8 @@ impl Theme {
     /// ([`PRESET_SPLIT_ZONE_BORDER_ALPHA`]).
     #[inline]
     pub fn preset_split_zone_border(&self) -> HexColor {
-        self.accent_primary().with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
+        self.accent_primary()
+            .with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
     }
 
     // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──

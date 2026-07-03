@@ -361,7 +361,9 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
     assert_eq!(engine.workspaces.len(), 4);
 
     // add_test_workspace 는 카테고리를 안 붙이므로 work 카테고리를 만들어 B/D 재배정.
-    let work = engine.create_category("work").expect("create work category");
+    let work = engine
+        .create_category("work")
+        .expect("create work category");
     engine.workspaces[1].set_category(work); // B
     engine.workspaces[3].set_category(work); // D
 

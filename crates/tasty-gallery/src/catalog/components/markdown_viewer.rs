@@ -461,7 +461,10 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
         };
         ui.with_layout(lay, |ui| {
             let rt = if i == 2 {
-                egui::RichText::new(text).monospace().size(body).color(color)
+                egui::RichText::new(text)
+                    .monospace()
+                    .size(body)
+                    .color(color)
             } else {
                 egui::RichText::new(text).size(body).color(color)
             };

@@ -171,9 +171,13 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
             let (target, remote_tasty, port_mode, port_file) =
                 remote_browse::resolve_connection_spec(Some(&name), None, "", "")
                     .map_err(|e| e.to_string())?;
-            let (tunnel, port) =
-                remote_browse::resolve_endpoint(&target, &remote_tasty, &port_mode, port_file.as_deref())
-                    .map_err(|e| e.to_string())?;
+            let (tunnel, port) = remote_browse::resolve_endpoint(
+                &target,
+                &remote_tasty,
+                &port_mode,
+                port_file.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
             let workspaces = remote_browse::browse_via_port(port).map_err(|e| e.to_string())?;
             Ok(BrowseOk {
                 port,
@@ -273,7 +277,8 @@ pub fn draw_remote_attach_popup(
         egui::pos2(full.left(), header_rect.bottom()),
         egui::pos2(full.right(), footer_rect.top()),
     );
-    let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(LEFT_W, body_rect.height()));
+    let left_rect =
+        egui::Rect::from_min_size(body_rect.min, egui::vec2(LEFT_W, body_rect.height()));
     let right_rect = egui::Rect::from_min_max(
         egui::pos2(body_rect.left() + LEFT_W, body_rect.top()),
         body_rect.max,
@@ -305,7 +310,8 @@ pub fn draw_remote_attach_popup(
     }
 
     // Connect 실행 — 재사용 터널 + 선택 ws 를 사용자-경로 큐에 넣는다(메인 루프 drain).
-    if do_connect && can_connect
+    if do_connect
+        && can_connect
         && let Some(ws) = st.ws_sel
         && let Some(ready_arc) = st.ready.take()
     {
@@ -313,11 +319,13 @@ pub fn draw_remote_attach_popup(
         if let Some(ReadyConn { port, tunnel }) = ready {
             // focus 이동은 큐 drain(dispatch_pending_gui_attach) 이 담당(원칙 1 —
             // 사용자 입력 경로에서만 새 mirror ws 로 focus 이동).
-            engine.pending_gui_attach_user.push(crate::core::GuiAttachUserReq {
-                port,
-                workspace: ws,
-                tunnel,
-            });
+            engine
+                .pending_gui_attach_user
+                .push(crate::core::GuiAttachUserReq {
+                    port,
+                    workspace: ws,
+                    tunnel,
+                });
         }
         close = true;
     }
@@ -360,7 +368,10 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     );
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui
-            .add(egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into())).frame(false))
+            .add(
+                egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into()))
+                    .frame(false),
+            )
             .on_hover_text(t("remote_attach.close"))
             .clicked()
         {
@@ -390,10 +401,8 @@ fn draw_left_pane(
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더.
     caps_header(&mut col, th, t("remote_attach.attach_profiles"), None);
-    let list_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left(), rect.top() + CAPS_H),
-        rect.max,
-    );
+    let list_rect =
+        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -446,8 +455,14 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + th.spacing_md.value(), rect.top() + th.spacing_sm.value()),
-        egui::pos2(rect.right() - th.spacing_md.value(), rect.bottom() - th.spacing_sm.value()),
+        egui::pos2(
+            rect.left() + th.spacing_md.value(),
+            rect.top() + th.spacing_sm.value(),
+        ),
+        egui::pos2(
+            rect.right() - th.spacing_md.value(),
+            rect.bottom() - th.spacing_sm.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -477,7 +492,15 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
             );
         }
         if p.inactive {
-            badge(ui, th, t("remote_attach.inactive"), th.accent_warning().into(), 0.12, 0.40, true);
+            badge(
+                ui,
+                th,
+                t("remote_attach.inactive"),
+                th.accent_warning().into(),
+                0.12,
+                0.40,
+                true,
+            );
         }
     });
     child.label(
@@ -574,8 +597,14 @@ fn draw_ws_list(
     );
     col.set_clip_rect(rect);
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    caps_header(&mut col, th, t("remote_attach.remote_workspaces"), Some(profile_name));
-    let list_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
+    caps_header(
+        &mut col,
+        th,
+        t("remote_attach.remote_workspaces"),
+        Some(profile_name),
+    );
+    let list_rect =
+        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -649,7 +678,15 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     );
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if disabled {
-            badge(ui, th, t("remote_attach.in_use"), th.border_attached().into(), 0.14, 0.45, false);
+            badge(
+                ui,
+                th,
+                t("remote_attach.in_use"),
+                th.border_attached().into(),
+                0.14,
+                0.45,
+                false,
+            );
         } else if w.busy_count > 0 {
             ui.label(
                 egui::RichText::new(t("remote_attach.busy"))
@@ -693,7 +730,9 @@ fn center_state(
             col.add(g.image(22.0, c));
         }
         CenterKind::Spinner => {
-            tasty_ui_widgets::Spinner::new().size(22.0).show(&mut col, th);
+            tasty_ui_widgets::Spinner::new()
+                .size(22.0)
+                .show(&mut col, th);
         }
     }
     col.label(
@@ -768,7 +807,10 @@ fn draw_footer(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, can_connect: boo
 // ════════════════════════════════════════════════════════════════════════
 /// caps 헤더 — mono micro uppercase muted. `suffix` 있으면 "· {suffix}" 를 붙인다.
 fn caps_header(ui: &mut egui::Ui, th: &Theme, label: &str, suffix: Option<&str>) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), CAPS_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), CAPS_H),
+        egui::Sense::hover(),
+    );
     let base_x = rect.left() + th.spacing_md.value();
     let y = rect.top() + th.spacing_md.value();
     let galley = ui.painter().layout_no_wrap(
@@ -777,7 +819,8 @@ fn caps_header(ui: &mut egui::Ui, th: &Theme, label: &str, suffix: Option<&str>)
         th.text_muted().into(),
     );
     let w = galley.rect.width();
-    ui.painter().galley(egui::pos2(base_x, y), galley, th.text_muted().into());
+    ui.painter()
+        .galley(egui::pos2(base_x, y), galley, th.text_muted().into());
     if let Some(s) = suffix {
         ui.painter().text(
             egui::pos2(base_x + w + th.spacing_sm.value(), y),
@@ -808,7 +851,8 @@ fn badge(
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
-    ui.painter().rect_filled(rect, radius, color.gamma_multiply(fill_a));
+    ui.painter()
+        .rect_filled(rect, radius, color.gamma_multiply(fill_a));
     ui.painter().rect_stroke(
         rect,
         radius,
@@ -817,7 +861,10 @@ fn badge(
     );
     let mut tx = rect.left() + pad_x;
     if warn_icon {
-        let ir = egui::Rect::from_min_size(egui::pos2(tx, rect.center().y - 6.0), egui::vec2(12.0, 12.0));
+        let ir = egui::Rect::from_min_size(
+            egui::pos2(tx, rect.center().y - 6.0),
+            egui::vec2(12.0, 12.0),
+        );
         icons::ALERT_TRIANGLE.image(12.0, color).paint_at(ui, ir);
         tx += 12.0 + 4.0;
     }

@@ -706,7 +706,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "remote-workspace-attach",
                             "Two-pane picker — loaded",
-                            Some("680×460 · attach profiles → remote workspace list · mirror on Connect"),
+                            Some(
+                                "680×460 · attach profiles → remote workspace list · mirror on Connect",
+                            ),
                             components::remote_attach::draw,
                         ),
                         spec(

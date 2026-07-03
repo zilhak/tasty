@@ -351,7 +351,9 @@ pub fn draw_full_sidebar_view(
                                 draw_list_separator(ui, th, 32.0);
                             }
                             let switch_digit = if props.workspace_switch_held && active_sec {
-                                crate::adapters::ui::switch_overlay::workspace_digit(props.kb, row_i)
+                                crate::adapters::ui::switch_overlay::workspace_digit(
+                                    props.kb, row_i,
+                                )
                             } else {
                                 None
                             };
@@ -397,7 +399,15 @@ pub fn draw_full_sidebar_view(
                     } else {
                         None
                     };
-                    draw_ws_row(ui, props, i, ws, switch_digit, &mut actions, &mut card_rects);
+                    draw_ws_row(
+                        ui,
+                        props,
+                        i,
+                        ws,
+                        switch_digit,
+                        &mut actions,
+                        &mut card_rects,
+                    );
                 }
 
                 // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
@@ -640,7 +650,14 @@ pub fn draw_collapsed_sidebar_view(
                         } else {
                             None
                         };
-                        draw_collapsed_avatar(ui, props, *global_idx, ws, switch_digit, &mut actions);
+                        draw_collapsed_avatar(
+                            ui,
+                            props,
+                            *global_idx,
+                            ws,
+                            switch_digit,
+                            &mut actions,
+                        );
                     }
                 }
             }
@@ -1727,7 +1744,10 @@ mod tests {
         let full = run_full_grouped(sections.clone(), workspaces.clone(), true);
         assert!(full.is_empty(), "expected no actions, got {full:?}");
         let collapsed = run_collapsed_grouped(sections, workspaces, true);
-        assert!(collapsed.is_empty(), "expected no actions, got {collapsed:?}");
+        assert!(
+            collapsed.is_empty(),
+            "expected no actions, got {collapsed:?}"
+        );
     }
 
     #[test]

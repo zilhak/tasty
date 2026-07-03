@@ -10,7 +10,9 @@
 //! - `draw_states` = 비-list 3+1 상태(initial / connecting / error / empty).
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, StatusKind, status_dot};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, StatusKind, status_dot,
+};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -47,11 +49,36 @@ struct Prof {
 
 // 디자인 RA_ATTACHES seed 1:1 (overlays-shared.jsx).
 const PROFILES: &[Prof] = &[
-    Prof { name: "prod-web", label: "us-east", target: "deploy@10.0.4.12", inactive: false },
-    Prof { name: "gb10", label: "", target: "→ prod-web", inactive: false },
-    Prof { name: "edge-direct", label: "", target: "root@edge.example.com", inactive: false },
-    Prof { name: "media-nas", label: "lab", target: "→ nas.local", inactive: false },
-    Prof { name: "legacy-attach", label: "", target: "→ legacy-box", inactive: true },
+    Prof {
+        name: "prod-web",
+        label: "us-east",
+        target: "deploy@10.0.4.12",
+        inactive: false,
+    },
+    Prof {
+        name: "gb10",
+        label: "",
+        target: "→ prod-web",
+        inactive: false,
+    },
+    Prof {
+        name: "edge-direct",
+        label: "",
+        target: "root@edge.example.com",
+        inactive: false,
+    },
+    Prof {
+        name: "media-nas",
+        label: "lab",
+        target: "→ nas.local",
+        inactive: false,
+    },
+    Prof {
+        name: "legacy-attach",
+        label: "",
+        target: "→ legacy-box",
+        inactive: true,
+    },
 ];
 
 struct Ws {
@@ -63,9 +90,24 @@ struct Ws {
 
 // 디자인 RA_WORKSPACES.t1 seed (prod-web).
 const WORKSPACES: &[Ws] = &[
-    Ws { name: "agents-prod", panes: 3, busy: true, attached: false },
-    Ws { name: "api-gateway", panes: 2, busy: false, attached: true },
-    Ws { name: "scratch", panes: 1, busy: false, attached: false },
+    Ws {
+        name: "agents-prod",
+        panes: 3,
+        busy: true,
+        attached: false,
+    },
+    Ws {
+        name: "api-gateway",
+        panes: 2,
+        busy: false,
+        attached: true,
+    },
+    Ws {
+        name: "scratch",
+        panes: 1,
+        busy: false,
+        attached: false,
+    },
 ];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -86,9 +128,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-sidebar", "left pane", theme.bg_sidebar().to_egui()),
-            TokenChip::new("surface-active", "selected row", theme.surface_active().to_egui()),
-            TokenChip::new("accent-primary", "select bar / Connect", theme.accent_primary().to_egui()),
-            TokenChip::new("accent-attached", "in-use badge (lavender)", theme.border_attached().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "selected row",
+                theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "select bar / Connect",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-attached",
+                "in-use badge (lavender)",
+                theme.border_attached().to_egui(),
+            ),
         ],
     );
 
@@ -116,12 +170,23 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("initial", "remote glyph + 'Select an attach profile'"),
             ("connecting", "Spinner + 'Connecting…' + SSH note"),
             ("error", "danger warn glyph + reason + Retry"),
-            ("empty", "placeholder glyph + 'No workspaces on this remote'"),
+            (
+                "empty",
+                "placeholder glyph + 'No workspaces on this remote'",
+            ),
             ("center", "flex-centered, gap sm, padding xl/lg"),
         ],
         &[
-            TokenChip::new("accent-danger", "error glyph", theme.accent_danger().to_egui()),
-            TokenChip::new("text-placeholder", "initial/empty glyph", theme.text_placeholder().to_egui()),
+            TokenChip::new(
+                "accent-danger",
+                "error glyph",
+                theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new(
+                "text-placeholder",
+                "initial/empty glyph",
+                theme.text_placeholder().to_egui(),
+            ),
             TokenChip::new("text-muted", "prompt copy", theme.text_muted().to_egui()),
         ],
     );
@@ -173,8 +238,14 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
     );
     // 디자인 padding T10 R10 B10 L14.
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L, rect.top() + theme.spacing_sm.value()),
-        egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom() - theme.spacing_sm.value()),
+        egui::pos2(
+            rect.left() + HEADER_PAD_L,
+            rect.top() + theme.spacing_sm.value(),
+        ),
+        egui::pos2(
+            rect.right() - theme.spacing_sm.value(),
+            rect.bottom() - theme.spacing_sm.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -201,12 +272,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
 fn body(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, BODY_H), egui::Sense::hover());
     let left = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, BODY_H));
-    let right = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + LEFT_W, rect.top()),
-        rect.max,
-    );
+    let right = egui::Rect::from_min_max(egui::pos2(rect.left() + LEFT_W, rect.top()), rect.max);
     // 좌 pane 배경(bg-sidebar) + borderRight.
-    ui.painter().rect_filled(left, 0.0, theme.bg_sidebar().to_egui());
+    ui.painter()
+        .rect_filled(left, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().vline(
         left.right(),
         left.y_range(),
@@ -227,7 +296,10 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
     let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, 30.0));
     let (_, _) = col.allocate_exact_size(egui::vec2(LEFT_W, 30.0), egui::Sense::hover());
     col.painter().text(
-        egui::pos2(hdr.left() + theme.spacing_md.value(), hdr.top() + theme.spacing_md.value()),
+        egui::pos2(
+            hdr.left() + theme.spacing_md.value(),
+            hdr.top() + theme.spacing_md.value(),
+        ),
         egui::Align2::LEFT_TOP,
         "ATTACH PROFILES",
         egui::FontId::monospace(theme.font_size_micro.value()),
@@ -248,14 +320,22 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H), egui::Sense::hover());
     if selected {
-        ui.painter().rect_filled(rect, 0.0, theme.surface_active().to_egui());
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         // inset 2px accent 좌측바.
         let bar = egui::Rect::from_min_size(rect.min, egui::vec2(2.0, rect.height()));
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + theme.spacing_md.value(), rect.top() + theme.spacing_sm.value()),
-        egui::pos2(rect.right() - theme.spacing_md.value(), rect.bottom() - theme.spacing_sm.value()),
+        egui::pos2(
+            rect.left() + theme.spacing_md.value(),
+            rect.top() + theme.spacing_sm.value(),
+        ),
+        egui::pos2(
+            rect.right() - theme.spacing_md.value(),
+            rect.bottom() - theme.spacing_sm.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -265,7 +345,11 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
     child.spacing_mut().item_spacing.y = 2.0;
     child.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        let name_c = if selected { theme.text_primary() } else { theme.text_secondary() };
+        let name_c = if selected {
+            theme.text_primary()
+        } else {
+            theme.text_secondary()
+        };
         ui.label(
             egui::RichText::new(p.name)
                 .size(theme.font_size_body.value())
@@ -280,7 +364,15 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
             );
         }
         if p.inactive {
-            badge(ui, theme, "inactive", theme.accent_warning().to_egui(), 0.12, 0.40, true);
+            badge(
+                ui,
+                theme,
+                "inactive",
+                theme.accent_warning().to_egui(),
+                0.12,
+                0.40,
+                true,
+            );
         }
     });
     child.label(
@@ -360,7 +452,10 @@ fn center_state(
 ) {
     let mut col = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(theme.spacing_lg.value(), theme.spacing_xl.value())))
+            .max_rect(rect.shrink2(egui::vec2(
+                theme.spacing_lg.value(),
+                theme.spacing_xl.value(),
+            )))
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     // 세로 중앙 정렬 — 위쪽 여백을 대략 반으로.
@@ -408,7 +503,8 @@ fn loaded_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         theme.text_muted().to_egui(),
     );
     let caps_w = caps.rect.width();
-    col.painter().galley(egui::pos2(base_x, y), caps, theme.text_muted().to_egui());
+    col.painter()
+        .galley(egui::pos2(base_x, y), caps, theme.text_muted().to_egui());
     col.painter().text(
         egui::pos2(base_x + caps_w + theme.spacing_sm.value(), y),
         egui::Align2::LEFT_TOP,
@@ -426,9 +522,11 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
     let selected = w.name == "agents-prod"; // 디자인: 첫 행 selected.
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), egui::Sense::hover());
     if selected {
-        ui.painter().rect_filled(rect, 0.0, theme.surface_active().to_egui());
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         let bar = egui::Rect::from_min_size(rect.min, egui::vec2(2.0, rect.height()));
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.top()),
@@ -440,7 +538,11 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    let kind = if w.busy { StatusKind::Running } else { StatusKind::Idle };
+    let kind = if w.busy {
+        StatusKind::Running
+    } else {
+        StatusKind::Idle
+    };
     status_dot(&mut child, theme, kind, "", w.busy, false);
     let name_c = if w.attached {
         theme.text_disabled()
@@ -455,7 +557,12 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
             .color(name_c.to_egui()),
     );
     // panes 아이콘 + count.
-    kit::icon(&mut child, icons::SPLIT, theme.font_size_caption.value(), theme.text_muted().to_egui());
+    kit::icon(
+        &mut child,
+        icons::SPLIT,
+        theme.font_size_caption.value(),
+        theme.text_muted().to_egui(),
+    );
     child.label(
         egui::RichText::new(w.panes.to_string())
             .size(theme.font_size_caption.value())
@@ -463,7 +570,15 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
     );
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if w.attached {
-            badge(ui, theme, "in use", theme.border_attached().to_egui(), 0.14, 0.45, false);
+            badge(
+                ui,
+                theme,
+                "in use",
+                theme.border_attached().to_egui(),
+                0.14,
+                0.45,
+                false,
+            );
         } else if w.busy {
             ui.label(
                 egui::RichText::new("busy")
@@ -493,7 +608,8 @@ fn badge(
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
-    ui.painter().rect_filled(rect, radius, color.gamma_multiply(fill_a));
+    ui.painter()
+        .rect_filled(rect, radius, color.gamma_multiply(fill_a));
     ui.painter().rect_stroke(
         rect,
         radius,

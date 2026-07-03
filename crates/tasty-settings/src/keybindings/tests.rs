@@ -465,7 +465,10 @@ fn quick_switch_fields_serde_roundtrip() {
     );
     assert_eq!(restored.tab_switch_next_key, "n");
     assert_eq!(restored.tab_switch_prev_key, kb.tab_switch_prev_key);
-    assert_eq!(restored.workspace_switch_next_key, kb.workspace_switch_next_key);
+    assert_eq!(
+        restored.workspace_switch_next_key,
+        kb.workspace_switch_next_key
+    );
     assert_eq!(restored.workspace_switch_prev_key, "u");
 }
 

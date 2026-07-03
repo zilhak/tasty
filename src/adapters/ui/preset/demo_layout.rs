@@ -610,7 +610,11 @@ impl DemoLayout {
         model.normalize_surface_ids();
         let resolve = |k: &str| catalog.label(k);
         let mut pane_ids = IdGen(0);
-        let root = Root::Panes(PaneNode::Leaf(norm_pane(&model.pane, &resolve, &mut pane_ids)));
+        let root = Root::Panes(PaneNode::Leaf(norm_pane(
+            &model.pane,
+            &resolve,
+            &mut pane_ids,
+        )));
         let next_id = max_node_id(&root) + 1;
         Self {
             root,
@@ -789,12 +793,20 @@ impl DemoLayout {
         };
         match action {
             ShortcutAction::SplitSurfaceVertical => self.dispatch(
-                Act::Split { id: leaf_id, row: true, before: false },
+                Act::Split {
+                    id: leaf_id,
+                    row: true,
+                    before: false,
+                },
                 selected,
                 catalog,
             ),
             ShortcutAction::SplitSurfaceHorizontal => self.dispatch(
-                Act::Split { id: leaf_id, row: false, before: false },
+                Act::Split {
+                    id: leaf_id,
+                    row: false,
+                    before: false,
+                },
                 selected,
                 catalog,
             ),
@@ -827,13 +839,27 @@ impl DemoLayout {
                 let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
                     return ShowOutcome::None;
                 };
-                self.dispatch(Act::SplitPane { id: pane, row: true }, selected, catalog)
+                self.dispatch(
+                    Act::SplitPane {
+                        id: pane,
+                        row: true,
+                    },
+                    selected,
+                    catalog,
+                )
             }
             ShortcutAction::SplitPaneHorizontal => {
                 let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
                     return ShowOutcome::None;
                 };
-                self.dispatch(Act::SplitPane { id: pane, row: false }, selected, catalog)
+                self.dispatch(
+                    Act::SplitPane {
+                        id: pane,
+                        row: false,
+                    },
+                    selected,
+                    catalog,
+                )
             }
             ShortcutAction::ClosePane => {
                 let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
@@ -1105,17 +1131,13 @@ impl DemoLayout {
         fn in_surf(node: &SurfNode, id: usize) -> bool {
             match node {
                 SurfNode::Leaf(l) => l.id == id,
-                SurfNode::Split { first, second, .. } => {
-                    in_surf(first, id) || in_surf(second, id)
-                }
+                SurfNode::Split { first, second, .. } => in_surf(first, id) || in_surf(second, id),
             }
         }
         fn in_pane(node: &PaneNode, id: usize) -> bool {
             match node {
                 PaneNode::Leaf(p) => p.tabs.iter().any(|t| in_surf(&t.layout, id)),
-                PaneNode::Split { first, second, .. } => {
-                    in_pane(first, id) || in_pane(second, id)
-                }
+                PaneNode::Split { first, second, .. } => in_pane(first, id) || in_pane(second, id),
             }
         }
         match &self.root {
@@ -1252,17 +1274,43 @@ pub enum ShowOutcome {
 enum Act {
     Select(usize),
     Deselect,
-    SetActive { pane: usize, idx: usize },
-    SetKind { id: usize, kind: String },
-    SetField { id: usize, target: PresetFieldTarget, value: String },
-    Split { id: usize, row: bool, before: bool },
-    Remove { id: usize },
-    AddTab { pane: usize },
+    SetActive {
+        pane: usize,
+        idx: usize,
+    },
+    SetKind {
+        id: usize,
+        kind: String,
+    },
+    SetField {
+        id: usize,
+        target: PresetFieldTarget,
+        value: String,
+    },
+    Split {
+        id: usize,
+        row: bool,
+        before: bool,
+    },
+    Remove {
+        id: usize,
+    },
+    AddTab {
+        pane: usize,
+    },
     // ── pane 계층 변형 · 탭 삭제. 키보드 단축키([`apply_shortcut`], `preset-edit-02`)가
     // 이 variant 를 생성한다. 마우스 UI(pane 핸들 · 탭 close ×)는 `preset-edit-03`.
-    SplitPane { id: usize, row: bool },
-    RemovePane { id: usize },
-    RemoveTab { pane: usize, idx: usize },
+    SplitPane {
+        id: usize,
+        row: bool,
+    },
+    RemovePane {
+        id: usize,
+    },
+    RemoveTab {
+        pane: usize,
+        idx: usize,
+    },
 }
 
 /// draw 재귀에 전달되는 편집 컨텍스트.
@@ -1332,7 +1380,13 @@ fn find_leaf_mut(node: &mut SurfNode, id: usize) -> Option<&mut Leaf> {
 /// id 의 leaf 를 split(leaf, new_leaf)로 교체. `slot` 에서 new_leaf 를 take.
 /// `before == true` 면 새 leaf 가 first, 아니면 second. 기존 leaf id 는 보존
 /// (`std::mem::replace` 로 이동만).
-fn split_node(node: &mut SurfNode, id: usize, row: bool, before: bool, slot: &mut Option<Leaf>) -> bool {
+fn split_node(
+    node: &mut SurfNode,
+    id: usize,
+    row: bool,
+    before: bool,
+    slot: &mut Option<Leaf>,
+) -> bool {
     match node {
         SurfNode::Leaf(l) => {
             if l.id == id
@@ -1398,7 +1452,8 @@ fn remove_pane_node(node: &mut PaneNode, id: usize) -> bool {
     };
     let first_is = matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == id);
     if first_is {
-        let sibling = std::mem::replace(second.as_mut(), PaneNode::Leaf(PreviewPane::placeholder()));
+        let sibling =
+            std::mem::replace(second.as_mut(), PaneNode::Leaf(PreviewPane::placeholder()));
         *node = sibling;
         return true;
     }
@@ -1450,7 +1505,10 @@ fn set_param(params: &mut serde_json::Value, key: &str, value: &str) {
         *params = serde_json::Value::Object(serde_json::Map::new());
     }
     if let Some(obj) = params.as_object_mut() {
-        obj.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+        obj.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
     }
 }
 
@@ -1908,7 +1966,10 @@ fn draw_leaf_form(
             });
         }
         // file_path/dir 은 파일/폴더 선택 다이얼로그 버튼을 덧붙인다.
-        if matches!(field.input, PresetFieldInput::FilePath | PresetFieldInput::Dir) {
+        if matches!(
+            field.input,
+            PresetFieldInput::FilePath | PresetFieldInput::Dir
+        ) {
             let salt = format!("preset_browse_{}_{}", leaf.id, field.id);
             let clicked = child
                 .push_id(&salt, |ui| {
@@ -2130,7 +2191,10 @@ fn draw_pane_card(
 
         // RemoveTab 이 SetActive 보다 우선 — × 클릭이 탭 전환을 유발하지 않게 한다.
         if close_clicked {
-            cx.act = Some(Act::RemoveTab { pane: pane.id, idx: i });
+            cx.act = Some(Act::RemoveTab {
+                pane: pane.id,
+                idx: i,
+            });
         } else if resp.clicked() {
             cx.act = Some(Act::SetActive {
                 pane: pane.id,
@@ -2497,7 +2561,13 @@ mod tests {
             }],
             active_tab: 0,
         };
-        let mut dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let mut dl = DemoLayout::from_pane(
+            &PanePreset {
+                name: "p".into(),
+                pane,
+            },
+            &tc(),
+        );
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
@@ -2520,11 +2590,18 @@ mod tests {
         assert_eq!(params.get("legacy_x").and_then(|v| v.as_i64()), Some(7));
 
         // 빈 값 write 는 param 키를 제거(값 부재 round-trip).
-        dl.set_field(leaf_id, &PresetFieldTarget::Params("file".into()), String::new());
+        dl.set_field(
+            leaf_id,
+            &PresetFieldTarget::Params("file".into()),
+            String::new(),
+        );
         let pane = dl.rebuild_single_pane().unwrap();
         if let PresetSurfaceLayout::Leaf { surface } = &pane.tabs[0].layout {
             assert!(surface.params.get("file").is_none());
-            assert_eq!(surface.params.get("legacy_x").and_then(|v| v.as_i64()), Some(7));
+            assert_eq!(
+                surface.params.get("legacy_x").and_then(|v| v.as_i64()),
+                Some(7)
+            );
         }
     }
 
@@ -2548,7 +2625,13 @@ mod tests {
             }],
             active_tab: 0,
         };
-        let mut dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let mut dl = DemoLayout::from_pane(
+            &PanePreset {
+                name: "p".into(),
+                pane,
+            },
+            &tc(),
+        );
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
@@ -2580,7 +2663,10 @@ mod tests {
         let pane = dl.rebuild_single_pane().unwrap();
         if let PresetSurfaceLayout::Leaf { surface } = &pane.tabs[0].layout {
             assert_eq!(surface.kind, "markdown");
-            assert!(surface.cwd.is_none(), "cwd cleared when new kind lacks Cwd field");
+            assert!(
+                surface.cwd.is_none(),
+                "cwd cleared when new kind lacks Cwd field"
+            );
             assert!(surface.startup_command.is_none());
         }
     }
@@ -2626,12 +2712,24 @@ mod tests {
         let mut after = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut after);
         assert_eq!(after.len(), 2);
-        assert!(after.contains(&orig_id), "기존 leaf id 는 split 후에도 보존");
-        let new_id = *after.iter().find(|&&i| i != orig_id).expect("distinct new id");
+        assert!(
+            after.contains(&orig_id),
+            "기존 leaf id 는 split 후에도 보존"
+        );
+        let new_id = *after
+            .iter()
+            .find(|&&i| i != orig_id)
+            .expect("distinct new id");
 
         // rebuild → 모델에 id 기록 → 새 DemoLayout build(디스크 재load + 정규화 모사).
         let pane = dl.rebuild_single_pane().unwrap();
-        let reloaded_dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let reloaded_dl = DemoLayout::from_pane(
+            &PanePreset {
+                name: "p".into(),
+                pane,
+            },
+            &tc(),
+        );
         let mut reloaded = Vec::new();
         surf_leaf_ids(first_surf(&reloaded_dl), &mut reloaded);
         reloaded.sort_unstable();
@@ -3258,7 +3356,11 @@ mod tests {
 
         let mut sel = Some(leaf_id);
         let out = dl.dispatch(
-            Act::Split { id: leaf_id, row: true, before: true },
+            Act::Split {
+                id: leaf_id,
+                row: true,
+                before: true,
+            },
             &mut sel,
             &tc(),
         );

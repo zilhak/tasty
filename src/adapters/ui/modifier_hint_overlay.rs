@@ -262,7 +262,11 @@ pub fn draw_modifier_hint(
         egui::pos2(render_rect.right() - x_zone, render_rect.top() + strip_h),
     );
     let move_resp = ui
-        .interact(strip_drag, egui::Id::new("modhint_move"), egui::Sense::drag())
+        .interact(
+            strip_drag,
+            egui::Id::new("modhint_move"),
+            egui::Sense::drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::Move);
     if move_resp.drag_started() {
         rt.working = Some((render_rect, DragMode::Move));
@@ -279,7 +283,11 @@ pub fn draw_modifier_hint(
         render_rect.max,
     );
     let resize_resp = ui
-        .interact(grip_rect, egui::Id::new("modhint_resize"), egui::Sense::drag())
+        .interact(
+            grip_rect,
+            egui::Id::new("modhint_resize"),
+            egui::Sense::drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
     if resize_resp.drag_started() {
         rt.working = Some((render_rect, DragMode::Resize));
@@ -365,7 +373,11 @@ fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let mut shadow = theme.shadow_popover().to_egui();
     shadow.color = shadow.color.gamma_multiply(alpha);
     painter.add(shadow.as_shape(rect, radius));
-    painter.rect_filled(rect, radius, theme.modhint_bg().to_egui().gamma_multiply(alpha));
+    painter.rect_filled(
+        rect,
+        radius,
+        theme.modhint_bg().to_egui().gamma_multiply(alpha),
+    );
     painter.rect_stroke(
         rect,
         radius,
@@ -397,7 +409,10 @@ fn draw_content(
     ui.painter().hline(
         strip_rect.x_range(),
         strip_rect.bottom() - bw * 0.5,
-        egui::Stroke::new(bw, theme.modhint_separator().to_egui().gamma_multiply(alpha)),
+        egui::Stroke::new(
+            bw,
+            theme.modhint_separator().to_egui().gamma_multiply(alpha),
+        ),
     );
 
     // 스트립 내용: held 조합 Kbd + "held" 라벨 (좌). X 는 호출측.
@@ -463,7 +478,10 @@ fn draw_section(ui: &mut egui::Ui, theme: &Theme, sec: &HintSection) {
     ui.painter().hline(
         hr.x_range(),
         hr.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.modhint_separator().to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.modhint_separator().to_egui(),
+        ),
     );
     ui.add_space(theme.modhint_row_gap().value());
 
@@ -563,7 +581,11 @@ fn combo_keys(sec: &HintSection) -> String {
         parts.push("Ctrl");
     }
     if c.alt {
-        parts.push(if cfg!(target_os = "macos") { "Cmd" } else { "Alt" });
+        parts.push(if cfg!(target_os = "macos") {
+            "Cmd"
+        } else {
+            "Alt"
+        });
     }
     if c.option {
         parts.push("Option");

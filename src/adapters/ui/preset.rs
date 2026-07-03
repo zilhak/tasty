@@ -479,9 +479,7 @@ fn draw_preview(
         if repaint {
             ui.ctx().request_repaint();
         }
-        if mutated
-            && let Err(e) = persist_layout(store, kind, name, &layout)
-        {
+        if mutated && let Err(e) = persist_layout(store, kind, name, &layout) {
             tracing::warn!("preset auto-save failed: {e}");
             toasts.push(
                 t("preset.toast.save_failed"),

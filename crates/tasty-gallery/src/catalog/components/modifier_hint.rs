@@ -82,8 +82,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("release", "0ms — vanishes immediately"),
         ],
         &[
-            TokenChip::new("modhint-bg", "panel fill (opaque)", theme.modhint_bg().to_egui()),
-            TokenChip::new("modhint-border", "1px shell", theme.modhint_border().to_egui()),
+            TokenChip::new(
+                "modhint-bg",
+                "panel fill (opaque)",
+                theme.modhint_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "modhint-border",
+                "1px shell",
+                theme.modhint_border().to_egui(),
+            ),
             TokenChip::new(
                 "modhint-strip-bg",
                 "drag strip",
@@ -210,7 +218,9 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32) {
                 .variant(IconButtonVariant::Ghost)
                 .size(ControlSize::Sm)
                 .show(ui, theme, &|ui, r, c| {
-                    crate::catalog::icons::CLOSE.image(r.height(), c).paint_at(ui, r);
+                    crate::catalog::icons::CLOSE
+                        .image(r.height(), c)
+                        .paint_at(ui, r);
                 });
         });
     });
@@ -220,12 +230,10 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32) {
 fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32) {
     let pad = theme.modhint_pad().value();
     let inner_w = w - pad * 2.0;
-    let mut child = ui.new_child(
-        egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
-            ui.min_rect().min + egui::vec2(pad, pad),
-            egui::vec2(inner_w, ui.available_height()),
-        )),
-    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
+        ui.min_rect().min + egui::vec2(pad, pad),
+        egui::vec2(inner_w, ui.available_height()),
+    )));
     child.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
     child.vertical(|ui| {
         for sec in SECTIONS {
@@ -255,7 +263,10 @@ fn chord_head(ui: &mut egui::Ui, theme: &Theme, chord: &str) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.modhint_separator().to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.modhint_separator().to_egui(),
+        ),
     );
 }
 

@@ -463,7 +463,10 @@ mod tests {
     #[test]
     fn normalize_assigns_missing_ids_deterministically() {
         // 전부 결손 → 방문 순서로 0,1,2.
-        let mut t = tab_preset(split(leaf_with_id(None), split(leaf_with_id(None), leaf_with_id(None))));
+        let mut t = tab_preset(split(
+            leaf_with_id(None),
+            split(leaf_with_id(None), leaf_with_id(None)),
+        ));
         assert!(t.normalize_surface_ids());
         let mut ids = Vec::new();
         surface_ids(&t.tab.layout, &mut ids);

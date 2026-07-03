@@ -115,9 +115,9 @@ fn bare_modifier(kb: &KeybindingSettings, target: BareTarget) -> &str {
         BareTarget::TabSlot(_) | BareTarget::TabNext | BareTarget::TabPrev => {
             &kb.tab_switch_modifier
         }
-        BareTarget::WorkspaceSlot(_)
-        | BareTarget::WorkspaceNext
-        | BareTarget::WorkspacePrev => &kb.workspace_switch_modifier,
+        BareTarget::WorkspaceSlot(_) | BareTarget::WorkspaceNext | BareTarget::WorkspacePrev => {
+            &kb.workspace_switch_modifier
+        }
     }
 }
 
@@ -138,9 +138,10 @@ fn bare_combo(kb: &KeybindingSettings, target: BareTarget) -> String {
 /// 팝업/경고에 표시할 `target` 라벨(콜론·공백 정리됨).
 fn bare_display_label(target: BareTarget) -> String {
     let raw = match target {
-        BareTarget::TabSlot(i) => {
-            t_fmt("settings.keybindings.tab_switch_slot_label", &(i + 1).to_string())
-        }
+        BareTarget::TabSlot(i) => t_fmt(
+            "settings.keybindings.tab_switch_slot_label",
+            &(i + 1).to_string(),
+        ),
         BareTarget::WorkspaceSlot(i) => t_fmt(
             "settings.keybindings.workspace_switch_slot_label",
             &(i + 1).to_string(),
@@ -233,8 +234,9 @@ pub(super) fn draw_quick_switch_section(
     // 라벨 컬럼 폭 — 이 섹션의 모든 라벨(슬롯 + 다음/이전) 중 최장 기준.
     let label_col_width = {
         let font_id = egui::TextStyle::Body.resolve(ui.style());
-        let mut targets: Vec<BareTarget> =
-            (0..kind.slot_count()).map(|i| kind.slot_target(i)).collect();
+        let mut targets: Vec<BareTarget> = (0..kind.slot_count())
+            .map(|i| kind.slot_target(i))
+            .collect();
         targets.push(kind.next_target());
         targets.push(kind.prev_target());
         targets
@@ -296,8 +298,9 @@ pub(super) fn draw_quick_switch_section(
 
 /// 이 섹션 슬롯들의 현재 합성 콤보가 **일반 액션**과 충돌하는 목록을 라벨로 반환.
 fn current_conflicts(kb: &KeybindingSettings, kind: QuickSwitchKind) -> Vec<String> {
-    let mut targets: Vec<BareTarget> =
-        (0..kind.slot_count()).map(|i| kind.slot_target(i)).collect();
+    let mut targets: Vec<BareTarget> = (0..kind.slot_count())
+        .map(|i| kind.slot_target(i))
+        .collect();
     targets.push(kind.next_target());
     targets.push(kind.prev_target());
 

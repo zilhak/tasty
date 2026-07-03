@@ -401,10 +401,10 @@ mod preset;
 mod quick_switch;
 
 pub use capture::{capture_bare_key, capture_winit_key_combo};
-pub use quick_switch::{clear_bare_target, set_bare_target};
 use entries::draw_keybinding_entries;
-use quick_switch::{QuickSwitchKind, draw_quick_switch_section};
 use entries_scripts::draw_script_bindings;
 use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;
+use quick_switch::{QuickSwitchKind, draw_quick_switch_section};
+pub use quick_switch::{clear_bare_target, set_bare_target};
 use tasty_ui_widgets::vspace;

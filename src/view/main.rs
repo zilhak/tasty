@@ -343,7 +343,11 @@ impl View for MainView {
                 let option = mods.alt_key();
                 #[cfg(not(target_os = "macos"))]
                 let option = false;
-                if self.state.modifier_hint.update_hold(ctrl, alt, option, shift) {
+                if self
+                    .state
+                    .modifier_hint
+                    .update_hold(ctrl, alt, option, shift)
+                {
                     dirty = true;
                 }
                 if dirty {

@@ -832,7 +832,13 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         } else {
             theme.text_muted().to_egui()
         };
-        paint_glyph(ui, icons::CLOSE, close_rect.center(), CLOSE_HIT * 0.5, close_color);
+        paint_glyph(
+            ui,
+            icons::CLOSE,
+            close_rect.center(),
+            CLOSE_HIT * 0.5,
+            close_color,
+        );
         x += tw;
     }
 
@@ -840,7 +846,13 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let add = egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(ADD_TAB_W, STRIP_H));
     ui.painter_at(strip)
         .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
-    paint_glyph(ui, icons::PLUS, add.center(), icon_sz, theme.text_secondary().to_egui());
+    paint_glyph(
+        ui,
+        icons::PLUS,
+        add.center(),
+        icon_sz,
+        theme.text_secondary().to_egui(),
+    );
 
     // strip border-bottom.
     ui.painter_at(rect)

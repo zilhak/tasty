@@ -134,7 +134,11 @@ impl Combo {
 
 /// 사용 가능한 축 전체에 대한 비어있지 않은 조합 목록(정렬 전).
 fn all_axis_combos() -> Vec<Combo> {
-    let option_states: &[bool] = if OPTION_AXIS { &[false, true] } else { &[false] };
+    let option_states: &[bool] = if OPTION_AXIS {
+        &[false, true]
+    } else {
+        &[false]
+    };
     let mut out = Vec::new();
     for ctrl in [false, true] {
         for alt in [false, true] {
@@ -458,7 +462,10 @@ mod tests {
     fn combos_for_alt_are_sorted_by_size_then_priority_non_macos() {
         // 비-macOS: option 축 없음 → 4개.
         let combos = combos_containing(HeldModifier::Alt);
-        assert_eq!(names(&combos), ["alt", "ctrl+alt", "alt+shift", "ctrl+alt+shift"]);
+        assert_eq!(
+            names(&combos),
+            ["alt", "ctrl+alt", "alt+shift", "ctrl+alt+shift"]
+        );
     }
 
     #[test]
@@ -472,11 +479,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn non_macos_never_generates_option_combos() {
-        for held in [
-            HeldModifier::Ctrl,
-            HeldModifier::Alt,
-            HeldModifier::Shift,
-        ] {
+        for held in [HeldModifier::Ctrl, HeldModifier::Alt, HeldModifier::Shift] {
             for c in combos_containing(held) {
                 assert!(!c.option, "option 축이 비-macOS 에서 생성됨: {}", c.name());
             }
@@ -584,7 +587,10 @@ mod tests {
         kb.workspace_switch_modifier = "ctrl".into();
 
         let alt_sections = build_hint_sections(HeldModifier::Alt, &kb, "none", &[]);
-        let alt = alt_sections.iter().find(|s| s.combo.name() == "alt").unwrap();
+        let alt = alt_sections
+            .iter()
+            .find(|s| s.combo.name() == "alt")
+            .unwrap();
         assert!(alt.roles.contains(&HintRole::TabSwitch));
         assert!(!alt.roles.contains(&HintRole::WorkspaceSwitch));
 
@@ -635,6 +641,10 @@ mod tests {
         // alt 단독 섹션은 shift 없음·switch 아님 → 생략되어야 한다.
         assert!(section_names(&sections).iter().all(|n| n != "alt"));
         // 남은 섹션은 전부 비어있지 않아야 한다.
-        assert!(sections.iter().all(|s| !s.rows.is_empty() || !s.roles.is_empty()));
+        assert!(
+            sections
+                .iter()
+                .all(|s| !s.rows.is_empty() || !s.roles.is_empty())
+        );
     }
 }
