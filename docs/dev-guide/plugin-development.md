@@ -185,7 +185,14 @@ TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한�
 | **Linux** | `prctl(PR_SET_PDEATHSIG, SIGKILL)` (자식 `pre_exec`). 부모 사망 시 커널이 직속 플러그인에 SIGKILL. | 호스트 `prepare`(pre_exec) | 고아 허용(범위 밖) |
 | **macOS** | PDEATHSIG 등가물 부재 → SDK 런타임 watchdog 이 `getppid` 폴링(500ms)해 부모 PID 변화 감지 시 self-exit. 호스트는 `TASTY_HOST_PID` env 만 주입. | 플러그인 SDK(`runtime.rs`) | 고아 허용(범위 밖) |
 
-모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 플러그인 기능이나 호스트를 죽이지 않는다. **결박 대상은 호스트가 직접 띄운 플러그인 프로세스뿐** — PTY pane 의 사용자 셸/AI 에이전트와 그 자식(MCP 서버 등)은 *사용자 프로세스*라 결박하지 않는다(정체성 원칙: 사용자 프로세스 비결박, PTY hangup 으로 정상 정리).
+모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 기능이나 호스트를 죽이지 않는다.
+
+**결박 대상은 플러그인에 국한되지 않는다.** PTY pane 의 사용자 셸과 그 안에서 돌던 모든 것(AI 에이전트·빌드·MCP 서버 등 자식 트리)도 호스트 수명에 묶인다 — **tasty 가 죽으면(정상 종료·크래시·`taskkill /f`·디버거 강제 stop 무관) tasty 안에서 돌던 프로세스는 함께 종료된다.** 메커니즘은 OS 별로 다르지만 결과는 같다:
+
+- **Windows**: 터미널 셸을 전역 호스트 Job Object 에 결박한다 (공용 primitive `tasty-reaper`, `Terminal::new` 이 spawn 직후 `adopt_pid`, 부팅 시 `boot.rs` 에서 `init_host_reaper` 1회). ConPTY 는 "pseudoconsole 종료 ⇒ 자식 종료" 를 보장하지 않아, 결박이 없으면 tasty 비정상 종료 시 화면 없는 좀비 셸 트리가 누적된다(개발 중 디버거 stop 마다 수십 개씩). 플러그인 job(위 표, `PluginManager` 소유)과 터미널 job(전역)은 별개 인스턴스지만 둘 다 `KILL_ON_JOB_CLOSE` 라 프로세스 사망 시 동일하게 정리된다.
+- **Unix**: tasty 종료 시 커널이 PTY master fd 를 닫으며 발생하는 SIGHUP 이 셸 foreground 프로세스 그룹을 정리하므로 별도 결박 없이 같은 결과가 난다(portable-pty `CommandBuilder` 가 `pre_exec` 를 노출하지 않아 셸에는 PDEATHSIG 설치 불가 — 대신 SIGHUP 이 그 역할을 한다).
+
+정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0034](../adr/0034-terminal-shell-host-lifetime-binding.md).
 
 ### 토큰 핸드셰이크 (보안)
 

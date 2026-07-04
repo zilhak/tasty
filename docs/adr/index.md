@@ -44,3 +44,4 @@
 | 0031 | [Lua 스크립트의 tasty 접근은 고정 호스트 API 표면으로만 — state 직접 접근 불가 + 워커 스레드 격리](0031-lua-host-api-only-worker-isolated.md) | Proposed | 2026-07-01 | lua, scripting, host-api, worker-thread, snapshot, command-queue, capability-boundary, sandbox, init-lua-removal, observe-only, adr-0009, adr-0028 |
 | 0032 | [원격 프로필을 ssh(연결) / tasty-attach(attach) 2-레이어로 분리](0032-remote-attach-two-layer-split.md) | Accepted | 2026-07-01 | remote, profile, attach, ssh, two-layer, ref, port-file, cli |
 | 0033 | [UI 색은 semantic role 접근자로만 — primitive 필드 직접 접근 전면 금지(위젯 포함)](0033-ui-color-semantic-role-only.md) | Accepted | 2026-07-03 | design-tokens, color, semantic, primitive, theme, ui-widgets, guard, enforcement, adr-0020 |
+| 0034 | [터미널 PTY 셸을 호스트(tasty) 수명에 결박한다](0034-terminal-shell-host-lifetime-binding.md) | Accepted | 2026-07-04 | process-lifetime, reaper, job-object, pty, terminal, windows, conpty, orphan, cross-platform, adr-0009 |
