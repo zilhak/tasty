@@ -13,6 +13,7 @@ anyhow = "1"
 tracing = "0.1"
 unicode-width = "0.2"
 finl_unicode = "1.4"
+tasty-reaper = { path = "../tasty-reaper" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

@@ -100,6 +100,18 @@ struct PtyBackend {
     _parser_thread: thread::JoinHandle<()>,
 }
 
+impl Drop for PtyBackend {
+    /// 정상 종료 경로(surface 닫기 / 앱 quit)에서 자식 셸을 best-effort 로 종료한다.
+    /// PTY master close 로 인한 HUP 에만 의존하지 않고 명시적으로 kill 한다. 이미
+    /// 종료된 경우의 오류는 무시(로그만). 비정상 종료(크래시 등 Drop 미실행) 경로는
+    /// [`tasty_reaper`] 의 Job Object 결박이 커버한다.
+    fn drop(&mut self) {
+        if let Err(e) = self.child.kill() {
+            tracing::trace!("pty child kill on drop failed (already exited?): {e}");
+        }
+    }
+}
+
 /// A server-side subscriber to a terminal's raw PTY output.
 struct OutputTap {
     tx: mpsc::SyncSender<Vec<u8>>,
@@ -469,6 +481,11 @@ impl Terminal {
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
+
+        // 자식 셸을 호스트 프로세스 수명에 결박한다(Windows Job Object). tasty 가
+        // 크래시·taskkill /f·디버거 stop 등으로 죽어도 셸 트리가 고아로 남지 않는다.
+        // 미초기화(테스트/CLI)·비-Windows 는 no-op.
+        tasty_reaper::adopt_pid(child.process_id());
 
         let mut pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;

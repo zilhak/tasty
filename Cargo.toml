@@ -192,6 +192,7 @@ tasty-utils = { path = "crates/tasty-utils" }
 tasty-i18n = { path = "crates/tasty-i18n" }
 tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
+tasty-reaper = { path = "crates/tasty-reaper" }
 tasty-portscan = { path = "crates/tasty-portscan" }
 # Window & Input
 winit = { version = "0.30", optional = true }

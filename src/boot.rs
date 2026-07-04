@@ -76,6 +76,10 @@ pub(crate) fn run() -> anyhow::Result<()> {
         cli_routing::Routed::Subcommand(cmd, port_file) => run_subcommand(cmd, port_file),
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
+            // 호스트(터미널·plugin 을 spawn 하는 프로세스)에서만 자식 결박 job 을 생성한다.
+            // CLI client / augmented-help 경로는 터미널을 띄우지 않으므로 제외. 이 job 이
+            // tasty 프로세스 사망 시 자식 셸 트리를 함께 정리한다(비-Windows 는 no-op).
+            tasty_reaper::init_host_reaper();
             #[cfg(feature = "gui")]
             {
                 if cli.headless {
