@@ -510,13 +510,18 @@ fn draw_row(
             ui.painter()
                 .circle_filled(r.center(), d * 0.5, theme.modhint_agent_dot().to_egui());
         }
-        ui.label(
-            egui::RichText::new(label)
-                .size(theme.font_size_body.value())
-                .color(theme.modhint_row_fg().to_egui()),
-        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             kbd(ui, theme, &prettify_binding(&row.binding));
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .size(theme.font_size_body.value())
+                            .color(theme.modhint_row_fg().to_egui()),
+                    )
+                    .wrap(),
+                );
+            });
         });
     });
 }
@@ -556,10 +561,13 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
                         );
                     }
                 }
-                ui.label(
-                    egui::RichText::new(t(role.desc_key()))
-                        .size(theme.font_size_body.value())
-                        .color(theme.modhint_row_fg().to_egui()),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(t(role.desc_key()))
+                            .size(theme.font_size_body.value())
+                            .color(theme.modhint_row_fg().to_egui()),
+                    )
+                    .wrap(),
                 );
             });
         });

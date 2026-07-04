@@ -270,7 +270,7 @@ fn chord_head(ui: &mut egui::Ui, theme: &Theme, chord: &str) {
     );
 }
 
-/// 액션 행 — (plugin 이면 agent dot) + 라벨(ellipsis) + 우측 Kbd.
+/// 액션 행 — (plugin 이면 agent dot) + 라벨(wrap) + 우측 Kbd.
 fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin: bool) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -281,13 +281,18 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
             ui.painter()
                 .circle_filled(r.center(), d * 0.5, theme.modhint_agent_dot().to_egui());
         }
-        ui.label(
-            egui::RichText::new(label)
-                .size(theme.font_size_body.value())
-                .color(theme.modhint_row_fg().to_egui()),
-        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             kbd(ui, theme, binding);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .size(theme.font_size_body.value())
+                            .color(theme.modhint_row_fg().to_egui()),
+                    )
+                    .wrap(),
+                );
+            });
         });
     });
 }
@@ -302,6 +307,7 @@ fn role_row(ui: &mut egui::Ui, theme: &Theme, desc: &str, glyph: RoleGlyph) {
             theme.modhint_row_gap().value() as i8,
         ))
         .show(ui, |ui| {
+            ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 let gsz = theme.icon_glyph_size_xs.value();
@@ -322,10 +328,13 @@ fn role_row(ui: &mut egui::Ui, theme: &Theme, desc: &str, glyph: RoleGlyph) {
                         paint_glyph(ui, MOUSE, r, col);
                     }
                 }
-                ui.label(
-                    egui::RichText::new(desc)
-                        .size(theme.font_size_body.value())
-                        .color(theme.modhint_row_fg().to_egui()),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(desc)
+                            .size(theme.font_size_body.value())
+                            .color(theme.modhint_row_fg().to_egui()),
+                    )
+                    .wrap(),
                 );
             });
         });
