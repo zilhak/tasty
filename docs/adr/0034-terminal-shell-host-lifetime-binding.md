@@ -77,8 +77,14 @@ Windows 에서만 누수가 나는 상태는 허용되지 않는다.
 
 ## Reconsideration Triggers
 
-- Windows 에서 셸/터미널을 detach 해 tasty 종료 후에도 유지하는 기능(tmux/screen 유사 세션
-  분리)을 정식 지원하기로 하면, 해당 detached 세션은 결박 대상에서 제외해야 하므로 재검토.
+- **display 프로세스와 PTY 소유 데몬의 분리**: 현재는 호스트(standalone GUI 또는 headless 데몬)가
+  PTY 를 직접 소유하고 결박도 그 호스트에 건다. 만약 tmux 서버처럼 *PTY 를 소유하는 영속 데몬* 과
+  *thin display 클라이언트* 를 분리하는 구조로 가면, 결박 대상은 반드시 **PTY 를 실제 소유하는
+  데몬** 이어야 하고(디스플레이 클라이언트 종료가 셸을 죽여선 안 됨) — host job 을 어느 프로세스가
+  소유하는지 재검토한다. (단 이는 client attach/detach 와 무관하다: 현행 headless 데몬 + attach
+  모델에서도 셸은 데몬에 결박되며 GUI/SSH 클라이언트의 attach/detach 는 셸 수명에 영향을 주지
+  않는다. "tasty 가 소유한 PTY 의 셸을 tasty 사후 재연결" 은 ConPTY/pty 구조상 불가능하므로 —
+  고아 셸은 재연결 수단이 없는 좀비 — 재연결을 위해 결박을 빼는 시나리오는 성립하지 않는다.)
 - portable-pty(또는 대체 PTY 백엔드)가 `pre_exec`/자식 결박 훅을 제공해 Unix 도 명시적 결박이
   가능해지면 OS 간 동작 차이를 없애는 방향으로 재검토.
 - ConPTY 가 "pseudoconsole 종료 ⇒ 자식 트리 종료" 를 보장하는 API 를 제공하면 Windows Job
