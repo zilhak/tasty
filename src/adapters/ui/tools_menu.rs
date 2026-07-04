@@ -18,13 +18,12 @@ use crate::plugin::tool_registry::ToolItem;
 use crate::state::AppState;
 use crate::theme;
 use egui::emath::GuiRounding as _;
+use tasty_ui_widgets::menu_separator;
 
 /// Popup width (도구 항목 라벨이 모두 들어가는 baseline). 사이드바 도구 버튼 좌측 정렬.
 const POPUP_WIDTH: f32 = 160.0;
 /// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
 const ITEM_HEIGHT: f32 = 28.0;
-/// `ui.separator()` 가 차지하는 perpendicular space (egui 기본값).
-const SEPARATOR_SPACE: f32 = 6.0;
 
 /// Built-in tool entries that are not contributed by any plugin.
 /// `action` 으로 popup / 별도 winit 윈도우 오픈을 구분한다.
@@ -126,7 +125,7 @@ pub fn draw_tools_menu(
 
     let items = state.tool_registry.visible_items();
     if !items.is_empty() && !BUILTIN_TOOLS.is_empty() {
-        ui.separator();
+        menu_separator(ui, &th);
     }
 
     let mut clicked: Option<ToolItem> = None;
@@ -229,16 +228,21 @@ fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
 /// 빌트인 + 플러그인 항목 개수에 맞춘 popup 크기 계산.
 ///
 /// content height = N·ITEM_HEIGHT + (N−1)·item_spacing
-///                  + (separator 가 들어가면 SEPARATOR_SPACE + item_spacing)
+///                  + (separator 가 들어가면 2·item_spacing)
 /// popup height   = content_margin()·2 + content_h + safety_margin
 ///                  (headless 이므로 title_bar_height() 는 빠진다)
+///
+/// separator 는 `menu_separator` 위젯이며 세로로 `add_space(spacing_xs)` 를 상하로
+/// 소비한다(hline 은 painter 직접 호출이라 레이아웃 공간을 잡지 않음). item_spacing
+/// == spacing_xs 이므로 소비량은 `2·item_spacing` 이고, spacing_xs 가 zoom 곱을
+/// 이미 반영하므로 zoom 변화에도 자동 정합된다.
 fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
     let total = builtin_count + plugin_count;
     let total = total.max(1);
     let mut content_h =
         total as f32 * ITEM_HEIGHT + (total.saturating_sub(1)) as f32 * item_spacing;
     if builtin_count > 0 && plugin_count > 0 {
-        content_h += SEPARATOR_SPACE + item_spacing;
+        content_h += 2.0 * item_spacing;
     }
     // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
     let safety_margin = 1.0;
@@ -296,8 +300,7 @@ mod size_tests {
         let needed = popup::content_margin() * 2.0
             + 7.0 * ITEM_HEIGHT
             + 6.0 * 4.0           // item_spacing between 7 items
-            + SEPARATOR_SPACE
-            + 4.0; // separator 양쪽 spacing 중 1 개 추가
+            + 2.0 * 4.0; // menu_separator = 2·spacing_xs
         assert!(
             size.y >= needed,
             "size.y ({}) < needed ({}) for 4+3 items",
