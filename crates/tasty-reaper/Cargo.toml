@@ -1,0 +1,16 @@
+[package]
+name = "tasty-reaper"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Tasty child-process reaper — binds spawned children (terminal shells) to the host lifetime so they can't orphan on abnormal exit"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_System_JobObjects"] }
+
+[lints]
+workspace = true

@@ -5772,6 +5772,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-reaper"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "tasty-remote-profiles"
 version = "0.1.0"
 dependencies = [
