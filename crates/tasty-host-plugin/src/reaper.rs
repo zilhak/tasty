@@ -29,56 +29,27 @@ pub use imp::PluginReaper;
 #[cfg(windows)]
 mod imp {
     use std::io;
-    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
+    use std::os::windows::io::AsRawHandle;
     use std::process::{Child, Command};
-    use std::ptr;
 
+    use tasty_reaper::JobObject;
     use windows_sys::Win32::Foundation::HANDLE;
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject,
-    };
 
-    /// Windows Job Object 기반 reaper. Job 핸들은 `OwnedHandle` 로 보관되어,
-    /// 본 구조체가 drop 되면 `CloseHandle` → `KILL_ON_JOB_CLOSE` 로 Job 내 전
-    /// 프로세스가 종료된다. `job` 이 `None` 이면 결박 비활성(생성 실패 fallback).
+    /// Windows Job Object 기반 reaper. Job Object primitive 는 [`tasty_reaper`] 에서
+    /// 공유하며, 본 타입은 그 job 을 **자기 소유**(`PluginManager` 수명에 결박)한다 —
+    /// 터미널 셸을 결박하는 전역 job 과는 별개 인스턴스다(둘 다 `KILL_ON_JOB_CLOSE`
+    /// 라 프로세스 사망 시 동일하게 정리된다). `job` 이 `None` 이면 결박 비활성.
     pub struct PluginReaper {
-        job: Option<OwnedHandle>,
+        job: Option<JobObject>,
     }
 
     impl PluginReaper {
-        /// Job Object 를 생성하고 `KILL_ON_JOB_CLOSE` 를 설정한다. 실패 시 Err —
-        /// 호출부가 warn 후 [`disabled`](Self::disabled) 로 degrade 한다.
+        /// Job Object 를 생성한다. 실패 시 Err — 호출부가 warn 후
+        /// [`disabled`](Self::disabled) 로 degrade 한다.
         pub fn new() -> io::Result<Self> {
-            // SAFETY: lpJobAttributes/lpName 둘 다 NULL → 기본 보안 속성의 익명 Job.
-            let raw = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
-            if raw.is_null() {
-                return Err(io::Error::last_os_error());
-            }
-            // SAFETY: raw 는 CreateJobObjectW 가 막 반환한 유효·단독 소유 핸들이며,
-            // OwnedHandle 이 소유권을 가져가 drop 시 CloseHandle 한다.
-            let job = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
-
-            // SAFETY: JOBOBJECT_EXTENDED_LIMIT_INFORMATION 은 POD 이며 all-zero 가
-            // 유효한 초기 상태다.
-            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-            info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-
-            // SAFETY: job 핸들은 유효하고, info 는 정보 클래스에 맞는 크기로 채워진
-            // 유효 포인터다.
-            let ok = unsafe {
-                SetInformationJobObject(
-                    job.as_raw_handle() as HANDLE,
-                    JobObjectExtendedLimitInformation,
-                    ptr::addr_of!(info).cast(),
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                )
-            };
-            if ok == 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(Self { job: Some(job) })
+            Ok(Self {
+                job: Some(JobObject::new()?),
+            })
         }
 
         /// 결박이 비활성화된 reaper. `adopt` 가 항상 no-op 으로 성공한다.
@@ -95,18 +66,7 @@ mod imp {
             let Some(job) = self.job.as_ref() else {
                 return Ok(());
             };
-            // SAFETY: 두 핸들 모두 유효 — job 은 CreateJobObjectW 산물, child 는
-            // 살아있는 std::process::Child 의 프로세스 핸들이다.
-            let ok = unsafe {
-                AssignProcessToJobObject(
-                    job.as_raw_handle() as HANDLE,
-                    child.as_raw_handle() as HANDLE,
-                )
-            };
-            if ok == 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
+            job.assign_handle(child.as_raw_handle() as HANDLE)
         }
     }
 }
