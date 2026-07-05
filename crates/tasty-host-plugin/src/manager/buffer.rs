@@ -1,13 +1,10 @@
 //! GPU shared buffer 매핑 관리. plugin 별 buffer id 발급 + dirty rect drain.
 
 use std::collections::HashMap;
-#[cfg(unix)]
 use std::sync::atomic::Ordering;
 
-#[cfg(unix)]
 use tasty_plugin_protocol::HandleChannelMessage;
 use tasty_plugin_protocol::{SharedBufferCreateResult, SharedBufferId};
-#[cfg(unix)]
 use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;
 
@@ -150,16 +147,79 @@ impl PluginManager {
         })
     }
 
-    /// Windows는 보조 채널 핸들 전송이 02c에서 미구현. plugin SDK 측이 미리
-    /// `HandleChannelUnavailable`을 반환하므로 실제로 호출되지 않지만, 호스트
-    /// 측에서도 명시적으로 거절한다.
+    /// Windows: Unix 판과 동형이되 핸들 전달 방식만 다르다. `tasty_shm::prepare_send`
+    /// 의 `DuplicateHandle` 이 plugin 프로세스(child pid) 핸들 테이블에 파일 매핑 핸들을
+    /// 복제해 넣고, 그 결과 HANDLE u64 를 [`HandleAttach`] 의 `handle` 필드에 in-band 로
+    /// 실어 보낸다(ancillary data 없음). 매핑(`SharedMemory`)은 매니저가 보관한다.
+    ///
+    /// [`HandleAttach`]: HandleChannelMessage::HandleAttach
     #[cfg(windows)]
     pub fn create_shared_buffer_for(
         &mut self,
-        _plugin_id: &str,
-        _call_id: u64,
-        _size: u64,
+        plugin_id: &str,
+        call_id: u64,
+        size: u64,
     ) -> Result<SharedBufferCreateResult, String> {
-        Err("shared_buffer.create: windows host-side not implemented".into())
+        const MAX_BYTES: u64 = 1 << 30; // 1 GiB. manifest 권한 도입 전 임시 상한.
+        if size == 0 {
+            return Err("shared_buffer.create: size must be > 0".into());
+        }
+        if size > MAX_BYTES {
+            return Err(format!(
+                "shared_buffer.create: size {size} exceeds host cap {MAX_BYTES}"
+            ));
+        }
+        let proc = self
+            .processes
+            .get(plugin_id)
+            .ok_or_else(|| format!("plugin '{plugin_id}' is not running"))?;
+        if self.handle_listener.is_none() {
+            return Err("shared_buffer.create: host handle channel not available".into());
+        }
+        // Windows 는 DuplicateHandle 대상 프로세스를 pid 로 특정해야 한다. child pid 가
+        // 없으면(shutdown 등) 핸들을 복제할 수 없다.
+        let child_pid = proc
+            .child_pid()
+            .ok_or_else(|| "shared_buffer.create: plugin child pid unavailable".to_string())?;
+
+        let (mem, sendable) = tasty_shm::create(size as usize)
+            .map_err(|e| format!("shared_buffer.create: tasty_shm::create failed: {e}"))?;
+        // 파일 매핑 핸들을 plugin 프로세스 핸들 테이블에 복제한다.
+        let payload = tasty_shm::prepare_send(sendable, PeerPid::Other(child_pid))
+            .map_err(|e| format!("shared_buffer.create: prepare_send failed: {e}"))?;
+        let dup_handle = payload.serialized_handle();
+
+        let id = SharedBufferId(self.next_buffer_id.fetch_add(1, Ordering::Relaxed));
+        let actual_size = mem.len() as u64;
+        let msg = HandleChannelMessage::HandleAttach {
+            request_id: call_id,
+            id,
+            size: actual_size,
+            // send_handle 이 인자 handle 로 덮어쓰므로 여기선 None 이어도 무방.
+            handle: None,
+        };
+        let send_result = proc.with_handle_stream(|stream| stream.send_handle(&msg, dup_handle));
+        match send_result {
+            Some(Ok(())) => {}
+            Some(Err(e)) => {
+                return Err(format!(
+                    "shared_buffer.create: handle channel send failed: {e}"
+                ));
+            }
+            None => {
+                return Err("shared_buffer.create: plugin handle channel not connected".into());
+            }
+        }
+        // 우리 매핑은 매니저가 보관 — plugin 이 매핑을 잡고 있는 한 살아있어야 한다.
+        // payload(peer 테이블의 복제 핸들)는 Drop 이 no-op 라 그대로 떨궈도 된다.
+        self.plugin_buffers
+            .entry(plugin_id.to_string())
+            .or_default()
+            .insert(id, mem);
+        drop(payload);
+        Ok(SharedBufferCreateResult {
+            id,
+            size: actual_size,
+        })
     }
 }

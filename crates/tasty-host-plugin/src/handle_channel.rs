@@ -13,12 +13,13 @@ use std::io::{self, Write};
 #[cfg(unix)]
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex, mpsc};
+#[cfg(any(unix, test))]
 use std::time::Duration;
 
 use tasty_plugin_protocol::HandleChannelMessage;
-#[cfg(unix)]
 use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
 
+#[cfg(unix)]
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 호스트 ↔ plugin 보조 채널의 OS-네이티브 stream 추상.
@@ -66,13 +67,30 @@ impl HandleStream {
         unix_wire::send_with_fd(&self.inner, line.as_bytes(), Some(fd))
     }
 
-    /// Windows 측 stub. 02c-Windows에서 구현 예정.
+    /// Windows: fd 대신 `DuplicateHandle` 결과 HANDLE u64 를 [`HandleAttach`] 의
+    /// `handle` 필드에 in-band 로 실어 평범한 NDJSON 라인으로 보낸다(ancillary data 없음).
+    /// `msg` 의 기존 `handle` 값은 무시하고 인자 `handle` 로 덮어써 Unix `send_handle` 과
+    /// 호출 형태를 맞춘다.
+    ///
+    /// [`HandleAttach`]: HandleChannelMessage::HandleAttach
     #[cfg(windows)]
-    pub fn send_handle(&mut self, _msg: &HandleChannelMessage, _handle: u64) -> io::Result<()> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel send_handle not implemented on Windows yet",
-        ))
+    pub fn send_handle(&mut self, msg: &HandleChannelMessage, handle: u64) -> io::Result<()> {
+        debug_assert!(matches!(msg, HandleChannelMessage::HandleAttach { .. }));
+        let msg = match msg {
+            HandleChannelMessage::HandleAttach {
+                request_id,
+                id,
+                size,
+                ..
+            } => HandleChannelMessage::HandleAttach {
+                request_id: *request_id,
+                id: *id,
+                size: *size,
+                handle: Some(handle),
+            },
+            other => other.clone(),
+        };
+        self.send_message(&msg)
     }
 
     /// 임의 바이트 송신. write_line 내부 헬퍼.
@@ -98,18 +116,24 @@ impl HandleStream {
         Ok(HandleStreamReader::from_unix(cloned))
     }
 
+    /// Windows: duplex 파이프 핸들을 복제해 reader 스레드용 stream 을 분리한다.
     #[cfg(windows)]
     pub fn reader(&self) -> io::Result<HandleStreamReader> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel reader not implemented on Windows yet",
-        ))
+        let cloned = self.inner.try_clone()?;
+        Ok(HandleStreamReader::from_windows(cloned))
     }
 }
 
 #[cfg(unix)]
 impl HandleStream {
     fn from_unix(stream: std::os::unix::net::UnixStream) -> Self {
+        Self { inner: stream }
+    }
+}
+
+#[cfg(windows)]
+impl HandleStream {
+    fn from_windows(stream: self::windows::PipeServerStream) -> Self {
         Self { inner: stream }
     }
 }
@@ -127,7 +151,9 @@ pub struct HandleStreamReader {
     #[cfg(unix)]
     fd_queue: VecDeque<std::os::fd::RawFd>,
     #[cfg(windows)]
-    _phantom: std::marker::PhantomData<()>,
+    inner: self::windows::PipeServerStream,
+    #[cfg(windows)]
+    carry: Vec<u8>,
 }
 
 impl HandleStreamReader {
@@ -137,6 +163,14 @@ impl HandleStreamReader {
             inner: stream,
             carry: Vec::with_capacity(4096),
             fd_queue: VecDeque::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn from_windows(stream: self::windows::PipeServerStream) -> Self {
+        Self {
+            inner: stream,
+            carry: Vec::with_capacity(4096),
         }
     }
 
@@ -179,12 +213,40 @@ impl HandleStreamReader {
         }
     }
 
+    /// Windows: 파이프에서 NDJSON 라인을 파싱해 돌려준다. host 측은 plugin 이 보내는
+    /// [`HandleChannelMessage::Dirty`] 만 받으므로 반환 핸들은 보통 `None`. `HandleAttach`
+    /// 가 온다면(비정상) in-band `handle` 필드를 그대로 노출한다.
     #[cfg(windows)]
     pub fn recv_message(&mut self) -> io::Result<(HandleChannelMessage, Option<u64>)> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel recv_message not implemented on Windows yet",
-        ))
+        use std::io::Read;
+        loop {
+            if let Some(nl) = self.carry.iter().position(|&b| b == b'\n') {
+                let line_bytes: Vec<u8> = self.carry.drain(..=nl).collect();
+                let line_str = std::str::from_utf8(&line_bytes[..nl])
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    .trim();
+                if line_str.is_empty() {
+                    continue;
+                }
+                let msg: HandleChannelMessage = serde_json::from_str(line_str)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let handle = match msg {
+                    HandleChannelMessage::HandleAttach { handle, .. } => handle,
+                    _ => None,
+                };
+                return Ok((msg, handle));
+            }
+
+            let mut buf = [0u8; 4096];
+            let n = self.inner.read(&mut buf)?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "handle channel closed",
+                ));
+            }
+            self.carry.extend_from_slice(&buf[..n]);
+        }
     }
 }
 
@@ -263,13 +325,34 @@ impl HandleListener {
         })
     }
 
-    /// 보조 채널을 bind. Windows 구현은 02c에서 채워진다 — 현재는 `Unsupported`.
+    /// 보조 채널을 bind. Windows 는 Named Pipe 서버 인스턴스를 만들고 accept 루프를
+    /// 띄운다. Unix `bind` 와 동형이되, socket file 대신 파이프 이름(`\\.\pipe\...`)을
+    /// endpoint 로 쓴다.
     #[cfg(windows)]
     pub fn bind() -> io::Result<Self> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel on Windows is not implemented yet (Step 02c)",
-        ))
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        // Unix 와 같은 이유(동일 프로세스 동시 bind 충돌 방지)로 프로세스 전역 단조 seq.
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let name = self::windows::unique_pipe_name(seq);
+
+        // accept thread 시작 전에 첫 인스턴스를 미리 만들어, 자식이 빠르게 connect 해도
+        // 대기 인스턴스가 항상 존재하게 한다. FILE_FLAG_FIRST_PIPE_INSTANCE 로 이름 선점.
+        let first = self::windows::create_pipe_instance(&name, true)?;
+        let endpoint = name.clone();
+
+        let pending: Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>> = Arc::default();
+        let pending_clone = pending.clone();
+        let accept_thread = std::thread::Builder::new()
+            .name("plugin-handle-listener".to_string())
+            .spawn(move || accept_loop_windows(name, first, pending_clone))?;
+
+        Ok(Self {
+            endpoint,
+            pending,
+            _accept_thread: accept_thread,
+        })
     }
 
     /// plugin spawn에 전달할 endpoint 문자열. Unix는 socket path, Windows는 pipe 이름.
@@ -412,6 +495,144 @@ fn send_auth_ack_unix(
     w.write_all(line.as_bytes())?;
     w.write_all(b"\n")?;
     w.flush()
+}
+
+/// Windows accept 루프. 한 인스턴스에서 클라이언트를 기다리고, 붙으면 다음 인스턴스를
+/// 먼저 만든 뒤(연속 connect 손실 방지) 연결을 별도 스레드에서 인증 처리한다.
+#[cfg(windows)]
+fn accept_loop_windows(
+    name: String,
+    first: self::windows::PipeServerStream,
+    pending: Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
+) {
+    let mut current = first;
+    loop {
+        if let Err(e) = self::windows::accept(&current) {
+            tracing::warn!("handle channel accept error: {e}");
+            match self::windows::create_pipe_instance(&name, false) {
+                Ok(next) => {
+                    current = next;
+                    continue;
+                }
+                Err(e2) => {
+                    tracing::error!("handle channel: recreate pipe failed: {e2} — listener stops");
+                    return;
+                }
+            }
+        }
+        // 다음 클라이언트용 인스턴스를 먼저 만들어 대기 인스턴스가 끊기지 않게 한다.
+        let next = match self::windows::create_pipe_instance(&name, false) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::error!("handle channel: next pipe instance failed: {e} — listener stops");
+                handle_incoming_windows(current, &pending);
+                return;
+            }
+        };
+        let connected = std::mem::replace(&mut current, next);
+        // auth 는 짧지만 느린 자식이 accept 스레드를 막지 않게 연결마다 스레드로 처리.
+        let p = pending.clone();
+        if let Err(e) = std::thread::Builder::new()
+            .name("plugin-handle-auth".to_string())
+            .spawn(move || handle_incoming_windows(connected, &p))
+        {
+            tracing::warn!("handle channel: auth thread spawn failed: {e}");
+        }
+    }
+}
+
+/// Windows 연결 하나의 인증 핸드셰이크. Unix `handle_incoming_unix` 미러.
+#[cfg(windows)]
+fn handle_incoming_windows(
+    mut stream: self::windows::PipeServerStream,
+    pending: &Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
+) {
+    let line = match read_line_windows(&mut stream) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::warn!("handle channel: auth read failed: {e}");
+            return;
+        }
+    };
+    let auth: AuthMessage = match serde_json::from_str(line.trim()) {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::warn!("handle channel: invalid auth message: {e}");
+            return;
+        }
+    };
+
+    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+
+    match tx_opt {
+        Some(tx) => {
+            if let Err(e) = send_auth_ack_windows(&mut stream, true, None) {
+                tracing::warn!(
+                    "handle channel: plugin '{}' auth_ack send failed: {e} — dropping",
+                    auth.plugin_id
+                );
+                return;
+            }
+            tracing::debug!(
+                "handle channel: plugin '{}' authenticated on aux channel",
+                auth.plugin_id
+            );
+            if let Err(e) = tx.send(HandleStream::from_windows(stream)) {
+                tracing::warn!(
+                    "handle channel: plugin '{}' handle stream handoff failed: {e}",
+                    auth.plugin_id
+                );
+            }
+        }
+        None => {
+            tracing::warn!(
+                "handle channel: auth with unknown/expired token (plugin_id={})",
+                auth.plugin_id
+            );
+            if let Err(e) = send_auth_ack_windows(&mut stream, false, Some("token mismatch")) {
+                tracing::debug!("handle channel: auth_ack(false) send failed: {e}");
+            }
+        }
+    }
+}
+
+/// 파이프에서 개행까지 한 줄을 읽는다. auth 라인 뒤 바이트를 over-read 하지 않도록
+/// 1바이트씩 읽는다(handoff 후 reader 스레드가 이어질 Dirty 바이트를 잃지 않게).
+#[cfg(windows)]
+fn read_line_windows(stream: &mut self::windows::PipeServerStream) -> io::Result<String> {
+    use std::io::Read;
+    let mut buf = Vec::with_capacity(256);
+    let mut byte = [0u8; 1];
+    loop {
+        let n = stream.read(&mut byte)?;
+        if n == 0 {
+            break; // EOF
+        }
+        if byte[0] == b'\n' {
+            break;
+        }
+        buf.push(byte[0]);
+    }
+    String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+#[cfg(windows)]
+fn send_auth_ack_windows(
+    stream: &mut self::windows::PipeServerStream,
+    ok: bool,
+    reason: Option<&str>,
+) -> io::Result<()> {
+    let env = AuthAckEnvelope {
+        auth_ack: AuthAck {
+            ok,
+            reason: reason.map(|s| s.to_string()),
+        },
+    };
+    let line =
+        serde_json::to_string(&env).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    stream.write_all(line.as_bytes())?;
+    stream.write_all(b"\n")?;
+    stream.flush()
 }
 
 #[cfg(unix)]

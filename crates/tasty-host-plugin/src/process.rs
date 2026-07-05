@@ -498,11 +498,11 @@ fn aux_reader_loop(
                     // 사용처가 없으므로 leak 방지를 위해 close.
                     unsafe { libc::close(fd) };
                 }
-                // Windows: aux는 DuplicateHandle 결과인데 unexpected HandleAttach라 사용처
-                // 없음. windows-rs OwnedHandle을 받았다면 Drop이 CloseHandle 처리하므로
-                // 별도 액션 불필요 — drop만 시키면 된다.
+                // Windows: aux는 in-band HANDLE u64 값일 뿐, 우리 프로세스 핸들 테이블에
+                // 복제된 게 아니므로 CloseHandle 대상이 아니다(plugin→host 로 HandleAttach 가
+                // 오는 것 자체가 비정상). 그냥 버린다.
                 #[cfg(windows)]
-                drop(aux);
+                let _ = aux;
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
             Err(e) => {
