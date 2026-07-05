@@ -807,3 +807,7 @@ mod windows;
 #[cfg(all(test, unix))]
 #[path = "handle_channel/channel_tests.rs"]
 mod channel_tests;
+
+#[cfg(all(test, windows))]
+#[path = "handle_channel/channel_tests_windows.rs"]
+mod channel_tests_windows;
