@@ -212,7 +212,7 @@ pub fn hold_reveal_alpha(
 }
 
 /// 홀드 조합별 표시 지연(ms). **Shift 단독**(shift 만 눌리고 ctrl/alt/option 모두 미눌림)이면
-/// 2000ms, 그 외 조합은 500ms.
+/// 1200ms, 그 외 조합은 500ms.
 ///
 /// 타이핑 중 Shift 로 팝업이 튀는 문제를 완화한다(Shift 는 대문자·기호 입력에 상시 쓰여
 /// 스침이 잦음). Shift 를 포함하되 다른 modifier 도 눌린 조합(Ctrl+Shift 등)은 의도적
@@ -799,14 +799,14 @@ mod tests {
     }
 
     #[test]
-    fn reveal_delay_shift_only_is_2000_else_500() {
+    fn reveal_delay_shift_only_is_1200_else_500() {
         let theme = tasty_themes::mocha_fallback();
         let shift = Combo {
             shift: true,
             ..Default::default()
         };
-        // Shift 단독 → 2000ms.
-        assert_eq!(reveal_delay_ms(shift, &theme), 2000.0);
+        // Shift 단독 → 1200ms.
+        assert_eq!(reveal_delay_ms(shift, &theme), 1200.0);
         // Shift + 다른 축 → 기본 500ms.
         let ctrl_shift = Combo {
             ctrl: true,
@@ -823,10 +823,10 @@ mod tests {
     }
 
     #[test]
-    fn shift_only_2000ms_gate_hides_before_and_shows_after() {
-        // 순수함수 hold_reveal_alpha 를 2000ms 지연으로 평가: 500ms→None, 2100ms→Some.
-        assert_eq!(hold_reveal_alpha(500.0, 2000.0, FADE, false), None);
-        assert!(hold_reveal_alpha(2100.0, 2000.0, FADE, false).is_some());
+    fn shift_only_1200ms_gate_hides_before_and_shows_after() {
+        // 순수함수 hold_reveal_alpha 를 1200ms 지연으로 평가: 500ms→None, 1300ms→Some.
+        assert_eq!(hold_reveal_alpha(500.0, 1200.0, FADE, false), None);
+        assert!(hold_reveal_alpha(1300.0, 1200.0, FADE, false).is_some());
     }
 
     #[test]

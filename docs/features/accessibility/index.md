@@ -24,7 +24,7 @@ Modal/Popup/Toast/Banner 어디에도 안 맞는 **5번째 오버레이 요소**
 
 - **콘텐츠**: `build_hint_sections(held: Combo, …)`(modifier-hint 콘텐츠 모델) — 눌린 4축 조합 `held` 를 부분집합으로 포함하는 조합(`combos_containing_all`, `Combo::contains_all`)만 노출. 고정 호스트 액션 + 사용자 스크립트 + 특수 역할(탭/워크스페이스 전환·마우스 캡처 우회·링크 열기)을 조합 크기·우선순위로 정렬. 다축 홀드 시 첫 섹션이 홀드 조합 자신이라 헤더와 일치. 빈 조합(바인딩·역할 모두 없음)은 섹션 자체 생략. plugin 단축키 노출은 후속 배선(PluginManager 가 App 소유라 draw 경로 미도달).
 - **홀드 판정**: winit `ModifiersChanged`(실사용자 입력)만 반영 — IPC/CLI 로 강제 표시 불가(원칙1). `held: Option<Combo>` 가 현재 눌린 4축을 그대로 담고, 조합이 바뀌면 `update_hold` 가 **항상 dirty** 를 반환해 즉시 좁힘. 타이머(`hold_since`)는 최초 press 에만 시작하고 조합이 바뀌어도 리셋하지 않는다. 창 포커스 상실 시 clear.
-- **표시 지연**: `reveal_delay_ms(held, theme)` 가 Shift 단독이면 `MOTION_HOLD_REVEAL_SHIFT_MS`(2000ms), 그 외 `MOTION_HOLD_REVEAL_MS`(500ms). 매 프레임 재평가라 Shift 단독 대기 중 modifier 를 추가하면 지연이 500ms 로 떨어지고 경과가 넘었으면 즉시 표시. 값은 Theme 토큰으로만(하드코딩 금지).
+- **표시 지연**: `reveal_delay_ms(held, theme)` 가 Shift 단독이면 `MOTION_HOLD_REVEAL_SHIFT_MS`(1200ms), 그 외 `MOTION_HOLD_REVEAL_MS`(500ms). 매 프레임 재평가라 Shift 단독 대기 중 modifier 를 추가하면 지연이 500ms 로 떨어지고 경과가 넘었으면 즉시 표시. 값은 Theme 토큰으로만(하드코딩 금지).
 - **지오메트리**: `modifier_hint.pos` / `modifier_hint.size`(`Option<(LogicalPx, LogicalPx)>`, 기본 `None`)에 영속. 기본 220×400, 최소 200×240. 사용자가 이동/리사이즈해 놓는 시점에 `UpdateSettings` 로 저장(사이드바 폭과 동일 성질, 전역 공유 + last-write-wins). 윈도우 축소로 화면 밖이 되어도 **저장값은 불변**이고 클램프는 렌더 단계 책임이다. 지오메트리는 접근성 의미가 아닌 오버레이 UI 상태라 `ModifierHintSettings`(별도 루트 섹션)에 둔다.
 
 ## 인터페이스

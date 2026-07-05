@@ -163,11 +163,11 @@ pub const STATUS_DOT_PULSE_MS: f32 = 1600.0;
 pub const MOTION_HOLD_REVEAL_MS: f32 = 500.0;
 
 /// modifier-hint **Shift 단독** 홀드 표시 지연 (`--tasty-motion-hold-reveal-shift` →
-/// `--tasty-duration-2000` = 2000ms). Shift 는 대문자·기호 입력에 상시 쓰여 스침이 잦으므로,
-/// Shift 만 눌린 경우에 한해 기본 500ms 대신 2초를 기다려 타이핑 중 오버레이가 튀는 것을
+/// `--tasty-duration-1200` = 1200ms). Shift 는 대문자·기호 입력에 상시 쓰여 스침이 잦으므로,
+/// Shift 만 눌린 경우에 한해 기본 500ms 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을
 /// 억제한다(Ctrl+Shift 등 다른 modifier 를 동반한 조합은 의도적 단축키라 기본 500ms 유지).
 /// [`MOTION_HOLD_REVEAL_MS`] 와 마찬가지로 **지연이며 모션이 아니라** reduced_motion 무관.
-pub const MOTION_HOLD_REVEAL_SHIFT_MS: f32 = 2000.0;
+pub const MOTION_HOLD_REVEAL_SHIFT_MS: f32 = 1200.0;
 
 /// 비-터미널 chrome UI 페이드 지속시간 (`--tasty-motion-ui-fade` →
 /// `--tasty-duration-200` = 200ms). modifier-hint 오버레이 등장 페이드(opacity 0.2→1.0)에
@@ -1460,7 +1460,7 @@ impl Theme {
     pub fn motion_hold_reveal_ms(&self) -> f32 {
         MOTION_HOLD_REVEAL_MS
     }
-    /// modifier-hint **Shift 단독** 홀드 표시 지연 (2000ms). `--tasty-motion-hold-reveal-shift`.
+    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). `--tasty-motion-hold-reveal-shift`.
     /// 타이핑 중 Shift 스침으로 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라**
     /// reduced_motion 무관.
     #[inline]
