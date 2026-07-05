@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tasty_plugin_protocol::PluginEvent;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_protocol::{METHOD_HOST_SHARED_BUFFER_CREATE, SharedBufferCreateResult};
 
 use crate::error::PluginError;
@@ -214,9 +214,67 @@ impl HostHandle {
         Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }
 
+    /// Windows: Unix 판과 동형이되 핸들을 fd 대신 in-band HANDLE u64 로 받는다.
+    /// host 가 `DuplicateHandle` 로 우리 프로세스 테이블에 복제한 파일 매핑 핸들을
+    /// 보조 채널 라인으로 받아 `tasty_shm::receive(Handle)` 로 매핑한다.
     #[cfg(windows)]
-    pub fn create_shared_buffer(&self, _size: usize) -> Result<SharedBuffer, PluginError> {
-        Err(PluginError::HandleChannelUnavailable)
+    pub fn create_shared_buffer(&self, size: usize) -> Result<SharedBuffer, PluginError> {
+        let handle_writer = self
+            .handle_writer
+            .clone()
+            .ok_or(PluginError::HandleChannelUnavailable)?;
+
+        let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
+
+        // 핸들 도착 알림 채널을 *RPC 송신 전에* 등록 — race 방지.
+        let (handle_tx, handle_rx) = mpsc::channel::<u64>();
+        {
+            let mut m = self
+                .shared_buffer_fd_pending
+                .lock()
+                .map_err(|_| PluginError::LockPoisoned("shared_buffer_fd_pending"))?;
+            m.insert(call_id, handle_tx);
+        }
+
+        let total_size = size
+            .checked_add(tasty_shm::footer::SIZE)
+            .ok_or(PluginError::Shm("size overflow with footer".into()))?;
+
+        let rpc_result = self.call_with_id(
+            call_id,
+            METHOD_HOST_SHARED_BUFFER_CREATE.to_string(),
+            serde_json::json!({ "size": total_size as u64 }),
+        );
+        let parsed: SharedBufferCreateResult = match rpc_result {
+            Ok(v) => serde_json::from_value(v)?,
+            Err(e) => {
+                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
+                    m.remove(&call_id);
+                }
+                return Err(e);
+            }
+        };
+
+        let handle = match handle_rx.recv_timeout(self.timeout) {
+            Ok(h) => h,
+            Err(_) => {
+                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
+                    m.remove(&call_id);
+                }
+                return Err(PluginError::HostCallTimeout {
+                    method: format!("{} (handle attach)", METHOD_HOST_SHARED_BUFFER_CREATE),
+                    timeout: self.timeout,
+                });
+            }
+        };
+
+        let payload = tasty_shm::ReceivedPayload::Handle {
+            handle,
+            size: parsed.size as usize,
+        };
+        let mem = tasty_shm::receive(payload).map_err(|e| PluginError::Shm(e.to_string()))?;
+
+        Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }
 }
 

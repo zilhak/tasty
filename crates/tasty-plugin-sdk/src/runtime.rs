@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use anyhow::Result;
 use serde_json::Value;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_protocol::HandleChannelMessage;
 use tasty_plugin_protocol::{
     BannerClosedParams, BannerOpenParams, BannerSetContextParams, EventDispatchParams,
@@ -111,38 +111,29 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 
     // 보조 채널이 살아 있으면 reader thread 띄우고 HostHandle에 writer 연결.
     let _handle_reader_thread: Option<std::thread::JoinHandle<()>> = match handle_client {
-        Some(client) => {
-            #[cfg(unix)]
-            {
-                match client.reader() {
-                    Ok(reader) => {
-                        let handle_writer = Arc::new(Mutex::new(client));
-                        host = host.with_handle_channel(
-                            handle_writer.clone(),
-                            shared_buffer_fd_pending.clone(),
-                        );
-                        let fd_pending_clone = shared_buffer_fd_pending.clone();
-                        let writer_clone = handle_writer.clone();
-                        let handle = std::thread::Builder::new()
-                            .name("plugin-handle-reader".into())
-                            .spawn(move || {
-                                handle_reader_loop(reader, fd_pending_clone, writer_clone);
-                            })?;
-                        Some(handle)
-                    }
-                    Err(e) => {
-                        tracing::warn!("plugin handle channel reader split failed: {e}");
-                        None
-                    }
-                }
+        #[cfg(any(unix, windows))]
+        Some(client) => match client.reader() {
+            Ok(reader) => {
+                let handle_writer = Arc::new(Mutex::new(client));
+                host = host
+                    .with_handle_channel(handle_writer.clone(), shared_buffer_fd_pending.clone());
+                let fd_pending_clone = shared_buffer_fd_pending.clone();
+                let writer_clone = handle_writer.clone();
+                let handle = std::thread::Builder::new()
+                    .name("plugin-handle-reader".into())
+                    .spawn(move || {
+                        handle_reader_loop(reader, fd_pending_clone, writer_clone);
+                    })?;
+                Some(handle)
             }
-            #[cfg(not(unix))]
-            {
-                // Windows에서는 보조 채널 미구현 — client는 drop된다.
-                let _client = client;
+            Err(e) => {
+                tracing::warn!("plugin handle channel reader split failed: {e}");
                 None
             }
-        }
+        },
+        // 보조 채널을 지원하지 않는 exotic 타깃 — client 는 drop 된다.
+        #[cfg(not(any(unix, windows)))]
+        Some(_client) => None,
         None => None,
     };
 
@@ -251,10 +242,10 @@ fn spawn_parent_death_watchdog() {
 #[cfg(not(target_os = "macos"))]
 fn spawn_parent_death_watchdog() {}
 
-/// 보조 채널의 reader thread loop. host가 보낸 `HandleAttach`의 fd를 fd_pending에
-/// 매칭해 `HostHandle::create_shared_buffer` 대기자에게 push하고, ping을 받으면 pong을
-/// 회신한다. 연결이 닫히면 조용히 종료.
-#[cfg(unix)]
+/// 보조 채널의 reader thread loop. host가 보낸 `HandleAttach`의 버퍼 핸들(Unix=fd /
+/// Windows=HANDLE u64)을 fd_pending에 매칭해 `HostHandle::create_shared_buffer` 대기자
+/// 에게 push하고, ping을 받으면 pong을 회신한다. 연결이 닫히면 조용히 종료.
+#[cfg(any(unix, windows))]
 fn handle_reader_loop(
     mut reader: crate::handle_channel::HandleClientReader,
     fd_pending: SharedBufferFdPending,
@@ -262,39 +253,10 @@ fn handle_reader_loop(
 ) {
     loop {
         match reader.recv_message() {
-            Ok((msg, aux_fd)) => match msg {
-                HandleChannelMessage::HandleAttach { request_id, .. } => match aux_fd {
-                    Some(fd) => {
-                        let sender = fd_pending
-                            .lock()
-                            .ok()
-                            .and_then(|mut m| m.remove(&request_id));
-                        match sender {
-                            Some(tx) => {
-                                if tx.send(fd).is_err() {
-                                    tracing::warn!(
-                                        "handle channel: orphan fd for request_id={request_id} (waiter dropped)"
-                                    );
-                                    // SAFETY: fd는 방금 SCM_RIGHTS로 받은 valid한 file descriptor.
-                                    // 매칭되는 waiter가 사라졌으니 leak 방지 위해 close.
-                                    unsafe { libc::close(fd) };
-                                }
-                            }
-                            None => {
-                                tracing::warn!(
-                                    "handle channel: unsolicited HandleAttach (request_id={request_id})"
-                                );
-                                // SAFETY: 위와 동일 — 미수령 fd는 close해서 leak 방지.
-                                unsafe { libc::close(fd) };
-                            }
-                        }
-                    }
-                    None => {
-                        tracing::warn!(
-                            "handle channel: HandleAttach without fd (request_id={request_id})"
-                        );
-                    }
-                },
+            Ok((msg, aux)) => match msg {
+                HandleChannelMessage::HandleAttach { request_id, .. } => {
+                    deliver_buffer_handle(&fd_pending, request_id, aux);
+                }
                 HandleChannelMessage::Ping { seq } => {
                     let pong = HandleChannelMessage::Pong { seq };
                     if let Ok(mut w) = writer.lock()
@@ -315,6 +277,82 @@ fn handle_reader_loop(
                 break;
             }
         }
+    }
+}
+
+/// Unix: `HandleAttach` 동행 fd 를 매칭 waiter 에게 push. 미매칭이면 leak 방지 close.
+#[cfg(unix)]
+fn deliver_buffer_handle(
+    fd_pending: &SharedBufferFdPending,
+    request_id: u64,
+    aux: Option<std::os::fd::RawFd>,
+) {
+    let Some(fd) = aux else {
+        tracing::warn!("handle channel: HandleAttach without fd (request_id={request_id})");
+        return;
+    };
+    let sender = fd_pending
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&request_id));
+    match sender {
+        Some(tx) => {
+            if tx.send(fd).is_err() {
+                tracing::warn!(
+                    "handle channel: orphan fd for request_id={request_id} (waiter dropped)"
+                );
+                // SAFETY: 방금 SCM_RIGHTS로 받은 valid fd — waiter 소멸 시 leak 방지 close.
+                unsafe { libc::close(fd) };
+            }
+        }
+        None => {
+            tracing::warn!(
+                "handle channel: unsolicited HandleAttach (request_id={request_id})"
+            );
+            // SAFETY: 위와 동일.
+            unsafe { libc::close(fd) };
+        }
+    }
+}
+
+/// Windows: `HandleAttach` in-band HANDLE u64 를 매칭 waiter 에게 push. 미매칭이면
+/// 우리 핸들 테이블에 복제돼 있는 핸들을 `CloseHandle` 로 회수(leak 방지).
+#[cfg(windows)]
+fn deliver_buffer_handle(fd_pending: &SharedBufferFdPending, request_id: u64, aux: Option<u64>) {
+    let Some(handle) = aux else {
+        tracing::warn!("handle channel: HandleAttach without handle (request_id={request_id})");
+        return;
+    };
+    let sender = fd_pending
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&request_id));
+    match sender {
+        Some(tx) => {
+            if tx.send(handle).is_err() {
+                tracing::warn!(
+                    "handle channel: orphan handle for request_id={request_id} (waiter dropped)"
+                );
+                close_orphan_handle(handle);
+            }
+        }
+        None => {
+            tracing::warn!(
+                "handle channel: unsolicited HandleAttach (request_id={request_id})"
+            );
+            close_orphan_handle(handle);
+        }
+    }
+}
+
+/// Windows: 미수령 파일 매핑 핸들을 닫아 leak 을 막는다. DuplicateHandle 로 우리
+/// 프로세스 테이블에 이미 복제돼 있으므로 CloseHandle 대상이다.
+#[cfg(windows)]
+fn close_orphan_handle(handle: u64) {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    // SAFETY: handle 은 host 가 DuplicateHandle 로 우리 테이블에 넣은 유효 핸들.
+    unsafe {
+        CloseHandle(handle as HANDLE);
     }
 }
 

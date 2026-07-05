@@ -44,14 +44,14 @@ use tasty_plugin_protocol::{
     RawInputEventWire, RawInputWire, SurfaceSetContextParams, ThemeWire,
 };
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_protocol::{PluginEvent, SharedBufferId};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::error::PluginError;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::host::HostHandle;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::shared_buffer::SharedBuffer;
 
 /// egui-mesh 렌더 코어 — surface/popup 공통. 자기 egui [`Context`](폰트 atlas 포함),
@@ -77,7 +77,7 @@ struct EguiMeshCore {
     /// textures_delta 체인의 연속성(`frame_seq == last + 1`)을 검증하는 데 쓰인다.
     frame_seq: u64,
     /// mesh POD 블록을 쓰는 shared buffer. 필요 크기보다 작아지면 재생성한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     buffer: Option<SharedBuffer>,
 }
 
@@ -117,7 +117,7 @@ impl EguiMeshCore {
             last_ctx: None,
             tex_state: BTreeMap::new(),
             frame_seq: 0,
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             buffer: None,
         }
     }
@@ -268,7 +268,7 @@ impl EguiMeshCore {
 
     /// 송신 확정된 frame 의 시퀀스를 발급한다(1부터 단조 증가). commit 성공 후에만
     /// 호출해 "송신된 frame 수" 와 어긋나지 않게 한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn next_frame_seq(&mut self) -> u64 {
         self.frame_seq += 1;
         self.frame_seq
@@ -276,7 +276,7 @@ impl EguiMeshCore {
 
     /// 인코드된 바이트를 shared buffer 에 commit 하고 (buffer_id, generation) 을 돌려준다.
     /// 회신 알림(PaintFrame/PopupPaintFrame)은 호출자가 보낸다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn commit(
         &mut self,
         host: &HostHandle,
@@ -299,7 +299,7 @@ impl EguiMeshCore {
 
     /// shared buffer 가 `needed` 바이트를 담을 수 있게 보장한다. 부족하면 헤드룸을 둔
     /// 크기로 새로 만든다(폰트 atlas 가 큰 첫 frame spike 를 흡수, 매 frame 재생성 방지).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn ensure_buffer(&mut self, host: &HostHandle, needed: usize) -> Result<(), PluginError> {
         let big_enough = self.buffer.as_ref().is_some_and(|b| b.len() >= needed);
         if !big_enough {
@@ -376,7 +376,7 @@ impl EguiMeshSurface {
     /// `set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
     /// [`PluginEvent::PaintFrame`] 알림을 보낸다. 출력이 직전과 같으면 `Ok(None)`,
     /// 변경됐으면 commit 후의 footer generation 을 `Ok(Some(gen))` 으로 반환한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn paint(
         &mut self,
         host: &HostHandle,
@@ -401,7 +401,7 @@ impl EguiMeshSurface {
     /// 캐시된 geom/ppp 로 재-run → 출력이 바뀌면 [`PluginEvent::PaintFrame`] 송신,
     /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`. host 는 이 PaintFrame 에 깨어나
     /// 재합성한다(별도 재-forward 왕복 불필요).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
         host: &HostHandle,
@@ -483,7 +483,7 @@ impl EguiMeshPopup {
 
     /// `popup.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
     /// [`PluginEvent::PopupPaintFrame`] 알림을 보낸다. 정적 화면이면 `Ok(None)`.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn paint(
         &mut self,
         host: &HostHandle,
@@ -507,7 +507,7 @@ impl EguiMeshPopup {
     /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
     /// 출력이 바뀌면 [`PluginEvent::PopupPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
     /// 전이면 `Ok(None)`.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
         host: &HostHandle,
@@ -589,7 +589,7 @@ impl EguiMeshBanner {
 
     /// `banner.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
     /// [`PluginEvent::BannerPaintFrame`] 알림을 보낸다. 정적 화면이면 `Ok(None)`.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn paint(
         &mut self,
         host: &HostHandle,
@@ -613,7 +613,7 @@ impl EguiMeshBanner {
     /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
     /// 출력이 바뀌면 [`PluginEvent::BannerPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
     /// 전이면 `Ok(None)`.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
         host: &HostHandle,

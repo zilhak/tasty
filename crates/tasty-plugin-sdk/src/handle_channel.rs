@@ -16,7 +16,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::time::Duration;
 
 use tasty_plugin_protocol::HandleChannelMessage;
-#[cfg(unix)]
 use tasty_plugin_protocol::{AuthAckEnvelope, AuthMessage};
 
 use crate::env::PluginEnv;
@@ -34,7 +33,7 @@ pub struct HandleClient {
     #[cfg(unix)]
     inner: std::os::unix::net::UnixStream,
     #[cfg(windows)]
-    _phantom: std::marker::PhantomData<()>,
+    inner: self::windows::PipeClientStream,
 }
 
 impl HandleClient {
@@ -96,11 +95,29 @@ impl HandleClient {
     }
 
     #[cfg(windows)]
-    fn connect_to(_endpoint: &str, _env: &PluginEnv) -> Result<Self> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel on Windows is not implemented yet (Step 02c)",
-        )))
+    fn connect_to(endpoint: &str, env: &PluginEnv) -> Result<Self> {
+        let mut stream = self::windows::PipeClientStream::connect(endpoint)?;
+
+        let auth = AuthMessage {
+            plugin_id: env.plugin_id.clone(),
+            token: env.token.clone(),
+        };
+        let line = serde_json::to_string(&auth)?;
+        stream.write_line(&line)?;
+
+        let ack_line = stream.read_line()?;
+        let trim = ack_line.trim();
+        if trim.is_empty() {
+            return Err(PluginError::HandshakeTimeout);
+        }
+        let env_msg: AuthAckEnvelope = serde_json::from_str(trim)?;
+        if env_msg.auth_ack.ok {
+            Ok(Self { inner: stream })
+        } else {
+            Err(PluginError::HandshakeRejected {
+                reason: env_msg.auth_ack.reason,
+            })
+        }
     }
 
     /// 한 줄을 NDJSON으로 송신.
@@ -113,14 +130,10 @@ impl HandleClient {
         Ok(())
     }
 
-    /// 한 줄을 NDJSON으로 송신. Windows stub.
+    /// 한 줄을 NDJSON으로 송신. Windows Named Pipe write.
     #[cfg(windows)]
-    #[allow(clippy::unused_self)]
-    pub fn write_line(&mut self, _line: &str) -> Result<()> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel write not implemented on Windows yet",
-        )))
+    pub fn write_line(&mut self, line: &str) -> Result<()> {
+        self.inner.write_line(line)
     }
 
     /// blocking으로 한 줄 읽기. read timeout이 설정되어 있다면 그 이내에 못 받으면 io 에러.
@@ -136,14 +149,10 @@ impl HandleClient {
         Ok(line)
     }
 
-    /// blocking으로 한 줄 읽기. Windows stub.
+    /// blocking으로 한 줄 읽기. Windows Named Pipe read.
     #[cfg(windows)]
-    #[allow(clippy::unused_self)]
     pub fn read_line(&mut self) -> Result<String> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel read not implemented on Windows yet",
-        )))
+        self.inner.read_line()
     }
 
     /// read timeout 조정. ping/pong 등 짧은 동기 대기 시 호출.
@@ -153,7 +162,8 @@ impl HandleClient {
         Ok(())
     }
 
-    /// read timeout 조정. Windows stub.
+    /// read timeout 조정. Windows 동기 파이프는 per-read timeout 을 두지 않는다 — no-op.
+    /// 보조 채널은 host 가 신뢰하는 자식 프로세스와만 통신하므로 무한 대기 위험이 낮다.
     #[cfg(windows)]
     #[allow(clippy::unused_self)]
     pub fn set_read_timeout(&self, _timeout: Option<Duration>) -> Result<()> {
@@ -168,12 +178,9 @@ impl HandleClient {
     }
 
     #[cfg(windows)]
-    #[allow(clippy::unused_self)]
-    pub fn send_message(&mut self, _msg: &HandleChannelMessage) -> Result<()> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel send_message not implemented on Windows yet",
-        )))
+    pub fn send_message(&mut self, msg: &HandleChannelMessage) -> Result<()> {
+        let line = serde_json::to_string(msg)?;
+        self.write_line(&line)
     }
 
     /// 수신 측 reader를 분리해서 반환. write 핸들은 self에 남는다.
@@ -183,12 +190,11 @@ impl HandleClient {
         Ok(HandleClientReader::from_unix(cloned))
     }
 
+    /// Windows: duplex 파이프 핸들을 복제해 reader 스레드용 stream 을 분리한다.
     #[cfg(windows)]
     pub fn reader(&self) -> Result<HandleClientReader> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel reader not implemented on Windows yet",
-        )))
+        let cloned = self.inner.try_clone()?;
+        Ok(HandleClientReader::from_windows(cloned))
     }
 
     /// Test 전용: 외부에서 만든 `UnixStream`을 그대로 감싸 `HandleClient`로 사용.
@@ -210,7 +216,9 @@ pub struct HandleClientReader {
     #[cfg(unix)]
     fd_queue: VecDeque<std::os::fd::RawFd>,
     #[cfg(windows)]
-    _phantom: std::marker::PhantomData<()>,
+    inner: self::windows::PipeClientStream,
+    #[cfg(windows)]
+    carry: Vec<u8>,
 }
 
 impl HandleClientReader {
@@ -220,6 +228,14 @@ impl HandleClientReader {
             inner: stream,
             carry: Vec::with_capacity(4096),
             fd_queue: VecDeque::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn from_windows(stream: self::windows::PipeClientStream) -> Self {
+        Self {
+            inner: stream,
+            carry: Vec::with_capacity(4096),
         }
     }
 
@@ -256,12 +272,32 @@ impl HandleClientReader {
         }
     }
 
+    /// Windows: 파이프에서 NDJSON 라인을 파싱한다. `HandleAttach` 의 in-band `handle`
+    /// 필드(HANDLE u64)를 함께 반환한다 — plugin 은 이 값을 `tasty_shm::receive` 로 매핑.
     #[cfg(windows)]
     pub fn recv_message(&mut self) -> Result<(HandleChannelMessage, Option<u64>)> {
-        Err(PluginError::Io(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "handle channel recv_message not implemented on Windows yet",
-        )))
+        loop {
+            if let Some(nl) = self.carry.iter().position(|&b| b == b'\n') {
+                let line_bytes: Vec<u8> = self.carry.drain(..=nl).collect();
+                let line_str = std::str::from_utf8(&line_bytes[..nl])
+                    .map_err(|e| PluginError::Io(io::Error::new(io::ErrorKind::InvalidData, e)))?
+                    .trim();
+                if line_str.is_empty() {
+                    continue;
+                }
+                let msg: HandleChannelMessage = serde_json::from_str(line_str)?;
+                let handle = match msg {
+                    HandleChannelMessage::HandleAttach { handle, .. } => handle,
+                    _ => None,
+                };
+                return Ok((msg, handle));
+            }
+
+            let n = self.inner.read_into(&mut self.carry)?;
+            if n == 0 {
+                return Err(PluginError::HostClosed);
+            }
+        }
     }
 }
 
@@ -333,6 +369,196 @@ mod unix_wire {
         }
 
         Ok((n as usize, fds))
+    }
+}
+
+/// SDK 측 Named Pipe 클라이언트. host 의 [`super::windows::PipeServerStream`] 대응.
+#[cfg(windows)]
+mod windows {
+    use std::io;
+    use std::ptr;
+
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_PIPE_BUSY, GetLastError, HANDLE,
+        INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, OPEN_EXISTING, ReadFile, WriteFile,
+    };
+    use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    use crate::error::{PluginError, Result};
+
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    /// `WaitNamedPipeW` 최대 대기(ms). host 가 accept 인스턴스를 상시 유지하므로 busy 는
+    /// 드물지만, spawn 직후 경합을 위해 여유를 둔다.
+    const PIPE_BUSY_WAIT_MS: u32 = 5000;
+
+    fn to_wide(name: &str) -> Vec<u16> {
+        name.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// close-on-drop HANDLE RAII.
+    struct OwnedHandle(HANDLE);
+
+    impl Drop for OwnedHandle {
+        fn drop(&mut self) {
+            if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
+                // SAFETY: null/INVALID 이 아닐 때만, Drop 은 한 번만 실행.
+                unsafe {
+                    CloseHandle(self.0);
+                }
+            }
+        }
+    }
+
+    // SAFETY: HANDLE 은 OS 관리 정수. 스레드 이동/공유 안전, 파이프 R/W thread-safe.
+    unsafe impl Send for OwnedHandle {}
+    unsafe impl Sync for OwnedHandle {}
+
+    /// 클라이언트 파이프 stream. [`HandleClient`](super::HandleClient) 의 Windows inner.
+    #[derive(Debug)]
+    pub(super) struct PipeClientStream {
+        handle: OwnedHandle,
+    }
+
+    impl std::fmt::Debug for OwnedHandle {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "OwnedHandle({:p})", self.0)
+        }
+    }
+
+    impl PipeClientStream {
+        /// endpoint(`\\.\pipe\...`)에 연결한다. 인스턴스가 모두 사용 중이면
+        /// `WaitNamedPipeW` 로 잠시 대기 후 재시도한다.
+        pub(super) fn connect(name: &str) -> Result<Self> {
+            let wide = to_wide(name);
+            loop {
+                // SAFETY: Win32 CreateFileW. wide 는 NUL 종단 UTF-16.
+                let raw = unsafe {
+                    CreateFileW(
+                        wide.as_ptr(),
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,
+                        ptr::null(),
+                        OPEN_EXISTING,
+                        0,
+                        ptr::null_mut(),
+                    )
+                };
+                if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
+                    return Ok(Self {
+                        handle: OwnedHandle(raw),
+                    });
+                }
+                // SAFETY: 부수효과 없는 last-error 조회.
+                let err = unsafe { GetLastError() };
+                if err == ERROR_PIPE_BUSY {
+                    // SAFETY: Win32 WaitNamedPipeW. 실패해도 다음 루프에서 재시도.
+                    let _ = unsafe { WaitNamedPipeW(wide.as_ptr(), PIPE_BUSY_WAIT_MS) };
+                    continue;
+                }
+                return Err(PluginError::Io(io::Error::from_raw_os_error(err as i32)));
+            }
+        }
+
+        fn read_raw(&self, buf: &mut [u8]) -> Result<usize> {
+            let mut read: u32 = 0;
+            // SAFETY: 유효 파이프 핸들, buf 는 len 만큼 유효, read 는 out param.
+            let rc = unsafe {
+                ReadFile(
+                    self.handle.0,
+                    buf.as_mut_ptr(),
+                    buf.len() as u32,
+                    &mut read,
+                    ptr::null_mut(),
+                )
+            };
+            if rc == 0 {
+                let e = io::Error::last_os_error();
+                if e.kind() == io::ErrorKind::BrokenPipe {
+                    return Ok(0); // EOF 정규화
+                }
+                return Err(PluginError::Io(e));
+            }
+            Ok(read as usize)
+        }
+
+        /// 최대 4 KiB 를 읽어 `carry` 뒤에 붙인다. 반환 0 이면 EOF.
+        pub(super) fn read_into(&mut self, carry: &mut Vec<u8>) -> Result<usize> {
+            let mut buf = [0u8; 4096];
+            let n = self.read_raw(&mut buf)?;
+            carry.extend_from_slice(&buf[..n]);
+            Ok(n)
+        }
+
+        /// 개행까지 한 줄 읽기. auth ack 뒤 바이트를 over-read 하지 않도록 1바이트씩 읽는다
+        /// (같은 파이프를 공유하는 reader clone 이 이어질 바이트를 잃지 않게).
+        pub(super) fn read_line(&mut self) -> Result<String> {
+            let mut out = Vec::with_capacity(256);
+            let mut byte = [0u8; 1];
+            loop {
+                let n = self.read_raw(&mut byte)?;
+                if n == 0 {
+                    break;
+                }
+                if byte[0] == b'\n' {
+                    break;
+                }
+                out.push(byte[0]);
+            }
+            String::from_utf8(out)
+                .map_err(|e| PluginError::Io(io::Error::new(io::ErrorKind::InvalidData, e)))
+        }
+
+        pub(super) fn write_line(&mut self, line: &str) -> Result<()> {
+            let mut buf = line.as_bytes().to_vec();
+            buf.push(b'\n');
+            let mut off = 0usize;
+            while off < buf.len() {
+                let mut written: u32 = 0;
+                // SAFETY: 유효 파이프 핸들, buf[off..] 는 유효, written 은 out param.
+                let rc = unsafe {
+                    WriteFile(
+                        self.handle.0,
+                        buf[off..].as_ptr(),
+                        (buf.len() - off) as u32,
+                        &mut written,
+                        ptr::null_mut(),
+                    )
+                };
+                if rc == 0 {
+                    return Err(PluginError::Io(io::Error::last_os_error()));
+                }
+                off += written as usize;
+            }
+            Ok(())
+        }
+
+        /// 현재 프로세스 내 파이프 핸들 복제. reader/writer 스레드 분리용.
+        pub(super) fn try_clone(&self) -> Result<Self> {
+            let mut dup: HANDLE = ptr::null_mut();
+            // SAFETY: 유효 핸들 → 같은 프로세스 복제. 실패 시 rc==0.
+            let rc = unsafe {
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    self.handle.0,
+                    GetCurrentProcess(),
+                    &mut dup,
+                    0,
+                    0,
+                    DUPLICATE_SAME_ACCESS,
+                )
+            };
+            if rc == 0 {
+                return Err(PluginError::Io(io::Error::last_os_error()));
+            }
+            Ok(Self {
+                handle: OwnedHandle(dup),
+            })
+        }
     }
 }
 

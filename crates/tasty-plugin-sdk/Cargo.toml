@@ -32,6 +32,9 @@ egui-mesh = ["dep:egui", "tasty-plugin-protocol/egui-mesh"]
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_IO"] }
+
 [dev-dependencies]
 tempfile = "3"
 
