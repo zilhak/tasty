@@ -175,15 +175,30 @@ fn handle_channel_pong_round_trip() {
 
 #[test]
 fn handle_channel_handle_attach_round_trip() {
+    // Unix: handle 없음 — wire에 handle 키가 나타나지 않아야 한다(하위호환 유지).
     let msg = HandleChannelMessage::HandleAttach {
         request_id: 9,
         id: SharedBufferId(1),
         size: 4096,
+        handle: None,
     };
     let s = serde_json::to_string(&msg).unwrap();
     assert!(s.contains("\"kind\":\"handle_attach\""));
+    assert!(!s.contains("\"handle\""), "None handle must be skipped: {s}");
     let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
     assert_eq!(parsed, msg);
+
+    // Windows: handle in-band. 라운드트립으로 값 보존 확인.
+    let win = HandleChannelMessage::HandleAttach {
+        request_id: 9,
+        id: SharedBufferId(1),
+        size: 4096,
+        handle: Some(0xDEAD_BEEF),
+    };
+    let s = serde_json::to_string(&win).unwrap();
+    assert!(s.contains("\"handle\":3735928559"));
+    let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
+    assert_eq!(parsed, win);
 }
 
 #[test]

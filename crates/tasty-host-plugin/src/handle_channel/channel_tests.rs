@@ -73,6 +73,7 @@ fn send_handle_delivers_fd_via_scm_rights() {
         request_id: 1,
         id: SharedBufferId(42),
         size: 4096,
+        handle: None,
     };
     host_stream.send_handle(&msg, send_fd).expect("send_handle");
 
@@ -119,6 +120,7 @@ fn shared_buffer_roundtrip_via_handle_channel() {
         request_id: 1,
         id,
         size: 4096,
+        handle: None,
     };
     host_stream
         .send_handle(&attach, payload.raw_fd())

@@ -519,8 +519,13 @@ pub enum HandleChannelMessage {
     Ping { seq: u64 },
     /// [`HandleChannelMessage::Ping`]의 응답.
     Pong { seq: u64 },
-    /// host → plugin: 새로 만든 shared buffer 핸들이 ancillary data로 동행한다.
+    /// host → plugin: 새로 만든 shared buffer 핸들을 plugin에 전달한다.
     /// `request_id`는 메인 채널의 `host.shared_buffer.create` call_id와 1:1 매칭.
+    ///
+    /// **Unix**: 핸들은 이 NDJSON 라인과 같은 `sendmsg`의 ancillary data(SCM_RIGHTS)로
+    /// fd가 동행하며, `handle` 필드는 `None`이다.
+    /// **Windows**: `DuplicateHandle`이 plugin 프로세스 핸들 테이블에 이미 복제해 넣은
+    /// HANDLE u64 값을 `handle` 필드에 in-band로 실어 보낸다(ancillary data 없음).
     HandleAttach {
         /// 메인 채널 `host.shared_buffer.create` 요청의 call_id.
         request_id: u64,
@@ -528,6 +533,10 @@ pub enum HandleChannelMessage {
         id: SharedBufferId,
         /// 매핑 크기. SDK가 `tasty_shm::receive`에 그대로 넣는다.
         size: u64,
+        /// Windows 전용: plugin 핸들 테이블에 복제된 HANDLE u64. Unix는 `None`(fd는
+        /// ancillary data로 도착). `skip_serializing_if`로 Unix wire를 그대로 유지한다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        handle: Option<u64>,
     },
     /// plugin → host: 특정 buffer의 dirty 영역을 통지. fire-and-forget.
     Dirty {

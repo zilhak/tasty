@@ -522,6 +522,7 @@ mod tests {
             request_id: 7,
             id: SharedBufferId(99),
             size: 8192,
+            handle: None,
         };
         let mut line = serde_json::to_string(&msg).unwrap();
         line.push('\n');

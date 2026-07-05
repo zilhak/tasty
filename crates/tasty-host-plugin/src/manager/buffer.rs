@@ -120,6 +120,8 @@ impl PluginManager {
             request_id: call_id,
             id,
             size: actual_size,
+            // Unix는 fd가 ancillary data로 동행 — handle 필드는 사용하지 않는다.
+            handle: None,
         };
         let raw_fd = payload.raw_fd();
         let send_result = proc.with_handle_stream(|stream| stream.send_handle(&msg, raw_fd));
