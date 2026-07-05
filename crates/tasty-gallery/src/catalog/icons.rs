@@ -1,12 +1,11 @@
 //! Icons 카탈로그 페이지 — 디자인(4) `gallery/icons.jsx` 의 `system-rules` Section
-//! + 6 job 그룹 Section 미러. 루트 `icons.json` 의 canonical 글리프 단일 소스.
+//! + 6 job 그룹 Section 미러.
 //!
-//! 한 지오메트리(24×24 viewBox, 2px stroke, round cap/join, no fill, currentColor)
-//! 를 job 별로 묶어 보여준다. 색은 글리프에 박지 않고 감싸는 컨트롤의 전경색을
-//! 상속한다 — 갤러리 타일에서는 `theme.*` 토큰으로 tint 한다.
-//!
-//! 여기 정의된 `MockGlyph` 상수가 **유일 소스**다. primitive specimen 이 쓰던
-//! `components/glyph.rs` 는 이 모듈에서 재노출만 한다(중복 path 정의 제거).
+//! 글리프의 canonical 소스는 [`tasty_icons`] 크레이트다 — 이 모듈은 재노출만 하고
+//! (중복 path 정의 제거), 카탈로그 페이지 트리·타일 렌더만 담당한다. specimen 이
+//! 쓰던 `MockGlyph`/`.image()` API 는 `Icon` 을 `MockGlyph` 로 별칭해 보존한다.
+//! 색은 글리프에 박지 않고 감싸는 컨트롤의 전경색을 상속한다 — 타일에서는 `theme.*`
+//! 토큰으로 tint 한다.
 //!
 //! 페이지 트리(Section/Spec 헤딩)는 `catalog.rs` 가, 각 Spec 본문은 여기의 draw
 //! 함수가 그린다 — `draw_system_rules` + 6 그룹 draw(`draw_actions` 등).
@@ -18,271 +17,43 @@ use tasty_ui_widgets::{IconButton, Input};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, stage};
 
-/// `<svg>` children 을 담은 글리프. `image()` 로 tint 된 egui 이미지를 만든다
-/// (painter 클로저에서 `paint_at`). stroke 는 white 로 고정하고 `.tint(color)` 로
-/// currentColor 를 재현한다.
-#[derive(Clone, Copy)]
-pub struct MockGlyph {
-    uri: &'static str,
-    svg: &'static str,
-}
+/// specimen 이 쓰던 `MockGlyph` = 크레이트 `Icon`. `.image(size, color)` 그대로 동작.
+pub use tasty_icons::Icon as MockGlyph;
+pub use tasty_icons::*;
 
-impl MockGlyph {
-    /// `size` 정사각, `color` tint 의 egui 이미지.
-    pub fn image(self, size: f32, color: egui::Color32) -> egui::Image<'static> {
-        egui::Image::from_bytes(self.uri, self.svg.as_bytes())
-            .fit_to_exact_size(egui::vec2(size, size))
-            .tint(color)
-    }
-}
-
-macro_rules! glyph {
+// ── divergent holdout (디자인 SoT 통일 커밋에서 제거) ──
+// LAYOUT_DETAIL/CHEVRON_UP/STAR/IMAGE 는 gallery 쪽 path 가 디자인 SoT 와 어긋나
+// 있었다(drift). 지금은 gallery-legacy 렌더를 그대로 유지해 이 커밋을 순수 dedup 으로
+// 두고, 다음 커밋에서 이 로컬 정의를 지워 크레이트(디자인 SoT)로 통일한다.
+macro_rules! legacy_glyph {
     ($name:ident, $uri:literal, $body:literal) => {
         pub const $name: MockGlyph = MockGlyph {
-            uri: concat!("bytes://gallery_icon_", $uri, ".svg"),
             svg: concat!(
                 r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
                 $body,
                 "</svg>"
             ),
-        };
-    };
-}
-
-/// `glyph` 과 동일하나 `fill="white"` — 채운 글리프(예: starFill).
-macro_rules! glyph_fill {
-    ($name:ident, $uri:literal, $body:literal) => {
-        pub const $name: MockGlyph = MockGlyph {
+            body: $body,
             uri: concat!("bytes://gallery_icon_", $uri, ".svg"),
-            svg: concat!(
-                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
-                $body,
-                "</svg>"
-            ),
+            filled: false,
         };
     };
 }
-
-// ── Actions ──
-glyph!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
-glyph!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
-glyph!(
-    REFRESH,
-    "refresh",
-    r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
-);
-glyph!(
-    EDIT,
-    "edit",
-    r#"<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>"#
-);
-glyph!(
-    TRASH,
-    "trash",
-    r#"<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>"#
-);
-glyph!(
-    COPY,
-    "copy",
-    r#"<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>"#
-);
-glyph!(
-    SEARCH,
-    "search",
-    r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#
-);
-glyph!(
-    COLUMNS,
-    "columns",
-    r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
-);
-glyph!(FUNNEL, "funnel", r#"<path d="M3 4h18l-7 8v6l-4 2v-8z"/>"#);
-
-// ── View modes & favorites (T11 explorer) ──
-glyph!(
-    LAYOUT_GRID,
-    "layout_grid",
-    r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>"#
-);
-glyph!(
-    LIST,
-    "list",
-    r#"<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>"#
-);
-glyph!(
+legacy_glyph!(
     LAYOUT_DETAIL,
     "layout_detail",
     r#"<rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="15" width="4" height="4" rx="1"/><path d="M11 7h10M11 17h10"/>"#
 );
-glyph!(
+legacy_glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
+legacy_glyph!(
     STAR,
     "star",
     r#"<path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"/>"#
 );
-// explorer 주소표시줄 앞 폴더 아이콘 (design `ic.folderOpen`).
-glyph!(
-    FOLDER_OPEN,
-    "folder_open",
-    r#"<path d="M3 8a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v1H3z M3 11h18l-1.5 8a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1z"/>"#
-);
-// 채운 별 — 즐겨찾기 populated 행 (design `ic.starFill`, accent-warning).
-glyph_fill!(
-    STAR_FILL,
-    "star_fill",
-    r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
-);
-glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
-
-// ── Navigation & disclosure ──
-glyph!(
-    CHEVRON_RIGHT,
-    "chevron_right",
-    r#"<path d="m9 18 6-6-6-6"/>"#
-);
-glyph!(CHEVRON_DOWN, "chevron_down", r#"<path d="m6 9 6 6 6-6"/>"#);
-glyph!(
-    CHEVRON_LEFT,
-    "chevron_left",
-    r#"<path d="m15 18-6-6 6-6"/>"#
-);
-glyph!(
-    CHEVRONS_LEFT,
-    "chevrons_left",
-    r#"<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>"#
-);
-glyph!(
-    CHEVRONS_RIGHT,
-    "chevrons_right",
-    r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
-);
-
-// ── Surfaces & workspace ──
-glyph!(
-    TERMINAL,
-    "terminal",
-    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#
-);
-glyph!(
-    MARKDOWN,
-    "markdown",
-    r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M16 9v4m0 0 2-2m-2 2-2-2"/>"#
-);
-glyph!(
-    SPLIT,
-    "split",
-    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>"#
-);
-glyph!(
-    FOLDER,
-    "folder",
-    r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#
-);
-glyph!(
-    FILE,
-    "file",
-    r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>"#
-);
-glyph!(
-    REMOTE,
-    "remote",
-    r#"<path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>"#
-);
-glyph!(LOG, "log", r#"<path d="M4 6h16M4 10h16M4 14h10M4 18h7"/>"#);
-glyph!(
-    PORT,
-    "port",
-    r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>"#
-);
-glyph!(
+legacy_glyph!(
     IMAGE,
     "image",
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 18 5-5 4 4 3-3 4 4"/>"#
-);
-glyph!(
-    GLOBE,
-    "globe",
-    r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>"#
-);
-
-// ── Visibility ──
-glyph!(
-    EYE,
-    "eye",
-    r#"<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>"#
-);
-glyph!(
-    EYE_OFF,
-    "eye_off",
-    r#"<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M6.6 6.6A18.5 18.5 0 0 0 2 11s3.5 7 10 7a10.9 10.9 0 0 0 4-.7M3 3l18 18"/>"#
-);
-
-// ── Status & alerts ──
-glyph!(
-    ALERT_TRIANGLE,
-    "alert_triangle",
-    r#"<path d="M10.3 3.9 1.8 18a1 1 0 0 0 .9 1.5h18.6a1 1 0 0 0 .9-1.5L13.7 3.9a1 1 0 0 0-1.7 0z"/><path d="M12 9v4M12 17h.01"/>"#
-);
-glyph!(
-    ALERT_CIRCLE,
-    "alert_circle",
-    r#"<circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/>"#
-);
-glyph!(
-    SHIELD_CHECK,
-    "shield_check",
-    r#"<path d="M12 3l7 3v6c0 4-3 6.5-7 9-4-2.5-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>"#
-);
-glyph!(
-    BELL,
-    "bell",
-    r#"<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>"#
-);
-glyph!(
-    HELP_CIRCLE,
-    "help_circle",
-    r#"<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>"#
-);
-glyph!(
-    MOUSE,
-    "mouse",
-    r#"<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>"#
-);
-glyph!(CHECK, "check", r#"<path d="M20 6 9 17l-5-5"/>"#);
-
-// ── Tools & system ──
-glyph!(
-    TOOLS,
-    "tools",
-    r#"<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"/>"#
-);
-glyph!(
-    SETTINGS,
-    "settings",
-    r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>"#
-);
-glyph!(
-    PLUG,
-    "plug",
-    r#"<path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8zM12 16v6"/>"#
-);
-glyph!(
-    ROCKET,
-    "rocket",
-    r#"<path d="M5 13c-1.5 1.5-2 5-2 5s3.5-.5 5-2a3.5 3.5 0 1 0-3-3zM12 15l-3-3a14 14 0 0 1 9-9 14 14 0 0 1-3 9zM9 12l3 3"/>"#
-);
-
-// ── Scripts (Lua manager · Misc · Scripts) ──
-// 05 스크립트 관리 창 전용. SCRIPT = 파일+본문 라인(행 글리프/빈 상태),
-// KEYBOARD = bind-shortcut IconButton. 디자인 `settings_window.jsx` SD.{script,kbd}.
-glyph!(
-    SCRIPT,
-    "script",
-    r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h4M9 17h6"/>"#
-);
-glyph!(
-    KEYBOARD,
-    "keyboard",
-    r#"<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>"#
 );
 
 /// 한 글리프 카탈로그 항목: (글리프, canonical name, role).

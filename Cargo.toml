@@ -185,6 +185,7 @@ tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-themes = { path = "crates/tasty-themes" }
 tasty-egui-theme = { path = "crates/tasty-egui-theme" }
+tasty-icons = { path = "crates/tasty-icons", features = ["egui"] }
 tasty-ui-widgets = { path = "crates/tasty-ui-widgets" }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
