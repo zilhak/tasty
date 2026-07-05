@@ -3,6 +3,10 @@
 //! 작성자는 [`Plugin`] trait를 구현하고 [`run`]을 호출하면 된다. SDK가
 //! 호스트와의 핸드셰이크/메시지 루프/JSON 직렬화를 처리한다.
 
+/// 빌드타임 베이크된 벡터 아이콘을 egui painter 로 그리는 helper. `egui-mesh` feature 를
+/// 켰을 때만(= egui 링크 시) 컴파일된다. image / markdown plugin 이 공유한다.
+#[cfg(feature = "egui-mesh")]
+pub mod baked_icon;
 pub mod bus;
 pub mod connection;
 /// egui-mesh plugin SDK 헬퍼 (A1-S4). `egui-mesh` feature 를 켰을 때만 컴파일된다 —
