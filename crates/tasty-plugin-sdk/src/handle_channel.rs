@@ -21,6 +21,7 @@ use tasty_plugin_protocol::{AuthAckEnvelope, AuthMessage};
 use crate::env::PluginEnv;
 use crate::error::{PluginError, Result};
 
+#[cfg(unix)]
 const AUTH_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 보조 채널 클라이언트. 메인 채널 인증 직후 plugin runtime이 한 번 만든다.
