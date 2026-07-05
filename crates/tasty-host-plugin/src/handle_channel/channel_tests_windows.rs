@@ -173,3 +173,88 @@ fn windows_handle_channel_round_trip() {
     drop(payload);
     drop(mem);
 }
+
+/// full-duplex 데드락 회귀 방지. host 의 aux reader 스레드가 blocking read 중일 때
+/// send_handle(write)이 막히지 않아야 한다. 동기 파일 핸들이면 같은 file object 의
+/// I/O 직렬화로 write 가 pending read 뒤에서 데드락하지만, overlapped I/O 는 이를 푼다.
+/// 이 테스트가 없으면 `windows_handle_channel_round_trip`(reader 미기동)은 회귀를 못 잡는다.
+#[test]
+fn windows_handle_channel_concurrent_read_write_no_deadlock() {
+    let listener = HandleListener::bind().expect("bind");
+    let endpoint = listener.endpoint().to_string();
+    let token = "tok-duplex";
+    let rx = listener.register_token(token);
+
+    // client: 인증 → HandleAttach 수신 확인 → (host reader 를 깨우기 위해) Dirty 송신.
+    let (attached_tx, attached_rx) = mpsc::channel::<u64>();
+    let ep = endpoint.clone();
+    let tok = token.to_string();
+    let client = thread::spawn(move || {
+        let c = RawClient::connect(&ep);
+        c.write_line(&format!("{{\"plugin_id\":\"p\",\"token\":\"{tok}\"}}"));
+        assert!(c.read_line().contains("\"ok\":true"));
+        let line = c.read_line();
+        let msg: HandleChannelMessage = serde_json::from_str(&line).expect("decode");
+        let handle = match msg {
+            HandleChannelMessage::HandleAttach { handle, .. } => handle.expect("handle"),
+            other => panic!("expected HandleAttach, got {other:?}"),
+        };
+        attached_tx.send(handle).expect("report attach");
+        // host reader 가 blocking read 에서 풀리도록 Dirty 한 줄 보낸다.
+        c.write_line("{\"kind\":\"dirty\"}");
+        thread::sleep(Duration::from_millis(50));
+    });
+
+    let stream = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("client handed off");
+
+    // host aux reader 스레드 — 실제 with_handle_stream 이 하는 것처럼 blocking read 진입.
+    let reader = stream.reader().expect("split reader");
+    let (read_done_tx, read_done_rx) = mpsc::channel::<()>();
+    let reader_thread = thread::spawn(move || {
+        let mut reader = reader;
+        // Dirty 를 받을 때까지 blocking read. write 가 데드락하면 이건 영영 안 온다.
+        let _ = reader.recv_message();
+        read_done_tx.send(()).ok();
+    });
+    // reader 가 blocking read 에 확실히 진입하도록 잠시 양보.
+    thread::sleep(Duration::from_millis(100));
+
+    // 이 write 는 reader 의 pending read 뒤에서 직렬화되면 데드락한다(동기 핸들). overlapped
+    // 라면 즉시 완료. 별도 스레드에서 수행하고 타임아웃으로 데드락을 감지한다.
+    let (write_done_tx, write_done_rx) = mpsc::channel::<()>();
+    let writer_thread = thread::spawn(move || {
+        let mut stream = stream;
+        let (mem, sendable) = tasty_shm::create(4096).expect("create shm");
+        let payload =
+            tasty_shm::prepare_send(sendable, tasty_shm::PeerPid::Same).expect("prepare_send");
+        let msg = HandleChannelMessage::HandleAttach {
+            request_id: 1,
+            id: SharedBufferId(1),
+            size: mem.len() as u64,
+            handle: None,
+        };
+        stream
+            .send_handle(&msg, payload.serialized_handle())
+            .expect("send_handle");
+        write_done_tx.send(()).ok();
+        drop(payload);
+        drop(mem);
+    });
+
+    // 핵심 단언: reader 가 blocking read 중이어도 write 가 타임아웃 안에 완료된다.
+    write_done_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("send_handle deadlocked behind pending read (sync-IO serialization regression)");
+    attached_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("client received HandleAttach");
+    read_done_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("host reader received Dirty");
+
+    writer_thread.join().expect("writer thread");
+    reader_thread.join().expect("reader thread");
+    client.join().expect("client thread");
+}
