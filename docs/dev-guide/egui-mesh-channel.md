@@ -49,7 +49,7 @@ mesh 는 GPU shared memory 버퍼에 써서 host 가 합성한다. 그 버퍼를
 
 | | Unix | Windows |
 |---|---|---|
-| 채널 | `AF_UNIX` socket | Named Pipe (`\\.\pipe\tasty-handle-…`) |
+| 채널 | `AF_UNIX` socket | Named Pipe (`\\.\pipe\tasty-handle-…`, **overlapped I/O**) |
 | 핸들 전달 | `sendmsg` + `SCM_RIGHTS`(ancillary fd) | `DuplicateHandle` 로 plugin 핸들 테이블에 복제 → 결과 HANDLE u64 를 `HandleAttach.handle` in-band |
 | plugin 수신 | `recvmsg` fd → `tasty_shm::receive(Fd)` | 라인 파싱 HANDLE u64 → `tasty_shm::receive(Handle)` |
 
@@ -58,6 +58,15 @@ mesh 는 GPU shared memory 버퍼에 써서 host 가 합성한다. 그 버퍼를
 플랫폼 레이어가 담당한다. end-to-end 라운드트립 검증은
 `crates/tasty-host-plugin/src/handle_channel/channel_tests_windows.rs`(Windows) ·
 `channel_tests.rs`(Unix).
+
+**Windows overlapped I/O (필수)**: 이 채널은 full-duplex 다 — host 는 HandleAttach 를
+write 하면서 동시에 reader 스레드가 plugin 의 Dirty 를 blocking read 한다. Windows 의
+*동기* 파일 핸들은 같은 file object 의 I/O 를 직렬화하고 `DuplicateHandle`(try_clone)은
+같은 file object 를 가리키므로, sync I/O 로 두면 reader 의 blocking `ReadFile` 이
+`WriteFile` 을 막아 HandleAttach 전송이 데드락된다(→ plugin paint hang → 팝업 빈 화면).
+그래서 파이프를 `FILE_FLAG_OVERLAPPED` 로 열고 per-op event overlapped I/O 로 read/write
+를 비직렬화한다. 회귀 방지는 `channel_tests_windows.rs` 의
+`windows_handle_channel_concurrent_read_write_no_deadlock`.
 
 ## set_context 송신 정책
 
