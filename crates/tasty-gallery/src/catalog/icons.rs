@@ -21,41 +21,6 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, s
 pub use tasty_icons::Icon as MockGlyph;
 pub use tasty_icons::*;
 
-// ── divergent holdout (디자인 SoT 통일 커밋에서 제거) ──
-// LAYOUT_DETAIL/CHEVRON_UP/STAR/IMAGE 는 gallery 쪽 path 가 디자인 SoT 와 어긋나
-// 있었다(drift). 지금은 gallery-legacy 렌더를 그대로 유지해 이 커밋을 순수 dedup 으로
-// 두고, 다음 커밋에서 이 로컬 정의를 지워 크레이트(디자인 SoT)로 통일한다.
-macro_rules! legacy_glyph {
-    ($name:ident, $uri:literal, $body:literal) => {
-        pub const $name: MockGlyph = MockGlyph {
-            svg: concat!(
-                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
-                $body,
-                "</svg>"
-            ),
-            body: $body,
-            uri: concat!("bytes://gallery_icon_", $uri, ".svg"),
-            filled: false,
-        };
-    };
-}
-legacy_glyph!(
-    LAYOUT_DETAIL,
-    "layout_detail",
-    r#"<rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="15" width="4" height="4" rx="1"/><path d="M11 7h10M11 17h10"/>"#
-);
-legacy_glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
-legacy_glyph!(
-    STAR,
-    "star",
-    r#"<path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"/>"#
-);
-legacy_glyph!(
-    IMAGE,
-    "image",
-    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 18 5-5 4 4 3-3 4 4"/>"#
-);
-
 /// 한 글리프 카탈로그 항목: (글리프, canonical name, role).
 type Entry = (MockGlyph, &'static str, &'static str);
 
