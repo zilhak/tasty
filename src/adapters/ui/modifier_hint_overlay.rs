@@ -528,10 +528,21 @@ fn draw_content(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     list_ui.set_opacity(alpha);
+
+    // 이 오버레이는 **modifier 를 홀드한 채** 떠 있는 특수 팝업이다. egui 는 Ctrl+휠을 zoom,
+    // Shift+휠을 가로 스크롤로 재해석하므로, 홀드 상태에서 세로 `ScrollArea` 가 안 움직인다.
+    // 따라서 포인터가 패널 위일 때는 modifier 를 무시한 **순수 세로 휠량**을 직접 계산해
+    // ScrollArea 에 주입한다. alt/option 단독은 egui 가 이미 세로로 처리하므로 이중 스크롤을
+    // 피해 zoom/가로로 전용되는 modifier(Ctrl/Cmd/Shift) 홀드 시에만 주입한다.
+    let wheel_y = modifier_free_wheel_y(ui.ctx(), rect);
     let pad = theme.modhint_pad().value();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(&mut list_ui, |ui| {
+            if wheel_y != 0.0 {
+                ui.scroll_with_delta(egui::vec2(0.0, wheel_y));
+                ui.ctx().request_repaint();
+            }
             // 좌우/상하 패딩은 Frame inner_margin 으로(ScrollArea 뷰포트 내부 → 절대 rect
             // 수동 배치 대신 idiomatic flow). 세로 섹션 간격은 spacing.
             egui::Frame::new()
@@ -547,6 +558,44 @@ fn draw_content(
                     }
                 });
         });
+}
+
+/// 포인터가 `rect`(패널) 위일 때, **modifier 를 무시한** 이번 프레임의 순수 세로 휠량(포인트)을
+/// 돌려준다. 그 외(포인터가 밖이거나 전용 modifier 없음)엔 `0.0`.
+///
+/// egui 는 `Ctrl/Cmd+휠`을 zoom, `Shift+휠`을 가로 스크롤로 바꾸므로([`InputState::begin_pass`]
+/// 의 MouseWheel 처리) 홀드 상태의 세로 `ScrollArea` 가 갱신되지 않는다. 여기서는 raw
+/// `Event::MouseWheel` 을 modifier 무관하게 다시 읽어 egui 와 **동일한 단위 스케일**(Point 그대로 /
+/// Line×`line_scroll_speed` / Page×화면높이)로 세로 성분만 합산한다. 부호는 egui 의 `smooth_scroll_delta`
+/// 와 같은 규약이라 [`egui::Ui::scroll_with_delta`] 에 그대로 넣으면 무-modifier 휠과 동일하게 스크롤된다.
+///
+/// alt/option 단독은 egui 가 이미 세로로 처리하므로, 이중 스크롤을 피하려 zoom/가로로 전용되는
+/// modifier(Ctrl·Cmd·Shift) 가 있을 때만 값을 낸다.
+fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f32 {
+    let pointer_over = ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
+    if !pointer_over {
+        return 0.0;
+    }
+    let line_speed = ctx.options(|o| o.line_scroll_speed);
+    let page = ctx.screen_rect().height();
+    ctx.input(|i| {
+        let m = i.modifiers;
+        // egui 가 세로 휠을 전용해 버리는 modifier 만 대상(그 외는 egui 세로 스크롤이 정상 동작).
+        if !(m.ctrl || m.mac_cmd || m.command || m.shift) {
+            return 0.0;
+        }
+        i.events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
+                    egui::MouseWheelUnit::Point => delta.y,
+                    egui::MouseWheelUnit::Line => line_speed * delta.y,
+                    egui::MouseWheelUnit::Page => page * delta.y,
+                }),
+                _ => None,
+            })
+            .sum()
+    })
 }
 
 /// 한 조합 섹션 — ChordHead(Kbd + separator) + HintRow* + RoleRow*.
