@@ -36,8 +36,9 @@ enum RoleGlyph {
     Mouse,
 }
 
-/// Ctrl 홀드 예시 — normal 행 · plugin 행(agent dot) · role 행(# / mouse) 을 모두 노출.
-const SECTIONS: &[Section] = &[
+/// **Ctrl 홀드** 패널 — normal 행 · plugin 행(agent dot) · hash role(탭 전환) 을 노출.
+/// 마우스 캡처 우회 role 은 **Shift 단독** 에만 붙으므로 여기엔 없다(→ `SHIFT_SECTIONS`).
+const CTRL_SECTIONS: &[Section] = &[
     Section {
         chord: "Ctrl",
         rows: &[("Copy", "Ctrl+C", false)],
@@ -51,10 +52,25 @@ const SECTIONS: &[Section] = &[
     Section {
         chord: "Ctrl+Shift",
         rows: &[("Reopen closed tab", "Ctrl+Shift+T", false)],
+        roles: &[],
+    },
+];
+
+/// **Shift 홀드** 패널 — mouse role 은 Shift **단독** 섹션에만. Ctrl+Shift 는 우회 role 없이
+/// 바인딩 행만(우회 실 동작은 조합에도 걸리지만 안내 행은 단독 섹션에만 표시).
+const SHIFT_SECTIONS: &[Section] = &[
+    Section {
+        chord: "Shift",
+        rows: &[],
         roles: &[(
             "Bypass TUI mouse capture (Shift+drag to select)",
             RoleGlyph::Mouse,
         )],
+    },
+    Section {
+        chord: "Ctrl+Shift",
+        rows: &[("Reopen closed tab", "Ctrl+Shift+T", false)],
+        roles: &[],
     },
 ];
 
@@ -63,10 +79,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Modifier hint panel",
-        Some("Ctrl held · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift"),
+        Some("Two holds shown · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift"),
     );
     spec::stage(ui, theme, StageVariant::Center, |ui| {
-        panel(ui, theme);
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            panel(ui, theme, "Ctrl", CTRL_SECTIONS);
+            panel(ui, theme, "Shift", SHIFT_SECTIONS);
+        });
     });
 
     let held = theme.motion_hold_reveal_ms() as i64;
@@ -78,7 +98,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "modhint-width 220 (min 200)"),
             ("height", "modhint-height 400 (min 240)"),
             ("strip", "modhint-strip-height 28 · bg-sidebar"),
-            ("reveal", "hold 500ms (Shift-only 2000ms) → fade 200ms (opacity 0.2→1.0)"),
+            ("reveal", "hold 500ms (Shift-only 1200ms) → fade 200ms (opacity 0.2→1.0)"),
             ("release", "0ms — vanishes immediately"),
         ],
         &[
@@ -137,8 +157,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "The list narrows to the held combo: pressing Ctrl then adding Shift drops the bare-Ctrl \
-         section and shows only combos containing Ctrl+Shift. Shift-only holds wait 2000ms (not 500ms) \
-         to avoid popping up mid-typing.",
+         section and shows only combos containing Ctrl+Shift. Shift-only holds wait 1200ms (not 500ms) \
+         to avoid popping up mid-typing. The mouse-capture-bypass role is listed under the bare Shift \
+         section only — it never repeats under Ctrl+Shift and other Shift combos.",
     );
     spec::dont(
         ui,
@@ -149,7 +170,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 220×400 패널 셸 + 드래그 스트립 + 섹션 리스트 + 코너 그립.
-fn panel(ui: &mut egui::Ui, theme: &Theme) {
+fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
     let w = theme.modhint_width().value();
     let h = theme.modhint_height().value();
     let bw = theme.border_width.value();
@@ -164,7 +185,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme) {
         ui.set_width(w);
         ui.set_height(h);
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        drag_strip(ui, theme, w);
+        drag_strip(ui, theme, w, held);
         // 스크롤 리스트 (남은 높이). specimen 은 정적이라 세로 오버플로가 없지만
         // 본체와 동일하게 ScrollArea 로 감싸 스크롤 어포던스를 재현한다.
         let list_h = h - theme.modhint_strip_height().value() - bw;
@@ -172,7 +193,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme) {
             .max_height(list_h)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                section_list(ui, theme, w);
+                section_list(ui, theme, w, sections);
             });
     });
 
@@ -198,7 +219,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 드래그 스트립 — held 조합 Kbd + "held" 라벨 + 우측 X. bg-sidebar, 하단 separator, cursor:move.
-fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32) {
+fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
     let strip_h = theme.modhint_strip_height().value();
     let bw = theme.border_width.value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, strip_h), egui::Sense::hover());
@@ -220,7 +241,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        kbd(ui, theme, "Ctrl");
+        kbd(ui, theme, held);
         ui.label(
             egui::RichText::new("held")
                 .size(theme.font_size_caption.value())
@@ -240,7 +261,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32) {
 }
 
 /// 섹션 리스트 — 각 섹션 = ChordHead + HintRow* + RoleRow*.
-fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32) {
+fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) {
     let pad = theme.modhint_pad().value();
     let inner_w = w - pad * 2.0;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
@@ -249,7 +270,7 @@ fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32) {
     )));
     child.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
     child.vertical(|ui| {
-        for sec in SECTIONS {
+        for sec in sections {
             chord_head(ui, theme, sec.chord);
             ui.spacing_mut().item_spacing.y = theme.modhint_row_gap().value();
             for (label, binding, plugin) in sec.rows {

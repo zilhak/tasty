@@ -23,8 +23,9 @@
 //!   [`parse_binding`] 이 `None` 을 돌려주어 자연히 제외된다.
 //!
 //! ## 특수 역할 (단축키 목록 외 설명 행) — **설정 현재값 기준**(기본값 가정 금지)
-//! - Shift 를 **포함하는 모든 조합**: TUI 마우스 캡처 임시 우회(Shift+드래그=로컬 선택 등).
-//!   판정이 `shift_key()` 만 검사하고 타 modifier 를 배제하지 않으므로 조합 전체에 붙는다.
+//! - Shift **단독** 조합: TUI 마우스 캡처 임시 우회(Shift+드래그=로컬 선택 등).
+//!   실 동작은 `shift_key()` 만 검사해 Ctrl+Shift 등에도 우회가 걸리지만, 안내 행은
+//!   Shift 단독 섹션에만 붙여 조합마다 중복 표시되지 않게 한다.
 //! - `tab_switch_modifier` 단독 조합: 탭 전환 + 숫자 오버레이.
 //! - `workspace_switch_modifier` 단독 조합: 워크스페이스 전환 + 숫자 오버레이.
 //! - `link_click_modifier`(`general`) 단독 조합: modifier+클릭 링크 열기. `"none"` 이면 역할 없음.
@@ -203,7 +204,7 @@ pub enum HintRowSource {
 /// 조합에 붙는 특수 역할(바인딩이 아닌 설명 행).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HintRole {
-    /// Shift 포함 조합 — TUI 마우스 캡처 임시 우회.
+    /// Shift 단독 조합 — TUI 마우스 캡처 임시 우회.
     MouseCaptureBypass,
     /// `tab_switch_modifier` 단독 — 탭 전환 + 숫자 오버레이.
     TabSwitch,
@@ -410,8 +411,10 @@ pub fn build_hint_sections(
     let ws_combo = single_axis_combo(&kb.workspace_switch_modifier);
     let link_combo = single_axis_combo(link_click_modifier); // "none" → None
     for sec in &mut sections {
-        // Shift 포함 조합 전체 → 마우스 캡처 우회.
-        if sec.combo.shift {
+        // Shift **단독** 조합에만 → 마우스 캡처 우회 안내.
+        // (실 동작은 `shift_key()` 만 검사해 Ctrl+Shift 등에도 우회가 걸리지만, 안내 행은
+        //  Shift 단독 섹션에만 붙여 조합마다 중복 표시되지 않게 한다.)
+        if sec.combo.shift && !sec.combo.ctrl && !sec.combo.alt && !sec.combo.option {
             sec.roles.push(HintRole::MouseCaptureBypass);
         }
         if Some(sec.combo) == tab_combo {
@@ -642,17 +645,24 @@ mod tests {
     }
 
     #[test]
-    fn shift_containing_sections_get_mouse_capture_bypass() {
-        let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);
+    fn only_shift_alone_section_gets_mouse_capture_bypass() {
+        // Shift 홀드 → Shift 단독 섹션에만 우회 역할, Ctrl+Shift 등 다축 섹션엔 없음.
+        let sections = build_hint_sections(shift(), &kb(), "ctrl", false, &[]);
         for sec in &sections {
-            if sec.combo.shift {
+            let shift_alone =
+                sec.combo.shift && !sec.combo.ctrl && !sec.combo.alt && !sec.combo.option;
+            if shift_alone {
                 assert!(
                     sec.roles.contains(&HintRole::MouseCaptureBypass),
-                    "shift 포함 섹션 {} 에 우회 역할 누락",
+                    "shift 단독 섹션 {} 에 우회 역할 누락",
                     sec.combo.name()
                 );
             } else {
-                assert!(!sec.roles.contains(&HintRole::MouseCaptureBypass));
+                assert!(
+                    !sec.roles.contains(&HintRole::MouseCaptureBypass),
+                    "shift 단독 아닌 섹션 {} 에 우회 역할이 잘못 붙음",
+                    sec.combo.name()
+                );
             }
         }
     }
