@@ -32,7 +32,7 @@
 //! 빈 조합(바인딩·역할 모두 없음)은 섹션 자체를 생략한다.
 //!
 //! NOTE: modifier-hint-03 오버레이(`super::super::modifier_hint_overlay`)가 대부분을 소비한다
-//! (`build_hint_sections`/`HeldModifier`/`Combo`/`HintSection`/`HintRow`/`HintRowSource`/
+//! (`build_hint_sections`/`Combo`/`HintSection`/`HintRow`/`HintRowSource`/
 //! `HintRole`). 남은 미사용은 ① `Combo::name`(테스트/디버그 전용), ② `PluginBindingInput`
 //! (plugin 단축키 wiring — `PluginManager` 가 `App` 소유라 draw 경로에 아직 미도달, 후속
 //! 배선 대상). 이 둘 때문에 blanket allow 를 유지한다. plugin wiring 완료 시 제거.
@@ -50,17 +50,6 @@ use super::binding::parse_binding;
 const OPTION_AXIS: bool = true;
 #[cfg(not(target_os = "macos"))]
 const OPTION_AXIS: bool = false;
-
-/// 사용자가 누르고 있는(홀드) 단일 modifier. 이 값을 포함하는 모든 조합을 노출한다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeldModifier {
-    Ctrl,
-    /// `"alt"` 토큰 — macOS 에서 물리 Command(⌘), 그 외에서 Alt.
-    Alt,
-    /// macOS 전용 Option 키. 비-macOS 에선 조합이 생성되지 않는다.
-    Option,
-    Shift,
-}
 
 /// modifier 조합 — 4축 bool. `option` 은 macOS 전용(비-macOS 에선 항상 false 로만 등장).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -80,14 +69,15 @@ impl Combo {
             .count()
     }
 
-    /// 이 조합이 주어진 홀드 modifier 를 포함하는지.
-    pub fn contains(&self, held: HeldModifier) -> bool {
-        match held {
-            HeldModifier::Ctrl => self.ctrl,
-            HeldModifier::Alt => self.alt,
-            HeldModifier::Option => self.option,
-            HeldModifier::Shift => self.shift,
-        }
+    /// 이 조합이 눌린 셋 `other` 를 부분집합으로 포함하는지(눌린 셋 ⊆ self).
+    ///
+    /// 각 축에 대해 "`other` 에서 눌리지 않았거나, 눌렸다면 self 도 눌림" 을 요구한다.
+    /// 예) `{ctrl,shift}.contains_all({ctrl})` = true, `{ctrl}.contains_all({ctrl,shift})` = false.
+    pub fn contains_all(&self, other: Combo) -> bool {
+        (!other.ctrl || self.ctrl)
+            && (!other.alt || self.alt)
+            && (!other.option || self.option)
+            && (!other.shift || self.shift)
     }
 
     /// 정렬 키: `(크기, 눌린 축의 우선순위 오름차순 배열)`.
@@ -160,13 +150,15 @@ fn all_axis_combos() -> Vec<Combo> {
     out
 }
 
-/// 홀드 modifier `M` 을 포함하는 모든 조합을 정렬해 반환.
+/// 눌린 조합 `held` 를 부분집합으로 포함하는 모든 조합을 정렬해 반환.
 ///
-/// macOS 는 8개, 비-macOS 는 4개(option 축 없음). 정렬은 [`Combo::sort_key`] 규칙.
-pub fn combos_containing(held: HeldModifier) -> Vec<Combo> {
+/// `held` 가 단일 축이면 그 축을 포함하는 조합 전체(macOS 8개·비-macOS 4개), 다축이면
+/// 그 축들을 **모두** 포함하는 조합으로 좁혀진다. 정렬은 [`Combo::sort_key`] 규칙 —
+/// 첫 원소는 항상 `held` 자신(가장 작은 크기)이므로 헤더와 첫 섹션이 일치한다.
+pub fn combos_containing_all(held: Combo) -> Vec<Combo> {
     let mut combos: Vec<Combo> = all_axis_combos()
         .into_iter()
-        .filter(|c| c.contains(held))
+        .filter(|c| c.contains_all(held))
         .collect();
     combos.sort_by_key(|c| c.sort_key());
     combos
@@ -299,22 +291,22 @@ fn combo_of(parsed: &super::binding::ParsedBinding<'_>) -> Combo {
     }
 }
 
-/// 홀드 modifier `M` 에 대한 정렬된 조합 콘텐츠를 만든다.
+/// 홀드 조합 `held` 에 대한 정렬된 조합 콘텐츠를 만든다.
 ///
-/// - `held`: 사용자가 누르고 있는 단일 modifier.
+/// - `held`: 사용자가 누르고 있는 modifier **조합**(4축). 이 조합을 포함하는 조합만 노출된다.
 /// - `kb`: 고정 필드 + `script_bindings` + tab/workspace switch modifier 소스.
 /// - `link_click_modifier`: `general.link_click_modifier`(`"ctrl"`|`"alt"`|`"none"`).
 /// - `plugin_bindings`: 표시할 plugin command 입력(전량, [`PluginBindingInput::resolve`] 산출).
 ///
 /// 반환은 정렬된 섹션 목록이며 **빈 섹션(바인딩·역할 모두 없음)은 생략**된다.
 pub fn build_hint_sections(
-    held: HeldModifier,
+    held: Combo,
     kb: &KeybindingSettings,
     link_click_modifier: &str,
     categories_enabled: bool,
     plugin_bindings: &[PluginBindingInput],
 ) -> Vec<HintSection> {
-    let mut sections: Vec<HintSection> = combos_containing(held)
+    let mut sections: Vec<HintSection> = combos_containing_all(held)
         .into_iter()
         .map(|combo| HintSection {
             combo,
@@ -340,7 +332,7 @@ pub fn build_hint_sections(
                 continue; // 더블탭·무 modifier·modifier 단독 → 제외
             };
             let combo = combo_of(&parsed);
-            if !combo.contains(held) {
+            if !combo.contains_all(held) {
                 continue;
             }
             push_row(
@@ -360,7 +352,7 @@ pub fn build_hint_sections(
             continue;
         };
         let combo = combo_of(&parsed);
-        if !combo.contains(held) {
+        if !combo.contains_all(held) {
             continue;
         }
         push_row(
@@ -382,7 +374,7 @@ pub fn build_hint_sections(
                 continue;
             };
             let combo = combo_of(&parsed);
-            if !combo.contains(held) {
+            if !combo.contains_all(held) {
                 continue;
             }
             push_row(
@@ -445,16 +437,69 @@ mod tests {
         sections.iter().map(|s| s.combo.name()).collect()
     }
 
+    /// 단일 축 홀드 조합 헬퍼(가독성).
+    fn ctrl() -> Combo {
+        Combo {
+            ctrl: true,
+            ..Default::default()
+        }
+    }
+    fn alt() -> Combo {
+        Combo {
+            alt: true,
+            ..Default::default()
+        }
+    }
+    fn shift() -> Combo {
+        Combo {
+            shift: true,
+            ..Default::default()
+        }
+    }
+
     /// 테스트용 기본 키바인딩(preset_tasty): new_workspace="alt+n", new_tab="alt+t",
     /// restore_closed="ctrl+shift+t", tab_switch="ctrl", workspace_switch="alt".
     fn kb() -> KeybindingSettings {
         KeybindingSettings::preset_tasty()
     }
 
+    #[test]
+    fn contains_all_is_subset_check() {
+        let ctrl_shift = Combo {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        // 상위 조합은 하위 축 셋을 포함.
+        assert!(ctrl_shift.contains_all(ctrl()));
+        assert!(ctrl_shift.contains_all(shift()));
+        assert!(ctrl_shift.contains_all(ctrl_shift));
+        // 하위(단일)는 상위(다축)를 포함하지 않음.
+        assert!(!ctrl().contains_all(ctrl_shift));
+        // 겹치지 않는 축은 포함 안 함.
+        assert!(!ctrl().contains_all(alt()));
+    }
+
+    #[test]
+    fn multi_axis_hold_narrows_to_superset_combos() {
+        // Ctrl+Shift 홀드 → ctrl+shift 를 포함하는 조합만(ctrl 단독·ctrl+alt 는 제외).
+        let ctrl_shift = Combo {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        let names = names(&combos_containing_all(ctrl_shift));
+        assert!(names.iter().all(|n| n.contains("ctrl") && n.contains("shift")));
+        assert!(!names.iter().any(|n| n == "ctrl"));
+        assert!(!names.iter().any(|n| n == "ctrl+alt"));
+        // 첫 원소는 홀드 조합 자신(가장 작은 크기).
+        assert_eq!(names.first().map(String::as_str), Some("ctrl+shift"));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn combos_for_alt_are_sorted_by_size_then_priority_macos() {
-        let combos = combos_containing(HeldModifier::Alt);
+        let combos = combos_containing_all(alt());
         assert_eq!(
             names(&combos),
             [
@@ -474,7 +519,7 @@ mod tests {
     #[test]
     fn combos_for_alt_are_sorted_by_size_then_priority_non_macos() {
         // 비-macOS: option 축 없음 → 4개.
-        let combos = combos_containing(HeldModifier::Alt);
+        let combos = combos_containing_all(alt());
         assert_eq!(
             names(&combos),
             ["alt", "ctrl+alt", "alt+shift", "ctrl+alt+shift"]
@@ -483,7 +528,7 @@ mod tests {
 
     #[test]
     fn combos_for_ctrl_start_with_single_ctrl_then_size_two() {
-        let combos = combos_containing(HeldModifier::Ctrl);
+        let combos = combos_containing_all(ctrl());
         // 크기 1 이 먼저, 그 다음 크기 2 (ctrl+alt 가 ctrl 단독보다 뒤).
         assert_eq!(combos.first().map(Combo::name), Some("ctrl".to_string()));
         assert!(combos.iter().all(|c| c.ctrl));
@@ -492,19 +537,23 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn non_macos_never_generates_option_combos() {
-        for held in [HeldModifier::Ctrl, HeldModifier::Alt, HeldModifier::Shift] {
-            for c in combos_containing(held) {
+        for held in [ctrl(), alt(), shift()] {
+            for c in combos_containing_all(held) {
                 assert!(!c.option, "option 축이 비-macOS 에서 생성됨: {}", c.name());
             }
         }
         // Option 홀드 자체도 비-macOS 에선 아무 조합도 없어야 한다.
-        assert!(combos_containing(HeldModifier::Option).is_empty());
+        let option = Combo {
+            option: true,
+            ..Default::default()
+        };
+        assert!(combos_containing_all(option).is_empty());
     }
 
     #[test]
     fn restore_closed_grouped_into_ctrl_shift() {
         // 기본 restore_closed = "ctrl+shift+t" → Ctrl 홀드 시 ctrl+shift 섹션에 분류.
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
+        let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);
         let ctrl_shift = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl+shift")
@@ -523,7 +572,7 @@ mod tests {
     #[test]
     fn alt_section_has_workspace_bindings_and_switch_role() {
         // Alt 홀드 → "alt" 단독 섹션에 new_workspace/new_tab + WorkspaceSwitch 역할.
-        let sections = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", false, &[]);
+        let sections = build_hint_sections(alt(), &kb(), "ctrl", false, &[]);
         let alt = sections
             .iter()
             .find(|s| s.combo.name() == "alt")
@@ -536,14 +585,14 @@ mod tests {
     #[test]
     fn alt_shift_section_has_category_switch_role_when_folders_on() {
         // Alt 홀드 + folders on → 워크스페이스축(alt)+Shift 섹션에 CategorySwitch 역할.
-        let on = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", true, &[]);
+        let on = build_hint_sections(alt(), &kb(), "ctrl", true, &[]);
         let cat = on
             .iter()
             .find(|s| s.combo.name() == "alt+shift")
             .expect("alt+shift 섹션 존재");
         assert!(cat.roles.contains(&HintRole::CategorySwitch));
         // folders off → 역할 없음.
-        let off = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", false, &[]);
+        let off = build_hint_sections(alt(), &kb(), "ctrl", false, &[]);
         assert!(
             off.iter()
                 .all(|s| !s.roles.contains(&HintRole::CategorySwitch))
@@ -552,7 +601,7 @@ mod tests {
 
     #[test]
     fn ctrl_single_section_has_tab_switch_role() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
+        let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);
         let ctrl = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl")
@@ -564,7 +613,7 @@ mod tests {
 
     #[test]
     fn shift_containing_sections_get_mouse_capture_bypass() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
+        let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);
         for sec in &sections {
             if sec.combo.shift {
                 assert!(
@@ -580,7 +629,7 @@ mod tests {
 
     #[test]
     fn link_none_produces_no_link_role() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "none", false, &[]);
+        let sections = build_hint_sections(ctrl(), &kb(), "none", false, &[]);
         assert!(
             sections
                 .iter()
@@ -594,14 +643,14 @@ mod tests {
         // 더블탭·무 modifier·modifier 단독 → 어느 섹션에도 안 들어가야 한다.
         kb.new_tab = vec!["shift+shift".into(), "f11".into(), "ctrl".into()];
         // Shift 홀드 섹션에 shift+shift 가 새지 않는지 확인.
-        let shift_sections = build_hint_sections(HeldModifier::Shift, &kb, "ctrl", false, &[]);
+        let shift_sections = build_hint_sections(shift(), &kb, "ctrl", false, &[]);
         assert!(shift_sections.iter().all(|s| {
             s.rows
                 .iter()
                 .all(|r| r.binding != "shift+shift" && r.binding != "f11" && r.binding != "ctrl")
         }));
         // Ctrl 홀드에서도 "ctrl" 단독/"f11" 이 새지 않음.
-        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", false, &[]);
+        let ctrl_sections = build_hint_sections(ctrl(), &kb, "ctrl", false, &[]);
         assert!(ctrl_sections.iter().all(|s| {
             s.rows
                 .iter()
@@ -616,7 +665,7 @@ mod tests {
         kb.tab_switch_modifier = "alt".into();
         kb.workspace_switch_modifier = "ctrl".into();
 
-        let alt_sections = build_hint_sections(HeldModifier::Alt, &kb, "none", false, &[]);
+        let alt_sections = build_hint_sections(alt(), &kb, "none", false, &[]);
         let alt = alt_sections
             .iter()
             .find(|s| s.combo.name() == "alt")
@@ -624,7 +673,7 @@ mod tests {
         assert!(alt.roles.contains(&HintRole::TabSwitch));
         assert!(!alt.roles.contains(&HintRole::WorkspaceSwitch));
 
-        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "none", false, &[]);
+        let ctrl_sections = build_hint_sections(ctrl(), &kb, "none", false, &[]);
         let ctrl = ctrl_sections
             .iter()
             .find(|s| s.combo.name() == "ctrl")
@@ -640,7 +689,7 @@ mod tests {
             title_i18n_key: "git_helper.stage_hunk".into(),
             bindings: vec!["ctrl+alt+g".into()],
         }];
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &plugins);
+        let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &plugins);
         let ctrl_alt = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl+alt")
@@ -667,7 +716,7 @@ mod tests {
         // Alt 홀드, switch/link 모두 alt 아닌 값 → alt 단독 섹션에 아무것도 안 붙어 생략.
         kb.tab_switch_modifier = "ctrl".into();
         kb.workspace_switch_modifier = "ctrl".into();
-        let sections = build_hint_sections(HeldModifier::Alt, &kb, "ctrl", false, &[]);
+        let sections = build_hint_sections(alt(), &kb, "ctrl", false, &[]);
         // alt 단독 섹션은 shift 없음·switch 아님 → 생략되어야 한다.
         assert!(section_names(&sections).iter().all(|n| n != "alt"));
         // 남은 섹션은 전부 비어있지 않아야 한다.

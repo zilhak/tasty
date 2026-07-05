@@ -26,7 +26,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use super::input::shortcuts::modifier_hint::{
-    HeldModifier, HintRole, HintRowSource, HintSection, build_hint_sections,
+    Combo, HintRole, HintRowSource, HintSection, build_hint_sections,
 };
 
 /// 진행 중 드래그/리사이즈 모드.
@@ -40,15 +40,15 @@ enum DragMode {
 
 /// modifier-hint 오버레이의 런타임 상태. `AppState` 필드(gui 전용).
 ///
-/// 홀드 상태(시작 시각·anchor modifier·세션 dismiss)와 진행 중 드래그 working rect 를 담는다.
+/// 홀드 상태(시작 시각·눌린 조합·세션 dismiss)와 진행 중 드래그 working rect 를 담는다.
 /// 지오메트리 영속값은 `Settings::modifier_hint`(pos/size)에 있고, working 은 드래그 중의
 /// 임시 실시간 rect 다(놓는 시점에 Settings 로 커밋).
 #[derive(Debug, Clone, Default)]
 pub struct ModifierHintRuntime {
-    /// 단일 modifier 홀드 시작 시각. `None` = 홀드 아님.
+    /// 홀드 시작 시각. `None` = 홀드 아님. **최초 press 에만 시작**하고 조합이 바뀌어도 유지.
     hold_since: Option<Instant>,
-    /// 현재 홀드의 anchor modifier(이 값을 포함하는 모든 조합을 노출).
-    held: Option<HeldModifier>,
+    /// 현재 눌린 modifier **조합**(4축). 이 조합을 포함하는 조합만 노출한다. `None` = 홀드 아님.
+    held: Option<Combo>,
     /// 이번 홀드 세션 X dismiss 여부. **전 modifier 를 떼면** `false` 로 리셋된다.
     dismissed: bool,
     /// 드래그/리사이즈 진행 중 실시간 rect(logical, 미클램프 원본) + 모드. `None` = 유휴.
@@ -59,9 +59,9 @@ impl ModifierHintRuntime {
     /// 홀드 상태를 갱신한다. `ModifiersChanged` 훅이 플랫폼 정규화된 축 bool 로 호출한다.
     ///
     /// - 하나도 안 눌림 → 전부 clear(+ dismissed 리셋). 반환 `true`(표시 갱신 필요).
-    /// - 하나 이상 눌림 → anchor 가 아직 눌려 있으면 유지, 아니면 우선순위(Ctrl<Alt<Option
-    ///   <Shift)로 재선정. 타이머(`hold_since`)는 "하나라도 눌린 동안" 유지 — 조합이 바뀌어도
-    ///   리셋하지 않고 콘텐츠만 따라 바뀐다(anchor 조합이 이미 모든 상위 조합을 포함).
+    /// - 하나 이상 눌림 → 현재 눌린 4축을 그대로 `held` 조합으로 저장. **조합이 바뀌면 항상
+    ///   dirty(=`true`)** 를 반환해 즉시 콘텐츠를 좁힌다(예: Ctrl→Ctrl+Shift). 타이머
+    ///   (`hold_since`)는 최초 press 에만 시작하고 조합이 바뀌어도 **리셋하지 않는다**.
     ///
     /// 반환 = 상태가 바뀌어 redraw 가 필요한지.
     pub fn update_hold(&mut self, ctrl: bool, alt: bool, option: bool, shift: bool) -> bool {
@@ -74,21 +74,18 @@ impl ModifierHintRuntime {
             self.working = None;
             return changed;
         }
-        let axis_down = |m: HeldModifier| match m {
-            HeldModifier::Ctrl => ctrl,
-            HeldModifier::Alt => alt,
-            HeldModifier::Option => option,
-            HeldModifier::Shift => shift,
+        let new = Combo {
+            ctrl,
+            alt,
+            option,
+            shift,
         };
-        let anchor_valid = self.held.is_some_and(axis_down);
-        let prev = self.held;
-        if !anchor_valid {
-            self.held = pick_anchor(ctrl, alt, option, shift);
-        }
+        let changed = self.held != Some(new);
+        self.held = Some(new);
         if self.hold_since.is_none() {
             self.hold_since = Some(Instant::now());
         }
-        prev != self.held
+        changed
     }
 
     /// 창 포커스 상실 등에서 홀드 상태를 전부 비운다(switch-overlay clear 와 동반).
@@ -97,21 +94,6 @@ impl ModifierHintRuntime {
         self.held = None;
         self.dismissed = false;
         self.working = None;
-    }
-}
-
-/// 눌린 축 중 anchor 로 쓸 modifier 를 우선순위(Ctrl<Alt<Option<Shift)로 선정.
-fn pick_anchor(ctrl: bool, alt: bool, option: bool, shift: bool) -> Option<HeldModifier> {
-    if ctrl {
-        Some(HeldModifier::Ctrl)
-    } else if alt {
-        Some(HeldModifier::Alt)
-    } else if option {
-        Some(HeldModifier::Option)
-    } else if shift {
-        Some(HeldModifier::Shift)
-    } else {
-        None
     }
 }
 
@@ -392,7 +374,7 @@ fn draw_content(
     ui: &mut egui::Ui,
     theme: &Theme,
     rect: egui::Rect,
-    held: HeldModifier,
+    held: Combo,
     sections: &[HintSection],
     alpha: f32,
 ) {
@@ -426,7 +408,7 @@ fn draw_content(
     strip_ui.set_opacity(alpha);
     strip_ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        kbd(ui, theme, held_label(held));
+        kbd(ui, theme, &combo_keycaps(held));
         ui.label(
             egui::RichText::new(t("modifier_hint.held"))
                 .size(theme.font_size_caption.value())
@@ -573,22 +555,9 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
         });
 }
 
-/// 홀드 anchor modifier 의 키캡 라벨(플랫폼 표기). `"alt"` 토큰은 macOS 에서 물리 Cmd.
-fn held_label(held: HeldModifier) -> &'static str {
-    match held {
-        HeldModifier::Ctrl => "Ctrl",
-        #[cfg(target_os = "macos")]
-        HeldModifier::Alt => "Cmd",
-        #[cfg(not(target_os = "macos"))]
-        HeldModifier::Alt => "Alt",
-        HeldModifier::Option => "Option",
-        HeldModifier::Shift => "Shift",
-    }
-}
-
-/// 섹션 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서, 플랫폼 표기).
-fn combo_keys(sec: &HintSection) -> String {
-    let c = &sec.combo;
+/// 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서, 플랫폼 표기). `"alt"` 축은 macOS 에서
+/// 물리 Cmd. 스트립 헤더(전체 홀드 조합)와 섹션 헤더가 같은 함수를 재사용해 표기를 일관화한다.
+fn combo_keycaps(c: Combo) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if c.ctrl {
         parts.push("Ctrl");
@@ -607,6 +576,11 @@ fn combo_keys(sec: &HintSection) -> String {
         parts.push("Shift");
     }
     parts.join("+")
+}
+
+/// 섹션 조합 → 키캡 문자열. [`combo_keycaps`] 를 섹션 헤더 draw 경로에서 재사용.
+fn combo_keys(sec: &HintSection) -> String {
+    combo_keycaps(sec.combo)
 }
 
 /// 바인딩 문자열(`"ctrl+shift+t"`) → 키캡 표기(`"Ctrl+Shift+T"`). 세그먼트별 첫 글자 대문자.
@@ -678,28 +652,48 @@ mod tests {
     }
 
     #[test]
-    fn update_hold_anchors_first_axis_and_keeps_timer() {
+    fn update_hold_stores_combo_and_dirties_on_change_keeping_timer() {
         let mut rt = ModifierHintRuntime::default();
-        // Ctrl 누름 → anchor=Ctrl, 타이머 시작.
+        // Ctrl 누름 → held={ctrl}, 타이머 시작, dirty.
         assert!(rt.update_hold(true, false, false, false));
-        assert_eq!(rt.held, Some(HeldModifier::Ctrl));
+        assert_eq!(
+            rt.held,
+            Some(Combo {
+                ctrl: true,
+                ..Default::default()
+            })
+        );
         let t0 = rt.hold_since;
         assert!(t0.is_some());
-        // Ctrl 유지하며 Shift 추가 → anchor 유지(Ctrl still down), 타이머 리셋 안 함.
-        rt.update_hold(true, false, false, true);
-        assert_eq!(rt.held, Some(HeldModifier::Ctrl));
+        // Ctrl 유지하며 Shift 추가 → 조합이 바뀌므로 dirty=true(즉시 좁힘), 타이머 리셋 안 함.
+        assert!(rt.update_hold(true, false, false, true), "조합 변경 시 dirty");
+        assert_eq!(
+            rt.held,
+            Some(Combo {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            })
+        );
         assert_eq!(rt.hold_since, t0, "조합 변경 시 타이머 리셋 금지");
+        // 같은 조합 재입력 → dirty=false(불필요 redraw 억제).
+        assert!(!rt.update_hold(true, false, false, true));
     }
 
     #[test]
-    fn update_hold_reanchors_when_anchor_released() {
+    fn update_hold_follows_combo_when_axis_released() {
         let mut rt = ModifierHintRuntime::default();
-        rt.update_hold(true, false, false, true); // Ctrl+Shift → anchor Ctrl
-        assert_eq!(rt.held, Some(HeldModifier::Ctrl));
+        rt.update_hold(true, false, false, true); // Ctrl+Shift
         let t0 = rt.hold_since;
-        // Ctrl 뗌, Shift 유지 → anchor 를 Shift 로 재선정, 타이머 유지(여전히 홀드 중).
-        rt.update_hold(false, false, false, true);
-        assert_eq!(rt.held, Some(HeldModifier::Shift));
+        // Ctrl 뗌, Shift 유지 → held={shift} 로 즉시 따라감(anchor 개념 없음), 타이머 유지.
+        assert!(rt.update_hold(false, false, false, true));
+        assert_eq!(
+            rt.held,
+            Some(Combo {
+                shift: true,
+                ..Default::default()
+            })
+        );
         assert_eq!(rt.hold_since, t0);
     }
 
@@ -752,8 +746,11 @@ mod tests {
     fn consumes_build_hint_sections() {
         use tasty_settings::KeybindingSettings;
         let kb = KeybindingSettings::preset_tasty();
-        let sections: Vec<HintSection> =
-            build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", false, &[]);
+        let ctrl = Combo {
+            ctrl: true,
+            ..Default::default()
+        };
+        let sections: Vec<HintSection> = build_hint_sections(ctrl, &kb, "ctrl", false, &[]);
         assert!(!sections.is_empty());
     }
 }
