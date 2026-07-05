@@ -16,6 +16,8 @@
 
 termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC 9(iTerm2/ConEmu), OSC 99(Kitty), OSC 777(rxvt), BEL. (OSC 7=cwd 변경, OSC 0/2=타이틀 변경은 알림이 아닌 별도 처리.)
 
+**벨(BEL) 토글**: BEL 의 "Bell" 토스트는 전역 `notification.enabled` 위에 벨 전용 `general.bell_notification`(기본 on)을 한 겹 더 얹어 게이트한다. off 면 토스트를 억제하되, 사용자가 등록한 `bell` 훅은 그대로 발화한다(훅=명시적 자동화 → 수동 반응인 토스트와 분리). `cascade_terminal_bell_ring` 참조.
+
 ### NotificationStore
 
 VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 같은 source 에서 설정 간격(기본 500ms) 내 연속 알림은 기존에 합침. 워크스페이스별 unread 카운트, 개별/전체 읽음 처리. 알림 발생 surface 를 `highlighted_surfaces` 로 추적해 포커스 시 자동 해제.

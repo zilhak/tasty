@@ -103,6 +103,13 @@ pub struct GeneralSettings {
     /// suppressed. On by default (spec-compliant). See `screen_reverse()` on the
     /// terminal and the render gate in `render_terminals`.
     pub reverse_screen_enabled: bool,
+    /// Show a notification (and play the notification sound, subject to the
+    /// global notification gates) when the terminal receives a BEL (`\a`). When
+    /// off, BEL no longer raises the "Bell" toast — but user-registered `bell`
+    /// hooks STILL fire, since a hook is explicit automation the user opted into,
+    /// not a passive reaction. On by default. Gated in `cascade_terminal_bell_ring`
+    /// on top of the global `notification.enabled`.
+    pub bell_notification: bool,
     /// 마우스 트래킹 앱(vim/htop 등) 위에서 처음 좌/우 클릭할 때, 마우스가 앱에 캡처
     /// 중이며 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭으로 띄울 수 있음을
     /// 안내하는 toast 를 트래킹 세션당 1회 표시한다(발견성, ADR-0022 ②). off 면 안내하지
@@ -181,6 +188,7 @@ impl Default for GeneralSettings {
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
             reverse_screen_enabled: true,
+            bell_notification: true,
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
             workspace_categories_enabled: false,
@@ -595,6 +603,28 @@ mod tests {
         let out = toml::to_string(&g).unwrap();
         let g2: GeneralSettings = toml::from_str(&out).unwrap();
         assert!(!g2.reverse_screen_enabled);
+    }
+
+    #[test]
+    fn bell_notification_defaults_true() {
+        let g = GeneralSettings::default();
+        assert!(g.bell_notification);
+    }
+
+    #[test]
+    fn bell_notification_missing_key_uses_default() {
+        // 구 config.toml 마이그레이션 안전: 키가 없으면 기본 true.
+        let g: GeneralSettings = toml::from_str("scrollback_lines = 5000").unwrap();
+        assert!(g.bell_notification);
+    }
+
+    #[test]
+    fn bell_notification_round_trips() {
+        let g: GeneralSettings = toml::from_str("bell_notification = false").unwrap();
+        assert!(!g.bell_notification);
+        let out = toml::to_string(&g).unwrap();
+        let g2: GeneralSettings = toml::from_str(&out).unwrap();
+        assert!(!g2.bell_notification);
     }
 
     #[test]

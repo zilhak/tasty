@@ -93,6 +93,18 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             );
             ui.end_row();
 
+            // 벨(BEL) 수신 시 "Bell" 토스트 표시 토글. off 면 토스트/소리만 억제하고
+            // 사용자가 등록한 bell 훅은 계속 발화한다.
+            ui.label(t("settings.terminal.bell_notification_label"));
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.bell_notification,
+                None,
+                true,
+            );
+            ui.end_row();
+
             ui.label(t("settings.terminal.link_modifier_label"));
             egui::ComboBox::from_id_salt("link_modifier")
                 .selected_text(match settings.general.link_click_modifier.as_str() {

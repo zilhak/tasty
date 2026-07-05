@@ -480,7 +480,10 @@ impl App {
                 (state, engine, None)
             }
         };
-        if engine.settings.notification.enabled {
+        // 벨 토스트는 전역 notification gate 위에 벨 전용 토글을 한 겹 더 얹는다.
+        // off 면 "Bell" 토스트/소리를 억제하되, 아래 hook 발화는 그대로 둔다 —
+        // 훅은 사용자가 명시적으로 등록한 자동화라 수동 반응(토스트)과 구분한다.
+        if engine.settings.notification.enabled && engine.settings.general.bell_notification {
             let ws_id = state.active_workspace(engine).id;
             state.dispatch_intent(
                 crate::core::intent::DomainIntent::PushNotification {
