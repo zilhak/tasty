@@ -35,7 +35,7 @@ use tasty_plugin_sdk::{
 };
 use tasty_type_appearance::theme::Theme;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
 use tasty_ui_widgets::{margin_all, vspace};
@@ -140,14 +140,14 @@ struct AddrState {
 
 struct MarkdownPlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     meshes: HashMap<u32, EguiMeshSurface>,
     /// surface_id 들 중 폰트(CJK fallback)를 이미 설치한 것 — set_fonts 재업로드 방지.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fonts_installed: std::collections::HashSet<u32>,
     /// surface_id → 직전 paint 의 focused 상태. reload 재-paint(입력 없는 재구성)가
     /// focused 를 잃지 않도록 보존한다 (C).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     last_focused: HashMap<u32, bool>,
     /// surface_id → markdown document state.
     docs: HashMap<u32, MdDoc>,
@@ -160,11 +160,11 @@ struct MarkdownPlugin {
 impl MarkdownPlugin {
     fn new(tr: Translator) -> Self {
         Self {
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             meshes: HashMap::new(),
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             fonts_installed: std::collections::HashSet::new(),
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             last_focused: HashMap::new(),
             docs: HashMap::new(),
             addr: HashMap::new(),
@@ -192,7 +192,7 @@ impl Plugin for MarkdownPlugin {
     }
 
     fn destroy_surface(&mut self, surface_id: u32) {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             self.meshes.remove(&surface_id);
             self.fonts_installed.remove(&surface_id);
@@ -235,7 +235,7 @@ impl MarkdownPlugin {
     }
 
     /// `set_context` 한 frame 을 그려 host 에 mesh 를 회신한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn paint(&mut self, ctx: SurfaceSetContextCtx) {
         let sid = ctx.params.surface_id;
         let focused = ctx.params.raw_input.focused;
@@ -324,7 +324,7 @@ impl MarkdownPlugin {
     /// (옵션 A). 마지막 set_context 의 캐시된 컨텍스트(geom/ppp/theme)로 빈 입력 재-paint →
     /// 출력이 바뀌면 host 로 PaintFrame 송신. theme 미수신(첫 set_context 전)이면 no-op.
     /// 재-paint 는 빈 입력이므로 링크 클릭은 발생하지 않는다(dispatch 불필요).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn repaint_after_reload(&mut self, host: &HostHandle, params: &Value) {
         let Some(sid) = params
             .get("surface")
@@ -386,11 +386,11 @@ impl MarkdownPlugin {
 
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
 
     /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     fn repaint_after_reload(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
@@ -414,7 +414,7 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
 /// 링크 클릭 부수효과. **forward 된 실제 사용자 클릭에서만** 도달한다(identity 경계).
 /// 파일은 host `file_handler.dispatch`(같은 Pane 새 탭, origin_surface_id)로, 외부 URL 은
 /// OS 핸들러로 연다. 파일 열기 외의 사용자 상태(focus/선택/스크롤)는 건드리지 않는다.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn dispatch_link(host: &HostHandle, sid: u32, click: LinkClick) {
     match click {
         LinkClick::File(path) => {
@@ -694,7 +694,7 @@ fn go_button(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) -> egui::Respons
 }
 
 /// 주소창 확정 이동을 host `markdown.navigate`(04) 로 보낸다 — 같은 surface 제자리 이동.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn navigate(host: &HostHandle, sid: u32, path: &str) {
     let path = path.trim();
     if path.is_empty() {
@@ -749,7 +749,7 @@ fn centered(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
 
 /// plugin Context 에 CJK fallback 을 설치한다. egui 기본 폰트(Proportional/Monospace)
 /// 뒤에 시스템 CJK 폰트를 fallback 으로 붙여 한글/일문/한자가 tofu 되지 않게 한다.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bytes) = load_system_cjk_font_data() {
@@ -769,8 +769,15 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 /// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        // host font_registry 미러 — 맑은 고딕(한글 tofu 방지). 없으면 None.
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         for path in &[
