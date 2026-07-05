@@ -13,6 +13,13 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
+/// 빌드타임 SVG 베이크 산출물 (S-11 PoC, 방식 B). `build.rs` 가 `assets/icons/*.svg`
+/// 를 usvg 로 파싱·평탄화해 `pub const REFRESH: &[&[[f32; 2]]]`(viewBox 0..24 좌표)를
+/// 생성한다. 런타임은 이 점배열을 그릴 크기로 스케일해 벡터 stroke 로 그린다.
+mod baked_icons {
+    include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
+}
+
 /// Render one frame of the image surface into `ctx`.
 pub fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
@@ -76,7 +83,9 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         }
     }
 
-    if icon_button(ui, theme, "\u{21BB}", tr.t("image_viewer.refresh")).clicked() {
+    // S-11 PoC: refresh 는 빌드타임 베이크된 벡터 아이콘으로 렌더 (나머지 버튼은 글리프
+    // 유지). 파이프라인 실증용 수직 슬라이스.
+    if baked_icon_button(ui, theme, baked_icons::REFRESH, tr.t("image_viewer.refresh")).clicked() {
         doc.reload_from_disk();
     }
 
@@ -606,6 +615,61 @@ fn styled_button(theme: &Theme, label: &str) -> egui::Button<'static> {
         theme.border_default().to_egui(),
     ))
     .corner_radius(theme.corner_radius_sm.value())
+}
+
+/// 아이콘 글리프를 버튼 높이 대비 몇 배로 그릴지. 시각 대조(gx10)로 확정할 튜닝값.
+const ICON_DRAW_RATIO: f32 = 0.7;
+
+/// 베이크된 벡터 아이콘 버튼 (S-11 PoC). chrome(배경·보더·hover·active)은 글리프
+/// 버튼과 동일하게 `styled_button` 을 재사용하고(빈 라벨), 그 위에 벡터 stroke 아이콘을
+/// 겹쳐 그린다. stroke 색은 글리프 라벨과 동일한 `text_primary` — raw 색 하드코딩 없음.
+fn baked_icon_button(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: &[&[[f32; 2]]],
+    tooltip: &str,
+) -> egui::Response {
+    let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
+    let w = theme.spacing_lg.value() * 1.5; // ≈ 24
+    let resp = ui
+        .add_sized([w, h], styled_button(theme, ""))
+        .on_hover_text(tooltip);
+    draw_baked_icon(
+        ui.painter(),
+        icon,
+        resp.rect.center(),
+        h * ICON_DRAW_RATIO,
+        theme.text_primary().to_egui(),
+    );
+    resp
+}
+
+/// viewBox 0..24 점배열을 `size`(logical px) 정사각으로 스케일해 `center` 를 중심으로
+/// 벡터 stroke 로 그린다. stroke width 는 SVG 기준 2px 를 동일 비율로 스케일(round
+/// cap/join 은 open 폴리라인 tessellation 이 담당).
+fn draw_baked_icon(
+    painter: &egui::Painter,
+    icon: &[&[[f32; 2]]],
+    center: egui::Pos2,
+    size: f32,
+    color: egui::Color32,
+) {
+    let scale = size / 24.0;
+    let origin = center - egui::vec2(size * 0.5, size * 0.5);
+    let width = 2.0 * scale; // SVG stroke-width 2 @ viewBox 24
+    for sub in icon {
+        if sub.len() < 2 {
+            continue;
+        }
+        let points: Vec<egui::Pos2> = sub
+            .iter()
+            .map(|p| origin + egui::vec2(p[0] * scale, p[1] * scale))
+            .collect();
+        painter.add(egui::Shape::line(
+            points,
+            egui::epaint::PathStroke::new(width, color),
+        ));
+    }
 }
 
 /// Fixed-size icon button (control-bar glyphs). Host used add_sized([24,20]).
