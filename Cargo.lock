@@ -5539,6 +5539,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-icons"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "tasty-ipc"
 version = "0.1.0"
 dependencies = [

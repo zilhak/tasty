@@ -1,0 +1,20 @@
+[package]
+name = "tasty-icons"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Canonical line/fill icon set (SVG single source) shared by host, gallery, and plugin build-time bake"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+# egui 는 optional·default off — build-dependency 로 링크될 때(플러그인 build.rs)
+# egui 가 붙지 않도록 한다. 0.31 default-features=false 는 host/gallery/plugin 이
+# 쓰는 통일 인스턴스와 동일 버전이라 Image/Color32 타입이 정합한다.
+egui = { version = "0.31", default-features = false, optional = true }
+
+[features]
+default = []
+egui = ["dep:egui"]
+
+[lints]
+workspace = true
