@@ -18,6 +18,7 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Spinner, checkbox};
 
+use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 문서 카드 폭(전시 박스).
@@ -777,13 +778,17 @@ fn addr_field(ui: &mut egui::Ui, theme: &Theme, width: f32, path: &str, editing:
         );
     }
     let pad = theme.spacing_sm.value();
-    ui.painter().text(
-        egui::pos2(rect.left() + pad, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "\u{1F4C4}",
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
+    // 선두 파일 글리프 — 본체 플러그인은 tasty-icons FILE 베이크 벡터를 caption 크기·
+    // text_muted 로 그린다. specimen 도 같은 canonical FILE 을 egui_extras 글리프로 미러
+    // (raw 유니코드 📄 제거).
+    let icon_sz = theme.font_size_caption.value();
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + pad, rect.center().y - icon_sz * 0.5),
+        egui::vec2(icon_sz, icon_sz),
     );
+    icons::FILE
+        .image(icon_sz, theme.text_muted().to_egui())
+        .paint_at(ui, icon_rect);
     let text_color = if editing {
         theme.text_primary()
     } else {
@@ -804,13 +809,13 @@ fn addr_field(ui: &mut egui::Ui, theme: &Theme, width: f32, path: &str, editing:
 fn addr_go(ui: &mut egui::Ui, theme: &Theme) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ADDR_FIELD_H, ADDR_FIELD_H), egui::Sense::hover());
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "\u{2192}",
-        egui::FontId::proportional(theme.font_size_body.value()),
-        theme.text_secondary().to_egui(),
-    );
+    // Go 화살표 — 본체 플러그인의 tasty-icons ARROW_RIGHT 베이크 벡터(body 크기·
+    // text_secondary)를 canonical 아이콘 렌더로 미러(raw 유니코드 → 제거).
+    let sz = theme.font_size_body.value();
+    let gr = egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz));
+    icons::ARROW_RIGHT
+        .image(sz, theme.text_secondary().to_egui())
+        .paint_at(ui, gr);
 }
 
 /// 지정 size/color 라벨 텍스트.

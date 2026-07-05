@@ -3,8 +3,11 @@
 //! 본체 렌더 경로(ADR-0028/0030, B2): image 는 egui-mesh plugin 이다 —
 //! `crates/tasty-plugin-image/src/render.rs::draw` 가 상단 control bar + 그 아래 이미지
 //! 영역(배경 `bg_sidebar`)을 자기 egui `Context` 에서 그려 mesh 로 host 가 합성한다. control bar
-//! viewer 모드 버튼은 `◀ ▶`(prev/next) · `↻`(refresh) · `✏`(edit) · `+`(new), 가운데
-//! 파일명 라벨(`subtext0`→`text_muted`), 우측 zoom 그룹 `Fit · + · % · -`. 이미지가 없으면
+//! viewer 모드 버튼은 chevron-left/right(prev/next) · refresh · edit · plus(new) — 본체는
+//! `tasty-icons` 빌드타임 베이크 벡터를 그리고, 이 specimen 은 같은 canonical 아이콘의
+//! egui_extras 글리프 렌더(`tasty_icons::<NAME>.image()`)로 미러한다(raw 유니코드 제거).
+//! 가운데 파일명 라벨(`subtext0`→`text_muted`), 우측 zoom 그룹 `Fit · + · % · -`(텍스트
+//! 버튼 — 본체도 `text_button`). 이미지가 없으면
 //! 영역 중앙에 `no_image` 안내(`subtext0`). 새 이미지는 blank canvas(기본 800×600).
 //!
 //! 갤러리는 본체 crate·실제 텍스처에 의존하지 않으므로 두 상태를 painter + 토큰으로
@@ -44,7 +47,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("toolbar", "◀ ▶ ↻ ✏ + · buttons surface-raised"),
+            ("toolbar", "prev / next / refresh / edit / new · surface-raised"),
             ("filename", "caption · text-muted"),
             ("zoom", "right · Fit / + / % / -"),
             ("canvas", "bg-sidebar (mantle) fill"),
@@ -95,14 +98,22 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         // ── control bar ──
         let by = rect.top() + pad;
         let mut x = rect.left() + pad;
-        // viewer 모드: 이미지 있으면 prev/next/edit 노출, 없으면 refresh/new 만.
-        let labels: &[&str] = if loaded {
-            &["\u{25C0}", "\u{25B6}", "\u{21BB}", "\u{270F}", "+"]
+        // viewer 모드: 이미지 있으면 prev/next/refresh/edit/new, 없으면 refresh/new 만.
+        // 본체 플러그인이 tasty-icons 베이크 벡터를 쓰므로 specimen 도 같은 canonical
+        // 아이콘을 egui_extras 글리프로 렌더해 미러한다(raw 유니코드 글리프 제거).
+        let glyphs: &[icons::Icon] = if loaded {
+            &[
+                icons::CHEVRON_LEFT,
+                icons::CHEVRON_RIGHT,
+                icons::REFRESH,
+                icons::EDIT,
+                icons::PLUS,
+            ]
         } else {
-            &["\u{21BB}", "+"]
+            &[icons::REFRESH, icons::PLUS]
         };
-        for label in labels {
-            x = button(&p, theme, x, by, BTN_W, label);
+        for g in glyphs {
+            x = button(&p, ui, theme, x, by, BTN_W, *g);
         }
         // 파일명 / 상태 라벨.
         x += pad;
@@ -179,8 +190,17 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
     });
 }
 
-/// control 버튼 한 칸. surface-raised 채움 + 1px border + 중앙 라벨. 다음 x 반환.
-fn button(p: &egui::Painter, theme: &Theme, x: f32, y: f32, width: f32, label: &str) -> f32 {
+/// control 버튼 한 칸. surface-raised 채움 + 1px border + 중앙 tasty-icons 글리프.
+/// 다음 x 반환. rect 는 painter `p` 로, 글리프는 `ui`(egui_extras 로더)로 그린다.
+fn button(
+    p: &egui::Painter,
+    ui: &egui::Ui,
+    theme: &Theme,
+    x: f32,
+    y: f32,
+    width: f32,
+    icon: icons::Icon,
+) -> f32 {
     let r = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, BTN_H));
     p.rect_filled(
         r,
@@ -193,13 +213,10 @@ fn button(p: &egui::Painter, theme: &Theme, x: f32, y: f32, width: f32, label: &
         egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
         egui::StrokeKind::Inside,
     );
-    p.text(
-        r.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        theme.text_primary().to_egui(),
-    );
+    // 중앙 글리프 — 본체 툴바 베이크 벡터를 canonical 아이콘 렌더로 미러(sm=14px, primary).
+    let gs = theme.icon_glyph_size_sm.value();
+    let gr = egui::Rect::from_center_size(r.center(), egui::vec2(gs, gs));
+    icon.image(gs, theme.text_primary().to_egui()).paint_at(ui, gr);
     x + width + theme.spacing_xs.value()
 }
 
