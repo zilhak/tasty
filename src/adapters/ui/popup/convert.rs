@@ -1,3 +1,4 @@
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
@@ -270,11 +271,10 @@ pub fn draw_convert_view(
         let is_selected = props.selected_index == Some(idx);
 
         let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
-        let label = if is_current {
-            format!("  \u{2713} {}    {}", item.label, shortcut_str)
-        } else {
-            format!("    {}    {}", item.label, shortcut_str)
-        };
+        // 현재 kind 마커였던 raw `✓`(U+2713)는 UI 폰트에 글리프가 없어 tofu 로
+        // 렌더되므로 제거하고, 아래에서 icons::CHECK(SVG)를 좌측 인덴트에 별도로
+        // 그린다. 두 분기가 동일한 4-space 인덴트를 써서 라벨 텍스트 x정렬을 맞춘다.
+        let label = format!("    {}    {}", item.label, shortcut_str);
         let text_color = if is_current {
             // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
             theme.text_placeholder()
@@ -311,6 +311,19 @@ pub fn draw_convert_view(
             egui::FontId::proportional(theme.font_size_body.value()),
             text_color.into(),
         );
+
+        // 현재 kind 체크마크 — 라벨 좌측 인덴트(4-space) 자리에 SVG 아이콘으로 배치.
+        // 세로는 행 중앙, tint 는 라벨색(text_placeholder)을 그대로 전달해 색을 맞춘다.
+        if is_current {
+            let icon_sz = theme.font_size_body.value();
+            let icon_rect = egui::Rect::from_min_size(
+                egui::pos2(text_pos.x, rect.center().y - icon_sz / 2.0),
+                egui::vec2(icon_sz, icon_sz),
+            );
+            icons::CHECK
+                .image(icon_sz, text_color.into())
+                .paint_at(ui, icon_rect);
+        }
 
         if resp.clicked() && !is_current {
             action = ConvertViewAction::Clicked {

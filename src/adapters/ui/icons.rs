@@ -148,6 +148,9 @@ line_icon!(
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>"#
 );
 line_icon!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
+// convert popup 의 "현재 kind" 체크마크. raw `✓`(U+2713)는 UI 폰트에 글리프가 없어
+// tofu 로 렌더되던 것을 고친다. path 는 갤러리 `catalog/icons.rs` CHECK 와 바이트 동일.
+line_icon!(CHECK, "check", r#"<path d="M20 6 9 17l-5-5"/>"#);
 line_icon!(
     SPLIT,
     "split",

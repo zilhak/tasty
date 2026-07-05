@@ -8,6 +8,7 @@
 //!
 //! 분리 패턴 문서: `.claude-workspace/conductor/tier-3-props-extraction-pattern.md`.
 
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
@@ -15,7 +16,7 @@ use crate::theme;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::margin_sym;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, vspace};
 
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
@@ -43,7 +44,7 @@ pub enum MarkdownOpenAction {
     Cancel,
     /// OK 버튼 / Enter / 최근 항목 클릭 — 현재 `path_input` 으로 열기 시도.
     Confirm,
-    /// 📂 버튼 — wrapper 가 OS file dialog 호출.
+    /// 폴더 열기(FOLDER_OPEN) 버튼 — wrapper 가 OS file dialog 호출.
     BrowseFile,
 }
 
@@ -111,8 +112,17 @@ pub fn draw_markdown_open_view(
             resp.request_focus();
         }
 
-        if ui
-            .add_sized([26.0, 22.0], egui::Button::new("\u{1F4C2}"))
+        // 파일 탐색 버튼 — 갤러리 IconButton(Ghost/Sm) + icons::FOLDER_OPEN(SVG).
+        // raw `📂`(U+1F4C2)는 UI 프로포셔널 폰트에 글리프가 없어 tofu 로 렌더되던 것을
+        // 고친다(gallery parity, banner.rs 선례). 색은 IconButton 의 해소색(ghost)을 따른다.
+        // TextEdit 은 위에서 `available_width() - 30.0` 로 폭을 예약했고, IconButton Sm
+        // side(item_height_tab=24)는 그 reserve 안에 들어가 한 줄에 배치된다.
+        if IconButton::new()
+            .variant(IconButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .show(ui, th, &|ui, rect, c| {
+                icons::FOLDER_OPEN.image(rect.height(), c).paint_at(ui, rect)
+            })
             .clicked()
         {
             action = MarkdownOpenAction::BrowseFile;
