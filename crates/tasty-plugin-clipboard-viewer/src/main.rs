@@ -26,16 +26,16 @@ use tasty_plugin_sdk::{
 
 use crate::clipboard::{ClipboardType, ContentRepr};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::collections::{HashMap, HashSet};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::Arc;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_protocol::ThemeWire;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshPopup;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_type_appearance::theme::Theme;
 
 const PLUGIN_ID: &str = "com.tasty.clipboard-viewer";
@@ -78,10 +78,10 @@ struct ClipboardViewerPlugin {
     /// 주 인스턴스의 클립보드 스냅샷 + 선택 상태.
     state: Option<ViewerState>,
     /// instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유). unix 전용.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
     /// CJK fallback 폰트를 이미 설치한 instance_id — set_fonts 재업로드 방지.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fonts_installed: HashSet<u64>,
     tr: Translator,
 }
@@ -91,9 +91,9 @@ impl ClipboardViewerPlugin {
         Self {
             primary_instance: None,
             state: None,
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             popups: HashMap::new(),
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             fonts_installed: HashSet::new(),
             tr: Translator::from_plugin_env(env),
         }
@@ -131,7 +131,7 @@ impl Plugin for ClipboardViewerPlugin {
 
     fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
         let iid = ctx.instance_id;
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             self.popups.remove(&iid);
             self.fonts_installed.remove(&iid);
@@ -145,7 +145,7 @@ impl Plugin for ClipboardViewerPlugin {
 
 impl ClipboardViewerPlugin {
     /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn paint(&mut self, ctx: PopupSetContextCtx) {
         let iid = ctx.params.instance_id;
 
@@ -184,21 +184,21 @@ impl ClipboardViewerPlugin {
         }
     }
 
-    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
-    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
-    #[cfg(not(unix))]
+    /// egui-mesh shared-buffer 송신을 지원하지 않는 exotic 타깃 — no-op(크로스플랫폼
+    /// 컴파일 보장). Unix/Windows 는 위 실제 paint 를 쓴다.
+    #[cfg(not(any(unix, windows)))]
     fn paint(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
 /// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
 /// popup Context 에 CJK fallback 을 설치한다(markdown `install_fonts` 미러). egui 기본
 /// 폰트(Proportional/Monospace) 뒤에 시스템 CJK 폰트를 붙여 한글/일문/한자 tofu 를 막는다.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bytes) = load_system_cjk_font_data() {
@@ -218,8 +218,15 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 /// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        // host font_registry 미러 — 맑은 고딕(한글 tofu 방지). 없으면 None.
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         for path in &[
