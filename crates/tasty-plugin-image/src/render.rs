@@ -13,9 +13,10 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
-/// 빌드타임 SVG 베이크 산출물 (S-11 PoC, 방식 B). `build.rs` 가 `assets/icons/*.svg`
-/// 를 usvg 로 파싱·평탄화해 `pub const REFRESH: &[&[[f32; 2]]]`(viewBox 0..24 좌표)를
-/// 생성한다. 런타임은 이 점배열을 그릴 크기로 스케일해 벡터 stroke 로 그린다.
+/// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
+/// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
+/// 좌표)를 생성한다. 런타임은 이 점배열을 [`tasty_plugin_sdk::baked_icon::draw`] 로
+/// 그릴 크기에 스케일해 벡터 stroke 로 그린다(텍스처 없음, DPI 독립).
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
 }
@@ -69,13 +70,15 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     let has_dir = doc.dir_images.len() > 1;
 
     if has_dir {
-        if icon_button(ui, theme, "\u{25C0}", tr.t("image_viewer.prev")).clicked()
+        if baked_icon_button(ui, theme, baked_icons::CHEVRON_LEFT, tr.t("image_viewer.prev"))
+            .clicked()
             && !doc.is_editing()
             && doc.step_prev().is_some()
         {
             doc.load_after_navigation();
         }
-        if icon_button(ui, theme, "\u{25B6}", tr.t("image_viewer.next")).clicked()
+        if baked_icon_button(ui, theme, baked_icons::CHEVRON_RIGHT, tr.t("image_viewer.next"))
+            .clicked()
             && !doc.is_editing()
             && doc.step_next().is_some()
         {
@@ -83,19 +86,17 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         }
     }
 
-    // S-11 PoC: refresh 는 빌드타임 베이크된 벡터 아이콘으로 렌더 (나머지 버튼은 글리프
-    // 유지). 파이프라인 실증용 수직 슬라이스.
     if baked_icon_button(ui, theme, baked_icons::REFRESH, tr.t("image_viewer.refresh")).clicked() {
         doc.reload_from_disk();
     }
 
     if doc.original_image.is_some()
-        && icon_button(ui, theme, "\u{270F}", tr.t("image_viewer.edit")).clicked()
+        && baked_icon_button(ui, theme, baked_icons::EDIT, tr.t("image_viewer.edit")).clicked()
     {
         doc.enter_edit_mode();
     }
 
-    if icon_button(ui, theme, "+", tr.t("image_viewer.new_image")).clicked() {
+    if baked_icon_button(ui, theme, baked_icons::PLUS, tr.t("image_viewer.new_image")).clicked() {
         doc.new_image_popup = true;
     }
 
@@ -145,10 +146,10 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
     }
 
     let undo_enabled = doc.can_undo();
-    if icon_button_enabled(
+    if baked_icon_button_enabled(
         ui,
         theme,
-        "\u{21B6}",
+        baked_icons::UNDO,
         tr.t("image_viewer.undo"),
         undo_enabled,
     )
@@ -157,10 +158,10 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         doc.undo();
     }
     let redo_enabled = doc.can_redo();
-    if icon_button_enabled(
+    if baked_icon_button_enabled(
         ui,
         theme,
-        "\u{21B7}",
+        baked_icons::REDO,
         tr.t("image_viewer.redo"),
         redo_enabled,
     )
@@ -547,7 +548,9 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
             if !resp.has_focus() && doc.save_path_buffer.is_empty() {
                 resp.request_focus();
             }
-            if icon_button(ui, theme, "\u{1F4C2}", tr.t("image_viewer.browse")).clicked() {
+            if baked_icon_button(ui, theme, baked_icons::FOLDER_OPEN, tr.t("image_viewer.browse"))
+                .clicked()
+            {
                 let dialog = rfd::FileDialog::new()
                     .add_filter("PNG", &["png"])
                     .set_file_name("image.png");
@@ -620,21 +623,27 @@ fn styled_button(theme: &Theme, label: &str) -> egui::Button<'static> {
 /// 아이콘 글리프를 버튼 높이 대비 몇 배로 그릴지. 시각 대조(gx10)로 확정할 튜닝값.
 const ICON_DRAW_RATIO: f32 = 0.7;
 
-/// 베이크된 벡터 아이콘 버튼 (S-11 PoC). chrome(배경·보더·hover·active)은 글리프
-/// 버튼과 동일하게 `styled_button` 을 재사용하고(빈 라벨), 그 위에 벡터 stroke 아이콘을
-/// 겹쳐 그린다. stroke 색은 글리프 라벨과 동일한 `text_primary` — raw 색 하드코딩 없음.
+/// 아이콘 버튼 고정 크기(control-bar). host 는 add_sized([24,20]) 를 썼다.
+fn icon_button_size(theme: &Theme) -> [f32; 2] {
+    let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
+    let w = theme.spacing_lg.value() * 1.5; // ≈ 24
+    [w, h]
+}
+
+/// 베이크된 벡터 아이콘 버튼. chrome(배경·보더·hover·active)은 `styled_button` 을
+/// 재사용하고(빈 라벨), 그 위에 [`tasty_plugin_sdk::baked_icon::draw`] 로 벡터 stroke
+/// 아이콘을 겹쳐 그린다. stroke 색은 텍스트 라벨과 동일한 `text_primary` — 하드코딩 없음.
 fn baked_icon_button(
     ui: &mut egui::Ui,
     theme: &Theme,
     icon: &[&[[f32; 2]]],
     tooltip: &str,
 ) -> egui::Response {
-    let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
-    let w = theme.spacing_lg.value() * 1.5; // ≈ 24
+    let [w, h] = icon_button_size(theme);
     let resp = ui
         .add_sized([w, h], styled_button(theme, ""))
         .on_hover_text(tooltip);
-    draw_baked_icon(
+    tasty_plugin_sdk::baked_icon::draw(
         ui.painter(),
         icon,
         resp.rect.center(),
@@ -644,55 +653,33 @@ fn baked_icon_button(
     resp
 }
 
-/// viewBox 0..24 점배열을 `size`(logical px) 정사각으로 스케일해 `center` 를 중심으로
-/// 벡터 stroke 로 그린다. stroke width 는 SVG 기준 2px 를 동일 비율로 스케일(round
-/// cap/join 은 open 폴리라인 tessellation 이 담당).
-fn draw_baked_icon(
-    painter: &egui::Painter,
-    icon: &[&[[f32; 2]]],
-    center: egui::Pos2,
-    size: f32,
-    color: egui::Color32,
-) {
-    let scale = size / 24.0;
-    let origin = center - egui::vec2(size * 0.5, size * 0.5);
-    let width = 2.0 * scale; // SVG stroke-width 2 @ viewBox 24
-    for sub in icon {
-        if sub.len() < 2 {
-            continue;
-        }
-        let points: Vec<egui::Pos2> = sub
-            .iter()
-            .map(|p| origin + egui::vec2(p[0] * scale, p[1] * scale))
-            .collect();
-        painter.add(egui::Shape::line(
-            points,
-            egui::epaint::PathStroke::new(width, color),
-        ));
-    }
-}
-
-/// Fixed-size icon button (control-bar glyphs). Host used add_sized([24,20]).
-fn icon_button(ui: &mut egui::Ui, theme: &Theme, label: &str, tooltip: &str) -> egui::Response {
-    let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
-    let w = theme.spacing_lg.value() * 1.5; // ≈ 24
-    ui.add_sized([w, h], styled_button(theme, label))
-        .on_hover_text(tooltip)
-}
-
-/// Fixed-size icon button that can be disabled (undo / redo).
-fn icon_button_enabled(
+/// 비활성화 가능한 베이크 아이콘 버튼 (undo / redo). disabled 면 chrome 은
+/// `add_enabled_ui` 로, 아이콘 stroke 는 `text_muted` 로 흐리게 그린다.
+fn baked_icon_button_enabled(
     ui: &mut egui::Ui,
     theme: &Theme,
-    label: &str,
+    icon: &[&[[f32; 2]]],
     tooltip: &str,
     enabled: bool,
 ) -> egui::Response {
-    let h = theme.spacing_lg.value() + theme.spacing_xs.value();
-    let w = theme.spacing_lg.value() * 1.5;
+    let [w, h] = icon_button_size(theme);
+    let color = if enabled {
+        theme.text_primary()
+    } else {
+        theme.text_muted()
+    };
     ui.add_enabled_ui(enabled, |ui| {
-        ui.add_sized([w, h], styled_button(theme, label))
-            .on_hover_text(tooltip)
+        let resp = ui
+            .add_sized([w, h], styled_button(theme, ""))
+            .on_hover_text(tooltip);
+        tasty_plugin_sdk::baked_icon::draw(
+            ui.painter(),
+            icon,
+            resp.rect.center(),
+            h * ICON_DRAW_RATIO,
+            color.to_egui(),
+        );
+        resp
     })
     .inner
 }

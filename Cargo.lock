@@ -5701,7 +5701,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5709,6 +5709,7 @@ dependencies = [
  "image",
  "rfd",
  "serde_json",
+ "tasty-icons",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
  "tasty-type-appearance",
@@ -5778,7 +5779,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "anyhow",
  "egui",
