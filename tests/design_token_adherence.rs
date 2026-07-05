@@ -33,6 +33,15 @@ const COLOR_SCAN_ROOTS: &[&str] = &[
     "crates/tasty-ui-widgets/src",
 ];
 
+/// raw 픽토그래픽 글리프 스캔 대상 — **host 전용**(widgets/gallery 미포함). gallery
+/// specimen 은 ↑↓↵→◀▶ 를 대량 사용하므로 SCAN_ROOTS 재사용 시 오검출된다(연구 §3).
+/// 플러그인(`crates/tasty-plugin-*`)도 미포함 — S-11 과 비중첩.
+const GLYPH_SCAN_ROOTS: &[&str] = &[
+    "src/view",
+    "src/adapters/ui",
+    "src/gfx/gpu/shell_setup.rs",
+];
+
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
 /// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.
 /// `text` 는 `text_primary`/`text_muted` 등 semantic 접근자의 접두라 경계 검사로 가른다.
@@ -190,6 +199,59 @@ fn no_inline_spacing_literals() {
         violations.is_empty(),
         "인라인 간격/마진 리터럴이 재유입됨 — typed 헬퍼(vspace/hspace/margin_all/margin_sym \
          + th.spacing_* / STRUCT_GAP_*)로 바꿀 것:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// 픽토그래픽 글리프 금지 범위(Tier-A) — UI 프로포셔널 폰트에서 tofu 나는 계열만
+/// 좁게 잡는다: 이모지·픽토그래프(U+1F000–1FAFF) + 딩뱃(U+2700–27BF). 화살표(↑↓→↵)·
+/// 기하도형(▲▼▾)·기술기호(⌘)·경고기호(⚠)는 kbd 힌트·라벨 구분자·콤보 affordance 로
+/// 정당하게 쓰이므로 **범위 밖**(연구 §3). CJK·따옴표 등 텍스트도 자동 제외된다.
+fn is_forbidden_pictographic(cp: u32) -> bool {
+    (0x1F000..=0x1FAFF).contains(&cp) || (0x2700..=0x27BF).contains(&cp)
+}
+
+/// `line` 에서 픽토그래픽 글리프를 찾으면 그 표현을 돌려준다. **두 형태 모두** 검사:
+/// ① 리터럴 코드포인트(누가 📂 를 그대로 붙여넣음) ② `\u{HEX}` 이스케이프 파싱 후 범위검사.
+/// 주석 라인 skip 은 상위 `collect_violations` 가 처리한다.
+fn violating_glyph(line: &str) -> Option<String> {
+    // ① 리터럴 char.
+    for ch in line.chars() {
+        let cp = ch as u32;
+        if is_forbidden_pictographic(cp) {
+            return Some(format!("U+{cp:04X} `{ch}`"));
+        }
+    }
+    // ② `\u{HEX}` 이스케이프.
+    let needle = "\\u{";
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(needle) {
+        let start = from + rel + needle.len();
+        let Some(close_rel) = line[start..].find('}') else {
+            break;
+        };
+        let hex = &line[start..start + close_rel];
+        if let Ok(cp) = u32::from_str_radix(hex, 16)
+            && is_forbidden_pictographic(cp)
+        {
+            return Some(format!("\\u{{{hex}}}"));
+        }
+        from = start + close_rel + 1;
+    }
+    None
+}
+
+#[test]
+fn no_raw_pictographic_glyph() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut violations = Vec::new();
+    for target in GLYPH_SCAN_ROOTS {
+        collect_violations(root, target, &violating_glyph, &mut violations);
+    }
+    assert!(
+        violations.is_empty(),
+        "host UI 소스에 raw 픽토그래픽 글리프(이모지 U+1F000–1FAFF / 딩뱃 U+2700–27BF)가 \
+         재유입됨 — SVG line-icon(`icons::*`)으로 바꿀 것. 리터럴·`\\u{{}}` 양형태 모두 금지:\n{}",
         violations.join("\n")
     );
 }
