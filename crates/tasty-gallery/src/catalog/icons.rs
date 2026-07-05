@@ -35,6 +35,8 @@ const ACTIONS: &[Entry] = &[
     (COPY, "copy", "copy to clipboard"),
     (SEARCH, "search", "filter / search affordance"),
     (FUNNEL, "funnel", "state filter"),
+    (UNDO, "undo", "undo an edit (image paint)"),
+    (REDO, "redo", "redo an edit (image paint)"),
 ];
 
 const NAV: &[Entry] = &[
@@ -44,6 +46,7 @@ const NAV: &[Entry] = &[
     (CHEVRON_UP, "chevronUp", "go to parent dir"),
     (CHEVRONS_LEFT, "chevronsLeft", "collapse sidebar"),
     (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
+    (ARROW_RIGHT, "arrowRight", "go / submit (markdown address)"),
 ];
 
 const VIEW: &[Entry] = &[
