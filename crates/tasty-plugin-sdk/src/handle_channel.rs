@@ -373,21 +373,29 @@ mod unix_wire {
     }
 }
 
-/// SDK 측 Named Pipe 클라이언트. host 의 [`super::windows::PipeServerStream`] 대응.
+/// SDK 측 Named Pipe 클라이언트(overlapped I/O). host 의
+/// [`super::windows::PipeServerStream`] 대응.
+///
+/// **왜 overlapped**: reader 스레드가 HandleAttach 를 blocking read 하는 동안 writer 가
+/// Pong/Dirty 를 write 한다. Windows 동기 파일 핸들은 같은 file object 의 I/O 를 직렬화해
+/// (DuplicateHandle 도 같은 object) read 가 write 를 막는 데드락이 생긴다. per-op event 를
+/// 쓰는 overlapped I/O 로 read/write 를 비직렬화한다.
 #[cfg(windows)]
 mod windows {
     use std::io;
+    use std::mem;
     use std::ptr;
 
     use windows_sys::Win32::Foundation::{
-        CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_PIPE_BUSY, GetLastError, HANDLE,
-        INVALID_HANDLE_VALUE,
+        CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_BROKEN_PIPE, ERROR_IO_PENDING,
+        ERROR_PIPE_BUSY, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, OPEN_EXISTING, ReadFile, WriteFile,
+        CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, ReadFile, WriteFile,
     };
+    use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
     use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
-    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, ResetEvent};
 
     use crate::error::{PluginError, Result};
 
@@ -415,24 +423,40 @@ mod windows {
         }
     }
 
-    // SAFETY: HANDLE 은 OS 관리 정수. 스레드 이동/공유 안전, 파이프 R/W thread-safe.
-    unsafe impl Send for OwnedHandle {}
-    unsafe impl Sync for OwnedHandle {}
-
-    /// 클라이언트 파이프 stream. [`HandleClient`](super::HandleClient) 의 Windows inner.
-    #[derive(Debug)]
-    pub(super) struct PipeClientStream {
-        handle: OwnedHandle,
-    }
-
     impl std::fmt::Debug for OwnedHandle {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "OwnedHandle({:p})", self.0)
         }
     }
 
+    // SAFETY: HANDLE 은 OS 관리 정수. 스레드 이동/공유 안전, 파이프 R/W thread-safe.
+    unsafe impl Send for OwnedHandle {}
+    unsafe impl Sync for OwnedHandle {}
+
+    fn make_event() -> Result<OwnedHandle> {
+        // SAFETY: Win32 CreateEventW. 수동 리셋(false)·초기 비신호(false)·무명.
+        let h = unsafe { CreateEventW(ptr::null(), 0, 0, ptr::null()) };
+        if h.is_null() {
+            return Err(PluginError::Io(io::Error::last_os_error()));
+        }
+        Ok(OwnedHandle(h))
+    }
+
+    /// 클라이언트 파이프 stream. [`HandleClient`](super::HandleClient) 의 Windows inner.
+    /// 자기 완료 event 를 소유해 read/write 가 서로 간섭하지 않는다.
+    #[derive(Debug)]
+    pub(super) struct PipeClientStream {
+        handle: OwnedHandle,
+        event: OwnedHandle,
+    }
+
     impl PipeClientStream {
-        /// endpoint(`\\.\pipe\...`)에 연결한다. 인스턴스가 모두 사용 중이면
+        fn from_handle(handle: OwnedHandle) -> Result<Self> {
+            let event = make_event()?;
+            Ok(Self { handle, event })
+        }
+
+        /// endpoint(`\\.\pipe\...`)에 연결한다(overlapped). 인스턴스가 모두 사용 중이면
         /// `WaitNamedPipeW` 로 잠시 대기 후 재시도한다.
         pub(super) fn connect(name: &str) -> Result<Self> {
             let wide = to_wide(name);
@@ -445,14 +469,12 @@ mod windows {
                         0,
                         ptr::null(),
                         OPEN_EXISTING,
-                        0,
+                        FILE_FLAG_OVERLAPPED,
                         ptr::null_mut(),
                     )
                 };
                 if raw != INVALID_HANDLE_VALUE && !raw.is_null() {
-                    return Ok(Self {
-                        handle: OwnedHandle(raw),
-                    });
+                    return Self::from_handle(OwnedHandle(raw));
                 }
                 // SAFETY: 부수효과 없는 last-error 조회.
                 let err = unsafe { GetLastError() };
@@ -465,26 +487,47 @@ mod windows {
             }
         }
 
-        fn read_raw(&self, buf: &mut [u8]) -> Result<usize> {
-            let mut read: u32 = 0;
-            // SAFETY: 유효 파이프 핸들, buf 는 len 만큼 유효, read 는 out param.
-            let rc = unsafe {
-                ReadFile(
-                    self.handle.0,
-                    buf.as_mut_ptr(),
-                    buf.len() as u32,
-                    &mut read,
-                    ptr::null_mut(),
-                )
-            };
-            if rc == 0 {
-                let e = io::Error::last_os_error();
-                if e.kind() == io::ErrorKind::BrokenPipe {
-                    return Ok(0); // EOF 정규화
-                }
-                return Err(PluginError::Io(e));
+        /// overlapped op 하나를 blocking 으로 수행한다. BROKEN_PIPE 는 EOF(0) 로 정규화.
+        fn blocking_io(
+            &self,
+            start: impl FnOnce(HANDLE, *mut OVERLAPPED, *mut u32) -> i32,
+        ) -> Result<usize> {
+            // SAFETY: ResetEvent 는 유효 event 핸들에 안전.
+            unsafe {
+                ResetEvent(self.event.0);
             }
-            Ok(read as usize)
+            let mut ov: OVERLAPPED = unsafe { mem::zeroed() };
+            ov.hEvent = self.event.0;
+            let mut transferred: u32 = 0;
+            let ok = start(self.handle.0, &mut ov, &mut transferred);
+            if ok == 0 {
+                // SAFETY: 부수효과 없는 last-error 조회.
+                let err = unsafe { GetLastError() };
+                if err == ERROR_BROKEN_PIPE {
+                    return Ok(0);
+                }
+                if err != ERROR_IO_PENDING {
+                    return Err(PluginError::Io(io::Error::from_raw_os_error(err as i32)));
+                }
+                // SAFETY: 유효 핸들·OVERLAPPED, 완료 대기(bWait=TRUE).
+                let done = unsafe { GetOverlappedResult(self.handle.0, &ov, &mut transferred, 1) };
+                if done == 0 {
+                    // SAFETY: 부수효과 없는 last-error 조회.
+                    let e2 = unsafe { GetLastError() };
+                    if e2 == ERROR_BROKEN_PIPE {
+                        return Ok(0);
+                    }
+                    return Err(PluginError::Io(io::Error::from_raw_os_error(e2 as i32)));
+                }
+            }
+            Ok(transferred as usize)
+        }
+
+        fn read_raw(&self, buf: &mut [u8]) -> Result<usize> {
+            self.blocking_io(|h, ov, transferred| {
+                // SAFETY: 유효 핸들, buf 는 len 만큼 유효, overlapped read.
+                unsafe { ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, transferred, ov) }
+            })
         }
 
         /// 최대 4 KiB 를 읽어 `carry` 뒤에 붙인다. 반환 0 이면 EOF.
@@ -519,26 +562,23 @@ mod windows {
             buf.push(b'\n');
             let mut off = 0usize;
             while off < buf.len() {
-                let mut written: u32 = 0;
-                // SAFETY: 유효 파이프 핸들, buf[off..] 는 유효, written 은 out param.
-                let rc = unsafe {
-                    WriteFile(
-                        self.handle.0,
-                        buf[off..].as_ptr(),
-                        (buf.len() - off) as u32,
-                        &mut written,
-                        ptr::null_mut(),
-                    )
-                };
-                if rc == 0 {
-                    return Err(PluginError::Io(io::Error::last_os_error()));
+                let chunk = &buf[off..];
+                let n = self.blocking_io(|h, ov, transferred| {
+                    // SAFETY: 유효 핸들, chunk 는 유효, overlapped write.
+                    unsafe { WriteFile(h, chunk.as_ptr(), chunk.len() as u32, transferred, ov) }
+                })?;
+                if n == 0 {
+                    return Err(PluginError::Io(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "handle channel pipe write returned 0",
+                    )));
                 }
-                off += written as usize;
+                off += n;
             }
             Ok(())
         }
 
-        /// 현재 프로세스 내 파이프 핸들 복제. reader/writer 스레드 분리용.
+        /// 현재 프로세스 내 파이프 핸들 복제(새 event). reader/writer 스레드 분리용.
         pub(super) fn try_clone(&self) -> Result<Self> {
             let mut dup: HANDLE = ptr::null_mut();
             // SAFETY: 유효 핸들 → 같은 프로세스 복제. 실패 시 rc==0.
@@ -556,9 +596,7 @@ mod windows {
             if rc == 0 {
                 return Err(PluginError::Io(io::Error::last_os_error()));
             }
-            Ok(Self {
-                handle: OwnedHandle(dup),
-            })
+            Self::from_handle(OwnedHandle(dup))
         }
     }
 }
