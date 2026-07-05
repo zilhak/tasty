@@ -130,6 +130,13 @@ TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한�
 가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
 [egui-mesh-channel](egui-mesh-channel.md).
 
+**chrome 아이콘**(툴바·주소창 등)은 raw 유니코드 글리프로 그리지 말고 `tasty-icons`
+canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty-icons`(egui off)
++ usvg 로 `Icon.svg` 를 평탄화해 점배열을 `OUT_DIR` 에 베이크하고, 런타임엔
+`tasty_plugin_sdk::baked_icon::draw(painter, icon, center, size, color)` 로 텍스처 없이
+DPI 독립·theme tint 벡터 stroke 로 그린다. 새 아이콘 = `tasty-icons` 에 const 추가 +
+plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md).
+
 ## 5. 호스트 IPC 호출
 
 `HostHandle::call("surface.list", json!({}))` — 매니페스트에 해당 권한 선언 + grant 필요. `?` 한 번으로 `PluginError → IpcMethodError` 변환. 주요 에러 variant: `HostCall{message}`(permission_denied 등) · `HostCallTimeout` · `HandshakeRejected/Timeout` · `HostClosed`. 권한↔메서드 매핑은 [plugin-permissions](plugin-permissions.md).

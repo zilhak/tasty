@@ -24,9 +24,16 @@
 안에서 `pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose
 렌더러다. 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
 
+본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — 경로 필드 + Go 버튼. 두 아이콘은
+`tasty-icons` 빌드타임 베이크 벡터다([ADR-0036](../../../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
+
 | UI 요소 | 토큰 / 비례 | 비고 |
 |---|---|---|
-| surface 배경 | `bg-panel` | toolbar 없음, 본문이 타일 채움 |
+| surface 배경 | `bg-panel` | 상단 주소창 바 + 본문이 타일 채움 |
+| 주소창 바 | `bg-sidebar` · 40px | 경로 필드 + Go |
+| 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` · `font-size-caption` | `tasty-icons` 베이크 벡터(raw `📄` 제거) |
+| 경로 필드 | `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px | mono 경로 텍스트 |
+| Go 버튼 | `ARROW_RIGHT` glyph · `text-secondary`(hover `text-primary`) · `font-size-body` | `tasty-icons` 베이크 벡터(raw `→` 제거) |
 | 본문 텍스트 | `text-secondary` · `line-height-prose` 행간 | 헤딩 색은 단계별 차별화 |
 | 헤딩 크기 | `font-size-prose-h1`(20, h1) / `font-size-prose-h2`(14, h2·h3) / body(h4~h6) | 6단계 prose 위계 |
 | small 캡션 | body × 0.85 · `text-muted` | |
