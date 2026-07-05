@@ -126,6 +126,22 @@ pub fn hold_reveal_alpha(
     }
 }
 
+/// 홀드 조합별 표시 지연(ms). **Shift 단독**(shift 만 눌리고 ctrl/alt/option 모두 미눌림)이면
+/// 2000ms, 그 외 조합은 500ms.
+///
+/// 타이핑 중 Shift 로 팝업이 튀는 문제를 완화한다(Shift 는 대문자·기호 입력에 상시 쓰여
+/// 스침이 잦음). Shift 를 포함하되 다른 modifier 도 눌린 조합(Ctrl+Shift 등)은 의도적
+/// 단축키 조합이라 기본 지연을 유지한다. 매 프레임 현재 조합으로 재평가되므로, Shift 단독
+/// 1.5초 뒤 Ctrl 을 추가하면 지연이 500ms 로 떨어지고 경과(1.5s) > 500ms 라 즉시 표시된다.
+/// `delay_ms` 는 Theme 토큰(`motion_hold_reveal_ms`/`motion_hold_reveal_shift_ms`)에서 온다.
+fn reveal_delay_ms(held: Combo, theme: &Theme) -> f32 {
+    if held.shift && !held.ctrl && !held.alt && !held.option {
+        theme.motion_hold_reveal_shift_ms()
+    } else {
+        theme.motion_hold_reveal_ms()
+    }
+}
+
 /// 저장된 위치/크기가 없을 때의 기본 지오메트리 — **사이드바 하단 anchor**(접힘/펼침 무관
 /// 동일). 화면 좌하단에 margin 을 두고 220×400(min 아님, 기본값)으로 배치한다.
 pub fn default_rect(screen: egui::Rect, theme: &Theme) -> egui::Rect {
@@ -204,7 +220,7 @@ pub fn draw_modifier_hint(
     }
 
     let held_ms = since.elapsed().as_secs_f32() * 1000.0;
-    let delay = theme.motion_hold_reveal_ms();
+    let delay = reveal_delay_ms(held, theme);
     let fade = theme.motion_ui_fade_ms();
     let Some(alpha) = hold_reveal_alpha(held_ms, delay, fade, reduced_motion) else {
         // 아직 지연 게이트 전 — 500ms 도달 시점에 깨어나도록 정확히 예약(busy-loop 아님).
@@ -695,6 +711,37 @@ mod tests {
             })
         );
         assert_eq!(rt.hold_since, t0);
+    }
+
+    #[test]
+    fn reveal_delay_shift_only_is_2000_else_500() {
+        let theme = tasty_themes::mocha_fallback();
+        let shift = Combo {
+            shift: true,
+            ..Default::default()
+        };
+        // Shift 단독 → 2000ms.
+        assert_eq!(reveal_delay_ms(shift, &theme), 2000.0);
+        // Shift + 다른 축 → 기본 500ms.
+        let ctrl_shift = Combo {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        assert_eq!(reveal_delay_ms(ctrl_shift, &theme), 500.0);
+        // Shift 없는 조합 → 500ms.
+        let ctrl = Combo {
+            ctrl: true,
+            ..Default::default()
+        };
+        assert_eq!(reveal_delay_ms(ctrl, &theme), 500.0);
+    }
+
+    #[test]
+    fn shift_only_2000ms_gate_hides_before_and_shows_after() {
+        // 순수함수 hold_reveal_alpha 를 2000ms 지연으로 평가: 500ms→None, 2100ms→Some.
+        assert_eq!(hold_reveal_alpha(500.0, 2000.0, FADE, false), None);
+        assert!(hold_reveal_alpha(2100.0, 2000.0, FADE, false).is_some());
     }
 
     #[test]

@@ -152,6 +152,7 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
 | `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `motion_hold_reveal_ms()` = `MOTION_HOLD_REVEAL_MS` | **신규**. 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
+| `--tasty-motion-hold-reveal-shift` | → `duration-2000` (2000ms) | `motion_hold_reveal_shift_ms()` = `MOTION_HOLD_REVEAL_SHIFT_MS` | **신규** primitive duration-2000. **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
 | `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `motion_ui_fade_ms()` = `MOTION_UI_FADE_MS` | **신규**. 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
 | `--tasty-modhint-width` | → `size-220` (220px) | `modhint_width()` | **신규** primitive size-220 |
 | `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
