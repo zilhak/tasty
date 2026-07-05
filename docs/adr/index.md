@@ -45,3 +45,4 @@
 | 0032 | [원격 프로필을 ssh(연결) / tasty-attach(attach) 2-레이어로 분리](0032-remote-attach-two-layer-split.md) | Accepted | 2026-07-01 | remote, profile, attach, ssh, two-layer, ref, port-file, cli |
 | 0033 | [UI 색은 semantic role 접근자로만 — primitive 필드 직접 접근 전면 금지(위젯 포함)](0033-ui-color-semantic-role-only.md) | Accepted | 2026-07-03 | design-tokens, color, semantic, primitive, theme, ui-widgets, guard, enforcement, adr-0020 |
 | 0034 | [터미널 PTY 셸을 호스트(tasty) 수명에 결박한다](0034-terminal-shell-host-lifetime-binding.md) | Accepted | 2026-07-04 | process-lifetime, reaper, job-object, pty, terminal, windows, conpty, orphan, cross-platform, adr-0009 |
+| 0035 | [modifier-hint 오버레이 — 눌린 조합으로 섹션 좁힘 + Shift 단독 표시 지연 2초](0035-modifier-hint-combo-narrowing-and-shift-delay.md) | Accepted | 2026-07-05 | modifier-hint, overlay, keybindings, combo, subset, reveal-delay, shift, design-token, accessibility, debug-ipc, adr-0020 |
