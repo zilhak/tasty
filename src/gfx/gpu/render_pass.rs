@@ -62,6 +62,8 @@ impl GpuState {
         let term_surface = theme.surface("terminal");
         // ANSI 16 팔레트는 *프레임당 1회* 만 추출 — 셀별 lock 비용 제거.
         let ansi = theme.ansi_palette();
+        // DECSCNM 렌더 허용 여부 — 프레임당 1회 읽어 모든 surface 에 동일 적용.
+        let reverse_screen_enabled = engine.settings.general.reverse_screen_enabled;
 
         // Accumulate instance data for every surface into the renderer's
         // shared vecs, recording per-surface (rect, bg range, glyph range).
@@ -160,6 +162,7 @@ impl GpuState {
                     render_preedit_ref,
                     link_for_this,
                     search_ref,
+                    reverse_screen_enabled,
                 );
             }
         }

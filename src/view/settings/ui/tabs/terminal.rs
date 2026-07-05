@@ -80,6 +80,19 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             tasty_ui_widgets::switch(ui, &th, &mut settings.general.inherit_cwd, None, true);
             ui.end_row();
 
+            // DECSCNM(화면 반전, mode 5) 렌더 토글. off 면 셸의 visible-bell 등이
+            // `\e[?5h` 를 보내도 전체 화면 반전 플래시를 그리지 않는다(모드 플래그는
+            // 여전히 추적 — 프로그램 조회 응답은 정상).
+            ui.label(t("settings.terminal.reverse_screen_label"));
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.reverse_screen_enabled,
+                None,
+                true,
+            );
+            ui.end_row();
+
             ui.label(t("settings.terminal.link_modifier_label"));
             egui::ComboBox::from_id_salt("link_modifier")
                 .selected_text(match settings.general.link_click_modifier.as_str() {

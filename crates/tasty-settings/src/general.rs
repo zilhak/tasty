@@ -94,6 +94,15 @@ pub struct GeneralSettings {
     /// including untrusted remote/SSH processes — silently exfiltrate clipboard
     /// contents (passwords, tokens). When off, read queries get no reply.
     pub allow_clipboard_read: bool,
+    /// Render DECSCNM (DEC private mode 5, "reverse screen"): when a program
+    /// sends `\e[?5h`, the whole viewport's default fg/bg are swapped. Some
+    /// setups abuse this as a visible bell (readline `bell-style visible` emits
+    /// the terminfo `flash` = a DECSCNM toggle), producing a jarring full-screen
+    /// flash. When this is off, the mode flag is still tracked (queries answer
+    /// correctly) but the renderer does NOT apply the swap, so the flash is
+    /// suppressed. On by default (spec-compliant). See `screen_reverse()` on the
+    /// terminal and the render gate in `render_terminals`.
+    pub reverse_screen_enabled: bool,
     /// 마우스 트래킹 앱(vim/htop 등) 위에서 처음 좌/우 클릭할 때, 마우스가 앱에 캡처
     /// 중이며 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭으로 띄울 수 있음을
     /// 안내하는 toast 를 트래킹 세션당 1회 표시한다(발견성, ADR-0022 ②). off 면 안내하지
@@ -171,6 +180,7 @@ impl Default for GeneralSettings {
             restore_surface_content: true,
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
+            reverse_screen_enabled: true,
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
             workspace_categories_enabled: false,
@@ -562,6 +572,29 @@ mod tests {
     fn new_restore_surface_content_key_loads() {
         let g: GeneralSettings = toml::from_str("restore_surface_content = false").unwrap();
         assert!(!g.restore_surface_content);
+    }
+
+    #[test]
+    fn reverse_screen_enabled_defaults_true() {
+        // 기본값은 현행 스펙 유지(DECSCNM 정상 렌더).
+        let g = GeneralSettings::default();
+        assert!(g.reverse_screen_enabled);
+    }
+
+    #[test]
+    fn reverse_screen_enabled_missing_key_uses_default() {
+        // 구 config.toml 마이그레이션 안전: 키가 없으면 기본 true.
+        let g: GeneralSettings = toml::from_str("scrollback_lines = 5000").unwrap();
+        assert!(g.reverse_screen_enabled);
+    }
+
+    #[test]
+    fn reverse_screen_enabled_round_trips() {
+        let g: GeneralSettings = toml::from_str("reverse_screen_enabled = false").unwrap();
+        assert!(!g.reverse_screen_enabled);
+        let out = toml::to_string(&g).unwrap();
+        let g2: GeneralSettings = toml::from_str(&out).unwrap();
+        assert!(!g2.reverse_screen_enabled);
     }
 
     #[test]

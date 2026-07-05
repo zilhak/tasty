@@ -188,6 +188,9 @@ impl CellRenderer {
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,
+        // DECSCNM 렌더 허용 여부(설정 `general.reverse_screen_enabled`). false 면
+        // 터미널이 reverse-screen 모드여도 화면 반전을 적용하지 않는다(플래시 억제).
+        reverse_screen_enabled: bool,
     ) {
         let bg_start = self.bg_instances.len() as u32;
         let glyph_start = self.glyph_instances.len() as u32;
@@ -200,8 +203,12 @@ impl CellRenderer {
         terminal.with_render_view(|view| {
             // DECSCNM (reverse screen): swap the default fg/bg for the whole
             // viewport. Cell-level attributes are unaffected; only the default
-            // (unstyled) colors invert.
-            let (default_bg, default_fg) = if view.screen_reverse() {
+            // (unstyled) colors invert. Gated by `reverse_screen_enabled`: when
+            // the user turns the setting off, the mode flag stays tracked (so
+            // program queries still answer correctly) but we skip the visual
+            // swap, suppressing the full-screen flash some shells emit as a
+            // visible bell.
+            let (default_bg, default_fg) = if reverse_screen_enabled && view.screen_reverse() {
                 (default_fg, default_bg)
             } else {
                 (default_bg, default_fg)
