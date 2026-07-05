@@ -130,6 +130,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
+        "Row keycaps show the leaf key only (C / G / T) — the chord head above owns the modifier, so \
+         Ctrl+C would repeat it. Section headers keep the full combo (Ctrl / Ctrl+Alt / Ctrl+Shift).",
+    );
+    spec::note(
+        ui,
+        theme,
         "The list narrows to the held combo: pressing Ctrl then adding Shift drops the bare-Ctrl \
          section and shows only combos containing Ctrl+Shift. Shift-only holds wait 2000ms (not 500ms) \
          to avoid popping up mid-typing.",
@@ -247,7 +253,12 @@ fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32) {
             chord_head(ui, theme, sec.chord);
             ui.spacing_mut().item_spacing.y = theme.modhint_row_gap().value();
             for (label, binding, plugin) in sec.rows {
-                hint_row(ui, theme, label, binding, *plugin);
+                // 행 키캡은 leaf 키만 — chord head 가 이미 modifier 를 담당한다. 디자인 SoT
+                // `overlays-shared.jsx` 의 `r.keys.startsWith(s.keys+"+") ? r.keys.slice(...)`
+                // 를 1:1 전사: `SECTIONS` mock 은 full chord 를 유지하고 렌더에서만 접두를 뗀다.
+                let prefix = format!("{}+", sec.chord);
+                let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
+                hint_row(ui, theme, label, leaf, *plugin);
             }
             for (desc, glyph) in sec.roles {
                 role_row(ui, theme, desc, *glyph);

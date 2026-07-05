@@ -26,7 +26,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use super::input::shortcuts::modifier_hint::{
-    Combo, HintRole, HintRowSource, HintSection, build_hint_sections,
+    Combo, HintRole, HintRowSource, HintSection, binding_leaf, build_hint_sections,
 };
 
 /// 진행 중 드래그/리사이즈 모드.
@@ -163,7 +163,7 @@ pub fn debug_state_json(
         .map(|s| {
             json!({
                 "combo": combo_keycaps(s.combo),
-                "rows": s.rows.iter().map(|r| r.binding.clone()).collect::<Vec<_>>(),
+                "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
             })
         })
@@ -594,7 +594,7 @@ fn draw_row(
                 .circle_filled(r.center(), d * 0.5, theme.modhint_agent_dot().to_egui());
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            kbd(ui, theme, &prettify_binding(&row.binding));
+            kbd(ui, theme, &prettify_binding(binding_leaf(&row.binding)));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(
                     egui::Label::new(

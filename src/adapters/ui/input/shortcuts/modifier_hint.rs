@@ -45,6 +45,20 @@ use crate::plugin::registry_state::ShortcutOverride;
 
 use super::binding::parse_binding;
 
+/// 행 바인딩에서 leaf 키 토큰만 반환 — 섹션 헤더가 이미 modifier 를 보여주므로 중복 제거.
+/// canonical full binding 은 [`HintRow::binding`] 에 유지하고 **표시만** leaf 로 도출한다.
+///
+/// 섹션 combo == 행 modifier 집합이 항상 성립하므로([`build_hint_sections`] 의 push 규칙:
+/// 행은 자신의 조합과 정확히 같은 섹션에만 들어간다), "modifier 전부 제거" 는 "섹션 prefix
+/// strip" 과 증명적으로 동치다. 문자열 strip 대신 파서를 쓰는 이유는 표기 순서에 견고하기
+/// 때문 — `"shift+ctrl+t"` 도(헤더가 `Ctrl+Shift` 라도) leaf 는 항상 `"t"`.
+///
+/// parse 실패(비정상 경로 — 섹션에 존재하는 행은 구조적으로 여기 오지 않는다) 시 원본
+/// 바인딩을 그대로 fallback 하여 빈 렌더를 원천 차단한다.
+pub fn binding_leaf(binding: &str) -> &str {
+    parse_binding(binding).map(|p| p.key).unwrap_or(binding)
+}
+
 /// `option` 축 존재 여부 — macOS 전용. 비-macOS 는 조합 공간에서 완전히 빠진다.
 #[cfg(target_os = "macos")]
 const OPTION_AXIS: bool = true;
@@ -461,6 +475,22 @@ mod tests {
     /// restore_closed="ctrl+shift+t", tab_switch="ctrl", workspace_switch="alt".
     fn kb() -> KeybindingSettings {
         KeybindingSettings::preset_tasty()
+    }
+
+    #[test]
+    fn binding_leaf_strips_all_modifiers() {
+        // 단일 modifier → leaf 키.
+        assert_eq!(binding_leaf("ctrl+k"), "k");
+        assert_eq!(binding_leaf("alt+t"), "t");
+        // 다축 조합 → leaf 키.
+        assert_eq!(binding_leaf("ctrl+shift+t"), "t");
+        // 표기 순서 무관(파서 사용) — 헤더가 Ctrl+Shift 라도 leaf 는 항상 t.
+        assert_eq!(binding_leaf("shift+ctrl+t"), "t");
+        // 구분자와 충돌하는 키(`,`)도 leaf 로 보존.
+        assert_eq!(binding_leaf("ctrl+,"), ",");
+        // parse 실패(modifier 단독/무 modifier) → 원본 fallback.
+        assert_eq!(binding_leaf("ctrl"), "ctrl");
+        assert_eq!(binding_leaf("f11"), "f11");
     }
 
     #[test]
