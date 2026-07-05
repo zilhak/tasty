@@ -740,6 +740,14 @@ fn route_debug_handler(
         "debug.host_popup.close" => {
             debug::handle_debug_host_popup_close(state, id, &request.params)
         }
+        // modifier-hint 오버레이 홀드 주입 + 상태 덤프 — 사용자 modifier 홀드 우회 force-state.
+        // release 미노출(원칙1: 오버레이는 실 홀드로만 표시).
+        #[cfg(feature = "gui")]
+        "debug.modifier_hint.hold" => {
+            debug::handle_debug_modhint_hold(state, engine, id, &request.params)
+        }
+        #[cfg(feature = "gui")]
+        "debug.modifier_hint.state" => debug::handle_debug_modhint_state(state, engine, id),
         // 배너 직접 발화/조회/닫기 — 사용자 조작 없이 시각 검증용. release 미노출.
         // 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 debug 전용.
         #[cfg(feature = "gui")]

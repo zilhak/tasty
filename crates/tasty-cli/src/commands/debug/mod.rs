@@ -128,6 +128,11 @@ pub enum DebugCommands {
     /// actions in release), for visual verification of the overlay.
     #[command(subcommand)]
     Banner(BannerDebugCommands),
+    /// Modifier-hint overlay hold injection + render-state dump (debug builds only).
+    /// Sets the overlay's held modifier combo without a real key hold and dumps
+    /// the recomputed render state (narrowed sections / delay / visibility).
+    #[command(subcommand)]
+    ModifierHint(ModifierHintDebugCommands),
     /// Settings modal force-open (debug builds only).
     /// Opens the settings modal without the user-action path (shortcut / button
     /// click), for visual verification of the settings UI against the design.
@@ -267,6 +272,28 @@ pub enum HostPopupDebugCommands {
         #[arg(long)]
         popup_id: String,
     },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum ModifierHintDebugCommands {
+    /// Inject a modifier hold (no flags = release). `--elapsed-ms` backdates the
+    /// hold timer to instantly pass the reveal-delay gate.
+    Hold {
+        #[arg(long)]
+        ctrl: bool,
+        #[arg(long)]
+        alt: bool,
+        #[arg(long)]
+        option: bool,
+        #[arg(long)]
+        shift: bool,
+        /// Backdate the hold timer by this many ms (skip the reveal delay).
+        #[arg(long)]
+        elapsed_ms: Option<u64>,
+    },
+    /// Dump the overlay render state (held / delay / alpha / visible / sections / header).
+    State,
 }
 
 #[cfg(debug_assertions)]

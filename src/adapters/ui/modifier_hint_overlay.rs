@@ -97,6 +97,91 @@ impl ModifierHintRuntime {
     }
 }
 
+/// Debug 전용 홀드 상태 조작·관찰 — `debug.modifier_hint.*` IPC 표면이 쓴다.
+///
+/// 원칙1상 오버레이는 실 modifier 홀드(`ModifiersChanged`)로만 뜨고 IPC 로 강제 표시할 수
+/// 없다. 이 접근자들은 `host_popup.open`(사용자 클릭 우회 force-open)과 동일 성격의 debug
+/// 격리 표면으로, 오버레이 내부 홀드 상태만 세팅/덤프한다(PTY raw 주입 아님). release
+/// 미노출.
+#[cfg(debug_assertions)]
+impl ModifierHintRuntime {
+    /// 현재 홀드 상태 스냅샷 — `(눌린 조합, 경과시간, dismissed)`.
+    pub fn debug_snapshot(
+        &self,
+    ) -> (Option<Combo>, Option<std::time::Duration>, bool) {
+        (self.held, self.hold_since.map(|s| s.elapsed()), self.dismissed)
+    }
+
+    /// `hold_since` 를 `elapsed` 만큼 과거로 백데이트 → 표시 지연 게이트를 즉시 통과시킨다
+    /// (스크린샷·상태 검증용). `Instant::checked_sub` 로 플랫폼별 하한을 안전 처리한다.
+    pub fn debug_backdate(&mut self, elapsed: std::time::Duration) {
+        if let Some(s) = self.hold_since {
+            self.hold_since = Some(s.checked_sub(elapsed).unwrap_or(s));
+        }
+    }
+}
+
+/// Debug 전용 — 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 JSON 덤프.
+///
+/// `debug.modifier_hint.state` 가 쓴다. `reveal_delay_ms`(Shift 단독 판정) · `hold_reveal_alpha`
+/// · `build_hint_sections`(좁힘) · `combo_keycaps` 를 그대로 재사용하므로, 스크린샷 없이도
+/// "무엇이 어떻게 표시되는가" 를 자동 단정할 수 있다. release 미노출.
+#[cfg(debug_assertions)]
+pub fn debug_state_json(
+    rt: &ModifierHintRuntime,
+    settings: &Settings,
+    theme: &Theme,
+    reduced_motion: bool,
+) -> serde_json::Value {
+    use serde_json::{Value, json};
+    let (held, elapsed, dismissed) = rt.debug_snapshot();
+    let Some(held) = held else {
+        return json!({
+            "held": Value::Null,
+            "hold_elapsed_ms": Value::Null,
+            "dismissed": dismissed,
+            "reveal_delay_ms": Value::Null,
+            "visible": false,
+            "alpha": Value::Null,
+            "header_combo": "",
+            "sections": [],
+        });
+    };
+    let elapsed_ms = elapsed.map(|d| d.as_secs_f32() * 1000.0).unwrap_or(0.0);
+    let delay = reveal_delay_ms(held, theme);
+    let fade = theme.motion_ui_fade_ms();
+    let alpha = hold_reveal_alpha(elapsed_ms, delay, fade, reduced_motion);
+    let sections = build_hint_sections(
+        held,
+        &settings.keybindings,
+        &settings.general.link_click_modifier,
+        settings.general.workspace_categories_enabled,
+        &[],
+    );
+    let sections_json: Vec<Value> = sections
+        .iter()
+        .map(|s| {
+            json!({
+                "combo": combo_keycaps(s.combo),
+                "rows": s.rows.iter().map(|r| r.binding.clone()).collect::<Vec<_>>(),
+                "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let visible =
+        settings.modifier_hint.enabled && !dismissed && alpha.is_some() && !sections.is_empty();
+    json!({
+        "held": { "ctrl": held.ctrl, "alt": held.alt, "option": held.option, "shift": held.shift },
+        "hold_elapsed_ms": elapsed_ms,
+        "dismissed": dismissed,
+        "reveal_delay_ms": delay,
+        "visible": visible,
+        "alpha": alpha,
+        "header_combo": combo_keycaps(held),
+        "sections": sections_json,
+    })
+}
+
 /// 홀드 경과시간(ms) → 오버레이 alpha. `None` = 아직 표시 안 함(지연 전).
 ///
 /// - `held_ms < delay_ms` → `None`(홀드 지연 게이트 통과 전 — 실수 스침 억제).

@@ -87,6 +87,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
         DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
         DebugCommands::HostPopup(sub) => host_popup_debug_command_to_method_params(sub),
+        DebugCommands::ModifierHint(sub) => modifier_hint_debug_command_to_method_params(sub),
         DebugCommands::Banner(sub) => banner_debug_command_to_method_params(sub),
         DebugCommands::Settings(sub) => settings_debug_command_to_method_params(sub),
         DebugCommands::Lua(sub) => lua_debug_command_to_method_params(sub),
@@ -150,6 +151,34 @@ pub(super) fn host_popup_debug_command_to_method_params(
             "debug.host_popup.close",
             serde_json::json!({ "popup_id": popup_id }),
         ),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn modifier_hint_debug_command_to_method_params(
+    command: &crate::ModifierHintDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::ModifierHintDebugCommands;
+    match command {
+        ModifierHintDebugCommands::Hold {
+            ctrl,
+            alt,
+            option,
+            shift,
+            elapsed_ms,
+        } => (
+            "debug.modifier_hint.hold",
+            serde_json::json!({
+                "ctrl": ctrl,
+                "alt": alt,
+                "option": option,
+                "shift": shift,
+                "elapsed_ms": elapsed_ms,
+            }),
+        ),
+        ModifierHintDebugCommands::State => {
+            ("debug.modifier_hint.state", serde_json::json!({}))
+        }
     }
 }
 

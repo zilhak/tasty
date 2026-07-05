@@ -377,6 +377,9 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.host_popup.list", local_only()),
     ("debug.host_popup.open", local_only()),
     ("debug.host_popup.close", local_only()),
+    // modifier-hint 오버레이 홀드 주입/상태 덤프 — 사용자 modifier 홀드 재현. release 미노출.
+    ("debug.modifier_hint.hold", local_only()),
+    ("debug.modifier_hint.state", local_only()),
     // 설정 모달 강제 open — 사용자 조작 재현. release 미노출. 시각 검증 자동화용.
     ("debug.settings.open", local_only()),
     // 런타임 설정 patch 적용 — 사용자 "설정 저장" 재현. release 미노출.

@@ -28,8 +28,8 @@ pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 #[cfg(debug_assertions)]
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,
-    HostPopupDebugCommands, LuaDebugCommands, PopupDebugCommands, SettingsDebugCommands,
-    ToolDebugCommands,
+    HostPopupDebugCommands, LuaDebugCommands, ModifierHintDebugCommands, PopupDebugCommands,
+    SettingsDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::FileHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};

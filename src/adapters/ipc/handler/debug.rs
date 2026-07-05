@@ -375,6 +375,63 @@ pub(super) fn handle_debug_host_popup_close(
     JsonRpcResponse::success(id, json!({ "closed": def.id }))
 }
 
+/// `debug.modifier_hint.hold` — `{ ctrl, alt, option, shift, elapsed_ms? }` 로 오버레이의
+/// 홀드 조합을 직접 세팅한다(생략 축 = false, 모두 false 면 홀드 해제). `elapsed_ms` 가
+/// 있으면 타이머를 그만큼 과거로 백데이트해 표시 지연 게이트를 즉시 통과시킨다.
+///
+/// 원칙1상 오버레이는 실 modifier 홀드로만 뜨지만, 이는 PTY raw 주입이 아니라 오버레이
+/// 내부 상태만 세팅하는 force-state 라 `host_popup.open` 과 동일하게 debug 격리로 충분하다.
+/// 응답은 `state` 와 동일한 렌더 상태 덤프. release 미노출.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_modhint_hold(
+    state: &mut AppState,
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let axis = |k: &str| params.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+    state.modifier_hint.update_hold(
+        axis("ctrl"),
+        axis("alt"),
+        axis("option"),
+        axis("shift"),
+    );
+    if let Some(ms) = params.get("elapsed_ms").and_then(|v| v.as_u64()) {
+        state
+            .modifier_hint
+            .debug_backdate(std::time::Duration::from_millis(ms));
+    }
+    let theme = crate::theme::theme();
+    let reduced_motion = engine.settings.accessibility.reduced_motion;
+    let dump = crate::adapters::ui::modifier_hint_overlay::debug_state_json(
+        &state.modifier_hint,
+        &engine.settings,
+        &theme,
+        reduced_motion,
+    );
+    JsonRpcResponse::success(id, dump)
+}
+
+/// `debug.modifier_hint.state` — 오버레이의 현재 렌더 상태를 draw 경로와 동일 로직으로
+/// 재평가해 덤프한다(held / 지연 / alpha / visible / header_combo / 좁혀진 sections). 스크린샷
+/// 없이 좁힘·즉시갱신·지연을 자동 단정하기 위한 debug 격리 표면. release 미노출.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_modhint_state(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
+    let theme = crate::theme::theme();
+    let reduced_motion = engine.settings.accessibility.reduced_motion;
+    let dump = crate::adapters::ui::modifier_hint_overlay::debug_state_json(
+        &state.modifier_hint,
+        &engine.settings,
+        &theme,
+        reduced_motion,
+    );
+    JsonRpcResponse::success(id, dump)
+}
+
 /// `debug.banner.list` — 빌트인 배너 정의 목록 + 현재 표시/대기 상태를 반환.
 ///
 /// 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 release 에
