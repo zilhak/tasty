@@ -35,9 +35,29 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 | host 합성 (decode + 전용 Renderer + scissor) | `src/gfx/gpu/egui_mesh_prepare.rs` (`gpu.rs::render` 가 호출) |
 | host→plugin set_context + 입력 forward | `src/view/main/egui_mesh.rs` |
 | paint_frame 수신 라우팅 / 송신 헬퍼 | `crates/tasty-host-plugin/src/manager/{pump,events,buffer}.rs` |
+| 보조 핸들 채널 (shared buffer 핸들 전송) | host `crates/tasty-host-plugin/src/handle_channel.rs` · plugin `crates/tasty-plugin-sdk/src/handle_channel.rs` · 매핑 `crates/tasty-shm/` |
 | host 측 surface stand-in | `src/plugin_bridge/egui_mesh_surface.rs` |
 | 화이트리스트 + api_version gate + registry 등록 | `src/engine/surface_registry/egui_mesh.rs` |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` |
+
+### 보조 핸들 채널 — shared buffer 를 plugin 에 넘기는 전송 (크로스플랫폼)
+
+mesh 는 GPU shared memory 버퍼에 써서 host 가 합성한다. 그 버퍼를 만드는 건 host 지만
+(`manager/buffer.rs::create_shared_buffer_for`), 매핑 핸들을 plugin 프로세스로 넘기는 건
+메인 TCP 채널이 아니라 **보조 핸들 채널**이다(메인 채널은 fd/HANDLE 을 운반 못 함). OS 별
+전송 수단만 다르고 상위 프로토콜(NDJSON `HandleAttach` + `Dirty`)은 동일하다:
+
+| | Unix | Windows |
+|---|---|---|
+| 채널 | `AF_UNIX` socket | Named Pipe (`\\.\pipe\tasty-handle-…`) |
+| 핸들 전달 | `sendmsg` + `SCM_RIGHTS`(ancillary fd) | `DuplicateHandle` 로 plugin 핸들 테이블에 복제 → 결과 HANDLE u64 를 `HandleAttach.handle` in-band |
+| plugin 수신 | `recvmsg` fd → `tasty_shm::receive(Fd)` | 라인 파싱 HANDLE u64 → `tasty_shm::receive(Handle)` |
+
+`HandleChannelMessage::HandleAttach` 의 `handle: Option<u64>` 는 Windows 전용이며,
+`skip_serializing_if` 로 Unix wire 는 변경되지 않는다. 핸들 복제/매핑 자체는 `tasty_shm`
+플랫폼 레이어가 담당한다. end-to-end 라운드트립 검증은
+`crates/tasty-host-plugin/src/handle_channel/channel_tests_windows.rs`(Windows) ·
+`channel_tests.rs`(Unix).
 
 ## set_context 송신 정책
 
