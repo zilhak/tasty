@@ -17,7 +17,7 @@
 //! compiled until C1 removes it.
 
 mod doc;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod render;
 
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ use tasty_plugin_sdk::{
 };
 use tasty_type_appearance::theme::Theme;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshSurface;
 
 const PLUGIN_ID: &str = "com.tasty.image";
@@ -40,10 +40,10 @@ const PLUGIN_VERSION: &str = "0.1.1";
 
 struct ImagePlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     meshes: HashMap<u32, EguiMeshSurface>,
     /// surface_id 들 중 폰트(CJK fallback)를 이미 설치한 것 — set_fonts 재업로드 방지.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fonts_installed: std::collections::HashSet<u32>,
     /// surface_id → image document state.
     docs: HashMap<u32, ImageDoc>,
@@ -54,9 +54,9 @@ struct ImagePlugin {
 impl ImagePlugin {
     fn new(tr: Translator) -> Self {
         Self {
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             meshes: HashMap::new(),
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             fonts_installed: std::collections::HashSet::new(),
             docs: HashMap::new(),
             tr,
@@ -83,7 +83,7 @@ impl Plugin for ImagePlugin {
     }
 
     fn destroy_surface(&mut self, surface_id: u32) {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             self.meshes.remove(&surface_id);
             self.fonts_installed.remove(&surface_id);
@@ -191,7 +191,7 @@ impl ImagePlugin {
     }
 
     /// `set_context` 한 frame 을 그려 host 에 mesh 를 회신한다.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn paint(&mut self, ctx: SurfaceSetContextCtx) {
         let sid = ctx.params.surface_id;
 
@@ -229,7 +229,7 @@ impl ImagePlugin {
     /// 편집/탐색 IPC 로 doc 이 out-of-band 로 바뀐 뒤, **입력 없이** 화면을 갱신한다(옵션 A).
     /// 마지막 set_context 의 캐시된 컨텍스트(geom/ppp/theme)로 빈 입력 재-paint → 출력이
     /// 바뀌면 host 로 PaintFrame 을 송신한다. theme 미수신(첫 set_context 전)이면 no-op.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn repaint_after_edit(&mut self, host: &HostHandle, params: &Value) {
         let Ok(sid) = require_surface(params) else {
             return;
@@ -262,11 +262,11 @@ impl ImagePlugin {
 
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
 
     /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     fn repaint_after_edit(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
@@ -321,7 +321,7 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
 }
 
 /// plugin Context 에 CJK fallback 을 설치한다 (host `font_registry` 미러, B1 markdown 동일).
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bytes) = load_system_cjk_font_data() {
@@ -341,8 +341,15 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 /// 시스템 CJK 폰트 바이트 로드.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        // host font_registry 미러 — 맑은 고딕(한글 tofu 방지). 없으면 None.
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         for path in &[
