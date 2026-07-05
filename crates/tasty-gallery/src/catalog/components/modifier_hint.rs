@@ -63,7 +63,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Modifier hint panel",
-        Some("Ctrl held · sections ordered by combo size then Ctrl < Alt < Shift"),
+        Some("Ctrl held · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift"),
     );
     spec::stage(ui, theme, StageVariant::Center, |ui| {
         panel(ui, theme);
@@ -78,7 +78,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "modhint-width 220 (min 200)"),
             ("height", "modhint-height 400 (min 240)"),
             ("strip", "modhint-strip-height 28 · bg-sidebar"),
-            ("reveal", "hold 500ms → fade 200ms (opacity 0.2→1.0)"),
+            ("reveal", "hold 500ms (Shift-only 2000ms) → fade 200ms (opacity 0.2→1.0)"),
             ("release", "0ms — vanishes immediately"),
         ],
         &[
@@ -126,6 +126,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Empty combos (no binding and no role) omit the whole section — never render an \"empty\" row.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "The list narrows to the held combo: pressing Ctrl then adding Shift drops the bare-Ctrl \
+         section and shows only combos containing Ctrl+Shift. Shift-only holds wait 2000ms (not 500ms) \
+         to avoid popping up mid-typing.",
     );
     spec::dont(
         ui,
