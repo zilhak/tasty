@@ -13,6 +13,14 @@
 
 mod render;
 
+/// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
+/// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
+/// 좌표)를 생성한다. 런타임은 이 점배열을 [`tasty_plugin_sdk::baked_icon::draw`] 로
+/// 그릴 크기에 스케일해 벡터 stroke 로 그린다(텍스처 없음, DPI 독립).
+mod baked_icons {
+    include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
+}
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -577,10 +585,17 @@ fn draw_path_field(
     );
     let ui = &mut cui;
     ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-    ui.label(
-        egui::RichText::new("\u{1F4C4}")
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
+    // 선두 문서 글리프 — 베이크된 FILE 벡터 아이콘. 이전 이모지 라벨과 동일 위치·크기
+    // (left_to_right flow, caption 크기, text_muted 색)를 유지한다.
+    let icon_sz = theme.font_size_caption.value();
+    let (icon_rect, _) =
+        ui.allocate_exact_size(egui::vec2(icon_sz, icon_sz), egui::Sense::hover());
+    tasty_plugin_sdk::baked_icon::draw(
+        ui.painter(),
+        baked_icons::FILE,
+        icon_rect.center(),
+        icon_sz,
+        theme.text_muted().to_egui(),
     );
     ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(1.0, theme.accent_primary().to_egui());
     let text_color = if focused {
@@ -666,11 +681,13 @@ fn go_button(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) -> egui::Respons
     } else {
         theme.text_secondary()
     };
-    ui.painter().text(
+    // go 화살표 — 베이크된 ARROW_RIGHT 벡터 아이콘. 이전 → 글리프와 동일 위치(rect
+    // center)·크기(body)를 유지한다.
+    tasty_plugin_sdk::baked_icon::draw(
+        ui.painter(),
+        baked_icons::ARROW_RIGHT,
         rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "\u{2192}",
-        egui::FontId::new(theme.font_size_body.value(), egui::FontFamily::Proportional),
+        theme.font_size_body.value(),
         color.to_egui(),
     );
     resp.on_hover_text(tr.t("markdown.addr.go"))

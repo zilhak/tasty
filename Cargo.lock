@@ -5736,12 +5736,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "egui",
  "pulldown-cmark",
  "serde_json",
+ "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -5749,6 +5750,7 @@ dependencies = [
  "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
+ "usvg",
  "webbrowser",
 ]
 

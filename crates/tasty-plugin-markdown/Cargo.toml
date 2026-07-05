@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 license = "MIT"
 description = "Markdown viewer surface plugin (egui-mesh)"
@@ -33,6 +33,14 @@ egui = { version = "0.31", default-features = false, features = [
     "bytemuck",
     "default_fonts",
 ] }
+
+# 빌드타임 SVG → 벡터 베이크(build.rs). usvg 는 host egui_extras svg feature 가 이미
+# Cargo.lock 에 vendored 한 0.37 을 그대로 쓴다 — build-dep 라 런타임 바이너리 크기 영향 0.
+# tasty-icons 는 canonical SVG 소스 — `default-features=false` 로 egui 를 끈다(build.rs
+# 는 egui 를 링크하지 않는다). host/gallery 런타임 렌더와 바이트 동일한 소스를 베이크.
+[build-dependencies]
+usvg = "0.37"
+tasty-icons = { path = "../tasty-icons", default-features = false }
 
 [dev-dependencies]
 tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
