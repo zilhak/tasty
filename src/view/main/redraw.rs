@@ -1536,4 +1536,109 @@ mod tests {
         let items = category_header_menu_items(true);
         assert_eq!(shape(&items), vec![Some(3), None, Some(100)]);
     }
+
+    // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip) 의
+    // 위치별 메뉴 구성을 id·separator 위치로 고정한다. id: 1=copy_path, 10=copy_files,
+    // 11=cut, 12=paste/paste_into, 20=open_in_system, 30=delete, 40=rename,
+    // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root. None=separator.
+    fn explorer_menu_shape(
+        multi: bool,
+        is_empty_target: bool,
+        is_folder: bool,
+        has_clip: bool,
+    ) -> Vec<Option<u32>> {
+        shape(&super::MainView::build_explorer_context_menu(
+            multi,
+            is_empty_target,
+            is_folder,
+            has_clip,
+        ))
+    }
+
+    #[test]
+    fn explorer_menu_empty_no_clip() {
+        // 빈 영역, 클립보드 없음: 경로복사 · 즐겨찾기추가.
+        assert_eq!(
+            explorer_menu_shape(false, true, false, false),
+            vec![Some(1), Some(50)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_empty_with_clip() {
+        // 빈 영역, 클립보드 있음: + ─ · 붙여넣기.
+        assert_eq!(
+            explorer_menu_shape(false, true, false, true),
+            vec![Some(1), Some(50), None, Some(12)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_single_file() {
+        // 단일 파일(클립보드 무관): 경로복사 · 복사 · 잘라내기 · 이름변경 · ─ · 휴지통.
+        assert_eq!(
+            explorer_menu_shape(false, false, false, false),
+            vec![Some(1), Some(10), Some(11), Some(40), None, Some(30)]
+        );
+        // has_clip 은 단일 파일 shape 에 영향 없음.
+        assert_eq!(
+            explorer_menu_shape(false, false, false, true),
+            vec![Some(1), Some(10), Some(11), Some(40), None, Some(30)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_single_folder_no_clip() {
+        // 단일 폴더, 클립보드 없음: 경로복사 · 즐겨찾기 · 새탭 · 루트설정 · 복사 ·
+        // 잘라내기 · 이름변경 · ─ · 휴지통 · 시스템열기.
+        assert_eq!(
+            explorer_menu_shape(false, false, true, false),
+            vec![
+                Some(1),
+                Some(50),
+                Some(60),
+                Some(61),
+                Some(10),
+                Some(11),
+                Some(40),
+                None,
+                Some(30),
+                Some(20)
+            ]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_single_folder_with_clip() {
+        // 단일 폴더, 클립보드 있음: 위 + 붙여넣기(12, cut/paste 그룹 안).
+        assert_eq!(
+            explorer_menu_shape(false, false, true, true),
+            vec![
+                Some(1),
+                Some(50),
+                Some(60),
+                Some(61),
+                Some(10),
+                Some(11),
+                Some(12),
+                Some(40),
+                None,
+                Some(30),
+                Some(20)
+            ]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_multi() {
+        // 다중 선택(클립보드 무관): 경로복사 · 복사 · 잘라내기 · ─ · 휴지통.
+        assert_eq!(
+            explorer_menu_shape(true, false, false, false),
+            vec![Some(1), Some(10), Some(11), None, Some(30)]
+        );
+        assert_eq!(
+            explorer_menu_shape(true, false, false, true),
+            vec![Some(1), Some(10), Some(11), None, Some(30)]
+        );
+    }
 }
