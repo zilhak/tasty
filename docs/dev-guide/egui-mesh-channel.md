@@ -170,12 +170,43 @@ popup/banner 도 같은 체인 규칙·재무장·mesh 분리 규칙을 공유�
 
 ## 입력 forward · identity 경계
 
-host 가 받은 **실제 사용자 입력**(클릭/스크롤/포인터 이동)만 surface-local 좌표로
-변환해 `set_context.raw_input` 으로 forward 한다. set_context 송신 자체는 host 렌더
-파이프라인의 일부라 사용자 상태(focus/스크롤/선택)에 부수효과가 없다. 에이전트
-IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 **release 에 없다** — 입력 주입은
-`#[cfg(debug_assertions)]` debug 격리(`debug.inject_window_mouse`)로만 존재한다
-(불가침 원칙 1·3, [debug-ipc](debug-ipc.md)).
+host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해 `set_context.raw_input`
+으로 forward 한다. 포인터(클릭/스크롤/이동)에 더해 **포커스된 egui-mesh surface** 는
+키보드도 받는다:
+
+| 입력 | wire 이벤트 | 누적 지점 |
+|---|---|---|
+| 포인터 버튼/이동/스크롤 | `PointerButton`/`PointerMoved`/`Scroll` | `egui_mesh_push_pointer_*`/`push_scroll` |
+| 키 누름(press-only) | `Key { key: egui Key::name(), … }` | `egui_mesh_push_key` ← `keyboard.rs` `forward_key_to_egui_mesh` |
+| 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
+| IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
+
+키/IME 는 **포커스된 egui-mesh surface 에만** 간다(`focused_egui_mesh_surface_id`
+downcast 판정). 중앙 키 디스패처(`keyboard.rs handle_keyboard_input`)가 단축키·vi·
+escape 소비를 **먼저** 처리한 뒤, 소비되지 않은 키를 이 forward 로 넘긴다 — 단축키
+선점 순서는 터미널 forward 와 동일하다. IME 는 조합 중 preedit 문자열까지 나르므로
+(commit-only 아님) plugin 의 egui `TextEdit` 이 조합 중간 상태를 인라인 표시한다.
+markdown/image 는 이 forward 로 host egui 를 거치지 않으므로(`main.rs` 의 host-egui 키
+피드에서 제외) host egui 가 그 키/IME 를 삼키지 않는다.
+
+키 wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK(`map_event`)가
+`Key::from_name` 으로 복원한다. winit→egui `Key` 변환은 논리 키 우선·물리 키 폴백
+(egui-winit 미러)이라 비-라틴 레이아웃의 편집 단축키(Ctrl+A 등)도 물리 위치로 매칭된다.
+Text 게이트는 command modifier·제어/사설영역 문자·IME 조합 중 non-ASCII 를 억제한다
+(조합 결과는 `Ime` `Commit` 으로 도착).
+
+set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 상태(focus/스크롤/선택)에
+부수효과가 없다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 **release 에
+없다** — 입력 주입은 `#[cfg(debug_assertions)]` debug 격리(`debug.inject_window_mouse`)로만
+존재한다(불가침 원칙 1·3, [debug-ipc](debug-ipc.md)).
+
+### 알려진 한계 (IME candidate 위치)
+
+OS IME candidate 창(조합 후보 목록)의 화면 위치는 host `update_ime_cursor_area` 가
+현재 **터미널 커서** 기준으로만 설정한다 — egui-mesh surface 편집 시 후보 창이 정확한
+필드 위치에 안 뜰 수 있다. 라이브 preedit **인라인 표시**(egui `TextEdit`)는 정상
+동작하며, 후보 창 위치는 별도 과제다. 클립보드(Cut/Copy/Paste)도 아직 wire 에 없어
+egui-mesh 필드에서 Ctrl+C/V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
 
 ## crash 격리
 

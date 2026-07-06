@@ -44,3 +44,7 @@ call("surface.ime_disable")
 - `surface_id` 지정 미지원 — 항상 포커스된 surface.
 - 마우스 클릭에 의한 preedit 커밋은 시뮬레이션 불가(별도 경로).
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되나 실제 OS IME 는 열리지 않음.
+- 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh surface(markdown 주소창 등)의
+  IME 는 별도 경로 — winit IME 를 plugin 으로 forward 해 plugin egui `TextEdit` 이 라이브
+  preedit 을 인라인 렌더한다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md) "입력
+  forward"). 인라인 조합 표시는 헤드리스 시뮬레이션 불가 — 실제 OS IME 로 육안 검증한다.

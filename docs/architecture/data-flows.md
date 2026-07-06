@@ -9,16 +9,18 @@
 ## 1. 키보드 입력 → 터미널 → 화면
 
 ```
-winit KeyEvent
+winit KeyEvent / Ime
   → app/event_handler.rs (ApplicationHandler::window_event)
-  → view/main/ (egui 가 먼저 소비하면 종료 — input-layer)
-  → view/main/keyboard.rs (handle_keyboard_input)
-      ├── 단축키 매칭 → Intent 발화 (shortcuts → UiIntent/DomainIntent, action-dispatch)
-      └── 그 외 키 → send_key_to_terminal
-          → tasty-terminal (Terminal::send_key) → PTY stdin → 셸
+  → view/main/ (overlay/host-egui surface 면 egui 가 먼저 소비 — input-layer)
+  → view/main/keyboard.rs (handle_keyboard_input) · view/main/ime.rs (handle_event)
+      ├── 단축키·vi·escape 매칭 → Intent 발화 (shortcuts → UiIntent/DomainIntent, action-dispatch)
+      └── 그 외 키 → 포커스 surface 로 분배:
+          ├── Terminal → forward_key_to_terminal → tasty-terminal(send_key) → PTY stdin → 셸
+          └── egui-mesh(markdown/image) → egui_mesh_push_key/text/ime
+              → set_context.raw_input forward → plugin egui TextEdit (egui-mesh-channel)
 ```
 
-셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 일반 키스트로크는 PTY 로 직접 간다.
+셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다.
 
 ---
 
