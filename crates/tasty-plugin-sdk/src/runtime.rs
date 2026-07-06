@@ -62,7 +62,6 @@ impl DispatchError {
     }
 }
 
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin 런타임 부트스트랩(watchdog/env/hello/메시지 루프 순차 셋업). 게이트와 별건
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
     // macOS: 부모(tasty) 사망 감시 watchdog 시작. PDEATHSIG 등가물이 없어 자식
@@ -75,22 +74,7 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let (writer_stream, mut reader) = conn.into_parts();
     let writer = Arc::new(Mutex::new(writer_stream));
 
-    // 보조 핸들 채널이 활성화되어 있으면 connect한다. 실패는 fatal이 아니라 warn만 남긴다 —
-    // 보조 채널을 안 쓰는 plugin이라면 그대로 동작해야 한다 (shared buffer 기능만 비활성).
-    let handle_client: Option<HandleClient> = if env.handle_endpoint.is_some() {
-        match HandleClient::connect(&env) {
-            Ok(c) => {
-                tracing::info!("plugin handle channel connected");
-                Some(c)
-            }
-            Err(e) => {
-                tracing::warn!("plugin handle channel connect failed: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let handle_client = connect_handle_channel(&env);
 
     // hello event 송신.
     let hello = PluginEvent::Hello {
@@ -107,36 +91,11 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 
     let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
     let shared_buffer_fd_pending: SharedBufferFdPending = Arc::new(Mutex::new(HashMap::new()));
-    #[cfg_attr(not(unix), allow(unused_mut))]
-    let mut host = HostHandle::new(writer.clone(), pending.clone());
+    let host = HostHandle::new(writer.clone(), pending.clone());
 
     // 보조 채널이 살아 있으면 reader thread 띄우고 HostHandle에 writer 연결.
-    let _handle_reader_thread: Option<std::thread::JoinHandle<()>> = match handle_client {
-        #[cfg(any(unix, windows))]
-        Some(client) => match client.reader() {
-            Ok(reader) => {
-                let handle_writer = Arc::new(Mutex::new(client));
-                host = host
-                    .with_handle_channel(handle_writer.clone(), shared_buffer_fd_pending.clone());
-                let fd_pending_clone = shared_buffer_fd_pending.clone();
-                let writer_clone = handle_writer.clone();
-                let handle = std::thread::Builder::new()
-                    .name("plugin-handle-reader".into())
-                    .spawn(move || {
-                        handle_reader_loop(reader, fd_pending_clone, writer_clone);
-                    })?;
-                Some(handle)
-            }
-            Err(e) => {
-                tracing::warn!("plugin handle channel reader split failed: {e}");
-                None
-            }
-        },
-        // 보조 채널을 지원하지 않는 exotic 타깃 — client 는 drop 된다.
-        #[cfg(not(any(unix, windows)))]
-        Some(_client) => None,
-        None => None,
-    };
+    let (host, _handle_reader_thread) =
+        spawn_handle_reader(host, handle_client, &shared_buffer_fd_pending)?;
 
     let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
     let worker_writer = writer.clone();
@@ -200,6 +159,61 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
         tracing::warn!("plugin worker thread panicked: {e:?}");
     }
     Ok(())
+}
+
+/// 보조 핸들 채널이 활성화돼 있으면 connect 한다. 실패는 fatal 이 아니라 warn 만 —
+/// 보조 채널을 안 쓰는 plugin 이라면 그대로 동작해야 한다 (shared buffer 기능만 비활성).
+fn connect_handle_channel(env: &PluginEnv) -> Option<HandleClient> {
+    if env.handle_endpoint.is_none() {
+        return None;
+    }
+    match HandleClient::connect(env) {
+        Ok(c) => {
+            tracing::info!("plugin handle channel connected");
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!("plugin handle channel connect failed: {e}");
+            None
+        }
+    }
+}
+
+/// 보조 채널이 살아 있으면 reader thread 를 띄우고 `HostHandle` 에 writer 를 연결한다.
+/// `host` 를 값으로 받아 `with_handle_channel` 로 재구성한 뒤 되돌려준다(소유권 왕복).
+#[cfg_attr(not(unix), allow(unused_mut))]
+fn spawn_handle_reader(
+    mut host: HostHandle,
+    handle_client: Option<HandleClient>,
+    shared_buffer_fd_pending: &SharedBufferFdPending,
+) -> Result<(HostHandle, Option<std::thread::JoinHandle<()>>)> {
+    let thread: Option<std::thread::JoinHandle<()>> = match handle_client {
+        #[cfg(any(unix, windows))]
+        Some(client) => match client.reader() {
+            Ok(reader) => {
+                let handle_writer = Arc::new(Mutex::new(client));
+                host = host
+                    .with_handle_channel(handle_writer.clone(), shared_buffer_fd_pending.clone());
+                let fd_pending_clone = shared_buffer_fd_pending.clone();
+                let writer_clone = handle_writer.clone();
+                let handle = std::thread::Builder::new()
+                    .name("plugin-handle-reader".into())
+                    .spawn(move || {
+                        handle_reader_loop(reader, fd_pending_clone, writer_clone);
+                    })?;
+                Some(handle)
+            }
+            Err(e) => {
+                tracing::warn!("plugin handle channel reader split failed: {e}");
+                None
+            }
+        },
+        // 보조 채널을 지원하지 않는 exotic 타깃 — client 는 drop 된다.
+        #[cfg(not(any(unix, windows)))]
+        Some(_client) => None,
+        None => None,
+    };
+    Ok((host, thread))
 }
 
 /// macOS 전용: 부모(tasty) 프로세스 사망을 감시해 self-exit 하는 watchdog 스레드.
