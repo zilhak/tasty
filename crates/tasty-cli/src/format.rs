@@ -22,7 +22,12 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
     }
 }
 
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — workspace→pane→tab→surface 4중 nested 트리 렌더. 레벨별 헬퍼 분리 여지 있으나 게이트 도입과 별건
+/// Render the full `list tree` output: workspace → pane → tab → surface.
+///
+/// Decomposed into per-level renderers ([`format_pane`], [`format_tab`],
+/// [`format_tab_ids`]) so each level stays within the cognitive-complexity
+/// gate. The emitted text is byte-for-byte identical to the previous
+/// monolithic form.
 fn format_tree(result: &serde_json::Value) {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
@@ -34,94 +39,113 @@ fn format_tree(result: &serde_json::Value) {
 
             if let Some(panes) = ws.get("panes").and_then(|v| v.as_array()) {
                 for pane in panes {
-                    let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let focused = pane
-                        .get("focused")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let pfx = if focused { ">" } else { " " };
-                    println!("  {} Pane {} (id:{})", pfx, pid, pid);
-
-                    if let Some(tabs) = pane.get("tabs").and_then(|v| v.as_array()) {
-                        for tab in tabs {
-                            let tid = tab.get("id").and_then(|v| v.as_u64());
-                            let tname = tab.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                            let tactive =
-                                tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
-                            let tpfx = if tactive { "*" } else { " " };
-
-                            // Extract surface info from the tab's surface field
-                            let surface = tab.get("surface");
-                            let stype =
-                                surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
-                            let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
-                            let surfaces_arr = surface
-                                .and_then(|s| s.get("surfaces"))
-                                .and_then(|v| v.as_array());
-
-                            // Split tab with full nested layout → render the
-                            // SurfaceGroup split tree under the tab line.
-                            if stype == Some("SplitLayout")
-                                && let Some(layout) = surface.and_then(|s| s.get("layout"))
-                                && !layout.is_null()
-                            {
-                                let focused = surface
-                                    .and_then(|s| s.get("focused_surface"))
-                                    .and_then(|v| v.as_u64());
-                                match tid {
-                                    Some(t) => {
-                                        println!("      {} {} (tab:{})", tpfx, tname, t)
-                                    }
-                                    None => println!("      {} {}", tpfx, tname),
-                                }
-                                let mut lines = Vec::new();
-                                render_layout(layout, "        ", true, focused, &mut lines);
-                                for l in lines {
-                                    println!("{}", l);
-                                }
-                                continue;
-                            }
-
-                            let mut ids = String::new();
-                            if let Some(t) = tid {
-                                ids.push_str(&format!("tab:{}", t));
-                            }
-                            if let Some(s) = sid {
-                                if !ids.is_empty() {
-                                    ids.push_str(", ");
-                                }
-                                ids.push_str(&format!("surface:{}", s));
-                            } else if let Some(arr) = surfaces_arr {
-                                // SplitLayout: list all surface IDs
-                                for s in arr {
-                                    if let Some(sv) = s.as_u64() {
-                                        if !ids.is_empty() {
-                                            ids.push_str(", ");
-                                        }
-                                        ids.push_str(&format!("surface:{}", sv));
-                                    }
-                                }
-                            }
-                            if let Some(t) = stype
-                                && t != "Terminal"
-                            {
-                                if !ids.is_empty() {
-                                    ids.push_str(", ");
-                                }
-                                ids.push_str(t);
-                            }
-
-                            if ids.is_empty() {
-                                println!("      {} {}", tpfx, tname);
-                            } else {
-                                println!("      {} {} [{}]", tpfx, tname, ids);
-                            }
-                        }
-                    }
+                    format_pane(pane);
                 }
             }
         }
     }
+}
+
+/// Render a single pane line and its tabs.
+fn format_pane(pane: &serde_json::Value) {
+    let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let focused = pane
+        .get("focused")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let pfx = if focused { ">" } else { " " };
+    println!("  {} Pane {} (id:{})", pfx, pid, pid);
+
+    if let Some(tabs) = pane.get("tabs").and_then(|v| v.as_array()) {
+        for tab in tabs {
+            format_tab(tab);
+        }
+    }
+}
+
+/// Render a single tab line and, for split tabs, its nested layout tree.
+fn format_tab(tab: &serde_json::Value) {
+    let tid = tab.get("id").and_then(|v| v.as_u64());
+    let tname = tab.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let tactive = tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+    let tpfx = if tactive { "*" } else { " " };
+
+    // Extract surface info from the tab's surface field
+    let surface = tab.get("surface");
+    let stype = surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
+    let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
+    let surfaces_arr = surface
+        .and_then(|s| s.get("surfaces"))
+        .and_then(|v| v.as_array());
+
+    // Split tab with full nested layout → render the
+    // SurfaceGroup split tree under the tab line.
+    if stype == Some("SplitLayout")
+        && let Some(layout) = surface.and_then(|s| s.get("layout"))
+        && !layout.is_null()
+    {
+        let focused = surface
+            .and_then(|s| s.get("focused_surface"))
+            .and_then(|v| v.as_u64());
+        match tid {
+            Some(t) => {
+                println!("      {} {} (tab:{})", tpfx, tname, t)
+            }
+            None => println!("      {} {}", tpfx, tname),
+        }
+        let mut lines = Vec::new();
+        render_layout(layout, "        ", true, focused, &mut lines);
+        for l in lines {
+            println!("{}", l);
+        }
+        return;
+    }
+
+    let ids = format_tab_ids(tid, sid, surfaces_arr, stype);
+
+    if ids.is_empty() {
+        println!("      {} {}", tpfx, tname);
+    } else {
+        println!("      {} {} [{}]", tpfx, tname, ids);
+    }
+}
+
+/// Build the bracketed `[tab:.., surface:.., <type>]` id list for a tab.
+fn format_tab_ids(
+    tid: Option<u64>,
+    sid: Option<u64>,
+    surfaces_arr: Option<&Vec<serde_json::Value>>,
+    stype: Option<&str>,
+) -> String {
+    let mut ids = String::new();
+    if let Some(t) = tid {
+        ids.push_str(&format!("tab:{}", t));
+    }
+    if let Some(s) = sid {
+        if !ids.is_empty() {
+            ids.push_str(", ");
+        }
+        ids.push_str(&format!("surface:{}", s));
+    } else if let Some(arr) = surfaces_arr {
+        // SplitLayout: list all surface IDs
+        for s in arr {
+            if let Some(sv) = s.as_u64() {
+                if !ids.is_empty() {
+                    ids.push_str(", ");
+                }
+                ids.push_str(&format!("surface:{}", sv));
+            }
+        }
+    }
+    if let Some(t) = stype
+        && t != "Terminal"
+    {
+        if !ids.is_empty() {
+            ids.push_str(", ");
+        }
+        ids.push_str(t);
+    }
+    ids
 }
 
 /// Render a `to_tree_json_full` split tree as an indented ASCII tree.
