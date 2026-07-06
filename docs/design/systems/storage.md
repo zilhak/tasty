@@ -46,6 +46,14 @@ CREATE TABLE recent_markdown (   -- 최근 연 Markdown 경로
 
 - `recent_markdown` 만 실제로 read/write 된다(`src/store/recent_files.rs`).
 - 북마크·recent HTML 테이블은 없다 — explorer / html 이 plugin 으로 분리되며 host DB 에서 빠졌다.
+- **경로 dedup**: 같은 파일의 다른 표기(구분자 `\`↔`/`, `\\?\` verbatim, `.`/`..`,
+  Windows 대소문자 차)를 정규화 키(`strip_verbatim_prefix`+`lexically_normalize`+Windows
+  case fold)로 접는다. PK 는 여전히 raw path(표시·열기용)이며 정규화 키는 비교 전용.
+  `add_markdown` 이 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
+  없는 fresh-start 정책이라 로드 시 1회 정규화 dedup 패스로 기존 중복을 접는다.
+- **기록 진입점**: markdown-open 이 수렴하는 인텐트 계층(`Intent::NewTab`/
+  `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `AppState::record_recent_markdown`
+  로 1회 기록한다 — 파일-열기 팝업·주소창 navigate·링크 클릭이 모두 반영된다.
 
 ### 접근 규칙
 
