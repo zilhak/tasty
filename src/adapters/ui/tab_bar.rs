@@ -772,7 +772,7 @@ pub fn draw_pane_tab_bars(
                 .iter()
                 .map(|t| {
                     let sids = t.all_surface_ids();
-                    engine.notifications.has_highlighted_surface(&sids)
+                    engine.has_highlight(&sids)
                 })
                 .collect();
             let tab_is_busy: Vec<bool> = pane

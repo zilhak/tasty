@@ -1330,6 +1330,10 @@ impl App {
                 .notifications
                 .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
+            // toast producer — 신규 알림(coalesce 아님)이면 그 surface 를 highlight.
+            // 옛날엔 NotificationStore.add() 내부 insert 였으나 highlight 가 producer
+            // 중립 공유 상태로 이전되면서 producer 측에서 발동한다.
+            main.core_state.raise_surface_highlight(surface_id);
             // sound gate — coalesce 가 묶지 않은 신규 발화일 때만 재생.
             // Bell 경로는 OS 가 \a 처리 시점에 자체 beep 할 수 있어 안전 default
             // 로 skip — 향후 실측 후 정책 완화 가능.

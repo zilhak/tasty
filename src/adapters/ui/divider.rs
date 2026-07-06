@@ -5,7 +5,7 @@
 //! 순수 시각 `draw_surface_highlights_view` 는 [`SurfaceHighlightsProps`] 만
 //! 받고 AppState/CoreState/`theme::theme()` 비의존. wrapper
 //! `draw_surface_highlights` 는 `state.surface_regions(engine, terminal_rect)`
-//! 와 `engine.notifications.is_surface_highlighted(id)` 를 호출해 owned
+//! 와 `engine.is_surface_highlighted(id)` 를 호출해 owned
 //! `Vec<SurfaceHighlightRegion>` 으로 평탄화한 뒤 view 에 전달.
 //!
 //! `draw_pane_dividers` 는 이미 단순 (Tier 2) 라 손대지 않음.
@@ -112,7 +112,7 @@ fn regions_from_state(
         for r in surface_regions {
             out.push(SurfaceHighlightRegion {
                 rect: r.rect,
-                is_highlighted: engine.notifications.is_surface_highlighted(r.id),
+                is_highlighted: engine.is_surface_highlighted(r.id),
             });
         }
     }

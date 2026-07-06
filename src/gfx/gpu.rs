@@ -330,9 +330,10 @@ impl GpuState {
         let (pane_rects, dividers, focused_surface_id) =
             self.prepare_layout(state, engine, terminal_rect);
 
-        // Clear notification highlight on the currently focused surface
+        // Clear surface highlight on the currently focused surface. `focused_surface_id`
+        // 는 실제 렌더 시점 포커스(에이전트 주입 아님)라 불가침 원칙 1 에 안전하다.
         if let Some(sid) = focused_surface_id {
-            engine.notifications.clear_surface_highlight(sid);
+            engine.clear_surface_highlight(sid);
         }
 
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;

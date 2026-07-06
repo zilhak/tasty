@@ -195,6 +195,13 @@ pub struct CoreState {
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
+    // ── Surface highlight (attention) state. Producer-neutral shared primitive:
+    // any producer (toast notification, completion IPC/CLI, …) may raise it, and
+    // it is cleared when the surface gains real render-time focus (gpu.rs). Set
+    // membership = highlighted. Consumers: surface border, tab title (yellow),
+    // workspace count badge. Helpers live in `state/highlight.rs`.
+    pub(crate) highlighted_surfaces: std::collections::HashSet<u32>,
+
     // ── Mouse-capture blacklist cache. Updated by the same 1Hz BusyPoll using
     // the foreground names already resolved for busy detection (no extra
     // process snapshot). Set membership = that surface's foreground process
@@ -369,6 +376,7 @@ impl CoreState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
+            highlighted_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             pending_move_surface: None,
@@ -951,6 +959,7 @@ fn file_handler_recent_path() -> std::path::PathBuf {
 
 mod busy;
 mod finders;
+mod highlight;
 mod message;
 mod pty;
 mod terminal_finders;
