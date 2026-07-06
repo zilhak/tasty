@@ -91,7 +91,10 @@ pub(super) struct EguiMeshRenderTarget {
     /// stale 텍스처를 free 하기 위해 추적한다.
     live_textures: HashSet<TextureId>,
     /// 체인 단절로 full 재전송을 요청했고 아직 full frame 을 못 받은 상태.
-    /// true 인 동안 재요청을 내지 않는다(요청 스팸 방지). frame 수락 시 해제.
+    /// **재요청 자체는 수락될 때까지 매 tick 재무장**한다 — 요청한 full frame 이
+    /// latest-wins 버퍼에서 유실돼도 복구가 수렴하도록(single-shot deadlock 제거). 이
+    /// 플래그는 로그 스팸만 억제한다(true 인 동안 재요청 로그를 내지 않음). frame 수락 시
+    /// 해제되어 다음 단절 때 다시 1회 로그한다.
     awaiting_full: bool,
     /// 한 번이라도 유효 mesh 를 디코드했는가. false 면 합성 skip.
     has_content: bool,
@@ -491,18 +494,21 @@ impl GpuState {
                     host_ppp,
                     plugin_id,
                 );
-                if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
-                    // 미상주 텍스처 참조 — mesh 도 보류. full 재전송을 1회 요청하고
-                    // (수락 시까지 재요청 안 함) 기존 캐시로 계속 합성한다.
-                    tracing::debug!(
-                        surface = sid,
-                        frame_seq,
-                        "egui-mesh prepare: texture delta chain broken; requesting full resend"
-                    );
-                    self.egui_mesh_targets
-                        .get_mut(sid)
-                        .expect("ensured above")
-                        .awaiting_full = true;
+                if matches!(outcome, DecodeOutcome::NeedsFull) {
+                    // 미상주 텍스처 참조 — mesh 도 보류. full 재전송을 요청한다. 요청한
+                    // full frame 이 latest-wins 버퍼에서 유실될 수 있으므로 수락될 때까지
+                    // 매 tick 재무장한다(single-shot deadlock 제거). 로그는 최초 1 회만.
+                    if !awaiting {
+                        tracing::debug!(
+                            surface = sid,
+                            frame_seq,
+                            "egui-mesh prepare: texture delta chain broken; requesting full resend"
+                        );
+                        self.egui_mesh_targets
+                            .get_mut(sid)
+                            .expect("ensured above")
+                            .awaiting_full = true;
+                    }
                     self.egui_mesh_full_requests.insert(*sid);
                 }
             } else {
@@ -587,17 +593,20 @@ impl GpuState {
                         host_ppp,
                         &frame_plugin_id,
                     );
-                    if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
-                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 요청한다(surface 동형).
-                        tracing::debug!(
-                            popup = iid,
-                            frame_seq,
-                            "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
-                        );
-                        self.egui_mesh_popup_targets
-                            .get_mut(iid)
-                            .expect("ensured above")
-                            .awaiting_full = true;
+                    if matches!(outcome, DecodeOutcome::NeedsFull) {
+                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 매 tick 재무장
+                        // 요청한다(surface 동형). 로그는 최초 1 회만.
+                        if !awaiting {
+                            tracing::debug!(
+                                popup = iid,
+                                frame_seq,
+                                "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
+                            );
+                            self.egui_mesh_popup_targets
+                                .get_mut(iid)
+                                .expect("ensured above")
+                                .awaiting_full = true;
+                        }
                         self.egui_mesh_popup_full_requests.insert(*iid);
                     }
                 } else {
@@ -682,17 +691,20 @@ impl GpuState {
                         host_ppp,
                         &frame_plugin_id,
                     );
-                    if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
-                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 요청한다(surface 동형).
-                        tracing::debug!(
-                            banner = iid,
-                            frame_seq,
-                            "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
-                        );
-                        self.egui_mesh_banner_targets
-                            .get_mut(iid)
-                            .expect("ensured above")
-                            .awaiting_full = true;
+                    if matches!(outcome, DecodeOutcome::NeedsFull) {
+                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 매 tick 재무장
+                        // 요청한다(surface 동형). 로그는 최초 1 회만.
+                        if !awaiting {
+                            tracing::debug!(
+                                banner = iid,
+                                frame_seq,
+                                "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
+                            );
+                            self.egui_mesh_banner_targets
+                                .get_mut(iid)
+                                .expect("ensured above")
+                                .awaiting_full = true;
+                        }
                         self.egui_mesh_banner_full_requests.insert(*iid);
                     }
                 } else {
