@@ -602,6 +602,9 @@ enum DiffKind {
     Del,
 }
 
+// 갤러리 데모 diff 행 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트(ui/theme/rect/커서 등)라
+// context struct 로 묶어봤자 draw 호출부에서 다시 풀어써야 해 의미가 없다. 정책 #2(데모 코드) 허용.
+#[allow(clippy::too_many_arguments)]
 fn diff_line(
     ui: &mut egui::Ui,
     theme: &Theme,

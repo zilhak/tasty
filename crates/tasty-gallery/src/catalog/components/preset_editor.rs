@@ -698,6 +698,9 @@ fn scope_demo(
 }
 
 /// 라벨 붙은 **편집 상태** scope 데모 한 칸 — selected surface 기준.
+// 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트(ui/theme/라벨/크기 등)라
+// context struct 로 묶어도 호출부에서 다시 풀어써야 해 이득이 없다. 정책 #2(데모 코드) 허용.
+#[allow(clippy::too_many_arguments)]
 fn scope_demo_edit(
     ui: &mut egui::Ui,
     theme: &Theme,
