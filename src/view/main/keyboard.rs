@@ -83,8 +83,11 @@ impl MainView {
         match surface_type {
             FocusedSurfaceType::Terminal => self.forward_key_to_terminal(event),
             _ => {
-                // markdown/image(egui-mesh 자가 렌더), html, empty, None —
-                // host 측 키 큐 처리 없음.
+                // markdown/image 등 egui-mesh surface 면 plugin 으로 Key/Text forward.
+                // html/empty/None 등 비-mesh surface 는 여전히 no-op.
+                if let Some(sid) = self.focused_egui_mesh_surface_id() {
+                    self.forward_key_to_egui_mesh(sid, event);
+                }
             }
         }
 
@@ -259,6 +262,23 @@ impl MainView {
                 }
             }
         }
+    }
+
+    /// 9단계(egui-mesh 변형): 포커스된 egui-mesh surface(markdown/image 등)로 키 누름 +
+    /// 텍스트를 forward. terminal forward 와 동형이되 대상이 plugin egui `TextEdit` 이라,
+    /// Key wire 이벤트 + (조건부) Text wire 이벤트를 surface 입력 큐에 누적한다.
+    /// Text 는 [`should_forward_text`] 로 걸러 command modifier·제어문자·IME 조합 중
+    /// non-ASCII 를 억제한다(조합 결과는 IME `Commit` 으로 별도 도착 — `ime.rs`).
+    fn forward_key_to_egui_mesh(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
+        self.egui_mesh_push_key(surface_id, event);
+
+        if let Some(text) = &event.text {
+            let is_cmd = self.base.modifiers.control_key() || self.base.modifiers.super_key();
+            if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
+                self.egui_mesh_push_text(surface_id, text.as_str());
+            }
+        }
+        self.mark_dirty();
     }
 
     /// 9단계 내 scroll match. `forward_key_to_terminal` 이 `focused_terminal`(read)
@@ -539,6 +559,30 @@ impl MainView {
     }
 }
 
+/// egui-mesh surface 로 `Text` wire 이벤트를 forward 할지 판정(egui-winit 미러 +
+/// IME 억제). 억제 조건: 빈 문자열 / 제어·사설영역 문자(Delete 의 `\u{f728}` 등) /
+/// command modifier 동반(Ctrl+key 는 문자 삽입 아님) / IME 조합 중 non-ASCII(조합 결과는
+/// IME `Commit` 으로 도착하므로 중복 방지 — ASCII 숫자·기호는 조합을 안 거쳐 통과).
+fn should_forward_text(text: &str, is_cmd: bool, ime_active: bool) -> bool {
+    if text.is_empty() || is_cmd {
+        return false;
+    }
+    // IME 조합 중 non-ASCII 는 Commit 으로 도착하므로 여기선 억제.
+    if ime_active && !text.is_ascii() {
+        return false;
+    }
+    text.chars().all(is_printable_char)
+}
+
+/// egui-winit `is_printable_char` 미러 — ASCII 제어문자와 유니코드 사설 사용 영역
+/// (일부 플랫폼이 Delete/기능키를 이 영역 문자로 보냄)을 비인쇄로 걸러낸다.
+fn is_printable_char(chr: char) -> bool {
+    let is_in_private_use_area = ('\u{e000}'..='\u{f8ff}').contains(&chr)
+        || ('\u{f0000}'..='\u{ffffd}').contains(&chr)
+        || ('\u{100000}'..='\u{10fffd}').contains(&chr);
+    !is_in_private_use_area && !chr.is_ascii_control()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +648,36 @@ mod tests {
         // text 가 None 이라 아무것도 전송되지 않는다.
         assert!(out.payloads.is_empty());
         assert!(!out.sent);
+    }
+
+    // egui-mesh Text forward 게이트 — 일반 문자는 통과.
+    #[test]
+    fn forward_text_passes_plain_char() {
+        assert!(should_forward_text("a", false, false));
+        assert!(should_forward_text("가", false, false));
+    }
+
+    // command modifier(Ctrl/Cmd) 동반 문자는 억제(단축키·제어 삽입 방지).
+    #[test]
+    fn forward_text_suppresses_command_modifier() {
+        assert!(!should_forward_text("a", true, false));
+    }
+
+    // 제어문자·사설영역 문자(예: macOS Delete `\u{f728}`)는 억제.
+    #[test]
+    fn forward_text_suppresses_control_and_private_use() {
+        assert!(!should_forward_text("\u{7f}", false, false)); // DEL
+        assert!(!should_forward_text("\u{f728}", false, false)); // macOS delete glyph
+        assert!(!should_forward_text("", false, false)); // 빈 문자열
+    }
+
+    // IME 조합 중: non-ASCII 는 억제(조합 결과는 Commit 으로 도착), ASCII 는 통과.
+    #[test]
+    fn forward_text_ime_suppresses_non_ascii_only() {
+        assert!(!should_forward_text("한", false, true));
+        assert!(should_forward_text("1", false, true));
+        assert!(should_forward_text(",", false, true));
+        // IME 비활성이면 non-ASCII 도 통과(합성 문자 직접 입력).
+        assert!(should_forward_text("한", false, false));
     }
 }

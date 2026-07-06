@@ -259,11 +259,14 @@ impl View for MainView {
             || self.state.has_input_dialog_open()
             || self.state.popups.has_focused();
 
-        // Non-terminal surfaces (Explorer, Markdown) use egui widgets (TextEdit etc.)
-        // that need direct keyboard events from egui's input system.
+        // host-egui 위젯(TextEdit 등)으로 렌더되는 surface 만 winit 키/IME 를 egui 입력
+        // 시스템으로 직접 넘긴다. markdown/image 는 plugin egui-mesh 로 렌더되므로 host
+        // egui 에 대응 위젯이 없다 — 대신 중앙 키 디스패처(keyboard.rs)가 surface 로
+        // Key/Text 를, ime.rs 가 IME 를 forward 한다. 여기서 빼야 host egui 가 그 키/IME 를
+        // 삼켜 forward(특히 IME preedit)를 막지 않는다.
         let egui_surface = matches!(
             self.state.focused_surface_type(&self.core_state),
-            FocusedSurfaceType::Kind(ref k) if k == "explorer" || k == "markdown"
+            FocusedSurfaceType::Kind(ref k) if k == "explorer"
         );
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);

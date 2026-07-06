@@ -20,6 +20,7 @@
 //! - `ime_advance_base`: advance가 마지막으로 갱신된 시점의 raw cursor 위치.
 //!   이후 raw cursor가 이 위치를 지나갔다면 그만큼 advance를 차감한다.
 
+use tasty_plugin_protocol::ImeWire;
 use winit::event::Ime;
 
 use super::MainView;
@@ -73,12 +74,42 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         return;
     }
 
+    // 포커스가 egui-mesh surface(markdown/image 등)면 IME 를 plugin 으로 forward 해
+    // 라이브 preedit 을 그 surface 의 egui TextEdit 이 인라인 표시하게 한다(터미널
+    // overlay 경로 대신). commit-only 가 아니라 조합 중 preedit 문자열도 나른다.
+    if let Some(sid) = w.focused_egui_mesh_surface_id() {
+        forward_ime_to_egui_mesh(w, sid, event);
+        w.mark_dirty();
+        return;
+    }
+
     match event {
         Ime::Enabled => w.ime_active = true,
         Ime::Disabled => on_disabled(w),
         Ime::Preedit(text, cursor) => on_preedit(w, text, cursor),
         Ime::Commit(text) => on_commit(w, text),
     }
+}
+
+/// winit IME 이벤트를 egui-mesh surface 로 forward. terminal overlay 상태
+/// (`ime_preedit`/advance)는 건드리지 않고, `ime_active` 만 갱신한다 — keyboard.rs 의
+/// Text 억제 판정([`super::keyboard`])이 이 플래그를 읽기 때문.
+fn forward_ime_to_egui_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
+    let wire = match event {
+        Ime::Enabled => {
+            w.ime_active = true;
+            ImeWire::Enabled
+        }
+        Ime::Disabled => {
+            w.ime_active = false;
+            ImeWire::Disabled
+        }
+        // winit preedit 의 cursor byte-range 는 egui `ImeEvent::Preedit(String)` 이
+        // 담지 않으므로 문자열만 나른다(candidate 위치는 host 가 별도 관리).
+        Ime::Preedit(text, _cursor) => ImeWire::Preedit { text },
+        Ime::Commit(text) => ImeWire::Commit { text },
+    };
+    w.egui_mesh_push_ime(surface_id, wire);
 }
 
 /// PTY 출력이 도착해 terminal cursor(또는 TUI의 fake cursor)가 움직였을 수 있을
