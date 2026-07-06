@@ -315,6 +315,12 @@ pub fn pages() -> Vec<Page> {
                             Some("Choice and toggle controls"),
                             components::prim_forms::draw,
                         ),
+                        spec(
+                            "combobox",
+                            "Combobox",
+                            Some("Editable field + recent-history dropdown — mono path, middle-ellipsis"),
+                            components::prim_combobox::draw,
+                        ),
                     ],
                 ),
                 section(
