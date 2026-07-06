@@ -12,6 +12,7 @@
 
 mod button;
 mod chip;
+mod combobox;
 mod control;
 mod help_hint;
 mod horizontal_tab_bar;
@@ -33,6 +34,7 @@ mod two_depth;
 mod warning_callout;
 pub use button::{Button, ButtonVariant};
 pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag};
+pub use combobox::{Combobox, ComboboxAction, combobox_dropdown};
 pub use control::ControlSize;
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
