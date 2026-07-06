@@ -27,7 +27,7 @@
 
 ### 공용 위젯으로 만들어야 하는 예 (이름이 곧 정체성)
 
-표(Table) · 드롭다운/셀렉트(Dropdown/Select) · 버튼(Button) · 입력 필드(Input/TextField) · 체크박스(Checkbox) · 스위치/토글(Switch) · 라디오(Radio) · 탭(Tab) · 태그(Tag) · 배지(Badge) · 슬라이더(Slider) · 툴팁(Tooltip) · 스피너(Spinner) · 프로그레스(Progress) 등.
+표(Table) · 드롭다운/셀렉트(Dropdown/Select) · 콤보박스/자동완성(Combobox/Autocomplete) · 버튼(Button) · 입력 필드(Input/TextField) · 체크박스(Checkbox) · 스위치/토글(Switch) · 라디오(Radio) · 탭(Tab) · 태그(Tag) · 배지(Badge) · 슬라이더(Slider) · 툴팁(Tooltip) · 스피너(Spinner) · 프로그레스(Progress) 등.
 
 ### 인라인이 허용되는 반례 (보편 이름 없음)
 
