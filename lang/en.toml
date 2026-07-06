@@ -1056,6 +1056,8 @@ duplicate = "A category with this name already exists."
 held = "held"
 # Tooltip on the overlay's X button — closes only for the current hold session.
 hide_tooltip = "Hide for this hold"
+# Placeholder shown under a chord that has no binding and no role (empty section).
+empty = "No shortcuts bound"
 
 [modifier_hint.role]
 mouse_capture_bypass = "Bypass TUI mouse capture (Shift+drag to select, Shift+Right-click for menu)"

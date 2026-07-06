@@ -1055,6 +1055,8 @@ duplicate = "같은 이름의 카테고리가 이미 있습니다."
 held = "홀드 중"
 # 오버레이 X 버튼 툴팁 — 이번 홀드 세션 동안만 닫는다.
 hide_tooltip = "이번 홀드 동안 숨기기"
+# 바인딩·역할이 모두 없는 조합(빈 섹션) 아래에 표시하는 플레이스홀더.
+empty = "지정된 단축키 없음"
 
 [modifier_hint.role]
 mouse_capture_bypass = "TUI 마우스 캡처 우회 (Shift+드래그로 선택, Shift+우클릭으로 메뉴)"
