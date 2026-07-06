@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::types::{
-    HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
-    PopupTrigger, PresetFieldInputType, SettingsItemDecl, SurfaceKindDecl, ToolAction,
+    CliCommandDecl, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest,
+    Permission, PopupTrigger, PresetFieldInputType, SettingsItemDecl, SettingsPageContribute,
+    SurfaceKindDecl, ToolAction, ToolContribute,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
@@ -334,8 +335,21 @@ impl Manifest {
         Ok(())
     }
 
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — manifest contributes 검증(항목별 prefix/중복/포맷 체크). 항목별 validator 분리 여지, 게이트와 별건
     fn validate_contributes(&self) -> anyhow::Result<()> {
+        let seen_prefixes = self.validate_contributed_ipc_namespaces()?;
+        self.validate_contributed_cli(&seen_prefixes)?;
+        self.validate_contributed_tools()?;
+        self.validate_contributed_popups()?;
+        self.validate_contributed_banners()?;
+        self.validate_contributed_windows()?;
+        self.validate_contributed_settings_pages()?;
+        self.validate_contributed_detectors()?;
+        self.validate_contributed_handlers()?;
+        self.validate_contributed_detector_permissions()?;
+        Ok(())
+    }
+
+    fn validate_contributed_ipc_namespaces(&self) -> anyhow::Result<HashSet<String>> {
         let mut seen_prefixes = HashSet::new();
         for ns in &self.contributes.ipc_namespace {
             if !is_valid_ipc_prefix(&ns.prefix) {
@@ -358,7 +372,10 @@ impl Manifest {
                 );
             }
         }
+        Ok(seen_prefixes)
+    }
 
+    fn validate_contributed_cli(&self, seen_prefixes: &HashSet<String>) -> anyhow::Result<()> {
         let mut seen_cli_names = HashSet::new();
         for cli in &self.contributes.cli {
             if !is_valid_cli_name(&cli.name) {
@@ -374,94 +391,108 @@ impl Manifest {
             if !seen_cli_names.insert(cli.name.clone()) {
                 anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }
+            Self::validate_cli_subcommands(cli, seen_prefixes)?;
+            Self::validate_cli_arg_groups(cli)?;
+        }
+        Ok(())
+    }
 
-            let mut seen_sub_names = HashSet::new();
-            for sub in &cli.subcommands {
-                if !is_valid_cli_name(&sub.name) {
-                    anyhow::bail!(
-                        "invalid cli subcommand name '{}' under '{}'",
-                        sub.name,
-                        cli.name
-                    );
-                }
-                if !seen_sub_names.insert(sub.name.clone()) {
-                    anyhow::bail!(
-                        "cli subcommand name '{}' declared twice under '{}'",
-                        sub.name,
-                        cli.name
-                    );
-                }
-                if !cli.arg_groups.contains_key(&sub.args) {
-                    anyhow::bail!(
-                        "cli subcommand '{} {}' references unknown arg group '{}'",
-                        cli.name,
-                        sub.name,
-                        sub.args
-                    );
-                }
-                if sub.polling.is_some() && sub.auto_wait.is_some() {
-                    anyhow::bail!(
-                        "cli subcommand '{} {}' declares both 'polling' and 'auto_wait' \
+    fn validate_cli_subcommands(
+        cli: &CliCommandDecl,
+        seen_prefixes: &HashSet<String>,
+    ) -> anyhow::Result<()> {
+        let mut seen_sub_names = HashSet::new();
+        for sub in &cli.subcommands {
+            if !is_valid_cli_name(&sub.name) {
+                anyhow::bail!(
+                    "invalid cli subcommand name '{}' under '{}'",
+                    sub.name,
+                    cli.name
+                );
+            }
+            if !seen_sub_names.insert(sub.name.clone()) {
+                anyhow::bail!(
+                    "cli subcommand name '{}' declared twice under '{}'",
+                    sub.name,
+                    cli.name
+                );
+            }
+            if !cli.arg_groups.contains_key(&sub.args) {
+                anyhow::bail!(
+                    "cli subcommand '{} {}' references unknown arg group '{}'",
+                    cli.name,
+                    sub.name,
+                    sub.args
+                );
+            }
+            if sub.polling.is_some() && sub.auto_wait.is_some() {
+                anyhow::bail!(
+                    "cli subcommand '{} {}' declares both 'polling' and 'auto_wait' \
                          — choose one (polling = self-poll, auto_wait = chain to another method)",
-                        cli.name,
-                        sub.name
-                    );
-                }
-                // ipc_method는 plugin 자기 namespace로 시작해야 한다.
-                let Some(dot) = sub.ipc_method.find('.') else {
-                    anyhow::bail!(
-                        "cli subcommand '{} {}' ipc_method '{}' has no namespace prefix",
-                        cli.name,
-                        sub.name,
-                        sub.ipc_method
-                    );
-                };
-                let prefix = &sub.ipc_method[..dot];
-                if !seen_prefixes.contains(prefix) {
-                    anyhow::bail!(
-                        "cli subcommand '{} {}' ipc_method '{}' uses prefix '{}' \
+                    cli.name,
+                    sub.name
+                );
+            }
+            // ipc_method는 plugin 자기 namespace로 시작해야 한다.
+            let Some(dot) = sub.ipc_method.find('.') else {
+                anyhow::bail!(
+                    "cli subcommand '{} {}' ipc_method '{}' has no namespace prefix",
+                    cli.name,
+                    sub.name,
+                    sub.ipc_method
+                );
+            };
+            let prefix = &sub.ipc_method[..dot];
+            if !seen_prefixes.contains(prefix) {
+                anyhow::bail!(
+                    "cli subcommand '{} {}' ipc_method '{}' uses prefix '{}' \
                          which is not declared in this plugin's ipc_namespace",
+                    cli.name,
+                    sub.name,
+                    sub.ipc_method,
+                    prefix
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_cli_arg_groups(cli: &CliCommandDecl) -> anyhow::Result<()> {
+        // arg group 내부 정합성: flag는 flags에만, positional은 flag 필드 없음.
+        for (group_name, group) in &cli.arg_groups {
+            for arg in &group.positional {
+                if arg.flag.is_some() {
+                    anyhow::bail!(
+                        "arg group '{}.{}' positional arg '{}' must not have a 'flag' field",
                         cli.name,
-                        sub.name,
-                        sub.ipc_method,
-                        prefix
+                        group_name,
+                        arg.name
                     );
                 }
             }
-
-            // arg group 내부 정합성: flag는 flags에만, positional은 flag 필드 없음.
-            for (group_name, group) in &cli.arg_groups {
-                for arg in &group.positional {
-                    if arg.flag.is_some() {
-                        anyhow::bail!(
-                            "arg group '{}.{}' positional arg '{}' must not have a 'flag' field",
-                            cli.name,
-                            group_name,
-                            arg.name
-                        );
-                    }
-                }
-                for arg in &group.flags {
-                    let Some(flag) = &arg.flag else {
-                        anyhow::bail!(
-                            "arg group '{}.{}' flag arg '{}' is missing 'flag' field",
-                            cli.name,
-                            group_name,
-                            arg.name
-                        );
-                    };
-                    if !flag.starts_with("--") {
-                        anyhow::bail!(
-                            "arg group '{}.{}' flag '{}' must start with '--'",
-                            cli.name,
-                            group_name,
-                            flag
-                        );
-                    }
+            for arg in &group.flags {
+                let Some(flag) = &arg.flag else {
+                    anyhow::bail!(
+                        "arg group '{}.{}' flag arg '{}' is missing 'flag' field",
+                        cli.name,
+                        group_name,
+                        arg.name
+                    );
+                };
+                if !flag.starts_with("--") {
+                    anyhow::bail!(
+                        "arg group '{}.{}' flag '{}' must start with '--'",
+                        cli.name,
+                        group_name,
+                        flag
+                    );
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_tools(&self) -> anyhow::Result<()> {
         // [[contributes.tool]] 검증.
         if !self.contributes.tool.is_empty() {
             if !self.permissions.iter().any(|p| p == "ui.tool_item") {
@@ -492,38 +523,49 @@ impl Manifest {
                         tool.id
                     );
                 }
-                match &tool.action {
-                    ToolAction::Event { event_key } => {
-                        if !is_valid_event_key(event_key) {
-                            anyhow::bail!(
-                                "contributes.tool '{}': action.event_key '{}' must be a concrete event key",
-                                tool.id,
-                                event_key
-                            );
-                        }
-                    }
-                    ToolAction::OpenSurface { surface_kind } => {
-                        if !surface_kinds.contains(surface_kind.as_str()) {
-                            anyhow::bail!(
-                                "contributes.tool '{}': action.surface_kind '{}' is not declared in this plugin's [[surface_kinds]]",
-                                tool.id,
-                                surface_kind
-                            );
-                        }
-                    }
-                    ToolAction::OpenPopup { popup_id } => {
-                        // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
-                        if popup_id.is_empty() {
-                            anyhow::bail!(
-                                "contributes.tool '{}': action.popup_id must not be empty",
-                                tool.id
-                            );
-                        }
-                    }
+                Self::validate_tool_action(tool, &surface_kinds)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_tool_action(
+        tool: &ToolContribute,
+        surface_kinds: &HashSet<&str>,
+    ) -> anyhow::Result<()> {
+        match &tool.action {
+            ToolAction::Event { event_key } => {
+                if !is_valid_event_key(event_key) {
+                    anyhow::bail!(
+                        "contributes.tool '{}': action.event_key '{}' must be a concrete event key",
+                        tool.id,
+                        event_key
+                    );
+                }
+            }
+            ToolAction::OpenSurface { surface_kind } => {
+                if !surface_kinds.contains(surface_kind.as_str()) {
+                    anyhow::bail!(
+                        "contributes.tool '{}': action.surface_kind '{}' is not declared in this plugin's [[surface_kinds]]",
+                        tool.id,
+                        surface_kind
+                    );
+                }
+            }
+            ToolAction::OpenPopup { popup_id } => {
+                // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
+                if popup_id.is_empty() {
+                    anyhow::bail!(
+                        "contributes.tool '{}': action.popup_id must not be empty",
+                        tool.id
+                    );
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_popups(&self) -> anyhow::Result<()> {
         // [[contributes.popup]] 검증.
         if !self.contributes.popup.is_empty() {
             if !self.permissions.iter().any(|p| p == "ui.popup") {
@@ -531,62 +573,74 @@ impl Manifest {
                     "[[contributes.popup]] requires permission 'ui.popup' to be declared in manifest permissions[]"
                 );
             }
-            let mut seen_popup_ids = HashSet::new();
-            for popup in &self.contributes.popup {
-                if !is_valid_tool_id(&popup.id) {
-                    anyhow::bail!(
-                        "invalid contributes.popup id '{}': must be lowercase ascii + digits + '-', \
-                         start with a letter, length ≤ 64",
-                        popup.id
-                    );
-                }
-                if !seen_popup_ids.insert(popup.id.clone()) {
-                    anyhow::bail!(
-                        "contributes.popup id '{}' declared twice in this manifest",
-                        popup.id
-                    );
-                }
-                if let PopupTrigger::Event { event_key } = &popup.trigger
-                    && !is_valid_event_key(event_key)
-                {
-                    anyhow::bail!(
-                        "contributes.popup '{}': trigger.event_key '{}' must be a concrete event key",
-                        popup.id,
-                        event_key
-                    );
-                }
-                if let Some(sz) = &popup.size_hint
-                    && (sz.width == 0 || sz.height == 0)
-                {
-                    anyhow::bail!(
-                        "contributes.popup '{}': size_hint width/height must be > 0",
-                        popup.id
-                    );
-                }
-            }
+            self.validate_popup_defs()?;
+            self.validate_tool_popup_refs()?;
+        }
+        Ok(())
+    }
 
-            // [[contributes.tool]] action.open_popup이 이 plugin의 popup id를 가리킬 때
-            // 해당 id가 실제로 존재해야 한다.
-            let popup_ids: HashSet<&str> = self
-                .contributes
-                .popup
-                .iter()
-                .map(|p| p.id.as_str())
-                .collect();
-            for tool in &self.contributes.tool {
-                if let ToolAction::OpenPopup { popup_id } = &tool.action
-                    && let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
-                    && !popup_ids.contains(local_id)
-                {
-                    anyhow::bail!(
-                        "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
-                        tool.id,
-                        popup_id
-                    );
-                }
+    fn validate_popup_defs(&self) -> anyhow::Result<()> {
+        let mut seen_popup_ids = HashSet::new();
+        for popup in &self.contributes.popup {
+            if !is_valid_tool_id(&popup.id) {
+                anyhow::bail!(
+                    "invalid contributes.popup id '{}': must be lowercase ascii + digits + '-', \
+                         start with a letter, length ≤ 64",
+                    popup.id
+                );
+            }
+            if !seen_popup_ids.insert(popup.id.clone()) {
+                anyhow::bail!(
+                    "contributes.popup id '{}' declared twice in this manifest",
+                    popup.id
+                );
+            }
+            if let PopupTrigger::Event { event_key } = &popup.trigger
+                && !is_valid_event_key(event_key)
+            {
+                anyhow::bail!(
+                    "contributes.popup '{}': trigger.event_key '{}' must be a concrete event key",
+                    popup.id,
+                    event_key
+                );
+            }
+            if let Some(sz) = &popup.size_hint
+                && (sz.width == 0 || sz.height == 0)
+            {
+                anyhow::bail!(
+                    "contributes.popup '{}': size_hint width/height must be > 0",
+                    popup.id
+                );
             }
         }
+        Ok(())
+    }
 
+    fn validate_tool_popup_refs(&self) -> anyhow::Result<()> {
+        // [[contributes.tool]] action.open_popup이 이 plugin의 popup id를 가리킬 때
+        // 해당 id가 실제로 존재해야 한다.
+        let popup_ids: HashSet<&str> = self
+            .contributes
+            .popup
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        for tool in &self.contributes.tool {
+            if let ToolAction::OpenPopup { popup_id } = &tool.action
+                && let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
+                && !popup_ids.contains(local_id)
+            {
+                anyhow::bail!(
+                    "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
+                    tool.id,
+                    popup_id
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_contributed_banners(&self) -> anyhow::Result<()> {
         // [[contributes.banner]] 검증 (A3).
         if !self.contributes.banner.is_empty() {
             if !self.permissions.iter().any(|p| p == "ui.banner") {
@@ -627,7 +681,10 @@ impl Manifest {
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_windows(&self) -> anyhow::Result<()> {
         // [[contributes.window]] 검증.
         if !self.contributes.window.is_empty() {
             if !self.permissions.iter().any(|p| p == "window.spawn") {
@@ -665,7 +722,10 @@ impl Manifest {
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_settings_pages(&self) -> anyhow::Result<()> {
         // [[contributes.settings_pages]] 검증.
         if !self.contributes.settings_pages.is_empty() {
             if !self.permissions.iter().any(|p| p == "ui.settings_page") {
@@ -693,101 +753,116 @@ impl Manifest {
                         page.id
                     );
                 }
-                let mut seen_item_ids = HashSet::new();
-                for item in &page.items {
-                    // 공통 형식 검사 (모든 variant): id·storage_key 는 settings id 규칙
-                    // (소문자/숫자/`_`/`-`, 1..=64), label_key 비어있지 않음, id 중복 금지.
-                    let (id, label_key, storage_key) = item.common();
-                    if !is_valid_settings_id(id) {
-                        anyhow::bail!(
-                            "invalid contributes.settings_pages '{}' item id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
-                            page.id,
-                            id
-                        );
-                    }
-                    if !seen_item_ids.insert(id.to_string()) {
-                        anyhow::bail!(
-                            "contributes.settings_pages '{}' item id '{}' declared twice",
-                            page.id,
-                            id
-                        );
-                    }
-                    if label_key.is_empty() {
-                        anyhow::bail!(
-                            "contributes.settings_pages '{}' item '{}': label_key must not be empty",
-                            page.id,
-                            id
-                        );
-                    }
-                    if !is_valid_settings_id(storage_key) {
-                        anyhow::bail!(
-                            "invalid contributes.settings_pages '{}' item '{}' storage_key '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
-                            page.id,
-                            id,
-                            storage_key
-                        );
-                    }
+                Self::validate_settings_page_items(page)?;
+            }
+        }
+        Ok(())
+    }
 
-                    // variant 별 추가 검사.
-                    match item {
-                        SettingsItemDecl::FontOverride { .. } | SettingsItemDecl::Toggle { .. } => {
-                        }
-                        SettingsItemDecl::Select {
-                            options, default, ..
-                        } => {
-                            // default 는 options.value 중 하나여야 한다.
-                            if !options.iter().any(|o| &o.value == default) {
-                                anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': select default '{}' is not among options",
-                                    page.id,
-                                    id,
-                                    default
-                                );
-                            }
-                        }
-                        SettingsItemDecl::Number {
-                            default, min, max, ..
-                        } => {
-                            // min/max 둘 다 주어지면 min ≤ max, default 는 [min,max] 안.
-                            if let (Some(mn), Some(mx)) = (min, max)
-                                && mn > mx
-                            {
-                                anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': number min ({}) > max ({})",
-                                    page.id,
-                                    id,
-                                    mn,
-                                    mx
-                                );
-                            }
-                            if let Some(mn) = min
-                                && default < mn
-                            {
-                                anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': number default ({}) < min ({})",
-                                    page.id,
-                                    id,
-                                    default,
-                                    mn
-                                );
-                            }
-                            if let Some(mx) = max
-                                && default > mx
-                            {
-                                anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': number default ({}) > max ({})",
-                                    page.id,
-                                    id,
-                                    default,
-                                    mx
-                                );
-                            }
-                        }
-                    }
+    fn validate_settings_page_items(page: &SettingsPageContribute) -> anyhow::Result<()> {
+        let mut seen_item_ids = HashSet::new();
+        for item in &page.items {
+            // 공통 형식 검사 (모든 variant): id·storage_key 는 settings id 규칙
+            // (소문자/숫자/`_`/`-`, 1..=64), label_key 비어있지 않음, id 중복 금지.
+            let (id, label_key, storage_key) = item.common();
+            if !is_valid_settings_id(id) {
+                anyhow::bail!(
+                    "invalid contributes.settings_pages '{}' item id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                    page.id,
+                    id
+                );
+            }
+            if !seen_item_ids.insert(id.to_string()) {
+                anyhow::bail!(
+                    "contributes.settings_pages '{}' item id '{}' declared twice",
+                    page.id,
+                    id
+                );
+            }
+            if label_key.is_empty() {
+                anyhow::bail!(
+                    "contributes.settings_pages '{}' item '{}': label_key must not be empty",
+                    page.id,
+                    id
+                );
+            }
+            if !is_valid_settings_id(storage_key) {
+                anyhow::bail!(
+                    "invalid contributes.settings_pages '{}' item '{}' storage_key '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                    page.id,
+                    id,
+                    storage_key
+                );
+            }
+            Self::validate_settings_item_variant(page, id, item)?;
+        }
+        Ok(())
+    }
+
+    fn validate_settings_item_variant(
+        page: &SettingsPageContribute,
+        id: &str,
+        item: &SettingsItemDecl,
+    ) -> anyhow::Result<()> {
+        // variant 별 추가 검사.
+        match item {
+            SettingsItemDecl::FontOverride { .. } | SettingsItemDecl::Toggle { .. } => {}
+            SettingsItemDecl::Select {
+                options, default, ..
+            } => {
+                // default 는 options.value 중 하나여야 한다.
+                if !options.iter().any(|o| &o.value == default) {
+                    anyhow::bail!(
+                        "contributes.settings_pages '{}' item '{}': select default '{}' is not among options",
+                        page.id,
+                        id,
+                        default
+                    );
+                }
+            }
+            SettingsItemDecl::Number {
+                default, min, max, ..
+            } => {
+                // min/max 둘 다 주어지면 min ≤ max, default 는 [min,max] 안.
+                if let (Some(mn), Some(mx)) = (min, max)
+                    && mn > mx
+                {
+                    anyhow::bail!(
+                        "contributes.settings_pages '{}' item '{}': number min ({}) > max ({})",
+                        page.id,
+                        id,
+                        mn,
+                        mx
+                    );
+                }
+                if let Some(mn) = min
+                    && default < mn
+                {
+                    anyhow::bail!(
+                        "contributes.settings_pages '{}' item '{}': number default ({}) < min ({})",
+                        page.id,
+                        id,
+                        default,
+                        mn
+                    );
+                }
+                if let Some(mx) = max
+                    && default > mx
+                {
+                    anyhow::bail!(
+                        "contributes.settings_pages '{}' item '{}': number default ({}) > max ({})",
+                        page.id,
+                        id,
+                        default,
+                        mx
+                    );
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_detectors(&self) -> anyhow::Result<()> {
         // [[contributes.detector]] 검증 — schema-agnostic 만 (host file 도메인 결합 제거).
         // concrete detector rule 검증은 본 바이너리
         // `plugin_bridge::manifest_validate::validate_detector_actual` 에서 수행.
@@ -811,7 +886,10 @@ impl Manifest {
                 anyhow::bail!("contributes.detector id '{id}' declared twice in this manifest");
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_handlers(&self) -> anyhow::Result<()> {
         // [[contributes.handler]] 검증 — schema-agnostic 만. 본문 (action/detector ref)
         // 은 본 바이너리 측에서 install 시점에 reject (file::handler::install_plugin_handlers).
         let mut seen_handler_ids = HashSet::new();
@@ -837,7 +915,10 @@ impl Manifest {
                 );
             }
         }
+        Ok(())
+    }
 
+    fn validate_contributed_detector_permissions(&self) -> anyhow::Result<()> {
         // detector contribute 권한: 신규 정의면 define, 기존 id 재선언이면 extend.
         // host/다른 plugin 의 detector 목록은 manifest 만으로는 모른다. install 시점에
         // 더 엄격하게 확인하되, manifest 차원에서는 최소한 둘 중 하나는 가져야 한다고
