@@ -216,7 +216,14 @@ impl App {
         // 우클릭 주입 후 메뉴 라우팅 회귀를 단언한다. 관찰 전용, debug 격리, release 미노출.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.pending_menu" {
-            let menu = w.state.dialogs.pending_native_menu.as_ref();
+            // 주입 경로가 세운 메뉴는 `debug_captured_menu` 로 가로채져 있다(블로킹 회피).
+            // live pending 이 있으면(비-주입 경로) 그걸, 아니면 포획본을 관찰한다.
+            let menu = w
+                .state
+                .dialogs
+                .pending_native_menu
+                .as_ref()
+                .or(w.debug_captured_menu.as_ref());
             let body = match menu {
                 Some(menu) => {
                     let (kind, surface_id) = pending_menu_kind(menu);

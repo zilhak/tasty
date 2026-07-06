@@ -86,6 +86,15 @@ pub struct MainView {
     pub(crate) last_terminal_paste_at: Option<std::time::Instant>,
     /// egui-mesh surface 별 host→plugin set_context forward 추적 (A1-S7).
     pub(crate) egui_mesh: std::collections::HashMap<u32, egui_mesh::MeshForwardState>,
+    /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
+    /// 실제 우클릭은 `process_pending_native_menu` 가 `TrackPopupMenu`(Windows) 등
+    /// **블로킹 모달** 로 즉시 소비하므로, 헤드리스 주입 테스트에서 우클릭 라우팅을
+    /// 관찰하려면 redraw 가 메뉴를 띄우기 전에 가로채야 한다. 주입 핸들러가 실행 직후
+    /// live `pending_native_menu` 를 이 슬롯으로 옮겨 (a) redraw 블로킹을 막고
+    /// (b) `debug.pending_menu` 가 결정적으로 읽게 한다. **주입 경로 전용** — 실제
+    /// 사용자 우클릭은 이 경로를 타지 않아 메뉴가 정상 표시된다(원칙 1·3 격리).
+    #[cfg(debug_assertions)]
+    pub(crate) debug_captured_menu: Option<crate::state::PendingNativeMenu>,
 }
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
@@ -133,6 +142,8 @@ impl MainView {
             hovered_link: None,
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),
+            #[cfg(debug_assertions)]
+            debug_captured_menu: None,
         }
     }
 

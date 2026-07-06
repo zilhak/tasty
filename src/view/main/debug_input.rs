@@ -50,12 +50,19 @@ impl MainView {
         match action {
             InjectPointer::Move => self.handle_cursor_moved(pos, false),
             InjectPointer::Button { button, pressed } => {
+                // 이 주입이 세우는 메뉴만 관찰하도록 직전 포획본을 비운 뒤 핸들러 실행,
+                // 실행 직후 live pending_native_menu 를 debug 슬롯으로 가로챈다. redraw 가
+                // 블로킹 모달(TrackPopupMenu 등)로 소비하기 전에 옮겨야 테스트가 멈추지 않는다.
+                self.debug_captured_menu = None;
                 let state = if pressed {
                     ElementState::Pressed
                 } else {
                     ElementState::Released
                 };
                 self.handle_mouse_input(state, button, false);
+                if let Some(menu) = self.state.dialogs.pending_native_menu.take() {
+                    self.debug_captured_menu = Some(menu);
+                }
             }
             InjectPointer::Scroll { dx, dy } => {
                 self.handle_mouse_wheel(MouseScrollDelta::LineDelta(dx, dy), false);
