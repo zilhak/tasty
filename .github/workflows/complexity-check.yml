@@ -1,0 +1,45 @@
+name: Complexity Check
+
+# ADR-0037 복잡도 게이트의 파일 SLOC 파트를 매 PR 자동 강제.
+# scripts/check-file-size.sh 가 tokei 로 Rust 파일의 code SLOC(주석·공백 제외)을 집계해
+# allowlist/skip 밖에서 1000줄 초과 신규 대형 파일이 있으면 exit 1.
+#
+# 함수 cognitive 복잡도 파트는 crossplatform-check.yml 의 Windows clippy 가 이미 잡으므로
+# 여기서는 파일 SLOC 만 책임진다(관심사 1:1).
+#
+# self-hosted Linux X64 근거: tokei 기반 무컴파일 게이트라 초단위로 끝나고, mac/win
+# 러너에 tokei 설치 부담을 지우지 않으려면 Linux 단일 러너가 적합하다. test.yml /
+# supply-chain-check.yml 과 동일한 self-hosted Linux X64 관행을 따른다.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+# test.yml / build-check.yml 와 동일 정책.
+concurrency:
+  group: complexity-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-file-size:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # tokei 가 러너에 없을 수 있으므로 보장(있으면 no-op).
+      - name: Ensure tokei
+        run: |
+          if ! command -v tokei >/dev/null 2>&1; then
+            cargo install tokei --locked
+          fi
+          tokei --version
+
+      - name: File SLOC gate
+        run: bash scripts/check-file-size.sh

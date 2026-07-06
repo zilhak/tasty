@@ -52,4 +52,4 @@ bash scripts/check-file-size.sh
 ## CI 배선
 
 - **cognitive**: 기존 `crossplatform-check.yml` 의 Windows clippy 잡이 `cargo clippy` 를 돌리므로, `cognitive_complexity = "deny"` 는 별도 배선 없이 자동으로 매-PR 차단된다(`-D warnings` 불요 — deny 자체가 에러).
-- **파일 SLOC**: `scripts/check-file-size.sh` 는 컴파일 불요·초경량이다. 신규 워크플로를 만들지 말고 기존 수동 트리거 잡(예: `supply-chain-check.yml`)에 tokei 설치 가드와 함께 스텝으로 얹는 것을 후속 배선 위치로 권한다. 현재는 로컬/수동 실행으로 운영한다.
+- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. tokei 미설치 시 `cargo install tokei --locked` 가드가 선행한다. 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
