@@ -36,11 +36,12 @@ use std::hash::{Hash, Hasher};
 use egui::epaint::textures::{TextureOptions, TexturesDelta};
 use egui::epaint::{ImageData, ImageDelta, TextureId};
 use egui::{
-    Context, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, Rect, vec2,
+    Context, Event, ImeEvent, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, Rect,
+    vec2,
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
-    BannerSetContextParams, ModifiersWire, PointerButtonWire, PopupSetContextParams,
+    BannerSetContextParams, ImeWire, ModifiersWire, PointerButtonWire, PopupSetContextParams,
     RawInputEventWire, RawInputWire, SurfaceSetContextParams, ThemeWire,
 };
 
@@ -756,6 +757,12 @@ fn map_event(e: &RawInputEventWire) -> Option<Event> {
             modifiers: map_modifiers(modifiers),
         },
         RawInputEventWire::Text { text } => Event::Text(text.clone()),
+        RawInputEventWire::Ime { event } => Event::Ime(match event {
+            ImeWire::Enabled => ImeEvent::Enabled,
+            ImeWire::Preedit { text } => ImeEvent::Preedit(text.clone()),
+            ImeWire::Commit { text } => ImeEvent::Commit(text.clone()),
+            ImeWire::Disabled => ImeEvent::Disabled,
+        }),
     })
 }
 
@@ -1155,5 +1162,31 @@ mod tests {
             }
         ));
         assert!(matches!(&raw.events[4], Event::Text(t) if t == "hi"));
+    }
+
+    /// IME wire 4단계가 각각 대응하는 `egui::Event::Ime(ImeEvent::…)` 로 매핑된다.
+    /// markdown 주소창의 라이브 preedit 표시가 이 매핑에 의존한다.
+    #[test]
+    fn ime_wire_maps_to_egui_ime_events() {
+        let cases = [
+            (ImeWire::Enabled, ImeEvent::Enabled),
+            (
+                ImeWire::Preedit {
+                    text: "ㅎ".into(),
+                },
+                ImeEvent::Preedit("ㅎ".into()),
+            ),
+            (
+                ImeWire::Commit {
+                    text: "한".into(),
+                },
+                ImeEvent::Commit("한".into()),
+            ),
+            (ImeWire::Disabled, ImeEvent::Disabled),
+        ];
+        for (wire, expected) in cases {
+            let mapped = map_event(&RawInputEventWire::Ime { event: wire });
+            assert_eq!(mapped, Some(Event::Ime(expected)));
+        }
     }
 }

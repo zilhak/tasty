@@ -24,7 +24,7 @@ pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, BannerCloseReason, BannerClosedParams, BannerOpenParams,
     BannerOpenResult, BannerSetContextParams, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, IpcCallResult, ModifiersWire, PixelRect,
+    ExtensionHookResult, HandleChannelMessage, ImeWire, IpcCallResult, ModifiersWire, PixelRect,
     PluginEvent, PluginRequest, PluginResponse, PointerButtonWire, PopupCloseReason,
     PopupClosedParams, PopupOpenParams, PopupOpenResult, PopupSetContextParams, RawInputEventWire,
     RawInputWire, SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams,

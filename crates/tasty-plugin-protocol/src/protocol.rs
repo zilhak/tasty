@@ -206,6 +206,27 @@ pub enum RawInputEventWire {
     },
     /// 텍스트 입력 (IME 확정 포함).
     Text { text: String },
+    /// IME 조합 라이프사이클(라이브 preedit + commit). egui `Event::Ime` 미러 —
+    /// plugin SDK 가 `egui::Event::Ime(egui::ImeEvent::…)` 로 매핑한다. `Text` 는 조합이
+    /// 끝난 최종 문자열만 나르지만, `Ime` 는 조합 중 preedit 문자열을 라이브로 전달해
+    /// plugin 의 `TextEdit` 이 조합 중간 상태를 인라인 표시하게 한다.
+    Ime { event: ImeWire },
+}
+
+/// egui `ImeEvent` 미러 — IME 조합 세션의 4단계. `RawInputEventWire::Ime` 에 실린다.
+/// winit `Ime` 의 preedit cursor range 는 egui `ImeEvent::Preedit(String)` 이 담지
+/// 않으므로 여기서도 문자열만 나른다(candidate 위치는 host 가 별도로 관리).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "ime", rename_all = "snake_case")]
+pub enum ImeWire {
+    /// IME 활성화 알림.
+    Enabled,
+    /// 조합 중 preedit 후보 문자열(라이브 표시).
+    Preedit { text: String },
+    /// 조합이 이 최종 문자열로 확정됨.
+    Commit { text: String },
+    /// IME 비활성화 알림.
+    Disabled,
 }
 
 /// `command.invoke` params — 사용자 단축키 매칭 시 호스트가 plugin에 보내는 명령.

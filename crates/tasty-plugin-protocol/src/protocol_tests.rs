@@ -380,6 +380,41 @@ fn raw_input_event_tags_stable() {
     assert!(s.contains("\"t\":\"pointer_gone\""), "{s}");
     let s = serde_json::to_string(&RawInputEventWire::Scroll { x: 1.0, y: 2.0 }).unwrap();
     assert!(s.contains("\"t\":\"scroll\""), "{s}");
+    // Ime 변형은 외부 `t` 태그와 내부 `ime` 태그가 둘 다 안정적으로 실린다.
+    let s = serde_json::to_string(&RawInputEventWire::Ime {
+        event: ImeWire::Preedit {
+            text: "한".into(),
+        },
+    })
+    .unwrap();
+    assert!(s.contains("\"t\":\"ime\""), "{s}");
+    assert!(s.contains("\"ime\":\"preedit\""), "{s}");
+}
+
+/// IME 4단계가 모두 `RawInputEventWire::Ime` 로 wrap 되어 round-trip 한다.
+#[test]
+fn raw_input_ime_events_round_trip() {
+    let events = vec![
+        RawInputEventWire::Ime {
+            event: ImeWire::Enabled,
+        },
+        RawInputEventWire::Ime {
+            event: ImeWire::Preedit {
+                text: "ㅎ".into(),
+            },
+        },
+        RawInputEventWire::Ime {
+            event: ImeWire::Commit {
+                text: "한글".into(),
+            },
+        },
+        RawInputEventWire::Ime {
+            event: ImeWire::Disabled,
+        },
+    ];
+    let s = serde_json::to_string(&events).unwrap();
+    let parsed: Vec<RawInputEventWire> = serde_json::from_str(&s).unwrap();
+    assert_eq!(parsed, events);
 }
 
 #[test]
