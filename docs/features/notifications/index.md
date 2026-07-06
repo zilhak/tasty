@@ -20,7 +20,7 @@ termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC
 
 ### NotificationStore
 
-VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 같은 source 에서 설정 간격(기본 500ms) 내 연속 알림은 기존에 합침. 워크스페이스별 unread 카운트, 개별/전체 읽음 처리. 알림 발생 surface 를 `highlighted_surfaces` 로 추적해 포커스 시 자동 해제.
+VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 같은 source 에서 설정 간격(기본 500ms) 내 연속 알림은 기존에 합침. 워크스페이스별 unread 카운트, 개별/전체 읽음 처리. 신규 알림 발화 시 그 source surface 를 highlight 발동한다 — toast 는 highlight 의 **producer 중 하나**이며, highlight 상태 자체는 NotificationStore 가 아니라 producer 중립 공유 primitive(CoreState `highlighted_surfaces`)에 있다. 상세 [`surface-highlight`](../surface-highlight/index.md).
 
 ### 시스템 알림 + 사운드
 

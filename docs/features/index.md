@@ -29,6 +29,7 @@
 | [keybindings](keybindings/index.md) — 단축키 (KeybindingSettings 도메인) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-viewer/index.md) |
 | [notifications](notifications/index.md) — 알림 (OSC/시스템/패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
+| [surface-highlight](surface-highlight/index.md) — Surface 주의 환기 (공유 상태·3채널·completion) | AI Agent · 로컬 사용자 | 없음 (테두리/탭/배지) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [0031](../adr/0031-lua-host-api-only-worker-isolated.md) |

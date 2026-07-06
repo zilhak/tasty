@@ -51,6 +51,11 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **Modifier-hint 오버레이** — modifier 를 홀드하면(기본 **500ms**, **Shift 단독만 2000ms**) 200ms 페이드로 떠서 눌린 **조합을 포함하는(부분집합)** 조합의 단축키 목록을 보여주고 **키를 떼면 즉시 소멸**하는 오버레이. 조합을 좁혀 누르면 목록도 즉시 좁혀진다(Ctrl→Ctrl+Shift). **키보드 포커스를 절대 안 받고**(입력은 그대로 터미널로), **마우스만 소비**(드래그 이동·테두리/코너 리사이즈·X 닫기). Popup(포커스/타이틀바/z-order)도 Toast(비인터랙티브 TTL)도 Banner(상단 고정 action)도 아닌 **홀드 수명 + 마우스 인터랙티브 + focus-less** 의 5번째 개념. 홀드 상태는 winit `ModifiersChanged`(실사용자 입력)만 반영 — IPC/CLI 로 강제 표시 불가(원칙1). `enabled` 설정 off 면 전혀 안 뜸. 지오메트리(pos/size)는 사용자가 이동/리사이즈하면 `Settings::modifier_hint` 에 영속. 상세 [`design/systems/design-token-mapping.md`](../design/systems/design-token-mapping.md) 의 modifier-hint 절 · 콘텐츠 모델은 `src/adapters/ui/input/shortcuts/modifier_hint.rs`, 본체는 `src/adapters/ui/modifier_hint_overlay.rs`.
 - **상태바(Workspace status bar)** — 작업 영역 하단을 항상 차지하는 고정 strip(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). focus surface 컨텍스트 표시 + 우측 빠른 액션(팔레트·테마). GUI 전용 표시 위젯(에이전트 표면 없음). 정본 [`features/workspace-status-bar`](../features/workspace-status-bar/index.md).
 
+### Surface 주의 환기 (→ [`features/surface-highlight`](../features/surface-highlight/index.md))
+
+- **Highlight** — surface 가 "확인 대기(주의 환기)" 상태임을 나타내는 **producer 중립 공유 상태**(CoreState `highlighted_surfaces`). 효과 3채널: **테두리 강조 + 탭 제목 강조(yellow) + 소속 워크스페이스 우측 개수 배지**. surface 가 **실제 렌더 시점 포커스**를 얻으면 자동 해제(`gpu.rs`, 에이전트 주입 아님 → 불가침 원칙 1 안전). **여러 producer**(toast 알림, completion, 후속 hook/자동감지/plugin)가 발동시킬 수 있다 — 특정 producer 의 소유물이 아니다. Toast(휘발성 View 오버레이)와 별개 개념: highlight 는 surface 에 붙는 지속 상태다.
+- **Completion** — "surface 가 작업을 완료했다"는 이벤트/신호(release 정식 IPC/CLI: `surface.completion` · `tasty surface completion`). **highlight 를 발동하는 producer 중 하나일 뿐**이다 — completion ≠ highlight. 에이전트가 자기 작업 결과를 보고하는 것이라 release 정당(PushNotification 과 동류). 향후 completion 고유 효과가 생기면 cascade 를 확장한다.
+
 ### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
 
 - **host 내장** — `terminal`(PTY+GPU 셰이더) / `empty` / `attached`(점유 mirror).

@@ -4,7 +4,7 @@
 
 판단 기준(원칙 1):
 
-- **에이전트 기능 → release IPC**: surface/tab/workspace 생성·조회·닫기, 클립보드, 알림, 메타데이터 등 — 에이전트가 *자기 작업* 을 하려고 필요한 동작.
+- **에이전트 기능 → release IPC**: surface/tab/workspace 생성·조회·닫기, 클립보드, 알림, 메타데이터 등 — 에이전트가 *자기 작업* 을 하려고 필요한 동작. 예: **`surface.completion`**(surface highlight 발동) — 에이전트가 "이 surface 확인 필요" 라고 *자기 작업 결과를 보고* 하는 것이라 PushNotification 과 동류 → **release 정식**. 반면 그 highlight 를 *포커스를 주입해* 해제하는 경로는 사용자 입력 재현이라 debug 격리 대상(현 해제는 실 렌더 포커스 기준이라 애초에 IPC 아님).
 - **디버그 기능 → debug 전용**: 사용자 단축키/마우스로 트리거되는 동작의 자동 재현(키/마우스 주입, 단축키로만 여는 popup/도구 메뉴의 IPC 트리거), 그리고 렌더러·파서 검증용 저수준 덤프.
 
 ## 라우팅
