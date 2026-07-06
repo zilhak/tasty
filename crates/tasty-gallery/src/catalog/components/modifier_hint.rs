@@ -74,6 +74,55 @@ const SHIFT_SECTIONS: &[Section] = &[
     },
 ];
 
+/// **혼재** — Ctrl 홀드 시 채워진 섹션과 빈(플레이스홀더) 섹션이 한 리스트에 공존
+/// (디자인 §2·3). Ctrl(role+rows) · Ctrl+Alt(EMPTY) · Ctrl+Shift(rows) · Ctrl+Alt+Shift(EMPTY).
+/// 빈 섹션 = `rows`·`roles` 모두 빈 배열 → `section_list` 가 플레이스홀더로 렌더.
+const MIXED_SECTIONS: &[Section] = &[
+    Section {
+        chord: "Ctrl",
+        rows: &[
+            ("Command palette", "Ctrl+K", false),
+            ("New tab", "Ctrl+T", false),
+            ("Close tab", "Ctrl+W", false),
+        ],
+        roles: &[("Switch tabs (number keys show over tabs)", RoleGlyph::Hash)],
+    },
+    Section {
+        chord: "Ctrl+Alt",
+        rows: &[],
+        roles: &[],
+    },
+    Section {
+        chord: "Ctrl+Shift",
+        rows: &[
+            ("New workspace", "Ctrl+Shift+N", false),
+            ("Split horizontal", "Ctrl+Shift+D", false),
+            ("git-helper: Stage hunk", "Ctrl+Shift+G", true),
+        ],
+        roles: &[],
+    },
+    Section {
+        chord: "Ctrl+Alt+Shift",
+        rows: &[],
+        roles: &[],
+    },
+];
+
+/// **전체 빈 패널** — Ctrl+Alt 홀드 시 상위 조합이 모두 미할당(디자인 §2·2). 두 섹션 모두
+/// 플레이스홀더만. 미할당 조합 홀드 시 패널이 뜨고 "바인딩 없음"으로 부재를 명시(ADR-0037).
+const EMPTY_SECTIONS: &[Section] = &[
+    Section {
+        chord: "Ctrl+Alt",
+        rows: &[],
+        roles: &[],
+    },
+    Section {
+        chord: "Ctrl+Alt+Shift",
+        rows: &[],
+        roles: &[],
+    },
+];
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::spec(
         ui,
@@ -82,10 +131,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         Some("Two holds shown · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift"),
     );
     spec::stage(ui, theme, StageVariant::Center, |ui| {
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-            panel(ui, theme, "Ctrl", CTRL_SECTIONS);
-            panel(ui, theme, "Shift", SHIFT_SECTIONS);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                panel(ui, theme, "Ctrl", CTRL_SECTIONS);
+                panel(ui, theme, "Shift", SHIFT_SECTIONS);
+            });
+            // 빈 조합 플레이스홀더(ADR-0037) — 혼재(채워진+빈) · 전체 빈 패널.
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                panel(ui, theme, "Ctrl", MIXED_SECTIONS);
+                panel(ui, theme, "Ctrl+Alt", EMPTY_SECTIONS);
+            });
         });
     });
 
@@ -128,6 +186,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.modhint_role_fg().to_egui(),
             ),
             TokenChip::new(
+                "modhint-empty-fg",
+                "empty placeholder text",
+                theme.modhint_empty_fg().to_egui(),
+            ),
+            TokenChip::new(
                 "modhint-agent-dot",
                 "plugin row dot",
                 theme.modhint_agent_dot().to_egui(),
@@ -145,7 +208,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::do_(
         ui,
         theme,
-        "Empty combos (no binding and no role) omit the whole section — never render an \"empty\" row.",
+        "Empty combos (no binding and no role) keep their section and show one muted \"No shortcuts bound\" \
+         placeholder — so holding an all-empty combo surfaces the panel instead of dead silence (ADR-0037).",
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't dress the placeholder like a real row: no keycap (implies a binding), no washed background \
+         (reads as a role-row), no leading glyph (reads as a bullet). It's text-muted only — quieter than \
+         every real row so it never competes with an actual binding.",
     );
     spec::note(
         ui,
@@ -272,17 +343,29 @@ fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) 
     child.vertical(|ui| {
         for sec in sections {
             chord_head(ui, theme, sec.chord);
-            ui.spacing_mut().item_spacing.y = theme.modhint_row_gap().value();
-            for (label, binding, plugin) in sec.rows {
-                // 행 키캡은 leaf 키만 — chord head 가 이미 modifier 를 담당한다. 디자인 SoT
-                // `overlays-shared.jsx` 의 `r.keys.startsWith(s.keys+"+") ? r.keys.slice(...)`
-                // 를 1:1 전사: `SECTIONS` mock 은 full chord 를 유지하고 렌더에서만 접두를 뗀다.
-                let prefix = format!("{}+", sec.chord);
-                let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
-                hint_row(ui, theme, label, leaf, *plugin);
-            }
-            for (desc, glyph) in sec.roles {
-                role_row(ui, theme, desc, *glyph);
+            // 빈 조합(바인딩·역할 모두 없음)은 내부 간격을 3px(채워진 6px)로 좁혀 "바인딩
+            // 없음" 플레이스홀더 한 줄만 그린다(ADR-0037, 본체 draw_section 전사).
+            let is_empty = sec.rows.is_empty() && sec.roles.is_empty();
+            let content_gap = if is_empty {
+                theme.modhint_empty_row_gap().value()
+            } else {
+                theme.modhint_row_gap().value()
+            };
+            ui.spacing_mut().item_spacing.y = content_gap;
+            if is_empty {
+                empty_row(ui, theme);
+            } else {
+                for (label, binding, plugin) in sec.rows {
+                    // 행 키캡은 leaf 키만 — chord head 가 이미 modifier 를 담당한다. 디자인 SoT
+                    // `overlays-shared.jsx` 의 `r.keys.startsWith(s.keys+"+") ? r.keys.slice(...)`
+                    // 를 1:1 전사: `SECTIONS` mock 은 full chord 를 유지하고 렌더에서만 접두를 뗀다.
+                    let prefix = format!("{}+", sec.chord);
+                    let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
+                    hint_row(ui, theme, label, leaf, *plugin);
+                }
+                for (desc, glyph) in sec.roles {
+                    role_row(ui, theme, desc, *glyph);
+                }
             }
             ui.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
         }
@@ -333,6 +416,25 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
                 );
             });
         });
+    });
+}
+
+/// 빈 조합 플레이스홀더 행 — muted 텍스트("바인딩 없음"). 부재 신호라 리스트에서 가장
+/// 조용하다: 키캡 없음 · wash 없음 · leading 글리프 없음 · 정적(호버/포커스 없음). 본체
+/// `modifier_hint_overlay.rs draw_empty_row` 전사. 갤러리는 mock 이라 문구를 하드코딩
+/// (본체는 `t("modifier_hint.empty")`).
+fn empty_row(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal(|ui| {
+        // 키캡 행(24px)보다 타이트한 20px 최소 높이(디자인 §6-5).
+        ui.set_min_height(theme.modhint_empty_row_min_height().value());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("No shortcuts bound")
+                    .size(theme.font_size_body.value())
+                    .color(theme.modhint_empty_fg().to_egui()),
+            )
+            .selectable(false),
+        );
     });
 }
 
