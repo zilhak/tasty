@@ -369,6 +369,10 @@ fn hsep(ui: &mut egui::Ui, th: &Theme) {
 
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     let mut close = false;
+    // 헤더 제목 라벨을 비선택으로 만들어 press 시 포인터를 가져가지 않게 한다
+    // (egui 기본 selectable_labels=true 면 글자 위 드래그가 텍스트 선택이 됨).
+    // 헤더 프레임 서브트리에만 적용 — 본문(탭·리스트) 라벨 선택성은 불변.
+    ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
         // 디자인 헤더 콘텐츠 높이 ~24 (title fontSize14 line-height). egui label/icon 은
         // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.

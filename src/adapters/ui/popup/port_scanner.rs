@@ -1059,6 +1059,10 @@ fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
 fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
+    // 헤더 라벨(제목·카운트 태그)을 비선택으로 만들어 press 시 포인터를 가져가지
+    // 않게 한다(egui 기본 selectable_labels=true 면 글자 위 드래그가 텍스트 선택으로
+    // 가로채짐). 헤더 프레임 서브트리에만 적용 — 본문 라벨 선택성은 불변.
+    ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
         // B1: leading 포트 아이콘.
         ui.add(icons::PORT.image(16.0, th.text_muted().into()));
