@@ -234,8 +234,9 @@ pub struct PluginManager {
     pub config: PluginsConfig,
     pub(super) waker: tasty_terminal::waker_factory::SharedWakerFactory,
     pub(super) listener: Option<HostListener>,
-    /// 보조 핸들 채널 listener. shared buffer 핸들 전송에 사용. Windows에서는 02c까지
-    /// `None`으로 유지된다 (HandleListener::bind가 Unsupported를 반환).
+    /// 보조 핸들 채널 listener. shared buffer 핸들 전송에 사용. Unix/Windows 양쪽에서
+    /// `HandleListener::bind`가 채널을 연다 (Unix=`AF_UNIX` socket, Windows=Named Pipe).
+    /// bind 실패 시에만 `None`이 된다.
     pub(super) handle_listener: Option<HandleListener>,
     pub log_dir: PathBuf,
     pub(super) next_request_id: AtomicU64,

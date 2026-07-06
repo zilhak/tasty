@@ -26,9 +26,10 @@ const AUTH_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 보조 채널 클라이언트. 메인 채널 인증 직후 plugin runtime이 한 번 만든다.
 ///
-/// Windows에서는 02c까지 stub이다 — [`HandleClient::connect`]가 `Unsupported` 에러를
-/// 반환한다. 호출자는 이 에러를 fatal로 취급하지 않고 warn 후 plugin 본 루프를 그대로
-/// 진행해야 한다 (보조 채널은 *추가* 동작).
+/// Unix/Windows 양쪽 구현 완료. [`HandleClient::connect`]가 Unix는 `AF_UNIX` socket으로,
+/// Windows는 Named Pipe(`CreateFileW` overlapped I/O)로 연결한 뒤 auth 핸드셰이크를 한다.
+/// 연결 실패 시 호출자는 이 에러를 fatal로 취급하지 않고 warn 후 plugin 본 루프를 그대로
+/// 진행한다 (보조 채널은 *추가* 동작).
 #[derive(Debug)]
 pub struct HandleClient {
     #[cfg(unix)]

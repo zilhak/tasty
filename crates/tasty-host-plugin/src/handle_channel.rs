@@ -256,7 +256,8 @@ impl HandleStreamReader {
 /// `AuthMessage`로 토큰을 매칭한 뒤 [`HandleListener::expect_connection`]을 호출한
 /// caller에게 stream을 분배한다.
 ///
-/// Windows에서는 02c까지 stub이다 — [`HandleListener::bind`]가 `Unsupported`를 반환.
+/// Unix/Windows 양쪽 구현 완료. [`HandleListener::bind`]가 Unix는 `AF_UNIX` socket을,
+/// Windows는 Named Pipe(overlapped accept 루프)를 연다.
 pub struct HandleListener {
     endpoint: String,
     pending: Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
