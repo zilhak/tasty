@@ -107,6 +107,38 @@ fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
     );
 }
 
+/// 워크스페이스 행 우측 개수 배지 — 본체 `paint_workspace_count_badge`(sidebar/view.rs)
+/// 와 동일한 디자인 Badge variant="primary": accent-primary 채움 pill + count(mono,
+/// badge-font-size), text-on-accent. min-width/height=badge-size, padding-x=badge-padding-x,
+/// pill(반경=높이/2). 행 우측에 spacing-sm 인셋으로 앵커.
+fn paint_ws_count_badge(p: &egui::Painter, theme: &Theme, row: egui::Rect, label: &str) {
+    let size = theme.badge_size().value();
+    let pad_x = theme.badge_padding_x().value();
+    let galley = p.layout_no_wrap(
+        label.to_string(),
+        egui::FontId::monospace(theme.badge_font_size().value()),
+        egui::Color32::from(theme.text_on_accent()),
+    );
+    let w = (galley.size().x + pad_x * 2.0).max(size);
+    let badge_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            row.max.x - theme.spacing_sm.value() - w,
+            row.center().y - size * 0.5,
+        ),
+        egui::vec2(w, size),
+    );
+    p.rect_filled(
+        badge_rect,
+        size / 2.0,
+        egui::Color32::from(theme.accent_primary()),
+    );
+    let gp = egui::pos2(
+        badge_rect.center().x - galley.size().x / 2.0,
+        badge_rect.center().y - galley.size().y / 2.0,
+    );
+    p.galley(gp, galley, egui::Color32::from(theme.text_on_accent()));
+}
+
 fn full(ui: &mut egui::Ui, theme: &Theme) {
     let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
     let h = theme.spacing_xl.value() * 15.0; // 360
@@ -197,26 +229,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
             }),
         );
         if let Some(b) = badge {
-            let bw = theme.spacing_lg.value();
-            let badge_rect = egui::Rect::from_min_size(
-                egui::pos2(
-                    row.max.x - theme.spacing_sm.value() - bw,
-                    row.center().y - theme.spacing_sm.value(),
-                ),
-                egui::vec2(bw, theme.spacing_lg.value()),
-            );
-            p.rect_filled(
-                badge_rect,
-                theme.corner_radius_sm.value(),
-                egui::Color32::from(theme.surface_raised()),
-            );
-            p.text(
-                badge_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                *b,
-                egui::FontId::proportional(theme.font_size_micro.value()),
-                egui::Color32::from(theme.text_secondary()),
-            );
+            paint_ws_count_badge(&p, theme, row, b);
         }
         y += row_h + theme.spacing_xs.value();
     }
@@ -365,26 +378,7 @@ fn paint_ws_row(
         }),
     );
     if let Some(b) = badge {
-        let bw = theme.spacing_lg.value();
-        let badge_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                rect.max.x - theme.spacing_sm.value() - bw,
-                rect.center().y - theme.spacing_sm.value(),
-            ),
-            egui::vec2(bw, theme.spacing_lg.value()),
-        );
-        p.rect_filled(
-            badge_rect,
-            theme.corner_radius_sm.value(),
-            egui::Color32::from(theme.surface_raised()),
-        );
-        p.text(
-            badge_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            b,
-            egui::FontId::proportional(theme.font_size_micro.value()),
-            egui::Color32::from(theme.text_secondary()),
-        );
+        paint_ws_count_badge(&p, theme, rect, b);
     }
 }
 

@@ -25,7 +25,9 @@ pub struct WorkspaceEntryView {
     pub subtitle: String,
     pub description: String,
     pub busy_count: usize,
-    pub has_highlight: bool,
+    /// 이 워크스페이스에서 highlight(주의 환기) 상태인 surface 개수. full 은 개수
+    /// 숫자 배지, collapsed 는 dot 으로 표현(`> 0` 조건).
+    pub highlight_count: usize,
     /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
     pub attached: bool,
     /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
@@ -215,6 +217,36 @@ fn paint_alert_badge(
     let gp = egui::pos2(
         badge_rect.center().x - galley.size().x / 2.0,
         badge_rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter()
+        .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
+}
+/// 워크스페이스 행 우측 개수 배지 — 디자인 Badge variant="primary"
+/// (accent-primary 채움 pill + count, 99 초과 시 "99+"). Badge specimen 토큰 전사:
+/// min-width/height=badge-size, padding-x=badge-padding-x, font=mono badge-font-size,
+/// pill(반경=높이/2), 색 accent-primary / text-on-accent. `right_to_left` 레이아웃
+/// 안에서 크기를 allocate 하고 그 자리에 painter 로 그린다.
+fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize) {
+    let label = if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    };
+    let galley = ui.painter().layout_no_wrap(
+        label,
+        egui::FontId::monospace(th.badge_font_size().value()),
+        egui::Color32::from(th.text_on_accent()),
+    );
+    let size = th.badge_size().value();
+    let pad_x = th.badge_padding_x().value();
+    let w = (galley.size().x + pad_x * 2.0).max(size);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, size), egui::Sense::hover());
+    // pill = 완전 라운드(반경 = 높이/2).
+    ui.painter()
+        .rect_filled(rect, size / 2.0, egui::Color32::from(th.accent_primary()));
+    let gp = egui::pos2(
+        rect.center().x - galley.size().x / 2.0,
+        rect.center().y - galley.size().y / 2.0,
     );
     ui.painter()
         .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
@@ -1194,7 +1226,7 @@ fn draw_collapsed_avatar(
         rect.max.x - dot_pad - dot_radius,
         rect.min.y + dot_pad + dot_radius,
     );
-    if ws.has_highlight {
+    if ws.highlight_count > 0 {
         // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
@@ -1344,14 +1376,10 @@ fn draw_workspace_card(
             // 우측에 점유시킨 뒤 남은 좌측 폭을 title 이 채우며 길면 말줄임한다
             // (truncate 가 가용폭을 모두 먹어 badge 를 밀어내지 않도록 reserve-first).
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ws.has_highlight {
-                    // 디자인 Badge variant="primary" — accent-primary 채움 pill.
-                    // notif count 데이터가 ws-level 에 없어(props=bool) 숫자는 생략하고
-                    // pill 형태(채움 원형)만 표현한다. count 배선은 별도 TODO.
-                    let badge_size = egui::vec2(10.0, 10.0);
-                    let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
-                    ui.painter()
-                        .circle_filled(rect.center(), 5.0, th.accent_primary());
+                if ws.highlight_count > 0 {
+                    // 디자인 Badge variant="primary" — accent-primary 채움 pill +
+                    // highlight surface 개수(99 초과 시 "99+"). Badge specimen 토큰 전사.
+                    paint_workspace_count_badge(ui, th, ws.highlight_count);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     // 디자인 WorkspaceRow: mirror(원격 워크스페이스 로컬 mirror)면 이름 앞에
@@ -1465,7 +1493,7 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 0,
-            has_highlight: false,
+            highlight_count: 0,
             attached: false,
             is_mirror: false,
             is_active,
@@ -1656,7 +1684,7 @@ mod tests {
         let mut mirror_busy = mock_ws("data-pipeline", true);
         mirror_busy.is_mirror = true;
         mirror_busy.busy_count = 2;
-        mirror_busy.has_highlight = true;
+        mirror_busy.highlight_count = 3;
         mirror_busy.attached = true;
         let ws = vec![mock_ws("main", false), mirror, mirror_busy];
         assert!(run_full(ws.clone(), false).is_empty());
@@ -1696,7 +1724,8 @@ mod tests {
                 subtitle: "a subtitle label that is also fairly long for ellipsis".into(),
                 description: long_desc.into(),
                 busy_count: 0,
-                has_highlight: true,
+                // 150 → "99+" cap 경로도 함께 no-panic 검증.
+                highlight_count: 150,
                 attached: false,
                 is_mirror: false,
                 is_active: true,
@@ -1707,7 +1736,7 @@ mod tests {
                 subtitle: String::new(),
                 description: String::new(),
                 busy_count: 0,
-                has_highlight: false,
+                highlight_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1717,7 +1746,7 @@ mod tests {
                 subtitle: String::new(),
                 description: "short desc".into(),
                 busy_count: 0,
-                has_highlight: false,
+                highlight_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1841,7 +1870,7 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 3,
-            has_highlight: true,
+            highlight_count: 2,
             attached: true,
             is_mirror: false,
             is_active: true,
