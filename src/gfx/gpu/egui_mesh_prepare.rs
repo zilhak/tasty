@@ -37,13 +37,22 @@
 //!    동안"이 아니라 "layout 에 존재하는 동안" 유지한다(`egui_mesh_surfaces_existing`).
 //!    비활성 탭/비활성 workspace 의 surface 도 도착 frame 을 매 tick 디코드해 텍스처
 //!    delta 를 항상 적용한다(합성만 skip) — 탭 복귀 시 재전송 왕복 없이 즉시 정상 합성.
-//! 2. **frame_seq 체인 검증 + full 재전송** — frame 메타의 `frame_seq`(plugin 송신 단조
-//!    시퀀스)가 `last_seq + 1` 이 아니면 중간 frame 을 놓친 것: frame 을 수락하지 않고
-//!    (`awaiting_full`) [`GpuState::egui_mesh_full_requests`] 에 적재한다. forward 측이
-//!    다음 tick 에 `need_full_textures` 플래그로 set_context 를 재송신하면 plugin SDK 가
-//!    전체 텍스처 상태를 full image 로 동봉한 frame(`full_textures = true`)을 보내고,
-//!    host 는 full frame 을 체인과 무관하게 수락하며 텍스처 상태를 리셋한다.
-//!    (Context 생성 직후 첫 frame 도 자연-full 로 마킹돼 bootstrap race 를 닫는다.)
+//! 2. **frame_seq 체인 검증 + full 재전송(텍스처 delta 한정)** — frame 메타의
+//!    `frame_seq`(plugin 송신 단조 시퀀스)가 `last_seq + 1` 이 아니면 중간 frame 을 놓친
+//!    것: 그 frame 에 실렸던 `textures_delta` 가 유실됐으므로 **delta 를 적용하지 않는다**
+//!    ([`chain_accepts`] = false). 대신 forward 측이 다음 tick 에 `need_full_textures`
+//!    플래그로 set_context 를 재송신하면 plugin SDK 가 전체 텍스처 상태를 full image 로
+//!    동봉한 frame(`full_textures = true`)을 보내고, host 는 full frame 을 체인과 무관하게
+//!    수락하며 텍스처 상태를 리셋한다. (Context 생성 직후 첫 frame 도 자연-full 로 마킹돼
+//!    bootstrap race 를 닫는다.)
+//!
+//! 3. **mesh(기하) 채택은 delta 체인과 분리** — reflow frame 의 mesh 는 자기완결적 기하라
+//!    중간 frame 유실과 무관한데, 위 체인 가드가 mesh 까지 묶어 거부하면 리사이즈 중 seq
+//!    가 튈 때 최신 폭의 mesh 가 화면에 반영되지 못하고 옛 mesh 에 고정된다(우측 잘림).
+//!    따라서 seq 불연속이어도 이 frame 의 mesh 가 참조하는 텍스처가 **모두 이미 상주**하면
+//!    ([`all_textures_live`]) mesh 만 채택한다(delta 는 여전히 미적용). 채택 시 `last_seq`
+//!    를 갱신하므로 다음 frame 이 자연 연속이 되어 delta 게이트도 스스로 수렴한다. 참조가
+//!    하나라도 미상주면(image plugin 신규 비트맵 등) mesh 도 보류하고 full 을 재요청한다.
 
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
@@ -114,15 +123,44 @@ impl EguiMeshRenderTarget {
     }
 }
 
-/// textures_delta 체인 수락 규칙 (frame 메타만으로 판정, 디코드 전 수행).
+/// textures_delta **적용** 게이트 (frame 메타만으로 판정, 디코드 전 수행).
 ///
-/// - full frame 은 무조건 수락(텍스처 상태 리셋 동반).
-/// - delta frame 은 기존 콘텐츠가 있고 시퀀스가 정확히 이어질 때만 수락 —
+/// 이 게이트는 이제 **mesh 수락이 아니라 텍스처 delta 적용 여부**만 결정한다.
+/// mesh(기하) 채택은 [`decode_mesh_into_target`] 가 디코드 후 참조-텍스처 상주 여부로
+/// 별도 판정한다(참조가 전부 live 면 seq 불연속이어도 채택). 이렇게 분리해야
+/// 리사이즈 중 seq 가 튀어도 최신 reflow mesh 가 화면에 반영된다.
+///
+/// - full frame 은 무조건 delta 적용(텍스처 상태 리셋 동반).
+/// - delta frame 은 기존 콘텐츠가 있고 시퀀스가 정확히 이어질 때만 적용 —
 ///   latest-wins buffer 에서 중간 frame 을 못 봤다면(seq 건너뜀) 그 frame 의
-///   textures_delta 가 유실된 것이므로, 수락하면 미등록/스테일 텍스처를 참조한다.
+///   textures_delta 가 유실된 것이므로, 적용하면 미등록/스테일 텍스처를 참조한다.
 ///   구버전 plugin 의 `frame_seq == 0` 도 자연히 체인 단절로 떨어진다.
 fn chain_accepts(has_content: bool, last_seq: u64, frame_seq: u64, full_textures: bool) -> bool {
     full_textures || (has_content && frame_seq == last_seq.wrapping_add(1))
+}
+
+/// 디코드된 primitives 가 참조하는 모든 `TextureId` 가 이 target 에 이미 상주(live)하는가.
+///
+/// 체인 단절(delta 미적용) frame 이라도 이 조건을 만족하면 mesh 만 채택해도 안전하다 —
+/// 렌더에 필요한 텍스처가 전부 업로드돼 있으므로 미등록 참조로 깨지지 않는다. markdown
+/// 은 폰트 atlas(`Managed(0)`)만 쓰고 bootstrap full frame 에서 이미 상주하므로 항상 통과.
+/// `Callback` primitive 는 decode_paint 가 제거하므로 정상 경로엔 없다(방어적으로 무시).
+fn all_textures_live(prims: &[ClippedPrimitive], live: &HashSet<TextureId>) -> bool {
+    prims.iter().all(|p| match &p.primitive {
+        Primitive::Mesh(m) => live.contains(&m.texture_id),
+        Primitive::Callback(_) => true,
+    })
+}
+
+/// [`decode_mesh_into_target`] 의 결과.
+enum DecodeOutcome {
+    /// mesh 를 채택해 합성 캐시를 갱신했다(delta 적용 여부와 무관).
+    Accepted,
+    /// mesh 가 미상주 텍스처를 참조해 보류했다 — full 재전송이 필요.
+    NeedsFull,
+    /// 이번 frame 은 갱신 없이 넘어갔다(footer tear / ppp 불일치 등 일시적). 재요청
+    /// 불필요 — 기존 캐시로 재합성하고 다음 tick 에 다시 시도한다.
+    Deferred,
 }
 
 /// 활성 workspace 에서 egui-mesh surface 의 (surface_id, plugin_id, 물리 rect) 일람.
@@ -181,13 +219,25 @@ fn offset_and_clip(
         .collect()
 }
 
-/// SharedBuffer 의 mesh 바이트를 디코드해 한 target 에 올린다(generation 변경 + 체인
-/// 수락([`EguiMeshRenderTarget::chain_accepts`]) 시에만 호출). footer tear / 너무 작은
-/// buffer / ppp 불일치 가드를 통과해야 갱신한다 — 실패하면 기존 캐시를 유지(이번 frame
-/// 재합성, 다음 tick 재시도). surface/popup/banner 합성기가 공유한다.
+/// SharedBuffer 의 mesh 바이트를 디코드해 한 target 에 올린다(generation 변경 시 호출).
+/// footer tear / 너무 작은 buffer / ppp 불일치 가드를 통과해야 갱신한다 — 실패하면 기존
+/// 캐시를 유지([`DecodeOutcome::Deferred`], 이번 frame 재합성, 다음 tick 재시도).
+/// surface/popup/banner 합성기가 공유한다.
 ///
-/// `full_textures` frame 은 plugin 의 전체 텍스처 상태를 담으므로, 수락 시 full 에
-/// 미포함된 기존 텍스처를 free 해 target 텍스처 상태를 plugin 상태와 일치시킨다.
+/// # mesh 채택과 텍스처 delta 적용의 분리
+///
+/// `chain_ok`([`chain_accepts`])는 **텍스처 delta 적용 여부**만 결정한다:
+/// - `chain_ok`(full 또는 seq 연속): `textures_delta.set/free` 를 renderer 에 반영한다.
+///   `full_textures` frame 은 plugin 의 전체 텍스처 상태를 담으므로 full 에 미포함된
+///   기존 텍스처를 free 해 target 상태를 plugin 상태와 일치시킨다.
+/// - `!chain_ok`(seq 점프 — 중간 frame 의 delta 유실): delta 를 적용하면 미등록/스테일
+///   텍스처를 참조하므로 **적용하지 않는다.** 대신 이 frame 의 mesh 가 참조하는 텍스처가
+///   모두 이미 상주하면([`all_textures_live`]) mesh(기하)만 채택한다. 하나라도 미상주면
+///   보류하고 [`DecodeOutcome::NeedsFull`] 로 full 재전송을 요청하게 한다.
+///
+/// mesh 채택 시 `last_seq` 를 채택한 frame_seq 로 갱신하므로 다음 frame 이 seq+1 로 자연
+/// 연속이 되어 delta 게이트가 다시 통과한다(체인 self-heal). markdown 은 참조가 항상
+/// 폰트 atlas(상주)라 즉시 회복한다.
 #[allow(clippy::too_many_arguments)] // reason: frame 디코드 컨텍스트 전체
 fn decode_mesh_into_target(
     device: &wgpu::Device,
@@ -197,9 +247,10 @@ fn decode_mesh_into_target(
     generation: u64,
     frame_seq: u64,
     full_textures: bool,
+    chain_ok: bool,
     host_ppp: f32,
     log_id: &str,
-) {
+) -> DecodeOutcome {
     // footer 길이 가드: plugin 이 footer(8B) 미만 버퍼를 등록하면 footer::load 의
     // 안전 전제(raw.len >= SIZE)가 깨진다. 검증 실패 시 해당 frame 은 skip.
     if raw.len() < tasty_shm::footer::SIZE {
@@ -208,14 +259,14 @@ fn decode_mesh_into_target(
             actual = raw.len(),
             "egui-mesh prepare: buffer too small"
         );
-        return;
+        return DecodeOutcome::Deferred;
     }
     // SAFETY: SharedMemory 영역. tasty-shm 동기화 규약 — plugin commit(Release) →
     // host Acquire-load → user data read. footer 시작 8B 는 mmap 페이지 align 이라 8B aligned.
     // footer generation 이 frame 메타와 다르면 half-painted 이므로 다음 frame 까지 미룬다.
     let gen_now = unsafe { tasty_shm::footer::load(raw, Ordering::Acquire) };
     if gen_now != generation {
-        return;
+        return DecodeOutcome::Deferred;
     }
     let user = tasty_shm::footer::user_slice(raw);
 
@@ -223,7 +274,7 @@ fn decode_mesh_into_target(
         Ok(d) => d,
         Err(e) => {
             tracing::warn!(target = log_id, "egui-mesh prepare: decode failed: {e}");
-            return;
+            return DecodeOutcome::Deferred;
         }
     };
 
@@ -237,35 +288,48 @@ fn decode_mesh_into_target(
             host_ppp,
             "egui-mesh prepare: ppp mismatch, deferring composite"
         );
-        return;
+        return DecodeOutcome::Deferred;
     }
 
-    // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
-    // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
-    if full_textures {
-        let full_ids: HashSet<TextureId> = decoded
-            .textures_delta
-            .set
-            .iter()
-            .map(|(id, _)| *id)
-            .collect();
-        for stale in target.live_textures.difference(&full_ids) {
-            target.renderer.free_texture(stale);
+    if chain_ok {
+        // 텍스처 delta 적용 (체인 연속 또는 full).
+        // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
+        // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
+        if full_textures {
+            let full_ids: HashSet<TextureId> = decoded
+                .textures_delta
+                .set
+                .iter()
+                .map(|(id, _)| *id)
+                .collect();
+            for stale in target.live_textures.difference(&full_ids) {
+                target.renderer.free_texture(stale);
+            }
+            target.live_textures = full_ids;
         }
-        target.live_textures = full_ids;
+
+        // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
+        // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
+        // render 전에 풀어도 안전(set/free 는 서로소).
+        for (id, delta) in &decoded.textures_delta.set {
+            target.renderer.update_texture(device, queue, *id, delta);
+            target.live_textures.insert(*id);
+        }
+        for id in &decoded.textures_delta.free {
+            target.renderer.free_texture(id);
+            target.live_textures.remove(id);
+        }
+    } else {
+        // 체인 단절(seq 점프): 유실된 delta 로 인한 스테일/미등록 텍스처 오염을 막기 위해
+        // delta 를 적용하지 않는다. 첫 콘텐츠는 반드시 full 로 받아야 안전하므로(부트스트랩
+        // 텍스처 상주 보장) 아직 콘텐츠가 없으면 채택하지 않는다. 참조 텍스처가 하나라도
+        // 미상주면 mesh 도 보류하고 full 재전송을 요청한다.
+        if !target.has_content || !all_textures_live(&decoded.primitives, &target.live_textures) {
+            return DecodeOutcome::NeedsFull;
+        }
+        // 참조가 전부 상주 — delta/live_textures 는 건드리지 않고 mesh 만 채택한다.
     }
 
-    // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
-    // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
-    // render 전에 풀어도 안전(set/free 는 서로소).
-    for (id, delta) in &decoded.textures_delta.set {
-        target.renderer.update_texture(device, queue, *id, delta);
-        target.live_textures.insert(*id);
-    }
-    for id in &decoded.textures_delta.free {
-        target.renderer.free_texture(id);
-        target.live_textures.remove(id);
-    }
     target.primitives = decoded.primitives;
     target.ppp = decoded.pixels_per_point;
     target.generation = generation;
@@ -273,6 +337,7 @@ fn decode_mesh_into_target(
     target.awaiting_full = false;
     target.has_content = true;
     target.translated_key = None; // 평행이동 캐시 무효화.
+    DecodeOutcome::Accepted
 }
 
 /// 캐시된 mesh 를 물리 rect 영역에 합성한다(전용 Renderer + 전용 pass).
@@ -409,11 +474,26 @@ impl GpuState {
             if !needs_decode {
                 continue;
             }
-            if !chain_ok {
-                // 중간 frame 관측 누락(latest-wins) — 이 frame 의 primitives 는 유실된
-                // 텍스처를 참조할 수 있어 수락하지 않는다. full 재전송을 1회 요청하고
-                // (수락 시까지 재요청 안 함) 기존 캐시로 계속 합성한다.
-                if !awaiting {
+            if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
+                // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+                let raw = unsafe { mem.as_slice() };
+                // mesh 채택은 chain 연속과 분리 — seq 점프여도 참조 텍스처가 상주하면 최신
+                // reflow mesh 를 채택한다. delta 는 chain_ok 일 때만 적용(decode 내부).
+                let outcome = decode_mesh_into_target(
+                    &self.device,
+                    &self.queue,
+                    self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
+                    raw,
+                    frame_generation,
+                    frame_seq,
+                    frame_full,
+                    chain_ok,
+                    host_ppp,
+                    plugin_id,
+                );
+                if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
+                    // 미상주 텍스처 참조 — mesh 도 보류. full 재전송을 1회 요청하고
+                    // (수락 시까지 재요청 안 함) 기존 캐시로 계속 합성한다.
                     tracing::debug!(
                         surface = sid,
                         frame_seq,
@@ -425,22 +505,6 @@ impl GpuState {
                         .awaiting_full = true;
                     self.egui_mesh_full_requests.insert(*sid);
                 }
-                continue;
-            }
-            if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
-                // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
-                let raw = unsafe { mem.as_slice() };
-                decode_mesh_into_target(
-                    &self.device,
-                    &self.queue,
-                    self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
-                    raw,
-                    frame_generation,
-                    frame_seq,
-                    frame_full,
-                    host_ppp,
-                    plugin_id,
-                );
             } else {
                 tracing::warn!(
                     plugin = %plugin_id,
@@ -504,25 +568,12 @@ impl GpuState {
                     t.awaiting_full,
                 )
             };
-            if needs_decode && !chain_ok {
-                // 체인 단절 — frame 을 수락하지 않고 full 재전송을 요청한다(surface 와 동형).
-                if !awaiting {
-                    tracing::debug!(
-                        popup = iid,
-                        frame_seq,
-                        "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
-                    );
-                    self.egui_mesh_popup_targets
-                        .get_mut(iid)
-                        .expect("ensured above")
-                        .awaiting_full = true;
-                    self.egui_mesh_popup_full_requests.insert(*iid);
-                }
-            } else if needs_decode {
+            if needs_decode {
                 if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
                     // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
                     let raw = unsafe { mem.as_slice() };
-                    decode_mesh_into_target(
+                    // mesh 채택과 delta 적용 분리 (surface 와 동형).
+                    let outcome = decode_mesh_into_target(
                         &self.device,
                         &self.queue,
                         self.egui_mesh_popup_targets
@@ -532,9 +583,23 @@ impl GpuState {
                         frame_generation,
                         frame_seq,
                         frame_full,
+                        chain_ok,
                         host_ppp,
                         &frame_plugin_id,
                     );
+                    if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
+                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 요청한다(surface 동형).
+                        tracing::debug!(
+                            popup = iid,
+                            frame_seq,
+                            "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
+                        );
+                        self.egui_mesh_popup_targets
+                            .get_mut(iid)
+                            .expect("ensured above")
+                            .awaiting_full = true;
+                        self.egui_mesh_popup_full_requests.insert(*iid);
+                    }
                 } else {
                     tracing::warn!(
                         plugin = %frame_plugin_id,
@@ -598,25 +663,12 @@ impl GpuState {
                     t.awaiting_full,
                 )
             };
-            if needs_decode && !chain_ok {
-                // 체인 단절 — frame 을 수락하지 않고 full 재전송을 요청한다(surface 와 동형).
-                if !awaiting {
-                    tracing::debug!(
-                        banner = iid,
-                        frame_seq,
-                        "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
-                    );
-                    self.egui_mesh_banner_targets
-                        .get_mut(iid)
-                        .expect("ensured above")
-                        .awaiting_full = true;
-                    self.egui_mesh_banner_full_requests.insert(*iid);
-                }
-            } else if needs_decode {
+            if needs_decode {
                 if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
                     // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
                     let raw = unsafe { mem.as_slice() };
-                    decode_mesh_into_target(
+                    // mesh 채택과 delta 적용 분리 (surface 와 동형).
+                    let outcome = decode_mesh_into_target(
                         &self.device,
                         &self.queue,
                         self.egui_mesh_banner_targets
@@ -626,9 +678,23 @@ impl GpuState {
                         frame_generation,
                         frame_seq,
                         frame_full,
+                        chain_ok,
                         host_ppp,
                         &frame_plugin_id,
                     );
+                    if matches!(outcome, DecodeOutcome::NeedsFull) && !awaiting {
+                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 요청한다(surface 동형).
+                        tracing::debug!(
+                            banner = iid,
+                            frame_seq,
+                            "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
+                        );
+                        self.egui_mesh_banner_targets
+                            .get_mut(iid)
+                            .expect("ensured above")
+                            .awaiting_full = true;
+                        self.egui_mesh_banner_full_requests.insert(*iid);
+                    }
                 } else {
                     tracing::warn!(
                         plugin = %frame_plugin_id,
@@ -719,7 +785,9 @@ mod tests {
         assert_eq!(out[0].clip_rect.max, Pos2::new(150.0, 120.0));
     }
 
-    /// 체인 수락 규칙: full 은 무조건, delta 는 콘텐츠 보유 + 정확한 seq 연속일 때만.
+    /// delta 적용 게이트: full 은 무조건, delta 는 콘텐츠 보유 + 정확한 seq 연속일 때만.
+    /// (이 게이트는 이제 mesh 수락이 아니라 텍스처 delta 적용 여부만 결정한다 — mesh 채택은
+    /// `all_textures_live` 로 별도 판정.)
     #[test]
     fn chain_accepts_full_or_contiguous_seq_only() {
         // 신규 target (콘텐츠 없음): full 만 수락.
@@ -738,6 +806,43 @@ mod tests {
 
         // 구버전 plugin (frame_seq 항상 0, full 마킹 없음) → 항상 체인 단절.
         assert!(!chain_accepts(true, 0, 0, false));
+    }
+
+    fn mesh_prim_tex(tex: TextureId) -> ClippedPrimitive {
+        ClippedPrimitive {
+            clip_rect: Rect::from_min_max(Pos2::ZERO, Pos2::new(10.0, 10.0)),
+            primitive: Primitive::Mesh(Mesh {
+                indices: vec![0, 1, 2],
+                vertices: vec![vtx(0.0, 0.0), vtx(1.0, 0.0), vtx(0.0, 1.0)],
+                texture_id: tex,
+            }),
+        }
+    }
+
+    /// mesh 채택 판정: 참조 텍스처가 전부 상주(live)할 때만 seq 점프 frame 을 채택할 수
+    /// 있다. 이 규칙이 delta 체인과 분리된 mesh 수락 게이트를 고정한다(리사이즈 reflow).
+    #[test]
+    fn all_textures_live_requires_every_ref_present() {
+        let font = TextureId::Managed(0);
+        let image = TextureId::Managed(7);
+        let mut live = HashSet::new();
+        live.insert(font);
+
+        // 폰트 atlas 만 참조 — markdown 정상 케이스 → 상주하므로 채택 가능.
+        let prims = vec![mesh_prim_tex(font), mesh_prim_tex(font)];
+        assert!(all_textures_live(&prims, &live));
+
+        // 미상주 텍스처(신규 비트맵) 참조 → 채택 불가(full 대기).
+        let prims = vec![mesh_prim_tex(font), mesh_prim_tex(image)];
+        assert!(!all_textures_live(&prims, &live));
+
+        // 참조 없는(빈) frame → 공허 참으로 통과(합성 시 빈 mesh 는 조기 return).
+        assert!(all_textures_live(&[], &live));
+
+        // image 도 상주하면 둘 다 참조해도 채택 가능.
+        live.insert(image);
+        let prims = vec![mesh_prim_tex(font), mesh_prim_tex(image)];
+        assert!(all_textures_live(&prims, &live));
     }
 
     /// 디코드 출력(mesh_wire) → offset_and_clip 통합: 실제 tessellate 한 mesh 가
