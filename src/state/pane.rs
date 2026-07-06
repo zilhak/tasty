@@ -152,7 +152,11 @@ impl AppState {
         closed
     }
 
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — surface close inner(cleanup/snapshot/active 보정 분기)
+    /// surface→tab→pane→workspace cascade close 의 인라인 실행형 디스패처.
+    /// Step1 판정(공유 `locate_surface_in_pane`)으로 위치를 잡고 case1..4 메서드에
+    /// 순차 위임한다. C2(`Core::apply_close_surface`)가 CoreEvent 를 *반환*해
+    /// caller 가 cleanup 을 실행하는 것과 달리, 여기서는 각 case 메서드가
+    /// cleanup/enqueue 를 *직접 실행*한다.
     fn close_surface_by_id_inner(
         &mut self,
         engine: &mut CoreState,
@@ -160,177 +164,176 @@ impl AppState {
         save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
-        // Find which workspace and pane contain this surface
-        let (ws_idx, pane_id) = match engine.find_workspace_index_for_surface(surface_id) {
-            Some(v) => v,
+        let loc = match crate::core::locate_surface_in_pane(engine, surface_id) {
+            Some(l) => l,
             None => return false,
         };
+        if !loc.surface_is_sole_in_tab && loc.can_close_surface_in_group {
+            return self.close_case_split(engine, &loc, surface_id, save_snapshot, is_user_close);
+        }
+        if self.close_case_tab(engine, &loc, save_snapshot, is_user_close) {
+            return true;
+        }
+        if self.close_case_pane(engine, &loc, is_user_close) {
+            return true;
+        }
+        self.close_case_workspace(engine, &loc, save_snapshot, is_user_close)
+    }
 
-        // Find the tab index containing this surface
-        let tab_idx;
-        let surface_is_sole_in_tab;
-        let can_close_surface_in_group;
-        {
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
-                Some(p) => p,
-                None => return false,
-            };
-
-            // Find which tab has this surface
-            let mut found_tab = None;
-            for (i, tab) in pane.tabs.iter().enumerate() {
-                if tab.contains_surface(surface_id) {
-                    found_tab = Some(i);
-                    break;
-                }
-            }
-            tab_idx = match found_tab {
-                Some(i) => i,
-                None => return false,
-            };
-
-            // Check if the surface is the only one in this tab
-            let tab = &pane.tabs[tab_idx];
-            if tab.is_split() {
-                // Split tab: try closing within the layout (fails if it's the only surface)
-                surface_is_sole_in_tab = false;
-                can_close_surface_in_group =
-                    !matches!(tab.layout(), crate::model::SurfaceLayout::Leaf(_));
-            } else if tab.contains_surface(surface_id) {
-                // Single-surface tab: sole content
-                surface_is_sole_in_tab = true;
-                can_close_surface_in_group = false;
-            } else {
-                return false;
+    /// Case 1: split tab 내 다중 surface 중 하나 close. 닫혔으면 true.
+    fn close_case_split(
+        &mut self,
+        engine: &mut CoreState,
+        loc: &crate::core::SurfaceCloseLocation,
+        surface_id: u32,
+        save_snapshot: bool,
+        is_user_close: bool,
+    ) -> bool {
+        // Capture surface snapshot before closing (user actions only)
+        if save_snapshot {
+            let ws = &engine.workspaces[loc.ws_idx];
+            let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
+            let tab = &pane.tabs[loc.tab_idx];
+            if terminal_surface_in_tab(tab, surface_id).is_some() {
+                let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
+                    surface_id,
+                    engine.terminals.get(surface_id),
+                );
+                let tab_name = tab.display_name().to_string();
+                engine.push_closed_item(crate::model::ClosedItem::Surface {
+                    surface: snapshot,
+                    tab_name,
+                });
             }
         }
-
-        // Case 1: Surface is within a split tab with multiple surfaces
-        if !surface_is_sole_in_tab && can_close_surface_in_group {
-            // Capture surface snapshot before closing (user actions only)
-            if save_snapshot {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                let tab = &pane.tabs[tab_idx];
-                if terminal_surface_in_tab(tab, surface_id).is_some() {
-                    let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
-                        surface_id,
-                        engine.terminals.get(surface_id),
-                    );
-                    let tab_name = tab.display_name().to_string();
-                    engine.push_closed_item(crate::model::ClosedItem::Surface {
-                        surface: snapshot,
-                        tab_name,
-                    });
-                }
-            }
-            // close 이전에 leaf surface 의 persist_id 를 추출해 둔다.
-            let persist_id = engine
-                .terminals
-                .scrollback_persist_id(surface_id)
-                .map(str::to_string);
-            let kind = self.surface_kind(engine, surface_id);
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
-            let tab = &mut pane.tabs[tab_idx];
-            if tab.close_surface(surface_id) {
-                self.cleanup_surface(engine, surface_id, persist_id);
-                self.enqueue_surface_closed(surface_id, kind, is_user_close);
-                engine.mark_layout_dirty();
-                return true;
-            }
-            return false;
+        // close 이전에 leaf surface 의 persist_id 를 추출해 둔다.
+        let persist_id = engine
+            .terminals
+            .scrollback_persist_id(surface_id)
+            .map(str::to_string);
+        let kind = self.surface_kind(engine, surface_id);
+        let ws = &mut engine.workspaces[loc.ws_idx];
+        let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
+        let tab = &mut pane.tabs[loc.tab_idx];
+        if tab.close_surface(surface_id) {
+            self.cleanup_surface(engine, surface_id, persist_id);
+            self.enqueue_surface_closed(surface_id, kind, is_user_close);
+            engine.mark_layout_dirty();
+            return true;
         }
+        false
+    }
 
-        // Case 2: Surface is the sole content of this tab — close the tab
-        {
-            // Capture tab snapshot before removing (user actions only).
-            // Must be done in a separate scope to avoid borrow conflicts.
-            if save_snapshot {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                if pane.tabs.len() > 1 {
-                    let snapshot_opt = {
-                        let mut snap_fn = crate::engine::surface_registry::snapshot_fn_for(
-                            &engine.surface_registry,
-                        );
-                        let terminals = &engine.terminals;
-                        crate::model::closed_item::ClosedTab::from_tab(
-                            &pane.tabs[tab_idx],
-                            &mut snap_fn,
-                            &|id| terminals.get(id),
-                        )
-                    };
-                    if let Some(snapshot) = snapshot_opt {
-                        engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
-                    }
-                }
-            }
-            // tab 의 모든 leaf surface 의 persist_id 수집 후 close.
-            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-            {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                if pane.tabs.len() > 1 {
-                    Self::collect_close_targets(&pane.tabs[tab_idx], engine, &mut targets);
-                }
-            }
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+    /// Case 2: surface 가 tab 유일 content 이고 pane.tabs>1 — tab close.
+    /// 처리했으면 true, 조건 불충족이면 false(fallthrough).
+    fn close_case_tab(
+        &mut self,
+        engine: &mut CoreState,
+        loc: &crate::core::SurfaceCloseLocation,
+        save_snapshot: bool,
+        is_user_close: bool,
+    ) -> bool {
+        // Capture tab snapshot before removing (user actions only).
+        // Must be done in a separate scope to avoid borrow conflicts.
+        if save_snapshot {
+            let ws = &engine.workspaces[loc.ws_idx];
+            let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
-                pane.tabs.remove(tab_idx);
-                if pane.active_tab >= pane.tabs.len() {
-                    pane.active_tab = pane.tabs.len() - 1;
+                let snapshot_opt = {
+                    let mut snap_fn =
+                        crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                    let terminals = &engine.terminals;
+                    crate::model::closed_item::ClosedTab::from_tab(
+                        &pane.tabs[loc.tab_idx],
+                        &mut snap_fn,
+                        &|id| terminals.get(id),
+                    )
+                };
+                if let Some(snapshot) = snapshot_opt {
+                    engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
                 }
-                for (sid, pid) in targets {
-                    let kind = self.surface_kind(engine, sid);
-                    self.cleanup_surface(engine, sid, pid);
-                    self.enqueue_surface_closed(sid, kind, is_user_close);
-                }
-                engine.mark_layout_dirty();
-                return true;
             }
         }
-
-        // Case 3: Last tab in pane -- close the pane
-        // (pane snapshot is captured as part of workspace in Case 4/5, or inline here)
+        // tab 의 모든 leaf surface 의 persist_id 수집 후 close.
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
-            // pane 내 모든 tab 의 leaf surface persist_id 수집.
-            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-            {
-                let ws = &engine.workspaces[ws_idx];
-                if ws.pane_layout().all_pane_ids().len() > 1
-                    && let Some(pane) = ws.pane_layout().find_pane(pane_id)
-                {
-                    for tab in &pane.tabs {
-                        Self::collect_close_targets(tab, engine, &mut targets);
-                    }
-                }
-            }
-            let ws = &mut engine.workspaces[ws_idx];
-            if ws.pane_layout().all_pane_ids().len() > 1 {
-                ws.pane_layout_mut().close_pane(pane_id);
-                if let Some(first) = ws.pane_layout().first_pane() {
-                    ws.focused_pane = first.id;
-                }
-                for (sid, pid) in targets {
-                    let kind = self.surface_kind(engine, sid);
-                    self.cleanup_surface(engine, sid, pid);
-                    self.enqueue_surface_closed(sid, kind, is_user_close);
-                }
-                engine.mark_layout_dirty();
-                return true;
+            let ws = &engine.workspaces[loc.ws_idx];
+            let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
+            if pane.tabs.len() > 1 {
+                Self::collect_close_targets(&pane.tabs[loc.tab_idx], engine, &mut targets);
             }
         }
+        let ws = &mut engine.workspaces[loc.ws_idx];
+        let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
+        if pane.tabs.len() > 1 {
+            pane.tabs.remove(loc.tab_idx);
+            if pane.active_tab >= pane.tabs.len() {
+                pane.active_tab = pane.tabs.len() - 1;
+            }
+            for (sid, pid) in targets {
+                let kind = self.surface_kind(engine, sid);
+                self.cleanup_surface(engine, sid, pid);
+                self.enqueue_surface_closed(sid, kind, is_user_close);
+            }
+            engine.mark_layout_dirty();
+            return true;
+        }
+        false
+    }
 
-        // Case 4 & 5: Last pane in workspace — close the workspace
+    /// Case 3: pane 의 마지막 tab 이고 ws 안 pane>1 — pane close.
+    /// 처리했으면 true, 조건 불충족이면 false(fallthrough).
+    fn close_case_pane(
+        &mut self,
+        engine: &mut CoreState,
+        loc: &crate::core::SurfaceCloseLocation,
+        is_user_close: bool,
+    ) -> bool {
+        // pane 내 모든 tab 의 leaf surface persist_id 수집.
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        {
+            let ws = &engine.workspaces[loc.ws_idx];
+            if ws.pane_layout().all_pane_ids().len() > 1
+                && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
+            {
+                for tab in &pane.tabs {
+                    Self::collect_close_targets(tab, engine, &mut targets);
+                }
+            }
+        }
+        let ws = &mut engine.workspaces[loc.ws_idx];
+        if ws.pane_layout().all_pane_ids().len() > 1 {
+            ws.pane_layout_mut().close_pane(loc.pane_id);
+            if let Some(first) = ws.pane_layout().first_pane() {
+                ws.focused_pane = first.id;
+            }
+            for (sid, pid) in targets {
+                let kind = self.surface_kind(engine, sid);
+                self.cleanup_surface(engine, sid, pid);
+                self.enqueue_surface_closed(sid, kind, is_user_close);
+            }
+            engine.mark_layout_dirty();
+            return true;
+        }
+        false
+    }
+
+    /// Case 4 & 5: workspace 의 마지막 pane — workspace close. 항상 true.
+    /// `target_kinds` 를 `workspaces.remove` **전에** 선캡처하고(remove 후
+    /// surface_kind 조회 불가), memory purge + active_workspace 보정을 포함한다.
+    fn close_case_workspace(
+        &mut self,
+        engine: &mut CoreState,
+        loc: &crate::core::SurfaceCloseLocation,
+        save_snapshot: bool,
+        is_user_close: bool,
+    ) -> bool {
         // Capture workspace snapshot before removing (user actions only)
         if save_snapshot {
             let item = {
                 let mut snap_fn =
                     crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let ws = &engine.workspaces[ws_idx];
+                let ws = &engine.workspaces[loc.ws_idx];
                 let terminals = &engine.terminals;
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
             };
@@ -339,7 +342,7 @@ impl AppState {
         // Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
-            let ws = &engine.workspaces[ws_idx];
+            let ws = &engine.workspaces[loc.ws_idx];
             for pid in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -353,8 +356,8 @@ impl AppState {
             .iter()
             .map(|(sid, _)| self.surface_kind(engine, *sid))
             .collect();
-        let workspace_id = engine.workspaces[ws_idx].id;
-        engine.workspaces.remove(ws_idx);
+        let workspace_id = engine.workspaces[loc.ws_idx].id;
+        engine.workspaces.remove(loc.ws_idx);
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
             self.active_workspace = engine.workspaces.len() - 1;
         }
