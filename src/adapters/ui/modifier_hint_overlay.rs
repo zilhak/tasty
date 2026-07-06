@@ -165,14 +165,14 @@ pub fn debug_state_json(
                 "combo": combo_keycaps(s.combo),
                 "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
-                // ADR-0037: 빈 조합 섹션은 draw 가 "바인딩 없음" 플레이스홀더로 렌더한다.
+                // ADR-0038: 빈 조합 섹션은 draw 가 "바인딩 없음" 플레이스홀더로 렌더한다.
                 // 렌더 픽셀 없이 빈-플레이스홀더 표시를 자동 단정할 수 있게 플래그를 노출.
                 "empty": s.is_empty(),
             })
         })
         .collect();
     // draw 의 방어 가드(`if sections.is_empty() { return }`)와 정확히 동일한 조건.
-    // ADR-0037 이후 빈 조합 홀드도 빈 섹션(플레이스홀더)이 남아 sections 가 비지 않으므로,
+    // ADR-0038 이후 빈 조합 홀드도 빈 섹션(플레이스홀더)이 남아 sections 가 비지 않으므로,
     // 이전과 달리 미할당 조합에서도 visible:true 로 뜬다.
     let visible =
         settings.modifier_hint.enabled && !dismissed && alpha.is_some() && !sections.is_empty();
@@ -327,7 +327,7 @@ pub fn draw_modifier_hint(
         settings.general.workspace_categories_enabled,
         &[], // plugin_bindings: PluginManager 는 App 소유라 draw 경로 미도달 → 후속 배선(open).
     );
-    // 방어적 가드 — ADR-0037 이후 홀드 가능한 실경로에선 항상 최소 홀드 조합 자신의
+    // 방어적 가드 — ADR-0038 이후 홀드 가능한 실경로에선 항상 최소 홀드 조합 자신의
     // 섹션이 남아 비지 않는다(빈 섹션도 유지되고 플레이스홀더로 렌더). 만일의 빈 목록엔
     // 빈 셸을 그리지 않고 조용히 빠진다.
     if sections.is_empty() {
@@ -626,7 +626,7 @@ fn draw_section(ui: &mut egui::Ui, theme: &Theme, sec: &HintSection) {
         ),
     );
     // 빈 조합 섹션은 내부 간격을 좁게(3px vs 6px) 잡아, 항상 표시되는 빈 섹션이
-    // 리스트를 과하게 늘어뜨리지 않게 한다(ADR-0037, 디자인 §6-5). 섹션 간 간격은 불변.
+    // 리스트를 과하게 늘어뜨리지 않게 한다(ADR-0038, 디자인 §6-5). 섹션 간 간격은 불변.
     let content_gap = if sec.is_empty() {
         theme.modhint_empty_row_gap().value()
     } else {
@@ -636,7 +636,7 @@ fn draw_section(ui: &mut egui::Ui, theme: &Theme, sec: &HintSection) {
 
     ui.spacing_mut().item_spacing.y = content_gap;
     if sec.is_empty() {
-        // 바인딩·역할이 모두 없는 조합 → "바인딩 없음" 플레이스홀더 한 줄(ADR-0037).
+        // 바인딩·역할이 모두 없는 조합 → "바인딩 없음" 플레이스홀더 한 줄(ADR-0038).
         draw_empty_row(ui, theme);
     } else {
         for row in &sec.rows {
@@ -974,7 +974,7 @@ mod tests {
         assert!(!sections.is_empty());
     }
 
-    /// ADR-0037: 바인딩·역할이 전무한 조합을 홀드해도 오버레이는 visible 이고, debug 덤프의
+    /// ADR-0038: 바인딩·역할이 전무한 조합을 홀드해도 오버레이는 visible 이고, debug 덤프의
     /// 해당 섹션은 `empty:true` 로 표시된다(draw 가 "바인딩 없음" 플레이스홀더로 렌더).
     #[test]
     fn debug_state_marks_empty_combo_and_stays_visible() {

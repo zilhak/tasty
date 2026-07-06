@@ -109,7 +109,7 @@ const MIXED_SECTIONS: &[Section] = &[
 ];
 
 /// **전체 빈 패널** — Ctrl+Alt 홀드 시 상위 조합이 모두 미할당(디자인 §2·2). 두 섹션 모두
-/// 플레이스홀더만. 미할당 조합 홀드 시 패널이 뜨고 "바인딩 없음"으로 부재를 명시(ADR-0037).
+/// 플레이스홀더만. 미할당 조합 홀드 시 패널이 뜨고 "바인딩 없음"으로 부재를 명시(ADR-0038).
 const EMPTY_SECTIONS: &[Section] = &[
     Section {
         chord: "Ctrl+Alt",
@@ -138,7 +138,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 panel(ui, theme, "Ctrl", CTRL_SECTIONS);
                 panel(ui, theme, "Shift", SHIFT_SECTIONS);
             });
-            // 빈 조합 플레이스홀더(ADR-0037) — 혼재(채워진+빈) · 전체 빈 패널.
+            // 빈 조합 플레이스홀더(ADR-0038) — 혼재(채워진+빈) · 전체 빈 패널.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
                 panel(ui, theme, "Ctrl", MIXED_SECTIONS);
@@ -209,7 +209,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Empty combos (no binding and no role) keep their section and show one muted \"No shortcuts bound\" \
-         placeholder — so holding an all-empty combo surfaces the panel instead of dead silence (ADR-0037).",
+         placeholder — so holding an all-empty combo surfaces the panel instead of dead silence (ADR-0038).",
     );
     spec::dont(
         ui,
@@ -344,7 +344,7 @@ fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) 
         for sec in sections {
             chord_head(ui, theme, sec.chord);
             // 빈 조합(바인딩·역할 모두 없음)은 내부 간격을 3px(채워진 6px)로 좁혀 "바인딩
-            // 없음" 플레이스홀더 한 줄만 그린다(ADR-0037, 본체 draw_section 전사).
+            // 없음" 플레이스홀더 한 줄만 그린다(ADR-0038, 본체 draw_section 전사).
             let is_empty = sec.rows.is_empty() && sec.roles.is_empty();
             let content_gap = if is_empty {
                 theme.modhint_empty_row_gap().value()
