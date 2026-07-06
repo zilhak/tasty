@@ -1,0 +1,35 @@
+name: Supply Chain Check
+
+# 루트 deny.toml 로 cargo-deny 의 advisories / licenses / bans / sources 4단계를 검증.
+# self-hosted runner 부하 통제를 위해 수동 트리거 only (build-check.yml 과 동일 정책).
+# PR/schedule 자동 트리거(재발방지 게이트화)는 후속 논의 대상 — 현 워크플로가 전부
+# 수동 트리거라 정책 일관성을 위해 여기서도 수동으로 둔다.
+
+on:
+  workflow_dispatch:
+
+# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+concurrency:
+  group: supply-chain-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-deny:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Ensure cargo-deny
+        run: |
+          if ! command -v cargo-deny >/dev/null 2>&1; then
+            cargo install cargo-deny --locked
+          fi
+          cargo-deny --version
+
+      - name: cargo deny check
+        run: cargo deny check
