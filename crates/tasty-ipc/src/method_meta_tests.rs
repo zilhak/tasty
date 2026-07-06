@@ -104,6 +104,15 @@ fn tab_create_requires_surface_write() {
 }
 
 #[test]
+fn surface_completion_requires_notification() {
+    // completion 은 read 가 아니라 highlight 발동(PushNotification 계열) →
+    // notification.* 와 동일한 Notification 권한, plugin 이 호출 가능해야 한다.
+    let m = method_meta("surface.completion").expect("registered");
+    assert!(m.plugin_callable, "agents must be able to signal completion");
+    assert!(m.required.contains(&Permission::Notification));
+}
+
+#[test]
 fn ime_methods_are_local_only_via_prefix() {
     let m = method_meta("surface.ime_commit").expect("registered");
     assert!(!m.plugin_callable);

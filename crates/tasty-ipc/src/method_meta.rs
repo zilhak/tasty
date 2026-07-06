@@ -95,6 +95,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.send_wait_idle", plugin(&[TerminalWrite])),
         ("surface.wake", plugin(&[TerminalSpawn])),
         ("surface.set_mark", plugin(&[TerminalRead])),
+        // completion 은 read 가 아니라 highlight(주의 환기) 발동 — PushNotification
+        // 계열이므로 notification.* 와 동일한 Notification 권한.
+        ("surface.completion", plugin(&[Notification])),
         ("surface.read_since_mark", plugin(&[TerminalRead])),
         ("surface.parse_since_mark", plugin(&[TerminalRead])),
         ("surface.commands", plugin(&[TerminalRead])),

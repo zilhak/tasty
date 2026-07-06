@@ -148,6 +148,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: SurfaceMetaCommands,
     },
+    /// Surface actions (completion signal, …)
+    Surface {
+        #[command(subcommand)]
+        command: SurfaceCommands,
+    },
     /// Check if a surface is currently typing (received key input within 5 seconds)
     IsTyping {
         /// Surface ID (default: focused)
@@ -621,5 +626,12 @@ mod workspace_category_tests {
         let r = req(&["tasty", "set", "workspace", "--id", "2", "--category", "5"]);
         assert_eq!(r.method, "workspace.update");
         assert_eq!(r.params["category"], "5");
+    }
+
+    #[test]
+    fn surface_completion_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "completion", "--surface", "42"]);
+        assert_eq!(r.method, "surface.completion");
+        assert_eq!(r.params["surface_id"], 42);
     }
 }

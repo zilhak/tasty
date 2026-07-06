@@ -675,6 +675,9 @@ impl Core {
             DomainIntent::SetTerminalMark { surface_id } => {
                 Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
             }
+            DomainIntent::SurfaceCompletion { surface_id } => {
+                Ok(vec![CoreEvent::SurfaceCompletionRequested { surface_id }])
+            }
             DomainIntent::CreateWorkspace {
                 cwd,
                 kind,

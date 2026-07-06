@@ -102,6 +102,9 @@ impl App {
             CoreEvent::TerminalMarkSet { surface_id } => {
                 self.cascade_terminal_mark_set(surface_id);
             }
+            CoreEvent::SurfaceCompletionRequested { surface_id } => {
+                self.cascade_surface_completion(surface_id);
+            }
             CoreEvent::WorkspaceCreated {
                 id,
                 index,
@@ -1157,6 +1160,28 @@ impl App {
         for (_, engine) in self.parked_states.iter_mut() {
             if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
+                return;
+            }
+        }
+    }
+
+    /// Surface completion cascade — completion producer(IPC/CLI)가 발동한
+    /// "작업 완료" 신호. surface 를 보유한 engine 의 `raise_surface_highlight` 로
+    /// highlight(주의 환기) 를 발동하고, main window 면 redraw 를 요청해 세 소비처
+    /// (테두리·탭·개수 배지)가 즉시 갱신되게 한다. `cascade_terminal_mark_set` 미러.
+    fn cascade_surface_completion(&mut self, surface_id: u32) {
+        for main in self.main_windows_iter_mut() {
+            if main.core_state.has_surface(surface_id) {
+                main.core_state.raise_surface_highlight(surface_id);
+                main.core_state.mark_layout_dirty();
+                main.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.has_surface(surface_id) {
+                engine.raise_surface_highlight(surface_id);
+                engine.mark_layout_dirty();
                 return;
             }
         }

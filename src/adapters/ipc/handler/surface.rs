@@ -2,6 +2,7 @@
 
 mod close;
 mod commands;
+mod completion;
 pub(crate) mod cwd;
 mod list;
 mod mark;
@@ -10,6 +11,7 @@ mod send;
 
 pub(crate) use close::{handle_surface_close, handle_surface_close_self};
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
+pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;
 pub(crate) use list::handle_surface_list;
 pub(crate) use mark::{handle_parse_since_mark, handle_read_since_mark, handle_set_mark};
