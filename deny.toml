@@ -56,11 +56,6 @@ ignore = [
   "RUSTSEC-2026-0184", # git2 0.20.4: BlameHunk Signature 잠재 UB
   # rand 0.8.5 는 phf_generator 빌드타임 트랜지티브(본체는 이미 rand 0.9) → 단독 상향 불가.
   "RUSTSEC-2026-0097", # rand 0.8.5: 커스텀 로거 + rand::rng() unsound
-
-  # --- 상향 가능하나 이번 범위(deny.toml 도입) 밖 — 후속 별도 커밋으로 상향 ---
-  # anyhow 1.0.102 → 1.0.103 상향 가능(dry-run 확인, 단독 변경). 의존성 상향은
-  # 본 작업과 관심사가 다르므로 여기서는 ignore 로 격리하고 후속 커밋으로 해소한다.
-  "RUSTSEC-2026-0190", # anyhow 1.0.102: Error::downcast_mut() unsound
 ]
 
 [licenses]
