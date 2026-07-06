@@ -1066,7 +1066,6 @@ impl MainView {
         self.mark_dirty();
     }
 
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — explorer 네이티브 메뉴 액션 분기 처리
     fn handle_explorer_native_menu(
         &mut self,
         surface_id: u32,
@@ -1076,17 +1075,43 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::show_context_menu;
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
-        let has_clip = engine
+        let has_clip = self
+            .core_state
             .explorer_clipboard
             .as_ref()
             .map(|c| !c.paths.is_empty())
             .unwrap_or(false);
 
+        let items = Self::build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip);
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => self.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
+            Some(10) => self.explorer_menu_set_clipboard(&paths, false),
+            Some(11) => self.explorer_menu_set_clipboard(&paths, true),
+            Some(12) => self.explorer_menu_paste(surface_id, &paths, &cwd, is_folder),
+            Some(30) => self.explorer_menu_trash(surface_id, &paths),
+            Some(20) => self.explorer_menu_open_in_system(&paths, &cwd),
+            Some(40) => self.explorer_menu_rename(surface_id, &paths),
+            Some(50) => self.explorer_menu_add_favorite(&paths, &cwd, is_empty_target),
+            Some(60) => self.explorer_menu_open_in_new_tab(surface_id, &paths),
+            Some(61) => self.explorer_menu_set_root(surface_id, &paths),
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    /// explorer 컨텍스트 메뉴 아이템 목록 구성 (design §3.3).
+    fn build_explorer_context_menu(
+        multi: bool,
+        is_empty_target: bool,
+        is_folder: bool,
+        has_clip: bool,
+    ) -> Vec<crate::platform::native_menu::MenuItem> {
+        use crate::platform::native_menu::MenuItem;
         let copy_path_label = if multi {
             crate::i18n::t("explorer.context_menu.copy_path_multi")
         } else {
@@ -1158,138 +1183,165 @@ impl MainView {
                 ));
             }
         }
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(1) => {
-                let text = if is_empty_target {
-                    cwd.display().to_string()
-                } else {
-                    paths
-                        .iter()
-                        .map(|p| p.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                };
-                if let Some(cb) = &mut self.clipboard {
-                    cb.set_text(&text);
-                }
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.copied"),
-                    crate::adapters::ui::ToastScope::Surface(surface_id),
-                );
-            }
-            Some(10) => {
-                engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
-                    paths: paths.clone(),
-                    cut: false,
-                });
-            }
-            Some(11) => {
-                engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
-                    paths: paths.clone(),
-                    cut: true,
-                });
-            }
-            Some(12) => {
-                let dest = if is_folder {
-                    paths.first().cloned().unwrap_or_else(|| cwd.clone())
-                } else {
-                    cwd.clone()
-                };
-                if let Some(clip) = engine.explorer_clipboard.clone() {
-                    let (ok, err) =
-                        crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
-                    // 잘라내기는 이동 성공 시 클립보드 소진.
-                    if clip.cut && err.is_none() {
-                        engine.explorer_clipboard = None;
-                    }
-                    if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-                        v.request_reload();
-                    }
-                    if let Some(e) = err {
-                        tracing::warn!("explorer: paste error ({ok} ok): {e}");
-                    }
-                }
-            }
-            Some(30) => {
-                // 휴지통으로 이동 (가역적이라 별도 확인 모달 없음).
-                if let Err(e) = trash::delete_all(&paths) {
-                    tracing::warn!("explorer: move to trash failed: {e}");
-                }
-                if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-                    v.selected.clear();
-                    v.anchor = None;
-                    v.request_reload();
-                }
-            }
-            Some(20) => {
-                let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());
-                if let Err(e) = crate::platform::reveal::open_path(&target) {
-                    tracing::warn!("explorer: open_path failed: {e}");
-                }
-            }
-            Some(40) => {
-                if let Some(path) = paths.first().cloned() {
-                    let current_name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-                    let scope = target.popup_scope();
-                    self.state.dialogs.rename = Some((target, current_name));
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: "rename",
-                            mode: crate::intent::OpenPopupMode::WithScope(scope),
-                        }
-                        .from_user_context_menu(),
-                    );
-                }
-            }
-            Some(50) => {
-                // 즐겨찾기 추가 — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
-                let path = if is_empty_target {
-                    cwd.clone()
-                } else {
-                    paths.first().cloned().unwrap_or_else(|| cwd.clone())
-                };
-                let seed = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-                let scope = target.popup_scope();
-                self.state.dialogs.rename = Some((target, seed));
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: "rename",
-                        mode: crate::intent::OpenPopupMode::WithScope(scope),
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-            Some(60) => {
-                // 새 탭으로 열기 — 대상 폴더를 cwd 로 하는 새 explorer 를 우클릭
-                // 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
-                if let Some(folder) = paths.first().cloned() {
-                    let params = serde_json::json!({ "path": folder.to_string_lossy() });
-                    if let Err(e) = self
-                        .state
-                        .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
-                    {
-                        tracing::warn!("explorer: open in new tab failed: {e}");
-                    }
-                }
-            }
-            Some(61) => {
-                // 이 폴더로 루트 설정 — 현재 explorer 의 cwd 를 그 폴더로 이동.
-                if let Some(folder) = paths.first().cloned() {
-                    self.state.set_explorer_cwd(engine, surface_id, folder);
-                }
-            }
-            _ => {}
+        items
+    }
+
+    /// 경로 복사 (아이템 1).
+    fn explorer_menu_copy_path(
+        &mut self,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+        cwd: &std::path::Path,
+        is_empty_target: bool,
+    ) {
+        let text = if is_empty_target {
+            cwd.display().to_string()
+        } else {
+            paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        if let Some(cb) = &mut self.clipboard {
+            cb.set_text(&text);
         }
-        self.mark_dirty();
+        self.state.toasts.push_info(
+            crate::i18n::t("toast.copied"),
+            crate::adapters::ui::ToastScope::Surface(surface_id),
+        );
+    }
+
+    /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
+    fn explorer_menu_set_clipboard(&mut self, paths: &[std::path::PathBuf], cut: bool) {
+        self.core_state.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+            paths: paths.to_vec(),
+            cut,
+        });
+    }
+
+    /// 붙여넣기 (아이템 12).
+    fn explorer_menu_paste(
+        &mut self,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+        cwd: &std::path::Path,
+        is_folder: bool,
+    ) {
+        let engine = &mut self.core_state;
+        let dest = if is_folder {
+            paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf())
+        } else {
+            cwd.to_path_buf()
+        };
+        if let Some(clip) = engine.explorer_clipboard.clone() {
+            let (ok, err) = crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
+            // 잘라내기는 이동 성공 시 클립보드 소진.
+            if clip.cut && err.is_none() {
+                engine.explorer_clipboard = None;
+            }
+            if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+                v.request_reload();
+            }
+            if let Some(e) = err {
+                tracing::warn!("explorer: paste error ({ok} ok): {e}");
+            }
+        }
+    }
+
+    /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
+    fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        if let Err(e) = trash::delete_all(paths) {
+            tracing::warn!("explorer: move to trash failed: {e}");
+        }
+        if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+            v.selected.clear();
+            v.anchor = None;
+            v.request_reload();
+        }
+    }
+
+    /// 시스템에서 열기 (아이템 20).
+    fn explorer_menu_open_in_system(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        cwd: &std::path::Path,
+    ) {
+        let target = paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf());
+        if let Err(e) = crate::platform::reveal::open_path(&target) {
+            tracing::warn!("explorer: open_path failed: {e}");
+        }
+    }
+
+    /// 이름 변경 (아이템 40).
+    fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        if let Some(path) = paths.first().cloned() {
+            let current_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
+            let scope = target.popup_scope();
+            self.state.dialogs.rename = Some((target, current_name));
+            self.state.dispatch_intent(
+                crate::intent::UiIntent::OpenPopup {
+                    id: "rename",
+                    mode: crate::intent::OpenPopupMode::WithScope(scope),
+                }
+                .from_user_context_menu(),
+            );
+        }
+    }
+
+    /// 즐겨찾기 추가 (아이템 50) — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
+    fn explorer_menu_add_favorite(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        cwd: &std::path::Path,
+        is_empty_target: bool,
+    ) {
+        let path = if is_empty_target {
+            cwd.to_path_buf()
+        } else {
+            paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf())
+        };
+        let seed = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
+        let scope = target.popup_scope();
+        self.state.dialogs.rename = Some((target, seed));
+        self.state.dispatch_intent(
+            crate::intent::UiIntent::OpenPopup {
+                id: "rename",
+                mode: crate::intent::OpenPopupMode::WithScope(scope),
+            }
+            .from_user_context_menu(),
+        );
+    }
+
+    /// 새 탭으로 열기 (아이템 60) — 대상 폴더를 cwd 로 하는 새 explorer 를
+    /// 우클릭 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
+    fn explorer_menu_open_in_new_tab(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        if let Some(folder) = paths.first().cloned() {
+            let params = serde_json::json!({ "path": folder.to_string_lossy() });
+            let engine = &mut self.core_state;
+            if let Err(e) = self
+                .state
+                .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+            {
+                tracing::warn!("explorer: open in new tab failed: {e}");
+            }
+        }
+    }
+
+    /// 이 폴더로 루트 설정 (아이템 61) — 현재 explorer 의 cwd 를 그 폴더로 이동.
+    fn explorer_menu_set_root(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        if let Some(folder) = paths.first().cloned() {
+            let engine = &mut self.core_state;
+            self.state.set_explorer_cwd(engine, surface_id, folder);
+        }
     }
 
     fn handle_explorer_favorite_native_menu(
