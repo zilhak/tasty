@@ -1,0 +1,25 @@
+# 파일 SLOC 게이트(복잡도 게이트 파트 B) 동결 목록 — grandfather.
+# scripts/check-file-size.sh 가 참조한다. 각 줄 = 레포 상대경로(슬래시).
+# 여기 등록된 파일은 code SLOC > 1000 여도 통과한다(기존 대형 파일 동결).
+# 신규로 1000 을 넘는 Rust 파일은 여기 없으면 게이트가 차단한다.
+# 테스트 모듈(tests.rs 등)·생성/전사 코드는 스크립트 skip() 이 별도 제외하므로 등록 불요.
+# 리팩터로 1000 이하로 줄면 해당 줄을 삭제해 래칫을 한 칸 조인다.
+# 상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+crates/tasty-gallery/src/catalog.rs
+crates/tasty-host-plugin/src/builtin.rs
+crates/tasty-memory/src/lib.rs
+crates/tasty-plugin-codex/src/handlers.rs
+crates/tasty-plugin-markdown/src/render.rs
+crates/tasty-type-appearance/src/theme.rs
+src/adapters/ui/popup/port_scanner.rs
+src/adapters/ui/popup/remote_tool.rs
+src/adapters/ui/preset/demo_layout.rs
+src/adapters/ui/sidebar/view.rs
+src/adapters/ui/surface/explorer.rs
+src/app/dispatch_domain.rs
+src/core/agent/runner_host.rs
+src/core/mod.rs
+src/view/main/redraw.rs
+src/view/main/vi_copy.rs
+src/view/settings/ui.rs
+src/view/settings/ui/tabs/appearance.rs
