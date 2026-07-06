@@ -223,21 +223,69 @@ impl MainView {
         // Cursor icon is determined in the egui render cycle (gpu/mod.rs)
     }
 
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — 마우스 입력 라우팅(히트테스트/드래그/셀렉션 분기). 실 리팩터 대상
+    /// 마우스 버튼 입력 라우팅 디스패처. 게이트(OS-resize → click-to-activate →
+    /// egui/overlay 소비 → egui-mesh) 를 순서대로 태운 뒤 버튼별 핸들러로 위임한다.
+    /// 좌표/라우팅 결정 수학은 이미 순수 함수(`resize_direction_at`·`pixel_to_grid`·
+    /// `right_click_delegates_to_app`·`left_click_local_select`)로 밖에 있어 이 계층은
+    /// **어느 state 메서드를 어떤 순서로** 부를지의 stateful 디스패치만 담당한다.
     pub(super) fn handle_mouse_input(
         &mut self,
         button_state: ElementState,
         button: MouseButton,
         egui_consumed: bool,
     ) {
-        // 통합 리사이즈 hit-test (콘텐츠 우선 입력모델). 모든 egui 인터랙티브
-        // 콘텐츠(사이드바 버튼·캡션 버튼·상태바 등)가 자동으로 우선권을 가지므로
-        // (`!egui_consumed` && 오버레이류 없음), 좌클릭 press 가 창 가장자리 margin
-        // 안일 때만 OS 리사이즈를 시작한다 — carve-out 불필요. egui_consumed
-        // early-return 보다 위에 두되 `!egui_consumed` 와 오버레이 가드를 모두 검사한다.
-        // macOS 는 네이티브 데코 창(`window_chrome::apply_csd_attributes`)이라 OS 가
-        // 가장자리 리사이즈를 처리하므로 이 경로를 타지 않는다(cfg 가드).
         #[cfg(not(target_os = "macos"))]
+        if self.try_begin_os_resize(button, button_state, egui_consumed) {
+            return;
+        }
+
+        let overlay_open = self.state.settings_open;
+        if self.try_click_to_activate(button, button_state, overlay_open) {
+            return;
+        }
+
+        if egui_consumed
+            || overlay_open
+            || self.state.popup_hovered
+            || self.state.banner_hovered
+            || self.state.modifier_hint_hovered
+        {
+            // 비-좌클릭/Release/egui-크롬(사이드바·탭바) 클릭의 소비. 활성 surface 안
+            // pane 포커스 갱신은 위 click-to-activate 단계가 흡수하므로 여기서는
+            // Release 정리와 egui 소비 repaint 만 남긴다.
+            if button_state == ElementState::Released {
+                self.dragging_divider = None;
+                self.left_mouse_down = false;
+                self.left_select_bypass = false;
+            }
+            if egui_consumed {
+                self.mark_dirty();
+            }
+            return;
+        }
+
+        if self.try_forward_egui_mesh_button(button, button_state) {
+            return;
+        }
+
+        match button {
+            MouseButton::Right => self.handle_right_button(button_state),
+            MouseButton::Middle => self.handle_middle_button(button_state),
+            MouseButton::Left => self.handle_left_button(button_state),
+            _ => {}
+        }
+    }
+
+    /// OS 가장자리 리사이즈 hit-test (콘텐츠 우선 입력모델). 좌클릭 press 가 창
+    /// 가장자리 margin 안이면 OS 리사이즈를 시작하고 `true`(클릭 소비). macOS 는
+    /// 네이티브 데코라 이 경로를 타지 않는다(호출부 cfg 가드).
+    #[cfg(not(target_os = "macos"))]
+    fn try_begin_os_resize(
+        &mut self,
+        button: MouseButton,
+        button_state: ElementState,
+        egui_consumed: bool,
+    ) -> bool {
         if button == MouseButton::Left
             && button_state == ElementState::Pressed
             && !egui_consumed
@@ -258,19 +306,22 @@ impl MainView {
                 if let Err(e) = self.base.winit.drag_resize_window(dir) {
                     tracing::warn!("window resize drag failed: {e}");
                 }
-                return;
+                return true;
             }
         }
+        false
+    }
 
-        let overlay_open = self.state.settings_open;
-
-        // click-to-activate swallow: 비활성 surface 를 좌클릭(press)하면 — 그 위에
-        // 배너/egui 위젯이 있든 없든 — 그 첫 클릭은 "surface 전환" 이 통째로 소비한다
-        // (macOS click-to-activate 모델). modal(`overlay_open`)·popup(`popup_hovered`)은
-        // surface 비소속 상위 레이어라 이 전환보다 먼저 배제한다. banner/divider/terminal
-        // 은 전환보다 아래 — 배너를 클릭해도 소속 surface 로 포커스가 간다. 전환이
-        // 클릭을 소비하면 그 클릭은 selection/cursor/마우스 리포트로 흐르지 않는다(첫
-        // 클릭은 활성화에만 쓰이고 한 번 더 클릭해야 동작). docs/architecture/input-layer.md.
+    /// click-to-activate swallow: 비활성 surface 를 좌클릭(press)하면 첫 클릭을
+    /// "surface 전환" 이 통째로 소비한다(macOS 모델). 전환하면 `true`(클릭 소비).
+    /// modal/popup 은 상위 레이어라 전환보다 먼저 배제(호출부 `overlay_open`).
+    /// docs/architecture/input-layer.md.
+    fn try_click_to_activate(
+        &mut self,
+        button: MouseButton,
+        button_state: ElementState,
+        overlay_open: bool,
+    ) -> bool {
         if button == MouseButton::Left
             && button_state == ElementState::Pressed
             && !overlay_open
@@ -296,33 +347,19 @@ impl MainView {
                     self.base.dirty = true;
                 }
                 self.mark_dirty();
-                return;
+                return true;
             }
         }
+        false
+    }
 
-        if egui_consumed
-            || overlay_open
-            || self.state.popup_hovered
-            || self.state.banner_hovered
-            || self.state.modifier_hint_hovered
-        {
-            // 비-좌클릭/Release/egui-크롬(사이드바·탭바) 클릭의 소비. 활성 surface 안
-            // pane 포커스 갱신은 위 click-to-activate 단계가 흡수하므로 여기서는
-            // Release 정리와 egui 소비 repaint 만 남긴다.
-            if button_state == ElementState::Released {
-                self.dragging_divider = None;
-                self.left_mouse_down = false;
-                self.left_select_bypass = false;
-            }
-            if egui_consumed {
-                self.mark_dirty();
-            }
-            return;
-        }
-
-        // egui-mesh surface 입력 forward (A1-S7): 포인터가 egui-mesh surface 위면 버튼
-        // 이벤트를 surface-local 좌표로 누적해 다음 set_context 로 보내고 소비한다.
-        // (host 가 받은 실제 사용자 입력만 forward — identity 경계.)
+    /// egui-mesh surface 입력 forward (A1-S7): 포인터가 egui-mesh surface 위면 버튼
+    /// 이벤트를 surface-local 좌표로 누적해 다음 set_context 로 보내고 소비(`true`).
+    fn try_forward_egui_mesh_button(
+        &mut self,
+        button: MouseButton,
+        button_state: ElementState,
+    ) -> bool {
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
             if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y) {
@@ -332,346 +369,366 @@ impl MainView {
                 }
                 self.egui_mesh_push_pointer_button(sid, rect, x, y, button, pressed);
                 self.mark_dirty();
-                return;
+                return true;
             }
         }
+        false
+    }
 
-        if button == MouseButton::Right {
-            let terminal_rect = self.compute_terminal_rect();
-            if let Some(pos) = self.cursor_position {
-                let (x, y) = (pos.x as f32, pos.y as f32);
-                if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                    return;
-                }
-                let Some(surface_id) =
-                    self.state
-                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
-                else {
-                    return;
-                };
-                let tracking = self
-                    .core_state
-                    .find_terminal_by_id(surface_id)
-                    .map(|t| t.mouse_tracking());
-                let Some(tracking) = tracking else {
-                    // 비-terminal surface (markdown/image/explorer/html 등) — terminal
-                    // 의 mouse-tracking 위임(ADR-0019/0022)은 해당 없음. T9 surface
-                    // 컨텍스트 메뉴(잘라내기/여기로 이동 + copy surface id)를 띄운다.
-                    if button_state == ElementState::Pressed {
-                        let sf = self.base.gpu.scale_factor();
-                        self.state.dialogs.pending_native_menu =
-                            Some(crate::state::PendingNativeMenu::Surface {
-                                surface_id,
-                                x: x / sf,
-                                y: y / sf,
-                            });
-                        self.mark_dirty();
-                    }
-                    return;
-                };
-                // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
-                let tracking = self.effective_click_tracking(surface_id, tracking);
-                let shift = self.base.modifiers.shift_key();
-                // 트래킹 ON + Shift 없음: 우클릭을 앱에 보고 (ADR-0019 앱 위임 유지).
-                // Shift+우클릭은 앱에 보고하지 않고 tasty 컨텍스트 메뉴로 우회한다 (ADR-0022
-                // — 앱 위임을 깨지 않는 opt-in modifier 우회, xterm/iTerm2 표준 관례).
-                // press·release 모두 report 경로로 새지 않도록 Shift 시 분기를 먼저 빠진다.
-                if right_click_delegates_to_app(tracking, shift) {
-                    // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — 텍스트 선택은
-                    // Shift+드래그, tasty 메뉴는 Shift+우클릭으로 우회 가능함을 트래킹 세션당
-                    // 1회 안내한다(Pressed 에서만, 설정 ON 일 때, ADR-0022 ②). 좌클릭 보고
-                    // 경로와 같은 take_mouse_capture_hint() 를 공유해 먼저 발생한 쪽만 뜬다.
-                    if button_state == ElementState::Pressed
-                        && self.core_state.settings.general.mouse_capture_hint
-                    {
-                        let show = self
-                            .core_state
-                            .find_terminal_by_id(surface_id)
-                            .is_some_and(|t| t.take_mouse_capture_hint());
-                        if show {
-                            self.state
-                                .banners
-                                .push(crate::adapters::ui::BannerState::persistent(
-                                    crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
-                                    crate::adapters::ui::BannerScope::Surface(surface_id),
-                                ));
-                        }
-                    }
-                    self.report_mouse_event(
-                        surface_id,
-                        x,
-                        y,
-                        2,
-                        false,
-                        button_state == ElementState::Released,
-                    );
-                    return;
-                }
-                if button_state == ElementState::Pressed {
-                    let sf = self.base.gpu.scale_factor();
-                    self.state.dialogs.pending_native_menu =
-                        Some(crate::state::PendingNativeMenu::TerminalSurface {
-                            surface_id,
-                            x: x / sf,
-                            y: y / sf,
-                        });
-                    self.mark_dirty();
-                }
-            }
+    /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0019), 아니면 tasty 컨텍스트
+    /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
+    fn handle_right_button(&mut self, button_state: ElementState) {
+        let terminal_rect = self.compute_terminal_rect();
+        let Some(pos) = self.cursor_position else {
+            return;
+        };
+        let (x, y) = (pos.x as f32, pos.y as f32);
+        if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             return;
         }
-        if button == MouseButton::Middle {
-            // 트래킹 ON 에서만 미들클릭 보고 (트래킹 OFF 는 현재 무동작 유지).
-            let terminal_rect = self.compute_terminal_rect();
-            if let Some(pos) = self.cursor_position {
-                let (x, y) = (pos.x as f32, pos.y as f32);
-                if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && let Some(surface_id) =
-                        self.state
-                            .surface_id_at_position(&self.core_state, x, y, terminal_rect)
-                    && self
-                        .core_state
-                        .find_terminal_by_id(surface_id)
+        let Some(surface_id) =
+            self.state
+                .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+        else {
+            return;
+        };
+        let tracking = self
+            .core_state
+            .find_terminal_by_id(surface_id)
+            .map(|t| t.mouse_tracking());
+        let Some(tracking) = tracking else {
+            // 비-terminal surface (markdown/image/explorer/html 등) — terminal 의
+            // mouse-tracking 위임(ADR-0019/0022)은 해당 없음. T9 surface 컨텍스트
+            // 메뉴(잘라내기/여기로 이동 + copy surface id)를 띄운다.
+            if button_state == ElementState::Pressed {
+                let sf = self.base.gpu.scale_factor();
+                self.state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::Surface {
+                        surface_id,
+                        x: x / sf,
+                        y: y / sf,
+                    });
+                self.mark_dirty();
+            }
+            return;
+        };
+        // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
+        let tracking = self.effective_click_tracking(surface_id, tracking);
+        let shift = self.base.modifiers.shift_key();
+        if right_click_delegates_to_app(tracking, shift) {
+            // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — Shift+드래그/
+            // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, ADR-0022 ②).
+            if button_state == ElementState::Pressed {
+                self.report_left_press_capture(surface_id);
+            }
+            self.report_mouse_event(
+                surface_id,
+                x,
+                y,
+                2,
+                false,
+                button_state == ElementState::Released,
+            );
+            return;
+        }
+        if button_state == ElementState::Pressed {
+            let sf = self.base.gpu.scale_factor();
+            self.state.dialogs.pending_native_menu =
+                Some(crate::state::PendingNativeMenu::TerminalSurface {
+                    surface_id,
+                    x: x / sf,
+                    y: y / sf,
+                });
+            self.mark_dirty();
+        }
+    }
+
+    /// 미들클릭 라우팅: 트래킹 ON 에서만 앱에 보고 (트래킹 OFF 는 무동작 유지).
+    fn handle_middle_button(&mut self, button_state: ElementState) {
+        let terminal_rect = self.compute_terminal_rect();
+        if let Some(pos) = self.cursor_position {
+            let (x, y) = (pos.x as f32, pos.y as f32);
+            if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
+                && let Some(surface_id) =
+                    self.state
+                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+                && self
+                    .core_state
+                    .find_terminal_by_id(surface_id)
+                    .map(|t| {
+                        self.effective_click_tracking(surface_id, t.mouse_tracking())
+                            != tasty_terminal::MouseTrackingMode::None
+                    })
+                    .unwrap_or(false)
+            {
+                self.report_mouse_event(
+                    surface_id,
+                    x,
+                    y,
+                    1,
+                    false,
+                    button_state == ElementState::Released,
+                );
+            }
+        }
+    }
+
+    /// 좌클릭 라우팅: 상태 갱신(left_mouse_down·vi_copy 종료) 후 링크클릭 →
+    /// press(divider/selection) → release 로 위임.
+    fn handle_left_button(&mut self, button_state: ElementState) {
+        if button_state == ElementState::Pressed {
+            self.left_mouse_down = true;
+            // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
+            if self.vi_copy.is_some() {
+                self.vi_copy = None;
+                self.base.dirty = true;
+            }
+        } else {
+            self.left_mouse_down = false;
+        }
+
+        let terminal_rect = self.compute_terminal_rect();
+        let Some(pos) = self.cursor_position else {
+            return;
+        };
+        let (x, y) = (pos.x as f32, pos.y as f32);
+        if self.try_handle_link_click(x, y, &terminal_rect, button_state) {
+            return;
+        }
+        if button_state == ElementState::Pressed {
+            self.handle_left_press(x, y, &terminal_rect);
+        } else if button_state == ElementState::Released {
+            self.handle_left_release(x, y, &terminal_rect);
+        }
+    }
+
+    /// 수식키+좌클릭 링크 라우팅. 매치되면 focus 갱신 후 링크 위면 열고(파일/외부 URL),
+    /// 아니면 아무것도 안 함 — 어느 쪽이든 `true`(selection 경로로 안 샘).
+    fn try_handle_link_click(
+        &mut self,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+        button_state: ElementState,
+    ) -> bool {
+        let modifier =
+            LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
+        let mods = &self.base.modifiers;
+        let link_mods_match = !matches!(modifier, LinkModifier::None)
+            && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
+        if !(link_mods_match && button_state == ElementState::Pressed) {
+            return false;
+        }
+        if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+            let engine = &mut self.core_state;
+            let changed_pane = self
+                .state
+                .focus_pane_at_position(engine, x, y, *terminal_rect);
+            let changed_surf =
+                self.state
+                    .focus_surface_at_position(engine, x, y, *terminal_rect);
+            if changed_pane || changed_surf {
+                self.base.dirty = true;
+            }
+        }
+        if let Some(hovered) = self.hovered_link.clone() {
+            // 원격(mirror) surface 판별: 클릭한 surface 의 terminal 이 detached
+            // mirror(자식 PTY 없음)면 화면 경로가 원격 호스트 경로라 로컬 핸들러로
+            // 열 수 없다. ID(hovered.surface_id) 로 직접 판별 — 포커스 독립.
+            let is_mirror = self
+                .core_state
+                .find_terminal_by_id(hovered.surface_id)
+                .map(|t| t.process_id().is_none())
+                .unwrap_or(false);
+            match crate::file_dispatch::parse_link(&hovered.uri) {
+                crate::file_dispatch::LinkKind::FileTarget(path) => {
+                    if is_mirror {
+                        // 원격 경로: 로컬 핸들러 lookup/identify 를 타지 않고 빈
+                        // picker(placeholder)만 띄운다 — empty-state, 실제 동작 없음.
+                        crate::file::dispatch::open_picker(
+                            &mut self.state,
+                            &mut self.core_state,
+                            crate::file::format::FileTarget::new(path),
+                            None,
+                            Vec::new(),
+                            false,
+                        );
+                    } else {
+                        self.state.dispatch_intent(
+                            crate::core::intent::DomainIntent::DispatchFile {
+                                target: crate::file::format::FileTarget::new(path),
+                                depth: crate::file::format::DetectDepth::Deep,
+                                origin_surface_id: None,
+                                ignore_size_limit: false,
+                            }
+                            .from_user_menu("terminal_link_click"),
+                        );
+                    }
+                }
+                crate::file_dispatch::LinkKind::External(uri) => {
+                    // 외부 URL(http:// 등)은 mirror 여부와 무관하게 기존대로 처리.
+                    terminal_link::open_uri(&uri);
+                }
+            }
+        }
+        self.mark_dirty();
+        true
+    }
+
+    /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
+    fn handle_left_press(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+        let threshold = 4.0;
+        let engine = &mut self.core_state;
+        let pane_div = self
+            .state
+            .find_pane_divider_at(engine, x, y, *terminal_rect, threshold);
+        let surf_div =
+            self.state
+                .find_surface_divider_at(engine, x, y, *terminal_rect, threshold);
+        if let Some(info) = pane_div {
+            self.dragging_divider = Some(DividerDrag {
+                info,
+                kind: DividerDragKind::Pane,
+            });
+        } else if let Some(info) = surf_div {
+            self.dragging_divider = Some(DividerDrag {
+                info,
+                kind: DividerDragKind::Surface,
+            });
+        } else {
+            self.begin_left_selection(x, y, terminal_rect);
+        }
+    }
+
+    /// 좌클릭 로컬/보고 선택 시작. focus 전환 + IME flush 후, 순수
+    /// `left_click_local_select` 결정에 따라 로컬 선택 시작 / 앱 보고 / Shift extend.
+    fn begin_left_selection(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+        let engine = &mut self.core_state;
+        let (need_flush, mouse_tracking) = {
+            let old_surface = self.state.focused_surface_id(engine);
+            let changed_pane = self
+                .state
+                .focus_pane_at_position(engine, x, y, *terminal_rect);
+            let changed_surf =
+                self.state
+                    .focus_surface_at_position(engine, x, y, *terminal_rect);
+            if changed_pane || changed_surf {
+                self.base.dirty = true;
+            }
+            let ime_active = self.ime_preedit.is_some();
+            let need_flush = ime_active && self.state.focused_surface_id(engine) != old_surface;
+            // Start text selection (only if not mouse-tracking or Shift held)
+            let mouse_tracking = self
+                .state
+                .focused_terminal(engine)
+                .map(|t| t.mouse_tracking())
+                .unwrap_or(tasty_terminal::MouseTrackingMode::None);
+            (need_flush, mouse_tracking)
+        };
+        if need_flush {
+            self.flush_ime_preedit();
+        }
+        // 블랙리스트면 None 으로 격하 → 좌클릭이 로컬 텍스트 선택으로 빠지고 앱 보고/
+        // 캡처 안내 배너 경로엔 진입하지 않는다.
+        let mouse_tracking = self
+            .state
+            .focused_surface_id(&self.core_state)
+            .map(|sid| self.effective_click_tracking(sid, mouse_tracking))
+            .unwrap_or(mouse_tracking);
+        let shift = self.base.modifiers.shift_key();
+        if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
+            if left_click_local_select(mouse_tracking, shift, false) {
+                // 트래킹 ON + Shift: 앱에 보고하지 않고 로컬 선택을 시작한다 (xterm/iTerm2
+                // 표준 modifier 우회). press 시점 1회 판정을 left_select_bypass 로 release
+                // 까지 유지 — motion/release 는 이 플래그로 라우팅한다. 트래킹 ON 엔 이전
+                // 로컬 앵커가 없어 extend 가 아니라 start.
+                self.left_select_bypass = true;
+                self.start_selection(x, y, terminal_rect);
+            } else {
+                // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0019 앱 위임). 단,
+                // 트래킹 진입 후 첫 캡처 상호작용이면 캡처 안내를 1회 띄운다.
+                if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
+                    self.report_left_press_capture(sid);
+                    self.report_mouse_event(sid, x, y, 0, false, false);
+                }
+            }
+        } else if shift {
+            self.extend_selection(x, y, terminal_rect);
+        } else {
+            self.start_selection(x, y, terminal_rect);
+        }
+    }
+
+    /// 마우스 캡처 진입 후 첫 상호작용이면 "마우스 캡처 중 — Shift 로 우회 가능" 안내
+    /// 배너를 1회 띄운다(설정 ON 일 때). 좌·우 클릭 보고 경로가 같은
+    /// `take_mouse_capture_hint()` 를 공유하므로 먼저 발생한 쪽만 뜬다 (ADR-0022 ②).
+    fn report_left_press_capture(&mut self, surface_id: u32) {
+        if self.core_state.settings.general.mouse_capture_hint {
+            let show = self
+                .core_state
+                .find_terminal_by_id(surface_id)
+                .is_some_and(|t| t.take_mouse_capture_hint());
+            if show {
+                self.state
+                    .banners
+                    .push(crate::adapters::ui::BannerState::persistent(
+                        crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
+                        crate::adapters::ui::BannerScope::Surface(surface_id),
+                    ));
+            }
+        }
+    }
+
+    /// 좌클릭 release: divider 드래그 확정(resize) 후, 트래킹 ON 이면 앱 보고,
+    /// 아니면 로컬 선택 확정(빈 클릭은 커서 이동 + 선택 클리어). bypass 는 앱 보고 스킵.
+    fn handle_left_release(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+        if self.dragging_divider.is_some() {
+            self.dragging_divider = None;
+            let cell_w = self.base.gpu.cell_width();
+            let cell_h = self.base.gpu.cell_height();
+            let engine = &mut self.core_state;
+            self.state.resize_all(engine, *terminal_rect, cell_w, cell_h);
+            self.base.dirty = true;
+        }
+        // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료. 단, Shift+좌클릭
+        // 우회 시퀀스(left_select_bypass)면 — dragging 여부와 무관하게(멀티클릭 word/line
+        // 은 dragging=false) — 앱 보고를 스킵하고 로컬 선택을 확정한다.
+        let bypass = self.left_select_bypass;
+        let report_surface = if bypass {
+            None
+        } else {
+            self.state
+                .focused_surface_id(&self.core_state)
+                .filter(|sid| {
+                    self.core_state
+                        .find_terminal_by_id(*sid)
                         .map(|t| {
-                            self.effective_click_tracking(surface_id, t.mouse_tracking())
+                            self.effective_click_tracking(*sid, t.mouse_tracking())
                                 != tasty_terminal::MouseTrackingMode::None
                         })
                         .unwrap_or(false)
-                {
-                    self.report_mouse_event(
-                        surface_id,
-                        x,
-                        y,
-                        1,
-                        false,
-                        button_state == ElementState::Released,
-                    );
-                }
-            }
-            return;
-        }
-        if button == MouseButton::Left {
-            if button_state == ElementState::Pressed {
-                self.left_mouse_down = true;
-                // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
-                if self.vi_copy.is_some() {
-                    self.vi_copy = None;
-                    self.base.dirty = true;
-                }
+                })
+        };
+        if let Some(sid) = report_surface {
+            self.report_mouse_event(sid, x, y, 0, false, true);
+        } else {
+            let empty = if let Some(sel) = &mut self.text_selection {
+                sel.dragging = false;
+                sel.is_empty()
             } else {
-                self.left_mouse_down = false;
-            }
-
-            let terminal_rect = self.compute_terminal_rect();
-            if let Some(pos) = self.cursor_position {
-                let (x, y) = (pos.x as f32, pos.y as f32);
-                // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
-                // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
-                let modifier =
-                    LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
-                let mods = &self.base.modifiers;
-                let link_mods_match = !matches!(modifier, LinkModifier::None)
-                    && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
-                if link_mods_match && button_state == ElementState::Pressed {
-                    if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        let engine = &mut self.core_state;
-                        let changed_pane =
-                            self.state
-                                .focus_pane_at_position(engine, x, y, terminal_rect);
-                        let changed_surf =
-                            self.state
-                                .focus_surface_at_position(engine, x, y, terminal_rect);
-                        if changed_pane || changed_surf {
-                            self.base.dirty = true;
-                        }
-                    }
-                    if let Some(hovered) = self.hovered_link.clone() {
-                        // 원격(mirror) surface 판별: 클릭한 surface 의 terminal 이 detached
-                        // mirror(자식 PTY 없음)면 화면 경로가 원격 호스트 경로라 로컬 핸들러로
-                        // 열 수 없다. ID(hovered.surface_id) 로 직접 판별 — 포커스 독립.
-                        let is_mirror = self
-                            .core_state
-                            .find_terminal_by_id(hovered.surface_id)
-                            .map(|t| t.process_id().is_none())
-                            .unwrap_or(false);
-                        match crate::file_dispatch::parse_link(&hovered.uri) {
-                            crate::file_dispatch::LinkKind::FileTarget(path) => {
-                                if is_mirror {
-                                    // 원격 경로: 로컬 핸들러 lookup/identify 를 타지 않고 빈
-                                    // picker(placeholder)만 띄운다 — empty-state, 실제 동작 없음.
-                                    crate::file::dispatch::open_picker(
-                                        &mut self.state,
-                                        &mut self.core_state,
-                                        crate::file::format::FileTarget::new(path),
-                                        None,
-                                        Vec::new(),
-                                        false,
-                                    );
-                                } else {
-                                    self.state.dispatch_intent(
-                                        crate::core::intent::DomainIntent::DispatchFile {
-                                            target: crate::file::format::FileTarget::new(path),
-                                            depth: crate::file::format::DetectDepth::Deep,
-                                            origin_surface_id: None,
-                                            ignore_size_limit: false,
-                                        }
-                                        .from_user_menu("terminal_link_click"),
-                                    );
-                                }
-                            }
-                            crate::file_dispatch::LinkKind::External(uri) => {
-                                // 외부 URL(http:// 등)은 mirror 여부와 무관하게 기존대로 처리.
-                                terminal_link::open_uri(&uri);
-                            }
-                        }
-                    }
-                    self.mark_dirty();
-                    return;
+                false
+            };
+            if empty {
+                // bypass 단일(빈) 클릭은 커서 이동 없이 선택만 클리어한다. 일반 단일
+                // 클릭은 클릭 위치로 커서 이동 후 클리어.
+                if !bypass {
+                    self.move_cursor_to_click(x, y, terminal_rect);
                 }
-                if button_state == ElementState::Pressed {
-                    let threshold = 4.0;
-                    let engine = &mut self.core_state;
-                    let pane_div =
-                        self.state
-                            .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
-                    let surf_div =
-                        self.state
-                            .find_surface_divider_at(engine, x, y, terminal_rect, threshold);
-                    if let Some(info) = pane_div {
-                        self.dragging_divider = Some(DividerDrag {
-                            info,
-                            kind: DividerDragKind::Pane,
-                        });
-                    } else if let Some(info) = surf_div {
-                        self.dragging_divider = Some(DividerDrag {
-                            info,
-                            kind: DividerDragKind::Surface,
-                        });
-                    } else {
-                        let (need_flush, mouse_tracking) = {
-                            let old_surface = self.state.focused_surface_id(engine);
-                            let changed_pane =
-                                self.state
-                                    .focus_pane_at_position(engine, x, y, terminal_rect);
-                            let changed_surf =
-                                self.state
-                                    .focus_surface_at_position(engine, x, y, terminal_rect);
-                            if changed_pane || changed_surf {
-                                self.base.dirty = true;
-                            }
-                            let ime_active = self.ime_preedit.is_some();
-                            let need_flush =
-                                ime_active && self.state.focused_surface_id(engine) != old_surface;
-                            // Start text selection (only if not mouse-tracking or Shift held)
-                            let mouse_tracking = self
-                                .state
-                                .focused_terminal(engine)
-                                .map(|t| t.mouse_tracking())
-                                .unwrap_or(tasty_terminal::MouseTrackingMode::None);
-                            (need_flush, mouse_tracking)
-                        };
-                        if need_flush {
-                            self.flush_ime_preedit();
-                        }
-                        // 블랙리스트면 None 으로 격하 → 좌클릭이 로컬 텍스트 선택으로
-                        // 빠지고 앱 보고/캡처 안내 배너 경로엔 진입하지 않는다.
-                        let mouse_tracking = self
-                            .state
-                            .focused_surface_id(&self.core_state)
-                            .map(|sid| self.effective_click_tracking(sid, mouse_tracking))
-                            .unwrap_or(mouse_tracking);
-                        let shift = self.base.modifiers.shift_key();
-                        if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
-                            if left_click_local_select(mouse_tracking, shift, false) {
-                                // 트래킹 ON + Shift: 앱에 보고하지 않고 로컬 선택을 시작한다
-                                // (xterm/iTerm2 표준 modifier 우회). press 시점 1회 판정을
-                                // left_select_bypass 로 release 까지 유지 — motion/release 는
-                                // 이 플래그로 라우팅한다(드래그 중 Shift 해제·멀티클릭 무관).
-                                // 트래킹 ON 엔 이전 로컬 앵커가 없어 extend 가 아니라 start.
-                                self.left_select_bypass = true;
-                                self.start_selection(x, y, &terminal_rect);
-                            } else {
-                                // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0019 앱 위임).
-                                // 단, 트래킹 진입 후 첫 캡처 상호작용이면 "마우스 캡처 중 —
-                                // Shift 로 우회 가능" 안내를 1회 띄운다. 우클릭 경로와 같은
-                                // take_mouse_capture_hint() 를 공유하므로 좌·우 중 먼저 발생한
-                                // 쪽만 뜬다 (설정 ON 일 때만, ADR-0022 ②).
-                                if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
-                                    if self.core_state.settings.general.mouse_capture_hint {
-                                        let show = self
-                                            .core_state
-                                            .find_terminal_by_id(sid)
-                                            .is_some_and(|t| t.take_mouse_capture_hint());
-                                        if show {
-                                            self.state.banners.push(
-                                                crate::adapters::ui::BannerState::persistent(
-                                                    crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
-                                                    crate::adapters::ui::BannerScope::Surface(sid),
-                                                ),
-                                            );
-                                        }
-                                    }
-                                    self.report_mouse_event(sid, x, y, 0, false, false);
-                                }
-                            }
-                        } else if shift {
-                            self.extend_selection(x, y, &terminal_rect);
-                        } else {
-                            self.start_selection(x, y, &terminal_rect);
-                        }
-                    }
-                } else if button_state == ElementState::Released {
-                    if self.dragging_divider.is_some() {
-                        self.dragging_divider = None;
-                        let cell_w = self.base.gpu.cell_width();
-                        let cell_h = self.base.gpu.cell_height();
-                        let engine = &mut self.core_state;
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                        self.base.dirty = true;
-                    }
-                    // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료.
-                    // 단, Shift+좌클릭 우회 시퀀스(left_select_bypass)면 — dragging 여부와
-                    // 무관하게(멀티클릭 word/line 은 dragging=false) — 앱 보고를 스킵하고
-                    // 로컬 선택을 확정한다. 이게 dragging 가드 대신 전용 플래그를 쓰는 이유다.
-                    let bypass = self.left_select_bypass;
-                    let report_surface = if bypass {
-                        None
-                    } else {
-                        self.state
-                            .focused_surface_id(&self.core_state)
-                            .filter(|sid| {
-                                self.core_state
-                                    .find_terminal_by_id(*sid)
-                                    .map(|t| {
-                                        self.effective_click_tracking(*sid, t.mouse_tracking())
-                                            != tasty_terminal::MouseTrackingMode::None
-                                    })
-                                    .unwrap_or(false)
-                            })
-                    };
-                    if let Some(sid) = report_surface {
-                        self.report_mouse_event(sid, x, y, 0, false, true);
-                    } else {
-                        let empty = if let Some(sel) = &mut self.text_selection {
-                            sel.dragging = false;
-                            sel.is_empty()
-                        } else {
-                            false
-                        };
-                        if empty {
-                            // bypass 단일(빈) 클릭은 커서 이동 없이 선택만 클리어한다.
-                            // 일반 단일 클릭은 클릭 위치로 커서 이동 후 클리어.
-                            if !bypass {
-                                self.move_cursor_to_click(x, y, &terminal_rect);
-                            }
-                            self.text_selection = None;
-                        }
-                    }
-                    self.left_select_bypass = false;
-                    self.mark_dirty();
-                }
+                self.text_selection = None;
             }
         }
+        self.left_select_bypass = false;
+        self.mark_dirty();
     }
 
     /// 클릭/드래그 픽셀 좌표를 해당 surface 의 viewport 1-based `(col, row)` 로 변환
