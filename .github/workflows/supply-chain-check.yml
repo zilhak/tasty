@@ -1,11 +1,17 @@
 name: Supply Chain Check
 
 # 루트 deny.toml 로 cargo-deny 의 advisories / licenses / bans / sources 4단계를 검증.
-# self-hosted runner 부하 통제를 위해 수동 트리거 only (build-check.yml 과 동일 정책).
-# PR/schedule 자동 트리거(재발방지 게이트화)는 후속 논의 대상 — 현 워크플로가 전부
-# 수동 트리거라 정책 일관성을 위해 여기서도 수동으로 둔다.
+# cargo-deny 는 무컴파일·초단위라 자동화 부하가 극소이므로 매 PR 게이트로 상시화한다.
+# 추가로 advisory DB 는 코드 무변경에도 시간 드리프트(신규 CVE)가 생기므로 주간 스케줄로
+# 정기 스캔한다(daily 는 러너 부하 대비 이득이 적어 weekly). build-check/test 처럼 무거운
+# 잡과 달리 deny 는 부하가 없어 수동 only 정책의 예외로 둔다.
 
 on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # 매주 월요일 09:00 UTC(주간 정기 advisory 스캔).
+    - cron: "0 9 * * 1"
   workflow_dispatch:
 
 # 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
