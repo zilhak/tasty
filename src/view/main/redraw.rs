@@ -187,15 +187,17 @@ impl MainView {
         false
     }
 
-    /// Synchronize native WebView instances with the current state.
-    /// Creates webviews for new Html panels, destroys removed ones,
-    /// updates bounds and visibility based on active workspace/tab.
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — Html webview 생성/파괴/bounds 동기화 분기
-    fn sync_webviews(&mut self) {
+    /// 블록 A: 전 워크스페이스 순회로 html webview surface 수집(순수 계산, native 부수효과 없음).
+    /// all_html_ids = 살아있는 모든 html surface, active_html = 활성 ws·활성 tab 만 inset bounds 포함.
+    fn collect_html_surfaces(
+        &self,
+        scale_factor: f64,
+    ) -> (
+        std::collections::HashMap<u32, crate::webview::WebViewBounds>,
+        Vec<u32>,
+    ) {
         let terminal_rect = self.compute_terminal_rect();
-        let scale_factor = self.base.gpu.scale_factor() as f64;
         let tab_bar_h = self.state.tab_bar_height.value() as f64;
-        let engine = &mut self.core_state;
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
@@ -203,7 +205,7 @@ impl MainView {
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();
 
-        for (ws_idx, ws) in engine.workspaces.iter().enumerate() {
+        for (ws_idx, ws) in self.core_state.workspaces.iter().enumerate() {
             let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
@@ -238,8 +240,19 @@ impl MainView {
             }
         }
 
+        (active_html, all_html_ids)
+    }
+
+    /// 블록 B: webview 없는 html surface 마다 native PlatformWebView 생성 + URL 로드 + 설정 적용 +
+    /// 비활성 숨김. &self 해석(find_webview_url/resolve_webview_settings) → 소유값 → &mut insert.
+    fn create_missing_webviews(
+        &mut self,
+        all_html_ids: &[u32],
+        active_html: &std::collections::HashMap<u32, crate::webview::WebViewBounds>,
+        scale_factor: f64,
+    ) {
         // Create new webviews for Html panels that don't have one yet
-        for &sid in &all_html_ids {
+        for &sid in all_html_ids {
             if !self.webviews.contains_key(&sid) {
                 // Find the URL for this surface
                 let url = self.find_webview_url(sid);
@@ -284,6 +297,15 @@ impl MainView {
                 }
             }
         }
+    }
+
+    /// Synchronize native WebView instances with the current state.
+    /// Creates webviews for new Html panels, destroys removed ones,
+    /// updates bounds and visibility based on active workspace/tab.
+    fn sync_webviews(&mut self) {
+        let scale_factor = self.base.gpu.scale_factor() as f64;
+        let (active_html, all_html_ids) = self.collect_html_surfaces(scale_factor);
+        self.create_missing_webviews(&all_html_ids, &active_html, scale_factor);
 
         // When any egui overlay (context menu, popup, dialog) is open,
         // hide all WebViews so they don't cover the overlay.
