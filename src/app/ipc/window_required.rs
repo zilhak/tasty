@@ -22,7 +22,10 @@ impl App {
                 || cmd.request.method == "ui.screenshot"
                 || cmd.request.method == "debug.inject_window_mouse"
                 || cmd.request.method == "debug.inject_egui_mouse"
-                || cmd.request.method == "debug.inject_egui_key";
+                || cmd.request.method == "debug.inject_egui_key"
+                || cmd.request.method == "debug.selection"
+                || cmd.request.method == "debug.pending_menu"
+                || cmd.request.method == "debug.focused_surface";
         }
         if !is_window_required {
             return IpcStep::NotHandled;
@@ -179,6 +182,73 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // read-only debug dump: 마우스 라우팅이 만든 로컬 텍스트 선택 상태를 그대로 노출한다
+        // (input 안전망 — press→move→release 주입 후 selection 회귀를 단언). 부수효과 0,
+        // 사용자 상태를 변경하지 않으므로 관찰 전용. debug 격리(원칙 1·3), release 미노출.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.selection" {
+            let sel = w.text_selection.as_ref();
+            let body = match sel {
+                Some(s) => {
+                    let n = s.normalized();
+                    serde_json::json!({
+                        "present": true,
+                        "surface_id": s.surface_id,
+                        "mode": format!("{:?}", s.mode),
+                        "dragging": s.dragging,
+                        "empty": s.is_empty(),
+                        "anchor": { "col": s.anchor.col, "row": s.anchor.absolute_row },
+                        "cursor": { "col": s.cursor.col, "row": s.cursor.absolute_row },
+                        "start": { "col": n.start.col, "row": n.start.absolute_row },
+                        "end": { "col": n.end.col, "row": n.end.absolute_row },
+                    })
+                }
+                None => serde_json::json!({ "present": false }),
+            };
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                body,
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // read-only debug dump: 우클릭 라우팅이 세운 대기 중 컨텍스트 메뉴(종류/대상 surface).
+        // 우클릭 주입 후 메뉴 라우팅 회귀를 단언한다. 관찰 전용, debug 격리, release 미노출.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.pending_menu" {
+            let menu = w.state.dialogs.pending_native_menu.as_ref();
+            let body = match menu {
+                Some(menu) => {
+                    let (kind, surface_id) = pending_menu_kind(menu);
+                    let mut obj = serde_json::json!({ "present": true, "kind": kind });
+                    if let Some(sid) = surface_id {
+                        obj["surface_id"] = serde_json::json!(sid);
+                    }
+                    obj
+                }
+                None => serde_json::json!({ "present": false }),
+            };
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                body,
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // read-only debug dump: 현재 포커스된 surface id (없으면 null). click-to-activate
+        // 라우팅(비활성 surface 좌클릭 → 포커스 전환) 회귀를 단언한다. `surface.list` 는
+        // engine 단위라 view-layer 포커스를 노출하지 않으므로 별도 관찰 IPC 가 필요하다.
+        // 관찰 전용, debug 격리, release 미노출.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.focused_surface" {
+            let focused = w.state.focused_surface_id(&w.core_state);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "surface_id": focused }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         if cmd.request.method.starts_with("surface.ime_") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let response = host_ipc::handler::ime::handle_ime_method(
@@ -191,5 +261,24 @@ impl App {
             w.base.dirty = true;
         }
         IpcStep::Handled
+    }
+}
+
+/// `PendingNativeMenu` variant → (kind 문자열, 대상 surface_id). 관찰용 debug dump 전용.
+#[cfg(debug_assertions)]
+fn pending_menu_kind(menu: &crate::state::PendingNativeMenu) -> (&'static str, Option<u32>) {
+    use crate::state::PendingNativeMenu as M;
+    match menu {
+        M::Tab { .. } => ("Tab", None),
+        M::Pane { .. } => ("Pane", None),
+        M::Workspace { .. } => ("Workspace", None),
+        M::TerminalSurface { surface_id, .. } => ("TerminalSurface", Some(*surface_id)),
+        M::Surface { surface_id, .. } => ("Surface", Some(*surface_id)),
+        M::Explorer { surface_id, .. } => ("Explorer", Some(*surface_id)),
+        M::ExplorerFavorite { surface_id, .. } => ("ExplorerFavorite", Some(*surface_id)),
+        M::NewWorkspaceButton { .. } => ("NewWorkspaceButton", None),
+        M::WorkspaceCategoryHeader { .. } => ("WorkspaceCategoryHeader", None),
+        M::SidebarBackground { .. } => ("SidebarBackground", None),
+        M::NewTabButton { .. } => ("NewTabButton", None),
     }
 }

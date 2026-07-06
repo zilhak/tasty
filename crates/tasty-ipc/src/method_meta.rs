@@ -369,6 +369,10 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.feed_bytes", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
+    // 마우스 라우팅 회귀 안전망용 read-only dump — 관찰 전용(사용자 상태 불변). release 미노출.
+    ("debug.selection", local_only()),
+    ("debug.pending_menu", local_only()),
+    ("debug.focused_surface", local_only()),
     ("debug.tool.list", local_only()),
     ("debug.tool.invoke", local_only()),
     ("debug.popup.list", local_only()),
