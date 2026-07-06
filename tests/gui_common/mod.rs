@@ -234,6 +234,71 @@ impl GuiTestInstance {
         panes.as_array().unwrap()[0]["id"].as_u64().unwrap()
     }
 
+    // --- Mouse-routing injection helpers (debug build only) ---
+    // 실제 데스크톱 마우스를 뺏지 않고, IPC 로 winit 레벨 포인터 이벤트를 주입해
+    // `handle_mouse_input` 라우팅을 그대로 태운다 (원칙 1·3: debug 격리).
+
+    /// active workspace 의 id 를 workspace.list(active 플래그) 로 조회.
+    #[allow(dead_code)]
+    pub fn active_workspace_id(&self) -> u64 {
+        let list = self.call("workspace.list", serde_json::json!({}));
+        for ws in list.as_array().map(|v| v.as_slice()).unwrap_or(&[]) {
+            if ws["active"].as_bool().unwrap_or(false) {
+                return ws["id"].as_u64().unwrap();
+            }
+        }
+        panic!("no active workspace in workspace.list: {list}");
+    }
+
+    /// 주어진 workspace_id 에 속한 surface id 목록 (surface.list 필터).
+    #[allow(dead_code)]
+    pub fn surface_ids_in_workspace(&self, ws_id: u64) -> Vec<u64> {
+        let surfaces = self.call("surface.list", serde_json::json!({}));
+        surfaces
+            .as_array()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .filter(|s| s["workspace_id"].as_u64() == Some(ws_id))
+            .filter_map(|s| s["id"].as_u64())
+            .collect()
+    }
+
+    /// winit 레벨 포인터 이벤트 주입. `event_type` ∈ move/press/release/scroll,
+    /// `button` 0=left/1=middle/2=right, (fx,fy) surface-local 정규화 [0,1].
+    #[allow(dead_code)]
+    pub fn inject_mouse(&self, surface_id: u64, fx: f32, fy: f32, event_type: &str, button: u8) {
+        self.call(
+            "debug.inject_window_mouse",
+            serde_json::json!({
+                "surface_id": surface_id,
+                "fx": fx,
+                "fy": fy,
+                "event_type": event_type,
+                "button": button,
+            }),
+        );
+    }
+
+    /// 로컬 텍스트 선택 상태 dump (read-only debug IPC).
+    #[allow(dead_code)]
+    pub fn debug_selection(&self) -> Value {
+        self.call("debug.selection", serde_json::json!({}))
+    }
+
+    /// 대기 중 컨텍스트 메뉴 dump (read-only debug IPC, 주입 포획본 관찰).
+    #[allow(dead_code)]
+    pub fn debug_pending_menu(&self) -> Value {
+        self.call("debug.pending_menu", serde_json::json!({}))
+    }
+
+    /// 현재 포커스된 surface id (없으면 None).
+    #[allow(dead_code)]
+    pub fn debug_focused_surface(&self) -> Option<u64> {
+        let v = self.call("debug.focused_surface", serde_json::json!({}));
+        v["surface_id"].as_u64()
+    }
+
     // --- Input simulation helpers ---
 
     /// Press a key combination (e.g., Ctrl+Comma).
