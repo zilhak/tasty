@@ -2708,3 +2708,190 @@ mod tab_title_tests {
         assert_eq!(display_name(&engine, pane_id), "TITLE-A");
     }
 }
+
+#[cfg(test)]
+mod close_surface_cascade_tests {
+    //! `apply_close_surface` (C2) 의 반환 `CoreEvent::SurfaceClosed` 필드
+    //! characterization. Case2(tab)/Case3(pane)/Case4(workspace) cascade 의
+    //! `cleanup_targets`·`closed_tab_ids`·`closed_pane_ids`·`workspace_id_purged`·
+    //! `workspaces_now_empty`·`cascade_level` 을 고정한다. 필드 하나라도 누락되면
+    //! caller `cascade_surface_closed` 가 plugin lifecycle 큐·host TabClosed·
+    //! memory purge 를 건너뛰어 런타임에서만 드러나는 leak 이 되므로, case별 헬퍼
+    //! 추출 리팩터의 안전망이다. save_snapshot=false 로 호출해 undo 스택/스냅샷
+    //! 경로는 배제하고 순수 cascade 반환값만 고정한다.
+    use super::*;
+    use crate::core::intent::CascadeLevel;
+    use tasty_terminal::Terminal;
+
+    fn test_engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    fn insert_detached(engine: &mut CoreState, sid: u32) {
+        engine.terminals.insert(sid, Terminal::new_detached(80, 24));
+    }
+
+    /// Case 2: sole-surface tab & pane 에 tab >1 → tab close.
+    #[test]
+    fn case2_tab_close_returns_tab_level_fields() {
+        let mut engine = test_engine();
+        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
+        // 두 번째 탭(sole surface) 추가.
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid1);
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .add_terminal_marker_tab(tab1_id, sid1);
+
+        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                closed, cascade_level, cleanup_targets, closed_tab_ids,
+                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+            } => {
+                assert!(closed);
+                assert_eq!(cascade_level, CascadeLevel::Tab);
+                assert_eq!(closed_tab_ids, vec![tab1_id]);
+                assert_eq!(cleanup_targets, vec![(sid1, None)]);
+                assert!(closed_pane_ids.is_empty());
+                assert_eq!(workspace_id_purged, None);
+                assert!(!workspaces_now_empty);
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
+        assert_eq!(
+            engine.workspaces[ws_idx].pane_layout().find_pane(pane_id).unwrap().tabs.len(),
+            1
+        );
+    }
+
+    /// Case 3: last tab in pane & ws 에 pane >1 → pane close.
+    #[test]
+    fn case3_pane_close_returns_pane_level_fields() {
+        let mut engine = test_engine();
+        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid1);
+        let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
+        let leftover = engine.workspaces[ws_idx].pane_layout_mut().split_pane_in_place(
+            pane0, crate::model::SplitDirection::Horizontal, new_pane,
+        );
+        assert!(leftover.is_none(), "split 성공해야 함");
+
+        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                closed, cascade_level, cleanup_targets, closed_tab_ids,
+                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+            } => {
+                assert!(closed);
+                assert_eq!(cascade_level, CascadeLevel::Pane);
+                assert_eq!(closed_pane_ids, vec![pane1_id]);
+                assert_eq!(closed_tab_ids, vec![tab1_id]);
+                assert_eq!(cleanup_targets, vec![(sid1, None)]);
+                assert_eq!(workspace_id_purged, None);
+                assert!(!workspaces_now_empty);
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
+        assert_eq!(engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(), 1);
+    }
+
+    /// Case 4: last pane in workspace, 다른 workspace 생존 → workspace close.
+    #[test]
+    fn case4_workspace_close_returns_workspace_level_fields() {
+        let mut engine = test_engine();
+        let ws1_id = engine.next_ids.next_workspace();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid1);
+        let ws1 = crate::model::Workspace::new_with_terminal_marker(
+            ws1_id, "ws1".to_string(), pane1_id, tab1_id, sid1,
+        );
+        engine.workspaces.push(ws1);
+        assert_eq!(engine.workspaces.len(), 2);
+
+        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                closed, cascade_level, cleanup_targets, closed_tab_ids,
+                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+            } => {
+                assert!(closed);
+                assert_eq!(cascade_level, CascadeLevel::Workspace);
+                assert_eq!(workspace_id_purged, Some(ws1_id));
+                assert_eq!(closed_pane_ids, vec![pane1_id]);
+                assert_eq!(closed_tab_ids, vec![tab1_id]);
+                assert_eq!(cleanup_targets, vec![(sid1, None)]);
+                assert!(!workspaces_now_empty);
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
+        assert_eq!(engine.workspaces.len(), 1);
+    }
+
+    /// Case 4 변형: 마지막 workspace 를 닫으면 `workspaces_now_empty==true`.
+    #[test]
+    fn case4_last_workspace_reports_now_empty() {
+        let mut engine = test_engine();
+        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        insert_detached(&mut engine, sid0);
+        let ws0_id = engine.workspaces[0].id;
+
+        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                closed, cascade_level, workspace_id_purged, workspaces_now_empty, ..
+            } => {
+                assert!(closed);
+                assert_eq!(cascade_level, CascadeLevel::Workspace);
+                assert_eq!(workspace_id_purged, Some(ws0_id));
+                assert!(workspaces_now_empty);
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
+        assert!(engine.workspaces.is_empty());
+    }
+
+    /// Case 1 보강: split tab 다중 close 의 반환 필드(기존 title-재투영 테스트는 미검증).
+    #[test]
+    fn case1_split_close_returns_single_cleanup_target() {
+        let mut engine = test_engine();
+        let sid_a = engine.workspaces[0].all_surface_ids()[0];
+        insert_detached(&mut engine, sid_a);
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid_a).unwrap();
+        let sid_b = engine.next_ids.next_surface();
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .split_surface_by_id_marker(sid_a, crate::model::SplitDirection::Horizontal, sid_b)
+            .unwrap();
+        insert_detached(&mut engine, sid_b);
+
+        let ev = Core::apply_close_surface(&mut engine, sid_a, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                closed, cascade_level, cleanup_targets, closed_tab_ids,
+                closed_pane_ids, workspace_id_purged, ..
+            } => {
+                assert!(closed);
+                assert_eq!(cascade_level, CascadeLevel::Surface);
+                assert_eq!(cleanup_targets, vec![(sid_a, None)]);
+                assert!(closed_tab_ids.is_empty());
+                assert!(closed_pane_ids.is_empty());
+                assert_eq!(workspace_id_purged, None);
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
+    }
+}

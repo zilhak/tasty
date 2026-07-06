@@ -187,6 +187,96 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
     assert_ne!(new_surface_ids[0], sid);
 }
 
+// ---- close_surface_by_id_inner cascade characterization (C3) ----
+//
+// `close_surface_by_id_inner` 의 *실제 부수효과* 를 고정한다: 닫힌 surface 의
+// Terminal 이 store 에서 제거되는지(cleanup_surface 실행), 형제가 생존하는지,
+// 구조(tab/pane)가 제거·재배정되는지, plugin lifecycle 큐에 close 이벤트가
+// enqueue 되는지. Case4(마지막 workspace) 는 `..._recreates_when_emptied` 가
+// 이미 커버하므로 Case1/2/3 만 신규 추가한다. save_snapshot=false 경로
+// (`close_surface_by_id_no_snapshot`) 로 호출해 undo 스냅샷은 배제하고
+// cleanup/enqueue 부수효과만 관측한다.
+
+/// Case 1: split tab 내 다중 surface 중 하나 close → cleanup 실행(Terminal 제거),
+/// 형제 surface 생존, lifecycle 이벤트 1건.
+#[test]
+fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
+    let (mut state, mut engine) = test_state();
+    let sid_a = collect_surface_ids(&mut state, &mut engine)[0];
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
+    let sid_b = engine.next_ids.next_surface();
+    engine.workspaces[ws_idx]
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        .unwrap()
+        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
+        .unwrap();
+    engine.terminals.insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+    assert!(engine.terminals.contains(sid_a));
+
+    let _ = state.take_pending_lifecycle_events();
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid_a, false));
+
+    assert!(!engine.terminals.contains(sid_a), "닫힌 surface 의 Terminal 이 cleanup 돼야 함");
+    assert!(engine.terminals.contains(sid_b), "형제 surface 는 생존");
+    let events = state.take_pending_lifecycle_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].surface_id, sid_a);
+}
+
+/// Case 2: sole-surface tab & pane 에 tab >1 → tab 제거 + 해당 leaf cleanup,
+/// 형제 tab 의 surface 생존.
+#[test]
+fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state.add_tab(&mut engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    let sid1 = *collect_surface_ids(&mut state, &mut engine).iter().find(|&&s| s != sid0).unwrap();
+    assert_eq!(
+        state.active_workspace(&engine).pane_layout().find_pane(pane_id).unwrap().tabs.len(), 2
+    );
+
+    let _ = state.take_pending_lifecycle_events();
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
+
+    assert_eq!(
+        state.active_workspace(&engine).pane_layout().find_pane(pane_id).unwrap().tabs.len(), 1
+    );
+    assert!(!engine.terminals.contains(sid1), "닫힌 tab 의 surface 가 cleanup 돼야 함");
+    assert!(engine.terminals.contains(sid0), "형제 tab 의 surface 는 생존");
+    let events = state.take_pending_lifecycle_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].surface_id, sid1);
+}
+
+/// Case 3: last tab in pane & ws 에 pane >1 → pane 제거 + focused_pane 재배정 +
+/// leaf cleanup, 형제 pane 의 surface 생존.
+#[test]
+fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state.test_split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    let sid1 = *collect_surface_ids(&mut state, &mut engine).iter().find(|&&s| s != sid0).unwrap();
+    assert_eq!(state.active_workspace(&engine).pane_layout().all_pane_ids().len(), 2);
+
+    let _ = state.take_pending_lifecycle_events();
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
+
+    assert_eq!(state.active_workspace(&engine).pane_layout().all_pane_ids().len(), 1);
+    assert!(!engine.terminals.contains(sid1));
+    assert!(engine.terminals.contains(sid0), "형제 pane 의 surface 는 생존");
+    let focused = state.active_workspace(&engine).focused_pane;
+    assert!(
+        state.active_workspace(&engine).pane_layout().find_pane(focused).is_some(),
+        "focused_pane 이 생존 pane 으로 재배정돼야 함"
+    );
+    let events = state.take_pending_lifecycle_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].surface_id, sid1);
+}
+
 // ---- deferred surface reify (display-point) ----
 
 /// 포커스된 pane 에 deferred(lazy PTY) 탭을 하나 추가하고 그 surface_id 를 반환한다.
