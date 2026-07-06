@@ -165,9 +165,15 @@ pub fn debug_state_json(
                 "combo": combo_keycaps(s.combo),
                 "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
+                // ADR-0037: 빈 조합 섹션은 draw 가 "바인딩 없음" 플레이스홀더로 렌더한다.
+                // 렌더 픽셀 없이 빈-플레이스홀더 표시를 자동 단정할 수 있게 플래그를 노출.
+                "empty": s.is_empty(),
             })
         })
         .collect();
+    // draw 의 방어 가드(`if sections.is_empty() { return }`)와 정확히 동일한 조건.
+    // ADR-0037 이후 빈 조합 홀드도 빈 섹션(플레이스홀더)이 남아 sections 가 비지 않으므로,
+    // 이전과 달리 미할당 조합에서도 visible:true 로 뜬다.
     let visible =
         settings.modifier_hint.enabled && !dismissed && alpha.is_some() && !sections.is_empty();
     json!({
