@@ -30,7 +30,9 @@
 //! - `workspace_switch_modifier` 단독 조합: 워크스페이스 전환 + 숫자 오버레이.
 //! - `link_click_modifier`(`general`) 단독 조합: modifier+클릭 링크 열기. `"none"` 이면 역할 없음.
 //!
-//! 빈 조합(바인딩·역할 모두 없음)은 섹션 자체를 생략한다.
+//! 빈 조합(바인딩·역할 모두 없음)도 섹션을 **유지**한다 — 오버레이가 ChordHead 아래에
+//! "바인딩 없음" 플레이스홀더 한 줄을 그린다(2026-07-06 결정, ADR-0037). 이전엔 빈 섹션을
+//! 생략했으나, 미할당 조합을 홀드하면 패널이 아예 안 떠 "반응 없음"으로 읽히는 문제로 반전.
 //!
 //! NOTE: modifier-hint-03 오버레이(`super::super::modifier_hint_overlay`)가 대부분을 소비한다
 //! (`build_hint_sections`/`Combo`/`HintSection`/`HintRow`/`HintRowSource`/
@@ -240,7 +242,9 @@ pub struct HintSection {
 }
 
 impl HintSection {
-    fn is_empty(&self) -> bool {
+    /// 바인딩·역할이 모두 없는 조합인가 — 오버레이가 이때 "바인딩 없음" 플레이스홀더를
+    /// 그린다(빈 섹션은 더 이상 생략되지 않는다, ADR-0037).
+    pub fn is_empty(&self) -> bool {
         self.rows.is_empty() && self.roles.is_empty()
     }
 }
@@ -437,8 +441,9 @@ pub fn build_hint_sections(
         }
     }
 
-    // 5. 빈 섹션 생략.
-    sections.retain(|s| !s.is_empty());
+    // 5. 빈 섹션도 유지한다 — 오버레이(modifier-hint-03)가 빈 섹션에 "바인딩 없음"
+    //    플레이스홀더를 그려 "이 조합은 정말 미할당" 임을 명시한다(2026-07-06 결정,
+    //    ADR-0037). 이전(2026-07-02)엔 여기서 `retain` 으로 빈 섹션을 생략했다.
     sections
 }
 
@@ -745,25 +750,26 @@ mod tests {
     }
 
     #[test]
-    fn empty_sections_are_omitted() {
-        // 바인딩·역할이 하나도 안 걸리는 조합은 섹션에서 빠진다.
+    fn empty_sections_are_retained() {
+        // ADR-0037: 바인딩·역할이 하나도 안 걸리는 조합도 섹션이 유지된다(오버레이가
+        // 플레이스홀더를 그린다). 이전엔 여기서 생략됐다.
         let mut kb = KeybindingSettings::preset_tasty();
         // 모든 고정 필드를 비워 역할만 남긴다.
         for (field_id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
             kb.clear_field(field_id);
         }
         kb.script_bindings.clear();
-        // Alt 홀드, switch/link 모두 alt 아닌 값 → alt 단독 섹션에 아무것도 안 붙어 생략.
+        // Alt 홀드, switch/link 모두 alt 아닌 값 → alt 단독 섹션에 아무것도 안 붙는다.
         kb.tab_switch_modifier = "ctrl".into();
         kb.workspace_switch_modifier = "ctrl".into();
         let sections = build_hint_sections(alt(), &kb, "ctrl", false, &[]);
-        // alt 단독 섹션은 shift 없음·switch 아님 → 생략되어야 한다.
-        assert!(section_names(&sections).iter().all(|n| n != "alt"));
-        // 남은 섹션은 전부 비어있지 않아야 한다.
-        assert!(
-            sections
-                .iter()
-                .all(|s| !s.rows.is_empty() || !s.roles.is_empty())
-        );
+        // alt 단독 섹션은 이제 유지되어야 한다(생략 안 함).
+        assert!(section_names(&sections).iter().any(|n| n == "alt"));
+        // 그 alt 섹션은 바인딩·역할이 없어 빈 섹션(is_empty)이어야 한다.
+        let alt_sec = sections
+            .iter()
+            .find(|s| s.combo == alt())
+            .expect("alt 섹션 존재");
+        assert!(alt_sec.is_empty());
     }
 }
