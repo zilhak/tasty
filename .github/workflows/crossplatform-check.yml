@@ -5,7 +5,13 @@ name: Cross-platform Check
 #
 # build-check.yml / release.yml 의 build-* 잡은 dist 빌드 스크립트(무거움) + 수동
 # 트리거라 매-커밋 가드 역할을 못 한다. 본 워크플로는 dist 산출물 없이
-# `cargo check` 만 돌려 Windows/macOS 컴파일 정합성만 빠르게 확인한다.
+# `cargo check` / `cargo clippy` 만 돌려 컴파일 정합성만 빠르게 확인한다.
+#
+# Windows 잡은 `cargo clippy`(check 의 상위집합: 컴파일 + lint)로 돌린다. #[cfg(windows)]
+# 하위에서만 사는 clippy 위반(overlapped I/O 보조채널 등)은 Linux/macOS CI 가 코드를
+# 컴파일조차 안 해 영구 사각지대이며, Windows 러너 clippy 만이 유일한 포착 경로다.
+# `-D warnings` 는 붙이지 않는다 — 워크스페이스에 의도적 warn 이 다수 있어 CI 가 항상
+# red 가 된다. deny-level 하드에러만 plain clippy 로 잡는다.
 #
 # self-hosted runner 사용 근거: cross-compile(`cargo check --target`)은
 # winit/wgpu 네이티브 의존성 때문에 Linux 에서 자주 실패한다. release.yml 이
@@ -41,6 +47,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: cargo check
+      # clippy 컴포넌트가 러너에 없을 수 있으므로 보장(있으면 no-op).
+      - name: ensure clippy component
         shell: pwsh
-        run: cargo check --workspace --locked
+        run: rustup component add clippy
+
+      # clippy 는 check 의 상위집합이라 크로스플랫폼 컴파일 가드를 유지하면서 lint 까지 얻는다.
+      # `-D warnings` 금지(의도적 warn 다수 → CI 상시 red). deny-level 하드에러만 잡는다.
+      - name: cargo clippy
+        shell: pwsh
+        run: cargo clippy --workspace --all-targets --locked
