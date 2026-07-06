@@ -1,6 +1,7 @@
 //! plugin process 가 보낸 IPC 호출 dispatch.
 
 use serde_json::json;
+use tasty_host_plugin::manager::PendingPluginCall;
 
 use crate::app::App;
 use crate::ipc;
@@ -11,7 +12,6 @@ impl App {
     /// 다른 plugin이 점유한 namespace prefix와 매칭되면 `forward_namespace_call_from_plugin`
     /// 경로로 우회 (응답은 target plugin이 줄 때까지 보류되며 main loop 다음 tick에서
     /// caller plugin에 `ipc.result`로 회신).
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin IPC 호출 라우팅(권한 게이트 + namespace forward 분기)
     pub(crate) fn process_plugin_ipc_calls(&mut self) {
         let calls = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.take_pending_plugin_calls(),
@@ -19,147 +19,21 @@ impl App {
         };
         for call in calls {
             // shared buffer 생성은 main 채널 + 보조 채널을 동시에 다뤄야 해서
-            // dispatcher에 노출하지 않고 매니저가 직접 처리한다. params에서 size를
-            // 꺼내 manager에 위임 → 매니저가 fd/HANDLE 송신 + RPC 응답을 모두 처리.
+            // dispatcher에 노출하지 않고 매니저가 직접 처리한다.
             if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
-                let size = call
-                    .params
-                    .get("size")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    let (result, error) =
-                        match mgr.create_shared_buffer_for(&call.plugin_id, call.call_id, size) {
-                            Ok(r) => (serde_json::to_value(&r).ok(), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
-                }
+                self.handle_ipc_shared_buffer_create(&call);
                 continue;
             }
-            // popup.close 인터셉트 — PluginManager가 App에 있어 일반 라우터로 도달 불가.
-            // ensure_allowed로 method_meta 권한 게이트(ui.popup)를 통과한 뒤,
-            // instance_id가 호출자 plugin 소유인지 확인하고 PluginRequest 사유로 close.
             if call.method == "popup.close" {
-                let caller = ipc::caller::CallerContext::Plugin {
-                    plugin_id: call.plugin_id.clone(),
-                    permissions: call.permissions.clone(),
-                };
-                let (result, error) = match caller.ensure_allowed(&call.method) {
-                    Err(e) => (None, Some(e.to_string())),
-                    Ok(()) => {
-                        let instance_id = call.params.get("instance_id").and_then(|v| v.as_u64());
-                        match instance_id {
-                            None => (None, Some("popup.close: missing 'instance_id'".to_string())),
-                            Some(id) => {
-                                let mgr = self.plugin_manager.as_mut();
-                                let owns = mgr
-                                    .as_ref()
-                                    .and_then(|m| {
-                                        m.popup_instances()
-                                            .find(|(iid, _)| *iid == id)
-                                            .map(|(_, inst)| inst.plugin_id == call.plugin_id)
-                                    })
-                                    .unwrap_or(false);
-                                if !owns {
-                                    (
-                                        None,
-                                        Some(format!(
-                                            "popup.close: instance {id} not owned by plugin '{}'",
-                                            call.plugin_id
-                                        )),
-                                    )
-                                } else if let Some(m) = mgr {
-                                    m.close_popup_instance(
-                                        id,
-                                        tasty_plugin_protocol::PopupCloseReason::PluginRequest,
-                                    );
-                                    (Some(serde_json::Value::Object(Default::default())), None)
-                                } else {
-                                    (None, Some("popup.close: plugin manager unavailable".into()))
-                                }
-                            }
-                        }
-                    }
-                };
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
-                }
+                self.handle_ipc_popup_close(&call);
                 continue;
             }
-            // banner.open (A3) — plugin 이 자기 surface 에 egui-mesh 배너를 띄운다.
-            // ui.banner 권한 게이트 + D1 소유권 검증(자기 surface 만)은 open_plugin_banner 가.
             if call.method == "banner.open" {
-                let caller = ipc::caller::CallerContext::Plugin {
-                    plugin_id: call.plugin_id.clone(),
-                    permissions: call.permissions.clone(),
-                };
-                let (result, error) = match caller.ensure_allowed(&call.method) {
-                    Err(e) => (None, Some(e.to_string())),
-                    Ok(()) => {
-                        let banner_id = call.params.get("banner_id").and_then(|v| v.as_str());
-                        let surface_id = call.params.get("surface_id").and_then(|v| v.as_u64());
-                        match (banner_id, surface_id) {
-                            (Some(bid), Some(sid)) => {
-                                let bid = bid.to_string();
-                                match self.open_plugin_banner(
-                                    Some(&call.plugin_id),
-                                    &bid,
-                                    sid as u32,
-                                ) {
-                                    Ok(iid) => (Some(json!({ "instance_id": iid })), None),
-                                    Err(e) => (None, Some(e)),
-                                }
-                            }
-                            _ => (
-                                None,
-                                Some(
-                                    "banner.open: missing 'banner_id' or 'surface_id'".to_string(),
-                                ),
-                            ),
-                        }
-                    }
-                };
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
-                }
+                self.handle_ipc_banner_open(&call);
                 continue;
             }
-            // banner.close (A3) — plugin 이 자기 배너 인스턴스를 닫는다.
             if call.method == "banner.close" {
-                let caller = ipc::caller::CallerContext::Plugin {
-                    plugin_id: call.plugin_id.clone(),
-                    permissions: call.permissions.clone(),
-                };
-                let (result, error) = match caller.ensure_allowed(&call.method) {
-                    Err(e) => (None, Some(e.to_string())),
-                    Ok(()) => match call.params.get("instance_id").and_then(|v| v.as_u64()) {
-                        None => (
-                            None,
-                            Some("banner.close: missing 'instance_id'".to_string()),
-                        ),
-                        Some(iid) => {
-                            if !self.plugin_owns_banner(&call.plugin_id, iid) {
-                                (
-                                    None,
-                                    Some(format!(
-                                        "banner.close: instance {iid} not owned by plugin '{}'",
-                                        call.plugin_id
-                                    )),
-                                )
-                            } else {
-                                self.close_plugin_banner(
-                                    iid,
-                                    tasty_plugin_protocol::BannerCloseReason::PluginRequest,
-                                );
-                                (Some(json!({ "closed": iid })), None)
-                            }
-                        }
-                    },
-                };
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
-                }
+                self.handle_ipc_banner_close(&call);
                 continue;
             }
             // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
@@ -181,25 +55,165 @@ impl App {
                 );
                 continue;
             }
-            let caller = ipc::caller::CallerContext::Plugin {
-                plugin_id: call.plugin_id.clone(),
-                permissions: call.permissions.clone(),
-            };
-            let request = ipc::protocol::JsonRpcRequest {
-                jsonrpc: "2.0".to_string(),
-                id: Some(serde_json::Value::from(call.call_id)),
-                method: call.method.clone(),
-                params: call.params.clone(),
-                session_token: None,
-            };
-            let response = self.dispatch_with_caller(&request, &caller);
-            let (result, error) = match response.error {
-                Some(err) => (None, Some(err.message)),
-                None => (response.result, None),
-            };
-            if let Some(mgr) = self.plugin_manager.as_mut() {
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            self.handle_ipc_default_dispatch(&call);
+        }
+    }
+
+    /// `host.shared_buffer.create` 인터셉트 — main 채널 + 보조 채널을 동시에
+    /// 다뤄야 해서 dispatcher에 노출하지 않고 매니저가 직접 처리한다. params에서
+    /// size를 꺼내 manager에 위임 → 매니저가 fd/HANDLE 송신 + RPC 응답을 모두 처리.
+    fn handle_ipc_shared_buffer_create(&mut self, call: &PendingPluginCall) {
+        let size = call
+            .params
+            .get("size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            let (result, error) =
+                match mgr.create_shared_buffer_for(&call.plugin_id, call.call_id, size) {
+                    Ok(r) => (serde_json::to_value(&r).ok(), None),
+                    Err(e) => (None, Some(e)),
+                };
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+        }
+    }
+
+    /// popup.close 인터셉트 — PluginManager가 App에 있어 일반 라우터로 도달 불가.
+    /// ensure_allowed로 method_meta 권한 게이트(ui.popup)를 통과한 뒤,
+    /// instance_id가 호출자 plugin 소유인지 확인하고 PluginRequest 사유로 close.
+    fn handle_ipc_popup_close(&mut self, call: &PendingPluginCall) {
+        let caller = ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let (result, error) = match caller.ensure_allowed(&call.method) {
+            Err(e) => (None, Some(e.to_string())),
+            Ok(()) => {
+                let instance_id = call.params.get("instance_id").and_then(|v| v.as_u64());
+                match instance_id {
+                    None => (None, Some("popup.close: missing 'instance_id'".to_string())),
+                    Some(id) => {
+                        let mgr = self.plugin_manager.as_mut();
+                        let owns = mgr
+                            .as_ref()
+                            .and_then(|m| {
+                                m.popup_instances()
+                                    .find(|(iid, _)| *iid == id)
+                                    .map(|(_, inst)| inst.plugin_id == call.plugin_id)
+                            })
+                            .unwrap_or(false);
+                        if !owns {
+                            (
+                                None,
+                                Some(format!(
+                                    "popup.close: instance {id} not owned by plugin '{}'",
+                                    call.plugin_id
+                                )),
+                            )
+                        } else if let Some(m) = mgr {
+                            m.close_popup_instance(
+                                id,
+                                tasty_plugin_protocol::PopupCloseReason::PluginRequest,
+                            );
+                            (Some(serde_json::Value::Object(Default::default())), None)
+                        } else {
+                            (None, Some("popup.close: plugin manager unavailable".into()))
+                        }
+                    }
+                }
             }
+        };
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+        }
+    }
+
+    /// banner.open (A3) — plugin 이 자기 surface 에 egui-mesh 배너를 띄운다.
+    /// ui.banner 권한 게이트 + D1 소유권 검증(자기 surface 만)은 open_plugin_banner 가.
+    fn handle_ipc_banner_open(&mut self, call: &PendingPluginCall) {
+        let caller = ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let (result, error) = match caller.ensure_allowed(&call.method) {
+            Err(e) => (None, Some(e.to_string())),
+            Ok(()) => {
+                let banner_id = call.params.get("banner_id").and_then(|v| v.as_str());
+                let surface_id = call.params.get("surface_id").and_then(|v| v.as_u64());
+                match (banner_id, surface_id) {
+                    (Some(bid), Some(sid)) => {
+                        let bid = bid.to_string();
+                        match self.open_plugin_banner(Some(&call.plugin_id), &bid, sid as u32) {
+                            Ok(iid) => (Some(json!({ "instance_id": iid })), None),
+                            Err(e) => (None, Some(e)),
+                        }
+                    }
+                    _ => (
+                        None,
+                        Some("banner.open: missing 'banner_id' or 'surface_id'".to_string()),
+                    ),
+                }
+            }
+        };
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+        }
+    }
+
+    /// banner.close (A3) — plugin 이 자기 배너 인스턴스를 닫는다.
+    fn handle_ipc_banner_close(&mut self, call: &PendingPluginCall) {
+        let caller = ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let (result, error) = match caller.ensure_allowed(&call.method) {
+            Err(e) => (None, Some(e.to_string())),
+            Ok(()) => match call.params.get("instance_id").and_then(|v| v.as_u64()) {
+                None => (None, Some("banner.close: missing 'instance_id'".to_string())),
+                Some(iid) => {
+                    if !self.plugin_owns_banner(&call.plugin_id, iid) {
+                        (
+                            None,
+                            Some(format!(
+                                "banner.close: instance {iid} not owned by plugin '{}'",
+                                call.plugin_id
+                            )),
+                        )
+                    } else {
+                        self.close_plugin_banner(
+                            iid,
+                            tasty_plugin_protocol::BannerCloseReason::PluginRequest,
+                        );
+                        (Some(json!({ "closed": iid })), None)
+                    }
+                }
+            },
+        };
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+        }
+    }
+
+    /// 인터셉트/forward 대상이 아닌 일반 호출 — 호스트 dispatcher로 통과.
+    fn handle_ipc_default_dispatch(&mut self, call: &PendingPluginCall) {
+        let caller = ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let request = ipc::protocol::JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::Value::from(call.call_id)),
+            method: call.method.clone(),
+            params: call.params.clone(),
+            session_token: None,
+        };
+        let response = self.dispatch_with_caller(&request, &caller);
+        let (result, error) = match response.error {
+            Some(err) => (None, Some(err.message)),
+            None => (response.result, None),
+        };
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
         }
     }
 }
