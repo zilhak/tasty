@@ -51,36 +51,12 @@ impl MainView {
             return;
         }
 
-        // Check for double-tap modifier shortcut (e.g. Shift+Shift)
-        if let Some(dt) = self.double_tap.take() {
-            if self.state.settings_open {
-                // When settings are open, pass to keybinding recorder
-                self.state.captured_double_tap = Some(dt.binding_str().to_string());
-                self.mark_dirty();
-                return;
-            } else if self.handle_double_tap_shortcut(dt) {
-                self.mark_dirty();
-                return;
-            }
+        if self.try_consume_double_tap_key() {
+            return;
         }
 
-        if event.logical_key == Key::Named(NamedKey::Escape) {
-            if self.state.settings_open {
-                self.state.settings_open = false;
-                self.state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
-                self.mark_dirty();
-                return;
-            }
-            if self.state.popups.is_open("notifications") {
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::ClosePopup {
-                        id: "notifications",
-                    }
-                    .from_user_shortcut("escape_close_notifications"),
-                );
-                self.mark_dirty();
-                return;
-            }
+        if self.try_consume_escape_key(event) {
+            return;
         }
 
         // Modals, dialogs, and focused popups block keyboard input to the terminal.
@@ -88,49 +64,15 @@ impl MainView {
             || self.state.has_input_dialog_open()
             || self.state.popups.has_focused();
 
-        if !overlay_open {
-            // On macOS, IME composition (e.g. Korean) can replace the logical key
-            // with the composed character. When modifier keys are held, use the
-            // physical key code to determine the intended key for shortcut matching.
-            let shortcut_key = if self.base.modifiers.control_key()
-                || self.base.modifiers.super_key()
-                || self.base.modifiers.alt_key()
-            {
-                crate::shortcuts::physical_key_to_logical(&event.physical_key)
-                    .unwrap_or_else(|| event.logical_key.clone())
-            } else {
-                event.logical_key.clone()
-            };
-            if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
-                if self.ime_preedit.is_some() {
-                    // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
-                    // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
-                    if self.state.popups.has_focused() {
-                        self.clear_ime_preedit();
-                    } else {
-                        self.flush_ime_preedit();
-                    }
-                }
-                // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
-                self.try_enter_vi_copy_mode();
-                self.mark_dirty();
-                return;
-            }
+        if !overlay_open && self.try_consume_shortcut_key(event) {
+            return;
         }
 
         // vi-style 키보드 복사 모드가 활성이면 키를 가로채 PTY 로 보내지 않는다.
-        if self.vi_copy.is_some() {
-            let vi_key = if self.base.modifiers.control_key() {
-                crate::shortcuts::physical_key_to_logical(&event.physical_key)
-                    .unwrap_or_else(|| event.logical_key.clone())
-            } else {
-                event.logical_key.clone()
-            };
-            if self.try_handle_vi_key(&vi_key, self.base.modifiers) {
-                self.mark_dirty();
-                return;
-            }
+        if self.vi_copy.is_some() && self.try_consume_vi_key(event) {
+            return;
         }
+
         if overlay_open {
             return;
         }
@@ -140,109 +82,7 @@ impl MainView {
         let typing_surface_id = self.state.focused_surface_id(&self.core_state);
 
         match surface_type {
-            FocusedSurfaceType::Terminal => {
-                // Forward to terminal.
-                // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
-                // composition — Ime::Commit will handle it). ASCII text (numbers,
-                // punctuation like 1234567890,./) passes through IME unchanged and
-                // won't generate Ime::Commit, so we must send it here.
-                let text_for_terminal = if self.ime_active {
-                    match &event.text {
-                        Some(t) if t.as_str().is_ascii() => &event.text,
-                        _ => &None,
-                    }
-                } else {
-                    &event.text
-                };
-                // When modifiers are held, prefer the physical key for Ctrl+letter
-                // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
-                // prevent control characters from being sent.
-                let terminal_key = if self.base.modifiers.control_key()
-                    || self.base.modifiers.super_key()
-                    || self.base.modifiers.alt_key()
-                {
-                    crate::shortcuts::physical_key_to_logical(&event.physical_key)
-                        .unwrap_or_else(|| event.logical_key.clone())
-                } else {
-                    event.logical_key.clone()
-                };
-
-                // option_as_meta 필드는 macOS 전용(#[cfg(target_os = "macos")]) 이므로
-                // 비-macOS 빌드가 깨지지 않도록 cfg 분기로 값을 산출해 항상 bool 을 넣는다.
-                // 이렇게 하면 decide_key_to_terminal 본문은 플랫폼 무관하게 유지된다.
-                #[cfg(target_os = "macos")]
-                let option_as_meta = self.core_state.settings.general.option_as_meta;
-                #[cfg(not(target_os = "macos"))]
-                let option_as_meta = false;
-
-                let read_state =
-                    self.state
-                        .focused_terminal(&self.core_state)
-                        .map(|t| KeyboardReadState {
-                            app_cursor: t.application_cursor_keys(),
-                            is_alt_screen: t.is_alternate_screen(),
-                            scroll_offset: t.scroll_offset(),
-                            rows: t.rows(),
-                            option_as_meta,
-                        });
-                let surface_id = self.state.focused_surface_id(&self.core_state);
-
-                if let (Some(rs), Some(sid)) = (read_state, surface_id) {
-                    let outcome = Self::decide_key_to_terminal(
-                        rs,
-                        &terminal_key,
-                        text_for_terminal,
-                        self.base.modifiers,
-                    );
-
-                    for payload in outcome.payloads {
-                        self.state.dispatch_intent(
-                            DomainIntent::SendToSurface {
-                                surface_id: sid,
-                                payload,
-                            }
-                            .from_user_shortcut("keyboard_input"),
-                        );
-                    }
-
-                    match outcome.scroll_action {
-                        KeyboardScrollAction::None => {}
-                        KeyboardScrollAction::ScrollUp(n) => {
-                            if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.core_state)
-                            {
-                                terminal.scroll_up(n);
-                            }
-                        }
-                        KeyboardScrollAction::ScrollDown(n) => {
-                            if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.core_state)
-                            {
-                                terminal.scroll_down(n);
-                            }
-                        }
-                        KeyboardScrollAction::ScrollToBottom => {
-                            if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.core_state)
-                            {
-                                terminal.scroll_to_bottom();
-                            }
-                        }
-                    }
-
-                    if outcome.dirty {
-                        self.base.dirty = true;
-                    }
-
-                    if outcome.sent {
-                        self.ime_cursor_advance = 0;
-                        if self.text_selection.is_some() {
-                            self.text_selection = None;
-                            self.base.dirty = true;
-                        }
-                    }
-                }
-            }
+            FocusedSurfaceType::Terminal => self.forward_key_to_terminal(event),
             _ => {
                 // markdown/image(egui-mesh 자가 렌더), html, empty, None —
                 // host 측 키 큐 처리 없음.
@@ -251,6 +91,198 @@ impl MainView {
 
         if let Some(sid) = typing_surface_id {
             self.core_state.record_typing(sid);
+        }
+    }
+
+    /// Ctrl/Cmd/Alt 가 눌린 동안 IME 조합(예: Korean)이 logical_key 를 조합문자로
+    /// 덮어써도 physical key code 로 US 레이아웃 base 문자를 복원한다. 6단계 단축키
+    /// 매칭과 9단계 터미널 포워딩이 동일 로직이라 공용 헬퍼로 통합.
+    fn shortcut_lookup_key(&self, event: &winit::event::KeyEvent) -> Key {
+        if self.base.modifiers.control_key()
+            || self.base.modifiers.super_key()
+            || self.base.modifiers.alt_key()
+        {
+            crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                .unwrap_or_else(|| event.logical_key.clone())
+        } else {
+            event.logical_key.clone()
+        }
+    }
+
+    /// 1~3단계: double-tap modifier 단축키(예: Shift+Shift) 소비. 소비 시 true.
+    fn try_consume_double_tap_key(&mut self) -> bool {
+        // Check for double-tap modifier shortcut (e.g. Shift+Shift)
+        if let Some(dt) = self.double_tap.take() {
+            if self.state.settings_open {
+                // When settings are open, pass to keybinding recorder
+                self.state.captured_double_tap = Some(dt.binding_str().to_string());
+                self.mark_dirty();
+                return true;
+            } else if self.handle_double_tap_shortcut(dt) {
+                self.mark_dirty();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 4단계: Escape 로 settings / notifications 팝업 닫기 소비. 소비 시 true.
+    fn try_consume_escape_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        if event.logical_key == Key::Named(NamedKey::Escape) {
+            if self.state.settings_open {
+                self.state.settings_open = false;
+                self.state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
+                self.mark_dirty();
+                return true;
+            }
+            if self.state.popups.is_open("notifications") {
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::ClosePopup {
+                        id: "notifications",
+                    }
+                    .from_user_shortcut("escape_close_notifications"),
+                );
+                self.mark_dirty();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 6단계: 단축키 소비 + IME 조합 중이면 flush/clear 분기(★불가침 — 조건·순서 불변).
+    /// 호출부가 `!overlay_open` 을 이미 확인한 뒤 진입한다(단락평가로 원본과 순서 동일).
+    fn try_consume_shortcut_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let shortcut_key = self.shortcut_lookup_key(event);
+        if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
+            if self.ime_preedit.is_some() {
+                // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
+                // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
+                if self.state.popups.has_focused() {
+                    self.clear_ime_preedit();
+                } else {
+                    self.flush_ime_preedit();
+                }
+            }
+            // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
+            self.try_enter_vi_copy_mode();
+            self.mark_dirty();
+            return true;
+        }
+        false
+    }
+
+    /// 7단계: vi copy-mode 활성 시 키 가로채기. Ctrl-only 폴백이라(6·9단계와 조건이
+    /// 달라) shortcut_lookup_key 로 통합하지 않고 내부에 verbatim 유지. 소비 시 true.
+    fn try_consume_vi_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let vi_key = if self.base.modifiers.control_key() {
+            crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                .unwrap_or_else(|| event.logical_key.clone())
+        } else {
+            event.logical_key.clone()
+        };
+        if self.try_handle_vi_key(&vi_key, self.base.modifiers) {
+            self.mark_dirty();
+            return true;
+        }
+        false
+    }
+
+    /// 9단계: 포커스된 터미널로 키 포워딩. IME 활성 시 non-ASCII text 억제(Commit 처리),
+    /// modifier 시 physical 폴백(Ctrl+letter). scroll 은 borrow 분리를 위해 별 메서드로.
+    fn forward_key_to_terminal(&mut self, event: &winit::event::KeyEvent) {
+        // Forward to terminal.
+        // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
+        // composition — Ime::Commit will handle it). ASCII text (numbers,
+        // punctuation like 1234567890,./) passes through IME unchanged and
+        // won't generate Ime::Commit, so we must send it here.
+        let text_for_terminal = if self.ime_active {
+            match &event.text {
+                Some(t) if t.as_str().is_ascii() => &event.text,
+                _ => &None,
+            }
+        } else {
+            &event.text
+        };
+        // When modifiers are held, prefer the physical key for Ctrl+letter
+        // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
+        // prevent control characters from being sent.
+        let terminal_key = self.shortcut_lookup_key(event);
+
+        // option_as_meta 필드는 macOS 전용(#[cfg(target_os = "macos")]) 이므로
+        // 비-macOS 빌드가 깨지지 않도록 cfg 분기로 값을 산출해 항상 bool 을 넣는다.
+        // 이렇게 하면 decide_key_to_terminal 본문은 플랫폼 무관하게 유지된다.
+        #[cfg(target_os = "macos")]
+        let option_as_meta = self.core_state.settings.general.option_as_meta;
+        #[cfg(not(target_os = "macos"))]
+        let option_as_meta = false;
+
+        let read_state = self
+            .state
+            .focused_terminal(&self.core_state)
+            .map(|t| KeyboardReadState {
+                app_cursor: t.application_cursor_keys(),
+                is_alt_screen: t.is_alternate_screen(),
+                scroll_offset: t.scroll_offset(),
+                rows: t.rows(),
+                option_as_meta,
+            });
+        let surface_id = self.state.focused_surface_id(&self.core_state);
+
+        if let (Some(rs), Some(sid)) = (read_state, surface_id) {
+            let outcome = Self::decide_key_to_terminal(
+                rs,
+                &terminal_key,
+                text_for_terminal,
+                self.base.modifiers,
+            );
+
+            for payload in outcome.payloads {
+                self.state.dispatch_intent(
+                    DomainIntent::SendToSurface {
+                        surface_id: sid,
+                        payload,
+                    }
+                    .from_user_shortcut("keyboard_input"),
+                );
+            }
+
+            self.apply_keyboard_scroll_action(outcome.scroll_action);
+
+            if outcome.dirty {
+                self.base.dirty = true;
+            }
+
+            if outcome.sent {
+                self.ime_cursor_advance = 0;
+                if self.text_selection.is_some() {
+                    self.text_selection = None;
+                    self.base.dirty = true;
+                }
+            }
+        }
+    }
+
+    /// 9단계 내 scroll match. `forward_key_to_terminal` 이 `focused_terminal`(read)
+    /// 로 read_state 를 만든 뒤 scroll 은 `focused_terminal_mut`(write) 재차용이
+    /// 필요해, read borrow 종료 후 mut borrow 하도록 별 메서드로 분리(borrow checker).
+    fn apply_keyboard_scroll_action(&mut self, action: KeyboardScrollAction) {
+        match action {
+            KeyboardScrollAction::None => {}
+            KeyboardScrollAction::ScrollUp(n) => {
+                if let Some(terminal) = self.state.focused_terminal_mut(&mut self.core_state) {
+                    terminal.scroll_up(n);
+                }
+            }
+            KeyboardScrollAction::ScrollDown(n) => {
+                if let Some(terminal) = self.state.focused_terminal_mut(&mut self.core_state) {
+                    terminal.scroll_down(n);
+                }
+            }
+            KeyboardScrollAction::ScrollToBottom => {
+                if let Some(terminal) = self.state.focused_terminal_mut(&mut self.core_state) {
+                    terminal.scroll_to_bottom();
+                }
+            }
         }
     }
 
