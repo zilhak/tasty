@@ -61,7 +61,7 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 ## 발화 / 처리
 
 - **발화**: `state.dispatch_intent(dispatched)` = `Vec::push` 한 줄(fire-and-forget). ergonomics 빌더 `.from_user_shortcut("…")` / `.from_user_menu("…")` / `.cascaded_from(intent)`.
-- **처리**: 메인 루프의 `App::dispatch_pending_intents` 가 모든 window/parked_state 를 순회 drain. 발화 순서대로 처리, drain 중 새로 발화한 Intent 는 **다음 프레임**(재진입 방지, `mem::take` 후 별 Vec 순회).
+- **처리**: 메인 루프의 `App::dispatch_pending_intents` 가 모든 window/parked_state 를 순회 drain. 처리 순서는 발화 순서 전체가 아니라 **클래스별 부분순서**(`classify_intent` 이 단일 정의점): 같은 state 내 non-Domain(`Immediate`) 은 FIFO 즉시 처리, `Intent::Domain` 은 전부 뒤로 밀려 단계 C(`run_domain_cascade`)에서 FIFO, `AppearanceChanged` 는 프레임 끝 1회로 축약. 따라서 같은 state 에서 Domain↔non-Domain 클래스 간 재정렬은 설계상 의도(borrow 분리 제약). drain 중 새로 발화한 Intent 는 **다음 프레임**(재진입 방지, `mem::take` 후 별 Vec 순회).
 - **핸들러 분기**: trait dispatch 아니라 **도메인 함수 분기**(`match &intent.body`). `&mut AppState` 를 trait object 가 통째 잡으면 partial mutation 이 borrow checker 를 못 통과하기 때문.
 - **에러**: 핸들러 안에서 `tracing::warn!`(패닉 금지, `let _=` 금지). 사용자에게 보여야 하면 `state.toasts.push`.
 

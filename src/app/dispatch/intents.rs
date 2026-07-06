@@ -6,26 +6,68 @@ use crate::app::App;
 use crate::ipc;
 use crate::view::ui::View as _;
 
+/// per-state batch 안 한 intent 의 처리 클래스. `classify_intent` 이 산출.
+enum IntentClass {
+    /// `Intent::Domain` — 단계 C(`run_domain_cascade`)로 지연.
+    Domain,
+    /// `UiIntent::AppearanceChanged` — bool 로 축약해 프레임 끝 1회 fan-out.
+    Appearance,
+    /// 그 외 — `dispatch_one_intent` 로 즉시 처리.
+    Immediate,
+}
+
 impl App {
     /// 호스트 내부 Intent 큐를 모든 AppState 에서 drain 해 도메인별 핸들러로 분기한다.
-    /// 설계: `docs/design/flows/action-dispatch.md`. 처리 순서 = 발화 순서.
-    /// drain 중 새로 발화된 Intent 는 다음 프레임에 처리 (재진입 방지).
+    /// 설계: `docs/design/flows/action-dispatch.md`.
     ///
-    /// D.3.I.3 두 큐 통합 — `Intent::Domain(DomainIntent)` 도 본 메서드에서
-    /// 처리한다. per-state batch 안의 `Intent::Domain` 항목은 따로 모아 본 loop
-    /// 끝난 후 `dispatch_domain_intent` (App-level cascade) 로 일괄 처리. 두
-    /// 단계 분리 이유: `dispatch_domain_intent` 가 `&mut self` 필요하지만 per-state
-    /// loop 는 `&mut self.view.views[id]` 를 잡고 있어 동시 borrow 불가.
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — intent 큐 드레인 2단계(per-state batch + domain cascade). borrow 분리 제약상 한 함수
+    /// 처리 순서 = **클래스별 부분순서**: 같은 state 내 non-Domain 은 FIFO 즉시,
+    /// `Intent::Domain` 은 전부 뒤로 밀려 단계 C 에서 FIFO, `AppearanceChanged` 는
+    /// 프레임 끝 1회로 축약. drain 중 새로 발화된 Intent 는 다음 프레임에 처리
+    /// (재진입 방지 — `mem::take`).
+    ///
+    /// D.3.I.3: `Intent::Domain` 을 per-state loop 안에서 처리하지 못하는 이유는
+    /// `dispatch_domain_intent` 가 `&mut self` 를 요구하는데 loop 는
+    /// `&mut self.view.views[id]` 를 잡고 있어 동시 borrow 불가하기 때문. 그래서
+    /// 단계 A(드레인)/B(per-state 처리+Domain 분리)/C(Domain cascade) 로 분리한다.
     pub(crate) fn dispatch_pending_intents(&mut self) {
-        use crate::intent::{Intent, UiIntent};
-        // 모든 windows + parked_states 에서 드레인한 뒤 일괄 처리.
-        // 각 state 마다 독립적으로 처리해야 — popup mutation 은 그 state.popups 대상이므로.
-        let mut per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)> =
-            Vec::new();
-        let mut parked_batches: Vec<(usize, Vec<crate::intent::DispatchedIntent>)> = Vec::new();
-        let mut appearance_changed = false;
+        // 단계 A — 모든 windows + parked_states 에서 큐를 소유째 드레인.
+        let (per_state_batches, parked_batches) = self.drain_pending_batches();
 
+        // 단계 B — per-state 처리 + Domain 분리 + appearance 축약.
+        let mut domain_batch: Vec<(
+            crate::app::dispatch_domain::DispatchSource,
+            crate::intent::DispatchedIntent,
+        )> = Vec::new();
+        let mut appearance_changed = false;
+        self.process_state_batches(
+            per_state_batches,
+            parked_batches,
+            &mut domain_batch,
+            &mut appearance_changed,
+        );
+
+        // 단계 C — Domain cascade (handle_core_event 가 App 메서드라 &mut self 필요).
+        self.run_domain_cascade(domain_batch);
+
+        // 부수 fan-out — appearance (모든 윈도우 GpuState theme reapply + palette resync).
+        if appearance_changed {
+            self.cascade_appearance_changed();
+        }
+    }
+
+    /// 단계 A — 모든 main window + parked state 의 pending intent 큐를 `mem::take`
+    /// 로 비우고 소유 batch 로 이동. 처리는 하지 않는다(드레인만). 반환 시점에
+    /// `self.view` / `self.parked_states` 빌림이 종료되므로 단계 B 가 필요한 필드만
+    /// 짧게 재빌림할 수 있다.
+    fn drain_pending_batches(
+        &mut self,
+    ) -> (
+        Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
+        Vec<(usize, Vec<crate::intent::DispatchedIntent>)>,
+    ) {
+        // 각 state 마다 독립 처리 — popup mutation 은 그 state.popups 대상이므로.
+        let mut per_state_batches = Vec::new();
+        let mut parked_batches = Vec::new();
         for (id, w) in self.view.views.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 let batch = main.state.take_pending_intents();
@@ -40,16 +82,23 @@ impl App {
                 parked_batches.push((idx, batch));
             }
         }
+        (per_state_batches, parked_batches)
+    }
 
-        // Domain intents 는 separate batch — main loop 가 끝난 후 처리
-        // (dispatch_domain_intent 가 &mut self 필요). 발화 source (Main(wid) /
-        // Parked(idx)) 와 origin 을 보존해 cascade 가 정확한 engine/state 에
-        // 접근하고 User/Agent/System 분기를 결정한다.
-        let mut domain_batch: Vec<(
+    /// 단계 B — 드레인된 소유 batch 를 state 단위로 처리. `Immediate` 는 즉시
+    /// `dispatch_one_intent`, `Domain` 은 source 부착해 `domain_batch` 로 지연,
+    /// `Appearance` 는 bool 로 축약. 입력이 소유 batch 라 매 iteration 의
+    /// `&mut self.core` + `get_mut()` 재빌림이 충돌하지 않는다.
+    fn process_state_batches(
+        &mut self,
+        per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
+        parked_batches: Vec<(usize, Vec<crate::intent::DispatchedIntent>)>,
+        domain_batch: &mut Vec<(
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
-        )> = Vec::new();
-
+        )>,
+        appearance_changed: &mut bool,
+    ) {
         for (window_id, batch) in per_state_batches {
             let core = &mut self.core;
             let Some(main) = self
@@ -63,18 +112,19 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                if matches!(intent.body, Intent::Domain(_)) {
-                    domain_batch.push((
+                match Self::classify_intent(&intent) {
+                    IntentClass::Domain => domain_batch.push((
                         crate::app::dispatch_domain::DispatchSource::Main(window_id),
                         intent,
-                    ));
-                    continue;
+                    )),
+                    IntentClass::Appearance => *appearance_changed = true,
+                    IntentClass::Immediate => Self::dispatch_one_intent(
+                        core,
+                        &mut main.state,
+                        &mut main.core_state,
+                        &intent,
+                    ),
                 }
-                if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
-                    appearance_changed = true;
-                    continue;
-                }
-                Self::dispatch_one_intent(core, &mut main.state, &mut main.core_state, &intent);
             }
             main.mark_dirty();
         }
@@ -86,33 +136,47 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                if matches!(intent.body, Intent::Domain(_)) {
-                    domain_batch.push((
+                match Self::classify_intent(&intent) {
+                    IntentClass::Domain => domain_batch.push((
                         crate::app::dispatch_domain::DispatchSource::Parked(idx),
                         intent,
-                    ));
-                    continue;
+                    )),
+                    IntentClass::Appearance => *appearance_changed = true,
+                    IntentClass::Immediate => {
+                        Self::dispatch_one_intent(core, state, engine, &intent)
+                    }
                 }
-                if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
-                    appearance_changed = true;
-                    continue;
-                }
-                Self::dispatch_one_intent(core, state, engine, &intent);
             }
         }
+    }
 
-        // Domain cascade — handle_core_event 가 App 메서드라 &mut self 필요.
+    /// per-state / parked 두 루프가 공유하는 분류 규칙. `Intent::Domain` 은 단계 C
+    /// 로 지연, `AppearanceChanged` 는 축약, 나머지는 즉시 처리. 이 3분류가
+    /// "클래스별 부분순서" semantics 의 단일 정의점이다.
+    fn classify_intent(intent: &crate::intent::DispatchedIntent) -> IntentClass {
+        use crate::intent::{Intent, UiIntent};
+        if matches!(intent.body, Intent::Domain(_)) {
+            IntentClass::Domain
+        } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
+            IntentClass::Appearance
+        } else {
+            IntentClass::Immediate
+        }
+    }
+
+    /// 단계 C — Domain cascade. `handle_core_event` 가 App 메서드라 `&mut self`
+    /// 필요. 소유 batch 를 순회하므로 view/parked 빌림과 충돌 없음.
+    fn run_domain_cascade(
+        &mut self,
+        domain_batch: Vec<(
+            crate::app::dispatch_domain::DispatchSource,
+            crate::intent::DispatchedIntent,
+        )>,
+    ) {
         for (source, dispatched) in domain_batch {
             if let Err(e) = self.dispatch_domain_intent(source, dispatched) {
                 tracing::warn!("dispatch_domain_intent failed: {e}");
             }
-        }
-
-        // Appearance fan-out — 모든 windows 의 GpuState 에 새 Theme 인스턴스를
-        // 박고 egui ctx 에 reapply. dispatcher 가 single entry point 라 main 과
-        // modal (settings / plugins / preset / quit) 모두 같은 프레임에 갱신된다.
-        if appearance_changed {
-            self.cascade_appearance_changed();
         }
     }
 
@@ -271,5 +335,34 @@ impl App {
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         ipc::protocol::JsonRpcResponse::error(id, -32000, "no application state available")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 단계 B 의 분류 규칙 고정 — Domain 지연 / appearance 축약 / 즉시처리.
+    /// research §2 "클래스별 부분순서" semantics 의 회귀 방지. 이 테스트가 깨지면
+    /// 누군가 Domain 을 인라인 처리로 되돌렸거나 appearance 축약을 없앤 것.
+    #[test]
+    fn classify_partitions_domain_appearance_immediate() {
+        use crate::intent::{Intent, UiIntent};
+        let dom = || crate::core::intent::DomainIntent::MoveWorkspace {
+            from_index: 0,
+            to_index: 0,
+        };
+        // 발화 순서: Domain, Immediate, Appearance, Domain.
+        let batch = [
+            dom().from_agent_ipc(),
+            Intent::RestoreClosedItem.from_user_shortcut("t"),
+            UiIntent::AppearanceChanged.from_user_menu("t"),
+            dom().from_agent_ipc(),
+        ];
+        let classes: Vec<_> = batch.iter().map(App::classify_intent).collect();
+        assert!(matches!(classes[0], IntentClass::Domain));
+        assert!(matches!(classes[1], IntentClass::Immediate));
+        assert!(matches!(classes[2], IntentClass::Appearance));
+        assert!(matches!(classes[3], IntentClass::Domain));
     }
 }
