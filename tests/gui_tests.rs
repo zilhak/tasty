@@ -857,3 +857,122 @@ fn test_tab_switch_speed() {
         s.workspace_count == initial_ws
     });
 }
+
+// ============================================================
+// IME composition + shortcut flush/clear (hybrid: IPC preedit + enigo shortcut)
+// ============================================================
+//
+// handle_keyboard_input 6단계의 flush/clear 분기를 검출한다. 진짜 OS IME 조합
+// 이벤트열은 enigo(SendInput/KEYEVENTF_UNICODE)가 OS IME 를 우회하므로 자동 재현
+// 불가하지만, "조합 중(preedit 존재) 상태에서 단축키를 누른" 상황은 하이브리드로
+// 재현된다: preedit 는 IPC(surface.ime_preedit)로 윈도우 state 에 직접 세팅하고,
+// 단축키만 enigo 실입력으로 handle_keyboard_input 을 태운다.
+//
+// 분기 조건은 `handle_shortcut` 소비 직후 `popups.has_focused()`.
+//   flush = preedit.text 를 PTY 로 확정 전송 (팝업 포커스 없음).
+//   clear = preedit 폐기, PTY 미전송 (팝업이 포커스를 가짐).
+// dispatch_intent 는 큐잉(지연 적용)이라, intent 로 여는 팝업(command palette/
+// notifications)은 이 체크 시점에 아직 focused 가 아니다 → flush 로 떨어진다.
+// 동기적으로 has_focused()==true 가 되는 유일한 경로는 `find` 가 "이미 열려 있으나
+// 비포커스인" search_bar 를 set_focused 로 재포커스하는 경우다. 아래 clear 테스트가
+// 정확히 그 상태(ctrl+f 로 열고 → 터미널 클릭으로 unfocus)를 구성한다.
+
+/// flush 경로: 조합 중 팝업을 열지 않는 단축키(sidebar collapse)를 누르면
+/// preedit 이 PTY 로 확정 전송된다.
+#[test]
+#[ignore]
+fn test_ime_preedit_flushed_on_non_popup_shortcut() {
+    let mut inst = shared();
+    let initial_ws = inst.ui_state().workspace_count;
+    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
+        s.workspace_count == initial_ws + 1
+    });
+    std::thread::sleep(Duration::from_millis(500)); // shell ready
+
+    // 포커스된 터미널에 preedit "한" 을 IPC 로 세팅 (응답에 surface_id 포함).
+    let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
+    let sid = pre["surface_id"].as_u64().expect("preedit response surface_id");
+    assert_eq!(pre["preedit_active"], serde_json::json!(true));
+
+    // preedit 은 화면에 에코되지 않으므로, mark 이후 read 는 단축키가 보낸 것만 잡는다.
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
+
+    // 팝업을 열지 않는 소비형 단축키(ctrl+b = toggle_sidebar_collapse) → flush.
+    inst.press_ctrl(Key::Unicode('b'));
+    std::thread::sleep(Duration::from_millis(500));
+
+    let out = inst.call(
+        "surface.read_since_mark",
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
+    );
+    let text = out["text"].as_str().unwrap_or("");
+    assert!(
+        text.contains("한"),
+        "flush: 조합 중 문자는 단축키 시 PTY 로 확정 전송돼야 한다. Got: {text:?}"
+    );
+    let status = inst.call("surface.ime_status", serde_json::json!({}));
+    assert_eq!(
+        status["has_preedit"],
+        serde_json::json!(false),
+        "flush 후 preedit 은 비워져야 한다"
+    );
+
+    // Cleanup: 사이드바 원복 + 워크스페이스 닫기.
+    inst.press_ctrl(Key::Unicode('b'));
+    inst.press_alt(Key::Unicode('W'));
+    inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
+        s.workspace_count == initial_ws
+    });
+}
+
+/// clear 경로: 조합 중 "팝업을 포커스시키는" 단축키를 누르면 preedit 이 폐기되고
+/// PTY 로 전송되지 않는다. 동기 재포커스가 일어나도록 search_bar 를 열고 → 터미널
+/// 클릭으로 unfocus 한 뒤(닫히지 않음) → find 를 다시 눌러 set_focused 를 태운다.
+#[test]
+#[ignore]
+fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
+    let mut inst = shared();
+    let initial_ws = inst.ui_state().workspace_count;
+    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
+        s.workspace_count == initial_ws + 1
+    });
+    std::thread::sleep(Duration::from_millis(500));
+
+    // search_bar 를 연다(포커스됨). 이어 터미널을 클릭해 unfocus (열린 채 유지 —
+    // search_bar 는 close_on_outside_click=false, sticky_focus=false).
+    inst.press_ctrl(Key::Unicode('f'));
+    std::thread::sleep(Duration::from_millis(300));
+    let (w, h) = inst.client_size();
+    inst.click_at(w / 2, h * 3 / 4); // 상단 앵커 search_bar 를 피해 터미널 영역 클릭
+    std::thread::sleep(Duration::from_millis(200));
+
+    // 이제 터미널 포커스 + search_bar 열림·비포커스. preedit + mark 세팅.
+    let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
+    let sid = pre["surface_id"].as_u64().expect("preedit response surface_id");
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
+
+    // find 재입력 → 열린 search_bar 를 동기 재포커스 → has_focused()==true → clear.
+    inst.press_ctrl(Key::Unicode('f'));
+    std::thread::sleep(Duration::from_millis(500));
+
+    let out = inst.call(
+        "surface.read_since_mark",
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
+    );
+    let text = out["text"].as_str().unwrap_or("");
+    assert!(
+        !text.contains("한"),
+        "clear: 조합 중 문자는 팝업 포커스 단축키 시 PTY 로 가면 안 된다. Got: {text:?}"
+    );
+    let status = inst.call("surface.ime_status", serde_json::json!({}));
+    assert_eq!(status["has_preedit"], serde_json::json!(false));
+
+    // Cleanup: search_bar 닫기 + 워크스페이스 닫기.
+    inst.press_key(Key::Escape);
+    inst.press_alt(Key::Unicode('W'));
+    inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
+        s.workspace_count == initial_ws
+    });
+}
