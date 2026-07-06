@@ -8,7 +8,6 @@ use crate::view::{ViewAction, ViewCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit AppEvent 평면 match 디스패치 — 이벤트 variant별 arm 나열
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::CreateWindow => {
@@ -27,91 +26,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::OpenPlugins => {
                 self.open_plugins_modal(event_loop);
             }
-            AppEvent::TerminalOutput(surface_id) => {
-                use crate::app::dispatch_domain::DispatchSource;
-                use crate::core::intent::CoreEvent;
-                // Early reset: 채널 drain 직전에 dedup 게이트를 풀어, drain 과 경합하는
-                // reader wake 가 스킵되어 유실되는 것을 막는다 (research §8). Some →
-                // 해당 surface 게이트, None → 글로벌 게이트. surface 가 없는 factory 의
-                // note_drained 는 무해한 no-op 이므로 전 view/parked 를 순회한다.
-                for w in self.view.views.values() {
-                    if let Some(main) = w.as_main()
-                        && let Some(factory) = main.core_state.waker_factory.as_ref()
-                    {
-                        factory.note_drained(surface_id);
-                    }
-                }
-                for (_, engine) in self.parked_states.iter() {
-                    if let Some(factory) = engine.waker_factory.as_ref() {
-                        factory.note_drained(surface_id);
-                    }
-                }
-                let core = &mut self.core;
-                let views = &mut self.view.views;
-                let parked_states = &mut self.parked_states;
-                let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
-                if let Some(sid) = surface_id {
-                    // Targeted polling: 모든 view 의 engine 을 순회하며 해당 surface 보유 시 process
-                    let mut found = false;
-                    for (wid, w) in views.iter_mut() {
-                        let Some(main) = w.as_main_mut() else {
-                            continue;
-                        };
-                        if main.core_state.find_terminal_by_id(sid).is_some() {
-                            let outcome = core.process_pty_output(&mut main.core_state, sid);
-                            if !outcome.events.is_empty() {
-                                pending.push((DispatchSource::Main(*wid), outcome.events));
-                            }
-                            main.recalc_ime_preedit_anchor();
-                            // P3 visibility gate: 안 보이는 surface 의 출력은 보이는
-                            // 창의 콘텐츠를 바꾸지 않으므로 redraw 요청을 생략한다.
-                            // 데이터 drain(process_pty_output)·이벤트 cascade 는 위에서
-                            // 이미 수행됐다. 해당 surface 가 보이게 전환되는 경로(탭/
-                            // 워크스페이스 전환·split·복원)는 각자 dirty 를 설정하므로
-                            // 전환 시 최신 grid 가 렌더된다.
-                            if main.is_surface_visible(sid) {
-                                main.mark_dirty();
-                            }
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
-                            if engine.find_terminal_by_id(sid).is_some() {
-                                let outcome = core.process_pty_output(engine, sid);
-                                if !outcome.events.is_empty() {
-                                    pending.push((DispatchSource::Parked(idx), outcome.events));
-                                }
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // Fallback: wake all views and process all terminals across engines
-                    for (wid, w) in views.iter_mut() {
-                        if let Some(main) = w.as_main_mut() {
-                            let outcome = core.process_all_pty_output(&mut main.core_state);
-                            if !outcome.events.is_empty() {
-                                pending.push((DispatchSource::Main(*wid), outcome.events));
-                            }
-                        }
-                        w.mark_dirty();
-                    }
-                    for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
-                        let outcome = core.process_all_pty_output(engine);
-                        if !outcome.events.is_empty() {
-                            pending.push((DispatchSource::Parked(idx), outcome.events));
-                        }
-                    }
-                }
-                // borrow scope 종료 후 cascade dispatch.
-                for (source, events) in pending {
-                    for ev in events {
-                        self.handle_core_event_system(source, ev);
-                    }
-                }
-            }
+            AppEvent::TerminalOutput(surface_id) => self.handle_terminal_output(surface_id),
             AppEvent::IpcReady => {
                 if self.process_ipc()
                     && let Some(w) = self.focused_window_mut()
@@ -145,58 +60,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.flush_layout_persistence(true);
                 self.shutdown_lifecycle_cascade(event_loop);
             }
-            AppEvent::Minimize => {
-                #[cfg(target_os = "macos")]
-                {
-                    // macOS: destroy windows, park all MainView states (dock reopen restores).
-                    // 모달은 파킹 대상이 아니므로 그냥 drop.
-                    let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
-                    for w in drained {
-                        if let Some(main_box) = crate::view::unbox_main(w) {
-                            self.parked_states
-                                .push((main_box.state, main_box.core_state));
-                        }
-                    }
-                    self.view.focused_view_id = None;
-                    self.view.active_modal_id = None;
-                    tracing::info!(
-                        "minimized to background ({} states parked)",
-                        self.parked_states.len()
-                    );
-                }
-                #[cfg(windows)]
-                {
-                    if self.tray_icon.is_some() {
-                        // Windows with tray: hide windows to tray (keep alive)
-                        for w in self.view.views.values() {
-                            w.base().winit.set_visible(false);
-                        }
-                        tracing::info!("hid {} window(s) to system tray", self.view.views.len());
-                    } else {
-                        // Windows without tray: minimize to taskbar
-                        for w in self.view.views.values() {
-                            w.base().winit.set_minimized(true);
-                        }
-                        tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    if self.tray_icon.is_some() {
-                        // Linux with tray: hide windows to tray (keep alive)
-                        for w in self.view.views.values() {
-                            w.base().winit.set_visible(false);
-                        }
-                        tracing::info!("hid {} window(s) to system tray", self.view.views.len());
-                    } else {
-                        // Linux without tray: minimize windows to taskbar (keep alive)
-                        for w in self.view.views.values() {
-                            w.base().winit.set_minimized(true);
-                        }
-                        tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
-                    }
-                }
-            }
+            AppEvent::Minimize => self.handle_minimize(),
             AppEvent::QuitRequested => {
                 self.handle_quit_requested(event_loop);
             }
@@ -241,30 +105,13 @@ impl ApplicationHandler<AppEvent> for App {
                 detector,
                 origin_surface_id,
                 ignore_size_limit,
-            } => {
-                tracing::debug!(
-                    request_id = %request_id,
-                    target = %target.display(),
-                    detector = ?detector.as_ref().map(|d| d.as_str()),
-                    origin_surface_id = ?origin_surface_id,
-                    ignore_size_limit,
-                    "IdentifyDone",
-                );
-                // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
-                // self.core 와 충돌하므로 인덱스로 직접 접근.
-                if let Some(id) = self.view.focused_view_id
-                    && let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
-                {
-                    self.core.apply_identify_result(
-                        &mut main.state,
-                        &mut main.core_state,
-                        target,
-                        detector,
-                        origin_surface_id,
-                        ignore_size_limit,
-                    );
-                }
-            }
+            } => self.handle_identify_done(
+                request_id,
+                target,
+                detector,
+                origin_surface_id,
+                ignore_size_limit,
+            ),
         }
     }
 
@@ -355,59 +202,10 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit WindowEvent 평면 match 디스패치 — 이벤트 variant별 arm 나열
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
-            if let WindowEvent::RedrawRequested = &event {
-                if let (Some(gpu), Some(window)) =
-                    (&mut self.shell_setup_gpu, &self.shell_setup_window)
-                {
-                    let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
-                    match result {
-                        Ok(crate::gpu::ShellSetupAction::None) => {}
-                        Ok(crate::gpu::ShellSetupAction::Confirmed) => {
-                            let mut settings = crate::settings::Settings::load();
-                            let normalize_report = settings.normalize();
-                            settings.general.shell = self.shell_setup_path.clone();
-                            if let Err(e) = settings.save() {
-                                tracing::error!("failed to save settings: {e}");
-                            }
-                            self.shell_setup_mode = false;
-                            let window = self.shell_setup_window.take().unwrap();
-                            let gpu = self.shell_setup_gpu.take().unwrap();
-                            self.init_app_state(window, gpu, settings);
-                            // invalid_theme_name 처리는 init_app_state 내부로 이동했으므로
-                            // normalize_report 는 여기서 별도 소비할 필요 없음.
-                            drop(normalize_report);
-                            if let Some(w) = self.focused_window_mut() {
-                                w.mark_dirty();
-                            }
-                        }
-                        Ok(crate::gpu::ShellSetupAction::Exit) => {
-                            event_loop.exit();
-                        }
-                        Err(e) => {
-                            let msg = format!("shell setup render error: {e}");
-                            tracing::warn!("{}", msg);
-                            crate::crash_report::record_error(&msg);
-                        }
-                    }
-                }
-                if let (Some(gpu), Some(window)) =
-                    (&mut self.shell_setup_gpu, &self.shell_setup_window)
-                {
-                    gpu.handle_egui_event(window, &event);
-                }
-                return;
-            }
-            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
-            {
-                gpu.handle_egui_event(window, &event);
-                if let WindowEvent::CloseRequested = &event {
-                    event_loop.exit();
-                }
-            }
+            self.handle_shell_setup_window_event(event_loop, event);
             return;
         }
 
@@ -415,27 +213,7 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(modal_id) = self.view.active_modal_id
             && id == modal_id
         {
-            let action = if let Some(modal) = self.view.views.get_mut(&id) {
-                let mut ctx = ViewCtx {
-                    event_loop,
-                    modal_active: false,
-                    plugin_manager: self.plugin_manager.as_ref(),
-                };
-                modal.handle_event(event, &mut ctx)
-            } else {
-                ViewAction::None
-            };
-
-            match action {
-                ViewAction::None => {}
-                ViewAction::Close => {
-                    self.close_active_modal();
-                }
-                ViewAction::CloseWithEvent(app_event) => {
-                    self.close_active_modal();
-                    crate::shortcuts::send_app_event(&self.view.proxy, app_event);
-                }
-            }
+            self.handle_active_modal_window_event(event_loop, id, event);
             return;
         }
 
@@ -447,30 +225,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Track focused window on focus events
         if let WindowEvent::Focused(true) = &event {
-            // 모달이 focus 이벤트를 받아도 focused_view_id는 MainView 전용
-            let is_main = self
-                .view
-                .views
-                .get(&id)
-                .map(|w| w.as_main().is_some())
-                .unwrap_or(false);
-            if is_main {
-                self.view.focused_view_id = Some(id);
-            }
-            if let Some(mgr) = self.plugin_manager.as_mut() {
-                use tasty_plugin_protocol::EventScope;
-                use tasty_plugin_protocol::events::payloads::WindowFocused;
-                let payload = WindowFocused {
-                    window_id: u64::from(id),
-                };
-                mgr.emit_host_event("window.focused", &payload, EventScope::System);
-            }
-            // If a modal is active, bring it to the front so it's not buried
-            if let Some(modal_id) = self.view.active_modal_id
-                && let Some(modal) = self.view.views.get(&modal_id)
-            {
-                modal.base().winit.focus_window();
-            }
+            self.handle_window_focused(id);
         }
 
         // Trigger modal shake when clicking on a non-modal window while modal is active
@@ -499,71 +254,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        let modal_active = self.view.is_modal_active();
-        let action = {
-            if let Some(w) = self.view.views.get_mut(&id) {
-                let mut ctx = ViewCtx {
-                    event_loop,
-                    modal_active,
-                    plugin_manager: self.plugin_manager.as_ref(),
-                };
-                // MainView.handle_event는 항상 ViewAction::None을 반환한다.
-                // PresetView (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
-                // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
-                w.handle_event(event, &mut ctx)
-            } else {
-                ViewAction::None
-            }
-        };
-        if self.view.views.contains_key(&id) {
-            match action {
-                ViewAction::None => {}
-                ViewAction::Close => {
-                    if self.preset_view_id == Some(id) {
-                        self.on_preset_window_closed(id);
-                        return;
-                    }
-                    debug_assert!(false, "non-modal window returned Close unexpectedly");
-                }
-                ViewAction::CloseWithEvent(app_event) => {
-                    if self.preset_view_id == Some(id) {
-                        self.on_preset_window_closed(id);
-                        crate::shortcuts::send_app_event(&self.view.proxy, app_event);
-                        return;
-                    }
-                    debug_assert!(
-                        false,
-                        "non-modal window returned CloseWithEvent unexpectedly"
-                    );
-                }
-            }
-
-            // Check if the window requested to close (e.g. last workspace removed)
-            let close_requested = self
-                .view
-                .views
-                .get(&id)
-                .map(|w| w.base().close_requested)
-                .unwrap_or(false);
-            if close_requested {
-                if let Some(w) = self.view.views.remove(&id)
-                    && self.view.views.values().all(|w| w.as_main().is_none())
-                    && let Some(main_box) = crate::view::unbox_main(w)
-                {
-                    tracing::info!("last main window closed via request, parking state");
-                    self.parked_states
-                        .push((main_box.state, main_box.core_state));
-                }
-                if self.view.focused_view_id == Some(id) {
-                    self.view.focused_view_id = self
-                        .view
-                        .views
-                        .iter()
-                        .find(|(_, w)| w.as_main().is_some())
-                        .map(|(id, _)| *id);
-                }
-            }
-        }
+        self.dispatch_window_event_to_view(event_loop, id, event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -727,6 +418,386 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    /// dedup 게이트 early reset — Some → 해당 surface 게이트, None → 글로벌 게이트.
+    /// surface 가 없는 factory 의 `note_drained` 는 무해한 no-op 이므로 전 view/parked
+    /// 를 순회한다. `handle_terminal_output` 의 채널 drain 직전 사전 패스.
+    fn note_drained_all(&self, surface_id: Option<u32>) {
+        for w in self.view.views.values() {
+            if let Some(main) = w.as_main()
+                && let Some(factory) = main.core_state.waker_factory.as_ref()
+            {
+                factory.note_drained(surface_id);
+            }
+        }
+        for (_, engine) in self.parked_states.iter() {
+            if let Some(factory) = engine.waker_factory.as_ref() {
+                factory.note_drained(surface_id);
+            }
+        }
+    }
+
+    /// `AppEvent::TerminalOutput` 핸들러 — reader thread 의 wake 를 받아 대상 surface
+    /// 의 PTY 출력을 drain·cascade 한다. Some(sid) 는 targeted polling, None 은 전
+    /// engine fallback. dedup 게이트 early reset 후 processing 순서는 통신 semantics
+    /// 에 영향하므로 원본 순서를 보존한다.
+    fn handle_terminal_output(&mut self, surface_id: Option<u32>) {
+        use crate::app::dispatch_domain::DispatchSource;
+        use crate::core::intent::CoreEvent;
+        // Early reset: 채널 drain 직전에 dedup 게이트를 풀어, drain 과 경합하는
+        // reader wake 가 스킵되어 유실되는 것을 막는다 (research §8).
+        self.note_drained_all(surface_id);
+        let core = &mut self.core;
+        let views = &mut self.view.views;
+        let parked_states = &mut self.parked_states;
+        let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
+        if let Some(sid) = surface_id {
+            // Targeted polling: 모든 view 의 engine 을 순회하며 해당 surface 보유 시 process
+            let mut found = false;
+            for (wid, w) in views.iter_mut() {
+                let Some(main) = w.as_main_mut() else {
+                    continue;
+                };
+                if main.core_state.find_terminal_by_id(sid).is_some() {
+                    let outcome = core.process_pty_output(&mut main.core_state, sid);
+                    if !outcome.events.is_empty() {
+                        pending.push((DispatchSource::Main(*wid), outcome.events));
+                    }
+                    main.recalc_ime_preedit_anchor();
+                    // P3 visibility gate: 안 보이는 surface 의 출력은 보이는
+                    // 창의 콘텐츠를 바꾸지 않으므로 redraw 요청을 생략한다.
+                    // 데이터 drain(process_pty_output)·이벤트 cascade 는 위에서
+                    // 이미 수행됐다. 해당 surface 가 보이게 전환되는 경로(탭/
+                    // 워크스페이스 전환·split·복원)는 각자 dirty 를 설정하므로
+                    // 전환 시 최신 grid 가 렌더된다.
+                    if main.is_surface_visible(sid) {
+                        main.mark_dirty();
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
+                    if engine.find_terminal_by_id(sid).is_some() {
+                        let outcome = core.process_pty_output(engine, sid);
+                        if !outcome.events.is_empty() {
+                            pending.push((DispatchSource::Parked(idx), outcome.events));
+                        }
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Fallback: wake all views and process all terminals across engines
+            for (wid, w) in views.iter_mut() {
+                if let Some(main) = w.as_main_mut() {
+                    let outcome = core.process_all_pty_output(&mut main.core_state);
+                    if !outcome.events.is_empty() {
+                        pending.push((DispatchSource::Main(*wid), outcome.events));
+                    }
+                }
+                w.mark_dirty();
+            }
+            for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
+                let outcome = core.process_all_pty_output(engine);
+                if !outcome.events.is_empty() {
+                    pending.push((DispatchSource::Parked(idx), outcome.events));
+                }
+            }
+        }
+        // borrow scope 종료 후 cascade dispatch.
+        for (source, events) in pending {
+            for ev in events {
+                self.handle_core_event_system(source, ev);
+            }
+        }
+    }
+
+    /// `AppEvent::Minimize` 핸들러 — 플랫폼별 최소화 전략. macOS 는 창 파괴 후
+    /// MainView 상태 파킹, Windows/Linux 는 트레이 유무에 따라 hide 또는 taskbar
+    /// 최소화(창 유지).
+    fn handle_minimize(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            // macOS: destroy windows, park all MainView states (dock reopen restores).
+            // 모달은 파킹 대상이 아니므로 그냥 drop.
+            let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
+            for w in drained {
+                if let Some(main_box) = crate::view::unbox_main(w) {
+                    self.parked_states
+                        .push((main_box.state, main_box.core_state));
+                }
+            }
+            self.view.focused_view_id = None;
+            self.view.active_modal_id = None;
+            tracing::info!(
+                "minimized to background ({} states parked)",
+                self.parked_states.len()
+            );
+        }
+        #[cfg(windows)]
+        {
+            if self.tray_icon.is_some() {
+                // Windows with tray: hide windows to tray (keep alive)
+                for w in self.view.views.values() {
+                    w.base().winit.set_visible(false);
+                }
+                tracing::info!("hid {} window(s) to system tray", self.view.views.len());
+            } else {
+                // Windows without tray: minimize to taskbar
+                for w in self.view.views.values() {
+                    w.base().winit.set_minimized(true);
+                }
+                tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if self.tray_icon.is_some() {
+                // Linux with tray: hide windows to tray (keep alive)
+                for w in self.view.views.values() {
+                    w.base().winit.set_visible(false);
+                }
+                tracing::info!("hid {} window(s) to system tray", self.view.views.len());
+            } else {
+                // Linux without tray: minimize windows to taskbar (keep alive)
+                for w in self.view.views.values() {
+                    w.base().winit.set_minimized(true);
+                }
+                tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
+            }
+        }
+    }
+
+    /// `AppEvent::IdentifyDone` 핸들러 — 비동기 파일 식별 결과를 focused MainView 에
+    /// 적용한다(`apply_identify_result`). split borrow 회피를 위해 focused view 를
+    /// 인덱스로 직접 접근.
+    fn handle_identify_done(
+        &mut self,
+        request_id: crate::identify_worker::IdentifyRequestId,
+        target: crate::file::format::FileTarget,
+        detector: Option<crate::file::format::DetectorId>,
+        origin_surface_id: Option<u32>,
+        ignore_size_limit: bool,
+    ) {
+        tracing::debug!(
+            request_id = %request_id,
+            target = %target.display(),
+            detector = ?detector.as_ref().map(|d| d.as_str()),
+            origin_surface_id = ?origin_surface_id,
+            ignore_size_limit,
+            "IdentifyDone",
+        );
+        // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
+        // self.core 와 충돌하므로 인덱스로 직접 접근.
+        if let Some(id) = self.view.focused_view_id
+            && let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
+        {
+            self.core.apply_identify_result(
+                &mut main.state,
+                &mut main.core_state,
+                target,
+                detector,
+                origin_surface_id,
+                ignore_size_limit,
+            );
+        }
+    }
+
+    /// shell setup mode 의 `WindowEvent` 핸들러. RedrawRequested 시 setup 화면을
+    /// 렌더하고 사용자 확정/종료를 처리하며, 그 외 이벤트는 egui 로 forward 한다.
+    /// 항상 이벤트를 소비한다(caller 는 호출 후 즉시 return).
+    fn handle_shell_setup_window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        event: WindowEvent,
+    ) {
+        if let WindowEvent::RedrawRequested = &event {
+            if let (Some(gpu), Some(window)) =
+                (&mut self.shell_setup_gpu, &self.shell_setup_window)
+            {
+                let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
+                match result {
+                    Ok(crate::gpu::ShellSetupAction::None) => {}
+                    Ok(crate::gpu::ShellSetupAction::Confirmed) => {
+                        let mut settings = crate::settings::Settings::load();
+                        let normalize_report = settings.normalize();
+                        settings.general.shell = self.shell_setup_path.clone();
+                        if let Err(e) = settings.save() {
+                            tracing::error!("failed to save settings: {e}");
+                        }
+                        self.shell_setup_mode = false;
+                        let window = self.shell_setup_window.take().unwrap();
+                        let gpu = self.shell_setup_gpu.take().unwrap();
+                        self.init_app_state(window, gpu, settings);
+                        // invalid_theme_name 처리는 init_app_state 내부로 이동했으므로
+                        // normalize_report 는 여기서 별도 소비할 필요 없음.
+                        drop(normalize_report);
+                        if let Some(w) = self.focused_window_mut() {
+                            w.mark_dirty();
+                        }
+                    }
+                    Ok(crate::gpu::ShellSetupAction::Exit) => {
+                        event_loop.exit();
+                    }
+                    Err(e) => {
+                        let msg = format!("shell setup render error: {e}");
+                        tracing::warn!("{}", msg);
+                        crate::crash_report::record_error(&msg);
+                    }
+                }
+            }
+            if let (Some(gpu), Some(window)) =
+                (&mut self.shell_setup_gpu, &self.shell_setup_window)
+            {
+                gpu.handle_egui_event(window, &event);
+            }
+            return;
+        }
+        if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
+        {
+            gpu.handle_egui_event(window, &event);
+            if let WindowEvent::CloseRequested = &event {
+                event_loop.exit();
+            }
+        }
+    }
+
+    /// 활성 모달을 대상으로 한 `WindowEvent` 를 모달 view 에 위임하고 그 `ViewAction`
+    /// (Close / CloseWithEvent)을 처리한다. caller 는 호출 후 즉시 return.
+    fn handle_active_modal_window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        event: WindowEvent,
+    ) {
+        let action = if let Some(modal) = self.view.views.get_mut(&id) {
+            let mut ctx = ViewCtx {
+                event_loop,
+                modal_active: false,
+                plugin_manager: self.plugin_manager.as_ref(),
+            };
+            modal.handle_event(event, &mut ctx)
+        } else {
+            ViewAction::None
+        };
+
+        match action {
+            ViewAction::None => {}
+            ViewAction::Close => {
+                self.close_active_modal();
+            }
+            ViewAction::CloseWithEvent(app_event) => {
+                self.close_active_modal();
+                crate::shortcuts::send_app_event(&self.view.proxy, app_event);
+            }
+        }
+    }
+
+    /// `WindowEvent::Focused(true)` 처리 — MainView 면 focused_view_id 갱신,
+    /// `window.focused` host event 발화, 활성 모달이 있으면 앞으로 가져온다.
+    fn handle_window_focused(&mut self, id: WindowId) {
+        // 모달이 focus 이벤트를 받아도 focused_view_id는 MainView 전용
+        let is_main = self
+            .view
+            .views
+            .get(&id)
+            .map(|w| w.as_main().is_some())
+            .unwrap_or(false);
+        if is_main {
+            self.view.focused_view_id = Some(id);
+        }
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::WindowFocused;
+            let payload = WindowFocused {
+                window_id: u64::from(id),
+            };
+            mgr.emit_host_event("window.focused", &payload, EventScope::System);
+        }
+        // If a modal is active, bring it to the front so it's not buried
+        if let Some(modal_id) = self.view.active_modal_id
+            && let Some(modal) = self.view.views.get(&modal_id)
+        {
+            modal.base().winit.focus_window();
+        }
+    }
+
+    /// 일반 모드 `WindowEvent` 를 대상 view 에 위임하고 반환 `ViewAction` 및 후속
+    /// close 요청(마지막 main window 파킹·포커스 이양)을 처리한다.
+    fn dispatch_window_event_to_view(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        event: WindowEvent,
+    ) {
+        let modal_active = self.view.is_modal_active();
+        let action = {
+            if let Some(w) = self.view.views.get_mut(&id) {
+                let mut ctx = ViewCtx {
+                    event_loop,
+                    modal_active,
+                    plugin_manager: self.plugin_manager.as_ref(),
+                };
+                // MainView.handle_event는 항상 ViewAction::None을 반환한다.
+                // PresetView (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
+                // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
+                w.handle_event(event, &mut ctx)
+            } else {
+                ViewAction::None
+            }
+        };
+        if self.view.views.contains_key(&id) {
+            match action {
+                ViewAction::None => {}
+                ViewAction::Close => {
+                    if self.preset_view_id == Some(id) {
+                        self.on_preset_window_closed(id);
+                        return;
+                    }
+                    debug_assert!(false, "non-modal window returned Close unexpectedly");
+                }
+                ViewAction::CloseWithEvent(app_event) => {
+                    if self.preset_view_id == Some(id) {
+                        self.on_preset_window_closed(id);
+                        crate::shortcuts::send_app_event(&self.view.proxy, app_event);
+                        return;
+                    }
+                    debug_assert!(
+                        false,
+                        "non-modal window returned CloseWithEvent unexpectedly"
+                    );
+                }
+            }
+
+            // Check if the window requested to close (e.g. last workspace removed)
+            let close_requested = self
+                .view
+                .views
+                .get(&id)
+                .map(|w| w.base().close_requested)
+                .unwrap_or(false);
+            if close_requested {
+                if let Some(w) = self.view.views.remove(&id)
+                    && self.view.views.values().all(|w| w.as_main().is_none())
+                    && let Some(main_box) = crate::view::unbox_main(w)
+                {
+                    tracing::info!("last main window closed via request, parking state");
+                    self.parked_states
+                        .push((main_box.state, main_box.core_state));
+                }
+                if self.view.focused_view_id == Some(id) {
+                    self.view.focused_view_id = self
+                        .view
+                        .views
+                        .iter()
+                        .find(|(_, w)| w.as_main().is_some())
+                        .map(|(id, _)| *id);
+                }
+            }
+        }
+    }
+
     /// OS 절전 복귀(`AppEvent::SystemResumed`, Windows) 헬스 패스 (ADR-0017).
     /// 전 view/parked engine 을 순회하며 (1) 살아있는 PTY 자식을 wake nudge,
     /// (2) `process_all_pty_output` 로 절전 중 죽은 자식의 `ProcessExited` cascade
