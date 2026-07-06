@@ -19,6 +19,31 @@ use super::{
     PendingRequestKind, PluginManager, RemoteSurfaceEntry,
 };
 
+/// 한 tick 의 plugin→호스트 이벤트 수집 결과.
+///
+/// `pump` 이 `collect_plugin_events` 로 채운 뒤 `apply_collected_events` 로
+/// 소비한다. 각 `Vec` 은 원본 pump 의 누산기와 1:1 대응하며, 채워지는 순서·
+/// 조건·처리 순서를 그대로 보존한다.
+#[derive(Default)]
+struct CollectedPluginEvents {
+    hello_log: Vec<(String, String)>,
+    to_register: Vec<String>,
+    new_calls: Vec<PendingPluginCall>,
+    new_event_publishes: Vec<(String, tasty_plugin_protocol::EventEnvelope)>,
+    new_event_subscribes: Vec<(String, u64, String)>,
+    new_event_unsubscribes: Vec<(String, u64)>,
+    // egui-mesh paint_frame 알림 (A1-S3): (surface_id, frame 메타).
+    new_paint_frames: Vec<(u32, super::EguiMeshFrame)>,
+    // egui-mesh popup paint_frame 알림 (A2): (instance_id, frame 메타).
+    new_popup_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
+    // egui-mesh banner paint_frame 알림 (A3): (instance_id, frame 메타).
+    new_banner_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
+    // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
+    // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
+    // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
+    disconnected: Vec<String>,
+}
+
 impl PluginManager {
     /// 매 tick 호출. plugin 이벤트 처리 + 헬스체크 + 비응답 재시작.
     ///
@@ -26,144 +51,184 @@ impl PluginManager {
     /// 리스트. 호출자 (App) 가 `finalize_plugin_hello` 로 surface_kind registry
     /// 등록 + CoreEvent (PluginLoaded / PluginSurfaceKindRegistered) 발화를
     /// 처리한다 (D.3.C.G.2.e). 비어있으면 finalize 안 호출.
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin→host 이벤트 펌프(hello/call/publish/register 다단계 수집). 게이트 도입과 별건
     pub fn pump(&mut self) -> Vec<(String, String)> {
-        // 1. plugin → 호스트 이벤트 처리
-        let mut hello_log: Vec<(String, String)> = Vec::new();
-        let mut to_register: Vec<String> = Vec::new();
-        let mut new_calls: Vec<PendingPluginCall> = Vec::new();
-        let mut new_event_publishes: Vec<(String, tasty_plugin_protocol::EventEnvelope)> =
-            Vec::new();
-        let mut new_event_subscribes: Vec<(String, u64, String)> = Vec::new();
-        let mut new_event_unsubscribes: Vec<(String, u64)> = Vec::new();
-        // egui-mesh paint_frame 알림 (A1-S3): (surface_id, frame 메타).
-        let mut new_paint_frames: Vec<(u32, super::EguiMeshFrame)> = Vec::new();
-        // egui-mesh popup paint_frame 알림 (A2): (instance_id, frame 메타).
-        let mut new_popup_paint_frames: Vec<(u64, super::EguiMeshFrame)> = Vec::new();
-        // egui-mesh banner paint_frame 알림 (A3): (instance_id, frame 메타).
-        let mut new_banner_paint_frames: Vec<(u64, super::EguiMeshFrame)> = Vec::new();
-        // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
-        // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
-        // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
-        let mut disconnected: Vec<String> = Vec::new();
+        // 1. plugin → 호스트 이벤트 수집 후 일괄 처리 (수집 순서·부수효과 보존).
+        let collected = self.collect_plugin_events();
+        let hello_pairs = self.apply_collected_events(collected);
+
+        // 2. 새로 만들어진 RemoteSurface 등록 + plugin에 surface.create/restore 송신.
+        self.drain_host_cmds();
+
+        // 4. plugin → 호스트 응답 처리 (display_name/snapshot 동기화).
+        self.drain_plugin_responses();
+
+        // 4a. 타임아웃된 extension hook을 fail-open 처리.
+        self.sweep_expired_hooks();
+
+        // 2. 주기적 ping
+        self.send_periodic_ping();
+
+        // 3. 헬스체크 — 60초 무응답 시 재시작
+        self.restart_unresponsive_plugins();
+
+        // H.f — auto-reload polling.
+        self.poll_auto_reload();
+
+        hello_pairs
+    }
+
+    /// plugin→호스트 이벤트를 `processes` 순회로 수집. self 를 읽기만 하며
+    /// (부수효과는 `apply_collected_events` 에서), 각 프로세스의 큐를 순서대로
+    /// 비운다 — 수집 순서를 원본 그대로 보존한다.
+    fn collect_plugin_events(&self) -> CollectedPluginEvents {
+        let mut out = CollectedPluginEvents::default();
         for (id, proc) in &self.processes {
             loop {
                 match proc.event_rx.try_recv() {
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        disconnected.push(id.clone());
+                        out.disconnected.push(id.clone());
                         break;
                     }
-                    Ok(ev) => match ev {
-                        PluginEvent::Hello { plugin_id, version } => {
-                            hello_log.push((plugin_id.clone(), version));
-                            if !self.registered_plugins.contains(&plugin_id) {
-                                to_register.push(plugin_id);
-                            }
-                        }
-                        PluginEvent::Log { level, message } => match level.as_str() {
-                            "error" => tracing::error!("[plugin {}] {}", id, message),
-                            "warn" => tracing::warn!("[plugin {}] {}", id, message),
-                            _ => tracing::info!("[plugin {}] {}", id, message),
-                        },
-                        PluginEvent::SurfaceInvalidated { .. } => {
-                            // 단계 06에서 처리
-                        }
-                        PluginEvent::PaintFrame {
-                            surface_id,
-                            buffer_id,
-                            generation,
-                            frame_seq,
-                            full_textures,
-                        } => {
-                            // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
-                            // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
-                            // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
-                            new_paint_frames.push((
-                                surface_id,
-                                super::EguiMeshFrame {
-                                    plugin_id: id.clone(),
-                                    buffer_id,
-                                    generation,
-                                    frame_seq,
-                                    full_textures,
-                                },
-                            ));
-                        }
-                        PluginEvent::PopupPaintFrame {
-                            instance_id,
-                            buffer_id,
-                            generation,
-                            frame_seq,
-                            full_textures,
-                        } => {
-                            // A2 popup 수신 라우팅: 최근 popup mesh frame 메타를 저장.
-                            // host 합성기(popup_mesh_render)가 instance_id 로 lookup 한다.
-                            new_popup_paint_frames.push((
-                                instance_id,
-                                super::EguiMeshFrame {
-                                    plugin_id: id.clone(),
-                                    buffer_id,
-                                    generation,
-                                    frame_seq,
-                                    full_textures,
-                                },
-                            ));
-                        }
-                        PluginEvent::BannerPaintFrame {
-                            instance_id,
-                            buffer_id,
-                            generation,
-                            frame_seq,
-                            full_textures,
-                        } => {
-                            // A3 banner 수신 라우팅: 최근 banner mesh frame 메타를 저장.
-                            // host 합성기(render_egui_mesh_banners)가 instance_id 로 lookup 한다.
-                            new_banner_paint_frames.push((
-                                instance_id,
-                                super::EguiMeshFrame {
-                                    plugin_id: id.clone(),
-                                    buffer_id,
-                                    generation,
-                                    frame_seq,
-                                    full_textures,
-                                },
-                            ));
-                        }
-                        PluginEvent::NotifyHost { .. } => {
-                            // 단계 06에서 처리
-                        }
-                        PluginEvent::IpcCall {
-                            call_id,
-                            method,
-                            params,
-                        } => {
-                            let perms = self
-                                .plugin_permissions
-                                .get(id)
-                                .cloned()
-                                .unwrap_or_else(|| Arc::new(HashSet::new()));
-                            new_calls.push(PendingPluginCall {
-                                plugin_id: id.clone(),
-                                call_id,
-                                method,
-                                params,
-                                permissions: perms,
-                            });
-                        }
-                        PluginEvent::EventPublish { envelope } => {
-                            new_event_publishes.push((id.clone(), envelope));
-                        }
-                        PluginEvent::EventSubscribe { sub_id, pattern } => {
-                            new_event_subscribes.push((id.clone(), sub_id, pattern));
-                        }
-                        PluginEvent::EventUnsubscribe { sub_id } => {
-                            new_event_unsubscribes.push((id.clone(), sub_id));
-                        }
-                    },
+                    Ok(ev) => self.classify_event(id, ev, &mut out),
                 }
             }
         }
+        out
+    }
+
+    /// 단일 `PluginEvent` 를 종류별 누산기로 분류. 부수효과 없이 `out` 에만
+    /// push 하며(Log 만 즉시 로깅 — 원본 동일), 누산기 mutation 을 원본 arm 과
+    /// 1:1 로 유지한다.
+    fn classify_event(&self, id: &str, ev: PluginEvent, out: &mut CollectedPluginEvents) {
+        match ev {
+            PluginEvent::Hello { plugin_id, version } => {
+                out.hello_log.push((plugin_id.clone(), version));
+                if !self.registered_plugins.contains(&plugin_id) {
+                    out.to_register.push(plugin_id);
+                }
+            }
+            PluginEvent::Log { level, message } => match level.as_str() {
+                "error" => tracing::error!("[plugin {}] {}", id, message),
+                "warn" => tracing::warn!("[plugin {}] {}", id, message),
+                _ => tracing::info!("[plugin {}] {}", id, message),
+            },
+            PluginEvent::SurfaceInvalidated { .. } => {
+                // 단계 06에서 처리
+            }
+            PluginEvent::PaintFrame {
+                surface_id,
+                buffer_id,
+                generation,
+                frame_seq,
+                full_textures,
+            } => {
+                // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
+                // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
+                // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
+                out.new_paint_frames.push((
+                    surface_id,
+                    super::EguiMeshFrame {
+                        plugin_id: id.to_string(),
+                        buffer_id,
+                        generation,
+                        frame_seq,
+                        full_textures,
+                    },
+                ));
+            }
+            PluginEvent::PopupPaintFrame {
+                instance_id,
+                buffer_id,
+                generation,
+                frame_seq,
+                full_textures,
+            } => {
+                // A2 popup 수신 라우팅: 최근 popup mesh frame 메타를 저장.
+                // host 합성기(popup_mesh_render)가 instance_id 로 lookup 한다.
+                out.new_popup_paint_frames.push((
+                    instance_id,
+                    super::EguiMeshFrame {
+                        plugin_id: id.to_string(),
+                        buffer_id,
+                        generation,
+                        frame_seq,
+                        full_textures,
+                    },
+                ));
+            }
+            PluginEvent::BannerPaintFrame {
+                instance_id,
+                buffer_id,
+                generation,
+                frame_seq,
+                full_textures,
+            } => {
+                // A3 banner 수신 라우팅: 최근 banner mesh frame 메타를 저장.
+                // host 합성기(render_egui_mesh_banners)가 instance_id 로 lookup 한다.
+                out.new_banner_paint_frames.push((
+                    instance_id,
+                    super::EguiMeshFrame {
+                        plugin_id: id.to_string(),
+                        buffer_id,
+                        generation,
+                        frame_seq,
+                        full_textures,
+                    },
+                ));
+            }
+            PluginEvent::NotifyHost { .. } => {
+                // 단계 06에서 처리
+            }
+            PluginEvent::IpcCall {
+                call_id,
+                method,
+                params,
+            } => {
+                let perms = self
+                    .plugin_permissions
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| Arc::new(HashSet::new()));
+                out.new_calls.push(PendingPluginCall {
+                    plugin_id: id.to_string(),
+                    call_id,
+                    method,
+                    params,
+                    permissions: perms,
+                });
+            }
+            PluginEvent::EventPublish { envelope } => {
+                out.new_event_publishes.push((id.to_string(), envelope));
+            }
+            PluginEvent::EventSubscribe { sub_id, pattern } => {
+                out.new_event_subscribes.push((id.to_string(), sub_id, pattern));
+            }
+            PluginEvent::EventUnsubscribe { sub_id } => {
+                out.new_event_unsubscribes.push((id.to_string(), sub_id));
+            }
+        }
+    }
+
+    /// 수집된 이벤트를 원본 pump 와 동일한 순서로 처리 (부수효과 확정).
+    /// 반환: 본 tick 에서 처음 hello 받은 plugin 의 `(plugin_id, version)`.
+    fn apply_collected_events(
+        &mut self,
+        collected: CollectedPluginEvents,
+    ) -> Vec<(String, String)> {
+        let CollectedPluginEvents {
+            hello_log,
+            to_register,
+            new_calls,
+            new_event_publishes,
+            new_event_subscribes,
+            new_event_unsubscribes,
+            new_paint_frames,
+            new_popup_paint_frames,
+            new_banner_paint_frames,
+            disconnected,
+        } = collected;
+
         // 죽은 plugin 의 egui-mesh frame 을 즉시 비운다 — 60초 healthcheck 를 기다리지
         // 않고 surface 를 blank 로 전환해 stale mesh 합성을 막는다 (research-a1 §9-7).
         for dead in &disconnected {
@@ -186,12 +251,34 @@ impl PluginManager {
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
         }
-        // hello 를 처음 받은 plugin 의 권한 set / event_bus 패턴 동기화.
-        // surface_kind registry 등록 + `registered_plugins.insert` 는 호출자
-        // (App::finalize_plugin_hello) 가 처리 — CoreEvent 발화 위치 정렬.
+        let hello_pairs = self.register_new_hellos(&to_register);
+
+        // Event Bus: plugin이 보낸 subscribe/unsubscribe/publish 처리.
+        for (plugin_id, sub_id, pattern) in new_event_subscribes {
+            if let Err(e) = self
+                .event_bus
+                .subscribe_plugin(&plugin_id, sub_id, pattern.clone())
+            {
+                tracing::warn!("plugin '{plugin_id}' event.subscribe rejected: {e}");
+            }
+        }
+        for (plugin_id, sub_id) in new_event_unsubscribes {
+            self.event_bus.unsubscribe_plugin(&plugin_id, sub_id);
+        }
+        for (plugin_id, envelope) in new_event_publishes {
+            self.route_plugin_event_publish(&plugin_id, envelope);
+        }
+
+        hello_pairs
+    }
+
+    /// hello 를 처음 받은 plugin 의 권한 set / event_bus 패턴 / settings_pages 동기화.
+    /// surface_kind registry 등록 + `registered_plugins.insert` 는 호출자
+    /// (App::finalize_plugin_hello) 가 처리 — CoreEvent 발화 위치 정렬.
+    fn register_new_hellos(&mut self, to_register: &[String]) -> Vec<(String, String)> {
         let mut hello_pairs: Vec<(String, String)> = Vec::new();
         if !to_register.is_empty() {
-            for plugin_id in &to_register {
+            for plugin_id in to_register {
                 if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
                     let granted = self.config.granted_permissions(plugin_id);
                     let perms: HashSet<Permission> = pkg
@@ -219,33 +306,11 @@ impl PluginManager {
                 }
             }
         }
+        hello_pairs
+    }
 
-        // Event Bus: plugin이 보낸 subscribe/unsubscribe/publish 처리.
-        for (plugin_id, sub_id, pattern) in new_event_subscribes {
-            if let Err(e) = self
-                .event_bus
-                .subscribe_plugin(&plugin_id, sub_id, pattern.clone())
-            {
-                tracing::warn!("plugin '{plugin_id}' event.subscribe rejected: {e}");
-            }
-        }
-        for (plugin_id, sub_id) in new_event_unsubscribes {
-            self.event_bus.unsubscribe_plugin(&plugin_id, sub_id);
-        }
-        for (plugin_id, envelope) in new_event_publishes {
-            self.route_plugin_event_publish(&plugin_id, envelope);
-        }
-
-        // 2. 새로 만들어진 RemoteSurface 등록 + plugin에 surface.create/restore 송신.
-        self.drain_host_cmds();
-
-        // 4. plugin → 호스트 응답 처리 (display_name/snapshot 동기화).
-        self.drain_plugin_responses();
-
-        // 4a. 타임아웃된 extension hook을 fail-open 처리.
-        self.sweep_expired_hooks();
-
-        // 2. 주기적 ping
+    /// 주기적 ping — `PING_INTERVAL` 경과 시 전 프로세스에 ping 송신.
+    fn send_periodic_ping(&mut self) {
         if self.last_ping.elapsed() >= PING_INTERVAL {
             for proc in self.processes.values() {
                 let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
@@ -253,8 +318,10 @@ impl PluginManager {
             }
             self.last_ping = Instant::now();
         }
+    }
 
-        // 3. 헬스체크 — 60초 무응답 시 재시작
+    /// 헬스체크 — `HEALTHCHECK_TIMEOUT` 무응답 plugin 을 재시작.
+    fn restart_unresponsive_plugins(&mut self) {
         let unresponsive: Vec<String> = self
             .processes
             .iter()
@@ -311,10 +378,12 @@ impl PluginManager {
                 self.start_plugin_internal(&pkg);
             }
         }
+    }
 
-        // H.f — auto-reload polling. flag off 면 check_for_updates 가 즉시
-        // 빈 Vec 을 반환해 cost 0. flag on 이고 마지막 tick 으로부터
-        // AUTO_RELOAD_POLL_INTERVAL 경과 시 1회 polling.
+    /// auto-reload polling. flag off 면 `check_for_updates` 가 즉시 빈 Vec 을
+    /// 반환해 cost 0. flag on 이고 마지막 tick 으로부터 `AUTO_RELOAD_POLL_INTERVAL`
+    /// 경과 시 1회 polling.
+    fn poll_auto_reload(&mut self) {
         if self.auto_reload_enabled
             && self.last_auto_reload_check.elapsed() >= AUTO_RELOAD_POLL_INTERVAL
         {
@@ -325,8 +394,6 @@ impl PluginManager {
                 }
             }
         }
-
-        hello_pairs
     }
 
     pub(super) fn drain_host_cmds(&mut self) {
