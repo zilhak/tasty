@@ -260,6 +260,13 @@ pub fn draw_remote_tool_popup(
     }
     ui.painter()
         .hline(full.x_range(), header_ir.response.rect.bottom(), sep);
+    // 헤더 전체(전체폭 × 실측 헤더 높이)를 드래그 이동 영역으로 매니저에 보고한다.
+    // 좁은 정적 띠(panel_header_drag_strip) 대신 이 rect 가 hit-test 에 우선 사용된다.
+    super::report_header_drag_rect(
+        ui.ctx(),
+        REMOTE_TOOL_POPUP_ID,
+        egui::Rect::from_x_y_ranges(full.x_range(), full.top()..=header_ir.response.rect.bottom()),
+    );
 
     // 탭바 — 디자인 bg-sidebar(mantle) 전체폭, TabBtn height 35, padding L8.
     // 자체 하단 borderBottom 까지 내부에서 그린다.

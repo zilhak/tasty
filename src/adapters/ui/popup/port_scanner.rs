@@ -887,6 +887,13 @@ pub fn draw_port_scanner_view(
     }
     ui.painter()
         .hline(full.x_range(), h_ir.response.rect.bottom(), sep);
+    // 헤더 전체(전체폭 × 실측 헤더 높이)를 드래그 이동 영역으로 매니저에 보고한다.
+    // 좁은 정적 띠(panel_header_drag_strip) 대신 이 rect 가 hit-test 에 우선 사용된다.
+    super::report_header_drag_rect(
+        ui.ctx(),
+        PORT_SCANNER_POPUP_ID,
+        egui::Rect::from_x_y_ranges(full.x_range(), full.top()..=h_ir.response.rect.bottom()),
+    );
 
     // 필터 행 — 디자인 padding 8 14 + borderBottom.
     let f_ir = egui::Frame::NONE

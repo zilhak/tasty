@@ -172,6 +172,27 @@ pub fn content_margin() -> f32 {
     crate::theme::theme().spacing_xs.value().round_ui()
 }
 
+/// 헤더 드래그 rect 를 담는 egui temp memory Id (popup id 로 네임스페이스).
+fn header_drag_rect_id(popup_id: PopupId) -> egui::Id {
+    egui::Id::new("popup.header_drag_rect").with(popup_id)
+}
+
+/// 뷰가 자신의 실측 헤더 rect(전체폭 × 실제 헤더 높이)를 egui temp memory 에 보고한다.
+///
+/// headless 패널 팝업(port_scanner / remote_tool)은 헤더 높이가 서로 다르고 host UI
+/// zoom 에도 좌우된다. 정적 리터럴로 추정하는 대신 각 뷰가 렌더 시점의 실제 rect 를
+/// 여기로 보고하면, `PopupManager::draw` 의 hit-test 가 이 rect 를 드래그 핸들로
+/// 우선 사용해 헤더 전체를 이동 영역으로 만든다. 매 프레임 재보고되므로 stale 위험이
+/// 낮고, popup id 로 네임스페이스해 팝업 간 rect 가 섞이지 않는다.
+pub fn report_header_drag_rect(ctx: &egui::Context, popup_id: PopupId, rect: egui::Rect) {
+    ctx.memory_mut(|m| m.data.insert_temp(header_drag_rect_id(popup_id), rect));
+}
+
+/// 뷰가 보고한 헤더 드래그 rect 를 읽는다(hit-test 용). 아직 보고 전이면 None.
+fn reported_header_drag_rect(ctx: &egui::Context, popup_id: PopupId) -> Option<egui::Rect> {
+    ctx.memory(|m| m.data.get_temp(header_drag_rect_id(popup_id)))
+}
+
 impl PopupState {
     pub fn new(id: PopupId, title: impl Into<String>, default_size: egui::Vec2) -> Self {
         Self {
@@ -265,6 +286,15 @@ impl PopupState {
             }
             DragHandle::Region(f) => Some(f(self)),
         }
+    }
+
+    /// hit-test 가 실제로 쓰는 이동 핸들 rect. 뷰가 `report_header_drag_rect` 로
+    /// 보고한 실측 헤더 rect 가 있으면 그것을(헤더 전체), 없으면 정적 선언
+    /// (`drag_handle_rect`)으로 폴백한다. 보고는 hit-test 보다 뒤(콘텐츠 렌더 시점)라
+    /// 이번 프레임엔 직전 프레임 값을 쓴다(1프레임 지연, 사실상 인지 불가). open
+    /// 첫 프레임엔 보고가 없어 기존 핸들 띠로 폴백한다.
+    fn effective_drag_handle_rect(&self, ctx: &egui::Context) -> Option<egui::Rect> {
+        reported_header_drag_rect(ctx, self.id).or_else(|| self.drag_handle_rect())
     }
 
     fn content_rect(&self) -> egui::Rect {

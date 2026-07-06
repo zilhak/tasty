@@ -4,14 +4,14 @@ use std::sync::OnceLock;
 
 use super::{DragHandle, PopupDef, PopupScope, PopupState};
 
-/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 헤더 드래그 띠.
+/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 헤더 드래그 띠 — **폴백**.
 ///
-/// 헤더 **좌측 절반**(아이콘 + 제목 라벨 영역)을 핸들로 선언한다. 좁은 폭에서는
-/// 우측의 검색 입력과 이 띠가 일부 겹칠 수 있으나, `PopupManager::draw` 가 콘텐츠
-/// 렌더 뒤 `is_using_pointer()` 로 **위젯 우선 중재**를 하므로 겹쳐도 입력 클릭이
-/// 항상 우선된다(드래그 미발동). 높이는 타이틀바 토큰(`title_bar_height`)을
-/// 재사용해 헤더 중앙의 라벨을 덮는다. 테두리 리사이즈 밴드(좌/상단 수 px)는
-/// 우선순위가 높아 그 부분은 리사이즈로 동작한다.
+/// 평상시 이 두 팝업은 뷰가 `report_header_drag_rect` 로 보고한 **실측 헤더 전체**
+/// rect 를 hit-test 에 쓴다(`PopupState::effective_drag_handle_rect`). 이 좁은 띠는
+/// **open 첫 프레임**(아직 보고 전)에만 잠깐 쓰이는 폴백이다. 헤더 좌측 절반 ×
+/// 타이틀바 높이만 덮으므로 그 프레임 한정 좌측 상단만 드래그 가능하나, 다음
+/// 프레임부터 보고 rect 로 대체돼 헤더 전체가 이동 영역이 된다. 위젯 우선 중재
+/// (`is_using_pointer()`)로 겹친 입력 클릭은 항상 우선된다.
 fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
     egui::Rect::from_min_size(s.pos, egui::vec2(s.size.x * 0.5, super::title_bar_height()))
 }

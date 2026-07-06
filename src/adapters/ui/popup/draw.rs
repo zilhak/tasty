@@ -90,7 +90,7 @@ impl PopupManager {
                         && let Some(edges) = resize_edges_at(rect, pos, RESIZE_BAND)
                     {
                         hovered_resize = Some((popup.id, edges));
-                    } else if let Some(handle) = popup.drag_handle_rect()
+                    } else if let Some(handle) = popup.effective_drag_handle_rect(ctx)
                         && handle.contains(pos)
                     {
                         hovered_handle = Some(popup.id);
