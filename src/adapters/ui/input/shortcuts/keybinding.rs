@@ -3,6 +3,11 @@
 //! 본 fn 은 `handle_shortcut` 의 메인 분기에서 호출된다. 키 + 모디파이어와
 //! `KeybindingSettings` 의 각 액션 바인딩 목록을 순서대로 비교하여 첫 매칭에서
 //! 액션을 수행한다.
+//!
+//! 분기 본체는 카테고리별 그룹 매처(`match_*_bindings`)로 나뉘어 있으나 매칭
+//! 순서는 원본 나열 순서를 그대로 보존한다 — 그룹은 연속 블록(contiguous run)
+//! 단위이며, 본체는 그룹을 원본 순서대로 순차 호출한다(먼저 매칭되는 binding 이
+//! 이긴다는 우선순위 규칙 불변).
 
 use winit::keyboard::{Key, ModifiersState};
 
@@ -14,7 +19,6 @@ use super::{focused_explorer_surface_id, matches_any_binding, send_app_event};
 
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — 단축키 binding 매칭 dispatch(다수 binding 분기). 게이트와 별건
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -25,6 +29,77 @@ impl MainView {
         cell_w: f32,
         cell_h: f32,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    ) -> bool {
+        // 그룹 호출 순서 = 원본 블록 나열 순서. 순서 변경 금지(단축키 우선순위 영향).
+        if Self::match_create_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_split_bindings(state, engine, kb, key, mods, terminal_rect, cell_w, cell_h) {
+            return true;
+        }
+        if Self::match_panel_bindings(state, engine, kb, key, mods, proxy) {
+            return true;
+        }
+        if Self::match_close_bindings(state, engine, kb, key, mods, terminal_rect, cell_w, cell_h) {
+            return true;
+        }
+        if Self::match_focus_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_sidebar_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_restore_quit_bindings(
+            state,
+            engine,
+            kb,
+            key,
+            mods,
+            terminal_rect,
+            cell_w,
+            cell_h,
+            proxy,
+        ) {
+            return true;
+        }
+        if Self::match_convert_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_window_tab_bindings(
+            state,
+            engine,
+            kb,
+            key,
+            mods,
+            terminal_rect,
+            cell_w,
+            cell_h,
+            proxy,
+        ) {
+            return true;
+        }
+        if Self::match_rename_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_explorer_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        if Self::match_preset_bindings(state, kb, key, mods) {
+            return true;
+        }
+        if Self::match_copy_rename_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
+        false
+    }
+
+    /// 생성 계열: new_workspace / new_tab.
+    fn match_create_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
     ) -> bool {
         if matches_any_binding(&kb.new_workspace, key, mods) {
             state.dispatch_intent(
@@ -43,6 +118,21 @@ impl MainView {
             }
             return true;
         }
+        false
+    }
+
+    /// 분할 계열: split_pane_{vertical,horizontal} / split_surface_{vertical,horizontal}.
+    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
+    fn match_split_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        terminal_rect: crate::model::PhysicalRect,
+        cell_w: f32,
+        cell_h: f32,
+    ) -> bool {
         if matches_any_binding(&kb.split_pane_vertical, key, mods) {
             state.dispatch_intent(
                 Intent::SplitPane {
@@ -83,6 +173,19 @@ impl MainView {
             state.resize_all(engine, terminal_rect, cell_w, cell_h);
             return true;
         }
+        false
+    }
+
+    /// 패널/오버레이 토글 계열: toggle_settings / toggle_notifications / find /
+    /// toggle_clipboard_viewer.
+    fn match_panel_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    ) -> bool {
         if matches_any_binding(&kb.toggle_settings, key, mods) {
             send_app_event(proxy, crate::AppEvent::OpenSettings);
             return true;
@@ -133,6 +236,21 @@ impl MainView {
             });
             return true;
         }
+        false
+    }
+
+    /// 닫기 계열: close_workspace / close_pane / close_surface.
+    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
+    fn match_close_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        terminal_rect: crate::model::PhysicalRect,
+        cell_w: f32,
+        cell_h: f32,
+    ) -> bool {
         if matches_any_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace(engine);
             if !engine.workspaces.is_empty() {
@@ -159,6 +277,17 @@ impl MainView {
             }
             return true;
         }
+        false
+    }
+
+    /// 포커스 이동 계열: focus_{pane,surface}_{next,prev}.
+    fn match_focus_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.focus_pane_next, key, mods) {
             state.move_pane_focus_forward(engine);
             return true;
@@ -175,6 +304,18 @@ impl MainView {
             state.move_surface_focus_backward(engine);
             return true;
         }
+        false
+    }
+
+    /// 사이드바 계열: toggle_sidebar / toggle_sidebar_collapse /
+    /// toggle_categories_collapsed.
+    fn match_sidebar_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.toggle_sidebar, key, mods) {
             state.sidebar_visible = !state.sidebar_visible;
             return true;
@@ -192,6 +333,22 @@ impl MainView {
             engine.mark_layout_dirty();
             return true;
         }
+        false
+    }
+
+    /// 복구/종료 계열: restore_closed / quit_immediate / quit_minimize / quit.
+    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
+    fn match_restore_quit_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        terminal_rect: crate::model::PhysicalRect,
+        cell_w: f32,
+        cell_h: f32,
+        proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    ) -> bool {
         if matches_any_binding(&kb.restore_closed, key, mods) {
             state.dispatch_intent(
                 crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
@@ -211,6 +368,18 @@ impl MainView {
             send_app_event(proxy, crate::AppEvent::QuitRequested);
             return true;
         }
+        false
+    }
+
+    /// 변환 계열: open_markdown / convert_surface / convert_to_markdown /
+    /// convert_to_explorer.
+    fn match_convert_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.open_markdown, key, mods) {
             let pane_id = state.active_workspace(engine).focused_pane;
             state.dialogs.file_open_pane_id = Some(pane_id);
@@ -274,6 +443,22 @@ impl MainView {
             }
             return true;
         }
+        false
+    }
+
+    /// 윈도우/탭 계열: new_window / close_active / next_tab / prev_tab.
+    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
+    fn match_window_tab_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        terminal_rect: crate::model::PhysicalRect,
+        cell_w: f32,
+        cell_h: f32,
+        proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    ) -> bool {
         if matches_any_binding(&kb.new_window, key, mods) {
             send_app_event(proxy, crate::AppEvent::CreateWindow);
             return true;
@@ -295,6 +480,17 @@ impl MainView {
             state.prev_tab_in_pane(engine);
             return true;
         }
+        false
+    }
+
+    /// 이름 변경 계열: rename_tab / rename_workspace.
+    fn match_rename_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.rename_tab, key, mods) {
             let pane_id = state.active_workspace(engine).focused_pane;
             if let Some(pane) = state
@@ -335,6 +531,17 @@ impl MainView {
             }
             return true;
         }
+        false
+    }
+
+    /// 탐색기 계열(탐색기 포커스일 때만): explorer_refresh / explorer_go_up.
+    fn match_explorer_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.explorer_refresh, key, mods)
             && state.focused_surface_type(engine).is_kind("explorer")
         {
@@ -363,6 +570,16 @@ impl MainView {
             }
             return true;
         }
+        false
+    }
+
+    /// 커맨드 팔레트/프리셋 계열: toggle_command_palette / apply_{workspace,tab,pane}_preset.
+    fn match_preset_bindings(
+        state: &mut crate::state::AppState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.toggle_command_palette, key, mods) {
             state.command_palette.reset();
             state.dispatch_intent(
@@ -407,6 +624,18 @@ impl MainView {
             );
             return true;
         }
+        false
+    }
+
+    /// 복사 모드/워크스페이스 부제 이름변경 계열: enter_copy_mode /
+    /// rename_workspace_subtitle.
+    fn match_copy_rename_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         if matches_any_binding(&kb.enter_copy_mode, key, mods) {
             state.dialogs.pending_enter_copy_mode = true;
             return true;
