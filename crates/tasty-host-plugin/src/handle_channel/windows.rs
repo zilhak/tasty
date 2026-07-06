@@ -58,6 +58,8 @@ impl Drop for OwnedHandle {
 // SAFETY: HANDLE 은 OS 관리 정수. 스레드 간 이동/공유해도 커널이 안전 처리하며
 // CloseHandle/ReadFile/WriteFile 은 thread-safe.
 unsafe impl Send for OwnedHandle {}
+// SAFETY: HANDLE 은 OS 관리 정수. 공유 참조로 스레드 간 공유해도 커널이 안전 처리하며
+// CloseHandle/ReadFile/WriteFile 은 thread-safe(Send 와 동일 근거).
 unsafe impl Sync for OwnedHandle {}
 
 /// per-op auto-reset event 를 만든다. overlapped 완료 대기에 쓴다.
@@ -97,6 +99,7 @@ impl PipeServerStream {
         unsafe {
             ResetEvent(self.event.as_raw());
         }
+        // SAFETY: OVERLAPPED 은 POD 이며 all-zero 가 유효한 초기 상태다.
         let mut ov: OVERLAPPED = unsafe { mem::zeroed() };
         ov.hEvent = self.event.as_raw();
         let mut transferred: u32 = 0;
@@ -153,6 +156,7 @@ impl PipeServerStream {
         unsafe {
             ResetEvent(self.event.as_raw());
         }
+        // SAFETY: OVERLAPPED 은 POD 이며 all-zero 가 유효한 초기 상태다.
         let mut ov: OVERLAPPED = unsafe { mem::zeroed() };
         ov.hEvent = self.event.as_raw();
         // SAFETY: 유효 파이프 인스턴스 핸들 + overlapped.

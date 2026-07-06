@@ -115,9 +115,13 @@ mod imp {
             Ok(Self { job })
         }
 
-        /// 이미 열린 프로세스 핸들을 job 에 assign 한다. 핸들은
-        /// `PROCESS_SET_QUOTA | PROCESS_TERMINATE` 권한을 가져야 한다.
-        pub fn assign_handle(&self, process_handle: HANDLE) -> io::Result<()> {
+        /// 이미 열린 프로세스 핸들을 job 에 assign 한다.
+        ///
+        /// # Safety
+        /// `process_handle` 은 `PROCESS_SET_QUOTA | PROCESS_TERMINATE` 권한을 가진
+        /// 유효한 열린 프로세스 핸들이어야 한다(호출자 보장). 무효 핸들이면
+        /// `AssignProcessToJobObject` 가 실패를 반환할 뿐이지만 계약상 유효를 요구한다.
+        pub unsafe fn assign_handle(&self, process_handle: HANDLE) -> io::Result<()> {
             // SAFETY: job 핸들은 유효(자기 소유), process_handle 은 호출자 보장 유효.
             let ok =
                 unsafe { AssignProcessToJobObject(self.job.as_raw_handle() as HANDLE, process_handle) };
@@ -139,7 +143,9 @@ mod imp {
             // 소유권을 가져가 이 함수 종료 시 CloseHandle 한다(assign 은 job 이 자체 참조를
             // 잡으므로 이후 핸들을 닫아도 무방).
             let owned = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
-            self.assign_handle(owned.as_raw_handle() as HANDLE)
+            // SAFETY: owned 는 방금 OpenProcess 로 PROCESS_SET_QUOTA | PROCESS_TERMINATE
+            // 권한으로 연 유효 핸들이므로 assign_handle 의 안전 계약을 충족한다.
+            unsafe { self.assign_handle(owned.as_raw_handle() as HANDLE) }
         }
     }
 }

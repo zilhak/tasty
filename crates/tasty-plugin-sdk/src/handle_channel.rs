@@ -431,6 +431,8 @@ mod windows {
 
     // SAFETY: HANDLE 은 OS 관리 정수. 스레드 이동/공유 안전, 파이프 R/W thread-safe.
     unsafe impl Send for OwnedHandle {}
+    // SAFETY: HANDLE 은 OS 관리 정수. 공유 참조로 스레드 간 공유해도 안전하며
+    // 파이프 R/W 는 커널이 thread-safe 하게 처리한다(Send 와 동일 근거).
     unsafe impl Sync for OwnedHandle {}
 
     fn make_event() -> Result<OwnedHandle> {
@@ -496,6 +498,7 @@ mod windows {
             unsafe {
                 ResetEvent(self.event.0);
             }
+            // SAFETY: OVERLAPPED 은 POD 이며 all-zero 가 유효한 초기 상태다.
             let mut ov: OVERLAPPED = unsafe { mem::zeroed() };
             ov.hEvent = self.event.0;
             let mut transferred: u32 = 0;

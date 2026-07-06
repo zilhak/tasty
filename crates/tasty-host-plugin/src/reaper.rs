@@ -66,7 +66,10 @@ mod imp {
             let Some(job) = self.job.as_ref() else {
                 return Ok(());
             };
-            job.assign_handle(child.as_raw_handle() as HANDLE)
+            // SAFETY: child 는 살아있는 자식 프로세스이고 as_raw_handle 이 반환하는 것은
+            // std 가 소유한 유효한 프로세스 핸들이다(spawn 이 부여한 완전 권한 포함) →
+            // assign_handle 의 안전 계약 충족.
+            unsafe { job.assign_handle(child.as_raw_handle() as HANDLE) }
         }
     }
 }
