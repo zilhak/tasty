@@ -32,10 +32,11 @@
 use std::collections::HashSet;
 
 use winit::event::{ElementState, MouseButton};
+use winit::keyboard::{Key as WinitKey, KeyCode, NamedKey, PhysicalKey};
 
 use tasty_plugin_protocol::{
-    ModifiersWire, PointerButtonWire, RawInputEventWire, RawInputWire, SurfaceSetContextParams,
-    ThemeWire,
+    ImeWire, ModifiersWire, PointerButtonWire, RawInputEventWire, RawInputWire,
+    SurfaceSetContextParams, ThemeWire,
 };
 
 use crate::model::{PhysicalPx, PhysicalRect};
@@ -193,6 +194,56 @@ impl MainView {
     pub(super) fn egui_mesh_push_scroll(&mut self, surface_id: u32, dx: f32, dy: f32) {
         let st = self.egui_mesh.entry(surface_id).or_default();
         st.events.push(RawInputEventWire::Scroll { x: dx, y: dy });
+    }
+
+    /// 포커스된 surface 가 egui-mesh(plugin 렌더 markdown/image 등)면 그 surface_id 반환.
+    /// terminal·host-egui surface 는 `None` — 키/Text/IME forward 대상 판정에 쓴다.
+    /// `downcast` 로 실제 [`EguiMeshSurface`] 인지 확인하므로, 임의 plugin 의 `Kind`
+    /// surface(RemoteSurface 등)로 잘못 forward 되지 않는다.
+    pub(super) fn focused_egui_mesh_surface_id(&self) -> Option<u32> {
+        let sid = self.state.focused_surface_id(&self.core_state)?;
+        let surface = self.core_state.find_surface_by_id(sid)?;
+        surface
+            .as_any()
+            .downcast_ref::<EguiMeshSurface>()
+            .map(|_| sid)
+    }
+
+    /// 키 누름을 egui-mesh surface 에 누적(Key wire 이벤트). 매핑 불가한 키는 무시.
+    /// press-only — release 는 [`MainView::handle_keyboard_input`] 이 이미 걸러낸다
+    /// (egui `TextEdit` 은 press + `RawInput.modifiers`(매 set_context 최신)로 편집·
+    /// 네비게이션을 처리하므로 release 없이도 동작).
+    pub(super) fn egui_mesh_push_key(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
+        let modifiers = self.mesh_modifiers();
+        let Some(ev) = key_wire_event(
+            &event.logical_key,
+            event.physical_key,
+            matches!(event.state, ElementState::Pressed),
+            event.repeat,
+            modifiers,
+        ) else {
+            return;
+        };
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(ev);
+    }
+
+    /// 텍스트 입력을 egui-mesh surface 에 누적(Text wire 이벤트). 빈 문자열은 무시.
+    pub(super) fn egui_mesh_push_text(&mut self, surface_id: u32, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::Text {
+            text: text.to_string(),
+        });
+    }
+
+    /// IME 조합 이벤트를 egui-mesh surface 에 누적(라이브 preedit + commit). plugin 의
+    /// `TextEdit` 이 조합 중간 상태를 인라인 렌더한다(commit-only 가 아닌 라이브 표시).
+    pub(super) fn egui_mesh_push_ime(&mut self, surface_id: u32, event: ImeWire) {
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::Ime { event });
     }
 
     /// 활성 workspace 의 egui-mesh surface 들에 렌더 컨텍스트를 forward.
@@ -363,4 +414,317 @@ fn map_button(button: MouseButton) -> Option<PointerButtonWire> {
 /// `ElementState` → pressed bool 헬퍼 (호출부 가독성).
 pub(super) fn is_pressed(state: ElementState) -> bool {
     matches!(state, ElementState::Pressed)
+}
+
+/// forward 될 Key wire 이벤트를 만든다. 매핑 불가한 키는 `None`(forward 생략) —
+/// wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK 가 `Key::from_name` 으로
+/// 복원한다(매핑 불가 키는 plugin 도 무시). `KeyEvent` 전체가 아니라 구성요소를
+/// 받아 `KeyEvent` 생성 없이 단위테스트가 가능하게 한다.
+fn key_wire_event(
+    logical: &WinitKey,
+    physical: PhysicalKey,
+    pressed: bool,
+    repeat: bool,
+    modifiers: ModifiersWire,
+) -> Option<RawInputEventWire> {
+    let key = winit_key_to_egui(logical, physical)?;
+    Some(RawInputEventWire::Key {
+        key: key.name().to_string(),
+        pressed,
+        repeat,
+        modifiers,
+    })
+}
+
+/// winit 논리/물리 키를 egui `Key` 로 변환한다(egui-winit `key_from_winit_key` +
+/// `key_from_key_code` 미러). 논리 키를 우선하고, 비-라틴 레이아웃(예: 한글)에서
+/// `Ctrl+A`(select-all)·`Ctrl+화살표` 같은 편집 단축키가 **물리 키 위치**로 매칭되도록
+/// 물리 키로 폴백한다(<https://github.com/emilk/egui/issues/3653> 와 동일 근거).
+fn winit_key_to_egui(logical: &WinitKey, physical: PhysicalKey) -> Option<egui::Key> {
+    let logical = match logical {
+        WinitKey::Named(named) => named_key_to_egui(*named),
+        WinitKey::Character(s) => egui::Key::from_name(s.as_str()),
+        WinitKey::Unidentified(_) | WinitKey::Dead(_) => None,
+    };
+    let physical = match physical {
+        PhysicalKey::Code(code) => keycode_to_egui(code),
+        PhysicalKey::Unidentified(_) => None,
+    };
+    logical.or(physical)
+}
+
+/// winit `NamedKey` → egui `Key` (egui-winit `key_from_named_key` 미러).
+fn named_key_to_egui(named: NamedKey) -> Option<egui::Key> {
+    use egui::Key;
+    Some(match named {
+        NamedKey::Enter => Key::Enter,
+        NamedKey::Tab => Key::Tab,
+        NamedKey::ArrowDown => Key::ArrowDown,
+        NamedKey::ArrowLeft => Key::ArrowLeft,
+        NamedKey::ArrowRight => Key::ArrowRight,
+        NamedKey::ArrowUp => Key::ArrowUp,
+        NamedKey::End => Key::End,
+        NamedKey::Home => Key::Home,
+        NamedKey::PageDown => Key::PageDown,
+        NamedKey::PageUp => Key::PageUp,
+        NamedKey::Backspace => Key::Backspace,
+        NamedKey::Delete => Key::Delete,
+        NamedKey::Insert => Key::Insert,
+        NamedKey::Escape => Key::Escape,
+        NamedKey::Cut => Key::Cut,
+        NamedKey::Copy => Key::Copy,
+        NamedKey::Paste => Key::Paste,
+        NamedKey::Space => Key::Space,
+        NamedKey::F1 => Key::F1,
+        NamedKey::F2 => Key::F2,
+        NamedKey::F3 => Key::F3,
+        NamedKey::F4 => Key::F4,
+        NamedKey::F5 => Key::F5,
+        NamedKey::F6 => Key::F6,
+        NamedKey::F7 => Key::F7,
+        NamedKey::F8 => Key::F8,
+        NamedKey::F9 => Key::F9,
+        NamedKey::F10 => Key::F10,
+        NamedKey::F11 => Key::F11,
+        NamedKey::F12 => Key::F12,
+        NamedKey::F13 => Key::F13,
+        NamedKey::F14 => Key::F14,
+        NamedKey::F15 => Key::F15,
+        NamedKey::F16 => Key::F16,
+        NamedKey::F17 => Key::F17,
+        NamedKey::F18 => Key::F18,
+        NamedKey::F19 => Key::F19,
+        NamedKey::F20 => Key::F20,
+        NamedKey::F21 => Key::F21,
+        NamedKey::F22 => Key::F22,
+        NamedKey::F23 => Key::F23,
+        NamedKey::F24 => Key::F24,
+        NamedKey::F25 => Key::F25,
+        NamedKey::F26 => Key::F26,
+        NamedKey::F27 => Key::F27,
+        NamedKey::F28 => Key::F28,
+        NamedKey::F29 => Key::F29,
+        NamedKey::F30 => Key::F30,
+        NamedKey::F31 => Key::F31,
+        NamedKey::F32 => Key::F32,
+        NamedKey::F33 => Key::F33,
+        NamedKey::F34 => Key::F34,
+        NamedKey::F35 => Key::F35,
+        _ => return None,
+    })
+}
+
+/// winit `KeyCode`(물리 위치) → egui `Key` (egui-winit `key_from_key_code` 미러).
+fn keycode_to_egui(code: KeyCode) -> Option<egui::Key> {
+    use egui::Key;
+    Some(match code {
+        KeyCode::ArrowDown => Key::ArrowDown,
+        KeyCode::ArrowLeft => Key::ArrowLeft,
+        KeyCode::ArrowRight => Key::ArrowRight,
+        KeyCode::ArrowUp => Key::ArrowUp,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
+        KeyCode::Insert => Key::Insert,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        KeyCode::Space => Key::Space,
+        KeyCode::Comma => Key::Comma,
+        KeyCode::Period => Key::Period,
+        KeyCode::Semicolon => Key::Semicolon,
+        KeyCode::Backslash => Key::Backslash,
+        KeyCode::Slash | KeyCode::NumpadDivide => Key::Slash,
+        KeyCode::BracketLeft => Key::OpenBracket,
+        KeyCode::BracketRight => Key::CloseBracket,
+        KeyCode::Backquote => Key::Backtick,
+        KeyCode::Quote => Key::Quote,
+        KeyCode::Cut => Key::Cut,
+        KeyCode::Copy => Key::Copy,
+        KeyCode::Paste => Key::Paste,
+        KeyCode::Minus | KeyCode::NumpadSubtract => Key::Minus,
+        KeyCode::NumpadAdd => Key::Plus,
+        KeyCode::Equal => Key::Equals,
+        KeyCode::Digit0 | KeyCode::Numpad0 => Key::Num0,
+        KeyCode::Digit1 | KeyCode::Numpad1 => Key::Num1,
+        KeyCode::Digit2 | KeyCode::Numpad2 => Key::Num2,
+        KeyCode::Digit3 | KeyCode::Numpad3 => Key::Num3,
+        KeyCode::Digit4 | KeyCode::Numpad4 => Key::Num4,
+        KeyCode::Digit5 | KeyCode::Numpad5 => Key::Num5,
+        KeyCode::Digit6 | KeyCode::Numpad6 => Key::Num6,
+        KeyCode::Digit7 | KeyCode::Numpad7 => Key::Num7,
+        KeyCode::Digit8 | KeyCode::Numpad8 => Key::Num8,
+        KeyCode::Digit9 | KeyCode::Numpad9 => Key::Num9,
+        KeyCode::KeyA => Key::A,
+        KeyCode::KeyB => Key::B,
+        KeyCode::KeyC => Key::C,
+        KeyCode::KeyD => Key::D,
+        KeyCode::KeyE => Key::E,
+        KeyCode::KeyF => Key::F,
+        KeyCode::KeyG => Key::G,
+        KeyCode::KeyH => Key::H,
+        KeyCode::KeyI => Key::I,
+        KeyCode::KeyJ => Key::J,
+        KeyCode::KeyK => Key::K,
+        KeyCode::KeyL => Key::L,
+        KeyCode::KeyM => Key::M,
+        KeyCode::KeyN => Key::N,
+        KeyCode::KeyO => Key::O,
+        KeyCode::KeyP => Key::P,
+        KeyCode::KeyQ => Key::Q,
+        KeyCode::KeyR => Key::R,
+        KeyCode::KeyS => Key::S,
+        KeyCode::KeyT => Key::T,
+        KeyCode::KeyU => Key::U,
+        KeyCode::KeyV => Key::V,
+        KeyCode::KeyW => Key::W,
+        KeyCode::KeyX => Key::X,
+        KeyCode::KeyY => Key::Y,
+        KeyCode::KeyZ => Key::Z,
+        KeyCode::F1 => Key::F1,
+        KeyCode::F2 => Key::F2,
+        KeyCode::F3 => Key::F3,
+        KeyCode::F4 => Key::F4,
+        KeyCode::F5 => Key::F5,
+        KeyCode::F6 => Key::F6,
+        KeyCode::F7 => Key::F7,
+        KeyCode::F8 => Key::F8,
+        KeyCode::F9 => Key::F9,
+        KeyCode::F10 => Key::F10,
+        KeyCode::F11 => Key::F11,
+        KeyCode::F12 => Key::F12,
+        KeyCode::F13 => Key::F13,
+        KeyCode::F14 => Key::F14,
+        KeyCode::F15 => Key::F15,
+        KeyCode::F16 => Key::F16,
+        KeyCode::F17 => Key::F17,
+        KeyCode::F18 => Key::F18,
+        KeyCode::F19 => Key::F19,
+        KeyCode::F20 => Key::F20,
+        KeyCode::F21 => Key::F21,
+        KeyCode::F22 => Key::F22,
+        KeyCode::F23 => Key::F23,
+        KeyCode::F24 => Key::F24,
+        KeyCode::F25 => Key::F25,
+        KeyCode::F26 => Key::F26,
+        KeyCode::F27 => Key::F27,
+        KeyCode::F28 => Key::F28,
+        KeyCode::F29 => Key::F29,
+        KeyCode::F30 => Key::F30,
+        KeyCode::F31 => Key::F31,
+        KeyCode::F32 => Key::F32,
+        KeyCode::F33 => Key::F33,
+        KeyCode::F34 => Key::F34,
+        KeyCode::F35 => Key::F35,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::SmolStr;
+
+    fn phys(code: KeyCode) -> PhysicalKey {
+        PhysicalKey::Code(code)
+    }
+
+    // 명명 키(Space/Enter/화살표)는 논리 키만으로 매핑된다.
+    #[test]
+    fn named_keys_map_from_logical() {
+        assert_eq!(
+            winit_key_to_egui(&WinitKey::Named(NamedKey::Space), phys(KeyCode::Space)),
+            Some(egui::Key::Space)
+        );
+        assert_eq!(
+            winit_key_to_egui(
+                &WinitKey::Named(NamedKey::Enter),
+                PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Unidentified)
+            ),
+            Some(egui::Key::Enter)
+        );
+    }
+
+    // 라틴 문자 키는 논리 키(`Key::from_name`)로 매핑된다.
+    #[test]
+    fn latin_char_maps_from_logical() {
+        let a: SmolStr = "a".into();
+        assert_eq!(
+            winit_key_to_egui(&WinitKey::Character(a), phys(KeyCode::KeyA)),
+            Some(egui::Key::A)
+        );
+    }
+
+    // 비-라틴(한글) 논리 문자는 `from_name` 이 None → 물리 키로 폴백해 편집 단축키
+    // (Ctrl+A select-all 등)가 물리 위치로 매칭된다.
+    #[test]
+    fn non_latin_char_falls_back_to_physical() {
+        let hangul: SmolStr = "ㅁ".into();
+        assert_eq!(
+            winit_key_to_egui(&WinitKey::Character(hangul), phys(KeyCode::KeyA)),
+            Some(egui::Key::A)
+        );
+    }
+
+    // 논리·물리 모두 매핑 불가면 None → forward 생략.
+    #[test]
+    fn unmappable_key_is_none() {
+        let dead: SmolStr = "\u{1}".into();
+        assert_eq!(
+            winit_key_to_egui(
+                &WinitKey::Character(dead),
+                PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Unidentified)
+            ),
+            None
+        );
+    }
+
+    // key_wire_event: 매핑된 키는 egui `Key::name()` 문자열 + pressed/repeat/modifiers
+    // 를 담은 Key wire 이벤트를 만든다. plugin 이 `Key::from_name` 으로 복원 가능해야 한다.
+    #[test]
+    fn key_wire_event_carries_egui_key_name() {
+        let mods = ModifiersWire {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        };
+        let ev = key_wire_event(
+            &WinitKey::Character("a".into()),
+            phys(KeyCode::KeyA),
+            true,
+            false,
+            mods,
+        )
+        .expect("mapped");
+        match ev {
+            RawInputEventWire::Key {
+                key,
+                pressed,
+                repeat,
+                modifiers,
+            } => {
+                assert_eq!(egui::Key::from_name(&key), Some(egui::Key::A));
+                assert!(pressed);
+                assert!(!repeat);
+                assert!(modifiers.ctrl && modifiers.command);
+            }
+            other => panic!("expected Key wire event, got {other:?}"),
+        }
+    }
+
+    // 매핑 불가한 키는 wire 이벤트를 만들지 않는다(forward 생략).
+    #[test]
+    fn key_wire_event_skips_unmappable() {
+        let ev = key_wire_event(
+            &WinitKey::Character("\u{1}".into()),
+            PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Unidentified),
+            true,
+            false,
+            ModifiersWire::default(),
+        );
+        assert!(ev.is_none());
+    }
 }
