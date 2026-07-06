@@ -15,8 +15,9 @@ plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를
           │  SharedBuffer 에 write + commit(footer generation)
           ▼  PluginEvent::PaintFrame { surface_id, buffer_id, generation,
           │                            frame_seq, full_textures }
-[host]  frame_seq 체인 검증(아래 "텍스처 상태 수명 + delta 체인") 통과 시
-          SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
+[host]  SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
+          → frame_seq 체인 검증(아래 "텍스처 상태 수명 + delta 체인"): delta 적용은 체인
+            연속(또는 full)일 때만, mesh 채택은 참조 텍스처 상주 시 seq 불연속이어도 수행
           → 전용 egui_wgpu::Renderer 에 update_texture/update_buffers/render
           → surface 물리 rect 으로 평행이동 + scissor 합성
 ```
@@ -136,21 +137,36 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    (`AppState::egui_mesh_surfaces_existing`). 비가시 surface 의 도착 frame 도 매 tick
    디코드해 delta 체인을 유지한다(합성만 skip) — 탭/workspace 전환 후 복귀 시 재전송
    왕복 없이 즉시 정상 합성된다. 비가시 GPU 텍스처 상주는 의도된 비용이다.
-2. **frame_seq 체인 검증 + full 재전송** — plugin SDK 는 송신 frame 마다 단조 시퀀스
-   `frame_seq`(buffer 재생성과 무관)를 `PaintFrame` 메타에 싣는다. host 는
-   `frame_seq == last + 1` 이 아니면(관측 누락) frame 을 **수락하지 않고** 다음
-   set_context 에 `need_full_textures` 를 실어 보낸다. SDK 는 자기가 보낸 텍스처 상태를
-   누적 보관(`EguiMeshCore::tex_state` — full 교체 / patch 합성 / free 제거)하다가, 이
-   요청에 dedup 을 우회하고 **전체 텍스처 상태를 full image 로 동봉**한 frame 을
-   `full_textures = true` 로 재송신한다. host 는 full frame 을 체인과 무관하게 수락하고
-   자기 텍스처 상태를 리셋한다(full 미포함 텍스처는 free). Context 생성 직후 첫 frame 도
-   자연-full 로 마킹돼, bootstrap 직후 gen1 이 덮여도(생성 race) 같은 경로로 회복된다.
+2. **frame_seq 체인 검증 + full 재전송 (텍스처 delta 한정)** — plugin SDK 는 송신 frame
+   마다 단조 시퀀스 `frame_seq`(buffer 재생성과 무관)를 `PaintFrame` 메타에 싣는다. host
+   는 `frame_seq == last + 1` 이 아니면(관측 누락) 그 frame 에 실렸던 `textures_delta` 가
+   유실됐다고 보고 **delta 를 적용하지 않는다**(`chain_accepts`). 대신 다음 set_context 에
+   `need_full_textures` 를 실어 보낸다. SDK 는 자기가 보낸 텍스처 상태를 누적 보관
+   (`EguiMeshCore::tex_state` — full 교체 / patch 합성 / free 제거)하다가, 이 요청에 dedup
+   을 우회하고 **전체 텍스처 상태를 full image 로 동봉**한 frame 을 `full_textures = true`
+   로 재송신한다. host 는 full frame 을 체인과 무관하게 수락하고 자기 텍스처 상태를
+   리셋한다(full 미포함 텍스처는 free). Context 생성 직후 첫 frame 도 자연-full 로 마킹돼,
+   bootstrap 직후 gen1 이 덮여도(생성 race) 같은 경로로 회복된다.
 
-요청 플래그의 흐름: 렌더 prepare 가 체인 단절을 감지하면 `GpuState` 의 요청 대기열에
-적재 → redraw 가 drain 해 surface 는 forward 추적 상태(`MeshForwardState::pending_full`)에,
-popup/banner 는 `AppState` 의 `plugin_mesh_{popup,banner}_full_requests` 에 옮김 → 다음
-tick 의 forward 가 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막
-geom/theme 으로 송신). popup/banner 도 같은 체인 규칙을 쓴다.
+   **재무장(single-shot deadlock 제거)**: 요청한 full frame 이 다시 latest-wins 버퍼에서
+   유실될 수 있으므로, host 는 수락될 때까지 **매 tick full 재전송을 재요청**한다(로그는
+   최초 1회만). frame 수락 시 해제되어 다음 단절 때 다시 요청·로그한다.
+3. **mesh(기하) 채택은 delta 체인과 분리** — reflow frame 의 mesh 는 자기완결적 기하라
+   중간 frame 유실(delta 손실)과 무관하다. 따라서 위 체인 가드는 **텍스처 delta 적용
+   여부만** 막고, mesh 채택은 `decode_mesh_into_target` 이 디코드 후 별도 판정한다: seq 가
+   불연속이어도 이 frame 의 mesh 가 참조하는 모든 `TextureId` 가 이미 상주(`live_textures`)
+   하면(`all_textures_live`) mesh 를 채택하고 `last_seq` 를 갱신한다(다음 frame 이 자연
+   연속이 되어 delta 게이트도 self-heal). 참조가 하나라도 미상주면(image plugin 신규 비트맵
+   등) 종전대로 mesh 도 보류하고 full 을 재요청한다. 이 분리로 리사이즈/split 로 폭이
+   바뀔 때 seq 가 튀어도 markdown 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시
+   reflow 된다. markdown 은 참조가 항상 폰트 atlas(상주)라 즉시 채택된다.
+
+요청 플래그의 흐름: 렌더 prepare 가 체인 단절 + 미상주 참조를 감지하면 `GpuState` 의 요청
+대기열에 적재 → redraw 가 drain 해 surface 는 forward 추적 상태
+(`MeshForwardState::pending_full`)에, popup/banner 는 `AppState` 의
+`plugin_mesh_{popup,banner}_full_requests` 에 옮김 → 다음 tick 의 forward 가
+`need_full_textures` set_context 를 송신(비가시 surface 는 마지막 geom/theme 으로 송신).
+popup/banner 도 같은 체인 규칙·재무장·mesh 분리 규칙을 공유한다.
 
 ## 입력 forward · identity 경계
 
