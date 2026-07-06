@@ -973,4 +973,48 @@ mod tests {
         let sections: Vec<HintSection> = build_hint_sections(ctrl, &kb, "ctrl", false, &[]);
         assert!(!sections.is_empty());
     }
+
+    /// ADR-0037: 바인딩·역할이 전무한 조합을 홀드해도 오버레이는 visible 이고, debug 덤프의
+    /// 해당 섹션은 `empty:true` 로 표시된다(draw 가 "바인딩 없음" 플레이스홀더로 렌더).
+    #[test]
+    fn debug_state_marks_empty_combo_and_stays_visible() {
+        use tasty_settings::{KeybindingSettings, Settings};
+        let mut settings = Settings::default();
+        // 모든 바인딩을 비워 어떤 조합에도 행이 안 붙게 한다.
+        for (field_id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            settings.keybindings.clear_field(field_id);
+        }
+        settings.keybindings.script_bindings.clear();
+        // 역할도 안 붙게: switch modifier 를 Ctrl/Alt 아닌 값으로, link 는 none.
+        settings.keybindings.tab_switch_modifier = "shift".into();
+        settings.keybindings.workspace_switch_modifier = "shift".into();
+        settings.general.link_click_modifier = "none".into();
+        settings.modifier_hint.enabled = true;
+
+        let mut rt = ModifierHintRuntime::default();
+        rt.update_hold(true, true, false, false); // Ctrl+Alt 홀드
+        rt.debug_backdate(std::time::Duration::from_millis(5000)); // 표시 지연 게이트 통과
+
+        let theme = tasty_themes::mocha_fallback();
+        let v = debug_state_json(&rt, &settings, &theme, false);
+
+        // 미할당 조합이라도 패널은 뜬다(이전엔 visible:false 였음).
+        assert_eq!(v["visible"], serde_json::json!(true), "dump={v}");
+        let sections = v["sections"].as_array().expect("sections 배열");
+        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true.
+        let ctrl_alt = sections
+            .iter()
+            .find(|s| s["combo"] == serde_json::json!("Ctrl+Alt"))
+            .expect("Ctrl+Alt 섹션 존재");
+        assert_eq!(ctrl_alt["empty"], serde_json::json!(true));
+        assert!(ctrl_alt["rows"].as_array().unwrap().is_empty());
+        assert!(ctrl_alt["roles"].as_array().unwrap().is_empty());
+        // 모든 섹션이 빈 섹션이어야 한다(전부 미할당).
+        assert!(
+            sections
+                .iter()
+                .all(|s| s["empty"] == serde_json::json!(true)),
+            "dump={v}"
+        );
+    }
 }

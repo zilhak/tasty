@@ -772,4 +772,30 @@ mod tests {
             .expect("alt 섹션 존재");
         assert!(alt_sec.is_empty());
     }
+
+    #[test]
+    fn mixed_hold_keeps_filled_and_empty_sections() {
+        // ADR-0037: Ctrl 홀드 시 채워진 섹션과 빈(플레이스홀더) 섹션이 한 리스트에 공존.
+        let mut kb = KeybindingSettings::preset_tasty();
+        for (field_id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            kb.clear_field(field_id);
+        }
+        kb.script_bindings.clear();
+        // Ctrl 단독에만 바인딩 하나 남긴다. switch modifier 는 Ctrl 계열 아님(역할 배제).
+        kb.new_tab = vec!["ctrl+k".to_string()];
+        kb.tab_switch_modifier = "shift".into();
+        kb.workspace_switch_modifier = "shift".into();
+        let sections = build_hint_sections(ctrl(), &kb, "none", false, &[]);
+        // Ctrl 섹션은 바인딩이 있어 채워짐.
+        let ctrl_sec = sections
+            .iter()
+            .find(|s| s.combo == ctrl())
+            .expect("ctrl 섹션 존재");
+        assert!(!ctrl_sec.is_empty(), "Ctrl 섹션은 비지 않아야 함");
+        // 상위집합(Ctrl+Alt 등) 중 최소 하나는 빈 섹션으로 유지된다.
+        assert!(
+            sections.iter().any(|s| s.combo != ctrl() && s.is_empty()),
+            "빈 상위조합 섹션이 유지되어야 함"
+        );
+    }
 }
