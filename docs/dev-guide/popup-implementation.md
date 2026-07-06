@@ -83,6 +83,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 ### 이동 / 리사이즈
 
 - **이동**: `drag_handle` 으로 선언한 영역을 클릭+드래그 → 스코프 경계 안에서 위치 이동. 타이틀바 팝업은 `DragHandle::TitleBar`(기본). 타이틀바 없는 팝업은 `DragHandle::Region(fn)` 으로 pos/size 로부터 핸들 띠를 직접 계산해 선언한다.
+  - **실측 헤더 rect 보고(헤더 전체 드래그)**: 헤더 높이가 host zoom·팝업별로 달라 정적 리터럴로 못 잡는 headless 패널(`port_scanner`·`remote_tool`)은, 뷰가 렌더 시점의 실제 헤더 rect(전체폭 × 실측 높이)를 `popup::report_header_drag_rect(ctx, popup_id, rect)` 로 매니저에 보고한다. hit-test(`effective_drag_handle_rect`)는 보고된 rect 를 `Region` 정적 띠보다 **우선** 사용해 헤더 전체를 이동 영역으로 만든다. 보고는 hit-test 보다 뒤(콘텐츠 렌더 시점)라 **직전 프레임** 값을 쓰며(1프레임 지연), open 첫 프레임엔 보고가 없어 정적 띠로 폴백한다. 또한 헤더 텍스트 라벨은 각 헤더 함수 최상단에서 `selectable_labels = false` 로 비선택 처리해 글자 위 드래그가 텍스트 선택으로 가로채지지 않게 한다.
   - **위젯 우선 중재(`is_using_pointer`)**: 이동/리사이즈의 *START 판정* 은 콘텐츠 렌더 **뒤** 에서 `ctx.is_using_pointer()` 게이트로 한다. 이번 프레임에 egui 위젯(버튼·입력)이 프레스를 가져갔으면 이동/리사이즈는 발동하지 않는다 → 핸들 띠가 위젯과 겹쳐도 **위젯이 항상 우선**(입력 우선순위: 위젯 > 리사이즈 > 이동). 따라서 `Region` 은 헤더 띠 전체처럼 넓은 영역을 가리켜도 안전하다(예: `port_scanner` 가 좁은 폭에서 좌측 띠와 검색 입력이 겹쳐도 입력 클릭이 우선). 단 **close 버튼은 매니저가 직접 페인팅** 한 영역이라 egui 위젯이 아니므로 `is_using_pointer` 에 안 잡힌다 → close 는 콘텐츠 렌더 *전* 에 따로 hit-test 해 우선 처리한다.
 - **리사이즈**: `resizable: true` 팝업은 테두리 밴드(약 6px)를 잡아 8방향으로 크기 조절. 우선순위는 **close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠**.
 
