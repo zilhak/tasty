@@ -321,6 +321,9 @@ pub fn draw_modifier_hint(
         settings.general.workspace_categories_enabled,
         &[], // plugin_bindings: PluginManager 는 App 소유라 draw 경로 미도달 → 후속 배선(open).
     );
+    // 방어적 가드 — ADR-0037 이후 홀드 가능한 실경로에선 항상 최소 홀드 조합 자신의
+    // 섹션이 남아 비지 않는다(빈 섹션도 유지되고 플레이스홀더로 렌더). 만일의 빈 목록엔
+    // 빈 셸을 그리지 않고 조용히 빠진다.
     if sections.is_empty() {
         return result;
     }
@@ -616,15 +619,45 @@ fn draw_section(ui: &mut egui::Ui, theme: &Theme, sec: &HintSection) {
             theme.modhint_separator().to_egui(),
         ),
     );
-    ui.add_space(theme.modhint_row_gap().value());
+    // 빈 조합 섹션은 내부 간격을 좁게(3px vs 6px) 잡아, 항상 표시되는 빈 섹션이
+    // 리스트를 과하게 늘어뜨리지 않게 한다(ADR-0037, 디자인 §6-5). 섹션 간 간격은 불변.
+    let content_gap = if sec.is_empty() {
+        theme.modhint_empty_row_gap().value()
+    } else {
+        theme.modhint_row_gap().value()
+    };
+    ui.add_space(content_gap);
 
-    ui.spacing_mut().item_spacing.y = theme.modhint_row_gap().value();
-    for row in &sec.rows {
-        draw_row(ui, theme, row);
+    ui.spacing_mut().item_spacing.y = content_gap;
+    if sec.is_empty() {
+        // 바인딩·역할이 모두 없는 조합 → "바인딩 없음" 플레이스홀더 한 줄(ADR-0037).
+        draw_empty_row(ui, theme);
+    } else {
+        for row in &sec.rows {
+            draw_row(ui, theme, row);
+        }
+        for role in &sec.roles {
+            draw_role_row(ui, theme, *role);
+        }
     }
-    for role in &sec.roles {
-        draw_role_row(ui, theme, *role);
-    }
+}
+
+/// 빈 조합 플레이스홀더 행 — muted 텍스트("바인딩 없음") 한 줄. 부재 신호라 리스트에서
+/// 가장 조용하다: 키캡 없음 · wash 없음 · leading 글리프 없음 · 호버/포커스 없음(정적).
+/// 디자인 `explorations/modifier-hint-empty-section.html` `.mh-empty` 전사.
+fn draw_empty_row(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal(|ui| {
+        // 키캡 행(24px)보다 타이트한 20px 최소 높이(디자인 §6-5).
+        ui.set_min_height(theme.modhint_empty_row_min_height().value());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(t("modifier_hint.empty"))
+                    .size(theme.font_size_body.value())
+                    .color(theme.modhint_empty_fg().to_egui()),
+            )
+            .selectable(false),
+        );
+    });
 }
 
 /// 액션 행 — (plugin 이면 agent dot) + 라벨 + 우측 Kbd.
