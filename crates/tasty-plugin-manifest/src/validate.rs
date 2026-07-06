@@ -334,6 +334,7 @@ impl Manifest {
         Ok(())
     }
 
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — manifest contributes 검증(항목별 prefix/중복/포맷 체크). 항목별 validator 분리 여지, 게이트와 별건
     fn validate_contributes(&self) -> anyhow::Result<()> {
         let mut seen_prefixes = HashSet::new();
         for ns in &self.contributes.ipc_namespace {

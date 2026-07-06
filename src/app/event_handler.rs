@@ -8,6 +8,7 @@ use crate::view::{ViewAction, ViewCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit AppEvent 평면 match 디스패치 — 이벤트 variant별 arm 나열
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::CreateWindow => {
@@ -354,6 +355,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit WindowEvent 평면 match 디스패치 — 이벤트 variant별 arm 나열
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {

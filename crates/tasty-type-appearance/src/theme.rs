@@ -623,6 +623,7 @@ impl PartialColors {
 
 impl ThemeColors {
     /// `Some(v)` 인 필드만 자기 자신에 덮어쓴다. (None 은 보존)
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 평면 per-필드 Option 병합 — 색 필드 수만큼 동일 if-let 반복, 중첩 없음(clippy 과대계상)
     pub fn apply_partial(&mut self, p: &PartialColors) {
         if let Some(v) = p.crust {
             self.crust = v;
@@ -1706,6 +1707,7 @@ mod tests {
 
     /// A2: semantic 접근자가 A1 크로스워크대로 primitive 필드에 매핑되는지 고정.
     #[test]
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn semantic_accessors_map_to_primitives() {
         let th = Theme::with_colors(distinct_colors(), false);
 
@@ -1803,6 +1805,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn zoom_one_preserves_sizing() {
         let base = Theme::with_colors(dummy_colors(), false);
         let zoomed = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
@@ -2125,6 +2128,7 @@ mod tests {
     /// zoom 1.0 에서 component 접근자가 tasty-ui-widgets 이식 전 위젯이 쓰던 값과
     /// 정확히 일치함을 대표 속성으로 실측 대조 (갤러리 픽셀 diff 0 의 근거).
     #[test]
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn component_accessors_invariant_at_zoom_one() {
         let t = Theme::with_colors(dummy_colors(), false);
         // primitive-직접 종착 — 구 매직넘버/파일 const 값이 zoom 1.0 에서 고정.

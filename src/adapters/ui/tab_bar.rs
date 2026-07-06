@@ -146,6 +146,7 @@ pub struct PaneTabBarsOutput {
 }
 
 /// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — pane별 탭바 horizontal 클로저 나열이 구조적(clippy 가 클로저를 과대계상)
 pub fn draw_pane_tab_bars_view(
     ctx: &egui::Context,
     props: &PaneTabBarsProps<'_>,

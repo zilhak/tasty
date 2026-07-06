@@ -18,6 +18,7 @@ struct EguiPanelInfo {
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
 /// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
 /// Supports both standalone non-terminal tabs and non-terminal leaves within split tabs.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — panel kind별 렌더 분기, 클로저 중첩이 구조적
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,

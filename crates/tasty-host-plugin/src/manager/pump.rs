@@ -26,6 +26,7 @@ impl PluginManager {
     /// 리스트. 호출자 (App) 가 `finalize_plugin_hello` 로 surface_kind registry
     /// 등록 + CoreEvent (PluginLoaded / PluginSurfaceKindRegistered) 발화를
     /// 처리한다 (D.3.C.G.2.e). 비어있으면 finalize 안 호출.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin→host 이벤트 펌프(hello/call/publish/register 다단계 수집). 게이트 도입과 별건
     pub fn pump(&mut self) -> Vec<(String, String)> {
         // 1. plugin → 호스트 이벤트 처리
         let mut hello_log: Vec<(String, String)> = Vec::new();

@@ -341,6 +341,7 @@ impl CellRenderer {
     /// Append instances for the current-screen path (no scrollback).
     /// Equivalent to the previous `prepare_with_bg`, but operates in append mode.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — GPU 셀 인스턴스 append(스타일/커서/셀 분기 밀집). hot path 라 분해 신중
     fn fill_surface(
         &mut self,
         surface: &Surface,

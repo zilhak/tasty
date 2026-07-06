@@ -2,6 +2,7 @@
 
 use crate::commands::ApprovalCommands;
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: CLI enum→(method,params) 평면 match 매핑 — arm 나열, 중첩 없음
 pub(super) fn approval_command_to_method_params(
     command: &ApprovalCommands,
 ) -> (&'static str, serde_json::Value) {

@@ -11,6 +11,7 @@ use termwiz::surface::{Change, CursorVisibility};
 use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
 impl TerminalState {
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: OSC 커맨드 평면 match 디스패치 — 시퀀스별 arm 나열, 중첩 얕음
     pub(crate) fn map_osc(&mut self, osc: OperatingSystemCommand) {
         match osc {
             OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {

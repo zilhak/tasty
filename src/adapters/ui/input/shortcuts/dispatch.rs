@@ -14,6 +14,7 @@ impl MainView {
     /// 단축키와 정확히 같은 효과를 내며, Command Palette / 외부 자동화에서 호출한다.
     ///
     /// Returns true if the action was recognized and dispatched. Unknown action_id는 false.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: action_id 문자열→액션 평면 match 디스패치 — 단축키와 1:1, arm 나열
     pub(crate) fn dispatch_action_by_id(&mut self, action_id: &str) -> bool {
         use crate::adapters::ui::popup::PopupScope;
         use crate::model::SplitDirection;

@@ -255,6 +255,7 @@ fn resolve_drop_section(spans: &[SectionSpan], y: f32) -> Option<&SectionSpan> {
 
 /// Pure view: full sidebar 내부 (SidePanel 안쪽 ui) 를 그리고 action 리스트
 /// 를 반환. 호출처는 SidePanel 을 직접 연다.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — ScrollArea show 클로저 내부 위젯 나열이 구조적(clippy 가 클로저를 과대계상)
 pub fn draw_full_sidebar_view(
     ui: &mut egui::Ui,
     props: &SidebarFullProps<'_>,

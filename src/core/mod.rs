@@ -1397,6 +1397,7 @@ impl Core {
     /// workspace 단계까지 자동 cascade. 옛 `close_surface_by_id_inner` 의 4-case
     /// 코드 이동. cleanup_surface / memory purge / active_workspace 보정 /
     /// auto-recreate 는 cascade + caller 책임.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — surface→tab→pane→workspace cascade close 4단계
     fn apply_close_surface(
         engine: &mut crate::core::CoreState,
         surface_id: u32,

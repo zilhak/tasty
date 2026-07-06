@@ -16,6 +16,7 @@ impl App {
     /// 끝난 후 `dispatch_domain_intent` (App-level cascade) 로 일괄 처리. 두
     /// 단계 분리 이유: `dispatch_domain_intent` 가 `&mut self` 필요하지만 per-state
     /// loop 는 `&mut self.view.views[id]` 를 잡고 있어 동시 borrow 불가.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — intent 큐 드레인 2단계(per-state batch + domain cascade). borrow 분리 제약상 한 함수
     pub(crate) fn dispatch_pending_intents(&mut self) {
         use crate::intent::{Intent, UiIntent};
         // 모든 windows + parked_states 에서 드레인한 뒤 일괄 처리.

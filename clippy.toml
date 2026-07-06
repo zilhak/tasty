@@ -1,5 +1,14 @@
 # Tasty 워크스페이스 clippy 정책.
 #
+# cognitive-complexity-threshold: 복잡도 게이트(파트 A)의 임계값.
+#   함수 cognitive complexity 가 이 값을 넘으면 `cognitive_complexity` lint 발동.
+#   Cargo.toml [workspace.lints.clippy] 에서 deny 로 승격 → 신규 초과 함수는 빌드 에러.
+#   기존 초과 함수는 위치 단위 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: …`
+#   로 동결(grandfather). 20 은 rca cognitive ≈ 50 등가로, egui 즉시모드 draw 는
+#   clippy 가 자동 배제하므로 실 로직 hotspot 만 표면화한다.
+#   상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+cognitive-complexity-threshold = 20
+
 # disallowed-methods: 색을 "디자인" 하는 함수의 우연한 호출을 차단.
 # 정상 경로는 단 두 가지뿐 — `~/.tasty/themes/*.toml` 또는 tasty-themes 의 const.
 #

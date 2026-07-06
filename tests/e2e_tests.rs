@@ -7,6 +7,7 @@ use std::time::Duration;
 /// All e2e tests run on a single shared tasty instance.
 /// This minimizes window spawn/kill (which steals OS focus).
 #[test]
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 순차 e2e 스텝 나열 — 단일 tasty 인스턴스 공유(포커스 도난 최소화) 설계상 한 함수, clippy 과대계상
 fn all_e2e_tests() {
     let tasty = TastyInstance::spawn();
     let sid = tasty.first_surface_id();

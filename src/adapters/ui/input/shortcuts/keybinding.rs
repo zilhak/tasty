@@ -14,6 +14,7 @@ use super::{focused_explorer_surface_id, matches_any_binding, send_app_event};
 
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — 단축키 binding 매칭 dispatch(다수 binding 분기). 게이트와 별건
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,

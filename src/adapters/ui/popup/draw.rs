@@ -44,6 +44,7 @@ impl PopupManager {
     /// Draw all open popups. The `content_fn` callback is invoked for each popup with its id.
     /// `draw_ctx` provides scope context for visibility and boundary clamping.
     /// Returns draw result including closed popup IDs and hover state for input layer.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — 열린 popup별 content_fn 콜백 + 경계 clamp, 클로저 중첩이 구조적
     pub fn draw(
         &mut self,
         ctx: &egui::Context,

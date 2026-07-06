@@ -152,6 +152,7 @@ impl AppState {
         closed
     }
 
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — surface close inner(cleanup/snapshot/active 보정 분기)
     fn close_surface_by_id_inner(
         &mut self,
         engine: &mut CoreState,

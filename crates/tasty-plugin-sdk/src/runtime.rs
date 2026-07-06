@@ -62,6 +62,7 @@ impl DispatchError {
     }
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin 런타임 부트스트랩(watchdog/env/hello/메시지 루프 순차 셋업). 게이트와 별건
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
     // macOS: 부모(tasty) 사망 감시 watchdog 시작. PDEATHSIG 등가물이 없어 자식

@@ -190,6 +190,7 @@ impl MainView {
     /// Synchronize native WebView instances with the current state.
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — Html webview 생성/파괴/bounds 동기화 분기
     fn sync_webviews(&mut self) {
         let terminal_rect = self.compute_terminal_rect();
         let scale_factor = self.base.gpu.scale_factor() as f64;
@@ -1065,6 +1066,7 @@ impl MainView {
         self.mark_dirty();
     }
 
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — explorer 네이티브 메뉴 액션 분기 처리
     fn handle_explorer_native_menu(
         &mut self,
         surface_id: u32,

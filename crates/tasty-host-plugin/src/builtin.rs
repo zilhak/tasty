@@ -449,6 +449,7 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
 ///    빈 리스트로 둔 경우(`granted = []`)는 entry는 있으니 건드리지 않는다.
 ///
 /// 실패한 항목은 warn 로그만 남기고 계속 진행 (다른 builtin은 영향 없음).
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — builtin 설치·복구 로직(항목별 조건 분기 + warn 후 계속). 게이트 도입과 별건
 pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     let dest_root = match discovery::plugin_root() {
         Some(p) => p,
@@ -644,6 +645,7 @@ pub struct BuiltinUpgradeReport {
 /// 실행 중 plugin process 의 binary 가 교체될 수 있다 (POSIX 는 inode 교체로 안전,
 /// Windows 는 sharing violation 가능). 본 함수는 *process 재시작을 수행하지 않는다*
 /// — 새 binary 는 다음 plugin restart (또는 부팅) 후 효과 발생.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — builtin 업그레이드 판정(force/restore/restart 조합 분기). 게이트 도입과 별건
 pub fn upgrade_builtins(
     mgr: &mut PluginManager,
     force: bool,

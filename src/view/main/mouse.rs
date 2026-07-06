@@ -223,6 +223,7 @@ impl MainView {
         // Cursor icon is determined in the egui render cycle (gpu/mod.rs)
     }
 
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — 마우스 입력 라우팅(히트테스트/드래그/셀렉션 분기). 실 리팩터 대상
     pub(super) fn handle_mouse_input(
         &mut self,
         button_state: ElementState,

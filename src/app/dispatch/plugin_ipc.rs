@@ -11,6 +11,7 @@ impl App {
     /// 다른 plugin이 점유한 namespace prefix와 매칭되면 `forward_namespace_call_from_plugin`
     /// 경로로 우회 (응답은 target plugin이 줄 때까지 보류되며 main loop 다음 tick에서
     /// caller plugin에 `ipc.result`로 회신).
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — plugin IPC 호출 라우팅(권한 게이트 + namespace forward 분기)
     pub(crate) fn process_plugin_ipc_calls(&mut self) {
         let calls = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.take_pending_plugin_calls(),

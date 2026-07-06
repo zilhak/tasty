@@ -22,6 +22,7 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
     }
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — workspace→pane→tab→surface 4중 nested 트리 렌더. 레벨별 헬퍼 분리 여지 있으나 게이트 도입과 별건
 fn format_tree(result: &serde_json::Value) {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {

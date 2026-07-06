@@ -149,6 +149,7 @@ fn link_identity_passkey(passkeys: &mut Passkeys, name: &str, identity: &str) ->
 }
 
 /// `tasty tool remote-profile ...` 로컬 분기 진입점(IPC 미경유).
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: CLI 서브커맨드 평면 match 디스패치 — arm 수 많으나 중첩 얕음, 분해 시 라우팅 추적만 어려워짐
 pub fn run(command: &RemoteProfileCommands) -> Result<()> {
     match command {
         RemoteProfileCommands::AddSsh {
