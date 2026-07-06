@@ -449,7 +449,6 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
 ///    빈 리스트로 둔 경우(`granted = []`)는 entry는 있으니 건드리지 않는다.
 ///
 /// 실패한 항목은 warn 로그만 남기고 계속 진행 (다른 builtin은 영향 없음).
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — builtin 설치·복구 로직(항목별 조건 분기 + warn 후 계속). 게이트 도입과 별건
 pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     let dest_root = match discovery::plugin_root() {
         Some(p) => p,
@@ -465,126 +464,158 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         let dest = dest_root.join(spec.id);
         let already_present = dest.exists();
 
-        // Step 1: 번들에서 복사. 신규 설치 + 기존 설치된 builtin의 manifest/binary
-        // 갱신을 동일 경로에서 처리한다. builtin은 호스트 소유 리소스이므로(사용자가
-        // 직접 편집하는 용도가 아님) 버전/mtime 비교 없이 번들본으로 **항상 무조건
-        // 덮어쓴다** — dev(`just run`)·배포(dmg) 모두 동일 정책이라, 새 빌드/설치를
-        // 띄우면 plugin 버전 bump 여부와 무관하게 최신 번들이 반영된다. 단 사용자가
-        // 명시 제거한 builtin(is_builtin_removed)은 복원하지 않는다(아래 가드).
-        if !mgr.config.is_builtin_removed(spec.id)
-            && let Some(bundle) = bundle.as_ref()
-        {
-            let src = bundle.join(spec.id);
-            if !src.is_dir() {
-                tracing::debug!(
-                    "builtin plugin '{}' not in bundle ({}), skipping",
-                    spec.id,
-                    src.display()
-                );
-            } else {
-                if let Err(e) = std::fs::create_dir_all(&dest_root) {
-                    tracing::warn!(
-                        "install_builtins: mkdir {} failed: {e}",
-                        dest_root.display()
-                    );
-                    continue;
-                }
-                if already_present {
-                    let installed_v = read_installed_version(&dest);
-                    let bundle_v = read_bundle_version(&src);
-                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), true) {
-                        BuiltinUpgradeDecision::Skip => {
-                            tracing::debug!(
-                                "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
-                                spec.id,
-                                installed_v.as_ref().map(|v| v.to_string()),
-                                bundle_v.as_ref().map(|v| v.to_string()),
-                            );
-                        }
-                        BuiltinUpgradeDecision::ResyncSameVersion => {
-                            if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
-                                tracing::warn!(
-                                    "install_builtins: resync '{}' failed: {e}",
-                                    spec.id
-                                );
-                                continue;
-                            }
-                        }
-                        BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
-                            tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
-                            if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                                tracing::warn!(
-                                    "install_builtins: upgrade '{}' failed: {e}",
-                                    spec.id
-                                );
-                                continue;
-                            }
-                        }
-                        BuiltinUpgradeDecision::ForceOverwrite => {
-                            // TASTY_FORCE_BUILTIN_OVERWRITE 경로 — 버전/mtime 무시하고 덮어쓴다.
-                            tracing::info!(
-                                "force-overwriting builtin '{}' (installed v{:?}, bundle v{:?})",
-                                spec.id,
-                                installed_v.as_ref().map(|v| v.to_string()),
-                                bundle_v.as_ref().map(|v| v.to_string()),
-                            );
-                            if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                                tracing::warn!(
-                                    "install_builtins: force-overwrite '{}' failed: {e}",
-                                    spec.id
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                } else {
-                    if let Err(e) = copy_dir_recursive(&src, &dest) {
-                        tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
-                        continue;
-                    }
-                    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
-                }
-            }
+        // Step 1: 번들에서 복사. 항목별 실패는 warn 후 다음 spec 으로 (Step 2 skip).
+        if install_builtin_bundle_step(
+            mgr,
+            spec,
+            &dest_root,
+            &dest,
+            already_present,
+            bundle.as_deref(),
+        ) {
+            continue;
         }
 
         // Step 2: dest가 존재하면 매니페스트 권한을 grant entry에 반영.
-        //   - grant entry 없음 → 매니페스트 권한 전체를 set (최초 install).
-        //   - grant entry 있음 → 매니페스트 신규 추가분만 증분 grant (기존 사용자
-        //     대상으로 새 버전 builtin이 추가한 permission을 자동 수용).
-        //
-        // 기존에 grant된 토큰은 *제거하지 않는다*. 사용자가 명시적 deny한 경우는
-        // 본 helper 책임 밖. 매니페스트에서 사라진 token은 다음 install 시점에
-        // set_granted로 덮어쓰일 때만 정리된다.
-        if dest.exists() {
-            // F.B.11-4: bridge::validate_bin_extras 는 본 바이너리 chain — discover
-            // 와 동일하게 install/add 경로의 caller 가 chain 한다.
-            if let Ok(manifest) = Manifest::load(&dest)
-                && !manifest.permissions.is_empty()
-            {
-                if !mgr.config.grants.contains_key(spec.id) {
-                    mgr.config
-                        .set_granted(spec.id, manifest.permissions.clone());
-                    config_dirty = true;
-                    tracing::info!(
-                        "auto-granted manifest permissions for builtin '{}'",
-                        spec.id
-                    );
-                } else if apply_builtin_permission_diff(
-                    &mut mgr.config,
-                    spec.id,
-                    &manifest.permissions,
-                ) {
-                    config_dirty = true;
-                    tracing::info!(
-                        "auto-granted new manifest permissions for builtin '{}'",
-                        spec.id
-                    );
-                }
-            }
+        if install_builtin_grant_step(mgr, spec, &dest) {
+            config_dirty = true;
         }
     }
     if config_dirty && let Err(e) = mgr.config.save() {
         tracing::warn!("install_builtins: save plugins.toml failed: {e}");
+    }
+}
+
+/// `install_builtins_if_needed` Step 1 — 번들에서 복사/갱신.
+///
+/// builtin은 호스트 소유 리소스이므로(사용자가 직접 편집하는 용도가 아님) 버전/mtime
+/// 비교 없이 번들본으로 **항상 무조건 덮어쓴다** — dev(`just run`)·배포(dmg) 모두 동일
+/// 정책이라, 새 빌드/설치를 띄우면 plugin 버전 bump 여부와 무관하게 최신 번들이 반영된다.
+/// 단 사용자가 명시 제거한 builtin(`is_builtin_removed`)은 복원하지 않는다.
+///
+/// 반환값: `true` 면 항목별 실패(warn 후 계속) — caller 는 Step 2 를 건너뛰고 다음 spec.
+fn install_builtin_bundle_step(
+    mgr: &PluginManager,
+    spec: &BuiltinSpec,
+    dest_root: &Path,
+    dest: &Path,
+    already_present: bool,
+    bundle: Option<&Path>,
+) -> bool {
+    if mgr.config.is_builtin_removed(spec.id) {
+        return false;
+    }
+    let Some(bundle) = bundle else {
+        return false;
+    };
+    let src = bundle.join(spec.id);
+    if !src.is_dir() {
+        tracing::debug!(
+            "builtin plugin '{}' not in bundle ({}), skipping",
+            spec.id,
+            src.display()
+        );
+        return false;
+    }
+    if let Err(e) = std::fs::create_dir_all(dest_root) {
+        tracing::warn!("install_builtins: mkdir {} failed: {e}", dest_root.display());
+        return true;
+    }
+    if already_present {
+        install_builtin_overwrite_present(spec, &src, dest)
+    } else {
+        if let Err(e) = copy_dir_recursive(&src, dest) {
+            tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
+            return true;
+        }
+        tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+        false
+    }
+}
+
+/// already-present builtin 을 번들 대비 갱신 (install 경로는 항상 force=true → 무조건 덮어씀).
+/// 반환값: `true` 면 실패(warn 후 계속) — caller 는 Step 2 skip.
+fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bool {
+    let installed_v = read_installed_version(dest);
+    let bundle_v = read_bundle_version(src);
+    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), true) {
+        BuiltinUpgradeDecision::Skip => {
+            tracing::debug!(
+                "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
+                spec.id,
+                installed_v.as_ref().map(|v| v.to_string()),
+                bundle_v.as_ref().map(|v| v.to_string()),
+            );
+            false
+        }
+        BuiltinUpgradeDecision::ResyncSameVersion => {
+            if let Err(e) = sync_dir_recursive_if_newer(src, dest) {
+                tracing::warn!("install_builtins: resync '{}' failed: {e}", spec.id);
+                return true;
+            }
+            false
+        }
+        BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
+            tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
+            if let Err(e) = overwrite_builtin_dir(src, dest) {
+                tracing::warn!("install_builtins: upgrade '{}' failed: {e}", spec.id);
+                return true;
+            }
+            false
+        }
+        BuiltinUpgradeDecision::ForceOverwrite => {
+            // TASTY_FORCE_BUILTIN_OVERWRITE 경로 — 버전/mtime 무시하고 덮어쓴다.
+            tracing::info!(
+                "force-overwriting builtin '{}' (installed v{:?}, bundle v{:?})",
+                spec.id,
+                installed_v.as_ref().map(|v| v.to_string()),
+                bundle_v.as_ref().map(|v| v.to_string()),
+            );
+            if let Err(e) = overwrite_builtin_dir(src, dest) {
+                tracing::warn!("install_builtins: force-overwrite '{}' failed: {e}", spec.id);
+                return true;
+            }
+            false
+        }
+    }
+}
+
+/// `install_builtins_if_needed` Step 2 — dest 존재 시 매니페스트 권한을 grant entry에 반영.
+///   - grant entry 없음 → 매니페스트 권한 전체를 set (최초 install).
+///   - grant entry 있음 → 매니페스트 신규 추가분만 증분 grant (기존 사용자 대상으로 새
+///     버전 builtin이 추가한 permission을 자동 수용).
+///
+/// 기존에 grant된 토큰은 *제거하지 않는다*. 사용자가 명시적 deny한 경우는 본 helper 책임 밖.
+/// 매니페스트에서 사라진 token은 다음 install 시점에 set_granted로 덮어쓰일 때만 정리된다.
+///
+/// 반환값: config 를 변경했으면 `true` (caller 가 dirty 마킹).
+fn install_builtin_grant_step(mgr: &mut PluginManager, spec: &BuiltinSpec, dest: &Path) -> bool {
+    if !dest.exists() {
+        return false;
+    }
+    // F.B.11-4: bridge::validate_bin_extras 는 본 바이너리 chain — discover 와 동일하게
+    // install/add 경로의 caller 가 chain 한다.
+    let Ok(manifest) = Manifest::load(dest) else {
+        return false;
+    };
+    if manifest.permissions.is_empty() {
+        return false;
+    }
+    if !mgr.config.grants.contains_key(spec.id) {
+        mgr.config.set_granted(spec.id, manifest.permissions.clone());
+        tracing::info!(
+            "auto-granted manifest permissions for builtin '{}'",
+            spec.id
+        );
+        true
+    } else if apply_builtin_permission_diff(&mut mgr.config, spec.id, &manifest.permissions) {
+        tracing::info!(
+            "auto-granted new manifest permissions for builtin '{}'",
+            spec.id
+        );
+        true
+    } else {
+        false
     }
 }
 
@@ -645,7 +676,6 @@ pub struct BuiltinUpgradeReport {
 /// 실행 중 plugin process 의 binary 가 교체될 수 있다 (POSIX 는 inode 교체로 안전,
 /// Windows 는 sharing violation 가능). 본 함수는 *process 재시작을 수행하지 않는다*
 /// — 새 binary 는 다음 plugin restart (또는 부팅) 후 효과 발생.
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — builtin 업그레이드 판정(force/restore/restart 조합 분기). 게이트 도입과 별건
 pub fn upgrade_builtins(
     mgr: &mut PluginManager,
     force: bool,
@@ -671,8 +701,33 @@ pub fn upgrade_builtins(
     let mut items = Vec::with_capacity(BUILTINS.len());
     let mut changed_ids: Vec<String> = Vec::new();
 
-    // §2.E.1 의사결정: `restore_all` 이 true 이면 전체 clear (restore_removed 무시).
-    // 그렇지 않으면 명시된 id 만 unmark.
+    restore_removed_builtins(mgr, restore_removed, restore_all);
+
+    for spec in BUILTINS {
+        let outcome = process_builtin_upgrade(
+            mgr,
+            spec,
+            &dest_root,
+            bundle.as_deref(),
+            force,
+            restart_running,
+        );
+        if outcome.changed {
+            changed_ids.push(spec.id.into());
+        }
+        items.push(outcome.item);
+    }
+
+    if !changed_ids.is_empty() {
+        finalize_builtin_upgrades(mgr, &dest_root, &changed_ids);
+    }
+
+    BuiltinUpgradeReport { items }
+}
+
+/// §2.E.1 의사결정: `restore_all` 이 true 이면 전체 clear (restore_removed 무시).
+/// 그렇지 않으면 명시된 id 만 unmark. 변경이 있었으면 plugins.toml 저장.
+fn restore_removed_builtins(mgr: &mut PluginManager, restore_removed: &[String], restore_all: bool) {
     let mut removed_cleared = false;
     if restore_all {
         if mgr.config.clear_removed_builtins() {
@@ -690,282 +745,357 @@ pub fn upgrade_builtins(
     if removed_cleared && let Err(e) = mgr.config.save() {
         tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
     }
+}
 
-    for spec in BUILTINS {
-        let dest = dest_root.join(spec.id);
+/// 한 builtin spec 의 upgrade 처리 결과. `changed` 면 caller 가 changed_ids 에 push.
+struct SpecUpgrade {
+    item: BuiltinUpgradeItem,
+    changed: bool,
+}
 
-        if mgr.config.is_builtin_removed(spec.id) {
-            items.push(BuiltinUpgradeItem {
-                id: spec.id.into(),
-                action: BuiltinUpgradeAction::Skipped {
-                    installed_version: read_installed_version(&dest).map(|v| v.to_string()),
-                    bundle_version: None,
-                    reason: "user-removed".into(),
-                },
-            });
-            continue;
+/// UpgradeVersion / ForceOverwrite 공통 스텝: (선택적 swap-shutdown) → overwrite →
+/// (선택적 respawn). 순서·조건을 원본 그대로 보존한다.
+/// Ok(SwapResult) 성공, Err(item) 은 Failed report 항목 (caller 는 그대로 push + skip).
+struct SwapResult {
+    was_restarted: bool,
+    restart_error: Option<String>,
+}
+
+fn swap_overwrite_respawn(
+    mgr: &mut PluginManager,
+    spec: &BuiltinSpec,
+    src: &Path,
+    dest: &Path,
+    restart_running: bool,
+) -> Result<SwapResult, BuiltinUpgradeItem> {
+    let should_swap = restart_running && mgr.is_running(spec.id);
+    if should_swap && let Err(e) = mgr.swap_shutdown_internal(spec.id) {
+        return Err(BuiltinUpgradeItem {
+            id: spec.id.into(),
+            action: BuiltinUpgradeAction::Failed {
+                reason: format!("swap-shutdown-failed: {e}"),
+            },
+        });
+    }
+    if let Err(e) = overwrite_builtin_dir(src, dest) {
+        if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
+            tracing::warn!("respawn after failed overwrite of '{}' failed: {re}", spec.id);
         }
+        return Err(BuiltinUpgradeItem {
+            id: spec.id.into(),
+            action: BuiltinUpgradeAction::Failed {
+                reason: e.to_string(),
+            },
+        });
+    }
+    let restart_error = if should_swap {
+        mgr.swap_respawn_internal(spec.id)
+            .err()
+            .map(|e| e.to_string())
+    } else {
+        None
+    };
+    Ok(SwapResult {
+        was_restarted: should_swap && restart_error.is_none(),
+        restart_error,
+    })
+}
 
-        let Some(bundle_root) = bundle.as_ref() else {
-            items.push(BuiltinUpgradeItem {
-                id: spec.id.into(),
-                action: BuiltinUpgradeAction::NotInBundle,
-            });
-            continue;
-        };
-        let src = bundle_root.join(spec.id);
-        if !src.is_dir() {
-            items.push(BuiltinUpgradeItem {
-                id: spec.id.into(),
-                action: BuiltinUpgradeAction::NotInBundle,
-            });
-            continue;
-        }
+fn not_in_bundle_item(spec: &BuiltinSpec) -> BuiltinUpgradeItem {
+    BuiltinUpgradeItem {
+        id: spec.id.into(),
+        action: BuiltinUpgradeAction::NotInBundle,
+    }
+}
 
-        // release 빌드 한정: bundle manifest 의 ed25519 detached signature 검증.
-        // sidecar 누락 / 변조 / 잘못된 서명 → 해당 plugin Skipped 로 차단.
-        // debug 빌드는 dev workspace bundle 이 unsigned 라 warn 로깅 후 통과.
-        #[cfg(not(debug_assertions))]
-        {
-            use crate::bundle_sig::{TrustDecision, verify_bundle_signature};
-            match verify_bundle_signature(&src) {
-                Ok(TrustDecision::Trusted) => {}
-                Ok(TrustDecision::Untrusted {
-                    plugin_id,
-                    fingerprint,
-                    reason,
-                    ..
-                }) => {
-                    // 임베드 + known_plugins.toml 모두 거부. release 빌드의
-                    // builtin 은 *반드시* 임베드 키로 통과되어야 하므로,
-                    // Untrusted = 사실상 차단. trust 모달은 외부 plugin 경로용
-                    // (0.7+ marketplace) 이며 builtin 흐름엔 노출하지 않는다.
-                    tracing::warn!(
-                        "builtin '{}' is untrusted (reason: {reason:?}, fp: {fingerprint})",
-                        plugin_id
-                    );
-                    items.push(BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Skipped {
-                            installed_version: read_installed_version(&dest).map(|v| v.to_string()),
-                            bundle_version: None,
-                            reason: format!("untrusted: {reason:?}"),
-                        },
-                    });
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
-                    items.push(BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Skipped {
-                            installed_version: read_installed_version(&dest).map(|v| v.to_string()),
-                            bundle_version: None,
-                            reason: format!("signature-invalid: {e}"),
-                        },
-                    });
-                    continue;
-                }
-            }
-        }
-        #[cfg(debug_assertions)]
-        {
-            match crate::bundle_sig::verify_bundle_signature(&src) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::debug!(
-                        "dev bundle '{}' signature check: {e} (debug build = ignored)",
-                        spec.id
-                    );
-                }
-            }
-        }
-
-        let installed_v = read_installed_version(&dest);
-        let bundle_v = read_bundle_version(&src);
-
-        if !dest.exists() {
-            if let Err(e) =
-                std::fs::create_dir_all(&dest_root).and_then(|_| copy_dir_recursive(&src, &dest))
-            {
-                items.push(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Failed {
-                        reason: e.to_string(),
-                    },
-                });
-                continue;
-            }
-            changed_ids.push(spec.id.into());
-            tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
-            items.push(BuiltinUpgradeItem {
-                id: spec.id.into(),
-                action: BuiltinUpgradeAction::Reinstalled {
-                    version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
-                    was_restarted: false,
-                    restart_error: None,
-                },
-            });
-            continue;
-        }
-
-        match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
-            BuiltinUpgradeDecision::Skip => {
-                items.push(BuiltinUpgradeItem {
+/// release 빌드 한정: bundle manifest 의 ed25519 detached signature 검증.
+/// sidecar 누락 / 변조 / 잘못된 서명 → Err(Skipped) 로 차단.
+/// debug 빌드는 dev workspace bundle 이 unsigned 라 warn 로깅 후 Ok 통과.
+fn verify_builtin_bundle_trust(
+    spec: &BuiltinSpec,
+    src: &Path,
+    dest: &Path,
+) -> Result<(), BuiltinUpgradeItem> {
+    #[cfg(not(debug_assertions))]
+    {
+        use crate::bundle_sig::{TrustDecision, verify_bundle_signature};
+        match verify_bundle_signature(src) {
+            Ok(TrustDecision::Trusted) => Ok(()),
+            Ok(TrustDecision::Untrusted {
+                plugin_id,
+                fingerprint,
+                reason,
+                ..
+            }) => {
+                // 임베드 + known_plugins.toml 모두 거부. release 빌드의 builtin 은
+                // *반드시* 임베드 키로 통과되어야 하므로, Untrusted = 사실상 차단.
+                // trust 모달은 외부 plugin 경로용(0.7+ marketplace) 이며 builtin
+                // 흐름엔 노출하지 않는다.
+                tracing::warn!(
+                    "builtin '{}' is untrusted (reason: {reason:?}, fp: {fingerprint})",
+                    plugin_id
+                );
+                Err(BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Skipped {
-                        installed_version: installed_v.map(|v| v.to_string()),
-                        bundle_version: bundle_v.map(|v| v.to_string()),
-                        reason: "installed >= bundle".into(),
+                        installed_version: read_installed_version(dest).map(|v| v.to_string()),
+                        bundle_version: None,
+                        reason: format!("untrusted: {reason:?}"),
                     },
-                });
+                })
             }
-            BuiltinUpgradeDecision::ResyncSameVersion => {
-                if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
-                    items.push(BuiltinUpgradeItem {
+            Err(e) => {
+                tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
+                Err(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Skipped {
+                        installed_version: read_installed_version(dest).map(|v| v.to_string()),
+                        bundle_version: None,
+                        reason: format!("signature-invalid: {e}"),
+                    },
+                })
+            }
+        }
+    }
+    #[cfg(debug_assertions)]
+    {
+        let _ = dest;
+        match crate::bundle_sig::verify_bundle_signature(src) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::debug!(
+                    "dev bundle '{}' signature check: {e} (debug build = ignored)",
+                    spec.id
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+/// dest 미존재 시 번들에서 신규 설치. 성공 → Reinstalled(changed), 실패 → Failed.
+fn install_new_builtin(
+    spec: &BuiltinSpec,
+    src: &Path,
+    dest: &Path,
+    dest_root: &Path,
+    bundle_v: Option<&semver::Version>,
+) -> SpecUpgrade {
+    if let Err(e) =
+        std::fs::create_dir_all(dest_root).and_then(|_| copy_dir_recursive(src, dest))
+    {
+        return SpecUpgrade {
+            item: BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Failed {
+                    reason: e.to_string(),
+                },
+            },
+            changed: false,
+        };
+    }
+    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+    SpecUpgrade {
+        item: BuiltinUpgradeItem {
+            id: spec.id.into(),
+            action: BuiltinUpgradeAction::Reinstalled {
+                version: bundle_v.map(|v| v.to_string()).unwrap_or_default(),
+                was_restarted: false,
+                restart_error: None,
+            },
+        },
+        changed: true,
+    }
+}
+
+/// dest 존재 시 decide_builtin_upgrade 판정 → 해당 분기 적용.
+fn apply_builtin_upgrade_decision(
+    mgr: &mut PluginManager,
+    spec: &BuiltinSpec,
+    src: &Path,
+    dest: &Path,
+    installed_v: Option<semver::Version>,
+    bundle_v: Option<semver::Version>,
+    force: bool,
+    restart_running: bool,
+) -> SpecUpgrade {
+    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
+        BuiltinUpgradeDecision::Skip => SpecUpgrade {
+            item: BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Skipped {
+                    installed_version: installed_v.map(|v| v.to_string()),
+                    bundle_version: bundle_v.map(|v| v.to_string()),
+                    reason: "installed >= bundle".into(),
+                },
+            },
+            changed: false,
+        },
+        BuiltinUpgradeDecision::ResyncSameVersion => {
+            if let Err(e) = sync_dir_recursive_if_newer(src, dest) {
+                return SpecUpgrade {
+                    item: BuiltinUpgradeItem {
                         id: spec.id.into(),
                         action: BuiltinUpgradeAction::Failed {
                             reason: e.to_string(),
                         },
-                    });
-                    continue;
-                }
-                items.push(BuiltinUpgradeItem {
+                    },
+                    changed: false,
+                };
+            }
+            SpecUpgrade {
+                item: BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Skipped {
                         installed_version: installed_v.map(|v| v.to_string()),
                         bundle_version: bundle_v.map(|v| v.to_string()),
                         reason: "same-version (mtime resync)".into(),
                     },
-                });
+                },
+                changed: false,
             }
-            BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
-                tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
-                let should_swap = restart_running && mgr.is_running(spec.id);
-                if should_swap && let Err(e) = mgr.swap_shutdown_internal(spec.id) {
-                    items.push(BuiltinUpgradeItem {
+        }
+        BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
+            tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
+            match swap_overwrite_respawn(mgr, spec, src, dest, restart_running) {
+                Ok(swap) => SpecUpgrade {
+                    item: BuiltinUpgradeItem {
                         id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: format!("swap-shutdown-failed: {e}"),
+                        action: BuiltinUpgradeAction::Upgraded {
+                            from: from.to_string(),
+                            to: to.to_string(),
+                            was_restarted: swap.was_restarted,
+                            restart_error: swap.restart_error,
                         },
-                    });
-                    continue;
-                }
-                if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                    if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
-                        tracing::warn!(
-                            "respawn after failed overwrite of '{}' failed: {re}",
-                            spec.id
-                        );
-                    }
-                    items.push(BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: e.to_string(),
-                        },
-                    });
-                    continue;
-                }
-                let restart_error = if should_swap {
-                    mgr.swap_respawn_internal(spec.id)
-                        .err()
-                        .map(|e| e.to_string())
-                } else {
-                    None
-                };
-                changed_ids.push(spec.id.into());
-                items.push(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Upgraded {
-                        from: from.to_string(),
-                        to: to.to_string(),
-                        was_restarted: should_swap && restart_error.is_none(),
-                        restart_error,
                     },
-                });
+                    changed: true,
+                },
+                Err(item) => SpecUpgrade {
+                    item,
+                    changed: false,
+                },
             }
-            BuiltinUpgradeDecision::ForceOverwrite => {
-                tracing::info!(
-                    "force-reinstalling builtin '{}' (installed v{:?}, bundle v{:?})",
-                    spec.id,
-                    installed_v.as_ref().map(|v| v.to_string()),
-                    bundle_v.as_ref().map(|v| v.to_string()),
-                );
-                let should_swap = restart_running && mgr.is_running(spec.id);
-                if should_swap && let Err(e) = mgr.swap_shutdown_internal(spec.id) {
-                    items.push(BuiltinUpgradeItem {
+        }
+        BuiltinUpgradeDecision::ForceOverwrite => {
+            tracing::info!(
+                "force-reinstalling builtin '{}' (installed v{:?}, bundle v{:?})",
+                spec.id,
+                installed_v.as_ref().map(|v| v.to_string()),
+                bundle_v.as_ref().map(|v| v.to_string()),
+            );
+            match swap_overwrite_respawn(mgr, spec, src, dest, restart_running) {
+                Ok(swap) => SpecUpgrade {
+                    item: BuiltinUpgradeItem {
                         id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: format!("swap-shutdown-failed: {e}"),
+                        action: BuiltinUpgradeAction::Reinstalled {
+                            version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                            was_restarted: swap.was_restarted,
+                            restart_error: swap.restart_error,
                         },
-                    });
-                    continue;
-                }
-                if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                    if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
-                        tracing::warn!(
-                            "respawn after failed overwrite of '{}' failed: {re}",
-                            spec.id
-                        );
-                    }
-                    items.push(BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: e.to_string(),
-                        },
-                    });
-                    continue;
-                }
-                let restart_error = if should_swap {
-                    mgr.swap_respawn_internal(spec.id)
-                        .err()
-                        .map(|e| e.to_string())
-                } else {
-                    None
-                };
-                changed_ids.push(spec.id.into());
-                items.push(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Reinstalled {
-                        version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
-                        was_restarted: should_swap && restart_error.is_none(),
-                        restart_error,
                     },
-                });
+                    changed: true,
+                },
+                Err(item) => SpecUpgrade {
+                    item,
+                    changed: false,
+                },
             }
         }
     }
+}
 
-    if !changed_ids.is_empty() {
-        // 디스크가 바뀌었으니 PluginManager state 재계산.
-        mgr.refresh_packages();
-        mgr.recompute_extensions();
-        // 매니페스트 신규 permission 자동 grant — install_builtins_if_needed step 2 와 동일.
-        let mut config_dirty = false;
-        for id in &changed_ids {
-            let dest = dest_root.join(id);
-            if !dest.exists() {
+/// 한 builtin spec 의 upgrade 전체 처리 (removed → not-in-bundle → 서명 → install/decide).
+fn process_builtin_upgrade(
+    mgr: &mut PluginManager,
+    spec: &BuiltinSpec,
+    dest_root: &Path,
+    bundle: Option<&Path>,
+    force: bool,
+    restart_running: bool,
+) -> SpecUpgrade {
+    let dest = dest_root.join(spec.id);
+
+    if mgr.config.is_builtin_removed(spec.id) {
+        return SpecUpgrade {
+            item: BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Skipped {
+                    installed_version: read_installed_version(&dest).map(|v| v.to_string()),
+                    bundle_version: None,
+                    reason: "user-removed".into(),
+                },
+            },
+            changed: false,
+        };
+    }
+
+    let Some(bundle_root) = bundle else {
+        return SpecUpgrade {
+            item: not_in_bundle_item(spec),
+            changed: false,
+        };
+    };
+    let src = bundle_root.join(spec.id);
+    if !src.is_dir() {
+        return SpecUpgrade {
+            item: not_in_bundle_item(spec),
+            changed: false,
+        };
+    }
+
+    if let Err(item) = verify_builtin_bundle_trust(spec, &src, &dest) {
+        return SpecUpgrade {
+            item,
+            changed: false,
+        };
+    }
+
+    let installed_v = read_installed_version(&dest);
+    let bundle_v = read_bundle_version(&src);
+
+    if !dest.exists() {
+        return install_new_builtin(spec, &src, &dest, dest_root, bundle_v.as_ref());
+    }
+
+    apply_builtin_upgrade_decision(
+        mgr,
+        spec,
+        &src,
+        &dest,
+        installed_v,
+        bundle_v,
+        force,
+        restart_running,
+    )
+}
+
+/// changed builtin 들에 대해 PluginManager state 재계산 + 매니페스트 신규 permission
+/// 자동 grant (install_builtins_if_needed step 2 와 동일 규칙).
+fn finalize_builtin_upgrades(mgr: &mut PluginManager, dest_root: &Path, changed_ids: &[String]) {
+    // 디스크가 바뀌었으니 PluginManager state 재계산.
+    mgr.refresh_packages();
+    mgr.recompute_extensions();
+    let mut config_dirty = false;
+    for id in changed_ids {
+        let dest = dest_root.join(id);
+        if !dest.exists() {
+            continue;
+        }
+        if let Ok(manifest) = Manifest::load(&dest) {
+            if manifest.permissions.is_empty() {
                 continue;
             }
-            if let Ok(manifest) = Manifest::load(&dest) {
-                if manifest.permissions.is_empty() {
-                    continue;
-                }
-                if !mgr.config.grants.contains_key(id) {
-                    mgr.config.set_granted(id, manifest.permissions.clone());
-                    config_dirty = true;
-                } else if apply_builtin_permission_diff(&mut mgr.config, id, &manifest.permissions)
-                {
-                    config_dirty = true;
-                }
+            if !mgr.config.grants.contains_key(id) {
+                mgr.config.set_granted(id, manifest.permissions.clone());
+                config_dirty = true;
+            } else if apply_builtin_permission_diff(&mut mgr.config, id, &manifest.permissions) {
+                config_dirty = true;
             }
         }
-        if config_dirty && let Err(e) = mgr.config.save() {
-            tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
-        }
     }
-
-    BuiltinUpgradeReport { items }
+    if config_dirty && let Err(e) = mgr.config.save() {
+        tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
+    }
 }
 
 /// 기존 builtin grant entry에 매니페스트 신규 permission 만 증분 추가.
