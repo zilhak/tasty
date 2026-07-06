@@ -397,19 +397,11 @@ impl MainView {
             .find_terminal_by_id(surface_id)
             .map(|t| t.mouse_tracking());
         let Some(tracking) = tracking else {
-            // 비-terminal surface (markdown/image/explorer/html 등) — terminal 의
-            // mouse-tracking 위임(ADR-0019/0022)은 해당 없음. T9 surface 컨텍스트
-            // 메뉴(잘라내기/여기로 이동 + copy surface id)를 띄운다.
-            if button_state == ElementState::Pressed {
-                let sf = self.base.gpu.scale_factor();
-                self.state.dialogs.pending_native_menu =
-                    Some(crate::state::PendingNativeMenu::Surface {
-                        surface_id,
-                        x: x / sf,
-                        y: y / sf,
-                    });
-                self.mark_dirty();
-            }
+            // 비-terminal surface(explorer/empty/markdown/image/webview/remote):
+            // 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임(release 시점)에 위임한다 —
+            // egui_panels 의 emit_surface_menu_fallback 이 Surface 메뉴를, explorer 는
+            // apply_explorer_action 이 Explorer 메뉴를 세팅한다. winit 은 terminal 전용
+            // (mouse-tracking/ADR-0022).
             return;
         };
         // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.

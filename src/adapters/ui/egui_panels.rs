@@ -222,38 +222,49 @@ pub fn draw_egui_panels(
         );
     }
 
-    // T9: host-rendered(egui) surface 우클릭 → surface 컨텍스트 메뉴(잘라내기/이동).
-    // egui 가 우클릭을 소비(egui_consumed=true)해 winit `mouse.rs` 경로가 일찍 반환
-    // 되는 경우를 커버한다. 전역 포인터 상태만 읽어(별도 click-sense 위젯을 덧대지
-    // 않아 markdown 링크·explorer 버튼 등 내부 상호작용을 가로채지 않음) 비-terminal
-    // 패널 rect 안의 secondary click 을 잡는다. winit 경로와 **단일 슬롯을 공유**하고,
-    // 이미 설정돼 있으면(=winit 경로가 먼저 잡음) 덮지 않는다 → 소비 여부와 무관히
-    // 한 메뉴만 표시(중복 발화 없음). 패널 rect 는 logical px, interact_pos 도 logical.
-    if state.dialogs.pending_native_menu.is_none() {
-        let secondary_pos = ctx.input(|i| {
-            if i.pointer.secondary_clicked() {
-                i.pointer.interact_pos()
-            } else {
-                None
-            }
-        });
-        if let Some(pos) = secondary_pos {
-            for info in &infos {
-                let Some(sid) = info.surface_id else { continue };
-                let within = pos.x >= info.logical_x
-                    && pos.x <= info.logical_x + info.logical_w
-                    && pos.y >= info.logical_y
-                    && pos.y <= info.logical_y + info.logical_h;
-                if within {
-                    state.dialogs.pending_native_menu =
-                        Some(crate::state::PendingNativeMenu::Surface {
-                            surface_id: sid,
-                            x: pos.x,
-                            y: pos.y,
-                        });
-                    break;
-                }
-            }
+    // T9: 비-terminal surface 컨텍스트 메뉴의 **단일 생산자**(release 시점).
+    emit_surface_menu_fallback(state, ctx, &infos);
+}
+
+/// 비-terminal surface(explorer/empty/markdown/image/webview/remote) 우클릭 →
+/// surface 컨텍스트 메뉴(잘라내기/여기로 이동 + copy surface id)의 **단일 생산자**.
+///
+/// winit `mouse.rs` 경로는 terminal 전용으로 축소됐고(비-terminal 은 위임만 함), 이
+/// egui 프레임이 release 시점 `secondary_clicked()` 로 비-terminal 컨텍스트 메뉴를
+/// 유일하게 생산한다. 전역 포인터 상태만 읽어(별도 click-sense 위젯을 덧대지 않아
+/// markdown 링크·explorer 버튼 등 내부 상호작용을 가로채지 않음) 비-terminal 패널
+/// rect 안의 secondary click 을 잡는다.
+///
+/// `is_none()` 가드는 explorer 를 위해 유지한다: explorer 는 이 호출 앞선 line 206
+/// `apply_explorer_action` 이 위치별 `Explorer`/`ExplorerFavorite` 메뉴를 먼저 슬롯에
+/// 선점하므로, 여기 fallback 은 이미 설정됨을 보고 건너뛴다("winit 이 먼저"가 아니라
+/// "explorer apply 가 먼저"). 한 프레임 한 메뉴(중복 발화 없음). 패널 rect 는 logical
+/// px, interact_pos 도 logical.
+fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: &[EguiPanelInfo]) {
+    if state.dialogs.pending_native_menu.is_some() {
+        return;
+    }
+    let secondary_pos = ctx.input(|i| {
+        if i.pointer.secondary_clicked() {
+            i.pointer.interact_pos()
+        } else {
+            None
+        }
+    });
+    let Some(pos) = secondary_pos else { return };
+    for info in infos {
+        let Some(sid) = info.surface_id else { continue };
+        let within = pos.x >= info.logical_x
+            && pos.x <= info.logical_x + info.logical_w
+            && pos.y >= info.logical_y
+            && pos.y <= info.logical_y + info.logical_h;
+        if within {
+            state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Surface {
+                surface_id: sid,
+                x: pos.x,
+                y: pos.y,
+            });
+            break;
         }
     }
 }
