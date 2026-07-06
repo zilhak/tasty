@@ -271,7 +271,9 @@ fn try_confirm(state: &mut AppState, engine: &mut crate::core::CoreState) -> Pop
 
 fn apply_open(state: &mut AppState, engine: &mut crate::core::CoreState, path: &str) {
     let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
-    state.recent_files.add_markdown(file_path.clone());
+    // 최근 목록 기록은 아래에서 발화하는 ConvertSurface/NewTab 인텐트가 인텐트 계층
+    // 공용 헬퍼(`record_recent_markdown`)로 1회 수행 — 여기서 직접 기록하지 않는다
+    // (중복 기록 방지 + 진입점 수렴).
     if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
         state.dispatch_intent(
             crate::intent::Intent::ConvertSurface {

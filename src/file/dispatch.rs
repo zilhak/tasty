@@ -249,6 +249,12 @@ pub(crate) fn open_surface_tab(
     let origin_pane = origin_surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
     match origin_pane {
         Some(pane_id) => {
+            // 이 분기는 인텐트 계층을 거치지 않고 Core 로 직접 apply 하므로(링크 클릭 등
+            // origin surface 의 pane 에 새 탭), markdown 최근 목록 기록을 여기서 직접
+            // 한다. None 분기는 `Intent::NewTab` 으로 위임되어 tab 핸들러가 기록한다.
+            if surface_kind == "markdown" {
+                state.record_recent_markdown(&params);
+            }
             let intent = crate::core::intent::DomainIntent::CreateTab {
                 pane_id,
                 cwd: None,
@@ -263,7 +269,6 @@ pub(crate) fn open_surface_tab(
                     "file_dispatch CreateTab failed: {e}",
                 );
             }
-            let _ = state; // CreateTab 본문이 state mutate (cascade).
         }
         None => {
             state.dispatch_intent(

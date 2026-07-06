@@ -41,6 +41,11 @@ fn new_tab(
         params.clone()
     };
 
+    // markdown 파일 열기는 최근 목록에 기록(진입점 수렴 — 파일-열기 팝업·CLI 등).
+    if kind == "markdown" {
+        state.record_recent_markdown(&surface_params);
+    }
+
     let intent = crate::core::intent::DomainIntent::CreateTab {
         pane_id,
         cwd,

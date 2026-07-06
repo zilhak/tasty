@@ -107,6 +107,11 @@ fn convert(
             let resolved_cwd = cwd
                 .clone()
                 .or_else(|| state.resolve_inherit_cwd_from_surface(engine, surface_id));
+            // markdown 제자리 변환(주소창 navigate·convert 팝업 등)도 최근 목록 기록.
+            // `file` 키로 통일된 뒤라 여기서 1회 기록 — file 없으면 no-op.
+            if kind == "markdown" {
+                state.record_recent_markdown(&params);
+            }
             ConvertSurfaceTarget::Kind {
                 cwd: resolved_cwd,
                 kind: kind.clone(),
