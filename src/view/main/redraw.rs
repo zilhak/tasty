@@ -449,8 +449,6 @@ impl MainView {
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
         use crate::state::PendingNativeMenu;
 
         let pending = match self.state.dialogs.pending_native_menu.take() {
@@ -464,555 +462,24 @@ impl MainView {
                 tab_index,
                 x,
                 y,
-            } => {
-                let tab_count = self
-                    .state
-                    .active_workspace(engine)
-                    .pane_layout()
-                    .find_pane(pane_id)
-                    .map(|p| p.tabs.len())
-                    .unwrap_or(0);
-                let can_move_left = tab_index > 0;
-                let can_move_right = tab_index + 1 < tab_count;
-
-                let move_left = if can_move_left {
-                    MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
-                } else {
-                    MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
-                };
-                let move_right = if can_move_right {
-                    MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
-                } else {
-                    MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
-                };
-
-                let items = [
-                    MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
-                    MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
-                    MenuItem::separator(),
-                    move_left,
-                    move_right,
-                    MenuItem::separator(),
-                    MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
-                    MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
-                ];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        // Rename
-                        let current_name = self
-                            .state
-                            .active_workspace(engine)
-                            .pane_layout()
-                            .find_pane(pane_id)
-                            .and_then(|p| p.tabs.get(tab_index))
-                            .map(|t| t.display_name())
-                            .unwrap_or_default();
-                        let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
-                        let scope = target.popup_scope();
-                        self.state.dialogs.rename = Some((target, current_name));
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: "rename",
-                                mode: crate::intent::OpenPopupMode::WithScope(scope),
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    Some(2) => {
-                        // Close tab (모든 surface 포함). 이전엔 첫 surface 만 닫아 split
-                        // 상태에서 surface 하나만 사라지던 버그가 있었음.
-                        if self.state.close_tab(engine, pane_id, tab_index)
-                            && engine.workspaces.is_empty()
-                        {
-                            self.request_close();
-                        }
-                    }
-                    Some(3) => {
-                        // Move Left
-                        if tab_index > 0
-                            && let Some(pane) = self
-                                .state
-                                .active_workspace_mut(&mut self.core_state)
-                                .pane_layout_mut()
-                                .find_pane_mut(pane_id)
-                        {
-                            pane.move_tab(tab_index, tab_index - 1);
-                        }
-                    }
-                    Some(4) => {
-                        // Move Right
-                        if let Some(pane) = self
-                            .state
-                            .active_workspace_mut(&mut self.core_state)
-                            .pane_layout_mut()
-                            .find_pane_mut(pane_id)
-                        {
-                            pane.move_tab(tab_index, tab_index + 1);
-                        }
-                    }
-                    Some(5) => {
-                        if let Err(e) = self.save_tab_preset_from_pane_tab(pane_id, tab_index) {
-                            tracing::warn!("save tab preset failed: {e}");
-                            self.state.toasts.push(
-                                crate::i18n::t("preset.toast.save_failed"),
-                                crate::adapters::ui::ToastKind::Error,
-                                crate::adapters::ui::ToastScope::Window,
-                            );
-                        }
-                    }
-                    Some(6) => {
-                        if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
-                            tracing::warn!("save pane preset failed: {e}");
-                            self.state.toasts.push(
-                                crate::i18n::t("preset.toast.save_failed"),
-                                crate::adapters::ui::ToastKind::Error,
-                                crate::adapters::ui::ToastScope::Window,
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
-            }
+            } => self.handle_tab_native_menu(pane_id, tab_index, x, y),
             PendingNativeMenu::Pane { pane_id, x, y } => {
-                let items = [
-                    MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
-                    MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
-                    MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
-                    MenuItem::new(5, crate::i18n::t("pane_context_menu.new_image")),
-                    MenuItem::separator(),
-                    MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
-                    MenuItem::separator(),
-                    MenuItem::new(7, crate::i18n::t("preset.context.apply_tab_preset")),
-                    MenuItem::new(8, crate::i18n::t("preset.context.apply_pane_preset")),
-                ];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        if let Err(e) = self.state.add_tab(engine) {
-                            tracing::warn!("add_tab from context menu failed: {e}");
-                        }
-                    }
-                    Some(2) => {
-                        // Create empty tab first, then show markdown popup targeting it
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
-                            // intent-exempt: surface_id 결과 의존 (후속 convert)
-
-                            self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
-                            self.state.dialogs.file_open_pane_id = Some(pane_id);
-                            self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.dispatch_intent(
-                                crate::intent::UiIntent::OpenPopup {
-                                    id: "markdown_open",
-                                    mode: crate::intent::OpenPopupMode::WithScope(
-                                        crate::adapters::ui::popup::PopupScope::Surface(surface_id),
-                                    ),
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
-                    Some(5) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
-                            // intent-exempt: surface_id 결과 의존 (후속 convert)
-
-                            self.state.dispatch_intent(
-                                crate::intent::Intent::ConvertSurface {
-                                    surface_id,
-                                    target: crate::intent::ConvertTarget::Kind {
-                                        cwd: None,
-                                        kind: "image".to_string(),
-                                        params: serde_json::json!({}),
-                                    },
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
-                    Some(6) => {
-                        if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
-                            tracing::warn!("save pane preset failed: {e}");
-                            self.state.toasts.push(
-                                crate::i18n::t("preset.toast.save_failed"),
-                                crate::adapters::ui::ToastKind::Error,
-                                crate::adapters::ui::ToastScope::Window,
-                            );
-                        }
-                    }
-                    Some(7) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        self.state.dialogs.preset_picker_selected = None;
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    Some(8) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        self.state.dialogs.preset_picker_selected = None;
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_pane_native_menu(pane_id, x, y)
             }
             PendingNativeMenu::Workspace { ws_idx, x, y } => {
-                let ws_count = engine.workspaces.len();
-                let can_move_up = ws_idx > 0;
-                let can_move_down = ws_idx + 1 < ws_count;
-
-                let move_up = if can_move_up {
-                    MenuItem::new(3, crate::i18n::t("context_menu.move_up"))
-                } else {
-                    MenuItem::disabled(3, crate::i18n::t("context_menu.move_up"))
-                };
-                let move_down = if can_move_down {
-                    MenuItem::new(4, crate::i18n::t("context_menu.move_down"))
-                } else {
-                    MenuItem::disabled(4, crate::i18n::t("context_menu.move_down"))
-                };
-
-                let mut items = vec![
-                    MenuItem::new(1, crate::i18n::t("context_menu.rename_title")),
-                    MenuItem::new(2, crate::i18n::t("context_menu.rename_subtitle")),
-                    MenuItem::separator(),
-                    move_up,
-                    move_down,
-                    MenuItem::separator(),
-                    MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
-                    MenuItem::separator(),
-                    MenuItem::new(7, crate::i18n::t("context_menu.add_remote_workspace")),
-                ];
-
-                // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
-                // + "새 카테고리". move_targets[i] = (cat_id) 로 결과 id(200+i) 매핑.
-                let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
-                if engine.settings.general.workspace_categories_enabled
-                    && ws_idx < engine.workspaces.len()
-                {
-                    let cur_cat = engine.workspaces[ws_idx].category;
-                    items.push(MenuItem::separator());
-                    // 비클릭 헤더(disabled) + 대상 카테고리 항목들.
-                    items.push(MenuItem::disabled(
-                        0,
-                        crate::i18n::t("workspace_category.move_to_category"),
-                    ));
-                    for cat in engine.categories() {
-                        if cat.id == cur_cat {
-                            continue;
-                        }
-                        let label = if cat.is_normal() {
-                            crate::i18n::t("sidebar.workspaces_heading").to_string()
-                        } else {
-                            cat.name.clone()
-                        };
-                        items.push(MenuItem::new(200 + move_targets.len() as u32, label));
-                        move_targets.push(cat.id);
-                    }
-                    items.push(MenuItem::separator());
-                    items.push(MenuItem::new(
-                        100,
-                        crate::i18n::t("workspace_category.new_category"),
-                    ));
-                }
-
-                // 카테고리 토글 상태와 무관하게 "닫기"는 항상 최하단.
-                items.push(MenuItem::separator());
-                items.push(MenuItem::new(
-                    6,
-                    crate::i18n::t("context_menu.close_workspace"),
-                ));
-
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if ws_idx < engine.workspaces.len() {
-                    match result {
-                        Some(1) => {
-                            let name = engine.workspaces[ws_idx].name.clone();
-                            let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
-                            let scope = target.popup_scope();
-                            self.state.dialogs.rename = Some((target, name));
-                            self.state.dispatch_intent(
-                                crate::intent::UiIntent::OpenPopup {
-                                    id: "rename",
-                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                        Some(2) => {
-                            let subtitle = engine.workspaces[ws_idx].subtitle.clone();
-                            let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
-                            let scope = target.popup_scope();
-                            self.state.dialogs.rename = Some((target, subtitle));
-                            self.state.dispatch_intent(
-                                crate::intent::UiIntent::OpenPopup {
-                                    id: "rename",
-                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                        Some(3) => {
-                            // Move Up
-                            if ws_idx > 0 {
-                                self.state.move_workspace(engine, ws_idx, ws_idx - 1);
-                            }
-                        }
-                        Some(4) => {
-                            // Move Down
-                            if ws_idx + 1 < engine.workspaces.len() {
-                                self.state.move_workspace(engine, ws_idx, ws_idx + 1);
-                            }
-                        }
-                        Some(5) => {
-                            if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
-                                tracing::warn!("save workspace preset failed: {e}");
-                                self.state.toasts.push(
-                                    crate::i18n::t("preset.toast.save_failed"),
-                                    crate::adapters::ui::ToastKind::Error,
-                                    crate::adapters::ui::ToastScope::Window,
-                                );
-                            }
-                        }
-                        // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
-                        // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
-                        // 독자에게 함정이 된다.
-                        #[allow(clippy::collapsible_match)]
-                        Some(6) => {
-                            // Close workspace (모든 surface + closed_item snapshot)
-                            if self.state.close_workspace_at(engine, ws_idx)
-                                && engine.workspaces.is_empty()
-                            {
-                                self.request_close();
-                            }
-                        }
-                        Some(7) => {
-                            // 원격 워크스페이스 추가 팝업 — 사용자 컨텍스트 메뉴 진입(원칙 1).
-                            self.state.dispatch_intent(
-                                crate::intent::UiIntent::OpenPopup {
-                                    id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                                    mode: crate::intent::OpenPopupMode::CenteredFocused,
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                        Some(100) => {
-                            // 새 카테고리 생성 다이얼로그.
-                            crate::adapters::ui::category_actions::open_new_category_dialog(
-                                &mut self.state,
-                            );
-                        }
-                        Some(id) if id >= 200 => {
-                            // 카테고리로 이동 — move_targets[id-200] 로 소속 변경.
-                            if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
-                                let ws_id = engine.workspaces[ws_idx].id;
-                                if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
-                                    tracing::warn!("set_workspace_category failed: {e:?}");
-                                }
-                                engine.mark_layout_dirty();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                self.mark_dirty();
+                self.handle_workspace_native_menu(ws_idx, x, y)
             }
             PendingNativeMenu::WorkspaceCategoryHeader { cat_id, x, y } => {
-                // 카테고리 헤더 우클릭 — Add workspace 선두(모든 헤더), 비-normal 만
-                // 이름변경/삭제, 공통 새 카테고리 (2026-07-02 디자인 — 조립·순서는
-                // `category_header_menu_items` 가 고정). 토글 off 면 애초에 라우팅되지 않음.
-                let is_normal = engine
-                    .categories()
-                    .iter()
-                    .find(|c| c.id == cat_id)
-                    .map(|c| c.is_normal())
-                    .unwrap_or(true);
-                let items = category_header_menu_items(is_normal);
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(3) => {
-                        // 이 카테고리 소속으로 새 워크스페이스 — 레일 `---` 팝업의
-                        // Add workspace 와 동일 인텐트 (소스 문자열만 구별).
-                        self.state.dispatch_intent(
-                            crate::intent::Intent::NewWorkspace {
-                                kind: None,
-                                params: serde_json::Value::Null,
-                                category: Some(cat_id),
-                            }
-                            .from_user_menu("category_header/add_workspace"),
-                        );
-                    }
-                    Some(1) => {
-                        crate::adapters::ui::category_actions::open_rename_category_dialog(
-                            &mut self.state,
-                            engine,
-                            cat_id,
-                        );
-                    }
-                    Some(2) => {
-                        crate::adapters::ui::category_actions::open_delete_category_confirm(
-                            &mut self.state,
-                            cat_id,
-                        );
-                    }
-                    Some(100) => {
-                        crate::adapters::ui::category_actions::open_new_category_dialog(
-                            &mut self.state,
-                        );
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_workspace_category_header_native_menu(cat_id, x, y)
             }
             PendingNativeMenu::SidebarBackground { x, y } => {
-                // 빈 배경 우클릭 — 새 카테고리.
-                let items = [MenuItem::new(
-                    100,
-                    crate::i18n::t("workspace_category.new_category"),
-                )];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if let Some(100) = result {
-                    crate::adapters::ui::category_actions::open_new_category_dialog(
-                        &mut self.state,
-                    );
-                }
-                self.mark_dirty();
+                self.handle_sidebar_background_native_menu(x, y)
             }
             PendingNativeMenu::TerminalSurface { surface_id, x, y } => {
-                // Show copy items only when there is an active (non-empty) selection.
-                let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
-                let mut items = Vec::new();
-                if has_selection {
-                    items.push(MenuItem::new(
-                        2,
-                        crate::i18n::t("terminal_context_menu.copy"),
-                    ));
-                    items.push(MenuItem::new(
-                        3,
-                        crate::i18n::t("terminal_context_menu.copy_no_newline"),
-                    ));
-                    items.push(MenuItem::separator());
-                }
-                items.push(MenuItem::new(
-                    1,
-                    crate::i18n::t("terminal_context_menu.copy_surface_id"),
-                ));
-                // T9: surface 공용 잘라내기 / 여기로 이동 tail.
-                items.push(MenuItem::separator());
-                items.push(MenuItem::new(
-                    10,
-                    crate::i18n::t("surface_context_menu.cut"),
-                ));
-                if engine.pending_move_surface.is_some() {
-                    items.push(MenuItem::new(
-                        11,
-                        crate::i18n::t("surface_context_menu.move_here"),
-                    ));
-                }
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        let text = surface_id.to_string();
-                        if let Some(cb) = &mut self.clipboard {
-                            cb.set_text(&text);
-                        }
-                        self.state.toasts.push_info(
-                            crate::i18n::t("toast.copied"),
-                            crate::adapters::ui::ToastScope::Surface(surface_id),
-                        );
-                    }
-                    Some(2) => {
-                        self.copy_selection_to_clipboard();
-                    }
-                    Some(3) => {
-                        self.copy_selection_no_newline();
-                    }
-                    Some(10) => {
-                        // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
-                        engine.pending_move_surface = Some(surface_id);
-                    }
-                    Some(11) => {
-                        if let Some(source) = engine.pending_move_surface.take() {
-                            self.state.dispatch_intent(
-                                crate::core::intent::DomainIntent::MoveSurface {
-                                    source_surface_id: source,
-                                    target_surface_id: surface_id,
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_terminal_surface_native_menu(surface_id, x, y)
             }
             PendingNativeMenu::Surface { surface_id, x, y } => {
-                // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
-                // 잘라내기 / (대기 있을 때) 여기로 이동.
-                let mut items = vec![MenuItem::new(
-                    1,
-                    crate::i18n::t("terminal_context_menu.copy_surface_id"),
-                )];
-                items.push(MenuItem::separator());
-                items.push(MenuItem::new(
-                    10,
-                    crate::i18n::t("surface_context_menu.cut"),
-                ));
-                if engine.pending_move_surface.is_some() {
-                    items.push(MenuItem::new(
-                        11,
-                        crate::i18n::t("surface_context_menu.move_here"),
-                    ));
-                }
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        let text = surface_id.to_string();
-                        if let Some(cb) = &mut self.clipboard {
-                            cb.set_text(&text);
-                        }
-                        self.state.toasts.push_info(
-                            crate::i18n::t("toast.copied"),
-                            crate::adapters::ui::ToastScope::Surface(surface_id),
-                        );
-                    }
-                    Some(10) => {
-                        engine.pending_move_surface = Some(surface_id);
-                    }
-                    Some(11) => {
-                        if let Some(source) = engine.pending_move_surface.take() {
-                            self.state.dispatch_intent(
-                                crate::core::intent::DomainIntent::MoveSurface {
-                                    source_surface_id: source,
-                                    target_surface_id: surface_id,
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_surface_native_menu(surface_id, x, y)
             }
             PendingNativeMenu::Explorer {
                 surface_id,
@@ -1021,329 +488,918 @@ impl MainView {
                 single_is_dir,
                 x,
                 y,
-            } => {
-                let multi = paths.len() > 1;
-                let is_empty_target = paths.is_empty();
-                let is_folder = paths.len() == 1 && single_is_dir;
-                let has_clip = engine
-                    .explorer_clipboard
-                    .as_ref()
-                    .map(|c| !c.paths.is_empty())
-                    .unwrap_or(false);
-
-                let copy_path_label = if multi {
-                    crate::i18n::t("explorer.context_menu.copy_path_multi")
-                } else {
-                    crate::i18n::t("explorer.context_menu.copy_path")
-                };
-                let mut items = vec![MenuItem::new(1, copy_path_label)];
-                // 즐겨찾기 추가는 단일 폴더 또는 빈 영역(cwd, 디렉토리)에서만 (design §3.3).
-                if is_empty_target || is_folder {
-                    items.push(MenuItem::new(
-                        50,
-                        crate::i18n::t("explorer.context_menu.add_to_favorites"),
-                    ));
-                }
-                // 단일 폴더: 새 탭으로 열기 / 이 폴더로 루트 설정 (빈 영역=cwd 자기
-                // 자신엔 무의미 → 제외).
-                if is_folder {
-                    items.push(MenuItem::new(
-                        60,
-                        crate::i18n::t("explorer.context_menu.open_in_new_tab"),
-                    ));
-                    items.push(MenuItem::new(
-                        61,
-                        crate::i18n::t("explorer.context_menu.set_as_root"),
-                    ));
-                }
-                if is_empty_target {
-                    // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
-                    if has_clip {
-                        items.push(MenuItem::separator());
-                        items.push(MenuItem::new(
-                            12,
-                            crate::i18n::t("explorer.context_menu.paste"),
-                        ));
-                    }
-                } else {
-                    // 파일/폴더/다중: 복사 · 잘라내기.
-                    items.push(MenuItem::new(
-                        10,
-                        crate::i18n::t("explorer.context_menu.copy_files"),
-                    ));
-                    items.push(MenuItem::new(
-                        11,
-                        crate::i18n::t("explorer.context_menu.cut"),
-                    ));
-                    if is_folder && has_clip {
-                        items.push(MenuItem::new(
-                            12,
-                            crate::i18n::t("explorer.context_menu.paste_into"),
-                        ));
-                    }
-                    // 이름 변경 (단일 파일/폴더만).
-                    if !multi {
-                        items.push(MenuItem::new(
-                            40,
-                            crate::i18n::t("explorer.context_menu.rename"),
-                        ));
-                    }
-                    items.push(MenuItem::separator());
-                    // 휴지통으로 이동 (파일/폴더/다중 공통).
-                    items.push(MenuItem::new(
-                        30,
-                        crate::i18n::t("explorer.context_menu.delete"),
-                    ));
-                    // "Open in system" 은 단일 폴더에서만 (design §3.3) — 메뉴 끝.
-                    if is_folder {
-                        items.push(MenuItem::new(
-                            20,
-                            crate::i18n::t("explorer.context_menu.open_in_system"),
-                        ));
-                    }
-                }
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        let text = if is_empty_target {
-                            cwd.display().to_string()
-                        } else {
-                            paths
-                                .iter()
-                                .map(|p| p.display().to_string())
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        };
-                        if let Some(cb) = &mut self.clipboard {
-                            cb.set_text(&text);
-                        }
-                        self.state.toasts.push_info(
-                            crate::i18n::t("toast.copied"),
-                            crate::adapters::ui::ToastScope::Surface(surface_id),
-                        );
-                    }
-                    Some(10) => {
-                        engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
-                            paths: paths.clone(),
-                            cut: false,
-                        });
-                    }
-                    Some(11) => {
-                        engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
-                            paths: paths.clone(),
-                            cut: true,
-                        });
-                    }
-                    Some(12) => {
-                        let dest = if is_folder {
-                            paths.first().cloned().unwrap_or_else(|| cwd.clone())
-                        } else {
-                            cwd.clone()
-                        };
-                        if let Some(clip) = engine.explorer_clipboard.clone() {
-                            let (ok, err) =
-                                crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
-                            // 잘라내기는 이동 성공 시 클립보드 소진.
-                            if clip.cut && err.is_none() {
-                                engine.explorer_clipboard = None;
-                            }
-                            if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-                                v.request_reload();
-                            }
-                            if let Some(e) = err {
-                                tracing::warn!("explorer: paste error ({ok} ok): {e}");
-                            }
-                        }
-                    }
-                    Some(30) => {
-                        // 휴지통으로 이동 (가역적이라 별도 확인 모달 없음).
-                        if let Err(e) = trash::delete_all(&paths) {
-                            tracing::warn!("explorer: move to trash failed: {e}");
-                        }
-                        if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-                            v.selected.clear();
-                            v.anchor = None;
-                            v.request_reload();
-                        }
-                    }
-                    Some(20) => {
-                        let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());
-                        if let Err(e) = crate::platform::reveal::open_path(&target) {
-                            tracing::warn!("explorer: open_path failed: {e}");
-                        }
-                    }
-                    Some(40) => {
-                        if let Some(path) = paths.first().cloned() {
-                            let current_name = path
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_default();
-                            let target =
-                                crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-                            let scope = target.popup_scope();
-                            self.state.dialogs.rename = Some((target, current_name));
-                            self.state.dispatch_intent(
-                                crate::intent::UiIntent::OpenPopup {
-                                    id: "rename",
-                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
-                    Some(50) => {
-                        // 즐겨찾기 추가 — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
-                        let path = if is_empty_target {
-                            cwd.clone()
-                        } else {
-                            paths.first().cloned().unwrap_or_else(|| cwd.clone())
-                        };
-                        let seed = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-                        let scope = target.popup_scope();
-                        self.state.dialogs.rename = Some((target, seed));
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: "rename",
-                                mode: crate::intent::OpenPopupMode::WithScope(scope),
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    Some(60) => {
-                        // 새 탭으로 열기 — 대상 폴더를 cwd 로 하는 새 explorer 를 우클릭
-                        // 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
-                        if let Some(folder) = paths.first().cloned() {
-                            let params = serde_json::json!({ "path": folder.to_string_lossy() });
-                            if let Err(e) = self
-                                .state
-                                .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
-                            {
-                                tracing::warn!("explorer: open in new tab failed: {e}");
-                            }
-                        }
-                    }
-                    Some(61) => {
-                        // 이 폴더로 루트 설정 — 현재 explorer 의 cwd 를 그 폴더로 이동.
-                        if let Some(folder) = paths.first().cloned() {
-                            self.state.set_explorer_cwd(engine, surface_id, folder);
-                        }
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
-            }
+            } => self.handle_explorer_native_menu(surface_id, paths, cwd, single_is_dir, x, y),
             PendingNativeMenu::ExplorerFavorite {
                 surface_id,
                 path,
                 x,
                 y,
-            } => {
-                let items = [
-                    MenuItem::new(60, crate::i18n::t("explorer.context_menu.open_in_new_tab")),
-                    MenuItem::new(61, crate::i18n::t("explorer.context_menu.set_as_root")),
-                    MenuItem::separator(),
-                    MenuItem::new(
-                        1,
-                        crate::i18n::t("explorer.context_menu.remove_from_favorites"),
-                    ),
-                ];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(60) => {
-                        let params = serde_json::json!({ "path": path.to_string_lossy() });
-                        if let Err(e) = self
-                            .state
-                            .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
-                        {
-                            tracing::warn!("explorer: open favorite in new tab failed: {e}");
-                        }
-                    }
-                    Some(61) => {
-                        self.state
-                            .set_explorer_cwd(engine, surface_id, path.clone());
-                    }
-                    Some(1) => {
-                        // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                        engine.explorer_favorites.remove(&path);
-                        engine.explorer_favorites.save();
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
-            }
+            } => self.handle_explorer_favorite_native_menu(surface_id, path, x, y),
             PendingNativeMenu::NewWorkspaceButton { x, y } => {
-                let items = [
-                    MenuItem::new(1, crate::i18n::t("preset.context.apply_workspace_preset")),
-                    MenuItem::separator(),
-                    MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
-                ];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        self.state.dialogs.preset_picker_selected = None;
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    Some(2) => {
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_new_workspace_button_native_menu(x, y)
             }
             PendingNativeMenu::NewTabButton { pane_id, x, y } => {
-                let items = [
-                    MenuItem::new(1, crate::i18n::t("preset.context.apply_tab_preset")),
-                    MenuItem::new(2, crate::i18n::t("preset.context.apply_pane_preset")),
-                ];
-                let result =
-                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                match result {
-                    Some(1) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        self.state.dialogs.preset_picker_selected = None;
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    Some(2) => {
-                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                        self.state.dialogs.preset_picker_selected = None;
-                        self.state.dispatch_intent(
-                            crate::intent::UiIntent::OpenPopup {
-                                id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
-                                mode: crate::intent::OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                    _ => {}
-                }
-                self.mark_dirty();
+                self.handle_new_tab_button_native_menu(pane_id, x, y)
             }
         }
+    }
+
+    fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let tab_count = self
+            .state
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .map(|p| p.tabs.len())
+            .unwrap_or(0);
+        let can_move_left = tab_index > 0;
+        let can_move_right = tab_index + 1 < tab_count;
+
+        let move_left = if can_move_left {
+            MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
+        } else {
+            MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
+        };
+        let move_right = if can_move_right {
+            MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
+        } else {
+            MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
+        };
+
+        let items = [
+            MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
+            MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
+            MenuItem::separator(),
+            move_left,
+            move_right,
+            MenuItem::separator(),
+            MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
+            MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
+        ];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                // Rename
+                let current_name = self
+                    .state
+                    .active_workspace(engine)
+                    .pane_layout()
+                    .find_pane(pane_id)
+                    .and_then(|p| p.tabs.get(tab_index))
+                    .map(|t| t.display_name())
+                    .unwrap_or_default();
+                let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
+                let scope = target.popup_scope();
+                self.state.dialogs.rename = Some((target, current_name));
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: "rename",
+                        mode: crate::intent::OpenPopupMode::WithScope(scope),
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            Some(2) => {
+                // Close tab (모든 surface 포함). 이전엔 첫 surface 만 닫아 split
+                // 상태에서 surface 하나만 사라지던 버그가 있었음.
+                if self.state.close_tab(engine, pane_id, tab_index) && engine.workspaces.is_empty()
+                {
+                    self.request_close();
+                }
+            }
+            Some(3) => {
+                // Move Left
+                if tab_index > 0
+                    && let Some(pane) = self
+                        .state
+                        .active_workspace_mut(&mut self.core_state)
+                        .pane_layout_mut()
+                        .find_pane_mut(pane_id)
+                {
+                    pane.move_tab(tab_index, tab_index - 1);
+                }
+            }
+            Some(4) => {
+                // Move Right
+                if let Some(pane) = self
+                    .state
+                    .active_workspace_mut(&mut self.core_state)
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+                {
+                    pane.move_tab(tab_index, tab_index + 1);
+                }
+            }
+            Some(5) => {
+                if let Err(e) = self.save_tab_preset_from_pane_tab(pane_id, tab_index) {
+                    tracing::warn!("save tab preset failed: {e}");
+                    self.state.toasts.push(
+                        crate::i18n::t("preset.toast.save_failed"),
+                        crate::adapters::ui::ToastKind::Error,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+            }
+            Some(6) => {
+                if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                    tracing::warn!("save pane preset failed: {e}");
+                    self.state.toasts.push(
+                        crate::i18n::t("preset.toast.save_failed"),
+                        crate::adapters::ui::ToastKind::Error,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_pane_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let items = [
+            MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
+            MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
+            MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
+            MenuItem::new(5, crate::i18n::t("pane_context_menu.new_image")),
+            MenuItem::separator(),
+            MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
+            MenuItem::separator(),
+            MenuItem::new(7, crate::i18n::t("preset.context.apply_tab_preset")),
+            MenuItem::new(8, crate::i18n::t("preset.context.apply_pane_preset")),
+        ];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                if let Err(e) = self.state.add_tab(engine) {
+                    tracing::warn!("add_tab from context menu failed: {e}");
+                }
+            }
+            Some(2) => {
+                // Create empty tab first, then show markdown popup targeting it
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
+                    // intent-exempt: surface_id 결과 의존 (후속 convert)
+
+                    self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
+                    self.state.dialogs.file_open_pane_id = Some(pane_id);
+                    self.state.dialogs.markdown_open_buffer.clear();
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: "markdown_open",
+                            mode: crate::intent::OpenPopupMode::WithScope(
+                                crate::adapters::ui::popup::PopupScope::Surface(surface_id),
+                            ),
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+            }
+            Some(5) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
+                    // intent-exempt: surface_id 결과 의존 (후속 convert)
+
+                    self.state.dispatch_intent(
+                        crate::intent::Intent::ConvertSurface {
+                            surface_id,
+                            target: crate::intent::ConvertTarget::Kind {
+                                cwd: None,
+                                kind: "image".to_string(),
+                                params: serde_json::json!({}),
+                            },
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+            }
+            Some(6) => {
+                if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                    tracing::warn!("save pane preset failed: {e}");
+                    self.state.toasts.push(
+                        crate::i18n::t("preset.toast.save_failed"),
+                        crate::adapters::ui::ToastKind::Error,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+            }
+            Some(7) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            Some(8) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_workspace_native_menu(&mut self, ws_idx: usize, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let ws_count = engine.workspaces.len();
+        let can_move_up = ws_idx > 0;
+        let can_move_down = ws_idx + 1 < ws_count;
+
+        let move_up = if can_move_up {
+            MenuItem::new(3, crate::i18n::t("context_menu.move_up"))
+        } else {
+            MenuItem::disabled(3, crate::i18n::t("context_menu.move_up"))
+        };
+        let move_down = if can_move_down {
+            MenuItem::new(4, crate::i18n::t("context_menu.move_down"))
+        } else {
+            MenuItem::disabled(4, crate::i18n::t("context_menu.move_down"))
+        };
+
+        let mut items = vec![
+            MenuItem::new(1, crate::i18n::t("context_menu.rename_title")),
+            MenuItem::new(2, crate::i18n::t("context_menu.rename_subtitle")),
+            MenuItem::separator(),
+            move_up,
+            move_down,
+            MenuItem::separator(),
+            MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
+            MenuItem::separator(),
+            MenuItem::new(7, crate::i18n::t("context_menu.add_remote_workspace")),
+        ];
+
+        // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
+        // + "새 카테고리". move_targets[i] = (cat_id) 로 결과 id(200+i) 매핑.
+        let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
+        if engine.settings.general.workspace_categories_enabled && ws_idx < engine.workspaces.len()
+        {
+            let cur_cat = engine.workspaces[ws_idx].category;
+            items.push(MenuItem::separator());
+            // 비클릭 헤더(disabled) + 대상 카테고리 항목들.
+            items.push(MenuItem::disabled(
+                0,
+                crate::i18n::t("workspace_category.move_to_category"),
+            ));
+            for cat in engine.categories() {
+                if cat.id == cur_cat {
+                    continue;
+                }
+                let label = if cat.is_normal() {
+                    crate::i18n::t("sidebar.workspaces_heading").to_string()
+                } else {
+                    cat.name.clone()
+                };
+                items.push(MenuItem::new(200 + move_targets.len() as u32, label));
+                move_targets.push(cat.id);
+            }
+            items.push(MenuItem::separator());
+            items.push(MenuItem::new(
+                100,
+                crate::i18n::t("workspace_category.new_category"),
+            ));
+        }
+
+        // 카테고리 토글 상태와 무관하게 "닫기"는 항상 최하단.
+        items.push(MenuItem::separator());
+        items.push(MenuItem::new(
+            6,
+            crate::i18n::t("context_menu.close_workspace"),
+        ));
+
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        if ws_idx < engine.workspaces.len() {
+            match result {
+                Some(1) => {
+                    let name = engine.workspaces[ws_idx].name.clone();
+                    let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
+                    let scope = target.popup_scope();
+                    self.state.dialogs.rename = Some((target, name));
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: "rename",
+                            mode: crate::intent::OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(2) => {
+                    let subtitle = engine.workspaces[ws_idx].subtitle.clone();
+                    let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
+                    let scope = target.popup_scope();
+                    self.state.dialogs.rename = Some((target, subtitle));
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: "rename",
+                            mode: crate::intent::OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(3) => {
+                    // Move Up
+                    if ws_idx > 0 {
+                        self.state.move_workspace(engine, ws_idx, ws_idx - 1);
+                    }
+                }
+                Some(4) => {
+                    // Move Down
+                    if ws_idx + 1 < engine.workspaces.len() {
+                        self.state.move_workspace(engine, ws_idx, ws_idx + 1);
+                    }
+                }
+                Some(5) => {
+                    if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
+                        tracing::warn!("save workspace preset failed: {e}");
+                        self.state.toasts.push(
+                            crate::i18n::t("preset.toast.save_failed"),
+                            crate::adapters::ui::ToastKind::Error,
+                            crate::adapters::ui::ToastScope::Window,
+                        );
+                    }
+                }
+                // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
+                // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
+                // 독자에게 함정이 된다.
+                #[allow(clippy::collapsible_match)]
+                Some(6) => {
+                    // Close workspace (모든 surface + closed_item snapshot)
+                    if self.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
+                    {
+                        self.request_close();
+                    }
+                }
+                Some(7) => {
+                    // 원격 워크스페이스 추가 팝업 — 사용자 컨텍스트 메뉴 진입(원칙 1).
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(100) => {
+                    // 새 카테고리 생성 다이얼로그.
+                    crate::adapters::ui::category_actions::open_new_category_dialog(
+                        &mut self.state,
+                    );
+                }
+                Some(id) if id >= 200 => {
+                    // 카테고리로 이동 — move_targets[id-200] 로 소속 변경.
+                    if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
+                        let ws_id = engine.workspaces[ws_idx].id;
+                        if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
+                            tracing::warn!("set_workspace_category failed: {e:?}");
+                        }
+                        engine.mark_layout_dirty();
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_workspace_category_header_native_menu(
+        &mut self,
+        cat_id: crate::model::WorkspaceCategoryId,
+        x: f32,
+        y: f32,
+    ) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::show_context_menu;
+        // 카테고리 헤더 우클릭 — Add workspace 선두(모든 헤더), 비-normal 만
+        // 이름변경/삭제, 공통 새 카테고리 (2026-07-02 디자인 — 조립·순서는
+        // `category_header_menu_items` 가 고정). 토글 off 면 애초에 라우팅되지 않음.
+        let is_normal = engine
+            .categories()
+            .iter()
+            .find(|c| c.id == cat_id)
+            .map(|c| c.is_normal())
+            .unwrap_or(true);
+        let items = category_header_menu_items(is_normal);
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(3) => {
+                // 이 카테고리 소속으로 새 워크스페이스 — 레일 `---` 팝업의
+                // Add workspace 와 동일 인텐트 (소스 문자열만 구별).
+                self.state.dispatch_intent(
+                    crate::intent::Intent::NewWorkspace {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                        category: Some(cat_id),
+                    }
+                    .from_user_menu("category_header/add_workspace"),
+                );
+            }
+            Some(1) => {
+                crate::adapters::ui::category_actions::open_rename_category_dialog(
+                    &mut self.state,
+                    engine,
+                    cat_id,
+                );
+            }
+            Some(2) => {
+                crate::adapters::ui::category_actions::open_delete_category_confirm(
+                    &mut self.state,
+                    cat_id,
+                );
+            }
+            Some(100) => {
+                crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_sidebar_background_native_menu(&mut self, x: f32, y: f32) {
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        // 빈 배경 우클릭 — 새 카테고리.
+        let items = [MenuItem::new(
+            100,
+            crate::i18n::t("workspace_category.new_category"),
+        )];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        if let Some(100) = result {
+            crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_terminal_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        // Show copy items only when there is an active (non-empty) selection.
+        let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
+        let mut items = Vec::new();
+        if has_selection {
+            items.push(MenuItem::new(
+                2,
+                crate::i18n::t("terminal_context_menu.copy"),
+            ));
+            items.push(MenuItem::new(
+                3,
+                crate::i18n::t("terminal_context_menu.copy_no_newline"),
+            ));
+            items.push(MenuItem::separator());
+        }
+        items.push(MenuItem::new(
+            1,
+            crate::i18n::t("terminal_context_menu.copy_surface_id"),
+        ));
+        // T9: surface 공용 잘라내기 / 여기로 이동 tail.
+        items.push(MenuItem::separator());
+        items.push(MenuItem::new(
+            10,
+            crate::i18n::t("surface_context_menu.cut"),
+        ));
+        if engine.pending_move_surface.is_some() {
+            items.push(MenuItem::new(
+                11,
+                crate::i18n::t("surface_context_menu.move_here"),
+            ));
+        }
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                let text = surface_id.to_string();
+                if let Some(cb) = &mut self.clipboard {
+                    cb.set_text(&text);
+                }
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.copied"),
+                    crate::adapters::ui::ToastScope::Surface(surface_id),
+                );
+            }
+            Some(2) => {
+                self.copy_selection_to_clipboard();
+            }
+            Some(3) => {
+                self.copy_selection_no_newline();
+            }
+            Some(10) => {
+                // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
+                engine.pending_move_surface = Some(surface_id);
+            }
+            Some(11) => {
+                if let Some(source) = engine.pending_move_surface.take() {
+                    self.state.dispatch_intent(
+                        crate::core::intent::DomainIntent::MoveSurface {
+                            source_surface_id: source,
+                            target_surface_id: surface_id,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
+        // 잘라내기 / (대기 있을 때) 여기로 이동.
+        let mut items = vec![MenuItem::new(
+            1,
+            crate::i18n::t("terminal_context_menu.copy_surface_id"),
+        )];
+        items.push(MenuItem::separator());
+        items.push(MenuItem::new(
+            10,
+            crate::i18n::t("surface_context_menu.cut"),
+        ));
+        if engine.pending_move_surface.is_some() {
+            items.push(MenuItem::new(
+                11,
+                crate::i18n::t("surface_context_menu.move_here"),
+            ));
+        }
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                let text = surface_id.to_string();
+                if let Some(cb) = &mut self.clipboard {
+                    cb.set_text(&text);
+                }
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.copied"),
+                    crate::adapters::ui::ToastScope::Surface(surface_id),
+                );
+            }
+            Some(10) => {
+                engine.pending_move_surface = Some(surface_id);
+            }
+            Some(11) => {
+                if let Some(source) = engine.pending_move_surface.take() {
+                    self.state.dispatch_intent(
+                        crate::core::intent::DomainIntent::MoveSurface {
+                            source_surface_id: source,
+                            target_surface_id: surface_id,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_explorer_native_menu(
+        &mut self,
+        surface_id: u32,
+        paths: Vec<std::path::PathBuf>,
+        cwd: std::path::PathBuf,
+        single_is_dir: bool,
+        x: f32,
+        y: f32,
+    ) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let multi = paths.len() > 1;
+        let is_empty_target = paths.is_empty();
+        let is_folder = paths.len() == 1 && single_is_dir;
+        let has_clip = engine
+            .explorer_clipboard
+            .as_ref()
+            .map(|c| !c.paths.is_empty())
+            .unwrap_or(false);
+
+        let copy_path_label = if multi {
+            crate::i18n::t("explorer.context_menu.copy_path_multi")
+        } else {
+            crate::i18n::t("explorer.context_menu.copy_path")
+        };
+        let mut items = vec![MenuItem::new(1, copy_path_label)];
+        // 즐겨찾기 추가는 단일 폴더 또는 빈 영역(cwd, 디렉토리)에서만 (design §3.3).
+        if is_empty_target || is_folder {
+            items.push(MenuItem::new(
+                50,
+                crate::i18n::t("explorer.context_menu.add_to_favorites"),
+            ));
+        }
+        // 단일 폴더: 새 탭으로 열기 / 이 폴더로 루트 설정 (빈 영역=cwd 자기
+        // 자신엔 무의미 → 제외).
+        if is_folder {
+            items.push(MenuItem::new(
+                60,
+                crate::i18n::t("explorer.context_menu.open_in_new_tab"),
+            ));
+            items.push(MenuItem::new(
+                61,
+                crate::i18n::t("explorer.context_menu.set_as_root"),
+            ));
+        }
+        if is_empty_target {
+            // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
+            if has_clip {
+                items.push(MenuItem::separator());
+                items.push(MenuItem::new(
+                    12,
+                    crate::i18n::t("explorer.context_menu.paste"),
+                ));
+            }
+        } else {
+            // 파일/폴더/다중: 복사 · 잘라내기.
+            items.push(MenuItem::new(
+                10,
+                crate::i18n::t("explorer.context_menu.copy_files"),
+            ));
+            items.push(MenuItem::new(
+                11,
+                crate::i18n::t("explorer.context_menu.cut"),
+            ));
+            if is_folder && has_clip {
+                items.push(MenuItem::new(
+                    12,
+                    crate::i18n::t("explorer.context_menu.paste_into"),
+                ));
+            }
+            // 이름 변경 (단일 파일/폴더만).
+            if !multi {
+                items.push(MenuItem::new(
+                    40,
+                    crate::i18n::t("explorer.context_menu.rename"),
+                ));
+            }
+            items.push(MenuItem::separator());
+            // 휴지통으로 이동 (파일/폴더/다중 공통).
+            items.push(MenuItem::new(
+                30,
+                crate::i18n::t("explorer.context_menu.delete"),
+            ));
+            // "Open in system" 은 단일 폴더에서만 (design §3.3) — 메뉴 끝.
+            if is_folder {
+                items.push(MenuItem::new(
+                    20,
+                    crate::i18n::t("explorer.context_menu.open_in_system"),
+                ));
+            }
+        }
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                let text = if is_empty_target {
+                    cwd.display().to_string()
+                } else {
+                    paths
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                if let Some(cb) = &mut self.clipboard {
+                    cb.set_text(&text);
+                }
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.copied"),
+                    crate::adapters::ui::ToastScope::Surface(surface_id),
+                );
+            }
+            Some(10) => {
+                engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+                    paths: paths.clone(),
+                    cut: false,
+                });
+            }
+            Some(11) => {
+                engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+                    paths: paths.clone(),
+                    cut: true,
+                });
+            }
+            Some(12) => {
+                let dest = if is_folder {
+                    paths.first().cloned().unwrap_or_else(|| cwd.clone())
+                } else {
+                    cwd.clone()
+                };
+                if let Some(clip) = engine.explorer_clipboard.clone() {
+                    let (ok, err) =
+                        crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
+                    // 잘라내기는 이동 성공 시 클립보드 소진.
+                    if clip.cut && err.is_none() {
+                        engine.explorer_clipboard = None;
+                    }
+                    if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+                        v.request_reload();
+                    }
+                    if let Some(e) = err {
+                        tracing::warn!("explorer: paste error ({ok} ok): {e}");
+                    }
+                }
+            }
+            Some(30) => {
+                // 휴지통으로 이동 (가역적이라 별도 확인 모달 없음).
+                if let Err(e) = trash::delete_all(&paths) {
+                    tracing::warn!("explorer: move to trash failed: {e}");
+                }
+                if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+                    v.selected.clear();
+                    v.anchor = None;
+                    v.request_reload();
+                }
+            }
+            Some(20) => {
+                let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());
+                if let Err(e) = crate::platform::reveal::open_path(&target) {
+                    tracing::warn!("explorer: open_path failed: {e}");
+                }
+            }
+            Some(40) => {
+                if let Some(path) = paths.first().cloned() {
+                    let current_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
+                    let scope = target.popup_scope();
+                    self.state.dialogs.rename = Some((target, current_name));
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: "rename",
+                            mode: crate::intent::OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+            }
+            Some(50) => {
+                // 즐겨찾기 추가 — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
+                let path = if is_empty_target {
+                    cwd.clone()
+                } else {
+                    paths.first().cloned().unwrap_or_else(|| cwd.clone())
+                };
+                let seed = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
+                let scope = target.popup_scope();
+                self.state.dialogs.rename = Some((target, seed));
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: "rename",
+                        mode: crate::intent::OpenPopupMode::WithScope(scope),
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            Some(60) => {
+                // 새 탭으로 열기 — 대상 폴더를 cwd 로 하는 새 explorer 를 우클릭
+                // 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
+                if let Some(folder) = paths.first().cloned() {
+                    let params = serde_json::json!({ "path": folder.to_string_lossy() });
+                    if let Err(e) = self
+                        .state
+                        .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                    {
+                        tracing::warn!("explorer: open in new tab failed: {e}");
+                    }
+                }
+            }
+            Some(61) => {
+                // 이 폴더로 루트 설정 — 현재 explorer 의 cwd 를 그 폴더로 이동.
+                if let Some(folder) = paths.first().cloned() {
+                    self.state.set_explorer_cwd(engine, surface_id, folder);
+                }
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_explorer_favorite_native_menu(
+        &mut self,
+        surface_id: u32,
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    ) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let items = [
+            MenuItem::new(60, crate::i18n::t("explorer.context_menu.open_in_new_tab")),
+            MenuItem::new(61, crate::i18n::t("explorer.context_menu.set_as_root")),
+            MenuItem::separator(),
+            MenuItem::new(
+                1,
+                crate::i18n::t("explorer.context_menu.remove_from_favorites"),
+            ),
+        ];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(60) => {
+                let params = serde_json::json!({ "path": path.to_string_lossy() });
+                if let Err(e) = self
+                    .state
+                    .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                {
+                    tracing::warn!("explorer: open favorite in new tab failed: {e}");
+                }
+            }
+            Some(61) => {
+                self.state
+                    .set_explorer_cwd(engine, surface_id, path.clone());
+            }
+            Some(1) => {
+                // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
+                engine.explorer_favorites.remove(&path);
+                engine.explorer_favorites.save();
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_new_workspace_button_native_menu(&mut self, x: f32, y: f32) {
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let items = [
+            MenuItem::new(1, crate::i18n::t("preset.context.apply_workspace_preset")),
+            MenuItem::separator(),
+            MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
+        ];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            Some(2) => {
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            _ => {}
+        }
+        self.mark_dirty();
+    }
+
+    fn handle_new_tab_button_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
+        let engine = &mut self.core_state;
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        let items = [
+            MenuItem::new(1, crate::i18n::t("preset.context.apply_tab_preset")),
+            MenuItem::new(2, crate::i18n::t("preset.context.apply_pane_preset")),
+        ];
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        match result {
+            Some(1) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            Some(2) => {
+                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            _ => {}
+        }
+        self.mark_dirty();
     }
 }
 
