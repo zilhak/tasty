@@ -146,6 +146,14 @@ fn all_e2e_tests() {
     tasty.send_text(sid, "echo __abort_ok__\n");
     tasty.wait_for_output(sid, "__abort_ok__", Duration::from_secs(3));
 
+    // ========== surface.completion (highlight producer) ==========
+    // completion IPC 가 CLI→핸들러→intent→cascade 전 경로로 라우팅되어 success 를
+    // 돌려주는지(=method_not_found 아님) 확인. highlight 발동 자체는 host 렌더라
+    // 헤드리스로 관측 불가 — 여기선 파이프라인 도달만 검증한다.
+    let completion = tasty.call("surface.completion", json!({ "surface_id": sid }));
+    assert_eq!(completion["ok"], true);
+    assert_eq!(completion["surface_id"].as_u64().unwrap(), sid);
+
     // ========== Dim (SGR 2) renderer regression ==========
     // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
     // interpret \033 escapes the same way, so we restrict to Unix.
@@ -401,6 +409,13 @@ fn all_e2e_tests() {
     assert!(
         tasty
             .call_raw("surface.set_mark", json!({}))
+            .get("error")
+            .is_some()
+    );
+    // completion 은 surface_id 필수 (포커스 독립, 불가침 원칙 1).
+    assert!(
+        tasty
+            .call_raw("surface.completion", json!({}))
             .get("error")
             .is_some()
     );
