@@ -1,8 +1,9 @@
 //! shortcuts 모듈 단위 테스트 — binding parsing/matching + zoom 단축키.
 
-use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey, SmolStr};
 
 use super::binding::{matches_binding, parse_binding};
+use super::physical_key_to_logical;
 use crate::view::main::MainView;
 
 fn mods_ctrl() -> ModifiersState {
@@ -185,6 +186,105 @@ fn named_key_without_mapping_never_matches_empty() {
     // 과거에는 named_str이 "" 를 반환해서 빈 key_part와 매칭되는 버그가 있었다.
     let key = k_named(NamedKey::Control);
     assert!(!matches_binding("ctrl+a", &key, mods_ctrl()));
+}
+
+// ── physical_key_to_logical: IME 조합 중 modifier 폴백 매핑 ─────────
+//
+// modifier(Ctrl/Cmd/Alt) 가 눌린 동안 IME 가 logical_key 를 조합문자로 덮어써도
+// physical key code 로부터 US 레이아웃 기준 base 문자를 복원한다. 이 매핑이
+// handle_keyboard_input 의 shortcut_lookup_key / terminal_key / vi_key 폴백을
+// 뒷받침한다 — Ctrl+letter, 단축키 매칭, vi 키가 조합문자에 오염되지 않게 한다.
+
+fn code(c: KeyCode) -> PhysicalKey {
+    PhysicalKey::Code(c)
+}
+
+#[test]
+fn physical_letters_map_to_lowercase_char() {
+    for (kc, expected) in [
+        (KeyCode::KeyA, "a"),
+        (KeyCode::KeyC, "c"),
+        (KeyCode::KeyM, "m"),
+        (KeyCode::KeyZ, "z"),
+    ] {
+        assert_eq!(
+            physical_key_to_logical(&code(kc)),
+            Some(Key::Character(expected.into())),
+            "{kc:?} should map to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn physical_digits_map_to_digit_char() {
+    for (kc, expected) in [
+        (KeyCode::Digit0, "0"),
+        (KeyCode::Digit1, "1"),
+        (KeyCode::Digit9, "9"),
+    ] {
+        assert_eq!(
+            physical_key_to_logical(&code(kc)),
+            Some(Key::Character(expected.into())),
+            "{kc:?} should map to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn physical_punctuation_maps_to_symbol_char() {
+    // zoom 단축키(=/-) 등에 쓰이는 기호가 조합 중에도 복원되는지.
+    for (kc, expected) in [
+        (KeyCode::Minus, "-"),
+        (KeyCode::Equal, "="),
+        (KeyCode::Slash, "/"),
+        (KeyCode::Backslash, "\\"),
+    ] {
+        assert_eq!(
+            physical_key_to_logical(&code(kc)),
+            Some(Key::Character(expected.into())),
+            "{kc:?} should map to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn non_character_physical_keys_return_none() {
+    // 글자/숫자/기호가 아닌 코드는 None → 호출부가 logical_key 로 폴백한다.
+    assert_eq!(physical_key_to_logical(&code(KeyCode::Enter)), None);
+    assert_eq!(physical_key_to_logical(&code(KeyCode::Space)), None);
+    assert_eq!(physical_key_to_logical(&code(KeyCode::F1)), None);
+    assert_eq!(physical_key_to_logical(&code(KeyCode::ArrowUp)), None);
+}
+
+#[test]
+fn unidentified_physical_key_returns_none() {
+    use winit::keyboard::NativeKeyCode;
+    assert_eq!(
+        physical_key_to_logical(&PhysicalKey::Unidentified(NativeKeyCode::Unidentified)),
+        None
+    );
+}
+
+// ── matches_binding: 플랫폼 alt/option modifier 매핑 ────────────────
+//
+// 비-macOS: 바인딩 "alt" → winit alt_key, "option" 바인딩은 절대 불일치.
+// (macOS 분기는 이 타깃에서 컴파일되지 않으므로 non-macOS 규칙만 검증.)
+
+#[test]
+#[cfg(not(target_os = "macos"))]
+fn alt_binding_matches_alt_modifier_on_non_macos() {
+    let key = k_char("t");
+    assert!(matches_binding("alt+t", &key, ModifiersState::ALT));
+    assert!(!matches_binding("alt+t", &key, mods_none()));
+    assert!(!matches_binding("t", &key, ModifiersState::ALT));
+}
+
+#[test]
+#[cfg(not(target_os = "macos"))]
+fn option_binding_never_matches_on_non_macos() {
+    let key = k_char("t");
+    assert!(!matches_binding("option+t", &key, ModifiersState::ALT));
+    assert!(!matches_binding("option+t", &key, mods_none()));
 }
 
 // ── handle_zoom_shortcut: surface별 override 갱신 ──────────────────
