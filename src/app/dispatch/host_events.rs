@@ -97,11 +97,13 @@ impl App {
                     mgr,
                     lua,
                     af!(),
-                    workspace_id,
-                    name,
-                    subtitle,
-                    description,
-                    user_direct,
+                    workspace::RenameEvent {
+                        workspace_id,
+                        name,
+                        subtitle,
+                        description,
+                        user_direct,
+                    },
                 ),
                 PendingHostEvent::WorkspaceCreated {
                     workspace_id,

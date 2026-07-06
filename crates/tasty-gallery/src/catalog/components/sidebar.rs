@@ -15,19 +15,23 @@ use crate::catalog::icons::{
 };
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// (name, badge, active, mirror). mirror=원격 워크스페이스 로컬 mirror → 이름 앞
-/// leading `>_→` glyph(디자인 2026-07-02 workspace-mirror-indicator). "infra" 는
-/// mirror + notif 배지 공존 데모(채널 분리: glyph / badge 별도 축).
-const WORKSPACES: &[(&str, Option<&str>, bool, bool)] = &[
+/// 워크스페이스 행 데모 데이터: (name, badge, active, mirror). mirror=원격 워크스페이스
+/// 로컬 mirror → 이름 앞 leading `>_→` glyph(디자인 2026-07-02 workspace-mirror-indicator).
+type WsRow = (&'static str, Option<&'static str>, bool, bool);
+/// 카테고리 섹션 데모 데이터: (label, collapsed, rows).
+type CategorySection = (&'static str, bool, &'static [WsRow]);
+
+/// "infra" 는 mirror + notif 배지 공존 데모(채널 분리: glyph / badge 별도 축).
+const WORKSPACES: &[WsRow] = &[
     ("main", None, true, false),
     ("infra", Some("2"), false, true),
     ("agent", None, false, false),
 ];
 
 /// 카테고리 그룹 데모 데이터 (디자인 데모셋: normal / Services / Archived).
-/// (label, collapsed, rows[(name, badge, active, mirror)]). SERVICES 의 "agent" 는
-/// mirror — full 은 leading glyph, rail 은 아바타 우하단 corner chip 으로 표시.
-const CATEGORY_SECTIONS: &[(&str, bool, &[(&str, Option<&str>, bool, bool)])] = &[
+/// SERVICES 의 "agent" 는 mirror — full 은 leading glyph, rail 은 아바타 우하단
+/// corner chip 으로 표시.
+const CATEGORY_SECTIONS: &[CategorySection] = &[
     (
         "WORKSPACES",
         false,

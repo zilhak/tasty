@@ -466,8 +466,13 @@ struct CatHead {
     active: bool,
 }
 
-/// (헤더, 그 카테고리에 속한 행들) — 행은 (digit 없음) ws 행이라 status dot 유지.
-const CAT_GROUPS: &[(CatHead, &[(&str, WsStatus, bool)])] = &[
+/// 워크스페이스 행 데모 데이터: (name, status, active).
+type WsRow = (&'static str, WsStatus, bool);
+/// 카테고리 그룹 데모 데이터: (헤더, 그 카테고리에 속한 행들).
+type CatGroup = (CatHead, &'static [WsRow]);
+
+/// 행은 (digit 없음) ws 행이라 status dot 유지.
+const CAT_GROUPS: &[CatGroup] = &[
     (
         CatHead {
             n: Some("1"),

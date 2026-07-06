@@ -21,16 +21,29 @@ pub(super) fn emit_activated(
     mgr.emit_host_event("workspace.activated", &payload, EventScope::System);
 }
 
+/// `emit_renamed` 인자 묶음 — rename payload 필드 + Lua hook 발화 라우팅 플래그.
+pub(super) struct RenameEvent {
+    pub workspace_id: u32,
+    pub name: Option<String>,
+    pub subtitle: Option<String>,
+    pub description: Option<String>,
+    /// 사용자 직접 변경(GUI rename dialog)이면 `true` — IPC 경유는 `false`.
+    pub user_direct: bool,
+}
+
 pub(super) fn emit_renamed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
     autofire: AutofireCtx<'_>,
-    workspace_id: u32,
-    name: Option<String>,
-    subtitle: Option<String>,
-    description: Option<String>,
-    user_direct: bool,
+    ev: RenameEvent,
 ) {
+    let RenameEvent {
+        workspace_id,
+        name,
+        subtitle,
+        description,
+        user_direct,
+    } = ev;
     let payload = WorkspaceRenamed {
         workspace_id,
         name,
