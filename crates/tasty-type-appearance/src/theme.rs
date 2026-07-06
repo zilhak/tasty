@@ -1520,6 +1520,19 @@ impl Theme {
     pub fn modhint_row_gap(&self) -> LogicalPx {
         LogicalPx((6.0 * self.ui_zoom).round())
     }
+    /// 빈 조합 섹션의 내부 간격 (3px) — 채워진 섹션(6px)보다 좁게 잡아, 항상 표시되는
+    /// 빈 섹션이 리스트를 과하게 늘어뜨리지 않게 한다. `--tasty-modhint-empty-row-gap`
+    /// (디자인 `explorations/modifier-hint-empty-section.html` §6-5, `.mh-section--empty { gap: 3px }`).
+    #[inline]
+    pub fn modhint_empty_row_gap(&self) -> LogicalPx {
+        LogicalPx((3.0 * self.ui_zoom).round())
+    }
+    /// 빈 조합 플레이스홀더 행의 최소 높이 (20px) — 키캡 행(24px)보다 타이트.
+    /// `--tasty-modhint-empty-row-min-height` (디자인 시안 §6-5, `.mh-empty { min-height: 20px }`).
+    #[inline]
+    pub fn modhint_empty_row_min_height(&self) -> LogicalPx {
+        LogicalPx((20.0 * self.ui_zoom).round())
+    }
     /// 코너 리사이즈 그립 크기 (12px). `--tasty-modhint-grip-size` → `--tasty-icon-size-xs`.
     #[inline]
     pub fn modhint_grip_size(&self) -> LogicalPx {
@@ -1564,6 +1577,13 @@ impl Theme {
     #[inline]
     pub fn modhint_row_fg(&self) -> HexColor {
         self.text_secondary()
+    }
+    /// 빈 조합 플레이스홀더("바인딩 없음") 텍스트 색. `--tasty-modhint-empty-fg` → `text-muted`.
+    /// 키캡 행의 `text-secondary` 보다 한 단계 절제된 톤 — 실제 항목이 아니라 부재 신호라
+    /// 리스트에서 가장 조용하다(wash·글리프·키캡 없음).
+    #[inline]
+    pub fn modhint_empty_fg(&self) -> HexColor {
+        self.text_muted()
     }
     /// plugin 행 leading agent dot 색. `--tasty-modhint-agent-dot` → `accent-agent`.
     #[inline]

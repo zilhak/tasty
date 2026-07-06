@@ -162,6 +162,8 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | `--tasty-modhint-pad` | → 10px | `modhint_pad()` | 스크롤 리스트 안쪽 패딩 |
 | `--tasty-modhint-section-gap` | → `space-md` (12) | `modhint_section_gap()` | 섹션 사이 |
 | `--tasty-modhint-row-gap` | → 6px | `modhint_row_gap()` | 섹션 내부 행 사이 |
+| `--tasty-modhint-empty-row-gap` | → 3px | `modhint_empty_row_gap()` | **신규**. 빈 조합 섹션 내부 간격(채워진 6px보다 좁게, §6-5). 디자인은 인라인 px(`.mh-section--empty{gap:3px}`) — 코드에서 토큰화 |
+| `--tasty-modhint-empty-row-min-height` | → 20px | `modhint_empty_row_min_height()` | **신규**. 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트). 디자인 인라인 px(`.mh-empty{min-height:20px}`) — 코드에서 토큰화 |
 | `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` | 코너 리사이즈 그립 |
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
@@ -173,6 +175,7 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | `--tasty-modhint-role-bg` | → `surface-active` | `modhint_role_bg()` | 특수 역할 행 washed 배경 |
 | `--tasty-modhint-role-fg` | → `accent-primary` | `modhint_role_fg()` | 역할 행 leading 글리프 |
 | `--tasty-modhint-row-fg` | → `text-secondary` | `modhint_row_fg()` | 액션/역할 행 텍스트 |
+| `--tasty-modhint-empty-fg` | → `text-muted` | `modhint_empty_fg()` | **신규**. 빈 조합 플레이스홀더("바인딩 없음") 텍스트 — row-fg(text-secondary)보다 한 단계 절제(§6-2) |
 | `--tasty-modhint-agent-dot` | → `accent-agent` | `modhint_agent_dot()` | plugin 행 leading agent dot |
 
 > **디자인 `--tasty-modhint-shadow` 는 `shadow-modal`** 로 선언돼 있으나, Rust Theme 는 떠
