@@ -37,7 +37,6 @@ struct KeyboardSendOutcome {
 }
 
 impl MainView {
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — 키 입력 처리(modifier/스크롤/IME/전송 분기)
     pub(super) fn handle_keyboard_input(
         &mut self,
         event: &winit::event::KeyEvent,
