@@ -61,7 +61,7 @@ pub fn handle_pane_close(
     let intent = crate::core::intent::DomainIntent::ClosePane { pane_id };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => return super::structural_apply_error(id, &e),
     };
     let Some(crate::core::intent::CoreEvent::PaneClosed {
         pane_id,
@@ -234,7 +234,7 @@ pub fn handle_split(
             };
             let events = match core.apply(engine, intent) {
                 Ok(events) => events,
-                Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+                Err(e) => return super::structural_apply_error(id, &e),
             };
             let Some(crate::core::intent::CoreEvent::PaneSplit {
                 workspace_index,
@@ -301,7 +301,7 @@ pub fn handle_split(
             };
             let events = match core.apply(engine, intent) {
                 Ok(events) => events,
-                Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+                Err(e) => return super::structural_apply_error(id, &e),
             };
             let Some(crate::core::intent::CoreEvent::SurfaceSplit {
                 workspace_index,

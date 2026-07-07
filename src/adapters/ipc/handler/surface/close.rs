@@ -20,7 +20,7 @@ fn close_surface_via_intent(
     };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => return super::super::structural_apply_error(id, &e),
     };
     let Some(crate::core::intent::CoreEvent::SurfaceClosed {
         surface_id,

@@ -125,7 +125,7 @@ pub fn handle_tab_create(
     };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => return super::structural_apply_error(id, &e),
     };
 
     let Some(crate::core::intent::CoreEvent::TabCreated {
@@ -180,7 +180,7 @@ pub fn handle_tab_close(
     let intent = crate::core::intent::DomainIntent::CloseTab { tab_id };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => return super::structural_apply_error(id, &e),
     };
 
     let Some(crate::core::intent::CoreEvent::TabClosed {
@@ -245,7 +245,7 @@ pub fn handle_tab_move(
     };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => return super::structural_apply_error(id, &e),
     };
     let moved = matches!(
         events.into_iter().next(),

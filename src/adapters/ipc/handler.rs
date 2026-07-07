@@ -841,6 +841,30 @@ pub(crate) fn apply_meta(
     }
 }
 
+/// 구조변경 IPC 핸들러 공용 — `Core::apply` 가 반환한 에러를 JSON-RPC 응답으로
+/// 변환한다. mirror(원격 attach client) 워크스페이스에서 forward 로 큐잉된 구조
+/// op([`crate::core::MirrorStructuralBlocked`] `forwarded: true`)는 로컬 실행이
+/// 거부됐지만 `pending_structural_forward` 에 실려 원격으로 전송돼 곧 실행된다 —
+/// 이를 실패(`internal_error`)로 오보하지 않고 `{forwarded:true}` success 로
+/// 회신한다. 원격 실행 결과는 비동기이며(역반영 delta 로 mirror 트리에 반영),
+/// 호출자는 `list surfaces` 등으로 관측한다. forward 대상이 아닌 mirror 거부
+/// (`forwarded:false`, 예: convert/move-surface) 또는 일반 에러는 기존대로
+/// internal_error 로 반환한다.
+pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -> JsonRpcResponse {
+    if let Some(blocked) = e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+        && blocked.forwarded
+    {
+        return JsonRpcResponse::success(
+            id,
+            json!({
+                "forwarded": true,
+                "workspace_index": blocked.workspace_index,
+            }),
+        );
+    }
+    JsonRpcResponse::internal_error(id, e.to_string())
+}
+
 fn handle_system_info(
     state: &AppState,
     engine: &crate::core::CoreState,
@@ -1121,5 +1145,50 @@ fn handle_send_wait_idle(
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
+}
+
+#[cfg(test)]
+mod structural_apply_error_tests {
+    //! mirror 워크스페이스 구조 op forward 시 IPC 응답 정합성 회귀 방지.
+    //! `forwarded:true`(원격으로 큐잉됨)를 실패로 오보하지 않고 success 로 회신한다.
+    use super::structural_apply_error;
+
+    #[test]
+    fn forwarded_op_returns_success_not_error() {
+        let err = anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+            workspace_index: 3,
+            forwarded: true,
+        });
+        let resp = structural_apply_error(serde_json::json!(1), &err);
+        assert!(
+            resp.error.is_none(),
+            "forward 로 큐잉된 op 는 에러로 회신하면 안 된다(원격 실행됨)"
+        );
+        let result = resp
+            .result
+            .expect("forwarded op 는 success result 를 가진다");
+        assert_eq!(result["forwarded"], true);
+        assert_eq!(result["workspace_index"], 3);
+    }
+
+    #[test]
+    fn non_forwarded_mirror_block_stays_internal_error() {
+        // forward 불가 op(convert/move-surface)의 mirror 거부는 기존대로 에러.
+        let err = anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+            workspace_index: 0,
+            forwarded: false,
+        });
+        let resp = structural_apply_error(serde_json::json!(1), &err);
+        assert!(resp.result.is_none());
+        assert_eq!(resp.error.expect("internal_error").code, -32603);
+    }
+
+    #[test]
+    fn plain_error_stays_internal_error() {
+        let err = anyhow::anyhow!("some unrelated failure");
+        let resp = structural_apply_error(serde_json::json!(1), &err);
+        assert!(resp.result.is_none());
+        assert_eq!(resp.error.expect("internal_error").code, -32603);
     }
 }
