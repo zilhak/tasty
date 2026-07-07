@@ -1171,15 +1171,11 @@ mod tests {
         let cases = [
             (ImeWire::Enabled, ImeEvent::Enabled),
             (
-                ImeWire::Preedit {
-                    text: "ㅎ".into(),
-                },
+                ImeWire::Preedit { text: "ㅎ".into() },
                 ImeEvent::Preedit("ㅎ".into()),
             ),
             (
-                ImeWire::Commit {
-                    text: "한".into(),
-                },
+                ImeWire::Commit { text: "한".into() },
                 ImeEvent::Commit("한".into()),
             ),
             (ImeWire::Disabled, ImeEvent::Disabled),

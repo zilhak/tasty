@@ -121,7 +121,9 @@ pub fn draw_markdown_open_view(
             .variant(IconButtonVariant::Ghost)
             .size(ControlSize::Sm)
             .show(ui, th, &|ui, rect, c| {
-                icons::FOLDER_OPEN.image(rect.height(), c).paint_at(ui, rect)
+                icons::FOLDER_OPEN
+                    .image(rect.height(), c)
+                    .paint_at(ui, rect)
             })
             .clicked()
         {

@@ -114,9 +114,7 @@ fn query_rows(conn: &rusqlite::Connection, sql: &str) -> Vec<(String, i64)> {
             return Vec::new();
         }
     };
-    let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-    });
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)));
     match rows {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(e) => {
@@ -190,20 +188,11 @@ mod tests {
     #[cfg(windows)]
     fn dedup_key_folds_separator_and_case_windows() {
         // 구분자 `\`↔`/` + 대소문자 차이는 같은 키로 접힌다.
-        assert_eq!(
-            dedup_key(r"E:\a\B.md"),
-            dedup_key("E:/a/b.md"),
-        );
+        assert_eq!(dedup_key(r"E:\a\B.md"), dedup_key("E:/a/b.md"),);
         // verbatim `\\?\` prefix 유무도 같은 키.
-        assert_eq!(
-            dedup_key(r"\\?\E:\a\b.md"),
-            dedup_key(r"E:\a\b.md"),
-        );
+        assert_eq!(dedup_key(r"\\?\E:\a\b.md"), dedup_key(r"E:\a\b.md"),);
         // `.`/`..` 세그먼트 붕괴.
-        assert_eq!(
-            dedup_key(r"E:\a\md\..\b.md"),
-            dedup_key(r"E:\a\b.md"),
-        );
+        assert_eq!(dedup_key(r"E:\a\md\..\b.md"), dedup_key(r"E:\a\b.md"),);
     }
 
     #[test]

@@ -265,7 +265,10 @@ pub fn draw_remote_tool_popup(
     super::report_header_drag_rect(
         ui.ctx(),
         REMOTE_TOOL_POPUP_ID,
-        egui::Rect::from_x_y_ranges(full.x_range(), full.top()..=header_ir.response.rect.bottom()),
+        egui::Rect::from_x_y_ranges(
+            full.x_range(),
+            full.top()..=header_ir.response.rect.bottom(),
+        ),
     );
 
     // 탭바 — 디자인 bg-sidebar(mantle) 전체폭, TabBtn height 35, padding L8.

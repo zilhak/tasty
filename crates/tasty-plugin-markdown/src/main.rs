@@ -591,8 +591,7 @@ fn draw_path_field(
     // 선두 문서 글리프 — 베이크된 FILE 벡터 아이콘. 이전 이모지 라벨과 동일 위치·크기
     // (left_to_right flow, caption 크기, text_muted 색)를 유지한다.
     let icon_sz = theme.font_size_caption.value();
-    let (icon_rect, _) =
-        ui.allocate_exact_size(egui::vec2(icon_sz, icon_sz), egui::Sense::hover());
+    let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(icon_sz, icon_sz), egui::Sense::hover());
     tasty_plugin_sdk::baked_icon::draw(
         ui.painter(),
         baked_icons::FILE,

@@ -128,7 +128,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Modifier hint panel",
-        Some("Two holds shown · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift"),
+        Some(
+            "Two holds shown · only combos containing the held keys · ordered by combo size then Ctrl < Alt < Shift",
+        ),
     );
     spec::stage(ui, theme, StageVariant::Center, |ui| {
         ui.vertical(|ui| {
@@ -156,7 +158,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "modhint-width 220 (min 200)"),
             ("height", "modhint-height 400 (min 240)"),
             ("strip", "modhint-strip-height 28 · bg-sidebar"),
-            ("reveal", "hold 500ms (Shift-only 1200ms) → fade 200ms (opacity 0.2→1.0)"),
+            (
+                "reveal",
+                "hold 500ms (Shift-only 1200ms) → fade 200ms (opacity 0.2→1.0)",
+            ),
             ("release", "0ms — vanishes immediately"),
         ],
         &[

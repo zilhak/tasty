@@ -212,13 +212,18 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
         .unwrap()
         .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
         .unwrap();
-    engine.terminals.insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+    engine
+        .terminals
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
     assert!(engine.terminals.contains(sid_a));
 
     let _ = state.take_pending_lifecycle_events();
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid_a, false));
 
-    assert!(!engine.terminals.contains(sid_a), "닫힌 surface 의 Terminal 이 cleanup 돼야 함");
+    assert!(
+        !engine.terminals.contains(sid_a),
+        "닫힌 surface 의 Terminal 이 cleanup 돼야 함"
+    );
     assert!(engine.terminals.contains(sid_b), "형제 surface 는 생존");
     let events = state.take_pending_lifecycle_events();
     assert_eq!(events.len(), 1);
@@ -233,19 +238,42 @@ fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.active_workspace(&engine).focused_pane;
-    let sid1 = *collect_surface_ids(&mut state, &mut engine).iter().find(|&&s| s != sid0).unwrap();
+    let sid1 = *collect_surface_ids(&mut state, &mut engine)
+        .iter()
+        .find(|&&s| s != sid0)
+        .unwrap();
     assert_eq!(
-        state.active_workspace(&engine).pane_layout().find_pane(pane_id).unwrap().tabs.len(), 2
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap()
+            .tabs
+            .len(),
+        2
     );
 
     let _ = state.take_pending_lifecycle_events();
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
 
     assert_eq!(
-        state.active_workspace(&engine).pane_layout().find_pane(pane_id).unwrap().tabs.len(), 1
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap()
+            .tabs
+            .len(),
+        1
     );
-    assert!(!engine.terminals.contains(sid1), "닫힌 tab 의 surface 가 cleanup 돼야 함");
-    assert!(engine.terminals.contains(sid0), "형제 tab 의 surface 는 생존");
+    assert!(
+        !engine.terminals.contains(sid1),
+        "닫힌 tab 의 surface 가 cleanup 돼야 함"
+    );
+    assert!(
+        engine.terminals.contains(sid0),
+        "형제 tab 의 surface 는 생존"
+    );
     let events = state.take_pending_lifecycle_events();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].surface_id, sid1);
@@ -257,19 +285,45 @@ fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
 fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
     let (mut state, mut engine) = test_state();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state.test_split_pane(&mut engine, SplitDirection::Vertical).unwrap();
-    let sid1 = *collect_surface_ids(&mut state, &mut engine).iter().find(|&&s| s != sid0).unwrap();
-    assert_eq!(state.active_workspace(&engine).pane_layout().all_pane_ids().len(), 2);
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    let sid1 = *collect_surface_ids(&mut state, &mut engine)
+        .iter()
+        .find(|&&s| s != sid0)
+        .unwrap();
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        2
+    );
 
     let _ = state.take_pending_lifecycle_events();
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
 
-    assert_eq!(state.active_workspace(&engine).pane_layout().all_pane_ids().len(), 1);
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        1
+    );
     assert!(!engine.terminals.contains(sid1));
-    assert!(engine.terminals.contains(sid0), "형제 pane 의 surface 는 생존");
+    assert!(
+        engine.terminals.contains(sid0),
+        "형제 pane 의 surface 는 생존"
+    );
     let focused = state.active_workspace(&engine).focused_pane;
     assert!(
-        state.active_workspace(&engine).pane_layout().find_pane(focused).is_some(),
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(focused)
+            .is_some(),
         "focused_pane 이 생존 pane 으로 재배정돼야 함"
     );
     let events = state.take_pending_lifecycle_events();

@@ -169,7 +169,10 @@ impl App {
         let (result, error) = match caller.ensure_allowed(&call.method) {
             Err(e) => (None, Some(e.to_string())),
             Ok(()) => match call.params.get("instance_id").and_then(|v| v.as_u64()) {
-                None => (None, Some("banner.close: missing 'instance_id'".to_string())),
+                None => (
+                    None,
+                    Some("banner.close: missing 'instance_id'".to_string()),
+                ),
                 Some(iid) => {
                     if !self.plugin_owns_banner(&call.plugin_id, iid) {
                         (

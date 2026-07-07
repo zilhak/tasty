@@ -613,8 +613,7 @@ impl App {
         event: WindowEvent,
     ) {
         if let WindowEvent::RedrawRequested = &event {
-            if let (Some(gpu), Some(window)) =
-                (&mut self.shell_setup_gpu, &self.shell_setup_window)
+            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
                 let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
                 match result {
@@ -647,15 +646,13 @@ impl App {
                     }
                 }
             }
-            if let (Some(gpu), Some(window)) =
-                (&mut self.shell_setup_gpu, &self.shell_setup_window)
+            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
                 gpu.handle_egui_event(window, &event);
             }
             return;
         }
-        if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
-        {
+        if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
             gpu.handle_egui_event(window, &event);
             if let WindowEvent::CloseRequested = &event {
                 event_loop.exit();

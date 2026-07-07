@@ -7,12 +7,6 @@
 //! filled with the sidebar tone. All colors / sizes / spacing come from the `Theme`
 //! tokens delivered via `set_context` — no raw px / `from_rgb` hardcoding.
 
-use egui::emath::GuiRounding as _;
-use tasty_plugin_sdk::Translator;
-use tasty_type_appearance::theme::Theme;
-
-use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
-
 /// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
 /// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
 /// 좌표)를 생성한다. 런타임은 이 점배열을 [`tasty_plugin_sdk::baked_icon::draw`] 로
@@ -20,6 +14,12 @@ use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
 }
+
+use egui::emath::GuiRounding as _;
+use tasty_plugin_sdk::Translator;
+use tasty_type_appearance::theme::Theme;
+
+use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
 /// Render one frame of the image surface into `ctx`.
 pub fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
@@ -70,15 +70,25 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     let has_dir = doc.dir_images.len() > 1;
 
     if has_dir {
-        if baked_icon_button(ui, theme, baked_icons::CHEVRON_LEFT, tr.t("image_viewer.prev"))
-            .clicked()
+        if baked_icon_button(
+            ui,
+            theme,
+            baked_icons::CHEVRON_LEFT,
+            tr.t("image_viewer.prev"),
+        )
+        .clicked()
             && !doc.is_editing()
             && doc.step_prev().is_some()
         {
             doc.load_after_navigation();
         }
-        if baked_icon_button(ui, theme, baked_icons::CHEVRON_RIGHT, tr.t("image_viewer.next"))
-            .clicked()
+        if baked_icon_button(
+            ui,
+            theme,
+            baked_icons::CHEVRON_RIGHT,
+            tr.t("image_viewer.next"),
+        )
+        .clicked()
             && !doc.is_editing()
             && doc.step_next().is_some()
         {
@@ -86,7 +96,14 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         }
     }
 
-    if baked_icon_button(ui, theme, baked_icons::REFRESH, tr.t("image_viewer.refresh")).clicked() {
+    if baked_icon_button(
+        ui,
+        theme,
+        baked_icons::REFRESH,
+        tr.t("image_viewer.refresh"),
+    )
+    .clicked()
+    {
         doc.reload_from_disk();
     }
 
@@ -548,8 +565,13 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
             if !resp.has_focus() && doc.save_path_buffer.is_empty() {
                 resp.request_focus();
             }
-            if baked_icon_button(ui, theme, baked_icons::FOLDER_OPEN, tr.t("image_viewer.browse"))
-                .clicked()
+            if baked_icon_button(
+                ui,
+                theme,
+                baked_icons::FOLDER_OPEN,
+                tr.t("image_viewer.browse"),
+            )
+            .clicked()
             {
                 let dialog = rfd::FileDialog::new()
                     .add_filter("PNG", &["png"])

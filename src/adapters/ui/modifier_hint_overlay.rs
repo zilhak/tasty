@@ -106,10 +106,12 @@ impl ModifierHintRuntime {
 #[cfg(debug_assertions)]
 impl ModifierHintRuntime {
     /// 현재 홀드 상태 스냅샷 — `(눌린 조합, 경과시간, dismissed)`.
-    pub fn debug_snapshot(
-        &self,
-    ) -> (Option<Combo>, Option<std::time::Duration>, bool) {
-        (self.held, self.hold_since.map(|s| s.elapsed()), self.dismissed)
+    pub fn debug_snapshot(&self) -> (Option<Combo>, Option<std::time::Duration>, bool) {
+        (
+            self.held,
+            self.hold_since.map(|s| s.elapsed()),
+            self.dismissed,
+        )
     }
 
     /// `hold_since` 를 `elapsed` 만큼 과거로 백데이트 → 표시 지연 게이트를 즉시 통과시킨다
@@ -855,7 +857,10 @@ mod tests {
         let t0 = rt.hold_since;
         assert!(t0.is_some());
         // Ctrl 유지하며 Shift 추가 → 조합이 바뀌므로 dirty=true(즉시 좁힘), 타이머 리셋 안 함.
-        assert!(rt.update_hold(true, false, false, true), "조합 변경 시 dirty");
+        assert!(
+            rt.update_hold(true, false, false, true),
+            "조합 변경 시 dirty"
+        );
         assert_eq!(
             rt.held,
             Some(Combo {

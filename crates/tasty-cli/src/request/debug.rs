@@ -176,9 +176,7 @@ pub(super) fn modifier_hint_debug_command_to_method_params(
                 "elapsed_ms": elapsed_ms,
             }),
         ),
-        ModifierHintDebugCommands::State => {
-            ("debug.modifier_hint.state", serde_json::json!({}))
-        }
+        ModifierHintDebugCommands::State => ("debug.modifier_hint.state", serde_json::json!({})),
     }
 }
 

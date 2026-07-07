@@ -94,10 +94,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.vertical(|ui| {
                     ui.set_width(field_w);
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    Input::new()
-                        .width(field_w)
-                        .placeholder("Choose…")
-                        .show(ui, theme, &mut st.prop_buf);
+                    Input::new().width(field_w).placeholder("Choose…").show(
+                        ui,
+                        theme,
+                        &mut st.prop_buf,
+                    );
                     ui.add_space(theme.spacing_xs.value());
                     let opts = ["Recent · main.rs", "Recent · lib.rs", "Recent · Cargo.toml"];
                     combobox_dropdown(ui, theme, &opts, "No recent files", false, None, Some(1));

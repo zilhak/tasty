@@ -390,12 +390,9 @@ pub(super) fn handle_debug_modhint_hold(
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let axis = |k: &str| params.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
-    state.modifier_hint.update_hold(
-        axis("ctrl"),
-        axis("alt"),
-        axis("option"),
-        axis("shift"),
-    );
+    state
+        .modifier_hint
+        .update_hold(axis("ctrl"), axis("alt"), axis("option"), axis("shift"));
     if let Some(ms) = params.get("elapsed_ms").and_then(|v| v.as_u64()) {
         state
             .modifier_hint

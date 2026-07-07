@@ -67,17 +67,17 @@ fn apply_theme(ui: &mut egui::Ui, theme: &Theme, body_px: f32) {
 
     // Body / heading-anchor / mono sizes. `Heading` is the top of the library's interpolated
     // heading ladder (prose-h1 anchor); H2..H6 are interpolated down to `Body`.
-    style.text_styles.insert(
-        TextStyle::Body,
-        FontId::new(body, FontFamily::Proportional),
-    );
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::new(body, FontFamily::Proportional));
     style.text_styles.insert(
         TextStyle::Heading,
         FontId::new(theme.font_size_prose_h1.value(), FontFamily::Proportional),
     );
-    style
-        .text_styles
-        .insert(TextStyle::Monospace, FontId::new(body, FontFamily::Monospace));
+    style.text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(body, FontFamily::Monospace),
+    );
 
     let v = &mut style.visuals;
     // Body prose tone (also the md-table cell fg — the two coincide by design).
@@ -93,8 +93,10 @@ fn apply_theme(ui: &mut egui::Ui, theme: &Theme, body_px: f32) {
     v.widgets.active.fg_stroke.color = theme.text_primary().to_egui();
     // Shared noninteractive stroke: table grid border + code-block border + horizontal rule.
     // md-table-border is border-strong (opaque) so the grid is finally visible.
-    v.widgets.noninteractive.bg_stroke =
-        egui::Stroke::new(theme.border_width.value(), theme.md_table_border().to_egui());
+    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(
+        theme.border_width.value(),
+        theme.md_table_border().to_egui(),
+    );
     v.widgets.noninteractive.corner_radius =
         egui::CornerRadius::same(theme.corner_radius.value() as u8);
 }
@@ -296,7 +298,9 @@ mod tests {
     fn take_clicked_link_classifies_and_consumes() {
         let mut cache = MdCache::default();
         cache.add_link_hook("../sibling.md".to_string());
-        cache.link_hooks_mut().insert("../sibling.md".to_string(), true);
+        cache
+            .link_hooks_mut()
+            .insert("../sibling.md".to_string(), true);
         let b = base();
         let got = take_clicked_link(&mut cache, Some(&b));
         assert!(matches!(got, Some(LinkClick::File(_))));

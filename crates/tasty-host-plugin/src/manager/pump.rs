@@ -202,7 +202,8 @@ impl PluginManager {
                 out.new_event_publishes.push((id.to_string(), envelope));
             }
             PluginEvent::EventSubscribe { sub_id, pattern } => {
-                out.new_event_subscribes.push((id.to_string(), sub_id, pattern));
+                out.new_event_subscribes
+                    .push((id.to_string(), sub_id, pattern));
             }
             PluginEvent::EventUnsubscribe { sub_id } => {
                 out.new_event_unsubscribes.push((id.to_string(), sub_id));

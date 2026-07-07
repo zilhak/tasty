@@ -518,7 +518,10 @@ fn install_builtin_bundle_step(
         return false;
     }
     if let Err(e) = std::fs::create_dir_all(dest_root) {
-        tracing::warn!("install_builtins: mkdir {} failed: {e}", dest_root.display());
+        tracing::warn!(
+            "install_builtins: mkdir {} failed: {e}",
+            dest_root.display()
+        );
         return true;
     }
     if already_present {
@@ -572,7 +575,10 @@ fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path
                 bundle_v.as_ref().map(|v| v.to_string()),
             );
             if let Err(e) = overwrite_builtin_dir(src, dest) {
-                tracing::warn!("install_builtins: force-overwrite '{}' failed: {e}", spec.id);
+                tracing::warn!(
+                    "install_builtins: force-overwrite '{}' failed: {e}",
+                    spec.id
+                );
                 return true;
             }
             false
@@ -602,7 +608,8 @@ fn install_builtin_grant_step(mgr: &mut PluginManager, spec: &BuiltinSpec, dest:
         return false;
     }
     if !mgr.config.grants.contains_key(spec.id) {
-        mgr.config.set_granted(spec.id, manifest.permissions.clone());
+        mgr.config
+            .set_granted(spec.id, manifest.permissions.clone());
         tracing::info!(
             "auto-granted manifest permissions for builtin '{}'",
             spec.id
@@ -727,7 +734,11 @@ pub fn upgrade_builtins(
 
 /// §2.E.1 의사결정: `restore_all` 이 true 이면 전체 clear (restore_removed 무시).
 /// 그렇지 않으면 명시된 id 만 unmark. 변경이 있었으면 plugins.toml 저장.
-fn restore_removed_builtins(mgr: &mut PluginManager, restore_removed: &[String], restore_all: bool) {
+fn restore_removed_builtins(
+    mgr: &mut PluginManager,
+    restore_removed: &[String],
+    restore_all: bool,
+) {
     let mut removed_cleared = false;
     if restore_all {
         if mgr.config.clear_removed_builtins() {
@@ -779,7 +790,10 @@ fn swap_overwrite_respawn(
     }
     if let Err(e) = overwrite_builtin_dir(src, dest) {
         if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
-            tracing::warn!("respawn after failed overwrite of '{}' failed: {re}", spec.id);
+            tracing::warn!(
+                "respawn after failed overwrite of '{}' failed: {re}",
+                spec.id
+            );
         }
         return Err(BuiltinUpgradeItem {
             id: spec.id.into(),
@@ -881,9 +895,7 @@ fn install_new_builtin(
     dest_root: &Path,
     bundle_v: Option<&semver::Version>,
 ) -> SpecUpgrade {
-    if let Err(e) =
-        std::fs::create_dir_all(dest_root).and_then(|_| copy_dir_recursive(src, dest))
-    {
+    if let Err(e) = std::fs::create_dir_all(dest_root).and_then(|_| copy_dir_recursive(src, dest)) {
         return SpecUpgrade {
             item: BuiltinUpgradeItem {
                 id: spec.id.into(),

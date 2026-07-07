@@ -527,7 +527,11 @@ mod tests {
             ..Default::default()
         };
         let names = names(&combos_containing_all(ctrl_shift));
-        assert!(names.iter().all(|n| n.contains("ctrl") && n.contains("shift")));
+        assert!(
+            names
+                .iter()
+                .all(|n| n.contains("ctrl") && n.contains("shift"))
+        );
         assert!(!names.iter().any(|n| n == "ctrl"));
         assert!(!names.iter().any(|n| n == "ctrl+alt"));
         // 첫 원소는 홀드 조합 자신(가장 작은 크기).

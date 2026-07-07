@@ -424,8 +424,12 @@ impl TerminalState {
         if self.resize_taps.is_empty() {
             return;
         }
-        self.resize_taps
-            .retain(|tx| !matches!(tx.try_send((cols, rows)), Err(mpsc::TrySendError::Disconnected(_))));
+        self.resize_taps.retain(|tx| {
+            !matches!(
+                tx.try_send((cols, rows)),
+                Err(mpsc::TrySendError::Disconnected(_))
+            )
+        });
     }
 
     /// Fan a raw chunk out to all output subscribers without blocking the pump.

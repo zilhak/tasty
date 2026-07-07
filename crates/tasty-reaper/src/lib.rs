@@ -123,8 +123,9 @@ mod imp {
         /// `AssignProcessToJobObject` 가 실패를 반환할 뿐이지만 계약상 유효를 요구한다.
         pub unsafe fn assign_handle(&self, process_handle: HANDLE) -> io::Result<()> {
             // SAFETY: job 핸들은 유효(자기 소유), process_handle 은 호출자 보장 유효.
-            let ok =
-                unsafe { AssignProcessToJobObject(self.job.as_raw_handle() as HANDLE, process_handle) };
+            let ok = unsafe {
+                AssignProcessToJobObject(self.job.as_raw_handle() as HANDLE, process_handle)
+            };
             if ok == 0 {
                 return Err(io::Error::last_os_error());
             }

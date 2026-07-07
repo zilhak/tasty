@@ -78,7 +78,11 @@ macro_rules! fill_icon {
 stroke_icon!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
 stroke_icon!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
 stroke_icon!(CHECK, "check", r#"<path d="m20 6-11 11-5-5"/>"#);
-stroke_icon!(REFRESH, "refresh", r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#);
+stroke_icon!(
+    REFRESH,
+    "refresh",
+    r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
+);
 stroke_icon!(
     EDIT,
     "edit",
@@ -110,8 +114,16 @@ stroke_icon!(
 );
 
 // ── Navigation & disclosure ──
-stroke_icon!(CHEVRON_LEFT, "chevron_left", r#"<path d="m15 18-6-6 6-6"/>"#);
-stroke_icon!(CHEVRON_RIGHT, "chevron_right", r#"<path d="m9 18 6-6-6-6"/>"#);
+stroke_icon!(
+    CHEVRON_LEFT,
+    "chevron_left",
+    r#"<path d="m15 18-6-6 6-6"/>"#
+);
+stroke_icon!(
+    CHEVRON_RIGHT,
+    "chevron_right",
+    r#"<path d="m9 18 6-6-6-6"/>"#
+);
 stroke_icon!(CHEVRON_UP, "chevron_up", r#"<path d="m18 15-6-6-6 6"/>"#);
 stroke_icon!(CHEVRON_DOWN, "chevron_down", r#"<path d="m6 9 6 6 6-6"/>"#);
 stroke_icon!(
@@ -125,7 +137,11 @@ stroke_icon!(
     r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
 );
 // markdown 주소창 go(design `mdGo`). 신규 글리프.
-stroke_icon!(ARROW_RIGHT, "arrow_right", r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#);
+stroke_icon!(
+    ARROW_RIGHT,
+    "arrow_right",
+    r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#
+);
 
 // ── Surfaces & workspace ──
 stroke_icon!(
@@ -295,5 +311,13 @@ stroke_icon!(
     r#"<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>"#
 );
 // image 편집 툴바 undo/redo. 신규 글리프(design plugins.jsx ImgBtn).
-stroke_icon!(UNDO, "undo", r#"<path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-1"/>"#);
-stroke_icon!(REDO, "redo", r#"<path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h1"/>"#);
+stroke_icon!(
+    UNDO,
+    "undo",
+    r#"<path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-1"/>"#
+);
+stroke_icon!(
+    REDO,
+    "redo",
+    r#"<path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h1"/>"#
+);

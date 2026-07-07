@@ -132,7 +132,9 @@ fn windows_handle_channel_round_trip() {
         .expect("receive");
         // SAFETY: 방금 매핑한 공유 메모리. 단독 접근.
         let slice = unsafe { mem.as_mut_slice() };
-        done_tx.send((slice[0], slice[1], slice[2])).expect("send result");
+        done_tx
+            .send((slice[0], slice[1], slice[2]))
+            .expect("send result");
         // mem 을 살려둔 채 잠시 대기 — host 가 먼저 drop 해도 매핑이 유효함을 보인다.
         thread::sleep(Duration::from_millis(50));
     });

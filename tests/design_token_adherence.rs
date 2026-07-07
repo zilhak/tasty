@@ -36,11 +36,7 @@ const COLOR_SCAN_ROOTS: &[&str] = &[
 /// raw 픽토그래픽 글리프 스캔 대상 — **host 전용**(widgets/gallery 미포함). gallery
 /// specimen 은 ↑↓↵→◀▶ 를 대량 사용하므로 SCAN_ROOTS 재사용 시 오검출된다(연구 §3).
 /// 플러그인(`crates/tasty-plugin-*`)도 미포함 — S-11 과 비중첩.
-const GLYPH_SCAN_ROOTS: &[&str] = &[
-    "src/view",
-    "src/adapters/ui",
-    "src/gfx/gpu/shell_setup.rs",
-];
+const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu/shell_setup.rs"];
 
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
 /// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.

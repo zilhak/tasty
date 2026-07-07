@@ -228,7 +228,8 @@ pub fn combobox_dropdown(
                 empty_row(ui, theme, empty_label);
             } else {
                 for (i, entry) in entries.iter().enumerate() {
-                    if candidate_row(ui, theme, entry, mono, row_icon, active == Some(i)).clicked() {
+                    if candidate_row(ui, theme, entry, mono, row_icon, active == Some(i)).clicked()
+                    {
                         clicked = Some(i);
                     }
                 }
@@ -313,10 +314,7 @@ fn empty_row(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         egui::FontId::proportional(theme.font_size_body.value()),
         egui::Color32::PLACEHOLDER,
     );
-    let pos = egui::pos2(
-        rect.left() + pad_x,
-        rect.center().y - g.rect.height() * 0.5,
-    );
+    let pos = egui::pos2(rect.left() + pad_x, rect.center().y - g.rect.height() * 0.5);
     ui.painter().galley(pos, g, theme.text_muted().to_egui());
 }
 

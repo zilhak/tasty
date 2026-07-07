@@ -503,8 +503,7 @@ impl MainView {
         terminal_rect: &crate::model::PhysicalRect,
         button_state: ElementState,
     ) -> bool {
-        let modifier =
-            LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
         let mods = &self.base.modifiers;
         let link_mods_match = !matches!(modifier, LinkModifier::None)
             && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -516,9 +515,9 @@ impl MainView {
             let changed_pane = self
                 .state
                 .focus_pane_at_position(engine, x, y, *terminal_rect);
-            let changed_surf =
-                self.state
-                    .focus_surface_at_position(engine, x, y, *terminal_rect);
+            let changed_surf = self
+                .state
+                .focus_surface_at_position(engine, x, y, *terminal_rect);
             if changed_pane || changed_surf {
                 self.base.dirty = true;
             }
@@ -574,9 +573,9 @@ impl MainView {
         let pane_div = self
             .state
             .find_pane_divider_at(engine, x, y, *terminal_rect, threshold);
-        let surf_div =
-            self.state
-                .find_surface_divider_at(engine, x, y, *terminal_rect, threshold);
+        let surf_div = self
+            .state
+            .find_surface_divider_at(engine, x, y, *terminal_rect, threshold);
         if let Some(info) = pane_div {
             self.dragging_divider = Some(DividerDrag {
                 info,
@@ -601,9 +600,9 @@ impl MainView {
             let changed_pane = self
                 .state
                 .focus_pane_at_position(engine, x, y, *terminal_rect);
-            let changed_surf =
-                self.state
-                    .focus_surface_at_position(engine, x, y, *terminal_rect);
+            let changed_surf = self
+                .state
+                .focus_surface_at_position(engine, x, y, *terminal_rect);
             if changed_pane || changed_surf {
                 self.base.dirty = true;
             }
@@ -679,7 +678,8 @@ impl MainView {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
             let engine = &mut self.core_state;
-            self.state.resize_all(engine, *terminal_rect, cell_w, cell_h);
+            self.state
+                .resize_all(engine, *terminal_rect, cell_w, cell_h);
             self.base.dirty = true;
         }
         // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료. 단, Shift+좌클릭

@@ -321,9 +321,7 @@ fn deliver_buffer_handle(
             }
         }
         None => {
-            tracing::warn!(
-                "handle channel: unsolicited HandleAttach (request_id={request_id})"
-            );
+            tracing::warn!("handle channel: unsolicited HandleAttach (request_id={request_id})");
             // SAFETY: 위와 동일.
             unsafe { libc::close(fd) };
         }
@@ -352,9 +350,7 @@ fn deliver_buffer_handle(fd_pending: &SharedBufferFdPending, request_id: u64, au
             }
         }
         None => {
-            tracing::warn!(
-                "handle channel: unsolicited HandleAttach (request_id={request_id})"
-            );
+            tracing::warn!("handle channel: unsolicited HandleAttach (request_id={request_id})");
             close_orphan_handle(handle);
         }
     }

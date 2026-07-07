@@ -318,7 +318,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "combobox",
                             "Combobox",
-                            Some("Editable field + recent-history dropdown — mono path, middle-ellipsis"),
+                            Some(
+                                "Editable field + recent-history dropdown — mono path, middle-ellipsis",
+                            ),
                             components::prim_combobox::draw,
                         ),
                     ],

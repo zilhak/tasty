@@ -95,7 +95,11 @@ fn drag_creates_local_selection() {
 
     let sel = inst.debug_selection();
     assert_eq!(sel["present"], json!(true), "selection should be present");
-    assert_eq!(sel["empty"], json!(false), "drag selection should not be empty");
+    assert_eq!(
+        sel["empty"],
+        json!(false),
+        "drag selection should not be empty"
+    );
     assert_eq!(
         sel["dragging"],
         json!(false),
@@ -129,7 +133,11 @@ fn right_click_opens_terminal_menu() {
     settle();
 
     let menu = inst.debug_pending_menu();
-    assert_eq!(menu["present"], json!(true), "a context menu should be pending");
+    assert_eq!(
+        menu["present"],
+        json!(true),
+        "a context menu should be pending"
+    );
     assert_eq!(
         menu["kind"],
         json!("TerminalSurface"),

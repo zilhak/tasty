@@ -184,7 +184,10 @@ fn handle_channel_handle_attach_round_trip() {
     };
     let s = serde_json::to_string(&msg).unwrap();
     assert!(s.contains("\"kind\":\"handle_attach\""));
-    assert!(!s.contains("\"handle\""), "None handle must be skipped: {s}");
+    assert!(
+        !s.contains("\"handle\""),
+        "None handle must be skipped: {s}"
+    );
     let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
     assert_eq!(parsed, msg);
 
@@ -382,9 +385,7 @@ fn raw_input_event_tags_stable() {
     assert!(s.contains("\"t\":\"scroll\""), "{s}");
     // Ime 변형은 외부 `t` 태그와 내부 `ime` 태그가 둘 다 안정적으로 실린다.
     let s = serde_json::to_string(&RawInputEventWire::Ime {
-        event: ImeWire::Preedit {
-            text: "한".into(),
-        },
+        event: ImeWire::Preedit { text: "한".into() },
     })
     .unwrap();
     assert!(s.contains("\"t\":\"ime\""), "{s}");
@@ -399,9 +400,7 @@ fn raw_input_ime_events_round_trip() {
             event: ImeWire::Enabled,
         },
         RawInputEventWire::Ime {
-            event: ImeWire::Preedit {
-                text: "ㅎ".into(),
-            },
+            event: ImeWire::Preedit { text: "ㅎ".into() },
         },
         RawInputEventWire::Ime {
             event: ImeWire::Commit {

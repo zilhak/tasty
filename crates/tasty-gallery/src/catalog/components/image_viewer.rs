@@ -47,7 +47,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("toolbar", "prev / next / refresh / edit / new · surface-raised"),
+            (
+                "toolbar",
+                "prev / next / refresh / edit / new · surface-raised",
+            ),
             ("filename", "caption · text-muted"),
             ("zoom", "right · Fit / + / % / -"),
             ("canvas", "bg-sidebar (mantle) fill"),
@@ -216,7 +219,8 @@ fn button(
     // 중앙 글리프 — 본체 툴바 베이크 벡터를 canonical 아이콘 렌더로 미러(sm=14px, primary).
     let gs = theme.icon_glyph_size_sm.value();
     let gr = egui::Rect::from_center_size(r.center(), egui::vec2(gs, gs));
-    icon.image(gs, theme.text_primary().to_egui()).paint_at(ui, gr);
+    icon.image(gs, theme.text_primary().to_egui())
+        .paint_at(ui, gr);
     x + width + theme.spacing_xs.value()
 }
 

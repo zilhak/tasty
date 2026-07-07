@@ -39,7 +39,10 @@ fn main() {
             .unwrap_or_else(|e| panic!("failed to parse baked icon {const_name}: {e}"));
 
         let subpaths = flatten_tree(&tree);
-        assert!(!subpaths.is_empty(), "no path geometry baked from {const_name}");
+        assert!(
+            !subpaths.is_empty(),
+            "no path geometry baked from {const_name}"
+        );
 
         write_const(&mut generated, const_name, &subpaths);
     }

@@ -892,7 +892,9 @@ fn test_ime_preedit_flushed_on_non_popup_shortcut() {
 
     // 포커스된 터미널에 preedit "한" 을 IPC 로 세팅 (응답에 surface_id 포함).
     let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
-    let sid = pre["surface_id"].as_u64().expect("preedit response surface_id");
+    let sid = pre["surface_id"]
+        .as_u64()
+        .expect("preedit response surface_id");
     assert_eq!(pre["preedit_active"], serde_json::json!(true));
 
     // preedit 은 화면에 에코되지 않으므로, mark 이후 read 는 단축키가 보낸 것만 잡는다.
@@ -950,7 +952,9 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
 
     // 이제 터미널 포커스 + search_bar 열림·비포커스. preedit + mark 세팅.
     let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
-    let sid = pre["surface_id"].as_u64().expect("preedit response surface_id");
+    let sid = pre["surface_id"]
+        .as_u64()
+        .expect("preedit response surface_id");
     inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // find 재입력 → 열린 search_bar 를 동기 재포커스 → has_focused()==true → clear.
