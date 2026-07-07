@@ -326,6 +326,34 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     #[cfg(not(debug_assertions))]
                     let _ = routed; // release: echo 분기 없어 routed 미사용 — 값 drop(Result 아님).
                 }
+                for (client_id, op_id, op) in outcome.structural_ops {
+                    // mirror client 가 forward 한 구조 op — anchor 워크스페이스를 그
+                    // client 가 점유(holder)할 때만 실행하고 StructuralResult 로 회신.
+                    let anchor = op.anchor_surface_id();
+                    let result = match engine.attach.workspace_of_surface(anchor) {
+                        Some(ws) if engine.attach.workspace_holder(ws) == Some(client_id) => {
+                            crate::core::attach_runtime::execute_forwarded_structural_op(
+                                &mut app.core,
+                                &mut state,
+                                &mut engine,
+                                &op,
+                            )
+                        }
+                        Some(_) => Err("not workspace holder".to_string()),
+                        None => Err("workspace not found".to_string()),
+                    };
+                    let (ok, reason) = match result {
+                        Ok(()) => (true, None),
+                        Err(reason) => (false, Some(reason)),
+                    };
+                    let reply =
+                        crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
+                    let frame = crate::ipc::stream::StreamFrame::new(
+                        crate::ipc::stream::StreamTag::Control,
+                        serde_json::to_vec(&reply).unwrap_or_default(),
+                    );
+                    let _ = app.stream_hub.push(client_id, frame); // best-effort 회신 — 무시.
+                }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
                 }

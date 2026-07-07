@@ -26,7 +26,7 @@ mod passkey;
 mod preset;
 mod remote_profile;
 pub(crate) mod surface;
-mod tab;
+pub(crate) mod tab;
 mod telemetry;
 mod terminal;
 #[cfg(all(debug_assertions, feature = "gui"))]

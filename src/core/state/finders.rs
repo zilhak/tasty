@@ -65,6 +65,24 @@ impl CoreState {
         None
     }
 
+    /// Find the tab ID that contains a given surface ID (across all workspaces).
+    /// Used by mirror structural-op forwarding to resolve a `CloseTab` from its
+    /// anchor surface on the authoritative (remote) instance.
+    pub fn find_tab_for_surface(&self, surface_id: u32) -> Option<u32> {
+        for workspace in &self.workspaces {
+            for pid in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            return Some(tab.id);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Find the workspace index containing a given pane ID.
     pub fn find_workspace_index_for_pane(&self, pane_id: u32) -> Option<usize> {
         for (i, workspace) in self.workspaces.iter().enumerate() {

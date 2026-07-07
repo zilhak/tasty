@@ -236,6 +236,33 @@ pub enum StructuralOp {
     },
 }
 
+impl StructuralOp {
+    /// The remote surface id this op is anchored on. The server uses it to locate
+    /// the enclosing workspace and verify the requesting client is its attach
+    /// holder before executing (only the occupier may mutate the workspace).
+    pub fn anchor_surface_id(&self) -> u32 {
+        match self {
+            StructuralOp::SplitSurface { surface_id, .. }
+            | StructuralOp::CloseSurface { surface_id }
+            | StructuralOp::ConvertSurface { surface_id, .. } => *surface_id,
+            StructuralOp::SplitPane {
+                anchor_surface_id, ..
+            }
+            | StructuralOp::NewTab {
+                anchor_surface_id, ..
+            }
+            | StructuralOp::CloseTab { anchor_surface_id }
+            | StructuralOp::ClosePane { anchor_surface_id }
+            | StructuralOp::MoveTab {
+                anchor_surface_id, ..
+            } => *anchor_surface_id,
+            StructuralOp::MoveSurface {
+                source_surface_id, ..
+            } => *source_surface_id,
+        }
+    }
+}
+
 /// Split direction carried over the wire. Maps to the host `SplitDirection` /
 /// the IPC `"vertical"`/`"horizontal"` convention on the server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -510,6 +537,29 @@ mod tests {
         let s = serde_json::to_string(&fail).unwrap();
         assert!(s.contains("unsupported kind"));
         assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), fail);
+    }
+
+    #[test]
+    fn structural_op_anchor_surface_id() {
+        assert_eq!(
+            StructuralOp::CloseSurface { surface_id: 5 }.anchor_surface_id(),
+            5
+        );
+        assert_eq!(
+            StructuralOp::ClosePane {
+                anchor_surface_id: 9
+            }
+            .anchor_surface_id(),
+            9
+        );
+        assert_eq!(
+            StructuralOp::MoveSurface {
+                source_surface_id: 3,
+                target_surface_id: 4
+            }
+            .anchor_surface_id(),
+            3
+        );
     }
 
     #[test]

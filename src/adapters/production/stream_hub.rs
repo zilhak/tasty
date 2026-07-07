@@ -70,6 +70,12 @@ pub struct PumpOutcome {
     /// In workspace mode the bytes are surface-prefixed (`decode_mux`); the main
     /// loop demuxes based on whether the client holds a workspace.
     pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
+    /// `(client_id, op_id, op)` structural-op forward requests from mirror
+    /// clients (a mirror workspace's split/new-tab/close/move, forwarded to run
+    /// on this authoritative instance). The main loop verifies the client is the
+    /// workspace holder, executes via the existing IPC handlers, and replies with
+    /// a [`StreamControl::StructuralResult`](crate::ipc::stream::StreamControl).
+    pub structural_ops: Vec<(StreamClientId, u64, crate::ipc::stream::StructuralOp)>,
 }
 
 /// Per-client push sink held in the registry.
@@ -206,10 +212,26 @@ impl StreamHub {
                     .workspace_attach_requests
                     .push((client_id, target_workspace_id)),
                 StreamInbound::Frame { client_id, frame } => {
-                    if frame.tag == crate::ipc::stream::StreamTag::Data {
-                        out.input_frames.push((client_id, frame.payload));
+                    match frame.tag {
+                        crate::ipc::stream::StreamTag::Data => {
+                            out.input_frames.push((client_id, frame.payload));
+                        }
+                        crate::ipc::stream::StreamTag::Control => {
+                            // Mirror structural-op forward (client→server). Only
+                            // `StructuralOp` is a client→server Control message;
+                            // any other Control payload (unknown/newer event) fails
+                            // to deserialize and is ignored (forward compatible).
+                            if let Ok(crate::ipc::stream::StreamControl::StructuralOp {
+                                op_id,
+                                op,
+                            }) = serde_json::from_slice(&frame.payload)
+                            {
+                                out.structural_ops.push((client_id, op_id, op));
+                            }
+                        }
+                        // Ping/Detach from clients carry no step-4 payload.
+                        _ => {}
                     }
-                    // Control/Ping/Detach from clients carry no step-4 payload.
                 }
             }
         }
@@ -326,6 +348,54 @@ mod tests {
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.workspace_attach_requests, vec![(4u32, 8u32)]);
         assert!(out.attach_requests.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_structural_op() {
+        use crate::ipc::stream::{SplitAxis, StreamControl, StructuralOp};
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let op = StructuralOp::SplitSurface {
+            surface_id: 12,
+            direction: SplitAxis::Vertical,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let payload = serde_json::to_vec(&StreamControl::StructuralOp {
+            op_id: 3,
+            op: op.clone(),
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 8,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.structural_ops, vec![(8u32, 3u64, op)]);
+        // Not misclassified as input.
+        assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_ignores_unknown_control() {
+        // A Control frame that is not a StructuralOp (e.g. a Resize, which is
+        // server→client only) must not be classified as a structural op.
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::Resize {
+            surface_id: 1,
+            cols: 80,
+            rows: 24,
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 8,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert!(out.structural_ops.is_empty());
     }
 
     #[test]

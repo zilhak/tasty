@@ -983,6 +983,10 @@ impl App {
             let _ = routed; // release: echo 분기 없어 routed 미사용 — 값 drop(Result 아님).
         }
 
+        for (client_id, op_id, op) in outcome.structural_ops {
+            self.apply_forwarded_structural_op(client_id, op_id, &op, &hub);
+        }
+
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
         }
@@ -1094,5 +1098,63 @@ impl App {
             }
         }
         false
+    }
+
+    /// mirror client 가 forward 한 구조 op 를 실행하고 `StructuralResult` 로 회신한다.
+    /// anchor surface 가 속한 워크스페이스를 **그 client 가 점유(holder)** 하고 있는
+    /// main window 에서만 실행한다(ADR-0040 hard 점유 = 구조 변경 권한). holder 가
+    /// 아니거나 대상 워크스페이스를 찾지 못하면 `ok:false` 로 거부한다.
+    ///
+    /// 한계: parked engine(백그라운드 창)은 `AppState` 를 갖지 않아 재사용 핸들러를
+    /// 호출할 수 없다 — mirror-attach 된 워크스페이스는 활성 호스팅 상태라 실제로는
+    /// main window 에 있다.
+    fn apply_forwarded_structural_op(
+        &mut self,
+        client_id: u32,
+        op_id: u64,
+        op: &crate::ipc::stream::StructuralOp,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        let anchor = op.anchor_surface_id();
+        let result: Option<Result<(), String>> = {
+            let core = &mut self.core;
+            let mut found = None;
+            for w in self.view.views.values_mut() {
+                let Some(main) = w.as_main_mut() else {
+                    continue;
+                };
+                let engine = &mut main.core_state;
+                let Some(ws) = engine.attach.workspace_of_surface(anchor) else {
+                    continue;
+                };
+                if engine.attach.workspace_holder(ws) != Some(client_id) {
+                    // 점유자 아님 → 이 client 는 이 워크스페이스를 조작할 권한 없음.
+                    found = Some(Err("not workspace holder".to_string()));
+                    break;
+                }
+                let r = crate::core::attach_runtime::execute_forwarded_structural_op(
+                    core,
+                    &mut main.state,
+                    engine,
+                    op,
+                );
+                w.mark_dirty();
+                found = Some(r);
+                break;
+            }
+            found
+        };
+
+        let (ok, reason) = match result {
+            Some(Ok(())) => (true, None),
+            Some(Err(reason)) => (false, Some(reason)),
+            None => (false, Some("workspace not found".to_string())),
+        };
+        let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
+        let frame = crate::ipc::stream::StreamFrame::new(
+            crate::ipc::stream::StreamTag::Control,
+            serde_json::to_vec(&reply).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
     }
 }
