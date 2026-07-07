@@ -101,6 +101,8 @@ pub struct KindCatalog {
 struct KindSpec {
     kind: String,
     label: String,
+    /// leading 아이콘 이름(registry `SurfaceKindDef.icon` 스냅샷). `None` 이면 FILE.
+    icon: Option<String>,
     /// 이 kind 를 편집할 때 노출할 필드 스키마(registry `preset_fields` 스냅샷).
     fields: Vec<PresetFieldSpec>,
 }
@@ -137,6 +139,7 @@ impl KindCatalog {
                         .as_ref()
                         .map(|def| label_from_i18n_key(def.display_name_i18n_key, k))
                         .unwrap_or_else(|| fallback_kind_label(k)),
+                    icon: def.as_ref().and_then(|def| def.icon.clone()),
                     fields: def
                         .as_ref()
                         .map(|def| def.preset_fields.clone())
@@ -156,6 +159,7 @@ impl KindCatalog {
                 .into_iter()
                 .map(|(kind, label)| KindSpec {
                     fields: fallback_fields(&kind),
+                    icon: None,
                     kind,
                     label,
                 })
@@ -197,6 +201,17 @@ impl KindCatalog {
             .find(|s| s.kind == kind)
             .map(|s| s.fields.clone())
             .unwrap_or_else(|| fallback_fields(kind))
+    }
+
+    /// kind → leading 아이콘. registry `SurfaceKindDef.icon` 이름을 host 아이콘 세트로
+    /// 해석한다(하드코딩 없음). 미등록/미선언(빈 catalog 포함)이면 중립 `FILE`.
+    fn kind_icon(&self, kind: &str) -> Icon {
+        self.specs
+            .iter()
+            .find(|s| s.kind == kind)
+            .and_then(|s| s.icon.as_deref())
+            .map(icons::from_name)
+            .unwrap_or(icons::FILE)
     }
 }
 
@@ -260,22 +275,13 @@ fn fallback_fields(kind: &str) -> Vec<PresetFieldSpec> {
     }
 }
 
-// ── kind 시각 매핑 (아이콘 + accent) ────────────────────────────────────
+// ── kind accent 시각 매핑 ───────────────────────────────────────────────
 //
-// 표시명(label)은 registry/i18n 으로 해석하지만, *아이콘과 accent 색*은 본질적으로
-// 시각 매핑이라 kind 문자열로 직접 결정한다(`tab_bar::kind_icon` 과 동일 idiom).
-// 미지정 kind 는 중립(FILE + text-secondary)으로 떨어진다 — plugin/remote kind 안전.
-
-fn kind_icon(kind: &str) -> Icon {
-    match kind {
-        "markdown" => icons::MD,
-        "explorer" => icons::FOLDER,
-        "image" => icons::IMAGE,
-        "html" => icons::HTML,
-        "terminal" | "attached" => icons::TERM,
-        _ => icons::FILE,
-    }
-}
+// 아이콘은 registry `SurfaceKindDef.icon`([`KindCatalog::kind_icon`])으로 해석한다.
+// accent 색은 아직 registry/theme 에 대응 토큰이 없다(SurfaceTheme 은 bg/fg 만) — 프리셋
+// 편집기 leaf 를 장식하는 host 시각 선택이라 kind 별로 직접 결정한다. 미지정 kind 는
+// 중립(text-secondary)으로 떨어진다. per-surface accent 토큰이 디자인에 추가되면
+// registry 조회로 이관 예정.
 
 fn kind_accent(theme: &Theme, kind: &str) -> egui::Color32 {
     match kind {
@@ -1791,7 +1797,7 @@ fn draw_leaf_preview(
 
     paint_icon(
         ui,
-        kind_icon(&leaf.kind),
+        catalog.kind_icon(&leaf.kind),
         egui::pos2(cx_x, y + icon * 0.5),
         icon,
         kind_accent(theme, &leaf.kind),
@@ -2300,7 +2306,7 @@ fn draw_pane_card(
         } else {
             theme.text_muted().to_egui()
         };
-        paint_icon(ui, kind_icon(rep), icon_c, icon_sz, icon_color);
+        paint_icon(ui, cx.catalog.kind_icon(rep), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
                 tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,

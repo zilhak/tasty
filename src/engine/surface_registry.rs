@@ -124,6 +124,12 @@ pub struct SurfaceKindDef {
     /// 03D-A에서는 자리만 둔다 — 현재 표시명은 surface 자체의 `display_name()` 메서드를 사용.
     pub display_name_i18n_key: &'static str,
 
+    /// 탭/프리셋 leading 아이콘의 아이콘 **이름**(매니페스트 `icon`). host 는 이 이름을
+    /// `icons::from_name` 으로 glyph 에 매핑한다 — 본체의 `match kind { "markdown" => MD }`
+    /// 하드코딩을 generic 화. builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    /// `None` 이면 UI fallback(FILE).
+    pub icon: Option<String>,
+
     /// 새 surface 인스턴스를 만든다. 03F에서 IPC handler / `add_kind_tab` /
     /// `split_pane_targeted` 가 이 함수를 호출하여 종류별 분기를 일원화한다.
     ///
@@ -296,6 +302,7 @@ mod tests {
         SurfaceKindDef {
             kind,
             display_name_i18n_key: "test.dummy",
+            icon: None,
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
             restore: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
             snapshot: Arc::new(|_| None),

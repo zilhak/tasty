@@ -86,6 +86,7 @@ pub fn register_egui_mesh_kind(
     registry.register(SurfaceKindDef {
         kind: kind_static,
         display_name_i18n_key: i18n_key_static,
+        icon: decl.icon.clone(),
         // 생성 params 의 `file` 을 stand-in 에 보관한다. plugin 에 surface.create 를
         // 알리는 것은 host_cmd 채널이 아니라 첫 set_context bootstrap 직전에 직접
         // 송신한다(`MainView::forward_egui_mesh_context`) — 같은 plugin req 채널 FIFO 라

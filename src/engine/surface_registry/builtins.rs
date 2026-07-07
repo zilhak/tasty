@@ -51,6 +51,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "terminal",
         display_name_i18n_key: "surface.kind.terminal",
+        icon: Some("terminal".to_string()),
         create: Arc::new(|_sid, _cwd, _params| {
             anyhow::bail!("terminal surfaces require host-managed PTY spawn; use split_pane_targeted/add_terminal_tab")
         }),
@@ -98,6 +99,8 @@ fn register_attached(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "attached",
         display_name_i18n_key: "surface.kind.attached",
+        // attached 는 배타 점유 marker — 내부 Terminal 의 mirror 라 terminal 아이콘.
+        icon: Some("terminal".to_string()),
         create: Arc::new(|_sid, _cwd, _params| {
             anyhow::bail!(
                 "attached surfaces are created by the attach handler, not via registry create"
@@ -126,6 +129,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "explorer",
         display_name_i18n_key: "surface.kind.explorer",
+        icon: Some("folder".to_string()),
         create: Arc::new(|sid, cwd, params| {
             let root = params
                 .get("path")
@@ -227,6 +231,8 @@ fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
         display_name_i18n_key: "surface.kind.empty",
+        // empty 는 placeholder — 전용 아이콘 없이 UI fallback(FILE).
+        icon: None,
         create: Arc::new(|sid, cwd, _params| {
             Ok(
                 Box::new(EmptySurface::new(sid).with_cwd(cwd.map(std::path::PathBuf::from)))

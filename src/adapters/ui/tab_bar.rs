@@ -20,18 +20,6 @@ use crate::adapters::ui::icons;
 use crate::state::AppState;
 use crate::theme;
 
-/// surface kind → 탭 leading 아이콘 (ui_kit tab strip).
-fn kind_icon(kind: &str) -> icons::Icon {
-    match kind {
-        "markdown" => icons::MD,
-        "explorer" => icons::FOLDER,
-        "image" => icons::IMAGE,
-        "html" => icons::HTML,
-        "terminal" | "attached" => icons::TERM,
-        _ => icons::FILE,
-    }
-}
-
 /// View 입력 — pane 한 개 분의 탭 데이터.
 #[derive(Clone, Debug)]
 pub struct PaneTabBarView {
@@ -39,8 +27,9 @@ pub struct PaneTabBarView {
     /// Pane 의 *물리* 좌표 사각형 (view 가 scale_factor 로 logical 변환).
     pub rect: PhysicalRect,
     pub tab_names: Vec<String>,
-    /// 탭별 surface kind ("terminal"/"markdown"/...) — leading 아이콘 결정.
-    pub tab_kinds: Vec<&'static str>,
+    /// 탭별 leading 아이콘. wrapper 가 registry(kind→`SurfaceKindDef.icon`)에서 해석해
+    /// 담는다 — view 는 kind 를 모른 채 아이콘만 그린다(엔진 비의존 유지).
+    pub tab_icons: Vec<icons::Icon>,
     /// 탭별 알림(노란 라벨) 여부.
     pub tab_has_notification: Vec<bool>,
     /// 탭별 busy(녹색 점) 여부.
@@ -398,9 +387,9 @@ pub fn draw_pane_tab_bars_view(
                                         fade,
                                     );
                                 } else {
-                                    let kind = info.tab_kinds.get(i).copied().unwrap_or("terminal");
-                                    kind_icon(kind)
-                                        .image(icon_size, text_color.into())
+                                    let icon =
+                                        info.tab_icons.get(i).copied().unwrap_or(icons::FILE);
+                                    icon.image(icon_size, text_color.into())
                                         .paint_at(ui, icon_rect);
                                 }
 
@@ -788,14 +777,22 @@ pub fn draw_pane_tab_bars(
                 pane_id,
                 rect: pane_rect,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
-                tab_kinds: pane
+                tab_icons: pane
                     .tabs
                     .iter()
                     .map(|t| {
-                        engine
+                        let kind = engine
                             .find_surface_by_id(t.focused_surface)
                             .map(|s| s.kind())
-                            .unwrap_or("terminal")
+                            .unwrap_or("terminal");
+                        // kind→아이콘: registry 의 SurfaceKindDef.icon 이름을 host
+                        // 아이콘 세트로 해석(하드코딩 없음). 미선언/미등록은 FILE.
+                        engine
+                            .surface_registry
+                            .get(kind)
+                            .and_then(|d| d.icon.clone())
+                            .map(|n| icons::from_name(&n))
+                            .unwrap_or(icons::FILE)
                     })
                     .collect(),
                 tab_has_notification,
@@ -1064,7 +1061,7 @@ mod tests {
                 height: PhysicalPx(600.0),
             },
             tab_names: names.iter().map(|s| s.to_string()).collect(),
-            tab_kinds: vec!["terminal"; n],
+            tab_icons: vec![icons::TERM; n],
             tab_has_notification: vec![false; n],
             tab_is_busy: vec![false; n],
             active_tab: active,

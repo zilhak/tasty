@@ -11,3 +11,37 @@ pub use tasty_icons::{
     COPY as CLIPBOARD, LAYOUT_DETAIL as DETAIL, LAYOUT_GRID as GRID, LIST as LIST_VIEW,
     MARKDOWN as MD, REMOTE as TERMINAL_PROMPT, TERMINAL as TERM,
 };
+
+/// surface kind 등 매니페스트/registry 가 선언한 아이콘 **이름** → glyph 매핑.
+/// host 가 kind 를 이름으로 분기(`match kind { "markdown" => MD }`)하지 않고, kind 가
+/// 선언한 icon 이름을 이 host-소유 아이콘 세트에서 해석한다. 미지정/미지의 이름은
+/// 중립 `FILE` 로 떨어진다(plugin/remote kind 안전망).
+pub fn from_name(name: &str) -> Icon {
+    match name {
+        "markdown" => MD,
+        "folder" => FOLDER,
+        "image" => IMAGE,
+        "html" => HTML,
+        "terminal" => TERM,
+        "file" => FILE,
+        _ => FILE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_name_maps_surface_kind_icons() {
+        // uri 로 아이콘 동일성 비교(Icon 는 PartialEq 미구현).
+        assert_eq!(from_name("markdown").uri, MD.uri);
+        assert_eq!(from_name("folder").uri, FOLDER.uri);
+        assert_eq!(from_name("image").uri, IMAGE.uri);
+        assert_eq!(from_name("html").uri, HTML.uri);
+        assert_eq!(from_name("terminal").uri, TERM.uri);
+        assert_eq!(from_name("file").uri, FILE.uri);
+        // 미지의 이름은 중립 FILE 로 fallback.
+        assert_eq!(from_name("no_such_icon").uri, FILE.uri);
+    }
+}

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.html"
 name = "HTML Viewer"
-version = "0.1.5"
+version = "0.1.6"
 description = "HTML viewer surface. Uses tasty's native WebView overlay toolkit."
 api_version = "1"
 permissions = [
@@ -20,6 +20,7 @@ command = "tasty-plugin-html"
 [[surface_kinds]]
 kind = "html"
 display_name_i18n_key = "surface.kind.html"
+icon = "html"
 rendering = "webview"
 
 # 프리셋 편집기 필드 — URL 입력. url 은 파일 경로 파생 대상이 아니다(derive_cwd 없음).

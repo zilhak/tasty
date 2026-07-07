@@ -28,7 +28,7 @@
 
 각 탭은 표시명(work-area 우선순위로 결정) + 상태 표지를 보인다:
 
-- **leading 아이콘** — surface kind 별(terminal/markdown/…).
+- **leading 아이콘** — surface kind 별(terminal/markdown/…). 아이콘은 registry `SurfaceKindDef.icon`(매니페스트 `icon` 이름)을 `icons::from_name` 으로 해석한다 — host 가 kind 를 하드코딩 분기하지 않는다.
 - **알림 표지** — 노란 라벨(`tab_has_notification`).
 - **busy 점** — 녹색 점(`tab_is_busy`, 포그라운드 프로세스 ≠ shell).
 - **활성/포커스** — active 탭 강조, 포커스된 Pane 인지에 따라 스트립 배경이 달라짐.
