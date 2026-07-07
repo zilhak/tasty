@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.16"
+version = "0.1.17"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -26,6 +26,9 @@ kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
 icon = "markdown"
 rendering = "egui-mesh"
+# capability: 줌 단축키로 폰트 크기 조절, copy 단축키로 egui Copy(선택 텍스트) 주입.
+zoomable = true
+egui_copy = true
 # 옛 caller 가 `file_path` 로 넘겨도 host 가 canonical `file` 키로 정규화한다.
 # 본체의 `kind == "markdown"` 정규화 하드코딩을 대체(generic-kind 마이그레이션).
 param_aliases = { file_path = "file" }

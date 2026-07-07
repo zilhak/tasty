@@ -47,6 +47,24 @@ impl FocusedSurfaceType {
     pub fn is_kind(&self, kind: &str) -> bool {
         matches!(self, Self::Kind(k) if k == kind)
     }
+
+    /// registry 에서 이 surface kind 의 capability flag 를 조회한다. `Terminal`/`None`
+    /// 은 kind 문자열이 아니므로 항상 false. host 가 `kind == "..."` 하드코딩 대신
+    /// plugin/builtin 이 선언한 capability 로 게이트를 판정하게 한다.
+    pub fn kind_capability(
+        &self,
+        engine: &CoreState,
+        f: impl Fn(&crate::engine::surface_registry::SurfaceKindDef) -> bool,
+    ) -> bool {
+        match self {
+            Self::Kind(k) => engine
+                .surface_registry
+                .get(k)
+                .map(|d| f(&d))
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

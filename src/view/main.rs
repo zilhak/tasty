@@ -24,7 +24,7 @@ use winit::window::CursorIcon;
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::selection::TextSelection;
-use crate::state::{AppState, FocusedSurfaceType};
+use crate::state::AppState;
 use crate::view::ui::{View, sealed};
 use crate::view::{
     Modality, TerminalHostView, ViewAction, ViewBase, ViewCtx, terminal_host::MODELESS_MODALITY,
@@ -263,11 +263,12 @@ impl View for MainView {
         // 시스템으로 직접 넘긴다. markdown/image 는 plugin egui-mesh 로 렌더되므로 host
         // egui 에 대응 위젯이 없다 — 대신 중앙 키 디스패처(keyboard.rs)가 surface 로
         // Key/Text 를, ime.rs 가 IME 를 forward 한다. 여기서 빼야 host egui 가 그 키/IME 를
-        // 삼켜 forward(특히 IME preedit)를 막지 않는다.
-        let egui_surface = matches!(
-            self.state.focused_surface_type(&self.core_state),
-            FocusedSurfaceType::Kind(ref k) if k == "explorer"
-        );
+        // 삼켜 forward(특히 IME preedit)를 막지 않는다. 어느 kind 가 host egui 를 소비하는지는
+        // registry 의 consumes_egui_input capability 로 판정(kind 하드코딩 없음).
+        let egui_surface = self
+            .state
+            .focused_surface_type(&self.core_state)
+            .kind_capability(&self.core_state, |d| d.consumes_egui_input);
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);
 

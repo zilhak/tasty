@@ -120,6 +120,11 @@ pub fn register_remote_kind(
         ),
         param_aliases: decl.param_aliases.clone(),
         default_params: decl.default_params.clone(),
+        consumes_egui_input: decl.consumes_egui_input,
+        zoomable: decl.zoomable,
+        egui_copy: decl.egui_copy,
+        copy_path: decl.copy_path,
+        egui_paste: decl.egui_paste,
     });
 
     tracing::info!(

@@ -91,6 +91,12 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 - **`preset_fields`** — 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마. `required = true` 인 `param_key` 는 surface 생성 IPC(`pane.split`/`workspace.new`)의 **필수 파라미터**로도 쓰인다(단일 진실원). 예: markdown 은 `file` 필드 하나(required).
 - **`param_aliases`** — 옛 caller 가 넘기는 alias 키 → canonical 키 매핑. host 가 convert 경로에서 정규화한다. 예: markdown 의 `{ file_path = "file" }`.
 - **`default_params`** — surface 생성 시 params 에 없으면 host 가 주입하는 기본값(키 → 리터럴 또는 정책 토큰). 정책 토큰: `@settings.explorer_view_mode`(Settings 의 마지막 explorer view mode), `@home`(홈 디렉토리 — **새 탭 생성 fresh-context 에서만** 해석; split/preset/workspace 처럼 cwd 를 상속·carry 하는 경로에선 건너뛴다). 예: explorer(builtin)의 `{ view_mode = "@settings.explorer_view_mode", path = "@home" }`.
+- **capability flags**(모두 기본 false) — host 의 입력/줌/복사/붙여넣기 게이트를 kind 하드코딩 없이 판정한다:
+  - **`consumes_egui_input`** — host 가 이 kind 를 host egui 위젯으로 렌더해 winit 키/IME 를 host egui 로 흘린다(예: explorer). egui-mesh 렌더 kind 는 false(중앙 키 디스패처가 forward).
+  - **`zoomable`** — 줌 in/out/reset 단축키로 폰트 크기 override 조절(예: markdown/explorer).
+  - **`egui_copy`** — copy 단축키가 egui `Event::Copy` 를 주입(선택 텍스트를 plugin egui 가 복사, 예: markdown).
+  - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
+  - **`egui_paste`** — paste 를 이 kind 가 자체 소비(host 가 terminal paste 로 흘리지 않음, 예: image).
 
 ### 파일 핸들러 (detector + handler)
 

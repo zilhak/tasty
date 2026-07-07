@@ -85,6 +85,12 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         ],
         param_aliases: std::collections::HashMap::new(),
         default_params: std::collections::HashMap::new(),
+        // terminal 은 GPU-PTY surface — 줌/복사/입력은 별도 경로. capability flags 없음.
+        consumes_egui_input: false,
+        zoomable: false,
+        egui_copy: false,
+        copy_path: false,
+        egui_paste: false,
     });
 }
 
@@ -114,6 +120,11 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
         default_params: std::collections::HashMap::new(),
+        consumes_egui_input: false,
+        zoomable: false,
+        egui_copy: false,
+        copy_path: false,
+        egui_paste: false,
     });
 }
 
@@ -195,6 +206,13 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             ),
             ("path".to_string(), "@home".to_string()),
         ]),
+        // explorer 는 host egui 위젯으로 렌더 → 키/IME 를 host egui 로 라우팅.
+        // 줌(폰트 크기)·select-all/copy-path 단축키 소비. copy(egui Copy)/paste 는 아님.
+        consumes_egui_input: true,
+        zoomable: true,
+        egui_copy: false,
+        copy_path: true,
+        egui_paste: false,
     });
 }
 
@@ -245,6 +263,11 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
         default_params: std::collections::HashMap::new(),
+        consumes_egui_input: false,
+        zoomable: false,
+        egui_copy: false,
+        copy_path: false,
+        egui_paste: false,
     });
 }
 
@@ -356,6 +379,24 @@ mod tests {
         let reg = registry_with_builtins();
         let def = reg.get("terminal").unwrap();
         assert!((def.create)(1, None, &json!({})).is_err());
+    }
+
+    #[test]
+    fn explorer_capability_flags() {
+        // explorer 는 host egui 렌더 → 입력 라우팅 + 줌 + select-all/copy-path 소비.
+        // copy(egui Copy)/paste 는 아님.
+        let reg = registry_with_builtins();
+        let ex = reg.get("explorer").unwrap();
+        assert!(ex.consumes_egui_input);
+        assert!(ex.zoomable);
+        assert!(ex.copy_path);
+        assert!(!ex.egui_copy);
+        assert!(!ex.egui_paste);
+        // terminal 은 GPU-PTY — capability flags 없음.
+        let term = reg.get("terminal").unwrap();
+        assert!(!term.consumes_egui_input);
+        assert!(!term.zoomable);
+        assert!(!term.copy_path);
     }
 
     #[test]

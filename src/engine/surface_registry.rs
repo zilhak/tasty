@@ -179,6 +179,15 @@ pub struct SurfaceKindDef {
     /// 기본키를 요구하는가"만 decl 로 옮긴 것. 본체의 `kind == "explorer"` 기본값 주입
     /// 하드코딩을 generic 화한다. builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
     pub default_params: HashMap<String, String>,
+
+    /// capability flags — host 의 `kind == "..."` 입력/줌/복사 게이트를 generic 화한다.
+    /// 각 의미는 매니페스트 [`crate::plugin::manifest::SurfaceKindDecl`] 의 동명 필드 참조.
+    /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    pub consumes_egui_input: bool,
+    pub zoomable: bool,
+    pub egui_copy: bool,
+    pub copy_path: bool,
+    pub egui_paste: bool,
 }
 
 impl SurfaceKindDef {
@@ -309,6 +318,11 @@ mod tests {
             preset_fields: Vec::new(),
             param_aliases: HashMap::new(),
             default_params: HashMap::new(),
+            consumes_egui_input: false,
+            zoomable: false,
+            egui_copy: false,
+            copy_path: false,
+            egui_paste: false,
         }
     }
 

@@ -139,6 +139,11 @@ pub fn register_egui_mesh_kind(
         ),
         param_aliases: decl.param_aliases.clone(),
         default_params: decl.default_params.clone(),
+        consumes_egui_input: decl.consumes_egui_input,
+        zoomable: decl.zoomable,
+        egui_copy: decl.egui_copy,
+        copy_path: decl.copy_path,
+        egui_paste: decl.egui_paste,
     });
 
     tracing::info!(
@@ -234,6 +239,31 @@ mod tests {
         let restored = (def.restore)(5, &snap).unwrap();
         assert_eq!(restored.kind(), "markdown");
         assert_eq!(restored.display_name(), "Readme");
+    }
+
+    #[test]
+    fn register_forwards_capability_flags() {
+        // decl 의 capability flag(zoomable/egui_copy)가 SurfaceKindDef 로 전달되는지.
+        let decl: SurfaceKindDecl = serde_json::from_value(json!({
+            "kind": "markdown",
+            "display_name_i18n_key": "surface.kind.markdown",
+            "rendering": "egui-mesh",
+            "zoomable": true,
+            "egui_copy": true,
+        }))
+        .unwrap();
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.tasty.markdown",
+            &decl,
+            HOST_API_VERSION
+        ));
+        let def = reg.get("markdown").unwrap();
+        assert!(def.zoomable);
+        assert!(def.egui_copy);
+        assert!(!def.egui_paste);
+        assert!(!def.consumes_egui_input);
     }
 
     #[test]

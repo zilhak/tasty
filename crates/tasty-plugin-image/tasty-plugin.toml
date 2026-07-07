@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.image"
 name = "Image"
-version = "0.1.10"
+version = "0.1.11"
 description = "Image surface viewer / paint canvas"
 api_version = "1"
 permissions = [
@@ -30,6 +30,8 @@ kind = "image"
 display_name_i18n_key = "surface.kind.image"
 icon = "image"
 rendering = "egui-mesh"
+# capability: paste 는 plugin(image.paste)이 소비 — host 가 terminal 로 흘리지 않음.
+egui_paste = true
 
 # 프리셋 편집기 필드 — 파일 경로(+Browse). 적용 시 파일 폴더를 cwd 로 파생.
 [[surface_kinds.preset_fields]]

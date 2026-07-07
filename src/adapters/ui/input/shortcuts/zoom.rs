@@ -23,6 +23,10 @@ impl MainView {
 
         // Pick which surface override the shortcut targets based on focus.
         let focus = state.focused_surface_type(engine);
+        // 어느 kind 가 줌 가능한지는 registry 의 zoomable capability 로 판정(kind
+        // 하드코딩 없음). appearance 가변 대여 전에 미리 계산한다(registry 는 engine 의
+        // 다른 필드라 동시 대여 회피).
+        let kind_zoomable = focus.kind_capability(engine, |d| d.zoomable);
         let appearance = &mut engine.settings.appearance;
         let (override_ref, current_effective_size) = match &focus {
             FocusedSurfaceType::Terminal => {
@@ -32,7 +36,7 @@ impl MainView {
                     .font_size;
                 (&mut appearance.terminal_font, size)
             }
-            FocusedSurfaceType::Kind(k) if k == "markdown" || k == "explorer" => {
+            FocusedSurfaceType::Kind(k) if kind_zoomable => {
                 let size = appearance.effective_font_for_kind(k).font_size;
                 let ov = appearance
                     .plugin_font_overrides

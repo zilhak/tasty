@@ -423,11 +423,31 @@ pub struct SurfaceKindDecl {
     /// `kind == "explorer"` 기본값 주입 하드코딩을 generic 화한다.
     #[serde(default)]
     pub default_params: HashMap<String, String>,
-    /// 이 kind 의 surface 가 활성일 때 host 의 egui 입력 라우팅이 plugin/host
-    /// 본체 측으로 입력을 흘려야 하는지. host 본체의 `kind == "markdown" || kind == "image"`
-    /// 같은 하드코딩 분기를 generic 화 하기 위한 capability 메타. 기본 false.
+    /// host 가 이 kind 를 host egui 위젯으로 렌더해 winit 키/IME 이벤트를 host egui
+    /// 입력 시스템으로 흘려야 하는지(예: explorer). egui-mesh 로 렌더되는 kind
+    /// (markdown/image)는 host egui 에 대응 위젯이 없어 false — 중앙 키 디스패처가
+    /// surface 로 forward 한다. host 본체의 `kind == "explorer"` 라우팅 분기를 generic 화.
     #[serde(default)]
     pub consumes_egui_input: bool,
+    /// zoom in/out/reset 단축키로 이 kind 의 폰트 크기 override 를 조절할 수 있는지
+    /// (예: markdown/explorer). host 본체의 `kind == "markdown" || kind == "explorer"`
+    /// 줌 게이트를 generic 화. 기본 false.
+    #[serde(default)]
+    pub zoomable: bool,
+    /// copy 단축키가 이 kind 에 egui `Event::Copy` 를 주입해야 하는지(선택 텍스트를
+    /// plugin egui 가 클립보드로 복사, 예: markdown). host 본체의 `kind == "markdown"`
+    /// copy 게이트를 generic 화. 기본 false.
+    #[serde(default)]
+    pub egui_copy: bool,
+    /// 이 kind 가 select-all / copy-path 단축키(선택 항목 경로 복사)를 소비하는지
+    /// (예: explorer). host 본체의 `kind == "explorer"` 게이트를 generic 화. 기본 false.
+    #[serde(default)]
+    pub copy_path: bool,
+    /// paste 단축키를 이 kind 가 자체 소비하는지(host 가 terminal paste 로 흘리지 않음,
+    /// 예: image 는 plugin `image.paste` 로 처리). host 본체의 `kind == "image"` paste
+    /// 게이트를 generic 화. 기본 false.
+    #[serde(default)]
+    pub egui_paste: bool,
     /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
     /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
     /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면
