@@ -90,16 +90,12 @@ fn convert(
             ConvertSurfaceTarget::Terminal { cwd }
         }
         ConvertTarget::Kind { cwd, kind, params } => {
-            // markdown 의 옛 caller 호환: SurfaceKindDef 가 기대하는 키는 `file`
-            // 이지만 옛 caller 는 `file_path` 로 넘긴다. 단일 호출 지점에서
-            // 정규화 — 별도 헬퍼 추상화 비용 > 이득.
+            // 옛 caller 호환: SurfaceKindDef 가 기대하는 canonical 키(예: markdown
+            // 의 `file`)로 registry 의 param_aliases(예: `file_path`→`file`)를 적용해
+            // generic 하게 정규화한다(kind 하드코딩 없음).
             let mut params = params.clone();
-            if kind == "markdown"
-                && let Some(obj) = params.as_object_mut()
-                && !obj.contains_key("file")
-                && let Some(fp) = obj.remove("file_path")
-            {
-                obj.insert("file".to_string(), fp);
+            if let Some(def) = engine.surface_registry.get(kind) {
+                def.normalize_param_aliases(&mut params);
             }
             // Surface cwd invariant: 변환 시 cwd 손실 금지. 호출자가 명시 cwd 를
             // 넘기지 않은 경우 source surface 에서 carry — 호스트 시작 cwd 같은

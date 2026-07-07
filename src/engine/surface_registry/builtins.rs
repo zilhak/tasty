@@ -82,6 +82,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
                 derive_cwd: false,
             },
         ],
+        param_aliases: std::collections::HashMap::new(),
     });
 }
 
@@ -107,6 +108,7 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         snapshot: Arc::new(|_| None),
         // attached 는 사용자가 프리셋으로 만들 수 없는 런타임 marker — 편집 필드 없음.
         preset_fields: Vec::new(),
+        param_aliases: std::collections::HashMap::new(),
     });
 }
 
@@ -176,6 +178,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             default: None,
             derive_cwd: false,
         }],
+        param_aliases: std::collections::HashMap::new(),
     });
 }
 
@@ -222,6 +225,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),
         // empty 는 placeholder surface — 편집 필드 없음.
         preset_fields: Vec::new(),
+        param_aliases: std::collections::HashMap::new(),
     });
 }
 

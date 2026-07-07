@@ -160,6 +160,57 @@ pub struct SurfaceKindDef {
     /// 매니페스트 `preset_fields` 에서, builtin 은 등록 코드에서 채운다. 빈 vec 이면
     /// kind 전용 필드가 없다(편집기 fallback 이 kind 별 기본 필드로 떨어짐).
     pub preset_fields: Vec<PresetFieldSpec>,
+
+    /// surface 열기 요청 params 의 key alias → canonical 키 매핑. caller 가 옛 키로
+    /// 넘기면 host 가 canonical 키로 정규화한다(매니페스트 `param_aliases`). 본체의
+    /// `kind == "markdown"` 일 때 `file_path`→`file` 정규화 같은 결합을 generic 화한다.
+    /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    pub param_aliases: HashMap<String, String>,
+}
+
+impl SurfaceKindDef {
+    /// 이 kind 의 surface 생성에 반드시 필요한 params 키 목록.
+    ///
+    /// `preset_fields[].required=true` 가 단일 진실원(매니페스트 `validate.rs` 가
+    /// 강제)이며, 값이 params 로 흐르는 필드(target=Params)만 해당한다. terminal 의
+    /// cwd/startup 처럼 전용 컬럼(Cwd/Startup)으로 라우팅되는 필드는 params 키가
+    /// 아니므로 제외된다.
+    pub fn required_params(&self) -> impl Iterator<Item = &str> {
+        self.preset_fields.iter().filter_map(|f| match &f.target {
+            PresetFieldTarget::Params(key) if f.required => Some(key.as_str()),
+            _ => None,
+        })
+    }
+
+    /// `params` 에서 값이 비었거나 없는 첫 required param 키를 반환. 없으면 `None`.
+    /// surface 생성 IPC 핸들러가 명확한 에러 메시지를 위해 선검증할 때 사용한다.
+    pub fn first_missing_required_param(&self, params: &serde_json::Value) -> Option<&str> {
+        self.required_params().find(|key| {
+            params
+                .get(*key)
+                .and_then(|v| v.as_str())
+                .map(str::is_empty)
+                .unwrap_or(true)
+        })
+    }
+
+    /// `params` 의 옛 키를 canonical 키로 정규화한다(alias 매핑). canonical 키가 이미
+    /// 있으면 alias 는 무시(명시 우선). object 가 아니거나 alias 가 없으면 no-op.
+    pub fn normalize_param_aliases(&self, params: &mut serde_json::Value) {
+        if self.param_aliases.is_empty() {
+            return;
+        }
+        let Some(obj) = params.as_object_mut() else {
+            return;
+        };
+        for (alias, canonical) in &self.param_aliases {
+            if !obj.contains_key(canonical.as_str())
+                && let Some(v) = obj.remove(alias)
+            {
+                obj.insert(canonical.clone(), v);
+            }
+        }
+    }
 }
 
 /// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 CoreState에 보관되어
@@ -242,6 +293,7 @@ mod tests {
             restore: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
             snapshot: Arc::new(|_| None),
             preset_fields: Vec::new(),
+            param_aliases: HashMap::new(),
         }
     }
 
@@ -264,6 +316,65 @@ mod tests {
         reg.register(dummy_def("x"));
         assert!(reg.contains("x"));
         assert_eq!(reg.len(), 1);
+    }
+
+    /// required_params 는 preset_fields 의 required=true + target=Params 만 노출한다.
+    fn def_with_file_required(kind: &'static str) -> SurfaceKindDef {
+        let mut d = dummy_def(kind);
+        d.preset_fields = vec![PresetFieldSpec {
+            id: "file".to_string(),
+            label_key: "preset.field.file".to_string(),
+            target: PresetFieldTarget::Params("file".to_string()),
+            input: PresetFieldInput::FilePath,
+            required: true,
+            placeholder_key: None,
+            default: None,
+            derive_cwd: true,
+        }];
+        d
+    }
+
+    #[test]
+    fn required_params_derived_from_preset_fields() {
+        let d = def_with_file_required("markdown");
+        assert_eq!(d.required_params().collect::<Vec<_>>(), vec!["file"]);
+        // cwd/startup (target=Cwd/Startup) 는 params 키가 아니라 required_params 제외.
+        let reg = SurfaceKindRegistry::new();
+        register_builtin_kinds(&reg);
+        let term = reg.get("terminal").unwrap();
+        assert_eq!(term.required_params().count(), 0);
+    }
+
+    #[test]
+    fn first_missing_required_param_detects_absent_and_empty() {
+        let d = def_with_file_required("markdown");
+        assert_eq!(
+            d.first_missing_required_param(&serde_json::json!({})),
+            Some("file")
+        );
+        assert_eq!(
+            d.first_missing_required_param(&serde_json::json!({"file": ""})),
+            Some("file")
+        );
+        assert_eq!(
+            d.first_missing_required_param(&serde_json::json!({"file": "/a/b.md"})),
+            None
+        );
+    }
+
+    #[test]
+    fn normalize_param_aliases_moves_old_key() {
+        let mut d = dummy_def("markdown");
+        d.param_aliases = HashMap::from([("file_path".to_string(), "file".to_string())]);
+        // 옛 키 → canonical 로 이동.
+        let mut p = serde_json::json!({"file_path": "/a/b.md"});
+        d.normalize_param_aliases(&mut p);
+        assert_eq!(p, serde_json::json!({"file": "/a/b.md"}));
+        // canonical 키가 이미 있으면 alias 무시(명시 우선). alias 키는 그대로 남되
+        // 다운스트림 create 가 canonical 만 읽으므로 무해(옛 동작과 동일).
+        let mut p2 = serde_json::json!({"file": "/keep.md", "file_path": "/drop.md"});
+        d.normalize_param_aliases(&mut p2);
+        assert_eq!(p2["file"], "/keep.md");
     }
 
     #[test]

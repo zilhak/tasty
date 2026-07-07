@@ -117,6 +117,7 @@ pub fn register_remote_kind(
         preset_fields: crate::engine::surface_registry::PresetFieldSpec::from_decls(
             &decl.preset_fields,
         ),
+        param_aliases: decl.param_aliases.clone(),
     });
 
     tracing::info!(

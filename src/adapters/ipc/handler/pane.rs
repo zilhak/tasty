@@ -179,15 +179,15 @@ pub fn handle_split(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    // 필수 파라미터 선검증
-    if kind == "markdown"
-        && params
-            .get("file")
-            .and_then(|v| v.as_str())
-            .map(str::is_empty)
-            .unwrap_or(true)
+    // 필수 파라미터 선검증 — registry 의 required_params(preset_fields.required)로
+    // generic 하게 검증한다(kind 하드코딩 없음).
+    if let Some(def) = engine.surface_registry.get(kind)
+        && let Some(missing) = def.first_missing_required_param(params)
     {
-        return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("Missing '{missing}' parameter for {kind} type"),
+        );
     }
 
     match level {

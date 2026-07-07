@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.14"
+version = "0.1.15"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -25,6 +25,9 @@ command = "tasty-plugin-markdown"
 kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
 rendering = "egui-mesh"
+# 옛 caller 가 `file_path` 로 넘겨도 host 가 canonical `file` 키로 정규화한다.
+# 본체의 `kind == "markdown"` 정규화 하드코딩을 대체(generic-kind 마이그레이션).
+param_aliases = { file_path = "file" }
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
 # 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).
