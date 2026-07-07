@@ -128,12 +128,14 @@ pub struct StreamAck {
 /// on the variants they know; a payload that does not match any variant (an
 /// older handshake shape or a newer event) fails to deserialize and is ignored,
 /// keeping the protocol forward/backward compatible.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
     /// A mirrored remote terminal changed grid size. The client resizes its
     /// mirror surface to match — the remote grid is authoritative for mirror
     /// geometry (local window/pane size never drives a mirror).
+    ///
+    /// Direction: **server→client**.
     Resize {
         /// Remote surface id. The client maps it to its local mirror surface id
         /// (workspace attach) or applies it to its sole mirror (surface attach).
@@ -141,6 +143,120 @@ pub enum StreamControl {
         cols: usize,
         rows: usize,
     },
+    /// A structural change (split / new-tab / close / move) performed in a
+    /// **mirror** workspace, forwarded to the remote (authoritative) instance so
+    /// it runs there and spawns real PTYs — instead of leaking a local shell into
+    /// the mirror. Anchored on **remote surface ids** (the only ids the client
+    /// maps back to the remote): the server resolves pane/tab/workspace from its
+    /// own tree. The occupying stream connection *is* the attach holder, so the
+    /// connection itself proves the authority to mutate the workspace (ADR-0040
+    /// hard occupancy).
+    ///
+    /// Direction: **client→server**. The server replies with a
+    /// [`StreamControl::StructuralResult`] carrying the same `op_id`.
+    StructuralOp {
+        /// Client-assigned monotonic id, echoed back in the result so the client
+        /// can correlate the reply (and toast on failure).
+        op_id: u64,
+        op: StructuralOp,
+    },
+    /// Result of a forwarded [`StreamControl::StructuralOp`]. `ok=false` carries a
+    /// `reason` — most notably a **remote-unsupported surface kind** (e.g. a
+    /// plugin `markdown` kind present locally but not on the remote host, whose
+    /// kind registry is the authority for what it can create). The client shows a
+    /// failure toast; neither side changes structure on a rejected op.
+    ///
+    /// Direction: **server→client**.
+    StructuralResult {
+        op_id: u64,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+}
+
+/// The concrete structural operation carried by [`StreamControl::StructuralOp`].
+/// Every variant is anchored on remote surface id(s); the server resolves the
+/// enclosing pane/tab/workspace from its authoritative tree, so the client never
+/// needs to track remote pane/tab ids (it only maps surfaces).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StructuralOp {
+    /// Split a surface within its tab. Anchor = the surface being split.
+    SplitSurface {
+        surface_id: u32,
+        direction: SplitAxis,
+        /// New surface kind (`"terminal"` or a registered plugin kind).
+        #[serde(default = "default_terminal_kind")]
+        surface_kind: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
+    /// Split the pane containing the anchor surface.
+    SplitPane {
+        anchor_surface_id: u32,
+        direction: SplitAxis,
+        #[serde(default = "default_terminal_kind")]
+        surface_kind: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
+    /// Add a new tab to the pane containing the anchor surface.
+    NewTab {
+        anchor_surface_id: u32,
+        #[serde(default = "default_terminal_kind")]
+        surface_kind: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
+    /// Close a surface (cascading up to tab/pane/workspace as usual).
+    CloseSurface { surface_id: u32 },
+    /// Close the tab containing the anchor surface.
+    CloseTab { anchor_surface_id: u32 },
+    /// Close the pane containing the anchor surface.
+    ClosePane { anchor_surface_id: u32 },
+    /// Reorder a tab within the pane containing the anchor surface.
+    MoveTab {
+        anchor_surface_id: u32,
+        from_index: usize,
+        to_index: usize,
+    },
+    /// Convert a surface to a different kind in place.
+    ConvertSurface {
+        surface_id: u32,
+        #[serde(default = "default_terminal_kind")]
+        surface_kind: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
+    /// Move a live surface onto another surface's slot (both remote ids).
+    MoveSurface {
+        source_surface_id: u32,
+        target_surface_id: u32,
+    },
+}
+
+/// Split direction carried over the wire. Maps to the host `SplitDirection` /
+/// the IPC `"vertical"`/`"horizontal"` convention on the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitAxis {
+    Vertical,
+    Horizontal,
+}
+
+impl SplitAxis {
+    /// The IPC/`SplitDirection` string form (`handle_split` parses this).
+    pub fn as_ipc_str(self) -> &'static str {
+        match self {
+            SplitAxis::Vertical => "vertical",
+            SplitAxis::Horizontal => "horizontal",
+        }
+    }
+}
+
+fn default_terminal_kind() -> String {
+    "terminal".to_string()
 }
 
 /// Write a single framed message (`[tag][len BE][payload]`), then flush.
@@ -286,6 +402,120 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<StreamControl>(foreign).is_err());
         }
+    }
+
+    #[test]
+    fn stream_control_structural_op_roundtrip() {
+        let msg = StreamControl::StructuralOp {
+            op_id: 42,
+            op: StructuralOp::SplitSurface {
+                surface_id: 7,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        // outer tagged on `event`, inner op tagged on `kind`.
+        assert!(s.contains(r#""event":"structural_op""#));
+        assert!(s.contains(r#""kind":"split_surface""#));
+        assert!(s.contains(r#""direction":"horizontal""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_structural_op_all_kinds_roundtrip() {
+        let ops = [
+            StructuralOp::SplitPane {
+                anchor_surface_id: 3,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({"a": 1}),
+            },
+            StructuralOp::NewTab {
+                anchor_surface_id: 4,
+                surface_kind: "markdown".to_string(),
+                params: serde_json::json!({"file": "/x"}),
+            },
+            StructuralOp::CloseSurface { surface_id: 5 },
+            StructuralOp::CloseTab {
+                anchor_surface_id: 6,
+            },
+            StructuralOp::ClosePane {
+                anchor_surface_id: 7,
+            },
+            StructuralOp::MoveTab {
+                anchor_surface_id: 8,
+                from_index: 0,
+                to_index: 2,
+            },
+            StructuralOp::ConvertSurface {
+                surface_id: 9,
+                surface_kind: "image".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::MoveSurface {
+                source_surface_id: 10,
+                target_surface_id: 11,
+            },
+        ];
+        for op in ops {
+            let msg = StreamControl::StructuralOp {
+                op_id: 1,
+                op: op.clone(),
+            };
+            let s = serde_json::to_string(&msg).unwrap();
+            let back: StreamControl = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, msg, "roundtrip failed for {op:?}");
+        }
+    }
+
+    #[test]
+    fn structural_op_defaults_terminal_kind_and_empty_params() {
+        // Client may omit surface_kind/params for a plain terminal split.
+        let raw = r#"{"kind":"split_surface","surface_id":1,"direction":"vertical"}"#;
+        let op: StructuralOp = serde_json::from_str(raw).unwrap();
+        match op {
+            StructuralOp::SplitSurface {
+                surface_kind,
+                params,
+                ..
+            } => {
+                assert_eq!(surface_kind, "terminal");
+                assert_eq!(params, serde_json::Value::Null);
+            }
+            _ => panic!("expected split_surface"),
+        }
+    }
+
+    #[test]
+    fn stream_control_structural_result_roundtrip() {
+        // success (no reason) and failure (with reason).
+        let ok = StreamControl::StructuralResult {
+            op_id: 9,
+            ok: true,
+            reason: None,
+        };
+        let s = serde_json::to_string(&ok).unwrap();
+        assert!(s.contains(r#""event":"structural_result""#));
+        assert!(!s.contains("reason")); // skipped when None
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), ok);
+
+        let fail = StreamControl::StructuralResult {
+            op_id: 9,
+            ok: false,
+            reason: Some("unsupported kind: markdown".to_string()),
+        };
+        let s = serde_json::to_string(&fail).unwrap();
+        assert!(s.contains("unsupported kind"));
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), fail);
+    }
+
+    #[test]
+    fn split_axis_ipc_str() {
+        assert_eq!(SplitAxis::Vertical.as_ipc_str(), "vertical");
+        assert_eq!(SplitAxis::Horizontal.as_ipc_str(), "horizontal");
     }
 
     #[test]
