@@ -135,10 +135,13 @@ pub(crate) fn handle_spawn(
         Ok(w) => w,
         Err(e) => return e,
     };
-    let command = match require_str(params, "command", &id) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
+    // command 는 optional. 지정되면 tab 생성 직후 그대로 붙여 제출한다. 생략되면
+    // 아무것도 보내지 않고 tab 생성·registry 등록·soft 점유·surface_id 반환만 한다
+    // — codex/claude plugin(05)이 이 2단계 spawn 을 소비한다: 먼저 command 없이
+    // 호출해 host registry 에 자식을 등록하고 child_surface_id 를 받은 뒤, 그
+    // surface_id 를 박은 에이전트 특화 command(TASTY_SURFACE_ID=... / session token
+    // 등)를 `surface.send` 로 별도 전송한다.
+    let command = optional_str(params, "command");
     let pane_override = optional_u32(params, "pane");
     let cwd = optional_str(params, "cwd");
     let role = optional_str(params, "role");
@@ -190,22 +193,25 @@ pub(crate) fn handle_spawn(
         );
     };
 
-    // 호출자가 넘긴 command 를 그대로 붙인 뒤 제출한다(에이전트 특화 아님). 본문/제출
-    // `\r` 을 분리해 길이 무관 결정적 제출(멀티라인은 bracketed paste) — tell 과 동형.
-    let body = build_tell_payload(&command);
-    let body_params = json!({ "surface_id": new_surface_id, "text": body });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
-        &id,
-    ) {
-        return e;
-    }
-    let cr_params = json!({ "surface_id": new_surface_id, "text": "\r" });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
-        &id,
-    ) {
-        return e;
+    // command 가 주어졌을 때만 붙여 제출한다(에이전트 특화 아님). 본문/제출 `\r` 을
+    // 분리해 길이 무관 결정적 제출(멀티라인은 bracketed paste) — tell 과 동형.
+    // command 생략 시(plugin 2단계 spawn) 전송을 건너뛰고 등록·점유만 수행한다.
+    if let Some(command) = &command {
+        let body = build_tell_payload(command);
+        let body_params = json!({ "surface_id": new_surface_id, "text": body });
+        if let Err(e) = unwrap_ok(
+            surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
+            &id,
+        ) {
+            return e;
+        }
+        let cr_params = json!({ "surface_id": new_surface_id, "text": "\r" });
+        if let Err(e) = unwrap_ok(
+            surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
+            &id,
+        ) {
+            return e;
+        }
     }
 
     engine.child_terminals.register_child(

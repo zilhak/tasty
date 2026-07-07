@@ -96,6 +96,44 @@ fn surface_list_requires_surface_read() {
     assert!(m.required.contains(&Permission::SurfaceRead));
 }
 
+/// occupancy-05: codex/claude plugin 이 자식 관리를 호스트 `terminal.*` 로 위임할 수
+/// 있어야 한다. 모든 terminal.* 메서드가 plugin_callable 이고, 요구 권한이 두
+/// plugin 이 매니페스트에 이미 선언한 권한 집합(surface.read/write, terminal.spawn/
+/// write/read) 부분집합이어야 위임이 permission_denied 없이 통과한다.
+#[test]
+fn terminal_star_is_plugin_callable_within_agent_plugin_permissions() {
+    use Permission::*;
+    // codex/claude 매니페스트가 보유한 terminal-관련 권한 상한.
+    let held = [
+        SurfaceRead,
+        SurfaceWrite,
+        TerminalSpawn,
+        TerminalWrite,
+        TerminalRead,
+    ];
+    for method in [
+        "terminal.spawn",
+        "terminal.tell",
+        "terminal.wait",
+        "terminal.children",
+        "terminal.parent",
+        "terminal.kill",
+        "terminal.respawn",
+        "terminal.broadcast",
+        "terminal.set_state",
+    ] {
+        let m = method_meta(method).unwrap_or_else(|| panic!("{method} not registered"));
+        assert!(m.plugin_callable, "{method} must be plugin-callable");
+        for needed in m.required {
+            assert!(
+                held.contains(needed),
+                "{method} requires '{}' which codex/claude do not hold",
+                needed.as_token()
+            );
+        }
+    }
+}
+
 #[test]
 fn tab_create_requires_surface_write() {
     let m = method_meta("tab.create").expect("registered");
@@ -108,7 +146,10 @@ fn surface_completion_requires_notification() {
     // completion 은 read 가 아니라 highlight 발동(PushNotification 계열) →
     // notification.* 와 동일한 Notification 권한, plugin 이 호출 가능해야 한다.
     let m = method_meta("surface.completion").expect("registered");
-    assert!(m.plugin_callable, "agents must be able to signal completion");
+    assert!(
+        m.plugin_callable,
+        "agents must be able to signal completion"
+    );
     assert!(m.required.contains(&Permission::Notification));
 }
 

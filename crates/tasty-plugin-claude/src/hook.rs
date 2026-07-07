@@ -1,16 +1,16 @@
 //! `claude.hook` IPC 핸들러.
 //!
-//! 호스트 `src/cli/claude.rs::run_claude_hook`의 로직을 1:1 옮긴 것. CLI에서
-//! `tasty claude hook <event> [--surface <id>] [--session <s>]`로 호출되며,
-//! event별로 ClaudeState의 idle/needs_input을 갱신하고 호스트 IPC로
-//! `surface.fire_hook` / `surface.meta.set` / `surface.meta.unset`를 호출한다.
+//! CLI에서 `tasty claude hook <event> [--surface <id>] [--session <s>]`로 호출되며,
+//! event별로 자식 상태(idle/needs_input/active)와 parent fan-out hook, session meta,
+//! 텔레메트리를 산출한다.
 //!
-//! 호스트 측과 달리 plugin은 idle/needs_input을 자기 state에서 직접 다루므로
-//! `claude.set_idle_state` / `claude.set_needs_input` IPC를 거치지 않는다.
-//! cutover(step 04) 후엔 그 IPC 메서드들 자체가 사라진다.
+//! **idle/needs_input 신호는 자체 state 대신 호스트 registry(`terminal.set_state`)로
+//! 주입한다**(occupancy-05). parent fan-out 대상 parent surface 는 호스트
+//! `terminal.parent` 로 조회한다. wall-time 텔레메트리 타이밍만 plugin 이 보유한다
+//! (`ClaudeState`).
 //!
-//! state 변이와 host 측 side effect 계산을 [`apply_hook`]으로 분리해 단위
-//! 테스트에서는 host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
+//! state 변이/host side effect 계산을 [`apply_hook`]으로 분리해 단위 테스트에서는
+//! host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
@@ -20,6 +20,12 @@ use crate::state::ClaudeState;
 /// hook 처리 후 plugin이 호스트에 보낼 IPC 호출 1건.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostCall {
+    /// `terminal.set_state { surface, state }` — 호스트 registry 의 자식 상태 갱신.
+    /// state ∈ {"idle", "needs_input", "active"}.
+    SetState {
+        surface_id: u32,
+        state: &'static str,
+    },
     /// `surface.fire_hook { surface_id, event }`
     FireHook {
         surface_id: u32,
@@ -33,11 +39,7 @@ pub enum HostCall {
     },
     /// `surface.meta.unset { surface_id, key }`
     MetaUnset { surface_id: u32, key: &'static str },
-    /// `telemetry.record { metric, value, op, workspace_id?, agent?, tags? }`
-    ///
-    /// Phase 4.6 — claude hook 이 자동 발행하는 메트릭. `agent` 는
-    /// host 측에서 plugin id (`tasty.com.tasty.claude`) 로 자동 결정되므로
-    /// 여기선 omit 한다. `surface_id` 는 tags 에 string 으로 담는다.
+    /// `telemetry.record { metric, value, tags }`
     TelemetryRecord {
         metric: &'static str,
         value: f64,
@@ -63,16 +65,33 @@ pub fn handle_claude_hook(
     let message = params.get("message").and_then(|v| v.as_str());
     let now_ms = now_ms();
 
-    let mut calls = apply_hook(state, event, surface_id, session.as_deref())?;
+    // parent fan-out 대상: 호스트 registry 가 이 surface 의 parent 를 안다면 그 id.
+    // status 가 active 인 경우만 유효한 parent (none/closed 는 fan-out 없음).
+    let parent_surface_id = lookup_parent(host, surface_id);
+
+    let mut calls = apply_hook(event, surface_id, parent_surface_id, session.as_deref())?;
     calls.extend(telemetry_for_hook(
         state, event, surface_id, message, now_ms,
     ));
-    state.save();
 
-    for call in calls {
-        deliver(host, &call);
+    for call in &calls {
+        deliver(host, call);
     }
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
+}
+
+/// 호스트 `terminal.parent` 로 parent surface 를 조회. 등록되지 않았거나 IPC
+/// 실패 시 None (fan-out 없음).
+fn lookup_parent(host: &HostHandle, surface_id: u32) -> Option<u32> {
+    let resp = host
+        .call("terminal.parent", json!({ "surface": surface_id }))
+        .ok()?;
+    if resp.get("status").and_then(|v| v.as_str()) != Some("active") {
+        return None;
+    }
+    resp.get("parent_surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
 }
 
 fn now_ms() -> u64 {
@@ -83,8 +102,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// hook event → telemetry HostCall 매핑. 순수 함수 (host 미사용) — 테스트가
-/// 직접 검증한다.
+/// hook event → telemetry HostCall 매핑. 순수 함수 — 테스트가 직접 검증한다.
 ///
 /// - `session-start` → state 에 시작 시각 기록 (HostCall 없음)
 /// - `stop` / `subagent-stop` / `session-end` → wall_time_ms 가 있으면 발행
@@ -164,22 +182,27 @@ fn extract_tokens(text: &str) -> Option<u64> {
     None
 }
 
-/// state를 변이하고 호스트에 보낼 IPC 호출 목록을 반환. host에 의존하지 않으므로
-/// 단위 테스트가 분기 동작을 직접 검증할 수 있다.
+/// event → 자식 상태 갱신(`SetState`) + parent fan-out hook + session meta 계산.
+/// host 에 의존하지 않는 순수 함수 — 단위 테스트가 분기 동작을 직접 검증한다.
+/// 자식 상태(idle/needs_input/active)는 호스트 registry 로 주입할 `SetState`
+/// HostCall 로 표현한다(자체 state 미보유). `parent_surface_id` 는 caller 가
+/// `terminal.parent` 로 조회해 넘긴다.
 pub fn apply_hook(
-    state: &mut ClaudeState,
     event: &str,
     surface_id: u32,
+    parent_surface_id: Option<u32>,
     session: Option<&str>,
 ) -> Result<Vec<HostCall>, IpcMethodError> {
     let mut calls = Vec::new();
     // tasty-hooks 는 hook.surface_id 가 fire 의 surface_id 와 정확히 일치할 때만
     // 실행하므로, parent 가 자식 완료를 polling 없이 감지하려면 child 자기
     // surface 외에 parent surface 에도 별도 event 를 fire 해야 한다.
-    let parent_surface_id = state.parent_of_child(surface_id);
     match event {
         "stop" | "subagent-stop" => {
-            state.set_idle(surface_id, true);
+            calls.push(HostCall::SetState {
+                surface_id,
+                state: "idle",
+            });
             calls.push(HostCall::FireHook {
                 surface_id,
                 event: "claude-idle",
@@ -192,7 +215,10 @@ pub fn apply_hook(
             }
         }
         "session-end" => {
-            state.set_idle(surface_id, true);
+            calls.push(HostCall::SetState {
+                surface_id,
+                state: "idle",
+            });
             calls.push(HostCall::MetaUnset {
                 surface_id,
                 key: "claude-session-id",
@@ -213,7 +239,10 @@ pub fn apply_hook(
             }
         }
         "notification" => {
-            state.set_needs_input(surface_id, true);
+            calls.push(HostCall::SetState {
+                surface_id,
+                state: "needs_input",
+            });
             calls.push(HostCall::FireHook {
                 surface_id,
                 event: "needs-input",
@@ -226,8 +255,10 @@ pub fn apply_hook(
             }
         }
         "prompt-submit" | "session-start" | "active" => {
-            // set_idle(false)는 needs_input도 함께 clear (state invariant).
-            state.set_idle(surface_id, false);
+            calls.push(HostCall::SetState {
+                surface_id,
+                state: "active",
+            });
             if event == "session-start"
                 && let Some(session_id) = session
             {
@@ -254,6 +285,10 @@ pub fn apply_hook(
 
 fn deliver(host: &HostHandle, call: &HostCall) {
     let (method, params) = match call {
+        HostCall::SetState { surface_id, state } => (
+            "terminal.set_state",
+            json!({ "surface": surface_id, "state": state }),
+        ),
         HostCall::FireHook { surface_id, event } => (
             "surface.fire_hook",
             json!({ "surface_id": surface_id, "event": event }),
@@ -309,68 +344,71 @@ fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::ChildEntry;
-
-    fn child_entry(child_surface_id: u32, index: u32) -> ChildEntry {
-        ChildEntry {
-            child_surface_id,
-            index,
-            cwd: None,
-            role: None,
-            nickname: None,
-        }
-    }
 
     #[test]
     fn stop_sets_idle_and_emits_fire_hook() {
-        let mut state = ClaudeState::default();
-        let calls = apply_hook(&mut state, "stop", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "idle");
+        let calls = apply_hook("stop", 100, None, None).unwrap();
         assert_eq!(
             calls,
-            vec![HostCall::FireHook {
-                surface_id: 100,
-                event: "claude-idle",
-            }]
+            vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "idle",
+                },
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "claude-idle",
+                }
+            ]
         );
     }
 
     #[test]
     fn subagent_stop_treated_like_stop() {
-        let mut state = ClaudeState::default();
-        let calls = apply_hook(&mut state, "subagent-stop", 7, None).unwrap();
-        assert_eq!(state.state_of(7), "idle");
-        assert!(matches!(
-            calls.as_slice(),
-            [HostCall::FireHook {
-                surface_id: 7,
-                event: "claude-idle"
-            }]
-        ));
+        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                HostCall::SetState {
+                    surface_id: 7,
+                    state: "idle",
+                },
+                HostCall::FireHook {
+                    surface_id: 7,
+                    event: "claude-idle",
+                }
+            ]
+        );
     }
 
     #[test]
     fn notification_sets_needs_input_and_fires_needs_input() {
-        let mut state = ClaudeState::default();
-        let calls = apply_hook(&mut state, "notification", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "needs_input");
+        let calls = apply_hook("notification", 100, None, None).unwrap();
         assert_eq!(
             calls,
-            vec![HostCall::FireHook {
-                surface_id: 100,
-                event: "needs-input",
-            }]
+            vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "needs_input",
+                },
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "needs-input",
+                }
+            ]
         );
     }
 
     #[test]
     fn session_end_clears_session_meta_and_fires_idle() {
-        let mut state = ClaudeState::default();
-        let calls = apply_hook(&mut state, "session-end", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "idle");
+        let calls = apply_hook("session-end", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "idle",
+                },
                 HostCall::MetaUnset {
                     surface_id: 100,
                     key: "claude-session-id",
@@ -388,32 +426,39 @@ mod tests {
     }
 
     #[test]
-    fn prompt_submit_clears_idle_and_needs_input() {
-        let mut state = ClaudeState::default();
-        state.set_idle(100, true);
-        state.set_needs_input(100, true);
-        let calls = apply_hook(&mut state, "prompt-submit", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "active");
-        assert!(calls.is_empty(), "prompt-submit emits no host calls");
+    fn prompt_submit_sets_active_and_no_meta() {
+        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
+        assert_eq!(
+            calls,
+            vec![HostCall::SetState {
+                surface_id: 100,
+                state: "active",
+            }]
+        );
     }
 
     #[test]
-    fn session_start_without_session_id_just_clears() {
-        let mut state = ClaudeState::default();
-        state.set_idle(100, true);
-        let calls = apply_hook(&mut state, "session-start", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "active");
-        assert!(calls.is_empty());
+    fn session_start_without_session_id_just_sets_active() {
+        let calls = apply_hook("session-start", 100, None, None).unwrap();
+        assert_eq!(
+            calls,
+            vec![HostCall::SetState {
+                surface_id: 100,
+                state: "active",
+            }]
+        );
     }
 
     #[test]
     fn session_start_with_session_id_emits_meta_set() {
-        let mut state = ClaudeState::default();
-        let calls = apply_hook(&mut state, "session-start", 100, Some("sess-abc")).unwrap();
-        assert_eq!(state.state_of(100), "active");
+        let calls = apply_hook("session-start", 100, None, Some("sess-abc")).unwrap();
         assert_eq!(
             calls,
             vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "active",
+                },
                 HostCall::MetaSet {
                     surface_id: 100,
                     key: "claude-session-id",
@@ -430,13 +475,14 @@ mod tests {
 
     #[test]
     fn stop_with_parent_also_fires_claude_child_idle_on_parent() {
-        let mut state = ClaudeState::default();
-        state.register_child(10, child_entry(100, 1));
-        let calls = apply_hook(&mut state, "stop", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "idle");
+        let calls = apply_hook("stop", 100, Some(10), None).unwrap();
         assert_eq!(
             calls,
             vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "idle",
+                },
                 HostCall::FireHook {
                     surface_id: 100,
                     event: "claude-idle",
@@ -451,9 +497,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_with_parent_fans_out_to_parent() {
-        let mut state = ClaudeState::default();
-        state.register_child(10, child_entry(100, 1));
-        let calls = apply_hook(&mut state, "subagent-stop", 100, None).unwrap();
+        let calls = apply_hook("subagent-stop", 100, Some(10), None).unwrap();
         assert!(calls.contains(&HostCall::FireHook {
             surface_id: 10,
             event: "claude-child-idle",
@@ -462,10 +506,7 @@ mod tests {
 
     #[test]
     fn session_end_with_parent_fans_out_to_parent() {
-        let mut state = ClaudeState::default();
-        state.register_child(10, child_entry(100, 1));
-        let calls = apply_hook(&mut state, "session-end", 100, None).unwrap();
-        // 기존 meta unset + 자체 claude-idle 발사는 유지, 마지막에 parent fan-out.
+        let calls = apply_hook("session-end", 100, Some(10), None).unwrap();
         assert_eq!(
             calls.last(),
             Some(&HostCall::FireHook {
@@ -473,7 +514,6 @@ mod tests {
                 event: "claude-child-idle",
             })
         );
-        // 자체 claude-idle 도 여전히 발사.
         assert!(calls.contains(&HostCall::FireHook {
             surface_id: 100,
             event: "claude-idle",
@@ -482,13 +522,14 @@ mod tests {
 
     #[test]
     fn notification_with_parent_fans_out_claude_child_needs_input() {
-        let mut state = ClaudeState::default();
-        state.register_child(10, child_entry(100, 1));
-        let calls = apply_hook(&mut state, "notification", 100, None).unwrap();
-        assert_eq!(state.state_of(100), "needs_input");
+        let calls = apply_hook("notification", 100, Some(10), None).unwrap();
         assert_eq!(
             calls,
             vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "needs_input",
+                },
                 HostCall::FireHook {
                     surface_id: 100,
                     event: "needs-input",
@@ -503,10 +544,7 @@ mod tests {
 
     #[test]
     fn stop_without_parent_does_not_fan_out() {
-        let mut state = ClaudeState::default();
-        // 자체적으로 idle 이 된 top-level conductor 시나리오. parent 매핑 없음.
-        let calls = apply_hook(&mut state, "stop", 100, None).unwrap();
-        // 부모 fan-out hook 이 없어야 한다.
+        let calls = apply_hook("stop", 100, None, None).unwrap();
         assert!(!calls.iter().any(|c| matches!(
             c,
             HostCall::FireHook {
@@ -518,8 +556,7 @@ mod tests {
 
     #[test]
     fn unknown_event_returns_invalid_params() {
-        let mut state = ClaudeState::default();
-        let err = apply_hook(&mut state, "bogus", 100, None).unwrap_err();
+        let err = apply_hook("bogus", 100, None, None).unwrap_err();
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("bogus"));
     }
@@ -603,9 +640,6 @@ mod tests {
 
     #[test]
     fn resolve_surface_id_missing_returns_invalid_params() {
-        // env에 TASTY_SURFACE_ID가 우연히 있으면 본 테스트가 신뢰성을 잃는다.
-        // 위 양수 테스트들과 달리 본 테스트는 env에 의존하므로, 부재 케이스를
-        // 보장할 수 없는 환경에서는 의미가 없다. 따라서 env가 있으면 스킵.
         if std::env::var("TASTY_SURFACE_ID").is_ok() {
             return;
         }

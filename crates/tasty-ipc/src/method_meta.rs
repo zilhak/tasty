@@ -114,6 +114,25 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.locate", plugin(&[SurfaceRead])),
         ("surface.respawn_terminal", plugin(&[TerminalSpawn])),
         ("surface.is_typing", plugin(&[TerminalRead])),
+        // ── child-terminal 관리 (ADR-0040 / occupancy-04) ─────────────
+        // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin(05)이
+        // 자체 registry 를 걷어내고 이 method 들로 위임한다. 권한은 각 method 가
+        // 내부에서 조합하는 sibling 핸들러(tab.create=SurfaceWrite, surface.send=
+        // TerminalWrite, surface.respawn_terminal=TerminalSpawn, surface.close=
+        // SurfaceWrite)의 요구를 합집합으로 반영한다.
+        (
+            "terminal.spawn",
+            plugin(&[SurfaceWrite, TerminalWrite, TerminalSpawn]),
+        ),
+        ("terminal.tell", plugin(&[TerminalWrite])),
+        ("terminal.wait", plugin(&[SurfaceRead])),
+        ("terminal.children", plugin(&[SurfaceRead])),
+        ("terminal.parent", plugin(&[SurfaceRead])),
+        ("terminal.kill", plugin(&[SurfaceWrite])),
+        ("terminal.respawn", plugin(&[TerminalWrite, TerminalSpawn])),
+        ("terminal.broadcast", plugin(&[TerminalWrite])),
+        // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
+        ("terminal.set_state", plugin(&[SurfaceWrite])),
         ("surface.fire_hook", plugin(&[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────
         ("hook.set", plugin(&[SurfaceWrite])),

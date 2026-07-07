@@ -5638,12 +5638,11 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "directories",
  "regex",
- "serde",
  "serde_json",
  "shell-escape",
  "tasty-plugin-sdk",
@@ -5682,10 +5681,9 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
- "serde",
  "serde_json",
  "tasty-plugin-sdk",
  "toml 0.8.2",

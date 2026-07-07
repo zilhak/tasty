@@ -13,7 +13,7 @@
 ## 내부 동작 (headless-valid)
 
 - **registry**(`ChildTerminalRegistry`): `parent_surface → 자식 목록`, `child_surface → parent`, parent별 다음 index, child별 idle/needs_input 상태를 보관한다. `~/.tasty/child-terminals.json` 에 영속(등록/제거마다 즉시 save). session token 추적(`session.rs`)·agent shell 서브프로세스 추적(`runner_host` `shell_children`)과는 **다른 서브시스템**이다.
-- **spawn**: 대상 workspace 의 pane 에 `terminal` 탭을 만들고(호출자 지정 `--command` 를 그대로 전송) child 를 registry 에 등록한 뒤, 그 child 를 **soft 점유**로 표시한다(주체 = spawn 을 발동한 parent surface). command 는 임의 문자열 — 에이전트 특화 command 빌더는 플러그인에 잔류.
+- **spawn**: 대상 workspace 의 pane 에 `terminal` 탭을 만들고(호출자 지정 `--command` 를 그대로 전송) child 를 registry 에 등록한 뒤, 그 child 를 **soft 점유**로 표시한다(주체 = spawn 을 발동한 parent surface). command 는 임의 문자열 — 에이전트 특화 command 빌더는 플러그인에 잔류. **`command` 는 optional**: 생략하면 tab 생성·registry 등록·soft 점유·`child_surface_id` 반환만 하고 아무것도 전송하지 않는다 — codex/claude 플러그인이 이 **2단계 spawn** 을 소비한다(먼저 command 없이 호출해 host registry 에 등록하고 받은 surface_id 를 박은 에이전트 특화 command 를 `surface.send` 로 별도 전송; surface_id inline env·session token 등이 필요하기 때문).
 - **soft 점유 연결**: spawn 성공 시 `occupy_soft(child, parent)`, kill 시 `release_occupancy(child)` 를 **in-process core 함수**로 호출한다 (`occupancy.*` IPC method 는 없다 — ADR-0040 경계). soft 점유는 표시만 하고 입력을 차단하지 않으며(`attached=false`), parent 가 죽으면 focus 지연 청소로 풀린다.
 - **wait**: 1-tick snapshot. child 가 `active` 인데 surface 가 라이브 트리에 없으면 `exited` 로 강등한다. idle/needs_input 은 registry 상태값을 그대로 반환. 상태값을 넣는 신호원(`set_state`)은 에이전트 hook 이 채운다.
 - **self-heal**: 호스트가 라이브 surface 트리를 직접 소유하므로, 접근 시점마다 라이브 집합과 대조해(reconcile) 죽은 자식을 registry 에서 정리한다(이벤트 구독 없이 동기). 부팅 후 첫 접근이 이전 세션 잔재를 회수한다.

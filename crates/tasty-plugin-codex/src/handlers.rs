@@ -1,12 +1,18 @@
 //! `handle_ipc_method` 내부에서 각 codex.* 메서드를 처리한다.
 //!
-//! 모든 호스트 호출은 `ctx.host.call(...)`을 통해 동기로 이루어진다. SDK가 worker
-//! 스레드에서 dispatch하므로 main 스레드가 계속 host로부터 응답을 받을 수 있다.
+//! 자식 terminal 관리(spawn/tell/wait/children/parent/kill/respawn/broadcast)는
+//! 호스트가 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 **위임**한다.
+//! 이 plugin 은 더 이상 자체 child registry 를 보유하지 않는다(호스트 registry 가
+//! 단일 SoT). 여기 남는 것은 codex **특화**뿐:
+//! - `make_codex_command` — codex 바이너리 기동 명령 빌더.
+//! - install/uninstall/hook — `~/.codex/config.toml` 조작 + trust 판정.
+//! - hook 이 산출한 idle/active 신호를 `terminal.set_state` 로 호스트 registry 에 주입.
+//! - wait 위임 결과에 codex 고유 trust 검사(`untrusted`)를 덧씌우는 래핑.
+//!
+//! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
 use serde_json::{Map, Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
-
-use crate::state::{ChildEntry, CodexState};
 
 /// 응답 매핑 헬퍼: HostHandle::call 결과를 IpcMethodError로 변환.
 fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
@@ -22,30 +28,27 @@ fn require_u32(params: &Value, key: &str) -> Result<u32, IpcMethodError> {
         .ok_or_else(|| IpcMethodError::invalid_params(&format!("missing '{key}'")))
 }
 
-fn optional_u32(params: &Value, key: &str) -> Option<u32> {
-    params.get(key).and_then(|v| v.as_u64()).map(|v| v as u32)
-}
-
 fn optional_str(params: &Value, key: &str) -> Option<String> {
     params.get(key).and_then(|v| v.as_str()).map(String::from)
 }
 
-fn resolve_parent(state: &CodexState, params: &Value) -> Result<u32, IpcMethodError> {
-    if let Some(p) = optional_u32(params, "surface") {
-        return Ok(p);
+/// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. 자식
+/// 관리 명령을 호스트 `terminal.*` 로 위임할 때 CLI 인자를 pass-through 하는 용도.
+fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
+    let mut out = Map::new();
+    for k in keys {
+        if let Some(v) = params.get(*k) {
+            out.insert((*k).to_string(), v.clone());
+        }
     }
-    state.single_parent().ok_or_else(|| {
-        IpcMethodError::invalid_params(
-            "missing 'surface' parameter (codex has 0 or >1 parents — specify --surface)",
-        )
-    })
+    out
 }
 
 /// codex 명령을 PTY로 보낼 문자열을 만든다. prompt가 있으면 shell quote.
 ///
 /// `TASTY_SURFACE_ID={surface_id}` inline env prefix를 항상 박는다. 이게 없으면
-/// codex 프로세스 env에 `TASTY_SURFACE_ID`가 비어, `~/.codex/settings.json`의 hook
-/// 명령 (`tasty codex hook X --surface ${TASTY_SURFACE_ID}`)이 surface ID 없이
+/// codex 프로세스 env에 `TASTY_SURFACE_ID`가 비어, `~/.codex/config.toml`의 hook
+/// 명령 (`tasty codex hook X --surface $TASTY_SURFACE_ID`)이 surface ID 없이
 /// 실행되어 `handle_hook`이 invalid_params로 거부 → idle/needs_input 상태가 영원히
 /// 갱신되지 않는다. claude plugin의 `start_claude_in_surface`와 동일한 패턴.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
@@ -59,25 +62,7 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
     }
 }
 
-/// codex tell 본문 PTY 텍스트를 만든다. claude `build_tell_pty_text` 와 동일 규칙.
-/// **제출 `\r` 은 포함하지 않는다** — 호출자(`handle_tell`)가 본문과 별도 IPC 호출로
-/// 보낸다(길이 무관 결정적 제출).
-/// - 단일라인(개행 없음): 평문 그대로.
-/// - 멀티라인(개행 있음): bracketed paste 시퀀스(`ESC[200~ … ESC[201~`)로 감싸고
-///   개행은 그대로 두어 한 덩어리 paste 로 삽입하게 한다.
-fn build_tell_payload(message: &str) -> String {
-    if message.contains('\n') {
-        format!("\u{1b}[200~{message}\u{1b}[201~")
-    } else {
-        message.to_string()
-    }
-}
-
-pub fn handle_launch(
-    _state: &mut CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
+pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
     let workspace_name = params
         .get("workspace")
         .and_then(|v| v.as_str())
@@ -124,18 +109,10 @@ pub fn handle_launch(
     }))
 }
 
-pub fn handle_parent(state: &CodexState, params: Value) -> Result<Value, IpcMethodError> {
-    let child_surface = require_u32(&params, "surface")?;
-    match state.parent_of_child(child_surface) {
-        Some(parent_id) => Ok(json!({
-            "parent_surface_id": parent_id,
-            "status": "active",
-        })),
-        None => Ok(json!({
-            "parent_surface_id": Value::Null,
-            "status": "none",
-        })),
-    }
+pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
+    let surface = require_u32(&params, "surface")?;
+    host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
 pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
@@ -144,198 +121,86 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
-    let payload = build_tell_payload(message);
-    // 1) 본문 전송 (제출 `\r` 미포함). 단일라인=평문, 멀티라인=bracketed paste 본문.
+    // 개행/제출 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트
+    // `terminal.tell` 이 동일하게 처리한다 → 본문 포맷을 재구현하지 않고 위임.
     host_call(
         host,
-        "surface.send",
-        json!({"surface_id": surface_id, "text": payload}),
-    )?;
-    // 2) 제출 Enter 를 본문과 다른 IPC 호출(=다른 PTY write)로 분리 — write 경계가
-    //    끊겨 수신측이 길이와 무관하게 `\r` 을 제출로 처리한다(단일라인 63자+ burst 가
-    //    paste 로 오인돼 미제출되던 회귀 차단).
-    host_call(
-        host,
-        "surface.send",
-        json!({"surface_id": surface_id, "text": "\r"}),
-    )?;
-    Ok(json!({ "sent": true, "surface_id": surface_id }))
+        "terminal.tell",
+        json!({ "surface": surface_id, "text": message }),
+    )
 }
 
-pub fn handle_spawn(
-    state: &mut CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
+pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
     let parent_surface = require_u32(&params, "surface")?;
-    let workspace_param = optional_str(&params, "workspace")
-        .ok_or_else(|| IpcMethodError::invalid_params("missing required '--workspace'"))?;
-    let pane_override = optional_u32(&params, "pane");
-    let cwd = optional_str(&params, "cwd");
     let prompt = optional_str(&params, "prompt");
-    let role = optional_str(&params, "role");
-    let nickname = optional_str(&params, "nickname");
 
-    let ws_id = resolve_workspace_id(host, &workspace_param)?.ok_or_else(|| {
-        IpcMethodError::invalid_params(&format!("workspace '{workspace_param}' not found"))
-    })?;
-
-    // 대상 pane: --pane 지정 시 그 pane, 아니면 workspace 의 첫 pane.
-    let pane_id = match pane_override {
-        Some(p) => p,
-        None => first_pane_in_workspace(host, ws_id)?,
-    };
-
-    // child index 를 먼저 확보해 탭 이름을 child{N} 으로 고정 생성한다.
-    let index = state.next_index_for(parent_surface);
-    let tab_name = format!("child{index}");
-    let mut tab_params = json!({
-        "pane_id": pane_id,
-        "type": "terminal",
-        "name": tab_name,
-    });
-    if let Some(c) = &cwd {
-        tab_params["cwd"] = Value::String(c.clone());
-    }
-    let tab_resp = host_call(host, "tab.create", tab_params)?;
-    let new_surface_id = tab_resp
-        .get("surface_id")
+    // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
+    //    workspace 는 required — 없으면 호스트가 invalid_params 로 거부한다.
+    let mut sp = forward(&params, &["workspace", "pane", "cwd", "role", "nickname"]);
+    sp.insert("parent".into(), json!(parent_surface));
+    let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
+    let child_sid = resp
+        .get("child_surface_id")
         .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
         .ok_or_else(|| {
             IpcMethodError::new(format!(
-                "tab.create response missing 'surface_id': {tab_resp}"
+                "terminal.spawn response missing 'child_surface_id': {resp}"
             ))
-        })? as u32;
+        })?;
 
-    let cmd = make_codex_command(new_surface_id, prompt.as_deref());
+    // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
+    let cmd = make_codex_command(child_sid, prompt.as_deref());
     host_call(
         host,
         "surface.send",
-        json!({"surface_id": new_surface_id, "text": cmd}),
+        json!({"surface_id": child_sid, "text": cmd}),
     )?;
 
-    state.register_child(
-        parent_surface,
-        ChildEntry {
-            child_surface_id: new_surface_id,
-            index,
-            cwd,
-            role,
-            nickname,
-        },
-    );
-    state.save();
-
-    Ok(json!({
-        "child_surface_id": new_surface_id,
-        "child_index": index,
-        "pane_id": pane_id,
-        "workspace_id": ws_id,
-    }))
+    Ok(resp)
 }
 
-/// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭, 아니면 name 매칭.
-fn resolve_workspace_id(host: &HostHandle, target: &str) -> Result<Option<u32>, IpcMethodError> {
-    let ws_list = host_call(host, "workspace.list", json!({}))?;
-    let arr = ws_list
-        .as_array()
-        .ok_or_else(|| IpcMethodError::new("workspace.list returned non-array"))?;
-    if let Ok(target_id) = target.parse::<u32>() {
-        for w in arr {
-            if w.get("id").and_then(|v| v.as_u64()) == Some(target_id as u64) {
-                return Ok(Some(target_id));
-            }
-        }
+pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    host_call(
+        host,
+        "terminal.children",
+        Value::Object(forward(&params, &["surface"])),
+    )
+}
+
+/// CLI 측 polling 이 idle/needs_input/exited/untrusted 도달까지 반복 호출한다.
+/// child 상태 판정은 호스트 `terminal.wait` 로 위임하고, codex 고유의 trust 검사만
+/// 여기서 덧씌운다: hook 이 미trust 면 codex 가 hook 을 fire 하지 않아 polling 이
+/// 영원히 active 로 남으므로, active tick 에서 `~/.codex/config.toml` trust 를
+/// 확인해 미충족 시 `untrusted` 로 즉시 종료 + 안내한다.
+pub fn handle_wait(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child")?;
+    let mut wp = forward(&params, &["surface"]);
+    wp.insert("child".into(), json!(child));
+    let resp = host_call(host, "terminal.wait", Value::Object(wp))?;
+    Ok(apply_trust_overlay(resp))
+}
+
+/// `codex.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface`
+/// (= child surface id) 하나. 호스트 `terminal.wait` 의 surface-mode 로 위임하되
+/// trust 검사도 동일하게 덧씌운다.
+pub fn handle_wait_by_surface(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let sid = require_u32(&params, "surface")?;
+    let resp = host_call(host, "terminal.wait", json!({ "surface": sid }))?;
+    Ok(apply_trust_overlay(resp))
+}
+
+/// 호스트 `terminal.wait` 응답에 codex trust 검사를 덧씌운다. state 가 `active`
+/// 인데 hook 이 미trust 면 `untrusted` 응답으로 교체 — 그 외 상태(idle/needs_input/
+/// exited)는 hook fire 됐다는 증거이거나 종료이므로 그대로 통과.
+fn apply_trust_overlay(resp: Value) -> Value {
+    let state = resp.get("state").and_then(|v| v.as_str()).unwrap_or("");
+    if state == "active" && !codex_hooks_all_trusted() {
+        return untrusted_response();
     }
-    for w in arr {
-        if w.get("name").and_then(|v| v.as_str()) == Some(target)
-            && let Some(id) = w.get("id").and_then(|v| v.as_u64())
-        {
-            return Ok(Some(id as u32));
-        }
-    }
-    Ok(None)
+    resp
 }
 
-/// workspace 내 첫 pane 의 id. spawn 시 `--pane` 미지정의 기본 대상이다.
-fn first_pane_in_workspace(host: &HostHandle, ws_id: u32) -> Result<u32, IpcMethodError> {
-    let panes = host_call(host, "pane.list", json!({}))?;
-    let arr = panes
-        .as_array()
-        .ok_or_else(|| IpcMethodError::new("pane.list returned non-array"))?;
-    arr.iter()
-        .find(|p| p.get("workspace_id").and_then(|v| v.as_u64()) == Some(ws_id as u64))
-        .and_then(|p| p.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
-        .ok_or_else(|| IpcMethodError::new(format!("No panes in workspace {ws_id}")))
-}
-
-pub fn handle_children(state: &CodexState, params: Value) -> Result<Value, IpcMethodError> {
-    let parent = resolve_parent(state, &params)?;
-    let children: Vec<Value> = state
-        .list_children(parent)
-        .iter()
-        .map(|c| {
-            json!({
-                "index": c.index,
-                "surface_id": c.child_surface_id,
-                "role": c.role,
-                "nickname": c.nickname,
-                "state": state.state_of(c.child_surface_id),
-                "cwd": c.cwd,
-            })
-        })
-        .collect();
-    Ok(json!({ "children": children }))
-}
-
-/// CLI 측 polling(`run_dynamic_client_polling`)이 idle/needs_input/exited/untrusted
-/// 도달까지 반복 호출한다. 본 함수는 그 polling tick 1개를 처리한다 — manifest의
-/// `polling` 선언이 CLI의 blocking loop를 활성화하므로 핸들러 자체는 1회 snapshot
-/// 만 반환.
-///
-/// state 분기:
-/// - `idle` / `needs_input` — hook 으로부터 정상 신호. CLI 측에서 즉시 종료.
-/// - `active` — 아직 진행 중. 단:
-///   - host `surface.locate` 로 죽은 surface 면 `exited` 로 강등 (SIGKILL / surface.closed
-///     이벤트 누락 케이스 방어).
-///   - codex hook 이 trust 안 된 상태면 영원히 fire 안 되므로 polling 무한 루프.
-///     이를 막기 위해 첫 active tick 에서 `~/.codex/config.toml` 의 `[hooks.state]`
-///     entry 확인해 미신뢰 시 `untrusted` 로 즉시 종료 + 사용자에게 trust 절차 안내.
-pub fn handle_wait(
-    state: &CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
-    let parent = resolve_parent(state, &params)?;
-    let child_index = require_u32(&params, "child")?;
-    let entry = state.find_child(parent, child_index).ok_or_else(|| {
-        IpcMethodError::invalid_params(&format!(
-            "child {child_index} not found under surface {parent}"
-        ))
-    })?;
-    let sid = entry.child_surface_id;
-    let response_state = match state.state_of(sid) {
-        "active" => {
-            let exists = host
-                .call("surface.locate", json!({ "surface_id": sid }))
-                .ok()
-                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
-                .unwrap_or(true);
-            if exists { "active" } else { "exited" }
-        }
-        other => other,
-    };
-
-    // trust 체크: state 가 active 일 때만 의미 있음. idle/needs_input 이면 hook 이
-    // fire 됐다는 증거 (= trusted) 고, exited 면 더 살피지 않는다.
-    if response_state == "active" && !codex_hooks_all_trusted() {
-        return Ok(untrusted_response());
-    }
-
-    Ok(json!({ "state": response_state }))
-}
-
-/// `handle_wait` 와 `handle_wait_by_surface` 가 공통으로 반환하는 untrusted 응답.
 /// codex 가 hook 을 실행하지 않으므로 polling 으로는 영원히 idle 도달 불가 — 사용자에게
 /// trust 절차를 안내하는 응답을 즉시 돌려 wait loop 가 untrusted terminal state 로
 /// 빠져나가도록 한다.
@@ -349,199 +214,89 @@ fn untrusted_response() -> Value {
     })
 }
 
-/// `codex.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface`
-/// (= child surface id) 하나. `CodexState::parent_of_child` 로 (parent) 를 역조회
-/// 후 그 자식의 state 를 반환. 등록되지 않은 surface 면 즉시 `exited` 응답.
-/// `handle_wait` 와 달리 trust 체크(`untrusted` 분기) 도 동일하게 수행한다.
-pub fn handle_wait_by_surface(
-    state: &CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
-    let sid = require_u32(&params, "surface")?;
-    if state.parent_of_child(sid).is_none() {
-        return Ok(json!({ "state": "exited" }));
-    }
-    let response_state = match state.state_of(sid) {
-        "active" => {
-            let exists = host
-                .call("surface.locate", json!({ "surface_id": sid }))
-                .ok()
-                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
-                .unwrap_or(true);
-            if exists { "active" } else { "exited" }
-        }
-        other => other,
-    };
-    if response_state == "active" && !codex_hooks_all_trusted() {
-        return Ok(untrusted_response());
-    }
-    Ok(json!({ "state": response_state }))
-}
-
-pub fn handle_broadcast(
-    state: &CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
-    let parent = resolve_parent(state, &params)?;
+pub fn handle_broadcast(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'text'"))?;
-    let role_filter = params.get("role").and_then(|v| v.as_str());
-
-    let mut sent_ids: Vec<u32> = Vec::new();
-    for child in state.list_children(parent) {
-        if let Some(r) = role_filter
-            && child.role.as_deref() != Some(r)
-        {
-            continue;
-        }
-        if let Err(e) = host_call(
-            host,
-            "surface.send",
-            json!({"surface_id": child.child_surface_id, "text": text}),
-        ) {
-            tracing::warn!(
-                "codex broadcast surface.send (sid={}) failed: {e:?}",
-                child.child_surface_id
-            );
-        }
-        sent_ids.push(child.child_surface_id);
-    }
-    Ok(json!({
-        "sent_count": sent_ids.len(),
-        "children": sent_ids,
-    }))
+    let mut bp = forward(&params, &["surface", "role"]);
+    bp.insert("text".into(), json!(text));
+    host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-pub fn handle_kill(
-    state: &mut CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
-    let parent = resolve_parent(state, &params)?;
-    let child_index = require_u32(&params, "child")?;
-    let removed = state.remove_child(parent, child_index).ok_or_else(|| {
-        IpcMethodError::invalid_params(&format!(
-            "child {child_index} not found under surface {parent}"
-        ))
-    })?;
-    state.save();
-    host_call(
-        host,
-        "surface.close",
-        json!({"surface_id": removed.child_surface_id}),
-    )?;
-    Ok(json!({
-        "killed_surface_id": removed.child_surface_id,
-        "child_index": removed.index,
-    }))
+pub fn handle_kill(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child")?;
+    let mut kp = forward(&params, &["surface"]);
+    kp.insert("child".into(), json!(child));
+    host_call(host, "terminal.kill", Value::Object(kp))
 }
 
-pub fn handle_respawn(
-    state: &mut CodexState,
-    host: &HostHandle,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
-    let parent = resolve_parent(state, &params)?;
-    let child_index = require_u32(&params, "child")?;
-    let entry = state
-        .find_child(parent, child_index)
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params(&format!(
-                "child {child_index} not found under surface {parent}"
-            ))
-        })?
-        .clone();
+pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child")?;
     let prompt = optional_str(&params, "prompt");
-    let new_cwd = optional_str(&params, "cwd");
-    let cmd = make_codex_command(entry.child_surface_id, prompt.as_deref());
 
-    // cwd 변경이 들어왔을 때는 PTY 자체를 새 working_dir 로 갈아끼운다.
-    // Ctrl-C + 재실행만으로는 작업 디렉토리가 바뀌지 않는 문제(보고서 결함 3)
-    // 를 차단. cwd 가 없으면 기존 cwd 유지 — Ctrl-C + codex 재실행만 수행.
-    let effective_cwd = new_cwd.clone().or_else(|| entry.cwd.clone());
-    if new_cwd.is_some() {
-        let mut respawn_params = json!({ "surface_id": entry.child_surface_id });
-        if let Some(c) = effective_cwd.as_deref() {
-            respawn_params["cwd"] = Value::String(c.to_string());
-        }
-        host_call(host, "surface.respawn_terminal", respawn_params)?;
-    } else {
-        // 기존 동작 유지: Ctrl+C 로 기존 프로세스 종료.
-        host_call(
-            host,
-            "surface.send_combo",
-            json!({"surface_id": entry.child_surface_id, "key": "c", "modifiers": ["ctrl"]}),
-        )?;
-    }
+    // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
+    //    갱신 + idle 초기화까지 호스트가 수행하고 child_surface_id 를 돌려준다.
+    //    codex 기동은 여기서 하지 않으므로 command 는 넘기지 않는다.
+    let mut rp = forward(&params, &["surface", "cwd", "role", "nickname"]);
+    rp.insert("child".into(), json!(child));
+    let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
+    let child_sid = resp
+        .get("child_surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| {
+            IpcMethodError::new(format!(
+                "terminal.respawn response missing 'child_surface_id': {resp}"
+            ))
+        })?;
+
+    // 2) codex 특화 기동 명령 재전송.
+    let cmd = make_codex_command(child_sid, prompt.as_deref());
     host_call(
         host,
         "surface.send",
-        json!({"surface_id": entry.child_surface_id, "text": cmd}),
+        json!({"surface_id": child_sid, "text": cmd}),
     )?;
-    // role/nickname/cwd가 새로 들어왔으면 갱신.
-    let new_role = optional_str(&params, "role");
-    let new_nick = optional_str(&params, "nickname");
-    state.update_child(parent, child_index, |e| {
-        if let Some(r) = new_role {
-            e.role = Some(r);
-        }
-        if let Some(n) = new_nick {
-            e.nickname = Some(n);
-        }
-        if let Some(c) = new_cwd {
-            e.cwd = Some(c);
-        }
-    });
-    // idle/needs_input 초기화.
-    state.set_idle(entry.child_surface_id, false);
-    state.save();
-    Ok(json!({
-        "child_surface_id": entry.child_surface_id,
-        "child_index": entry.index,
-    }))
+
+    Ok(resp)
 }
 
 /// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 `Stop` /
-/// `UserPromptSubmit` / `SessionStart` 만 정상 처리한다.
-///
-/// 이전엔 `notification` / `session-end` / `subagent-stop` 도 받았으나, codex CLI
-/// 0.130 에 해당 hook event 가 존재하지 않아 영원히 도착하지 않는다 (Claude Code
-/// 흉내내던 잔존 코드). 외부에서 `tasty codex hook notification` 을 invoke 하면
-/// invalid_params 로 거부한다.
+/// `UserPromptSubmit` / `SessionStart` 만 정상 처리한다. idle/active 신호를
+/// 호스트 registry(`terminal.set_state`)에 주입한다 — 자체 state 는 없다.
 ///
 /// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
-/// codex 의 wire schema (StopCommandOutputWire / SessionStartCommandOutputWire /
-/// UserPromptSubmitCommandOutputWire) 와 호환되어야 한다. 모든 필드가 optional
-/// 이므로 empty object 는 "no decision, continue normally" 의미. `{"ok":true,...}`
-/// 같은 자체 schema 를 반환하면 codex 가 "hook returned invalid JSON output" 으로
-/// 거부한다 (side effect 는 이미 발생했지만 codex TUI 에 에러 메시지 노출).
-pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMethodError> {
+/// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
+/// object 는 "no decision, continue normally" 의미.
+pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'event'"))?;
-    let surface = optional_u32(&params, "surface");
-    let surface_id = surface.ok_or_else(|| {
-        IpcMethodError::invalid_params("hook requires --surface to identify child")
-    })?;
-    match event {
-        "stop" => state.set_idle(surface_id, true),
-        "prompt-submit" | "session-start" => state.set_idle(surface_id, false),
-        other => {
-            return Err(IpcMethodError::invalid_params(&format!(
-                "unknown hook event '{other}' (supported: stop, prompt-submit, session-start)"
-            )));
-        }
-    }
-    state.save();
+    let surface_id = require_u32(&params, "surface")
+        .map_err(|_| IpcMethodError::invalid_params("hook requires --surface to identify child"))?;
+    let new_state = hook_event_to_state(event)?;
+    host_call(
+        host,
+        "terminal.set_state",
+        json!({ "surface": surface_id, "state": new_state }),
+    )?;
     Ok(json!({}))
 }
 
-pub fn handle_install(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
+/// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
+fn hook_event_to_state(event: &str) -> Result<&'static str, IpcMethodError> {
+    match event {
+        "stop" => Ok("idle"),
+        "prompt-submit" | "session-start" => Ok("active"),
+        other => Err(IpcMethodError::invalid_params(&format!(
+            "unknown hook event '{other}' (supported: stop, prompt-submit, session-start)"
+        ))),
+    }
+}
+
+pub fn handle_install() -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -567,7 +322,7 @@ Trust persists per-machine. `tasty codex wait` returns `state: \"untrusted\"` un
     Ok(resp)
 }
 
-pub fn handle_uninstall(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
+pub fn handle_uninstall() -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path()?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
@@ -813,50 +568,27 @@ mod tests {
     }
 
     #[test]
-    fn build_tell_payload_single_line_plain_no_cr() {
-        // 단일라인 본문은 평문 그대로 — 제출 `\r` 은 handle_tell 이 별도 PTY write 로 보낸다.
-        let body = build_tell_payload("hello");
-        assert_eq!(body, "hello");
-        assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
+    fn hook_event_to_state_maps_known_events() {
+        assert_eq!(hook_event_to_state("stop").unwrap(), "idle");
+        assert_eq!(hook_event_to_state("prompt-submit").unwrap(), "active");
+        assert_eq!(hook_event_to_state("session-start").unwrap(), "active");
     }
 
     #[test]
-    fn build_tell_payload_single_line_long_has_no_cr() {
-        // 회귀 가드: 63자+ 단일라인도 본문에 `\r` 이 붙으면 안 된다(붙으면 본문+CR 한
-        // burst → paste 오인 → 미제출). 제출 CR 분리는 handle_tell 책임.
-        let msg = "a".repeat(80);
-        let body = build_tell_payload(&msg);
-        assert_eq!(body, msg);
-        assert!(!body.contains('\r'));
+    fn hook_event_to_state_rejects_unsupported() {
+        // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
+        // 거부 (silent no-op 대신 invalid_params).
+        let err = hook_event_to_state("notification").unwrap_err();
+        assert!(format!("{err:?}").contains("unknown hook event"));
     }
 
     #[test]
-    fn build_tell_payload_multi_line_bracketed() {
-        // "a\nb" → ESC[200~ a\nb ESC[201~ (멀티라인만 paste, 개행 그대로, 제출 \r 미포함).
-        let body = build_tell_payload("a\nb");
-        assert_eq!(body, "\u{1b}[200~a\nb\u{1b}[201~");
-        assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
-    }
-
-    #[test]
-    fn build_tell_payload_trailing_backslash_single_line() {
-        // 개행 없는 단일라인이므로 평문 그대로 (paste 아님, CR 미포함).
-        assert_eq!(build_tell_payload("foo\\"), "foo\\");
-    }
-
-    #[test]
-    fn build_tell_payload_three_lines() {
-        // "x\ny\nz" → ESC[200~ x\ny\nz ESC[201~ (제출 \r 미포함).
-        assert_eq!(
-            build_tell_payload("x\ny\nz"),
-            "\u{1b}[200~x\ny\nz\u{1b}[201~"
-        );
-    }
-
-    #[test]
-    fn build_tell_payload_empty_message() {
-        // "" → 단일라인 경로: 빈 본문. 제출 `\r` 은 handle_tell 이 별도로 보낸다.
-        assert_eq!(build_tell_payload(""), "");
+    fn apply_trust_overlay_passes_through_non_active() {
+        // idle/needs_input/exited 는 trust 무관 그대로 통과.
+        for s in ["idle", "needs_input", "exited"] {
+            let resp = apply_trust_overlay(json!({ "state": s }));
+            assert_eq!(resp["state"], s);
+        }
     }
 
     fn parse_toml(text: &str) -> toml::Value {
@@ -1073,14 +805,5 @@ trusted_hash = "sha256:xyz"
             &value,
             "/Users/x/.codex/config.toml"
         ));
-    }
-
-    #[test]
-    fn handle_hook_rejects_unsupported_events() {
-        // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
-        // handle_hook 도 거부 (silent no-op 대신 invalid_params).
-        let mut s = CodexState::default();
-        let err = handle_hook(&mut s, json!({"event": "notification", "surface": 1})).unwrap_err();
-        assert!(format!("{err:?}").contains("unknown hook event"));
     }
 }
