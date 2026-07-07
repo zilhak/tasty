@@ -49,6 +49,14 @@ pub(crate) enum MirrorEvent {
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
     /// 메인루프가 실패 toast 를 띄운다. 성공은 무음(별도 이벤트 없음).
     StructuralFailed(String),
+    /// 원격 워크스페이스 구조가 바뀌었다(3단계 역반영). 원격 ws 전체 트리+surfaces 를
+    /// 담아 메인루프가 mirror 트리를 증분 재구성한다(survivor 터미널 local id 유지 →
+    /// scrollback 보존, 신규만 새 mirror, 사라진 것 제거).
+    StructuralDelta {
+        workspace_id: u32,
+        tree: Value,
+        surfaces: Vec<Value>,
+    },
 }
 
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
@@ -217,26 +225,7 @@ impl App {
                 if s.get("role").and_then(|v| v.as_str()) == Some("terminal") {
                     let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                     let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    let mut mirror = Terminal::new_detached(cols, rows);
-                    // 입력 forward: focus mirror 로의 send_bytes → sink → encode_mux →
-                    // 원격 PTY(서버 holder+workspace 검증). keyboard.rs 무변경.
-                    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-                    mirror.set_input_sink(tx);
-                    let fwd_writer = writer.clone();
-                    std::thread::spawn(move || {
-                        for chunk in rx {
-                            let framed = stream::encode_mux(remote_id, &chunk);
-                            let Ok(mut w) = fwd_writer.lock() else { break };
-                            if stream::write_frame(&mut *w, StreamTag::Data, &framed).is_err() {
-                                break;
-                            }
-                        }
-                    });
-                    // Mirror emit 은 process() 밖(feed_bytes)이라 process 진입의
-                    // lazy 게이트 동기화가 닿지 않는다 — 옵저버가 먼저 등록된
-                    // 경우를 위해 insert 시점에 게이트를 직접 초기화한다.
-                    mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
-                    engine.terminals.insert(local_id, mirror);
+                    make_mirror_surface(remote_id, local_id, cols, rows, &writer, engine);
                     terminal_locals.insert(local_id);
                 }
                 // 비-터미널은 mirror 불가(design §4.4) → 로컬 id 만(placeholder leaf).
@@ -308,6 +297,16 @@ impl App {
                                         }) => Some(MirrorEvent::StructuralFailed(
                                             reason.unwrap_or_default(),
                                         )),
+                                        // 3단계: 원격 구조 변경 역반영 → mirror 트리 재구성.
+                                        Ok(StreamControl::StructuralDelta {
+                                            workspace_id,
+                                            tree,
+                                            surfaces,
+                                        }) => Some(MirrorEvent::StructuralDelta {
+                                            workspace_id,
+                                            tree,
+                                            surfaces,
+                                        }),
                                         _ => None,
                                     };
                                 if let Some(ev) = mirror_ev
@@ -387,59 +386,69 @@ impl App {
                 )
             };
 
-            if !drained.is_empty() {
-                // remote→local 매핑은 세션 보유. mirror terminal 이 있는 main view 에
-                // 이벤트를 **도착 순서대로** 적용한다(Data=출력 재생, Resize=그리드 갱신).
-                let map = self.attach_client_sessions[idx].remote_to_local.clone();
-                for main in self.main_windows_iter_mut() {
-                    if main
-                        .core_state
-                        .workspaces
-                        .iter()
-                        .any(|ws| ws.id == local_ws)
-                    {
-                        for ev in &drained {
-                            match ev {
-                                MirrorEvent::Data(remote_id, bytes) => {
-                                    if let Some(&local) = map.get(remote_id)
-                                        && let Some(t) = main.core_state.terminals.get_mut(local)
-                                    {
-                                        t.feed_bytes(bytes);
-                                    }
-                                }
-                                MirrorEvent::Resize(remote_id, cols, rows) => {
-                                    // mirror 그리드를 원격 새 크기로 갱신. 로컬 resize
-                                    // 스윕은 detached mirror 를 건너뛰므로, 이 경로가
-                                    // mirror 를 리사이즈하는 유일한 지점이다.
-                                    if let Some(&local) = map.get(remote_id)
-                                        && let Some(t) = main.core_state.terminals.get_mut(local)
-                                    {
-                                        t.resize(*cols, *rows);
-                                    }
-                                }
-                                MirrorEvent::StructuralFailed(reason) => {
-                                    // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
-                                    // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
-                                    // 없음(요청/응답).
-                                    let base = crate::i18n::t(
-                                        "attach.toast.mirror_structural_forward_failed",
-                                    );
-                                    let msg: String = if reason.is_empty() {
-                                        base.to_string()
-                                    } else {
-                                        format!("{base} ({reason})")
-                                    };
-                                    main.state.toasts.push(
-                                        msg,
-                                        crate::adapters::ui::ToastKind::Warning,
-                                        crate::adapters::ui::ToastScope::Window,
-                                    );
+            if !drained.is_empty()
+                && let Some(wid) = self.find_main_with_workspace(local_ws)
+            {
+                // 세션(remote→local 매핑)과 그 mirror 를 호스팅하는 창 engine 을 **분리
+                // 대여**(self 의 서로 다른 필드 → disjoint borrow). delta 가 매핑을
+                // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
+                // Data 가 새 surface 로 라우팅된다. 이벤트를 **도착 순서대로** 적용한다.
+                let sess = &mut self.attach_client_sessions[idx];
+                if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+                    for ev in drained {
+                        match ev {
+                            MirrorEvent::Data(remote_id, bytes) => {
+                                if let Some(&local) = sess.remote_to_local.get(&remote_id)
+                                    && let Some(t) = main.core_state.terminals.get_mut(local)
+                                {
+                                    t.feed_bytes(&bytes);
                                 }
                             }
+                            MirrorEvent::Resize(remote_id, cols, rows) => {
+                                // mirror 그리드를 원격 새 크기로 갱신. 로컬 resize
+                                // 스윕은 detached mirror 를 건너뛰므로, 이 경로가
+                                // mirror 를 리사이즈하는 유일한 지점이다.
+                                if let Some(&local) = sess.remote_to_local.get(&remote_id)
+                                    && let Some(t) = main.core_state.terminals.get_mut(local)
+                                {
+                                    t.resize(cols, rows);
+                                }
+                            }
+                            MirrorEvent::StructuralFailed(reason) => {
+                                // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
+                                // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
+                                // 없음(요청/응답).
+                                let base =
+                                    crate::i18n::t("attach.toast.mirror_structural_forward_failed");
+                                let msg: String = if reason.is_empty() {
+                                    base.to_string()
+                                } else {
+                                    format!("{base} ({reason})")
+                                };
+                                main.state.toasts.push(
+                                    msg,
+                                    crate::adapters::ui::ToastKind::Warning,
+                                    crate::adapters::ui::ToastScope::Window,
+                                );
+                            }
+                            MirrorEvent::StructuralDelta {
+                                workspace_id,
+                                tree,
+                                surfaces,
+                            } => {
+                                // 원격 구조 변경 역반영: survivor 터미널 local id 를
+                                // 유지하며 mirror 트리를 재구성(신규 추가/사라진 것 제거).
+                                apply_mirror_structural_delta(
+                                    sess,
+                                    main,
+                                    workspace_id,
+                                    &tree,
+                                    &surfaces,
+                                );
+                            }
                         }
-                        main.mark_dirty();
-                        break;
                     }
+                    main.mark_dirty();
                 }
             }
             if disconnected {
@@ -549,6 +558,120 @@ impl App {
             }
             Err(_) => tracing::warn!("structural forward: writer lock 실패 — drop"),
         }
+    }
+}
+
+/// 원격 surface 하나에 대응하는 mirror 터미널을 만들어 `engine` 에 삽입한다.
+/// `Terminal::new_detached`(로컬 PTY 없음) + 입력 sink forwarder(로컬 키 입력 →
+/// `encode_mux(remote_id)` → writer → 원격 PTY, 서버 holder+workspace 검증) + 옵저버
+/// 게이트 초기화. 핸드셰이크(`start_gui_attach`)와 역반영(`apply_mirror_structural_delta`)이
+/// 공유한다. 입력 forwarder 는 mirror drop(세션 정리/역반영 remove) 시 sink 채널이 끊겨
+/// 자연 종료한다.
+fn make_mirror_surface(
+    remote_id: u32,
+    local_id: u32,
+    cols: usize,
+    rows: usize,
+    writer: &Arc<Mutex<TcpStream>>,
+    engine: &mut crate::core::CoreState,
+) {
+    let mut mirror = Terminal::new_detached(cols, rows);
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    mirror.set_input_sink(tx);
+    let fwd_writer = writer.clone();
+    std::thread::spawn(move || {
+        for chunk in rx {
+            let framed = stream::encode_mux(remote_id, &chunk);
+            let Ok(mut w) = fwd_writer.lock() else { break };
+            if stream::write_frame(&mut *w, StreamTag::Data, &framed).is_err() {
+                break;
+            }
+        }
+    });
+    // Mirror emit 은 process() 밖(feed_bytes)이라 process 진입의 lazy 게이트 동기화가
+    // 닿지 않는다 — 옵저버가 먼저 등록된 경우를 위해 insert 시점에 게이트를 직접 초기화.
+    mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
+    engine.terminals.insert(local_id, mirror);
+}
+
+/// 원격 구조 변경 delta(3단계 역반영)를 mirror 트리에 적용한다. 원격 ws 의 실행 후 전체
+/// 트리+surfaces 를 받아:
+/// 1. survivor(기존 매핑에 있는 remote_id)는 **기존 local id 를 재사용**(터미널을
+///    재생성하지 않아 scrollback/grid 보존),
+/// 2. 신규 remote surface 는 로컬 id 발급 + `make_mirror_surface`(터미널만),
+/// 3. 사라진 것은 mirror 터미널 제거,
+/// 4. 갱신된 매핑으로 `build_mirror_workspace` 재실행 → 같은 local ws id 로 교체.
+///
+/// pane 상위 배치는 `build_mirror_workspace` 의 기존 horizontal-chain 근사를 그대로
+/// 승계한다(핸드셰이크와 동일 수준 — 3단계가 악화시키지 않음).
+fn apply_mirror_structural_delta(
+    sess: &mut AttachClientSession,
+    main: &mut crate::view::main::MainView,
+    workspace_id: u32,
+    tree: &Value,
+    surfaces: &[Value],
+) {
+    let engine = &mut main.core_state;
+    let ids = engine.next_ids.clone();
+
+    // 1·2. new_map(survivor 유지 + 신규 할당) + terminal_locals 수집.
+    let mut new_map: HashMap<u32, u32> = HashMap::new();
+    let mut terminal_locals: HashSet<u32> = HashSet::new();
+    for s in surfaces {
+        let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let is_terminal = s.get("role").and_then(|v| v.as_str()) == Some("terminal");
+        let local_id = match sess.remote_to_local.get(&remote_id) {
+            Some(&l) => l, // survivor — 기존 local id 재사용(터미널 유지).
+            None => {
+                let l = ids.next_surface();
+                if is_terminal {
+                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+                    make_mirror_surface(remote_id, l, cols, rows, &sess.writer, engine);
+                }
+                l
+            }
+        };
+        if is_terminal {
+            terminal_locals.insert(local_id);
+        }
+        new_map.insert(remote_id, local_id);
+    }
+
+    // 3. removed — 기존 매핑 중 새 surfaces 에 없는 것: mirror 터미널 제거(입력
+    //    forwarder 는 sink drop 으로 자연 종료).
+    for (&remote_id, &local_id) in sess.remote_to_local.iter() {
+        if !new_map.contains_key(&remote_id) {
+            engine.terminals.remove(local_id);
+        }
+    }
+
+    // 매핑 교체(이후 같은 drain 의 Data 는 갱신된 매핑으로 라우팅된다).
+    sess.remote_to_local = new_map;
+
+    // 4. 트리 재구성 → 같은 local ws id 로 in-place 교체(survivor local id 유지 →
+    //    위치·구성만 갱신, active_workspace 인덱스 불변).
+    if let Some(pos) = engine
+        .workspaces
+        .iter()
+        .position(|w| w.id == sess.local_workspace)
+    {
+        let name = engine.workspaces[pos].name.clone();
+        let mut ws = build_mirror_workspace(
+            sess.local_workspace,
+            &name,
+            tree,
+            &ids,
+            &sess.remote_to_local,
+            &terminal_locals,
+        );
+        ws.mirror = true;
+        engine.workspaces[pos] = ws;
+    } else {
+        tracing::warn!(
+            "structural delta: mirror workspace {} (remote {workspace_id}) 를 못 찾음 — drop",
+            sess.local_workspace
+        );
     }
 }
 
@@ -803,6 +926,51 @@ mod tests {
         assert_eq!(ws.id, 99);
         // mirror surface = 로컬 50 (remote 1 재매핑).
         assert_eq!(ws.all_surface_ids(), vec![50]);
+    }
+
+    /// 3단계 역반영의 핵심 계약: survivor(기존 매핑 remote_id)는 **기존 local id 를
+    /// 유지**하고 신규 remote leaf 는 새 local id 로 트리에 삽입된다. `apply_mirror_
+    /// structural_delta` 가 갱신하는 매핑을 그대로 재현해 `build_mirror_workspace` 에
+    /// 넘겼을 때 survivor local id 가 보존되는지 검증한다(터미널 재생성 방지의 기반).
+    #[test]
+    fn build_mirror_workspace_preserves_survivor_and_inserts_new_leaf() {
+        let ids = IdGenerator::new();
+        // survivor: remote 1 → 기존 local 50(유지). 신규: remote 2 → 새 local 발급.
+        let survivor_local = 50u32;
+        let mut map = HashMap::new();
+        map.insert(1u32, survivor_local);
+        let new_local = ids.next_surface(); // 역반영이 신규에 발급하는 것과 동형.
+        map.insert(2u32, new_local);
+        let mut term = HashSet::new();
+        term.insert(survivor_local);
+        term.insert(new_local);
+        // split 트리: survivor(remote 1) + 신규(remote 2).
+        let tree = serde_json::json!({
+            "id": 9, "focused_pane": 7,
+            "panes": [ {
+                "id": 7,
+                "tabs": [ {
+                    "id": 3, "name": "Shell", "active": true, "focused_surface": 1,
+                    "layout": {
+                        "type": "Split", "direction": "vertical", "ratio": 0.5,
+                        "focus_second": false,
+                        "first": { "type": "Leaf", "id": 1, "kind": "terminal" },
+                        "second": { "type": "Leaf", "id": 2, "kind": "terminal" }
+                    }
+                } ]
+            } ]
+        });
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let sids = ws.all_surface_ids();
+        assert!(
+            sids.contains(&survivor_local),
+            "survivor local id({survivor_local}) 가 유지돼야 한다: {sids:?}"
+        );
+        assert!(
+            sids.contains(&new_local),
+            "신규 leaf local id({new_local}) 가 트리에 삽입돼야 한다: {sids:?}"
+        );
+        assert_eq!(sids.len(), 2, "survivor + 신규 = 2개 leaf");
     }
 
     /// 빈/널 트리 fallback — panic 없이 placeholder workspace.
