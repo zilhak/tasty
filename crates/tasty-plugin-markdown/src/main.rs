@@ -219,6 +219,11 @@ impl Plugin for MarkdownPlugin {
                 self.repaint_after_reload(&ctx.host, &ctx.params);
                 Ok(out)
             }
+            // 최근목록 조회는 host 소유(AppState.recent_files) — plugin 은 저장소를 못 본다.
+            // 네트워크/CLI caller 가 이 namespace 로 보낸 호출을 host 본문으로 trampoline
+            // 한다(image.open/list 와 동형 host-adapter). owner==self 인 self-call 이라
+            // plugin_ipc 가 forward 하지 않고 host dispatch 로 통과시켜 handle_recent 에 닿는다.
+            "markdown.recent" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
             other => Err(IpcMethodError::not_found(other)),
         }
     }

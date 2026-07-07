@@ -135,6 +135,19 @@ fn terminal_star_is_plugin_callable_within_agent_plugin_permissions() {
 }
 
 #[test]
+fn markdown_recent_requires_surface_read() {
+    // recent 조회는 임의 파일 read(FsRead) 가 아니라 이미 열었던 목록 반환뿐 →
+    // 더 약한 SurfaceRead 권한. plugin(주소창 03)이 호출 가능해야 한다.
+    let m = method_meta("markdown.recent").expect("registered");
+    assert!(m.plugin_callable, "address bar plugin must be able to query recents");
+    assert!(m.required.contains(&Permission::SurfaceRead));
+    assert!(
+        !m.required.contains(&Permission::FsRead),
+        "recent 은 임의 path read 가 아니므로 FsRead 를 요구하지 않는다"
+    );
+}
+
+#[test]
 fn tab_create_requires_surface_write() {
     let m = method_meta("tab.create").expect("registered");
     assert!(m.plugin_callable);

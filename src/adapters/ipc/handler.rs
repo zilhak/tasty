@@ -402,6 +402,11 @@ fn route_engine_handler(
         // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),
+        // markdown 최근목록 조회 — 주소창(03) 드롭다운 데이터 공급원. 읽기 전용.
+        // navigate 와 같은 네임스페이스라 `markdown` 모듈(gui-gated) 소속. 기본 features
+        // 바이너리(런타임 `--headless` 포함)에는 항상 존재한다.
+        #[cfg(feature = "gui")]
+        "markdown.recent" => markdown::handle_recent(state, id),
         // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
         // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.

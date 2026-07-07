@@ -18,9 +18,9 @@ use presets::{file_handler_command_to_method_params, preset_command_to_method_pa
 use telemetry::telemetry_command_to_method_params;
 
 use super::{
-    CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
-    SendCommands, SetCommands, SurfaceCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
-    WorkspaceCategoryCommands,
+    CloseCommands, Commands, ListCommands, MarkdownCommands, MoveCommands, NewCommands,
+    ReadCommands, RemoteCommands, SendCommands, SetCommands, SurfaceCommands, SurfaceMetaCommands,
+    ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -236,6 +236,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             workspace_category_command_to_method_params(command)
         }
         Commands::Terminal { command } => terminal_command_to_method_params(command),
+        Commands::Markdown { command } => markdown_command_to_method_params(command),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
     };
@@ -672,6 +673,14 @@ fn terminal_command_to_method_params(
             "terminal.set_state",
             serde_json::json!({ "surface": surface, "state": state }),
         ),
+    }
+}
+
+fn markdown_command_to_method_params(
+    command: &MarkdownCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        MarkdownCommands::Recent => ("markdown.recent", serde_json::json!({})),
     }
 }
 

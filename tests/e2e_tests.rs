@@ -66,6 +66,17 @@ fn all_e2e_tests() {
     let tabs = tasty.call("tab.list", json!({"pane_id": pid}));
     assert!(!tabs["tabs"].as_array().unwrap().is_empty());
 
+    // markdown.recent — 최근 markdown 목록 조회(읽기 전용, 주소창 드롭다운 공급원).
+    // 격리 HOME 이라 초기 목록은 비어 있어도 무방 — 왕복 success + `recent` 배열 shape 검증.
+    let recent = tasty.call("markdown.recent", json!({}));
+    let recent_arr = recent["recent"]
+        .as_array()
+        .expect("markdown.recent returns { recent: [...] }");
+    assert!(recent_arr.len() <= 10, "recent 은 최대 10개");
+    // 조회가 사용자 상태(포커스 등)를 바꾸지 않았는지: 재조회가 여전히 성공.
+    let recent2 = tasty.call("markdown.recent", json!({}));
+    assert!(recent2["recent"].is_array());
+
     // notification
     tasty.call(
         "notification.create",

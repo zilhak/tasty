@@ -26,7 +26,8 @@
   - **외부 URL**(`http(s)://`·`mailto:`·`data:`)만 plugin 이 OS 핸들러(`webbrowser`)로 위임한다.
   - **`#anchor`** 는 무시(문서 내 위치 — 열 대상 없음). base_dir 을 모르는 상대 경로, 존재하지 않는 경로도 무반응.
   - 이미지의 상대 경로도 동일하게 base_dir 기준으로 해석한다.
-- **cli** — `tasty markdown …`(reload 등).
+- **최근목록 조회** — `markdown.recent` IPC(`tasty markdown recent`)가 최근 연 markdown 파일을 **최신순 최대 10개** 반환한다(`{recent:[{path,file_name}]}`). 주소창(03) 편집 드롭다운의 데이터 공급원. **읽기 전용** — host `AppState.recent_files` 캐시를 필터 없이 조회할 뿐 사용자 상태(포커스/선택/히스토리)를 바꾸지 않는다(불가침 원칙). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 `navigate`(FsRead)보다 약한 **`surface.read`** 권한.
+- **cli** — `tasty markdown recent`(최근목록 조회). reload 등은 plugin CLI.
 - **settings_page** — `markdown` 페이지.
 
 ## 인터페이스
