@@ -10,9 +10,9 @@
 //! host 가 webview 가시성을 제어하는 것만으로 노출된다:
 //!
 //! - **placeholder** — URL 미지정(navigation 전): overlay 가 아예 생성되지 않아
-//!   이 chrome 이 그대로 보인다(GLOBE text-disabled + "No page loaded").
+//!   이 chrome 이 그대로 보인다(HTML glyph text-disabled + "No page loaded").
 //! - **boundary** — URL 지정됨: overlay 가 영역을 덮지만, egui overlay(메뉴/팝업/
-//!   다이얼로그) 가 열려 webview 가 일시 숨겨질 때 이 backdrop 이 보인다(GLOBE
+//!   다이얼로그) 가 열려 webview 가 일시 숨겨질 때 이 backdrop 이 보인다(HTML glyph
 //!   text-muted + "WebView region" + url).
 //!
 //! loading/error 상태는 navigation 생명주기 신호(start/finish/fail)로 결정된다. 3개
@@ -85,7 +85,7 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                 NavState::Idle | NavState::Done => match url {
                     None => {
                         // placeholder — no URL.
-                        ui.add(icons::GLOBE.image(glyph, th.text_disabled().to_egui()));
+                        ui.add(icons::HTML.image(glyph, th.text_disabled().to_egui()));
                         ui.add_space(th.spacing_sm.value());
                         label(
                             ui,
@@ -95,7 +95,7 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                     }
                     Some(url) => {
                         // boundary — webview region backdrop.
-                        ui.add(icons::GLOBE.image(glyph, th.text_muted().to_egui()));
+                        ui.add(icons::HTML.image(glyph, th.text_muted().to_egui()));
                         ui.add_space(th.spacing_sm.value());
                         label(
                             ui,

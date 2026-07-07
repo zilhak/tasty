@@ -31,7 +31,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             tile(ui, theme, |ui| {
                 glyph(
                     ui,
-                    icons::GLOBE,
+                    icons::HTML,
                     theme.icon_glyph_size_md.value(),
                     theme.text_muted(),
                 );
@@ -44,7 +44,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             tile(ui, theme, |ui| {
                 glyph(
                     ui,
-                    icons::GLOBE,
+                    icons::HTML,
                     theme.icon_glyph_size_md.value(),
                     theme.text_disabled(),
                 );

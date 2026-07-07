@@ -177,9 +177,9 @@ stroke_icon!(
     r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>"#
 );
 stroke_icon!(
-    GLOBE,
-    "globe",
-    r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>"#
+    HTML,
+    "html",
+    r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.8 13.8 0 0 1 3.6 9 13.8 13.8 0 0 1-3.6 9 13.8 13.8 0 0 1-3.6-9 13.8 13.8 0 0 1 3.6-9z"/>"#
 );
 
 // ── View modes & favorites (explorer) ──

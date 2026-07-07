@@ -60,7 +60,7 @@ const SURFACES: &[Entry] = &[
     (TERMINAL, "terminal", "terminal surface / tab"),
     (MARKDOWN, "markdown", "markdown surface / tab"),
     (IMAGE, "image", "image surface / fallback"),
-    (GLOBE, "globe", "html surface / web view"),
+    (HTML, "html", "html surface / web view"),
     (SPLIT, "split", "split a pane"),
     (FOLDER, "folder", "folder / workspace"),
     (FILE, "file", "file leaf"),

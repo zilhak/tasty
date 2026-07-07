@@ -271,6 +271,7 @@ fn kind_icon(kind: &str) -> Icon {
         "markdown" => icons::MD,
         "explorer" => icons::FOLDER,
         "image" => icons::IMAGE,
+        "html" => icons::HTML,
         "terminal" | "attached" => icons::TERM,
         _ => icons::FILE,
     }
