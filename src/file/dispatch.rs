@@ -84,19 +84,27 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-/// 대용량 markdown 확인 게이트의 임계값 (1MB). 이 값을 *초과* 하면 확인 팝업.
+/// markdown 의 대용량 확인 게이트 임계값 (1MB). `markdown.navigate` IPC 핸들러(markdown
+/// 네임스페이스 전용)가 쓰는 markdown 고유 상수. host 의 generic 파일-핸들러 오픈 경로는
+/// 이 상수가 아니라 kind 의 매니페스트 `size_confirm_limit`(registry)을 읽는다.
 pub(crate) const MD_SIZE_LIMIT_BYTES: u64 = 1024 * 1024;
 
-/// `path` 가 크기 게이트를 초과하는 일반 파일이면 그 크기(bytes)를 반환.
+/// `path` 가 `limit` bytes 를 초과하는 일반 파일이면 그 크기(bytes)를 반환.
 ///
 /// 파일이 없거나 stat 실패 / 정확히 임계값 이하면 `None` — 게이트를 통과시키고
-/// 기존 오픈 흐름에 맡긴다(로드 실패는 플러그인이 표시). 경계값(정확히 1MB)은
+/// 기존 오픈 흐름에 맡긴다(로드 실패는 플러그인이 표시). 경계값(정확히 `limit`)은
 /// 통과(`None`) — *초과* 만 게이트.
-pub(crate) fn exceeds_md_size_limit(path: &std::path::Path) -> Option<u64> {
+pub(crate) fn exceeds_size_limit(path: &std::path::Path, limit: u64) -> Option<u64> {
     std::fs::metadata(path)
         .ok()
         .map(|m| m.len())
-        .filter(|&len| len > MD_SIZE_LIMIT_BYTES)
+        .filter(|&len| len > limit)
+}
+
+/// markdown 고유 임계값([`MD_SIZE_LIMIT_BYTES`]) 기준 초과 판정. markdown 네임스페이스
+/// IPC 핸들러(`markdown.navigate`) 전용 — host generic 경로는 registry 값을 쓴다.
+pub(crate) fn exceeds_md_size_limit(path: &std::path::Path) -> Option<u64> {
+    exceeds_size_limit(path, MD_SIZE_LIMIT_BYTES)
 }
 
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
@@ -180,14 +188,19 @@ pub fn execute_handler_action(
         } => {
             let path_str = target.as_path().to_string_lossy().into_owned();
 
-            // 대용량 markdown 확인 게이트 (01-md-size-confirm-gate). bypass 아니고
-            // 1MB 초과면 실제 오픈 대신 확인 팝업을 띄우고 오픈을 보류한다. [열기]
-            // 확정 시 `Core::apply_pending_md_open` 이 재개한다. pane/workspace/tab 의
-            // 직접 생성 IPC 는 이 함수를 경유하지 않으므로 게이트 대상 밖(항상 즉시 생성).
+            // 대용량 파일 확인 게이트 (01-md-size-confirm-gate). kind 가 매니페스트
+            // `size_confirm_limit`(registry)을 선언하고 파일이 그 값을 초과하면 실제 오픈
+            // 대신 확인 팝업을 띄우고 오픈을 보류한다(kind 하드코딩 없이 generic — markdown
+            // 은 1MB 를 선언). [열기] 확정 시 `Core::apply_pending_md_open` 이 재개한다.
+            // pane/workspace/tab 의 직접 생성 IPC 는 이 함수를 경유하지 않으므로 게이트
+            // 대상 밖(항상 즉시 생성).
             #[cfg(feature = "gui")]
-            if surface_kind == "markdown"
-                && !ignore_size_limit
-                && let Some(size) = exceeds_md_size_limit(target.as_path())
+            if !ignore_size_limit
+                && let Some(limit) = engine
+                    .surface_registry
+                    .get(surface_kind)
+                    .and_then(|d| d.size_confirm_limit)
+                && let Some(size) = exceeds_size_limit(target.as_path(), limit)
             {
                 state.dialogs.pending_md_open = Some(crate::state::PendingMdOpen {
                     path: path_str,

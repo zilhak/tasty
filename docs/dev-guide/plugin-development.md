@@ -98,6 +98,7 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
   - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
   - **`egui_paste`** — paste 를 이 kind 가 자체 소비(host 가 terminal paste 로 흘리지 않음, 예: image).
 - **`name_from_param`** — 자동 탭 명명 시 basename 을 파생할 params 키. 선언하면 그 키 값의 basename 을 탭 표시명으로 쓴다(예: markdown/image 는 `"file"`, explorer(builtin)는 `"path"` → `README.md`). 미선언이면 kind 표시명(`display_name_i18n_key`)으로 fallback. host 의 `kind == "markdown"` basename 명명 하드코딩을 대체.
+- **`size_confirm_limit`** — 파일 핸들러로 이 kind 를 열 때 확인 팝업을 띄우는 크기 임계값(bytes). 선언하면 파일이 그 값을 *초과* 할 때 즉시 열지 않고 확인 팝업을 띄운다(예: markdown 은 `1048576` = 1MB). 미선언이면 게이트 없음(항상 즉시 열기). host 의 `kind == "markdown"` 1MB 게이트 하드코딩을 대체.
 
 ### 파일 핸들러 (detector + handler)
 

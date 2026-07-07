@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.18"
+version = "0.1.19"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -35,6 +35,9 @@ param_aliases = { file_path = "file" }
 # 자동 탭 명명: `file` 값의 basename 을 표시명으로(예: README.md). 본체의
 # `kind == "markdown"` basename 명명 하드코딩을 대체(generic-kind 마이그레이션).
 name_from_param = "file"
+# 파일 핸들러로 열 때 1MB 초과면 확인 팝업. 본체의 `kind == "markdown"` 1MB 게이트
+# 하드코딩을 대체(generic-kind 마이그레이션).
+size_confirm_limit = 1048576
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
 # 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).

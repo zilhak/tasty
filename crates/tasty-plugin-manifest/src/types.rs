@@ -454,6 +454,12 @@ pub struct SurfaceKindDecl {
     /// 파생 없이 kind 표시명 fallback.
     #[serde(default)]
     pub name_from_param: Option<String>,
+    /// 파일 기반 kind 를 파일 핸들러로 열 때 확인 팝업을 띄우는 크기 임계값(bytes,
+    /// 예: markdown=1048576). `Some(n)` 이면 파일이 n bytes 를 *초과* 할 때 즉시 열지 않고
+    /// 확인 팝업을 띄운다. host 본체의 `kind == "markdown"` 1MB 게이트 하드코딩을 generic 화.
+    /// 미선언이면 게이트 없음(항상 즉시 열기).
+    #[serde(default)]
+    pub size_confirm_limit: Option<u64>,
     /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
     /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
     /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면
