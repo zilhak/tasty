@@ -130,6 +130,63 @@ impl CoreState {
         self.workspaces.iter().position(|w| w.id == ws_id)
     }
 
+    /// 구조 변경 `DomainIntent` 의 **대상이 mirror 워크스페이스**에 속하면 그
+    /// 워크스페이스 인덱스를 반환한다. mirror 워크스페이스는 원격 워크스페이스의
+    /// 뷰(원격 attach client)이므로, 그 안의 구조 변경(split·new-tab·close·이동)은
+    /// **로컬에서 실행하면 안 된다** — 로컬 PTY spawn / 로컬 트리 변경은 "workspace
+    /// 전체가 remote" 불변식을 깨뜨린다. `Core::apply` 가 이 값이 `Some` 이면 구조
+    /// 변경을 거부한다([`super::super::MirrorStructuralBlocked`]). 구조와 무관한
+    /// intent 나 대상을 못 찾는 경우 `None`.
+    ///
+    /// (구조 변경을 원격으로 forward 하는 2단계에서 같은 판별점을 재사용한다.)
+    pub(crate) fn mirror_workspace_index_for_structural(
+        &self,
+        intent: &crate::core::intent::DomainIntent,
+    ) -> Option<usize> {
+        use crate::core::intent::DomainIntent as D;
+        let ws_idx = match intent {
+            D::SplitSurface {
+                target_surface_id: sid,
+                ..
+            }
+            | D::CloseSurface {
+                surface_id: sid, ..
+            }
+            | D::ConvertSurface {
+                surface_id: sid, ..
+            } => self.find_workspace_index_for_surface(*sid).map(|(i, _)| i),
+            D::MoveSurface {
+                source_surface_id,
+                target_surface_id,
+            } => {
+                // source(떼어내는 쪽) 또는 target(대체되는 쪽) 어느 하나라도 mirror
+                // 면 로컬 실행 금지 — 둘 다 검사해 mirror 인 쪽 인덱스를 돌려준다.
+                self.find_workspace_index_for_surface(*source_surface_id)
+                    .map(|(i, _)| i)
+                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .or_else(|| {
+                        self.find_workspace_index_for_surface(*target_surface_id)
+                            .map(|(i, _)| i)
+                    })
+            }
+            D::SplitPane {
+                target_pane_id: pid,
+                ..
+            }
+            | D::CreateTab { pane_id: pid, .. }
+            | D::ClosePane { pane_id: pid }
+            | D::MoveTab { pane_id: pid, .. } => self.find_workspace_index_for_pane(*pid),
+            D::CloseTab { tab_id } => self
+                .find_pane_for_tab(*tab_id)
+                .and_then(|pid| self.find_workspace_index_for_pane(pid)),
+            _ => return None,
+        }?;
+        self.workspaces
+            .get(ws_idx)
+            .filter(|w| w.mirror)
+            .map(|_| ws_idx)
+    }
+
     /// 주어진 카테고리에 속한 워크스페이스들을 **전역 인덱스 동반** 으로 반환.
     /// 전역 인덱스 = `self.workspaces` 의 0-based 위치 — 카테고리-로컬 단축키/
     /// 사이드바 매핑을 기존 전역 `switch_workspace` 로 변환할 때 필수.

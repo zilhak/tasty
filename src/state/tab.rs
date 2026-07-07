@@ -8,6 +8,11 @@ use crate::core::CoreState;
 impl AppState {
     /// Add a new tab in the focused pane.
     pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
+        // mirror 누출 차단 — 로컬 PTY spawn 은 "workspace 전체가 remote" 불변식을
+        // 깬다. 가드가 toast 를 띄우고 no-op(Ok) 로 반환한다(2단계에서 원격 forward).
+        if self.block_mirror_structural(engine) {
+            return Ok(());
+        }
         let cwd = self.resolve_inherit_cwd(engine);
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
@@ -43,6 +48,11 @@ impl AppState {
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
+        // mirror 누출 차단 — 로컬 surface 생성은 "workspace 전체가 remote" 불변식을
+        // 깬다. 가드가 toast 를 띄우고 Err 로 반환한다(2단계에서 원격 forward).
+        if self.block_mirror_structural(engine) {
+            anyhow::bail!("mirror workspace: structural change blocked");
+        }
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
         let cwd = self.resolve_inherit_cwd(engine);
@@ -220,6 +230,11 @@ impl AppState {
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
+        // mirror 누출 차단 — tab close 는 mirror 트리를 원격과 어긋나게 한다.
+        // true 를 돌려 호출부의 close fallback 체인을 멈춘다(전체 mirror 는 유지).
+        if self.block_mirror_structural(engine) {
+            return true;
+        }
         // Capture tab snapshot + collect persist_ids (immutable borrow).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let snapshot_opt = if let Some(pane) = self.focused_pane(engine) {

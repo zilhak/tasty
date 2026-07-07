@@ -42,7 +42,7 @@ fn split(
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
         Err(e) => {
-            tracing::warn!("SplitPane failed: {e}");
+            super::report_apply_error(state, "SplitPane", &e);
             return;
         }
     };

@@ -51,7 +51,7 @@ fn split(
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
         Err(e) => {
-            tracing::warn!("SplitSurface failed: {e}");
+            super::report_apply_error(state, "SplitSurface", &e);
             return;
         }
     };
@@ -125,6 +125,6 @@ fn convert(
         target: domain_target,
     };
     if let Err(e) = core.apply(engine, intent) {
-        tracing::warn!("ConvertSurface failed: {e}");
+        super::report_apply_error(state, "ConvertSurface", &e);
     }
 }

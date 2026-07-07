@@ -987,6 +987,12 @@ occupied_surface = "Held by another client (readonly). Force detach to take over
 occupied_workspace = "Attached by a client"
 mirror_workspace = "Mirror of a remote workspace"
 
+[attach.toast]
+# Shown when a structural change (split / new tab / close / reorder) is attempted
+# inside a mirror workspace. Mirror workspaces are a view of a remote workspace,
+# so the change must run on the remote instance (forwarding lands in a later step).
+mirror_structural_blocked = "Can't change structure in a mirrored remote workspace yet."
+
 # Webview(html) surface host chrome — painted by the host before/around the
 # native WebView overlay (placeholder when no page, boundary backdrop otherwise).
 [webview]

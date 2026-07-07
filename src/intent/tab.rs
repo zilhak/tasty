@@ -54,6 +54,6 @@ fn new_tab(
         surface_params,
     };
     if let Err(e) = core.apply(engine, intent) {
-        tracing::warn!("NewTab kind={kind} failed: {e}");
+        super::report_apply_error(state, &format!("NewTab kind={kind}"), &e);
     }
 }

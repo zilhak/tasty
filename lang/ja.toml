@@ -986,6 +986,12 @@ occupied_surface = "別のクライアントが占有中(読み取り専用)。�
 occupied_workspace = "クライアントが接続中"
 mirror_workspace = "リモートワークスペースのミラー"
 
+[attach.toast]
+# ミラーワークスペース内で構造変更(分割 / 新規タブ / 閉じる / 並べ替え)を試みた時に
+# 表示。ミラーワークスペースはリモートワークスペースのビューなので、変更はリモート
+# インスタンスで実行される必要がある(リモート転送は後続ステップで対応)。
+mirror_structural_blocked = "ミラーされたリモートワークスペースではまだ構造を変更できません。"
+
 # Webview(html) surface の host chrome — native WebView overlay が付く前/隠れた時に
 # host が描画する(URL 未指定なら placeholder、指定済みなら boundary backdrop)。
 [webview]

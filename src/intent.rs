@@ -36,6 +36,28 @@ use crate::model::popup_kind::{PopupId, PopupScope};
 
 pub use preset::ClonedPreset;
 
+/// `Core::apply` 가 반환한 에러를 도메인 핸들러가 공통 처리한다. mirror(원격 attach
+/// client) 워크스페이스에서 구조 변경을 시도해 거부된 경우
+/// ([`crate::core::MirrorStructuralBlocked`]) 사용자에게 차단 toast 를 띄우고,
+/// 그 외 에러는 `warn` 로그를 남긴다. `label` 은 로그용 컨텍스트(예: "SplitSurface").
+///
+/// mirror 구조 변경 forward 는 2단계에서 붙는다 — 현재(1단계)는 로컬 실행을 막고
+/// 사용자에게 "원격 워크스페이스라 로컬 실행 불가" 를 알리는 데서 그친다.
+pub fn report_apply_error(state: &mut crate::state::AppState, label: &str, err: &anyhow::Error) {
+    if err
+        .downcast_ref::<crate::core::MirrorStructuralBlocked>()
+        .is_some()
+    {
+        state.toasts.push(
+            crate::i18n::t("attach.toast.mirror_structural_blocked"),
+            crate::adapters::ui::ToastKind::Warning,
+            crate::adapters::ui::ToastScope::Window,
+        );
+    } else {
+        tracing::warn!("{label} failed: {err}");
+    }
+}
+
 /// 발화된 Intent. 메인 루프 drain 까지 `AppState::pending_intents` 에 머문다.
 #[derive(Debug, Clone)]
 pub struct DispatchedIntent {

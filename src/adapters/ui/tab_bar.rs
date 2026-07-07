@@ -980,7 +980,9 @@ pub fn draw_pane_tab_bars(
                         separator_w,
                         pane_logical_w,
                     );
+                    // mirror 워크스페이스는 로컬 탭 순서 변경 금지(원격과 어긋남).
                     if target != drag.tab_index
+                        && !state.block_mirror_structural(engine)
                         && let Some(pane) = state
                             .active_workspace_mut(engine)
                             .pane_layout_mut()

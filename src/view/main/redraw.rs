@@ -593,8 +593,9 @@ impl MainView {
                 }
             }
             Some(3) => {
-                // Move Left
+                // Move Left — mirror 워크스페이스는 로컬 탭 순서 변경 금지(원격과 어긋남).
                 if tab_index > 0
+                    && !self.state.block_mirror_structural(&self.core_state)
                     && let Some(pane) = self
                         .state
                         .active_workspace_mut(&mut self.core_state)
@@ -605,12 +606,13 @@ impl MainView {
                 }
             }
             Some(4) => {
-                // Move Right
-                if let Some(pane) = self
-                    .state
-                    .active_workspace_mut(&mut self.core_state)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
+                // Move Right — mirror 워크스페이스는 로컬 탭 순서 변경 금지(원격과 어긋남).
+                if !self.state.block_mirror_structural(&self.core_state)
+                    && let Some(pane) = self
+                        .state
+                        .active_workspace_mut(&mut self.core_state)
+                        .pane_layout_mut()
+                        .find_pane_mut(pane_id)
                 {
                     pane.move_tab(tab_index, tab_index + 1);
                 }

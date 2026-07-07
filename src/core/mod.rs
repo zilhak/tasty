@@ -43,6 +43,32 @@ use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
 
+/// mirror(원격 attach client) 워크스페이스에서 구조 변경(split·new-tab·close·이동)이
+/// 시도됐음을 나타내는 마커 에러. `Core::apply` 가 구조 `DomainIntent` 의 대상이
+/// mirror 워크스페이스일 때 로컬 실행을 **거부**하며 반환한다 — 로컬 PTY spawn /
+/// 로컬 트리 변경은 "workspace 전체가 remote" 불변식을 깨기 때문.
+///
+/// 호출자는 [`anyhow::Error::downcast_ref`] 로 이 타입을 식별해 (사용자 경로에서)
+/// 차단 toast 를 띄운다. 구조 변경을 원격으로 forward 하는 2단계에서 이 지점이
+/// forward 요청/응답으로 대체된다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MirrorStructuralBlocked {
+    /// 대상 mirror 워크스페이스 인덱스.
+    pub workspace_index: usize,
+}
+
+impl std::fmt::Display for MirrorStructuralBlocked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "structural change rejected: target belongs to a mirror (remote attach) workspace; \
+             the operation must be performed on the remote instance"
+        )
+    }
+}
+
+impl std::error::Error for MirrorStructuralBlocked {}
+
 /// Helper: layout / tab_bar 기반으로 surface_id 별 *목표 grid (cols, rows)* 를
 /// 수집. 본 helper 는 read-only 로 workspaces 만 순회한다 — `terminals` store 에는
 /// 직접 접근하지 않으므로 caller 가 결과를 받아 `engine.terminals.get_mut` 로
@@ -650,6 +676,15 @@ impl Core {
         engine: &mut crate::core::CoreState,
         intent: DomainIntent,
     ) -> anyhow::Result<Vec<CoreEvent>> {
+        // mirror(원격 attach client) 워크스페이스 누출 차단 — 그 안의 구조 변경은
+        // 로컬에서 실행하지 않는다(로컬 PTY spawn / 트리 변경 금지). 사용자 단축키·
+        // 에이전트 IPC 어느 진입 경로든 여기(단일 mutate 진입점)로 수렴하므로 한 곳에서
+        // 막는다. 구조와 무관한 intent 는 통과. (2단계에서 이 지점이 원격 forward 로 대체.)
+        if let Some(workspace_index) = engine.mirror_workspace_index_for_structural(&intent) {
+            return Err(anyhow::Error::new(MirrorStructuralBlocked {
+                workspace_index,
+            }));
+        }
         match intent {
             // Phase D 진행 중 — 본 stub 들은 *이벤트만 발행*. cascade
             // (Theme apply / Scrollback limit / clipboard max / notification
@@ -2828,8 +2863,14 @@ mod close_surface_cascade_tests {
         let ev = Core::apply_close_surface(&mut engine, sid1, false);
         match ev {
             CoreEvent::SurfaceClosed {
-                closed, cascade_level, cleanup_targets, closed_tab_ids,
-                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+                closed,
+                cascade_level,
+                cleanup_targets,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                workspaces_now_empty,
+                ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Tab);
@@ -2842,7 +2883,12 @@ mod close_surface_cascade_tests {
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
         assert_eq!(
-            engine.workspaces[ws_idx].pane_layout().find_pane(pane_id).unwrap().tabs.len(),
+            engine.workspaces[ws_idx]
+                .pane_layout()
+                .find_pane(pane_id)
+                .unwrap()
+                .tabs
+                .len(),
             1
         );
     }
@@ -2858,16 +2904,22 @@ mod close_surface_cascade_tests {
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
         let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
-        let leftover = engine.workspaces[ws_idx].pane_layout_mut().split_pane_in_place(
-            pane0, crate::model::SplitDirection::Horizontal, new_pane,
-        );
+        let leftover = engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
         assert!(leftover.is_none(), "split 성공해야 함");
 
         let ev = Core::apply_close_surface(&mut engine, sid1, false);
         match ev {
             CoreEvent::SurfaceClosed {
-                closed, cascade_level, cleanup_targets, closed_tab_ids,
-                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+                closed,
+                cascade_level,
+                cleanup_targets,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                workspaces_now_empty,
+                ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Pane);
@@ -2879,7 +2931,10 @@ mod close_surface_cascade_tests {
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
-        assert_eq!(engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(), 1);
+        assert_eq!(
+            engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(),
+            1
+        );
     }
 
     /// Case 4: last pane in workspace, 다른 workspace 생존 → workspace close.
@@ -2892,7 +2947,11 @@ mod close_surface_cascade_tests {
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
         let ws1 = crate::model::Workspace::new_with_terminal_marker(
-            ws1_id, "ws1".to_string(), pane1_id, tab1_id, sid1,
+            ws1_id,
+            "ws1".to_string(),
+            pane1_id,
+            tab1_id,
+            sid1,
         );
         engine.workspaces.push(ws1);
         assert_eq!(engine.workspaces.len(), 2);
@@ -2900,8 +2959,14 @@ mod close_surface_cascade_tests {
         let ev = Core::apply_close_surface(&mut engine, sid1, false);
         match ev {
             CoreEvent::SurfaceClosed {
-                closed, cascade_level, cleanup_targets, closed_tab_ids,
-                closed_pane_ids, workspace_id_purged, workspaces_now_empty, ..
+                closed,
+                cascade_level,
+                cleanup_targets,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                workspaces_now_empty,
+                ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Workspace);
@@ -2927,7 +2992,11 @@ mod close_surface_cascade_tests {
         let ev = Core::apply_close_surface(&mut engine, sid0, false);
         match ev {
             CoreEvent::SurfaceClosed {
-                closed, cascade_level, workspace_id_purged, workspaces_now_empty, ..
+                closed,
+                cascade_level,
+                workspace_id_purged,
+                workspaces_now_empty,
+                ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Workspace);
@@ -2958,8 +3027,13 @@ mod close_surface_cascade_tests {
         let ev = Core::apply_close_surface(&mut engine, sid_a, false);
         match ev {
             CoreEvent::SurfaceClosed {
-                closed, cascade_level, cleanup_targets, closed_tab_ids,
-                closed_pane_ids, workspace_id_purged, ..
+                closed,
+                cascade_level,
+                cleanup_targets,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Surface);
@@ -2970,5 +3044,224 @@ mod close_surface_cascade_tests {
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod mirror_structural_guard_tests {
+    //! mirror(원격 attach client) 워크스페이스 누출 차단 (1단계). mirror 워크스페이스의
+    //! surface/pane 을 target 으로 한 구조 `DomainIntent` 를 `Core::apply` 로 디스패치하면
+    //! 로컬 실행이 거부되고([`MirrorStructuralBlocked`]) **새 로컬 터미널이 insert 되지
+    //! 않아야** 한다. 비-mirror 워크스페이스는 그대로 통과(회귀 방지).
+    use super::*;
+    use crate::core::intent::DomainIntent;
+    use crate::model::SplitDirection;
+    use tasty_terminal::Terminal;
+
+    /// 테스트용 `Core` — 모든 port 를 mock/in-memory 로 주입. `apply` 의 mirror 가드는
+    /// 어떤 port 도 건드리기 전에 반환하므로 실제 PTY/디스크 접근이 없다.
+    fn build_test_core() -> (Core, CoreState) {
+        use std::sync::{Arc, Mutex};
+
+        use crate::adapters::test::{
+            fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
+            mock_process::MockProcessSpawner, tmp_home::TmpHome,
+        };
+        use crate::core::builder::CoreBuilder;
+        use crate::ports::notification_sound::NoopPlayer;
+
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        let engine = CoreState::new(80, 24, waker).expect("engine");
+
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let themes: Arc<dyn tasty_themes::ThemeStorage> = Arc::new(tasty_themes::ThemeStore::new());
+
+        let core = CoreBuilder::new()
+            .with_fs(Arc::new(MemFileSystem::new()))
+            .with_clock(Arc::new(FakeClock::default()))
+            .with_clipboard(Arc::new(MockClipboard::default()))
+            .with_process(Arc::new(MockProcessSpawner::default()))
+            .with_home(Arc::new(TmpHome::new(
+                tempfile::tempdir().expect("tmp").keep(),
+            )))
+            .with_sound_player(Arc::new(NoopPlayer))
+            .with_memory(memory)
+            .with_themes(themes)
+            .with_preset_store(preset_store)
+            .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
+            .build()
+            .expect("test Core");
+        (core, engine)
+    }
+
+    /// 기본 워크스페이스 0 의 단일 surface `a` 에 detached 터미널을 붙이고 `(surface, pane)`
+    /// 를 반환. `mirror` 는 호출자가 세팅.
+    fn seed(engine: &mut CoreState) -> (u32, u32) {
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine.terminals.insert(a, Terminal::new_detached(80, 24));
+        let (_ws, pane) = engine.find_workspace_index_for_surface(a).unwrap();
+        (a, pane)
+    }
+
+    fn is_blocked(err: &anyhow::Error) -> bool {
+        err.downcast_ref::<MirrorStructuralBlocked>().is_some()
+    }
+
+    /// mirror 워크스페이스에서 SplitSurface/SplitPane/CreateTab 디스패치 시 거부 +
+    /// 새 로컬 터미널 insert 없음. (수정 전이라면 로컬 PTY 가 spawn 돼 count 가 늘어난다.)
+    #[test]
+    fn mirror_split_and_newtab_are_blocked_without_spawning() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let before = engine.terminals.iter().count();
+
+        for intent in [
+            DomainIntent::SplitSurface {
+                target_surface_id: a,
+                direction: SplitDirection::Horizontal,
+                cwd: None,
+                kind: "terminal".to_string(),
+                surface_params: serde_json::json!({}),
+            },
+            DomainIntent::SplitPane {
+                target_pane_id: pane,
+                direction: SplitDirection::Horizontal,
+                cwd: None,
+                kind: "terminal".to_string(),
+                surface_params: serde_json::json!({}),
+            },
+            DomainIntent::CreateTab {
+                pane_id: pane,
+                cwd: None,
+                kind: "terminal".to_string(),
+                name: None,
+                surface_params: serde_json::json!({}),
+            },
+        ] {
+            let err = core
+                .apply(&mut engine, intent)
+                .expect_err("must be blocked");
+            assert!(
+                is_blocked(&err),
+                "expected MirrorStructuralBlocked, got: {err}"
+            );
+            assert_eq!(
+                engine.terminals.iter().count(),
+                before,
+                "mirror 워크스페이스에서 새 로컬 터미널이 insert 되면 안 된다"
+            );
+        }
+    }
+
+    /// 비-mirror 워크스페이스는 가드에 걸리지 않는다(회귀 방지). SplitSurface 가
+    /// 통과해 새 터미널이 실제로 insert 된다.
+    #[test]
+    fn non_mirror_split_passes_and_spawns() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        assert!(!engine.workspaces[0].mirror);
+        let before = engine.terminals.iter().count();
+
+        core.apply(
+            &mut engine,
+            DomainIntent::SplitSurface {
+                target_surface_id: a,
+                direction: SplitDirection::Horizontal,
+                cwd: None,
+                kind: "terminal".to_string(),
+                surface_params: serde_json::json!({}),
+            },
+        )
+        .expect("non-mirror split must succeed");
+        assert_eq!(
+            engine.terminals.iter().count(),
+            before + 1,
+            "비-mirror split 은 로컬 터미널을 1개 늘려야 한다(회귀)"
+        );
+    }
+
+    /// 순수 판별 헬퍼: 모든 구조 variant 가 mirror 워크스페이스 대상일 때 Some,
+    /// mirror 플래그가 없으면 None. (구조와 무관한 intent 는 항상 None.)
+    #[test]
+    fn helper_flags_structural_targets_only_when_mirror() {
+        let (_core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        // 두 번째 탭을 추가해 CloseTab/tab 대상 확보.
+        let tab_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        engine
+            .terminals
+            .insert(sid1, Terminal::new_detached(80, 24));
+        engine.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane)
+            .unwrap()
+            .add_terminal_marker_tab(tab_id, sid1);
+
+        let structural = |a: u32, pane: u32, tab_id: u32| {
+            vec![
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+                DomainIntent::SplitPane {
+                    target_pane_id: pane,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+                DomainIntent::CreateTab {
+                    pane_id: pane,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    name: None,
+                    surface_params: serde_json::json!({}),
+                },
+                DomainIntent::CloseSurface {
+                    surface_id: a,
+                    save_snapshot: false,
+                },
+                DomainIntent::ClosePane { pane_id: pane },
+                DomainIntent::CloseTab { tab_id },
+                DomainIntent::MoveTab {
+                    pane_id: pane,
+                    from_index: 0,
+                    to_index: 1,
+                },
+            ]
+        };
+
+        // 비-mirror: 전부 None.
+        for intent in structural(a, pane, tab_id) {
+            assert_eq!(
+                engine.mirror_workspace_index_for_structural(&intent),
+                None,
+                "비-mirror 는 통과해야 한다: {intent:?}"
+            );
+        }
+        // mirror: 전부 Some(0).
+        engine.workspaces[0].mirror = true;
+        for intent in structural(a, pane, tab_id) {
+            assert_eq!(
+                engine.mirror_workspace_index_for_structural(&intent),
+                Some(0),
+                "mirror 는 차단 대상이어야 한다: {intent:?}"
+            );
+        }
+        // 구조와 무관한 intent 는 mirror 여도 None.
+        assert_eq!(
+            engine.mirror_workspace_index_for_structural(&DomainIntent::SetTerminalMark {
+                surface_id: a
+            }),
+            None,
+        );
     }
 }
