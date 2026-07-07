@@ -42,6 +42,26 @@
 - **점유는 surface 의 생성 방식과 무관하게 걸린다.** 새로 만든 surface 든, **이미 살아있는(로컬 사용자가 쓰던 것 포함) surface** 든, 어떤 기능이 점유를 걸 수 있다. 이는 기존 attach 가 *이미 살아있는* 원격 surface 를 점유하는 것과 동형이다 — "spawn 한 것만 점유" 같은 제한은 점유 개념 자체엔 없다.
 - **본 ADR 은 점유 개념 그 자체만 정의하며, 특정 소비자 기능과 독립적이다.** 예컨대 `terminal`/`claude`/`codex` 명령이 "자기가 spawn 한 child surface 만 점유" 하는 것은 그 명령들이 점유를 소비하는 **한 사례의 정책** 일 뿐, 점유가 걸릴 수 있는 대상 범위를 규정하지 않는다. 점유 계획과 child-terminal spawn 구현은 별개 축이다.
 - 대상당 점유 주체는 **1:1**(배타), 주체당 대상은 **1:N** — 기존 다중성 규칙 유지.
+- **현 시점 soft 점유 소비자 = `terminal` 명령 + claude/codex 플러그인 뿐.** 살아있는 임의 surface 에 soft 점유를 거는 **직접 명령(CLI/IPC)은 두지 않는다** — 필요해지면 후속으로 추가한다. hard 점유는 기존 attach 경로 그대로다.
+
+### 시각 표현 (터미널 테두리)
+
+점유·완료 상태는 **터미널 테두리 색** 하나의 채널로 표시하며, 색으로 구분한다(색은 전부 Theme semantic token 에서 — raw px/`from_rgb` 금지, [ADR-0033](0033-ui-color-semantic-role-only.md); soft/hard 테두리 토큰은 디자인 소유 → 디자인 요청 대상):
+
+- **초록** = 약한 점유(soft)
+- **주황** = 강한 점유(hard)
+- **하늘색** = 완료 알림(기존 surface-highlight 테두리, 포커스 시 사라짐 — [ADR-0039](0039-surface-highlight-shared-primitive.md))
+
+**테두리 채널 우선순위**: 점유와 완료 알림은 **같은 테두리 채널을 공유** 하므로 동시에 못 그린다. 점유 중이면 **점유 테두리(초록/주황)가 완료 알림 테두리(하늘색)를 덮는다** — 점유된 surface 엔 완료 알림용 테두리를 따로 표시하지 않는다. 단 완료 알림의 **다른 채널(탭 제목·워크스페이스 배지)은 surface-highlight 그대로 동작** 한다 — 점유가 덮는 것은 테두리 채널뿐이다.
+
+### 점유 해제·수명
+
+- **능동 해제는 명시적 해제뿐** (위 Decision: self-release | force-detach). 시간 만료·유휴 자동 해제는 없다.
+- **강한 점유**: 기존 attach 수명 그대로(연결 EOF / force-detach).
+- **약한 점유**: 점유 주체가 죽어도 **즉시 자동 해제되지 않는다**(soft 는 연결 기반이 아닐 수 있어 죽음을 항상 인지할 수 없음). 대신:
+  - 죽음을 **인지 가능한 경우(명시적 해제)** 는 그때 풀린다.
+  - 그 외에는 soft 점유가 내부적으로 **parent(점유 주체에 대응하는 surface)를 기록만** 해둔다.
+  - 그 surface 가 **focus 될 때**, 기록된 parent surface 가 더 이상 존재하지 않으면 → 그 시점에 **점유 없음으로 지연 갱신(청소)** 한다. (surface-highlight 의 "실 포커스 시 해제"([ADR-0039](0039-surface-highlight-shared-primitive.md))와 동일하게 *실 사용자 포커스* 기준이라 원칙1 안전.)
 
 ## Consequences
 
@@ -51,10 +71,10 @@
   - 점유 개념이 원격 attach 에 갇히지 않고 **주체 중립 모델** 로 승격 → actors 모델의 일관성 강화.
 - **잃은 것**:
   - actors 모델의 "AI Agent = 점유 없음" 이라는 단정이 사라진다 — [`concepts/actors.md`](../concepts/actors.md) · [`identity.md`](../identity.md) §2.1 표/서술 개정 필요.
-  - 마커 2종(soft/hard)의 시각 구분을 디자인·구현해야 한다(gallery-first 대상).
+  - soft/hard 테두리 색(초록/주황)은 **신규 시각 요소** 라 디자인 소유 토큰이 필요하다(디자인 요청 → gallery-first).
 - **운영 비용 / 유지 부담**:
-  - 강한 점유가 attach `AttachRegistry` 를 재사용할지, 별도 점유 레지스트리로 통합할지 구현 결정이 남는다(본 ADR 은 *개념* 만 확정, 구현 층위는 후속).
-  - 점유 주체가 죽었을 때 lease 만료·자동 해제 정책(특히 soft) 이 필요하다.
+  - 강한 점유(attach `AttachRegistry`)와 약한 점유를 **하나의 통합 점유 레지스트리** 로 묶는 방향을 선호하되, 실현가능성·수정범위는 구현 TODO 에서 확정한다(통합이 적절하면 통합, 아니면 분리 유지).
+  - 약한 점유의 지연 해제(focus 시 parent 부재 청소)는 포커스 경로에 점유 정합 로직을 얹는다 — surface-highlight 의 실-포커스-해제 경로와 같은 자리라 재사용 여지가 있다.
 
 ## Alternatives Considered
 
