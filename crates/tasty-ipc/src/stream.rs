@@ -173,6 +173,38 @@ pub enum StreamControl {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// Full re-sync of a mirror workspace's structure after a forwarded
+    /// [`StreamControl::StructuralOp`] succeeded on the remote (authoritative)
+    /// instance — the reverse-reflection channel (3단계). Rather than a minimal
+    /// per-surface diff (which would force the client to track remote pane/tab
+    /// ids — it only maps *surfaces*, a 2단계 invariant), the server pushes the
+    /// **entire** post-op workspace tree plus per-surface descriptors, and the
+    /// client rebuilds its mirror with survivor terminals preserved (existing
+    /// mirror grids keep their local ids → no scrollback loss). This covers
+    /// split / new-tab / close-cascade / move-tab uniformly.
+    ///
+    /// `tree` / `surfaces` are the same shapes the handshake descriptor
+    /// (`attached_workspace`) carries, so client-side `build_mirror_workspace`
+    /// is reused verbatim. The client derives added/removed by diffing
+    /// `surfaces`' remote ids against its `remote_to_local` map, so no explicit
+    /// diff is carried.
+    ///
+    /// Direction: **server→client**. Pushed immediately after the
+    /// [`StreamControl::StructuralResult`] (ok=true) for the op that changed the
+    /// structure, so the client applies the (silent) success then re-syncs.
+    StructuralDelta {
+        /// Remote workspace id (the client maps it to its local mirror
+        /// workspace; a mirror session hosts exactly one workspace so this is
+        /// mainly for validation/diagnostics).
+        workspace_id: u32,
+        /// Post-op full workspace tree (`to_attach_tree_json`, same shape as the
+        /// handshake `tree`).
+        tree: serde_json::Value,
+        /// Post-op per-surface descriptors (same shape as the handshake
+        /// `surfaces`: `{remote_id, role, cols, rows}` for terminals /
+        /// `{remote_id, role, kind}` for placeholders).
+        surfaces: Vec<serde_json::Value>,
+    },
 }
 
 /// The concrete structural operation carried by [`StreamControl::StructuralOp`].
@@ -566,6 +598,49 @@ mod tests {
         let s = serde_json::to_string(&fail).unwrap();
         assert!(s.contains("unsupported kind"));
         assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), fail);
+    }
+
+    #[test]
+    fn stream_control_structural_delta_roundtrip() {
+        let msg = StreamControl::StructuralDelta {
+            workspace_id: 3,
+            tree: serde_json::json!({
+                "panes": [{ "id": 1, "tabs": [] }],
+                "focused_pane": 1,
+            }),
+            surfaces: vec![
+                serde_json::json!({"remote_id": 10, "role": "terminal", "cols": 80, "rows": 24}),
+                serde_json::json!({"remote_id": 11, "role": "placeholder", "kind": "markdown"}),
+            ],
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"structural_delta""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn structural_delta_not_confused_with_other_events() {
+        // A StructuralDelta payload must not deserialize as Resize/StructuralOp/
+        // StructuralResult (and vice versa) — the `event` tag keeps them distinct.
+        let delta = serde_json::to_string(&StreamControl::StructuralDelta {
+            workspace_id: 1,
+            tree: serde_json::Value::Null,
+            surfaces: vec![],
+        })
+        .unwrap();
+        match serde_json::from_str::<StreamControl>(&delta).unwrap() {
+            StreamControl::StructuralDelta { workspace_id, .. } => assert_eq!(workspace_id, 1),
+            other => panic!("expected StructuralDelta, got {other:?}"),
+        }
+        // A resize event stays a resize.
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(
+                r#"{"event":"resize","surface_id":1,"cols":80,"rows":24}"#
+            )
+            .unwrap(),
+            StreamControl::Resize { .. }
+        ));
     }
 
     #[test]
