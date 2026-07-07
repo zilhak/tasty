@@ -46,13 +46,15 @@
 
 ### 시각 표현 (터미널 테두리)
 
-점유·완료 상태는 **터미널 테두리 색** 하나의 채널로 표시하며, 색으로 구분한다(색은 전부 Theme semantic token 에서 — raw px/`from_rgb` 금지, [ADR-0033](0033-ui-color-semantic-role-only.md); soft/hard 테두리 토큰은 디자인 소유 → 디자인 요청 대상):
+점유·완료 상태는 **터미널 테두리 색** 하나의 채널로 표시하며, 색으로 구분한다. **본 ADR 은 이 채널 구조(3상태를 색 하나로 구분) 와 우선순위(아래)라는 큰 틀만 규정한다 — 구체적인 색값·토큰은 디자인이 결정한다(디자인이 SoT).** 색은 전부 Theme semantic token 에서 온다(raw px/`from_rgb` 금지, [ADR-0033](0033-ui-color-semantic-role-only.md)).
 
-- **초록** = 약한 점유(soft)
-- **주황** = 강한 점유(hard)
-- **하늘색** = 완료 알림(기존 surface-highlight 테두리, 포커스 시 사라짐 — [ADR-0039](0039-surface-highlight-shared-primitive.md))
+디자인 확정값(2026-07-07, 디자인 정본 소유 — 세부는 디자인이 갱신할 수 있으며 소스는 그것을 따른다):
 
-**테두리 채널 우선순위**: 점유와 완료 알림은 **같은 테두리 채널을 공유** 하므로 동시에 못 그린다. 점유 중이면 **점유 테두리(초록/주황)가 완료 알림 테두리(하늘색)를 덮는다** — 점유된 surface 엔 완료 알림용 테두리를 따로 표시하지 않는다. 단 완료 알림의 **다른 채널(탭 제목·워크스페이스 배지)은 surface-highlight 그대로 동작** 한다 — 점유가 덮는 것은 테두리 채널뿐이다.
+- **약한 점유(soft)** = green (`--tasty-accent-occupied-soft`)
+- **강한 점유(hard)** = peach (`--tasty-accent-occupied-hard`) — 기존 원격 attach 테두리(`accent-attention`) 색을 점유 역할로 승격
+- **완료 알림** = blue (`accent-primary`) — 기존 surface-highlight 테두리 그대로, 포커스 시 사라짐([ADR-0039](0039-surface-highlight-shared-primitive.md)). 라이브 소스가 이미 쓰는 색을 유지한다.
+
+**테두리 채널 우선순위**: 점유와 완료 알림은 **같은 테두리 채널을 공유** 하므로 동시에 못 그린다. 점유 중이면 **점유 테두리가 완료 알림 테두리를 덮는다** — 점유된 surface 엔 완료 알림용 테두리를 따로 표시하지 않는다. 단 완료 알림의 **다른 채널(탭 제목·워크스페이스 배지)은 surface-highlight 그대로 동작** 한다 — 점유가 덮는 것은 테두리 채널뿐이다.
 
 ### 점유 해제·수명
 
@@ -71,7 +73,7 @@
   - 점유 개념이 원격 attach 에 갇히지 않고 **주체 중립 모델** 로 승격 → actors 모델의 일관성 강화.
 - **잃은 것**:
   - actors 모델의 "AI Agent = 점유 없음" 이라는 단정이 사라진다 — [`concepts/actors.md`](../concepts/actors.md) · [`identity.md`](../identity.md) §2.1 표/서술 개정 필요.
-  - soft/hard 테두리 색(초록/주황)은 **신규 시각 요소** 라 디자인 소유 토큰이 필요하다(디자인 요청 → gallery-first).
+  - soft/hard 테두리 색은 **신규 시각 요소** 였고, 디자인이 소유 토큰을 확정했다(2026-07-07: soft=green / hard=peach, 완료=blue 유지 — semantic 토큰 + gallery specimen 포함).
 - **운영 비용 / 유지 부담**:
   - 강한 점유(attach `AttachRegistry`)와 약한 점유를 **하나의 통합 점유 레지스트리** 로 묶는 방향을 선호하되, 실현가능성·수정범위는 구현 TODO 에서 확정한다(통합이 적절하면 통합, 아니면 분리 유지).
   - 약한 점유의 지연 해제(focus 시 parent 부재 청소)는 포커스 경로에 점유 정합 로직을 얹는다 — surface-highlight 의 실-포커스-해제 경로와 같은 자리라 재사용 여지가 있다.
