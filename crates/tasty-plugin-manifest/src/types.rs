@@ -448,6 +448,12 @@ pub struct SurfaceKindDecl {
     /// 게이트를 generic 화. 기본 false.
     #[serde(default)]
     pub egui_paste: bool,
+    /// 자동 탭 명명 시 basename 을 파생할 params 키(예: markdown="file",
+    /// image="file"). `Some(key)` 이면 params 의 그 키 값 basename 을 표시명으로 쓴다.
+    /// host 본체의 `kind == "markdown"` basename 명명 하드코딩을 generic 화. 미선언이면
+    /// 파생 없이 kind 표시명 fallback.
+    #[serde(default)]
+    pub name_from_param: Option<String>,
     /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
     /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
     /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면

@@ -97,6 +97,7 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
   - **`egui_copy`** — copy 단축키가 egui `Event::Copy` 를 주입(선택 텍스트를 plugin egui 가 복사, 예: markdown).
   - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
   - **`egui_paste`** — paste 를 이 kind 가 자체 소비(host 가 terminal paste 로 흘리지 않음, 예: image).
+- **`name_from_param`** — 자동 탭 명명 시 basename 을 파생할 params 키. 선언하면 그 키 값의 basename 을 탭 표시명으로 쓴다(예: markdown/image 는 `"file"`, explorer(builtin)는 `"path"` → `README.md`). 미선언이면 kind 표시명(`display_name_i18n_key`)으로 fallback. host 의 `kind == "markdown"` basename 명명 하드코딩을 대체.
 
 ### 파일 핸들러 (detector + handler)
 

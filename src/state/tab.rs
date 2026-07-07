@@ -58,7 +58,11 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd(engine);
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = super::pane::default_tab_name_for_kind(kind, params);
+        let name = super::pane::default_tab_name_for_kind(
+            kind,
+            params,
+            engine.surface_registry.get(kind).as_deref(),
+        );
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_surface_tab(tab_id, name, None, surface);
             engine.mark_layout_dirty();
@@ -101,7 +105,11 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd(engine);
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = super::pane::default_tab_name_for_kind(kind, params);
+        let name = super::pane::default_tab_name_for_kind(
+            kind,
+            params,
+            engine.surface_registry.get(kind).as_deref(),
+        );
         let ws = self.active_workspace_mut(engine);
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, None, surface);

@@ -91,6 +91,8 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         egui_copy: false,
         copy_path: false,
         egui_paste: false,
+        // terminal 표시명은 surface 자체 display_name 으로 결정 — 파라미터 basename 명명 없음.
+        name_from_param: None,
     });
 }
 
@@ -125,6 +127,7 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         egui_copy: false,
         copy_path: false,
         egui_paste: false,
+        name_from_param: None,
     });
 }
 
@@ -213,6 +216,8 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         egui_copy: false,
         copy_path: true,
         egui_paste: false,
+        // explorer 탭 표시명은 현재 폴더 `path` basename 으로 파생.
+        name_from_param: Some("path".to_string()),
     });
 }
 
@@ -268,6 +273,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         egui_copy: false,
         copy_path: false,
         egui_paste: false,
+        name_from_param: None,
     });
 }
 

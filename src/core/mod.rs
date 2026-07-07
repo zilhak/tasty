@@ -1230,7 +1230,11 @@ impl Core {
                 cwd.as_deref(),
                 &surface_params,
             )?;
-            let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+            let name = crate::state::pane::default_tab_name_for_kind(
+                &kind,
+                &surface_params,
+                engine.surface_registry.get(&kind).as_deref(),
+            );
             crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
 
@@ -1423,7 +1427,8 @@ impl Core {
                     // markdown 등 file 기반 kind 는 옛 Markdown variant 처럼
                     // file basename 으로 자동 명명. 그 외 kind 는 클리어 — surface
                     // 자체의 display_name 이 사용된다.
-                    let auto_name = derive_auto_name(&kind, &params);
+                    let auto_name =
+                        derive_auto_name(engine.surface_registry.get(&kind).as_deref(), &params);
                     (new_surface, Some(auto_name))
                 }
             };
@@ -2136,7 +2141,11 @@ impl Core {
                 cwd.as_deref(),
                 &surface_params,
             )?;
-            let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+            let name = crate::state::pane::default_tab_name_for_kind(
+                &kind,
+                &surface_params,
+                engine.surface_registry.get(&kind).as_deref(),
+            );
             Some((surface, name))
         } else {
             None
@@ -2375,7 +2384,11 @@ pub(crate) fn apply_create_workspace_inner(
             cwd.as_deref(),
             &surface_params,
         )?;
-        let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+        let tab_name = crate::state::pane::default_tab_name_for_kind(
+            &kind,
+            &surface_params,
+            engine.surface_registry.get(&kind).as_deref(),
+        );
         let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
         crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
     };
@@ -2422,19 +2435,20 @@ pub(crate) fn apply_create_workspace_inner(
     })
 }
 
-/// `ConvertSurface` 의 Kind 분기에서 사용. file 기반 kind 는 params 의 `file`
-/// 키 basename 을 자동 명명 으로 사용. 그 외 kind 는 None — surface 의
-/// display_name 이 자동으로 적용된다. 옛 `ConvertSurfaceTarget::Markdown`
-/// arm 의 명명 동작 보존.
-fn derive_auto_name(kind: &str, params: &serde_json::Value) -> Option<String> {
-    if kind == "markdown"
-        && let Some(p) = params.get("file").and_then(|v| v.as_str())
-    {
-        return std::path::Path::new(p)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string());
-    }
-    None
+/// `ConvertSurface` 의 Kind 분기에서 사용. kind 가 매니페스트 `name_from_param`
+/// (registry `SurfaceKindDef.name_from_param`)을 선언하면 그 params 키 값의 basename 을
+/// 자동 명명으로 쓴다(예: markdown="file"). 미선언이면 None — surface 자체의
+/// display_name 이 자동 적용된다. 옛 `ConvertSurfaceTarget::Markdown` arm 의 명명 동작을
+/// 본체 `kind == "markdown"` 하드코딩 없이 보존한다.
+fn derive_auto_name(
+    def: Option<&crate::engine::surface_registry::SurfaceKindDef>,
+    params: &serde_json::Value,
+) -> Option<String> {
+    let key = def.and_then(|d| d.name_from_param.as_deref())?;
+    let p = params.get(key).and_then(|v| v.as_str())?;
+    std::path::Path::new(p)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
 }
 
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
@@ -2493,6 +2507,40 @@ mod osc52_clipboard_read_tests {
         // An allowed query with no clipboard text resolves to None (nothing to
         // read), distinct from the gated-off case but also emitting no bytes.
         assert_eq!(osc52_clipboard_read_reply(true, None), None);
+    }
+}
+
+#[cfg(test)]
+mod derive_auto_name_tests {
+    use super::derive_auto_name;
+    use crate::engine::surface_registry::{SurfaceKindRegistry, register_builtin_kinds};
+
+    #[test]
+    fn name_from_param_kind_yields_basename_else_none() {
+        let reg = SurfaceKindRegistry::new();
+        register_builtin_kinds(&reg);
+        // explorer builtin 은 name_from_param="path" 선언 → path basename.
+        let explorer = reg.get("explorer").unwrap();
+        assert_eq!(
+            derive_auto_name(Some(&explorer), &serde_json::json!({"path": "/a/b/proj"})),
+            Some("proj".to_string())
+        );
+        // 선언 키가 없으면 None (자동명명 skip → surface display_name 사용).
+        assert_eq!(
+            derive_auto_name(Some(&explorer), &serde_json::json!({})),
+            None
+        );
+        // name_from_param 미선언 kind(empty)는 항상 None.
+        let empty = reg.get("empty").unwrap();
+        assert_eq!(
+            derive_auto_name(Some(&empty), &serde_json::json!({"path": "/a/b"})),
+            None
+        );
+        // def 미등록이면 None.
+        assert_eq!(
+            derive_auto_name(None, &serde_json::json!({"file": "/x.md"})),
+            None
+        );
     }
 }
 

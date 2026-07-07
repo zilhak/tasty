@@ -188,6 +188,12 @@ pub struct SurfaceKindDef {
     pub egui_copy: bool,
     pub copy_path: bool,
     pub egui_paste: bool,
+
+    /// 자동 탭 명명에 basename 을 파생할 params 키(매니페스트 `name_from_param`).
+    /// `Some("file")` 이면 params 의 `file` 값 basename 을 표시명으로 쓴다. `None` 이면
+    /// 파생 없이 kind 의 표시명 fallback. 본체의 `kind == "markdown"` basename 명명
+    /// 하드코딩을 generic 화한다. builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    pub name_from_param: Option<String>,
 }
 
 impl SurfaceKindDef {
@@ -323,6 +329,7 @@ mod tests {
             egui_copy: false,
             copy_path: false,
             egui_paste: false,
+            name_from_param: None,
         }
     }
 
@@ -404,6 +411,45 @@ mod tests {
         let mut p2 = serde_json::json!({"file": "/keep.md", "file_path": "/drop.md"});
         d.normalize_param_aliases(&mut p2);
         assert_eq!(p2["file"], "/keep.md");
+    }
+
+    #[test]
+    fn default_tab_name_uses_name_from_param() {
+        let mut d = dummy_def("markdown");
+        d.name_from_param = Some("file".to_string());
+        // name_from_param 키가 params 에 있으면 basename.
+        assert_eq!(
+            crate::state::pane::default_tab_name_for_kind(
+                "markdown",
+                &serde_json::json!({"file": "/a/b/README.md"}),
+                Some(&d),
+            ),
+            "README.md"
+        );
+        // 키가 없으면 display_name_i18n_key 번역(테스트: lang 미로드 → 키 그대로).
+        assert_eq!(
+            crate::state::pane::default_tab_name_for_kind(
+                "markdown",
+                &serde_json::json!({}),
+                Some(&d),
+            ),
+            "test.dummy"
+        );
+        // name_from_param 미선언이면 파생 없이 fallback.
+        let plain = dummy_def("empty");
+        assert_eq!(
+            crate::state::pane::default_tab_name_for_kind(
+                "empty",
+                &serde_json::json!({"file": "/x/y.md"}),
+                Some(&plain),
+            ),
+            "test.dummy"
+        );
+        // def 미등록이면 kind 문자열 그대로(catch-all 보존).
+        assert_eq!(
+            crate::state::pane::default_tab_name_for_kind("plugin_x", &serde_json::json!({}), None),
+            "plugin_x"
+        );
     }
 
     #[test]

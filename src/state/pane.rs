@@ -465,32 +465,33 @@ impl AppState {
 }
 
 /// kind+params로부터 합리적인 탭 표시명을 도출한다.
-/// 경로/URL이 있으면 마지막 segment, 없으면 kind에 대응되는 정적 이름을 사용한다.
-pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
+///
+/// kind 가 매니페스트 `name_from_param`(registry `SurfaceKindDef.name_from_param`)을
+/// 선언하면 그 params 키의 값 basename 을 표시명으로 쓴다(예: markdown="file" →
+/// `README.md`). 미선언이거나 그 키가 params 에 없으면 kind 의 표시명 fallback
+/// (`display_name_i18n_key` 번역, 미등록이면 kind 문자열)으로 떨어진다. 본체의
+/// `kind == "markdown"` basename 명명 하드코딩을 generic 화한다.
+pub(crate) fn default_tab_name_for_kind(
+    kind: &str,
+    params: &Value,
+    def: Option<&crate::engine::surface_registry::SurfaceKindDef>,
+) -> String {
     fn basename_or(path: &str, fallback: &str) -> String {
         path.split(['/', '\\'])
             .rfind(|s| !s.is_empty())
             .unwrap_or(fallback)
             .to_string()
     }
-    match kind {
-        "markdown" => params
-            .get("file")
-            .and_then(|v| v.as_str())
-            .map(|p| basename_or(p, "Markdown"))
-            .unwrap_or_else(|| "Markdown".to_string()),
-        "explorer" => params
-            .get("path")
-            .and_then(|v| v.as_str())
-            .map(|p| basename_or(p, "Explorer"))
-            .unwrap_or_else(|| "Explorer".to_string()),
-        "image" => params
-            .get("file")
-            .and_then(|v| v.as_str())
-            .map(|p| basename_or(p, "Image"))
-            .unwrap_or_else(|| "Image".to_string()),
-        "empty" => "Empty".to_string(),
-        "terminal" => "terminal".to_string(),
-        other => other.to_string(),
+    // kind 표시명 fallback: registry display_name_i18n_key 번역(미등록이면 kind 그대로).
+    let fallback = || {
+        def.map(|d| crate::i18n::t(d.display_name_i18n_key).to_string())
+            .unwrap_or_else(|| kind.to_string())
+    };
+    if let Some(key) = def.and_then(|d| d.name_from_param.as_deref())
+        && let Some(p) = params.get(key).and_then(|v| v.as_str())
+    {
+        let fb = fallback();
+        return basename_or(p, &fb);
     }
+    fallback()
 }
