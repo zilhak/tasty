@@ -111,6 +111,18 @@ impl crate::theme::Theme {
         self.peach
     }
 
+    /// `semantic.accent-occupied-soft` → `{primitive.color-green}`
+    #[inline]
+    pub fn accent_occupied_soft(&self) -> HexColor {
+        self.green
+    }
+
+    /// `semantic.accent-occupied-hard` → `{primitive.color-peach}`
+    #[inline]
+    pub fn accent_occupied_hard(&self) -> HexColor {
+        self.peach
+    }
+
     /// `semantic.accent-danger` → `{primitive.color-red}`
     #[inline]
     pub fn accent_danger(&self) -> HexColor {

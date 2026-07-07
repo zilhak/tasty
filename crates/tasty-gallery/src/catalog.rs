@@ -1001,6 +1001,12 @@ pub fn pages() -> Vec<Page> {
                             Some("Focused #000, unfocused 0.92, agent dot"),
                             components::surface_highlights::draw,
                         ),
+                        spec(
+                            "occupancy",
+                            "Occupancy & completion borders",
+                            Some("soft green 1px · hard peach 1px · completed blue 2px"),
+                            components::occupancy_borders::draw,
+                        ),
                     ],
                 ),
             ],

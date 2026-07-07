@@ -694,6 +694,21 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분
     // (2026-07-03-accent-attention 디자인 판정).
     ("semantic.accent-attention", "accent_attention", "peach"),
+    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (ADR-0040,
+    // 2026-07-07-occupancy-borders 디자인 판정). soft=green(협조 신호, write 제한
+    // 없음), hard=peach(readonly + force-detach). accent-success(green)·accent-
+    // attention(peach) 와 primitive 는 공유하나 의미가 겹치지 않도록 독립 role 로
+    // 분리 — 점유 의미가 축 독립 진화 가능.
+    (
+        "semantic.accent-occupied-soft",
+        "accent_occupied_soft",
+        "green",
+    ),
+    (
+        "semantic.accent-occupied-hard",
+        "accent_occupied_hard",
+        "peach",
+    ),
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),

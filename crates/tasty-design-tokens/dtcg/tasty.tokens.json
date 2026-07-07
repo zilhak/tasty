@@ -633,6 +633,14 @@
       "$type": "color",
       "$value": "{primitive.color-peach}"
     },
+    "accent-occupied-soft": {
+      "$type": "color",
+      "$value": "{primitive.color-green}"
+    },
+    "accent-occupied-hard": {
+      "$type": "color",
+      "$value": "{primitive.color-peach}"
+    },
     "accent-danger": {
       "$type": "color",
       "$value": "{primitive.color-red}"

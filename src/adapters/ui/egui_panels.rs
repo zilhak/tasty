@@ -472,11 +472,15 @@ where
         });
 }
 
-/// 점유된 surface 의 **주황 테두리 + force-detach 오버레이**(attach/detach 작업 J-3).
+/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0040 / 작업 02).
 ///
-/// 서버측에서 client 가 점유한 surface 를 "알림이 온 것처럼" 주황(`accent-attention`) 1px
-/// 테두리로 표시한다. **focus 와 무관**하게 점유 중이면 항상 그린다(focus 해도 사라지지
-/// 않음). readonly 정정으로 내용은 보이므로(render_pass/egui), 테두리는 *점유 표식* +
+/// 점유 tier 를 색으로 구분해 1px 테두리로 표시한다(하나의 시각 채널 = surface 테두리):
+/// - **soft**(협조 신호, write 제한 없음) → green(`accent-occupied-soft`), force-detach 없음.
+/// - **hard**(readonly + mirror-observe, 기존 remote-attach 흡수) → peach
+///   (`accent-occupied-hard`) + 우상단 force-detach 버튼.
+///
+/// **focus 와 무관**하게 점유 중이면 항상 그린다(focus 해도 사라지지 않음). readonly
+/// 정정으로 내용은 보이므로(render_pass/egui), 테두리는 *점유 표식* + (hard 한정)
 /// force-detach 진입점 역할만 한다. 색은 Theme 토큰(하드코딩 없음).
 fn draw_occupied_overlays(
     ctx: &egui::Context,
@@ -488,9 +492,10 @@ fn draw_occupied_overlays(
 ) {
     let th = theme::theme();
 
-    /// 점유 surface 의 logical rect(읽기 단계 수집물).
+    /// 점유 surface 의 logical rect + tier(읽기 단계 수집물).
     struct Occ {
         sid: u32,
+        hard: bool,
         x: f32,
         y: f32,
         w: f32,
@@ -516,12 +521,20 @@ fn draw_occupied_overlays(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             for r in tab.layout().surface_regions(content_rect) {
-                // 터미널 단위 hard 점유(is_hard_occupied) 또는 workspace 점유 멤버(is_content_hidden).
-                if !engine.attach.is_hard_occupied(r.id) && !engine.attach.is_content_hidden(r.id) {
-                    continue;
-                }
+                // content-hidden(workspace 점유 멤버)은 ADR-0040 상 hard 계열이라 lock
+                // 유무와 무관하게 hard(peach)로 표시한다. 그 외에는 occupancy_of 의 tier
+                // 로 분기: hard=peach, soft=green(협조 마커). 점유 아니면 skip.
+                let hard = if engine.attach.is_content_hidden(r.id) {
+                    true
+                } else {
+                    match engine.attach.occupancy_of(r.id) {
+                        Some(occ) => occ.tier == crate::core::attach::OccupancyTier::Hard,
+                        None => continue,
+                    }
+                };
                 occ.push(Occ {
                     sid: r.id,
+                    hard,
                     x: (r.rect.x.value() / scale_factor).round_ui(),
                     y: (r.rect.y.value() / scale_factor).round_ui(),
                     w: (r.rect.width.value() / scale_factor).round_ui(),
@@ -534,9 +547,16 @@ fn draw_occupied_overlays(
         return;
     }
 
-    // 주황 테두리 + 우상단 force-detach 버튼. 클릭은 deferred 적용(engine 가변 차용).
+    // tier 별 1px 테두리 + (hard 한정) 우상단 force-detach 버튼.
+    // 클릭은 deferred 적용(engine 가변 차용).
     let mut pending_force_detach: Option<u32> = None;
     for o in &occ {
+        // soft=green(협조 신호), hard=peach(readonly). 둘 다 Theme 토큰(하드코딩 없음).
+        let border_color = if o.hard {
+            th.accent_occupied_hard()
+        } else {
+            th.accent_occupied_soft()
+        };
         let clicked = egui::Area::new(egui::Id::new(format!("attach_occupied_{}", o.sid)))
             .fixed_pos(egui::pos2(o.x, o.y))
             .order(egui::Order::Foreground)
@@ -544,14 +564,18 @@ fn draw_occupied_overlays(
                 ui.set_min_size(egui::vec2(o.w, o.h));
                 ui.set_max_size(egui::vec2(o.w, o.h));
                 let rect = ui.max_rect();
-                // 1px 주황 테두리(focus 무관, Theme 토큰). 점유(occupancy) 주의환기 =
-                // accent-attention role(peach).
+                // 1px 점유 테두리(focus 무관, Theme 토큰).
                 ui.painter().rect_stroke(
                     rect,
                     0.0,
-                    egui::Stroke::new(1.0, th.accent_attention()),
+                    egui::Stroke::new(1.0, border_color),
                     egui::StrokeKind::Inside,
                 );
+                // force-detach 버튼은 hard 점유(readonly)에서만. soft 는 협조 신호라
+                // 회수 진입점 없음.
+                if !o.hard {
+                    return false;
+                }
                 // 우상단 force-detach 버튼(작게). readonly 점유를 회수하는 진입점.
                 let btn_w = (o.w - 8.0).clamp(24.0, 96.0);
                 let btn_rect = egui::Rect::from_min_size(

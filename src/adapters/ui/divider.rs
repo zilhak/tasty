@@ -101,7 +101,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
 /// `state.surface_regions(engine, terminal_rect)` 결과를 view 용
 /// `Vec<SurfaceHighlightRegion>` 으로 평탄화. 별도 함수로 분리해 view 와 무관하게
 /// 단위 테스트 가능.
-fn regions_from_state(
+pub(crate) fn regions_from_state(
     state: &AppState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
@@ -110,9 +110,13 @@ fn regions_from_state(
     let mut out = Vec::new();
     for (_pane_id, _pane_rect, surface_regions) in &regions {
         for r in surface_regions {
+            // 우선순위(ADR-0040): 점유(soft/hard) > 완료. 점유 중 surface 는 완료
+            // 테두리를 억제한다 — 점유색만 남기고 완료 테두리는 그리지 않는다. 완료의
+            // 다른 채널(탭 제목 yellow·워크스페이스 배지)은 불변.
+            let occupied = engine.attach.occupancy_of(r.id).is_some();
             out.push(SurfaceHighlightRegion {
                 rect: r.rect,
-                is_highlighted: engine.is_surface_highlighted(r.id),
+                is_highlighted: engine.is_surface_highlighted(r.id) && !occupied,
             });
         }
     }

@@ -388,6 +388,50 @@ fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState)
     state.active_workspace = index;
 }
 
+// ---- occupancy > completion 우선순위 (ADR-0040, 작업 02) ----
+
+/// 점유(soft) 중 surface 는 완료 하이라이트가 억제된다: `regions_from_state` 의 해당
+/// region `is_highlighted` 가 false. 점유 없이 highlight 만 있으면 true(대조군).
+#[test]
+fn occupancy_suppresses_completion_highlight() {
+    use crate::adapters::ui::divider::regions_from_state;
+    use crate::model::{PhysicalPx, PhysicalRect};
+
+    let (state, mut engine) = test_state();
+    let sids = engine
+        .workspaces
+        .get(state.active_workspace)
+        .unwrap()
+        .all_surface_ids();
+    let sid = *sids.first().expect("기본 workspace 에 surface 하나");
+
+    let term_rect = PhysicalRect {
+        x: PhysicalPx(0.0),
+        y: PhysicalPx(0.0),
+        width: PhysicalPx(800.0),
+        height: PhysicalPx(600.0),
+    };
+
+    // 대조군: highlight 만 → is_highlighted true.
+    engine.raise_surface_highlight(sid);
+    let regions = regions_from_state(&state, &engine, term_rect);
+    assert!(
+        regions.iter().any(|r| r.is_highlighted),
+        "점유 없이 highlight 만이면 완료 테두리가 그려져야 한다"
+    );
+
+    // soft 점유 추가 → 억제(is_highlighted false).
+    engine
+        .attach
+        .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
+        .expect("soft 점유 획득");
+    let regions = regions_from_state(&state, &engine, term_rect);
+    assert!(
+        regions.iter().all(|r| !r.is_highlighted),
+        "점유 중이면 완료 테두리를 억제해야 한다(점유 > 완료)"
+    );
+}
+
 #[test]
 fn add_workspace_increments_count() {
     let (mut state, mut engine) = test_state();

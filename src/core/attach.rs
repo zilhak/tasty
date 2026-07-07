@@ -154,8 +154,7 @@ impl OccupancyRegistry {
 
     /// 통합 점유 조회(작업 02 테두리 렌더 소비). tier 를 한 번에 판별한다. hard 가
     /// soft 를 가린다(ADR-0040 테두리 우선순위: 점유 surface 는 hard 표시가 soft 를 덮음).
-    /// 점유 없으면 None.
-    #[allow(dead_code)] // 작업 02 배선 전까지 gui 빌드에 소비처 없음.
+    /// 점유 없으면 None. 작업 02 테두리 렌더(egui_panels.rs::draw_occupied_overlays)가 소비.
     pub fn occupancy_of(&self, surface_id: SurfaceId) -> Option<Occupancy> {
         if let Some(lock) = self.surface_locks.get(&surface_id) {
             return Some(Occupancy {

@@ -1,5 +1,5 @@
 pub(crate) mod brand;
-mod divider;
+pub(crate) mod divider;
 mod draw;
 mod egui_panels;
 pub(crate) mod icons;
