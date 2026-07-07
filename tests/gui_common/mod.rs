@@ -400,7 +400,7 @@ impl GuiTestInstance {
         std::thread::sleep(Duration::from_millis(200));
     }
 
-    /// Get window client area size (width, height).
+    /// Get window client area size (width, height) in physical pixels.
     #[cfg(target_os = "windows")]
     #[allow(dead_code)]
     pub fn client_size(&self) -> (i32, i32) {
@@ -410,6 +410,21 @@ impl GuiTestInstance {
             let _ = GetClientRect(self.hwnd, &mut rect);
         }
         (rect.right - rect.left, rect.bottom - rect.top)
+    }
+
+    /// Get window client area size (width, height) in physical pixels.
+    ///
+    /// Windows 는 `GetClientRect(HWND)` 로 직접 읽지만, macOS/Linux 에서는 테스트
+    /// 프로세스가 tasty 의 winit Window 핸들을 갖지 않는다(별도 프로세스 + IPC 구조).
+    /// tasty 의 `debug.info` IPC 가 노출하는 viewport(= `window.inner_size()`, 물리 픽셀
+    /// client area)를 조회해 Windows 와 동일 의미의 값을 크로스플랫폼으로 얻는다.
+    #[cfg(not(target_os = "windows"))]
+    #[allow(dead_code)]
+    pub fn client_size(&self) -> (i32, i32) {
+        let info = self.call("debug.info", serde_json::json!({}));
+        let w = info["viewport_width"].as_i64().unwrap_or(0) as i32;
+        let h = info["viewport_height"].as_i64().unwrap_or(0) as i32;
+        (w, h)
     }
 
     /// Convert client-relative (x, y) to screen coordinates.
