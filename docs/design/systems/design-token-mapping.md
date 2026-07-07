@@ -42,7 +42,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | control-height-tree | 22 | |
 | font-size body / caption / heading | 13 / 11 / 13(weight 600) | `font_size_body/caption/heading` |
 | font-size micro | 10 | `font_size_micro` — Badge/Tag/Kbd·command_palette footer 힌트 |
-| font-size prose-h1 / prose-h2 | 20 / 14 | `font_size_prose_h1` / `font_size_prose_h2` — markdown prose (UI cap 면제) |
+| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 앵커(egui_commonmark `Heading`↔`Body` 보간 최상단, UI cap 면제). `prose-h2`·`line-height-prose` 는 라이브러리가 헤딩 보간·본문 leading 을 소유해 소스 은퇴(retire-pending); vendor json 잔존, 디자인 tokens/ 에서 최종 제거 예정 |
 | font-size term-sm / term / term-lg | 12 / 14 / 16 | `font_size_term_sm` / `font_size_term` / `font_size_term_lg` — 터미널 스케일 |
 | icon-size xs | 12 | `icon_glyph_size_xs` |
 | icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프 |
@@ -220,7 +220,7 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-padding-y` | → `space-xs` (4) | `spacing_xs` | 세로 패딩 |
 | `--tasty-tooltip-padding-x` | → `space-sm` (8) | `spacing_sm` | 가로 패딩 |
 | `--tasty-tooltip-font-size` | → `font-size-caption` (11) | `font_size_caption` | 11px 텍스트 |
-| `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | **신규** `line_height_ui: f32 = 1.4` (무차원, zoom 무관 — `line_height_prose` 전례) | UI 줄간격 배수 |
+| `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | **신규** `line_height_ui: f32 = 1.4` (무차원 비율, zoom 무관) | UI 줄간격 배수 |
 | `--tasty-tooltip-max-width` | → `size-240` (240px) | **신규** `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
 | `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
 | `--tasty-tooltip-motion` | → `motion-ui-med` → duration-150 (150ms) | (없음 — 모션 토큰 미보유) | hover delay 150ms 는 위젯 상수 `HOVER_DELAY_SECONDS`(시간값, 길이/색 토큰 아님). fade 는 immediate-mode snap 으로 생략 |

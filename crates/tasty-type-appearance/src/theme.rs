@@ -236,13 +236,10 @@ pub struct ThemeSizing {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
-    /// markdown surface H1 — 렌더 CONTENT 라 UI 14px 상한 예외 (20px).
+    /// markdown surface heading 앵커 — egui_commonmark 이 `Heading`↔`Body` 사이를 보간하는
+    /// 헤딩 사다리의 최상단(H1). 렌더 CONTENT 라 UI 14px 상한 예외 (20px). per-H2 픽셀 토큰
+    /// (`prose-h2`)·본문 leading 배수(`line-height-prose`)는 라이브러리가 소유해 은퇴됨.
     pub font_size_prose_h1: LogicalPx,
-    /// markdown surface H2 — 14px (= font_size_max).
-    pub font_size_prose_h2: LogicalPx,
-    /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
-    /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
-    pub line_height_prose: f32,
     /// UI 텍스트(툴팁 등 여러 줄 chrome 문단) 줄간격 배수 (1.4, design
     /// `--tasty-line-height-ui`). prose(1.6)보다 촘촘한 UI 전용 배수 — 무차원 비율이라
     /// `f32`. 폰트 크기에 곱해 줄 높이를 만든다.
@@ -362,8 +359,6 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_heading: LogicalPx(13.0), // semibold 로 구분, 크기는 같음
     font_size_max: LogicalPx(14.0),
     font_size_prose_h1: LogicalPx(20.0),
-    font_size_prose_h2: LogicalPx(14.0),
-    line_height_prose: 1.6,
     line_height_ui: 1.4,
     font_size_term_sm: LogicalPx(12.0),
     font_size_term: LogicalPx(14.0),
@@ -847,13 +842,9 @@ pub struct Theme {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
-    /// markdown surface H1 — 렌더 CONTENT 라 UI 14px 상한 예외 (20px).
+    /// markdown surface heading 앵커 — egui_commonmark 헤딩 사다리 최상단(H1). 렌더 CONTENT 라
+    /// UI 14px 상한 예외 (20px). per-H2·본문 leading 은 라이브러리 소유로 은퇴됨.
     pub font_size_prose_h1: LogicalPx,
-    /// markdown surface H2 — 14px (= font_size_max).
-    pub font_size_prose_h2: LogicalPx,
-    /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
-    /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
-    pub line_height_prose: f32,
     /// UI 텍스트(툴팁 등) 줄간격 배수 (1.4, design `--tasty-line-height-ui`). 무차원 비율.
     pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
@@ -1032,9 +1023,7 @@ impl Theme {
             // prose / term 스케일 = surface CONTENT 폰트 (markdown/terminal). UI zoom
             // 영향 받지 않는다 — 터미널/마크다운 셀 폰트는 자체 설정 경로를 따른다.
             font_size_prose_h1: SIZING.font_size_prose_h1,
-            font_size_prose_h2: SIZING.font_size_prose_h2,
             // 줄간격 배수 — 무차원 비율, zoom 무관 (폰트 크기 자체가 스케일을 담당).
-            line_height_prose: SIZING.line_height_prose,
             line_height_ui: SIZING.line_height_ui,
             font_size_term_sm: SIZING.font_size_term_sm,
             font_size_term: SIZING.font_size_term,
@@ -2009,8 +1998,6 @@ mod tests {
         let t = Theme::with_colors(dummy_colors(), false);
         assert_eq!(t.font_size_micro.value(), 10.0);
         assert_eq!(t.font_size_prose_h1.value(), 20.0);
-        assert_eq!(t.font_size_prose_h2.value(), 14.0);
-        assert_eq!(t.line_height_prose, 1.6);
         assert_eq!(t.line_height_ui, 1.4);
         assert_eq!(t.tooltip_max_width.value(), 240.0);
         assert_eq!(t.font_size_term_sm.value(), 12.0);
@@ -2055,7 +2042,6 @@ mod tests {
     fn prose_term_fonts_unaffected_by_zoom() {
         let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
         assert_eq!(t.font_size_prose_h1, SIZING.font_size_prose_h1);
-        assert_eq!(t.line_height_prose, SIZING.line_height_prose);
         assert_eq!(t.line_height_ui, SIZING.line_height_ui);
         assert_eq!(t.font_size_term, SIZING.font_size_term);
         // micro 는 caption 처럼 zoom 적용: 10 * 1.5 = 15.

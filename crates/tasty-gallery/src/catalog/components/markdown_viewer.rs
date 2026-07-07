@@ -268,6 +268,14 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
+/// H2 근사 크기 — egui_commonmark 은 헤딩 사다리를 `Heading` 앵커(`prose-h1`)와 `Body`
+/// 사이에서 보간하며 per-H2 픽셀 토큰(`prose-h2`)은 은퇴했다. specimen 은 라이브러리의
+/// 레벨-1 보간 계수(0.835, `egui_commonmark_backend`)를 미러해 H2 크기를 근사한다.
+fn md_h2_size(theme: &Theme) -> f32 {
+    let min = theme.font_size_body.value();
+    min + (theme.font_size_prose_h1.value() - min) * 0.835
+}
+
 /// heading 한 줄 — level 별 size/color/case (디자인 MD_H 전사).
 fn heading(ui: &mut egui::Ui, theme: &Theme, level: u8, text: &str) {
     let body = theme.font_size_body.value();
@@ -279,7 +287,7 @@ fn heading(ui: &mut egui::Ui, theme: &Theme, level: u8, text: &str) {
             0.0,
         ),
         2 => (
-            theme.font_size_prose_h2.value(),
+            md_h2_size(theme),
             theme.text_primary().to_egui(),
             false,
             theme.spacing_md.value(),
@@ -689,11 +697,7 @@ fn heading_sample(ui: &mut egui::Ui, theme: &Theme, level: u8) {
             theme.text_primary().to_egui(),
             false,
         ),
-        2 => (
-            theme.font_size_prose_h2.value(),
-            theme.text_primary().to_egui(),
-            false,
-        ),
+        2 => (md_h2_size(theme), theme.text_primary().to_egui(), false),
         3 => (
             theme.font_size_max.value(),
             theme.text_primary().to_egui(),

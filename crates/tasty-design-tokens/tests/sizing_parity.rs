@@ -11,7 +11,7 @@ use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, SEMANTIC_DIM_TO_THEME_FIELD, ThemeMode};
 use tasty_type_appearance::theme::SIZING;
 
-/// `SIZING` 필드명 문자열 → 실제 값(px 는 f32, `line_height_prose` 는 무차원 비율).
+/// `SIZING` 필드명 문자열 → 실제 값(px 필드는 `.0` 로 f32 추출).
 /// `SEMANTIC_DIM_TO_THEME_FIELD` 에 새 필드가 추가되면 여기 match arm 도 추가할 것.
 fn sizing_value(field: &str) -> f32 {
     match field {
@@ -34,11 +34,9 @@ fn sizing_value(field: &str) -> f32 {
         "font_size_heading" => SIZING.font_size_heading.0,
         "font_size_max" => SIZING.font_size_max.0,
         "font_size_prose_h1" => SIZING.font_size_prose_h1.0,
-        "font_size_prose_h2" => SIZING.font_size_prose_h2.0,
         "font_size_term_sm" => SIZING.font_size_term_sm.0,
         "font_size_term" => SIZING.font_size_term.0,
         "font_size_term_lg" => SIZING.font_size_term_lg.0,
-        "line_height_prose" => SIZING.line_height_prose,
         "icon_glyph_size_xs" => SIZING.icon_glyph_size_xs.0,
         "icon_glyph_size_sm" => SIZING.icon_glyph_size_sm.0,
         "icon_glyph_size_md" => SIZING.icon_glyph_size_md.0,

@@ -34,8 +34,8 @@
 | 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` · `font-size-caption` | `tasty-icons` 베이크 벡터(raw `📄` 제거) |
 | 경로 필드 | `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px | mono 경로 텍스트 |
 | Go 버튼 | `ARROW_RIGHT` glyph · `text-secondary`(hover `text-primary`) · `font-size-body` | `tasty-icons` 베이크 벡터(raw `→` 제거) |
-| 본문 텍스트 | `text-secondary` · `line-height-prose` 행간 | 헤딩 색은 단계별 차별화 |
-| 헤딩 크기 | `font-size-prose-h1`(20, h1) / `font-size-prose-h2`(14, h2·h3) / body(h4~h6) | 6단계 prose 위계 |
+| 본문 텍스트 | `text-secondary` · 본문 leading 은 egui_commonmark 소유 | 헤딩 색은 단계별 차별화. `line-height-prose` override 미노출 → 은퇴(retire-pending) |
+| 헤딩 크기 | `font-size-prose-h1`(20) 을 `Heading` 앵커로, H2~H6 은 egui_commonmark 이 `Heading`↔`Body` 사이 보간 | per-H2 픽셀 토큰(`prose-h2`) 미노출 → 은퇴(retire-pending). 6단계 prose 위계는 라이브러리 보간 |
 | small 캡션 | body × 0.85 · `text-muted` | |
 | 링크 | `accent-primary` | |
 | 코드블록 배경 | `surface-raised` | |

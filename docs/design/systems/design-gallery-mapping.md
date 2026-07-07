@@ -393,7 +393,7 @@ painter/egui 로 전사.
 
 | surface | plugin draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| markdown | `crates/tasty-plugin-markdown/src/render.rs` (`pulldown-cmark` + 토큰 기반 prose 렌더러) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20)/`font-size-prose-h2`(14) |
+| markdown | `crates/tasty-plugin-markdown/src/render.rs` (`egui_commonmark` 라이브러리, 토큰을 `Visuals`/text-style 로 주입) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20) 앵커, H2~H6 은 라이브러리 보간(`prose-h2`·`line-height-prose` 은퇴) |
 | image | `crates/tasty-plugin-image/src/render.rs` | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
 | html | OS native WebView overlay (`engine/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 경계 · `GLOBE` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
 
