@@ -8,7 +8,7 @@
 //! 서버는 PTY/grid 권위 owner 라 데이터가 이미 있다. live grid 를 매 프레임 그대로
 //! 그리면 "실시간"이 되어 사용자 확정 UX("3초 polling")와 어긋난다. → 점유 surface
 //! 마다 **display-only mirror**(detached `Terminal`)를 두고, 3초 `AttachPoll` tick 때만
-//! live grid 스냅샷을 feed 한다. render_pass 가 is_attached surface 를 이 mirror 로
+//! live grid 스냅샷을 feed 한다. render_pass 가 is_hard_occupied surface 를 이 mirror 로
 //! 렌더한다(plan §2.3). live Terminal 은 PTY 소유 + 입력 라우팅 전용으로 유지.
 //!
 //! headless 빌드는 렌더가 없어 호출자가 없다(gui 한정 — render_pass/attach_poll).
@@ -21,7 +21,7 @@ use crate::core::CoreState;
 
 impl CoreState {
     /// 서버측 readonly display mirror 를 live grid 스냅샷으로 갱신한다(3초 cadence).
-    /// 점유된(`is_attached`) 각 surface 에 대해 mirror 가 없으면 만들고, live grid 의
+    /// 점유된(`is_hard_occupied`) 각 surface 에 대해 mirror 가 없으면 만들고, live grid 의
     /// 현재 화면을 snapshot→feed 한다. snapshot 은 `\x1b[2J\x1b[H`(clear+home) 로
     /// 시작하므로 같은 mirror 에 반복 feed 해도 누적 없이 덮어쓴다. 더 이상 점유되지
     /// 않는 surface 의 mirror 는 제거한다.
@@ -62,7 +62,7 @@ impl CoreState {
         any
     }
 
-    /// render_pass 가 is_attached surface 를 렌더할 때 사용하는 display mirror.
+    /// render_pass 가 is_hard_occupied surface 를 렌더할 때 사용하는 display mirror.
     /// 아직 첫 `refresh_readonly_views` 전이면 None → render_pass 는 그 surface 를
     /// 건너뛴다(잠깐 빈 화면; 다음 tick 에 채워짐).
     pub(crate) fn readonly_view(&self, surface_id: u32) -> Option<&Terminal> {

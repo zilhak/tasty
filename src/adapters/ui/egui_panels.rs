@@ -516,8 +516,8 @@ fn draw_occupied_overlays(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             for r in tab.layout().surface_regions(content_rect) {
-                // 터미널 단위 점유(is_attached) 또는 workspace 점유 멤버(is_content_hidden).
-                if !engine.attach.is_attached(r.id) && !engine.attach.is_content_hidden(r.id) {
+                // 터미널 단위 hard 점유(is_hard_occupied) 또는 workspace 점유 멤버(is_content_hidden).
+                if !engine.attach.is_hard_occupied(r.id) && !engine.attach.is_content_hidden(r.id) {
                     continue;
                 }
                 occ.push(Occ {

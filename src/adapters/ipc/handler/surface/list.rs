@@ -54,7 +54,7 @@ fn collect_tab_surface_info(
                 "busy": engine.is_surface_busy(node.id),
                 "pty_ready": engine.terminals.contains(node.id),
                 // attach/detach 단계 3: 배타 점유 여부(free/점유 디스커버리).
-                "attached": engine.attach.is_attached(node.id),
+                "attached": engine.attach.is_hard_occupied(node.id),
             });
             if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
                 entry["foreground_process"] = json!(fg.name);
@@ -104,7 +104,7 @@ fn collect_surface_layout_info(
                 "busy": engine.is_surface_busy(id),
                 // attach/detach: 배타 점유 여부(surface 단위 단계 4 + workspace 단계 6).
                 // split 레이아웃의 leaf 도 단일-surface 경로와 동일하게 노출.
-                "attached": engine.attach.is_attached(id),
+                "attached": engine.attach.is_hard_occupied(id),
             });
             if let Some(terminal) = engine.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());

@@ -245,11 +245,11 @@ pub struct CoreState {
 
     /// 배타적 attach 점유 lock (attach/detach 단계 3). surface_id → 점유 client.
     /// 휘발성 — 직렬화/복원 안 함(decision 2). client_id 는 단계 1 StreamClientId.
-    pub(crate) attach: crate::core::attach::AttachRegistry,
+    pub(crate) attach: crate::core::attach::OccupancyRegistry,
 
     /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
     /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `AttachPoll`
-    /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_attached
+    /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_hard_occupied
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
     /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
@@ -384,7 +384,7 @@ impl CoreState {
             #[cfg(feature = "gui")]
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
-            attach: crate::core::attach::AttachRegistry::new(),
+            attach: crate::core::attach::OccupancyRegistry::new(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_gui_attach_user: Vec::new(),

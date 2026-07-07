@@ -77,8 +77,8 @@ impl GpuState {
                 // (`readonly_view`)를 렌더한다(plan §2.3). 입력 차단은
                 // `apply_send_to_surface` 가 담당하고, 점유 표시(주황 테두리)는 egui
                 // 오버레이가 그린다. client mirror 는 자기 engine 에 lock 이 없어
-                // (is_attached=false) live terminal 을 정상 렌더한다(G).
-                let is_readonly = engine.attach.is_attached(region.id);
+                // (is_hard_occupied=false) live terminal 을 정상 렌더한다(G).
+                let is_readonly = engine.attach.is_hard_occupied(region.id);
                 let terminal = if is_readonly {
                     match engine.readonly_view(region.id) {
                         Some(t) => t,

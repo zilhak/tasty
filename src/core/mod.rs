@@ -1119,7 +1119,7 @@ impl Core {
         // §2.4 서버 본인 입력 차단: attach 로 점유된 surface 는 서버 로컬 입력
         // (사용자 GUI 키 / IPC surface.send*) 이 PTY 에 닿지 못한다. client 경유
         // 입력은 단계 4 의 holder-검증 attach 채널로 들어와 이 경로를 우회한다.
-        if engine.attach.is_attached(surface_id) {
+        if engine.attach.is_hard_occupied(surface_id) {
             return CoreEvent::SurfaceSent {
                 surface_id,
                 sent: false,

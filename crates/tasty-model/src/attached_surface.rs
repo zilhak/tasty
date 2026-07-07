@@ -12,7 +12,7 @@ pub type AttachClientId = u32;
 ///   가리키는 marker. 실제 grid 는 `TerminalStore` 의 detached Terminal 이 보유.
 ///
 /// 본 struct 자체는 grid 를 들지 않는 *트리 leaf marker*. 권위 점유 상태는
-/// `AttachRegistry`(엔진)에 있고, 본 타입은 트리에서 "이 자리는 attached" 임을 표시.
+/// `OccupancyRegistry`(엔진)에 있고, 본 타입은 트리에서 "이 자리는 attached" 임을 표시.
 /// 트리 leaf 실제 교체·렌더 분기는 단계 4 — 단계 3 은 타입 정의 + registry 등록만.
 pub struct AttachedSurface {
     pub id: SurfaceId,

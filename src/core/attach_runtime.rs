@@ -1,6 +1,6 @@
 //! attach 런타임 결선 (attach/detach 단계 4).
 //!
-//! 단계 3 의 [`AttachRegistry`](crate::core::attach) 는 순수 lock 테이블이고,
+//! 단계 3 의 [`OccupancyRegistry`](crate::core::attach) 는 순수 lock 테이블이고,
 //! 단계 2 의 mirror(`new_detached`/`feed_bytes`/output tap/input sink)는 터미널
 //! 메커니즘이다. 이 모듈은 둘을 **실제 바이트 파이프로 결선**한다:
 //!
@@ -105,7 +105,7 @@ impl CoreState {
     }
 
     /// client 입력 Data 프레임을 그 client 가 점유한 surface 의 PTY 로 전달한다.
-    /// 서버 로컬 입력 차단(`apply_send_to_surface` 의 is_attached 거부)을 우회하는
+    /// 서버 로컬 입력 차단(`apply_send_to_surface` 의 is_hard_occupied 거부)을 우회하는
     /// 유일한 정규 경로 — holder 검증을 거치므로 점유자만 입력할 수 있다.
     /// 반환: 라우팅 성공 여부(false = 점유 surface 없음 = 비-attach client).
     pub fn feed_attached_input(&mut self, client_id: AttachClientId, bytes: &[u8]) -> bool {

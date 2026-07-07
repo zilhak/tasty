@@ -12,8 +12,12 @@
 //!
 //! attach 제어 API(acquire/release/force_detach/통지)의 호출자는 `attach.*` IPC
 //! 핸들러로, `ipc/handler.rs:5` 와 동일하게 gui 라우팅 경유다. headless 빌드엔
-//! 호출자가 없어(같은 정책) dead_code 를 *headless 한정* 침묵한다. `is_attached`
+//! 호출자가 없어(같은 정책) dead_code 를 *headless 한정* 침묵한다. `is_hard_occupied`
 //! (서버 입력 차단)만 headless 에서도 `apply_send_to_surface` 가 호출한다.
+//!
+//! ADR-0040: 이 레지스트리는 hard(원격 attach)와 soft(표시만) 점유를 통합한다. hard 는
+//! 위 기존 메커니즘 그대로이고, soft 는 `soft` 테이블에 additive 로 얹혀 hard 술어를
+//! 오염하지 않는다. 통합 조회는 `occupancy_of`.
 #![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use std::collections::HashMap;
@@ -44,9 +48,69 @@ pub enum AttachError {
     NotAttached,
 }
 
-/// 배타 attach 점유 lock 테이블. `CoreState` 가 보유(엔진 권위, model-view 분리).
+// ─── 통합 점유 모델 (ADR-0040) ────────────────────────────────────────────
+//
+// hard 점유(원격 attach)와 soft 점유(표시만)를 하나의 레지스트리가 관리한다.
+// hard 는 기존 `AttachLock`(holder=StreamClient) 저장을 **그대로 보존** 하고, soft 는
+// 별도 테이블(`soft`)에 additive 로 얹는다. 두 계층은 `occupancy_of` 로 단일 조회되며
+// (작업 02 테두리 렌더 소비), soft 는 절대 hard 술어(`is_hard_occupied`)를 true 로
+// 만들지 않는다(입력차단/mirror 회귀 0). soft 경로는 StreamHub/gui 비의존이라
+// headless 컴파일·동작한다.
+
+/// 점유 계층. `Soft`=advisory 마커(write 허용), `Hard`=readonly 강제(기존 attach 메커니즘).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OccupancyTier {
+    Soft,
+    Hard,
+}
+
+/// 점유 주체. hard 는 stream client(u32), soft 는 parent surface 로 식별되는 주체.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Holder {
+    /// hard 점유자 = stream client(기존 attach). 값·의미 보존.
+    StreamClient(AttachClientId),
+    /// soft 점유자 = 주체에 대응하는 parent surface(=`Occupancy.parent`) + 선택 라벨.
+    Subject { label: Option<String> },
+}
+
+/// 한 surface 의 통합 점유 뷰(tier 무관 단일 조회, 작업 02 소비). `occupancy_of` 가
+/// tier 별 내부 저장(`surface_locks`/`soft`)을 이 값으로 투영해 반환한다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Occupancy {
+    pub tier: OccupancyTier,
+    pub holder: Holder,
+    /// soft: 점유 주체에 대응하는 parent surface(focus 시 부재 청소용, ADR-0040 수명).
+    /// hard: 항상 None(연결 EOF/force-detach 수명이라 parent 기록 불필요).
+    pub parent: Option<SurfaceId>,
+    pub granted_seq: u64,
+}
+
+/// soft 점유 연산 실패 사유(hard 의 `AttachError` 와 분리 — holder 표현이 다름).
+#[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OccupancyError {
+    /// 이미 다른 주체(parent)가 soft 점유 중(1:1 배타, ADR-0040).
+    AlreadyOccupied { parent: SurfaceId },
+    /// release 요청 주체(parent)가 점유자가 아님.
+    NotHolder { parent: SurfaceId },
+    /// 해당 surface 에 soft 점유 없음.
+    NotOccupied,
+}
+
+/// soft 점유 내부 엔트리. hard(`AttachLock`)와 **분리 저장** — hard 기계(workspace_locks/
+/// notifier/force-detach/release_all_for_client)는 이 맵에 진입하지 않는다.
+#[allow(dead_code)] // 필드는 occupancy_of(작업 02 소비)에서만 읽힘.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SoftEntry {
+    parent: SurfaceId,
+    label: Option<String>,
+    granted_seq: u64,
+}
+
+/// 통합 점유 레지스트리(ADR-0040). hard(원격 attach)와 soft(표시만) 두 계층을 함께
+/// 관리한다. `CoreState` 가 보유(엔진 권위, model-view 분리). 구 이름은 `AttachRegistry`.
 #[derive(Default)]
-pub struct AttachRegistry {
+pub struct OccupancyRegistry {
     surface_locks: HashMap<SurfaceId, AttachLock>,
     /// workspace 단위 점유(단계 6, D1). workspace 점유 시 그 안 모든 *터미널*
     /// surface 는 `surface_locks` 에도 동시에 들어가(holder 동일) 단계 4 의 서버
@@ -59,11 +123,16 @@ pub struct AttachRegistry {
     surface_to_workspace: HashMap<SurfaceId, WorkspaceId>,
     next_seq: u64,
     /// force-detach 통지용 push 핸들(단계 1 StreamHub). App 부팅 시 주입.
-    /// `None`(테스트/미주입)이면 통지는 no-op + lock 만 free 환원.
+    /// `None`(테스트/미주입)이면 통지는 no-op + lock 만 free 환원. **hard 전용** —
+    /// soft 는 이 경로에 진입하지 않는다.
     notifier: Option<StreamHub>,
+    /// soft 점유 테이블(ADR-0040). hard(`surface_locks`)와 **분리** — soft 는 절대
+    /// `is_hard_occupied` 를 true 로 만들지 않는다(입력차단/mirror/`"attached"`/content-hidden
+    /// 회귀 0). gui/StreamHub 비의존이라 headless 컴파일·동작. holder=주체(parent surface).
+    soft: HashMap<SurfaceId, SoftEntry>,
 }
 
-impl AttachRegistry {
+impl OccupancyRegistry {
     pub fn new() -> Self {
         Self::default()
     }
@@ -75,9 +144,83 @@ impl AttachRegistry {
         self.notifier = Some(hub);
     }
 
-    /// surface 가 현재 점유 중인지(입력 차단·list 용).
-    pub fn is_attached(&self, surface_id: SurfaceId) -> bool {
+    /// surface 가 **hard 점유** 중인지(서버 입력 차단·list `attached` 필드·readonly
+    /// mirror·content-hidden 판정용). ADR-0040 이후 이 술어는 **hard 전용** 이다 —
+    /// soft 점유는 절대 true 로 만들지 않는다(입력차단/mirror 회귀 방지). 소비처 5곳
+    /// 모두 hard 의미이므로 개명(구 `is_attached`)만으로 의미 보존.
+    pub fn is_hard_occupied(&self, surface_id: SurfaceId) -> bool {
         self.surface_locks.contains_key(&surface_id)
+    }
+
+    /// 통합 점유 조회(작업 02 테두리 렌더 소비). tier 를 한 번에 판별한다. hard 가
+    /// soft 를 가린다(ADR-0040 테두리 우선순위: 점유 surface 는 hard 표시가 soft 를 덮음).
+    /// 점유 없으면 None.
+    #[allow(dead_code)] // 작업 02 배선 전까지 gui 빌드에 소비처 없음.
+    pub fn occupancy_of(&self, surface_id: SurfaceId) -> Option<Occupancy> {
+        if let Some(lock) = self.surface_locks.get(&surface_id) {
+            return Some(Occupancy {
+                tier: OccupancyTier::Hard,
+                holder: Holder::StreamClient(lock.holder),
+                parent: None,
+                granted_seq: lock.granted_seq,
+            });
+        }
+        self.soft.get(&surface_id).map(|e| Occupancy {
+            tier: OccupancyTier::Soft,
+            holder: Holder::Subject {
+                label: e.label.clone(),
+            },
+            parent: Some(e.parent),
+            granted_seq: e.granted_seq,
+        })
+    }
+
+    /// soft 점유 획득(표시만, write 제한 없음 — ADR-0040). 같은 parent 재-acquire 는
+    /// 멱등(라벨만 갱신). 이미 다른 주체의 soft 점유면 `AlreadyOccupied`. hard 기계와
+    /// 무관 — StreamHub/gui 없이 동작(headless 안전). 배선(작업 03)이 호출한다.
+    #[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
+    pub fn acquire_soft(
+        &mut self,
+        surface_id: SurfaceId,
+        parent: SurfaceId,
+        label: Option<String>,
+    ) -> Result<(), OccupancyError> {
+        if let Some(existing) = self.soft.get(&surface_id)
+            && existing.parent != parent
+        {
+            return Err(OccupancyError::AlreadyOccupied {
+                parent: existing.parent,
+            });
+        }
+        self.next_seq += 1;
+        self.soft.insert(
+            surface_id,
+            SoftEntry {
+                parent,
+                label,
+                granted_seq: self.next_seq,
+            },
+        );
+        Ok(())
+    }
+
+    /// soft 점유 self-release(ADR-0040: 주체 본인 해제). parent(주체 식별자) 불일치 →
+    /// `NotHolder`, 엔트리 없음 → `NotOccupied`. force-detach/focus 부재-청소 경로는
+    /// 작업 03 이 배선(tier 공용 또는 분리).
+    #[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
+    pub fn release_soft(
+        &mut self,
+        surface_id: SurfaceId,
+        parent: SurfaceId,
+    ) -> Result<(), OccupancyError> {
+        match self.soft.get(&surface_id) {
+            None => Err(OccupancyError::NotOccupied),
+            Some(e) if e.parent != parent => Err(OccupancyError::NotHolder { parent: e.parent }),
+            Some(_) => {
+                self.soft.remove(&surface_id);
+                Ok(())
+            }
+        }
     }
 
     /// surface 의 점유 client(없으면 None). 단계 4 placeholder 렌더("client N 점유
@@ -315,18 +458,18 @@ mod tests {
 
     #[test]
     fn acquire_free_succeeds() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         let lock = reg.acquire(10, 1).unwrap();
         assert_eq!(lock.holder, 1);
         assert_eq!(lock.granted_seq, 1);
-        assert!(reg.is_attached(10));
+        assert!(reg.is_hard_occupied(10));
         assert_eq!(reg.holder(10), Some(1));
     }
 
     #[test]
     fn acquire_already_attached_rejected() {
         // 동시 attach 거부 — 핵심.
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire(10, 1).unwrap();
         let err = reg.acquire(10, 2).unwrap_err();
         assert_eq!(err, AttachError::AlreadyAttached { holder: 1 });
@@ -336,7 +479,7 @@ mod tests {
 
     #[test]
     fn acquire_same_client_idempotent() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         let a = reg.acquire(10, 1).unwrap();
         let b = reg.acquire(10, 1).unwrap();
         assert_eq!(a, b);
@@ -344,58 +487,58 @@ mod tests {
 
     #[test]
     fn release_by_holder() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire(10, 1).unwrap();
         reg.release(10, 1).unwrap();
-        assert!(!reg.is_attached(10));
+        assert!(!reg.is_hard_occupied(10));
     }
 
     #[test]
     fn release_non_holder_rejected() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire(10, 1).unwrap();
         let err = reg.release(10, 2).unwrap_err();
         assert_eq!(err, AttachError::NotHolder { holder: 1 });
-        assert!(reg.is_attached(10)); // 여전히 점유.
+        assert!(reg.is_hard_occupied(10)); // 여전히 점유.
     }
 
     #[test]
     fn release_not_attached() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         assert_eq!(reg.release(10, 1).unwrap_err(), AttachError::NotAttached);
     }
 
     #[test]
     fn force_detach_frees_and_returns_holder() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire(10, 7).unwrap();
         assert_eq!(reg.force_detach(10), Some(7));
-        assert!(!reg.is_attached(10));
+        assert!(!reg.is_hard_occupied(10));
     }
 
     #[test]
     fn force_detach_idempotent_when_free() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         assert_eq!(reg.force_detach(10), None);
     }
 
     #[test]
     fn release_all_for_client() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire(10, 1).unwrap();
         reg.acquire(11, 1).unwrap();
         reg.acquire(12, 2).unwrap();
         let mut released = reg.release_all_for_client(1);
         released.sort_unstable();
         assert_eq!(released, vec![10, 11]);
-        assert!(!reg.is_attached(10));
-        assert!(!reg.is_attached(11));
-        assert!(reg.is_attached(12)); // 다른 client 유지.
+        assert!(!reg.is_hard_occupied(10));
+        assert!(!reg.is_hard_occupied(11));
+        assert!(reg.is_hard_occupied(12)); // 다른 client 유지.
     }
 
     #[test]
     fn granted_seq_monotonic() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         let a = reg.acquire(10, 1).unwrap();
         let b = reg.acquire(11, 2).unwrap();
         assert!(b.granted_seq > a.granted_seq);
@@ -405,14 +548,14 @@ mod tests {
 
     #[test]
     fn acquire_workspace_locks_terminals_and_members() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         // ws 100: 터미널 [10,11] + 비-터미널 [12].
         reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1)
             .unwrap();
         // 터미널은 surface_locks 에도 들어가 서버 렌더/입력차단이 자동 적용.
-        assert!(reg.is_attached(10));
-        assert!(reg.is_attached(11));
-        assert!(!reg.is_attached(12)); // 비-터미널은 lock 아님
+        assert!(reg.is_hard_occupied(10));
+        assert!(reg.is_hard_occupied(11));
+        assert!(!reg.is_hard_occupied(12)); // 비-터미널은 lock 아님
         // 내용 숨김은 멤버 전체(비-터미널 포함).
         assert!(reg.is_content_hidden(10));
         assert!(reg.is_content_hidden(12));
@@ -424,7 +567,7 @@ mod tests {
 
     #[test]
     fn acquire_workspace_already_attached_rejected() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire_workspace(100, &[10], &[10], 1).unwrap();
         let err = reg.acquire_workspace(100, &[10], &[10], 2).unwrap_err();
         assert_eq!(err, AttachError::AlreadyAttached { holder: 1 });
@@ -432,7 +575,7 @@ mod tests {
 
     #[test]
     fn acquire_workspace_idempotent_same_client() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         let a = reg.acquire_workspace(100, &[10], &[10], 1).unwrap();
         let b = reg.acquire_workspace(100, &[10], &[10], 1).unwrap();
         assert_eq!(a, b);
@@ -440,7 +583,7 @@ mod tests {
 
     #[test]
     fn acquire_workspace_partial_conflict_rejected() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         // surface 11 을 client 2 가 surface 단위로 먼저 점유.
         reg.acquire(11, 2).unwrap();
         // ws 100 이 11 을 포함 → 부분 충돌로 거부.
@@ -449,17 +592,17 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, AttachError::AlreadyAttached { holder: 2 });
         assert!(!reg.workspace_locks.contains_key(&100));
-        assert!(!reg.is_attached(10)); // 부분 점유 안 됨
+        assert!(!reg.is_hard_occupied(10)); // 부분 점유 안 됨
     }
 
     #[test]
     fn force_detach_workspace_clears_members() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 7)
             .unwrap();
         assert_eq!(reg.force_detach_workspace(100), Some(7));
-        assert!(!reg.is_attached(10));
-        assert!(!reg.is_attached(11));
+        assert!(!reg.is_hard_occupied(10));
+        assert!(!reg.is_hard_occupied(11));
         assert!(!reg.is_content_hidden(12));
         assert_eq!(reg.workspace_holder(100), None);
         assert!(reg.workspaces_snapshot().is_empty());
@@ -467,13 +610,13 @@ mod tests {
 
     #[test]
     fn force_detach_workspace_idempotent_when_free() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         assert_eq!(reg.force_detach_workspace(100), None);
     }
 
     #[test]
     fn release_all_for_client_clears_workspace_and_surface() {
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1)
             .unwrap();
         reg.acquire(20, 1).unwrap(); // 별도 surface 단위
@@ -484,10 +627,104 @@ mod tests {
         assert_eq!(released, vec![10, 11, 12, 20]);
         assert!(!reg.is_content_hidden(10));
         assert!(!reg.is_content_hidden(12));
-        assert!(!reg.is_attached(20));
+        assert!(!reg.is_hard_occupied(20));
         // 다른 client 의 workspace 는 유지.
         assert_eq!(reg.workspace_holder(200), Some(2));
-        assert!(reg.is_attached(30));
+        assert!(reg.is_hard_occupied(30));
+    }
+
+    // ─── soft 점유 (ADR-0040) ─────────────────────────────────────────────
+
+    #[test]
+    fn soft_occupancy_does_not_set_hard_predicate() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, /*parent*/ 99, None).unwrap();
+        assert!(!reg.is_hard_occupied(10)); // 입력차단/mirror 회귀 0
+        assert_eq!(
+            reg.occupancy_of(10).map(|o| o.tier),
+            Some(OccupancyTier::Soft)
+        );
+        // hard 는 여전히 독립 동작.
+        reg.acquire(11, 1).unwrap();
+        assert!(reg.is_hard_occupied(11));
+    }
+
+    #[test]
+    fn soft_occupancy_records_parent_and_label() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, Some("agent".into())).unwrap();
+        let occ = reg.occupancy_of(10).unwrap();
+        assert_eq!(occ.tier, OccupancyTier::Soft);
+        assert_eq!(occ.parent, Some(99));
+        assert_eq!(
+            occ.holder,
+            Holder::Subject {
+                label: Some("agent".into())
+            }
+        );
+    }
+
+    #[test]
+    fn soft_acquire_same_parent_idempotent_updates_label() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        reg.acquire_soft(10, 99, Some("x".into())).unwrap(); // 같은 주체 재-acquire
+        assert_eq!(
+            reg.occupancy_of(10).unwrap().holder,
+            Holder::Subject {
+                label: Some("x".into())
+            }
+        );
+    }
+
+    #[test]
+    fn soft_acquire_other_subject_rejected() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        let err = reg.acquire_soft(10, 77, None).unwrap_err();
+        assert_eq!(err, OccupancyError::AlreadyOccupied { parent: 99 });
+    }
+
+    #[test]
+    fn soft_release_by_subject() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        reg.release_soft(10, 99).unwrap();
+        assert!(reg.occupancy_of(10).is_none());
+    }
+
+    #[test]
+    fn soft_release_non_holder_rejected() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        assert_eq!(
+            reg.release_soft(10, 77).unwrap_err(),
+            OccupancyError::NotHolder { parent: 99 }
+        );
+        assert!(reg.occupancy_of(10).is_some()); // 여전히 점유.
+    }
+
+    #[test]
+    fn soft_release_not_occupied() {
+        let mut reg = OccupancyRegistry::new();
+        assert_eq!(
+            reg.release_soft(10, 99).unwrap_err(),
+            OccupancyError::NotOccupied
+        );
+    }
+
+    #[test]
+    fn hard_dominates_soft_in_occupancy_of() {
+        // 같은 surface 에 soft 후 hard — occupancy_of 는 hard 를 보고(테두리 우선순위),
+        // is_hard_occupied 도 true.
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        reg.acquire(10, 1).unwrap();
+        assert!(reg.is_hard_occupied(10));
+        assert_eq!(
+            reg.occupancy_of(10).map(|o| o.tier),
+            Some(OccupancyTier::Hard)
+        );
     }
 
     #[test]
@@ -496,7 +733,7 @@ mod tests {
         let hub = StreamHub::new();
         let holder = hub.alloc_id();
         let rx = hub.register(holder);
-        let mut reg = AttachRegistry::new();
+        let mut reg = OccupancyRegistry::new();
         reg.set_notifier(hub);
         reg.acquire(10, holder).unwrap();
         assert_eq!(reg.force_detach(10), Some(holder));
