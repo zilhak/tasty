@@ -101,6 +101,27 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 > egui logical raw f32 관행(PANE_GAP 등과 동일)으로, typed-length(PhysicalPx/LogicalPx) 규칙
 > 밖이다(egui `Rect` 좌표계, tasty `Rect` 아님) — 소스에 주석 명시.
 
+## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
+
+디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의
+`--tasty-preset-leaf-*` 5종. 미선택 leaf 미리보기가 kind 아이콘·kind명 아래에 설정값을
+`키 값` 한 줄로 요약하는 색·치수. 색 2종은 신규 component 접근자로, 폰트/gap 3종은 기존
+semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소스 `gallery/preset_editor.jsx`
+(`LeafSummary`/`summaryRows`/`FIELDS`).
+
+| 디자인 토큰 | semantic 참조 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-preset-leaf-label-fg` | `text-muted` | `Theme::preset_leaf_label_fg()` = `text_muted()` | 요약 라벨(소문자 필드 키) 색. 신규 접근자 |
+| `--tasty-preset-leaf-value-fg` | `text-secondary` | `Theme::preset_leaf_value_fg()` = `text_secondary()` | 요약 값 색. 신규 접근자 |
+| `--tasty-preset-leaf-label-font-size` | `font-size-micro` (10) | `Theme::font_size_micro` | 라벨 폰트(mono). 기존 필드 재사용 |
+| `--tasty-preset-leaf-value-font-size` | `font-size-caption` (11) | `Theme::font_size_caption` | 값 폰트(mono). 기존 필드 재사용 |
+| `--tasty-preset-leaf-summary-gap` | `space-xs` (4) | `Theme::spacing_xs` | 행↔행·kind명↔요약·라벨↔값 gap. 기존 필드 재사용 |
+
+> **degrade 임계(preview 전용 egui 좌표, 비토큰 구조 상수)**: 요약 숨김 `96×72`
+> (`LEAF_SUMMARY_MIN_W`/`LEAF_SUMMARY_MIN_H`)·아이콘만 `46`(`LEAF_ICON_ONLY_MIN`, `SPLIT_ZONE_MIN`
+> 동류) 는 위 split-zone 과 동일하게 egui raw f32 관행이다. 앞자름(cwd/file)/뒤자름(startup/url)
+> 방향은 `PresetFieldSpec.input`(Dir/FilePath=앞자름)으로 판정 — kind 하드코딩 없음.
+
 ## 토큰이 아닌 raw 값 주의
 
 디자인 inline style 에는 토큰이 아닌 raw px 도 섞여 있다 (전사 시 그대로 옮기되 기록):

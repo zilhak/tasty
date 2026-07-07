@@ -62,6 +62,13 @@ const SPLIT_ZONE_EDGE: f32 = 0.3;
 /// split 존 최소 축 길이(px). 축이 이 값 미만이면 그 축 밴드는 소멸(degrade)해
 /// 좁은 leaf 에서도 중앙 선택이 항상 가능하다.
 const SPLIT_ZONE_MIN: f32 = 46.0;
+/// leaf 미리보기 값 요약 표시 임계(구조 상수 — 토큰 아님, `SPLIT_ZONE_MIN` 동류).
+/// 빈 leaf 박스가 이 너비/높이 미만이면 요약을 숨기고 아이콘 + kind명만 남긴다.
+const LEAF_SUMMARY_MIN_W: f32 = 96.0;
+const LEAF_SUMMARY_MIN_H: f32 = 72.0;
+/// leaf 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
+/// `SPLIT_ZONE_MIN` 과 같은 46px 구조 상수 계열.
+const LEAF_ICON_ONLY_MIN: f32 = 46.0;
 /// inline leaf form 최대 폭.
 const FORM_MAX_W: f32 = 240.0;
 /// inline leaf form 좌우 padding.
@@ -1705,28 +1712,7 @@ fn draw_surface_box(
     if selected {
         draw_leaf_form(ui, theme, rect, leaf, cx);
     } else {
-        let icon = theme.icon_glyph_size_md.value();
-        let label_h = theme.font_size_caption.value();
-        let total = icon + LEAF_GAP + label_h;
-        let icon_cy = rect.center().y - total * 0.5 + icon * 0.5;
-        paint_icon(
-            ui,
-            kind_icon(&leaf.kind),
-            egui::pos2(rect.center().x, icon_cy),
-            icon,
-            kind_accent(theme, &leaf.kind),
-        );
-        // painter_at 가 rect 로 clip 하므로 좁은 leaf 에서도 라벨이 넘치지 않는다.
-        ui.painter_at(rect).text(
-            egui::pos2(
-                rect.center().x,
-                icon_cy + icon * 0.5 + LEAF_GAP + label_h * 0.5,
-            ),
-            egui::Align2::CENTER_CENTER,
-            &leaf.label,
-            egui::FontId::monospace(label_h),
-            theme.text_secondary().to_egui(),
-        );
+        draw_leaf_preview(ui, theme, rect, leaf, cx.catalog);
     }
 
     // outline: 선택=2px accent, 편집 일반=1px separator.
@@ -1756,6 +1742,182 @@ fn draw_surface_box(
     // 선택 leaf: 우상단 remove 핸들.
     if selected {
         draw_handle_cluster(ui, theme, rect, leaf.id, cx);
+    }
+}
+
+/// 미선택 leaf 미리보기 — 가운데 kind 아이콘(accent) + kind명(mono, secondary) +
+/// 그 아래 값 요약 블록(중앙 정렬). 값 요약은 kind 필드 중 값이 비지 않은 것을
+/// `키 값` 한 줄로 그린다(라벨=`field.id` mono muted, 값 mono secondary).
+///
+/// degrade(빈 leaf 박스 크기 기준): 박스 <96×72 → 요약 숨김(아이콘 + kind명);
+/// 짧은 축 <46 → kind명도 숨김(아이콘만). 임계는 [`LEAF_SUMMARY_MIN_W`]/
+/// [`LEAF_SUMMARY_MIN_H`]/[`LEAF_ICON_ONLY_MIN`].
+fn draw_leaf_preview(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    leaf: &Leaf,
+    catalog: &KindCatalog,
+) {
+    let icon = theme.icon_glyph_size_md.value();
+    let label_h = theme.font_size_caption.value();
+    // summary-gap = 행↔행 gap, kind명↔요약 gap, 라벨↔값 gap 모두 space-xs.
+    let gap = theme.spacing_xs.value();
+    let row_h = theme.font_size_caption.value();
+
+    let short_axis = rect.width().min(rect.height());
+    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN;
+    let show_summary =
+        show_kind && rect.width() >= LEAF_SUMMARY_MIN_W && rect.height() >= LEAF_SUMMARY_MIN_H;
+
+    let rows = if show_summary {
+        leaf_summary_rows(leaf, catalog)
+    } else {
+        Vec::new()
+    };
+
+    // 아이콘 + kind명 + 요약 전체 높이를 계산해 세로 중앙 정렬.
+    let mut total = icon;
+    if show_kind {
+        total += LEAF_GAP + label_h;
+    }
+    if !rows.is_empty() {
+        total += gap + rows.len() as f32 * row_h + (rows.len() as f32 - 1.0) * gap;
+    }
+
+    let cx_x = rect.center().x;
+    let mut y = rect.center().y - total * 0.5;
+
+    paint_icon(
+        ui,
+        kind_icon(&leaf.kind),
+        egui::pos2(cx_x, y + icon * 0.5),
+        icon,
+        kind_accent(theme, &leaf.kind),
+    );
+    y += icon;
+
+    if show_kind {
+        y += LEAF_GAP;
+        // painter_at 가 rect 로 clip 하므로 좁은 leaf 에서도 라벨이 넘치지 않는다.
+        ui.painter_at(rect).text(
+            egui::pos2(cx_x, y + label_h * 0.5),
+            egui::Align2::CENTER_CENTER,
+            &leaf.label,
+            egui::FontId::monospace(label_h),
+            theme.text_secondary().to_egui(),
+        );
+        y += label_h;
+    }
+
+    if !rows.is_empty() {
+        y += gap;
+        let label_font = egui::FontId::monospace(theme.font_size_micro.value());
+        let value_font = egui::FontId::monospace(row_h);
+        let inner_w = (rect.width() - gap * 2.0).max(0.0);
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
+                y += gap;
+            }
+            let row_cy = y + row_h * 0.5;
+            let label_w = text_width(ui, &row.label, label_font.clone());
+            let avail = (inner_w - label_w - gap).max(0.0);
+            let value = elide_to_width(ui, &row.value, value_font.clone(), avail, row.front_elide);
+            let value_w = text_width(ui, &value, value_font.clone());
+            let line_w = label_w + gap + value_w;
+            let start_x = cx_x - line_w * 0.5;
+            let p = ui.painter_at(rect);
+            p.text(
+                egui::pos2(start_x, row_cy),
+                egui::Align2::LEFT_CENTER,
+                &row.label,
+                label_font.clone(),
+                theme.preset_leaf_label_fg().to_egui(),
+            );
+            p.text(
+                egui::pos2(start_x + label_w + gap, row_cy),
+                egui::Align2::LEFT_CENTER,
+                &value,
+                value_font.clone(),
+                theme.preset_leaf_value_fg().to_egui(),
+            );
+            y += row_h;
+        }
+    }
+}
+
+/// leaf 미리보기 값 요약의 한 행 — 라벨(소문자 필드 키) + 값 + 앞자름 여부.
+#[derive(Clone, Debug, PartialEq)]
+struct LeafSummaryRow {
+    label: String,
+    value: String,
+    /// path-like(Dir/FilePath) 필드는 앞자름(경로 꼬리 유지), 그 외는 뒤자름.
+    front_elide: bool,
+}
+
+/// 미선택 leaf 미리보기에 표시할 값 요약 행 목록(순수 함수 — 렌더 무관, 테스트 대상).
+/// catalog 의 kind 필드를 등록 순서대로 순회하며 값이 비지 않은(공백 제외) 필드만 남긴다.
+/// 라벨은 편집 폼의 번역 헤더([`field_label_text`])가 아니라 `field.id`(cwd/startup/
+/// file/url) 소문자 키다. kind 하드코딩 없이 [`KindCatalog::fields`] 에 의존하므로
+/// plugin kind 도 자체 필드 선언대로 요약된다.
+fn leaf_summary_rows(leaf: &Leaf, catalog: &KindCatalog) -> Vec<LeafSummaryRow> {
+    catalog
+        .fields(&leaf.kind)
+        .iter()
+        .filter_map(|f| {
+            let value = field_value(leaf, &f.target);
+            if value.trim().is_empty() {
+                return None;
+            }
+            let front_elide = matches!(f.input, PresetFieldInput::Dir | PresetFieldInput::FilePath);
+            Some(LeafSummaryRow {
+                label: f.id.clone(),
+                value,
+                front_elide,
+            })
+        })
+        .collect()
+}
+
+/// 한 줄 ellipsis. `front=true` 면 선두를 잘라 앞에 `…`(경로 꼬리 유지), false 면
+/// 말미를 잘라 뒤에 `…`. egui painter clip 은 뒤자름만 되고 앞자름은 불가하므로
+/// (CSS `direction: rtl` 트릭 없음) FontId 로 폭을 측정해 직접 글자를 잘라낸다.
+fn elide_to_width(
+    ui: &egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    max_w: f32,
+    front: bool,
+) -> String {
+    if max_w <= 0.0 {
+        return String::new();
+    }
+    if text_width(ui, text, font.clone()) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if front {
+        for start in 1..chars.len() {
+            let candidate: String = std::iter::once('…')
+                .chain(chars[start..].iter().copied())
+                .collect();
+            if text_width(ui, &candidate, font.clone()) <= max_w {
+                return candidate;
+            }
+        }
+        "…".to_string()
+    } else {
+        for end in (1..chars.len()).rev() {
+            let candidate: String = chars[..end]
+                .iter()
+                .copied()
+                .chain(std::iter::once('…'))
+                .collect();
+            if text_width(ui, &candidate, font.clone()) <= max_w {
+                return candidate;
+            }
+        }
+        "…".to_string()
     }
 }
 
@@ -3376,5 +3538,86 @@ mod tests {
         let mut after = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut after);
         assert!(after.contains(&leaf_id));
+    }
+
+    /// leaf 를 직접 만드는 테스트 헬퍼(요약 대상 선정 검증용).
+    fn leaf_of(kind: &str, cwd: Option<&str>, startup: Option<&str>) -> Leaf {
+        Leaf {
+            id: 1,
+            kind: kind.into(),
+            label: up(kind),
+            cwd: cwd.map(str::to_string),
+            startup: startup.map(str::to_string),
+            params: serde_json::Value::Null,
+        }
+    }
+
+    /// 터미널 leaf 요약은 값이 채워진 필드만 `field.id` 라벨로 산출한다 —
+    /// cwd 만 채우고 startup 을 비우면 startup 행이 빠진다.
+    #[test]
+    fn summary_rows_include_only_nonempty_fields_with_id_labels() {
+        let leaf = leaf_of("terminal", Some("/x"), None);
+        let rows = leaf_summary_rows(&leaf, &tc());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "cwd"); // field.id, 편집 폼 헤더 아님
+        assert_eq!(rows[0].value, "/x");
+        // cwd 는 path-like(Dir) → 앞자름 대상.
+        assert!(rows[0].front_elide);
+    }
+
+    /// cwd·startup 둘 다 채우면 등록 순서대로 두 행, startup 은 뒤자름(command).
+    #[test]
+    fn summary_rows_keep_field_order_and_elide_direction() {
+        let leaf = leaf_of("terminal", Some("/work/dir"), Some("cargo run"));
+        let rows = leaf_summary_rows(&leaf, &tc());
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].label.as_str(), rows[0].front_elide), ("cwd", true));
+        assert_eq!(
+            (rows[1].label.as_str(), rows[1].front_elide),
+            ("startup", false) // Text 입력 → 뒤자름
+        );
+    }
+
+    /// 공백만 있는 값은 행에서 제외한다(placeholder 표시 안 함).
+    #[test]
+    fn summary_rows_drop_blank_values() {
+        let leaf = leaf_of("terminal", Some("   "), Some(""));
+        let rows = leaf_summary_rows(&leaf, &tc());
+        assert!(rows.is_empty());
+    }
+
+    /// markdown leaf 의 params.file 은 `file` 라벨 + FilePath 앞자름으로 요약된다.
+    #[test]
+    fn summary_rows_read_params_file_as_front_elide() {
+        let leaf = Leaf {
+            id: 1,
+            kind: "markdown".into(),
+            label: "Markdown".into(),
+            cwd: None,
+            startup: None,
+            params: serde_json::json!({ "file": "/a/b/readme.md" }),
+        };
+        let rows = leaf_summary_rows(&leaf, &tc());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "file");
+        assert_eq!(rows[0].value, "/a/b/readme.md");
+        assert!(rows[0].front_elide); // FilePath → 앞자름
+    }
+
+    /// html leaf 의 params.url 은 `url` 라벨 + 뒤자름(Url 입력)으로 요약된다.
+    #[test]
+    fn summary_rows_read_params_url_as_end_elide() {
+        let leaf = Leaf {
+            id: 1,
+            kind: "html".into(),
+            label: "Html".into(),
+            cwd: None,
+            startup: None,
+            params: serde_json::json!({ "url": "https://example.com/path" }),
+        };
+        let rows = leaf_summary_rows(&leaf, &tc());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "url");
+        assert!(!rows[0].front_elide); // Url → 뒤자름
     }
 }

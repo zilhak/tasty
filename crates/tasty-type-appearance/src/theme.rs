@@ -1318,6 +1318,20 @@ impl Theme {
             .with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
     }
 
+    /// 프리셋 편집기 leaf 미리보기 값 요약의 라벨(소문자 필드 키) 색. design
+    /// `--tasty-preset-leaf-label-fg` → `text-muted`.
+    #[inline]
+    pub fn preset_leaf_label_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// 프리셋 편집기 leaf 미리보기 값 요약의 값 색. design
+    /// `--tasty-preset-leaf-value-fg` → `text-secondary`.
+    #[inline]
+    pub fn preset_leaf_value_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
     // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──
     /// 타이틀바 배경 (active/focused). `--tasty-titlebar-bg` → `bg-app`.
     #[inline]

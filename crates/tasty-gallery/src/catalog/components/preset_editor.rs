@@ -10,7 +10,7 @@
 //! 3종 구조 레벨을 서로 다른 시각 weight 로 구분(디자인 changelog):
 //!  - Pane split (상위 레이아웃) → 테두리 카드 + **5px bg-app gap** (무거운 divider).
 //!  - Surface split (하위 레이아웃) → **1px border-default hairline** (가벼운 divider).
-//!  - Surface leaf → kind 아이콘 + 표시명(가운데, mono). 내용은 렌더 안 함(구조만).
+//!  - Surface leaf → kind 아이콘 + 표시명 + 값 요약(`키 값`, 가운데, mono). 좁으면 degrade.
 //!  - Mini tab strip → 20px, bg-sidebar. 활성 = bg-panel + 2px accent 하단 bar + kind 아이콘.
 
 use tasty_type_appearance::theme::Theme;
@@ -53,6 +53,12 @@ const CLOSE_MARGIN: f32 = 1.0;
 const CLOSE_TAB_PAD: f32 = 3.0;
 /// 경계 split 존 밴드 폭 비율(변 기준 바깥 30%).
 const SPLIT_ZONE_EDGE: f32 = 0.3;
+/// leaf 값 요약 표시 임계(본체 `demo_layout.rs` 와 동일 구조 상수). 빈 leaf 박스가
+/// 이 너비/높이 미만이면 요약을 숨기고 아이콘 + kind명만 남긴다.
+const LEAF_SUMMARY_MIN_W: f32 = 96.0;
+const LEAF_SUMMARY_MIN_H: f32 = 72.0;
+/// 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
+const LEAF_ICON_ONLY_MIN: f32 = 46.0;
 
 // ── 정적 preview 모델 (디자인 build* 트리 전사) ──────────────────────
 
@@ -92,9 +98,24 @@ impl Kind {
     }
 }
 
+/// leaf 값 요약의 한 행 — 라벨(소문자 필드 키) + 값 + 앞자름 여부(본체 `LeafSummaryRow`
+/// 전사). path-like(cwd/file) = 앞자름(경로 꼬리 유지), command/url(startup/url) = 뒤자름.
+#[derive(Clone)]
+struct SummaryCell {
+    label: &'static str,
+    value: &'static str,
+    front_elide: bool,
+}
+
+/// surface leaf — kind + 값 요약(비지 않은 필드 행). 요약이 비면 아이콘 + kind명만.
+struct DemoLeaf {
+    kind: Kind,
+    summary: Vec<SummaryCell>,
+}
+
 /// 하위 레이아웃(surface split) 트리.
 enum Surf {
-    Leaf(Kind),
+    Leaf(DemoLeaf),
     Split {
         row: bool,
         ratio: f32,
@@ -129,7 +150,17 @@ enum Scope {
 }
 
 fn leaf(k: Kind) -> Surf {
-    Surf::Leaf(k)
+    Surf::Leaf(DemoLeaf {
+        kind: k,
+        summary: Vec::new(),
+    })
+}
+fn cell(label: &'static str, value: &'static str, front_elide: bool) -> SummaryCell {
+    SummaryCell {
+        label,
+        value,
+        front_elide,
+    }
 }
 fn ssplit(row: bool, ratio: f32, a: Surf, b: Surf) -> Surf {
     Surf::Split {
@@ -248,7 +279,7 @@ fn split_rects(
 /// 하위 레이아웃(surface split). Leaf = kind 박스, Split = 1px hairline 으로 분할.
 fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
     match node {
-        Surf::Leaf(k) => draw_surface_box(ui, theme, rect, *k),
+        Surf::Leaf(l) => draw_surface_box(ui, theme, rect, l),
         Surf::Split {
             row,
             ratio,
@@ -264,32 +295,132 @@ fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
     }
 }
 
-/// surface leaf — bg-app fill, 가운데 kind 아이콘(accent) + 표시명(mono, secondary).
-fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind: Kind) {
+/// surface leaf — bg-app fill, 가운데 kind 아이콘(accent) + 표시명(mono, secondary) +
+/// 값 요약(중앙 정렬). 본체 `demo_layout.rs::draw_leaf_preview` 와 동형: 값이 채워진
+/// 필드를 `키 값` 한 줄로 그리고, 박스 <96×72 → 요약 숨김, 짧은 축 <46 → kind명도 숨김.
+fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &DemoLeaf) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());
 
     let icon = theme.icon_glyph_size_md.value();
     let label_h = theme.font_size_caption.value();
-    let total = icon + LEAF_GAP + label_h;
-    let icon_cy = rect.center().y - total * 0.5 + icon * 0.5;
+    // summary-gap = 행↔행, kind명↔요약, 라벨↔값 gap 모두 space-xs.
+    let gap = theme.spacing_xs.value();
+    let row_h = theme.font_size_caption.value();
+
+    let short_axis = rect.width().min(rect.height());
+    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN;
+    let show_summary =
+        show_kind && rect.width() >= LEAF_SUMMARY_MIN_W && rect.height() >= LEAF_SUMMARY_MIN_H;
+    let rows: &[SummaryCell] = if show_summary { &leaf.summary } else { &[] };
+
+    let mut total = icon;
+    if show_kind {
+        total += LEAF_GAP + label_h;
+    }
+    if !rows.is_empty() {
+        total += gap + rows.len() as f32 * row_h + (rows.len() as f32 - 1.0) * gap;
+    }
+
+    let cx_x = rect.center().x;
+    let mut y = rect.center().y - total * 0.5;
+
     paint_glyph(
         ui,
-        kind.icon(),
-        egui::pos2(rect.center().x, icon_cy),
+        leaf.kind.icon(),
+        egui::pos2(cx_x, y + icon * 0.5),
         icon,
-        kind.accent(theme),
+        leaf.kind.accent(theme),
     );
-    ui.painter_at(rect).text(
-        egui::pos2(
-            rect.center().x,
-            icon_cy + icon * 0.5 + LEAF_GAP + label_h * 0.5,
-        ),
-        egui::Align2::CENTER_CENTER,
-        kind.label(),
-        egui::FontId::monospace(label_h),
-        theme.text_secondary().to_egui(),
-    );
+    y += icon;
+
+    if show_kind {
+        y += LEAF_GAP;
+        ui.painter_at(rect).text(
+            egui::pos2(cx_x, y + label_h * 0.5),
+            egui::Align2::CENTER_CENTER,
+            leaf.kind.label(),
+            egui::FontId::monospace(label_h),
+            theme.text_secondary().to_egui(),
+        );
+        y += label_h;
+    }
+
+    if !rows.is_empty() {
+        y += gap;
+        let label_font = egui::FontId::monospace(theme.font_size_micro.value());
+        let value_font = egui::FontId::monospace(row_h);
+        let inner_w = (rect.width() - gap * 2.0).max(0.0);
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
+                y += gap;
+            }
+            let row_cy = y + row_h * 0.5;
+            let label_w = text_width(ui, row.label, label_font.clone());
+            let avail = (inner_w - label_w - gap).max(0.0);
+            let value = elide_to_width(ui, row.value, value_font.clone(), avail, row.front_elide);
+            let value_w = text_width(ui, &value, value_font.clone());
+            let line_w = label_w + gap + value_w;
+            let start_x = cx_x - line_w * 0.5;
+            let p = ui.painter_at(rect);
+            p.text(
+                egui::pos2(start_x, row_cy),
+                egui::Align2::LEFT_CENTER,
+                row.label,
+                label_font.clone(),
+                theme.preset_leaf_label_fg().to_egui(),
+            );
+            p.text(
+                egui::pos2(start_x + label_w + gap, row_cy),
+                egui::Align2::LEFT_CENTER,
+                &value,
+                value_font.clone(),
+                theme.preset_leaf_value_fg().to_egui(),
+            );
+            y += row_h;
+        }
+    }
+}
+
+/// 한 줄 ellipsis(본체 `elide_to_width` 전사). `front=true` 면 선두를 잘라 앞에 `…`
+/// (경로 꼬리 유지), false 면 말미를 잘라 뒤에 `…`.
+fn elide_to_width(
+    ui: &egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    max_w: f32,
+    front: bool,
+) -> String {
+    if max_w <= 0.0 {
+        return String::new();
+    }
+    if text_width(ui, text, font.clone()) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if front {
+        for start in 1..chars.len() {
+            let candidate: String = std::iter::once('…')
+                .chain(chars[start..].iter().copied())
+                .collect();
+            if text_width(ui, &candidate, font.clone()) <= max_w {
+                return candidate;
+            }
+        }
+        "…".to_string()
+    } else {
+        for end in (1..chars.len()).rev() {
+            let candidate: String = chars[..end]
+                .iter()
+                .copied()
+                .chain(std::iter::once('…'))
+                .collect();
+            if text_width(ui, &candidate, font.clone()) <= max_w {
+                return candidate;
+            }
+        }
+        "…".to_string()
+    }
 }
 
 /// 상위 레이아웃(pane split). Leaf = pane 카드, Split = 5px bg-app gap 으로 분할.
@@ -406,7 +537,7 @@ fn tab_kind(t: &DemoTab) -> Kind {
     let mut n = &t.layout;
     loop {
         match n {
-            Surf::Leaf(k) => return *k,
+            Surf::Leaf(l) => return l.kind,
             Surf::Split { first, .. } => n = first,
         }
     }
@@ -433,10 +564,10 @@ fn draw_surf_edit(
     w: &mut EditWalk,
 ) {
     match node {
-        Surf::Leaf(k) => {
+        Surf::Leaf(l) => {
             let idx = w.next;
             w.next += 1;
-            draw_surface_box_edit(ui, theme, rect, *k, idx == w.selected);
+            draw_surface_box_edit(ui, theme, rect, l.kind, idx == w.selected);
         }
         Surf::Split {
             row,
@@ -694,6 +825,35 @@ fn scope_demo(
             egui::StrokeKind::Inside,
         );
         draw_scope_body(ui, theme, canvas.shrink(theme.spacing_sm.value()), scope);
+    });
+}
+
+/// leaf 값 요약 데모 한 칸 — 단일 leaf 박스를 지정 크기로 그려 요약/앞뒤자름/degrade
+/// 를 보인다. bg-app fill + 1px border-default 로 박스 경계를 드러낸다.
+fn leaf_summary_demo(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    caption: &str,
+    leaf: &DemoLeaf,
+    w: f32,
+    h: f32,
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+        ui.label(
+            egui::RichText::new(caption)
+                .monospace()
+                .size(theme.font_size_micro.value())
+                .color(theme.text_muted().to_egui()),
+        );
+        let (canvas, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+        draw_surface_box(ui, theme, canvas, leaf);
+        ui.painter_at(canvas).rect_stroke(
+            canvas,
+            0.0,
+            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+            egui::StrokeKind::Inside,
+        );
     });
 }
 
@@ -964,6 +1124,59 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
+    // leaf 값 요약 — 미선택 leaf 가 kind 아이콘 + kind명 아래에 설정값(`키 값`)을
+    // 요약한다. path-like(cwd/file)=앞자름(꼬리 유지), command/url=뒤자름. degrade:
+    // <96×72 → 요약 숨김, 짧은 축 <46 → 아이콘만.
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        let term = DemoLeaf {
+            kind: Kind::Terminal,
+            summary: vec![
+                cell("cwd", "~/workspace/etc/tasty/crates/fe-ccp", true),
+                cell("startup", "cargo watch -x run", false),
+            ],
+        };
+        leaf_summary_demo(
+            ui,
+            theme,
+            "terminal · cwd (front-elide) + startup",
+            &term,
+            176.0,
+            120.0,
+        );
+
+        let md = DemoLeaf {
+            kind: Kind::Markdown,
+            summary: vec![cell("file", "~/tasty/docs/design/README.md", true)],
+        };
+        leaf_summary_demo(
+            ui,
+            theme,
+            "markdown · file (front-elide)",
+            &md,
+            150.0,
+            104.0,
+        );
+
+        let degraded = DemoLeaf {
+            kind: Kind::Terminal,
+            summary: vec![cell("cwd", "~/tasty", true)],
+        };
+        leaf_summary_demo(
+            ui,
+            theme,
+            "degrade <96×72 · summary hidden",
+            &degraded,
+            90.0,
+            64.0,
+        );
+
+        let icon_only = DemoLeaf {
+            kind: Kind::Terminal,
+            summary: vec![cell("cwd", "~/tasty", true)],
+        };
+        leaf_summary_demo(ui, theme, "degrade <46 · icon only", &icon_only, 40.0, 40.0);
+    });
+
     // 편집 상태(Phase 2 / TODO 09): selected surface 2px accent outline + handle
     // cluster + inline leaf form. 선택 = Terminal leaf(startup 필드 노출).
     let edit_tab = build_tab();
@@ -1005,6 +1218,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("tab strip", "20px mini row · 2px accent bar"),
             ("surface split", "1px hairline (lower layout)"),
             ("leaf", "kind icon + label, centered (mono)"),
+            ("leaf summary", "field values · key value (mono, centered)"),
+            ("leaf degrade", "<96×72 hides summary · <46 icon only"),
             ("interactive", "mini tabs switch live (in app)"),
             ("edit: selected", "2px accent outline + remove handle"),
             ("edit: split zone", "boundary 30% band + 2px divider"),
@@ -1034,6 +1249,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "zone 2px divider (accent 55%)",
                 theme.preset_split_zone_border().to_egui(),
             ),
+            TokenChip::new(
+                "preset-leaf-label",
+                "summary field key (text-muted)",
+                theme.preset_leaf_label_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "preset-leaf-value",
+                "summary field value (text-secondary)",
+                theme.preset_leaf_value_fg().to_egui(),
+            ),
         ],
     );
 
@@ -1041,8 +1266,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Two split levels read by weight — a heavy bg-app gap + border for pane (upper) splits, a \
-         1px hairline for surface (lower) splits. A leaf shows only its kind (Terminal / Markdown / \
-         Editor / Log), never its contents. The Edit-mode stage shows the WYSIWYG state: every \
+         1px hairline for surface (lower) splits. A leaf shows its kind (Terminal / Markdown / \
+         Editor / Log) plus a value summary of its configured fields (key value, mono, centered): \
+         path-like keys (cwd / file) front-elide to keep the tail, command / url keys end-elide. It \
+         degrades by box size — under 96×72 the summary is hidden, under 46 on the short axis only \
+         the icon remains. The Edit-mode stage shows the WYSIWYG state: every \
          surface gets a faint 1px separator outline, the selected surface gets a 2px accent inset \
          outline + a single remove handle, and its center label is replaced by the inline leaf form \
          (kind / cwd / startup — startup only when kind=terminal). The Direct-manipulation stage \
@@ -1056,7 +1284,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::dont(
         ui,
         theme,
-        "Don't render surface contents. A leaf shows only its kind — the preview is about \
-         structure, not data.",
+        "Don't render surface contents (live output). A leaf shows its kind plus a summary of its \
+         configured fields (cwd / startup / file / url) — never runtime data. The preview is about \
+         structure and configuration, not contents.",
     );
 }
