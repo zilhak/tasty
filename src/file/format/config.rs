@@ -281,7 +281,7 @@ mod tests {
             [[detector]]
             id = "pdf"
             display_name_i18n_key = "format.pdf"
-            icon = "📄"
+            icon = "file"
 
             [[detector.rule]]
             kind = "extension"

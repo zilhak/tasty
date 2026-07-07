@@ -780,7 +780,7 @@ fn addr_field(ui: &mut egui::Ui, theme: &Theme, width: f32, path: &str, editing:
     let pad = theme.spacing_sm.value();
     // 선두 파일 글리프 — 본체 플러그인은 tasty-icons FILE 베이크 벡터를 caption 크기·
     // text_muted 로 그린다. specimen 도 같은 canonical FILE 을 egui_extras 글리프로 미러
-    // (raw 유니코드 📄 제거).
+    // (raw 유니코드 file 이모지 제거).
     let icon_sz = theme.font_size_caption.value();
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(rect.left() + pad, rect.center().y - icon_sz * 0.5),

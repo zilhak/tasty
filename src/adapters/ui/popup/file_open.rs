@@ -113,7 +113,7 @@ pub fn draw_markdown_open_view(
         }
 
         // 파일 탐색 버튼 — 갤러리 IconButton(Ghost/Sm) + icons::FOLDER_OPEN(SVG).
-        // raw `📂`(U+1F4C2)는 UI 프로포셔널 폰트에 글리프가 없어 tofu 로 렌더되던 것을
+        // raw folder 이모지(U+1F4C2)는 UI 프로포셔널 폰트에 글리프가 없어 tofu 로 렌더되던 것을
         // 고친다(gallery parity, banner.rs 선례). 색은 IconButton 의 해소색(ghost)을 따른다.
         // TextEdit 은 위에서 `available_width() - 30.0` 로 폭을 예약했고, IconButton Sm
         // side(item_height_tab=24)는 그 reserve 안에 들어가 한 줄에 배치된다.

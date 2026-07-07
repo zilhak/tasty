@@ -1,0 +1,130 @@
+//! 소스 이모지 재유입 가드 — 코드/매니페스트에 픽토그래픽 이모지가 다시 박히면 fail 한다.
+//!
+//! 배경: 플러그인 매니페스트(`tasty-plugin.toml`)의 `icon` 필드에 오프-디자인 이모지
+//! (📝🌐🖼️ 등)가 손으로 박혀 있었다. 프로젝트 원칙은 "아이콘은 디자인 폴더
+//! (`icons.json`)의 SVG 라인아이콘에서 추출해 쓴다" 이므로 이모지 플레이스홀더는
+//! 위반이다. 이 가드는 정리 결과를 유지한다 — 누가 `.rs`/`tasty-plugin.toml` 에 이모지를
+//! 다시 넣으면 `cargo test --workspace`(`.github/workflows/test.yml`)에서 fail 하고
+//! `파일:라인 + 코드포인트(U+XXXX) + 문자` 를 출력한다. 선례: `tests/design_token_adherence.rs`.
+//!
+//! **금지 범위(false positive 0 으로 좁힘)**: 픽토그래픽 이모지 대부분
+//! (`U+1F000..=1FAFF`) + regional indicator=국기(`U+1F1E6..=1F1FF`). 이 범위가 소스의
+//! 진짜 이모지(📝🌐🖼️😀🦀👨👩👧👦🇰🇷👍📁📂📄)를 전부 잡고, `⚠`(26A0)·`→`(2192)·
+//! `▶`(25B6)·`⌘`(2318)·`✓`(2713)·`▦`(25A6) 같은 **의도적 텍스트 기호**는 안 잡는다.
+//!
+//! **allowlist(파일 단위)**: 이모지가 테스트 입력 자체인 소수 파일만 스캔에서 제외한다.
+
+use std::path::{Path, PathBuf};
+
+/// 스캔에서 제외할 파일(repo-relative) — 이모지가 테스트의 본질이라 제거하면 검증이 무의미해지는 곳.
+/// - `tasty-memory/src/scope.rs`: "이모지 키 거부" 단위테스트(😀 가 입력).
+/// - `tasty-terminal/src/disk_scrollback.rs`: 터미널 셀 이모지 렌더 테스트(🦀).
+/// - `tasty-terminal/tests/scrollback_capture.rs`: 이모지 폭/ZWJ/flag/skin-tone 캡처 테스트.
+const ALLOWLIST_FILES: &[&str] = &[
+    "crates/tasty-memory/src/scope.rs",
+    "crates/tasty-terminal/src/disk_scrollback.rs",
+    "crates/tasty-terminal/tests/scrollback_capture.rs",
+];
+
+/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성.
+const PRUNE_DIRS: &[&str] = &[
+    "target",
+    "dist",
+    ".worktree",
+    ".git",
+    "node_modules",
+    // gitignored 로컬 작업 폴더 — 플러그인 매니페스트의 스테이징 사본(빌드 산출물성)이 있어 소스가 아님.
+    ".claude-workspace",
+];
+
+/// 금지 코드포인트인지 — 픽토그래픽 이모지(1F000..1FAFF) + regional indicator(1F1E6..1F1FF).
+fn is_forbidden_emoji(cp: u32) -> bool {
+    (0x1F000..=0x1FAFF).contains(&cp) || (0x1F1E6..=0x1F1FF).contains(&cp)
+}
+
+/// 스캔 대상 파일인지 — repo-relative 경로 기준.
+/// - 파일명이 `tasty-plugin.toml` 이면 대상(어디에 있든).
+/// - `.rs` 이면서 `src/` · `crates/*/src/` · `crates/*/tests/` 아래면 대상.
+fn is_scan_target(rel: &str) -> bool {
+    if rel.rsplit('/').next() == Some("tasty-plugin.toml") {
+        return true;
+    }
+    if !rel.ends_with(".rs") {
+        return false;
+    }
+    if rel.starts_with("src/") {
+        return true;
+    }
+    // crates/<name>/src/... 또는 crates/<name>/tests/...
+    if let Some(rest) = rel.strip_prefix("crates/") {
+        let mut parts = rest.splitn(2, '/');
+        let _name = parts.next();
+        if let Some(after) = parts.next() {
+            return after.starts_with("src/") || after.starts_with("tests/");
+        }
+    }
+    false
+}
+
+/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. PRUNE_DIRS 는 가지치기.
+fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
+    if path.is_file() {
+        let rel = rel_of(path, root);
+        if is_scan_target(&rel) {
+            out.push(path.to_path_buf());
+        }
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if PRUNE_DIRS.contains(&name) {
+                continue;
+            }
+        }
+        gather(&p, root, out);
+    }
+}
+
+fn rel_of(file: &Path, root: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+#[test]
+fn no_emoji_in_source() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    gather(root, root, &mut files);
+
+    let mut violations = Vec::new();
+    for file in files {
+        let rel = rel_of(&file, root);
+        if ALLOWLIST_FILES.contains(&rel.as_str()) {
+            continue;
+        }
+        let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
+        for (i, line) in contents.lines().enumerate() {
+            for ch in line.chars() {
+                let cp = ch as u32;
+                if is_forbidden_emoji(cp) {
+                    violations.push(format!("  {}:{} — U+{:04X} `{}`", rel, i + 1, cp, ch));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "소스(.rs / tasty-plugin.toml)에 픽토그래픽 이모지(U+1F000–1FAFF / 국기 U+1F1E6–1F1FF)가 \
+         재유입됨 — 아이콘은 디자인 SVG 라인아이콘(`icons::*`)에서 쓰고, 매니페스트 icon 이모지· \
+         주석 이모지는 제거할 것. 테스트 입력이 본질인 파일은 ALLOWLIST_FILES 에 추가:\n{}",
+        violations.join("\n")
+    );
+}

@@ -5690,7 +5690,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -5701,7 +5701,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5736,7 +5736,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "egui",
@@ -5756,7 +5756,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "egui",

@@ -177,7 +177,7 @@ fn accepts_full_manifest() {
         [[surface_kinds]]
         kind = "explorer"
         display_name_i18n_key = "surface.kind.explorer"
-        icon = "📁"
+        icon = "folder"
 
         [[contributes.commands]]
         id = "explorer.refresh"

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.13"
+version = "0.1.14"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -24,7 +24,6 @@ command = "tasty-plugin-markdown"
 [[surface_kinds]]
 kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
-icon = "📝"
 rendering = "egui-mesh"
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
