@@ -11,7 +11,11 @@ use serde_json::json;
 const ITEM_HEIGHT: f32 = 24.0;
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
 const HIDDEN_KINDS: &[&str] = &["empty"];
-/// 빌트인 우선 표시 순서. 이 목록에 없는 kind는 알파벳순으로 뒤따른다.
+/// 변환 메뉴 상단 우선 표시 순서(bundled UX 정책). 이 목록에 없는 kind 는 알파벳순으로
+/// 뒤따른다. 이건 "host 가 kind 의 *동작*을 안다"(=제거 대상 하드코딩)가 아니라 bundled
+/// kind 의 *정렬 선호*라는 별도 층위의 host UX 정책이므로 registry 로 데이터화하지 않고
+/// 본체에 정책으로 남긴다(generic-kind 마이그레이션 결정). plugin kind 는 여기 없으면
+/// 알파벳순으로 자연 편입된다.
 const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 /// `default_size` 산정 시 가정하는 항목 수. registry 가 비어 있을 수 있는 등록
 /// 시점에만 쓰이고, sizer 가 매 프레임 실제 등록된 kind 수로 재계산한다.
@@ -492,19 +496,6 @@ pub fn apply_convert_action(
                 .from_user_menu("convert/markdown"),
             );
         }
-        ConvertAction::Image => {
-            state.dispatch_intent(
-                crate::intent::Intent::ConvertSurface {
-                    surface_id,
-                    target: crate::intent::ConvertTarget::Kind {
-                        cwd: None,
-                        kind: "image".to_string(),
-                        params: json!({}),
-                    },
-                }
-                .from_user_menu("convert/image"),
-            );
-        }
         ConvertAction::Kind(kind) => {
             state.dispatch_intent(
                 crate::intent::Intent::ConvertSurface {
@@ -523,18 +514,23 @@ pub fn apply_convert_action(
 
 #[derive(Clone)]
 pub enum ConvertAction {
+    /// terminal 은 PTY spawn 이라 전용 `ConvertTarget::Terminal` 경로를 탄다(generic
+    /// Kind 로 수렴 불가 — host 책임의 PTY 생성).
     Terminal,
+    /// markdown 은 변환 시 파일 선택 picker(`markdown_open` popup)를 먼저 띄운다 —
+    /// 빈 params 로 바로 변환하는 generic Kind 와 동작이 다르다(파일 필수).
     Markdown,
-    Image,
-    /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind.
+    /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind. image 를 포함해
+    /// 파일 없이 빈 params 로 즉시 변환 가능한 모든 kind 가 이 경로로 수렴한다.
     Kind(String),
 }
 
 fn action_for_kind(kind: &str) -> ConvertAction {
+    // terminal/markdown 만 전용 경로(위 variant 주석 참조). image 를 비롯한 그 외 kind 는
+    // 전부 generic Kind — kind 이름 하드코딩 없이 빈 params 로 ConvertSurface 한다.
     match kind {
         "terminal" => ConvertAction::Terminal,
         "markdown" => ConvertAction::Markdown,
-        "image" => ConvertAction::Image,
         other => ConvertAction::Kind(other.to_string()),
     }
 }
