@@ -49,14 +49,25 @@
 //! 3. **mesh(기하) 채택은 delta 체인과 분리** — reflow frame 의 mesh 는 자기완결적 기하라
 //!    중간 frame 유실과 무관한데, 위 체인 가드가 mesh 까지 묶어 거부하면 리사이즈 중 seq
 //!    가 튈 때 최신 폭의 mesh 가 화면에 반영되지 못하고 옛 mesh 에 고정된다(우측 잘림).
-//!    따라서 seq 불연속이어도 이 frame 의 mesh 가 참조하는 텍스처가 **모두 이미 상주**하면
-//!    ([`all_textures_live`]) mesh 만 채택한다(delta 는 여전히 미적용). 채택 시 `last_seq`
+//!    따라서 seq 불연속이어도 이 frame 의 mesh 가 참조하는 텍스처가 **모두 이미 상주**하고
+//!    ([`all_textures_live`]) 이 frame 의 delta 가 상주 텍스처 **크기 안에 들어갈** 때만
+//!    ([`deltas_fit_live`]) mesh 를 채택한다(delta 는 여전히 미적용). 채택 시 `last_seq`
 //!    를 갱신하므로 다음 frame 이 자연 연속이 되어 delta 게이트도 스스로 수렴한다. 참조가
-//!    하나라도 미상주면(image plugin 신규 비트맵 등) mesh 도 보류하고 full 을 재요청한다.
+//!    하나라도 미상주면(image plugin 신규 비트맵 등), 또는 delta 가 상주 크기를 벗어나면
+//!    (아틀라스 리사이즈 full frame 유실 — id 는 상주하나 크기가 어긋나 mesh UV 가 stale-
+//!    크기 텍스처와 불일치하고, 채택 시 last_seq 전진으로 delta 게이트가 재개방돼 다음 부분
+//!    delta 가 stale 텍스처에 오버런 write → 크래시) mesh 를 보류하고 full 을 재요청한다.
+//!
+//! 4. **부분 delta 경계 검증(크래시 방어선)** — egui-wgpu `update_texture` 는 partial delta
+//!    에서 리사이즈하지 않으므로(상류 계약), 아틀라스 리사이즈 frame 이 유실된 채 커진
+//!    좌표의 부분 delta 가 오면 `queue.write_texture` 가 옛-크기 텍스처를 오버런한다. delta
+//!    적용 전 [`deltas_fit_live`] 로 경계를 확인해 벗어나면 어떤 delta 도 적용하지 않고
+//!    (`last_seq` 도 전진 없이) full 을 재요청한다 — 회복이 full frame 으로 수렴한다.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 
+use egui::epaint::textures::TexturesDelta;
 use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
@@ -87,9 +98,12 @@ pub(super) struct EguiMeshRenderTarget {
     /// 마지막으로 **수락한** frame 의 frame_seq (plugin 송신 단조 시퀀스). 다음 frame 은
     /// `full_textures` 이거나 `frame_seq == last_seq + 1` 일 때만 수락한다(체인 검증).
     last_seq: u64,
-    /// 이 Renderer 에 업로드돼 있는 TextureId 집합. full frame 수락 시 full 에 미포함된
-    /// stale 텍스처를 free 하기 위해 추적한다.
-    live_textures: HashSet<TextureId>,
+    /// 이 Renderer 에 업로드돼 있는 텍스처 id → 현재 크기([width, height]). full frame
+    /// 수락 시 full 에 미포함된 stale 텍스처를 free 하기 위해, 그리고 **부분 delta 적용
+    /// 전 대상 텍스처 경계를 검증**하기 위해 추적한다. 크기는 full(pos=None) delta 가
+    /// 텍스처를 (재)생성할 때 확정되고, 부분(pos=Some) delta 는 크기를 바꾸지 않는다
+    /// (egui-wgpu `update_texture` 는 partial 에서 리사이즈하지 않음 — 상류 계약).
+    live_textures: HashMap<TextureId, [usize; 2]>,
     /// 체인 단절로 full 재전송을 요청했고 아직 full frame 을 못 받은 상태.
     /// **재요청 자체는 수락될 때까지 매 tick 재무장**한다 — 요청한 full frame 이
     /// latest-wins 버퍼에서 유실돼도 복구가 수렴하도록(single-shot deadlock 제거). 이
@@ -112,7 +126,7 @@ impl EguiMeshRenderTarget {
             ppp: 1.0,
             generation: 0,
             last_seq: 0,
-            live_textures: HashSet::new(),
+            live_textures: HashMap::new(),
             awaiting_full: false,
             has_content: false,
             translated: Vec::new(),
@@ -148,10 +162,34 @@ fn chain_accepts(has_content: bool, last_seq: u64, frame_seq: u64, full_textures
 /// 렌더에 필요한 텍스처가 전부 업로드돼 있으므로 미등록 참조로 깨지지 않는다. markdown
 /// 은 폰트 atlas(`Managed(0)`)만 쓰고 bootstrap full frame 에서 이미 상주하므로 항상 통과.
 /// `Callback` primitive 는 decode_paint 가 제거하므로 정상 경로엔 없다(방어적으로 무시).
-fn all_textures_live(prims: &[ClippedPrimitive], live: &HashSet<TextureId>) -> bool {
+fn all_textures_live(prims: &[ClippedPrimitive], live: &HashMap<TextureId, [usize; 2]>) -> bool {
     prims.iter().all(|p| match &p.primitive {
-        Primitive::Mesh(m) => live.contains(&m.texture_id),
+        Primitive::Mesh(m) => live.contains_key(&m.texture_id),
         Primitive::Callback(_) => true,
+    })
+}
+
+/// 이 `textures_delta` 의 모든 부분(pos=Some) set 이 현재 상주 텍스처 크기 안에 들어가는가.
+///
+/// egui-wgpu `Renderer::update_texture` 는 **partial delta 에서 리사이즈하지 않는다**
+/// (상류 계약, `egui-wgpu-0.31.1/src/renderer.rs:540`). 아틀라스 리사이즈(full) frame 이
+/// latest-wins 버퍼에서 유실되면, 그 뒤 부분 delta 가 커진 아틀라스 좌표(예: pos.y=57,
+/// 끝 72)를 담고 오는데 대상 텍스처는 아직 옛 크기(64)라 그대로 `queue.write_texture` 하면
+/// Y 오버런으로 **크래시**한다. 그 write 전에 여기서 경계를 검사해 벗어나면 `false` 를
+/// 반환하고, 호출부는 delta 를 적용하지 않고 full 재전송으로 떨어뜨린다.
+///
+/// - full(pos=None) delta 는 대상 텍스처를 (재)생성하므로 크기와 무관하게 항상 적합.
+/// - 부분 delta 인데 대상 텍스처가 미상주면 적용 불가(미등록 참조) → `false`.
+fn deltas_fit_live(delta: &TexturesDelta, live: &HashMap<TextureId, [usize; 2]>) -> bool {
+    delta.set.iter().all(|(id, d)| match d.pos {
+        None => true,
+        Some([px, py]) => {
+            let Some(&[tw, th]) = live.get(id) else {
+                return false;
+            };
+            let [dw, dh] = d.image.size();
+            px + dw <= tw && py + dh <= th
+        }
     })
 }
 
@@ -295,6 +333,15 @@ fn decode_mesh_into_target(
     }
 
     if chain_ok {
+        // 크래시 직접 차단(최소 방어선): 부분 delta 가 대상 텍스처 경계를 벗어나면
+        // (아틀라스 리사이즈 full frame 유실) egui-wgpu 가 리사이즈 없이 write 해
+        // Queue::write_texture Y 오버런으로 크래시한다. 적용 전에 검증해, 벗어나면 어떤
+        // delta 도 적용하지 않고(부분 적용으로 상태를 오염시키지 않는다) last_seq 도
+        // 전진시키지 않은 채 full 재전송을 요청한다.
+        if !deltas_fit_live(&decoded.textures_delta, &target.live_textures) {
+            return DecodeOutcome::NeedsFull;
+        }
+
         // 텍스처 delta 적용 (체인 연속 또는 full).
         // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
         // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
@@ -305,10 +352,16 @@ fn decode_mesh_into_target(
                 .iter()
                 .map(|(id, _)| *id)
                 .collect();
-            for stale in target.live_textures.difference(&full_ids) {
-                target.renderer.free_texture(stale);
+            let stale: Vec<TextureId> = target
+                .live_textures
+                .keys()
+                .filter(|id| !full_ids.contains(id))
+                .copied()
+                .collect();
+            for id in stale {
+                target.renderer.free_texture(&id);
+                target.live_textures.remove(&id);
             }
-            target.live_textures = full_ids;
         }
 
         // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
@@ -316,7 +369,17 @@ fn decode_mesh_into_target(
         // render 전에 풀어도 안전(set/free 는 서로소).
         for (id, delta) in &decoded.textures_delta.set {
             target.renderer.update_texture(device, queue, *id, delta);
-            target.live_textures.insert(*id);
+            // 크기 기록: full(pos=None) delta 는 텍스처를 (재)생성하며 새 크기를 확정한다.
+            // 부분(pos=Some) delta 는 크기를 바꾸지 않으므로(위 경계검증으로 기존 크기 안에
+            // 들어감이 보장됨) 기존 값을 유지한다.
+            if delta.pos.is_none() {
+                target.live_textures.insert(*id, delta.image.size());
+            } else {
+                target
+                    .live_textures
+                    .entry(*id)
+                    .or_insert_with(|| delta.image.size());
+            }
         }
         for id in &decoded.textures_delta.free {
             target.renderer.free_texture(id);
@@ -327,10 +390,19 @@ fn decode_mesh_into_target(
         // delta 를 적용하지 않는다. 첫 콘텐츠는 반드시 full 로 받아야 안전하므로(부트스트랩
         // 텍스처 상주 보장) 아직 콘텐츠가 없으면 채택하지 않는다. 참조 텍스처가 하나라도
         // 미상주면 mesh 도 보류하고 full 재전송을 요청한다.
-        if !target.has_content || !all_textures_live(&decoded.primitives, &target.live_textures) {
+        //
+        // 추가로, 이 frame 의 textures_delta 가 상주 텍스처 크기를 벗어나면(중간 리사이즈
+        // full frame 유실) 이 mesh 의 UV 는 커진 아틀라스 기준이라 stale-크기 텍스처와
+        // 어긋난다(스크램블). 그런 mesh 를 채택하면 last_seq 가 전진해 delta 게이트가
+        // 재개방되고, 다음 부분 delta 가 stale-크기 텍스처에 적용돼 오버런 크래시로 이어진다.
+        // 따라서 delta 경계 정합까지 만족할 때만 mesh 를 채택하고, 아니면 full 을 재요청한다.
+        if !target.has_content
+            || !all_textures_live(&decoded.primitives, &target.live_textures)
+            || !deltas_fit_live(&decoded.textures_delta, &target.live_textures)
+        {
             return DecodeOutcome::NeedsFull;
         }
-        // 참조가 전부 상주 — delta/live_textures 는 건드리지 않고 mesh 만 채택한다.
+        // 참조가 전부 상주 + delta 경계 정합 — delta/live_textures 는 건드리지 않고 mesh 만 채택.
     }
 
     target.primitives = decoded.primitives;
@@ -837,8 +909,8 @@ mod tests {
     fn all_textures_live_requires_every_ref_present() {
         let font = TextureId::Managed(0);
         let image = TextureId::Managed(7);
-        let mut live = HashSet::new();
-        live.insert(font);
+        let mut live: HashMap<TextureId, [usize; 2]> = HashMap::new();
+        live.insert(font, [1024, 64]);
 
         // 폰트 atlas 만 참조 — markdown 정상 케이스 → 상주하므로 채택 가능.
         let prims = vec![mesh_prim_tex(font), mesh_prim_tex(font)];
@@ -852,9 +924,125 @@ mod tests {
         assert!(all_textures_live(&[], &live));
 
         // image 도 상주하면 둘 다 참조해도 채택 가능.
-        live.insert(image);
+        live.insert(image, [16, 16]);
         let prims = vec![mesh_prim_tex(font), mesh_prim_tex(image)];
         assert!(all_textures_live(&prims, &live));
+    }
+
+    /// 크기 [w,h] 의 이미지를 담은 delta 를 만든다. pos=None → full, pos=Some → partial.
+    fn img_delta(pos: Option<[usize; 2]>, w: usize, h: usize) -> egui::epaint::ImageDelta {
+        let image = egui::epaint::ColorImage::new([w, h], Color32::WHITE);
+        egui::epaint::ImageDelta {
+            image: egui::epaint::ImageData::Color(std::sync::Arc::new(image)),
+            options: egui::epaint::textures::TextureOptions::LINEAR,
+            pos,
+        }
+    }
+
+    fn tex_delta(set: Vec<(TextureId, egui::epaint::ImageDelta)>) -> TexturesDelta {
+        TexturesDelta {
+            set,
+            free: Vec::new(),
+        }
+    }
+
+    /// 크래시 게이트: 부분(pos=Some) delta 가 대상 텍스처 경계를 벗어나면 `deltas_fit_live`
+    /// 는 false 를 반환한다. 이 검사가 `Queue::write_texture` Y 오버런 write 를 그 전에 막는다.
+    ///
+    /// 재현: 폰트 atlas Managed(0) 가 height=64 로 상주하는데, 아틀라스가 128 로 성장한
+    /// (리사이즈 full frame 유실) 뒤 부분 delta 가 pos.y=57 height=15 (→ 57..72) 로 온다.
+    /// 크래시 로그의 "Y 57..72 would overrun ... Y size 64" 와 정확히 일치.
+    #[test]
+    fn deltas_fit_live_rejects_partial_overrun() {
+        let font = TextureId::Managed(0);
+        let mut live: HashMap<TextureId, [usize; 2]> = HashMap::new();
+        live.insert(font, [1024, 64]);
+
+        // full(pos=None) delta 는 새 텍스처를 만들므로 크기 무관하게 적합 (128 성장 프레임).
+        assert!(deltas_fit_live(
+            &tex_delta(vec![(font, img_delta(None, 1024, 128))]),
+            &live
+        ));
+
+        // 경계 안 부분 delta (pos.y=40, height=15 → 55 <= 64) → 적합.
+        assert!(deltas_fit_live(
+            &tex_delta(vec![(font, img_delta(Some([0, 40]), 1024, 15))]),
+            &live
+        ));
+
+        // 정확히 경계까지 (pos.y=49, height=15 → 64 <= 64) → 적합.
+        assert!(deltas_fit_live(
+            &tex_delta(vec![(font, img_delta(Some([0, 49]), 1024, 15))]),
+            &live
+        ));
+
+        // 크래시 케이스: pos.y=57, height=15 → 72 > 64 → 오버런 → 부적합.
+        assert!(!deltas_fit_live(
+            &tex_delta(vec![(font, img_delta(Some([0, 57]), 1024, 15))]),
+            &live
+        ));
+
+        // x 축 오버런도 잡는다 (pos.x=1020, width=8 → 1028 > 1024).
+        assert!(!deltas_fit_live(
+            &tex_delta(vec![(font, img_delta(Some([1020, 0]), 8, 8))]),
+            &live
+        ));
+
+        // 부분 delta 인데 대상 텍스처 미상주 → 부적합(미등록 참조).
+        assert!(!deltas_fit_live(
+            &tex_delta(vec![(TextureId::Managed(9), img_delta(Some([0, 0]), 8, 8))]),
+            &live
+        ));
+
+        // delta 없는 순수 reflow frame → 적합(빈 set 은 공허 참).
+        assert!(deltas_fit_live(&tex_delta(vec![]), &live));
+    }
+
+    /// 회귀: "아틀라스 리사이즈 full frame 유실 → 오버런 부분 delta" 조합이 다시
+    /// 크래시로 이어지지 않음을 고정한다. host 합성 게이트의 두 방어선을 결정적으로 검증:
+    ///
+    /// 1. **체인 단절(seq 점프) frame** — mesh 채택 게이트는 참조 상주(`all_textures_live`)
+    ///    **와** delta 경계 정합(`deltas_fit_live`)을 함께 요구한다. 오버런 부분 delta 를
+    ///    담은 seq 점프 frame 은 후자에서 걸려 채택되지 않는다(스크램블+게이트 재개방 차단).
+    /// 2. **체인 연속(chain_ok) frame** — 부분 delta 가 경계를 벗어나면 어떤 delta 도
+    ///    적용하지 않는다(오버런 write 차단, 크래시 직접 방어선).
+    ///
+    /// 회복: 128 로 성장한 full frame 을 받으면 새 크기가 기록되고 이후 부분 delta 가 정상
+    /// 적용된다(경계 통과).
+    #[test]
+    fn resize_loss_then_overrun_partial_is_gated() {
+        let font = TextureId::Managed(0);
+
+        // 초기 상태: 폰트 atlas 64 로 상주(부트스트랩 full frame 적용 결과).
+        let mut live: HashMap<TextureId, [usize; 2]> = HashMap::new();
+        live.insert(font, [1024, 64]);
+
+        // 리사이즈 full frame(64→128)이 latest-wins 버퍼에서 유실됐다고 가정.
+        // 이제 도착하는 seq 점프 frame: 128-아틀라스 rows 를 참조하는 오버런 부분 delta.
+        let overrun = tex_delta(vec![(font, img_delta(Some([0, 57]), 1024, 15))]);
+        let prims = vec![mesh_prim_tex(font)];
+
+        // (1) 체인 단절 mesh 채택 게이트: 참조는 상주하지만 delta 경계가 어긋나므로 거부.
+        let refs_live = all_textures_live(&prims, &live);
+        let fits = deltas_fit_live(&overrun, &live);
+        assert!(refs_live, "폰트 atlas 는 id 로 상주");
+        assert!(!fits, "오버런 부분 delta 는 경계 검증에서 걸린다");
+        // 실제 decode 분기 조건: (refs_live && fits) 여야 mesh 채택 → 여기선 false → NeedsFull.
+        assert!(
+            !(refs_live && fits),
+            "seq 점프 오버런 frame 은 채택되지 않는다"
+        );
+
+        // (2) 체인 연속이었어도(잘못 게이트가 열렸다 가정) 크래시 방어선이 delta 를 막는다.
+        assert!(
+            !deltas_fit_live(&overrun, &live),
+            "chain_ok 여도 오버런 delta 는 적용 전 차단"
+        );
+
+        // (3) 회복: 128 full frame 적용을 모사 — 크기 기록 갱신.
+        live.insert(font, [1024, 128]);
+        // 이후 pos.y=57..72 부분 delta 는 이제 128 안에 들어간다 → 정상 적용.
+        assert!(deltas_fit_live(&overrun, &live), "128 성장 후엔 경계 통과");
     }
 
     /// 디코드 출력(mesh_wire) → offset_and_clip 통합: 실제 tessellate 한 mesh 가
