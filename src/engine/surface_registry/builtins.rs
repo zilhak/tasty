@@ -83,6 +83,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
             },
         ],
         param_aliases: std::collections::HashMap::new(),
+        default_params: std::collections::HashMap::new(),
     });
 }
 
@@ -109,6 +110,7 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         // attached 는 사용자가 프리셋으로 만들 수 없는 런타임 marker — 편집 필드 없음.
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
+        default_params: std::collections::HashMap::new(),
     });
 }
 
@@ -179,6 +181,16 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             derive_cwd: false,
         }],
         param_aliases: std::collections::HashMap::new(),
+        // kind별 기본값 주입(host 정책 토큰): view_mode 는 Settings 의 마지막 view mode,
+        // path 는 새 탭 컨텍스트(cwd 상속 없음)에서만 home 으로 보정된다(`@home` 은
+        // tab.create 만 해석 — split/preset/workspace 회귀 방지, 아래 해석기 참고).
+        default_params: std::collections::HashMap::from([
+            (
+                "view_mode".to_string(),
+                "@settings.explorer_view_mode".to_string(),
+            ),
+            ("path".to_string(), "@home".to_string()),
+        ]),
     });
 }
 
@@ -226,6 +238,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         // empty 는 placeholder surface — 편집 필드 없음.
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
+        default_params: std::collections::HashMap::new(),
     });
 }
 

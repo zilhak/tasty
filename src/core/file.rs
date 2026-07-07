@@ -143,15 +143,20 @@ impl Core {
                 );
             }
             PendingMdOpenKind::InPlace { surface_id } => {
-                // 제자리 이동 — 같은 surface 를 markdown + 새 file 로 변환. re-bootstrap 은
+                // 제자리 이동 — 같은 surface 를 *현재 kind* + 새 file 로 변환. 이 경로는
+                // 이미 그 kind 의 surface 에서만 트리거되므로 현재 kind 를 재사용해
+                // `"markdown"` 리터럴을 없앤다(동작 불변). re-bootstrap 은
                 // SurfaceConverted cascade 가 처리(drop_egui_mesh_frame).
-                let _ = engine;
+                let kind = engine
+                    .find_surface_by_id(surface_id)
+                    .map(|s| s.kind().to_string())
+                    .unwrap_or_else(|| "markdown".to_string());
                 state.dispatch_intent(
                     crate::intent::Intent::ConvertSurface {
                         surface_id,
                         target: crate::intent::ConvertTarget::Kind {
                             cwd: None,
-                            kind: "markdown".to_string(),
+                            kind,
                             params: serde_json::json!({ "file": pending.path }),
                         },
                     }

@@ -166,6 +166,13 @@ pub struct SurfaceKindDef {
     /// `kind == "markdown"` 일 때 `file_path`→`file` 정규화 같은 결합을 generic 화한다.
     /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
     pub param_aliases: HashMap<String, String>,
+
+    /// surface 생성 시 params 에 없으면 host 가 주입하는 kind별 기본값(매니페스트
+    /// `default_params`). 값은 리터럴이거나 정책 토큰(`@settings.explorer_view_mode`,
+    /// `@home`)이다. 정책 토큰 해석은 host 정책이라 host 에 남고, "어느 kind 가 어떤
+    /// 기본키를 요구하는가"만 decl 로 옮긴 것. 본체의 `kind == "explorer"` 기본값 주입
+    /// 하드코딩을 generic 화한다. builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    pub default_params: HashMap<String, String>,
 }
 
 impl SurfaceKindDef {
@@ -294,6 +301,7 @@ mod tests {
             snapshot: Arc::new(|_| None),
             preset_fields: Vec::new(),
             param_aliases: HashMap::new(),
+            default_params: HashMap::new(),
         }
     }
 

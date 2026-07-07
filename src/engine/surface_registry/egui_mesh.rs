@@ -137,6 +137,7 @@ pub fn register_egui_mesh_kind(
             &decl.preset_fields,
         ),
         param_aliases: decl.param_aliases.clone(),
+        default_params: decl.default_params.clone(),
     });
 
     tracing::info!(

@@ -77,17 +77,13 @@ pub fn handle_tab_create(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    // explorer는 path 미지정 시 home으로 보정 (Core 가 home dir 정책 모름 — handler 잔존).
+    // 새 탭은 상속·carry cwd 컨텍스트가 없다(fresh-context). kind 가 `@home` 같은
+    // fresh-context 기본값(예: explorer path)을 선언하면 여기서 주입한다(generic —
+    // kind 하드코딩 없음). split/preset/workspace 는 이 경로를 거치지 않아 회귀 없음.
     let mut params = params.clone();
-    if surface_type == "explorer" && params.get("path").and_then(|v| v.as_str()).is_none() {
-        let home = directories::BaseDirs::new()
-            .map(|d| d.home_dir().to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
-        if let Some(obj) = params.as_object_mut() {
-            obj.insert("path".into(), serde_json::Value::String(home));
-        } else {
-            params = serde_json::json!({ "path": home });
-        }
+    if let Some(def) = engine.surface_registry.get(surface_type) {
+        let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
+        engine.apply_kind_default_params(&def, &mut params, home.as_deref());
     }
 
     // cwd resolve — terminal 만. explicit > pane active surface 의 inherit.

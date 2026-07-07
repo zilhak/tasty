@@ -32,7 +32,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 - 뷰 모드 3 종(grid / list / detail)을 toolbar 우측의 **아이콘 view-mode 토글**(`seg_toggle`, design `SegToggle`)로 전환한다 — grid/list/detail 아이콘 세그먼트, active = surface-active 배경 + text-primary. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
 - toolbar 의 **주소표시줄**(`address_bar`, design `ExpToolbar`)은 surface-raised 배경 + border-default + radius 박스로, 앞에 folderOpen 아이콘, 크럼 사이 chevron 아이콘 구분자. 내용은 박스 폭으로 clip 되어 긴 경로가 view-mode 토글을 침범하지 않는다(주소표시줄 flex:1 / 토글 flex:none).
-- **마지막 view mode 기억**: 사용자가 뷰 모드를 바꾸면 그 값이 `Settings.general.explorer_view_mode`(`~/.tasty/config.toml`)에 영속되고, **새로 생성되는** explorer surface 는 이 값으로 열린다(주입 지점: `create_surface_via_registry` 가 `view_mode` param 미지정 시 설정값을 실어 explorer `create` 에 전달). 같은 surface 안의 새 내부 탭(`add_tab`)은 활성 탭의 view mode 를 승계한다. snapshot 복원 경로는 create 를 거치지 않아 per-tab 저장값을 그대로 유지한다.
+- **마지막 view mode 기억**: 사용자가 뷰 모드를 바꾸면 그 값이 `Settings.general.explorer_view_mode`(`~/.tasty/config.toml`)에 영속되고, **새로 생성되는** explorer surface 는 이 값으로 열린다(주입 지점: `create_surface_via_registry` 가 explorer 의 `default_params` `view_mode = "@settings.explorer_view_mode"` 정책 토큰을 `view_mode` param 미지정 시 해석해 explorer `create` 에 실어 전달 — kind별 default_params 는 [plugin-development.md](../../dev-guide/plugin-development.md) 참조). 같은 surface 안의 새 내부 탭(`add_tab`)은 활성 탭의 view mode 를 승계한다. snapshot 복원 경로는 create 를 거치지 않아 per-tab 저장값을 그대로 유지한다.
 - list/detail 데이터 행은 공용 `Table`(selectable)을, 사이드바 디렉토리 행은 공용 `tree_row` 를 재사용한다. detail 컬럼은 Name(1fr)/Size(80)/Date(132)/Type(92)이며, Size·Date 는 **monospace·caption(11)·text-muted**, Size 는 우측 정렬 + 8px 우측 패딩으로 Date 와 시각적 간격을 둔다(design `DetailRow`).
 
 ### deferred action 적용
@@ -72,7 +72,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추가 없이 generic 경로):
 
-- 생성: `tasty new tab --type explorer [--path <dir>]` / `tasty new workspace --type explorer [--path <dir>]`. `--path` 미지정 시 inherit cwd → home 순으로 결정. (IPC: `DomainIntent::CreateTab { kind: "explorer", surface_params }`.)
+- 생성: `tasty new tab --type explorer [--path <dir>]` / `tasty new workspace --type explorer [--path <dir>]`. `--path` 미지정 시 새 탭은 explorer `default_params` 의 `path = "@home"` 로 home 이 주입된다(fresh-context). (IPC: `DomainIntent::CreateTab { kind: "explorer", surface_params }`.)
 - 조회/닫기: `tasty list surfaces` 에 `foreground_process`/`pane_id`/`workspace_id` 와 함께 나타나고, `tasty close ...` 로 닫는다 — 전 워크스페이스 순회·ID 직접 지정(포커스 독립).
 - 변환: 다른 surface 를 explorer 로 in-place 변환 — `Intent::ConvertSurface { kind: "explorer" }`. cwd 미지정 시 source surface 에서 carry. [convert-surface](../convert-surface/index.md) 의 generic convert popup 도 registry kind 열거로 explorer 를 노출한다.
 

@@ -614,20 +614,73 @@ impl CoreState {
             .surface_registry
             .get(kind)
             .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
-        // 새 explorer 는 "마지막으로 고른 view mode"(Settings)로 열린다. params 가
-        // view_mode 를 명시하지 않은 경우에만 주입한다(명시 우선). restore 경로는
-        // create 를 거치지 않으므로 per-tab 저장값이 그대로 유지된다.
-        if kind == "explorer"
-            && params.get("view_mode").is_none()
-            && let serde_json::Value::Object(mut map) = params.clone()
-        {
-            map.insert(
-                "view_mode".to_string(),
-                serde_json::Value::String(self.settings.general.explorer_view_mode.clone()),
-            );
-            return (def.create)(surface_id, cwd, &serde_json::Value::Object(map));
+        // kind별 default_params 정책 토큰을 주입한다(예: 새 explorer 는 "마지막으로
+        // 고른 view mode"). params 에 없는 키만 채운다(명시 우선). restore 경로는 create
+        // 를 거치지 않으므로 per-tab 저장값이 그대로 유지된다.
+        //
+        // home=None: `@home` 같은 파일시스템 컨텍스트 토큰은 여기서 해석하지 않는다.
+        // 이 funnel 은 split/preset/workspace 등 cwd 를 상속·carry 하는 생성 경로가
+        // 공유하므로, home 을 강제 주입하면 그 경로들이 회귀한다. `@home` 은 새 탭
+        // (`handler/tab.rs::handle_tab_create`)만 fresh-context 로 적용한다.
+        if def.default_params.is_empty() {
+            return (def.create)(surface_id, cwd, params);
         }
-        (def.create)(surface_id, cwd, params)
+        let mut owned = params.clone();
+        if self.apply_kind_default_params(&def, &mut owned, None) {
+            (def.create)(surface_id, cwd, &owned)
+        } else {
+            (def.create)(surface_id, cwd, params)
+        }
+    }
+
+    /// `def.default_params` 의 기본값을 `params` 에 주입한다(이미 있는 키는 건너뜀 —
+    /// 명시 우선). 정책 토큰 해석: `@settings.explorer_view_mode` → Settings 값,
+    /// `@home` → `home`(주어질 때만), 그 외 `@`-prefix → unknown(warn+skip), 나머지는
+    /// 리터럴. `home` 이 `None` 이면 `@home` 토큰은 건너뛴다. 하나라도 주입하면 `true`.
+    pub(crate) fn apply_kind_default_params(
+        &self,
+        def: &crate::engine::surface_registry::SurfaceKindDef,
+        params: &mut serde_json::Value,
+        home: Option<&std::path::Path>,
+    ) -> bool {
+        if def.default_params.is_empty() {
+            return false;
+        }
+        let Some(obj) = params.as_object_mut() else {
+            return false;
+        };
+        let mut injected = false;
+        for (key, token) in &def.default_params {
+            if obj.contains_key(key.as_str()) {
+                continue;
+            }
+            let Some(val) = self.resolve_default_param_token(token, home) else {
+                continue;
+            };
+            obj.insert(key.clone(), serde_json::Value::String(val));
+            injected = true;
+        }
+        injected
+    }
+
+    /// default_params 정책 토큰 → 구체 값. 미해석 토큰은 `None`. `docs/dev-guide/
+    /// plugin-development.md` 의 default_params 절 참조.
+    fn resolve_default_param_token(
+        &self,
+        token: &str,
+        home: Option<&std::path::Path>,
+    ) -> Option<String> {
+        match token {
+            "@settings.explorer_view_mode" => {
+                Some(self.settings.general.explorer_view_mode.clone())
+            }
+            "@home" => home.map(|p| p.to_string_lossy().to_string()),
+            t if t.starts_with('@') => {
+                tracing::warn!("unknown default_param policy token: {t}");
+                None
+            }
+            literal => Some(literal.to_string()),
+        }
     }
 }
 
@@ -1294,5 +1347,65 @@ mod category_tests {
             _ => unreachable!(),
         };
         assert_eq!(e.workspaces[idx2].category, NORMAL_CATEGORY_ID);
+    }
+}
+
+#[cfg(test)]
+mod default_params_tests {
+    use super::CoreState;
+
+    fn engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    /// explorer 는 default_params 로 view_mode(@settings)·path(@home)를 선언한다.
+    /// home=None(상속 컨텍스트 funnel): view_mode 만 주입되고 @home 은 건너뛴다 →
+    /// split/preset/workspace 회귀 방지.
+    #[test]
+    fn explorer_defaults_without_home_inject_view_mode_only() {
+        let e = engine();
+        let def = e.surface_registry.get("explorer").unwrap();
+        let mut params = serde_json::json!({});
+        let injected = e.apply_kind_default_params(&def, &mut params, None);
+        assert!(injected);
+        assert_eq!(params["view_mode"], e.settings.general.explorer_view_mode);
+        assert!(
+            params.get("path").is_none(),
+            "@home must not resolve when home=None"
+        );
+    }
+
+    /// home=Some(새 탭 fresh-context): view_mode + path(home) 모두 주입.
+    #[test]
+    fn explorer_defaults_with_home_inject_path() {
+        let e = engine();
+        let def = e.surface_registry.get("explorer").unwrap();
+        let mut params = serde_json::json!({});
+        let home = std::path::PathBuf::from("/home/tester");
+        e.apply_kind_default_params(&def, &mut params, Some(&home));
+        assert_eq!(params["view_mode"], e.settings.general.explorer_view_mode);
+        assert_eq!(params["path"], "/home/tester");
+    }
+
+    /// 명시 지정된 키는 보존(주입 안 함).
+    #[test]
+    fn explicit_params_preserved() {
+        let e = engine();
+        let def = e.surface_registry.get("explorer").unwrap();
+        let home = std::path::PathBuf::from("/home/tester");
+        let mut params = serde_json::json!({"view_mode": "list", "path": "/explicit"});
+        e.apply_kind_default_params(&def, &mut params, Some(&home));
+        assert_eq!(params["view_mode"], "list");
+        assert_eq!(params["path"], "/explicit");
+    }
+
+    /// default_params 없는 kind(terminal)는 no-op.
+    #[test]
+    fn kind_without_defaults_is_noop() {
+        let e = engine();
+        let def = e.surface_registry.get("terminal").unwrap();
+        let mut params = serde_json::json!({});
+        assert!(!e.apply_kind_default_params(&def, &mut params, None));
     }
 }

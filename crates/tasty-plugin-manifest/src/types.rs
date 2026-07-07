@@ -417,6 +417,12 @@ pub struct SurfaceKindDecl {
     /// 예: `{"file_path": "file"}`.
     #[serde(default)]
     pub param_aliases: HashMap<String, String>,
+    /// surface 생성 시 params 에 없으면 host 가 주입하는 kind별 기본값. 값은 리터럴
+    /// 이거나 host 가 해석하는 정책 토큰(`@settings.explorer_view_mode`, `@home`)이다.
+    /// "어느 kind 가 어떤 기본키를 요구하는가"를 decl 로 옮겨 host 본체의
+    /// `kind == "explorer"` 기본값 주입 하드코딩을 generic 화한다.
+    #[serde(default)]
+    pub default_params: HashMap<String, String>,
     /// 이 kind 의 surface 가 활성일 때 host 의 egui 입력 라우팅이 plugin/host
     /// 본체 측으로 입력을 흘려야 하는지. host 본체의 `kind == "markdown" || kind == "image"`
     /// 같은 하드코딩 분기를 generic 화 하기 위한 capability 메타. 기본 false.
