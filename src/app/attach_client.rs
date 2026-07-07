@@ -31,7 +31,7 @@ use tasty_terminal::Terminal;
 
 use crate::AppEvent;
 use crate::app::App;
-use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag};
+use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag, StructuralOp};
 use crate::model::{
     EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface,
     Workspace,
@@ -46,6 +46,9 @@ pub(crate) enum MirrorEvent {
     Data(u32, Vec<u8>),
     /// 원격 grid resize `(remote_surface_id, cols, rows)` — mirror 크기 갱신.
     Resize(u32, usize, usize),
+    /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
+    /// 메인루프가 실패 toast 를 띄운다. 성공은 무음(별도 이벤트 없음).
+    StructuralFailed(String),
 }
 
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
@@ -73,6 +76,8 @@ pub(crate) struct AttachClientSession {
     /// 단계 7 — 이 mirror 를 띄운 매핑된(anchor) 로컬 워크스페이스 id. 세션 정리 시
     /// `auto_attach_active` 에서 제거해 재활성 시 재attach 가능하게 한다. 수동 None.
     anchor_ws_id: Option<u32>,
+    /// forward 한 구조 op 의 op_id 시퀀스(2단계). 회신 correlate/로그용 — 단조 증가.
+    op_seq: u64,
 }
 
 impl App {
@@ -286,16 +291,29 @@ impl App {
                                     let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                                     break;
                                 }
-                                // mid-session Control: 원격 resize 통지. 알 수 없는
-                                // event(구/신 스키마)는 파싱 실패 → 무시(전방 호환).
-                                if let Ok(StreamControl::Resize {
-                                    surface_id,
-                                    cols,
-                                    rows,
-                                }) = serde_json::from_slice::<StreamControl>(&frame.payload)
+                                // mid-session Control: 원격 resize 통지 / forward 회신.
+                                // 알 수 없는 event(구/신 스키마)는 파싱 실패 → 무시(전방 호환).
+                                let mirror_ev =
+                                    match serde_json::from_slice::<StreamControl>(&frame.payload) {
+                                        Ok(StreamControl::Resize {
+                                            surface_id,
+                                            cols,
+                                            rows,
+                                        }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
+                                        // 2단계: forward 실패 회신 → 실패 toast. 성공은 무음.
+                                        Ok(StreamControl::StructuralResult {
+                                            ok: false,
+                                            reason,
+                                            ..
+                                        }) => Some(MirrorEvent::StructuralFailed(
+                                            reason.unwrap_or_default(),
+                                        )),
+                                        _ => None,
+                                    };
+                                if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
                                 {
-                                    buf.push(MirrorEvent::Resize(surface_id, cols, rows));
+                                    buf.push(ev);
                                     drop(buf);
                                     let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                                 }
@@ -321,6 +339,7 @@ impl App {
             client_id,
             tunnel,
             anchor_ws_id,
+            op_seq: 0,
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -398,6 +417,24 @@ impl App {
                                         t.resize(*cols, *rows);
                                     }
                                 }
+                                MirrorEvent::StructuralFailed(reason) => {
+                                    // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
+                                    // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
+                                    // 없음(요청/응답).
+                                    let base = crate::i18n::t(
+                                        "attach.toast.mirror_structural_forward_failed",
+                                    );
+                                    let msg: String = if reason.is_empty() {
+                                        base.to_string()
+                                    } else {
+                                        format!("{base} ({reason})")
+                                    };
+                                    main.state.toasts.push(
+                                        msg,
+                                        crate::adapters::ui::ToastKind::Warning,
+                                        crate::adapters::ui::ToastScope::Window,
+                                    );
+                                }
                             }
                         }
                         main.mark_dirty();
@@ -451,6 +488,67 @@ impl App {
             self.auto_attach_active.remove(&anchor);
         }
         // 터널 핸들(sess.tunnel)은 여기서 Drop → 자식 ssh kill(고아 터널 방지).
+    }
+
+    /// `about_to_wait` 에서 호출 — `Core::apply` 가 mirror 워크스페이스 구조 op 를 쌓은
+    /// forward 큐를 drain 해 원격에 전송한다(2단계). 각 op 의 anchor 로컬 surface id 를
+    /// 세션 매핑으로 원격 id 로 치환한 뒤 attach stream 의 `StreamTag::Control` 로 보낸다.
+    /// 로컬은 이미 mutation 이 차단됐고(요청/응답), 원격 실행 결과는 reader 가 받는
+    /// `StructuralResult`(실패 시 toast)로 반영된다.
+    pub(crate) fn dispatch_pending_structural_forwards(&mut self) {
+        let mut pending: Vec<StructuralOp> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.append(&mut main.core_state.pending_structural_forward);
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.append(&mut e.pending_structural_forward);
+        }
+        for local_op in pending {
+            self.forward_one_structural_op(local_op);
+        }
+    }
+
+    /// forward 큐의 op 하나를 담당 mirror 세션으로 전송한다. anchor 로컬 surface 를 가진
+    /// 세션을 찾아 local→remote 치환 후 `StructuralOp` 프레임을 write half 로 보낸다.
+    /// 세션을 못 찾으면(예상 밖) warn 후 drop.
+    fn forward_one_structural_op(&mut self, local_op: StructuralOp) {
+        let local_anchor = local_op.anchor_surface_id();
+        // anchor 로컬 surface 를 mirror 로 보유한 세션.
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter_mut()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_anchor))
+        else {
+            tracing::warn!(
+                "structural forward: mirror 세션이 로컬 surface {local_anchor} 를 갖지 않음 — drop"
+            );
+            return;
+        };
+        // local → remote anchor.
+        let Some(remote_anchor) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_anchor)
+            .map(|(&r, _)| r)
+        else {
+            tracing::warn!(
+                "structural forward: 로컬 surface {local_anchor} 의 원격 id 없음 — drop"
+            );
+            return;
+        };
+        let wire = local_op.with_anchor_surface_id(remote_anchor);
+        let op_id = sess.op_seq;
+        sess.op_seq += 1;
+        let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
+            .unwrap_or_default();
+        match sess.writer.lock() {
+            Ok(mut w) => {
+                if let Err(e) = stream::write_frame(&mut *w, StreamTag::Control, &payload) {
+                    tracing::warn!("structural forward send 실패: {e}");
+                }
+            }
+            Err(_) => tracing::warn!("structural forward: writer lock 실패 — drop"),
+        }
     }
 }
 

@@ -44,15 +44,17 @@ pub use preset::ClonedPreset;
 /// mirror 구조 변경 forward 는 2단계에서 붙는다 — 현재(1단계)는 로컬 실행을 막고
 /// 사용자에게 "원격 워크스페이스라 로컬 실행 불가" 를 알리는 데서 그친다.
 pub fn report_apply_error(state: &mut crate::state::AppState, label: &str, err: &anyhow::Error) {
-    if err
-        .downcast_ref::<crate::core::MirrorStructuralBlocked>()
-        .is_some()
-    {
-        state.toasts.push(
-            crate::i18n::t("attach.toast.mirror_structural_blocked"),
-            crate::adapters::ui::ToastKind::Warning,
-            crate::adapters::ui::ToastScope::Window,
-        );
+    if let Some(blocked) = err.downcast_ref::<crate::core::MirrorStructuralBlocked>() {
+        // 2단계: forward 로 큐잉된 op 는 원격 실행 결과가 UX 를 결정한다 — 여기서 차단
+        // toast 를 띄우지 않는다(성공 무음, 실패 시 App drain 이 forward 실패 toast).
+        // forward 대상이 아닌 op(convert/move-surface)만 기존 차단 toast.
+        if !blocked.forwarded {
+            state.toasts.push(
+                crate::i18n::t("attach.toast.mirror_structural_blocked"),
+                crate::adapters::ui::ToastKind::Warning,
+                crate::adapters::ui::ToastScope::Window,
+            );
+        }
     } else {
         tracing::warn!("{label} failed: {err}");
     }

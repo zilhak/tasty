@@ -992,6 +992,9 @@ mirror_workspace = "Mirror of a remote workspace"
 # inside a mirror workspace. Mirror workspaces are a view of a remote workspace,
 # so the change must run on the remote instance (forwarding lands in a later step).
 mirror_structural_blocked = "Can't change structure in a mirrored remote workspace yet."
+# Shown when a structural change forwarded to the remote instance fails there —
+# most often because the requested surface kind isn't available on the remote.
+mirror_structural_forward_failed = "The remote workspace couldn't apply that change."
 
 # Webview(html) surface host chrome — painted by the host before/around the
 # native WebView overlay (placeholder when no page, boundary backdrop otherwise).

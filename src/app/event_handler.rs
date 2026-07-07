@@ -275,6 +275,10 @@ impl ApplicationHandler<AppEvent> for App {
         // mirror 재구성). process_ipc 직후라야 같은 frame 에 반영된다.
         self.dispatch_pending_gui_attach();
 
+        // 2단계 — mirror 워크스페이스 구조 op forward 큐 drain(원격 전송). Core::apply 가
+        // 이번 프레임에 쌓은 op 를 같은 프레임에 원격으로 보낸다.
+        self.dispatch_pending_structural_forwards();
+
         // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).

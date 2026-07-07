@@ -991,6 +991,7 @@ mirror_workspace = "リモートワークスペースのミラー"
 # 表示。ミラーワークスペースはリモートワークスペースのビューなので、変更はリモート
 # インスタンスで実行される必要がある(リモート転送は後続ステップで対応)。
 mirror_structural_blocked = "ミラーされたリモートワークスペースではまだ構造を変更できません。"
+mirror_structural_forward_failed = "リモートワークスペースがその変更を適用できませんでした。"
 
 # Webview(html) surface の host chrome — native WebView overlay が付く前/隠れた時に
 # host が描画する(URL 未指定なら placeholder、指定済みなら boundary backdrop)。

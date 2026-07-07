@@ -55,6 +55,11 @@ use crate::ports::process::ProcessSpawner;
 pub(crate) struct MirrorStructuralBlocked {
     /// 대상 mirror 워크스페이스 인덱스.
     pub workspace_index: usize,
+    /// `true` 면 이 구조 op 를 원격으로 **forward** 하도록 큐에 넣었다(2단계). 이 경우
+    /// 로컬 실행만 막고 차단 toast 는 띄우지 않는다(원격 실행 결과가 UX 를 결정 —
+    /// 성공 시 무음, 실패 시 forward 실패 toast). `false` 면 forward 대상이 아닌 op
+    /// (convert/move-surface 등)라 기존 차단 toast 를 띄운다.
+    pub forwarded: bool,
 }
 
 impl std::fmt::Display for MirrorStructuralBlocked {
@@ -68,6 +73,105 @@ impl std::fmt::Display for MirrorStructuralBlocked {
 }
 
 impl std::error::Error for MirrorStructuralBlocked {}
+
+/// mirror 구조 `DomainIntent` → 원격 forward 할 [`StructuralOp`](crate::ipc::stream::StructuralOp).
+/// anchor 는 **로컬** mirror surface id(App drain 이 세션 매핑으로 원격 id 로 치환).
+/// pane/tab 대상 op 는 그 pane/tab 의 대표 surface(활성 탭의 focused surface)를 anchor 로
+/// 삼아 원격이 자기 트리에서 pane/tab 을 resolve 하게 한다. forward 대상이 아닌
+/// op(convert/move-surface — 재사용할 원격 IPC 핸들러 없음) 또는 anchor 를 못 찾으면
+/// `None`(→ 기존 차단 유지).
+fn build_mirror_forward_op(
+    engine: &crate::core::CoreState,
+    intent: &DomainIntent,
+) -> Option<crate::ipc::stream::StructuralOp> {
+    use crate::core::intent::DomainIntent as D;
+    use crate::ipc::stream::{SplitAxis, StructuralOp};
+
+    fn axis(d: &crate::model::SplitDirection) -> SplitAxis {
+        match d {
+            crate::model::SplitDirection::Horizontal => SplitAxis::Horizontal,
+            crate::model::SplitDirection::Vertical => SplitAxis::Vertical,
+        }
+    }
+    // pane 안 대표 surface(활성 탭의 focused surface) — pane/tab op 의 anchor.
+    let pane_anchor = |pane_id: u32| -> Option<u32> {
+        engine
+            .find_pane_by_id(pane_id)
+            .and_then(|p| p.tabs.get(p.active_tab))
+            .and_then(|t| t.focused_surface_id())
+    };
+    let tab_anchor = |tab_id: u32| -> Option<u32> {
+        for ws in &engine.workspaces {
+            for pid in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        if tab.id == tab_id {
+                            return tab.focused_surface_id();
+                        }
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    match intent {
+        D::SplitSurface {
+            target_surface_id,
+            direction,
+            kind,
+            surface_params,
+            ..
+        } => Some(StructuralOp::SplitSurface {
+            surface_id: *target_surface_id,
+            direction: axis(direction),
+            surface_kind: kind.clone(),
+            params: surface_params.clone(),
+        }),
+        D::SplitPane {
+            target_pane_id,
+            direction,
+            kind,
+            surface_params,
+            ..
+        } => Some(StructuralOp::SplitPane {
+            anchor_surface_id: pane_anchor(*target_pane_id)?,
+            direction: axis(direction),
+            surface_kind: kind.clone(),
+            params: surface_params.clone(),
+        }),
+        D::CreateTab {
+            pane_id,
+            kind,
+            surface_params,
+            ..
+        } => Some(StructuralOp::NewTab {
+            anchor_surface_id: pane_anchor(*pane_id)?,
+            surface_kind: kind.clone(),
+            params: surface_params.clone(),
+        }),
+        D::CloseSurface { surface_id, .. } => Some(StructuralOp::CloseSurface {
+            surface_id: *surface_id,
+        }),
+        D::CloseTab { tab_id } => Some(StructuralOp::CloseTab {
+            anchor_surface_id: tab_anchor(*tab_id)?,
+        }),
+        D::ClosePane { pane_id } => Some(StructuralOp::ClosePane {
+            anchor_surface_id: pane_anchor(*pane_id)?,
+        }),
+        D::MoveTab {
+            pane_id,
+            from_index,
+            to_index,
+        } => Some(StructuralOp::MoveTab {
+            anchor_surface_id: pane_anchor(*pane_id)?,
+            from_index: *from_index,
+            to_index: *to_index,
+        }),
+        // convert / move-surface 는 forward 미지원(차단 유지).
+        _ => None,
+    }
+}
 
 /// Helper: layout / tab_bar 기반으로 surface_id 별 *목표 grid (cols, rows)* 를
 /// 수집. 본 helper 는 read-only 로 workspaces 만 순회한다 — `terminals` store 에는
@@ -681,8 +785,20 @@ impl Core {
         // 에이전트 IPC 어느 진입 경로든 여기(단일 mutate 진입점)로 수렴하므로 한 곳에서
         // 막는다. 구조와 무관한 intent 는 통과. (2단계에서 이 지점이 원격 forward 로 대체.)
         if let Some(workspace_index) = engine.mirror_workspace_index_for_structural(&intent) {
+            // 2단계: 로컬 실행은 여전히 막되(불변식 유지), forward 가능한 op 는 원격에
+            // 넘기도록 큐에 넣는다. anchor 는 아직 로컬 surface id — App drain 이 세션
+            // 매핑으로 원격 id 로 치환해 전송한다. forward 불가 op(convert/move-surface)는
+            // None → 기존 차단 toast.
+            let forwarded = match build_mirror_forward_op(engine, &intent) {
+                Some(op) => {
+                    engine.pending_structural_forward.push(op);
+                    true
+                }
+                None => false,
+            };
             return Err(anyhow::Error::new(MirrorStructuralBlocked {
                 workspace_index,
+                forwarded,
             }));
         }
         match intent {
@@ -3311,5 +3427,89 @@ mod mirror_structural_guard_tests {
             }),
             None,
         );
+    }
+
+    /// 2단계 client 측: mirror split 은 로컬 실행이 차단되면서 forward 큐에 op 를 쌓는다.
+    /// op 의 anchor 는 아직 **로컬** surface id(App drain 이 원격으로 치환), forwarded=true.
+    #[test]
+    fn mirror_split_enqueues_forward_with_local_anchor() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        assert!(engine.pending_structural_forward.is_empty());
+
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect_err("mirror split must be blocked locally");
+        let blocked = err
+            .downcast_ref::<MirrorStructuralBlocked>()
+            .expect("MirrorStructuralBlocked");
+        assert!(blocked.forwarded, "forward 가능 op 는 forwarded=true");
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        match &engine.pending_structural_forward[0] {
+            StructuralOp::SplitSurface { surface_id, .. } => {
+                assert_eq!(*surface_id, a, "anchor 는 로컬 surface a");
+            }
+            other => panic!("expected SplitSurface, got {other:?}"),
+        }
+    }
+
+    /// SplitPane/NewTab 는 pane 의 대표 surface(활성 탭 focused)를 anchor 로 큐잉한다.
+    #[test]
+    fn mirror_split_pane_anchors_on_pane_surface() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        core.apply(
+            &mut engine,
+            DomainIntent::SplitPane {
+                target_pane_id: pane,
+                direction: SplitDirection::Vertical,
+                cwd: None,
+                kind: "terminal".to_string(),
+                surface_params: serde_json::json!({}),
+            },
+        )
+        .expect_err("blocked");
+        match &engine.pending_structural_forward[0] {
+            StructuralOp::SplitPane {
+                anchor_surface_id, ..
+            } => assert_eq!(*anchor_surface_id, a, "pane anchor = 활성 탭 surface a"),
+            other => panic!("expected SplitPane, got {other:?}"),
+        }
+    }
+
+    /// convert 는 재사용할 원격 IPC 핸들러가 없어 forward 대상이 아니다 →
+    /// forwarded=false(기존 차단 toast 유지), 큐는 비어있다.
+    #[test]
+    fn mirror_convert_is_blocked_without_forward() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::ConvertSurface {
+                    surface_id: a,
+                    target: crate::core::intent::ConvertSurfaceTarget::Terminal { cwd: None },
+                },
+            )
+            .expect_err("blocked");
+        let blocked = err
+            .downcast_ref::<MirrorStructuralBlocked>()
+            .expect("MirrorStructuralBlocked");
+        assert!(!blocked.forwarded, "convert 는 forward 대상 아님");
+        assert!(engine.pending_structural_forward.is_empty());
     }
 }

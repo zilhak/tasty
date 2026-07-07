@@ -269,6 +269,14 @@ pub struct CoreState {
     /// (focus 비의존, plan §5). headless 는 GUI 가 없어 drain 되지 않는다.
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
 
+    /// mirror 워크스페이스 구조 변경 forward 큐(2단계). `Core::apply` 가 mirror
+    /// 워크스페이스의 구조 op 를 로컬 실행 대신 여기 push 하고(로컬 mutation 없음),
+    /// App 이 `about_to_wait` 에서 drain 해 anchor **로컬** surface id 를 원격 id 로
+    /// 치환한 뒤 attach stream(`StreamTag::Control`)으로 원격에 forward 한다. 담긴
+    /// [`StructuralOp`] 의 anchor 는 아직 **로컬** id(전송 직전 세션 매핑으로 원격
+    /// 치환). mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
+    pub(crate) pending_structural_forward: Vec<crate::ipc::stream::StructuralOp>,
+
     /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
     /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
@@ -395,6 +403,7 @@ impl CoreState {
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
+            pending_structural_forward: Vec::new(),
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {

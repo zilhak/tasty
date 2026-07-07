@@ -261,6 +261,35 @@ impl StructuralOp {
             } => *source_surface_id,
         }
     }
+
+    /// Return a copy with the anchor surface id replaced. The mirror client builds
+    /// an op with a **local** anchor id (the only id it knows at the block point),
+    /// then swaps in the mapped **remote** id before sending. For `MoveSurface`
+    /// the anchor is the source; the target id is left untouched (both are remote
+    /// ids the client already holds).
+    pub fn with_anchor_surface_id(&self, remote: u32) -> StructuralOp {
+        let mut cloned = self.clone();
+        match &mut cloned {
+            StructuralOp::SplitSurface { surface_id, .. }
+            | StructuralOp::CloseSurface { surface_id }
+            | StructuralOp::ConvertSurface { surface_id, .. } => *surface_id = remote,
+            StructuralOp::SplitPane {
+                anchor_surface_id, ..
+            }
+            | StructuralOp::NewTab {
+                anchor_surface_id, ..
+            }
+            | StructuralOp::CloseTab { anchor_surface_id }
+            | StructuralOp::ClosePane { anchor_surface_id }
+            | StructuralOp::MoveTab {
+                anchor_surface_id, ..
+            } => *anchor_surface_id = remote,
+            StructuralOp::MoveSurface {
+                source_surface_id, ..
+            } => *source_surface_id = remote,
+        }
+        cloned
+    }
 }
 
 /// Split direction carried over the wire. Maps to the host `SplitDirection` /
@@ -560,6 +589,35 @@ mod tests {
             .anchor_surface_id(),
             3
         );
+    }
+
+    #[test]
+    fn structural_op_with_anchor_surface_id() {
+        // Local anchor swapped for the remote id before send.
+        let local = StructuralOp::SplitPane {
+            anchor_surface_id: 5, // local mirror id
+            direction: SplitAxis::Vertical,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let remote = local.with_anchor_surface_id(100);
+        assert_eq!(remote.anchor_surface_id(), 100);
+        // MoveSurface swaps source, keeps target.
+        let mv = StructuralOp::MoveSurface {
+            source_surface_id: 1,
+            target_surface_id: 2,
+        }
+        .with_anchor_surface_id(9);
+        match mv {
+            StructuralOp::MoveSurface {
+                source_surface_id,
+                target_surface_id,
+            } => {
+                assert_eq!(source_surface_id, 9);
+                assert_eq!(target_surface_id, 2);
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
