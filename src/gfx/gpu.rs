@@ -36,6 +36,20 @@ pub enum ShellSetupAction {
     Exit,
 }
 
+/// surface configure 치수를 물리 유효 범위로 clamp 한다.
+///
+/// wgpu 는 `surface.configure` 에 `max_texture_dimension_2d` 를 넘는 width/height 가
+/// 오면 panic 한다(TD-7 crash 근본원인: 외부 `SetWindowPos` 등이 winit `Resized`
+/// 이벤트로 65535 를 유입). tasty 자기 코드(IPC/CLI/시작단/split)로 상한 초과를
+/// 주입하는 진입점은 없으므로(research §3·§4), 방어는 winit 경계에서의 clamp 하나로
+/// 일원화한다 — 거부 계층은 막을 진입점이 없어 추가하지 않는다.
+///
+/// 하한 `1`(configure 는 0 불가), 상한 `max`(어댑터별 실제 한계, 런타임 조회).
+/// 0 은 최소화 신호로 호출 전 early-return 이 처리하므로 이 함수 진입 전 걸러진다.
+fn clamp_surface_dims(w: u32, h: u32, max: u32) -> (u32, u32) {
+    (w.clamp(1, max), h.clamp(1, max))
+}
+
 pub struct GpuState {
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
@@ -134,11 +148,16 @@ impl GpuState {
             .or_else(|| surface_caps.formats.first().copied())
             .ok_or_else(|| anyhow::anyhow!("no supported surface format found"))?;
 
+        // startup 방어 일관성: resize 와 동일한 clamp 로 상한도 승격한다.
+        // 고정 720p 요청이라 상한 초과는 현실적으로 불가하나, resize 와 같은
+        // 헬퍼를 재사용해 물리 유효 범위를 한 곳에서 보장한다(research §6-2).
+        let max_dim = device.limits().max_texture_dimension_2d;
+        let (config_width, config_height) = clamp_surface_dims(size.width, size.height, max_dim);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: surface_format,
-            width: size.width.max(1),
-            height: size.height.max(1),
+            width: config_width,
+            height: config_height,
             present_mode: if surface_caps
                 .present_modes
                 .contains(&wgpu::PresentMode::Mailbox)
@@ -252,15 +271,29 @@ impl GpuState {
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        // 0 은 최소화 신호 — configure 를 스킵한다(early-return 유지).
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
-        self.size = new_size;
-        self.config.width = new_size.width;
-        self.config.height = new_size.height;
+        // 상한 clamp: 외부 SetWindowPos 등이 winit Resized 로 max 초과 치수를 유입하면
+        // surface.configure 가 panic 한다(TD-7). 어댑터별 실제 한계를 런타임 조회해
+        // clamp 하고, 실제로 clamp 가 걸리면 warn 으로 남긴다(하드코딩 상한 금지).
+        let max = self.device.limits().max_texture_dimension_2d;
+        let (w, h) = clamp_surface_dims(new_size.width, new_size.height, max);
+        if w != new_size.width || h != new_size.height {
+            tracing::warn!(
+                req_w = new_size.width,
+                req_h = new_size.height,
+                max,
+                "surface resize request exceeds max_texture_dimension_2d; clamping"
+            );
+        }
+        let clamped = PhysicalSize::new(w, h);
+        self.size = clamped;
+        self.config.width = w;
+        self.config.height = h;
         self.surface.configure(&self.device, &self.config);
-        self.renderer
-            .resize(&self.queue, new_size.width, new_size.height);
+        self.renderer.resize(&self.queue, w, h);
     }
 
     /// Pass a winit event to egui. Returns (consumed, repaint).
@@ -663,5 +696,34 @@ impl GpuState {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clamp_surface_dims;
+
+    const MAX: u32 = 8192;
+
+    #[test]
+    fn passes_through_valid_dims() {
+        assert_eq!(clamp_surface_dims(1, 1, MAX), (1, 1));
+        assert_eq!(clamp_surface_dims(MAX, MAX, MAX), (MAX, MAX));
+        assert_eq!(clamp_surface_dims(1280, 720, MAX), (1280, 720));
+    }
+
+    #[test]
+    fn clamps_upper_bound() {
+        assert_eq!(clamp_surface_dims(MAX + 1, 720, MAX), (MAX, 720));
+        // TD-7 crash 재현 치수: 1100x65535, max 8192 → 높이만 clamp.
+        assert_eq!(clamp_surface_dims(1100, 65535, MAX), (1100, MAX));
+        assert_eq!(clamp_surface_dims(65535, 65535, MAX), (MAX, MAX));
+    }
+
+    #[test]
+    fn raises_zero_to_lower_bound() {
+        // early-return 이 0 을 먼저 거르지만, 함수 자체의 하한도 방어적으로 보장한다.
+        assert_eq!(clamp_surface_dims(0, 720, MAX), (1, 720));
+        assert_eq!(clamp_surface_dims(1280, 0, MAX), (1280, 1));
     }
 }
