@@ -56,9 +56,10 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **forward (요청)**: `Core::apply` 가 로컬 차단과 동시에 그 구조 op 를 `StructuralOp` 로 만들어(anchor = **로컬** surface id) forward 큐에 넣고, App 이 `about_to_wait` 에서 drain 해 anchor 를 **원격 surface id 로 치환**한 뒤 attach stream 의 `StreamTag::Control`(`StreamControl::StructuralOp`)로 원격에 보낸다. attach 연결 자체가 hard 점유 holder 이므로 연결이 곧 구조 변경 권한을 증명한다(ADR-0040). op 는 **원격 surface id 로 anchor** 되어 원격이 자기 트리에서 pane/tab/workspace 를 resolve 한다 — client 는 surface 매핑만 보유하면 된다.
 - **원격 실행**: 원격이 `StructuralOp` 를 수신(`StreamHub::pump_inbound` 분류)해 holder 를 검증한 뒤, 기존 IPC 핸들러(split/tab.create/tab.close/tab.move/pane.close/surface.close)를 재사용해 실제로 실행한다(원격 ws 는 mirror 가 아니라 실제 PTY 를 spawn). 결과는 `StreamControl::StructuralResult{op_id, ok, reason?}` 로 회신.
 - **실패 회신**: 원격이 op 를 실패 처리(대표적으로 **원격에 등록되지 않은 plugin surface kind** — 원격의 kind 레지스트리가 그 호스트에서 생성 가능한 kind 의 authority)하면 `ok:false`+`reason` 을 회신하고, client 가 실패 toast(`attach.toast.mirror_structural_forward_failed`)를 띄운다. 요청/응답이라 실패 시 로컬·원격 어느 쪽도 구조가 바뀌지 않는다.
+- **역반영 (성공 시)**: 성공한 forward 로 원격에 생긴/사라진 surface 를 mirror 트리에 반영한다. 원격이 실행 후 워크스페이스 **전체 트리+surfaces** 를 `StreamControl::StructuralDelta` 로 push(`StructuralResult` 성공 회신 **직후**)하고, client 가 이를 받아 mirror 트리를 증분 재구성한다. survivor(이미 mirror 로 존재하는 원격 surface)는 **기존 mirror 터미널을 그대로 유지**(scrollback 보존)하고, 새 원격 surface 만 새 mirror 로 추가, 사라진 surface 는 제거한다. 최소 증분(surface 별 diff) 대신 full-tree 재동기화를 쓰는 이유: client 는 surface 매핑만 보유한다는 불변식을 지키면서 split·새 탭·닫기(cascade)·탭 이동을 균일하게 반영하기 위함. pane 상위 배치는 핸드셰이크와 동일한 근사 수준을 승계한다.
 - **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단·forward 대상이 아니다.
 
-**현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 이동이 forward 대상이다. surface convert 와 surface 이동(move-surface)은 재사용할 원격 IPC 핸들러가 없어 아직 forward 하지 않고 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다. `Core::apply` 를 우회하는 UI 직접 경로(탭 드래그 등)도 아직 차단만 한다. 또한 성공한 forward 로 원격에 생긴 새 surface 를 **mirror 트리에 역반영**하는 경로는 미구현이라, 성공 시 원격은 바뀌지만 로컬 mirror 표시는 아직 갱신되지 않는다(실패 toast 경로는 완결).
+**현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 이동이 forward 대상이며, 성공 시 원격 실행 결과가 mirror 트리에 역반영된다. surface convert 와 surface 이동(move-surface)은 재사용할 원격 IPC 핸들러가 없어 아직 forward 하지 않고 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다(단, 나중에 이 둘이 forward 되면 full-tree 역반영이 자동으로 커버한다). `Core::apply` 를 우회하는 UI 직접 경로(탭 드래그 등)도 아직 차단만 한다.
 
 ### 자동 매핑
 
