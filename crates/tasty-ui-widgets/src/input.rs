@@ -26,6 +26,8 @@ pub struct Input<'a> {
     width: Option<f32>,
     icon: Option<IconPainter<'a>>,
     addon: Option<&'a str>,
+    /// 텍스트 색 override. `None` 이면 `input_fg`(text-primary).
+    text_color: Option<egui::Color32>,
 }
 
 impl Default for Input<'_> {
@@ -44,6 +46,7 @@ impl<'a> Input<'a> {
             width: None,
             icon: None,
             addon: None,
+            text_color: None,
         }
     }
 
@@ -81,6 +84,14 @@ impl<'a> Input<'a> {
 
     pub fn addon(mut self, addon: &'a str) -> Self {
         self.addon = Some(addon);
+        self
+    }
+
+    /// 텍스트 색 override — 미지정 시 `input_fg`(text-primary). 주소창 idle 표시처럼
+    /// 비포커스 상태를 text-secondary 로 낮추려는 호출측(combobox 트리거)을 위해 노출한다.
+    /// 값은 반드시 `Theme` 토큰에서 파생한 색이어야 한다(raw hex 금지).
+    pub fn text_color(mut self, color: egui::Color32) -> Self {
+        self.text_color = Some(color);
         self
     }
 
@@ -153,7 +164,10 @@ impl<'a> Input<'a> {
                         .desired_width(te_w)
                         .hint_text(tasty_egui_theme::hint_text(theme, self.placeholder))
                         .font(font)
-                        .text_color(theme.input_fg().to_egui());
+                        .text_color(
+                            self.text_color
+                                .unwrap_or_else(|| theme.input_fg().to_egui()),
+                        );
                     let r = ui.add_enabled(self.enabled, te);
                     if let Some(g) = addon_galley {
                         let (arect, _) =

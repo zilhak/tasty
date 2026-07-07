@@ -37,6 +37,18 @@ pub enum ComboboxAction {
     Cancel,
 }
 
+/// `Combobox::show` 한 프레임 결과 — 행위 + 트리거 응답.
+///
+/// 트리거(`Input`)의 [`egui::Response`] 를 그대로 노출한다. 호출측이 포커스 상태
+/// (`has_focus`/`gained_focus`/`lost_focus`)로 편집모드를 추적하거나 Esc 확정 후
+/// `surrender_focus()` 하도록 하기 위함이다(플러그인 주소창 배선 계약).
+pub struct ComboboxResponse {
+    /// 이번 프레임의 사용자 행위.
+    pub action: ComboboxAction,
+    /// 트리거(편집 필드) 응답.
+    pub response: egui::Response,
+}
+
 /// Combobox 빌더. 프레젠테이션 설정만 담고, 상태(`buf`/`entries`/`active`)는 `show` 인자.
 pub struct Combobox<'a> {
     id_salt: &'a str,
@@ -50,6 +62,8 @@ pub struct Combobox<'a> {
     icon: Option<IconPainter<'a>>,
     /// 후보 행 공통 leading 아이콘(선택 — 히스토리 dropdown 은 파일 아이콘).
     row_icon: Option<IconPainter<'a>>,
+    /// 트리거 텍스트 색 override(선택). 미지정 시 `input_fg`(text-primary).
+    trigger_text_color: Option<egui::Color32>,
 }
 
 impl<'a> Combobox<'a> {
@@ -63,6 +77,7 @@ impl<'a> Combobox<'a> {
             width: None,
             icon: None,
             row_icon: None,
+            trigger_text_color: None,
         }
     }
 
@@ -105,6 +120,13 @@ impl<'a> Combobox<'a> {
         self
     }
 
+    /// 트리거 텍스트 색 override — 미지정 시 `input_fg`(text-primary). 주소창 idle 표시가
+    /// 비편집 시 text-secondary 로 낮추는 용도. 값은 `Theme` 토큰에서 파생해야 한다.
+    pub fn trigger_text_color(mut self, color: egui::Color32) -> Self {
+        self.trigger_text_color = Some(color);
+        self
+    }
+
     /// 트리거 + (포커스 시) 드롭다운을 그린다.
     ///
     /// - `buf`: 편집 버퍼(트리거 텍스트).
@@ -120,7 +142,7 @@ impl<'a> Combobox<'a> {
         buf: &mut String,
         entries: &[&str],
         active: &mut Option<usize>,
-    ) -> ComboboxAction {
+    ) -> ComboboxResponse {
         let width = self.width.unwrap_or_else(|| ui.available_width());
 
         // 트리거 = Input 그대로(mono·아이콘·focus ring 계약을 재사용).
@@ -132,6 +154,9 @@ impl<'a> Combobox<'a> {
         if let Some(icon) = self.icon {
             trigger = trigger.icon(icon);
         }
+        if let Some(color) = self.trigger_text_color {
+            trigger = trigger.text_color(color);
+        }
         let resp = trigger.show(ui, theme, buf);
 
         let mut action = if resp.changed() {
@@ -140,13 +165,19 @@ impl<'a> Combobox<'a> {
             ComboboxAction::None
         };
 
-        // 편집(포커스) 중이면 열림 — 브라우저 주소창형(포커스 즉시 히스토리 노출).
-        let open = self.enabled && resp.has_focus();
-        if !open {
-            return action;
+        // 포커스 중이면 열림(브라우저 주소창형 — 포커스 즉시 히스토리 노출).
+        let focused = self.enabled && resp.has_focus();
+        // singleline TextEdit 은 Enter/Esc 에서 **같은 프레임에 포커스를 넘긴다** → 그
+        // 프레임엔 `has_focus()` 가 이미 false 다. Enter/Esc 확정을 놓치지 않도록 이번
+        // 프레임에 포커스를 잃은 경우(`lost_focus`)까지 "관여(engaged)"로 본다.
+        let engaged = self.enabled && (resp.has_focus() || resp.lost_focus());
+        if !engaged {
+            return ComboboxResponse {
+                action,
+                response: resp,
+            };
         }
 
-        // 키보드 스캐폴드 — 실제 키 forward 이후 종단 검증(작업1 트랙).
         let (down, up, enter, esc) = ui.input(|i| {
             (
                 i.key_pressed(egui::Key::ArrowDown),
@@ -156,33 +187,40 @@ impl<'a> Combobox<'a> {
             )
         });
         let n = entries.len();
-        if down {
-            *active = step_active(*active, n, true);
-        }
-        if up {
-            *active = step_active(*active, n, false);
+        // active 이동·드롭다운 렌더는 실제 포커스(열림)일 때만. 닫히는 프레임엔 스킵.
+        if focused {
+            if down {
+                *active = step_active(*active, n, true);
+            }
+            if up {
+                *active = step_active(*active, n, false);
+            }
         }
 
         // 드롭다운 — 트리거 아래 floating(레이아웃 불변). space-xs 오프셋.
-        let area_id = ui.make_persistent_id(("tasty_combobox", self.id_salt));
-        let origin = resp.rect.left_bottom() + egui::vec2(0.0, theme.spacing_xs.value());
-        let clicked = egui::Area::new(area_id)
-            .order(egui::Order::Foreground)
-            .fixed_pos(origin)
-            .constrain(true)
-            .show(ui.ctx(), |ui| {
-                ui.set_width(width);
-                combobox_dropdown(
-                    ui,
-                    theme,
-                    entries,
-                    self.empty_label,
-                    self.mono,
-                    self.row_icon,
-                    *active,
-                )
-            })
-            .inner;
+        let clicked = if focused {
+            let area_id = ui.make_persistent_id(("tasty_combobox", self.id_salt));
+            let origin = resp.rect.left_bottom() + egui::vec2(0.0, theme.spacing_xs.value());
+            egui::Area::new(area_id)
+                .order(egui::Order::Foreground)
+                .fixed_pos(origin)
+                .constrain(true)
+                .show(ui.ctx(), |ui| {
+                    ui.set_width(width);
+                    combobox_dropdown(
+                        ui,
+                        theme,
+                        entries,
+                        self.empty_label,
+                        self.mono,
+                        self.row_icon,
+                        *active,
+                    )
+                })
+                .inner
+        } else {
+            None
+        };
 
         // 행위 우선순위: Esc > Enter/click > Edited.
         if esc {
@@ -192,7 +230,10 @@ impl<'a> Combobox<'a> {
         } else if let Some(i) = clicked {
             action = ComboboxAction::Pick(i);
         }
-        action
+        ComboboxResponse {
+            action,
+            response: resp,
+        }
     }
 }
 
