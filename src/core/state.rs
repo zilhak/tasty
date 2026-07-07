@@ -962,6 +962,7 @@ mod finders;
 mod highlight;
 mod message;
 mod pty;
+mod soft_occupancy;
 mod terminal_finders;
 
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.

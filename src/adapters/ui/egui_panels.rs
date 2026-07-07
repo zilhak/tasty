@@ -571,11 +571,8 @@ fn draw_occupied_overlays(
     }
 
     if let Some(sid) = pending_force_detach {
-        // workspace 점유면 멤버 일괄 해제(단계 6 D6), 아니면 surface 단위.
-        if let Some(ws) = engine.attach.workspace_of_surface(sid) {
-            engine.attach.force_detach_workspace(ws);
-        } else {
-            engine.attach.force_detach(sid);
-        }
+        // tier 공용 해제(ADR-0040): hard(workspace 멤버·surface lock) 든 soft 든 로컬
+        // 사용자가 끊는다. workspace 점유면 멤버 일괄(D6), soft 는 holder 통지 없이 제거.
+        engine.release_occupancy(sid);
     }
 }

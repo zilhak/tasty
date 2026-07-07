@@ -223,6 +223,13 @@ impl OccupancyRegistry {
         }
     }
 
+    /// soft 점유 무조건 해제(주체 검증 없음). 로컬 사용자 force-detach 와 focus 지연
+    /// 청소(ADR-0040 §수명)가 tier 공용으로 호출한다 — soft holder 는 stream client 가
+    /// 아니라 StreamHub 통지 없이 엔트리만 제거된다. 반환: 실제로 제거됐는지.
+    pub fn clear_soft(&mut self, surface_id: SurfaceId) -> bool {
+        self.soft.remove(&surface_id).is_some()
+    }
+
     /// surface 의 점유 client(없으면 None). 단계 4 placeholder 렌더("client N 점유
     /// 중")·force-detach UI 가 사용. 현재는 테스트만 호출하므로 dead_code 침묵.
     #[allow(dead_code)]
@@ -711,6 +718,16 @@ mod tests {
             reg.release_soft(10, 99).unwrap_err(),
             OccupancyError::NotOccupied
         );
+    }
+
+    #[test]
+    fn clear_soft_removes_unconditionally() {
+        // force-detach·focus 지연청소 tier 공용 primitive: 주체 검증 없이 제거.
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_soft(10, 99, None).unwrap();
+        assert!(reg.clear_soft(10));
+        assert!(reg.occupancy_of(10).is_none());
+        assert!(!reg.clear_soft(10)); // 이미 없으면 false
     }
 
     #[test]
