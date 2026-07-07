@@ -1120,45 +1120,80 @@ impl App {
         hub: &crate::adapters::production::stream_hub::StreamHub,
     ) {
         let anchor = op.anchor_surface_id();
-        let result: Option<Result<(), String>> = {
-            let core = &mut self.core;
-            let mut found = None;
-            for w in self.view.views.values_mut() {
-                let Some(main) = w.as_main_mut() else {
-                    continue;
-                };
-                let engine = &mut main.core_state;
-                let Some(ws) = engine.attach.workspace_of_surface(anchor) else {
-                    continue;
-                };
-                if engine.attach.workspace_holder(ws) != Some(client_id) {
-                    // 점유자 아님 → 이 client 는 이 워크스페이스를 조작할 권한 없음.
-                    found = Some(Err("not workspace holder".to_string()));
-                    break;
-                }
-                let r = crate::core::attach_runtime::execute_forwarded_structural_op(
+        let core = &mut self.core;
+        let mut handled = false;
+        for w in self.view.views.values_mut() {
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
+            let engine = &mut main.core_state;
+            let Some(ws) = engine.attach.workspace_of_surface(anchor) else {
+                continue;
+            };
+            handled = true;
+            // 점유자(holder)만 이 워크스페이스를 조작할 수 있다(ADR-0040 hard 점유).
+            let (ok, reason, delta) = if engine.attach.workspace_holder(ws) != Some(client_id) {
+                (false, Some("not workspace holder".to_string()), None)
+            } else {
+                match crate::core::attach_runtime::execute_forwarded_structural_op(
                     core,
                     &mut main.state,
                     engine,
                     op,
-                );
-                w.mark_dirty();
-                found = Some(r);
-                break;
+                ) {
+                    Ok(delta) => (true, None, delta),
+                    Err(reason) => (false, Some(reason), None),
+                }
+            };
+            // 순서: StructuralResult(회신) → StructuralDelta(역반영) → 새 surface tap.
+            // delta 를 tap 보다 먼저 보내 client 가 매핑을 만든 뒤 스냅샷을 받게 한다.
+            reply_structural_result(hub, client_id, op_id, ok, reason);
+            if let Some(fd) = delta {
+                push_structural_delta(hub, client_id, &fd.delta);
+                for sid in fd.added_terminals {
+                    engine.tap_surface_for_stream(sid, client_id, hub);
+                }
             }
-            found
-        };
-
-        let (ok, reason) = match result {
-            Some(Ok(())) => (true, None),
-            Some(Err(reason)) => (false, Some(reason)),
-            None => (false, Some("workspace not found".to_string())),
-        };
-        let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
-        let frame = crate::ipc::stream::StreamFrame::new(
-            crate::ipc::stream::StreamTag::Control,
-            serde_json::to_vec(&reply).unwrap_or_default(),
-        );
-        let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+            w.mark_dirty();
+            break;
+        }
+        if !handled {
+            reply_structural_result(
+                hub,
+                client_id,
+                op_id,
+                false,
+                Some("workspace not found".to_string()),
+            );
+        }
     }
+}
+
+/// `StructuralResult` 회신 프레임을 client 에 push(best-effort).
+fn reply_structural_result(
+    hub: &crate::adapters::production::stream_hub::StreamHub,
+    client_id: u32,
+    op_id: u64,
+    ok: bool,
+    reason: Option<String>,
+) {
+    let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
+    let frame = crate::ipc::stream::StreamFrame::new(
+        crate::ipc::stream::StreamTag::Control,
+        serde_json::to_vec(&reply).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+}
+
+/// `StructuralDelta`(역반영) 프레임을 client 에 push(best-effort).
+fn push_structural_delta(
+    hub: &crate::adapters::production::stream_hub::StreamHub,
+    client_id: u32,
+    delta: &crate::ipc::stream::StreamControl,
+) {
+    let frame = crate::ipc::stream::StreamFrame::new(
+        crate::ipc::stream::StreamTag::Control,
+        serde_json::to_vec(delta).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort delta — client 끊김 시 무해.
 }

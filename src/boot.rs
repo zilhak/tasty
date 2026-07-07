@@ -328,23 +328,24 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 }
                 for (client_id, op_id, op) in outcome.structural_ops {
                     // mirror client 가 forward 한 구조 op — anchor 워크스페이스를 그
-                    // client 가 점유(holder)할 때만 실행하고 StructuralResult 로 회신.
+                    // client 가 점유(holder)할 때만 실행하고 StructuralResult 로 회신,
+                    // 성공 시 StructuralDelta 로 역반영(3단계). 순서: result → delta →
+                    // 새 surface tap(client 가 매핑을 만든 뒤 스냅샷을 받게).
                     let anchor = op.anchor_surface_id();
-                    let result = match engine.attach.workspace_of_surface(anchor) {
+                    let (ok, reason, delta) = match engine.attach.workspace_of_surface(anchor) {
                         Some(ws) if engine.attach.workspace_holder(ws) == Some(client_id) => {
-                            crate::core::attach_runtime::execute_forwarded_structural_op(
+                            match crate::core::attach_runtime::execute_forwarded_structural_op(
                                 &mut app.core,
                                 &mut state,
                                 &mut engine,
                                 &op,
-                            )
+                            ) {
+                                Ok(delta) => (true, None, delta),
+                                Err(reason) => (false, Some(reason), None),
+                            }
                         }
-                        Some(_) => Err("not workspace holder".to_string()),
-                        None => Err("workspace not found".to_string()),
-                    };
-                    let (ok, reason) = match result {
-                        Ok(()) => (true, None),
-                        Err(reason) => (false, Some(reason)),
+                        Some(_) => (false, Some("not workspace holder".to_string()), None),
+                        None => (false, Some("workspace not found".to_string()), None),
                     };
                     let reply =
                         crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
@@ -353,6 +354,16 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         serde_json::to_vec(&reply).unwrap_or_default(),
                     );
                     let _ = app.stream_hub.push(client_id, frame); // best-effort 회신 — 무시.
+                    if let Some(fd) = delta {
+                        let delta_frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Control,
+                            serde_json::to_vec(&fd.delta).unwrap_or_default(),
+                        );
+                        let _ = app.stream_hub.push(client_id, delta_frame); // best-effort delta — 무시.
+                        for sid in fd.added_terminals {
+                            engine.tap_surface_for_stream(sid, client_id, &app.stream_hub);
+                        }
+                    }
                 }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);

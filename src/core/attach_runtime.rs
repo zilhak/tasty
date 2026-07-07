@@ -192,50 +192,9 @@ impl CoreState {
         );
         let _ = hub.push(client_id, descriptor_frame); // best-effort 디스크립터 push — PushResult(Result 아님) 무시: client 끊김 시 forwarder 가 정리.
 
-        // 각 터미널: 초기 스냅샷(mux) + 출력 forwarder(mux). client 끊김 시 자동 종료.
+        // 각 터미널: 초기 스냅샷(mux) + 출력/resize forwarder(mux). client 끊김 시 자동 종료.
         for &sid in &class.terminals {
-            let Some(terminal) = self.terminals.get_mut(sid) else {
-                continue;
-            };
-            let snapshot = terminal.snapshot_as_vt();
-            let tap_rx = terminal.add_output_tap();
-            let resize_rx = terminal.add_resize_tap();
-            let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
-            let _ = hub.push(client_id, snapshot_frame); // best-effort 초기 mux 스냅샷 push — PushResult 무시: client 끊김 시 forwarder 가 정리.
-            let hub2 = hub.clone();
-            thread::spawn(move || {
-                for chunk in tap_rx {
-                    match hub2.push(
-                        client_id,
-                        StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
-                    ) {
-                        PushResult::Unknown | PushResult::Disconnected => break,
-                        _ => {}
-                    }
-                }
-            });
-
-            // resize forwarder: 원격 grid 변경 → client mirror 크기 갱신. workspace
-            // 모드라 Control payload 에 remote surface_id(sid)를 실어 client 가
-            // remote→local 매핑으로 해당 mirror 만 갱신하게 한다.
-            let hub3 = hub.clone();
-            thread::spawn(move || {
-                for (cols, rows) in resize_rx {
-                    let msg = StreamControl::Resize {
-                        surface_id: sid,
-                        cols,
-                        rows,
-                    };
-                    let frame = StreamFrame::new(
-                        StreamTag::Control,
-                        serde_json::to_vec(&msg).unwrap_or_default(),
-                    );
-                    match hub3.push(client_id, frame) {
-                        PushResult::Unknown | PushResult::Disconnected => break,
-                        _ => {}
-                    }
-                }
-            });
+            self.tap_surface_for_stream(sid, client_id, hub);
         }
 
         tracing::debug!(
@@ -243,6 +202,65 @@ impl CoreState {
             class.terminals.len(),
             class.non_terminals.len(),
         );
+    }
+
+    /// 한 라이브 터미널 surface 를 workspace-mode stream client 로 tap 한다: 초기 화면
+    /// bulk 스냅샷(mux) 을 1회 push 한 뒤 출력·resize forwarder 스레드를 건다. 핸드셰이크
+    /// (`attach_workspace_for_stream`)와 3단계 역반영(원격에 새로 생긴 surface 를
+    /// on-the-fly 로 tap)이 공유한다.
+    ///
+    /// snapshot → tap 은 인접 동기 호출이라 그 사이 ingest 가 없어 누락/중복이 없다
+    /// (메인루프 단일소유). client 끊김(push Unknown/Disconnected) 또는 원격 터미널
+    /// drop(close 로 `terminals.remove` → tap sender drop → 채널 EOF) 시 forwarder 는
+    /// 자연 종료한다.
+    pub(crate) fn tap_surface_for_stream(
+        &mut self,
+        sid: SurfaceId,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        let Some(terminal) = self.terminals.get_mut(sid) else {
+            return;
+        };
+        let snapshot = terminal.snapshot_as_vt();
+        let tap_rx = terminal.add_output_tap();
+        let resize_rx = terminal.add_resize_tap();
+        let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
+        let _ = hub.push(client_id, snapshot_frame); // best-effort 초기 mux 스냅샷 push — PushResult 무시: client 끊김 시 forwarder 가 정리.
+        let hub2 = hub.clone();
+        thread::spawn(move || {
+            for chunk in tap_rx {
+                match hub2.push(
+                    client_id,
+                    StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
+                ) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+
+        // resize forwarder: 원격 grid 변경 → client mirror 크기 갱신. workspace 모드라
+        // Control payload 에 remote surface_id(sid)를 실어 client 가 remote→local
+        // 매핑으로 해당 mirror 만 갱신하게 한다.
+        let hub3 = hub.clone();
+        thread::spawn(move || {
+            for (cols, rows) in resize_rx {
+                let msg = StreamControl::Resize {
+                    surface_id: sid,
+                    cols,
+                    rows,
+                };
+                let frame = StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&msg).unwrap_or_default(),
+                );
+                match hub3.push(client_id, frame) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
     }
 
     /// workspace mode client 의 입력(surface-prefixed)을 지정 remote surface 의 PTY 로.
@@ -274,6 +292,25 @@ impl CoreState {
         workspace_id: u32,
         class: &AttachSurfaceClass,
     ) -> serde_json::Value {
+        let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
+        serde_json::json!({
+            "event": "attached_workspace",
+            "workspace_id": workspace_id,
+            "name": self.workspaces[idx].name,
+            "tree": tree,
+            "surfaces": surfaces,
+        })
+    }
+
+    /// `(tree, surfaces)` 페이로드 — 핸드셰이크 디스크립터(`build_workspace_descriptor`)와
+    /// 3단계 역반영 delta([`StreamControl::StructuralDelta`])가 공유한다. tree 는
+    /// `to_attach_tree_json`(분할 방향/비율 포함), surfaces 는 per-surface
+    /// role/cols/rows/kind.
+    pub(crate) fn build_workspace_tree_surfaces(
+        &self,
+        idx: usize,
+        class: &AttachSurfaceClass,
+    ) -> (serde_json::Value, Vec<serde_json::Value>) {
         let ws = &self.workspaces[idx];
         // sid → kind (비-터미널 placeholder 라벨용).
         let mut kinds: HashMap<u32, &'static str> = HashMap::new();
@@ -309,14 +346,20 @@ impl CoreState {
                 "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
             }));
         }
-        serde_json::json!({
-            "event": "attached_workspace",
-            "workspace_id": workspace_id,
-            "name": ws.name,
-            "tree": ws.to_attach_tree_json(),
-            "surfaces": surfaces,
-        })
+        (ws.to_attach_tree_json(), surfaces)
     }
+}
+
+/// mirror client 가 forward 한 구조 op 를 이 인스턴스(원격 = authoritative)에서 실행한
+/// 결과로, 성공 시 client 에 역반영할 delta 를 담는다(3단계).
+#[derive(Debug)]
+pub(crate) struct ForwardedDelta {
+    /// client 에 push 할 `StreamControl::StructuralDelta`(원격 ws 전체 트리+surfaces).
+    pub delta: crate::ipc::stream::StreamControl,
+    /// 이 op 로 **새로 생긴** 터미널 surface 들. 호출자가 delta push **직후**
+    /// [`CoreState::tap_surface_for_stream`] 로 tap 을 건다(스냅샷이 client 매핑 생성
+    /// 뒤에 도착하도록 delta 다음 순서를 보장).
+    pub added_terminals: Vec<SurfaceId>,
 }
 
 /// mirror client 가 forward 한 구조 op 를 이 인스턴스(원격 = authoritative)에서
@@ -326,9 +369,17 @@ impl CoreState {
 /// 워크스페이스는 mirror 가 아니므로 `Core::apply` 의 mirror 가드에 걸리지 않고 실제로
 /// 실행된다.
 ///
-/// 반환: 성공이면 `Ok(())`, JSON-RPC 에러(예: 원격에 등록되지 않은 plugin kind →
-/// `create_surface_via_registry` 가 "unknown surface kind" Err)면 `Err(reason)`. 호출자
-/// (메인루프)가 이 결과를 [`StreamControl::StructuralResult`] 로 client 에 회신한다.
+/// 반환:
+/// - 성공: `Ok(Some(delta))` — anchor 워크스페이스의 실행 **전/후** `all_surface_ids`
+///   diff 로 added(신규 터미널)를 계산하고, 실행 후 트리+surfaces 를 담은
+///   [`StreamControl::StructuralDelta`] 를 만들어 반환한다(핸들러 응답 파싱이 아니라
+///   트리 diff 라 close cascade·move 도 균일 커버). 워크스페이스가 통째로 사라진 극단
+///   케이스는 `Ok(None)`.
+/// - 실패: JSON-RPC 에러(예: 원격 미등록 plugin kind → "unknown surface kind")면
+///   `Err(reason)`.
+///
+/// 호출자(메인루프)가 [`StreamControl::StructuralResult`] 로 회신한 **뒤** delta 를 push
+/// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
 ///
 /// `ConvertSurface`/`MoveSurface` 는 재사용할 IPC 핸들러가 없어 아직 forward 대상이
 /// 아니다(client 도 이 둘은 forward 하지 않고 기존 차단 유지) — 방어적으로 거부 사유를
@@ -338,9 +389,25 @@ pub(crate) fn execute_forwarded_structural_op(
     state: &mut crate::state::AppState,
     engine: &mut CoreState,
     op: &StructuralOp,
-) -> Result<(), String> {
+) -> Result<Option<ForwardedDelta>, String> {
     use crate::adapters::ipc::handler::{pane, surface, tab};
     use serde_json::json;
+    use std::collections::HashSet;
+
+    // anchor 워크스페이스를 실행 **전** 확보(close 로 anchor surface 가 사라져도 ws id
+    // 로 재조회 가능하게). before-set 은 delta 의 added 계산 기준.
+    let ws_id = engine
+        .find_workspace_index_for_surface(op.anchor_surface_id())
+        .map(|(idx, _)| engine.workspaces[idx].id);
+    let before: HashSet<SurfaceId> = ws_id
+        .and_then(|id| engine.find_workspace_index_for_id(id))
+        .map(|idx| {
+            engine.workspaces[idx]
+                .all_surface_ids()
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_default();
 
     // 재사용 핸들러는 응답 id 를 페이로드로만 쓴다(내부 호출 → Null).
     let rid = serde_json::Value::Null;
@@ -426,10 +493,36 @@ pub(crate) fn execute_forwarded_structural_op(
         }
     };
 
-    match resp.error {
-        Some(err) => Err(err.message),
-        None => Ok(()),
+    if let Some(err) = resp.error {
+        return Err(err.message);
     }
+
+    // 성공 — 실행 후 트리 스냅샷으로 delta 구성. anchor 를 못 찾았거나(방어) ws 가 통째로
+    // 사라졌으면(극단) delta 없음.
+    let Some(ws_id) = ws_id else {
+        return Ok(None);
+    };
+    let Some(idx_after) = engine.find_workspace_index_for_id(ws_id) else {
+        return Ok(None);
+    };
+    let class = engine.workspaces[idx_after].classify_attach_surfaces();
+    // added = after − before 중 터미널만(비-터미널 placeholder 는 tap 불필요).
+    let added_terminals: Vec<SurfaceId> = class
+        .terminals
+        .iter()
+        .copied()
+        .filter(|sid| !before.contains(sid))
+        .collect();
+    let (tree, surfaces) = engine.build_workspace_tree_surfaces(idx_after, &class);
+    let delta = crate::ipc::stream::StreamControl::StructuralDelta {
+        workspace_id: ws_id,
+        tree,
+        surfaces,
+    };
+    Ok(Some(ForwardedDelta {
+        delta,
+        added_terminals,
+    }))
 }
 
 /// forward 된 op 의 kind params(있으면)에 재사용 핸들러가 기대하는 제어 키
@@ -526,8 +619,23 @@ mod forward_exec_tests {
         a
     }
 
+    /// 성공한 op 의 delta 에서 surfaces 배열의 remote_id 집합을 뽑는다(테스트 헬퍼).
+    fn delta_surface_ids(fd: &super::ForwardedDelta) -> std::collections::HashSet<u32> {
+        let crate::ipc::stream::StreamControl::StructuralDelta { surfaces, .. } = &fd.delta else {
+            panic!("expected StructuralDelta");
+        };
+        surfaces
+            .iter()
+            .filter_map(|s| {
+                s.get("remote_id")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+            })
+            .collect()
+    }
+
     /// forward 된 SplitSurface 는 (비-mirror) 서버 워크스페이스에서 실제로 실행되어
-    /// 새 터미널이 insert 된다(=원격이 새 PTY spawn). Ok 회신.
+    /// 새 터미널이 insert 된다(=원격이 새 PTY spawn). Ok + delta(신규 surface 포함).
     #[test]
     fn forward_split_surface_executes_and_spawns() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
@@ -540,15 +648,25 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
         };
         let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
+        let fd = r
+            .expect("expected Ok")
+            .expect("split 성공은 delta 를 동반해야 한다");
         assert_eq!(
             engine.terminals.iter().count(),
             before + 1,
             "forward split 은 서버에서 새 터미널을 spawn 해야 한다"
         );
+        // added_terminals 는 신규 surface 하나, delta.surfaces 에는 anchor+신규 모두 포함.
+        assert_eq!(fd.added_terminals.len(), 1, "added 는 신규 터미널 1개");
+        let ids = delta_surface_ids(&fd);
+        assert!(ids.contains(&a), "delta 에 anchor surface 가 있어야 한다");
+        assert!(
+            ids.contains(&fd.added_terminals[0]),
+            "delta.surfaces 에 신규 surface 가 있어야 한다"
+        );
     }
 
-    /// forward 된 NewTab 도 실제 실행(pane 은 anchor surface 로 resolve). Ok + 터미널 +1.
+    /// forward 된 NewTab 도 실제 실행(pane 은 anchor surface 로 resolve). Ok + delta + 터미널 +1.
     #[test]
     fn forward_new_tab_executes() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
@@ -560,8 +678,41 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
         };
         let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
+        let fd = r.expect("expected Ok").expect("new-tab 성공은 delta 동반");
         assert_eq!(engine.terminals.iter().count(), before + 1);
+        assert_eq!(fd.added_terminals.len(), 1);
+    }
+
+    /// forward 된 CloseTab 은 cascade 로 surface 를 제거한다 — delta 에 그 surface 가
+    /// 빠지고(=client 가 removed 도출), added 는 비어 있다.
+    #[test]
+    fn forward_close_tab_removes_from_delta() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        // 먼저 new-tab 으로 두 번째 탭(surface) 을 만든다.
+        let mk = StructuralOp::NewTab {
+            anchor_surface_id: a,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let added = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mk)
+            .expect("new-tab Ok")
+            .expect("new-tab delta");
+        let new_sid = added.added_terminals[0];
+        // 새 surface 가 속한 탭을 닫는다.
+        let close = StructuralOp::CloseTab {
+            anchor_surface_id: new_sid,
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close)
+            .expect("close Ok")
+            .expect("close delta");
+        assert!(fd.added_terminals.is_empty(), "close 는 added 없음");
+        let ids = delta_surface_ids(&fd);
+        assert!(
+            !ids.contains(&new_sid),
+            "닫힌 surface 는 delta 에서 빠져야 한다"
+        );
+        assert!(ids.contains(&a), "남은 surface 는 delta 에 유지");
     }
 
     /// 원격에 등록되지 않은 kind(예: plugin markdown 부재)는 Err(reason) — client 가
