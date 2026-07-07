@@ -52,7 +52,16 @@ mirror grid 는 **원격이 authoritative** — 로컬 창/pane 크기가 아니
 - **로컬 덮어쓰기 차단**: mirror 는 detached 터미널(PTY 없음)이라, 매 프레임 도는 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `AppState::resize_all`)이 `Terminal::is_detached()` 인 터미널을 skip 한다. 이 한 곳에서 걸러 모든 리사이즈 진입점(창 resize·divider drag·단축키·redraw)을 커버한다.
 - **원격→client 통지**: 원격 터미널 grid 가 실제로 바뀌면(`TerminalState::resize_grid` 이 `true`) 서버의 resize tap(`Terminal::add_resize_tap`)이 새 `(cols, rows)` 를 fan-out 하고, attach forwarder 스레드가 `Control` 프레임에 `StreamControl::Resize{surface_id, cols, rows}` 를 실어 client 에 push 한다. workspace 모드는 `surface_id` 에 remote surface_id 를 실어 client 가 remote→local 매핑으로 해당 mirror 만 리사이즈한다.
 - **순서 보존**: client reader 는 Data(출력)와 Resize 를 **한 버퍼에 도착 순서대로**(`MirrorEvent`) 쌓고, 메인 스레드가 순서대로 적용한다 — resize 앞뒤 출력이 올바른 그리드에서 재생되도록.
-- **`StreamControl` 확장성**: `event` 태그 기반 enum. resize 외 mid-session 이벤트(구조 변경 forward 등)는 새 `StreamTag` 없이 variant 로 추가한다. 알 수 없는 event 는 client 에서 역직렬화 실패로 무시(전방/후방 호환). 단발 핸드셰이크 디스크립터(`attached`/`attached_workspace`/`attach_error`)와 `force_detached` 는 여전히 ad-hoc JSON 으로 위치 기반 파싱.
+- **`StreamControl` 확장성**: `event` 태그 기반 enum. mid-session 이벤트는 새 `StreamTag` 없이 variant 로 추가한다 — 현재 `Resize`(server→client), `StructuralOp`(client→server, 구조 변경 forward), `StructuralResult`(server→client, forward 회신). 알 수 없는 event 는 역직렬화 실패로 무시(전방/후방 호환). 단발 핸드셰이크 디스크립터(`attached`/`attached_workspace`/`attach_error`)와 `force_detached` 는 여전히 ad-hoc JSON 으로 위치 기반 파싱.
+
+## mirror 구조 변경 forward
+
+mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab)은 로컬에서 실행하지 않고 원격(authoritative)에서 실행되도록 forward 한다. 사용자 동작·CLI/IPC 어느 경로든 `Core::apply` 로 수렴하므로 거기 한 곳에서 처리한다. 개념·정책은 [features/remote-attach](../features/remote-attach/index.md#mirror-워크스페이스-내-구조-변경), 여기엔 결선만.
+
+- **request (client→server)**: `Core::apply` 가 mirror 구조 op 를 로컬 차단(`MirrorStructuralBlocked`)하면서 `StructuralOp`(anchor = **로컬** surface id)를 `CoreState.pending_structural_forward` 에 push. `App::dispatch_pending_structural_forwards`(`about_to_wait`, gui)가 drain 해 anchor 를 세션 매핑(`AttachClientSession.remote_to_local` 역방향)으로 **원격 id 로 치환**(`StructuralOp::with_anchor_surface_id`)한 뒤 `StreamTag::Control` 로 전송. anchor 를 surface id 로 잡는 이유: client 는 pane/tab 의 원격 id 매핑을 갖지 않으므로, 원격이 surface 로부터 pane/tab/workspace 를 자기 트리에서 resolve 한다.
+- **실행 (server)**: `StreamHub::pump_inbound` 이 client Control 프레임을 `StructuralOp` 로 분류(`PumpOutcome.structural_ops`) → 메인루프(gui `event_handler`/headless `boot`)가 anchor 워크스페이스의 **holder 를 검증**(hard 점유 = 구조 변경 권한, ADR-0040)한 뒤 `execute_forwarded_structural_op`(`core/attach_runtime.rs`)로 기존 IPC 핸들러(split/tab.create/tab.close/tab.move/pane.close/surface.close)를 재사용해 실행. 서버 ws 는 mirror 가 아니라 `Core::apply` 가드를 통과해 실제 PTY 를 spawn 한다.
+- **회신 (server→client)**: 실행 결과를 `StructuralResult{op_id, ok, reason?}` 로 push. 원격 미등록 kind 는 `create_surface_via_registry` 가 Err → `ok:false`+reason. client reader 가 실패 회신을 `MirrorEvent::StructuralFailed` 로 올려 실패 toast. 성공은 무음.
+- **미구현**: 성공한 forward 로 원격에 생긴 새 surface 를 mirror 트리에 반영하는 **역반영**(server→client 구조 delta push + client 트리 증분 갱신)은 아직 없다. convert/move-surface 와 `Core::apply` 우회 UI 경로(탭 드래그 등)도 아직 forward 아닌 차단.
 
 ## SSH 터널 (원격 client 공통)
 
