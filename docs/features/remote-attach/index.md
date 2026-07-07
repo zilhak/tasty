@@ -48,6 +48,16 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 
 `tasty remote attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 이 명령을 받은 **로컬 GUI 인스턴스**가 client 가 되어 원격 워크스페이스를 mirror 로 재구성한다(`attach.into_gui`). mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되되 **이름 앞 하늘색 `>_→` glyph**(collapsed 레일은 아바타 우하단 하늘색 corner chip)로 로컬과 구분(`Workspace.mirror`). status dot 은 실행상태(running/idle) 전용이며 mirror 색을 싣지 않는다 — 원격 origin 은 별도 시각 축(디자인 `workspace-mirror-fg`, notif=우상단 / attached=둘레 ring 과 채널 분리). 갱신은 원격 출력이 올 때 즉시, 3초 tick 은 backstop.
 
+### mirror 워크스페이스 내 구조 변경
+
+mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의 뷰다 — 입력(키스트로크)은 이미 원격 PTY 로 forward 된다. 그 안에서의 **구조 변경**(surface/pane split · 새 탭 · 닫기 · 탭 순서 변경)은 로컬에서 실행하면 로컬 셸 PTY 가 mirror 에 섞여 "workspace 전체가 remote" 불변식을 깬다. 따라서 mirror 워크스페이스 안의 구조 변경은 **로컬에서 실행하지 않고 차단**되며 안내 toast(`attach.toast.mirror_structural_blocked`)를 띄운다. 판별·차단 지점:
+
+- **에이전트 IPC · 사용자 단축키(intent)** 는 단일 mutate 진입점 `Core::apply` 가 대상 워크스페이스가 mirror 면 `MirrorStructuralBlocked` 로 거부(`CoreState::mirror_workspace_index_for_structural`).
+- `Core::apply` 를 우회하는 UI 직접 조작(`AppState::add_tab`/`add_kind_tab`/`close_active_*`, 탭 드래그·컨텍스트 메뉴 이동)은 `AppState::block_mirror_structural` 가드로 차단.
+- **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단하지 않는다.
+
+구조 변경을 원격 인스턴스에서 실행되게 **forward** 하는 경로(원격 실패 회신·mirror 트리 역반영)는 아직 미구현이다.
+
 ### 자동 매핑
 
 `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, layout.json 영속). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
