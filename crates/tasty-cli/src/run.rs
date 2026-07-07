@@ -89,6 +89,14 @@ fn run_dynamic_client(
     }
 }
 
+/// auto-wait chain / polling 의 각 응답을 **line-delimited(compact 한 줄)** JSON 으로
+/// 직렬화한다. pretty(여러 줄)로 내면 한 프로세스 stdout 에 두 응답을 합칠 때 물리적
+/// 라인 경계가 응답 경계와 어긋나 "마지막 line 만 파싱" 계약이 깨진다 — 그래서 compact
+/// 고정. serde_json compact 는 중첩 값에도 개행을 넣지 않으므로 emit 당 정확히 1 줄.
+fn line_json(value: &serde_json::Value) -> String {
+    serde_json::to_string(value).unwrap_or_default()
+}
+
 /// `claude spawn` / `claude tell` / `codex spawn` / `codex tell` 같이 manifest 가
 /// `auto_wait` 를 선언한 명령. 1 차 IPC 응답을 line-delimited JSON 으로 출력한 뒤,
 /// `--no-wait` 가 아니면 wait IPC 를 chain 호출해 terminal_states 도달까지 block —
@@ -124,10 +132,7 @@ fn run_dynamic_client_with_auto_wait(
             }
         }
     };
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&first_value).unwrap_or_default()
-    );
+    println!("{}", line_json(&first_value));
 
     // ── 2) --no-wait 이면 여기서 종료.
     if aw.skipped {
@@ -235,10 +240,7 @@ fn run_dynamic_client_polling(
                     .map(|s| polling.terminal_states.iter().any(|t| t == s))
                     .unwrap_or(false);
                 if reached {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&value).unwrap_or_default()
-                    );
+                    println!("{}", line_json(&value));
                     return Ok(());
                 }
                 last_response = Some(value);
@@ -259,7 +261,7 @@ fn run_dynamic_client_polling(
         {
             // timeout — 마지막 응답을 그대로 출력. terminal 아님을 caller 가 판단.
             if let Some(v) = last_response {
-                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+                println!("{}", line_json(&v));
             }
             return Ok(());
         }
@@ -758,6 +760,33 @@ mod tests {
             request_params,
             skipped: false,
         }
+    }
+
+    #[test]
+    fn line_json_is_single_physical_line() {
+        // 프레이밍 계약: auto-wait chain / polling 의 각 emit 은 정확히 1 물리 라인이어야
+        // "마지막 line 파싱"이 성립한다. 중첩 객체/배열이 들어와도 compact 직렬화는
+        // 개행을 넣지 않으므로 두 응답(spawn + wait)을 이어붙여도 라인 경계 = 응답 경계.
+        let spawn_resp = json!({
+            "child_index": 3,
+            "child_surface_id": 42,
+            "parent_surface_id": 11,
+            "nested": { "pane_id": 7, "list": [1, 2, 3] }
+        });
+        let wait_resp = json!({ "state": "idle", "meta": { "a": [true, false] } });
+        let spawn_line = line_json(&spawn_resp);
+        let wait_line = line_json(&wait_resp);
+        assert!(!spawn_line.contains('\n'), "spawn emit must be single-line");
+        assert!(!wait_line.contains('\n'), "wait emit must be single-line");
+        // 두 emit 을 개행으로 이어붙인 stdout(경로 A) 은 정확히 2 물리 라인이고,
+        // 마지막 라인은 그 자체로 유효한 wait JSON 이다.
+        let combined = format!("{spawn_line}\n{wait_line}");
+        let lines: Vec<&str> = combined.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let parsed_last: Value = serde_json::from_str(lines[1]).expect("last line valid JSON");
+        assert_eq!(parsed_last.get("state"), Some(&Value::from("idle")));
+        let parsed_first: Value = serde_json::from_str(lines[0]).expect("first line valid JSON");
+        assert_eq!(parsed_first.get("child_index"), Some(&Value::from(3)));
     }
 
     #[test]
