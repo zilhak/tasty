@@ -1001,11 +1001,18 @@ mod tests {
         // 미할당 조합이라도 패널은 뜬다(이전엔 visible:false 였음).
         assert_eq!(v["visible"], serde_json::json!(true), "dump={v}");
         let sections = v["sections"].as_array().expect("sections 배열");
-        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true.
+        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true. combo_keycaps 는 alt 축을
+        // macOS 에서 물리 Cmd 로 표기하므로(디자인), 기대 라벨은 플랫폼에 따라 다르다.
+        let alt_label = if cfg!(target_os = "macos") {
+            "Cmd"
+        } else {
+            "Alt"
+        };
+        let held_combo = format!("Ctrl+{alt_label}");
         let ctrl_alt = sections
             .iter()
-            .find(|s| s["combo"] == serde_json::json!("Ctrl+Alt"))
-            .expect("Ctrl+Alt 섹션 존재");
+            .find(|s| s["combo"] == serde_json::json!(held_combo))
+            .unwrap_or_else(|| panic!("{held_combo} 섹션 존재. dump={v}"));
         assert_eq!(ctrl_alt["empty"], serde_json::json!(true));
         assert!(ctrl_alt["rows"].as_array().unwrap().is_empty());
         assert!(ctrl_alt["roles"].as_array().unwrap().is_empty());
