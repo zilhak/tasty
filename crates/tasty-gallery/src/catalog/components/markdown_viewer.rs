@@ -1,19 +1,22 @@
 //! `markdown_viewer` specimen — Markdown surface 의 host egui 패널 (Layouts).
 //!
-//! 본체 렌더 경로: `src/adapters/ui/surface/markdown.rs::draw_markdown` 가
-//! `ScrollArea::vertical` 안에서 tasty 자체 렌더러(`surface/markdown/render.rs`)로
-//! pulldown-cmark AST 를 그린다. toolbar·헤더 없이 surface 타일 전체를 본문이 채운다.
+//! 본체 렌더 경로(소스 TODO 08 이후): `crates/tasty-plugin-markdown` 이 **`egui_commonmark`
+//! 라이브러리**로 마크다운을 그린다(hand-rolled 렌더러 은퇴). 색은 전부 `egui::Visuals` 에서
+//! 읽으므로 plugin 이 Theme 시맨틱 토큰을 `Visuals`/text-style 에 주입해 디자인 토큰이 출력을
+//! 몬다. toolbar·헤더 없이 surface 타일 전체를 본문이 채운다.
 //!
-//! 디자인의 핵심은 **14px UI cap 안의 prose element 계층**이다: heading 은 크기만이 아니라
-//! `size → weight → color → case` 로 갈린다. h1 만 content 예외로 `prose-h1`(20)이고
-//! 나머지는 ≤ `max`(14). egui 는 합성 weight 가 없어 700/600/500 단계는 **size+color+case**
-//! 가 대신 나르며(h2·h3 은 같은 14/primary 라 시각적으로 겹친다 — egui 한계), inline bold 는
-//! text-primary 승격으로 신호한다. 본문 줄간격은 `line-height-prose`(1.6).
-//!
-//! 갤러리는 본체 crate·pulldown-cmark 에 의존하지 않으므로 같은 토큰·계층으로 element
-//! catalog(heading 6단계 / inline runs / bullet·ordered·task list / table / nested
-//! blockquote / hr / code)와 상태(load-fail·empty·loading)를 전사한다 — 픽셀 동일성
-//! 비목표, 토큰·구조 정합 목표.
+//! **library-driven 주석 (이 specimen 은 라이브러리 출력의 근사):** 아래 카탈로그는 갤러리가
+//! `egui_commonmark`/plugin 에 의존하지 않으므로 같은 토큰·계층을 **손으로 전사**한 것이다 —
+//! 라이브러리 실제 출력과 픽셀 동일성은 비목표. 라이브러리가 확정한 디자인 예외(정본
+//! `tokens/semantic.css:137-138,152`):
+//! - **heading 사다리는 라이브러리가 보간**한다 — `Heading`(prose-h1 20 앵커)↔`Body`(13) 사이를
+//!   H2..H6 이 자동 보간(per-H2 픽셀 지정 불가, prose-h2 deprecated). h2·h3 이 시각적으로
+//!   겹치는 것은 이 보간의 결과다.
+//! - **본문 leading override 불가**(line-height-prose deprecated — 라이브러리 소유).
+//! - **표**는 `Frame::group`+`Grid::striped` 로 그려 grid border(md-table-border, 불투명)·zebra
+//!   (md-table-row-bg-zebra)·cell fg(md-table-cell-fg)만 노출 — header 밴드/불투명 base fill/
+//!   per-cell 8·4px 패딩은 라이브러리 Grid 로 도달 불가(heading 보간과 동류의 라이브러리 제약).
+//! - inline bold 는 text-primary(strong) 승격으로 신호(egui 합성 weight 없음).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Spinner, checkbox};
@@ -107,13 +110,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "addr field",
                 "28px · surface-raised · border-focus ring on edit",
             ),
-            ("body", "13 · line-height-prose 1.6 · text-secondary"),
-            ("h1", "prose-h1 20 · text-primary (cap-exempt)"),
-            ("h2/h3", "14 · text-primary"),
-            ("h4/h5/h6", "13 · secondary→muted · h6 UPPER"),
-            ("code", "mono · surface-raised"),
-            ("link", "accent-primary · underline"),
-            ("table", "grid + zebra · header surface-raised"),
+            ("body", "13 · text-secondary · leading=library-owned"),
+            ("h1", "Heading anchor prose-h1 20 · text-primary"),
+            ("h2–h6", "library-interpolated 20→13 · strong"),
+            ("code", "mono · surface-raised · egui_extras highlight"),
+            ("link", "accent-primary · host-routed"),
+            ("table", "grid border + zebra (header band n/a)"),
             ("states", "failed=accent-danger · empty=muted"),
         ],
         &[
@@ -166,13 +168,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "A read-only Markdown surface — tasty parses with pulldown-cmark and paints every \
-         element from Theme tokens so the six-level prose heading hierarchy (size → weight \
-         → color → case) and the 1.6 line-height-prose body leading hold. egui has no \
-         synthetic font weight, so the 700/600/500 steps are carried by size + color + \
-         case (h2 and h3 share 14/primary and read alike — an egui limit). Below the \
-         document: the heading type-scale, and the load-fail / empty / loading chrome that \
-         replaces a raw `Error:` body.",
+        "A read-only Markdown surface — the plugin renders with egui_commonmark, injecting \
+         Theme tokens into egui Visuals so the colors follow the design. The heading ladder \
+         is interpolated by the library between the Heading anchor (prose-h1 20) and Body \
+         (13); per-level pixel sizes and body leading are library-owned (a confirmed design \
+         exception), and h2/h3 read alike. This specimen hand-transcribes the same tokens as \
+         an approximation of that output. Below the document: the heading type-scale, and the \
+         load-fail / empty / loading chrome that replaces a raw `Error:` body.",
     );
 }
 
