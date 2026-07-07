@@ -31,16 +31,25 @@ use tasty_terminal::Terminal;
 
 use crate::AppEvent;
 use crate::app::App;
-use crate::ipc::stream::{self, STREAM_PROTO, StreamTag};
+use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag};
 use crate::model::{
     EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface,
     Workspace,
 };
 use crate::view::ui::View as _;
 
-/// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 출력 버퍼.
-/// 항목은 `(remote_surface_id, bytes)`.
-pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<(u32, Vec<u8>)>>>;
+/// reader thread 가 원격에서 받은 mirror 갱신 이벤트. 출력 바이트와 resize 통지를
+/// **한 버퍼에 순서대로** 담아 프레임 도착 순서(원격의 apply 순서)를 보존한다 —
+/// resize 앞뒤 출력이 올바른 그리드에서 재생되도록.
+pub(crate) enum MirrorEvent {
+    /// 원격 출력 바이트 `(remote_surface_id, bytes)`.
+    Data(u32, Vec<u8>),
+    /// 원격 grid resize `(remote_surface_id, cols, rows)` — mirror 크기 갱신.
+    Resize(u32, usize, usize),
+}
+
+/// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
+pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<MirrorEvent>>>;
 
 /// client 가 점유한 원격 워크스페이스의 로컬 mirror 세션(작업 J).
 pub(crate) struct AttachClientSession {
@@ -258,7 +267,7 @@ impl App {
                                 if let Some((sid, payload)) = stream::decode_mux(&frame.payload)
                                     && let Ok(mut buf) = output.lock()
                                 {
-                                    buf.push((sid, payload.to_vec()));
+                                    buf.push(MirrorEvent::Data(sid, payload.to_vec()));
                                 }
                                 // 실시간 갱신: 데이터가 오는 즉시 메인 루프를 깨워 mirror 에
                                 // 적용한다(로컬 PTY 의 TerminalOutput wake 와 동형).
@@ -276,6 +285,19 @@ impl App {
                                     disconnected.store(true, Ordering::SeqCst);
                                     let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                                     break;
+                                }
+                                // mid-session Control: 원격 resize 통지. 알 수 없는
+                                // event(구/신 스키마)는 파싱 실패 → 무시(전방 호환).
+                                if let Ok(StreamControl::Resize {
+                                    surface_id,
+                                    cols,
+                                    rows,
+                                }) = serde_json::from_slice::<StreamControl>(&frame.payload)
+                                    && let Ok(mut buf) = output.lock()
+                                {
+                                    buf.push(MirrorEvent::Resize(surface_id, cols, rows));
+                                    drop(buf);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                                 }
                             }
                             StreamTag::Ping => {}
@@ -335,7 +357,7 @@ impl App {
         for idx in 0..self.attach_client_sessions.len() {
             let (drained, local_ws, disconnected) = {
                 let sess = &self.attach_client_sessions[idx];
-                let drained: Vec<(u32, Vec<u8>)> = match sess.output.lock() {
+                let drained: Vec<MirrorEvent> = match sess.output.lock() {
                     Ok(mut b) => std::mem::take(&mut *b),
                     Err(_) => Vec::new(),
                 };
@@ -347,7 +369,8 @@ impl App {
             };
 
             if !drained.is_empty() {
-                // remote→local 매핑은 세션 보유. mirror terminal 이 있는 main view 에 feed.
+                // remote→local 매핑은 세션 보유. mirror terminal 이 있는 main view 에
+                // 이벤트를 **도착 순서대로** 적용한다(Data=출력 재생, Resize=그리드 갱신).
                 let map = self.attach_client_sessions[idx].remote_to_local.clone();
                 for main in self.main_windows_iter_mut() {
                     if main
@@ -356,11 +379,25 @@ impl App {
                         .iter()
                         .any(|ws| ws.id == local_ws)
                     {
-                        for (remote_id, bytes) in &drained {
-                            if let Some(&local) = map.get(remote_id)
-                                && let Some(t) = main.core_state.terminals.get_mut(local)
-                            {
-                                t.feed_bytes(bytes);
+                        for ev in &drained {
+                            match ev {
+                                MirrorEvent::Data(remote_id, bytes) => {
+                                    if let Some(&local) = map.get(remote_id)
+                                        && let Some(t) = main.core_state.terminals.get_mut(local)
+                                    {
+                                        t.feed_bytes(bytes);
+                                    }
+                                }
+                                MirrorEvent::Resize(remote_id, cols, rows) => {
+                                    // mirror 그리드를 원격 새 크기로 갱신. 로컬 resize
+                                    // 스윕은 detached mirror 를 건너뛰므로, 이 경로가
+                                    // mirror 를 리사이즈하는 유일한 지점이다.
+                                    if let Some(&local) = map.get(remote_id)
+                                        && let Some(t) = main.core_state.terminals.get_mut(local)
+                                    {
+                                        t.resize(*cols, *rows);
+                                    }
+                                }
                             }
                         }
                         main.mark_dirty();

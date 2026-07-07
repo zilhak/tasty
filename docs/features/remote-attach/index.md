@@ -30,6 +30,14 @@ attach 의 본질은 **배타 점유**다. 개념 정의는 [actors 점유 모�
 
 attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push 하고, 이후 변화는 delta 로 흐른다. client 는 PTY 없는 mirror 터미널에 바이트를 먹여 같은 grid 를 재구성한다. 프로토콜·mux 상세는 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 
+**그리드 크기는 원격이 authoritative** — mirror 의 cols×rows 는 로컬 창/pane 크기가 아니라 **원격 터미널 크기**를 따른다. 원격 PTY 는 자기 grid 로 콘텐츠를 래핑하므로 mirror grid 가 로컬 크기로 바뀌면 줄바꿈·커서가 어긋난다. 구현:
+
+- mirror 는 detached 터미널(PTY 없음)이라 매 프레임 도는 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `AppState::resize_all`)이 **detached 터미널을 skip** 한다(`Terminal::is_detached`). → 로컬 창 크기가 mirror grid 를 덮어쓰지 못한다.
+- 원격 터미널이 리사이즈되면 서버가 attach stream 의 **`Control` 프레임(`StreamControl::Resize`)** 으로 새 cols/rows 를 통지하고, client 가 그 값으로 mirror 를 리사이즈한다. → 원격 grid 변경이 mirror 에 반영된다.
+- 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다 — pane 이 원격 grid 보다 크면 남는 영역은 배경으로 남는 자연 레터박스(스케일·스트레치 없음).
+
+`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 향후 구조 변경 이벤트(탭/pane open·close forward)도 새 `StreamTag` 없이 variant 로 추가된다.
+
 ### 모드
 
 - **mirror-dump**(`--dump-after <ms>`): N ms 출력을 수집해 grid 를 재구성하고 텍스트를 stdout 으로 출력 후 종료. GUI 없이 attach 파이프라인을 검증하는 경로.

@@ -907,6 +907,47 @@ fn output_tap_disconnected_is_pruned() {
     assert_eq!(rx2.try_recv().unwrap(), b"!".to_vec());
 }
 
+#[test]
+fn resize_tap_emits_new_dims_only_on_change() {
+    let mut t = test_terminal(40, 12);
+    let rx = t.add_resize_tap();
+    // No-op resize (same dims) must NOT emit.
+    t.resize(40, 12);
+    assert!(rx.try_recv().is_err());
+    // Real resize emits the authoritative new grid.
+    t.resize(100, 30);
+    assert_eq!(rx.try_recv().unwrap(), (100, 30));
+    // A second change emits again.
+    t.resize(80, 24);
+    assert_eq!(rx.try_recv().unwrap(), (80, 24));
+}
+
+#[test]
+fn resize_tap_disconnected_is_pruned() {
+    let mut t = test_terminal(40, 12);
+    let rx = t.add_resize_tap();
+    drop(rx); // subscriber gone
+    // Next resize detects the disconnect, prunes the tap, and resizes normally.
+    t.resize(60, 18);
+    assert_eq!((t.cols(), t.rows()), (60, 18));
+}
+
+#[test]
+fn detached_mirror_is_detached_and_resizes_grid() {
+    // PTY-backed terminal is NOT a detached mirror; the local resize sweep skips
+    // only detached ones.
+    let pty = test_terminal(40, 12);
+    assert!(!pty.is_detached());
+
+    // A detached mirror reports detached and its grid follows an explicit resize
+    // (the remote-driven path), with no PTY SIGWINCH involved.
+    let mut mirror = Terminal::new_detached(157, 45);
+    assert!(mirror.is_detached());
+    assert_eq!((mirror.cols(), mirror.rows()), (157, 45));
+    mirror.resize(120, 40);
+    assert_eq!((mirror.cols(), mirror.rows()), (120, 40));
+}
+
 // ---- Initial bulk snapshot (snapshot_as_vt, attach step 4) ----
 
 /// Snapshot-specific grid comparison. Unlike [`assert_grid_eq`], this does NOT

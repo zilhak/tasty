@@ -79,6 +79,13 @@ impl Terminal {
         self.pty.as_ref()?.child.process_id()
     }
 
+    /// Whether this terminal is a detached mirror (no PTY/child). Its grid is
+    /// authoritative from the remote handshake/resize and must NOT be overwritten
+    /// by the local layout resize sweep — the local resize path skips these.
+    pub fn is_detached(&self) -> bool {
+        self.pty.is_none()
+    }
+
     /// Get the foreground process info (name, PID) for this terminal.
     pub fn foreground_process_info(&self) -> Option<foreground_process::ForegroundProcessInfo> {
         let shell_pid = self.process_id()?;

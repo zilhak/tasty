@@ -229,6 +229,11 @@ impl AppState {
         }
         for (sid, cols, rows) in targets {
             if let Some(t) = engine.terminals.get_mut(sid) {
+                // mirror(detached) 터미널은 원격 기준 그리드로 고정 — 로컬 레이아웃
+                // 리사이즈에서 제외한다(원격 resize 는 attach Control 로만 갱신).
+                if t.is_detached() {
+                    continue;
+                }
                 t.resize(cols, rows);
             }
         }

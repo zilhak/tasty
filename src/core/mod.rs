@@ -618,6 +618,12 @@ impl Core {
             collect_terminal_resize_targets(state, engine, terminal_rect, cell_width, cell_height);
         for (sid, cols, rows) in targets {
             if let Some(t) = engine.terminals.get_mut(sid) {
+                // mirror(detached) 터미널은 그리드가 원격 기준으로 고정 — 로컬
+                // 창/pane 크기로 덮어쓰지 않는다. 원격 resize 는 attach Control
+                // 프레임(`StreamControl::Resize`)으로만 갱신한다.
+                if t.is_detached() {
+                    continue;
+                }
                 t.resize(cols, rows);
             }
         }

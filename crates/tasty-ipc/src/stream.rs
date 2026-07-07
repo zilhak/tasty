@@ -115,6 +115,34 @@ pub struct StreamAck {
     pub error: Option<String>,
 }
 
+/// Server→client control events pushed over the attach stream *during* a live
+/// session (after the handshake ack/descriptor). Tagged JSON on the `event`
+/// field — **extensible**: new mid-session control events (e.g. structural ops:
+/// tab/pane open/close) add a variant here without allocating a new
+/// [`StreamTag`]. The one-shot handshake descriptors (`attached` /
+/// `attached_workspace` / `attach_error`) and the `force_detached` signal remain
+/// ad-hoc JSON read positionally by the client; this enum covers the streaming
+/// control messages that arrive mid-session.
+///
+/// Clients deserialize each mid-session `Control` payload into this enum and act
+/// on the variants they know; a payload that does not match any variant (an
+/// older handshake shape or a newer event) fails to deserialize and is ignored,
+/// keeping the protocol forward/backward compatible.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum StreamControl {
+    /// A mirrored remote terminal changed grid size. The client resizes its
+    /// mirror surface to match — the remote grid is authoritative for mirror
+    /// geometry (local window/pane size never drives a mirror).
+    Resize {
+        /// Remote surface id. The client maps it to its local mirror surface id
+        /// (workspace attach) or applies it to its sole mirror (surface attach).
+        surface_id: u32,
+        cols: usize,
+        rows: usize,
+    },
+}
+
 /// Write a single framed message (`[tag][len BE][payload]`), then flush.
 pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::Result<()> {
     let len: u32 = payload
@@ -231,6 +259,33 @@ mod tests {
     fn decode_mux_rejects_truncated() {
         assert!(decode_mux(&[0u8, 1, 2]).is_none());
         assert!(decode_mux(&[]).is_none());
+    }
+
+    #[test]
+    fn stream_control_resize_roundtrip() {
+        let msg = StreamControl::Resize {
+            surface_id: 7,
+            cols: 157,
+            rows: 45,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        // tagged on `event` = "resize" (snake_case).
+        assert!(s.contains(r#""event":"resize""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_ignores_foreign_events() {
+        // Handshake/other events must NOT deserialize as a StreamControl variant —
+        // the client relies on this to skip payloads it doesn't handle.
+        for foreign in [
+            r#"{"event":"attached","surface_id":1,"cols":80,"rows":24}"#,
+            r#"{"event":"attach_error","reason":"x"}"#,
+            r#"{"event":"force_detached"}"#,
+        ] {
+            assert!(serde_json::from_str::<StreamControl>(foreign).is_err());
+        }
     }
 
     #[test]

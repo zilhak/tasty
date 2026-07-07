@@ -124,6 +124,11 @@ struct OutputTap {
 const OUTPUT_TAP_CAP: usize = 1024;
 /// Consecutive `Full` sends after which a slow tap is unsubscribed.
 const OUTPUT_TAP_LAG_LIMIT: u32 = 64;
+/// Bounded capacity for each resize tap channel. Resizes are rare and coalescing
+/// is acceptable (the client only needs the latest size), so a small buffer is
+/// ample; a persistently full channel is treated as a live-but-behind client and
+/// the message is simply dropped for that tick.
+const RESIZE_TAP_CAP: usize = 8;
 
 /// VTE 상태 머신 — surface grid · parser · modes · scrollback · output buffer ·
 /// events. **파서 스레드와 메인 스레드가 `Arc<Mutex<TerminalState>>` 로 공유** 한다
@@ -151,6 +156,11 @@ pub(crate) struct TerminalState {
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
     /// detached terminal and in the common no-subscriber case (zero overhead).
     output_taps: Vec<OutputTap>,
+    /// Server-side resize subscribers. Each tap receives `(cols, rows)` whenever
+    /// the grid actually changes so an attached client can keep its mirror grid
+    /// in lockstep with the authoritative remote size. Empty in the common
+    /// no-subscriber case (zero overhead).
+    resize_taps: Vec<mpsc::SyncSender<(usize, usize)>>,
     pub(crate) cols: usize,
     pub(crate) rows: usize,
     /// Saved cursor position for ESC 7 / ESC 8
@@ -317,6 +327,7 @@ impl TerminalState {
             parser: Parser::new(),
             input_tx: None,
             output_taps: Vec::new(),
+            resize_taps: Vec::new(),
             cols,
             rows,
             saved_cursor: None,
@@ -396,6 +407,25 @@ impl TerminalState {
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(OUTPUT_TAP_CAP);
         self.output_taps.push(OutputTap { tx, lag: 0 });
         rx
+    }
+
+    /// Register a server-side subscriber to this terminal's grid resizes. The
+    /// receiver yields `(cols, rows)` on every actual dimension change.
+    pub(crate) fn add_resize_tap(&mut self) -> mpsc::Receiver<(usize, usize)> {
+        let (tx, rx) = mpsc::sync_channel::<(usize, usize)>(RESIZE_TAP_CAP);
+        self.resize_taps.push(tx);
+        rx
+    }
+
+    /// Fan a `(cols, rows)` change out to all resize subscribers. Drops any
+    /// disconnected or persistently-full subscriber (a resize is a rare, tiny
+    /// message — a full channel means the client is gone).
+    fn fan_out_resize(&mut self, cols: usize, rows: usize) {
+        if self.resize_taps.is_empty() {
+            return;
+        }
+        self.resize_taps
+            .retain(|tx| !matches!(tx.try_send((cols, rows)), Err(mpsc::TrySendError::Disconnected(_))));
     }
 
     /// Fan a raw chunk out to all output subscribers without blocking the pump.
@@ -668,6 +698,13 @@ impl Terminal {
     /// Register a server-side subscriber to this terminal's raw PTY output.
     pub fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
         self.lock_state().add_output_tap()
+    }
+
+    /// Register a server-side subscriber to this terminal's grid resizes. Yields
+    /// `(cols, rows)` on each actual change — used to keep a remote mirror grid
+    /// in lockstep with this authoritative terminal.
+    pub fn add_resize_tap(&mut self) -> mpsc::Receiver<(usize, usize)> {
+        self.lock_state().add_resize_tap()
     }
 
     fn default_shell() -> String {

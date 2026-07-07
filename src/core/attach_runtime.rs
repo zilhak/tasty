@@ -22,7 +22,7 @@ use std::thread;
 use crate::adapters::production::stream_hub::{PushResult, StreamHub};
 use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
-use crate::ipc::stream::{StreamFrame, StreamTag, encode_mux};
+use crate::ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_mux};
 use crate::model::{AttachSurfaceClass, SurfaceId};
 
 impl CoreState {
@@ -74,6 +74,7 @@ impl CoreState {
         // 누락/중복 없음). 이후 tap 바이트가 delta.
         let snapshot = terminal.snapshot_as_vt();
         let tap_rx = terminal.add_output_tap();
+        let resize_rx = terminal.add_resize_tap();
 
         // attach 성공 통지(client 가 cols/rows 로 mirror 생성) + 초기 스냅샷.
         let attached = serde_json::json!({
@@ -95,6 +96,27 @@ impl CoreState {
         thread::spawn(move || {
             for chunk in tap_rx {
                 match hub2.push(client_id, StreamFrame::new(StreamTag::Data, chunk)) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+
+        // resize forwarder: 원격 grid 변경 → client mirror 크기 갱신(Control frame).
+        // client 끊김 시 자동 종료(bare surface_id — 이 연결은 단일 surface).
+        let hub3 = hub.clone();
+        thread::spawn(move || {
+            for (cols, rows) in resize_rx {
+                let msg = StreamControl::Resize {
+                    surface_id,
+                    cols,
+                    rows,
+                };
+                let frame = StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&msg).unwrap_or_default(),
+                );
+                match hub3.push(client_id, frame) {
                     PushResult::Unknown | PushResult::Disconnected => break,
                     _ => {}
                 }
@@ -177,6 +199,7 @@ impl CoreState {
             };
             let snapshot = terminal.snapshot_as_vt();
             let tap_rx = terminal.add_output_tap();
+            let resize_rx = terminal.add_resize_tap();
             let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
             let _ = hub.push(client_id, snapshot_frame); // best-effort 초기 mux 스냅샷 push — PushResult 무시: client 끊김 시 forwarder 가 정리.
             let hub2 = hub.clone();
@@ -186,6 +209,28 @@ impl CoreState {
                         client_id,
                         StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
                     ) {
+                        PushResult::Unknown | PushResult::Disconnected => break,
+                        _ => {}
+                    }
+                }
+            });
+
+            // resize forwarder: 원격 grid 변경 → client mirror 크기 갱신. workspace
+            // 모드라 Control payload 에 remote surface_id(sid)를 실어 client 가
+            // remote→local 매핑으로 해당 mirror 만 갱신하게 한다.
+            let hub3 = hub.clone();
+            thread::spawn(move || {
+                for (cols, rows) in resize_rx {
+                    let msg = StreamControl::Resize {
+                        surface_id: sid,
+                        cols,
+                        rows,
+                    };
+                    let frame = StreamFrame::new(
+                        StreamTag::Control,
+                        serde_json::to_vec(&msg).unwrap_or_default(),
+                    );
+                    match hub3.push(client_id, frame) {
                         PushResult::Unknown | PushResult::Disconnected => break,
                         _ => {}
                     }

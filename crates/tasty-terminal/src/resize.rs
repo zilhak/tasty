@@ -76,6 +76,9 @@ impl TerminalState {
 
         // Reset scroll region on resize
         self.scroll_region = None;
+        // Notify attached mirrors of the authoritative new grid so they resize in
+        // lockstep (no-op when there are no subscribers).
+        self.fan_out_resize(cols, rows);
         true
     }
 
