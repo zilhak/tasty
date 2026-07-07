@@ -19,6 +19,15 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 # typed 간격 헬퍼 (vspace/margin_all) — git-viewer 선례와 동일하게 공용 위젯 crate 직접 의존.
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
+# egui_commonmark 는 egui 와 **lockstep** (0.20 ↔ egui 0.31). egui(및 egui-wgpu/
+# egui-winit/egui_extras) 를 bump 하기 전에 egui_commonmark 가 그 egui 버전을 지원하는
+# 릴리스를 냈는지 crates.io 에서 먼저 확인할 것 — 없으면 egui 업글 보류. 상세:
+# docs/dev-guide/dep-issues.md. syntect(better_syntax_highlighting)·이미지(load-images)
+# 는 끈다 — 코드 하이라이팅은 egui_extras 내장 경로로 충분하고, 이미지는 후속(TODO 08 bonus).
+egui_commonmark = { version = "0.20.0", default-features = false, features = [
+    "pulldown_cmark",
+] }
+# 링크 destination pre-scan 전용 (egui_commonmark 도 내부적으로 같은 0.12 를 쓴다).
 pulldown-cmark = { version = "0.12", default-features = false }
 webbrowser = "1"
 serde_json = "1"

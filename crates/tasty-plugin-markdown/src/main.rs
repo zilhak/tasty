@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use render::{LinkClick, MdStyle};
+use render::{LinkClick, MdCache};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
@@ -151,6 +151,10 @@ struct MarkdownPlugin {
     last_focused: HashMap<u32, bool>,
     /// surface_id → markdown document state.
     docs: HashMap<u32, MdDoc>,
+    /// surface_id → egui_commonmark 라이브러리 캐시 (이미지 로더 설치 플래그·링크 훅 테이블).
+    /// frame 마다 재생성하지 않도록 per-surface 로 보존한다.
+    #[cfg(any(unix, windows))]
+    caches: HashMap<u32, MdCache>,
     /// surface_id → 주소창 편집 상태 (03).
     addr: HashMap<u32, AddrState>,
     /// plugin lang 카탈로그 (state.failed / state.empty 등 UI 문자열).
@@ -166,6 +170,8 @@ impl MarkdownPlugin {
             fonts_installed: std::collections::HashSet::new(),
             #[cfg(any(unix, windows))]
             last_focused: HashMap::new(),
+            #[cfg(any(unix, windows))]
+            caches: HashMap::new(),
             docs: HashMap::new(),
             addr: HashMap::new(),
             tr,
@@ -197,6 +203,7 @@ impl Plugin for MarkdownPlugin {
             self.meshes.remove(&surface_id);
             self.fonts_installed.remove(&surface_id);
             self.last_focused.remove(&surface_id);
+            self.caches.remove(&surface_id);
         }
         self.docs.remove(&surface_id);
         self.addr.remove(&surface_id);
@@ -266,11 +273,9 @@ impl MarkdownPlugin {
             addr.buffer = file_path.clone();
         }
 
-        let link_slot = egui::Id::new(("md_link_click", sid));
         // 본문 폰트 크기: host 는 surface EffectiveFont.font_size 를 썼다(폰트 parity defer).
         // body 토큰으로 대체한다 — 디자인 본문 크기와 동일.
         let body_px = theme.font_size_body.value();
-        let style = MdStyle::new(&theme, body_px, base_dir, link_slot);
 
         let is_new = !self.meshes.contains_key(&sid);
         let mesh = self
@@ -283,12 +288,15 @@ impl MarkdownPlugin {
             install_fonts(mesh.context());
             self.fonts_installed.insert(sid);
         }
+        // egui_commonmark 캐시(mesh 와 서로소 필드)를 미리 뽑아 클로저가 self 를 잡지 않게 한다.
+        let cache = self.caches.entry(sid).or_default();
 
         let result = mesh.paint(&ctx.host, &ctx.params, |egui_ctx| {
             draw(
                 egui_ctx,
                 &theme,
-                &style,
+                body_px,
+                cache,
                 &content,
                 load_error.as_deref(),
                 tr,
@@ -307,15 +315,9 @@ impl MarkdownPlugin {
             navigate(&ctx.host, sid, &path);
         }
 
-        // egui run 중 stash 된 링크 클릭을 꺼내 dispatch (file → host, url → OS).
-        let click = mesh.context().data_mut(|d| {
-            let c = d.get_temp::<LinkClick>(link_slot);
-            if c.is_some() {
-                d.remove::<LinkClick>(link_slot);
-            }
-            c
-        });
-        if let Some(click) = click {
+        // show() 후 라이브러리 링크 훅에서 클릭된 destination 을 꺼내 dispatch
+        // (file → host, url → OS). 소비 시 훅을 리셋해 재발화하지 않는다.
+        if let Some(click) = render::take_clicked_link(cache, base_dir.as_deref()) {
             dispatch_link(&ctx.host, sid, click);
         }
     }
@@ -348,7 +350,6 @@ impl MarkdownPlugin {
         };
         let content = doc.content.clone();
         let load_error = doc.load_error.clone();
-        let base_dir = doc.base_dir.clone();
         let file_path = doc.file_path.clone().unwrap_or_default();
 
         let addr = self.addr.entry(sid).or_default();
@@ -356,21 +357,22 @@ impl MarkdownPlugin {
             addr.buffer = file_path.clone();
         }
 
-        let link_slot = egui::Id::new(("md_link_click", sid));
         let body_px = theme.font_size_body.value();
-        let style = MdStyle::new(&theme, body_px, base_dir, link_slot);
 
         // 입력이 없는 재-paint 라 raw_input.focused 를 못 얻는다 — 직전 paint 의 focused 를
         // 재사용해 focused 배경이 unfocused 로 튀지 않게 한다 (C).
         let focused = self.last_focused.get(&sid).copied().unwrap_or(false);
+        let cache = self.caches.entry(sid).or_default();
         let Some(mesh) = self.meshes.get_mut(&sid) else {
             return;
         };
+        // 재-paint 는 빈 입력이므로 링크 클릭은 발생하지 않는다(dispatch 불필요).
         let result = mesh.repaint_last(host, |egui_ctx| {
             draw(
                 egui_ctx,
                 &theme,
-                &style,
+                body_px,
+                cache,
                 &content,
                 load_error.as_deref(),
                 tr,
@@ -459,7 +461,8 @@ fn md_body_bg(theme: &Theme, focused: bool) -> tasty_type_appearance::color::Hex
 fn draw(
     ctx: &egui::Context,
     theme: &Theme,
-    style: &MdStyle,
+    body_px: f32,
+    cache: &mut MdCache,
     content: &str,
     load_error: Option<&str>,
     tr: &Translator,
@@ -502,7 +505,7 @@ fn draw(
                     state_empty(ui, theme, tr);
                     return;
                 }
-                render::render(ui, style, content);
+                render::render(ui, theme, body_px, cache, content);
                 // Trailing space so the last line doesn't collide with the bottom margin.
                 vspace(ui, theme.spacing_sm);
             });

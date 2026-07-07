@@ -42,3 +42,23 @@ winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5b
 - 탈출 조건: 업스트림 winit 이 PR #4478(한글 IME 수정)을 머지·릴리스 → `[patch.crates-io]` 항목 제거하고 공식 crates.io 버전으로 교체.
 - PR #4478 상태를 주기적으로 확인한다(머지/클로즈/대체 PR 여부).
 - **대비책**(포크 레포 소실 시): 해당 commit 을 조직 레포에 미러링하거나 `vendor/` 로 캐싱. 핀 고정으로 충분할 수 있으므로 레포 소실 징후가 보일 때만 착수(과투자 주의).
+
+## `egui_commonmark` — egui 버전 lockstep (egui 업글 안전장치)
+
+`crates/tasty-plugin-markdown` 이 마크다운 렌더를 `egui_commonmark` 라이브러리로 위임한다(소스 TODO 08). 이 라이브러리는 egui 와 **lockstep**이다:
+
+```toml
+# crates/tasty-plugin-markdown/Cargo.toml
+egui_commonmark = { version = "0.20.0", ... }   # ↔ egui 0.31
+```
+
+- **왜 커플링인가**: `egui_commonmark`(및 내부 `egui_commonmark_backend`)는 특정 egui 버전의 `Ui`/`Visuals`/`egui_extras` API 에 직접 의존한다. egui 를 올리면 그 egui 를 지원하는 `egui_commonmark` 릴리스로 **함께** 올려야 하고, 대응 릴리스가 아직 없으면 egui 업글이 막힌다.
+- **함께 움직여야 하는 egui-family** (한 컴파일 단위 egui/epaint 로 통일돼야 host↔plugin egui-mesh 와이어가 정합 — ADR-0028 / [egui-mesh-channel](egui-mesh-channel.md)):
+  - `egui` / `egui-wgpu` / `egui-winit` / `egui_extras`
+  - `egui_commonmark`(+ transitive `egui_commonmark_backend`)
+
+### 점검 / 전환 트리거
+
+- **egui(및 egui-wgpu/egui-winit/egui_extras) 를 bump 하기 전에** `egui_commonmark` 가 그 egui 버전을 지원하는 릴리스를 냈는지 [crates.io](https://crates.io/crates/egui_commonmark) 에서 먼저 확인한다. 없으면 egui 업글 보류(또는 `egui_commonmark` upstream 대응 릴리스 대기).
+- 확인 위치: `egui_commonmark` Cargo.toml 의 `[dependencies.egui]` version. 이 값이 올리려는 egui major.minor 와 맞아야 한다.
+- syntect 기반 하이라이팅(`better_syntax_highlighting`)·이미지 로더(`load-images`) feature 는 현재 끔 — 코드 하이라이팅은 `egui_extras` 내장 경로로 충분하고, 이미지 렌더는 후속 단계(TODO 08 bonus). 활성화 시 syntect(빌드타임·바이너리 증가)·`image` crate 비용을 고려한다.
