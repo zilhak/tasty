@@ -24,15 +24,18 @@
 안에서 `pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose
 렌더러다. 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
 
-본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — 경로 필드 + Go 버튼. 두 아이콘은
-`tasty-icons` 빌드타임 베이크 벡터다([ADR-0036](../../../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
+본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — 경로 combobox + Go 버튼. 경로 필드는
+공유 `Combobox` 위젯(`tasty-ui-widgets` — 트리거 `Input` + 히스토리 드롭다운)을 직접 쓴다.
+아이콘은 `tasty-icons` 빌드타임 베이크 벡터다([ADR-0036](../../../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
 
 | UI 요소 | 토큰 / 비례 | 비고 |
 |---|---|---|
 | surface 배경 | `bg-panel` | 상단 주소창 바 + 본문이 타일 채움 |
-| 주소창 바 | `bg-sidebar` · 40px | 경로 필드 + Go |
-| 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` · `font-size-caption` | `tasty-icons` 베이크 벡터(raw `📄` 제거) |
-| 경로 필드 | `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px | mono 경로 텍스트 |
+| 주소창 바 | `bg-sidebar` · 40px | 경로 combobox + Go |
+| 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` | `Combobox` 트리거 leading 아이콘(베이크 벡터) |
+| 경로 필드(트리거) | `Input` — `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px · mono caption(11) | 비편집=`text-secondary`, 편집=`text-primary` |
+| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `markdown.recent` 최신순 최대 10개 |
+| 드롭다운 후보 행 | `MenuItem` 언어 · 28px · middle-ellipsis 경로 · hover=`overlay-hover` / keyboard-active=`surface-active`(2단계 분리) | 행 선두 `FILE` 아이콘 · empty="No recent files"(`text-muted`) |
 | Go 버튼 | `ARROW_RIGHT` glyph · `text-secondary`(hover `text-primary`) · `font-size-body` | `tasty-icons` 베이크 벡터(raw `→` 제거) |
 | 본문 텍스트 | `text-secondary` · 본문 leading 은 egui_commonmark 소유 | 헤딩 색은 단계별 차별화. `line-height-prose` override 미노출 → 은퇴(retire-pending) |
 | 헤딩 크기 | `font-size-prose-h1`(20) 을 `Heading` 앵커로, H2~H6 은 egui_commonmark 이 `Heading`↔`Body` 사이 보간 | per-H2 픽셀 토큰(`prose-h2`) 미노출 → 은퇴(retire-pending). 6단계 prose 위계는 라이브러리 보간 |

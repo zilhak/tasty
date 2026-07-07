@@ -38,7 +38,7 @@ use tasty_type_appearance::theme::Theme;
 #[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
-use tasty_ui_widgets::{margin_all, vspace};
+use tasty_ui_widgets::{Combobox, ComboboxAction, margin_all, vspace};
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
 const PLUGIN_VERSION: &str = "0.1.0";
@@ -132,10 +132,14 @@ impl MdDoc {
 struct AddrState {
     /// 경로 편집 버퍼. 비편집 중엔 표시 경로와 동기화된다.
     buffer: String,
-    /// TextEdit 이 포커스를 가진 편집 모드 여부.
+    /// combobox 트리거가 포커스를 가진 편집 모드 여부(= 히스토리 드롭다운 열림).
     editing: bool,
     /// paint 클로저가 채우는 확정된 이동 경로 — paint 후 host `markdown.navigate` 로 소비.
     pending_navigate: Option<String>,
+    /// 편집 진입 시 `markdown.recent` 로 캐시한 최근 경로(최신순 최대 10). 드롭다운 후보.
+    recent: Vec<String>,
+    /// 히스토리 드롭다운의 keyboard-active 행 index(↑/↓ 커서). 첫 오픈 시 `None`.
+    active: Option<usize>,
 }
 
 struct MarkdownPlugin {
@@ -277,6 +281,8 @@ impl MarkdownPlugin {
         if !addr.editing {
             addr.buffer = file_path.clone();
         }
+        // 편집 진입(비편집→편집) 전환 감지용 — draw 가 편집모드를 갱신하기 전 값.
+        let prev_editing = addr.editing;
 
         // 본문 폰트 크기: host 는 surface EffectiveFont.font_size 를 썼다(폰트 parity defer).
         // body 토큰으로 대체한다 — 디자인 본문 크기와 동일.
@@ -324,6 +330,33 @@ impl MarkdownPlugin {
         // (file → host, url → OS). 소비 시 훅을 리셋해 재발화하지 않는다.
         if let Some(click) = render::take_clicked_link(cache, base_dir.as_deref()) {
             dispatch_link(&ctx.host, sid, click);
+        }
+
+        // 편집 진입 프레임이면 `markdown.recent` 로 최근목록을 캐시하고, 이미 채워진 addr 로
+        // 마지막 컨텍스트를 재-paint 한다 — 진입 클릭 한 프레임 안에서 드롭다운이 채워진
+        // 채로 뜨게 한다(캐시가 비어 첫 프레임이 empty 로 뜨는 것을 막는다). 캐시 조회는
+        // 편집 진입 시 1회뿐 — 타이핑 프레임마다 host 를 호출하지 않는다.
+        if addr.editing && !prev_editing {
+            let fetched = fetch_recent(&ctx.host);
+            addr.recent = fetched;
+            // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
+            let result = mesh.repaint_last(&ctx.host, |egui_ctx| {
+                draw(
+                    egui_ctx,
+                    &theme,
+                    body_px,
+                    cache,
+                    &content,
+                    load_error.as_deref(),
+                    tr,
+                    &file_path,
+                    addr,
+                    focused,
+                );
+            });
+            if let Err(e) = result {
+                tracing::warn!("markdown surface {sid} recent-repaint failed: {e}");
+            }
         }
     }
 
@@ -545,8 +578,9 @@ fn draw_addr_bar(
     );
 }
 
-/// 경로 표시/편집 필드 — surface_raised 배경, idle/편집 border + focus ring, 선두 글리프,
-/// mono 경로 텍스트. TextEdit 이 forward 된 사용자 입력으로 편집된다.
+/// 경로 표시/편집 필드 — 공유 [`Combobox`] 위젯(트리거 `Input` + 히스토리 드롭다운).
+/// 비편집=경로 표시(text-secondary), 클릭=편집모드 진입 → recent 캐시가 드롭다운으로 펼쳐진다.
+/// 키보드: ↑/↓ active 행 이동 · Enter=active 경로/버퍼 navigate · Esc=닫고 원복.
 fn draw_path_field(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -555,116 +589,95 @@ fn draw_path_field(
     file_path: &str,
     addr: &mut AddrState,
 ) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, ADDR_FIELD_HEIGHT), egui::Sense::hover());
-    let focused = addr.editing;
-    let border = if focused {
-        theme.border_focus()
-    } else {
-        theme.border_default()
-    };
-    ui.painter().rect(
-        rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), border.to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    if focused {
-        // 2px focus ring, border_focus 35% 알파.
-        let ring = theme.border_focus().to_egui().gamma_multiply(0.35);
-        ui.painter().rect_stroke(
-            rect.expand(1.0),
-            theme.corner_radius.value(),
-            egui::Stroke::new(2.0, ring),
-            egui::StrokeKind::Outside,
-        );
-    }
+    // addr 필드를 분해해 buffer(&mut)/recent(&)/active(&mut) 를 동시 대여한다.
+    let AddrState {
+        buffer,
+        editing,
+        pending_navigate,
+        recent,
+        active,
+    } = addr;
 
-    let pad = theme.spacing_sm.value();
-    let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x + pad, rect.min.y),
-        egui::pos2(rect.max.x - pad, rect.max.y),
-    );
-    let mut cui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    let ui = &mut cui;
-    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-    // 선두 문서 글리프 — 베이크된 FILE 벡터 아이콘. 이전 이모지 라벨과 동일 위치·크기
-    // (left_to_right flow, caption 크기, text_muted 색)를 유지한다.
-    let icon_sz = theme.font_size_caption.value();
-    let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(icon_sz, icon_sz), egui::Sense::hover());
-    tasty_plugin_sdk::baked_icon::draw(
-        ui.painter(),
-        baked_icons::FILE,
-        icon_rect.center(),
-        icon_sz,
-        theme.text_muted().to_egui(),
-    );
-    ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(1.0, theme.accent_primary().to_egui());
-    let text_color = if focused {
-        theme.text_primary()
-    } else {
-        theme.text_secondary()
+    // 후보 = 최근 경로(최신순). combobox 는 `&[&str]` 을 받는다.
+    let entries: Vec<&str> = recent.iter().map(String::as_str).collect();
+
+    // 선두/후보 파일 아이콘 — 베이크된 FILE 벡터. Input/MenuItem 이 넘겨준 정사각 rect
+    // 중심에 그 폭 크기로 그린다(색은 위젯이 text-muted 로 호출).
+    let file_icon = |ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32| {
+        tasty_plugin_sdk::baked_icon::draw(
+            ui.painter(),
+            baked_icons::FILE,
+            rect.center(),
+            rect.width(),
+            color,
+        );
     };
-    let resp = ui.add(
-        egui::TextEdit::singleline(&mut addr.buffer)
-            .frame(false)
-            .desired_width(ui.available_width())
-            .hint_text(tr.t("markdown.addr.placeholder"))
-            .font(egui::FontId::new(
-                theme.font_size_caption.value(),
-                egui::FontFamily::Monospace,
-            ))
-            .text_color(text_color.to_egui()),
-    );
-    if resp.gained_focus() {
-        addr.editing = true;
+
+    let placeholder = tr.t("markdown.addr.placeholder");
+    let empty_label = tr.t("markdown.addr.no_recent");
+
+    let mut combo = Combobox::new("md_addr")
+        .mono(true)
+        .placeholder(placeholder)
+        .empty_label(empty_label)
+        .width(width)
+        .icon(&file_icon)
+        .row_icon(&file_icon);
+    // 비편집(idle) 경로는 text-secondary 로 낮춰 표시(현행 주소창 관례). 편집 중엔 Input
+    // 기본 text-primary. `editing` 은 직전 프레임 포커스라 진입 프레임 1틱 지연은 무해하다
+    // (클릭과 동시에 드롭다운이 열리는 순간이라 육안 무영향).
+    if !*editing {
+        combo = combo.trigger_text_color(theme.text_secondary().to_egui());
     }
-    let (enter, esc) = ui.input(|i| {
-        (
-            i.key_pressed(egui::Key::Enter),
-            i.key_pressed(egui::Key::Escape),
-        )
-    });
-    match addr_key_decision(resp.has_focus(), resp.lost_focus(), enter, esc) {
-        AddrKey::Navigate => {
-            addr.pending_navigate = Some(addr.buffer.clone());
-            addr.editing = false;
-        }
-        AddrKey::Revert => {
-            // Esc / 확정 없는 포커스 이탈 → 원래 경로 원복, 아무것도 안 열림.
-            addr.buffer = file_path.to_string();
-            addr.editing = false;
-            if esc {
-                resp.surrender_focus();
+    let out = combo.show(ui, theme, buffer, &entries, active);
+
+    // 편집모드 = 트리거 포커스(단일 진실). 드롭다운 열림/닫힘도 이 값으로 수렴.
+    *editing = out.response.has_focus();
+
+    match addr_outcome(out.action, out.response.lost_focus()) {
+        AddrOutcome::NavigatePick(i) => {
+            if let Some(path) = recent.get(i) {
+                *buffer = path.clone();
             }
+            *pending_navigate = Some(buffer.clone());
         }
-        AddrKey::None => {}
+        AddrOutcome::NavigateBuffer => {
+            *pending_navigate = Some(buffer.clone());
+        }
+        AddrOutcome::Revert => {
+            // Esc / 확정 없는 포커스 이탈 → 원래 경로 원복.
+            *buffer = file_path.to_string();
+            out.response.surrender_focus();
+        }
+        AddrOutcome::None => {}
+    }
+    // 닫히면 keyboard-active 커서 리셋(다음 오픈은 active 없음부터).
+    if !*editing {
+        *active = None;
     }
 }
 
-/// 주소창 키 입력 결정 (순수 — 테스트 용이). Esc(포커스 중)=원복, Enter(포커스 이탈)=이동,
-/// 그 외 포커스 이탈=원복.
+/// 주소창 확정 결정 (순수 — 단위테스트로 격리). combobox 행위 + singleline 포커스 이탈을
+/// 이동/원복/무동작으로 매핑한다. Esc/선택/Enter 없이 포커스만 잃으면 편집 취소로 원복한다
+/// (현행 동작 보존).
 #[derive(Debug, PartialEq, Eq)]
-enum AddrKey {
+enum AddrOutcome {
     None,
-    Navigate,
+    /// 현재 버퍼로 이동(active 행 없이 Enter).
+    NavigateBuffer,
+    /// active 후보 행 경로로 이동(행 클릭 / Enter-on-active).
+    NavigatePick(usize),
+    /// 원복(Esc, 또는 확정 없는 포커스 이탈).
     Revert,
 }
 
-fn addr_key_decision(has_focus: bool, lost_focus: bool, enter: bool, esc: bool) -> AddrKey {
-    if has_focus && esc {
-        AddrKey::Revert
-    } else if lost_focus && enter {
-        AddrKey::Navigate
-    } else if lost_focus {
-        AddrKey::Revert
-    } else {
-        AddrKey::None
+fn addr_outcome(action: ComboboxAction, lost_focus: bool) -> AddrOutcome {
+    match action {
+        ComboboxAction::Cancel => AddrOutcome::Revert,
+        ComboboxAction::Pick(i) => AddrOutcome::NavigatePick(i),
+        ComboboxAction::Submit => AddrOutcome::NavigateBuffer,
+        ComboboxAction::None | ComboboxAction::Edited if lost_focus => AddrOutcome::Revert,
+        ComboboxAction::None | ComboboxAction::Edited => AddrOutcome::None,
     }
 }
 
@@ -711,6 +724,32 @@ fn navigate(host: &HostHandle, sid: u32, path: &str) {
     if let Err(e) = host.call("markdown.navigate", params) {
         tracing::warn!("markdown navigate failed: {e}");
     }
+}
+
+/// 편집 진입 시 host `markdown.recent`(작업2) 로 최근목록을 조회한다 — 최신순 최대 10개
+/// 경로. 조회 전용(사용자 상태 불변). 실패하면 빈 목록으로 폴백한다.
+#[cfg(any(unix, windows))]
+fn fetch_recent(host: &HostHandle) -> Vec<String> {
+    match host.call("markdown.recent", json!({})) {
+        Ok(v) => parse_recent(&v),
+        Err(e) => {
+            tracing::warn!("markdown.recent fetch failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// `markdown.recent` 응답(`{ "recent": [{ path, file_name }] }`)에서 경로 목록을 추출한다
+/// (순수 — 단위테스트로 격리). 응답 형태가 어긋나면 빈 목록.
+fn parse_recent(v: &Value) -> Vec<String> {
+    v.get("recent")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.get("path").and_then(|p| p.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Load failure — "Failed to load" title (accent-danger) over the error in a muted caption.
@@ -865,30 +904,62 @@ mod tests {
     }
 
     #[test]
-    fn addr_key_enter_navigates_on_blur() {
-        // Enter 는 포커스 이탈(lost_focus)과 함께 도착 → 이동.
+    fn addr_outcome_submit_navigates_buffer() {
+        // active 행 없이 Enter → 현재 버퍼 이동.
         assert_eq!(
-            addr_key_decision(false, true, true, false),
-            AddrKey::Navigate
+            addr_outcome(ComboboxAction::Submit, true),
+            AddrOutcome::NavigateBuffer
         );
     }
 
     #[test]
-    fn addr_key_esc_reverts_while_focused() {
-        assert_eq!(addr_key_decision(true, false, false, true), AddrKey::Revert);
-    }
-
-    #[test]
-    fn addr_key_blur_without_enter_reverts() {
+    fn addr_outcome_pick_navigates_row() {
+        // active 행 Enter / 행 클릭 → 그 후보 경로 이동.
         assert_eq!(
-            addr_key_decision(false, true, false, false),
-            AddrKey::Revert
+            addr_outcome(ComboboxAction::Pick(2), true),
+            AddrOutcome::NavigatePick(2)
         );
     }
 
     #[test]
-    fn addr_key_typing_is_none() {
-        assert_eq!(addr_key_decision(true, false, false, false), AddrKey::None);
+    fn addr_outcome_cancel_reverts() {
+        // Esc → 원복(포커스 유지/이탈 무관).
+        assert_eq!(addr_outcome(ComboboxAction::Cancel, false), AddrOutcome::Revert);
+        assert_eq!(addr_outcome(ComboboxAction::Cancel, true), AddrOutcome::Revert);
+    }
+
+    #[test]
+    fn addr_outcome_blur_without_confirm_reverts() {
+        // 확정 없이 포커스만 잃으면 편집 취소 → 원복.
+        assert_eq!(addr_outcome(ComboboxAction::None, true), AddrOutcome::Revert);
+        assert_eq!(addr_outcome(ComboboxAction::Edited, true), AddrOutcome::Revert);
+    }
+
+    #[test]
+    fn addr_outcome_typing_is_none() {
+        // 포커스 유지 중 편집/무입력 → 무동작(드롭다운 열림 유지).
+        assert_eq!(addr_outcome(ComboboxAction::None, false), AddrOutcome::None);
+        assert_eq!(addr_outcome(ComboboxAction::Edited, false), AddrOutcome::None);
+    }
+
+    #[test]
+    fn parse_recent_extracts_paths_in_order() {
+        let v = json!({ "recent": [
+            { "path": "/a/first.md", "file_name": "first.md" },
+            { "path": "/b/second.md", "file_name": "second.md" },
+        ]});
+        assert_eq!(parse_recent(&v), vec!["/a/first.md", "/b/second.md"]);
+    }
+
+    #[test]
+    fn parse_recent_tolerates_missing_or_malformed() {
+        assert!(parse_recent(&json!({})).is_empty());
+        assert!(parse_recent(&json!({ "recent": "nope" })).is_empty());
+        // path 없는 항목은 건너뛴다.
+        assert_eq!(
+            parse_recent(&json!({ "recent": [{ "file_name": "x" }, { "path": "/ok.md" }] })),
+            vec!["/ok.md"]
+        );
     }
 
     #[test]

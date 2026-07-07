@@ -23,6 +23,7 @@ empty = "This file is empty"
 [markdown.addr]
 placeholder = "Path to markdown file"
 go = "Open (Enter)"
+no_recent = "No recent files"
 
 # 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
 [preset.field]
