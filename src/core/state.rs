@@ -247,6 +247,13 @@ pub struct CoreState {
     /// 휘발성 — 직렬화/복원 안 함(decision 2). client_id 는 단계 1 StreamClientId.
     pub(crate) attach: crate::core::attach::OccupancyRegistry,
 
+    /// child-terminal registry (ADR-0040 / occupancy-04). 에이전트가 `terminal.spawn`
+    /// 으로 만든 자식 터미널 surface 의 parent/index/idle/needs_input 매핑. 부팅 시
+    /// `~/.tasty/child-terminals.json` 에서 로드, 등록/제거마다 즉시 save. soft 점유
+    /// (`occupy_soft`) 소비자와 짝. session.rs 의 SessionToken / runner_host 의
+    /// shell_children 과는 다른 서브시스템이다(파편화 방지 — child_terminal.rs 참조).
+    pub(crate) child_terminals: crate::core::child_terminal::ChildTerminalRegistry,
+
     /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
     /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `AttachPoll`
     /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_hard_occupied
@@ -385,6 +392,7 @@ impl CoreState {
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
+            child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_gui_attach_user: Vec::new(),

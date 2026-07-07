@@ -28,6 +28,7 @@ mod remote_profile;
 pub(crate) mod surface;
 mod tab;
 mod telemetry;
+mod terminal;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
 #[cfg(feature = "gui")]
@@ -277,6 +278,18 @@ fn route_engine_handler(
         "tab.create" => tab::handle_tab_create(core, state, engine, id, &request.params),
         "tab.close" => tab::handle_tab_close(core, state, engine, id, &request.params),
         "tab.move" => tab::handle_tab_move(core, state, engine, id, &request.params),
+        // terminal (child-terminal 관리, ADR-0040 / occupancy-04)
+        "terminal.spawn" => terminal::handle_spawn(core, state, engine, id, &request.params),
+        "terminal.tell" => terminal::handle_tell(core, state, engine, id, &request.params),
+        "terminal.wait" => terminal::handle_wait(engine, id, &request.params),
+        "terminal.children" => terminal::handle_children(engine, id, &request.params),
+        "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
+        "terminal.kill" => terminal::handle_kill(core, state, engine, id, &request.params),
+        "terminal.respawn" => terminal::handle_respawn(core, state, engine, id, &request.params),
+        "terminal.broadcast" => {
+            terminal::handle_broadcast(core, state, engine, id, &request.params)
+        }
+        "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, state, id, &request.params),
         "preset.get" => preset::handle_get(core, state, id, &request.params),

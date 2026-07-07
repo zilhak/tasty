@@ -1019,6 +1019,12 @@ header = "{} のリモートワークスペース (合計{}件):"
 row_free = "  #{} {} (pane={}, busy={}) — 未占有"
 row_attached = "  #{} {} (pane={}, busy={}) — client {} が占有中"
 
+# `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
+[cli.terminal]
+desc = "AIエージェント用の子ターミナル管理 (spawn/tell/wait/children/kill/…)."
+spawn_no_parent = "エラー: 親サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
+tell_no_target = "エラー: 対象サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
+
 [command_index.cap.soft]
 title = "コマンド履歴が大量です"
 body = "このサーフェスにコマンドが {} 件記録されています。古い項目はサーフェスを閉じると整理されます。"

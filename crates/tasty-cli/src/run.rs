@@ -269,6 +269,75 @@ fn run_dynamic_client_polling(
     }
 }
 
+/// `tasty terminal` 이 wait chain(polling/auto-wait)을 타야 하는가?
+/// - `wait` — 항상 polling.
+/// - `spawn`/`tell` — `--wait` 지정 시에만.
+/// 그 외 terminal 서브커맨드(children/kill/…)와 비-terminal 명령은 일반 경로.
+fn terminal_needs_wait_chain(command: &Commands) -> bool {
+    use crate::commands::TerminalCommands as T;
+    matches!(
+        command,
+        Commands::Terminal {
+            command: T::Wait { .. } | T::Spawn { wait: true, .. } | T::Tell { wait: true, .. }
+        }
+    )
+}
+
+/// `tasty terminal wait/spawn --wait/tell --wait` 을 실행. wait 는 polling, spawn/tell
+/// 은 1 차 응답 후 `terminal.wait` chain(dynamic.rs 의 AutoWaitPlan 재사용).
+fn run_terminal_wait_chain(command: Commands, port_file: Option<&str>) -> Result<()> {
+    use crate::commands::TerminalCommands as T;
+    use std::collections::HashMap;
+    use tasty_plugin_manifest::PollingDecl;
+
+    let polling = PollingDecl {
+        state_field: "state".into(),
+        terminal_states: vec!["idle".into(), "needs_input".into(), "exited".into()],
+        interval_ms: 500,
+        timeout_field: Some("timeout".into()),
+    };
+    let request = command_to_request(&command);
+    let request_params = request.params.as_object().cloned().unwrap_or_default();
+
+    let Commands::Terminal { command: sub } = &command else {
+        // terminal_needs_wait_chain 게이트를 통과한 경우만 도달.
+        return Ok(());
+    };
+    match sub {
+        T::Wait { .. } => run_dynamic_client_polling(request, polling, port_file),
+        T::Spawn { .. } => {
+            let plan = super::dynamic::AutoWaitPlan {
+                method: "terminal.wait".into(),
+                polling,
+                // spawn 응답의 child_surface_id → wait 의 surface.
+                map_from_response: HashMap::from([(
+                    "child_surface_id".to_string(),
+                    "surface".to_string(),
+                )]),
+                map_from_request: HashMap::new(),
+                timeout_field: "timeout".into(),
+                request_params,
+                skipped: false,
+            };
+            run_dynamic_client_with_auto_wait(request, plan, port_file)
+        }
+        T::Tell { .. } => {
+            let plan = super::dynamic::AutoWaitPlan {
+                method: "terminal.wait".into(),
+                polling,
+                map_from_response: HashMap::new(),
+                // tell 요청의 surface → wait 의 surface.
+                map_from_request: HashMap::from([("surface".to_string(), "surface".to_string())]),
+                timeout_field: "timeout".into(),
+                request_params,
+                skipped: false,
+            };
+            run_dynamic_client_with_auto_wait(request, plan, port_file)
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     // debug stream-echo uses a raw framed streaming channel, not the JSON-RPC
@@ -627,6 +696,13 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             *interval_ms,
             port_file,
         );
+    }
+
+    // `tasty terminal wait/spawn/tell` — dynamic.rs 의 polling/auto-wait 기계를
+    // 호스트 static CLI 에서 재현. wait 는 polling, spawn/tell 은 `--wait` 지정 시에만
+    // wait chain (04 호스트엔 idle 신호원이 없어 opt-in — 05 가 hook 을 배선한 뒤 의미).
+    if terminal_needs_wait_chain(&command) {
+        return run_terminal_wait_chain(command, port_file);
     }
 
     let port = port_file::read_port_file_from(port_file)?;

@@ -34,6 +34,7 @@
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [0031](../adr/0031-lua-host-api-only-worker-isolated.md) |
 | [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | 없음 |
+| [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |
 | [telemetry](telemetry/index.md) — 텔레메트리 (관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |

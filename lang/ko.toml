@@ -1019,6 +1019,12 @@ header = "{} 의 원격 워크스페이스 (총 {}개):"
 row_free = "  #{} {} (pane={}, busy={}) — 미점유"
 row_attached = "  #{} {} (pane={}, busy={}) — client {} 점유중"
 
+# `tasty terminal` — 호스트 내재화된 child-terminal 관리 (ADR-0040).
+[cli.terminal]
+desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/wait/children/kill/…)."
+spawn_no_parent = "오류: parent surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
+tell_no_target = "오류: 대상 surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
+
 [command_index.cap.soft]
 title = "명령 이력이 많습니다"
 body = "이 서피스에 명령 {}개가 기록되었습니다. 오래된 항목은 서피스를 닫을 때 정리됩니다."

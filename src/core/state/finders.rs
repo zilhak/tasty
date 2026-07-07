@@ -23,6 +23,31 @@ impl CoreState {
         None
     }
 
+    /// 전 워크스페이스의 살아있는 surface id 집합. child-terminal registry self-heal
+    /// (`reconcile_child_terminals`) 이 stale 판정에 쓴다 — 포커스 독립(전 워크스페이스
+    /// 순회). parent surface 도 자식 surface 도 이 집합 기준으로 대조된다.
+    pub fn live_surface_ids(&self) -> std::collections::HashSet<u32> {
+        let mut ids = std::collections::HashSet::new();
+        for workspace in &self.workspaces {
+            for sid in workspace.all_surface_ids() {
+                ids.insert(sid);
+            }
+        }
+        ids
+    }
+
+    /// child-terminal registry 를 라이브 surface 트리와 대조해 stale 항목을 정리한다.
+    /// 호스트는 라이브 트리를 직접 소유하므로 이벤트 구독 없이 접근 시점마다 동기
+    /// reconcile 로 self-heal 한다(부팅 후 첫 접근이 이전 세션 잔재를 회수, surface
+    /// 닫힘도 다음 접근에서 정리). 실제 제거가 있었을 때만 디스크 save.
+    pub fn reconcile_child_terminals(&mut self) {
+        let live = self.live_surface_ids();
+        let summary = self.child_terminals.reconcile_with_live_surfaces(&live);
+        if summary.changed() {
+            self.child_terminals.save();
+        }
+    }
+
     /// Find the pane ID that contains a given surface ID.
     pub fn find_pane_for_surface(&self, surface_id: u32) -> Option<u32> {
         for workspace in &self.workspaces {

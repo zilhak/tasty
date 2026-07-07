@@ -16,6 +16,7 @@ pub(crate) mod attach;
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
 pub(crate) mod builder;
+pub(crate) mod child_terminal;
 pub(crate) mod file;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;

@@ -153,6 +153,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: SurfaceCommands,
     },
+    /// Manage child terminals (spawn/tell/wait/children/kill/…) — host-internalized
+    /// agent child-terminal management (ADR-0040).
+    Terminal {
+        #[command(subcommand)]
+        command: TerminalCommands,
+    },
     /// Check if a surface is currently typing (received key input within 5 seconds)
     IsTyping {
         /// Surface ID (default: focused)

@@ -235,6 +235,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::WorkspaceCategory { command } => {
             workspace_category_command_to_method_params(command)
         }
+        Commands::Terminal { command } => terminal_command_to_method_params(command),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
     };
@@ -549,6 +550,131 @@ fn workspace_category_command_to_method_params(
     }
 }
 
+fn terminal_command_to_method_params(
+    command: &crate::commands::TerminalCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::commands::TerminalCommands as T;
+    use serde_json::{Map, Value};
+
+    // key 를 Some 일 때만 넣는 헬퍼 — host 는 생략된 optional 을 single_parent 등으로
+    // 폴백하므로 null 을 넣지 않는다.
+    fn put_u32(map: &mut Map<String, Value>, key: &str, v: Option<u32>) {
+        if let Some(x) = v {
+            map.insert(key.into(), Value::from(x));
+        }
+    }
+    fn put_str(map: &mut Map<String, Value>, key: &str, v: &Option<String>) {
+        if let Some(x) = v {
+            map.insert(key.into(), Value::from(x.clone()));
+        }
+    }
+
+    match command {
+        T::Spawn {
+            surface,
+            workspace,
+            pane,
+            cwd,
+            command,
+            role,
+            nickname,
+            wait: _,
+            timeout,
+        } => {
+            let mut m = Map::new();
+            // parent = --surface 또는 caller TASTY_SURFACE_ID. 둘 다 없으면 대상 불명.
+            let Some(parent) = resolve_surface_id(*surface) else {
+                eprintln!("{}", tasty_i18n::t("cli.terminal.spawn_no_parent"));
+                std::process::exit(1);
+            };
+            m.insert("parent".into(), Value::from(parent));
+            m.insert("workspace".into(), Value::from(workspace.clone()));
+            put_u32(&mut m, "pane", *pane);
+            if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
+                m.insert("cwd".into(), Value::from(c));
+            }
+            m.insert("command".into(), Value::from(command.clone()));
+            put_str(&mut m, "role", role);
+            put_str(&mut m, "nickname", nickname);
+            put_u32(&mut m, "timeout", *timeout);
+            ("terminal.spawn", Value::Object(m))
+        }
+        T::Tell {
+            text,
+            surface,
+            wait: _,
+            timeout,
+        } => {
+            let mut m = Map::new();
+            let Some(target) = resolve_surface_id(*surface) else {
+                eprintln!("{}", tasty_i18n::t("cli.terminal.tell_no_target"));
+                std::process::exit(1);
+            };
+            m.insert("surface".into(), Value::from(target));
+            m.insert("text".into(), Value::from(text.clone()));
+            put_u32(&mut m, "timeout", *timeout);
+            ("terminal.tell", Value::Object(m))
+        }
+        T::Wait {
+            surface,
+            child,
+            timeout,
+        } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            put_u32(&mut m, "child", *child);
+            put_u32(&mut m, "timeout", *timeout);
+            ("terminal.wait", Value::Object(m))
+        }
+        T::Children { surface } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            ("terminal.children", Value::Object(m))
+        }
+        T::Parent { surface } => ("terminal.parent", serde_json::json!({ "surface": surface })),
+        T::Kill { surface, child } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            m.insert("child".into(), Value::from(*child));
+            ("terminal.kill", Value::Object(m))
+        }
+        T::Respawn {
+            surface,
+            child,
+            cwd,
+            command,
+            role,
+            nickname,
+        } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            m.insert("child".into(), Value::from(*child));
+            if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
+                m.insert("cwd".into(), Value::from(c));
+            }
+            put_str(&mut m, "command", command);
+            put_str(&mut m, "role", role);
+            put_str(&mut m, "nickname", nickname);
+            ("terminal.respawn", Value::Object(m))
+        }
+        T::Broadcast {
+            text,
+            surface,
+            role,
+        } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            m.insert("text".into(), Value::from(text.clone()));
+            put_str(&mut m, "role", role);
+            ("terminal.broadcast", Value::Object(m))
+        }
+        T::SetState { surface, state } => (
+            "terminal.set_state",
+            serde_json::json!({ "surface": surface, "state": state }),
+        ),
+    }
+}
+
 fn move_command_to_method_params(command: &MoveCommands) -> (&'static str, serde_json::Value) {
     match command {
         MoveCommands::Tab { pane, from, to } => (
@@ -675,5 +801,91 @@ mod tests {
         unsafe {
             std::env::remove_var("TASTY_SURFACE_ID");
         }
+    }
+
+    fn cmd_from(args: &[&str]) -> Commands {
+        use clap::Parser;
+        crate::Cli::try_parse_from(args)
+            .expect("parse")
+            .command
+            .expect("subcommand")
+    }
+
+    #[test]
+    fn terminal_spawn_maps_to_terminal_spawn_with_explicit_parent() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "terminal",
+            "spawn",
+            "--surface",
+            "7",
+            "--workspace",
+            "dev",
+            "--command",
+            "bash",
+            "--role",
+            "worker",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.spawn");
+        assert_eq!(req.params["parent"].as_u64(), Some(7));
+        assert_eq!(req.params["workspace"].as_str(), Some("dev"));
+        assert_eq!(req.params["command"].as_str(), Some("bash"));
+        assert_eq!(req.params["role"].as_str(), Some("worker"));
+    }
+
+    #[test]
+    fn terminal_children_omits_surface_when_absent() {
+        // --surface 없고 env 없으면 host single_parent 폴백 위해 키 자체를 생략.
+        // SAFETY: 단일 테스트 안에서만 조작.
+        unsafe {
+            std::env::remove_var("TASTY_SURFACE_ID");
+        }
+        let cmd = cmd_from(&["tasty", "terminal", "children"]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.children");
+        assert!(req.params.get("surface").is_none());
+    }
+
+    #[test]
+    fn terminal_kill_maps_child_index() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "terminal",
+            "kill",
+            "--surface",
+            "7",
+            "--child",
+            "2",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.kill");
+        assert_eq!(req.params["surface"].as_u64(), Some(7));
+        assert_eq!(req.params["child"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn terminal_set_state_maps_surface_and_state() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "terminal",
+            "set-state",
+            "--surface",
+            "9",
+            "--state",
+            "idle",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.set_state");
+        assert_eq!(req.params["surface"].as_u64(), Some(9));
+        assert_eq!(req.params["state"].as_str(), Some("idle"));
+    }
+
+    #[test]
+    fn terminal_parent_requires_surface() {
+        let cmd = cmd_from(&["tasty", "terminal", "parent", "--surface", "5000"]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.parent");
+        assert_eq!(req.params["surface"].as_u64(), Some(5000));
     }
 }

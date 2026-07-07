@@ -1020,6 +1020,12 @@ header = "Remote workspaces on {} ({} total):"
 row_free = "  #{} {} (panes={}, busy={}) — free"
 row_attached = "  #{} {} (panes={}, busy={}) — attached by client {}"
 
+# `tasty terminal` — host-internalized child-terminal management (ADR-0040).
+[cli.terminal]
+desc = "Manage child terminals (spawn/tell/wait/children/kill/…) for AI agents."
+spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
+tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
+
 [command_index.cap.soft]
 title = "Command history is large"
 body = "This surface has recorded {} commands. Old entries are cleared when the surface closes."
