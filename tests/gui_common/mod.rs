@@ -96,10 +96,14 @@ impl GuiTestInstance {
                 .as_nanos()
         ));
 
-        // Launch tasty in GUI mode with port-file for IPC
+        // Launch tasty in GUI mode with port-file for IPC.
+        // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
+        // 블로킹 native 팝업 없이 `debug_captured_menu` 로 포획하게 해, headless 에서
+        // `debug.pending_menu` 로 관찰 가능케 한다(debug 격리, release 미노출).
         let process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
+            .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
             .spawn()
             .expect("failed to spawn tasty GUI");
 
@@ -270,6 +274,31 @@ impl GuiTestInstance {
     pub fn inject_mouse(&self, surface_id: u64, fx: f32, fy: f32, event_type: &str, button: u8) {
         self.call(
             "debug.inject_window_mouse",
+            serde_json::json!({
+                "surface_id": surface_id,
+                "fx": fx,
+                "fy": fy,
+                "event_type": event_type,
+                "button": button,
+            }),
+        );
+    }
+
+    /// egui 입력 큐 레벨 포인터 주입 (window 정규화 [0,1] 좌표). `debug.inject_window_mouse`
+    /// (winit 경로)와 달리 egui 이벤트를 직접 넣어 egui 위젯(explorer 그리드/컨텍스트 메뉴
+    /// 등)의 `secondary_clicked` 라우팅을 그대로 탄다. `event_type` ∈ move/press/release,
+    /// `button` 0=left/1=middle/2=right.
+    #[allow(dead_code)]
+    pub fn inject_egui_mouse(
+        &self,
+        surface_id: u64,
+        fx: f32,
+        fy: f32,
+        event_type: &str,
+        button: u8,
+    ) {
+        self.call(
+            "debug.inject_egui_mouse",
             serde_json::json!({
                 "surface_id": surface_id,
                 "fx": fx,

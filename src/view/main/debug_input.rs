@@ -80,11 +80,33 @@ impl MainView {
         &mut self,
         fx: f32,
         fy: f32,
+        surface_id: Option<u32>,
         action: InjectPointer,
     ) -> bool {
         let ppp = self.base.gpu.egui_pixels_per_point().max(f32::EPSILON);
-        let (w, h) = self.base.gpu.surface_config_size();
-        let pos = egui::pos2((w as f32 / ppp) * fx, (h as f32 / ppp) * fy);
+        // surface_id 지정 시 (fx,fy)를 그 surface rect 안 정규화 좌표로 해석한다 —
+        // window 정규화는 고정 px 레이아웃(사이드바/탭바) 탓에 창 크기 의존적이라
+        // 테스트가 취약하다. 미지정 시 기존대로 window 정규화([0,1]) 로 해석한다.
+        let pos = if let Some(sid) = surface_id {
+            let terminal_rect = self.compute_terminal_rect();
+            let Some(rect) = self
+                .state
+                .surface_rect_by_id(&self.core_state, sid, terminal_rect)
+            else {
+                return false;
+            };
+            egui::pos2(
+                (rect.x.value() + fx * rect.width.value()) / ppp,
+                (rect.y.value() + fy * rect.height.value()) / ppp,
+            )
+        } else {
+            let (w, h) = self.base.gpu.surface_config_size();
+            egui::pos2((w as f32 / ppp) * fx, (h as f32 / ppp) * fy)
+        };
+        // 직전 포획본을 비운다 — egui 프레임이 세우는 메뉴를 `process_pending_native_menu`
+        // 의 suppress 훅이 이 슬롯에 새로 포획한다(mesh 경로와 동일 관찰 규약). 비우지
+        // 않으면 메뉴를 안 세운 클릭이 직전 값을 반환해 관찰이 오염된다.
+        self.debug_captured_menu = None;
         let events = match action {
             // 클릭 전 hover 를 같은 pos 로 세팅해야 plugin egui 가 위젯 hit-test 를 맞춘다.
             InjectPointer::Move => vec![egui::Event::PointerMoved(pos)],

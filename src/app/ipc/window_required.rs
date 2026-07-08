@@ -161,7 +161,11 @@ impl App {
                 },
                 _ => InjectPointer::Move,
             };
-            let ok = w.debug_inject_egui_pointer(fx, fy, action);
+            let surface_id = p
+                .get("surface_id")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            let ok = w.debug_inject_egui_pointer(fx, fy, surface_id, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),

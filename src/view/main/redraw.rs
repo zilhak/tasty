@@ -479,6 +479,16 @@ impl MainView {
             None => return,
         };
 
+        // debug: egui 프레임이 세우는 메뉴(explorer 우클릭 등)를 블로킹 native 팝업
+        // 없이 관찰하기 위한 격리 훅. winit 경로(mesh inject)는 핸들러가 즉시 메뉴를
+        // 세워 `debug_captured_menu` 로 포획되지만, egui 경로는 이 redraw 프레임에서
+        // 메뉴를 세우므로 여기서 가로채야 headless 회귀 테스트가 가능하다. release 미노출.
+        #[cfg(debug_assertions)]
+        if std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
+            self.debug_captured_menu = Some(pending);
+            return;
+        }
+
         match pending {
             PendingNativeMenu::Tab {
                 pane_id,
