@@ -95,6 +95,9 @@ pub fn draw_explorer(
     let mut action: Option<ExplorerAction> = None;
 
     ui.set_min_size(ui.available_size());
+    // explorer 표면 전체 rect — 하위 위젯이 처리하지 못한 우클릭을 아래 catch-all 이
+    // 이 rect 기준으로 흡수한다(툴바/내부 탭바/상태줄/빈 사이드바 등 chrome 영역).
+    let surface_rect = ui.max_rect();
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
 
     ui.vertical(|ui| {
@@ -150,6 +153,32 @@ pub fn draw_explorer(
             },
         );
     });
+
+    // 표면 전체 catch-all: 그리드 셀·트리 노드·즐겨찾기·content 빈 영역 등 하위 위젯이
+    // 이미 `action` 을 세웠으면 건드리지 않는다. 그 외 explorer chrome(툴바/내부 탭바/
+    // 상태줄/사이드바 빈 영역)의 우클릭은 여기서 Empty 메뉴로 선점한다 — 안 그러면
+    // egui_panels 의 generic surface fallback 이 explorer 위에 "터미널 ID 복사" 메뉴를
+    // 띄운다(불가침 원칙 §1·§2: 파일 브라우저에 무관한 surface-op 메뉴 노출 금지).
+    // 권한 거부 루트는 붙여넣기가 무의미하므로 제외(content 빈영역 규칙과 동일).
+    if action.is_none() && !matches!(view.state, LoadState::NoPermission) {
+        let pos = ui.input(|i| {
+            if i.pointer.secondary_clicked() {
+                i.pointer.interact_pos()
+            } else {
+                None
+            }
+        });
+        if let Some(pos) = pos
+            && surface_rect.contains(pos)
+        {
+            action = Some(ExplorerAction::ContextMenu {
+                target: ExplorerMenuTarget::Empty,
+                cwd: panel.current_root().to_path_buf(),
+                x: pos.x,
+                y: pos.y,
+            });
+        }
+    }
 
     action
 }

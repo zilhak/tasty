@@ -149,3 +149,60 @@ fn right_click_opens_terminal_menu() {
         "menu surface_id should match the injected surface"
     );
 }
+
+/// (d) explorer 우클릭은 표면 어디서든 explorer 메뉴가 뜨고, generic surface
+/// fallback("터미널 ID 복사")이 새지 않는다. 그리드 콘텐츠뿐 아니라 chrome
+/// (툴바/내부 탭바/상태줄/빈 사이드바)까지 `draw_explorer` 의 표면 전체 catch-all 이
+/// Empty 메뉴로 흡수하는 회귀를 잡는다(불가침 원칙 §1·§2). 좌표는 surface 상대
+/// 정규화라 창 크기와 무관. egui 경로 주입(`inject_egui_mouse`)으로 위젯
+/// `secondary_clicked` 라우팅을 그대로 탄다.
+#[test]
+#[ignore]
+fn right_click_explorer_never_falls_back_to_surface_menu() {
+    let inst = shared();
+
+    // active workspace 의 pane 에 grid explorer 를 만들어 활성 탭으로 렌더시킨다.
+    let pane_id = inst.first_pane_id();
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
+    let mut params = json!({ "pane_id": pane_id, "type": "explorer", "view_mode": "grid" });
+    if let Ok(h) = home {
+        params["path"] = json!(h);
+    }
+    let created = inst.call("tab.create", params);
+    let sid = created["surface_id"]
+        .as_u64()
+        .expect("tab.create should return the explorer surface_id");
+    settle();
+
+    // surface 상대 좌표(fx,fy ∈ [0,1]): 이전에 surface fallback 이 새던 chrome 영역들 +
+    // 콘텐츠 그리드. 전부 explorer 메뉴여야 한다.
+    let spots = [
+        (0.5_f32, 0.30_f32, "content grid"),
+        (0.5, 0.02, "internal tab bar / toolbar (top)"),
+        (0.5, 0.99, "status line (bottom)"),
+        (0.02, 0.60, "left sidebar empty area"),
+    ];
+    for (fx, fy, label) in spots {
+        inst.inject_egui_mouse(sid, fx, fy, "move", 2);
+        inst.inject_egui_mouse(sid, fx, fy, "press", 2);
+        inst.inject_egui_mouse(sid, fx, fy, "release", 2);
+        settle();
+        let menu = inst.debug_pending_menu();
+        assert_eq!(
+            menu["present"],
+            json!(true),
+            "explorer right-click at {label} should set a pending menu"
+        );
+        assert_eq!(
+            menu["kind"],
+            json!("Explorer"),
+            "explorer right-click at {label} must open the Explorer menu, \
+             never the generic Surface fallback"
+        );
+        assert_eq!(
+            menu["surface_id"].as_u64(),
+            Some(sid),
+            "menu surface_id at {label} should match the explorer surface"
+        );
+    }
+}
