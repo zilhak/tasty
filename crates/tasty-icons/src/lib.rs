@@ -8,9 +8,10 @@
 //! · plugin build.rs (빌드타임 usvg 베이크): `[build-dependencies]` 로 이 크레이트를
 //!   egui 없이 링크해 [`Icon::svg`]/[`Icon::body`] 를 usvg 에 먹인다.
 //!
-//! path 는 디자인 시스템 번들(`F:/Download/Tasty Design System (1)`)의
-//! `components/core/Icon.jsx` `ICON_PATHS` + `gallery/plugins.jsx` `ic` 를 SoT 로
-//! 전사했다. 24×24 viewBox, 2px stroke, round cap/join. stroke 는 white 로 고정하고
+//! path 는 디자인 시스템 번들(`Tasty Design System`)의 `icons.json` 매니페스트
+//! (개별 `icons/<name>.svg` 글리프의 machine-readable SoT, `components/core/Icon.jsx`
+//! `ICON_PATHS` 와 동기) 를 전사했다. 각 항목의 `fill` boolean 으로 stroke/filled 를
+//! 분기한다. 24×24 viewBox, 2px stroke, round cap/join. stroke 는 white 로 고정하고
 //! 소비처가 `tint` 로 currentColor 를 재현한다 — 색을 글리프에 박지 않는다.
 
 /// line/fill 아이콘 한 개. 아래 필드는 모두 `&'static str`/`bool` 이라 egui 없이도
@@ -110,7 +111,7 @@ stroke_icon!(FUNNEL, "funnel", r#"<path d="M3 4h18l-7 8v6l-4 2v-8z"/>"#);
 stroke_icon!(
     COLUMNS,
     "columns",
-    r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>"#
 );
 
 // ── Navigation & disclosure ──
@@ -168,7 +169,7 @@ stroke_icon!(
 stroke_icon!(
     FOLDER_OPEN,
     "folder_open",
-    r#"<path d="M3 8a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v1H3z M3 11h18l-1.5 8a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1z"/>"#
+    r#"<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H21a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>"#
 );
 stroke_icon!(
     FILE,
@@ -203,29 +204,30 @@ stroke_icon!(
 stroke_icon!(
     LAYOUT_GRID,
     "layout_grid",
-    r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>"#
+    r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>"#
 );
+// design `listView` — 행 + leading 마커 점. host 는 LIST_VIEW 로 별칭. (log 라인은 `LOG`=design `list`.)
 stroke_icon!(
     LIST,
     "list",
-    r#"<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>"#
+    r#"<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>"#
 );
 stroke_icon!(
     LAYOUT_DETAIL,
     "layout_detail",
-    r#"<path d="M3 5h18M3 12h18M3 19h18M3 5v14"/>"#
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h10M7 16.5h6"/>"#
 );
 // 즐겨찾기 outline star — design `star`(채운 STAR_FILL 과 같은 지오메트리).
 stroke_icon!(
     STAR,
     "star",
-    r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
+    r#"<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>"#
 );
 // 채운 별 — 즐겨찾기 populated 행 (design `starFill`, accent-warning 색).
 fill_icon!(
     STAR_FILL,
     "star_fill",
-    r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
+    r#"<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>"#
 );
 
 // ── Visibility ──

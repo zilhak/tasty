@@ -51,9 +51,11 @@ const NAV: &[Entry] = &[
 
 const VIEW: &[Entry] = &[
     (LAYOUT_GRID, "layoutGrid", "grid / icon view"),
-    (LIST, "list", "list view"),
+    (LIST, "listView", "list view"),
     (LAYOUT_DETAIL, "layoutDetail", "detail / table view"),
+    (COLUMNS, "columns", "column split layout"),
     (STAR, "star", "favorite / bookmark"),
+    (STAR_FILL, "starFill", "favorite / active (filled)"),
 ];
 
 const SURFACES: &[Entry] = &[
@@ -63,6 +65,7 @@ const SURFACES: &[Entry] = &[
     (HTML, "html", "html surface / web view"),
     (SPLIT, "split", "split a pane"),
     (FOLDER, "folder", "folder / workspace"),
+    (FOLDER_OPEN, "folderOpen", "folder / workspace (open state)"),
     (FILE, "file", "file leaf"),
     (REMOTE, "remote", "remote connection"),
     (PORT, "port", "listening port / target"),
