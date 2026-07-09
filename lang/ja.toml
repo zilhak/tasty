@@ -604,10 +604,6 @@ failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
 loading = "読み込み中…"
 
-[markdown.large_file]
-title = "大きなファイルを開きますか？"
-body = "1MBを超えています。表示が遅くなる可能性があります。"
-
 [script.confirm]
 title = "登録後にスクリプトが変更されました"
 changed_tag = "変更あり"

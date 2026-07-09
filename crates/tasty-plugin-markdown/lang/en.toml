@@ -20,6 +20,12 @@ markdown = "Markdown"
 failed = "Failed to load"
 empty = "This file is empty"
 
+[markdown.large_file]
+title = "Open large file?"
+body = "Over 1 MB — rendering may be slow."
+open = "Open"
+cancel = "Cancel"
+
 [markdown.addr]
 placeholder = "Path to markdown file"
 go = "Open (Enter)"

@@ -114,57 +114,6 @@ impl Core {
             }
         }
     }
-
-    /// 대용량 markdown 확인 팝업에서 [열기] 확정 시 보류된 오픈을 재개한다.
-    /// 이미 사용자가 확인했으므로 크기 재검사 없이(bypass) 원래 OpenSurface 오픈을
-    /// 그대로 실행한다. `App::dispatch_pending_md_open` 이 frame begin 에 호출.
-    #[cfg(feature = "gui")]
-    pub(crate) fn apply_pending_md_open(
-        &mut self,
-        state: &mut AppState,
-        engine: &mut CoreState,
-        pending: crate::state::PendingMdOpen,
-    ) {
-        use crate::state::PendingMdOpenKind;
-        match pending.kind {
-            PendingMdOpenKind::NewTab {
-                param_key,
-                surface_kind,
-                origin_surface_id,
-            } => {
-                let params = serde_json::json!({ param_key.as_str(): pending.path });
-                crate::file::dispatch::open_surface_tab(
-                    self,
-                    state,
-                    engine,
-                    &surface_kind,
-                    params,
-                    origin_surface_id,
-                );
-            }
-            PendingMdOpenKind::InPlace { surface_id } => {
-                // 제자리 이동 — 같은 surface 를 *현재 kind* + 새 file 로 변환. 이 경로는
-                // 이미 그 kind 의 surface 에서만 트리거되므로 현재 kind 를 재사용해
-                // `"markdown"` 리터럴을 없앤다(동작 불변). re-bootstrap 은
-                // SurfaceConverted cascade 가 처리(drop_egui_mesh_frame).
-                let kind = engine
-                    .find_surface_by_id(surface_id)
-                    .map(|s| s.kind().to_string())
-                    .unwrap_or_else(|| "markdown".to_string());
-                state.dispatch_intent(
-                    crate::intent::Intent::ConvertSurface {
-                        surface_id,
-                        target: crate::intent::ConvertTarget::Kind {
-                            cwd: None,
-                            kind,
-                            params: serde_json::json!({ "file": pending.path }),
-                        },
-                    }
-                    .from_user_menu("markdown_navigate"),
-                );
-            }
-        }
-    }
 }
 
 /// `~/.tasty/file-handlers.toml`. 홈 디렉토리 결정 실패 시 임시 경로 — 그 경우

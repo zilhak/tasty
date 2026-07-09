@@ -145,7 +145,6 @@ pub fn register_egui_mesh_kind(
         copy_path: decl.copy_path,
         egui_paste: decl.egui_paste,
         name_from_param: decl.name_from_param.clone(),
-        size_confirm_limit: decl.size_confirm_limit,
         records_recent: decl.records_recent,
     });
 

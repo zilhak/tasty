@@ -12,7 +12,6 @@ pub(crate) mod rail_category;
 pub(crate) mod remote_attach;
 pub(crate) mod remote_tool;
 pub(crate) mod script_confirm;
-pub(crate) mod size_confirm;
 
 use crate::state::AppState;
 

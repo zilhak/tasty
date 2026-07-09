@@ -195,13 +195,6 @@ pub struct SurfaceKindDef {
     /// 하드코딩을 generic 화한다. builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
     pub name_from_param: Option<String>,
 
-    /// 파일 기반 kind 를 파일 핸들러로 열 때 확인 팝업을 띄우는 크기 임계값(bytes,
-    /// 매니페스트 `size_confirm_limit`). `Some(n)` 이면 파일이 n bytes 를 *초과* 할 때
-    /// 즉시 열지 않고 확인 팝업을 띄운다. `None` 이면 게이트 없음(항상 즉시 열기). 본체의
-    /// `kind == "markdown"` 1MB 게이트 하드코딩을 generic 화한다. builtin 은 등록 코드에서,
-    /// plugin kind 는 decl 에서 채운다.
-    pub size_confirm_limit: Option<u64>,
-
     /// 이 kind 의 surface 를 파일로 열 때 host 가 "최근 연 파일" 목록에 기록할지
     /// (매니페스트 `records_recent`). `true` 면 파일-open 진입점에서 kind 별 최근 목록에
     /// 기록한다. host 본체의 `kind == "markdown"` recent 기록 분기를 generic 화한다.
@@ -343,7 +336,6 @@ mod tests {
             copy_path: false,
             egui_paste: false,
             name_from_param: None,
-            size_confirm_limit: None,
             records_recent: false,
         }
     }

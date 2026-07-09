@@ -574,11 +574,6 @@ pub struct DialogState {
     pub(crate) preset_picker_selected: Option<String>,
     /// `enter_copy_mode` 단축키 트리거 신호. MainView 가 다음 frame 에 소비.
     pub(crate) pending_enter_copy_mode: bool,
-    /// 대용량 markdown 열기 확인(`markdown_size_confirm`) 팝업의 보류 상태.
-    /// `Some` 이면 게이트가 열기를 보류하고 팝업을 띄운 상태 — 사용자가 [열기] 를
-    /// 누르면 `App::dispatch_pending_md_open` 이 `Core::apply_pending_md_open` 으로
-    /// 실제 오픈을 재개하고, [취소]/Esc/바깥클릭이면 슬롯을 폐기한다.
-    pub(crate) pending_md_open: Option<PendingMdOpen>,
     /// 축소 레일 카테고리 팝업(`rail_category`)이 대상으로 하는 카테고리 id.
     /// `---` 버튼 클릭 시 set, popup 닫힘 시 None.
     pub(crate) rail_category_popup: Option<crate::model::WorkspaceCategoryId>,
@@ -590,40 +585,6 @@ pub struct DialogState {
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
     /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
     pub(crate) pending_script_confirm: Option<PendingScriptConfirm>,
-}
-
-/// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
-///
-/// 게이트가 크기 초과를 감지하면 실제 오픈 대신 이 값을 채우고 확인 팝업을 띄운다.
-/// [열기] 확정 시 이 값으로 원래 오픈을 bypass(재검사 없이) 재개한다. `kind` 가
-/// 새 탭 오픈(파일 dispatch)인지 제자리 이동(04, 주소창)인지 구분한다.
-#[derive(Debug, Clone)]
-pub struct PendingMdOpen {
-    /// 열려던 파일의 절대 경로 문자열.
-    pub(crate) path: String,
-    /// 감지된 파일 크기(bytes) — 팝업의 크기 칩 표시용.
-    pub(crate) size: u64,
-    /// 팝업 wrapper 의 사용자 결정: `Some(true)`=열기, `Some(false)`=취소.
-    /// `App::dispatch_pending_md_open` 이 frame begin 에 drain.
-    pub(crate) result: Option<bool>,
-    /// 재개 방식 — 새 탭 vs 제자리 이동.
-    pub(crate) kind: PendingMdOpenKind,
-}
-
-/// 대용량 확인 후 재개 방식.
-#[derive(Debug, Clone)]
-pub enum PendingMdOpenKind {
-    /// 파일 dispatch — 새 탭으로 연다(`execute_handler_action` OpenSurface).
-    NewTab {
-        /// handler param key (예: `"file"`). 재개 시 params 재구성에 사용.
-        param_key: String,
-        /// surface kind (항상 `"markdown"`).
-        surface_kind: String,
-        /// origin surface — 그 Pane 에 새 tab. None 이면 focused.
-        origin_surface_id: Option<u32>,
-    },
-    /// 제자리 이동(04) — 같은 surface 를 `ConvertSurface` 로 markdown+새 file 로 교체.
-    InPlace { surface_id: u32 },
 }
 
 /// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031 TODO 06).
@@ -696,7 +657,6 @@ impl DialogState {
             pending_open_preset_window: false,
             preset_picker_selected: None,
             pending_enter_copy_mode: false,
-            pending_md_open: None,
             rail_category_popup: None,
             pending_category_delete: None,
             pending_script_confirm: None,

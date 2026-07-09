@@ -20,6 +20,12 @@ markdown = "Markdown"
 failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
 
+[markdown.large_file]
+title = "大きなファイルを開きますか？"
+body = "1MBを超えています。表示が遅くなる可能性があります。"
+open = "開く"
+cancel = "キャンセル"
+
 [markdown.addr]
 placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"

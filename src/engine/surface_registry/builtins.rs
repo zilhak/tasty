@@ -93,8 +93,6 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         egui_paste: false,
         // terminal 표시명은 surface 자체 display_name 으로 결정 — 파라미터 basename 명명 없음.
         name_from_param: None,
-        // terminal 은 파일 오픈 게이트 대상 아님.
-        size_confirm_limit: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
     });
@@ -132,7 +130,6 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
-        size_confirm_limit: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
     });
@@ -225,8 +222,6 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         egui_paste: false,
         // explorer 탭 표시명은 현재 폴더 `path` basename 으로 파생.
         name_from_param: Some("path".to_string()),
-        // explorer 는 디렉토리 뷰 — 파일 크기 게이트 대상 아님.
-        size_confirm_limit: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
     });
@@ -285,7 +280,6 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
-        size_confirm_limit: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
     });

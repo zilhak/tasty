@@ -454,12 +454,6 @@ pub struct SurfaceKindDecl {
     /// 파생 없이 kind 표시명 fallback.
     #[serde(default)]
     pub name_from_param: Option<String>,
-    /// 파일 기반 kind 를 파일 핸들러로 열 때 확인 팝업을 띄우는 크기 임계값(bytes,
-    /// 예: markdown=1048576). `Some(n)` 이면 파일이 n bytes 를 *초과* 할 때 즉시 열지 않고
-    /// 확인 팝업을 띄운다. host 본체의 `kind == "markdown"` 1MB 게이트 하드코딩을 generic 화.
-    /// 미선언이면 게이트 없음(항상 즉시 열기).
-    #[serde(default)]
-    pub size_confirm_limit: Option<u64>,
     /// 이 kind 의 surface 를 파일로 열 때 host 가 "최근 연 파일" 목록에 기록할지
     /// (예: markdown=true). host 는 특정 kind 이름을 모르고 이 플래그로 기록 대상을
     /// 판정한다(generic per-kind). host 본체의 `kind == "markdown"` recent 기록 분기를

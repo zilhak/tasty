@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.22"
+version = "0.1.23"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -11,7 +11,12 @@ permissions = [
     "file_handler.define",
     "file_handler.handle:markdown",
     "ui.settings_page",
+    # 대용량 파일 확인 팝업(egui-mesh)을 자가 렌더한다.
+    "ui.popup",
 ]
+# 대용량 파일 감지 시 plugin 이 발행하는 이벤트(→ host fire_popup_triggers → 확인 팝업).
+# 크기 감지는 plugin in-process — host 는 파일 크기를 stat 하지 않는다(크기게이트 plugin 소유).
+event_publish = ["com.tasty.markdown.large_file_confirm"]
 lang_dir = "lang"
 
 [entry]
@@ -35,9 +40,9 @@ param_aliases = { file_path = "file" }
 # 자동 탭 명명: `file` 값의 basename 을 표시명으로(예: README.md). 본체의
 # `kind == "markdown"` basename 명명 하드코딩을 대체(generic-kind 마이그레이션).
 name_from_param = "file"
-# 파일 핸들러로 열 때 1MB 초과면 확인 팝업. 본체의 `kind == "markdown"` 1MB 게이트
-# 하드코딩을 대체(generic-kind 마이그레이션).
-size_confirm_limit = 1048576
+# 대용량 파일(>1MB) 확인은 **plugin 이 소유**한다: plugin 이 in-process 로 크기를 감지해
+# read 를 보류하고 large-file 이벤트를 발행 → 아래 `[[contributes.popup]]` 확인 팝업을
+# 연다. host 는 파일 크기를 stat 하지 않는다(옛 `size_confirm_limit` 게이트 제거).
 # 파일로 열 때 host 의 "최근 연 파일" 목록에 기록. 본체의 `kind == "markdown"` recent
 # 기록 하드코딩을 대체(generic per-kind). 주소창 드롭다운이 `recent.query` 로 조회.
 records_recent = true
@@ -63,6 +68,18 @@ unfocused_fg = "#a6adc8"
 [[contributes.ipc_namespace]]
 prefix = "markdown"
 description_i18n_key = "markdown.namespace.desc"
+
+# 대용량 파일 확인 팝업. plugin 이 크기 초과를 in-process 로 감지해 발행한
+# `com.tasty.markdown.large_file_confirm` 이벤트로 열린다(event trigger). 콘텐츠
+# (파일명·크기 태그·[취소]/[열기])는 plugin 이 egui-mesh 로 자가 렌더하고, 셸(scrim/
+# border/outside-click/Esc)은 host 소유(ADR-0028). [열기] 시 plugin 이 read 를 재개한다.
+[[contributes.popup]]
+id = "large-file-confirm"
+trigger = { kind = "event", event_key = "com.tasty.markdown.large_file_confirm" }
+rendering = "egui-mesh"
+size_hint = { width = 360, height = 150 }
+anchor = "screen-center"
+dismiss_on_outside_click = true
 
 [[contributes.detector]]
 id = "markdown"

@@ -30,21 +30,35 @@ use render::{LinkClick, MdCache};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
+    BusHandle, EventScope, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, PopupClosedCtx,
+    PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx, SurfaceResult,
     SurfaceSetContextCtx, Translator,
 };
 use tasty_type_appearance::theme::Theme;
 
 #[cfg(any(unix, windows))]
+use tasty_plugin_sdk::EguiMeshPopup;
+#[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
-use tasty_ui_widgets::{Combobox, ComboboxAction, margin_all, vspace};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, Combobox, ComboboxAction, TagVariant, margin_all, tag, vspace,
+};
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
 const PLUGIN_VERSION: &str = "0.1.0";
 
 /// How often to check the file's mtime (in seconds).
 const RELOAD_CHECK_INTERVAL_SECS: f64 = 1.0;
+
+/// 대용량 파일 확인 게이트 임계값 (1MB). 이 크기를 *초과* 하는 파일은 읽기 전에 확인
+/// 팝업을 띄운다. **크기 감지는 plugin in-process** — host 는 파일 크기를 stat 하지
+/// 않는다(불가침 원칙: markdown 크기게이트는 plugin 소유). 이름도 plugin-local 이다.
+const LARGE_FILE_LIMIT_BYTES: u64 = 1024 * 1024;
+
+/// 대용량 감지 시 plugin 이 발행하는 이벤트 key. 매니페스트 `event_publish` 패턴 +
+/// `[[contributes.popup]]` event trigger 가 이 key 로 매칭돼 확인 팝업을 연다.
+const LARGE_FILE_EVENT_KEY: &str = "com.tasty.markdown.large_file_confirm";
 
 /// Per-surface markdown document state owned by the plugin (content, load outcome, base
 /// dir for relative paths, mtime reload tracking). Mirrors the former host `MarkdownView`
@@ -56,6 +70,10 @@ struct MdDoc {
     load_error: Option<String>,
     last_mtime: Option<SystemTime>,
     last_check: Instant,
+    /// 대용량 확인 대기 중이면 true — 파일을 아직 읽지 않았다(빈 콘텐츠). 확인 팝업의
+    /// [열기] 확정 시 [`MdDoc::resume_load`] 가 실제 read 를 재개한다. 이 동안 poll_reload
+    /// 도 읽지 않는다.
+    pending_large: bool,
 }
 
 impl MdDoc {
@@ -81,6 +99,33 @@ impl MdDoc {
             load_error,
             last_mtime,
             last_check: Instant::now(),
+            pending_large: false,
+        }
+    }
+
+    /// 대용량 파일을 **읽지 않고** 경로만 보관한 문서를 만든다(확인 팝업 대기). 확인
+    /// 시 [`MdDoc::resume_load`] 가 read 를 재개한다.
+    fn new_deferred(file: Option<String>) -> Self {
+        let base_dir = file
+            .as_ref()
+            .and_then(|f| PathBuf::from(f).parent().map(|p| p.to_path_buf()));
+        Self {
+            file_path: file,
+            base_dir,
+            content: String::new(),
+            load_error: None,
+            last_mtime: None,
+            last_check: Instant::now(),
+            pending_large: true,
+        }
+    }
+
+    /// 대용량 확인 [열기] 후 실제 read 를 재개한다.
+    fn resume_load(&mut self) {
+        self.pending_large = false;
+        if let Some(f) = self.file_path.clone() {
+            self.last_mtime = std::fs::metadata(&f).and_then(|m| m.modified()).ok();
+            self.read_now(&f);
         }
     }
 
@@ -88,6 +133,10 @@ impl MdDoc {
     /// changed file is picked up the next time the surface paints (i.e. on user input —
     /// idle auto-reload without input awaits the `SurfaceInvalidated` re-forward path).
     fn poll_reload(&mut self) {
+        // 대용량 확인 대기 중이면 아직 읽지 않는다([열기] 확정 전).
+        if self.pending_large {
+            return;
+        }
         let Some(f) = self.file_path.clone() else {
             return;
         };
@@ -143,6 +192,17 @@ struct AddrState {
     active: Option<usize>,
 }
 
+/// 대용량 확인 팝업 인스턴스의 대상 정보(open_popup context 로 받아 보관). [열기] 시
+/// 이 surface 의 문서 read 를 재개한다.
+#[derive(Clone)]
+struct LargeFileConfirm {
+    surface_id: u32,
+    /// 표시용 파일명(basename). 경로 전체 대신 파일명만 팝업에 노출.
+    file_name: String,
+    /// 크기 칩 라벨 (예: "3.2 MB").
+    size_label: String,
+}
+
 struct MarkdownPlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
     #[cfg(any(unix, windows))]
@@ -162,6 +222,16 @@ struct MarkdownPlugin {
     caches: HashMap<u32, MdCache>,
     /// surface_id → 주소창 편집 상태 (03).
     addr: HashMap<u32, AddrState>,
+    /// large-file 이벤트 발행용 Event Bus 핸들(`on_start` 에서 저장).
+    bus: Option<BusHandle>,
+    /// popup instance_id → 대용량 확인 대상.
+    confirm: HashMap<u64, LargeFileConfirm>,
+    /// popup instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유).
+    #[cfg(any(unix, windows))]
+    popups: HashMap<u64, EguiMeshPopup>,
+    /// CJK fallback 폰트를 이미 설치한 popup instance_id — set_fonts 재업로드 방지.
+    #[cfg(any(unix, windows))]
+    popup_fonts_installed: std::collections::HashSet<u64>,
     /// plugin lang 카탈로그 (state.failed / state.empty 등 UI 문자열).
     tr: Translator,
 }
@@ -179,6 +249,12 @@ impl MarkdownPlugin {
             caches: HashMap::new(),
             docs: HashMap::new(),
             addr: HashMap::new(),
+            bus: None,
+            confirm: HashMap::new(),
+            #[cfg(any(unix, windows))]
+            popups: HashMap::new(),
+            #[cfg(any(unix, windows))]
+            popup_fonts_installed: std::collections::HashSet::new(),
             tr,
         }
     }
@@ -193,12 +269,24 @@ impl Plugin for MarkdownPlugin {
         PLUGIN_VERSION
     }
 
+    fn on_start(&mut self, _host: HostHandle, bus: BusHandle) {
+        // large-file 확인 이벤트를 발행하려면 Event Bus 핸들이 필요하다(create_surface 에는
+        // host/bus 가 없으므로 여기서 저장).
+        self.bus = Some(bus);
+    }
+
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
         // egui-mesh surface 는 tree 를 안 그린다 — file 만 적재하고 빈 결과를 돌린다.
         // SDK 는 surface.create 의 **전체 envelope** 을 `ctx.params` 로 넘긴다 — 실제 생성
         // params(file 등)는 `params.params` 아래에 중첩돼 있다.
+        //
+        // 대용량 파일(> LARGE_FILE_LIMIT_BYTES)은 **plugin in-process** 로 크기를 감지해
+        // read 를 보류하고(확인 대기), large-file 이벤트를 발행한다. host 는 파일 크기를
+        // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
+        // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
         let file = surface_param_file(&ctx.params);
-        self.docs.insert(ctx.surface_id, MdDoc::new(file));
+        let doc = self.make_doc(file, ctx.surface_id);
+        self.docs.insert(ctx.surface_id, doc);
         SurfaceResult::default()
     }
 
@@ -238,6 +326,41 @@ impl Plugin for MarkdownPlugin {
     fn paint_surface(&mut self, ctx: SurfaceSetContextCtx) {
         self.paint(ctx);
     }
+
+    fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
+        // large-file 확인 팝업 — event payload({surface_id, path, size})가 context 로 온다.
+        // egui-mesh popup 이라 tree 를 반환하지 않는다(mesh 채널 paint_popup 로 그린다).
+        if let (Some(surface_id), Some(path), Some(size)) = (
+            ctx.context.get("surface_id").and_then(|v| v.as_u64()),
+            ctx.context.get("path").and_then(|v| v.as_str()),
+            ctx.context.get("size").and_then(|v| v.as_u64()),
+        ) {
+            self.confirm.insert(
+                ctx.instance_id,
+                LargeFileConfirm {
+                    surface_id: surface_id as u32,
+                    file_name: basename(path),
+                    size_label: format_size(size),
+                },
+            );
+        }
+        PopupOpenResult::default()
+    }
+
+    fn paint_popup(&mut self, ctx: PopupSetContextCtx) {
+        self.paint_confirm(ctx);
+    }
+
+    fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
+        let iid = ctx.instance_id;
+        #[cfg(any(unix, windows))]
+        {
+            self.popups.remove(&iid);
+            self.popup_fonts_installed.remove(&iid);
+        }
+        // 확인 없이 닫힘(취소/outside-click/Esc)이면 surface 는 대기(빈) 상태로 유지한다.
+        self.confirm.remove(&iid);
+    }
 }
 
 impl MarkdownPlugin {
@@ -251,6 +374,31 @@ impl MarkdownPlugin {
             doc.force_reload();
         }
         Ok(json!({ "ok": true, "surface_id": surface_id }))
+    }
+
+    /// 문서를 만든다. 파일이 임계값을 *초과* 하면 read 를 보류(`new_deferred`)하고
+    /// large-file 이벤트를 발행해 확인 팝업을 띄운다(크기 감지는 plugin in-process).
+    /// bus 가 없으면(초기화 전) 게이트를 건너뛰고 즉시 로드한다(fail-open).
+    fn make_doc(&self, file: Option<String>, surface_id: u32) -> MdDoc {
+        if let Some(path) = file.as_deref()
+            && let Some(size) = file_exceeds_limit(path)
+        {
+            if let Some(bus) = self.bus.as_ref() {
+                let payload = json!({
+                    "surface_id": surface_id,
+                    "path": path,
+                    "size": size,
+                });
+                if let Err(e) =
+                    bus.publish_fresh(LARGE_FILE_EVENT_KEY, payload, EventScope::Surface)
+                {
+                    tracing::warn!("markdown large-file event publish failed: {e}");
+                }
+                return MdDoc::new_deferred(file);
+            }
+            tracing::warn!("markdown large-file gate: event bus unavailable — loading anyway");
+        }
+        MdDoc::new(file)
     }
 
     /// `set_context` 한 frame 을 그려 host 에 mesh 를 회신한다.
@@ -427,6 +575,54 @@ impl MarkdownPlugin {
         }
     }
 
+    /// large-file 확인 팝업 한 frame 을 egui-mesh 로 그린다. [열기] 시 대상 surface 의
+    /// 문서 read 를 재개하고 그 surface 를 재-paint 한 뒤 팝업을 닫는다. [취소] 는 팝업만
+    /// 닫는다(surface 는 대기 상태 유지). chrome(scrim/border/Esc/outside-click)은 host 소유.
+    #[cfg(any(unix, windows))]
+    fn paint_confirm(&mut self, ctx: PopupSetContextCtx) {
+        let iid = ctx.params.instance_id;
+        let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
+            tracing::debug!("markdown confirm popup {iid}: set_context without theme — skipping");
+            return;
+        };
+        let Some(confirm) = self.confirm.get(&iid).cloned() else {
+            // 우리 확인 팝업이 아닌 instance — 무시(있을 수 없음).
+            return;
+        };
+
+        let mut chosen: Option<ConfirmChoice> = None;
+        {
+            // popups/popup_fonts_installed/tr 만 빌린다(docs·confirm 과 서로소) — 아래 처리부가
+            // self 전체를 다시 빌릴 수 있도록 이 블록에서 borrow 를 끝낸다.
+            let popups = &mut self.popups;
+            let installed = &mut self.popup_fonts_installed;
+            let tr = &self.tr;
+            let popup = popups.entry(iid).or_insert_with(|| EguiMeshPopup::new(iid));
+            if installed.insert(iid) {
+                install_fonts(popup.context());
+            }
+            let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
+                chosen = draw_confirm(egui_ctx, &theme, &confirm, tr);
+            });
+            if let Err(e) = result {
+                tracing::warn!("markdown confirm popup {iid} paint failed: {e}");
+            }
+        }
+
+        match chosen {
+            Some(ConfirmChoice::Open) => {
+                if let Some(doc) = self.docs.get_mut(&confirm.surface_id) {
+                    doc.resume_load();
+                }
+                // 대상 surface 를 재-paint 해 로드된 내용을 즉시 반영(입력 없는 갱신).
+                self.repaint_after_reload(&ctx.host, &json!({ "surface": confirm.surface_id }));
+                close_popup(&ctx.host, iid);
+            }
+            Some(ConfirmChoice::Cancel) => close_popup(&ctx.host, iid),
+            None => {}
+        }
+    }
+
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
     #[cfg(not(any(unix, windows)))]
@@ -435,6 +631,10 @@ impl MarkdownPlugin {
     /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
     #[cfg(not(any(unix, windows)))]
     fn repaint_after_reload(&mut self, _host: &HostHandle, _params: &Value) {}
+
+    /// unix 외에는 egui-mesh 채널이 비활성이라 확인 팝업 렌더도 no-op.
+    #[cfg(not(any(unix, windows)))]
+    fn paint_confirm(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
 /// surface.create envelope 에서 `file` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은
@@ -447,6 +647,122 @@ fn surface_param_file(envelope: &Value) -> Option<String> {
         .or_else(|| envelope.get("file"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// 파일이 대용량 임계값([`LARGE_FILE_LIMIT_BYTES`])을 *초과* 하면 그 크기(bytes)를 반환.
+/// stat 실패/이하/경계값은 `None`(게이트 통과 — 즉시 로드). 경계값(정확히 limit)은 통과.
+fn file_exceeds_limit(path: &str) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()
+        .map(|m| m.len())
+        .filter(|&len| len > LARGE_FILE_LIMIT_BYTES)
+}
+
+/// 경로에서 표시용 파일명(basename)을 파생한다. 파생 실패 시 경로 그대로.
+fn basename(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// bytes → "3.2 MB" 형태. 10MB 이상은 소수점 없이(host size_confirm 미러).
+fn format_size(bytes: u64) -> String {
+    let mb = bytes as f64 / (1024.0 * 1024.0);
+    if mb >= 10.0 {
+        format!("{mb:.0} MB")
+    } else {
+        format!("{mb:.1} MB")
+    }
+}
+
+/// host 에 팝업 인스턴스 닫기를 요청한다(셸 생명주기는 host 소유).
+#[cfg(any(unix, windows))]
+fn close_popup(host: &HostHandle, instance_id: u64) {
+    if let Err(e) = host.call("popup.close", json!({ "instance_id": instance_id })) {
+        tracing::warn!("markdown confirm popup close failed: {e}");
+    }
+}
+
+/// 확인 팝업에서 사용자가 고른 결정.
+#[cfg(any(unix, windows))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConfirmChoice {
+    /// 대용량이어도 읽어 렌더한다.
+    Open,
+    /// 열지 않는다(surface 대기 유지).
+    Cancel,
+}
+
+/// large-file 확인 팝업 콘텐츠. 파일명 + 크기 태그 + 안내문 + [취소]/[열기]. 색·폰트·
+/// 간격은 host 가 보낸 `Theme` 토큰에서만 가져온다. 셸(scrim/border/Esc)은 host 소유.
+#[cfg(any(unix, windows))]
+fn draw_confirm(
+    ctx: &egui::Context,
+    theme: &Theme,
+    confirm: &LargeFileConfirm,
+    tr: &Translator,
+) -> Option<ConfirmChoice> {
+    let frame = egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .inner_margin(margin_all(theme.spacing_md));
+    let mut choice = None;
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+
+        // 제목.
+        ui.label(
+            egui::RichText::new(tr.t("markdown.large_file.title"))
+                .size(theme.font_size_body.value())
+                .strong()
+                .color(theme.text_primary().to_egui()),
+        );
+
+        // 파일명 (mono, muted).
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(&confirm.file_name)
+                    .size(theme.font_size_caption.value())
+                    .family(egui::FontFamily::Monospace)
+                    .color(theme.text_muted().to_egui()),
+            )
+            .truncate(),
+        );
+
+        // 경고 태그(크기) + 안내문.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            tag(ui, theme, &confirm.size_label, TagVariant::Warning, false);
+            ui.label(
+                egui::RichText::new(tr.t("markdown.large_file.body"))
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_secondary().to_egui()),
+            );
+        });
+
+        vspace(ui, theme.spacing_xs);
+
+        // 푸터: 취소(ghost) / 열기(primary), 우측 정렬.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if Button::new(tr.t("markdown.large_file.open"))
+                    .variant(ButtonVariant::Primary)
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    choice = Some(ConfirmChoice::Open);
+                }
+                if Button::new(tr.t("markdown.large_file.cancel"))
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    choice = Some(ConfirmChoice::Cancel);
+                }
+            });
+        });
+    });
+    choice
 }
 
 /// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
@@ -905,6 +1221,61 @@ mod tests {
         let doc = p.docs.get(&1).expect("doc inserted");
         assert!(doc.load_error.is_some());
         assert!(doc.content.is_empty());
+    }
+
+    /// 크기게이트 임계값 판정 — 초과만 게이트(경계값·이하·부재는 통과). host
+    /// `file/dispatch.rs` 의 `size_gate_boundary_and_over` 를 plugin in-process 로 이관.
+    #[test]
+    fn file_exceeds_limit_gates_over_only() {
+        let dir = std::env::temp_dir();
+        let big = dir.join(format!("tasty-md-big-{}.md", std::process::id()));
+        let exact = dir.join(format!("tasty-md-exact-{}.md", std::process::id()));
+        let small = dir.join(format!("tasty-md-small-{}.md", std::process::id()));
+        std::fs::write(&big, vec![b'x'; LARGE_FILE_LIMIT_BYTES as usize + 1]).unwrap();
+        std::fs::write(&exact, vec![b'x'; LARGE_FILE_LIMIT_BYTES as usize]).unwrap();
+        std::fs::write(&small, vec![b'x'; 500 * 1024]).unwrap();
+
+        assert_eq!(
+            file_exceeds_limit(big.to_str().unwrap()),
+            Some(LARGE_FILE_LIMIT_BYTES + 1)
+        );
+        // 정확히 임계값 → None (초과만 게이트).
+        assert_eq!(file_exceeds_limit(exact.to_str().unwrap()), None);
+        assert_eq!(file_exceeds_limit(small.to_str().unwrap()), None);
+        // 없는 파일 → None (게이트 통과, 로드 시 error 표시).
+        assert_eq!(file_exceeds_limit("\0nonexistent-md-for-test"), None);
+
+        let _ = std::fs::remove_file(&big); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+        let _ = std::fs::remove_file(&exact); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&small); // best-effort 정리 — 실패 무시.
+    }
+
+    /// deferred 문서는 [열기] 확정(`resume_load`) 전까지 read 를 보류한다(poll 도 안 읽음).
+    #[test]
+    fn deferred_doc_holds_read_until_resume() {
+        let path =
+            std::env::temp_dir().join(format!("tasty-md-deferred-{}.md", std::process::id()));
+        std::fs::write(&path, b"# hello deferred").unwrap();
+        let mut doc = MdDoc::new_deferred(Some(path.to_string_lossy().into_owned()));
+        assert!(doc.pending_large);
+        assert!(doc.content.is_empty());
+        // 대기 중 poll 은 읽지 않는다.
+        doc.poll_reload();
+        assert!(doc.content.is_empty());
+        // 확정 후 실제 로드.
+        doc.resume_load();
+        assert!(!doc.pending_large);
+        assert!(doc.content.contains("hello deferred"));
+        // best-effort 정리 — 실패해도 테스트 결과에 영향 없음.
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn format_size_and_basename_examples() {
+        assert_eq!(format_size(2 * 1024 * 1024 + 200 * 1024), "2.2 MB");
+        assert_eq!(format_size(12 * 1024 * 1024), "12 MB");
+        #[cfg(not(windows))]
+        assert_eq!(basename("/docs/big-notes.md"), "big-notes.md");
     }
 
     #[test]
