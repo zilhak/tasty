@@ -229,11 +229,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: WorkspaceCategoryCommands,
     },
-    /// Markdown surface queries (recent files, …).
-    Markdown {
-        #[command(subcommand)]
-        command: MarkdownCommands,
-    },
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,
@@ -644,24 +639,5 @@ mod workspace_category_tests {
         let r = req(&["tasty", "surface", "completion", "--surface", "42"]);
         assert_eq!(r.method, "surface.completion");
         assert_eq!(r.params["surface_id"], 42);
-    }
-
-    #[test]
-    fn markdown_recent_maps_to_ipc() {
-        let r = req(&["tasty", "markdown", "recent"]);
-        assert_eq!(r.method, "markdown.recent");
-        // 조회는 파라미터 없음 — 포커스/대상 의존 없는 전역 최근목록.
-        assert!(r.params.as_object().is_some_and(|o| o.is_empty()));
-    }
-
-    #[test]
-    fn markdown_recent_parses() {
-        let cli = Cli::try_parse_from(["tasty", "markdown", "recent"]).unwrap();
-        let Some(Commands::Markdown {
-            command: MarkdownCommands::Recent,
-        }) = cli.command
-        else {
-            panic!("expected markdown recent");
-        };
     }
 }

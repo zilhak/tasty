@@ -95,6 +95,8 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         name_from_param: None,
         // terminal 은 파일 오픈 게이트 대상 아님.
         size_confirm_limit: None,
+        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
+        records_recent: false,
     });
 }
 
@@ -131,6 +133,8 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         egui_paste: false,
         name_from_param: None,
         size_confirm_limit: None,
+        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
+        records_recent: false,
     });
 }
 
@@ -223,6 +227,8 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         name_from_param: Some("path".to_string()),
         // explorer 는 디렉토리 뷰 — 파일 크기 게이트 대상 아님.
         size_confirm_limit: None,
+        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
+        records_recent: false,
     });
 }
 
@@ -280,6 +286,8 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         egui_paste: false,
         name_from_param: None,
         size_confirm_limit: None,
+        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
+        records_recent: false,
     });
 }
 

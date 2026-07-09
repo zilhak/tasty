@@ -136,7 +136,8 @@ struct AddrState {
     editing: bool,
     /// paint 클로저가 채우는 확정된 이동 경로 — paint 후 host `markdown.navigate` 로 소비.
     pending_navigate: Option<String>,
-    /// 편집 진입 시 `markdown.recent` 로 캐시한 최근 경로(최신순 최대 10). 드롭다운 후보.
+    /// 편집 진입 시 `recent.query {kind:"markdown"}` 로 캐시한 최근 경로(최신순 최대 10).
+    /// 드롭다운 후보.
     recent: Vec<String>,
     /// 히스토리 드롭다운의 keyboard-active 행 index(↑/↓ 커서). 첫 오픈 시 `None`.
     active: Option<usize>,
@@ -224,10 +225,12 @@ impl Plugin for MarkdownPlugin {
                 Ok(out)
             }
             // 최근목록 조회는 host 소유(AppState.recent_files) — plugin 은 저장소를 못 본다.
-            // 네트워크/CLI caller 가 이 namespace 로 보낸 호출을 host 본문으로 trampoline
-            // 한다(image.open/list 와 동형 host-adapter). owner==self 인 self-call 이라
-            // plugin_ipc 가 forward 하지 않고 host dispatch 로 통과시켜 handle_recent 에 닿는다.
-            "markdown.recent" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
+            // host 는 generic `recent.query {kind}` 만 알고 "markdown" 을 모른다. CLI/주소창
+            // caller 가 이 plugin namespace 로 보낸 호출을 host 의 generic 메서드로 kind 를
+            // 채워 trampoline 한다(host 무지 유지 — image.open/list 와 동형 host-adapter).
+            "markdown.recent" => Ok(ctx
+                .host
+                .call("recent.query", json!({ "kind": "markdown" }))?),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -332,7 +335,7 @@ impl MarkdownPlugin {
             dispatch_link(&ctx.host, sid, click);
         }
 
-        // 편집 진입 프레임이면 `markdown.recent` 로 최근목록을 캐시하고, 이미 채워진 addr 로
+        // 편집 진입 프레임이면 `recent.query` 로 최근목록을 캐시하고, 이미 채워진 addr 로
         // 마지막 컨텍스트를 재-paint 한다 — 진입 클릭 한 프레임 안에서 드롭다운이 채워진
         // 채로 뜨게 한다(캐시가 비어 첫 프레임이 empty 로 뜨는 것을 막는다). 캐시 조회는
         // 편집 진입 시 1회뿐 — 타이핑 프레임마다 host 를 호출하지 않는다.
@@ -726,20 +729,21 @@ fn navigate(host: &HostHandle, sid: u32, path: &str) {
     }
 }
 
-/// 편집 진입 시 host `markdown.recent`(작업2) 로 최근목록을 조회한다 — 최신순 최대 10개
-/// 경로. 조회 전용(사용자 상태 불변). 실패하면 빈 목록으로 폴백한다.
+/// 편집 진입 시 host 의 generic `recent.query {kind}` 로 최근목록을 조회한다 — 최신순
+/// 최대 10개 경로. host 는 "markdown" 을 모르므로 plugin 이 kind 를 채운다. 조회 전용
+/// (사용자 상태 불변). 실패하면 빈 목록으로 폴백한다.
 #[cfg(any(unix, windows))]
 fn fetch_recent(host: &HostHandle) -> Vec<String> {
-    match host.call("markdown.recent", json!({})) {
+    match host.call("recent.query", json!({ "kind": "markdown" })) {
         Ok(v) => parse_recent(&v),
         Err(e) => {
-            tracing::warn!("markdown.recent fetch failed: {e}");
+            tracing::warn!("recent.query fetch failed: {e}");
             Vec::new()
         }
     }
 }
 
-/// `markdown.recent` 응답(`{ "recent": [{ path, file_name }] }`)에서 경로 목록을 추출한다
+/// `recent.query` 응답(`{ "recent": [{ path, file_name }] }`)에서 경로 목록을 추출한다
 /// (순수 — 단위테스트로 격리). 응답 형태가 어긋나면 빈 목록.
 fn parse_recent(v: &Value) -> Vec<String> {
     v.get("recent")
@@ -924,22 +928,37 @@ mod tests {
     #[test]
     fn addr_outcome_cancel_reverts() {
         // Esc → 원복(포커스 유지/이탈 무관).
-        assert_eq!(addr_outcome(ComboboxAction::Cancel, false), AddrOutcome::Revert);
-        assert_eq!(addr_outcome(ComboboxAction::Cancel, true), AddrOutcome::Revert);
+        assert_eq!(
+            addr_outcome(ComboboxAction::Cancel, false),
+            AddrOutcome::Revert
+        );
+        assert_eq!(
+            addr_outcome(ComboboxAction::Cancel, true),
+            AddrOutcome::Revert
+        );
     }
 
     #[test]
     fn addr_outcome_blur_without_confirm_reverts() {
         // 확정 없이 포커스만 잃으면 편집 취소 → 원복.
-        assert_eq!(addr_outcome(ComboboxAction::None, true), AddrOutcome::Revert);
-        assert_eq!(addr_outcome(ComboboxAction::Edited, true), AddrOutcome::Revert);
+        assert_eq!(
+            addr_outcome(ComboboxAction::None, true),
+            AddrOutcome::Revert
+        );
+        assert_eq!(
+            addr_outcome(ComboboxAction::Edited, true),
+            AddrOutcome::Revert
+        );
     }
 
     #[test]
     fn addr_outcome_typing_is_none() {
         // 포커스 유지 중 편집/무입력 → 무동작(드롭다운 열림 유지).
         assert_eq!(addr_outcome(ComboboxAction::None, false), AddrOutcome::None);
-        assert_eq!(addr_outcome(ComboboxAction::Edited, false), AddrOutcome::None);
+        assert_eq!(
+            addr_outcome(ComboboxAction::Edited, false),
+            AddrOutcome::None
+        );
     }
 
     #[test]

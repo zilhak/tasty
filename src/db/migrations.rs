@@ -19,6 +19,13 @@ const SCHEMA_SQL: &str = r#"
         path TEXT PRIMARY KEY,
         opened_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS recent_files (
+        kind TEXT NOT NULL,
+        path TEXT NOT NULL,
+        opened_at INTEGER NOT NULL,
+        PRIMARY KEY(kind, path)
+    );
 "#;
 
 #[derive(Debug)]
@@ -88,12 +95,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','recent_files')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
 
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))

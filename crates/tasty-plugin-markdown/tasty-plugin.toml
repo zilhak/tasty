@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.21"
+version = "0.1.22"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -38,6 +38,9 @@ name_from_param = "file"
 # 파일 핸들러로 열 때 1MB 초과면 확인 팝업. 본체의 `kind == "markdown"` 1MB 게이트
 # 하드코딩을 대체(generic-kind 마이그레이션).
 size_confirm_limit = 1048576
+# 파일로 열 때 host 의 "최근 연 파일" 목록에 기록. 본체의 `kind == "markdown"` recent
+# 기록 하드코딩을 대체(generic per-kind). 주소창 드롭다운이 `recent.query` 로 조회.
+records_recent = true
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
 # 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).
@@ -84,12 +87,18 @@ description = "Markdown viewer commands"
 description_i18n_key = "markdown.cli.desc"
 subcommands = [
     { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Force reload the markdown surface from disk" },
+    { name = "recent", ipc_method = "markdown.recent", args = "recent_args", description = "List recently opened markdown files (newest first, up to 10)" },
 ]
 
 [contributes.cli.arg_groups.reload_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
 ]
+
+# recent 조회는 인자 없음 — 빈 그룹이라도 명시적으로 가리켜야 한다(validator). plugin
+# 트램폴린이 host 의 generic `recent.query` 를 kind="markdown" 으로 채운다(host 무지).
+[contributes.cli.arg_groups.recent_args]
+flags = []
 
 [[contributes.settings_pages]]
 id = "markdown"

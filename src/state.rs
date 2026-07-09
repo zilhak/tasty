@@ -930,19 +930,22 @@ impl AppState {
         std::mem::take(&mut self.pending_intents)
     }
 
-    /// markdown surface 를 여는 인텐트가 수렴하는 지점에서 최근 목록에 1회 기록한다.
-    /// surface params 의 `file` 키를 정규화 dedup 으로 기록하며, `file` 키가 없거나
-    /// 비어 있으면 no-op(파일 없는 변환·kind 만 바뀌는 케이스는 기록 대상 아님).
+    /// 파일 기반 surface 를 여는 인텐트가 수렴하는 지점에서 `kind` 의 최근 목록에 1회
+    /// 기록한다. surface params 의 `file` 키를 정규화 dedup 으로 기록하며, `file` 키가
+    /// 없거나 비어 있으면 no-op(파일 없는 변환·kind 만 바뀌는 케이스는 기록 대상 아님).
     ///
-    /// 배치 근거: markdown-open 진입점(파일-열기 팝업·주소창 navigate·링크 클릭·
-    /// convert)이 모두 `Intent::NewTab`/`Intent::ConvertSurface`(또는 file-dispatch
-    /// 의 직접 `CreateTab`)로 수렴하므로, 그 인텐트 계층에서 공용으로 1회 기록한다.
-    /// generic surface factory 는 `AppState` 접근이 없어 여기서 처리한다.
-    pub(crate) fn record_recent_markdown(&mut self, params: &serde_json::Value) {
+    /// **generic per-kind**: host 는 특정 kind 이름을 모른다. 호출부가 매니페스트
+    /// `records_recent` capability 로 기록 대상 여부를 판정한 뒤 이 함수에 kind 를 넘긴다.
+    ///
+    /// 배치 근거: 파일-open 진입점(파일-열기 팝업·주소창 navigate·링크 클릭·convert)이
+    /// 모두 `Intent::NewTab`/`Intent::ConvertSurface`(또는 file-dispatch 의 직접
+    /// `CreateTab`)로 수렴하므로, 그 인텐트 계층에서 공용으로 1회 기록한다. generic
+    /// surface factory 는 `AppState` 접근이 없어 여기서 처리한다.
+    pub(crate) fn record_recent(&mut self, kind: &str, params: &serde_json::Value) {
         if let Some(file) = params.get("file").and_then(|v| v.as_str())
             && !file.is_empty()
         {
-            self.recent_files.add_markdown(file.to_string());
+            self.recent_files.add(kind, file.to_string());
         }
     }
 

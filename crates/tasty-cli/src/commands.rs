@@ -6,7 +6,6 @@ pub mod attach;
 pub mod debug;
 pub mod file_handler;
 pub mod list_set;
-pub mod markdown;
 pub mod memory;
 pub mod move_send;
 pub mod new_close;
@@ -36,7 +35,6 @@ pub use debug::{
 };
 pub use file_handler::FileHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};
-pub use markdown::MarkdownCommands;
 pub use memory::{
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands,
 };

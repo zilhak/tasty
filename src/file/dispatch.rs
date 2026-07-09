@@ -263,10 +263,15 @@ pub(crate) fn open_surface_tab(
     match origin_pane {
         Some(pane_id) => {
             // 이 분기는 인텐트 계층을 거치지 않고 Core 로 직접 apply 하므로(링크 클릭 등
-            // origin surface 의 pane 에 새 탭), markdown 최근 목록 기록을 여기서 직접
-            // 한다. None 분기는 `Intent::NewTab` 으로 위임되어 tab 핸들러가 기록한다.
-            if surface_kind == "markdown" {
-                state.record_recent_markdown(&params);
+            // origin surface 의 pane 에 새 탭), 최근 목록 기록을 여기서 직접 한다. None
+            // 분기는 `Intent::NewTab` 으로 위임되어 tab 핸들러가 기록한다. kind 하드코딩
+            // 없이 매니페스트 `records_recent` 를 선언한 kind 만 기록(generic per-kind).
+            if engine
+                .surface_registry
+                .get(surface_kind)
+                .is_some_and(|d| d.records_recent)
+            {
+                state.record_recent(surface_kind, &params);
             }
             let intent = crate::core::intent::DomainIntent::CreateTab {
                 pane_id,

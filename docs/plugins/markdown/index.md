@@ -26,9 +26,9 @@
   - **외부 URL**(`http(s)://`·`mailto:`·`data:`)만 plugin 이 OS 핸들러(`webbrowser`)로 위임한다.
   - **`#anchor`** 는 무시(문서 내 위치 — 열 대상 없음). base_dir 을 모르는 상대 경로, 존재하지 않는 경로도 무반응.
   - 이미지의 상대 경로도 동일하게 base_dir 기준으로 해석한다.
-- **주소창 편집 + 히스토리 드롭다운(03)** — 상단 주소창 경로 필드는 공유 `Combobox` 위젯(`crates/tasty-ui-widgets/src/combobox.rs` — 트리거 `Input` + 히스토리 드롭다운)으로 배선된다. 비편집 시 현재 경로를 `text-secondary` 로 표시하고, 클릭해 포커스하면 편집모드로 들어가며 그 순간 `markdown.recent` 로 최근목록을 캐시해 필드 아래 floating 드롭다운(최신순 최대 10개, 필터 없음)을 펼친다. 키보드: **↑/↓** keyboard-active 행 이동(wrap), **Enter** = active 행 있으면 그 경로로·없으면 현재 버퍼로 `navigate`, **Esc** = 드롭다운 닫고 버퍼 원복, 행 클릭 = 그 경로로 navigate. 스페이스/한글 입력은 키 forward + IME 라이브 preedit(작업1) 위에서 필드에 그대로 들어간다. 편집 부수효과는 forward 된 실제 사용자 입력에서만 발생 — identity 경계 준수.
-- **최근목록 조회** — `markdown.recent` IPC(`tasty markdown recent`)가 최근 연 markdown 파일을 **최신순 최대 10개** 반환한다(`{recent:[{path,file_name}]}`). 위 주소창 드롭다운의 데이터 공급원. **읽기 전용** — host `AppState.recent_files` 캐시를 필터 없이 조회할 뿐 사용자 상태(포커스/선택/히스토리)를 바꾸지 않는다(불가침 원칙). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 `navigate`(FsRead)보다 약한 **`surface.read`** 권한.
-- **cli** — `tasty markdown recent`(최근목록 조회). reload 등은 plugin CLI.
+- **주소창 편집 + 히스토리 드롭다운(03)** — 상단 주소창 경로 필드는 공유 `Combobox` 위젯(`crates/tasty-ui-widgets/src/combobox.rs` — 트리거 `Input` + 히스토리 드롭다운)으로 배선된다. 비편집 시 현재 경로를 `text-secondary` 로 표시하고, 클릭해 포커스하면 편집모드로 들어가며 그 순간 generic `recent.query {kind:"markdown"}` 로 최근목록을 캐시해 필드 아래 floating 드롭다운(최신순 최대 10개, 필터 없음)을 펼친다. 키보드: **↑/↓** keyboard-active 행 이동(wrap), **Enter** = active 행 있으면 그 경로로·없으면 현재 버퍼로 `navigate`, **Esc** = 드롭다운 닫고 버퍼 원복, 행 클릭 = 그 경로로 navigate. 스페이스/한글 입력은 키 forward + IME 라이브 preedit(작업1) 위에서 필드에 그대로 들어간다. 편집 부수효과는 forward 된 실제 사용자 입력에서만 발생 — identity 경계 준수.
+- **최근목록 조회** — host 의 generic **`recent.query {kind}`** IPC 가 그 kind 의 최근 연 파일을 **최신순 최대 10개** 반환한다(`{recent:[{path,file_name}]}`). markdown plugin 은 `kind:"markdown"` 을 채워 호출한다(host 는 특정 kind 를 모른다 — generic per-kind). 위 주소창 드롭다운의 데이터 공급원. **읽기 전용** — host `AppState.recent_files` 캐시를 필터 없이 조회할 뿐 사용자 상태(포커스/선택/히스토리)를 바꾸지 않는다(불가침 원칙). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 `navigate`(FsRead)보다 약한 **`surface.read`** 권한. recent 기록 대상 여부는 매니페스트 `records_recent` capability 로 판정한다.
+- **cli** — `tasty markdown recent`(최근목록 조회 — plugin CLI 서브커맨드가 `recent.query` 로 trampoline). reload 등도 plugin CLI.
 - **settings_page** — `markdown` 페이지.
 
 ## 인터페이스

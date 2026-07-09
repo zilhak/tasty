@@ -68,7 +68,7 @@ pub fn markdown_open_popup_size(recent_count: usize) -> egui::Vec2 {
 
 /// Sizer for markdown open popup — uses AppState.recent_files cache (no disk IO).
 pub fn markdown_popup_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    markdown_open_popup_size(state.recent_files.markdown.len())
+    markdown_open_popup_size(state.recent_files.get("markdown").len())
 }
 
 /// 순수 view. 그리기 + Action 산출. AppState/CoreState 접근 금지.
@@ -213,7 +213,7 @@ pub fn draw_markdown_open_popup(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
-    let recents = state.recent_files.markdown.clone();
+    let recents = state.recent_files.get("markdown").to_vec();
     let mut path_input = std::mem::take(&mut state.dialogs.markdown_open_buffer);
     let error_owned = state.dialogs.file_open_error.clone();
 
@@ -274,7 +274,7 @@ fn try_confirm(state: &mut AppState, engine: &mut crate::core::CoreState) -> Pop
 fn apply_open(state: &mut AppState, engine: &mut crate::core::CoreState, path: &str) {
     let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
     // 최근 목록 기록은 아래에서 발화하는 ConvertSurface/NewTab 인텐트가 인텐트 계층
-    // 공용 헬퍼(`record_recent_markdown`)로 1회 수행 — 여기서 직접 기록하지 않는다
+    // 공용 헬퍼(`record_recent`)로 1회 수행 — 여기서 직접 기록하지 않는다
     // (중복 기록 방지 + 진입점 수렴).
     if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
         state.dispatch_intent(

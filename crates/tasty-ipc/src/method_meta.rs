@@ -316,9 +316,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // markdown surface 제자리 이동 (04) — 주어진 surface 를 새 파일의 markdown
         // 으로 교체한다. 임의 path 를 읽으므로 FsRead. 주소창(03) 플러그인이 caller.
         ("markdown.navigate", plugin(&[FsRead])),
-        // markdown 최근목록 조회 — 주소창(03) 드롭다운 데이터 공급원. navigate 와 달리
-        // 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더 약한 SurfaceRead 권한.
-        ("markdown.recent", plugin(&[SurfaceRead])),
+        // generic per-kind 최근목록 조회 — 주소창(03) 드롭다운 데이터 공급원(plugin 이
+        // kind 를 채워 호출). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더
+        // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
+        ("recent.query", plugin(&[SurfaceRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —

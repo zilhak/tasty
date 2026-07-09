@@ -460,6 +460,12 @@ pub struct SurfaceKindDecl {
     /// 미선언이면 게이트 없음(항상 즉시 열기).
     #[serde(default)]
     pub size_confirm_limit: Option<u64>,
+    /// 이 kind 의 surface 를 파일로 열 때 host 가 "최근 연 파일" 목록에 기록할지
+    /// (예: markdown=true). host 는 특정 kind 이름을 모르고 이 플래그로 기록 대상을
+    /// 판정한다(generic per-kind). host 본체의 `kind == "markdown"` recent 기록 분기를
+    /// generic 화. 미선언이면 기록 안 함.
+    #[serde(default)]
+    pub records_recent: bool,
     /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
     /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
     /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면

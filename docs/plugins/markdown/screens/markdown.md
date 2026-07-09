@@ -34,7 +34,7 @@
 | 주소창 바 | `bg-sidebar` · 40px | 경로 combobox + Go |
 | 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` | `Combobox` 트리거 leading 아이콘(베이크 벡터) |
 | 경로 필드(트리거) | `Input` — `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px · mono caption(11) | 비편집=`text-secondary`, 편집=`text-primary` |
-| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `markdown.recent` 최신순 최대 10개 |
+| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `recent.query {kind:"markdown"}` 최신순 최대 10개 |
 | 드롭다운 후보 행 | `MenuItem` 언어 · 28px · middle-ellipsis 경로 · hover=`overlay-hover` / keyboard-active=`surface-active`(2단계 분리) | 행 선두 `FILE` 아이콘 · empty="No recent files"(`text-muted`) |
 | Go 버튼 | `ARROW_RIGHT` glyph · `text-secondary`(hover `text-primary`) · `font-size-body` | `tasty-icons` 베이크 벡터(raw `→` 제거) |
 | 본문 텍스트 | `text-secondary` · 본문 leading 은 egui_commonmark 소유 | 헤딩 색은 단계별 차별화. `line-height-prose` override 미노출 → 은퇴(retire-pending) |
