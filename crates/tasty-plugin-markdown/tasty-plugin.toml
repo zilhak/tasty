@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.23"
+version = "0.1.24"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -78,6 +78,17 @@ id = "large-file-confirm"
 trigger = { kind = "event", event_key = "com.tasty.markdown.large_file_confirm" }
 rendering = "egui-mesh"
 size_hint = { width = 360, height = 150 }
+anchor = "screen-center"
+dismiss_on_outside_click = true
+
+# 파일열기 폼(경로 입력 + browse + 열기/취소). host 가 `com.tasty.markdown.file_open`
+# 이벤트를 발행하면(단축키/메뉴 트리거 배선은 Phase 4) fire_popup_triggers 가 이 팝업을
+# 연다. browse 는 host `fs.pick_file`(native rfd)로 위임, 열기는 `file_handler.dispatch`.
+[[contributes.popup]]
+id = "file-open"
+trigger = { kind = "event", event_key = "com.tasty.markdown.file_open" }
+rendering = "egui-mesh"
+size_hint = { width = 420, height = 170 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
 

@@ -203,6 +203,13 @@ struct LargeFileConfirm {
     size_label: String,
 }
 
+/// 파일열기 팝업 인스턴스 상태 — 경로 입력 버퍼. TextEdit 이 직접 mutate 하고
+/// browse(native 다이얼로그) 결과가 채운다. 확정 시 host `file_handler.dispatch` 로 연다.
+#[derive(Default)]
+struct FileOpenState {
+    path_input: String,
+}
+
 struct MarkdownPlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
     #[cfg(any(unix, windows))]
@@ -226,6 +233,8 @@ struct MarkdownPlugin {
     bus: Option<BusHandle>,
     /// popup instance_id → 대용량 확인 대상.
     confirm: HashMap<u64, LargeFileConfirm>,
+    /// popup instance_id → 파일열기 팝업 상태(경로 입력 버퍼).
+    file_open: HashMap<u64, FileOpenState>,
     /// popup instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유).
     #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
@@ -251,6 +260,7 @@ impl MarkdownPlugin {
             addr: HashMap::new(),
             bus: None,
             confirm: HashMap::new(),
+            file_open: HashMap::new(),
             #[cfg(any(unix, windows))]
             popups: HashMap::new(),
             #[cfg(any(unix, windows))]
@@ -328,27 +338,46 @@ impl Plugin for MarkdownPlugin {
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        // large-file 확인 팝업 — event payload({surface_id, path, size})가 context 로 온다.
         // egui-mesh popup 이라 tree 를 반환하지 않는다(mesh 채널 paint_popup 로 그린다).
-        if let (Some(surface_id), Some(path), Some(size)) = (
-            ctx.context.get("surface_id").and_then(|v| v.as_u64()),
-            ctx.context.get("path").and_then(|v| v.as_str()),
-            ctx.context.get("size").and_then(|v| v.as_u64()),
-        ) {
-            self.confirm.insert(
-                ctx.instance_id,
-                LargeFileConfirm {
-                    surface_id: surface_id as u32,
-                    file_name: basename(path),
-                    size_label: format_size(size),
-                },
-            );
+        // popup_id 로 두 팝업을 구분한다.
+        match ctx.popup_id.as_str() {
+            // large-file 확인 — event payload({surface_id, path, size})가 context 로 온다.
+            "large-file-confirm" => {
+                if let (Some(surface_id), Some(path), Some(size)) = (
+                    ctx.context.get("surface_id").and_then(|v| v.as_u64()),
+                    ctx.context.get("path").and_then(|v| v.as_str()),
+                    ctx.context.get("size").and_then(|v| v.as_u64()),
+                ) {
+                    self.confirm.insert(
+                        ctx.instance_id,
+                        LargeFileConfirm {
+                            surface_id: surface_id as u32,
+                            file_name: basename(path),
+                            size_label: format_size(size),
+                        },
+                    );
+                }
+            }
+            // 파일열기 폼 — context 없이 빈 상태로 시작(사용자가 경로 입력/browse).
+            "file-open" => {
+                self.file_open
+                    .insert(ctx.instance_id, FileOpenState::default());
+            }
+            other => {
+                tracing::warn!("markdown open_popup: unknown popup_id '{other}'");
+            }
         }
         PopupOpenResult::default()
     }
 
     fn paint_popup(&mut self, ctx: PopupSetContextCtx) {
-        self.paint_confirm(ctx);
+        // instance 가 어느 팝업 맵에 있는지로 분기한다(paint 시점엔 popup_id 가 없다).
+        let iid = ctx.params.instance_id;
+        if self.file_open.contains_key(&iid) {
+            self.paint_file_open(ctx);
+        } else {
+            self.paint_confirm(ctx);
+        }
     }
 
     fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
@@ -360,6 +389,7 @@ impl Plugin for MarkdownPlugin {
         }
         // 확인 없이 닫힘(취소/outside-click/Esc)이면 surface 는 대기(빈) 상태로 유지한다.
         self.confirm.remove(&iid);
+        self.file_open.remove(&iid);
     }
 }
 
@@ -623,6 +653,65 @@ impl MarkdownPlugin {
         }
     }
 
+    /// 파일열기 팝업 한 frame 을 egui-mesh 로 그린다. [browse] 는 host `fs.pick_file`
+    /// (native 다이얼로그)로 경로를 채우고, [열기] 는 입력 경로를 host `file_handler.dispatch`
+    /// 로 열고 팝업을 닫는다. [취소]/Esc 는 팝업만 닫는다. chrome(scrim/border)은 host 소유.
+    #[cfg(any(unix, windows))]
+    fn paint_file_open(&mut self, ctx: PopupSetContextCtx) {
+        let iid = ctx.params.instance_id;
+        let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
+            tracing::debug!("markdown file-open popup {iid}: set_context without theme — skipping");
+            return;
+        };
+
+        let mut action = FileOpenAction::None;
+        {
+            // popups/popup_fonts_installed/tr/file_open 서로소 필드만 빌린다 — 아래 처리부가
+            // self 를 다시 빌릴 수 있도록 이 블록에서 borrow 를 끝낸다.
+            let popups = &mut self.popups;
+            let installed = &mut self.popup_fonts_installed;
+            let tr = &self.tr;
+            let Some(st) = self.file_open.get_mut(&iid) else {
+                return;
+            };
+            let popup = popups.entry(iid).or_insert_with(|| EguiMeshPopup::new(iid));
+            if installed.insert(iid) {
+                install_fonts(popup.context());
+            }
+            let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
+                action = draw_file_open(egui_ctx, &theme, st, tr);
+            });
+            if let Err(e) = result {
+                tracing::warn!("markdown file-open popup {iid} paint failed: {e}");
+            }
+        }
+
+        match action {
+            FileOpenAction::Browse => {
+                // native 파일 다이얼로그는 plugin 프로세스에서 못 연다 → host 에 위임(fs.pick_file).
+                // host UI 스레드가 rfd 모달을 여는 동안 이 호출은 블로킹되나 데드락은 없다.
+                if let Some(path) = pick_markdown_file(&ctx.host)
+                    && let Some(st) = self.file_open.get_mut(&iid)
+                {
+                    st.path_input = path;
+                }
+            }
+            FileOpenAction::Open => {
+                let path = self
+                    .file_open
+                    .get(&iid)
+                    .map(|s| s.path_input.trim().to_string())
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    open_markdown_file(&ctx.host, &path);
+                    close_popup(&ctx.host, iid);
+                }
+            }
+            FileOpenAction::Cancel => close_popup(&ctx.host, iid),
+            FileOpenAction::None => {}
+        }
+    }
+
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
     #[cfg(not(any(unix, windows)))]
@@ -635,6 +724,10 @@ impl MarkdownPlugin {
     /// unix 외에는 egui-mesh 채널이 비활성이라 확인 팝업 렌더도 no-op.
     #[cfg(not(any(unix, windows)))]
     fn paint_confirm(&mut self, _ctx: PopupSetContextCtx) {}
+
+    /// unix 외에는 egui-mesh 채널이 비활성이라 파일열기 팝업 렌더도 no-op.
+    #[cfg(not(any(unix, windows)))]
+    fn paint_file_open(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
 /// surface.create envelope 에서 `file` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은
@@ -763,6 +856,138 @@ fn draw_confirm(
         });
     });
     choice
+}
+
+/// 파일열기 팝업에서 사용자가 취한 동작.
+#[cfg(any(unix, windows))]
+enum FileOpenAction {
+    /// 아무것도 안 함.
+    None,
+    /// native 파일 다이얼로그를 연다(host fs.pick_file).
+    Browse,
+    /// 입력 경로로 파일을 연다.
+    Open,
+    /// 열지 않고 닫는다.
+    Cancel,
+}
+
+/// browse — host 에 native 파일 다이얼로그(rfd)를 위임한다(fs.pick_file). plugin 프로세스는
+/// native OS 다이얼로그를 못 열기 때문. markdown 확장자로 필터. 선택 경로(취소면 None)를
+/// 반환한다. host UI 스레드가 모달을 여는 동안 이 호출은 블로킹되나 데드락은 없다(ADR-0042).
+#[cfg(any(unix, windows))]
+fn pick_markdown_file(host: &HostHandle) -> Option<String> {
+    match host.call(
+        "fs.pick_file",
+        json!({ "filters": [{ "name": "Markdown", "exts": ["md", "markdown"] }] }),
+    ) {
+        Ok(v) => v
+            .get("path")
+            .and_then(|p| p.as_str())
+            .map(|s| s.to_string()),
+        Err(e) => {
+            tracing::warn!("markdown file-open browse (fs.pick_file) failed: {e}");
+            None
+        }
+    }
+}
+
+/// 입력/선택한 markdown 파일을 host `file_handler.dispatch` 로 연다(origin 없이 → focused
+/// pane 의 새 탭). markdown 감지·surface 생성은 host detector 가 담당한다.
+#[cfg(any(unix, windows))]
+fn open_markdown_file(host: &HostHandle, path: &str) {
+    if let Err(e) = host.call(
+        "file_handler.dispatch",
+        json!({ "path": path, "depth": "deep" }),
+    ) {
+        tracing::warn!("markdown file-open dispatch failed: {e}");
+    }
+}
+
+/// 파일열기 팝업 콘텐츠. 경로 입력 필드 + [browse] + [취소]/[열기]. 색·폰트·간격은 host 가
+/// 보낸 `Theme` 토큰에서만 가져온다. 키보드/텍스트 입력은 host 가 popup raw_input 으로
+/// forward 한다. 셸(scrim/border/Esc/outside-click)은 host 소유.
+#[cfg(any(unix, windows))]
+fn draw_file_open(
+    ctx: &egui::Context,
+    theme: &Theme,
+    st: &mut FileOpenState,
+    tr: &Translator,
+) -> FileOpenAction {
+    let frame = egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .inner_margin(margin_all(theme.spacing_md));
+    let mut action = FileOpenAction::None;
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+
+        // Esc → 닫기(host 셸도 처리하나 forward 된 입력에서 즉시 반응).
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            action = FileOpenAction::Cancel;
+        }
+
+        // 제목.
+        ui.label(
+            egui::RichText::new(tr.t("markdown.file_open.title"))
+                .size(theme.font_size_body.value())
+                .strong()
+                .color(theme.text_primary().to_egui()),
+        );
+
+        // 경로 라벨.
+        ui.label(
+            egui::RichText::new(tr.t("markdown.file_open.path_label"))
+                .size(theme.font_size_caption.value())
+                .color(theme.text_secondary().to_egui()),
+        );
+
+        // 경로 입력 + browse.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            let browse =
+                Button::new(tr.t("markdown.file_open.browse")).variant(ButtonVariant::Ghost);
+            // browse 버튼 폭을 확보하고 남은 폭을 입력 필드에 준다.
+            let field_w =
+                (ui.available_width() - theme.spacing_xl.value()).max(theme.spacing_xl.value());
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut st.path_input)
+                    .desired_width(field_w)
+                    .hint_text(tr.t("markdown.file_open.path_label"))
+                    .font(egui::FontId::new(
+                        theme.font_size_body.value(),
+                        egui::FontFamily::Monospace,
+                    )),
+            );
+            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                action = FileOpenAction::Open;
+            }
+            if browse.show(ui, theme).clicked() {
+                action = FileOpenAction::Browse;
+            }
+        });
+
+        vspace(ui, theme.spacing_xs);
+
+        // 푸터: 취소(ghost) / 열기(primary), 우측 정렬.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if Button::new(tr.t("markdown.file_open.open"))
+                    .variant(ButtonVariant::Primary)
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    action = FileOpenAction::Open;
+                }
+                if Button::new(tr.t("markdown.file_open.cancel"))
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme)
+                    .clicked()
+                {
+                    action = FileOpenAction::Cancel;
+                }
+            });
+        });
+    });
+    action
 }
 
 /// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).

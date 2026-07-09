@@ -541,12 +541,14 @@ pub struct DialogState {
     pub(crate) convert_popup_selected: Option<usize>,
     /// Pending native context menu
     pub(crate) pending_native_menu: Option<PendingNativeMenu>,
-    /// Markdown open popup: path buffer
+    /// Markdown file-open 다이얼로그 상태 — path 버퍼 + 트리거 pane. 호스트 파일열기
+    /// 폼(egui + rfd)은 Phase 3 에서 플러그인 egui-mesh 팝업으로 이관돼 제거됐고, 이
+    /// 필드들은 아직 이 상태를 세팅하는 키바인딩/convert opener(Phase 4 소유)가 남아
+    /// 있어 유지한다. opener 를 플러그인 팝업 트리거로 재배선하는 Phase 4 에서 함께
+    /// 제거된다(그때까지 write-only). `file_open_error` 는 폼과 함께 이미 제거됐다.
     pub(crate) markdown_open_buffer: String,
     /// Which pane the file open popup was triggered from
     pub(crate) file_open_pane_id: Option<u32>,
-    /// Error message for file open popup validation
-    pub(crate) file_open_error: Option<String>,
     /// Pending file drag request (paths to drag to external apps).
     pub(crate) pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
@@ -644,7 +646,6 @@ impl DialogState {
             pending_native_menu: None,
             markdown_open_buffer: String::new(),
             file_open_pane_id: None,
-            file_open_error: None,
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,

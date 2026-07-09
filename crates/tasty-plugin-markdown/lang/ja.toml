@@ -26,6 +26,13 @@ body = "1MBを超えています。表示が遅くなる可能性があります
 open = "開く"
 cancel = "キャンセル"
 
+[markdown.file_open]
+title = "マークダウンファイルを開く"
+path_label = "ファイルパスを入力:"
+browse = "参照…"
+open = "開く"
+cancel = "キャンセル"
+
 [markdown.addr]
 placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"

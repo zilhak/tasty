@@ -26,6 +26,13 @@ body = "Over 1 MB — rendering may be slow."
 open = "Open"
 cancel = "Cancel"
 
+[markdown.file_open]
+title = "Open Markdown File"
+path_label = "Enter file path:"
+browse = "Browse…"
+open = "Open"
+cancel = "Cancel"
+
 [markdown.addr]
 placeholder = "Path to markdown file"
 go = "Open (Enter)"

@@ -621,10 +621,6 @@ image = "Image"
 [dialog]
 recent_files = "Recent Files"
 
-[dialog.markdown]
-title = "Open Markdown File"
-path_label = "Enter file path:"
-
 [dialog.html]
 title = "Open HTML"
 url_label = "Enter URL or file path:"

@@ -621,10 +621,6 @@ image = "イメージ"
 [dialog]
 recent_files = "最近のファイル"
 
-[dialog.markdown]
-title = "マークダウンファイルを開く"
-path_label = "ファイルパスを入力:"
-
 [dialog.html]
 title = "HTMLを開く"
 url_label = "URLまたはファイルパスを入力:"

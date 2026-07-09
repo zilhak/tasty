@@ -621,10 +621,6 @@ image = "이미지"
 [dialog]
 recent_files = "최근 파일"
 
-[dialog.markdown]
-title = "마크다운 파일 열기"
-path_label = "파일 경로 입력:"
-
 [dialog.html]
 title = "HTML 열기"
 url_label = "URL 또는 파일 경로 입력:"

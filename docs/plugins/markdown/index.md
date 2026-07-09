@@ -21,6 +21,7 @@
 - **폰트** — B1 은 본문 폰트-패밀리를 egui 기본(Proportional)으로 두고 **CJK fallback 만 plugin 이 설치**(한글/일문 tofu 방지). 사용자 커스텀 markdown 폰트-패밀리 정합은 후속.
 - **인라인 이미지** — 후속 단계. `egui_commonmark` 의 `load-images` feature 를 꺼둔 상태라(빌드·바이너리 절감) 현재 이미지는 로더 미설치로 렌더되지 않는다. 활성화 시 `egui_extras` 이미지 로더 + mesh 비트맵 경로(ADR-0030)로 흐른다.
 - **파일 핸들러** — `detector "markdown"`(확장자 매핑) + `handler` action `open_surface{surface_kind:"markdown"}`. 마크다운 파일 열기 시 이 surface 로 뜬다.
+- **파일열기 팝업** — plugin 매니페스트 `[[contributes.popup]] id="file-open"`(egui-mesh, event trigger `com.tasty.markdown.file_open`). 경로 입력 필드 + **찾아보기** + 열기/취소로 구성한다. **찾아보기**는 host generic **`fs.pick_file {filters,start_dir?} → {path?}`** IPC 로 native 파일 다이얼로그를 위임한다(plugin 프로세스는 native 다이얼로그를 못 연다 — host 가 winit main 스레드에서 rfd 모달을 열고 경로를 회신, [ADR-0042](../../adr/0042-fs-pick-file-native-dialog-host-delegation.md)). filters 는 caller(이 plugin)가 markdown 확장자로 채운다(host 무지). 열기 확정 → 입력 경로를 host `file_handler.dispatch{path,depth:"deep"}` 로 연다. `fs.pick_file` 은 임의 경로를 고르는 read 관심사라 **`fs.read`** 권한으로 게이트. large-file 확인 팝업(`id="large-file-confirm"`)도 같은 egui-mesh 팝업 계열이다.
 - **링크 클릭** — 본문 링크 클릭(forward 된 실제 사용자 입력)은 plugin 이 분류·해석한 뒤 host `file_handler.dispatch` 로 보낸다(Explorer "파일 열기" 와 동일한 `DispatchFile` 경로 — 그 surface 가 속한 **Pane 의 새 탭**, 포커스 전환 없음). 경로 해석 기준:
   - **상대 경로**(`docs/index.md`, `../sibling.md`)는 **현재 마크다운 파일의 폴더(base_dir) 기준**으로 절대화한다(프로세스 cwd 가 아님). 절대 경로는 그대로.
   - **외부 URL**(`http(s)://`·`mailto:`·`data:`)만 plugin 이 OS 핸들러(`webbrowser`)로 위임한다.
