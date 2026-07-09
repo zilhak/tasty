@@ -51,12 +51,19 @@
 //!    가 튈 때 최신 폭의 mesh 가 화면에 반영되지 못하고 옛 mesh 에 고정된다(우측 잘림).
 //!    따라서 seq 불연속이어도 이 frame 의 mesh 가 참조하는 텍스처가 **모두 이미 상주**하고
 //!    ([`all_textures_live`]) 이 frame 의 delta 가 상주 텍스처 **크기 안에 들어갈** 때만
-//!    ([`deltas_fit_live`]) mesh 를 채택한다(delta 는 여전히 미적용). 채택 시 `last_seq`
-//!    를 갱신하므로 다음 frame 이 자연 연속이 되어 delta 게이트도 스스로 수렴한다. 참조가
-//!    하나라도 미상주면(image plugin 신규 비트맵 등), 또는 delta 가 상주 크기를 벗어나면
+//!    ([`deltas_fit_live`]) mesh 를 채택한다(delta 는 여전히 미적용 — [`DecodeOutcome::AcceptedStale`]).
+//!    참조가 하나라도 미상주면(image plugin 신규 비트맵 등), 또는 delta 가 상주 크기를 벗어나면
 //!    (아틀라스 리사이즈 full frame 유실 — id 는 상주하나 크기가 어긋나 mesh UV 가 stale-
-//!    크기 텍스처와 불일치하고, 채택 시 last_seq 전진으로 delta 게이트가 재개방돼 다음 부분
-//!    delta 가 stale 텍스처에 오버런 write → 크래시) mesh 를 보류하고 full 을 재요청한다.
+//!    크기 텍스처와 불일치) mesh 를 보류하고 full 을 재요청한다.
+//!
+//!    **불변식(핵심):** 체인 단절 frame 의 mesh 를 채택하더라도 그 mesh 의 uv 가 가정하는
+//!    atlas *내용*이 GPU 에 전달됐다는 보장이 없다(유실된 delta 가 배치/글리프를 바꿨을 수
+//!    있음 — id·크기 게이트로는 순수 reflow 와 구분 불가). 따라서 **delta 를 실제 적용하지
+//!    못한(체인 단절) frame 의 mesh 는 `last_seq` 를 전진시키지 않는다.** 그래야 다음 tick
+//!    에도 체인 단절로 남아 full 재전송이 계속 무장되고, 유실로 stale 해진 atlas 가 다음
+//!    full frame 으로 정합 복구된다. `last_seq` 를 전진시켜 버리면 다음 frame 이 자연 연속으로
+//!    보여 full 복구 트리거가 스스로 닫히고, stale 배치 atlas 에 새 uv 가 영구 고착(스크램블)
+//!    한다. mesh 는 이번 frame 합성엔 채택되므로(최신 기하 반영) 화면 깜빡임·우측 잘림은 없다.
 //!
 //! 4. **부분 delta 경계 검증(크래시 방어선)** — egui-wgpu `update_texture` 는 partial delta
 //!    에서 리사이즈하지 않으므로(상류 계약), 아틀라스 리사이즈 frame 이 유실된 채 커진
@@ -193,11 +200,57 @@ fn deltas_fit_live(delta: &TexturesDelta, live: &HashMap<TextureId, [usize; 2]>)
     })
 }
 
+/// mesh 채택 + 텍스처 delta 게이트의 **순수 판정** (device/queue 무관 — 단위 테스트로 고정).
+///
+/// [`decode_mesh_into_target`] 이 디코드 후 이 함수로 결과를 결정한다. side-effect(텍스처
+/// 업로드, `last_seq` 전진)는 이 판정에 따라 호출부에서 수행한다.
+///
+/// - `chain_ok`: 텍스처 delta 를 적용할 수 있는가([`chain_accepts`]) — full 또는 seq 연속.
+/// - `has_content`: 이 target 이 이미 유효 mesh 를 보유하는가(첫 콘텐츠는 full 로만 수락).
+/// - `refs_live`: mesh 가 참조하는 텍스처가 전부 상주하는가([`all_textures_live`]).
+/// - `deltas_fit`: 이 frame 의 부분 delta 가 상주 텍스처 경계 안인가([`deltas_fit_live`]).
+///
+/// 반환:
+/// - [`DecodeOutcome::Accepted`] — chain_ok + 경계 정합. delta 적용 + `last_seq` 전진.
+/// - [`DecodeOutcome::AcceptedStale`] — 체인 단절(seq 점프)이지만 참조 상주 + 경계 정합.
+///   mesh 만 채택, delta 미적용, `last_seq` **미전진**(다음 tick full 재요청 유지 — 불변식).
+/// - [`DecodeOutcome::NeedsFull`] — 오버런 부분 delta(크래시 위험) / 첫 콘텐츠 없음 / 미상주
+///   참조. 보류하고 full 재전송 요청.
+///
+/// chain_ok 케이스는 delta 적용이 참조 텍스처를 (재)생성하므로 `refs_live` 를 사전 요구하지
+/// 않는다(기존 계약 유지). `deltas_fit` 은 두 경로 공통 크래시 방어선.
+fn classify_decode(
+    chain_ok: bool,
+    has_content: bool,
+    refs_live: bool,
+    deltas_fit: bool,
+) -> DecodeOutcome {
+    if chain_ok {
+        if deltas_fit {
+            DecodeOutcome::Accepted
+        } else {
+            // 오버런 부분 delta(아틀라스 리사이즈 full frame 유실) — 적용 시 egui-wgpu 가
+            // 리사이즈 없이 write 해 오버런 크래시. 보류 + full 재요청(3d74217c 방어선).
+            DecodeOutcome::NeedsFull
+        }
+    } else if has_content && refs_live && deltas_fit {
+        DecodeOutcome::AcceptedStale
+    } else {
+        DecodeOutcome::NeedsFull
+    }
+}
+
 /// [`decode_mesh_into_target`] 의 결과.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DecodeOutcome {
-    /// mesh 를 채택해 합성 캐시를 갱신했다(delta 적용 여부와 무관).
+    /// mesh 채택 + 텍스처 delta 적용 완료(체인 연속 또는 full). `last_seq` 전진.
     Accepted,
-    /// mesh 가 미상주 텍스처를 참조해 보류했다 — full 재전송이 필요.
+    /// 체인 단절(seq 점프) frame 의 mesh 를 채택했으나 유실된 텍스처 delta 로 인해 GPU
+    /// atlas 내용 정합이 보장되지 않는다. mesh(기하)는 최신으로 갱신하되 `last_seq` 는
+    /// 전진시키지 않아 다음 tick 에도 체인 단절로 남고, caller 가 full 재전송을 무장한다.
+    /// (불변식: delta 를 실제 적용하지 못한 frame 의 mesh 는 seq 를 전진시키지 않는다.)
+    AcceptedStale,
+    /// mesh 가 미상주 텍스처를 참조하거나 delta 가 경계를 벗어나 보류했다 — full 재전송이 필요.
     NeedsFull,
     /// 이번 frame 은 갱신 없이 넘어갔다(footer tear / ppp 불일치 등 일시적). 재요청
     /// 불필요 — 기존 캐시로 재합성하고 다음 tick 에 다시 시도한다.
@@ -332,17 +385,22 @@ fn decode_mesh_into_target(
         return DecodeOutcome::Deferred;
     }
 
-    if chain_ok {
-        // 크래시 직접 차단(최소 방어선): 부분 delta 가 대상 텍스처 경계를 벗어나면
-        // (아틀라스 리사이즈 full frame 유실) egui-wgpu 가 리사이즈 없이 write 해
-        // Queue::write_texture Y 오버런으로 크래시한다. 적용 전에 검증해, 벗어나면 어떤
-        // delta 도 적용하지 않고(부분 적용으로 상태를 오염시키지 않는다) last_seq 도
-        // 전진시키지 않은 채 full 재전송을 요청한다.
-        if !deltas_fit_live(&decoded.textures_delta, &target.live_textures) {
-            return DecodeOutcome::NeedsFull;
-        }
+    // mesh 채택 + 텍스처 delta 게이트를 순수 판정으로 결정한다. side-effect 는 아래에서
+    // 이 결과에 따라 수행한다.
+    let refs_live = all_textures_live(&decoded.primitives, &target.live_textures);
+    let deltas_fit = deltas_fit_live(&decoded.textures_delta, &target.live_textures);
+    let outcome = classify_decode(chain_ok, target.has_content, refs_live, deltas_fit);
+    if outcome == DecodeOutcome::NeedsFull {
+        // 오버런 부분 delta(크래시 위험) / 미상주 참조 / 첫 콘텐츠 없음 — 어떤 delta 도
+        // 적용하지 않고(부분 적용으로 상태를 오염시키지 않는다) last_seq 도 전진시키지
+        // 않은 채 full 재전송을 요청한다.
+        return DecodeOutcome::NeedsFull;
+    }
 
-        // 텍스처 delta 적용 (체인 연속 또는 full).
+    // 텍스처 delta 적용은 chain_ok(=Accepted)일 때만 한다. AcceptedStale(seq 점프)은
+    // 유실된 delta 로 인한 스테일/미등록 텍스처 오염을 막기 위해 delta 를 적용하지 않고
+    // mesh(기하)만 채택한다 — live_textures 도 건드리지 않는다.
+    if chain_ok {
         // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
         // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
         if full_textures {
@@ -370,7 +428,7 @@ fn decode_mesh_into_target(
         for (id, delta) in &decoded.textures_delta.set {
             target.renderer.update_texture(device, queue, *id, delta);
             // 크기 기록: full(pos=None) delta 는 텍스처를 (재)생성하며 새 크기를 확정한다.
-            // 부분(pos=Some) delta 는 크기를 바꾸지 않으므로(위 경계검증으로 기존 크기 안에
+            // 부분(pos=Some) delta 는 크기를 바꾸지 않으므로(deltas_fit 로 기존 크기 안에
             // 들어감이 보장됨) 기존 값을 유지한다.
             if delta.pos.is_none() {
                 target.live_textures.insert(*id, delta.image.size());
@@ -385,34 +443,22 @@ fn decode_mesh_into_target(
             target.renderer.free_texture(id);
             target.live_textures.remove(id);
         }
-    } else {
-        // 체인 단절(seq 점프): 유실된 delta 로 인한 스테일/미등록 텍스처 오염을 막기 위해
-        // delta 를 적용하지 않는다. 첫 콘텐츠는 반드시 full 로 받아야 안전하므로(부트스트랩
-        // 텍스처 상주 보장) 아직 콘텐츠가 없으면 채택하지 않는다. 참조 텍스처가 하나라도
-        // 미상주면 mesh 도 보류하고 full 재전송을 요청한다.
-        //
-        // 추가로, 이 frame 의 textures_delta 가 상주 텍스처 크기를 벗어나면(중간 리사이즈
-        // full frame 유실) 이 mesh 의 UV 는 커진 아틀라스 기준이라 stale-크기 텍스처와
-        // 어긋난다(스크램블). 그런 mesh 를 채택하면 last_seq 가 전진해 delta 게이트가
-        // 재개방되고, 다음 부분 delta 가 stale-크기 텍스처에 적용돼 오버런 크래시로 이어진다.
-        // 따라서 delta 경계 정합까지 만족할 때만 mesh 를 채택하고, 아니면 full 을 재요청한다.
-        if !target.has_content
-            || !all_textures_live(&decoded.primitives, &target.live_textures)
-            || !deltas_fit_live(&decoded.textures_delta, &target.live_textures)
-        {
-            return DecodeOutcome::NeedsFull;
-        }
-        // 참조가 전부 상주 + delta 경계 정합 — delta/live_textures 는 건드리지 않고 mesh 만 채택.
     }
 
     target.primitives = decoded.primitives;
     target.ppp = decoded.pixels_per_point;
     target.generation = generation;
-    target.last_seq = frame_seq;
-    target.awaiting_full = false;
     target.has_content = true;
     target.translated_key = None; // 평행이동 캐시 무효화.
-    DecodeOutcome::Accepted
+    if chain_ok {
+        // 정상 체인(delta 적용됨): last_seq 전진 + 로그 억제 해제.
+        target.last_seq = frame_seq;
+        target.awaiting_full = false;
+    }
+    // AcceptedStale(!chain_ok): last_seq 를 전진시키지 않는다 — atlas 내용 정합이 미보장이라
+    // 다음 tick 에도 체인 단절로 남아 caller 가 full 재전송을 계속 무장한다(불변식). mesh 는
+    // 이번 frame 합성엔 채택되므로 최신 기하는 반영된다. awaiting_full 은 caller 가 설정한다.
+    outcome
 }
 
 /// 캐시된 mesh 를 물리 rect 영역에 합성한다(전용 Renderer + 전용 pass).
@@ -547,6 +593,12 @@ impl GpuState {
                 )
             };
             if !needs_decode {
+                // AcceptedStale 로 generation 은 갱신됐으나 아직 full 로 수렴하지 못한
+                // (awaiting_full) 대상은 매 tick full 재요청을 유지한다 — take_* 가 매 frame
+                // drain 하므로 재무장하지 않으면 forward 가 끊겨 stale 이 영구 고착한다.
+                if awaiting {
+                    self.egui_mesh_full_requests.insert(*sid);
+                }
                 continue;
             }
             if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
@@ -566,10 +618,14 @@ impl GpuState {
                     host_ppp,
                     plugin_id,
                 );
-                if matches!(outcome, DecodeOutcome::NeedsFull) {
-                    // 미상주 텍스처 참조 — mesh 도 보류. full 재전송을 요청한다. 요청한
-                    // full frame 이 latest-wins 버퍼에서 유실될 수 있으므로 수락될 때까지
-                    // 매 tick 재무장한다(single-shot deadlock 제거). 로그는 최초 1 회만.
+                // NeedsFull: mesh 보류. AcceptedStale: mesh 는 채택했으나 atlas 내용 정합
+                // 미보장(유실 delta) — 둘 다 full 재전송을 요청한다. 요청한 full frame 이
+                // latest-wins 버퍼에서 유실될 수 있으므로 수락될 때까지 매 tick 재무장한다
+                // (single-shot deadlock 제거). 로그는 최초 1 회만.
+                if matches!(
+                    outcome,
+                    DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
+                ) {
                     if !awaiting {
                         tracing::debug!(
                             surface = sid,
@@ -665,9 +721,12 @@ impl GpuState {
                         host_ppp,
                         &frame_plugin_id,
                     );
-                    if matches!(outcome, DecodeOutcome::NeedsFull) {
-                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 매 tick 재무장
-                        // 요청한다(surface 동형). 로그는 최초 1 회만.
+                    // NeedsFull(보류) 또는 AcceptedStale(채택했으나 atlas 정합 미보장) —
+                    // 둘 다 full 재전송을 매 tick 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
+                    if matches!(
+                        outcome,
+                        DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
+                    ) {
                         if !awaiting {
                             tracing::debug!(
                                 popup = iid,
@@ -689,6 +748,9 @@ impl GpuState {
                         "egui-mesh popup prepare: SharedMemory not registered"
                     );
                 }
+            } else if awaiting {
+                // AcceptedStale 로 generation 갱신됐으나 미수렴 — 매 tick full 재무장(surface 동형).
+                self.egui_mesh_popup_full_requests.insert(*iid);
             }
 
             if let Some(t) = self.egui_mesh_popup_targets.get_mut(iid) {
@@ -763,9 +825,12 @@ impl GpuState {
                         host_ppp,
                         &frame_plugin_id,
                     );
-                    if matches!(outcome, DecodeOutcome::NeedsFull) {
-                        // 체인 단절 + 미상주 텍스처 참조 — full 재전송을 매 tick 재무장
-                        // 요청한다(surface 동형). 로그는 최초 1 회만.
+                    // NeedsFull(보류) 또는 AcceptedStale(채택했으나 atlas 정합 미보장) —
+                    // 둘 다 full 재전송을 매 tick 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
+                    if matches!(
+                        outcome,
+                        DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
+                    ) {
                         if !awaiting {
                             tracing::debug!(
                                 banner = iid,
@@ -787,6 +852,9 @@ impl GpuState {
                         "egui-mesh banner prepare: SharedMemory not registered"
                     );
                 }
+            } else if awaiting {
+                // AcceptedStale 로 generation 갱신됐으나 미수렴 — 매 tick full 재무장(surface 동형).
+                self.egui_mesh_banner_full_requests.insert(*iid);
             }
 
             if let Some(t) = self.egui_mesh_banner_targets.get_mut(iid) {
@@ -1043,6 +1111,38 @@ mod tests {
         live.insert(font, [1024, 128]);
         // 이후 pos.y=57..72 부분 delta 는 이제 128 안에 들어간다 → 정상 적용.
         assert!(deltas_fit_live(&overrun, &live), "128 성장 후엔 경계 통과");
+    }
+
+    /// 채택 게이트 판정(`classify_decode`)의 핵심 3케이스를 고정한다. 이 순수 함수가
+    /// `Accepted`(→ `last_seq` 전진 + delta 적용) / `AcceptedStale`(→ 채택하되 `last_seq`
+    /// **미전진** + delta 미적용) / `NeedsFull`(→ 보류 + full 재요청)을 가르며,
+    /// [`decode_mesh_into_target`] 은 이 결과의 `chain_ok`(=Accepted) 여부로 `last_seq`
+    /// 전진을 결정한다(Accepted⟺chain_ok, AcceptedStale⟺!chain_ok).
+    #[test]
+    fn classify_decode_gates_stale_and_overrun() {
+        use DecodeOutcome::*;
+
+        // (1) 정상 frame: chain_ok + 경계 정합 → Accepted (delta 적용 + last_seq 전진).
+        assert_eq!(classify_decode(true, true, true, true), Accepted);
+        // chain_ok 는 delta 적용이 참조를 (재)생성하므로 refs_live 사전 미요구.
+        assert_eq!(classify_decode(true, true, false, true), Accepted);
+        // 첫 콘텐츠(has_content=false)도 chain_ok(=full)면 수락.
+        assert_eq!(classify_decode(true, false, true, true), Accepted);
+
+        // (2) delta 스킵 frame(체인 단절, seq 점프)인데 참조 상주 + 경계 정합
+        //     → AcceptedStale: mesh 채택하되 last_seq 는 전진시키지 않는다(불변식 — 다음
+        //     tick full 재요청 유지로 stale atlas 자연 복구).
+        assert_eq!(classify_decode(false, true, true, true), AcceptedStale);
+
+        // (3) overrun 부분 delta(크기 경계 초과) → NeedsFull: 체인 연속이든 단절이든 거부 +
+        //     full 재요청(3d74217c 크래시 방어선 무회귀).
+        assert_eq!(classify_decode(true, true, true, false), NeedsFull);
+        assert_eq!(classify_decode(false, true, true, false), NeedsFull);
+
+        // 체인 단절 + 첫 콘텐츠 없음 → NeedsFull(부트스트랩은 full 로만).
+        assert_eq!(classify_decode(false, false, true, true), NeedsFull);
+        // 체인 단절 + 미상주 참조(신규 비트맵) → NeedsFull.
+        assert_eq!(classify_decode(false, true, false, true), NeedsFull);
     }
 
     /// 디코드 출력(mesh_wire) → offset_and_clip 통합: 실제 tessellate 한 mesh 가
