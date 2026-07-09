@@ -4,6 +4,30 @@ View 내부 가상 창은 모두 **`PopupManager` + `PopupDef` 시스템**으로
 
 > **0단계 — gallery-first**: 새 팝업은 본체에 넣기 **전에** 갤러리에 먼저 만든다(디자인 수령 → 갤러리 specimen → 본체). 아래 3단계는 그 "본체 반영" 단계다. 절차·근거는 [gallery-first](gallery-first.md) · [ADR-0020](../adr/0020-gallery-complete-component-source.md).
 
+## 두 팝업 시스템 — host `PopupDef` vs plugin `[[contributes.popup]]`
+
+tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머지(3단계·필드표 등)는 **host `PopupDef`** 경로 전용이다.
+
+| | **host `PopupDef`** | **plugin `[[contributes.popup]]`** |
+|---|---|---|
+| 정의 위치 | `src/adapters/ui/popup/defs.rs::all_defs()` 컴파일타임 `vec![...]` | plugin 매니페스트 `tasty-plugin.toml` |
+| 콘텐츠 렌더 | host 프로세스 egui (`draw_fn`) | **plugin 프로세스** egui → egui-mesh 로 tessellate, host 가 합성 ([ADR-0028](../adr/0028-plugin-egui-mesh-render-channel.md)) |
+| 셸(scrim·border·이동·리사이즈·outside-click·Esc) | `PopupManager` | **host `PopupManager`** (동일 — 셸은 언제나 host 소유) |
+| 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host event 발행이 발화, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0043](../adr/0043-convert-input-popup-capability.md)) |
+| 상태·입력 버퍼 | host `AppState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
+
+**선택 기준 — 콘텐츠의 소유자가 누구인가:**
+
+- **host `PopupDef`**: 콘텐츠가 host 데이터/위젯(설정, 파일 핸들러 picker, convert 목록, 이름변경 등)이고 host 가 렌더에 필요한 모든 상태를 가진 경우. host 가 kind 이름을 몰라야 하는 정보(특정 plugin 의 도메인 데이터)는 담지 않는다.
+- **plugin `[[contributes.popup]]`**: 콘텐츠가 **특정 plugin 의 도메인**(그 plugin 만 아는 데이터·검증·동작)인 경우. host 는 그 내용을 몰라야 한다(불가침 원칙 — host 는 plugin 이름/도메인으로 조건분기하지 않는다). 셸만 host 가 그려 준다.
+
+**현재 plugin 팝업 (markdown, egui-mesh):**
+
+- `large-file-confirm` — 대용량 파일 열기 확인. 크기 감지·확인 로직이 plugin in-process 소유(host 는 파일 크기를 stat 하지 않는다). plugin 이 `com.tasty.markdown.large_file_confirm` 이벤트를 발행하면 열린다.
+- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host generic `fs.pick_file`([ADR-0042](../adr/0042-fs-pick-file-native-dialog-host-delegation.md))로 위임, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 상세: [plugins/markdown](../plugins/markdown/index.md).
+
+plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [egui-mesh-channel](egui-mesh-channel.md) 참조. 갤러리 specimen 은 host-side 미러로 유지한다(gallery-completeness — plugin egui-mesh 를 갤러리가 직접 렌더하지 않으므로 폼/토큰/구조만 정합).
+
 ## 왜 `egui::Window` 직접 사용 금지
 
 - `PopupManager` 의 입력 계층(`popup_hovered`)을 우회 → 팝업 위를 클릭해도 뒤 surface 가 클릭을 받는다.

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (`Alt+'` 팝업) · AI Agent (kind 별 IPC — 범용 convert 없음)
-- **ADR**: 없음
+- **ADR**: [ADR-0043](../../adr/0043-convert-input-popup-capability.md) (파일 입력이 필요한 kind 의 convert 라우팅 capability)
 - **코드**: `ConvertSurface` intent (`src/intent/surface.rs`), 팝업 `src/adapters/ui/popup/convert.rs`
 - **화면**: convert 팝업 (`PopupScope::Surface`)
 
@@ -16,7 +16,7 @@
 
 - `convert_surface` 단축키(기본 `Alt+'`) → Surface 스코프 팝업. Empty surface 중앙의 타입 전환 버튼도 동일 팝업. `convert_to_markdown` 직접 전환 단축키(기본 없음).
 - 팝업 항목은 `SurfaceKindRegistry` 에서 **동적 enumerate**(빌트인 + plugin 제공 kind). `empty` 등 시스템 kind 는 `HIDDEN_KINDS` 로 제외. 현재 타입과 같은 항목은 체크 + 비활성.
-- 키보드 탐색(Up/Down+Enter), kind 첫 글자 즉시 선택. Markdown 전환 시 파일 경로 다이얼로그, Terminal 전환 시 새 PTY(탭 이름 CWD 기반).
+- 키보드 탐색(Up/Down+Enter), kind 첫 글자 즉시 선택. **convert 라우팅은 registry capability 로 판정**(host 는 kind 이름을 하드코딩하지 않는다, [ADR-0043](../../adr/0043-convert-input-popup-capability.md)): `terminal` 은 host PTY spawn 전용 경로, `convert_requires_input` capability 를 선언한 kind(예: markdown)는 그 kind 소유 plugin 의 파일 입력 팝업(`convert_input_popup`)을 먼저 열고(제자리 변환은 context 에 `surface_id` 실림), 그 외 kind 는 빈 params 로 즉시 변환.
 - **개별 surface 교체 원칙**: 대상 surface 구현체만 교체, 탭 레이아웃·다른 surface 무영향.
 - **cwd carry**: 터미널에서 `cd /foo/bar` 후 Explorer 로 전환하면 Explorer 루트는 `/foo/bar`(호스트 시작 cwd 로 fallback 안 함) — [surface-cwd invariant](../../architecture/invariants/surface-cwd.md).
 

@@ -30,6 +30,8 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → text Input(mono, + `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
 
+> **surface 폰트 override 저장소**: surface-kind 폰트 override 는 전부 `appearance.plugin_font_overrides.<kind>`(generic per-kind, host 는 live 경로에서 특정 kind 이름을 모른다)로 수렴한다. 단 레거시 top-level `[markdown_font]`/`[explorer_font]` 섹션은 **전환기 back-compat 로 유지**한다(`migrate_legacy_font_overrides` 가 load 시 `plugin_font_overrides` 로 일회성 승계 — 읽기 전용, write-back 없음). **후속 과제**: 이 migration 이 정식 릴리스에 배포된 뒤 다음 사이클에 두 레거시 필드를 제거한다(그전에 제거하면 migration 미포함 릴리스 사용자의 폰트 override 가 유실됨).
+
 > **소비 배선**: host 가 `resolve_webview_settings` 로 `plugin_settings."com.tasty.html"` 을 읽어 네이티브 webview 에 직접 적용한다(별도 host→plugin IPC 없음 — `font_override` 호스트 적용과 같은 선례). 적용 현황:
 > - **zoom · sandbox(JS on/off)**: 3 OS 모두 실효.
 > - **color_scheme**(`prefers-color-scheme` 강제): macOS 실효(NSAppearance). Windows/Linux 는 no-op(후속).

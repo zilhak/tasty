@@ -16,6 +16,8 @@ URI/경로 입력을 **(1) 형식 식별 → (2) 등록 핸들러 디스패치**
 
 DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`). rule 종류 — Cheap(IO 없음): `extension`·`path_glob`·`is_directory`; Deep(8KB head + MIME): `magic`·`mime`·`lua`(sandbox 5.4)·`structure_check`(JSON Schema). Deep 평가는 호출당 head/MIME 를 캐시(IO 1회). pre-filter 로 디렉토리/파일 대상에 맞는 detector 만 평가. 호스트 default 는 `default-file-format.toml`(html, `$directory`…), markdown/image detector 는 각 plugin 이 contribute.
 
+> **후속 과제(detector 이중소스)**: 호스트 `save.rs` 의 `md`/`markdown` 확장자 detector 룰이 markdown plugin 매니페스트 `[[contributes.detector]]` 와 이중소스인지 확인이 남아 있다. markdown de-pluginize 범위 밖(파일포맷 detector 영역과 직교)이라 별도 과제로 분리한다.
+
 ### 핸들러 디스패치 (`FileHandlerRegistry`)
 
 HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction: `OpenSurface{surface_kind, param_key}` · `Ipc{method}` · `System`(OS 위임). actor 별 schema 강제 — **plugin TOML 은 System 금지**(sandbox 일관성), user TOML 은 전부 허용. `handlers_for` 정렬: priority asc → owner(`user > plugin > host`) → id 사전순. 같은 detector 에 핸들러 여럿이면 picker 없이 1순위 자동(결정론적).
