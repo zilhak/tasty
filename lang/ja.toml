@@ -599,11 +599,6 @@ no_items = "項目なし"
 no_permission = "権限がありません"
 loading = "読み込み中…"
 
-[markdown.state]
-failed = "読み込みに失敗しました"
-empty = "このファイルは空です"
-loading = "読み込み中…"
-
 [script.confirm]
 title = "登録後にスクリプトが変更されました"
 changed_tag = "変更あり"

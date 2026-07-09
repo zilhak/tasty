@@ -599,11 +599,6 @@ no_items = "항목 없음"
 no_permission = "권한 없음"
 loading = "불러오는 중…"
 
-[markdown.state]
-failed = "불러오지 못했습니다"
-empty = "이 파일은 비어 있습니다"
-loading = "불러오는 중…"
-
 [script.confirm]
 title = "등록 이후 스크립트가 변경됨"
 changed_tag = "변경됨"

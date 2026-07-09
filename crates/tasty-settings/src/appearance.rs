@@ -164,15 +164,26 @@ pub struct AppearanceSettings {
     /// Terminal surface font override (per-field). Host-rendered terminal core uses this.
     pub terminal_font: FontOverride,
     /// Per-plugin (surface-kind) font overrides. Key = surface kind string
-    /// (e.g. `"markdown"`, `"explorer"`).
+    /// (e.g. `"markdown"`, `"explorer"`). Single source of truth for surface
+    /// font overrides — the host stays kind-agnostic and never names a specific
+    /// kind in the *live* font path.
     #[serde(default)]
     pub plugin_font_overrides: HashMap<String, FontOverride>,
     /// Legacy markdown override. Read on load and migrated into
     /// `plugin_font_overrides["markdown"]`; never written back.
+    ///
+    /// The `migrate_legacy_font_overrides` reader is transitional back-compat:
+    /// the migration has **not** shipped in a tagged release yet, so users of the
+    /// last release (v0.3.1) still keep their markdown/explorer font override in
+    /// these top-level `[markdown_font]`/`[explorer_font]` sections. We keep these
+    /// fields as a one-shot config-migration reader until the migration reaches a
+    /// release; the next cycle after that ships can remove them (removal trigger).
+    /// The live font logic itself is fully generic over `plugin_font_overrides`.
     #[serde(default, skip_serializing)]
     pub markdown_font: FontOverride,
     /// Legacy explorer override. Read on load and migrated into
-    /// `plugin_font_overrides["explorer"]`; never written back.
+    /// `plugin_font_overrides["explorer"]`; never written back. Same transitional
+    /// back-compat rationale as [`Self::markdown_font`].
     #[serde(default, skip_serializing)]
     pub explorer_font: FontOverride,
 }
@@ -267,22 +278,16 @@ impl AppearanceSettings {
         }
     }
 
-    /// Effective font for markdown surface.
-    #[deprecated(note = "use effective_font_for_kind(\"markdown\") — removed in Step 4")]
-    pub fn effective_markdown_font(&self) -> EffectiveFont {
-        self.effective_font_for_kind("markdown")
-    }
-
-    /// Effective font for explorer surface.
-    #[deprecated(note = "use effective_font_for_kind(\"explorer\") — removed in Step 4")]
-    pub fn effective_explorer_font(&self) -> EffectiveFont {
-        self.effective_font_for_kind("explorer")
-    }
-
     /// Migrate legacy `markdown_font` / `explorer_font` fields into
     /// `plugin_font_overrides`. Called by [`crate::Settings::load`] right after
     /// deserialization. Idempotent: an existing entry in `plugin_font_overrides`
     /// always wins over the legacy field.
+    ///
+    /// Transitional back-compat: the migration has not shipped in a tagged
+    /// release yet, so the last release (v0.3.1) writes overrides into the
+    /// top-level `[markdown_font]`/`[explorer_font]` sections. Removing this
+    /// reader before the migration reaches a release would silently drop those
+    /// users' font overrides on their next save.
     pub fn migrate_legacy_font_overrides(&mut self) {
         let legacy = [
             ("markdown", std::mem::take(&mut self.markdown_font)),
@@ -541,32 +546,19 @@ font_family = "New"
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn deprecated_effective_markdown_font_still_works() {
-        let mut s = AppearanceSettings::default();
-        s.default_font.font_family = "Base".to_string();
-        s.plugin_font_overrides.insert(
-            "markdown".to_string(),
-            FontOverride {
-                font_family: Some("Md".to_string()),
-                ..Default::default()
-            },
-        );
-        let via_deprecated = s.effective_markdown_font();
-        let via_new = s.effective_font_for_kind("markdown");
-        assert_eq!(via_deprecated.font_family, via_new.font_family);
-        assert_eq!(via_deprecated.font_family, "Md");
+    fn explicit_plugin_override_deserializes_per_kind() {
+        // 여러 kind override 가 서로 독립적으로 역직렬화되는지 (generic per-kind).
+        let toml_str = r#"
+[plugin_font_overrides.markdown]
+font_family = "Md"
 
-        s.plugin_font_overrides.insert(
-            "explorer".to_string(),
-            FontOverride {
-                font_size: Some(22.0),
-                ..Default::default()
-            },
-        );
-        let via_deprecated_ex = s.effective_explorer_font();
-        let via_new_ex = s.effective_font_for_kind("explorer");
-        assert_eq!(via_deprecated_ex.font_size, via_new_ex.font_size);
-        assert_eq!(via_deprecated_ex.font_size, 22.0);
+[plugin_font_overrides.explorer]
+font_size = 22.0
+"#;
+        let parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        let eff_md = parsed.effective_font_for_kind("markdown");
+        assert_eq!(eff_md.font_family, "Md");
+        let eff_ex = parsed.effective_font_for_kind("explorer");
+        assert_eq!(eff_ex.font_size, 22.0);
     }
 }

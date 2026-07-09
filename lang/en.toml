@@ -599,11 +599,6 @@ no_items = "no items"
 no_permission = "No permission"
 loading = "Loading…"
 
-[markdown.state]
-failed = "Failed to load"
-empty = "This file is empty"
-loading = "Loading…"
-
 [script.confirm]
 title = "Script changed since registration"
 changed_tag = "changed"

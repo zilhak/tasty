@@ -1,21 +1,30 @@
 //! Per-surface font registration into egui.
 //!
-//! Markdown surfaces render with egui rather than the GPU cell renderer, so they
-//! need their own family inside egui's `FontDefinitions`. This module registers
-//! one named family — "font_markdown" — and re-runs the registration whenever
-//! the user changes the relevant settings.
+//! Some surfaces render with egui rather than the GPU cell renderer and reference
+//! a per-kind named font family inside egui's `FontDefinitions`. This module
+//! registers **one named family per surface kind that has a font override**
+//! (`AppearanceSettings::plugin_font_overrides`), named `font_<kind>`, and re-runs
+//! the registration whenever the relevant settings change. The host stays
+//! kind-agnostic — it never names a specific kind (e.g. `markdown`); it iterates
+//! whatever override kinds are registered (`markdown`, `explorer`, …).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::settings::{AppearanceSettings, EffectiveFont};
 
-const MARKDOWN_FAMILY: &str = "font_markdown";
+/// egui named family for a surface kind's override font: `font_<kind>`.
+/// e.g. `markdown` → `font_markdown`.
+fn family_name_for_kind(kind: &str) -> String {
+    format!("font_{kind}")
+}
 
-/// Track the most recently applied surface font signatures so we only
+/// Track the most recently applied per-kind font signatures so we only
 /// re-register fonts when something actually changed.
 #[derive(Default, Debug, Clone)]
 pub struct SurfaceFontState {
-    markdown_sig: String,
+    /// kind → signature of the last-applied effective font.
+    sigs: BTreeMap<String, String>,
     initialized: bool,
 }
 
@@ -23,29 +32,41 @@ fn signature(font: &EffectiveFont) -> String {
     format!("{}|{}", font.font_family, font.custom_font_path)
 }
 
-/// Refresh the markdown font family in egui if the relevant settings have
+/// Compute the current per-kind effective-font signatures for every registered
+/// override kind (generic — no kind name hardcoded).
+fn current_signatures(appearance: &AppearanceSettings) -> BTreeMap<String, String> {
+    appearance
+        .plugin_font_overrides
+        .keys()
+        .map(|kind| {
+            let eff = appearance.effective_font_for_kind(kind);
+            (kind.clone(), signature(&eff))
+        })
+        .collect()
+}
+
+/// Refresh the per-kind surface font families in egui if any relevant setting
 /// changed since the last call.
 pub fn refresh_surface_fonts(
     ctx: &egui::Context,
     appearance: &AppearanceSettings,
     state: &mut SurfaceFontState,
 ) {
-    let md = appearance.effective_font_for_kind("markdown");
-    let new_md_sig = signature(&md);
+    let new_sigs = current_signatures(appearance);
 
-    if state.initialized && state.markdown_sig == new_md_sig {
+    if state.initialized && state.sigs == new_sigs {
         return;
     }
 
     let fonts = build_font_definitions(appearance, None);
     ctx.set_fonts(fonts);
-    state.markdown_sig = new_md_sig;
+    state.sigs = new_sigs;
     state.initialized = true;
 }
 
-/// Build a `FontDefinitions` containing the egui defaults, CJK fallback, and
-/// the per-surface markdown named family. Optionally also registers a
-/// `preview` named family loaded from the given font.
+/// Build a `FontDefinitions` containing the egui defaults, CJK fallback, and one
+/// named family per surface-kind override (`font_<kind>`). Optionally also
+/// registers a `preview` named family loaded from the given font.
 ///
 /// Settings UI calls this with a preview font to ensure that when it issues
 /// `set_fonts(...)` for live preview, it does not clobber the surface
@@ -72,8 +93,14 @@ pub fn build_font_definitions(
         }
     }
 
-    let md = appearance.effective_font_for_kind("markdown");
-    register_surface_family(&mut fonts, MARKDOWN_FAMILY, "md", &md, cjk_data.is_some());
+    // One named family per override kind — host iterates registered kinds instead
+    // of hardcoding a specific one. `data_prefix` uses the kind string to keep the
+    // internal `font_data` keys unique across kinds.
+    for kind in appearance.plugin_font_overrides.keys() {
+        let eff = appearance.effective_font_for_kind(kind);
+        let family = family_name_for_kind(kind);
+        register_surface_family(&mut fonts, &family, kind, &eff, cjk_data.is_some());
+    }
 
     if let Some((slot, eff)) = preview {
         let prefix = format!("preview_{}", slot);
