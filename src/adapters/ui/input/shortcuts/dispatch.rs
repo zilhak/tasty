@@ -265,16 +265,8 @@ impl MainView {
                 }
             }
             "open_markdown" => {
-                let pane_id = state.active_workspace(engine).focused_pane;
-                state.dialogs.file_open_pane_id = Some(pane_id);
-                state.dialogs.markdown_open_buffer.clear();
-                state.dispatch_intent(
-                    UiIntent::OpenPopup {
-                        id: "markdown_open",
-                        mode: OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_shortcut("open_markdown"),
-                );
+                // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 이 새 탭 dispatch).
+                state.enqueue_convert_input_popup(engine, "markdown", None);
             }
             "convert_surface" => {
                 if let Some(sid) = state.focused_surface_id(engine) {
@@ -291,17 +283,8 @@ impl MainView {
             }
             "convert_to_markdown" => {
                 if let Some(sid) = state.focused_surface_id(engine) {
-                    let pane_id = state.active_workspace(engine).focused_pane;
-                    state.dialogs.markdown_convert_surface_id = Some(sid);
-                    state.dialogs.file_open_pane_id = Some(pane_id);
-                    state.dialogs.markdown_open_buffer.clear();
-                    state.dispatch_intent(
-                        UiIntent::OpenPopup {
-                            id: "markdown_open",
-                            mode: OpenPopupMode::WithScope(PopupScope::Surface(sid)),
-                        }
-                        .from_user_shortcut("convert_to_markdown"),
-                    );
+                    // 제자리 markdown 변환: surface_id 를 실어 file-open 팝업(plugin navigate).
+                    state.enqueue_convert_input_popup(engine, "markdown", Some(sid));
                 }
             }
             "convert_to_explorer" => {

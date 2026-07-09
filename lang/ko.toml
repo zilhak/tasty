@@ -613,7 +613,6 @@ run = "그래도 실행"
 [convert_popup]
 title = "서피스 타입 전환"
 terminal = "터미널"
-markdown = "마크다운..."
 explorer = "탐색기"
 html = "HTML..."
 image = "이미지"

@@ -146,6 +146,13 @@ pub fn register_egui_mesh_kind(
         egui_paste: decl.egui_paste,
         name_from_param: decl.name_from_param.clone(),
         records_recent: decl.records_recent,
+        convert_requires_input: decl.convert_requires_input,
+        // decl 은 local popup id 만 안다 — 등록 시점에 소유 plugin_id 로 qualify 해
+        // host 가 `open_popup_instance` 로 곧장 열 수 있는 `<plugin>/<popup>` 형태로 만든다.
+        convert_input_popup: decl
+            .convert_input_popup
+            .as_ref()
+            .map(|p| format!("{plugin_id}/{p}")),
     });
 
     tracing::info!(

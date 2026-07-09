@@ -460,6 +460,21 @@ pub struct SurfaceKindDecl {
     /// generic 화. 미선언이면 기록 안 함.
     #[serde(default)]
     pub records_recent: bool,
+    /// 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지
+    /// (예: markdown=true — 어느 파일을 열지 골라야 한다). host 는 특정 kind 이름을
+    /// 모르고 이 플래그로 convert 라우팅을 판정한다: `true` 면 즉시 빈 params 변환
+    /// 대신 `convert_input_popup` 이 가리키는 plugin 팝업을 연다. host 본체의
+    /// `kind == "markdown"` convert 분기를 generic 화. 미선언이면 빈 params 즉시 변환.
+    #[serde(default)]
+    pub convert_requires_input: bool,
+    /// `convert_requires_input == true` 일 때 host 가 열 이 plugin 의 file-input
+    /// 팝업 **local id**(예: markdown="file-open" — 같은 plugin 의
+    /// `[[contributes.popup]] id`). host 는 이를 `<plugin_id>/<popup_id>` 로 qualify
+    /// 해 `open_popup_instance` 로 연다(payload 에 convert 대상 surface_id 를 실어
+    /// 제자리 변환, 미포함이면 새 탭 열기). markdown/event-key 하드코딩 없이 데이터로만
+    /// 라우팅하기 위한 필드다. 미선언이면 convert-input 팝업 없음.
+    #[serde(default)]
+    pub convert_input_popup: Option<String>,
     /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
     /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
     /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면

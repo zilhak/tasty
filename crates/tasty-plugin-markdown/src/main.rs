@@ -203,11 +203,15 @@ struct LargeFileConfirm {
     size_label: String,
 }
 
-/// 파일열기 팝업 인스턴스 상태 — 경로 입력 버퍼. TextEdit 이 직접 mutate 하고
-/// browse(native 다이얼로그) 결과가 채운다. 확정 시 host `file_handler.dispatch` 로 연다.
+/// 파일열기 팝업 인스턴스 상태 — 경로 입력 버퍼 + (선택) convert 대상 surface.
+/// TextEdit 이 `path_input` 을 mutate 하고 browse(native 다이얼로그) 결과가 채운다.
+/// `convert_surface_id` 가 `Some` 이면 확정 시 그 surface 를 제자리 markdown 변환
+/// (`markdown.navigate`), `None` 이면 새 탭으로 연다(`file_handler.dispatch`). host 가
+/// open context 의 `surface_id` 유무로 이 값을 정한다.
 #[derive(Default)]
 struct FileOpenState {
     path_input: String,
+    convert_surface_id: Option<u32>,
 }
 
 struct MarkdownPlugin {
@@ -358,10 +362,21 @@ impl Plugin for MarkdownPlugin {
                     );
                 }
             }
-            // 파일열기 폼 — context 없이 빈 상태로 시작(사용자가 경로 입력/browse).
+            // 파일열기 폼 — 경로 입력 버퍼는 빈 상태로 시작. context 에 `surface_id` 가
+            // 있으면 그 surface 를 제자리 변환할 대상으로 기억한다(없으면 새 탭 열기).
             "file-open" => {
-                self.file_open
-                    .insert(ctx.instance_id, FileOpenState::default());
+                let convert_surface_id = ctx
+                    .context
+                    .get("surface_id")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                self.file_open.insert(
+                    ctx.instance_id,
+                    FileOpenState {
+                        path_input: String::new(),
+                        convert_surface_id,
+                    },
+                );
             }
             other => {
                 tracing::warn!("markdown open_popup: unknown popup_id '{other}'");
@@ -697,13 +712,18 @@ impl MarkdownPlugin {
                 }
             }
             FileOpenAction::Open => {
-                let path = self
+                let (path, convert_sid) = self
                     .file_open
                     .get(&iid)
-                    .map(|s| s.path_input.trim().to_string())
+                    .map(|s| (s.path_input.trim().to_string(), s.convert_surface_id))
                     .unwrap_or_default();
                 if !path.is_empty() {
-                    open_markdown_file(&ctx.host, &path);
+                    match convert_sid {
+                        // convert 대상 surface → 제자리 markdown 변환.
+                        Some(sid) => navigate(&ctx.host, sid, &path),
+                        // 대상 없음 → 새 탭으로 연다.
+                        None => open_markdown_file(&ctx.host, &path),
+                    }
                     close_popup(&ctx.host, iid);
                 }
             }

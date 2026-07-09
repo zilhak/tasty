@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.24"
+version = "0.1.25"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [
@@ -46,6 +46,11 @@ name_from_param = "file"
 # 파일로 열 때 host 의 "최근 연 파일" 목록에 기록. 본체의 `kind == "markdown"` recent
 # 기록 하드코딩을 대체(generic per-kind). 주소창 드롭다운이 `recent.query` 로 조회.
 records_recent = true
+# convert 시 host 가 어느 파일을 열지 물어야 한다 → 즉시 빈 params 변환 대신 아래
+# `file-open` 팝업을 연다. host 는 markdown 을 모르고 이 두 필드(capability + popup 참조)
+# 로만 convert 라우팅을 판정한다(본체 `kind == "markdown"` convert 분기 제거).
+convert_requires_input = true
+convert_input_popup = "file-open"
 
 # 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
 # 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).
@@ -81,9 +86,12 @@ size_hint = { width = 360, height = 150 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
 
-# 파일열기 폼(경로 입력 + browse + 열기/취소). host 가 `com.tasty.markdown.file_open`
-# 이벤트를 발행하면(단축키/메뉴 트리거 배선은 Phase 4) fire_popup_triggers 가 이 팝업을
-# 연다. browse 는 host `fs.pick_file`(native rfd)로 위임, 열기는 `file_handler.dispatch`.
+# 파일열기 폼(경로 입력 + browse + 열기/취소). host 는 `[[surface_kinds]]
+# convert_input_popup = "file-open"` 을 보고 convert/open 진입점에서 이 팝업을
+# `open_popup_instance` 로 직접 연다(context 에 convert 대상 surface_id 를 실으면 제자리
+# 변환, 없으면 새 탭). event_key trigger 도 남겨 두어 host 이벤트 발행 경로도 지원한다.
+# browse 는 host `fs.pick_file`(native rfd)로 위임, 열기는 surface_id 유무로 분기한다:
+# 있으면 `markdown.navigate`(제자리), 없으면 `file_handler.dispatch`(새 탭).
 [[contributes.popup]]
 id = "file-open"
 trigger = { kind = "event", event_key = "com.tasty.markdown.file_open" }

@@ -675,23 +675,13 @@ impl MainView {
                 }
             }
             Some(2) => {
-                // Create empty tab first, then show markdown popup targeting it
+                // 빈 탭을 먼저 만들고, 그 surface 를 제자리 markdown 변환. surface_id 를
+                // 실어 file-open 팝업을 연다(plugin 이 markdown.navigate 로 제자리 변환).
                 self.state.active_workspace_mut(engine).focused_pane = pane_id;
                 if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                     // intent-exempt: surface_id 결과 의존 (후속 convert)
-
-                    self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
-                    self.state.dialogs.file_open_pane_id = Some(pane_id);
-                    self.state.dialogs.markdown_open_buffer.clear();
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: "markdown_open",
-                            mode: crate::intent::OpenPopupMode::WithScope(
-                                crate::adapters::ui::popup::PopupScope::Surface(surface_id),
-                            ),
-                        }
-                        .from_user_context_menu(),
-                    );
+                    self.state
+                        .enqueue_convert_input_popup(engine, "markdown", Some(surface_id));
                 }
             }
             Some(5) => {

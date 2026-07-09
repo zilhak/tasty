@@ -95,6 +95,9 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         name_from_param: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
+        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
+        convert_requires_input: false,
+        convert_input_popup: None,
     });
 }
 
@@ -132,6 +135,9 @@ fn register_attached(registry: &SurfaceKindRegistry) {
         name_from_param: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
+        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
+        convert_requires_input: false,
+        convert_input_popup: None,
     });
 }
 
@@ -224,6 +230,9 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         name_from_param: Some("path".to_string()),
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
+        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
+        convert_requires_input: false,
+        convert_input_popup: None,
     });
 }
 
@@ -282,6 +291,9 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         name_from_param: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
+        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
+        convert_requires_input: false,
+        convert_input_popup: None,
     });
 }
 

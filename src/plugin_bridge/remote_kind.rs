@@ -127,6 +127,12 @@ pub fn register_remote_kind(
         egui_paste: decl.egui_paste,
         name_from_param: decl.name_from_param.clone(),
         records_recent: decl.records_recent,
+        convert_requires_input: decl.convert_requires_input,
+        // local popup id → `<plugin>/<popup>` qualify (egui_mesh.rs 와 동일 규약).
+        convert_input_popup: decl
+            .convert_input_popup
+            .as_ref()
+            .map(|p| format!("{plugin_id}/{p}")),
     });
 
     tracing::info!(

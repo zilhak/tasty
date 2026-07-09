@@ -613,7 +613,6 @@ run = "それでも実行"
 [convert_popup]
 title = "サーフェスタイプ切替"
 terminal = "ターミナル"
-markdown = "マークダウン..."
 explorer = "エクスプローラー"
 html = "HTML..."
 image = "イメージ"

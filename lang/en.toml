@@ -613,7 +613,6 @@ run = "Run anyway"
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"
-markdown = "Markdown..."
 explorer = "Explorer"
 html = "HTML..."
 image = "Image"

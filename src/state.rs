@@ -533,22 +533,12 @@ pub enum PendingNativeMenu {
 pub struct DialogState {
     /// Unified rename dialog: target + edit buffer.
     pub(crate) rename: Option<(RenameTarget, String)>,
-    /// Convert to markdown: target surface id
-    pub(crate) markdown_convert_surface_id: Option<u32>,
     /// Surface convert popup: target surface_id (None = closed)
     pub(crate) convert_popup: Option<u32>,
     /// Keyboard-selected index in the convert popup menu
     pub(crate) convert_popup_selected: Option<usize>,
     /// Pending native context menu
     pub(crate) pending_native_menu: Option<PendingNativeMenu>,
-    /// Markdown file-open 다이얼로그 상태 — path 버퍼 + 트리거 pane. 호스트 파일열기
-    /// 폼(egui + rfd)은 Phase 3 에서 플러그인 egui-mesh 팝업으로 이관돼 제거됐고, 이
-    /// 필드들은 아직 이 상태를 세팅하는 키바인딩/convert opener(Phase 4 소유)가 남아
-    /// 있어 유지한다. opener 를 플러그인 팝업 트리거로 재배선하는 Phase 4 에서 함께
-    /// 제거된다(그때까지 write-only). `file_open_error` 는 폼과 함께 이미 제거됐다.
-    pub(crate) markdown_open_buffer: String,
-    /// Which pane the file open popup was triggered from
-    pub(crate) file_open_pane_id: Option<u32>,
     /// Pending file drag request (paths to drag to external apps).
     pub(crate) pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
@@ -640,12 +630,9 @@ impl DialogState {
     pub fn new() -> Self {
         Self {
             rename: None,
-            markdown_convert_surface_id: None,
             convert_popup: None,
             convert_popup_selected: None,
             pending_native_menu: None,
-            markdown_open_buffer: String::new(),
-            file_open_pane_id: None,
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
@@ -908,6 +895,47 @@ impl AppState {
         {
             self.recent_files.add(kind, file.to_string());
         }
+    }
+
+    /// `convert_requires_input` kind 의 파일 입력 팝업을 여는 요청을 enqueue 한다.
+    ///
+    /// host 는 kind 이름을 모른다 — registry 의 `convert_input_popup`(등록 시점에
+    /// `<plugin_id>/<popup_id>` 로 qualify 됨) 데이터만 따라 `open_popup_instance` 로
+    /// 여는 요청을 `pending_popup_opens` 에 넣는다(App 메인 루프가 drain →
+    /// PluginManager). `convert_surface_id` 가 `Some` 이면 context 에 실어 plugin 이
+    /// 제자리 변환(`markdown.navigate`), `None` 이면 새 탭으로 연다.
+    ///
+    /// 반환값: 요청을 enqueue 했으면 `true`, kind/팝업 미상이면 `false`(warn 로그).
+    pub(crate) fn enqueue_convert_input_popup(
+        &mut self,
+        engine: &CoreState,
+        kind: &str,
+        convert_surface_id: Option<u32>,
+    ) -> bool {
+        let Some(popup_ref) = engine
+            .surface_registry
+            .get(kind)
+            .and_then(|d| d.convert_input_popup.clone())
+        else {
+            tracing::warn!(
+                "convert-input popup: kind '{kind}' has no convert_input_popup capability"
+            );
+            return false;
+        };
+        let Some((plugin_id, local_id)) = popup_ref.split_once('/') else {
+            tracing::warn!("convert-input popup: malformed convert_input_popup '{popup_ref}'");
+            return false;
+        };
+        let cwd = self
+            .resolve_inherit_cwd(engine)
+            .map(|p| p.to_string_lossy().into_owned());
+        let mut context = serde_json::json!({ "cwd": cwd });
+        if let Some(sid) = convert_surface_id {
+            context["surface_id"] = serde_json::json!(sid);
+        }
+        self.pending_popup_opens
+            .push((plugin_id.to_string(), local_id.to_string(), context));
+        true
     }
 
     /// Returns true if any dialog with text input is open.

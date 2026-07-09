@@ -185,16 +185,9 @@ impl MainView {
                         send_app_event(&self.proxy, crate::AppEvent::Minimize);
                     }
                     "open_markdown" => {
-                        let pane_id = self.state.active_workspace(engine).focused_pane;
-                        self.state.dialogs.file_open_pane_id = Some(pane_id);
-                        self.state.dialogs.markdown_open_buffer.clear();
-                        self.state.dispatch_intent(
-                            UiIntent::OpenPopup {
-                                id: "markdown_open",
-                                mode: OpenPopupMode::CenteredFocused,
-                            }
-                            .from_user_shortcut("open_markdown_double_tap"),
-                        );
+                        // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 새 탭 dispatch).
+                        self.state
+                            .enqueue_convert_input_popup(engine, "markdown", None);
                     }
                     "convert_surface" => {
                         if let Some(sid) = self.state.focused_surface_id(engine) {
@@ -213,19 +206,9 @@ impl MainView {
                     }
                     "convert_to_markdown" => {
                         if let Some(sid) = self.state.focused_surface_id(engine) {
-                            let pane_id = self.state.active_workspace(engine).focused_pane;
-                            self.state.dialogs.markdown_convert_surface_id = Some(sid);
-                            self.state.dialogs.file_open_pane_id = Some(pane_id);
-                            self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.dispatch_intent(
-                                UiIntent::OpenPopup {
-                                    id: "markdown_open",
-                                    mode: OpenPopupMode::WithScope(
-                                        crate::adapters::ui::popup::PopupScope::Surface(sid),
-                                    ),
-                                }
-                                .from_user_shortcut("convert_to_markdown_double_tap"),
-                            );
+                            // 제자리 markdown 변환: surface_id 를 실어 file-open 팝업(plugin navigate).
+                            self.state
+                                .enqueue_convert_input_popup(engine, "markdown", Some(sid));
                         }
                     }
                     "convert_to_explorer" => {

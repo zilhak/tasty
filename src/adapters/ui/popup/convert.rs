@@ -401,7 +401,7 @@ pub fn draw_convert_content(
         && let Some(sel) = state.dialogs.convert_popup_selected
         && selectable_indices.contains(&sel)
     {
-        action = Some(action_for_kind(internal_items[sel].kind));
+        action = Some(action_for_kind(engine, internal_items[sel].kind));
     }
 
     // 단축키: physical_key 사용 (한글 IME 활성 시에도 영문 매칭 보장).
@@ -421,7 +421,7 @@ pub fn draw_convert_content(
                     .iter()
                     .find(|it| it.shortcut == Some(ch) && Some(it.kind) != current_kind)
             {
-                action = Some(action_for_kind(item.kind));
+                action = Some(action_for_kind(engine, item.kind));
             }
         }
     });
@@ -433,7 +433,7 @@ pub fn draw_convert_content(
     };
     let view_action = draw_convert_view(ui, &theme::theme(), &view_props);
     if let ConvertViewAction::Clicked { kind, .. } = view_action {
-        action = Some(action_for_kind(&kind));
+        action = Some(action_for_kind(engine, &kind));
     }
 
     action.map(ConvertResult::Action)
@@ -481,20 +481,11 @@ pub fn apply_convert_action(
                 .from_user_menu("convert/terminal"),
             );
         }
-        ConvertAction::Markdown => {
-            let pane_id = state.active_workspace(engine).focused_pane;
-            state.dialogs.markdown_convert_surface_id = Some(surface_id);
-            state.dialogs.file_open_pane_id = Some(pane_id);
-            state.dialogs.markdown_open_buffer.clear();
-            state.dispatch_intent(
-                crate::intent::UiIntent::OpenPopup {
-                    id: "markdown_open",
-                    mode: crate::intent::OpenPopupMode::WithScope(popup::PopupScope::Surface(
-                        surface_id,
-                    )),
-                }
-                .from_user_menu("convert/markdown"),
-            );
+        ConvertAction::RequiresInput(kind) => {
+            // 이 kind 는 convert 전 파일 입력이 필요하다(capability `convert_requires_input`).
+            // host 는 kind 이름을 모르고 registry 데이터로 그 kind plugin 의 file-open
+            // 팝업을 연다 — surface_id 를 실어 plugin 이 제자리 변환하게 한다.
+            state.enqueue_convert_input_popup(engine, &kind, Some(surface_id));
         }
         ConvertAction::Kind(kind) => {
             state.dispatch_intent(
@@ -517,22 +508,30 @@ pub enum ConvertAction {
     /// terminal 은 PTY spawn 이라 전용 `ConvertTarget::Terminal` 경로를 탄다(generic
     /// Kind 로 수렴 불가 — host 책임의 PTY 생성).
     Terminal,
-    /// markdown 은 변환 시 파일 선택 picker(`markdown_open` popup)를 먼저 띄운다 —
-    /// 빈 params 로 바로 변환하는 generic Kind 와 동작이 다르다(파일 필수).
-    Markdown,
+    /// `convert_requires_input` capability 를 선언한 kind. 변환 전 그 kind plugin 의
+    /// file-open 팝업을 먼저 띄운다(파일 필수) — 빈 params 로 바로 변환하는 generic
+    /// Kind 와 동작이 다르다. host 는 kind 이름을 모르고 capability 로만 판정한다.
+    RequiresInput(String),
     /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind. image 를 포함해
     /// 파일 없이 빈 params 로 즉시 변환 가능한 모든 kind 가 이 경로로 수렴한다.
     Kind(String),
 }
 
-fn action_for_kind(kind: &str) -> ConvertAction {
-    // terminal/markdown 만 전용 경로(위 variant 주석 참조). image 를 비롯한 그 외 kind 는
-    // 전부 generic Kind — kind 이름 하드코딩 없이 빈 params 로 ConvertSurface 한다.
-    match kind {
-        "terminal" => ConvertAction::Terminal,
-        "markdown" => ConvertAction::Markdown,
-        other => ConvertAction::Kind(other.to_string()),
+fn action_for_kind(engine: &crate::core::CoreState, kind: &str) -> ConvertAction {
+    // terminal 만 전용 PTY 경로(위 variant 주석). 나머지는 registry capability 로 판정:
+    // `convert_requires_input` 이면 파일 입력 팝업 경유, 아니면 빈 params 즉시 변환.
+    // kind 이름 하드코딩 없이 데이터로만 라우팅한다.
+    if kind == "terminal" {
+        return ConvertAction::Terminal;
     }
+    if engine
+        .surface_registry
+        .get(kind)
+        .is_some_and(|d| d.convert_requires_input)
+    {
+        return ConvertAction::RequiresInput(kind.to_string());
+    }
+    ConvertAction::Kind(kind.to_string())
 }
 
 fn letter_key_to_char(key: &egui::Key) -> Option<char> {

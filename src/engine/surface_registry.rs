@@ -200,6 +200,19 @@ pub struct SurfaceKindDef {
     /// 기록한다. host 본체의 `kind == "markdown"` recent 기록 분기를 generic 화한다.
     /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
     pub records_recent: bool,
+
+    /// 이 kind 로 convert 하려면 host 가 먼저 파일 입력 팝업을 띄워야 하는지
+    /// (매니페스트 `convert_requires_input`). `true` 면 convert 팝업에서 이 kind 선택
+    /// 시 즉시 빈 params 변환 대신 `convert_input_popup` 팝업을 연다. host 본체의
+    /// `kind == "markdown"` convert 분기를 generic 화. builtin 은 false.
+    pub convert_requires_input: bool,
+
+    /// `convert_requires_input == true` 일 때 host 가 열 plugin file-input 팝업의
+    /// **qualified id** (`"<plugin_id>/<popup_id>"`). host 는 이를 split 해
+    /// `open_popup_instance` 로 연다. 등록 시점(egui_mesh.rs/remote_kind.rs)에
+    /// 소유 plugin_id 로 qualify 한다 — host 는 kind 이름을 몰라도 이 데이터만 따른다.
+    /// builtin 은 `None`.
+    pub convert_input_popup: Option<String>,
 }
 
 impl SurfaceKindDef {
@@ -337,6 +350,8 @@ mod tests {
             egui_paste: false,
             name_from_param: None,
             records_recent: false,
+            convert_requires_input: false,
+            convert_input_popup: None,
         }
     }
 
