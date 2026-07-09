@@ -9,6 +9,8 @@ mod debug;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
 mod file_handler;
+#[cfg(feature = "gui")]
+mod fs;
 mod hooks;
 #[cfg(feature = "gui")]
 mod image;
@@ -407,6 +409,11 @@ fn route_engine_handler(
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(state, id, request.params.clone()),
+        // native 파일 선택 다이얼로그(rfd) 위임 — plugin 이 자기 프로세스에서 못 여는
+        // host UI 스레드 자원. host 는 특정 kind 를 모른 채 filters 만 받아 대행한다
+        // (파일열기 팝업 플러그인化의 유일 generic 갭, ADR-0042). rfd 는 gui feature.
+        #[cfg(feature = "gui")]
+        "fs.pick_file" => fs::handle_pick_file(id, &request.params),
         // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
         // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.

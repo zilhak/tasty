@@ -320,6 +320,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // kind 를 채워 호출). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
         ("recent.query", plugin(&[SurfaceRead])),
+        // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
+        // native OS 파일 선택 다이얼로그(rfd)를 host 프로세스에서 열고 선택 경로를
+        // 회신한다. plugin 은 자기 프로세스에서 native 다이얼로그(host UI 스레드 자원)를
+        // 못 여므로 host 에 위임한다 — generic 하게 "파일 선택" 만 대행하고 host 는 특정
+        // kind/plugin 을 모른다. 사용자가 임의 경로를 고르는 read 관심사라 FsRead. filters
+        // 는 caller(예: markdown plugin 이 md/markdown)가 채운다. ADR-0042.
+        ("fs.pick_file", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
