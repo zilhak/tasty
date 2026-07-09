@@ -153,20 +153,36 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    최초 1회만). frame 수락 시 해제되어 다음 단절 때 다시 요청·로그한다.
 3. **mesh(기하) 채택은 delta 체인과 분리** — reflow frame 의 mesh 는 자기완결적 기하라
    중간 frame 유실(delta 손실)과 무관하다. 따라서 위 체인 가드는 **텍스처 delta 적용
-   여부만** 막고, mesh 채택은 `decode_mesh_into_target` 이 디코드 후 별도 판정한다: seq 가
-   불연속이어도 이 frame 의 mesh 가 참조하는 모든 `TextureId` 가 이미 상주(`live_textures`)
-   하면(`all_textures_live`) mesh 를 채택하고 `last_seq` 를 갱신한다(다음 frame 이 자연
-   연속이 되어 delta 게이트도 self-heal). 참조가 하나라도 미상주면(image plugin 신규 비트맵
-   등) 종전대로 mesh 도 보류하고 full 을 재요청한다. 이 분리로 리사이즈/split 로 폭이
-   바뀔 때 seq 가 튀어도 markdown 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시
-   reflow 된다. markdown 은 참조가 항상 폰트 atlas(상주)라 즉시 채택된다.
+   여부만** 막고, mesh 채택은 `decode_mesh_into_target` 이 디코드 후 `classify_decode` 로
+   세 결과 중 하나로 판정한다. 입력 축은 셋: `chain_ok`(full 이거나 `frame_seq == last+1`),
+   참조 상주(`all_textures_live` — 이 frame 의 mesh 가 참조하는 모든 `TextureId` 가 이미
+   상주), delta 경계 정합(`deltas_fit_live` — patch delta 가 상주 텍스처 크기 안에 들어감,
+   3d74217c 의 오버런 방어선).
 
-요청 플래그의 흐름: 렌더 prepare 가 체인 단절 + 미상주 참조를 감지하면 `GpuState` 의 요청
-대기열에 적재 → redraw 가 drain 해 surface 는 forward 추적 상태
+   | 결과 | 조건 | mesh | `textures_delta` | `last_seq` | full 재요청 |
+   |---|---|---|---|---|---|
+   | **Accepted** | `chain_ok` + 경계 정합 | 채택 | 적용 | 전진 | 없음 |
+   | **AcceptedStale** | 체인 단절(seq 점프)이나 참조 상주 + 경계 정합 | 채택 | **미적용** | **미전진** | **매 tick** |
+   | **NeedsFull** | 첫 콘텐츠 없음 · 미상주 참조 · 오버런(경계 초과) | 보류 | 미적용 | 미전진 | 매 tick |
+
+   **불변식**: delta 를 실제 적용하지 못한(체인 단절으로 스킵한) frame 의 mesh 는 채택하되
+   `last_seq` 를 전진시키지 않는다(**AcceptedStale**). 그러면 다음 tick 도 체인 단절로 남아
+   full 재전송이 계속 무장되고, 유실로 stale 해진 atlas 는 다음 full frame 으로 정합
+   복구된다. mesh(기하)는 최신으로 갱신되므로 리사이즈/split 로 폭이 바뀌어 seq 가 튀어도
+   markdown 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
+   글리프 uv 만 다음 full 까지 stale atlas 를 가리킨다. 참조가 하나라도 미상주(image plugin
+   신규 비트맵 등)거나 delta 가 오버런이면 **NeedsFull** — mesh 도 보류하고 full 을
+   재요청한다(오버런은 적용 시 egui-wgpu 가 리사이즈 없이 write 해 크래시하므로 보류가
+   방어선이다). markdown 은 참조가 항상 폰트 atlas(상주)라 단절 시 AcceptedStale 경로다.
+
+요청 플래그의 흐름: 렌더 prepare 가 `NeedsFull` 또는 `AcceptedStale` 을 판정하면 `GpuState` 의
+요청 대기열에 적재 → redraw 가 drain 해 surface 는 forward 추적 상태
 (`MeshForwardState::pending_full`)에, popup/banner 는 `AppState` 의
 `plugin_mesh_{popup,banner}_full_requests` 에 옮김 → 다음 tick 의 forward 가
 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막 geom/theme 으로 송신).
-popup/banner 도 같은 체인 규칙·재무장·mesh 분리 규칙을 공유한다.
+plugin generation 이 정지해 새 frame 이 안 와도 이미 무장된 surface 는 매 tick 재요청을
+유지한다(재-tessellation·업로드 없이 IPC 메시지만). popup/banner 도 같은 체인 규칙·재무장·
+mesh 분리 규칙을 공유한다.
 
 ## 입력 forward · identity 경계
 
