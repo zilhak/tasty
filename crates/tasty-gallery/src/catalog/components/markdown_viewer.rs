@@ -18,8 +18,10 @@
 //!   per-cell 8·4px 패딩은 라이브러리 Grid 로 도달 불가(heading 보간과 동류의 라이브러리 제약).
 //! - inline bold 는 text-primary(strong) 승격으로 신호(egui 합성 weight 없음).
 
+use std::cell::RefCell;
+
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Spinner, checkbox};
+use tasty_ui_widgets::{PathField, Spinner, checkbox};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -30,20 +32,31 @@ const DOC_W: f32 = 560.0;
 const TILE_W: f32 = 200.0;
 const TILE_H: f32 = 132.0;
 
-/// 주소창 바 / 경로 필드 높이 (플러그인 `main.rs` 와 동일 — 디자인 40 / 28).
-const ADDR_BAR_H: f32 = 40.0;
-const ADDR_FIELD_H: f32 = 28.0;
+/// 주소창 바 폭 (필드/Go 높이는 공용 `PathField` 소유 — 디자인 40 바).
 const ADDR_BAR_W: f32 = 360.0;
 
+/// 최근 파일 후보(markdown 주소창 데모 — 플러그인 `recent.query` 응답의 근사).
+const MD_RECENT: &[&str] = &[
+    "/docs/readme.md",
+    "/docs/guide.md",
+    "/docs/architecture.md",
+    "~/work/tasty/CHANGELOG.md",
+];
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 0. 상단 주소창 chrome (03) — idle / editing.
+    // 0. 상단 주소창 chrome (03) — 공용 [`PathField`] 라이브 소비(markdown 컨텍스트: file
+    //    아이콘 + 최근파일 드롭다운). 비포커스=idle(경로 secondary), 클릭=editing(primary +
+    //    후보 드롭다운 + 키내비/이동/원복). idle/editing×explorer/markdown 전 매트릭스는
+    //    `prim_path_field` specimen 이 정적+라이브로 전시 — 여기선 markdown surface 컨텍스트만.
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        spec::cluster(ui, theme, "idle", |ui| {
-            address_bar(ui, theme, "/docs/readme.md", false);
-        });
-        spec::cluster(ui, theme, "editing", |ui| {
-            address_bar(ui, theme, "/docs/guide.md", true);
-        });
+        spec::cluster(
+            ui,
+            theme,
+            "address bar — shared PathField (click to edit)",
+            |ui| {
+                address_bar(ui, theme);
+            },
+        );
     });
 
     // 1. 전체 element catalog 문서.
@@ -105,10 +118,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("addr bar", "40px · bg-sidebar · path field + Go (03)"),
+            ("addr bar", "40px · bg-sidebar · shared PathField (03)"),
             (
                 "addr field",
-                "28px · surface-raised · border-focus ring on edit",
+                "AutoComplete trigger + Go · idle secondary / edit primary",
             ),
             ("body", "13 · text-secondary · leading=library-owned"),
             ("h1", "Heading anchor prose-h1 20 · text-primary"),
@@ -736,92 +749,63 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// 상단 주소창 chrome (03) 정적 전사 — 40px 바 + 경로 필드 + Go. editing=true 면
-/// border-focus + focus ring + text-primary, false 면 border-default + text-secondary.
-fn address_bar(ui: &mut egui::Ui, theme: &Theme, path: &str, editing: bool) {
+/// 주소창 라이브 데모 상태(호출측 소유 — PathField 계약). 갤러리 재-draw 간 유지되도록
+/// thread-local 로 보관한다.
+struct AddrDemo {
+    buf: String,
+    editing: bool,
+    active: Option<usize>,
+}
+
+thread_local! {
+    static ADDR_DEMO: RefCell<Option<AddrDemo>> = const { RefCell::new(None) };
+}
+
+/// 상단 주소창 chrome (03) — 공용 [`PathField`] 라이브 소비(markdown 컨텍스트). 하드롤
+/// 전사(구 `addr_field`/`addr_go`)를 폐기하고 본체 플러그인과 같은 위젯을 그대로 그린다:
+/// file leading/row 아이콘 + arrow-right Go + 최근파일 후보 드롭다운. idle=경로 secondary,
+/// 클릭=editing(primary + 드롭다운 + 키내비). 40px 바는 sidebar 프레임이 소유.
+fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
+    // 아이콘 주입 — canonical FILE / ARROW_RIGHT 를 위젯이 넘긴 rect 에 그대로 그린다
+    // (색·크기는 위젯이 상태별 토큰으로 호출).
+    let file_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::FILE.image(rect.height(), c).paint_at(ui, rect);
+    };
+    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::ARROW_RIGHT
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
         .show(ui, |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(ADDR_BAR_W, ADDR_BAR_H),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                    let go_w = ADDR_FIELD_H;
-                    let field_w = ADDR_BAR_W
-                        - theme.spacing_sm.value() * 2.0
-                        - go_w
-                        - theme.spacing_xs.value();
-                    addr_field(ui, theme, field_w, path, editing);
-                    addr_go(ui, theme);
-                },
-            );
+            ADDR_DEMO.with(|s| {
+                let mut slot = s.borrow_mut();
+                let st = slot.get_or_insert_with(|| AddrDemo {
+                    buf: "/docs/readme.md".to_string(),
+                    editing: false,
+                    active: None,
+                });
+                PathField::new("md_viewer_addr")
+                    .placeholder("Go to file…")
+                    .empty_label("No recent files")
+                    .width(ADDR_BAR_W - theme.spacing_sm.value() * 2.0)
+                    .leading_icon(&file_icon)
+                    .row_icon(&file_icon)
+                    .go_icon(&go_icon)
+                    .show(
+                        ui,
+                        theme,
+                        &mut st.buf,
+                        &mut st.editing,
+                        &mut st.active,
+                        MD_RECENT,
+                        "/docs/readme.md",
+                    );
+            });
         });
-}
-
-fn addr_field(ui: &mut egui::Ui, theme: &Theme, width: f32, path: &str, editing: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, ADDR_FIELD_H), egui::Sense::hover());
-    let border = if editing {
-        theme.border_focus()
-    } else {
-        theme.border_default()
-    };
-    ui.painter().rect(
-        rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), border.to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    if editing {
-        let ring = theme.border_focus().to_egui().gamma_multiply(0.35);
-        ui.painter().rect_stroke(
-            rect.expand(1.0),
-            theme.corner_radius.value(),
-            egui::Stroke::new(2.0, ring),
-            egui::StrokeKind::Outside,
-        );
-    }
-    let pad = theme.spacing_sm.value();
-    // 선두 파일 글리프 — 본체 플러그인은 tasty-icons FILE 베이크 벡터를 caption 크기·
-    // text_muted 로 그린다. specimen 도 같은 canonical FILE 을 egui_extras 글리프로 미러
-    // (raw 유니코드 file 이모지 제거).
-    let icon_sz = theme.font_size_caption.value();
-    let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + pad, rect.center().y - icon_sz * 0.5),
-        egui::vec2(icon_sz, icon_sz),
-    );
-    icons::FILE
-        .image(icon_sz, theme.text_muted().to_egui())
-        .paint_at(ui, icon_rect);
-    let text_color = if editing {
-        theme.text_primary()
-    } else {
-        theme.text_secondary()
-    };
-    ui.painter().text(
-        egui::pos2(
-            rect.left() + pad + theme.spacing_md.value(),
-            rect.center().y,
-        ),
-        egui::Align2::LEFT_CENTER,
-        path,
-        egui::FontId::monospace(theme.font_size_caption.value()),
-        text_color.to_egui(),
-    );
-}
-
-fn addr_go(ui: &mut egui::Ui, theme: &Theme) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(ADDR_FIELD_H, ADDR_FIELD_H), egui::Sense::hover());
-    // Go 화살표 — 본체 플러그인의 tasty-icons ARROW_RIGHT 베이크 벡터(body 크기·
-    // text_secondary)를 canonical 아이콘 렌더로 미러(raw 유니코드 → 제거).
-    let sz = theme.font_size_body.value();
-    let gr = egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz));
-    icons::ARROW_RIGHT
-        .image(sz, theme.text_secondary().to_egui())
-        .paint_at(ui, gr);
 }
 
 /// 지정 size/color 라벨 텍스트.

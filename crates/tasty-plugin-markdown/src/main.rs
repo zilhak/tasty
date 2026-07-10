@@ -42,8 +42,7 @@ use tasty_plugin_sdk::EguiMeshPopup;
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
 use tasty_ui_widgets::{
-    AutoComplete, AutoCompleteAction, Button, ButtonVariant, MatchMode, TagVariant, margin_all,
-    tag, vspace,
+    Button, ButtonVariant, PathField, PathFieldOutcome, TagVariant, margin_all, tag, vspace,
 };
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
@@ -536,6 +535,11 @@ impl MarkdownPlugin {
         if addr.editing && !prev_editing {
             let fetched = fetch_recent(&ctx.host);
             addr.recent = fetched;
+            // clear-on-focus — 편집 진입 프레임에 버퍼를 비워 최근 목록이 필터 없이 전부
+            // 펼쳐지게 하고(빈 substring 은 전건 매치), 이후 타이핑이 typeahead 필터가 되게
+            // 한다. 진입 첫 draw 는 버퍼=현재 경로였어도 여기서 비워 재-paint 하므로, 필터로
+            // 목록이 비는 프레임이 사용자에게 노출되지 않는다.
+            addr.buffer.clear();
             // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
             let result = mesh.repaint_last(&ctx.host, |egui_ctx| {
                 draw(
@@ -1044,9 +1048,8 @@ fn dispatch_link(host: &HostHandle, sid: u32, click: LinkClick) {
     }
 }
 
-/// 주소창 바 높이 / 경로 필드 높이 (4px 그리드; 디자인 40 / 28).
+/// 주소창 바 높이 (4px 그리드; 디자인 40). 필드/Go 높이는 공용 `PathField`(ControlSize::Sm)가 소유.
 const ADDR_BAR_HEIGHT: f32 = 40.0;
-const ADDR_FIELD_HEIGHT: f32 = 28.0;
 
 /// 본문 배경색: focused 면 markdown surface 의 focused_bg, 아니면 unfocused_bg (A).
 /// 하드코딩(`theme.base`) 대신 `theme.surface("markdown")` 토큰을 경유한다.
@@ -1115,7 +1118,10 @@ fn draw(
     });
 }
 
-/// 주소창 바: 경로 필드(표시/편집) + Go 버튼. 확정 시 `addr.pending_navigate` 를 채운다.
+/// 주소창 바: 공용 [`PathField`] (경로 표시/편집 트리거 + 히스토리 드롭다운 + Go). 확정 시
+/// `addr.pending_navigate` 를 채운다(paint 후 host `markdown.navigate` 로 소비). 비편집=경로
+/// 표시(text-secondary), 클릭=편집모드 진입 → recent 캐시가 드롭다운으로 펼쳐지고 타이핑이
+/// substring 필터. 키보드: ↑/↓ active 행 · Enter/행클릭/Go=navigate · Esc=닫고 원복.
 fn draw_addr_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -1123,51 +1129,9 @@ fn draw_addr_bar(
     file_path: &str,
     addr: &mut AddrState,
 ) {
-    let gap = theme.spacing_xs.value();
-    ui.horizontal_centered(|ui| {
-        ui.spacing_mut().item_spacing.x = gap;
-        let go_w = ADDR_FIELD_HEIGHT;
-        let field_w = (ui.available_width() - go_w - gap).max(40.0);
-        draw_path_field(ui, theme, tr, field_w, file_path, addr);
-        if go_button(ui, theme, tr).clicked() {
-            addr.pending_navigate = Some(addr.buffer.clone());
-            addr.editing = false;
-        }
-    });
-    // 본문과의 경계 1px separator.
-    let r = ui.max_rect();
-    ui.painter().hline(
-        r.x_range(),
-        r.bottom(),
-        egui::Stroke::new(1.0, theme.separator.to_egui()),
-    );
-}
-
-/// 경로 표시/편집 필드 — 공유 [`AutoComplete`] 위젯(트리거 `Input` + 히스토리 드롭다운).
-/// 비편집=경로 표시(text-secondary), 클릭=편집모드 진입 → recent 캐시가 드롭다운으로 펼쳐진다.
-/// 키보드: ↑/↓ active 행 이동 · Enter=active 경로/버퍼 navigate · Esc=닫고 원복.
-fn draw_path_field(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    tr: &Translator,
-    width: f32,
-    file_path: &str,
-    addr: &mut AddrState,
-) {
-    // addr 필드를 분해해 buffer(&mut)/recent(&)/active(&mut) 를 동시 대여한다.
-    let AddrState {
-        buffer,
-        editing,
-        pending_navigate,
-        recent,
-        active,
-    } = addr;
-
-    // 후보 = 최근 경로(최신순). AutoComplete 는 `&[&str]` 을 받는다.
-    let entries: Vec<&str> = recent.iter().map(String::as_str).collect();
-
-    // 선두/후보 파일 아이콘 — 베이크된 FILE 벡터. Input/MenuItem 이 넘겨준 정사각 rect
-    // 중심에 그 폭 크기로 그린다(색은 위젯이 text-muted 로 호출).
+    // 선두/후보 파일 아이콘 · Go 화살표 — 베이크된 벡터 아이콘을 painter 로 주입한다
+    // (위젯 내부 아이콘 상수 금지). 위젯이 넘긴 정사각 rect 중심에 그 폭 크기로 그린다
+    // (색은 위젯이 상태별 토큰으로 호출).
     let file_icon = |ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32| {
         tasty_plugin_sdk::baked_icon::draw(
             ui.painter(),
@@ -1177,109 +1141,50 @@ fn draw_path_field(
             color,
         );
     };
-
-    let placeholder = tr.t("markdown.addr.placeholder");
-    let empty_label = tr.t("markdown.addr.no_recent");
-
-    // 주소창은 v1 동작 유지 — 편집 진입 시 최근 목록을 필터 없이 그대로 노출한다
-    // (버퍼=현재 경로라 substring 필터를 켜면 빈 목록이 됨). typeahead 필터 전환은
-    // PathField 이관(후속 TODO)에서 clear-on-focus 와 함께 붙인다.
-    let mut combo = AutoComplete::new("md_addr")
-        .mono(true)
-        .match_mode(MatchMode::None)
-        .highlight(false)
-        .placeholder(placeholder)
-        .empty_label(empty_label)
-        .width(width)
-        .icon(&file_icon)
-        .row_icon(&file_icon);
-    // 비편집(idle) 경로는 text-secondary 로 낮춰 표시(현행 주소창 관례). 편집 중엔 Input
-    // 기본 text-primary. `editing` 은 직전 프레임 포커스라 진입 프레임 1틱 지연은 무해하다
-    // (클릭과 동시에 드롭다운이 열리는 순간이라 육안 무영향).
-    if !*editing {
-        combo = combo.trigger_text_color(theme.text_secondary().to_egui());
-    }
-    let out = combo.show(ui, theme, buffer, &entries, active);
-
-    // 편집모드 = 트리거 포커스(단일 진실). 드롭다운 열림/닫힘도 이 값으로 수렴.
-    *editing = out.response.has_focus();
-
-    match addr_outcome(out.action, out.response.lost_focus()) {
-        AddrOutcome::NavigatePick(path) => {
-            *buffer = path;
-            *pending_navigate = Some(buffer.clone());
-        }
-        AddrOutcome::NavigateBuffer => {
-            *pending_navigate = Some(buffer.clone());
-        }
-        AddrOutcome::Revert => {
-            // Esc / 확정 없는 포커스 이탈 → 원래 경로 원복.
-            *buffer = file_path.to_string();
-            out.response.surrender_focus();
-        }
-        AddrOutcome::None => {}
-    }
-    // 닫히면 keyboard-active 커서 리셋(다음 오픈은 active 없음부터).
-    if !*editing {
-        *active = None;
-    }
-}
-
-/// 주소창 확정 결정 (순수 — 단위테스트로 격리). AutoComplete 행위 + singleline 포커스
-/// 이탈을 이동/원복/무동작으로 매핑한다. Esc/선택/Enter 없이 포커스만 잃으면 편집 취소로
-/// 원복한다 (현행 동작 보존).
-#[derive(Debug, PartialEq, Eq)]
-enum AddrOutcome {
-    None,
-    /// 현재 버퍼로 이동(active 행 없이 Enter).
-    NavigateBuffer,
-    /// 선택된 후보 경로로 이동(행 클릭 / Enter-on-active). AutoComplete 가 확정 문자열을
-    /// 직접 주므로 인덱스 역매핑이 없다.
-    NavigatePick(String),
-    /// 원복(Esc, 또는 확정 없는 포커스 이탈).
-    Revert,
-}
-
-fn addr_outcome(action: AutoCompleteAction, lost_focus: bool) -> AddrOutcome {
-    match action {
-        AutoCompleteAction::Cancel => AddrOutcome::Revert,
-        AutoCompleteAction::Pick(path) => AddrOutcome::NavigatePick(path),
-        AutoCompleteAction::Submit => AddrOutcome::NavigateBuffer,
-        AutoCompleteAction::None | AutoCompleteAction::Edited if lost_focus => AddrOutcome::Revert,
-        AutoCompleteAction::None | AutoCompleteAction::Edited => AddrOutcome::None,
-    }
-}
-
-/// Go 버튼 — arrow-right 글리프. 클릭 시 caller 가 이동을 확정한다.
-fn go_button(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(ADDR_FIELD_HEIGHT, ADDR_FIELD_HEIGHT),
-        egui::Sense::click(),
-    );
-    let hovered = resp.hovered();
-    if hovered {
-        ui.painter().rect_filled(
-            rect,
-            theme.corner_radius.value(),
-            theme.hover_overlay.to_egui_premultiplied(),
+    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32| {
+        tasty_plugin_sdk::baked_icon::draw(
+            ui.painter(),
+            baked_icons::ARROW_RIGHT,
+            rect.center(),
+            rect.width(),
+            color,
         );
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    let color = if hovered {
-        theme.text_primary()
-    } else {
-        theme.text_secondary()
     };
-    // go 화살표 — 베이크된 ARROW_RIGHT 벡터 아이콘. 이전 → 글리프와 동일 위치(rect
-    // center)·크기(body)를 유지한다.
-    tasty_plugin_sdk::baked_icon::draw(
-        ui.painter(),
-        baked_icons::ARROW_RIGHT,
-        rect.center(),
-        theme.font_size_body.value(),
-        color.to_egui(),
+
+    // addr 필드를 분해해 buffer(&mut)/recent(&)/editing·active(&mut) 를 동시 대여한다.
+    let AddrState {
+        buffer,
+        editing,
+        pending_navigate,
+        recent,
+        active,
+    } = addr;
+    // 후보 = 최근 경로(최신순). PathField 는 `&[&str]` 을 받는다.
+    let entries: Vec<&str> = recent.iter().map(String::as_str).collect();
+
+    ui.horizontal_centered(|ui| {
+        // Navigate 확정 경로는 PathField 가 준 문자열(필터된 가시 후보/버퍼)이다 — 원본
+        // recent[i] 를 인덱스 역참조하지 않는다(회귀 방지). Esc/blur 원복은 위젯이 buffer 를
+        // file_path 로 되돌린다.
+        let outcome = PathField::new("md_addr")
+            .placeholder(tr.t("markdown.addr.placeholder"))
+            .empty_label(tr.t("markdown.addr.no_recent"))
+            .width(ui.available_width())
+            .leading_icon(&file_icon)
+            .row_icon(&file_icon)
+            .go_icon(&go_icon)
+            .show(ui, theme, buffer, editing, active, &entries, file_path);
+        if let PathFieldOutcome::Navigate(path) = outcome {
+            *pending_navigate = Some(path);
+        }
+    });
+    // 본문과의 경계 1px separator.
+    let r = ui.max_rect();
+    ui.painter().hline(
+        r.x_range(),
+        r.bottom(),
+        egui::Stroke::new(1.0, theme.separator.to_egui()),
     );
-    resp.on_hover_text(tr.t("markdown.addr.go"))
 }
 
 /// 주소창 확정 이동을 host `markdown.navigate`(04) 로 보낸다 — 같은 surface 제자리 이동.
@@ -1528,65 +1433,9 @@ mod tests {
         assert_eq!(basename("/docs/big-notes.md"), "big-notes.md");
     }
 
-    #[test]
-    fn addr_outcome_submit_navigates_buffer() {
-        // active 행 없이 Enter → 현재 버퍼 이동.
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::Submit, true),
-            AddrOutcome::NavigateBuffer
-        );
-    }
-
-    #[test]
-    fn addr_outcome_pick_navigates_row() {
-        // active 행 Enter / 행 클릭 → 그 후보 경로 이동(확정 문자열 직접 전달).
-        assert_eq!(
-            addr_outcome(
-                AutoCompleteAction::Pick("/docs/readme.md".to_string()),
-                true
-            ),
-            AddrOutcome::NavigatePick("/docs/readme.md".to_string())
-        );
-    }
-
-    #[test]
-    fn addr_outcome_cancel_reverts() {
-        // Esc → 원복(포커스 유지/이탈 무관).
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::Cancel, false),
-            AddrOutcome::Revert
-        );
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::Cancel, true),
-            AddrOutcome::Revert
-        );
-    }
-
-    #[test]
-    fn addr_outcome_blur_without_confirm_reverts() {
-        // 확정 없이 포커스만 잃으면 편집 취소 → 원복.
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::None, true),
-            AddrOutcome::Revert
-        );
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::Edited, true),
-            AddrOutcome::Revert
-        );
-    }
-
-    #[test]
-    fn addr_outcome_typing_is_none() {
-        // 포커스 유지 중 편집/무입력 → 무동작(드롭다운 열림 유지).
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::None, false),
-            AddrOutcome::None
-        );
-        assert_eq!(
-            addr_outcome(AutoCompleteAction::Edited, false),
-            AddrOutcome::None
-        );
-    }
+    // 주소창 확정 결정(Enter/Pick/Esc/blur/Go)의 단위테스트는 공용 위젯 `PathField` 의
+    // `decide`(crates/tasty-ui-widgets/src/path_field.rs) 로 이관됐다 — 여기선 markdown
+    // 고유 로직(recent 파싱 등)만 검증한다.
 
     #[test]
     fn parse_recent_extracts_paths_in_order() {
