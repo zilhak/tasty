@@ -3,7 +3,9 @@
 //! 저장: `~/.tasty/state.db` (SQLite) — `recent_files(kind, path, opened_at)` 테이블.
 //! 인메모리 캐시(`AppState.recent_files`)가 매 뮤테이션마다 DB에 반영된다. host 는
 //! 특정 surface_kind 이름을 모르고, 매니페스트 `records_recent` 를 선언한 kind 만
-//! 기록 대상이 된다(generic per-kind — kind 하드코딩 없음).
+//! 파일-open 진입점에서 기록 대상이 된다(generic per-kind — kind 하드코딩 없음).
+//! 그 외에 builtin host surface 가 자체 kind 로 직접 적재하기도 한다(예: explorer 가
+//! 이동 확정한 cwd 를 `"directory"` kind 로 — `add`/`get` 은 kind 문자열만 다를 뿐 동일 경로).
 //!
 //! **레거시 마이그레이션**: 이전 버전의 `recent_markdown(path, opened_at)` 데이터는
 //! 앱 시작 시 1회 `recent_files` 로 복사된다(`kind='markdown'`). meta 플래그로 정확히
@@ -334,6 +336,36 @@ mod tests {
     #[test]
     fn get_absent_kind_is_empty() {
         let rf = RecentFiles::default();
+        assert!(rf.get("markdown").is_empty());
+    }
+
+    /// explorer 최근 디렉토리(kind="directory")도 generic 경로를 그대로 탄다 —
+    /// 최신순·중복제거·상한(MAX_ENTRIES)·kind 격리. explorer address_bar 후보 소스.
+    #[test]
+    fn directory_kind_recent_latest_first_dedup_and_cap() {
+        let mut rf = RecentFiles::default();
+        #[cfg(windows)]
+        let mk = |i: usize| format!(r"E:\dir{i}");
+        #[cfg(not(windows))]
+        let mk = |i: usize| format!("/dir{i}");
+
+        // 상한(10) 초과로 12개 적재 → 최신 10개만, 최신순.
+        for i in 0..12 {
+            rf.add("directory", mk(i));
+        }
+        let list = rf.get("directory");
+        assert_eq!(list.len(), MAX_ENTRIES);
+        assert_eq!(list[0], mk(11)); // 마지막 add 가 맨 앞.
+        assert_eq!(list[9], mk(2)); // 가장 오래된 유지분.
+
+        // 재방문 → 중복 없이 맨 앞으로.
+        rf.add("directory", mk(2));
+        let list = rf.get("directory");
+        assert_eq!(list.len(), MAX_ENTRIES);
+        assert_eq!(list[0], mk(2));
+        assert_eq!(list.iter().filter(|p| **p == mk(2)).count(), 1);
+
+        // kind 격리 — markdown 은 비어 있다.
         assert!(rf.get("markdown").is_empty());
     }
 

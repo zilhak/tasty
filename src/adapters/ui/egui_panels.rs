@@ -4,6 +4,12 @@ use crate::model::PhysicalRect;
 use crate::state::AppState;
 use crate::theme;
 
+/// explorer 최근 방문 디렉토리를 담는 `RecentFiles` kind. markdown 이 파일을 kind
+/// "markdown" 으로 적재하는 것과 대칭으로, explorer 는 이동 확정한 cwd 를 이 kind 로
+/// 적재하고 주소창(PathField) 자동완성 후보로 되읽는다(generic per-kind — 신규 DB 테이블
+/// 불필요, 기존 `recent_files(kind, path, opened_at)` 재사용).
+const EXPLORER_RECENT_KIND: &str = "directory";
+
 struct EguiPanelInfo {
     pane_id: u32,
     /// If Some, this is a specific surface within a split tab.
@@ -99,6 +105,9 @@ pub fn draw_egui_panels(
         .filter(|c| c.cut)
         .map(|c| c.paths.iter().cloned().collect())
         .unwrap_or_default();
+    // 최근 방문 디렉토리(주소창 자동완성 후보) — 프레임당 1회 스냅샷(≤10, clone 무시 가능).
+    // 루프 안에서 state 가 가변 차용되는 동안 읽을 수 없어 owned Vec 로 뽑아 둔다.
+    let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND).to_vec();
 
     for info in &infos {
         let id_suffix = info
@@ -156,6 +165,7 @@ pub fn draw_egui_panels(
                         &id_suffix,
                         &explorer_favorites,
                         &explorer_cut_pending,
+                        &explorer_recent_dirs,
                     )
                 },
             );
@@ -340,6 +350,15 @@ pub(crate) fn apply_explorer_action(
         }
         _ => {
             apply_explorer_panel_action(state, engine, sid, &act);
+            // 사용자가 이동 확정한 디렉토리를 "최근 디렉토리" 후보로 적재(주소창 자동완성).
+            // `A::Navigate` 는 주소창 타이핑·트리·즐겨찾기 클릭 등 실제 사용자 입력에서만
+            // emit 되고, 에이전트 IPC 의 cwd 변경은 다른 경로(`set_explorer_cwd`)라 자연히
+            // 제외된다(identity 경계). 중복/최신순/상한은 `RecentFiles::add` 가 처리.
+            if let A::Navigate(p) = &act {
+                state
+                    .recent_files
+                    .add(EXPLORER_RECENT_KIND, p.display().to_string());
+            }
             // cwd/내부 탭이 바뀔 수 있는 액션은 주소창 편집을 취소한다 — surface 단위
             // `ExplorerView` 의 addr 버퍼가 다른 내부 탭/경로로 새지 않도록(다음 sync 가
             // 새 cwd 로 재동기화). SetViewMode/SetSort 는 cwd 불변이라 제외.

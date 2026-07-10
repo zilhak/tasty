@@ -92,6 +92,7 @@ pub fn draw_explorer(
     id_suffix: &str,
     favorites: &[favorites::ExplorerFavorite],
     cut_pending: &HashSet<PathBuf>,
+    recent_dirs: &[String],
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
     let theme: &Theme = &th;
@@ -105,7 +106,7 @@ pub fn draw_explorer(
 
     ui.vertical(|ui| {
         tab_strip(ui, theme, panel, &mut action);
-        toolbar(ui, theme, panel, view, id_suffix, &mut action);
+        toolbar(ui, theme, panel, view, id_suffix, recent_dirs, &mut action);
         // toolbar ↔ content 구분선.
         let (sep_rect, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
@@ -328,12 +329,14 @@ fn tab_strip(
 }
 
 // ── 툴바: nav 버튼 + 편집형 PathField 주소창 + view-mode segmented ──────────
+#[allow(clippy::too_many_arguments)]
 fn toolbar(
     ui: &mut egui::Ui,
     theme: &Theme,
     panel: &ExplorerPanel,
     view: &mut ExplorerView,
     id_suffix: &str,
+    recent_dirs: &[String],
     action: &mut Option<ExplorerAction>,
 ) {
     let h = theme.item_height_interactive.value() + theme.spacing_sm.value() * 2.0;
@@ -404,6 +407,7 @@ fn toolbar(
                     view,
                     id_suffix,
                     tab_index,
+                    recent_dirs,
                     action,
                 )
             },
@@ -502,10 +506,12 @@ fn seg_toggle(
 
 /// 주소표시줄 — 공용 편집형 [`PathField`](design `PathField`/`ExpToolbar`): folderOpen leading +
 /// mono 경로(idle=secondary / editing=primary) + Go(arrow-right). 클릭→편집, 임의 경로 타이핑
-/// 후 `↵`/Go 로 디렉토리 이동. 후보(최근 디렉토리)는 후속 TODO — 지금은 빈 슬라이스.
+/// 후 `↵`/Go 로 디렉토리 이동. `recent_dirs`(최근 방문 디렉토리, host `RecentFiles`)를 자동완성
+/// 후보로 준다 — PathField 의 substring 필터가 타이핑에 맞춰 좁힌다.
 ///
 /// 편집 상태(`addr_buffer`/`addr_editing`/`addr_active`)는 per-surface [`ExplorerView`] 소유.
 /// id_salt 는 surface(`id_suffix`) + 내부 탭 index 로 고유화해 다중 surface/탭 충돌을 막는다.
+#[allow(clippy::too_many_arguments)]
 fn address_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -513,9 +519,12 @@ fn address_bar(
     view: &mut ExplorerView,
     id_suffix: &str,
     tab_index: usize,
+    recent_dirs: &[String],
     action: &mut Option<ExplorerAction>,
 ) {
     let current_str = current.display().to_string();
+    // 후보 = 최근 방문 디렉토리(최신순). PathField 는 `&[&str]` 를 받으므로 슬라이스 변환.
+    let candidates: Vec<&str> = recent_dirs.iter().map(String::as_str).collect();
     let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         icons::FOLDER_OPEN
             .image(rect.height(), c)
@@ -540,7 +549,7 @@ fn address_bar(
             &mut view.addr_buffer,
             &mut view.addr_editing,
             &mut view.addr_active,
-            &[],
+            &candidates,
             &current_str,
         );
     // 확정 이동 — explorer 는 **디렉토리만** 대상(파일/오타는 no-op). Revert/None 은 무동작.
