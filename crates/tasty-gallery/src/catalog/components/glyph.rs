@@ -4,6 +4,6 @@
 //! 있고, 여기서는 primitive 가 참조하는 것만 재노출한다(중복 path 정의 제거).
 
 pub use crate::catalog::icons::{
-    ALERT_CIRCLE, ALERT_TRIANGLE, CLOSE, COPY, FILE, FOLDER, MARKDOWN, MockGlyph, PLUG, PLUS,
-    SEARCH, SETTINGS, SPLIT, TERMINAL, TRASH,
+    ALERT_CIRCLE, ALERT_TRIANGLE, CLOSE, COPY, FILE, FOLDER, FOLDER_OPEN, MARKDOWN, MockGlyph,
+    PLUG, PLUS, SEARCH, SETTINGS, SPLIT, TERMINAL, TRASH,
 };

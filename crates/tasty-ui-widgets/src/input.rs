@@ -88,7 +88,7 @@ impl<'a> Input<'a> {
     }
 
     /// 텍스트 색 override — 미지정 시 `input_fg`(text-primary). 주소창 idle 표시처럼
-    /// 비포커스 상태를 text-secondary 로 낮추려는 호출측(combobox 트리거)을 위해 노출한다.
+    /// 비포커스 상태를 text-secondary 로 낮추려는 호출측(AutoComplete 트리거)을 위해 노출한다.
     /// 값은 반드시 `Theme` 토큰에서 파생한 색이어야 한다(raw hex 금지).
     pub fn text_color(mut self, color: egui::Color32) -> Self {
         self.text_color = Some(color);

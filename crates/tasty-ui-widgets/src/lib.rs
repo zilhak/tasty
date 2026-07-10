@@ -10,9 +10,9 @@
 //!
 //! 위젯 함수는 후속 step 에서 점진적으로 추가된다.
 
+mod autocomplete;
 mod button;
 mod chip;
-mod combobox;
 mod control;
 mod help_hint;
 mod horizontal_tab_bar;
@@ -32,9 +32,11 @@ mod tooltip;
 mod tree_row;
 mod two_depth;
 mod warning_callout;
+pub use autocomplete::{
+    AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
+};
 pub use button::{Button, ButtonVariant};
 pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag};
-pub use combobox::{Combobox, ComboboxAction, ComboboxResponse, combobox_dropdown};
 pub use control::ControlSize;
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;

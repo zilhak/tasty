@@ -221,7 +221,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
 | `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
-| combobox (신규 합성 — jsx 없음) | `Combobox` / `combobox_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis) | `prim_combobox` | ✓ gallery |
+| `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
 | `feedback/Spinner` | `Spinner`(size/color/reduced_motion) | `prim_spinner` | ✓ port_scanner(loading) |
 | `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` | — |
@@ -236,7 +236,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 `leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
 Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false).
 
-**시각검증 주**: primitive 14종 전부 시각검증 완료(combobox: gallery scroll readback — closed/open·history/empty/proportional/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
+**시각검증 주**: primitive 14종 전부 시각검증 완료(autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
 `ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
 (`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
 settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이

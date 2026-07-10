@@ -1594,6 +1594,17 @@ impl Theme {
         self.accent_agent()
     }
 
+    // ── 컴포넌트 토큰 (AutoComplete 후보 드롭다운) — `--tasty-autocomplete-*` ──
+    // 자유입력 트리거 + 후보 드롭다운(typeahead). 색·간격·행높이는 전부 기존
+    // Input/menu-item/semantic 접근자를 그대로 재사용하므로 여기엔 드롭다운 최대
+    // 높이 하나만 둔다(신규 primitive 없음 — 220 은 modhint 와 공유하는 `size-220`).
+    /// 드롭다운 최대 높이 (220px, ≈7행). 초과 시 리스트 내부 스크롤 + shrink-to-fit.
+    /// `--tasty-autocomplete-max-height` → `--tasty-size-220`.
+    #[inline]
+    pub fn autocomplete_max_height(&self) -> LogicalPx {
+        LogicalPx((220.0 * self.ui_zoom).round())
+    }
+
     // ── 컴포넌트 토큰 (markdown surface 인라인 표 — grid + zebra) ──
     // Markdown surface 의 GFM 표 전용 tier-3 토큰. 공용 `Table` 위젯과 별개(읽기 전용·정적).
     // 모두 기존 semantic 접근자를 가리키는 포인터 — 신규 primitive/hex 없음. 값 사다리

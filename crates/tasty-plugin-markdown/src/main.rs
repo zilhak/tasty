@@ -42,7 +42,8 @@ use tasty_plugin_sdk::EguiMeshPopup;
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, Combobox, ComboboxAction, TagVariant, margin_all, tag, vspace,
+    AutoComplete, AutoCompleteAction, Button, ButtonVariant, MatchMode, TagVariant, margin_all,
+    tag, vspace,
 };
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
@@ -181,7 +182,7 @@ impl MdDoc {
 struct AddrState {
     /// 경로 편집 버퍼. 비편집 중엔 표시 경로와 동기화된다.
     buffer: String,
-    /// combobox 트리거가 포커스를 가진 편집 모드 여부(= 히스토리 드롭다운 열림).
+    /// AutoComplete 트리거가 포커스를 가진 편집 모드 여부(= 히스토리 드롭다운 열림).
     editing: bool,
     /// paint 클로저가 채우는 확정된 이동 경로 — paint 후 host `markdown.navigate` 로 소비.
     pending_navigate: Option<String>,
@@ -1142,7 +1143,7 @@ fn draw_addr_bar(
     );
 }
 
-/// 경로 표시/편집 필드 — 공유 [`Combobox`] 위젯(트리거 `Input` + 히스토리 드롭다운).
+/// 경로 표시/편집 필드 — 공유 [`AutoComplete`] 위젯(트리거 `Input` + 히스토리 드롭다운).
 /// 비편집=경로 표시(text-secondary), 클릭=편집모드 진입 → recent 캐시가 드롭다운으로 펼쳐진다.
 /// 키보드: ↑/↓ active 행 이동 · Enter=active 경로/버퍼 navigate · Esc=닫고 원복.
 fn draw_path_field(
@@ -1162,7 +1163,7 @@ fn draw_path_field(
         active,
     } = addr;
 
-    // 후보 = 최근 경로(최신순). combobox 는 `&[&str]` 을 받는다.
+    // 후보 = 최근 경로(최신순). AutoComplete 는 `&[&str]` 을 받는다.
     let entries: Vec<&str> = recent.iter().map(String::as_str).collect();
 
     // 선두/후보 파일 아이콘 — 베이크된 FILE 벡터. Input/MenuItem 이 넘겨준 정사각 rect
@@ -1180,8 +1181,13 @@ fn draw_path_field(
     let placeholder = tr.t("markdown.addr.placeholder");
     let empty_label = tr.t("markdown.addr.no_recent");
 
-    let mut combo = Combobox::new("md_addr")
+    // 주소창은 v1 동작 유지 — 편집 진입 시 최근 목록을 필터 없이 그대로 노출한다
+    // (버퍼=현재 경로라 substring 필터를 켜면 빈 목록이 됨). typeahead 필터 전환은
+    // PathField 이관(후속 TODO)에서 clear-on-focus 와 함께 붙인다.
+    let mut combo = AutoComplete::new("md_addr")
         .mono(true)
+        .match_mode(MatchMode::None)
+        .highlight(false)
         .placeholder(placeholder)
         .empty_label(empty_label)
         .width(width)
@@ -1199,10 +1205,8 @@ fn draw_path_field(
     *editing = out.response.has_focus();
 
     match addr_outcome(out.action, out.response.lost_focus()) {
-        AddrOutcome::NavigatePick(i) => {
-            if let Some(path) = recent.get(i) {
-                *buffer = path.clone();
-            }
+        AddrOutcome::NavigatePick(path) => {
+            *buffer = path;
             *pending_navigate = Some(buffer.clone());
         }
         AddrOutcome::NavigateBuffer => {
@@ -1221,27 +1225,28 @@ fn draw_path_field(
     }
 }
 
-/// 주소창 확정 결정 (순수 — 단위테스트로 격리). combobox 행위 + singleline 포커스 이탈을
-/// 이동/원복/무동작으로 매핑한다. Esc/선택/Enter 없이 포커스만 잃으면 편집 취소로 원복한다
-/// (현행 동작 보존).
+/// 주소창 확정 결정 (순수 — 단위테스트로 격리). AutoComplete 행위 + singleline 포커스
+/// 이탈을 이동/원복/무동작으로 매핑한다. Esc/선택/Enter 없이 포커스만 잃으면 편집 취소로
+/// 원복한다 (현행 동작 보존).
 #[derive(Debug, PartialEq, Eq)]
 enum AddrOutcome {
     None,
     /// 현재 버퍼로 이동(active 행 없이 Enter).
     NavigateBuffer,
-    /// active 후보 행 경로로 이동(행 클릭 / Enter-on-active).
-    NavigatePick(usize),
+    /// 선택된 후보 경로로 이동(행 클릭 / Enter-on-active). AutoComplete 가 확정 문자열을
+    /// 직접 주므로 인덱스 역매핑이 없다.
+    NavigatePick(String),
     /// 원복(Esc, 또는 확정 없는 포커스 이탈).
     Revert,
 }
 
-fn addr_outcome(action: ComboboxAction, lost_focus: bool) -> AddrOutcome {
+fn addr_outcome(action: AutoCompleteAction, lost_focus: bool) -> AddrOutcome {
     match action {
-        ComboboxAction::Cancel => AddrOutcome::Revert,
-        ComboboxAction::Pick(i) => AddrOutcome::NavigatePick(i),
-        ComboboxAction::Submit => AddrOutcome::NavigateBuffer,
-        ComboboxAction::None | ComboboxAction::Edited if lost_focus => AddrOutcome::Revert,
-        ComboboxAction::None | ComboboxAction::Edited => AddrOutcome::None,
+        AutoCompleteAction::Cancel => AddrOutcome::Revert,
+        AutoCompleteAction::Pick(path) => AddrOutcome::NavigatePick(path),
+        AutoCompleteAction::Submit => AddrOutcome::NavigateBuffer,
+        AutoCompleteAction::None | AutoCompleteAction::Edited if lost_focus => AddrOutcome::Revert,
+        AutoCompleteAction::None | AutoCompleteAction::Edited => AddrOutcome::None,
     }
 }
 
@@ -1527,17 +1532,20 @@ mod tests {
     fn addr_outcome_submit_navigates_buffer() {
         // active 행 없이 Enter → 현재 버퍼 이동.
         assert_eq!(
-            addr_outcome(ComboboxAction::Submit, true),
+            addr_outcome(AutoCompleteAction::Submit, true),
             AddrOutcome::NavigateBuffer
         );
     }
 
     #[test]
     fn addr_outcome_pick_navigates_row() {
-        // active 행 Enter / 행 클릭 → 그 후보 경로 이동.
+        // active 행 Enter / 행 클릭 → 그 후보 경로 이동(확정 문자열 직접 전달).
         assert_eq!(
-            addr_outcome(ComboboxAction::Pick(2), true),
-            AddrOutcome::NavigatePick(2)
+            addr_outcome(
+                AutoCompleteAction::Pick("/docs/readme.md".to_string()),
+                true
+            ),
+            AddrOutcome::NavigatePick("/docs/readme.md".to_string())
         );
     }
 
@@ -1545,11 +1553,11 @@ mod tests {
     fn addr_outcome_cancel_reverts() {
         // Esc → 원복(포커스 유지/이탈 무관).
         assert_eq!(
-            addr_outcome(ComboboxAction::Cancel, false),
+            addr_outcome(AutoCompleteAction::Cancel, false),
             AddrOutcome::Revert
         );
         assert_eq!(
-            addr_outcome(ComboboxAction::Cancel, true),
+            addr_outcome(AutoCompleteAction::Cancel, true),
             AddrOutcome::Revert
         );
     }
@@ -1558,11 +1566,11 @@ mod tests {
     fn addr_outcome_blur_without_confirm_reverts() {
         // 확정 없이 포커스만 잃으면 편집 취소 → 원복.
         assert_eq!(
-            addr_outcome(ComboboxAction::None, true),
+            addr_outcome(AutoCompleteAction::None, true),
             AddrOutcome::Revert
         );
         assert_eq!(
-            addr_outcome(ComboboxAction::Edited, true),
+            addr_outcome(AutoCompleteAction::Edited, true),
             AddrOutcome::Revert
         );
     }
@@ -1570,9 +1578,12 @@ mod tests {
     #[test]
     fn addr_outcome_typing_is_none() {
         // 포커스 유지 중 편집/무입력 → 무동작(드롭다운 열림 유지).
-        assert_eq!(addr_outcome(ComboboxAction::None, false), AddrOutcome::None);
         assert_eq!(
-            addr_outcome(ComboboxAction::Edited, false),
+            addr_outcome(AutoCompleteAction::None, false),
+            AddrOutcome::None
+        );
+        assert_eq!(
+            addr_outcome(AutoCompleteAction::Edited, false),
             AddrOutcome::None
         );
     }

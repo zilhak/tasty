@@ -316,12 +316,12 @@ pub fn pages() -> Vec<Page> {
                             components::prim_forms::draw,
                         ),
                         spec(
-                            "combobox",
-                            "Combobox",
+                            "autocomplete",
+                            "AutoComplete",
                             Some(
-                                "Editable field + recent-history dropdown — mono path, middle-ellipsis",
+                                "Free-text trigger + candidate dropdown (typeahead) — substring filter, match highlight, max-height scroll",
                             ),
-                            components::prim_combobox::draw,
+                            components::prim_autocomplete::draw,
                         ),
                     ],
                 ),
