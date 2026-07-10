@@ -432,6 +432,7 @@ fn custom_tab_slot_key_switches_correct_tab() {
         true,  // ctrl
         false, // shift
         false, // alt
+        false, // option
     );
     assert!(consumed);
     assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 2);
@@ -453,6 +454,7 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         true,
         false,
         false,
+        false,
     ));
     assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
     // ctrl+h → 이전 탭.
@@ -462,6 +464,7 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         &kb,
         &k_char("h"),
         true,
+        false,
         false,
         false,
     ));
@@ -483,7 +486,8 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         &k_char("j"),
         false,
         false,
-        true, // alt
+        true,  // alt
+        false, // option
     ));
     assert_eq!(state.active_workspace, 1);
     // alt+k → 이전.
@@ -495,6 +499,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         false,
         false,
         true,
+        false,
     ));
     assert_eq!(state.active_workspace, 0);
 }
@@ -515,6 +520,7 @@ fn workspace_slot_key_switches_workspace() {
         false,
         false,
         true,
+        false,
     ));
     assert_eq!(state.active_workspace, 1);
 }
@@ -535,6 +541,7 @@ fn wrong_modifier_and_unbound_key_return_false() {
         false,
         false,
         false,
+        false,
     ));
     // ctrl + "z"(어떤 슬롯/next/prev 도 아님) → false.
     assert!(!MainView::handle_numeric_switch_shortcuts(
@@ -545,6 +552,67 @@ fn wrong_modifier_and_unbound_key_return_false() {
         true,
         false,
         false,
+        false,
     ));
     assert_eq!(state.focused_pane(&engine).unwrap().active_tab, before);
+}
+
+#[test]
+fn category_combo_routes_to_category_switch() {
+    // 기본 카테고리 modifier = ctrl+shift(독립 축). ctrl+shift+숫자 → 카테고리 전환.
+    let (mut state, mut engine) = fresh_state();
+    engine.settings.general.workspace_categories_enabled = true;
+    add_test_workspace(&mut state, &mut engine); // ws0 (normal)
+    add_test_workspace(&mut state, &mut engine); // ws1
+    let cat = engine.create_category("Services").unwrap();
+    let ws1_id = engine.workspaces[1].id;
+    engine.set_workspace_category(ws1_id, cat).unwrap();
+    state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
+    let kb = crate::settings::KeybindingSettings::default(); // cat=ctrl+shift, slot "2"=섹션 index 1
+    // ctrl+shift+"2" → 섹션 index 1(Services) 로 카테고리 전환 → ws1 착지.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("2"),
+        true,  // ctrl
+        true,  // shift
+        false, // alt
+        false, // option
+    ));
+    assert_eq!(state.active_workspace, 1);
+}
+
+#[test]
+fn axis_combos_do_not_cross_route() {
+    // ctrl 단독 → Tab, ctrl+shift(카테고리 축) → 탭/워크스페이스로 새지 않음.
+    let (mut state, mut engine) = fresh_state();
+    state.add_tab(&mut engine).unwrap(); // 2 tabs
+    state.goto_tab_in_pane(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default();
+    let before = state.focused_pane(&engine).unwrap().active_tab;
+    // ctrl+shift+"2": categories off → Category 대상이지만 비소비(false), 탭 전환 없음.
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("2"),
+        true,  // ctrl
+        true,  // shift
+        false, // alt
+        false, // option
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, before);
+    // ctrl 단독+"2" → 탭 전환 정상(2번째 탭 = index 1).
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("2"),
+        true,  // ctrl
+        false, // shift
+        false, // alt
+        false, // option
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
 }

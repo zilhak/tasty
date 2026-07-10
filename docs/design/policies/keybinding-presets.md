@@ -34,6 +34,7 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 | focus_pane_next/prev | ctrl+] / ctrl+[ | (동일) | (동일) | (동일) |
 | focus_surface_next/prev | alt+] / alt+[ | (동일) | (동일) | (동일) |
 | tab_switch_modifier / workspace_switch_modifier | ctrl / alt | (동일) | (동일) | (동일) |
+| category_switch_modifier | ctrl+shift | (동일) | (동일) | (동일) |
 
 > Pane/Surface 분할·포커스는 tasty 고유라 전 프리셋 동일. `next_tab`/`prev_tab` 은 `ctrl+tab`/`alt+tab` 이 OS 단축키와 충돌해 기본값 없음.
 

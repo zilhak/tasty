@@ -408,7 +408,41 @@ fn all_presets_share_quick_switch_defaults() {
             kb.workspace_switch_prev_key, "k",
             "preset '{name}' workspace prev"
         );
+        assert_eq!(
+            kb.category_switch_slot_keys,
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+            "preset '{name}' category slot keys"
+        );
     }
+}
+
+/// 4 프리셋 전부 축별 modifier 기본값이 탭=ctrl / 워크스페이스=alt / 카테고리=ctrl+shift.
+#[test]
+fn all_presets_share_switch_modifier_defaults() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(
+            kb.tab_switch_modifier, "ctrl",
+            "preset '{name}' tab modifier"
+        );
+        assert_eq!(
+            kb.workspace_switch_modifier, "alt",
+            "preset '{name}' workspace modifier"
+        );
+        assert_eq!(
+            kb.category_switch_modifier, "ctrl+shift",
+            "preset '{name}' category modifier"
+        );
+    }
+}
+
+/// 구 config(카테고리 modifier 필드 없음) 로드 시 serde default 로 `"ctrl+shift"` 채워짐.
+/// 마이그레이션이 아니라 로드가 깨지지 않게만 하는 단순 default.
+#[test]
+fn missing_category_modifier_falls_back_to_ctrl_shift() {
+    let toml_str = "tab_switch_modifier = \"ctrl\"\nworkspace_switch_modifier = \"alt\"\n";
+    let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+    assert_eq!(kb.category_switch_modifier, "ctrl+shift");
 }
 
 /// index 기반 slot/raw-key accessor round-trip.

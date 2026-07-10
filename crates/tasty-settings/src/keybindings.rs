@@ -28,10 +28,19 @@ pub struct KeybindingSettings {
     pub focus_pane_prev: Vec<String>,
     pub focus_surface_next: Vec<String>,
     pub focus_surface_prev: Vec<String>,
-    /// Modifier for tab switch (number keys): "ctrl" or "alt"
+    /// Modifier **combo** for tab switch (number keys). 단일 토큰(`"ctrl"`) 또는
+    /// 조합(`"ctrl+shift"`)을 허용한다 — 매칭은 `parse_binding` 기반 4축 조합으로 한다.
     pub tab_switch_modifier: String,
-    /// Modifier for workspace switch (number keys): "ctrl" or "alt"
+    /// Modifier **combo** for workspace switch (number keys). 단일 토큰 또는 조합.
     pub workspace_switch_modifier: String,
+    /// Modifier **combo** for category switch (number keys). 세 축 중 카테고리 축의
+    /// 독립 modifier — 과거 `workspace_switch_modifier`+Shift 파생을 대체한 1급 필드.
+    /// 기본값 `"ctrl+shift"`(macOS 스크린샷 `⌘⇧3/4/5` 예약과 겹치지 않음).
+    ///
+    /// ⚠️ 신규 필드라 구 config 에는 없다 — struct 레벨 `#[serde(default)]` 만으로는
+    /// `String::default()`(빈 문자열)로 채워져 매칭이 조용히 죽는다. 전용 default fn 필수.
+    #[serde(default = "default_category_switch_modifier")]
+    pub category_switch_modifier: String,
     /// Toggle sidebar visibility (completely hidden/shown).
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
@@ -131,8 +140,8 @@ pub struct KeybindingSettings {
     #[serde(default = "default_workspace_slot_keys")]
     pub workspace_switch_slot_keys: [String; 9],
     /// 카테고리 quick-switch 슬롯 1~10번의 raw 키(1~9 후 0 = 10번째). dispatch 시점에
-    /// `workspace_switch_modifier` + Shift 와 조합된다(`Alt+Shift`, T4WS ②⑤). folders 기능
-    /// on 일 때만 유효. 기본값 `["1".."9","0"]`.
+    /// `category_switch_modifier`(기본 `ctrl+shift`) 와 조합된다. folders 기능 on 일 때만
+    /// 유효. 기본값 `["1".."9","0"]`.
     #[serde(default = "default_category_slot_keys")]
     pub category_switch_slot_keys: [String; 10],
     /// 탭 quick-switch "다음 탭" raw 키. 기본값 `"l"`(vim). `next_tab` 과 별개 필드.
@@ -186,6 +195,14 @@ fn default_workspace_next_key() -> String {
 /// 워크스페이스 quick-switch "이전" 기본 키 `"k"`(vim).
 fn default_workspace_prev_key() -> String {
     "k".to_string()
+}
+
+/// 카테고리 quick-switch modifier 조합 기본값 `"ctrl+shift"`.
+///
+/// 4 프리셋 공통. macOS 시스템 스크린샷 예약(`⌘⇧3/4/5/6`, tasty 가 가로챌 수 없음)과
+/// 겹치지 않는 안전한 조합이다. 구 config(카테고리 필드 없음) 로드 시 이 값으로 채워진다.
+fn default_category_switch_modifier() -> String {
+    "ctrl+shift".to_string()
 }
 
 impl Default for KeybindingSettings {

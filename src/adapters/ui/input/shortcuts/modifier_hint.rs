@@ -26,8 +26,9 @@
 //! - Shift **단독** 조합: TUI 마우스 캡처 임시 우회(Shift+드래그=로컬 선택 등).
 //!   실 동작은 `shift_key()` 만 검사해 Ctrl+Shift 등에도 우회가 걸리지만, 안내 행은
 //!   Shift 단독 섹션에만 붙여 조합마다 중복 표시되지 않게 한다.
-//! - `tab_switch_modifier` 단독 조합: 탭 전환 + 숫자 오버레이.
-//! - `workspace_switch_modifier` 단독 조합: 워크스페이스 전환 + 숫자 오버레이.
+//! - `tab_switch_modifier` 조합: 탭 전환 + 숫자 오버레이.
+//! - `workspace_switch_modifier` 조합: 워크스페이스 전환 + 숫자 오버레이.
+//! - `category_switch_modifier` 조합(기본 `ctrl+shift`): 카테고리 전환 + 헤더 숫자 오버레이(folders on).
 //! - `link_click_modifier`(`general`) 단독 조합: modifier+클릭 링크 열기. `"none"` 이면 역할 없음.
 //!
 //! 빈 조합(바인딩·역할 모두 없음)도 섹션을 **유지**한다 — 오버레이가 ChordHead 아래에
@@ -119,6 +120,27 @@ impl Combo {
         (self.size(), prios)
     }
 
+    /// modifier-only 조합 문자열(`"ctrl"` / `"alt"` / `"ctrl+shift"` / `"option+shift"`)을
+    /// [`Combo`] 로 파싱한다. quick-switch 축 modifier([`KeybindingSettings::tab_switch_modifier`]
+    /// 등)와 hint 역할 주입이 공유하는 **단일 소스** — `if shift` 하드코딩을 대체한다.
+    ///
+    /// modifier 토큰(`ctrl`/`shift`/`alt`/`option`)은 `+` 를 키로 갖지 않으므로 `parse_binding`
+    /// 의 프리픽스-스트립 대신 `split('+')` 로 충분하다(구분자 충돌 없음). 알 수 없는 토큰이
+    /// 하나라도 섞이거나(`"none"`·키 문자) 빈 문자열이면 `None`(=역할/매칭 없음).
+    pub fn parse_modifiers(s: &str) -> Option<Combo> {
+        let mut c = Combo::default();
+        for part in s.split('+') {
+            match part.trim().to_ascii_lowercase().as_str() {
+                "ctrl" => c.ctrl = true,
+                "shift" => c.shift = true,
+                "alt" => c.alt = true,
+                "option" => c.option = true,
+                _ => return None,
+            }
+        }
+        if c.size() == 0 { None } else { Some(c) }
+    }
+
     /// 조합 이름 — 우선순위 순서로 `+` 연결. 예) `{ctrl,shift}` → `"ctrl+shift"`.
     /// 테스트·디버그용. UI 표시 문자열이 아니다(그건 03 이 토큰별로 그린다).
     pub fn name(&self) -> String {
@@ -167,6 +189,17 @@ fn all_axis_combos() -> Vec<Combo> {
     out
 }
 
+/// 사용 가능한 축 전체의 비어있지 않은 조합을 정렬해 반환(OS-aware).
+///
+/// 설정 UI 의 quick-switch modifier 피커가 소비한다 — 열거된 유효 조합만 선택 가능하게
+/// 해 쓰레기 값 저장을 원천 차단한다(decision 1). macOS 는 `option` 축 포함(15개),
+/// 그 외는 제외(7개). [`Combo::name`] 이 저장용 정규 문자열, `format_display` 가 표시용.
+pub fn all_modifier_combos() -> Vec<Combo> {
+    let mut combos = all_axis_combos();
+    combos.sort_by_key(|c| c.sort_key());
+    combos
+}
+
 /// 눌린 조합 `held` 를 부분집합으로 포함하는 모든 조합을 정렬해 반환.
 ///
 /// `held` 가 단일 축이면 그 축을 포함하는 조합 전체(macOS 8개·비-macOS 4개), 다축이면
@@ -212,7 +245,7 @@ pub enum HintRole {
     TabSwitch,
     /// `workspace_switch_modifier` 단독 — 워크스페이스 전환 + 숫자 오버레이.
     WorkspaceSwitch,
-    /// `workspace_switch_modifier`+Shift — 카테고리 전환 + 헤더 숫자 오버레이(folders on).
+    /// `category_switch_modifier`(기본 `ctrl+shift`) — 카테고리 전환 + 헤더 숫자 오버레이(folders on).
     CategorySwitch,
     /// `link_click_modifier` 단독 — modifier+클릭 링크 열기.
     LinkClick,
@@ -282,21 +315,6 @@ impl PluginBindingInput {
             title_i18n_key: entry.title_i18n_key.clone(),
             bindings,
         }
-    }
-}
-
-/// modifier 이름 토큰(`"ctrl"`/`"alt"`) → 단독 축 조합. 그 외(빈 문자열·`"none"` 등)는 None.
-fn single_axis_combo(token: &str) -> Option<Combo> {
-    match token.to_ascii_lowercase().as_str() {
-        "ctrl" => Some(Combo {
-            ctrl: true,
-            ..Default::default()
-        }),
-        "alt" => Some(Combo {
-            alt: true,
-            ..Default::default()
-        }),
-        _ => None,
     }
 }
 
@@ -410,10 +428,12 @@ pub fn build_hint_sections(
         }
     }
 
-    // 4. 특수 역할 주입 (설정 현재값 기준).
-    let tab_combo = single_axis_combo(&kb.tab_switch_modifier);
-    let ws_combo = single_axis_combo(&kb.workspace_switch_modifier);
-    let link_combo = single_axis_combo(link_click_modifier); // "none" → None
+    // 4. 특수 역할 주입 (설정 현재값 기준). 세 축 각각의 독립 조합을 파싱해 매칭한다
+    //    (과거 `Combo{shift:true,..ws}` 카테고리 파생 하드코딩 제거 — 카테고리도 1급 축).
+    let tab_combo = Combo::parse_modifiers(&kb.tab_switch_modifier);
+    let ws_combo = Combo::parse_modifiers(&kb.workspace_switch_modifier);
+    let cat_combo = Combo::parse_modifiers(&kb.category_switch_modifier);
+    let link_combo = Combo::parse_modifiers(link_click_modifier); // "none" → None
     for sec in &mut sections {
         // Shift **단독** 조합에만 → 마우스 캡처 우회 안내.
         // (실 동작은 `shift_key()` 만 검사해 Ctrl+Shift 등에도 우회가 걸리지만, 안내 행은
@@ -427,14 +447,9 @@ pub fn build_hint_sections(
         if Some(sec.combo) == ws_combo {
             sec.roles.push(HintRole::WorkspaceSwitch);
         }
-        // 워크스페이스축 + Shift → 카테고리 전환(folders 기능 on 전제, 디자인 E).
-        if categories_enabled {
-            if let Some(ws) = ws_combo {
-                let cat_combo = Combo { shift: true, ..ws };
-                if sec.combo == cat_combo {
-                    sec.roles.push(HintRole::CategorySwitch);
-                }
-            }
+        // 카테고리 축 조합(folders 기능 on 전제, 디자인 E).
+        if categories_enabled && Some(sec.combo) == cat_combo {
+            sec.roles.push(HintRole::CategorySwitch);
         }
         if Some(sec.combo) == link_combo {
             sec.roles.push(HintRole::LinkClick);
@@ -625,20 +640,48 @@ mod tests {
     }
 
     #[test]
-    fn alt_shift_section_has_category_switch_role_when_folders_on() {
-        // Alt 홀드 + folders on → 워크스페이스축(alt)+Shift 섹션에 CategorySwitch 역할.
-        let on = build_hint_sections(alt(), &kb(), "ctrl", true, &[]);
+    fn category_combo_section_has_category_switch_role_when_folders_on() {
+        // 기본 카테고리 modifier = ctrl+shift → Ctrl 홀드 + folders on 시 ctrl+shift 섹션에
+        // CategorySwitch 역할(과거 workspace축+Shift 파생 제거, 독립 축 매칭).
+        let on = build_hint_sections(ctrl(), &kb(), "ctrl", true, &[]);
         let cat = on
             .iter()
-            .find(|s| s.combo.name() == "alt+shift")
-            .expect("alt+shift 섹션 존재");
+            .find(|s| s.combo.name() == "ctrl+shift")
+            .expect("ctrl+shift 섹션 존재");
         assert!(cat.roles.contains(&HintRole::CategorySwitch));
         // folders off → 역할 없음.
-        let off = build_hint_sections(alt(), &kb(), "ctrl", false, &[]);
+        let off = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);
         assert!(
             off.iter()
                 .all(|s| !s.roles.contains(&HintRole::CategorySwitch))
         );
+    }
+
+    #[test]
+    fn parse_modifiers_handles_single_and_combo_tokens() {
+        assert_eq!(Combo::parse_modifiers("ctrl"), Some(ctrl()));
+        assert_eq!(Combo::parse_modifiers("alt"), Some(alt()));
+        assert_eq!(
+            Combo::parse_modifiers("ctrl+shift"),
+            Some(Combo {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            })
+        );
+        // 표기 순서 무관.
+        assert_eq!(
+            Combo::parse_modifiers("shift+ctrl"),
+            Some(Combo {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            })
+        );
+        // 알 수 없는 토큰·"none"·빈 문자열 → None.
+        assert_eq!(Combo::parse_modifiers("none"), None);
+        assert_eq!(Combo::parse_modifiers(""), None);
+        assert_eq!(Combo::parse_modifiers("ctrl+x"), None);
     }
 
     #[test]

@@ -37,6 +37,8 @@ pub enum BareTarget {
     TabSlot(usize),
     /// 워크스페이스 quick-switch 슬롯 `idx`(0~8 → 표시 "1번"~"9번").
     WorkspaceSlot(usize),
+    /// 카테고리 quick-switch 슬롯 `idx`(0~9 → 표시 "1번"~"10번", reserved normal=1).
+    CategorySlot(usize),
     TabNext,
     TabPrev,
     WorkspaceNext,
@@ -204,6 +206,19 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 QuickSwitchKind::Workspace,
+            );
+
+            vspace(ui, th.spacing_sm);
+            ui.separator();
+            vspace(ui, th.spacing_xs);
+
+            draw_quick_switch_section(
+                ui,
+                &mut settings.keybindings,
+                recording_field,
+                pending_binding,
+                &captured,
+                QuickSwitchKind::Category,
             );
         }
         KeybindingsSubTab::Pane => {

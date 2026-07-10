@@ -20,6 +20,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::adapters::ui::input::shortcuts::modifier_hint::Combo;
 use crate::settings::KeybindingSettings;
 
 /// 키캡 한 변 (= 디자인 `switch-overlay-size` = `kbd-size` = size-16). 갤러리 num_cap·
@@ -35,8 +36,8 @@ pub enum SwitchTarget {
     Tab,
     /// 워크스페이스 전환 (`workspace_switch_modifier`, 기본 Alt).
     Workspace,
-    /// 카테고리 전환 (`workspace_switch_modifier` + Shift, 기본 Alt+Shift, T4WS ②⑤).
-    /// folders 기능 on 일 때만 의미. modifier-exclusive: Workspace(단독)와 동시 렌더 없음.
+    /// 카테고리 전환 (`category_switch_modifier`, 기본 `ctrl+shift`).
+    /// folders 기능 on 일 때만 의미. modifier-exclusive: 세 축 조합이 충돌 없이 배타.
     Category,
 }
 
@@ -55,38 +56,39 @@ pub struct SwitchOverlayState {
 
 /// 현재 눌린 modifier 조합으로 switch overlay 의 대상을 판정하는 **단일 소스**.
 ///
-/// 단축키 소비처 `input/shortcuts/numeric.rs` 와 **완전히 동일한 조건/우선순위**:
-/// tab 을 먼저 검사하고, 아니면 워크스페이스축(`workspace_switch_modifier`)을 본다 —
-/// 그 키 + Shift = `Category`, 단독 = `Workspace`(Shift 유무로 상호 배타). 축과 무관한
-/// modifier 가 섞이면 `None`. `Category` 의 folders 기능 게이트는 호출측이 판단한다.
-/// `ctrl`/`shift`/`alt` 는 플랫폼 정규화가 끝난 값을 받는다 (macOS super→alt 매핑은
-/// 호출측 `dispatch.rs`/래퍼에서 처리됨).
+/// 세 축(탭/워크스페이스/카테고리) 각각의 독립 modifier **조합**([`Combo::parse_modifiers`]
+/// 로 파싱)과 현재 눌린 조합이 **정확히 일치**할 때만 그 대상을 돌려준다. 단일 토큰
+/// (`"ctrl"`)은 조합의 부분집합이므로 그대로 동작한다. 정확 일치라 축이 서로 새지 않고
+/// (`ctrl` 단독 ≠ `ctrl+shift`), 우선순위 로직이 필요 없다 — 두 축이 같은 조합을 갖는
+/// 상태는 설정 단계 충돌 차단으로 애초에 저장되지 않는다. `Category` 의 folders 기능
+/// 게이트는 호출측이 판단한다.
+///
+/// `ctrl`/`shift`/`alt`/`option` 은 플랫폼 정규화가 끝난 값을 받는다: `alt` 는 `"alt"`
+/// 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그
+/// 외 항상 false). 정규화는 호출측 `dispatch.rs`/`main.rs`/래퍼에서 처리된다.
 pub fn switch_target_for(
     kb: &KeybindingSettings,
     ctrl: bool,
     shift: bool,
     alt: bool,
+    option: bool,
 ) -> Option<SwitchTarget> {
-    let tab_matches = match kb.tab_switch_modifier.to_lowercase().as_str() {
-        "alt" => alt && !ctrl && !shift,
-        // 기본 ctrl.
-        _ => ctrl && !shift && !alt,
+    let held = Combo {
+        ctrl,
+        alt,
+        option,
+        shift,
     };
-    if tab_matches {
+    // 축 순서(탭→워크스페이스→카테고리)는 표기용일 뿐 — 충돌 차단으로 배타가 보장돼
+    // 어느 순서든 결과가 같다.
+    if Combo::parse_modifiers(&kb.tab_switch_modifier) == Some(held) {
         return Some(SwitchTarget::Tab);
     }
-    // 워크스페이스축 물리 키(토큰 기준)와 그 반대 축 키. Category = 이 키 + Shift,
-    // Workspace = 이 키 단독. Shift 유무로 두 대상이 상호 배타(modifier-exclusive).
-    let (ws_key, ws_other) = match kb.workspace_switch_modifier.to_lowercase().as_str() {
-        "ctrl" => (ctrl, alt),
-        // 기본 alt.
-        _ => (alt, ctrl),
-    };
-    if ws_key && !ws_other {
-        if shift {
-            return Some(SwitchTarget::Category);
-        }
+    if Combo::parse_modifiers(&kb.workspace_switch_modifier) == Some(held) {
         return Some(SwitchTarget::Workspace);
+    }
+    if Combo::parse_modifiers(&kb.category_switch_modifier) == Some(held) {
+        return Some(SwitchTarget::Category);
     }
     None
 }
@@ -102,22 +104,22 @@ pub fn switch_target_for(
 /// (egui `mods.alt`)은 `"alt"` 토큰이 아니므로 무시한다.
 pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
     #[cfg(target_os = "macos")]
-    let alt = mods.mac_cmd;
+    let (alt, option) = (mods.mac_cmd, mods.alt);
     #[cfg(not(target_os = "macos"))]
-    let alt = mods.alt;
-    switch_target_for(kb, mods.ctrl, mods.shift, alt) == Some(SwitchTarget::Workspace)
+    let (alt, option) = (mods.alt, false);
+    switch_target_for(kb, mods.ctrl, mods.shift, alt, option) == Some(SwitchTarget::Workspace)
 }
 
-/// 현재 눌린 modifier 가 카테고리 전환(`workspace_switch_modifier` + Shift, 기본 Alt+Shift)과
+/// 현재 눌린 modifier 가 카테고리 전환(`category_switch_modifier`, 기본 `ctrl+shift`)과
 /// 일치하는지 (사이드바 카테고리 키캡). [`workspace_switch_held`] 와 동일한 정규화
-/// (`"alt"` 토큰 = macOS Command)를 거쳐 [`switch_target_for`] 에 넘긴다. folders 기능
-/// 게이트는 호출측이 별도로 판단한다(이 함수는 modifier 만 본다).
+/// (`"alt"` 토큰 = macOS Command, `"option"` = macOS Option)를 거쳐 [`switch_target_for`]
+/// 에 넘긴다. folders 기능 게이트는 호출측이 별도로 판단한다(이 함수는 modifier 만 본다).
 pub fn category_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
     #[cfg(target_os = "macos")]
-    let alt = mods.mac_cmd;
+    let (alt, option) = (mods.mac_cmd, mods.alt);
     #[cfg(not(target_os = "macos"))]
-    let alt = mods.alt;
-    switch_target_for(kb, mods.ctrl, mods.shift, alt) == Some(SwitchTarget::Category)
+    let (alt, option) = (mods.alt, false);
+    switch_target_for(kb, mods.ctrl, mods.shift, alt, option) == Some(SwitchTarget::Category)
 }
 
 /// 탭 슬롯 `index` 에 표시할 키캡 문자. 설정된 `tab_switch_slot_keys[index]` 를 그대로
@@ -312,8 +314,9 @@ mod tests {
             mods_mac(true, true, false, false),
             &kb
         ));
-        // ⌘+⌥ → 표시됨 — 실제 전환도 super_key 기준이라 발동한다(표시=동작 일치).
-        assert!(workspace_switch_held(
+        // ⌘+⌥ → 표시 안 됨 — option 이 1급 축이 된 뒤로 held=alt+option 은 ws("alt")와
+        // 정확 일치하지 않는다. 실제 전환도 option 을 축으로 넘기므로 표시=동작 일치.
+        assert!(!workspace_switch_held(
             mods_mac(false, true, true, false),
             &kb
         ));
@@ -328,26 +331,36 @@ mod tests {
     }
 
     #[test]
-    fn switch_target_default_ctrl_is_tab() {
-        let kb = kb_with("ctrl", "alt");
-        // ctrl 단독 → Tab, alt 단독 → Workspace.
+    fn switch_target_default_axes() {
+        // 기본 프리셋: 탭=ctrl, 워크스페이스=alt, 카테고리=ctrl+shift.
+        let kb = KeybindingSettings::default();
         assert_eq!(
-            switch_target_for(&kb, true, false, false),
+            switch_target_for(&kb, true, false, false, false),
             Some(SwitchTarget::Tab)
         );
         assert_eq!(
-            switch_target_for(&kb, false, false, true),
+            switch_target_for(&kb, false, false, true, false),
             Some(SwitchTarget::Workspace)
+        );
+        // ctrl+shift → Category (독립 축).
+        assert_eq!(
+            switch_target_for(&kb, true, true, false, false),
+            Some(SwitchTarget::Category)
+        );
+        // ctrl 단독은 카테고리(ctrl+shift)와 정확 일치하지 않으므로 Tab 이지 Category 아님.
+        assert_ne!(
+            switch_target_for(&kb, true, false, false, false),
+            Some(SwitchTarget::Category)
         );
     }
 
     #[test]
     fn switch_target_mixed_modifier_is_none() {
-        let kb = kb_with("ctrl", "alt");
-        // 다른 modifier 가 섞이면 단축키와 동일하게 미표시(None).
-        assert_eq!(switch_target_for(&kb, true, true, false), None);
-        assert_eq!(switch_target_for(&kb, true, false, true), None);
-        assert_eq!(switch_target_for(&kb, false, false, false), None);
+        let kb = KeybindingSettings::default(); // 탭=ctrl, ws=alt, cat=ctrl+shift
+        // 어느 축과도 정확 일치하지 않는 조합 → None.
+        assert_eq!(switch_target_for(&kb, true, false, true, false), None); // ctrl+alt
+        assert_eq!(switch_target_for(&kb, false, true, false, false), None); // shift 단독
+        assert_eq!(switch_target_for(&kb, false, false, false, false), None); // 무 modifier
     }
 
     #[test]
@@ -355,41 +368,26 @@ mod tests {
         // tab=alt / ws=ctrl 로 재바인딩하면 대상도 반대로.
         let kb = kb_with("alt", "ctrl");
         assert_eq!(
-            switch_target_for(&kb, false, false, true),
+            switch_target_for(&kb, false, false, true, false),
             Some(SwitchTarget::Tab)
         );
         assert_eq!(
-            switch_target_for(&kb, true, false, false),
+            switch_target_for(&kb, true, false, false, false),
             Some(SwitchTarget::Workspace)
         );
     }
 
     #[test]
-    fn switch_target_alt_shift_is_category() {
-        let kb = kb_with("ctrl", "alt"); // tab=ctrl, ws=alt
-        // alt 단독 → Workspace, alt+shift → Category (Shift 유무로 상호 배타).
+    fn switch_target_category_is_independent_axis() {
+        // 카테고리 modifier 를 독립적으로 재바인딩(ws 파생 아님).
+        let mut kb = kb_with("ctrl", "alt");
+        kb.category_switch_modifier = "alt+shift".into();
+        // alt+shift → Category, ctrl+shift 는 이제 어느 축도 아님 → None.
         assert_eq!(
-            switch_target_for(&kb, false, false, true),
-            Some(SwitchTarget::Workspace)
-        );
-        assert_eq!(
-            switch_target_for(&kb, false, true, true),
+            switch_target_for(&kb, false, true, true, false),
             Some(SwitchTarget::Category)
         );
-        // ctrl+shift 는 워크스페이스축(alt)이 아니므로 카테고리 아님.
-        assert_eq!(switch_target_for(&kb, true, true, false), None);
-    }
-
-    #[test]
-    fn switch_target_category_follows_rebound_ws_modifier() {
-        // ws=ctrl 로 재바인딩하면 카테고리는 ctrl+shift.
-        let kb = kb_with("alt", "ctrl");
-        assert_eq!(
-            switch_target_for(&kb, true, true, false),
-            Some(SwitchTarget::Category)
-        );
-        // alt+shift 는 이제 tab 축(alt)+shift → tab 아님, ws 축(ctrl) 아님 → None.
-        assert_eq!(switch_target_for(&kb, false, true, true), None);
+        assert_eq!(switch_target_for(&kb, true, true, false, false), None);
     }
 
     #[test]

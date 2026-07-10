@@ -446,11 +446,12 @@ pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── Category switch overlay (Alt+Shift) ─────────────────────────────
+// ── Category switch overlay (Ctrl+Shift, 기본값) ─────────────────────
 //
 // 디자인 B/C (`overlays-shared.jsx` CatSwitchSidebarMock / CatSwitchRailMock).
-// workspace-switch(Alt) 와 **modifier-exclusive** — Alt+Shift 홀드 중에는 카테고리
-// 헤더만 키캡을 얻고, 워크스페이스 행은 status dot 을 그대로 유지한다.
+// 카테고리 축은 독립 `category_switch_modifier`(기본 `ctrl+shift`)를 가지며 workspace-switch
+// 와 **modifier-exclusive** — 카테고리 조합 홀드 중에는 카테고리 헤더만 키캡을 얻고,
+// 워크스페이스 행은 status dot 을 그대로 유지한다.
 //
 // - Full: 키캡은 카테고리 헤더 행 **우측 정렬**(`[chevron] LABEL … [cap]`). chevron
 //   은 접힘/자동확장(D) 을 나타내는 load-bearing 요소라 교체하지 않는다.
@@ -716,7 +717,7 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(
             ui,
             theme,
-            "Alt+Shift held — keycap right-aligned on each header",
+            "Ctrl+Shift held — keycap right-aligned on each header",
             |ui| full_cat(ui, theme, true),
         );
         spec::cluster(ui, theme, "released — collapsed rail", |ui| {
@@ -725,7 +726,7 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(
             ui,
             theme,
-            "Alt+Shift held — keycap centered on each --- boundary",
+            "Ctrl+Shift held — keycap centered on each --- boundary",
             |ui| rail_cat(ui, theme, true),
         );
     });
@@ -739,7 +740,10 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
             ("full placement", "right-aligned on header (keeps chevron)"),
             ("rail placement", "centered on the --- boundary"),
             ("range", "reserved normal = 1; 11th onward: none"),
-            ("exclusivity", "Alt+Shift ⇒ headers only; rows keep dots"),
+            (
+                "exclusivity",
+                "category combo ⇒ headers only; rows keep dots",
+            ),
             ("on switch", "auto-expand collapsed + land on last-active"),
         ],
         &[
@@ -764,8 +768,9 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Alt = 워크스페이스, Alt+Shift = 카테고리 — 두 오버레이는 상호 배타라 동시에 \
-         그려지지 않는다. 카테고리 헤더엔 교체할 status dot 이 없고 chevron 은 접힘/자동확장 \
+        "워크스페이스(`workspace_switch_modifier`)와 카테고리(`category_switch_modifier`, 기본 \
+         Ctrl+Shift)는 서로 다른 축의 조합이라 상호 배타 — 두 오버레이는 동시에 그려지지 \
+         않는다. 카테고리 헤더엔 교체할 status dot 이 없고 chevron 은 접힘/자동확장 \
          을 나타내는 load-bearing 요소이므로, 키캡은 헤더 우측에 덧붙고 chevron 을 건드리지 \
          않는다. reserved normal(\"Workspaces\")도 전환 대상(1) 이다.",
     );

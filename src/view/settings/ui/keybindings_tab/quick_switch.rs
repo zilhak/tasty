@@ -10,6 +10,7 @@
 //! - 캡처는 [`super::capture_bare_key`](modifier 금지)로 한다.
 //! - 충돌 검사는 합성 콤보를 일반 액션(`find_conflict`) + 다른 슬롯(자체 순회)과 비교한다.
 
+use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
 use crate::settings::KeybindingSettings;
 
@@ -27,14 +28,16 @@ const ROW_GAP: f32 = 4.0;
 pub(super) enum QuickSwitchKind {
     Tab,
     Workspace,
+    Category,
 }
 
 impl QuickSwitchKind {
-    /// 이 종류의 슬롯 개수 (탭 10, 워크스페이스 9).
+    /// 이 종류의 슬롯 개수 (탭 10, 워크스페이스 9, 카테고리 10).
     fn slot_count(self) -> usize {
         match self {
             QuickSwitchKind::Tab => 10,
             QuickSwitchKind::Workspace => 9,
+            QuickSwitchKind::Category => 10,
         }
     }
 
@@ -42,20 +45,24 @@ impl QuickSwitchKind {
         match self {
             QuickSwitchKind::Tab => BareTarget::TabSlot(idx),
             QuickSwitchKind::Workspace => BareTarget::WorkspaceSlot(idx),
+            QuickSwitchKind::Category => BareTarget::CategorySlot(idx),
         }
     }
 
-    fn next_target(self) -> BareTarget {
+    /// 다음/이전 raw 키 타겟. 카테고리 축은 next/prev 키가 없어 `None`.
+    fn next_target(self) -> Option<BareTarget> {
         match self {
-            QuickSwitchKind::Tab => BareTarget::TabNext,
-            QuickSwitchKind::Workspace => BareTarget::WorkspaceNext,
+            QuickSwitchKind::Tab => Some(BareTarget::TabNext),
+            QuickSwitchKind::Workspace => Some(BareTarget::WorkspaceNext),
+            QuickSwitchKind::Category => None,
         }
     }
 
-    fn prev_target(self) -> BareTarget {
+    fn prev_target(self) -> Option<BareTarget> {
         match self {
-            QuickSwitchKind::Tab => BareTarget::TabPrev,
-            QuickSwitchKind::Workspace => BareTarget::WorkspacePrev,
+            QuickSwitchKind::Tab => Some(BareTarget::TabPrev),
+            QuickSwitchKind::Workspace => Some(BareTarget::WorkspacePrev),
+            QuickSwitchKind::Category => None,
         }
     }
 
@@ -63,6 +70,7 @@ impl QuickSwitchKind {
         match self {
             QuickSwitchKind::Tab => "settings.keybindings.tab_switch_modifier_label",
             QuickSwitchKind::Workspace => "settings.keybindings.workspace_switch_modifier_label",
+            QuickSwitchKind::Category => "settings.keybindings.category_switch_modifier_label",
         }
     }
 
@@ -70,6 +78,7 @@ impl QuickSwitchKind {
         match self {
             QuickSwitchKind::Tab => "tab_switch_modifier",
             QuickSwitchKind::Workspace => "workspace_switch_modifier",
+            QuickSwitchKind::Category => "category_switch_modifier",
         }
     }
 }
@@ -81,6 +90,7 @@ fn bare_key_value(kb: &KeybindingSettings, target: BareTarget) -> String {
     match target {
         BareTarget::TabSlot(i) => kb.tab_slot_key(i).unwrap_or("").to_string(),
         BareTarget::WorkspaceSlot(i) => kb.workspace_slot_key(i).unwrap_or("").to_string(),
+        BareTarget::CategorySlot(i) => kb.category_slot_key(i).unwrap_or("").to_string(),
         BareTarget::TabNext => kb.tab_next_key().to_string(),
         BareTarget::TabPrev => kb.tab_prev_key().to_string(),
         BareTarget::WorkspaceNext => kb.workspace_next_key().to_string(),
@@ -97,6 +107,9 @@ pub fn set_bare_target(kb: &mut KeybindingSettings, target: BareTarget, raw_key:
         BareTarget::WorkspaceSlot(i) => {
             kb.set_workspace_slot_key(i, raw_key);
         }
+        BareTarget::CategorySlot(i) => {
+            kb.set_category_slot_key(i, raw_key);
+        }
         BareTarget::TabNext => kb.set_tab_next_key(raw_key),
         BareTarget::TabPrev => kb.set_tab_prev_key(raw_key),
         BareTarget::WorkspaceNext => kb.set_workspace_next_key(raw_key),
@@ -109,7 +122,7 @@ pub fn clear_bare_target(kb: &mut KeybindingSettings, target: BareTarget) {
     set_bare_target(kb, target, "");
 }
 
-/// `target` 이 조합에 쓰는 modifier(`"ctrl"`/`"alt"`).
+/// `target` 이 조합에 쓰는 modifier 조합(`"ctrl"`/`"alt"`/`"ctrl+shift"` …).
 fn bare_modifier(kb: &KeybindingSettings, target: BareTarget) -> &str {
     match target {
         BareTarget::TabSlot(_) | BareTarget::TabNext | BareTarget::TabPrev => {
@@ -118,6 +131,7 @@ fn bare_modifier(kb: &KeybindingSettings, target: BareTarget) -> &str {
         BareTarget::WorkspaceSlot(_) | BareTarget::WorkspaceNext | BareTarget::WorkspacePrev => {
             &kb.workspace_switch_modifier
         }
+        BareTarget::CategorySlot(_) => &kb.category_switch_modifier,
     }
 }
 
@@ -146,6 +160,10 @@ fn bare_display_label(target: BareTarget) -> String {
             "settings.keybindings.workspace_switch_slot_label",
             &(i + 1).to_string(),
         ),
+        BareTarget::CategorySlot(i) => t_fmt(
+            "settings.keybindings.category_switch_slot_label",
+            &(i + 1).to_string(),
+        ),
         BareTarget::TabNext => t("settings.keybindings.tab_switch_next_label").to_string(),
         BareTarget::TabPrev => t("settings.keybindings.tab_switch_prev_label").to_string(),
         BareTarget::WorkspaceNext => {
@@ -158,14 +176,17 @@ fn bare_display_label(target: BareTarget) -> String {
     raw.trim_end_matches(':').trim().to_string()
 }
 
-/// 모든 quick-switch bare 타겟 목록(슬롯 간 중복 검사용 — 탭·워크스페이스 교차 포함).
+/// 모든 quick-switch bare 타겟 목록(슬롯 간 중복 검사용 — 탭·워크스페이스·카테고리 교차 포함).
 fn all_bare_targets() -> Vec<BareTarget> {
-    let mut v = Vec::with_capacity(23);
+    let mut v = Vec::with_capacity(33);
     for i in 0..10 {
         v.push(BareTarget::TabSlot(i));
     }
     for i in 0..9 {
         v.push(BareTarget::WorkspaceSlot(i));
+    }
+    for i in 0..10 {
+        v.push(BareTarget::CategorySlot(i));
     }
     v.push(BareTarget::TabNext);
     v.push(BareTarget::TabPrev);
@@ -219,12 +240,18 @@ pub(super) fn draw_quick_switch_section(
             let modifier = match kind {
                 QuickSwitchKind::Tab => &mut keybindings.tab_switch_modifier,
                 QuickSwitchKind::Workspace => &mut keybindings.workspace_switch_modifier,
+                QuickSwitchKind::Category => &mut keybindings.category_switch_modifier,
             };
+            // OS-aware 허용 조합만 열거(쓰레기 값 원천 차단, decision 1). macOS 는 option
+            // 축 포함, 그 외 제외 — modifier_hint 의 조합 열거를 단일 소스로 재사용한다.
             egui::ComboBox::from_id_salt(kind.modifier_salt())
-                .selected_text(modifier_display(modifier))
+                .selected_text(KeybindingSettings::format_display(modifier))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(modifier, "ctrl".to_string(), "Ctrl");
-                    ui.selectable_value(modifier, "alt".to_string(), "Alt");
+                    for combo in all_modifier_combos() {
+                        let name = combo.name();
+                        let display = KeybindingSettings::format_display(&name);
+                        ui.selectable_value(modifier, name, display);
+                    }
                 });
             ui.end_row();
         });
@@ -237,8 +264,8 @@ pub(super) fn draw_quick_switch_section(
         let mut targets: Vec<BareTarget> = (0..kind.slot_count())
             .map(|i| kind.slot_target(i))
             .collect();
-        targets.push(kind.next_target());
-        targets.push(kind.prev_target());
+        targets.extend(kind.next_target());
+        targets.extend(kind.prev_target());
         targets
             .iter()
             .map(|&tg| {
@@ -263,23 +290,20 @@ pub(super) fn draw_quick_switch_section(
             label_col_width,
         );
     }
-    // 다음/이전.
-    slot_row(
-        ui,
-        keybindings,
-        recording_field,
-        can_record,
-        kind.next_target(),
-        label_col_width,
-    );
-    slot_row(
-        ui,
-        keybindings,
-        recording_field,
-        can_record,
-        kind.prev_target(),
-        label_col_width,
-    );
+    // 다음/이전 (카테고리 축은 next/prev 키가 없어 렌더하지 않는다).
+    for tg in [kind.next_target(), kind.prev_target()]
+        .into_iter()
+        .flatten()
+    {
+        slot_row(
+            ui,
+            keybindings,
+            recording_field,
+            can_record,
+            tg,
+            label_col_width,
+        );
+    }
 
     // modifier 변경 등으로 현재 합성 콤보가 다른 액션과 충돌하면 조용히 넘기지 않고 경고.
     let conflicts = current_conflicts(keybindings, kind);
@@ -301,8 +325,8 @@ fn current_conflicts(kb: &KeybindingSettings, kind: QuickSwitchKind) -> Vec<Stri
     let mut targets: Vec<BareTarget> = (0..kind.slot_count())
         .map(|i| kind.slot_target(i))
         .collect();
-    targets.push(kind.next_target());
-    targets.push(kind.prev_target());
+    targets.extend(kind.next_target());
+    targets.extend(kind.prev_target());
 
     let mut out = Vec::new();
     for tg in targets {
@@ -436,12 +460,5 @@ fn consume_capture(
             *recording_field = None;
         }
         KeyCapture::None => {}
-    }
-}
-
-fn modifier_display(modifier: &str) -> &str {
-    match modifier.to_lowercase().as_str() {
-        "alt" => "Alt",
-        _ => "Ctrl",
     }
 }

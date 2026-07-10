@@ -18,35 +18,36 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
-### 탭/워크스페이스 quick-switch (raw 키)
+### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
 
-번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다. modifier 는 `tab_switch_modifier`/`workspace_switch_modifier`(각각 기본 `ctrl`/`alt`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 모든 슬롯이 즉시 재조합된다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.
+번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다. modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다. **각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다. 카테고리도 1급 축으로 자기 modifier 필드를 갖는다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.
 
 | 필드 | 타입 | 기본값 | 의미 |
 |------|------|--------|------|
+| `tab_switch_modifier` / `workspace_switch_modifier` / `category_switch_modifier` | `String` | `"ctrl"` / `"alt"` / `"ctrl+shift"` | 축별 modifier 조합 |
 | `tab_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 탭 1~10번 슬롯 |
 | `workspace_switch_slot_keys` | `[String; 9]` | `["1".."9"]` | 워크스페이스 1~9번 슬롯(0번 없음) |
-| `category_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 카테고리 1~10번 슬롯(reserved normal=1). `workspace_switch_modifier`+Shift 로 합성 |
+| `category_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 카테고리 1~10번 슬롯(reserved normal=1). `category_switch_modifier` 와 합성 |
 | `tab_switch_next_key` / `tab_switch_prev_key` | `String` | `"l"` / `"h"` | 탭 다음/이전 |
 | `workspace_switch_next_key` / `workspace_switch_prev_key` | `String` | `"j"` / `"k"` | 워크스페이스 다음/이전 |
 
-이 필드들 모두 필드별 `#[serde(default = "…")]` 를 가져, 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다. 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음). `category_switch_slot_keys` 는 별도 modifier 필드 없이 `workspace_switch_modifier`+Shift 를 재사용하며(index accessor `category_slot_key`/`set_category_slot_key`), 현재 Settings quick-switch UI 에는 편집기가 없어 기본값으로 동작한다(대상 판정·dispatch 만 배선).
+카테고리 축은 next/prev 키가 없다(슬롯만). 카테고리 modifier 기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`, tasty 가 가로챌 수 없음)과 겹치지 않게 고른 값이다. slot/next/prev 필드는 모두 필드별 `#[serde(default = "…")]` 를 가져 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다(`category_switch_modifier` 도 동일 — `"ctrl+shift"` default). 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
 
 #### quick-switch 섹션 UI (Tab/Workspace 서브탭)
 
-Tab·Workspace 서브탭의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
+Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
 
-1. **modifier 드롭다운** — `tab_switch_modifier`/`workspace_switch_modifier`(Ctrl/Alt) 선택.
-2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번. 각 버튼 라벨은 저장된 raw 키를 현재 modifier 와 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+1`). modifier 드롭다운을 바꾸면 저장값(raw 키) 변경 없이 라벨이 즉시 재조합된다.
-3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`.
+1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**에서 선택한다(`modifier_hint::all_modifier_combos`). 열거된 유효 조합(비-macOS 7개, macOS 는 option 축 포함 15개)만 노출해 쓰레기 값 저장을 원천 차단한다. 표시는 `format_display`(`"ctrl+shift"` → `Ctrl+Shift`).
+2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번 / 카테고리 1~10번. 각 버튼 라벨은 저장된 raw 키를 현재 modifier 조합과 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+Shift+1`). modifier 드롭다운을 바꾸면 저장값(raw 키) 변경 없이 라벨이 즉시 재조합된다.
+3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`(탭·워크스페이스 축만; 카테고리 축은 없음).
 
 버튼을 누르면 **bare-key 녹화**로 진입한다(`capture_bare_key`). 일반 콤보 녹화(`capture_winit_key_combo`)와 정반대로, **modifier 가 하나라도 눌리면 그 입력은 무효**(대기 유지)이고 modifier 없는 순수 키 하나만 유효하다. Escape 는 슬롯을 비운다. 캡처 분기는 `RecordingSlot.field_kind`(`Combo`/`BareKey(BareTarget)`)로 결정되고, `SettingsUiState::recording_is_bare_key()` 가 winit 이벤트 캡처 경로를 가른다(`view/settings.rs`).
 
-**충돌 검사**는 합성 콤보 `"{modifier}+{key}"` 기준으로 두 축을 본다: ① 일반 액션과의 충돌(`find_conflict` — `next_tab`/`prev_tab` 포함), ② 다른 quick-switch 슬롯과의 중복(슬롯 배열 자체 순회, 탭↔워크스페이스 교차 포함). 충돌 시 기존 확인 팝업(`PendingBinding`)을 재사용하며, accept 시 상대가 일반 필드면 그 바인딩을, 다른 슬롯이면 그 슬롯을 비운다. 또한 modifier 변경 등으로 현재 슬롯 콤보가 일반 액션과 겹치면 섹션 하단에 경고 라벨을 표시해 조용히 넘기지 않는다.
+**충돌 검사**는 합성 콤보 `"{modifier}+{key}"` 기준으로 두 축을 본다: ① 일반 액션과의 충돌(`find_conflict` — `next_tab`/`prev_tab` 포함), ② 다른 quick-switch 슬롯과의 중복(슬롯 배열 자체 순회, 탭↔워크스페이스↔카테고리 교차 포함). 축 modifier 가 달라도 합성 콤보로 비교하므로 교차 충돌을 잡는다 — 두 축이 같은 조합을 갖는 상태는 애초에 저장되지 않는다(`switch_target_for` 에는 우선순위 로직이 없다). 충돌 시 기존 확인 팝업(`PendingBinding`)을 재사용하며, accept 시 상대가 일반 필드면 그 바인딩을, 다른 슬롯이면 그 슬롯을 비운다. 또한 modifier 변경 등으로 현재 슬롯 콤보가 일반 액션과 겹치면 섹션 하단에 경고 라벨을 표시해 조용히 넘기지 않는다.
 
 #### dispatch — 키 입력 → 전환
 
-실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt)` 로 판정한다 — Tab/Workspace 는 modifier 가 `tab_switch_modifier`/`workspace_switch_modifier` 와 **단독** 일치할 때, Category 는 `workspace_switch_modifier`+Shift 일 때 잡히므로(상호 배타) 맨 키 오검출이 없다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
+실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt, option)` 로 판정한다 — 세 축 각각의 modifier 조합(`Combo::parse_modifiers`)과 현재 눌린 조합이 **정확히 일치**할 때만 그 축이 잡힌다(단일 토큰은 조합의 부분집합이라 그대로 동작, `ctrl` 단독 ≠ `ctrl+shift`). 정확 일치라 축이 서로 새지 않고 우선순위 로직이 없다. `alt` 는 `"alt"` 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그 외 항상 false)으로 플랫폼 정규화된 값을 받는다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
 
 - 탭: next/prev → `next_tab_in_pane`/`prev_tab_in_pane`, 슬롯 index → `goto_tab_in_pane(index)`.
 - 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
@@ -81,7 +82,7 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Im
 
 각 서브탭 *내부* 항목 순서: **① 생성/분할 → ② 탐색(next/prev/focus) → ③ 수정(rename/convert) → ④ 닫기 → ⑤ 수식키(modifier, separator 로 구분)**.
 
-**어느 서브탭에 두는가** — 그 동작의 *대상 엔티티* 이름을 가진 서브탭에 둔다. `new_tab`→Tab, `split_pane_*`→Pane, `close_surface`→Surface. 수식키도 대상 엔티티 서브탭(`tab_switch_modifier`→Tab, `workspace_switch_modifier`→Workspace). cascade 인 `close_active` 는 가장 먼저 닫히는 대상이 탭이라 Tab. `open_markdown` 은 새 탭으로 열려 Tab.
+**어느 서브탭에 두는가** — 그 동작의 *대상 엔티티* 이름을 가진 서브탭에 둔다. `new_tab`→Tab, `split_pane_*`→Pane, `close_surface`→Surface. 수식키도 대상 엔티티 서브탭(`tab_switch_modifier`→Tab, `workspace_switch_modifier`·`category_switch_modifier`→Workspace). cascade 인 `close_active` 는 가장 먼저 닫히는 대상이 탭이라 Tab. `open_markdown` 은 새 탭으로 열려 Tab.
 
 > explorer / html 이 plugin 으로 분리되며 `open_explorer`·`convert_to_explorer` 호스트 키바인딩은 사라졌다(plugin 이 자기 command 로 기여). 현재 Surface 의 convert 계열은 `convert_surface`·`convert_to_markdown` 만 호스트에 남는다.
 

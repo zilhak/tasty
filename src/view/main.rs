@@ -339,25 +339,21 @@ impl View for MainView {
                 let mods = self.base.modifiers;
                 let ctrl = mods.control_key();
                 let shift = mods.shift_key();
+                // `alt` = "alt" 토큰(macOS super/그 외 alt), `option` = "option" 토큰
+                // (macOS 물리 ⌥/그 외 항상 false). switch-overlay·modifier-hint 공통 축.
                 #[cfg(target_os = "macos")]
-                let alt = mods.super_key();
+                let (alt, option) = (mods.super_key(), mods.alt_key());
                 #[cfg(not(target_os = "macos"))]
-                let alt = mods.alt_key();
+                let (alt, option) = (mods.alt_key(), false);
                 let kb = &self.core_state.settings.keybindings;
                 if self
                     .state
-                    .update_switch_overlay(&self.core_state, kb, ctrl, shift, alt)
+                    .update_switch_overlay(&self.core_state, kb, ctrl, shift, alt, option)
                 {
                     dirty = true;
                 }
-                // modifier-hint 오버레이 홀드 갱신. `alt`(=switch-overlay 와 동일한 정규화된
-                // "alt" 토큰 축: macOS super/그 외 alt)는 재사용하고, macOS Option(물리 alt)만
-                // 별도 축으로 넘긴다. anchor 가 바뀌면 dirty(콘텐츠 갱신). 표시 게이트(500ms)·
-                // 페이드 재그리기는 draw_modifier_hint 가 스스로 예약한다.
-                #[cfg(target_os = "macos")]
-                let option = mods.alt_key();
-                #[cfg(not(target_os = "macos"))]
-                let option = false;
+                // modifier-hint 오버레이 홀드 갱신. anchor 가 바뀌면 dirty(콘텐츠 갱신).
+                // 표시 게이트(500ms)·페이드 재그리기는 draw_modifier_hint 가 스스로 예약한다.
                 if self
                     .state
                     .modifier_hint

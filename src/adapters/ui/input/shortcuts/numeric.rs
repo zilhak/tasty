@@ -25,6 +25,7 @@ impl MainView {
         ctrl: bool,
         shift: bool,
         alt: bool,
+        option: bool,
     ) -> bool {
         // 슬롯 키가 문자(`"q"` 등)일 수도 있으므로 `Key::Character` 이면 무조건 검색을
         // 시도하고, 매칭이 없으면 조용히 false 를 돌려 다른 단축키 매칭으로 넘긴다.
@@ -35,7 +36,7 @@ impl MainView {
 
         // 대상 판별은 switch-number overlay 와 **단일 소스** 공유 헬퍼로 한다
         // (정규화된 ctrl/shift/alt + modifier 필수 게이트 → 맨 키 오검출 없음).
-        match switch_target_for(kb, ctrl, shift, alt) {
+        match switch_target_for(kb, ctrl, shift, alt, option) {
             Some(SwitchTarget::Tab) => {
                 // next/prev 우선 검사(겹칠 때 next/prev 가 슬롯을 이긴다).
                 if ch == kb.tab_next_key() {
@@ -72,7 +73,7 @@ impl MainView {
                 }
             }
             Some(SwitchTarget::Category) => {
-                // folders 기능 off 면 Alt+Shift+숫자 는 카테고리 역할 없음(무시).
+                // folders 기능 off 면 카테고리 조합+숫자 는 역할 없음(무시).
                 if !engine.settings.general.workspace_categories_enabled {
                     return false;
                 }

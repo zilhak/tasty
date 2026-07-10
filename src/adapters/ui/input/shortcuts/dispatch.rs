@@ -513,10 +513,12 @@ impl MainView {
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
+        // `alt` = "alt" 토큰(macOS 물리 ⌘=super, 그 외 Alt). `option` = "option" 토큰
+        // (macOS 물리 ⌥, 그 외 항상 false). switch_target_for 의 정규화 규약과 동일.
         #[cfg(target_os = "macos")]
-        let alt = mods.super_key();
+        let (alt, option) = (mods.super_key(), mods.alt_key());
         #[cfg(not(target_os = "macos"))]
-        let alt = mods.alt_key();
+        let (alt, option) = (mods.alt_key(), false);
 
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
@@ -577,6 +579,7 @@ impl MainView {
             ctrl,
             shift,
             alt,
+            option,
         ) {
             if self.core_state.workspaces.is_empty() {
                 self.request_close();

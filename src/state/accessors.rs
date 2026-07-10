@@ -119,11 +119,12 @@ impl AppState {
         ctrl: bool,
         shift: bool,
         alt: bool,
+        option: bool,
     ) -> bool {
         use crate::adapters::ui::switch_overlay::{
             SwitchOverlayState, SwitchTarget, switch_target_for,
         };
-        let next = switch_target_for(kb, ctrl, shift, alt)
+        let next = switch_target_for(kb, ctrl, shift, alt, option)
             // folders 기능 off 면 Category(Alt+Shift) 는 대상 없음 — 스냅샷·리드로 안 함.
             .filter(|t| {
                 *t != SwitchTarget::Category || engine.settings.general.workspace_categories_enabled
