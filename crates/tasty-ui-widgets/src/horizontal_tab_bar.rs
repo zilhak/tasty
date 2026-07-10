@@ -9,8 +9,8 @@
 //! - chevron 클릭 시 `SCROLL_STEP` 만큼 offset 이동.
 //!
 //! `id_salt` 는 호출자 별로 unique 해야 함 (ScrollArea state 분리).
-//! chevron 아이콘은 widgets crate 내 `assets/icons/chevron-{left,right}.svg`
-//! 를 `include_image!` 로 embed. 호출자는 `egui_extras::install_image_loaders`
+//! chevron 아이콘은 canonical `tasty_icons::CHEVRON_LEFT`/`CHEVRON_RIGHT`
+//! (2px stroke) 를 `Icon::image` 로 렌더. 호출자는 `egui_extras::install_image_loaders`
 //! 가 미리 호출됐다고 가정 (본체·갤러리 모두 이미 호출 중).
 
 use egui::Color32;
@@ -67,23 +67,15 @@ pub fn horizontal_tab_bar_with_arrows<T: Copy + PartialEq>(
         );
         let left_btn = ui.put(
             left_rect,
-            egui::Button::image(
-                egui::Image::new(egui::include_image!("../assets/icons/chevron-left.svg"))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-            )
-            .frame(false)
-            .min_size(left_rect.size()),
+            egui::Button::image(tasty_icons::CHEVRON_LEFT.image(icon_size, icon_tint))
+                .frame(false)
+                .min_size(left_rect.size()),
         );
         let right_btn = ui.put(
             right_rect,
-            egui::Button::image(
-                egui::Image::new(egui::include_image!("../assets/icons/chevron-right.svg"))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-            )
-            .frame(false)
-            .min_size(right_rect.size()),
+            egui::Button::image(tasty_icons::CHEVRON_RIGHT.image(icon_size, icon_tint))
+                .frame(false)
+                .min_size(right_rect.size()),
         );
         if left_btn.clicked() {
             new_offset = (new_offset - SCROLL_STEP).max(0.0);
