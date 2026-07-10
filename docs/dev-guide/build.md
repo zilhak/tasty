@@ -44,6 +44,17 @@ cargo build --release       # thin LTO 검증
 cargo build --profile dist  # 배포용
 ```
 
+### headless(`--no-default-features`) 빌드
+
+`gui` 는 default feature 라 `cargo build` 는 winit/wgpu/egui 를 켠다. gui 없는 headless/CLI 인스턴스(로컬 GUI 사용자 없이 IPC/CLI + 원격 attach 만 쓰는 인스턴스, `docs/identity.md` "headless 환경을 의식한다")는 `--no-default-features` 로 빌드한다.
+
+```bash
+cargo check --workspace --no-default-features   # headless 컴파일 검증
+cargo build --workspace --no-default-features   # headless 빌드
+```
+
+gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 매 PR 자동 검출한다.
+
 본체+플러그인을 한 번에 다루는 래퍼가 있다. `just build` 는 빌드·스테이징만(실행 X), `just run` 은 빌드 후 호스트까지 실행한다. 둘 다 플러그인을 빌드·스테이징하며, 호스트는 부팅 시 builtin 을 강제 덮어쓰기 설치하므로 플러그인 소스 변경이 (`just build` 면 다음 실행 시, `just run` 이면 그 실행에서) 반영된다.
 
 ```bash
