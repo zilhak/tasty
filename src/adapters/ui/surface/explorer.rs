@@ -533,6 +533,7 @@ fn address_bar(
         .leading_icon(&folder_icon)
         .row_icon(&folder_icon)
         .go_icon(&go_icon)
+        .go_tooltip(t("explorer.address.go"))
         .show(
             ui,
             theme,

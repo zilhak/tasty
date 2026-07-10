@@ -83,6 +83,8 @@ pub struct PathField<'a> {
     row_icon: Option<IconPainter<'a>>,
     /// Go(arrow-right) 아이콘(per-surface baked/glyph 주입).
     go_icon: Option<IconPainter<'a>>,
+    /// Go 버튼 hover tooltip(디자인 aria-label 대체). `None` 이면 tooltip 없음.
+    go_tooltip: Option<&'a str>,
 }
 
 impl<'a> PathField<'a> {
@@ -98,6 +100,7 @@ impl<'a> PathField<'a> {
             leading_icon: None,
             row_icon: None,
             go_icon: None,
+            go_tooltip: None,
         }
     }
 
@@ -150,6 +153,13 @@ impl<'a> PathField<'a> {
     /// Go(arrow-right) 아이콘 painter.
     pub fn go_icon(mut self, go_icon: IconPainter<'a>) -> Self {
         self.go_icon = Some(go_icon);
+        self
+    }
+
+    /// Go 버튼 hover tooltip(i18n 라벨). egui 엔 웹 aria 가 없어 tooltip 으로 노출한다.
+    /// 미지정 시 tooltip 없음(기존 호출 무변경).
+    pub fn go_tooltip(mut self, go_tooltip: &'a str) -> Self {
+        self.go_tooltip = Some(go_tooltip);
         self
     }
 
@@ -211,11 +221,15 @@ impl<'a> PathField<'a> {
             *editing = out.response.has_focus();
 
             // Go 버튼 — arrow-right IconButton(sm). 클릭 = 현재 버퍼 확정.
+            // tooltip 은 버튼 response 에 붙인다(값 있을 때만 — 디자인 aria-label 대체).
             let go_clicked = if let Some(go) = self.go_icon {
-                crate::IconButton::new()
+                let mut resp = crate::IconButton::new()
                     .size(ControlSize::Sm)
-                    .show(ui, theme, go)
-                    .clicked()
+                    .show(ui, theme, go);
+                if let Some(tip) = self.go_tooltip {
+                    resp = resp.on_hover_text(tip);
+                }
+                resp.clicked()
             } else {
                 false
             };

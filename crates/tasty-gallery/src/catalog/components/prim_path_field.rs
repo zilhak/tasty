@@ -121,6 +121,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .leading_icon(&folder_icon)
                         .row_icon(&folder_icon)
                         .go_icon(&go_icon)
+                        .go_tooltip("Go")
                         .show(
                             ui,
                             theme,
@@ -180,6 +181,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .leading_icon(&file_icon)
                         .row_icon(&file_icon)
                         .go_icon(&go_icon)
+                        .go_tooltip("Open (Enter)")
                         .show(
                             ui,
                             theme,
@@ -199,7 +201,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("trigger", "AutoComplete (Input + candidate dropdown)"),
-            ("trailing", "Go IconButton (sm) — arrow-right"),
+            (
+                "trailing",
+                "Go IconButton (sm) — arrow-right · hover tooltip",
+            ),
             ("idle", "mono path · text-secondary"),
             ("editing", "text-primary + focus ring + caret"),
             ("keys", "Enter/Go navigate · ↑/↓ active · Esc revert"),

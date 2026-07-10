@@ -181,7 +181,7 @@ impl MdDoc {
 struct AddrState {
     /// 경로 편집 버퍼. 비편집 중엔 표시 경로와 동기화된다.
     buffer: String,
-    /// AutoComplete 트리거가 포커스를 가진 편집 모드 여부(= 히스토리 드롭다운 열림).
+    /// PathField 가 포커스를 가진 편집 모드 여부(= 히스토리 드롭다운 열림).
     editing: bool,
     /// paint 클로저가 채우는 확정된 이동 경로 — paint 후 host `markdown.navigate` 로 소비.
     pending_navigate: Option<String>,
@@ -1173,6 +1173,7 @@ fn draw_addr_bar(
             .leading_icon(&file_icon)
             .row_icon(&file_icon)
             .go_icon(&go_icon)
+            .go_tooltip(tr.t("markdown.addr.go"))
             .show(ui, theme, buffer, editing, active, &entries, file_path);
         if let PathFieldOutcome::Navigate(path) = outcome {
             *pending_navigate = Some(path);
