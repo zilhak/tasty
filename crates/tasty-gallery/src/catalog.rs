@@ -323,6 +323,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::prim_autocomplete::draw,
                         ),
+                        spec(
+                            "path-field",
+                            "PathField",
+                            Some(
+                                "Shared address-bar path field — AutoComplete trigger + Go button, edit/navigate/revert",
+                            ),
+                            components::prim_path_field::draw,
+                        ),
                     ],
                 ),
                 section(

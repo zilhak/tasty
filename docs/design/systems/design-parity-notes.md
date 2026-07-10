@@ -483,3 +483,31 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   `GridCell`(L301)·`ExpGridMini`(L314, 긴 이름 샘플). 본체 `src/adapters/ui/surface/explorer.rs`
   `grid_cell()`, specimen `crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs`
   `grid_cell()`(GRID 긴 이름 샘플 + meta `"glyph 16 + 3-line label (…) · fixed height"`). 2026-07-09 반영.
+
+## PathField — AutoComplete + Go 합성 공용 위젯 (편집/이동/원복 결정 포팅, 2026-07-09)
+
+- **무엇**: 두 주소창(Explorer / Markdown)이 공유할 편집형 경로 필드를 `tasty-ui-widgets` 에
+  신설(`path_field.rs`). 디자인 `plugins.jsx` `PathField`(:59) 전사 — 트리거 = `AutoComplete`
+  (Input 언어 + 후보 드롭다운) + 우측 Go `IconButton`(sm, arrow-right). idle=mono text-secondary,
+  editing=text-primary + focus ring + caret(Input 기본).
+- **구조 축**: 디자인 `PathField` 는 `editing && candidates` 면 `<AutoComplete withGo …/>`, 아니면
+  필드 div + `<IconButton Go/>` 두 브랜치다. 소스 `AutoComplete` 에는 `withGo` 가 없어(markdown 이
+  Go 를 따로 그렸음) PathField 가 **AutoComplete + Go IconButton 을 `ui.horizontal` 한 행에** 합성
+  한다: 필드폭 = 총폭 − control-height(sm 28) − `spacing_sm`(6) gap. 드롭다운은 트리거 rect 아래
+  floating(AutoComplete 소유)이라 Go 버튼과 겹치지 않는다.
+- **토큰 축**: 색·간격·행높이 전부 `theme.*` accessor — 필드 fill=`surface-raised`(input-bg),
+  idle=`text-secondary`, editing=`text-primary`, match=`accent-primary`, Go 버튼=`IconButton`(sm)
+  자체 토큰. raw px/`from_rgb` 0. 신규 Theme 필드 0(AutoComplete/IconButton 토큰 재사용).
+- **결정 로직 포팅**: markdown `addr_outcome(action, lost_focus)` → 위젯 순수함수 `decide(action,
+  lost_focus, go_clicked)`. 우선순위 **Esc(Cancel) > Pick(행 확정) > Submit(버퍼) > Go 클릭 >
+  확정없는 blur(원복) > None**. Go 클릭은 같은 프레임 `lost_focus` 를 유발하지만 이동 확정이므로
+  blur-원복보다 앞선다(이 순서가 회귀 방지 핵심 — 단위테스트 `decide_go_click_navigates_buffer_over_blur_revert`).
+  상태(buffer/editing/active)는 호출측 소유, 위젯이 매 프레임 `&mut` 갱신(글로벌 상태 0).
+- **egui 세금/specimen**: editing 의 focus ring/caret 은 실제 포커스에서만 Input 이 그린다 → 정적
+  specimen 은 focus 테두리를 못 고정한다. `prim_path_field` 는 idle/editing+list 를 정적 전사(필드
+  행 + `autocomplete_dropdown`)하되, 실제 편집·포커스링·키내비·이동/원복은 **라이브 `PathField`
+  인스턴스**(context 별 click-to-edit)로 노출한다(gallery-first).
+- **근거**: 디자인 `gallery/plugins.jsx` `PathField`(:59), changelog `2026-07-09-autocomplete.md`
+  "Both address bars integrated: the shared PathField …". 소스 `crates/tasty-ui-widgets/src/path_field.rs`,
+  specimen `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
+  후속 TODO. 2026-07-09 반영.
