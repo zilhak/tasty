@@ -4,26 +4,52 @@
 
 | 상태 | 방법 |
 |------|------|
-| 정상 모드 (IPC 가능) | **`ui.screenshot` IPC** (권장·기본) |
+| 정상 모드 (IPC/CLI 가능) | **`tasty screenshot` CLI / `ui.screenshot` IPC** (권장·기본) |
 | **`tasty-gallery` 검증** | **`TASTY_GALLERY_SHOT` env GPU 캡처** (갤러리는 IPC 없음 — 아래) |
 | IPC 불가 (셸 설정 모드 등) | OS 화면 캡처 (최후 폴백) |
 
 시각 판단 휴리스틱·체크리스트는 [visual-verification](visual-verification.md).
 
-## `ui.screenshot` IPC (권장)
+## `tasty screenshot` CLI / `ui.screenshot` IPC (권장)
 
-- **debug 빌드 전용**(`src/app/ipc/window_required.rs` 가 게이트). release 미노출.
+정식 release 기능이다(더 이상 debug 전용 아님). **focus 독립** — 대상 창/surface 를 ID 로 직접
+지정하며 focused 창에 의존하지 않는다(불가침 원칙 3). 에이전트가 *자기 작업을 관찰*하는
+캡처라 사용자 상태(focus/가시 탭/선택)를 건드리지 않는다(원칙 1·2). 임의 경로 파일 쓰기
+표면이라 `local_only`(plugin 미노출) — CLI/로컬 client 만 호출.
+
 - GUI 모드 전용(headless 불가).
-- params `{ "path": "<절대경로>.png" }`. 응답 `{ "path": .., "scheduled": true }` — **다음 프레임에 캡처 예약**(비동기, `pending_screenshot`). 호출 직후 잠깐 기다렸다 파일을 읽는다.
-- `tasty screenshot` 같은 CLI 는 없다. JSON-RPC(개행 구분)를 포트로 직접 보낸다. 포트 파일은 debug 빌드면 **debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 — 격리 표 [independent-verification](../dev-guide/independent-verification.md), 구현 `crates/tasty-ipc/src/port_file.rs`).
+- 두 가지 대상:
+  - **surface 캡처** `--surface <id>` — 그 **터미널** surface 를 **오프스크린 렌더**로 그 자체
+    grid 크기(cols×rows)에 캡처한다. 배경 탭·다른 workspace·비-focus 창의 surface 도 찍히며
+    swapchain/present/가시 프레임/focus 를 전혀 건드리지 않는다(`pending_surface_screenshot`
+    → `GpuState::capture_surface_to_png`). 소유 창은 surface_id 로 자동 해소(창별 CoreState 순회).
+    **터미널만 지원**(v1). egui 패널(explorer/markdown/image/html)·plugin·webview surface 는
+    범위 밖 — 명확한 에러 반환.
+  - **window 캡처** `--window <id>`(없고 창이 1개면 그 창; 다중이면 에러 — focus 기본값 금지)
+    — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처(`pending_screenshot`).
+- 응답 `{ "path": .., ("surface_id"|"window_id"): .., "scheduled": true }` — **다음 프레임에
+  캡처 예약**(비동기). 호출 직후 잠깐 기다렸다 파일을 읽는다. 대상 창은 자동으로 redraw 를
+  요청받아(비-focus 창도) 캡처가 발화한다.
+
+```bash
+# 터미널 surface 를 ID 로 (focus 무관, 배경 탭도 가능)
+tasty screenshot --path /abs/out.png --surface 5
+# 창 전체 프레임 (창 여러 개면 --window 필수; list windows 로 ID 조회)
+tasty screenshot --path /abs/win.png --window 2
+```
+
+CLI 없이 raw JSON-RPC(개행 구분)를 포트로 직접 보낼 수도 있다. 포트 파일은 debug 빌드면
+**debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 —
+격리 표 [independent-verification](../dev-guide/independent-verification.md), 구현
+`crates/tasty-ipc/src/port_file.rs`).
 
 ```python
 import socket, json
 port = int(open("/Users/<you>/.tasty-debug/tasty.port").read().strip())  # debug 빌드 루트
-req = {"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"/abs/out.png"}}
+req = {"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"/abs/out.png","surface_id":5}}
 s = socket.socket(); s.settimeout(8); s.connect(("127.0.0.1", port))
 s.sendall((json.dumps(req)+"\n").encode())
-print(s.recv(8192).decode().strip())   # {"result":{"path":..,"scheduled":true},..}
+print(s.recv(8192).decode().strip())   # {"result":{"path":..,"surface_id":5,"scheduled":true},..}
 ```
 
 ### 사용자 세션을 건드리지 않고 격리 실행

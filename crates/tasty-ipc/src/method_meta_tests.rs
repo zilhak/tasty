@@ -86,7 +86,18 @@ fn debug_methods_are_local_only() {
 fn debug_methods_absent_in_release() {
     assert!(method_meta("debug.inject_key").is_none());
     assert!(method_meta("system.shutdown").is_none());
-    assert!(method_meta("ui.screenshot").is_none());
+    // ui.screenshot 은 focus-독립 정식 기능으로 승격됨 — release 에 노출된다
+    // (아래 `ui_screenshot_promoted_to_release` 참조).
+}
+
+/// `ui.screenshot` 은 debug 전용에서 focus-독립 정식 기능으로 승격됐다 —
+/// release `METHOD_TABLE` 에 존재하고 local_only(파일 쓰기 표면, plugin 미노출)여야
+/// 한다. (구 debug-only 대칭 테스트 `debug_methods_absent_in_release` 와 짝.)
+#[test]
+fn ui_screenshot_promoted_to_release() {
+    let m = method_meta("ui.screenshot").expect("registered in release METHOD_TABLE");
+    assert!(!m.plugin_callable, "ui.screenshot must be local_only");
+    assert!(m.required.is_empty());
 }
 
 #[test]

@@ -45,7 +45,9 @@ call("system.info")
 
 ## 스크린샷
 
-`ui.screenshot {path}` 는 **GUI 모드 + debug 빌드** 에서만 동작한다(release 미노출, [debug-ipc](../dev-guide/debug-ipc.md)). 결과 PNG.
+`tasty screenshot --path <png>` (IPC `ui.screenshot {path}`) 는 **GUI 모드**에서 동작하는 정식
+release 기능이다(focus 독립 — `--surface <id>` 로 터미널 surface 를 오프스크린 캡처하거나
+`--window <id>` 로 창 프레임 캡처). 결과 PNG. 상세 [screenshot-methods](../ai-verification/screenshot-methods.md).
 
 ## 관련
 

@@ -4,7 +4,7 @@
 
 ## 스크린샷은 tasty 자체 `ui.screenshot` 우선
 
-화면 캡처는 OS 캡처 도구가 아니라 **tasty 의 debug IPC `ui.screenshot`** 를 우선 쓴다 — 정확한 윈도우/surface 영역을 결정적으로 얻고, 좌표가 tasty 내부 레이아웃과 일치한다(OS 캡처는 데코·DPI·다른 창 혼입 위험). debug 빌드 전용이며 release 표면엔 없다 → [debug-ipc](../dev-guide/debug-ipc.md). 셀 색 검증은 `debug.glyph_color`(렌더러가 GPU 에 push 하는 실제 RGBA)도 함께.
+화면 캡처는 OS 캡처 도구가 아니라 **tasty 의 `ui.screenshot`**(CLI `tasty screenshot`)를 우선 쓴다 — 정확한 윈도우/surface 영역을 결정적으로 얻고, 좌표가 tasty 내부 레이아웃과 일치한다(OS 캡처는 데코·DPI·다른 창 혼입 위험). focus-독립 정식 기능이라 release 에서도 동작하고 `--surface <id>` 로 특정 터미널 surface 도 캡처 가능 → [screenshot-methods](screenshot-methods.md). 셀 색 검증은 `debug.glyph_color`(렌더러가 GPU 에 push 하는 실제 RGBA, debug 빌드)도 함께.
 
 ## 체크리스트 ("보인다"고 말하기 전에)
 

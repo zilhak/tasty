@@ -232,6 +232,24 @@ pub enum Commands {
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,
+    /// Capture a screenshot to a PNG file (focus-independent).
+    ///
+    /// With `--surface`, captures that terminal surface via an offscreen render at
+    /// its own grid size — works for background tabs/workspaces and never changes
+    /// focus or the visible frame. Otherwise captures a whole window: `--window`
+    /// selects it by ID (see `list windows`); if omitted and only one window is
+    /// open, that one is used.
+    Screenshot {
+        /// Output PNG path.
+        #[arg(long)]
+        path: String,
+        /// Terminal surface ID to capture (offscreen; focus-independent).
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Window ID to capture (whole tasty frame). Required when multiple windows are open.
+        #[arg(long)]
+        window: Option<u64>,
+    },
 }
 
 #[cfg(test)]

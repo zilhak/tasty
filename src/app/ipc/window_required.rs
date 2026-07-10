@@ -2,14 +2,14 @@
 //!
 //! - `surface.ime_*`
 //! - `debug.info` (debug only)
-//! - `ui.screenshot` (debug only)
+//!
+//! `ui.screenshot` was promoted to a release, focus-independent method — it now
+//! lives in the `app_methods` step (targets window/surface by ID, not focus).
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
 use crate::ipc::server::{IpcCommand, send_response};
-#[cfg(debug_assertions)]
-use crate::view::ui::View as _;
 
 impl App {
     pub(crate) fn ipc_step_window_required(&mut self, cmd: &IpcCommand) -> IpcStep {
@@ -19,7 +19,6 @@ impl App {
         {
             is_window_required = is_window_required
                 || cmd.request.method == "debug.info"
-                || cmd.request.method == "ui.screenshot"
                 || cmd.request.method == "debug.inject_window_mouse"
                 || cmd.request.method == "debug.inject_egui_mouse"
                 || cmd.request.method == "debug.inject_egui_key"
@@ -66,24 +65,6 @@ impl App {
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 debug_data,
-            );
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
-        }
-        #[cfg(debug_assertions)]
-        if cmd.request.method == "ui.screenshot" {
-            let path = cmd
-                .request
-                .params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("screenshot.png")
-                .to_string();
-            w.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-            w.mark_dirty();
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({"path": path, "scheduled": true}),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

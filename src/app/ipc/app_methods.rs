@@ -143,6 +143,136 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // ui.screenshot — 정식 release 기능. focus 독립(원칙 3): 대상 window/surface 를
+        // ID 로 직접 지정하고 focused_view_id 에 의존하지 않는다. 에이전트가 자기 작업을
+        // 관찰하는 캡처라 사용자 상태(focus/가시 탭)를 건드리지 않는다(원칙 1·2). local_only
+        // (파일 쓰기 표면) — plugin 미노출.
+        //
+        // params: { path (필수), surface_id? (u32), window_id? (u64) }
+        // - surface_id → 해당 터미널 surface 를 오프스크린 렌더로 캡처(가시성/포커스 무관).
+        // - 아니면 window 프레임 캡처: window_id 지정, 없으면 유일 window, 다중이면 에러.
+        if cmd.request.method == "ui.screenshot" {
+            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
+                Some(p) if !p.is_empty() => p.to_string(),
+                _ => {
+                    send_response(
+                        &cmd.response_tx,
+                        host_ipc::protocol::JsonRpcResponse::error(
+                            response_id,
+                            -32602,
+                            "Missing 'path' parameter (string)",
+                        ),
+                    );
+                    return IpcStep::Handled;
+                }
+            };
+            let surface_id = cmd
+                .request
+                .params
+                .get("surface_id")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
+
+            // ── surface 지정 오프스크린 캡처 (focus 독립) ──
+            if let Some(sid) = surface_id {
+                // 소유 window(창별 CoreState)를 ID 로 순회 해소 — focus 무관.
+                let owner = self.view.views.values_mut().find_map(|w| {
+                    let m = w.as_main_mut()?;
+                    if m.core_state.has_surface(sid) {
+                        Some(m)
+                    } else {
+                        None
+                    }
+                });
+                let response = match owner {
+                    None => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        format!("Surface {sid} not found"),
+                    ),
+                    Some(m) => {
+                        let kind = m.core_state.find_surface_by_id(sid).map(|s| s.kind());
+                        if kind == Some("terminal") {
+                            m.base.gpu.pending_surface_screenshot =
+                                Some((sid, std::path::PathBuf::from(&path)));
+                            m.base.dirty = true;
+                            m.base.winit.request_redraw();
+                            host_ipc::protocol::JsonRpcResponse::success(
+                                response_id,
+                                serde_json::json!({
+                                    "path": path,
+                                    "surface_id": sid,
+                                    "scheduled": true,
+                                }),
+                            )
+                        } else {
+                            host_ipc::protocol::JsonRpcResponse::error(
+                                response_id,
+                                -32000,
+                                format!(
+                                    "Surface {sid} is kind '{}' — only terminal surfaces can be captured (egui panels / plugin / webview are out of scope)",
+                                    kind.unwrap_or("unknown")
+                                ),
+                            )
+                        }
+                    }
+                };
+                send_response(&cmd.response_tx, response);
+                return IpcStep::Handled;
+            }
+
+            // ── window(tasty 자체 화면) 캡처 (focus 독립) ──
+            let mains: Vec<_> = self
+                .view
+                .views
+                .iter()
+                .filter(|(_, w)| w.as_main().is_some())
+                .map(|(id, _)| *id)
+                .collect();
+            let target = match window_id {
+                Some(wid) => mains.iter().copied().find(|w| u64::from(*w) == wid),
+                None if mains.len() == 1 => mains.first().copied(),
+                None => None,
+            };
+            let response = match target {
+                Some(tid) => match self.view.views.get_mut(&tid).and_then(|w| w.as_main_mut()) {
+                    Some(m) => {
+                        m.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                        m.base.dirty = true;
+                        m.base.winit.request_redraw();
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            response_id,
+                            serde_json::json!({
+                                "path": path,
+                                "window_id": u64::from(tid),
+                                "scheduled": true,
+                            }),
+                        )
+                    }
+                    None => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        "Target window is not a main view",
+                    ),
+                },
+                None => match window_id {
+                    Some(wid) => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        format!("Window id {wid} not found"),
+                    ),
+                    None => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32000,
+                        "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.",
+                    ),
+                },
+            };
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         if cmd.request.method.starts_with("plugin.") {
             return self.ipc_dispatch_plugin_method(cmd, caller);
         }

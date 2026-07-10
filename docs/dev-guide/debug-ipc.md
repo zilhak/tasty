@@ -37,7 +37,6 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | method | params | 설명 |
 |--------|--------|------|
 | `ui.state` | `{}` | 현재 UI 상태(settings_open, popup, 활성 workspace/pane/tab 수 등) 덤프 |
-| `ui.screenshot` | — | 윈도우 스크린샷 덤프 |
 | `debug.info` | `{}` | 실행 중 인스턴스 debug 정보 |
 | `debug.cell_info` | `surface_id, row, col` | 셀 단위 렌더 속성(텍스트, fg/bg, bold/italic/underline …) |
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |

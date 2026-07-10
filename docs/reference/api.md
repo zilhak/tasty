@@ -57,6 +57,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
 - SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)
 - webview: `webview.set_url`
+- 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
 - 시스템: `system.info`
 
 ### Plugin 관리 (`plugin.*`, local-only)
@@ -69,11 +70,13 @@ release IPC 없음 — 스크립트는 등록 목록 + 단축키 트리거로만
 plugin 이 `[[contributes.ipc_namespace]]` 로 prefix 를 선언하면 `<prefix>.<method>` 가 그 plugin 으로 forward 된다(예: `claude.*`, `codex.*`). [plugins/](../plugins/index.md).
 
 ### Debug 전용 (debug 빌드만, `DEBUG_METHODS`)
-`ui.state` · `ui.screenshot` · `debug.{info,cell_info,screen_attrs,glyph_color,feed_bytes,inject_mouse,inject_key,tool.*,popup.*,event_bus.*,extension.invoke_hook}` · `window.focus`/`view.focus` · `system.shutdown`. release 미노출 → [debug-ipc](../dev-guide/debug-ipc.md).
+`ui.state` · `debug.{info,cell_info,screen_attrs,glyph_color,feed_bytes,inject_mouse,inject_key,tool.*,popup.*,event_bus.*,extension.invoke_hook}` · `window.focus`/`view.focus` · `system.shutdown`. release 미노출 → [debug-ipc](../dev-guide/debug-ipc.md).
+
+(`ui.screenshot` 은 focus-독립 정식 기능으로 승격 — 위 "기타 호스트" 참조. [screenshot-methods](../ai-verification/screenshot-methods.md).)
 
 ## CLI 매핑
 
-CLI 는 위 IPC 를 감싼다(`tasty workspace list`, `tasty send text`, `tasty memory put`, `tasty agent task-create`, `tasty approval request`, `tasty plugin list` …). debug 서브커맨드는 debug 빌드만. 환경별 접속/실행/종료 패턴은 [environments](environments.md).
+CLI 는 위 IPC 를 감싼다(`tasty workspace list`, `tasty send text`, `tasty memory put`, `tasty agent task-create`, `tasty approval request`, `tasty plugin list`, `tasty screenshot --path …` …). debug 서브커맨드는 debug 빌드만. 환경별 접속/실행/종료 패턴은 [environments](environments.md).
 
 ## 관련
 

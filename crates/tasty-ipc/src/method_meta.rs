@@ -368,6 +368,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("window.create", local_only()),
         ("window.close", local_only()),
         ("window.list", local_only()),
+        // ui.screenshot — 정식 focus-독립 캡처. 대상 window/surface 를 ID 로 지정하며
+        // focused 창에 의존하지 않는다(원칙 3). 임의 경로 파일 쓰기 표면이라 local_only
+        // (plugin 미노출) — CLI/로컬 client 만 호출.
+        ("ui.screenshot", local_only()),
         // E.C.e (D1=b) — Tasty 내부 어휘 통일에 따른 view.* alias. 동작은 window.* 와 동등.
         // wire format 호환을 위해 양쪽 메서드 명 모두 살림. payload 의 `window_id`
         // 필드는 외부 wire format 이라 변경 X.
@@ -388,13 +392,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
 ///
 /// 카테고리:
 /// - `system.shutdown` — 호스트 종료 (사용자가 직접 종료해야 하는 동작)
-/// - `ui.state` / `ui.screenshot` — UI 상태 dump (디버깅용)
+/// - `ui.state` — UI 상태 dump (디버깅용)
 /// - `debug.*` — 사용자 입력 재현 / 디버그 dump
+///
+/// (`ui.screenshot` 은 focus-독립 리팩토링으로 [`METHOD_TABLE`] 로 승격됨.)
 #[cfg(debug_assertions)]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("system.shutdown", local_only()),
     ("ui.state", local_only()),
-    ("ui.screenshot", local_only()),
     ("debug.info", local_only()),
     ("debug.cell_info", local_only()),
     ("debug.screen_attrs", local_only()),

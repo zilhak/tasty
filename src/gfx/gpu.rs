@@ -90,8 +90,13 @@ pub struct GpuState {
     pub(in crate::gfx::gpu) egui_mesh_popup_full_requests: std::collections::HashSet<u64>,
     /// banner 대응 full 재전송 요청 대기열 (instance_id).
     pub(in crate::gfx::gpu) egui_mesh_banner_full_requests: std::collections::HashSet<u64>,
-    /// When set, the next render will capture the frame to this path as PNG.
+    /// When set, the next render will capture the full window frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
+    /// When set, the next render will capture the given terminal surface to this
+    /// path as PNG via an offscreen pass — independent of the swapchain, visible
+    /// tab, and focus (the surface is rendered at its own grid size). See
+    /// [`Self::capture_surface_to_png`].
+    pub pending_surface_screenshot: Option<(u32, std::path::PathBuf)>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
     pub(super) perf: PerfAggregator,
     /// winit 이벤트 루프 proxy — CSD titlebar close 버튼이 per-window 닫기
@@ -265,6 +270,7 @@ impl GpuState {
             egui_mesh_popup_full_requests: std::collections::HashSet::new(),
             egui_mesh_banner_full_requests: std::collections::HashSet::new(),
             pending_screenshot: None,
+            pending_surface_screenshot: None,
             perf: PerfAggregator::new(),
             proxy,
         })
@@ -337,6 +343,29 @@ impl GpuState {
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> Result<(), wgpu::SurfaceError> {
         let render_start = std::time::Instant::now();
+
+        // 0. Offscreen surface screenshot (agent action, focus-independent).
+        // Rendered to its own texture at the surface's grid size — never touches
+        // the swapchain, visible tab, present, or focus. Runs before the live
+        // frame so the shared renderer accumulator (reset by `render_terminals`'
+        // `begin_frame`) and the projection uniform (restored inside the helper)
+        // stay coherent for the visible frame that follows.
+        if let Some((surface_id, path)) = self.pending_surface_screenshot.take() {
+            let reverse_screen = engine.settings.general.reverse_screen_enabled;
+            // A hard-occupied surface shows a readonly mirror server-side; capture
+            // what the user would see (mirror), else the live terminal.
+            let terminal = if engine.attach.is_hard_occupied(surface_id) {
+                engine.readonly_view(surface_id)
+            } else {
+                engine.terminals.get(surface_id)
+            };
+            match terminal {
+                Some(t) => self.capture_surface_to_png(t, reverse_screen, &path),
+                None => tracing::warn!(
+                    "surface screenshot: surface {surface_id} has no terminal to capture"
+                ),
+            }
+        }
 
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
@@ -546,7 +575,7 @@ impl GpuState {
         // 6. Screenshot + present
         let t0 = std::time::Instant::now();
         if let Some(path) = self.pending_screenshot.take() {
-            self.capture_frame_to_png(&output.texture, &path);
+            self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
         output.present();
         let present_ms = t0.elapsed().as_secs_f64() * 1000.0;

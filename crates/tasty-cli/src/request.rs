@@ -238,6 +238,19 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Terminal { command } => terminal_command_to_method_params(command),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
+        // focus 독립 캡처. surface/window 를 ID 로 직접 지정 (focused 의존 없음).
+        Commands::Screenshot {
+            path,
+            surface,
+            window,
+        } => (
+            "ui.screenshot",
+            serde_json::json!({
+                "path": path,
+                "surface_id": surface,
+                "window_id": window,
+            }),
+        ),
     };
 
     JsonRpcRequest {
@@ -809,6 +822,49 @@ mod tests {
             .expect("parse")
             .command
             .expect("subcommand")
+    }
+
+    #[test]
+    fn screenshot_surface_maps_to_ui_screenshot() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "screenshot",
+            "--path",
+            "/tmp/s.png",
+            "--surface",
+            "5",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "ui.screenshot");
+        assert_eq!(
+            req.params.get("path").and_then(|v| v.as_str()),
+            Some("/tmp/s.png")
+        );
+        assert_eq!(
+            req.params.get("surface_id").and_then(|v| v.as_u64()),
+            Some(5)
+        );
+        // surface 지정 시 window_id 는 null (호스트가 surface 소유 창을 해소).
+        assert!(req.params.get("window_id").is_some_and(|v| v.is_null()));
+    }
+
+    #[test]
+    fn screenshot_window_maps_to_ui_screenshot() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "screenshot",
+            "--path",
+            "/tmp/w.png",
+            "--window",
+            "2",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "ui.screenshot");
+        assert_eq!(
+            req.params.get("window_id").and_then(|v| v.as_u64()),
+            Some(2)
+        );
+        assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
     }
 
     #[test]
