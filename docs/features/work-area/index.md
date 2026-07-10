@@ -76,13 +76,12 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 |------|-----------|------|------|------|
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. deferred 가능(아래 `empty`) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(타입 선택 UI). **deferred 터미널 placeholder 도 이 타입** |
-| `attached` | Attached (held)/(mirror) | **host 내장**(런타임 marker) | 서버측=readonly mirror, client측=mirror Terminal | attach 점유의 양쪽 표현 → [점유](../../concepts/actors.md#점유-occupation-모델) |
 | `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh 합성 | egui-mesh whitelist |
 | `image` | Image | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** (T11) | egui | host builtin surface |
 | `html` | (plugin 제공) | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
 
-- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`attached`/`explorer`) 가 부팅 시 등록.
+- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`) 가 부팅 시 등록.
 - **egui-mesh plugin**(`markdown`/`image`)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
 - **webview plugin**(`html`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리하고 plugin 은 `webview.set_url` IPC 로 URL/navigation 만 제어.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
@@ -96,7 +95,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
   - 닫기: `tasty close tab|pane|surface --… <ID>`.
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
-- **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 `attached` marker 로 표시되고, 점유된 워크스페이스는 mirror 면 사이드바 이름 앞 하늘색 glyph(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
+- **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 원본 kind(terminal)를 그대로 유지하고, 점유는 `OccupancyRegistry`(`is_hard_occupied`)가 추적하며 서버측은 readonly mirror 오버레이(`src/core/attach_readonly.rs`)로 렌더 + 로컬 입력을 차단한다(전용 트리 marker kind 없음). 점유된 워크스페이스는 mirror 면 사이드바 이름 앞 하늘색 glyph(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
 
 ## 비-목표 (Out of scope)
 
@@ -104,7 +103,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **탭 스트립의 시각/드래그 동작** — [`features/workspace-tabs/`](../workspace-tabs/index.md). 여기선 Pane 의 `tabs`/`active_tab` *도메인* 만.
 - **상태바** — [`features/workspace-status-bar/`](../workspace-status-bar/index.md).
 - **터미널 PTY/그리드/스크롤백 내부** — surface 는 leaf marker 일 뿐, 터미널 데이터는 `TerminalStore`.
-- **attach/detach 실행 메커니즘** — surface 는 `attached` marker 만; 점유 동작·실행은 [remote-attach](../remote-attach/index.md), 메커니즘은 [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
+- **attach/detach 실행 메커니즘** — surface 는 원본 kind 를 유지하고 점유는 `OccupancyRegistry` 로 추적; 점유 동작·실행은 [remote-attach](../remote-attach/index.md), 메커니즘은 [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 
 ## Acceptance Criteria
 
@@ -119,7 +118,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 
 ## 구현
 
-- 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`attached_surface.rs`/`markdown_panel.rs`/`image_panel.rs`).
+- 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`markdown_panel.rs`/`image_panel.rs`).
 - 이진 트리 공통: `binary_tree.rs` (`BinaryTree` trait — Pane/Surface 양쪽이 구현).
 - 보유/동작: `src/core/state.rs` `CoreState`(`workspaces`, `surface_registry`, `terminals`, `attach`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs`).
 - 종류 레지스트리: `src/engine/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.

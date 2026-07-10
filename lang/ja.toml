@@ -959,7 +959,6 @@ cancel_button = "キャンセル"
 [surface.kind]
 terminal = "ターミナル"
 empty = "空"
-attached = "アタッチ"
 explorer = "エクスプローラー"
 
 [attach]

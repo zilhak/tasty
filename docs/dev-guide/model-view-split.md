@@ -97,6 +97,6 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 |-------|------|-------|
 | `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll, load error) | `AppState::markdown_views` |
 | `ImagePanel` (file_path, dir_images, current_index) | `ImageView` (image, texture, edit_state, brush, popup buffers) | `AppState::image_views` |
-| `TerminalSurface` / `EmptySurface` / `AttachedSurface` | (없음 — GPU 렌더 또는 id-only) | — |
+| `TerminalSurface` / `EmptySurface` | (없음 — GPU 렌더 또는 id-only) | — |
 
 신규 host surface 추가 시 이 표에 줄을 더한다. plugin surface(`explorer`/`html`)는 여기 들어오지 않는다.

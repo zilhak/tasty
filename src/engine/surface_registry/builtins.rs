@@ -17,7 +17,7 @@ use super::{
 
 /// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
 ///
-/// 부팅 시 등록: terminal / empty / attached / **explorer**(T11 host builtin).
+/// 부팅 시 등록: terminal / empty / **explorer**(T11 host builtin).
 ///
 /// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
 /// - `"image"` / `"markdown"`: 각 plugin 이 hello 시 `rendering = "egui-mesh"`
@@ -25,7 +25,6 @@ use super::{
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
-    register_attached(registry);
     register_explorer(registry);
 }
 
@@ -38,7 +37,7 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
 /// 에서 host builtin 으로 승격됐다 — 사용자 `~/.tasty/plugins/` 에 옛 plugin 이
 /// 남아 있어도 native explorer 가 항상 우선한다.
 pub fn is_host_builtin_kind(kind: &str) -> bool {
-    matches!(kind, "terminal" | "empty" | "attached" | "explorer")
+    matches!(kind, "terminal" | "empty" | "explorer")
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -92,46 +91,6 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         // terminal 표시명은 surface 자체 display_name 으로 결정 — 파라미터 basename 명명 없음.
-        name_from_param: None,
-        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
-        records_recent: false,
-        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
-        convert_requires_input: false,
-        convert_input_popup: None,
-    });
-}
-
-// ── Attached ──────────────────────────────────────────────────────────────
-//
-// attached surface 는 attach 핸들러(단계 4)가 직접 생성하는 런타임 marker
-// (배타 점유 lock 의 양쪽 표현 — placeholder/mirror). create/restore 경로 없음
-// (sentinel bail). decision 2(휘발성): snapshot=None 으로 layout.json 에서 제외 —
-// 재시작 시 내부 Terminal 이 일반 `SavedSurface::Terminal` 로 free 환원된다.
-
-fn register_attached(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "attached",
-        display_name_i18n_key: "surface.kind.attached",
-        // attached 는 배타 점유 marker — 내부 Terminal 의 mirror 라 terminal 아이콘.
-        icon: Some("terminal".to_string()),
-        create: Arc::new(|_sid, _cwd, _params| {
-            anyhow::bail!(
-                "attached surfaces are created by the attach handler, not via registry create"
-            )
-        }),
-        restore: Arc::new(|_sid, _data| {
-            anyhow::bail!("attached surfaces are volatile (decision 2); not restored")
-        }),
-        snapshot: Arc::new(|_| None),
-        // attached 는 사용자가 프리셋으로 만들 수 없는 런타임 marker — 편집 필드 없음.
-        preset_fields: Vec::new(),
-        param_aliases: std::collections::HashMap::new(),
-        default_params: std::collections::HashMap::new(),
-        consumes_egui_input: false,
-        zoomable: false,
-        egui_copy: false,
-        copy_path: false,
-        egui_paste: false,
         name_from_param: None,
         // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
@@ -423,16 +382,5 @@ mod tests {
         assert!(!term.consumes_egui_input);
         assert!(!term.zoomable);
         assert!(!term.copy_path);
-    }
-
-    #[test]
-    fn attached_is_volatile_sentinel() {
-        // attached kind 는 attach 핸들러가 직접 생성하는 런타임 marker —
-        // create/restore 는 sentinel bail, snapshot 은 휘발성(None, decision 2).
-        let reg = registry_with_builtins();
-        let def = reg.get("attached").unwrap();
-        assert!((def.create)(1, None, &json!({})).is_err());
-        assert!((def.restore)(1, &json!({})).is_err());
-        assert!((def.snapshot)(&crate::model::EmptySurface::new(1)).is_none());
     }
 }

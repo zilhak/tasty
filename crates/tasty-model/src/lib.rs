@@ -76,7 +76,6 @@ pub fn compute_terminal_rect(
 }
 
 mod attach_mapping;
-mod attached_surface;
 pub mod banner_kind;
 mod binary_tree;
 pub mod closed_item;
@@ -94,7 +93,6 @@ mod workspace;
 mod workspace_category;
 
 pub use attach_mapping::{WorkspaceAttachMapping, WorkspaceAttachTarget};
-pub use attached_surface::*;
 pub use binary_tree::BinaryTree;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use empty_surface::*;

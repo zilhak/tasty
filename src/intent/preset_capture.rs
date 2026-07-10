@@ -11,10 +11,10 @@
 //! `params` 는 참조하지 않는다. capture 측에서도 terminal 의 params 는 빈 객체로
 //! 두면 충분.
 //!
-//! ### terminal/attached 특수 처리
+//! ### terminal 특수 처리
 //!
-//! `SurfaceKindRegistry` 의 terminal/attached snapshot 은 의도적으로 `None` 을
-//! 반환한다 (PTY 는 host 책임, attached 는 휘발성 marker). preset capture 는 이
+//! `SurfaceKindRegistry` 의 terminal snapshot 은 의도적으로 `None` 을
+//! 반환한다 (PTY 는 host 책임). preset capture 는 이
 //! `None` 을 *실패* 가 아니라 *정상 신호* 로 받아들여야 한다. 같은 코드베이스의
 //! `engine::layout_persistence::capture::SavedSurface::capture_surface` 가 동일한
 //! 패턴을 쓰며, 본 모듈도 그와 정렬한다.
@@ -164,8 +164,7 @@ fn capture_surface_layout(
 ///    "terminal"` + `DeferredSpawn.working_dir` 를 cwd 로. `kind()` 는 항상
 ///    `"empty"` 라 registry 분기에 먹히므로, 그 앞에서 downcast +
 ///    `is_deferred()` 가드로 가로챈다. (비-deferred empty 는 통과.)
-/// 2. terminal / attached → `kind = "terminal"` + `cwd` 추출 + 빈 params.
-///    (attached 는 preset 레이아웃 관점에서 terminal 슬롯이다.)
+/// 2. terminal → `kind = "terminal"` + `cwd` 추출 + 빈 params.
 /// 3. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
 ///    객체로 fallback (kind 는 그대로 보존).
 /// 4. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
@@ -199,7 +198,7 @@ fn capture_surface(
         };
     }
 
-    if kind_str == "terminal" || kind_str == "attached" {
+    if kind_str == "terminal" {
         let cwd = surface
             .surface_id()
             .and_then(|id| engine.terminals.get(id))

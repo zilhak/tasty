@@ -79,12 +79,12 @@ const FORM_GAP: f32 = 4.0;
 /// registry 미주입 컨텍스트(갤러리·테스트·main 부재)에서 쓰는 정적 kind 후보 +
 /// builtin 정렬 기준. registry 가 주입되면 [`KindCatalog::from_registry`] 가 실제
 /// 등록 kind 로 대체하고, 이 배열은 빈 catalog 의 graceful fallback 으로만 남는다.
-/// `empty`/`attached` 는 제외(capture/apply 정규화 정책과 정합).
+/// `empty` 는 제외(capture/apply 정규화 정책과 정합).
 const EDIT_KINDS: &[&str] = &["terminal", "markdown", "image", "explorer", "html"];
 
-/// 편집기 kind 드롭다운에서 숨길 시스템 kind. `empty`/`attached` 는 사용자가
+/// 편집기 kind 드롭다운에서 숨길 시스템 kind. `empty` 는 사용자가
 /// 직접 만들 수 없는 내부 상태라 capture/apply 정규화와 정합하게 후보에서 제외한다.
-const HIDDEN_EDIT_KINDS: &[&str] = &["empty", "attached"];
+const HIDDEN_EDIT_KINDS: &[&str] = &["empty"];
 
 /// registry 에서 파생한 경량 kind 스냅샷 — 편집기 렌더/mutation 이 engine 타입에
 /// 의존하지 않도록 순수 데이터만 담는다(build 시 1회 추출, `방식 B`).
@@ -109,7 +109,7 @@ struct KindSpec {
 
 impl KindCatalog {
     /// registry 스냅샷에서 편집기 kind catalog 를 만든다.
-    /// - `HIDDEN_EDIT_KINDS`(`empty`/`attached`) 는 제외.
+    /// - `HIDDEN_EDIT_KINDS`(`empty`) 는 제외.
     /// - 순서: builtin 우선([`EDIT_KINDS`] 순), 그 외 plugin kind 는 알파벳순.
     /// - 표시명: registry `display_name_i18n_key` 번역 우선, 미번역/미등록이면 capitalize.
     pub fn from_registry(registry: &SurfaceKindRegistry) -> Self {
@@ -285,7 +285,7 @@ fn fallback_fields(kind: &str) -> Vec<PresetFieldSpec> {
 
 fn kind_accent(theme: &Theme, kind: &str) -> egui::Color32 {
     match kind {
-        "terminal" | "attached" => theme.accent_success().to_egui(),
+        "terminal" => theme.accent_success().to_egui(),
         "markdown" => theme.accent_primary().to_egui(),
         "image" => theme.accent_info().to_egui(),
         "explorer" => theme.accent_agent().to_egui(),
@@ -318,7 +318,7 @@ fn label_from_i18n_key(key: &str, kind: &str) -> String {
 /// `surface.kind.<kind>` i18n 키를 시도하고(= registry `display_name_i18n_key`
 /// 규약과 동일 키. builtin/plugin 모두 이 네임스페이스를 쓴다), 미번역이면 kind
 /// 첫 글자를 대문자로. registry 가 주입되면 [`KindCatalog`] 가 우선하고, 이 함수는
-/// catalog 에 없는 kind(비활성 plugin·`empty`/`attached` 등)의 안전망으로만 쓰인다.
+/// catalog 에 없는 kind(비활성 plugin·`empty` 등)의 안전망으로만 쓰인다.
 fn fallback_kind_label(kind: &str) -> String {
     label_from_i18n_key(&format!("surface.kind.{kind}"), kind)
 }
@@ -2504,7 +2504,7 @@ mod tests {
     #[test]
     fn catalog_candidates_reflect_registered_kinds() {
         // registry 파생 catalog 는 등록 kind 를 후보로 노출하고, 현재 kind 가 목록에
-        // 없으면 덧붙인다. HIDDEN(empty/attached)은 from_registry 에서 이미 걸러진다.
+        // 없으면 덧붙인다. HIDDEN(empty)은 from_registry 에서 이미 걸러진다.
         let cat = KindCatalog::from_pairs(vec![
             ("terminal".to_string(), "Terminal".to_string()),
             ("foo".to_string(), "Foo Surface".to_string()),

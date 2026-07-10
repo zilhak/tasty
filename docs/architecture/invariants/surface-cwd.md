@@ -18,7 +18,6 @@ Terminal(`/foo/bar`) → Explorer 변환 시, 예전엔 변환 타깃이 cwd 를
 | `MarkdownPanel` / `ImagePanel` | 자기 file 의 parent (자체 의미 우선; file 없으면 None) |
 | `EmptySurface` | carry 한 `self.cwd` (없으면 None) |
 | `ExplorerPanel` | 활성 탭의 **고정 cwd**(프로젝트 루트) — 현재 폴더(current)를 하위로 오가도 스폰 cwd 는 cwd 불변. cwd↔current 분리는 [features/explorer](../../features/explorer/index.md) |
-| `AttachedSurface` | `None` (점유 mirror — 자체 cwd 의미 없음) |
 | `RemoteSurface`(plugin surface) | `None` — plugin 이 `ctx.cwd` 로 받아 자체 보유, host trait 에는 비노출. host carry 는 `SurfaceCreateCtx.cwd` 로 *한 번만* 전달 |
 
 ### 2. carry 경로 강제 — `SurfaceKindDef::create` 시그니처

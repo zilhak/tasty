@@ -125,12 +125,12 @@ text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme �
 모델 의미(`Vertical`=좌우/row, `Horizontal`=상하/column, capture·apply 와 일치)를 따른다.
 
 **kind→표시명 (i18n)**: 라벨은 `surface.kind.<kind>` 키로 해석(= registry `display_name_i18n_key`
-규약). 호스트 lang 에 빌트인 `terminal`/`empty`/`attached` 키를 추가했고(`lang/{en,ko,ja}.toml`
+규약). 호스트 lang 에 빌트인 `terminal`/`empty` 키를 추가했고(`lang/{en,ko,ja}.toml`
 `[surface.kind]`), plugin kind(markdown/image/…)는 각 plugin lang 의 `[surface.kind]` 가 제공.
 `PresetView` 는 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 경량 스냅샷
 (`KindCatalog`)을 파생한다 — kind 드롭다운 후보는 런타임 등록 kind 를 반영하고, 표시명은
 registry `display_name_i18n_key` 로 해석하며(미번역/미등록이면 `fallback_kind_label` capitalize
-로 graceful fallback), `empty`/`attached` 는 후보에서 제외한다. registry 미주입(갤러리·main
+로 graceful fallback), `empty` 는 후보에서 제외한다. registry 미주입(갤러리·main
 부재)이면 빈 catalog → 정적 목록으로 떨어진다.
 
 **배선**: `draw_preset_panel`(`src/adapters/ui/preset.rs`)이 선택 preset 으로 `DemoLayout` 을

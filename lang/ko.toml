@@ -959,7 +959,6 @@ cancel_button = "취소"
 [surface.kind]
 terminal = "터미널"
 empty = "빈 화면"
-attached = "연결됨"
 explorer = "탐색기"
 
 [attach]

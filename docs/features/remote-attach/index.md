@@ -135,7 +135,6 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - mirror 비영속: `src/engine/layout_persistence/capture.rs`(`SavedLayout::capture` 가 `ws.mirror` 제외 + active 인덱스 remap). 회귀 테스트 `core::state` `mirror_workspace_not_persisted`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-cli/src/remote_browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선).
-- trait marker: `AttachedSurface`(`kind:"attached"`, placeholder/mirror) — [work-area Surface 종류](../work-area/index.md#surface-종류).
 
 ## 화면
 

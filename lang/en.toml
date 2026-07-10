@@ -960,7 +960,6 @@ cancel_button = "Cancel"
 [surface.kind]
 terminal = "Terminal"
 empty = "Empty"
-attached = "Attached"
 explorer = "Explorer"
 
 [attach]
