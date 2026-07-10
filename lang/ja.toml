@@ -556,6 +556,11 @@ forward = "進む"
 up = "上へ"
 refresh = "更新"
 
+[explorer.address]
+placeholder = "ディレクトリへ移動…"
+go = "移動"
+empty = "一致するパスがありません"
+
 [explorer.sidebar]
 tree = "ファイル"
 favorites = "お気に入り"

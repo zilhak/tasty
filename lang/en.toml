@@ -556,6 +556,11 @@ forward = "Forward"
 up = "Up"
 refresh = "Refresh"
 
+[explorer.address]
+placeholder = "Go to directory…"
+go = "Go"
+empty = "No matching path"
+
 [explorer.sidebar]
 tree = "Files"
 favorites = "Favorites"

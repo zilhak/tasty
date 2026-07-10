@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
+use tasty_ui_widgets::{
+    PathField, PathFieldOutcome, Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir,
+    tree_row,
+};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::i18n::{t, t_fmt};
@@ -102,7 +105,7 @@ pub fn draw_explorer(
 
     ui.vertical(|ui| {
         tab_strip(ui, theme, panel, &mut action);
-        toolbar(ui, theme, panel, &mut action);
+        toolbar(ui, theme, panel, view, id_suffix, &mut action);
         // toolbar ↔ content 구분선.
         let (sep_rect, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
@@ -210,7 +213,7 @@ fn tab_strip(
     let mut x = rect.min.x;
     for (i, tab) in panel.tabs.iter().enumerate() {
         let is_active = i == active;
-        // 탭 라벨은 고정 cwd(프로젝트) 이름 — 현재 폴더는 breadcrumb 이 보여준다.
+        // 탭 라벨은 고정 cwd(프로젝트) 이름 — 현재 폴더는 주소창(PathField)이 보여준다.
         let label = tab
             .cwd
             .file_name()
@@ -324,11 +327,13 @@ fn tab_strip(
     }
 }
 
-// ── 툴바: nav 버튼 + breadcrumb + view-mode segmented ──────────────────────
+// ── 툴바: nav 버튼 + 편집형 PathField 주소창 + view-mode segmented ──────────
 fn toolbar(
     ui: &mut egui::Ui,
     theme: &Theme,
     panel: &ExplorerPanel,
+    view: &mut ExplorerView,
+    id_suffix: &str,
     action: &mut Option<ExplorerAction>,
 ) {
     let h = theme.item_height_interactive.value() + theme.spacing_sm.value() * 2.0;
@@ -387,10 +392,21 @@ fn toolbar(
         let seg_w = seg_toggle_width(theme);
         let gap = theme.spacing_sm.value();
         let addr_w = (ui.available_width() - seg_w - gap).max(0.0);
+        let tab_index = panel.active;
         ui.allocate_ui_with_layout(
             egui::vec2(addr_w, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
-            |ui| address_bar(ui, theme, panel.current_root(), action),
+            |ui| {
+                address_bar(
+                    ui,
+                    theme,
+                    panel.current_root(),
+                    view,
+                    id_suffix,
+                    tab_index,
+                    action,
+                )
+            },
         );
         ui.add_space(gap);
         seg_toggle(ui, theme, tab.view_mode, action);
@@ -484,103 +500,67 @@ fn seg_toggle(
     }
 }
 
-/// 주소표시줄 박스 (design `ExpToolbar` address bar + `Crumb`): surface-raised 배경 +
-/// border-default 1px + radius 박스, 앞에 folderOpen 아이콘, 크럼 사이 chevron 아이콘.
-/// 내용은 박스 폭으로 clip 되어 긴 경로가 view-mode 토글을 침범하지 않는다.
+/// 주소표시줄 — 공용 편집형 [`PathField`](design `PathField`/`ExpToolbar`): folderOpen leading +
+/// mono 경로(idle=secondary / editing=primary) + Go(arrow-right). 클릭→편집, 임의 경로 타이핑
+/// 후 `↵`/Go 로 디렉토리 이동. 후보(최근 디렉토리)는 후속 TODO — 지금은 빈 슬라이스.
+///
+/// 편집 상태(`addr_buffer`/`addr_editing`/`addr_active`)는 per-surface [`ExplorerView`] 소유.
+/// id_salt 는 surface(`id_suffix`) + 내부 탭 index 로 고유화해 다중 surface/탭 충돌을 막는다.
 fn address_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
     current: &Path,
+    view: &mut ExplorerView,
+    id_suffix: &str,
+    tab_index: usize,
     action: &mut Option<ExplorerAction>,
 ) {
-    let h = ui.available_height();
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().rect(
-        rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    let pad = theme.spacing_xs.value();
-    let inner = rect.shrink2(egui::vec2(pad + theme.border_width.value(), 0.0));
-    // 내용은 inner 로 clip → 어떤 경로 길이도 박스를 넘지 않는다(design overflow clip).
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.set_clip_rect(inner);
-    child.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-
-    let icon_sm = theme.icon_glyph_size_sm.value();
-    let (fi_rect, _) =
-        child.allocate_exact_size(egui::vec2(icon_sm, icon_sm), egui::Sense::hover());
-    icons::FOLDER_OPEN
-        .image(icon_sm, theme.text_muted().to_egui())
-        .paint_at(&child, fi_rect);
-    child.add_space(theme.spacing_xs.value());
-
-    let font = egui::FontId::proportional(theme.font_size_body.value());
-    let mut crumbs: Vec<PathBuf> = current.ancestors().map(|p| p.to_path_buf()).collect();
-    crumbs.reverse();
-    let crumbs: Vec<PathBuf> = crumbs
-        .into_iter()
-        .filter(|c| {
-            !c.as_os_str().is_empty()
-                && c.file_name()
-                    .map(|n| !n.is_empty())
-                    .unwrap_or_else(|| !c.to_string_lossy().is_empty())
-        })
-        .collect();
-    let last = crumbs.len().saturating_sub(1);
-    for (i, c) in crumbs.iter().enumerate() {
-        let name = c
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| c.to_string_lossy().to_string());
-        let is_last = i == last;
-        let galley =
-            child.fonts(|f| f.layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE));
-        let crumb_pad = theme.spacing_xs.value();
-        let (crect, resp) = child.allocate_exact_size(
-            egui::vec2(galley.size().x + crumb_pad * 2.0, h),
-            egui::Sense::click(),
+    let current_str = current.display().to_string();
+    let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::FOLDER_OPEN
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::ARROW_RIGHT
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+    let salt = format!("explorer_addr_{id_suffix}_{tab_index}");
+    let outcome = PathField::new(&salt)
+        .placeholder(t("explorer.address.placeholder"))
+        .empty_label(t("explorer.address.empty"))
+        .leading_icon(&folder_icon)
+        .row_icon(&folder_icon)
+        .go_icon(&go_icon)
+        .show(
+            ui,
+            theme,
+            &mut view.addr_buffer,
+            &mut view.addr_editing,
+            &mut view.addr_active,
+            &[],
+            &current_str,
         );
-        let color = if is_last || resp.hovered() {
-            theme.text_primary().to_egui()
-        } else {
-            theme.text_secondary().to_egui()
-        };
-        child.painter().text(
-            egui::pos2(crect.min.x + crumb_pad, crect.center().y),
-            egui::Align2::LEFT_CENTER,
-            &name,
-            font.clone(),
-            color,
-        );
-        if resp.clicked() && !is_last && action.is_none() {
-            *action = Some(ExplorerAction::Navigate(c.clone()));
-        }
-        if !is_last {
-            let (srect, _) =
-                child.allocate_exact_size(egui::vec2(icon_sm, h), egui::Sense::hover());
-            let sep_rect = egui::Rect::from_center_size(
-                srect.center(),
-                egui::vec2(
-                    theme.icon_glyph_size_xs.value(),
-                    theme.icon_glyph_size_xs.value(),
-                ),
-            );
-            icons::CHEVRON_RIGHT
-                .image(
-                    theme.icon_glyph_size_xs.value(),
-                    theme.text_muted().to_egui().gamma_multiply(0.7),
-                )
-                .paint_at(&child, sep_rect);
-        }
+    // 확정 이동 — explorer 는 **디렉토리만** 대상(파일/오타는 no-op). Revert/None 은 무동작.
+    if let PathFieldOutcome::Navigate(input) = outcome
+        && action.is_none()
+        && let Some(dir) = navigate_target(&input)
+    {
+        *action = Some(ExplorerAction::Navigate(dir));
     }
+}
+
+/// PathField 확정 문자열을 이동 대상 디렉토리로 해석. **존재하는 디렉토리**일 때만 `Some`.
+/// 파일/존재하지 않는 경로/오타는 `None`(이동 no-op) — explorer 는 디렉토리만 열 수 있어
+/// markdown(파일 대상)과 반대 가드다.
+fn navigate_target(input: &str) -> Option<PathBuf> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(trimmed);
+    (path.exists() && path.is_dir()).then_some(path)
 }
 
 // ── 사이드바: 디렉토리 트리 ───────────────────────────────────────────────
@@ -1555,5 +1535,38 @@ fn type_label(e: &DirEntryInfo) -> String {
         t("explorer.type.file").to_string()
     } else {
         e.ext.to_uppercase()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::navigate_target;
+    use std::path::PathBuf;
+
+    /// 존재하는 디렉토리 → Some(그 경로).
+    #[test]
+    fn navigate_target_accepts_existing_dir() {
+        let dir = env!("CARGO_MANIFEST_DIR");
+        assert_eq!(navigate_target(dir), Some(PathBuf::from(dir)));
+        // 앞뒤 공백은 무시.
+        assert_eq!(
+            navigate_target(&format!("  {dir}  ")),
+            Some(PathBuf::from(dir))
+        );
+    }
+
+    /// 파일 경로는 디렉토리가 아니므로 no-op(None) — explorer 는 디렉토리만 이동.
+    #[test]
+    fn navigate_target_rejects_file() {
+        let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        assert_eq!(navigate_target(file), None);
+    }
+
+    /// 존재하지 않는 경로/오타/빈 문자열 → None.
+    #[test]
+    fn navigate_target_rejects_missing_and_empty() {
+        assert_eq!(navigate_target("/nonexistent/xyz/should/not/exist"), None);
+        assert_eq!(navigate_target(""), None);
+        assert_eq!(navigate_target("   "), None);
     }
 }

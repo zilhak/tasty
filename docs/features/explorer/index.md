@@ -15,7 +15,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 ### 모델 (`ExplorerPanel`)
 
 - `ExplorerPanel` 은 식별(`id`)과 내비게이션 상태만 보유한다 — 내부 탭 목록(`tabs`)·활성 탭 인덱스(`active`). 각 `ExplorerTab` 은 **cwd(고정 루트)** 와 **current(현재 폴더, 필드명 `root`)** 를 분리해 보유하고, 히스토리(back/forward 스택), 뷰 모드(`view_mode`), 정렬 컬럼/방향(`sort_column`/`sort_dir`)을 가진다.
-- **cwd ↔ current 분리** (VS Code 식 "고정 프로젝트 + 자유 탐색"): `cwd()` 는 explorer 를 연 프로젝트 루트로 **좌측 사이드바 트리 루트**·**스폰 cwd**(`source_cwd()`)·**surface/탭 표시명**의 기준이며 내비게이션에 불변. `current()`(=`current_root()`) 는 **우측 목록**·**상단 breadcrumb** 이 따라가는 탐색 폴더로, back/forward/go_up 이 이것만 움직인다. current 는 cwd 하위로 제한되지 않고 파일시스템 어디로든 자유 이동한다.
+- **cwd ↔ current 분리** (VS Code 식 "고정 프로젝트 + 자유 탐색"): `cwd()` 는 explorer 를 연 프로젝트 루트로 **좌측 사이드바 트리 루트**·**스폰 cwd**(`source_cwd()`)·**surface/탭 표시명**의 기준이며 내비게이션에 불변. `current()`(=`current_root()`) 는 **우측 목록**·**상단 주소창(편집형 PathField)** 이 따라가는 탐색 폴더로, back/forward/go_up 이 이것만 움직인다. current 는 cwd 하위로 제한되지 않고 파일시스템 어디로든 자유 이동한다.
 - 내비게이션: `navigate_to(dir)` / `go_back` / `go_forward` / `go_up` — 모두 **current 에만** 작용. `can_go_up` 은 current 의 파일시스템 부모 존재만 본다(cwd 경계로 clamp 안 함). `set_cwd(folder)` 는 cwd·current 를 folder 로 재설정하고 히스토리를 비운다(explorer-03 "이 폴더로 루트 설정"). 히스토리는 탭별로 독립.
 - **`..` 상위 이동**: current 에 부모가 있으면(파일시스템 루트 아님) 우측 목록 최상단에 `..` 특수 행을 그려 상위 폴더로 이동한다. `..` 는 **렌더 전용**이라 `view.entries`/선택/상태줄/컨텍스트 메뉴 대상이 아니며 더블클릭 시 `Navigate(parent)` 만 emit 한다.
 - 내부 탭: `add_tab`(활성 탭 cwd 복제, current=cwd) / `close_tab(idx)` / `active_tab[_mut]`. surface 하나 안에 여러 디렉토리 탭을 둔다 (상위 pane 탭과 별개). 탭별 cwd 는 독립(per-tab).
@@ -25,13 +25,14 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 디렉토리 엔트리 캐시·선택 집합·트리 펼침 같은 무거운 GUI 상태는 모델이 아니라 per-surface 뷰 스토어에 둔다 (markdown/image 뷰 스토어와 동형).
 
 - **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 텍스트로 표현한다.
+- **주소창 편집 상태**: `addr_buffer`(편집 텍스트) / `addr_editing`(포커스=편집모드) / `addr_active`(후보 드롭다운 keyboard-active 행)를 뷰가 소유한다(PathField 계약 — 상태는 호출측 소유). `sync()` 는 **비편집 시** 버퍼를 활성 탭 cwd 로 재동기화하고, 편집 중이면 사용자 입력을 보존한다. 내부 탭은 surface 단위 `ExplorerView` 를 공유하므로, cwd/내부 탭을 바꾸는 액션(`Navigate/GoBack/GoForward/GoUp/NewTab/CloseTab/SelectTab`) 적용 시 `cancel_addr_edit()` 로 편집을 취소해 버퍼가 다른 탭/경로로 새지 않게 하고(다음 `sync()` 가 새 cwd 로 맞춘다), id_salt 는 surface+내부탭 index 로 고유화한다.
 - **선택**: `selected: HashSet<PathBuf>` + `anchor`(shift 범위 기준). `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
 - **사이드바 트리**: `expanded` 펼침 집합 + `tree_children` lazy 하위 디렉토리 캐시. 폭 196(design `ExpSidebar`). 섹션 순서는 **Files(트리, cwd 루트 고정) 위 → 1px 구분선 → Favorites 아래**. 트리에서 **현재 폴더(current)** 노드는 surface-active 배경 + text-primary 로 하이라이트되고, 폴더 아이콘은 text-muted. 섹션 캡션은 monospace·micro·uppercase(design `SideHead`).
 
 ### 뷰 모드 / 정렬
 
 - 뷰 모드 3 종(grid / list / detail)을 toolbar 우측의 **아이콘 view-mode 토글**(`seg_toggle`, design `SegToggle`)로 전환한다 — grid/list/detail 아이콘 세그먼트, active = surface-active 배경 + text-primary. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
-- toolbar 의 **주소표시줄**(`address_bar`, design `ExpToolbar`)은 surface-raised 배경 + border-default + radius 박스로, 앞에 folderOpen 아이콘, 크럼 사이 chevron 아이콘 구분자. 내용은 박스 폭으로 clip 되어 긴 경로가 view-mode 토글을 침범하지 않는다(주소표시줄 flex:1 / 토글 flex:none).
+- toolbar 의 **주소표시줄**(`address_bar`, design `ExpToolbar`/`PathField`)은 공용 **편집형 `PathField`** 다 — folderOpen leading 아이콘 + mono 경로(비편집=text-secondary / 편집=text-primary) + 우측 Go(arrow-right) 버튼(input-bg/input-border(-focus) 토큰). 클릭하면 편집 모드로 들어가 임의 디렉토리 경로를 타이핑하고 `↵` 또는 Go 로 **cwd(current) 이동**한다(존재하는 디렉토리만 — `navigate_target` 가 `exists() && is_dir()` 를 통과해야 `ExplorerAction::Navigate` emit, 파일/오타는 no-op). `Esc` 또는 확정 없는 포커스 이탈은 현재 cwd 로 원복. 과거 breadcrumb(조각 클릭 상위 점프)는 폐기 — 대체는 Back/Forward/Up + 사이드바 트리 + 타이핑 이동. 후보(최근 디렉토리) 드롭다운은 후속 과제로 현재 `candidates=&[]`. 주소표시줄 flex:1 / 토글 flex:none.
 - **마지막 view mode 기억**: 사용자가 뷰 모드를 바꾸면 그 값이 `Settings.general.explorer_view_mode`(`~/.tasty/config.toml`)에 영속되고, **새로 생성되는** explorer surface 는 이 값으로 열린다(주입 지점: `create_surface_via_registry` 가 explorer 의 `default_params` `view_mode = "@settings.explorer_view_mode"` 정책 토큰을 `view_mode` param 미지정 시 해석해 explorer `create` 에 실어 전달 — kind별 default_params 는 [plugin-development.md](../../dev-guide/plugin-development.md) 참조). 같은 surface 안의 새 내부 탭(`add_tab`)은 활성 탭의 view mode 를 승계한다. snapshot 복원 경로는 create 를 거치지 않아 per-tab 저장값을 그대로 유지한다.
 - list/detail 데이터 행은 공용 `Table`(selectable)을, 사이드바 디렉토리 행은 공용 `tree_row` 를 재사용한다. detail 컬럼은 Name(1fr)/Size(80)/Date(132)/Type(92)이며, Size·Date 는 **monospace·caption(11)·text-muted**, Size 는 우측 정렬 + 8px 우측 패딩으로 Date 와 시각적 간격을 둔다(design `DetailRow`).
 

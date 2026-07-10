@@ -338,7 +338,25 @@ pub(crate) fn apply_explorer_action(
             };
             state.dialogs.pending_native_menu = Some(menu);
         }
-        _ => apply_explorer_panel_action(state, engine, sid, &act),
+        _ => {
+            apply_explorer_panel_action(state, engine, sid, &act);
+            // cwd/내부 탭이 바뀔 수 있는 액션은 주소창 편집을 취소한다 — surface 단위
+            // `ExplorerView` 의 addr 버퍼가 다른 내부 탭/경로로 새지 않도록(다음 sync 가
+            // 새 cwd 로 재동기화). SetViewMode/SetSort 는 cwd 불변이라 제외.
+            if matches!(
+                act,
+                A::Navigate(_)
+                    | A::GoBack
+                    | A::GoForward
+                    | A::GoUp
+                    | A::NewTab
+                    | A::CloseTab(_)
+                    | A::SelectTab(_)
+            ) && let Some(v) = state.explorer_views.get_mut(sid)
+            {
+                v.cancel_addr_edit();
+            }
+        }
     }
 }
 

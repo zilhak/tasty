@@ -556,6 +556,11 @@ forward = "앞으로"
 up = "위로"
 refresh = "새로고침"
 
+[explorer.address]
+placeholder = "디렉토리로 이동…"
+go = "이동"
+empty = "일치하는 경로 없음"
+
 [explorer.sidebar]
 tree = "파일"
 favorites = "즐겨찾기"

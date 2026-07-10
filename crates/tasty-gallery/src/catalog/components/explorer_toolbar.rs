@@ -1,38 +1,86 @@
-//! `explorer_toolbar` specimen — 디자인 T11 explorer 툴바의 주소표시줄 박스 +
-//! view-mode 아이콘 토글 (design `ExpToolbar` / `Crumb` / `SegToggle`).
+//! `explorer_toolbar` specimen — 디자인 T11 explorer 툴바의 편집형 주소표시줄(`PathField`) +
+//! view-mode 아이콘 토글 (design `ExpToolbar` / `PathField` / `SegToggle`).
 //!
-//! - **주소표시줄**(design address bar): surface-raised 배경 + border-default 1px +
-//!   radius 박스, 앞에 `folderOpen` 아이콘(text-muted), 크럼 사이 `chevRsm` 아이콘.
+//! - **주소표시줄**(design `PathField`): 공용 편집형 경로 필드 — folderOpen leading + mono 경로
+//!   (idle=secondary / editing=primary) + Go(arrow-right). 클릭→편집, 경로 타이핑 후 `↵`/Go 로
+//!   디렉토리 이동. 후보(최근 디렉토리) 드롭다운 = AutoComplete. breadcrumb 는 폐기.
 //! - **SegToggle**: 컨테이너 surface-raised + border-default + radius, grid/list/detail
 //!   아이콘 세그먼트. active = surface-active bg + text-primary, inactive = text-muted.
 //!
-//! 색·치수·폰트는 전부 `Theme` 토큰. 본체 `explorer.rs` 의 `address_bar`/`seg_toggle`
+//! 색·치수·폰트는 전부 `Theme` 토큰. 본체 `explorer.rs` 의 `address_bar`(PathField)/`seg_toggle`
 //! 와 동일 형상(구조 전사).
 
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::PathField;
 
-use crate::catalog::icons::{
-    CHEVRON_RIGHT, FOLDER_OPEN, LAYOUT_DETAIL, LAYOUT_GRID, LIST, MockGlyph,
-};
+use super::glyph;
+use crate::catalog::icons::{LAYOUT_DETAIL, LAYOUT_GRID, LIST, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
-const CRUMBS: &[&str] = &["Home", "user", "Downloads"];
+/// 최근 디렉토리 후보(design ExpToolbar `PathField candidates`).
+const EXP_RECENT: &[&str] = &[
+    "~/Downloads",
+    "~/work/tasty",
+    "~/work/tasty/crates/tasty-ui-widgets",
+    "~/.config/tasty",
+];
+
+/// 라이브 PathField 편집 상태(호출측 소유 계약).
+struct AddrState {
+    buf: String,
+    editing: bool,
+    active: Option<usize>,
+}
 
 thread_local! {
     static SEG_SEL: RefCell<usize> = const { RefCell::new(2) }; // detail 기본 활성
+    static ADDR: RefCell<Option<AddrState>> = const { RefCell::new(None) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // ── 주소표시줄 박스 ──
+    let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        glyph::FOLDER_OPEN
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        glyph::ARROW_RIGHT
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+
+    // ── 편집형 주소표시줄 (PathField) ──
     stage(ui, theme, StageVariant::Tight, |ui| {
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_panel()))
             .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
             .show(ui, |ui| {
                 ui.set_width(theme.measure_md.value());
-                address_bar(ui, theme, CRUMBS);
+                ADDR.with(|s| {
+                    let mut slot = s.borrow_mut();
+                    let st = slot.get_or_insert_with(|| AddrState {
+                        buf: "~/Downloads".to_string(),
+                        editing: false,
+                        active: None,
+                    });
+                    PathField::new("gallery_exp_addr")
+                        .placeholder("Go to directory…")
+                        .empty_label("No matching path")
+                        .leading_icon(&folder_icon)
+                        .row_icon(&folder_icon)
+                        .go_icon(&go_icon)
+                        .show(
+                            ui,
+                            theme,
+                            &mut st.buf,
+                            &mut st.editing,
+                            &mut st.active,
+                            EXP_RECENT,
+                            "~/Downloads",
+                        );
+                });
             });
     });
 
@@ -55,21 +103,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("address bar", "surface-raised + border-default + radius"),
-            ("crumb sep", "chevron (text-muted · 0.7)"),
+            ("field", "PathField — input-bg + input-border(-focus)"),
+            ("leading", "folderOpen (input-icon-fg)"),
+            ("trailing", "Go IconButton (sm) — arrow-right"),
+            ("keys", "Enter/Go navigate · ↑/↓ active · Esc revert"),
             ("toggle", "3 icons · active surface-active"),
             ("height", "28 (control-height-interactive)"),
         ],
         &[
             TokenChip::new(
-                "surface-raised",
-                "box / toggle bg",
+                "input-bg",
+                "field fill",
                 egui::Color32::from(theme.surface_raised()),
             ),
             TokenChip::new(
-                "border-default",
-                "1px border",
-                egui::Color32::from(theme.border_default()),
+                "text-secondary",
+                "idle path",
+                egui::Color32::from(theme.text_secondary()),
             ),
             TokenChip::new(
                 "surface-active",
@@ -87,81 +137,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "Address bar clips its crumbs to the box width so a long path never overflows into \
-         the view-mode toggle (design flex address:1 / toggle:none). The toggle uses grid / \
-         list / detail icons — active segment fills surface-active with text-primary, inactive \
-         stays text-muted. Mirrors the main app's address_bar / seg_toggle.",
+        "The address bar is now the shared editable PathField (folderOpen + mono path + Go), \
+         replacing the old breadcrumb — click to edit, type a directory and press Enter / Go \
+         to move cwd; recent directories surface in the AutoComplete dropdown. Mirrors the main \
+         app's address_bar (PathField) / seg_toggle. The toggle uses grid / list / detail icons \
+         — active segment fills surface-active with text-primary, inactive stays text-muted.",
     );
-}
-
-/// 주소표시줄 박스 한 개. 내용은 박스 폭으로 clip.
-fn address_bar(ui: &mut egui::Ui, theme: &Theme, crumbs: &[&str]) {
-    let h = theme.item_height_interactive.value();
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().rect(
-        rect,
-        theme.corner_radius.value(),
-        egui::Color32::from(theme.surface_raised()),
-        egui::Stroke::new(
-            theme.border_width.value(),
-            egui::Color32::from(theme.border_default()),
-        ),
-        egui::StrokeKind::Inside,
-    );
-    let pad = theme.spacing_xs.value();
-    let inner = rect.shrink2(egui::vec2(pad + theme.border_width.value(), 0.0));
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.set_clip_rect(inner);
-    child.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-
-    let icon_sm = theme.icon_glyph_size_sm.value();
-    let (fi, _) = child.allocate_exact_size(egui::vec2(icon_sm, icon_sm), egui::Sense::hover());
-    FOLDER_OPEN
-        .image(icon_sm, egui::Color32::from(theme.text_muted()))
-        .paint_at(&child, fi);
-    child.add_space(theme.spacing_xs.value());
-
-    let font = egui::FontId::proportional(theme.font_size_body.value());
-    let last = crumbs.len().saturating_sub(1);
-    for (i, name) in crumbs.iter().enumerate() {
-        let is_last = i == last;
-        let galley = child
-            .fonts(|f| f.layout_no_wrap((*name).to_string(), font.clone(), egui::Color32::WHITE));
-        let crumb_pad = theme.spacing_xs.value();
-        let (crect, _) = child.allocate_exact_size(
-            egui::vec2(galley.size().x + crumb_pad * 2.0, h),
-            egui::Sense::hover(),
-        );
-        let color = if is_last {
-            egui::Color32::from(theme.text_primary())
-        } else {
-            egui::Color32::from(theme.text_secondary())
-        };
-        child.painter().text(
-            egui::pos2(crect.min.x + crumb_pad, crect.center().y),
-            egui::Align2::LEFT_CENTER,
-            name,
-            font.clone(),
-            color,
-        );
-        if !is_last {
-            let (srect, _) =
-                child.allocate_exact_size(egui::vec2(icon_sm, h), egui::Sense::hover());
-            let xs = theme.icon_glyph_size_xs.value();
-            let sr = egui::Rect::from_center_size(srect.center(), egui::vec2(xs, xs));
-            CHEVRON_RIGHT
-                .image(
-                    xs,
-                    egui::Color32::from(theme.text_muted()).gamma_multiply(0.7),
-                )
-                .paint_at(&child, sr);
-        }
-    }
 }
 
 /// grid/list/detail 아이콘 토글. 클릭된 세그먼트 index 반환(없으면 None).

@@ -50,6 +50,12 @@ pub struct ExplorerView {
     pub tree_children: HashMap<PathBuf, Vec<DirEntryInfo>>,
     /// 강제 새로고침 요청 플래그 (F5 / refresh 버튼).
     reload_requested: bool,
+    /// 주소창(PathField) 편집 버퍼. 비편집 시 `sync()` 가 활성 탭 cwd 로 재동기화한다.
+    pub addr_buffer: String,
+    /// 주소창 편집(=트리거 포커스) 여부. PathField 가 매 프레임 갱신.
+    pub addr_editing: bool,
+    /// 주소창 후보 드롭다운의 keyboard-active 행(필터된 가시 목록 기준).
+    pub addr_active: Option<usize>,
 }
 
 impl ExplorerView {
@@ -63,7 +69,17 @@ impl ExplorerView {
             expanded: HashSet::new(),
             tree_children: HashMap::new(),
             reload_requested: false,
+            addr_buffer: String::new(),
+            addr_editing: false,
+            addr_active: None,
         }
+    }
+
+    /// 주소창 편집을 취소한다. 내부 탭 전환/nav 로 cwd 가 바뀔 때 호출해 편집 버퍼가
+    /// 다른 탭/경로로 새는 것을 막는다 — 다음 `sync()` 가 새 cwd 로 재동기화한다.
+    pub fn cancel_addr_edit(&mut self) {
+        self.addr_editing = false;
+        self.addr_active = None;
     }
 
     /// 다음 렌더에서 현재 디렉토리를 다시 읽도록 표시.
@@ -96,6 +112,16 @@ impl ExplorerView {
     /// 요청됐으면 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel) {
         let tab = panel.active_tab();
+        // 주소창: 비편집 시 항상 활성 탭 cwd 로 재동기화(탭 전환/nav 로 cwd 가 바뀌면 버퍼도
+        // 따라간다). 편집 중이면 사용자 입력을 보존한다. 엔트리 reload 여부와 독립이므로
+        // 아래 early-return 보다 앞에 둔다.
+        if !self.addr_editing {
+            let cwd = tab.root.display().to_string();
+            if self.addr_buffer != cwd {
+                self.addr_buffer = cwd;
+            }
+            self.addr_active = None;
+        }
         let key = (tab.root.clone(), tab.sort_column, tab.sort_dir);
         let dir_changed = self
             .loaded
@@ -306,5 +332,50 @@ mod tests {
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
         assert!(v[0].is_dir);
+    }
+
+    /// 비편집 시 sync 가 주소창 버퍼를 활성 탭 cwd 로 맞춘다.
+    #[test]
+    fn sync_addr_buffer_tracks_cwd_when_not_editing() {
+        let panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel);
+        assert_eq!(view.addr_buffer, "/tmp/alpha");
+        assert!(!view.addr_editing);
+    }
+
+    /// 편집 중이면 sync 가 cwd 로 덮어쓰지 않고 사용자 입력을 보존한다.
+    #[test]
+    fn sync_preserves_addr_buffer_while_editing() {
+        let mut panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel);
+        // 편집 진입 후 타이핑.
+        view.addr_editing = true;
+        view.addr_buffer = "/tmp/typed".to_string();
+        // cwd 가 바뀌어도(다른 탭/nav) 편집 중이면 버퍼 유지.
+        panel
+            .active_tab_mut()
+            .navigate_to(PathBuf::from("/tmp/beta"));
+        view.sync(&panel);
+        assert_eq!(view.addr_buffer, "/tmp/typed");
+    }
+
+    /// cancel_addr_edit 후 sync 가 새 cwd 로 재동기화(내부 탭 전환/nav 누수 방지).
+    #[test]
+    fn cancel_addr_edit_resyncs_to_new_cwd() {
+        let mut panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel);
+        view.addr_editing = true;
+        view.addr_buffer = "/tmp/typed".to_string();
+        panel
+            .active_tab_mut()
+            .navigate_to(PathBuf::from("/tmp/beta"));
+        // 탭 전환/nav 적용 시 편집 취소 → 다음 sync 가 새 cwd 로 맞춘다.
+        view.cancel_addr_edit();
+        assert!(!view.addr_editing);
+        view.sync(&panel);
+        assert_eq!(view.addr_buffer, "/tmp/beta");
     }
 }
