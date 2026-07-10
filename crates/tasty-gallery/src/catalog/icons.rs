@@ -35,6 +35,8 @@ const ACTIONS: &[Entry] = &[
     (COPY, "copy", "copy to clipboard"),
     (SEARCH, "search", "filter / search affordance"),
     (FUNNEL, "funnel", "state filter"),
+    (SWAP, "swap", "swap / switch direction"),
+    (DOWNLOAD, "download", "download / save to disk"),
     (UNDO, "undo", "undo an edit (image paint)"),
     (REDO, "redo", "redo an edit (image paint)"),
 ];
@@ -47,6 +49,7 @@ const NAV: &[Entry] = &[
     (CHEVRONS_LEFT, "chevronsLeft", "collapse sidebar"),
     (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
     (ARROW_RIGHT, "arrowRight", "go / submit (markdown address)"),
+    (MOVE, "move", "move / reposition (4-way)"),
 ];
 
 const VIEW: &[Entry] = &[
@@ -64,16 +67,23 @@ const SURFACES: &[Entry] = &[
     (IMAGE, "image", "image surface / fallback"),
     (HTML, "html", "html surface / web view"),
     (SPLIT, "split", "split a pane"),
+    (SPLIT_H, "splitH", "split a pane (horizontal divider)"),
+    (PANE_EMPTY, "paneEmpty", "empty pane / no surface"),
     (FOLDER, "folder", "folder / workspace"),
     (FOLDER_OPEN, "folderOpen", "folder / workspace (open state)"),
     (FILE, "file", "file leaf"),
     (REMOTE, "remote", "remote connection"),
     (PORT, "port", "listening port / target"),
+    (LAYERS, "layers", "layout presets / stacked layers"),
+    (TEXT_LEFT, "textLeft", "text content / paragraph"),
+    (GIT_BRANCH, "gitBranch", "git branch"),
+    (GIT_TREE, "gitTree", "git tree / lineage"),
 ];
 
 const VISIBILITY: &[Entry] = &[
     (EYE, "eye", "reveal value"),
     (EYE_OFF, "eyeOff", "hide value"),
+    (LOCK, "lock", "locked / secret held back"),
 ];
 
 const STATUS: &[Entry] = &[
@@ -89,6 +99,9 @@ const SYSTEM: &[Entry] = &[
     (SETTINGS, "settings", "Settings window"),
     (PLUG, "plug", "Plugins"),
     (ROCKET, "rocket", "getting started / launch"),
+    (THEME, "theme", "theme toggle (Mocha / Latte)"),
+    (SUN, "sun", "empty state / no settings"),
+    (HASH, "hash", "number / tab-switch digits"),
 ];
 
 // ── icongrid 타일 치수 (icons.jsx `.icongrid` / `.icontile`) ──

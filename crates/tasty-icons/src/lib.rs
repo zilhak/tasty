@@ -113,6 +113,14 @@ stroke_icon!(
     "columns",
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>"#
 );
+// 방향 전환/교체(design `swap`).
+stroke_icon!(SWAP, "swap", r#"<path d="M7 7h11l-3-3M17 17H6l3 3"/>"#);
+// 디스크로 저장/내려받기(design `download`).
+stroke_icon!(
+    DOWNLOAD,
+    "download",
+    r#"<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/>"#
+);
 
 // ── Navigation & disclosure ──
 stroke_icon!(
@@ -142,6 +150,12 @@ stroke_icon!(
     ARROW_RIGHT,
     "arrow_right",
     r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#
+);
+// 4방향 이동/재배치(design `move`).
+stroke_icon!(
+    MOVE,
+    "move",
+    r#"<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>"#
 );
 
 // ── Surfaces & workspace ──
@@ -198,6 +212,42 @@ stroke_icon!(
     "html",
     r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.8 13.8 0 0 1 3.6 9 13.8 13.8 0 0 1-3.6 9 13.8 13.8 0 0 1-3.6-9 13.8 13.8 0 0 1 3.6-9z"/>"#
 );
+// surface 없는 빈 pane(design `paneEmpty`).
+stroke_icon!(
+    PANE_EMPTY,
+    "pane_empty",
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 12h8"/>"#
+);
+// 가로 분할선 split(design `splitH`).
+stroke_icon!(
+    SPLIT_H,
+    "split_h",
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>"#
+);
+// 레이아웃 프리셋/적층 레이어(design `layers`).
+stroke_icon!(
+    LAYERS,
+    "layers",
+    r#"<path d="m12 2 9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/>"#
+);
+// 텍스트 콘텐츠/문단(design `textLeft`).
+stroke_icon!(
+    TEXT_LEFT,
+    "text_left",
+    r#"<path d="M4 7h16M4 12h16M4 17h10"/>"#
+);
+// git 브랜치(design `gitBranch`).
+stroke_icon!(
+    GIT_BRANCH,
+    "git_branch",
+    r#"<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M18 11.5a6 6 0 0 1-6 6H8.5M6 8.5v7"/>"#
+);
+// git 트리/계보(design `gitTree`).
+stroke_icon!(
+    GIT_TREE,
+    "git_tree",
+    r#"<path d="M12 3v6m0 0a3 3 0 1 0 0 6m0-6a3 3 0 1 1 0 6m0 0v6"/>"#
+);
 
 // ── View modes & favorites (explorer) ──
 // host 는 GRID / LIST_VIEW / DETAIL 로 별칭한다.
@@ -240,6 +290,12 @@ stroke_icon!(
     EYE_OFF,
     "eye_off",
     r#"<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M6.6 6.6A18.5 18.5 0 0 0 2 11s3.5 7 10 7a10.9 10.9 0 0 0 4-.7M3 3l18 18"/>"#
+);
+// 잠김/비공개 보류(design `lock`).
+stroke_icon!(
+    LOCK,
+    "lock",
+    r#"<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>"#
 );
 
 // ── Status & alerts ──
@@ -322,4 +378,22 @@ stroke_icon!(
     REDO,
     "redo",
     r#"<path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h1"/>"#
+);
+// 테마 토글 Mocha/Latte(design `theme`).
+stroke_icon!(
+    THEME,
+    "theme",
+    r#"<path d="M12 3a9 9 0 1 0 9 9c-2 0-3-1-3-3s1-3-1-5-3-1-4-1z"/>"#
+);
+// 빈 상태/설정 없음(design `sun`).
+stroke_icon!(
+    SUN,
+    "sun",
+    r#"<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>"#
+);
+// 숫자/탭 전환 digits(design `hash`).
+stroke_icon!(
+    HASH,
+    "hash",
+    r#"<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>"#
 );
