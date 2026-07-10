@@ -389,8 +389,14 @@ pub fn draw_pane_tab_bars_view(
                                 } else {
                                     let icon =
                                         info.tab_icons.get(i).copied().unwrap_or(icons::FILE);
+                                    // Image::paint_at 은 ui.painter()(=탭바 전폭 clip)를 쓰므로
+                                    // 배경/텍스트와 달리 뷰포트 밖으로 새어 화살표/우측 버튼과
+                                    // 겹친다. paint 동안만 ui clip 을 뷰포트로 좁혀 정합.
+                                    let prev_clip = ui.clip_rect();
+                                    ui.set_clip_rect(clip_rect.intersect(prev_clip));
                                     icon.image(icon_size, text_color.into())
                                         .paint_at(ui, icon_rect);
+                                    ui.set_clip_rect(prev_clip);
                                 }
 
                                 // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
@@ -467,7 +473,13 @@ pub fn draw_pane_tab_bars_view(
                                         } else {
                                             th.text_muted().into()
                                         };
+                                        // kind 아이콘과 동일: paint 동안만 ui clip 을 뷰포트로
+                                        // 좁혀 우측 경계 탭의 close ✕ 가 화살표/버튼 위로
+                                        // 새지 않게 한다(배경/텍스트 클립과 일관).
+                                        let prev_clip = ui.clip_rect();
+                                        ui.set_clip_rect(clip_rect.intersect(prev_clip));
                                         icons::CLOSE.image(cs, cc).paint_at(ui, close_rect);
+                                        ui.set_clip_rect(prev_clip);
                                         cr.clicked()
                                     } else {
                                         false
