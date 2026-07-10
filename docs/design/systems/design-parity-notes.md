@@ -453,3 +453,33 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   30% 밴드)이라 구조·토큰 축은 정합하고, 오직 "입력 상태 전이"만 정적↔live 로 갈린다.
 - **근거**: 디자인 changelog `2026-07-02-preset-editor.md`, `gallery/preset_editor.jsx`
   (`SurfaceBox`/`pickZone`/`AddTabBtn`). preset-edit-03 반영(2026-07-03).
+
+## explorer GridCell — 아이콘 축소 + 파일명 3줄 wrap 말줄임 (2026-07-09 디자인 확정 반영)
+
+- **증상**: explorer grid(아이콘) 셀이 28px 아이콘 + **1줄 12자 하드컷**(`truncate(&e.name,12)`
+  → `rust-toolch…`) 이라 긴 파일명 식별이 어렵고, 아이콘이 셀 높이를 대부분 차지했다.
+- **원인/전사 포인트**: 디자인 `GridCell`(gallery/plugins.jsx L301, `WebkitLineClamp:3`)은
+  폭 기준 3줄 wrap + 마지막 줄 말줄임을 규정하는데, egui `p.text(Align2::CENTER_CENTER, …)` 은
+  **단일 행 렌더**라 이 구조를 못 담는다. 구조 전사에는 다행 wrap+말줄임을 네이티브로 처리하는
+  `LayoutJob` 이 필요하다.
+- **처방(구조 축)**: 라벨을 `LayoutJob { halign: Align::Center, wrap: TextWrapping {
+  max_width: CELL_W - spacing_xs*2(=72), max_rows: 3, overflow_character: Some('…') } }` +
+  `ui.fonts(|f| f.layout_job(job))` galley → `p.galley()` 로 교체. `halign::Center` 로 각
+  행이 x=0 중심 정렬되므로 `p.galley(center.x, …)` 가 다행 중앙정렬을, pos.y 를 라벨 블록 상단에
+  두어 **top 정렬**(구 `label_h/2` 수직 중앙 아님)을 준다. 셀 높이는 `label_line_h ×3`(round(11×1.3)
+  =14 ×3) 고정 예약으로 짧은 이름도 3줄분을 잡아 `horizontal_wrapped` 그리드 행을 균일화한다.
+  `CELL_W` 80 유지, 아이콘→라벨 `spacing_xs`(4)·블록 상하 `spacing_sm`(8) 리듬 불변. dead 가 된
+  `truncate()` 함수 제거.
+- **처방(토큰 축)**: 아이콘 `item_height_interactive`(28) → `icon_glyph_size_md`(16), 라벨 폰트
+  `font_size_body`(13) → `font_size_caption`(11)(사용자 explorer 폰트를 caption 상한으로 clamp).
+  라벨색 **상태 의존**으로 — 선택 `text_primary` / 비선택 `text_secondary`(디자인이 함께 확정,
+  기존엔 상태 무관 항상 primary). glyph 색(폴더/파일 text-muted·이미지 accent-info)·선택/hover/cut
+  스타일은 불변. 신규 Theme 필드 0(기존 토큰 재사용).
+- **egui 세금/검증 함정**: `Galley::text()` 는 **원본 소스 문자열**을 돌려주므로 말줄임 삽입
+  여부를 여기서 못 본다 — 실제 렌더 결과는 `galley.rows[].glyphs[].chr` 로 재구성해야 확인된다.
+  실 폰트 레이아웃으로 디자인 샘플(src·rust-toolchain.toml·THIRD_PARTY_LICENSES.md) 전부 ≤3행,
+  초장문 unbreakable 이름은 3행 클램프 + glyph 에 `…` 삽입을 확인(임시 test, 검증 후 제거).
+- **근거**: 디자인 changelog `2026-07-09-explorer-grid-cell.md`, `gallery/plugins.jsx`
+  `GridCell`(L301)·`ExpGridMini`(L314, 긴 이름 샘플). 본체 `src/adapters/ui/surface/explorer.rs`
+  `grid_cell()`, specimen `crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs`
+  `grid_cell()`(GRID 긴 이름 샘플 + meta `"glyph 16 + 3-line label (…) · fixed height"`). 2026-07-09 반영.

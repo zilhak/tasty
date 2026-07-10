@@ -1139,9 +1139,13 @@ fn grid_cell(
     cut: bool,
     font: &EffectiveFont,
 ) -> egui::Response {
-    // design GridCell: glyph height 28 (scale 1.7) — 아이콘 배경 박스 없음.
-    let glyph = theme.item_height_interactive.value(); // 28
-    let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
+    // design GridCell: glyph 16 (icon_glyph_size_md) — 아이콘 배경 박스 없음.
+    let glyph = theme.icon_glyph_size_md.value(); // 16
+    // 라벨: caption(11) — 사용자 explorer 폰트를 caption 상한으로 clamp. line_h ≈ round(11 × 1.3)=14.
+    let label_font = font.font_size.max(1.0).min(theme.font_size_caption.value());
+    let label_line_h = (label_font * 1.3).round();
+    // 고정 3줄 예약 — 짧은 이름도 3줄분 높이를 잡아 그리드 행 정렬을 균일하게 유지.
+    let label_h = label_line_h * 3.0;
     let cell_h = theme.spacing_sm.value()
         + glyph
         + theme.spacing_xs.value()
@@ -1186,15 +1190,42 @@ fn grid_cell(
     icon.image(glyph, fg_dim(glyph_color))
         .paint_at(ui, glyph_rect);
 
-    p.text(
+    // 라벨: 폭 기준 wrap, 최대 3줄, 넘치면 마지막 줄 '…'. 블록은 top 정렬(수직 중앙 아님).
+    // 선택 시 text-primary, 비선택 시 text-secondary (design GridCell). cut 디밍은 유지.
+    let label_color = fg_dim(if selected {
+        theme.text_primary().to_egui()
+    } else {
+        theme.text_secondary().to_egui()
+    });
+    let mut job = egui::text::LayoutJob {
+        halign: egui::Align::Center,
+        wrap: egui::text::TextWrapping {
+            // 좌우 패딩 spacing_xs(4) 씩 제외한 내부 폭 (design padding "8px 4px").
+            max_width: CELL_W - theme.spacing_xs.value() * 2.0,
+            max_rows: 3,
+            overflow_character: Some('…'),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    job.append(
+        &e.name,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(label_font),
+            color: label_color,
+            line_height: Some(label_line_h),
+            ..Default::default()
+        },
+    );
+    let galley = ui.fonts(|f| f.layout_job(job));
+    p.galley(
         egui::pos2(
             rect.center().x,
-            glyph_rect.bottom() + theme.spacing_xs.value() + label_h / 2.0,
+            glyph_rect.bottom() + theme.spacing_xs.value(),
         ),
-        egui::Align2::CENTER_CENTER,
-        truncate(&e.name, 12),
-        egui::FontId::proportional(font.font_size.max(1.0).min(theme.font_size_body.value())),
-        fg_dim(theme.text_primary().to_egui()),
+        galley,
+        label_color,
     );
 
     resp
@@ -1488,15 +1519,6 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
         resp
     };
     enabled && resp.clicked()
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let head: String = s.chars().take(max.saturating_sub(1)).collect();
-        format!("{head}…")
-    }
 }
 
 /// 수정 시각을 `YYYY-MM-DD` 로. 시스템 시계 의존 포맷은 chrono 없이 epoch 계산.

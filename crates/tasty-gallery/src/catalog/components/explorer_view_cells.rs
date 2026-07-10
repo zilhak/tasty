@@ -1,7 +1,8 @@
 //! `explorer_view_cells` specimen — 디자인 T11 explorer view mode 셀 (design §3.2).
 //!
 //! grid / list / detail 세 뷰의 셀을 나란히 전시한다.
-//! - **grid (신규)**: 배경 박스 없이 확대 글리프(height 28) + 라벨. 선택 셀 = surface-active 배경만(보더 없음).
+//! - **grid (신규)**: 배경 박스 없이 글리프(16) + 3줄 wrap 라벨(폭 기준, 넘치면 '…'). 고정 3줄 높이,
+//!   라벨 top 정렬. 선택 셀 = surface-active 배경만(보더 없음) + 라벨 text-primary, 비선택 라벨 text-secondary.
 //! - **list (재사용)**: `tree_row()` depth=0 (단일 컬럼 icon+label).
 //! - **detail (재사용 + 정렬 헤더)**: 공용 `Table` 위젯에 Name/Size/Modified/Type 컬럼.
 //!   정렬 컬럼 헤더 인디케이터는 Table 이 제공 → explorer 는 컬럼 구성만 신규.
@@ -47,6 +48,17 @@ const GRID: &[Entry] = &[
     Entry {
         glyph: FILE,
         name: "README.md",
+        dir: false,
+    },
+    // 긴 이름 샘플 — 3줄 wrap + '…' 말줄임 시연 (design ExpGridMini).
+    Entry {
+        glyph: FILE,
+        name: "rust-toolchain.toml",
+        dir: false,
+    },
+    Entry {
+        glyph: FILE,
+        name: "THIRD_PARTY_LICENSES.md",
         dir: false,
     },
 ];
@@ -293,7 +305,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("grid cell", "glyph 28 (no box) + label · space-md gap"),
+            ("grid cell", "glyph 16 + 3-line label (…) · fixed height"),
             ("list row", "22 control-height-tree (tree_row)"),
             ("detail row", "Name flex · Size/Date mono 11 · Size padR 8"),
             ("selected", "surface-active (no border)"),
@@ -336,12 +348,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// grid 셀 한 개. 클릭되면 `true`. 배경 박스 없이 확대 글리프 + 중앙 라벨,
+/// grid 셀 한 개. 클릭되면 `true`. 배경 박스 없이 글리프(16) + 3줄 wrap 라벨(top 정렬),
 /// 선택 시 surface-active 배경만(추가 보더 없음 — design GridCell). `cut` 이면 전경
 /// (아이콘+라벨)을 opacity-cut(50%) 로 디밍(배경은 유지) — design cell-state matrix.
 fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: bool) -> bool {
-    let glyph = theme.item_height_interactive.value(); // design glyph height 28
-    let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
+    let glyph = theme.icon_glyph_size_md.value(); // design glyph 16
+    // 라벨: caption(11), line_h ≈ round(11 × 1.3)=14. 고정 3줄 예약 → 그리드 행 정렬 균일.
+    let label_font = theme.font_size_caption.value();
+    let label_line_h = (label_font * 1.3).round();
+    let label_h = label_line_h * 3.0;
     let cell_h = theme.spacing_sm.value()
         + glyph
         + theme.spacing_xs.value()
@@ -385,16 +400,42 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         .image(glyph, fg_dim(egui::Color32::from(theme.text_muted())))
         .paint_at(ui, glyph_rect);
 
-    // 라벨 (1줄 중앙).
-    p.text(
+    // 라벨: 폭 기준 wrap, 최대 3줄, 넘치면 마지막 줄 '…'. 블록 top 정렬.
+    // 선택 시 text-primary, 비선택 시 text-secondary (design GridCell). cut 디밍은 유지.
+    let label_color = fg_dim(if selected {
+        egui::Color32::from(theme.text_primary())
+    } else {
+        egui::Color32::from(theme.text_secondary())
+    });
+    let mut job = egui::text::LayoutJob {
+        halign: egui::Align::Center,
+        wrap: egui::text::TextWrapping {
+            // 좌우 패딩 spacing_xs(4) 씩 제외한 내부 폭 (design padding "8px 4px").
+            max_width: CELL_W - theme.spacing_xs.value() * 2.0,
+            max_rows: 3,
+            overflow_character: Some('…'),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    job.append(
+        e.name,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(label_font),
+            color: label_color,
+            line_height: Some(label_line_h),
+            ..Default::default()
+        },
+    );
+    let galley = ui.fonts(|f| f.layout_job(job));
+    p.galley(
         egui::pos2(
             rect.center().x,
-            glyph_rect.bottom() + theme.spacing_xs.value() + label_h / 2.0,
+            glyph_rect.bottom() + theme.spacing_xs.value(),
         ),
-        egui::Align2::CENTER_CENTER,
-        e.name,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        fg_dim(egui::Color32::from(theme.text_primary())),
+        galley,
+        label_color,
     );
 
     resp.clicked()
