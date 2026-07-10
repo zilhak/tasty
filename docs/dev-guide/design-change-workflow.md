@@ -9,6 +9,23 @@
 이 워크플로의 도구 3분할(Figma 기획 / Claude design 디자인 / claude code 구현)과 그 근거·재검토 조건은
 [ADR-0025](../adr/0025-planning-tool-split-experimental.md) 에 있다. 본 문서는 그 결정의 *현재 운영 절차* 만 기술한다.
 
+## 요청문서 전달 경로 (직접 접근 우선 / 로컬 fallback)
+
+요청문서를 designer(Claude design)에게 넘기는 방법은 **claude design 프로젝트 직접 접근 수단(예: DesignSync MCP)의 유무**에 따라 갈린다. 어느 경로든 요청문서의 내용·구성(§0~§8)·changelog 는 동일하다.
+
+| | **A. 직접 접근 가능 (우선)** | **B. fallback (직접 접근 없음/실패/미인증)** |
+|---|---|---|
+| 요청문서 위치 | 원격 claude design 프로젝트의 `design-request/MMDDhhmm-design-request-<slug>.md` 에 직접 write | 로컬 `.claude-workspace/design-request/MMDDhhmm-design-request-<slug>.md` |
+| 넣는 주체 | claude code 가 write (요청 md 한정 — 실제 디자인 파일 산출은 아님) | claude code 가 로컬 파일로 작성 |
+| designer 에게 전달 | 사용자가 claude.ai/design 프로젝트에서 올려둔 요청 md 를 열어 처리 지시 | 사용자가 요청문서를 Claude design 에 직접 제출 |
+| 시안 수령 | 갱신 디자인을 직접 접근 수단으로 읽어 정합(폴더 경로 수령 불필요) | 사용자가 받아온 디자인 폴더 경로를 넘겨받아 정합 |
+
+- **직접 접근 수단으로 write 하는 대상은 오직 `design-request/` 폴더의 요청 md 뿐**이다. 토큰/컴포넌트/UI kit 등 실제 디자인 산출물은 여전히 designer(Claude design)만 만든다 — claude code 가 직접 수정하지 않는다는 원칙은 불변.
+- 직접 접근 수단에는 designer AI 에게 프롬프트를 보내는 창구가 없다(파일 CRUD 만). 그래서 A 에서도 "요청을 처리하라"는 **지시 행위 자체는 여전히 사용자 몫**이다 — 달라지는 건 문서 전달이 수동 복붙에서 원격 파일 배치로 바뀌는 것뿐.
+- 이 저장소의 직접 접근 설정(접근 수단·projectId 등)은 로컬 지침(`.claude/CLAUDE.md`)에 기록한다(세션 고유값이라 커밋 문서에 박지 않는다).
+
+아래 다이어그램·표·라이프사이클은 **B(fallback)** 경로를 기준으로 그린 것이다. A 경로에서는 `[2] 사용자 제출`이 "claude code 가 원격 `design-request/` 에 write → 사용자가 그 파일로 지시"로 대체되고, 시안 수령이 직접 읽기가 된다.
+
 ## 뱅글뱅글 도는 루프
 
 ```
@@ -26,7 +43,7 @@
 
 | 단계 | 행위자 | 하는 일 | 산출물 |
 |------|--------|---------|--------|
-| 1 | **planner** | 무엇을·어떻게 보이게 할지 정의한 **디자인 요청문서** 작성 | `.claude-workspace/design-request/YYYY-MM-DD-<slug>.md` |
+| 1 | **planner** | 무엇을·어떻게 보이게 할지 정의한 **디자인 요청문서** 작성 | `.claude-workspace/design-request/MMDDhhmm-design-request-<slug>.md` |
 | 2 | **사용자** | 요청문서를 **Claude design 에 직접 제출** | (제출) |
 | 3 | **designer** (Claude design) | 색·간격·인터랙션 살아있는 **고충실 시안** 생성 | HTML/CSS 시안 (휘발성) |
 | 4 | **구현** (claude code) | Figma 회귀반영 → 갤러리 specimen → 본체 반영 | 코드 + Figma 갱신 |
@@ -40,8 +57,8 @@
 **planner 가 작성하는 입력 산출물.** "이번에 무엇을, 어떤 화면·컴포넌트·상태·인터랙션으로 보이게 할지"를
 디자이너(Claude design)가 고충실 시안으로 옮길 수 있도록 정의한 문서다. *왜/구현 배선*이 아니라 **무엇을 어떻게 보이게 할지**만 담는다.
 
-- **표준 위치**: `.claude-workspace/design-request/` — gitignored 작업 산출물(커밋 대상 아님).
-- **파일명 규칙**: `YYYY-MM-DD-<slug>.md` (예: `2026-06-28-explorer-file-manager.md`).
+- **위치**: 전달 경로에 따라 다르다(위 "요청문서 전달 경로" 참조) — A(직접 접근)면 원격 claude design 프로젝트의 `design-request/`, B(fallback)면 로컬 `.claude-workspace/design-request/`(gitignored, 커밋 대상 아님).
+- **파일명 규칙**: `MMDDhhmm-design-request-<slug>.md` — 맨 앞에 **월일시분(MMDDhhmm)**, 이어서 **`design-request`**, 마지막에 내용 slug 를 붙인다(예: `07101430-design-request-explorer-file-manager.md`). 날짜·시간을 선두에 둬 파일이 시간순으로 정렬되게 하고, `design-request` 접두로 문서 종류를 명시한다.
 - **기준 구성**: 아래 §0~§8 구성을 그대로 따른다.
 
 ### 요청문서 구성 (§0~§8)
