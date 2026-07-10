@@ -94,7 +94,7 @@ stroke_icon!(
     "trash",
     r#"<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>"#
 );
-// 클립보드 복사 글리프(design `copy`). host 는 `CLIPBOARD` 로 별칭한다.
+// 클립보드 복사 글리프(design `copy`). 뷰어용 `CLIPBOARD` 와는 별개 글리프.
 stroke_icon!(
     COPY,
     "copy",
@@ -247,6 +247,12 @@ stroke_icon!(
     GIT_TREE,
     "git_tree",
     r#"<path d="M12 3v6m0 0a3 3 0 1 0 0 6m0-6a3 3 0 1 1 0 6m0 0v6"/>"#
+);
+// 클립보드 뷰어(design `clipboard`). copy 글리프와 별개 — 뷰어 표면/툴 항목용.
+stroke_icon!(
+    CLIPBOARD,
+    "clipboard",
+    r#"<rect x="8" y="3" width="8" height="4" rx="1"/><path d="M9 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3"/>"#
 );
 
 // ── View modes & favorites (explorer) ──

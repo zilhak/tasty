@@ -25,7 +25,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     row(ui, theme, icons::SETTINGS, "Remote connections…", false);
                     row(ui, theme, icons::PLUG, "Presets", false);
                     menu_separator(ui, theme);
-                    row(ui, theme, icons::TERMINAL, "Clipboard History", false);
+                    row(ui, theme, icons::CLIPBOARD, "Clipboard Viewer", false);
                     row(ui, theme, icons::SEARCH, "Git", false);
                 },
             );

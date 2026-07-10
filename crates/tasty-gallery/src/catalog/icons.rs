@@ -75,6 +75,7 @@ const SURFACES: &[Entry] = &[
     (REMOTE, "remote", "remote connection"),
     (PORT, "port", "listening port / target"),
     (LAYERS, "layers", "layout presets / stacked layers"),
+    (CLIPBOARD, "clipboard", "clipboard viewer"),
     (TEXT_LEFT, "textLeft", "text content / paragraph"),
     (GIT_BRANCH, "gitBranch", "git branch"),
     (GIT_TREE, "gitTree", "git tree / lineage"),

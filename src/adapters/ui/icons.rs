@@ -8,8 +8,8 @@ pub use tasty_icons::*;
 
 // host 로컬 이름 → canonical 별칭 (기존 사용처 무변경 목적).
 pub use tasty_icons::{
-    COPY as CLIPBOARD, LAYOUT_DETAIL as DETAIL, LAYOUT_GRID as GRID, LIST as LIST_VIEW,
-    MARKDOWN as MD, REMOTE as TERMINAL_PROMPT, TERMINAL as TERM,
+    LAYOUT_DETAIL as DETAIL, LAYOUT_GRID as GRID, LIST as LIST_VIEW, MARKDOWN as MD,
+    REMOTE as TERMINAL_PROMPT, TERMINAL as TERM,
 };
 
 /// surface kind 등 매니페스트/registry 가 선언한 아이콘 **이름** → glyph 매핑.
