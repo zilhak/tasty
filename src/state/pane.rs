@@ -30,10 +30,11 @@ impl AppState {
     /// 2단계에서 붙는다.
     pub(crate) fn block_mirror_structural(&mut self, engine: &CoreState) -> bool {
         if self.active_workspace(engine).mirror {
+            #[cfg(feature = "gui")]
             self.toasts.push(
                 crate::i18n::t("attach.toast.mirror_structural_blocked"),
-                crate::adapters::ui::ToastKind::Warning,
-                crate::adapters::ui::ToastScope::Window,
+                crate::model::toast_kind::ToastKind::Warning,
+                crate::model::toast_kind::ToastScope::Window,
             );
             true
         } else {

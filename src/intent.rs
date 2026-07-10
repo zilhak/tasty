@@ -49,10 +49,11 @@ pub fn report_apply_error(state: &mut crate::state::AppState, label: &str, err: 
         // toast 를 띄우지 않는다(성공 무음, 실패 시 App drain 이 forward 실패 toast).
         // forward 대상이 아닌 op(convert/move-surface)만 기존 차단 toast.
         if !blocked.forwarded {
+            #[cfg(feature = "gui")]
             state.toasts.push(
                 crate::i18n::t("attach.toast.mirror_structural_blocked"),
-                crate::adapters::ui::ToastKind::Warning,
-                crate::adapters::ui::ToastScope::Window,
+                crate::model::toast_kind::ToastKind::Warning,
+                crate::model::toast_kind::ToastScope::Window,
             );
         }
     } else {
