@@ -202,9 +202,9 @@ pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "This page is the single source for these glyphs. A new overlay's header X, \
-         refresh, and filter-search all pull close / refresh / search from here — \
-         never re-inline a <path>.",
+        "This page is the display window for these glyphs; their geometry lives in the \
+         tasty-icons crate. A new overlay's header X, refresh, and filter-search all pull \
+         close / refresh / search from there — never re-inline a <path>.",
     );
     dont(
         ui,

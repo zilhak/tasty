@@ -6,6 +6,10 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 
 출처: 디자인 루트의 `tokens/semantic.css` + `tokens/primitives.css` (mocha 기준).
 
+> 색·치수 토큰이 `Theme` 로 수렴하듯, **아이콘 지오메트리(SVG path)는 `tasty-icons`
+> 크레이트의 수기 전사가 소유**한다(소비처는 path 를 재인라인하지 않는다). 규칙 전문은
+> [icons.md](icons.md).
+
 ## 색
 
 | 디자인 토큰 | tasty Theme | mocha hex | 비고 |

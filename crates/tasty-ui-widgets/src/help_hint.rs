@@ -9,8 +9,8 @@
 //! - hover ~150ms(design `--tasty-motion-ui-med`) 후 [`Tooltip`] 을 조합해 띄운다.
 //!
 //! 글리프는 SVG 자산 주입 대신 painter 로 직접 그린다(`status_dot`/`spinner` 전례) —
-//! 위젯 크레이트는 아이콘 자산을 소유하지 않는다. 갤러리 canonical `catalog/icons.rs`
-//! 의 `HELP_CIRCLE` 은 icons.json 미러 완전성 목적의 별개 소스.
+//! 위젯 크레이트는 아이콘 자산을 소유하지 않는다. canonical 지오메트리는 `tasty-icons`
+//! (수기 전사)가 소유하며, 그 `HELP_CIRCLE` 은 여기 painter path 와 별개 소스다.
 
 use tasty_type_appearance::theme::Theme;
 
