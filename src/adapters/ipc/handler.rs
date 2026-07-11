@@ -34,6 +34,7 @@ mod telemetry;
 mod terminal;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
+mod webhook;
 #[cfg(feature = "gui")]
 mod webview;
 pub(crate) mod workspace;
@@ -375,6 +376,12 @@ fn route_engine_handler(
         "global_hook.unset" => {
             hooks::handle_global_hook_unset(core, state, engine, id, &request.params)
         }
+        // webhook (인바운드 웹훅 — 원칙 2·3: id 지정, list 전범위, 포커스 불변).
+        // 상태는 전역 싱글턴이라 core/state/engine 미사용.
+        "webhook.register" => webhook::handle_register(id, &request.params),
+        "webhook.list" => webhook::handle_list(id),
+        "webhook.info" => webhook::handle_info(id, &request.params),
+        "webhook.unregister" => webhook::handle_unregister(id, &request.params),
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),

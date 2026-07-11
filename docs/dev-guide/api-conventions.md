@@ -46,7 +46,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 ## plugin 점유 namespace
 
-plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace claude plugin hook global_hook message tool notification window debug ui ime split tree memory output approval telemetry` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
+plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace claude plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
 
 ### auto_wait chain
 

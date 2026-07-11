@@ -11,9 +11,13 @@ pub mod exec;
 pub mod registry;
 pub mod types;
 
-pub use exec::{SubstitutionContext, execute_sequence, substitute_params};
-pub use registry::{HookHandlerRegistry, RegistryError, global};
+// 편의 re-export — 현재 소비되는 심볼만 노출한다. 나머지(HookHandlerRegistry /
+// RegistryError / BindingError / substitute_params 등)는 후속 stage(S1b/S14)가
+// 소비할 때 여기에 추가한다. 전체 경로(`registry::` / `types::` / `exec::`)로는
+// 항상 접근 가능.
+pub use exec::{SubstitutionContext, execute_sequence};
+pub use registry::global;
 pub use types::{
-    BindingError, HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
-    IpcCall, TriggerSource, validate_binding,
+    HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
+    TriggerSource, validate_binding,
 };

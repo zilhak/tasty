@@ -23,6 +23,7 @@ pub mod surface;
 pub mod surface_meta;
 pub mod telemetry;
 pub mod terminal;
+pub mod webhook;
 pub mod workspace_category;
 
 pub use agent::AgentCommands;
@@ -50,4 +51,5 @@ pub use surface::SurfaceCommands;
 pub use surface_meta::SurfaceMetaCommands;
 pub use telemetry::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
 pub use terminal::TerminalCommands;
+pub use webhook::WebhookCommands;
 pub use workspace_category::WorkspaceCategoryCommands;

@@ -229,6 +229,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: WorkspaceCategoryCommands,
     },
+    /// Manage inbound webhooks (register/list/info/unregister) — HTTP → IpcSequence.
+    Webhook {
+        #[command(subcommand)]
+        command: WebhookCommands,
+    },
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,
@@ -657,5 +662,49 @@ mod workspace_category_tests {
         let r = req(&["tasty", "surface", "completion", "--surface", "42"]);
         assert_eq!(r.method, "surface.completion");
         assert_eq!(r.params["surface_id"], 42);
+    }
+
+    #[test]
+    fn webhook_register_inline_sequence_maps_to_ipc() {
+        let r = req(&[
+            "tasty",
+            "webhook",
+            "register",
+            "--method",
+            "POST",
+            "--sequence",
+            r#"[{"method":"notification.create","params":{"body":"${body.m}"}}]"#,
+        ]);
+        assert_eq!(r.method, "webhook.register");
+        assert_eq!(r.params["methods"][0], "POST");
+        // --sequence 는 JSON 문자열 → 배열 Value 로 파싱돼 전달.
+        assert_eq!(r.params["sequence"][0]["method"], "notification.create");
+    }
+
+    #[test]
+    fn webhook_register_handler_maps_to_ipc() {
+        let r = req(&[
+            "tasty",
+            "webhook",
+            "register",
+            "--handler",
+            "host/notify",
+        ]);
+        assert_eq!(r.method, "webhook.register");
+        assert_eq!(r.params["handler"], "host/notify");
+    }
+
+    #[test]
+    fn webhook_list_info_unregister_map() {
+        let r = req(&["tasty", "webhook", "list"]);
+        assert_eq!(r.method, "webhook.list");
+
+        let r = req(&["tasty", "webhook", "info", "--id", "abc123"]);
+        assert_eq!(r.method, "webhook.info");
+        assert_eq!(r.params["id"], "abc123");
+
+        let r = req(&["tasty", "webhook", "unregister", "--id", "abc123"]);
+        assert_eq!(r.method, "webhook.unregister");
+        assert_eq!(r.params["id"], "abc123");
     }
 }

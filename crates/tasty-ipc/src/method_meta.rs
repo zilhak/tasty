@@ -141,6 +141,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("global_hook.set", plugin(&[SurfaceWrite])),
         ("global_hook.list", plugin(&[SurfaceRead])),
         ("global_hook.unset", plugin(&[SurfaceWrite])),
+        // ── webhook (인바운드 웹훅 리스너 — MVP) ─────────────────────────
+        // MVP 는 local_only(CLI/로컬 client 만). plugin 이 webhook.register 를
+        // Network 권한으로 호출하는 실배선은 후속(S11). register/unregister 는
+        // verb 화이트리스트 밖이나 명세 확정 네이밍(단방향 웹훅 lifecycle 의미가
+        // create/remove 보다 명확) — api-conventions "verb 화이트리스트" 정당화.
+        ("webhook.register", local_only()),
+        ("webhook.list", local_only()),
+        ("webhook.info", local_only()),
+        ("webhook.unregister", local_only()),
         // ── message (surface 간 메시지 큐) ─────────────────────────────
         ("message.send", plugin(&[SurfaceWrite])),
         ("message.read", plugin(&[SurfaceRead])),

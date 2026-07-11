@@ -235,6 +235,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::WorkspaceCategory { command } => {
             workspace_category_command_to_method_params(command)
         }
+        Commands::Webhook { command } => webhook_command_to_method_params(command),
         Commands::Terminal { command } => terminal_command_to_method_params(command),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
@@ -560,6 +561,35 @@ fn workspace_category_command_to_method_params(
             "workspace_category.move",
             serde_json::json!({ "from_index": from, "to_index": to }),
         ),
+    }
+}
+
+fn webhook_command_to_method_params(
+    command: &crate::commands::WebhookCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::commands::WebhookCommands as W;
+    match command {
+        W::Register {
+            methods,
+            handler,
+            sequence,
+        } => {
+            // --sequence 는 JSON 문자열 → Value 로 파싱해 전달(서버가 IpcCall 배열로 검증).
+            let sequence_value = sequence
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            (
+                "webhook.register",
+                serde_json::json!({
+                    "methods": methods,
+                    "handler": handler,
+                    "sequence": sequence_value,
+                }),
+            )
+        }
+        W::List => ("webhook.list", serde_json::json!({})),
+        W::Info { id } => ("webhook.info", serde_json::json!({ "id": id })),
+        W::Unregister { id } => ("webhook.unregister", serde_json::json!({ "id": id })),
     }
 }
 

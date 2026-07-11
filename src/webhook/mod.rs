@@ -15,7 +15,8 @@ pub mod ack;
 pub mod listener;
 pub mod registry;
 
-pub use registry::{RegisterOutcome, WebhookEntry, info, list, register, unregister};
+// RegisterOutcome 는 registry::register 반환 타입으로 내부 소비 — 전체 경로로 접근.
+pub use registry::{WebhookEntry, info, list, register, unregister};
 
 use crate::adapters::ipc::host_call::HostIpcInjector;
 

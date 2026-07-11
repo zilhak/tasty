@@ -41,6 +41,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("terminal", 9),
     ("ui", 1),
     ("view", 3),
+    ("webhook", 4),
     ("webview", 1),
     ("window", 3),
     ("workspace", 4),
