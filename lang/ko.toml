@@ -126,6 +126,7 @@ coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."
 detectors = "파일 디텍터"
 handlers = "파일 핸들러"
 extension_mapping = "파일 확장자 매핑"
+hook_handlers = "훅 핸들러"
 
 [settings.file_handler.common]
 enabled = "활성"
@@ -206,6 +207,23 @@ reset_tooltip = "이 확장자의 사용자 우선순위를 제거합니다 (ins
 clear = "삭제"
 unregistered = "미설치"
 disabled = "비활성"
+
+[settings.file_handler.hook_handlers]
+description = "인바운드 훅 서버가 일치하는 이벤트를 수신했을 때 실행되는 핸들러입니다. 코어 host 기본값, plugin 기여분, 사용자 user 매핑을 포함하며, priority 숫자가 작을수록 먼저 실행됩니다. 웹훅 리스너(bind / port / secret)는 별도로 설정합니다."
+add_button = "핸들러 추가"
+new_head = "새 훅 핸들러"
+field_event_id = "이벤트 id:"
+field_shell_command = "셸 명령:"
+placeholder_event_id = "예: pipeline-done"
+placeholder_shell_command = "tasty notify \"$TASTY_HOOK_*\""
+section_head = "등록된 훅 핸들러"
+prio = "prio {}"
+shell_cmd_label = "셸 명령:"
+action_label = "액션:"
+pending_add = "저장 시 추가됩니다"
+empty = "등록된 훅 핸들러가 없습니다."
+err_id_empty = "이벤트 id 는 필수입니다."
+err_id_invalid = "이벤트 id 는 소문자, 숫자, '-' 만 사용할 수 있습니다 (최대 32자)."
 
 [settings.general]
 heading = "일반"

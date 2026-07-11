@@ -126,6 +126,7 @@ coming_soon = "このサブタブは今後のアップデートで利用可能�
 detectors = "ファイルディテクター"
 handlers = "ファイルハンドラー"
 extension_mapping = "ファイル拡張子マッピング"
+hook_handlers = "フックハンドラー"
 
 [settings.file_handler.common]
 enabled = "有効"
@@ -206,6 +207,23 @@ reset_tooltip = "この拡張子のユーザー優先順位を削除し、イン
 clear = "削除"
 unregistered = "未インストール"
 disabled = "無効"
+
+[settings.file_handler.hook_handlers]
+description = "インバウンドフックサーバーが一致するイベントを受信したときに実行されるハンドラーです。コアの host 既定値、plugin の提供分、ユーザーの user マッピングを含み、priority の数値が小さいほど先に実行されます。Webhook リスナー（bind / port / secret）は別途設定します。"
+add_button = "ハンドラーを追加"
+new_head = "新しいフックハンドラー"
+field_event_id = "イベント id:"
+field_shell_command = "シェルコマンド:"
+placeholder_event_id = "例: pipeline-done"
+placeholder_shell_command = "tasty notify \"$TASTY_HOOK_*\""
+section_head = "登録済みフックハンドラー"
+prio = "prio {}"
+shell_cmd_label = "シェルコマンド:"
+action_label = "アクション:"
+pending_add = "保存時に追加されます"
+empty = "登録されたフックハンドラーはありません。"
+err_id_empty = "イベント id は必須です。"
+err_id_invalid = "イベント id は小文字、数字、'-' のみ使用できます（最大 32 文字）。"
 
 [settings.general]
 heading = "一般"

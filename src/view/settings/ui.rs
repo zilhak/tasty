@@ -188,6 +188,9 @@ pub struct SettingsUiState {
     /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
     /// 디스크 저장. Cancel 시 폐기.
     pub(crate) fh_edit_draft: file_handler_tab::FileHandlerEditDraft,
+    /// Hook Handlers sub-tab 편집 draft. Save 시 전역 훅 핸들러 레지스트리에 commit +
+    /// `~/.tasty/hook-handlers.toml` 저장. Cancel 시 폐기.
+    pub(crate) hook_edit_draft: file_handler_tab::HookHandlerEditDraft,
     /// Currently previewed preset name in the Preset sub-tab (None = no preview).
     selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
@@ -337,6 +340,9 @@ impl SettingsUiState {
                     }
                     "detectors" => FileHandlerSubTab::Detectors,
                     "handlers" => FileHandlerSubTab::Handlers,
+                    "hook_handlers" | "hook-handlers" | "hookhandlers" => {
+                        FileHandlerSubTab::HookHandlers
+                    }
                     _ => return false,
                 };
                 true
@@ -381,6 +387,7 @@ impl SettingsUiState {
             extension_priority_draft: None,
             extension_priority_new_input: String::new(),
             fh_edit_draft: file_handler_tab::FileHandlerEditDraft::default(),
+            hook_edit_draft: file_handler_tab::HookHandlerEditDraft::default(),
             selected_preset: None,
             pending_binding: None,
             popups,
@@ -837,6 +844,10 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 (
                     FileHandlerSubTab::Handlers,
                     t("settings.file_handler.sub.handlers"),
+                ),
+                (
+                    FileHandlerSubTab::HookHandlers,
+                    t("settings.file_handler.sub.hook_handlers"),
                 ),
             ]
             .into_iter()
@@ -1326,6 +1337,27 @@ fn draw_settings_footer(
             {
                 tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
             }
+            // Hook Handlers sub-tab draft 를 전역 훅 핸들러 레지스트리에 commit +
+            // `~/.tasty/hook-handlers.toml` 저장 (파일 핸들러와 동형 경로).
+            {
+                let hh = std::mem::take(&mut ui_state.hook_edit_draft);
+                if hh.has_changes() {
+                    let reg = crate::hook_handler::global();
+                    hh.apply(reg);
+                    match crate::hook_handler::user_config_path() {
+                        Some(path) => {
+                            if let Err(e) = reg.save_user_config(&path) {
+                                tracing::warn!(
+                                    "hook_handlers tab: save_user_config failed: {e}"
+                                );
+                            }
+                        }
+                        None => tracing::warn!(
+                            "hook_handlers tab: user config path unavailable — changes not persisted"
+                        ),
+                    }
+                }
+            }
             *result = Some(true);
         }
         if Button::new(t("button.cancel"))
@@ -1337,6 +1369,7 @@ fn draw_settings_footer(
             ui_state.bashrc_user_draft = None;
             ui_state.extension_priority_draft = None;
             ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
+            ui_state.hook_edit_draft = file_handler_tab::HookHandlerEditDraft::default();
             *result = Some(false);
         }
     });
@@ -1394,6 +1427,7 @@ fn draw_active_content(
             &mut ui_state.extension_priority_draft,
             &mut ui_state.extension_priority_new_input,
             &mut ui_state.fh_edit_draft,
+            &mut ui_state.hook_edit_draft,
             file_format,
             file_handler,
         ),

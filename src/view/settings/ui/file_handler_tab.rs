@@ -1,15 +1,18 @@
-//! Settings UI 의 `FileHandler` 탭 (Phase D MD3 + Phase E ME4).
+//! Settings UI 의 `FileHandler` 탭 — 표시명 "Handler" (S13 일반화: 내부 enum 키는
+//! `FileHandler` 유지, 라벨만 변경).
 //!
-//! 4 개의 sub-tab:
-//! - **Detectors** — 등록된 detector 의 목록. Enabled 토글, user-origin 항목 삭제,
+//! sub-tab 4 종:
+//! - **File Detectors** — 등록된 detector 의 목록. Enabled 토글, user-origin 항목 삭제,
 //!   user 추가 (id + 확장자 list 기반 간단 form). 다른 rule kind 는 TOML 손편집으로.
-//! - **Handlers** — 등록된 handler 의 목록. Enabled 토글, user-origin 항목 삭제,
+//! - **File Handlers** — 등록된 handler 의 목록. Enabled 토글, user-origin 항목 삭제,
 //!   user 추가 (id + detector dropdown + priority + action kind/params).
-//! - **Extension Mapping** — 같은 확장자를 광고하는 여러 detector 의 우선순위 표 편집.
-//! - **Recent picks** — picker 가 기록한 LRU 목록 + Forget.
+//! - **File Extension Mapping** — 같은 확장자를 광고하는 여러 detector 의 우선순위 표 편집.
+//! - **Hook Handlers** — 공유 훅 핸들러 레지스트리(`src/hook_handler/`) 매핑 테이블
+//!   ([`hook_handlers`] 모듈).
 //!
-//! 편집 사항은 `FileHandlerEditDraft` 에 쌓이고 Settings 의 Save 버튼이 registry 에
-//! commit + `~/.tasty/file-handlers.toml` 에 atomic write 한다.
+//! 파일 계열 편집은 `FileHandlerEditDraft` 에 쌓이고 Settings 의 Save 버튼이 registry 에
+//! commit + `~/.tasty/file-handlers.toml` 에 atomic write 한다. 훅 핸들러 편집은
+//! `HookHandlerEditDraft` → `~/.tasty/hook-handlers.toml` 로 동형 경로.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,12 +20,14 @@ use crate::file::format::{DetectorDecl, DetectorId, FileFormatRegistry};
 use crate::file::handler::{FileHandlerRegistry, HandlerId, UserHandlerUpsertDecl};
 use crate::i18n::t;
 
-/// FileHandler 탭의 sub-tab.
+/// FileHandler(표시명 "Handler") 탭의 sub-tab. 파일 라우팅 3종 + 훅 핸들러
+/// 레지스트리(S13 — enum 키는 FileHandler 유지, 라벨만 일반화).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileHandlerSubTab {
     Detectors,
     Handlers,
     ExtensionMapping,
+    HookHandlers,
 }
 
 /// Detectors / Handlers sub-tab 의 편집 draft. Save 시 `apply` 가 호출되고 Cancel 시 폐기.
@@ -121,12 +126,16 @@ enum AddHandlerActionKind {
 
 /// FileHandler 탭 콘텐츠. L2 사이드바(섹션 목록·필터·선택)는 settings 셸이
 /// 소유하므로 여기서는 활성 `sub_tab` 의 콘텐츠만 그린다.
+// sub-tab 4 종의 draft/registry 인자가 누적된 디스패치 표면 — settings 셸이 소유한
+// 상태를 그대로 위임받는 구조라 인자 축약보다 명시가 낫다.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_file_handler_tab(
     ui: &mut egui::Ui,
     sub_tab: FileHandlerSubTab,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
     new_ext_input: &mut String,
     fh_draft: &mut FileHandlerEditDraft,
+    hh_draft: &mut HookHandlerEditDraft,
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
 ) {
@@ -136,6 +145,7 @@ pub(crate) fn draw_file_handler_tab(
         }
         FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
         FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),
+        FileHandlerSubTab::HookHandlers => draw_hook_handlers(ui, hh_draft),
     }
 }
 
@@ -154,8 +164,11 @@ pub(super) fn draw_intro_block(ui: &mut egui::Ui, body_key: &str, bullet_keys: &
 mod detectors;
 mod extension_mapping;
 mod handlers;
+mod hook_handlers;
 
 use detectors::draw_detectors;
 use extension_mapping::draw_extension_mapping;
 use handlers::draw_handlers;
+use hook_handlers::draw_hook_handlers;
+pub(crate) use hook_handlers::HookHandlerEditDraft;
 use tasty_ui_widgets::vspace;

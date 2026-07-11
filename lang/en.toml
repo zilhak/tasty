@@ -126,6 +126,7 @@ coming_soon = "This sub-tab will be available in a future update."
 detectors = "File Detectors"
 handlers = "File Handlers"
 extension_mapping = "File Extension Mapping"
+hook_handlers = "Hook Handlers"
 
 [settings.file_handler.common]
 enabled = "enabled"
@@ -206,6 +207,23 @@ reset_tooltip = "Remove the custom priority for this extension (revert to instal
 clear = "Remove"
 unregistered = "not installed"
 disabled = "disabled"
+
+[settings.file_handler.hook_handlers]
+description = "Handlers fired when the inbound-hook server receives a matching event. Includes core host defaults, plugin contributions, and your own user mappings; lower priority numbers run first. The webhook listener (bind / port / secret) is configured separately."
+add_button = "Add handler"
+new_head = "New hook handler"
+field_event_id = "Event id:"
+field_shell_command = "Shell command:"
+placeholder_event_id = "e.g. pipeline-done"
+placeholder_shell_command = "tasty notify \"$TASTY_HOOK_*\""
+section_head = "Registered hook handlers"
+prio = "prio {}"
+shell_cmd_label = "Shell cmd:"
+action_label = "Action:"
+pending_add = "Will add on save"
+empty = "No hook handlers registered."
+err_id_empty = "Event id is required."
+err_id_invalid = "Event id must contain only lowercase letters, digits, or '-' (max 32)."
 
 [settings.general]
 heading = "General"
