@@ -19,6 +19,10 @@ struct EguiPanelInfo {
     logical_y: f32,
     logical_w: f32,
     logical_h: f32,
+    /// explorer surface 이면 첫 패스에서 캡처한 `current_root()`(빈영역 메뉴 cwd),
+    /// 그 외 surface 는 `None`. fallback 이 explorer 위에서 generic `Surface` 메뉴
+    /// 대신 항상 빈영역 explorer 메뉴를 세우게 하는 kind 판별 겸 cwd 운반자다(A-1).
+    explorer_cwd: Option<std::path::PathBuf>,
 }
 
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
@@ -65,6 +69,15 @@ pub fn draw_egui_panels(
                     // free·점유 모두 GPU 렌더(점유는 readonly mirror). egui 미관여.
                     continue;
                 }
+                // explorer surface 는 빈영역 메뉴 cwd(=current_root)를 미리 캡처해
+                // fallback 이 explorer-aware 하게 동작하도록 한다(A-1). catch-all 이
+                // 어떤 이유로 슬롯을 못 세워도 fallback 이 generic 메뉴 대신 explorer
+                // 빈영역 메뉴를 세운다(불가침 §1·§2).
+                let explorer_cwd = r
+                    .surface
+                    .as_any()
+                    .downcast_ref::<crate::model::ExplorerPanel>()
+                    .map(|p| p.current_root().to_path_buf());
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
@@ -72,6 +85,7 @@ pub fn draw_egui_panels(
                     logical_y: (r.rect.y.value() / scale_factor).round_ui(),
                     logical_w: (r.rect.width.value() / scale_factor).round_ui(),
                     logical_h: (r.rect.height.value() / scale_factor).round_ui(),
+                    explorer_cwd,
                 };
                 infos.push(info);
             }
@@ -250,6 +264,14 @@ pub fn draw_egui_panels(
 /// 선점하므로, 여기 fallback 은 이미 설정됨을 보고 건너뛴다("winit 이 먼저"가 아니라
 /// "explorer apply 가 먼저"). 한 프레임 한 메뉴(중복 발화 없음). 패널 rect 는 logical
 /// px, interact_pos 도 logical.
+///
+/// **A-1(explorer-aware fallback):** catch-all(`draw_explorer` line 167-185)이 어떤
+/// 이유로 explorer 슬롯을 못 세우고 이 fallback 이 발화하더라도, explorer surface
+/// (`info.explorer_cwd.is_some()`) 위에서는 generic `Surface` 메뉴 대신 항상 빈영역
+/// `Explorer` 메뉴를 세운다. 그래서 explorer 위에는 절대 "터미널 ID 복사" 같은
+/// surface-op 메뉴가 노출되지 않고(불가침 §1·§2), 사용자는 항상 explorer 메뉴를
+/// 받는다. OS 무관 순수 로직이라 `#[cfg]` 불필요 — explorer 위 generic 메뉴는 원래
+/// 어느 OS 에서도 뜨면 안 되므로 macOS 정상 경로 회귀도 불가능하다.
 fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: &[EguiPanelInfo]) {
     if state.dialogs.pending_native_menu.is_some() {
         return;
@@ -269,10 +291,25 @@ fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: 
             && pos.y >= info.logical_y
             && pos.y <= info.logical_y + info.logical_h;
         if within {
-            state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Surface {
-                surface_id: sid,
-                x: pos.x,
-                y: pos.y,
+            // A-1: explorer surface 위에서는 generic `Surface` 메뉴("터미널 ID
+            // 복사"/"잘라내기")를 절대 세우지 않는다 — catch-all 이 어떤 이유로
+            // explorer 슬롯을 못 세워도 항상 빈영역 explorer 메뉴를 세운다(kind-blind
+            // 구멍 원천 차단, 불가침 §1·§2). 빈영역 메뉴는 catch-all 의 `T::Empty`
+            // 분기(paths 빈 vec + cwd = current_root + single_is_dir=false)와 동일.
+            state.dialogs.pending_native_menu = Some(match &info.explorer_cwd {
+                Some(cwd) => crate::state::PendingNativeMenu::Explorer {
+                    surface_id: sid,
+                    paths: Vec::new(),
+                    cwd: cwd.clone(),
+                    single_is_dir: false,
+                    x: pos.x,
+                    y: pos.y,
+                },
+                None => crate::state::PendingNativeMenu::Surface {
+                    surface_id: sid,
+                    x: pos.x,
+                    y: pos.y,
+                },
             });
             break;
         }
