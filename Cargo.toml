@@ -264,6 +264,12 @@ webbrowser = { version = "1", optional = true }
 # Shell escaping
 shell-escape = "0.1"
 
+# 인바운드 웹훅 리스너 — 경량 blocking HTTP/1.1 서버 (thread-per-request).
+# ssl feature 없이 사용(TLS 종단은 리버스 프록시/공유기에 위임). tokio 불필요 —
+# 코드베이스 std::thread blocking I/O 일관성 유지. 신규 트랜지티브 3개
+# (ascii/chunked_transfer/httpdate) 전부 퍼미시브 라이선스. 근거: docs/adr.
+tiny_http = { version = "0.12", default-features = false }
+
 # Clipboard
 arboard = { version = "3", optional = true }
 
