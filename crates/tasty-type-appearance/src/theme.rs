@@ -1482,20 +1482,21 @@ impl Theme {
     // 4분류(Popup/Toast/Banner/Modal) 밖의 신규 요소: 키보드 포커스 없음 + 마우스
     // 인터랙티브 + 홀드 수명. 치수는 LogicalPx(DPI 자연대응), 색은 semantic 재사용.
     // raw px 하드코딩 금지 — 본체 draw 는 전부 이 접근자를 경유한다.
-    /// 기본 너비 (220px). `--tasty-modhint-width` → `--tasty-size-220`.
+    /// 기본 너비 (180px). `--tasty-modhint-width` → `--tasty-size-180`.
+    /// 열린 사이드바 폭(`AppearanceSettings.sidebar_width` 기본 180)과 정렬.
     #[inline]
     pub fn modhint_width(&self) -> LogicalPx {
-        LogicalPx((220.0 * self.ui_zoom).round())
+        LogicalPx((180.0 * self.ui_zoom).round())
     }
     /// 기본 높이 (400px). `--tasty-modhint-height`. 펼친 사이드바 하단을 채우는 세로 패널.
     #[inline]
     pub fn modhint_height(&self) -> LogicalPx {
         LogicalPx((400.0 * self.ui_zoom).round())
     }
-    /// 리사이즈 최소 너비 (200px). `--tasty-modhint-min-width`.
+    /// 리사이즈 최소 너비 (180px = 기본 너비). `--tasty-modhint-min-width`.
     #[inline]
     pub fn modhint_min_width(&self) -> LogicalPx {
-        LogicalPx((200.0 * self.ui_zoom).round())
+        LogicalPx((180.0 * self.ui_zoom).round())
     }
     /// 리사이즈 최소 높이 (240px). `--tasty-modhint-min-height`.
     #[inline]
@@ -1597,7 +1598,7 @@ impl Theme {
     // ── 컴포넌트 토큰 (AutoComplete 후보 드롭다운) — `--tasty-autocomplete-*` ──
     // 자유입력 트리거 + 후보 드롭다운(typeahead). 색·간격·행높이는 전부 기존
     // Input/menu-item/semantic 접근자를 그대로 재사용하므로 여기엔 드롭다운 최대
-    // 높이 하나만 둔다(신규 primitive 없음 — 220 은 modhint 와 공유하는 `size-220`).
+    // 높이 하나만 둔다(신규 primitive 없음 — 220 은 primitive `size-220`).
     /// 드롭다운 최대 높이 (220px, ≈7행). 초과 시 리스트 내부 스크롤 + shrink-to-fit.
     /// `--tasty-autocomplete-max-height` → `--tasty-size-220`.
     #[inline]

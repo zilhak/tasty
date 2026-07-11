@@ -155,7 +155,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("width", "modhint-width 220 (min 200)"),
+            ("width", "modhint-width 180 (min 180)"),
             ("height", "modhint-height 400 (min 240)"),
             ("strip", "modhint-strip-height 28 · bg-sidebar"),
             (
@@ -245,7 +245,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 220×400 패널 셸 + 드래그 스트립 + 섹션 리스트 + 코너 그립.
+/// 180×400 패널 셸 + 드래그 스트립 + 섹션 리스트 + 코너 그립.
 fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
     let w = theme.modhint_width().value();
     let h = theme.modhint_height().value();

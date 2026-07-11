@@ -167,7 +167,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 ## modifier-hint 오버레이 (modifier-hint-03 specimen + 본체)
 
 디자인 `tokens/components.css` 의 `--tasty-modhint-*` Tier-3 블록 + `tokens/primitives.css`
-의 `--tasty-size-220` / `--tasty-duration-200` / `--tasty-duration-500`, `tokens/semantic.css`
+의 `--tasty-size-180` / `--tasty-duration-200` / `--tasty-duration-500`, `tokens/semantic.css`
 의 `--tasty-motion-ui-fade`(=200ms) / `--tasty-motion-hold-reveal`(=500ms). 4분류
 (Popup/Toast/Banner/Modal) 밖의 신규 요소(키보드 포커스 없음 + 마우스 인터랙티브 + 홀드
 수명)라 [`docs/concepts/ubiquitous-language.md`](../../concepts/ubiquitous-language.md) 에
@@ -179,9 +179,9 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `motion_hold_reveal_ms()` = `MOTION_HOLD_REVEAL_MS` | **신규**. 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
 | `--tasty-motion-hold-reveal-shift` | → `duration-1200` (1200ms) | `motion_hold_reveal_shift_ms()` = `MOTION_HOLD_REVEAL_SHIFT_MS` | **신규** primitive duration-1200. **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
 | `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `motion_ui_fade_ms()` = `MOTION_UI_FADE_MS` | **신규**. 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
-| `--tasty-modhint-width` | → `size-220` (220px) | `modhint_width()` | **신규** primitive size-220 |
+| `--tasty-modhint-width` | → `size-180` (180px) | `modhint_width()` | 열린 사이드바 폭(기본 180)과 정렬 |
 | `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
-| `--tasty-modhint-min-width` | → 200px | `modhint_min_width()` | 리사이즈 최소 |
+| `--tasty-modhint-min-width` | → 180px | `modhint_min_width()` | 리사이즈 최소 (= 기본 너비) |
 | `--tasty-modhint-min-height` | → 240px | `modhint_min_height()` | 리사이즈 최소 |
 | `--tasty-modhint-strip-height` | → `size-28` (= item-height-interactive) | `modhint_strip_height()` | 드래그 스트립 높이 |
 | `--tasty-modhint-pad` | → 10px | `modhint_pad()` | 스크롤 리스트 안쪽 패딩 |

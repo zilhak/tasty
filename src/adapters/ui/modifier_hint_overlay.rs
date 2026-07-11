@@ -236,7 +236,7 @@ fn reveal_delay_ms(held: Combo, theme: &Theme) -> f32 {
 }
 
 /// 저장된 위치/크기가 없을 때의 기본 지오메트리 — **사이드바 하단 anchor**(접힘/펼침 무관
-/// 동일). 화면 좌하단에 margin 을 두고 220×400(min 아님, 기본값)으로 배치한다.
+/// 동일). 화면 좌하단에 margin 을 두고 180×400(min 아님, 기본값)으로 배치한다.
 pub fn default_rect(screen: egui::Rect, theme: &Theme) -> egui::Rect {
     let w = theme.modhint_width().value();
     let h = theme.modhint_height().value();
