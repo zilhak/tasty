@@ -924,12 +924,38 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "settings",
                     "Settings window",
-                    vec![spec(
-                        "settings",
-                        "Three-tier: tabs over sidebar over content",
-                        Some("1100×700 · 7 L1 tabs · L2 sidebar · content · footer"),
-                        components::settings::draw,
-                    )],
+                    vec![
+                        spec(
+                            "settings",
+                            "Three-tier: tabs over sidebar over content",
+                            Some("1100×700 · 7 L1 tabs · L2 sidebar · content · footer"),
+                            components::settings::draw,
+                        ),
+                        spec(
+                            "settings-file-extension-mapping",
+                            "Handler › File Extension Mapping",
+                            Some("ext cluster (mono) → handler Select · Add mapping"),
+                            components::settings_handler::draw_extension_mapping,
+                        ),
+                        spec(
+                            "settings-file-detectors",
+                            "Handler › File Detectors",
+                            Some("Detection passes — name + desc rows · Switch"),
+                            components::settings_handler::draw_detectors,
+                        ),
+                        spec(
+                            "settings-file-handlers",
+                            "Handler › File Handlers",
+                            Some("name · kind Tag · Switch rows"),
+                            components::settings_handler::draw_file_handlers,
+                        ),
+                        spec(
+                            "settings-hook-handlers",
+                            "Handler › Hook Handlers",
+                            Some("registry rows — id · origin Tag · prio · Switch · shell cmd Input · add draft"),
+                            components::settings_handler::draw_hook_handlers,
+                        ),
+                    ],
                 ),
                 section(
                     "scripts",

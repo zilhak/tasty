@@ -38,13 +38,14 @@ const L2_WIDTH: f32 = 200.0;
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: f32 = 150.0;
 
-/// L1 상단 탭 (jsx `L1_LABEL`: FileHandler → "File Handler"). 활성 = Appearance.
+/// L1 상단 탭 (jsx `L1_LABEL`: FileHandler → "Handler" — S13 일반화, 내부 키는
+/// FileHandler 유지). 활성 = Appearance.
 const L1_TABS: &[&str] = &[
     "General",
     "Terminal",
     "Appearance",
     "Keybindings",
-    "File Handler",
+    "Handler",
     "Misc",
     "Plugins",
 ];
