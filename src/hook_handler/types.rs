@@ -37,6 +37,15 @@ impl std::fmt::Display for HookHandlerId {
     }
 }
 
+/// short-name 패턴 검증 — `[a-z0-9-]{1,32}` (파일 핸들러와 동일 규약).
+pub fn is_valid_hook_handler_short_name(s: &str) -> bool {
+    if s.is_empty() || s.len() > 32 {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// 핸들러의 출처(누가 등록했나).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HookHandlerOwner {

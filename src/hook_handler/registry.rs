@@ -1,216 +1,785 @@
-//! 공유 훅 핸들러 레지스트리 — **MVP: 인메모리 최소**.
+//! 공유 훅 핸들러 레지스트리 — **S1b: 파일 핸들러 풀미러(정식화)**.
 //!
-//! 파일 핸들러(`src/file/handler/registry.rs`)의 3출처 병합·patch semantics·user
-//! config 영속화는 후속 stage(S1b)에서 정식화한다. MVP 는 등록/조회/해제만 갖춘
-//! 단순 맵 + 프로세스 전역 싱글턴이다. 웹훅 리스너(off-main thread)와 IPC 핸들러
-//! (main thread)가 같은 레지스트리를 봐야 하므로 `OnceLock<Mutex<..>>` 싱글턴으로
-//! 공유한다(`method_meta::PLUGIN_PREFIXES` 선례).
+//! 파일 핸들러(`src/file/handler/registry.rs`)를 정본 템플릿으로 3출처 병합을 갖춘다:
+//! host embedded TOML + plugin manifest + user config(`~/.tasty/hook-handlers.toml`).
+//! 같은 handler id 가 여러 출처에 등장하면 **patch semantics**(Host → Plugin → User
+//! 순서로 `Some` 필드만 덮어씀), 정렬은 priority↑ → owner tie-break(user>plugin>host)
+//! → id.
+//!
+//! 파일 핸들러와의 차이:
+//! - `detector` 대신 트리거 출처 게이트 `source`(`HookSource`).
+//! - `System` 대신 셸 action `ShellCommand` — plugin 은 못 쓰고(타입 배제), host/user 만.
+//! - **셸 불변식**: `ShellCommand` 는 `source == Hook` 만 허용 → finalize 에서 구조적으로
+//!   강제한다(위반 시 drop + warn). 웹훅(외부 HTTP)→셸 경로가 어떤 출처로도 성립 불가.
+//! - 인스턴스가 아니라 **프로세스 전역 싱글턴**(`global()`) — 웹훅 리스너(off-main
+//!   thread)와 IPC 핸들러(main thread)가 같은 레지스트리를 봐야 하므로.
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, OnceLock};
+use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
-use super::types::{HookHandler, HookHandlerAction, HookHandlerId, HookSource};
+use serde::Deserialize;
+use tracing::warn;
 
-/// 레지스트리 등록 실패 사유.
+use super::config::{
+    HookHandlerDecl, HookHandlerDeclError, HostHookHandlerActionDecl, PluginHookHandlerActionDecl,
+    UserHookHandlerActionDecl, validate_host_hook_handler_decl, validate_plugin_hook_handler_decl,
+};
+use super::types::{
+    HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, TriggerSource,
+    is_valid_hook_handler_short_name,
+};
+
+/// 런타임 등록(익명 웹훅 핸들러 등) 실패 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
-    /// 같은 id 가 이미 등록됨.
-    Duplicate { id: String },
-    /// 셸 action 은 `source: Hook` 만 허용(불변식 강제).
+    /// 셸 action 은 `source = Hook` 만 허용(불변식 강제).
     ShellMustBeHookSource { id: String },
 }
 
 impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Duplicate { id } => write!(f, "hook handler '{id}' already registered"),
             Self::ShellMustBeHookSource { id } => write!(
                 f,
-                "hook handler '{id}' is a shell command and must declare source=hook"
+                "hook handler '{id}' is a shell command and must declare source = hook"
             ),
         }
     }
 }
 
-/// 인메모리 훅 핸들러 레지스트리 (MVP).
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+struct HookHandlerContribution {
+    owner: HookHandlerOwner,
+    source: Option<HookSource>,
+    priority: Option<i32>,
+    display_name_i18n_key: Option<String>,
+    disabled_override: Option<bool>,
+    action: Option<HookHandlerAction>,
+}
+
+struct Inner {
+    /// handler id → 출처별 contribution. install 순서 보존 (host → plugin → user).
+    contributions: BTreeMap<HookHandlerId, Vec<HookHandlerContribution>>,
+    finalized: BTreeMap<HookHandlerId, HookHandler>,
+    dirty: bool,
+}
+
+/// 공유 훅 핸들러 레지스트리 (3출처 병합 + patch semantics + lazy finalize).
 pub struct HookHandlerRegistry {
-    handlers: BTreeMap<HookHandlerId, HookHandler>,
+    inner: RwLock<Inner>,
 }
 
 impl HookHandlerRegistry {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            inner: RwLock::new(Inner {
+                contributions: BTreeMap::new(),
+                finalized: BTreeMap::new(),
+                dirty: false,
+            }),
+        }
     }
 
-    /// 핸들러 등록. 중복 id 는 거부하고, 셸 action 은 `source=Hook` 을 강제한다
-    /// (불변식: 셸 웹훅 거부의 등록단계 방어선).
-    pub fn register(&mut self, handler: HookHandler) -> Result<(), RegistryError> {
-        if matches!(handler.action, HookHandlerAction::ShellCommand { .. })
-            && handler.source != HookSource::Hook
-        {
-            return Err(RegistryError::ShellMustBeHookSource {
-                id: handler.id.0.clone(),
-            });
-        }
-        if self.handlers.contains_key(&handler.id) {
-            return Err(RegistryError::Duplicate {
-                id: handler.id.0.clone(),
-            });
-        }
-        self.handlers.insert(handler.id.clone(), handler);
-        Ok(())
+    // ── 조회 ────────────────────────────────────────────────────────────
+
+    /// id 로 단건 lookup (owned). 없으면 `None`.
+    pub fn get(&self, id: &HookHandlerId) -> Option<HookHandler> {
+        self.ensure_finalized();
+        let inner = self.inner.read().ok()?;
+        inner.finalized.get(id).cloned()
     }
 
-    /// 이미 존재하면 덮어쓰는 등록(익명 핸들러 재등록 등). 셸 불변식은 동일 적용.
-    pub fn upsert(&mut self, handler: HookHandler) -> Result<(), RegistryError> {
-        if matches!(handler.action, HookHandlerAction::ShellCommand { .. })
-            && handler.source != HookSource::Hook
-        {
-            return Err(RegistryError::ShellMustBeHookSource {
-                id: handler.id.0.clone(),
-            });
-        }
-        self.handlers.insert(handler.id.clone(), handler);
-        Ok(())
-    }
-
-    pub fn get(&self, id: &HookHandlerId) -> Option<&HookHandler> {
-        self.handlers.get(id)
+    /// `get` 별칭 (파일 핸들러 `handler()` 미러).
+    pub fn handler(&self, id: &HookHandlerId) -> Option<HookHandler> {
+        self.get(id)
     }
 
     pub fn contains(&self, id: &HookHandlerId) -> bool {
-        self.handlers.contains_key(id)
+        self.ensure_finalized();
+        self.inner
+            .read()
+            .map(|g| g.finalized.contains_key(id))
+            .unwrap_or(false)
     }
 
-    /// 전체 핸들러 (id 정렬순). 포커스 독립 — 전 범위 조회.
-    pub fn all(&self) -> Vec<HookHandler> {
-        self.handlers.values().cloned().collect()
+    /// 전체 핸들러 id (정렬순). 포커스 독립 — 전 범위 조회.
+    pub fn list_handlers(&self) -> Vec<HookHandlerId> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        inner.finalized.keys().cloned().collect()
     }
 
-    pub fn remove(&mut self, id: &HookHandlerId) -> Option<HookHandler> {
-        self.handlers.remove(id)
+    /// 활성 핸들러 전체 (priority↑ → owner tie-break → id).
+    pub fn all_handlers(&self) -> Vec<HookHandler> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let mut v: Vec<HookHandler> = inner
+            .finalized
+            .values()
+            .filter(|h| !h.disabled)
+            .cloned()
+            .collect();
+        sort_handlers(&mut v);
+        v
     }
 
-    pub fn len(&self) -> usize {
-        self.handlers.len()
+    /// 주어진 트리거 출처에 바인딩 가능한 활성 핸들러들 (파일 핸들러 `handlers_for`
+    /// 미러). `source.accepts(trigger)` + 웹훅이면 `is_webhook_bindable()` 통과.
+    /// priority↑ → owner tie-break → id.
+    pub fn handlers_for_source(&self, trigger: TriggerSource) -> Vec<HookHandler> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let mut v: Vec<HookHandler> = inner
+            .finalized
+            .values()
+            .filter(|h| !h.disabled && h.source.accepts(trigger))
+            .filter(|h| trigger != TriggerSource::Webhook || h.action.is_webhook_bindable())
+            .cloned()
+            .collect();
+        sort_handlers(&mut v);
+        v
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.handlers.is_empty()
+    // ── install (3출처) ─────────────────────────────────────────────────
+
+    pub fn install_host_defaults(&self, toml_text: &str) {
+        let decls = match parse_host_handler_section(toml_text) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(error = %e, "hook_handler: failed to parse host defaults");
+                return;
+            }
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        for decl in decls {
+            install_host(&mut inner, decl);
+        }
+        inner.dirty = true;
+    }
+
+    pub fn install_user_config(&self, path: &Path) {
+        let text = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "hook_handler: user config read failed");
+                return;
+            }
+        };
+        let decls = match parse_user_handler_section(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "hook_handler: user config parse failed");
+                return;
+            }
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        for decl in decls {
+            install_user(&mut inner, decl);
+        }
+        inner.dirty = true;
+    }
+
+    pub fn install_plugin_handlers(
+        &self,
+        plugin_id: &str,
+        decls: &[HookHandlerDecl<PluginHookHandlerActionDecl>],
+    ) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        for decl in decls {
+            install_plugin(&mut inner, plugin_id, decl.clone());
+        }
+        inner.dirty = true;
+    }
+
+    pub fn uninstall_plugin(&self, plugin_id: &str) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let mut empty_ids = Vec::new();
+        for (id, contribs) in inner.contributions.iter_mut() {
+            contribs.retain(|c| !matches!(&c.owner, HookHandlerOwner::Plugin(p) if p == plugin_id));
+            if contribs.is_empty() {
+                empty_ids.push(id.clone());
+            }
+        }
+        for id in empty_ids {
+            inner.contributions.remove(&id);
+        }
+        inner.dirty = true;
+    }
+
+    // ── 런타임 등록(익명 웹훅 핸들러) ──────────────────────────────────
+
+    /// 완전 지정된 핸들러를 런타임 등록/갱신한다(익명 웹훅 핸들러 등). 같은
+    /// id·owner 는 덮어쓴다. 셸 불변식(`ShellCommand` ⇒ `source == Hook`) 적용.
+    ///
+    /// 파일 핸들러엔 없는 hook 전용 경로 — 인라인 `sequence` 로 등록된 웹훅 핸들러가
+    /// 조회 일관성을 위해 레지스트리에 반영될 때 쓴다.
+    pub fn upsert_full_handler(&self, handler: HookHandler) -> Result<(), RegistryError> {
+        if matches!(handler.action, HookHandlerAction::ShellCommand { .. })
+            && handler.source != HookSource::Hook
+        {
+            return Err(RegistryError::ShellMustBeHookSource {
+                id: handler.id.0.clone(),
+            });
+        }
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return Ok(()),
+        };
+        push_contribution(
+            &mut inner,
+            handler.id.clone(),
+            HookHandlerContribution {
+                owner: handler.owner,
+                source: Some(handler.source),
+                priority: Some(handler.priority),
+                display_name_i18n_key: handler.display_name_i18n_key,
+                disabled_override: Some(handler.disabled),
+                action: Some(handler.action),
+            },
+        );
+        inner.dirty = true;
+        Ok(())
+    }
+
+    // ── user config 편집 (Settings UI, S13) ─────────────────────────────
+
+    /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 변경 저장에 사용.
+    pub fn export_user_config(&self) -> String {
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return String::new(),
+        };
+        let mut handlers = Vec::<toml::Value>::new();
+        for (id, contribs) in inner.contributions.iter() {
+            let Some(user) = contribs
+                .iter()
+                .find(|c| matches!(c.owner, HookHandlerOwner::User))
+            else {
+                continue;
+            };
+            if user.source.is_none()
+                && user.priority.is_none()
+                && user.display_name_i18n_key.is_none()
+                && user.disabled_override.is_none()
+                && user.action.is_none()
+            {
+                continue;
+            }
+            let mut t = toml::value::Table::new();
+            t.insert("id".into(), toml::Value::String(id.as_str().to_string()));
+            if let Some(src) = user.source {
+                if let Ok(v) = toml::Value::try_from(src) {
+                    t.insert("source".into(), v);
+                }
+            }
+            if let Some(p) = user.priority {
+                t.insert("priority".into(), toml::Value::Integer(p as i64));
+            }
+            if let Some(k) = &user.display_name_i18n_key {
+                t.insert(
+                    "display_name_i18n_key".into(),
+                    toml::Value::String(k.clone()),
+                );
+            }
+            if let Some(d) = user.disabled_override {
+                t.insert("disabled".into(), toml::Value::Boolean(d));
+            }
+            if let Some(action) = &user.action {
+                match toml::Value::try_from(action) {
+                    Ok(v) => {
+                        t.insert("action".into(), v);
+                    }
+                    Err(e) => warn!(
+                        handler = id.as_str(),
+                        error = %e,
+                        "hook_handler: user action not TOML-serializable — omitted"
+                    ),
+                }
+            }
+            handlers.push(toml::Value::Table(t));
+        }
+        if handlers.is_empty() {
+            return String::new();
+        }
+        let mut doc = toml::value::Table::new();
+        doc.insert("handler".into(), toml::Value::Array(handlers));
+        toml::to_string(&doc).unwrap_or_default()
+    }
+
+    /// `export_user_config` 결과를 `path` 에 atomic write.
+    pub fn save_user_config(&self, path: &Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let text = self.export_user_config();
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(text.as_bytes())?;
+        tmp.flush()?;
+        tmp.persist(path).map_err(|e| e.error)?;
+        Ok(())
+    }
+
+    /// host/plugin/user handler 를 user-origin override 로 disable/enable.
+    pub fn set_user_handler_disabled(&self, id: &HookHandlerId, disabled: bool) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            warn!(
+                handler = id.as_str(),
+                "hook_handler: set_user_handler_disabled — unknown handler"
+            );
+            return;
+        };
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.owner, HookHandlerOwner::User))
+        {
+            existing.disabled_override = Some(disabled);
+        } else {
+            entry.push(HookHandlerContribution {
+                owner: HookHandlerOwner::User,
+                source: None,
+                priority: None,
+                display_name_i18n_key: None,
+                disabled_override: Some(disabled),
+                action: None,
+            });
+        }
+        inner.dirty = true;
+    }
+
+    /// User-origin contribution 의 `disabled_override` 만 비운다. 다른 user 필드 보존.
+    pub fn clear_user_handler_override(&self, id: &HookHandlerId) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
+        let mut user_empty = false;
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.owner, HookHandlerOwner::User))
+        {
+            existing.disabled_override = None;
+            user_empty = existing.source.is_none()
+                && existing.priority.is_none()
+                && existing.display_name_i18n_key.is_none()
+                && existing.action.is_none();
+        }
+        if user_empty {
+            entry.retain(|c| !matches!(c.owner, HookHandlerOwner::User));
+            if entry.is_empty() {
+                inner.contributions.remove(id);
+            }
+        }
+        inner.dirty = true;
+    }
+
+    /// user-origin contribution 전체 제거. host/plugin 은 보존.
+    pub fn remove_user_handler(&self, id: &HookHandlerId) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
+        entry.retain(|c| !matches!(c.owner, HookHandlerOwner::User));
+        if entry.is_empty() {
+            inner.contributions.remove(id);
+        }
+        inner.dirty = true;
+    }
+
+    /// Settings UI 가 user-origin handler 를 추가/갱신 (patch). 기존 host/plugin 이
+    /// 있으면 그 위에 덮는다. id 는 `<owner>/<short>` 형식이어야 한다.
+    pub fn upsert_user_handler(
+        &self,
+        decl: UserHookHandlerUpsertDecl,
+    ) -> Result<(), HookHandlerDeclError> {
+        if !decl.id.contains('/') {
+            return Err(HookHandlerDeclError::InvalidShortName(decl.id.clone()));
+        }
+        let action: Option<HookHandlerAction> = decl.action.map(Into::into);
+        // 셸 불변식: user 가 ShellCommand 를 non-hook source 로 upsert 하려 하면 거부.
+        if let Some(HookHandlerAction::ShellCommand { .. }) = &action {
+            if decl.source != Some(HookSource::Hook) {
+                return Err(HookHandlerDeclError::ShellMustBeHookSource {
+                    handler: decl.id.clone(),
+                });
+            }
+        }
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return Err(HookHandlerDeclError::InvalidShortName("lock poisoned".into())),
+        };
+        push_contribution(
+            &mut inner,
+            HookHandlerId(decl.id),
+            HookHandlerContribution {
+                owner: HookHandlerOwner::User,
+                source: decl.source,
+                priority: decl.priority,
+                display_name_i18n_key: decl.display_name_i18n_key,
+                disabled_override: decl.disabled,
+                action,
+            },
+        );
+        inner.dirty = true;
+        Ok(())
+    }
+
+    /// 사용자 설정 파일을 다시 읽어 user owner contribution 만 교체. host + plugin 은 그대로.
+    ///
+    /// **Transactional**: read/parse 실패 시 기존 user contribution 보존.
+    pub fn reload_user_config(&self, path: &Path) {
+        let decls = match std::fs::read_to_string(path) {
+            Ok(text) => match parse_user_handler_section(&text) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "hook_handler: reload aborted — parse failed, keeping previous user config",
+                    );
+                    return;
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "hook_handler: reload aborted — read failed, keeping previous user config",
+                );
+                return;
+            }
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let mut empty_ids = Vec::new();
+        for (id, contribs) in inner.contributions.iter_mut() {
+            contribs.retain(|c| !matches!(c.owner, HookHandlerOwner::User));
+            if contribs.is_empty() {
+                empty_ids.push(id.clone());
+            }
+        }
+        for id in empty_ids {
+            inner.contributions.remove(&id);
+        }
+        for decl in decls {
+            install_user(&mut inner, decl);
+        }
+        inner.dirty = true;
+    }
+
+    fn ensure_finalized(&self) {
+        let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
+        if !needs {
+            return;
+        }
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if !inner.dirty {
+            return;
+        }
+        let mut next = BTreeMap::new();
+        for (id, contribs) in inner.contributions.iter() {
+            let Some(base) = contribs.first() else {
+                continue;
+            };
+            let mut source = base.source;
+            let mut priority = base.priority;
+            let mut display = base.display_name_i18n_key.clone();
+            let mut disabled = base.disabled_override.unwrap_or(false);
+            let mut action = base.action.clone();
+            let mut owner = base.owner.clone();
+
+            for c in contribs.iter().skip(1) {
+                if c.source.is_some() {
+                    source = c.source;
+                }
+                if c.priority.is_some() {
+                    priority = c.priority;
+                }
+                if c.display_name_i18n_key.is_some() {
+                    display = c.display_name_i18n_key.clone();
+                }
+                if let Some(d) = c.disabled_override {
+                    disabled = d;
+                }
+                if c.action.is_some() {
+                    action = c.action.clone();
+                }
+                owner = c.owner.clone();
+            }
+
+            // source + action 둘 다 있어야 등록.
+            let (Some(source), Some(action)) = (source, action) else {
+                warn!(
+                    handler_id = id.as_str(),
+                    "hook_handler: handler missing required source or action — dropped"
+                );
+                continue;
+            };
+            // 셸 불변식(구조적 강제): ShellCommand 는 source == Hook 만 산다.
+            if matches!(action, HookHandlerAction::ShellCommand { .. }) && source != HookSource::Hook
+            {
+                warn!(
+                    handler_id = id.as_str(),
+                    "hook_handler: shell command with non-hook source — dropped (invariant)"
+                );
+                continue;
+            }
+            let priority = priority.unwrap_or(100);
+            next.insert(
+                id.clone(),
+                HookHandler {
+                    id: id.clone(),
+                    source,
+                    priority,
+                    owner,
+                    action,
+                    display_name_i18n_key: display,
+                    disabled,
+                },
+            );
+        }
+        inner.finalized = next;
+        inner.dirty = false;
     }
 }
 
-/// 프로세스 전역 싱글턴. 웹훅 리스너 thread 와 IPC 핸들러 thread 가 공유.
-static REGISTRY: OnceLock<Mutex<HookHandlerRegistry>> = OnceLock::new();
+impl Default for HookHandlerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-/// 전역 훅 핸들러 레지스트리 핸들. lock 이 poison 되면(다른 thread panic) 복구해
-/// 반환한다 — 레지스트리는 단순 맵이라 부분갱신 위험이 없다.
-pub fn global() -> std::sync::MutexGuard<'static, HookHandlerRegistry> {
-    REGISTRY
-        .get_or_init(|| Mutex::new(HookHandlerRegistry::new()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+fn sort_handlers(v: &mut [HookHandler]) {
+    v.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| owner_rank(&a.owner).cmp(&owner_rank(&b.owner)))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+/// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.
+fn owner_rank(owner: &HookHandlerOwner) -> u8 {
+    match owner {
+        HookHandlerOwner::User => 0,
+        HookHandlerOwner::Plugin(_) => 1,
+        HookHandlerOwner::Host => 2,
+    }
+}
+
+fn install_host(inner: &mut Inner, decl: HookHandlerDecl<HostHookHandlerActionDecl>) {
+    if let Err(e) = validate_host_hook_handler_decl(&decl) {
+        warn!(error = %e, "hook_handler: rejecting host handler decl");
+        return;
+    }
+    let id_str = format!("host/{}", decl.id);
+    push_contribution(
+        inner,
+        HookHandlerId(id_str),
+        HookHandlerContribution {
+            owner: HookHandlerOwner::Host,
+            source: Some(decl.source),
+            priority: Some(decl.priority),
+            display_name_i18n_key: decl.display_name_i18n_key,
+            disabled_override: if decl.disabled { Some(true) } else { None },
+            action: Some(decl.action.into()),
+        },
+    );
+}
+
+fn install_plugin(
+    inner: &mut Inner,
+    plugin_id: &str,
+    decl: HookHandlerDecl<PluginHookHandlerActionDecl>,
+) {
+    if let Err(e) = validate_plugin_hook_handler_decl(&decl) {
+        warn!(plugin = plugin_id, error = %e, "hook_handler: rejecting plugin handler decl");
+        return;
+    }
+    let id_str = format!("{}/{}", plugin_id, decl.id);
+    push_contribution(
+        inner,
+        HookHandlerId(id_str),
+        HookHandlerContribution {
+            owner: HookHandlerOwner::Plugin(plugin_id.to_string()),
+            source: Some(decl.source),
+            priority: Some(decl.priority),
+            display_name_i18n_key: decl.display_name_i18n_key,
+            disabled_override: if decl.disabled { Some(true) } else { None },
+            action: Some(decl.action.into()),
+        },
+    );
+}
+
+fn install_user(inner: &mut Inner, decl: UserHookHandlerSettingsDecl) {
+    // user TOML 의 id 는 전역 id 형태(`host/<short>` · `<plugin>/<short>` · `user/<short>`).
+    // 어느 경우든 contribution owner 는 항상 `User`(= 출처가 사용자 TOML). base
+    // contribution(원 출처)은 retain-by-owner 로 보존되고 finalize 가 patch 로 덮는다.
+    let id_str = decl.id.clone();
+    if !id_str.contains('/') {
+        warn!(
+            id = id_str.as_str(),
+            "hook_handler: user handler id missing owner prefix",
+        );
+        return;
+    }
+    if let Some(short) = id_str.split('/').next_back() {
+        if !is_valid_hook_handler_short_name(short) {
+            warn!(
+                id = id_str.as_str(),
+                "hook_handler: user handler invalid short-name"
+            );
+            return;
+        }
+    }
+    push_contribution(
+        inner,
+        HookHandlerId(id_str),
+        HookHandlerContribution {
+            owner: HookHandlerOwner::User,
+            source: decl.source,
+            priority: decl.priority,
+            display_name_i18n_key: decl.display_name_i18n_key,
+            disabled_override: decl.disabled,
+            action: decl.action.map(Into::into),
+        },
+    );
+}
+
+fn push_contribution(inner: &mut Inner, id: HookHandlerId, contrib: HookHandlerContribution) {
+    let entry = inner.contributions.entry(id).or_default();
+    // 같은 origin 으로 재install 시 기존 동일 origin 제거 후 push.
+    entry.retain(|c| !same_owner(&c.owner, &contrib.owner));
+    entry.push(contrib);
+}
+
+fn same_owner(a: &HookHandlerOwner, b: &HookHandlerOwner) -> bool {
+    match (a, b) {
+        (HookHandlerOwner::Host, HookHandlerOwner::Host) => true,
+        (HookHandlerOwner::User, HookHandlerOwner::User) => true,
+        (HookHandlerOwner::Plugin(x), HookHandlerOwner::Plugin(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Settings UI 가 `upsert_user_handler` 호출에 사용하는 입력. 모든 필드 optional
+/// (patch semantics).
+#[derive(Debug, Clone)]
+pub struct UserHookHandlerUpsertDecl {
+    pub id: String,
+    pub source: Option<HookSource>,
+    pub priority: Option<i32>,
+    pub display_name_i18n_key: Option<String>,
+    pub disabled: Option<bool>,
+    pub action: Option<UserHookHandlerActionDecl>,
+}
+
+/// User TOML schema. 모든 필드 optional 로 patch 가능.
+#[derive(Debug, Clone, Deserialize)]
+struct UserHookHandlerSettingsDecl {
+    id: String,
+    #[serde(default)]
+    source: Option<HookSource>,
+    #[serde(default)]
+    priority: Option<i32>,
+    #[serde(default)]
+    display_name_i18n_key: Option<String>,
+    #[serde(default)]
+    disabled: Option<bool>,
+    #[serde(default)]
+    action: Option<UserHookHandlerActionDecl>,
+}
+
+fn parse_host_handler_section(
+    toml_text: &str,
+) -> Result<Vec<HookHandlerDecl<HostHookHandlerActionDecl>>, toml::de::Error> {
+    #[derive(Deserialize)]
+    struct Wrap {
+        #[serde(default, rename = "handler")]
+        handlers: Vec<HookHandlerDecl<HostHookHandlerActionDecl>>,
+    }
+    let w: Wrap = toml::from_str(toml_text)?;
+    Ok(w.handlers)
+}
+
+fn parse_user_handler_section(
+    toml_text: &str,
+) -> Result<Vec<UserHookHandlerSettingsDecl>, toml::de::Error> {
+    #[derive(Deserialize)]
+    struct Wrap {
+        #[serde(default, rename = "handler")]
+        handlers: Vec<UserHookHandlerSettingsDecl>,
+    }
+    let w: Wrap = toml::from_str(toml_text)?;
+    Ok(w.handlers)
+}
+
+// ── 프로세스 전역 싱글턴 ────────────────────────────────────────────────
+
+static REGISTRY: OnceLock<HookHandlerRegistry> = OnceLock::new();
+
+/// 전역 훅 핸들러 레지스트리. 웹훅 리스너 thread 와 IPC 핸들러 thread 가 공유한다
+/// (`&'static` — 내부 `RwLock` 로 동기화).
+pub fn global() -> &'static HookHandlerRegistry {
+    REGISTRY.get_or_init(HookHandlerRegistry::new)
+}
+
+/// `~/.tasty/hook-handlers.toml` — 사용자 훅 핸들러 설정. 홈 결정 실패 시 임시 경로.
+pub fn user_config_path() -> Option<PathBuf> {
+    tasty_utils::path::tasty_home().map(|d| d.join("hook-handlers.toml"))
+}
+
+/// 부팅 공용 헬퍼 — host embedded 기본값 + user config 를 전역 레지스트리에 install.
+/// GUI/headless 부팅에서 웹훅 리스너 init 직전에 호출한다. 중복 호출은 owner 기준
+/// retain 으로 idempotent.
+pub fn install_default_sources() {
+    let reg = global();
+    reg.install_host_defaults(include_str!("defaults/default-hook-handlers.toml"));
+    if let Some(path) = user_config_path() {
+        reg.install_user_config(&path);
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hook_handler::types::{
-        HookHandlerOwner, IpcCall, TriggerSource, validate_binding,
-    };
-
-    fn ipc_handler(id: &str, source: HookSource) -> HookHandler {
-        HookHandler {
-            id: HookHandlerId::new(id),
-            source,
-            priority: 0,
-            owner: HookHandlerOwner::Host,
-            action: HookHandlerAction::IpcSequence {
-                calls: vec![IpcCall {
-                    method: "notification.create".to_string(),
-                    params: serde_json::json!({"body": "${body.message}"}),
-                }],
-            },
-            display_name_i18n_key: None,
-            disabled: false,
-        }
-    }
-
-    fn shell_handler(id: &str, source: HookSource) -> HookHandler {
-        HookHandler {
-            id: HookHandlerId::new(id),
-            source,
-            priority: 0,
-            owner: HookHandlerOwner::Host,
-            action: HookHandlerAction::ShellCommand {
-                command: "echo".to_string(),
-                args: vec!["hi".to_string()],
-            },
-            display_name_i18n_key: None,
-            disabled: false,
-        }
-    }
-
-    #[test]
-    fn register_and_get() {
-        let mut reg = HookHandlerRegistry::new();
-        reg.register(ipc_handler("host/notify", HookSource::Webhook))
-            .unwrap();
-        assert!(reg.contains(&HookHandlerId::new("host/notify")));
-        assert_eq!(reg.len(), 1);
-    }
-
-    #[test]
-    fn duplicate_rejected() {
-        let mut reg = HookHandlerRegistry::new();
-        reg.register(ipc_handler("host/notify", HookSource::Webhook))
-            .unwrap();
-        let err = reg
-            .register(ipc_handler("host/notify", HookSource::Webhook))
-            .unwrap_err();
-        assert!(matches!(err, RegistryError::Duplicate { .. }));
-    }
-
-    #[test]
-    fn shell_with_webhook_source_rejected_at_registration() {
-        let mut reg = HookHandlerRegistry::new();
-        // 불변식: 셸 action 은 source=hook 만 허용.
-        let err = reg
-            .register(shell_handler("host/sh", HookSource::Webhook))
-            .unwrap_err();
-        assert!(matches!(err, RegistryError::ShellMustBeHookSource { .. }));
-        let err = reg
-            .register(shell_handler("host/sh2", HookSource::Any))
-            .unwrap_err();
-        assert!(matches!(err, RegistryError::ShellMustBeHookSource { .. }));
-        // source=hook 셸은 허용.
-        reg.register(shell_handler("host/sh3", HookSource::Hook))
-            .unwrap();
-    }
-
-    #[test]
-    fn shell_hook_cannot_bind_to_webhook() {
-        // 등록은 되지만(source=hook), 웹훅 바인딩 게이트에서 거부.
-        let h = shell_handler("host/sh", HookSource::Hook);
-        let err = validate_binding(&h, TriggerSource::Webhook).unwrap_err();
-        assert!(matches!(
-            err,
-            crate::hook_handler::types::BindingError::SourceMismatch { .. }
-        ));
-    }
-
-    #[test]
-    fn webhook_ipc_handler_binds_to_webhook_not_hook() {
-        let h = ipc_handler("host/notify", HookSource::Webhook);
-        assert!(validate_binding(&h, TriggerSource::Webhook).is_ok());
-        assert!(validate_binding(&h, TriggerSource::Hook).is_err());
-    }
-
-    #[test]
-    fn any_source_binds_both() {
-        let h = ipc_handler("host/notify", HookSource::Any);
-        assert!(validate_binding(&h, TriggerSource::Webhook).is_ok());
-        assert!(validate_binding(&h, TriggerSource::Hook).is_ok());
-    }
-}
+#[path = "registry_tests.rs"]
+mod tests;

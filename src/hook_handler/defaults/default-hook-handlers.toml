@@ -1,0 +1,24 @@
+# 호스트 default 훅 핸들러 정의 (파일 핸들러 `default-file-handlers.toml` 미러).
+#
+# 각 핸들러는 트리거 출처 게이트 `source`(hook / webhook / any)와 action 을 갖는다.
+# action 종류:
+#   - ipc_sequence : owner 가 고정한 tasty IPC 호출들을 페이로드 값으로 채워 순차 실행.
+#                    외부 HTTP(webhook)에 바인딩 가능(`is_webhook_bindable`).
+#   - shell_command: OS 프로세스 실행. **`source = hook` 만 허용**(웹훅→셸 경로는
+#                    finalize 단계에서 구조적으로 차단됨). host/user 만 선언 가능.
+#
+# priority 는 낮을수록 우선(파일 핸들러 규약과 동일). plugin 권장 ≥100, user 임의.
+#
+# 여기 등록된 핸들러는 "바인딩 가능한 후보"일 뿐 — 실제 웹훅/훅 트리거에 연결되기
+# 전까지는 아무 동작도 하지 않는다.
+
+# 웹훅 → OS 알림. 외부 HTTP 요청 바디의 `message` 를 알림 본문으로 노출하는 기본
+# 편의 핸들러. `webhook.register --handler host/webhook-notify` 로 즉시 바인딩 가능.
+[[handler]]
+id = "webhook-notify"
+source = "webhook"
+priority = 100
+
+[handler.action]
+kind = "ipc_sequence"
+calls = [{ method = "notification.create", params = { title = "Webhook", body = "${body.message}" } }]

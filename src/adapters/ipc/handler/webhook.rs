@@ -72,15 +72,14 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
         // ── 등록된 핸들러 id 로 바인딩 ──
         (Some(hid), None) => {
             let hid = HookHandlerId::new(hid);
-            let reg = hook_handler::global();
-            let Some(handler) = reg.get(&hid) else {
+            let Some(handler) = hook_handler::global().get(&hid) else {
                 return JsonRpcResponse::invalid_params(
                     id,
                     format!("hook handler '{hid}' not found"),
                 );
             };
             // source 게이트 — 셸/hook-전용 핸들러는 여기서 거부(불변식).
-            if let Err(e) = validate_binding(handler, TriggerSource::Webhook) {
+            if let Err(e) = validate_binding(&handler, TriggerSource::Webhook) {
                 return JsonRpcResponse::invalid_params(id, e.to_string());
             }
             match &handler.action {
@@ -101,7 +100,7 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
                 let anon_id = anon.id.clone();
                 // 익명 핸들러를 레지스트리에도 반영(조회/일관성). 실패해도 웹훅
                 // 등록은 진행(calls 스냅샷을 웹훅 엔트리가 이미 소유).
-                if let Err(e) = hook_handler::global().upsert(anon) {
+                if let Err(e) = hook_handler::global().upsert_full_handler(anon) {
                     tracing::warn!("anonymous hook handler upsert failed: {e}");
                 }
                 (Some(anon_id), calls)
