@@ -36,15 +36,18 @@ impl HookBinding {
     }
 }
 
-/// `check_and_fire` 가 반환하는 발사된 훅 1건 — hook id + 실행할 바인딩.
+/// `check_and_fire` 가 반환하는 발사된 훅 1건 — hook id + 실행할 바인딩 + 매칭 이벤트.
 ///
 /// 이 크레이트는 바인딩을 실행하지 않는다(leaf). 호출자(본체)가 `binding` 을
 /// `hook_handler::trigger::execute_binding` 으로 실행하고 `hook_id` 로 host event 를
-/// 큐잉한다.
+/// 큐잉한다. `event` 는 **등록된** 훅 이벤트의 사본이다(수신 이벤트가 아님 —
+/// OutputMatch 는 매칭 텍스트가 아니라 등록 패턴) — 셸 핸들러 env
+/// (`TASTY_HOOK_EVENT`) 등 트리거 컨텍스트 전파용.
 #[derive(Clone, Debug)]
 pub struct FiredHook {
     pub hook_id: HookId,
     pub binding: HookBinding,
+    pub event: HookEvent,
 }
 
 #[derive(Clone, Debug)]
@@ -208,6 +211,7 @@ impl HookManager {
                     fired.push(FiredHook {
                         hook_id: hook.id,
                         binding: hook.binding.clone(),
+                        event: hook.event.clone(),
                     });
                 }
             }
@@ -386,6 +390,7 @@ mod tests {
         let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
         assert_eq!(fired.len(), 2);
         assert_eq!(fired[0].binding, HookBinding::InlineShell("echo hi".into()));
+        assert_eq!(fired[0].event, HookEvent::Bell);
         assert_eq!(
             fired[1].binding,
             HookBinding::Handler("host/webhook-notify".into())
