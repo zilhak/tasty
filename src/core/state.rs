@@ -277,6 +277,16 @@ pub struct CoreState {
     /// 치환). mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
     pub(crate) pending_structural_forward: Vec<crate::ipc::stream::StructuralOp>,
 
+    /// client-driven mirror geometry(ADR-0045) forward 큐. `Core::resize_all_terminals`
+    /// 의 로컬 레이아웃 스윕이 mirror(detached) 터미널의 목표 grid `(cols, rows)` 를
+    /// 로컬에 적용하는 대신(로컬 grid 는 server `Resize` echo 로만 갱신 → desync 방지)
+    /// 여기에 **로컬 mirror surface id → (cols, rows)** 로 넣는다. HashMap 이라 한
+    /// 프레임에 여러 번 스윕돼도 surface 별 최신값만 남아 coalesce 된다. App 이
+    /// `about_to_wait`(`dispatch_pending_resize_forwards`, gui)에서 drain 해 로컬 id 를
+    /// 세션 매핑으로 원격 id 로 치환한 뒤 `StreamControl::ClientResize` 로 forward 한다.
+    /// mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
+    pub(crate) pending_resize_forward: std::collections::HashMap<u32, (usize, usize)>,
+
     /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
     /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
@@ -404,6 +414,7 @@ impl CoreState {
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_structural_forward: Vec::new(),
+            pending_resize_forward: std::collections::HashMap::new(),
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {

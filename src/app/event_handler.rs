@@ -279,6 +279,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 이번 프레임에 쌓은 op 를 같은 프레임에 원격으로 보낸다.
         self.dispatch_pending_structural_forwards();
 
+        // ADR-0045 — client-driven mirror geometry: redraw 의 로컬 레이아웃 스윕이
+        // mirror pane 목표 grid 를 쌓은 큐를 drain 해 원격 PTY 로 forward 한다. 원격
+        // reflow 결과는 기존 server→client Resize echo 로 mirror 에 반영된다.
+        self.dispatch_pending_resize_forwards();
+
         // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).

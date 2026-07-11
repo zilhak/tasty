@@ -86,6 +86,13 @@ pub(crate) struct AttachClientSession {
     anchor_ws_id: Option<u32>,
     /// forward 한 구조 op 의 op_id 시퀀스(2단계). 회신 correlate/로그용 — 단조 증가.
     op_seq: u64,
+    /// client-driven resize(ADR-0045) 중복 전송 억제. **원격 surface_id →
+    /// 마지막으로 forward 한 (cols, rows)**. 로컬 레이아웃 스윕은 매 프레임 돌고
+    /// mirror grid 는 server echo 로만 갱신되므로, echo 왕복(약 1 RTT) 동안 같은
+    /// 목표가 매 프레임 재계산된다 — 여기서 직전 전송값과 같으면 재전송을 생략해
+    /// 네트워크 프레임 폭주를 막는다(서버측 동일값 no-op 이 2차 방어). TCP 는 신뢰
+    /// 전송이라 한 번 보낸 값은 도달이 보장돼 재전송이 불필요하다.
+    last_forwarded_resize: HashMap<u32, (usize, usize)>,
 }
 
 impl App {
@@ -339,6 +346,7 @@ impl App {
             tunnel,
             anchor_ws_id,
             op_seq: 0,
+            last_forwarded_resize: HashMap::new(),
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -558,6 +566,77 @@ impl App {
             }
             Err(_) => tracing::warn!("structural forward: writer lock 실패 — drop"),
         }
+    }
+
+    /// `about_to_wait` 에서 호출 — `Core::resize_all_terminals` 의 로컬 레이아웃
+    /// 스윕이 mirror(detached) 터미널마다 쌓은 client-driven resize 큐를 drain 해
+    /// 원격에 forward 한다(ADR-0045). 각 로컬 surface id 를 세션 매핑으로 원격 id 로
+    /// 치환하고, 세션의 last-forwarded dedup 을 통과한 것만 `StreamControl::ClientResize`
+    /// 로 보낸다. 로컬 mirror grid 는 여기서 건드리지 않는다 — server 의 `Resize`
+    /// echo 가 유일한 갱신원(desync 방지).
+    pub(crate) fn dispatch_pending_resize_forwards(&mut self) {
+        let mut pending: Vec<(u32, usize, usize)> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            for (sid, (cols, rows)) in main.core_state.pending_resize_forward.drain() {
+                pending.push((sid, cols, rows));
+            }
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            for (sid, (cols, rows)) in e.pending_resize_forward.drain() {
+                pending.push((sid, cols, rows));
+            }
+        }
+        for (local_sid, cols, rows) in pending {
+            self.forward_one_resize(local_sid, cols, rows);
+        }
+    }
+
+    /// resize 큐의 항목 하나를 담당 mirror 세션으로 전송한다. 로컬 mirror surface 를
+    /// 보유한 세션을 찾아 local→remote 치환 후, 직전 전송값과 다르면
+    /// `ClientResize` 프레임을 write half 로 보낸다(같으면 생략 — coalesce).
+    /// 세션/원격 id 를 못 찾으면(예상 밖) warn 후 drop.
+    fn forward_one_resize(&mut self, local_sid: u32, cols: usize, rows: usize) {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter_mut()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
+        else {
+            tracing::warn!("resize forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop");
+            return;
+        };
+        // local → remote surface id.
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_sid)
+            .map(|(&r, _)| r)
+        else {
+            tracing::warn!("resize forward: 로컬 surface {local_sid} 의 원격 id 없음 — drop");
+            return;
+        };
+        // dedup: 직전 forward 와 같은 (cols, rows)면 재전송 생략(coalesce).
+        if sess.last_forwarded_resize.get(&remote_sid) == Some(&(cols, rows)) {
+            return;
+        }
+        let payload = serde_json::to_vec(&StreamControl::ClientResize {
+            surface_id: remote_sid,
+            cols,
+            rows,
+        })
+        .unwrap_or_default();
+        match sess.writer.lock() {
+            Ok(mut w) => {
+                if let Err(e) = stream::write_frame(&mut *w, StreamTag::Control, &payload) {
+                    tracing::warn!("resize forward send 실패: {e}");
+                    return;
+                }
+            }
+            Err(_) => {
+                tracing::warn!("resize forward: writer lock 실패 — drop");
+                return;
+            }
+        }
+        sess.last_forwarded_resize.insert(remote_sid, (cols, rows));
     }
 }
 
