@@ -114,7 +114,7 @@ fn paint(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState, input: RawInp
         addr.buffer = FILE_PATH.to_string();
     }
     let prev_editing = addr.editing;
-    let _ = ctx.run(input, |c| draw(c, theme, addr));
+    let _out = ctx.run(input, |c| draw(c, theme, addr));
 
     if addr.editing && !prev_editing {
         addr.entry_transitions += 1;
@@ -126,7 +126,7 @@ fn paint(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState, input: RawInp
             "E:/notes/todo.md".into(),
         ];
         addr.buffer.clear();
-        let _ = ctx.run(raw(false, vec![]), |c| draw(c, theme, addr));
+        let _out = ctx.run(raw(false, vec![]), |c| draw(c, theme, addr));
     }
 }
 
@@ -139,20 +139,20 @@ fn editing_survives_unfocused_rerun() {
     let mut addr = AddrState::new();
 
     // hover 이동 프레임 — 아직 비편집.
-    let _ = ctx.run(raw(true, vec![ptr_move(FX, FY)]), |c| {
+    let _out = ctx.run(raw(true, vec![ptr_move(FX, FY)]), |c| {
         draw(c, &theme, &mut addr)
     });
     assert!(!addr.editing, "클릭 전엔 편집모드가 아니다");
 
     // 클릭 press → 편집 진입.
-    let _ = ctx.run(raw(true, vec![ptr_btn(FX, FY, true)]), |c| {
+    let _out = ctx.run(raw(true, vec![ptr_btn(FX, FY, true)]), |c| {
         draw(c, &theme, &mut addr)
     });
     assert!(addr.editing, "클릭 press 프레임에 편집모드 진입");
 
     // focused=false + 빈 events 재-run (SDK repaint_last 의 미수정 최악 조건 /
     // 실제 surface blur 와 동형) → editing 은 memory 포커스 기반이라 유지된다.
-    let _ = ctx.run(raw(false, vec![]), |c| draw(c, &theme, &mut addr));
+    let _out = ctx.run(raw(false, vec![]), |c| draw(c, &theme, &mut addr));
     assert!(
         addr.editing,
         "focused=false 재-run 프레임에서 editing 이 떨어지면 진동 루프가 재점화된다"
