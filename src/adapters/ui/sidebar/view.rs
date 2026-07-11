@@ -568,22 +568,26 @@ pub fn draw_full_sidebar_view(
             }
 
             vspace(ui, th.spacing_xs);
-            let new_ws_resp =
-                draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
-            if new_ws_resp.clicked() {
-                actions.push(SidebarFullAction::NewWorkspace);
+            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 (디자인 changelog
+            // 2026-07-06-sidebar) — 생성은 배경 우클릭 / 카테고리 메뉴 Add workspace 로.
+            if props.categories.is_none() {
+                let new_ws_resp =
+                    draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
+                if new_ws_resp.clicked() {
+                    actions.push(SidebarFullAction::NewWorkspace);
+                }
+                if new_ws_resp.secondary_clicked() {
+                    let pos = new_ws_resp.interact_pointer_pos().unwrap_or_default();
+                    actions.push(SidebarFullAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
+                    ui.painter().rect_stroke(
+                        new_ws_resp.rect,
+                        4.0,
+                        egui::Stroke::new(2.0, th.accent_success()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                vspace(ui, th.spacing_xs);
             }
-            if new_ws_resp.secondary_clicked() {
-                let pos = new_ws_resp.interact_pointer_pos().unwrap_or_default();
-                actions.push(SidebarFullAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
-                ui.painter().rect_stroke(
-                    new_ws_resp.rect,
-                    4.0,
-                    egui::Stroke::new(2.0, th.accent_success()),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            vspace(ui, th.spacing_xs);
 
             // 그룹 모드 한정 — 목록 아래 빈 배경 우클릭 → 새 카테고리 (디자인
             // background → New category). 남은 스크롤 영역 전체를 우클릭 감지 영역으로.
@@ -757,21 +761,27 @@ pub fn draw_collapsed_sidebar_view(
             }
         }
 
-        vspace(ui, STRUCT_GAP_2);
-        let (rect, resp) = ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
-        paint_icon_button(ui, th, rect, &resp, icons::PLUS);
-        if resp.clicked() {
-            actions.push(SidebarCollapsedAction::NewWorkspace);
-        }
-        if resp.secondary_clicked() {
-            let pos = resp.interact_pointer_pos().unwrap_or_default();
-            actions.push(SidebarCollapsedAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
-            ui.painter().rect_stroke(
-                rect,
-                4.0,
-                egui::Stroke::new(2.0, th.accent_success()),
-                egui::StrokeKind::Inside,
-            );
+        // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 (디자인 changelog
+        // 2026-07-06-sidebar) — 생성은 rail 카테고리 팝업 Add workspace 로.
+        if props.categories.is_none() {
+            vspace(ui, STRUCT_GAP_2);
+            let (rect, resp) =
+                ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+            paint_icon_button(ui, th, rect, &resp, icons::PLUS);
+            if resp.clicked() {
+                actions.push(SidebarCollapsedAction::NewWorkspace);
+            }
+            if resp.secondary_clicked() {
+                let pos = resp.interact_pointer_pos().unwrap_or_default();
+                actions
+                    .push(SidebarCollapsedAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
+                ui.painter().rect_stroke(
+                    rect,
+                    4.0,
+                    egui::Stroke::new(2.0, th.accent_success()),
+                    egui::StrokeKind::Inside,
+                );
+            }
         }
     });
 

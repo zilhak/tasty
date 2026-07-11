@@ -31,6 +31,7 @@
 - **헤더**: 워드마크 `tasty.` + 수박 로고(`icon_256.png`) + **접기 버튼**(full↔collapsed 토글).
 - **워크스페이스 영역** (남는 높이): `Workspaces` heading → 워크스페이스 카드 목록 → `New workspace` 버튼.
   - 카드: 클릭=전환, 드래그=재정렬, 점유 중이면 인디케이터.
+  - `New workspace`(+) 버튼은 **워크스페이스 카테고리 토글 off 일 때만** 표시 (full/collapsed 공통). on 이면 배경 우클릭·카테고리 메뉴의 Add workspace 로 생성. → [`features/workspace-category/`](../../workspace-category/index.md)
 - **하단 버튼** (각 버튼이 뭘 하는지 한 줄 + 상세는 해당 문서로 링크 — 연결 개념):
   - **도구** (`icons::TOOLS`) — 클릭 시 **도구 메뉴**를 연다 (리스닝 포트 등 빌트인 진단/유틸 항목 모음). → [`features/tools-menu/`](../../tools-menu/index.md)
   - **플러그인** (`icons::PLUG`) — **플러그인 관리 창**을 연다 (설치/활성·비활성). → [`features/plugin-system/`](../../plugin-system/index.md)
