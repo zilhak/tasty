@@ -37,241 +37,20 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.close" || cmd.request.method == "view.close" {
-            // CLAUDE.md "포커스 독립": id 로 직접 지정. focused 의존 금지.
-            let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
-            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = match target_id {
-                None => host_ipc::protocol::JsonRpcResponse::error(
-                    response_id,
-                    -32602,
-                    "Missing 'id' parameter (u64). focused 의존은 금지.",
-                ),
-                Some(id_u64) => {
-                    // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
-                    // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
-                    let mains: Vec<_> = self
-                        .view
-                        .views
-                        .iter()
-                        .filter(|(_, w)| w.as_main().is_some())
-                        .map(|(id, _)| *id)
-                        .collect();
-                    let target = mains.iter().copied().find(|w| u64::from(*w) == id_u64);
-                    match target {
-                        Some(_) if mains.len() <= 1 => host_ipc::protocol::JsonRpcResponse::error(
-                            response_id,
-                            -32000,
-                            "Cannot close the last main window via IPC — quitting the app is a user action",
-                        ),
-                        Some(tid) => {
-                            // GUI request_close_window 와 공통 helper — window.closed
-                            // plugin event + window.delete.post Lua fire 포함.
-                            self.close_main_window(
-                                tid,
-                                tasty_plugin_protocol::LifecycleReason::Ipc,
-                            );
-                            host_ipc::protocol::JsonRpcResponse::success(
-                                response_id,
-                                serde_json::json!({"closed": true, "id": id_u64}),
-                            )
-                        }
-                        None => host_ipc::protocol::JsonRpcResponse::error(
-                            response_id,
-                            -32602,
-                            format!("Window id {id_u64} not found"),
-                        ),
-                    }
-                }
-            };
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
+            return self.ipc_handle_window_close(cmd);
         }
         // window.focus 는 사용자 입력 재현 (단축키/마우스 클릭 영역) 으로 분류.
         // CLAUDE.md: "CLI/IPC로 포커스·활성 탭·활성 워크스페이스를 전환하는 명령은
         // 존재하지 않는다." → release 빌드에 노출 안 함. debug 빌드만 유지.
         #[cfg(debug_assertions)]
         if cmd.request.method == "window.focus" || cmd.request.method == "view.focus" {
-            let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
-            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = match target_id {
-                None => host_ipc::protocol::JsonRpcResponse::error(
-                    response_id,
-                    -32602,
-                    "Missing 'id' parameter (u64)",
-                ),
-                Some(id_u64) => {
-                    let mut found = false;
-                    for (id, w) in &self.view.views {
-                        if w.as_main().is_none() {
-                            continue;
-                        }
-                        if u64::from(*id) == id_u64 {
-                            w.base().winit.focus_window();
-                            self.view.focused_view_id = Some(*id);
-                            found = true;
-                            break;
-                        }
-                    }
-                    host_ipc::protocol::JsonRpcResponse::success(
-                        response_id,
-                        serde_json::json!({"focused": found, "id": id_u64}),
-                    )
-                }
-            };
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
+            return self.ipc_handle_window_focus(cmd);
         }
         if cmd.request.method == "window.list" || cmd.request.method == "view.list" {
-            let focused_id = self.view.focused_view_id;
-            let list: Vec<_> = self
-                .view
-                .views
-                .iter()
-                .filter_map(|(id, w)| {
-                    let main = w.as_main()?;
-                    Some(serde_json::json!({
-                        "id": u64::from(*id),
-                        "focused": focused_id == Some(*id),
-                        "title": main.state.active_workspace(&main.core_state).name,
-                    }))
-                })
-                .collect();
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!(list),
-            );
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
+            return self.ipc_handle_window_list(cmd);
         }
-        // ui.screenshot — 정식 release 기능. focus 독립(원칙 3): 대상 window/surface 를
-        // ID 로 직접 지정하고 focused_view_id 에 의존하지 않는다. 에이전트가 자기 작업을
-        // 관찰하는 캡처라 사용자 상태(focus/가시 탭)를 건드리지 않는다(원칙 1·2). local_only
-        // (파일 쓰기 표면) — plugin 미노출.
-        //
-        // params: { path (필수), surface_id? (u32), window_id? (u64) }
-        // - surface_id → 해당 터미널 surface 를 오프스크린 렌더로 캡처(가시성/포커스 무관).
-        // - 아니면 window 프레임 캡처: window_id 지정, 없으면 유일 window, 다중이면 에러.
         if cmd.request.method == "ui.screenshot" {
-            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
-                Some(p) if !p.is_empty() => p.to_string(),
-                _ => {
-                    send_response(
-                        &cmd.response_tx,
-                        host_ipc::protocol::JsonRpcResponse::error(
-                            response_id,
-                            -32602,
-                            "Missing 'path' parameter (string)",
-                        ),
-                    );
-                    return IpcStep::Handled;
-                }
-            };
-            let surface_id = cmd
-                .request
-                .params
-                .get("surface_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
-            let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
-
-            // ── surface 지정 오프스크린 캡처 (focus 독립) ──
-            if let Some(sid) = surface_id {
-                // 소유 window(창별 CoreState)를 ID 로 순회 해소 — focus 무관.
-                let owner = self.view.views.values_mut().find_map(|w| {
-                    let m = w.as_main_mut()?;
-                    if m.core_state.has_surface(sid) {
-                        Some(m)
-                    } else {
-                        None
-                    }
-                });
-                let response = match owner {
-                    None => host_ipc::protocol::JsonRpcResponse::error(
-                        response_id,
-                        -32602,
-                        format!("Surface {sid} not found"),
-                    ),
-                    Some(m) => {
-                        let kind = m.core_state.find_surface_by_id(sid).map(|s| s.kind());
-                        if kind == Some("terminal") {
-                            m.base.gpu.pending_surface_screenshot =
-                                Some((sid, std::path::PathBuf::from(&path)));
-                            m.base.dirty = true;
-                            m.base.winit.request_redraw();
-                            host_ipc::protocol::JsonRpcResponse::success(
-                                response_id,
-                                serde_json::json!({
-                                    "path": path,
-                                    "surface_id": sid,
-                                    "scheduled": true,
-                                }),
-                            )
-                        } else {
-                            host_ipc::protocol::JsonRpcResponse::error(
-                                response_id,
-                                -32000,
-                                format!(
-                                    "Surface {sid} is kind '{}' — only terminal surfaces can be captured (egui panels / plugin / webview are out of scope)",
-                                    kind.unwrap_or("unknown")
-                                ),
-                            )
-                        }
-                    }
-                };
-                send_response(&cmd.response_tx, response);
-                return IpcStep::Handled;
-            }
-
-            // ── window(tasty 자체 화면) 캡처 (focus 독립) ──
-            let mains: Vec<_> = self
-                .view
-                .views
-                .iter()
-                .filter(|(_, w)| w.as_main().is_some())
-                .map(|(id, _)| *id)
-                .collect();
-            let target = match window_id {
-                Some(wid) => mains.iter().copied().find(|w| u64::from(*w) == wid),
-                None if mains.len() == 1 => mains.first().copied(),
-                None => None,
-            };
-            let response = match target {
-                Some(tid) => match self.view.views.get_mut(&tid).and_then(|w| w.as_main_mut()) {
-                    Some(m) => {
-                        m.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-                        m.base.dirty = true;
-                        m.base.winit.request_redraw();
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            response_id,
-                            serde_json::json!({
-                                "path": path,
-                                "window_id": u64::from(tid),
-                                "scheduled": true,
-                            }),
-                        )
-                    }
-                    None => host_ipc::protocol::JsonRpcResponse::error(
-                        response_id,
-                        -32602,
-                        "Target window is not a main view",
-                    ),
-                },
-                None => match window_id {
-                    Some(wid) => host_ipc::protocol::JsonRpcResponse::error(
-                        response_id,
-                        -32602,
-                        format!("Window id {wid} not found"),
-                    ),
-                    None => host_ipc::protocol::JsonRpcResponse::error(
-                        response_id,
-                        -32000,
-                        "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.",
-                    ),
-                },
-            };
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
+            return self.ipc_handle_ui_screenshot(cmd);
         }
         if cmd.request.method.starts_with("plugin.") {
             return self.ipc_dispatch_plugin_method(cmd, caller);
@@ -297,6 +76,256 @@ impl App {
             return IpcStep::Handled;
         }
         IpcStep::NotHandled
+    }
+
+    /// `window.close` / `view.close`: main view 만 대상, 마지막 main 은 거부.
+    /// CLAUDE.md "포커스 독립": id 로 직접 지정, focused 의존 금지.
+    fn ipc_handle_window_close(&mut self, cmd: &IpcCommand) -> IpcStep {
+        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let response = match target_id {
+            None => host_ipc::protocol::JsonRpcResponse::error(
+                response_id,
+                -32602,
+                "Missing 'id' parameter (u64). focused 의존은 금지.",
+            ),
+            Some(id_u64) => {
+                // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
+                // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
+                let mains: Vec<_> = self
+                    .view
+                    .views
+                    .iter()
+                    .filter(|(_, w)| w.as_main().is_some())
+                    .map(|(id, _)| *id)
+                    .collect();
+                let target = mains.iter().copied().find(|w| u64::from(*w) == id_u64);
+                match target {
+                    Some(_) if mains.len() <= 1 => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32000,
+                        "Cannot close the last main window via IPC — quitting the app is a user action",
+                    ),
+                    Some(tid) => {
+                        // GUI request_close_window 와 공통 helper — window.closed
+                        // plugin event + window.delete.post Lua fire 포함.
+                        self.close_main_window(tid, tasty_plugin_protocol::LifecycleReason::Ipc);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            response_id,
+                            serde_json::json!({"closed": true, "id": id_u64}),
+                        )
+                    }
+                    None => host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        format!("Window id {id_u64} not found"),
+                    ),
+                }
+            }
+        };
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
+    }
+
+    /// `window.focus` / `view.focus` (debug 전용): 사용자 입력 재현이라 release 미노출.
+    #[cfg(debug_assertions)]
+    fn ipc_handle_window_focus(&mut self, cmd: &IpcCommand) -> IpcStep {
+        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let response = match target_id {
+            None => host_ipc::protocol::JsonRpcResponse::error(
+                response_id,
+                -32602,
+                "Missing 'id' parameter (u64)",
+            ),
+            Some(id_u64) => {
+                let mut found = false;
+                for (id, w) in &self.view.views {
+                    if w.as_main().is_none() {
+                        continue;
+                    }
+                    if u64::from(*id) == id_u64 {
+                        w.base().winit.focus_window();
+                        self.view.focused_view_id = Some(*id);
+                        found = true;
+                        break;
+                    }
+                }
+                host_ipc::protocol::JsonRpcResponse::success(
+                    response_id,
+                    serde_json::json!({"focused": found, "id": id_u64}),
+                )
+            }
+        };
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
+    }
+
+    /// `window.list` / `view.list`: 전 view 순회, main view 만 노출.
+    fn ipc_handle_window_list(&self, cmd: &IpcCommand) -> IpcStep {
+        let focused_id = self.view.focused_view_id;
+        let list: Vec<_> = self
+            .view
+            .views
+            .iter()
+            .filter_map(|(id, w)| {
+                let main = w.as_main()?;
+                Some(serde_json::json!({
+                    "id": u64::from(*id),
+                    "focused": focused_id == Some(*id),
+                    "title": main.state.active_workspace(&main.core_state).name,
+                }))
+            })
+            .collect();
+        let response = host_ipc::protocol::JsonRpcResponse::success(
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            serde_json::json!(list),
+        );
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
+    }
+
+    /// `ui.screenshot` — 정식 release 기능. focus 독립(원칙 3): 대상 window/surface 를
+    /// ID 로 직접 지정하고 focused_view_id 에 의존하지 않는다. 에이전트가 자기 작업을
+    /// 관찰하는 캡처라 사용자 상태(focus/가시 탭)를 건드리지 않는다(원칙 1·2). local_only
+    /// (파일 쓰기 표면) — plugin 미노출.
+    ///
+    /// params: { path (필수), surface_id? (u32), window_id? (u64) }
+    /// - surface_id → 해당 터미널 surface 를 오프스크린 렌더로 캡처(가시성/포커스 무관).
+    /// - 아니면 window 프레임 캡처: window_id 지정, 없으면 유일 window, 다중이면 에러.
+    fn ipc_handle_ui_screenshot(&mut self, cmd: &IpcCommand) -> IpcStep {
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
+            Some(p) if !p.is_empty() => p.to_string(),
+            _ => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        "Missing 'path' parameter (string)",
+                    ),
+                );
+                return IpcStep::Handled;
+            }
+        };
+        let surface_id = cmd
+            .request
+            .params
+            .get("surface_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
+
+        // ── surface 지정 오프스크린 캡처 (focus 독립) ──
+        if let Some(sid) = surface_id {
+            return self.ipc_screenshot_surface(cmd, response_id, &path, sid);
+        }
+
+        // ── window(tasty 자체 화면) 캡처 (focus 독립) ──
+        let mains: Vec<_> = self
+            .view
+            .views
+            .iter()
+            .filter(|(_, w)| w.as_main().is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        let target = match window_id {
+            Some(wid) => mains.iter().copied().find(|w| u64::from(*w) == wid),
+            None if mains.len() == 1 => mains.first().copied(),
+            None => None,
+        };
+        let response = match target {
+            Some(tid) => match self.view.views.get_mut(&tid).and_then(|w| w.as_main_mut()) {
+                Some(m) => {
+                    m.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                    m.base.dirty = true;
+                    m.base.winit.request_redraw();
+                    host_ipc::protocol::JsonRpcResponse::success(
+                        response_id,
+                        serde_json::json!({
+                            "path": path,
+                            "window_id": u64::from(tid),
+                            "scheduled": true,
+                        }),
+                    )
+                }
+                None => host_ipc::protocol::JsonRpcResponse::error(
+                    response_id,
+                    -32602,
+                    "Target window is not a main view",
+                ),
+            },
+            None => match window_id {
+                Some(wid) => host_ipc::protocol::JsonRpcResponse::error(
+                    response_id,
+                    -32602,
+                    format!("Window id {wid} not found"),
+                ),
+                None => host_ipc::protocol::JsonRpcResponse::error(
+                    response_id,
+                    -32000,
+                    "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.",
+                ),
+            },
+        };
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
+    }
+
+    /// `ui.screenshot` 의 surface 지정 오프스크린 캡처 경로. 소유 window 를 ID 로 순회
+    /// 해소(focus 무관)하고 terminal surface 만 캡처 스케줄한다.
+    fn ipc_screenshot_surface(
+        &mut self,
+        cmd: &IpcCommand,
+        response_id: serde_json::Value,
+        path: &str,
+        sid: u32,
+    ) -> IpcStep {
+        // 소유 window(창별 CoreState)를 ID 로 순회 해소 — focus 무관.
+        let owner = self.view.views.values_mut().find_map(|w| {
+            let m = w.as_main_mut()?;
+            if m.core_state.has_surface(sid) {
+                Some(m)
+            } else {
+                None
+            }
+        });
+        let response = match owner {
+            None => host_ipc::protocol::JsonRpcResponse::error(
+                response_id,
+                -32602,
+                format!("Surface {sid} not found"),
+            ),
+            Some(m) => {
+                let kind = m.core_state.find_surface_by_id(sid).map(|s| s.kind());
+                if kind == Some("terminal") {
+                    m.base.gpu.pending_surface_screenshot =
+                        Some((sid, std::path::PathBuf::from(path)));
+                    m.base.dirty = true;
+                    m.base.winit.request_redraw();
+                    host_ipc::protocol::JsonRpcResponse::success(
+                        response_id,
+                        serde_json::json!({
+                            "path": path,
+                            "surface_id": sid,
+                            "scheduled": true,
+                        }),
+                    )
+                } else {
+                    host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32000,
+                        format!(
+                            "Surface {sid} is kind '{}' — only terminal surfaces can be captured (egui panels / plugin / webview are out of scope)",
+                            kind.unwrap_or("unknown")
+                        ),
+                    )
+                }
+            }
+        };
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
     }
 
     /// `plugin.*` 메서드 한 묶음. 라이프사이클 변경 메서드는 HandledDirty 반환.
