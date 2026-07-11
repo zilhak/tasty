@@ -55,4 +55,5 @@ surface 무관 — `condition` 으로 트리거:
 
 ## 관련
 
+- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처가 공유하도록 [공유 훅 핸들러 레지스트리(ADR-0047)](../../adr/0047-shared-hook-handler-registry-source-gate.md)가 신설됐다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 이 훅(내부 이벤트)은 위 셸 명령 인라인(`SurfaceHook.command`) 모델로 동작하며 그 레지스트리를 소비하지 않는다(현재 소비처는 웹훅 등록 경로).
 - [agent-collaboration](../agent-collaboration/index.md) · [notifications](../notifications/index.md) · [claude plugin](../../plugins/claude/index.md)(Claude hook 발화)

@@ -45,4 +45,5 @@ HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction
 
 ## 관련
 
+- **레지스트리 정본 템플릿**: 이 `FileHandlerRegistry`(3출처 patch 병합 + actor 별 action 스키마 + owner tie-break 정렬)를 공유 훅 핸들러 레지스트리가 미러링한다 — [webhook](../webhook/index.md) · [ADR-0047](../../adr/0047-shared-hook-handler-registry-source-gate.md). 차이: file handler 의 `detector`↔hook 의 `source` 게이트, `System` action↔`ShellCommand`(hook 출처 전용).
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-development](../../dev-guide/plugin-development.md) · [settings](../settings/index.md)
