@@ -573,6 +573,9 @@ fn webhook_command_to_method_params(
             methods,
             handler,
             sequence,
+            persistent,
+            ttl_secs,
+            count,
         } => {
             // --sequence 는 JSON 문자열 → Value 로 파싱해 전달(서버가 IpcCall 배열로 검증).
             let sequence_value = sequence
@@ -584,12 +587,16 @@ fn webhook_command_to_method_params(
                     "methods": methods,
                     "handler": handler,
                     "sequence": sequence_value,
+                    "persistent": persistent,
+                    "ttl_secs": ttl_secs,
+                    "count": count,
                 }),
             )
         }
         W::List => ("webhook.list", serde_json::json!({})),
         W::Info { id } => ("webhook.info", serde_json::json!({ "id": id })),
         W::Unregister { id } => ("webhook.unregister", serde_json::json!({ "id": id })),
+        W::Sweep => ("webhook.sweep", serde_json::json!({})),
     }
 }
 

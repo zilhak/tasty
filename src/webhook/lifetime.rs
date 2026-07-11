@@ -35,6 +35,11 @@ pub enum Persistence {
 }
 
 /// 자동 소멸 제한 (초과 시 웹훅 등록 해제 + path 회수).
+///
+/// 변형명 `TimeLimit`/`CountLimit` 는 명세(research.md §2 · 작업항목 4)가 확정한
+/// 이름이라 `enum_variant_names` lint 를 허용한다(제한의 종류를 이름에 담는 편이
+/// `Time`/`Count` 보다 코드 가독성이 높다).
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Limit {
     /// 제한 없음 — 명시적 unregister/sweep 전까지 유지.
@@ -53,14 +58,6 @@ pub struct Lifetime {
 }
 
 impl Lifetime {
-    /// MVP 기본값 — 임시 + 무제한(재시작 시 소멸, 스스로 만료 안 함).
-    pub fn temporary_unlimited() -> Self {
-        Self {
-            persistence: Persistence::Temporary,
-            limit: Limit::Unlimited,
-        }
-    }
-
     /// 재시작 시 config 로 복원되는가.
     pub fn is_persistent(&self) -> bool {
         self.persistence == Persistence::Persistent
@@ -100,9 +97,17 @@ impl Lifetime {
 mod tests {
     use super::*;
 
+    /// 테스트용 임시·무제한 lifetime(제거된 `temporary_unlimited` 헬퍼 대체).
+    fn temp_unlimited() -> Lifetime {
+        Lifetime {
+            persistence: Persistence::Temporary,
+            limit: Limit::Unlimited,
+        }
+    }
+
     #[test]
     fn unlimited_never_expires() {
-        let lt = Lifetime::temporary_unlimited();
+        let lt = temp_unlimited();
         assert!(!lt.is_expired(now_unix()));
         assert!(!lt.is_time_expired(u64::MAX));
         assert!(!lt.is_exhausted());
@@ -139,7 +144,7 @@ mod tests {
 
     #[test]
     fn consume_noop_on_non_count() {
-        let mut lt = Lifetime::temporary_unlimited();
+        let mut lt = temp_unlimited();
         assert!(!lt.consume());
         assert_eq!(lt.limit, Limit::Unlimited);
     }

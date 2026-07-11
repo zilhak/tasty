@@ -22,10 +22,21 @@ pub enum WebhookCommands {
         /// Inline IpcSequence as a JSON array of {"method","params"} objects.
         #[arg(long)]
         sequence: Option<String>,
+        /// Persist across restarts (default: temporary, dropped on restart).
+        #[arg(long)]
+        persistent: bool,
+        /// Time limit in seconds; the webhook auto-expires after this many
+        /// seconds. Mutually exclusive with --count.
+        #[arg(long, value_name = "SECS", conflicts_with = "count")]
+        ttl_secs: Option<u64>,
+        /// Count limit; the webhook auto-destructs after this many successful
+        /// calls. Mutually exclusive with --ttl-secs.
+        #[arg(long, value_name = "N")]
+        count: Option<u64>,
     },
-    /// List all registered webhooks (URL, methods, handler, steps).
+    /// List all registered webhooks (URL, methods, handler, steps, lifetime).
     List,
-    /// Show a single webhook's details by id.
+    /// Show a single webhook's details by id (incl. remaining count / expiry).
     Info {
         /// Webhook opaque id (the `/{id}` path segment).
         #[arg(long)]
@@ -37,4 +48,6 @@ pub enum WebhookCommands {
         #[arg(long)]
         id: String,
     },
+    /// Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted).
+    Sweep,
 }

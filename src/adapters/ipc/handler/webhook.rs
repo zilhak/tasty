@@ -19,7 +19,8 @@ use crate::hook_handler::{
     self, HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
     TriggerSource, validate_binding,
 };
-use crate::webhook;
+use crate::webhook::{self, Lifetime, Limit, Persistence};
+use crate::webhook::lifetime::now_unix;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 기본 허용 메서드(요청에 `methods` 미지정 시).
@@ -33,11 +34,22 @@ const DEFAULT_METHODS: &[&str] = &["POST"];
 /// - `sequence`: 인라인 IpcCall 배열 (선택) — owner 가 직접 정의(익명 웹훅 핸들러).
 ///
 /// `handler` 와 `sequence` 중 정확히 하나를 지정한다.
+///
+/// lifetime params (선택):
+/// - `persistent`: bool (기본 false → Temporary). true 면 재시작 후에도 복원.
+/// - `ttl_secs`: u64 — 시간제한(now+ttl 절대 deadline). `count` 와 상호배타.
+/// - `count`: u64 — 횟수제한(잔여 호출 수). `ttl_secs` 와 상호배타.
+/// - 둘 다 없으면 무제한.
 pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let methods = parse_methods(params);
     if methods.is_empty() {
         return JsonRpcResponse::invalid_params(id, "'methods' must be a non-empty string array");
     }
+
+    let lifetime = match parse_lifetime(params) {
+        Ok(lt) => lt,
+        Err(e) => return JsonRpcResponse::invalid_params(id, e),
+    };
 
     // CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 "부재" 로 취급한다.
     let handler_field = params.get("handler").and_then(|v| v.as_str());
@@ -102,9 +114,6 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
         }
     };
 
-    // lifetime 파싱은 후속 배선(commit B)에서 params 로 확장한다. 현재는 기존
-    // MVP 동작 유지(임시·무제한).
-    let lifetime = webhook::Lifetime::temporary_unlimited();
     let outcome = webhook::register(methods.clone(), handler_id.clone(), calls, lifetime);
     JsonRpcResponse::success(
         id,
@@ -113,8 +122,88 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
             "url": outcome.url,
             "methods": methods,
             "handler": handler_id.map(|h| h.0),
+            "lifetime": lifetime_json(&lifetime),
         }),
     )
+}
+
+/// `webhook.sweep` — 만료된(시간 초과 / 횟수 소진) 웹훅 일괄 정리. 제거된 id 목록 반환.
+pub fn handle_sweep(id: serde_json::Value) -> JsonRpcResponse {
+    let swept = webhook::sweep();
+    JsonRpcResponse::success(id, json!({ "swept": swept, "count": swept.len() }))
+}
+
+/// lifetime params 를 파싱한다. `ttl_secs`/`count` 는 상호배타.
+fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
+    let persistence = if params
+        .get("persistent")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        Persistence::Persistent
+    } else {
+        Persistence::Temporary
+    };
+
+    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다.
+    let ttl = params.get("ttl_secs").filter(|v| !v.is_null());
+    let count = params.get("count").filter(|v| !v.is_null());
+
+    let limit = match (ttl, count) {
+        (Some(_), Some(_)) => {
+            return Err("specify at most one of 'ttl_secs' or 'count', not both".to_string());
+        }
+        (Some(ttl), None) => {
+            let secs = ttl
+                .as_u64()
+                .ok_or_else(|| "'ttl_secs' must be a positive integer".to_string())?;
+            if secs == 0 {
+                return Err("'ttl_secs' must be greater than 0".to_string());
+            }
+            Limit::TimeLimit {
+                deadline_unix: now_unix().saturating_add(secs),
+            }
+        }
+        (None, Some(count)) => {
+            let remaining = count
+                .as_u64()
+                .ok_or_else(|| "'count' must be a positive integer".to_string())?;
+            if remaining == 0 {
+                return Err("'count' must be greater than 0".to_string());
+            }
+            Limit::CountLimit { remaining }
+        }
+        (None, None) => Limit::Unlimited,
+    };
+
+    Ok(Lifetime { persistence, limit })
+}
+
+/// lifetime → JSON(등록/조회 응답, 로컬 owner 채널). 시간제한은 절대 시각 +
+/// 현재 기준 잔여 초를, 횟수제한은 남은 카운트를 노출한다.
+fn lifetime_json(lifetime: &Lifetime) -> serde_json::Value {
+    let persistence = match lifetime.persistence {
+        Persistence::Persistent => "persistent",
+        Persistence::Temporary => "temporary",
+    };
+    match lifetime.limit {
+        Limit::Unlimited => json!({ "persistence": persistence, "limit": "unlimited" }),
+        Limit::TimeLimit { deadline_unix } => {
+            let now = now_unix();
+            json!({
+                "persistence": persistence,
+                "limit": "time",
+                "expires_at_unix": deadline_unix,
+                "expires_in_secs": deadline_unix.saturating_sub(now),
+                "expired": now >= deadline_unix,
+            })
+        }
+        Limit::CountLimit { remaining } => json!({
+            "persistence": persistence,
+            "limit": "count",
+            "remaining": remaining,
+        }),
+    }
 }
 
 /// `webhook.list` — 전체 웹훅 목록(포커스 독립, 전 범위).
@@ -181,7 +270,8 @@ fn anonymous_handler(calls: &[IpcCall]) -> HookHandler {
     }
 }
 
-/// 웹훅 엔트리 → JSON(조회 응답). 발급 URL·메서드·핸들러 노출(로컬 owner 채널).
+/// 웹훅 엔트리 → JSON(조회 응답). 발급 URL·메서드·핸들러·lifetime(남은횟수/만료)
+/// 노출(로컬 owner 채널).
 fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
     json!({
         "id": e.id,
@@ -189,5 +279,6 @@ fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
         "methods": e.methods,
         "handler": e.handler_id.as_ref().map(|h| h.0.clone()),
         "steps": e.calls.len(),
+        "lifetime": lifetime_json(&e.lifetime),
     })
 }

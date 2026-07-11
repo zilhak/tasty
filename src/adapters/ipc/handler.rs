@@ -382,6 +382,7 @@ fn route_engine_handler(
         "webhook.list" => webhook::handle_list(id),
         "webhook.info" => webhook::handle_info(id, &request.params),
         "webhook.unregister" => webhook::handle_unregister(id, &request.params),
+        "webhook.sweep" => webhook::handle_sweep(id),
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
