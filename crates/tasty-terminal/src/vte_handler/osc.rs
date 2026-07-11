@@ -23,10 +23,7 @@ fn looks_like_shell_exe_path(title: &str) -> bool {
     if !title.contains(['/', '\\', ':']) {
         return false;
     }
-    let basename = title
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(title);
+    let basename = title.rsplit(['/', '\\']).next().unwrap_or(title);
     is_known_shell_name(basename)
 }
 
