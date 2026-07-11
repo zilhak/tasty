@@ -1,7 +1,7 @@
 //! 축소 레일 카테고리 팝업 (`sidebar_context_menu.jsx` `RailCategoryPopup` 전사).
 //!
 //! 레일의 `---` 카테고리 버튼을 누르면 버튼 **우측**에 앵커드로 뜬다(Tools 버튼과 동일
-//! 앵커 패턴). 맨 위는 **클릭 불가한 카테고리 이름 헤더**(count 표기), 그 아래 액션:
+//! 앵커 패턴). 맨 위는 **클릭 불가한 카테고리 이름 헤더**(라벨만, count 없음), 그 아래 액션:
 //! `Add workspace`(해당 카테고리 소속 생성) · `Collapse/Expand`(접힘 토글). 비-normal
 //! 카테고리는 separator + `Rename`(→ rename 다이얼로그) / `Delete`(danger, → 삭제 confirm).
 //!
@@ -21,13 +21,12 @@ pub const RAIL_CATEGORY_POPUP_ID: &str = "rail_category";
 const POPUP_WIDTH: f32 = 176.0;
 /// 메뉴 항목 한 줄 높이 (디자인 28px 행). draw 와 sizer 가 공유.
 const ITEM_HEIGHT: f32 = 28.0;
-/// 헤더(이름 + count) 영역 높이 — 라벨 + 상하 패딩 + 하단 보더.
+/// 헤더(이름) 영역 높이 — 라벨 + 상하 패딩 + 하단 보더.
 const HEADER_HEIGHT: f32 = 30.0;
 
 /// 현재 대상 카테고리가 접혀 있는지 등 팝업 렌더에 필요한 스냅샷.
 struct Target {
     label: String,
-    count: usize,
     collapsed: bool,
     /// normal(예약) 여부 — true 면 Rename/Delete 를 노출하지 않는다(additive-only).
     is_reserved: bool,
@@ -42,10 +41,8 @@ fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<T
     } else {
         cat.name.clone()
     };
-    let count = engine.workspaces_in_category(cat_id).len();
     Some(Target {
         label,
-        count,
         collapsed: cat.collapsed,
         is_reserved: cat.is_normal(),
     })
@@ -104,7 +101,7 @@ pub fn draw_rail_category_popup(
     let cat_id = state.dialogs.rail_category_popup.expect("resolved above");
     let th = theme::theme();
 
-    // ── 비클릭 카테고리 이름 헤더 (count 우측 표기 + 하단 보더). ──
+    // ── 비클릭 카테고리 이름 헤더 (라벨만 + 하단 보더 — count 표기 없음). ──
     let width = ui.available_width();
     let (header_rect, _) =
         ui.allocate_exact_size(egui::vec2(width, HEADER_HEIGHT), egui::Sense::hover());
@@ -115,15 +112,6 @@ pub fn draw_rail_category_popup(
         egui::FontId::proportional(th.font_size_body.value()),
         th.text_primary().into(),
     );
-    if target.count > 0 {
-        ui.painter().text(
-            egui::pos2(header_rect.max.x - 8.0, header_rect.center().y),
-            egui::Align2::RIGHT_CENTER,
-            target.count.to_string(),
-            egui::FontId::monospace(th.font_size_micro.value()),
-            th.text_muted().into(),
-        );
-    }
     // 하단 1px 보더 (separator).
     let border = egui::Rect::from_min_size(
         egui::pos2(

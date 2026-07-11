@@ -5,7 +5,7 @@
 //!   상태(예약어 normal)는 danger 라인 + 확인 비활성.
 //! - **Delete confirm**: 380px destructive — trash danger 글리프 + 제목 + 안전 결과 본문 +
 //!   Cancel/Delete(danger).
-//! - **Rail popup**: 176px 앵커드 — 비클릭 이름 헤더(+count) + Add workspace/Collapse +
+//! - **Rail popup**: 176px 앵커드 — 비클릭 이름 헤더(라벨만) + Add workspace/Collapse +
 //!   (비-normal) Rename/Delete(danger).
 //!
 //! Theme 토큰만으로 정적 재현.
@@ -98,23 +98,13 @@ fn rail_popup(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_sm.value(),
             theme.spacing_sm.value(),
             |ui| {
-                // 비클릭 이름 헤더 + count.
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Services")
-                            .color(theme.text_primary().to_egui())
-                            .size(theme.font_size_body.value())
-                            .strong(),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new("3")
-                                .color(theme.text_muted().to_egui())
-                                .size(theme.font_size_micro.value())
-                                .monospace(),
-                        );
-                    });
-                });
+                // 비클릭 이름 헤더 (라벨만 — count 표기 없음).
+                ui.label(
+                    egui::RichText::new("Services")
+                        .color(theme.text_primary().to_egui())
+                        .size(theme.font_size_body.value())
+                        .strong(),
+                );
                 kit::hsep(ui, theme);
                 popup_row(ui, theme, PLUS, "Add workspace", false);
                 popup_row(ui, theme, CHEVRON_DOWN, "Collapse", false);
