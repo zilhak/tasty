@@ -527,21 +527,38 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                         .show_inside(ui, |ui| {
                             let mut draft = ui_state.draft.take().unwrap();
 
-                            egui::ScrollArea::vertical()
-                                .auto_shrink([false, false])
-                                .drag_to_scroll(false)
-                                .show(ui, |ui| {
-                                    tasty_ui_widgets::tab_content_frame(ui, |ui| {
-                                        draw_active_content(
-                                            ui,
-                                            &mut draft,
-                                            ui_state,
-                                            captured_double_tap,
-                                            file_format,
-                                            file_handler,
-                                        );
+                            // Keybindings › Preset 은 자체 padding + 내부 스크롤을
+                            // 가진 DrillDown 이라 표준 패딩/스크롤 래퍼 밖에서
+                            // full-bleed 로 그린다 (디자인 settings_window.jsx
+                            // `fullBleed`, changelog 2026-07-09).
+                            let full_bleed = ui_state.active_tab == SettingsTab::Keybindings
+                                && ui_state.keybindings_sub_tab == KeybindingsSubTab::Preset;
+                            if full_bleed {
+                                draw_active_content(
+                                    ui,
+                                    &mut draft,
+                                    ui_state,
+                                    captured_double_tap,
+                                    file_format,
+                                    file_handler,
+                                );
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .drag_to_scroll(false)
+                                    .show(ui, |ui| {
+                                        tasty_ui_widgets::tab_content_frame(ui, |ui| {
+                                            draw_active_content(
+                                                ui,
+                                                &mut draft,
+                                                ui_state,
+                                                captured_double_tap,
+                                                file_format,
+                                                file_handler,
+                                            );
+                                        });
                                     });
-                                });
+                            }
 
                             // 충돌 감지 시 팝업 열기.
                             // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의
