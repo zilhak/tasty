@@ -56,15 +56,28 @@ fn lock() -> MutexGuard<'static, WebhookState> {
 }
 
 /// 리스너 runtime 설정 주입(부팅 헬퍼가 bind 전에 호출).
-pub(super) fn set_runtime(injector: HostIpcInjector, bind_addr: &str, port: u16) {
+///
+/// `port` 는 **설정값**(자동 폴백 없음). `None` = 포트 미설정 → bind 하지 않으며
+/// 발급 URL 에도 포트가 빠진다([`build_url`]).
+pub(super) fn set_runtime(injector: HostIpcInjector, bind_addr: &str, port: Option<u16>) {
     let mut s = lock();
     s.injector = Some(injector);
     s.bind_addr = bind_addr.to_string();
-    s.port = Some(port);
+    s.port = port;
 }
 
 /// 이미 bind 되었는지(부팅 헬퍼 중복 호출 가드).
 pub(super) fn is_bound() -> bool {
+    lock().bound
+}
+
+/// 현재 설정된 포트(`webhook.config` get 용). 미설정이면 `None`.
+pub fn configured_port() -> Option<u16> {
+    lock().port
+}
+
+/// 리스너가 실제로 bind 되었는지(`webhook.config` get 용).
+pub fn is_listener_bound() -> bool {
     lock().bound
 }
 

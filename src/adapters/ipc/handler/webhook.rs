@@ -243,6 +243,55 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
     JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid }))
 }
 
+/// `webhook.config` — 리스너 바인드 포트 조회/설정(S8).
+///
+/// - `port` 미지정(또는 null): **조회** — 현재 활성(설정) 포트 + bind 여부 + 파일값.
+/// - `port` 지정: **설정** — `~/.tasty/webhooks.toml` 에 기록(다른 키 보존, S5 호환).
+///   리스너 재바인드는 하지 않으므로 실제 반영은 **재시작 시점**이다(`restart_required`).
+///
+/// 포트는 **설정값 only**(자동 폴백 없음). 유효 범위 1..=65535.
+pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    // CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 "조회" 로 취급한다.
+    match params.get("port").filter(|v| !v.is_null()) {
+        // ── 설정 ──
+        Some(raw) => {
+            let Some(n) = raw.as_u64() else {
+                return JsonRpcResponse::invalid_params(id, "'port' must be an integer 1..=65535");
+            };
+            if !(1..=65535).contains(&n) {
+                return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
+            }
+            let port = n as u16;
+            if let Err(e) = webhook::config::set_port(port) {
+                return JsonRpcResponse::internal_error(
+                    id,
+                    format!("failed to persist webhook port: {e}"),
+                );
+            }
+            // 활성 포트(=bind 된 포트)와 다르면 재시작이 필요함을 알린다.
+            let restart_required = webhook::registry::configured_port() != Some(port);
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "port": port,
+                    "restart_required": restart_required,
+                }),
+            )
+        }
+        // ── 조회 ──
+        None => JsonRpcResponse::success(
+            id,
+            json!({
+                // 활성(리스너가 쓰는) 포트 — 부팅 시 파일에서 로드된 값.
+                "port": webhook::registry::configured_port(),
+                "bound": webhook::registry::is_listener_bound(),
+                // 파일의 현재 값(런타임 set 후 재시작 전이면 활성값과 다를 수 있음).
+                "configured_port": webhook::config::read_port(),
+            }),
+        ),
+    }
+}
+
 /// `methods` 파라미터 파싱 — 대문자 정규화. 미지정 시 기본값.
 fn parse_methods(params: &serde_json::Value) -> Vec<String> {
     match params.get("methods") {

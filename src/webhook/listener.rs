@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use super::ack::{AckStatus, build_ack};
 use super::registry::{self, MatchResult};
+use super::WebhookInitReport;
 use super::abuse;
 use crate::adapters::ipc::host_call::HostIpcInjector;
 use crate::hook_handler::{SubstitutionContext, execute_sequence};
@@ -22,12 +23,13 @@ use crate::hook_handler::{SubstitutionContext, execute_sequence};
 /// 리스너 init — runtime 주입 후 tiny_http 를 bind 하고 accept thread 를 띄운다.
 ///
 /// 포트는 **설정값 only**(자동 폴백 bind 없음). bind 실패는 삼키지 않고 경고 —
-/// 사용자가 포트/방화벽을 직접 조치한다(다중 bind 가드로 중복 호출 무해).
-pub fn init(injector: HostIpcInjector, bind_addr: &str, port: u16) {
-    registry::set_runtime(injector, bind_addr, port);
+/// 사용자가 포트/방화벽을 직접 조치한다(다중 bind 가드로 중복 호출 무해). 결과를
+/// [`WebhookInitReport`] 로 반환해 caller 가 UI/로그로 노출한다.
+pub fn init(injector: HostIpcInjector, bind_addr: &str, port: u16) -> WebhookInitReport {
+    registry::set_runtime(injector, bind_addr, Some(port));
     if registry::is_bound() {
         tracing::debug!("webhook listener already bound; skip re-init");
-        return;
+        return WebhookInitReport::Bound;
     }
     let addr = format!("{bind_addr}:{port}");
     match tiny_http::Server::http(addr.as_str()) {
@@ -40,11 +42,14 @@ pub fn init(injector: HostIpcInjector, bind_addr: &str, port: u16) {
             {
                 tracing::warn!("webhook accept thread spawn failed: {e}");
             }
+            WebhookInitReport::Bound
         }
         Err(e) => {
+            let error = e.to_string();
             tracing::warn!(
-                "webhook listener bind {addr} failed: {e} — set a free port and check firewall (no auto-fallback)"
+                "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
             );
+            WebhookInitReport::BindFailed { port, error }
         }
     }
 }

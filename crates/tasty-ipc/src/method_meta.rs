@@ -151,6 +151,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("webhook.info", local_only()),
         ("webhook.unregister", local_only()),
         ("webhook.sweep", local_only()),
+        ("webhook.config", local_only()),
         // ── message (surface 간 메시지 큐) ─────────────────────────────
         ("message.send", plugin(&[SurfaceWrite])),
         ("message.read", plugin(&[SurfaceRead])),

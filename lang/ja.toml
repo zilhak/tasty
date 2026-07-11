@@ -700,6 +700,10 @@ vi_copy_macro_recording_started = "マクロ録画を開始しました"
 vi_copy_macro_recording_stopped = "マクロ録画を停止しました"
 vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレジスタ または再帰回数超過)"
 
+[webhook.warn]
+port_not_configured = "Webhook ポートが未設定のため、インバウンドリスナーを起動できませんでした。`tasty webhook config --port <番号>` で指定してください。"
+bind_failed = "Webhook ポート {} をバインドできませんでした（{}）。空きポートを指定しファイアウォールを確認してください。リスナーは起動していません。"
+
 [banner.mouse_capture]
 title = "マウス入力をキャプチャ中"
 body = "このアプリがマウスをキャプチャしています。テキスト選択は Shift+ドラッグ、tasty メニューは Shift+右クリックを使用してください。"

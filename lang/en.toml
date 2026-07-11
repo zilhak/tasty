@@ -700,6 +700,10 @@ vi_copy_macro_recording_started = "Macro recording started"
 vi_copy_macro_recording_stopped = "Macro recording stopped"
 vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion limit)"
 
+[webhook.warn]
+port_not_configured = "Webhook port not set — the inbound listener did not start. Set one with `tasty webhook config --port <N>`."
+bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and check your firewall; the listener did not start."
+
 [banner.mouse_capture]
 title = "Mouse input captured"
 body = "This app is capturing the mouse. Use Shift+drag to select text, Shift+Right-click for the tasty menu."

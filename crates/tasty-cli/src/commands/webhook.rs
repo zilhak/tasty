@@ -61,4 +61,14 @@ pub enum WebhookCommands {
     },
     /// Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted).
     Sweep,
+    /// Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml).
+    ///
+    /// With no `--port`, prints the active port and bound status. With `--port`,
+    /// persists the new port; the listener rebinds only on the next restart.
+    /// The port is config-only — tasty never silently binds a fallback port.
+    Config {
+        /// Set the listener port (1-65535). Requires restart to take effect.
+        #[arg(long)]
+        port: Option<u16>,
+    },
 }

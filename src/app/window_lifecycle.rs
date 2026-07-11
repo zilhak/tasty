@@ -382,7 +382,18 @@ impl App {
             // 웹훅 리스너 init — (A)config 로드 + (B)IPC 처리 가능 동시 만족 최초
             // 지점. init_app_state 는 첫 윈도우 1회만 호출되므로 중복 bind 가드
             // 불필요(리스너 내부 가드도 있음). injector 는 Clone(Arc).
-            crate::webhook::init_from_config(injector.clone());
+            //
+            // 포트 미설정/ bind 실패는 기존 toast 인프라로 사용자에게 알린다(신규
+            // 디자인 컴포넌트 없이 재사용, S8). db/theme 부팅 경고가 InfoModal 을
+            // 쓰는 것과 달리 웹훅 미기동은 치명적이지 않아 Warning 토스트로 족하다.
+            let report = crate::webhook::init_from_config(injector.clone());
+            if let Some(msg) = report.user_warning() {
+                state.toasts.push(
+                    msg,
+                    crate::adapters::ui::ToastKind::Warning,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+            }
             self.core.set_host_ipc_injector(injector);
         }
         let mut core_state = self

@@ -609,6 +609,7 @@ fn webhook_command_to_method_params(
         W::Info { id } => ("webhook.info", serde_json::json!({ "id": id })),
         W::Unregister { id } => ("webhook.unregister", serde_json::json!({ "id": id })),
         W::Sweep => ("webhook.sweep", serde_json::json!({})),
+        W::Config { port } => ("webhook.config", serde_json::json!({ "port": port })),
     }
 }
 

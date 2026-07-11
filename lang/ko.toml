@@ -700,6 +700,10 @@ vi_copy_macro_recording_started = "매크로 녹화를 시작했습니다"
 vi_copy_macro_recording_stopped = "매크로 녹화를 중단했습니다"
 vi_copy_macro_replay_failed = "매크로 재생 실패 (빈 register 또는 재귀 한도 초과)"
 
+[webhook.warn]
+port_not_configured = "웹훅 포트가 설정되지 않아 인바운드 리스너를 시작하지 못했습니다. `tasty webhook config --port <번호>` 로 지정하세요."
+bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포트를 지정하고 방화벽을 확인하세요. 리스너가 시작되지 않았습니다."
+
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
 body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭을 사용하세요."

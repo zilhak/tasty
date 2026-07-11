@@ -231,7 +231,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 웹훅 리스너 init (headless). start_ipc 이후 = (B)IPC 처리 가능. config 는
         // 아래 CoreState::new_with_ids 에서 로드되지만 리스너는 IPC 라우터만
         // 필요하므로 이 시점 주입으로 충분. headless 엔 init_app_state 가 없어 여기서 호출.
-        crate::webhook::init_from_config(injector.clone());
+        // headless 는 toast UI 가 없으므로 포트 미설정/bind 실패 경고는 리스너 내부
+        // `tracing::warn!` 로만 노출된다(S8) — 반환 report 는 여기서 소비하지 않는다.
+        let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }
 
