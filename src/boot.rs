@@ -228,6 +228,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         waker: waker.stream_waker(),
     };
     if let Some(injector) = app.hub.start_ipc(waker.ipc_waker(), stream_ctx) {
+        // 웹훅 리스너 init (headless). start_ipc 이후 = (B)IPC 처리 가능. config 는
+        // 아래 CoreState::new_with_ids 에서 로드되지만 리스너는 IPC 라우터만
+        // 필요하므로 이 시점 주입으로 충분. headless 엔 init_app_state 가 없어 여기서 호출.
+        crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }
 

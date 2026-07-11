@@ -1,0 +1,52 @@
+//! 웹훅 HTTP 응답 = **단방향 ACK 전용** (CRITICAL 불변식).
+//!
+//! [`build_ack`] 는 **IpcSequence 실행 결과에 접근하는 인자를 갖지 않는다.** 응답은
+//! 고정 상태코드 + 최소 바디뿐이며, 어떤 params/치환 조합에서도 tasty 내부 데이터가
+//! 응답으로 샐 수 없다 — "안 담는다" 가 아니라 담을 수 있는 코드 경로 자체를 두지
+//! 않는다(응답 빌더 시그니처가 실행 경로와 분리).
+
+use std::io::Cursor;
+
+use tiny_http::Response;
+
+/// 웹훅 응답 상태 — 고정 enum. MVP 는 3종(수신/없음/메서드불가). Phase2 에서
+/// 인증(401)·만료(410)·남용차단(429) 이 추가된다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AckStatus {
+    /// 200 — 매칭 성공, 핸들러에 전달됨.
+    Received,
+    /// 404 — 등록된 웹훅 path 없음.
+    NotFound,
+    /// 405 — path 는 있으나 HTTP 메서드 불일치.
+    MethodNotAllowed,
+}
+
+impl AckStatus {
+    fn parts(self) -> (u16, &'static str) {
+        match self {
+            AckStatus::Received => (200, "received"),
+            AckStatus::NotFound => (404, "not found"),
+            AckStatus::MethodNotAllowed => (405, "method not allowed"),
+        }
+    }
+}
+
+/// 단방향 ACK 빌더. **실행 결과 인자를 받지 않는다** — 이 시그니처가 단방향
+/// 불변식의 타입 강제선이다. 바디는 고정 문자열뿐.
+pub fn build_ack(status: AckStatus) -> Response<Cursor<Vec<u8>>> {
+    let (code, body) = status.parts();
+    Response::from_string(body).with_status_code(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ack_bodies_are_fixed_strings() {
+        // 어떤 상태든 바디는 고정 문자열 — 내부 데이터가 섞일 여지 없음.
+        assert_eq!(build_ack(AckStatus::Received).status_code().0, 200);
+        assert_eq!(build_ack(AckStatus::NotFound).status_code().0, 404);
+        assert_eq!(build_ack(AckStatus::MethodNotAllowed).status_code().0, 405);
+    }
+}

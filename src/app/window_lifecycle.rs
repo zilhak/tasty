@@ -379,6 +379,10 @@ impl App {
             waker: stream_waker,
         };
         if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx) {
+            // 웹훅 리스너 init — (A)config 로드 + (B)IPC 처리 가능 동시 만족 최초
+            // 지점. init_app_state 는 첫 윈도우 1회만 호출되므로 중복 bind 가드
+            // 불필요(리스너 내부 가드도 있음). injector 는 Clone(Arc).
+            crate::webhook::init_from_config(injector.clone());
             self.core.set_host_ipc_injector(injector);
         }
         let mut core_state = self
