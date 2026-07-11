@@ -1650,6 +1650,139 @@ impl Theme {
     pub fn md_table_cell_padding_y(&self) -> LogicalPx {
         self.spacing_xs
     }
+
+    // ── 컴포넌트 토큰 (DrillDown — master→detail content-swap) — `--tasty-drilldown-*` ──
+    // 리스트 뷰 ⇄ 디테일 뷰 전면 교체 레이아웃. 디테일 상단에 back bar(← + 제목 +
+    // 우측 actions 슬롯) 밴드. 값은 디자인 `tokens/components.css` 의 alias 체인 그대로.
+    // (title-font-weight semibold 는 egui 폰트 weight 한계로 색 강조 관례로 대체 —
+    // `button.rs` 참조.)
+    /// back bar 밴드 높이 (36px). `--tasty-drilldown-backbar-height` → `size-36`.
+    #[inline]
+    pub fn drilldown_backbar_height(&self) -> LogicalPx {
+        LogicalPx((36.0 * self.ui_zoom).round())
+    }
+    /// back bar 좌우 패딩 (8px) — ← 버튼을 콘텐츠 좌단에 정렬.
+    /// `--tasty-drilldown-backbar-padding-x` → `space-sm`.
+    #[inline]
+    pub fn drilldown_backbar_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// back bar 상하 패딩 (4px). `--tasty-drilldown-backbar-padding-y` → `space-xs`.
+    #[inline]
+    pub fn drilldown_backbar_padding_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+    /// ← ↔ 제목 ↔ actions 간격 (8px). `--tasty-drilldown-backbar-gap` → `space-sm`.
+    #[inline]
+    pub fn drilldown_backbar_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// back bar 하단 헤어라인. `--tasty-drilldown-backbar-border` → `separator`.
+    #[inline]
+    pub fn drilldown_backbar_border(&self) -> HexColor {
+        self.separator
+    }
+    /// 디테일 제목 폰트 (13px). `--tasty-drilldown-title-font-size` → `font-size-body`.
+    #[inline]
+    pub fn drilldown_title_font_size(&self) -> LogicalPx {
+        self.font_size_body
+    }
+    /// 디테일 제목 색. `--tasty-drilldown-title-fg` → `text-primary`.
+    #[inline]
+    pub fn drilldown_title_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    // ── 컴포넌트 토큰 (ListCtrl — 행 선택형 내비게이션 리스트) — `--tasty-listctrl-*` ──
+    // "하나 골라 진입하는" 풀폭 리스트 (데이터 그리드는 Table). 행 상태 팔레트는
+    // TreeRow/MenuItem/Table 과 동일한 list idiom (hover = overlay-hover, selected =
+    // surface-active + 2px accent 좌측 바). 값은 디자인 `tokens/components.css` 그대로.
+    /// 행 최소 높이 (36px — label + description 수용).
+    /// `--tasty-listctrl-row-min-height` → `size-36`.
+    #[inline]
+    pub fn listctrl_row_min_height(&self) -> LogicalPx {
+        LogicalPx((36.0 * self.ui_zoom).round())
+    }
+    /// 행 좌우 패딩 (12px). `--tasty-listctrl-row-padding-x` → `space-md`.
+    #[inline]
+    pub fn listctrl_row_padding_x(&self) -> LogicalPx {
+        self.spacing_md
+    }
+    /// 행 상하 패딩 (8px). `--tasty-listctrl-row-padding-y` → `space-sm`.
+    #[inline]
+    pub fn listctrl_row_padding_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// icon ↔ text ↔ trailing 간격 (8px). `--tasty-listctrl-row-gap` → `space-sm`.
+    #[inline]
+    pub fn listctrl_row_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// 행 corner radius (divided 모드에선 0). `--tasty-listctrl-radius` → `radius-sm`.
+    #[inline]
+    pub fn listctrl_radius(&self) -> LogicalPx {
+        self.corner_radius_sm
+    }
+    /// 라벨 폰트 (13px). `--tasty-listctrl-font-size` → `font-size-body`.
+    #[inline]
+    pub fn listctrl_font_size(&self) -> LogicalPx {
+        self.font_size_body
+    }
+    /// 라벨 기본 색. `--tasty-listctrl-label-fg` → `text-secondary`.
+    #[inline]
+    pub fn listctrl_label_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+    /// hover/selected 라벨 색. `--tasty-listctrl-label-fg-active` → `text-primary`.
+    #[inline]
+    pub fn listctrl_label_fg_active(&self) -> HexColor {
+        self.text_primary()
+    }
+    /// description(보조 줄) 색. `--tasty-listctrl-desc-fg` → `text-muted`.
+    #[inline]
+    pub fn listctrl_desc_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// description 폰트 (11px). `--tasty-listctrl-desc-font-size` → `font-size-caption`.
+    #[inline]
+    pub fn listctrl_desc_font_size(&self) -> LogicalPx {
+        self.font_size_caption
+    }
+    /// leading 아이콘 색. `--tasty-listctrl-icon-fg` → `text-muted`.
+    #[inline]
+    pub fn listctrl_icon_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// trailing drill-in chevron 색. `--tasty-listctrl-chevron-fg` → `text-muted`.
+    #[inline]
+    pub fn listctrl_chevron_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// hover 행 워시. `--tasty-listctrl-row-bg-hover` → `overlay-hover`.
+    #[inline]
+    pub fn listctrl_row_bg_hover(&self) -> HexColor {
+        self.overlay_hover()
+    }
+    /// selected 행 배경. `--tasty-listctrl-row-bg-selected` → `surface-active`.
+    #[inline]
+    pub fn listctrl_row_bg_selected(&self) -> HexColor {
+        self.surface_active()
+    }
+    /// selected 행 좌측 accent 바 색. `--tasty-listctrl-selected-bar` → `accent-primary`.
+    #[inline]
+    pub fn listctrl_selected_bar(&self) -> HexColor {
+        self.accent_primary()
+    }
+    /// selected 좌측 바 굵기 (2px). `--tasty-listctrl-selected-bar-width` → `size-2`.
+    #[inline]
+    pub fn listctrl_selected_bar_width(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
+    }
+    /// 행 사이 헤어라인. `--tasty-listctrl-divider` → `separator`.
+    #[inline]
+    pub fn listctrl_divider(&self) -> HexColor {
+        self.separator
+    }
 }
 
 // ============================================================================
