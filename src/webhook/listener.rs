@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use super::ack::{AckStatus, build_ack};
 use super::registry::{self, MatchResult};
+use super::abuse;
 use crate::adapters::ipc::host_call::HostIpcInjector;
 use crate::hook_handler::{SubstitutionContext, execute_sequence};
 
@@ -56,8 +57,21 @@ fn accept_loop(server: tiny_http::Server) {
     }
 }
 
-/// 한 요청 처리: 파싱 → 매칭 → ACK 응답 → fire-and-forget 실행.
+/// 한 요청 처리: (남용차단) → 파싱 → 매칭 → ACK 응답 → fire-and-forget 실행.
 fn handle_request(mut request: tiny_http::Request) {
+    // 출처 IP(포트 제외 — 스캐너는 IP 를 재사용하며 포트만 바꾼다).
+    let source = request.remote_addr().map(|a| a.ip().to_string());
+
+    // 남용 차단: 쿨다운 중 출처는 파싱/실행 전 즉시 429 로 거부한다.
+    if let Some(src) = source.as_deref()
+        && abuse::is_source_blocked(src)
+    {
+        if let Err(e) = request.respond(build_ack(AckStatus::TooManyRequests)) {
+            tracing::debug!("webhook 429 respond failed: {e}");
+        }
+        return;
+    }
+
     let url = request.url().to_string();
     let method = request.method().to_string().to_ascii_uppercase();
 
@@ -99,6 +113,14 @@ fn handle_request(mut request: tiny_http::Request) {
             }
         }
     };
+
+    // 404/405 는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
+    // 정상 매칭(200)은 집계하지 않으므로 정상 웹훅 트래픽은 영향받지 않는다.
+    if matches!(ack, AckStatus::NotFound | AckStatus::MethodNotAllowed)
+        && let Some(src) = source.as_deref()
+    {
+        abuse::record_failure(src);
+    }
 
     // 단방향: ACK 를 실행 전/무관하게 즉시 확정·응답.
     if let Err(e) = request.respond(build_ack(ack)) {

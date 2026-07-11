@@ -15,6 +15,7 @@
 //! sweep** + **선택적 인증(S6)** + 기본 IpcSequence 실행. 남용차단·포트설정 UI 는
 //! 후속(S7~S8).
 
+pub mod abuse;
 pub mod ack;
 pub mod auth;
 pub mod lifetime;

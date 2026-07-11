@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 use tiny_http::Response;
 
-/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410) 반영, 남용차단(429) 은 후속.
+/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410)·남용차단(429) 반영.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AckStatus {
     /// 200 — 매칭 성공, 핸들러에 전달됨.
@@ -22,6 +22,8 @@ pub enum AckStatus {
     MethodNotAllowed,
     /// 410 — lifetime 만료(시간 초과 / 횟수 소진). 호출 시 lazy 삭제됨.
     Gone,
+    /// 429 — 남용 차단 쿨다운 중인 출처(404/405 반복). 매칭 전 즉시 거부.
+    TooManyRequests,
 }
 
 impl AckStatus {
@@ -32,6 +34,7 @@ impl AckStatus {
             AckStatus::NotFound => (404, "not found"),
             AckStatus::MethodNotAllowed => (405, "method not allowed"),
             AckStatus::Gone => (410, "gone"),
+            AckStatus::TooManyRequests => (429, "too many requests"),
         }
     }
 }
@@ -55,5 +58,6 @@ mod tests {
         assert_eq!(build_ack(AckStatus::NotFound).status_code().0, 404);
         assert_eq!(build_ack(AckStatus::MethodNotAllowed).status_code().0, 405);
         assert_eq!(build_ack(AckStatus::Gone).status_code().0, 410);
+        assert_eq!(build_ack(AckStatus::TooManyRequests).status_code().0, 429);
     }
 }
