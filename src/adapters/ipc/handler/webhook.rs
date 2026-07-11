@@ -12,6 +12,10 @@
 //!   검증 → `source: hook` 전용·`ShellCommand` 는 여기서 거부(`invalid_params`).
 //! - **데이터/흐름 분리**: 인라인 시퀀스의 `method` 는 owner(로컬 CLI/IPC)가 준
 //!   리터럴이며, 외부 HTTP 페이로드는 이 등록 경로에 닿지 않는다.
+//! - **plugin caller 게이트(S11)**: `webhook.register` 는 `Network` 권한으로 plugin
+//!   도 호출 가능하지만, plugin 은 인라인 `sequence`(Local 권한 실행 → escalation)를
+//!   못 쓰고 자기 소유(`<plugin_id>/…`) hook 핸들러 id 만 바인딩할 수 있다. 시퀀스
+//!   정의는 owner(Local) 전용 채널로 유지된다.
 
 use serde_json::json;
 
@@ -19,6 +23,7 @@ use crate::hook_handler::{
     self, HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
     TriggerSource, validate_binding,
 };
+use crate::ipc::caller::CallerContext;
 use crate::webhook::lifetime::now_unix;
 use crate::webhook::{self, AuthLocation, Lifetime, Limit, Persistence, WebhookAuth, auth_summary};
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -36,12 +41,28 @@ const DEFAULT_METHODS: &[&str] = &["POST"];
 ///
 /// `handler` 와 `sequence` 중 정확히 하나를 지정한다.
 ///
+/// **Plugin caller 제약(S11)**: `webhook.register` 는 `Network` 권한으로 plugin 도
+/// 호출할 수 있으나, plugin 은 **인라인 `sequence` 를 쓸 수 없고**(owner=Local 만
+/// 임의 시퀀스를 정의 — 시퀀스는 Local 권한으로 실행되므로 escalation 방지)
+/// **자기 소유 hook 핸들러 id(`<plugin_id>/…`)만 바인딩**할 수 있다. 이 두 제약이
+/// "register 는 owner 채널" 불변식(research §3.1)을 plugin 확장에서도 지킨다.
+///
 /// lifetime params (선택):
 /// - `persistent`: bool (기본 false → Temporary). true 면 재시작 후에도 복원.
 /// - `ttl_secs`: u64 — 시간제한(now+ttl 절대 deadline). `count` 와 상호배타.
 /// - `count`: u64 — 횟수제한(잔여 호출 수). `ttl_secs` 와 상호배타.
 /// - 둘 다 없으면 무제한.
-pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_register(
+    caller: &CallerContext,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    // plugin caller 면 그 plugin_id 를 잡아 시퀀스 금지 + 소유 핸들러 게이트에 쓴다.
+    let plugin_caller: Option<&str> = match caller {
+        CallerContext::Plugin { plugin_id, .. } => Some(plugin_id.as_str()),
+        _ => None,
+    };
+
     let methods = parse_methods(params);
     if methods.is_empty() {
         return JsonRpcResponse::invalid_params(id, "'methods' must be a non-empty string array");
@@ -71,6 +92,18 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
         }
         // ── 등록된 핸들러 id 로 바인딩 ──
         (Some(hid), None) => {
+            // plugin caller 는 자기 소유(`<plugin_id>/…`) 핸들러만 바인딩 가능.
+            if let Some(pid) = plugin_caller {
+                let owned_prefix = format!("{pid}/");
+                if !hid.starts_with(&owned_prefix) {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        format!(
+                            "plugin '{pid}' may only bind its own hook handlers ('{pid}/…'), not '{hid}'"
+                        ),
+                    );
+                }
+            }
             let hid = HookHandlerId::new(hid);
             let Some(handler) = hook_handler::global().get(&hid) else {
                 return JsonRpcResponse::invalid_params(
@@ -94,27 +127,41 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
             }
         }
         // ── 인라인 시퀀스 (owner 직접 정의 → 익명 웹훅 핸들러 등록) ──
-        (None, Some(seq)) => match serde_json::from_value::<Vec<IpcCall>>(seq.clone()) {
-            Ok(calls) if !calls.is_empty() => {
-                let anon = anonymous_handler(&calls);
-                let anon_id = anon.id.clone();
-                // 익명 핸들러를 레지스트리에도 반영(조회/일관성). 실패해도 웹훅
-                // 등록은 진행(calls 스냅샷을 웹훅 엔트리가 이미 소유).
-                if let Err(e) = hook_handler::global().upsert_full_handler(anon) {
-                    tracing::warn!("anonymous hook handler upsert failed: {e}");
-                }
-                (Some(anon_id), calls)
-            }
-            Ok(_) => {
-                return JsonRpcResponse::invalid_params(id, "'sequence' must be non-empty");
-            }
-            Err(e) => {
+        (None, Some(seq)) => {
+            // plugin 은 인라인 시퀀스 금지 — 시퀀스는 Local 권한으로 실행되므로
+            // plugin 이 임의 시퀀스를 등록하면 자기 권한 집합을 넘어선 IPC escalation
+            // 이 된다. 자기 매니페스트로 선언한(=사용자 인지+grant) hook 핸들러 id
+            // 로만 바인딩하게 강제한다(위 handler 분기).
+            if let Some(pid) = plugin_caller {
                 return JsonRpcResponse::invalid_params(
                     id,
-                    format!("'sequence' must be an array of {{method, params}}: {e}"),
+                    format!(
+                        "plugin '{pid}' cannot register an inline 'sequence'; reference a hook handler id via 'handler' instead"
+                    ),
                 );
             }
-        },
+            match serde_json::from_value::<Vec<IpcCall>>(seq.clone()) {
+                Ok(calls) if !calls.is_empty() => {
+                    let anon = anonymous_handler(&calls);
+                    let anon_id = anon.id.clone();
+                    // 익명 핸들러를 레지스트리에도 반영(조회/일관성). 실패해도 웹훅
+                    // 등록은 진행(calls 스냅샷을 웹훅 엔트리가 이미 소유).
+                    if let Err(e) = hook_handler::global().upsert_full_handler(anon) {
+                        tracing::warn!("anonymous hook handler upsert failed: {e}");
+                    }
+                    (Some(anon_id), calls)
+                }
+                Ok(_) => {
+                    return JsonRpcResponse::invalid_params(id, "'sequence' must be non-empty");
+                }
+                Err(e) => {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        format!("'sequence' must be an array of {{method, params}}: {e}"),
+                    );
+                }
+            }
+        }
         (None, None) => {
             return JsonRpcResponse::invalid_params(id, "provide 'handler' or 'sequence'");
         }
@@ -337,10 +384,16 @@ fn parse_auth(params: &serde_json::Value) -> Result<Option<WebhookAuth>, String>
     };
 
     let location = match location_kind {
-        "query" => AuthLocation::QueryKey { key: require_key("query")? },
+        "query" => AuthLocation::QueryKey {
+            key: require_key("query")?,
+        },
         "bearer" => AuthLocation::BearerHeader,
-        "body" => AuthLocation::BodyField { field: require_key("body")? },
-        "header" => AuthLocation::HeaderKey { name: require_key("header")? },
+        "body" => AuthLocation::BodyField {
+            field: require_key("body")?,
+        },
+        "header" => AuthLocation::HeaderKey {
+            name: require_key("header")?,
+        },
         other => {
             return Err(format!(
                 "'auth.location' must be one of query|bearer|body|header, got '{other}'"
@@ -357,7 +410,13 @@ fn anonymous_handler(calls: &[IpcCall]) -> HookHandler {
     // short-name 규약: [a-z0-9-]{1,32}. method 의 '.' 를 '-' 로.
     let slug: String = first
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .take(24)
         .collect();
     HookHandler {
@@ -386,4 +445,70 @@ fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
         "lifetime": lifetime_json(&e.lifetime),
         "auth": e.auth.as_ref().map(auth_summary),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    fn plugin_caller(id: &str) -> CallerContext {
+        CallerContext::Plugin {
+            plugin_id: id.to_string(),
+            permissions: Arc::new(HashSet::new()),
+        }
+    }
+
+    fn err_message(resp: &JsonRpcResponse) -> String {
+        resp.error
+            .as_ref()
+            .map(|e| e.message.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn plugin_cannot_register_inline_sequence() {
+        let caller = plugin_caller("com.example.p");
+        let params = json!({
+            "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
+        });
+        let resp = handle_register(&caller, json!(1), &params);
+        assert!(resp.error.is_some(), "plugin inline sequence must be rejected");
+        assert!(
+            err_message(&resp).contains("inline 'sequence'"),
+            "got: {}",
+            err_message(&resp)
+        );
+    }
+
+    #[test]
+    fn plugin_cannot_bind_foreign_handler() {
+        let caller = plugin_caller("com.example.p");
+        // 다른 owner(host/…) 핸들러 id — 소유 prefix 불일치로 조기 거부.
+        let params = json!({ "handler": "host/notify" });
+        let resp = handle_register(&caller, json!(1), &params);
+        assert!(resp.error.is_some(), "foreign handler bind must be rejected");
+        assert!(
+            err_message(&resp).contains("may only bind its own"),
+            "got: {}",
+            err_message(&resp)
+        );
+    }
+
+    #[test]
+    fn local_caller_inline_sequence_not_gated() {
+        // Local(owner) 은 인라인 시퀀스 허용 — plugin 게이트에 걸리지 않는다.
+        // (등록 자체는 listener 미기동 등 이후 경로에 의존하므로 여기선 "plugin
+        // 게이트 거부 메시지가 아님" 만 확인한다.)
+        let params = json!({
+            "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
+        });
+        let resp = handle_register(&CallerContext::Local, json!(1), &params);
+        let msg = err_message(&resp);
+        assert!(
+            !msg.contains("inline 'sequence'") && !msg.contains("may only bind its own"),
+            "local caller must not hit plugin gate, got: {msg}"
+        );
+    }
 }

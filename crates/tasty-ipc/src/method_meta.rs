@@ -142,11 +142,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("global_hook.list", plugin(&[SurfaceRead])),
         ("global_hook.unset", plugin(&[SurfaceWrite])),
         // ── webhook (인바운드 웹훅 리스너 — lifetime 6종/영속화 포함) ──────
-        // local_only(CLI/로컬 client 만). plugin 이 webhook.register 를 Network
-        // 권한으로 호출하는 실배선은 후속(S11). register/unregister/sweep 는 웹훅
-        // lifecycle 의미가 create/remove/clear 보다 명확 — api-conventions
-        // "verb 화이트리스트" 정당화. sweep = 만료 웹훅 일괄 정리.
-        ("webhook.register", local_only()),
+        // register 만 plugin 호출 가능(Network 권한, S11). plugin 은 인라인
+        // sequence 를 못 쓰고 자기 소유 hook 핸들러 id 만 바인딩할 수 있다(핸들러
+        // 측 caller 게이트). 나머지 조회/해제/설정은 local_only(CLI/로컬 client).
+        // register/unregister/sweep 는 웹훅 lifecycle 의미가 create/remove/clear
+        // 보다 명확 — api-conventions "verb 화이트리스트" 정당화. sweep = 만료 정리.
+        ("webhook.register", plugin(&[Network])),
         ("webhook.list", local_only()),
         ("webhook.info", local_only()),
         ("webhook.unregister", local_only()),

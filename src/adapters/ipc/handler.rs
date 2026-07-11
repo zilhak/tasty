@@ -379,7 +379,7 @@ fn route_engine_handler(
         }
         // webhook (인바운드 웹훅 — 원칙 2·3: id 지정, list 전범위, 포커스 불변).
         // 상태는 전역 싱글턴이라 core/state/engine 미사용.
-        "webhook.register" => webhook::handle_register(id, &request.params),
+        "webhook.register" => webhook::handle_register(caller, id, &request.params),
         "webhook.list" => webhook::handle_list(id),
         "webhook.info" => webhook::handle_info(id, &request.params),
         "webhook.unregister" => webhook::handle_unregister(id, &request.params),
