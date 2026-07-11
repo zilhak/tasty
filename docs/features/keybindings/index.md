@@ -67,6 +67,15 @@ Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 
 
 키바인딩 **프리셋**(기본 세트 전환)을 제공한다(`keybindings/presets.rs`). 레이아웃 프리셋(`tasty-presets` crate, Workspace/Tab/Pane)과는 별개 — 이름만 비슷한 다른 시스템이다.
 
+Settings › Keybindings › **Preset** 서브탭은 **drill-down**(content-swap) 구조다
+(`src/view/settings/ui/keybindings_tab/preset.rs`, 공용 위젯
+`tasty_ui_widgets::{DrillDown, ListCtrl}` — 디자인 `settings_window.jsx` `PresetSubtab`):
+
+- **List view** — 풀폭 `ListCtrl` 프리셋 목록(Tasty / Mac / Windows / Linux). 각 행: 이름 + 한 줄 설명 + drill-in chevron. 현재 draft 와 모든 일반 바인딩이 일치하는 **사용 중 프리셋**에 trailing "Active" Tag(success·dot) + selected 하이라이트(2px accent 바).
+- **Detail view** — 행 클릭 시 콘텐츠 전체 교체(0ms): back bar(← + "{이름} preset" 제목 + **우측 Apply**) 아래 Action / Current / {프리셋} 3열 diff 테이블 — 변경 행은 text-primary 강조. ← 로 목록 복귀.
+- **Apply 범위** — Apply 는 선택 프리셋을 settings **draft** 에 기록(사용 중 프리셋이면 "Applied" 비활성 — 적용할 diff 없음), footer Save 가 draft 전체를 디스크에 커밋. 두 버튼은 물리적으로 분리(back bar vs footer).
+- 이 서브탭은 표준 콘텐츠 패딩/스크롤 래퍼를 우회한 **full-bleed** — DrillDown 이 자체 패딩과 내부 스크롤을 소유한다.
+
 ### 설정 탭 구성 (서브탭·항목 순서)
 
 Settings 의 Keybindings 탭은 액션을 서브탭으로 묶고, 그 순서는 **유비쿼터스 언어 계층**을 따른다. 서브탭 enum: `KeybindingsSubTab`(`src/view/settings/ui/keybindings_tab.rs`).

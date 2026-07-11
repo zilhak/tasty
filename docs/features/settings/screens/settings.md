@@ -40,7 +40,8 @@
   - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
   - Notifications → [`features/notifications/`](../../notifications/index.md) · FileHandler → [`features/file-handler/`](../../file-handler/index.md)
   - Plugins → [`features/plugin-system/`](../../plugin-system/index.md)
-- **Save / Cancel** (하단): draft 커밋 / 폐기.
+- **Save / Cancel** (하단): draft 커밋 / 폐기. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은 footer **Cancel** + OS 타이틀바 close 뿐.
+- **Keybindings › Preset**: 이 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋).
 
 ## 상태별 시각
 

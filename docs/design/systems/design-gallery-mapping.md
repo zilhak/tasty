@@ -429,3 +429,26 @@ module const(token-policy §c).
 
 **신규 glyph 필요** (gallery `icons.rs`): `SCRIPT`(file+lines: `M14 3v4a1 1 0 0 0 1 1h4` / `M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z` / `M9 13h4M9 17h6`), `KEYBOARD`(`rect x2 y6 w20 h12 rx2` + `M6 10h.01…M8 14h8`). 기존 재사용: PLUS/EDIT/TRASH/FOLDER/ALERT_TRIANGLE.
 **신규 토큰 없음**(changelog 확인). i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,display_name,browse,unbound,changed_badge,changed_help,empty_title,empty_body,remove_confirm}`).
+
+## Settings › Keybindings › Preset drill-down (settings-preset-drilldown)
+
+디자인 `ui_kits/terminal/overlays/settings_window.jsx` `PresetSubtab`/`PresetDiffTable` ↔ 본체
+`src/view/settings/ui/keybindings_tab/preset.rs`. changelog:
+`changelog/2026-07-09-settings-preset-drilldown.md`. 구 좌(120px)/우 split 을
+공용 위젯 [`DrillDown`+`ListCtrl`](#primitive-컴포넌트-레이어-components) 소비로 재작성 —
+두 위젯의 첫 본체 소비처.
+
+| 디자인 jsx | 본체 | 비고 |
+|---|---|---|
+| `PresetSubtab` (DrillDown 루트, `view` controlled) | `draw_preset_subtab` | 뷰 상태 = `selected_preset: Option<String>` (None=List / Some=Detail) |
+| list wrapper (`padding: space-md space-lg`, gap space-sm) | list 클로저 `Frame::inner_margin(symmetric(lg, md))` | 인트로 `<p>`(12/muted/measure-md) = `intro_note` |
+| `<ListCtrl items selectedId={activeId}>` | `ListCtrl::show(..., active_idx)` | Active(사용 중) = draft 와 전 일반 바인딩 일치 프리셋. trailing `Tag`(success·dot) "Active" |
+| back bar `actions` = Apply(primary sm, disabled=Applied) | `DrillDownActions` 클로저 + `Button` | 클릭 신호는 `Cell` 로 회수 (`&dyn Fn` 불변 계약) |
+| `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 바인딩 2열=mono term-sm(12), 변경=`text-primary`(fontWeight600 은 색 강조 관례) |
+| `fullBleed` (Keybindings›Preset 만 표준 래퍼 우회) | `ui.rs` content 디스패치 `full_bleed` 분기 | DrillDown 이 자체 패딩+내부 스크롤 소유 |
+
+**헤더 close ✕ 제거 (Request 1)**: `draw_l1_tab_band` 의 `marginLeft:auto` ghost close ✕ 삭제
+(닫기 = footer Cancel + OS 타이틀바). 갤러리 `components/settings.rs` L1 밴드 미러도 동일.
+**신규 토큰 없음** (위젯 토큰은 [design-token-mapping §drilldown/listctrl](design-token-mapping.md) 참조).
+i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`preset_col_before` 문구 갱신,
+`preset_col_after` 제거 (3열 헤더 = 프리셋 이름).
