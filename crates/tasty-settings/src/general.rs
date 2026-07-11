@@ -33,14 +33,41 @@ __tasty_osc7() {
     fi
     printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
 }
+
+# Emit OSC 0 (window title) with a cwd-derived name so tab titles show
+# something meaningful instead of the ConPTY default (the shell exe path).
+# Naming mirrors Tab::refresh_display_name: ~ for $HOME, / for root,
+# basename otherwise. Re-emits only when PWD actually changes.
+__tasty_title() {
+    [[ "$PWD" == "$__TASTY_TITLE_LAST_PWD" ]] && return
+    __TASTY_TITLE_LAST_PWD="$PWD"
+    local name
+    if [[ "$PWD" == "$HOME" ]]; then
+        name="~"
+    elif [[ "$PWD" == "/" ]]; then
+        name="/"
+    else
+        name="${PWD##*/}"
+    fi
+    printf '\033]0;%s\007' "$name"
+}
 "#;
 
 /// 빌트인 bashrc 의 *후반부* — `PROMPT_COMMAND` 설정. 합성 rc 의 *맨 뒤* 에 append
-/// 되어 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 마지막에 prepend.
-pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+/// 되어 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 빌트인 훅이 마지막에 prepend.
+pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc7;__tasty_title${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 
 # === end tasty built-in ===
 "#;
+
+/// 합성 bashrc 버전 스탬프. `compose_*_bashrc` 가 출력 맨 앞에 심고,
+/// `ensure_compiled_bashrc` 가 기존 파일에서 이 줄이 정확히 일치하지 않으면
+/// (스탬프 없음 = 구버전 포함) 강제 재생성한다 — "빠진 파일만 채우는" 기존
+/// 동작으로는 빌트인 블록 변경이 기존 설치본에 반영되지 않기 때문.
+///
+/// **빌트인 블록(`BUILTIN_BASHRC_PRE`/`BUILTIN_BASHRC_PROMPT`) 내용을 바꿀
+/// 때마다 숫자를 +1 할 것.** (v1 = 스탬프 도입 전 무표기 세대.)
+pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v2";
 
 /// `~/.tasty/bashrc.user`의 초기 시드. 사용자가 자유롭게 수정/리셋할 수 있는 기본값.
 pub const INITIAL_USER_BASHRC: &str = r#"# Tasty user bashrc — edit freely.
@@ -423,8 +450,8 @@ pub fn tasty_bashrc_user_path() -> String {
 /// 사용자 rc 가 PROMPT_COMMAND 를 덮어써도 마지막에 `__tasty_osc7` 이 prepend.
 pub fn compose_default_mode_bashrc() -> String {
     format!(
-        "{}\n[ -f ~/.bashrc ] && source ~/.bashrc\n{}",
-        BUILTIN_BASHRC_PRE, BUILTIN_BASHRC_PROMPT,
+        "{}\n{}\n[ -f ~/.bashrc ] && source ~/.bashrc\n{}",
+        BUILTIN_BASHRC_STAMP, BUILTIN_BASHRC_PRE, BUILTIN_BASHRC_PROMPT,
     )
 }
 
@@ -432,8 +459,8 @@ pub fn compose_default_mode_bashrc() -> String {
 /// 사용자 영역 (`~/.tasty/bashrc.user`) 이 PROMPT_COMMAND 를 덮어써도 마지막에 prepend.
 pub fn compose_tasty_mode_bashrc(user_content: &str) -> String {
     format!(
-        "{}\n{}\n{}",
-        BUILTIN_BASHRC_PRE, user_content, BUILTIN_BASHRC_PROMPT,
+        "{}\n{}\n{}\n{}",
+        BUILTIN_BASHRC_STAMP, BUILTIN_BASHRC_PRE, user_content, BUILTIN_BASHRC_PROMPT,
     )
 }
 
@@ -473,20 +500,29 @@ pub fn save_user_bashrc(user_content: &str) {
     }
 }
 
-/// Windows 셸 시작 시 두 합성 rc (`~/.tasty/bashrc`, `~/.tasty/bashrc.default`) 가 존재하도록
-/// 보장한다. 빠진 파일만 채우며, 이미 있는 파일은 건드리지 않는다 (사용자가 tastyrc 를
-/// 저장한 결과를 `save_user_bashrc` 가 별도로 재생성).
+/// 합성 rc 파일이 현재 빌트인 버전 스탬프(`BUILTIN_BASHRC_STAMP`)를 담고 있는지.
+/// 파일이 없거나 스탬프가 다르면 (구버전/무표기) false — 재생성 대상.
+#[cfg(windows)]
+fn bashrc_stamp_current(path: &str) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|s| s.lines().any(|l| l.trim() == BUILTIN_BASHRC_STAMP))
+}
+
+/// Windows 셸 시작 시 두 합성 rc (`~/.tasty/bashrc`, `~/.tasty/bashrc.default`) 가
+/// 존재하고 최신 빌트인 버전인지 보장한다. 파일이 없거나 버전 스탬프가 현재와
+/// 다르면 재생성한다 (스탬프 없이 "빠진 파일만 채우면" 빌트인 블록 변경이 기존
+/// 설치본에 영원히 반영되지 않는다). 사용자 편집 영역(`bashrc.user`)은 건드리지
+/// 않는다 — tasty 모드 재생성은 `save_user_bashrc` 경유라 사용자 본문이 보존된다.
 #[cfg(windows)]
 fn ensure_compiled_bashrc() {
     // tasty 모드 합성 rc.
     let tasty_path = tasty_bashrc_path();
-    if !std::path::Path::new(&tasty_path).exists() {
+    if !bashrc_stamp_current(&tasty_path) {
         let user = load_user_bashrc();
         save_user_bashrc(&user);
     }
     // default 모드 합성 rc.
     let default_path = tasty_bashrc_default_path();
-    if !std::path::Path::new(&default_path).exists() {
+    if !bashrc_stamp_current(&default_path) {
         let compiled = compose_default_mode_bashrc();
         if let Some(parent) = std::path::Path::new(&default_path).parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -657,10 +693,44 @@ mod tests {
         }
     }
 
+    // TASTY_HOME env 변경은 프로세스 전역이라, tasty_home() 경로를 읽거나 바꾸는
+    // 테스트(effective_shell_args / ensure_compiled_bashrc 계열)는 직렬화한다.
+    #[cfg(windows)]
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 테스트마다 격리된 TASTY_HOME (실 홈의 bashrc 를 건드리지 않도록).
+    #[cfg(windows)]
+    struct HomeGuard {
+        _dir: tempfile::TempDir,
+        prev: Option<String>,
+    }
+    #[cfg(windows)]
+    impl HomeGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let prev = std::env::var("TASTY_HOME").ok();
+            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+            unsafe { std::env::set_var("TASTY_HOME", dir.path()) };
+            Self { _dir: dir, prev }
+        }
+    }
+    #[cfg(windows)]
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var("TASTY_HOME") },
+            }
+        }
+    }
+
     // default 모드: Windows 는 `--rcfile ~/.tasty/bashrc.default` 로 OSC7 강제 주입.
     #[cfg(windows)]
     #[test]
     fn default_mode_uses_default_rc_file() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let args = settings_with_mode("default").effective_shell_args();
         assert!(args.iter().any(|a| a == "--rcfile"));
         assert!(
@@ -673,6 +743,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn unknown_mode_falls_back_to_default_rc_file() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let args = settings_with_mode("fast").effective_shell_args();
         assert!(args.iter().any(|a| a == "--rcfile"));
         assert!(
@@ -685,6 +756,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn tasty_mode_uses_tasty_rc_file() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let args = settings_with_mode("tasty").effective_shell_args();
         assert_eq!(args.len(), 2);
         assert_eq!(args[0], "--rcfile");
@@ -715,6 +787,79 @@ mod tests {
         let user_pos = compiled.find("alias hi").unwrap();
         let prompt_pos = compiled.find("PROMPT_COMMAND=").unwrap();
         assert!(prompt_pos > user_pos);
+    }
+
+    // 두 모드 합성 rc 모두 __tasty_title 정의 + PROMPT_COMMAND 합류를 포함한다.
+    #[test]
+    fn compiled_rcs_define_and_join_tasty_title() {
+        for compiled in [
+            compose_default_mode_bashrc(),
+            compose_tasty_mode_bashrc("alias hi='echo hi'\n"),
+        ] {
+            assert!(compiled.contains("__tasty_title()"), "definition missing");
+            assert!(
+                compiled.contains(r#"PROMPT_COMMAND="__tasty_osc7;__tasty_title"#),
+                "PROMPT_COMMAND joint missing"
+            );
+        }
+    }
+
+    // 두 모드 합성 rc 모두 버전 스탬프를 담는다 (재생성 감지의 전제).
+    #[test]
+    fn compiled_rcs_carry_version_stamp() {
+        for compiled in [compose_default_mode_bashrc(), compose_tasty_mode_bashrc("")] {
+            assert!(
+                compiled.lines().any(|l| l.trim() == BUILTIN_BASHRC_STAMP),
+                "version stamp missing"
+            );
+        }
+    }
+
+    // 스탬프 없는 (구버전) 기존 합성 rc 는 ensure_compiled_bashrc 가 강제 재생성한다.
+    #[cfg(windows)]
+    #[test]
+    fn ensure_compiled_bashrc_regenerates_stale_files() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let tasty_path = tasty_bashrc_path();
+        let default_path = tasty_bashrc_default_path();
+        std::fs::create_dir_all(std::path::Path::new(&tasty_path).parent().unwrap()).unwrap();
+        std::fs::write(&tasty_path, "# old builtin without stamp\n").unwrap();
+        std::fs::write(&default_path, "# old builtin without stamp\n").unwrap();
+
+        ensure_compiled_bashrc();
+
+        for path in [&tasty_path, &default_path] {
+            let content = std::fs::read_to_string(path).unwrap();
+            assert!(
+                content.lines().any(|l| l.trim() == BUILTIN_BASHRC_STAMP),
+                "{path} not regenerated with current stamp"
+            );
+            assert!(
+                content.contains("__tasty_title()"),
+                "{path} missing __tasty_title"
+            );
+        }
+    }
+
+    // 현재 스탬프를 담은 파일은 재생성하지 않는다 (사용자 저장 결과 보존).
+    #[cfg(windows)]
+    #[test]
+    fn ensure_compiled_bashrc_keeps_current_files() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let tasty_path = tasty_bashrc_path();
+        std::fs::create_dir_all(std::path::Path::new(&tasty_path).parent().unwrap()).unwrap();
+        let current = compose_tasty_mode_bashrc("# SENTINEL-user-content\n");
+        std::fs::write(&tasty_path, &current).unwrap();
+
+        ensure_compiled_bashrc();
+
+        let content = std::fs::read_to_string(&tasty_path).unwrap();
+        assert!(
+            content.contains("# SENTINEL-user-content"),
+            "current-stamped file must not be overwritten"
+        );
     }
 
     // 비-Windows: 셸 모드 필드 자체가 없으므로 effective_shell_args 는 항상 빈 vec.
