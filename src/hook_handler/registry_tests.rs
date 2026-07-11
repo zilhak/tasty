@@ -5,7 +5,7 @@
 //! export/save/reload 를 커버한다.
 
 use super::*;
-use crate::hook_handler::types::{IpcCall, validate_binding};
+use crate::hook_handler::types::{HookHandlerId, IpcCall, validate_binding};
 
 /// host embedded default 를 install 한다. 기본 핸들러 = `host/webhook-notify`
 /// (source=webhook, ipc_sequence).
@@ -15,7 +15,12 @@ fn load_host(reg: &HookHandlerRegistry) {
 
 const HOST_NOTIFY_ID: &str = "host/webhook-notify";
 
-fn plugin_ipc(short: &str, source: HookSource, priority: i32, method: &str) -> HookHandlerDecl<PluginHookHandlerActionDecl> {
+fn plugin_ipc(
+    short: &str,
+    source: HookSource,
+    priority: i32,
+    method: &str,
+) -> HookHandlerDecl<PluginHookHandlerActionDecl> {
     HookHandlerDecl::<PluginHookHandlerActionDecl> {
         id: short.into(),
         source,
@@ -43,7 +48,9 @@ fn write_user_toml(dir: &tempfile::TempDir, body: &str) -> std::path::PathBuf {
 fn host_defaults_load() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    let h = reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).expect("host handler");
+    let h = reg
+        .get(&HookHandlerId::new(HOST_NOTIFY_ID))
+        .expect("host handler");
     assert_eq!(h.source, HookSource::Webhook);
     assert_eq!(h.owner, HookHandlerOwner::Host);
     assert!(matches!(h.action, HookHandlerAction::IpcSequence { .. }));
@@ -56,7 +63,10 @@ fn all_handlers_returns_every_enabled() {
     load_host(&reg);
     // host default 1개 (webhook-notify).
     assert_eq!(reg.all_handlers().len(), 1);
-    assert_eq!(reg.list_handlers(), vec![HookHandlerId::new(HOST_NOTIFY_ID)]);
+    assert_eq!(
+        reg.list_handlers(),
+        vec![HookHandlerId::new(HOST_NOTIFY_ID)]
+    );
 }
 
 #[test]
@@ -82,7 +92,12 @@ fn plugin_install_and_lower_priority_sorts_first() {
     load_host(&reg);
     reg.install_plugin_handlers(
         "com.example.hook",
-        &[plugin_ipc("relay", HookSource::Webhook, 10, "notification.create")],
+        &[plugin_ipc(
+            "relay",
+            HookSource::Webhook,
+            10,
+            "notification.create",
+        )],
     );
     let v = reg.handlers_for_source(TriggerSource::Webhook);
     assert_eq!(v.len(), 2);
@@ -97,7 +112,12 @@ fn uninstall_plugin_removes_only_its_handlers() {
     load_host(&reg);
     reg.install_plugin_handlers(
         "com.example.hook",
-        &[plugin_ipc("relay", HookSource::Any, 20, "notification.create")],
+        &[plugin_ipc(
+            "relay",
+            HookSource::Any,
+            20,
+            "notification.create",
+        )],
     );
     assert_eq!(reg.all_handlers().len(), 2);
     reg.uninstall_plugin("com.example.hook");
@@ -110,7 +130,12 @@ fn uninstall_plugin_removes_only_its_handlers() {
 fn plugin_reinstall_is_idempotent() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    let decls = [plugin_ipc("relay", HookSource::Any, 30, "notification.create")];
+    let decls = [plugin_ipc(
+        "relay",
+        HookSource::Any,
+        30,
+        "notification.create",
+    )];
     reg.install_plugin_handlers("com.example.hook", &decls);
     reg.install_plugin_handlers("com.example.hook", &decls);
     // 같은 owner 재install → retain 으로 교체, 중복 누적 없음.
@@ -136,7 +161,12 @@ fn owner_tiebreak_user_gt_plugin_gt_host() {
     );
     reg.install_plugin_handlers(
         "com.example.hook",
-        &[plugin_ipc("same", HookSource::Any, 50, "notification.create")],
+        &[plugin_ipc(
+            "same",
+            HookSource::Any,
+            50,
+            "notification.create",
+        )],
     );
     let dir = tempfile::tempdir().unwrap();
     let p = write_user_toml(
@@ -257,10 +287,18 @@ fn remove_and_clear_user_override() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
     reg.set_user_handler_disabled(&HookHandlerId::new(HOST_NOTIFY_ID), true);
-    assert!(reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap().disabled);
+    assert!(
+        reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
+            .unwrap()
+            .disabled
+    );
     // clear override → host 기본(enabled) 로 복귀.
     reg.clear_user_handler_override(&HookHandlerId::new(HOST_NOTIFY_ID));
-    assert!(!reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap().disabled);
+    assert!(
+        !reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
+            .unwrap()
+            .disabled
+    );
 }
 
 // ── reload ────────────────────────────────────────────────────────────────
@@ -281,7 +319,12 @@ fn reload_user_config_replaces_user_keeps_host() {
         ),
     );
     reg.install_user_config(&p);
-    assert_eq!(reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap().priority, 5);
+    assert_eq!(
+        reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
+            .unwrap()
+            .priority,
+        5
+    );
 
     // 2차: user override 제거하고 새 user 핸들러 추가 → reload.
     std::fs::write(
@@ -300,7 +343,12 @@ fn reload_user_config_replaces_user_keeps_host() {
     reg.reload_user_config(&p);
 
     // host 는 default priority (=100) 로 복귀.
-    assert_eq!(reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap().priority, 100);
+    assert_eq!(
+        reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
+            .unwrap()
+            .priority,
+        100
+    );
     // user/fresh 등장.
     assert!(reg.contains(&HookHandlerId::new("user/fresh")));
 }
@@ -469,7 +517,10 @@ fn upsert_user_handler_shell_must_be_hook_source() {
             }),
         })
         .expect_err("shell+webhook must reject");
-    assert!(matches!(err, HookHandlerDeclError::ShellMustBeHookSource { .. }));
+    assert!(matches!(
+        err,
+        HookHandlerDeclError::ShellMustBeHookSource { .. }
+    ));
 }
 
 // ── validate_binding (types) ───────────────────────────────────────────────
@@ -564,7 +615,9 @@ fn export_round_trip_preserves_user_handler() {
     std::fs::write(&p2, &exported).unwrap();
     reg2.install_user_config(&p2);
 
-    let h = reg2.get(&HookHandlerId::new("user/my-hook")).expect("round-trip handler");
+    let h = reg2
+        .get(&HookHandlerId::new("user/my-hook"))
+        .expect("round-trip handler");
     assert_eq!(h.priority, 25);
     assert_eq!(h.source, HookSource::Webhook);
     assert!(matches!(h.action, HookHandlerAction::IpcSequence { .. }));
@@ -600,4 +653,67 @@ fn export_empty_when_no_user_contributions() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
     assert_eq!(reg.export_user_config(), "");
+}
+
+// ── HostHookHandlerPort (S11: opaque JSON → PluginHookHandlerActionDecl) ───────
+//
+// 전역 싱글턴 `global()` 을 쓰므로 다른 테스트와 충돌하지 않도록 고유 plugin id 를
+// 쓰고 그 id 범위만 검증한다.
+
+#[test]
+fn host_port_decodes_and_installs_plugin_hook_handlers() {
+    use tasty_plugin_protocol::host_port::HookHandlerRegistryPort;
+    let port = HostHookHandlerPort;
+    let pid = "com.test.s11-port-ok";
+    // manifest 의 opaque `[[contributes.hook_handler]]` 항목과 동형의 JSON.
+    let handlers = vec![
+        serde_json::json!({
+            "id": "notify",
+            "source": "webhook",
+            "priority": 100,
+            "action": {
+                "kind": "ipc_sequence",
+                "calls": [{ "method": "notification.create", "params": { "body": "hi" } }]
+            }
+        }),
+        // 잘못된 short-name → 디코드는 되지만 validate 에서 drop(전체 install 은 계속).
+        serde_json::json!({
+            "id": "Bad_Name",
+            "source": "hook",
+            "priority": 10,
+            "action": { "kind": "ipc_sequence", "calls": [] }
+        }),
+    ];
+    port.install_plugin_hook_handlers(pid, &handlers);
+
+    let good = HookHandlerId::new(format!("{pid}/notify"));
+    let bad = HookHandlerId::new(format!("{pid}/Bad_Name"));
+    assert!(global().contains(&good), "valid handler must be installed");
+    assert!(
+        !global().contains(&bad),
+        "invalid short-name must be dropped, not installed"
+    );
+
+    // 정리 — 전역 오염 방지.
+    port.uninstall_plugin(pid);
+    assert!(!global().contains(&good));
+}
+
+#[test]
+fn host_port_shell_command_json_is_rejected_by_type() {
+    use tasty_plugin_protocol::host_port::HookHandlerRegistryPort;
+    let port = HostHookHandlerPort;
+    let pid = "com.test.s11-port-shell";
+    // plugin decl 은 shell_command variant 가 없으므로 디코드 실패 → skip(install 안 됨).
+    let handlers = vec![serde_json::json!({
+        "id": "sh",
+        "source": "hook",
+        "priority": 1,
+        "action": { "kind": "shell_command", "command": "echo", "args": ["hi"] }
+    })];
+    port.install_plugin_hook_handlers(pid, &handlers);
+    assert!(
+        !global().contains(&HookHandlerId::new(format!("{pid}/sh"))),
+        "plugin shell_command must not install (type-level exclusion)"
+    );
 }
