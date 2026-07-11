@@ -230,7 +230,9 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |
+| `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` | — |
 | `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택) | Overlays `Port Scanner popup` | ✓ port_scanner |
+| `data/ListCtrl` | `ListCtrl` / `ListCtrlItem` / `ListCtrlOutput` (label+description+leading icon+trailing 슬롯+drill-in chevron, divided 헤어라인, selected surface-active+2px accent 좌측 바, disabled, empty_label) | `prim_listctrl` | — |
 | `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
 
 **primitive 케이스 커버리지**: 디자인 jsx 의 변형까지 specimen 에 포함 — Button

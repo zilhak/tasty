@@ -24,6 +24,8 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 | `two_depth_layout_filtered(...)` | 위 + 좌측 섹션 필터 입력 포함 변형 |
 | `horizontal_tab_bar_with_arrows(ui, id_salt, tabs, active)` | 가로 ScrollArea + chevron overlay(콘텐츠 폭 > viewport 시) |
 | `tab_content_frame(ui, content)` | 탭 콘텐츠 4면 inner_margin wrapper |
+| `DrillDown::show(ui, theme, list, detail, actions)` | master→detail content-swap idiom — controlled `view`, 디테일 back bar(←+제목+actions) + 내부 스크롤 |
+| `ListCtrl::show(ui, theme, items, selected)` | 행 선택형 내비게이션 리스트 — DrillDown 과 짝 (`clicked` 인덱스 반환) |
 
 사용 사이트: 본체 settings(Appearance/Keybindings 의 2-depth 레이아웃·상단 탭바·콘텐츠 프레임), 갤러리 데모.
 

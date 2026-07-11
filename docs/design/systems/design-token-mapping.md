@@ -237,3 +237,43 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 > `line-height-ui`(1.4)·`max-width-240`(240px) 2 종만 신규 Theme 필드로 승격했다. delay(150ms)
 > 는 모션 토큰 부재로 위젯 duration 상수, fade 는 immediate-mode snap 처리(switch-overlay-fade 와
 > 동일 관습). 글리프는 SVG 자산 주입 대신 painter 직접 드로잉(`status_dot`/`spinner` 전례).
+
+## drilldown / listctrl (S13 settings-preset-drilldown 위젯 2종)
+
+디자인 `tokens/components.css` 의 `--tasty-drilldown-*`(8종) + `--tasty-listctrl-*`(17종)
+Tier-3 블록 (changelog `2026-07-09-settings-preset-drilldown`). 위젯
+`crates/tasty-ui-widgets/src/drilldown.rs`(`DrillDown`) + `listctrl.rs`(`ListCtrl`).
+디자인 DTCG export(`tokens/tasty.tokens.json`)에 아직 미반영인 신규 블록이라 로컬 DTCG
+재생성 대신 `theme.rs` 수기 접근자(autocomplete/modhint/md-table 전례)로 전사했다 —
+**신규 primitive/hex 없음**, 전부 기존 semantic/primitive 종착.
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
+|---|---|---|---|
+| `--tasty-drilldown-backbar-height` | → `size-36` (36px) | `drilldown_backbar_height()` | back bar 밴드 (`ui_zoom` 적용) |
+| `--tasty-drilldown-backbar-padding-x` | → `space-sm` (8) | `drilldown_backbar_padding_x()` | ← 를 콘텐츠 좌단 정렬 |
+| `--tasty-drilldown-backbar-padding-y` | → `space-xs` (4) | `drilldown_backbar_padding_y()` | |
+| `--tasty-drilldown-backbar-gap` | → `space-sm` (8) | `drilldown_backbar_gap()` | ← ↔ 제목 ↔ actions |
+| `--tasty-drilldown-backbar-border` | → `separator` | `drilldown_backbar_border()` | 하단 헤어라인 |
+| `--tasty-drilldown-title-font-size` | → `font-size-body` (13) | `drilldown_title_font_size()` | 디테일 제목 |
+| `--tasty-drilldown-title-font-weight` | → `font-weight-semibold` | (없음) | egui weight 한계 — 색 강조 관례(`button.rs` semibold 관례와 동일) |
+| `--tasty-drilldown-title-fg` | → `text-primary` | `drilldown_title_fg()` | |
+| `--tasty-listctrl-row-min-height` | → `size-36` (36px) | `listctrl_row_min_height()` | desc 있으면 내용만큼 확장 (`ui_zoom` 적용) |
+| `--tasty-listctrl-row-padding-x` | → `space-md` (12) | `listctrl_row_padding_x()` | |
+| `--tasty-listctrl-row-padding-y` | → `space-sm` (8) | `listctrl_row_padding_y()` | |
+| `--tasty-listctrl-row-gap` | → `space-sm` (8) | `listctrl_row_gap()` | icon ↔ text ↔ trailing |
+| `--tasty-listctrl-radius` | → `radius-sm` (2) | `listctrl_radius()` | divided 시 헤어라인 행 radius 0 |
+| `--tasty-listctrl-font-size` | → `font-size-body` (13) | `listctrl_font_size()` | 라벨 |
+| `--tasty-listctrl-label-fg` | → `text-secondary` | `listctrl_label_fg()` | |
+| `--tasty-listctrl-label-fg-active` | → `text-primary` | `listctrl_label_fg_active()` | hover/selected |
+| `--tasty-listctrl-desc-fg` | → `text-muted` | `listctrl_desc_fg()` | |
+| `--tasty-listctrl-desc-font-size` | → `font-size-caption` (11) | `listctrl_desc_font_size()` | |
+| `--tasty-listctrl-icon-fg` | → `text-muted` | `listctrl_icon_fg()` | leading 글리프 (icon-size-md = `icon_glyph_size_md`) |
+| `--tasty-listctrl-chevron-fg` | → `text-muted` | `listctrl_chevron_fg()` | drill-in chevron (icon-size-sm 슬롯, painter 폴리라인 — tree_row 전례) |
+| `--tasty-listctrl-row-bg-hover` | → `overlay-hover` | `listctrl_row_bg_hover()` | premultiplied 워시 |
+| `--tasty-listctrl-row-bg-selected` | → `surface-active` | `listctrl_row_bg_selected()` | |
+| `--tasty-listctrl-selected-bar` | → `accent-primary` | `listctrl_selected_bar()` | 좌측 accent 바 |
+| `--tasty-listctrl-selected-bar-width` | → `size-2` (2px) | `listctrl_selected_bar_width()` | (`ui_zoom` 적용) |
+| `--tasty-listctrl-divider` | → `separator` | `listctrl_divider()` | 행 사이 헤어라인 |
+
+> desc 줄과 라벨 사이 1px 간격(디자인 `.tasty-listctrl__text { gap: 1px }`)은 spacing
+> 스텝 밖 구조 간격 → `tasty-ui-widgets::tokens::STRUCT_GAP_1` (primitive size-1 대응 관례).
