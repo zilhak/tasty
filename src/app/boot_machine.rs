@@ -42,9 +42,20 @@ pub(crate) const BOOT_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 /// (`window_lifecycle.rs` 의 `create_app_state` 참조).
 pub(crate) enum BootPhase {
     /// GPU init 완료 + 첫 로딩 프레임 present 직후. 다음 스텝에서 엔진(CoreState)
-    /// ·plugin manager 원자 초기화(T2.6·T3)를 수행한다 — 이 스텝 동안 프레임이
-    /// 멈추는 것은 실측·수용됨 (4부 워커 분리의 판단 대상).
+    /// ·plugin manager 원자 초기화(T2.6·T3) 워커를 spawn 하고 WaitingEngine 으로
+    /// 전이한다.
     GpuInit,
+    /// 원자 초기화(T2.6·T3)가 워커 스레드에서 도는 동안 결과 채널을 폴링 —
+    /// 구(S-4까지)의 동기 원자 스텝을 워커로 옮겨, 이 구간에도 매 프레임 로딩
+    /// 렌더가 돈다 (4부 워커 분리). 채널 disconnect(워커 panic)는 동기 재시도
+    /// fallback 으로 받는다.
+    WaitingEngine {
+        started: Instant,
+        rx: std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        /// 워커 체류 동안 돈 부팅 프레임 스텝 수 — 로딩 프레임이 실제로
+        /// 갱신됐는지의 계측 증거 (T2.7 로그).
+        frames: u32,
+    },
     /// pending layout restore 가 요구하는 plugin surface kind 등록 대기
     /// (구 1차 300ms sleep 루프의 프레임 전개). 스텝: pump →
     /// `finalize_plugin_hello` → 등록 확인, 미충족이면 다음 프레임 재시도.
@@ -173,22 +184,48 @@ impl App {
     fn boot_step(&mut self, boot: &mut BootState) -> bool {
         match &mut boot.phase {
             BootPhase::GpuInit => {
-                // 원자 스텝: 엔진(CoreState) + plugin manager 초기화 (T2.6·T3).
-                // 동기 원자 작업이라 이 동안 로딩 프레임이 갱신되지 않는 것은
-                // 수용 (실측 후 4부 워커 분리에서 판단).
-                self.ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width);
-                if self.core_state().pending_layout_restore.is_some() {
-                    let needed = self.boot_required_plugin_kinds();
-                    let now = Instant::now();
-                    boot.phase = BootPhase::WaitingPlugins {
-                        started: now,
-                        deadline: now + Duration::from_millis(300),
-                        needed,
-                    };
-                    false
-                } else {
-                    // 복원할 layout 없음 (첫 설치) — 대기 phase 없이 즉시 완료.
-                    true
+                // 원자 스텝(T2.6·T3)을 워커 스레드로 — cols/rows 는 GPU cell
+                // metrics 의존이라 메인에서 계산해 전달한다. 워커가 도는 동안
+                // 메인은 WaitingEngine 에서 매 프레임 로딩 렌더를 지속한다.
+                let rx = self.spawn_engine_worker(boot);
+                boot.phase = BootPhase::WaitingEngine {
+                    started: Instant::now(),
+                    rx,
+                    frames: 0,
+                };
+                false
+            }
+            BootPhase::WaitingEngine { started, rx, frames } => {
+                *frames += 1;
+                match rx.try_recv() {
+                    Ok((engine, mgr)) => {
+                        let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
+                        let frames = *frames;
+                        self.core_state = Some(engine);
+                        self.plugin_manager = Some(mgr);
+                        tracing::info!(
+                            target: "tasty::boot",
+                            ms = wait_ms,
+                            frames,
+                            "T2.7 engine_wait (워커 체류; frames = 그동안 돈 로딩 프레임 스텝 수)"
+                        );
+                        self.boot_transition_after_engine(boot)
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => false,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // 워커 panic (예: engine 생성 expect) — 결과 없이 채널이
+                        // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
+                        // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
+                        // 원인이면 부팅이 정상 진행된다.
+                        tracing::error!(
+                            "boot engine worker channel disconnected — synchronous fallback"
+                        );
+                        self.ensure_engine_and_plugins(
+                            &boot.gpu,
+                            boot.settings.appearance.sidebar_width,
+                        );
+                        self.boot_transition_after_engine(boot)
+                    }
                 }
             }
             BootPhase::WaitingPlugins {
@@ -230,6 +267,98 @@ impl App {
                 } else {
                     false
                 }
+            }
+        }
+    }
+
+    /// 원자 초기화(T2.6·T3) 워커 spawn — 결과는 채널로 돌아온다 (WaitingEngine
+    /// 스텝이 try_recv 폴링). 워커 본문은 동기 경로와 동일한 App-free 함수
+    /// (`build_engine_and_plugins`) 라 의미론 이중화가 없다.
+    ///
+    /// 스레드 생성 실패 시: 에러 로그 후 tx 가 즉시 drop 되므로 첫 폴링이
+    /// Disconnected 를 보고 동기 fallback 으로 합류한다.
+    fn spawn_engine_worker(
+        &self,
+        boot: &BootState,
+    ) -> std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)> {
+        let (cols, rows) = crate::app::window_lifecycle::boot_grid_size(
+            &boot.gpu,
+            boot.settings.appearance.sidebar_width,
+        );
+        let factory: crate::waker::SharedWakerFactory = Arc::new(
+            crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
+        );
+        let proxy = self.view.proxy.clone();
+        let memory = self.core.memory_arc();
+        #[cfg(debug_assertions)]
+        let input_simulation_enabled = self.input_simulation_enabled;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("tasty-boot-engine".into())
+            .spawn(move || {
+                let result = crate::app::window_lifecycle::build_engine_and_plugins(
+                    cols,
+                    rows,
+                    factory,
+                    proxy,
+                    memory,
+                    #[cfg(debug_assertions)]
+                    input_simulation_enabled,
+                );
+                if tx.send(result).is_err() {
+                    // 수신부(부팅 머신)가 먼저 사라진 경우 — 종료 경로. 여기서
+                    // drop 되는 PluginManager 의 자식 프로세스는 PluginProcess
+                    // 의 Drop 이 kill 로 정리한다.
+                    tracing::warn!("boot engine worker: receiver dropped; discarding init result");
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::error!("boot engine worker spawn failed: {e} — synchronous fallback");
+        }
+        rx
+    }
+
+    /// 엔진+plugin manager 장착 직후의 공통 전이 — pending layout restore 유무로
+    /// WaitingPlugins 진입 또는 즉시 완료. 워커 정상 수신과 동기 fallback 이
+    /// 공유하며, 구(동기 GpuInit 스텝) 후반부와 의미론 동일. 반환: 부팅 완료 여부.
+    fn boot_transition_after_engine(&mut self, boot: &mut BootState) -> bool {
+        if self.core_state().pending_layout_restore.is_some() {
+            let needed = self.boot_required_plugin_kinds();
+            let now = Instant::now();
+            boot.phase = BootPhase::WaitingPlugins {
+                started: now,
+                deadline: now + Duration::from_millis(300),
+                needed,
+            };
+            false
+        } else {
+            // 복원할 layout 없음 (첫 설치) — 대기 phase 없이 즉시 완료.
+            true
+        }
+    }
+
+    /// 부팅 중 종료 경로 공용 — WaitingEngine 워커가 spawn 한 plugin 자식
+    /// 프로세스 회수. 결과를 잠시 기다려 PluginManager 를 받아 graceful
+    /// shutdown 한다. 회수 없이 프로세스가 끝나면 워커가 강제 종료돼
+    /// PluginProcess::drop 이 못 돌고 자식이 잔존할 수 있다.
+    ///
+    /// 부팅 미완이 아니거나 WaitingEngine 이 아니면 no-op — steady-state 종료
+    /// 경로에서 불려도 무해하다.
+    pub(crate) fn reclaim_boot_engine_worker_for_exit(&mut self) {
+        let Some(boot) = self.boot.as_mut() else {
+            return;
+        };
+        let BootPhase::WaitingEngine { rx, .. } = &boot.phase else {
+            return;
+        };
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok((engine, mut mgr)) => {
+                drop(engine);
+                mgr.shutdown_all();
+            }
+            Err(e) => {
+                // 워커 panic(즉시 Disconnected) 또는 5s 초과 — 더 기다리지 않는다.
+                tracing::warn!("boot engine worker not reclaimed before exit: {e}");
             }
         }
     }
@@ -375,7 +504,11 @@ impl App {
                     boot.gpu.resize(size);
                 }
             }
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                // WaitingEngine 워커가 만든 plugin 자식 프로세스 잔존 방지.
+                self.reclaim_boot_engine_worker_for_exit();
+                event_loop.exit();
+            }
             // 부팅 미완 — 나머지 이벤트(키/마우스/포커스 등)는 소비만 한다.
             // ApplyPendingLayoutRestore 의 bootstrap 전제(적용 전 다른 mutate 없음)
             // 보호. 부팅은 최대 ~1s 이므로 입력 드롭 체감 없음.

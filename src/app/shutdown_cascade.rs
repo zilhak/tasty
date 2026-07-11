@@ -60,6 +60,10 @@ impl App {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
+        // 단계 0: 부팅 중(WaitingEngine) 종료라면 워커가 spawn 한 plugin 자식
+        //         프로세스를 먼저 회수한다 (steady-state 에선 no-op).
+        self.reclaim_boot_engine_worker_for_exit();
+
         // 단계 1: shutdown initiated 이벤트 발화. plugin 이 cleanup hook 을 돌릴 시간을 준다.
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
