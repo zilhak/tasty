@@ -9,8 +9,10 @@
 //!
 //! 첫 부팅(첫 윈도우)은 이 모듈의 동기 함수 대신 부팅 상태 머신
 //! (`boot_machine.rs` — `begin_boot` → phase 스텝 → `finish_boot`)이 담당하며,
-//! 여기의 `ensure_engine_and_plugins` / `boot_pump_step_*` /
+//! 여기의 `build_engine_and_plugins`(워커 본문) / `boot_pump_step_*` /
 //! `boot_apply_pending_layout_restore` / `assemble_app_state` 를 공유한다.
+//! `ensure_engine_and_plugins` 는 동기 wrapper — 동기 경로(다중 창)와 부팅
+//! 머신의 워커 실패 fallback 이 쓴다.
 
 use std::sync::Arc;
 
@@ -48,6 +50,129 @@ pub(super) fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettin
     }
 }
 
+/// 부팅 시 터미널 그리드 크기 계산 — GPU cell metrics + 사이드바 폭 의존이라
+/// 메인 스레드 몫이다. `ensure_engine_and_plugins`(동기)와 부팅 상태 머신의
+/// 워커 spawn(cols/rows 를 정수 2개로 뽑아 전달)이 공유한다.
+pub(super) fn boot_grid_size(
+    gpu: &GpuState,
+    sidebar_width: tasty_type_geometry::length::LogicalPx,
+) -> (usize, usize) {
+    let sf = gpu.scale_factor();
+    let size = gpu.size();
+    let sidebar_w = sidebar_width.to_physical(sf);
+    let terminal_rect = crate::model::PhysicalRect {
+        x: sidebar_w,
+        y: tasty_type_geometry::length::PhysicalPx(0.0),
+        width: (tasty_type_geometry::length::PhysicalPx(size.width as f32) - sidebar_w)
+            .max(tasty_type_geometry::length::PhysicalPx(1.0)),
+        height: tasty_type_geometry::length::PhysicalPx(size.height as f32),
+    };
+    gpu.grid_size_for_rect(&terminal_rect)
+}
+
+/// 엔진(CoreState)+plugin manager 원자 초기화(T2.6·T3)의 App-free 본문 —
+/// **첫 부팅 전용** (두 번째 창의 글로벌 Arc 공유 분기는
+/// `ensure_engine_and_plugins` 에 남아 있다). `App` 참조가 없어 부팅 상태
+/// 머신이 워커 스레드에서 실행하며(`boot_machine.rs` 의 WaitingEngine),
+/// 동기 wrapper 의 첫 부팅 분기도 같은 본문을 쓴다.
+///
+/// panic: `CoreState::new_with_ids` 실패 시 expect — 워커에서 돌 때는 결과
+/// 채널 drop 으로 표면화되고 WaitingEngine 의 disconnect fallback 이 받는다.
+pub(super) fn build_engine_and_plugins(
+    cols: usize,
+    rows: usize,
+    factory: crate::waker::SharedWakerFactory,
+    proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    #[cfg(debug_assertions)] input_simulation_enabled: bool,
+) -> (crate::core::CoreState, plugin::PluginManager) {
+    let engine = build_core_state_first_boot(
+        cols,
+        rows,
+        factory.clone(),
+        proxy,
+        memory,
+        #[cfg(debug_assertions)]
+        input_simulation_enabled,
+    );
+    let mgr = build_plugin_manager(factory, &engine);
+    (engine, mgr)
+}
+
+/// 첫 부팅의 CoreState 생성 (T2.6 계측 포함). 공유 source 없음 —
+/// `CoreState::new` 의 기본 Arc 사용. preset_store 는 Core 가 유일 owner
+/// (D.3.C.M.2) — engine 에는 더 이상 없다.
+fn build_core_state_first_boot(
+    cols: usize,
+    rows: usize,
+    factory: crate::waker::SharedWakerFactory,
+    proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    #[cfg(debug_assertions)] input_simulation_enabled: bool,
+) -> crate::core::CoreState {
+    // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 — T2↔T3
+    // 갭의 두 번째 기여자라 별도 계측 (첫 번째는 begin_boot 의 db+theme).
+    let t_engine = std::time::Instant::now();
+    let waker: crate::terminal::Waker = factory.make_default_waker();
+    let mut engine = crate::core::CoreState::new_with_ids(cols, rows, waker, None, memory)
+        .expect("failed to create engine state");
+    engine.waker_factory = Some(factory);
+    // 첫 부팅 — identify_worker 는 App proxy 가 필요.
+    engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
+        engine.file_format.clone(),
+        proxy,
+    )));
+    #[cfg(debug_assertions)]
+    {
+        engine.input_simulation_enabled = input_simulation_enabled;
+    }
+    tracing::info!(
+        target: "tasty::boot",
+        ms = t_engine.elapsed().as_secs_f64() * 1000.0,
+        "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
+    );
+    engine
+}
+
+/// PluginManager 생성 + builtin 설치·discovery·spawn (T3a·T3b 계측 포함).
+/// engine 의 registry Arc 들을 공유해 만든다 — App-free.
+fn build_plugin_manager(
+    factory: crate::waker::SharedWakerFactory,
+    engine: &crate::core::CoreState,
+) -> plugin::PluginManager {
+    let mut mgr = plugin::PluginManager::with_registries(
+        factory,
+        engine.file_format.clone(),
+        engine.file_handler.clone(),
+    );
+    mgr.set_surface_registry(engine.surface_registry.clone());
+    mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
+    // 공유 훅 핸들러 레지스트리(전역 싱글턴) port 주입 — plugin enable/disable
+    // 시 `[[contributes.hook_handler]]` 를 등록/해제한다(S11).
+    mgr.set_hook_handler_registry(std::sync::Arc::new(
+        crate::hook_handler::HostHookHandlerPort,
+    ));
+    // T3 은 discovery 와 spawn 을 나눠 찍는다 — 4부 escalate 확정 시 어느
+    // 쪽이 병목인지 판단하기 위함.
+    let t3 = std::time::Instant::now();
+    plugin::install_builtins_if_needed(&mut mgr);
+    mgr.refresh_packages();
+    tracing::info!(
+        target: "tasty::boot",
+        ms = t3.elapsed().as_secs_f64() * 1000.0,
+        "T3a plugin_discovery (install_builtins + refresh_packages)"
+    );
+    let t3b = std::time::Instant::now();
+    mgr.discover_and_start();
+    tracing::info!(
+        target: "tasty::boot",
+        ms = t3b.elapsed().as_secs_f64() * 1000.0,
+        total_ms = t3.elapsed().as_secs_f64() * 1000.0,
+        "T3b plugin_spawn (discover_and_start; total_ms = T3 전체)"
+    );
+    mgr
+}
+
 impl App {
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
     ///
@@ -83,42 +208,32 @@ impl App {
 
     /// 엔진(CoreState)·plugin manager 의 원자 초기화 — `create_app_state` 선두 절반.
     /// 두 블록 모두 `is_none` 가드라 재호출은 no-op (다중 창 경로 안전).
-    /// 부팅 상태 머신의 GpuInit 스텝과 동기 경로가 공유한다 (T2.6·T3 계측 포함).
+    ///
+    /// 동기 wrapper — 첫 부팅 본문은 App-free `build_engine_and_plugins`(부팅
+    /// 상태 머신의 워커와 동일 본문)로 위임하고, 여기는 두 번째 main window 의
+    /// 글로벌 Arc 공유 분기 + self 장착을 담당한다. 호출자: 동기 경로
+    /// (`create_app_state` / `create_new_window`) + 부팅 상태 머신의 워커
+    /// disconnect fallback (T2.6·T3 계측 포함).
     pub(super) fn ensure_engine_and_plugins(
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) {
-        let sf = gpu.scale_factor();
-        let size = gpu.size();
-        let sidebar_w = sidebar_width.to_physical(sf);
-        let terminal_rect = crate::model::PhysicalRect {
-            x: sidebar_w,
-            y: tasty_type_geometry::length::PhysicalPx(0.0),
-            width: (tasty_type_geometry::length::PhysicalPx(size.width as f32) - sidebar_w)
-                .max(tasty_type_geometry::length::PhysicalPx(1.0)),
-            height: tasty_type_geometry::length::PhysicalPx(size.height as f32),
-        };
-        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
-
+        let (cols, rows) = boot_grid_size(gpu, sidebar_width);
         let factory: crate::waker::SharedWakerFactory = Arc::new(
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
         );
-        let waker: crate::terminal::Waker = factory.make_default_waker();
 
         // CoreState를 App 직속에 1회 init.
         if self.core_state.is_none() {
-            // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 — T2↔T3
-            // 갭의 두 번째 기여자라 별도 계측 (첫 번째는 init_app_state 의 db+theme).
-            let t_engine = std::time::Instant::now();
             // 두 번째 main window 생성 시: 첫 engine 의 글로벌 Arc 들을 공유한다.
             // surface_registry 는 plugin_manager 가 첫 부팅 시 set 한 것과 같은
             // Arc 여야 plugin 이 register 한 surface kind 가 두 번째 윈도우에서도
             // 보임. file_format / file_handler 도 동일 — plugin contribute 한
             // file 동작이 두번째 윈도우에서 누락 안 되도록.
             //
-            // 첫 부팅 시점에는 source 없음 → CoreState::new 의 기본 Arc 사용.
-            // preset_store 는 Core 가 유일 owner (D.3.C.M.2) — engine 에는 더 이상 없다.
+            // 첫 부팅 시점에는 source 없음 → App-free 본문
+            // (`build_core_state_first_boot`)이 CoreState::new 의 기본 Arc 사용.
             let shared = self.any_main_engine().map(|src| {
                 (
                     src.surface_registry.clone(),
@@ -133,20 +248,7 @@ impl App {
                 )
             });
 
-            // IdGenerator 는 CoreState::new 시점에 default workspace 만들면서
-            // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
-            // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
-            let shared_ids = shared.as_ref().map(|s| s.8.clone());
-            let mut engine = crate::core::CoreState::new_with_ids(
-                cols,
-                rows,
-                waker.clone(),
-                shared_ids,
-                self.core.memory_arc(),
-            )
-            .expect("failed to create engine state");
-            engine.waker_factory = Some(factory.clone());
-            if let Some((
+            let engine = if let Some((
                 surface_registry,
                 file_format,
                 file_handler,
@@ -155,9 +257,24 @@ impl App {
                 telemetry_seq,
                 anomaly_detector,
                 agent_seq,
-                _next_ids,
+                next_ids,
             )) = shared
             {
+                // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 (T2.6).
+                let t_engine = std::time::Instant::now();
+                // IdGenerator 는 CoreState::new 시점에 default workspace 만들면서
+                // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
+                // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
+                let waker: crate::terminal::Waker = factory.make_default_waker();
+                let mut engine = crate::core::CoreState::new_with_ids(
+                    cols,
+                    rows,
+                    waker,
+                    Some(next_ids),
+                    self.core.memory_arc(),
+                )
+                .expect("failed to create engine state");
+                engine.waker_factory = Some(factory.clone());
                 engine.surface_registry = surface_registry;
                 engine.file_format = file_format;
                 engine.file_handler = file_handler;
@@ -166,63 +283,32 @@ impl App {
                 engine.telemetry_seq = telemetry_seq;
                 engine.anomaly_detector = anomaly_detector;
                 engine.agent_seq = agent_seq;
-                // next_ids 는 위에서 이미 생성 시점에 주입됨.
+                #[cfg(debug_assertions)]
+                {
+                    engine.input_simulation_enabled = self.input_simulation_enabled;
+                }
+                tracing::info!(
+                    target: "tasty::boot",
+                    ms = t_engine.elapsed().as_secs_f64() * 1000.0,
+                    "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
+                );
+                engine
             } else {
-                // 첫 부팅 — identify_worker 는 App proxy 가 필요.
-                engine.identify_worker =
-                    Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
-                        engine.file_format.clone(),
-                        self.view.proxy.clone(),
-                    )));
-            }
-            #[cfg(debug_assertions)]
-            {
-                engine.input_simulation_enabled = self.input_simulation_enabled;
-            }
+                build_core_state_first_boot(
+                    cols,
+                    rows,
+                    factory.clone(),
+                    self.view.proxy.clone(),
+                    self.core.memory_arc(),
+                    #[cfg(debug_assertions)]
+                    self.input_simulation_enabled,
+                )
+            };
             self.core_state = Some(engine);
-            tracing::info!(
-                target: "tasty::boot",
-                ms = t_engine.elapsed().as_secs_f64() * 1000.0,
-                "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
-            );
         }
 
         if self.plugin_manager.is_none() {
-            let (file_format, file_handler, surface_registry) = {
-                let engine = self.core_state();
-                (
-                    engine.file_format.clone(),
-                    engine.file_handler.clone(),
-                    engine.surface_registry.clone(),
-                )
-            };
-            let mut mgr =
-                plugin::PluginManager::with_registries(factory, file_format, file_handler);
-            mgr.set_surface_registry(surface_registry);
-            mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
-            // 공유 훅 핸들러 레지스트리(전역 싱글턴) port 주입 — plugin enable/disable
-            // 시 `[[contributes.hook_handler]]` 를 등록/해제한다(S11).
-            mgr.set_hook_handler_registry(std::sync::Arc::new(
-                crate::hook_handler::HostHookHandlerPort,
-            ));
-            // T3 은 discovery 와 spawn 을 나눠 찍는다 — 4부 escalate 확정 시 어느
-            // 쪽이 병목인지 판단하기 위함.
-            let t3 = std::time::Instant::now();
-            plugin::install_builtins_if_needed(&mut mgr);
-            mgr.refresh_packages();
-            tracing::info!(
-                target: "tasty::boot",
-                ms = t3.elapsed().as_secs_f64() * 1000.0,
-                "T3a plugin_discovery (install_builtins + refresh_packages)"
-            );
-            let t3b = std::time::Instant::now();
-            mgr.discover_and_start();
-            tracing::info!(
-                target: "tasty::boot",
-                ms = t3b.elapsed().as_secs_f64() * 1000.0,
-                total_ms = t3.elapsed().as_secs_f64() * 1000.0,
-                "T3b plugin_spawn (discover_and_start; total_ms = T3 전체)"
-            );
+            let mgr = build_plugin_manager(factory, self.core_state());
             self.plugin_manager = Some(mgr);
         }
     }
