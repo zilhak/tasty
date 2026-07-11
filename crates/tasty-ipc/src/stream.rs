@@ -131,14 +131,42 @@ pub struct StreamAck {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
-    /// A mirrored remote terminal changed grid size. The client resizes its
-    /// mirror surface to match — the remote grid is authoritative for mirror
-    /// geometry (local window/pane size never drives a mirror).
+    /// A mirrored remote terminal's grid settled at a new size. The client
+    /// resizes its mirror surface to match. This is the **authoritative confirm**
+    /// of the geometry the client requested via [`StreamControl::ClientResize`]:
+    /// the remote PTY is the single source of truth for the real grid (it owns
+    /// the reflow), and it echoes the settled size back here. The client applies
+    /// its mirror grid **only** from this echo (never optimistically from the
+    /// local pane), so mirror content is always replayed at the size the remote
+    /// actually reflowed to — no desync.
     ///
     /// Direction: **server→client**.
     Resize {
         /// Remote surface id. The client maps it to its local mirror surface id
         /// (workspace attach) or applies it to its sole mirror (surface attach).
+        surface_id: u32,
+        cols: usize,
+        rows: usize,
+    },
+    /// The client (mirror side) requests the remote PTY be resized to the grid of
+    /// its **local mirror pane**. Mirror geometry is **client-driven**: the pane
+    /// the user placed the mirror in decides the grid, and the client pushes that
+    /// intent here. The server resizes the real remote PTY (`Terminal::resize`),
+    /// which reflows and echoes the settled size back as
+    /// [`StreamControl::Resize`] — the client applies its mirror grid from that
+    /// echo, not optimistically. Anchored on the **remote surface id** (mapped
+    /// from the local mirror id before send). The occupying stream connection is
+    /// the workspace's attach holder, so the connection itself proves the
+    /// authority to drive geometry (ADR-0040 hard occupancy, ADR-0045).
+    ///
+    /// Direction: **client→server**. No explicit reply — the resulting
+    /// [`StreamControl::Resize`] echo (present only when the grid actually
+    /// changed) is the confirmation; an identical request is a no-op on the
+    /// remote (`resize_grid` returns false → no echo).
+    ClientResize {
+        /// Remote surface id (the client maps its local mirror id to this before
+        /// sending). The server resolves the enclosing workspace and verifies the
+        /// requesting client is its attach holder before applying.
         surface_id: u32,
         cols: usize,
         rows: usize,
@@ -477,6 +505,47 @@ mod tests {
         assert!(s.contains(r#""event":"resize""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_client_resize_roundtrip() {
+        let msg = StreamControl::ClientResize {
+            surface_id: 12,
+            cols: 203,
+            rows: 57,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        // tagged on `event` = "client_resize" (snake_case) — distinct from the
+        // server→client "resize" so the two directions never collide.
+        assert!(s.contains(r#""event":"client_resize""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn client_resize_and_resize_are_distinct_events() {
+        // A ClientResize (client→server) must not deserialize as a Resize
+        // (server→client) or vice-versa — the direction is carried by the tag.
+        let client = serde_json::to_string(&StreamControl::ClientResize {
+            surface_id: 1,
+            cols: 80,
+            rows: 24,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&client).unwrap(),
+            StreamControl::ClientResize { .. }
+        ));
+        let server = serde_json::to_string(&StreamControl::Resize {
+            surface_id: 1,
+            cols: 80,
+            rows: 24,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&server).unwrap(),
+            StreamControl::Resize { .. }
+        ));
     }
 
     #[test]
