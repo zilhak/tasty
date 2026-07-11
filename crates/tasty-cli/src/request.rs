@@ -576,11 +576,22 @@ fn webhook_command_to_method_params(
             persistent,
             ttl_secs,
             count,
+            auth_location,
+            auth_key,
+            auth_token,
         } => {
             // --sequence 는 JSON 문자열 → Value 로 파싱해 전달(서버가 IpcCall 배열로 검증).
             let sequence_value = sequence
                 .as_deref()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            // auth 3-flag → 서버가 검증하는 auth 객체(미지정 시 null).
+            let auth_value = auth_location.as_deref().map(|loc| {
+                serde_json::json!({
+                    "location": loc,
+                    "key": auth_key,
+                    "token": auth_token,
+                })
+            });
             (
                 "webhook.register",
                 serde_json::json!({
@@ -590,6 +601,7 @@ fn webhook_command_to_method_params(
                     "persistent": persistent,
                     "ttl_secs": ttl_secs,
                     "count": count,
+                    "auth": auth_value,
                 }),
             )
         }

@@ -695,6 +695,34 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn webhook_register_auth_flags_map_to_auth_object() {
+        let r = req(&[
+            "tasty",
+            "webhook",
+            "register",
+            "--handler",
+            "host/notify",
+            "--auth-location",
+            "query",
+            "--auth-key",
+            "token",
+            "--auth-token",
+            "s3cret",
+        ]);
+        assert_eq!(r.method, "webhook.register");
+        assert_eq!(r.params["auth"]["location"], "query");
+        assert_eq!(r.params["auth"]["key"], "token");
+        assert_eq!(r.params["auth"]["token"], "s3cret");
+    }
+
+    #[test]
+    fn webhook_register_without_auth_flags_omits_auth() {
+        let r = req(&["tasty", "webhook", "register", "--handler", "host/notify"]);
+        // auth 미지정 → null (서버가 무인증으로 취급).
+        assert!(r.params["auth"].is_null());
+    }
+
+    #[test]
     fn webhook_list_info_unregister_map() {
         let r = req(&["tasty", "webhook", "list"]);
         assert_eq!(r.method, "webhook.list");

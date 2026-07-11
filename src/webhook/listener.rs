@@ -86,7 +86,18 @@ fn handle_request(mut request: tiny_http::Request) {
         MatchResult::NotFound => (AckStatus::NotFound, None),
         MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
         MatchResult::Expired => (AckStatus::Gone, None),
-        MatchResult::Matched { calls, injector } => (AckStatus::Received, Some((calls, injector))),
+        MatchResult::Matched {
+            calls,
+            injector,
+            auth,
+        } => {
+            // 인증이 설정된 웹훅은 실행 전 토큰을 검증한다. 미설정(None)은 통과.
+            // 검증은 ACK 상태코드 선택에만 관여하고 실행/응답바디에 데이터를 싣지 않음.
+            match &auth {
+                Some(a) if !a.verify(&headers, &query, &body) => (AckStatus::Unauthorized, None),
+                _ => (AckStatus::Received, Some((calls, injector))),
+            }
+        }
     };
 
     // 단방향: ACK 를 실행 전/무관하게 즉시 확정·응답.

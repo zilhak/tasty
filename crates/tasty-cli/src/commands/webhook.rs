@@ -33,6 +33,17 @@ pub enum WebhookCommands {
         /// calls. Mutually exclusive with --ttl-secs.
         #[arg(long, value_name = "N")]
         count: Option<u64>,
+        /// Optional auth: where the token is presented. Unset = no auth.
+        #[arg(long = "auth-location", value_name = "LOCATION",
+              value_parser = ["query", "bearer", "body", "header"], requires = "auth_token")]
+        auth_location: Option<String>,
+        /// Token location key: query param / body field path / header name.
+        /// Required for query|body|header locations (ignored for bearer).
+        #[arg(long = "auth-key", value_name = "KEY")]
+        auth_key: Option<String>,
+        /// Fixed shared token the sender must present to pass auth.
+        #[arg(long = "auth-token", value_name = "TOKEN", requires = "auth_location")]
+        auth_token: Option<String>,
     },
     /// List all registered webhooks (URL, methods, handler, steps, lifetime).
     List,

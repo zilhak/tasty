@@ -9,16 +9,20 @@
 //! - [`persist`] — `Persistent` 웹훅의 `~/.tasty/webhooks.toml` 영속화·재시작 복원.
 //! - [`listener`] — tiny_http bind + accept + 요청 라우팅.
 //! - [`ack`] — 단방향 ACK 빌더(실행 결과 미접근, 타입 강제).
+//! - [`auth`] — 웹훅별 **선택적** 인증(고정 토큰, 미설정 시 무인증 통과).
 //!
 //! 현재 범위: 단일 포트 + opaque path + **lifetime 6종 + 영속화 + lazy 만료 +
-//! sweep** + 기본 IpcSequence 실행. 인증·남용차단·포트설정 UI 는 후속(S6~S8).
+//! sweep** + **선택적 인증(S6)** + 기본 IpcSequence 실행. 남용차단·포트설정 UI 는
+//! 후속(S7~S8).
 
 pub mod ack;
+pub mod auth;
 pub mod lifetime;
 pub mod listener;
 pub mod persist;
 pub mod registry;
 
+pub use auth::{AuthLocation, WebhookAuth, auth_summary};
 // RegisterOutcome 는 registry::register 반환 타입으로 내부 소비 — 전체 경로로 접근.
 pub use lifetime::{Lifetime, Limit, Persistence};
 pub use registry::{WebhookEntry, info, list, register, sweep, unregister};

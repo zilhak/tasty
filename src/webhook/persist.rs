@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::auth::WebhookAuth;
 use super::lifetime::{Lifetime, Limit, Persistence, now_unix};
 use super::registry::WebhookEntry;
 use crate::hook_handler::{HookHandlerId, IpcCall};
@@ -52,6 +53,9 @@ pub(super) struct PersistedWebhook {
     #[serde(default, rename = "sequence", skip_serializing_if = "Vec::is_empty")]
     pub calls: Vec<IpcCall>,
     pub limit: PersistedLimit,
+    /// 선택적 인증 설정(S6). 미설정이면 생략 — 복원 시 무인증 통과.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<WebhookAuth>,
 }
 
 /// lifetime 제한의 영속 표현. 영속성은 `Persistent` 로 고정(저장 대상이 곧 영속)이라
@@ -92,6 +96,7 @@ pub(super) fn to_persisted(entry: &WebhookEntry) -> PersistedWebhook {
         handler: entry.handler_id.as_ref().map(|h| h.0.clone()),
         calls: entry.calls.clone(),
         limit: PersistedLimit::from_limit(entry.lifetime.limit),
+        auth: entry.auth.clone(),
     }
 }
 
@@ -191,6 +196,7 @@ pub(super) fn restore_into_registry() {
             handler_id: pw.handler.map(HookHandlerId::new),
             calls: pw.calls,
             lifetime,
+            auth: pw.auth,
         });
         restored += 1;
     }
@@ -235,6 +241,7 @@ mod tests {
                 params: serde_json::json!({"body": "${body.message}"}),
             }],
             limit: PersistedLimit::Count { remaining: 3 },
+            auth: None,
         }];
         // Value::try_from → table 삽입 → 문자열화 → 재파싱이 동일 데이터를 준다.
         let mut doc = toml::Table::new();
@@ -264,6 +271,7 @@ mod tests {
             handler: None,
             calls: vec![],
             limit: PersistedLimit::Unlimited,
+            auth: None,
         }];
         let mut doc: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         doc.insert("webhook".into(), toml::Value::try_from(&items).unwrap());

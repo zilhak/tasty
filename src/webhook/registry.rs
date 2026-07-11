@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+use super::auth::WebhookAuth;
 use super::lifetime::{Lifetime, now_unix};
 use crate::adapters::ipc::host_call::HostIpcInjector;
 use crate::hook_handler::{HookHandlerId, IpcCall};
@@ -25,6 +26,8 @@ pub struct WebhookEntry {
     pub calls: Vec<IpcCall>,
     /// lifetime — 영속성 + 자동 소멸 제한(6종).
     pub lifetime: Lifetime,
+    /// 선택적 인증 설정. `None` 이면 무인증 통과(인증은 opt-in).
+    pub auth: Option<WebhookAuth>,
 }
 
 /// 웹훅 리스너 전역 상태.
@@ -134,6 +137,7 @@ pub fn register(
     handler_id: Option<HookHandlerId>,
     calls: Vec<IpcCall>,
     lifetime: Lifetime,
+    auth: Option<WebhookAuth>,
 ) -> RegisterOutcome {
     let mut s = lock();
     let id = gen_opaque_id(&s.entries);
@@ -146,6 +150,7 @@ pub fn register(
             handler_id,
             calls,
             lifetime,
+            auth,
         },
     );
     if lifetime.is_persistent() {
@@ -224,15 +229,17 @@ pub(super) enum MatchResult {
     Matched {
         calls: Vec<IpcCall>,
         injector: Option<HostIpcInjector>,
+        /// 선택적 인증 설정 스냅샷. `Some` 이면 리스너가 실행 전 검증한다.
+        auth: Option<WebhookAuth>,
     },
 }
 
-/// (path, method) 로 매칭해 실행할 시퀀스 스냅샷 + injector 를 반환한다.
+/// (path, method) 로 매칭해 실행할 시퀀스 스냅샷 + injector + 인증설정을 반환한다.
 ///
 /// **lazy 만료**: path 가 불릴 때 시간제한 만료를 먼저 확인해 만료면 삭제 후
 /// `Expired`(410) 를 돌린다. 매칭 성공한 횟수제한 웹훅은 카운트를 1 차감하고,
 /// 소진되면 그 자리에서 삭제한다(다음 호출은 404). 짧게 lock 을 잡아 mutate +
-/// clone 만 하고 실행은 lock 밖에서 한다.
+/// clone 만 하고 실행·인증검증은 lock 밖에서 한다.
 pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
     let now = now_unix();
     let mut s = lock();
@@ -255,10 +262,11 @@ pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
         return MatchResult::MethodNotAllowed;
     }
 
-    // ③ 매칭 성공 — 횟수 차감 후 소진되면 삭제.
+    // ③ 매칭 성공 — 횟수 차감 후 소진되면 삭제. 인증검증은 lock 밖(리스너)에서.
     let injector = s.injector.clone();
     let entry = s.entries.get_mut(path).expect("entry present under lock");
     let calls = entry.calls.clone();
+    let auth = entry.auth.clone();
     let exhausted = entry.lifetime.consume();
     let persistent = entry.lifetime.is_persistent();
     if exhausted {
@@ -267,7 +275,11 @@ pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
     if persistent {
         persist_locked(&s);
     }
-    MatchResult::Matched { calls, injector }
+    MatchResult::Matched {
+        calls,
+        injector,
+        auth,
+    }
 }
 
 #[cfg(test)]
@@ -305,6 +317,7 @@ mod tests {
             None,
             calls.clone(),
             temp(Limit::Unlimited),
+            None,
         );
         assert_eq!(out.id.len(), 16); // 8바이트 → 16 hex
         assert!(out.url.contains(&out.id));
@@ -335,8 +348,20 @@ mod tests {
     #[test]
     fn opaque_ids_are_nonsequential() {
         let _g = serial();
-        let a = register(vec!["POST".to_string()], None, vec![], temp(Limit::Unlimited));
-        let b = register(vec!["POST".to_string()], None, vec![], temp(Limit::Unlimited));
+        let a = register(
+            vec!["POST".to_string()],
+            None,
+            vec![],
+            temp(Limit::Unlimited),
+            None,
+        );
+        let b = register(
+            vec!["POST".to_string()],
+            None,
+            vec![],
+            temp(Limit::Unlimited),
+            None,
+        );
         assert_ne!(a.id, b.id);
         // 순차 카운터가 아님(랜덤) — 인접 등록이 인접 id 를 주지 않는다.
         unregister(&a.id);
@@ -352,6 +377,7 @@ mod tests {
             None,
             vec![],
             temp(Limit::CountLimit { remaining: 2 }),
+            None,
         );
         assert!(matches!(
             match_request(&out.id, "POST"),
@@ -383,6 +409,7 @@ mod tests {
             None,
             vec![],
             temp(Limit::TimeLimit { deadline_unix: 1 }),
+            None,
         );
         assert!(matches!(
             match_request(&out.id, "POST"),
@@ -405,6 +432,7 @@ mod tests {
             None,
             vec![],
             temp(Limit::CountLimit { remaining: 1 }),
+            None,
         );
         assert!(matches!(
             match_request(&out.id, "GET"),
@@ -426,12 +454,14 @@ mod tests {
             None,
             vec![],
             temp(Limit::Unlimited),
+            None,
         );
         let expired = register(
             vec!["POST".to_string()],
             None,
             vec![],
             temp(Limit::TimeLimit { deadline_unix: 1 }),
+            None,
         );
         let swept = sweep();
         assert!(swept.contains(&expired.id));

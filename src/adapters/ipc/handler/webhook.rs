@@ -19,8 +19,8 @@ use crate::hook_handler::{
     self, HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
     TriggerSource, validate_binding,
 };
-use crate::webhook::{self, Lifetime, Limit, Persistence};
 use crate::webhook::lifetime::now_unix;
+use crate::webhook::{self, AuthLocation, Lifetime, Limit, Persistence, WebhookAuth, auth_summary};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 기본 허용 메서드(요청에 `methods` 미지정 시).
@@ -32,6 +32,7 @@ const DEFAULT_METHODS: &[&str] = &["POST"];
 /// - `methods`: `["POST", ...]` (선택, 기본 `["POST"]`) — 허용 HTTP 메서드.
 /// - `handler`: 등록된 훅 핸들러 id (선택) — source 게이트 검증 후 그 IpcSequence 사용.
 /// - `sequence`: 인라인 IpcCall 배열 (선택) — owner 가 직접 정의(익명 웹훅 핸들러).
+/// - `auth`: 선택적 인증 `{ location, key?, token }` — 미지정 시 무인증 통과.
 ///
 /// `handler` 와 `sequence` 중 정확히 하나를 지정한다.
 ///
@@ -49,6 +50,12 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
     let lifetime = match parse_lifetime(params) {
         Ok(lt) => lt,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
+    };
+
+    // 인증 설정 파싱(선택). 형식 오류는 등록 전 거부.
+    let auth = match parse_auth(params) {
+        Ok(auth) => auth,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
     // CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 "부재" 로 취급한다.
@@ -114,7 +121,8 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
         }
     };
 
-    let outcome = webhook::register(methods.clone(), handler_id.clone(), calls, lifetime);
+    let auth_json = auth.as_ref().map(auth_summary);
+    let outcome = webhook::register(methods.clone(), handler_id.clone(), calls, lifetime, auth);
     JsonRpcResponse::success(
         id,
         json!({
@@ -123,6 +131,7 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
             "methods": methods,
             "handler": handler_id.map(|h| h.0),
             "lifetime": lifetime_json(&lifetime),
+            "auth": auth_json,
         }),
     )
 }
@@ -248,6 +257,52 @@ fn parse_methods(params: &serde_json::Value) -> Vec<String> {
     }
 }
 
+/// `auth` 파라미터 파싱(선택). 미지정/`null` 이면 `Ok(None)`(무인증).
+///
+/// 형식: `{ "location": "query"|"bearer"|"body"|"header", "key": "<name>",
+/// "token": "<secret>" }`. `bearer` 는 `key` 불요, 나머지는 필수. `token` 은 항상 필수.
+fn parse_auth(params: &serde_json::Value) -> Result<Option<WebhookAuth>, String> {
+    let Some(auth) = params.get("auth").filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let obj = auth
+        .as_object()
+        .ok_or_else(|| "'auth' must be an object".to_string())?;
+
+    let token = obj
+        .get("token")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "'auth.token' is required and must be a non-empty string".to_string())?
+        .to_string();
+
+    let location_kind = obj
+        .get("location")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "'auth.location' is required".to_string())?;
+    let key = obj.get("key").and_then(|v| v.as_str());
+
+    let require_key = |what: &str| -> Result<String, String> {
+        key.filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("'auth.key' is required for {what} auth location"))
+    };
+
+    let location = match location_kind {
+        "query" => AuthLocation::QueryKey { key: require_key("query")? },
+        "bearer" => AuthLocation::BearerHeader,
+        "body" => AuthLocation::BodyField { field: require_key("body")? },
+        "header" => AuthLocation::HeaderKey { name: require_key("header")? },
+        other => {
+            return Err(format!(
+                "'auth.location' must be one of query|bearer|body|header, got '{other}'"
+            ));
+        }
+    };
+
+    Ok(Some(WebhookAuth { location, token }))
+}
+
 /// 인라인 시퀀스로부터 익명 웹훅 핸들러 생성 — 결정적 id(첫 method 기반 + 카운트).
 fn anonymous_handler(calls: &[IpcCall]) -> HookHandler {
     let first = calls.first().map(|c| c.method.as_str()).unwrap_or("seq");
@@ -271,7 +326,8 @@ fn anonymous_handler(calls: &[IpcCall]) -> HookHandler {
 }
 
 /// 웹훅 엔트리 → JSON(조회 응답). 발급 URL·메서드·핸들러·lifetime(남은횟수/만료)
-/// 노출(로컬 owner 채널).
+/// 노출(로컬 owner 채널). 인증은 **위치/키만** 요약 노출하고 **토큰은 절대 싣지
+/// 않는다**(`auth_summary`).
 fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
     json!({
         "id": e.id,
@@ -280,5 +336,6 @@ fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
         "handler": e.handler_id.as_ref().map(|h| h.0.clone()),
         "steps": e.calls.len(),
         "lifetime": lifetime_json(&e.lifetime),
+        "auth": e.auth.as_ref().map(auth_summary),
     })
 }

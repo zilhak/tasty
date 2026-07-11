@@ -9,11 +9,13 @@ use std::io::Cursor;
 
 use tiny_http::Response;
 
-/// 웹훅 응답 상태 — 고정 enum. Phase2 에서 인증(401)·남용차단(429) 이 추가된다.
+/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410) 반영, 남용차단(429) 은 후속.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AckStatus {
     /// 200 — 매칭 성공, 핸들러에 전달됨.
     Received,
+    /// 401 — 웹훅에 인증이 설정됐으나 토큰 미제시/불일치.
+    Unauthorized,
     /// 404 — 등록된 웹훅 path 없음.
     NotFound,
     /// 405 — path 는 있으나 HTTP 메서드 불일치.
@@ -26,6 +28,7 @@ impl AckStatus {
     fn parts(self) -> (u16, &'static str) {
         match self {
             AckStatus::Received => (200, "received"),
+            AckStatus::Unauthorized => (401, "unauthorized"),
             AckStatus::NotFound => (404, "not found"),
             AckStatus::MethodNotAllowed => (405, "method not allowed"),
             AckStatus::Gone => (410, "gone"),
@@ -48,6 +51,7 @@ mod tests {
     fn ack_bodies_are_fixed_strings() {
         // 어떤 상태든 바디는 고정 문자열 — 내부 데이터가 섞일 여지 없음.
         assert_eq!(build_ack(AckStatus::Received).status_code().0, 200);
+        assert_eq!(build_ack(AckStatus::Unauthorized).status_code().0, 401);
         assert_eq!(build_ack(AckStatus::NotFound).status_code().0, 404);
         assert_eq!(build_ack(AckStatus::MethodNotAllowed).status_code().0, 405);
         assert_eq!(build_ack(AckStatus::Gone).status_code().0, 410);
