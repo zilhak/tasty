@@ -92,13 +92,17 @@ struct MeshFrame {
 }
 
 /// 직전 set_context 의 재-paint 재현에 필요한 host-side 컨텍스트 스냅샷.
-/// **raw_input 은 담지 않는다** — 재-paint 는 identity 불변식상 빈 입력으로만 한다
-/// (가짜 사용자 입력 무주입). theme 은 plugin 의 draw closure 가 캐시된 값을 다시
-/// 쓸 수 있도록 [`EguiMeshCore::last_theme`]로 노출한다.
+/// **입력 이벤트는 담지 않는다** — 재-paint 는 identity 불변식상 빈 events 로만 한다
+/// (가짜 사용자 입력 무주입). `focused` 는 이벤트가 아니라 지속 상태라 캐시해 재현한다
+/// (identity 불변식 무위반) — 재-paint 프레임이 focused=false 로 떨어지면 포커스 의존
+/// UI(커서·드롭다운·focused 배경)가 재-paint 에서만 퇴행하는 결함이 생긴다. theme 은
+/// plugin 의 draw closure 가 캐시된 값을 다시 쓸 수 있도록 [`EguiMeshCore::last_theme`]
+/// 로 노출한다.
 struct CachedContext {
     width_px: u32,
     height_px: u32,
     ppp: f32,
+    focused: bool,
     theme: Option<ThemeWire>,
 }
 
@@ -137,29 +141,38 @@ impl EguiMeshCore {
         need_full: bool,
         run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
-        // out-of-band 재-paint 가 재현할 수 있도록 이번 컨텍스트를 캐시한다(입력 제외).
+        // out-of-band 재-paint 가 재현할 수 있도록 이번 컨텍스트를 캐시한다
+        // (입력 이벤트 제외 — focused 는 지속 상태라 포함).
         self.last_ctx = Some(CachedContext {
             width_px,
             height_px,
             ppp,
+            focused: raw_input.focused,
             theme: theme.cloned(),
         });
         let raw = build_raw_input(width_px, height_px, ppp, raw_input);
         self.render(raw, need_full, run_ui)
     }
 
-    /// 마지막 캐시된 컨텍스트(geom/ppp)로 **빈 입력** 재-run 한다. plugin 이 out-of-band 로
-    /// 상태를 바꾼 뒤 화면을 갱신할 때 쓴다. 첫 set_context 전(캐시 없음)이면 `None`(no-op).
-    /// 출력이 직전과 동일하면(상태 변경이 화면에 안 걸림) `None`.
+    /// 마지막 캐시된 컨텍스트(geom/ppp/focused)로 **빈 이벤트 + 직전 focused 보존** 재-run
+    /// 한다. plugin 이 out-of-band 로 상태를 바꾼 뒤 화면을 갱신할 때 쓴다. 첫 set_context
+    /// 전(캐시 없음)이면 `None`(no-op). 출력이 직전과 동일하면(상태 변경이 화면에 안 걸림)
+    /// `None`.
     ///
-    /// identity 불변식: 재-run 의 `raw_input` 은 [`RawInputWire::default`](빈 events)로,
-    /// 가짜 사용자 입력을 주입하지 않는다.
+    /// identity 불변식: 재-run 의 `raw_input.events` 는 빈 배열 — 가짜 사용자 입력을
+    /// 주입하지 않는다. `focused` 는 이벤트가 아니라 지속 상태라 직전 set_context 값을
+    /// 그대로 재현한다(false 로 떨어뜨리면 `has_focus()` 게이트가 커서·드롭다운 등
+    /// 포커스 의존 UI 를 재-paint 프레임에서만 퇴행시킨다).
     fn repaint_last(&mut self, run_ui: impl FnMut(&Context)) -> Option<MeshFrame> {
-        let (width_px, height_px, ppp) = {
+        let (width_px, height_px, ppp, focused) = {
             let c = self.last_ctx.as_ref()?;
-            (c.width_px, c.height_px, c.ppp)
+            (c.width_px, c.height_px, c.ppp, c.focused)
         };
-        let raw = build_raw_input(width_px, height_px, ppp, &RawInputWire::default());
+        let wire = RawInputWire {
+            focused,
+            ..Default::default()
+        };
+        let raw = build_raw_input(width_px, height_px, ppp, &wire);
         self.render(raw, false, run_ui)
     }
 
@@ -398,10 +411,10 @@ impl EguiMeshSurface {
         Ok(Some(generation))
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
-    /// 캐시된 geom/ppp 로 재-run → 출력이 바뀌면 [`PluginEvent::PaintFrame`] 송신,
-    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`. host 는 이 PaintFrame 에 깨어나
-    /// 재합성한다(별도 재-forward 왕복 불필요).
+    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
+    /// 재-paint 한다(옵션 A). 캐시된 geom/ppp/focused 로 재-run → 출력이 바뀌면
+    /// [`PluginEvent::PaintFrame`] 송신, 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
+    /// host 는 이 PaintFrame 에 깨어나 재합성한다(별도 재-forward 왕복 불필요).
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -505,9 +518,9 @@ impl EguiMeshPopup {
         Ok(Some(generation))
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
-    /// 출력이 바뀌면 [`PluginEvent::PopupPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
-    /// 전이면 `Ok(None)`.
+    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
+    /// 재-paint 한다(옵션 A). 출력이 바뀌면 [`PluginEvent::PopupPaintFrame`] 송신,
+    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -611,9 +624,9 @@ impl EguiMeshBanner {
         Ok(Some(generation))
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
-    /// 출력이 바뀌면 [`PluginEvent::BannerPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
-    /// 전이면 `Ok(None)`.
+    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
+    /// 재-paint 한다(옵션 A). 출력이 바뀌면 [`PluginEvent::BannerPaintFrame`] 송신,
+    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -915,15 +928,69 @@ mod tests {
         );
     }
 
-    /// identity 불변식: 재-paint 가 재현하는 빈 입력에는 사용자 이벤트가 하나도 없다.
+    /// identity 불변식: 재-paint 가 재현하는 입력에는 사용자 이벤트가 하나도 없다.
+    /// (focused 는 이벤트가 아닌 지속 상태라 캐시 재현 대상 — 아래
+    /// `repaint_last_preserves_last_focused` 가 검증.)
     #[test]
     fn empty_raw_input_carries_no_events() {
         let raw = build_raw_input(320, 200, 1.0, &RawInputWire::default());
         assert!(
             raw.events.is_empty(),
-            "repaint replays with empty input — no fake events injected"
+            "repaint replays with empty events — no fake events injected"
         );
-        assert!(!raw.focused);
+        assert!(!raw.focused, "default wire maps to focused=false");
+    }
+
+    /// 재-paint 는 직전 set_context 의 focused 를 보존해야 한다 — focused=false 로
+    /// 재-run 하면 `has_focus()` 의 viewport 게이트가 꺼져 포커스 의존 UI(커서·드롭다운·
+    /// editing 상태머신)가 재-paint 프레임에서만 퇴행한다(markdown 주소창 진동의 원인).
+    #[test]
+    fn repaint_last_preserves_last_focused() {
+        let mut surface = EguiMeshSurface::new(1);
+        let focused_params = SurfaceSetContextParams {
+            raw_input: RawInputWire {
+                focused: true,
+                ..Default::default()
+            },
+            ..ctx_params(320, 200, 1.0)
+        };
+        surface.run_frame(&focused_params, |ctx| {
+            assert!(ctx.input(|i| i.focused), "set_context frame is focused");
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("a");
+            });
+        });
+        // 재-paint 재-run 프레임에서도 i.focused 가 true 로 유지돼야 한다.
+        let mut checked = false;
+        let _ = surface.core.repaint_last(|ctx| {
+            checked = true;
+            assert!(
+                ctx.input(|i| i.focused),
+                "repaint must replay the last focused state, not default(false)"
+            );
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("b");
+            });
+        });
+        assert!(checked, "repaint ran the ui closure");
+
+        // 직전이 unfocused 였으면 캐시값도 false — banner(항상 focused=false forward)
+        // 등의 기존 동작 불변.
+        surface.run_frame(&ctx_params(320, 200, 1.0), |ctx| {
+            assert!(!ctx.input(|i| i.focused));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("c");
+            });
+        });
+        let _ = surface.core.repaint_last(|ctx| {
+            assert!(
+                !ctx.input(|i| i.focused),
+                "unfocused last context replays unfocused"
+            );
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("d");
+            });
+        });
     }
 
     /// 캐시된 theme 스냅샷이 set_context 뒤 노출되고, theme 미동봉이면 None.
