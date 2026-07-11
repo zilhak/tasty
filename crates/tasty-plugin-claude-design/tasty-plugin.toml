@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.15"
+version = "0.1.16"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
@@ -44,7 +44,7 @@ positional = [
 ]
 flags = [
     { name = "project", type = "string", flag = "--project", required = false, help = "Target project UUID or name (defaults to the attached project)" },
-    { name = "timeout", type = "u32",    flag = "--timeout", required = false, help = "Stream timeout in seconds (omit = wait until the turn ends)" },
+    { name = "timeout", type = "u32",    flag = "--timeout", required = false, help = "Stream timeout in seconds (omit = default 1800 = 30 min; the chat also completes via the design-tasks/.DONE lock file)" },
 ]
 
 [contributes.cli.arg_groups.protocol_args]

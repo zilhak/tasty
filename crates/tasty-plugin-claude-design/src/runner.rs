@@ -12,7 +12,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -148,7 +148,15 @@ impl Runner {
                     Ok(msg)
                 }
             }
-            Err(_) => Err(format!("runner op '{op}' timed out")),
+            // 타임아웃과 채널 disconnect(런너 프로세스 사망)를 구분한다 — 예전엔 둘 다
+            // "timed out" 으로 뭉개 원인 오인을 낳았다(첫 테스트에서 disconnect 를
+            // 타임아웃으로 오진).
+            Err(RecvTimeoutError::Timeout) => {
+                Err(format!("runner op '{op}' timed out after {}s", timeout.as_secs()))
+            }
+            Err(RecvTimeoutError::Disconnected) => Err(format!(
+                "runner op '{op}' failed: runner channel disconnected (node process died?)"
+            )),
         }
     }
 

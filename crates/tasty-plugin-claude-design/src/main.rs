@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.15"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.16"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// `design.protocol` 정본 텍스트 — 바이너리에 임베드. 동시성 lock 규약 전문 + AI 부트스트랩
 /// 절차. 호스트 패키징(manifest+binary+lang 만 복사)에 의존하지 않고 CLI 가 직접 출력한다.
@@ -220,7 +220,11 @@ impl ClaudeDesignPlugin {
             .ok_or_else(|| IpcMethodError::invalid_params("message is required"))?
             .to_string();
         let project = self.resolve_project(params.get("project").and_then(Value::as_str))?;
-        let timeout_s = params.get("timeout").and_then(Value::as_u64).unwrap_or(180);
+        // 디자인 턴(고충실 시안)은 흔히 수 분~십수 분 걸린다. 옛 기본값 180s 는 정상 턴을
+        // 조기 절단해 reply 를 못 받았다(CLI help 의 "omit = 턴 종료까지"와도 어긋남).
+        // 생략 시 넉넉히 30분까지 기다린다. 완료는 lock 프로토콜(design-tasks/.DONE)로도
+        // 추적할 수 있으므로 이 값은 상한일 뿐이다.
+        let timeout_s = params.get("timeout").and_then(Value::as_u64).unwrap_or(1800);
 
         let mut req = json!({ "message": message, "timeout_ms": timeout_s * 1000 });
         if let Some(uuid) = project {
