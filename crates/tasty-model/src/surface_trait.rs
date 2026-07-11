@@ -8,7 +8,11 @@ use super::{PhysicalRect, SurfaceId};
 /// Each surface type (TerminalSurface, EmptySurface, ExplorerPanel,
 /// RemoteSurface, EguiMeshSurface) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
-pub trait Surface: Any {
+///
+/// `Send` supertrait: Surface 트리를 담는 `CoreState` 가 부팅 워커 스레드에서
+/// 생성돼 채널로 메인에 전달되므로 (boot_machine 의 WaitingEngine), 모든 구현체는
+/// 스레드 간 이동 가능해야 한다.
+pub trait Surface: Any + Send {
     /// Stable identifier for this surface kind (lowercase, snake_case).
     /// 예: `"terminal"`, `"markdown"`. IPC/registry/플러그인이
     /// 식별자로 쓰며, 절대 변경되지 않는다.
