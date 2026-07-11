@@ -11,16 +11,18 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-/// T7 시작점 — 첫 부팅 `resumed()` 가 정상 완료된 시각.
+/// T7 시작점 — 부팅 상태 머신이 Ready 에 도달(`finish_boot` = MainView 등록 완료)
+/// 한 시각. 상태 머신 도입 전에는 `resumed()` 정상 완료 시각이었고, 두 시점은
+/// "부팅 작업 완료 → 첫 실 UI paint 대기" 라는 같은 의미다 (이름은 호환 유지).
 ///
-/// shell setup 모드로 빠지는 early-return 경로에서는 set 되지 않는다. 그 경우
-/// T7 은 (무의미한 값을 찍는 대신) 조용히 생략된다 — setup 완료 후의 첫 paint
-/// 는 "부팅 흰 화면" 측정 대상이 아니기 때문.
+/// shell setup 모드로 빠지는 early-return 경로에서는 setup 확정 후의 finish_boot
+/// 가 set 한다 — 그 T7 은 "부팅 흰 화면" 이 아니라 setup 완료 후 첫 paint 지연을
+/// 뜻하므로 비교표에서는 구분해 읽는다.
 static RESUMED_DONE: OnceLock<Instant> = OnceLock::new();
 
 static FIRST_PAINT_LOGGED: AtomicBool = AtomicBool::new(false);
 
-/// `resumed()` 정상 완료 직전에 호출 — T7 의 기준 시각을 기록한다.
+/// 부팅 완료(Ready, `finish_boot` 말미)에 호출 — T7 의 기준 시각을 기록한다.
 pub(crate) fn mark_resumed_done() {
     // 두 번째 이후 호출(이론상 없음)은 no-op — 첫 시각 유지가 의도.
     RESUMED_DONE.set(Instant::now()).ok();

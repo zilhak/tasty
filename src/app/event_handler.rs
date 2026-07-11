@@ -9,6 +9,16 @@ use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        // 부팅 상태 머신 진행 중 — 종료 계열 외 AppEvent 는 부팅 완료 후 재생하도록
+        // 지연한다. 구 코드에서 resumed() 가 블로킹하는 동안 winit 큐에 쌓이던 것과
+        // 등가이며, 특히 TerminalOutput 을 지금 소비하면 대상 engine 이 아직 views
+        // 밖(App.core_state)이라 waker dedup 게이트가 닫힌 채 wake 가 유실된다.
+        if let Some(boot) = self.boot.as_mut()
+            && !matches!(event, AppEvent::Shutdown | AppEvent::QuitRequested)
+        {
+            boot.pending_events.push(event);
+            return;
+        }
         match event {
             AppEvent::CreateWindow => {
                 self.create_new_window(event_loop);
@@ -116,7 +126,10 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if !self.view.views.is_empty() || self.shell_setup_gpu.is_some() {
+        // 재진입 가드 — macOS 등은 resumed() 를 재호출할 수 있다. 부팅 상태 머신
+        // 진행 중(boot Some)에는 views 가 아직 비어 있으므로 boot 조건이 없으면
+        // 창이 중복 생성된다.
+        if !self.view.views.is_empty() || self.shell_setup_gpu.is_some() || self.boot.is_some() {
             return;
         }
 
@@ -192,8 +205,11 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         window.set_ime_allowed(true);
-        self.init_app_state(window, gpu, init_settings);
-        // invalid_theme_name 보고는 init_app_state 가 직접 수행하므로 normalize_report 는 더
+        // 부팅 상태 머신 시작 — theme/db 초기화 + 첫 로딩 프레임 present 후 즉시
+        // 반환한다. 엔진·plugin·layout 복원은 이후 프레임 스텝(drive_boot_frame)이
+        // 진행하고, Ready 도달 시 finish_boot 가 MainView 로 합류한다.
+        self.begin_boot(window, gpu, init_settings, boot_t0, false);
+        // invalid_theme_name 보고는 부팅 상태 머신이 직접 수행하므로 normalize_report 는 더
         // 이상 여기서 소비되지 않는다. 변수 자체는 normalize 호출 결과 보존용으로 둔다.
         drop(normalize_report);
 
@@ -218,17 +234,23 @@ impl ApplicationHandler<AppEvent> for App {
         tracing::info!(
             target: "tasty::boot",
             ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
-            "resumed_total (T1~T6 + 미계측 잔여 합)"
+            "resumed_total (T1~T2 + T2.5 + 첫 로딩 프레임 — 상태 머신 전개로 T2.6~T6 은 boot_total 로 이동)"
         );
-        // T7 기준 시각. shell setup early-return 경로는 여길 안 지나므로 그 경우
-        // T7 은 생략된다 (boot::trace 모듈 주석 참조).
-        crate::boot::trace::mark_resumed_done();
+        // T7 기준 시각(mark_resumed_done)은 부팅 상태 머신의 finish_boot(Ready)가
+        // 기록한다 — 구 코드의 resumed() 말미와 등가 시점 (boot::trace 주석 참조).
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             self.handle_shell_setup_window_event(event_loop, event);
+            return;
+        }
+
+        // 부팅 상태 머신 진행 중 — 부팅 창의 이벤트를 여기서 전부 소비한다
+        // (RedrawRequested = 스텝 구동, 그 외 입력은 core 에 닿지 않게 가드).
+        if self.boot.is_some() {
+            self.handle_boot_window_event(event_loop, event);
             return;
         }
 
@@ -282,6 +304,20 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+        // 부팅 상태 머신 구동 — 미완 동안 steady-state 파이프라인(plugin pump /
+        // intent drain / IPC 등)은 태우지 않는다 (부팅 가드; IPC 서버는 어차피
+        // finish_boot 에서 시작). WaitUntil 재예약은 hidden/표시 직후 창이
+        // RedrawRequested 를 못 받는 플랫폼에서도 스텝 진행을 보장하는 워치독.
+        if self.boot.is_some() {
+            self.drive_boot_frame(event_loop);
+            if self.boot.is_some() {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL,
+                ));
+            }
+            return;
+        }
 
         // Lua 자동실행 재진입 가드 정산 — 프레임당 1회, 모든 fire 경로보다 먼저.
         // (완료는 두 checkpoint 를 지나야 반영 — cascade 이벤트가 완료보다 먼저
@@ -658,13 +694,19 @@ impl App {
                         self.shell_setup_mode = false;
                         let window = self.shell_setup_window.take().unwrap();
                         let gpu = self.shell_setup_gpu.take().unwrap();
-                        self.init_app_state(window, gpu, settings);
-                        // invalid_theme_name 처리는 init_app_state 내부로 이동했으므로
+                        // 진입 경로 ② — 부팅 상태 머신 시작. 창은 이미 setup 화면으로
+                        // 보이는 상태라 축A(set_visible)는 스킵(window_hidden=false),
+                        // phase 구동은 일반 경로와 동일. boot_t0 는 Confirmed 시각.
+                        self.begin_boot(
+                            window,
+                            gpu,
+                            settings,
+                            std::time::Instant::now(),
+                            false,
+                        );
+                        // invalid_theme_name 처리는 부팅 상태 머신 내부로 이동했으므로
                         // normalize_report 는 여기서 별도 소비할 필요 없음.
                         drop(normalize_report);
-                        if let Some(w) = self.focused_window_mut() {
-                            w.mark_dirty();
-                        }
                     }
                     Ok(crate::gpu::ShellSetupAction::Exit) => {
                         event_loop.exit();

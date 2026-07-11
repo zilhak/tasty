@@ -8,6 +8,8 @@ pub(crate) mod attach_poll;
 #[cfg(feature = "gui")]
 pub(crate) mod auto_attach;
 #[cfg(feature = "gui")]
+pub(crate) mod boot_machine;
+#[cfg(feature = "gui")]
 pub(crate) mod busy;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch;
@@ -79,6 +81,11 @@ pub(crate) struct App {
     /// Moved into new windows when created, or used directly for IPC.
     #[cfg(feature = "gui")]
     pub(crate) parked_states: Vec<(state::AppState, crate::core::CoreState)>,
+    /// 부팅 상태 머신 (`BootPhase`) — 첫 윈도우 부팅 미완 동안 `Some`.
+    /// `resumed()` / shell setup 완료가 `begin_boot` 로 시작하고, Ready 도달 시
+    /// `finish_boot` 가 take 해 MainView 로 합류한다 (boot_machine.rs).
+    #[cfg(feature = "gui")]
+    pub(crate) boot: Option<boot_machine::BootState>,
     // Shell setup mode (before terminal is created)
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_mode: bool,
@@ -191,6 +198,7 @@ impl App {
             stream_inbound_rx,
             view: ViewRegistry::new(proxy.clone()),
             parked_states: Vec::new(),
+            boot: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,

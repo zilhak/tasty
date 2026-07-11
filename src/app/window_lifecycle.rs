@@ -5,8 +5,12 @@
 //!   plugin 등록을 짧게 기다린 뒤 layout 을 복원한다.
 //! - `register_window`: 만들어진 `MainView` 를 hash 에 등록 + focused 로 설정 +
 //!   `window.created` host event / lua hook 발화.
-//! - `init_app_state`: shell 확정 후 첫 윈도우의 IPC server 시작 + AppState 부착.
 //! - `create_new_window`: 다중 윈도우용 — 새 winit window + GPU + AppState (parked 우선) + 모달 안내.
+//!
+//! 첫 부팅(첫 윈도우)은 이 모듈의 동기 함수 대신 부팅 상태 머신
+//! (`boot_machine.rs` — `begin_boot` → phase 스텝 → `finish_boot`)이 담당하며,
+//! 여기의 `ensure_engine_and_plugins` / `boot_pump_step_*` /
+//! `boot_apply_pending_layout_restore` / `assemble_app_state` 를 공유한다.
 
 use std::sync::Arc;
 
@@ -20,7 +24,7 @@ use crate::{plugin, window};
 ///
 /// 반환: `settings.appearance.theme` 가 디스크/캐시에 없어 mocha 로 fallback 된 경우 원래 요청 id.
 /// (호출자가 InfoModal 로 사용자에게 알린다.)
-fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Option<String> {
+pub(super) fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Option<String> {
     if let Err(e) = tasty_themes::first_run_init() {
         tracing::warn!("themes first_run_init failed: {e}");
     }
@@ -46,11 +50,45 @@ fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Opti
 
 impl App {
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
+    ///
+    /// 동기 경로 (다중 창 `create_new_window` 등). 첫 부팅은 이 함수 대신 부팅
+    /// 상태 머신(`boot_machine.rs`)이 같은 하위 단계(`ensure_engine_and_plugins` /
+    /// `boot_pump_step_*` / `boot_apply_pending_layout_restore` / `assemble_app_state`)
+    /// 를 프레임 단위로 나눠 태운다 — 의미론은 이 함수와 동일해야 한다.
     pub(crate) fn create_app_state(
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) -> crate::state::AppState {
+        self.ensure_engine_and_plugins(gpu, sidebar_width);
+
+        // pending_layout_restore 가 있으면: wait-for-plugin loop 를 거쳐 등록
+        // 대기 → `DomainIntent::ApplyPendingLayoutRestore` 발화. Intent 본문
+        // (Core::apply) 안에서 take + restore + restored_active_workspace 추출이
+        // 한 번에 일어난다 — caller 는 events 만 검사.
+        //
+        // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
+        // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
+        let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
+            self.boot_wait_for_required_plugin_kinds();
+            let restored = self.boot_apply_pending_layout_restore();
+            self.boot_wait_for_remote_surface_restores();
+            restored
+        } else {
+            None
+        };
+
+        self.assemble_app_state(restored_idx_after_layout)
+    }
+
+    /// 엔진(CoreState)·plugin manager 의 원자 초기화 — `create_app_state` 선두 절반.
+    /// 두 블록 모두 `is_none` 가드라 재호출은 no-op (다중 창 경로 안전).
+    /// 부팅 상태 머신의 GpuInit 스텝과 동기 경로가 공유한다 (T2.6·T3 계측 포함).
+    pub(super) fn ensure_engine_and_plugins(
+        &mut self,
+        gpu: &GpuState,
+        sidebar_width: tasty_type_geometry::length::LogicalPx,
+    ) {
         let sf = gpu.scale_factor();
         let size = gpu.size();
         let sidebar_w = sidebar_width.to_physical(sf);
@@ -187,56 +225,52 @@ impl App {
             );
             self.plugin_manager = Some(mgr);
         }
+    }
 
-        // pending_layout_restore 가 있으면: wait-for-plugin loop 를 거쳐 등록
-        // 대기 → `DomainIntent::ApplyPendingLayoutRestore` 발화. Intent 본문
-        // (Core::apply) 안에서 take + restore + restored_active_workspace 추출이
-        // 한 번에 일어난다 — caller 는 events 만 검사.
-        //
-        // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
-        // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
-        let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
-            self.boot_wait_for_required_plugin_kinds();
-
-            let t5 = std::time::Instant::now();
-            let engine = self
-                .core_state
-                .as_mut()
-                .expect("core_state must be initialized before layout restore");
-            let restored = match self.core.apply(
-                engine,
-                crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
-            ) {
-                Ok(events) => events.into_iter().find_map(|e| {
-                    if let crate::core::intent::CoreEvent::LayoutRestored {
-                        restored: true,
-                        active_workspace,
-                    } = e
-                    {
-                        tracing::info!("Layout restored from layout.json (deferred)");
-                        active_workspace
-                    } else {
-                        None
-                    }
-                }),
-                Err(e) => {
-                    tracing::warn!("ApplyPendingLayoutRestore failed: {e}");
+    /// `DomainIntent::ApplyPendingLayoutRestore` 1회 apply (T5 계측 포함).
+    /// take + restore + restored_active_workspace 추출은 Intent 본문(Core::apply)
+    /// 안에서 한 번에 일어난다 — 단일 take 보장. 반환: 복원된 활성 workspace idx.
+    pub(super) fn boot_apply_pending_layout_restore(&mut self) -> Option<usize> {
+        let t5 = std::time::Instant::now();
+        let engine = self
+            .core_state
+            .as_mut()
+            .expect("core_state must be initialized before layout restore");
+        let restored = match self.core.apply(
+            engine,
+            crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
+        ) {
+            Ok(events) => events.into_iter().find_map(|e| {
+                if let crate::core::intent::CoreEvent::LayoutRestored {
+                    restored: true,
+                    active_workspace,
+                } = e
+                {
+                    tracing::info!("Layout restored from layout.json (deferred)");
+                    active_workspace
+                } else {
                     None
                 }
-            };
-            tracing::info!(
-                target: "tasty::boot",
-                ms = t5.elapsed().as_secs_f64() * 1000.0,
-                "T5 layout_apply (ApplyPendingLayoutRestore)"
-            );
-
-            self.boot_wait_for_remote_surface_restores();
-
-            restored
-        } else {
-            None
+            }),
+            Err(e) => {
+                tracing::warn!("ApplyPendingLayoutRestore failed: {e}");
+                None
+            }
         };
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t5.elapsed().as_secs_f64() * 1000.0,
+            "T5 layout_apply (ApplyPendingLayoutRestore)"
+        );
+        restored
+    }
 
+    /// AppState 조립 — `create_app_state` 의 마지막 절반. 부팅 상태 머신의 Ready
+    /// 합류(finish_boot)와 동기 경로가 공유한다.
+    pub(super) fn assemble_app_state(
+        &mut self,
+        restored_idx_after_layout: Option<usize>,
+    ) -> crate::state::AppState {
         let preset_store = self.core.preset_store.clone();
         let memory = self.core.memory_arc();
         let mut state = crate::state::AppState::new(self.core_state_mut(), preset_store, memory);
@@ -257,29 +291,12 @@ impl App {
     /// 보장. T4 부팅 계측 포함 (탈출 사유: satisfied / deadline).
     fn boot_wait_for_required_plugin_kinds(&mut self) {
         use std::time::{Duration, Instant};
-        let needed: Vec<String> = self
-            .core_state()
-            .pending_layout_restore
-            .as_ref()
-            .map(|s| s.required_plugin_kinds())
-            .unwrap_or_default();
+        let needed = self.boot_required_plugin_kinds();
         let t4 = Instant::now();
         let deadline = t4 + Duration::from_millis(300);
         let mut t4_reason = "deadline";
         while Instant::now() < deadline {
-            let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
-                mgr.pump()
-            } else {
-                Vec::new()
-            };
-            self.finalize_plugin_hello(hello_pairs);
-            let registered_all = {
-                let engine = self.core_state();
-                needed
-                    .iter()
-                    .all(|k| engine.surface_registry.get(k).is_some())
-            };
-            if registered_all {
+            if self.boot_pump_step_plugins_registered(&needed) {
                 t4_reason = "satisfied";
                 break;
             }
@@ -291,6 +308,31 @@ impl App {
             reason = t4_reason,
             "T4 layout_wait_plugins (deadline 300ms)"
         );
+    }
+
+    /// pending layout restore 가 요구하는 plugin surface kind 목록 peek (take 안 함).
+    pub(super) fn boot_required_plugin_kinds(&self) -> Vec<String> {
+        self.core_state()
+            .pending_layout_restore
+            .as_ref()
+            .map(|s| s.required_plugin_kinds())
+            .unwrap_or_default()
+    }
+
+    /// wait-for-plugin 1스텝: pump → `finalize_plugin_hello` → 필요 kind 전수 등록
+    /// 확인. 동기 루프(위)와 부팅 상태 머신의 WaitingPlugins 스텝이 공유한다.
+    /// 반환: 필요 kind 가 전부 등록됐는가 (satisfied).
+    pub(super) fn boot_pump_step_plugins_registered(&mut self, needed: &[String]) -> bool {
+        let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
+            mgr.pump()
+        } else {
+            Vec::new()
+        };
+        self.finalize_plugin_hello(hello_pairs);
+        let engine = self.core_state();
+        needed
+            .iter()
+            .all(|k| engine.surface_registry.get(k).is_some())
     }
 
     /// ApplyPendingLayoutRestore 가 RemoteSurface 들을 생성하고
@@ -311,18 +353,7 @@ impl App {
         let deadline = t6 + Duration::from_millis(500);
         let mut t6_reason = "deadline";
         while Instant::now() < deadline {
-            let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
-                let hello_pairs = mgr.pump();
-                if !hello_pairs.is_empty() {
-                    self.finalize_plugin_hello(hello_pairs);
-                }
-                self.plugin_manager
-                    .as_ref()
-                    .is_some_and(|m| m.has_pending_surface_restores())
-            } else {
-                false
-            };
-            if !still_pending {
+            if self.boot_pump_step_remote_restores_done() {
                 t6_reason = "satisfied";
                 break;
             }
@@ -334,6 +365,25 @@ impl App {
             reason = t6_reason,
             "T6 remote_surface_wait (deadline 500ms)"
         );
+    }
+
+    /// RemoteSurface 복원 round-trip 대기 1스텝. **pump 는 조건 확인 전 무조건
+    /// 1회** (1차 스텝과 미묘하게 다름 — hello 가 비어도 pump 가 send/recv 를
+    /// 진행시켜야 round-trip 이 끝난다). 동기 루프(위)와 부팅 상태 머신의
+    /// RestoringLayout 스텝이 공유한다. 반환: 더 이상 pending 이 없는가.
+    pub(super) fn boot_pump_step_remote_restores_done(&mut self) -> bool {
+        let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
+            let hello_pairs = mgr.pump();
+            if !hello_pairs.is_empty() {
+                self.finalize_plugin_hello(hello_pairs);
+            }
+            self.plugin_manager
+                .as_ref()
+                .is_some_and(|m| m.has_pending_surface_restores())
+        } else {
+            false
+        };
+        !still_pending
     }
 
     /// Register a MainView and set it as focused.
@@ -367,124 +417,6 @@ impl App {
                 },
                 "window.create.post",
                 &payload,
-            );
-        }
-    }
-
-    /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
-    ///
-    /// 테마 디스크 초기화·적용은 이 함수 내부에서 수행되며, 요청된 theme id 가
-    /// fallback 되었으면 InfoModal 로 사용자에게 알린다.
-    pub(crate) fn init_app_state(
-        &mut self,
-        window: Arc<Window>,
-        gpu: GpuState,
-        mut settings: crate::settings::Settings,
-    ) {
-        // state.db 초기화는 create_app_state 이전에 반드시 호출. memory.db 는
-        // boot 가 App::new 이전에 이미 초기화함 (D.3.C.M.1) — 여기서 별도 호출하지 않는다.
-        let t_db_theme = std::time::Instant::now();
-        let db_init_error = crate::db::init().err();
-
-        // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
-        let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
-        if let Err(e) = settings.save() {
-            tracing::warn!("failed to persist settings after theme apply: {e}");
-        }
-        // T2↔T3 갭 분해 마커 — shell setup 완료 경로에서도 이 함수가 호출되지만,
-        // 그때도 db+theme 소요라는 의미는 동일하므로 그대로 찍는다.
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t_db_theme.elapsed().as_secs_f64() * 1000.0,
-            "T2.5 db_theme (init_app_state enter -> create_app_state)"
-        );
-
-        let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
-
-        // DB 초기화 실패 알림 — create_new_window 와 동일하게 InfoModal 로 안내 후 Exit(1).
-        if let Some(err) = db_init_error {
-            tracing::error!("state.db init failed: {err}");
-            let (key, args) = err.user_message_i18n();
-            let body = match args.len() {
-                0 => crate::i18n::t(key).to_string(),
-                1 => crate::i18n::t_fmt(key, &args[0]),
-                _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
-            };
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t("db_error.title").to_string(),
-                    body,
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
-                },
-            );
-        }
-
-        // Theme fallback 알림 — normalize 가 잘못된 theme 이름을 정정한 경우.
-        if let Some(invalid) = invalid_theme_name {
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t("theme_error.title").to_string(),
-                    body: crate::i18n::t_fmt("theme_error.body", &invalid),
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
-                },
-            );
-        }
-
-        let ipc_proxy = self.view.proxy.clone();
-        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);
-        });
-        let stream_proxy = self.view.proxy.clone();
-        let stream_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            crate::shortcuts::send_app_event(&stream_proxy, crate::AppEvent::StreamReady);
-        });
-        let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
-            hub: self.stream_hub.clone(),
-            inbound_tx: self.stream_inbound_tx.clone(),
-            waker: stream_waker,
-        };
-        if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx) {
-            // 웹훅 리스너 init — (A)config 로드 + (B)IPC 처리 가능 동시 만족 최초
-            // 지점. init_app_state 는 첫 윈도우 1회만 호출되므로 중복 bind 가드
-            // 불필요(리스너 내부 가드도 있음). injector 는 Clone(Arc).
-            //
-            // 포트 미설정/ bind 실패는 기존 toast 인프라로 사용자에게 알린다(신규
-            // 디자인 컴포넌트 없이 재사용, S8). db/theme 부팅 경고가 InfoModal 을
-            // 쓰는 것과 달리 웹훅 미기동은 치명적이지 않아 Warning 토스트로 족하다.
-            //
-            // 공유 훅 핸들러 레지스트리 시드(host embedded 기본값 + user config). 웹훅
-            // 바인딩·`hook_handler.*` 조회가 이 전역 레지스트리를 보므로 리스너 init
-            // 전에 채운다(plugin contribution 은 discover_and_start 에서 병합).
-            crate::hook_handler::install_default_sources();
-            let report = crate::webhook::init_from_config(injector.clone());
-            if let Some(msg) = report.user_warning() {
-                state.toasts.push(
-                    msg,
-                    crate::adapters::ui::ToastKind::Warning,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-            }
-            self.core.set_host_ipc_injector(injector);
-        }
-        let mut core_state = self
-            .core_state
-            .take()
-            .expect("App.core_state must be present to register a main window");
-        // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록
-        // IPC 서버와 동일한 StreamHub 를 attach registry 에 주입.
-        core_state.attach.set_notifier(self.stream_hub.clone());
-        self.register_window(gpu, state, core_state, window);
-        // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
-        // init_app_state는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
-        if let Some(mgr) = self.plugin_manager.as_mut() {
-            use tasty_plugin_protocol::EventScope;
-            use tasty_plugin_protocol::events::payloads::SystemStartupComplete;
-            mgr.emit_host_event(
-                "system.startup_complete",
-                &SystemStartupComplete::default(),
-                EventScope::System,
             );
         }
     }
