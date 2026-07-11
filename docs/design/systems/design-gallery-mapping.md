@@ -452,3 +452,27 @@ module const(token-policy §c).
 **신규 토큰 없음** (위젯 토큰은 [design-token-mapping §drilldown/listctrl](design-token-mapping.md) 참조).
 i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`preset_col_before` 문구 갱신,
 `preset_col_after` 제거 (3열 헤더 = 프리셋 이름).
+
+## Settings › Handler 탭 서브탭 콘텐츠 (S13)
+
+L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)하고 Hook Handlers
+서브탭을 추가한 개편. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
+(`L1_LABEL`·`L2.FileHandler`·`HookHandlers`/`HookRow`/`SEED_HOOKS`/`HOOK_ORIGIN`).
+changelog: `changelog/2026-07-11-settings-handler-tab.md`.
+
+| 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
+|---|---|---|---|
+| `body()` File Extension Mapping 분기 | `view/settings/ui/file_handler_tab/extension_mapping.rs` | `catalog/components/settings_handler.rs::draw_extension_mapping` | ext mono 12 `text-secondary` · row `settings-row-min-height` · `separator`(마지막 행 없음) |
+| `body()` File Detectors 분기 | `view/settings/ui/file_handler_tab/detectors.rs` | `::draw_detectors` | name 13 `text-secondary` + desc 12 `text-muted` · Switch 우측 |
+| `body()` File Handlers 분기 | `view/settings/ui/file_handler_tab/handlers.rs` | `::draw_file_handlers` | name 13 + `Tag`(kind) + Switch(marginLeft auto) |
+| `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro 12 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
+| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(plugin=`agent` variant) · `prio N` mono `font-size-micro` · disabled 시 row `opacity-disabled` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input` |
+
+**전사 노트**:
+- jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 egui letter-spacing 미지원 —
+  기존 관례(mono `font-size-micro` uppercase `text-muted`)로 전사.
+- **신규 토큰 0** (changelog 확인). 화면 전용 고정값(라벨폭 74/100, priority step 10)은
+  module const(token-policy §c).
+- 본체 Hook Handlers 는 레지스트리 정책 적용으로 jsx 와 두 곳이 다르다: 제거 버튼은
+  user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
+  편집 대신 mono 요약. intro copy 의 priority 방향은 엔진 규약(낮을수록 먼저)으로 기술.

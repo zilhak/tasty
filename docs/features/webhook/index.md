@@ -100,7 +100,8 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 - **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0047](../../adr/0047-shared-hook-handler-registry-source-gate.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).
 - **auth 파라미터**: `--auth-location <query|bearer|body|header>` + `--auth-token`(상호 requires), bearer 외에는 `--auth-key`.
-- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0047)](../../adr/0047-shared-hook-handler-registry-source-gate.md) 참조. 현재 런타임 레지스트리는 이 인라인 `sequence` 등록(익명 핸들러)이 유일한 소비처다.
+- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0047)](../../adr/0047-shared-hook-handler-registry-source-gate.md) 참조.
+- **핸들러 레지스트리 GUI**: [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서 레지스트리(host 기본 + plugin 기여 + user 매핑)를 조회·편집한다(토글/셸 명령 인라인 편집/user 행 추가·제거, `~/.tasty/hook-handlers.toml` 영속). **리스너(bind/port/secret) 설정은 이 서브탭에 없다** — 위 CLI(`webhook.config`) 전용.
 
 ## 비-목표 (Out of scope)
 

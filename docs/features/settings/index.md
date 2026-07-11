@@ -20,7 +20,7 @@
 - **Terminal** — L2: General(터미널 동작 설정 — 셸/스타트업/스크롤백/링크 수식키, macOS 빌드는 "Use Option as Meta" 토글 추가 → [terminal](../terminal/index.md) 키보드 입력) / Mouse Capture(마우스 캡처 안내 배너 토글 + Shift 우회 Note + 캡처 비활성화 블랙리스트 에디터) / TUI(OSC 52 클립보드 읽기 허용 토글 + 바로 아래 bordered warning callout → [clipboard](../clipboard/index.md)) / Performance.
 - **Appearance** — L2: Theme / Colors / General / Display / Tasty / Terminal + 플러그인 기여 페이지(동적). Display = UI 스케일(sm/md/lg) 전용. Tasty = 앱 크롬 색상(accent / sidebar bg / active tab indicator). HTML viewer 설정은 호스트 고정 탭이 아니라 `com.tasty.html` 플러그인이 기여하는 동적 페이지다.
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
-- **FileHandler** — L2: Extension Mapping / Detectors / Handlers.
+- **FileHandler**(표시 라벨 **Handler** — 내부 enum 키는 `FileHandler` 유지) — L2: File Extension Mapping / File Detectors / File Handlers / Hook Handlers. Hook Handlers 는 공유 훅 핸들러 레지스트리(host 기본 + plugin 기여 + user 매핑) 편집 — 행별 enabled 토글(전 출처), ShellCommand 행 인라인 명령 편집, user 행 제거, 인라인 추가 폼(신규 행 origin=user·max+10 priority·enabled). 웹훅 리스너(bind/port/secret) 설정은 여기 노출하지 않는다(CLI 전용).
 - **Misc** — L2: Scripts (전 플랫폼·최상단 — Lua 스크립트 관리, [lua-hooks](../lua-hooks/index.md)) + Tastyrc (Windows 전용).
 - **Plugins** — 플러그인 기여 설정 페이지 (동적).
 
@@ -39,7 +39,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 ### draft / save 모델
 
-편집은 **작업 사본(`draft`)** 에 쌓이고, Save 시 영속 `Settings` 로 커밋, Cancel 시 폐기. 일부 항목(FileHandler 의 Extension Mapping 등)은 Save 시 user TOML 에 직접 atomic write.
+편집은 **작업 사본(`draft`)** 에 쌓이고, Save 시 영속 `Settings` 로 커밋, Cancel 시 폐기. 일부 항목(FileHandler 의 파일 서브탭 → `~/.tasty/file-handlers.toml`, Hook Handlers → `~/.tasty/hook-handlers.toml`)은 Save 시 각 registry commit 후 user TOML 에 직접 atomic write.
 
 ### 단축키 탭 (Keybindings)
 
@@ -55,7 +55,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 - **각 설정 도메인은 해당 기능으로 연결** (연결 개념 — 설정 창은 편집 UI, 도메인 규칙은 각 문서):
   - Keybindings → [`features/keybindings/`](../keybindings/index.md) / 키 매핑 정책 [`design/policies/key-mapping`](../../design/policies/key-mapping.md)
   - Appearance/Theme → [`design/systems/theme`](../../design/systems/theme.md)
-  - Clipboard → [`features/clipboard/`](../clipboard/index.md) · Notifications → [`features/notifications/`](../notifications/index.md) · FileHandler → [`features/file-handler/`](../file-handler/index.md)
+  - Clipboard → [`features/clipboard/`](../clipboard/index.md) · Notifications → [`features/notifications/`](../notifications/index.md) · FileHandler(파일 서브탭) → [`features/file-handler/`](../file-handler/index.md) · Hook Handlers → [`features/webhook/`](../webhook/index.md)·[`features/hooks/`](../hooks/index.md)
   - Plugins → [`features/plugin-system/`](../plugin-system/index.md)
 
 ## 비-목표
@@ -75,8 +75,8 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 ## 구현
 
 - `src/view/settings.rs` — `SettingsView`, `SettingsUiState`(draft/active_tab/sub-tab 상태).
-- `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / Colors / General / Display / Tasty / Terminal / Plugin) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 는 L1 으로 승격되어 기존 내부 3depth(Extension Mapping / Detectors / Handlers)가 그 L2 가 된다.
-- 탭별: `src/view/settings/ui/tabs/*` + `keybindings_tab.rs` + `file_handler_tab.rs`.
+- `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / Colors / General / Display / Tasty / Terminal / Plugin) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 의 L2 는 `FileHandlerSubTab`(ExtensionMapping / Detectors / Handlers / HookHandlers).
+- 탭별: `src/view/settings/ui/tabs/*` + `keybindings_tab.rs` + `file_handler_tab.rs`(+ `file_handler_tab/hook_handlers.rs` — 훅 핸들러 레지스트리 편집).
 
 ## 화면
 

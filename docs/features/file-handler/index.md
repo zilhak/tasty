@@ -4,7 +4,7 @@
 - **주체**: 로컬 사용자 · AI Agent (`file_handler.dispatch`) · plugin (contribute)
 - **ADR**: 없음
 - **코드**: `src/file/format/`(식별) + `src/file_handler/`(디스패치); IPC `file_handler.{reload,dispatch}`
-- **화면**: [설정 창](../settings/screens/settings.md) File Handler 탭 · file_handler_picker popup
+- **화면**: [설정 창](../settings/screens/settings.md) Handler 탭의 파일 서브탭 3종 · file_handler_picker popup
 
 ## 목적
 
@@ -36,7 +36,7 @@ HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction
 
 ## 인터페이스
 
-- **사용자**: Settings File Handler 탭(Detectors/Handlers/Extension Mapping sub-tab — 토글·user 항목 추가/삭제, 확장자 우선순위). user 설정은 `~/.tasty/file-handlers.toml`(부팅 1회 로드, atomic write).
+- **사용자**: Settings **Handler** 탭의 파일 서브탭(File Detectors / File Handlers / File Extension Mapping — 토글·user 항목 추가/삭제, 확장자 우선순위). user 설정은 `~/.tasty/file-handlers.toml`(부팅 1회 로드, atomic write). 같은 탭의 Hook Handlers 서브탭은 파일 핸들러가 아니라 [공유 훅 핸들러 레지스트리](../webhook/index.md) 편집이다.
 - **AI Agent / CLI**: `file_handler.dispatch`(임의 경로를 흐름에 진입, plugin 호출은 FsRead 권한) · `file_handler.reload`(user 설정 reload) · `tasty file-handler` CLI.
 
 ## 비-목표
