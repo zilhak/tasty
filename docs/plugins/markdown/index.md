@@ -16,6 +16,7 @@
 ## 내부 동작
 
 - **surface_kind `markdown` (egui-mesh)** — plugin 이 `MdDoc`(파일 경로·내용·base_dir·mtime)를 소유하고, `egui_commonmark` 로 헤딩/인라인 서식/리스트/테이블/blockquote/코드/rule 을 그린다. 헤딩 사다리는 라이브러리가 `Heading`(prose-h1 앵커)↔`Body` 사이를 보간하고(per-H2 픽셀 지정 불가·본문 leading override 불가 — 정본 확정 예외, `tokens/semantic.css:137-138,152`), 표는 `Frame::group`+`Grid::striped` 로 grid border(md-table-border, 불투명)·zebra·cell fg 를 노출한다(header 밴드/불투명 base fill 은 라이브러리 Grid 제약). 코드블록은 `egui_extras` 내장 하이라이트(syntect 미도입). display_name 은 파일명.
+- **리로드·삭제 처리** — 모든 리로드 경로(자동 mtime 폴링·수동 `markdown.reload`·초기/재개 로드)는 동일한 규약(`last_mtime = metadata().ok()` → 재읽기)을 쓴다. 파일이 외부 삭제로 사라지면 어느 경로든 동일하게 error 상태(`markdown.state.failed`)로 표시하고, 파일이 다시 생기면 자동으로 복구한다. 자동 폴링은 `Option<SystemTime>` 비교라 삭제(=`None`)를 "변경 없음"과 구별한다(삭제 지속 시 반복 read 없음).
 - **콘텐츠 전달** — surface 생성 시 host 가 `surface.create{file}` 를 plugin 에 보낸다(첫 set_context bootstrap 직전, 같은 채널 FIFO 로 순서 보장). plugin 이 파일을 직접 읽는다(`fs.read`).
 - **Theme parity** — host 가 resolved Theme 스냅샷(색 집합+is_light+UI zoom)을 `set_context.theme` 로 전달 → plugin 이 `Theme::with_colors_and_zoom` 으로 동일 Theme 재구성. 테마 변경 시 host 가 재forward 한다.
 - **폰트** — B1 은 본문 폰트-패밀리를 egui 기본(Proportional)으로 두고 **CJK fallback 만 plugin 이 설치**(한글/일문 tofu 방지). 사용자 커스텀 markdown 폰트-패밀리 정합은 후속.

@@ -144,13 +144,15 @@ impl MdDoc {
             return;
         }
         self.last_check = Instant::now();
-        let Some(current) = std::fs::metadata(&f).and_then(|m| m.modified()).ok() else {
-            return;
-        };
-        if self.last_mtime == Some(current) {
+        // 삭제(metadata 실패=None)를 "변경 없음"과 구별하려면 Option 채로 비교한다.
+        // 다른 리로드 경로(force_reload/resume_load)와 동일하게 last_mtime=metadata().ok()
+        // → read_now 규약으로 수렴 → 삭제 시 read_now 가 load_error 를 세팅해 error 상태로
+        // 통일된다. 삭제 지속(None==None)은 무동작이라 반복 read 가 없다.
+        let current = std::fs::metadata(&f).and_then(|m| m.modified()).ok();
+        if self.last_mtime == current {
             return;
         }
-        self.last_mtime = Some(current);
+        self.last_mtime = current;
         self.read_now(&f);
     }
 
@@ -1423,6 +1425,45 @@ mod tests {
         assert!(!doc.pending_large);
         assert!(doc.content.contains("hello deferred"));
         // best-effort 정리 — 실패해도 테스트 결과에 영향 없음.
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 자동 mtime 폴링 경로가 외부 삭제를 error 상태로 감지한다 — 다른 리로드 경로
+    /// (force_reload/resume_load/초기 로드)와 동일한 삭제 처리 규약으로 통일됨을 확인한다.
+    #[test]
+    fn poll_reload_detects_external_deletion_as_error() {
+        use std::time::Duration;
+
+        let path =
+            std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));
+        std::fs::write(&path, b"# hello poll").unwrap();
+        let mut doc = MdDoc::new(Some(path.to_string_lossy().into_owned()));
+        // 정상 로드 baseline.
+        assert!(!doc.content.is_empty());
+        assert!(doc.load_error.is_none());
+        assert!(doc.last_mtime.is_some());
+
+        // throttle 우회 — last_check 를 충분히 과거로.
+        doc.last_check = Instant::now()
+            .checked_sub(Duration::from_secs(RELOAD_CHECK_INTERVAL_SECS as u64 + 5))
+            .expect("instant underflow");
+        // 외부 삭제 → poll 이 metadata 실패(None)를 변경으로 감지해 read_now → load_error.
+        std::fs::remove_file(&path).unwrap();
+        doc.poll_reload();
+        assert!(
+            doc.load_error.is_some(),
+            "삭제가 error 상태로 감지되어야 한다"
+        );
+        assert!(doc.last_mtime.is_none(), "삭제 후 last_mtime 은 None");
+
+        // 삭제 지속(None==None) — 반복 read 없이 무동작, error 유지.
+        doc.last_check = Instant::now()
+            .checked_sub(Duration::from_secs(RELOAD_CHECK_INTERVAL_SECS as u64 + 5))
+            .expect("instant underflow");
+        doc.poll_reload();
+        assert!(doc.load_error.is_some(), "삭제 지속 시 error 유지");
+
+        // best-effort 정리 — 이미 삭제되었을 수 있음.
         let _ = std::fs::remove_file(&path);
     }
 
