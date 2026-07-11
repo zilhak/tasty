@@ -28,7 +28,12 @@ use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.11"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.15"; // tasty-plugin.toml / Cargo.toml 과 일치
+
+/// `design.protocol` 정본 텍스트 — 바이너리에 임베드. 동시성 lock 규약 전문 + AI 부트스트랩
+/// 절차. 호스트 패키징(manifest+binary+lang 만 복사)에 의존하지 않고 CLI 가 직접 출력한다.
+const PROTOCOL_MD: &str = include_str!("../protocol/protocol.md");
+const BOOTSTRAP_MD: &str = include_str!("../protocol/bootstrap.md");
 
 /// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
 /// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
@@ -119,6 +124,9 @@ impl Plugin for ClaudeDesignPlugin {
             "design.chat" => self.handle_chat(&ctx.params),
             // M5: 최근 chat 상태/응답 (auto_wait 폴링 대상).
             "design.chat_status" => Ok(self.handle_chat_status()),
+            // 동시성 lock 프로토콜 정본 출력(+부트스트랩 절차). 브라우저/로그인 불필요 —
+            // 순수 텍스트. AI 가 이 규약을 발견·설치하는 경로.
+            "design.protocol" => Ok(handle_protocol(&ctx.params)),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -366,6 +374,25 @@ fn run_login(runner: Arc<Runner>, data_dir: PathBuf) {
         },
         Err(e) => tracing::error!(error = %e, "design login op failed"),
     }
+}
+
+/// `design.protocol` — 동시성 lock 프로토콜 정본 텍스트를 반환한다. `--bootstrap` 이면
+/// 대상 프로젝트에 규약을 심는 AI 절차를, 아니면 규약 전문을 낸다. 부작용 없음(브라우저·
+/// 로그인 불필요) — AI 가 "충돌은 이렇게 규칙 세워 회피한다"를 발견하는 값싼 경로.
+fn handle_protocol(params: &Value) -> Value {
+    let bootstrap = params
+        .get("bootstrap")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    json!({
+        "mode": if bootstrap { "bootstrap" } else { "print" },
+        "folder": "design-tasks/",
+        "filename_pattern": "<YYYYMMDD-hhmm>-<slug>.<STATE>.md",
+        "states": ["WORKING", "DONE", "FAILED", "NEEDS-INPUT"],
+        "ttl_minutes": 10,
+        "grace_minutes": 5,
+        "text": if bootstrap { BOOTSTRAP_MD } else { PROTOCOL_MD },
+    })
 }
 
 /// `design.detect` — 시스템 Playwright/node/chromium 탐지. 설정 UI "자동 감지" 백엔드(§12).
