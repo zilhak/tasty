@@ -41,6 +41,7 @@
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
 | [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
 | [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행) | 로컬 사용자 · AI Agent | 없음 |
+| [webhook](webhook/index.md) — 인바운드 웹훅 리스너 (외부 HTTP 트리거) | 로컬 사용자 · AI Agent | 없음 (headless) |
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
 | [surface-move](surface-move/index.md) — Surface 위치 이동 (잘라내기/여기로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |

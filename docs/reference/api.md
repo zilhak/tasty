@@ -52,6 +52,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 ### 기타 호스트
 - 알림: `notification.{list,create}` — [notifications](../features/notifications/index.md)
 - 훅: `hook.{set,list,unset}` · `global_hook.{set,list,unset}` · `surface.fire_hook`
+- 웹훅(인바운드 HTTP): `webhook.{register,list,info,unregister,sweep,config}` (local-only) — [webhook](../features/webhook/index.md)
 - 메시지 패싱: `message.{send,read,count,clear}`
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
