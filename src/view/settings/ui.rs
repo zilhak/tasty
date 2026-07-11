@@ -461,13 +461,6 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 .show_inside(ui, |ui| draw_l1_tab_band(ui, &th, ui_state));
             let hr = header.response.rect;
             ui.painter().hline(hr.x_range(), hr.bottom() - 0.5, sep);
-            // 밴드 우측 close ✕ → 취소와 동일 경로(draft 폐기 + 모달 닫기).
-            if header.inner {
-                ui_state.bashrc_user_draft = None;
-                ui_state.extension_priority_draft = None;
-                ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
-                result = Some(false);
-            }
 
             // ── L2 영속 사이드바 (디자인 width200 / bg-sidebar / border-right) ──
             let sections = build_l2_sections(ui_state);
@@ -1015,12 +1008,12 @@ fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
 
 // ── L1 헤더 밴드 ──────────────────────────────────────────────────────────
 
-/// 디자인 header band 전사 (settings_window.jsx:465-477): bg-sidebar 위 좌측
-/// bold "Settings" 타이틀 + 세로 구분선 → 7 개 L1 탭(active 는 text-primary +
-/// 2px accent underline, inactive 는 text-muted) → 우측 `marginLeft:auto` close ✕.
-/// close ✕ 클릭 시 `true` 반환(취소와 동일 경로로 모달 닫기 — 사용자 결정: OS
-/// 타이틀바와 중복되더라도 디자인대로 카드 내부에 둔다).
-fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) -> bool {
+/// 디자인 header band 전사 (settings_window.jsx): bg-sidebar 위 좌측 bold
+/// "Settings" 타이틀 + 세로 구분선 → 7 개 L1 탭(active 는 text-primary +
+/// 2px accent underline, inactive 는 text-muted). 우측 close ✕ 는 없다 —
+/// 닫기/취소는 footer Cancel + OS 타이틀바 close 로 일원화
+/// (design changelog 2026-07-09-settings-preset-drilldown).
+fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) {
     let tabs = [
         (SettingsTab::General, t("settings.tab.general")),
         (SettingsTab::Terminal, t("settings.tab.terminal")),
@@ -1031,7 +1024,6 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
         (SettingsTab::Plugins, t("settings.tab.plugin")),
     ];
     let prev = ui_state.active_tab;
-    let mut close_clicked = false;
     egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: th.spacing_md.value() as i8,
@@ -1086,20 +1078,6 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
                         }
                     }
 
-                    // 우측 marginLeft:auto close ✕ (jsx:475, ghost IconButton).
-                    let close_side = tasty_ui_widgets::ControlSize::Md.height(th);
-                    let pad = (ui.available_width() - close_side).max(0.0);
-                    ui.add_space(pad);
-                    let resp = tasty_ui_widgets::IconButton::new()
-                        .variant(tasty_ui_widgets::IconButtonVariant::Ghost)
-                        .show(ui, th, &|ui, rect, c| {
-                            crate::adapters::ui::icons::CLOSE
-                                .image(rect.width(), c)
-                                .paint_at(ui, rect)
-                        });
-                    if resp.clicked() {
-                        close_clicked = true;
-                    }
                 },
             );
         });
@@ -1107,7 +1085,6 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
     if ui_state.active_tab != prev {
         ui_state.l2_filter.clear();
     }
-    close_clicked
 }
 
 /// 헤더 밴드의 한 L1 탭 버튼. 밴드 높이를 가득 채워 active underline 이

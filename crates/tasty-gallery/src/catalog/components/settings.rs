@@ -3,7 +3,8 @@
 //! 권위 원본: `ui_kits/terminal/overlays/settings_window.jsx` (settings-ia-restructure,
 //! 2026-06-17 · 크기확대 2026-06-26). 1100×700 카드, **7탭 L1 IA**
 //! (General / Terminal / Appearance / Keybindings / File Handler / Misc / Plugins),
-//! 좌측 "Settings" 타이틀 + 세로 구분선 + 우측 close ✕ 를 가진 상단 밴드(높이 44),
+//! 좌측 "Settings" 타이틀 + 세로 구분선을 가진 상단 밴드(높이 44 — close ✕ 없음,
+//! 닫기는 footer Cancel + OS 타이틀바),
 //! **L2 200px** 섹션 사이드바(검색 아이콘 필터 + 섹션 리스트, plugin 섹션은
 //! accent-agent dot), content, footer(Cancel/Save).
 //!
@@ -24,7 +25,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Input, checkbox, select, switch,
+    Button, ButtonVariant, Input, checkbox, select, switch,
 };
 
 use crate::catalog::icons;
@@ -115,7 +116,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("frame", "1100×700 · bg-panel · border-strong"),
-            ("L1 band", "h44 · Settings title · 7 tabs · close ✕"),
+            ("L1 band", "h44 · Settings title · 7 tabs"),
             ("active tab", "2px accent underline"),
             ("L2", "sidebar 200 · search filter · plugin dot"),
             ("content", "padding 16 · row label 150 · gap 16"),
@@ -181,18 +182,11 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: f32) {
                     egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
                 );
                 ui.add_space(theme.spacing_sm.value());
-                // 탭들.
+                // 탭들. 우측 close ✕ 는 없다 — 닫기는 footer Cancel + OS 타이틀바
+                // (design changelog 2026-07-09-settings-preset-drilldown).
                 for (i, t) in L1_TABS.iter().enumerate() {
                     l1_tab(ui, theme, t, band_h, i == L1_ACTIVE);
                 }
-                // 우측 close ✕.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    IconButton::new().variant(IconButtonVariant::Ghost).show(
-                        ui,
-                        theme,
-                        &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
-                    );
-                });
             });
         });
 }
