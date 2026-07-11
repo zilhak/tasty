@@ -257,7 +257,11 @@ impl SettingsUiState {
             "terminal" => SettingsTab::Terminal,
             "appearance" => SettingsTab::Appearance,
             "keybindings" => SettingsTab::Keybindings,
-            "file_handler" | "file-handler" | "filehandler" => SettingsTab::FileHandler,
+            // 표시 라벨은 "Handler" 로 일반화됐지만 내부 key 는 FileHandler 유지 —
+            // 기존 file_handler 계열 키도 하위호환으로 계속 받는다.
+            "handler" | "file_handler" | "file-handler" | "filehandler" => {
+                SettingsTab::FileHandler
+            }
             "misc" => SettingsTab::Misc,
             "plugins" => SettingsTab::Plugins,
             _ => return false,

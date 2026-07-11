@@ -100,7 +100,7 @@ terminal = "Terminal"
 appearance = "Appearance"
 notifications = "Notifications"
 keybindings = "Keybindings"
-file_handler = "File Handler"
+file_handler = "Handler"
 misc = "Misc"
 plugin = "Plugins"
 
@@ -123,9 +123,9 @@ modifier_hint_desc = "Show a floating panel of the available shortcuts while you
 coming_soon = "This sub-tab will be available in a future update."
 
 [settings.file_handler.sub]
-detectors = "Detectors"
-handlers = "Handlers"
-extension_mapping = "Extension Mapping"
+detectors = "File Detectors"
+handlers = "File Handlers"
+extension_mapping = "File Extension Mapping"
 
 [settings.file_handler.common]
 enabled = "enabled"

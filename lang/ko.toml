@@ -100,7 +100,7 @@ terminal = "터미널"
 appearance = "외관"
 notifications = "알림"
 keybindings = "단축키"
-file_handler = "파일 핸들러"
+file_handler = "핸들러"
 misc = "기타"
 plugin = "플러그인"
 
@@ -123,9 +123,9 @@ modifier_hint_desc = "수정자 키(Ctrl / Alt / Shift — macOS 는 Cmd / Optio
 coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."
 
 [settings.file_handler.sub]
-detectors = "디텍터"
-handlers = "핸들러"
-extension_mapping = "확장자 매핑"
+detectors = "파일 디텍터"
+handlers = "파일 핸들러"
+extension_mapping = "파일 확장자 매핑"
 
 [settings.file_handler.common]
 enabled = "활성"

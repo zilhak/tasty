@@ -100,7 +100,7 @@ terminal = "ターミナル"
 appearance = "外観"
 notifications = "通知"
 keybindings = "キーバインド"
-file_handler = "ファイルハンドラ"
+file_handler = "ハンドラ"
 misc = "その他"
 plugin = "プラグイン"
 
@@ -123,9 +123,9 @@ modifier_hint_desc = "修飾キー（Ctrl / Alt / Shift — macOS では Cmd / O
 coming_soon = "このサブタブは今後のアップデートで利用可能になります。"
 
 [settings.file_handler.sub]
-detectors = "ディテクター"
-handlers = "ハンドラー"
-extension_mapping = "拡張子マッピング"
+detectors = "ファイルディテクター"
+handlers = "ファイルハンドラー"
+extension_mapping = "ファイル拡張子マッピング"
 
 [settings.file_handler.common]
 enabled = "有効"
