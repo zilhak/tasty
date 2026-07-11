@@ -5974,6 +5974,7 @@ dependencies = [
  "egui_extras",
  "tasty-egui-theme",
  "tasty-icons",
+ "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",
 ]

@@ -217,8 +217,16 @@ impl<'a> PathField<'a> {
             }
             let out = ac.show(ui, theme, buffer, candidates, active);
 
-            // 편집모드 = 트리거 포커스(단일 진실). 드롭다운 열림/닫힘도 이 값으로 수렴.
-            *editing = out.response.has_focus();
+            // 편집모드 = 트리거의 egui memory 포커스(단일 진실). `has_focus()` 는
+            // viewport focused(RawInput.focused)에 게이트돼 있어 쓰지 않는다 — 편집모드는
+            // 위젯 포커스 상태 머신이고, viewport focused 는 렌더 게이트(커서 깜빡임·
+            // 드롭다운 표시)로만 작용해야 한다. has_focus 를 쓰면 focused=false 프레임
+            // (plugin 재-paint / surface blur)마다 editing 이 false 로 떨어져 진입 재감지
+            // 루프(주소창 진동)를 만든다. blur-원복은 memory 기반 lost_focus 가 담당.
+            *editing = out
+                .response
+                .ctx
+                .memory(|m| m.has_focus(out.response.id));
 
             // Go 버튼 — arrow-right IconButton(sm). 클릭 = 현재 버퍼 확정.
             // tooltip 은 버튼 response 에 붙인다(값 있을 때만 — 디자인 aria-label 대체).

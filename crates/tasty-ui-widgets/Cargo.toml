@@ -13,5 +13,9 @@ tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
+[dev-dependencies]
+# path_field_focus 통합테스트가 headless Context 구동에 실제 Theme 을 요구한다.
+tasty-themes = { path = "../tasty-themes" }
+
 [lints]
 workspace = true
