@@ -126,6 +126,9 @@ impl ApplicationHandler<AppEvent> for App {
         use std::sync::Arc;
         use winit::window::WindowAttributes;
 
+        // 부팅 구간 계측 (T1~T7, target: "tasty::boot") — 흰 화면 시간 분해용 상시 계측.
+        let boot_t0 = std::time::Instant::now();
+
         let mut attrs = WindowAttributes::default()
             .with_title(if cfg!(debug_assertions) {
                 "Tasty (Debug)"
@@ -145,6 +148,11 @@ impl ApplicationHandler<AppEvent> for App {
                 .create_window(attrs)
                 .expect("failed to create window"),
         );
+        tracing::info!(
+            target: "tasty::boot",
+            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
+            "T1 window_create (resumed enter -> create_window return)"
+        );
 
         let mut init_settings = crate::settings::Settings::load();
         // Validate enum-like fields up-front so GPU init and downstream consumers
@@ -156,9 +164,15 @@ impl ApplicationHandler<AppEvent> for App {
             tracing::warn!("failed to persist normalized settings: {e}");
         }
 
+        let t2 = std::time::Instant::now();
         let gpu = self
             .create_gpu_state(window.clone(), &init_settings.appearance)
             .expect("failed to initialize GPU");
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t2.elapsed().as_secs_f64() * 1000.0,
+            "T2 gpu_init (create_gpu_state)"
+        );
 
         if !init_settings.general.is_shell_valid() {
             if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
@@ -200,6 +214,15 @@ impl ApplicationHandler<AppEvent> for App {
             self.tray_icon = Some(tray);
             self.tray_menu_ids = Some(ids);
         }
+
+        tracing::info!(
+            target: "tasty::boot",
+            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
+            "resumed_total (T1~T6 + 미계측 잔여 합)"
+        );
+        // T7 기준 시각. shell setup early-return 경로는 여길 안 지나므로 그 경우
+        // T7 은 생략된다 (boot::trace 모듈 주석 참조).
+        crate::boot::trace::mark_resumed_done();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {

@@ -23,6 +23,8 @@ pub(crate) mod headless_dispatch;
 pub(crate) mod locale;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
+pub(crate) mod trace;
+#[cfg(feature = "gui")]
 pub(crate) mod waker;
 pub(crate) mod wiring;
 

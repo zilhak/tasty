@@ -87,7 +87,11 @@ impl MainView {
                 link_hover,
                 plugin_manager,
             ) {
-                Ok(()) => {}
+                Ok(()) => {
+                    // T7 (부팅 계측): 첫 present 성공 시각. Lost/Outdated 재시도
+                    // 프레임은 present 가 안 되므로 Ok 분기에서만 기록 (원샷).
+                    crate::boot::trace::mark_first_paint();
+                }
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     self.base.gpu.resize(self.base.winit.inner_size());
                     // Surface was lost/outdated; resize recovers it, but we must

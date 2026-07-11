@@ -70,6 +70,9 @@ impl App {
 
         // CoreState를 App 직속에 1회 init.
         if self.core_state.is_none() {
+            // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 — T2↔T3
+            // 갭의 두 번째 기여자라 별도 계측 (첫 번째는 init_app_state 의 db+theme).
+            let t_engine = std::time::Instant::now();
             // 두 번째 main window 생성 시: 첫 engine 의 글로벌 Arc 들을 공유한다.
             // surface_registry 는 plugin_manager 가 첫 부팅 시 set 한 것과 같은
             // Arc 여야 plugin 이 register 한 surface kind 가 두 번째 윈도우에서도
@@ -139,6 +142,11 @@ impl App {
                 engine.input_simulation_enabled = self.input_simulation_enabled;
             }
             self.core_state = Some(engine);
+            tracing::info!(
+                target: "tasty::boot",
+                ms = t_engine.elapsed().as_secs_f64() * 1000.0,
+                "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
+            );
         }
 
         if self.plugin_manager.is_none() {
@@ -159,9 +167,24 @@ impl App {
             mgr.set_hook_handler_registry(std::sync::Arc::new(
                 crate::hook_handler::HostHookHandlerPort,
             ));
+            // T3 은 discovery 와 spawn 을 나눠 찍는다 — 4부 escalate 확정 시 어느
+            // 쪽이 병목인지 판단하기 위함.
+            let t3 = std::time::Instant::now();
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.refresh_packages();
+            tracing::info!(
+                target: "tasty::boot",
+                ms = t3.elapsed().as_secs_f64() * 1000.0,
+                "T3a plugin_discovery (install_builtins + refresh_packages)"
+            );
+            let t3b = std::time::Instant::now();
             mgr.discover_and_start();
+            tracing::info!(
+                target: "tasty::boot",
+                ms = t3b.elapsed().as_secs_f64() * 1000.0,
+                total_ms = t3.elapsed().as_secs_f64() * 1000.0,
+                "T3b plugin_spawn (discover_and_start; total_ms = T3 전체)"
+            );
             self.plugin_manager = Some(mgr);
         }
 
@@ -173,37 +196,9 @@ impl App {
         // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
         // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
         let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
-            // wait-for-plugin: required_plugin_kinds 만 peek (take 안 함).
-            // Intent 본문이 단일 take 를 보장.
-            {
-                use std::time::{Duration, Instant};
-                let needed: Vec<String> = self
-                    .core_state()
-                    .pending_layout_restore
-                    .as_ref()
-                    .map(|s| s.required_plugin_kinds())
-                    .unwrap_or_default();
-                let deadline = Instant::now() + Duration::from_millis(300);
-                while Instant::now() < deadline {
-                    let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.pump()
-                    } else {
-                        Vec::new()
-                    };
-                    self.finalize_plugin_hello(hello_pairs);
-                    let registered_all = {
-                        let engine = self.core_state();
-                        needed
-                            .iter()
-                            .all(|k| engine.surface_registry.get(k).is_some())
-                    };
-                    if registered_all {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-            }
+            self.boot_wait_for_required_plugin_kinds();
 
+            let t5 = std::time::Instant::now();
             let engine = self
                 .core_state
                 .as_mut()
@@ -229,39 +224,13 @@ impl App {
                     None
                 }
             };
+            tracing::info!(
+                target: "tasty::boot",
+                ms = t5.elapsed().as_secs_f64() * 1000.0,
+                "T5 layout_apply (ApplyPendingLayoutRestore)"
+            );
 
-            // ApplyPendingLayoutRestore 가 RemoteSurface 들을 생성하고
-            // `HostCmd::RemoteSurfaceRestored` 를 큐잉했다. pump 를 추가로 돌려
-            // 송신 → plugin 응답 round-trip 이 끝날 때까지 대기한다. 이게 끝나야
-            // RemoteSurface 의 snapshot_cache 가 plugin 의 최신 값으로 갱신된
-            // 상태로 main loop 에 진입 — 사용자 동작 race 가 사라진다. carry 값이
-            // 이미 안전망 역할을 하므로 (1) layout.json 오염은 이 wait 와 무관하게
-            // 차단된 상태이고, 이 wait 는 부팅 직후 사용자 동작이 응답으로 덮어
-            // 씌워지는 깜박임/덮어쓰기를 추가로 방지하는 목적.
-            //
-            // deadline: plugin 이 panic/hang 등으로 영영 응답 안 보내는 케이스
-            // 보호. 초과해도 (1) carry 덕에 layout 손상은 없음.
-            {
-                use std::time::{Duration, Instant};
-                let deadline = Instant::now() + Duration::from_millis(500);
-                while Instant::now() < deadline {
-                    let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
-                        let hello_pairs = mgr.pump();
-                        if !hello_pairs.is_empty() {
-                            self.finalize_plugin_hello(hello_pairs);
-                        }
-                        self.plugin_manager
-                            .as_ref()
-                            .is_some_and(|m| m.has_pending_surface_restores())
-                    } else {
-                        false
-                    };
-                    if !still_pending {
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-            }
+            self.boot_wait_for_remote_surface_restores();
 
             restored
         } else {
@@ -280,6 +249,91 @@ impl App {
                 .set_plugin_items(mgr.plugin_tool_items());
         }
         state
+    }
+
+    /// wait-for-plugin: pending layout restore 가 요구하는 plugin surface kind
+    /// 들이 등록될 때까지 pump + sleep 폴링 (deadline 300ms).
+    /// `required_plugin_kinds` 만 peek (take 안 함) — Intent 본문이 단일 take 를
+    /// 보장. T4 부팅 계측 포함 (탈출 사유: satisfied / deadline).
+    fn boot_wait_for_required_plugin_kinds(&mut self) {
+        use std::time::{Duration, Instant};
+        let needed: Vec<String> = self
+            .core_state()
+            .pending_layout_restore
+            .as_ref()
+            .map(|s| s.required_plugin_kinds())
+            .unwrap_or_default();
+        let t4 = Instant::now();
+        let deadline = t4 + Duration::from_millis(300);
+        let mut t4_reason = "deadline";
+        while Instant::now() < deadline {
+            let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
+                mgr.pump()
+            } else {
+                Vec::new()
+            };
+            self.finalize_plugin_hello(hello_pairs);
+            let registered_all = {
+                let engine = self.core_state();
+                needed
+                    .iter()
+                    .all(|k| engine.surface_registry.get(k).is_some())
+            };
+            if registered_all {
+                t4_reason = "satisfied";
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t4.elapsed().as_secs_f64() * 1000.0,
+            reason = t4_reason,
+            "T4 layout_wait_plugins (deadline 300ms)"
+        );
+    }
+
+    /// ApplyPendingLayoutRestore 가 RemoteSurface 들을 생성하고
+    /// `HostCmd::RemoteSurfaceRestored` 를 큐잉했다. pump 를 추가로 돌려
+    /// 송신 → plugin 응답 round-trip 이 끝날 때까지 대기한다. 이게 끝나야
+    /// RemoteSurface 의 snapshot_cache 가 plugin 의 최신 값으로 갱신된
+    /// 상태로 main loop 에 진입 — 사용자 동작 race 가 사라진다. carry 값이
+    /// 이미 안전망 역할을 하므로 (1) layout.json 오염은 이 wait 와 무관하게
+    /// 차단된 상태이고, 이 wait 는 부팅 직후 사용자 동작이 응답으로 덮어
+    /// 씌워지는 깜박임/덮어쓰기를 추가로 방지하는 목적.
+    ///
+    /// deadline: plugin 이 panic/hang 등으로 영영 응답 안 보내는 케이스
+    /// 보호. 초과해도 (1) carry 덕에 layout 손상은 없음.
+    /// T6 부팅 계측 포함 (탈출 사유: satisfied / deadline).
+    fn boot_wait_for_remote_surface_restores(&mut self) {
+        use std::time::{Duration, Instant};
+        let t6 = Instant::now();
+        let deadline = t6 + Duration::from_millis(500);
+        let mut t6_reason = "deadline";
+        while Instant::now() < deadline {
+            let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
+                let hello_pairs = mgr.pump();
+                if !hello_pairs.is_empty() {
+                    self.finalize_plugin_hello(hello_pairs);
+                }
+                self.plugin_manager
+                    .as_ref()
+                    .is_some_and(|m| m.has_pending_surface_restores())
+            } else {
+                false
+            };
+            if !still_pending {
+                t6_reason = "satisfied";
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t6.elapsed().as_secs_f64() * 1000.0,
+            reason = t6_reason,
+            "T6 remote_surface_wait (deadline 500ms)"
+        );
     }
 
     /// Register a MainView and set it as focused.
@@ -329,6 +383,7 @@ impl App {
     ) {
         // state.db 초기화는 create_app_state 이전에 반드시 호출. memory.db 는
         // boot 가 App::new 이전에 이미 초기화함 (D.3.C.M.1) — 여기서 별도 호출하지 않는다.
+        let t_db_theme = std::time::Instant::now();
         let db_init_error = crate::db::init().err();
 
         // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
@@ -336,6 +391,13 @@ impl App {
         if let Err(e) = settings.save() {
             tracing::warn!("failed to persist settings after theme apply: {e}");
         }
+        // T2↔T3 갭 분해 마커 — shell setup 완료 경로에서도 이 함수가 호출되지만,
+        // 그때도 db+theme 소요라는 의미는 동일하므로 그대로 찍는다.
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t_db_theme.elapsed().as_secs_f64() * 1000.0,
+            "T2.5 db_theme (init_app_state enter -> create_app_state)"
+        );
 
         let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
 
