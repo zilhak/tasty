@@ -8,26 +8,49 @@ use termwiz::escape::csi::{Device, Window};
 use termwiz::escape::osc::ColorOrQuery;
 use termwiz::surface::{Change, CursorVisibility};
 
+use crate::foreground_process::is_known_shell_name;
 use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
+/// 셸 실행파일 경로 형태의 제목인지 판정한다 (예: ConPTY 가 spawn 시 콘솔 기본
+/// 제목으로 세팅하는 `C:\Program Files/Git/bin/bash.exe`). 이런 제목은 사용자
+/// 의미가 없어 `current_title` 세팅·`TitleChanged` 발화 모두에서 무시한다 —
+/// 하류(이벤트 변환)만 막으면 `refresh_tab_osc_title` 직접 투영 경로로 샌다.
+///
+/// 이중 조건으로 오탐을 좁힌다: 경로 형태(`/`·`\`·`:` 포함)이면서 basename 이
+/// known shell 일 때만 참. bare `"bash"` 나 `"user@host: ~/dev"` 는 통과한다.
+/// 혼합 슬래시 케이스 커버를 위해 `/` 와 `\` 둘 다 구분자로 취급한다.
+fn looks_like_shell_exe_path(title: &str) -> bool {
+    if !title.contains(['/', '\\', ':']) {
+        return false;
+    }
+    let basename = title
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(title);
+    is_known_shell_name(basename)
+}
+
 impl TerminalState {
+    /// 제목 OSC (0/1/2/Sun) 공통 처리 — 셸 exe 경로 제목은 소스에서 무시.
+    fn set_title_from_osc(&mut self, title: String) {
+        if looks_like_shell_exe_path(&title) {
+            tracing::debug!("ignoring shell-exe-path OSC title: {title:?}");
+            return;
+        }
+        self.current_title = Some(title.clone());
+        self.events.push(TerminalEvent {
+            surface_id: 0,
+            kind: TerminalEventKind::TitleChanged(title),
+        });
+    }
+
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: OSC 커맨드 평면 match 디스패치 — 시퀀스별 arm 나열, 중첩 얕음
     pub(crate) fn map_osc(&mut self, osc: OperatingSystemCommand) {
         match osc {
-            OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {
-                self.current_title = Some(title.clone());
-                self.events.push(TerminalEvent {
-                    surface_id: 0,
-                    kind: TerminalEventKind::TitleChanged(title),
-                });
-            }
-            OperatingSystemCommand::SetWindowTitle(title)
+            OperatingSystemCommand::SetIconNameAndWindowTitle(title)
+            | OperatingSystemCommand::SetWindowTitle(title)
             | OperatingSystemCommand::SetWindowTitleSun(title) => {
-                self.current_title = Some(title.clone());
-                self.events.push(TerminalEvent {
-                    surface_id: 0,
-                    kind: TerminalEventKind::TitleChanged(title),
-                });
+                self.set_title_from_osc(title);
             }
             OperatingSystemCommand::CurrentWorkingDirectory(url) => {
                 let path = if let Some(stripped) = url.strip_prefix("file://") {

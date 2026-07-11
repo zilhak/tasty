@@ -52,6 +52,10 @@ impl Term {
         self.term.take_events()
     }
 
+    fn current_title(&self) -> Option<String> {
+        self.term.current_title()
+    }
+
     fn is_alternate(&self) -> bool {
         self.term.is_alternate_screen()
     }
@@ -365,6 +369,62 @@ fn osc_set_window_title_emits_event() {
             .any(|e| matches!(&e.kind, TerminalEventKind::TitleChanged(s) if s == "hi")),
         "expected TitleChanged(\"hi\") from production OSC handler, got none"
     );
+}
+
+/// 헬퍼: feed 후 TitleChanged 이벤트 존재 여부.
+fn has_title_changed(events: &[TerminalEvent]) -> bool {
+    events
+        .iter()
+        .any(|e| matches!(&e.kind, TerminalEventKind::TitleChanged(_)))
+}
+
+// ConPTY 가 spawn 시 세팅하는 셸 exe 경로 제목(혼합 슬래시)은 소스에서 무시 —
+// current_title 세팅도, TitleChanged 발화도 없어야 한다 (직접 투영 경로 차단).
+#[test]
+fn osc_title_shell_exe_path_is_ignored() {
+    let mut t = Term::new(80, 24);
+    t.feed(b"\x1b]0;C:\\Program Files/Git/bin/bash.exe\x07");
+    assert_eq!(t.current_title(), None);
+    assert!(
+        !has_title_changed(&t.take_events()),
+        "shell exe path title must not emit TitleChanged"
+    );
+}
+
+// Unix 형태 셸 절대경로도 동일하게 무시된다 (경로 형태 + known shell basename).
+#[test]
+fn osc_title_unix_shell_path_is_ignored() {
+    let mut t = Term::new(80, 24);
+    t.feed(b"\x1b]0;/usr/bin/bash\x07");
+    assert_eq!(t.current_title(), None);
+    assert!(!has_title_changed(&t.take_events()));
+}
+
+// 경로 형태가 아닌 일반 제목은 정상 세팅 + 이벤트 발화 (회귀 방지).
+#[test]
+fn osc_title_non_path_title_still_sets() {
+    let mut t = Term::new(80, 24);
+    t.feed(b"\x1b]0;my project\x07");
+    assert_eq!(t.current_title(), Some("my project".to_string()));
+    assert!(has_title_changed(&t.take_events()));
+}
+
+// bare "bash" (구분자 없음) 는 필터하지 않는다 — 오탐 방지.
+#[test]
+fn osc_title_bare_shell_name_still_sets() {
+    let mut t = Term::new(80, 24);
+    t.feed(b"\x1b]0;bash\x07");
+    assert_eq!(t.current_title(), Some("bash".to_string()));
+    assert!(has_title_changed(&t.take_events()));
+}
+
+// basename 이 셸이 아닌 경로형 제목 (예: "user@host: ~/dev") 은 통과한다.
+#[test]
+fn osc_title_pathlike_non_shell_basename_still_sets() {
+    let mut t = Term::new(80, 24);
+    t.feed(b"\x1b]0;user@host: ~/dev\x07");
+    assert_eq!(t.current_title(), Some("user@host: ~/dev".to_string()));
+    assert!(has_title_changed(&t.take_events()));
 }
 
 // ============================================================
