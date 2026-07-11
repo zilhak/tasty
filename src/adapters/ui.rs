@@ -25,6 +25,7 @@ pub mod surface;
 pub mod terminal_link;
 pub mod toast;
 pub(crate) mod tools_menu;
+pub(crate) mod tutorial;
 
 pub mod input;
 

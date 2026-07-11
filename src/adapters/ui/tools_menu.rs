@@ -61,6 +61,12 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         label_key: "preset.tools.menu_item",
         action: BuiltinAction::OpenWindow(WindowKind::Preset),
     },
+    BuiltinTool {
+        label_key: "tutorial.tools_menu_item",
+        action: BuiltinAction::OpenPopup(
+            crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
+        ),
+    },
 ];
 
 pub fn draw_tools_menu(

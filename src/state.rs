@@ -300,6 +300,11 @@ pub struct AppState {
     /// `Settings::modifier_hint`(pos/size), 이 필드는 홀드/드래그 세션 상태만.
     #[cfg(feature = "gui")]
     pub(crate) modifier_hint: crate::adapters::ui::modifier_hint_overlay::ModifierHintRuntime,
+    /// 튜토리얼(마커 오버레이) 런타임 상태 — 진행 중 주제/step, 목록 팝업 선택·시작
+    /// 큐. GUI 전용(사용자 클릭으로만 진행, IPC/CLI 발화 없음 — 불가침 원칙 1).
+    /// `draw_popups` 말미의 `draw_tutorial_overlay` 가 매 프레임 읽고 전이시킨다.
+    #[cfg(feature = "gui")]
+    pub(crate) tutorial: crate::adapters::ui::tutorial::TutorialRuntime,
     /// All transient dialog/popup state.
     pub(crate) dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
@@ -813,6 +818,8 @@ impl AppState {
             #[cfg(feature = "gui")]
             modifier_hint: crate::adapters::ui::modifier_hint_overlay::ModifierHintRuntime::default(
             ),
+            #[cfg(feature = "gui")]
+            tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,

@@ -285,6 +285,22 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::confirm_delete_category::draw_confirm_delete_category,
             },
             PopupDef {
+                id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
+                title_key: "tutorial.popup_title",
+                title_fn: None,
+                default_size: crate::adapters::ui::tutorial::topic_popup::tutorial_topics_default_size(),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                // 중앙 정렬 모달 — 이동/리사이즈 비활성(디자인 CenteredFocused).
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: crate::adapters::ui::tutorial::topic_popup::draw_tutorial_topics_popup,
+            },
+            PopupDef {
                 id: super::rail_category::RAIL_CATEGORY_POPUP_ID,
                 title_key: "workspace_category.heading",
                 title_fn: None,

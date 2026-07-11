@@ -333,6 +333,29 @@ pub fn draw_popups(
         reduced_motion,
     );
     state.modifier_hint_hovered = hint_result.hovered;
+
+    // 튜토리얼 오버레이 (마커 오버레이 + 안내 말풍선) — 팝업/toast/banner/modhint 위
+    // 최상위 레이어. 마커/scrim 은 hit-transparent, 말풍선만 마우스 소비. 진입·진행은
+    // 사용자 클릭으로만(원칙 1). 마커 좌표는 draw_ctx/terminal_rect 로 매 프레임 재해석.
+    let content_area = egui::Rect::from_min_size(
+        egui::pos2(
+            terminal_rect.x.value() / scale_factor,
+            terminal_rect.y.value() / scale_factor,
+        ),
+        egui::vec2(
+            terminal_rect.width.value() / scale_factor,
+            terminal_rect.height.value() / scale_factor,
+        ),
+    );
+    crate::adapters::ui::tutorial::draw_tutorial_overlay(
+        ctx,
+        state,
+        engine,
+        &draw_ctx,
+        content_area,
+        &th,
+    );
+
     if let Some((pos, size)) = hint_result.persist {
         // 사용자 드래그/리사이즈 결과 → Settings 영속(사이드바 폭 등과 동일 성질,
         // 전역 공유 + last-write-wins). from_user_menu = 사용자 직접 조작 origin.

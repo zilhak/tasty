@@ -274,7 +274,7 @@ impl PopupManager {
             // surface-raised(=surface0). 단 헤더+리스트형 "패널" popup 은 bg-panel
             // (=base, 한 단계 더 어두움). remote_tool / port_scanner 가 후자.
             let bg_fill: egui::Color32 = match popup_id {
-                "remote_tool" | "port_scanner" => th.bg_panel().into(),
+                "remote_tool" | "port_scanner" | "tutorial_topics" => th.bg_panel().into(),
                 _ => th.surface_raised().into(),
             };
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
