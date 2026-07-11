@@ -1471,3 +1471,34 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
         }
     }
 }
+
+#[cfg(all(test, debug_assertions))]
+mod tab_key_tests {
+    use super::*;
+
+    /// S13 — L1 표시 라벨은 Handler 로 일반화됐지만 내부 키는 FileHandler 유지.
+    /// 신규 alias `handler` 와 기존 file_handler 계열 키가 모두 같은 탭으로 간다.
+    #[test]
+    fn handler_tab_key_aliases() {
+        let mut st = SettingsUiState::new();
+        for key in ["handler", "file_handler", "file-handler", "filehandler"] {
+            st.active_tab = SettingsTab::General;
+            assert!(st.select_tab_by_key(key), "key '{key}' should resolve");
+            assert_eq!(st.active_tab, SettingsTab::FileHandler);
+        }
+        assert!(!st.select_tab_by_key("nonexistent"));
+    }
+
+    /// Hook Handlers L2 키 매핑 + 미지정 키 거부.
+    #[test]
+    fn hook_handlers_section_key() {
+        let mut st = SettingsUiState::new();
+        assert!(st.select_tab_by_key("handler"));
+        for key in ["hook_handlers", "hook-handlers", "hookhandlers"] {
+            st.file_handler_sub_tab = FileHandlerSubTab::ExtensionMapping;
+            assert!(st.select_section_by_key(key), "key '{key}' should resolve");
+            assert_eq!(st.file_handler_sub_tab, FileHandlerSubTab::HookHandlers);
+        }
+        assert!(!st.select_section_by_key("unknown-section"));
+    }
+}
