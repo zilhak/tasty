@@ -782,6 +782,43 @@ pub fn user_config_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("hook-handlers.toml"))
 }
 
+/// Plugin manager 가 `HookHandlerRegistryPort` 로 훅 핸들러 contribute 를 등록/해제할
+/// 때 쓰는 호스트 어댑터. 레지스트리가 프로세스 전역 싱글턴(`global()`)이라 상태를
+/// 갖지 않는 zero-sized 어댑터로 충분하다 — 파일 핸들러(`FileHandlerRegistry` 가
+/// 직접 impl)와 달리 여기서는 opaque JSON 을 concrete plugin decl 로 디코드해
+/// `global()` 에 위임한다.
+pub struct HostHookHandlerPort;
+
+impl tasty_plugin_protocol::host_port::HookHandlerRegistryPort for HostHookHandlerPort {
+    fn install_plugin_hook_handlers(&self, plugin_id: &str, handlers: &[serde_json::Value]) {
+        let mut decls: Vec<HookHandlerDecl<PluginHookHandlerActionDecl>> =
+            Vec::with_capacity(handlers.len());
+        for v in handlers {
+            match serde_json::from_value::<HookHandlerDecl<PluginHookHandlerActionDecl>>(v.clone()) {
+                Ok(d) => {
+                    // schema 검증(short-name). plugin 은 `ShellCommand` 를 타입상 못
+                    // 쓰므로 셸 게이트는 불필요하다(config::validate_plugin_hook_handler_decl).
+                    if let Err(e) = validate_plugin_hook_handler_decl(&d) {
+                        warn!(plugin = plugin_id, error = %e, "plugin hook handler decl rejected");
+                        continue;
+                    }
+                    decls.push(d);
+                }
+                Err(e) => warn!(
+                    plugin = plugin_id,
+                    error = %e,
+                    "plugin hook handler decode failed"
+                ),
+            }
+        }
+        global().install_plugin_handlers(plugin_id, &decls);
+    }
+
+    fn uninstall_plugin(&self, plugin_id: &str) {
+        global().uninstall_plugin(plugin_id);
+    }
+}
+
 /// 부팅 공용 헬퍼 — host embedded 기본값 + user config 를 전역 레지스트리에 install.
 /// GUI/headless 부팅에서 웹훅 리스너 init 직전에 호출한다. 중복 호출은 owner 기준
 /// retain 으로 idempotent.

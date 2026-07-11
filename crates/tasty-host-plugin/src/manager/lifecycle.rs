@@ -102,9 +102,19 @@ impl PluginManager {
             banner_mesh_frames: HashMap::new(),
             file_format,
             file_handler,
+            hook_handler: None,
             i18n_registrar: None,
             plugin_reaper,
         }
+    }
+
+    /// 호스트가 공유 훅 핸들러 레지스트리 port 를 주입. headless/test 는 호출 안 함.
+    /// 주입 후에는 plugin enable/disable 시 `[[contributes.hook_handler]]` 를 등록/해제한다.
+    pub fn set_hook_handler_registry(
+        &mut self,
+        registry: Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>,
+    ) {
+        self.hook_handler = Some(registry);
     }
 
     /// 호스트가 i18n namespace 등록 trait 을 주입. headless/test 는 호출 안 함.
@@ -188,6 +198,12 @@ impl PluginManager {
                     .install_plugin_detectors(&pkg.manifest.id, &pkg.manifest.contributes.detector);
                 self.file_handler
                     .install_plugin_handlers(&pkg.manifest.id, &pkg.manifest.contributes.handler);
+                if let Some(hh) = &self.hook_handler {
+                    hh.install_plugin_hook_handlers(
+                        &pkg.manifest.id,
+                        &pkg.manifest.contributes.hook_handler,
+                    );
+                }
                 self.start_plugin_internal(&pkg);
             }
         }
@@ -329,6 +345,9 @@ impl PluginManager {
                 .install_plugin_detectors(plugin_id, &pkg.manifest.contributes.detector);
             self.file_handler
                 .install_plugin_handlers(plugin_id, &pkg.manifest.contributes.handler);
+            if let Some(hh) = &self.hook_handler {
+                hh.install_plugin_hook_handlers(plugin_id, &pkg.manifest.contributes.hook_handler);
+            }
 
             if !self.processes.contains_key(plugin_id) {
                 self.ensure_listener();
@@ -357,9 +376,12 @@ impl PluginManager {
                 tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
             }
         }
-        // file_format / file_handler 두 registry 에서 plugin 의 contribute 제거.
+        // file_format / file_handler / hook_handler registry 에서 plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
         self.file_handler.uninstall_plugin(plugin_id);
+        if let Some(hh) = &self.hook_handler {
+            hh.uninstall_plugin(plugin_id);
+        }
         // `plugin.unloaded` / `plugin.disabled` 발화는 D.3.C.G.2.b cascade 가 처리
         // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded
         // → cascade). was_running 분기는 App::plugin_disable 가 사전 캡처하므로 본

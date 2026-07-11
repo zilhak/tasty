@@ -8,6 +8,6 @@ pub mod file;
 pub mod i18n;
 pub mod surface;
 
-pub use file::{FileFormatRegistryPort, FileHandlerRegistryPort};
+pub use file::{FileFormatRegistryPort, FileHandlerRegistryPort, HookHandlerRegistryPort};
 pub use i18n::I18nNamespaceRegistrar;
 pub use surface::SurfaceRegistry;

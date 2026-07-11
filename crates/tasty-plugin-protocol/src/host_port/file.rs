@@ -13,3 +13,12 @@ pub trait FileHandlerRegistryPort: Send + Sync {
     fn install_plugin_handlers(&self, plugin_id: &str, handlers: &[serde_json::Value]);
     fn uninstall_plugin(&self, plugin_id: &str);
 }
+
+/// 공유 훅 핸들러 레지스트리(webhook/hook 트리거 공유)를 plugin manager 가 의존 없이
+/// 받기 위한 trait. 파일 핸들러와 동일 형태 — plugin enable/disable 시점에
+/// `[[contributes.hook_handler]]` opaque payload 를 등록/해제한다. 호스트 impl 이
+/// concrete `HookHandlerDecl<PluginHookHandlerActionDecl>` 로 deserialize 한다.
+pub trait HookHandlerRegistryPort: Send + Sync {
+    fn install_plugin_hook_handlers(&self, plugin_id: &str, handlers: &[serde_json::Value]);
+    fn uninstall_plugin(&self, plugin_id: &str);
+}

@@ -154,6 +154,11 @@ impl App {
                 plugin::PluginManager::with_registries(factory, file_format, file_handler);
             mgr.set_surface_registry(surface_registry);
             mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
+            // 공유 훅 핸들러 레지스트리(전역 싱글턴) port 주입 — plugin enable/disable
+            // 시 `[[contributes.hook_handler]]` 를 등록/해제한다(S11).
+            mgr.set_hook_handler_registry(std::sync::Arc::new(
+                crate::hook_handler::HostHookHandlerPort,
+            ));
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.refresh_packages();
             mgr.discover_and_start();
