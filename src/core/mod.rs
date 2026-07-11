@@ -467,7 +467,12 @@ impl Core {
         let injector = self.host_ipc_injector.get().cloned();
         let mut ids = Vec::with_capacity(fired.len());
         for f in &fired {
-            crate::hook_handler::trigger::execute_binding(&f.binding, injector.as_ref());
+            crate::hook_handler::trigger::execute_binding(
+                &f.binding,
+                injector.as_ref(),
+                &f.event,
+                surface_id,
+            );
             ids.push(f.hook_id);
         }
         ids

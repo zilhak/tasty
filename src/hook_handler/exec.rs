@@ -149,14 +149,16 @@ pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &Sub
 ///
 /// `hook_handler.dispatch` 가 셸 핸들러를 수동 발화할 때 쓴다. `tasty-hooks` 의
 /// background spawn 을 미러링하되, 구조화된 `command` + `args` 를 셸 경유 없이 직접
-/// exec 한다(인젝션 표면 축소). 실행 결과는 로깅에만 쓰이고 반환하지 않는다 —
-/// 응답 경로(ACK/JSON)로 실행 결과가 새지 않는다(단방향 불변식).
-pub fn spawn_shell(command: String, args: Vec<String>) {
+/// exec 한다(인젝션 표면 축소). `env` 는 트리거 컨텍스트(`TASTY_HOOK_*`,
+/// [`super::env::build_env`]) — 값 전달 전용이며 실행 대상(command)은 owner 소유라
+/// 바꾸지 못한다. 실행 결과는 로깅에만 쓰이고 반환하지 않는다 — 응답 경로
+/// (ACK/JSON)로 실행 결과가 새지 않는다(단방향 불변식).
+pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
     if let Err(e) = std::thread::Builder::new()
         .name("hook-shell".into())
         .spawn(move || {
             let mut cmd = std::process::Command::new(&command);
-            cmd.args(&args);
+            cmd.args(&args).envs(env);
             match tasty_utils::process::hide_console(&mut cmd).output() {
                 Ok(_) => tracing::debug!("hook shell '{command}' ran"),
                 Err(e) => tracing::warn!("hook shell '{command}' spawn failed: {e}"),
@@ -232,6 +234,45 @@ mod tests {
         // key 위치의 `${...}` 는 치환하지 않는다(데이터/흐름 분리).
         let out = substitute_params(&json!({"${body.message}": "v"}), &ctx());
         assert_eq!(out, json!({"${body.message}": "v"}));
+    }
+
+    /// 직접 exec 경로(`spawn_shell`)가 env 를 자식에 실제로 노출하는지 실 프로세스로
+    /// 증명한다 — `hook_handler.dispatch` 셸 발화의 `TASTY_HOOK_*` 회귀 방어.
+    #[test]
+    fn spawn_shell_exposes_env_to_child() {
+        use std::time::{Duration, Instant};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = dir.path().join("env.txt");
+        // 직접 exec 은 셸 확장이 없으므로 셸 자체를 command 로 준다(공백 없는
+        // temp 경로 — trigger.rs 인라인 테스트와 동일 근거로 인용부호 없음).
+        let (command, args) = if cfg!(windows) {
+            (
+                "cmd".to_string(),
+                vec![
+                    "/C".to_string(),
+                    format!("echo %TASTY_HOOK_EVENT%> {}", marker.display()),
+                ],
+            )
+        } else {
+            (
+                "sh".to_string(),
+                vec![
+                    "-c".to_string(),
+                    format!("echo \"$TASTY_HOOK_EVENT\" > {}", marker.display()),
+                ],
+            )
+        };
+        spawn_shell(
+            command,
+            args,
+            vec![("TASTY_HOOK_EVENT".to_string(), "user/envtest".to_string())],
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !marker.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let content = std::fs::read_to_string(&marker).expect("marker written");
+        assert_eq!(content.trim(), "user/envtest");
     }
 
     #[test]

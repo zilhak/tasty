@@ -15,8 +15,9 @@
 //! 실행한다(익명 hook 핸들러). 옛 `tasty-hooks::check_and_fire` 가 하던 셸 spawn 을
 //! 여기로 옮긴 것이라 동작이 동일하다.
 
-use tasty_hooks::HookBinding;
+use tasty_hooks::{HookBinding, HookEvent};
 
+use super::env::{HookShellEnv, build_env};
 use super::exec::{SubstitutionContext, execute_sequence};
 use super::registry::global;
 use super::types::{HookHandlerAction, HookHandlerId, TriggerSource, validate_binding};
@@ -25,11 +26,28 @@ use crate::adapters::ipc::host_call::HostIpcInjector;
 /// 발사된 훅의 바인딩을 실행한다 (fire-and-forget).
 ///
 /// `injector` 는 IpcSequence 핸들러 실행에만 필요하다 — 없으면 IpcSequence 는
-/// 건너뛰고 warn 을 남긴다(셸은 injector 불요).
-pub fn execute_binding(binding: &HookBinding, injector: Option<&HostIpcInjector>) {
+/// 건너뛰고 warn 을 남긴다(셸은 injector 불요). `event`(등록 이벤트) + `surface_id`
+/// 는 셸 핸들러 자식 프로세스에 `TASTY_HOOK_*` env 로 노출되는 트리거 컨텍스트다
+/// ([`super::env`]).
+pub fn execute_binding(
+    binding: &HookBinding,
+    injector: Option<&HostIpcInjector>,
+    event: &HookEvent,
+    surface_id: u32,
+) {
+    let shell_env = || {
+        build_env(&HookShellEnv {
+            event: event.to_display_string(),
+            source: "hook",
+            surface_id: Some(surface_id),
+            // hook 트리거엔 HTTP 페이로드가 없다(IpcSequence 의 빈 치환 컨텍스트와
+            // 대칭). payload env 는 hook_handler.dispatch 경로에서만 채워진다.
+            payload: serde_json::Value::Null,
+        })
+    };
     match binding {
         // 하위호환: 익명 셸 핸들러. 옛 check_and_fire 의 셸 spawn 과 동일 동작.
-        HookBinding::InlineShell(command) => spawn_shell(command.clone(), Vec::new()),
+        HookBinding::InlineShell(command) => spawn_shell(command.clone(), Vec::new(), shell_env()),
         // 레지스트리 핸들러 참조 — 조회 + source 게이트 후 action 분기.
         HookBinding::Handler(id) => {
             let handler = match global().get(&HookHandlerId(id.clone())) {
@@ -44,7 +62,9 @@ pub fn execute_binding(binding: &HookBinding, injector: Option<&HostIpcInjector>
                 return;
             }
             match handler.action {
-                HookHandlerAction::ShellCommand { command, args } => spawn_shell(command, args),
+                HookHandlerAction::ShellCommand { command, args } => {
+                    spawn_shell(command, args, shell_env())
+                }
                 HookHandlerAction::IpcSequence { calls } => match injector {
                     Some(inj) => {
                         // hook 트리거엔 HTTP 페이로드가 없으므로 빈 치환 컨텍스트.
@@ -62,8 +82,9 @@ pub fn execute_binding(binding: &HookBinding, injector: Option<&HostIpcInjector>
 /// 셸 명령을 백그라운드 스레드에서 fire-and-forget 실행. spawn 실패는 warn.
 ///
 /// `args` 가 있으면 명령 문자열 뒤에 공백 join 해 붙인다(레지스트리 ShellCommand
-/// 용 — 인라인 셸은 항상 args 없음).
-fn spawn_shell(command: String, args: Vec<String>) {
+/// 용 — 인라인 셸은 항상 args 없음). `env` 는 트리거 컨텍스트(`TASTY_HOOK_*`) —
+/// 값 전달 전용이며 실행 대상은 바꾸지 못한다.
+fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
     std::thread::spawn(move || {
         let full = if args.is_empty() {
             command
@@ -79,6 +100,7 @@ fn spawn_shell(command: String, args: Vec<String>) {
             c.args(["-c", &full]);
             c
         };
+        process.envs(env);
         if let Err(e) = tasty_utils::process::hide_console(&mut process).output() {
             tracing::warn!("hook shell command spawn failed: {e}; cmd: {full}");
         }
@@ -102,7 +124,7 @@ mod tests {
         // 호출은 옛 tasty-hooks 와 동일하며, 여기선 공백 없는 temp 경로를 쓴다).
         let cmd = format!("echo ok > {}", marker.display());
 
-        execute_binding(&HookBinding::InlineShell(cmd), None);
+        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 1);
 
         // fire-and-forget 백그라운드 스레드 — 파일 생성까지 폴링.
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -112,9 +134,44 @@ mod tests {
         assert!(marker.exists(), "inline shell hook did not create marker file");
     }
 
+    /// 셸 훅 자식 프로세스가 `TASTY_HOOK_*` env 를 실제로 받는지 실 spawn 으로
+    /// 증명한다 — cmd(`%VAR%`)/sh(`$VAR`) 각자의 확장 문법으로 값을 파일에 남긴다.
+    #[test]
+    fn shell_binding_receives_hook_env() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = dir.path().join("hook-env.txt");
+        // cmd 함정: `>` 직전 문자가 숫자면 fd 리다이렉트로 파싱된다(`42> f` = stderr).
+        // 리다이렉트 앞에 공백을 두고, 결과의 trailing space 는 trim 으로 흡수한다.
+        let cmd = if cfg!(windows) {
+            format!(
+                "echo %TASTY_HOOK_EVENT%/%TASTY_HOOK_SOURCE%/%TASTY_HOOK_SURFACE_ID% > {}",
+                marker.display()
+            )
+        } else {
+            format!(
+                "echo \"$TASTY_HOOK_EVENT/$TASTY_HOOK_SOURCE/$TASTY_HOOK_SURFACE_ID\" > {}",
+                marker.display()
+            )
+        };
+
+        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 42);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !marker.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let content = std::fs::read_to_string(&marker).expect("marker written");
+        assert_eq!(content.trim(), "bell/hook/42");
+    }
+
     /// 알 수 없는 핸들러 id 참조는 조용히 무시(패닉 없음).
     #[test]
     fn unknown_handler_reference_is_noop() {
-        execute_binding(&HookBinding::Handler("user/does-not-exist".into()), None);
+        execute_binding(
+            &HookBinding::Handler("user/does-not-exist".into()),
+            None,
+            &HookEvent::Bell,
+            1,
+        );
     }
 }

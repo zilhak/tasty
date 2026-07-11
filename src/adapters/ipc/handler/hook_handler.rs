@@ -18,7 +18,8 @@ use serde_json::json;
 
 use crate::core::Core;
 use crate::hook_handler::{
-    self, HookHandlerAction, HookHandlerId, SubstitutionContext, execute_sequence, spawn_shell,
+    self, HookHandlerAction, HookHandlerId, HookShellEnv, SubstitutionContext, build_env,
+    execute_sequence, spawn_shell,
 };
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -123,7 +124,15 @@ pub fn handle_dispatch(
             )
         }
         HookHandlerAction::ShellCommand { command, args } => {
-            spawn_shell(command, args);
+            // 수동 발화 컨텍스트를 env 로 노출 — IpcSequence 가 `${body.*}` 치환으로
+            // 받는 payload 를 셸은 `TASTY_HOOK_<KEY>` env 로 받는다(의미 대칭).
+            let env = build_env(&HookShellEnv {
+                event: hid.0.clone(),
+                source: "dispatch",
+                surface_id: None,
+                payload: params.get("body").cloned().unwrap_or(serde_json::Value::Null),
+            });
+            spawn_shell(command, args, env);
             JsonRpcResponse::success(
                 id,
                 json!({ "accepted": true, "id": hid.0, "action": "shell_command" }),

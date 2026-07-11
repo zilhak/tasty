@@ -9,6 +9,7 @@
 //! 고정) + 셸 웹훅 거부(`ShellCommand` 는 webhook 바인딩 불가).
 
 pub mod config;
+pub mod env;
 pub mod exec;
 pub mod registry;
 pub mod trigger;
@@ -18,6 +19,7 @@ pub mod types;
 // actor별 action decl, `HookHandlerRegistry` / `RegistryError` / `UserHookHandlerUpsertDecl`
 // 등 S13 이 소비할 것)는 소비 시점에 추가한다. 전체 경로(`registry::` / `types::` /
 // `exec::` / `config::`)로는 항상 접근 가능.
+pub use env::{HookShellEnv, build_env};
 pub use exec::{SubstitutionContext, execute_sequence, spawn_shell};
 pub use registry::{HostHookHandlerPort, global, install_default_sources, user_config_path};
 pub use types::{
