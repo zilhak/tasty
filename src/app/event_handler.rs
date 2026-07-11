@@ -142,7 +142,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 부팅 구간 계측 (T1~T7, target: "tasty::boot") — 흰 화면 시간 분해용 상시 계측.
         let boot_t0 = std::time::Instant::now();
 
+        // 축A: hidden 생성 — 첫 로딩 프레임 present 후에야 표시해 OS 기본 배경(흰)
+        // 프레임을 제거한다. 3 OS 공통 winit API (표시는 begin_boot / shell setup
+        // 분기가 수행, 실패 시에도 fallback 으로 반드시 표시).
         let mut attrs = WindowAttributes::default()
+            .with_visible(false)
             .with_title(if cfg!(debug_assertions) {
                 "Tasty (Debug)"
             } else {
@@ -178,7 +182,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         let t2 = std::time::Instant::now();
-        let gpu = self
+        let mut gpu = self
             .create_gpu_state(window.clone(), &init_settings.appearance)
             .expect("failed to initialize GPU");
         tracing::info!(
@@ -198,6 +202,15 @@ impl ApplicationHandler<AppEvent> for App {
                 tracing::warn!("bash not found; entering shell setup mode");
                 self.shell_setup_mode = true;
                 self.shell_setup_path = String::new();
+                // 축A: hidden 생성이므로 setup 화면 첫 프레임을 그린 뒤 표시한다.
+                // 렌더 실패 시에도 표시 — 창이 영영 hidden 이 되지 않게 하는 fallback.
+                // Ok(action) 은 버린다 — 사용자 입력 전 첫 프레임이라 항상 None.
+                if let Err(e) = gpu.render_shell_setup(&window, &mut self.shell_setup_path) {
+                    tracing::warn!(
+                        "shell setup first frame render failed: {e} — showing window anyway"
+                    );
+                }
+                window.set_visible(true);
                 self.shell_setup_gpu = Some(gpu);
                 self.shell_setup_window = Some(window);
                 return;
@@ -208,7 +221,7 @@ impl ApplicationHandler<AppEvent> for App {
         // 부팅 상태 머신 시작 — theme/db 초기화 + 첫 로딩 프레임 present 후 즉시
         // 반환한다. 엔진·plugin·layout 복원은 이후 프레임 스텝(drive_boot_frame)이
         // 진행하고, Ready 도달 시 finish_boot 가 MainView 로 합류한다.
-        self.begin_boot(window, gpu, init_settings, boot_t0, false);
+        self.begin_boot(window, gpu, init_settings, boot_t0, true);
         // invalid_theme_name 보고는 부팅 상태 머신이 직접 수행하므로 normalize_report 는 더
         // 이상 여기서 소비되지 않는다. 변수 자체는 normalize 호출 결과 보존용으로 둔다.
         drop(normalize_report);
