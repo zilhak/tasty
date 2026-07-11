@@ -18,11 +18,12 @@
 - **`.`** 는 *이름의 일부*다 (`surface.read` 의 `.` 는 분류용 — 호스트는 쪼개지 않음).
 - **`:`** 는 *scope 구분자*다 — 권한이 적용되는 대상을 한정해야 의미가 생기는 권한에만 등장.
 
-전체 토큰 목록(scope 없는 23 + scoped 4)은 [concepts/plugins](../concepts/plugins.md#권한-permissions). scoped 검증 규칙:
+전체 토큰 목록(scope 없는 24 + scoped 5)은 [concepts/plugins](../concepts/plugins.md#권한-permissions). scoped 검증 규칙:
 
 - `ipc.invoke:<prefix>` — `is_valid_ipc_prefix`(소문자 시작+소문자/숫자/`_`, ≤32) **그리고** 호스트 예약어 거부.
 - `ext:<plugin_id>` — `is_valid_plugin_id`(reverse-DNS).
 - `file_handler.extend:<id>` / `file_handler.handle:<id>` — `is_valid_detector_id`, `$unknown` 거부.
+- `hook_handler.handle:<id>` — `is_valid_hook_handler_id`(소문자+숫자+`-`, ≤32). `$`-prefix reserved 개념 없음. `hook_handler.define` 은 scope 없는 base 토큰.
 
 형식 위반 토큰은 `from_token` 이 `None` → 매니페스트 로드 단계에서 거부.
 
@@ -70,6 +71,7 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 | `[[contributes.window]]` | `window.spawn` |
 | `[extends]` | `ext:<target>` |
 | `[[contributes.detector]]` (신규) | `file_handler.define` |
+| `[[contributes.hook_handler]]` | `hook_handler.define` |
 
 `event_subscribe` 는 별도 권한 없음 — 패턴 자체가 게이트.
 

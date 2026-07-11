@@ -107,6 +107,12 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 
 확장자 → surface 매핑. `[[contributes.detector]]`(확장자 규칙) + `[[contributes.handler]]`(`action = open_surface{surface_kind}`). 권한: `file_handler.define`(신규 detector) / `file_handler.extend:<id>` / `file_handler.handle:<id>`. handler `id` 는 short name — install 단계가 `<plugin_id>/<id>` 로 자동 prefix. priority 동순위면 owner tiebreak `user > plugin > host`. 예: [image](../plugins/image/index.md)·[markdown](../plugins/markdown/index.md).
 
+### 훅 핸들러 (webhook/hook 트리거)
+
+`[[contributes.hook_handler]]` — 인바운드 웹훅 또는 내부 hook 이벤트가 발사됐을 때 실행할 **IpcSequence**(고정 IPC 호출들 + 페이로드 값 치환)를 선언한다. 권한: `hook_handler.define`. plugin 은 `action.kind = "ipc_sequence"` 만 쓸 수 있고 셸(`shell_command`)은 타입 레벨에서 배제된다(host/user 전용). `source` 로 트리거 출처를 게이트한다 — `webhook`(외부 HTTP) / `hook`(내부 이벤트) / `any`. handler `id` 는 short name(`[a-z0-9-]{1,32}`) → install 단계가 `<plugin_id>/<id>` 로 자동 prefix. priority 동순위면 owner tiebreak `user > plugin > host`.
+
+plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를 호출한다 — 이때 `network` 권한이 필요하고, plugin 은 **인라인 sequence 를 못 쓰고 자기 소유(`<plugin_id>/…`) 핸들러 id 만** 바인딩할 수 있다(임의 시퀀스는 owner=Local 전용 채널).
+
 ### 도구 메뉴 항목 + popup
 
 - `[[contributes.tool]]`(`ui.tool_item`) — [도구 메뉴](../features/tools-menu/index.md)에 항목. `action.kind`: `event`(Event Bus 발화) / `open_surface`(탭 추가) / `open_popup`(`popup_id = <plugin_id>/<id>`). `order_hint` 오름차순(빌트인 0..99).
