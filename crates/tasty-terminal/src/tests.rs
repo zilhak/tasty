@@ -867,12 +867,19 @@ fn detached_input_without_sink_is_dropped() {
 }
 
 // ---- Server-side output tap (fan-out) ----
+//
+// These tests use detached terminals, NOT `test_terminal` (real PTY): a real
+// PTY spawns a shell whose banner output is ingested asynchronously and races
+// with the injected bytes — the tap's first message can be a banner chunk and
+// full-grid comparisons get polluted (observed flaky on Windows/cmd). Tap
+// fan-out lives in the shared `ingest` path, so detached exercises the exact
+// same code under test, deterministically.
 
 #[test]
 fn output_tap_receives_raw_bytes_and_replays_to_mirror() {
-    let mut t = test_terminal(40, 12);
+    let mut t = Terminal::new_detached(40, 12);
     let rx = t.add_output_tap();
-    t.process_bytes(b"\x1b[31mX");
+    t.feed_bytes(b"\x1b[31mX");
     assert_eq!(rx.try_recv().unwrap(), b"\x1b[31mX".to_vec());
 
     // Replaying the tapped bytes into a mirror yields an identical grid.
@@ -884,26 +891,26 @@ fn output_tap_receives_raw_bytes_and_replays_to_mirror() {
 #[test]
 fn output_tap_is_non_destructive() {
     // The grid produced with a tap attached must match the grid without one.
-    let mut tapped = test_terminal(40, 12);
+    let mut tapped = Terminal::new_detached(40, 12);
     let _rx = tapped.add_output_tap();
-    tapped.process_bytes(MIRROR_SEQ);
+    tapped.feed_bytes(MIRROR_SEQ);
 
-    let mut untapped = test_terminal(40, 12);
-    untapped.process_bytes(MIRROR_SEQ);
+    let mut untapped = Terminal::new_detached(40, 12);
+    untapped.feed_bytes(MIRROR_SEQ);
     assert_grid_eq(&tapped, &untapped, "tap-nondestructive");
 }
 
 #[test]
 fn output_tap_disconnected_is_pruned() {
-    let mut t = test_terminal(40, 12);
+    let mut t = Terminal::new_detached(40, 12);
     let rx = t.add_output_tap();
     drop(rx); // subscriber gone
     // Next ingest detects the disconnect, prunes the tap, and applies normally.
-    t.process_bytes(b"hello");
+    t.feed_bytes(b"hello");
     assert!(t.screen_text().contains("hello"));
     // A fresh tap still works after pruning.
     let rx2 = t.add_output_tap();
-    t.process_bytes(b"!");
+    t.feed_bytes(b"!");
     assert_eq!(rx2.try_recv().unwrap(), b"!".to_vec());
 }
 
