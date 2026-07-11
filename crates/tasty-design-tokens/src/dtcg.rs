@@ -540,13 +540,13 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.font-size-heading", "font_size_heading"),
     ("semantic.font-size-max", "font_size_max"),
     ("semantic.font-size-prose-h1", "font_size_prose_h1"),
-    // `semantic.font-size-prose-h2` 는 SIZING 필드 없음 — egui_commonmark 이 헤딩을 보간해
-    // per-H2 픽셀을 받지 못하므로 은퇴(retire-pending). 토큰은 vendor json 에 잔존(디자인 export).
+    // `semantic.font-size-prose-h2` 는 은퇴·제거됨 — egui_commonmark 이 헤딩을 보간해
+    // per-H2 픽셀을 받지 못한다 (2026-07-08-tokens, vendor json 에서도 제거).
     ("semantic.font-size-term-sm", "font_size_term_sm"),
     ("semantic.font-size-term", "font_size_term"),
     ("semantic.font-size-term-lg", "font_size_term_lg"),
-    // `semantic.line-height-prose` 는 SIZING 필드 없음 — markdown body leading 을
-    // egui_commonmark 이 소유해 override 미노출로 은퇴(retire-pending). 토큰은 vendor json 잔존.
+    // `semantic.line-height-prose` 는 은퇴·제거됨 — markdown body leading 을
+    // egui_commonmark 이 소유해 override 미노출 (2026-07-08-tokens, vendor json 에서도 제거).
     // 아이콘 글리프
     ("semantic.icon-size-xs", "icon_glyph_size_xs"),
     ("semantic.icon-size-sm", "icon_glyph_size_sm"),

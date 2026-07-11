@@ -876,10 +876,6 @@
       "$type": "dimension",
       "$value": "{primitive.font-size-20}"
     },
-    "font-size-prose-h2": {
-      "$type": "dimension",
-      "$value": "{semantic.font-size-max}"
-    },
     "font-size-brand-wordmark": {
       "$type": "dimension",
       "$value": "{primitive.font-size-17}"
@@ -923,10 +919,6 @@
     "line-height-ui": {
       "$type": "number",
       "$value": "{primitive.line-height-140}"
-    },
-    "line-height-prose": {
-      "$type": "number",
-      "$value": "{primitive.line-height-160}"
     },
     "letter-spacing-ui": {
       "$type": "dimension",

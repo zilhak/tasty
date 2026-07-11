@@ -46,7 +46,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | control-height-tree | 22 | |
 | font-size body / caption / heading | 13 / 11 / 13(weight 600) | `font_size_body/caption/heading` |
 | font-size micro | 10 | `font_size_micro` — Badge/Tag/Kbd·command_palette footer 힌트 |
-| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 앵커(egui_commonmark `Heading`↔`Body` 보간 최상단, UI cap 면제). `prose-h2`·`line-height-prose` 는 라이브러리가 헤딩 보간·본문 leading 을 소유해 소스 은퇴(retire-pending); vendor json 잔존, 디자인 tokens/ 에서 최종 제거 예정 |
+| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 앵커(egui_commonmark `Heading`↔`Body` 보간 최상단, UI cap 면제). `prose-h2`·`line-height-prose` 는 라이브러리가 헤딩 보간·본문 leading 을 소유해 은퇴 확정 — 디자인 tokens/·vendor json·생성 const 모두에서 제거됨 |
 | font-size term-sm / term / term-lg | 12 / 14 / 16 | `font_size_term_sm` / `font_size_term` / `font_size_term_lg` — 터미널 스케일 |
 | icon-size xs | 12 | `icon_glyph_size_xs` |
 | icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프 |

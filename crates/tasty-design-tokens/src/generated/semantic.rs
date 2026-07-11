@@ -61,9 +61,6 @@ pub const FONT_SIZE_MICRO: LogicalPx = super::primitive::FONT_SIZE_10;
 /// `semantic.font-size-prose-h1` → `{primitive.font-size-20}` = 20px
 pub const FONT_SIZE_PROSE_H1: LogicalPx = super::primitive::FONT_SIZE_20;
 
-/// `semantic.font-size-prose-h2` → `{semantic.font-size-max}` = 14px
-pub const FONT_SIZE_PROSE_H2: LogicalPx = FONT_SIZE_MAX;
-
 /// `semantic.font-size-term` → `{primitive.font-size-14}` = 14px
 pub const FONT_SIZE_TERM: LogicalPx = super::primitive::FONT_SIZE_14;
 
@@ -96,9 +93,6 @@ pub const ICON_SIZE_XS: LogicalPx = super::primitive::SIZE_12;
 
 /// `semantic.letter-spacing-ui` → `{primitive.letter-spacing-0}` = 0
 pub const LETTER_SPACING_UI: LogicalPx = super::primitive::LETTER_SPACING_0;
-
-/// `semantic.line-height-prose` → `{primitive.line-height-160}` = 1.6
-pub const LINE_HEIGHT_PROSE: f32 = super::primitive::LINE_HEIGHT_160;
 
 /// `semantic.line-height-term` → `{primitive.line-height-120}` = 1.2
 pub const LINE_HEIGHT_TERM: f32 = super::primitive::LINE_HEIGHT_120;

@@ -32,9 +32,9 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 494 (104/131/259). semantic 131 = 129 + `accent-occupied-soft`(green)
-/// + `accent-occupied-hard`(peach) (2026-07-07-occupancy-borders 판정, ADR-0040 점유
-/// 테두리 role 을 accent-success/accent-attention 에서 독립 분리).
+/// 토큰 census — 492 (104/129/259). semantic 129 = 기존 131 에서
+/// `font-size-prose-h2`·`line-height-prose` 2종 제거 (2026-07-08-tokens 판정,
+/// egui_commonmark 이 헤딩 보간·본문 leading 을 소유해 소비처 소멸 → 은퇴 확정).
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
@@ -46,7 +46,7 @@ fn token_census_matches_design_export() {
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Semantic),
-        131,
+        129,
         "semantic census drift"
     );
     assert_eq!(
@@ -54,7 +54,7 @@ fn token_census_matches_design_export() {
         259,
         "component census drift"
     );
-    assert_eq!(set.len(), 494, "total census drift");
+    assert_eq!(set.len(), 492, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

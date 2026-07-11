@@ -10,9 +10,9 @@
 //! 라이브러리 실제 출력과 픽셀 동일성은 비목표. 라이브러리가 확정한 디자인 예외(정본
 //! `tokens/semantic.css:137-138,152`):
 //! - **heading 사다리는 라이브러리가 보간**한다 — `Heading`(prose-h1 20 앵커)↔`Body`(13) 사이를
-//!   H2..H6 이 자동 보간(per-H2 픽셀 지정 불가, prose-h2 deprecated). h2·h3 이 시각적으로
+//!   H2..H6 이 자동 보간(per-H2 픽셀 지정 불가, prose-h2 토큰 제거됨). h2·h3 이 시각적으로
 //!   겹치는 것은 이 보간의 결과다.
-//! - **본문 leading override 불가**(line-height-prose deprecated — 라이브러리 소유).
+//! - **본문 leading override 불가**(line-height-prose 토큰 제거됨 — 라이브러리 소유).
 //! - **표**는 `Frame::group`+`Grid::striped` 로 그려 grid border(md-table-border, 불투명)·zebra
 //!   (md-table-row-bg-zebra)·cell fg(md-table-cell-fg)만 노출 — header 밴드/불투명 base fill/
 //!   per-cell 8·4px 패딩은 라이브러리 Grid 로 도달 불가(heading 보간과 동류의 라이브러리 제약).
