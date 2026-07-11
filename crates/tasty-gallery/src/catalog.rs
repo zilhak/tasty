@@ -933,6 +933,44 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                section(
+                    "tutorial",
+                    "Tutorial — marker · callout · topic popup",
+                    vec![
+                        spec(
+                            "tutorial-marker",
+                            "Marker overlay — the 6th overlay family",
+                            Some(
+                                "Floating geometric ring at a target rect · top z · pointer-events:none · glow + spotlight default",
+                            ),
+                            widgets::tutorial::draw_marker,
+                        ),
+                        spec(
+                            "tutorial-callout",
+                            "Callout bubble — guidance pinned to a marker",
+                            Some(
+                                "244px fixed · step/total + dot rail · Skip·Back·Next · 4-way tail · edge-avoidance",
+                            ),
+                            widgets::tutorial::draw_callout,
+                        ),
+                        spec(
+                            "tutorial-topics",
+                            "Topic-list popup — the entry surface",
+                            Some(
+                                "360px CenteredFocused + scrim · scrollable list · selected / done states · 진행",
+                            ),
+                            widgets::tutorial::draw_topics,
+                        ),
+                        spec(
+                            "tutorial-composite",
+                            "Composite — a tutorial step in place",
+                            Some(
+                                "Step 1/4 워크스페이스 — marker + spotlight dim + callout, popup closed",
+                            ),
+                            widgets::tutorial::draw_composite,
+                        ),
+                    ],
+                ),
             ],
         },
         // ── Layouts ──────────────────────────────────────────────────
