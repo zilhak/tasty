@@ -77,7 +77,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 
 | 문서 | 내용 |
 |------|------|
-| [plugin-development](plugin-development.md) | plugin 제작 + 호스트 런타임 계약 |
+| [plugin-development](plugin-development.md) | plugin 제작 + 호스트 런타임 계약 (실행 중 tasty 에 플러그인만 반복 갱신 §9.1 — 호스트 재빌드 불필요) |
 | [plugin-permissions](plugin-permissions.md) | 권한 모델 |
 | [plugin-sensitive-data](plugin-sensitive-data.md) | 민감 데이터 |
 | [plugin-packaging](plugin-packaging.md) | 서명 + staging 동기화 |
