@@ -92,15 +92,25 @@ fn committed_generated_files_are_fresh() {
 }
 
 /// 재생성 텍스트와 커밋 텍스트를 비교, 어긋나면 첫 불일치 행만 짚어 panic.
+///
+/// Windows autocrlf 체크아웃에서는 `include_str!` 가 CRLF 를 읽어오므로
+/// 비교 전 양쪽을 `\n` 으로 정규화한다 — freshness 는 내용 드리프트를
+/// 잡는 가드이지 line ending 가드가 아니다.
 fn assert_fresh(label: &str, fresh: &str, committed: &str) {
+    let fresh = fresh.replace("\r\n", "\n");
+    let committed = committed.replace("\r\n", "\n");
     if fresh != committed {
         let first_diff = fresh
             .lines()
             .zip(committed.lines())
             .position(|(a, b)| a != b)
             .map(|i| i + 1);
+        let detail = match first_diff {
+            Some(line) => format!("첫 불일치: {line}행"),
+            None => "행 내용은 모두 일치 — 행 수/말미 개행 차이".to_string(),
+        };
         panic!(
-            "{label} 이 vendor json 과 어긋남 (첫 불일치: {first_diff:?}행, \
+            "{label} 이 vendor json 과 어긋남 ({detail}, \
              재생성 {}줄 vs 커밋 {}줄) — `cargo run -p tasty-design-tokens --bin generate` \
              실행 후 결과를 커밋할 것",
             fresh.lines().count(),
