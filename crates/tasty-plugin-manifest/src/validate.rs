@@ -15,8 +15,8 @@ use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
     is_reserved_event_namespace, is_reserved_hook_event_key, is_reserved_ipc_prefix,
     is_valid_cli_name, is_valid_event_key, is_valid_event_pattern, is_valid_hook_event_key,
-    is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id, is_valid_settings_id,
-    is_valid_simple_id, is_valid_tool_id,
+    is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
+    is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -346,6 +346,7 @@ impl Manifest {
         self.validate_contributed_detectors()?;
         self.validate_contributed_handlers()?;
         self.validate_contributed_detector_permissions()?;
+        self.validate_contributed_hook_handlers()?;
         Ok(())
     }
 
@@ -936,6 +937,42 @@ impl Manifest {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_contributed_hook_handlers(&self) -> anyhow::Result<()> {
+        // [[contributes.hook_handler]] 검증 — schema-agnostic 만. concrete action
+        // (IpcSequence calls 등) 은 host 측 `HookHandlerRegistryPort::install_plugin_hook_handlers`
+        // 가 install 시점에 deserialize·검증한다. plugin 은 셸(`ShellCommand`) 을
+        // 타입 레벨에서 쓸 수 없으므로(PluginHookHandlerActionDecl) 여기선 id 형식 +
+        // 유일성 + define 권한만 확인한다.
+        let has_define = self
+            .permissions
+            .iter()
+            .any(|p| p == "hook_handler.define");
+        let mut seen_ids = HashSet::new();
+        for v in &self.contributes.hook_handler {
+            let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            if id.is_empty() {
+                anyhow::bail!("contributes.hook_handler entry missing required 'id' string field");
+            }
+            if !is_valid_hook_handler_id(id) {
+                anyhow::bail!(
+                    "invalid contributes.hook_handler id '{id}': must be lowercase ascii + digits + '-', length ≤ 32"
+                );
+            }
+            if !seen_ids.insert(id.to_string()) {
+                anyhow::bail!("contributes.hook_handler id '{id}' declared twice in this manifest");
+            }
+            // 훅 핸들러 정의는 base 권한 `hook_handler.define` 을 요구한다(파일 핸들러
+            // detector 가 `file_handler.define` 을 요구하는 것과 동일 지위). 사용자가
+            // plugin install 시 이 권한을 grant 해야 훅 핸들러가 설치된다.
+            if !has_define {
+                anyhow::bail!(
+                    "contributes.hook_handler '{id}' requires permission 'hook_handler.define'"
+                );
+            }
+        }
         Ok(())
     }
 

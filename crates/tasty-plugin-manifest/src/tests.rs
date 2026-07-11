@@ -1747,6 +1747,36 @@ fn file_handler_unknown_sentinel_token_rejected() {
     assert!(Permission::from_token("file_handler.extend:$unknown").is_none());
 }
 
+#[test]
+fn hook_handler_define_token_parses() {
+    assert_eq!(
+        Permission::from_token("hook_handler.define"),
+        Some(Permission::HookHandlerDefine)
+    );
+    assert_eq!(
+        Permission::HookHandlerDefine.as_token(),
+        "hook_handler.define"
+    );
+}
+
+#[test]
+fn hook_handler_handle_token_parses() {
+    let p = Permission::from_token("hook_handler.handle:notify").unwrap();
+    assert_eq!(p, Permission::HookHandlerHandle("notify".into()));
+    assert_eq!(p.as_token(), "hook_handler.handle:notify");
+}
+
+#[test]
+fn hook_handler_handle_token_bad_scope_rejected() {
+    // 대문자·`$`-prefix·32 초과·`.` 는 hook handler short-name 규칙 위반.
+    assert!(Permission::from_token("hook_handler.handle:Notify").is_none());
+    assert!(Permission::from_token("hook_handler.handle:$directory").is_none());
+    assert!(Permission::from_token("hook_handler.handle:").is_none());
+    assert!(Permission::from_token("hook_handler.handle:a.b").is_none());
+    let too_long = "a".repeat(33);
+    assert!(Permission::from_token(&format!("hook_handler.handle:{too_long}")).is_none());
+}
+
 fn detector_skeleton(perms: &str, extra: &str) -> String {
     format!(
         r#"
@@ -1777,6 +1807,86 @@ fn detector_define_token_required_for_new_id() {
         "#,
     );
     parse(&s).expect("with file_handler.define should accept new detector");
+}
+
+#[test]
+fn hook_handler_contribute_requires_define() {
+    // define 권한 없이 [[contributes.hook_handler]] → reject.
+    let s = detector_skeleton(
+        r#""#,
+        r#"
+            [[contributes.hook_handler]]
+            id = "notify"
+            source = "webhook"
+            priority = 100
+            [contributes.hook_handler.action]
+            kind = "ipc_sequence"
+            calls = [{ method = "notification.create", params = { body = "hi" } }]
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("hook_handler.define"), "got: {err}");
+}
+
+#[test]
+fn hook_handler_contribute_with_define_ok() {
+    let s = detector_skeleton(
+        r#""hook_handler.define""#,
+        r#"
+            [[contributes.hook_handler]]
+            id = "notify"
+            source = "webhook"
+            priority = 100
+            [contributes.hook_handler.action]
+            kind = "ipc_sequence"
+            calls = [{ method = "notification.create", params = { body = "hi" } }]
+        "#,
+    );
+    parse(&s).expect("with hook_handler.define should accept hook handler");
+}
+
+#[test]
+fn hook_handler_contribute_bad_id_rejected() {
+    let s = detector_skeleton(
+        r#""hook_handler.define""#,
+        r#"
+            [[contributes.hook_handler]]
+            id = "Bad_Id"
+            source = "webhook"
+            priority = 100
+            [contributes.hook_handler.action]
+            kind = "ipc_sequence"
+            calls = []
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("invalid contributes.hook_handler id"), "got: {err}");
+}
+
+#[test]
+fn hook_handler_contribute_duplicate_id_rejected() {
+    let s = detector_skeleton(
+        r#""hook_handler.define""#,
+        r#"
+            [[contributes.hook_handler]]
+            id = "notify"
+            source = "webhook"
+            priority = 100
+            [contributes.hook_handler.action]
+            kind = "ipc_sequence"
+            calls = []
+
+            [[contributes.hook_handler]]
+            id = "notify"
+            source = "hook"
+            priority = 50
+            [contributes.hook_handler.action]
+            kind = "ipc_sequence"
+            calls = []
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
 }
 
 #[test]

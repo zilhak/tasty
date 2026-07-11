@@ -4,7 +4,9 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::validators::{is_reserved_ipc_prefix, is_valid_ipc_prefix, is_valid_plugin_id};
+use super::validators::{
+    is_reserved_ipc_prefix, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_plugin_id,
+};
 
 /// 호스트가 지원하는 plugin protocol 메이저 버전.
 /// plugin 매니페스트의 `api_version`과 일치해야 한다.
@@ -183,6 +185,16 @@ pub enum Permission {
     /// 특정 detector 에 handler attach 권한. 토큰 형식: `file_handler.handle:<id>`.
     /// `$unknown` 은 reject. `$directory` 등 실 등록된 reserved id 는 허용.
     FileHandlerHandle(String),
+    /// 새 hook 핸들러 정의 권한. 토큰 `hook_handler.define`.
+    /// `[[contributes.hook_handler]]` 로 훅 핸들러(IpcSequence)를 선언할 때 필요.
+    /// 파일 핸들러 `file_handler.define` 미러 — 훅 핸들러엔 detector 재선언(extend)
+    /// 개념이 없어 define + handle 두 토큰만 둔다.
+    HookHandlerDefine,
+    /// 특정 hook 핸들러 id 에 대한 scope 권한. 토큰 형식: `hook_handler.handle:<id>`.
+    /// `<id>` 는 hook 핸들러 short-name(`[a-z0-9-]{1,32}`). 파일 핸들러
+    /// `file_handler.handle:<detector>` 미러 — 특정 핸들러 id 단위 grant 가시성을
+    /// 위해 예약된 scoped 토큰.
+    HookHandlerHandle(String),
 }
 
 impl Permission {
@@ -212,6 +224,7 @@ impl Permission {
             "ui.settings_page" => Self::UiSettingsPage,
             "window.spawn" => Self::WindowSpawn,
             "file_handler.define" => Self::FileHandlerDefine,
+            "hook_handler.define" => Self::HookHandlerDefine,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
                     if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -238,6 +251,14 @@ impl Permission {
                         return None;
                     }
                     return Some(Self::FileHandlerHandle(id.to_string()));
+                }
+                if let Some(id) = other.strip_prefix("hook_handler.handle:") {
+                    // 훅 핸들러 short-name 규칙(`[a-z0-9-]{1,32}`). `$`-prefix reserved
+                    // 개념이 없으므로 detector 와 달리 그대로 검증만 한다.
+                    if !is_valid_hook_handler_id(id) {
+                        return None;
+                    }
+                    return Some(Self::HookHandlerHandle(id.to_string()));
                 }
                 return None;
             }
@@ -279,6 +300,8 @@ impl Permission {
             Self::FileHandlerDefine => "file_handler.define".into(),
             Self::FileHandlerExtend(id) => format!("file_handler.extend:{id}"),
             Self::FileHandlerHandle(id) => format!("file_handler.handle:{id}"),
+            Self::HookHandlerDefine => "hook_handler.define".into(),
+            Self::HookHandlerHandle(id) => format!("hook_handler.handle:{id}"),
         }
     }
 }
@@ -609,6 +632,16 @@ pub struct Contributes {
     /// **Opaque payload** (F.B.2) — detector 와 동일 사유.
     #[serde(default)]
     pub handler: Vec<serde_json::Value>,
+    /// 훅 핸들러 contribute (webhook/hook 공유 레지스트리). plugin 은 `IpcSequence`
+    /// 만 사용 가능(셸 `ShellCommand` 는 host/user 전용 — 타입 레벨 배제). 각 항목은
+    /// `[[contributes.hook_handler]]` 한 블록이며 `hook_handler.define` 권한을 요구한다.
+    ///
+    /// **Opaque payload** (F.B.2 동일 사유) — manifest crate 가 본 바이너리
+    /// `hook_handler::config` 결합 없이 분리 가능하도록 raw JSON Value 로 보관.
+    /// concrete `HookHandlerDecl<PluginHookHandlerActionDecl>` 변환/검증은 host
+    /// `HookHandlerRegistryPort` impl(install 시점)에서 수행한다.
+    #[serde(default)]
+    pub hook_handler: Vec<serde_json::Value>,
     /// Plugin 이 설정 모달에 노출할 sub-page 정의. 항목당 `[[contributes.settings_pages]]`
     /// 한 블록. host 가 plugin registry 를 순회해 동적으로 sub-tab 을 그린다.
     /// 1 차 schema 는 `FontOverride` 항목만 지원 (Color/Bool/Enum 등은 후속 확장).

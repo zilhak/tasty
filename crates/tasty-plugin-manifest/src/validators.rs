@@ -25,6 +25,19 @@ pub(super) fn is_valid_simple_id(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// hook handler short-name 형식 검증 (manifest 측 schema 차원). 소문자 ascii + 숫자 +
+/// `-`, 길이 1..=32. host 측 `hook_handler::types::is_valid_hook_handler_short_name`
+/// 과 동일 규칙이며, 본 함수는 manifest 가 host hook_handler 도메인 결합 없이
+/// `hook_handler.handle:<id>` scope 를 검증하기 위한 자체 복제다 — 두 함수가 어긋나면
+/// install 단계에서 reject 된다.
+pub(super) fn is_valid_hook_handler_id(s: &str) -> bool {
+    if s.is_empty() || s.len() > 32 {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// IPC namespace prefix 형식 검증.
 /// 소문자 ascii + 숫자 + `_`. 알파벳으로 시작. 길이 1..=32. `.` 포함 불가.
 pub(super) fn is_valid_ipc_prefix(s: &str) -> bool {
