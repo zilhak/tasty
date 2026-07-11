@@ -233,6 +233,11 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 필요하므로 이 시점 주입으로 충분. headless 엔 init_app_state 가 없어 여기서 호출.
         // headless 는 toast UI 가 없으므로 포트 미설정/bind 실패 경고는 리스너 내부
         // `tracing::warn!` 로만 노출된다(S8) — 반환 report 는 여기서 소비하지 않는다.
+        //
+        // 공유 훅 핸들러 레지스트리 시드(host embedded 기본값 + user config). 웹훅
+        // 바인딩·`hook_handler.*` 조회가 이 전역 레지스트리를 보므로 리스너 init 전에
+        // 채운다(plugin contribution 은 이후 discover_and_start 에서 병합).
+        crate::hook_handler::install_default_sources();
         let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }

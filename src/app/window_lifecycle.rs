@@ -391,6 +391,11 @@ impl App {
             // 포트 미설정/ bind 실패는 기존 toast 인프라로 사용자에게 알린다(신규
             // 디자인 컴포넌트 없이 재사용, S8). db/theme 부팅 경고가 InfoModal 을
             // 쓰는 것과 달리 웹훅 미기동은 치명적이지 않아 Warning 토스트로 족하다.
+            //
+            // 공유 훅 핸들러 레지스트리 시드(host embedded 기본값 + user config). 웹훅
+            // 바인딩·`hook_handler.*` 조회가 이 전역 레지스트리를 보므로 리스너 init
+            // 전에 채운다(plugin contribution 은 discover_and_start 에서 병합).
+            crate::hook_handler::install_default_sources();
             let report = crate::webhook::init_from_config(injector.clone());
             if let Some(msg) = report.user_warning() {
                 state.toasts.push(

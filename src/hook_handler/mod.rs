@@ -15,11 +15,11 @@ pub mod trigger;
 pub mod types;
 
 // 편의 re-export — 현재 소비되는 심볼만 노출한다. 나머지(config 의 `HookHandlerDecl` /
-// actor별 action decl, `HookHandlerRegistry` / `RegistryError` / `UserHookHandlerUpsertDecl` /
-// `install_default_sources` 등 S9/S11/S14 가 소비할 것)는 소비 시점에 추가한다. 전체
-// 경로(`registry::` / `types::` / `exec::` / `config::`)로는 항상 접근 가능.
+// actor별 action decl, `HookHandlerRegistry` / `RegistryError` / `UserHookHandlerUpsertDecl`
+// 등 S13 이 소비할 것)는 소비 시점에 추가한다. 전체 경로(`registry::` / `types::` /
+// `exec::` / `config::`)로는 항상 접근 가능.
 pub use exec::{SubstitutionContext, execute_sequence, spawn_shell};
-pub use registry::{HostHookHandlerPort, global, user_config_path};
+pub use registry::{HostHookHandlerPort, global, install_default_sources, user_config_path};
 pub use types::{
     HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,
     TriggerSource, validate_binding,
