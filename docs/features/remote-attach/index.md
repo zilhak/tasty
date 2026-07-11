@@ -30,13 +30,14 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 
 attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push 하고, 이후 변화는 delta 로 흐른다. client 는 PTY 없는 mirror 터미널에 바이트를 먹여 같은 grid 를 재구성한다. 프로토콜·mux 상세는 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 
-**그리드 크기는 원격이 authoritative** — mirror 의 cols×rows 는 로컬 창/pane 크기가 아니라 **원격 터미널 크기**를 따른다. 원격 PTY 는 자기 grid 로 콘텐츠를 래핑하므로 mirror grid 가 로컬 크기로 바뀌면 줄바꿈·커서가 어긋난다. 구현:
+**그리드 크기는 client 가 구동(client-driven)** — mirror 의 cols×rows 는 그것을 띄운 **로컬 pane 크기**를 따르고, 원격 PTY 를 그 크기로 reflow 시킨다(ADR-0045). "remote authoritative" 는 메커니즘으로만 남는다: 원격 PTY 가 실제 크기의 단일 진실원이라 콘텐츠 래핑(reflow)을 담당하고, 그 확정 크기를 client 에 되돌린다. client 는 **의도를 밀고(요청)** 원격은 **결과를 확정(echo)** 한다. 구현:
 
-- mirror 는 detached 터미널(PTY 없음)이라 매 프레임 도는 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `AppState::resize_all`)이 **detached 터미널을 skip** 한다(`Terminal::is_detached`). → 로컬 창 크기가 mirror grid 를 덮어쓰지 못한다.
-- 원격 터미널이 리사이즈되면 서버가 attach stream 의 **`Control` 프레임(`StreamControl::Resize`)** 으로 새 cols/rows 를 통지하고, client 가 그 값으로 mirror 를 리사이즈한다. → 원격 grid 변경이 mirror 에 반영된다.
-- 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다 — pane 이 원격 grid 보다 크면 남는 영역은 배경으로 남는 자연 레터박스(스케일·스트레치 없음).
+- mirror 는 detached 터미널(PTY 없음)이라 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `AppState::resize_all`)이 detached 터미널을 로컬에 직접 적용하지 않고, 목표 grid 를 forward 큐에 넣는다. `about_to_wait` 에서 **`StreamControl::ClientResize`**(client→server) 로 원격에 요청한다.
+- 서버가 그 surface 의 **실제 원격 PTY 를 요청 크기로 resize**(reflow)한다(holder 만 구동 가능 — 배타 점유라 구동자는 항상 유일).
+- 원격 grid 가 실제로 바뀌면 서버가 기존 **`Control` 프레임(`StreamControl::Resize`, server→client)** 으로 확정 cols/rows 를 통지하고, client 가 그 echo 로만 mirror 를 리사이즈한다. → 로컬을 낙관적으로 먼저 바꾸지 않아(원격 reflow 전 잘못된 grid 재생 방지) desync 가 없다.
+- 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다. mirror 가 pane 크기로 reflow 되므로 pane 을 채운다(과거의 80×24 좌상단 소영역 + 배경 레터박스는 사라진다). 초기 attach 순간(원격 기본 80×24 → 첫 forward reflow)에는 약 1 RTT 의 짧은 깜빡임이 있을 수 있다.
 
-`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 향후 구조 변경 이벤트(탭/pane open·close forward)도 새 `StreamTag` 없이 variant 로 추가된다.
+`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다.
 
 ### 모드
 

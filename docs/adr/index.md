@@ -55,3 +55,4 @@
 | 0042 | [native 파일 선택 다이얼로그는 host `fs.pick_file`(FsRead)로 위임한다](0042-fs-pick-file-native-dialog-host-delegation.md) | Accepted | 2026-07-09 | plugin, ipc, fs, native-dialog, rfd, permission, fs-read, host-delegation, markdown, focus-independence, adr-0028 |
 | 0043 | [convert 시 파일 입력이 필요한 kind 를 capability 로 라우팅](0043-convert-input-popup-capability.md) | Accepted | 2026-07-09 | surface-kind, convert, plugin, de-pluginize, capability, popup, adr-0028, adr-0042 |
 | 0044 | [스크린샷을 focus-독립 + ID 지정으로 만들어 debug 격리에서 release 로 승격](0044-screenshot-release-promotion-surface-target.md) | Accepted | 2026-07-10 | screenshot, ipc, cli, focus-independence, offscreen-render, gpu, debug-ipc, local-only, adr-0032, adr-0040 |
+| 0045 | [mirror grid geometry 는 client 가 구동하고 remote 는 reflow 로 확정](0045-mirror-geometry-client-driven.md) | Accepted | 2026-07-11 | attach, remote, mirror, geometry, resize, protocol, client-driven, backward-compat, headless, adr-0007, adr-0040 |
