@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.18"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.19"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// `design.protocol` 정본 텍스트 — 바이너리에 임베드. 동시성 lock 규약 전문 + AI 부트스트랩
 /// 절차. 호스트 패키징(manifest+binary+lang 만 복사)에 의존하지 않고 CLI 가 직접 출력한다.
