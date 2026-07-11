@@ -86,15 +86,19 @@ IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바�
 보내지 않는다. 이 경우 plugin 은 SDK 의 `EguiMeshSurface::repaint_last`(popup/banner 동형)로
 스스로 재-paint 한다:
 
-- `EguiMeshCore` 가 마지막 set_context 의 **geom/ppp/theme** 를 캐시한다(입력은 저장 안 함).
-- `repaint_last(&host, run_ui)` 는 캐시된 geom/ppp 로 **빈 raw_input** 재-run → 출력이 바뀌면
-  `PaintFrame`(popup/banner 는 각자 `*PaintFrame`) 을 송신한다. host 의 기존 wake·재합성
-  경로가 이 프레임에 깨어난다(1-hop, 재-forward 왕복 불필요).
+- `EguiMeshCore` 가 마지막 set_context 의 **geom/ppp/theme/focused** 를 캐시한다(입력
+  이벤트는 저장 안 함).
+- `repaint_last(&host, run_ui)` 는 캐시된 geom/ppp 로 **빈 이벤트 + 직전 focused 보존**
+  재-run → 출력이 바뀌면 `PaintFrame`(popup/banner 는 각자 `*PaintFrame`) 을 송신한다.
+  host 의 기존 wake·재합성 경로가 이 프레임에 깨어난다(1-hop, 재-forward 왕복 불필요).
 - 첫 set_context 도착 전(캐시 없음)이면 no-op, 출력 무변화면 `last_hash` dedup 으로 생략.
 
-**identity 불변식**: 재-paint 는 `RawInputWire::default()`(events 빈 배열)로만 재현한다 —
-`set_context.raw_input` 에 가짜 사용자 입력을 주입하지 않는다. 캐시된 theme 은
-`last_theme()` 로 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
+**identity 불변식**: 재-paint 의 `events` 는 빈 배열 — `set_context.raw_input` 에 가짜
+사용자 입력을 주입하지 않는다. `focused` 는 이벤트가 아니라 지속 상태이므로 직전
+set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨어뜨리면 egui `has_focus()`
+의 viewport 게이트가 꺼져 커서·드롭다운 등 포커스 의존 UI 가 재-paint 프레임에서만
+퇴행한다(markdown 주소창 진동 버그의 원인이었다). 캐시된 theme 은 `last_theme()` 로
+노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
 
 소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤).
 git-viewer 는 모든 상태 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가
