@@ -345,7 +345,7 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "nav",
-                    "Tab · TreeRow · MenuItem",
+                    "Tab · TreeRow · MenuItem · DrillDown",
                     vec![
                         spec(
                             "tab",
@@ -364,6 +364,14 @@ pub fn pages() -> Vec<Page> {
                             "MenuItem",
                             Some("Row in a context or command menu"),
                             components::prim_nav::draw_menu_item,
+                        ),
+                        spec(
+                            "drilldown",
+                            "DrillDown",
+                            Some(
+                                "Master → detail content swap — pinned back bar (← + title + actions), instant switch",
+                            ),
+                            components::prim_drilldown::draw,
                         ),
                     ],
                 ),
@@ -437,13 +445,23 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "data",
-                    "Table",
-                    vec![spec(
-                        "table",
-                        "Table",
-                        Some("Sticky-header data grid — the shared Table widget"),
-                        components::prim_table::draw,
-                    )],
+                    "Table · ListCtrl",
+                    vec![
+                        spec(
+                            "table",
+                            "Table",
+                            Some("Sticky-header data grid — the shared Table widget"),
+                            components::prim_table::draw,
+                        ),
+                        spec(
+                            "listctrl",
+                            "ListCtrl",
+                            Some(
+                                "Row-selectable navigation list — pick one to drill into (pair with DrillDown)",
+                            ),
+                            components::prim_listctrl::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "segmented",
