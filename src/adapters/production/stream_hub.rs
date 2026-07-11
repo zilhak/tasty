@@ -76,6 +76,12 @@ pub struct PumpOutcome {
     /// workspace holder, executes via the existing IPC handlers, and replies with
     /// a [`StreamControl::StructuralResult`](crate::ipc::stream::StreamControl).
     pub structural_ops: Vec<(StreamClientId, u64, crate::ipc::stream::StructuralOp)>,
+    /// `(client_id, remote surface_id, cols, rows)` client-driven resize requests
+    /// from mirror clients ([`StreamControl::ClientResize`](crate::ipc::stream::StreamControl)).
+    /// The main loop verifies the client is the anchor surface's workspace holder,
+    /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
+    /// tap echoes the settled grid back as a `Resize` (no extra push here).
+    pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
 }
 
 /// Per-client push sink held in the registry.
@@ -217,16 +223,25 @@ impl StreamHub {
                             out.input_frames.push((client_id, frame.payload));
                         }
                         crate::ipc::stream::StreamTag::Control => {
-                            // Mirror structural-op forward (client→server). Only
-                            // `StructuralOp` is a client→server Control message;
-                            // any other Control payload (unknown/newer event) fails
-                            // to deserialize and is ignored (forward compatible).
-                            if let Ok(crate::ipc::stream::StreamControl::StructuralOp {
-                                op_id,
-                                op,
-                            }) = serde_json::from_slice(&frame.payload)
-                            {
-                                out.structural_ops.push((client_id, op_id, op));
+                            // Client→server Control messages: `StructuralOp`
+                            // (split/new-tab/close/move forward) and `ClientResize`
+                            // (client-driven mirror geometry). Any other payload
+                            // (a server→client event, or an unknown/newer one)
+                            // fails to match and is ignored (forward compatible).
+                            match serde_json::from_slice(&frame.payload) {
+                                Ok(crate::ipc::stream::StreamControl::StructuralOp {
+                                    op_id,
+                                    op,
+                                }) => out.structural_ops.push((client_id, op_id, op)),
+                                Ok(crate::ipc::stream::StreamControl::ClientResize {
+                                    surface_id,
+                                    cols,
+                                    rows,
+                                }) => {
+                                    out.resize_requests
+                                        .push((client_id, surface_id, cols, rows));
+                                }
+                                _ => {}
                             }
                         }
                         // Ping/Detach from clients carry no step-4 payload.
@@ -379,8 +394,9 @@ mod tests {
 
     #[test]
     fn pump_inbound_ignores_unknown_control() {
-        // A Control frame that is not a StructuralOp (e.g. a Resize, which is
-        // server→client only) must not be classified as a structural op.
+        // A Control frame that is not a client→server message (e.g. a Resize,
+        // which is server→client only) must not be classified as a structural op
+        // or a resize request.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::Resize {
@@ -396,6 +412,29 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert!(out.structural_ops.is_empty());
+        assert!(out.resize_requests.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_client_resize() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::ClientResize {
+            surface_id: 12,
+            cols: 203,
+            rows: 57,
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 8,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.resize_requests, vec![(8u32, 12u32, 203usize, 57usize)]);
+        // Not misclassified as a structural op or input.
+        assert!(out.structural_ops.is_empty());
+        assert!(out.input_frames.is_empty());
     }
 
     #[test]
