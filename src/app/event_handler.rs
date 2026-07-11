@@ -989,6 +989,14 @@ impl App {
             self.apply_forwarded_structural_op(client_id, op_id, &op, &hub);
         }
 
+        // client-driven mirror geometry(ADR-0045): mirror client 가 요청한 크기로
+        // 원격 PTY 를 resize. holder 검증은 `apply_attached_workspace_resize` 가
+        // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
+        // 자동 fan-out 한다(여기서 추가 push 없음).
+        for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
+            self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
+        }
+
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
         }
@@ -1163,6 +1171,40 @@ impl App {
                 false,
                 Some("workspace not found".to_string()),
             );
+        }
+    }
+
+    /// mirror client 가 forward 한 client-driven resize(ADR-0045)를 원격 PTY 에
+    /// 적용한다. anchor surface 를 가진 engine 을 순회하며
+    /// `apply_attached_workspace_resize`(holder 검증 포함)를 호출한다 — 성공한
+    /// engine 에서 멈춘다. 실제 grid 변화는 `Terminal::resize` 가 판정하고, 변화
+    /// 시 resize tap 이 server→client `Resize` echo 를 자동 fan-out 한다(추가 push
+    /// 불요). holder 아님/미발견이면 조용히 무시(구조 op 와 달리 회신 프레임 없음 —
+    /// 요청은 idempotent 하고 echo 부재가 곧 "변화 없음"이다).
+    fn apply_forwarded_resize(
+        &mut self,
+        client_id: u32,
+        remote_surface_id: u32,
+        cols: usize,
+        rows: usize,
+    ) {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.apply_attached_workspace_resize(
+                    client_id,
+                    remote_surface_id,
+                    cols,
+                    rows,
+                )
+            {
+                w.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
+                return;
+            }
         }
     }
 }

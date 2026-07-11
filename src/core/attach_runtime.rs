@@ -285,6 +285,37 @@ impl CoreState {
         }
     }
 
+    /// client-driven mirror geometry(ADR-0045): mirror client 가 보낸
+    /// [`StreamControl::ClientResize`](crate::ipc::stream::StreamControl) 를 지정
+    /// remote surface 의 **실제 PTY** 에 적용한다. `feed_attached_workspace_input`
+    /// 과 동형으로 holder 를 검증해(그 workspace 를 점유한 client 만) 타 workspace 의
+    /// grid 를 구동하지 못하게 막는다.
+    ///
+    /// 반환: 적용 시도 여부(`false` = anchor workspace 미발견/holder 아님/surface
+    /// 없음). 실제 grid 변화 판정은 `Terminal::resize` 내부(동일값이면 no-op)이며,
+    /// 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를 자동
+    /// fan-out 한다 — 여기서 추가로 push 하지 않는다(echo 경로 재사용).
+    pub fn apply_attached_workspace_resize(
+        &mut self,
+        client_id: AttachClientId,
+        remote_surface_id: u32,
+        cols: usize,
+        rows: usize,
+    ) -> bool {
+        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
+            return false;
+        };
+        if self.attach.workspace_holder(ws) != Some(client_id) {
+            return false;
+        }
+        if let Some(terminal) = self.terminals.get_mut(remote_surface_id) {
+            terminal.resize(cols, rows);
+            true
+        } else {
+            false
+        }
+    }
+
     /// workspace attach 디스크립터: 트리(분할 비율 포함) + per-surface role/cols/rows/kind.
     fn build_workspace_descriptor(
         &self,

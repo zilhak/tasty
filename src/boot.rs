@@ -365,6 +365,18 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         }
                     }
                 }
+                for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
+                    // client-driven mirror geometry(ADR-0045): mirror client 가
+                    // 요청한 크기로 원격 PTY 를 resize. holder 검증은 헬퍼가 담당,
+                    // 변화 시 기존 resize tap 이 server→client Resize echo 를 자동
+                    // fan-out 한다(추가 push 없음). headless 서버가 주 시나리오다.
+                    engine.apply_attached_workspace_resize(
+                        client_id,
+                        remote_surface_id,
+                        cols,
+                        rows,
+                    );
+                }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
                 }
