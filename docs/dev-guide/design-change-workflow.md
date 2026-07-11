@@ -15,16 +15,26 @@
 
 | | **A. 직접 접근 가능 (우선)** | **B. fallback (직접 접근 없음/실패/미인증)** |
 |---|---|---|
-| 요청문서 위치 | 원격 claude design 프로젝트의 `design-request/MMDDhhmm-design-request-<slug>.md` 에 직접 write | 로컬 `.claude-workspace/design-request/MMDDhhmm-design-request-<slug>.md` |
+| 요청문서 위치 | 원격 프로젝트의 **요청 인박스 폴더**(프로젝트 컨벤션 — 예: `uploads/<slug>.md`)에 직접 write | 로컬 `.claude-workspace/design-request/MMDDhhmm-design-request-<slug>.md` |
 | 넣는 주체 | claude code 가 write (요청 md 한정 — 실제 디자인 파일 산출은 아님) | claude code 가 로컬 파일로 작성 |
-| designer 에게 전달 | 사용자가 claude.ai/design 프로젝트에서 올려둔 요청 md 를 열어 처리 지시 | 사용자가 요청문서를 Claude design 에 직접 제출 |
-| 시안 수령 | 갱신 디자인을 직접 접근 수단으로 읽어 정합(폴더 경로 수령 불필요) | 사용자가 받아온 디자인 폴더 경로를 넘겨받아 정합 |
+| designer 에게 전달 | claude code 가 `tasty design chat` 으로 **자동 지시**(동시성 lock 준수, 아래) — 또는 사용자가 직접 지시 | 사용자가 요청문서를 Claude design 에 직접 제출 |
+| 시안 수령 | 갱신 디자인/`.DONE` 을 직접 접근 수단으로 읽어 정합(폴더 경로 수령 불필요) | 사용자가 받아온 디자인 폴더 경로를 넘겨받아 정합 |
 
-- **직접 접근 수단으로 write 하는 대상은 오직 `design-request/` 폴더의 요청 md 뿐**이다. 토큰/컴포넌트/UI kit 등 실제 디자인 산출물은 여전히 designer(Claude design)만 만든다 — claude code 가 직접 수정하지 않는다는 원칙은 불변.
-- 직접 접근 수단에는 designer AI 에게 프롬프트를 보내는 창구가 없다(파일 CRUD 만). 그래서 A 에서도 "요청을 처리하라"는 **지시 행위 자체는 여전히 사용자 몫**이다 — 달라지는 건 문서 전달이 수동 복붙에서 원격 파일 배치로 바뀌는 것뿐.
+- **직접 접근 수단으로 write 하는 대상은 요청 인박스의 요청 md 뿐**이다. 토큰/컴포넌트/UI kit 등 실제 디자인 산출물은 여전히 designer(Claude design)만 만든다 — claude code 가 직접 수정하지 않는다는 원칙은 불변.
+- **A 경로 자동 지시**: `tasty design chat`(claude-design 플러그인)이 designer 에게 프롬프트를 보낼 수 있다(off-screen Playwright). 단 claude.ai/design 은 한 프로젝트에 **동시 한 turn** 만 허용하므로, 자동 지시는 반드시 아래 **동시성 lock 프로토콜**을 따른다. (플러그인이 없거나 사용자가 원하면 지시는 사용자 몫으로 두어도 된다.)
 - 이 저장소의 직접 접근 설정(접근 수단·projectId 등)은 로컬 지침(`.claude/CLAUDE.md`)에 기록한다(세션 고유값이라 커밋 문서에 박지 않는다).
+- 요청 인박스 폴더명·파일명은 **대상 프로젝트의 컨벤션**을 따른다(이 프로젝트는 `uploads/<slug>.md`). B(로컬)는 tasty 컨벤션 `MMDDhhmm-design-request-<slug>.md` 를 쓴다.
 
-아래 다이어그램·표·라이프사이클은 **B(fallback)** 경로를 기준으로 그린 것이다. A 경로에서는 `[2] 사용자 제출`이 "claude code 가 원격 `design-request/` 에 write → 사용자가 그 파일로 지시"로 대체되고, 시안 수령이 직접 읽기가 된다.
+### 동시성 lock (A 경로 자동 지시 시 필수)
+
+claude.ai/design 은 한 프로젝트에 동시 한 turn 만 허용해, 이전 turn 이 진행 중일 때 새 `design chat` 을 쏘면 "Your other tab is working on a request" 로 막힌다. busy 를 값싸게 물을 API 가 없어, **공유 저장소(디자인 프로젝트 파일)에 요청마다 상태 파일을 만들어** busy/완료를 판정하는 파일 기반 advisory lock 을 쓴다.
+
+- **규약 전문·부트스트랩**: `tasty design protocol` (규약) / `tasty design protocol --bootstrap` (대상 프로젝트에 designer 규율 심는 절차). 플러그인이 정본을 노출한다.
+- **발사 전**: 원격 `design-tasks/` 를 `list_files` 로 확인 → 비-stale `.WORKING` 있으면 발사 금지·대기.
+- **완료**: 대응 `.DONE`(/`.FAILED`/`.NEEDS-INPUT`) 파일 등장으로 감지하고 그 파일에서 결과를 회수(브라우저 turn-end 스크래핑에 의존 X).
+- **backstop**: `tasty design chat` 은 전송 직후 busy 배너를 감지하면 `state:"busy"` 로 즉시 반환(timeout 헛대기 X). `tasty design turn-status` 는 lock TTL 만료 시 turn liveness 재확인에 쓴다.
+
+아래 다이어그램·표·라이프사이클은 **B(fallback)** 경로를 기준으로 그린 것이다. A 경로에서는 `[2] 사용자 제출`이 "claude code 가 원격 요청 인박스에 write → `tasty design chat` 으로 자동 지시(동시성 lock 준수)"로 대체되고, 시안 수령이 직접 읽기가 된다.
 
 ## 뱅글뱅글 도는 루프
 
@@ -57,7 +67,7 @@
 **planner 가 작성하는 입력 산출물.** "이번에 무엇을, 어떤 화면·컴포넌트·상태·인터랙션으로 보이게 할지"를
 디자이너(Claude design)가 고충실 시안으로 옮길 수 있도록 정의한 문서다. *왜/구현 배선*이 아니라 **무엇을 어떻게 보이게 할지**만 담는다.
 
-- **위치**: 전달 경로에 따라 다르다(위 "요청문서 전달 경로" 참조) — A(직접 접근)면 원격 claude design 프로젝트의 `design-request/`, B(fallback)면 로컬 `.claude-workspace/design-request/`(gitignored, 커밋 대상 아님).
+- **위치**: 전달 경로에 따라 다르다(위 "요청문서 전달 경로" 참조) — A(직접 접근)면 원격 프로젝트의 요청 인박스 폴더(프로젝트 컨벤션, 이 프로젝트는 `uploads/`), B(fallback)면 로컬 `.claude-workspace/design-request/`(gitignored, 커밋 대상 아님).
 - **파일명 규칙**: `MMDDhhmm-design-request-<slug>.md` — 맨 앞에 **월일시분(MMDDhhmm)**, 이어서 **`design-request`**, 마지막에 내용 slug 를 붙인다(예: `07101430-design-request-explorer-file-manager.md`). 날짜·시간을 선두에 둬 파일이 시간순으로 정렬되게 하고, `design-request` 접두로 문서 종류를 명시한다.
 - **기준 구성**: 아래 §0~§8 구성을 그대로 따른다.
 
