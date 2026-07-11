@@ -1,6 +1,6 @@
 # ADR-0040: 점유를 약한/강한(soft/hard) 2계층으로 나누고 AI 에이전트를 점유 주체로 일반화한다
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-07
 - **Tags**: occupation, soft-occupy, hard-occupy, actors, ai-agent, child-terminal, attach, readonly, marker, focus-independence, adr-0007, adr-0032
 

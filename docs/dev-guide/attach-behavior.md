@@ -23,14 +23,16 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 `remote`·`debug attach` 는 **IPC 네임스페이스가 아니다.** attach 의 IPC 표면은 `attach.*`(아래) 그대로이고, `remote attach`/`remote check`/`debug attach` 는 그 위(+`system.info`)에서 *원격성·debug 격리만 분기*하는 CLI 계층이다.
 
-## 점유 레지스트리 (`AttachRegistry`)
+## 점유 레지스트리 (`OccupancyRegistry`)
 
 `src/core/attach.rs`. 휘발성(직렬화/복원 안 함 — 재시작 시 빈 registry → 전부 free).
 
-- `surface_locks: HashMap<SurfaceId, AttachLock>` — surface 단위 배타 lock. `acquire` 가 동시 점유를 `AlreadyAttached{holder}` 로 거부.
+이 registry 는 [ADR-0040](../adr/0040-occupancy-soft-hard-tiers-agent-occupant.md) 의 **약한/강한(soft/hard) 2계층 점유**를 함께 담는다. **attach 는 강한(hard) 점유의 한 사례** — 아래는 그 hard 경로다. 약한(soft) 점유(advisory 마커, write 미차단; 현 소비자 = `terminal` 명령의 child-terminal)는 [`features/child-terminal`](../features/child-terminal/index.md) 를 보라. 두 계층은 같은 registry 에 있지만 별도 저장이다(hard=`surface_locks`/`workspace_locks`, soft=별도 soft 엔트리).
+
+- `surface_locks: HashMap<SurfaceId, AttachLock>` — surface 단위 배타(hard) lock. `acquire` 가 동시 점유를 `AlreadyAttached{holder}` 로 거부.
 - `workspace_locks` + `surface_to_workspace` — workspace 단위 점유. workspace 점유 시 멤버 *터미널* 은 `surface_locks` 에도 동일 holder 로 등록(서버측 placeholder 렌더·입력차단을 surface 단위와 동일 적용). 비-터미널은 역매핑(`surface_to_workspace`)으로만 "점유 표시".
 - `release` (holder 본인) / `force_detach` (서버 권한) / `release_all_for_client`(EOF 시 일괄 — workspace + 멤버 + 잔여 surface).
-- **입력 격리**: `apply_send_to_surface` 가 `is_attached` 면 서버 로컬 입력 거부, client 입력만 `feed_attached_input` 우회 경로로 PTY 도달.
+- **입력 격리**: `apply_send_to_surface` 가 `is_hard_occupied` 면 서버 로컬 입력 거부, client 입력만 `feed_attached_input` 우회 경로로 PTY 도달. (soft 점유는 write 를 막지 않는다 — hard 만 격리.)
 
 ## 초기 스냅샷 + delta
 

@@ -19,9 +19,9 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 ### 주체 (→ [actors.md](actors.md))
 
 - **로컬 사용자** — 이 머신에서 GUI 를 직접 쓰는 사람. 포커스의 주인. 점유 불필요. 점유를 끊을 수 있는 유일한 주체.
-- **AI Agent** — IPC/CLI 로 tasty 를 조작하는 AI. 대상은 ID 직접 지정. 점유 없이 동작, **격리 계약**(부수효과가 사용자 상태에 안 닿음)을 따른다.
+- **AI Agent** — IPC/CLI 로 tasty 를 조작하는 AI. 대상은 ID 직접 지정. **기본은 점유 없이** 동작하되 필요하면 점유(soft/hard)를 걸 수 있다(예: `terminal` child-terminal 의 soft 점유). **격리 계약**(부수효과가 사용자 상태에 안 닿음)을 따른다.
 - **원격 접속 사용자** — SSH 너머에서 attach 로 접속하는 사람. 행동은 AI Agent 에 가깝고(연결 기반), **점유**라는 관문을 반드시 통과한다.
-- **점유(occupation)** — 원격 사용자가 surface/workspace 를 **배타 claim**. 점유 중 다른 주체는 readonly. 대상→점유자는 1:1, 원격 사용자→대상은 1:N.
+- **점유(occupation)** — 주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속·가시 관계. **약한(soft: advisory 마커, write 허용) / 강한(hard: 배타 + 다른 주체 readonly; 원격 attach 가 사례)** 2계층(ADR-0040). 계층과 무관하게 대상→점유자는 1:1(배타), 주체→대상은 1:N. self-release 또는 로컬 사용자 force-detach 로만 해제.
 
 ### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
 
