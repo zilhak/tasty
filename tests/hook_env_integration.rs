@@ -127,6 +127,7 @@ args = ["{dispatch_flag}", '{dispatch_line}']
     let content = wait_file_content(&dispatch_marker, Duration::from_secs(10));
     assert_eq!(content, "user/envdispatch/dispatch/tasty");
 
-    let _ = std::fs::remove_file(&hook_marker);
-    let _ = std::fs::remove_file(&dispatch_marker);
+    // best-effort 정리 — temp 마커 잔류는 무해.
+    std::fs::remove_file(&hook_marker).ok();
+    std::fs::remove_file(&dispatch_marker).ok();
 }
