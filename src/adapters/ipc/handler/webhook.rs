@@ -102,7 +102,10 @@ pub fn handle_register(id: serde_json::Value, params: &serde_json::Value) -> Jso
         }
     };
 
-    let outcome = webhook::register(methods.clone(), handler_id.clone(), calls);
+    // lifetime 파싱은 후속 배선(commit B)에서 params 로 확장한다. 현재는 기존
+    // MVP 동작 유지(임시·무제한).
+    let lifetime = webhook::Lifetime::temporary_unlimited();
+    let outcome = webhook::register(methods.clone(), handler_id.clone(), calls, lifetime);
     JsonRpcResponse::success(
         id,
         json!({

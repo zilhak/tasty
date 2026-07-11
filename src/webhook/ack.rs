@@ -9,8 +9,7 @@ use std::io::Cursor;
 
 use tiny_http::Response;
 
-/// 웹훅 응답 상태 — 고정 enum. MVP 는 3종(수신/없음/메서드불가). Phase2 에서
-/// 인증(401)·만료(410)·남용차단(429) 이 추가된다.
+/// 웹훅 응답 상태 — 고정 enum. Phase2 에서 인증(401)·남용차단(429) 이 추가된다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AckStatus {
     /// 200 — 매칭 성공, 핸들러에 전달됨.
@@ -19,6 +18,8 @@ pub enum AckStatus {
     NotFound,
     /// 405 — path 는 있으나 HTTP 메서드 불일치.
     MethodNotAllowed,
+    /// 410 — lifetime 만료(시간 초과 / 횟수 소진). 호출 시 lazy 삭제됨.
+    Gone,
 }
 
 impl AckStatus {
@@ -27,6 +28,7 @@ impl AckStatus {
             AckStatus::Received => (200, "received"),
             AckStatus::NotFound => (404, "not found"),
             AckStatus::MethodNotAllowed => (405, "method not allowed"),
+            AckStatus::Gone => (410, "gone"),
         }
     }
 }
@@ -48,5 +50,6 @@ mod tests {
         assert_eq!(build_ack(AckStatus::Received).status_code().0, 200);
         assert_eq!(build_ack(AckStatus::NotFound).status_code().0, 404);
         assert_eq!(build_ack(AckStatus::MethodNotAllowed).status_code().0, 405);
+        assert_eq!(build_ack(AckStatus::Gone).status_code().0, 410);
     }
 }

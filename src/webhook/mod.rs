@@ -4,19 +4,24 @@
 //! path 로 멀티플렉싱한다. 개별 웹훅은 port/path 를 지정하지 못하고 리스너가
 //! 짧은해시 id 를 발급·은닉한다. 응답은 **단방향 ACK 전용**([`ack`]).
 //!
-//! - [`registry`] — 등록 상태(전역 싱글턴) + register/list/info/unregister.
+//! - [`registry`] — 등록 상태(전역 싱글턴) + register/list/info/unregister/sweep.
+//! - [`lifetime`] — {영속성}×{제한} = 6종 lifetime + lazy 만료 판정.
+//! - [`persist`] — `Persistent` 웹훅의 `~/.tasty/webhooks.toml` 영속화·재시작 복원.
 //! - [`listener`] — tiny_http bind + accept + 요청 라우팅.
 //! - [`ack`] — 단방향 ACK 빌더(실행 결과 미접근, 타입 강제).
 //!
-//! MVP 범위: 단일 포트 + opaque path + Temporary/Unlimited lifetime + 기본
-//! IpcSequence 실행. lifetime 6종·영속화·인증·남용차단·포트설정 UI 는 후속.
+//! 현재 범위: 단일 포트 + opaque path + **lifetime 6종 + 영속화 + lazy 만료 +
+//! sweep** + 기본 IpcSequence 실행. 인증·남용차단·포트설정 UI 는 후속(S6~S8).
 
 pub mod ack;
+pub mod lifetime;
 pub mod listener;
+pub mod persist;
 pub mod registry;
 
 // RegisterOutcome 는 registry::register 반환 타입으로 내부 소비 — 전체 경로로 접근.
-pub use registry::{WebhookEntry, info, list, register, unregister};
+pub use lifetime::{Lifetime, Limit, Persistence};
+pub use registry::{WebhookEntry, info, list, register, sweep, unregister};
 
 use crate::adapters::ipc::host_call::HostIpcInjector;
 
@@ -34,5 +39,9 @@ pub fn init_from_config(injector: HostIpcInjector) {
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(DEFAULT_WEBHOOK_PORT);
+    // 리스너 runtime(injector/addr/port) 을 먼저 세팅해야 복원 엔트리의 URL 표기가
+    // 정확하다. init 내부의 set_runtime 이 이를 처리하므로 bind 전에 호출된다.
     listener::init(injector, "0.0.0.0", port);
+    // 재시작 복원 + 필터 — 이미 만료된 Persistent 웹훅은 등록하지 않고 정리한다.
+    persist::restore_into_registry();
 }

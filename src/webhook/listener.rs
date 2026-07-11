@@ -85,6 +85,7 @@ fn handle_request(mut request: tiny_http::Request) {
     let (ack, exec) = match registry::match_request(&path, &method) {
         MatchResult::NotFound => (AckStatus::NotFound, None),
         MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
+        MatchResult::Expired => (AckStatus::Gone, None),
         MatchResult::Matched { calls, injector } => (AckStatus::Received, Some((calls, injector))),
     };
 
