@@ -32,6 +32,19 @@ const SEL_MESSAGES = '[data-testid="chat-messages"]';
 // `anthropic.omelette.api.v1alpha.OmeletteService` 라 "OmeletteService" 앞은 `/` 가
 // 아니라 `.` 다. 따라서 leading slash 를 넣으면 안 된다(과거 버그). 쿼리스트링 허용.
 const CHAT_RPC_RE = /OmeletteService\/Chat(\?|$)/;
+// "Your other tab is working on a request" 배너 — claude.ai/design 은 한 프로젝트에
+// 동시 한 turn 만 허용한다(동시성 lock 프로토콜의 근거). 전송 직후 이 배너가 뜨면
+// 충돌이므로 timeout 까지 헛대기 말고 즉시 busy 로 보고한다.
+const BUSY_TEXT_RE = /other tab is working/i;
+// 배너는 transient alert 다. body 전체 텍스트로 판정하면 대화 transcript 의 문구 언급까지
+// 매칭돼 false-positive(→ chat 을 잘못 busy 처리)가 난다. ARIA alert/status 컨테이너로
+// 스코프해 transcript 와 구분한다. ⚠ 실제 배너의 정확한 컨테이너는 라이브 DOM 으로 확인
+// 필요(§7-7) — 못 맞히면 backstop 이 조용히 no-op 이 되고 timeout 으로 폴백하므로 안전
+// (위험한 false-positive 대신 안전한 false-negative 방향).
+const SEL_BUSY_BANNER = '[role="alert"], [role="status"]';
+// 턴 진행(응답 생성) 중 신호 후보 — turn_status 가 liveness 재확인에 쓴다.
+// ⚠ 라이브 DOM 으로 정밀화 필요(protocol §7-7): stop 버튼/composer 비활성 셀렉터.
+const SEL_STOP = '[data-testid="stop-button"], button[aria-label*="Stop" i]';
 
 // off-screen: 화면 밖으로 던져 사용자 포커스/시야를 방해하지 않는다(설계 §1·§8).
 // bringToFront() 는 절대 호출하지 않는다.
@@ -267,10 +280,30 @@ async function handle(req) {
         }, SEL_MESSAGES);
 
         // 턴 종료 신호를 클릭 전에 건다. timeout 은 디자인 턴이 길 수 있어 넉넉히.
-        const timeoutMs = req.timeout_ms || 180000;
+        const timeoutMs = req.timeout_ms || 1800000;
         const chatDone = page.waitForResponse((r) => CHAT_RPC_RE.test(r.url()), { timeout: timeoutMs });
         await page.locator(SEL_SEND).click();
-        const resp = await chatDone;
+
+        // 전송 직후: 턴 시작(Chat RPC) vs "다른 탭 작업 중" 배너 경쟁. 배너가 이기면
+        // 동시성 충돌이므로 timeout 까지 헛대기 말고 즉시 busy 로 보고(프로토콜 backstop).
+        const busySeen = page
+          .locator(SEL_BUSY_BANNER, { hasText: BUSY_TEXT_RE })
+          .first()
+          .waitFor({ state: 'visible', timeout: timeoutMs })
+          .then(() => true)
+          .catch(() => false);
+        const race = await Promise.race([
+          chatDone.then((r) => ({ kind: 'rpc', resp: r })).catch((e) => ({ kind: 'rpc_err', e })),
+          busySeen.then((seen) => (seen ? { kind: 'busy' } : { kind: 'none' })),
+        ]);
+        if (race.kind === 'busy') {
+          send({ id, kind: 'busy', message: 'another tab is working on a request in this project' });
+          break;
+        }
+        if (race.kind === 'rpc_err') {
+          throw race.e; // Chat RPC 대기 실패(진짜 타임아웃 등) → 아래 catch 로.
+        }
+        const resp = race.resp;
         await resp.finished(); // 스트림 닫힘 = 모델 턴 종료.
         await page.waitForTimeout(800); // DOM 반영 여유.
 
@@ -286,6 +319,44 @@ async function handle(req) {
         send({ id, kind: 'chat_done', reply, url: page.url() });
       } catch (e) {
         send({ id, kind: 'error', code: 'chat_failed', message: e.message });
+      }
+      break;
+    }
+
+    case 'turn_status': {
+      // 부작용 없음: 현재(또는 지정) 프로젝트 캔버스가 응답 생성/작업 중인지 관찰만 한다.
+      // lock 프로토콜 TTL 만료 시 "정말 죽었나 vs 아직 작업 중인가" 재확인용(§5-2). 관찰
+      // 이라 전송/충돌을 일으키지 않는다.
+      try {
+        await ensureBrowser();
+        if (req.project) {
+          const want = `/design/p/${req.project}`;
+          if (!page.url().includes(want)) {
+            await page.goto(projectUrl(req.project), { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(1200);
+          }
+        }
+        const info = await page.evaluate((stopSel) => {
+          // 배너는 ARIA alert/status 컨테이너 안의 문구로만 판정(대화 transcript 의 문구
+          // 언급과 구분 — body 전체 텍스트 매칭은 false-positive).
+          const alerts = Array.from(document.querySelectorAll('[role="alert"], [role="status"]'));
+          const busyBanner = alerts.some((el) => /other tab is working/i.test(el.innerText || ''));
+          const stopBtn = !!document.querySelector(stopSel);
+          const composer = document.querySelector(
+            '[data-testid="chat-composer-input"], div[role="textbox"].ProseMirror',
+          );
+          const composerDisabled = composer
+            ? composer.getAttribute('contenteditable') === 'false' ||
+              composer.getAttribute('aria-disabled') === 'true'
+            : null;
+          return { busyBanner, stopBtn, composerDisabled };
+        }, SEL_STOP);
+        // working = 응답 생성 중이거나 다른 탭이 프로젝트를 잡고 있음. (신호 정밀도는
+        // §7-7 라이브 검증 대상 — 현재는 best-effort.)
+        const working = info.stopBtn === true || info.busyBanner === true || info.composerDisabled === true;
+        send({ id, kind: 'turn_status', working, ...info, url: page.url() });
+      } catch (e) {
+        send({ id, kind: 'error', code: 'turn_status_failed', message: e.message });
       }
       break;
     }

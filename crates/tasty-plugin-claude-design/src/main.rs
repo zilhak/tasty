@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.16"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.17"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// `design.protocol` 정본 텍스트 — 바이너리에 임베드. 동시성 lock 규약 전문 + AI 부트스트랩
 /// 절차. 호스트 패키징(manifest+binary+lang 만 복사)에 의존하지 않고 CLI 가 직접 출력한다.
@@ -127,6 +127,8 @@ impl Plugin for ClaudeDesignPlugin {
             // 동시성 lock 프로토콜 정본 출력(+부트스트랩 절차). 브라우저/로그인 불필요 —
             // 순수 텍스트. AI 가 이 규약을 발견·설치하는 경로.
             "design.protocol" => Ok(handle_protocol(&ctx.params)),
+            // 프로젝트 캔버스가 응답 생성 중인지 관찰(전송 없음). lock TTL 만료 시 재확인용.
+            "design.turn_status" => self.handle_turn_status(&ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -245,6 +247,21 @@ impl ClaudeDesignPlugin {
         Ok(json!({ "state": "running" }))
     }
 
+    /// `design.turn_status` — 대상(또는 현재) 프로젝트 캔버스가 응답 생성/작업 중인지
+    /// 관찰만 한다(전송·충돌 없음). lock 프로토콜의 TTL 만료 재확인(§5-2)에 쓰인다.
+    fn handle_turn_status(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        self.require_logged_in()?;
+        let project = self.resolve_project(params.get("project").and_then(Value::as_str))?;
+        let runner = self.ensure_runner()?;
+        let mut req = json!({});
+        if let Some(uuid) = project {
+            req["project"] = json!(uuid);
+        }
+        runner
+            .request("turn_status", req, PROBE_TIMEOUT)
+            .map_err(IpcMethodError::new)
+    }
+
     /// `design.chat_status` — 최근 chat 의 상태/응답. auto_wait 폴링 대상.
     fn handle_chat_status(&self) -> Value {
         self.last_chat
@@ -327,6 +344,11 @@ fn run_chat(
     last_chat: Arc<Mutex<Value>>,
 ) {
     let result = match runner.request("chat", req, wait) {
+        // 런너가 "다른 탭 작업 중" 배너를 만나면 busy 로 즉시 반환(동시성 충돌).
+        Ok(msg) if msg.get("kind").and_then(Value::as_str) == Some("busy") => json!({
+            "state": "busy",
+            "message": msg.get("message").cloned().unwrap_or(Value::Null),
+        }),
         Ok(msg) => json!({
             "state": "done",
             "reply": msg.get("reply").cloned().unwrap_or(Value::Null),

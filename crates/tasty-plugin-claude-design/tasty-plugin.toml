@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.16"
+version = "0.1.17"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
@@ -33,8 +33,9 @@ subcommands = [
     { name = "projects", ipc_method = "design.projects", args = "no_args",   description = "List Claude Design projects" },
     { name = "detect",   ipc_method = "design.detect",   args = "no_args",   description = "Auto-detect system Playwright / node / chromium and report paths" },
     { name = "probe",    ipc_method = "design.probe",    args = "no_args",   description = "Launch an off-screen headful browser and check claude.ai/design reachability + Cloudflare pass (no credentials needed)" },
-    { name = "chat",     ipc_method = "design.chat",     args = "chat_args", auto_wait = { method = "design.chat_status", polling = { state_field = "state", terminal_states = ["done", "error"], interval_ms = 1500, timeout_field = "timeout" } }, description = "Send a message to a design project canvas; auto-waits for the reply (runs in background, polled via design.chat_status)." },
+    { name = "chat",     ipc_method = "design.chat",     args = "chat_args", auto_wait = { method = "design.chat_status", polling = { state_field = "state", terminal_states = ["done", "error", "busy"], interval_ms = 1500, timeout_field = "timeout" } }, description = "Send a message to a design project canvas; auto-waits for the reply (runs in background, polled via design.chat_status)." },
     { name = "chat-status", ipc_method = "design.chat_status", args = "no_args", description = "Show the latest chat status / reply" },
+    { name = "turn-status", ipc_method = "design.turn_status", args = "turn_status_args", description = "Check whether a design project's chat is actively generating (turn in progress). Observe-only (no send) — used to re-verify a stale concurrency lock at TTL expiry." },
     { name = "protocol", ipc_method = "design.protocol", args = "protocol_args", description = "Print the concurrency-lock protocol AI agents must follow before driving a design project (file-based advisory lock under design-tasks/). Use --bootstrap for the step-by-step to install it into a target project." },
 ]
 
@@ -50,6 +51,11 @@ flags = [
 [contributes.cli.arg_groups.protocol_args]
 flags = [
     { name = "bootstrap", type = "bool", flag = "--bootstrap", required = false, help = "Print the bootstrap procedure (how to install the protocol into a target design project) instead of the protocol text." },
+]
+
+[contributes.cli.arg_groups.turn_status_args]
+flags = [
+    { name = "project", type = "string", flag = "--project", required = false, help = "Target project UUID or name (defaults to the attached project)" },
 ]
 
 [contributes.cli.arg_groups.no_args]
