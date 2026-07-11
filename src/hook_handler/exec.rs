@@ -145,6 +145,28 @@ pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &Sub
     }
 }
 
+/// `ShellCommand` action 을 **fire-and-forget** 로 실행한다(worker thread spawn).
+///
+/// `hook_handler.dispatch` 가 셸 핸들러를 수동 발화할 때 쓴다. `tasty-hooks` 의
+/// background spawn 을 미러링하되, 구조화된 `command` + `args` 를 셸 경유 없이 직접
+/// exec 한다(인젝션 표면 축소). 실행 결과는 로깅에만 쓰이고 반환하지 않는다 —
+/// 응답 경로(ACK/JSON)로 실행 결과가 새지 않는다(단방향 불변식).
+pub fn spawn_shell(command: String, args: Vec<String>) {
+    if let Err(e) = std::thread::Builder::new()
+        .name("hook-shell".into())
+        .spawn(move || {
+            let mut cmd = std::process::Command::new(&command);
+            cmd.args(&args);
+            match tasty_utils::process::hide_console(&mut cmd).output() {
+                Ok(_) => tracing::debug!("hook shell '{command}' ran"),
+                Err(e) => tracing::warn!("hook shell '{command}' spawn failed: {e}"),
+            }
+        })
+    {
+        tracing::warn!("hook shell thread spawn failed: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

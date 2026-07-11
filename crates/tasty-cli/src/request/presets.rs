@@ -2,13 +2,44 @@
 //!
 //! `read_json_file_or_stdin` 는 preset save 의 file 인자 처리에 사용.
 
-use crate::commands::{FileHandlerCommands, PresetCommands};
+use crate::commands::{FileHandlerCommands, HookHandlerCommands, PresetCommands};
 
 pub(super) fn file_handler_command_to_method_params(
     command: &FileHandlerCommands,
 ) -> (&'static str, serde_json::Value) {
     match command {
         FileHandlerCommands::Reload => ("file_handler.reload", serde_json::Value::Null),
+    }
+}
+
+pub(super) fn hook_handler_command_to_method_params(
+    command: &HookHandlerCommands,
+) -> (&'static str, serde_json::Value) {
+    use HookHandlerCommands as H;
+    match command {
+        H::List => ("hook_handler.list", serde_json::json!({})),
+        H::Reload => ("hook_handler.reload", serde_json::Value::Null),
+        H::Dispatch {
+            id,
+            body,
+            header,
+            query,
+        } => {
+            // body/header/query 는 JSON 문자열 → Value 파싱(서버가 치환 컨텍스트로 사용).
+            let parse = |s: &Option<String>| {
+                s.as_deref()
+                    .and_then(|v| serde_json::from_str::<serde_json::Value>(v).ok())
+            };
+            (
+                "hook_handler.dispatch",
+                serde_json::json!({
+                    "id": id,
+                    "body": parse(body),
+                    "headers": parse(header),
+                    "query": parse(query),
+                }),
+            )
+        }
     }
 }
 

@@ -59,6 +59,21 @@ fn all_handlers_returns_every_enabled() {
     assert_eq!(reg.list_handlers(), vec![HookHandlerId::new(HOST_NOTIFY_ID)]);
 }
 
+#[test]
+fn all_handlers_including_disabled_shows_disabled() {
+    let reg = HookHandlerRegistry::new();
+    load_host(&reg);
+    // user override 로 host 핸들러 비활성화.
+    reg.set_user_handler_disabled(&HookHandlerId::new(HOST_NOTIFY_ID), true);
+    // 활성 목록엔 없다.
+    assert!(reg.all_handlers().is_empty());
+    // 비활성 포함 목록엔 남아 있고 disabled=true 로 노출된다(재활성 대상 가시화).
+    let full = reg.all_handlers_including_disabled();
+    assert_eq!(full.len(), 1);
+    assert_eq!(full[0].id, HookHandlerId::new(HOST_NOTIFY_ID));
+    assert!(full[0].disabled);
+}
+
 // ── plugin install / 정렬 ─────────────────────────────────────────────────
 
 #[test]

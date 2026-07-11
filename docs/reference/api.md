@@ -55,6 +55,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 웹훅(인바운드 HTTP): `webhook.{register,list,info,unregister,sweep,config}` (local-only) — [webhook](../features/webhook/index.md)
 - 메시지 패싱: `message.{send,read,count,clear}`
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
+- 훅 핸들러: `hook_handler.{list,reload,dispatch}` (local-only) — 훅/웹훅 공유 핸들러 레지스트리 조회(비활성 포함)·user config(`~/.tasty/hook-handlers.toml`) 재로드·id 로 수동 발화(IpcSequence/ShellCommand). dispatch 는 fire-and-forget(응답은 accepted ACK 만)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
 - SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)
 - webview: `webview.set_url`

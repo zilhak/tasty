@@ -11,6 +11,7 @@ pub(crate) mod debug_plugin;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod fs;
+mod hook_handler;
 mod hooks;
 #[cfg(feature = "gui")]
 mod image;
@@ -411,6 +412,12 @@ fn route_engine_handler(
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
         "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
+        // hook handler: 공유 훅 핸들러 레지스트리 조회/재로드/수동 발화. 상태는
+        // 전역 싱글턴이라 list/reload 는 core/state/engine 미사용. dispatch 만
+        // IpcSequence 실행에 host injector 가 필요해 core 를 받는다.
+        "hook_handler.list" => hook_handler::handle_list(id),
+        "hook_handler.reload" => hook_handler::handle_reload(id),
+        "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
         // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),

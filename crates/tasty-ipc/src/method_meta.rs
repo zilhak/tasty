@@ -324,6 +324,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // opener 가 읽음) 처리하므로 FsRead 권한 요구. explorer plugin 더블클릭
         // 같은 사용처가 주된 caller.
         ("file_handler.dispatch", plugin(&[FsRead])),
+        // ── hook_handler.* (공유 훅 핸들러 레지스트리 — local-only) ───────
+        // 웹훅/훅이 공유하는 핸들러 레지스트리 조회(list)/user config 재로드(reload)/
+        // id 로 수동 발화(dispatch). webhook.* 와 동일하게 지금은 전부 local_only —
+        // plugin 이 HookHandler 권한으로 list/dispatch 를 호출하는 실배선은 후속(S11).
+        // reload 는 user config 변경 후 재읽기라 애초에 plugin 무관(local 전용).
+        ("hook_handler.list", local_only()),
+        ("hook_handler.reload", local_only()),
+        ("hook_handler.dispatch", local_only()),
         // markdown surface 제자리 이동 (04) — 주어진 surface 를 새 파일의 markdown
         // 으로 교체한다. 임의 path 를 읽으므로 FsRead. 주소창(03) 플러그인이 caller.
         ("markdown.navigate", plugin(&[FsRead])),

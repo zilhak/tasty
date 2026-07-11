@@ -219,6 +219,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: FileHandlerCommands,
     },
+    /// Hook handler — shared hook/webhook handler registry (list / reload / dispatch).
+    HookHandler {
+        #[command(subcommand)]
+        command: HookHandlerCommands,
+    },
     /// Manage layout presets (workspace / tab / pane).
     Preset {
         #[command(subcommand)]
@@ -734,5 +739,41 @@ mod workspace_category_tests {
         let r = req(&["tasty", "webhook", "unregister", "--id", "abc123"]);
         assert_eq!(r.method, "webhook.unregister");
         assert_eq!(r.params["id"], "abc123");
+    }
+
+    #[test]
+    fn hook_handler_list_reload_map() {
+        let r = req(&["tasty", "hook-handler", "list"]);
+        assert_eq!(r.method, "hook_handler.list");
+
+        let r = req(&["tasty", "hook-handler", "reload"]);
+        assert_eq!(r.method, "hook_handler.reload");
+    }
+
+    #[test]
+    fn hook_handler_dispatch_maps_id_and_body() {
+        let r = req(&[
+            "tasty",
+            "hook-handler",
+            "dispatch",
+            "--id",
+            "host/notify",
+            "--body",
+            r#"{"message":"hi"}"#,
+        ]);
+        assert_eq!(r.method, "hook_handler.dispatch");
+        assert_eq!(r.params["id"], "host/notify");
+        // --body 는 JSON 문자열 → Value 로 파싱돼 치환 컨텍스트로 전달.
+        assert_eq!(r.params["body"]["message"], "hi");
+    }
+
+    #[test]
+    fn hook_handler_dispatch_without_context_omits_it() {
+        let r = req(&["tasty", "hook-handler", "dispatch", "--id", "user/x"]);
+        assert_eq!(r.method, "hook_handler.dispatch");
+        // body/headers/query 미지정 → null (서버가 부재로 취급).
+        assert!(r.params["body"].is_null());
+        assert!(r.params["headers"].is_null());
+        assert!(r.params["query"].is_null());
     }
 }

@@ -17,7 +17,7 @@ pub mod types;
 // actor별 action decl, `HookHandlerRegistry` / `RegistryError` / `UserHookHandlerUpsertDecl` /
 // `install_default_sources` 등 S9/S11/S14 가 소비할 것)는 소비 시점에 추가한다. 전체
 // 경로(`registry::` / `types::` / `exec::` / `config::`)로는 항상 접근 가능.
-pub use exec::{SubstitutionContext, execute_sequence};
+pub use exec::{SubstitutionContext, execute_sequence, spawn_shell};
 pub use registry::{global, user_config_path};
 pub use types::{
     HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource, IpcCall,

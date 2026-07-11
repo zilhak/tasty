@@ -130,6 +130,19 @@ impl HookHandlerRegistry {
         v
     }
 
+    /// **비활성 포함** 전체 핸들러 (priority↑ → owner tie-break → id). 관리·조회
+    /// 표면(`hook_handler.list`)이 disabled 핸들러도 보여줘 재활성 대상을 노출한다.
+    pub fn all_handlers_including_disabled(&self) -> Vec<HookHandler> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let mut v: Vec<HookHandler> = inner.finalized.values().cloned().collect();
+        sort_handlers(&mut v);
+        v
+    }
+
     /// 주어진 트리거 출처에 바인딩 가능한 활성 핸들러들 (파일 핸들러 `handlers_for`
     /// 미러). `source.accepts(trigger)` + 웹훅이면 `is_webhook_bindable()` 통과.
     /// priority↑ → owner tie-break → id.

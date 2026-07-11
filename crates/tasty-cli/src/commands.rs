@@ -5,6 +5,7 @@ pub mod approval;
 pub mod attach;
 pub mod debug;
 pub mod file_handler;
+pub mod hook_handler;
 pub mod list_set;
 pub mod memory;
 pub mod move_send;
@@ -35,6 +36,7 @@ pub use debug::{
     SettingsDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::FileHandlerCommands;
+pub use hook_handler::HookHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};
 pub use memory::{
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands,
