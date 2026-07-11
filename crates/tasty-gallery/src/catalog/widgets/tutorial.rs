@@ -182,12 +182,7 @@ fn callout(
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius_lg.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
+        .shadow(theme.shadow_popover().to_egui())
         .inner_margin(egui::Margin {
             left: theme.spacing_lg.value() as i8,
             right: theme.spacing_lg.value() as i8,
@@ -376,12 +371,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius_lg.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
+        .shadow(theme.shadow_popover().to_egui())
         .show(ui, |ui| {
             ui.set_width(POPUP_W);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);

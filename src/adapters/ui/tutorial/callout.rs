@@ -158,12 +158,7 @@ pub fn draw_callout(
                     theme.border_strong().to_egui(),
                 ))
                 .corner_radius(theme.corner_radius_lg.value())
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 10],
-                    blur: 28,
-                    spread: 0,
-                    color: egui::Color32::from_black_alpha(120),
-                })
+                .shadow(theme.shadow_popover().to_egui())
                 .inner_margin(egui::Margin {
                     left: theme.spacing_lg.value() as i8,
                     right: theme.spacing_lg.value() as i8,
