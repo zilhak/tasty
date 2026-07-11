@@ -238,14 +238,52 @@ cargo build --release -p my-plugin
 tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
 ```
 
-**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 워크스페이스 빌드 시 호스트가 부팅에 자동 sync(`ensure_dev_bundle` → `install_builtins_if_needed`). 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. 매니페스트 변경은 호스트 재시작으로 `tasty <plugin> --help` 에 반영.
+**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 워크스페이스 빌드 시 호스트가 부팅에 자동 sync(`ensure_dev_bundle` → `install_builtins_if_needed`). 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
 
 디버깅: `tasty plugin logs <id> --follow` / `~/.tasty/plugins-logs/<id>.log` / `RUST_LOG=debug`.
+
+### 9.1 실행 중인 tasty 에 번들 플러그인만 반복 갱신 (호스트 재빌드·재시작 불필요)
+
+**플러그인은 호스트(tasty 본체)와 별개의 자식 프로세스다.** 번들 플러그인의 코드/매니페스트/임베드 리소스만 고쳤다면 **본체를 재빌드·재시작할 필요 없이 그 플러그인만** 갱신하면 실행 중인 tasty 에 반영된다. (호스트 코드 `src/`·다른 크레이트를 고쳤을 때만 본체 재빌드+재시작이 필요하고, 그건 실행 중 exe 잠금 때문에 보통 사용자 도움이 필요하다.)
+
+**0) 실행 중인 tasty 의 프로필을 먼저 확인** — 그 프로필로 플러그인을 빌드해야 한다. 번들 스테이징 경로가 `target/<profile>/builtin-plugins/` 라, 프로필이 어긋나면 엉뚱한(옛) 바이너리가 sync 된다.
+```bash
+# 어떤 exe 가 떠 있나: Windows  tasklist | findstr tasty  ·  Linux/macOS  ps aux | grep tasty
+# 경로로 profile 판별 (…/target/release/tasty → release, …/debug/… → debug, 설치본 → dist).
+# 개발 중이면 보통 target/release/tasty → 이하 예시도 --release.
+```
+
+**1) 그 프로필로 플러그인만 빌드**
+```bash
+cargo build --release -p tasty-plugin-<name>      # 실행 중 tasty 와 같은 프로필
+```
+
+**2) 재서명 (release/dist 호스트는 매니페스트 서명을 검증)** — 안 하면 다음 단계가 `untrusted: UnknownKey` 로 skip. debug 호스트는 서명 안 보므로 불필요.
+```bash
+./scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --manifest crates/tasty-plugin-<name>/tasty-plugin.toml
+```
+
+**3) 정지 → 재동기화 → 재기동 (순서 중요)**
+```bash
+tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
+tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
+#   ※ version 을 안 올린 변경(예: 임베드 JS/텍스트만, 바이너리 내용만 변경)은 same-version 이라 skip →
+#      'tasty plugin upgrade-builtins --force' 로 동일버전 덮어쓰기.
+tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
+```
+
+**4) 실행 중 tasty 에 대해 실동작 검증**
+```bash
+tasty <plugin-cli> --help             # 새 서브커맨드/매니페스트 반영 확인
+tasty <plugin-cli> <cmd> ...          # CLI→IPC→실행 중 호스트→플러그인 경로로 실제 동작 확인
+```
+
+> **왜 호스트 재시작이 필요 없나**: `tasty <plugin> --help` 는 매번 새 CLI 프로세스가 **설치된 매니페스트**(`~/.tasty/plugins/<id>/`)를 읽으므로 upgrade 즉시 반영되고, IPC 디스패치는 `disable/enable` 이 플러그인 프로세스를 재기동하며 호스트 레지스트리를 갱신한다. 따라서 **본체 GUI 를 껐다 켤 필요가 없다.**
 
 ## 10. 한계 (현재 SDK)
 
 - async 미지원 — 모든 콜백 동기(무거운 I/O 는 플러그인 내부 thread).
-- HotReload 미지원 — 코드 변경은 `disable && enable`.
+- HotReload 미지원 — 코드 변경은 재빌드 후 `disable && enable`(전체 반복 절차는 [§9.1](#91-실행-중인-tasty-에-번들-플러그인만-반복-갱신-호스트-재빌드재시작-불필요)). 단 플러그인만 갱신하면 되고 **호스트 재빌드·재시작은 불필요**.
 - 권한 게이트는 **호스트 IPC 호출만** 막는다 — 플러그인 프로세스의 직접 `std::fs` 는 OS 샌드박스가 없는 한 강제 안 됨([plugin-permissions 한계](plugin-permissions.md#한계)).
 
 ## 관련
