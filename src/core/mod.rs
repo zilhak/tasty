@@ -405,17 +405,21 @@ impl Core {
     // ─── Hooks ───
 
     /// surface hook 등록. 반환: 새 hook id.
+    ///
+    /// `binding` 은 공유 훅 핸들러 레지스트리 참조([`HookBinding::Handler`]) 또는
+    /// 하위호환 인라인 셸([`HookBinding::InlineShell`]). 배선/게이트는 IPC 핸들러
+    /// (`hooks.rs`)에서 처리한다.
     pub(crate) fn register_surface_hook(
         &mut self,
         engine: &mut crate::core::CoreState,
         surface_id: u32,
         event: tasty_hooks::HookEvent,
-        command: String,
+        binding: tasty_hooks::HookBinding,
         once: bool,
     ) -> u64 {
         engine
             .hook_manager
-            .add_hook(surface_id, event, command, once)
+            .add_hook(surface_id, event, binding, once)
     }
 
     /// surface hook 해제. 반환: 실제 제거 여부.
@@ -449,13 +453,24 @@ impl Core {
 
     /// surface 의 hook 들 중 event 매칭 시 fire — 발사된 hook id 들 반환.
     /// AppState 의 enqueue_host_event 는 호출처 (handler) 에서 처리.
+    ///
+    /// S9: 각 발사 훅의 바인딩을 `hook_handler::trigger` 로 실행한다(레지스트리 조회
+    /// + `source` 게이트 + ShellCommand/IpcSequence 분기). IpcSequence 핸들러 실행에
+    /// 필요한 IPC injector 는 main-thread 의 `host_ipc_injector` 에서 얻는다.
     pub(crate) fn fire_surface_hooks(
         &mut self,
         engine: &mut crate::core::CoreState,
         surface_id: u32,
         events: &[tasty_hooks::HookEvent],
     ) -> Vec<u64> {
-        engine.hook_manager.check_and_fire(surface_id, events)
+        let fired = engine.hook_manager.check_and_fire(surface_id, events);
+        let injector = self.host_ipc_injector.get().cloned();
+        let mut ids = Vec::with_capacity(fired.len());
+        for f in &fired {
+            crate::hook_handler::trigger::execute_binding(&f.binding, injector.as_ref());
+            ids.push(f.hook_id);
+        }
+        ids
     }
 
     // ─── Approval (휴먼 핸드오프) ───

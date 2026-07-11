@@ -3,12 +3,14 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
 - **ADR**: 없음
-- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`), `hook.*`·`global_hook.*` 핸들러
+- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 실행 배선 `src/hook_handler/trigger.rs`
 - **화면**: 없음
 
 ## 목적
 
-특정 이벤트 발생 시 셸 명령을 자동 실행하는 훅. surface 별 이벤트 훅(`hook.*`)과 surface 무관 글로벌 훅(`global_hook.*`)이 있다. "에이전트가 에이전트를 제어하는 자동화" 의 토대(conductor 가 polling 없이 자식 완료를 감지).
+특정 이벤트 발생 시 동작을 자동 실행하는 훅. surface 별 이벤트 훅(`hook.*`)과 surface 무관 글로벌 훅(`global_hook.*`)이 있다. "에이전트가 에이전트를 제어하는 자동화" 의 토대(conductor 가 polling 없이 자식 완료를 감지).
+
+surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공유 훅 핸들러 레지스트리**(`src/hook_handler/`)의 핸들러를 참조한다 — 웹훅과 훅이 같은 핸들러 정의를 공유하는 구조다. 기존 `--command` 인라인 셸은 하위호환을 위해 **익명 hook 핸들러**로 감싸 그대로 실행된다.
 
 ## 내부 동작
 
@@ -35,8 +37,17 @@
 - 따라서 **플러그인이 비활성이면 그 플러그인의 이벤트 hook 등록도 거부**된다(예: claude plugin 비활성 시 `claude-idle` hook 등록 불가 — 의도된 dead-setting 방지). claude plugin 은 위 5개 키를 manifest 로 선언한다.
 
 - **once** 옵션: true 면 한 번 실행 후 자동 삭제. 기본은 persistent.
-- **비동기 실행**: 훅 명령은 백그라운드 스레드에서(메인 루프 블로킹 없음). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
+- **비동기 실행**: 훅 동작은 백그라운드에서(메인 루프 블로킹 없음). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
 - ProcessExit 은 surface 자동 닫기까지(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn).
+
+#### 바인딩 (핸들러 참조 vs 인라인 셸)
+
+surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
+
+- **`Handler(id)`** — 공유 훅 핸들러 레지스트리 핸들러 id 참조(`tasty set hook --handler <id>`). 등록 시 핸들러가 존재하고 `source` 가 hook 트리거를 수용(`hook` 또는 `any`)하는지 검증한다 — `webhook` 전용 핸들러는 거부된다.
+- **`InlineShell(cmd)`** — 하위호환 익명 셸(`tasty set hook --command "..."`). 레지스트리에 등록되지 않는 인라인 핸들러라 export/영속화 대상이 아니다.
+
+`tasty-hooks` 는 leaf 크레이트라 레지스트리를 볼 수 없어 `(surface, event)` 매칭만 하고 바인딩을 돌려준다. 실제 실행(레지스트리 조회 + `source` 게이트 + `ShellCommand`→셸 / `IpcSequence`→IPC 순차 실행)은 본체 `hook_handler::trigger::execute_binding` 이 담당한다. `IpcSequence` 실행에는 IPC injector 가 필요하다(없으면 건너뛰고 warn).
 
 ### Global hook (조건)
 
@@ -49,7 +60,7 @@ surface 무관 — `condition` 으로 트리거:
 ## 인터페이스
 
 - **사용자/AI Agent/CLI**:
-  - `hook.set`/`hook.list`/`hook.unset` — `tasty set hook --event bell --command "..." [--once]`
+  - `hook.set`/`hook.list`/`hook.unset` — `tasty set hook --event bell --command "..." [--once]` 또는 핸들러 참조 `tasty set hook --event bell --handler <id>` (`--command`/`--handler` 택1)
   - `global_hook.set`/`list`/`unset` — `tasty set global-hook --condition interval:60 --command "..." [--label ...]`
   - 표 → [reference/api](../../reference/api.md#기타-호스트)
 

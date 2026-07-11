@@ -1,16 +1,58 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
-use std::process::Command;
 
 pub type HookId = u64;
+
+/// 훅이 트리거됐을 때 무엇을 실행할지에 대한 바인딩.
+///
+/// S9 로 hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, 공유 훅 핸들러
+/// 레지스트리의 핸들러를 **id 로 참조**한다([`HookBinding::Handler`]). 기존 API
+/// (`hook.set --command`) 호환을 위해 인라인 셸 명령은 **익명 hook 핸들러**로 감싸
+/// [`HookBinding::InlineShell`] 로 보존한다 — 레지스트리를 오염시키지 않는 인라인
+/// 핸들러다(export/영속화 대상이 아님).
+///
+/// 실제 실행(레지스트리 조회 + `source` 게이트 + ShellCommand/IpcSequence 분기)은
+/// 본체 `src/hook_handler/trigger.rs` 가 담당한다 — 이 크레이트는 leaf 라 레지스트리를
+/// 볼 수 없으므로 (surface, event) → binding 매칭만 하고 바인딩을 호출자에게
+/// 되돌려준다.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HookBinding {
+    /// 공유 훅 핸들러 레지스트리의 핸들러 id 참조.
+    Handler(String),
+    /// 하위호환 익명 셸 핸들러 — 인라인 셸 명령 문자열.
+    InlineShell(String),
+}
+
+impl HookBinding {
+    /// 사람이 읽을 표시 문자열 (`hook.list` 응답용). 인라인 셸은 명령 그대로,
+    /// 핸들러 참조는 `handler:<id>`.
+    pub fn to_display_string(&self) -> String {
+        match self {
+            HookBinding::Handler(id) => format!("handler:{id}"),
+            HookBinding::InlineShell(cmd) => cmd.clone(),
+        }
+    }
+}
+
+/// `check_and_fire` 가 반환하는 발사된 훅 1건 — hook id + 실행할 바인딩.
+///
+/// 이 크레이트는 바인딩을 실행하지 않는다(leaf). 호출자(본체)가 `binding` 을
+/// `hook_handler::trigger::execute_binding` 으로 실행하고 `hook_id` 로 host event 를
+/// 큐잉한다.
+#[derive(Clone, Debug)]
+pub struct FiredHook {
+    pub hook_id: HookId,
+    pub binding: HookBinding,
+}
 
 #[derive(Clone, Debug)]
 pub struct SurfaceHook {
     pub id: HookId,
     pub surface_id: u32,
     pub event: HookEvent,
-    pub command: String,
+    pub binding: HookBinding,
     pub once: bool,
     /// Pre-compiled regex for OutputMatch events (cached at registration time).
     pub compiled_regex: Option<regex::Regex>,
@@ -112,7 +154,7 @@ impl HookManager {
         &mut self,
         surface_id: u32,
         event: HookEvent,
-        command: String,
+        binding: HookBinding,
         once: bool,
     ) -> HookId {
         let id = self.next_id;
@@ -127,7 +169,7 @@ impl HookManager {
             id,
             surface_id,
             event,
-            command,
+            binding,
             once,
             compiled_regex,
         });
@@ -147,13 +189,14 @@ impl HookManager {
             .collect()
     }
 
-    /// Check events and fire matching hooks. Returns fired hook IDs.
+    /// Check events and return matching hooks' bindings, retiring once-hooks.
     ///
-    /// SECURITY NOTE: Hook commands are intentionally executed via the system shell.
-    /// Users explicitly register hook commands via the IPC API, and the IPC server
-    /// only listens on localhost (127.0.0.1). IPC callers are responsible for
-    /// validating/sanitizing any user-provided input before registering hooks.
-    pub fn check_and_fire(&mut self, surface_id: u32, events: &[HookEvent]) -> Vec<HookId> {
+    /// **실행하지 않는다.** 이 크레이트는 leaf 라 공유 훅 핸들러 레지스트리를 볼 수
+    /// 없다 — (surface, event) 매칭만 하고 각 발사 훅의 [`HookBinding`] 을 돌려준다.
+    /// 실제 실행(레지스트리 조회 + `source` 게이트 + ShellCommand/IpcSequence 분기)은
+    /// 본체 `hook_handler::trigger::execute_binding` 이 담당한다. once 훅은 여기서
+    /// 발사 즉시 제거된다(옛 동작 보존).
+    pub fn check_and_fire(&mut self, surface_id: u32, events: &[HookEvent]) -> Vec<FiredHook> {
         let mut fired = Vec::new();
 
         for hook in &self.hooks {
@@ -162,31 +205,16 @@ impl HookManager {
             }
             for event in events {
                 if hook.event.matches(event, hook.compiled_regex.as_ref()) {
-                    // Fire the hook command in background
-                    let cmd = hook.command.clone();
-                    let hook_id = hook.id;
-                    std::thread::spawn(move || {
-                        let mut process = if cfg!(windows) {
-                            let mut c = Command::new("cmd");
-                            c.args(["/C", &cmd]);
-                            c
-                        } else {
-                            let mut c = Command::new("sh");
-                            c.args(["-c", &cmd]);
-                            c
-                        };
-                        let result = tasty_utils::process::hide_console(&mut process).output();
-                        if let Err(e) = result {
-                            tracing::warn!("hook {hook_id:?} spawn failed: {e}");
-                        }
+                    fired.push(FiredHook {
+                        hook_id: hook.id,
+                        binding: hook.binding.clone(),
                     });
-                    fired.push(hook.id);
                 }
             }
         }
 
         // Remove once-hooks that fired
-        let fired_set: HashSet<HookId> = fired.iter().copied().collect();
+        let fired_set: HashSet<HookId> = fired.iter().map(|f| f.hook_id).collect();
         self.hooks.retain(|h| !h.once || !fired_set.contains(&h.id));
 
         fired
@@ -298,10 +326,14 @@ mod tests {
         assert!(pattern.matches(&text, None));
     }
 
+    fn shell(cmd: &str) -> HookBinding {
+        HookBinding::InlineShell(cmd.into())
+    }
+
     #[test]
     fn hook_manager_add_and_list() {
         let mut manager = HookManager::new();
-        let id = manager.add_hook(1, HookEvent::Bell, "echo bell".into(), false);
+        let id = manager.add_hook(1, HookEvent::Bell, shell("echo bell"), false);
         let hooks = manager.list_hooks(Some(1));
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].id, id);
@@ -310,7 +342,7 @@ mod tests {
     #[test]
     fn hook_manager_remove() {
         let mut manager = HookManager::new();
-        let id = manager.add_hook(1, HookEvent::Bell, "echo bell".into(), false);
+        let id = manager.add_hook(1, HookEvent::Bell, shell("echo bell"), false);
         assert!(manager.remove_hook(id));
         assert_eq!(manager.list_hooks(None).len(), 0);
     }
@@ -324,7 +356,7 @@ mod tests {
     #[test]
     fn hook_manager_once_hook_removed_after_fire() {
         let mut manager = HookManager::new();
-        manager.add_hook(1, HookEvent::Bell, "echo once".into(), true);
+        manager.add_hook(1, HookEvent::Bell, shell("echo once"), true);
         let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
         assert_eq!(fired.len(), 1);
         // Hook should be removed after firing
@@ -334,10 +366,48 @@ mod tests {
     #[test]
     fn hook_manager_persistent_hook_stays() {
         let mut manager = HookManager::new();
-        manager.add_hook(1, HookEvent::Bell, "echo persistent".into(), false);
+        manager.add_hook(1, HookEvent::Bell, shell("echo persistent"), false);
         let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
         assert_eq!(fired.len(), 1);
         // Hook should still be there
         assert_eq!(manager.list_hooks(None).len(), 1);
+    }
+
+    #[test]
+    fn check_and_fire_returns_binding() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::Bell, shell("echo hi"), false);
+        manager.add_hook(
+            1,
+            HookEvent::Bell,
+            HookBinding::Handler("host/webhook-notify".into()),
+            false,
+        );
+        let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
+        assert_eq!(fired.len(), 2);
+        assert_eq!(fired[0].binding, HookBinding::InlineShell("echo hi".into()));
+        assert_eq!(
+            fired[1].binding,
+            HookBinding::Handler("host/webhook-notify".into())
+        );
+    }
+
+    #[test]
+    fn check_and_fire_only_matches_surface() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::Bell, shell("s1"), false);
+        manager.add_hook(2, HookEvent::Bell, shell("s2"), false);
+        let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].binding, HookBinding::InlineShell("s1".into()));
+    }
+
+    #[test]
+    fn binding_display_string() {
+        assert_eq!(shell("echo x").to_display_string(), "echo x");
+        assert_eq!(
+            HookBinding::Handler("user/foo".into()).to_display_string(),
+            "handler:user/foo"
+        );
     }
 }

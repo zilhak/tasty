@@ -455,9 +455,11 @@ impl App {
         let fired = engine
             .hook_manager
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Notification]);
-        for hook_id in fired {
+        let injector = self.core.host_ipc_injector.get().cloned();
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(&f.binding, injector.as_ref());
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id,
+                hook_id: f.hook_id,
                 event_kind: "notification".to_string(),
                 surface_id,
             });
@@ -502,9 +504,11 @@ impl App {
         let fired = engine
             .hook_manager
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Bell]);
-        for hook_id in fired {
+        let injector = self.core.host_ipc_injector.get().cloned();
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(&f.binding, injector.as_ref());
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id,
+                hook_id: f.hook_id,
                 event_kind: "bell".to_string(),
                 surface_id,
             });
@@ -625,9 +629,11 @@ impl App {
         let fired = engine
             .hook_manager
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::ProcessExit]);
-        for hook_id in fired {
+        let injector = self.core.host_ipc_injector.get().cloned();
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(&f.binding, injector.as_ref());
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id,
+                hook_id: f.hook_id,
                 event_kind: "process-exit".to_string(),
                 surface_id,
             });

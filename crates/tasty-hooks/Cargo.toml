@@ -9,7 +9,6 @@ description = "Event-based shell command hook system"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
-tasty-utils = { path = "../tasty-utils" }
 
 [lints]
 workspace = true

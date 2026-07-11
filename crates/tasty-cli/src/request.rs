@@ -492,6 +492,7 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
             surface,
             event,
             command,
+            handler,
             once,
         } => (
             "hook.set",
@@ -499,6 +500,7 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "surface_id": resolve_surface_id(*surface),
                 "event": event,
                 "command": command,
+                "handler": handler,
                 "once": once,
             }),
         ),

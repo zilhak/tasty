@@ -50,9 +50,14 @@ pub enum SetCommands {
         /// Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS
         #[arg(long)]
         event: String,
-        /// Shell command to execute when the event fires
+        /// Inline shell command to execute when the event fires (backward-compat;
+        /// wrapped as an anonymous hook handler). Mutually exclusive with --handler.
         #[arg(long)]
-        command: String,
+        command: Option<String>,
+        /// Shared hook-handler id to bind (e.g. host/my-handler). The handler must
+        /// accept the hook trigger source. Mutually exclusive with --command.
+        #[arg(long)]
+        handler: Option<String>,
         /// Remove the hook after it fires once
         #[arg(long)]
         once: bool,

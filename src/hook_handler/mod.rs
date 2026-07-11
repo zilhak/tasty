@@ -11,6 +11,7 @@
 pub mod config;
 pub mod exec;
 pub mod registry;
+pub mod trigger;
 pub mod types;
 
 // 편의 re-export — 현재 소비되는 심볼만 노출한다. 나머지(config 의 `HookHandlerDecl` /

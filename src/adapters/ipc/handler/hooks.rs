@@ -72,9 +72,35 @@ pub(crate) fn handle_hook_set(
         return resp;
     }
 
-    let command = match params.get("command").and_then(|v| v.as_str()) {
-        Some(c) => c.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'command' parameter"),
+    // S9: hook 은 공유 훅 핸들러 레지스트리를 참조한다. `handler` 파라미터가 있으면
+    // 핸들러 id 참조(레지스트리 조회 + hook 트리거 source 게이트 검증), 없으면 옛
+    // `command` 를 인라인 셸(익명 hook 핸들러)로 감싼다(하위호환 어댑터).
+    let binding = if let Some(handler_id) = params.get("handler").and_then(|v| v.as_str()) {
+        let hid = crate::hook_handler::HookHandlerId::new(handler_id);
+        match crate::hook_handler::registry::global().get(&hid) {
+            Some(h) => {
+                if let Err(e) = crate::hook_handler::validate_binding(
+                    &h,
+                    crate::hook_handler::TriggerSource::Hook,
+                ) {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        format!("handler '{handler_id}' cannot bind to a hook trigger: {e}"),
+                    );
+                }
+            }
+            None => {
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("Unknown hook handler '{handler_id}'"),
+                );
+            }
+        }
+        tasty_hooks::HookBinding::Handler(handler_id.to_string())
+    } else if let Some(command) = params.get("command").and_then(|v| v.as_str()) {
+        tasty_hooks::HookBinding::InlineShell(command.to_string())
+    } else {
+        return JsonRpcResponse::invalid_params(id, "Missing 'command' or 'handler' parameter");
     };
 
     let once = params
@@ -82,7 +108,7 @@ pub(crate) fn handle_hook_set(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let hook_id = core.register_surface_hook(engine, surface_id, event, command, once);
+    let hook_id = core.register_surface_hook(engine, surface_id, event, binding, once);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -102,11 +128,14 @@ pub(crate) fn handle_hook_list(
         .list_hooks(surface_id)
         .iter()
         .map(|h| {
+            // `binding` = 구조적 표현(`handler:<id>` 또는 인라인 셸 명령).
+            // `command` 는 하위호환 별칭 — 인라인 셸이면 옛 응답과 동일한 명령 문자열.
             json!({
                 "id": h.id,
                 "surface_id": h.surface_id,
                 "event": h.event.to_display_string(),
-                "command": h.command,
+                "binding": h.binding.to_display_string(),
+                "command": h.binding.to_display_string(),
                 "once": h.once,
             })
         })
