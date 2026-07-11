@@ -7,9 +7,11 @@
 //! 핵심 불변식은 [`types`] 모듈 문서 참조 — 데이터/흐름 분리(`IpcCall.method`
 //! 고정) + 셸 웹훅 거부(`ShellCommand` 는 webhook 바인딩 불가).
 
+pub mod exec;
 pub mod registry;
 pub mod types;
 
+pub use exec::{SubstitutionContext, execute_sequence, substitute_params};
 pub use registry::{HookHandlerRegistry, RegistryError, global};
 pub use types::{
     BindingError, HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
