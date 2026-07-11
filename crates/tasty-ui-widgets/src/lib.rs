@@ -14,6 +14,7 @@ mod autocomplete;
 mod button;
 mod chip;
 mod control;
+mod drilldown;
 mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
@@ -40,6 +41,7 @@ pub use autocomplete::{
 pub use button::{Button, ButtonVariant};
 pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag};
 pub use control::ControlSize;
+pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
