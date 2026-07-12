@@ -331,7 +331,12 @@ impl LinkHighlight {
 ///   로컬 `exists()` 검증을 건너뛰고 (원격 cwd 기준 결합한) 경로를 그대로 emit.
 fn resolve_link_target(candidate: &str, cwd: Option<&Path>, mirror: bool) -> Option<String> {
     let p = Path::new(candidate);
-    let abs: PathBuf = if p.is_absolute() {
+    // mirror surface 의 화면 경로는 원격 호스트(유닉스) 규약을 따른다 — Windows
+    // 의 `Path::is_absolute()` 는 `/remote/...` 를 (드라이브/UNC 접두사가 없어)
+    // 비절대로 판정하므로 로컬 규약만 쓰면 원격 절대경로가 상대경로로 오판돼
+    // cwd 없이는 링크화되지 않는다. mirror 면 유닉스식 루트를 절대로 인정한다.
+    let is_abs = p.is_absolute() || (mirror && candidate.starts_with('/'));
+    let abs: PathBuf = if is_abs {
         p.to_path_buf()
     } else {
         cwd?.join(p)
