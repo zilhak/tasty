@@ -17,8 +17,10 @@ mod error_scan;
 mod handlers;
 mod hook;
 mod install;
+mod reboot;
 mod state;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -43,6 +45,8 @@ struct ClaudePlugin {
     /// registry 는 호스트 `terminal.*` 가 소유한다.
     state: ClaudeState,
     scanner: Arc<Mutex<ErrorScanner>>,
+    /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
+    rebooting: Arc<Mutex<HashSet<u32>>>,
 }
 
 impl ClaudePlugin {
@@ -50,6 +54,7 @@ impl ClaudePlugin {
         Self {
             state: ClaudeState::new(),
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
+            rebooting: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -94,6 +99,7 @@ impl Plugin for ClaudePlugin {
             "claude.launch" => handle_launch(&self.scanner, &ctx.host, &ctx.params),
             "claude.respawn" => handle_respawn(&ctx.host, &ctx.params),
             "claude.spawn" => handle_spawn(&ctx.host, &ctx.params),
+            "claude.reboot" => reboot::handle_reboot(&self.rebooting, &ctx.host, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
