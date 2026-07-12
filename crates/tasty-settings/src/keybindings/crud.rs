@@ -558,6 +558,35 @@ impl KeybindingSettings {
         self.category_switch_prev_key = key.to_string();
     }
 
+    // ── 개별 지정 모드 역전환 복원 (S-9) ─────────────────────────────
+    //
+    // 개별 지정(`INDIVIDUAL_SWITCH_MODIFIER`) 에서 규칙 기반 modifier 로 되돌아갈 때
+    // 호출한다. 개별 지정 슬롯의 완전 콤보 문자열(예: `"ctrl+alt+1"`)은 "어느 부분이
+    // modifier 였고 어느 게 raw 키였는지" 구조적으로 유실돼 있어 역산이 불가능하므로,
+    // 이 축의 슬롯/다음/이전 값을 전부 기본값으로 복원하는 것이 유일하게 안전한
+    // 선택이다(S-9 분석검증 Q3 확정).
+
+    /// 탭 축 슬롯/다음/이전을 기본값으로 복원.
+    pub fn reset_tab_switch_to_defaults(&mut self) {
+        self.tab_switch_slot_keys = super::default_tab_slot_keys();
+        self.tab_switch_next_key = super::default_tab_next_key();
+        self.tab_switch_prev_key = super::default_tab_prev_key();
+    }
+
+    /// 워크스페이스 축 슬롯/다음/이전을 기본값으로 복원.
+    pub fn reset_workspace_switch_to_defaults(&mut self) {
+        self.workspace_switch_slot_keys = super::default_workspace_slot_keys();
+        self.workspace_switch_next_key = super::default_workspace_next_key();
+        self.workspace_switch_prev_key = super::default_workspace_prev_key();
+    }
+
+    /// 카테고리 축 슬롯/다음/이전을 기본값으로 복원.
+    pub fn reset_category_switch_to_defaults(&mut self) {
+        self.category_switch_slot_keys = super::default_category_slot_keys();
+        self.category_switch_next_key = super::default_category_next_key();
+        self.category_switch_prev_key = super::default_category_prev_key();
+    }
+
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     ///
     /// [`Self::format_display_parts`] 의 토큰을 `+` 로 join 한 단일 문자열.

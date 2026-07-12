@@ -576,6 +576,7 @@ impl MainView {
             &mut self.core_state,
             &kb,
             key,
+            mods,
             ctrl,
             shift,
             alt,

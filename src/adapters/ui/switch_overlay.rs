@@ -390,6 +390,51 @@ mod tests {
         assert_eq!(switch_target_for(&kb, true, true, false, false), None);
     }
 
+    /// S-9: "개별 지정" sentinel 로 바뀐 축은 `switch_target_for` 가 **절대** 그 대상을
+    /// 반환하지 않는다 — sentinel 문자열이 `Combo::parse_modifiers` 에서 파싱 실패
+    /// (`None`)하므로 규칙 기반 판정에서 구조적으로 제외된다. switch-number 오버레이가
+    /// 이 함수를 단일 소스로 공유하므로, 이 결과는 곧 "개별 지정 축엔 오버레이가 자동으로
+    /// 안 뜬다"는 의도된 부작용을 고정하는 회귀 테스트다.
+    #[test]
+    fn individual_axis_never_matched_by_switch_target_for() {
+        let kb = KeybindingSettings {
+            tab_switch_modifier: KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
+            ..Default::default()
+        }; // ws=alt, cat=ctrl+shift 는 기본값 유지.
+        // ctrl 단독을 눌러도 더 이상 Tab 을 반환하지 않는다(다른 축과도 일치하지 않으므로 None).
+        assert_eq!(switch_target_for(&kb, true, false, false, false), None);
+        // 워크스페이스/카테고리 축은 여전히 정상 동작(개별 지정은 탭 축에만 적용됨).
+        assert_eq!(
+            switch_target_for(&kb, false, false, true, false),
+            Some(SwitchTarget::Workspace)
+        );
+        assert_eq!(
+            switch_target_for(&kb, true, true, false, false),
+            Some(SwitchTarget::Category)
+        );
+    }
+
+    /// 세 축 모두 개별 지정이면 어떤 modifier 조합을 눌러도 `switch_target_for` 는 항상
+    /// `None` — 규칙 기반 판정 경로가 완전히 비활성화된다.
+    #[test]
+    fn all_axes_individual_means_switch_target_for_always_none() {
+        let individual = KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string();
+        let kb = KeybindingSettings {
+            tab_switch_modifier: individual.clone(),
+            workspace_switch_modifier: individual.clone(),
+            category_switch_modifier: individual,
+            ..Default::default()
+        };
+        for (ctrl, shift, alt, option) in [
+            (true, false, false, false),
+            (false, false, true, false),
+            (true, true, false, false),
+            (false, true, false, false),
+        ] {
+            assert_eq!(switch_target_for(&kb, ctrl, shift, alt, option), None);
+        }
+    }
+
     #[test]
     fn category_digit_range() {
         let kb = KeybindingSettings::default();

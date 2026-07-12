@@ -48,14 +48,19 @@ pub enum BareTarget {
 }
 
 /// 녹화 슬롯이 요구하는 캡처 규칙. 일반 콤보 필드는 modifier 필수([`Combo`]),
-/// quick-switch 슬롯은 modifier 금지 bare 키([`BareKey`]).
+/// quick-switch 슬롯은 modifier 금지 bare 키([`BareKey`]) — 단 그 축이 "개별 지정"
+/// (`KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER`) 이면 [`IndividualSlot`] 로
+/// modifier 포함 자유 콤보를 녹화한다(일반 콤보 필드와 동일 캡처 규칙, 저장 위치만
+/// quick-switch 슬롯 필드).
 ///
 /// [`Combo`]: FieldKind::Combo
 /// [`BareKey`]: FieldKind::BareKey
+/// [`IndividualSlot`]: FieldKind::IndividualSlot
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
     Combo,
     BareKey(BareTarget),
+    IndividualSlot(BareTarget),
 }
 
 /// Sub-tab within the Keybindings tab.

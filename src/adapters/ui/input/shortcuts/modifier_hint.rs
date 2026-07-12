@@ -684,6 +684,17 @@ mod tests {
         assert_eq!(Combo::parse_modifiers("ctrl+x"), None);
     }
 
+    /// S-9: "개별 지정" sentinel(`INDIVIDUAL_SWITCH_MODIFIER`)은 4축 토큰(`ctrl`/`shift`/
+    /// `alt`/`option`) 어느 것과도 안 맞아 파싱 실패한다 — 파서 수정 없이 sentinel 을
+    /// 도입할 수 있다는 설계 전제를 회귀로 고정한다.
+    #[test]
+    fn parse_modifiers_rejects_individual_switch_sentinel() {
+        assert_eq!(
+            Combo::parse_modifiers(tasty_settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER),
+            None
+        );
+    }
+
     #[test]
     fn ctrl_single_section_has_tab_switch_role() {
         let sections = build_hint_sections(ctrl(), &kb(), "ctrl", false, &[]);

@@ -223,6 +223,18 @@ fn default_category_switch_modifier() -> String {
     "ctrl+shift".to_string()
 }
 
+impl KeybindingSettings {
+    /// "개별 지정" sentinel — `tab_switch_modifier`/`workspace_switch_modifier`/
+    /// `category_switch_modifier` 에 저장되면 그 축이 규칙 기반(modifier + raw 키 1개
+    /// 조합) 대신 **슬롯마다 독립된 완전 콤보**(모디파이어 포함 자유 조합)를 쓴다는
+    /// 뜻이다. 4축 조합 파서([`crate`] 밖 `Combo::parse_modifiers`, `src/adapters/ui/
+    /// input/shortcuts/modifier_hint.rs`)는 `ctrl`/`shift`/`alt`/`option` 토큰만
+    /// 인식하고 그 외 토큰이 섞이면 무조건 `None` 을 반환하므로, 이 문자열은 파서
+    /// 수정 없이도 "규칙 기반 조합이 아니다" 를 안전하게 표현한다(어떤 4축 조합의
+    /// `Combo::name()` 결과와도 겹치지 않음).
+    pub const INDIVIDUAL_SWITCH_MODIFIER: &'static str = "individual";
+}
+
 impl Default for KeybindingSettings {
     fn default() -> Self {
         Self::preset_tasty()

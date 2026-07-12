@@ -575,6 +575,71 @@ fn category_next_prev_serde_roundtrip() {
     assert_eq!(restored.category_switch_prev_key, "p");
 }
 
+// ── "개별 지정" sentinel + 역전환 복원 (S-9) ────────────────────────
+
+/// sentinel 값이 4축 조합 파서가 절대 만들 수 없는 문자열인지 확인(회귀 방지) —
+/// `Combo::parse_modifiers` 는 메인 크레이트에 있어 여기선 문자열 형태만 고정한다.
+#[test]
+fn individual_switch_modifier_sentinel_value() {
+    assert_eq!(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER, "individual");
+}
+
+/// 4 프리셋 전부 기본값은 sentinel 이 아니다(규칙 기반 값만 가짐 — 작업 항목 9).
+#[test]
+fn presets_never_default_to_individual_modifier() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        for modifier in [
+            &kb.tab_switch_modifier,
+            &kb.workspace_switch_modifier,
+            &kb.category_switch_modifier,
+        ] {
+            assert_ne!(
+                modifier.as_str(),
+                KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER,
+                "preset '{name}' 축 modifier 가 개별 지정 sentinel 이면 안 됨"
+            );
+        }
+    }
+}
+
+/// 개별 지정 → 규칙 기반 역전환 시 각 축의 reset_*_to_defaults 가 정확히 기본값으로
+/// 복원하는지(분석검증 Q3).
+#[test]
+fn reset_to_defaults_restores_each_axis_independently() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.set_tab_slot_key(0, "ctrl+alt+q");
+    kb.set_tab_next_key("shift+f5");
+    kb.set_workspace_slot_key(0, "ctrl+shift+z");
+    kb.set_category_next_key("alt+ctrl+p");
+
+    kb.reset_tab_switch_to_defaults();
+    assert_eq!(
+        kb.tab_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    );
+    assert_eq!(kb.tab_next_key(), "l");
+    assert_eq!(kb.tab_prev_key(), "h");
+    // 워크스페이스/카테고리는 아직 손대지 않았으니 그대로.
+    assert_eq!(kb.workspace_slot_key(0), Some("ctrl+shift+z"));
+    assert_eq!(kb.category_next_key(), "alt+ctrl+p");
+
+    kb.reset_workspace_switch_to_defaults();
+    assert_eq!(
+        kb.workspace_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    );
+    assert_eq!(kb.category_next_key(), "alt+ctrl+p"); // 카테고리는 여전히 그대로.
+
+    kb.reset_category_switch_to_defaults();
+    assert_eq!(kb.category_next_key(), "j");
+    assert_eq!(kb.category_prev_key(), "k");
+    assert_eq!(
+        kb.category_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    );
+}
+
 /// 카테고리 next/prev 기본값(`j`/`k`)이 4 프리셋 전체에서 다른 일반 액션과 충돌하지
 /// 않는지 확인 — 분석검증 Q1 근거("j"/"k" 무충돌, "u"/"p" 는 실제로는 충돌 없음이지만
 /// 원 문서 제안값 "p" 는 toggle_command_palette 와 충돌해 기각됐음을 회귀로 고정).
@@ -582,8 +647,14 @@ fn category_next_prev_serde_roundtrip() {
 fn category_next_prev_defaults_do_not_conflict_with_presets() {
     for name in KeybindingSettings::preset_names() {
         let kb = KeybindingSettings::preset_by_name(name).unwrap();
-        let next_combo = format!("{}+{}", kb.category_switch_modifier, kb.category_switch_next_key);
-        let prev_combo = format!("{}+{}", kb.category_switch_modifier, kb.category_switch_prev_key);
+        let next_combo = format!(
+            "{}+{}",
+            kb.category_switch_modifier, kb.category_switch_next_key
+        );
+        let prev_combo = format!(
+            "{}+{}",
+            kb.category_switch_modifier, kb.category_switch_prev_key
+        );
         assert_eq!(
             kb.find_conflict("", &next_combo),
             None,

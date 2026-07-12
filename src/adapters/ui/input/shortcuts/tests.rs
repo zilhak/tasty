@@ -12,8 +12,17 @@ fn mods_ctrl() -> ModifiersState {
 fn mods_ctrl_shift() -> ModifiersState {
     ModifiersState::CONTROL | ModifiersState::SHIFT
 }
+fn mods_alt() -> ModifiersState {
+    ModifiersState::ALT
+}
 fn mods_none() -> ModifiersState {
     ModifiersState::empty()
+}
+fn mods_ctrl_alt() -> ModifiersState {
+    ModifiersState::CONTROL | ModifiersState::ALT
+}
+fn mods_alt_shift() -> ModifiersState {
+    ModifiersState::ALT | ModifiersState::SHIFT
 }
 fn k_char(s: &str) -> Key {
     Key::Character(SmolStr::new(s))
@@ -429,6 +438,7 @@ fn custom_tab_slot_key_switches_correct_tab() {
         &mut engine,
         &kb,
         &k_char("q"),
+        mods_ctrl(),
         true,  // ctrl
         false, // shift
         false, // alt
@@ -451,6 +461,7 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         &mut engine,
         &kb,
         &k_char("l"),
+        mods_ctrl(),
         true,
         false,
         false,
@@ -463,6 +474,7 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         &mut engine,
         &kb,
         &k_char("h"),
+        mods_ctrl(),
         true,
         false,
         false,
@@ -484,6 +496,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         &mut engine,
         &kb,
         &k_char("j"),
+        mods_alt(),
         false,
         false,
         true,  // alt
@@ -496,6 +509,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         &mut engine,
         &kb,
         &k_char("k"),
+        mods_alt(),
         false,
         false,
         true,
@@ -517,6 +531,7 @@ fn workspace_slot_key_switches_workspace() {
         &mut engine,
         &kb,
         &k_char("2"),
+        mods_alt(),
         false,
         false,
         true,
@@ -538,6 +553,7 @@ fn wrong_modifier_and_unbound_key_return_false() {
         &mut engine,
         &kb,
         &k_char("1"),
+        mods_none(),
         false,
         false,
         false,
@@ -549,6 +565,7 @@ fn wrong_modifier_and_unbound_key_return_false() {
         &mut engine,
         &kb,
         &k_char("z"),
+        mods_ctrl(),
         true,
         false,
         false,
@@ -575,6 +592,7 @@ fn category_combo_routes_to_category_switch() {
         &mut engine,
         &kb,
         &k_char("2"),
+        mods_ctrl_shift(),
         true,  // ctrl
         true,  // shift
         false, // alt
@@ -601,17 +619,41 @@ fn category_next_prev_keys_cycle_categories() {
 
     // ctrl+shift+j → 다음 카테고리(Services) → 미방문이라 first(ws1) 착지.
     assert!(MainView::handle_numeric_switch_shortcuts(
-        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("j"),
+        mods_ctrl_shift(),
+        true,
+        true,
+        false,
+        false,
     ));
     assert_eq!(state.active_workspace, 1);
     // ctrl+shift+j → 다음 카테고리(Extra) → ws2 착지.
     assert!(MainView::handle_numeric_switch_shortcuts(
-        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("j"),
+        mods_ctrl_shift(),
+        true,
+        true,
+        false,
+        false,
     ));
     assert_eq!(state.active_workspace, 2);
     // ctrl+shift+k → 이전 카테고리(Services) → ws1 로 복귀.
     assert!(MainView::handle_numeric_switch_shortcuts(
-        &mut state, &mut engine, &kb, &k_char("k"), true, true, false, false,
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("k"),
+        mods_ctrl_shift(),
+        true,
+        true,
+        false,
+        false,
     ));
     assert_eq!(state.active_workspace, 1);
 }
@@ -625,7 +667,150 @@ fn category_next_prev_keys_noop_when_folders_disabled() {
     state.switch_workspace(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
     assert!(!MainView::handle_numeric_switch_shortcuts(
-        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("j"),
+        mods_ctrl_shift(),
+        true,
+        true,
+        false,
+        false,
+    ));
+    assert_eq!(state.active_workspace, 0);
+}
+
+// ── "개별 지정" 축 디스패치 (S-9) ──────────────────────────────────
+
+#[test]
+fn individual_tab_axis_slot_and_next_prev_dispatch() {
+    // 탭 축을 개별 지정으로 바꾸고 슬롯/다음/이전에 모디파이어 포함 자유 콤보를 저장.
+    let (mut state, mut engine) = fresh_state();
+    state.add_tab(&mut engine).unwrap();
+    state.add_tab(&mut engine).unwrap(); // 3 tabs
+    state.goto_tab_in_pane(&mut engine, 0);
+    let mut kb = crate::settings::KeybindingSettings {
+        tab_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+            .to_string(),
+        ..Default::default()
+    };
+    kb.set_tab_slot_key(2, "ctrl+alt+q"); // 3번째 탭 슬롯 = 완전 콤보.
+    kb.set_tab_next_key("alt+shift+l");
+    kb.set_tab_prev_key("alt+shift+h");
+
+    // ctrl+alt+q → 3번째 탭(index 2).
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("q"),
+        mods_ctrl_alt(),
+        false,
+        false,
+        false,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 2);
+    // alt+shift+h → 이전 탭.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("h"),
+        mods_alt_shift(),
+        false,
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    // 규칙 기반 시절 modifier(ctrl 단독)+슬롯 문자는 이제 안 먹힌다(축이 개별 지정으로
+    // 바뀌어 switch_target_for 가 이 축을 절대 반환하지 않음).
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("1"),
+        mods_ctrl(),
+        true,
+        false,
+        false,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+}
+
+#[test]
+fn individual_workspace_axis_slot_dispatch() {
+    let (mut state, mut engine) = fresh_state();
+    add_test_workspace(&mut state, &mut engine); // ws 1
+    add_test_workspace(&mut state, &mut engine); // ws 2
+    state.switch_workspace(&mut engine, 0);
+    let mut kb = crate::settings::KeybindingSettings {
+        workspace_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+            .to_string(),
+        ..Default::default()
+    };
+    kb.set_workspace_slot_key(1, "ctrl+alt+w"); // 2번째 워크스페이스(index 1) = 완전 콤보.
+
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("w"),
+        mods_ctrl_alt(),
+        true,
+        false,
+        true,
+        false,
+    ));
+    assert_eq!(state.active_workspace, 1);
+}
+
+#[test]
+fn individual_category_axis_respects_folders_gate() {
+    let (mut state, mut engine) = fresh_state();
+    engine.settings.general.workspace_categories_enabled = true;
+    add_test_workspace(&mut state, &mut engine); // ws0(normal) 이미 있으니 ws1 추가
+    let cat = engine.create_category("Services").unwrap();
+    let ws1_id = engine.workspaces[1].id;
+    engine.set_workspace_category(ws1_id, cat).unwrap();
+    state.switch_workspace(&mut engine, 0);
+    let mut kb = crate::settings::KeybindingSettings {
+        category_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+            .to_string(),
+        ..Default::default()
+    };
+    kb.category_switch_slot_keys[1] = "ctrl+alt+shift+s".to_string(); // 섹션 index 1.
+
+    let mods = ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::SHIFT;
+    // folders on → 매칭되어 Services 로 전환.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("s"),
+        mods,
+        true,
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(state.active_workspace, 1);
+
+    // folders off → 개별 지정 콤보가 저장돼 있어도 무시(표시=동작 게이트).
+    state.switch_workspace(&mut engine, 0);
+    engine.settings.general.workspace_categories_enabled = false;
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("s"),
+        mods,
+        true,
+        true,
+        true,
+        false,
     ));
     assert_eq!(state.active_workspace, 0);
 }
@@ -644,6 +829,7 @@ fn axis_combos_do_not_cross_route() {
         &mut engine,
         &kb,
         &k_char("2"),
+        mods_ctrl_shift(),
         true,  // ctrl
         true,  // shift
         false, // alt
@@ -656,6 +842,7 @@ fn axis_combos_do_not_cross_route() {
         &mut engine,
         &kb,
         &k_char("2"),
+        mods_ctrl(),
         true,  // ctrl
         false, // shift
         false, // alt
