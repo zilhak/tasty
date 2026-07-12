@@ -399,7 +399,25 @@ impl TerminalState {
             }
         }
 
+        if changed {
+            self.flush_surface_change_logs();
+        }
         changed
+    }
+
+    /// termwiz `Surface` 는 모든 변경을 내부 change log(`Vec<Change>`)에
+    /// append-only 로 누적하고, 소비자가 `flush_changes_older_than` 으로 비워
+    /// 주기를 기대하는 설계다. tasty 는 diff 스트림을 쓰지 않고 grid 셀을 직접
+    /// 읽으므로(process-then-render) 이 로그의 소비자가 없다 — 비우지 않으면
+    /// 출력 줄당 ~380B 가 영구 누적된다 (soak s4 실측: 5000줄 명령당 호스트
+    /// RSS +1.9MB, ED3 로도 해제 불가). ingest 말미에서 전량 비운다.
+    fn flush_surface_change_logs(&mut self) {
+        let seq = self.primary_surface.current_seqno();
+        self.primary_surface.flush_changes_older_than(seq);
+        if let Some(alt) = &mut self.alternate_surface {
+            let seq = alt.current_seqno();
+            alt.flush_changes_older_than(seq);
+        }
     }
 
     /// Register a server-side subscriber to this terminal's raw PTY output.
