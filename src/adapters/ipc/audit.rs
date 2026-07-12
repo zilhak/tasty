@@ -3,11 +3,16 @@
 //! 모든 IPC 호출(allow + deny) 을 `tasty.audit.{ts:013}.{seq:04}` 키로 영속한다.
 //! 권한 거부 사고 추적, agent 행동 감사, capability_elevation 사후 분석에 쓴다.
 //!
-//! 보존 정책: 기본 30 일 (`DEFAULT_RETENTION_MS`). load 시 lazy evict — query
-//! 가 호출될 때 만료된 record 를 함께 삭제한다.
+//! 보존 정책: 기본 30 일 (`DEFAULT_RETENTION_MS`). 집행 지점 2개:
+//! 1. load 시 lazy evict — query 가 호출될 때 만료 record 를 함께 삭제.
+//! 2. **append 경로 주기 집행** (`maybe_evict_on_append`, 최대 1시간 1회) —
+//!    query 전용 lazy 만으론 아무도 조회하지 않는 일반 사용에서 디스크가 무한
+//!    축적된다 (macOS soak 실측 ~68.5KB/min, AI 에이전트 워크로드 기준 일 ~100MB).
 //!
 //! 스토리지는 Global scope — workspace 가 닫혀도 audit 은 유지되어야 한다.
 //! workspace_id 는 record 안에 함께 기록.
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tasty_memory::{ListOpts, MemoryError, MemoryValue, PutOpts, Scope};
@@ -218,6 +223,39 @@ impl<'a> AuditStore<'a> {
         Ok(alive)
     }
 
+    /// 만료 record 만 골라 삭제한다 (append 경로의 주기 집행용). 키가
+    /// `tasty.audit.{ts:013}.{seq:04}` 라 값 역직렬화 없이 키 파싱만으로
+    /// 판정한다. 삭제 건수 반환. `retention_ms=0` 은 no-op.
+    pub fn evict_expired(&mut self, retention_ms: u64, now_ms: u64) -> Result<usize> {
+        if retention_ms == 0 {
+            return Ok(0);
+        }
+        let cutoff = now_ms.saturating_sub(retention_ms);
+        let opts = ListOpts {
+            prefix: Some(AUDIT_KEY_PREFIX.to_string()),
+            ..Default::default()
+        };
+        let entries = self.mem.list(&Scope::Global, &opts)?;
+        let mut evicted = 0usize;
+        for e in entries {
+            let expired = e
+                .key
+                .strip_prefix(AUDIT_KEY_PREFIX)
+                .and_then(|rest| rest.get(..13))
+                .and_then(|ts| ts.parse::<u64>().ok())
+                .is_some_and(|ts| ts < cutoff);
+            if expired
+                && self
+                    .mem
+                    .delete(&self.owner, &Scope::Global, &e.key, None)
+                    .is_ok()
+            {
+                evicted += 1;
+            }
+        }
+        Ok(evicted)
+    }
+
     pub fn query(
         &mut self,
         q: &AuditQuery,
@@ -336,6 +374,35 @@ fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec
     v
 }
 
+/// append 경로 retention 집행의 시간 게이트 (프로세스 전역, 최대
+/// [`APPEND_EVICT_INTERVAL_MS`] 에 1회). 부팅 후 첫 append 에서도 1회 돈다
+/// (last=0). CAS 로 다중 진입을 걸러 스캔이 겹치지 않는다.
+static LAST_APPEND_EVICT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// append 경로 retention 집행 주기 — 1시간. 스캔 비용(전 record list)이
+/// 시간당 1회로 상한된다.
+pub const APPEND_EVICT_INTERVAL_MS: u64 = 60 * 60 * 1_000;
+
+/// append 직후 호출 — 주기가 찼으면 만료 record 를 삭제한다. 실패는 audit
+/// 기록 자체를 막지 않도록 warn 으로만 남긴다.
+pub fn maybe_evict_on_append(store: &mut AuditStore, now_ms: u64) {
+    let last = LAST_APPEND_EVICT_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last) < APPEND_EVICT_INTERVAL_MS {
+        return;
+    }
+    if LAST_APPEND_EVICT_MS
+        .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return; // 다른 스레드가 이번 주기를 가져감
+    }
+    match store.evict_expired(DEFAULT_RETENTION_MS, now_ms) {
+        Ok(0) => {}
+        Ok(n) => tracing::debug!("audit: append-path retention evicted {n} records"),
+        Err(e) => tracing::warn!("audit: append-path retention evict failed: {e}"),
+    }
+}
+
 /// Phase 6.5a dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
 /// 호출된다.
@@ -447,6 +514,38 @@ mod tests {
         assert_eq!(all[0].ts_ms, 1_000);
         assert_eq!(all[0].seq, 0);
         assert_eq!(all[2].ts_ms, 2_000);
+    }
+
+    #[test]
+    fn evict_expired_removes_only_expired_by_key() {
+        let (_td, mut mem) = fresh();
+        let mut store = AuditStore::new(&mut mem, "_host");
+        let old = rec(
+            1_000,
+            0,
+            AuditCallerKind::Local,
+            "",
+            "a.b",
+            AuditDecision::Allow,
+        );
+        let new = rec(
+            9_000,
+            0,
+            AuditCallerKind::Local,
+            "",
+            "c.d",
+            AuditDecision::Allow,
+        );
+        store.append(&old).unwrap();
+        store.append(&new).unwrap();
+        // retention 5000ms, now 10000 → cutoff 5000: old(1000)만 만료.
+        let n = store.evict_expired(5_000, 10_000).unwrap();
+        assert_eq!(n, 1, "expired record 만 정확히 1건 삭제");
+        let all = store.list(0, 10_000).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].ts_ms, 9_000);
+        // retention=0 은 no-op.
+        assert_eq!(store.evict_expired(0, 10_000).unwrap(), 0);
     }
 
     #[test]
