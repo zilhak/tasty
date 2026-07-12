@@ -464,6 +464,18 @@ pub enum PluginEvent {
     EventSubscribe { sub_id: u64, pattern: String },
     /// plugin → 호스트: 이전 [`PluginEvent::EventSubscribe`]의 구독 해제.
     EventUnsubscribe { sub_id: u64 },
+    /// plugin 이 자기 측 shared buffer 매핑을 폐기했음을 알린다 — 예: egui-mesh
+    /// buffer 가 성장으로 재생성되어 구버퍼가 교체될 때(SDK `ensure_buffer`).
+    /// host 는 대응 매핑(`plugin_buffers`)을 해제한다. 이 통지가 없으면 구세대
+    /// 버퍼의 `SharedMemory` 매핑이 plugin 수명 내내 host 에 남는다.
+    /// surface/popup/banner *닫힘* 경로는 host 가 frame 메타 기반으로 자체 해제
+    /// 하므로, 이 이벤트는 인스턴스 생존 중 교체 시점용이다. fire-and-forget.
+    SharedBufferReleased { id: SharedBufferId },
+    /// 미래 variant 의 forward-compat fallback — 구버전 host 가 모르는 kind 를
+    /// 받아도 메시지 단위 파싱 실패 없이 무시할 수 있게 한다 (CHANGELOG 정책:
+    /// 새 variant 는 fallback 가능한 형태로만). host 는 debug 로그 후 버린다.
+    #[serde(other)]
+    Unknown,
 }
 
 /// [`METHOD_EVENT_DISPATCH`] params — 호스트가 구독자 plugin에게 보내는 이벤트.

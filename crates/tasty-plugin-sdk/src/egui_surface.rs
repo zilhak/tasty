@@ -318,7 +318,15 @@ impl EguiMeshCore {
         let big_enough = self.buffer.as_ref().is_some_and(|b| b.len() >= needed);
         if !big_enough {
             let cap = needed.max(4096).next_power_of_two();
-            self.buffer = Some(host.create_shared_buffer(cap)?);
+            let new_buf = host.create_shared_buffer(cap)?;
+            // 성장 교체: 구버퍼 폐기를 host 에 통지해 host 측 매핑도 해제시킨다.
+            // 통지가 없으면 구세대 버퍼의 host 매핑이 plugin 수명 내내 남는다.
+            // 실패는 leak 1건 유지일 뿐이라 frame 진행을 막지 않는다 — warn 만.
+            if let Some(old) = self.buffer.replace(new_buf)
+                && let Err(e) = host.notify(&PluginEvent::SharedBufferReleased { id: old.id() })
+            {
+                tracing::warn!("shared buffer release notify failed: {e}");
+            }
         }
         Ok(())
     }

@@ -12,6 +12,7 @@ use serde_json::json;
 
 use crate::host_cmd::HostCmd;
 use crate::protocol::{self, PluginEvent};
+use tasty_plugin_protocol::SharedBufferId;
 use tasty_plugin_manifest::Permission;
 
 use super::{
@@ -38,6 +39,9 @@ struct CollectedPluginEvents {
     new_popup_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
     // egui-mesh banner paint_frame 알림 (A3): (instance_id, frame 메타).
     new_banner_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
+    // plugin 이 폐기한 shared buffer (성장 재생성 등): (plugin_id, buffer_id).
+    // host 매핑을 해제하지 않으면 구세대 버퍼가 plugin 수명 내내 남는다.
+    released_buffers: Vec<(String, SharedBufferId)>,
     // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
     // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
     // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
@@ -208,6 +212,13 @@ impl PluginManager {
             PluginEvent::EventUnsubscribe { sub_id } => {
                 out.new_event_unsubscribes.push((id.to_string(), sub_id));
             }
+            PluginEvent::SharedBufferReleased { id: buffer_id } => {
+                out.released_buffers.push((id.to_string(), buffer_id));
+            }
+            PluginEvent::Unknown => {
+                // forward-compat fallback — 신버전 plugin 의 미지 이벤트는 무시.
+                tracing::debug!("[plugin {}] unknown event kind (ignored)", id);
+            }
         }
     }
 
@@ -227,6 +238,7 @@ impl PluginManager {
             new_paint_frames,
             new_popup_paint_frames,
             new_banner_paint_frames,
+            released_buffers,
             disconnected,
         } = collected;
 
@@ -248,6 +260,9 @@ impl PluginManager {
         }
         for (instance_id, frame) in new_banner_paint_frames {
             self.banner_mesh_frames.insert(instance_id, frame);
+        }
+        for (plugin_id, buffer_id) in released_buffers {
+            self.release_plugin_buffer(&plugin_id, buffer_id);
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
