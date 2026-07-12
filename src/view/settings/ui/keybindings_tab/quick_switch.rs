@@ -716,6 +716,29 @@ mod tests {
     }
 
     #[test]
+    fn consume_capture_individual_slot_conflicts_with_general_action() {
+        // preset_tasty 의 restore_closed = "ctrl+shift+t" — 개별 지정 슬롯에 같은 콤보를
+        // 녹화하면 일반 액션 충돌 팝업(PendingBinding)이 뜨고 즉시 저장되지 않아야 한다.
+        let mut kb = KeybindingSettings::preset_tasty();
+        kb.tab_switch_modifier = INDIVIDUAL.to_string();
+        let mut recording = Some(RecordingSlot {
+            field_id: String::new(),
+            idx: 0,
+            field_kind: FieldKind::IndividualSlot(BareTarget::TabSlot(0)),
+        });
+        let mut pending = None;
+        let captured = KeyCapture::Combo("ctrl+shift+t".to_string());
+        consume_capture(&mut kb, &mut recording, &mut pending, &captured);
+        // 충돌 발견 → 슬롯엔 아직 반영 안 됨, pending 팝업 상태로 전환.
+        assert_eq!(kb.tab_slot_key(0), Some("1")); // preset 기본값 그대로.
+        assert!(recording.is_none()); // 녹화는 종료(팝업으로 전환).
+        let pending = pending.expect("일반 액션 충돌 시 PendingBinding 이 채워져야 함");
+        assert_eq!(pending.conflicting_field, "restore_closed");
+        assert_eq!(pending.bare_target, Some(BareTarget::TabSlot(0)));
+        assert_eq!(pending.bare_raw_key, "ctrl+shift+t");
+    }
+
+    #[test]
     fn consume_capture_bare_slot_still_composes_via_modifier() {
         // 회귀 방지: IndividualSlot 분기 추가가 기존 BareKey 경로를 깨지 않아야 한다.
         let mut kb = KeybindingSettings::preset_tasty(); // tab modifier = "ctrl"
