@@ -13,7 +13,7 @@
 //! 치수는 구조적 레이아웃 값으로 `dialog::frame_card` 의 `240.0` 관례를 따라 리터럴.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -200,7 +200,7 @@ fn callout(
                     .strong()
                     .color(theme.accent_primary().to_egui()),
             );
-            ui.add_space(4.0);
+            vspace(ui, theme.spacing_xs);
             // 제목 (13, semibold, text-primary).
             ui.label(
                 egui::RichText::new(title)
@@ -208,7 +208,8 @@ fn callout(
                     .strong()
                     .color(theme.text_primary().to_egui()),
             );
-            ui.add_space(6.0);
+            // 디자인 전사값 6px — 토큰 산술(4×1.5)로 표현.
+            vspace(ui, theme.spacing_xs * 1.5);
             // 본문 (11, text-secondary).
             ui.label(
                 egui::RichText::new(body)
@@ -316,7 +317,8 @@ fn topic_row(ui: &mut egui::Ui, theme: &Theme, n: usize, title: &str, desc: &str
         .fill(fill)
         .stroke(egui::Stroke::new(theme.border_width.value(), border))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::same(10))
+        // 디자인 전사값 10px — 토큰 산술(4×2.5)로 표현.
+        .inner_margin(margin_all(theme.spacing_xs * 2.5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {

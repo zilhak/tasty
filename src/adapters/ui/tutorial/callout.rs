@@ -8,7 +8,7 @@
 //! `Button` 재사용, 색·간격·반경은 `Theme` 토큰.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 
 use crate::i18n::t;
 
@@ -176,14 +176,15 @@ pub fn draw_callout(
                             .strong()
                             .color(theme.accent_primary().to_egui()),
                     );
-                    ui.add_space(4.0);
+                    vspace(ui, theme.spacing_xs);
                     ui.label(
                         egui::RichText::new(title)
                             .size(theme.font_size_body.value())
                             .strong()
                             .color(theme.text_primary().to_egui()),
                     );
-                    ui.add_space(6.0);
+                    // 디자인 전사값 6px — 토큰 산술(4×1.5)로 표현.
+                    vspace(ui, theme.spacing_xs * 1.5);
                     ui.label(
                         egui::RichText::new(body)
                             .size(theme.font_size_caption.value())

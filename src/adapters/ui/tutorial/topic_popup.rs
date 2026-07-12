@@ -6,7 +6,9 @@
 //! 디자인 SoT `gallery/overlays-tutorial.jsx::TopicPopup/Topic` 의 host 대응.
 //! "진행" 클릭 → `TutorialRuntime::request_start` 로 시작 큐 + 팝업 close.
 
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, margin_all,
+};
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::adapters::ui::tutorial::all_topics;
@@ -54,13 +56,19 @@ pub fn draw_tutorial_topics_popup(
                         .color(th.text_primary().to_egui()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let x = ui.add(
-                        egui::Label::new(
-                            egui::RichText::new("✕").color(th.text_muted().to_egui()),
-                        )
-                        .sense(egui::Sense::click()),
-                    );
-                    if x.clicked() {
+                    // 닫기 affordance — banner/갤러리 dismiss_x 와 동일한 Ghost/Sm
+                    // IconButton + icons::CLOSE(SVG). raw "✕"(U+2715) 는 UI 폰트에
+                    // 글리프가 없어 tofu 위험 + 픽토그래픽 게이트 위반.
+                    if IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .show(ui, &th, &|ui, rect, c| {
+                            crate::adapters::ui::icons::CLOSE
+                                .image(rect.height(), c)
+                                .paint_at(ui, rect)
+                        })
+                        .clicked()
+                    {
                         action = PopupAction::Close;
                     }
                 });
@@ -146,7 +154,8 @@ fn topic_row(
         .fill(fill)
         .stroke(egui::Stroke::new(th.border_width.value(), border))
         .corner_radius(th.corner_radius.value())
-        .inner_margin(egui::Margin::same(10))
+        // 디자인 전사값 10px 유지 — 토큰 산술(4×2.5)로 표현 (그리드 스냅은 디자인 몫).
+        .inner_margin(margin_all(th.spacing_xs * 2.5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
