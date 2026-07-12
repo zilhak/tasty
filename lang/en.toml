@@ -896,6 +896,11 @@ corrupt = "Database file is corrupted: {}. Back up and delete the file to start 
 schema_mismatch = "Database schema version mismatch (expected {}, found {}). Backward compatibility was removed in 0.4. Back up and delete ~/.tasty/state.db to start fresh."
 other = "Database initialization failed: {}"
 
+[boot]
+phase_gpu_init = "Initializing graphics…"
+phase_waiting_plugins = "Loading plugins…"
+phase_restoring_layout = "Restoring layout…"
+
 [approval.popup]
 title = "Approval needed"
 comment_label = "Comment (optional)"

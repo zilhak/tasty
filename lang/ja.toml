@@ -896,6 +896,11 @@ corrupt = "データベースファイルが破損しています: {}. ファイ
 schema_mismatch = "データベースのスキーマバージョンが一致しません (expected {}, found {})。0.4 で下位互換は削除されました。~/.tasty/state.db をバックアップしてから削除してください。"
 other = "データベースの初期化に失敗しました: {}"
 
+[boot]
+phase_gpu_init = "グラフィックスを初期化しています…"
+phase_waiting_plugins = "プラグインを読み込んでいます…"
+phase_restoring_layout = "レイアウトを復元しています…"
+
 [approval.popup]
 title = "承認が必要"
 comment_label = "コメント (任意)"

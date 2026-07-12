@@ -896,6 +896,11 @@ corrupt = "DB 파일이 손상되었습니다: {}. 파일을 백업한 뒤 삭�
 schema_mismatch = "DB 스키마 버전이 맞지 않습니다 (expected {}, found {}). 0.4 버전부터 하위 호환이 끊겼습니다. ~/.tasty/state.db 를 백업한 뒤 삭제하면 새로 시작됩니다."
 other = "DB 초기화에 실패했습니다: {}"
 
+[boot]
+phase_gpu_init = "그래픽 초기화 중…"
+phase_waiting_plugins = "플러그인 불러오는 중…"
+phase_restoring_layout = "레이아웃 복원 중…"
+
 [approval.popup]
 title = "승인 필요"
 comment_label = "코멘트 (선택)"
