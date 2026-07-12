@@ -981,6 +981,13 @@ impl AppState {
                     .as_ref()
                     .and_then(|sp| sp.scrollback_persist_id.clone());
                 out.push((es.id, pid));
+            } else if let Some(sid) = s.surface_id() {
+                // 나머지 kind (plugin RemoteSurface / EguiMeshSurface / webview 등).
+                // scrollback persist 는 없지만 cleanup_surface + surface.closed
+                // lifecycle(→ 소유 plugin 에 surface.destroy 통지) 대상이다. 이 분기가
+                // 없으면 cleanup 대상에서 조용히 빠져 plugin 프로세스의 per-surface
+                // 상태가 영원히 남는다 (soak S6 실측: markdown 사이클당 ~30MB 누수).
+                out.push((sid, None));
             }
         });
     }

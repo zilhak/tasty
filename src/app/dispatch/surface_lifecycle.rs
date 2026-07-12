@@ -31,6 +31,10 @@ impl App {
             return;
         };
         for ev in drained {
+            // plugin surface 면 소유 plugin 에 surface.destroy 통지 + host 측
+            // RemoteSurfaceEntry/mesh frame 정리 (아니면 no-op). 이 호출이 빠지면
+            // plugin 프로세스의 per-surface 상태가 영원히 남는다 (soak S6 실측).
+            mgr.destroy_remote_surface(ev.surface_id, ev.kind);
             let bus_reason = if ev.is_user_close {
                 LifecycleReason::User
             } else {

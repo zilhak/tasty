@@ -197,6 +197,8 @@ pub(super) fn parse_hook_result(resp: &PluginResponse) -> HookOutcome {
 }
 
 pub(super) struct RemoteSurfaceEntry {
+    /// 소유 plugin id — surface 닫힘 시 `surface.destroy` 를 이 plugin 에 보낸다.
+    pub(super) plugin_id: String,
     pub(super) handles: SurfaceHandles,
 }
 

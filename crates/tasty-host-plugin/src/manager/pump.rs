@@ -397,6 +397,66 @@ impl PluginManager {
         }
     }
 
+    /// Surface 닫힘 시 plugin surface 정리 — 소유 plugin 에 `surface.destroy` 를
+    /// 보내(plugin 측 per-surface 상태 해제: docs/mesh 컨텍스트/캐시) host 측
+    /// `RemoteSurfaceEntry`(shm 핸들)와 stale mesh frame 메타를 제거한다.
+    /// plugin surface 가 아니면(터미널 등) no-op — 호출측은 kind 를 구분할 필요 없다.
+    ///
+    /// 소유 plugin 해석은 두 갈래다:
+    /// 1. `RemoteSurfaceEntry` 가 있는 surface — entry 의 plugin_id.
+    /// 2. egui-mesh surface(markdown 등) — entry 를 만들지 않으므로
+    ///    (`send_egui_mesh_surface_create` 참조) manifest `[[surface_kinds]]` 의
+    ///    kind 선언으로 owner 를 해석한다.
+    ///
+    /// 이 통지가 없으면 plugin 프로세스가 surface 상태를 영원히 들고 있어
+    /// open/close 반복 시 무한 성장한다 (soak S6 실측: markdown 사이클당 ~30MB).
+    /// plugin 이 create 를 받은 적 없는 surface 에 destroy 가 가도 plugin 측
+    /// `destroy_surface` 는 맵 remove 뿐이라 무해하다.
+    pub fn destroy_remote_surface(&mut self, surface_id: u32, kind: Option<&str>) {
+        if let Some(entry) = self.surfaces.remove(&surface_id) {
+            self.egui_mesh_frames.remove(&surface_id);
+            self.send_surface_request(
+                &entry.plugin_id,
+                protocol::METHOD_SURFACE_DESTROY,
+                json!({ "surface_id": surface_id }),
+                PendingRequestKind::Other,
+            );
+            // entry drop → SurfaceHandles(shm) 해제.
+            return;
+        }
+        // egui-mesh surface: 수신했던 mesh frame 의 plugin_id 가 1순위 owner 소스다 —
+        // cascade 시점엔 surface 가 이미 layout 에서 제거돼 kind 가 None 으로 올 수
+        // 있기 때문 (`cascade_surface_closed` 의 surface_kind 폴백 주석 참조).
+        // frame 을 한 번도 못 받은 surface(paint 전 즉시 close)만 kind 선언으로 폴백.
+        let owner = self
+            .egui_mesh_frames
+            .remove(&surface_id)
+            .map(|f| f.plugin_id)
+            .or_else(|| kind.and_then(|k| self.plugin_id_for_surface_kind(k)));
+        if let Some(pid) = owner {
+            tracing::debug!("surface.destroy → plugin '{pid}' (surface {surface_id})");
+            self.send_surface_request(
+                &pid,
+                protocol::METHOD_SURFACE_DESTROY,
+                json!({ "surface_id": surface_id }),
+                PendingRequestKind::Other,
+            );
+        } else {
+            tracing::debug!(
+                "surface.destroy skipped (surface {surface_id}, kind {kind:?} — owner 미해석)"
+            );
+        }
+    }
+
+    /// manifest `[[surface_kinds]]` 가 `kind` 를 선언한 plugin id. egui-mesh
+    /// surface 의 kind→owner 해석용. 없으면(터미널/호스트 빌트인) None.
+    fn plugin_id_for_surface_kind(&self, kind: &str) -> Option<String> {
+        self.packages
+            .iter()
+            .find(|p| p.manifest.surface_kinds.iter().any(|sk| sk.kind == kind))
+            .map(|p| p.manifest.id.clone())
+    }
+
     pub(super) fn drain_host_cmds(&mut self) {
         loop {
             let cmd = match self.host_cmd_rx.try_recv() {
@@ -412,8 +472,13 @@ impl PluginManager {
                     params,
                     handles,
                 } => {
-                    self.surfaces
-                        .insert(surface_id, RemoteSurfaceEntry { handles });
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id: plugin_id.clone(),
+                            handles,
+                        },
+                    );
                     let cwd_str = cwd.as_ref().and_then(|p| p.to_str()).map(str::to_string);
                     self.send_surface_request(
                         &plugin_id,
@@ -434,8 +499,13 @@ impl PluginManager {
                     data,
                     handles,
                 } => {
-                    self.surfaces
-                        .insert(surface_id, RemoteSurfaceEntry { handles });
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id: plugin_id.clone(),
+                            handles,
+                        },
+                    );
                     self.send_surface_request(
                         &plugin_id,
                         protocol::METHOD_SURFACE_RESTORE,
