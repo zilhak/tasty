@@ -335,6 +335,12 @@ impl TastyInstance {
             .to_string()
     }
 
+    /// OS process id — soak 하네스의 외부 측정(프로세스 트리 RSS/핸들 수)용.
+    #[allow(dead_code)] // 일부 test binary 만 사용
+    pub fn pid(&self) -> u32 {
+        self.process.id()
+    }
+
     /// Shutdown the instance gracefully.
     pub fn shutdown(&self) {
         let _ = self.call("system.shutdown", serde_json::json!({}));

@@ -389,6 +389,9 @@ gui = [
 serde_json = "1"
 enigo = "0.6"
 tempfile = "3"
+# 메모리 누수 soak 하네스(tests/soak_memory.rs)의 외부 측정용 — 프로세스 트리
+# RSS·자식 프로세스 열거. 본체 의존성 아님(관찰자 효과 0), dev 전용.
+sysinfo = "0.35"
 
 # gui_common 이 objc2-app-kit 등 gui 전용 optional 의존을 쓰므로 headless
 # (`--no-default-features`) 테스트 빌드에서 제외한다.
