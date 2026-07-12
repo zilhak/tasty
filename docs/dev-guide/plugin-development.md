@@ -213,7 +213,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 | OS | 메커니즘 | 통합 지점 | 손자(node/chrome) |
 |----|----------|-----------|--------------------|
 | **Windows** | Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`). 호스트가 Job 핸들을 `PluginManager` 수명 동안 소유 → 호스트 사망 시 핸들 닫히며 OS 가 Job 내 전 프로세스 강제 종료. | 호스트 `adopt`(각 자식 assign) | **자동 커버**(Job 멤버십 자식 상속) |
-| **Linux** | `prctl(PR_SET_PDEATHSIG, SIGKILL)` (자식 `pre_exec`). 부모 사망 시 커널이 직속 플러그인에 SIGKILL. | 호스트 `prepare`(pre_exec) | 고아 허용(범위 밖) |
+| **Linux** | `prctl(PR_SET_PDEATHSIG, SIGKILL)` (자식 `pre_exec`). 부모 사망 시 커널이 직속 플러그인에 SIGKILL. **PDEATHSIG 는 fork 한 *스레드* 종료에 발화**하므로(man prctl 경고) 모든 spawn 은 `PluginReaper::spawn_bound` 가 프로세스 수명의 영속 spawner 스레드에서 fork 한다 — 단명 스레드(부트 워커 등)에서 직접 spawn 하면 그 스레드 종료 시 plugin 전원이 SIGKILL 된다. | 호스트 `prepare`(pre_exec) + `spawn_bound`(영속 스레드 fork) | 고아 허용(범위 밖) |
 | **macOS** | PDEATHSIG 등가물 부재 → SDK 런타임 watchdog 이 `getppid` 폴링(500ms)해 부모 PID 변화 감지 시 self-exit. 호스트는 `TASTY_HOST_PID` env 만 주입. | 플러그인 SDK(`runtime.rs`) | 고아 허용(범위 밖) |
 
 모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 기능이나 호스트를 죽이지 않는다.

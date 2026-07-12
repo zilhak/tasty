@@ -157,7 +157,10 @@ impl PluginProcess {
             cmd.env("TASTY_HOME", &home);
         }
 
-        let child = cmd.spawn().map_err(|e| {
+        // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
+        // 결박되므로(단명 부트 워커에서 직접 spawn 하면 그 스레드 종료 시 plugin
+        // 전원 SIGKILL) 영속 spawner 스레드에서 fork 해야 한다. 타 OS 는 직접 spawn.
+        let child = reaper.spawn_bound(cmd).map_err(|e| {
             anyhow::anyhow!(
                 "failed to spawn plugin '{}' ({}): {}",
                 package.manifest.id,
