@@ -243,7 +243,9 @@ fn cycle_heavy_output(inst: &TastyInstance, surface_id: u64) {
                 return;
             }
             // 입력 유실 레이스 감지 — 첫 바이트가 사라져 셸이 명령을 못 찾음.
-            if out.contains("command not found") {
+            // 셸별 메시지: bash/zsh "command not found", dash(Ubuntu /bin/sh)
+            // "eq: not found" — 공통 부분문자열 "not found" 로 매치한다.
+            if out.contains("not found") {
                 INPUT_INCIDENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("S4: input-loss incident (attempt {attempt}) — first byte dropped");
                 std::thread::sleep(Duration::from_millis(500));
