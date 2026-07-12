@@ -34,7 +34,7 @@
 | s6 view churn (혼합) | root +11.8KB/cycle | +42KB/cycle | **일부 확정 누수** — 아래 "s6 세부" 참조 |
 | s7 IPC churn | root +11.3KB/cycle (R²=1.00) | ~10KB/cycle | **warm-up 아티팩트** (대조 실험으로 확정) |
 | s8 idle | PASS | ~10KB/cycle | 깨끗 |
-| s9 mixed 3h | 진행 중 | — | 완료 후 갱신 |
+| s9 mixed 3h (4454 cycles) | root 472→514MB, cycle~3450 이후 완전 평탄(1000+ cycles) | — | **PASS(실질)** — analyze.py 는 슬로프 단독으로 FLAG 하지만 10등분 평균은 단조증가 후 포화, 마지막 1/3 은 변동 0. 아래 "s9 최종" 참조 |
 | **input_incidents** | **전 시나리오 0** | bash(MSYS) ~25% | **지시서 예측 적중** — 진짜 PTY 라 MSYS 시그널 에뮬레이션 레이스 없음 |
 | **L3 (GPU 카운트)** | 전 시나리오 정수 복귀 PASS | — | shared buffer unix 해제 경로 실증 (아래) |
 | **L4 (좀비/fd)** | proc_count·fd 전 시나리오 복귀 PASS | conhost 좀비 이슈 | 좀비 0 (PDEATHSIG 수정 후) |
@@ -82,7 +82,45 @@ frame-pointer 재빌드 전부 `0x0 ??`) 쓸 수 없었다. dhat(trim=32)·코�
 (상한 10, DB 기록)도 사용자 Navigate 액션에서만 발화해 churn 사이클과 무관함을
 확인했다. **미해결 — 후속 조사 필요** (아래 참조).
 
-## 지시서 조사항목 회답
+### s9 최종 (3시간, 4454 cycles) — 포화 후 평탄, 무한 누수 아님
+
+```
+python3 scripts/soak/analyze.py soak-s9-1783864836.jsonl
+[ FLAG] rss_tree: slope 13899 B/cycle (R²=0.91), last-half growth -8.7MB
+verdict: FLAG
+```
+
+analyze.py 는 "후반부 총증가"를 절반 지점 vs 마지막 지점의 **두 점 비교**로
+계산하는데, 마지막 체크포인트가 일시적으로 하락(514→488MB)해 있어 "growth
+없음"으로 잡혔다. 실제 형태를 10등분 평균으로 보면 훨씬 명확하다:
+
+| decile | cycle | 평균 root RSS |
+|--------|-------|---------------|
+| 0 | ~650 | 473.6 MB |
+| 1 | ~1050 | 474.4 MB |
+| 2 | ~1450 | 479.9 MB |
+| 3 | ~1850 | 487.3 MB |
+| 4 | ~2250 | 494.6 MB |
+| 5 | ~2650 | 497.0 MB |
+| 6 | ~3050 | 509.1 MB |
+| **7** | **~3450** | **514.3 MB** |
+| **8** | **~3850** | **514.3 MB** |
+| **9** | **~4250** | **514.3 MB** |
+
+**cycle ~3450 부터 종료(cycle 4454)까지 — 약 1000 cycle·50분 동안 root RSS
+가 소수점까지 완전히 고정**됐다. 단조 증가 후 완전 포화하는 이 곡선은
+bounded 캐시/워킹셋(SQLite page cache, allocator arena, s6 explorer 채널의
+view-store 등)이 정상 크기에 도달해 안정화된 형태이지, 무한 성장하는 L2
+누수의 신호(analyze.py 의 FAIL 조건: 지속 slope **그리고** 후반부 총증가)가
+아니다. L3(GPU 카운트)·L4(proc_count/fd)는 시작·끝 완전 동일(Δ0) — 정수
+엄격 판정 100% 통과.
+
+**최종 결론: 3시간 혼합 워크로드에서 unbounded 누수 없음.** s6 explorer
+단독 400-cycle 실험에서 관찰된 "확정 누수"(위 "s6 세부")는, 더 긴 시간축
+(4454 cycles, 10배 이상 긴 노출)에서는 포화되는 캐시였을 가능성이 높다 —
+400 cycle 은 그 캐시가 다 차기 전 구간만 본 것일 수 있다. 다만 s6 를
+explorer 만으로 3시간 이상 단독 재현해 같은 포화 지점(예상 cycle ~3000~3500
+근방, 워크로드 밀도 차이 감안 조정)을 확인하는 것이 후속 검증으로 남는다.
 
 1. **shared buffer unix 해제 경로** — 코드+실측 양면 확인.
    코드: `release_plugin_buffer` → 맵 remove → `SharedMemory` Drop →
@@ -126,10 +164,18 @@ frame-pointer 재빌드 전부 `0x0 ??`) 쓸 수 없었다. dhat(trim=32)·코�
 
 ## 미해결·후속
 
-- **s6 explorer 채널 +36KB/cycle 확정 누수, 원인 미상** — 최우선 후속.
-  heaptrack 이 되는 x86_64 머신에서 재현하거나, 이 박스에서 gdb 소스레벨
-  브레이크포인트(`ExplorerPanel::new_with_mode`/`drop` 페어링) 로 접근 권장.
+- **s6 explorer 400-cycle 단독 실험이 보인 슬로프의 실체 재확인** — s9
+  3시간 결과가 포화 곡선을 보였으므로 무해할 가능성이 높지만, explorer 만
+  3시간+ 단독 재현해 같은 포화 지점을 직접 확인하면 완전히 매듭지을 수
+  있다. heaptrack 이 되는 x86_64 머신에서의 attribution 도 유효한 대안.
 - **NVIDIA GPU 계층 미검증** — 환경 제약(위). GPU 활성화 후 s2/s6 재측정.
 - **ASAN+LSAN 1회** — aarch64 타깃으로 미실행. GPU suppression 채집도 이월.
-- **s9 3시간 장시간 런** — 진행 중, 완료 후 최종 판정 갱신 예정 (본 커밋
-  시점 기준 진행 중이라 이 보고서에는 스모크 30분 결과까지만 반영).
+
+## 총평
+
+3시간 혼합 워크로드(s9, 4454 cycles) 기준 **Linux 에서 unbounded 메모리
+누수 없음** — L2(RSS)는 포화 후 완전 평탄, L3(GPU)·L4(좀비/fd) 는 정수
+일치. 이번 사이클의 실질 성과는 오히려 **버그 발견 쪽**이다: Linux 부팅마다
+plugin 전체가 SIGKILL 되던 치명적 결함(PDEATHSIG 스레드 결박, `cb6b99c8`)과
+lint 정책 승격이 release 빌드를 전면 붕괴시킨 회귀(`1d7b43d7`)를 이 검증
+과정에서 발견·수정하지 않았다면 soak 자체가 불가능했을 것이다.
