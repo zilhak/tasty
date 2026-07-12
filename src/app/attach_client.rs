@@ -601,7 +601,9 @@ impl App {
             .iter_mut()
             .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
         else {
-            tracing::warn!("resize forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop");
+            tracing::warn!(
+                "resize forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop"
+            );
             return;
         };
         // local → remote surface id.

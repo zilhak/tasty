@@ -110,7 +110,9 @@ impl From<UserHookHandlerActionDecl> for HookHandlerAction {
 pub enum HookHandlerDeclError {
     InvalidShortName(String),
     /// 셸 action 을 `source != hook` 으로 선언(불변식 위반).
-    ShellMustBeHookSource { handler: String },
+    ShellMustBeHookSource {
+        handler: String,
+    },
 }
 
 impl fmt::Display for HookHandlerDeclError {

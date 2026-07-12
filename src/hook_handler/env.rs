@@ -53,7 +53,9 @@ pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
     if let Value::Object(map) = &ctx.payload {
         for (key, value) in map {
             let Some(fragment) = env_key_fragment(key) else {
-                tracing::warn!("hook shell env: payload key '{key}' has no ASCII alphanumerics — skipped");
+                tracing::warn!(
+                    "hook shell env: payload key '{key}' has no ASCII alphanumerics — skipped"
+                );
                 continue;
             };
             let name = format!("TASTY_HOOK_{fragment}");
@@ -174,7 +176,10 @@ mod tests {
     fn colliding_normalized_keys_first_wins() {
         // BTreeMap 순서상 "pr-id" < "pr_id" — 먼저 온 값 유지, 뒤는 무시.
         let vars = build_env(&ctx(None, json!({"pr-id": "a", "pr_id": "b"})));
-        let hits: Vec<_> = vars.iter().filter(|(n, _)| n == "TASTY_HOOK_PR_ID").collect();
+        let hits: Vec<_> = vars
+            .iter()
+            .filter(|(n, _)| n == "TASTY_HOOK_PR_ID")
+            .collect();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].1, "a");
     }

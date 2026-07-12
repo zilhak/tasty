@@ -11,7 +11,12 @@ use tasty_type_appearance::theme::Theme;
 /// 스포트라이트 scrim — `screen` 전체를 scrim-bg 로 덮되 `hole`(마커 rect)만
 /// 밝게 남긴다. hole 을 뺀 4개 밴드(상/하/좌/우)를 채워 진짜 스포트라이트를 만든다
 /// (마커는 scrim 위에서 원래 밝기 유지 — changelog Decision 1).
-pub fn paint_spotlight_scrim(p: &egui::Painter, screen: egui::Rect, hole: egui::Rect, theme: &Theme) {
+pub fn paint_spotlight_scrim(
+    p: &egui::Painter,
+    screen: egui::Rect,
+    hole: egui::Rect,
+    theme: &Theme,
+) {
     let scrim = theme.scrim().to_egui();
     let hole = hole.intersect(screen);
     // 상단 밴드 (screen.top → hole.top).
@@ -64,7 +69,10 @@ pub fn paint_marker(p: &egui::Painter, rect: egui::Rect, theme: &Theme) {
         p.rect_stroke(
             rect.expand(grow),
             radius + grow,
-            egui::Stroke::new(theme.focus_ring_width.value() + grow, accent.with_alpha(alpha).to_egui()),
+            egui::Stroke::new(
+                theme.focus_ring_width.value() + grow,
+                accent.with_alpha(alpha).to_egui(),
+            ),
             egui::StrokeKind::Outside,
         );
     }

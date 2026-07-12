@@ -1860,7 +1860,10 @@ fn hook_handler_contribute_bad_id_rejected() {
         "#,
     );
     let err = parse(&s).unwrap_err().to_string();
-    assert!(err.contains("invalid contributes.hook_handler id"), "got: {err}");
+    assert!(
+        err.contains("invalid contributes.hook_handler id"),
+        "got: {err}"
+    );
 }
 
 #[test]

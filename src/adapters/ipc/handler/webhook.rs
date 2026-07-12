@@ -474,7 +474,10 @@ mod tests {
             "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
         });
         let resp = handle_register(&caller, json!(1), &params);
-        assert!(resp.error.is_some(), "plugin inline sequence must be rejected");
+        assert!(
+            resp.error.is_some(),
+            "plugin inline sequence must be rejected"
+        );
         assert!(
             err_message(&resp).contains("inline 'sequence'"),
             "got: {}",
@@ -488,7 +491,10 @@ mod tests {
         // 다른 owner(host/…) 핸들러 id — 소유 prefix 불일치로 조기 거부.
         let params = json!({ "handler": "host/notify" });
         let resp = handle_register(&caller, json!(1), &params);
-        assert!(resp.error.is_some(), "foreign handler bind must be rejected");
+        assert!(
+            resp.error.is_some(),
+            "foreign handler bind must be rejected"
+        );
         assert!(
             err_message(&resp).contains("may only bind its own"),
             "got: {}",

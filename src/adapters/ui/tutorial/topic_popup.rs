@@ -166,7 +166,8 @@ fn topic_row(
                 } else {
                     (th.surface_raised().to_egui(), th.text_muted().to_egui())
                 };
-                ui.painter().rect_filled(cap, th.corner_radius_sm.value(), cap_bg);
+                ui.painter()
+                    .rect_filled(cap, th.corner_radius_sm.value(), cap_bg);
                 ui.painter().text(
                     cap.center(),
                     egui::Align2::CENTER_CENTER,
@@ -194,8 +195,10 @@ fn topic_row(
 }
 
 fn hsep(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, width: f32) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, th.border_width.value()), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width, th.border_width.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,

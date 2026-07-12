@@ -412,10 +412,7 @@ mod tests {
 
     #[test]
     fn resume_command_is_plain_and_submits() {
-        assert_eq!(
-            resume_command("0e5cbdf4-32a1"),
-            "claude -r 0e5cbdf4-32a1\r"
-        );
+        assert_eq!(resume_command("0e5cbdf4-32a1"), "claude -r 0e5cbdf4-32a1\r");
     }
 
     #[test]

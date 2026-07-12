@@ -117,7 +117,9 @@ mod tests {
     fn time_limit_expires_at_deadline() {
         let lt = Lifetime {
             persistence: Persistence::Persistent,
-            limit: Limit::TimeLimit { deadline_unix: 1000 },
+            limit: Limit::TimeLimit {
+                deadline_unix: 1000,
+            },
         };
         assert!(!lt.is_time_expired(999));
         assert!(lt.is_time_expired(1000)); // 경계 포함(>=)

@@ -138,7 +138,11 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
             ("divider", "1px separator · 마지막 행 없음"),
         ],
         &[
-            TokenChip::new("text-secondary", "ext cluster", theme.text_secondary().to_egui()),
+            TokenChip::new(
+                "text-secondary",
+                "ext cluster",
+                theme.text_secondary().to_egui(),
+            ),
             TokenChip::new("text-muted", "→ glyph", theme.text_muted().to_egui()),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
         ],
@@ -209,9 +213,13 @@ pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
                                 );
                             });
                             ui.add_space(theme.spacing_sm.value());
-                            row_separator(ui, theme, resp.response.rect.expand2(
-                                egui::vec2(0.0, theme.spacing_xs.value()),
-                            ));
+                            row_separator(
+                                ui,
+                                theme,
+                                resp.response
+                                    .rect
+                                    .expand2(egui::vec2(0.0, theme.spacing_xs.value())),
+                            );
                         }
                     });
                 },
@@ -227,7 +235,11 @@ pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
             ("divider", "1px separator · paddingBottom 8"),
         ],
         &[
-            TokenChip::new("text-secondary", "pass name", theme.text_secondary().to_egui()),
+            TokenChip::new(
+                "text-secondary",
+                "pass name",
+                theme.text_secondary().to_egui(),
+            ),
             TokenChip::new("text-muted", "description", theme.text_muted().to_egui()),
             TokenChip::new(
                 "accent-primary",
@@ -299,7 +311,11 @@ pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
             ("divider", "1px separator · 마지막 행 없음"),
         ],
         &[
-            TokenChip::new("text-secondary", "handler name", theme.text_secondary().to_egui()),
+            TokenChip::new(
+                "text-secondary",
+                "handler name",
+                theme.text_secondary().to_egui(),
+            ),
             TokenChip::new("tag", "kind chip", theme.tag_fg().to_egui()),
             TokenChip::new(
                 "accent-primary",
@@ -476,7 +492,13 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 mono_head(ui, theme, "New hook handler");
-                hook_field_row(ui, theme, "Event id:", "e.g. pipeline.done", &mut st.draft_id);
+                hook_field_row(
+                    ui,
+                    theme,
+                    "Event id:",
+                    "e.g. pipeline.done",
+                    &mut st.draft_id,
+                );
                 hook_field_row(
                     ui,
                     theme,

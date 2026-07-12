@@ -182,11 +182,13 @@ impl<'a> DrillDown<'a> {
                 .max_rect(inner)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
-        let mut resp = IconButton::new()
-            .size(ControlSize::Sm)
-            .show(&mut left_ui, theme, &|ui, irect, color| {
+        let mut resp = IconButton::new().size(ControlSize::Sm).show(
+            &mut left_ui,
+            theme,
+            &|ui, irect, color| {
                 paint_chevron_left(ui, irect.center(), color);
-            });
+            },
+        );
         if !self.back_label.is_empty() {
             resp = resp.on_hover_text(self.back_label);
         }

@@ -21,8 +21,8 @@ mod webhook_common;
 
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
-use webhook_common::{stdout_str, WebhookInstance};
+use serde_json::{Value, json};
+use webhook_common::{WebhookInstance, stdout_str};
 
 /// 남용차단 임계치를 40 으로, 윈도우/쿨다운을 넉넉히 잡아 결정적으로 만든다. 이전
 /// 스텝들이 만드는 소수의 404/405 실패로는 트립되지 않고(≪40), 마지막 남용 테스트만
@@ -100,15 +100,20 @@ fn register_notify_webhook(inst: &WebhookInstance, params_extra: Value) -> (Stri
         }
     }
     let resp = inst.call("webhook.register", params);
-    let id = resp["id"].as_str().expect("register returns id").to_string();
-    let url = resp["url"].as_str().expect("register returns url").to_string();
+    let id = resp["id"]
+        .as_str()
+        .expect("register returns id")
+        .to_string();
+    let url = resp["url"]
+        .as_str()
+        .expect("register returns url")
+        .to_string();
     assert!(url.contains(&id), "url must contain id");
     (id, url)
 }
 
 #[allow(clippy::cognitive_complexity)] // 단일 공유 인스턴스에서 순차 e2e 스텝 나열(포커스 도난 최소화 설계).
 fn integration_flow(inst: &WebhookInstance) {
-
     // ========== 1) 등록 → 실 HTTP POST → ACK + 상태변화 + 페이로드 치환 ==========
     {
         let (id, _url) = register_notify_webhook(&inst, json!({}));
@@ -146,12 +151,18 @@ fn integration_flow(inst: &WebhookInstance) {
         for p in payloads {
             let (code, body) = inst.post(&id, p);
             assert_eq!(code, 200, "payload {p} must still ACK 200");
-            assert_eq!(body, "received", "ACK body must never carry payload/内부 data");
+            assert_eq!(
+                body, "received",
+                "ACK body must never carry payload/内부 data"
+            );
         }
         // 실행 대상이 바뀌지 않았음의 결정적 증거: tasty 는 여전히 살아 IPC 응답한다
         // (페이로드의 system.shutdown 이 실행됐다면 여기서 연결이 끊긴다).
         let sysinfo = inst.call("system.info", json!({}));
-        assert!(sysinfo.get("version").is_some(), "tasty must remain alive — payload method must not execute");
+        assert!(
+            sysinfo.get("version").is_some(),
+            "tasty must remain alive — payload method must not execute"
+        );
         // 그리고 각 message 는 notification.create(고정 method)로 실행돼 알림이 생긴다.
         assert!(wait_notification(&inst, "P1", Duration::from_secs(8)));
         inst.call("webhook.unregister", json!({ "id": id }));
@@ -199,7 +210,9 @@ fn integration_flow(inst: &WebhookInstance) {
     {
         // hook 전용 IpcSequence.
         let resp = inst.call_raw("webhook.register", json!({ "handler": "user/hookonly" }));
-        let err = resp.get("error").expect("hook-only handler must be rejected");
+        let err = resp
+            .get("error")
+            .expect("hook-only handler must be rejected");
         let msg = err["message"].as_str().unwrap_or("").to_lowercase();
         assert!(
             msg.contains("source") || msg.contains("hook"),
@@ -216,11 +229,18 @@ fn integration_flow(inst: &WebhookInstance) {
 
     // ========== 7) host default 핸들러(source=webhook)는 바인딩 성공 ==========
     {
-        let resp = inst.call("webhook.register", json!({ "handler": "host/webhook-notify" }));
+        let resp = inst.call(
+            "webhook.register",
+            json!({ "handler": "host/webhook-notify" }),
+        );
         let id = resp["id"].as_str().expect("host handler binds").to_string();
         let (code, _body) = inst.post(&id, r#"{"message":"HOSTDEFAULT"}"#);
         assert_eq!(code, 200);
-        assert!(wait_notification(&inst, "HOSTDEFAULT", Duration::from_secs(8)));
+        assert!(wait_notification(
+            &inst,
+            "HOSTDEFAULT",
+            Duration::from_secs(8)
+        ));
         inst.call("webhook.unregister", json!({ "id": id }));
     }
 
@@ -234,7 +254,10 @@ fn integration_flow(inst: &WebhookInstance) {
         let (code, body) = inst.post(&id, r#"{"message":"NOAUTH"}"#);
         assert_eq!(code, 401, "missing token must be 401");
         assert_eq!(body, "unauthorized");
-        assert!(!has_notification(&inst, "NOAUTH"), "unauthorized must not execute");
+        assert!(
+            !has_notification(&inst, "NOAUTH"),
+            "unauthorized must not execute"
+        );
 
         // 올바른 토큰(쿼리) → 200 + 실행.
         let path = format!("{id}?tok=s3cr3t");
@@ -245,7 +268,10 @@ fn integration_flow(inst: &WebhookInstance) {
         // info/list 응답은 위치/키만 노출하고 토큰은 절대 싣지 않는다.
         let info = inst.call("webhook.info", json!({ "id": id }));
         let info_str = serde_json::to_string(&info).unwrap();
-        assert!(!info_str.contains("s3cr3t"), "token must never leak in info");
+        assert!(
+            !info_str.contains("s3cr3t"),
+            "token must never leak in info"
+        );
         inst.call("webhook.unregister", json!({ "id": id }));
     }
 
@@ -255,7 +281,11 @@ fn integration_flow(inst: &WebhookInstance) {
         assert_eq!(inst.post(&id, r#"{"message":"live"}"#).0, 200);
         let removed = inst.call("webhook.unregister", json!({ "id": id }));
         assert_eq!(removed["unregistered"].as_bool(), Some(true));
-        assert_eq!(inst.post(&id, r#"{"message":"dead"}"#).0, 404, "unregistered path must 404");
+        assert_eq!(
+            inst.post(&id, r#"{"message":"dead"}"#).0,
+            404,
+            "unregistered path must 404"
+        );
     }
 
     // ========== 10) CLI→IPC 매핑 — 실 CLI 바이너리로 register/list/info/unregister ==========
@@ -269,7 +299,11 @@ fn integration_flow(inst: &WebhookInstance) {
             "--sequence",
             r#"[{"method":"notification.create","params":{"body":"CLI_MARKER"}}]"#,
         ]);
-        assert!(out.status.success(), "cli register must succeed: {}", webhook_common::stderr_str(&out));
+        assert!(
+            out.status.success(),
+            "cli register must succeed: {}",
+            webhook_common::stderr_str(&out)
+        );
         let reg: Value = serde_json::from_str(&stdout_str(&out)).expect("cli register prints JSON");
         let cli_id = reg["id"].as_str().expect("cli register id").to_string();
 
@@ -292,7 +326,11 @@ fn integration_flow(inst: &WebhookInstance) {
         // 실제 HTTP 로도 CLI 등록 웹훅이 동작.
         let (code, _b) = inst.post(&cli_id, r#"{}"#);
         assert_eq!(code, 200);
-        assert!(wait_notification(&inst, "CLI_MARKER", Duration::from_secs(8)));
+        assert!(wait_notification(
+            &inst,
+            "CLI_MARKER",
+            Duration::from_secs(8)
+        ));
 
         // unregister via CLI.
         let out = inst.cli(&["webhook", "unregister", "--id", &cli_id]);
@@ -304,7 +342,11 @@ fn integration_flow(inst: &WebhookInstance) {
     {
         // list 는 host default(webhook-notify) + user(hookonly/shelltest)를 포함.
         let out = inst.cli(&["hook-handler", "list"]);
-        assert!(out.status.success(), "hook-handler list: {}", webhook_common::stderr_str(&out));
+        assert!(
+            out.status.success(),
+            "hook-handler list: {}",
+            webhook_common::stderr_str(&out)
+        );
         let list: Value = serde_json::from_str(&stdout_str(&out)).expect("hook-handler list JSON");
         let ids: Vec<String> = list["handlers"]
             .as_array()
@@ -314,12 +356,22 @@ fn integration_flow(inst: &WebhookInstance) {
                     .collect()
             })
             .unwrap_or_default();
-        assert!(ids.iter().any(|i| i == "host/webhook-notify"), "host default handler must be listed");
-        assert!(ids.iter().any(|i| i == "user/hookonly"), "user handler must be merged in");
+        assert!(
+            ids.iter().any(|i| i == "host/webhook-notify"),
+            "host default handler must be listed"
+        );
+        assert!(
+            ids.iter().any(|i| i == "user/hookonly"),
+            "user handler must be merged in"
+        );
 
         // dispatch(수동 발화) → hookonly 가 IpcSequence 를 실행해 알림 생성.
         let out = inst.cli(&["hook-handler", "dispatch", "--id", "user/hookonly"]);
-        assert!(out.status.success(), "dispatch: {}", webhook_common::stderr_str(&out));
+        assert!(
+            out.status.success(),
+            "dispatch: {}",
+            webhook_common::stderr_str(&out)
+        );
         assert!(
             wait_notification(&inst, "dispatched", Duration::from_secs(8)),
             "dispatched hook handler must execute its IpcSequence"
@@ -340,7 +392,10 @@ fn integration_flow(inst: &WebhookInstance) {
             }
             assert_eq!(code, 404, "pre-cooldown misses must be 404 (req {i})");
         }
-        assert!(saw_429, "repeated 404s from one source must trip the abuse cooldown (429)");
+        assert!(
+            saw_429,
+            "repeated 404s from one source must trip the abuse cooldown (429)"
+        );
     }
 }
 
@@ -531,15 +586,21 @@ fn webhook_family() {
     let home = unique_home();
     let hook_env = hook_env_setup();
     // integration 용 정적 핸들러 + hook env 용 동적 핸들러를 한 파일로 결합 주입.
-    let combined_handlers = format!("{HOOK_HANDLERS_TOML}
-{}", hook_env.handlers_toml);
+    let combined_handlers = format!(
+        "{HOOK_HANDLERS_TOML}
+{}",
+        hook_env.handlers_toml
+    );
     let (persistent_id, persistent_url, temp_id);
 
     // ── 1차 인스턴스 ──
     {
         let inst = WebhookInstance::builder(port)
             .home(home.clone())
-            .env("TASTY_WEBHOOK_ABUSE_THRESHOLD", &ABUSE_THRESHOLD.to_string())
+            .env(
+                "TASTY_WEBHOOK_ABUSE_THRESHOLD",
+                &ABUSE_THRESHOLD.to_string(),
+            )
             .env("TASTY_WEBHOOK_ABUSE_WINDOW_SECS", "3600")
             .env("TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS", "60")
             .file("hook-handlers.toml", &combined_handlers)

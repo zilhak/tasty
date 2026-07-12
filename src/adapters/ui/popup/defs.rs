@@ -288,7 +288,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
                 title_key: "tutorial.popup_title",
                 title_fn: None,
-                default_size: crate::adapters::ui::tutorial::topic_popup::tutorial_topics_default_size(),
+                default_size:
+                    crate::adapters::ui::tutorial::topic_popup::tutorial_topics_default_size(),
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,

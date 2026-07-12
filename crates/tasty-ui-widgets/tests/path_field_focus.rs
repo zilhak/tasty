@@ -175,11 +175,21 @@ fn entry_repaint_does_not_reignite_flicker_loop() {
     assert_eq!(addr.entry_transitions, 0);
 
     // 클릭: press → release. press 프레임에 진입 + entry repaint 1회.
-    paint(&ctx, &theme, &mut addr, raw(true, vec![ptr_btn(FX, FY, true)]));
+    paint(
+        &ctx,
+        &theme,
+        &mut addr,
+        raw(true, vec![ptr_btn(FX, FY, true)]),
+    );
     assert!(addr.editing, "press 프레임에 편집 진입");
     assert_eq!(addr.entry_transitions, 1, "진입 전이는 클릭 프레임 1회");
     assert_eq!(addr.buffer, "", "진입 시 버퍼는 clear 된 채 유지");
-    paint(&ctx, &theme, &mut addr, raw(true, vec![ptr_btn(FX, FY, false)]));
+    paint(
+        &ctx,
+        &theme,
+        &mut addr,
+        raw(true, vec![ptr_btn(FX, FY, false)]),
+    );
 
     // 이후: 미세 jitter 이동 8 프레임 + 무입력 재-forward 4 프레임.
     for i in 0..8 {
@@ -191,12 +201,18 @@ fn entry_repaint_does_not_reignite_flicker_loop() {
             raw(true, vec![ptr_move(FX + dx, FY)]),
         );
         assert!(addr.editing, "jitter-{i}: editing 진동 없음");
-        assert_eq!(addr.buffer, "", "jitter-{i}: 버퍼가 경로로 재동기화되지 않음");
+        assert_eq!(
+            addr.buffer, "",
+            "jitter-{i}: 버퍼가 경로로 재동기화되지 않음"
+        );
     }
     for i in 0..4 {
         paint(&ctx, &theme, &mut addr, raw(true, vec![]));
         assert!(addr.editing, "empty-{i}: editing 진동 없음");
-        assert_eq!(addr.buffer, "", "empty-{i}: 버퍼가 경로로 재동기화되지 않음");
+        assert_eq!(
+            addr.buffer, "",
+            "empty-{i}: 버퍼가 경로로 재동기화되지 않음"
+        );
     }
 
     assert_eq!(

@@ -688,13 +688,7 @@ mod workspace_category_tests {
 
     #[test]
     fn webhook_register_handler_maps_to_ipc() {
-        let r = req(&[
-            "tasty",
-            "webhook",
-            "register",
-            "--handler",
-            "host/notify",
-        ]);
+        let r = req(&["tasty", "webhook", "register", "--handler", "host/notify"]);
         assert_eq!(r.method, "webhook.register");
         assert_eq!(r.params["handler"], "host/notify");
     }

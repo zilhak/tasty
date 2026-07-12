@@ -191,10 +191,7 @@ impl std::fmt::Display for BindingError {
 ///
 /// **불변식(셸 웹훅 거부)**: `Webhook` 트리거는 `is_webhook_bindable()` 가 참인
 /// action 만 허용 → `ShellCommand` 는 여기서 거부된다.
-pub fn validate_binding(
-    handler: &HookHandler,
-    trigger: TriggerSource,
-) -> Result<(), BindingError> {
+pub fn validate_binding(handler: &HookHandler, trigger: TriggerSource) -> Result<(), BindingError> {
     if handler.disabled {
         return Err(BindingError::Disabled {
             handler: handler.id.0.clone(),

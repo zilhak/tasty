@@ -81,8 +81,14 @@ pub fn place_callout(
         .unwrap_or(below);
 
     // 안전영역 clamp.
-    pos.x = pos.x.clamp(safe_rect.min.x, (safe_rect.max.x - size.x).max(safe_rect.min.x));
-    pos.y = pos.y.clamp(safe_rect.min.y, (safe_rect.max.y - size.y).max(safe_rect.min.y));
+    pos.x = pos.x.clamp(
+        safe_rect.min.x,
+        (safe_rect.max.x - size.x).max(safe_rect.min.x),
+    );
+    pos.y = pos.y.clamp(
+        safe_rect.min.y,
+        (safe_rect.max.y - size.y).max(safe_rect.min.y),
+    );
 
     // tail 은 마커 중심을 계속 조준 — offset 재계산 + tail 범위로 clamp.
     let tail_offset = match tail {
@@ -293,7 +299,11 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, pl: Placemen
             )
         }
     };
-    p.add(egui::Shape::convex_polygon(vec![a, apex, b], fill, egui::Stroke::NONE));
+    p.add(egui::Shape::convex_polygon(
+        vec![a, apex, b],
+        fill,
+        egui::Stroke::NONE,
+    ));
     p.line_segment([a, apex], stroke);
     p.line_segment([apex, b], stroke);
 }
@@ -341,6 +351,9 @@ mod tests {
         assert!(p.tail_offset >= TAIL && p.tail_offset <= SIZE.x - TAIL);
         // 마커 중심 x 는 pos.x + tail_offset 근처.
         let aim_x = p.pos.x + p.tail_offset;
-        assert!((aim_x - marker.center().x).abs() <= SIZE.x, "tail aims near marker center");
+        assert!(
+            (aim_x - marker.center().x).abs() <= SIZE.x,
+            "tail aims near marker center"
+        );
     }
 }

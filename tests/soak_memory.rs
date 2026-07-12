@@ -307,8 +307,8 @@ fn soak() {
     let duration = Duration::from_secs(env_u64("SOAK_DURATION_SECS", 600));
     let max_cycles = env_u64("SOAK_CYCLES", u64::MAX);
     let checkpoint_every = env_u64("SOAK_CHECKPOINT_EVERY", 10).max(1);
-    let out_dir = std::env::var("SOAK_OUT_DIR")
-        .unwrap_or_else(|_| ".claude-workspace/temp/soak".into());
+    let out_dir =
+        std::env::var("SOAK_OUT_DIR").unwrap_or_else(|_| ".claude-workspace/temp/soak".into());
 
     std::fs::create_dir_all(&out_dir).expect("failed to create SOAK_OUT_DIR");
     let out_path = format!("{}/soak-{}-{}.jsonl", out_dir, scenario, now_epoch() as u64);

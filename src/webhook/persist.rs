@@ -65,9 +65,13 @@ pub(super) struct PersistedWebhook {
 pub(super) enum PersistedLimit {
     Unlimited,
     /// 절대 만료 시각(Unix epoch secs).
-    Time { deadline_unix: u64 },
+    Time {
+        deadline_unix: u64,
+    },
     /// 남은 호출 횟수.
-    Count { remaining: u64 },
+    Count {
+        remaining: u64,
+    },
 }
 
 impl PersistedLimit {
@@ -273,17 +277,16 @@ mod tests {
             limit: PersistedLimit::Unlimited,
             auth: None,
         }];
-        let mut doc: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut doc: toml::Table =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         doc.insert("webhook".into(), toml::Value::try_from(&items).unwrap());
         let text = toml::to_string_pretty(&doc).unwrap();
         std::fs::write(&path, &text).unwrap();
 
-        let reparsed: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let reparsed: toml::Table =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(reparsed.contains_key("listener"), "listener 보존 실패");
         assert!(reparsed.contains_key("webhook"));
-        assert_eq!(
-            reparsed["listener"]["port"].as_integer(),
-            Some(28429)
-        );
+        assert_eq!(reparsed["listener"]["port"].as_integer(), Some(28429));
     }
 }

@@ -24,9 +24,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{
-    Button, ButtonVariant, Input, checkbox, select, switch,
-};
+use tasty_ui_widgets::{Button, ButtonVariant, Input, checkbox, select, switch};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};

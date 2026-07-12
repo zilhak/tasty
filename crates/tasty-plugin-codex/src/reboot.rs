@@ -417,7 +417,10 @@ mod tests {
     #[test]
     fn count_occurrences_counts_and_handles_empty() {
         assert_eq!(count_occurrences("a b a b a", "a"), 3);
-        assert_eq!(count_occurrences("run codex resume x\nrun codex resume y", "run codex resume"), 2);
+        assert_eq!(
+            count_occurrences("run codex resume x\nrun codex resume y", "run codex resume"),
+            2
+        );
         assert_eq!(count_occurrences("anything", ""), 0);
         assert_eq!(count_occurrences("", "x"), 0);
     }
@@ -431,7 +434,8 @@ mod tests {
 
     #[test]
     fn banner_marker_matches_observed_banner() {
-        let observed = "\u{256d}\u{2500}\u{2500}\u{256e}\n\u{2502} >_ OpenAI Codex (v0.142.2) \u{2502}";
+        let observed =
+            "\u{256d}\u{2500}\u{2500}\u{256e}\n\u{2502} >_ OpenAI Codex (v0.142.2) \u{2502}";
         assert_eq!(count_occurrences(observed, BANNER_MARKER), 1);
     }
 

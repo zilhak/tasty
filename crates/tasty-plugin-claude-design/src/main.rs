@@ -226,7 +226,10 @@ impl ClaudeDesignPlugin {
         // 조기 절단해 reply 를 못 받았다(CLI help 의 "omit = 턴 종료까지"와도 어긋남).
         // 생략 시 넉넉히 30분까지 기다린다. 완료는 lock 프로토콜(design-tasks/.DONE)로도
         // 추적할 수 있으므로 이 값은 상한일 뿐이다.
-        let timeout_s = params.get("timeout").and_then(Value::as_u64).unwrap_or(1800);
+        let timeout_s = params
+            .get("timeout")
+            .and_then(Value::as_u64)
+            .unwrap_or(1800);
 
         let mut req = json!({ "message": message, "timeout_ms": timeout_s * 1000 });
         if let Some(uuid) = project {

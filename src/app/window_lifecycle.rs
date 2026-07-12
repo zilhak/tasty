@@ -26,7 +26,9 @@ use crate::{plugin, window};
 ///
 /// 반환: `settings.appearance.theme` 가 디스크/캐시에 없어 mocha 로 fallback 된 경우 원래 요청 id.
 /// (호출자가 InfoModal 로 사용자에게 알린다.)
-pub(super) fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Option<String> {
+pub(super) fn boot_apply_theme(
+    appearance: &mut tasty_settings::AppearanceSettings,
+) -> Option<String> {
     if let Err(e) = tasty_themes::first_run_init() {
         tracing::warn!("themes first_run_init failed: {e}");
     }

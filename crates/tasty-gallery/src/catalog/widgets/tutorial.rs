@@ -77,9 +77,13 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     let mut tx = tabbar.min.x;
     for (i, t) in ["zsh", "logs", "vim"].iter().enumerate() {
         let tw = 12.0
-            + p.layout_no_wrap(t.to_string(), egui::FontId::proportional(11.0), egui::Color32::WHITE)
-                .size()
-                .x
+            + p.layout_no_wrap(
+                t.to_string(),
+                egui::FontId::proportional(11.0),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
             + 12.0;
         let tab = egui::Rect::from_min_size(egui::pos2(tx, tabbar.min.y), egui::vec2(tw, 24.0));
         if i == 0 {
@@ -294,7 +298,11 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
             )
         }
     };
-    p.add(egui::Shape::convex_polygon(vec![a, apex, b], fill, egui::Stroke::NONE));
+    p.add(egui::Shape::convex_polygon(
+        vec![a, apex, b],
+        fill,
+        egui::Stroke::NONE,
+    ));
     // 외곽 2변만 stroke (base 는 bubble 이 덮음).
     p.line_segment([a, apex], stroke);
     p.line_segment([apex, b], stroke);
@@ -302,7 +310,15 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
 
 // ── Topic row + popup (jsx `Topic` / `TopicPopup`) ─────────────────────────
 
-fn topic_row(ui: &mut egui::Ui, theme: &Theme, n: usize, title: &str, desc: &str, sel: bool, done: bool) {
+fn topic_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    n: usize,
+    title: &str,
+    desc: &str,
+    sel: bool,
+    done: bool,
+) {
     let border = if sel {
         theme.accent_primary().with_alpha(102).to_egui() // 40%
     } else {
@@ -326,11 +342,18 @@ fn topic_row(ui: &mut egui::Ui, theme: &Theme, n: usize, title: &str, desc: &str
                 // 인덱스 캡 (20x20, radius-sm).
                 let (cap, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                 let (cap_bg, cap_fg) = if sel {
-                    (theme.accent_primary().to_egui(), theme.text_on_accent().to_egui())
+                    (
+                        theme.accent_primary().to_egui(),
+                        theme.text_on_accent().to_egui(),
+                    )
                 } else {
-                    (theme.surface_raised().to_egui(), theme.text_muted().to_egui())
+                    (
+                        theme.surface_raised().to_egui(),
+                        theme.text_muted().to_egui(),
+                    )
                 };
-                ui.painter().rect_filled(cap, theme.corner_radius_sm.value(), cap_bg);
+                ui.painter()
+                    .rect_filled(cap, theme.corner_radius_sm.value(), cap_bg);
                 ui.painter().text(
                     cap.center(),
                     egui::Align2::CENTER_CENTER,
@@ -395,9 +418,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                 .color(theme.text_primary().to_egui()),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new("✕").color(theme.text_muted().to_egui()),
-                            );
+                            ui.label(egui::RichText::new("✕").color(theme.text_muted().to_egui()));
                         });
                     });
                 });
@@ -422,9 +443,33 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                 scaled,
                             );
                             if scaled {
-                                topic_row(ui, theme, 2, "커맨드 팔레트 & 단축키", "모든 명령을 키보드로.", false, false);
-                                topic_row(ui, theme, 3, "포트 스캐너 · 리모트", "로컬 포트와 원격 세션 연결.", false, false);
-                                topic_row(ui, theme, 4, "프리셋 & 워크스페이스 레이아웃", "패인 배치를 저장·복원.", false, false);
+                                topic_row(
+                                    ui,
+                                    theme,
+                                    2,
+                                    "커맨드 팔레트 & 단축키",
+                                    "모든 명령을 키보드로.",
+                                    false,
+                                    false,
+                                );
+                                topic_row(
+                                    ui,
+                                    theme,
+                                    3,
+                                    "포트 스캐너 · 리모트",
+                                    "로컬 포트와 원격 세션 연결.",
+                                    false,
+                                    false,
+                                );
+                                topic_row(
+                                    ui,
+                                    theme,
+                                    4,
+                                    "프리셋 & 워크스페이스 레이아웃",
+                                    "패인 배치를 저장·복원.",
+                                    false,
+                                    false,
+                                );
                             }
                         });
                 });
@@ -460,8 +505,10 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
 /// 전체 폭 1px separator.
 fn hsep(ui: &mut egui::Ui, theme: &Theme) {
     let w = ui.available_width();
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(w, theme.border_width.value()), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, theme.border_width.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
@@ -520,7 +567,10 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("family", "Modal · Popup · Toast · Banner · Modifier-hint · Marker"),
+            (
+                "family",
+                "Modal · Popup · Toast · Banner · Modifier-hint · Marker",
+            ),
             ("z-layer", "top — above all content"),
             ("pointer", "none (clicks pass through)"),
             ("ring width", "2px (focus-ring-width)"),
@@ -529,9 +579,17 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
             ("fires on", "Tools → Tutorial only"),
         ],
         &[
-            TokenChip::new("accent-primary", "ring + halo", theme.accent_primary().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "ring + halo",
+                theme.accent_primary().to_egui(),
+            ),
             TokenChip::new("scrim-bg", "spotlight dim", theme.scrim().to_egui()),
-            TokenChip::new("border-strong", "callout edge", theme.border_strong().to_egui()),
+            TokenChip::new(
+                "border-strong",
+                "callout edge",
+                theme.border_strong().to_egui(),
+            ),
         ],
     );
 
@@ -550,16 +608,52 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
 pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "tail up", |ui| {
-            callout(ui, theme, Tail::Up, 2, 5, "탭 헤더", "패인 상단의 이 띠에서 탭을 전환·추가·닫습니다.", false);
+            callout(
+                ui,
+                theme,
+                Tail::Up,
+                2,
+                5,
+                "탭 헤더",
+                "패인 상단의 이 띠에서 탭을 전환·추가·닫습니다.",
+                false,
+            );
         });
         spec::cluster(ui, theme, "tail down", |ui| {
-            callout(ui, theme, Tail::Down, 3, 5, "패인", "탭 하나가 열리는 이 사각 영역이 패인입니다.", false);
+            callout(
+                ui,
+                theme,
+                Tail::Down,
+                3,
+                5,
+                "패인",
+                "탭 하나가 열리는 이 사각 영역이 패인입니다.",
+                false,
+            );
         });
         spec::cluster(ui, theme, "tail left", |ui| {
-            callout(ui, theme, Tail::Left, 4, 5, "서피스", "패인 안에서 실제 터미널·마크다운이 그려지는 면.", false);
+            callout(
+                ui,
+                theme,
+                Tail::Left,
+                4,
+                5,
+                "서피스",
+                "패인 안에서 실제 터미널·마크다운이 그려지는 면.",
+                false,
+            );
         });
         spec::cluster(ui, theme, "tail right · first step", |ui| {
-            callout(ui, theme, Tail::Right, 1, 5, "워크스페이스", "이 전체 영역이 하나의 워크스페이스입니다.", true);
+            callout(
+                ui,
+                theme,
+                Tail::Right,
+                1,
+                5,
+                "워크스페이스",
+                "이 전체 영역이 하나의 워크스페이스입니다.",
+                true,
+            );
         });
     });
 
@@ -573,12 +667,27 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
             ("buttons", "Skip (link) · Back (secondary) · Next (primary)"),
             ("first step", "Back hidden"),
             ("last step", "Next reopens topic popup"),
-            ("placement", "below → above → right → left; flip + clamp 8px"),
+            (
+                "placement",
+                "below → above → right → left; flip + clamp 8px",
+            ),
         ],
         &[
-            TokenChip::new("surface-raised", "bubble fill", theme.surface_raised().to_egui()),
-            TokenChip::new("border-strong", "edge + tail", theme.border_strong().to_egui()),
-            TokenChip::new("accent-primary", "step · dot · Next", theme.accent_primary().to_egui()),
+            TokenChip::new(
+                "surface-raised",
+                "bubble fill",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "border-strong",
+                "edge + tail",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "step · dot · Next",
+                theme.accent_primary().to_egui(),
+            ),
         ],
     );
 
@@ -597,11 +706,9 @@ fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     paint_scrim(&p, rect, theme);
     // scrim 위 팝업 — 중앙 정렬 child Ui.
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)),
-    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
+        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+    ));
     child.set_clip_rect(rect);
     child.vertical_centered(|ui| {
         topic_popup(ui, theme, scaled);
@@ -632,13 +739,20 @@ pub fn draw_topics(ui: &mut egui::Ui, theme: &Theme) {
             ("type", "CenteredFocused popup + scrim"),
             ("width", "360px"),
             ("list", "max-height 200px → internal scroll"),
-            ("row states", "hover · selected = surface-active + accent cap · done = ✓"),
+            (
+                "row states",
+                "hover · selected = surface-active + accent cap · done = ✓",
+            ),
             ("footer", "Esc hint + 진행 (primary)"),
         ],
         &[
             TokenChip::new("bg-panel", "popup fill", theme.bg_panel().to_egui()),
             TokenChip::new("scrim-bg", "dim behind", theme.scrim().to_egui()),
-            TokenChip::new("surface-active", "selected row", theme.surface_active().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "selected row",
+                theme.surface_active().to_egui(),
+            ),
             TokenChip::new("accent-success", "done ✓", theme.accent_success().to_egui()),
         ],
     );

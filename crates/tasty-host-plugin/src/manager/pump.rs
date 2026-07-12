@@ -12,8 +12,8 @@ use serde_json::json;
 
 use crate::host_cmd::HostCmd;
 use crate::protocol::{self, PluginEvent};
-use tasty_plugin_protocol::SharedBufferId;
 use tasty_plugin_manifest::Permission;
+use tasty_plugin_protocol::SharedBufferId;
 
 use super::{
     AUTO_RELOAD_POLL_INTERVAL, HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall,

@@ -243,8 +243,13 @@ fn draw_preset_diff_table(
             preset_name.to_uppercase(),
         ];
         for (i, text) in headers.iter().enumerate() {
-            let galley = truncated(ui, text, head_font.clone(), th.text_muted().to_egui(),
-                (col_w[i] - pad_x * 2.0).max(0.0));
+            let galley = truncated(
+                ui,
+                text,
+                head_font.clone(),
+                th.text_muted().to_egui(),
+                (col_w[i] - pad_x * 2.0).max(0.0),
+            );
             ui.painter().galley(
                 egui::pos2(rect.left() + x_off[i] + pad_x, rect.top()),
                 galley,
@@ -257,8 +262,7 @@ fn draw_preset_diff_table(
         // ── 데이터 행 (padding: space-sm space-md, 하단 헤어라인) ──
         let action_font = egui::FontId::proportional(th.font_size_body.value());
         let mono_font = egui::FontId::monospace(th.font_size_term_sm.value());
-        let content_h = ui
-            .fonts(|f| f.row_height(&action_font).max(f.row_height(&mono_font)));
+        let content_h = ui.fonts(|f| f.row_height(&action_font).max(f.row_height(&mono_font)));
         let row_h = content_h + pad_y * 2.0;
 
         for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS {
@@ -274,14 +278,23 @@ fn draw_preset_diff_table(
             };
             let cells: [(String, egui::FontId, egui::Color32); 3] = [
                 (action, action_font.clone(), th.text_secondary().to_egui()),
-                (fmt_bindings(cur_raw), mono_font.clone(), th.text_muted().to_egui()),
+                (
+                    fmt_bindings(cur_raw),
+                    mono_font.clone(),
+                    th.text_muted().to_egui(),
+                ),
                 (fmt_bindings(next_raw), mono_font.clone(), next_fg),
             ];
 
             let (rect, _) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::hover());
             for (i, (text, font, fg)) in cells.iter().enumerate() {
-                let galley =
-                    truncated(ui, text, font.clone(), *fg, (col_w[i] - pad_x * 2.0).max(0.0));
+                let galley = truncated(
+                    ui,
+                    text,
+                    font.clone(),
+                    *fg,
+                    (col_w[i] - pad_x * 2.0).max(0.0),
+                );
                 let pos = egui::pos2(
                     rect.left() + x_off[i] + pad_x,
                     rect.center().y - galley.rect.height() * 0.5,

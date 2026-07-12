@@ -262,9 +262,7 @@ impl SettingsUiState {
             "keybindings" => SettingsTab::Keybindings,
             // 표시 라벨은 "Handler" 로 일반화됐지만 내부 key 는 FileHandler 유지 —
             // 기존 file_handler 계열 키도 하위호환으로 계속 받는다.
-            "handler" | "file_handler" | "file-handler" | "filehandler" => {
-                SettingsTab::FileHandler
-            }
+            "handler" | "file_handler" | "file-handler" | "filehandler" => SettingsTab::FileHandler,
             "misc" => SettingsTab::Misc,
             "plugins" => SettingsTab::Plugins,
             _ => return false,
@@ -1109,7 +1107,6 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
                             ui_state.active_tab = tab;
                         }
                     }
-
                 },
             );
         });

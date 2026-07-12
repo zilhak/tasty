@@ -74,16 +74,16 @@ impl WebhookAuth {
             AuthLocation::BodyField { field } => {
                 resolve_body_string(body, field).map(str::to_string)
             }
-            AuthLocation::HeaderKey { name } => {
-                headers.get(&name.to_ascii_lowercase()).cloned()
-            }
+            AuthLocation::HeaderKey { name } => headers.get(&name.to_ascii_lowercase()).cloned(),
         }
     }
 }
 
 /// `Bearer <token>` 에서 토큰부를 뽑는다(스킴 대소문자 무시). 스킴이 아니면 `None`.
 fn strip_bearer(raw: &str) -> Option<&str> {
-    let rest = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;
+    let rest = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))?;
     Some(rest.trim())
 }
 
@@ -139,13 +139,18 @@ mod tests {
     }
 
     fn query(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn query_key_match_and_mismatch() {
         let auth = WebhookAuth {
-            location: AuthLocation::QueryKey { key: "token".into() },
+            location: AuthLocation::QueryKey {
+                key: "token".into(),
+            },
             token: "s3cret".into(),
         };
         assert!(auth.verify(&headers(&[]), &query(&[("token", "s3cret")]), &Value::Null));
@@ -160,17 +165,35 @@ mod tests {
             location: AuthLocation::BearerHeader,
             token: "abc".into(),
         };
-        assert!(auth.verify(&headers(&[("Authorization", "Bearer abc")]), &query(&[]), &Value::Null));
-        assert!(auth.verify(&headers(&[("Authorization", "bearer abc")]), &query(&[]), &Value::Null));
-        assert!(!auth.verify(&headers(&[("Authorization", "Bearer nope")]), &query(&[]), &Value::Null));
+        assert!(auth.verify(
+            &headers(&[("Authorization", "Bearer abc")]),
+            &query(&[]),
+            &Value::Null
+        ));
+        assert!(auth.verify(
+            &headers(&[("Authorization", "bearer abc")]),
+            &query(&[]),
+            &Value::Null
+        ));
+        assert!(!auth.verify(
+            &headers(&[("Authorization", "Bearer nope")]),
+            &query(&[]),
+            &Value::Null
+        ));
         // 스킴 없는 값 → None → false.
-        assert!(!auth.verify(&headers(&[("Authorization", "abc")]), &query(&[]), &Value::Null));
+        assert!(!auth.verify(
+            &headers(&[("Authorization", "abc")]),
+            &query(&[]),
+            &Value::Null
+        ));
     }
 
     #[test]
     fn body_field_nested_string() {
         let auth = WebhookAuth {
-            location: AuthLocation::BodyField { field: "meta.token".into() },
+            location: AuthLocation::BodyField {
+                field: "meta.token".into(),
+            },
             token: "t0k".into(),
         };
         let body = json!({"meta": {"token": "t0k"}});
@@ -185,12 +208,22 @@ mod tests {
     #[test]
     fn header_key_lookup_case_insensitive() {
         let auth = WebhookAuth {
-            location: AuthLocation::HeaderKey { name: "X-Webhook-Token".into() },
+            location: AuthLocation::HeaderKey {
+                name: "X-Webhook-Token".into(),
+            },
             token: "hk".into(),
         };
         // 저장은 소문자, 조회 시 name 도 소문자화.
-        assert!(auth.verify(&headers(&[("X-Webhook-Token", "hk")]), &query(&[]), &Value::Null));
-        assert!(!auth.verify(&headers(&[("X-Webhook-Token", "bad")]), &query(&[]), &Value::Null));
+        assert!(auth.verify(
+            &headers(&[("X-Webhook-Token", "hk")]),
+            &query(&[]),
+            &Value::Null
+        ));
+        assert!(!auth.verify(
+            &headers(&[("X-Webhook-Token", "bad")]),
+            &query(&[]),
+            &Value::Null
+        ));
         assert!(!auth.verify(&headers(&[]), &query(&[]), &Value::Null));
     }
 
@@ -205,7 +238,9 @@ mod tests {
     #[test]
     fn summary_never_exposes_token() {
         let auth = WebhookAuth {
-            location: AuthLocation::QueryKey { key: "token".into() },
+            location: AuthLocation::QueryKey {
+                key: "token".into(),
+            },
             token: "super-secret".into(),
         };
         let summary = auth_summary(&auth);
@@ -218,7 +253,9 @@ mod tests {
     #[test]
     fn serde_roundtrip_tagged() {
         let auth = WebhookAuth {
-            location: AuthLocation::HeaderKey { name: "X-Tok".into() },
+            location: AuthLocation::HeaderKey {
+                name: "X-Tok".into(),
+            },
             token: "x".into(),
         };
         let s = serde_json::to_string(&auth).unwrap();

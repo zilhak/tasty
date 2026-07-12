@@ -120,9 +120,9 @@ pub fn resolve_marker_rect(
 ) -> Option<egui::Rect> {
     match target {
         MarkerTarget::ContentArea => Some(content_area),
-        MarkerTarget::TabHeader => pane.map(|p| {
-            egui::Rect::from_min_size(p.min, egui::vec2(p.width(), tab_bar_height))
-        }),
+        MarkerTarget::TabHeader => {
+            pane.map(|p| egui::Rect::from_min_size(p.min, egui::vec2(p.width(), tab_bar_height)))
+        }
         MarkerTarget::Pane => pane,
         MarkerTarget::Surface => surface,
     }
@@ -169,8 +169,14 @@ pub fn draw_tutorial_overlay(
         .map(|(_, r)| *r)
         .or_else(|| layout_ctx.surface_rects.first().map(|(_, r)| *r));
     let tab_bar_height = theme.tab_bar_height.value();
-    let marker = resolve_marker_rect(step.target, content_area, pane_rect, surface_rect, tab_bar_height)
-        .unwrap_or(content_area);
+    let marker = resolve_marker_rect(
+        step.target,
+        content_area,
+        pane_rect,
+        surface_rect,
+        tab_bar_height,
+    )
+    .unwrap_or(content_area);
 
     // 3) 스포트라이트 scrim + 마커 링 (Order::Tooltip painter, hit-transparent).
     let screen = ctx.screen_rect();
@@ -183,7 +189,10 @@ pub fn draw_tutorial_overlay(
     // 4) 말풍선(edge-avoidance) — 자기 영역 마우스 소비.
     let title = t(step.title_key);
     let body = t(step.body_key);
-    let size = egui::vec2(callout::CALLOUT_W, callout::callout_height(ctx, theme, body));
+    let size = egui::vec2(
+        callout::CALLOUT_W,
+        callout::callout_height(ctx, theme, body),
+    );
     let placement = callout::place_callout(
         marker,
         size,
@@ -194,7 +203,15 @@ pub fn draw_tutorial_overlay(
     let first = active.step == 0;
     let last = active.step + 1 >= topic.steps.len();
     let click = callout::draw_callout(
-        ctx, theme, placement, active.step + 1, topic.steps.len(), title, body, first, last,
+        ctx,
+        theme,
+        placement,
+        active.step + 1,
+        topic.steps.len(),
+        title,
+        body,
+        first,
+        last,
     );
 
     // 5) Esc → Skip.
@@ -277,7 +294,13 @@ mod tests {
             Some(pane)
         );
         assert_eq!(
-            resolve_marker_rect(MarkerTarget::Surface, content, Some(pane), Some(surface), 24.0),
+            resolve_marker_rect(
+                MarkerTarget::Surface,
+                content,
+                Some(pane),
+                Some(surface),
+                24.0
+            ),
             Some(surface)
         );
     }
@@ -285,8 +308,14 @@ mod tests {
     #[test]
     fn unresolved_pane_surface_is_none() {
         let content = r(100.0, 0.0, 900.0, 600.0);
-        assert_eq!(resolve_marker_rect(MarkerTarget::Pane, content, None, None, 24.0), None);
-        assert_eq!(resolve_marker_rect(MarkerTarget::Surface, content, None, None, 24.0), None);
+        assert_eq!(
+            resolve_marker_rect(MarkerTarget::Pane, content, None, None, 24.0),
+            None
+        );
+        assert_eq!(
+            resolve_marker_rect(MarkerTarget::Surface, content, None, None, 24.0),
+            None
+        );
     }
 
     #[test]

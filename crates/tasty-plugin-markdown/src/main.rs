@@ -1434,8 +1434,7 @@ mod tests {
     fn poll_reload_detects_external_deletion_as_error() {
         use std::time::Duration;
 
-        let path =
-            std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));
+        let path = std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));
         std::fs::write(&path, b"# hello poll").unwrap();
         let mut doc = MdDoc::new(Some(path.to_string_lossy().into_owned()));
         // 정상 로드 baseline.

@@ -294,8 +294,8 @@ impl WebhookInstance {
 
     /// JSON-RPC 요청 → 전체 응답(오류 포함).
     pub fn call_raw(&self, method: &str, params: Value) -> Value {
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
-            .expect("connect to tasty IPC");
+        let mut stream =
+            TcpStream::connect(format!("127.0.0.1:{}", self.port)).expect("connect to tasty IPC");
         stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
         let request = serde_json::json!({
             "jsonrpc": "2.0", "method": method, "params": params, "id": 1
@@ -338,9 +338,7 @@ impl WebhookInstance {
         };
         let addr = format!("127.0.0.1:{}", self.webhook_port);
         let mut stream = TcpStream::connect(&addr).expect("connect webhook listener");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .ok();
+        stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
         let request = format!(
             "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
             len = body.len()

@@ -195,7 +195,11 @@ impl App {
                 };
                 false
             }
-            BootPhase::WaitingEngine { started, rx, frames } => {
+            BootPhase::WaitingEngine {
+                started,
+                rx,
+                frames,
+            } => {
                 *frames += 1;
                 match rx.try_recv() {
                     Ok((engine, mgr)) => {

@@ -710,13 +710,7 @@ impl App {
                         // 진입 경로 ② — 부팅 상태 머신 시작. 창은 이미 setup 화면으로
                         // 보이는 상태라 축A(set_visible)는 스킵(window_hidden=false),
                         // phase 구동은 일반 경로와 동일. boot_t0 는 Confirmed 시각.
-                        self.begin_boot(
-                            window,
-                            gpu,
-                            settings,
-                            std::time::Instant::now(),
-                            false,
-                        );
+                        self.begin_boot(window, gpu, settings, std::time::Instant::now(), false);
                         // invalid_theme_name 처리는 부팅 상태 머신 내부로 이동했으므로
                         // normalize_report 는 여기서 별도 소비할 필요 없음.
                         drop(normalize_report);

@@ -131,7 +131,10 @@ mod tests {
         while Instant::now() < deadline && !marker.exists() {
             std::thread::sleep(Duration::from_millis(25));
         }
-        assert!(marker.exists(), "inline shell hook did not create marker file");
+        assert!(
+            marker.exists(),
+            "inline shell hook did not create marker file"
+        );
     }
 
     /// 셸 훅 자식 프로세스가 `TASTY_HOOK_*` env 를 실제로 받는지 실 spawn 으로

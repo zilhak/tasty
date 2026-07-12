@@ -309,7 +309,6 @@ impl GitViewerPlugin {
             tracing::warn!("git-viewer popup {iid} paint failed: {e}");
         }
     }
-
 }
 
 /// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).

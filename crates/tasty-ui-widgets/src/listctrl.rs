@@ -372,10 +372,7 @@ fn row_height(
     desc_h: Option<LogicalPx>,
     desc_gap: LogicalPx,
 ) -> LogicalPx {
-    let content = label_h.value()
-        + desc_h
-            .map(|d| d.value() + desc_gap.value())
-            .unwrap_or(0.0);
+    let content = label_h.value() + desc_h.map(|d| d.value() + desc_gap.value()).unwrap_or(0.0);
     LogicalPx((content + pad_y.value() * 2.0).max(min_height.value()))
 }
 

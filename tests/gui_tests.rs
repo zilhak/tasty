@@ -984,20 +984,20 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
 
 // ═══════════════════ mouse-routing injection net (구 mouse_routing_tests.rs 병합 — 테스트 다이어트) ═══════════════════
 // Mouse-routing injection regression net for `handle_mouse_input`.
-// 
+//
 // `handle_mouse_input` 의 좌표/라우팅 결정 수학은 이미 순수 함수(단위테스트)로
 // 격리돼 있다. 이 net 이 잡는 것은 순수테스트가 못 잡는 부분 — "블록→메서드
 // 추출이 분기 순서·가드·early-return 을 보존했는가" 하는 stateful 라우팅이다.
-// 
+//
 // 실제 데스크톱 마우스를 뺏지 않고 IPC(`debug.inject_window_mouse`)로 winit
 // 레벨 포인터 이벤트를 주입해 실제 `handle_mouse_input` 을 헤드리스 구동하고,
 // read-only debug IPC(`debug.selection`/`debug.pending_menu`/`debug.focused_surface`)
 // 로 라우팅 결과를 단언한다 (원칙 1·3: 사용자 입력 재현은 debug 격리).
-// 
+//
 // 대상은 focused 테스트 윈도우의 **active workspace** surface 다 — 주입 좌표가
 // 보이는 레이아웃에 닿아야 `surface_rect_by_id` 가 해소되기 때문. IPC 로 만든
 // workspace 는 active 전환이 없으므로(포커스 독립) 여기서는 쓰지 않는다.
-// 
+//
 // Run with: cargo test --test mouse_routing_tests -- --ignored --test-threads=1
 // (display 필요, single-thread — 한 윈도우만 OS 포커스를 가질 수 있으므로.)
 

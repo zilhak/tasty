@@ -118,8 +118,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                     ui.add_space(th.spacing_sm.value());
                                     for (action, key) in preset.bindings {
                                         ui.horizontal(|ui| {
-                                            ui.spacing_mut().item_spacing.x =
-                                                th.spacing_sm.value();
+                                            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                                             kbd(ui, th, key);
                                             ui.label(
                                                 egui::RichText::new(action)

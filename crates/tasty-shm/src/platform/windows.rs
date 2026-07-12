@@ -27,7 +27,6 @@ impl OwnedHandle {
     fn as_raw(&self) -> HANDLE {
         self.0
     }
-
 }
 
 impl Drop for OwnedHandle {

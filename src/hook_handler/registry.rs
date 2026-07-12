@@ -462,7 +462,11 @@ impl HookHandlerRegistry {
         }
         let mut inner = match self.inner.write() {
             Ok(g) => g,
-            Err(_) => return Err(HookHandlerDeclError::InvalidShortName("lock poisoned".into())),
+            Err(_) => {
+                return Err(HookHandlerDeclError::InvalidShortName(
+                    "lock poisoned".into(),
+                ));
+            }
         };
         push_contribution(
             &mut inner,
@@ -578,7 +582,8 @@ impl HookHandlerRegistry {
                 continue;
             };
             // 셸 불변식(구조적 강제): ShellCommand 는 source == Hook 만 산다.
-            if matches!(action, HookHandlerAction::ShellCommand { .. }) && source != HookSource::Hook
+            if matches!(action, HookHandlerAction::ShellCommand { .. })
+                && source != HookSource::Hook
             {
                 warn!(
                     handler_id = id.as_str(),
@@ -803,7 +808,8 @@ impl tasty_plugin_protocol::host_port::HookHandlerRegistryPort for HostHookHandl
         let mut decls: Vec<HookHandlerDecl<PluginHookHandlerActionDecl>> =
             Vec::with_capacity(handlers.len());
         for v in handlers {
-            match serde_json::from_value::<HookHandlerDecl<PluginHookHandlerActionDecl>>(v.clone()) {
+            match serde_json::from_value::<HookHandlerDecl<PluginHookHandlerActionDecl>>(v.clone())
+            {
                 Ok(d) => {
                     // schema 검증(short-name). plugin 은 `ShellCommand` 를 타입상 못
                     // 쓰므로 셸 게이트는 불필요하다(config::validate_plugin_hook_handler_decl).

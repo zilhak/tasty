@@ -42,7 +42,9 @@ impl Default for AbuseConfig {
 }
 
 fn env_u64(key: &str) -> Option<u64> {
-    std::env::var(key).ok().and_then(|s| s.trim().parse::<u64>().ok())
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
 }
 
 impl AbuseConfig {

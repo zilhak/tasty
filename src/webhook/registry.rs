@@ -52,7 +52,9 @@ fn state() -> &'static Mutex<WebhookState> {
 }
 
 fn lock() -> MutexGuard<'static, WebhookState> {
-    state().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    state()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// 리스너 runtime 설정 주입(부팅 헬퍼가 bind 전에 호출).
@@ -347,7 +349,10 @@ mod tests {
             match_request(&out.id, "GET"),
             MatchResult::MethodNotAllowed
         ));
-        assert!(matches!(match_request("nope", "POST"), MatchResult::NotFound));
+        assert!(matches!(
+            match_request("nope", "POST"),
+            MatchResult::NotFound
+        ));
 
         assert!(unregister(&out.id));
         assert!(info(&out.id).is_none());

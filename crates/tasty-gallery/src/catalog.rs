@@ -952,7 +952,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "settings-hook-handlers",
                             "Handler › Hook Handlers",
-                            Some("registry rows — id · origin Tag · prio · Switch · shell cmd Input · add draft"),
+                            Some(
+                                "registry rows — id · origin Tag · prio · Switch · shell cmd Input · add draft",
+                            ),
                             components::settings_handler::draw_hook_handlers,
                         ),
                     ],

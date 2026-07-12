@@ -32,7 +32,9 @@ use crate::adapters::ui::icons;
 use crate::hook_handler::config::UserHookHandlerActionDecl;
 use crate::hook_handler::registry::{HookHandlerRegistry, UserHookHandlerUpsertDecl};
 use crate::hook_handler::types::is_valid_hook_handler_short_name;
-use crate::hook_handler::{HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource};
+use crate::hook_handler::{
+    HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
+};
 use crate::i18n::{t, t_fmt};
 
 /// jsx `HookRow` line 2 의 "Shell cmd:" 라벨 폭 (`width: 74, flex: none`).
@@ -177,7 +179,11 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     }
 
     // ── Mono caps 섹션 헤드 (jsx `headStyle`) ──
-    mono_caps_head(ui, &th, t("settings.file_handler.hook_handlers.section_head"));
+    mono_caps_head(
+        ui,
+        &th,
+        t("settings.file_handler.hook_handlers.section_head"),
+    );
     vspace(ui, th.spacing_xs);
 
     // ── 등록 핸들러 rows (registry 정렬순: priority↑ → owner → id) + draft 추가분 ──
@@ -194,7 +200,15 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     let mut cmd_edit: Option<(HookHandlerId, String)> = None;
     let mut remove_toggle: Option<HookHandlerId> = None;
     for h in &rows {
-        draw_hook_row(ui, &th, hh, h, &mut toggle, &mut cmd_edit, &mut remove_toggle);
+        draw_hook_row(
+            ui,
+            &th,
+            hh,
+            h,
+            &mut toggle,
+            &mut cmd_edit,
+            &mut remove_toggle,
+        );
     }
     // draft 로 추가된 행 — jsx 는 commitAdd 가 목록에 바로 push 하므로 pending add
     // 도 동일 비주얼의 행으로 노출한다 (Save 전까지는 draft 에만 존재).
@@ -281,9 +295,11 @@ fn draw_hook_row(
                         }
                         if pending_remove {
                             ui.label(
-                                egui::RichText::new(t("settings.file_handler.common.pending_remove"))
-                                    .size(th.font_size_caption.value())
-                                    .color(th.text_muted()),
+                                egui::RichText::new(t(
+                                    "settings.file_handler.common.pending_remove",
+                                ))
+                                .size(th.font_size_caption.value())
+                                .color(th.text_muted()),
                             );
                         }
                         let mut checked = on;
@@ -385,9 +401,11 @@ fn draw_pending_add_row(
                             *remove_add = Some(index);
                         }
                         ui.label(
-                            egui::RichText::new(t("settings.file_handler.hook_handlers.pending_add"))
-                                .size(th.font_size_caption.value())
-                                .color(th.text_muted()),
+                            egui::RichText::new(t(
+                                "settings.file_handler.hook_handlers.pending_add",
+                            ))
+                            .size(th.font_size_caption.value())
+                            .color(th.text_muted()),
                         );
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
@@ -416,7 +434,11 @@ fn draw_pending_add_row(
                 });
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                    row_label(ui, th, t("settings.file_handler.hook_handlers.shell_cmd_label"));
+                    row_label(
+                        ui,
+                        th,
+                        t("settings.file_handler.hook_handlers.shell_cmd_label"),
+                    );
                     Input::new().mono(true).show(ui, th, &mut add.cmd);
                 });
             });
@@ -563,7 +585,10 @@ fn add_field_row(
                 );
             },
         );
-        Input::new().mono(true).placeholder(placeholder).show(ui, th, buf);
+        Input::new()
+            .mono(true)
+            .placeholder(placeholder)
+            .show(ui, th, buf);
     });
 }
 

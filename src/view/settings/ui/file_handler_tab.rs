@@ -169,6 +169,6 @@ mod hook_handlers;
 use detectors::draw_detectors;
 use extension_mapping::draw_extension_mapping;
 use handlers::draw_handlers;
-use hook_handlers::draw_hook_handlers;
 pub(crate) use hook_handlers::HookHandlerEditDraft;
+use hook_handlers::draw_hook_handlers;
 use tasty_ui_widgets::vspace;

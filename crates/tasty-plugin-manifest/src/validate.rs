@@ -946,10 +946,7 @@ impl Manifest {
         // 가 install 시점에 deserialize·검증한다. plugin 은 셸(`ShellCommand`) 을
         // 타입 레벨에서 쓸 수 없으므로(PluginHookHandlerActionDecl) 여기선 id 형식 +
         // 유일성 + define 권한만 확인한다.
-        let has_define = self
-            .permissions
-            .iter()
-            .any(|p| p == "hook_handler.define");
+        let has_define = self.permissions.iter().any(|p| p == "hook_handler.define");
         let mut seen_ids = HashSet::new();
         for v in &self.contributes.hook_handler {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");

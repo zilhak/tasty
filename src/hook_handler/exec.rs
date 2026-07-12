@@ -136,10 +136,7 @@ pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &Sub
                 tracing::debug!("webhook IpcSequence step {i} ({}) ok", call.method);
             }
             Err(e) => {
-                tracing::warn!(
-                    "webhook IpcSequence step {i} ({}) failed: {e}",
-                    call.method
-                );
+                tracing::warn!("webhook IpcSequence step {i} ({}) failed: {e}", call.method);
             }
         }
     }
@@ -222,7 +219,10 @@ mod tests {
 
     #[test]
     fn unresolved_ref_is_null_or_empty() {
-        assert_eq!(substitute_params(&json!("${body.missing}"), &ctx()), json!(null));
+        assert_eq!(
+            substitute_params(&json!("${body.missing}"), &ctx()),
+            json!(null)
+        );
         assert_eq!(
             substitute_params(&json!("x=${body.missing}"), &ctx()),
             json!("x=")

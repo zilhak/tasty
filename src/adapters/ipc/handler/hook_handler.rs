@@ -59,7 +59,10 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
 /// 파일 핸들러 `file_handler.reload` 응답 형태(`{path, exists}`)를 미러링한다.
 pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
     let Some(path) = hook_handler::user_config_path() else {
-        return JsonRpcResponse::internal_error(id, "cannot resolve tasty home for hook-handlers.toml");
+        return JsonRpcResponse::internal_error(
+            id,
+            "cannot resolve tasty home for hook-handlers.toml",
+        );
     };
     let exists = path.exists();
     hook_handler::global().reload_user_config(&path);
@@ -130,7 +133,10 @@ pub fn handle_dispatch(
                 event: hid.0.clone(),
                 source: "dispatch",
                 surface_id: None,
-                payload: params.get("body").cloned().unwrap_or(serde_json::Value::Null),
+                payload: params
+                    .get("body")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
             });
             spawn_shell(command, args, env);
             JsonRpcResponse::success(
@@ -143,7 +149,10 @@ pub fn handle_dispatch(
 
 /// dispatch 치환 컨텍스트 조립. body 는 JSON 값 그대로, headers/query 는 문자열 맵.
 fn build_context(params: &serde_json::Value) -> SubstitutionContext {
-    let body = params.get("body").cloned().unwrap_or(serde_json::Value::Null);
+    let body = params
+        .get("body")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let headers = string_map(params.get("headers"), true);
     let query = string_map(params.get("query"), false);
     SubstitutionContext {
