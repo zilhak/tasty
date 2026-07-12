@@ -16,6 +16,8 @@ use super::MAX_SIZE;
 pub(crate) struct PlatformMapping {
     ptr: *mut u8,
     len: usize,
+    // 이유: RAII 가드 — 읽히지 않지만 munmap 까지 fd 를 살려둬야 함(삭제 시 즉시 close 버그).
+    #[allow(dead_code)]
     fd: OwnedFd,
 }
 
@@ -174,6 +176,8 @@ fn set_cloexec(fd: RawFd) -> Result<(), ShmError> {
 impl PlatformPayload {
     /// 호출자가 sendmsg 후 fd 소유권을 명시적으로 회수하고 싶을 때.
     /// 일반적으로는 Drop으로 자동 close되므로 사용 불요.
+    // 이유: macos.rs 의 동명 메서드와 플랫폼 대칭 API (한쪽만 삭제 시 분기). 판단필요 — conductor 검토.
+    #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()
     }

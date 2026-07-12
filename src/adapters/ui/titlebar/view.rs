@@ -26,6 +26,9 @@ pub enum WindowButton {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlSide {
+    // 이유: DE 감지(GNOME=좌측 등) 전까지는 `titlebar/mod.rs::os_controls()` 가
+    // 단일 우측 프리셋만 생성 — 후속 DE 프리셋 확장 시 첫 실사용처가 된다.
+    #[allow(dead_code)]
     Left,
     Right,
 }

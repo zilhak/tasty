@@ -703,6 +703,9 @@ impl GpuState {
     }
 
     /// Get egui's actual pixels_per_point (what it uses for rendering).
+    // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
+    // release 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn egui_pixels_per_point(&self) -> f32 {
         self.egui_ctx.pixels_per_point()
     }
@@ -716,16 +719,25 @@ impl GpuState {
     }
 
     /// Get egui's zoom factor.
+    // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
+    // release 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn egui_zoom_factor(&self) -> f32 {
         self.egui_ctx.zoom_factor()
     }
 
     /// Whether egui-winit currently allows IME on the window.
+    // 이유: 호출부가 debug_info.rs(개발자 로컬 디버그 전용) 뿐이라 release 빌드에서
+    // 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn egui_ime_allowed(&self) -> bool {
         self.egui_state.allow_ime()
     }
 
     /// Get the wgpu surface config dimensions.
+    // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
+    // release 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn surface_config_size(&self) -> (u32, u32) {
         (self.config.width, self.config.height)
     }

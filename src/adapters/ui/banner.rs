@@ -50,6 +50,10 @@ pub struct BannerDef {
     /// 고유 id = kind. 같은 id 는 한 스코프에 하나만 존재한다.
     pub id: BannerId,
     /// TTL(초). `None` 이면 사용자 닫기까지 유지, `Some` 이면 카운트다운 후 자동 소멸.
+    // 이유: 선언용 필드 — 현재 유일한 `BannerDef`(BANNER_MOUSE_CAPTURE)는
+    // `BannerState::persistent`로 직접 열려 이 필드를 거치지 않는다. def→state
+    // 변환 지점이 생기면 여기서 읽어야 한다 (판단필요 — conductor 검토).
+    #[allow(dead_code)]
     pub ttl_seconds: Option<u32>,
     /// 셸 내부 콘텐츠 draw 함수.
     pub content_fn: BannerContentFn,
@@ -118,6 +122,9 @@ impl BannerState {
     }
 
     /// TTL(초) 배너 — 카운트다운 0 에서 자동 소멸.
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)와 `#[cfg(test)]` 뿐이라
+    // release+non-test 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn with_ttl(id: BannerId, scope: BannerScope, seconds: u32) -> Self {
         let ms = seconds as f32 * 1000.0;
         Self {
@@ -343,6 +350,9 @@ impl BannerManager {
 
     /// id 로 닫는다 (debug). 표시 중이면 닫고 승격, 큐에 있으면 큐에서 제거.
     /// 닫힌(또는 제거된) 게 있으면 `true`.
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)와 `#[cfg(test)]` 뿐이라
+    // release+non-test 빌드에서 미사용으로 잡힌다 (debug-ipc.md 격리 정책의 정상 형태).
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn close_by_id(&mut self, id: BannerId) -> bool {
         let mut target_scope: Option<BannerScope> = None;
         for (scope, lane) in self.scopes.iter_mut() {
@@ -390,6 +400,9 @@ impl BannerManager {
     }
 
     /// 표시 중 배너의 카운트다운을 강제 설정한다 (debug). TTL 배너에만 적용.
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)와 `#[cfg(test)]` 뿐이라
+    // release+non-test 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn set_countdown(&mut self, scope: &BannerScope, seconds: u32) -> bool {
         if let Some(lane) = self.scopes.get_mut(scope)
             && let Some(shown) = lane.shown.as_mut()
@@ -409,6 +422,9 @@ impl BannerManager {
     }
 
     /// 스코프의 대기 큐 (표시 중 제외).
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)뿐이라 release 빌드에서
+    // 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn queued_banners(&self, scope: &BannerScope) -> impl Iterator<Item = &BannerState> {
         self.scopes
             .get(scope)
@@ -417,6 +433,9 @@ impl BannerManager {
     }
 
     /// 전체 스코프 대기 큐 합 (debug 요약).
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)와 `#[cfg(test)]` 뿐이라
+    // release+non-test 빌드에서 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn total_queued(&self) -> usize {
         self.scopes.values().map(|lane| lane.queue.len()).sum()
     }
@@ -821,6 +840,9 @@ pub mod defs {
     }
 
     /// 전체 빌트인 배너 정의.
+    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)뿐이라 release 빌드에서
+    // 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn all_defs() -> &'static [BannerDef] {
         &DEFS
     }
