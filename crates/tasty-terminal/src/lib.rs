@@ -109,6 +109,38 @@ impl Drop for PtyBackend {
         if let Err(e) = self.child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
         }
+        // unix: portable-pty 의 kill() 은 SIGHUP 송신뿐 reap 이 없고, 살아있는 동안의
+        // try_wait 폴링(process() 의 exit 감지)도 close 시점엔 더 이상 돌지 않는다 —
+        // 회수하지 않으면 zombie 가 PID 테이블에 남는다 (macOS soak 실측: s9 30분
+        // churn 중 16개 누적). 메인 스레드를 막지 않도록 detached thread 에서
+        // 유예 poll → SIGKILL escalation 으로 reap 한다. 셸은 SIGHUP 후 보통 수 ms
+        // 안에 죽으므로 정상 경로 비용은 poll 1~2회다.
+        #[cfg(unix)]
+        if let Some(pid) = self.child.process_id() {
+            std::thread::spawn(move || {
+                let pid = pid as i32;
+                let mut status = 0i32;
+                for _ in 0..40 {
+                    // SAFETY: waitpid 는 본 프로세스의 자식 pid 에만 매칭된다. 이미
+                    // 다른 곳에서 회수됐으면 -1(ECHILD) 로 즉시 반환된다.
+                    match unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } {
+                        0 => std::thread::sleep(std::time::Duration::from_millis(5)),
+                        _ => return, // >0 회수 완료, -1 이미 회수됨/자식 아님
+                    }
+                }
+                // 200ms 유예 내 미종료 — SIGHUP 을 무시하는 자식. SIGKILL 은 무시
+                // 불가능하므로 blocking waitpid 가 곧바로 끝난다.
+                // SAFETY: kill syscall. pid 는 아직 미회수 자식(위 waitpid 가 0 반환)
+                // 이므로 재사용될 수 없다.
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+                // SAFETY: waitpid syscall — 본 프로세스의 자식 pid 에만 매칭.
+                unsafe {
+                    libc::waitpid(pid, &raw mut status, 0);
+                }
+            });
+        }
     }
 }
 
