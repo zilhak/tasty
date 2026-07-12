@@ -366,6 +366,7 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Panes => ("pane.list", serde_json::json!({})),
         ListCommands::Tabs { pane } => ("tab.list", serde_json::json!({ "pane_id": pane })),
         ListCommands::Info => ("system.info", serde_json::json!({})),
+        ListCommands::GpuStats => ("system.gpu_stats", serde_json::json!({})),
         ListCommands::Notifications => ("notification.list", serde_json::json!({})),
         ListCommands::Hooks { surface } => (
             "hook.list",

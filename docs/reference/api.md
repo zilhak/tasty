@@ -60,7 +60,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)
 - webview: `webview.set_url`
 - 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
-- 시스템: `system.info`
+- 시스템: `system.info` · `system.gpu_stats` (local-only, GPU 리소스 카운트 스냅샷 — wgpu 전역 리포트 + 창별 렌더러 카운트, 메모리 누수 soak 검증용. CLI `tasty list gpu-stats`) — [memory-leak-soak](../dev-guide/memory-leak-soak.md)
 
 ### Plugin 관리 (`plugin.*`, local-only)
 `list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission` · `audit_{query,summary,follow,clear}` · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).

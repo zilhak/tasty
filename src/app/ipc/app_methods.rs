@@ -1,6 +1,7 @@
 //! step 2: 호스트 자체 메서드.
 //!
 //! - `system.shutdown` (debug)
+//! - `system.gpu_stats` (read-only GPU 리소스 카운트 — 메모리 누수 soak 검증)
 //! - `window.create` / `window.close` / `window.focus` / `window.list`
 //! - `plugin.*` (15개 메서드)
 //! - `approval.await` (blocking — worker thread 위임)
@@ -26,6 +27,9 @@ impl App {
             send_response(&cmd.response_tx, response);
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             return IpcStep::Shutdown;
+        }
+        if cmd.request.method == "system.gpu_stats" {
+            return self.ipc_handle_system_gpu_stats(cmd);
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
@@ -76,6 +80,74 @@ impl App {
             return IpcStep::Handled;
         }
         IpcStep::NotHandled
+    }
+
+    /// `system.gpu_stats` — GPU 리소스 카운트 read-only 조회 (메모리 누수 soak 검증용).
+    ///
+    /// 반환: wgpu 전역 리포트(`Instance::generate_report()` — 모든 창 합산 buffers/
+    /// textures/texture_views/bind_groups … 의 live 카운트) + 창별 `GpuState` 카운트
+    /// (egui-mesh target 맵 3종 len, atlas, draw calls). soak 하네스가 "surface 를
+    /// 닫았는데 카운트가 기준선으로 복귀하지 않음" 유형의 누수를 판정하는 1차 소스.
+    ///
+    /// 순수 조회 — 사용자 상태(focus/선택/스크롤)에 닿지 않는다(원칙 1). IPC+CLI
+    /// 양면 노출(원칙 2: `tasty list gpu-stats`), 대상 지정 불필요한 전역 스냅샷이라
+    /// 포커스 독립(원칙 3). local_only — plugin 미노출.
+    fn ipc_handle_system_gpu_stats(&self, cmd: &IpcCommand) -> IpcStep {
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let windows: Vec<_> = self
+            .view
+            .views
+            .iter()
+            .map(|(id, w)| {
+                serde_json::json!({
+                    "window_id": u64::from(*id),
+                    "main": w.as_main().is_some(),
+                    "stats": w.base().gpu.resource_stats(),
+                })
+            })
+            .collect();
+        // RegistryReport 를 JSON 으로 — 타입 경로(wgpu-core 재수출)에 의존하지 않도록
+        // 필드 접근만 하는 macro 로 변환한다. `num_allocated` 가 live 카운트.
+        macro_rules! reg {
+            ($r:expr) => {
+                serde_json::json!({
+                    "allocated": $r.num_allocated,
+                    "kept_from_user": $r.num_kept_from_user,
+                    "released_from_user": $r.num_released_from_user,
+                })
+            };
+        }
+        let wgpu_report = self.gpu_instance.generate_report().map(|r| {
+            serde_json::json!({
+                "surfaces": reg!(r.surfaces),
+                "hub": {
+                    "devices": reg!(r.hub.devices),
+                    "queues": reg!(r.hub.queues),
+                    "buffers": reg!(r.hub.buffers),
+                    "textures": reg!(r.hub.textures),
+                    "texture_views": reg!(r.hub.texture_views),
+                    "samplers": reg!(r.hub.samplers),
+                    "bind_groups": reg!(r.hub.bind_groups),
+                    "bind_group_layouts": reg!(r.hub.bind_group_layouts),
+                    "pipeline_layouts": reg!(r.hub.pipeline_layouts),
+                    "shader_modules": reg!(r.hub.shader_modules),
+                    "render_pipelines": reg!(r.hub.render_pipelines),
+                    "compute_pipelines": reg!(r.hub.compute_pipelines),
+                    "command_buffers": reg!(r.hub.command_buffers),
+                    "render_bundles": reg!(r.hub.render_bundles),
+                    "query_sets": reg!(r.hub.query_sets),
+                },
+            })
+        });
+        let response = host_ipc::protocol::JsonRpcResponse::success(
+            response_id,
+            serde_json::json!({
+                "windows": windows,
+                "wgpu": wgpu_report,
+            }),
+        );
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
     }
 
     /// `window.close` / `view.close`: main view 만 대상, 마지막 main 은 거부.

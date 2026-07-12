@@ -44,6 +44,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
     &[
         // ── 호스트 system ─────────────────────────────────────────────
         ("system.info", plugin(&[])),
+        // GPU 리소스 카운트 read-only 스냅샷 (메모리 누수 soak 검증). 순수 조회지만
+        // 내부 렌더러 구조를 노출하는 진단 표면이라 local_only — plugin 미노출.
+        ("system.gpu_stats", local_only()),
         // ── workspace (read/write) ────────────────────────────────────
         ("workspace.list", plugin(&[SurfaceRead])),
         ("workspace.create", plugin(&[SurfaceWrite])),

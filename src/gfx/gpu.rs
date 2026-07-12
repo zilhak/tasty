@@ -609,6 +609,26 @@ impl GpuState {
         Ok(())
     }
 
+    /// GPU 리소스 카운트 스냅샷 — `system.gpu_stats` IPC 가 창 단위로 노출한다.
+    /// 메모리 누수 soak 검증용 read-only 조회: egui-mesh target 맵 3종은 retain
+    /// 방식으로 정리되므로(§4-3), close/reopen 반복 후에도 len 이 단조 증가하면
+    /// 그것이 GPU 리소스 누수 신호다. 렌더 상태를 변경하지 않는다.
+    pub(crate) fn resource_stats(&self) -> serde_json::Value {
+        let (bg_draws, glyph_draws, total_draws) = self.renderer.draw_call_count();
+        serde_json::json!({
+            "egui_mesh_targets": self.egui_mesh_targets.len(),
+            "egui_mesh_popup_targets": self.egui_mesh_popup_targets.len(),
+            "egui_mesh_banner_targets": self.egui_mesh_banner_targets.len(),
+            "atlas": {
+                "eviction_count": self.renderer.atlas.eviction_count(),
+                "active_pages": self.renderer.atlas.active_page_count(),
+                "entry_count_sum": self.renderer.atlas.entry_count_sum(),
+            },
+            "draw_calls": { "bg": bg_draws, "glyph": glyph_draws, "total": total_draws },
+            "active_surfaces": self.renderer.active_surface_count(),
+        })
+    }
+
     fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> PhysicalRect {
         crate::model::compute_terminal_rect(
             PhysicalPx(self.size.width as f32),

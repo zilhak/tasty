@@ -22,6 +22,8 @@ pub enum ListCommands {
     },
     /// Show system info
     Info,
+    /// Show GPU resource counts (wgpu report + per-window renderer stats)
+    GpuStats,
     /// List notifications
     Notifications,
     /// List hooks
