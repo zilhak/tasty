@@ -28,12 +28,6 @@ impl OwnedHandle {
         self.0
     }
 
-    /// 핸들 소유권을 회수. 호출 후 Drop이 close하지 않는다.
-    fn into_raw(self) -> HANDLE {
-        let h = self.0;
-        std::mem::forget(self);
-        h
-    }
 }
 
 impl Drop for OwnedHandle {
@@ -52,7 +46,8 @@ impl Drop for OwnedHandle {
 /// `SharedMemory`의 platform 표현. mmap view + 파일 매핑 핸들.
 pub(crate) struct PlatformMapping {
     view: *mut u8,
-    handle: OwnedHandle,
+    /// RAII 보유 전용 — 읽지 않지만 Drop 이 CloseHandle 해야 매핑 수명이 유지된다.
+    _handle: OwnedHandle,
 }
 
 impl Drop for PlatformMapping {
@@ -127,7 +122,7 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
         len: size,
         _handle: PlatformMapping {
             view: view.Value as *mut u8,
-            handle: mapping_handle,
+            _handle: mapping_handle,
         },
     };
     let handle = SendableHandle {
@@ -211,7 +206,7 @@ pub(crate) fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError
         len: size,
         _handle: PlatformMapping {
             view: view.Value as *mut u8,
-            handle: owned,
+            _handle: owned,
         },
     })
 }
@@ -239,6 +234,9 @@ fn duplicate_to_self(source: HANDLE) -> Result<HANDLE, ShmError> {
 
 impl PlatformPayload {
     /// 핸들 값을 회수. 일반적으로는 호출 불요 (Drop이 없음 — peer 소유라서).
+    /// unix 판 `into_raw_fd` 와의 대칭 API 표면 유지 — 현재 windows 송신 경로는
+    /// `serialized_handle` 만 쓴다.
+    #[allow(dead_code)]
     pub(crate) fn into_raw(self) -> u64 {
         let h = self.duplicated;
         std::mem::forget(self);

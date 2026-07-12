@@ -31,6 +31,7 @@ mod platform;
 
 pub mod footer;
 
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use error::ShmError;
@@ -177,9 +178,11 @@ pub enum ReceivedPayload {
     },
 }
 
-/// 단일 프로세스 내 단조 카운터 (macOS의 shm_open 이름 충돌 방지용).
+/// 단일 프로세스 내 단조 카운터 (macOS의 shm_open 이름 충돌 방지용 — macOS 전용).
+#[cfg(target_os = "macos")]
 static MONO_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(target_os = "macos")]
 pub(crate) fn next_unique_id() -> u64 {
     MONO_COUNTER.fetch_add(1, Ordering::Relaxed)
 }

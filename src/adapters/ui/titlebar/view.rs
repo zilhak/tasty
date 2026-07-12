@@ -129,7 +129,9 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
                     caption_rect,
                     props,
                 ));
-                right_controls_w = caption_w;
+                // Windows 는 controls=None(위 DE 블록과 배타)이라 사실상 = caption_w.
+                // max 로 합성해 두 경로가 한 변수로 흐르게 한다 (dead-store 경고 방지 겸).
+                right_controls_w = right_controls_w.max(caption_w);
             }
 
             // 드래그 영역 = 전체에서 좌측 inset(신호등/좌측버튼)·우측 strip(DE 버튼/Windows

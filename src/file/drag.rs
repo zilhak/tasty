@@ -21,6 +21,9 @@ pub use windows::start_file_drag;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DragResult {
     /// The drop was accepted by the target application.
+    /// 현재 macOS 구현만 구성한다 — Windows/Linux 스텁은 Cancelled 고정이라
+    /// 해당 타깃 빌드에선 dead_code 로 보인다 (크로스 플랫폼 API 표면 유지).
+    #[allow(dead_code)]
     Accepted,
     /// The drag was cancelled (user released outside a valid target).
     Cancelled,

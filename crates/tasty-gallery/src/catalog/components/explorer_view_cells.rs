@@ -26,6 +26,9 @@ const CELL_W: f32 = 80.0;
 struct Entry {
     glyph: MockGlyph,
     name: &'static str,
+    /// 실 explorer Entry 와의 필드 parity 용 — 렌더는 glyph 가 폴더 여부를 이미
+    /// 인코드하므로 specimen 에선 읽지 않는다.
+    #[allow(dead_code)]
     dir: bool,
 }
 

@@ -91,10 +91,15 @@ impl HookHandlerRegistry {
     }
 
     /// `get` 별칭 (파일 핸들러 `handler()` 미러).
+    // 아래 조회 API 군(handler/contains/list_handlers/all_handlers/
+    // handlers_for_source/clear_user_handler_override)은 현재 registry_tests 만
+    // 사용한다 — 파일 핸들러 레지스트리와의 API 대칭 유지 목적으로 남긴다.
+    #[allow(dead_code)]
     pub fn handler(&self, id: &HookHandlerId) -> Option<HookHandler> {
         self.get(id)
     }
 
+    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn contains(&self, id: &HookHandlerId) -> bool {
         self.ensure_finalized();
         self.inner
@@ -104,6 +109,7 @@ impl HookHandlerRegistry {
     }
 
     /// 전체 핸들러 id (정렬순). 포커스 독립 — 전 범위 조회.
+    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn list_handlers(&self) -> Vec<HookHandlerId> {
         self.ensure_finalized();
         let inner = match self.inner.read() {
@@ -114,6 +120,7 @@ impl HookHandlerRegistry {
     }
 
     /// 활성 핸들러 전체 (priority↑ → owner tie-break → id).
+    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn all_handlers(&self) -> Vec<HookHandler> {
         self.ensure_finalized();
         let inner = match self.inner.read() {
@@ -146,6 +153,7 @@ impl HookHandlerRegistry {
     /// 주어진 트리거 출처에 바인딩 가능한 활성 핸들러들 (파일 핸들러 `handlers_for`
     /// 미러). `source.accepts(trigger)` + 웹훅이면 `is_webhook_bindable()` 통과.
     /// priority↑ → owner tie-break → id.
+    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn handlers_for_source(&self, trigger: TriggerSource) -> Vec<HookHandler> {
         self.ensure_finalized();
         let inner = match self.inner.read() {
@@ -389,6 +397,7 @@ impl HookHandlerRegistry {
     }
 
     /// User-origin contribution 의 `disabled_override` 만 비운다. 다른 user 필드 보존.
+    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn clear_user_handler_override(&self, id: &HookHandlerId) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,

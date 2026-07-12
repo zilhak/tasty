@@ -65,7 +65,7 @@ impl PlatformWebView {
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(std::mem::transmute(DefWindowProcW as usize)),
+                lpfnWndProc: Some(std::mem::transmute(DefWindowProcW as *const () as usize)),
                 hInstance: GetModuleHandleW(None).unwrap_or_default().into(),
                 lpszClassName: class_name,
                 ..Default::default()
