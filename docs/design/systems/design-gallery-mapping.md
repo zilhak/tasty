@@ -78,12 +78,21 @@ indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_k
 in-place 교체라 리플로 0, release 시 원복. 사용자 입력 modifier 만 보므로 IPC/에이전트 강제
 표시 불가(사용자 입력 전용).
 
-**카테고리 quick-switch (Alt+Shift, `draw_category`)**: workspace 오버레이(Alt 단독)와 **modifier-exclusive**
-— `switch_target_for` 가 `workspace_switch_modifier`+Shift 를 `SwitchTarget::Category` 로 판정한다. full 은
+**카테고리 quick-switch (기본 Ctrl+Shift, `draw_category`)**: 카테고리는 자기 modifier 필드
+(`category_switch_modifier`, 기본 `"ctrl+shift"`)를 갖는 **독립 1급 축**이다 — 과거 "workspace
+오버레이(Alt) + Shift 파생" 방식은 폐기됐다. `switch_target_for` 가 세 축(탭/워크스페이스/카테고리)
+각각의 modifier 조합을 `Combo::parse_modifiers` 로 파싱해 현재 눌린 조합과 **정확히 일치**할 때만
+그 축을 반환하므로(modifier-exclusive, 우선순위 로직 없음) 세 축이 서로 새지 않는다. full 은
 카테고리 헤더 **우측**에 키캡(chevron 은 load-bearing 이라 교체 안 함, status dot 없음), rail 은 `---` 경계
 **중앙**에 키캡. 번호는 reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 없음. 전환 시 접힘이면 자동
-확장(layout.json 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`). folders 토글
-게이트. discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 글리프, folders on).
+확장(layout.json 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`, 다음/이전
+카테고리 자체 전환은 `next_category`/`prev_category` 가 이 함수를 재사용). folders 토글 게이트.
+discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 글리프, folders on).
+
+**"개별 지정" 모드와 오버레이**: 세 축 중 하나라도 modifier 를 "개별 지정"
+(`KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER`)으로 바꾸면 그 축은 `switch_target_for` 가 절대
+반환하지 않으므로(sentinel 파싱 실패) 이 switch-number 오버레이가 그 축에서 자동으로 뜨지 않는다 —
+슬롯마다 콤보가 달라 통일된 숫자 힌트를 그릴 근거가 없기 때문(의도된 동작, [keybindings](../../features/keybindings/index.md) 참조).
 
 **등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",
 …, draw_tab), spec("switch-ws", …, draw_workspace), spec("switch-cat", …, draw_category)])` — search 와
