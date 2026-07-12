@@ -640,6 +640,66 @@ fn switch_to_category_out_of_range_noop() {
     assert_eq!(state.active_workspace, 0);
 }
 
+// ---- category axis next/prev (S-9) ----
+
+/// normal=A(0), work=B(1), play=C(2) — 각 카테고리에 워크스페이스 1개씩. next_category
+/// 는 카테고리 리스트(0=normal, 1.., 등록 순서) 를 wrap-around 순회하며 각 카테고리의
+/// (미방문이므로) first 워크스페이스로 착지한다.
+#[test]
+fn next_prev_category_wraps_across_categories() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    let work = engine.create_category("work").expect("create work");
+    let play = engine.create_category("play").expect("create play");
+    engine.workspaces[1].set_category(work); // B
+    engine.workspaces[2].set_category(play); // C
+
+    state.switch_workspace(&mut engine, 0); // active = A (normal)
+    state.next_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // work → B
+    state.next_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // play → C
+    state.next_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → normal → A
+
+    state.prev_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // wrap → play → C
+    state.prev_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // work → B
+}
+
+/// 카테고리가 normal 하나뿐이면 next/prev_category 가 no-op.
+#[test]
+fn next_prev_category_noop_when_single_category() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // 같은 normal 카테고리에 워크스페이스 추가.
+    assert_eq!(state.active_workspace, 1);
+
+    state.next_category(&mut engine);
+    assert_eq!(state.active_workspace, 1);
+    state.prev_category(&mut engine);
+    assert_eq!(state.active_workspace, 1);
+}
+
+/// 카테고리 전환은 대상 카테고리의 last-active 로 착지(switch_to_category 재사용 확인).
+#[test]
+fn next_category_lands_on_last_active() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[1].set_category(work); // B
+    engine.workspaces[2].set_category(work); // C
+
+    // work 안에서 C(2)를 마지막으로 방문.
+    state.switch_workspace(&mut engine, 2);
+    state.switch_workspace(&mut engine, 0); // normal 로 복귀.
+
+    state.next_category(&mut engine); // → work, last-active = C.
+    assert_eq!(state.active_workspace, 2);
+}
+
 /// 카테고리 내 워크스페이스가 자기 자신 하나뿐이면 next/prev 가 no-op.
 #[test]
 fn next_prev_workspace_in_active_category_noop_when_alone() {

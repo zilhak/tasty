@@ -43,6 +43,8 @@ pub enum BareTarget {
     TabPrev,
     WorkspaceNext,
     WorkspacePrev,
+    CategoryNext,
+    CategoryPrev,
 }
 
 /// 녹화 슬롯이 요구하는 캡처 규칙. 일반 콤보 필드는 modifier 필수([`Combo`]),

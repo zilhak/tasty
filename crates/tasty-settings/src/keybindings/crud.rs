@@ -463,10 +463,10 @@ impl KeybindingSettings {
 
     // ── quick-switch raw 키 accessor (index 기반) ─────────────────────
     //
-    // 이 6개 필드는 콤보가 아니라 raw 키 하나이므로 `GENERAL_BINDING_FIELDS` /
+    // 이 8개 필드는 콤보가 아니라 raw 키 하나이므로 `GENERAL_BINDING_FIELDS` /
     // `get_bindings(_mut)`(콤보 `Vec<String>` 시스템)에 넣지 않고 전용 accessor 로 다룬다.
-    // modifier 는 dispatch 시점에 `tab_switch_modifier`/`workspace_switch_modifier` 에서
-    // 조합된다(quickswitch-03). 여기는 데이터 접근만 제공한다.
+    // modifier 는 dispatch 시점에 `tab_switch_modifier`/`workspace_switch_modifier`/
+    // `category_switch_modifier` 에서 조합된다(quickswitch-03). 여기는 데이터 접근만 제공한다.
 
     /// 탭 quick-switch 슬롯 `idx`(0~9)의 raw 키. 범위 밖이면 None.
     pub fn tab_slot_key(&self, idx: usize) -> Option<&str> {
@@ -542,6 +542,20 @@ impl KeybindingSettings {
     }
     pub fn set_workspace_prev_key(&mut self, key: &str) {
         self.workspace_switch_prev_key = key.to_string();
+    }
+
+    /// 카테고리 quick-switch "다음/이전" raw 키.
+    pub fn category_next_key(&self) -> &str {
+        &self.category_switch_next_key
+    }
+    pub fn category_prev_key(&self) -> &str {
+        &self.category_switch_prev_key
+    }
+    pub fn set_category_next_key(&mut self, key: &str) {
+        self.category_switch_next_key = key.to_string();
+    }
+    pub fn set_category_prev_key(&mut self, key: &str) {
+        self.category_switch_prev_key = key.to_string();
     }
 
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").

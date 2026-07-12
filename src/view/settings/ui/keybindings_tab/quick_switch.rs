@@ -1,9 +1,10 @@
 //! Keybindings › Tab/Workspace 서브탭의 **quick-switch 섹션** — modifier 드롭다운 +
 //! 슬롯(1~N) + 다음/이전 raw 키 편집 UI (quickswitch-04).
 //!
-//! 일반 콤보 필드(`entries.rs`)와 달리 이 6종 필드(`tab_switch_slot_keys` 등)는
+//! 일반 콤보 필드(`entries.rs`)와 달리 이 8종 필드(`tab_switch_slot_keys` 등)는
 //! **modifier 없는 raw 키 하나**를 저장하고, 표시·dispatch 시점에
-//! `tab_switch_modifier`/`workspace_switch_modifier` 와 조합된다. 따라서:
+//! `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier` 와
+//! 조합된다. 따라서:
 //!
 //! - 저장값은 raw 키(`"q"`), 버튼 라벨은 표시 시점에 `"{Modifier}+{Key}"` 로 합성한다
 //!   (modifier 드롭다운을 바꾸면 저장값 변경 없이 라벨이 자동으로 따라간다).
@@ -49,12 +50,12 @@ impl QuickSwitchKind {
         }
     }
 
-    /// 다음/이전 raw 키 타겟. 카테고리 축은 next/prev 키가 없어 `None`.
+    /// 다음/이전 raw 키 타겟.
     fn next_target(self) -> Option<BareTarget> {
         match self {
             QuickSwitchKind::Tab => Some(BareTarget::TabNext),
             QuickSwitchKind::Workspace => Some(BareTarget::WorkspaceNext),
-            QuickSwitchKind::Category => None,
+            QuickSwitchKind::Category => Some(BareTarget::CategoryNext),
         }
     }
 
@@ -62,7 +63,7 @@ impl QuickSwitchKind {
         match self {
             QuickSwitchKind::Tab => Some(BareTarget::TabPrev),
             QuickSwitchKind::Workspace => Some(BareTarget::WorkspacePrev),
-            QuickSwitchKind::Category => None,
+            QuickSwitchKind::Category => Some(BareTarget::CategoryPrev),
         }
     }
 
@@ -95,6 +96,8 @@ fn bare_key_value(kb: &KeybindingSettings, target: BareTarget) -> String {
         BareTarget::TabPrev => kb.tab_prev_key().to_string(),
         BareTarget::WorkspaceNext => kb.workspace_next_key().to_string(),
         BareTarget::WorkspacePrev => kb.workspace_prev_key().to_string(),
+        BareTarget::CategoryNext => kb.category_next_key().to_string(),
+        BareTarget::CategoryPrev => kb.category_prev_key().to_string(),
     }
 }
 
@@ -114,6 +117,8 @@ pub fn set_bare_target(kb: &mut KeybindingSettings, target: BareTarget, raw_key:
         BareTarget::TabPrev => kb.set_tab_prev_key(raw_key),
         BareTarget::WorkspaceNext => kb.set_workspace_next_key(raw_key),
         BareTarget::WorkspacePrev => kb.set_workspace_prev_key(raw_key),
+        BareTarget::CategoryNext => kb.set_category_next_key(raw_key),
+        BareTarget::CategoryPrev => kb.set_category_prev_key(raw_key),
     }
 }
 
@@ -131,7 +136,9 @@ fn bare_modifier(kb: &KeybindingSettings, target: BareTarget) -> &str {
         BareTarget::WorkspaceSlot(_) | BareTarget::WorkspaceNext | BareTarget::WorkspacePrev => {
             &kb.workspace_switch_modifier
         }
-        BareTarget::CategorySlot(_) => &kb.category_switch_modifier,
+        BareTarget::CategorySlot(_) | BareTarget::CategoryNext | BareTarget::CategoryPrev => {
+            &kb.category_switch_modifier
+        }
     }
 }
 
@@ -172,13 +179,19 @@ fn bare_display_label(target: BareTarget) -> String {
         BareTarget::WorkspacePrev => {
             t("settings.keybindings.workspace_switch_prev_label").to_string()
         }
+        BareTarget::CategoryNext => {
+            t("settings.keybindings.category_switch_next_label").to_string()
+        }
+        BareTarget::CategoryPrev => {
+            t("settings.keybindings.category_switch_prev_label").to_string()
+        }
     };
     raw.trim_end_matches(':').trim().to_string()
 }
 
 /// 모든 quick-switch bare 타겟 목록(슬롯 간 중복 검사용 — 탭·워크스페이스·카테고리 교차 포함).
 fn all_bare_targets() -> Vec<BareTarget> {
-    let mut v = Vec::with_capacity(33);
+    let mut v = Vec::with_capacity(35);
     for i in 0..10 {
         v.push(BareTarget::TabSlot(i));
     }
@@ -192,6 +205,8 @@ fn all_bare_targets() -> Vec<BareTarget> {
     v.push(BareTarget::TabPrev);
     v.push(BareTarget::WorkspaceNext);
     v.push(BareTarget::WorkspacePrev);
+    v.push(BareTarget::CategoryNext);
+    v.push(BareTarget::CategoryPrev);
     v
 }
 
@@ -290,7 +305,7 @@ pub(super) fn draw_quick_switch_section(
             label_col_width,
         );
     }
-    // 다음/이전 (카테고리 축은 next/prev 키가 없어 렌더하지 않는다).
+    // 다음/이전 (세 축 모두 존재 — 카테고리도 대칭).
     for tg in [kind.next_target(), kind.prev_target()]
         .into_iter()
         .flatten()

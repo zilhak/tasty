@@ -156,6 +156,14 @@ pub struct KeybindingSettings {
     /// 워크스페이스 quick-switch "이전" raw 키. 기본값 `"k"`(vim).
     #[serde(default = "default_workspace_prev_key")]
     pub workspace_switch_prev_key: String,
+    /// 카테고리 quick-switch "다음 카테고리" raw 키. 기본값 `"j"`(vim). 4프리셋 전수
+    /// 대조로 무충돌 확인된 값(워크스페이스 축과 문자는 같지만 modifier 가 달라
+    /// 합성 콤보는 겹치지 않는다 — `ctrl+shift+j` vs `alt+j`).
+    #[serde(default = "default_category_next_key")]
+    pub category_switch_next_key: String,
+    /// 카테고리 quick-switch "이전 카테고리" raw 키. 기본값 `"k"`(vim).
+    #[serde(default = "default_category_prev_key")]
+    pub category_switch_prev_key: String,
 }
 
 /// 탭 quick-switch 슬롯 raw 키 기본값 `["1".."9","0"]`(현행 `TAB_DIGITS` 와 동일).
@@ -194,6 +202,16 @@ fn default_workspace_next_key() -> String {
 
 /// 워크스페이스 quick-switch "이전" 기본 키 `"k"`(vim).
 fn default_workspace_prev_key() -> String {
+    "k".to_string()
+}
+
+/// 카테고리 quick-switch "다음 카테고리" 기본 키 `"j"`(vim).
+fn default_category_next_key() -> String {
+    "j".to_string()
+}
+
+/// 카테고리 quick-switch "이전 카테고리" 기본 키 `"k"`(vim).
+fn default_category_prev_key() -> String {
     "k".to_string()
 }
 

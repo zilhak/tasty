@@ -584,6 +584,53 @@ fn category_combo_routes_to_category_switch() {
 }
 
 #[test]
+fn category_next_prev_keys_cycle_categories() {
+    // 기본 카테고리 modifier = ctrl+shift, next/prev raw 키 = "j"/"k" (S-9).
+    let (mut state, mut engine) = fresh_state();
+    engine.settings.general.workspace_categories_enabled = true;
+    add_test_workspace(&mut state, &mut engine); // ws1
+    add_test_workspace(&mut state, &mut engine); // ws2
+    let services = engine.create_category("Services").unwrap();
+    let extra = engine.create_category("Extra").unwrap();
+    let ws1_id = engine.workspaces[1].id;
+    let ws2_id = engine.workspaces[2].id;
+    engine.set_workspace_category(ws1_id, services).unwrap();
+    engine.set_workspace_category(ws2_id, extra).unwrap();
+    state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
+    let kb = crate::settings::KeybindingSettings::default();
+
+    // ctrl+shift+j → 다음 카테고리(Services) → 미방문이라 first(ws1) 착지.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+    ));
+    assert_eq!(state.active_workspace, 1);
+    // ctrl+shift+j → 다음 카테고리(Extra) → ws2 착지.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+    ));
+    assert_eq!(state.active_workspace, 2);
+    // ctrl+shift+k → 이전 카테고리(Services) → ws1 로 복귀.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state, &mut engine, &kb, &k_char("k"), true, true, false, false,
+    ));
+    assert_eq!(state.active_workspace, 1);
+}
+
+#[test]
+fn category_next_prev_keys_noop_when_folders_disabled() {
+    // folders 기능 off → 카테고리 next/prev 도 슬롯과 동일하게 무시(표시=동작).
+    let (mut state, mut engine) = fresh_state();
+    engine.settings.general.workspace_categories_enabled = false;
+    add_test_workspace(&mut state, &mut engine);
+    state.switch_workspace(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default();
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state, &mut engine, &kb, &k_char("j"), true, true, false, false,
+    ));
+    assert_eq!(state.active_workspace, 0);
+}
+
+#[test]
 fn axis_combos_do_not_cross_route() {
     // ctrl 단독 → Tab, ctrl+shift(카테고리 축) → 탭/워크스페이스로 새지 않음.
     let (mut state, mut engine) = fresh_state();

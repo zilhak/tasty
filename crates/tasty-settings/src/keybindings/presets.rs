@@ -80,6 +80,8 @@ impl KeybindingSettings {
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
             workspace_switch_prev_key: super::default_workspace_prev_key(),
+            category_switch_next_key: super::default_category_next_key(),
+            category_switch_prev_key: super::default_category_prev_key(),
         }
     }
 
@@ -155,6 +157,8 @@ impl KeybindingSettings {
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
             workspace_switch_prev_key: super::default_workspace_prev_key(),
+            category_switch_next_key: super::default_category_next_key(),
+            category_switch_prev_key: super::default_category_prev_key(),
         }
     }
 
@@ -230,6 +234,8 @@ impl KeybindingSettings {
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
             workspace_switch_prev_key: super::default_workspace_prev_key(),
+            category_switch_next_key: super::default_category_next_key(),
+            category_switch_prev_key: super::default_category_prev_key(),
         }
     }
 
@@ -305,6 +311,8 @@ impl KeybindingSettings {
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
             workspace_switch_prev_key: super::default_workspace_prev_key(),
+            category_switch_next_key: super::default_category_next_key(),
+            category_switch_prev_key: super::default_category_prev_key(),
         }
     }
 

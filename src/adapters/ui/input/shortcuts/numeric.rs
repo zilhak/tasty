@@ -77,6 +77,15 @@ impl MainView {
                 if !engine.settings.general.workspace_categories_enabled {
                     return false;
                 }
+                // next/prev 우선 검사(겹칠 때 next/prev 가 슬롯을 이긴다) — 탭/워크스페이스와 동일 순서.
+                if ch == kb.category_next_key() {
+                    state.next_category(engine);
+                    return true;
+                }
+                if ch == kb.category_prev_key() {
+                    state.prev_category(engine);
+                    return true;
+                }
                 if let Some(section) = kb.category_switch_slot_keys.iter().position(|k| k == ch) {
                     state.switch_to_category(engine, section);
                     return true;

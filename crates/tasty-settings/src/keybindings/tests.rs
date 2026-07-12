@@ -516,6 +516,8 @@ fn quick_switch_fields_not_in_general_bindings() {
         "tab_switch_prev_key",
         "workspace_switch_next_key",
         "workspace_switch_prev_key",
+        "category_switch_next_key",
+        "category_switch_prev_key",
     ] {
         assert!(
             KeybindingSettings::GENERAL_BINDING_FIELDS
@@ -526,4 +528,71 @@ fn quick_switch_fields_not_in_general_bindings() {
     }
     // count 는 여전히 53.
     assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 53);
+}
+
+// ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────
+
+/// 4 프리셋 전부 카테고리 next/prev 기본값이 vim 스타일 `j`/`k` (분석검증 Q1 확정값).
+#[test]
+fn all_presets_share_category_next_prev_defaults() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(kb.category_switch_next_key, "j", "preset '{name}' cat next");
+        assert_eq!(kb.category_switch_prev_key, "k", "preset '{name}' cat prev");
+    }
+}
+
+/// 구 config(카테고리 next/prev 필드 없음) 로드 시 default fn 으로 복원.
+#[test]
+fn missing_category_next_prev_falls_back_to_defaults() {
+    let toml_str = "tab_switch_modifier = \"ctrl\"\nworkspace_switch_modifier = \"alt\"\n";
+    let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+    assert_eq!(kb.category_switch_next_key, "j");
+    assert_eq!(kb.category_switch_prev_key, "k");
+}
+
+/// 카테고리 next/prev accessor round-trip.
+#[test]
+fn category_next_prev_accessors_roundtrip() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    assert_eq!(kb.category_next_key(), "j");
+    assert_eq!(kb.category_prev_key(), "k");
+    kb.set_category_next_key("u");
+    kb.set_category_prev_key("p");
+    assert_eq!(kb.category_next_key(), "u");
+    assert_eq!(kb.category_prev_key(), "p");
+}
+
+/// 카테고리 next/prev 직렬화 round-trip.
+#[test]
+fn category_next_prev_serde_roundtrip() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.set_category_next_key("u");
+    kb.set_category_prev_key("p");
+    let serialized = toml::to_string(&kb).unwrap();
+    let restored: KeybindingSettings = toml::from_str(&serialized).unwrap();
+    assert_eq!(restored.category_switch_next_key, "u");
+    assert_eq!(restored.category_switch_prev_key, "p");
+}
+
+/// 카테고리 next/prev 기본값(`j`/`k`)이 4 프리셋 전체에서 다른 일반 액션과 충돌하지
+/// 않는지 확인 — 분석검증 Q1 근거("j"/"k" 무충돌, "u"/"p" 는 실제로는 충돌 없음이지만
+/// 원 문서 제안값 "p" 는 toggle_command_palette 와 충돌해 기각됐음을 회귀로 고정).
+#[test]
+fn category_next_prev_defaults_do_not_conflict_with_presets() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        let next_combo = format!("{}+{}", kb.category_switch_modifier, kb.category_switch_next_key);
+        let prev_combo = format!("{}+{}", kb.category_switch_modifier, kb.category_switch_prev_key);
+        assert_eq!(
+            kb.find_conflict("", &next_combo),
+            None,
+            "preset '{name}': category next combo '{next_combo}' 충돌"
+        );
+        assert_eq!(
+            kb.find_conflict("", &prev_combo),
+            None,
+            "preset '{name}': category prev combo '{prev_combo}' 충돌"
+        );
+    }
 }
