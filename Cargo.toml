@@ -34,12 +34,29 @@ result_large_err = "allow"
 #   must_use 가 아니라 걸리지 않는다 — 정확히 Result/must_use 누락만 표면화한다.
 #   CI 에 `-D warnings` 가 없어 빌드를 막지 않는다. 신규 Result 삼킴이 clippy 에 뜨면 처리.
 let_underscore_must_use = "warn"
+# 색을 "디자인"하는 raw 생성자 호출 차단(color-policy 의 집행 수단). warn 이던 시절
+# 위반 6건이 조용히 유입됐던 전례 → deny 로 승격. 예외는 위치 단위
+# `#[allow(clippy::disallowed_methods)]` + 사유 주석 (clippy.toml 의 예외 컨벤션).
+disallowed_methods = "deny"
 
 # `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
 # unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스
 # 일관성을 위해 명시.
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+# 워크스페이스 warning 0 달성(2026-07-12) 시점에 아래를 deny 로 못박는다 —
+# "권고" 가 아니라 "금지". 각각 올바른 대체 형태가 존재한다:
+# - function_casts_as_integer: `f as usize` 금지 → `f as *const () as usize`
+# - unused_assignments: dead store 금지 → 값 합성(.max 등) 또는 제거
+# - unused_must_use: Result/must_use 무음 무시 금지 → 처리 또는 tracing 로그
+#   (error-handling.md 정책의 기계적 집행. 의도적 무시는 `let _ =` + 사유 주석
+#   경로만 남는데 그건 let_underscore_must_use(warn)가 표면화한다)
+# - dead_code: 죽은 코드 금지 → 삭제 또는 위치 단위 #[allow(dead_code)] + 사유
+#   (git-viewer 에서 cfg 게이트 잔재 47건이 warning 으로만 떠서 방치됐던 전례)
+function_casts_as_integer = "deny"
+unused_assignments = "deny"
+unused_must_use = "deny"
+dead_code = "deny"
 
 [package]
 name = "tasty"

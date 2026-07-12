@@ -3,6 +3,10 @@
 //! Launches a single shared tasty GUI instance for all tests.
 //! Each test creates its own workspace for isolation — no state reset needed.
 
+// 다중 test binary 가 공유하는 test-support 모듈 — binary 마다 사용하는 부분집합이
+// 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
+#![allow(dead_code)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;

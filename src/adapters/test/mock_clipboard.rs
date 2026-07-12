@@ -9,12 +9,6 @@ pub struct MockClipboard {
     text: Mutex<Option<String>>,
 }
 
-impl MockClipboard {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 impl ClipboardSystem for MockClipboard {
     fn read_text(&self) -> anyhow::Result<String> {
         let t = self.text.lock().expect("MockClipboard poisoned");

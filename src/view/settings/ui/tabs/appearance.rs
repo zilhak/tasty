@@ -2065,6 +2065,9 @@ mod swatch_tests {
     use tasty_themes::ThemeFile;
 
     #[test]
+    // 테스트 기대값 리터럴 구성 — 색을 "디자인"하는 게 아니라 파서 출력과 비교할
+    // 고정 팔레트 값을 만든다 (clippy.toml disallowed-methods 예외 컨벤션).
+    #[allow(clippy::disallowed_methods)]
     fn swatch_derives_from_theme_file_colors() {
         let text = r##"
             [palette]

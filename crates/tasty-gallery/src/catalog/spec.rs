@@ -235,8 +235,10 @@ pub fn dont(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color32) {
     ui.add_space(theme.spacing_sm.value());
-    // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서 alpha 도출.
-    let tint = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 31);
+    // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서
+    // gamma_multiply 로 도출 — git_viewer specimen 의 9~10% tint 와 동일 관행
+    // (raw from_rgba_* 는 disallowed-methods 로 금지).
+    let tint = accent.gamma_multiply(0.12);
     let resp = egui::Frame::new()
         .fill(tint)
         .corner_radius(theme.corner_radius_sm.value())

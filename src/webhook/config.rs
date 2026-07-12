@@ -124,8 +124,14 @@ mod tests {
     impl Drop for HomeGuard {
         fn drop(&mut self) {
             match &self.prev {
-                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
-                None => unsafe { std::env::remove_var("TASTY_HOME") },
+                Some(v) => {
+                    // SAFETY: new() 와 동일 — 테스트 프로세스 단독, serial 락으로 병렬 간섭 차단.
+                    unsafe { std::env::set_var("TASTY_HOME", v) }
+                }
+                None => {
+                    // SAFETY: 상동.
+                    unsafe { std::env::remove_var("TASTY_HOME") }
+                }
             }
         }
     }

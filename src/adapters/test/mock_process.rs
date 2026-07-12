@@ -18,12 +18,6 @@ pub struct MockProcessSpawner {
     pub spawns: Mutex<Vec<SpawnRecord>>,
 }
 
-impl MockProcessSpawner {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 impl ProcessSpawner for MockProcessSpawner {
     fn spawn(
         &self,
