@@ -38,7 +38,10 @@ impl ThemeId {
 }
 
 /// 빌트인 `LATTE_TOML_TEXT` 를 Mocha base 위에 partial 로 적용해 Theme 생성.
-fn latte_theme() -> Theme {
+///
+/// `pub(crate)` — Chrome 카테고리(`catalog::chrome_loading`)가 앰비언트 테마
+/// 토글과 무관하게 Latte 고정 variant specimen 을 그릴 때도 재사용한다.
+pub(crate) fn latte_theme() -> Theme {
     use tasty_type_appearance::theme::Theme as ThemeStruct;
     let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT)
         .expect("builtin latte.toml ships valid");

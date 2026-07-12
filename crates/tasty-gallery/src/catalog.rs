@@ -11,6 +11,7 @@
 //! specimen 의 `draw` 함수를 그대로 연결해 컴파일/실행을 유지하며, 페이지별
 //! specimen 콘텐츠의 디자인 정합 재작성은 Round 2 의 책임이다.
 
+pub mod chrome_loading;
 pub mod components;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
@@ -41,6 +42,8 @@ pub enum Category {
     Layouts,
     /// 플러그인 유래 컴포넌트 (네이티브와 분리된 플러그인 전용 섹션).
     Plugins,
+    /// 앱 크롬 전용 완결 화면 (부팅 로딩 등) — 위젯이 아니라 조립된 화면 단위 specimen.
+    Chrome,
 }
 
 impl Category {
@@ -53,6 +56,7 @@ impl Category {
             Category::Overlays => "Overlays",
             Category::Layouts => "Layouts",
             Category::Plugins => "Plugins",
+            Category::Chrome => "Chrome",
         }
     }
 
@@ -65,6 +69,7 @@ impl Category {
             Category::Overlays => "modals",
             Category::Layouts => "shells",
             Category::Plugins => "plugins",
+            Category::Chrome => "app chrome",
         }
     }
 
@@ -96,6 +101,11 @@ impl Category {
                  git viewers, plus the markdown / image / html content surfaces. Each ships with \
                  its plugin and is themed by the host."
             }
+            Category::Chrome => {
+                "Fully assembled app-chrome screens, not single widgets — the boot loading \
+                 screen and its window-size and theme variants. One-to-one with what the host \
+                 renders before the first real frame."
+            }
         }
     }
 
@@ -112,6 +122,7 @@ impl Category {
             Category::Overlays,
             Category::Layouts,
             Category::Plugins,
+            Category::Chrome,
         ]
     }
 }
@@ -1166,6 +1177,48 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
             ],
+        },
+        // ── Chrome ───────────────────────────────────────────────────
+        // 완결 앱 크롬 화면 specimen — 위젯이 아니라 조립된 화면 단위(디자인
+        // `gallery/shell.jsx` 의 신규 "Chrome" 그룹 1:1 전사).
+        Page {
+            category: Category::Chrome,
+            sections: vec![section(
+                "boot-loading",
+                "Boot loading screen",
+                vec![
+                    spec(
+                        "boot-loading-default",
+                        "Default — 1280×720",
+                        Some("Wordmark → spinner → phase text, centered stack"),
+                        chrome_loading::draw_default,
+                    ),
+                    spec(
+                        "boot-loading-min",
+                        "Minimum window — 640×480",
+                        Some("Same stack, size-invariant — no responsive scaling"),
+                        chrome_loading::draw_min,
+                    ),
+                    spec(
+                        "boot-loading-phases",
+                        "Phase text — three variants",
+                        Some("GpuInit / WaitingPlugins / RestoringLayout, side by side"),
+                        chrome_loading::draw_phases,
+                    ),
+                    spec(
+                        "boot-loading-no-text",
+                        "No phase text",
+                        Some("Slot stays reserved and empty — comparison variant"),
+                        chrome_loading::draw_no_text,
+                    ),
+                    spec(
+                        "boot-loading-latte",
+                        "Latte theme",
+                        Some("GPU clear color follows the resolved theme, not a hardcoded dark"),
+                        chrome_loading::draw_latte,
+                    ),
+                ],
+            )],
         },
     ]
 }
