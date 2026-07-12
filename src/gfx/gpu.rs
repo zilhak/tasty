@@ -556,8 +556,13 @@ impl GpuState {
         // egui-mesh popup 합성 (A2): host egui pass *후* — 셸(scrim/bg/border)을 egui 가
         // 그린 뒤 content_rect 에 plugin mesh 를 얹는다. `draw_plugin_popups` 가 egui frame
         // 중 채운 영역을 읽는다. mesh 는 content_rect 로 clip 되어 셸을 덮지 않는다.
+        // regions 가 비어도 잔존 target 이 있으면 호출한다 — 함수 안의 retain-prune 이
+        // 돌아야 마지막 popup 이 닫힌 프레임에 전용 Renderer/텍스처가 해제된다
+        // (surface 게이트의 `|| !egui_mesh_targets.is_empty()` 와 동형. 없으면 다음
+        // popup 이 열릴 때까지 target 1개가 GPU 자원을 쥔 채 상주 — 실측 확인).
         if let Some(mgr) = plugin_manager
-            && !state.plugin_mesh_popup_regions.is_empty()
+            && (!state.plugin_mesh_popup_regions.is_empty()
+                || !self.egui_mesh_popup_targets.is_empty())
         {
             let regions = state.plugin_mesh_popup_regions.clone();
             self.render_egui_mesh_popups(&view, &regions, mgr);
@@ -566,8 +571,10 @@ impl GpuState {
         // egui-mesh banner 합성 (A3): popup 과 동형 — host egui pass *후* content_rect 에
         // plugin mesh 를 얹는다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
         // manager)가 그렸고, content 만 여기서 합성된다. `draw_plugin_banners` 가 적재한 영역.
+        // popup 과 동일 — 잔존 target prune 을 위해 빈 regions 에서도 호출.
         if let Some(mgr) = plugin_manager
-            && !state.plugin_mesh_banner_regions.is_empty()
+            && (!state.plugin_mesh_banner_regions.is_empty()
+                || !self.egui_mesh_banner_targets.is_empty())
         {
             let regions = state.plugin_mesh_banner_regions.clone();
             self.render_egui_mesh_banners(&view, &regions, mgr);
