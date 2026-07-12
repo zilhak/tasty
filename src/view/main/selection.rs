@@ -316,7 +316,7 @@ impl MainView {
         let engine = &self.core_state;
         let surface_id = self.state.focused_surface_id(engine)?;
         // hard 점유(readonly)면 mirror, 아니면 live — 실제 렌더되는 것과 동일 대상을
-        // 참조해야 좌표 변환이 화면과 일치한다(ADR-0040).
+        // 참조해야 좌표 변환이 화면과 일치한다(ADR-0049).
         let terminal = engine.visible_terminal(surface_id)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = self.state.focused_surface_rect(engine, *terminal_rect)?;

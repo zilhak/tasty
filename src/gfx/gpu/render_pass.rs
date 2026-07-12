@@ -102,7 +102,7 @@ impl GpuState {
                 // readonly 뷰는 IME/vi-cursor/링크/검색처럼 *PTY 앱과의 상호작용*
                 // 오버레이는 그리지 않는다(보기 전용). selection 만은 예외 — PTY 로
                 // 아무것도 보내지 않는 tasty 로컬 UI 동작(드래그 선택→복사)이라
-                // hard 점유(readonly)에서도 계속 표시한다(ADR-0040).
+                // hard 점유(readonly)에서도 계속 표시한다(ADR-0049).
                 let sel_info = selection
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));

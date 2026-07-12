@@ -17,7 +17,7 @@
 attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/0040-occupancy-soft-hard-tiers-agent-occupant.md) 2계층 점유 중 강한 점유 계층의 사례다(약한 점유는 [child-terminal](../child-terminal/index.md)). 개념 정의는 [actors 점유 모델](../../concepts/actors.md#점유-occupation-모델), 여기선 동작:
 
 - **배타 lock**: 한 surface 는 한 client 만 점유한다(`OccupancyRegistry`). 점유는 `stream.open{target}` 핸드셰이크의 `attach.acquire` 로 잡고, 동시 attach 는 holder 정보를 담아 `already_attached` 로 거부.
-- **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다.
+- **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다. readonly 는 PTY/TUI 조작(키 입력·마우스 트래킹 보고·휠 스크롤·Ctrl+click 링크 열기)만 차단하는 것이고, **드래그로 텍스트를 선택해 클립보드로 복사하는 tasty 자체 기능은 예외적으로 계속 동작**한다 — PTY 에 아무것도 보내지 않는 순수 로컬 UI 동작이기 때문이다(좌표·복사 텍스트는 실제 렌더되는 mirror 기준). 근거: [ADR-0049](../../adr/0049-hard-occupancy-selection-exception.md).
 - **자동 해제**: client 연결 종료(EOF) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
 - **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한). 끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
 
