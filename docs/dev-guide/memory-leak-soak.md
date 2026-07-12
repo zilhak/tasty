@@ -82,6 +82,25 @@ warmup(기본 앞 10% 체크포인트)을 제외하고:
 
 주의: 기준선은 첫 post-warmup 체크포인트다. 짧은 런에서는 lazy 초기화(첫 markdown surface 의 텍스처 등)가 기준선 이후에 발생해 false FAIL 이 날 수 있다 — 본 실행은 충분히 길게, 판정 전 모든 surface kind 가 한 번씩 돌았는지 확인.
 
+추가 주의 (macOS 사이클 실측 교훈, 2026-07-12):
+
+- **s8 은 300s 로 측정 불능** — cycle=30s 라 기본 checkpoint(10 cycle)로는 마지막에 2초 간격
+  체크포인트 2개만 남는다. idle 드리프트는 `SOAK_CHECKPOINT_EVERY=1` + 600s 이상으로 잰다.
+- **proc_count 는 zombie 를 못 본다** — sysinfo 가 Z 상태 프로세스를 세지 않는다. L4 의 zombie
+  축적은 `ps -axo stat=,ppid=` 외부 감시로 별도 계수해야 한다 (macOS 사이클에서 이 맹점 뒤로
+  PTY 셸 zombie 누적이 숨어 있었다).
+- **RSS 단독 판정 금지 (macOS)** — 메모리 압축기가 idle 페이지를 RSS 에서 숨긴다. phys
+  footprint(`vmmap --summary`) 를 병행 측정해 이중 확인한다. 반대로 활동 직후 RSS 상승이
+  footprint 평평과 동반되면 pool/캐시 워밍업이지 누수가 아니다.
+- **`leaks` 는 diff 로만** — 절대값은 AppKit/XPC 부팅 노이즈를 포함한다 (Apple 자체 바이너리도
+  ROOT LEAK 를 보고). warmup 직후와 종료 직전 2점을 떠 성장분만 판정한다.
+- **알려진 상류 잔류 — egui `WidgetRects` layer 누적**: surface churn 시나리오(s1·s2·s6)의
+  root RSS FLAG 에는 egui(0.31, master 도 동일)의 구조적 성장분이 포함된다.
+  `WidgetRects::clear()` 가 `by_layer` 의 Vec 내용만 비우고 map 항목(capacity 포함)을 제거하지
+  않아, surface 마다 고유 `Area` id 를 쓰는 tasty 에서 닫힌 surface 의 layer 항목(~10KB)이
+  영구 잔존한다. 닫기 1회당 ~10–12KB — 공개 API 로 purge 불가(상류 몫). soak 판정 시 이
+  성분(닫기 횟수 × ~10KB)을 알려진 잔류로 차감하고 그 이상의 성장만 신규 의심으로 본다.
+
 ## 3단계 — 원인규명 (플랫폼별 런북)
 
 FLAG/FAIL 이 재현되면(같은 시나리오 2회) 해당 시나리오만 도구 아래서 재실행한다. `children_rss_by_name` 이 plugin 프로세스를 지목하면 그 plugin 바이너리에 도구를 붙인다.
