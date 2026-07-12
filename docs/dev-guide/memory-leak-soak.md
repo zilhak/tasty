@@ -119,6 +119,21 @@ umdh snap1.log snap2.log > diff.txt   # 증가 스택 상위부터 정렬됨
 gflags /i tasty.exe -ust          # 끝나면 끄기
 ```
 
+### 전 OS — dhat-heap (opt-in feature)
+
+UMDH 미설치/무권한 환경에서 쓰는 크로스플랫폼 heap attribution. 전 할당을 계측해 **정상 종료 시** cwd 에 `dhat-heap.json` 을 남긴다.
+
+```bash
+cargo build --features dhat-heap
+# 계측 인스턴스로 시나리오 재현 → system.shutdown(debug) 등으로 정상 종료
+# dhat-heap.json 의 pps[] 를 분석 (뷰어: https://nnethercote.github.io/dh_view/dh_view.html)
+```
+
+해석 주의 2가지 (s6 조사 실측 교훈):
+
+1. **shutdown 캐스케이드가 해제하는 L2 누수는 exit-time 잔류(`eb`)에 안 남는다** — heap 최대점 스냅샷(`gb`, t-gmax)으로 봐야 한다. 성장분이 부팅 피크를 넘도록 사이클을 충분히 돌려야 gmax 가 churn 말미에 찍힌다.
+2. **비-Rust-heap 성장은 dhat 에 안 보인다** — mmap(플랫폼 shm, plugin shared buffer), GPU 드라이버 풀, GDI 등. "RSS 는 느는데 dhat gmax 총량이 평평"이면 이 유형 (s6 의 markdown 누수가 정확히 이랬다 — shared buffer 매핑 누적).
+
 ### L1 확정 도장 — ASAN+LSAN (Linux, nightly)
 
 ```bash
