@@ -11,12 +11,6 @@ use crate::theme::Theme;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{hspace, vspace};
 
-/// 사이드바 헤더 (full / collapsed) 에 표시되는 수박 로고 PNG.
-/// PNG 디코딩에는 egui_extras 의 `image` feature 가 필요하다 (Cargo.toml 에서 활성,
-/// `egui_extras::install_image_loaders` (gpu.rs) 가 ImageCrateLoader 를 설치).
-const LOGO_PNG: &[u8] = include_bytes!("../../../../assets/icons/icon_256.png");
-const LOGO_URI: &str = "bytes://tasty_sidebar_logo_256.png";
-
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
 #[derive(Debug, Clone)]
@@ -630,7 +624,7 @@ pub fn draw_collapsed_sidebar_view(
                 let logo_size = th.sidebar_logo_collapsed_size.value();
                 let logo_vec = egui::vec2(logo_size, logo_size);
                 let (logo_rect, _) = ui.allocate_exact_size(logo_vec, egui::Sense::hover());
-                egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
+                egui::Image::from_bytes(brand::LOGO_URI, brand::LOGO_PNG)
                     .fit_to_exact_size(logo_vec)
                     .paint_at(ui, logo_rect);
                 vspace(ui, th.spacing_xs);
@@ -840,38 +834,9 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
     ui.horizontal(|ui| {
         // 디자인 chrome.jsx Sidebar 헤더 padding-left 12 (패널 좌우 margin 0).
         hspace(ui, th.spacing_md);
-        // 로고 (수박 PNG) — 워드마크 좌측, gap 8.
-        let logo_size = th.sidebar_logo_size.value();
-        let logo_vec = egui::vec2(logo_size, logo_size);
-        let (logo_rect, _) = ui.allocate_exact_size(logo_vec, egui::Sense::hover());
-        egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-            .fit_to_exact_size(logo_vec)
-            .paint_at(ui, logo_rect);
-        hspace(ui, th.spacing_sm);
-        let mut job = egui::text::LayoutJob::default();
-        let font = egui::FontId::monospace(th.sidebar_wordmark_font_size.value());
-        // 워드마크 트래킹 -0.5px (디자인 정책: mono 17 bold).
-        job.append(
-            "tasty",
-            0.0,
-            egui::TextFormat {
-                font_id: font.clone(),
-                extra_letter_spacing: -0.5,
-                color: th.text_primary().into(),
-                ..Default::default()
-            },
-        );
-        job.append(
-            ".",
-            0.0,
-            egui::TextFormat {
-                font_id: font,
-                extra_letter_spacing: -0.5,
-                color: brand::MELON_FLESH.into(),
-                ..Default::default()
-            },
-        );
-        ui.label(job);
+        // 로고(수박 PNG) + 워드마크 `tasty.` 락업 — 부팅 로딩 화면과 공유하는
+        // 단일 소스 (`brand::draw_wordmark`).
+        brand::draw_wordmark(ui, th, th.sidebar_logo_size, th.sidebar_wordmark_font_size);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // 디자인 chrome.jsx Sidebar 헤더 padding-right 12 (패널 좌우 margin 0).
