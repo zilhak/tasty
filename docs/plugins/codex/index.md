@@ -16,9 +16,11 @@
 
 ## 내부 동작
 
-- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 패인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `broadcast` · `wait` · `kill`/`respawn` · `hook`(stop/notification/prompt-submit/session-start). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치 — wait 동작에 필요).
+- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 패인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `broadcast` · `wait` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/notification/prompt-submit/session-start). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치 — wait 동작에 필요).
 - **ipc_namespace `codex`** — 위 동작의 IPC 표면.
 - **event_subscribe** `surface.closed` — 인스턴스 상태 정리.
+- **hook 명령은 OS 별 셸 구문으로 설치된다** — Codex 는 hook 명령을 Windows 에선 PowerShell, 그 외에선 POSIX sh 로 실행하므로, `install` 이 Windows 에는 `if ($env:TASTY_SURFACE_ID) { $input | tasty codex hook … }` 형태(PS), 그 외에는 `[ -n "$TASTY_SURFACE_ID" ] && … || true` 형태(POSIX)를 발행한다. hook 은 Codex 가 stdin 으로 주는 JSON payload 의 `session_id` 를 읽어 surface meta(`codex-session-id`, `restore.command`)에 기록한다 — `reboot` 와 세션 복원이 이 meta 를 소비한다.
+- **`reboot`** (`tasty codex reboot [--surface <id>] [--delay <초>] [--prompt <추가문구>]`) — surface 안의 Codex 를 종료하고 **같은 세션으로 재시작**한다([claude reboot](../claude/index.md) 와 동형). 동작: 즉시 응답 → delay(기본 5s) 후 Ctrl+C ×4 → 전경 이탈 확인 후 `codex resume -c check_for_update_on_startup=false <session_id>` 전송(업데이트 프롬프트가 기동을 가로채는 것을 방지) → 복귀 확인 후 재시작 안내 프롬프트를 화면 검증·재시도 + 별도 Enter 로 제출. 안전 가드는 claude 와 동일(전경 불일치 시 미전송·중단, 중복 reboot 거부). **턴의 마지막 행동으로 호출할 것.** Codex 에는 SessionEnd hook 이 없어 세션 meta 는 종료 시 지워지지 않고 다음 session-start 가 덮어쓴다.
 
 ## 인터페이스
 

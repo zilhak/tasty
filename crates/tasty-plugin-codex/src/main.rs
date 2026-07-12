@@ -14,6 +14,10 @@
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
 mod handlers;
+mod reboot;
+
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
@@ -22,7 +26,10 @@ const PLUGIN_ID: &str = "com.tasty.codex";
 const PLUGIN_VERSION: &str = "0.1.0";
 
 #[derive(Default)]
-struct CodexPlugin;
+struct CodexPlugin {
+    /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
+    rebooting: Arc<Mutex<HashSet<u32>>>,
+}
 
 impl Plugin for CodexPlugin {
     fn id(&self) -> &str {
@@ -61,6 +68,7 @@ impl Plugin for CodexPlugin {
             "codex.install" => handlers::handle_install(),
             "codex.uninstall" => handlers::handle_uninstall(),
             "codex.hook" => handlers::handle_hook(&host, params),
+            "codex.reboot" => reboot::handle_reboot(&self.rebooting, &host, &params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -72,5 +80,5 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(CodexPlugin)
+    tasty_plugin_sdk::run(CodexPlugin::default())
 }
