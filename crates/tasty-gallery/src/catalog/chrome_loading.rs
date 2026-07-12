@@ -19,7 +19,7 @@ use crate::catalog::spec::{meta, note};
 #[allow(clippy::disallowed_methods)]
 const MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
 
-const LOGO_PNG: &[u8] = include_bytes!("../../../../../../assets/icons/icon_256.png");
+const LOGO_PNG: &[u8] = include_bytes!("../../../../assets/icons/icon_256.png");
 const LOGO_URI: &str = "bytes://tasty_gallery_boot_logo_256.png";
 
 /// 워드마크 마크 크기 — 브랜드 락업 확정값(14px 상한의 sanctioned 예외).
