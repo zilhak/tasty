@@ -63,6 +63,16 @@ jobs:
         shell: pwsh
         run: cargo clippy --workspace --all-targets --locked
 
+      # Windows 단위테스트 — `#[cfg(windows)]` 분기와 플랫폼 의존 로직(경로 절대성,
+      # ConPTY 등)의 born-broken 테스트를 잡는 유일한 채널 (test.yml 은 Linux 전용이라
+      # terminal_link mirror 경로 테스트가 도입 시점부터 Windows 에서 깨진 채 미검출됐던
+      # 전례). `--lib --bins` 만 — e2e/integration 은 GUI spawn·plugin 빌드 오케스트레이션이
+      # 필요해 러너 가드로 부적합. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
+      # 추가 비용은 실행 시간뿐이다.
+      - name: cargo test (unit)
+        shell: pwsh
+        run: cargo test --workspace --lib --bins --locked
+
   # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
   # gui-gating 누락(headless-build-01 회귀)을 매 PR 자동 검출한다. gui 네이티브 의존이
   # 빠져 순수 컴파일만 필요하므로 Linux x64 러너에서 가볍게 돈다.
