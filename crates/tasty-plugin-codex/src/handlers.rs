@@ -277,6 +277,26 @@ pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
     let surface_id = require_u32(&params, "surface")
         .map_err(|_| IpcMethodError::invalid_params("hook requires --surface to identify child"))?;
     let new_state = hook_event_to_state(event)?;
+    // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
+    // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
+    // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
+    // source=resume 인 session-start 를 같은 session_id 로 다시 fire 한다(실측).
+    if event == "session-start"
+        && let Some(session) = params.get("session").and_then(|v| v.as_str())
+        && !session.is_empty()
+    {
+        for (key, value) in [
+            ("codex-session-id", session.to_string()),
+            ("restore.command", format!("codex resume {session}")),
+        ] {
+            if let Err(e) = host.call(
+                "surface.meta.set",
+                json!({ "surface_id": surface_id, "key": key, "value": value }),
+            ) {
+                tracing::warn!("codex hook meta.set '{key}' failed: {e}");
+            }
+        }
+    }
     host_call(
         host,
         "terminal.set_state",
@@ -402,12 +422,27 @@ fn write_toml(path: &Path, value: &toml::Value) -> Result<(), IpcMethodError> {
 }
 
 fn hook_command(event_kebab: &str) -> String {
-    // `[ -n "$VAR" ]` guard로 TASTY_SURFACE_ID 가 비어있을 때 skip. claude plugin과
-    // 동일한 패턴. 가드 없으면 codex 가 `${TASTY_SURFACE_ID}` 를 빈 문자열로 치환해
-    // `tasty codex hook X --surface ` 가 실행되어 invalid_params 노이즈 발생.
-    format!(
-        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true"
-    )
+    // TASTY_SURFACE_ID 가 비어있을 때 skip 하는 guard 포함. 가드 없으면 codex 가
+    // 변수를 빈 문자열로 치환해 `tasty codex hook X --surface ` 가 실행되어
+    // invalid_params 노이즈 발생.
+    //
+    // Windows: codex 는 hook 명령을 PowerShell 로 실행한다(실측 2026-07-12 —
+    // 단일따옴표/`#` 주석이 PS 규칙으로 해석되고 순수 PS 구문 명령이 성공).
+    // POSIX `[ -n ... ]` 가드는 PS 파서에서 항상 실패해 hook 이 한 번도 성공하지
+    // 못하므로 PS 구문으로 발행한다. stdin 의 payload JSON 은 `$input` 으로 tasty
+    // CLI 에 그대로 전달한다(session_id 추출용).
+    #[cfg(windows)]
+    {
+        format!(
+            "if ($env:TASTY_SURFACE_ID) {{ $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID }}"
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        format!(
+            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true"
+        )
+    }
 }
 
 fn new_matcher_group(event_kebab: &str) -> toml::Value {

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.9"
+version = "0.1.10"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -38,7 +38,7 @@ subcommands = [
     { name = "respawn",   ipc_method = "codex.respawn",   args = "respawn_args",   description = "Respawn a child Codex instance" },
     { name = "install",   ipc_method = "codex.install",   args = "no_args",        description = "Install Tasty hook into Codex CLI configuration" },
     { name = "uninstall", ipc_method = "codex.uninstall", args = "no_args",        description = "Uninstall Tasty hook from Codex CLI configuration" },
-    { name = "hook",      ipc_method = "codex.hook",      args = "hook_args",      description = "Codex hook integration (called by Codex CLI's hook system)" },
+    { name = "hook",      ipc_method = "codex.hook",      args = "hook_args",      stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system." },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -118,7 +118,8 @@ positional = [
     { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, notification, prompt-submit, session-start)" },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID the hook is firing for" },
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for" },
+    { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook." },
 ]
 
 [contributes.cli.arg_groups.no_args]
