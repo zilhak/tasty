@@ -112,3 +112,4 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 - [build.md](build.md) — release(`strip = true`) / dev / dist 프로필
 - [error-handling.md](error-handling.md) — `Result` 처리·로그 레벨 정책 (애초에 crash 를 줄이는 쪽)
 - [self-verification.md](self-verification.md) · [e2e-tests.md](e2e-tests.md) — 재현·검증
+- [memory-leak-soak.md](memory-leak-soak.md) — 죽음/멈춤이 아니라 **메모리가 새는** 증상일 때 (soak 테스트 + 계층별 판정)
