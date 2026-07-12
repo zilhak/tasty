@@ -830,9 +830,12 @@ mod tests {
     use super::*;
 
     // env 는 process-global 이라 cargo test 의 병렬 실행에서 race 가 난다.
-    // 한 #[test] 안에 모든 env 시나리오를 순차 수행해 격리한다 (TODO §2 권고 A).
+    // TASTY_SURFACE_ID 를 조작하는 모든 시나리오를 이 한 #[test] 안에 순차
+    // 수행해 격리한다 (TODO §2 권고 A). 별도 #[test] 로 분리하면 set/remove 가
+    // 병렬 인터리빙되어 flaky 해진다 — 실측 사례: terminal.children 의
+    // remove_var 가 notify 의 set_var("42") 직후에 끼어들어 None != Some(42).
     #[test]
-    fn notify_request_attaches_surface_id_from_env() {
+    fn surface_id_env_scenarios() {
         let cmd = Commands::Notify {
             body: "msg".to_string(),
             title: "T".to_string(),
@@ -853,12 +856,19 @@ mod tests {
         );
 
         // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
-        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
+        // SAFETY: 이 통합 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
         unsafe {
             std::env::remove_var("TASTY_SURFACE_ID");
         }
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
+
+        // case 2b: terminal.children — --surface 없고 env 없으면 host
+        // single_parent 폴백 위해 키 자체를 생략.
+        let children = cmd_from(&["tasty", "terminal", "children"]);
+        let req = command_to_request(&children);
+        assert_eq!(req.method, "terminal.children");
+        assert!(req.params.get("surface").is_none());
 
         // case 3: env 가 invalid → surface_id null (resolve_surface_id 안전 폴백)
         // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
@@ -945,19 +955,6 @@ mod tests {
         assert_eq!(req.params["workspace"].as_str(), Some("dev"));
         assert_eq!(req.params["command"].as_str(), Some("bash"));
         assert_eq!(req.params["role"].as_str(), Some("worker"));
-    }
-
-    #[test]
-    fn terminal_children_omits_surface_when_absent() {
-        // --surface 없고 env 없으면 host single_parent 폴백 위해 키 자체를 생략.
-        // SAFETY: 단일 테스트 안에서만 조작.
-        unsafe {
-            std::env::remove_var("TASTY_SURFACE_ID");
-        }
-        let cmd = cmd_from(&["tasty", "terminal", "children"]);
-        let req = command_to_request(&cmd);
-        assert_eq!(req.method, "terminal.children");
-        assert!(req.params.get("surface").is_none());
     }
 
     #[test]
