@@ -249,7 +249,9 @@ mod tests {
     fn plugin_identity() {
         let p = MeshDemoPlugin::default();
         assert_eq!(p.id(), "com.tasty.mesh-demo");
-        assert_eq!(p.version(), "0.1.2");
+        // Cargo.toml 이 SoT — 하드코딩 기대값은 버전 bump 마다 드리프트한다
+        // (0.1.2 vs 0.1.6 실재, Windows 단위테스트 CI 부재로 잠복했던 것).
+        assert_eq!(p.version(), env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
