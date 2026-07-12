@@ -314,8 +314,10 @@ impl MainView {
         terminal_rect: &PhysicalRect,
     ) -> Option<(SelectionPoint, u32)> {
         let engine = &self.core_state;
-        let terminal = self.state.focused_terminal(engine)?;
         let surface_id = self.state.focused_surface_id(engine)?;
+        // hard 점유(readonly)면 mirror, 아니면 live — 실제 렌더되는 것과 동일 대상을
+        // 참조해야 좌표 변환이 화면과 일치한다(ADR-0040).
+        let terminal = engine.visible_terminal(surface_id)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = self.state.focused_surface_rect(engine, *terminal_rect)?;
         let (cols, rows) = terminal.dimensions();
@@ -340,7 +342,7 @@ impl MainView {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = engine.find_terminal_by_id(sel.surface_id) {
+        let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;
@@ -369,7 +371,7 @@ impl MainView {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = engine.find_terminal_by_id(sel.surface_id) {
+        let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;

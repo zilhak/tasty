@@ -355,11 +355,7 @@ impl GpuState {
             let reverse_screen = engine.settings.general.reverse_screen_enabled;
             // A hard-occupied surface shows a readonly mirror server-side; capture
             // what the user would see (mirror), else the live terminal.
-            let terminal = if engine.attach.is_hard_occupied(surface_id) {
-                engine.readonly_view(surface_id)
-            } else {
-                engine.terminals.get(surface_id)
-            };
+            let terminal = engine.visible_terminal(surface_id);
             match terminal {
                 Some(t) => self.capture_surface_to_png(t, reverse_screen, &path),
                 None => tracing::warn!(

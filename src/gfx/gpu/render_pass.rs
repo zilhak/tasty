@@ -79,17 +79,9 @@ impl GpuState {
                 // 오버레이가 그린다. client mirror 는 자기 engine 에 lock 이 없어
                 // (is_hard_occupied=false) live terminal 을 정상 렌더한다(G).
                 let is_readonly = engine.attach.is_hard_occupied(region.id);
-                let terminal = if is_readonly {
-                    match engine.readonly_view(region.id) {
-                        Some(t) => t,
-                        // 첫 AttachPoll tick 전 — 다음 tick 에 mirror 가 채워진다.
-                        None => continue,
-                    }
-                } else {
-                    match engine.terminals.get(region.id) {
-                        Some(t) => t,
-                        None => continue,
-                    }
+                // 첫 AttachPoll tick 전이면 mirror 가 아직 없다 — 다음 tick 에 채워진다.
+                let Some(terminal) = engine.visible_terminal(region.id) else {
+                    continue;
                 };
                 let surface_id = &region.id;
                 let rect = &region.rect;
@@ -107,9 +99,11 @@ impl GpuState {
                     term_surface.unfocused_fg.to_gpu_rgba()
                 };
 
-                // readonly 뷰는 사용자 상호작용 오버레이를 그리지 않는다(보기 전용).
+                // readonly 뷰는 IME/vi-cursor/링크/검색처럼 *PTY 앱과의 상호작용*
+                // 오버레이는 그리지 않는다(보기 전용). selection 만은 예외 — PTY 로
+                // 아무것도 보내지 않는 tasty 로컬 UI 동작(드래그 선택→복사)이라
+                // hard 점유(readonly)에서도 계속 표시한다(ADR-0040).
                 let sel_info = selection
-                    .filter(|_| !is_readonly)
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
                 let sel_ref = sel_info.as_ref();

@@ -731,7 +731,7 @@ impl MainView {
         let cell_h = self.base.gpu.cell_height();
         let Some((scroll_offset, sb_len, (cols, rows))) = self
             .core_state
-            .find_terminal_by_id(surface_id)
+            .visible_terminal(surface_id)
             .map(|t| (t.scroll_offset(), t.scrollback_len(), t.dimensions()))
         else {
             return (1, 1);
