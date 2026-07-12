@@ -453,7 +453,7 @@ module const(token-policy §c).
 | list wrapper (`padding: space-md space-lg`, gap space-sm) | list 클로저 `Frame::inner_margin(symmetric(lg, md))` | 인트로 `<p>`(12/muted/measure-md) = `intro_note` |
 | `<ListCtrl items selectedId={activeId}>` | `ListCtrl::show(..., active_idx)` | Active(사용 중) = draft 와 전 일반 바인딩 일치 프리셋. trailing `Tag`(success·dot) "Active" |
 | back bar `actions` = Apply(primary sm, disabled=Applied) | `DrillDownActions` 클로저 + `Button` | 클릭 신호는 `Cell` 로 회수 (`&dyn Fn` 불변 계약) |
-| `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 바인딩 2열=mono term-sm(12), 변경=`text-primary`(fontWeight600 은 색 강조 관례) |
+| `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 바인딩 2열=mono term-sm(12), 변경=`accent-primary`(색상만, bold 없음) |
 | `fullBleed` (Keybindings›Preset 만 표준 래퍼 우회) | `ui.rs` content 디스패치 `full_bleed` 분기 | DrillDown 이 자체 패딩+내부 스크롤 소유 |
 
 **헤더 close ✕ 제거 (Request 1)**: `draw_l1_tab_band` 의 `marginLeft:auto` ghost close ✕ 삭제

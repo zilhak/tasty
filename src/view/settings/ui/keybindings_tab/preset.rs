@@ -9,8 +9,8 @@
 //!   selected 하이라이트(2px accent 바)도 사용 중 프리셋에 붙는다
 //!   (jsx `selectedId={activeId}`). 행 클릭 → 디테일 진입.
 //! - **Detail view** — back bar(← + "{이름} preset" 제목 + **우측 Apply**) 아래
-//!   Action/Current/{프리셋} 3열 diff 테이블. 변경 행은 text-primary 강조
-//!   (디자인 fontWeight 600 은 egui weight 한계로 색 강조 관례 — `button.rs` 참조).
+//!   Action/Current/{프리셋} 3열 diff 테이블. 변경 행은 accent-primary 강조(색상만,
+//!   bold 없음 — changelog `2026-07-12-keybindings-preset-diff-accent` 근거).
 //! - **Apply 배치** — back bar 우측 슬롯. footer 의 Cancel/Save 와 물리적으로
 //!   분리: Apply = 선택 프리셋을 settings **draft** 에 기록(사용 중 프리셋이면
 //!   "Applied" 비활성 — 적용할 diff 없음), footer Save = draft 전체를 디스크에
@@ -272,7 +272,7 @@ fn draw_preset_diff_table(
             let action = t(label_key).trim_end_matches(':').trim().to_string();
 
             let next_fg = if changed {
-                th.text_primary().to_egui()
+                th.accent_primary().to_egui()
             } else {
                 th.text_muted().to_egui()
             };
