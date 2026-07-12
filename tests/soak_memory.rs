@@ -47,14 +47,28 @@ fn now_epoch() -> f64 {
 /// tasty 루트 + 모든 자손 프로세스의 RSS 합산과 이름별 자손 카운트.
 /// 셸/conhost/plugin 프로세스 누수(L4)와 트리 전체 메모리(L2)를 함께 본다.
 fn sample_process_tree(root_pid: u32) -> Value {
-    use sysinfo::{ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    // tasks 를 끈 refresh kind 가 필수 — 기본 refresh_processes 는 Linux 에서
+    // task(스레드)까지 Process 로 나열하는데, 스레드는 소속 프로세스의 RSS 를
+    // 그대로 보고하므로 트리 합산이 스레드 수만큼 뻥튀기된다 (실측: root
+    // 373MB × 스레드 57개 ≈ 21GB, false-FLAG 유발). Windows/macOS 는 task
+    // 나열이 없어 동작 불변.
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_memory(),
+    );
     let procs = sys.processes();
 
     // parent → children 인덱스를 만들어 루트에서 BFS.
     let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for (pid, p) in procs {
+        // 방어선: refresh kind 가 tasks 를 안 켜도, 혹시 나열된 스레드 항목은
+        // 제외한다 (thread_kind 는 Linux task 에서만 Some).
+        if p.thread_kind().is_some() {
+            continue;
+        }
         if let Some(parent) = p.parent() {
             children
                 .entry(parent.as_u32())
