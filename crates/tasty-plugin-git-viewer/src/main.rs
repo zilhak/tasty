@@ -17,9 +17,7 @@ mod render;
 
 use std::path::PathBuf;
 
-#[cfg(unix)]
 use std::collections::{HashMap, HashSet};
-#[cfg(unix)]
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -30,11 +28,11 @@ use tasty_plugin_sdk::{
 };
 use tasty_type_appearance::theme::Theme;
 
-#[cfg(unix)]
 use tasty_plugin_sdk::EguiMeshPopup;
 
 const PLUGIN_ID: &str = "com.tasty.git-viewer";
-const PLUGIN_VERSION: &str = "0.1.8";
+// Cargo.toml 이 SoT — 하드코딩 드리프트(0.1.8 vs 0.1.10 실재했음)를 컴파일 타임에 차단.
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: usize = 200;
 
 #[derive(Default)]
@@ -209,10 +207,8 @@ struct GitViewerPlugin {
     /// primary 인스턴스의 상태.
     state: Option<ViewerState>,
     /// popup instance_id → egui-mesh 렌더 상태(폰트 atlas·shared buffer 소유).
-    #[cfg(unix)]
     popups: HashMap<u64, EguiMeshPopup>,
     /// CJK fallback 폰트를 이미 설치한 popup instance_id.
-    #[cfg(unix)]
     fonts_installed: HashSet<u64>,
     tr: Translator,
 }
@@ -222,9 +218,7 @@ impl GitViewerPlugin {
         Self {
             primary: None,
             state: None,
-            #[cfg(unix)]
             popups: HashMap::new(),
-            #[cfg(unix)]
             fonts_installed: HashSet::new(),
             tr: Translator::from_plugin_env(env),
         }
@@ -272,17 +266,13 @@ impl Plugin for GitViewerPlugin {
             self.primary = None;
             self.state = None;
         }
-        #[cfg(unix)]
-        {
-            self.popups.remove(&ctx.instance_id);
-            self.fonts_installed.remove(&ctx.instance_id);
-        }
+        self.popups.remove(&ctx.instance_id);
+        self.fonts_installed.remove(&ctx.instance_id);
     }
 }
 
 impl GitViewerPlugin {
     /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다.
-    #[cfg(unix)]
     fn paint_popup_impl(&mut self, ctx: PopupSetContextCtx) {
         let iid = ctx.params.instance_id;
 
@@ -320,10 +310,6 @@ impl GitViewerPlugin {
         }
     }
 
-    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
-    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
-    #[cfg(not(unix))]
-    fn paint_popup_impl(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
 /// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
@@ -332,7 +318,6 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
 }
 
 /// plugin Context 에 CJK fallback 을 설치한다(한글/일문/한자 커밋 메시지·경로 tofu 방지).
-#[cfg(unix)]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bytes) = load_system_cjk_font_data() {
@@ -352,8 +337,14 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 /// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
-#[cfg(unix)]
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        // host font_registry::load_system_cjk_font_data 미러 (맑은 고딕).
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         for path in &[
