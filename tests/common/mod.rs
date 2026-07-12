@@ -104,6 +104,11 @@ impl TastyInstance {
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("HOME", &isolated_home)
+            // HOME 만으로는 Windows 에서 격리되지 않는다 — tasty 루트 해석
+            // (tasty-utils path.rs)은 directories::BaseDirs(=USERPROFILE) 기반이라
+            // 실사용자의 ~/.tasty-debug 를 읽어 세션 복원·설정이 새어든다.
+            // TASTY_HOME 이 루트 override 의 SoT 이므로 명시 지정 (전 OS 일관).
+            .env("TASTY_HOME", isolated_home.join(".tasty"))
             .env("ZDOTDIR", &isolated_home)
             .env_remove("OH_MY_ZSH")
             .env_remove("ZSH")
@@ -242,6 +247,7 @@ impl TastyInstance {
     }
 
     /// Send a JSON-RPC request and return the full response (including errors).
+    #[allow(dead_code)] // 일부 test binary 만 사용
     pub fn call_raw(&self, method: &str, params: Value) -> Value {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
             .expect("failed to connect to tasty IPC");
