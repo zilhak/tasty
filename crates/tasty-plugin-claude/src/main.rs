@@ -33,7 +33,7 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// PTY 에러 폴링 간격. 호스트 메모리 스캔(O(1))과의 정확도 차이를 좁히기 위해
 /// 짧게. 자식 N명에 대해 N IPC/주기지만 N이 10 이하인 일상 시나리오에서는 무시

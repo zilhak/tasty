@@ -36,7 +36,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_plugin_sdk::EguiMeshSurface;
 
 const PLUGIN_ID: &str = "com.tasty.image";
-const PLUGIN_VERSION: &str = "0.1.1";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct ImagePlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).

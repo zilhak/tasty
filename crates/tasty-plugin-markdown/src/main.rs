@@ -46,7 +46,7 @@ use tasty_ui_widgets::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// How often to check the file's mtime (in seconds).
 const RELOAD_CHECK_INTERVAL_SECS: f64 = 1.0;

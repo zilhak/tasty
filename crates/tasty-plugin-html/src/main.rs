@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.html";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct HtmlPlugin;
 

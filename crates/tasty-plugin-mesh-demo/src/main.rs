@@ -23,7 +23,7 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.mesh-demo";
-const PLUGIN_VERSION: &str = "0.1.2";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Default)]
 struct MeshDemoPlugin {

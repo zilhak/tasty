@@ -39,7 +39,7 @@ use tasty_plugin_sdk::EguiMeshPopup;
 use tasty_type_appearance::theme::Theme;
 
 const PLUGIN_ID: &str = "com.tasty.clipboard-viewer";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// open_popup 시점에 읽어둔 클립보드 스냅샷 + 좌측 선택 상태(paint 클로저에서 갱신).
 pub(crate) struct ViewerState {
