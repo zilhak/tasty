@@ -24,9 +24,16 @@ resumed() (src/app/event_handler.rs)
   RedrawRequested → drive_boot_frame()   (같은 스텝 함수 — 중복 호출 무해)
 
   phase 스텝 (BootPhase):
-  GpuInit          엔진(CoreState, layout.json 로드) + plugin manager 초기화 —
-                   동기 원자 스텝(이 동안 프레임 정지는 수용).
-                   pending layout restore 있으면 → WaitingPlugins, 없으면 → Ready
+  GpuInit          엔진(CoreState)+plugin manager 원자 초기화(T2.6·T3) 워커
+                   스레드 spawn (`build_engine_and_plugins`, App-free 함수) →
+                   WaitingEngine 으로 전이. cols/rows 는 GPU cell metrics
+                   의존이라 spawn 전 메인에서 계산해 워커에 값으로 전달.
+  WaitingEngine    워커 결과 채널을 매 스텝 try_recv 폴링 — 원자 구간(T2.6+T3
+                   ≈470ms)에도 메인은 로딩 프레임만 그리므로 스피너가 멈추지
+                   않는다. 도착 시 `(CoreState, PluginManager)` 를 장착하고
+                   pending layout restore 있으면 → WaitingPlugins, 없으면 →
+                   Ready. 채널 disconnect(워커 panic 등)는 메인 동기
+                   `ensure_engine_and_plugins` 재시도로 fallback.
   WaitingPlugins   pump → finalize_plugin_hello → 필요 surface kind 등록 확인.
   (deadline 300ms) 미충족이면 다음 프레임 재시도. 충족/초과 시
                    ApplyPendingLayoutRestore 1회 apply 후 → RestoringLayout
@@ -43,10 +50,14 @@ finish_boot (Ready):
   hidden 생성 → 첫 present 후 표시), ② shell setup 완료(`Confirmed` — 창이 이미
   보이므로 표시 전환만 스킵, phase 구동 동일).
 - 다중 창(`create_new_window`)·parked 복원은 상태 머신을 타지 않고 동기 경로
-  (`create_app_state`)를 유지한다. 두 경로는 같은 스텝 함수
-  (`ensure_engine_and_plugins` / `boot_pump_step_*` /
-  `boot_apply_pending_layout_restore` / `assemble_app_state`,
-  `src/app/window_lifecycle.rs`)를 공유하므로 대기 의미론이 이중화되지 않는다.
+  (`create_app_state` → `ensure_engine_and_plugins`)를 유지한다. 동기 경로와
+  워커(`WaitingEngine`)는 원자 초기화 본문으로 같은 App-free 함수
+  `build_engine_and_plugins`(첫 부팅 전용 하위 함수, `src/app/window_lifecycle.rs`)
+  를 공유하고, `boot_pump_step_*` / `boot_apply_pending_layout_restore` /
+  `assemble_app_state` 도 두 경로가 공통으로 쓰므로 대기 의미론이 이중화되지
+  않는다. 두 번째 main window 의 글로벌 Arc 공유 분기(`any_main_engine`)는
+  첫 부팅엔 source 가 없어 워커 본문 밖(동기 wrapper `ensure_engine_and_plugins`)
+  에만 존재한다.
 
 ## 부팅 가드 (bootstrap 불변식)
 
@@ -55,6 +66,10 @@ finish_boot (Ready):
 
 - **window event** 는 전부 소비한다 (`handle_boot_window_event` — RedrawRequested
   = 스텝 구동, Resized = gpu.resize, CloseRequested = 종료, 그 외 무시).
+  CloseRequested 시 `reclaim_boot_engine_worker_for_exit` 가 먼저 불려 —
+  `WaitingEngine` 체류 중이면 워커 결과(최대 5s 대기)를 회수해 그 안의
+  `PluginManager` 를 graceful shutdown 한다(잔존 plugin 자식 프로세스 방지).
+  WaitingEngine 이 아니거나 부팅 완료 후(steady-state 종료 cascade)에는 no-op.
 - **AppEvent** 는 종료 계열(Shutdown/QuitRequested)만 즉시 처리하고 나머지는
   `BootState.pending_events` 에 지연 → Ready 후 도착 순서대로 재생한다. 특히
   `TerminalOutput` 을 부팅 중 소비하면 대상 engine 이 아직 views 밖
@@ -85,15 +100,24 @@ warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info` 로 �
 | T2.5 db_theme | `begin_boot` 진입 → 첫 로딩 프레임 직전 (db::init + theme apply) |
 | T2.9 window_visible | 부팅 시작 → `set_visible(true)` (첫 로딩 프레임 present 후) |
 | resumed_total | `resumed()` 전체 (T1~T2.5 + 첫 프레임 — 메인 스레드 점유 구간) |
-| T2.6 engine_init | CoreState 생성 + layout.json 로드 |
-| T3a/T3b | plugin discovery / spawn (T3b 의 total_ms = T3 전체) |
+| T2.6 engine_init | CoreState 생성 + layout.json 로드 (**부팅 워커 스레드**에서 계측) |
+| T3a/T3b | plugin discovery / spawn (T3b 의 total_ms = T3 전체, **부팅 워커 스레드**) |
+| T2.7 engine_wait | `WaitingEngine` 체류 — 메인이 워커 결과를 기다린 시간. `frames` 필드 = 그 동안 돈 로딩 프레임 스텝 수(로딩 프레임이 실제로 갱신됐다는 계측 증거) |
 | T4 layout_wait_plugins | WaitingPlugins 체류 (탈출 사유 satisfied/deadline) |
 | T5 layout_apply | ApplyPendingLayoutRestore |
 | T6 remote_surface_wait | RestoringLayout 체류 (탈출 사유 satisfied/deadline) |
 | boot_total | 부팅 시작 → Ready |
 | T7 first_paint | Ready → 첫 실 UI present (`src/boot/trace.rs` 원샷) |
 
-실측 기준치(Windows/7950X3D, debug): T2 ≈ 540~570ms, T3 ≈ 430~465ms(플러그인 11개
-설치 시; 첫 설치는 ≈0.6ms)가 지배 구간이고 T4/T6 은 <3ms(satisfied)다. 두 원자
-스텝(T2·T3)은 동기라 그 동안 로딩 프레임이 갱신되지 않는다 — 워커 분리 escalate
-판단은 이 수치가 기준.
+실측 기준치(Windows/7950X3D, debug): T2(GPU init, 메인 고정) ≈ 540~570ms, T3(plugin
+discovery/spawn) ≈ 430~465ms(플러그인 11개 설치 시; 첫 설치는 ≈0.6ms)가 지배
+구간이고 T4/T6 은 <3ms(satisfied)다.
+
+- **T2 는 메인 스레드 고정**이다 — wgpu surface 가 winit window 핸들에 결합돼
+  있어 워커로 옮길 수 없다. 이 구간은 로딩 프레임 자체가 아직 없으므로(첫 present
+  이전) 스피너 정지가 발생하지 않는다.
+- **T2.6+T3(≈470ms)는 `WaitingEngine` 워커 스레드로 옮겨졌다** — 원자 스텝이지만
+  메인은 이 구간에도 `about_to_wait` 워치독(16ms)이 매 프레임 로딩 렌더를
+  지속하므로 스피너가 멈추지 않는다(T2.7 의 `frames` 로 실측 확인).
+- 대기 루프(T4·T6)는 이미 <3ms 수준이라 워커로 옮길 대상이 아니다 (부팅 로딩
+  UI 4부작 4부 escalate 판단 — `.claude-workspace/conductor/S-7/`).
