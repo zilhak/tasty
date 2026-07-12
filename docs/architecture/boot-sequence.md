@@ -81,11 +81,39 @@ finish_boot (Ready):
 
 ## 로딩 프레임
 
-`GpuState::render_loading`(`src/gfx/gpu/loading.rs`) — 배경 단색(theme `bg_app`
-토큰) clear 만 그리는 빈 egui 프레임. 콘텐츠(스피너·문구)는 로딩 화면 UI 작업이
-`BootPhase` 인자를 받아 얹는다. hidden 창은 `RedrawRequested` 를 못 받을 수
-있으므로 첫 프레임은 `begin_boot` 가 이벤트 대기 없이 직접 그리고, 이후는
-`about_to_wait` 의 WaitUntil 워치독이 스텝을 보장한다.
+`GpuState::render_loading`(`src/gfx/gpu/loading.rs`) — 배경(theme `bg_app` 토큰)
+위에 워드마크 → 스피너 → phase 문구를 세로 중앙 스택으로 그리는 egui 프레임.
+hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은 `begin_boot`
+가 이벤트 대기 없이 직접 그리고, 이후는 `about_to_wait` 의 WaitUntil 워치독이
+스텝을 보장한다.
+
+- **워드마크** — 수박 마크(64px) + `tasty.` mono(38px, `.` 는 `--tasty-brand-melon-flesh`)
+  브랜드 락업(`guidelines/brand-logo.html` verbatim, 14px UI 폰트 상한의 sanctioned
+  예외). `src/adapters/ui/brand.rs::draw_wordmark` — 사이드바 헤더(22px/17px)와
+  같은 함수를 크기만 다르게 호출해 공유한다.
+- **스피너** — `tasty-ui-widgets::Spinner`(공용 위젯) 재사용, 크기 32(기본
+  16→boot hero), 색 `accent_primary()` 명시 지정(미지정 시 기본은
+  `text_muted()`). 부팅 시작 `Instant` 가 아니라 egui `ctx().input(|i| i.time)`
+  경과 기반 등속 회전 — 프레임 드랍에도 각도는 시간에 비례한다.
+- **phase 문구** — `BootPhase` → i18n 키 매핑(`GpuInit`/`WaitingEngine` 은 문구
+  공유): `boot.phase_gpu_init`("Initializing graphics…") /
+  `boot.phase_waiting_plugins`("Loading plugins…") /
+  `boot.phase_restoring_layout`("Restoring layout…"). 스피너 아래 고정 높이
+  슬롯(16px)에 그려 문구 유무와 무관하게 레이아웃이 흔들리지 않는다(첫 설치는
+  `RestoringLayout` 을 스킵할 수 있어 문구 순서 불연속 허용).
+- **레이아웃은 창 크기 불변** — 1280×720 기본 창과 640×480 최소 창 모두 동일
+  절대 크기의 중앙 스택(반응형 축소 없음), 남는 공간만큼 `top_pad` 로 수직
+  중앙 정렬.
+- **전환** — Ready 도달 시 즉시 스냅(0ms). 로딩 프레임과 첫 실 UI 프레임은
+  서로 다른 렌더 경로(`render_loading` → `finish_boot` → 통상 프레임 파이프라인)라
+  크로스페이드는 두 경로를 한 프레임에서 합성해야 하는 구조적 비용이 크고,
+  부팅 자체가 대개 1초 미만이라 디자인이 허용한 저비용 폴백을 채택했다
+  (페이드 채택 시 재검토 지점 — `--tasty-motion-ui-fade` 200ms).
+- **테마** — 하드코딩 다크 없음, `boot_apply_theme()` 가 첫 present 전에 저장된
+  테마(Mocha/Latte)를 적용하므로 GPU clear color 도 resolved theme 을 그대로
+  따라간다.
+- 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
+  (Chrome 카테고리) — 기본/최소창/phase 문구 3종/문구 없음/Latte 5개 변형.
 
 ## 부팅 계측 (target: `tasty::boot`)
 

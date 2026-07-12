@@ -75,4 +75,8 @@
 ## 화면
 
 - [screens/window-chrome.md](screens/window-chrome.md) — OS별 타이틀바/캡션/신호등 배치.
+
+## 관련
+
+- [architecture/boot-sequence.md](../../architecture/boot-sequence.md) "로딩 프레임" — 이 창이 표시되기 전, 부팅 상태 머신이 그리는 워드마크+스피너+phase 문구 로딩 화면.
 </content>
