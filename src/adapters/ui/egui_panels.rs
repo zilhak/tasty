@@ -621,9 +621,16 @@ fn draw_occupied_overlays(
         return;
     }
 
-    // tier 별 1px 테두리 + (hard 한정) 우상단 force-detach 버튼.
-    // 클릭은 deferred 적용(engine 가변 차용).
-    let mut pending_force_detach: Option<u32> = None;
+    // tier 별 1px 테두리 — surface 전체를 덮는 interactable Area 대신 순수 페인트
+    // (`ctx.layer_painter`)로 그린다. `divider.rs`의 `draw_pane_dividers`/
+    // `draw_surface_highlights_view`와 동일 패턴: `Areas::layer_id_at`의 순회
+    // 대상(interactable 레이어)에 아예 안 잡히므로 점유 surface 위 마우스
+    // 클릭/드래그/휠을 막지 않는다(egui 0.31.1 `memory/mod.rs` 확인 근거는
+    // `.claude-workspace/todo-conductor/2026-07-12-occupied-surface-mouse-drag-fix.md`).
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("occupied_overlays_border"),
+    ));
     for o in &occ {
         // soft=green(협조 신호), hard=peach(readonly). 둘 다 Theme 토큰(하드코딩 없음).
         let border_color = if o.hard {
@@ -631,34 +638,33 @@ fn draw_occupied_overlays(
         } else {
             th.accent_occupied_soft()
         };
-        let clicked = egui::Area::new(egui::Id::new(format!("attach_occupied_{}", o.sid)))
-            .fixed_pos(egui::pos2(o.x, o.y))
+        let rect = egui::Rect::from_min_size(egui::pos2(o.x, o.y), egui::vec2(o.w, o.h));
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0, border_color),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    // force-detach 버튼은 hard 점유(readonly)에서만. soft 는 협조 신호라 회수
+    // 진입점 없음. 버튼은 실제 클릭 가능한 위젯이라 surface 전체가 아닌 버튼
+    // 크기에 딱 맞는 작은 Area로 분리 — 이 Area만 interactable로 남는다.
+    // 클릭은 deferred 적용(engine 가변 차용).
+    let mut pending_force_detach: Option<u32> = None;
+    for o in &occ {
+        if !o.hard {
+            continue;
+        }
+        let btn_w = (o.w - 8.0).clamp(24.0, 96.0);
+        let btn_pos = egui::pos2(o.x + o.w - btn_w - 4.0, o.y + 4.0);
+        let clicked = egui::Area::new(egui::Id::new(format!("attach_force_detach_{}", o.sid)))
+            .fixed_pos(btn_pos)
             .order(egui::Order::Foreground)
             .show(ctx, |ui| -> bool {
-                ui.set_min_size(egui::vec2(o.w, o.h));
-                ui.set_max_size(egui::vec2(o.w, o.h));
-                let rect = ui.max_rect();
-                // 1px 점유 테두리(focus 무관, Theme 토큰).
-                ui.painter().rect_stroke(
-                    rect,
-                    0.0,
-                    egui::Stroke::new(1.0, border_color),
-                    egui::StrokeKind::Inside,
-                );
-                // force-detach 버튼은 hard 점유(readonly)에서만. soft 는 협조 신호라
-                // 회수 진입점 없음.
-                if !o.hard {
-                    return false;
-                }
-                // 우상단 force-detach 버튼(작게). readonly 점유를 회수하는 진입점.
-                let btn_w = (o.w - 8.0).clamp(24.0, 96.0);
-                let btn_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.right() - btn_w - 4.0, rect.top() + 4.0),
-                    egui::vec2(btn_w, 20.0),
-                );
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(btn_rect));
-                child
-                    .button(crate::i18n::t("attach.force_detach"))
+                ui.set_min_size(egui::vec2(btn_w, 20.0));
+                ui.set_max_size(egui::vec2(btn_w, 20.0));
+                ui.button(crate::i18n::t("attach.force_detach"))
                     .on_hover_text(crate::i18n::t("attach.occupied_surface"))
                     .clicked()
             })

@@ -764,22 +764,23 @@ impl MainView {
     }
 
     /// surface 의 "유효 클릭 트래킹 모드". 마우스 캡처 블랙리스트(설정 + 1Hz 캐시)에
-    /// 걸린 surface 면 실제 트래킹 모드와 무관하게 `None` 으로 격하해 클릭/드래그/버튼을
-    /// 로컬 처리(선택·tasty 메뉴)하게 한다. **휠 경로는 이 헬퍼를 쓰지 않고** 실제
-    /// `mouse_tracking()` 을 그대로 보므로 휠은 블랙리스트여도 앱에 보고된다(결정 ②).
+    /// 걸린 surface 거나 hard 점유(readonly) 중이면 실제 트래킹 모드와 무관하게
+    /// `None` 으로 격하해 클릭/드래그/버튼을 로컬 처리(선택·tasty 메뉴)하게 한다.
+    /// hard 점유는 사용자가 그 live 앱과 상호작용할 수 없는 상태이므로, 트래킹이
+    /// 켜진 채였더라도 "앱에 보고" 분기로 빠져 조용히 무동작하지 않고 항상 로컬
+    /// 선택으로 떨어져야 한다(ADR-0040). **휠 경로는 이 헬퍼를 쓰지 않고** 별도로
+    /// hard 점유를 조기 차단한다(`handle_mouse_wheel`).
     fn effective_click_tracking(
         &self,
         surface_id: u32,
         actual: tasty_terminal::MouseTrackingMode,
     ) -> tasty_terminal::MouseTrackingMode {
-        if self
-            .core_state
-            .is_surface_mouse_capture_disabled(surface_id)
-        {
-            tasty_terminal::MouseTrackingMode::None
-        } else {
-            actual
-        }
+        effective_click_tracking_decision(
+            self.core_state.attach.is_hard_occupied(surface_id),
+            self.core_state
+                .is_surface_mouse_capture_disabled(surface_id),
+            actual,
+        )
     }
 
     /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
@@ -854,6 +855,16 @@ impl MainView {
                 .or_else(|| self.state.focused_surface_id(&self.core_state));
 
             if let Some(surface_id) = target_id {
+                // hard 점유(readonly)는 목표상 휠을 요구하지 않으므로 여기서 조기
+                // 차단한다. 트래킹 조회(아래 `t.mouse_tracking()`)는 `effective_click_
+                // tracking`을 거치지 않고 live terminal을 직접 보고, 트래킹 OFF일 때의
+                // 로컬 스크롤백 분기도 live terminal을 직접 mutate한다 — hard 점유가
+                // 렌더하는 것은 mirror(`readonly_view`)라 이 mutate는 화면에 반영되지
+                // 않으면서 live의 scroll_offset만 조용히 어긋나, 점유 해제 직후 스크롤이
+                // 튀어 보이는 회귀를 만든다. 이 두 조회/mutate 이전에 막아야 한다.
+                if self.core_state.attach.is_hard_occupied(surface_id) {
+                    return;
+                }
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y as i32,
                     MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
@@ -1009,6 +1020,21 @@ fn left_click_local_select(
     tracking == tasty_terminal::MouseTrackingMode::None || shift || bypass_active
 }
 
+/// `effective_click_tracking`(MainView 메서드)의 순수 결정 로직. hard 점유(readonly)
+/// 이거나 마우스 캡처 블랙리스트에 걸리면 실제 트래킹 모드와 무관하게 `None`으로
+/// 격하한다 — 그래야 `left_click_local_select`가 항상 로컬 선택으로 떨어진다.
+fn effective_click_tracking_decision(
+    is_hard_occupied: bool,
+    capture_disabled: bool,
+    actual: tasty_terminal::MouseTrackingMode,
+) -> tasty_terminal::MouseTrackingMode {
+    if is_hard_occupied || capture_disabled {
+        tasty_terminal::MouseTrackingMode::None
+    } else {
+        actual
+    }
+}
+
 #[cfg(test)]
 mod wheel_tests {
     use super::encode_wheel_report;
@@ -1092,8 +1118,47 @@ mod right_click_tests {
 
 #[cfg(test)]
 mod left_click_tests {
-    use super::left_click_local_select;
+    use super::{effective_click_tracking_decision, left_click_local_select};
     use tasty_terminal::MouseTrackingMode;
+
+    #[test]
+    fn hard_occupied_forces_tracking_none_even_if_actually_on() {
+        // hard 점유(readonly): live 트래킹이 켜져 있어도(AllMotion 등) 항상 None 으로
+        // 격하해 로컬 선택으로 떨어져야 한다 — 조용한 무동작(앱 보고 스킵)을 방지.
+        assert_eq!(
+            effective_click_tracking_decision(true, false, MouseTrackingMode::AllMotion),
+            MouseTrackingMode::None
+        );
+        assert_eq!(
+            effective_click_tracking_decision(true, false, MouseTrackingMode::CellMotion),
+            MouseTrackingMode::None
+        );
+    }
+
+    #[test]
+    fn hard_occupied_and_capture_disabled_both_force_none() {
+        // 두 조건은 or — 어느 한쪽만 참이어도 None.
+        assert_eq!(
+            effective_click_tracking_decision(true, true, MouseTrackingMode::Click),
+            MouseTrackingMode::None
+        );
+        assert_eq!(
+            effective_click_tracking_decision(false, true, MouseTrackingMode::Click),
+            MouseTrackingMode::None
+        );
+    }
+
+    #[test]
+    fn not_occupied_and_not_disabled_keeps_actual_tracking() {
+        assert_eq!(
+            effective_click_tracking_decision(false, false, MouseTrackingMode::CellMotion),
+            MouseTrackingMode::CellMotion
+        );
+        assert_eq!(
+            effective_click_tracking_decision(false, false, MouseTrackingMode::None),
+            MouseTrackingMode::None
+        );
+    }
 
     #[test]
     fn tracking_on_shift_press_starts_local_select() {
