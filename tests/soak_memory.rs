@@ -13,7 +13,7 @@
 //! `docs/dev-guide/memory-leak-soak.md`.
 //!
 //! env:
-//! - `SOAK_SCENARIO`       s1|s4|s7|s8|s9 (기본 s9=mixed)
+//! - `SOAK_SCENARIO`       s1|s2|s4|s6|s7|s8|s9 (기본 s9=mixed)
 //! - `SOAK_DURATION_SECS`  soak 시간 (기본 600)
 //! - `SOAK_CYCLES`         사이클 수 상한 (기본 무제한 — 시간으로만 종료)
 //! - `SOAK_CHECKPOINT_EVERY` 체크포인트 간격(사이클, 기본 10)
@@ -76,15 +76,18 @@ fn sample_process_tree(root_pid: u32) -> Value {
     let mut rss_total: u64 = 0;
     let mut root_rss: u64 = 0;
     let mut by_name: BTreeMap<String, usize> = BTreeMap::new();
+    let mut rss_by_name: BTreeMap<String, u64> = BTreeMap::new();
     for pid in &tree {
         if let Some(p) = procs.get(&sysinfo::Pid::from_u32(*pid)) {
             rss_total += p.memory();
             if *pid == root_pid {
                 root_rss = p.memory();
             } else {
-                *by_name
-                    .entry(p.name().to_string_lossy().into_owned())
-                    .or_insert(0) += 1;
+                let name = p.name().to_string_lossy().into_owned();
+                *by_name.entry(name.clone()).or_insert(0) += 1;
+                // 이름별 RSS 합산 — 트리 성장이 어느 자식(plugin/셸)에서
+                // 나는지 attribution 없이도 1차 특정할 수 있게 한다.
+                *rss_by_name.entry(name).or_insert(0) += p.memory();
             }
         }
     }
@@ -93,6 +96,7 @@ fn sample_process_tree(root_pid: u32) -> Value {
         "rss_root_bytes": root_rss,
         "proc_count": tree.len(),
         "children_by_name": by_name,
+        "children_rss_by_name": rss_by_name,
     })
 }
 
@@ -163,13 +167,96 @@ fn cycle_tab_churn(inst: &TastyInstance, pane_id: u64) {
     std::thread::sleep(Duration::from_millis(100));
 }
 
+/// S2: split churn — surface split → 준비 대기 → 닫기. per-surface GPU 리소스와
+/// 레이아웃 트리 정리 경로(L2·L3)를 두드린다. sibling 그리드 재계산도 유발.
+fn cycle_split_churn(inst: &TastyInstance, surface0: u64) {
+    let r = inst.call(
+        "split",
+        json!({ "level": "surface", "target_surface": surface0, "direction": "vertical" }),
+    );
+    let new_sid = r["new_surface_id"]
+        .as_u64()
+        .expect("split returned new_surface_id");
+    let start = Instant::now();
+    loop {
+        if !inst.screen_text_of(new_sid).trim().is_empty() {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "S2: surface {new_sid} never became ready"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    inst.call("surface.close", json!({ "surface_id": new_sid }));
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+/// S6: plugin/host view churn — explorer(호스트 view store: `drop_view` 경로,
+/// model-view-split.md 가 경고하는 정확히 그 누수 지점)와 markdown(plugin
+/// egui-mesh: `egui_mesh_targets` retain 경로)을 번갈아 열고 닫는다.
+/// plugin surface 는 screen_text 가 없으므로 고정 대기 후 닫는다.
+fn cycle_plugin_view_churn(inst: &TastyInstance, pane_id: u64, alt: bool) {
+    let params = if alt {
+        json!({ "pane_id": pane_id, "type": "explorer" })
+    } else {
+        let md = format!("{}/README.md", env!("CARGO_MANIFEST_DIR"));
+        json!({ "pane_id": pane_id, "type": "markdown", "file": md })
+    };
+    let r = inst.call("tab.create", params);
+    let surface_id = r["surface_id"]
+        .as_u64()
+        .expect("tab.create returned surface_id");
+    std::thread::sleep(Duration::from_millis(700));
+    let tabs = inst.call("tab.list", json!({ "pane_id": pane_id }));
+    let tab_id = tabs["tabs"]
+        .as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|t| t["surface_id"].as_u64() == Some(surface_id))
+        })
+        .and_then(|t| t["id"].as_u64())
+        .expect("created view tab not found in tab.list");
+    inst.call("tab.close", json!({ "tab_id": tab_id }));
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+/// 입력 유실 incident 카운터 — split close(resize) 직후 `surface.send` 의 첫
+/// 바이트가 유실되는 레이스가 실측됐다("seq"→"eq"). 하네스는 이를 은폐하지 않고
+/// 계수해 checkpoint JSONL 에 기록한 뒤 재시도한다 — 24h soak 이 레이스 빈도를
+/// 정량화하는 부수 신호가 된다.
+static INPUT_INCIDENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// S4: heavy output — 대량 출력으로 스크롤백 링버퍼·VTE 파서·glyph atlas 를
 /// 두드린다. scrollback_lines 가 유한하므로 워밍업 후 RSS 는 평평해야 정상.
 fn cycle_heavy_output(inst: &TastyInstance, surface_id: u64) {
-    inst.set_mark(surface_id);
-    inst.send_text(surface_id, "seq 1 20000\n");
-    // 명령 echo("seq 1 20000")에는 "19999" 가 없으므로 완료 판정으로 안전.
-    inst.wait_for_output(surface_id, "19999", Duration::from_secs(60));
+    for attempt in 0..3 {
+        inst.set_mark(surface_id);
+        // 5000줄 — 반드시 scrollback 상한(격리 config 10000줄) 미만이어야 한다.
+        // 초과하면 mark 가 링버퍼에서 밀려나 read_since_mark 판정이 flaky 해진다.
+        inst.send_text(surface_id, "seq 1 5000\n");
+        let start = Instant::now();
+        loop {
+            let out = inst.read_since_mark(surface_id);
+            // 명령 echo("seq 1 5000")에는 "4999" 가 없으므로 완료 판정으로 안전.
+            if out.contains("4999") {
+                return;
+            }
+            // 입력 유실 레이스 감지 — 첫 바이트가 사라져 셸이 명령을 못 찾음.
+            if out.contains("command not found") {
+                INPUT_INCIDENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("S4: input-loss incident (attempt {attempt}) — first byte dropped");
+                std::thread::sleep(Duration::from_millis(500));
+                break; // 재시도
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(60),
+                "S4: timeout waiting for output; got:\n{out}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    panic!("S4: input corruption persisted after 3 attempts");
 }
 
 /// S7: IPC churn — 상태 무변화 조회를 연타한다. `call` 은 매번 새 TCP 연결을
@@ -207,6 +294,7 @@ fn checkpoint(inst: &TastyInstance, scenario: &str, cycle: u64) -> Value {
         "handles": sample_handle_count(inst.pid()),
         "surfaces": surfaces,
         "gpu": gpu,
+        "input_incidents": INPUT_INCIDENTS.load(std::sync::atomic::Ordering::Relaxed),
     })
 }
 
@@ -250,17 +338,21 @@ fn soak() {
     while start.elapsed() < duration && cycle < max_cycles {
         match scenario.as_str() {
             "s1" => cycle_tab_churn(&inst, pane_id),
+            "s2" => cycle_split_churn(&inst, surface0),
             "s4" => cycle_heavy_output(&inst, surface0),
+            "s6" => cycle_plugin_view_churn(&inst, pane_id, cycle % 2 == 0),
             "s7" => cycle_ipc_churn(&inst),
             "s8" => cycle_idle(),
             // s9 mixed — 결정적 가중 혼합 (재현성 위해 난수 없이 cycle 인덱스로).
-            "s9" => match cycle % 6 {
-                0 | 1 | 2 => cycle_tab_churn(&inst, pane_id),
+            "s9" => match cycle % 8 {
+                0 | 1 => cycle_tab_churn(&inst, pane_id),
+                2 => cycle_split_churn(&inst, surface0),
                 3 => cycle_heavy_output(&inst, surface0),
-                4 => cycle_ipc_churn(&inst),
+                4 => cycle_plugin_view_churn(&inst, pane_id, cycle % 16 < 8),
+                5 | 6 => cycle_ipc_churn(&inst),
                 _ => std::thread::sleep(Duration::from_secs(5)),
             },
-            other => panic!("unknown SOAK_SCENARIO '{other}' (s1|s4|s7|s8|s9)"),
+            other => panic!("unknown SOAK_SCENARIO '{other}' (s1|s2|s4|s6|s7|s8|s9)"),
         }
         cycle += 1;
         if cycle % checkpoint_every == 0 {
