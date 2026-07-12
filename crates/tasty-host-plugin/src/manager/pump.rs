@@ -251,6 +251,20 @@ impl PluginManager {
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
+            // drift 감지: 바이너리(hello 보고 버전)와 설치 매니페스트 버전 불일치.
+            // dev bundle 은 매니페스트(소스)와 바이너리(target exe)를 독립적으로
+            // copy_if_newer 하므로, plugin 을 재빌드하지 않으면 "최신 매니페스트 +
+            // stale exe" 조합이 조용히 설치된다 — e2e markdown.recent 회귀의 원인.
+            // 동작은 막지 않고(런타임 호환 판정은 api_version 몫) 소리만 낸다.
+            if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id)
+                && pkg.manifest.version != version
+            {
+                tracing::warn!(
+                    "plugin '{plugin_id}' version drift: binary v{version} != manifest v{} — \
+                     stale build? (dev: `cargo build --workspace` 후 재실행)",
+                    pkg.manifest.version
+                );
+            }
         }
         let hello_pairs = self.register_new_hellos(&to_register);
 

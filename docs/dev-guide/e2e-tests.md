@@ -2,13 +2,18 @@
 
 `tests/e2e_tests.rs` 는 실 tasty 바이너리를 spawn 하여 IPC 로 조작하는 end-to-end 테스트다. `tests/common/mod.rs::TastyInstance::spawn` 이 공통 spawn fixture 다. 자체 검증 절차는 [self-verification.md](self-verification.md), debug 전용 IPC 는 [debug-ipc.md](debug-ipc.md).
 
+## 0. 전제: plugin 바이너리 최신화 (필수)
+
+**e2e 는 `cargo test --test e2e_tests` 단독 실행 전에 `cargo build --workspace` 가 선행돼야 한다** (또는 처음부터 `cargo test --workspace` 사용). package 한정 test 는 본체(tasty.exe)만 빌드하고 plugin bin crate 들을 빌드하지 않는데, dev bundle(`target/debug/builtin-plugins/`)은 **매니페스트는 소스에서, 바이너리는 target exe 에서 독립적으로** `copy_if_newer` 하므로 stale plugin exe 가 최신 매니페스트를 달고 격리 TASTY_HOME 에 설치된다. 이 drift 는 plugin↔host 계약이 바뀐 직후(예: `markdown.recent` 의 host adapter 이관) namespace 호출을 "Method not found" 로 깨뜨린다. 호스트는 hello 시 바이너리 보고 버전 ≠ 매니페스트 버전이면 `version drift` warn 을 남긴다 — spawn 실패 진단 시 stderr tail 에서 이 경고를 먼저 확인.
+
 ## 1. 환경 격리
 
 각 테스트마다 `$TMPDIR/tasty-test-home-{pid}-{nanos}/` 를 새 HOME 으로 만들고, host 환경 누수를 spawn 직전에 차단한다:
 
 | env | 처리 | 이유 |
 |-----|------|------|
-| `HOME` / `ZDOTDIR` | 격리 HOME override | `~/.tasty/`·db·plugin extract·zsh rc 위치 격리 |
+| `HOME` / `ZDOTDIR` | 격리 HOME override | zsh rc 위치 격리 (macOS/Linux 의 `~/.tasty/` 격리도 겸함) |
+| `TASTY_HOME` | 격리 `.tasty` 로 명시 | tasty 루트 해석은 `directories::BaseDirs`(=Windows 는 USERPROFILE) 기반이라 **HOME 만으로는 Windows 에서 격리되지 않는다** — 실사용자 `~/.tasty-debug` 세션 복원이 새어든다. `TASTY_HOME` 이 루트 override 의 SoT |
 | `SHELL` | 제거 | host login shell 누수 차단(`detect_bash` 의 `$SHELL` 경로) |
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
