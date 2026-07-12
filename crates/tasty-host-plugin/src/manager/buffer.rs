@@ -31,6 +31,22 @@ impl PluginManager {
         self.plugin_buffers.get(plugin_id)?.get(&buffer_id)
     }
 
+    /// surface/popup/banner 닫힘 시 그 인스턴스가 쓰던 shared buffer 매핑을 host 측
+    /// 에서 해제한다. plugin 은 자기 매핑을 drop 하지만 host 에 알릴 프로토콜
+    /// 메시지가 없어, 이 호출이 없으면 `plugin_buffers` 의 `SharedMemory` 매핑이
+    /// plugin 수명 내내 누적된다 (soak s6 실측: markdown open/close 당 호스트
+    /// RSS ~1.1MB — Rust heap 밖(mmap)이라 dhat 에도 안 잡히는 유형).
+    /// plugin 측 매핑은 독립 뷰라 이 해제와 무관하게 유효하다.
+    pub(super) fn release_plugin_buffer(
+        &mut self,
+        plugin_id: &str,
+        buffer_id: super::SharedBufferId,
+    ) {
+        if let Some(bufs) = self.plugin_buffers.get_mut(plugin_id) {
+            bufs.remove(&buffer_id);
+        }
+    }
+
     /// egui-mesh surface 의 최근 paint_frame 메타 조회 (A1-S3 수신 라우팅 골격).
     ///
     /// 렌더 prepare(A1-S5)가 호출해 `buffer_id` 로 [`PluginManager::plugin_buffer`] 를

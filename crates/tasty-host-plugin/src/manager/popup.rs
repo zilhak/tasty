@@ -119,7 +119,11 @@ impl PluginManager {
             return;
         };
         // egui-mesh popup 이면 합성기가 참조하던 frame 메타를 함께 정리 (stale buffer 방지).
-        self.popup_mesh_frames.remove(&instance_id);
+        // 그 frame 의 shared buffer 매핑도 해제 — 안 지우면 plugin 수명 내내 host 에
+        // 누적된다 (`release_plugin_buffer` 문서 참조).
+        if let Some(f) = self.popup_mesh_frames.remove(&instance_id) {
+            self.release_plugin_buffer(&f.plugin_id, f.buffer_id);
+        }
         // plugin process가 살아있을 때만 알린다. 종료 중이면 다음 spawn에서 새 인스턴스 id로 시작.
         if self.processes.contains_key(&inst.plugin_id) {
             self.send_surface_request(

@@ -427,8 +427,15 @@ impl PluginManager {
     /// plugin 이 create 를 받은 적 없는 surface 에 destroy 가 가도 plugin 측
     /// `destroy_surface` 는 맵 remove 뿐이라 무해하다.
     pub fn destroy_remote_surface(&mut self, surface_id: u32, kind: Option<&str>) {
+        // 이 surface 의 mesh frame 이 참조하던 shared buffer 매핑도 host 측에서
+        // 해제한다 — plugin 은 해제를 알릴 프로토콜 메시지가 없어 여기서 안 지우면
+        // plugin 수명 내내 누적된다 (`release_plugin_buffer` 문서 참조).
+        let frame = self.egui_mesh_frames.remove(&surface_id);
+        if let Some(f) = &frame {
+            let (pid, bid) = (f.plugin_id.clone(), f.buffer_id);
+            self.release_plugin_buffer(&pid, bid);
+        }
         if let Some(entry) = self.surfaces.remove(&surface_id) {
-            self.egui_mesh_frames.remove(&surface_id);
             self.send_surface_request(
                 &entry.plugin_id,
                 protocol::METHOD_SURFACE_DESTROY,
@@ -442,9 +449,7 @@ impl PluginManager {
         // cascade 시점엔 surface 가 이미 layout 에서 제거돼 kind 가 None 으로 올 수
         // 있기 때문 (`cascade_surface_closed` 의 surface_kind 폴백 주석 참조).
         // frame 을 한 번도 못 받은 surface(paint 전 즉시 close)만 kind 선언으로 폴백.
-        let owner = self
-            .egui_mesh_frames
-            .remove(&surface_id)
+        let owner = frame
             .map(|f| f.plugin_id)
             .or_else(|| kind.and_then(|k| self.plugin_id_for_surface_kind(k)));
         if let Some(pid) = owner {
