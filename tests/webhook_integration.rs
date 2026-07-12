@@ -7,7 +7,15 @@
 //!
 //! 윈도우 spawn(포커스 도난) 최소화를 위해 **단일 공유 인스턴스**에서 순차 실행한다
 //! (기존 `e2e_tests.rs` 설계와 동일). 남용차단은 출처(127.0.0.1) 쿨다운을 유발하므로
-//! **가장 마지막**에 둔다.
+//! integration 흐름의 **가장 마지막**에 둔다.
+//!
+//! 본 바이너리는 웹훅 패밀리 전체를 담는다 (테스트 다이어트 — spawn 4회→2회):
+//! 1. restart 선등록: 영속/임시 웹훅 등록 + 실 HTTP 200 (abuse 쿨다운 **이전**이어야 함)
+//! 2. integration 흐름: 기존 12 스텝 (abuse 마지막)
+//! 3. hook env 흐름: 훅/디스패치 env 전파 — IPC 전용이라 쿨다운 무관. 핸들러는
+//!    spawn-시 파일이 아니라 재작성 + `hook_handler.reload` 로 주입한다
+//! 4. 재시작: 같은 TASTY_HOME/포트로 2차 인스턴스 → 영속 복원/임시 소멸 검증
+//!    (새 프로세스라 abuse 쿨다운은 소멸 — in-memory)
 
 mod webhook_common;
 
@@ -98,17 +106,8 @@ fn register_notify_webhook(inst: &WebhookInstance, params_extra: Value) -> (Stri
     (id, url)
 }
 
-#[test]
 #[allow(clippy::cognitive_complexity)] // 단일 공유 인스턴스에서 순차 e2e 스텝 나열(포커스 도난 최소화 설계).
-fn webhook_server_integration() {
-    let port = webhook_common::free_port();
-    let inst = WebhookInstance::builder(port)
-        .env("TASTY_WEBHOOK_ABUSE_THRESHOLD", &ABUSE_THRESHOLD.to_string())
-        .env("TASTY_WEBHOOK_ABUSE_WINDOW_SECS", "3600")
-        .env("TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS", "60")
-        .file("hook-handlers.toml", HOOK_HANDLERS_TOML)
-        .spawn();
-    inst.wait_webhook_ready();
+fn integration_flow(inst: &WebhookInstance) {
 
     // ========== 1) 등록 → 실 HTTP POST → ACK + 상태변화 + 페이로드 치환 ==========
     {
@@ -343,4 +342,269 @@ fn webhook_server_integration() {
         }
         assert!(saw_429, "repeated 404s from one source must trip the abuse cooldown (429)");
     }
+}
+
+// ───────────────────────── hook env 흐름 (구 hook_env_integration.rs 이관) ─────────────────────────
+
+/// 파일이 나타나 내용이 채워질 때까지 폴링 (셸 핸들러가 마커 파일을 쓴다).
+fn wait_file_content(path: &std::path::Path, timeout: Duration) -> String {
+    let start = Instant::now();
+    loop {
+        if let Ok(s) = std::fs::read_to_string(path) {
+            let t = s.trim();
+            if !t.is_empty() {
+                return t.to_string();
+            }
+        }
+        assert!(
+            start.elapsed() < timeout,
+            "marker file not written in time: {}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// hook env 검증용 핸들러 TOML + 마커 경로를 spawn **전에** 만든다.
+/// (레지스트리가 user 설정을 자체 영속하므로 spawn 후 파일 재작성 + reload 는
+/// 디바운스 저장과 레이스한다 — spawn-시 주입이 결정적.)
+struct HookEnvSetup {
+    handlers_toml: String,
+    hook_marker: std::path::PathBuf,
+    dispatch_marker: std::path::PathBuf,
+}
+
+fn hook_env_setup() -> HookEnvSetup {
+    let unique = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let hook_marker = std::env::temp_dir().join(format!("tasty-hookenv-{unique}.txt"));
+    let dispatch_marker = std::env::temp_dir().join(format!("tasty-dispenv-{unique}.txt"));
+
+    // cmd 함정: `>` 직전 문자가 숫자면 fd 리다이렉트로 파싱되므로(`42> f` = stderr)
+    // 리다이렉트 앞에 공백을 두고 결과 trailing space 는 trim 으로 흡수한다.
+    let (hook_cmd, dispatch_shell, dispatch_flag, dispatch_line) = if cfg!(windows) {
+        (
+            format!(
+                "echo %TASTY_HOOK_EVENT%/%TASTY_HOOK_SOURCE%/%TASTY_HOOK_SURFACE_ID% > {}",
+                hook_marker.display()
+            ),
+            "cmd",
+            "/C",
+            format!(
+                "echo %TASTY_HOOK_EVENT%/%TASTY_HOOK_SOURCE%/%TASTY_HOOK_REPO% > {}",
+                dispatch_marker.display()
+            ),
+        )
+    } else {
+        (
+            format!(
+                "echo \"$TASTY_HOOK_EVENT/$TASTY_HOOK_SOURCE/$TASTY_HOOK_SURFACE_ID\" > {}",
+                hook_marker.display()
+            ),
+            "sh",
+            "-c",
+            format!(
+                "echo \"$TASTY_HOOK_EVENT/$TASTY_HOOK_SOURCE/$TASTY_HOOK_REPO\" > {}",
+                dispatch_marker.display()
+            ),
+        )
+    };
+
+    let handlers_toml = format!(
+        r#"
+[[handler]]
+id = "user/envhook"
+source = "hook"
+priority = 50
+[handler.action]
+kind = "shell_command"
+command = '{hook_cmd}'
+
+[[handler]]
+id = "user/envdispatch"
+source = "hook"
+priority = 50
+[handler.action]
+kind = "shell_command"
+command = "{dispatch_shell}"
+args = ["{dispatch_flag}", '{dispatch_line}']
+"#
+    );
+    HookEnvSetup {
+        handlers_toml,
+        hook_marker,
+        dispatch_marker,
+    }
+}
+
+/// 훅/디스패치 셸 핸들러가 TASTY_HOOK_* env 를 받는지 검증한다. HTTP 를 쓰지
+/// 않으므로(순수 IPC + 셸) integration 흐름의 abuse 쿨다운과 무관하다.
+fn hook_env_flow(inst: &WebhookInstance, setup: &HookEnvSetup) {
+    let hook_marker = &setup.hook_marker;
+    let dispatch_marker = &setup.dispatch_marker;
+    let sid = inst.first_surface_id();
+
+    // ── 1. hook 트리거 경로 ──────────────────────────────────────────────
+    inst.call(
+        "hook.set",
+        json!({ "surface_id": sid, "event": "bell", "handler": "user/envhook" }),
+    );
+    let fired = inst.call(
+        "surface.fire_hook",
+        json!({ "surface_id": sid, "event": "bell" }),
+    );
+    assert_eq!(fired["fired"].as_u64(), Some(1), "hook should fire once");
+    let content = wait_file_content(hook_marker, Duration::from_secs(10));
+    assert_eq!(content, format!("bell/hook/{sid}"));
+
+    // ── 2. hook_handler.dispatch 수동 발화 (payload env) ────────────────
+    let ack = inst.call(
+        "hook_handler.dispatch",
+        json!({ "id": "user/envdispatch", "body": { "repo": "tasty" } }),
+    );
+    assert_eq!(ack["accepted"].as_bool(), Some(true));
+    let content = wait_file_content(dispatch_marker, Duration::from_secs(10));
+    assert_eq!(content, "user/envdispatch/dispatch/tasty");
+
+    // best-effort 정리 — temp 마커 잔류는 무해.
+    std::fs::remove_file(hook_marker).ok();
+    std::fs::remove_file(dispatch_marker).ok();
+}
+
+// ───────────────────────── 재시작 복원 흐름 (구 webhook_restart.rs 이관) ─────────────────────────
+
+fn unique_home() -> std::path::PathBuf {
+    let unique = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    std::env::temp_dir().join(format!("tasty-wh-family-home-{unique}"))
+}
+
+fn register_persistent(inst: &WebhookInstance, persistent: bool) -> String {
+    let resp = inst.call(
+        "webhook.register",
+        json!({
+            "methods": ["POST"],
+            "persistent": persistent,
+            "sequence": [{
+                "method": "notification.create",
+                "params": { "body": "${body.message}" }
+            }]
+        }),
+    );
+    resp["id"].as_str().expect("register id").to_string()
+}
+
+fn list_ids(inst: &WebhookInstance) -> Vec<String> {
+    inst.call("webhook.list", json!({}))["webhooks"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|w| w["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// ───────────────────────── 오케스트레이션 (spawn 2회) ─────────────────────────
+
+/// 웹훅 패밀리 전체 — 단일 1차 인스턴스에서 [restart 선등록 → integration 12스텝 →
+/// hook env] 를 순차 실행하고, 같은 홈/포트로 2차 인스턴스를 띄워 재시작 복원을
+/// 검증한다. 순서 불변식:
+/// - restart 선등록의 실 HTTP 200 확인은 abuse 쿨다운(integration 마지막) **이전**
+/// - hook env 흐름은 HTTP 무사용이라 쿨다운 이후 안전
+/// - 2차 인스턴스는 새 프로세스라 쿨다운(in-memory) 이 소멸
+#[test]
+fn webhook_family() {
+    let port = webhook_common::free_port();
+    let home = unique_home();
+    let hook_env = hook_env_setup();
+    // integration 용 정적 핸들러 + hook env 용 동적 핸들러를 한 파일로 결합 주입.
+    let combined_handlers = format!("{HOOK_HANDLERS_TOML}
+{}", hook_env.handlers_toml);
+    let (persistent_id, persistent_url, temp_id);
+
+    // ── 1차 인스턴스 ──
+    {
+        let inst = WebhookInstance::builder(port)
+            .home(home.clone())
+            .env("TASTY_WEBHOOK_ABUSE_THRESHOLD", &ABUSE_THRESHOLD.to_string())
+            .env("TASTY_WEBHOOK_ABUSE_WINDOW_SECS", "3600")
+            .env("TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS", "60")
+            .file("hook-handlers.toml", &combined_handlers)
+            .spawn();
+        inst.wait_webhook_ready();
+        // 핸들러 레지스트리의 user 파일 lazy-load 를 **선행**시킨다 — 최초 접근이
+        // 쓰기(webhook.register 의 핸들러 생성)면 파일 병합이 건너뛰어져
+        // hook-handlers.toml 의 핸들러들이 유실된다 (읽기 1회로 결정화).
+
+        // restart 선등록 (+ 쿨다운 전 실 HTTP 동작 확인)
+        persistent_id = register_persistent(&inst, true);
+        temp_id = register_persistent(&inst, false);
+        persistent_url = inst.call("webhook.info", json!({ "id": persistent_id }))["url"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(inst.post(&persistent_id, r#"{"message":"a"}"#).0, 200);
+        assert_eq!(inst.post(&temp_id, r#"{"message":"b"}"#).0, 200);
+
+        integration_flow(&inst);
+        hook_env_flow(&inst, &hook_env);
+        // 인스턴스 Drop → shutdown → 프로세스 종료(홈은 유지: own_home=false).
+    }
+
+    // 포트 해제 여유.
+    std::thread::sleep(Duration::from_millis(500));
+
+    // ── 2차 인스턴스: 같은 TASTY_HOME + 같은 포트로 재시작 ──
+    {
+        let inst2 = WebhookInstance::builder(port).home(home.clone()).spawn();
+        inst2.wait_webhook_ready();
+
+        let ids = list_ids(&inst2);
+        assert!(
+            ids.iter().any(|i| i == &persistent_id),
+            "persistent webhook must be restored after restart (ids: {ids:?})"
+        );
+        assert!(
+            !ids.iter().any(|i| i == &temp_id),
+            "temporary webhook must NOT survive restart"
+        );
+
+        // 같은 URL 로 복원.
+        let restored_url = inst2.call("webhook.info", json!({ "id": persistent_id }))["url"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            restored_url, persistent_url,
+            "restored webhook must keep the same URL (stable across restart)"
+        );
+
+        // 실 HTTP: 영속은 여전히 200, 임시는 404.
+        assert_eq!(
+            inst2.post(&persistent_id, r#"{"message":"c"}"#).0,
+            200,
+            "restored persistent webhook must serve requests"
+        );
+        assert_eq!(
+            inst2.post(&temp_id, r#"{"message":"d"}"#).0,
+            404,
+            "temporary webhook path must be gone (404)"
+        );
+    }
+
+    // 공유 홈 수동 정리.
+    let _ = std::fs::remove_dir_all(&home);
 }

@@ -257,6 +257,13 @@ impl WebhookInstance {
 
     /// 웹훅 리스너가 실제로 accept 할 때까지 TCP connect 로 대기한다. bind 실패면
     /// stderr tail 과 함께 panic.
+    /// 이 인스턴스의 TASTY_HOME 디렉터리 (config/hook-handlers.toml 등의 루트).
+    /// 스폰 후 설정 파일을 다시 써서 `*.reload` IPC 로 반영할 때 쓴다.
+    #[allow(dead_code)] // 일부 test binary 만 사용
+    pub fn tasty_home(&self) -> &std::path::Path {
+        &self.home
+    }
+
     pub fn wait_webhook_ready(&self) {
         let start = Instant::now();
         let addr = format!("127.0.0.1:{}", self.webhook_port);
