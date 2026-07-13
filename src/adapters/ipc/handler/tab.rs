@@ -167,9 +167,11 @@ pub fn handle_tab_close(
     };
 
     // Prevent closing a tab that contains the caller — handler 잔존 (caller 정보 params).
+    // tab 단위 스코프: 닫기 영향 범위는 그 tab(과 하위 SurfaceGroup)뿐이므로, caller 가
+    // 같은 Pane 의 "다른" tab에 있는 경우까지 막으면 안 된다(과잉 차단 버그, Pane 단위
+    // 체크였던 이전 구현이 형제 tab 도 잘못 막았다).
     if let Some(caller) = super::caller_surface_id(params)
-        && let Some(pane_id) = engine.find_pane_for_tab(tab_id)
-        && super::surface_belongs_to_pane(engine, caller, pane_id)
+        && engine.find_tab_for_surface(caller) == Some(tab_id)
     {
         return JsonRpcResponse::invalid_params(
             id,

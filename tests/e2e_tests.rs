@@ -297,6 +297,40 @@ fn all_e2e_tests() {
     let result = tasty.call("tab.close", json!({"tab_id": sole_tab_id}));
     assert_eq!(result["closed"], false);
 
+    // ========== tab.close self-protection guard is tab-scoped, not pane-scoped ==========
+    // Regression: the guard used to check "does caller belong to the same PANE as the
+    // target tab", which wrongly blocked closing a sibling tab. tab.close only affects
+    // that tab (and its own SurfaceGroup), so the guard must match that blast radius.
+    tasty.call("tab.create", json!({"pane_id": sole_pid}));
+    let tab_list = tasty.call("tab.list", json!({"pane_id": sole_pid}));
+    let sibling_tab_id = tab_list["tabs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"].as_u64().unwrap() != sole_tab_id)
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+
+    // caller (sid) lives in sole_tab_id, not sibling_tab_id → closing the sibling must succeed.
+    let result = tasty.call(
+        "tab.close",
+        json!({"tab_id": sibling_tab_id, "caller_surface_id": sid}),
+    );
+    assert_eq!(result["closed"], true);
+
+    // Re-create the sibling so sole_tab_id is no longer the last tab, then confirm closing
+    // the tab that actually contains the caller is still refused (the guard's real purpose).
+    tasty.call("tab.create", json!({"pane_id": sole_pid}));
+    let result = tasty.call_raw(
+        "tab.close",
+        json!({"tab_id": sole_tab_id, "caller_surface_id": sid}),
+    );
+    assert!(
+        result.get("error").is_some(),
+        "expected tab.close to refuse closing the caller's own tab, got {result:?}"
+    );
+
     // ========== Renderer color resolution (debug.glyph_color) ==========
 
     // Inject deterministic VTE: clear screen, home cursor, plain Z, then dim Z.
