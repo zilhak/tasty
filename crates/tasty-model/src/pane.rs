@@ -305,4 +305,33 @@ impl Pane {
             "tabs": tabs,
         })
     }
+
+    /// attach 디스크립터용 pane JSON: `{"id", "tabs":[{"id","name","active",
+    /// "focused_surface","layout"}, ...]}`. `Workspace::to_attach_tree_json`(평면
+    /// "panes")과 `PaneNode::to_tree_json_full`(트리 Leaf)이 이 메서드를 공유해
+    /// 두 표현이 서로 다른 pane 직렬화를 갖지 않도록 한다.
+    pub fn to_attach_json(&self) -> serde_json::Value {
+        let tabs: Vec<_> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(i, tab)| {
+                let layout = tab
+                    .layout_if_initialized()
+                    .map(|l| l.to_tree_json_full())
+                    .unwrap_or(serde_json::Value::Null);
+                serde_json::json!({
+                    "id": tab.id,
+                    "name": tab.display_name(),
+                    "active": i == self.active_tab,
+                    "focused_surface": tab.focused_surface,
+                    "layout": layout,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "id": self.id,
+            "tabs": tabs,
+        })
+    }
 }

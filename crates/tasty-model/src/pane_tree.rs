@@ -209,6 +209,35 @@ impl PaneNode {
         }
     }
 
+    /// attach 단계 J 후속: pane 레벨 이진트리를 JSON 으로 직렬화(direction/ratio
+    /// 보존). `SurfaceLayout::to_tree_json_full` 과 대칭 — Leaf 는 `Pane::to_attach_json`
+    /// (id+tabs, 기존 평면 "panes" 원소와 동일 shape)에 `"type":"Leaf"` 를 얹고,
+    /// Split 은 direction/ratio/first/second 를 담는다.
+    pub fn to_tree_json_full(&self) -> serde_json::Value {
+        match self {
+            PaneNode::Leaf(pane) => {
+                let mut v = pane.to_attach_json();
+                v["type"] = serde_json::json!("Leaf");
+                v
+            }
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => serde_json::json!({
+                "type": "Split",
+                "direction": match direction {
+                    SplitDirection::Horizontal => "horizontal",
+                    SplitDirection::Vertical => "vertical",
+                },
+                "ratio": ratio,
+                "first": first.to_tree_json_full(),
+                "second": second.to_tree_json_full(),
+            }),
+        }
+    }
+
     // ─── BinaryTree alias (외부 caller 0 변경 보장) ────────────────────────
     //
     // 외부 호출처들은 `crate::model::BinaryTree` 를 import 하지 않으므로
@@ -263,5 +292,44 @@ impl PaneNode {
         direction: FocusDirection,
     ) -> Option<PaneId> {
         <Self as BinaryTree>::directional_focus(self, current_pane_id, direction)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf_pane(id: PaneId) -> PaneNode {
+        PaneNode::Leaf(Pane {
+            id,
+            tabs: vec![],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        })
+    }
+
+    #[test]
+    fn to_tree_json_full_serializes_split_direction_and_ratio() {
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.3,
+            first: Box::new(leaf_pane(7)),
+            second: Box::new(leaf_pane(8)),
+        };
+        let json = node.to_tree_json_full();
+        assert_eq!(json["type"], "Split");
+        assert_eq!(json["direction"], "vertical");
+        assert!((json["ratio"].as_f64().unwrap() - 0.3).abs() < 1e-6);
+        assert_eq!(json["first"]["id"], 7);
+        assert_eq!(json["second"]["id"], 8);
+    }
+
+    #[test]
+    fn to_tree_json_full_leaf_carries_pane_payload() {
+        let node = leaf_pane(9);
+        let json = node.to_tree_json_full();
+        assert_eq!(json["type"], "Leaf");
+        assert_eq!(json["id"], 9);
+        assert!(json["tabs"].is_array());
     }
 }

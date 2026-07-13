@@ -170,36 +170,14 @@ impl Workspace {
             .all_pane_ids()
             .iter()
             .filter_map(|&pid| self.pane_layout().find_pane(pid))
-            .map(|pane| {
-                let tabs: Vec<_> = pane
-                    .tabs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, tab)| {
-                        let layout = tab
-                            .layout_if_initialized()
-                            .map(|l| l.to_tree_json_full())
-                            .unwrap_or(serde_json::Value::Null);
-                        serde_json::json!({
-                            "id": tab.id,
-                            "name": tab.display_name(),
-                            "active": i == pane.active_tab,
-                            "focused_surface": tab.focused_surface,
-                            "layout": layout,
-                        })
-                    })
-                    .collect();
-                serde_json::json!({
-                    "id": pane.id,
-                    "tabs": tabs,
-                })
-            })
+            .map(|pane| pane.to_attach_json())
             .collect();
         serde_json::json!({
             "id": self.id,
             "name": self.name,
             "focused_pane": self.focused_pane,
             "panes": panes,
+            "pane_layout": self.pane_layout().to_tree_json_full(),
         })
     }
 
@@ -221,5 +199,37 @@ impl Workspace {
             "name": self.name,
             "panes": panes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SplitDirection;
+
+    fn leaf_pane(id: PaneId, tab_id: TabId, surface_id: SurfaceId) -> Pane {
+        Pane::new_with_surface(
+            id,
+            tab_id,
+            "Shell".to_string(),
+            Box::new(EmptySurface::new(surface_id)),
+        )
+    }
+
+    #[test]
+    fn to_attach_tree_json_includes_pane_layout_with_direction_and_ratio() {
+        let pane_layout = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.3,
+            first: Box::new(PaneNode::Leaf(leaf_pane(1, 1, 1))),
+            second: Box::new(PaneNode::Leaf(leaf_pane(2, 2, 2))),
+        };
+        let ws = Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout, 2);
+        let json = ws.to_attach_tree_json();
+        assert_eq!(json["pane_layout"]["type"], "Split");
+        assert_eq!(json["pane_layout"]["direction"], "vertical");
+        assert!((json["pane_layout"]["ratio"].as_f64().unwrap() - 0.3).abs() < 1e-6);
+        // 기존 평면 "panes" 필드도 여전히 존재(하위호환)해야 한다.
+        assert_eq!(json["panes"].as_array().unwrap().len(), 2);
     }
 }

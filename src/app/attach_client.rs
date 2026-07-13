@@ -756,12 +756,121 @@ fn apply_mirror_structural_delta(
     }
 }
 
+/// pane JSON(`{"id", "tabs":[...]}` — 평면 "panes" 원소/트리 Leaf 공용 shape)
+/// → 로컬 `Pane`. 새 local pane id 발급 + 각 tab 의 layout(`build_layout`)/
+/// focused_surface remote→local 매핑. `build_mirror_workspace`의 평면 fallback
+/// 경로와 `build_pane_node`(트리 파서)가 공유한다.
+fn build_pane_from_json(
+    p: &Value,
+    ids: &crate::core::state::IdGenerator,
+    map: &HashMap<u32, u32>,
+    term: &HashSet<u32>,
+) -> Pane {
+    let tabs_json = p
+        .get("tabs")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut tabs: Vec<Tab> = Vec::new();
+    let mut active_tab = 0usize;
+    for (i, t) in tabs_json.iter().enumerate() {
+        let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
+        let layout = build_layout(&layout_json, ids, map, term).unwrap_or_else(|| {
+            SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
+        });
+        let remote_focus = t
+            .get("focused_surface")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let focused_surface = map
+            .get(&remote_focus)
+            .copied()
+            .or_else(|| layout.first_surface_id())
+            .unwrap_or(0);
+        let tab_name = t
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Shell")
+            .to_string();
+        if t.get("active").and_then(|v| v.as_bool()).unwrap_or(false) {
+            active_tab = i;
+        }
+        tabs.push(Tab {
+            id: ids.next_tab(),
+            name: tab_name,
+            explicit_name: None,
+            osc_title: None,
+            layout_opt: Some(layout),
+            focused_surface,
+            cached_display_name: None,
+        });
+    }
+    if tabs.is_empty() {
+        let sid = ids.next_surface();
+        tabs.push(Tab {
+            id: ids.next_tab(),
+            name: "Shell".to_string(),
+            explicit_name: None,
+            osc_title: None,
+            layout_opt: Some(SurfaceLayout::Leaf(Box::new(EmptySurface::new(sid)))),
+            focused_surface: sid,
+            cached_display_name: None,
+        });
+    }
+    Pane {
+        id: ids.next_pane(),
+        tabs,
+        active_tab,
+        tab_scroll_offset: 0.0,
+    }
+}
+
+/// "pane_layout" JSON(`PaneNode::to_tree_json_full` shape) → `PaneNode`
+/// (direction/ratio 보존). Leaf 파싱 시 (remote_pane_id → 신규 local pane id)를
+/// `pane_id_map` 에 기록해, 호출부가 focused_pane remote→local 해석에 재사용한다
+/// (트리 재귀 파서는 기존 `local_panes: Vec<(remote_id, Pane)>` 평면 리스트가
+/// 없으므로 이 매핑이 그 대체 경로다).
+fn build_pane_node(
+    node: &Value,
+    ids: &crate::core::state::IdGenerator,
+    map: &HashMap<u32, u32>,
+    term: &HashSet<u32>,
+    pane_id_map: &mut HashMap<u32, u32>,
+) -> Option<PaneNode> {
+    match node.get("type").and_then(|v| v.as_str())? {
+        "Leaf" => {
+            let remote_pane = node.get("id").and_then(|v| v.as_u64())? as u32;
+            let pane = build_pane_from_json(node, ids, map, term);
+            pane_id_map.insert(remote_pane, pane.id);
+            Some(PaneNode::Leaf(pane))
+        }
+        "Split" => {
+            let direction = match node.get("direction").and_then(|v| v.as_str()) {
+                Some("vertical") => SplitDirection::Vertical,
+                _ => SplitDirection::Horizontal,
+            };
+            let ratio = node.get("ratio").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+            let first = build_pane_node(node.get("first")?, ids, map, term, pane_id_map)?;
+            let second = build_pane_node(node.get("second")?, ids, map, term, pane_id_map)?;
+            Some(PaneNode::Split {
+                direction,
+                ratio,
+                first: Box::new(first),
+                second: Box::new(second),
+            })
+        }
+        _ => None,
+    }
+}
+
 /// 디스크립터 `tree`(`to_attach_tree_json`)로 로컬 mirror Workspace 를 재구성한다.
 ///
-/// pane 단위 분할 배치는 디스크립터에 없으므로(`to_attach_tree_json` 이 pane 을 평면
-/// 리스트로 emit) 다중 pane 은 horizontal split chain 으로 best-effort 재구성한다.
-/// 각 pane 의 tab 별 `SurfaceLayout`(분할 방향/비율)은 `to_tree_json_full` 로 보존돼
-/// 정확히 재현된다. remote leaf id 는 `map` 으로 로컬 id 치환.
+/// 신버전 서버는 `"pane_layout"` 트리 필드(direction/ratio 보존, `build_pane_node`)를
+/// 실어 pane 상위 배치를 정확히 재현한다. 그 필드가 없는 구버전 서버는 평면 `"panes"`
+/// 리스트만 보내므로, 다중 pane 을 horizontal split chain 으로 best-effort 재구성하는
+/// 기존 fallback 을 그대로 유지한다. 각 pane 의 tab 별 `SurfaceLayout`(분할 방향/비율)은
+/// 두 경로 모두 `to_tree_json_full` 로 보존돼 정확히 재현된다. remote leaf id 는 `map`
+/// 으로 로컬 id 치환.
 fn build_mirror_workspace(
     ws_id: u32,
     name: &str,
@@ -770,79 +879,41 @@ fn build_mirror_workspace(
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
 ) -> Workspace {
-    let panes_json = tree
-        .get("panes")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
     let remote_focused_pane = tree
         .get("focused_pane")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as u32;
 
+    // 신버전 서버: "pane_layout" 트리 필드로 direction/ratio 보존 파싱.
+    if let Some(layout_json) = tree.get("pane_layout").filter(|v| !v.is_null()) {
+        let mut pane_id_map = HashMap::new();
+        if let Some(node) = build_pane_node(layout_json, ids, map, term, &mut pane_id_map) {
+            let focused_local_pane = pane_id_map
+                .get(&remote_focused_pane)
+                .copied()
+                .unwrap_or_else(|| node.first_pane().map(|p| p.id).unwrap_or(0));
+            return Workspace::from_restored(
+                ws_id,
+                name.to_string(),
+                String::new(),
+                node,
+                focused_local_pane,
+            );
+        }
+        // "pane_layout" 이 있는데 파싱 실패(형태 불량) — 아래 구버전 fallback으로 흘려보냄.
+    }
+
+    // 구버전 fallback: 평면 "panes" 리스트 → horizontal chain(best-effort).
+    let panes_json = tree
+        .get("panes")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
     let mut local_panes: Vec<(u32, Pane)> = Vec::new();
     for p in &panes_json {
         let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let tabs_json = p
-            .get("tabs")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let mut tabs: Vec<Tab> = Vec::new();
-        let mut active_tab = 0usize;
-        for (i, t) in tabs_json.iter().enumerate() {
-            let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
-            let layout = build_layout(&layout_json, ids, map, term).unwrap_or_else(|| {
-                SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
-            });
-            let remote_focus = t
-                .get("focused_surface")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32;
-            let focused_surface = map
-                .get(&remote_focus)
-                .copied()
-                .or_else(|| layout.first_surface_id())
-                .unwrap_or(0);
-            let tab_name = t
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Shell")
-                .to_string();
-            if t.get("active").and_then(|v| v.as_bool()).unwrap_or(false) {
-                active_tab = i;
-            }
-            tabs.push(Tab {
-                id: ids.next_tab(),
-                name: tab_name,
-                explicit_name: None,
-                osc_title: None,
-                layout_opt: Some(layout),
-                focused_surface,
-                cached_display_name: None,
-            });
-        }
-        if tabs.is_empty() {
-            let sid = ids.next_surface();
-            tabs.push(Tab {
-                id: ids.next_tab(),
-                name: "Shell".to_string(),
-                explicit_name: None,
-                osc_title: None,
-                layout_opt: Some(SurfaceLayout::Leaf(Box::new(EmptySurface::new(sid)))),
-                focused_surface: sid,
-                cached_display_name: None,
-            });
-        }
-        local_panes.push((
-            remote_pane,
-            Pane {
-                id: ids.next_pane(),
-                tabs,
-                active_tab,
-                tab_scroll_offset: 0.0,
-            },
-        ));
+        local_panes.push((remote_pane, build_pane_from_json(p, ids, map, term)));
     }
 
     if local_panes.is_empty() {
@@ -870,7 +941,8 @@ fn build_mirror_workspace(
         .map(|(_, p)| p.id)
         .unwrap_or(local_panes[0].1.id);
 
-    // PaneNode: 1개=Leaf, 다중=horizontal split chain(best-effort — 배치 정보 부재).
+    // PaneNode: 1개=Leaf, 다중=horizontal split chain(best-effort — 구버전 서버는
+    // pane 배치 정보를 안 보내므로 이 근사만 가능).
     let mut iter = local_panes.into_iter().map(|(_, p)| p);
     let mut node = PaneNode::Leaf(iter.next().unwrap());
     for p in iter {
@@ -1063,5 +1135,78 @@ mod tests {
         let ws = build_mirror_workspace(1, "remote", &serde_json::Value::Null, &ids, &map, &term);
         assert_eq!(ws.id, 1);
         assert_eq!(ws.all_surface_ids().len(), 1);
+    }
+
+    /// pane_layout 필드가 있으면 direction/ratio/focused_pane 이 정확히 복원돼야 한다
+    /// (이번 버그의 핵심 회귀 테스트).
+    #[test]
+    fn build_mirror_workspace_preserves_vertical_pane_split() {
+        let ids = IdGenerator::new();
+        let map = HashMap::new(); // 이 테스트는 focused_surface 매핑 불필요(pane 레벨 검증 목적)
+        let term = HashSet::new();
+        let tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 8,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split",
+                "direction": "vertical",
+                "ratio": 0.3,
+                "first": { "type": "Leaf", "id": 7, "tabs": [] },
+                "second": { "type": "Leaf", "id": 8, "tabs": [] }
+            }
+        });
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        match ws.pane_layout() {
+            PaneNode::Split {
+                direction,
+                ratio,
+                second,
+                ..
+            } => {
+                assert_eq!(*direction, SplitDirection::Vertical);
+                assert!((*ratio - 0.3).abs() < 0.001);
+                // focused_pane(remote 8) 이 second(새로 발급된 로컬 id)로 매핑됐는지.
+                if let PaneNode::Leaf(p) = second.as_ref() {
+                    assert_eq!(ws.focused_pane, p.id);
+                } else {
+                    panic!("expected second to be Leaf");
+                }
+            }
+            _ => panic!("expected Split, got Leaf"),
+        }
+    }
+
+    /// pane_layout 필드가 없으면(구버전 서버) 기존 horizontal-chain fallback 이
+    /// 그대로 동작해야 한다(하위호환 회귀 검증 — 기존 3개 테스트와 별개로, "필드 부재"
+    /// 그 자체를 명시적으로 검증).
+    #[test]
+    fn build_mirror_workspace_falls_back_to_horizontal_chain_without_pane_layout_field() {
+        let ids = IdGenerator::new();
+        let mut map = HashMap::new();
+        map.insert(1u32, 50u32);
+        map.insert(2u32, 51u32);
+        let mut term = HashSet::new();
+        term.insert(50u32);
+        term.insert(51u32);
+        let tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 2,
+            "panes": [
+                { "id": 1, "tabs": [ { "id": 3, "name": "Shell", "active": true,
+                    "focused_surface": 1, "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } } ] },
+                { "id": 2, "tabs": [ { "id": 4, "name": "Shell", "active": true,
+                    "focused_surface": 2, "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } } ] }
+            ]
+            // "pane_layout" 필드 없음 — 구버전 서버 흉내.
+        });
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        match ws.pane_layout() {
+            PaneNode::Split {
+                direction, ratio, ..
+            } => {
+                assert_eq!(*direction, SplitDirection::Horizontal);
+                assert!((*ratio - 0.5).abs() < 1e-6);
+            }
+            _ => panic!("expected Split (2 panes → horizontal chain fallback)"),
+        }
     }
 }
