@@ -1,13 +1,16 @@
 //! `handle_ipc_method` 내부에서 각 codex.* 메서드를 처리한다.
 //!
-//! 자식 terminal 관리(spawn/tell/wait/children/parent/kill/respawn/broadcast)는
+//! 자식 terminal 관리(spawn/tell/children/parent/kill/respawn/broadcast)는
 //! 호스트가 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 **위임**한다.
 //! 이 plugin 은 더 이상 자체 child registry 를 보유하지 않는다(호스트 registry 가
 //! 단일 SoT). 여기 남는 것은 codex **특화**뿐:
-//! - `make_codex_command` — codex 바이너리 기동 명령 빌더.
+//! - `make_codex_command` — codex 바이너리 기동 명령 빌더(`--dangerously-bypass-hook-trust`
+//!   포함 — hook 이 항상 fire 되게 한다).
 //! - install/uninstall/hook — `~/.codex/config.toml` 조작 + trust 판정.
-//! - hook 이 산출한 idle/active 신호를 `terminal.set_state` 로 호스트 registry 에 주입.
-//! - wait 위임 결과에 codex 고유 trust 검사(`untrusted`)를 덧씌우는 래핑.
+//! - hook 이 산출한 idle/active 신호를 `terminal.set_state` 로 호스트 registry 에 주입하고,
+//!   `stop` 이벤트는 `surface.fire_hook`으로 `codex-idle`도 함께 쏜다.
+//! - `handle_spawn`/`handle_tell` 이 완료 시(`codex-idle`/`process-exit`) caller 에게
+//!   1 회성 알림을 보내는 hook 을 등록한다(`register_notify_hooks`).
 //!
 //! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
@@ -51,14 +54,20 @@ fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
 /// 명령 (`tasty codex hook X --surface $TASTY_SURFACE_ID`)이 surface ID 없이
 /// 실행되어 `handle_hook`이 invalid_params로 거부 → idle/needs_input 상태가 영원히
 /// 갱신되지 않는다. claude plugin의 `start_claude_in_surface`와 동일한 패턴.
+///
+/// `--dangerously-bypass-hook-trust` 는 사용자가 `/hooks` 로 수동 승인하기 전에도
+/// tasty 가 install 한 hook 이 항상 fire 되게 한다. tasty 는 자기 hook을 스스로
+/// 심으므로(hook source 를 스스로 vet함) 이 플래그의 정당한 사용 대상이다 —
+/// 이게 없으면 codex 가 hook 을 fire 하지 않아 `codex-idle` 알림이 영원히 오지
+/// 않는다.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
     let prefix = format!("TASTY_SURFACE_ID={surface_id} ");
     match prompt {
         Some(p) if !p.is_empty() => {
             let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("{prefix}codex \"{escaped}\"\r")
+            format!("{prefix}codex --dangerously-bypass-hook-trust \"{escaped}\"\r")
         }
-        _ => format!("{prefix}codex\r"),
+        _ => format!("{prefix}codex --dangerously-bypass-hook-trust\r"),
     }
 }
 
@@ -123,11 +132,20 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
     // 개행/제출 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트
     // `terminal.tell` 이 동일하게 처리한다 → 본문 포맷을 재구현하지 않고 위임.
-    host_call(
+    let resp = host_call(
         host,
         "terminal.tell",
         json!({ "surface": surface_id, "text": message }),
-    )
+    )?;
+
+    // caller_surface 는 dynamic CLI 가 `TASTY_SURFACE_ID` 로 자동 채운다(명시
+    // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
+    // 등록하지 않는다 — 누구에게 알릴지 모르므로.
+    if let Ok(caller) = require_u32(&params, "caller_surface") {
+        register_notify_hooks(host, surface_id, caller, "tell");
+    }
+
+    Ok(resp)
 }
 
 pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
@@ -157,7 +175,10 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
         json!({"surface_id": child_sid, "text": cmd}),
     )?;
 
-    // 3) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
+    // 3) 완료 시(codex-idle/process-exit) parent 에게 1 회성 알림 등록.
+    register_notify_hooks(host, child_sid, parent_surface, "spawn");
+
+    // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
     let mut out = resp;
     if let Some(warning) = compute_spawn_warning(host, parent_surface) {
         if let Some(obj) = out.as_object_mut() {
@@ -166,6 +187,84 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
     }
 
     Ok(out)
+}
+
+/// child(=target) 가 완료(codex-idle 또는 process-exit)되면 caller 에게 1 회성
+/// 알림을 보내도록 hook 2개를 등록한다. 두 hook 의 command 는 완전히 동일한
+/// `codex notify-caller` 호출이며, fire 시점에 surface meta 에 저장된 형제
+/// hook_id 목록을 조회해 스스로 정리한다 — 등록 순서(어느 이벤트가 먼저 fire
+/// 하는지)에 무관하게 대칭적으로 동작한다(어느 쪽이 나중에 등록됐는지에 기대는
+/// 임베딩 방식은 codex-idle 이 먼저 오는 흔한 경로에서 실패하므로 쓰지 않는다).
+/// host 호출 실패는 경고만 하고 넘어간다(soft — spawn/tell 성공을 막지 않음).
+fn register_notify_hooks(host: &HostHandle, target_surface: u32, caller_surface: u32, kind: &str) {
+    let cmd = format!(
+        "tasty codex notify-caller --caller {caller_surface} --target {target_surface} --kind {kind}"
+    );
+    let mut ids = Vec::new();
+    for event in ["codex-idle", "process-exit"] {
+        match host.call(
+            "hook.set",
+            json!({ "surface_id": target_surface, "event": event, "command": cmd, "once": true }),
+        ) {
+            Ok(resp) => {
+                if let Some(id) = resp.get("hook_id").and_then(|v| v.as_u64()) {
+                    ids.push(id.to_string());
+                }
+            }
+            Err(e) => tracing::warn!("codex notify hook.set '{event}' failed: {e}"),
+        }
+    }
+    if ids.len() == 2
+        && let Err(e) = host.call(
+            "surface.meta.set",
+            json!({
+                "surface_id": target_surface,
+                "key": "codex-notify-hooks",
+                "value": ids.join(","),
+            }),
+        )
+    {
+        tracing::warn!("codex notify hook sibling meta.set failed: {e}");
+    }
+}
+
+/// `register_notify_hooks` 가 등록한 hook 이 fire 되면 실행되는 핸들러. caller
+/// 에게 완료 알림을 보내고, 형제 once-hook(자신 포함)을 함께 정리한다. 자신은
+/// once 시맨틱으로 이미 자동 제거된 뒤이므로 unset 이 no-op 이어도 무해하다 —
+/// "누가 먼저 fire했는지" 판별이 전혀 필요 없다.
+pub fn handle_notify_caller(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let caller = require_u32(&params, "caller")?;
+    let target = require_u32(&params, "target")?;
+    let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
+
+    if let Err(e) = host.call(
+        "terminal.tell",
+        json!({ "surface": caller, "text": format!("{kind} 완료: surface {target}") }),
+    ) {
+        tracing::warn!("codex notify-caller tell failed: {e}");
+    }
+
+    if let Ok(meta) = host.call(
+        "surface.meta.get",
+        json!({ "surface_id": target, "key": "codex-notify-hooks" }),
+    ) && let Some(raw) = meta.get("value").and_then(|v| v.as_str())
+    {
+        for id_str in raw.split(',').filter(|s| !s.is_empty()) {
+            if let Ok(hook_id) = id_str.parse::<u64>()
+                && let Err(e) = host.call("hook.unset", json!({ "hook_id": hook_id }))
+            {
+                tracing::warn!("codex notify-caller hook.unset({hook_id}) failed: {e}");
+            }
+        }
+    }
+    if let Err(e) = host.call(
+        "surface.meta.unset",
+        json!({ "surface_id": target, "key": "codex-notify-hooks" }),
+    ) {
+        tracing::warn!("codex notify-caller meta.unset failed: {e}");
+    }
+
+    Ok(json!({}))
 }
 
 const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
@@ -224,52 +323,6 @@ pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMet
         "terminal.children",
         Value::Object(forward(&params, &["surface"])),
     )
-}
-
-/// CLI 측 polling 이 idle/needs_input/exited/untrusted 도달까지 반복 호출한다.
-/// child 상태 판정은 호스트 `terminal.wait` 로 위임하고, codex 고유의 trust 검사만
-/// 여기서 덧씌운다: hook 이 미trust 면 codex 가 hook 을 fire 하지 않아 polling 이
-/// 영원히 active 로 남으므로, active tick 에서 `~/.codex/config.toml` trust 를
-/// 확인해 미충족 시 `untrusted` 로 즉시 종료 + 안내한다.
-pub fn handle_wait(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child")?;
-    let mut wp = forward(&params, &["surface"]);
-    wp.insert("child".into(), json!(child));
-    let resp = host_call(host, "terminal.wait", Value::Object(wp))?;
-    Ok(apply_trust_overlay(resp))
-}
-
-/// `codex.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface`
-/// (= child surface id) 하나. 호스트 `terminal.wait` 의 surface-mode 로 위임하되
-/// trust 검사도 동일하게 덧씌운다.
-pub fn handle_wait_by_surface(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let sid = require_u32(&params, "surface")?;
-    let resp = host_call(host, "terminal.wait", json!({ "surface": sid }))?;
-    Ok(apply_trust_overlay(resp))
-}
-
-/// 호스트 `terminal.wait` 응답에 codex trust 검사를 덧씌운다. state 가 `active`
-/// 인데 hook 이 미trust 면 `untrusted` 응답으로 교체 — 그 외 상태(idle/needs_input/
-/// exited)는 hook fire 됐다는 증거이거나 종료이므로 그대로 통과.
-fn apply_trust_overlay(resp: Value) -> Value {
-    let state = resp.get("state").and_then(|v| v.as_str()).unwrap_or("");
-    if state == "active" && !codex_hooks_all_trusted() {
-        return untrusted_response();
-    }
-    resp
-}
-
-/// codex 가 hook 을 실행하지 않으므로 polling 으로는 영원히 idle 도달 불가 — 사용자에게
-/// trust 절차를 안내하는 응답을 즉시 돌려 wait loop 가 untrusted terminal state 로
-/// 빠져나가도록 한다.
-fn untrusted_response() -> Value {
-    json!({
-        "state": "untrusted",
-        "trust_required": true,
-        "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
-    Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
-    Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
-    })
 }
 
 pub fn handle_broadcast(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
@@ -360,6 +413,16 @@ pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
         "terminal.set_state",
         json!({ "surface": surface_id, "state": new_state }),
     )?;
+    // stop → idle 은 완료 신호이기도 하므로 `codex-idle` surface hook 도 함께
+    // 쏜다 — `register_notify_hooks` 로 등록된 1 회성 알림이 이걸 구독한다.
+    if event == "stop"
+        && let Err(e) = host.call(
+            "surface.fire_hook",
+            json!({ "surface_id": surface_id, "event": "codex-idle" }),
+        )
+    {
+        tracing::warn!("codex hook fire_hook 'codex-idle' failed: {e}");
+    }
     Ok(json!({}))
 }
 
@@ -391,9 +454,11 @@ pub fn handle_install() -> Result<Value, IpcMethodError> {
     });
     if !trusted {
         resp["note"] = Value::String(
-            "Codex blocks newly-added hooks until trusted. Run `codex` in any terminal, \
-type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
-Trust persists per-machine. `tasty codex wait` returns `state: \"untrusted\"` until trust is granted."
+            "Codex blocks newly-added hooks until trusted, but tasty starts every codex instance \
+with `--dangerously-bypass-hook-trust` (spawn/launch/reboot), so hooks fire regardless of this \
+status. Manual trust is only needed if you run `codex` yourself without that flag. To trust \
+manually: run `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press \
+Enter → t → Esc → Down. Trust persists per-machine."
                 .into(),
         );
     }
@@ -437,9 +502,13 @@ pub fn handle_uninstall() -> Result<Value, IpcMethodError> {
 //
 // Trust gate: codex 는 새 hook entry 를 *trust* 하기 전엔 fire 하지 않고 TUI 에
 // "1 hook needs review" 표시 후 `/hooks` 명령 승인을 요구한다 (`HookStateToml`
-// 의 `trusted_hash` 메커니즘). install 자체는 멱등하게 entry 를 박지만, 첫
-// 사용자가 `/hooks` 로 한 번 승인해야 한다 — 이는 codex CLI 의 보안 정책이므로
-// 플러그인 측에서 우회 불가.
+// 의 `trusted_hash` 메커니즘). install 자체는 멱등하게 entry 를 박지만, 승인
+// 없이는 hook 이 fire 되지 않는다 — **단, `--dangerously-bypass-hook-trust`
+// CLI 플래그(codex 공식 옵션)를 기동 명령에 박으면 이 승인 절차를 우회할 수
+// 있다**(`make_codex_command`/`reboot::resume_command` 가 항상 이 플래그를
+// 붙인다). tasty 는 자기 hook 을 스스로 심으므로(hook source 를 스스로 vet함)
+// 이 플래그의 정당한 사용 대상이다. `codex_hooks_all_trusted*` 는 이제 wait
+// 경로가 아니라 `handle_install` 의 안내 문구(수동 승인 여부 표시)에만 쓰인다.
 
 use std::path::{Path, PathBuf};
 
@@ -570,7 +639,9 @@ fn merge_install(mut value: toml::Value) -> toml::Value {
 /// 다르면 invalidate 한다. 본 체크는 키 존재 + sha256: prefix 만 보므로, stale entry
 /// 가 있고 codex 가 invalidate 한 케이스는 못 잡는다. 하지만 우리 install 은 멱등하고
 /// `hook_command()` 가 static 이라 실제 stale 케이스는 사용자가 config.toml 을 직접
-/// 편집한 경우 정도. 그 케이스는 wait 가 timeout 폴백으로 종료되며 별 안전 문제 없음.
+/// 편집한 경우 정도. `--dangerously-bypass-hook-trust`(기동 명령에 항상 포함)가
+/// 이 여부와 무관하게 hook 을 fire 시키므로, 이 함수는 이제 `handle_install` 의
+/// 안내 문구(수동 승인 상태 표시)에만 쓰인다 — 실제 hook 동작에는 영향 없음.
 fn codex_hooks_all_trusted() -> bool {
     let Ok(path) = codex_config_toml_path() else {
         return false;
@@ -633,10 +704,13 @@ mod tests {
 
     #[test]
     fn make_codex_command_no_prompt() {
-        assert_eq!(make_codex_command(42, None), "TASTY_SURFACE_ID=42 codex\r");
+        assert_eq!(
+            make_codex_command(42, None),
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
+        );
         assert_eq!(
             make_codex_command(42, Some("")),
-            "TASTY_SURFACE_ID=42 codex\r"
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
         );
     }
 
@@ -644,20 +718,26 @@ mod tests {
     fn make_codex_command_with_plain_prompt() {
         assert_eq!(
             make_codex_command(42, Some("hello")),
-            "TASTY_SURFACE_ID=42 codex \"hello\"\r"
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust \"hello\"\r"
         );
     }
 
     #[test]
     fn make_codex_command_with_prompt_escapes_quotes() {
         let cmd = make_codex_command(7, Some(r#"fix "bug" please"#));
-        assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"fix \\\"bug\\\" please\"\r");
+        assert_eq!(
+            cmd,
+            "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"fix \\\"bug\\\" please\"\r"
+        );
     }
 
     #[test]
     fn make_codex_command_with_prompt_escapes_backslash() {
         let cmd = make_codex_command(7, Some(r"path\to\file"));
-        assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"path\\\\to\\\\file\"\r");
+        assert_eq!(
+            cmd,
+            "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"path\\\\to\\\\file\"\r"
+        );
     }
 
     #[test]
@@ -673,15 +753,6 @@ mod tests {
         // 거부 (silent no-op 대신 invalid_params).
         let err = hook_event_to_state("notification").unwrap_err();
         assert!(format!("{err:?}").contains("unknown hook event"));
-    }
-
-    #[test]
-    fn apply_trust_overlay_passes_through_non_active() {
-        // idle/needs_input/exited 는 trust 무관 그대로 통과.
-        for s in ["idle", "needs_input", "exited"] {
-            let resp = apply_trust_overlay(json!({ "state": s }));
-            assert_eq!(resp["state"], s);
-        }
     }
 
     #[test]

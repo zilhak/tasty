@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.12"
+version = "0.1.13"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -23,24 +23,34 @@ command = "tasty-plugin-codex"
 [[contributes.ipc_namespace]]
 prefix = "codex"
 
+# 이 plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 카탈로그.
+# host 가 `hook.set` / `surface.fire_hook` 등록을 (내장 ∪ 활성 plugin 선언) 으로
+# 검증하므로, 여기 선언되지 않은 키는 plugin 활성 상태여도 거부된다.
+# `process-exit` 은 host 내장 이벤트라 선언 불필요. `needs-input` 에 대응하는
+# codex hook 이벤트가 없어(Notification 이벤트 부재) 선언하지 않는다 — 거짓
+# 계약을 만들지 않기 위함.
+[[contributes.hook_events]]
+key = "codex-idle"
+description = "Codex instance became idle (Stop hook)"
+
 [[contributes.cli]]
 name = "codex"
-description = "Codex CLI integration (launch, spawn, kill, wait, etc.)"
+description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
-    { name = "launch",    ipc_method = "codex.launch",    args = "launch_args",    description = "Launch a new workspace and start Codex in its terminal" },
-    { name = "spawn",     ipc_method = "codex.spawn",     args = "spawn_args",     auto_wait = { method = "codex.wait", map_from_response = { child_index = "child" }, map_from_request = { surface = "surface" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" } }, description = "Spawn a child Codex instance in a split surface. Auto-waits until the child becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
-    { name = "children",  ipc_method = "codex.children",  args = "children_args",  description = "List children of the specified Codex parent" },
-    { name = "parent",    ipc_method = "codex.parent",    args = "parent_args",    description = "Return the parent Codex surface id for a given child surface" },
-    { name = "tell",      ipc_method = "codex.tell",      args = "tell_args",      auto_wait = { method = "codex.wait_by_surface", map_from_request = { surface = "surface" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" } }, description = "Send a message to a Codex instance (preserves line breaks, submits at end). Auto-waits until the target becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
-    { name = "wait",      ipc_method = "codex.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Codex instance to become idle / needs_input / exited (returns untrusted with instructions if codex hooks haven't been approved yet)" },
-    { name = "broadcast", ipc_method = "codex.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Codex instance" },
-    { name = "kill",      ipc_method = "codex.kill",      args = "kill_args",      description = "Kill a child Codex instance by child index" },
-    { name = "respawn",   ipc_method = "codex.respawn",   args = "respawn_args",   description = "Respawn a child Codex instance" },
-    { name = "reboot",    ipc_method = "codex.reboot",    args = "reboot_args",    description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off." },
-    { name = "install",   ipc_method = "codex.install",   args = "no_args",        description = "Install Tasty hook into Codex CLI configuration" },
-    { name = "uninstall", ipc_method = "codex.uninstall", args = "no_args",        description = "Uninstall Tasty hook from Codex CLI configuration" },
-    { name = "hook",      ipc_method = "codex.hook",      args = "hook_args",      stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system." },
+    { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal" },
+    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a one-shot notification is sent to the parent surface when the child becomes idle or exits." },
+    { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent" },
+    { name = "parent",        ipc_method = "codex.parent",        args = "parent_args",        description = "Return the parent Codex surface id for a given child surface" },
+    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a one-shot notification is sent to the caller surface when the target becomes idle or exits." },
+    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: notify caller surface that a spawned/told child reached a terminal state, then clean up the sibling once-hook. Invoked by hooks registered from spawn/tell — not meant for direct use." },
+    { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance" },
+    { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index" },
+    { name = "respawn",       ipc_method = "codex.respawn",       args = "respawn_args",       description = "Respawn a child Codex instance" },
+    { name = "reboot",        ipc_method = "codex.reboot",        args = "reboot_args",        description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off." },
+    { name = "install",       ipc_method = "codex.install",       args = "no_args",            description = "Install Tasty hook into Codex CLI configuration" },
+    { name = "uninstall",     ipc_method = "codex.uninstall",     args = "no_args",            description = "Uninstall Tasty hook from Codex CLI configuration" },
+    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system." },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -60,9 +70,8 @@ positional = [
     { name = "message", type = "string", required = true, help = "Message text to send. Newlines are preserved; the message is submitted automatically." },
 ]
 flags = [
-    { name = "surface", type = "u32",  flag = "--surface", required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
-    { name = "no_wait", type = "bool", flag = "--no-wait", required = false, help = "Skip the automatic wait — return immediately after tell (legacy fire-and-forget)" },
-    { name = "timeout", type = "u32",  flag = "--timeout", required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
+    { name = "surface",        type = "u32", flag = "--surface",        required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "caller_surface", type = "u32", flag = "--caller-surface", required = false, help = "Surface ID to notify when the target reaches a terminal state (defaults to caller's TASTY_SURFACE_ID)" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -74,8 +83,6 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
-    { name = "no_wait",   type = "bool",   flag = "--no-wait",   required = false, help = "Skip the automatic wait — return immediately after spawn (legacy fire-and-forget)" },
-    { name = "timeout",   type = "u32",    flag = "--timeout",   required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -83,11 +90,11 @@ flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
 ]
 
-[contributes.cli.arg_groups.wait_args]
+[contributes.cli.arg_groups.notify_caller_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index returned by `codex children` / `codex spawn`" },
-    { name = "timeout", type = "u32", flag = "--timeout", required = false, help = "Timeout in seconds (no default — omit means wait forever)" },
+    { name = "caller", type = "u32",    flag = "--caller", required = true, help = "Surface ID to notify" },
+    { name = "target",  type = "u32",   flag = "--target", required = true, help = "Surface ID that completed" },
+    { name = "kind",    type = "string", flag = "--kind",  required = true, help = "spawn | tell" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]

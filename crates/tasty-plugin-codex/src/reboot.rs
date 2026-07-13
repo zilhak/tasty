@@ -197,9 +197,12 @@ pub(crate) fn is_safe_session_id(id: &str) -> bool {
 /// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
 /// 동작하는 평문. `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
 /// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
-/// "Update now" 를 확정해 버린다.
+/// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
+/// codex 도 hook 이 항상 fire 되게 한다(`handlers::make_codex_command` 와 동일 이유).
 pub(crate) fn resume_command(session_id: &str) -> String {
-    format!("codex resume -c check_for_update_on_startup=false {session_id}\r")
+    format!(
+        "codex resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false {session_id}\r"
+    )
 }
 
 /// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
@@ -398,7 +401,7 @@ mod tests {
     fn resume_command_disables_update_prompt_and_submits() {
         assert_eq!(
             resume_command("019f55e7-3dfa"),
-            "codex resume -c check_for_update_on_startup=false 019f55e7-3dfa\r"
+            "codex resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r"
         );
     }
 

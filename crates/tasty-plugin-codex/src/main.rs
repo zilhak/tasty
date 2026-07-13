@@ -2,9 +2,10 @@
 
 //! Tasty Codex plugin — 외부 plugin.
 //!
-//! `tasty codex spawn|children|wait|broadcast|kill|respawn|install|uninstall|hook`
+//! `tasty codex spawn|children|tell|broadcast|kill|respawn|install|uninstall|hook`
 //! CLI 세트를 제공한다. 자식 terminal surface에서 `codex` CLI를 띄우고 Claude Code의
-//! `tasty claude` 명령과 동일한 멀티에이전트 워크플로를 제공한다.
+//! `tasty claude` 명령과 동일한 멀티에이전트 워크플로를 제공한다. spawn/tell 은
+//! 동기 대기 대신 완료 시 1 회성 알림 훅(`notify-caller`)으로 caller 에게 알린다.
 //!
 //! 자식 terminal 관리(registry·spawn·wait·kill·reconcile·soft 점유)는 호스트가
 //! 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 위임한다 — 이 plugin 은
@@ -60,8 +61,7 @@ impl Plugin for CodexPlugin {
             "codex.children" => handlers::handle_children(&host, params),
             "codex.parent" => handlers::handle_parent(&host, params),
             "codex.tell" => handlers::handle_tell(&host, params),
-            "codex.wait" => handlers::handle_wait(&host, params),
-            "codex.wait_by_surface" => handlers::handle_wait_by_surface(&host, params),
+            "codex.notify_caller" => handlers::handle_notify_caller(&host, params),
             "codex.broadcast" => handlers::handle_broadcast(&host, params),
             "codex.kill" => handlers::handle_kill(&host, params),
             "codex.respawn" => handlers::handle_respawn(&host, params),

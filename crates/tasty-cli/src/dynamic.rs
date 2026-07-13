@@ -223,10 +223,10 @@ pub fn matches_to_request(
         if let Some(v) = params.get("surface").cloned() {
             params.entry(String::from("surface_id")).or_insert(v);
         }
-        // caller_surface: plugin이 정의한 `caller_surface` (u32) 인자가 사용자
-        // 입력에 없으면 TASTY_SURFACE_ID env로 채운다. `surface`용 자동 채움과
-        // 동일한 패턴이지만 별도 필드명이므로 독립 블록 — plugin-private 키라
-        // `surface_id` 류 dual-write 는 하지 않는다(호스트 IPC 표준 키가 아님).
+        // `tell` 등 target(`surface`)과 caller 를 구분해야 하는 명령을 위한 자동
+        // 채움. 필드명 `caller_surface` 로 고정(claude/codex 공용) — `surface`용
+        // 자동 채움과 동일한 패턴이지만 별도 필드명이므로 독립 블록. plugin-private
+        // 키라 `surface_id` 류 dual-write 는 하지 않는다(호스트 IPC 표준 키가 아님).
         let defines_caller_surface = g
             .flags
             .iter()
