@@ -1,5 +1,7 @@
 # bash(MSYS): resize 후 다음 입력의 첫 바이트 유실
 
+**⚠️ Windows 전용 이슈.** ConPTY(Windows 전용 PTY 백엔드) + MSYS bash(git-bash 등) 조합에서만 재현된다 — macOS/Linux 의 tasty PTY 백엔드는 ConPTY 를 쓰지 않으므로 이 문서의 증상과 무관하다(아래 실측의 "셸을 cmd.exe 로 교체 → 유실 0" 도 Windows 내부 비교이지, 크로스플랫폼 비교가 아님에 주의).
+
 **증상.** ConPTY resize(레이아웃 변경 — split/unsplit, 창 크기 변경)가 일어난 surface 의 bash 프롬프트에 다음 입력을 주입하면, 첫 1바이트가 소리 없이 사라진다 — `surface.send "seq 1 5000\n"` 이 `eq 1 5000` 으로 도착해 `bash: eq: command not found`. 재현율 resize+입력 쌍당 ~25–33%.
 
 **원인 (셸 측 — tasty 무죄).** bash 는 SIGWINCH 핸들러를 `SA_RESTART` 로 설치하고, readline 은 플래그만 세워뒀다가 **다음 입력이 read 를 깨울 때** 보류된 WINCH 를 처리한다(bash 5 동작, [fff#48](https://github.com/dylanaraps/fff/issues/48)). MSYS/Cygwin 의 시그널 에뮬레이션이 ConPTY 위에서 이 "read 를 깨운 바이트"를 소모한다.

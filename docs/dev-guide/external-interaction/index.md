@@ -19,4 +19,4 @@ dev-guide 판이다 — 대상이 "디자인 렌더와 egui 의 구조 차이" �
 | 노트 | 요지 |
 |------|------|
 | [tell-autosubmit-paste-threshold](tell-autosubmit-paste-threshold.md) | child `tell` 단일라인이 63자(code point) 이상이면 자동제출 안 됨 — 본문+`\r` 한 burst 가 수신측 paste 휴리스틱에 흡수. 본문과 제출 `\r` 을 별도 PTY write 로 분리해 해결 |
-| [bash-resize-first-byte-loss](bash-resize-first-byte-loss.md) | bash(MSYS)는 resize 후 다음 입력의 첫 1바이트를 지연 SIGWINCH 처리에 소모 (~25–33%, 시간 무관, cmd.exe 무결). 상류 버그 — 에이전트는 `\n` 프리픽스 또는 echo 검증으로 방어 |
+| [bash-resize-first-byte-loss](bash-resize-first-byte-loss.md) | **Windows 전용**(ConPTY+MSYS bash). resize 후 다음 입력의 첫 1바이트를 지연 SIGWINCH 처리에 소모 (~25–33%, 시간 무관, cmd.exe 무결). 상류 버그 — 에이전트는 `\n` 프리픽스 또는 echo 검증으로 방어 |

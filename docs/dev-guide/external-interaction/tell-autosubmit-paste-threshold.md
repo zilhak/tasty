@@ -47,14 +47,25 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 
 단일라인 tell 도 멀티라인과 동일하게 **본문과 제출 `\r` 을 별도 PTY write 로 분리 전송**한다.
 
-- `crates/tasty-plugin-claude/src/handlers.rs`: `build_tell_pty_text` 단일라인은 `\r` 미포함
-  평문을 반환하고, `handle_tell` 이 개행 유무와 무관하게 "본문 `surface.send` → 별도 `\r`
-  `surface.send`" 두 호출을 탄다(멀티라인의 bracketed paste 본문 처리는 유지).
-- `crates/tasty-plugin-codex/src/handlers.rs`: codex tell 도 동형 구조라 동일 적용
-  (`build_tell_payload` + `handle_tell`).
+- **호스트 `terminal.tell` 에 중앙화됐다** — `src/adapters/ipc/handler/terminal.rs` 의
+  `build_tell_payload`(개행 유무와 무관하게 `\r` 미포함 본문만 만든다. 멀티라인은 bracketed
+  paste 로 감싼다) + `handle_tell`(본문 `surface.send` → 별도 `\r` `surface.send`, 두 번의
+  write 로 분리)이 유일한 구현이다.
+- `claude`/`codex` 플러그인의 `tell` 은 자체 페이로드 조립 로직을 갖지 않고 `terminal.tell`
+  IPC 를 그대로 호출해 위임한다(`crates/tasty-plugin-claude/src/handlers.rs`,
+  `crates/tasty-plugin-codex/src/handlers.rs` 의 `handle_tell` — 둘 다 `host_call(host,
+  "terminal.tell", …)` 한 줄). `terminal.spawn` 의 초기 command 주입도 같은
+  `build_tell_payload` 를 거친다.
+- **적용 범위 밖(주의)**: `terminal.broadcast`(`handle_broadcast`)는 대상마다 `surface.send`
+  를 그대로 호출할 뿐 `build_tell_payload` 를 거치지 않는다 — 63자+ 단일라인을 여러 child 에
+  동시 전송하면 이 함정이 재현될 수 있다. `claude`/`codex` 플러그인이 자기 프로세스를 처음
+  띄우는 `start_claude_in_surface`류 launch 경로도 별도 `surface.send`(쉘 커맨드라인 + `\r`
+  한 덩어리)라 같은 사각지대다 — 다만 이쪽은 대상이 TUI 가 아니라 아직 아무것도 안 뜬 shell
+  프롬프트라 bracketed-paste 휴리스틱이 걸릴 대상 자체가 없어 실질 위험은 없다.
 
-결과: 메시지 길이·콘텐츠와 무관하게 결정적으로 자동제출된다. 단위 테스트가 본문 payload 에
-제출 `\r` 이 섞이지 않음(63자+ 회귀 가드 포함)과 멀티라인 본문 분리를 검증한다.
+결과: `tell`/`terminal.spawn` 경로는 메시지 길이·콘텐츠와 무관하게 결정적으로 자동제출된다.
+단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드 포함)과 멀티라인 본문
+분리를 검증한다.
 
 ## 일반 교훈
 
