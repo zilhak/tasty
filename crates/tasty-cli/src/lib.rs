@@ -153,7 +153,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: SurfaceCommands,
     },
-    /// Manage child terminals (spawn/tell/wait/children/kill/…) — host-internalized
+    /// Manage child terminals (spawn/tell/children/kill/…) — host-internalized
     /// agent child-terminal management (ADR-0040).
     Terminal {
         #[command(subcommand)]

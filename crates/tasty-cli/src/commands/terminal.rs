@@ -1,5 +1,5 @@
 //! `tasty terminal` subcommand — 호스트 내재화된 child-terminal 관리 (ADR-0040 /
-//! occupancy-04). 에이전트가 자식 터미널을 spawn/tell/wait/kill 하는 범용 명령.
+//! occupancy-04). 에이전트가 자식 터미널을 spawn/tell/kill 하는 범용 명령.
 //!
 //! codex/claude 플러그인 CLI 와 달리 특정 에이전트 바이너리에 묶이지 않는다 —
 //! `--command` 로 임의 명령을 띄운다. spawn 성공 시 자식은 soft 점유로 표시된다.
@@ -11,9 +11,9 @@ pub enum TerminalCommands {
     /// Spawn a child terminal in a workspace and run a command in it.
     ///
     /// The child is registered under the parent surface and marked with a soft
-    /// occupancy (green border). Returns immediately by default; pass --wait to
-    /// block until the child becomes idle / needs_input / exited (requires an
-    /// idle-signal source, e.g. an agent hook wired to `terminal set-state`).
+    /// occupancy (green border). Returns immediately — completion (idle /
+    /// needs_input / exited) is reported via an agent hook wired to
+    /// `terminal set-state`, not by blocking here.
     Spawn {
         /// Parent surface ID (defaults to caller's TASTY_SURFACE_ID)
         #[arg(long)]
@@ -36,41 +36,16 @@ pub enum TerminalCommands {
         /// Display nickname shown on the tab
         #[arg(long)]
         nickname: Option<String>,
-        /// Block until the child reaches idle / needs_input / exited after spawn
-        #[arg(long)]
-        wait: bool,
-        /// --wait timeout in seconds (omit means wait forever)
-        #[arg(long)]
-        timeout: Option<u32>,
     },
     /// Send a message to a child terminal (preserves line breaks, submits at end).
     ///
-    /// Returns immediately by default; pass --wait to block until the target
-    /// becomes idle / needs_input / exited.
+    /// Returns immediately.
     Tell {
         /// Message text to send. Newlines are preserved; submitted automatically.
         text: String,
         /// Target surface ID (defaults to caller's TASTY_SURFACE_ID)
         #[arg(long)]
         surface: Option<u32>,
-        /// Block until the target reaches idle / needs_input / exited after tell
-        #[arg(long)]
-        wait: bool,
-        /// --wait timeout in seconds (omit means wait forever)
-        #[arg(long)]
-        timeout: Option<u32>,
-    },
-    /// Wait for a child terminal to become idle / needs_input / exited.
-    Wait {
-        /// Parent surface ID, or the child surface itself when --child is omitted
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Child index returned by `terminal children` / `terminal spawn`
-        #[arg(long)]
-        child: Option<u32>,
-        /// Timeout in seconds (omit means wait forever)
-        #[arg(long)]
-        timeout: Option<u32>,
     },
     /// List children of the specified parent surface.
     Children {

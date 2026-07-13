@@ -1059,7 +1059,7 @@ row_attached = "  #{} {} (pane={}, busy={}) — client {} が占有中"
 
 # `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
 [cli.terminal]
-desc = "AIエージェント用の子ターミナル管理 (spawn/tell/wait/children/kill/…)."
+desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/kill/…)."
 spawn_no_parent = "エラー: 親サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 tell_no_target = "エラー: 対象サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 

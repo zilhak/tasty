@@ -287,7 +287,6 @@ fn route_engine_handler(
         // terminal (child-terminal 관리, ADR-0040 / occupancy-04)
         "terminal.spawn" => terminal::handle_spawn(core, state, engine, id, &request.params),
         "terminal.tell" => terminal::handle_tell(core, state, engine, id, &request.params),
-        "terminal.wait" => terminal::handle_wait(engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.kill" => terminal::handle_kill(core, state, engine, id, &request.params),

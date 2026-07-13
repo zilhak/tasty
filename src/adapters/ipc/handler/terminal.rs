@@ -280,51 +280,6 @@ pub(crate) fn handle_tell(
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
 
-/// 1-tick snapshot. child(=parent+index) 또는 surface 직접 지정 두 모드.
-/// state 가 `active` 인데 host `surface.locate` 로 죽은 surface 면 `exited` 로 강등.
-/// (codex 의 trust/untrusted 는 에이전트 특화라 여기 없다.)
-pub(crate) fn handle_wait(engine: &CoreState, id: Value, params: &Value) -> JsonRpcResponse {
-    // 모드 결정: `child` 가 있으면 parent+index, 없으면 `surface` 직접.
-    let sid = if params.get("child").is_some() {
-        let parent = match resolve_parent(engine, params, &id) {
-            Ok(p) => p,
-            Err(e) => return e,
-        };
-        let child_index = match require_u32(params, "child", &id) {
-            Ok(c) => c,
-            Err(e) => return e,
-        };
-        match engine.child_terminals.find_child(parent, child_index) {
-            Some(entry) => entry.child_surface_id,
-            None => {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    format!("child {child_index} not found under surface {parent}"),
-                );
-            }
-        }
-    } else {
-        let sid = match require_u32(params, "surface", &id) {
-            Ok(s) => s,
-            Err(e) => return e,
-        };
-        // 등록되지 않은 surface 는 즉시 exited (관리 대상 아님).
-        if engine.child_terminals.parent_of_child(sid).is_none() {
-            return JsonRpcResponse::success(id, json!({ "state": "exited" }));
-        }
-        sid
-    };
-
-    let response_state = match engine.child_terminals.state_of(sid) {
-        "active" => {
-            let exists = engine.find_pane_for_surface(sid).is_some();
-            if exists { "active" } else { "exited" }
-        }
-        other => other,
-    };
-    JsonRpcResponse::success(id, json!({ "state": response_state, "surface_id": sid }))
-}
-
 pub(crate) fn handle_children(
     engine: &mut CoreState,
     id: Value,
@@ -617,41 +572,6 @@ mod tests {
 
     fn ok(resp: JsonRpcResponse) -> Value {
         resp.result.expect("expected success result")
-    }
-
-    #[test]
-    fn wait_unregistered_surface_is_exited() {
-        let e = engine();
-        let resp = handle_wait(&e, json!(1), &json!({ "surface": 424242 }));
-        assert_eq!(ok(resp)["state"], "exited");
-    }
-
-    #[test]
-    fn wait_active_dead_surface_downgrades_to_exited() {
-        // 등록됐지만 라이브 트리에 없는 surface + active → surface.locate 부재로 exited 강등.
-        let mut e = engine();
-        e.child_terminals.register_child(7, child(5000, 0));
-        let resp = handle_wait(&e, json!(1), &json!({ "surface": 5000 }));
-        assert_eq!(ok(resp)["state"], "exited");
-    }
-
-    #[test]
-    fn wait_idle_state_is_returned() {
-        let mut e = engine();
-        e.child_terminals.register_child(7, child(5000, 0));
-        e.child_terminals.set_idle(5000, true);
-        let resp = handle_wait(&e, json!(1), &json!({ "surface": 5000 }));
-        assert_eq!(ok(resp)["state"], "idle");
-    }
-
-    #[test]
-    fn wait_by_parent_and_child_index() {
-        let mut e = engine();
-        let idx = e.child_terminals.next_index_for(7);
-        e.child_terminals.register_child(7, child(5000, idx));
-        e.child_terminals.set_needs_input(5000, true);
-        let resp = handle_wait(&e, json!(1), &json!({ "surface": 7, "child": 0 }));
-        assert_eq!(ok(resp)["state"], "needs_input");
     }
 
     #[test]

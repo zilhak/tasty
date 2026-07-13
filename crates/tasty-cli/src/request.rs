@@ -648,8 +648,6 @@ fn terminal_command_to_method_params(
             command,
             role,
             nickname,
-            wait: _,
-            timeout,
         } => {
             let mut m = Map::new();
             // parent = --surface 또는 caller TASTY_SURFACE_ID. 둘 다 없으면 대상 불명.
@@ -666,15 +664,9 @@ fn terminal_command_to_method_params(
             m.insert("command".into(), Value::from(command.clone()));
             put_str(&mut m, "role", role);
             put_str(&mut m, "nickname", nickname);
-            put_u32(&mut m, "timeout", *timeout);
             ("terminal.spawn", Value::Object(m))
         }
-        T::Tell {
-            text,
-            surface,
-            wait: _,
-            timeout,
-        } => {
+        T::Tell { text, surface } => {
             let mut m = Map::new();
             let Some(target) = resolve_surface_id(*surface) else {
                 eprintln!("{}", tasty_i18n::t("cli.terminal.tell_no_target"));
@@ -682,19 +674,7 @@ fn terminal_command_to_method_params(
             };
             m.insert("surface".into(), Value::from(target));
             m.insert("text".into(), Value::from(text.clone()));
-            put_u32(&mut m, "timeout", *timeout);
             ("terminal.tell", Value::Object(m))
-        }
-        T::Wait {
-            surface,
-            child,
-            timeout,
-        } => {
-            let mut m = Map::new();
-            put_u32(&mut m, "surface", resolve_surface_id(*surface));
-            put_u32(&mut m, "child", *child);
-            put_u32(&mut m, "timeout", *timeout);
-            ("terminal.wait", Value::Object(m))
         }
         T::Children { surface } => {
             let mut m = Map::new();

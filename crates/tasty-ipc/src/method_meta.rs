@@ -128,7 +128,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             plugin(&[SurfaceWrite, TerminalWrite, TerminalSpawn]),
         ),
         ("terminal.tell", plugin(&[TerminalWrite])),
-        ("terminal.wait", plugin(&[SurfaceRead])),
         ("terminal.children", plugin(&[SurfaceRead])),
         ("terminal.parent", plugin(&[SurfaceRead])),
         ("terminal.kill", plugin(&[SurfaceWrite])),

@@ -125,7 +125,6 @@ fn terminal_star_is_plugin_callable_within_agent_plugin_permissions() {
     for method in [
         "terminal.spawn",
         "terminal.tell",
-        "terminal.wait",
         "terminal.children",
         "terminal.parent",
         "terminal.kill",

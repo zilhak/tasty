@@ -25,6 +25,7 @@
 - **(BREAK) `claude.wait`/`claude.wait_by_surface`/`claude.wait_any` IPC 메서드 + `tasty claude wait`/`wait-any` CLI 제거** — 위 이벤트 기반 알림으로 대체됐다. 폴링 기반 대기가 필요하면 더 이상 이 plugin 이 제공하지 않는다.
 - **(BREAK) `claude-child-idle`/`claude-child-needs-input` surface hook 이벤트 제거** — spawn 시점에 등록된 parent-child 관계를 기준으로 매번 parent 에 fan-out 하던 구식 메커니즘. 신규 1회성 알림(위)이 caller 기준·1회성·`tell` 의 임의 surface 대상까지 커버하는 더 일반적인 방식으로 완전히 대체한다.
 - `tasty codex wait` (BREAK) — 동기 폴링 명령 제거. `spawn`/`tell` 의 자동 알림으로 대체.
+- **(BREAK) `terminal.wait` IPC 메서드 + `tasty terminal wait`/`spawn --wait`/`tell --wait` CLI 제거** — claude/codex 의 동기 wait 를 이벤트 기반 알림으로 대체하면서 `terminal.wait` 의 마지막 호출자가 사라졌다. `terminal.set_state`(에이전트 hook 진입점)는 영향 없이 유지된다.
 
 ### Added
 - **`claude.notify_done` IPC / `tasty claude notify-done` CLI (내부용)** — `spawn`/`tell` 이 등록하는 1회성 알림 hook(`claude-idle`/`needs-input`/`process-exit`)이 fire 될 때 실행되어, caller surface 에 완료 메시지를 전달하고 남은 형제 hook 을 정리한다.
