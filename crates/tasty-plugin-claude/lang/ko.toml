@@ -1,2 +1,8 @@
 [claude.cli]
 desc = "Claude Code 자식 세션을 관리합니다"
+
+[claude]
+"settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
+
+[settings.subtab]
+claude = "Claude Code"

@@ -426,7 +426,68 @@ pub(crate) fn handle_spawn(host: &HostHandle, params: &Value) -> Result<Value, I
     if let Some(obj) = out.as_object_mut() {
         obj.insert("parent_surface_id".into(), json!(parent_surface_id));
     }
+
+    // 3) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
+    if let Some(warning) = compute_spawn_warning(host, parent_surface_id) {
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("warning".into(), json!(warning));
+        }
+    }
+
     Ok(out)
+}
+
+const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
+
+/// spawn 직후 parent 의 현재 child 목록/상태를 재조회해 임계치 초과 여부를 판단한다.
+/// host 호출 실패는 경고 생략으로 처리한다(soft 경고이므로 spawn 성공을 막지 않음).
+///
+/// 여기서 부르는 건 claude 특화 remap 된 `claude.children`(필드명 `child_surface_id`)이
+/// 아니라 **원본** `terminal.children`(필드명 `surface_id`) — `index`/`state` 필드명은
+/// 양쪽 shape 모두 동일하므로 아래 파싱 코드는 원본 응답에 그대로 맞는다.
+fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<String> {
+    let children_resp = host
+        .call("terminal.children", json!({ "surface": parent_surface_id }))
+        .ok()?;
+    let children = children_resp.get("children")?.as_array()?;
+    let total = children.len();
+    let idle_indices: Vec<u64> = children
+        .iter()
+        .filter(|c| c.get("state").and_then(|s| s.as_str()) == Some("idle"))
+        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
+        .collect();
+
+    let threshold = host
+        .call(
+            "settings.get_plugin_setting",
+            json!({ "storage_key": "spawn_child_warn_threshold" }),
+        )
+        .ok()
+        .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
+        .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
+
+    build_spawn_warning(total, &idle_indices, threshold)
+}
+
+/// 순수 함수 — host 호출 없음. 단위 테스트 대상.
+fn build_spawn_warning(total: usize, idle_indices: &[u64], threshold: f64) -> Option<String> {
+    if (total as f64) <= threshold {
+        return None;
+    }
+    let mut msg = format!(
+        "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
+    );
+    if !idle_indices.is_empty() {
+        let idle_list = idle_indices
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        msg.push_str(&format!(
+            " Idle children at index [{idle_list}] have already finished their work — consider `respawn` instead of spawning a new one."
+        ));
+    }
+    Some(msg)
 }
 
 /// 자식 surface 의 parent 를 조회 — 호스트 `terminal.parent` 로 위임.
@@ -438,6 +499,30 @@ pub(crate) fn handle_parent(host: &HostHandle, params: &Value) -> Result<Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_spawn_warning_none_below_threshold() {
+        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+    }
+
+    #[test]
+    fn build_spawn_warning_above_threshold_lists_idle_and_mentions_respawn() {
+        let w = build_spawn_warning(7, &[2, 5], 6.0).unwrap();
+        assert!(w.contains("respawn"));
+        assert!(w.contains('2') && w.contains('5'));
+    }
+
+    #[test]
+    fn build_spawn_warning_above_threshold_no_idle_has_no_respawn_word() {
+        let w = build_spawn_warning(7, &[], 6.0).unwrap();
+        assert!(!w.contains("respawn"));
+    }
+
+    #[test]
+    fn build_spawn_warning_respects_custom_threshold() {
+        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+        assert!(build_spawn_warning(4, &[], 3.0).is_some());
+    }
 
     #[test]
     fn build_launch_command_no_task() {

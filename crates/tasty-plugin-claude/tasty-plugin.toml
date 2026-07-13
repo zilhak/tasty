@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.11"
+version = "0.1.12"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -17,6 +17,7 @@ permissions = [
     # Phase 6.2: 자식 Claude 인스턴스에 session token 을 발급한다.
     # 자식이 호스트에 IPC 호출 시 envelope.session_token 으로 신원을 증명.
     "agent",
+    "ui.settings_page",
 ]
 lang_dir = "lang"
 
@@ -168,3 +169,16 @@ flags = [
 ]
 
 [contributes.cli.arg_groups.no_args]
+
+[[contributes.settings_pages]]
+id = "claude"
+title_key = "settings.subtab.claude"
+category = "plugin"
+
+[[contributes.settings_pages.items]]
+kind = "number"
+id = "spawn_child_warn_threshold"
+label_key = "claude.settings.spawn_child_warn_threshold"
+storage_key = "spawn_child_warn_threshold"
+default = 6.0
+min = 1.0
