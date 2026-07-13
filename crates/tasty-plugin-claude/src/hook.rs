@@ -1,13 +1,14 @@
 //! `claude.hook` IPC 핸들러.
 //!
 //! CLI에서 `tasty claude hook <event> [--surface <id>] [--session <s>]`로 호출되며,
-//! event별로 자식 상태(idle/needs_input/active)와 parent fan-out hook, session meta,
-//! 텔레메트리를 산출한다.
+//! event별로 자식 상태(idle/needs_input/active)와 session meta, 텔레메트리를 산출한다.
 //!
 //! **idle/needs_input 신호는 자체 state 대신 호스트 registry(`terminal.set_state`)로
-//! 주입한다**(occupancy-05). parent fan-out 대상 parent surface 는 호스트
-//! `terminal.parent` 로 조회한다. wall-time 텔레메트리 타이밍만 plugin 이 보유한다
-//! (`ClaudeState`).
+//! 주입한다**(occupancy-05). caller(spawn/tell 호출 주체)에게 완료를 알리는 건
+//! `handlers.rs`의 1회성 알림 훅(`register_notify_hooks`/`claude.notify_done`)이
+//! 이 모듈이 fire 하는 `claude-idle`/`needs-input` 이벤트를 구독해 처리한다 — 이
+//! 모듈은 parent 관계를 조회하거나 fan-out 하지 않는다. wall-time 텔레메트리
+//! 타이밍만 plugin 이 보유한다(`ClaudeState`).
 //!
 //! state 변이/host side effect 계산을 [`apply_hook`]으로 분리해 단위 테스트에서는
 //! host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
@@ -65,11 +66,7 @@ pub fn handle_claude_hook(
     let message = params.get("message").and_then(|v| v.as_str());
     let now_ms = now_ms();
 
-    // parent fan-out 대상: 호스트 registry 가 이 surface 의 parent 를 안다면 그 id.
-    // status 가 active 인 경우만 유효한 parent (none/closed 는 fan-out 없음).
-    let parent_surface_id = lookup_parent(host, surface_id);
-
-    let mut calls = apply_hook(event, surface_id, parent_surface_id, session.as_deref())?;
+    let mut calls = apply_hook(event, surface_id, session.as_deref())?;
     calls.extend(telemetry_for_hook(
         state, event, surface_id, message, now_ms,
     ));
@@ -78,20 +75,6 @@ pub fn handle_claude_hook(
         deliver(host, call);
     }
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
-}
-
-/// 호스트 `terminal.parent` 로 parent surface 를 조회. 등록되지 않았거나 IPC
-/// 실패 시 None (fan-out 없음).
-fn lookup_parent(host: &HostHandle, surface_id: u32) -> Option<u32> {
-    let resp = host
-        .call("terminal.parent", json!({ "surface": surface_id }))
-        .ok()?;
-    if resp.get("status").and_then(|v| v.as_str()) != Some("active") {
-        return None;
-    }
-    resp.get("parent_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
 }
 
 fn now_ms() -> u64 {
@@ -182,21 +165,16 @@ fn extract_tokens(text: &str) -> Option<u64> {
     None
 }
 
-/// event → 자식 상태 갱신(`SetState`) + parent fan-out hook + session meta 계산.
-/// host 에 의존하지 않는 순수 함수 — 단위 테스트가 분기 동작을 직접 검증한다.
-/// 자식 상태(idle/needs_input/active)는 호스트 registry 로 주입할 `SetState`
-/// HostCall 로 표현한다(자체 state 미보유). `parent_surface_id` 는 caller 가
-/// `terminal.parent` 로 조회해 넘긴다.
+/// event → 자식 상태 갱신(`SetState`) + session meta 계산. host 에 의존하지 않는
+/// 순수 함수 — 단위 테스트가 분기 동작을 직접 검증한다. 자식 상태
+/// (idle/needs_input/active)는 호스트 registry 로 주입할 `SetState` HostCall 로
+/// 표현한다(자체 state 미보유).
 pub fn apply_hook(
     event: &str,
     surface_id: u32,
-    parent_surface_id: Option<u32>,
     session: Option<&str>,
 ) -> Result<Vec<HostCall>, IpcMethodError> {
     let mut calls = Vec::new();
-    // tasty-hooks 는 hook.surface_id 가 fire 의 surface_id 와 정확히 일치할 때만
-    // 실행하므로, parent 가 자식 완료를 polling 없이 감지하려면 child 자기
-    // surface 외에 parent surface 에도 별도 event 를 fire 해야 한다.
     match event {
         "stop" | "subagent-stop" => {
             calls.push(HostCall::SetState {
@@ -207,12 +185,6 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
-            if let Some(parent_sid) = parent_surface_id {
-                calls.push(HostCall::FireHook {
-                    surface_id: parent_sid,
-                    event: "claude-child-idle",
-                });
-            }
         }
         "session-end" => {
             calls.push(HostCall::SetState {
@@ -231,12 +203,6 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
-            if let Some(parent_sid) = parent_surface_id {
-                calls.push(HostCall::FireHook {
-                    surface_id: parent_sid,
-                    event: "claude-child-idle",
-                });
-            }
         }
         "notification" => {
             calls.push(HostCall::SetState {
@@ -247,12 +213,6 @@ pub fn apply_hook(
                 surface_id,
                 event: "needs-input",
             });
-            if let Some(parent_sid) = parent_surface_id {
-                calls.push(HostCall::FireHook {
-                    surface_id: parent_sid,
-                    event: "claude-child-needs-input",
-                });
-            }
         }
         "prompt-submit" | "session-start" | "active" => {
             calls.push(HostCall::SetState {
@@ -347,7 +307,7 @@ mod tests {
 
     #[test]
     fn stop_sets_idle_and_emits_fire_hook() {
-        let calls = apply_hook("stop", 100, None, None).unwrap();
+        let calls = apply_hook("stop", 100, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -365,7 +325,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_treated_like_stop() {
-        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
+        let calls = apply_hook("subagent-stop", 7, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -383,7 +343,7 @@ mod tests {
 
     #[test]
     fn notification_sets_needs_input_and_fires_needs_input() {
-        let calls = apply_hook("notification", 100, None, None).unwrap();
+        let calls = apply_hook("notification", 100, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -401,7 +361,7 @@ mod tests {
 
     #[test]
     fn session_end_clears_session_meta_and_fires_idle() {
-        let calls = apply_hook("session-end", 100, None, None).unwrap();
+        let calls = apply_hook("session-end", 100, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -427,7 +387,7 @@ mod tests {
 
     #[test]
     fn prompt_submit_sets_active_and_no_meta() {
-        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
+        let calls = apply_hook("prompt-submit", 100, None).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -439,7 +399,7 @@ mod tests {
 
     #[test]
     fn session_start_without_session_id_just_sets_active() {
-        let calls = apply_hook("session-start", 100, None, None).unwrap();
+        let calls = apply_hook("session-start", 100, None).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -451,7 +411,7 @@ mod tests {
 
     #[test]
     fn session_start_with_session_id_emits_meta_set() {
-        let calls = apply_hook("session-start", 100, None, Some("sess-abc")).unwrap();
+        let calls = apply_hook("session-start", 100, Some("sess-abc")).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -474,89 +434,8 @@ mod tests {
     }
 
     #[test]
-    fn stop_with_parent_also_fires_claude_child_idle_on_parent() {
-        let calls = apply_hook("stop", 100, Some(10), None).unwrap();
-        assert_eq!(
-            calls,
-            vec![
-                HostCall::SetState {
-                    surface_id: 100,
-                    state: "idle",
-                },
-                HostCall::FireHook {
-                    surface_id: 100,
-                    event: "claude-idle",
-                },
-                HostCall::FireHook {
-                    surface_id: 10,
-                    event: "claude-child-idle",
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn subagent_stop_with_parent_fans_out_to_parent() {
-        let calls = apply_hook("subagent-stop", 100, Some(10), None).unwrap();
-        assert!(calls.contains(&HostCall::FireHook {
-            surface_id: 10,
-            event: "claude-child-idle",
-        }));
-    }
-
-    #[test]
-    fn session_end_with_parent_fans_out_to_parent() {
-        let calls = apply_hook("session-end", 100, Some(10), None).unwrap();
-        assert_eq!(
-            calls.last(),
-            Some(&HostCall::FireHook {
-                surface_id: 10,
-                event: "claude-child-idle",
-            })
-        );
-        assert!(calls.contains(&HostCall::FireHook {
-            surface_id: 100,
-            event: "claude-idle",
-        }));
-    }
-
-    #[test]
-    fn notification_with_parent_fans_out_claude_child_needs_input() {
-        let calls = apply_hook("notification", 100, Some(10), None).unwrap();
-        assert_eq!(
-            calls,
-            vec![
-                HostCall::SetState {
-                    surface_id: 100,
-                    state: "needs_input",
-                },
-                HostCall::FireHook {
-                    surface_id: 100,
-                    event: "needs-input",
-                },
-                HostCall::FireHook {
-                    surface_id: 10,
-                    event: "claude-child-needs-input",
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn stop_without_parent_does_not_fan_out() {
-        let calls = apply_hook("stop", 100, None, None).unwrap();
-        assert!(!calls.iter().any(|c| matches!(
-            c,
-            HostCall::FireHook {
-                event: "claude-child-idle",
-                ..
-            }
-        )));
-    }
-
-    #[test]
     fn unknown_event_returns_invalid_params() {
-        let err = apply_hook("bogus", 100, None, None).unwrap_err();
+        let err = apply_hook("bogus", 100, None).unwrap_err();
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("bogus"));
     }

@@ -50,7 +50,9 @@ plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예�
 
 ### auto_wait chain
 
-`claude spawn`/`tell`, `codex spawn`/`tell` 은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 child 가 terminal state(`idle`/`needs_input`/`exited`)에 도달할 때까지 block 한다. 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
+일부 plugin 은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 대상이 terminal state 에 도달할 때까지 block 하는 방식을 쓴다. 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
+
+`claude-design` 플러그인의 `design.chat`(→ `design.chat_status` polling)이 이 메커니즘을 계속 사용한다. **`claude spawn`/`tell` 은 더 이상 이 메커니즘을 쓰지 않는다** — 동기 블로킹 대신 완료 시 caller surface 에 1회성 알림 훅을 주입하는 이벤트 기반 모델로 대체됐다(`crates/tasty-plugin-claude/src/handlers.rs`의 `register_notify_hooks`/`claude.notify_done` 참조). auto_wait/polling 스키마 자체는 삭제되지 않았고 다른 소비자를 위해 유지된다.
 
 ---
 

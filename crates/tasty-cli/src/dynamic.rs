@@ -223,6 +223,23 @@ pub fn matches_to_request(
         if let Some(v) = params.get("surface").cloned() {
             params.entry(String::from("surface_id")).or_insert(v);
         }
+        // caller_surface: plugin이 정의한 `caller_surface` (u32) 인자가 사용자
+        // 입력에 없으면 TASTY_SURFACE_ID env로 채운다. `surface`용 자동 채움과
+        // 동일한 패턴이지만 별도 필드명이므로 독립 블록 — plugin-private 키라
+        // `surface_id` 류 dual-write 는 하지 않는다(호스트 IPC 표준 키가 아님).
+        let defines_caller_surface = g
+            .flags
+            .iter()
+            .chain(g.positional.iter())
+            .any(|a| a.name == "caller_surface" && matches!(a.ty, CliArgType::U32));
+        if defines_caller_surface
+            && !params.contains_key("caller_surface")
+            && let Some(sid) = std::env::var("TASTY_SURFACE_ID")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+        {
+            params.insert("caller_surface".into(), Value::from(sid));
+        }
     }
 
     let auto_wait_plan = sub_decl

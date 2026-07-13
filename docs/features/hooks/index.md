@@ -25,7 +25,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 | `Bell` | BEL 수신 |
 | `Notification` | OSC 알림 수신 |
 | `IdleTimeout(secs)` | N초간 PTY 출력 없음 |
-| `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error` / `claude-child-idle` / `claude-child-needs-input`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
+| `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
 
 #### 이벤트 키 검증 (내장 + 플러그인 선언)
 
@@ -34,7 +34,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 - **내장 이벤트**(`process-exit` / `bell` / `notification` / `output-match:` / `idle-timeout:`)는 플러그인 무관하게 항상 허용.
 - **플러그인 선언 이벤트**는 플러그인이 manifest `[[contributes.hook_events]]` 로 자기가 발사하는 키를 선언해야 한다. 코어는 이름을 하드코딩하지 않고 이 카탈로그를 활성 플러그인 hello 시 집계한다(언로드/제거 시 제거).
 - 내장도 아니고 활성 플러그인이 선언하지도 않은 키(오타·미존재 이벤트)는 **등록 거부**(`invalid_params`, 에러 메시지에 내장 + 활성 선언 목록 안내). 죽은 hook 등록을 막는다.
-- 따라서 **플러그인이 비활성이면 그 플러그인의 이벤트 hook 등록도 거부**된다(예: claude plugin 비활성 시 `claude-idle` hook 등록 불가 — 의도된 dead-setting 방지). claude plugin 은 위 5개 키를 manifest 로 선언한다.
+- 따라서 **플러그인이 비활성이면 그 플러그인의 이벤트 hook 등록도 거부**된다(예: claude plugin 비활성 시 `claude-idle` hook 등록 불가 — 의도된 dead-setting 방지). claude plugin 은 위 3개 키를 manifest 로 선언한다.
 
 - **once** 옵션: true 면 한 번 실행 후 자동 삭제. 기본은 persistent.
 - **비동기 실행**: 훅 동작은 백그라운드에서(메인 루프 블로킹 없음). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.

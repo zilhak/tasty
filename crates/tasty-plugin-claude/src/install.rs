@@ -4,8 +4,8 @@
 //! 두 곳을 동시에 유지해 cutover 직전까지 회귀를 막는다. step 04 cutover에서
 //! 호스트 측은 제거되고 본 모듈이 단일 출처가 된다.
 //!
-//! `is_tasty_stop_hook_installed`는 `claude wait`의 사전 점검에 쓰이므로
-//! 별도로 노출한다 — wait IPC가 plugin으로 옮겨가는 step 04에서 사용.
+//! `is_tasty_stop_hook_installed`는 tasty Stop hook 설치 여부를 점검하는
+//! 별도 노출 함수다.
 
 #![allow(dead_code)]
 
@@ -81,8 +81,8 @@ pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str
     arr.iter().any(|entry| entry_matches_marker(entry, marker))
 }
 
-/// `~/.claude/settings.json`을 읽어 tasty Stop hook이 설치돼 있는지.
-/// `claude wait` 사전 점검에 사용. 파일이 없으면 false.
+/// `~/.claude/settings.json`을 읽어 tasty Stop hook이 설치돼 있는지. 파일이
+/// 없으면 false.
 pub fn is_tasty_stop_hook_installed() -> Result<bool> {
     let path = claude_settings_path()?;
     if !path.exists() {

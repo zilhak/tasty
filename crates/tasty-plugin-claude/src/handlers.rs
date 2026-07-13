@@ -99,77 +99,6 @@ pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value
     Ok(json!(entries))
 }
 
-/// 한 번의 호출은 1회 상태 스냅샷이며, CLI 측 polling 이 idle/needs_input/exited
-/// 도달까지 반복 호출한다. 상태 판정은 호스트 `terminal.wait` 로 위임한다
-/// (`child_index` → 호스트 `child` 매핑).
-pub(crate) fn handle_wait(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let child_index = require_child_index(params)?;
-    let mut wp = forward(params, &["surface"]);
-    wp.insert("child".into(), json!(child_index));
-    host_call(host, "terminal.wait", Value::Object(wp))
-}
-
-/// `claude.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력 `surface_id`
-/// (= child surface id) 하나를 호스트 `terminal.wait` 의 surface-mode 로 위임.
-pub(crate) fn handle_wait_by_surface(
-    host: &HostHandle,
-    params: &Value,
-) -> Result<Value, IpcMethodError> {
-    let sid = require_surface_id(params)?;
-    host_call(host, "terminal.wait", json!({ "surface": sid }))
-}
-
-/// `claude.wait_any` 의 입력 파라미터 파싱. host IPC 없이 단위 테스트 가능.
-///
-/// `--children "1, 2, 3"` 같은 공백 포함 입력도 trim 후 parse — 잘못된 토큰은
-/// silent drop 되므로 모든 토큰이 invalid 하거나 empty 면 빈 결과 → invalid_params.
-pub(crate) fn parse_wait_any_params(params: &Value) -> Result<(u32, Vec<u32>), IpcMethodError> {
-    let parent_surface_id = require_surface_id(params)?;
-    let children_str = params
-        .get("children")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params("Missing 'children' parameter (comma-separated indices)")
-        })?;
-    let children: Vec<u32> = children_str
-        .split(',')
-        .filter_map(|s| s.trim().parse::<u32>().ok())
-        .collect();
-    if children.is_empty() {
-        return Err(IpcMethodError::invalid_params(
-            "'children' must be a non-empty comma-separated list of indices",
-        ));
-    }
-    Ok((parent_surface_id, children))
-}
-
-/// 여러 child 중 *먼저* idle / needs_input / exited 가 되는 것을 즉시 깨운다.
-/// 입력 children 순서를 보존하며 각 child 를 호스트 `terminal.wait` 로 조회한다 —
-/// 첫 terminal 을 발견하면 즉시 반환, 모두 active 면 `{"state":"pending"}`.
-/// 호스트가 등록되지 않은 child 를 invalid_params 로 거부하면 그 자리를 terminal
-/// `exited` 로 취급한다(옛 wait-any 의 미발급/정리된 index 동작 보존).
-pub(crate) fn handle_wait_any(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let (parent_surface_id, children) = parse_wait_any_params(params)?;
-    for child_index in children {
-        let state = match host.call(
-            "terminal.wait",
-            json!({ "surface": parent_surface_id, "child": child_index }),
-        ) {
-            Ok(v) => v
-                .get("state")
-                .and_then(|s| s.as_str())
-                .unwrap_or("active")
-                .to_string(),
-            // 등록되지 않은/정리된 child → terminal exited (옛 wait-any 동작 보존).
-            Err(_) => "exited".to_string(),
-        };
-        if state == "exited" || state == "idle" || state == "needs_input" {
-            return Ok(json!({ "state": state, "child_index": child_index }));
-        }
-    }
-    Ok(json!({ "state": "pending" }))
-}
-
 /// 자식 Claude 를 종료한다 — 호스트 `terminal.kill` 로 위임(surface.close +
 /// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
 pub(crate) fn handle_kill(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
@@ -204,11 +133,106 @@ pub(crate) fn handle_tell(host: &HostHandle, params: &Value) -> Result<Value, Ip
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("Missing 'message' parameter"))?;
-    host_call(
+    let resp = host_call(
         host,
         "terminal.tell",
         json!({ "surface": surface_id, "text": message }),
+    )?;
+
+    // caller_surface 는 dynamic.rs 의 TASTY_SURFACE_ID 자동 채움으로 대개 채워진다.
+    // 없으면(구버전 클라이언트 등) 어디로 알릴지 알 수 없으므로 알림 배선을
+    // 생략한다(soft) — tell 자체의 성공/실패에는 영향 없음.
+    if let Some(caller_surface) = params.get("caller_surface").and_then(|v| v.as_u64()) {
+        register_notify_hooks(host, caller_surface as u32, surface_id, "tell");
+    }
+
+    Ok(resp)
+}
+
+/// caller_surface 에 spawn/tell 완료를 알리는 command 문자열 — 등록 시점과
+/// 정리 시점에 동일하게 재생성해야 하므로 순수 함수로 분리한다. 3개 형제 hook이
+/// 전부 이 문자열을 그대로 command 로 쓰므로, 서로의 hook_id 를 몰라도
+/// (target_surface, command 일치) 기준으로 서로를 찾아 정리할 수 있다.
+fn notify_done_command(caller_surface: u32, target_surface: u32, command_name: &str) -> String {
+    format!(
+        "tasty claude notify-done --caller-surface {caller_surface} --target-surface {target_surface} --command {command_name}"
     )
+}
+
+/// spawn/tell 완료 시 caller 에게 1회성으로 알려줄 3개의 형제 hook
+/// (claude-idle / needs-input / process-exit) 을 target_surface 에 등록한다.
+/// 등록 자체는 best-effort — 실패해도 spawn/tell 성공 자체를 막지 않는다.
+fn register_notify_hooks(
+    host: &HostHandle,
+    caller_surface: u32,
+    target_surface: u32,
+    command_name: &str,
+) {
+    let command = notify_done_command(caller_surface, target_surface, command_name);
+    for event in ["claude-idle", "needs-input", "process-exit"] {
+        // best-effort — 등록 실패해도 spawn/tell 자체는 이미 성공했으므로 무시.
+        let _ = host.call(
+            "hook.set",
+            json!({
+                "surface_id": target_surface,
+                "event": event,
+                "command": command,
+                "once": true,
+            }),
+        );
+    }
+}
+
+/// `tasty claude notify-done` — 형제 once-hook 중 하나가 fire 되어 실행되는
+/// 커맨드. caller_surface 에 완료 메시지를 주입한 뒤, target_surface 에 남아있는
+/// (아직 fire 되지 않은) 나머지 형제 hook 들을 command 문자열 일치로 찾아 정리한다.
+pub(crate) fn handle_notify_done(
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let caller_surface = params
+        .get("caller_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'caller_surface' parameter"))?
+        as u32;
+    let target_surface = params
+        .get("target_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'target_surface' parameter"))?
+        as u32;
+    let command_name = params
+        .get("command")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'command' parameter"))?;
+
+    // 1) caller 에게 알림 주입.
+    let message = format!("{command_name} 완료: surface {target_surface}");
+    // caller surface 가 이미 닫혔을 수 있음(soft) — 실패해도 형제 hook 정리는 계속 진행.
+    let _ = host.call(
+        "terminal.tell",
+        json!({ "surface": caller_surface, "text": message }),
+    );
+
+    // 2) 남은 형제 hook 정리 — 나 자신은 이미 once=true 로 fire 시 자동 제거됐으므로
+    //    hook.list 시점엔 나머지(0~2개)만 남아있다. command 문자열 완전 일치로 식별.
+    let expected_command = notify_done_command(caller_surface, target_surface, command_name);
+    if let Ok(resp) = host.call("hook.list", json!({ "surface_id": target_surface })) {
+        if let Some(hooks) = resp.as_array() {
+            for h in hooks {
+                let matches =
+                    h.get("command").and_then(|v| v.as_str()) == Some(expected_command.as_str());
+                if matches {
+                    if let Some(hook_id) = h.get("id") {
+                        // best-effort 정리 — 실패하면 좀비로 남을 수 있으나 알림 자체는
+                        // 이미 (1)에서 전달됐으므로 caller 관점 결과에는 영향 없음.
+                        let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(json!({}))
 }
 
 /// 새 workspace 를 만들고 그 안에서 claude 를 기동한다. child 가 아니라 top-level
@@ -434,6 +458,9 @@ pub(crate) fn handle_spawn(host: &HostHandle, params: &Value) -> Result<Value, I
         }
     }
 
+    // 4) caller(parent_surface_id)에게 완료(idle/needs_input/exited) 1회성 알림 배선.
+    register_notify_hooks(host, parent_surface_id, child_surface_id, "spawn");
+
     Ok(out)
 }
 
@@ -540,24 +567,6 @@ mod tests {
         assert!(out.starts_with("claude --task "), "prefix wrong: {out}");
         assert!(out.contains("fix the bug"), "task body missing: {out}");
         assert_ne!(out, "claude --task fix the bug", "must be escaped");
-    }
-
-    #[test]
-    fn parse_wait_any_params_errors_on_empty_children() {
-        let err = parse_wait_any_params(&json!({
-            "surface_id": 10,
-            "children": "",
-        }))
-        .unwrap_err();
-        assert_eq!(err.code, -32602, "expected invalid_params, got {err:?}");
-    }
-
-    #[test]
-    fn parse_wait_any_params_parses_spaced_list() {
-        let (parent, children) =
-            parse_wait_any_params(&json!({ "surface_id": 10, "children": "1, 2 ,3" })).unwrap();
-        assert_eq!(parent, 10);
-        assert_eq!(children, vec![1, 2, 3]);
     }
 
     #[test]

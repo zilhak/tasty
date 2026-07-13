@@ -16,7 +16,8 @@
 
 ## 내부 동작
 
-- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `wait`/`wait-any`(상태 대기) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합: stop/notification/session-end/prompt-submit/session-start/subagent-stop).
+- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합: stop/notification/session-end/prompt-submit/session-start/subagent-stop) · `notify-done`(내부용: spawn/tell 완료 시 caller 에게 1회성 알림 전달 + 형제 hook 정리, 아래).
+- `spawn`/`tell`은 **동기 블록 없이 즉시 반환**한다. 대상(child 또는 tell 대상 surface)이 idle/needs_input/exited 중 하나에 도달하면, caller surface(spawn/tell을 호출한 surface)에 완료 메시지가 자동으로 주입된다 — `claude-idle`/`needs-input`/`process-exit` 3개의 1회성(once) surface hook을 등록해 구현하며, 그중 하나가 fire되면 `notify-done`이 알림 전송과 함께 나머지 형제 hook을 정리한다(중복 알림 방지).
 - **ipc_namespace `claude`** — 위 동작의 IPC 표면.
 - **event_subscribe** `surface.closed` — surface 종료를 받아 인스턴스 상태 정리.
 - 실제 Claude 프로세스는 터미널 surface 안에서 돌고(`process.spawn`), 플러그인은 그 생명주기·관계를 관리한다.
@@ -25,7 +26,7 @@
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|wait|broadcast|kill|respawn|children|parent|hook …`.
+- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook …`.
 - surface/패인 생성 자체는 [work-area](../../features/work-area/index.md) 도메인을 사용.
 
 ## 비-목표
@@ -37,5 +38,5 @@
 
 - [ ] Given 플러그인 활성 When `tasty claude launch` Then 새 워크스페이스에서 Claude 가 실행된다.
 - [ ] Given 부모 인스턴스 When `tasty claude spawn` Then 자식 인스턴스가 패인 분할로 생성되고 `children` 에 보인다.
-- [ ] Given 자식 When `tasty claude wait --child <id>` Then idle/needs_input/exited 까지 대기한다.
+- [ ] Given 자식 When `tasty claude spawn`(또는 `tell`) 완료 후 자식이 idle/needs_input/exited 에 도달 Then caller surface 에 완료 알림이 1회성으로 주입되고 형제 hook 이 함께 정리된다.
 </content>
