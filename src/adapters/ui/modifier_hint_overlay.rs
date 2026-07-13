@@ -12,7 +12,9 @@
 //!   마우스만.
 //! - **원칙3(포커스 독립성)**: 키보드 포커스를 **절대** 취득하지 않는다. 마우스만 소비하며,
 //!   `AppState::modifier_hint_hovered` 가드가 `mouse.rs` 4지점에서 하위 surface 로의 전파
-//!   (click-to-activate/휠/드래그)를 막는다.
+//!   (click-to-activate/휠/드래그)를 막고, `gfx/gpu.rs` 커서 결정부에서도 같은 플래그로
+//!   패널 아래 surface 의 커서(I-beam 등)가 덮어써지지 않게 막는다(입력 소비가 아니라
+//!   프레임 후처리 시각 갱신이라 mouse.rs 4지점과는 별도 카테고리).
 //!
 //! ## Model / Runtime / View 분리
 //! - [`hold_reveal_alpha`] / [`default_rect`] / [`clamp_rect`] / [`resize_to`] — 순수 함수,

@@ -436,6 +436,7 @@ impl GpuState {
             && !self.egui_ctx.is_pointer_over_area()
             && !state.popup_hovered
             && !state.banner_hovered
+            && !state.modifier_hint_hovered
             && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
         {
             let px = pos.x * self.scale_factor;
