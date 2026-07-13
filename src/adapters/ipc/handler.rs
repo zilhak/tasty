@@ -29,6 +29,7 @@ mod passkey;
 mod preset;
 mod recent;
 mod remote_profile;
+mod settings;
 pub(crate) mod surface;
 pub(crate) mod tab;
 mod telemetry;
@@ -553,6 +554,10 @@ fn route_engine_handler(
         }
         "memory.cache_list" => {
             memory::handle_cache_list(core, state, engine, caller, id, &request.params)
+        }
+        // settings (plugin 이 자기 plugin_settings 값을 read-back)
+        "settings.get_plugin_setting" => {
+            settings::handle_get_plugin_setting(engine, caller, id, &request.params)
         }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => {

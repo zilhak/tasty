@@ -319,6 +319,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
+        // ── settings (plugin 이 자기 plugin_settings 값을 read-back) ──────
+        // [[contributes.settings_pages]] 를 선언하려면 이미 UiSettingsPage 권한이
+        // 필요하므로(위 permission variant 재사용), 그 값을 다시 읽는 IPC 도
+        // 동일 권한으로 게이트한다. caller_plugin_id 는 요청 파라미터가 아니라
+        // CallerContext 에서 강제 도출 — 다른 plugin 값 조회 불가.
+        ("settings.get_plugin_setting", plugin(&[UiSettingsPage])),
         // ── file_handler.* (host config 관리 — local-only) ───────────
         // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
         // 도 reload 영향 밖이라) local 전용.
