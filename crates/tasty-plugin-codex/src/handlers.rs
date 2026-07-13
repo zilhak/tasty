@@ -157,7 +157,65 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
         json!({"surface_id": child_sid, "text": cmd}),
     )?;
 
-    Ok(resp)
+    // 3) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
+    let mut out = resp;
+    if let Some(warning) = compute_spawn_warning(host, parent_surface) {
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("warning".into(), json!(warning));
+        }
+    }
+
+    Ok(out)
+}
+
+const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
+
+/// spawn 직후 parent 의 현재 child 목록/상태를 재조회해 임계치 초과 여부를 판단한다.
+/// host 호출 실패는 경고 생략으로 처리한다(soft 경고이므로 spawn 성공을 막지 않음).
+fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<String> {
+    let children_resp = host
+        .call("terminal.children", json!({ "surface": parent_surface_id }))
+        .ok()?;
+    let children = children_resp.get("children")?.as_array()?;
+    let total = children.len();
+    let idle_indices: Vec<u64> = children
+        .iter()
+        .filter(|c| c.get("state").and_then(|s| s.as_str()) == Some("idle"))
+        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
+        .collect();
+
+    let threshold = host
+        .call(
+            "settings.get_plugin_setting",
+            json!({ "storage_key": "spawn_child_warn_threshold" }),
+        )
+        .ok()
+        .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
+        .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
+
+    build_spawn_warning(total, &idle_indices, threshold)
+}
+
+/// child 개수가 임계치를 넘으면 경고 문구를 만든다(순수 함수, 단위 테스트 대상).
+/// idle child 가 있으면 그 index 목록과 `respawn` 권유 문구를 덧붙인다.
+fn build_spawn_warning(total: usize, idle_indices: &[u64], threshold: f64) -> Option<String> {
+    if (total as f64) <= threshold {
+        return None;
+    }
+    let mut msg = format!(
+        "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
+    );
+    if !idle_indices.is_empty() {
+        let idle_list = idle_indices
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        msg.push_str(&format!(
+            " Idle children at index [{idle_list}] have already finished their work — consider `respawn` instead of spawning a new one."
+        ));
+    }
+    Some(msg)
 }
 
 pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
@@ -624,6 +682,31 @@ mod tests {
             let resp = apply_trust_overlay(json!({ "state": s }));
             assert_eq!(resp["state"], s);
         }
+    }
+
+    #[test]
+    fn build_spawn_warning_none_below_threshold() {
+        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+    }
+
+    #[test]
+    fn build_spawn_warning_above_threshold_lists_idle_and_mentions_respawn() {
+        let w = build_spawn_warning(7, &[2, 5], 6.0).unwrap();
+        assert!(w.contains("respawn"));
+        assert!(w.contains('2') && w.contains('5'));
+    }
+
+    #[test]
+    fn build_spawn_warning_above_threshold_no_idle_has_no_respawn_word() {
+        let w = build_spawn_warning(7, &[], 6.0).unwrap();
+        assert!(!w.contains("respawn"));
+    }
+
+    #[test]
+    fn build_spawn_warning_respects_custom_threshold() {
+        // threshold=6 이면 안 뜨는 3개가, threshold=3 이면 뜬다(설정 override 시나리오).
+        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+        assert!(build_spawn_warning(4, &[], 3.0).is_some());
     }
 
     fn parse_toml(text: &str) -> toml::Value {

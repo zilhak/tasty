@@ -1,2 +1,8 @@
 [codex.cli]
 desc = "Manage Codex CLI child sessions"
+
+[codex]
+"settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
+
+[settings.subtab]
+codex = "Codex"

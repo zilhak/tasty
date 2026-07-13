@@ -1,2 +1,8 @@
 [codex.cli]
 desc = "Codex CLI 子セッションの管理"
+
+[codex]
+"settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
+
+[settings.subtab]
+codex = "Codex"

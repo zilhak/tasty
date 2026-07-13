@@ -21,6 +21,7 @@
 - **event_subscribe** `surface.closed` — 인스턴스 상태 정리.
 - **hook 명령은 OS 별 셸 구문으로 설치된다** — Codex 는 hook 명령을 Windows 에선 PowerShell, 그 외에선 POSIX sh 로 실행하므로, `install` 이 Windows 에는 `if ($env:TASTY_SURFACE_ID) { $input | tasty codex hook … }` 형태(PS), 그 외에는 `[ -n "$TASTY_SURFACE_ID" ] && … || true` 형태(POSIX)를 발행한다. hook 은 Codex 가 stdin 으로 주는 JSON payload 의 `session_id` 를 읽어 surface meta(`codex-session-id`, `restore.command`)에 기록한다 — `reboot` 와 세션 복원이 이 meta 를 소비한다.
 - **`reboot`** (`tasty codex reboot [--surface <id>] [--delay <초>] [--prompt <추가문구>]`) — surface 안의 Codex 를 종료하고 **같은 세션으로 재시작**한다([claude reboot](../claude/index.md) 와 동형). 동작: 즉시 응답 → delay(기본 5s) 후 Ctrl+C ×4 → 전경 이탈 확인 후 `codex resume -c check_for_update_on_startup=false <session_id>` 전송(업데이트 프롬프트가 기동을 가로채는 것을 방지) → 복귀 확인 후 재시작 안내 프롬프트를 화면 검증·재시도 + 별도 Enter 로 제출. 안전 가드는 claude 와 동일(전경 불일치 시 미전송·중단, 중복 reboot 거부). **턴의 마지막 행동으로 호출할 것.** Codex 에는 SessionEnd hook 이 없어 세션 meta 는 종료 시 지워지지 않고 다음 session-start 가 덮어쓴다.
+- **spawn child 개수 경고** — `spawn` 이 성공한 뒤 parent 의 현재 child 수를 재조회해, Settings › Plugin › Codex 의 "Spawn child warning threshold"(기본 6) 를 넘으면 응답에 `warning` 필드를 실어 돌려준다(soft 경고, spawn 자체는 막지 않음). idle 상태인 child 가 있으면 그 index 목록과 함께 새로 spawn 하는 대신 `respawn` 사용을 권한다([claude](../claude/index.md) 와 동형).
 
 ## 인터페이스
 

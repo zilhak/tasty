@@ -1,2 +1,8 @@
 [codex.cli]
 desc = "Codex CLI 자식 세션 관리"
+
+[codex]
+"settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
+
+[settings.subtab]
+codex = "Codex"

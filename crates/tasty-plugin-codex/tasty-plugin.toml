@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.11"
+version = "0.1.12"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -12,6 +12,7 @@ permissions = [
     "terminal.read",
     "fs.write",
     "notification",
+    "ui.settings_page",
 ]
 lang_dir = "lang"
 
@@ -131,3 +132,16 @@ flags = [
 ]
 
 [contributes.cli.arg_groups.no_args]
+
+[[contributes.settings_pages]]
+id = "codex"
+title_key = "settings.subtab.codex"
+category = "plugin"
+
+[[contributes.settings_pages.items]]
+kind = "number"
+id = "spawn_child_warn_threshold"
+label_key = "codex.settings.spawn_child_warn_threshold"
+storage_key = "spawn_child_warn_threshold"
+default = 6.0
+min = 1.0
