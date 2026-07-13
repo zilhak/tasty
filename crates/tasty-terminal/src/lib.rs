@@ -537,6 +537,15 @@ impl Terminal {
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
+        // host 가 확정한 데이터 루트를 모든 터미널 env 에 주입한다. plugin spawn 경로
+        // (tasty-host-plugin)만 TASTY_HOME 을 전파하면, conductor 자신이 떠 있는 이
+        // PTY 셸은 TASTY_HOME 을 못 봐서 completion-log 경로(`<tasty_home>/notify/...`)를
+        // 판별할 수 없다(머신에 ~/.tasty 와 ~/.tasty-debug 가 공존하면 어느 쪽인지 모름).
+        // TASTY_SURFACE_ID 와 같은 이유로 여기서도 명시 주입해 writer(plugin)/reader
+        // (conductor)의 경로 SoT 를 실제로 일치시킨다.
+        if let Some(home) = tasty_utils::path::tasty_home() {
+            cmd.env("TASTY_HOME", &home);
+        }
 
         // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
         for (key, _) in std::env::vars() {

@@ -26,9 +26,16 @@ Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때
 
 - **경로 규약**: `<tasty_home>/notify/<caller_surface>.log`
   - `tasty_home()` = `~/.tasty`(release) / `~/.tasty-debug`(debug) / `TASTY_HOME` env override.
+  - **한 머신에 `~/.tasty` 와 `~/.tasty-debug` 가 공존**할 수 있으므로, 어느 루트인지는
+    호스트가 부팅 시 확정한 값을 **env 로 내려받아야만** 판별 가능하다(경로를 눈대중으로
+    구성하면 안 됨).
   - plugin(writer)은 호스트가 주입한 `TASTY_HOME` env 로 호스트와 **동일 루트**를 본다
     (`crates/tasty-host-plugin/src/process.rs` 가 plugin spawn 시 `TASTY_HOME` 전파).
-  - conductor(reader)는 자기 `TASTY_SURFACE_ID` 와 `tasty_home()` 로 이 경로를 직접 구성.
+  - conductor(reader)가 떠 있는 터미널 PTY 도 동일하게 `TASTY_HOME` 을 env 로 받는다
+    (`crates/tasty-terminal/src/lib.rs` `Terminal::new` 가 `TASTY_SURFACE_ID` 와 함께
+    `TASTY_HOME` 도 주입). 따라서 conductor 는 **`$TASTY_HOME` env 를 그대로 읽어**
+    `$TASTY_HOME/notify/$TASTY_SURFACE_ID.log` 로 경로를 구성한다 — writer/reader 가
+    같은 루트를 보장받는다.
 - **라인 포맷**: caller 에게 tell 로 주입하던 메시지와 **동일 문자열** 한 줄
   (예: `spawn 완료: surface 42` / `tell 완료: surface 42`). divergence 방지.
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
@@ -42,8 +49,11 @@ Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때
 conductor 는 child 를 dispatch 한 뒤 **한 번** 자기 surface 의 완료 로그를 arm 한다:
 
 ```
-Monitor({ command: "tail -n0 -F <tasty_home>/notify/<my_surface_id>.log", persistent: true })
+Monitor({ command: "tail -n0 -F \"$TASTY_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
+
+`$TASTY_HOME` 과 `$TASTY_SURFACE_ID` 는 conductor 터미널 env 에 이미 주입돼 있으므로
+경로를 하드코딩하거나 debug/release 루트를 추측할 필요가 없다.
 
 이후 child 완료마다 append 된 라인이 Monitor 이벤트로 전달된다. `-n0` 은 기존 라인을 건너뛰고
 arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 있어 재-arm 이 필요 없다.
@@ -74,7 +84,10 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 - 수신 세션 상태(busy/idle)에 의존하는 PTY 입력 주입은 완료 알림의 **단일 경로로 부적합**하다.
   파일 append + 에이전트가 능동적으로 arm 하는 감시(Monitor tail)가 상태 독립적이다.
 - writer(plugin)와 reader(conductor)가 같은 파일을 가리키려면 경로 SoT 를 `tasty_home()`
-  하나로 통일하고, 호스트가 plugin 에 `TASTY_HOME` 을 전파해 debug/release·override 를 일치시킨다.
+  하나로 통일하고, 호스트가 **양쪽 프로세스 모두**에 `TASTY_HOME` 을 env 로 내려줘야 한다 —
+  plugin spawn(`tasty-host-plugin`)뿐 아니라 conductor 가 사는 터미널 PTY spawn
+  (`tasty-terminal` `Terminal::new`)에도. 한쪽만 전파하면 다른 쪽이 debug/release 루트를
+  판별하지 못해 경로가 어긋난다.
 
 ## 날짜
 

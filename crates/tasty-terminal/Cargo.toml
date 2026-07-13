@@ -14,6 +14,7 @@ tracing = "0.1"
 unicode-width = "0.2"
 finl_unicode = "1.4"
 tasty-reaper = { path = "../tasty-reaper" }
+tasty-utils = { path = "../tasty-utils" }
 
 # unix 공통 — Drop 의 zombie reap(waitpid/kill escalation)이 cfg(unix) 라
 # macOS 만이 아니라 Linux 빌드에도 필요하다.

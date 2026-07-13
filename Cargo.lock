@@ -6026,6 +6026,7 @@ dependencies = [
  "portable-pty",
  "regex",
  "tasty-reaper",
+ "tasty-utils",
  "termwiz",
  "tracing",
  "unicode-width 0.2.2",
