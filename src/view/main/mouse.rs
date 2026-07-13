@@ -515,9 +515,9 @@ impl MainView {
         // hard 점유 화면은 최대 3초 지연된 mirror 스냅샷이라 그 시점에 보이는 링크가
         // 실제 PTY 상태와 다를 수 있다(ADR-0049). false 를 반환하면 handle_left_button 이
         // 기존처럼 press/release(선택·드래그)로 위임한다.
-        if let Some(sid) =
-            self.state
-                .surface_id_at_position(&self.core_state, x, y, *terminal_rect)
+        if let Some(sid) = self
+            .state
+            .surface_id_at_position(&self.core_state, x, y, *terminal_rect)
             && self.core_state.attach.is_hard_occupied(sid)
         {
             return false;
