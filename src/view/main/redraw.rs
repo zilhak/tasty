@@ -769,8 +769,6 @@ impl MainView {
             move_down,
             MenuItem::separator(),
             MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
-            MenuItem::separator(),
-            MenuItem::new(7, crate::i18n::t("context_menu.add_remote_workspace")),
         ];
 
         // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
@@ -873,16 +871,6 @@ impl MainView {
                         self.request_close();
                     }
                 }
-                Some(7) => {
-                    // 원격 워크스페이스 추가 팝업 — 사용자 컨텍스트 메뉴 진입(원칙 1).
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                            mode: crate::intent::OpenPopupMode::CenteredFocused,
-                        }
-                        .from_user_context_menu(),
-                    );
-                }
                 Some(100) => {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
@@ -937,6 +925,16 @@ impl MainView {
                     .from_user_menu("category_header/add_workspace"),
                 );
             }
+            Some(4) => {
+                // 원격 워크스페이스 추가 팝업 — 카테고리 헤더 우클릭 진입(원칙 1).
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
             Some(1) => {
                 crate::adapters::ui::category_actions::open_rename_category_dialog(
                     &mut self.state,
@@ -960,14 +958,29 @@ impl MainView {
 
     fn handle_sidebar_background_native_menu(&mut self, x: f32, y: f32) {
         use crate::platform::native_menu::{MenuItem, show_context_menu};
-        // 빈 배경 우클릭 — 새 카테고리.
-        let items = [MenuItem::new(
-            100,
-            crate::i18n::t("workspace_category.new_category"),
-        )];
+        // 빈 배경 우클릭 — 새 카테고리 · 원격 워크스페이스 추가. 그룹모드 배경(카테고리
+        // ON)·flat모드 배경(카테고리 OFF, TODO 03) 양쪽에서 이 핸들러로 라우팅되므로
+        // 카테고리 상태 분기 없이 공통 메뉴로 노출한다.
+        let items = [
+            MenuItem::new(100, crate::i18n::t("workspace_category.new_category")),
+            MenuItem::separator(),
+            MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
+        ];
         let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        if let Some(100) = result {
-            crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
+        match result {
+            Some(100) => {
+                crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
+            }
+            Some(2) => {
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
+            _ => {}
         }
         self.mark_dirty();
     }
@@ -1486,14 +1499,16 @@ impl MainView {
 }
 
 /// 카테고리 헤더 우클릭 메뉴 항목 조립 (디자인 sidebar_context_menu.jsx category 분기
-/// 전사, 2026-07-02). additive 선두: Add workspace(3) · ─ · [비-normal 한정:
-/// Rename(1) · Delete(2) · ─] · New category(100). reserved normal 은 rename/delete
-/// 만 금지 — add 는 노출한다. native 메뉴 조립은 순수 함수로 분리해 구성·순서를
-/// 단위 테스트로 고정한다.
+/// 전사, 2026-07-02). additive 선두: Add workspace(3) · ─ · Add remote workspace(4,
+/// TODO 03) · ─ · [비-normal 한정: Rename(1) · Delete(2) · ─] · New category(100).
+/// reserved normal 은 rename/delete 만 금지 — add(로컬/원격) 는 노출한다. native 메뉴
+/// 조립은 순수 함수로 분리해 구성·순서를 단위 테스트로 고정한다.
 fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_menu::MenuItem> {
     use crate::platform::native_menu::MenuItem;
     let mut items = vec![
         MenuItem::new(3, crate::i18n::t("workspace_category.add_workspace")),
+        MenuItem::separator(),
+        MenuItem::new(4, crate::i18n::t("context_menu.add_remote_workspace")),
         MenuItem::separator(),
     ];
     if !is_normal {
@@ -1528,19 +1543,29 @@ mod tests {
 
     #[test]
     fn category_header_menu_non_normal_order() {
-        // Add workspace · ─ · Rename · Delete · ─ · New category.
+        // Add workspace · ─ · Add remote workspace · ─ · Rename · Delete · ─ · New category.
         let items = category_header_menu_items(false);
         assert_eq!(
             shape(&items),
-            vec![Some(3), None, Some(1), Some(2), None, Some(100)]
+            vec![
+                Some(3),
+                None,
+                Some(4),
+                None,
+                Some(1),
+                Some(2),
+                None,
+                Some(100)
+            ]
         );
     }
 
     #[test]
     fn category_header_menu_normal_is_additive_only() {
-        // reserved normal: Add workspace · ─ · New category (rename/delete 금지).
+        // reserved normal: Add workspace · ─ · Add remote workspace · ─ · New category
+        // (rename/delete 금지).
         let items = category_header_menu_items(true);
-        assert_eq!(shape(&items), vec![Some(3), None, Some(100)]);
+        assert_eq!(shape(&items), vec![Some(3), None, Some(4), None, Some(100)]);
     }
 
     // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip) 의

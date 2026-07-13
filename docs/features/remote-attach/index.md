@@ -82,7 +82,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 ### 원격 워크스페이스 추가 팝업 (GUI picker — 사용자 경로)
 
-위 브라우징/attach 능력을 **로컬 사용자가 직접 조작**하는 GUI 표면. 사이드바에서 **워크스페이스 카드 우클릭 / 새 워크스페이스(+) 버튼 우클릭 → "원격 워크스페이스 추가"** 로 연다(`remote_attach` headless 팝업, 680×460 2-pane). 좌측은 `tasty-attach` 프로필 목록(remote_tool 이 편집하는 같은 스토어를 **소비만** 함), 우측은 선택 프로필의 원격 워크스페이스를 **4상태**(initial / connecting / error+retry / loaded[+empty])로 표시한다. 조회는 위 browse 코어(`tasty_cli::remote_browse`)를 **워커 스레드**로 돌려(폴링 슬롯) UI 를 막지 않는다. 이미 타 client 가 점유한 원격 ws 는 lavender `in use` 배지 + 선택 불가(중복 mirror 방지).
+위 브라우징/attach 능력을 **로컬 사용자가 직접 조작**하는 GUI 표면. 사이드바에서 **카테고리 헤더 우클릭(카테고리 on) / 새 워크스페이스(+) 버튼 우클릭 · 빈 배경 우클릭(카테고리 off) → "원격 워크스페이스 추가"** 로 연다(`remote_attach` headless 팝업, 680×460 2-pane). 워크스페이스 카드 우클릭에는 없다(카테고리 ON/OFF 에 따라 노출 위치가 갈리도록 재배치 — [`sidebar/screens/sidebar.md`](../sidebar/screens/sidebar.md) 참고). 좌측은 `tasty-attach` 프로필 목록(remote_tool 이 편집하는 같은 스토어를 **소비만** 함), 우측은 선택 프로필의 원격 워크스페이스를 **4상태**(initial / connecting / error+retry / loaded[+empty])로 표시한다. 조회는 위 browse 코어(`tasty_cli::remote_browse`)를 **워커 스레드**로 돌려(폴링 슬롯) UI 를 막지 않는다. 이미 타 client 가 점유한 원격 ws 는 lavender `in use` 배지 + 선택 불가(중복 mirror 방지).
 
 **Connect 확정 = 사용자 동작 → focus 이동**: 원격 ws 를 골라 Connect 하면 조회에 쓴 SSH 터널을 재사용해 mirror 로 attach 하고, **새 mirror ws 로 focus 가 이동**한다(사용자가 확정한 결과). 이 focus 이동은 IPC/에이전트 경로(위 `remote.attach`, focus 중립)와 분리된 **사용자 입력 전용 큐**(`CoreState.pending_gui_attach_user`)를 통해서만 일어난다 — release IPC 는 이 큐에 push 하지 못한다(원칙 1②). 컨텍스트 메뉴 진입은 `from_user_context_menu()` 로 마킹하고, self(loopback) attach 는 release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다. Cancel/Esc/× 는 진행 중 조회(터널)를 정리하며 닫는다.
 
