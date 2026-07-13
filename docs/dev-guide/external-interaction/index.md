@@ -19,4 +19,5 @@ dev-guide 판이다 — 대상이 "디자인 렌더와 egui 의 구조 차이" �
 | 노트 | 요지 |
 |------|------|
 | [tell-autosubmit-paste-threshold](tell-autosubmit-paste-threshold.md) | child `tell` 단일라인이 63자(code point) 이상이면 자동제출 안 됨 — 본문+`\r` 한 burst 가 수신측 paste 휴리스틱에 흡수. 본문과 제출 `\r` 을 별도 PTY write 로 분리해 해결 |
+| [child-completion-notify-log](child-completion-notify-log.md) | child 완료 알림을 PTY `tell` 에만 의존하면 caller 가 busy 일 때 씹힌다. `<tasty_home>/notify/<caller_surface>.log` 에 append 하고 conductor 가 Monitor tool 로 tail — background-task notification 이 idle 세션도 깨운다. `tell` 은 fallback 으로 유지 |
 | [bash-resize-first-byte-loss](bash-resize-first-byte-loss.md) | **Windows 전용**(ConPTY+MSYS bash). resize 후 다음 입력의 첫 1바이트를 지연 SIGWINCH 처리에 소모 (~25–33%, 시간 무관, cmd.exe 무결). 상류 버그 — 에이전트는 `\n` 프리픽스 또는 echo 검증으로 방어 |

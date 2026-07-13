@@ -236,10 +236,18 @@ pub fn handle_notify_caller(host: &HostHandle, params: Value) -> Result<Value, I
     let caller = require_u32(&params, "caller")?;
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
+    let message = format!("{kind} 완료: surface {target}");
+
+    // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
+    // 무관하게 다음 턴에 전달된다(terminal.tell 이 busy 세션에서 씹히는 문제의 대안
+    // 경로). best-effort — 실패해도 tell/hook 정리에 영향 없음.
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller, &message) {
+        tracing::warn!("codex notify-caller completion-log append failed: {e}");
+    }
 
     if let Err(e) = host.call(
         "terminal.tell",
-        json!({ "surface": caller, "text": format!("{kind} 완료: surface {target}") }),
+        json!({ "surface": caller, "text": message }),
     ) {
         tracing::warn!("codex notify-caller tell failed: {e}");
     }

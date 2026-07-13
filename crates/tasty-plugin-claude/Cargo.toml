@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-claude"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: Claude Code CLI integration"
@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-utils = { path = "../tasty-utils" }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
