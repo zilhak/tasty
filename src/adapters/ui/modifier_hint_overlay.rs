@@ -350,6 +350,7 @@ pub fn draw_modifier_hint(
 
     draw_shell(&ui, theme, render_rect, alpha);
     draw_content(&mut ui, theme, render_rect, held, &sections, alpha);
+    draw_shell_border(&ui, theme, render_rect, alpha);
 
     // ── 인터랙션: 드래그 스트립(이동) · 코너 그립(리사이즈) · X(dismiss) ──
     let strip_h = theme.modhint_strip_height().value();
@@ -461,11 +462,12 @@ fn rect_from_settings(settings: &Settings, screen: egui::Rect, theme: &Theme) ->
     egui::Rect::from_min_size(min, size)
 }
 
-/// 셸(그림자 + 불투명 fill + 1px 보더)을 painter 로 그린다 — 고정 크기라 Frame(콘텐츠 맞춤)
-/// 대신 painter 직접 사용. 색은 `alpha` 곱(페이드).
+/// 셸(그림자 + 불투명 fill)을 painter 로 그린다 — 고정 크기라 Frame(콘텐츠 맞춤)
+/// 대신 painter 직접 사용. 색은 `alpha` 곱(페이드). 테두리는 [`draw_shell_border`]
+/// 가 `draw_content` **이후에** 별도로 그린다(스트립 배경 채우기가 테두리를 덮지
+/// 않도록 항상 마지막에 그림 — CSS 박스 모델의 border-on-top 을 재현).
 fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let radius = theme.corner_radius.value();
-    let bw = theme.border_width.value();
     let painter = ui.painter();
     let mut shadow = theme.shadow_popover().to_egui();
     shadow.color = shadow.color.gamma_multiply(alpha);
@@ -475,7 +477,16 @@ fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
         radius,
         theme.modhint_bg().to_egui().gamma_multiply(alpha),
     );
-    painter.rect_stroke(
+}
+
+/// 패널 테두리만 그린다. **`draw_content` 호출 이후에** 실행해야 한다 — 스트립
+/// 배경 채우기(`radius 0.0`, 불투명)가 먼저 그려진 테두리를 덮어 지우는 문제를
+/// 막기 위해, 항상 맨 마지막에 다시 그려 테두리가 콘텐츠 위에 남게 한다. `radius`
+/// 를 그대로 재사용하므로 둥근 모서리도 별도 처리 없이 자연스럽게 복원된다.
+fn draw_shell_border(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
+    let radius = theme.corner_radius.value();
+    let bw = theme.border_width.value();
+    ui.painter().rect_stroke(
         rect,
         radius,
         egui::Stroke::new(bw, theme.modhint_border().to_egui().gamma_multiply(alpha)),
