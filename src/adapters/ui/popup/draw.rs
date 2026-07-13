@@ -249,6 +249,7 @@ impl PopupManager {
         }
 
         // --- Render all open popups ---
+        let mut scrim_painted = false;
         for (z_idx, &popup_idx) in open_indices.iter().enumerate() {
             let popup = &mut self.popups[popup_idx];
             if closed.contains(&popup.id) {
@@ -269,6 +270,22 @@ impl PopupManager {
             );
 
             let painter = ctx.layer_painter(layer_id);
+
+            // Scrim: headless 모달 popup(remote_tool/remote_attach/command_palette/
+            // port_scanner — popup.rs:303-306 과 동일 id 세트) 뒤 화면 전체를 반투명
+            // 검정으로 딤 처리한다(디자인 <Scrim>, plugin_bridge/popup_render.rs:134
+            // 패턴 재사용). 여러 개가 동시에 열려 있어도 z-order 최하단 1개(가장 먼저
+            // 순회되는 대상)에서만 그려 중첩 딤을 막는다 — 그 popup 자신의 layer 에
+            // 배경보다 먼저 그리므로 별도 layer 없이 자연스럽게 그 popup 아래에 깔린다.
+            if !scrim_painted
+                && matches!(
+                    popup_id,
+                    "remote_tool" | "remote_attach" | "command_palette" | "port_scanner"
+                )
+            {
+                painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
+                scrim_painted = true;
+            }
 
             // Popup background. 디자인 semantic 토큰 매핑: 대부분 popup 은
             // surface-raised(=surface0). 단 헤더+리스트형 "패널" popup 은 bg-panel

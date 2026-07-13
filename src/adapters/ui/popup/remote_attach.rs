@@ -478,17 +478,23 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
         } else {
             th.text_secondary()
         };
-        ui.label(
-            egui::RichText::new(&p.name)
-                .size(th.font_size_body.value())
-                .strong()
-                .color(name_c),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(&p.name)
+                    .size(th.font_size_body.value())
+                    .strong()
+                    .color(name_c),
+            )
+            .truncate(),
         );
         if !p.label.is_empty() {
-            ui.label(
-                egui::RichText::new(format!("({})", p.label))
-                    .size(th.font_size_body.value())
-                    .color(th.text_muted()),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("({})", p.label))
+                        .size(th.font_size_body.value())
+                        .color(th.text_muted()),
+                )
+                .truncate(),
             );
         }
         if p.inactive {
@@ -665,10 +671,13 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     } else {
         th.text_secondary()
     };
-    child.label(
-        egui::RichText::new(&w.name)
-            .size(th.font_size_body.value())
-            .color(name_c),
+    child.add(
+        egui::Label::new(
+            egui::RichText::new(&w.name)
+                .size(th.font_size_body.value())
+                .color(name_c),
+        )
+        .truncate(),
     );
     child.add(icons::SPLIT.image(th.font_size_caption.value(), th.text_muted().into()));
     child.label(
