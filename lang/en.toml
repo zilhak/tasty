@@ -1017,6 +1017,7 @@ force_detach = "Force detach"
 occupied_surface = "Held by another client (readonly). Force detach to take over."
 occupied_workspace = "Attached by a client"
 mirror_workspace = "Mirror of a remote workspace"
+mirror_pill_label = "Remote"
 
 [attach.toast]
 # Shown when a structural change (split / new tab / close / reorder) is attempted

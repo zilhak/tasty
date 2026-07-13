@@ -9,6 +9,7 @@
 //! Theme 토큰만으로 정적 재현 (binary 미의존).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::icons::{
     CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
@@ -16,7 +17,8 @@ use crate::catalog::icons::{
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 워크스페이스 행 데모 데이터: (name, badge, active, mirror). mirror=원격 워크스페이스
-/// 로컬 mirror → 이름 앞 leading `>_→` glyph(디자인 2026-07-02 workspace-mirror-indicator).
+/// 로컬 mirror → 이름과 subtitle 사이 별도 줄의 "REMOTE" pill(디자인 2026-07-13
+/// workspace-remote-indicator).
 type WsRow = (&'static str, Option<&'static str>, bool, bool);
 /// 카테고리 섹션 데모 데이터: (label, collapsed, rows).
 type CategorySection = (&'static str, bool, &'static [WsRow]);
@@ -29,8 +31,8 @@ const WORKSPACES: &[WsRow] = &[
 ];
 
 /// 카테고리 그룹 데모 데이터 (디자인 데모셋: normal / Services / Archived).
-/// SERVICES 의 "agent" 는 mirror — full 은 leading glyph, rail 은 아바타 우하단
-/// corner chip 으로 표시.
+/// SERVICES 의 "agent" 는 mirror — full 은 이름 아래 별도 줄의 "REMOTE" pill, rail 은
+/// 아바타 우하단 corner chip 으로 표시.
 const CATEGORY_SECTIONS: &[CategorySection] = &[
     (
         "WORKSPACES",
@@ -64,20 +66,26 @@ fn paint_icon(
     glyph.image(size, color).paint_at(ui, r);
 }
 
-/// Full 행 — 이름 앞 leading mirror glyph(`>_→`, workspace_mirror_fg). glyph 를
-/// `name_x` 중앙에 그리고, 이름이 시작할 x(글리프 폭 + gap 만큼 우측)를 돌려준다.
-/// mirror 가 아니면 `name_x` 를 그대로 반환(리플로 없음).
-fn mirror_leading_glyph(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    name_x: f32,
-    cy: f32,
-    mirror: bool,
-) -> f32 {
+/// mirror 행의 pill 줄 높이(추가 행 높이 산정용) — 아이콘/pill 높이 중 큰 값.
+fn mirror_pill_line_h(theme: &Theme) -> f32 {
+    theme
+        .tag_size()
+        .value()
+        .max(theme.workspace_mirror_icon_size().value())
+}
+
+/// Full 행 — 이름 줄 **아래** 별도 줄에 sky "REMOTE" pill(아이콘+`tag()`)을 그린다
+/// (디자인 2026-07-13 workspace-remote-indicator). `row`는 이름 행 자체의 rect(1줄
+/// 기준), pill 은 그 바로 아래(`spacing_xs` 간격)에 그려진다. mirror 가 아니면 아무것도
+/// 그리지 않는다(리플로 없음, 호출부가 행 높이를 미리 `mirror_pill_line_h()`만큼 늘려
+/// 놓아야 한다).
+fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f32, mirror: bool) {
     if !mirror {
-        return name_x;
+        return;
     }
+    let y = row.bottom() + theme.spacing_xs.value();
     let sz = theme.workspace_mirror_icon_size().value();
+    let cy = y + mirror_pill_line_h(theme) * 0.5;
     paint_icon(
         ui,
         REMOTE,
@@ -85,7 +93,11 @@ fn mirror_leading_glyph(
         sz,
         egui::Color32::from(theme.workspace_mirror_fg()),
     );
-    name_x + sz + theme.workspace_mirror_gap().value()
+    let mut tag_ui = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
+        egui::pos2(name_x + sz + theme.workspace_mirror_gap().value(), y),
+        egui::vec2(ui.available_width(), mirror_pill_line_h(theme)),
+    )));
+    tag(&mut tag_ui, theme, "REMOTE", TagVariant::Remote, false);
 }
 
 /// Collapsed 아바타 우하단 mirror corner chip — bg-sidebar halo(반경 spacing_sm) +
@@ -215,10 +227,8 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
             }),
         );
         let name_x = dc.x + dot_r + theme.spacing_sm.value();
-        // mirror 면 이름 앞 leading glyph 를 그리고 이름 시작 x 를 그만큼 우측으로.
-        let text_x = mirror_leading_glyph(ui, theme, name_x, row.center().y, *mirror);
         p.text(
-            egui::pos2(text_x, row.center().y),
+            egui::pos2(name_x, row.center().y),
             egui::Align2::LEFT_CENTER,
             name,
             egui::FontId::proportional(theme.font_size_body.value()),
@@ -231,7 +241,14 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         if let Some(b) = badge {
             paint_ws_count_badge(&p, theme, row, b);
         }
-        y += row_h + theme.spacing_xs.value();
+        // mirror 면 이름 아래 별도 줄에 "REMOTE" pill — 그만큼 행 높이를 늘린다.
+        mirror_pill_line(ui, theme, row, name_x, *mirror);
+        let extra = if *mirror {
+            theme.spacing_xs.value() + mirror_pill_line_h(theme)
+        } else {
+            0.0
+        };
+        y += row_h + extra + theme.spacing_xs.value();
     }
 
     // ── footer: border-top + ghost rows (bottom-anchored) ──
@@ -365,9 +382,8 @@ fn paint_ws_row(
         }),
     );
     let name_x = dc.x + dot_r + theme.spacing_sm.value();
-    let text_x = mirror_leading_glyph(ui, theme, name_x, rect.center().y, mirror);
     p.text(
-        egui::pos2(text_x, rect.center().y),
+        egui::pos2(name_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         name,
         egui::FontId::proportional(theme.font_size_body.value()),
@@ -380,6 +396,8 @@ fn paint_ws_row(
     if let Some(b) = badge {
         paint_ws_count_badge(&p, theme, rect, b);
     }
+    // mirror 면 이름 아래 별도 줄에 "REMOTE" pill(호출부가 행 높이를 늘려 놓는다).
+    mirror_pill_line(ui, theme, rect, name_x, mirror);
 }
 
 /// 카테고리 그룹(확장) — chevron 헤더 + 소속 행. 접힌/빈 카테고리는 헤더만.
@@ -447,7 +465,12 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
                     egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
                 );
                 paint_ws_row(ui, theme, row, name, *badge, *active, *mirror);
-                y += row_h + theme.spacing_xs.value();
+                let extra = if *mirror {
+                    theme.spacing_xs.value() + mirror_pill_line_h(theme)
+                } else {
+                    0.0
+                };
+                y += row_h + extra + theme.spacing_xs.value();
             }
         }
     }
@@ -543,7 +566,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("logo", "22 full / 24 rail"),
             ("row", "dot + name + badge"),
             ("active row", "surface-active + 2px inset accent"),
-            ("mirror", "leading >_→ glyph / rail corner chip"),
+            ("mirror", "REMOTE pill line / rail corner chip"),
             ("footer", "Tools·Plugins·Settings, border-top"),
         ],
         &[
@@ -576,9 +599,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Full 은 워크스페이스를 이름·badge 까지 펼치고, 접으면 52px rail 로 줄어 \
          아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시. \
-         원격 워크스페이스 로컬 mirror 는 status dot(실행상태)과 별개로 — full 은 이름 앞 \
-         leading `>_→` glyph, rail 은 아바타 우하단 sky corner chip(workspace-mirror-fg)으로 \
-         표시(notif 우상단 / attached 둘레 ring 과 채널 분리). \
+         원격 워크스페이스 로컬 mirror 는 status dot(실행상태)과 별개로 — full 은 이름과 \
+         subtitle 사이 별도 줄의 sky \"REMOTE\" pill, rail 은 아바타 우하단 sky corner \
+         chip(workspace-mirror-fg)으로 표시(notif 우상단 / attached 둘레 ring 과 채널 분리). \
          카테고리 토글 on 이면 chevron 헤더로 그룹화(빈·접힌 카테고리는 헤더/`---` 만), \
          레일은 카테고리 경계를 `---` 버튼으로 표시한다.",
     );

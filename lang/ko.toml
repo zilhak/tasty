@@ -1016,6 +1016,7 @@ force_detach = "강제 끊기"
 occupied_surface = "다른 client 가 점유 중(읽기 전용). 회수하려면 강제 끊기."
 occupied_workspace = "client 가 attach 중"
 mirror_workspace = "원격 워크스페이스의 mirror"
+mirror_pill_label = "원격"
 
 [attach.toast]
 # mirror 워크스페이스 안에서 구조 변경(split / 새 탭 / 닫기 / 순서 변경)을 시도했을 때

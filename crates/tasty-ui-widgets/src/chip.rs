@@ -19,6 +19,11 @@ pub enum TagVariant {
     Success,
     Warning,
     Danger,
+    /// sky 톤 **채움** chip(fill 16%/border 45%) — accent-remote 기준. 디자인
+    /// 2026-07-13 workspace-remote-indicator: 사이드바 mirror 워크스페이스 pill
+    /// 전용. `Info`(투명 채움+40% 보더, git-viewer 태그용)와 시각이 달라 별도
+    /// variant로 분리 — `Info` alpha를 바꾸면 git-viewer 태그가 회귀한다.
+    Remote,
 }
 
 /// Badge variant (디자인 `core/Badge`).
@@ -66,6 +71,11 @@ pub fn tag(
             egui::Color32::TRANSPARENT,
             Some(theme.accent_info().to_egui().gamma_multiply(0.4)),
             theme.accent_info().to_egui(),
+        ),
+        TagVariant::Remote => (
+            theme.accent_remote().to_egui().gamma_multiply(0.16),
+            Some(theme.accent_remote().to_egui().gamma_multiply(0.45)),
+            theme.accent_remote().to_egui(),
         ),
         TagVariant::Success => (
             egui::Color32::TRANSPARENT,

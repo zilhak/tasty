@@ -9,7 +9,7 @@
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
-use tasty_ui_widgets::{hspace, vspace};
+use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
@@ -58,8 +58,10 @@ pub struct SidebarFullProps<'a> {
     pub new_workspace_label: &'a str,
     pub workspaces_heading: &'a str,
     pub occupied_hover: &'a str,
-    /// mirror(원격 워크스페이스 로컬 mirror) leading glyph 의 hover tooltip.
+    /// mirror(원격 워크스페이스 로컬 mirror) pill 의 hover tooltip.
     pub mirror_hover: &'a str,
+    /// mirror pill 라벨 텍스트(예: "Remote") — 표시 시 `.to_uppercase()` 적용.
+    pub mirror_pill_label: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 버튼에 danger 배지를 그린다.
     pub plugin_alert: usize,
     /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
@@ -985,6 +987,7 @@ fn draw_ws_row(
         ws,
         props.occupied_hover,
         props.mirror_hover,
+        props.mirror_pill_label,
         switch_digit,
         fade,
     );
@@ -1251,6 +1254,7 @@ fn draw_workspace_card(
     ws: &WorkspaceEntryView,
     occupied_hover: &str,
     mirror_hover: &str,
+    mirror_pill_label: &str,
     // Some(digit) 면 status dot 자리에 숫자 키캡(switch-number overlay)을 그린다.
     switch_digit: Option<&str>,
     // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
@@ -1314,8 +1318,9 @@ fn draw_workspace_card(
                 );
             } else {
                 // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
-                // dot 은 실행상태 전용 — mirror(원격 origin)는 이름 앞 leading glyph 로
-                // 분리(디자인 2026-07-02 workspace-mirror-indicator). sky "remote" fill 제거.
+                // dot 은 실행상태 전용 — mirror(원격 origin)는 이름과 subtitle 사이 별도
+                // 줄의 "REMOTE" pill 로 분리(디자인 2026-07-13 workspace-remote-indicator).
+                // sky "remote" fill 제거.
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
@@ -1356,17 +1361,6 @@ fn draw_workspace_card(
                     paint_workspace_count_badge(ui, th, ws.highlight_count);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    // 디자인 WorkspaceRow: mirror(원격 워크스페이스 로컬 mirror)면 이름 앞에
-                    // leading remote-link glyph(`>_→` = TERMINAL_PROMPT). status dot(실행상태)·
-                    // attached ring·notif 와 독립된 별도 축(원격 origin) — 한 행에 공존 가능.
-                    if ws.is_mirror {
-                        ui.spacing_mut().item_spacing.x = th.workspace_mirror_gap().value();
-                        ui.add(icons::TERMINAL_PROMPT.image(
-                            th.workspace_mirror_icon_size().value(),
-                            th.workspace_mirror_fg().into(),
-                        ))
-                        .on_hover_text(mirror_hover);
-                    }
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&ws.name)
@@ -1378,6 +1372,33 @@ fn draw_workspace_card(
                 });
             });
         });
+
+        // 디자인 2026-07-13 workspace-remote-indicator: mirror(원격 워크스페이스
+        // 로컬 mirror)는 타이틀 행의 leading glyph 가 아니라 이름과 subtitle 사이
+        // 별도 줄의 sky "REMOTE" pill 로 표시(가시성 강화, changelog 최종 상태).
+        // subtitle 유무와 독립 — subtitle 이 없어도 그린다. collapsed rail 의
+        // corner chip(이 함수 밖)은 이 변경과 무관, 그대로 유지.
+        if ws.is_mirror {
+            vspace(ui, STRUCT_GAP_1);
+            let resp = ui.horizontal(|ui| {
+                // 타이틀 시작 x 정렬: subtitle/description 과 동일 인셋
+                // (dot 슬롯 spacing_sm=8 + item_spacing spacing_xs=4).
+                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
+                ui.spacing_mut().item_spacing.x = th.workspace_mirror_gap().value();
+                ui.add(icons::TERMINAL_PROMPT.image(
+                    th.workspace_mirror_icon_size().value(),
+                    th.workspace_mirror_fg().into(),
+                ));
+                tag(
+                    ui,
+                    th,
+                    &mirror_pill_label.to_uppercase(),
+                    TagVariant::Remote,
+                    false,
+                );
+            });
+            resp.response.on_hover_text(mirror_hover);
+        }
 
         if !ws.subtitle.is_empty() {
             // 디자인 margin-top 1px (title 과의 위계 간격).
@@ -1540,6 +1561,7 @@ mod tests {
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
                     mirror_hover: "Mirror of a remote workspace",
+                    mirror_pill_label: "REMOTE",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
                     category_switch_held: false,
@@ -1650,8 +1672,9 @@ mod tests {
 
     #[test]
     fn mirror_indicator_renders_full_and_collapsed_without_panic() {
-        // is_mirror=true 워크스페이스: full 은 이름 앞 leading glyph, collapsed 는 아바타
-        // 우하단 corner chip 을 그린다(디자인 2026-07-02 workspace-mirror-indicator). busy+
+        // is_mirror=true 워크스페이스: full 은 이름과 subtitle 사이 별도 줄의 "REMOTE"
+        // pill, collapsed 는 아바타 우하단 corner chip 을 그린다(디자인 2026-07-13
+        // workspace-remote-indicator). busy+
         // attached+notif 와 공존하는 mirror 행도 섞어 채널 분리 렌더 경로를 no-panic 검증.
         let mut mirror = mock_ws("infra", false);
         mirror.is_mirror = true;
@@ -1755,6 +1778,7 @@ mod tests {
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
                     mirror_hover: "Mirror of a remote workspace",
+                    mirror_pill_label: "REMOTE",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
                     category_switch_held: false,

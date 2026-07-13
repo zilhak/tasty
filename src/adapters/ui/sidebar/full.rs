@@ -106,6 +106,7 @@ pub fn draw_full_sidebar(
     let workspaces_heading = t("sidebar.workspaces_heading");
     let occupied_hover = t("attach.occupied_workspace");
     let mirror_hover = t("attach.mirror_workspace");
+    let mirror_pill_label = t("attach.mirror_pill_label");
 
     let mut result = FullSidebarResult {
         collapse_clicked: false,
@@ -162,6 +163,7 @@ pub fn draw_full_sidebar(
                 workspaces_heading,
                 occupied_hover,
                 mirror_hover,
+                mirror_pill_label,
                 plugin_alert,
                 workspace_switch_held,
                 category_switch_held,

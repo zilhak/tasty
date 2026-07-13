@@ -1016,6 +1016,7 @@ force_detach = "強制切断"
 occupied_surface = "別のクライアントが占有中(読み取り専用)。取り戻すには強制切断。"
 occupied_workspace = "クライアントが接続中"
 mirror_workspace = "リモートワークスペースのミラー"
+mirror_pill_label = "リモート"
 
 [attach.toast]
 # ミラーワークスペース内で構造変更(分割 / 新規タブ / 閉じる / 並べ替え)を試みた時に
