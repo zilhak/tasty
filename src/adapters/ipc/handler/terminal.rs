@@ -87,6 +87,16 @@ fn build_tell_payload(message: &str) -> String {
     }
 }
 
+/// broadcast 대상에 보낼 `(본문 payload, 제출 여부)`. 호출자가 넣은 trailing `\r`(제출
+/// 의도)만 본문에서 분리한다 — 본문은 `build_tell_payload` 로 감싸 한 write, 제출 `\r` 은
+/// 또 다른 write 로 보내 64-codepoint paste burst 를 피하고 길이 무관 결정적 제출을 보장한다
+/// (tell 과 동형). trailing `\r` 이 없으면 제출 write 를 생략해 "sent as-is" 주입 계약을 보존.
+fn build_broadcast_payload(text: &str) -> (String, bool) {
+    let submit = text.ends_with('\r');
+    let body = text.trim_end_matches('\r');
+    (build_tell_payload(body), submit)
+}
+
 /// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭 우선, 아니면 name 매칭.
 fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
     if let Ok(target_id) = target.parse::<u32>()
@@ -500,14 +510,25 @@ pub(crate) fn handle_broadcast(
         .map(|c| c.child_surface_id)
         .collect();
 
+    let (body, submit) = build_broadcast_payload(&text);
     let mut sent_ids: Vec<u32> = Vec::new();
     for sid in targets {
-        let send_params = json!({ "surface_id": sid, "text": text });
+        // 1) 본문(제출 `\r` 미포함, 멀티라인은 bracketed paste). 2) 호출자가 trailing `\r` 을
+        //    넣었을 때만 제출 Enter 를 별도 write 로 분리 — 길이 무관 결정적 제출.
+        let body_params = json!({ "surface_id": sid, "text": body.clone() });
         if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &send_params),
+            surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
             &id,
         ) {
             tracing::warn!("terminal.broadcast surface.send (sid={sid}) failed: {e:?}");
+        } else if submit {
+            let cr_params = json!({ "surface_id": sid, "text": "\r" });
+            if let Err(e) = unwrap_ok(
+                surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
+                &id,
+            ) {
+                tracing::warn!("terminal.broadcast submit (sid={sid}) failed: {e:?}");
+            }
         }
         sent_ids.push(sid);
     }
@@ -650,5 +671,34 @@ mod tests {
             &json!({ "surface": 5000, "state": "active" }),
         );
         assert_eq!(e.child_terminals.state_of(5000), "active");
+    }
+
+    #[test]
+    fn broadcast_payload_splits_trailing_cr_for_submit() {
+        // 63자+ 단일라인 + trailing `\r`: 본문엔 `\r` 이 섞이지 않고(64-codepoint burst 회피),
+        // 제출 플래그만 켜진다 → 호출부가 별도 write 로 결정적 제출. (paste-threshold 회귀 가드)
+        let body63 = "a".repeat(63);
+        let (payload, submit) = build_broadcast_payload(&format!("{body63}\r"));
+        assert_eq!(payload, body63, "본문에 제출 \\r 이 섞이면 안 됨");
+        assert!(!payload.contains('\r'));
+        assert!(submit);
+    }
+
+    #[test]
+    fn broadcast_payload_no_trailing_cr_is_injection_only() {
+        // trailing `\r` 이 없으면 "sent as-is" — 제출하지 않는다(빌트인 계약 보존).
+        let (payload, submit) = build_broadcast_payload(&"b".repeat(80));
+        assert_eq!(payload, "b".repeat(80));
+        assert!(!submit);
+    }
+
+    #[test]
+    fn broadcast_payload_multiline_wraps_bracketed_and_submits() {
+        // 멀티라인 + trailing `\r`: bracketed paste 로 감싸고 제출 플래그 on,
+        // 감싼 본문 안에 제출 `\r` 은 없다.
+        let (payload, submit) = build_broadcast_payload("line1\nline2\r");
+        assert_eq!(payload, "\u{1b}[200~line1\nline2\u{1b}[201~");
+        assert!(!payload.contains('\r'));
+        assert!(submit);
     }
 }

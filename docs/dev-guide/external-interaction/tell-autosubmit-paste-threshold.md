@@ -56,16 +56,18 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
   `crates/tasty-plugin-codex/src/handlers.rs` 의 `handle_tell` — 둘 다 `host_call(host,
   "terminal.tell", …)` 한 줄). `terminal.spawn` 의 초기 command 주입도 같은
   `build_tell_payload` 를 거친다.
-- **적용 범위 밖(주의)**: `terminal.broadcast`(`handle_broadcast`)는 대상마다 `surface.send`
-  를 그대로 호출할 뿐 `build_tell_payload` 를 거치지 않는다 — 63자+ 단일라인을 여러 child 에
-  동시 전송하면 이 함정이 재현될 수 있다. `claude`/`codex` 플러그인이 자기 프로세스를 처음
-  띄우는 `start_claude_in_surface`류 launch 경로도 별도 `surface.send`(쉘 커맨드라인 + `\r`
-  한 덩어리)라 같은 사각지대다 — 다만 이쪽은 대상이 TUI 가 아니라 아직 아무것도 안 뜬 shell
-  프롬프트라 bracketed-paste 휴리스틱이 걸릴 대상 자체가 없어 실질 위험은 없다.
+- 호스트 `terminal.broadcast`(`handle_broadcast`)도 동일 함정을 피한다 — `build_broadcast_payload`
+  가 호출자가 넣은 trailing `\r`(제출 의도)을 본문에서 분리해, 본문은 `build_tell_payload` 로
+  감싸 한 write, 제출 `\r` 은 별도 write 로 보낸다. tell 과 달리 broadcast 는 `\r` 이 없으면
+  제출 write 를 생략해 "sent as-is" 주입 계약을 보존한다.
+- **적용 범위 밖(주의)**: `claude`/`codex` 플러그인이 자기 프로세스를 처음 띄우는
+  `start_claude_in_surface`류 launch 경로는 별도 `surface.send`(쉘 커맨드라인 + `\r` 한 덩어리)
+  라 같은 사각지대다 — 다만 이쪽은 대상이 TUI 가 아니라 아직 아무것도 안 뜬 shell 프롬프트라
+  bracketed-paste 휴리스틱이 걸릴 대상 자체가 없어 실질 위험은 없다.
 
-결과: `tell`/`terminal.spawn` 경로는 메시지 길이·콘텐츠와 무관하게 결정적으로 자동제출된다.
-단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드 포함)과 멀티라인 본문
-분리를 검증한다.
+결과: `tell`/`terminal.spawn`/`terminal.broadcast` 경로 모두 메시지 길이·콘텐츠와 무관하게
+결정적으로 동작한다. 단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드
+포함)과 멀티라인 본문 분리를 검증한다.
 
 ## 일반 교훈
 
