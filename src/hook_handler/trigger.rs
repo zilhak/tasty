@@ -179,8 +179,13 @@ mod tests {
 
     /// end-to-end: self-binary 디렉토리가 없는 PATH 환경에서도 hook 셸 커맨드가
     /// `tasty` 자기 자신(여기선 테스트 바이너리)을 basename 으로 호출해 해결됨을
-    /// 증명한다 — `spawn_shell` 이 PATH 를 self-dir 로 보강하기 때문. 이 보강이
-    /// 없으면 `command not found`(exit 127)로 조용히 실패해 marker 가 안 생긴다.
+    /// 증명한다 — `spawn_shell` 이 PATH 를 self-dir 로 보강하기 때문.
+    ///
+    /// **marker 내용을 검증한다(존재 여부가 아니라).** 셸은 리다이렉션(`>`)을 명령
+    /// 실행 전에 처리(O_CREAT|O_TRUNC)하므로, basename 이 `command not found`(exit
+    /// 127)여도 marker 파일 자체는 0바이트로 생성된다. 존재만 보면 해결 실패를
+    /// 못 잡는 vacuous pass 가 된다. 실제 stdout(`--list` 는 `<name>: test` 라인들을
+    /// 출력)이 marker 에 담겼는지까지 확인해야 self 해결 성공을 진짜로 증명한다.
     #[test]
     fn inline_shell_resolves_self_binary_via_augmented_path() {
         let exe = std::env::current_exe().expect("current_exe");
@@ -193,19 +198,31 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let marker = dir.path().join("resolved.txt");
         // 테스트 바이너리를 basename 으로 호출(→ PATH 해결 필요). `--list` 는
-        // 테스트를 실행하지 않고 목록만 출력 후 즉시 종료하므로 재귀가 없다.
+        // 테스트를 실행하지 않고 목록(`<name>: test`)만 stdout 으로 출력 후 즉시
+        // 종료하므로 재귀가 없고, 해결 성공 시 marker 에 실제 내용이 담긴다.
         // basename 은 해시만 포함(공백 없음)이라 인용부호 불필요 — 기존 테스트 관례.
         let cmd = format!("{basename} --list > {}", marker.display());
 
         execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 1);
 
+        // 존재가 아니라 실제 stdout 이 담길 때까지 폴링한다. 해결 실패 시 marker 는
+        // 0바이트인 채로 남아 deadline 까지 조건을 못 채운다.
         let deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < deadline && !marker.exists() {
+        let content = loop {
+            let c = std::fs::read_to_string(&marker).unwrap_or_default();
+            if !c.trim().is_empty() || Instant::now() >= deadline {
+                break c;
+            }
             std::thread::sleep(Duration::from_millis(25));
-        }
+        };
         assert!(
-            marker.exists(),
-            "hook command referencing self binary by basename did not run — PATH was not augmented with the self-binary dir"
+            !content.trim().is_empty(),
+            "self binary was not resolved via augmented PATH — marker empty (command not found leaves a 0-byte redirect file)"
+        );
+        // `--list` 출력 형식(`<test name>: test`)의 존재로 실제 실행을 확증한다.
+        assert!(
+            content.contains(": test"),
+            "marker does not contain --list output; got: {content:?}"
         );
     }
 
