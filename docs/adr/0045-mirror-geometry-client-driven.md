@@ -25,12 +25,14 @@ mirror grid geometry 를 **client-driven** 으로 뒤집는다: mirror 를 띄�
 - client 의 로컬 레이아웃 리사이즈 스윕은 detached(mirror) 터미널을 **skip 하던 것을**, 목표 grid 를 로컬에 적용하지 않고 **forward 큐에 넣는 것으로** 교체한다.
 - 서버는 두 drain(gui `event_handler` / headless `boot`)에서 holder 를 검증한 뒤 원격 **실제 PTY** 를 `Terminal::resize` 한다.
 - 로컬 mirror grid 는 **server 의 `Resize` echo 로만 갱신**한다(낙관적 로컬 적용 금지). 이 echo 경로(resize tap → forwarder → reader → `t.resize`)는 **무변경 재사용**이다.
+- 서버가 **GUI 인스턴스**(창 보유)로 그 워크스페이스를 렌더 중이면, host 창의 레이아웃 리사이즈 sweep(`Core::resize_all_terminals`)이 **hard-점유된 surface 를 skip** 한다(`OccupancyRegistry::is_hard_occupied`). 이 skip 이 없으면 host 창이 매 sweep 마다 점유 surface 를 자기 창 grid 로 되돌려 client 의 `ClientResize` 를 무력화하고, mirror 가 host 창 크기에 고정된다(레터박스). 점유 중 그 surface 의 grid 는 **오직 `apply_attached_workspace_resize`(holder 검증 후 client 요청 크기 적용)** 만 설정하며, detach 로 lock 이 풀리면 다음 sweep 부터 host 창이 다시 구동한다(원복). headless 서버는 창이 없어 이 sweep 자체가 없으므로 무해하지만, **GUI-hosted 서버**(원격 tasty GUI 를 attach)에선 필수 불변식이다 — 초기 설계 Context 가 headless 서버만 상정해 이 케이스를 놓쳤다.
 
 ## Consequences
 
 - **얻은 것**: mirror 가 로컬 pane 을 채운다(레터박스 제거). 원격 grid 가 로컬 크기를 따라가 `stty size`·앱 레이아웃이 실제 보이는 영역과 일치한다. 신규 코드는 작다(대부분 기존 forward/echo 인프라 복제·재사용).
 - **잃은 것**: echo 왕복(약 1 RTT) 동안 mirror grid 가 즉시 반응하지 않는다. LAN 에선 무시할 수준이나 고지연 링크에선 체감될 수 있다. 초기 attach 순간(80×24 → 첫 forward reflow)에 짧은 깜빡임이 남는다.
 - **운영 비용 / 유지 부담**: 프로토콜 variant 1 개 + 서버 수신 분류/적용 + client forward 큐. desync 를 막는 불변식("로컬 grid 는 echo 로만 갱신")을 유지해야 한다 — 낙관적 로컬 적용을 넣으면 이 ADR 의 전제가 깨진다. resize 폭주는 client 측 last-forwarded dedup + 서버측 `resize_grid=false` no-op 2 중으로 흡수한다.
+- **불변식(GUI-hosted 서버)**: 점유 중인 surface 는 host 창 sweep(`resize_all_terminals`)이 skip 해야 한다 — 이 skip 을 빼면 host 창이 client-driven grid 를 되돌려 이 ADR 이 무효화된다. 부수 효과로 점유 중 GUI-host 의 로컬 창은 occupant 의 grid 를 따라 렌더되며(host 창이 더 크면 host 쪽에 레터박스), 이는 host 사용자가 점유 대상에 readonly 라는 ADR-0040 점유 의미와 정합한다.
 
 ## Alternatives Considered
 

@@ -768,6 +768,16 @@ impl Core {
         let targets =
             collect_terminal_resize_targets(state, engine, terminal_rect, cell_width, cell_height);
         for (sid, cols, rows) in targets {
+            // hard-점유된 surface(원격 client 가 mirror 로 구동 중인 서버측 실제 PTY)는
+            // client-driven geometry(ADR-0045) — 점유 client 가 유일 구동자다. 이 host
+            // 창의 레이아웃 sweep 이 원격 창 grid 로 되돌리면 client 의 ClientResize 가
+            // 무력화되어 mirror 가 host 창 크기에 고정(레터박스)된다. 따라서 점유 중인
+            // surface 는 여기서 skip 하고, 오직 `apply_attached_workspace_resize`(holder
+            // 검증 후 client 요청 크기 적용)만 이 surface 의 grid 를 설정하게 한다. detach 로
+            // lock 이 풀리면 다음 sweep 부터 host 창이 다시 구동한다(원복).
+            if engine.attach.is_hard_occupied(sid) {
+                continue;
+            }
             if let Some(t) = engine.terminals.get_mut(sid) {
                 // mirror(detached) 터미널은 client-driven geometry(ADR-0045):
                 // 로컬 pane 목표 grid 를 로컬에 **직접 적용하지 않고**(로컬 grid 는

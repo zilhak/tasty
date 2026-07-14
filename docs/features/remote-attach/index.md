@@ -33,7 +33,7 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 **그리드 크기는 client 가 구동(client-driven)** — mirror 의 cols×rows 는 그것을 띄운 **로컬 pane 크기**를 따르고, 원격 PTY 를 그 크기로 reflow 시킨다(ADR-0045). "remote authoritative" 는 메커니즘으로만 남는다: 원격 PTY 가 실제 크기의 단일 진실원이라 콘텐츠 래핑(reflow)을 담당하고, 그 확정 크기를 client 에 되돌린다. client 는 **의도를 밀고(요청)** 원격은 **결과를 확정(echo)** 한다. 구현:
 
 - mirror 는 detached 터미널(PTY 없음)이라 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `AppState::resize_all`)이 detached 터미널을 로컬에 직접 적용하지 않고, 목표 grid 를 forward 큐에 넣는다. `about_to_wait` 에서 **`StreamControl::ClientResize`**(client→server) 로 원격에 요청한다.
-- 서버가 그 surface 의 **실제 원격 PTY 를 요청 크기로 resize**(reflow)한다(holder 만 구동 가능 — 배타 점유라 구동자는 항상 유일).
+- 서버가 그 surface 의 **실제 원격 PTY 를 요청 크기로 resize**(reflow)한다(holder 만 구동 가능 — 배타 점유라 구동자는 항상 유일). 서버가 **GUI 인스턴스**(창 보유)면 그 host 창의 레이아웃 sweep(`Core::resize_all_terminals`)이 **hard-점유 surface 를 skip**(`is_hard_occupied`)해 자기 창 grid 로 되돌리지 않는다 — skip 이 없으면 host 창이 client-driven grid 를 덮어써 mirror 가 host 창 크기에 고정된다(레터박스). headless 서버는 창이 없어 무해하지만 GUI-hosted 서버엔 필수. detach 시 원복.
 - 원격 grid 가 실제로 바뀌면 서버가 기존 **`Control` 프레임(`StreamControl::Resize`, server→client)** 으로 확정 cols/rows 를 통지하고, client 가 그 echo 로만 mirror 를 리사이즈한다. → 로컬을 낙관적으로 먼저 바꾸지 않아(원격 reflow 전 잘못된 grid 재생 방지) desync 가 없다.
 - 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다. mirror 가 pane 크기로 reflow 되므로 pane 을 채운다(과거의 80×24 좌상단 소영역 + 배경 레터박스는 사라진다). 초기 attach 순간(원격 기본 80×24 → 첫 forward reflow)에는 약 1 RTT 의 짧은 깜빡임이 있을 수 있다.
 
