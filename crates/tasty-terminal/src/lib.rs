@@ -554,17 +554,13 @@ impl Terminal {
             }
         }
 
-        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
-        if let Ok(exe_path) = std::env::current_exe()
-            && let Some(exe_dir) = exe_path.parent()
+        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
+        // terminal. hook_handler::trigger::spawn_shell 와 동일한 보강을 공유
+        // 헬퍼로 적용해 두 경로의 동작을 일치시킨다(패키징된 macOS `.app` 의
+        // 최소 PATH 에서 `tasty` self 호출 해결).
+        if let Some(new_path) =
+            tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
         {
-            let exe_dir_str = exe_dir.to_string_lossy();
-            let sep = if cfg!(windows) { ";" } else { ":" };
-            let new_path = if let Ok(existing) = std::env::var("PATH") {
-                format!("{}{}{}", exe_dir_str, sep, existing)
-            } else {
-                exe_dir_str.to_string()
-            };
             cmd.env("PATH", new_path);
         }
 

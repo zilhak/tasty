@@ -79,6 +79,34 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
   그래서 채널이 아니라 **에이전트가 직접 arm 하는 Monitor** 방식을 택했다. Monitor 라인
   전달의 간헐 지연: `#76508`.
 
+## 패키징된 macOS `.app` 의 PATH 제약 — hook 셸 커맨드가 자기 자신을 재호출할 때
+
+완료 알림 hook(`register_notify_hooks`, `crates/tasty-plugin-{claude,codex}/src/handlers.rs`)이
+등록하는 `command` 는 `tasty claude notify-done ...` / `tasty codex notify-caller ...` 형태로,
+**`tasty` 자기 자신을 PATH 로 재호출**한다. 이 셸 커맨드는 `src/hook_handler/trigger.rs::spawn_shell`
+이 `sh -c`(windows `cmd /C`)로 실행하며 **부모(host 앱) 프로세스의 환경을 상속**한다.
+
+- **함정**: 패키징된 `.app` 을 macOS LaunchServices(Dock/Finder 더블클릭/`open Tasty.app`)로 띄우면
+  host 프로세스의 PATH 가 `/usr/bin:/bin:/usr/sbin:/sbin` 로 제한된다. `tasty` 바이너리가 있는
+  `.../Tasty.app/Contents/MacOS` 는 이 최소 PATH 에 없으므로, 상속받은 셸이 `tasty` 를 못 찾아
+  `command not found`(exit 127)로 **조용히 실패**한다 — completion-log append 도 tell 도 도착하지 않는다.
+- **dev 에서 안 보이는 이유**: `cargo run` / 터미널에서 직접 띄운 바이너리는 그 터미널의 풍부한 PATH를
+  상속하므로 재현되지 않는다. LaunchServices 로 띄운 `.app` 에서만 드러난다.
+- **처방**: `spawn_shell` 이 자식 프로세스의 PATH 를 보강한다 — `std::env::current_exe()` 의 부모
+  디렉토리(=실행 중인 `tasty` 바이너리가 있는 곳)를 PATH 맨 앞에 붙여, 자기 자신 재호출은 최소 PATH
+  환경에서도 항상 해결된다. `current_exe()` 실패는 상속 PATH 그대로 두는 fallback(패닉 없음).
+  이 보강은 `InlineShell`/`ShellCommand`(레지스트리) 양쪽이 공유하는 `spawn_shell` 한 곳에서 처리돼
+  모든 hook 셸 커맨드에 적용된다. **스코프**: self-binary 디렉토리 하나만 추가하며, 로그인쉘(`$SHELL -lc`)
+  이나 사용자 커스텀 PATH(nvm/rbenv/cargo bin 등)를 복제하지는 않는다.
+- **공유 헬퍼**: 실제 PATH 계산은 `tasty_utils::process::path_prepending_self_dir` 하나로 통일돼,
+  hook 셸(`spawn_shell`)과 PTY 셸(`crates/tasty-terminal/src/lib.rs::Terminal::new`, conductor 자신의
+  인터랙티브 터미널이 `tasty` CLI 를 찾는 것도 이 경로 덕분)이 **동일 로직**을 쓴다. 구분자(`:`/`;`)는
+  `std::env::{split_paths,join_paths}` 로 크로스플랫폼 처리.
+- **회귀 방어**: `crates/tasty-utils/src/process.rs` 의 `prepends_self_binary_dir_to_minimal_path`
+  (순수 함수, 최소 PATH prepend 검증) + `src/hook_handler/trigger.rs` 의
+  `inline_shell_resolves_self_binary_via_augmented_path`(self-dir 없는 PATH 에서 basename 재호출 성공
+  end-to-end 검증).
+
 ## 일반 교훈
 
 - 수신 세션 상태(busy/idle)에 의존하는 PTY 입력 주입은 완료 알림의 **단일 경로로 부적합**하다.

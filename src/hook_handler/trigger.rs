@@ -101,6 +101,16 @@ fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
             c
         };
         process.envs(env);
+        // 패키징된 macOS `.app`(LaunchServices 경유 실행)은 PATH 를
+        // `/usr/bin:/bin:/usr/sbin:/sbin` 으로 제한한다. 이 최소 PATH 를 그대로
+        // 상속하면 `tasty` 자기 자신을 재호출하는 hook 커맨드(notify-done 등)가
+        // `command not found`(exit 127)로 조용히 실패한다. 실행 중인 바이너리
+        // 자신의 디렉토리를 PATH 맨 앞에 붙여 self 재호출을 항상 해결한다.
+        // Terminal::new(PTY 셸)와 동일한 보강을 공유 헬퍼로 적용한다.
+        if let Some(path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
+        {
+            process.env("PATH", path);
+        }
         if let Err(e) = tasty_utils::process::hide_console(&mut process).output() {
             tracing::warn!("hook shell command spawn failed: {e}; cmd: {full}");
         }
@@ -165,6 +175,38 @@ mod tests {
         }
         let content = std::fs::read_to_string(&marker).expect("marker written");
         assert_eq!(content.trim(), "bell/hook/42");
+    }
+
+    /// end-to-end: self-binary 디렉토리가 없는 PATH 환경에서도 hook 셸 커맨드가
+    /// `tasty` 자기 자신(여기선 테스트 바이너리)을 basename 으로 호출해 해결됨을
+    /// 증명한다 — `spawn_shell` 이 PATH 를 self-dir 로 보강하기 때문. 이 보강이
+    /// 없으면 `command not found`(exit 127)로 조용히 실패해 marker 가 안 생긴다.
+    #[test]
+    fn inline_shell_resolves_self_binary_via_augmented_path() {
+        let exe = std::env::current_exe().expect("current_exe");
+        // file_name 은 windows 에서 `.exe` 확장자를 포함해 그대로 호출 가능하다.
+        let basename = exe
+            .file_name()
+            .expect("file_name")
+            .to_string_lossy()
+            .into_owned();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = dir.path().join("resolved.txt");
+        // 테스트 바이너리를 basename 으로 호출(→ PATH 해결 필요). `--list` 는
+        // 테스트를 실행하지 않고 목록만 출력 후 즉시 종료하므로 재귀가 없다.
+        // basename 은 해시만 포함(공백 없음)이라 인용부호 불필요 — 기존 테스트 관례.
+        let cmd = format!("{basename} --list > {}", marker.display());
+
+        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 1);
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !marker.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert!(
+            marker.exists(),
+            "hook command referencing self binary by basename did not run — PATH was not augmented with the self-binary dir"
+        );
     }
 
     /// 알 수 없는 핸들러 id 참조는 조용히 무시(패닉 없음).
