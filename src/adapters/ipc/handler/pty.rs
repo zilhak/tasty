@@ -65,6 +65,10 @@ fn lazy_sweep(engine: &mut CoreState) {
     let expired = engine.pty_registry.sweep_idle(Instant::now());
     for pty_id in expired {
         engine.terminals.remove(pty_id);
+        // waker dedup 게이트 제거(pty_id 키) — 미제거 시 sweep 마다 게이트 영구 누적(누수).
+        if let Some(factory) = engine.waker_factory.as_ref() {
+            factory.forget_surface(pty_id);
+        }
         tracing::debug!("headless pty {pty_id} swept (idle TTL exceeded)");
     }
 }
@@ -265,6 +269,10 @@ pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> 
     let had_terminal = engine.terminals.remove(pty_id).is_some();
     if !had_entry && !had_terminal {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+    }
+    // waker dedup 게이트 제거(pty_id 키) — 미제거 시 kill 마다 게이트 영구 누적(누수).
+    if let Some(factory) = engine.waker_factory.as_ref() {
+        factory.forget_surface(pty_id);
     }
     JsonRpcResponse::success(id, json!({ "id": pty_id, "killed": true }))
 }
@@ -473,6 +481,75 @@ mod tests {
         for pid in e.pty_registry.ids() {
             handle_kill(&mut e, json!(0), &json!({ "id": pid }));
         }
+    }
+
+    /// 회귀(waker dedup 게이트 누수): `pty.kill` 은 회수하는 pty_id 의 waker 게이트를
+    /// 반드시 `forget_surface` 로 정리해야 한다(대상 pty 만 — 다른 pty 게이트는 보존).
+    #[test]
+    fn kill_forgets_only_target_waker_gate() {
+        use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
+        let mut e = engine();
+        let factory = RecordingWakerFactory::new();
+        let shared: crate::waker::SharedWakerFactory = factory.clone();
+        e.waker_factory = Some(shared);
+        let caller = CallerContext::Local;
+
+        // spawn 2 개 — 각 pty_id 로 targeted 게이트가 생성된다(make_waker → factory).
+        let a = ok(handle_spawn(&mut e, &caller, json!(1), &json!({})))["pty_id"]
+            .as_u64()
+            .unwrap() as u32;
+        let b = ok(handle_spawn(&mut e, &caller, json!(2), &json!({})))["pty_id"]
+            .as_u64()
+            .unwrap() as u32;
+        assert!(
+            factory.made().contains(&a) && factory.made().contains(&b),
+            "spawn 은 pty_id 별 targeted 게이트를 만든다"
+        );
+
+        // kill a → forget_surface(a) 호출, b 게이트는 건드리지 않는다.
+        ok(handle_kill(&mut e, json!(3), &json!({ "id": a })));
+        assert!(
+            factory.forgotten().contains(&a),
+            "handle_kill 은 회수하는 pty_id 의 waker 게이트를 정리해야 한다"
+        );
+        assert!(
+            !factory.forgotten().contains(&b),
+            "kill 은 대상 pty 의 게이트만 정리(다른 pty 보존)"
+        );
+
+        // 정리: 남은 b 종료.
+        handle_kill(&mut e, json!(4), &json!({ "id": b }));
+    }
+
+    /// 회귀(waker dedup 게이트 누수): idle TTL sweep(`lazy_sweep`)도 회수하는 pty_id 의
+    /// waker 게이트를 `forget_surface` 로 정리해야 한다. TTL 0 으로 즉시 만료시킨다.
+    #[test]
+    fn idle_sweep_forgets_waker_gate() {
+        use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
+        let mut e = engine();
+        // TTL 0: 다음 접근(lazy_sweep) 시 touch 안 된 headless PTY 는 즉시 만료 회수.
+        e.pty_registry =
+            crate::core::pty_registry::PtyRegistry::with_limits(8, std::time::Duration::ZERO);
+        let factory = RecordingWakerFactory::new();
+        let shared: crate::waker::SharedWakerFactory = factory.clone();
+        e.waker_factory = Some(shared);
+        let caller = CallerContext::Local;
+
+        let a = ok(handle_spawn(&mut e, &caller, json!(1), &json!({})))["pty_id"]
+            .as_u64()
+            .unwrap() as u32;
+        assert!(factory.made().contains(&a), "spawn 이 게이트를 만든다");
+
+        // handle_list → lazy_sweep → a 가 idle 만료로 회수되며 게이트도 정리된다.
+        ok(handle_list(&mut e, json!(2)));
+        assert!(
+            !e.pty_registry.contains(a),
+            "TTL 0 이므로 sweep 이 a 를 회수해야 한다"
+        );
+        assert!(
+            factory.forgotten().contains(&a),
+            "lazy_sweep 은 회수하는 pty_id 의 waker 게이트를 정리해야 한다"
+        );
     }
 
     #[test]

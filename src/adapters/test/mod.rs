@@ -14,4 +14,5 @@ pub mod mem_fs;
 pub mod mock_clipboard;
 pub mod mock_ipc_server;
 pub mod mock_process;
+pub mod mock_waker_factory;
 pub mod tmp_home;

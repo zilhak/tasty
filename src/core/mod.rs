@@ -2398,6 +2398,11 @@ impl Core {
         // 5) registry 제거: 더 이상 headless 가 아니므로 pty.list 에서 빠지고 이중
         //    등록이 방지된다. 옛 exit-watcher 스레드는 detached 라 자식 reap 을 계속한다.
         engine.pty_registry.remove(pty_id);
+        // 옛 pty_id 키의 waker dedup 게이트 제거 — 3)에서 surface_id 로 재배선했으므로
+        // 옛 pty_id 게이트는 더 이상 쓰이지 않는다. 미제거 시 승격마다 게이트 누적(누수).
+        if let Some(factory) = engine.waker_factory.as_ref() {
+            factory.forget_surface(pty_id);
+        }
         engine.mark_layout_dirty();
 
         let (tab_count, active_tab) = engine
@@ -3558,6 +3563,82 @@ mod mirror_structural_guard_tests {
         );
 
         // 정리: 승격된 surface 의 Terminal 제거(프로세스 종료).
+        engine.terminals.remove(surface_id);
+    }
+
+    /// 회귀(waker dedup 게이트 누수): `AdoptTerminal` 승격은 Terminal 을
+    /// pty_id→surface_id 로 re-key 하며 새 surface_id 게이트를 배선하므로, 옛 pty_id
+    /// 게이트를 `forget_surface` 로 정리해야 한다(미정리 시 승격마다 누적).
+    #[test]
+    fn adopt_terminal_forgets_old_pty_waker_gate() {
+        use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
+        use crate::core::pty_registry::PtySpawnSpec;
+
+        let (mut core, mut engine) = build_test_core();
+        let factory = RecordingWakerFactory::new();
+        let shared: crate::waker::SharedWakerFactory = factory.clone();
+        engine.waker_factory = Some(shared);
+        let (_a, pane) = seed(&mut engine);
+
+        // pty.spawn 흉내: registry 등록 + make_waker(pty_id) 로 pty_id 게이트 생성.
+        let pty_id = engine
+            .pty_registry
+            .register(
+                PtySpawnSpec {
+                    owner_agent_id: "agent-x".into(),
+                    cwd: None,
+                    command: vec![],
+                },
+                std::time::Instant::now(),
+            )
+            .expect("register headless pty");
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(pty_id);
+        let terminal = tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols: 80,
+                rows: 24,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                surface_id: pty_id,
+                working_dir: None,
+                initial_input: None,
+            },
+            waker,
+        )
+        .expect("spawn headless terminal");
+        engine.terminals.insert(pty_id, terminal);
+        assert!(
+            factory.made().contains(&pty_id),
+            "spawn 흉내는 pty_id 게이트를 만든다"
+        );
+
+        // 승격.
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::AdoptTerminal {
+                    pane_id: pane,
+                    pty_id,
+                },
+            )
+            .expect("adopt must succeed");
+        let surface_id = match events.into_iter().next() {
+            Some(CoreEvent::TabCreated { surface_id, .. }) => surface_id,
+            other => panic!("expected TabCreated, got {other:?}"),
+        };
+
+        // 옛 pty_id 게이트는 정리, 새 surface_id 게이트(재배선된 활성 게이트)는 보존.
+        assert!(
+            factory.forgotten().contains(&pty_id),
+            "adopt 는 옛 pty_id 의 waker 게이트를 정리해야 한다"
+        );
+        assert!(
+            !factory.forgotten().contains(&surface_id),
+            "재배선된 새 surface_id 게이트는 정리 대상이 아니다"
+        );
+
+        // 정리: 승격된 surface 의 Terminal 제거.
         engine.terminals.remove(surface_id);
     }
 
