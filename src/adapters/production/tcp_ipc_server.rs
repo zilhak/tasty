@@ -54,6 +54,14 @@ impl TcpIpcServer {
         // Write port file so CLI clients can find us
         port_file::write_port_file_to(port, custom_port_file.as_deref())?;
 
+        // 이 인스턴스가 자기 데이터 루트의 주인이 된 순간, 과거 완료 알림 로그
+        // (`notify/`)를 통째로 청소한다. surface_id 는 재시작마다 새로 발급되므로
+        // 이전 프로세스가 남긴 로그 파일들은 이 인스턴스에선 모두 죽은 surface 의
+        // 것 — 읽을 reader 가 없다. 부팅 latency 에 영향을 주지 않도록 결과를
+        // 기다리지 않는 fire-and-forget 으로 던진다(다음 append 시 create_dir_all
+        // 이 알아서 재생성한다).
+        Self::spawn_notify_dir_cleanup();
+
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
 
@@ -93,6 +101,29 @@ impl TcpIpcServer {
             shutdown,
             custom_port_file,
         })
+    }
+
+    /// 자기 데이터 루트 밑 `notify/` 디렉토리를 별도 스레드에서 통째로 삭제한다
+    /// (fire-and-forget — join 하지 않아 부팅 흐름을 막지 않는다). 홈 미확인 시
+    /// 아무것도 하지 않는다.
+    fn spawn_notify_dir_cleanup() {
+        let Some(dir) = tasty_utils::path::tasty_home().map(|home| home.join("notify")) else {
+            return;
+        };
+        thread::spawn(move || Self::clear_notify_dir(&dir));
+    }
+
+    /// `notify/` 디렉토리를 통째로 삭제한다. 디렉토리가 애초에 없으면(NotFound)
+    /// 정상 상황이라 무시하고, 그 외 에러만 로그한다. 재생성은 하지 않는다 —
+    /// 다음 `append_notify_line` 이 `create_dir_all` 로 알아서 만든다.
+    fn clear_notify_dir(dir: &std::path::Path) {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!("failed to clear notify dir {}: {}", dir.display(), e);
+            }
+        }
     }
 
     fn handle_connection(
@@ -371,6 +402,58 @@ impl IpcServerPort for TcpIpcServer {
 
     fn command_sender(&self) -> mpsc::Sender<IpcCommand> {
         self.command_tx.clone()
+    }
+}
+
+#[cfg(test)]
+mod notify_cleanup_tests {
+    use super::*;
+
+    // 더미 파일이 든 notify/ 를 clear 하면 디렉토리가 통째로 사라진다.
+    #[test]
+    fn clear_removes_populated_notify_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = tmp.path().join("notify");
+        std::fs::create_dir_all(&notify).unwrap();
+        for id in ["11.log", "42.log", "1337.log"] {
+            std::fs::write(notify.join(id), b"spawn done\n").unwrap();
+        }
+        assert!(notify.exists());
+
+        TcpIpcServer::clear_notify_dir(&notify);
+
+        assert!(!notify.exists(), "notify dir should be removed");
+    }
+
+    // 애초에 없는 디렉토리를 clear 해도 에러/패닉 없이 no-op.
+    #[test]
+    fn clear_is_noop_when_dir_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = tmp.path().join("notify");
+        assert!(!notify.exists());
+
+        // NotFound 를 삼키므로 패닉 없이 반환해야 한다.
+        TcpIpcServer::clear_notify_dir(&notify);
+
+        assert!(!notify.exists());
+    }
+
+    // fire-and-forget spawn 경로도 스레드를 join 해 실제로 비워지는지 확인.
+    #[test]
+    fn spawned_thread_clears_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = tmp.path().join("notify");
+        std::fs::create_dir_all(&notify).unwrap();
+        std::fs::write(notify.join("7.log"), b"x\n").unwrap();
+
+        // spawn_notify_dir_cleanup 은 tasty_home() 에 의존하므로 여기선 직접
+        // 스레드를 띄워 프로덕션과 동일한 fire-and-forget 경로(spawn→clear)를
+        // 재현하고, 테스트에서만 join 으로 완료를 기다린다.
+        let dir = notify.clone();
+        let handle = thread::spawn(move || TcpIpcServer::clear_notify_dir(&dir));
+        handle.join().unwrap();
+
+        assert!(!notify.exists());
     }
 }
 
