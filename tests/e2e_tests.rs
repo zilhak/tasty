@@ -508,6 +508,108 @@ fn all_e2e_tests() {
             .is_some()
     );
 
+    // ========== headless PTY (pty.*) — 6+1 메서드 통합 흐름 ==========
+    // spawn → list → write → read → wait(exit_code) → kill, 그리고 별도 pty 를
+    // attach_surface 로 실제 Tab 으로 승격. Surface 없이 돌던 PTY 가 진짜 exit-code 를
+    // 회수하고, 승격 시 실제 surface 로 등장하는지 end-to-end 로 검증(18-a/b/c 를 잇는다).
+
+    // spawn: bare shell(command 없음). pty id 는 disjoint 고범위(>= 0x8000_0000).
+    let spawned = tasty.call("pty.spawn", json!({}));
+    let pty_id = spawned["pty_id"]
+        .as_u64()
+        .expect("pty.spawn returns pty_id");
+    assert!(
+        pty_id >= 0x8000_0000,
+        "pty id 는 surface id 와 disjoint 한 고범위여야: {pty_id}"
+    );
+
+    // list: 방금 만든 headless PTY 가 필터 없이 전체 목록에 등장.
+    let listed = tasty.call("pty.list", json!({}));
+    assert!(
+        listed["ptys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"].as_u64() == Some(pty_id)),
+        "pty.list 가 방금 spawn 한 pty 를 빠뜨림: {listed:?}"
+    );
+
+    // write → read: 셸에 echo 를 보내고 화면 텍스트에 반영되는지 폴링.
+    tasty.call(
+        "pty.write",
+        json!({ "id": pty_id, "text": "echo PTY_E2E_MARK\n" }),
+    );
+    let read_start = std::time::Instant::now();
+    loop {
+        let r = tasty.call("pty.read", json!({ "id": pty_id }));
+        if r["text"].as_str().unwrap_or("").contains("PTY_E2E_MARK") {
+            break;
+        }
+        if read_start.elapsed() > Duration::from_secs(5) {
+            panic!("pty.read 가 echo 출력을 반영하지 못함: {r:?}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // write(exit 5) → wait: watcher 가 잡은 진짜 exit_code 를 폴링으로 확인.
+    tasty.call("pty.write", json!({ "id": pty_id, "text": "exit 5\n" }));
+    let wait_start = std::time::Instant::now();
+    let exited = loop {
+        let w = tasty.call("pty.wait", json!({ "id": pty_id }));
+        if w["exited"].as_bool() == Some(true) {
+            break w;
+        }
+        if wait_start.elapsed() > Duration::from_secs(10) {
+            panic!("pty.wait 가 종료를 감지하지 못함: {w:?}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(exited["exit_code"].as_i64(), Some(5), "진짜 exit-code 회수");
+    assert_eq!(exited["success"], false);
+
+    // kill: 이미 종료된 PTY 도 두 store 에서 회수 → list 에서 사라진다.
+    tasty.call("pty.kill", json!({ "id": pty_id }));
+    let listed2 = tasty.call("pty.list", json!({}));
+    assert!(
+        listed2["ptys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["id"].as_u64() != Some(pty_id)),
+        "kill 후 pty.list 에 남아있으면 안 됨: {listed2:?}"
+    );
+
+    // attach_surface: 살아있는 별도 headless PTY 를 실제 Tab 으로 승격.
+    let promo = tasty.call("pty.spawn", json!({}));
+    let promo_id = promo["pty_id"].as_u64().expect("second pty");
+    let attached = tasty.call(
+        "pty.attach_surface",
+        json!({ "id": promo_id, "pane_id": pid }),
+    );
+    let new_surface = attached["surface_id"]
+        .as_u64()
+        .expect("attach_surface returns surface_id");
+    assert_eq!(attached["pane_id"].as_u64(), Some(pid));
+    // 승격된 surface 는 실제 surface.list 에 등장하고, headless 목록에선 사라진다.
+    let surfaces_now = tasty.call("surface.list", json!({}));
+    assert!(
+        surfaces_now
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["id"].as_u64() == Some(new_surface)),
+        "승격된 surface 가 surface.list 에 없음: {surfaces_now:?}"
+    );
+    let listed3 = tasty.call("pty.list", json!({}));
+    assert!(
+        listed3["ptys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["id"].as_u64() != Some(promo_id)),
+        "승격된 pty 는 headless 목록에서 빠져야 함: {listed3:?}"
+    );
+
     // ========== Multi-window: owner-based routing + list 전체 순회 ==========
     // 두 번째 main window 를 생성하고, focused 가 새 윈도우로 전환되어도
     // 첫 윈도우의 surface 가 IPC 로 접근 가능한지 검증. CLAUDE.md "포커스 독립".

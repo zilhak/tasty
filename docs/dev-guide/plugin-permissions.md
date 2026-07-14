@@ -49,6 +49,15 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 
 누락 메서드는 `method_meta` 가 `None` → plugin 호출 시 자동 `UnknownMethod` 거부(Local 은 fallthrough 통과). debug/호스트 자체 메서드(`plugin.*`/`window.*`)는 `local_only()`.
 
+**권한은 "무엇을 실제로 건드리는가"로 정한다** — Surface 트리를 건드리면 `Surface*` 가 섞이고, 순수 PTY IO 만 하면 `Terminal*` 만 쓴다. headless PTY primitive(`pty.*`, [ADR-0050](../adr/0050-headless-pty-primitive.md))가 이 규칙의 예시다 — 새 `Pty*` 토큰 없이 기존 `Terminal*` 3종만 재사용한다:
+
+| 메서드 | 권한 | Surface 를 건드리는가 |
+|--------|------|----------------------|
+| `pty.spawn` | `TerminalSpawn` | 아니오 (Surface 없이 PTY 만) |
+| `pty.write` / `pty.kill` | `TerminalWrite` | 아니오 |
+| `pty.read` / `pty.wait` / `pty.list` | `TerminalRead` | 아니오 |
+| `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | **예** (실제 Tab 생성 — `terminal.spawn` 과 동일 이유로 `SurfaceWrite` 추가) |
+
 ## 새 권한 토큰 추가
 
 1. `Permission` enum 에 variant 추가(scoped 면 `<Name>(String)`).
