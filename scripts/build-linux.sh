@@ -304,7 +304,12 @@ fi
 
 echo "==> Verifying artifacts..."
 # tar.gz: 내부에 tasty 존재 + 풀어서 --version 호출 가능
-tar -tzf "$DIST_DIR/$ARCHIVE_NAME" | grep -q "$PKG_DIR/tasty" || {
+# `tar -tzf ... | grep -q ...` 는 pipefail 하에서 SIGPIPE 레이스가 난다 — grep -q 가
+# 첫 매치에서 바로 종료하며 파이프를 닫으면 tar 가 나머지를 쓰다 SIGPIPE 로 죽고,
+# pipefail 때문에 grep 이 매치를 찾았어도 파이프 전체가 실패로 처리된다.
+# command substitution 으로 tar 출력을 완전히 받은 뒤 grep 하면 이 레이스가 없다.
+TAR_LISTING=$(tar -tzf "$DIST_DIR/$ARCHIVE_NAME")
+grep -q "$PKG_DIR/tasty" <<<"$TAR_LISTING" || {
     echo "Error: tasty not in $ARCHIVE_NAME" >&2
     exit 1
 }
