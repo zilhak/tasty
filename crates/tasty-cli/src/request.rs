@@ -368,10 +368,13 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Info => ("system.info", serde_json::json!({})),
         ListCommands::GpuStats => ("system.gpu_stats", serde_json::json!({})),
         ListCommands::Notifications => ("notification.list", serde_json::json!({})),
-        ListCommands::Hooks { surface } => (
-            "hook.list",
-            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
-        ),
+        // list 는 포커스 독립 — 무필터면 전 워크스페이스를 순회한다. 여기서
+        // `resolve_surface_id`(TASTY_SURFACE_ID env fallback)를 쓰면 tasty 터미널
+        // 안에서 호출 시 현재 surface 로 암묵 필터링돼 전체 조회가 불가능해지므로,
+        // 명시적 `--surface` 값만 필터로 넘긴다(없으면 null → 호스트가 전체 반환).
+        ListCommands::Hooks { surface } => {
+            ("hook.list", serde_json::json!({ "surface_id": surface }))
+        }
         ListCommands::GlobalHooks => ("global_hook.list", serde_json::json!({})),
         ListCommands::Queue { surface } => (
             "message.count",
@@ -833,6 +836,29 @@ mod tests {
         assert_eq!(
             req.params.get("surface_id").and_then(|v| v.as_u64()),
             Some(42)
+        );
+
+        // case 1b: hook.list 는 포커스 독립 list — env(TASTY_SURFACE_ID=42)가 있어도
+        // 무필터면 surface_id 를 null 로 보내 호스트가 전 워크스페이스를 순회하게 한다.
+        // resolve_surface_id 의 env 폴백을 여기 적용하면 현재 surface 로 암묵 필터링돼
+        // 전체 조회가 불가능해지는 회귀(TODO 22)를 막는다.
+        let hooks_no_filter = command_to_request(&cmd_from(&["tasty", "list", "hooks"]));
+        assert_eq!(hooks_no_filter.method, "hook.list");
+        assert!(
+            hooks_no_filter
+                .params
+                .get("surface_id")
+                .is_some_and(|v| v.is_null())
+        );
+        // --surface 명시 시 필터 유지(회귀 없음).
+        let hooks_filtered =
+            command_to_request(&cmd_from(&["tasty", "list", "hooks", "--surface", "7"]));
+        assert_eq!(
+            hooks_filtered
+                .params
+                .get("surface_id")
+                .and_then(|v| v.as_u64()),
+            Some(7)
         );
 
         // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
