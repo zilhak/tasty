@@ -74,9 +74,10 @@ impl Terminal {
         self.cached_dims.1
     }
 
-    /// Get the PID of the child process. `None` for a detached mirror (no child).
+    /// Get the PID of the child process. `None` for a detached mirror (no child)
+    /// or after [`take_child`](Self::take_child) hands the child off.
     pub fn process_id(&self) -> Option<u32> {
-        self.pty.as_ref()?.child.process_id()
+        self.pty.as_ref()?.child.as_ref()?.process_id()
     }
 
     /// Whether this terminal is a detached mirror (no PTY/child). Its grid is
@@ -167,8 +168,9 @@ impl Terminal {
     /// Check if the child process is still running. A detached mirror has no
     /// child; reported as alive.
     pub fn is_alive(&mut self) -> bool {
-        match self.pty.as_mut() {
-            Some(pty) => pty.child.try_wait().ok().flatten().is_none(),
+        match self.pty.as_mut().and_then(|pty| pty.child.as_mut()) {
+            Some(child) => child.try_wait().ok().flatten().is_none(),
+            // 자식 없음: detached mirror 이거나 take_child 로 자식이 이관됨 — alive 로 본다.
             None => true,
         }
     }
@@ -176,10 +178,24 @@ impl Terminal {
     /// Check if the child process has exited. Returns false if exited. A detached
     /// mirror (no child) is always considered alive.
     pub fn check_process_alive(&mut self) -> bool {
-        match self.pty.as_mut() {
-            Some(pty) => !matches!(pty.child.try_wait(), Ok(Some(_status))),
+        match self.pty.as_mut().and_then(|pty| pty.child.as_mut()) {
+            Some(child) => !matches!(child.try_wait(), Ok(Some(_status))),
+            // 자식 없음: detached mirror 이거나 take_child 로 이관됨 — alive 로 본다.
             None => true,
         }
+    }
+
+    /// Hand off ownership of the waitable child process so an external owner (the
+    /// headless `pty_registry` exit-watcher, TODO 18) can call `child.wait()` for a
+    /// real exit code. After this the terminal's own exit-detection
+    /// ([`check_process_alive`](Self::check_process_alive)) and Drop-time kill/reap
+    /// no longer apply to that child — the new owner is responsible for kill/reap.
+    ///
+    /// Returns `None` if already taken or if this is a detached mirror with no PTY.
+    /// Surface terminals never call this, so their child stays `Some` and their
+    /// lifecycle (Drop-kill, zombie reaping) is unchanged.
+    pub fn take_child(&mut self) -> Option<Box<dyn portable_pty::Child + Send + Sync>> {
+        self.pty.as_mut().and_then(|pty| pty.child.take())
     }
 
     /// Take all accumulated events, leaving the internal buffer empty.

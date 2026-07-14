@@ -20,6 +20,7 @@ pub(crate) mod child_terminal;
 pub(crate) mod file;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
+pub(crate) mod pty_registry;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;
 pub(crate) mod state;

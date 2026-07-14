@@ -94,7 +94,11 @@ pub struct CellInfo {
 struct PtyBackend {
     _writer_thread: thread::JoinHandle<()>,
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// `Some` for a normally-owned PTY (Surface 터미널). `None` only after
+    /// [`Terminal::take_child`] hands the waitable child off to an external owner
+    /// (headless `pty_registry` exit-watcher, TODO 18) — Surface 터미널은 절대
+    /// take_child 를 호출하지 않으므로 항상 `Some` 이고 kill/reap 경로가 그대로 산다.
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
     /// shared `TerminalState` off the input thread.
     _parser_thread: thread::JoinHandle<()>,
@@ -106,7 +110,13 @@ impl Drop for PtyBackend {
     /// 종료된 경우의 오류는 무시(로그만). 비정상 종료(크래시 등 Drop 미실행) 경로는
     /// [`tasty_reaper`] 의 Job Object 결박이 커버한다.
     fn drop(&mut self) {
-        if let Err(e) = self.child.kill() {
+        // take_child 로 자식이 이관된 경우(headless pty_registry) kill/reap 소유권도
+        // 그쪽으로 넘어갔으므로 여기서는 아무것도 하지 않는다. Surface 터미널은 항상
+        // `Some` 이라 아래 경로가 그대로 실행된다.
+        let Some(child) = self.child.as_mut() else {
+            return;
+        };
+        if let Err(e) = child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
         }
         // unix: portable-pty 의 kill() 은 SIGHUP 송신뿐 reap 이 없고, 살아있는 동안의
@@ -116,7 +126,7 @@ impl Drop for PtyBackend {
         // 유예 poll → SIGKILL escalation 으로 reap 한다. 셸은 SIGHUP 후 보통 수 ms
         // 안에 죽으므로 정상 경로 비용은 poll 1~2회다.
         #[cfg(unix)]
-        if let Some(pid) = self.child.process_id() {
+        if let Some(pid) = child.process_id() {
             std::thread::spawn(move || {
                 let pid = pid as i32;
                 let mut status = 0i32;
@@ -661,7 +671,7 @@ impl Terminal {
         let pty = PtyBackend {
             _writer_thread: writer_thread,
             pty_master: pair.master,
-            child,
+            child: Some(child),
             _parser_thread: parser_thread,
         };
 

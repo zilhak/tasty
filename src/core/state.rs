@@ -254,6 +254,15 @@ pub struct CoreState {
     /// shell_children 과는 다른 서브시스템이다(파편화 방지 — child_terminal.rs 참조).
     pub(crate) child_terminals: crate::core::child_terminal::ChildTerminalRegistry,
 
+    /// headless PTY registry (TODO 18 / `pty.*` primitive). 에이전트가 Surface 없이
+    /// 백그라운드에서 굴리는 PTY 의 메타데이터 + 진짜 exit-code 를 보관하고, 동시 개수
+    /// 상한·idle TTL 로 좀비 누적을 막는다. child_terminals(자식 터미널 surface) 와는
+    /// Surface 유무로 갈리는 별도 서브시스템이다(파편화 방지 — pty_registry.rs 참조).
+    /// 비영속 — headless PTY 는 호스트와 수명을 같이한다.
+    // 소비자(IPC `pty.*` 핸들러·상태바 카운트·sweep 배선)는 18-b/18-c 에서 붙는다.
+    #[allow(dead_code)]
+    pub(crate) pty_registry: crate::core::pty_registry::PtyRegistry,
+
     /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
     /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `AttachPoll`
     /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_hard_occupied
@@ -411,6 +420,7 @@ impl CoreState {
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
+            pty_registry: crate::core::pty_registry::PtyRegistry::new(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_structural_forward: Vec::new(),
