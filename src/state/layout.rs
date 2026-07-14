@@ -188,10 +188,16 @@ impl AppState {
 
     /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
     ///
-    /// D.3.E.4 이후 TerminalSurface 는 id-marker 라 Surface trait 의
-    /// `resize_all` 은 no-op. Terminal 본체는 `engine.terminals` (TerminalStore) 가
-    /// owner — 본 메서드는 layout 으로부터 surface 별 sub-rect 를 산출한 뒤
-    /// store 의 Terminal 을 직접 resize 한다.
+    /// **단일 authority 위임**: 터미널 grid 리사이즈 로직은 `Core::resize_all_terminals`
+    /// 한 곳으로 통일한다(attach 의미론 — detached mirror 는 원격 forward, hard-점유
+    /// surface 는 skip — 을 정본 한 벌만 보유). 과거 이 메서드가 자체 sweep 을 갖고
+    /// 있었으나 정본과 갈라져(occupancy 가드 누락) GUI-hosted 서버에서 점유 surface 를
+    /// 매 프레임 창 grid 로 되돌리는 레터박스를 유발했다(ADR-0045). 렌더/입력 경로의
+    /// 진입점만 유지하고 구현은 위임한다.
+    ///
+    /// PTY resize 는 Terminal 내부에서 deferred(`pending_pty_resize`) — 호출자는
+    /// resize 이벤트가 settle 되면 `flush_all_pty_resizes()` 를 별도로 호출한다.
+    #[cfg(feature = "gui")]
     pub fn resize_all(
         &mut self,
         engine: &mut CoreState,
@@ -199,47 +205,12 @@ impl AppState {
         cell_width: f32,
         cell_height: f32,
     ) {
-        let tab_bar_h = self.tab_bar_height;
-        let mut targets: Vec<(u32, usize, usize)> = Vec::new();
-        for ws in &engine.workspaces {
-            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-            for (pane_id, pane_rect) in pane_rects {
-                let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
-                    continue;
-                };
-                let content_rect = PhysicalRect {
-                    x: pane_rect.x,
-                    y: pane_rect.y + tab_bar_h,
-                    width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
-                };
-                for tab in &pane.tabs {
-                    let Some(layout) = tab.layout_opt.as_ref() else {
-                        continue;
-                    };
-                    for (sid, rect) in layout.compute_rects(content_rect) {
-                        let cols =
-                            ((rect.width.value() / cell_width.max(1.0)).floor() as usize).max(1);
-                        let rows =
-                            ((rect.height.value() / cell_height.max(1.0)).floor() as usize).max(1);
-                        targets.push((sid, cols, rows));
-                    }
-                }
-            }
-        }
-        for (sid, cols, rows) in targets {
-            if let Some(t) = engine.terminals.get_mut(sid) {
-                // mirror(detached) 터미널은 원격 기준 그리드로 고정 — 로컬 레이아웃
-                // 리사이즈에서 제외한다(원격 resize 는 attach Control 로만 갱신).
-                if t.is_detached() {
-                    continue;
-                }
-                t.resize(cols, rows);
-            }
-        }
-
-        // Note: PTY resize is deferred (pending_pty_resize in Terminal).
-        // Callers should call flush_all_pty_resizes() when resize events settle,
-        // NOT on every frame during continuous drag.
+        crate::core::Core::resize_all_terminals(
+            self,
+            engine,
+            terminal_rect,
+            cell_width,
+            cell_height,
+        );
     }
 }

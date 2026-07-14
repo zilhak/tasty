@@ -26,6 +26,7 @@ mirror grid geometry 를 **client-driven** 으로 뒤집는다: mirror 를 띄�
 - 서버는 두 drain(gui `event_handler` / headless `boot`)에서 holder 를 검증한 뒤 원격 **실제 PTY** 를 `Terminal::resize` 한다.
 - 로컬 mirror grid 는 **server 의 `Resize` echo 로만 갱신**한다(낙관적 로컬 적용 금지). 이 echo 경로(resize tap → forwarder → reader → `t.resize`)는 **무변경 재사용**이다.
 - 서버가 **GUI 인스턴스**(창 보유)로 그 워크스페이스를 렌더 중이면, host 창의 레이아웃 리사이즈 sweep(`Core::resize_all_terminals`)이 **hard-점유된 surface 를 skip** 한다(`OccupancyRegistry::is_hard_occupied`). 이 skip 이 없으면 host 창이 매 sweep 마다 점유 surface 를 자기 창 grid 로 되돌려 client 의 `ClientResize` 를 무력화하고, mirror 가 host 창 크기에 고정된다(레터박스). 점유 중 그 surface 의 grid 는 **오직 `apply_attached_workspace_resize`(holder 검증 후 client 요청 크기 적용)** 만 설정하며, detach 로 lock 이 풀리면 다음 sweep 부터 host 창이 다시 구동한다(원복). headless 서버는 창이 없어 이 sweep 자체가 없으므로 무해하지만, **GUI-hosted 서버**(원격 tasty GUI 를 attach)에선 필수 불변식이다 — 초기 설계 Context 가 headless 서버만 상정해 이 케이스를 놓쳤다.
+- **단일 authority (필수)**: 이 skip 이 유효하려면 터미널 grid 리사이즈 sweep 이 **`Core::resize_all_terminals` 한 곳뿐이어야** 한다. 과거 View 레이어에 중복 sweep(`AppState::resize_all` 자체 구현)이 남아 gpu 렌더 경로에서 매 프레임 돌며 occupancy 가드 없이 점유 surface 를 창 grid 로 되돌려, 정본의 skip 을 무력화했다(레터박스 재발). 중복 sweep 은 정본으로 위임(delegation)해 제거했다 — `AppState::resize_all` 은 이제 `Core::resize_all_terminals` 로 forward 하는 얇은 진입점이다. detached-forward·occupancy-skip 같은 attach 의미론이 정본 한 벌에만 존재해야 divergence 로 인한 회귀가 없다.
 
 ## Consequences
 
