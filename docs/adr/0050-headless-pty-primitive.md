@@ -8,7 +8,7 @@
 
 에이전트가 Surface(Tab) 없이 백그라운드에서 1회성 명령/자동화를 돌리고 **진짜 exit-code** 를 회수해야 하는 요구가 있었다. 기존 자식 터미널 기계(`terminal.*`, `child_terminal.rs`)는 이 요구를 그대로 충족하지 못한다:
 
-- **`terminal.*` 는 Surface 존재를 전제한다.** `terminal.spawn` 은 새 Tab(Surface)을 만들어 GUI 에 렌더하고, `terminal.wait` 는 Surface 라이브 트리 존재 여부로 종료를 판정하며, `terminal.kill` 은 Surface 를 닫는 연산이다. 그래서 권한 매핑에도 Surface 토큰이 섞인다 — `terminal.spawn → [SurfaceWrite, TerminalWrite, TerminalSpawn]`, `terminal.wait → [SurfaceRead]`, `terminal.kill → [SurfaceWrite]`. Surface 는 곧 포커스/닫은-항목 히스토리/선택 같은 **사용자 상태에 닿는 지점**이다(identity.md 원칙 1).
+- **`terminal.*` 는 Surface 존재를 전제한다.** `terminal.spawn` 은 새 Tab(Surface)을 만들어 GUI 에 렌더하고, `terminal.kill` 은 Surface 를 닫는 연산이다. 그래서 권한 매핑에도 Surface 토큰이 섞인다 — `terminal.spawn → [SurfaceWrite, TerminalWrite, TerminalSpawn]`, `terminal.kill → [SurfaceWrite]`. Surface 는 곧 포커스/닫은-항목 히스토리/선택 같은 **사용자 상태에 닿는 지점**이다(identity.md 원칙 1).
 - headless PTY 는 정의상 Surface 트리를 전혀 건드리지 않아야 한다 — 렌더되지 않고, 사용자 상태에 닿을 지점 자체가 없다. `TerminalStore`(`CoreState::terminals`)는 이미 Surface 트리와 분리된 flat `HashMap<SurfaceId, Terminal>` 이고, 출력 이벤트 게이트(`sync_output_event_gates`/`ObserverRouter::wants`)는 Surface 트리를 조회하지 않는 단순 값 비교라, Surface 노드가 없는 orphan id 를 넣어도 크래시 위험이 없음을 확인했다.
 - `terminal.*` 에는 **동시 개수 상한도 idle TTL 도 없다** — 자식이 Tab 으로 보여 사용자가 눈으로 닫을 수 있는 GUI 안전망이 있기 때문이다. headless PTY 는 그 안전망이 없어 좀비 누적을 스스로 막아야 한다.
 
