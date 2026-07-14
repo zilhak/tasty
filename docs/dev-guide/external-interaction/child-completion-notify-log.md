@@ -1,4 +1,4 @@
-# child 완료 알림 — PTY tell 단일 의존의 함정과 completion-log 대안
+# child 완료 알림 — PTY tell 단일 의존의 함정과 completion-log 단일 채널화
 
 ## 증상
 
@@ -18,11 +18,18 @@ child(claude/codex)가 작업을 끝내 caller(conductor)에게 "완료" 를 알
 
 ## 처방 (현재 상태)
 
-`terminal.tell` **은 그대로 유지**(즉시 눈에 보이는 fallback)하되, 완료 이벤트를 **파일에
-한 줄씩 append 하는 대안 경로를 추가**한다. conductor 는 이 파일을 Claude Code 내장
+완료 이벤트를 **파일에 한 줄씩 append** 한다. conductor 는 이 파일을 Claude Code 내장
 **Monitor tool** 로 tail 하면 busy/idle 여부와 무관하게 다음 turn 에 완료를 전달받는다 —
 Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때문이다(상류 동작,
 아래 근거).
+
+원래는 이 append 와 함께 `terminal.tell` 도 발사했으나(즉시 눈에 보이는 fallback),
+completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 경로에서 `terminal.tell`
+주입은 제거**했다. caller 가 Claude Code CLI 세션이면 주입된 텍스트가 **사람이 직접
+타이핑해 제출한 발화와 구분되지 않는 형태**로 대화 트랜스크립트에 섞여 들어가는 부작용이
+있었기 때문이다. 이제 completion-log 가 완료 알림의 **유일한 채널**이다. (일반 메시지
+전달인 `tasty claude tell` / `tasty codex tell` 의 `terminal.tell` 은 완료 알림이 아니라
+메시지 전달 그 자체이므로 그대로 유지된다.)
 
 - **경로 규약**: `<tasty_home>/notify/<caller_surface>.log`
   - `tasty_home()` = `~/.tasty`(release) / `~/.tasty-debug`(debug) / `TASTY_HOME` env override.
@@ -36,8 +43,7 @@ Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때
     `TASTY_HOME` 도 주입). 따라서 conductor 는 **`$TASTY_HOME` env 를 그대로 읽어**
     `$TASTY_HOME/notify/$TASTY_SURFACE_ID.log` 로 경로를 구성한다 — writer/reader 가
     같은 루트를 보장받는다.
-- **라인 포맷**: caller 에게 tell 로 주입하던 메시지와 **동일 문자열** 한 줄
-  (예: `spawn 완료: surface 42` / `tell 완료: surface 42`). divergence 방지.
+- **라인 포맷**: 완료 메시지 **한 줄** (예: `spawn 완료: surface 42` / `tell 완료: surface 42`).
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
   `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 truncate 후 라인을 계속
   받는다.
@@ -65,7 +71,8 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 - Monitor tool 은 Amazon Bedrock / Google Cloud Agent Platform / Microsoft Foundry 에서
   미제공이고, `DISABLE_TELEMETRY` 또는 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 가
   설정되면 비활성이다. 이 경우 completion-log 는 여전히 append 되지만 자동 전달은 안 되므로
-  `terminal.tell` fallback 이나 수동 확인에 의존한다.
+  수동 확인(로그 파일 직접 조회)에 의존한다 — `terminal.tell` fallback 은 위장 발화 부작용
+  때문에 제거됐으므로 더는 대안 채널이 아니다.
 - 간헐적 전달 지연(수십 초)이 보고돼 있다(아래 근거). 손실이 아니라 지연이다.
 
 ## 근거
@@ -89,7 +96,7 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 - **함정**: 패키징된 `.app` 을 macOS LaunchServices(Dock/Finder 더블클릭/`open Tasty.app`)로 띄우면
   host 프로세스의 PATH 가 `/usr/bin:/bin:/usr/sbin:/sbin` 로 제한된다. `tasty` 바이너리가 있는
   `.../Tasty.app/Contents/MacOS` 는 이 최소 PATH 에 없으므로, 상속받은 셸이 `tasty` 를 못 찾아
-  `command not found`(exit 127)로 **조용히 실패**한다 — completion-log append 도 tell 도 도착하지 않는다.
+  `command not found`(exit 127)로 **조용히 실패**한다 — completion-log append 가 도착하지 않는다.
 - **dev 에서 안 보이는 이유**: `cargo run` / 터미널에서 직접 띄운 바이너리는 그 터미널의 풍부한 PATH를
   상속하므로 재현되지 않는다. LaunchServices 로 띄운 `.app` 에서만 드러난다.
 - **처방**: `spawn_shell` 이 자식 프로세스의 PATH 를 보강한다 — `std::env::current_exe()` 의 부모

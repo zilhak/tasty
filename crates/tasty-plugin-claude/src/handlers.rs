@@ -247,17 +247,14 @@ pub(crate) fn handle_notify_done<H: HostCall>(
 
     // 1) caller 에게 알림 주입.
     let message = format!("{command_name} 완료: surface {target_surface}");
-    // 1a) 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle
-    //     여부와 무관하게 다음 턴에 전달된다(terminal.tell 이 busy 세션에서 씹히는
-    //     문제의 대안 경로). best-effort — 실패해도 tell/hook 정리에 영향 없음.
+    // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle
+    // 여부와 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔
+    // terminal.tell 도 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화
+    // 트랜스크립트에 섞여 들어가는 부작용 때문에 제거함). best-effort — 실패해도
+    // 형제 hook 정리에 영향 없음.
     if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
         tracing::warn!("claude notify-done completion-log append failed: {e}");
     }
-    // caller surface 가 이미 닫혔을 수 있음(soft) — 실패해도 형제 hook 정리는 계속 진행.
-    let _ = host.call(
-        "terminal.tell",
-        json!({ "surface": caller_surface, "text": message }),
-    );
 
     // 2) 남은 형제 hook 정리 — 나 자신은 이미 once=true 로 fire 시 자동 제거됐으므로
     //    hook.list 시점엔 나머지(0~2개)만 남아있다. command 문자열 완전 일치로 식별하되

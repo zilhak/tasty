@@ -1,22 +1,25 @@
 //! child→caller 완료 알림 로그 — Monitor tool 이 `tail -F` 로 감시하는 append-only 파일.
 //!
-//! 배경: child(claude/codex)가 끝났을 때 caller(conductor)에게 완료를 알리는 기존
+//! 배경: child(claude/codex)가 끝났을 때 caller(conductor)에게 완료를 알리는 원래
 //! 경로는 `terminal.tell` 로 PTY 에 텍스트를 강제 주입하는 것뿐이었다. 이 방식은
 //! **caller 세션이 busy(다른 turn 생성 중)일 때 주입이 씹힌다** — conductor 가 무거운
-//! 작업을 도는 동안 완료 알림을 놓치는 사고가 실제로 있었다.
+//! 작업을 도는 동안 완료 알림을 놓치는 사고가 실제로 있었다. 게다가 caller 가 Claude
+//! Code CLI 세션이면 주입된 텍스트가 **사람이 직접 타이핑한 발화와 구분되지 않는
+//! 형태**로 대화 트랜스크립트에 섞여 들어간다.
 //!
-//! 처방(추가 경로): 완료 이벤트를 **파일에 한 줄씩 append** 한다. conductor 는 dispatch
+//! 처방(현재 유일 경로): 완료 이벤트를 **파일에 한 줄씩 append** 한다. conductor 는 dispatch
 //! 직후 한 번 `Monitor({ command: "tail -n0 -F <path>", persistent: true })` 로 arm 하면,
 //! 이후 child 완료마다 append 된 라인이 background-task notification 으로 **idle 세션도
-//! 깨워** 다음 턴에 전달된다. `terminal.tell` 은 fallback 으로 유지한다(제거하지 않음).
+//! 깨워** 다음 턴에 전달된다. 이 파일 채널이 안정적으로 검증된 뒤 완료-알림 경로에서
+//! `terminal.tell` 주입은 **제거**했다(위 위장 발화 부작용 때문) — completion-log 가
+//! 완료 알림의 유일한 채널이다.
 //!
 //! 경로 규약: `<tasty_home>/notify/<caller_surface>.log`. conductor 는 자기 surface_id
 //! (`TASTY_SURFACE_ID`)와 `tasty_home()` 으로 이 경로를 직접 구성할 수 있다. plugin 은
 //! 호스트가 주입한 `TASTY_HOME` env 로 [`crate::path::tasty_home`] 이 host 와 동일 루트를
 //! 반환하므로 writer(plugin)와 reader(conductor)의 경로가 항상 일치한다.
 //!
-//! 라인 포맷은 caller 에게 tell 로 주입하던 메시지와 **동일 문자열**로 둔다(divergence
-//! 방지) — 예: `spawn 완료: surface 42`.
+//! 라인 포맷은 완료 메시지 한 줄로 둔다 — 예: `spawn 완료: surface 42`.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

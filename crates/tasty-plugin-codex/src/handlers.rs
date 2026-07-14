@@ -275,17 +275,11 @@ pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Valu
     let message = format!("{kind} 완료: surface {target}");
 
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
-    // 무관하게 다음 턴에 전달된다(terminal.tell 이 busy 세션에서 씹히는 문제의 대안
-    // 경로). best-effort — 실패해도 tell/hook 정리에 영향 없음.
+    // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
+    // 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화 트랜스크립트에 섞여
+    // 들어가는 부작용 때문에 제거함). best-effort — 실패해도 hook 정리에 영향 없음.
     if let Err(e) = tasty_utils::notify::append_notify_line(caller, &message) {
         tracing::warn!("codex notify-caller completion-log append failed: {e}");
-    }
-
-    if let Err(e) = host.call(
-        "terminal.tell",
-        json!({ "surface": caller, "text": message }),
-    ) {
-        tracing::warn!("codex notify-caller tell failed: {e}");
     }
 
     // 자기 그룹(같은 command)의 남은 형제 정리 — surface 필터 + command 일치.
