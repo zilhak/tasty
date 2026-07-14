@@ -1,6 +1,6 @@
 # ADR-0027: Figma 기획 파일의 SoT·네이밍 규약과 파생 인덱스 (anti-drift 유지 구조)
 
-- **Status**: Accepted
+- **Status**: Accepted (2026-07-14 일부 개정 — 구분자 `/` 금지 해제, §2·§3 참조)
 - **Date**: 2026-06-28
 - **Tags**: figma, planning, naming-convention, source-of-truth, anti-drift, sigma, spellbook, workflow, adr-0025
 
@@ -47,17 +47,25 @@ status-emoji (= ADR-0025 파이프라인 단계):
   🔒 mirror    code 가 SoT (토큰·기존 컴포넌트) — 워크아이템 아님
 
 kind: screen / wire / flow / token / comp / overlay …
-구분자 = '.'  (첫 점 앞 = kind, 뒤 = slug 경로. '/' 금지)
+구분자 = '.'  (첫 점 앞 = kind, 뒤 = slug 경로)
 
 예:  🎨 screen.settings   ✅ comp.overlay.modal   🔵 wire.explorer   🔒 token.color
 ```
+
+**구분자 `/` 는 허용된다 (2026-07-14 개정).** 금지의 근거였던 find_node 충돌이 해소됐다 —
+sigma `find_node` 의 **배열 path**(`["icon/arrow/left"]`, 원소 = 리터럴 이름 매칭)와
+`get_tree` `namePattern` 모두 슬래시 포함 이름을 정확히 조회함이 라이브 검증됐다.
+기존 `.` 표기는 그대로 유효하며(재명명 불요·계속 권장), `/` 는 **Figma Assets 패널
+그룹핑이 필요한 컴포넌트**(아이콘 세트 등 — 이름 슬래시가 폴더 계층으로 렌더됨)에 쓴다.
+잔존 주의: `get_tree` 의 `fullPath` 문자열 표시에서는 이름 속 `/` 가 계층처럼 보인다
+(조회 정확성과는 무관한 표시 모호성).
 
 ### 3. 조회·생성 도구 규약 (검증된 도구 사실)
 
 라이브 검증(임시 frame 생성→조작→삭제, 실제 노드 무손상)으로 확정한 sigma 동작:
 
 - **조회 = `sigma_get_tree` + `filter.namePattern`(정규식).** slug 로 노드+현재 nodeId 를 회수한다. ✅ 동작.
-- **`sigma_find_node` 는 lookup 에 쓰지 않는다.** page-직속 frame 을 (이모지/슬래시 없는) 깨끗한 이름으로도 못 찾는 것을 확인. 또한 이름 속 `/` 는 find_node 의 경로 구분자와 충돌한다. → 이것이 구분자를 `.` 로 정한 이유.
+- **`sigma_find_node` 는 보조 lookup.** (2026-07-14 개정) 채택 당시의 두 결함이 모두 해소됐다 — ① page-직속 frame 조회 실패는 sigma 에서 수정됨(바인딩 page 미반영 버그), ② 이름 속 `/` 충돌은 **배열 path**(원소 = 리터럴 이름, 쪼개지 않음)로 회피 가능함이 검증됨. 문자열 path 만 `/` 를 계층 구분자로 쪼개며, 실패 시 sigma 가 배열 형태를 제안하는 힌트를 반환한다. 단 exact full-name 매칭 특성상(status 이모지까지 알아야 함) **status-무관 조회는 여전히 get_tree namePattern 이 1차**다.
 - **`sigma_modify_node` 의 `setPluginData`/`getPluginData`/`getPluginDataKeys` 동작.** pluginData 는 노드에 keyed 되어 **rename 을 거쳐도 생존**(이름 churn 면역). 단 재import 는 새 노드를 만들므로 pluginData 는 소실 → 생성기가 재적용해야 한다. 그래서 **slug+status 의 1차 SoT 는 (가시·diff 가능한) 노드 이름**이고, pluginData 는 비표시 메타(예: 핸드오프 문서 링크, 근거 ADR 번호)용 *보조* 저장소다.
 - **상태 수집 가능.** get_tree 가 이모지 접두 포함 이름을 반환하므로, 전 페이지를 walk 해 `_index` 의 구조표·STATUS 표를 기계 생성할 수 있다.
 
@@ -93,7 +101,7 @@ kind: screen / wire / flow / token / comp / overlay …
 ## Alternatives Considered
 
 - **`find_node` 로 slug 조회**: 검증에서 page-직속 frame 을 못 찾음(깨끗한 이름도) → 신뢰 불가. get_tree namePattern 으로 대체.
-- **구분자 `/`**: find_node 경로 구분자 충돌 + get_tree `fullPath` 에서 가짜 계층으로 표시됨 → `.` 채택.
+- **구분자 `/`**: (채택 당시) find_node 경로 구분자 충돌 + get_tree `fullPath` 에서 가짜 계층으로 표시됨 → `.` 채택. (2026-07-14) 전자는 find_node 배열 path 로 해소되어 `/` 금지는 해제(§2 개정) — fullPath 표시 모호성만 잔존.
 - **slug+status 의 1차 SoT 를 pluginData 로**: 비표시라 사람이 audit/​diff 하기 어렵고, 재import 에 소실됨. 가시성·도구친화성에서 이름이 우월 → pluginData 는 보조로 강등.
 - **Cover/`_index` 를 손 유지**: 세 번째 드리프트 복사본을 만든다 — 바로 그 병의 재발. → 생성물로 고정.
 - **code/JSON(생성기 입력)을 단일 SoT 로, Figma 는 순수 출력**: 가능하지만 ADR-0025 의 "Figma 에서 기획한다" 와 충돌하고, 손으로 Figma 를 만지는 현재 워크플로(직접 도구 편집)를 부정한다. 현 단계에선 **이름=SoT(가시·hand-editable) + 생성 view** 의 절충을 택한다.
@@ -103,7 +111,7 @@ kind: screen / wire / flow / token / comp / overlay …
 다음 중 하나가 충족되면 본 ADR 을 재검토한다.
 
 - **[ADR-0025](0025-planning-tool-split-experimental.md) 의 Figma 기획 단계가 제거되면** → 본 ADR 도 함께 폐기(Figma 파일 자체가 없어지므로 무의미).
-- sigma 가 `find_node` 의 page-직속 frame 조회를 고치면 → 조회 도구 규약(3)을 재검토(find_node 복권 가능).
+- sigma 가 `find_node` 의 page-직속 frame 조회를 고치면 → 조회 도구 규약(3)을 재검토(find_node 복권 가능). **(발화·반영됨, 2026-07-14 — find_node 보조 복권 + 배열 path 검증 + `/` 금지 해제)**
 - pluginData 가 재import 에도 보존되는 경로(예: import 가 pluginData 를 실어 보냄)가 생기면 → slug+status 의 SoT 를 pluginData 로 승격 검토.
 - 네이밍 규약 위반이 반복적으로 누적되면 → 생성기에 lint/거부(reject) 단계를 추가하거나, 규약을 단순화.
 - gen-index 생성기가 끝내 작성되지 않으면 → 파생물 자동화 전제가 무너지므로 규칙 2(파생물 손편집 금지)를 완화하거나 본 ADR 을 축소.
