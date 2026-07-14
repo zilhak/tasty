@@ -22,9 +22,9 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 
 ### 배포 제외 플래그 (`bundle = false`)
 
-매니페스트 최상위 `bundle` 키(기본 `true`, 스키마: `crates/tasty-plugin-manifest/src/types.rs`)로 **개별 plugin 을 배포 패키징에서만 제외**할 수 있다. `false` 면 dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)의 plugin 탐색 glob 이 그 crate 를 건너뛰어 DMG/AppImage/deb/rpm/MSIX 산출물에 넣지 않는다. **dev 스테이징**(`just build-plugins`/`link-plugins`)은 이 플래그를 보지 않으므로 로컬 빌드에는 그대로 포함된다 — 데모/PoC plugin 을 개발 중엔 쓰되 출하판엔 빼는 용도.
+매니페스트 최상위 `bundle` 키(기본 `true`, 스키마: `crates/tasty-plugin-manifest/src/types.rs`)로 **개별 plugin 을 배포 패키징에서만 제외**할 수 있다. `false` 면 dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)의 plugin 탐색 glob 이 그 crate 를 건너뛰어 DMG/AppImage/MSIX 산출물과 실제 바이너리 빌드에는 넣지 않는다. **dev 스테이징**(`just build-plugins`/`link-plugins`)은 이 플래그를 보지 않으므로 로컬 빌드에는 그대로 포함된다 — 데모/PoC plugin 을 개발 중엔 쓰되 출하판엔 빼는 용도.
 
-런타임 `BUILTINS`(`builtin.rs`)에는 그대로 남겨둔다: `install_builtins_if_needed` 가 번들에 없는 builtin 을 debug 로그만 남기고 **graceful skip** 하므로, dev(스테이징됨)는 설치·dist(미스테이징)는 무시로 자연히 갈린다. 현재 `com.tasty.mesh-demo`(egui-mesh PoC)가 유일한 `bundle = false` — Windows WiX(`wix/main.wxs`)는 애초에 명시 컴포넌트 목록에 mesh-demo 가 없어 이 변경 전부터 MSI 에는 빠져 있었고, 이제 세 스크립트가 그 omission 과 정합한다.
+런타임 `BUILTINS`(`builtin.rs`)에는 그대로 남겨둔다: `install_builtins_if_needed` 가 번들에 없는 builtin 을 debug 로그만 남기고 **graceful skip** 하므로, dev(스테이징됨)는 설치·dist(미스테이징)는 무시로 자연히 갈린다. 현재 `com.tasty.mesh-demo`(egui-mesh PoC)가 유일한 `bundle = false`. **주의**: `bundle = false` 는 glob 기반 위치(4/5/6)와 바이너리 빌드에만 자동 적용되고, 아래 "staging 7 위치 동기화" 표의 **명시(explicit) 위치(1/2/3)는 자동으로 걸러지지 않는다** — 새로 `bundle = false` 를 붙인 plugin 이 있으면 `[package.metadata.deb] assets`/`[package.metadata.generate-rpm] assets`/`wix/main.wxs` 에서도 그 plugin 항목을 수동으로 빼야 한다. mesh-demo 는 WiX 는 애초에 목록에 없었지만 deb/rpm 에는 남아있어 dist 빌드가 `Static file asset has not been built`(cargo-deb)로 fail 하는 실제 사고가 있었다 — deb/rpm assets 에서도 제거해 정정됨.
 
 ## 서명
 
@@ -96,6 +96,7 @@ repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 그
 
 - **lang 파일 — wix 만 enumerate**: deb/rpm/빌드스크립트는 `lang/*` 자동 포함, wix 는 `LangEn`/`LangJa`/`LangKo` Component 를 *나열* → 새 로케일(`de.toml` 등) 추가 시 wix 만 silent skip → .msi 사용자만 누락. wix 의 해당 plugin Directory 에 `Component`+`ComponentRef` 직접 추가 필요.
 - **`.sig` 빌드 시점 의존**: git 에 commit 안 되는 빌드 산출물. 6 staging 위치 모두 비존재 시 non-debug 빌드 fail — CI 가 `sign-bundle.sh` 를 항상 실행하도록 보장.
+- **`bundle = false` — 명시 위치(1/2/3)는 자동으로 안 걸러짐**: glob 위치(4/5/6)는 빌드 자체가 그 crate 를 건너뛰지만, deb/rpm assets·wix components 는 plugin 마다 하드코딩된 목록이라 `bundle = false` 여부와 무관하게 그대로 남아있다. mesh-demo 를 deb/rpm assets 에서 안 뺐다가 `cargo-deb`/`cargo-generate-rpm` 이 "빌드 안 된 바이너리를 packaging 하려 함" 으로 dist 빌드 전체가 fail 한 사고가 실제로 있었다(v0.9.5 릴리스). 새로 `bundle = false` 를 붙일 때 1/2/3 에서도 그 plugin 항목을 반드시 제거할 것.
 
 비-staging(번들 산출물 아님): `~/.tasty/known-plugins.toml`(사용자 trust DB, 런타임 생성) · `.pub` sidecar(없음 — 공개키는 호스트 바이너리 embed).
 
