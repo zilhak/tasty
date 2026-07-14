@@ -25,35 +25,54 @@ pub(crate) const LOGO_URI: &str = "bytes://tasty_brand_logo_256.png";
 /// 크기만 결정한다 — sidebar 헤더(22px 마크 + 17px 텍스트)와 부팅 로딩 화면
 /// (64px + 38px, 브랜드 락업 sanctioned 14px 예외)이 공유하는 단일 소스.
 pub fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme, icon_size: LogicalPx, font_size: LogicalPx) {
-    ui.horizontal(|ui| {
-        let icon_vec = egui::vec2(icon_size.value(), icon_size.value());
-        let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
-        egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-            .fit_to_exact_size(icon_vec)
-            .paint_at(ui, icon_rect);
-        ui.add_space(theme.spacing_sm.value());
-        let mut job = egui::text::LayoutJob::default();
-        let font = egui::FontId::monospace(font_size.value());
-        job.append(
-            "tasty",
-            0.0,
-            egui::TextFormat {
-                font_id: font.clone(),
-                extra_letter_spacing: -0.5,
-                color: theme.text_primary().into(),
-                ..Default::default()
-            },
-        );
-        job.append(
-            ".",
-            0.0,
-            egui::TextFormat {
-                font_id: font,
-                extra_letter_spacing: -0.5,
-                color: MELON_FLESH.into(),
-                ..Default::default()
-            },
-        );
-        ui.label(job);
-    });
+    let icon_vec = egui::vec2(icon_size.value(), icon_size.value());
+    let gap = theme.spacing_sm.value();
+
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::monospace(font_size.value());
+    job.append(
+        "tasty",
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            extra_letter_spacing: -0.5,
+            color: theme.text_primary().into(),
+            ..Default::default()
+        },
+    );
+    job.append(
+        ".",
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            extra_letter_spacing: -0.5,
+            color: MELON_FLESH.into(),
+            ..Default::default()
+        },
+    );
+    // 텍스트를 먼저 갤리로 확정해 락업의 실제 폭을 잰다. `ui.horizontal` 은 desired
+    // width 로 가용 폭 전체를 요구해 centered 부모(`top_down(Center)`) 안에서 좌측
+    // origin 에 붙어 버리므로, 내용 크기만큼만 영역을 잡아 부모가 중앙정렬(또는
+    // 사이드바처럼 left_to_right 에서 좌측정렬)을 그대로 적용하게 한다.
+    let galley = ui.fonts(|f| f.layout_job(job));
+    // gap(add_space) + label 앞 item_spacing 을 함께 더해 desired 폭을 실제 내용 폭과
+    // 일치시킨다 — 어긋나면 centered 부모가 그 차이의 절반만큼 락업을 밀어 스피너
+    // 중심과 어긋난다.
+    let item_spacing = ui.spacing().item_spacing.x;
+    let content = egui::vec2(
+        icon_vec.x + gap + item_spacing + galley.size().x,
+        icon_vec.y.max(galley.size().y),
+    );
+    ui.allocate_ui_with_layout(
+        content,
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
+            egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
+                .fit_to_exact_size(icon_vec)
+                .paint_at(ui, icon_rect);
+            ui.add_space(gap);
+            ui.label(galley);
+        },
+    );
 }

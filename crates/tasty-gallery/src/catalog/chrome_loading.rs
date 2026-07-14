@@ -77,37 +77,52 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
 /// 워드마크 락업 — 수박 마크 + `tasty.` mono(`.` 는 `MELON_FLESH`). 근거·구조는
 /// `src/adapters/ui/brand.rs::draw_wordmark` 와 동일(호스트 앱은 그쪽을 쓴다).
 fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme) {
-    ui.horizontal(|ui| {
-        let icon_vec = egui::vec2(WORDMARK_ICON_SIZE.value(), WORDMARK_ICON_SIZE.value());
-        let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
-        egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-            .fit_to_exact_size(icon_vec)
-            .paint_at(ui, icon_rect);
-        ui.add_space(theme.spacing_sm.value());
-        let mut job = egui::text::LayoutJob::default();
-        let font = egui::FontId::monospace(WORDMARK_FONT_SIZE.value());
-        job.append(
-            "tasty",
-            0.0,
-            egui::TextFormat {
-                font_id: font.clone(),
-                extra_letter_spacing: -0.5,
-                color: theme.text_primary().to_egui(),
-                ..Default::default()
-            },
-        );
-        job.append(
-            ".",
-            0.0,
-            egui::TextFormat {
-                font_id: font,
-                extra_letter_spacing: -0.5,
-                color: MELON_FLESH.to_egui(),
-                ..Default::default()
-            },
-        );
-        ui.label(job);
-    });
+    let icon_vec = egui::vec2(WORDMARK_ICON_SIZE.value(), WORDMARK_ICON_SIZE.value());
+    let gap = theme.spacing_sm.value();
+
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::monospace(WORDMARK_FONT_SIZE.value());
+    job.append(
+        "tasty",
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            extra_letter_spacing: -0.5,
+            color: theme.text_primary().to_egui(),
+            ..Default::default()
+        },
+    );
+    job.append(
+        ".",
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            extra_letter_spacing: -0.5,
+            color: MELON_FLESH.to_egui(),
+            ..Default::default()
+        },
+    );
+    // 실 렌더(`brand::draw_wordmark`)와 동일: 내용 크기만큼만 영역을 잡아 centered
+    // 부모(`top_down(Center)`)가 락업을 가로 중앙에 두게 한다.
+    let galley = ui.fonts(|f| f.layout_job(job));
+    // gap + label 앞 item_spacing 을 함께 더해 desired 폭 = 실제 내용 폭 (실 렌더와 동일).
+    let item_spacing = ui.spacing().item_spacing.x;
+    let content = egui::vec2(
+        icon_vec.x + gap + item_spacing + galley.size().x,
+        icon_vec.y.max(galley.size().y),
+    );
+    ui.allocate_ui_with_layout(
+        content,
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
+            egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
+                .fit_to_exact_size(icon_vec)
+                .paint_at(ui, icon_rect);
+            ui.add_space(gap);
+            ui.label(galley);
+        },
+    );
 }
 
 /// 기본 — 1280×720, `GpuInit` 문구.
