@@ -31,7 +31,7 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     {
         let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "-a" || a == "--all") {
-            cli::print_command_tree();
+            cli::print_command_tree(env!("CARGO_PKG_VERSION"));
             return Ok(Routed::AlreadyHandled);
         }
         // root-level `--help` / `-h` 만 가로챈다 — `args[1]` 위치 체크로 좁혀

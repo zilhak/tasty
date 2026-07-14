@@ -117,7 +117,10 @@ fn resolve_command_path() -> (clap::Command, String) {
 /// Print all commands in a tree structure (2 levels deep) with usage details.
 /// `print_augmented_help` 와 동일하게 plugin contributes.cli 를 합친 트리를 출력 —
 /// `-a/--all` 의 "all" 의미를 정적 호스트 명령 + plugin 명령 양쪽으로 일관화한다.
-pub fn print_command_tree() {
+/// `version` 은 호출자(루트 바이너리)가 주입한다 — tasty-cli 는 라이브러리 crate 라
+/// 자체 CARGO_PKG_VERSION 이 루트 바이너리 버전과 어긋나기 때문 (cli_routing 의
+/// `--version` override 와 같은 이유).
+pub fn print_command_tree(version: &str) {
     use clap::CommandFactory;
 
     let entries = match tasty_host_plugin::plugin_root() {
@@ -129,7 +132,7 @@ pub fn print_command_tree() {
     } else {
         dynamic::build_augmented_cli(&entries)
     };
-    println!("{} {}", cmd.get_name(), cmd.get_version().unwrap_or(""));
+    println!("{} {}", cmd.get_name(), version);
     println!(
         "{}",
         cmd.get_about().map(|s| s.to_string()).unwrap_or_default()
