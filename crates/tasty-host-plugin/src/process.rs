@@ -150,11 +150,14 @@ impl PluginProcess {
             cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
             cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
             cmd.env("TASTY_PLUGIN_LOG_PATH", &log_path);
-            // host 가 부팅 시 확정한 데이터 루트(TASTY_HOME override 또는 cfg fallback
-            // 결과)를 자식에 그대로 내려준다. plugin 이 자기 cfg!(debug_assertions) 로
-            // 루트를 재계산해 host 와 어긋나는 일을 막는다 — env 가 tasty_home() 의
-            // 1순위라 plugin 은 무조건 host 와 동일 루트를 본다.
-            cmd.env("TASTY_HOME", &home);
+            // host 가 부팅 시 확정한 데이터 루트를 자식에 정보성으로 내려준다
+            // (completion-log 경로 판별용). **`TASTY_HOME` 이 아니라
+            // `TASTY_PARENT_HOME`** 으로 주입한다 — `TASTY_HOME` 은 tasty_home()
+            // (self-determination, override 전용)의 1순위라, 정보성 값을 그 이름으로
+            // 주입하면 자식이 그걸 자기 데이터 루트 override 로 오인한다(release 안에서
+            // debug 실행 시 격리 붕괴). notify_log_path() 가 `TASTY_PARENT_HOME` 을
+            // 최우선으로 보므로 writer(plugin)/reader(conductor) 경로는 계속 일치한다.
+            cmd.env("TASTY_PARENT_HOME", &home);
         }
 
         // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에

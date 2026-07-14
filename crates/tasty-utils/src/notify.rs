@@ -14,10 +14,17 @@
 //! `terminal.tell` 주입은 **제거**했다(위 위장 발화 부작용 때문) — completion-log 가
 //! 완료 알림의 유일한 채널이다.
 //!
-//! 경로 규약: `<tasty_home>/notify/<caller_surface>.log`. conductor 는 자기 surface_id
-//! (`TASTY_SURFACE_ID`)와 `tasty_home()` 으로 이 경로를 직접 구성할 수 있다. plugin 은
-//! 호스트가 주입한 `TASTY_HOME` env 로 [`crate::path::tasty_home`] 이 host 와 동일 루트를
-//! 반환하므로 writer(plugin)와 reader(conductor)의 경로가 항상 일치한다.
+//! 경로 규약: `<parent_home>/notify/<caller_surface>.log`. host 는 자식(plugin
+//! 서브프로세스 = writer, conductor 셸 = reader) 양쪽에 자기 데이터 루트를
+//! **`TASTY_PARENT_HOME`** env 로 주입한다. [`notify_log_path`] 는 이 값을 최우선으로
+//! 보고, 없을 때만 [`crate::path::tasty_home`] 으로 fallback 하므로 writer/reader 의
+//! 경로가 항상 일치한다.
+//!
+//! `TASTY_HOME`(= `tasty_home()` 의 override 1순위)이 아니라 별도 이름을 쓰는 이유:
+//! 정보성 부모-루트 값을 `TASTY_HOME` 으로 주입하면 release 터미널 안에서 실행된 debug
+//! 빌드가 그 값을 자기 데이터 루트 override 로 오인해 `~/.tasty-debug` 격리가 깨지고
+//! release 의 포트파일까지 덮어쓰는 사고가 났다. self-determination(`TASTY_HOME`)과
+//! broadcast(`TASTY_PARENT_HOME`)를 환경변수 이름으로 분리한다.
 //!
 //! 라인 포맷은 완료 메시지 한 줄로 둔다 — 예: `spawn 완료: surface 42`.
 
@@ -29,9 +36,34 @@ use std::path::{Path, PathBuf};
 /// 어렵지만, surface_id 가 세션 간 재사용되며 파일이 계속 누적되는 것을 방어한다.
 const NOTIFY_LOG_CAP_BYTES: u64 = 256 * 1024;
 
-/// caller_surface 별 완료 로그 파일 경로. `tasty_home()` 이 없으면(홈 해석 실패) `None`.
+/// caller_surface 별 완료 로그 파일 경로.
+///
+/// host 가 자식에 주입한 `TASTY_PARENT_HOME`(정보성 부모 루트)이 있으면 그 값을
+/// 최우선으로 홈으로 쓰고, 없으면 [`crate::path::tasty_home`] 으로 fallback 한다.
+/// writer(plugin)/reader(conductor) 양쪽 다 `TASTY_PARENT_HOME` 을 받으므로 이 함수가
+/// 그걸 최우선으로 봐야 두 경로가 일치한다. 홈 해석 실패 시 `None`.
 pub fn notify_log_path(caller_surface: u32) -> Option<PathBuf> {
-    crate::path::tasty_home().map(|home| notify_log_path_in(&home, caller_surface))
+    resolve_home(
+        std::env::var("TASTY_PARENT_HOME").ok(),
+        crate::path::tasty_home,
+    )
+    .map(|home| notify_log_path_in(&home, caller_surface))
+}
+
+/// 홈 루트 선택 로직(순수 — env 접근 없이 테스트 가능). `TASTY_PARENT_HOME` 값이
+/// 비어있지 않으면 그것을, 아니면 `fallback`(보통 `tasty_home()`)을 쓴다. `fallback` 은
+/// parent 가 없을 때만 호출하는 클로저라 불필요한 홈 해석을 피한다.
+fn resolve_home(
+    parent_env: Option<String>,
+    fallback: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(raw) = parent_env {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    fallback()
 }
 
 /// 순수 경로 조립(파일시스템 접근 없음) — 단위 테스트 대상.
@@ -71,6 +103,45 @@ fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // notify_log_path() 의 홈 선택 로직은 pure `resolve_home` 로 추출돼 있어(이 crate 는
+    // `#![forbid(unsafe_code)]` 라 테스트에서 env 를 직접 조작할 수 없다) env 조작 없이
+    // 검증한다. resolve_home 이 곧 notify_log_path 가 쓰는 우선순위 규칙 전부다.
+
+    // TASTY_PARENT_HOME 이 설정돼 있으면 그 값을 쓴다(fallback 은 호출조차 안 함).
+    #[test]
+    fn resolve_home_prefers_parent_env() {
+        let got = resolve_home(Some("/tmp/fake-parent-home".to_string()), || {
+            panic!("fallback must not run when parent env is set")
+        });
+        assert_eq!(got, Some(PathBuf::from("/tmp/fake-parent-home")));
+    }
+
+    // 이를 notify_log_path 경로 조립까지 연결하면 최종 경로가 parent home 밑에 놓인다.
+    #[test]
+    fn parent_env_drives_full_notify_path() {
+        let home = resolve_home(Some("/tmp/fake-parent-home".to_string()), || None).unwrap();
+        assert_eq!(
+            notify_log_path_in(&home, 9),
+            PathBuf::from("/tmp/fake-parent-home/notify/9.log")
+        );
+    }
+
+    // TASTY_PARENT_HOME 이 없으면 fallback(= tasty_home())을 쓴다.
+    #[test]
+    fn resolve_home_falls_back_when_parent_absent() {
+        let got = resolve_home(None, || Some(PathBuf::from("/tmp/fallback-root")));
+        assert_eq!(got, Some(PathBuf::from("/tmp/fallback-root")));
+    }
+
+    // 빈/공백 값도 미설정으로 간주하고 fallback 한다.
+    #[test]
+    fn resolve_home_treats_empty_parent_as_absent() {
+        let got = resolve_home(Some("   ".to_string()), || {
+            Some(PathBuf::from("/tmp/fallback-root2"))
+        });
+        assert_eq!(got, Some(PathBuf::from("/tmp/fallback-root2")));
+    }
 
     #[test]
     fn path_in_builds_notify_subdir_and_log_suffix() {
