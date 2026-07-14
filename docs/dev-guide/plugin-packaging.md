@@ -33,7 +33,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 | 알고리즘 | Ed25519 (`ed25519-dalek`) |
 | 서명 대상 | `<plugin-dir>/tasty-plugin.toml` 의 SHA-256 digest |
 | 서명 파일 | `tasty-plugin.toml.sig` (raw 64 byte) |
-| Trust store | `crates/tasty-host-plugin/keys/` 의 `release-pubkey.bin` + `dev-pubkey.bin` (multi-pubkey 배열, `bundle_sig.rs::TRUSTED_PUBKEYS`) |
+| Trust store | `crates/tasty-host-plugin/keys/` 의 `release-pubkey.bin` + `dev-pubkey.bin` (2-slot 배열, `bundle_sig.rs::TRUSTED_PUBKEYS`) — 둘 다 추적 안 함, 매 빌드 로컬 자동생성. `release-pubkey.bin` 은 항상 placeholder 로 남고 실질 검증은 dev 슬롯이 담당 |
 | 검증 시점 | `install_builtins_if_needed()` — release/dist 는 실제 차단, debug 는 warn 만(`#[cfg(debug_assertions)]`) |
 
 보호 범위는 **매니페스트 한 파일만** — 권한/contributes/kind 가 매니페스트 안이라 변조 시 confused-deputy 가 최대 위험. binary 는 OS codesign(macOS notarization/Windows Authenticode)에 위임, lang/ 등 부속은 검증 밖.
@@ -64,27 +64,17 @@ dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)와 
 
 ### Release CI 서명
 
-`.github/workflows/release.yml` 이 tag push(`v*`)/manual dispatch 시:
+`.github/workflows/release.yml` 이 tag push(`v*`)/manual dispatch 시, self-hosted 빌드 러너(macOS/Windows/Linux x64/Linux ARM64)가 각자 `scripts/build-*.sh`/`build-windows.ps1` 안에서 `scripts/ensure-sign-key.sh` → `scripts/sign-bundle.sh --all-builtins` 를 호출해 서명한다. GitHub Secret 은 관여하지 않는다 — 각 러너는 `~/.tasty-keys/release.pem` 이 없으면(4대 전부 없음, 아래 "영구 release 키를 두지 않는 이유" 참고) `gen-dev-key.sh` 로 그 자리에서 새 키를 만들어 서명하고, 그 키는 해당 머신에만 남는다.
 
-1. GitHub Secret `TASTY_RELEASE_SIGN_KEY`(Ed25519 PEM 의 base64)를 `$RUNNER_TEMP` 에 mode 600 으로 디코딩.
-2. `scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins` 로 9 plugin 서명.
-3. 빌드 실행 → 결과 무관하게 `Wipe release signing key` step 으로 키 삭제.
+repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 그 빌드 시점에 생성된 키로 재서명하므로 repo 와 다른 키로 덮어쓰는 게 정상.
 
-PR CI 는 secret 미주입(debug 빌드라 검증 우회). repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 secret 키로 재서명하므로 repo 와 다른 키로 덮어쓰는 게 정상.
+### 영구 release 키를 두지 않는 이유
 
-### release key 등록 (운영자 1회)
+원래는 운영자가 Ed25519 keypair 를 1회 발급해 `crates/tasty-host-plugin/keys/release-pubkey.bin` 에 영구 커밋하고, 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 모든 release 빌드가 공유하는 설계였다. 하지만 이 절차가 실제로 완료된 적이 없어(`release-pubkey.bin` 이 계속 all-zero placeholder) CI 가 매 release 마다 secret 부재로 실패했다.
 
-```bash
-openssl genpkey -algorithm Ed25519 -out release-private.pem && chmod 600 release-private.pem
-openssl pkey -in release-private.pem -pubout -outform DER | tail -c 32 > crates/tasty-host-plugin/keys/release-pubkey.bin
-base64 -w 0 release-private.pem   # → GitHub Secret TASTY_RELEASE_SIGN_KEY (개행 없이)
-```
+`install_builtins_if_needed()`(`crates/tasty-host-plugin/src/builtin.rs`) 확인 결과, builtin plugin 은 항상 그 앱 바이너리와 **같은 설치 번들 안에서 로컬로 복사**된다 — 앱 버전과 독립적으로 원격에서 개별 업데이트되는 경로가 없다. 즉 "구버전 바이너리가 신버전 키로 서명된 plugin 을 검증해야 하는" 상황 자체가 없어, 릴리스마다 자기 안에서 완결되는 신뢰 단위다. 그래서 영구 신뢰 루트 대신 **매 빌드 로컬 자동생성 dev 키**로 통일했다 — 수동 키 배포 절차가 없어지고, 유출 리스크도 그 빌드 1 회로 국한된다. 대신 "이 서명이 특정 발급자가 발급했다"는 장기 정체성 보증은 포기하는데, 애초에 이 서명이 막으려는 건 발급자 신원 위조가 아니라 매니페스트 변조에 의한 confused-deputy(위 표 참고)라 이 트레이드오프가 맞는다. 배경·대안은 [ADR-0051](../adr/0051-ephemeral-release-signing-key.md) 참고.
 
-`release-private.pem` 은 안전한 곳에 백업 후 로컬 즉시 삭제. **유출되면 임의 plugin 이 빌트인을 가장 가능.**
-
-### 키 회전 (multi-pubkey)
-
-`TRUSTED_PUBKEYS` 배열에 새 키를 prepend 하고 옛 키를 *최소 2 minor 유지* 후 제거 — 강제 업데이트 압박 없이 점진 이행. 영구 차단이 필요하면 옛 entry 즉시 제거(이전 release plugin 즉시 차단).
+플러그인이 향후 앱 버전과 독립적으로 배포/업데이트되는 마켓플레이스 모델이 생기면 이 결정을 재검토해야 한다(그 경우 영구 신뢰 루트가 다시 필요).
 
 ## staging 7 위치 동기화
 
@@ -115,7 +105,6 @@ base64 -w 0 release-private.pem   # → GitHub Secret TASTY_RELEASE_SIGN_KEY (�
 |------|------|
 | `Skipped { signature-invalid }` 로 builtin 미설치 | non-debug 인데 `.sig` 부재. 패키징본(exe-relative `plugins/`)은 `sign-bundle.sh` 후 재빌드. workspace 산출물 직접 실행(`target/<profile>/tasty.exe`)은 dev bundle 이 `crates/<plugin>/tasty-plugin.toml.sig` 를 동기화하므로, crates 에 `.sig` 만 있으면(=`sign-bundle.sh --all-builtins` 1 회) 통과 |
 | 로컬 release 에서 dev key 서명 검증 실패 | `dev-pubkey.bin` 이 사용 private key 와 불일치 → `gen-dev-key.sh` 로 두 파일 함께 갱신 |
-| CI sign step `signing key not found` | `TASTY_RELEASE_SIGN_KEY` 미등록 또는 base64 디코딩이 PEM 아님 |
 | Windows `candle could not be found` | WiX 3.x 미설치/`WIX` env 누락 → `winget install WiXToolset.WiXToolset` |
 
 ## 관련

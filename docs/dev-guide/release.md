@@ -36,7 +36,7 @@ CLAUDE.md 정책의 운영 형태:
 ./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
 ```
 
-생성/갱신되는 `*.toml.sig`(현재 9개)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 `TASTY_RELEASE_SIGN_KEY` secret 으로 재서명한다(dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
+생성/갱신되는 `*.toml.sig`(현재 9개)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 각 self-hosted 러너가 그 자리에서 로컬 자동생성한 키로 재서명한다(영구 보관 안 함, dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
 
 ### 3. 커밋 — body 가 곧 릴리스 노트
 
@@ -64,10 +64,8 @@ git push origin main --tags
 ### 5. 워크플로 (release.yml)
 
 1. **create-release** — 버전 검증 → draft release 생성(body = 릴리스 노트).
-2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — `TASTY_RELEASE_SIGN_KEY` 로 plugin 재서명 → 빌드(`--profile dist`) → 아티팩트 업로드 → 키 파일 wipe.
+2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 내부에서 `ensure-sign-key.sh` 로 로컬 키를 자동생성해 plugin 재서명 → 빌드(`--profile dist`) → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
 3. **publish-release** — draft 해제(공개).
-
-`TASTY_RELEASE_SIGN_KEY` 미등록 상태로 tag push 시 build job 이 첫 step 에서 fail.
 
 ### 6. 검증
 
