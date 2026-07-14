@@ -135,6 +135,18 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.broadcast", plugin(&[TerminalWrite])),
         // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
         ("terminal.set_state", plugin(&[SurfaceWrite])),
+        // ── headless PTY primitive (TODO 18 / pty_registry) ───────────
+        // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
+        // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만
+        // 사용한다(TODO 18 research §3). spawn 은 Surface 를 안 만들어 SurfaceWrite
+        // 불필요, wait 는 라이브 트리 대신 PtyEntry exit cell 로 판정해 SurfaceRead
+        // 불필요, kill 은 Surface 를 닫지 않고 프로세스만 종료해 SurfaceWrite 불필요.
+        ("pty.spawn", plugin(&[TerminalSpawn])),
+        ("pty.write", plugin(&[TerminalWrite])),
+        ("pty.read", plugin(&[TerminalRead])),
+        ("pty.wait", plugin(&[TerminalRead])),
+        ("pty.kill", plugin(&[TerminalWrite])),
+        ("pty.list", plugin(&[TerminalRead])),
         ("surface.fire_hook", plugin(&[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────
         ("hook.set", plugin(&[SurfaceWrite])),

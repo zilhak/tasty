@@ -27,6 +27,7 @@ mod output;
 pub(crate) mod pane;
 mod passkey;
 mod preset;
+mod pty;
 mod recent;
 mod remote_profile;
 mod settings;
@@ -295,6 +296,13 @@ fn route_engine_handler(
             terminal::handle_broadcast(core, state, engine, id, &request.params)
         }
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
+        // headless PTY primitive (TODO 18 / pty_registry) — Surface 없는 백그라운드 PTY
+        "pty.spawn" => pty::handle_spawn(engine, caller, id, &request.params),
+        "pty.write" => pty::handle_write(engine, id, &request.params),
+        "pty.read" => pty::handle_read(engine, id, &request.params),
+        "pty.wait" => pty::handle_wait(engine, id, &request.params),
+        "pty.kill" => pty::handle_kill(engine, id, &request.params),
+        "pty.list" => pty::handle_list(engine, id),
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, state, id, &request.params),
         "preset.get" => preset::handle_get(core, state, id, &request.params),

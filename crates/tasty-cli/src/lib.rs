@@ -159,6 +159,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: TerminalCommands,
     },
+    /// Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with
+    /// no Surface/tab. Separate namespace from `terminal` (TODO 18 pty primitive).
+    Pty {
+        #[command(subcommand)]
+        command: PtyCommands,
+    },
     /// Check if a surface is currently typing (received key input within 5 seconds)
     IsTyping {
         /// Surface ID (default: focused)

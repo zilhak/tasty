@@ -241,6 +241,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         }
         Commands::Webhook { command } => webhook_command_to_method_params(command),
         Commands::Terminal { command } => terminal_command_to_method_params(command),
+        Commands::Pty { command } => pty_command_to_method_params(command),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
         // focus 독립 캡처. surface/window 를 ID 로 직접 지정 (focused 의존 없음).
@@ -728,6 +729,29 @@ fn terminal_command_to_method_params(
     }
 }
 
+/// `pty.*` headless PTY primitive (TODO 18). `terminal.*`(자식 터미널 surface) 와
+/// 별개 네임스페이스 — pty id 로만 조작하고 Surface 를 만들지 않는다.
+fn pty_command_to_method_params(
+    command: &crate::commands::PtyCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::commands::PtyCommands as P;
+    match command {
+        P::Spawn { cwd, command } => {
+            let mut m = serde_json::Map::new();
+            if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
+                m.insert("cwd".into(), serde_json::Value::from(c));
+            }
+            m.insert("command".into(), serde_json::json!(command));
+            ("pty.spawn", serde_json::Value::Object(m))
+        }
+        P::Write { id, text } => ("pty.write", serde_json::json!({ "id": id, "text": text })),
+        P::Read { id, lines } => ("pty.read", serde_json::json!({ "id": id, "lines": lines })),
+        P::Wait { id } => ("pty.wait", serde_json::json!({ "id": id })),
+        P::Kill { id } => ("pty.kill", serde_json::json!({ "id": id })),
+        P::List => ("pty.list", serde_json::json!({})),
+    }
+}
+
 fn move_command_to_method_params(command: &MoveCommands) -> (&'static str, serde_json::Value) {
     match command {
         MoveCommands::Tab { pane, from, to } => (
@@ -978,6 +1002,40 @@ mod tests {
         assert_eq!(req.method, "terminal.kill");
         assert_eq!(req.params["surface"].as_u64(), Some(7));
         assert_eq!(req.params["child"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn pty_spawn_maps_command_tokens_as_array() {
+        let cmd = cmd_from(&["tasty", "pty", "spawn", "--", "echo", "hi"]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "pty.spawn");
+        assert_eq!(
+            req.params["command"],
+            serde_json::json!(["echo", "hi"]),
+            "command tokens must map to a JSON array"
+        );
+    }
+
+    #[test]
+    fn pty_write_wait_kill_map_id() {
+        let w = command_to_request(&cmd_from(&[
+            "tasty",
+            "pty",
+            "write",
+            "--id",
+            "2147483648",
+            "hello",
+        ]));
+        assert_eq!(w.method, "pty.write");
+        assert_eq!(w.params["id"].as_u64(), Some(2_147_483_648));
+        assert_eq!(w.params["text"].as_str(), Some("hello"));
+
+        let wait = command_to_request(&cmd_from(&["tasty", "pty", "wait", "--id", "42"]));
+        assert_eq!(wait.method, "pty.wait");
+        assert_eq!(wait.params["id"].as_u64(), Some(42));
+
+        let list = command_to_request(&cmd_from(&["tasty", "pty", "list"]));
+        assert_eq!(list.method, "pty.list");
     }
 
     #[test]

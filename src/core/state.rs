@@ -259,8 +259,7 @@ pub struct CoreState {
     /// 상한·idle TTL 로 좀비 누적을 막는다. child_terminals(자식 터미널 surface) 와는
     /// Surface 유무로 갈리는 별도 서브시스템이다(파편화 방지 — pty_registry.rs 참조).
     /// 비영속 — headless PTY 는 호스트와 수명을 같이한다.
-    // 소비자(IPC `pty.*` 핸들러·상태바 카운트·sweep 배선)는 18-b/18-c 에서 붙는다.
-    #[allow(dead_code)]
+    // 소비자: IPC `pty.*` 핸들러(18-b, `handler/pty.rs`). 상태바 카운트는 18-c.
     pub(crate) pty_registry: crate::core::pty_registry::PtyRegistry,
 
     /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
