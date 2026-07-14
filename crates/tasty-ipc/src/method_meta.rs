@@ -147,6 +147,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("pty.wait", plugin(&[TerminalRead])),
         ("pty.kill", plugin(&[TerminalWrite])),
         ("pty.list", plugin(&[TerminalRead])),
+        // 승격 경로(18-c): headless PTY 를 실제 Surface 로 만든다 — spawn/write/... 와
+        // 달리 Surface 트리를 새로 만들므로 terminal.spawn 과 동일하게 SurfaceWrite 를
+        // 더한다(TerminalSpawn 은 새 터미널 surface 생성 권한).
+        ("pty.attach_surface", plugin(&[SurfaceWrite, TerminalSpawn])),
         ("surface.fire_hook", plugin(&[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────
         ("hook.set", plugin(&[SurfaceWrite])),

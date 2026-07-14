@@ -749,6 +749,10 @@ fn pty_command_to_method_params(
         P::Wait { id } => ("pty.wait", serde_json::json!({ "id": id })),
         P::Kill { id } => ("pty.kill", serde_json::json!({ "id": id })),
         P::List => ("pty.list", serde_json::json!({})),
+        P::AttachSurface { pty_id, pane_id } => (
+            "pty.attach_surface",
+            serde_json::json!({ "id": pty_id, "pane_id": pane_id }),
+        ),
     }
 }
 

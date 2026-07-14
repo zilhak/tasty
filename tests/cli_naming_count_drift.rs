@@ -32,7 +32,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("plugin", 18),
     ("popup", 1),
     ("preset", 7),
-    ("pty", 6),
+    ("pty", 7),
     ("recent", 1),
     ("remote", 9),
     ("session", 3),

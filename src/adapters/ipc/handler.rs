@@ -303,6 +303,9 @@ fn route_engine_handler(
         "pty.wait" => pty::handle_wait(engine, id, &request.params),
         "pty.kill" => pty::handle_kill(engine, id, &request.params),
         "pty.list" => pty::handle_list(engine, id),
+        "pty.attach_surface" => {
+            pty::handle_attach_surface(core, state, engine, id, &request.params)
+        }
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, state, id, &request.params),
         "preset.get" => preset::handle_get(core, state, id, &request.params),

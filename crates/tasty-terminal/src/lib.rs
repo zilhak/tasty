@@ -343,6 +343,14 @@ pub struct Terminal {
     last_alive_check: std::time::Instant,
     /// Whether we've already emitted a ProcessExited event.
     process_exit_emitted: bool,
+    /// The parser thread's wake callback, held behind a mutex so it can be
+    /// re-targeted after construction. A headless PTY's Terminal is created with
+    /// a waker targeting its pty id; when it is promoted to a real Surface
+    /// (`pty.attach_surface`, TODO 18-c) its store key changes to the new
+    /// surface_id, so the waker must be [rewired](Terminal::rewire_waker) to that
+    /// id — otherwise targeted PTY polling would keep draining the stale key and
+    /// the promoted terminal would appear frozen. `None` for a detached mirror.
+    waker: Arc<Mutex<Waker>>,
 }
 
 /// How long after the last PTY output a terminal still counts as busy.
@@ -640,7 +648,12 @@ impl Terminal {
         let state_weak = Arc::downgrade(&state);
         let dirty_t = Arc::clone(&dirty);
         let eof_t = Arc::clone(&parser_eof);
-        let waker_t = waker.clone();
+        // Shared, rewireable waker. The parser thread reads the *current* callback
+        // each wake (cloning the inner Arc out from under a brief lock, then
+        // releasing before invoking), so `rewire_waker` can re-target it at
+        // runtime without racing the wake path.
+        let waker_holder = Arc::new(Mutex::new(waker));
+        let waker_t = Arc::clone(&waker_holder);
         let parser_thread = thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
@@ -656,7 +669,8 @@ impl Terminal {
                             st.ingest(&buf[..n]);
                         }
                         dirty_t.store(true, Ordering::Release);
-                        waker_t();
+                        let w = { waker_t.lock().unwrap_or_else(|p| p.into_inner()).clone() };
+                        w();
                     }
                     Err(_) => break,
                 }
@@ -665,7 +679,8 @@ impl Terminal {
             // check (bypassing the throttle), and wake once more to drive it.
             eof_t.store(true, Ordering::Release);
             dirty_t.store(true, Ordering::Release);
-            waker_t();
+            let w = { waker_t.lock().unwrap_or_else(|p| p.into_inner()).clone() };
+            w();
         });
 
         let pty = PtyBackend {
@@ -687,7 +702,17 @@ impl Terminal {
             // Start in the past so the first process() always checks immediately.
             last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
             process_exit_emitted: false,
+            waker: waker_holder,
         })
+    }
+
+    /// Re-target the parser thread's wake callback. Used when a headless PTY's
+    /// Terminal is re-keyed to a new `surface_id` during promotion to a real
+    /// Surface (`pty.attach_surface`, TODO 18-c): the host installs a waker for
+    /// the new id so targeted PTY polling drains the terminal at its new store
+    /// key. Detached mirrors have no parser thread, so this is inert for them.
+    pub fn rewire_waker(&self, waker: Waker) {
+        *self.waker.lock().unwrap_or_else(|p| p.into_inner()) = waker;
     }
 
     /// Create a detached mirror terminal with no PTY, child, or threads. Its grid
@@ -704,6 +729,8 @@ impl Terminal {
             last_pty_flush: std::time::Instant::now(),
             last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
             process_exit_emitted: false,
+            // No parser thread — a no-op waker keeps the field total.
+            waker: Arc::new(Mutex::new(Arc::new(|| {}))),
         }
     }
 

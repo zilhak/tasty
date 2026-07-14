@@ -911,6 +911,9 @@ impl Core {
             } => Ok(vec![Self::apply_move_tab(
                 engine, pane_id, from_index, to_index,
             )]),
+            DomainIntent::AdoptTerminal { pane_id, pty_id } => {
+                Self::apply_adopt_terminal(engine, pane_id, pty_id)
+            }
             DomainIntent::SplitPane {
                 target_pane_id,
                 direction,
@@ -2345,6 +2348,72 @@ impl Core {
         }])
     }
 
+    /// `DomainIntent::AdoptTerminal` 본문 — headless PTY 를 실제 Surface 로 승격한다
+    /// (`pty.attach_surface`, 18-c). `apply_create_tab` 의 tab/pane 트리 등록은 그대로
+    /// 하되 **새 Terminal 을 spawn 하지 않는다**: 이미 `TerminalStore` 에 `pty_id` 키로
+    /// 들어있는 headless Terminal 을 새 `surface_id` 로 re-key 하고 `pty_registry` 에서
+    /// 제거한다. 같은 Terminal 인스턴스(=같은 PTY 자식 프로세스·scrollback)를 옮기는
+    /// 것이라 attach 전 상태가 그대로 보존된다.
+    ///
+    /// borrow/mutation 순서: 검증 → id 발급 → store re-key(waker 재배선 포함) →
+    /// pane marker → registry 제거. pane 미존재 등 실패는 store 를 건드리기 전에
+    /// bail 해 orphan 을 만들지 않는다.
+    fn apply_adopt_terminal(
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        pty_id: u32,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        // 1) 검증 (mutation 전). 대상 headless PTY 가 살아있고 pane 이 존재해야 한다.
+        match engine.pty_registry.get(pty_id) {
+            None => anyhow::bail!("headless pty {pty_id} not found"),
+            Some(entry) if entry.has_exited() => {
+                anyhow::bail!("headless pty {pty_id} already exited")
+            }
+            Some(_) => {}
+        }
+        if engine.find_pane_by_id(pane_id).is_none() {
+            anyhow::bail!("pane {pane_id} not found");
+        }
+
+        // 2) 새 id 발급 (apply_create_tab 과 동형).
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+
+        // 3) store re-key: headless Terminal 을 pty_id → surface_id 로 옮긴다. 새
+        //    surface_id 로 targeted polling 이 이 Terminal 을 그 새 키에서 drain 하도록
+        //    waker 를 재배선한다(재배선 없으면 승격된 터미널이 GUI 에서 멈춘 것처럼 보임).
+        let Some(terminal) = engine.terminals.remove(pty_id) else {
+            anyhow::bail!("headless pty {pty_id} registry/store desync (terminal missing)");
+        };
+        terminal.rewire_waker(engine.make_waker(surface_id));
+        engine.terminals.insert(surface_id, terminal);
+
+        // 4) pane marker: 새 Terminal spawn 없이 트리에만 등록. 에이전트 행동이므로
+        //    active_tab 을 바꾸지 않는 background 변형을 쓴다(포커스 독립, 원칙 1·3).
+        engine
+            .find_pane_by_id_mut(pane_id)
+            .expect("pane existence checked above")
+            .add_terminal_marker_tab_background(tab_id, surface_id, None);
+
+        // 5) registry 제거: 더 이상 headless 가 아니므로 pty.list 에서 빠지고 이중
+        //    등록이 방지된다. 옛 exit-watcher 스레드는 detached 라 자식 reap 을 계속한다.
+        engine.pty_registry.remove(pty_id);
+        engine.mark_layout_dirty();
+
+        let (tab_count, active_tab) = engine
+            .find_pane_by_id(pane_id)
+            .map(|p| (p.tabs.len(), p.active_tab))
+            .unwrap_or((0, 0));
+
+        Ok(vec![CoreEvent::TabCreated {
+            pane_id,
+            tab_id,
+            surface_id,
+            tab_count,
+            active_tab,
+        }])
+    }
+
     /// `DomainIntent::MoveWorkspace` 본문. workspaces 벡터의 from→to 이동.
     /// active_workspace 보정은 cascade 에서 처리 (Core 는 state 모름).
     fn apply_move_workspace(
@@ -3373,6 +3442,146 @@ mod mirror_structural_guard_tests {
             engine.terminals.iter().count(),
             before + 1,
             "비-mirror split 은 로컬 터미널을 1개 늘려야 한다(회귀)"
+        );
+    }
+
+    /// 18-c e2e: headless PTY spawn 흉내 → `AdoptTerminal` 승격 → (1) 같은 Terminal
+    /// 인스턴스가 pty_id→surface_id 로 re-key 되어 상태 보존, (2) registry 에서 제거,
+    /// (3) pane tab 목록에 등장, (4) `TabCreated` cascade 이벤트 발행.
+    #[test]
+    fn adopt_terminal_promotes_headless_pty_preserving_state() {
+        use crate::core::pty_registry::PtySpawnSpec;
+
+        let (mut core, mut engine) = build_test_core();
+        let (_a, pane) = seed(&mut engine);
+
+        // pty.spawn 흉내: registry 등록 + 같은 pty_id 로 real Terminal 삽입.
+        let pty_id = engine
+            .pty_registry
+            .register(
+                PtySpawnSpec {
+                    owner_agent_id: "agent-x".into(),
+                    cwd: None,
+                    command: vec![],
+                },
+                std::time::Instant::now(),
+            )
+            .expect("register headless pty");
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(pty_id);
+        let terminal = tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols: 80,
+                rows: 24,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                surface_id: pty_id,
+                working_dir: None,
+                initial_input: None,
+            },
+            waker,
+        )
+        .expect("spawn headless terminal");
+        engine.terminals.insert(pty_id, terminal);
+
+        // 승격 전에 상태를 만들어 둔다 — 같은 프로세스라면 승격 후에도 화면에 남는다.
+        engine
+            .find_terminal_by_id_mut(pty_id)
+            .expect("headless terminal")
+            .send_bytes(b"echo ADOPT_MARKER_123\n");
+        let mut seen = false;
+        for _ in 0..500 {
+            engine.process_surface(pty_id);
+            if engine
+                .find_terminal_by_id(pty_id)
+                .map(|t| t.screen_text())
+                .unwrap_or_default()
+                .contains("ADOPT_MARKER_123")
+            {
+                seen = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(seen, "marker should appear before adoption");
+
+        // 승격.
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::AdoptTerminal {
+                    pane_id: pane,
+                    pty_id,
+                },
+            )
+            .expect("adopt must succeed");
+        let surface_id = match events.into_iter().next() {
+            Some(CoreEvent::TabCreated {
+                surface_id,
+                pane_id: p,
+                ..
+            }) => {
+                assert_eq!(p, pane, "TabCreated pane_id");
+                surface_id
+            }
+            other => panic!("expected TabCreated cascade event, got {other:?}"),
+        };
+
+        // (1) re-key: pty_id 는 사라지고 surface_id 로 옮겨졌으며 상태가 보존됐다.
+        assert!(
+            engine.find_terminal_by_id(pty_id).is_none(),
+            "old pty_id key removed from store"
+        );
+        let screen = engine
+            .find_terminal_by_id(surface_id)
+            .expect("terminal now at surface_id")
+            .screen_text();
+        assert!(
+            screen.contains("ADOPT_MARKER_123"),
+            "state preserved across promotion (same process): {screen:?}"
+        );
+
+        // (2) registry 에서 제거 — pty.list 에서 빠지고 이중 등록 방지.
+        assert!(
+            !engine.pty_registry.contains(pty_id),
+            "promoted pty must leave the headless registry"
+        );
+
+        // (3) pane tab 목록에 새 surface 등장.
+        let pane_ref = engine.find_pane_by_id(pane).expect("pane");
+        assert!(
+            pane_ref
+                .tabs
+                .iter()
+                .any(|t| t.all_surface_ids().contains(&surface_id)),
+            "promoted surface must appear in the pane's tabs"
+        );
+
+        // 정리: 승격된 surface 의 Terminal 제거(프로세스 종료).
+        engine.terminals.remove(surface_id);
+    }
+
+    /// 18-c: 존재하지 않는 pty_id 로 승격 시도는 에러 — store/트리 무변경.
+    #[test]
+    fn adopt_unknown_pty_errors() {
+        let (mut core, mut engine) = build_test_core();
+        let (_a, pane) = seed(&mut engine);
+        let bogus = crate::core::pty_registry::PTY_ID_BASE + 4242;
+        let before = engine.terminals.iter().count();
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::AdoptTerminal {
+                    pane_id: pane,
+                    pty_id: bogus,
+                },
+            )
+            .expect_err("unknown pty must error");
+        assert!(err.to_string().contains("not found"), "err: {err}");
+        assert_eq!(
+            engine.terminals.iter().count(),
+            before,
+            "실패한 승격은 store 를 건드리지 않아야 한다"
         );
     }
 

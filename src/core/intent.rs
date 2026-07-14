@@ -104,6 +104,14 @@ pub(crate) enum DomainIntent {
         from_index: usize,
         to_index: usize,
     },
+    /// headless PTY(`pty_registry`, TODO 18)를 실제 Surface 로 **승격(adopt)** 한다
+    /// (`pty.attach_surface`, 18-c). `CreateTab` 처럼 새 tab_id/surface_id 를 발급받아
+    /// Tab/Pane 트리에 marker 를 꽂되, **새 Terminal 을 spawn 하지 않는다** — 이미
+    /// headless(`PTY_ID_BASE` 이상) id 로 `TerminalStore` 에 존재하는 Terminal 을
+    /// 새 surface_id 로 re-key 하고 `pty_registry` 에서 제거한다. `RespawnTerminal`
+    /// 이 같은 id 위에서 Terminal 을 교체하는 것과 반대 방향(id 이전) 연산이다.
+    /// 성공 시 `CoreEvent::TabCreated` 를 발행 — cascade 는 `CreateTab` 과 동형.
+    AdoptTerminal { pane_id: u32, pty_id: u32 },
 
     // ─── Pane lifecycle (D.3.C.B.3) ───
     /// 특정 pane 을 split. focused 의존 없음 — 호출자가 target_pane_id 결정.

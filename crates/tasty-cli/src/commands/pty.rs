@@ -51,4 +51,15 @@ pub enum PtyCommands {
     },
     /// List all live headless PTYs (focus-independent — always the full set).
     List,
+    /// Promote a headless PTY into a real Surface/tab under a pane. The same
+    /// process/scrollback is moved (state preserved) and the pty id leaves the
+    /// headless list.
+    AttachSurface {
+        /// Target pty id to promote.
+        #[arg(long = "pty-id")]
+        pty_id: u32,
+        /// Pane to attach the promoted terminal to (new background tab).
+        #[arg(long = "pane-id")]
+        pane_id: u32,
+    },
 }

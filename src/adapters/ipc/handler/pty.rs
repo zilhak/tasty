@@ -269,6 +269,76 @@ pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> 
     JsonRpcResponse::success(id, json!({ "id": pty_id, "killed": true }))
 }
 
+/// `pty.attach_surface` — headless PTY 를 실제 Surface(Tab) 로 **승격(adopt)** 한다.
+/// `pane_id`(어느 Pane 에 붙일지) + `id`(pty id) 를 받아 `AdoptTerminal` intent 로
+/// 실행한다. spawn/write/read/wait/kill/list 와 달리 이건 진짜 Surface 를 새로
+/// 만들므로(권한 `[SurfaceWrite, TerminalSpawn]`) `tab.create` 와 동일한
+/// `cascade_tab_created`(tab.created/surface.created host event)를 발화해야 GUI 가
+/// 그 Tab 을 렌더한다. 승격 후 그 pty id 는 registry 에서 빠져 `pty.list` 에 더 이상
+/// 나타나지 않는다(같은 Terminal 인스턴스가 surface_id 키로 옮겨짐 — 상태 보존).
+pub(crate) fn handle_attach_surface(
+    core: &mut crate::core::Core,
+    state: &mut crate::state::AppState,
+    engine: &mut CoreState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let pty_id = match require_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let pane_id = match require_u32(params, "pane_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    // 검증: 대상 headless PTY 가 살아있고 pane 이 존재해야 한다(깔끔한 에러 메시지).
+    match engine.pty_registry.get(pty_id) {
+        None => {
+            return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
+        }
+        Some(entry) if entry.has_exited() => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("headless pty {pty_id} already exited"),
+            );
+        }
+        Some(_) => {}
+    }
+    if engine.find_pane_by_id(pane_id).is_none() {
+        return JsonRpcResponse::invalid_params(id, format!("pane {pane_id} not found"));
+    }
+
+    let intent = crate::core::intent::DomainIntent::AdoptTerminal { pane_id, pty_id };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return super::structural_apply_error(id, &e),
+    };
+
+    let Some(crate::core::intent::CoreEvent::TabCreated {
+        pane_id,
+        tab_id,
+        surface_id,
+        ..
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
+    };
+
+    // tab.create 와 동형 cascade — tab.created/surface.created host event enqueue +
+    // polling baseline 동기화. 이 호출을 빠뜨리면 데이터만 옮겨지고 화면엔 안 뜬다.
+    crate::app::dispatch_domain::cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "pane_id": pane_id,
+            "tab_id": tab_id,
+            "surface_id": surface_id,
+        }),
+    )
+}
+
 /// `pty.list` — 살아있는 headless PTY 전체 목록. **포커스 독립성**: 필터 없이 전 목록을
 /// 무조건 반환한다. 접근 시점에 idle TTL 을 lazy sweep 한다.
 pub(crate) fn handle_list(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
