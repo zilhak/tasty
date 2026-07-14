@@ -189,50 +189,86 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
     Ok(out)
 }
 
-/// child(=target) 가 완료(codex-idle 또는 process-exit)되면 caller 에게 1 회성
-/// 알림을 보내도록 hook 2개를 등록한다. 두 hook 의 command 는 완전히 동일한
-/// `codex notify-caller` 호출이며, fire 시점에 surface meta 에 저장된 형제
-/// hook_id 목록을 조회해 스스로 정리한다 — 등록 순서(어느 이벤트가 먼저 fire
-/// 하는지)에 무관하게 대칭적으로 동작한다(어느 쪽이 나중에 등록됐는지에 기대는
-/// 임베딩 방식은 codex-idle 이 먼저 오는 흔한 경로에서 실패하므로 쓰지 않는다).
-/// host 호출 실패는 경고만 하고 넘어간다(soft — spawn/tell 성공을 막지 않음).
-fn register_notify_hooks(host: &HostHandle, target_surface: u32, caller_surface: u32, kind: &str) {
-    let cmd = format!(
+/// 호스트 IPC 를 동기 호출하는 최소 표면. `HostHandle` 로 실동작하고, 테스트에서는
+/// in-memory mock 으로 대체해 형제 hook 등록/발화/정리 사이클을 재현·검증한다.
+pub(crate) trait HostCall {
+    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError>;
+}
+
+impl HostCall for HostHandle {
+    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
+        HostHandle::call(self, method, params)
+    }
+}
+
+/// 완료 알림 hook 의 command 문자열 — 등록 시점과 fire 후 정리 시점이 **정확히 같은
+/// 값**을 만들어야 command 일치 정리가 성립한다. 형제(codex-idle/process-exit)는 모두
+/// 이 동일 문자열을 command 로 갖는다.
+fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -> String {
+    format!(
         "tasty codex notify-caller --caller {caller_surface} --target {target_surface} --kind {kind}"
-    );
-    let mut ids = Vec::new();
+    )
+}
+
+/// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
+/// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
+/// 순수 선택이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
+/// 서로 다른 command(예: `--kind spawn` vs `--kind tell`)로 등록된 두 그룹은 서로의
+/// 정리 대상에 포함되지 않는다(옛 단일 meta 슬롯 방식의 clobber-좀비를 제거).
+fn siblings_to_unset(hooks: &[Value], expected_command: &str) -> Vec<u64> {
+    hooks
+        .iter()
+        .filter(|h| h.get("command").and_then(|v| v.as_str()) == Some(expected_command))
+        .filter_map(|h| h.get("id").and_then(|v| v.as_u64()))
+        .collect()
+}
+
+/// 발화한 형제 하나가 자기 그룹(같은 command)의 남은 형제 once-hook 들을 정리한다.
+/// `hook.list` 는 반드시 `surface_id` 로 필터해 다른 surface(=다른 child)의 hook 을
+/// 건드리지 않는다. best-effort — 실패해도 알림 자체는 이미 전달됐다.
+fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expected_command: &str) {
+    if let Ok(resp) = host.call("hook.list", json!({ "surface_id": target_surface }))
+        && let Some(hooks) = resp.as_array()
+    {
+        for hook_id in siblings_to_unset(hooks, expected_command) {
+            // best-effort 정리 — 실패하면 좀비로 남을 수 있으나 알림 자체는 이미
+            // 전달됐으므로 caller 관점 결과에는 영향 없음.
+            let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
+        }
+    }
+}
+
+/// child(=target) 가 완료(codex-idle 또는 process-exit)되면 caller 에게 1 회성 알림을
+/// 보내도록 hook 2개를 등록한다. 두 hook 의 command 는 완전히 동일한 `codex
+/// notify-caller` 호출이며, fire 시점에 `hook.list` 를 command 문자열로 매칭해 자기
+/// 그룹의 남은 형제를 정리한다 — 어느 이벤트가 먼저 fire 하는지에 무관하게 대칭적으로
+/// 동작하고, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐
+/// 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다. host 호출 실패는 경고만 하고
+/// 넘어간다(soft — spawn/tell 성공을 막지 않음).
+fn register_notify_hooks<H: HostCall>(
+    host: &H,
+    target_surface: u32,
+    caller_surface: u32,
+    kind: &str,
+) {
+    let cmd = notify_caller_command(caller_surface, target_surface, kind);
     for event in ["codex-idle", "process-exit"] {
-        match host.call(
+        if let Err(e) = host.call(
             "hook.set",
             json!({ "surface_id": target_surface, "event": event, "command": cmd, "once": true }),
         ) {
-            Ok(resp) => {
-                if let Some(id) = resp.get("hook_id").and_then(|v| v.as_u64()) {
-                    ids.push(id.to_string());
-                }
-            }
-            Err(e) => tracing::warn!("codex notify hook.set '{event}' failed: {e}"),
+            tracing::warn!("codex notify hook.set '{event}' failed: {e}");
         }
-    }
-    if ids.len() == 2
-        && let Err(e) = host.call(
-            "surface.meta.set",
-            json!({
-                "surface_id": target_surface,
-                "key": "codex-notify-hooks",
-                "value": ids.join(","),
-            }),
-        )
-    {
-        tracing::warn!("codex notify hook sibling meta.set failed: {e}");
     }
 }
 
 /// `register_notify_hooks` 가 등록한 hook 이 fire 되면 실행되는 핸들러. caller
 /// 에게 완료 알림을 보내고, 형제 once-hook(자신 포함)을 함께 정리한다. 자신은
 /// once 시맨틱으로 이미 자동 제거된 뒤이므로 unset 이 no-op 이어도 무해하다 —
-/// "누가 먼저 fire했는지" 판별이 전혀 필요 없다.
-pub fn handle_notify_caller(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+/// "누가 먼저 fire했는지" 판별이 전혀 필요 없다. 정리는 `hook.list`(surface 필터) +
+/// command 문자열 일치로 하며, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에
+/// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
+pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Value, IpcMethodError> {
     let caller = require_u32(&params, "caller")?;
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
@@ -252,25 +288,9 @@ pub fn handle_notify_caller(host: &HostHandle, params: Value) -> Result<Value, I
         tracing::warn!("codex notify-caller tell failed: {e}");
     }
 
-    if let Ok(meta) = host.call(
-        "surface.meta.get",
-        json!({ "surface_id": target, "key": "codex-notify-hooks" }),
-    ) && let Some(raw) = meta.get("value").and_then(|v| v.as_str())
-    {
-        for id_str in raw.split(',').filter(|s| !s.is_empty()) {
-            if let Ok(hook_id) = id_str.parse::<u64>()
-                && let Err(e) = host.call("hook.unset", json!({ "hook_id": hook_id }))
-            {
-                tracing::warn!("codex notify-caller hook.unset({hook_id}) failed: {e}");
-            }
-        }
-    }
-    if let Err(e) = host.call(
-        "surface.meta.unset",
-        json!({ "surface_id": target, "key": "codex-notify-hooks" }),
-    ) {
-        tracing::warn!("codex notify-caller meta.unset failed: {e}");
-    }
+    // 자기 그룹(같은 command)의 남은 형제 정리 — surface 필터 + command 일치.
+    let expected_command = notify_caller_command(caller, target, &kind);
+    cleanup_sibling_hooks(host, target, &expected_command);
 
     Ok(json!({}))
 }
@@ -1002,5 +1022,158 @@ trusted_hash = "sha256:xyz"
             &value,
             "/Users/x/.codex/config.toml"
         ));
+    }
+
+    // ── 형제 once-hook 정리 재현 (TODO 23) ──
+
+    use std::cell::RefCell;
+
+    struct MockHook {
+        id: u64,
+        surface_id: u32,
+        command: String,
+        event: String,
+    }
+
+    /// hook.set/list/unset + terminal.tell 을 in-memory 로 시뮬레이션하는 mock 호스트.
+    struct MockHost {
+        hooks: RefCell<Vec<MockHook>>,
+        next_id: RefCell<u64>,
+    }
+
+    impl MockHost {
+        fn new() -> Self {
+            Self {
+                hooks: RefCell::new(Vec::new()),
+                next_id: RefCell::new(1),
+            }
+        }
+
+        /// event 발화 시뮬레이션 — 매칭 once-hook 제거(호스트 `check_and_fire` retain 동일).
+        fn fire(&self, surface_id: u32, event: &str) -> usize {
+            let mut hooks = self.hooks.borrow_mut();
+            let before = hooks.len();
+            hooks.retain(|h| !(h.surface_id == surface_id && h.event == event));
+            before - hooks.len()
+        }
+
+        fn commands_on(&self, surface_id: u32) -> Vec<String> {
+            self.hooks
+                .borrow()
+                .iter()
+                .filter(|h| h.surface_id == surface_id)
+                .map(|h| h.command.clone())
+                .collect()
+        }
+    }
+
+    impl HostCall for MockHost {
+        fn call(
+            &self,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            match method {
+                "hook.set" => {
+                    let mut id = self.next_id.borrow_mut();
+                    let hid = *id;
+                    *id += 1;
+                    self.hooks.borrow_mut().push(MockHook {
+                        id: hid,
+                        surface_id: params["surface_id"].as_u64().unwrap() as u32,
+                        command: params["command"].as_str().unwrap().to_string(),
+                        event: params["event"].as_str().unwrap().to_string(),
+                    });
+                    Ok(json!({ "hook_id": hid }))
+                }
+                "hook.list" => {
+                    let sid = params["surface_id"].as_u64().map(|v| v as u32);
+                    let arr: Vec<Value> = self
+                        .hooks
+                        .borrow()
+                        .iter()
+                        .filter(|h| sid.is_none_or(|s| h.surface_id == s))
+                        .map(|h| {
+                            json!({ "id": h.id, "surface_id": h.surface_id, "command": h.command, "event": h.event })
+                        })
+                        .collect();
+                    Ok(json!(arr))
+                }
+                "hook.unset" => {
+                    let hid = params["hook_id"].as_u64().unwrap();
+                    self.hooks.borrow_mut().retain(|h| h.id != hid);
+                    Ok(json!({ "removed": true }))
+                }
+                _ => Ok(json!({})),
+            }
+        }
+    }
+
+    #[test]
+    fn siblings_to_unset_isolates_by_command() {
+        let spawn_cmd = notify_caller_command(9, 100, "spawn");
+        let tell_cmd = notify_caller_command(9, 100, "tell");
+        let hooks = vec![
+            json!({ "id": 1, "command": spawn_cmd, "event": "process-exit" }),
+            json!({ "id": 2, "command": tell_cmd, "event": "process-exit" }),
+            json!({ "id": 3, "command": spawn_cmd, "event": "codex-idle" }),
+        ];
+        assert_eq!(siblings_to_unset(&hooks, &spawn_cmd), vec![1, 3]);
+    }
+
+    #[test]
+    fn sibling_cleanup_removes_all_after_one_fires() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        register_notify_hooks(&host, target, caller, "tell");
+        assert_eq!(host.commands_on(target).len(), 2, "2 형제 등록");
+
+        // codex-idle 이 fire(once 제거) → 나머지 형제(process-exit) 정리.
+        assert_eq!(host.fire(target, "codex-idle"), 1);
+        let expected = notify_caller_command(caller, target, "tell");
+        cleanup_sibling_hooks(&host, target, &expected);
+
+        assert!(
+            host.commands_on(target).is_empty(),
+            "형제 hook 이 하나도 남지 않아야 함 — process-exit 좀비 없음: {:?}",
+            host.commands_on(target)
+        );
+    }
+
+    #[test]
+    fn concurrent_registrations_leave_no_zombie() {
+        // 같은 child(target) 에 spawn 완료 hook 과 tell 완료 hook 이 겹쳐 등록된 상태.
+        // 옛 단일 meta 슬롯(`codex-notify-hooks`) 방식이면 tell 등록이 spawn 의 sibling
+        // id 목록을 덮어써, spawn 그룹의 process-exit 이 정리되지 못하고 좀비로 남았다.
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        register_notify_hooks(&host, target, caller, "spawn");
+        register_notify_hooks(&host, target, caller, "tell");
+        assert_eq!(host.commands_on(target).len(), 4, "두 그룹 = 4 hook");
+
+        // spawn 그룹의 codex-idle 이 먼저 fire → spawn 그룹만 정리.
+        host.fire(target, "codex-idle");
+        let spawn_cmd = notify_caller_command(caller, target, "spawn");
+        cleanup_sibling_hooks(&host, target, &spawn_cmd);
+
+        let remaining = host.commands_on(target);
+        let tell_cmd = notify_caller_command(caller, target, "tell");
+        assert!(
+            remaining.iter().all(|c| c == &tell_cmd),
+            "spawn 그룹 좀비 잔존: {remaining:?}"
+        );
+        assert!(
+            !remaining.iter().any(|c| c == &spawn_cmd),
+            "spawn 그룹 process-exit 좀비 남음"
+        );
+
+        // 이제 tell 그룹도 fire → 전부 정리.
+        host.fire(target, "process-exit");
+        cleanup_sibling_hooks(&host, target, &tell_cmd);
+        assert!(
+            host.commands_on(target).is_empty(),
+            "최종적으로 형제 hook 이 전부 사라져야 함: {:?}",
+            host.commands_on(target)
+        );
     }
 }
