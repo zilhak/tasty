@@ -544,6 +544,14 @@ pub(crate) fn execute_forwarded_structural_op(
         .copied()
         .filter(|sid| !before.contains(sid))
         .collect();
+    // 점유 상속(ADR-0040 "workspace 전체가 remote" 불변식): forward 로 원격에 새로 생긴
+    // 터미널을 이 workspace 의 hard 점유에 편입한다. 등록하지 않으면 새 surface 가
+    // 비점유로 남아 (1) host 창 sweep 이 자기 grid 로 되돌리고(레터박스) (2) is_hard_occupied
+    // 미표시 (3) `feed_attached_workspace_input`/`apply_attached_workspace_resize` 의
+    // holder 검증(surface_to_workspace 기반)이 실패해 client 입력·resize 가 거부된다.
+    for sid in &added_terminals {
+        engine.attach.add_workspace_member(ws_id, *sid, true);
+    }
     let (tree, surfaces) = engine.build_workspace_tree_surfaces(idx_after, &class);
     let delta = crate::ipc::stream::StreamControl::StructuralDelta {
         workspace_id: ws_id,
@@ -694,6 +702,47 @@ mod forward_exec_tests {
         assert!(
             ids.contains(&fd.added_terminals[0]),
             "delta.surfaces 에 신규 surface 가 있어야 한다"
+        );
+    }
+
+    /// forward 된 split 으로 원격에 새로 생긴 surface 는 점유된 workspace 의 hard 점유를
+    /// **상속**한다(ADR-0040 "workspace 전체가 remote"). 등록이 빠지면 새 surface 가
+    /// 비점유로 남아 (host 창 sweep 이 grid 를 되돌리는) 레터박스·(holder 검증 실패로)
+    /// client 입력 거부를 유발한다. surface_locks(is_hard_occupied) + surface_to_workspace
+    /// (입력 라우팅) 양쪽에 등록돼야 한다.
+    #[test]
+    fn forward_split_inherits_workspace_occupancy() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 42;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+        let op = StructuralOp::SplitSurface {
+            surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("expected Ok")
+            .expect("split delta");
+        let new_sid = fd.added_terminals[0];
+        assert!(
+            engine.attach.is_hard_occupied(new_sid),
+            "새 surface 는 hard 점유(surface_locks)를 상속해야 한다 — resize skip/readonly"
+        );
+        assert_eq!(
+            engine.attach.workspace_of_surface(new_sid),
+            Some(ws_id),
+            "새 surface 는 점유 workspace 멤버로 등록돼야 한다 — 입력 라우팅 holder 검증"
+        );
+        assert_eq!(
+            engine.attach.workspace_holder_of(new_sid),
+            Some(client_id),
+            "새 surface 의 holder 는 workspace holder 와 동일해야 한다"
         );
     }
 

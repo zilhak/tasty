@@ -384,6 +384,30 @@ impl OccupancyRegistry {
         Ok(lock)
     }
 
+    /// 이미 점유된 workspace 에 **나중에 생긴 멤버 surface 를 추가 등록**한다. 구조 변경
+    /// forward(split·새 탭 등)로 원격에 새 surface 가 생겼을 때, "workspace 전체가
+    /// remote"(ADR-0040 불변식)를 유지하려면 그 새 surface 도 같은 holder 점유에 편입돼야
+    /// 한다. `acquire_workspace` 의 per-member 등록과 동형으로: 터미널이면 surface_locks 에
+    /// (is_hard_occupied → 서버 입력차단·resize skip·readonly), 모든 멤버를
+    /// surface_to_workspace 에(입력 라우팅 holder 검증·EOF/force-detach 일괄 정리) 넣는다.
+    /// 기존 workspace 점유의 lock(holder/granted_seq)을 그대로 승계한다. workspace 가
+    /// 점유돼 있지 않으면 no-op(false). 멱등(이미 등록된 surface 는 유지).
+    pub fn add_workspace_member(
+        &mut self,
+        workspace_id: WorkspaceId,
+        surface_id: SurfaceId,
+        is_terminal: bool,
+    ) -> bool {
+        let Some(&lock) = self.workspace_locks.get(&workspace_id) else {
+            return false;
+        };
+        if is_terminal {
+            self.surface_locks.entry(surface_id).or_insert(lock);
+        }
+        self.surface_to_workspace.insert(surface_id, workspace_id);
+        true
+    }
+
     /// surface 의 *내용을 숨겨야* 하는가(D2, decision 3). 터미널(surface_locks)이거나
     /// 점유된 workspace 의 멤버(비-터미널 포함)면 true. render 분기용.
     pub fn is_content_hidden(&self, surface_id: SurfaceId) -> bool {
