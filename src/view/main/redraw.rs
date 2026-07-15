@@ -607,21 +607,48 @@ impl MainView {
                 }
             }
             Some(3) => {
-                // Move Left — mirror 워크스페이스는 로컬 탭 순서 변경 금지(원격과 어긋남).
-                if tab_index > 0
-                    && !self.state.block_mirror_structural(&self.core_state)
-                    && let Some(pane) = self
+                // Move Left — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
+                // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
+                if tab_index > 0 {
+                    let mirror_op = self
+                        .core_state
+                        .find_pane_by_id(pane_id)
+                        .and_then(|p| p.tabs.get(p.active_tab))
+                        .and_then(|t| t.focused_surface_id())
+                        .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
+                            anchor_surface_id: sid,
+                            from_index: tab_index,
+                            to_index: tab_index - 1,
+                        });
+                    if !self
                         .state
-                        .active_workspace_mut(&mut self.core_state)
-                        .pane_layout_mut()
-                        .find_pane_mut(pane_id)
-                {
-                    pane.move_tab(tab_index, tab_index - 1);
+                        .forward_mirror_structural(&mut self.core_state, mirror_op)
+                        && let Some(pane) = self
+                            .state
+                            .active_workspace_mut(&mut self.core_state)
+                            .pane_layout_mut()
+                            .find_pane_mut(pane_id)
+                    {
+                        pane.move_tab(tab_index, tab_index - 1);
+                    }
                 }
             }
             Some(4) => {
-                // Move Right — mirror 워크스페이스는 로컬 탭 순서 변경 금지(원격과 어긋남).
-                if !self.state.block_mirror_structural(&self.core_state)
+                // Move Right — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
+                // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
+                let mirror_op = self
+                    .core_state
+                    .find_pane_by_id(pane_id)
+                    .and_then(|p| p.tabs.get(p.active_tab))
+                    .and_then(|t| t.focused_surface_id())
+                    .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
+                        anchor_surface_id: sid,
+                        from_index: tab_index,
+                        to_index: tab_index + 1,
+                    });
+                if !self
+                    .state
+                    .forward_mirror_structural(&mut self.core_state, mirror_op)
                     && let Some(pane) = self
                         .state
                         .active_workspace_mut(&mut self.core_state)

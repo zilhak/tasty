@@ -8,9 +8,16 @@ use crate::core::CoreState;
 impl AppState {
     /// Add a new tab in the focused pane.
     pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
-        // mirror 누출 차단 — 로컬 PTY spawn 은 "workspace 전체가 remote" 불변식을
-        // 깬다. 가드가 toast 를 띄우고 no-op(Ok) 로 반환한다(2단계에서 원격 forward).
-        if self.block_mirror_structural(engine) {
+        // mirror 워크스페이스면 로컬 PTY spawn 대신 NewTab 을 원격으로 forward 한다
+        // (로컬 spawn 은 "workspace 전체가 remote" 불변식을 깬다). no-op(Ok) 로 반환.
+        let mirror_op =
+            self.focused_surface_id(engine)
+                .map(|sid| crate::ipc::stream::StructuralOp::NewTab {
+                    anchor_surface_id: sid,
+                    surface_kind: "terminal".to_string(),
+                    params: serde_json::Value::Null,
+                });
+        if self.forward_mirror_structural(engine, mirror_op) {
             return Ok(());
         }
         let cwd = self.resolve_inherit_cwd(engine);
@@ -48,10 +55,17 @@ impl AppState {
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
-        // mirror 누출 차단 — 로컬 surface 생성은 "workspace 전체가 remote" 불변식을
-        // 깬다. 가드가 toast 를 띄우고 Err 로 반환한다(2단계에서 원격 forward).
-        if self.block_mirror_structural(engine) {
-            anyhow::bail!("mirror workspace: structural change blocked");
+        // mirror 워크스페이스면 로컬 surface 생성 대신 NewTab 을 원격으로 forward 한다
+        // (로컬 생성은 "workspace 전체가 remote" 불변식을 깬다). Err 로 반환한다.
+        let mirror_op =
+            self.focused_surface_id(engine)
+                .map(|sid| crate::ipc::stream::StructuralOp::NewTab {
+                    anchor_surface_id: sid,
+                    surface_kind: kind.to_string(),
+                    params: params.clone(),
+                });
+        if self.forward_mirror_structural(engine, mirror_op) {
+            anyhow::bail!("mirror workspace: structural change forwarded to remote");
         }
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
@@ -193,6 +207,20 @@ impl AppState {
     /// 지정 close). focused pane / active tab 와 무관하게 동작한다.
     /// 내부 모든 surface cleanup + closed_item snapshot + layout dirty 마킹을 수행.
     pub fn close_tab(&mut self, engine: &mut CoreState, pane_id: u32, tab_index: usize) -> bool {
+        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
+        // forward 한다(로컬 close 는 원격 트리와 어긋남).
+        let mirror_op = self
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .and_then(|p| p.tabs.get(tab_index))
+            .and_then(|t| t.focused_surface_id())
+            .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
+                anchor_surface_id: sid,
+            });
+        if self.forward_mirror_structural(engine, mirror_op) {
+            return true;
+        }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let snapshot_opt = if let Some(pane) = self
             .active_workspace(engine)
@@ -238,9 +266,14 @@ impl AppState {
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 누출 차단 — tab close 는 mirror 트리를 원격과 어긋나게 한다.
-        // true 를 돌려 호출부의 close fallback 체인을 멈춘다(전체 mirror 는 유지).
-        if self.block_mirror_structural(engine) {
+        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
+        // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
+        let mirror_op =
+            self.focused_surface_id(engine)
+                .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
+                    anchor_surface_id: sid,
+                });
+        if self.forward_mirror_structural(engine, mirror_op) {
             return true;
         }
         // Capture tab snapshot + collect persist_ids (immutable borrow).

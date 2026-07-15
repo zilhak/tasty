@@ -166,6 +166,115 @@ fn close_active_tab_after_add() {
     assert_eq!(tab_count_after, 1);
 }
 
+// ---- mirror 워크스페이스 구조 op forward (UI/키보드 경로) ----
+// mirror 워크스페이스의 close/new-tab 은 로컬 트리를 건드리지 않고 원격으로
+// forward 돼야 한다(split 이 Core::apply→forward 로 하는 것과 동형). UI-layer
+// 직접 조작 경로(close_active_*·add_tab·close_tab)는 Core::apply 를 우회하므로
+// forward 를 직접 얹는다. 아래 테스트는 각 경로가 (1) 올바른 StructuralOp 를
+// pending_structural_forward 에 쌓고 (2) 로컬 트리는 그대로 두는지 검증한다.
+
+#[test]
+fn mirror_close_active_surface_forwards_close_surface() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid = state.focused_surface_id(&engine).unwrap();
+    state.active_workspace_mut(&mut engine).mirror = true;
+    assert!(engine.pending_structural_forward.is_empty());
+
+    // 폴백 체인 정지(true) + 로컬 트리 불변.
+    assert!(state.close_active_surface(&mut engine));
+    assert!(
+        engine.find_terminal_by_id(sid).is_some(),
+        "mirror close 는 로컬 surface 를 지우면 안 된다"
+    );
+    assert_eq!(engine.pending_structural_forward.len(), 1);
+    match &engine.pending_structural_forward[0] {
+        StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid),
+        other => panic!("expected CloseSurface, got {other:?}"),
+    }
+}
+
+#[test]
+fn mirror_close_active_pane_forwards_close_pane() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid = state.focused_surface_id(&engine).unwrap();
+    state.active_workspace_mut(&mut engine).mirror = true;
+
+    assert!(state.close_active_pane(&mut engine));
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        1,
+        "mirror pane close 는 로컬 pane 을 제거하면 안 된다"
+    );
+    match &engine.pending_structural_forward[0] {
+        StructuralOp::ClosePane { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
+        other => panic!("expected ClosePane, got {other:?}"),
+    }
+}
+
+#[test]
+fn mirror_close_active_tab_forwards_close_tab() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid = state.focused_surface_id(&engine).unwrap();
+    state.active_workspace_mut(&mut engine).mirror = true;
+
+    assert!(state.close_active_tab(&mut engine));
+    assert!(
+        engine.find_terminal_by_id(sid).is_some(),
+        "mirror tab close 는 로컬 surface 를 지우면 안 된다"
+    );
+    match &engine.pending_structural_forward[0] {
+        StructuralOp::CloseTab { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
+        other => panic!("expected CloseTab, got {other:?}"),
+    }
+}
+
+#[test]
+fn mirror_add_tab_forwards_new_tab() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid = state.focused_surface_id(&engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    let tabs_before = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_id)
+        .unwrap()
+        .tabs
+        .len();
+    state.active_workspace_mut(&mut engine).mirror = true;
+
+    state.add_tab(&mut engine).unwrap();
+    let tabs_after = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_id)
+        .unwrap()
+        .tabs
+        .len();
+    assert_eq!(
+        tabs_after, tabs_before,
+        "mirror add_tab 은 로컬 탭을 만들면 안 된다"
+    );
+    match &engine.pending_structural_forward[0] {
+        StructuralOp::NewTab {
+            anchor_surface_id,
+            surface_kind,
+            ..
+        } => {
+            assert_eq!(*anchor_surface_id, sid);
+            assert_eq!(surface_kind, "terminal");
+        }
+        other => panic!("expected NewTab, got {other:?}"),
+    }
+}
+
 #[test]
 fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
     // 마지막 workspace 의 유일 surface 까지 닫아도 workspaces 가 비면 안 된다.

@@ -19,34 +19,51 @@ fn terminal_surface_in_tab(
 }
 
 impl AppState {
-    /// active 워크스페이스가 mirror(원격 attach client)면 차단 toast 를 띄우고 `true`.
-    /// mirror 워크스페이스는 원격 워크스페이스의 뷰라, 그 안의 로컬 구조 변경
-    /// (new-tab / close / move-tab)은 "workspace 전체가 remote" 불변식을 깬다 —
-    /// `Core::apply` 를 우회하는 UI-layer 직접 조작 경로(`add_tab`·`close_active_*`·
-    /// tab drag/context-menu)가 공통으로 이 가드를 태워 로컬 실행을 막는다.
+    /// active 워크스페이스가 mirror(원격 attach client)면 구조 변경을 원격으로
+    /// **forward** 하고 `true` 를 돌려 로컬 실행/폴백 체인을 멈춘다(전체 mirror 뷰는
+    /// 유지). mirror 워크스페이스는 원격 워크스페이스의 뷰라, 그 안의 구조 변경
+    /// (new-tab / close / move-tab)을 로컬에서 실행하면 "workspace 전체가 remote"
+    /// 불변식을 깬다 — 대신 원격 authority 로 forward 해 거기서 실행된다.
+    ///
+    /// `Core::apply` 를 우회하는 UI-layer 직접 조작 경로(`add_tab`·`close_active_*`)는
+    /// split(intent→`Core::apply`→forward)과 달리 forward 가 자동으로 붙지 않으므로
+    /// 여기서 직접 `op` 를 실어 준다. `op` 가 `None`(앵커 surface 를 못 찾음)이면
+    /// forward 없이 차단 toast 만 띄운다.
     ///
     /// mirror 워크스페이스 **자체를 닫는 것**(`close_active_workspace`)은 로컬 mirror
-    /// 뷰를 걷어내는 정당한 로컬 동작이므로 가드하지 않는다. 구조 변경 원격 forward 는
-    /// 2단계에서 붙는다.
-    pub(crate) fn block_mirror_structural(&mut self, engine: &CoreState) -> bool {
-        if self.active_workspace(engine).mirror {
-            #[cfg(feature = "gui")]
-            self.toasts.push(
-                crate::i18n::t("attach.toast.mirror_structural_blocked"),
-                crate::model::toast_kind::ToastKind::Warning,
-                crate::model::toast_kind::ToastScope::Window,
-            );
-            true
-        } else {
-            false
+    /// 뷰를 걷어내는 정당한 로컬 동작이므로 이 가드를 태우지 않는다.
+    pub(crate) fn forward_mirror_structural(
+        &mut self,
+        engine: &mut CoreState,
+        op: Option<crate::ipc::stream::StructuralOp>,
+    ) -> bool {
+        if !self.active_workspace(engine).mirror {
+            return false;
         }
+        match op {
+            Some(op) => engine.pending_structural_forward.push(op),
+            None => {
+                #[cfg(feature = "gui")]
+                self.toasts.push(
+                    crate::i18n::t("attach.toast.mirror_structural_blocked"),
+                    crate::model::toast_kind::ToastKind::Warning,
+                    crate::model::toast_kind::ToastScope::Window,
+                );
+            }
+        }
+        true
     }
 
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
     pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 누출 차단 — pane close 는 mirror 트리를 원격과 어긋나게 한다.
-        // 가드가 true 를 돌려 fallback 체인(→ close_active_workspace)을 멈춘다.
-        if self.block_mirror_structural(engine) {
+        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 ClosePane 을 원격으로
+        // forward 한다. true 를 돌려 fallback 체인(→ close_active_workspace)을 멈춘다.
+        let mirror_op = self.focused_surface_id(engine).map(|sid| {
+            crate::ipc::stream::StructuralOp::ClosePane {
+                anchor_surface_id: sid,
+            }
+        });
+        if self.forward_mirror_structural(engine, mirror_op) {
             return true;
         }
         let target_id = self.active_workspace(engine).focused_pane;
@@ -85,9 +102,12 @@ impl AppState {
     /// within the tab. For single-surface tabs, delegates to close_surface_by_id
     /// which handles tab/pane/workspace cascading.
     pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 누출 차단 — surface close 는 mirror 트리를 원격과 어긋나게 한다.
-        // true 를 돌려 호출부의 close fallback 체인을 멈춘다(전체 mirror 는 유지).
-        if self.block_mirror_structural(engine) {
+        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseSurface 를 원격으로
+        // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
+        let mirror_op = self
+            .focused_surface_id(engine)
+            .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
+        if self.forward_mirror_structural(engine, mirror_op) {
             return true;
         }
         let surface_id;
