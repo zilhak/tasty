@@ -243,6 +243,11 @@ pub fn draw_remote_attach_popup(
     let ctx = ui.ctx().clone();
     let mut st = read_ui(&ctx);
 
+    // 리스트 항목은 텍스트가 아니라 목록으로 다뤄야 한다 — 라벨을 비선택으로 만들어
+    // 글자 위 I-beam/드래그 선택을 막는다(egui 기본 selectable_labels=true). 이 팝업의
+    // 모든 child ui 는 이 root ui 에서 파생되어 스타일을 상속한다.
+    ui.style_mut().interaction.selectable_labels = false;
+
     poll_browse(&mut st);
 
     // Escape: 닫기(진행 중 조회/터널은 clear_ui 로 UiState drop 되며 정리).
