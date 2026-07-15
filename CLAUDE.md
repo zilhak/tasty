@@ -87,6 +87,22 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 워크스페이스 구조, 프로필 상세, LTO 설명, 빌드 시간 측정, 크레이트 분리 가이드 전체: [`docs/dev-guide/build.md`](docs/dev-guide/build.md).
 
+## Conductor/에이전트 병렬 작업 시 빌드·검증 명령
+
+`role:conductor` 스킬(스택 중립적 공통 문서)이 프로젝트별 빌드/lint/test 명령을 이 CLAUDE.md에서 찾도록 되어 있다. 이 프로젝트(cargo workspace)의 명령은 다음과 같다 — CI(`.github/workflows/`)·pre-commit hook(`.githooks/pre-commit`)과 동일한 커맨드를 쓴다:
+
+| 목적 | 명령 |
+|------|------|
+| 빌드 (dev) | `cargo build` |
+| 빌드 (release 검증) | `cargo build --release` |
+| lint | `cargo clippy --workspace --all-targets --locked` |
+| 포맷 검사 | `cargo fmt --check` |
+| 테스트 | `cargo test --workspace --locked` |
+
+- **의존성 설치 스텝 없음**: pnpm/npm과 달리 cargo는 별도 `install` 명령이 없다. `cargo build`/`cargo test` 등이 최초 실행 시 자동으로 fetch·컴파일한다. worktree를 새로 만든 직후 미리 받아두고 싶으면 `cargo fetch`.
+- **turbo류 캐시 재생 이슈 해당 없음**: `conductor-core.md`의 "빌드 검증 시 캐시 무효화" 규칙은 콘텐츠 해시 기반으로 컴파일을 통째로 건너뛰는 빌드 시스템(turbo 등)을 겨냥한다. cargo의 기본 incremental build는 변경분을 실제로 재컴파일하므로 이 프로젝트에서는 `--force` 류의 캐시 무효화 플래그가 불필요하다.
+- **실행 시나리오 검증(Gate 5)**: 빌드/테스트 통과만으로 "동작 확인"으로 보고하지 않는다. `cargo run` 기반 debug 인스턴스로 실제 시나리오를 재현하는 방법은 [`docs/dev-guide/self-verification.md`](docs/dev-guide/self-verification.md) 참조 — child에게 검증을 맡길 때 이 문서의 절차를 prompt에 포함한다.
+
 # 코드 정책
 
 ## 언어·툴
