@@ -474,7 +474,13 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
             .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    child.set_clip_rect(inner);
+    // 클립은 가로만(truncate 오버플로 가드) — 세로는 행 전체 높이로 둔다. inner 는
+    // 상하 spacing_sm 를 깎아 두 줄(name+target)을 담기엔 낮아, inner 로 세로까지
+    // 클립하면 둘째 줄(target) 하단 descender 가 잘린다.
+    child.set_clip_rect(egui::Rect::from_min_max(
+        egui::pos2(inner.left(), rect.top()),
+        egui::pos2(inner.right(), rect.bottom()),
+    ));
     child.spacing_mut().item_spacing.y = 2.0;
     child.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
