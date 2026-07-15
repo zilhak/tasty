@@ -347,6 +347,11 @@ impl ApplicationHandler<AppEvent> for App {
         // mirror 재구성). process_ipc 직후라야 같은 frame 에 반영된다.
         self.dispatch_pending_gui_attach();
 
+        // 사용자가 mirror 워크스페이스 자체를 닫았으면(context menu/단축키 close),
+        // 남은 attach 세션을 정리해 원격에 Detach 통지 → 원격 점유 해제. 미정리 시
+        // 소켓이 열린 채라 재연결 시 "사용 중"으로 잔류한다.
+        self.detach_orphaned_mirror_sessions();
+
         // 2단계 — mirror 워크스페이스 구조 op forward 큐 drain(원격 전송). Core::apply 가
         // 이번 프레임에 쌓은 op 를 같은 프레임에 원격으로 보낸다.
         self.dispatch_pending_structural_forwards();

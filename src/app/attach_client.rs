@@ -507,6 +507,36 @@ impl App {
         // 터널 핸들(sess.tunnel)은 여기서 Drop → 자식 ssh kill(고아 터널 방지).
     }
 
+    /// `about_to_wait` 에서 호출 — 사용자가 mirror 워크스페이스 **자체를 닫으면**
+    /// (context menu / 단축키 `close_workspace`) 로컬 워크스페이스는 즉시 사라지지만
+    /// 그 워크스페이스를 mirror 하던 attach 세션은 남는다. 세션 소켓이 열린 채라
+    /// 원격에 `Detach` 가 전달되지 않고 원격의 hard workspace 점유가 해제되지 않아
+    /// 재연결 시 "사용 중"으로 남는다. 세션의 `local_workspace` 가 어느 창에도 없으면
+    /// 고아로 보고 `cleanup_mirror_workspace` 로 정리한다 — `Detach` 통지 → 원격이
+    /// `Disconnected` 로 점유 해제 + anchor 게이트 해제 + 터널 kill. disconnected
+    /// (EOF/force-detach) 정리와 동형이되, 트리거가 **로컬 사용자 close** 인 경로다.
+    /// 세션 push 는 항상 mirror workspace 생성(같은 동기 함수) 뒤라 attach 셋업 중
+    /// false-positive 고아는 발생하지 않는다.
+    pub(crate) fn detach_orphaned_mirror_sessions(&mut self) {
+        if self.attach_client_sessions.is_empty() {
+            return;
+        }
+        // (idx, local_workspace) 를 먼저 수집한 뒤 존재 여부를 조회 — iter 대여를
+        // 들고 find_main_with_workspace(&self) 를 부르지 않도록 분리.
+        let orphaned: Vec<usize> = self
+            .attach_client_sessions
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| (idx, s.local_workspace))
+            .filter(|&(_, ws)| self.find_main_with_workspace(ws).is_none())
+            .map(|(idx, _)| idx)
+            .collect();
+        for &idx in orphaned.iter().rev() {
+            let sess = self.attach_client_sessions.remove(idx);
+            self.cleanup_mirror_workspace(&sess);
+        }
+    }
+
     /// `about_to_wait` 에서 호출 — `Core::apply` 가 mirror 워크스페이스 구조 op 를 쌓은
     /// forward 큐를 drain 해 원격에 전송한다(2단계). 각 op 의 anchor 로컬 surface id 를
     /// 세션 매핑으로 원격 id 로 치환한 뒤 attach stream 의 `StreamTag::Control` 로 보낸다.
