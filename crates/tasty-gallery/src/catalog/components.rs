@@ -19,6 +19,7 @@ pub mod explorer_tab_bar;
 pub mod explorer_toolbar;
 pub mod explorer_view_cells;
 pub mod file_handler_picker;
+pub mod file_picker;
 pub mod git_viewer;
 pub mod glyph;
 pub mod html_chrome;

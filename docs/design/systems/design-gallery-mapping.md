@@ -485,3 +485,36 @@ changelog: `changelog/2026-07-11-settings-handler-tab.md`.
 - 본체 Hook Handlers 는 레지스트리 정책 적용으로 jsx 와 두 곳이 다르다: 제거 버튼은
   user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
   편집 대신 mono 요약. intro copy 의 priority 방향은 엔진 규약(낮을수록 먼저)으로 기술.
+
+## File picker (Overlays) — gallery-first 1단계, 본체 미배선
+
+디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
++ `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
+`catalog/components/file_picker.rs`. changelog: `changelog/2026-07-15-file-picker.md`.
+design-request: `design-request/07151555-design-request-remote-file-picker.md`. **본체
+(egui `PopupDef`) 미구현** — 원격 디렉토리 탐색 채널 아키텍처가 아직 결정되지 않아 이번
+반영은 갤러리 specimen 까지만([gallery-first](../../dev-guide/gallery-first.md) 1단계).
+본체 배선은 별도 후속 작업(그 때 이 표의 "본체 함수" 열을 채운다).
+
+640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
+브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
+C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 코드화한다 — B/C 는
+반영하지 않는다(디자인측 changelog 에만 후보로 남는다).
+
+| 디자인 jsx 컴포넌트 | 갤러리 함수 (`file_picker.rs`) | 비고 |
+|---|---|---|
+| `FilePickerFrame`(container) | `card` | 640×480 · bg-panel · border-strong · modal shadow |
+| header(glyph·title·host indicator·✕) | `header` | 글리프 항상 `FILE`(B안의 remote 글리프 스왑 미반영) |
+| host 배지(§6.1 A안, 채택) | `host_badge` | mono `user@host` · `accent-info` 14%/45% 배경/보더 |
+| path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | root=mono, 중간=accent 링크, current=bold 비클릭 |
+| list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
+| `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
+| 로딩/빈폴더/에러(권한·연결끊김) | `center`(state 분기) | Spinner · folderOpen · ALERT_TRIANGLE + Retry/Reconnect |
+| footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성 |
+
+**갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
+대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사. 브레드크럼 세그먼트별
+`maxWidth:180` ellipsis 는 미반영(시드 문자열이 짧아 발생하지 않음 — 실 데이터 연결 시
+`elide()` 재사용 검토). **신규 Theme 필드 0** — 전부 기존 semantic 접근자
+(`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
+기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.

@@ -765,6 +765,26 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "filepicker",
+                    "File picker",
+                    vec![
+                        spec(
+                            "filepicker",
+                            "Native file picker — local & remote, one component",
+                            Some(
+                                "640×480 · PopupDef · differs only in header host badge + breadcrumb root",
+                            ),
+                            components::file_picker::draw,
+                        ),
+                        spec(
+                            "filepicker-states",
+                            "States — loading · empty · permission · connection lost · multi-select",
+                            Some("body swaps list ↔ status without changing the frame"),
+                            components::file_picker::draw_states,
+                        ),
+                    ],
+                ),
+                section(
                     "search",
                     "Search bar",
                     vec![spec(
