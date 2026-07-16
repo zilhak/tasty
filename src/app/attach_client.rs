@@ -21,7 +21,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -56,6 +56,15 @@ pub(crate) enum MirrorEvent {
         workspace_id: u32,
         tree: Value,
         surfaces: Vec<Value>,
+    },
+    /// (03 screenshot→remote-clipboard) 원격이 이 mirror 세션이 업로드한 캡처를
+    /// 처리한 결과(`capture_result` 커스텀 이벤트 — `StreamControl` enum 밖, 그
+    /// enum 이 인식 못 하는 별도 "event" 값으로 같은 Control 채널을 탄다). 성공 시
+    /// `path` 가 원격 파일시스템 경로, 실패 시 `reason`.
+    CaptureResult {
+        ok: bool,
+        path: Option<String>,
+        reason: Option<String>,
     },
 }
 
@@ -314,7 +323,12 @@ impl App {
                                             tree,
                                             surfaces,
                                         }),
-                                        _ => None,
+                                        // StreamControl 이 인식 못 하는 payload — (03)
+                                        // capture_result 커스텀 이벤트인지 확인(별도
+                                        // enum, StreamControl 비수정 — parse_capture_result 참조).
+                                        Ok(_) | Err(_) => {
+                                            parse_capture_result(&frame.payload)
+                                        }
                                     };
                                 if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
@@ -452,6 +466,33 @@ impl App {
                                     workspace_id,
                                     &tree,
                                     &surfaces,
+                                );
+                            }
+                            MirrorEvent::CaptureResult { ok, path, reason } => {
+                                // (03) 원격이 이 세션의 캡처 업로드를 처리한 결과.
+                                let msg = if ok {
+                                    format!(
+                                        "{} ({})",
+                                        crate::i18n::t("attach.toast.mirror_capture_saved"),
+                                        path.unwrap_or_default()
+                                    )
+                                } else {
+                                    let base =
+                                        crate::i18n::t("attach.toast.mirror_capture_failed");
+                                    match reason {
+                                        Some(r) if !r.is_empty() => format!("{base} ({r})"),
+                                        _ => base.to_string(),
+                                    }
+                                };
+                                let kind = if ok {
+                                    crate::adapters::ui::ToastKind::Success
+                                } else {
+                                    crate::adapters::ui::ToastKind::Warning
+                                };
+                                main.state.toasts.push(
+                                    msg,
+                                    kind,
+                                    crate::adapters::ui::ToastScope::Window,
                                 );
                             }
                         }
@@ -1039,6 +1080,117 @@ fn build_layout(
         }
         _ => None,
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// (03) screenshot→remote-clipboard — mirror client 측 업로드 송신.
+//
+// 이 블록은 위 구조 op forward/역반영 로직(특히 `apply_mirror_structural_delta`)과
+// 완전히 독립적이다 — 별도 기능(신규 03)이라 별도 impl 블록 + 전용 free fn 으로
+// 분리해 둔다(병행 작업 merge 충돌 최소화).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 업로드 세션 식별자 시퀀스 — 프로세스 내 유일성만 필요(원격은 client_id 로도
+/// 이미 세션이 구분되므로 재기동 간 유일성은 불필요).
+static NEXT_CAPTURE_UPLOAD_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_capture_upload_id() -> u64 {
+    NEXT_CAPTURE_UPLOAD_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// 한 청크의 raw payload 크기 상한. base64 인코딩(약 4/3 팽창) 후에도
+/// `StreamTag::Control` 프레임의 `MAX_FRAME_LEN`(1MiB) 에 JSON 오버헤드를 포함해
+/// 여유 있게 들어가도록 700KiB 로 잡는다(대부분의 스크린샷은 청크 1~2개).
+const CAPTURE_CHUNK_RAW_LEN: usize = 700 * 1024;
+
+/// `parse_capture_result`가 쓰는 wire shape. `StreamControl` enum 에는 없는
+/// 이벤트라 별도로 직접 파싱한다.
+#[derive(serde::Deserialize)]
+struct CaptureResultWire {
+    ok: bool,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// `frame.payload` 가 (03) `capture_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
+/// 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른 미지 이벤트와
+/// 동일하게 조용히 무시 — 전방 호환).
+fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    if value.get("event").and_then(|v| v.as_str()) != Some("capture_result") {
+        return None;
+    }
+    let wire: CaptureResultWire = serde_json::from_value(value).ok()?;
+    Some(MirrorEvent::CaptureResult {
+        ok: wire.ok,
+        path: wire.path,
+        reason: wire.reason,
+    })
+}
+
+impl App {
+    /// (03) 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
+    /// 업로드하고, 완료 시 원격이 그 경로를 원격 클립보드에 쓰도록 요청한다.
+    /// `StreamControl` enum(다른 worktree 가 동시 수정 중)은 건드리지 않고, 그
+    /// enum 이 인식 못 하는 별도 "event" 값의 raw JSON 을 같은
+    /// `StreamTag::Control` 채널에 실어 보낸다(파싱 실패 시 조용히 스킵되는
+    /// 전방 호환 특성을 그대로 이용 — `stream_hub.rs`/서버측이 이를 받아 처리).
+    pub(crate) fn forward_capture_to_remote_clipboard(
+        &mut self,
+        local_ws_id: u32,
+        file_name: &str,
+        bytes: &[u8],
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter()
+            .find(|s| s.local_workspace == local_ws_id)
+        else {
+            anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
+        };
+        let writer = sess.writer.clone();
+        let upload_id = next_capture_upload_id();
+
+        use base64::Engine as _;
+        let chunks: Vec<&[u8]> = if bytes.is_empty() {
+            vec![&[][..]]
+        } else {
+            bytes.chunks(CAPTURE_CHUNK_RAW_LEN).collect()
+        };
+        let total = chunks.len() as u32;
+        for (seq, chunk) in chunks.into_iter().enumerate() {
+            let msg = serde_json::json!({
+                "event": "capture_chunk",
+                "upload_id": upload_id,
+                "seq": seq as u32,
+                "total": total,
+                "data_b64": base64::engine::general_purpose::STANDARD.encode(chunk),
+            });
+            send_capture_control_frame(&writer, &msg)?;
+        }
+        let commit = serde_json::json!({
+            "event": "capture_commit",
+            "upload_id": upload_id,
+            "file_name": file_name,
+        });
+        send_capture_control_frame(&writer, &commit)
+    }
+}
+
+/// (03) capture_chunk/capture_commit JSON 하나를 `StreamTag::Control` 프레임으로
+/// 직렬화해 보낸다.
+fn send_capture_control_frame(
+    writer: &Arc<Mutex<TcpStream>>,
+    msg: &serde_json::Value,
+) -> anyhow::Result<()> {
+    let payload = serde_json::to_vec(msg)?;
+    let mut w = writer
+        .lock()
+        .map_err(|_| anyhow::anyhow!("attach writer lock poisoned"))?;
+    stream::write_frame(&mut *w, StreamTag::Control, &payload)?;
+    Ok(())
 }
 
 #[cfg(test)]

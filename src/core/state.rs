@@ -277,6 +277,21 @@ pub struct CoreState {
     /// (focus 비의존, plan §5). headless 는 GUI 가 없어 drain 되지 않는다.
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
 
+    /// (03) 스크린샷→클립보드 키바인딩 트리거 큐. `Some(local mirror workspace id)`
+    /// 면 트리거 시점에 포커스된 surface 가 원격 mirror workspace 소속이었다는 뜻
+    /// (캡처 완료 후 그 mirror 의 attach 세션으로 원격 전송), `None` 이면 로컬(캡처
+    /// 후 로컬 클립보드에 직접 기록). mirror 판별은 트리거 시점에 끝내 두고(포커스가
+    /// 캡처 완료 전에 바뀌어도 흔들리지 않게), 실제 OS 캡처(블로킹)는
+    /// `App::poll_screenshot_captures` 가 백그라운드 스레드에서 수행한다.
+    pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
+
+    /// (03) attach 서버측 — mirror client 가 청크로 보내는 캡처 파일 바이트를
+    /// upload_id 단위로 누적한다. `StreamTag::Control` 채널(기존 `StreamControl` enum
+    /// 은 그대로 두고, 그 enum 이 인식 못 하는 별도 "event" 값의 raw JSON 을 실어
+    /// 보낸다 — 파싱 실패 시 조용히 스킵되는 특성을 그대로 이용) 로 도착. gui/headless
+    /// 양쪽 `StreamReady` 처리부가 공유한다(attach 서버는 어느 빌드든 될 수 있음).
+    pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
+
     /// mirror 워크스페이스 구조 변경 forward 큐(2단계). `Core::apply` 가 mirror
     /// 워크스페이스의 구조 op 를 로컬 실행 대신 여기 push 하고(로컬 mutation 없음),
     /// App 이 `about_to_wait` 에서 drain 해 anchor **로컬** surface id 를 원격 id 로
@@ -422,6 +437,8 @@ impl CoreState {
             pty_registry: crate::core::pty_registry::PtyRegistry::new(),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
+            pending_screenshot_captures: Vec::new(),
+            capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
             pending_gui_attach_user: Vec::new(),

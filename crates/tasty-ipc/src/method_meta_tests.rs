@@ -100,6 +100,16 @@ fn ui_screenshot_promoted_to_release() {
     assert!(m.required.is_empty());
 }
 
+/// `clipboard.set_text` — release `METHOD_TABLE` 에 존재하고 plugin_callable +
+/// `Permission::ClipboardWrite` 필수여야 한다 (원격 mirror 캡처를 원격 인스턴스의
+/// clipboard.set_text 로 반영하는 attach 전송 경로도 이 등록을 사용).
+#[test]
+fn clipboard_set_text_is_release() {
+    let m = method_meta("clipboard.set_text").expect("registered in release METHOD_TABLE");
+    assert!(m.plugin_callable);
+    assert!(m.required.contains(&Permission::ClipboardWrite));
+}
+
 #[test]
 fn surface_list_requires_surface_read() {
     let m = method_meta("surface.list").expect("registered");

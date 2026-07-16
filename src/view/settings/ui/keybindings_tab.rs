@@ -335,6 +335,10 @@ pub fn draw_keybindings_tab(
                     ("cut", "settings.keybindings.cut_label"),
                     ("select_all", "settings.keybindings.select_all_label"),
                     ("paste", "settings.keybindings.paste_label"),
+                    (
+                        "screenshot_to_clipboard",
+                        "settings.keybindings.screenshot_to_clipboard_label",
+                    ),
                 ],
             );
         }

@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::thread;
 
 use crate::adapters::production::stream_hub::{PushResult, StreamHub};
+use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, encode_mux};
@@ -575,6 +576,72 @@ fn structural_params(base: &serde_json::Value, control: serde_json::Value) -> se
         }
     }
     serde_json::Value::Object(obj)
+}
+
+/// (03 screenshot→remote-clipboard) mirror client 가 워크스페이스 attach 채널로
+/// 보낸 캡처 업로드의 commit 을 처리한다. `client_id` 가 이 engine 이 호스팅하는
+/// 어떤 workspace 든 점유(holder)하고 있어야 신뢰한다(구조 op forward 와 동일한
+/// "attach 점유 = 권한" 원칙 — 별도 캡슐화된 권한 레이어 없음). 누적 바이트를
+/// `~/.tasty/screenshots/<file_name>` 에 쓰고 이 인스턴스(= mirror 관점의 "원격")의
+/// 클립보드에 그 경로를 기록한다. 결과는 `capture_result` 커스텀 이벤트로 회신
+/// (best-effort, `StreamControl` enum 은 건드리지 않고 그 enum 이 인식 못 하는
+/// "event" 값을 같은 `StreamTag::Control` 채널에 실어 보낸다 — stream_hub.rs 의
+/// 미지 payload 무시 특성을 그대로 이용).
+pub(crate) fn finalize_capture_upload(
+    engine: &mut CoreState,
+    core: &Core,
+    hub: &StreamHub,
+    client_id: u32,
+    upload_id: u64,
+    file_name: &str,
+) {
+    let bytes = engine.capture_uploads.take(client_id, upload_id);
+    let is_holder = engine.attach.client_holds_workspace(client_id);
+    let result = match (is_holder, bytes) {
+        (false, _) => Err("client does not hold a workspace attach".to_string()),
+        (true, None) => Err("no uploaded bytes for this upload_id".to_string()),
+        (true, Some(bytes)) => save_capture_and_set_clipboard(core, file_name, &bytes),
+    };
+    let payload = match &result {
+        Ok(path) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": true,
+            "path": path,
+        }),
+        Err(reason) => serde_json::json!({
+            "event": "capture_result",
+            "upload_id": upload_id,
+            "ok": false,
+            "reason": reason,
+        }),
+    };
+    let frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&payload).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+}
+
+/// `file_name` 의 basename 만 취해(경로 조작 방지) `~/.tasty/screenshots/` 밑에
+/// 저장하고, 그 절대경로 문자열을 로컬 클립보드에 기록한다.
+fn save_capture_and_set_clipboard(core: &Core, file_name: &str, bytes: &[u8]) -> Result<String, String> {
+    let safe_name = std::path::Path::new(file_name)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "screenshot.png".to_string());
+    let dir = crate::paths::tasty_home()
+        .map(|h| h.join("screenshots"))
+        .ok_or_else(|| "no tasty home directory".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(safe_name);
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    let path_str = path.to_string_lossy().to_string();
+    core.clipboard_arc()
+        .write_text(&path_str)
+        .map_err(|e| e.to_string())?;
+    Ok(path_str)
 }
 
 /// attach 거부/실패 통지: `attach_error` Control + Detach 로 연결 종료 유도.

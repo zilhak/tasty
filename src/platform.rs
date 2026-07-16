@@ -15,6 +15,8 @@ pub mod native_menu;
 pub mod power_windows;
 #[cfg(feature = "gui")]
 pub mod reveal;
+#[cfg(feature = "gui")]
+pub mod screen_capture;
 #[cfg(all(
     any(windows, target_os = "macos", target_os = "linux"),
     feature = "gui"

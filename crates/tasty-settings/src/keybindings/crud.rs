@@ -64,6 +64,10 @@ impl KeybindingSettings {
             "restore_closed",
             "settings.keybindings.restore_closed_label",
         ),
+        (
+            "screenshot_to_clipboard",
+            "settings.keybindings.screenshot_to_clipboard_label",
+        ),
         ("quit", "settings.keybindings.quit_label"),
         (
             "quit_immediate",
@@ -169,6 +173,7 @@ impl KeybindingSettings {
             "toggle_sidebar_collapse" => self.toggle_sidebar_collapse.as_slice(),
             "toggle_categories_collapsed" => self.toggle_categories_collapsed.as_slice(),
             "restore_closed" => self.restore_closed.as_slice(),
+            "screenshot_to_clipboard" => self.screenshot_to_clipboard.as_slice(),
             "quit" => self.quit.as_slice(),
             "quit_immediate" => self.quit_immediate.as_slice(),
             "quit_minimize" => self.quit_minimize.as_slice(),
@@ -230,6 +235,7 @@ impl KeybindingSettings {
             "toggle_sidebar_collapse" => &mut self.toggle_sidebar_collapse,
             "toggle_categories_collapsed" => &mut self.toggle_categories_collapsed,
             "restore_closed" => &mut self.restore_closed,
+            "screenshot_to_clipboard" => &mut self.screenshot_to_clipboard,
             "quit" => &mut self.quit,
             "quit_immediate" => &mut self.quit_immediate,
             "quit_minimize" => &mut self.quit_minimize,

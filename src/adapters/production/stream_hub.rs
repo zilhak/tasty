@@ -82,6 +82,32 @@ pub struct PumpOutcome {
     /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
     /// tap echoes the settled grid back as a `Resize` (no extra push here).
     pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
+    /// `(client_id, msg)` — (03) screenshot→remote-clipboard upload chunks/commit
+    /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::ipc::stream::StreamControl)
+    /// variant (that enum is a concurrent workstream's file) — it rides the same
+    /// `StreamTag::Control` channel as a raw JSON payload with an "event" tag value
+    /// `StreamControl`'s tagged parse doesn't recognize, so it falls through to the
+    /// `Err(_)` arm below rather than colliding with a real `StreamControl` message.
+    pub capture_uploads: Vec<(StreamClientId, CaptureUploadMsg)>,
+}
+
+/// (03) screenshot→remote-clipboard mid-session control messages. See
+/// [`PumpOutcome::capture_uploads`] doc for why this lives outside `StreamControl`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum CaptureUploadMsg {
+    /// One chunk of base64-encoded file bytes. `seq`/`total` are carried for
+    /// diagnostics only — chunks are appended in arrival order (TCP is ordered
+    /// per-connection), not reordered by `seq`.
+    CaptureChunk {
+        upload_id: u64,
+        seq: u32,
+        total: u32,
+        data_b64: String,
+    },
+    /// Marks the upload complete — the main loop finalizes (write file + set the
+    /// local clipboard to its path) and replies with a `capture_result` event.
+    CaptureCommit { upload_id: u64, file_name: String },
 }
 
 /// Per-client push sink held in the registry.
@@ -225,9 +251,11 @@ impl StreamHub {
                         crate::ipc::stream::StreamTag::Control => {
                             // Client→server Control messages: `StructuralOp`
                             // (split/new-tab/close/move forward) and `ClientResize`
-                            // (client-driven mirror geometry). Any other payload
-                            // (a server→client event, or an unknown/newer one)
-                            // fails to match and is ignored (forward compatible).
+                            // (client-driven mirror geometry). Any other
+                            // `StreamControl` variant (server→client only) is
+                            // ignored; a payload that isn't a `StreamControl` at
+                            // all falls to `Err` and is tried against the (03)
+                            // capture-upload mini-protocol before being dropped.
                             match serde_json::from_slice(&frame.payload) {
                                 Ok(crate::ipc::stream::StreamControl::StructuralOp {
                                     op_id,
@@ -241,7 +269,14 @@ impl StreamHub {
                                     out.resize_requests
                                         .push((client_id, surface_id, cols, rows));
                                 }
-                                _ => {}
+                                Ok(_) => {}
+                                Err(_) => {
+                                    if let Ok(msg) =
+                                        serde_json::from_slice::<CaptureUploadMsg>(&frame.payload)
+                                    {
+                                        out.capture_uploads.push((client_id, msg));
+                                    }
+                                }
                             }
                         }
                         // Ping/Detach from clients carry no step-4 payload.
@@ -434,6 +469,54 @@ mod tests {
         assert_eq!(out.resize_requests, vec![(8u32, 12u32, 203usize, 57usize)]);
         // Not misclassified as a structural op or input.
         assert!(out.structural_ops.is_empty());
+        assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_capture_chunk_and_commit() {
+        // (03) The capture-upload mini-protocol lives outside `StreamControl` — its
+        // payloads must fail the `StreamControl` parse (unrecognized "event") and
+        // fall through to the `CaptureUploadMsg` attempt.
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let chunk = serde_json::json!({
+            "event": "capture_chunk",
+            "upload_id": 42,
+            "seq": 0,
+            "total": 1,
+            "data_b64": "aGVsbG8=",
+        });
+        let commit = serde_json::json!({
+            "event": "capture_commit",
+            "upload_id": 42,
+            "file_name": "screenshot-1.png",
+        });
+        tx.send(StreamInbound::Frame {
+            client_id: 5,
+            frame: frame(StreamTag::Control, chunk.to_string().as_bytes()),
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 5,
+            frame: frame(StreamTag::Control, commit.to_string().as_bytes()),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.capture_uploads.len(), 2);
+        match &out.capture_uploads[0] {
+            (5, CaptureUploadMsg::CaptureChunk { upload_id, .. }) => assert_eq!(*upload_id, 42),
+            other => panic!("expected CaptureChunk, got {other:?}"),
+        }
+        match &out.capture_uploads[1] {
+            (5, CaptureUploadMsg::CaptureCommit { upload_id, file_name }) => {
+                assert_eq!(*upload_id, 42);
+                assert_eq!(file_name, "screenshot-1.png");
+            }
+            other => panic!("expected CaptureCommit, got {other:?}"),
+        }
+        // Not misclassified as a structural op / resize / input frame.
+        assert!(out.structural_ops.is_empty());
+        assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());
     }
 

@@ -43,7 +43,7 @@
 ## 인터페이스
 
 - **사용자**: 복사/붙여넣기/선택(위), 현재 클립보드 내용은 plugin 뷰어 팝업.
-- **AI Agent / CLI**: 단발 클립보드 read/write 는 각 에이전트 프로세스의 직접 접근 영역(ADR-0009). host 는 클립보드 IPC 네임스페이스를 노출하지 않는다.
+- **AI Agent / CLI**: 단발 클립보드 **read** 는 각 에이전트 프로세스의 직접 접근 영역(ADR-0009) — host 가 read IPC 를 노출하지 않는다. **write** 는 `clipboard.set_text` IPC(`Permission::ClipboardWrite`)/CLI `tasty clipboard set-text <text>` 로 host 가 노출한다 — [remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md) 가 원격 mirror 캡처 결과를 원격 클립보드에 반영하는 데 이 경로를 쓴다.
 
 ## 비-목표
 

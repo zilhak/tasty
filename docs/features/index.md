@@ -26,6 +26,7 @@
 | [tutorial](tutorial/index.md) — 튜토리얼 (마커 오버레이 인앱 투어, 도구 메뉴 항목) | 로컬 사용자 | 마커+말풍선+주제 팝업 |
 | [remote-profiles](remote-profiles/index.md) — 원격 접속 프로필 + Passkey (도구 메뉴 항목) | 로컬 사용자 · AI Agent | [창](remote-profiles/screens/remote-tool.md) |
 | [remote-attach](remote-attach/index.md) — 원격 attach (점유/mirror) | 원격 · AI Agent · 로컬(force-detach) | [GUI mirror](remote-attach/screens/remote-attach.md) |
+| [remote-screenshot-clipboard](remote-screenshot-clipboard/index.md) — 원격 스크린샷 → 클립보드 (mirror 포커스 시 원격 clipboard 반영) | 로컬 사용자 | 없음 (토스트만) |
 | [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/screens/listening-ports.md) |
 | [keybindings](keybindings/index.md) — 단축키 (KeybindingSettings 도메인) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-viewer/index.md) |

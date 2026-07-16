@@ -65,6 +65,9 @@ impl MainView {
         if Self::match_convert_bindings(state, engine, kb, key, mods) {
             return true;
         }
+        if Self::match_capture_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
         if Self::match_window_tab_bindings(
             state,
             engine,
@@ -425,6 +428,30 @@ impl MainView {
                     .from_user_shortcut("convert_to_explorer"),
                 );
             }
+            return true;
+        }
+        false
+    }
+
+    /// (03) 스크린샷→클립보드: `screenshot_to_clipboard`. 포커스된 surface 기준으로
+    /// 로컬/원격(mirror) 을 **여기서** 판별해 `engine.pending_screenshot_captures`
+    /// 에 push 만 한다 — 실제 OS 캡처(블로킹)는 `App::poll_screenshot_captures` 가
+    /// 백그라운드 스레드에서 수행(메인 루프 무블록). 판별을 트리거 시점에 끝내 두는
+    /// 이유: 캡처가 끝나기 전에 포커스가 바뀌어도 판정이 흔들리지 않게.
+    fn match_capture_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
+        if matches_any_binding(&kb.screenshot_to_clipboard, key, mods) {
+            let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
+                let (idx, _pane_id) = engine.find_workspace_index_for_surface(sid)?;
+                let ws = engine.workspaces.get(idx)?;
+                ws.mirror.then_some(ws.id)
+            });
+            engine.pending_screenshot_captures.push(mirror_ws_id);
             return true;
         }
         false

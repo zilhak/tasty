@@ -225,6 +225,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: FileHandlerCommands,
     },
+    /// Clipboard — 로컬 클립보드 조작.
+    Clipboard {
+        #[command(subcommand)]
+        command: ClipboardCommands,
+    },
     /// Hook handler — shared hook/webhook handler registry (list / reload / dispatch).
     HookHandler {
         #[command(subcommand)]

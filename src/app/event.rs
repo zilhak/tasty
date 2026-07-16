@@ -78,6 +78,11 @@ pub(crate) enum AppEvent {
     /// Debug 라 핸들을 싣지 않는다).
     #[cfg(feature = "gui")]
     AutoAttachReady,
+    /// (03) 스크린샷→클립보드 캡처 워커 스레드가 OS 인터랙티브 캡처를 마치면
+    /// 보내는 wake 신호. App 이 결과 채널(`screenshot_capture_rx`)을 drain 해
+    /// 로컬 클립보드에 기록하거나 mirror 세션으로 업로드한다.
+    #[cfg(feature = "gui")]
+    ScreenshotCaptureReady,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.

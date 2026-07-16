@@ -1,5 +1,6 @@
 mod agent;
 mod approval;
+mod clipboard;
 mod debug;
 mod memory;
 mod output;
@@ -9,6 +10,7 @@ mod telemetry;
 
 use agent::agent_command_to_method_params;
 use approval::approval_command_to_method_params;
+use clipboard::clipboard_command_to_method_params;
 #[cfg(debug_assertions)]
 use debug::debug_command_to_method_params;
 use memory::memory_command_to_method_params;
@@ -234,6 +236,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),
         Commands::Agent { command } => agent_command_to_method_params(command),
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
+        Commands::Clipboard { command } => clipboard_command_to_method_params(command),
         Commands::HookHandler { command } => hook_handler_command_to_method_params(command),
         Commands::Preset { command } => preset_command_to_method_params(command),
         Commands::WorkspaceCategory { command } => {

@@ -56,6 +56,9 @@ impl App {
         if cmd.request.method == "ui.screenshot" {
             return self.ipc_handle_ui_screenshot(cmd);
         }
+        if cmd.request.method == "clipboard.set_text" {
+            return self.ipc_handle_clipboard_set_text(cmd);
+        }
         if cmd.request.method.starts_with("plugin.") {
             return self.ipc_dispatch_plugin_method(cmd, caller);
         }
@@ -340,6 +343,42 @@ impl App {
                     "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.",
                 ),
             },
+        };
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
+    }
+
+    /// `clipboard.set_text` — 로컬 클립보드에 텍스트를 쓴다. `Permission::ClipboardWrite`
+    /// 로 plugin 노출(원칙 2). remote mirror 캡처 결과를 원격 clipboard 에 반영하는
+    /// attach 전송 경로(`attach_client.rs`)도 원격 tasty 인스턴스에서 이 메서드로 도착한다.
+    ///
+    /// params: { text (필수, string) }
+    fn ipc_handle_clipboard_set_text(&mut self, cmd: &IpcCommand) -> IpcStep {
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let text = match cmd.request.params.get("text").and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(
+                        response_id,
+                        -32602,
+                        "Missing 'text' parameter (string)",
+                    ),
+                );
+                return IpcStep::Handled;
+            }
+        };
+        let response = match self.core.clipboard_arc().write_text(&text) {
+            Ok(()) => host_ipc::protocol::JsonRpcResponse::success(
+                response_id,
+                serde_json::json!({"ok": true}),
+            ),
+            Err(e) => host_ipc::protocol::JsonRpcResponse::error(
+                response_id,
+                -32000,
+                format!("Failed to write clipboard: {e}"),
+            ),
         };
         send_response(&cmd.response_tx, response);
         IpcStep::Handled

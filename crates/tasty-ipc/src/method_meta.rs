@@ -187,6 +187,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("image.prev", plugin(&[SurfaceWrite])),
         ("image.paste", plugin(&[SurfaceWrite, ClipboardRead])),
         ("image.list", plugin(&[SurfaceRead])),
+        // ── clipboard ──────────────────────────────────────────────────
+        ("clipboard.set_text", plugin(&[ClipboardWrite])),
         // ── memory: regular (공유 네임스페이스, owner enforcement) ────
         ("memory.put", plugin(&[MemoryWrite])),
         ("memory.get", plugin(&[MemoryRead])),

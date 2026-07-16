@@ -382,6 +382,7 @@ split_surface_horizontal_label = "サーフェス水平分割:"
 toggle_settings_label = "設定の切替:"
 toggle_notifications_label = "通知の切替:"
 toggle_clipboard_viewer_label = "クリップボードビューアーの切替:"
+screenshot_to_clipboard_label = "スクリーンショットをクリップボードへ:"
 find_label = "検索:"
 close_pane_label = "ペインを閉じる:"
 close_surface_label = "サーフェスを閉じる:"
@@ -1024,6 +1025,11 @@ mirror_pill_label = "リモート"
 # インスタンスで実行される必要がある(リモート転送は後続ステップで対応)。
 mirror_structural_blocked = "ミラーされたリモートワークスペースではまだ構造を変更できません。"
 mirror_structural_forward_failed = "リモートワークスペースがその変更を適用できませんでした。"
+# ミラーワークスペースにフォーカスした状態で撮ったインタラクティブスクリーンショットが
+# アップロードされ、リモートインスタンスのクリップボードに反映された時に表示。
+mirror_capture_saved = "スクリーンショットをリモートのクリップボードにコピーしました。"
+# 上記のアップロード/リモートクリップボード反映が失敗した時に表示。
+mirror_capture_failed = "スクリーンショットをリモートのクリップボードにコピーできませんでした。"
 
 # Webview(html) surface の host chrome — native WebView overlay が付く前/隠れた時に
 # host が描画する(URL 未指定なら placeholder、指定済みなら boundary backdrop)。

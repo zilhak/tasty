@@ -32,6 +32,8 @@ pub(crate) mod plugin_glue;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
+pub(crate) mod screenshot_capture;
+#[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
 pub(crate) mod window_access;
@@ -159,6 +161,13 @@ pub(crate) struct App {
     pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_rx: std::sync::mpsc::Receiver<auto_attach::AutoAttachOutcome>,
+    /// (03) 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
+    #[cfg(feature = "gui")]
+    pub(crate) screenshot_capture_tx:
+        std::sync::mpsc::Sender<screenshot_capture::ScreenshotCaptureOutcome>,
+    #[cfg(feature = "gui")]
+    pub(crate) screenshot_capture_rx:
+        std::sync::mpsc::Receiver<screenshot_capture::ScreenshotCaptureOutcome>,
     /// 모든 윈도우가 공유하는 wgpu `Instance`. 부트(`App::new`) 시 `Backends::all()`
     /// 로 1회 생성한다. 창마다 `Instance::new`(~50ms) 를 반복하지 않으려고 App 이
     /// 소유 — 모든 surface 가 이 instance 에서 만들어지고 그 수명에 의존하므로
@@ -190,6 +199,7 @@ impl App {
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
+        let (screenshot_capture_tx, screenshot_capture_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
@@ -224,6 +234,8 @@ impl App {
             auto_attach_active: std::collections::HashSet::new(),
             auto_attach_tx,
             auto_attach_rx,
+            screenshot_capture_tx,
+            screenshot_capture_rx,
             // 공유 wgpu instance — 부트 시 1회. `Backends::all()` 로 백엔드 자동
             // 선택을 유지한다(어댑터는 첫 윈도우 surface 로 지연 생성 → gpu_adapter).
             gpu_instance: Arc::new(wgpu::Instance::new(&wgpu::InstanceDescriptor {

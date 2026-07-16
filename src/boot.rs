@@ -390,6 +390,45 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         rows,
                     );
                 }
+                for (client_id, msg) in outcome.capture_uploads {
+                    // (03) screenshot→remote-clipboard: mirror client 가 이 headless
+                    // 인스턴스로 화면 캡처를 업로드 — headless 는 단일 engine 이라
+                    // gui 의 holder 순회가 필요 없다. holder 검증은 finalize 내부.
+                    use crate::adapters::production::stream_hub::CaptureUploadMsg;
+                    match msg {
+                        CaptureUploadMsg::CaptureChunk {
+                            upload_id,
+                            data_b64,
+                            ..
+                        } => {
+                            use base64::Engine as _;
+                            match base64::engine::general_purpose::STANDARD.decode(&data_b64) {
+                                Ok(bytes) if engine.attach.client_holds_workspace(client_id) => {
+                                    engine.capture_uploads.append(client_id, upload_id, &bytes);
+                                }
+                                Ok(_) => tracing::warn!(
+                                    "capture upload: client {client_id} does not hold a workspace — dropping chunk"
+                                ),
+                                Err(_) => tracing::warn!(
+                                    "capture upload: invalid base64 chunk (client {client_id}, upload {upload_id})"
+                                ),
+                            }
+                        }
+                        CaptureUploadMsg::CaptureCommit {
+                            upload_id,
+                            file_name,
+                        } => {
+                            crate::core::attach_runtime::finalize_capture_upload(
+                                &mut engine,
+                                &app.core,
+                                &app.stream_hub,
+                                client_id,
+                                upload_id,
+                                &file_name,
+                            );
+                        }
+                    }
+                }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
                 }

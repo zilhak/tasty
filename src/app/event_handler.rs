@@ -109,6 +109,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::AutoAttachReady => {
                 self.drain_auto_attach_results();
             }
+            // (03) 스크린샷→클립보드 캡처 워커가 완료됐다(wake). 결과를 drain 해
+            // 로컬 클립보드 기록 또는 mirror 세션 업로드를 적용한다.
+            AppEvent::ScreenshotCaptureReady => {
+                self.drain_screenshot_capture_results();
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,
@@ -365,6 +370,10 @@ impl ApplicationHandler<AppEvent> for App {
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).
         self.poll_auto_attach();
+
+        // (03) 스크린샷→클립보드: 신규 키바인딩이 쌓은 트리거 큐를 drain 해 캡처
+        // 워커를 spawn 하고, 완료된 결과를 로컬 클립보드/mirror 세션에 적용한다.
+        self.poll_screenshot_captures();
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
@@ -1079,6 +1088,13 @@ impl App {
             self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
         }
 
+        // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
+        // 캡처 업로드 청크/커밋. holder(그 client 가 점유한 워크스페이스를 가진
+        // engine)를 찾아 누적/커밋한다.
+        for (client_id, msg) in outcome.capture_uploads {
+            self.apply_capture_upload_msg(client_id, msg, &hub);
+        }
+
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
         }
@@ -1286,6 +1302,96 @@ impl App {
         for (_, engine) in self.parked_states.iter_mut() {
             if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
                 return;
+            }
+        }
+    }
+
+    /// (03) screenshot→remote-clipboard — mirror client 가 보낸 캡처 업로드 청크/커밋
+    /// 하나를 적용한다. `client_id` 가 워크스페이스를 점유(holder)한 engine 을 찾아
+    /// 그 engine 의 `capture_uploads` 레지스트리에 누적하거나(청크) 완결 처리한다
+    /// (커밋 — `finalize_capture_upload` 가 파일 저장 + 클립보드 기록 + 회신까지 담당).
+    fn apply_capture_upload_msg(
+        &mut self,
+        client_id: u32,
+        msg: crate::adapters::production::stream_hub::CaptureUploadMsg,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        use crate::adapters::production::stream_hub::CaptureUploadMsg;
+        match msg {
+            CaptureUploadMsg::CaptureChunk {
+                upload_id,
+                data_b64,
+                ..
+            } => {
+                use base64::Engine as _;
+                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data_b64)
+                else {
+                    tracing::warn!(
+                        "capture upload: invalid base64 chunk (client {client_id}, upload {upload_id})"
+                    );
+                    return;
+                };
+                for w in self.view.views.values_mut() {
+                    if let Some(main) = w.as_main_mut()
+                        && main.core_state.attach.client_holds_workspace(client_id)
+                    {
+                        main.core_state
+                            .capture_uploads
+                            .append(client_id, upload_id, &bytes);
+                        return;
+                    }
+                }
+                for (_, engine) in self.parked_states.iter_mut() {
+                    if engine.attach.client_holds_workspace(client_id) {
+                        engine.capture_uploads.append(client_id, upload_id, &bytes);
+                        return;
+                    }
+                }
+                tracing::warn!(
+                    "capture upload: client {client_id} does not hold a workspace — dropping chunk"
+                );
+            }
+            CaptureUploadMsg::CaptureCommit {
+                upload_id,
+                file_name,
+            } => {
+                let core = &self.core;
+                for w in self.view.views.values_mut() {
+                    if let Some(main) = w.as_main_mut()
+                        && main.core_state.attach.client_holds_workspace(client_id)
+                    {
+                        crate::core::attach_runtime::finalize_capture_upload(
+                            &mut main.core_state,
+                            core,
+                            hub,
+                            client_id,
+                            upload_id,
+                            &file_name,
+                        );
+                        return;
+                    }
+                }
+                for (_, engine) in self.parked_states.iter_mut() {
+                    if engine.attach.client_holds_workspace(client_id) {
+                        crate::core::attach_runtime::finalize_capture_upload(
+                            engine, core, hub, client_id, upload_id, &file_name,
+                        );
+                        return;
+                    }
+                }
+                // holder 를 못 찾음(예: chunk 하나 없이 commit 만 도착, 혹은 이미
+                // detach) — capture_result 실패 회신.
+                let payload = serde_json::json!({
+                    "event": "capture_result",
+                    "upload_id": upload_id,
+                    "ok": false,
+                    "reason": "client does not hold a workspace attach",
+                });
+                let frame = crate::ipc::stream::StreamFrame::new(
+                    crate::ipc::stream::StreamTag::Control,
+                    serde_json::to_vec(&payload).unwrap_or_default(),
+                );
+                let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
             }
         }
     }

@@ -76,6 +76,15 @@ pub struct KeybindingSettings {
     pub prev_tab: Vec<String>,
     /// Toggle the clipboard history viewer popup.
     pub toggle_clipboard_viewer: Vec<String>,
+    /// (03) 화면을 인터랙티브하게 캡처해 경로를 클립보드에 복사한다. 포커스된
+    /// surface 가 원격 attach(mirror) workspace 소속이면 캡처 파일을 원격으로
+    /// 전송해 원격 클립보드에 경로를 기록한다(로컬이면 로컬 클립보드).
+    ///
+    /// ⚠️ 신규 필드라 구 config 에는 없다 — struct 레벨 `#[serde(default)]` 만으로는
+    /// `Vec::default()`(빈 벡터)로 채워져 기본 바인딩이 조용히 사라진다. 전용
+    /// default fn 필수(`category_switch_modifier` 선례).
+    #[serde(default = "default_screenshot_to_clipboard")]
+    pub screenshot_to_clipboard: Vec<String>,
     /// Open terminal text search bar.
     pub find: Vec<String>,
     /// Copy selection (or inject egui Copy event) from focused surface.
@@ -221,6 +230,13 @@ fn default_category_prev_key() -> String {
 /// 겹치지 않는 안전한 조합이다. 구 config(카테고리 필드 없음) 로드 시 이 값으로 채워진다.
 fn default_category_switch_modifier() -> String {
     "ctrl+shift".to_string()
+}
+
+/// (03) 스크린샷→클립보드 기본 바인딩 `"ctrl+alt+s"`. 4 프리셋 공통 — macOS
+/// 시스템 스크린샷 예약(`⌘⇧3/4/5/6`, 이 스킴의 `alt+shift+3/4/5/6`)과 겹치지
+/// 않는다(어느 프리셋도 그 조합을 안 씀). 구 config(필드 없음) 로드 시 이 값으로 채워진다.
+fn default_screenshot_to_clipboard() -> Vec<String> {
+    vec!["ctrl+alt+s".to_string()]
 }
 
 impl KeybindingSettings {

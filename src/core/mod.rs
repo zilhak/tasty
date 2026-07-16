@@ -16,6 +16,7 @@ pub(crate) mod attach;
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
 pub(crate) mod builder;
+pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod file;
 pub(crate) mod intent;
@@ -520,6 +521,13 @@ impl Core {
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
         self.memory.clone()
+    }
+
+    /// Clipboard port 의 Arc clone. `memory_arc` 와 동일 목적 — cascade 로 도달하지
+    /// 못하는 표면(스크린샷 캡처 워커 스레드, attach 서버측 원격 클립보드 기록)에
+    /// inject 한다.
+    pub(crate) fn clipboard_arc(&self) -> Arc<dyn ClipboardSystem> {
+        self.clipboard.clone()
     }
 
     // ─── Host→plugin sync IPC dispatch ───
