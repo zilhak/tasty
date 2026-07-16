@@ -33,7 +33,7 @@ fn reconstruct(t: &Terminal) -> Vec<String> {
     }
     let (_cols, nrows) = t.dimensions();
     for r in 0..nrows {
-        rows.push(t.screen_row(r)); // screen_row already trim_end's
+        rows.push(t.screen_row(r, true)); // screen_row already trim_end's
     }
     trim_trailing_empty(&mut rows);
     rows
@@ -43,7 +43,7 @@ fn reconstruct(t: &Terminal) -> Vec<String> {
 /// tall reference where nothing scrolled off.
 fn visible_rows(t: &Terminal) -> Vec<String> {
     let (_cols, nrows) = t.dimensions();
-    let mut rows: Vec<String> = (0..nrows).map(|r| t.screen_row(r)).collect();
+    let mut rows: Vec<String> = (0..nrows).map(|r| t.screen_row(r, true)).collect();
     trim_trailing_empty(&mut rows);
     rows
 }
@@ -287,7 +287,7 @@ fn s5_partial_region_overscroll() {
         t.scrollback_len()
     );
     for r in 0..6 {
-        eprintln!("  screen[{r}]={:?}", t.screen_row(r));
+        eprintln!("  screen[{r}]={:?}", t.screen_row(r, true));
     }
     for i in 0..t.scrollback_len() {
         eprintln!("  scrollback[{i}]={:?}", scrollback_row_text(&t, i));
@@ -339,7 +339,7 @@ fn s7_partial_region_lf_scroll() {
 
     eprintln!("[S7] scrollback_len={}", t.scrollback_len());
     for r in 0..6 {
-        eprintln!("  screen[{r}]={:?}", t.screen_row(r));
+        eprintln!("  screen[{r}]={:?}", t.screen_row(r, true));
     }
     for i in 0..t.scrollback_len() {
         eprintln!("  scrollback[{i}]={:?}", scrollback_row_text(&t, i));

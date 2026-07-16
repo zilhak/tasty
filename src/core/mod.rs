@@ -3509,7 +3509,7 @@ mod mirror_structural_guard_tests {
             engine.process_surface(pty_id);
             if engine
                 .find_terminal_by_id(pty_id)
-                .map(|t| t.screen_text())
+                .map(|t| t.screen_text(true))
                 .unwrap_or_default()
                 .contains("ADOPT_MARKER_123")
             {
@@ -3550,7 +3550,7 @@ mod mirror_structural_guard_tests {
         let screen = engine
             .find_terminal_by_id(surface_id)
             .expect("terminal now at surface_id")
-            .screen_text();
+            .screen_text(true);
         assert!(
             screen.contains("ADOPT_MARKER_123"),
             "state preserved across promotion (same process): {screen:?}"

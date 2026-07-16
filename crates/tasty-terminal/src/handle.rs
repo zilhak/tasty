@@ -86,16 +86,16 @@ impl Terminal {
 
     // ── Screen / cell inspection ──
 
-    pub fn screen_text(&self) -> String {
-        self.lock_state().screen_text()
+    pub fn screen_text(&self, include_dim: bool) -> String {
+        self.lock_state().screen_text(include_dim)
     }
 
-    pub fn screen_text_lines(&self, n: usize) -> String {
-        self.lock_state().screen_text_lines(n)
+    pub fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
+        self.lock_state().screen_text_lines(n, include_dim)
     }
 
-    pub fn screen_row(&self, row: usize) -> String {
-        self.lock_state().screen_row(row)
+    pub fn screen_row(&self, row: usize, include_dim: bool) -> String {
+        self.lock_state().screen_row(row, include_dim)
     }
 
     pub fn cell_info(&self, row: usize, col: usize) -> Option<CellInfo> {

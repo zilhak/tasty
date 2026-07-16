@@ -30,8 +30,9 @@ pub trait TerminalProcess: Send {
     fn force_flush_pty_resize(&mut self);
 
     // ─── 화면 read ───
-    fn screen_text(&self) -> String;
-    fn screen_text_lines(&self, n: usize) -> String;
+    /// `include_dim=false` 면 dim(ghost-suggestion) 셀을 제외한다.
+    fn screen_text(&self, include_dim: bool) -> String;
+    fn screen_text_lines(&self, n: usize, include_dim: bool) -> String;
     fn cursor_position(&self) -> (usize, usize);
     fn cursor_visible(&self) -> bool;
     fn cols(&self) -> usize;

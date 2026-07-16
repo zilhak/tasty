@@ -39,12 +39,12 @@ impl TerminalProcess for Terminal {
         Terminal::force_flush_pty_resize(self);
     }
 
-    fn screen_text(&self) -> String {
-        Terminal::screen_text(self)
+    fn screen_text(&self, include_dim: bool) -> String {
+        Terminal::screen_text(self, include_dim)
     }
 
-    fn screen_text_lines(&self, n: usize) -> String {
-        Terminal::screen_text_lines(self, n)
+    fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
+        Terminal::screen_text_lines(self, n, include_dim)
     }
 
     fn cursor_position(&self) -> (usize, usize) {

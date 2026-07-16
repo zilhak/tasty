@@ -57,10 +57,10 @@ impl TerminalProcess for MockTerminal {
         false
     }
     fn force_flush_pty_resize(&mut self) {}
-    fn screen_text(&self) -> String {
+    fn screen_text(&self, _include_dim: bool) -> String {
         self.fake_screen.clone()
     }
-    fn screen_text_lines(&self, _n: usize) -> String {
+    fn screen_text_lines(&self, _n: usize, _include_dim: bool) -> String {
         self.fake_screen.clone()
     }
     fn cursor_position(&self) -> (usize, usize) {

@@ -5,6 +5,8 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
+/// `surface.screen_text` — optional `lines`(하단 N 줄), `show_dim`(기본 false: dim/
+/// ghost-suggestion 셀 제외 — 실제 입력된 텍스트만 반환).
 pub(crate) fn handle_screen_text(
     _state: &AppState,
     engine: &crate::core::CoreState,
@@ -19,11 +21,15 @@ pub(crate) fn handle_screen_text(
         .get("lines")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
+    let show_dim = params
+        .get("show_dim")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let text = engine
         .find_terminal_by_id(surface_id)
         .map(|t| match lines {
-            Some(n) => t.screen_text_lines(n),
-            None => t.screen_text(),
+            Some(n) => t.screen_text_lines(n, show_dim),
+            None => t.screen_text(show_dim),
         })
         .unwrap_or_default();
     JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))

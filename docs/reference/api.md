@@ -28,7 +28,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 
 ### Surface 상호작용
 - 입력: `surface.{send,send_key,send_combo,send_to,send_wait_idle,wake,respawn_terminal}`
-- 읽기/마크: `surface.{set_mark,read_since_mark,parse_since_mark,screen_text,cursor_position,foreground_process,is_typing,locate}`
+- 읽기/마크: `surface.{set_mark,read_since_mark,parse_since_mark,screen_text,cursor_position,foreground_process,is_typing,locate}`. `screen_text`(및 `pty.read`)는 dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀을 기본 제외 — `show_dim:true`(CLI `--show-dim`)로 포함.
 - 명령(OSC 133): `surface.{commands,last_command,command_at}`
 - 메타: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
 - 출력 옵저버: `output.observe_{start,stop,list,info}`

@@ -36,7 +36,7 @@ impl Term {
 
     /// Text content of a row (0-indexed), trailing spaces trimmed.
     fn row(&self, row: usize) -> String {
-        self.term.screen_row(row)
+        self.term.screen_row(row, true)
     }
 
     /// All bytes the terminal wrote back to its input sink (query responses).

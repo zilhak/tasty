@@ -201,6 +201,8 @@ pub(crate) fn handle_write(engine: &mut CoreState, id: Value, params: &Value) ->
 
 /// `pty.read` — PTY 의 현재 화면 텍스트를 읽는다(optional `lines`=하단 N 줄).
 /// `surface.screen_text` 와 동일 추출 경로. idle 타이머 리셋.
+/// `show_dim`(기본 false): dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀을
+/// 결과에 포함할지 — 기본은 제외해 실제 입력된 텍스트만 반환한다.
 pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     let pty_id = match require_u32(params, "id", &id) {
         Ok(v) => v,
@@ -213,11 +215,15 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
         .get("lines")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
+    let show_dim = params
+        .get("show_dim")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let text = engine
         .find_terminal_by_id(pty_id)
         .map(|t| match lines {
-            Some(n) => t.screen_text_lines(n),
-            None => t.screen_text(),
+            Some(n) => t.screen_text_lines(n, show_dim),
+            None => t.screen_text(show_dim),
         })
         .unwrap_or_default();
     engine.pty_registry.touch(pty_id, Instant::now());

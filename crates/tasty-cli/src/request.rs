@@ -452,11 +452,16 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
                 )
             }
         }
-        ReadCommands::Screen { surface, lines } => (
+        ReadCommands::Screen {
+            surface,
+            lines,
+            show_dim,
+        } => (
             "surface.screen_text",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "lines": lines,
+                "show_dim": show_dim,
             }),
         ),
         ReadCommands::Commands {
@@ -745,7 +750,14 @@ fn pty_command_to_method_params(
             ("pty.spawn", serde_json::Value::Object(m))
         }
         P::Write { id, text } => ("pty.write", serde_json::json!({ "id": id, "text": text })),
-        P::Read { id, lines } => ("pty.read", serde_json::json!({ "id": id, "lines": lines })),
+        P::Read {
+            id,
+            lines,
+            show_dim,
+        } => (
+            "pty.read",
+            serde_json::json!({ "id": id, "lines": lines, "show_dim": show_dim }),
+        ),
         P::Wait { id } => ("pty.wait", serde_json::json!({ "id": id })),
         P::Kill { id } => ("pty.kill", serde_json::json!({ "id": id })),
         P::List => ("pty.list", serde_json::json!({})),

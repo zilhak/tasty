@@ -36,6 +36,11 @@ pub enum PtyCommands {
         /// Only the bottom N lines (default: full visible screen).
         #[arg(long)]
         lines: Option<usize>,
+        /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.
+        /// Default excludes them so unsubmitted UI suggestions aren't mistaken for
+        /// real buffer content.
+        #[arg(long)]
+        show_dim: bool,
     },
     /// Poll a headless PTY's exit status (returns immediately, non-blocking).
     Wait {

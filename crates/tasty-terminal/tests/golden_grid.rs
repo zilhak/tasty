@@ -30,7 +30,7 @@ use tasty_terminal::Terminal;
 fn grid_text(term: &Terminal) -> String {
     let (_, rows) = term.dimensions();
     (0..rows)
-        .map(|r| term.screen_row(r))
+        .map(|r| term.screen_row(r, true))
         .collect::<Vec<_>>()
         .join("\n")
 }

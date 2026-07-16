@@ -27,10 +27,10 @@ fn ed3_clears_scrollback() {
 #[test]
 fn ed3_preserves_visible_screen() {
     let mut t = filled();
-    let before: Vec<String> = (0..3).map(|r| t.screen_row(r)).collect();
+    let before: Vec<String> = (0..3).map(|r| t.screen_row(r, true)).collect();
 
     t.feed_bytes(b"\x1b[3J");
-    let after: Vec<String> = (0..3).map(|r| t.screen_row(r)).collect();
+    let after: Vec<String> = (0..3).map(|r| t.screen_row(r, true)).collect();
 
     assert_eq!(before, after, "ED3 must not touch the visible screen");
 }

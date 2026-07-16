@@ -635,7 +635,11 @@ fn resize_ping_pong_does_not_accumulate_visible_lines_when_cursor_is_high() {
 const MIRROR_SEQ: &[u8] = b"hello\r\n\x1b[31mred\x1b[0m world\r\n\x1b[2J\x1b[H\x1b[1mbold\x1b[0m\x1b[?1h\x1b[3;5Hxy\x1b[K";
 
 fn assert_grid_eq(a: &Terminal, b: &Terminal, ctx: &str) {
-    assert_eq!(a.screen_text(), b.screen_text(), "{ctx}: screen_text");
+    assert_eq!(
+        a.screen_text(true),
+        b.screen_text(true),
+        "{ctx}: screen_text"
+    );
     assert_eq!(a.cursor_position(), b.cursor_position(), "{ctx}: cursor");
     assert_eq!(
         a.application_cursor_keys(),
@@ -907,7 +911,7 @@ fn output_tap_disconnected_is_pruned() {
     drop(rx); // subscriber gone
     // Next ingest detects the disconnect, prunes the tap, and applies normally.
     t.feed_bytes(b"hello");
-    assert!(t.screen_text().contains("hello"));
+    assert!(t.screen_text(true).contains("hello"));
     // A fresh tap still works after pruning.
     let rx2 = t.add_output_tap();
     t.feed_bytes(b"!");
@@ -966,8 +970,8 @@ fn detached_mirror_is_detached_and_resizes_grid() {
 /// non-blank cell (which is what the renderer actually draws).
 fn assert_snapshot_eq(server: &Terminal, mirror: &Terminal, ctx: &str) {
     assert_eq!(
-        server.screen_text(),
-        mirror.screen_text(),
+        server.screen_text(true),
+        mirror.screen_text(true),
         "{ctx}: screen_text"
     );
     assert_eq!(
@@ -1056,7 +1060,11 @@ fn snapshot_as_vt_preserves_alt_screen() {
     let mut mirror = Terminal::new_detached(20, 4);
     mirror.feed_bytes(&snapshot);
     assert!(mirror.is_alternate_screen(), "mirror enters alt-screen");
-    assert_eq!(server.screen_text(), mirror.screen_text(), "alt content");
+    assert_eq!(
+        server.screen_text(true),
+        mirror.screen_text(true),
+        "alt content"
+    );
 }
 
 // ---- check_process_alive throttle tests ----
@@ -1548,7 +1556,11 @@ fn decaln_fills_screen_with_e() {
     let mut t = Terminal::new_detached(8, 3);
     t.feed_bytes(b"\x1b#8");
     for row in 0..3 {
-        assert_eq!(t.screen_row(row), "EEEEEEEE", "row {row} should be all E");
+        assert_eq!(
+            t.screen_row(row, true),
+            "EEEEEEEE",
+            "row {row} should be all E"
+        );
     }
     // DECALN homes the cursor.
     assert_eq!(t.cursor_position(), (0, 0));
@@ -1561,8 +1573,8 @@ fn nel_moves_to_next_line_col0() {
     let mut t = Terminal::new_detached(10, 4);
     t.feed_bytes(b"abc\x1bEx");
     // 'x' should land at column 0 of row 1, not after 'abc'.
-    assert_eq!(t.screen_row(0), "abc");
-    assert_eq!(t.screen_row(1), "x");
+    assert_eq!(t.screen_row(0, true), "abc");
+    assert_eq!(t.screen_row(1, true), "x");
     assert_eq!(t.cursor_position(), (1, 1));
 }
 
@@ -1571,8 +1583,8 @@ fn nel_scrolls_at_bottom() {
     let mut t = Terminal::new_detached(10, 2);
     t.feed_bytes(b"r0\x1bEr1\x1bEr2");
     // After two NELs on a 2-row screen, the first row scrolled off.
-    assert_eq!(t.screen_row(0), "r1");
-    assert_eq!(t.screen_row(1), "r2");
+    assert_eq!(t.screen_row(0, true), "r1");
+    assert_eq!(t.screen_row(1, true), "r2");
 }
 
 // ---- REP (CSI b): repeat last printed character ----
@@ -1582,7 +1594,7 @@ fn rep_repeats_last_character() {
     let mut t = Terminal::new_detached(10, 2);
     // 'a' then REP 4 → "aaaaa" (1 original + 4 repeats).
     t.feed_bytes(b"a\x1b[4b");
-    assert_eq!(t.screen_row(0), "aaaaa");
+    assert_eq!(t.screen_row(0, true), "aaaaa");
     assert_eq!(t.cursor_position(), (5, 0));
 }
 
@@ -1590,14 +1602,14 @@ fn rep_repeats_last_character() {
 fn rep_default_count_is_one() {
     let mut t = Terminal::new_detached(10, 2);
     t.feed_bytes(b"X\x1b[b"); // no param → repeat once
-    assert_eq!(t.screen_row(0), "XX");
+    assert_eq!(t.screen_row(0, true), "XX");
 }
 
 #[test]
 fn rep_without_prior_print_is_noop() {
     let mut t = Terminal::new_detached(10, 2);
     t.feed_bytes(b"\x1b[5b"); // nothing printed yet
-    assert_eq!(t.screen_row(0), "");
+    assert_eq!(t.screen_row(0, true), "");
 }
 
 // ---- HT / CHT / CBT / HTS / TBC: tab stops ----
@@ -1608,7 +1620,7 @@ fn ht_advances_to_8col_tab_stop() {
     t.feed_bytes(b"\tX");
     // Default tab stop at column 8.
     assert_eq!(t.cursor_position().0, 9); // 8 (stop) + 1 (X)
-    let row = t.screen_row(0);
+    let row = t.screen_row(0, true);
     assert_eq!(row.chars().nth(8), Some('X'));
 }
 
@@ -1616,7 +1628,7 @@ fn ht_advances_to_8col_tab_stop() {
 fn ht_between_text_aligns_columns() {
     let mut t = Terminal::new_detached(40, 2);
     t.feed_bytes(b"A\tB");
-    let row = t.screen_row(0);
+    let row = t.screen_row(0, true);
     assert_eq!(row.chars().next(), Some('A'));
     assert_eq!(row.chars().nth(8), Some('B'));
 }
@@ -1702,10 +1714,10 @@ fn decom_makes_cup_region_relative() {
     assert_eq!(t.cursor_position(), (0, 3));
     // CUP to line 1 (region-relative) → physical row 3.
     t.feed_bytes(b"\x1b[1;1HA");
-    assert_eq!(t.screen_row(3), "A");
+    assert_eq!(t.screen_row(3, true), "A");
     // CUP to line 2 → physical row 4.
     t.feed_bytes(b"\x1b[2;1HB");
-    assert_eq!(t.screen_row(4), "B");
+    assert_eq!(t.screen_row(4, true), "B");
 }
 
 #[test]
@@ -1715,7 +1727,7 @@ fn decom_clamps_to_region_bottom() {
     t.feed_bytes(b"\x1b[?6h");
     // Line 99 (region-relative) clamps to region bottom (row 6).
     t.feed_bytes(b"\x1b[99;1HZ");
-    assert_eq!(t.screen_row(6), "Z");
+    assert_eq!(t.screen_row(6, true), "Z");
 }
 
 #[test]
@@ -1724,7 +1736,7 @@ fn decom_off_is_absolute() {
     t.feed_bytes(b"\x1b[4;7r");
     // Without origin mode, CUP line 1 is absolute row 0.
     t.feed_bytes(b"\x1b[1;1HA");
-    assert_eq!(t.screen_row(0), "A");
+    assert_eq!(t.screen_row(0, true), "A");
 }
 
 #[test]
@@ -1733,7 +1745,7 @@ fn decom_reset_by_full_reset() {
     t.feed_bytes(b"\x1b[4;7r\x1b[?6h");
     t.feed_bytes(b"\x1bc"); // RIS
     t.feed_bytes(b"\x1b[1;1HA");
-    assert_eq!(t.screen_row(0), "A");
+    assert_eq!(t.screen_row(0, true), "A");
 }
 
 // ---- XTWINOPS (CSI ... t): size reports + title stack ----
@@ -1798,10 +1810,10 @@ fn dec_line_drawing_maps_box_chars() {
     let mut t = Terminal::new_detached(10, 2);
     // Designate G0 = line drawing, print "lqk" → "┌─┐".
     t.feed_bytes(b"\x1b(0lqk");
-    assert_eq!(t.screen_row(0), "┌─┐");
+    assert_eq!(t.screen_row(0, true), "┌─┐");
     // Back to ASCII: "lqk" prints literally.
     t.feed_bytes(b"\x1b(B\r\nlqk");
-    assert_eq!(t.screen_row(1), "lqk");
+    assert_eq!(t.screen_row(1, true), "lqk");
 }
 
 #[test]
@@ -1810,7 +1822,7 @@ fn dec_line_drawing_so_si_switches_g1() {
     // G1 = line drawing; G0 stays ASCII. SO invokes G1, SI back to G0.
     t.feed_bytes(b"\x1b)0"); // designate G1 line drawing
     t.feed_bytes(b"a\x0eq\x0fb"); // 'a' (G0/ascii), SO, 'q'→─, SI, 'b'
-    assert_eq!(t.screen_row(0), "a─b");
+    assert_eq!(t.screen_row(0, true), "a─b");
 }
 
 #[test]
@@ -1819,5 +1831,5 @@ fn dec_line_drawing_reset_by_ris() {
     t.feed_bytes(b"\x1b(0");
     t.feed_bytes(b"\x1bc"); // RIS clears charset designation
     t.feed_bytes(b"q");
-    assert_eq!(t.screen_row(0), "q");
+    assert_eq!(t.screen_row(0, true), "q");
 }

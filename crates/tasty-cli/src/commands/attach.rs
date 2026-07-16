@@ -371,7 +371,7 @@ fn run_workspace_mirror_dump(
     // 각 surface 화면을 섹션 헤더와 함께 stdout 으로 — 검증 grep 용.
     for (sid, m) in &mirrors {
         println!("=== surface {sid} ===");
-        println!("{}", m.screen_text());
+        println!("{}", m.screen_text(true));
     }
     for (sid, kind) in &placeholders {
         println!("=== surface {sid} (placeholder: {kind}) ===");
@@ -457,7 +457,7 @@ fn run_mirror_dump(
     }
 
     // mirror 화면을 stdout 으로 — 검증 핵심(GUI 없이 grid 확인).
-    println!("{}", mirror.screen_text());
+    println!("{}", mirror.screen_text(true));
 
     // 정상 종료 시 detach 통지(force-detach/단절이면 서버가 이미 끊음).
     let mut writer = writer;

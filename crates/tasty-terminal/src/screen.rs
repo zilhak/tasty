@@ -1,23 +1,43 @@
 //! `Terminal` 의 screen / cell 접근 메서드.
 
-use termwiz::cell::{CellAttributes, Underline};
+use termwiz::cell::{CellAttributes, Intensity, Underline};
 use termwiz::color::ColorAttribute;
+use termwiz::surface::line::Line;
 
 use crate::{CellInfo, TerminalState};
+
+/// Claude Code 등 CLI 가 그리는 ghost-suggestion(자동완성 제안) 텍스트는 dim
+/// (`Intensity::Half`) 속성으로 렌더링된다 — 실제 입력된 텍스트와 구분하는 신호로
+/// 검증됨 (실측: 동일 행에서 실제 타이핑은 `Normal`, ghost 제안은 `Half`).
+fn is_dim(attrs: &CellAttributes) -> bool {
+    attrs.intensity() == Intensity::Half
+}
+
+/// 한 행의 텍스트를 셀 단위로 이어붙인다. `include_dim=false` 면 dim(ghost-suggestion)
+/// 셀의 텍스트를 건너뛴다(공백으로 치환하지 않음 — 트리밍 후 자연스럽게 사라지도록).
+fn line_text(line: &Line, include_dim: bool) -> String {
+    let mut text = String::new();
+    for cell in line.visible_cells() {
+        if !include_dim && is_dim(cell.attrs()) {
+            continue;
+        }
+        text.push_str(cell.str());
+    }
+    text
+}
 
 impl TerminalState {
     /// Get the visible text content of the screen as a string.
     /// Each row is on its own line, trailing spaces are trimmed.
-    pub fn screen_text(&self) -> String {
+    /// `include_dim=false` excludes dim (ghost-suggestion) cells — the default
+    /// used by `surface.screen_text` / `pty.read` so CLI autocomplete overlays
+    /// (e.g. Claude Code's ghost text) aren't mistaken for real buffer content.
+    pub fn screen_text(&self, include_dim: bool) -> String {
         let surface = self.surface();
         let lines = surface.screen_lines();
         let mut result = String::new();
         for line in lines {
-            let mut row_text = String::new();
-            for cell in line.visible_cells() {
-                row_text.push_str(cell.str());
-            }
-            result.push_str(row_text.trim_end());
+            result.push_str(line_text(&line, include_dim).trim_end());
             result.push('\n');
         }
         // Trim trailing empty lines
@@ -29,7 +49,7 @@ impl TerminalState {
 
     /// Get the last N lines of terminal output (screen + scrollback from the bottom).
     /// If N is larger than available lines, returns everything available.
-    pub fn screen_text_lines(&self, n: usize) -> String {
+    pub fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
         let surface = self.surface();
         let screen_lines = surface.screen_lines();
         let screen_count = screen_lines.len();
@@ -40,11 +60,7 @@ impl TerminalState {
             let start = screen_count - n;
             let mut result = String::new();
             for line in &screen_lines[start..] {
-                let mut row_text = String::new();
-                for cell in line.visible_cells() {
-                    row_text.push_str(cell.str());
-                }
-                result.push_str(row_text.trim_end());
+                result.push_str(line_text(line, include_dim).trim_end());
                 result.push('\n');
             }
             while result.ends_with("\n\n") {
@@ -62,7 +78,13 @@ impl TerminalState {
             for i in scrollback_start..scrollback_total {
                 let line_text = self
                     .scrollback_line_owned(i)
-                    .map(|cells| cells.iter().map(|(s, _)| s.as_str()).collect::<String>())
+                    .map(|cells| {
+                        cells
+                            .iter()
+                            .filter(|(_, attrs)| include_dim || !is_dim(attrs))
+                            .map(|(s, _)| s.as_str())
+                            .collect::<String>()
+                    })
                     .unwrap_or_default();
                 result.push_str(line_text.trim_end());
                 result.push('\n');
@@ -70,11 +92,7 @@ impl TerminalState {
 
             // Append all screen lines
             for line in screen_lines {
-                let mut row_text = String::new();
-                for cell in line.visible_cells() {
-                    row_text.push_str(cell.str());
-                }
-                result.push_str(row_text.trim_end());
+                result.push_str(line_text(&line, include_dim).trim_end());
                 result.push('\n');
             }
 
@@ -86,17 +104,13 @@ impl TerminalState {
     }
 
     /// Get the text of a specific row (0-indexed), trimmed.
-    pub fn screen_row(&self, row: usize) -> String {
+    pub fn screen_row(&self, row: usize, include_dim: bool) -> String {
         let surface = self.surface();
         let lines = surface.screen_lines();
         if row >= lines.len() {
             return String::new();
         }
-        let mut text = String::new();
-        for cell in lines[row].visible_cells() {
-            text.push_str(cell.str());
-        }
-        text.trim_end().to_string()
+        line_text(&lines[row], include_dim).trim_end().to_string()
     }
 
     /// Get detailed information about a specific cell (row, col) on the current screen.
@@ -230,5 +244,59 @@ impl TerminalState {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Terminal;
+
+    /// SGR 2 = faint/dim (`Intensity::Half`) — Claude Code 등 CLI 의
+    /// ghost-suggestion 오버레이가 실측으로 확인된 렌더링 신호.
+    const SGR_FAINT: &[u8] = b"\x1b[2m";
+    const SGR_RESET: &[u8] = b"\x1b[0m";
+
+    #[test]
+    fn screen_row_excludes_dim_by_default() {
+        let mut t = Terminal::new_detached(20, 1);
+        t.feed_bytes(b"real ");
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"ghost");
+        t.feed_bytes(SGR_RESET);
+
+        assert_eq!(t.screen_row(0, false), "real");
+        assert_eq!(t.screen_row(0, true), "real ghost");
+    }
+
+    #[test]
+    fn screen_text_excludes_dim_by_default() {
+        let mut t = Terminal::new_detached(20, 1);
+        t.feed_bytes(b"real ");
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"ghost");
+        t.feed_bytes(SGR_RESET);
+
+        assert_eq!(t.screen_text(false).trim_end(), "real");
+        assert!(t.screen_text(true).contains("ghost"));
+    }
+
+    #[test]
+    fn screen_text_lines_excludes_dim_by_default() {
+        let mut t = Terminal::new_detached(20, 1);
+        t.feed_bytes(b"real ");
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"ghost");
+        t.feed_bytes(SGR_RESET);
+
+        assert_eq!(t.screen_text_lines(1, false).trim_end(), "real");
+        assert!(t.screen_text_lines(1, true).contains("ghost"));
+    }
+
+    #[test]
+    fn bold_is_not_treated_as_dim() {
+        let mut t = Terminal::new_detached(20, 1);
+        t.feed_bytes(b"\x1b[1mbold\x1b[0m");
+
+        assert_eq!(t.screen_row(0, false), "bold");
     }
 }

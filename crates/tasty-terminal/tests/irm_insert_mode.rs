@@ -13,7 +13,7 @@ fn irm_on_inserts_and_shifts_right() {
     t.feed_bytes(b"\x1b[1G"); // cursor to col0 (over 'A')
     t.feed_bytes(b"\x1b[4h"); // IRM on (standard SM 4)
     t.feed_bytes(b"X"); // insert: X pushes ABC right
-    assert_eq!(t.screen_row(0), "XABC");
+    assert_eq!(t.screen_row(0, true), "XABC");
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn irm_off_overwrites() {
     t.feed_bytes(b"ABC\x1b[1G");
     t.feed_bytes(b"\x1b[4l"); // IRM off (default)
     t.feed_bytes(b"X");
-    assert_eq!(t.screen_row(0), "XBC"); // overwrite
+    assert_eq!(t.screen_row(0, true), "XBC"); // overwrite
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn irm_default_is_overwrite() {
     let mut t = Terminal::new_detached(80, 24);
     t.feed_bytes(b"ABC\x1b[1G");
     t.feed_bytes(b"X");
-    assert_eq!(t.screen_row(0), "XBC");
+    assert_eq!(t.screen_row(0, true), "XBC");
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn irm_multiple_inserts_accumulate() {
     t.feed_bytes(b"ABC\x1b[1G");
     t.feed_bytes(b"\x1b[4h");
     t.feed_bytes(b"XY"); // PrintString path: shift by total width
-    assert_eq!(t.screen_row(0), "XYABC");
+    assert_eq!(t.screen_row(0, true), "XYABC");
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn irm_reset_back_to_overwrite() {
     t.feed_bytes(b"X"); // -> "XABC", cursor at col1
     t.feed_bytes(b"\x1b[4l"); // off
     t.feed_bytes(b"Z"); // overwrite the 'A' now at col1
-    assert_eq!(t.screen_row(0), "XZBC");
+    assert_eq!(t.screen_row(0, true), "XZBC");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn irm_wide_grapheme_insert() {
     t.feed_bytes(b"ABC\x1b[1G");
     t.feed_bytes(b"\x1b[4h");
     t.feed_bytes("가".as_bytes()); // width-2
-    assert_eq!(t.screen_row(0), "가ABC");
+    assert_eq!(t.screen_row(0, true), "가ABC");
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn irm_reset_by_full_reset() {
     t.feed_bytes(b"\x1bc"); // RIS full reset
     t.feed_bytes(b"ABC\x1b[1G");
     t.feed_bytes(b"X");
-    assert_eq!(t.screen_row(0), "XBC"); // back to overwrite
+    assert_eq!(t.screen_row(0, true), "XBC"); // back to overwrite
 }
 
 #[test]
