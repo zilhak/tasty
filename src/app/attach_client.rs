@@ -753,6 +753,14 @@ fn make_mirror_surface(
 ///
 /// pane 상위 배치는 `build_mirror_workspace` 의 기존 horizontal-chain 근사를 그대로
 /// 승계한다(핸드셰이크와 동일 수준 — 3단계가 악화시키지 않음).
+///
+/// **focus 보존(수정 방향 B)**: 순수 pane/tab 전환(클릭·키보드 이동)은 forward 되는
+/// StructuralOp 가 없어 원격의 `Workspace.focused_pane`/`Pane.active_tab` 은 갱신되지
+/// 않는다(대개 워크스페이스 생성 시점의 첫 pane/첫 탭에 고정). 아래 4단계가 그 값을
+/// 그대로 담은 delta 로 로컬 트리를 통째로 교체하면, 사용자가 로컬에서만 이동해둔
+/// focus 가 매번 그 고정값으로 되돌아간다 — 이를 막기 위해 교체 **전** 로컬에서 실제로
+/// focus 돼 있던 surface 를 remote id 기준으로 캡처해뒀다가, 교체 **후** 새 트리에서
+/// 그 surface 를 찾아 focus 를 복원한다(서버 상태는 건드리지 않음 — client-only 보정).
 fn apply_mirror_structural_delta(
     sess: &mut AttachClientSession,
     main: &mut crate::view::main::MainView,
@@ -762,6 +770,14 @@ fn apply_mirror_structural_delta(
 ) {
     let engine = &mut main.core_state;
     let ids = engine.next_ids.clone();
+
+    // focus 캡처(교체 전) — 로컬에서 실제로 focus 돼 있던 surface 를, 재구성마다 바뀌는
+    // local id 대신 안정적인 **remote id** 로 기억한다(옛 remote_to_local 기준).
+    let old_focused_remote: Option<u32> = engine
+        .workspaces
+        .iter()
+        .find(|w| w.id == sess.local_workspace)
+        .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
 
     // 1·2. new_map(survivor 유지 + 신규 할당) + terminal_locals 수집.
     let mut new_map: HashMap<u32, u32> = HashMap::new();
@@ -815,6 +831,7 @@ fn apply_mirror_structural_delta(
             &terminal_locals,
         );
         ws.mirror = true;
+        restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local);
         engine.workspaces[pos] = ws;
     } else {
         tracing::warn!(
@@ -822,6 +839,69 @@ fn apply_mirror_structural_delta(
             sess.local_workspace
         );
     }
+}
+
+/// delta 로 새로 만들어진 `ws` 에 `old_focused_remote`(교체 전 캡처한 remote surface
+/// id)가 가리키던 위치로 focus 를 되돌린다. 캡처해둔 surface 가 새 트리에도 살아있으면
+/// (이번 op 로 사라지지 않았으면) `ws.focused_pane`/해당 pane 의 `active_tab`/그 tab 의
+/// `focused_surface` 를 그 위치로 맞춘다. surface 자체가 이번 op 로 없어졌으면(예:
+/// 그 surface 를 닫은 CloseSurface) 억지로 복원하지 않고 `ws` 가 이미 담고 있는 원격
+/// 값(= 원격의 고정 focused_pane/active_tab) 그대로 둔다.
+fn restore_focus_after_delta(
+    ws: &mut Workspace,
+    old_focused_remote: Option<u32>,
+    remote_to_local: &HashMap<u32, u32>,
+) {
+    let Some(remote_sid) = old_focused_remote else {
+        return;
+    };
+    let Some(&new_local_sid) = remote_to_local.get(&remote_sid) else {
+        return;
+    };
+    let Some((pane_id, tab_id)) = find_pane_and_tab_for_surface(ws, new_local_sid) else {
+        return;
+    };
+    ws.focused_pane = pane_id;
+    if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+        && let Some(tab_index) = pane.tabs.iter().position(|t| t.id == tab_id)
+    {
+        pane.active_tab = tab_index;
+        pane.tabs[tab_index].focused_surface = new_local_sid;
+    }
+}
+
+/// 현재 `ws`(교체되기 전의 mirror workspace)에서 실제로 focus 돼 있는 surface 를
+/// **remote surface id** 로 찾아 반환한다(`remote_to_local` 역조회). local pane/tab/
+/// surface id 는 매 delta 마다 재발급되어 안정적이지 않으므로, 여러 delta 를 거쳐도
+/// 불변인 remote id 를 캡처의 기준으로 삼는다. focus 가 가리키는 surface 가 아직 이
+/// 세션에 매핑되지 않았으면(예상 밖) `None`.
+fn capture_focused_remote(ws: &Workspace, remote_to_local: &HashMap<u32, u32>) -> Option<u32> {
+    let pane = ws.pane_layout().find_pane(ws.focused_pane)?;
+    let tab = pane.tabs.get(pane.active_tab)?;
+    let local_sid = tab.focused_surface_id()?;
+    remote_to_local
+        .iter()
+        .find(|&(_, &l)| l == local_sid)
+        .map(|(&r, _)| r)
+}
+
+/// 주어진 workspace 안에서 `surface_id` 를 포함하는 (pane_id, tab_id) 를 찾는다.
+/// `CoreState::find_pane_for_surface`/`find_tab_for_surface` 와 동형이지만 **단일
+/// workspace 로 스코프를 좁힌** 버전 — `apply_mirror_structural_delta` 가 아직
+/// `engine.workspaces` 에 삽입하기 **전의** 갓 만든 `Workspace` 값에도 바로 쓸 수
+/// 있어야 하기 때문(engine 전체 순회 버전은 삽입 후에만 그 워크스페이스를 찾는다).
+fn find_pane_and_tab_for_surface(ws: &Workspace, surface_id: u32) -> Option<(u32, u32)> {
+    for pane_id in ws.pane_layout().all_pane_ids() {
+        let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+            continue;
+        };
+        for tab in &pane.tabs {
+            if tab.contains_surface(surface_id) {
+                return Some((pane_id, tab.id));
+            }
+        }
+    }
+    None
 }
 
 /// pane JSON(`{"id", "tabs":[...]}` — 평면 "panes" 원소/트리 Leaf 공용 shape)
@@ -1387,5 +1467,203 @@ mod tests {
             }
             _ => panic!("expected Split (2 panes → horizontal chain fallback)"),
         }
+    }
+
+    /// pane B, tab2 의 surface(local 52)를 담은 workspace 를 만들어 `capture_focused_remote`
+    /// 가 **remote id 3**(local 52)을 정확히 되짚어내는지 검증한다(TODO
+    /// 01-mirror-workspace-focus-jump 원인 분석의 "1. 캡처" 단계).
+    #[test]
+    fn capture_focused_remote_finds_remote_id_of_locally_focused_surface() {
+        let ids = IdGenerator::new();
+        let mut map = HashMap::new();
+        map.insert(1u32, 50u32); // pane A 의 surface
+        map.insert(2u32, 51u32); // pane B, tab1 의 surface
+        map.insert(3u32, 52u32); // pane B, tab2 의 surface — 사용자가 보고 있는 곳
+        let mut term = HashSet::new();
+        term.insert(50u32);
+        term.insert(51u32);
+        term.insert(52u32);
+        let tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 11,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split", "direction": "horizontal", "ratio": 0.5,
+                "first": { "type": "Leaf", "id": 10, "tabs": [
+                    { "id": 100, "name": "Shell", "active": true, "focused_surface": 1,
+                      "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } }
+                ] },
+                "second": { "type": "Leaf", "id": 11, "tabs": [
+                    { "id": 110, "name": "Shell", "active": false, "focused_surface": 2,
+                      "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } },
+                    { "id": 111, "name": "Shell", "active": true, "focused_surface": 3,
+                      "layout": { "type": "Leaf", "id": 3, "kind": "terminal" } }
+                ] }
+            }
+        });
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        assert_eq!(
+            capture_focused_remote(&ws, &map),
+            Some(3),
+            "focused_pane=pane B, active_tab=tab2(remote 3) 를 정확히 되짚어야 한다"
+        );
+    }
+
+    /// 핵심 회귀 테스트(TODO 01-mirror-workspace-focus-jump): 클라이언트가 로컬에서만
+    /// pane B 의 두 번째 탭으로 이동해둔 상태에서 구조 변경 delta 가 도착하면(원격의
+    /// focused_pane 은 forward 되는 순수 focus op 가 없어 항상 최초 pane=pane A 로
+    /// 고정), 패치 전에는 재구성된 트리가 pane A(첫 pane)로 focus 를 되돌렸다.
+    /// `capture_focused_remote`(교체 전) → `restore_focus_after_delta`(교체 후) 조합이
+    /// 실제 `apply_mirror_structural_delta` 가 쓰는 것과 동일한 복원 로직이다.
+    #[test]
+    fn focus_restore_keeps_client_on_pane_b_after_structural_delta_from_pane_a() {
+        let ids = IdGenerator::new();
+
+        // "before": 원격의 focused_pane 은 최초 pane A(10) 에 고정. 사용자는 로컬에서
+        // pane B(11) 의 두 번째 탭(remote 3)으로 이동해 있다.
+        let mut map = HashMap::new();
+        map.insert(1u32, 50u32);
+        map.insert(2u32, 51u32);
+        map.insert(3u32, 52u32);
+        let mut term = HashSet::new();
+        term.insert(50u32);
+        term.insert(51u32);
+        term.insert(52u32);
+        let before_tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 10,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split", "direction": "horizontal", "ratio": 0.5,
+                "first": { "type": "Leaf", "id": 10, "tabs": [
+                    { "id": 100, "name": "Shell", "active": true, "focused_surface": 1,
+                      "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } }
+                ] },
+                "second": { "type": "Leaf", "id": 11, "tabs": [
+                    { "id": 110, "name": "Shell", "active": false, "focused_surface": 2,
+                      "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } },
+                    { "id": 111, "name": "Shell", "active": true, "focused_surface": 3,
+                      "layout": { "type": "Leaf", "id": 3, "kind": "terminal" } }
+                ] }
+            }
+        });
+        let mut before_ws = build_mirror_workspace(99, "remote", &before_tree, &ids, &map, &term);
+
+        // 사용자가 로컬에서 pane B, tab2 로 이동한다 — 순수 클릭/키보드 네비게이션이라
+        // 원격에는 아무것도 forward 되지 않는다(버그의 1번 원인). 서버가 선언한
+        // focused_pane(10, pane A)과는 별개로, 클라이언트의 실제 로컬 focus 만 바뀐다.
+        let pane_b_surface3_local = *map.get(&3).unwrap();
+        let (pane_b_id, tab_id) = find_pane_and_tab_for_surface(&before_ws, pane_b_surface3_local)
+            .expect("pane B tab2 surface must exist");
+        before_ws.focused_pane = pane_b_id;
+        let pane_b = before_ws
+            .pane_layout_mut()
+            .find_pane_mut(pane_b_id)
+            .expect("pane B exists");
+        let tab_index = pane_b
+            .tabs
+            .iter()
+            .position(|t| t.id == tab_id)
+            .expect("tab exists");
+        pane_b.active_tab = tab_index;
+        pane_b.tabs[tab_index].focused_surface = pane_b_surface3_local;
+
+        let old_focused_remote = capture_focused_remote(&before_ws, &map);
+        assert_eq!(old_focused_remote, Some(3));
+
+        // "after": pane A 에 새 탭(remote 4)이 background 로 추가된 구조 변경 delta.
+        // 원격의 focused_pane 은 여전히 pane A(10) — 버그의 근본 원인 그대로 재현.
+        let mut after_map = map.clone();
+        after_map.insert(4u32, 53u32);
+        term.insert(53u32);
+        let after_tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 10,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split", "direction": "horizontal", "ratio": 0.5,
+                "first": { "type": "Leaf", "id": 10, "tabs": [
+                    { "id": 100, "name": "Shell", "active": true, "focused_surface": 1,
+                      "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } },
+                    { "id": 101, "name": "Shell", "active": false, "focused_surface": 4,
+                      "layout": { "type": "Leaf", "id": 4, "kind": "terminal" } }
+                ] },
+                "second": { "type": "Leaf", "id": 11, "tabs": [
+                    { "id": 110, "name": "Shell", "active": false, "focused_surface": 2,
+                      "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } },
+                    { "id": 111, "name": "Shell", "active": true, "focused_surface": 3,
+                      "layout": { "type": "Leaf", "id": 3, "kind": "terminal" } }
+                ] }
+            }
+        });
+        let mut after_ws =
+            build_mirror_workspace(99, "remote", &after_tree, &ids, &after_map, &term);
+
+        // 대조군 — 복원 없이 그대로 두면 pane A(원격의 고정값)에 focus 가 있다(버그 재현).
+        let pane_a_local_surface = *after_map.get(&1).unwrap();
+        let (pane_a_id, _) = find_pane_and_tab_for_surface(&after_ws, pane_a_local_surface)
+            .expect("pane A surface must exist in rebuilt tree");
+        assert_eq!(
+            after_ws.focused_pane, pane_a_id,
+            "패치 전이라면 재구성 직후 focus 는 항상 pane A(원격 고정값)"
+        );
+
+        // 수정된 복원 로직 적용.
+        restore_focus_after_delta(&mut after_ws, old_focused_remote, &after_map);
+
+        let pane_b_surface3_local = *after_map.get(&3).unwrap();
+        let (pane_b_id, tab_id) = find_pane_and_tab_for_surface(&after_ws, pane_b_surface3_local)
+            .expect("pane B tab2 surface must exist in rebuilt tree");
+        assert_eq!(
+            after_ws.focused_pane, pane_b_id,
+            "복원 후 focus 는 pane A 가 아니라 사용자가 실제로 보던 pane B 에 있어야 한다"
+        );
+        let pane_b = after_ws
+            .pane_layout()
+            .find_pane(pane_b_id)
+            .expect("pane B exists");
+        assert_eq!(
+            pane_b.tabs[pane_b.active_tab].id, tab_id,
+            "pane B 의 active_tab 도 사용자가 보던 두 번째 탭이어야 한다"
+        );
+        assert_eq!(
+            pane_b.tabs[pane_b.active_tab].focused_surface, pane_b_surface3_local,
+            "그 탭의 focused_surface 도 정확히 그 surface 를 가리켜야 한다"
+        );
+    }
+
+    /// 캡처해둔 surface 자체가 이번 op 로 사라졌으면(예: CloseSurface 로 그 surface 를
+    /// 직접 닫음) 억지로 복원하지 않고 원격이 보낸 값 그대로 둬야 한다(무리한 복원 방지).
+    #[test]
+    fn focus_restore_is_noop_when_captured_surface_no_longer_exists() {
+        let ids = IdGenerator::new();
+        let mut map = HashMap::new();
+        map.insert(1u32, 50u32);
+        map.insert(2u32, 51u32);
+        let mut term = HashSet::new();
+        term.insert(50u32);
+        term.insert(51u32);
+        let tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 10,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split", "direction": "horizontal", "ratio": 0.5,
+                "first": { "type": "Leaf", "id": 10, "tabs": [
+                    { "id": 100, "name": "Shell", "active": true, "focused_surface": 1,
+                      "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } }
+                ] },
+                "second": { "type": "Leaf", "id": 11, "tabs": [
+                    { "id": 110, "name": "Shell", "active": true, "focused_surface": 2,
+                      "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } }
+                ] }
+            }
+        });
+        let mut ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let untouched_focused_pane = ws.focused_pane;
+
+        // 캡처된 surface(remote 3)는 이 map/tree 어디에도 없다 — 이미 닫힌 상태를 흉내.
+        restore_focus_after_delta(&mut ws, Some(3), &map);
+
+        assert_eq!(
+            ws.focused_pane, untouched_focused_pane,
+            "캡처된 surface 가 없으면 원격이 보낸 focused_pane 그대로 둬야 한다"
+        );
     }
 }
