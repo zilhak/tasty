@@ -199,6 +199,15 @@ fn notify_done_command(caller_surface: u32, target_surface: u32, command_name: &
     )
 }
 
+/// caller 에게 보여줄 완료 알림 문구 — "그 child 가 맡은 작업이 끝났다"를 앞세운다.
+/// 과거 `"{command_name} 완료: surface {target_surface}"` 형태는 spawn/tell 자체가
+/// (호출이) 완료됐다는 뜻으로 오독되기 쉬워, conductor 가 실제 작업 완료 알림을
+/// "spawn 접수 확인" 정도로 여기고 계속 무시하는 사고로 이어졌다. `command_name`은
+/// 호출 방식(spawn/tell)일 뿐 완료의 주어가 아니므로 괄호로 분리한다.
+fn notify_done_message(command_name: &str, target_surface: u32) -> String {
+    format!("surface {target_surface} 작업 완료 (호출 방식: {command_name})")
+}
+
 /// spawn/tell 완료 시 caller 에게 1회성으로 알려줄 3개의 형제 hook
 /// (claude-idle / needs-input / process-exit) 을 target_surface 에 등록한다.
 /// 등록 자체는 best-effort — 실패해도 spawn/tell 성공 자체를 막지 않는다.
@@ -246,7 +255,7 @@ pub(crate) fn handle_notify_done<H: HostCall>(
         .ok_or_else(|| IpcMethodError::invalid_params("Missing 'command' parameter"))?;
 
     // 1) caller 에게 알림 주입.
-    let message = format!("{command_name} 완료: surface {target_surface}");
+    let message = notify_done_message(command_name, target_surface);
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle
     // 여부와 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔
     // terminal.tell 도 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화
@@ -598,6 +607,33 @@ mod tests {
         assert!(out.starts_with("claude --task "), "prefix wrong: {out}");
         assert!(out.contains("fix the bug"), "task body missing: {out}");
         assert_ne!(out, "claude --task fix the bug", "must be escaped");
+    }
+
+    // ── 완료 알림 문구 (TODO 07: "spawn 완료" 오독 방지) ──
+
+    #[test]
+    fn notify_done_message_leads_with_work_completion() {
+        let msg = notify_done_message("spawn", 42);
+        assert!(
+            msg.contains("작업 완료"),
+            "완료 대상이 '작업'임이 드러나야 함: {msg}"
+        );
+        assert!(msg.contains("42"), "target surface 번호 누락: {msg}");
+        assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");
+    }
+
+    #[test]
+    fn notify_done_message_does_not_read_as_command_itself_completing() {
+        // 회귀 방지: 과거 "{command_name} 완료: surface N" 형태는 "spawn 이라는 동작이
+        // 완료됐다"로 오독되기 쉬웠다 — command_name 이 더 이상 완료의 주어로 문장
+        // 맨 앞에 오지 않아야 한다.
+        for command_name in ["spawn", "tell"] {
+            let msg = notify_done_message(command_name, 7);
+            assert!(
+                !msg.starts_with(&format!("{command_name} 완료")),
+                "옛 오독 유발 포맷으로 회귀함: {msg}"
+            );
+        }
     }
 
     #[test]

@@ -210,6 +210,15 @@ fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -
     )
 }
 
+/// caller 에게 보여줄 완료 알림 문구 — "그 child 가 맡은 작업이 끝났다"를 앞세운다.
+/// 과거 `"{kind} 완료: surface {target}"` 형태는 spawn/tell 자체가(호출이) 완료됐다는
+/// 뜻으로 오독되기 쉬워, conductor 가 실제 작업 완료 알림을 "spawn 접수 확인" 정도로
+/// 여기고 계속 무시하는 사고로 이어졌다. `kind`는 호출 방식(spawn/tell)일 뿐 완료의
+/// 주어가 아니므로 괄호로 분리한다(tasty-plugin-claude 의 `notify_done_message`와 동형).
+fn notify_caller_message(kind: &str, target: u32) -> String {
+    format!("surface {target} 작업 완료 (호출 방식: {kind})")
+}
+
 /// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
 /// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
 /// 순수 선택이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
@@ -272,7 +281,7 @@ pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Valu
     let caller = require_u32(&params, "caller")?;
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
-    let message = format!("{kind} 완료: surface {target}");
+    let message = notify_caller_message(&kind, target);
 
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
     // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
@@ -1113,6 +1122,33 @@ trusted_hash = "sha256:xyz"
             json!({ "id": 3, "command": spawn_cmd, "event": "codex-idle" }),
         ];
         assert_eq!(siblings_to_unset(&hooks, &spawn_cmd), vec![1, 3]);
+    }
+
+    // ── 완료 알림 문구 (TODO 07: "spawn 완료" 오독 방지) ──
+
+    #[test]
+    fn notify_caller_message_leads_with_work_completion() {
+        let msg = notify_caller_message("spawn", 42);
+        assert!(
+            msg.contains("작업 완료"),
+            "완료 대상이 '작업'임이 드러나야 함: {msg}"
+        );
+        assert!(msg.contains("42"), "target surface 번호 누락: {msg}");
+        assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");
+    }
+
+    #[test]
+    fn notify_caller_message_does_not_read_as_command_itself_completing() {
+        // 회귀 방지: 과거 "{kind} 완료: surface N" 형태는 "spawn 이라는 동작이
+        // 완료됐다"로 오독되기 쉬웠다 — kind 가 더 이상 완료의 주어로 문장 맨 앞에
+        // 오지 않아야 한다.
+        for kind in ["spawn", "tell"] {
+            let msg = notify_caller_message(kind, 7);
+            assert!(
+                !msg.starts_with(&format!("{kind} 완료")),
+                "옛 오독 유발 포맷으로 회귀함: {msg}"
+            );
+        }
     }
 
     #[test]

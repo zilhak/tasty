@@ -26,7 +26,10 @@
 //! release 의 포트파일까지 덮어쓰는 사고가 났다. self-determination(`TASTY_HOME`)과
 //! broadcast(`TASTY_PARENT_HOME`)를 환경변수 이름으로 분리한다.
 //!
-//! 라인 포맷은 완료 메시지 한 줄로 둔다 — 예: `spawn 완료: surface 42`.
+//! 라인 포맷은 완료 메시지 한 줄로 둔다 — 예: `surface 42 작업 완료 (호출 방식: spawn)`.
+//! 호출 방식(spawn/tell)을 문장 맨 앞에 두지 않는 이유는 `crates/tasty-plugin-claude`/
+//! `tasty-plugin-codex` 의 `notify_done_message`/`notify_caller_message` 주석 참조 —
+//! "{command} 완료" 형태는 명령 자체가 끝났다는 뜻으로 오독되기 쉬웠다.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -156,9 +159,9 @@ mod tests {
     fn append_creates_dir_and_writes_line_with_newline() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("notify").join("7.log");
-        append_line_to(&path, "spawn 완료: surface 7", 1024).unwrap();
+        append_line_to(&path, "surface 7 작업 완료 (호출 방식: spawn)", 1024).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "spawn 완료: surface 7\n");
+        assert_eq!(content, "surface 7 작업 완료 (호출 방식: spawn)\n");
     }
 
     #[test]

@@ -54,7 +54,13 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
     붙어있던 모든 `tasty` CLI 가 통째로 연결 불가가 되는 사고가 실제로 발생했다
     (2026-07-14). self-determination(`TASTY_HOME`)과 정보성 broadcast(`TASTY_PARENT_HOME`)를
     **환경변수 이름으로 분리**해 이 오인을 원천 차단한다.
-- **라인 포맷**: 완료 메시지 **한 줄** (예: `spawn 완료: surface 42` / `tell 완료: surface 42`).
+- **라인 포맷**: 완료 메시지 **한 줄** (예: `surface 42 작업 완료 (호출 방식: spawn)` /
+  `surface 42 작업 완료 (호출 방식: tell)`). 과거엔 `spawn 완료: surface 42` 형태였으나,
+  `command_name`(spawn/tell)이 문장 맨 앞에서 완료의 주어처럼 읽혀 "spawn 이라는 호출이
+  접수/완료됐다"로 오독되기 쉬웠다 — 실제 의미는 "그 child 가 맡은 작업이 끝났다"인데
+  conductor 가 이를 spawn 접수 확인 정도로 여기고 실제 완료 알림을 계속 무시하는 사고로
+  이어졌다(2026-07-17). 이제 "작업 완료"를 앞세우고 호출 방식은 괄호로 분리한다
+  (`notify_done_message`/`notify_caller_message`, `crates/tasty-plugin-{claude,codex}/src/handlers.rs`).
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
   `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 truncate 후 라인을 계속
   받는다.
