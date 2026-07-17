@@ -196,6 +196,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel::<AppEvent>();
     let waker = HeadlessWaker::new(tx);
+    // busy indicator(활동 상태) 갱신 + attach client 로의 forward 를 구동하는 1Hz
+    // ticker. gui 빌드의 `busy_tick::spawn` 을 headless 로 미러링(아래 BusyPoll arm 참조).
+    waker.spawn_busy_ticker();
 
     let boot_settings = crate::settings::Settings::load();
     let memory_config = tasty_memory::MemoryConfig {
@@ -434,7 +437,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 }
             }
             AppEvent::BusyPoll => {
-                // 단계 0 범위 밖 — busy indicator 미구현.
+                // 1Hz ticker(`spawn_busy_ticker`)에서 발화. 렌더가 없어 로컬 redraw 는
+                // 무의미하지만(반환값 무시), attach client 로의 busy forward 는
+                // headless 가 원격 attach 의 주 시나리오라 필수 — gui `app/busy.rs`
+                // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
+                engine.refresh_busy_surfaces();
+                engine.forward_busy_activity(&app.stream_hub);
             }
             AppEvent::AttachPoll => {
                 // headless 는 렌더가 없어 readonly display mirror·client mirror 가

@@ -148,6 +148,25 @@ pub enum StreamControl {
         cols: usize,
         rows: usize,
     },
+    /// A remote surface's busy/idle activity state (the same foreground-process
+    /// heuristic `CoreState::refresh_busy_surfaces` already computes for the
+    /// remote's own local terminals) flipped. The client applies `busy` to its
+    /// mirror surface's own busy-state tracking (mirror terminals have no local
+    /// PTY, so they can never compute this themselves — this push is the *only*
+    /// source for mirror activity). Consumed by the workspace sidebar's "running"
+    /// status dot (`busy_count`), which is otherwise blind to mirror workspaces.
+    ///
+    /// Pushed once per 1Hz busy-poll tick per occupied surface whose busy value
+    /// actually changed since the last push (idempotent state, not a delta — a
+    /// dropped/lagged frame self-heals on the next tick since the server always
+    /// re-diffs from its live busy set, never from a client ack).
+    ///
+    /// Direction: **server→client**.
+    Activity {
+        /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
+        surface_id: u32,
+        busy: bool,
+    },
     /// The client (mirror side) requests the remote PTY be resized to the grid of
     /// its **local mirror pane**. Mirror geometry is **client-driven**: the pane
     /// the user placed the mirror in decides the grid, and the client pushes that
@@ -503,6 +522,19 @@ mod tests {
         let s = serde_json::to_string(&msg).unwrap();
         // tagged on `event` = "resize" (snake_case).
         assert!(s.contains(r#""event":"resize""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_activity_roundtrip() {
+        let msg = StreamControl::Activity {
+            surface_id: 9,
+            busy: true,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        // tagged on `event` = "activity" (snake_case).
+        assert!(s.contains(r#""event":"activity""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
     }

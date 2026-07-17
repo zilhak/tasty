@@ -195,6 +195,27 @@ pub struct CoreState {
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
+    /// Busy state of **mirror** (client-side attach) terminals, pushed by the
+    /// remote host as `StreamControl::Activity` — mirror terminals have no local
+    /// PTY/foreground process, so `refresh_busy_surfaces` can never populate
+    /// `busy_surfaces` for them (see [`busy`](crate::core::state::busy)). Kept in
+    /// a **separate** set (not merged into `busy_surfaces`) because
+    /// `refresh_busy_surfaces` wholesale-replaces `busy_surfaces` every 1Hz tick
+    /// from a fresh local poll, which would silently drop mirror entries on the
+    /// very next tick if they lived in the same set. `is_surface_busy`/
+    /// `busy_count`/`any_busy` read the union of both. Populated by
+    /// `set_mirror_surface_busy` (`app/attach_client.rs` on `MirrorEvent::Activity`),
+    /// cleared when the mirror surface/workspace is torn down.
+    pub(crate) mirror_busy_surfaces: std::collections::HashSet<u32>,
+
+    /// Server-side dedup cache for `busy_activity_forwards`: last busy value
+    /// pushed to an attach client per occupied surface, so a tick only forwards
+    /// an `Activity` frame when the value actually flipped. Entries for surfaces
+    /// no longer hard-occupied are dropped each call (not merely on detach) so a
+    /// later re-attach — possibly by a different client — always gets a fresh
+    /// initial push regardless of the surface's last-seen value.
+    pub(crate) last_forwarded_busy: std::collections::HashMap<u32, bool>,
+
     // ── Surface highlight (attention) state. Producer-neutral shared primitive:
     // any producer (toast notification, completion IPC/CLI, …) may raise it, and
     // it is cleared when the surface gains real render-time focus (gpu.rs). Set
@@ -424,6 +445,8 @@ impl CoreState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
+            mirror_busy_surfaces: std::collections::HashSet::new(),
+            last_forwarded_busy: std::collections::HashMap::new(),
             highlighted_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),

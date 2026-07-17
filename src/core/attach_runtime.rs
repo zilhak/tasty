@@ -317,6 +317,23 @@ impl CoreState {
         }
     }
 
+    /// 1Hz busy-poll tick 마다 호출 — `busy_activity_forwards`(순수 diff, hub 비의존)가
+    /// 계산한 변화분을 실제로 attach client 에 push 한다. gui(`app/busy.rs`, 매 window/
+    /// parked engine)와 headless(`boot.rs`, 유일한 engine) 양쪽이 같은 1Hz 캐던스로 호출
+    /// 하는 공통 진입점 — resize forwarder(`attach_surface_for_stream`)와 달리 busy 는
+    /// `Terminal` 자체 tap 이 아니라 OS 폴링 기반이라 전용 스레드 대신 기존 BusyPoll
+    /// 타이머에 편승한다.
+    pub fn forward_busy_activity(&mut self, hub: &StreamHub) {
+        for (client_id, surface_id, busy) in self.busy_activity_forwards() {
+            let msg = StreamControl::Activity { surface_id, busy };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&msg).unwrap_or_default(),
+            );
+            let _ = hub.push(client_id, frame); // best-effort activity 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+        }
+    }
+
     /// workspace attach 디스크립터: 트리(분할 비율 포함) + per-surface role/cols/rows/kind.
     fn build_workspace_descriptor(
         &self,

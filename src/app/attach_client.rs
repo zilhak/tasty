@@ -46,6 +46,11 @@ pub(crate) enum MirrorEvent {
     Data(u32, Vec<u8>),
     /// 원격 grid resize `(remote_surface_id, cols, rows)` — mirror 크기 갱신.
     Resize(u32, usize, usize),
+    /// 원격 surface 의 busy/idle 활동 상태 `(remote_surface_id, busy)`. mirror 터미널은
+    /// 로컬 PTY 가 없어 스스로 활동 상태를 계산할 수 없으므로(`process_id()` 가 항상
+    /// `None`), 이 push 가 mirror 워크스페이스 사이드바 status dot 의 유일한 데이터
+    /// 소스다(`CoreState::set_mirror_surface_busy`).
+    Activity(u32, bool),
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
     /// 메인루프가 실패 toast 를 띄운다. 성공은 무음(별도 이벤트 없음).
     StructuralFailed(String),
@@ -305,6 +310,9 @@ impl App {
                                             cols,
                                             rows,
                                         }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
+                                        Ok(StreamControl::Activity { surface_id, busy }) => {
+                                            Some(MirrorEvent::Activity(surface_id, busy))
+                                        }
                                         // 2단계: forward 실패 회신 → 실패 toast. 성공은 무음.
                                         Ok(StreamControl::StructuralResult {
                                             ok: false,
@@ -434,6 +442,11 @@ impl App {
                                     t.resize(cols, rows);
                                 }
                             }
+                            MirrorEvent::Activity(remote_id, busy) => {
+                                if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+                                    main.core_state.set_mirror_surface_busy(local, busy);
+                                }
+                            }
                             MirrorEvent::StructuralFailed(reason) => {
                                 // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
                                 // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
@@ -522,6 +535,7 @@ impl App {
             };
             for &local in sess.remote_to_local.values() {
                 engine.terminals.remove(local);
+                engine.forget_mirror_surface_busy(local);
             }
             engine.workspaces.remove(pos);
             // active_workspace 인덱스 클램프(제거로 out-of-range 방지).
@@ -808,6 +822,7 @@ fn apply_mirror_structural_delta(
     for (&remote_id, &local_id) in sess.remote_to_local.iter() {
         if !new_map.contains_key(&remote_id) {
             engine.terminals.remove(local_id);
+            engine.forget_mirror_surface_busy(local_id);
         }
     }
 
