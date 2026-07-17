@@ -625,7 +625,11 @@ pub(crate) fn finalize_capture_upload(
 
 /// `file_name` 의 basename 만 취해(경로 조작 방지) `~/.tasty/screenshots/` 밑에
 /// 저장하고, 그 절대경로 문자열을 로컬 클립보드에 기록한다.
-fn save_capture_and_set_clipboard(core: &Core, file_name: &str, bytes: &[u8]) -> Result<String, String> {
+fn save_capture_and_set_clipboard(
+    core: &Core,
+    file_name: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
     let safe_name = std::path::Path::new(file_name)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())

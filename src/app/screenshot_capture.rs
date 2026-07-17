@@ -72,7 +72,10 @@ impl App {
     /// mirror 면 그 mirror workspace 의 attach 세션으로 파일을 업로드한다.
     pub(crate) fn drain_screenshot_capture_results(&mut self) {
         while let Ok(outcome) = self.screenshot_capture_rx.try_recv() {
-            let ScreenshotCaptureOutcome { mirror_ws_id, result } = outcome;
+            let ScreenshotCaptureOutcome {
+                mirror_ws_id,
+                result,
+            } = outcome;
             let (path, bytes) = match result {
                 Ok(v) => v,
                 Err(e) => {

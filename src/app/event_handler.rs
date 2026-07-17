@@ -1324,8 +1324,7 @@ impl App {
                 ..
             } => {
                 use base64::Engine as _;
-                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data_b64)
-                else {
+                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data_b64) else {
                     tracing::warn!(
                         "capture upload: invalid base64 chunk (client {client_id}, upload {upload_id})"
                     );

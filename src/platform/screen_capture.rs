@@ -143,7 +143,12 @@ fn try_grim_slurp(path: &Path) -> anyhow::Result<bool> {
     if geometry.is_empty() {
         return Ok(true);
     }
-    match Command::new("grim").arg("-g").arg(&geometry).arg(path).status() {
+    match Command::new("grim")
+        .arg("-g")
+        .arg(&geometry)
+        .arg(path)
+        .status()
+    {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.into()),
@@ -181,10 +186,8 @@ mod tests {
         // 호출한다 — `capture_interactive`/`capture_to_path` 는 실제 OS 캡처 도구를
         // 실행하므로(headless 환경에 설치돼 있으면 디스플레이 없이 인터랙티브 선택을
         // 무한 대기할 수 있음), 단위테스트에서는 절대 실행하지 않는다.
-        let tmp = std::env::temp_dir().join(format!(
-            "tasty-screenshot-test-{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("tasty-screenshot-test-{}", std::process::id()));
         // SAFETY: 이 테스트 프로세스 전용 임시 env 조작 — 병렬 테스트 간 공유 상태
         // 변경 위험은 std::env::set_var 의 통상적 테스트 관행과 동일 수준(단일 스레드
         // 테스트 바이너리 내에서 이 값을 읽는 다른 테스트 없음).
@@ -197,6 +200,9 @@ mod tests {
         unsafe {
             std::env::remove_var("TASTY_HOME");
         }
+        // 의도적 무시: 테스트 격리용 임시 디렉터리 정리(best-effort) — 실패해도
+        // (동시 실행 등으로 이미 지워졌거나 권한 문제) 이 테스트의 검증 결과에는
+        // 영향이 없고, OS 임시 디렉터리는 어차피 주기적으로 정리된다.
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

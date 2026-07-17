@@ -508,7 +508,13 @@ mod tests {
             other => panic!("expected CaptureChunk, got {other:?}"),
         }
         match &out.capture_uploads[1] {
-            (5, CaptureUploadMsg::CaptureCommit { upload_id, file_name }) => {
+            (
+                5,
+                CaptureUploadMsg::CaptureCommit {
+                    upload_id,
+                    file_name,
+                },
+            ) => {
                 assert_eq!(*upload_id, 42);
                 assert_eq!(file_name, "screenshot-1.png");
             }

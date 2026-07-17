@@ -326,9 +326,7 @@ impl App {
                                         // StreamControl 이 인식 못 하는 payload — (03)
                                         // capture_result 커스텀 이벤트인지 확인(별도
                                         // enum, StreamControl 비수정 — parse_capture_result 참조).
-                                        Ok(_) | Err(_) => {
-                                            parse_capture_result(&frame.payload)
-                                        }
+                                        Ok(_) | Err(_) => parse_capture_result(&frame.payload),
                                     };
                                 if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
@@ -477,8 +475,7 @@ impl App {
                                         path.unwrap_or_default()
                                     )
                                 } else {
-                                    let base =
-                                        crate::i18n::t("attach.toast.mirror_capture_failed");
+                                    let base = crate::i18n::t("attach.toast.mirror_capture_failed");
                                     match reason {
                                         Some(r) if !r.is_empty() => format!("{base} ({r})"),
                                         _ => base.to_string(),

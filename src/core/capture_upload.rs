@@ -7,6 +7,12 @@ use std::collections::HashMap;
 
 /// `(client_id, upload_id)` → 누적된 바이트. 여러 mirror client 가 동시에 업로드해도
 /// 서로 섞이지 않는다.
+///
+/// TODO(follow-up, scope 밖): commit 없이 중단된 업로드(client 가 청크 도중 끊김 등)의
+/// partial 엔트리가 영구히 남는다 — 만료/청소(예: 마지막 append 시각 기록 + 주기적
+/// sweep, 또는 client 연결 종료 시 그 client 의 남은 partial 일괄 제거) 가 없다.
+/// 스크린샷 1건은 최대 몇 MB 라 즉각적 위험은 낮지만, 이 게이트에서 막을 이슈로
+/// 취급하지 않는다 — 별도 후속 작업으로 남긴다.
 #[derive(Default)]
 pub(crate) struct CaptureUploadRegistry {
     partials: HashMap<(u32, u64), Vec<u8>>,

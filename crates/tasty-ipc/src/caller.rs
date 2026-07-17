@@ -348,6 +348,22 @@ mod tests {
         ));
     }
 
+    /// Gate5 AC4 (remote-screenshot-clipboard) — `ClipboardWrite` 없는 plugin 은
+    /// `clipboard.set_text` 호출이 거부돼야 한다. 물리 다중 머신 없이도 실제
+    /// 프로덕션 게이트 코드(`ensure_allowed`)를 직접 행사하는 결정론적 검증.
+    #[test]
+    fn plugin_missing_clipboard_write_denied_for_clipboard_set_text() {
+        let c = plugin_with(&[Permission::SurfaceRead]);
+        let err = c.ensure_allowed("clipboard.set_text").unwrap_err();
+        assert!(matches!(
+            err,
+            CallerError::MissingPermission {
+                permission: Permission::ClipboardWrite,
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn plugin_with_permission_passes() {
         let c = plugin_with(&[Permission::SurfaceWrite]);
