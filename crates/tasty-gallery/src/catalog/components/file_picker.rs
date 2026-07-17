@@ -461,16 +461,17 @@ struct Cols {
 fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
     let pad = theme.spacing_md.value();
     let gap = theme.spacing_sm.value();
+    let glyph = theme.icon_glyph_size_md.value();
     let mut x = rect.left() + pad;
     let checkbox_x = if multi {
         let cx = x;
-        x += 16.0 + gap;
+        x += glyph + gap;
         Some(cx)
     } else {
         None
     };
     let icon_x = x;
-    x += 16.0 + gap;
+    x += glyph + gap;
     let name_left = x;
     let mod_right = rect.right() - pad;
     let size_right = mod_right - MOD_COL_W - gap;
@@ -555,7 +556,10 @@ fn row(
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(2.0, rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(theme.focus_ring_width.value(), rect.height()),
+        );
         ui.painter()
             .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
@@ -569,11 +573,12 @@ fn row(
         );
     }
     let c = cols(rect, theme, multi);
+    let glyph_size = theme.icon_glyph_size_md.value();
     if let Some(cx) = c.checkbox_x {
         let mut chk = checked;
         let cb_rect = egui::Rect::from_min_size(
-            egui::pos2(cx, rect.center().y - 8.0),
-            egui::vec2(16.0, 16.0),
+            egui::pos2(cx, rect.center().y - glyph_size * 0.5),
+            egui::vec2(glyph_size, glyph_size),
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cb_rect));
         checkbox(&mut child, theme, &mut chk, "", true);
@@ -584,10 +589,10 @@ fn row(
         (icons::FILE, theme.text_muted().to_egui())
     };
     let ir = egui::Rect::from_min_size(
-        egui::pos2(c.icon_x, rect.center().y - 8.0),
-        egui::vec2(16.0, 16.0),
+        egui::pos2(c.icon_x, rect.center().y - glyph_size * 0.5),
+        egui::vec2(glyph_size, glyph_size),
     );
-    icon_glyph.image(16.0, icon_color).paint_at(ui, ir);
+    icon_glyph.image(glyph_size, icon_color).paint_at(ui, ir);
     let name_color = if selected {
         theme.text_primary()
     } else {
