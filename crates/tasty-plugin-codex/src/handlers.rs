@@ -295,7 +295,32 @@ pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Valu
     let expected_command = notify_caller_command(caller, target, &kind);
     cleanup_sibling_hooks(host, target, &expected_command);
 
+    // target 이 아직 살아있다면(이번 fire 가 process-exit 가 아니었다면) 형제 hook 을
+    // 다시 등록해 다음 idle 전환에도 알림이 오도록 자기재무장한다 — "spawn/tell 당
+    // 알림 1회" 가 아니라 "child 가 살아있는 동안 상태 전환마다 알림"으로 바뀐다.
+    rearm_if_still_alive(host, caller, target, &kind);
+
     Ok(json!({}))
+}
+
+/// `target` 이 host 트리에 여전히 존재하면(=이번 fire 가 process-exit 가 아니었다면)
+/// 형제 hook(codex-idle/process-exit)을 재등록한다. `surface.locate` 로 생존을
+/// 판별하는 이유: process-exit 로 fire 된 경우 host 는 hook 발화 직후 동기로 그
+/// surface 를 이미 닫으므로(`close_surface_by_id_no_snapshot`), 이 시점에 조회하면
+/// 사라져 있다 — 반대로 codex-idle 은 surface 가 살아있는 상태에서만 발생하는
+/// 이벤트라 재등록이 안전하다. 조회 실패(best-effort)는 "죽었다"로 간주해 재등록을
+/// 건너뛴다 — 좀비 hook 을 쌓는 것보다 드물게 재무장을 놓치는 쪽이 안전하다.
+fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &str) {
+    let alive = host
+        .call("surface.locate", json!({ "surface_id": target }))
+        .ok()
+        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    if alive {
+        // register_notify_hooks 는 (host, target_surface, caller_surface, kind) 순서다
+        // (claude 쪽과 인자 순서가 다르므로 주의).
+        register_notify_hooks(host, target, caller, kind);
+    }
 }
 
 const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
@@ -1039,9 +1064,13 @@ trusted_hash = "sha256:xyz"
     }
 
     /// hook.set/list/unset + terminal.tell 을 in-memory 로 시뮬레이션하는 mock 호스트.
+    /// `alive` 는 `surface.locate` 응답을 시뮬레이션 — 기본은 아무도 살아있지 않은
+    /// 것으로 취급하고(= surface.locate 조회 실패와 동일하게 안전 쪽으로 fallback),
+    /// `mark_alive`/`mark_dead` 로 명시적으로 상태를 세팅한다.
     struct MockHost {
         hooks: RefCell<Vec<MockHook>>,
         next_id: RefCell<u64>,
+        alive: RefCell<std::collections::HashSet<u32>>,
     }
 
     impl MockHost {
@@ -1049,6 +1078,7 @@ trusted_hash = "sha256:xyz"
             Self {
                 hooks: RefCell::new(Vec::new()),
                 next_id: RefCell::new(1),
+                alive: RefCell::new(std::collections::HashSet::new()),
             }
         }
 
@@ -1067,6 +1097,17 @@ trusted_hash = "sha256:xyz"
                 .filter(|h| h.surface_id == surface_id)
                 .map(|h| h.command.clone())
                 .collect()
+        }
+
+        /// `surface.locate` 가 `exists: true` 를 돌려주도록(= 아직 process 가 살아있음).
+        fn mark_alive(&self, surface_id: u32) {
+            self.alive.borrow_mut().insert(surface_id);
+        }
+
+        /// `surface.locate` 가 `exists: false` 를 돌려주도록(= process-exit 로 host 가
+        /// 이미 surface 를 닫아버림을 재현).
+        fn mark_dead(&self, surface_id: u32) {
+            self.alive.borrow_mut().remove(&surface_id);
         }
     }
 
@@ -1106,6 +1147,11 @@ trusted_hash = "sha256:xyz"
                     let hid = params["hook_id"].as_u64().unwrap();
                     self.hooks.borrow_mut().retain(|h| h.id != hid);
                     Ok(json!({ "removed": true }))
+                }
+                "surface.locate" => {
+                    let sid = params["surface_id"].as_u64().unwrap() as u32;
+                    let exists = self.alive.borrow().contains(&sid);
+                    Ok(json!({ "surface_id": sid, "exists": exists }))
                 }
                 _ => Ok(json!({})),
             }
@@ -1203,6 +1249,72 @@ trusted_hash = "sha256:xyz"
         assert!(
             host.commands_on(target).is_empty(),
             "최종적으로 형제 hook 이 전부 사라져야 함: {:?}",
+            host.commands_on(target)
+        );
+    }
+
+    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (TODO 08) ──
+    //
+    // 배경: codex-idle 은 process-exit 와 달리 "child 가 아직 살아있는 상태 전환"일 수
+    // 있다. 형제 hook 이 once=true 라 한 번 fire 하면 남은 형제도 정리돼 그 spawn/tell
+    // 콜당 알림이 딱 1번만 오던 문제 — 진짜 완료 전에 codex-idle 을 한 번이라도 거치면
+    // 그 뒤엔 재알림 경로가 없었다.
+
+    #[test]
+    fn handle_notify_caller_rearms_when_target_still_alive() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, target, caller, "tell");
+        assert_eq!(host.commands_on(target).len(), 2, "최초 2 형제 등록");
+
+        // 1번째 전환: codex-idle — child 는 여전히 살아있다.
+        assert_eq!(host.fire(target, "codex-idle"), 1);
+        handle_notify_caller(
+            &host,
+            json!({ "caller": caller, "target": target, "kind": "tell" }),
+        )
+        .unwrap();
+        assert_eq!(
+            host.commands_on(target).len(),
+            2,
+            "살아있으면 형제 hook 이 다시 2개로 재무장돼야 함"
+        );
+
+        // 2번째 전환에도 계속 재무장되는지 확인 — 'spawn/tell 당 1회' 로 되돌아가면 안 됨.
+        assert_eq!(host.fire(target, "codex-idle"), 1);
+        handle_notify_caller(
+            &host,
+            json!({ "caller": caller, "target": target, "kind": "tell" }),
+        )
+        .unwrap();
+        assert_eq!(
+            host.commands_on(target).len(),
+            2,
+            "두 번째 전환에도 재무장돼야 함"
+        );
+    }
+
+    #[test]
+    fn handle_notify_caller_does_not_rearm_when_target_exited() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, target, caller, "spawn");
+
+        // process-exit 로 fire — host 는 이 시점에 이미 동기로 surface 를 닫으므로
+        // surface.locate 가 exists:false 를 돌려주는 상황을 재현.
+        assert_eq!(host.fire(target, "process-exit"), 1);
+        host.mark_dead(target);
+        handle_notify_caller(
+            &host,
+            json!({ "caller": caller, "target": target, "kind": "spawn" }),
+        )
+        .unwrap();
+
+        assert!(
+            host.commands_on(target).is_empty(),
+            "죽은 surface 에 재무장하면 좀비 hook: {:?}",
             host.commands_on(target)
         );
     }

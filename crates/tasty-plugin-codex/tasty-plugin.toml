@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.17"
+version = "0.1.18"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -39,11 +39,11 @@ description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
     { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal" },
-    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a one-shot notification is sent to the parent surface when the child becomes idle or exits." },
+    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition." },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent" },
     { name = "parent",        ipc_method = "codex.parent",        args = "parent_args",        description = "Return the parent Codex surface id for a given child surface" },
-    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a one-shot notification is sent to the caller surface when the target becomes idle or exits." },
-    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: notify caller surface that a spawned/told child reached a terminal state, then clean up the sibling once-hook. Invoked by hooks registered from spawn/tell — not meant for direct use." },
+    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a notification is sent to the caller surface every time the target becomes idle, and once more when it exits — not just the first transition." },
+    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: notify caller surface that a spawned/told child changed state, clean up the sibling once-hook, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm the sibling hooks so future transitions keep notifying until the child actually exits. Invoked by hooks registered from spawn/tell — not meant for direct use." },
     { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance" },
     { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index" },
     { name = "respawn",       ipc_method = "codex.respawn",       args = "respawn_args",       description = "Respawn a child Codex instance" },

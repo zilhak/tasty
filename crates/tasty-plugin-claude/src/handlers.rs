@@ -272,7 +272,38 @@ pub(crate) fn handle_notify_done<H: HostCall>(
     let expected_command = notify_done_command(caller_surface, target_surface, command_name);
     cleanup_sibling_hooks(host, target_surface, &expected_command);
 
+    // 3) target_surface 가 아직 살아있다면(이번 fire 가 process-exit 가 아니었다면)
+    //    형제 hook 을 다시 3개 등록해 다음 idle/needs-input 전환에도 알림이 오도록
+    //    자기재무장한다 — "spawn/tell 당 알림 1회" 가 아니라 "child 가 살아있는 동안
+    //    상태 전환마다 알림"으로 바뀐다. claude-idle/needs-input 은 일시적 상태 전환일
+    //    수 있어(예: 애매한 지시에 되묻고 다시 작업 재개) 여기서 멈추면 진짜 완료를
+    //    영영 놓친다.
+    rearm_if_still_alive(host, caller_surface, target_surface, command_name);
+
     Ok(json!({}))
+}
+
+/// `target_surface` 가 host 트리에 여전히 존재하면(=이번 fire 가 process-exit 가
+/// 아니었다면) 형제 hook 3개를 재등록한다. `surface.locate` 로 생존을 판별하는 이유:
+/// process-exit 로 fire 된 경우 host 는 hook 발화 직후 동기로 그 surface 를 이미
+/// 닫으므로(`close_surface_by_id_no_snapshot`), 이 시점에 조회하면 사라져 있다 —
+/// 반대로 claude-idle/needs-input 은 surface 가 살아있는 상태에서만 발생하는
+/// 이벤트라 재등록이 안전하다. 조회 실패(best-effort)는 "죽었다"로 간주해 재등록을
+/// 건너뛴다 — 좀비 hook 을 쌓는 것보다 드물게 재무장을 놓치는 쪽이 안전하다.
+fn rearm_if_still_alive<H: HostCall>(
+    host: &H,
+    caller_surface: u32,
+    target_surface: u32,
+    command_name: &str,
+) {
+    let alive = host
+        .call("surface.locate", json!({ "surface_id": target_surface }))
+        .ok()
+        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    if alive {
+        register_notify_hooks(host, caller_surface, target_surface, command_name);
+    }
 }
 
 /// 새 workspace 를 만들고 그 안에서 claude 를 기동한다. child 가 아니라 top-level
@@ -655,9 +686,13 @@ mod tests {
 
     /// hook.set/list/unset + terminal.tell 을 in-memory 로 시뮬레이션하는 mock 호스트.
     /// `fire` 로 특정 surface 의 특정 event once-hook 을 실제 host 처럼 제거(once)한다.
+    /// `alive` 는 `surface.locate` 응답을 시뮬레이션 — 기본은 아무도 살아있지 않은
+    /// 것으로 취급하고(= surface.locate 조회 실패와 동일하게 안전 쪽으로 fallback),
+    /// `mark_alive`/`mark_dead` 로 명시적으로 상태를 세팅한다.
     struct MockHost {
         hooks: RefCell<Vec<MockHook>>,
         next_id: RefCell<u64>,
+        alive: RefCell<std::collections::HashSet<u32>>,
     }
 
     impl MockHost {
@@ -665,6 +700,7 @@ mod tests {
             Self {
                 hooks: RefCell::new(Vec::new()),
                 next_id: RefCell::new(1),
+                alive: RefCell::new(std::collections::HashSet::new()),
             }
         }
 
@@ -684,6 +720,17 @@ mod tests {
                 .filter(|h| h.surface_id == surface_id)
                 .map(|h| h.command.clone())
                 .collect()
+        }
+
+        /// `surface.locate` 가 `exists: true` 를 돌려주도록(= 아직 process 가 살아있음).
+        fn mark_alive(&self, surface_id: u32) {
+            self.alive.borrow_mut().insert(surface_id);
+        }
+
+        /// `surface.locate` 가 `exists: false` 를 돌려주도록(= process-exit 로 host 가
+        /// 이미 surface 를 닫아버림을 재현).
+        fn mark_dead(&self, surface_id: u32) {
+            self.alive.borrow_mut().remove(&surface_id);
         }
     }
 
@@ -723,6 +770,11 @@ mod tests {
                     let hid = params["hook_id"].as_u64().unwrap();
                     self.hooks.borrow_mut().retain(|h| h.id != hid);
                     Ok(json!({ "removed": true }))
+                }
+                "surface.locate" => {
+                    let sid = params["surface_id"].as_u64().unwrap() as u32;
+                    let exists = self.alive.borrow().contains(&sid);
+                    Ok(json!({ "surface_id": sid, "exists": exists }))
                 }
                 _ => Ok(json!({})),
             }
@@ -798,6 +850,75 @@ mod tests {
         assert!(
             host.commands_on(target).is_empty(),
             "최종적으로 형제 hook 이 전부 사라져야 함: {:?}",
+            host.commands_on(target)
+        );
+    }
+
+    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (TODO 08) ──
+    //
+    // 배경: needs-input/claude-idle 은 process-exit 와 달리 "child 가 아직 살아있는
+    // 상태 전환"일 수 있다(예: 애매한 지시에 되묻고 다시 작업 재개). 형제 hook 이
+    // once=true 라 한 번 fire 하면 남은 형제도 정리돼 그 spawn/tell 콜당 알림이 딱
+    // 1번만 오던 문제 — child 가 진짜 완료되기 전에 needs-input 을 한 번이라도 거치면
+    // 그 뒤엔 재알림 경로가 없었다.
+
+    #[test]
+    fn handle_notify_done_rearms_when_target_still_alive() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, caller, target, "tell");
+        assert_eq!(host.commands_on(target).len(), 3, "최초 3 형제 등록");
+
+        // 1번째 전환: needs-input(되묻기) — child 는 여전히 살아있다.
+        assert_eq!(host.fire(target, "needs-input"), 1);
+        handle_notify_done(
+            &host,
+            &json!({ "caller_surface": caller, "target_surface": target, "command": "tell" }),
+        )
+        .unwrap();
+        assert_eq!(
+            host.commands_on(target).len(),
+            3,
+            "살아있으면 형제 hook 이 다시 3개로 재무장돼야 함"
+        );
+
+        // 2번째 전환: 진짜 완료(claude-idle) — 여전히 살아있는 상태에서 fire 됐다고
+        // 가정(실제로는 이 직후 host 가 종료를 감지해도, hook 발화 자체는 idle 이 먼저
+        // 다다르는 케이스를 재현). 재무장이 반복되는지 확인.
+        assert_eq!(host.fire(target, "claude-idle"), 1);
+        handle_notify_done(
+            &host,
+            &json!({ "caller_surface": caller, "target_surface": target, "command": "tell" }),
+        )
+        .unwrap();
+        assert_eq!(
+            host.commands_on(target).len(),
+            3,
+            "두 번째 전환에도 계속 재무장돼야 함 — 'spawn/tell 당 1회' 로 되돌아가면 안 됨"
+        );
+    }
+
+    #[test]
+    fn handle_notify_done_does_not_rearm_when_target_exited() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, caller, target, "spawn");
+
+        // process-exit 로 fire — host 는 이 시점에 이미 동기로 surface 를 닫으므로
+        // surface.locate 가 exists:false 를 돌려주는 상황을 재현.
+        assert_eq!(host.fire(target, "process-exit"), 1);
+        host.mark_dead(target);
+        handle_notify_done(
+            &host,
+            &json!({ "caller_surface": caller, "target_surface": target, "command": "spawn" }),
+        )
+        .unwrap();
+
+        assert!(
+            host.commands_on(target).is_empty(),
+            "죽은 surface 에 재무장하면 좀비 hook: {:?}",
             host.commands_on(target)
         );
     }

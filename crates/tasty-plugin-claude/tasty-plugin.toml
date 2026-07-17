@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.17"
+version = "0.1.18"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -49,10 +49,10 @@ description = "Claude Code CLI integration (launch, spawn, kill, etc.)"
 description_i18n_key = "claude.cli.desc"
 subcommands = [
     { name = "launch",    ipc_method = "claude.launch",    args = "launch_args",    description = "Launch Claude Code in a new workspace" },
-    { name = "spawn",     ipc_method = "claude.spawn",     args = "spawn_args",     description = "Spawn a child Claude instance into a workspace. Returns immediately; a one-shot notification is delivered to the caller surface when the child becomes idle / needs_input / exited." },
+    { name = "spawn",     ipc_method = "claude.spawn",     args = "spawn_args",     description = "Spawn a child Claude instance into a workspace. Returns immediately; a notification is delivered to the caller surface every time the child transitions to idle/needs_input, and once more when it exits — not just the first transition." },
     { name = "children",  ipc_method = "claude.children",  args = "children_args",  description = "List children of the specified Claude parent" },
     { name = "parent",    ipc_method = "claude.parent",    args = "parent_args",    description = "Show the parent of the specified Claude child" },
-    { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      description = "Send a message to a Claude instance (multi-line, submits at end). Returns immediately; a one-shot notification is delivered to the caller surface when the target becomes idle / needs_input / exited." },
+    { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      description = "Send a message to a Claude instance (multi-line, submits at end). Returns immediately; a notification is delivered to the caller surface every time the target transitions to idle/needs_input, and once more when it exits — not just the first transition." },
     { name = "broadcast", ipc_method = "claude.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Claude instance" },
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index" },
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance" },
@@ -60,7 +60,7 @@ subcommands = [
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message) when invoked by Claude Code's hook system." },
-    { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a one-shot spawn/tell completion notification to the caller surface and clean up sibling once-hooks (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
+    { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
 ]
 
 [contributes.cli.arg_groups.launch_args]
