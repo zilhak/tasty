@@ -23,7 +23,7 @@ pub mod waker_factory;
 
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::thread;
 
 use anyhow::Result;
@@ -36,6 +36,7 @@ use termwiz::surface::Surface;
 
 pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
+pub use io::WriteAck;
 pub use mouse_report::encode_mouse_report;
 pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
@@ -194,6 +195,17 @@ pub(crate) struct TerminalState {
     /// `None` until wired. Lives in the shared state because VTE responses
     /// (DSR/DA) are emitted from the parser thread during ingest.
     input_tx: Option<mpsc::Sender<Vec<u8>>>,
+    /// PTY writer 스레드가 지금까지 flush 완료한 write 개수 + 대기자 깨우기용
+    /// condvar. `enqueued_count` 와 비교해 "이 write 가 실제로 PTY 에 flush 됐는지"
+    /// 를 폴링 없이 확인하는 데 쓴다([`io::WriteAck`], tell/spawn 제출 순서 보장—
+    /// 본문 write 완료 전에 제출 `\r` 이 먼저 도달해 paste 휴리스틱에 먹히는 걸
+    /// 막는다). detached(mirror) 터미널은 writer 스레드가 없어 절대 증가하지
+    /// 않는다 — `WriteAck::wait` 는 타임아웃으로 자연 종료.
+    write_progress: WriteProgress,
+    /// `input_tx` 로 실제 enqueue 성공한 총 횟수. `write_progress` 와 비교해 "내
+    /// write" 가 몇 번째인지 판별하는 용도 전용 — [`io::WriteAck`] 가 없으면
+    /// 아무도 읽지 않는다.
+    enqueued_count: u64,
     /// Server-side raw output subscribers. Each tap receives the exact raw PTY
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
     /// detached terminal and in the common no-subscriber case (zero overhead).
@@ -367,6 +379,105 @@ pub(crate) fn default_tab_stops(cols: usize) -> Vec<bool> {
     (0..cols).map(|c| c % 8 == 0).collect()
 }
 
+/// PTY writer 스레드가 지금까지 flush 완료한 write 개수(`Mutex<u64>`) + 대기자
+/// 깨우기용 condvar. [`io::WriteAck`] 가 폴링 없이 "이 write 가 실제로 flush
+/// 됐는지" 를 확인하는 데 쓴다.
+pub(crate) type WriteProgress = Arc<(Mutex<u64>, Condvar)>;
+
+/// PTY writer 스레드 본체 — 큐에 들어오는 write 를 순서대로 PTY 에
+/// write_all+flush 하고, 각 성공마다 `progress` 카운터를 올려 `\r` 를 별도로
+/// write 로 보내는 `IpcHandler` 가 `WriteAck` 로 실제 flush 완료를 확인할 수
+/// 있게 한다.
+fn run_writer_loop(
+    mut pty_writer: Box<dyn Write + Send>,
+    write_rx: mpsc::Receiver<Vec<u8>>,
+    progress: WriteProgress,
+) {
+    while let Ok(data) = write_rx.recv() {
+        if pty_writer.write_all(&data).is_err() {
+            break;
+        }
+        if pty_writer.flush().is_err() {
+            break;
+        }
+        let (count, cvar) = &*progress;
+        if let Ok(mut n) = count.lock() {
+            *n += 1;
+            cvar.notify_all();
+        }
+    }
+}
+
+/// PTY 자식 프로세스에 넘길 [`CommandBuilder`] 를 조립한다(shell arg/env/cwd).
+/// `Terminal::new` 의 cognitive complexity 상한 때문에 뺐다 — 인라인이었을 때와
+/// 동작은 동일.
+fn build_shell_command(
+    shell: &str,
+    args: &[&str],
+    surface_id: u32,
+    working_dir: Option<&std::path::Path>,
+) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(shell);
+    // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
+    #[cfg(not(windows))]
+    cmd.arg("-li");
+    for arg in args {
+        if !arg.is_empty() {
+            cmd.arg(arg);
+        }
+    }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
+    // host 가 확정한 데이터 루트를 모든 터미널 env 에 주입한다(정보성 broadcast).
+    // conductor 자신이 떠 있는 이 PTY 셸이 completion-log 경로
+    // (`<tasty_home>/notify/...`)를 판별하려면 부모 루트를 알아야 한다(머신에
+    // ~/.tasty 와 ~/.tasty-debug 가 공존하면 어느 쪽인지 모름).
+    //
+    // 이 값은 `TASTY_PARENT_HOME` 으로 주입한다 — **`TASTY_HOME` 이 아니다.**
+    // `TASTY_HOME` 은 tasty_home()(self-determination, override 전용)의 1순위라,
+    // release 터미널 안에서 debug 빌드를 실행하면 그 debug 프로세스가 부모의
+    // release 루트를 override 로 오인해 ~/.tasty-debug 격리가 깨지고 release 의
+    // 포트파일을 덮어쓰는 사고가 난다. 정보성 값은 별도 이름으로 분리한다.
+    if let Some(home) = tasty_utils::path::tasty_home() {
+        cmd.env("TASTY_PARENT_HOME", &home);
+    }
+
+    // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CMUX_") {
+            cmd.env_remove(&key);
+        }
+    }
+
+    // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
+    // terminal. hook_handler::trigger::spawn_shell 와 동일한 보강을 공유
+    // 헬퍼로 적용해 두 경로의 동작을 일치시킨다(패키징된 macOS `.app` 의
+    // 최소 PATH 에서 `tasty` self 호출 해결).
+    if let Some(new_path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
+    {
+        cmd.env("PATH", new_path);
+    }
+
+    if let Some(dir) = working_dir {
+        cmd.cwd(dir);
+    }
+    cmd
+}
+
+/// PTY writer 스레드를 띄우고 `(input 채널 sender, join handle, flush 진행률
+/// 카운터)` 를 반환한다. `Terminal::new` 의 cognitive complexity 상한 때문에
+/// 채널/Arc 준비까지 통째로 뺐다.
+fn spawn_pty_writer(
+    pty_writer: Box<dyn Write + Send>,
+) -> (mpsc::Sender<Vec<u8>>, thread::JoinHandle<()>, WriteProgress) {
+    let write_progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
+    let write_progress_for_writer = Arc::clone(&write_progress);
+    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+    let writer_thread =
+        thread::spawn(move || run_writer_loop(pty_writer, write_rx, write_progress_for_writer));
+    (write_tx, writer_thread, write_progress)
+}
+
 impl TerminalState {
     /// Build the PTY-independent VTE state for a fresh terminal.
     fn new(cols: usize, rows: usize) -> Self {
@@ -376,6 +487,8 @@ impl TerminalState {
             use_alternate: false,
             parser: Parser::new(),
             input_tx: None,
+            write_progress: Arc::new((Mutex::new(0), Condvar::new())),
+            enqueued_count: 0,
             output_taps: Vec::new(),
             resize_taps: Vec::new(),
             cols,
@@ -544,51 +657,7 @@ impl Terminal {
             Some(s) if !s.is_empty() => s.to_string(),
             _ => Self::default_shell(),
         };
-        let mut cmd = CommandBuilder::new(&shell);
-        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
-        #[cfg(not(windows))]
-        cmd.arg("-li");
-        for arg in config.args {
-            if !arg.is_empty() {
-                cmd.arg(arg);
-            }
-        }
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
-        // host 가 확정한 데이터 루트를 모든 터미널 env 에 주입한다(정보성 broadcast).
-        // conductor 자신이 떠 있는 이 PTY 셸이 completion-log 경로
-        // (`<tasty_home>/notify/...`)를 판별하려면 부모 루트를 알아야 한다(머신에
-        // ~/.tasty 와 ~/.tasty-debug 가 공존하면 어느 쪽인지 모름).
-        //
-        // 이 값은 `TASTY_PARENT_HOME` 으로 주입한다 — **`TASTY_HOME` 이 아니다.**
-        // `TASTY_HOME` 은 tasty_home()(self-determination, override 전용)의 1순위라,
-        // release 터미널 안에서 debug 빌드를 실행하면 그 debug 프로세스가 부모의
-        // release 루트를 override 로 오인해 ~/.tasty-debug 격리가 깨지고 release 의
-        // 포트파일을 덮어쓰는 사고가 난다. 정보성 값은 별도 이름으로 분리한다.
-        if let Some(home) = tasty_utils::path::tasty_home() {
-            cmd.env("TASTY_PARENT_HOME", &home);
-        }
-
-        // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
-        for (key, _) in std::env::vars() {
-            if key.starts_with("CMUX_") {
-                cmd.env_remove(&key);
-            }
-        }
-
-        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
-        // terminal. hook_handler::trigger::spawn_shell 와 동일한 보강을 공유
-        // 헬퍼로 적용해 두 경로의 동작을 일치시킨다(패키징된 macOS `.app` 의
-        // 최소 PATH 에서 `tasty` self 호출 해결).
-        if let Some(new_path) =
-            tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
-        {
-            cmd.env("PATH", new_path);
-        }
-
-        if let Some(dir) = working_dir {
-            cmd.cwd(dir);
-        }
+        let cmd = build_shell_command(&shell, config.args, surface_id, working_dir);
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
@@ -614,23 +683,16 @@ impl Terminal {
         }
 
         // Writer thread: drains queued writes to PTY without blocking the main thread.
-        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
-        let writer_thread = thread::spawn(move || {
-            while let Ok(data) = write_rx.recv() {
-                if pty_writer.write_all(&data).is_err() {
-                    break;
-                }
-                if pty_writer.flush().is_err() {
-                    break;
-                }
-            }
-        });
+        // `write_progress` 는 [`io::WriteAck`] 가 "이 write 가 실제로 flush 됐는지"
+        // 를 폴링 없이 확인하는 데 쓴다.
+        let (write_tx, writer_thread, write_progress) = spawn_pty_writer(pty_writer);
 
         // Shared VTE state + signalling flags (ADR-0002). The writer-thread sender
         // is wired into the state so VTE responses (DSR/DA), emitted from the
         // parser thread during ingest, reach the PTY.
         let mut initial_state = TerminalState::new(cols, rows);
         initial_state.input_tx = Some(write_tx);
+        initial_state.write_progress = write_progress;
         let state = Arc::new(Mutex::new(initial_state));
         let dirty = Arc::new(AtomicBool::new(false));
         let parser_eof = Arc::new(AtomicBool::new(false));

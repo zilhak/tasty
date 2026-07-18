@@ -97,6 +97,106 @@ fn build_broadcast_payload(text: &str) -> (String, bool) {
     (build_tell_payload(body), submit)
 }
 
+/// 본문 ack 대기 + 제출 `\r` 재주입에 쓰는 타임아웃.
+///
+/// 두 write(본문/제출 `\r`)가 지연 없이 연달아 PTY 에 들어가면 child TUI(Ink 기반
+/// Claude Code/Codex CLI)의 다음 `read()` 가 둘을 한 번에 묶어 받을 수 있다 — 이
+/// 경우 63자+ 단일라인처럼 paste 휴리스틱을 트리거하는 입력은 그 안에 섞인 `\r`
+/// 을 제출이 아닌 paste 본문의 일부로 처리해 제출이 유실된다(실측: in-process
+/// 연속 write 시 596자 메시지 8/8 재현 — 입력창에 텍스트만 남고 제출 안 됨).
+///
+/// 최초 수정은 고정 20ms sleep 이었으나 Gate 4 리뷰에서 두 가지가 지적됨: (a)
+/// `handle_tell`/`handle_spawn` 은 winit 메인 스레드(`about_to_wait` → `process_ipc`)
+/// 에서 동기 실행되므로 메인 스레드 sleep 은 그 시간만큼 렌더/입력 처리를 통째로
+/// 멈춘다, (b) 20ms 는 "대충 다 썼겠지" 라는 타이밍 가정이라 writer 스레드가
+/// 밀리면 깨질 수 있다. 재설계: 본문을 [`tasty_terminal::WriteAck`] 로 write 해
+/// writer 스레드가 실제로 flush 완료했다는 사실 자체를 ack 로 받고, 그 ack 대기는
+/// 새로 스폰한 스레드(메인 스레드 아님)에서 수행 — 완료되면 그 스레드가
+/// `HostIpcInjector` 로 host 자신에게 `surface.send("\r")` 를 재주입한다. 메인
+/// 스레드는 다음 `about_to_wait` 틱에서 이 재주입된 커맨드를 평소처럼(non-blocking)
+/// 드레인한다. 이 타임아웃은 ack 가 끝내 오지 않을 때(writer 스레드 이상 등)의
+/// 안전판 — 그 시점엔 최선 노력으로 `\r` 을 진행한다(완전 무제출보다 낫다).
+const TELL_SUBMIT_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// ack 완료 이후, 제출 `\r` 재주입 전에 추가로 두는 확정적 지연.
+///
+/// [`WriteAck`](tasty_terminal::WriteAck) 가 보장하는 건 writer 스레드의
+/// `write_all`+`flush` 가 에러 없이 리턴했다는 사실뿐이다 — 즉 본문 바이트가
+/// 커널 PTY 버퍼에 들어갔다는 것이지, child TUI 가 그 바이트를 이미 `read()` 로
+/// 소비했다는 보장이 아니다. ack 이후 곧바로 `\r` 을 재주입하면, child 의 다음
+/// `read()` 가 여전히 본문과 `\r` 을 한 번에 묶어 받을 가능성이 남는다(이 경우
+/// paste 휴리스틱이 `\r` 을 제출이 아닌 본문 일부로 삼켜버린다 — 원래 버그와 동일
+/// 증상). 실전에서는 ack 대기 → 스레드 깨어남 → `HostIpcInjector::dispatch` →
+/// 메인 스레드의 다음 `about_to_wait` 틱, 이 여러 홉이 쌓는 자연 지연 덕에 대체로
+/// 회피되지만, 이건 스레드 스케줄링 우연에 기대는 것이라 재주입 경로가 더
+/// 빨라지도록 최적화되면 안전마진이 줄어들 수 있다. 20ms 는 1라운드 실측에서
+/// (5ms/10ms 는 간헐 실패, 20ms 부터 일관 통과) 얻은 값을 그대로 재사용한 확정적
+/// 하한 — 스레드 홉의 우연한 지연에만 기대지 않도록 명시적으로 보장한다. 반드시
+/// 새로 스폰한 스레드 안에서만 sleep 한다 — 메인 스레드에서 쓰면 1라운드에서
+/// 지적된 렌더/IPC 정지 문제가 재발한다.
+const TELL_SUBMIT_EXTRA_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// [`send_body_then_submit`] 1단계 — `apply_send_to_surface`(core/mod.rs)와 동일한
+/// attach 점유 체크 + surface 초기화를 거쳐 ack 가능한 방식으로 본문을 큐잉한다.
+/// `None` 은 surface 미존재 또는 hard-occupied(`handle_surface_send` 와 동일하게
+/// 구분하지 않는다).
+fn send_text_to_surface_with_ack(
+    engine: &mut CoreState,
+    surface_id: u32,
+    text: &str,
+) -> Option<tasty_terminal::WriteAck> {
+    if engine.attach.is_hard_occupied(surface_id) {
+        return None;
+    }
+    engine.ensure_surface_initialized(surface_id);
+    engine
+        .find_terminal_by_id_mut(surface_id)
+        .map(|terminal| terminal.send_key_with_ack(text))
+}
+
+/// 본문을 ack 가능한 방식으로 write 하고, 실제 PTY flush 확인(ack) 후에만 제출
+/// `\r` 을 별도 스레드에서 host IPC 로 재주입한다. `handle_tell` / `handle_spawn`
+/// 의 command 주입이 동형이라 공용으로 뺐다.
+///
+/// **메인 스레드는 절대 블로킹하지 않는다** — ack 대기(`WriteAck::wait`)와 `\r`
+/// 재주입(`HostIpcInjector::dispatch`)은 전부 새로 스폰한 스레드에서 수행된다.
+/// 그 스레드가 큐에 넣는 `surface.send` 커맨드는 메인 스레드가 다음
+/// `about_to_wait` 틱에서 평소처럼 non-blocking 하게 드레인해 처리하므로, 제출
+/// `\r` 도 기존 `handle_surface_send` 의 attach 점유 검증 등을 동일하게 통과한다.
+fn send_body_then_submit(
+    engine: &mut CoreState,
+    core: &Core,
+    id: &Value,
+    surface_id: u32,
+    body: String,
+) -> Result<(), JsonRpcResponse> {
+    let Some(ack) = send_text_to_surface_with_ack(engine, surface_id, &body) else {
+        return Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            format!("Surface {surface_id} not found"),
+        ));
+    };
+
+    let injector = core.host_ipc_injector_arc().get().cloned();
+    std::thread::spawn(move || {
+        ack.wait(TELL_SUBMIT_ACK_TIMEOUT);
+        std::thread::sleep(TELL_SUBMIT_EXTRA_SETTLE_DELAY);
+        let Some(injector) = injector else {
+            tracing::warn!(
+                "terminal tell/spawn: host_ipc_injector unavailable — \\r submit for surface {surface_id} dropped"
+            );
+            return;
+        };
+        let params = json!({ "surface_id": surface_id, "text": "\r" });
+        if let Err(e) = injector.dispatch("surface.send", params, TELL_SUBMIT_ACK_TIMEOUT) {
+            tracing::warn!(
+                "terminal tell/spawn: submit \\r re-injection failed (surface={surface_id}): {e}"
+            );
+        }
+    });
+    Ok(())
+}
+
 /// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭 우선, 아니면 name 매칭.
 fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
     if let Ok(target_id) = target.parse::<u32>()
@@ -204,22 +304,12 @@ pub(crate) fn handle_spawn(
     };
 
     // command 가 주어졌을 때만 붙여 제출한다(에이전트 특화 아님). 본문/제출 `\r` 을
-    // 분리해 길이 무관 결정적 제출(멀티라인은 bracketed paste) — tell 과 동형.
-    // command 생략 시(plugin 2단계 spawn) 전송을 건너뛰고 등록·점유만 수행한다.
+    // 분리해 길이 무관 결정적 제출(멀티라인은 bracketed paste) — tell 과 동형(ack
+    // 기반 재주입 포함, TELL_SUBMIT_ACK_TIMEOUT 참조). command 생략 시(plugin
+    // 2단계 spawn) 전송을 건너뛰고 등록·점유만 수행한다.
     if let Some(command) = &command {
         let body = build_tell_payload(command);
-        let body_params = json!({ "surface_id": new_surface_id, "text": body });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
-            &id,
-        ) {
-            return e;
-        }
-        let cr_params = json!({ "surface_id": new_surface_id, "text": "\r" });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
-            &id,
-        ) {
+        if let Err(e) = send_body_then_submit(engine, core, &id, new_surface_id, body) {
             return e;
         }
     }
@@ -258,7 +348,7 @@ pub(crate) fn handle_spawn(
 
 pub(crate) fn handle_tell(
     core: &mut Core,
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -272,19 +362,10 @@ pub(crate) fn handle_tell(
         Err(e) => return e,
     };
     let payload = build_tell_payload(&text);
-    // 1) 본문(제출 `\r` 미포함). 2) 제출 Enter 를 별도 write 로 분리 — 길이 무관 결정적 제출.
-    let body_params = json!({ "surface_id": surface_id, "text": payload });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
-        &id,
-    ) {
-        return e;
-    }
-    let cr_params = json!({ "surface_id": surface_id, "text": "\r" });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
-        &id,
-    ) {
+    // 1) 본문(제출 `\r` 미포함) 을 ack 가능한 방식으로 write. 2) 실제 flush 확인
+    // (ack) 후 별도 스레드에서 제출 Enter 를 재주입 — 길이 무관 결정적 제출
+    // (근거는 TELL_SUBMIT_ACK_TIMEOUT 참조).
+    if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
         return e;
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))

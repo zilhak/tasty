@@ -6,11 +6,45 @@
 //! (`Terminal`) 이 락을 잡아 위임한다 (ADR-0002).
 
 use std::sync::mpsc;
+use std::time::Duration;
 
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
 
-use crate::{Terminal, TerminalState};
+use crate::{Terminal, TerminalState, WriteProgress};
+
+/// [`Terminal::send_key_with_ack`] 가 반환하는 완료 확인 핸들.
+///
+/// 어느 스레드에서든 `wait()` 로 "이 write 를 writer 스레드가 실제로 PTY 에
+/// write_all+flush 완료했는지" 를 블로킹 대기(타임아웃 포함)할 수 있다.
+/// `TerminalState` 락은 잡지 않으므로 그 자체로는 메인 스레드를 막지 않는다 —
+/// 단 이 이점을 얻으려면 호출자가 반드시 메인 스레드가 **아닌** 다른 스레드에서
+/// `wait()` 해야 한다. 메인 스레드에서 직접 부르면 고정 sleep 과 동일한 blocking
+/// 문제가 재발한다.
+pub struct WriteAck {
+    progress: WriteProgress,
+    target: u64,
+}
+
+impl WriteAck {
+    /// writer 스레드가 이 write 를 포함해 최소 `target` 개를 flush 할 때까지
+    /// 대기한다. 도달하면 `true`. `timeout` 내 도달 못 하면(detached 터미널이라
+    /// writer 스레드 자체가 없거나, 죽었거나, 너무 느린 경우) `false` — 호출자는
+    /// 이 경우도 최선 노력으로 다음 단계를 진행해야 한다(무한 대기 금지).
+    pub fn wait(&self, timeout: Duration) -> bool {
+        let (lock, cvar) = &*self.progress;
+        let Ok(guard) = lock.lock() else {
+            return false;
+        };
+        if *guard >= self.target {
+            return true;
+        }
+        match cvar.wait_timeout_while(guard, timeout, |n| *n < self.target) {
+            Ok((_, wait_result)) => !wait_result.timed_out(),
+            Err(_) => false,
+        }
+    }
+}
 
 impl TerminalState {
     /// Route input bytes to the PTY writer (or the detached input sink). With
@@ -21,6 +55,10 @@ impl TerminalState {
         if let Some(sink) = self.input_tx.as_ref() {
             if let Err(e) = sink.send(bytes) {
                 tracing::warn!("terminal input channel closed during input: {e}");
+            } else {
+                // `write_progress` 와 비교해 "이 write 가 몇 번째인지" 판별하는
+                // 용도 전용 — [`WriteAck`] 가 없으면 아무도 읽지 않는다.
+                self.enqueued_count += 1;
             }
         } else {
             tracing::trace!("terminal input dropped (no sink): {} bytes", bytes.len());
@@ -118,6 +156,19 @@ impl Terminal {
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
     pub fn send_key(&mut self, text: &str) {
         self.lock_state().write_input(text.as_bytes().to_vec());
+    }
+
+    /// [`Terminal::send_key`] 와 동일하게 non-blocking 큐잉하지만, writer 스레드가
+    /// 이 바이트를 실제로 write_all+flush 완료했음을 (다른 스레드에서) 나중에
+    /// 확인할 수 있는 [`WriteAck`] 를 함께 반환한다. `send_key`(ack 없는
+    /// fire-and-forget)의 동작은 이 메서드와 무관하게 그대로다.
+    pub fn send_key_with_ack(&mut self, text: &str) -> WriteAck {
+        let mut state = self.lock_state();
+        state.write_input(text.as_bytes().to_vec());
+        WriteAck {
+            progress: state.write_progress.clone(),
+            target: state.enqueued_count,
+        }
     }
 
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).

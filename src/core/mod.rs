@@ -554,8 +554,9 @@ impl Core {
         inj.dispatch(method, params, timeout)
     }
 
-    /// Arc<OnceLock<HostIpcInjector>> 의 사본. runner thread 가 자체 호출 시 사용.
-    #[allow(dead_code)] // 이유: Core 흡수 layer(D.3.C) — runner thread 자체 dispatch 경로 미배선.
+    /// Arc<OnceLock<HostIpcInjector>> 의 사본. 메인 스레드가 아닌 별도 스레드가
+    /// 자체적으로 host IPC 를 재주입할 때 쓴다 — `terminal.tell`/`terminal.spawn`
+    /// 의 제출 `\r` ack 대기 스레드(`adapters::ipc::handler::terminal`)가 소비.
     pub(crate) fn host_ipc_injector_arc(
         &self,
     ) -> Arc<OnceLock<crate::ipc::host_call::HostIpcInjector>> {
