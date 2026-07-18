@@ -39,6 +39,25 @@ pub struct AccessibilitySettings {
     pub reduced_motion: bool,
 }
 
+/// 오버레이류(토스트 등) 표시 설정. "Overlay" 는 ubiquitous-language 의 확립된
+/// 우산 용어라, 이후 banner/marker 등 다른 오버레이 표시 설정도 이 섹션에 모은다.
+/// 현재는 토스트 수명 1개만 보유한다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverlaySettings {
+    /// 토스트가 자동 소멸하기 전 화면에 머무는 시간(ms). UI 는 초 단위로 노출하되
+    /// (1.0~10.0s, 0.5s step) 내부 저장은 ms. 기본 2000ms.
+    pub toast_duration_ms: u64,
+}
+
+impl Default for OverlaySettings {
+    fn default() -> Self {
+        Self {
+            toast_duration_ms: 2000,
+        }
+    }
+}
+
 /// Modifier 키 홀드 시 표시되는 단축키 안내 오버레이의 설정 슬롯.
 /// on/off 토글과 사용자가 이동/리사이즈한 위치·크기를 영속한다.
 ///

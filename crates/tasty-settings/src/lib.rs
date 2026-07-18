@@ -30,7 +30,7 @@ pub use scripts::{
 };
 pub use types::{
     AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
-    PerformanceSettings,
+    OverlaySettings, PerformanceSettings,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +44,9 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub memory: MemorySettings,
     pub accessibility: AccessibilitySettings,
+    /// 오버레이류(토스트 등) 표시 설정. `#[serde(default)]`(Settings 전체) 로 기존
+    /// config.toml 마이그레이션 안전(누락 시 toast_duration_ms=2000).
+    pub overlay: OverlaySettings,
     /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
     pub modifier_hint: ModifierHintSettings,

@@ -206,6 +206,9 @@ fn accent_color(kind: ToastKind, th: &Theme) -> egui::Color32 {
 pub struct ToastManager {
     toasts: Vec<ToastState>,
     next_id: u64,
+    /// 새 토스트/coalesce 갱신에 부여할 수명. `Settings.overlay.toast_duration_ms`
+    /// 에서 매 프레임 동기화된다(설정 미로드 시 [`DEFAULT_LIFETIME`]).
+    lifetime: Duration,
 }
 
 impl ToastManager {
@@ -213,7 +216,14 @@ impl ToastManager {
         Self {
             toasts: Vec::new(),
             next_id: 1,
+            lifetime: DEFAULT_LIFETIME,
         }
+    }
+
+    /// 토스트 수명을 설정값(ms)으로 동기화한다. 이미 떠 있는 토스트에는 소급하지
+    /// 않고, 이후 push/coalesce 되는 토스트부터 적용된다. draw 직전에 호출한다.
+    pub fn set_lifetime_ms(&mut self, ms: u64) {
+        self.lifetime = Duration::from_millis(ms);
     }
 
     /// 토스트 발사. 사용자 행동에서만 호출되어야 한다.
@@ -229,7 +239,7 @@ impl ToastManager {
         }) {
             existing.spawned_at = now;
             existing.kind = kind;
-            existing.lifetime = DEFAULT_LIFETIME;
+            existing.lifetime = self.lifetime;
             return;
         }
 
@@ -242,7 +252,7 @@ impl ToastManager {
             kind,
             scope: scope.clone(),
             spawned_at: now,
-            lifetime: DEFAULT_LIFETIME,
+            lifetime: self.lifetime,
         });
 
         // 스코프당 최대 개수 초과 시 가장 오래된 것 제거.

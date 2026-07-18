@@ -99,6 +99,7 @@ general = "一般"
 terminal = "ターミナル"
 appearance = "外観"
 notifications = "通知"
+overlay = "オーバーレイ"
 keybindings = "キーバインド"
 file_handler = "ハンドラ"
 misc = "その他"
@@ -118,6 +119,10 @@ reduced_motion = "モーションを減らす"
 reduced_motion_desc = "UI のフェード/スライドアニメーションを省略します。トーストのフェードイン/アウトが無効になります。ターミナル出力のアニメーションには影響しません。"
 modifier_hint = "修飾キーのヒントを表示"
 modifier_hint_desc = "修飾キー（Ctrl / Alt / Shift — macOS では Cmd / Option も）を押している間、利用可能なショートカットをフローティングパネルで表示します。少し押し続けると表示され、離した瞬間に消えます。"
+
+[settings.overlay]
+toast_duration = "トースト表示時間"
+toast_duration_desc = "トーストが自動的に消えるまで画面に表示される時間です。左右にドラッグするか、クリックして値を入力します。"
 
 [settings.file_handler]
 coming_soon = "このサブタブは今後のアップデートで利用可能になります。"

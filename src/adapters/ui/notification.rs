@@ -305,6 +305,9 @@ pub fn draw_popups(
 
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
     let reduced_motion = engine.settings.accessibility.reduced_motion;
+    state
+        .toasts
+        .set_lifetime_ms(engine.settings.overlay.toast_duration_ms);
     state.toasts.draw(ctx, &draw_ctx, reduced_motion);
 
     // Banner 렌더링 (toast 와 동일 LayoutContext). 배너는 스코프 콘텐츠 최상단(탭바
