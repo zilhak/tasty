@@ -5773,9 +5773,10 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude-design"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
+ "rusqlite",
  "serde",
  "serde_json",
  "tasty-plugin-sdk",

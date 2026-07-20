@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-claude-design"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: Claude Design (claude.ai/design) canvas integration"
@@ -20,6 +20,8 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+# import-session: 로컬 Firefox 프로필의 cookies.sqlite 읽기 전용 접근.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [lints]
 workspace = true

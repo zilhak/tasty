@@ -2,7 +2,8 @@
 
 //! Tasty Claude Design plugin — `claude.ai/design` 캔버스 통합 (외부 plugin).
 //!
-//! `tasty design login|logout|status|projects|detect|probe|chat` CLI 세트를 제공한다.
+//! `tasty design login|logout|import-session|status|projects|detect|probe|chat` CLI 세트를
+//! 제공한다.
 //! **시스템에 이미 설치된** Playwright(off-screen 헤드풀)를 자식 프로세스로 띄워
 //! `claude.ai/design` 에 attach 하고 Omelette RPC 로 Chat 을 주고받는다.
 //!
@@ -17,6 +18,7 @@
 
 mod auth;
 mod detect;
+mod firefox_import;
 mod runner;
 
 use std::path::{Path, PathBuf};
@@ -118,6 +120,9 @@ impl Plugin for ClaudeDesignPlugin {
             "design.login" => self.handle_login(),
             // M4: 저장된 세션 삭제.
             "design.logout" => self.handle_logout(),
+            // 로컬 Firefox 프로필의 claude.ai 쿠키를 가져와 저장(Google 자동화 로그인
+            // 차단 환경의 대안 경로 — 상세: firefox_import.rs).
+            "design.import_session" => self.handle_import_session(),
             // M5: 런너로 프로젝트 목록 스크랩.
             "design.projects" => self.handle_projects(),
             // M5: 기계적 chat — bg thread 시작(즉시 반환), 결과는 chat_status 로.
@@ -335,6 +340,34 @@ impl ClaudeDesignPlugin {
             tracing::warn!(error = %e, "runner set_auth(null) on logout failed");
         }
         Ok(json!({ "ok": true }))
+    }
+
+    /// `design.import_session` — 자동화 로그인이 Google 에 막히는 환경(공식 Chrome 이
+    /// 없는 아키텍처 등, `firefox_import.rs` 참조)의 대안. 사용자가 평소 쓰는 Firefox 에서
+    /// 이미 정상 로그인해 둔 claude.ai 세션 쿠키를 읽어 그대로 저장 + 런너에 주입한다.
+    fn handle_import_session(&mut self) -> Result<Value, IpcMethodError> {
+        let data_dir = self
+            .data_dir
+            .clone()
+            .ok_or_else(|| IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set"))?;
+        let state = firefox_import::import_from_firefox()
+            .map_err(|e| IpcMethodError::new(format!("firefox import failed: {e}")))?;
+        auth::save_auth(&state, &data_dir)
+            .map_err(|e| IpcMethodError::new(format!("save auth failed: {e}")))?;
+        if let Some(runner) = self.runner.as_ref().filter(|r| r.is_alive())
+            && let Err(e) = runner.request(
+                "set_auth",
+                json!({ "storage_state": state }),
+                runner::DEFAULT_OP_TIMEOUT,
+            )
+        {
+            tracing::warn!(error = %e, "runner set_auth after firefox import failed");
+        }
+        tracing::info!("design session imported from local Firefox profile");
+        Ok(json!({
+            "kind": "import_ok",
+            "message": "Imported claude.ai session from the local Firefox profile. Run `tasty design status` to confirm.",
+        }))
     }
 }
 

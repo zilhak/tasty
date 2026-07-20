@@ -108,7 +108,15 @@ async function launchLoginBrowser(pw) {
   try {
     return await pw.chromium.launch({ ...base, channel: 'chrome' });
   } catch (e) {
-    log('chrome channel unavailable, falling back to bundled chromium:', e.message);
+    // 번들 Chromium 도 Google 에 걸릴 수 있다(공식 Chrome 이 없는 아키텍처, 예: arm64
+    // Linux 는 이 우회조차 못 쓴다) — 그 경우 `tasty design import-session` 으로 로컬
+    // Firefox 의 기존 로그인 세션을 가져오는 게 대안이다.
+    log(
+      'chrome channel unavailable, falling back to bundled chromium (may be blocked by ' +
+        "Google's automation detection — if login hangs/fails, try `tasty design " +
+        'import-session` instead):',
+      e.message,
+    );
     return await pw.chromium.launch(base);
   }
 }
