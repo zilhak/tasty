@@ -588,14 +588,22 @@ impl App {
         }
         for &idx in dead.iter().rev() {
             let sess = self.attach_client_sessions.remove(idx);
-            self.cleanup_mirror_workspace(&sess);
+            self.cleanup_mirror_workspace(&sess, true);
         }
     }
 
     /// 끊긴(force-detach/EOF) 세션의 mirror workspace + mirror terminal 을 제거한다.
     /// 원칙 1①: 서버의 force-detach 가 client 의 *닫힌항목 히스토리/포커스* 를 건드리지
     /// 않게 — mirror workspace 만 제거하고 active index 만 클램프한다.
-    fn cleanup_mirror_workspace(&mut self, sess: &AttachClientSession) {
+    ///
+    /// `from_disconnect`: 이 정리가 **원격발 disconnect**(EOF/force-detach/heartbeat
+    /// TTL — `apply_attach_client_output` 호출)로 일어났으면 `true`, **로컬 사용자가
+    /// mirror workspace 자체를 닫은** 경로(`detach_orphaned_mirror_sessions` 호출)면
+    /// `false`. `true`일 때만 anchor 를 `auto_attach_pending_reactivation` 에 넣어
+    /// `maybe_trigger_auto_attach` 가 워크스페이스 전환(엣지) 전까지 조용한 자동
+    /// 재연결을 억제하게 한다 — 사용자가 명시적으로 mirror ws 를 닫은 경우는 "재진입
+    /// 대기" 의미가 없어(사용자 스스로 걷어낸 것) 게이팅 대상이 아니다.
+    fn cleanup_mirror_workspace(&mut self, sess: &AttachClientSession, from_disconnect: bool) {
         for main in self.main_windows_iter_mut() {
             let engine = &mut main.core_state;
             let Some(pos) = engine
@@ -631,6 +639,11 @@ impl App {
         // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
         if let Some(anchor) = sess.anchor_ws_id {
             self.auto_attach_active.remove(&anchor);
+            // disconnect 발 정리만 재진입 대기로 표시 — 사용자가 mirror ws 를 직접
+            // 닫은 경로는 "재진입 대기" 대상이 아니다(위 함수 docstring 참고).
+            if from_disconnect {
+                self.auto_attach_pending_reactivation.insert(anchor);
+            }
         }
         // 터널 핸들(sess.tunnel)은 여기서 Drop → 자식 ssh kill(고아 터널 방지).
     }
@@ -661,7 +674,7 @@ impl App {
             .collect();
         for &idx in orphaned.iter().rev() {
             let sess = self.attach_client_sessions.remove(idx);
-            self.cleanup_mirror_workspace(&sess);
+            self.cleanup_mirror_workspace(&sess, false);
         }
     }
 

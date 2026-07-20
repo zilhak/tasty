@@ -157,16 +157,26 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_active: std::collections::HashSet<u32>,
     /// 직전 프레임에 포커스 창의 활성 워크스페이스였던 id(엣지 감지용).
-    /// `maybe_trigger_auto_attach` 가 이 값과 이번 프레임의 활성 ws id 를 비교해
-    /// **전환**(재활성화) 만 트리거로 인정한다 — "계속 활성 상태" 는 트리거하지 않는다.
-    /// 이게 없으면: silent disconnect → `cleanup_mirror_workspace` 가 anchor 를
-    /// `auto_attach_active` 에서 제거 → anchor 워크스페이스가 여전히(사용자가 이동한 적
-    /// 없이) 활성 상태 → 바로 다음 프레임에 조건이 다시 참이 돼 **사용자 조작 없이
-    /// 즉시 재연결이 재시도**된다 — "정리만 하고 자동 재연결은 사용자가 워크스페이스를
-    /// 벗어났다 되돌아오는 등 수동으로 재진입해야 재시도"라는 스코프와 어긋나는 동작이라
-    /// 엣지 트리거로 좁힌다.
+    /// `maybe_trigger_auto_attach` 가 `auto_attach_pending_reactivation` 에 속한
+    /// anchor 에 한해, 이 값과 이번 프레임의 활성 ws id 를 비교해 **전환**(재활성화)
+    /// 만 트리거로 인정한다 — 아래 `auto_attach_pending_reactivation` 문서 참고.
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_last_active_ws: Option<u32>,
+    /// silent disconnect(원격발 EOF/force-detach/heartbeat TTL) 로 방금 정리되어
+    /// **재진입 대기 중인** anchor(매핑된 로컬 ws id) 집합. `cleanup_mirror_workspace`
+    /// 가 이 정리가 disconnect 경로(사용자가 mirror ws 자체를 닫은 경로가 아니라)임을
+    /// 확인했을 때만 여기 넣는다. `maybe_trigger_auto_attach` 는 이 집합에 속한
+    /// anchor 만 워크스페이스 전환(엣지, `auto_attach_last_active_ws` 비교)이 있어야
+    /// 트리거 후보로 본다 — 이 집합에 없는 anchor(신규 mapping 등)는 기존처럼 활성화
+    /// 즉시(레벨) 트리거된다. 트리거에 성공하면 이 집합에서 제거한다.
+    ///
+    /// 이게 없으면: "disconnect 후 조용한 자동 재연결 억제"를 anchor 워크스페이스가
+    /// **활성 상태로 남아있는지 자체**로 판정하게 되는데, 그 기준은 "방금 새로
+    /// `attach_mapping` 을 설정한 이미-활성인 워크스페이스"와 구분이 안 된다 — 그러면
+    /// 후자(흔한 CLI 시나리오: `tasty set workspace --ssh-profile ...` 를 이미 활성인
+    /// 워크스페이스에 실행)도 워크스페이스 전환 전까지 트리거되지 않는 회귀가 생긴다.
+    #[cfg(feature = "gui")]
+    pub(crate) auto_attach_pending_reactivation: std::collections::HashSet<u32>,
     /// 단계 7 — 자동 attach 워커 스레드 → 메인 루프 결과 채널(SSH 터널/포트 전달).
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
@@ -244,6 +254,7 @@ impl App {
             attach_client_sessions: Vec::new(),
             auto_attach_active: std::collections::HashSet::new(),
             auto_attach_last_active_ws: None,
+            auto_attach_pending_reactivation: std::collections::HashSet::new(),
             auto_attach_tx,
             auto_attach_rx,
             screenshot_capture_tx,
