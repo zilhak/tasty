@@ -42,10 +42,13 @@ function isDesignAppUrl(url) {
 const SEL_COMPOSER = '[data-testid="chat-composer-input"], div[role="textbox"].ProseMirror';
 const SEL_SEND = '[data-testid="chat-send-button"]';
 const SEL_MESSAGES = '[data-testid="chat-messages"]';
-// 턴 종료 신호: 모델 턴 스트리밍 RPC 가 닫히는 시점. 주의: 서비스명이
-// `anthropic.omelette.api.v1alpha.OmeletteService` 라 "OmeletteService" 앞은 `/` 가
-// 아니라 `.` 다. 따라서 leading slash 를 넣으면 안 된다(과거 버그). 쿼리스트링 허용.
-const CHAT_RPC_RE = /OmeletteService\/Chat(\?|$)/;
+// 턴 종료(완료) 신호: 클라이언트가 턴 lease 를 반납하는 ReleaseTurn RPC. 실측상 디자인
+// 턴은 첫 Chat 스트림을 열어둔 채(닫히지 않음) RenewTurn 으로 lease 를 연장하며 도구 호출·
+// 편집을 수행하다가, 완료 시 ReleaseTurn 을 딱 한 번 호출한다. 따라서 "첫 Chat 응답 스트림
+// close" 가 아니라 이 ReleaseTurn 이 진짜 턴 종료 신호다(과거엔 Chat 스트림 close 를 기다려
+// 영영 안 풀리고 timeout 났다 — 응답은 화면에 다 떠도 완료를 못 읽음). 주의: 서비스명이
+// `...v1alpha.OmeletteService` 라 메서드 앞은 `/`, 서비스명 안은 `.` 다. 쿼리스트링 허용.
+const RELEASE_TURN_RE = /OmeletteService\/ReleaseTurn(\?|$)/;
 // "Your other tab is working on a request" 배너 — claude.ai/design 은 한 프로젝트에
 // 동시 한 turn 만 허용한다(동시성 lock 프로토콜의 근거). 전송 직후 이 배너가 뜨면
 // 충돌이므로 timeout 까지 헛대기 말고 즉시 busy 로 보고한다.
@@ -302,7 +305,7 @@ async function handle(req) {
     }
 
     case 'chat': {
-      // 기계적 chat: 프로젝트 진입 → composer 입력 → send 클릭 → Chat 스트림 종료 대기
+      // 기계적 chat: 프로젝트 진입 → composer 입력 → send 클릭 → ReleaseTurn(턴 종료) 대기
       // → 응답 델타 추출. (관찰로 확정한 결정론적 레시피.)
       try {
         await ensureBrowser();
@@ -323,13 +326,14 @@ async function handle(req) {
           return c ? (c.innerText || '') : '';
         }, SEL_MESSAGES);
 
-        // 턴 종료 신호를 클릭 전에 건다. timeout 은 디자인 턴이 길 수 있어 넉넉히.
+        // 턴 종료(ReleaseTurn) 대기를 클릭 전에 건다(전송 후 걸면 놓칠 수 있음). timeout 은
+        // 디자인 턴이 길 수 있어 넉넉히.
         const timeoutMs = req.timeout_ms || 1800000;
-        const chatDone = page.waitForResponse((r) => CHAT_RPC_RE.test(r.url()), { timeout: timeoutMs });
+        const turnReleased = page.waitForResponse((r) => RELEASE_TURN_RE.test(r.url()), { timeout: timeoutMs });
         await page.locator(SEL_SEND).click();
 
-        // 전송 직후: 턴 시작(Chat RPC) vs "다른 탭 작업 중" 배너 경쟁. 배너가 이기면
-        // 동시성 충돌이므로 timeout 까지 헛대기 말고 즉시 busy 로 보고(프로토콜 backstop).
+        // 전송 직후: 정상 턴(→ ReleaseTurn 으로 종료) vs "다른 탭 작업 중" 배너 경쟁. 배너가
+        // 이기면 동시성 충돌이므로 timeout 까지 헛대기 말고 즉시 busy 로 보고(프로토콜 backstop).
         const busySeen = page
           .locator(SEL_BUSY_BANNER, { hasText: BUSY_TEXT_RE })
           .first()
@@ -337,19 +341,18 @@ async function handle(req) {
           .then(() => true)
           .catch(() => false);
         const race = await Promise.race([
-          chatDone.then((r) => ({ kind: 'rpc', resp: r })).catch((e) => ({ kind: 'rpc_err', e })),
+          turnReleased.then(() => ({ kind: 'done' })).catch((e) => ({ kind: 'wait_err', e })),
           busySeen.then((seen) => (seen ? { kind: 'busy' } : { kind: 'none' })),
         ]);
         if (race.kind === 'busy') {
           send({ id, kind: 'busy', message: 'another tab is working on a request in this project' });
           break;
         }
-        if (race.kind === 'rpc_err') {
-          throw race.e; // Chat RPC 대기 실패(진짜 타임아웃 등) → 아래 catch 로.
+        if (race.kind === 'wait_err') {
+          throw race.e; // ReleaseTurn 대기 실패(진짜 타임아웃 등) → 아래 catch 로.
         }
-        const resp = race.resp;
-        await resp.finished(); // 스트림 닫힘 = 모델 턴 종료.
-        await page.waitForTimeout(800); // DOM 반영 여유.
+        // ReleaseTurn 수신 = 턴 종료. DOM 반영 여유 후 응답 델타 추출.
+        await page.waitForTimeout(800);
 
         const reply = await page.evaluate(({ sel, before }) => {
           const c = document.querySelector(sel);
