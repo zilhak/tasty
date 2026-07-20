@@ -100,6 +100,91 @@ pub fn show_context_menu(
         });
     }
 
+    // Explicit outside-click dismiss. GTK's own menu-shell deactivate logic
+    // apparently keys off its own bookkeeping of "do I hold a grab", which
+    // isn't reliably set here (no trigger `GdkEvent` to grab a timestamp
+    // from — winit already consumed it) even though a grab does get
+    // established (see below) — so don't depend on it. Instead watch
+    // button-press-events on the menu directly: any press whose coordinates
+    // land outside the menu's own allocation must be one redirected here by
+    // the grab below (a real in-menu click is, by definition, inside it) —
+    // treat that as "clicked outside" and dismiss ourselves.
+    {
+        let done = Rc::clone(&done);
+        menu.connect_button_press_event(move |menu_widget, event| {
+            let (px, py) = event.position();
+            let w = f64::from(menu_widget.allocated_width());
+            let h = f64::from(menu_widget.allocated_height());
+            if px < 0.0 || py < 0.0 || px >= w || py >= h {
+                menu_widget.popdown();
+                done.set(true);
+            }
+            gtk::glib::Propagation::Proceed
+        });
+    }
+
+    // Best-effort pointer/keyboard grab, via GDK's own `Seat::grab` (not
+    // raw Xlib `XGrabPointer`) so the resulting events flow through GDK's
+    // normal (XInput2-based) event pipeline and actually reach the
+    // button-press-event handler above — a raw core-protocol Xlib grab
+    // redirects clicks at the X11 level too, but GDK3's event source only
+    // recognizes XInput2 events, so those redirected clicks never turned
+    // into a `GdkEventButton` at all (confirmed empirically: the handler
+    // above never fired for outside clicks under a raw Xlib grab).
+    // Without a grab at all, clicks outside the menu route to whatever
+    // window is under them (tasty's own main window) and the menu never
+    // sees them — so the handler above never gets a chance to run.
+    //
+    // Deferred to an idle callback (rather than done inline, or in the
+    // widget "map" signal) so it runs *after* `popup_at_rect` below has
+    // fully mapped the popup server-side — "map" fires as part of GTK's own
+    // default handler for the signal, before the underlying map request is
+    // guaranteed flushed, and grabbing too early fails.
+    let grabbed: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    {
+        let grabbed = Rc::clone(&grabbed);
+        let x11_gdk_display = x11_gdk_display.clone();
+        let menu_weak = menu.downgrade();
+        gtk::glib::idle_add_local_once(move || {
+            let Some(menu) = menu_weak.upgrade() else {
+                return;
+            };
+            let Some(gdk_win) = menu.window() else {
+                return;
+            };
+            let Some(seat) = x11_gdk_display
+                .upcast_ref::<gtk::gdk::Display>()
+                .default_seat()
+            else {
+                return;
+            };
+            // `popup_at_rect`'s own internal grab (established with no
+            // trigger event) does succeed at the X11 level — release it
+            // first so our explicit one below doesn't fail with
+            // `AlreadyGrabbed`.
+            seat.ungrab();
+            let status = seat.grab(
+                &gdk_win,
+                gtk::gdk::SeatCapabilities::POINTER | gtk::gdk::SeatCapabilities::KEYBOARD,
+                true, // owner_events: let clicks inside the menu (or any of
+                // its own sub-windows) route normally so GTK's own
+                // item hit-testing/activation keeps working; clicks
+                // outside every owned window still land on the menu
+                // (the grab window) and reach the handler above.
+                None,
+                None,
+                None,
+            );
+            if status == gtk::gdk::GrabStatus::Success {
+                grabbed.set(true);
+            } else {
+                tracing::warn!(
+                    "native context menu: seat grab failed ({status:?}) — outside-click dismiss may not work, relying on the timeout fallback"
+                );
+            }
+        });
+    }
+
     let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
     menu.popup_at_rect(
         &rect_window,
@@ -142,6 +227,16 @@ pub fn show_context_menu(
     }
     if !timed_out.get() {
         timeout_id.remove();
+    }
+
+    // Symmetric ungrab on every exit path (selection, cancel, or timeout).
+    if grabbed.get() {
+        if let Some(seat) = x11_gdk_display
+            .upcast_ref::<gtk::gdk::Display>()
+            .default_seat()
+        {
+            seat.ungrab();
+        }
     }
 
     if timed_out.get() {
