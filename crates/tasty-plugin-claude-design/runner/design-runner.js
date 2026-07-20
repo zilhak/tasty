@@ -24,6 +24,20 @@ const DESIGN_ORIGIN = 'https://claude.ai';
 const DESIGN_URL = `${DESIGN_ORIGIN}/design`;
 const projectUrl = (uuid) => `${DESIGN_ORIGIN}/design/p/${uuid}`;
 
+// URL이 실제 로그인된 claude.ai/design 앱인지 판정. path substring match(/\/design/)는
+// 로그아웃 시 claude.com/product/design(마케팅 페이지)로의 리다이렉트도 함께 매칭해
+// 오탐(false "logged_in: true")을 내므로, 호스트 + 정확한 경로로 앵커링한다.
+function isDesignAppUrl(url) {
+  if (!url) return false;
+  let u;
+  try {
+    u = new URL(url);
+  } catch (_) {
+    return false;
+  }
+  return u.hostname === 'claude.ai' && /^\/design(\/|$)/.test(u.pathname);
+}
+
 // 채팅 UI 셀렉터 (실측 확정, 설계 관찰 기록 참조).
 const SEL_COMPOSER = '[data-testid="chat-composer-input"], div[role="textbox"].ProseMirror';
 const SEL_SEND = '[data-testid="chat-send-button"]';
@@ -130,9 +144,7 @@ async function inspectPage() {
   }
   // Cloudflare 챌린지 페이지는 title 이 "Just a moment..." (조사 §5).
   const cfChallenge = /just a moment/i.test(title);
-  // auth 없이 design 에 가면 로그인 페이지로 유도된다.
-  const looksLogin = /\/login|\/sign-in|\/auth/i.test(url || '');
-  const onDesign = /\/design/i.test(url || '') && !looksLogin;
+  const onDesign = isDesignAppUrl(url);
   return {
     browser: 'open',
     url,
@@ -212,7 +224,7 @@ async function handle(req) {
           let url = '';
           try { url = lpage.url(); } catch (_) { /* navigating */ }
           // design 앱 도달(로그인 페이지 아님) = 로그인 성공.
-          if (/\/design/i.test(url) && !/\/login|\/sign-in|\/auth/i.test(url)) { ok = true; break; }
+          if (isDesignAppUrl(url)) { ok = true; break; }
         }
         if (!ok) {
           await loginBrowser.close();
