@@ -237,10 +237,25 @@ fn find_playwright() -> Option<PathBuf> {
 /// `npm root -g` 결과 디렉토리. npm 미설치/실패 시 `None`.
 fn npm_global_root() -> Option<PathBuf> {
     let npm = find_runtime_exe("npm")?;
-    let output = match std::process::Command::new(&npm)
-        .args(["root", "-g"])
-        .output()
-    {
+    let mut cmd = std::process::Command::new(&npm);
+    cmd.args(["root", "-g"]);
+    // npm 은 nvm/homebrew 레이아웃에서 `#!/usr/bin/env node` shebang 스크립트다(실제
+    // 바이너리가 아님). GUI(launchd)처럼 PATH 에 node 가 없는 컨텍스트에서 실행하면
+    // shebang 의 `env node` 가 node 를 못 찾아 exit 127 로 실패한다 — npm 실행 파일을
+    // 찾는 것과 npm 을 실행하는 것은 별개다. 탐지한 node 의 디렉토리를 자식 PATH 앞에
+    // 얹어, node 탐지 성공이 곧 npm 실행 가능으로 이어지게 한다(§3.1 의도 완결).
+    if let Some(node_dir) = find_node().as_deref().and_then(|p| p.parent()) {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut dirs = vec![node_dir.to_path_buf()];
+        dirs.extend(std::env::split_paths(&existing));
+        match std::env::join_paths(dirs) {
+            Ok(joined) => {
+                cmd.env("PATH", joined);
+            }
+            Err(e) => tracing::warn!(error = %e, "npm 실행용 PATH 합성 실패 — 기존 PATH 유지"),
+        }
+    }
+    let output = match cmd.output() {
         Ok(out) => out,
         Err(e) => {
             tracing::warn!(error = %e, "`npm root -g` 실행 실패");
