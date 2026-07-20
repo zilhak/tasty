@@ -85,10 +85,7 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
     let server = TastyInstance::spawn();
     let sid = server.first_surface_id();
 
-    assert!(
-        !is_attached(&server, sid),
-        "surface must start unattached"
-    );
+    assert!(!is_attached(&server, sid), "surface must start unattached");
 
     // client A: attach 성공 → 점유 lock 획득.
     let (stale_conn, ctrl) = open_attach(server.port(), sid);
