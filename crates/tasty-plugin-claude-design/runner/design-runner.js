@@ -124,13 +124,24 @@ async function launchLoginBrowser(pw) {
 async function ensureBrowser() {
   if (browser && browser.isConnected()) return;
   const pw = loadPlaywright();
-  log('launching off-screen headful chromium...');
-  // headless:false 가 핵심 — Cloudflare Managed Challenge 는 헤드리스 지문을 차단한다
-  // (조사 §5/§6). 진짜 헤드풀만 통과.
-  browser = await pw.chromium.launch({
+  // headless:false 가 핵심 — Cloudflare Managed Challenge 는 헤드리스 지문을 차단한다(조사
+  // §5/§6). 나아가 번들 Chromium 은 헤드풀이어도 자동화 지문이 CF 챌린지에 묶여 통과가
+  // 막히는 사례가 있어(로컬 실측), 로그인 브라우저처럼 실제 시스템 Chrome(channel:'chrome')을
+  // 우선 쓴다 — 지문이 import 한 cf_clearance(같은 실제 Chrome 에서 추출)와 일치하고 봇 탐지도
+  // 덜 걸린다. 자동화 플래그(navigator.webdriver / --enable-automation)는 숨긴다. Chrome
+  // 미설치 시 번들로 폴백(그 경우 CF 에 막힐 수 있음 — import-session + 로그인 유지로 완화).
+  const base = {
     headless: false,
-    args: OFFSCREEN_ARGS,
-  });
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: [...OFFSCREEN_ARGS, '--disable-blink-features=AutomationControlled'],
+  };
+  try {
+    log('launching off-screen headful system Chrome (channel:chrome)...');
+    browser = await pw.chromium.launch({ ...base, channel: 'chrome' });
+  } catch (e) {
+    log('chrome channel unavailable, falling back to bundled chromium (CF may challenge):', e.message);
+    browser = await pw.chromium.launch(base);
+  }
   const ctxOpts = { viewport: { width: 1280, height: 800 } };
   // 저장된 로그인 세션이 있으면 주입 — CF 통과 + 로그인 유지(조사 §6 Test 3).
   if (authState) ctxOpts.storageState = authState;
@@ -150,8 +161,21 @@ async function inspectPage() {
   } catch (e) {
     log('inspect failed:', e.message);
   }
-  // Cloudflare 챌린지 페이지는 title 이 "Just a moment..." (조사 §5).
-  const cfChallenge = /just a moment/i.test(title);
+  // Cloudflare 챌린지 페이지 판정. title 은 브라우저 로케일에 따라 현지화되므로(예: 한국어
+  // "잠시만 기다리십시오…" / "사람인지 확인하는 중") 영어 "Just a moment" 만 보면 오탐한다 —
+  // 여러 로케일 title + CF 챌린지 DOM 마커(#challenge-running / turnstile)를 함께 본다.
+  const cfTitle =
+    /just a moment|잠시만 기다|사람인지|checking your browser|un momento|einen moment|checking if the site/i.test(
+      title,
+    );
+  let cfBody = false;
+  try {
+    cfBody =
+      (await page.locator('#challenge-running, #cf-challenge-running, [class*="cf-turnstile"], #cf-please-wait').count()) > 0;
+  } catch (e) {
+    // navigate 중 등으로 locator 실패 시 title 판정만 사용.
+  }
+  const cfChallenge = cfTitle || cfBody;
   const onDesign = isDesignAppUrl(url);
   return {
     browser: 'open',

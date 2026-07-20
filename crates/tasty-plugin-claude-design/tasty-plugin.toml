@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.23"
+version = "0.1.24"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
@@ -29,7 +29,7 @@ description_i18n_key = "design.cli.desc"
 subcommands = [
     { name = "login",    ipc_method = "design.login",    args = "no_args",   description = "Open a visible browser to log in; capture and store the session (plaintext file, ADR-0018). Returns immediately; check `design status`." },
     { name = "logout",   ipc_method = "design.logout",   args = "no_args",   description = "Delete the stored Claude Design session" },
-    { name = "import-session", ipc_method = "design.import_session", args = "no_args", description = "Import an existing claude.ai session from the local Firefox profile's cookies (no browser automation involved). Use when `login` is blocked by Google's automated-browser OAuth detection (e.g. no official Google Chrome available for this CPU architecture) — log into claude.ai with Firefox normally once, then run this." },
+    { name = "import-session", ipc_method = "design.import_session", args = "no_args", description = "Import an existing claude.ai session from a local browser profile's cookies — tries Chrome first, then Firefox (no browser automation involved). Use when `login` is blocked by Google's automated-browser OAuth detection — log into claude.ai with Chrome or Firefox normally once, then run this." },
     { name = "status",   ipc_method = "design.status",   args = "no_args",   description = "Show runtime / stored-session / runner / Cloudflare-pass state" },
     { name = "projects", ipc_method = "design.projects", args = "no_args",   description = "List Claude Design projects" },
     { name = "detect",   ipc_method = "design.detect",   args = "no_args",   description = "Auto-detect system Playwright / node / chromium and report paths" },
