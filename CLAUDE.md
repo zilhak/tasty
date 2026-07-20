@@ -78,6 +78,8 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 자동 +1 절차와 릴리스 절차 전체: [`docs/dev-guide/release.md`](docs/dev-guide/release.md).
 
+> **패치 버전 bump 는 라이브 반영의 조건이기도 하다.** 실행 중 tasty 에 번들 plugin 변경을 **재시작 없이** 반영하는 `upgrade-builtins` 재sync 는 매니페스트 `version` 이 올라갔을 때만 동작한다(same-version skip). 반영 절차 전체는 [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md) §9.1.
+
 ## 빌드
 
 Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프로필 3 종 (`dev` / `release` / `dist`).

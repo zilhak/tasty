@@ -11,6 +11,11 @@
 //! 3. **uninstall** 시 `removed_builtins`에 추가되어 다음 실행에서 재등장하지 않음.
 //!
 //! 외부 플러그인과의 차이는 *발생지*뿐이다. 디스커버리·실행·권한 모델은 동일하다.
+//!
+//! 위 2 는 **첫 설치**만 설명한다. 첫 복사 이후 플러그인 코드/매니페스트를 고쳤을
+//! 때 **호스트 재시작 없이** 실행 중 tasty 에 반영하는 절차(재빌드 → `upgrade-builtins`
+//! 재sync → `disable`/`enable` respawn)는 `docs/dev-guide/plugin-development.md` §9.1
+//! 참조. 재sync 는 매니페스트 `version` 을 올렸을 때만 일어난다(same-version skip).
 
 use std::collections::HashSet;
 use std::ffi::OsString;
