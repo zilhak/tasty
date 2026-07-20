@@ -117,6 +117,71 @@ attach 스트림은 read timeout 이 없는 순수 blocking I/O 라 네트워크
 - **GUI heartbeat 스레드 정리**: `cleanup_mirror_workspace` 가 세션 종료 시(원격발이든 사용자 close 든) `sess.disconnected` 를 set 해, `writer: Arc<Mutex<TcpStream>>` 를 계속 붙들고 있는 heartbeat 스레드가 다음 tick 에 스스로 종료하게 한다 — 안 하면 세션이 정리된 뒤에도 소켓/스레드가 새는 leak.
 - **버전 skew 리스크(완화 로직 없음, 의도적)**: read timeout(20초)이 걸린 이후부터 이 프로토콜을 도입한 버전이 적용된다. 구버전 프로세스(Ping 미전송)와 신버전 프로세스가 같이 떠 있는 상태(예: 호스트 재시작 없이 CLI/플러그인만 재배포)에서는 idle 상태의 mirror 세션이 20초 뒤 오탐 disconnect 될 수 있다 — 이 프로젝트는 단일 사용자 로컬 앱이라 그런 skew 창이 짧고 드물어 허용 가능하다고 판단했다. 향후 다중 버전 동시운영이 필요해지면 capability 협상 또는 프로토콜 버전 필드 도입을 재검토한다.
 
+## 클라이언트측 비대칭("서버는 점유 유지, 클라이언트는 사라짐") 원인
+
+read timeout 프로토콜(위 절) 반영 *이전에도* "네트워크가 불안정해지면 클라이언트 mirror
+workspace 는 사라지는데 서버는 여전히 점유 상태로 남는" 비대칭이 관찰됐다. 서버측 무한 블록
+문제는 서버가 자기 소켓에 read timeout 을 걸어 스스로 해소한다(위 절). 아래는 **클라이언트가
+왜 서버보다 먼저 사라지고 있었는가**의 실측 확인 결과다.
+
+- **원인**: SSH 원격 attach(`crates/tasty-cli/src/ssh.rs::push_common_opts`)는 최초 SSH 터널
+  구현부터 `ServerAliveInterval=15` + `ServerAliveCountMax=3` 를 걸어왔다. 이는 **로컬 ssh
+  자식 프로세스 자신의 keepalive** 다 — 원격 sshd 가 15초
+  간격 keepalive 요청에 3회(최대 45초) 응답하지 않으면 로컬 ssh 프로세스가 스스로 종료한다.
+  ssh 가 죽으면 그 프로세스가 열어둔 로컬 loopback 포트(`ssh -L` 의 local 소켓)도 함께 닫혀
+  GUI/CLI client 의 `read`가 **EOF** 를 받는다 — 이건 이미 있던 "원격발 종료" 경로(위 "연결
+  생존 확인" 참조)를 그대로 타므로 read timeout 프로토콜 없이도 동작했다. 원격 tasty 서버
+  자신의 소켓은 이 keepalive 와 무관하게 열린 채로 남으므로(서버는 SSH 를 전혀 모른다 — 항상
+  loopback 만 본다) 무한 블록됐다 — 이게 서버/클라이언트 비대칭의 실체다.
+- **read timeout 프로토콜 반영 후의 위치**: 이 SSH self-kill 경로는 여전히 유효하지만,
+  이제는 **두 독립 메커니즘 중 하나**일 뿐이다 — SSH 터널이 죽지 않고 데이터만 조용히
+  막히는 경우(예: 같은 머신 loopback attach, 또는 SSH 는 살아있지만 tasty 프로세스 자체가
+  멎은 경우)에도 `HEARTBEAT_TIMEOUT`(20초) 가 독자적으로 클라이언트를 깨운다. 즉 SSH
+  self-kill 은 클라이언트 정리를 **더 빠르게**(최대 45초) 만들 뿐, read timeout 프로토콜의
+  전제 조건이 아니다.
+- **실측 검증(2026-07-20)**: `ps`/`kill` 로 실제 SSH 프로세스 종료를 관찰하는 대신(이 sandbox
+  는 self-loopback SSH 인증 수단이 없어 재현 불가), 동일한 근본 시나리오("피어가 조용히
+  응답을 멈춤")를 `SIGSTOP`으로 직접 재현했다. 격리된 debug 인스턴스(`--port-file` 커스텀)를
+  loopback 으로 띄우고 `tasty debug attach
+  <surface> --dump-after 30000`로 attach, 3초 뒤 서버 프로세스에 `SIGSTOP` → 클라이언트가
+  `--dump-after` 로 요청한 30초를 다 기다리지 않고 **~21초**(≈`HEARTBEAT_TIMEOUT`)만에
+  스스로 종료함을 확인(`AttachExit::Disconnected` 경로). `SIGCONT` 로 서버를 살려도 이미
+  종료한 클라이언트는 영향 없음 — 정상 동작.
+- **회귀 확인**: 서버가 건강한 상태에서 `HEARTBEAT_TIMEOUT` 보다 오래(raw 브리지, idle 25초+)
+  열어둔 세션은 끊기지 않고 유지됨을 같은 방식으로 확인(client 발 heartbeat 스레드가
+  서버측 read timeout 을 계속 갱신). 단, CLI **mirror-dump 모드**(`--raw` 미사용)는
+  client 발 heartbeat 이 없어 `--dump-after` 를 `HEARTBEAT_TIMEOUT`(20초) 이상으로 주면
+  **서버가 먼저** client 를 idle 로 보고 끊는다(서버도 20초 read timeout 을 걸기 때문) —
+  이건 버그가 아니라 문서화된 설계(위 "연결 생존 확인"의 "CLI dump 모드는 client 발
+  heartbeat 이 없다" 참조): 기본값 500ms 로 짧게 끝나는 검증 전용 모드라 20초를 넘기는
+  사용은 애초에 지원 대상이 아니다.
+
+## GUI 자동 재연결 스코프
+
+silent disconnect 정리(`cleanup_mirror_workspace`) 자체는 heartbeat TTL 만료로도 자동 발동한다
+(위 "연결 생존 확인"). 정리 이후 **자동으로 재attach 를 재시도하는 로직은 없다** — 의도적
+결정이다: 조용히 재연결을 반복 시도하는 것보다, 정리까지만 자동으로 하고 재진입은 사용자가
+결정하게 두는 쪽이 최소 동작이라 골랐다(자동 재연결이 필요해지면 CLI `--ssh` 의
+`run_attach_ssh` 백오프 루프(아래)와 유사한 패턴을 별도로 설계할 수 있다).
+
+- **트리거는 엣지(edge), 레벨(level) 아님**: `src/app/auto_attach.rs::maybe_trigger_auto_attach`
+  는 "활성 워크스페이스가 매핑 Some & `auto_attach_active` 에 없으면 트리거"를 **활성
+  워크스페이스 id 가 직전 프레임과 달라진 프레임에서만** 평가한다(`App.auto_attach_last_active_ws`
+  로 직전 값을 들고 비교, 술어는 `is_reactivation_edge` — 단위 테스트
+  `reactivation_edge_only_on_transition`). "이미 활성 상태로 계속 남아있는 것"은 트리거가
+  아니다 — 그래서 disconnect 로 `cleanup_mirror_workspace`가 앵커를 `auto_attach_active`
+  에서 지운 뒤에도, 사용자가 그 앵커 워크스페이스를 계속 보고 있었다면(다른 곳으로 이동하지
+  않았다면) 자동으로 재시도되지 않는다 — **다른 워크스페이스로 전환했다가 그 앵커로 돌아와야**
+  (전환 엣지) 재시도된다. 정상 연결 유지 중(앵커가 이미 `auto_attach_active` 에 있는 상태)에는
+  엣지가 잡혀도 중복 방지 체크가 그대로 걸러내 재트리거되지 않는다.
+- **`detach_orphaned_mirror_sessions` 와의 관계**: 간섭 없음. `apply_attach_client_output`
+  (disconnect 정리)과 `detach_orphaned_mirror_sessions`(사용자가 mirror ws 자체를 닫은
+  고아 세션 정리)는 서로 다른 세션 식별 기준(전자는 `disconnected` 플래그, 후자는
+  `local_workspace` 가 어느 창에도 없음)으로 동작하고, 둘 다 단일 스레드 메인루프에서
+  순차 실행돼(레이스 없음) 겹치는 세션이 있어도 먼저 처리한 쪽이 세션을 vec 에서 제거해
+  뒤쪽은 자연히 skip 한다. `maybe_trigger_auto_attach` 의 엣지 판정은 이 두 정리 경로 중
+  **어느 쪽이 anchor 를 `auto_attach_active`에서 지웠는지와 무관**하게 동일하게 적용된다.
+
 ## mirror 세션 종료 (client → 원격 점유 해제)
 
 client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(hard workspace lock)를 해제해야 한다. 종료 트리거는 두 가지이고 정리 경로(`cleanup_mirror_workspace`)를 공유한다.
