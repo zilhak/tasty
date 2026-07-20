@@ -101,7 +101,7 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab)은 로�
 
 - **시스템 ssh 위임**: 자체 암호화 없이 시스템 `ssh` 를 자식 프로세스로 실행. 사용자 `~/.ssh/config`·agent·known_hosts 재사용. **Windows 는 시스템 OpenSSH 풀경로**(`%WINDIR%\System32\OpenSSH\ssh.exe`) 우선 — git 번들 ssh 는 윈도우 ssh-agent(named pipe)를 못 봐 무암호 인증 실패.
 - **원격 포트 발견**: 기본 `auto` = subcommand → file-unix → file-windows 순서로 원격 DefaultShell 4종(PowerShell/cmd/git bash/unix) 커버. `--remote-port-mode` 로 고정, `--remote-tasty <path>` 로 원격 바이너리 경로(기본 `tasty`).
-- **터널 생명주기**: detach/종료 시 자식 ssh kill(고아 터널 방지)하되 **원격 데몬은 생존**(server-owns-PTY persistence = detach 의 본질). 자동 재연결(attach 한정): 지수 백오프(0.5s→30s)로 터널+attach 재수립(`--no-reconnect` 로 끔).
+- **터널 생명주기**: detach/종료 시 자식 ssh kill(고아 터널 방지)하되 **원격 데몬은 생존**(server-owns-PTY persistence = detach 의 본질). 자동 재연결(attach 한정): 지수 백오프(0.5s→30s)로 터널+attach 재수립(`--no-reconnect` 로 끔) — **단, 이 재연결은 `run_attach_on_port` 가 반환하는 `AttachExit::Disconnected` 를 전제로 하므로 mirror-dump/workspace-mirror-dump 모드에만 실제로 동작한다.** `--raw` 모드(`run_raw_bridge`)는 reader 스레드가 종료 사유(정상 Detach vs 조용한 끊김)를 구분하지 않고 무조건 `std::process::exit(0)` 으로 프로세스를 죽여 그 반환 지점 자체에 도달하지 못한다 — 재연결이 **절대 발동하지 않는** 기존 결함이다(구조적 재설계 필요, 별도 TODO 로 분리해 미해결).
 - **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 면 SSH 없이 직접 attach(동일 머신 다중 인스턴스 검증).
 
 ## 연결 생존 확인 (read timeout + heartbeat)
@@ -113,7 +113,7 @@ attach 스트림은 read timeout 이 없는 순수 blocking I/O 라 네트워크
 - **송신은 write 쪽이 idle 할 때만**: 서버의 write thread(`handle_stream_connection`)는 기존 `for frame in sink_rx` blocking iterator 대신 `sink_rx.recv_timeout(HEARTBEAT_INTERVAL)` 루프를 쓴다 — sink 에 실제 Data/Control 프레임이 흐르면 그게 곧 liveness 라 Ping 을 보내지 않고, `HEARTBEAT_INTERVAL` 동안 조용하면 빈 Ping 을 대신 흘린다. GUI/CLI(raw 브리지) client 는 각각 별도 heartbeat 스레드가 `HEARTBEAT_INTERVAL` 마다 무조건 Ping 을 보낸다(활성 트래픽 여부를 별도로 추적하지 않음 — 5바이트 프레임 오버헤드가 그 추적 비용보다 훨씬 싸다).
 - **CLI dump 모드(mirror-dump/workspace-mirror-dump)는 client 발 heartbeat 이 없다**: `--dump-after` 기본 500ms 로 짧게 끝나 `HEARTBEAT_TIMEOUT`(20초) 안에서 항상 종료되고, 서버가 보내는 Ping 만으로 client 쪽 read timeout 은 충분히 방지된다. raw 브리지(대화형, 장시간 idle 가능)만 client 쪽 heartbeat 스레드를 띄운다.
 - **양방향이 필요한 이유**: 서버 write thread 의 Ping 은 client 의 read timeout 을(idle mirror 뷰), client 의 Ping 은 서버의 read timeout 을(client 가 오래 아무 입력도 안 보내는 세션) 각각 갱신한다 — 한쪽만 보내면 반대 방향의 read loop 가 오탐 disconnect 된다.
-- **timeout 만료 → 기존 disconnect 경로 재사용**: read timeout 으로 인한 `WouldBlock`/`TimedOut` io 에러는 서버의 `Err(_) => break`(`handle_stream_connection`)·GUI client 의 `Err(_) => disconnected.store(true, ...)`·CLI 의 `mpsc::RecvTimeoutError::Disconnected` 분기를 그대로 타 EOF 와 동일하게 처리된다 — 별도 sweep 스레드나 새 상태 없이, 아래 "mirror 세션 종료"·[`features/remote-attach`](../features/remote-attach/index.md) 의 "자동 해제" 가 조용한 네트워크 단절까지 커버하게 된다.
+- **timeout 만료 → 기존 disconnect 경로 재사용**: read timeout 으로 인한 `WouldBlock`/`TimedOut` io 에러는 서버의 `Err(_) => break`(`handle_stream_connection`)·GUI client 의 `Err(_) => disconnected.store(true, ...)`·CLI 의 `mpsc::RecvTimeoutError::Disconnected` 분기(`run_mirror_dump`/`run_workspace_mirror_dump` 한정 — `run_raw_bridge` 는 이 mpsc 분리 패턴을 쓰지 않아 예외, 아래 "SSH 터널" 절 참고)를 그대로 타 EOF 와 동일하게 처리된다 — 별도 sweep 스레드나 새 상태 없이, 아래 "mirror 세션 종료"·[`features/remote-attach`](../features/remote-attach/index.md) 의 "자동 해제" 가 조용한 네트워크 단절까지 커버하게 된다.
 - **GUI heartbeat 스레드 정리**: `cleanup_mirror_workspace` 가 세션 종료 시(원격발이든 사용자 close 든) `sess.disconnected` 를 set 해, `writer: Arc<Mutex<TcpStream>>` 를 계속 붙들고 있는 heartbeat 스레드가 다음 tick 에 스스로 종료하게 한다 — 안 하면 세션이 정리된 뒤에도 소켓/스레드가 새는 leak.
 - **버전 skew 리스크(완화 로직 없음, 의도적)**: read timeout(20초)이 걸린 이후부터 이 프로토콜을 도입한 버전이 적용된다. 구버전 프로세스(Ping 미전송)와 신버전 프로세스가 같이 떠 있는 상태(예: 호스트 재시작 없이 CLI/플러그인만 재배포)에서는 idle 상태의 mirror 세션이 20초 뒤 오탐 disconnect 될 수 있다 — 이 프로젝트는 단일 사용자 로컬 앱이라 그런 skew 창이 짧고 드물어 허용 가능하다고 판단했다. 향후 다중 버전 동시운영이 필요해지면 capability 협상 또는 프로토콜 버전 필드 도입을 재검토한다.
 
@@ -164,23 +164,36 @@ silent disconnect 정리(`cleanup_mirror_workspace`) 자체는 heartbeat TTL 만
 결정하게 두는 쪽이 최소 동작이라 골랐다(자동 재연결이 필요해지면 CLI `--ssh` 의
 `run_attach_ssh` 백오프 루프(아래)와 유사한 패턴을 별도로 설계할 수 있다).
 
-- **트리거는 엣지(edge), 레벨(level) 아님**: `src/app/auto_attach.rs::maybe_trigger_auto_attach`
-  는 "활성 워크스페이스가 매핑 Some & `auto_attach_active` 에 없으면 트리거"를 **활성
-  워크스페이스 id 가 직전 프레임과 달라진 프레임에서만** 평가한다(`App.auto_attach_last_active_ws`
-  로 직전 값을 들고 비교, 술어는 `is_reactivation_edge` — 단위 테스트
-  `reactivation_edge_only_on_transition`). "이미 활성 상태로 계속 남아있는 것"은 트리거가
-  아니다 — 그래서 disconnect 로 `cleanup_mirror_workspace`가 앵커를 `auto_attach_active`
-  에서 지운 뒤에도, 사용자가 그 앵커 워크스페이스를 계속 보고 있었다면(다른 곳으로 이동하지
-  않았다면) 자동으로 재시도되지 않는다 — **다른 워크스페이스로 전환했다가 그 앵커로 돌아와야**
-  (전환 엣지) 재시도된다. 정상 연결 유지 중(앵커가 이미 `auto_attach_active` 에 있는 상태)에는
-  엣지가 잡혀도 중복 방지 체크가 그대로 걸러내 재트리거되지 않는다.
+- **트리거는 기본적으로 레벨(level)** — `src/app/auto_attach.rs::maybe_trigger_auto_attach`
+  는 "활성 워크스페이스가 매핑 Some & `auto_attach_active` 에 없으면 트리거"를 **매 프레임**
+  재평가한다. 예를 들어 이미 활성인 워크스페이스에 `attach_mapping` 을 방금 새로 설정하면
+  (`tasty set workspace --ssh-profile ...`) 워크스페이스 전환 없이도 다음 프레임에 즉시
+  트리거된다.
+- **단, "재진입 대기(pending reactivation)" anchor 만 엣지(edge) 게이팅** — silent
+  disconnect(원격발 EOF/force-detach/heartbeat TTL)로 `cleanup_mirror_workspace` 가 정리한
+  anchor 는 `App.auto_attach_pending_reactivation` 에 들어간다(`from_disconnect=true` 로
+  호출됐을 때만 — 아래 "mirror 세션 종료"의 두 트리거 종류 참고). 그 집합에 속한 anchor 는
+  활성 워크스페이스 id 가 **직전 프레임과 달라진 프레임에서만**(`App.auto_attach_last_active_ws`
+  로 직전 값을 들고 비교, 술어는 `is_reactivation_edge`) 트리거를 허용한다 — "이미 활성
+  상태로 계속 남아있는 것"은 허용하지 않는다. 두 조건을 합친 최종 판정은
+  `is_attach_trigger_allowed(pending_reactivation, current, previous)`(단위 테스트
+  `new_mapping_triggers_immediately_without_transition`/
+  `disconnected_anchor_waits_for_transition_before_retrigger`). 트리거에 성공(워커 spawn)
+  하면 그 anchor 를 `auto_attach_pending_reactivation` 에서 제거한다.
+  - **왜 신규 mapping 과 구분해야 하는가**: 앵커가 활성 상태로 남아있는지만으로 재연결
+    억제를 판정하면, "disconnect 직후 그 워크스페이스를 계속 보고 있는 것"과 "그 워크스페이스에
+    매핑을 막 새로 설정한 것"을 구분할 수 없다 — 둘 다 "워크스페이스 전환 없이 활성 상태"이기
+    때문. 엣지를 모든 anchor 에 무차별 적용하면 후자(흔한 CLI 시나리오)까지 워크스페이스
+    전환 전까지 트리거되지 않는 회귀가 생긴다.
 - **`detach_orphaned_mirror_sessions` 와의 관계**: 간섭 없음. `apply_attach_client_output`
-  (disconnect 정리)과 `detach_orphaned_mirror_sessions`(사용자가 mirror ws 자체를 닫은
-  고아 세션 정리)는 서로 다른 세션 식별 기준(전자는 `disconnected` 플래그, 후자는
+  (disconnect 정리, `cleanup_mirror_workspace(sess, from_disconnect=true)`)과
+  `detach_orphaned_mirror_sessions`(사용자가 mirror ws 자체를 닫은 고아 세션 정리,
+  `from_disconnect=false`)는 서로 다른 세션 식별 기준(전자는 `disconnected` 플래그, 후자는
   `local_workspace` 가 어느 창에도 없음)으로 동작하고, 둘 다 단일 스레드 메인루프에서
   순차 실행돼(레이스 없음) 겹치는 세션이 있어도 먼저 처리한 쪽이 세션을 vec 에서 제거해
-  뒤쪽은 자연히 skip 한다. `maybe_trigger_auto_attach` 의 엣지 판정은 이 두 정리 경로 중
-  **어느 쪽이 anchor 를 `auto_attach_active`에서 지웠는지와 무관**하게 동일하게 적용된다.
+  뒤쪽은 자연히 skip 한다. `from_disconnect` 플래그가 두 경로를 구분해 사용자가 mirror ws 를
+  직접 닫은 경우는 `auto_attach_pending_reactivation` 에 들어가지 않는다(재진입 대기 의미가
+  없음 — 사용자 스스로 걷어낸 것).
 
 ## mirror 세션 종료 (client → 원격 점유 해제)
 
@@ -188,7 +201,7 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 - **원격발 종료(EOF/force-detach/read timeout)**: reader 스레드가 `Detach`/`force_detached`/EOF 를 받거나(위 "연결 생존 확인" 참조) read timeout 으로 소켓 read 가 에러를 반환하면 `disconnected` 플래그 → `apply_attach_client_output` 이 세션 제거 + `cleanup_mirror_workspace`.
 - **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 존재 여부(`find_main_with_workspace`)를 확인해, 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
-- **`cleanup_mirror_workspace`(공용)**: mirror ws·터미널 제거(이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트 해제 → 터널 kill. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
+- **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널 제거(이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 추가하지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
 
 ## force-detach
 
