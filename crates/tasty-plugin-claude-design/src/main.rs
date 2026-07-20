@@ -17,6 +17,7 @@
 //! OmeletteService/Chat 응답 종료). 자격증명 저장은 평문(ADR-0018).
 
 mod auth;
+mod chrome_import;
 mod detect;
 mod firefox_import;
 mod runner;
@@ -342,16 +343,30 @@ impl ClaudeDesignPlugin {
         Ok(json!({ "ok": true }))
     }
 
-    /// `design.import_session` — 자동화 로그인이 Google 에 막히는 환경(공식 Chrome 이
-    /// 없는 아키텍처 등, `firefox_import.rs` 참조)의 대안. 사용자가 평소 쓰는 Firefox 에서
-    /// 이미 정상 로그인해 둔 claude.ai 세션 쿠키를 읽어 그대로 저장 + 런너에 주입한다.
+    /// `design.import_session` — 자동화 로그인이 Google 에 막히는 환경의 대안. 사용자가 평소
+    /// 쓰는 브라우저에서 이미 정상 로그인해 둔 claude.ai 세션 쿠키를 읽어 저장 + 런너에 주입한다.
+    ///
+    /// **Chrome 먼저 시도 → 실패 시 Firefox 폴백 → 둘 다 없으면 명시적으로 세션 없음 에러.**
+    /// 각 importer 는 해당 브라우저 프로필/쿠키가 없으면 Err 를 반환하므로, 이 순서가 곧
+    /// "설치·로그인된 브라우저를 순서대로 탐지"하는 흐름이다(상세: `chrome_import.rs`·
+    /// `firefox_import.rs`). Chrome 복호는 OS 별 스킴 차이로 현재 macOS 만 지원.
     fn handle_import_session(&mut self) -> Result<Value, IpcMethodError> {
         let data_dir = self
             .data_dir
             .clone()
             .ok_or_else(|| IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set"))?;
-        let state = firefox_import::import_from_firefox()
-            .map_err(|e| IpcMethodError::new(format!("firefox import failed: {e}")))?;
+        let (state, source) = match chrome_import::import_from_chrome() {
+            Ok(s) => (s, "Chrome"),
+            Err(chrome_err) => match firefox_import::import_from_firefox() {
+                Ok(s) => (s, "Firefox"),
+                Err(firefox_err) => {
+                    return Err(IpcMethodError::new(format!(
+                        "no local claude.ai session found — log into claude.ai with Chrome or Firefox first \
+                         (Chrome: {chrome_err}; Firefox: {firefox_err})"
+                    )));
+                }
+            },
+        };
         auth::save_auth(&state, &data_dir)
             .map_err(|e| IpcMethodError::new(format!("save auth failed: {e}")))?;
         if let Some(runner) = self.runner.as_ref().filter(|r| r.is_alive())
@@ -361,12 +376,15 @@ impl ClaudeDesignPlugin {
                 runner::DEFAULT_OP_TIMEOUT,
             )
         {
-            tracing::warn!(error = %e, "runner set_auth after firefox import failed");
+            tracing::warn!(error = %e, "runner set_auth after import failed");
         }
-        tracing::info!("design session imported from local Firefox profile");
+        tracing::info!(source, "design session imported from local browser profile");
         Ok(json!({
             "kind": "import_ok",
-            "message": "Imported claude.ai session from the local Firefox profile. Run `tasty design status` to confirm.",
+            "source": source,
+            "message": format!(
+                "Imported claude.ai session from the local {source} profile. Run `tasty design status` to confirm."
+            ),
         }))
     }
 }
