@@ -1097,12 +1097,20 @@ fn draw(
         .fill(md_body_bg(theme, focused).to_egui())
         .inner_margin(margin_all(theme.spacing_sm));
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-        ui.set_min_width(ui.available_width());
-        egui::ScrollArea::vertical()
+        let viewport_w = ui.available_width();
+        ui.set_min_width(viewport_w);
+        // 세로/가로 모두 스크롤. 뷰포트보다 넓은 테이블(라이브러리가 wrap 없이 Grid 로
+        // 그려 뷰포트를 넘김)이 가로 스크롤로 도달 가능해진다. 세로 전용이면 오른쪽이 클립됨.
+        egui::ScrollArea::both()
             .auto_shrink([false, false])
             .drag_to_scroll(false)
             .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
+                // prose 는 뷰포트 폭에 맞춰 wrap 시키고(available_width 를 뷰포트로 고정 →
+                // 라이브러리가 max_width 를 뷰포트로 읽음), 뷰포트보다 넓은 테이블만 넘쳐
+                // 가로 스크롤로 도달하게 한다. max 를 안 잡으면 both() 가 무한 폭을 줘 문단도
+                // wrap 되지 않는다.
+                ui.set_max_width(viewport_w);
+                ui.set_min_width(viewport_w);
                 ui.style_mut().interaction.selectable_labels = true;
 
                 if let Some(err) = load_error {

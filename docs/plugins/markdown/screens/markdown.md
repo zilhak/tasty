@@ -20,9 +20,11 @@
 
 ## 디자인 토큰 매핑
 
-`crates/tasty-plugin-markdown/src/render.rs::render` 가 `ScrollArea::vertical`(host 측)
+`crates/tasty-plugin-markdown/src/render.rs::render` 가 `ScrollArea::both`(`main.rs::draw`)
 안에서 `pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose
-렌더러다. 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
+렌더러다. 스크롤 영역은 세로+가로 양방향이며, inner ui 의 `max_width` 를 뷰포트 폭으로 고정해
+prose 는 뷰포트에서 wrap 시키고 뷰포트보다 넓은 표(라이브러리가 wrap 없이 Grid 로 그려
+넘침)만 가로로 넘쳐 가로 스크롤로 도달하게 한다(세로 전용이면 표 오른쪽이 클립됨). 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
 
 본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — explorer 와 공유하는 `PathField` 위젯
 (`tasty-ui-widgets/src/path_field.rs` — `AutoComplete` 트리거 `Input` + 후보 드롭다운 + 우측
