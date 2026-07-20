@@ -920,7 +920,7 @@ mod forward_exec_tests {
         assert!(r.is_err(), "missing anchor must fail");
     }
 
-    // ─── hard-occupied dispatch 가드 (TODO 10: 생성 계열) 회귀 방지 ──────
+    // ─── hard-occupied dispatch 가드 (TODO 10/11) 회귀 방지 ──────────────
     //
     // `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)는 일반 IPC
     // method-string dispatch 에만 걸려 있고, 이 파일의 `execute_forwarded_structural_op`
@@ -997,6 +997,111 @@ mod forward_exec_tests {
         );
     }
 
+    /// (holder 회귀 방지) ClosePane forward 는 hard-occupied 워크스페이스의 pane 이
+    /// 2개 이상일 때 여전히 성공해야 한다.
+    #[test]
+    fn forward_close_pane_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        // 두 번째 pane 을 먼저 만든다(점유 전 — 아직 로컬 자유 상태).
+        let split = StructuralOp::SplitPane {
+            anchor_surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split)
+            .expect("split ok")
+            .expect("split delta");
+        let b = fd.added_terminals[0];
+        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        engine
+            .attach
+            .acquire_workspace(ws_id, &all, &all, 7)
+            .expect("workspace 점유 획득");
+        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let close = StructuralOp::ClosePane {
+            anchor_surface_id: b,
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward ClosePane 은 hard-occupied 상태에서도 성공해야 한다"
+        );
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            panes_before - 1
+        );
+    }
+
+    /// (holder 회귀 방지) MoveTab forward 는 hard-occupied 워크스페이스에서도 성공해야
+    /// 한다.
+    #[test]
+    fn forward_move_tab_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        // 같은 pane 에 두 번째 tab 을 만든다(점유 전).
+        let new_tab = StructuralOp::NewTab {
+            anchor_surface_id: a,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &new_tab)
+            .expect("new-tab ok")
+            .expect("new-tab delta");
+        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        engine
+            .attach
+            .acquire_workspace(ws_id, &all, &all, 7)
+            .expect("workspace 점유 획득");
+        let mv = StructuralOp::MoveTab {
+            anchor_surface_id: a,
+            from_index: 0,
+            to_index: 1,
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward MoveTab 은 hard-occupied 상태에서도 성공해야 한다"
+        );
+    }
+
+    /// (holder 회귀 방지) CloseSurface forward 는 같은 tab 안에 형제 surface 가 있을 때
+    /// hard-occupied 워크스페이스에서도 성공해야 한다.
+    #[test]
+    fn forward_close_surface_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        // 같은 tab 안에 형제 surface 를 만든다(점유 전).
+        let split_surface = StructuralOp::SplitSurface {
+            surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd =
+            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
+                .expect("split ok")
+                .expect("split delta");
+        let b = fd.added_terminals[0];
+        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        engine
+            .attach
+            .acquire_workspace(ws_id, &all, &all, 7)
+            .expect("workspace 점유 획득");
+        let before = engine.terminals.iter().count();
+        let close = StructuralOp::CloseSurface { surface_id: b };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward CloseSurface 는 hard-occupied 상태에서도 성공해야 한다"
+        );
+        assert_eq!(engine.terminals.iter().count(), before - 1);
+    }
+
     /// (TODO 10) 비-holder 경로: hard-occupied 워크스페이스에 일반 IPC(`split`/
     /// `tab.create`)로 직접 호출하면 거부되고 트리가 그대로 유지돼야 한다.
     #[test]
@@ -1051,6 +1156,80 @@ mod forward_exec_tests {
             engine.workspaces[0].pane_layout().all_pane_ids().len(),
             panes_before,
             "거부된 요청은 새 pane 을 만들면 안 된다"
+        );
+    }
+
+    /// (TODO 11) 비-holder 경로: hard-occupied 워크스페이스에 일반 IPC(`pane.close`/
+    /// `tab.close`/`tab.move`/`surface.close`)로 직접 호출하면 거부되고 트리가 그대로
+    /// 유지돼야 한다.
+    #[test]
+    fn dispatch_denies_structural_close_move_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let tab_id = engine.workspaces[0]
+            .pane_layout()
+            .find_pane(pane_id)
+            .expect("pane exists")
+            .tabs[0]
+            .id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+
+        let terminals_before = engine.terminals.iter().count();
+        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let tabs_before = engine.workspaces[0]
+            .pane_layout()
+            .find_pane(pane_id)
+            .expect("pane exists")
+            .tabs
+            .len();
+
+        for (method, params) in [
+            ("pane.close", serde_json::json!({ "pane_id": pane_id })),
+            ("tab.close", serde_json::json!({ "tab_id": tab_id })),
+            (
+                "tab.move",
+                serde_json::json!({ "pane_id": pane_id, "from_index": 0, "to_index": 0 }),
+            ),
+            ("surface.close", serde_json::json!({ "surface_id": a })),
+        ] {
+            let req = ipc_request(method, params);
+            let resp = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &req,
+                &CallerContext::Local,
+            );
+            let err = resp.error.unwrap_or_else(|| {
+                panic!("{method}: hard-occupied 워크스페이스에 대한 비-holder 요청은 거부돼야 한다")
+            });
+            assert!(
+                err.message.to_lowercase().contains("occupied"),
+                "{method}: 에러 메시지에 점유 안내가 있어야 한다 (got: {})",
+                err.message
+            );
+        }
+
+        assert_eq!(engine.terminals.iter().count(), terminals_before);
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            panes_before,
+            "거부된 요청은 pane 을 닫으면 안 된다"
+        );
+        assert_eq!(
+            engine.workspaces[0]
+                .pane_layout()
+                .find_pane(pane_id)
+                .expect("pane exists")
+                .tabs
+                .len(),
+            tabs_before,
+            "거부된 요청은 tab 을 닫거나 이동하면 안 된다"
         );
     }
 
