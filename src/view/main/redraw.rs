@@ -620,14 +620,15 @@ impl MainView {
                             from_index: tab_index,
                             to_index: tab_index - 1,
                         });
-                    if !self
+                    if !self.state.forward_mirror_structural(
+                        &mut self.core_state,
+                        mirror_op,
+                        Vec::new(),
+                    ) && let Some(pane) = self
                         .state
-                        .forward_mirror_structural(&mut self.core_state, mirror_op)
-                        && let Some(pane) = self
-                            .state
-                            .active_workspace_mut(&mut self.core_state)
-                            .pane_layout_mut()
-                            .find_pane_mut(pane_id)
+                        .active_workspace_mut(&mut self.core_state)
+                        .pane_layout_mut()
+                        .find_pane_mut(pane_id)
                     {
                         pane.move_tab(tab_index, tab_index - 1);
                     }
@@ -646,14 +647,15 @@ impl MainView {
                         from_index: tab_index,
                         to_index: tab_index + 1,
                     });
-                if !self
+                if !self.state.forward_mirror_structural(
+                    &mut self.core_state,
+                    mirror_op,
+                    Vec::new(),
+                ) && let Some(pane) = self
                     .state
-                    .forward_mirror_structural(&mut self.core_state, mirror_op)
-                    && let Some(pane) = self
-                        .state
-                        .active_workspace_mut(&mut self.core_state)
-                        .pane_layout_mut()
-                        .find_pane_mut(pane_id)
+                    .active_workspace_mut(&mut self.core_state)
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
                 {
                     pane.move_tab(tab_index, tab_index + 1);
                 }

@@ -32,16 +32,32 @@ impl AppState {
     ///
     /// mirror 워크스페이스 **자체를 닫는 것**(`close_active_workspace`)은 로컬 mirror
     /// 뷰를 걷어내는 정당한 로컬 동작이므로 이 가드를 태우지 않는다.
+    ///
+    /// 이 메서드의 모든 호출부는 GUI 단축키/버튼/컨텍스트 메뉴 직접 조작이다(IPC/CLI
+    /// 는 `Core::apply`→`DomainIntent` 경로만 탄다) — 그래서 항상 `user_triggered: true`
+    /// 로 push 한다(08). `close_focus_candidates`(로컬 surface id, 우선순위 순)는 close
+    /// 계열 호출부가 닫히기 **전** 트리에서 계산해 넘긴다 — 닫힌 surface 가 focus 였고
+    /// 원격의 옛 focus 복원이 실패할 때(09) client-only fallback 대상이 된다. new-tab/
+    /// split/move-tab 등 close 가 아닌 op 은 빈 벡터를 넘긴다.
     pub(crate) fn forward_mirror_structural(
         &mut self,
         engine: &mut CoreState,
         op: Option<crate::ipc::stream::StructuralOp>,
+        close_focus_candidates: Vec<u32>,
     ) -> bool {
         if !self.active_workspace(engine).mirror {
             return false;
         }
         match op {
-            Some(op) => engine.pending_structural_forward.push(op),
+            Some(op) => {
+                engine
+                    .pending_structural_forward
+                    .push(crate::core::PendingStructuralForward {
+                        op,
+                        user_triggered: true,
+                        close_focus_candidates,
+                    });
+            }
             None => {
                 #[cfg(feature = "gui")]
                 self.toasts.push(
@@ -54,6 +70,72 @@ impl AppState {
         true
     }
 
+    /// pane 안에서 `closing_tab_index` 탭이 닫힐 때 client-side focus fallback 후보
+    /// (로컬 surface id, 우선순위 순)를 반환한다(09). 로컬(비-mirror)의 "탭 하나만
+    /// 남기고 닫음" 케이스(`close_case_tab`, `src/core/mod.rs`)와 동일한 규칙: 닫히는
+    /// 탭이 마지막이 아니면 다음 탭, 마지막이면 이전 탭이 1순위. 그 슬롯도 못 쓰게 되는
+    /// (예상 밖) 경우를 대비해 나머지 탭도 순서대로 방어적 fallback 으로 담는다. pane
+    /// 에 탭이 하나뿐이면 빈 벡터(호출부가 기존 동작 — 원격 고정값 — 으로 남는다).
+    pub(crate) fn pane_sibling_tab_focus_candidates(
+        pane: &crate::model::Pane,
+        closing_tab_index: usize,
+    ) -> Vec<u32> {
+        let n = pane.tabs.len();
+        if n <= 1 {
+            return Vec::new();
+        }
+        let primary = if closing_tab_index + 1 < n {
+            closing_tab_index + 1
+        } else {
+            closing_tab_index.wrapping_sub(1)
+        };
+        let mut out = Vec::new();
+        if let Some(sid) = pane.tabs.get(primary).and_then(|t| t.focused_surface_id()) {
+            out.push(sid);
+        }
+        for (idx, tab) in pane.tabs.iter().enumerate() {
+            if idx == closing_tab_index || idx == primary {
+                continue;
+            }
+            if let Some(sid) = tab.focused_surface_id() {
+                out.push(sid);
+            }
+        }
+        out
+    }
+
+    /// focused pane 의 active tab 안에서 `surface_id` 가 닫힐 때 client-side focus
+    /// fallback 후보(로컬 surface id, 우선순위 순)를 반환한다(09). split 된 tab 이면
+    /// 같은 tab 안의 다른 leaf surface(구조상 순서, `close_active_surface` 가 로컬
+    /// 실행 시 쓰는 `Tab::close_surface`/`SurfaceLayout::close_surface` 의 "첫 leaf
+    /// 승격"과 동형)를, split 안 된 tab(닫으면 탭 자체가 사라짐)이면
+    /// [`pane_sibling_tab_focus_candidates`] 를 그대로 위임한다.
+    fn active_surface_close_focus_candidates(
+        &self,
+        engine: &CoreState,
+        surface_id: u32,
+    ) -> Vec<u32> {
+        let ws = self.active_workspace(engine);
+        let Some(pane) = ws.pane_layout().find_pane(ws.focused_pane) else {
+            return Vec::new();
+        };
+        let tab_index = pane.active_tab;
+        let Some(tab) = pane.tabs.get(tab_index) else {
+            return Vec::new();
+        };
+        if tab.is_split() {
+            tab.layout_opt
+                .as_ref()
+                .map(|l| l.all_surface_ids())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|&sid| sid != surface_id)
+                .collect()
+        } else {
+            Self::pane_sibling_tab_focus_candidates(pane, tab_index)
+        }
+    }
+
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
     pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 ClosePane 을 원격으로
@@ -63,7 +145,10 @@ impl AppState {
                 anchor_surface_id: sid,
             }
         });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        // pane 레벨 close 는 로컬도 무조건 "워크스페이스 첫 pane" 으로 이동하는 cascade
+        // 케이스(`close_case_pane`)와 같은 성격이라 인접 후보를 계산하지 않는다 — 09
+        // 문서의 스코프(같은 pane 안 인접 탭/surface)에 포함하지 않기로 한 결정.
+        if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             return true;
         }
         let target_id = self.active_workspace(engine).focused_pane;
@@ -104,10 +189,13 @@ impl AppState {
     pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseSurface 를 원격으로
         // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
-        let mirror_op = self
-            .focused_surface_id(engine)
+        let focused_sid = self.focused_surface_id(engine);
+        let mirror_op = focused_sid
             .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        let candidates = focused_sid
+            .map(|sid| self.active_surface_close_focus_candidates(engine, sid))
+            .unwrap_or_default();
+        if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
         let surface_id;

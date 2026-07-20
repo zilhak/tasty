@@ -51,6 +51,7 @@ fn split(
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
         Err(e) => {
+            crate::core::mark_last_forward_user_triggered(engine, &e, origin);
             super::report_apply_error(state, "SplitSurface", &e);
             return;
         }

@@ -76,6 +76,57 @@ impl std::fmt::Display for MirrorStructuralBlocked {
 
 impl std::error::Error for MirrorStructuralBlocked {}
 
+/// mirror 구조 변경 forward 큐(`CoreState::pending_structural_forward`)의 원소.
+/// `Core::apply` 는 origin 을 모르므로 항상 `user_triggered: false`(+ 빈 candidates)로
+/// push 한다 — 이는 IPC/에이전트 호출과 동일하게 취급되는 안전한 기본값이다. origin 을
+/// 아는 GUI 호출부(`intent::pane`/`intent::surface`/`intent::tab`, 그리고 origin 개념이
+/// 아예 없이 항상 GUI 직접 호출인 `state::AppState::forward_mirror_structural`)가
+/// 사후에 `user_triggered`를 뒤집거나(전자) 처음부터 `true`로 push한다(후자).
+///
+/// 08/09 두 이슈가 이 태그를 근거로 client-only focus 보정을 한다:
+/// - **08**(새 리소스로 focus 이동): `user_triggered`가 true 인 new-tab/split 이
+///   성공하면, 그 결과 delta 에서 새로 생긴 surface 로 focus 를 옮긴다.
+/// - **09**(close 시 인접 대상 fallback): `close_focus_candidates`(로컬 surface id,
+///   우선순위 순)를 담아두면, 닫힌 surface 가 focus 였던 경우(=기존 `restore_focus_
+///   after_delta`가 복원할 대상을 잃는 경우) 첫 번째로 살아남은 후보로 focus 를
+///   옮긴다. new-tab/split 등 close 가 아닌 op 은 항상 빈 벡터.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingStructuralForward {
+    pub(crate) op: crate::ipc::stream::StructuralOp,
+    pub(crate) user_triggered: bool,
+    pub(crate) close_focus_candidates: Vec<u32>,
+}
+
+impl PendingStructuralForward {
+    fn agent(op: crate::ipc::stream::StructuralOp) -> Self {
+        Self {
+            op,
+            user_triggered: false,
+            close_focus_candidates: Vec::new(),
+        }
+    }
+}
+
+/// `core.apply(...)`가 mirror-block+forward 로 방금 push 한 **마지막** op 를 "사용자
+/// GUI 조작 유래"로 표시한다(08). `err` 가 `forwarded=true`인 `MirrorStructuralBlocked`
+/// 가 아니거나 `origin` 이 사용자가 아니면 no-op(기본 `false` 유지) — 다른 이유의
+/// 실패로 큐에 아무것도 안 쌓였는데 엉뚱한 이전 op 를 잘못 표시하는 것을 막는다.
+pub(crate) fn mark_last_forward_user_triggered(
+    engine: &mut CoreState,
+    err: &anyhow::Error,
+    origin: &crate::intent::IntentOrigin,
+) {
+    let Some(blocked) = err.downcast_ref::<MirrorStructuralBlocked>() else {
+        return;
+    };
+    if !blocked.forwarded || !origin.is_user() {
+        return;
+    }
+    if let Some(last) = engine.pending_structural_forward.last_mut() {
+        last.user_triggered = true;
+    }
+}
+
 /// mirror 구조 `DomainIntent` → 원격 forward 할 [`StructuralOp`](crate::ipc::stream::StructuralOp).
 /// anchor 는 **로컬** mirror surface id(App drain 이 세션 매핑으로 원격 id 로 치환).
 /// pane/tab 대상 op 는 그 pane/tab 의 대표 surface(활성 탭의 focused surface)를 anchor 로
@@ -838,7 +889,9 @@ impl Core {
             // None → 기존 차단 toast.
             let forwarded = match build_mirror_forward_op(engine, &intent) {
                 Some(op) => {
-                    engine.pending_structural_forward.push(op);
+                    engine
+                        .pending_structural_forward
+                        .push(PendingStructuralForward::agent(op));
                     true
                 }
                 None => false,
@@ -3793,7 +3846,12 @@ mod mirror_structural_guard_tests {
             .expect("MirrorStructuralBlocked");
         assert!(blocked.forwarded, "forward 가능 op 는 forwarded=true");
         assert_eq!(engine.pending_structural_forward.len(), 1);
-        match &engine.pending_structural_forward[0] {
+        let queued = &engine.pending_structural_forward[0];
+        assert!(
+            !queued.user_triggered,
+            "Core::apply 는 origin 을 모르므로 기본 user_triggered=false(08)"
+        );
+        match &queued.op {
             StructuralOp::SplitSurface { surface_id, .. } => {
                 assert_eq!(*surface_id, a, "anchor 는 로컬 surface a");
             }
@@ -3819,7 +3877,7 @@ mod mirror_structural_guard_tests {
             },
         )
         .expect_err("blocked");
-        match &engine.pending_structural_forward[0] {
+        match &engine.pending_structural_forward[0].op {
             StructuralOp::SplitPane {
                 anchor_surface_id, ..
             } => assert_eq!(*anchor_surface_id, a, "pane anchor = 활성 탭 surface a"),
@@ -3847,6 +3905,106 @@ mod mirror_structural_guard_tests {
             .downcast_ref::<MirrorStructuralBlocked>()
             .expect("MirrorStructuralBlocked");
         assert!(!blocked.forwarded, "convert 는 forward 대상 아님");
+        assert!(engine.pending_structural_forward.is_empty());
+    }
+
+    /// 08 — `mark_last_forward_user_triggered` 는 `forwarded=true` + user origin 일
+    /// 때만 마지막 pending forward 를 `user_triggered=true` 로 뒤집는다.
+    #[test]
+    fn mark_last_forward_user_triggered_flips_on_user_origin() {
+        use crate::intent::{IntentOrigin, UserSource};
+
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect_err("blocked");
+        assert!(!engine.pending_structural_forward[0].user_triggered);
+
+        mark_last_forward_user_triggered(
+            &mut engine,
+            &err,
+            &IntentOrigin::User {
+                source: UserSource::Shortcut("split_surface_horizontal"),
+            },
+        );
+        assert!(
+            engine.pending_structural_forward[0].user_triggered,
+            "user origin + forwarded=true 는 뒤집혀야 한다"
+        );
+    }
+
+    /// 08 — agent/IPC origin 이면 forwarded=true 여도 그대로 false 로 남는다(기존 동작
+    /// 유지, IPC 경로는 focus 를 옮기지 않아야 하므로).
+    #[test]
+    fn mark_last_forward_user_triggered_stays_false_on_agent_origin() {
+        use crate::intent::IntentOrigin;
+
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect_err("blocked");
+
+        mark_last_forward_user_triggered(
+            &mut engine,
+            &err,
+            &IntentOrigin::Agent {
+                source: crate::intent::AgentSource::Ipc,
+            },
+        );
+        assert!(
+            !engine.pending_structural_forward[0].user_triggered,
+            "agent origin 은 뒤집히면 안 된다"
+        );
+    }
+
+    /// 08 — `forwarded=false`(convert 등 forward 불가 op)면 origin 이 user 여도
+    /// 아무것도 건드리지 않는다(애초에 큐가 비어 있으므로 no-op).
+    #[test]
+    fn mark_last_forward_user_triggered_noop_when_not_forwarded() {
+        use crate::intent::{IntentOrigin, UserSource};
+
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::ConvertSurface {
+                    surface_id: a,
+                    target: crate::core::intent::ConvertSurfaceTarget::Terminal { cwd: None },
+                },
+            )
+            .expect_err("blocked");
+
+        mark_last_forward_user_triggered(
+            &mut engine,
+            &err,
+            &IntentOrigin::User {
+                source: UserSource::Shortcut("x"),
+            },
+        );
         assert!(engine.pending_structural_forward.is_empty());
     }
 }

@@ -319,7 +319,11 @@ pub struct CoreState {
     /// 치환한 뒤 attach stream(`StreamTag::Control`)으로 원격에 forward 한다. 담긴
     /// [`StructuralOp`] 의 anchor 는 아직 **로컬** id(전송 직전 세션 매핑으로 원격
     /// 치환). mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
-    pub(crate) pending_structural_forward: Vec<crate::ipc::stream::StructuralOp>,
+    ///
+    /// 각 원소는 `StructuralOp` 자체 외에 08/09 client-only focus 보정용 태그
+    /// (`user_triggered`/`close_focus_candidates`)를 함께 싣는다 —
+    /// [`crate::core::PendingStructuralForward`] 참고.
+    pub(crate) pending_structural_forward: Vec<crate::core::PendingStructuralForward>,
 
     /// client-driven mirror geometry(ADR-0045) forward 큐. `Core::resize_all_terminals`
     /// 의 로컬 레이아웃 스윕이 mirror(detached) 터미널의 목표 grid `(cols, rows)` 를

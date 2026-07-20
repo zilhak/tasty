@@ -52,8 +52,14 @@ pub(crate) enum MirrorEvent {
     /// 소스다(`CoreState::set_mirror_surface_busy`).
     Activity(u32, bool),
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
-    /// 메인루프가 실패 toast 를 띄운다. 성공은 무음(별도 이벤트 없음).
+    /// 메인루프가 실패 toast 를 띄운다.
     StructuralFailed(String),
+    /// forward 한 구조 op 가 원격에서 **성공**했다(2단계) — 페이로드는 `op_id`. 08/09
+    /// client-only focus 보정 대상 op(`user_triggered`)만 correlate 할 필요가 있어
+    /// 세션의 `pending_op_focus`에서 이 id 를 찾아 `next_delta_focus`로 옮겨두는 데
+    /// 쓰인다(찾지 못하면 이 op 은 focus 보정 대상이 아니었다는 뜻 — 조용히 무시).
+    /// 구조 자체의 반영은 뒤따르는 `StructuralDelta` 가 담당(성공은 그 외엔 무음).
+    StructuralSucceeded(u64),
     /// 원격 워크스페이스 구조가 바뀌었다(3단계 역반영). 원격 ws 전체 트리+surfaces 를
     /// 담아 메인루프가 mirror 트리를 증분 재구성한다(survivor 터미널 local id 유지 →
     /// scrollback 보존, 신규만 새 mirror, 사라진 것 제거).
@@ -100,6 +106,15 @@ pub(crate) struct AttachClientSession {
     anchor_ws_id: Option<u32>,
     /// forward 한 구조 op 의 op_id 시퀀스(2단계). 회신 correlate/로그용 — 단조 증가.
     op_seq: u64,
+    /// 08/09 — `user_triggered` op 중 focus 보정이 필요한 것의 `op_id → 의도`.
+    /// `forward_one_structural_op` 이 전송 시 채우고, 그 op 의 성공 회신
+    /// (`StructuralResult{ok:true}`)이 오면 `next_delta_focus`로 옮겨지며 제거된다.
+    /// 실패 회신은 그냥 버려짐(딜타가 안 오므로 여기 남아도 다음 op 와 섞이지 않게
+    /// 반드시 제거해야 한다 — 실패 시엔 애초에 삽입되지 않는 성공 전용 슬롯이라
+    /// 자연히 문제없다).
+    pending_op_focus: HashMap<u64, PendingOpFocus>,
+    /// 방금 성공한 op 의 focus 의도 — 다음 `StructuralDelta` 적용에 1회 소비(take)된다.
+    next_delta_focus: Option<PendingOpFocus>,
     /// client-driven resize(ADR-0045) 중복 전송 억제. **원격 surface_id →
     /// 마지막으로 forward 한 (cols, rows)**. 로컬 레이아웃 스윕은 매 프레임 돌고
     /// mirror grid 는 server echo 로만 갱신되므로, echo 왕복(약 1 RTT) 동안 같은
@@ -319,7 +334,7 @@ impl App {
                                         Ok(StreamControl::Activity { surface_id, busy }) => {
                                             Some(MirrorEvent::Activity(surface_id, busy))
                                         }
-                                        // 2단계: forward 실패 회신 → 실패 toast. 성공은 무음.
+                                        // 2단계: forward 실패 회신 → 실패 toast.
                                         Ok(StreamControl::StructuralResult {
                                             ok: false,
                                             reason,
@@ -327,6 +342,14 @@ impl App {
                                         }) => Some(MirrorEvent::StructuralFailed(
                                             reason.unwrap_or_default(),
                                         )),
+                                        // 성공 회신 — UX 로는 무음이지만(구조 반영은
+                                        // 뒤따르는 StructuralDelta), 08/09 focus 보정
+                                        // op 를 correlate 하려면 op_id 가 필요하다.
+                                        Ok(StreamControl::StructuralResult {
+                                            ok: true,
+                                            op_id,
+                                            ..
+                                        }) => Some(MirrorEvent::StructuralSucceeded(op_id)),
                                         // 3단계: 원격 구조 변경 역반영 → mirror 트리 재구성.
                                         Ok(StreamControl::StructuralDelta {
                                             workspace_id,
@@ -402,6 +425,8 @@ impl App {
             tunnel,
             anchor_ws_id,
             op_seq: 0,
+            pending_op_focus: HashMap::new(),
+            next_delta_focus: None,
             last_forwarded_resize: HashMap::new(),
         });
         tracing::info!(
@@ -500,6 +525,15 @@ impl App {
                                     crate::adapters::ui::ToastScope::Window,
                                 );
                             }
+                            MirrorEvent::StructuralSucceeded(op_id) => {
+                                // 08/09 — 이 op 이 focus 보정 대상(user_triggered)으로
+                                // 등록돼 있었으면, 뒤따르는(프로토콜 보장) 다음
+                                // StructuralDelta 적용 시 1회 소비할 의도로 옮겨둔다.
+                                // 등록돼 있지 않았으면(에이전트/IPC 유래 등) no-op.
+                                if let Some(intent) = sess.pending_op_focus.remove(&op_id) {
+                                    sess.next_delta_focus = Some(intent);
+                                }
+                            }
                             MirrorEvent::StructuralDelta {
                                 workspace_id,
                                 tree,
@@ -507,12 +541,14 @@ impl App {
                             } => {
                                 // 원격 구조 변경 역반영: survivor 터미널 local id 를
                                 // 유지하며 mirror 트리를 재구성(신규 추가/사라진 것 제거).
+                                let pending_focus = sess.next_delta_focus.take();
                                 apply_mirror_structural_delta(
                                     sess,
                                     main,
                                     workspace_id,
                                     &tree,
                                     &surfaces,
+                                    pending_focus,
                                 );
                             }
                             MirrorEvent::CaptureResult { ok, path, reason } => {
@@ -635,7 +671,7 @@ impl App {
     /// 로컬은 이미 mutation 이 차단됐고(요청/응답), 원격 실행 결과는 reader 가 받는
     /// `StructuralResult`(실패 시 toast)로 반영된다.
     pub(crate) fn dispatch_pending_structural_forwards(&mut self) {
-        let mut pending: Vec<StructuralOp> = Vec::new();
+        let mut pending: Vec<crate::core::PendingStructuralForward> = Vec::new();
         for main in self.main_windows_iter_mut() {
             pending.append(&mut main.core_state.pending_structural_forward);
         }
@@ -650,7 +686,18 @@ impl App {
     /// forward 큐의 op 하나를 담당 mirror 세션으로 전송한다. anchor 로컬 surface 를 가진
     /// 세션을 찾아 local→remote 치환 후 `StructuralOp` 프레임을 write half 로 보낸다.
     /// 세션을 못 찾으면(예상 밖) warn 후 drop.
-    fn forward_one_structural_op(&mut self, local_op: StructuralOp) {
+    ///
+    /// `user_triggered`(08/09)면, 이 op 의 op_id 에 대응하는 focus 의도(`PendingOpFocus`)
+    /// 를 세션에 등록해둔다 — 성공 회신(`StructuralResult{ok:true}`) 이 오면 그 직후
+    /// (프로토콜 보장) 도착하는 `StructuralDelta` 적용 시 소비된다. `close_focus_
+    /// candidates`(로컬 id)는 여기서 anchor 와 같은 방식으로 원격 id 로 치환한다 —
+    /// 매핑에 없는(예상 밖) 후보는 조용히 걸러진다.
+    fn forward_one_structural_op(&mut self, pending: crate::core::PendingStructuralForward) {
+        let crate::core::PendingStructuralForward {
+            op: local_op,
+            user_triggered,
+            close_focus_candidates,
+        } = pending;
         let local_anchor = local_op.anchor_surface_id();
         // anchor 로컬 surface 를 mirror 로 보유한 세션.
         let Some(sess) = self
@@ -678,6 +725,14 @@ impl App {
         let wire = local_op.with_anchor_surface_id(remote_anchor);
         let op_id = sess.op_seq;
         sess.op_seq += 1;
+
+        if user_triggered
+            && let Some(intent) =
+                pending_op_focus_for(&local_op, &close_focus_candidates, &sess.remote_to_local)
+        {
+            sess.pending_op_focus.insert(op_id, intent);
+        }
+
         let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
             .unwrap_or_default();
         match sess.writer.lock() {
@@ -797,6 +852,57 @@ fn make_mirror_surface(
     engine.terminals.insert(local_id, mirror);
 }
 
+/// forward 한 `user_triggered` op 하나에 대해, 성공 시 어떤 client-only focus 보정을
+/// 해야 하는지(08/09). `op_id`로 세션에 등록해뒀다가 그 op 의 성공 회신 직후 도착하는
+/// `StructuralDelta` 적용에서 1회 소비된다.
+#[derive(Debug, Clone)]
+enum PendingOpFocus {
+    /// new-tab/split(08): 결과 delta 에서 새로 생긴 surface 로 focus 를 옮긴다.
+    NewResource,
+    /// close(09): 캡처해둔 이전 focus 가 이번 op 로 사라지면(=이번 op 이 바로 그
+    /// surface/tab 을 닫은 것), 아래 후보(**remote** id, 우선순위 순) 중 delta 이후에도
+    /// 살아남은 첫번째로 focus 를 옮긴다. 후보가 다 없으면 기존 동작(원격 고정값) 유지.
+    Close { candidates: Vec<u32> },
+}
+
+/// `forward_one_structural_op` 이 op 하나를 세션에 실어 보내기 직전, 이 op 이 08/09
+/// focus 보정 대상인지 판정한다. new-tab/split 계열은 항상 `NewResource`. close 계열은
+/// `close_focus_candidates`(로컬 id, `AppState` 가 닫히기 **전** 트리에서 계산해둔 것)를
+/// `remote_to_local`(전송 시점 기준 — anchor 치환과 동일 스냅샷)로 원격 id 로 치환해
+/// 담는다. 치환 결과가 전부 비면(매핑에 없는 후보뿐이었으면) `None` — split/move 등
+/// 대상이 아닌 op 도 `None`. `remote_to_local` 을 직접 받아(세션 전체가 아니라) 순수
+/// 함수로 유지 — 테스트가 TCP 연결을 갖춘 `AttachClientSession` 없이도 검증 가능하다.
+fn pending_op_focus_for(
+    op: &StructuralOp,
+    close_focus_candidates: &[u32],
+    remote_to_local: &HashMap<u32, u32>,
+) -> Option<PendingOpFocus> {
+    match op {
+        StructuralOp::NewTab { .. }
+        | StructuralOp::SplitSurface { .. }
+        | StructuralOp::SplitPane { .. } => Some(PendingOpFocus::NewResource),
+        StructuralOp::CloseSurface { .. }
+        | StructuralOp::CloseTab { .. }
+        | StructuralOp::ClosePane { .. } => {
+            let candidates: Vec<u32> = close_focus_candidates
+                .iter()
+                .filter_map(|local_sid| {
+                    remote_to_local
+                        .iter()
+                        .find(|&(_, l)| l == local_sid)
+                        .map(|(&r, _)| r)
+                })
+                .collect();
+            if candidates.is_empty() {
+                None
+            } else {
+                Some(PendingOpFocus::Close { candidates })
+            }
+        }
+        _ => None,
+    }
+}
+
 /// 원격 구조 변경 delta(3단계 역반영)를 mirror 트리에 적용한다. 원격 ws 의 실행 후 전체
 /// 트리+surfaces 를 받아:
 /// 1. survivor(기존 매핑에 있는 remote_id)는 **기존 local id 를 재사용**(터미널을
@@ -821,6 +927,7 @@ fn apply_mirror_structural_delta(
     workspace_id: u32,
     tree: &Value,
     surfaces: &[Value],
+    pending_focus: Option<PendingOpFocus>,
 ) {
     let engine = &mut main.core_state;
     let ids = engine.next_ids.clone();
@@ -833,9 +940,12 @@ fn apply_mirror_structural_delta(
         .find(|w| w.id == sess.local_workspace)
         .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
 
-    // 1·2. new_map(survivor 유지 + 신규 할당) + terminal_locals 수집.
+    // 1·2. new_map(survivor 유지 + 신규 할당) + terminal_locals 수집. 이 op 으로 새로
+    // 생긴 remote surface(=이전 매핑에 없던 것)도 순서대로 기록해둔다(08 — new-tab/split
+    // 성공 시 focus 를 옮길 대상 후보).
     let mut new_map: HashMap<u32, u32> = HashMap::new();
     let mut terminal_locals: HashSet<u32> = HashSet::new();
+    let mut newly_created_remote_ids: Vec<u32> = Vec::new();
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let is_terminal = s.get("role").and_then(|v| v.as_str()) == Some("terminal");
@@ -848,6 +958,7 @@ fn apply_mirror_structural_delta(
                     let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
                     make_mirror_surface(remote_id, l, cols, rows, &sess.writer, engine);
                 }
+                newly_created_remote_ids.push(remote_id);
                 l
             }
         };
@@ -886,7 +997,38 @@ fn apply_mirror_structural_delta(
             &terminal_locals,
         );
         ws.mirror = true;
-        restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local);
+
+        // 08 — 이번 op 이 user_triggered new-tab/split 이면, 옛 focus 를 복원하는 대신
+        // 새로 생긴 surface 로 focus 를 옮긴다(옛 focus 는 새 리소스를 만든 op 으로는
+        // 거의 항상 살아남으므로, restore 를 먼저 태우면 08 의 목적과 반대로 옛 위치에
+        // 눌러앉는다 — 그래서 NewResource 는 restore 를 아예 건너뛴다).
+        let mut focus_handled = false;
+        if matches!(pending_focus, Some(PendingOpFocus::NewResource))
+            && let Some(&new_local) = newly_created_remote_ids
+                .first()
+                .and_then(|rid| sess.remote_to_local.get(rid))
+        {
+            focus_handled = set_focus_to_surface(&mut ws, new_local);
+        }
+        if !focus_handled {
+            let restored =
+                restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local);
+            // 09 — 옛 focus 복원이 실패했다(=캡처해둔 surface 가 이번 op 으로 사라짐,
+            // 전형적으로 그 surface/tab 자체를 닫은 경우) — user_triggered close 로 미리
+            // 계산해둔 인접 후보(remote id, 우선순위 순) 중 delta 이후에도 살아있는
+            // 첫번째로 fallback 한다. 후보가 다 사라졌으면(예상 밖) 기존 동작대로 원격의
+            // 고정 focused_pane/active_tab 값 그대로 남는다.
+            if !restored && let Some(PendingOpFocus::Close { candidates }) = &pending_focus {
+                for &remote_cand in candidates {
+                    if let Some(&local_cand) = sess.remote_to_local.get(&remote_cand)
+                        && set_focus_to_surface(&mut ws, local_cand)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
         engine.workspaces[pos] = ws;
     } else {
         tracing::warn!(
@@ -899,29 +1041,39 @@ fn apply_mirror_structural_delta(
 /// delta 로 새로 만들어진 `ws` 에 `old_focused_remote`(교체 전 캡처한 remote surface
 /// id)가 가리키던 위치로 focus 를 되돌린다. 캡처해둔 surface 가 새 트리에도 살아있으면
 /// (이번 op 로 사라지지 않았으면) `ws.focused_pane`/해당 pane 의 `active_tab`/그 tab 의
-/// `focused_surface` 를 그 위치로 맞춘다. surface 자체가 이번 op 로 없어졌으면(예:
-/// 그 surface 를 닫은 CloseSurface) 억지로 복원하지 않고 `ws` 가 이미 담고 있는 원격
-/// 값(= 원격의 고정 focused_pane/active_tab) 그대로 둔다.
+/// `focused_surface` 를 그 위치로 맞추고 `true`. surface 자체가 이번 op 로 없어졌으면
+/// (예: 그 surface 를 닫은 CloseSurface) 억지로 복원하지 않고 `false` — 호출부(09)가
+/// 인접 후보 fallback 을 시도할지 판단하는 신호로 쓴다.
 fn restore_focus_after_delta(
     ws: &mut Workspace,
     old_focused_remote: Option<u32>,
     remote_to_local: &HashMap<u32, u32>,
-) {
+) -> bool {
     let Some(remote_sid) = old_focused_remote else {
-        return;
+        return false;
     };
     let Some(&new_local_sid) = remote_to_local.get(&remote_sid) else {
-        return;
+        return false;
     };
-    let Some((pane_id, tab_id)) = find_pane_and_tab_for_surface(ws, new_local_sid) else {
-        return;
+    set_focus_to_surface(ws, new_local_sid)
+}
+
+/// `ws` 안에서 `local_sid` 를 포함하는 (pane, tab) 을 찾아 그 위치로
+/// `focused_pane`/`active_tab`/`focused_surface` 를 맞춘다. 찾지 못하면(surface 가
+/// 이번 delta 에 없음) 아무것도 바꾸지 않고 `false`.
+fn set_focus_to_surface(ws: &mut Workspace, local_sid: u32) -> bool {
+    let Some((pane_id, tab_id)) = find_pane_and_tab_for_surface(ws, local_sid) else {
+        return false;
     };
     ws.focused_pane = pane_id;
     if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
         && let Some(tab_index) = pane.tabs.iter().position(|t| t.id == tab_id)
     {
         pane.active_tab = tab_index;
-        pane.tabs[tab_index].focused_surface = new_local_sid;
+        pane.tabs[tab_index].focused_surface = local_sid;
+        true
+    } else {
+        false
     }
 }
 
@@ -1329,6 +1481,7 @@ fn send_capture_control_frame(
 mod tests {
     use super::*;
     use crate::core::state::IdGenerator;
+    use crate::ipc::stream::SplitAxis;
 
     /// to_tree_json_full → SurfaceLayout 재구성: 분할 방향/비율/focus 보존 +
     /// remote→local id 재매핑 + 터미널/placeholder kind 구분.
@@ -1720,5 +1873,114 @@ mod tests {
             ws.focused_pane, untouched_focused_pane,
             "캡처된 surface 가 없으면 원격이 보낸 focused_pane 그대로 둬야 한다"
         );
+    }
+
+    /// `set_focus_to_surface` — 존재하는 surface 로는 focused_pane/active_tab/
+    /// focused_surface 를 모두 갱신하고 `true`, 없는 surface 로는 아무것도 안 바꾸고
+    /// `false`(08/09 가 공유하는 핵심 primitive).
+    #[test]
+    fn set_focus_to_surface_updates_pane_tab_surface_or_reports_false() {
+        let ids = IdGenerator::new();
+        let mut map = HashMap::new();
+        map.insert(1u32, 50u32);
+        map.insert(2u32, 51u32);
+        let mut term = HashSet::new();
+        term.insert(50u32);
+        term.insert(51u32);
+        let tree = serde_json::json!({
+            "id": 9, "name": "remote", "focused_pane": 10,
+            "panes": [],
+            "pane_layout": {
+                "type": "Split", "direction": "horizontal", "ratio": 0.5,
+                "first": { "type": "Leaf", "id": 10, "tabs": [
+                    { "id": 100, "name": "Shell", "active": true, "focused_surface": 1,
+                      "layout": { "type": "Leaf", "id": 1, "kind": "terminal" } }
+                ] },
+                "second": { "type": "Leaf", "id": 11, "tabs": [
+                    { "id": 110, "name": "Shell", "active": true, "focused_surface": 2,
+                      "layout": { "type": "Leaf", "id": 2, "kind": "terminal" } }
+                ] }
+            }
+        });
+        let mut ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let local_b = *map.get(&2).unwrap();
+
+        assert!(set_focus_to_surface(&mut ws, local_b));
+        let (pane_b_id, tab_b_id) =
+            find_pane_and_tab_for_surface(&ws, local_b).expect("pane B exists");
+        assert_eq!(ws.focused_pane, pane_b_id);
+        let pane_b = ws.pane_layout().find_pane(pane_b_id).unwrap();
+        assert_eq!(pane_b.tabs[pane_b.active_tab].id, tab_b_id);
+        assert_eq!(pane_b.tabs[pane_b.active_tab].focused_surface, local_b);
+
+        assert!(
+            !set_focus_to_surface(&mut ws, 12345),
+            "존재하지 않는 surface 는 false"
+        );
+    }
+
+    /// 08 — new-tab/split 계열은 항상 `NewResource`(원격 id map 과 무관).
+    #[test]
+    fn pending_op_focus_for_new_tab_and_split_is_new_resource() {
+        let map = HashMap::new();
+        for op in [
+            StructuralOp::NewTab {
+                anchor_surface_id: 1,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::Value::Null,
+            },
+            StructuralOp::SplitSurface {
+                surface_id: 1,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::Value::Null,
+            },
+            StructuralOp::SplitPane {
+                anchor_surface_id: 1,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::Value::Null,
+            },
+        ] {
+            assert!(matches!(
+                pending_op_focus_for(&op, &[], &map),
+                Some(PendingOpFocus::NewResource)
+            ));
+        }
+    }
+
+    /// 09 — close 계열은 `close_focus_candidates`(로컬 id)를 map 으로 원격 id 로
+    /// 치환해 담는다. map 에 없는 후보만 있으면 `None`(fallback 대상 없음).
+    #[test]
+    fn pending_op_focus_for_close_translates_candidates_or_none() {
+        let mut map = HashMap::new();
+        map.insert(7u32, 70u32); // remote 7 -> local 70
+        map.insert(8u32, 71u32); // remote 8 -> local 71
+
+        let op = StructuralOp::CloseSurface { surface_id: 1 };
+        match pending_op_focus_for(&op, &[70, 71], &map) {
+            Some(PendingOpFocus::Close { candidates }) => {
+                assert_eq!(candidates, vec![7, 8]);
+            }
+            other => panic!("expected Close{{candidates}}, got {other:?}"),
+        }
+
+        // 후보가 전부 매핑에 없으면(예상 밖) fallback 대상 없음 → None.
+        assert!(pending_op_focus_for(&op, &[999], &map).is_none());
+        // close 후보를 아예 안 준 경우(빈 슬라이스)도 None.
+        assert!(pending_op_focus_for(&op, &[], &map).is_none());
+    }
+
+    /// move-tab/convert 등 08/09 대상이 아닌 op 은 후보가 있어도 항상 `None`.
+    #[test]
+    fn pending_op_focus_for_non_target_ops_is_none() {
+        let mut map = HashMap::new();
+        map.insert(7u32, 70u32);
+        let op = StructuralOp::MoveTab {
+            anchor_surface_id: 1,
+            from_index: 0,
+            to_index: 1,
+        };
+        assert!(pending_op_focus_for(&op, &[70], &map).is_none());
     }
 }

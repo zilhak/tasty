@@ -5,7 +5,7 @@
 //!   handler 안에서 결정 (`state.active_workspace(engine).focused_pane`).
 //!   terminal kind 면 cwd 도 handler 가 inherit 결정.
 
-use super::{DispatchedIntent, Intent};
+use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
 use crate::state::AppState;
@@ -17,7 +17,7 @@ pub fn handle(
     intent: &DispatchedIntent,
 ) {
     if let Intent::NewTab { kind, params } = &intent.body {
-        new_tab(core, state, engine, kind.as_deref(), params)
+        new_tab(core, state, engine, kind.as_deref(), params, &intent.origin)
     }
 }
 
@@ -27,6 +27,7 @@ fn new_tab(
     engine: &mut CoreState,
     kind: Option<&str>,
     params: &serde_json::Value,
+    origin: &IntentOrigin,
 ) {
     let kind = kind.unwrap_or("terminal");
     let pane_id = state.active_workspace(engine).focused_pane;
@@ -59,6 +60,7 @@ fn new_tab(
         surface_params,
     };
     if let Err(e) = core.apply(engine, intent) {
+        crate::core::mark_last_forward_user_triggered(engine, &e, origin);
         super::report_apply_error(state, &format!("NewTab kind={kind}"), &e);
     }
 }

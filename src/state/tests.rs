@@ -188,7 +188,12 @@ fn mirror_close_active_surface_forwards_close_surface() {
         "mirror close 는 로컬 surface 를 지우면 안 된다"
     );
     assert_eq!(engine.pending_structural_forward.len(), 1);
-    match &engine.pending_structural_forward[0] {
+    let queued = &engine.pending_structural_forward[0];
+    assert!(
+        queued.user_triggered,
+        "AppState 직접 호출 경로는 항상 GUI 유래(08)"
+    );
+    match &queued.op {
         StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid),
         other => panic!("expected CloseSurface, got {other:?}"),
     }
@@ -211,7 +216,7 @@ fn mirror_close_active_pane_forwards_close_pane() {
         1,
         "mirror pane close 는 로컬 pane 을 제거하면 안 된다"
     );
-    match &engine.pending_structural_forward[0] {
+    match &engine.pending_structural_forward[0].op {
         StructuralOp::ClosePane { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
         other => panic!("expected ClosePane, got {other:?}"),
     }
@@ -229,7 +234,7 @@ fn mirror_close_active_tab_forwards_close_tab() {
         engine.find_terminal_by_id(sid).is_some(),
         "mirror tab close 는 로컬 surface 를 지우면 안 된다"
     );
-    match &engine.pending_structural_forward[0] {
+    match &engine.pending_structural_forward[0].op {
         StructuralOp::CloseTab { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
         other => panic!("expected CloseTab, got {other:?}"),
     }
@@ -262,7 +267,7 @@ fn mirror_add_tab_forwards_new_tab() {
         tabs_after, tabs_before,
         "mirror add_tab 은 로컬 탭을 만들면 안 된다"
     );
-    match &engine.pending_structural_forward[0] {
+    match &engine.pending_structural_forward[0].op {
         StructuralOp::NewTab {
             anchor_surface_id,
             surface_kind,
@@ -273,6 +278,87 @@ fn mirror_add_tab_forwards_new_tab() {
         }
         other => panic!("expected NewTab, got {other:?}"),
     }
+}
+
+// ---- 09: close 시 client-only 인접 focus 후보 계산 ----
+
+/// 09 — 같은 pane 안 탭이 2개일 때 마지막 탭을 닫으면(닫히는 탭이 마지막이므로) 이전
+/// 탭의 focused surface 가 1순위 인접 후보로 담긴다.
+#[test]
+fn mirror_close_active_tab_computes_sibling_candidate() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid_first = state.focused_surface_id(&engine).unwrap();
+    // 두번째 탭 추가(아직 비-mirror — 로컬 실행돼 active_tab 이 새 탭으로 이동한다).
+    state.add_tab(&mut engine).unwrap();
+    let sid_second = state.focused_surface_id(&engine).unwrap();
+    assert_ne!(sid_first, sid_second);
+
+    state.active_workspace_mut(&mut engine).mirror = true;
+    assert!(state.close_active_tab(&mut engine));
+    let queued = &engine.pending_structural_forward[0];
+    assert!(queued.user_triggered);
+    assert_eq!(
+        queued.close_focus_candidates,
+        vec![sid_first],
+        "닫히는 탭이 마지막이면 이전 탭의 focused surface 가 1순위 후보"
+    );
+    match &queued.op {
+        StructuralOp::CloseTab { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid_second),
+        other => panic!("expected CloseTab, got {other:?}"),
+    }
+}
+
+/// 09 — split 된 tab 안에서 focus 된 surface 를 닫으면, 같은 tab 안의 형제 surface
+/// 가 인접 후보로 담긴다(pane 자체가 사라지지 않으므로 tab 레벨로 안 올라간다).
+#[test]
+fn mirror_close_active_surface_split_computes_sibling_candidate() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let sid_a = state.focused_surface_id(&engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
+    let sid_b = engine.next_ids.next_surface();
+    engine.workspaces[ws_idx]
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        .unwrap()
+        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
+        .unwrap();
+    engine
+        .terminals
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+    // split_surface_by_id_marker 는 focused_surface 를 안 건드리므로 sid_a 가 여전히
+    // focus — close_active_surface 가 그 surface 를 닫는다.
+    assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
+
+    state.active_workspace_mut(&mut engine).mirror = true;
+    assert!(state.close_active_surface(&mut engine));
+    let queued = &engine.pending_structural_forward[0];
+    assert!(queued.user_triggered);
+    assert_eq!(
+        queued.close_focus_candidates,
+        vec![sid_b],
+        "split tab 안 형제 surface 가 인접 후보"
+    );
+    match &queued.op {
+        StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid_a),
+        other => panic!("expected CloseSurface, got {other:?}"),
+    }
+}
+
+/// 09 — pane 레벨 close(`close_active_pane`)는 후보를 계산하지 않는다(로컬도
+/// cascade 시 "워크스페이스 첫 pane" 으로 무조건 이동하는 것과 같은 스코프 결정).
+#[test]
+fn mirror_close_active_pane_has_no_focus_candidates() {
+    let (mut state, mut engine) = test_state();
+    state.active_workspace_mut(&mut engine).mirror = true;
+    assert!(state.close_active_pane(&mut engine));
+    assert!(
+        engine.pending_structural_forward[0]
+            .close_focus_candidates
+            .is_empty()
+    );
 }
 
 #[test]

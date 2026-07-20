@@ -17,7 +17,7 @@ impl AppState {
                     surface_kind: "terminal".to_string(),
                     params: serde_json::Value::Null,
                 });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             return Ok(());
         }
         let cwd = self.resolve_inherit_cwd(engine);
@@ -64,7 +64,7 @@ impl AppState {
                     surface_kind: kind.to_string(),
                     params: params.clone(),
                 });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             anyhow::bail!("mirror workspace: structural change forwarded to remote");
         }
         let tab_id = engine.next_ids.next_tab();
@@ -218,7 +218,13 @@ impl AppState {
             .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
                 anchor_surface_id: sid,
             });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        let candidates = self
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .map(|pane| AppState::pane_sibling_tab_focus_candidates(pane, tab_index))
+            .unwrap_or_default();
+        if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
@@ -273,7 +279,11 @@ impl AppState {
                 .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
                     anchor_surface_id: sid,
                 });
-        if self.forward_mirror_structural(engine, mirror_op) {
+        let candidates = self
+            .focused_pane(engine)
+            .map(|pane| AppState::pane_sibling_tab_focus_candidates(pane, pane.active_tab))
+            .unwrap_or_default();
+        if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
         // Capture tab snapshot + collect persist_ids (immutable borrow).

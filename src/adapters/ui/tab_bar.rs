@@ -1001,7 +1001,7 @@ pub fn draw_pane_tab_bars(
                                 from_index: drag.tab_index,
                                 to_index: target,
                             });
-                        if !state.forward_mirror_structural(engine, mirror_op)
+                        if !state.forward_mirror_structural(engine, mirror_op, Vec::new())
                             && let Some(pane) = state
                                 .active_workspace_mut(engine)
                                 .pane_layout_mut()
