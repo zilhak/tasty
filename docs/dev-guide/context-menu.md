@@ -62,6 +62,12 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 
 `macos.rs` / `windows.rs` / `linux.rs` 가 플랫폼 구현.
 
+### Linux 구현 (GTK 3, X11 only)
+
+winit 이 소유한 창은 GTK 소유가 아니라 기본적으로 대응하는 `GdkWindow` 가 없다. `linux.rs` 는 winit 창의 raw X11 XID 를 `gdkx11::X11Window::foreign_new_for_display` 로 감싼 foreign `GdkWindow` 를 만들어 `menu.popup_at_rect()` 의 `rect_window` 로 넘긴다(`host_api/webview/linux.rs` 와 동일 패턴). 이게 없으면 `gtk_menu_popup_at_rect: assertion 'GDK_IS_WINDOW (rect_window)' failed` 로 팝업 자체가 무효화된다.
+
+**알려진 제약**: 진짜 트리거 `GdkEvent`(winit → egui 로 이미 소비된 뒤라 합성 불가)가 없어 `trigger_event` 는 항상 `None` 이다. 이 상태에서는 GTK 의 포인터/키보드 grab 이 타임스탬프 경쟁으로 완전히 성립하지 않을 수 있어, **메뉴 바깥을 클릭해도 즉시 안 닫힐 수 있다**(메뉴 안 항목 클릭·activate 는 정상 동작). 이를 대비해 `selection-done` 이 30초 안에 안 오면 강제로 `popdown()` 하는 워치독이 있다 — 무한 멈춤(grab 이 전혀 안 잡혀 `gtk_main_iteration_do` 루프가 영원히 안 빠지는 경우) 방지용 안전장치다.
+
 ## 새 메뉴 체크리스트
 
 1. `PendingNativeMenu` variant 추가(좌표 `x/y` 필수).
