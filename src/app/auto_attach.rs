@@ -52,18 +52,38 @@ impl App {
     /// 활성 워크스페이스가 매핑 Some & 아직 attach 안 됐으면 워커 스레드로 SSH 터널
     /// 수립을 시작한다(메인 루프 무블록). 포커스 독립(원칙 3): 활성 상태를 *읽어*
     /// 트리거할 뿐, 동작은 ID(anchor/remote_ws)로 결정된다.
+    ///
+    /// **엣지 트리거**: `auto_attach_last_active_ws` 와 비교해 활성 워크스페이스가
+    /// **바뀐 프레임**만 후보로 본다 — 단순히 "이번 프레임도 계속 활성" 인 것은
+    /// 트리거하지 않는다. silent disconnect 로 `cleanup_mirror_workspace` 가 anchor 를
+    /// `auto_attach_active` 에서 지운 뒤에도 사용자가 그 워크스페이스를 떠난 적이
+    /// 없다면(전환 없음) 재트리거하지 않는다 — "정리만, 자동 재연결은 사용자가 벗어났다
+    /// 되돌아오는 등 수동 재진입 필요"라는 스코프를 만족시키기 위함(레벨 트리거였다면
+    /// disconnect 직후에도 앵커가 여전히 활성이면 사용자 조작 없이 바로 다음 프레임에
+    /// 재연결이 재시도되는 동작이 됐을 것).
     fn maybe_trigger_auto_attach(&mut self) {
-        // 활성 ws 의 (anchor id, 매핑)을 읽어 후보 수집(borrow 스코프 분리).
-        let candidate = {
+        let prev_active = self.auto_attach_last_active_ws;
+        // 활성 ws 의 (anchor id, 매핑)을 읽어 후보 수집(borrow 스코프 분리) — 엣지
+        // 판정은 `prev_active`(위에서 미리 복사) 로 하고, `self.auto_attach_last_active_ws`
+        // 갱신은 `main` borrow 가 끝난 뒤로 미룬다(동시 대여 회피).
+        let (current_ws_id, candidate) = {
             let Some(main) = self.focused_window_mut() else {
+                self.auto_attach_last_active_ws = None;
                 return;
             };
             let idx = main.state.active_workspace;
-            match main.core_state.workspaces.get(idx) {
-                Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
-                None => None,
-            }
+            let current_ws_id = main.core_state.workspaces.get(idx).map(|ws| ws.id);
+            let candidate = if !is_reactivation_edge(current_ws_id, prev_active) {
+                None
+            } else {
+                match main.core_state.workspaces.get(idx) {
+                    Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
+                    None => None,
+                }
+            };
+            (current_ws_id, candidate)
         };
+        self.auto_attach_last_active_ws = current_ws_id;
         let Some((anchor, mapping)) = candidate else {
             return;
         };
@@ -193,6 +213,15 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     Ok((Some(tunnel), local_port))
 }
 
+/// `current`(이번 프레임 활성 ws id) 가 `previous`(직전 프레임 활성 ws id) 와 달라진
+/// **전환** 인지 판정한다. `maybe_trigger_auto_attach` 의 엣지 트리거 조건
+/// (silent disconnect 후 사용자가 실제로 워크스페이스를 전환해 돌아와야 재시도)의
+/// 핵심 술어라 독립적으로 테스트한다. `current` 가 `None`(포커스 창에 활성 ws 자체가
+/// 없는 비정상 상태)이면 전환으로 치지 않는다.
+fn is_reactivation_edge(current: Option<u32>, previous: Option<u32>) -> bool {
+    current.is_some() && current != previous
+}
+
 /// `127.0.0.1:PORT` / `localhost:PORT` / `[::1]:PORT` 면 PORT 를 돌려준다(loopback 직결).
 /// 그 외(원격 호스트/alias)는 None → SSH 터널 경로.
 fn parse_loopback_port(dest: &str) -> Option<u16> {
@@ -212,6 +241,19 @@ fn parse_loopback_port(dest: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reactivation_edge_only_on_transition() {
+        // 첫 활성화(직전 없음) — 전환으로 인정.
+        assert!(is_reactivation_edge(Some(1), None));
+        // 같은 ws 가 계속 활성 — 전환 아님(이게 없으면 silent disconnect 직후 anchor
+        // 가 여전히 활성인 상태에서 매 프레임 재트리거되는 회귀가 재현된다).
+        assert!(!is_reactivation_edge(Some(1), Some(1)));
+        // 다른 ws 로 전환 — 전환으로 인정.
+        assert!(is_reactivation_edge(Some(2), Some(1)));
+        // 활성 ws 자체가 없음 — 전환 아님.
+        assert!(!is_reactivation_edge(None, Some(1)));
+    }
 
     #[test]
     fn loopback_ports_parsed() {
