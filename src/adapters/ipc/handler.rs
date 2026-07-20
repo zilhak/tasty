@@ -243,6 +243,67 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 /// 현재는 시그니처가 `&mut AppState`이지만 본문이 GUI를 만지지 않는다. 향후
 /// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
 /// 좁힐 예정 (별도 작업).
+/// hard-occupied workspace 에 대한 **비-holder** 구조 **생성** IPC(`split`/
+/// `tab.create`)를 차단한다. close/이동 계열(`pane.close`/`tab.close`/`tab.move`/
+/// `surface.close`)은 별도 TODO(11)에서 이 match 에 arm 을 추가하는 방식으로 확장한다.
+///
+/// **왜 여기(문자열 method dispatch)인가**: `execute_forwarded_structural_op`
+/// (`src/core/attach_runtime.rs`)는 attach 점유 holder 가 forward 한 구조 변경을
+/// 실행할 때 `tab::handle_tab_create`/`pane::handle_split` 등을 **직접 함수
+/// 호출**해서 이 method-string 라우팅을 우회한다 — "attach 연결 자체가 그
+/// workspace 에 대한 구조 변경 권한을 증명한다"는 모델
+/// (`docs/features/remote-attach/index.md` "mirror 워크스페이스 내 구조 변경" 절)
+/// 이기 때문이다. 따라서 가드를 `Core::apply` 나 핸들러 함수 내부에 두면 holder
+/// 본인의 forward 요청까지 함께 막혀버린다(회귀). 이 dispatch 지점만 두 경로가
+/// 갈라지는 유일한 곳이라 여기서만 걸어야 한다.
+///
+/// 대상을 찾을 수 없거나(params 누락 등) 점유 아님이면 `None`(핸들러가 그대로
+/// 진행 — 정상 검증/실행 경로에 위임).
+fn hard_occupied_structural_guard(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+    method: &str,
+    params: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    let ws_idx: usize = match method {
+        "split" => {
+            let target_pane = params
+                .get("target_pane")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            let target_surface = pane::resolve_surface_target(state, params);
+            target_pane
+                .and_then(|pid| engine.find_workspace_index_for_pane(pid))
+                .or_else(|| {
+                    target_surface
+                        .and_then(|sid| engine.find_workspace_index_for_surface(sid))
+                        .map(|(i, _)| i)
+                })?
+        }
+        "tab.create" => {
+            let pane_id = params
+                .get("pane_id")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32)?;
+            engine.find_workspace_index_for_pane(pane_id)?
+        }
+        _ => return None,
+    };
+    let ws_id = engine.workspaces.get(ws_idx)?.id;
+    if engine.attach.workspace_holder(ws_id).is_some() {
+        return Some(JsonRpcResponse::invalid_params(
+            id.clone(),
+            format!(
+                "Workspace {ws_id} is occupied by a remote attach session (hard-occupied) — \
+                 structural changes (new tab/split) must come from that session. \
+                 Use a different workspace."
+            ),
+        ));
+    }
+    None
+}
+
 fn route_engine_handler(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -251,6 +312,11 @@ fn route_engine_handler(
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
+    if let Some(resp) =
+        hard_occupied_structural_guard(state, engine, &request.method, &request.params, &id)
+    {
+        return Some(resp);
+    }
     Some(match request.method.as_str() {
         "system.info" => handle_system_info(state, engine, id),
         // workspace

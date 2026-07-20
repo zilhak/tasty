@@ -94,7 +94,10 @@ pub fn handle_pane_close(
 
 /// Resolve a surface target from params.
 /// Supports numeric ID and nickname string.
-fn resolve_surface_target(state: &AppState, params: &serde_json::Value) -> Option<u32> {
+///
+/// `pub(super)`: hard-occupied dispatch 가드(`handler.rs`)가 `split` 의 대상
+/// workspace 를 판별할 때 이 해석 로직을 그대로 재사용한다(nickname 해석 중복 방지).
+pub(super) fn resolve_surface_target(state: &AppState, params: &serde_json::Value) -> Option<u32> {
     let val = params.get("target_surface");
     let val = val?;
     if val.is_null() {

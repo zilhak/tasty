@@ -64,6 +64,15 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 **현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 이동이 forward 대상이며, 성공 시 원격 실행 결과가 mirror 트리에 역반영된다. surface convert 와 surface 이동(move-surface)은 재사용할 원격 IPC 핸들러가 없어 아직 forward 하지 않고 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다(단, 나중에 이 둘이 forward 되면 full-tree 역반영이 자동으로 커버한다). `Core::apply` 를 우회하는 UI 직접 경로(탭 드래그 등)도 아직 차단만 한다.
 
+### 서버(피점유)측 비-holder 구조 생성 차단
+
+위 절이 다루는 것은 **client(점유 holder)측** 구조 변경이 원격(서버)에서 실행되도록 forward 되는 경로다. 반대 방향 — **서버 자신이 hard-occupied 상태인 자기 workspace 에 대해, 점유 holder 가 아닌 제3자(서버 로컬 IPC/CLI/agent)가 직접** 구조 **생성** IPC(`split`/`tab.create`)를 호출하는 경우도 배타성 위반이다 — [ADR-0040](../../adr/0040-occupancy-soft-hard-tiers-agent-occupant.md) 이 정의하는 hard 점유의 배타성은 입력(`apply_send_to_surface`)·resize(`resize_all_terminals`)뿐 아니라 구조 변경까지 적용돼야 한다. close/이동 계열(`pane.close`/`tab.close`/`tab.move`/`surface.close`)도 동일 원인을 공유하는 별도 후속 항목이다.
+
+- **차단 대상**: 위 IPC 2종을 **일반 IPC/CLI 진입점**(서버 로컬 호출)으로 직접 호출하고, 대상 pane/surface 가 hard-occupied workspace 에 속한 경우. 요청은 `invalid_params` 에러(안내 문구: "점유 중이라 불가능, 다른 workspace 사용")로 거부되고 트리는 전혀 바뀌지 않는다.
+- **차단 대상이 아닌 경우(중요)**: 점유 holder 본인이 mirror 안에서 실제로 만든 구조 변경이 위 forward 경로로 서버에 도달해 실행되는 것은 **정상 동작이며 이 차단의 대상이 아니다** — "attach 연결 자체가 그 workspace 에 대한 구조 변경 권한을 증명한다"는 forward 모델(위 절)을 그대로 유지한다.
+- **차단 근거**: [`docs/identity.md`](../../identity.md) 원칙1(에이전트 행동의 부수효과가 사용자 상태에 닿지 않아야 함) — 서버 로컬에서 만든/닫은/옮긴 탭이 점유 client 화면에 통지 없이 편입/소멸/재배치되면, 원격 사용자가 보고 있는 화면에 자신이 하지 않은 변화가 일어나는 셈이라 이 원칙을 위반한다.
+- **메커니즘**: [dev-guide/attach-behavior "서버 로컬(비-holder) 구조 변경 차단"](../../dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단).
+
 ### 자동 매핑
 
 `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, layout.json 영속). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).

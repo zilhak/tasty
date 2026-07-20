@@ -79,6 +79,15 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab)은 로�
 - **focus 보존 (client-only 보정)**: 위 트리 재구성이 실어 보내는 `tree.focused_pane`/pane 별 `active_tab` 은 **원격의** 값이다 — 순수 pane/tab 전환(클릭·키보드 이동)은 forward 되는 `StructuralOp` 가 없으므로(위 목록에 없음), 원격의 이 값은 대개 워크스페이스 생성 시점(첫 pane/첫 탭)에 고정된 채 절대 바뀌지 않는다. 과거엔 매 delta 마다 이 고정값을 그대로 실어 로컬 워크스페이스를 통째로 교체해, 사용자가 로컬에서만 다른 pane/탭으로 이동해둔 focus 가 구조 변경(새 탭/닫기 등) 때마다 첫 pane/첫 탭으로 되돌아가는 버그가 있었다. `apply_mirror_structural_delta` 는 교체 **전** 로컬에서 실제로 focus 돼 있던 surface 를 remote id 기준으로 캡처(`capture_focused_remote` — local pane/tab id 는 매 delta 마다 재발급돼 불안정하므로 remote surface id 를 기준으로 삼는다)해뒀다가, 교체 **후** 새 트리에서 그 surface 의 위치를 찾아(`find_pane_and_tab_for_surface`) `ws.focused_pane`/해당 `Pane.active_tab`/그 `Tab.focused_surface` 를 되돌린다(`restore_focus_after_delta`). 캡처한 surface 자체가 이번 op 로 사라졌으면(예: 그 surface 를 닫은 `CloseSurface`) 복원을 시도하지 않고 원격 값 그대로 둔다 — 서버 상태는 전혀 건드리지 않는 순수 client-side 보정이다.
 - **미구현**: convert/move-surface 는 재사용할 원격 IPC 핸들러가 없어 아직 forward 아닌 차단(`build_mirror_forward_op`·`execute_forwarded_structural_op` 모두 미지원). 그 외 구조 변경(split/new-tab/close/move-tab)은 intent 경로든 UI 직접 조작 경로든 모두 forward 된다.
 
+## 서버 로컬(비-holder) 구조 생성 차단
+
+위 절이 다루는 forward 실행(`execute_forwarded_structural_op`)은 hard 점유 **holder** 가 mirror 안에서 만든 정당한 구조 변경이 서버에 도달해 실행되는 경로다. 이 절은 반대 경우 — **서버 자신의 workspace 가 hard-occupied 상태일 때, holder 가 아닌 서버 로컬 IPC/CLI/agent 가 직접** `split`/`tab.create` 를 호출하는 경로를 다룬다(close/이동 계열은 동일 메커니즘을 재사용하는 별도 후속 항목). 개념·사용자 영향은 [features/remote-attach "서버(피점유)측 비-holder 구조 생성 차단"](../features/remote-attach/index.md#서버피점유측-비-holder-구조-생성-차단), 여기엔 메커니즘만.
+
+- **왜 `Core::apply` 나 핸들러 함수 내부가 아닌가**: `execute_forwarded_structural_op`(`src/core/attach_runtime.rs`)는 holder 의 forward 실행 시 `tab::handle_tab_create`/`pane::handle_split` 를 **직접 함수 호출**한다 — 이 함수들 내부, 또는 그 안에서 공통으로 거치는 `Core::apply` 에 가드를 걸면 holder 본인의 forward 요청까지 함께 막혀 위 "mirror 구조 변경 forward" 기능 전체가 회귀한다.
+- **가드 위치**: `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`) — `route_engine_handler` 의 method-string dispatch 최상단에서, `execute_forwarded_structural_op` 가 우회하는 그 dispatch 지점에서만 검사한다. params 에서 대상 pane_id/surface_id(`split` 은 `target_pane`/`target_surface`, nickname 포함)를 뽑아 소속 workspace 를 찾고, `OccupancyRegistry::workspace_holder`(`src/core/attach.rs`)가 `Some` 이면 `invalid_params` 로 거부한다("점유 중" + "다른 workspace 사용" 안내). 대상을 resolve 할 수 없으면(params 누락 등) `None`(가드 미개입) — 원래 핸들러의 통상 검증 에러로 흘려보낸다.
+- **CLI 는 무수정**: `crates/tasty-cli/src/transport.rs` 가 JSON-RPC `error.message` 를 그대로 노출하므로, `tasty new tab`/`tasty split` 은 서버 에러 메시지를 그대로 보여준다.
+- **테스트**: `src/core/attach_runtime.rs` `forward_exec_tests` 모듈 — `dispatch_denies_structural_create_when_hard_occupied`(비-holder 일반 IPC 호출 거부 + 트리 불변), `dispatch_allows_tab_create_when_not_occupied`(비점유 workspace 오탐 방지), `forward_new_tab_succeeds_when_hard_occupied`/`forward_split_pane_succeeds_when_hard_occupied`(holder 의 forward 는 hard-occupied 여도 정상 성공 — 회귀 방지).
+
 ## SSH 터널 (원격 client 공통)
 
 `crates/tasty-cli/src/ssh.rs` — `remote attach` 와 `remote check` 가 공유.

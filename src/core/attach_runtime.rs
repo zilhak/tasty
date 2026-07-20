@@ -919,4 +919,161 @@ mod forward_exec_tests {
         let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
         assert!(r.is_err(), "missing anchor must fail");
     }
+
+    // ─── hard-occupied dispatch 가드 (TODO 10: 생성 계열) 회귀 방지 ──────
+    //
+    // `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)는 일반 IPC
+    // method-string dispatch 에만 걸려 있고, 이 파일의 `execute_forwarded_structural_op`
+    // 가 핸들러 함수를 직접 호출하는 forward 실행 경로는 우회한다. 아래 테스트들은
+    // 그 분기가 실제로 지켜지는지 — (a) holder 의 forward 는 hard-occupied 워크스페이스
+    // 에서도 여전히 성공하고, (b) 비-holder 의 일반 IPC 호출은 거부되는지 — 를 같은
+    // fixture 로 함께 확인한다.
+
+    use crate::adapters::ipc::handler::handle_with_caller;
+    use crate::ipc::caller::CallerContext;
+    use crate::ipc::protocol::JsonRpcRequest;
+
+    fn ipc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
+        JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: method.to_string(),
+            params,
+            id: Some(serde_json::json!(1)),
+            session_token: None,
+        }
+    }
+
+    /// (holder 회귀 방지) NewTab forward 는 워크스페이스가 hard-occupied 여도 여전히
+    /// 성공해야 한다 — attach 연결 자체가 구조 변경 권한을 증명한다는 모델
+    /// (`docs/features/remote-attach/index.md`)이 이번 가드로 깨지면 안 된다.
+    #[test]
+    fn forward_new_tab_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+        let before = engine.terminals.iter().count();
+        let op = StructuralOp::NewTab {
+            anchor_surface_id: a,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward NewTab 은 hard-occupied 상태에서도 성공해야 한다"
+        );
+        assert_eq!(engine.terminals.iter().count(), before + 1);
+    }
+
+    /// (holder 회귀 방지) SplitPane forward 도 동일하게 hard-occupied 에서 성공해야 한다.
+    #[test]
+    fn forward_split_pane_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let op = StructuralOp::SplitPane {
+            anchor_surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward SplitPane 은 hard-occupied 상태에서도 성공해야 한다"
+        );
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            panes_before + 1
+        );
+    }
+
+    /// (TODO 10) 비-holder 경로: hard-occupied 워크스페이스에 일반 IPC(`split`/
+    /// `tab.create`)로 직접 호출하면 거부되고 트리가 그대로 유지돼야 한다.
+    #[test]
+    fn dispatch_denies_structural_create_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+
+        let terminals_before = engine.terminals.iter().count();
+        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+
+        for (method, params) in [
+            ("tab.create", serde_json::json!({ "pane_id": pane_id })),
+            (
+                "split",
+                serde_json::json!({
+                    "level": "surface",
+                    "target_surface": a,
+                    "direction": "horizontal",
+                }),
+            ),
+        ] {
+            let req = ipc_request(method, params);
+            let resp = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &req,
+                &CallerContext::Local,
+            );
+            let err = resp.error.unwrap_or_else(|| {
+                panic!("{method}: hard-occupied 워크스페이스에 대한 비-holder 요청은 거부돼야 한다")
+            });
+            assert!(
+                err.message.to_lowercase().contains("occupied"),
+                "{method}: 에러 메시지에 점유 안내가 있어야 한다 (got: {})",
+                err.message
+            );
+        }
+
+        assert_eq!(
+            engine.terminals.iter().count(),
+            terminals_before,
+            "거부된 요청은 새 터미널을 만들면 안 된다"
+        );
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            panes_before,
+            "거부된 요청은 새 pane 을 만들면 안 된다"
+        );
+    }
+
+    /// 점유가 없는 워크스페이스에서는 가드가 오탐하지 않고 정상 통과해야 한다
+    /// (false-positive 방지 — 가드가 hard-occupied 가 아닌 workspace 까지 막으면
+    /// 일반 사용자의 로컬 작업 자체가 회귀한다).
+    #[test]
+    fn dispatch_allows_tab_create_when_not_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        seed(&mut engine);
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+        assert!(
+            resp.error.is_none(),
+            "점유되지 않은 workspace 의 tab.create 는 허용돼야 한다: {:?}",
+            resp.error
+        );
+    }
 }
