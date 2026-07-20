@@ -57,6 +57,10 @@ impl StreamConnection {
         target: Option<u32>,
         target_workspace: Option<u32>,
     ) -> Result<(Self, u32)> {
+        // 조용한 네트워크 단절 감지용 read timeout. writer/reader 는 이 소켓의 clone이라
+        // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
+        // 포함)에 적용된다.
+        stream.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT))?;
         let writer = stream.try_clone()?;
         let mut reader = BufReader::new(stream);
         let mut writer = writer;

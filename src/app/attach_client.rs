@@ -189,6 +189,12 @@ impl App {
     ) -> anyhow::Result<u32> {
         // 1. 연결 + 핸드셰이크 + 디스크립터 수신.
         let sock = TcpStream::connect(("127.0.0.1", port))?;
+        // 조용한 네트워크 단절 감지용 read timeout(핸드셰이크 ack/디스크립터 대기에도
+        // 적용됨 — 이 함수 내 이후 `conn.recv()` 호출들이 그 대상). heartbeat 스레드(3.5)
+        // 가 이 주기 이내에 Ping 을 보내 idle 세션에서도 서버측 read timeout 을 갱신한다.
+        if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+            tracing::warn!("gui attach: failed to set read timeout: {e}");
+        }
         let (mut conn, client_id) =
             StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
         let first = conn.recv()?;
@@ -344,6 +350,8 @@ impl App {
                                     let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                                 }
                             }
+                            // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋
+                            // 하므로 별도 처리 불필요.
                             StreamTag::Ping => {}
                         },
                         Err(_) => {
@@ -351,6 +359,34 @@ impl App {
                             let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                             break;
                         }
+                    }
+                }
+            });
+        }
+
+        // 4. heartbeat thread: 서버측 read timeout 갱신용으로 주기적으로 Ping 송신
+        //    (반대 방향은 서버 write thread 의 동일 로직이 이 소켓의 read timeout 을
+        //    갱신한다). 세션 정리(`cleanup_mirror_workspace`, disconnect 든 사용자
+        //    close 든) 시 `disconnected` 가 set 되므로 다음 tick 에 자연 종료 —
+        //    writer/소켓을 무기한 붙들지 않는다. 활성 입력 트래픽과 무관하게 고정
+        //    주기로 보낸다 — Ping 프레임은 5바이트라 오버헤드가 무시할 만하고, 여러
+        //    forwarder 스레드의 "마지막 전송 시각"을 공유 상태로 조율하는 비용이
+        //    더 크다.
+        {
+            let writer = writer.clone();
+            let disconnected = disconnected.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(stream::HEARTBEAT_INTERVAL);
+                    if disconnected.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let sent = match writer.lock() {
+                        Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Ping, &[]).is_ok(),
+                        Err(_) => false,
+                    };
+                    if !sent {
+                        break;
                     }
                 }
             });
@@ -548,6 +584,10 @@ impl App {
             main.mark_dirty();
             break;
         }
+        // heartbeat 스레드 종료 신호 — 사용자 close 경로(disconnected 가 아직 false)도
+        // 포함해 여기서 항상 set. 안 하면 그 스레드가 writer(Arc) 를 계속 붙들어 세션이
+        // 이미 정리된 뒤에도 소켓이 살아있고 Ping 이 무의미하게 계속 나간다.
+        sess.disconnected.store(true, Ordering::SeqCst);
         // 원격에 detach 통지(best-effort).
         if let Ok(mut w) = sess.writer.lock() {
             let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 종료 경로, 실패 무시

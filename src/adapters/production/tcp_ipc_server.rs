@@ -209,6 +209,17 @@ impl TcpIpcServer {
         ctx: StreamContext,
         peer: Option<std::net::SocketAddr>,
     ) {
+        // 조용한(FIN/RST 없는) 네트워크 단절 감지용 read timeout. reader/writer 는 같은
+        // 소켓의 clone(둘 다 원래 `stream`에서 파생)이라 옵션이 공유돼 write 쪽에는 영향
+        // 없다 — read 만 타임아웃 대상. write thread(아래)가 이 주기 이내에 Ping 을 흘려
+        // idle 세션에서도 상대측 read timeout 이 갱신되게 한다.
+        if let Err(e) = reader
+            .get_ref()
+            .set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT))
+        {
+            tracing::warn!("stream client: failed to set read timeout: {e}");
+        }
+
         let client_id = ctx.hub.alloc_id();
         let sink_rx = ctx.hub.register(client_id);
         tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
@@ -220,14 +231,28 @@ impl TcpIpcServer {
         let attach_workspace = open_params.as_ref().and_then(|p| p.target_workspace);
 
         // Write thread: drain the push sink (fed by the main loop) to the socket.
+        // `recv_timeout` 대신 blocking iterator 를 쓰던 옛 구현은 sink 가 idle 이면
+        // 소켓에 아무것도 안 나가 client 쪽 read timeout 이 결국 만료된다 — sink 가
+        // HEARTBEAT_INTERVAL 동안 조용하면 빈 Ping 프레임을 대신 흘려보낸다. 실제
+        // Data/Control 트래픽이 있으면 그 자체가 liveness 라 Ping 은 나가지 않는다.
         let mut w = writer;
         let write_handle = thread::spawn(move || {
-            for frame in sink_rx {
-                if stream::write_frame(&mut w, frame.tag, &frame.payload).is_err() {
-                    break;
-                }
-                if frame.tag == StreamTag::Detach {
-                    break;
+            loop {
+                match sink_rx.recv_timeout(stream::HEARTBEAT_INTERVAL) {
+                    Ok(frame) => {
+                        if stream::write_frame(&mut w, frame.tag, &frame.payload).is_err() {
+                            break;
+                        }
+                        if frame.tag == StreamTag::Detach {
+                            break;
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if stream::write_frame(&mut w, StreamTag::Ping, &[]).is_err() {
+                            break;
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break, // unregister 됨
                 }
             }
         });

@@ -16,7 +16,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -358,6 +358,9 @@ fn run_workspace_mirror_dump(
                     forced = true;
                     break;
                 }
+                // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
+                // 처리 불필요. 이 dump 는 기본 500ms 로 짧게 끝나 client 발 Ping 송신은
+                // 두지 않았다(HEARTBEAT_TIMEOUT 20s 이내).
                 StreamTag::Ping => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => break,
@@ -445,6 +448,9 @@ fn run_mirror_dump(
                     forced = true;
                     break;
                 }
+                // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
+                // 처리 불필요. 이 dump 도 기본 500ms 로 짧게 끝나 client 발 Ping 송신은
+                // 두지 않았다(HEARTBEAT_TIMEOUT 20s 이내).
                 StreamTag::Ping => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => break, // 정상: deadline 도달.
@@ -481,9 +487,33 @@ fn run_mirror_dump(
 /// 스레드가 프로세스를 종료하므로 raw 모드는 attach 후 자동 재연결을 하지 않는다
 /// (블로킹 stdin 을 깰 수 없음 — 완전 raw TTY + 재연결 UX 는 후속, plan §6.4 R6).
 fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
-    let mut writer = conn.try_clone_writer()?;
+    // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
+    let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
     if let Some(s) = send {
-        stream::write_frame(&mut writer, StreamTag::Data, &decode_escapes(s))?;
+        let mut w = writer.lock().unwrap();
+        stream::write_frame(&mut *w, StreamTag::Data, &decode_escapes(s))?;
+        drop(w);
+    }
+
+    // heartbeat thread: 이 세션은 raw 브리지라 stdin 이 조용하면(사용자가 그냥 보기만
+    // 하는 동안) 오래 idle 할 수 있다 — 주기적으로 Ping 을 보내 서버측 read timeout 을
+    // 갱신한다(반대 방향은 서버 write thread 의 동일 로직이 처리). 별도 종료 신호 없이
+    // 프로세스 종료(아래 reader 의 `process::exit` 또는 main 함수 반환)에 맡긴다 — CLI
+    // 프로세스라 스레드 정리를 기다릴 이유가 없다.
+    {
+        let writer = writer.clone();
+        thread::spawn(move || {
+            loop {
+                thread::sleep(stream::HEARTBEAT_INTERVAL);
+                let sent = match writer.lock() {
+                    Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Ping, &[]).is_ok(),
+                    Err(_) => false,
+                };
+                if !sent {
+                    break;
+                }
+            }
+        });
     }
 
     // reader thread: 서버 출력 → stdout. force-detach/Detach 시 프로세스 종료.
@@ -504,6 +534,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                         break;
                     }
                 }
+                // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
+                // 처리 불필요.
                 StreamTag::Ping => {}
             }
         }
@@ -519,13 +551,21 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
             Ok(n) => {
                 if let Some(pos) = buf[..n].iter().position(|&b| b == 0x1c) {
                     // Ctrl+\ 이전 바이트만 보내고 detach.
-                    if pos > 0 {
-                        let _ = stream::write_frame(&mut writer, StreamTag::Data, &buf[..pos]); // 종료 경로 best-effort 송신 — 무시
+                    if pos > 0
+                        && let Ok(mut w) = writer.lock()
+                    {
+                        let _ = stream::write_frame(&mut *w, StreamTag::Data, &buf[..pos]); // 종료 경로 best-effort 송신 — 무시
                     }
-                    let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                    if let Ok(mut w) = writer.lock() {
+                        let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                    }
                     break;
                 }
-                if stream::write_frame(&mut writer, StreamTag::Data, &buf[..n]).is_err() {
+                let write_ok = match writer.lock() {
+                    Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &buf[..n]).is_ok(),
+                    Err(_) => false,
+                };
+                if !write_ok {
                     break;
                 }
             }

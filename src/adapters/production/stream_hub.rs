@@ -279,7 +279,10 @@ impl StreamHub {
                                 }
                             }
                         }
-                        // Ping/Detach from clients carry no step-4 payload.
+                        // Ping/Detach carry no step-4 payload. Ping's only job is
+                        // completing the accept thread's `read_frame` call so the
+                        // socket's read timeout resets (heartbeat protocol) — no
+                        // state to track here.
                         _ => {}
                     }
                 }

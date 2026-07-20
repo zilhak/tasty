@@ -11,6 +11,7 @@
 //! arrive in later steps. See `.claude-workspace/conductor/attach-detach/step1/plan.md`.
 
 use std::io::{self, Read, Write};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,17 @@ pub const STREAM_PROTO: u32 = 1;
 /// length prefixes (wezterm issue #7527 OOM lesson).
 pub const MAX_FRAME_LEN: u32 = 1 << 20;
 
+/// Idle interval between application-level [`StreamTag::Ping`] heartbeats sent
+/// by either peer's write side while no other frame has gone out. Real traffic
+/// (Data/Control) counts as liveness too — a peer only falls back to sending a
+/// bare Ping once this long has passed with nothing else to send.
+pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Socket read timeout applied to attach streams. Four heartbeats' worth of
+/// slack so transient jitter/scheduling delay doesn't trip a false disconnect —
+/// a peer is declared dead only after missing several heartbeats in a row.
+pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// Frame type tag (first byte of every frame).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -34,7 +46,10 @@ pub enum StreamTag {
     Data = 0,
     /// UTF-8 JSON control message (handshake ack; future resize/detach metadata).
     Control = 1,
-    /// Keepalive ping. Reserved — unused in step 1.
+    /// Application-level keepalive. Sent with an empty payload by either peer's
+    /// write side when idle for [`HEARTBEAT_INTERVAL`]; receiving *any* frame
+    /// (including this one) resets the reader's [`HEARTBEAT_TIMEOUT`] socket
+    /// read timeout, so no explicit handling is needed on receipt.
     Ping = 2,
     /// Graceful close signal (empty payload), either direction.
     Detach = 3,
@@ -451,6 +466,28 @@ mod tests {
             assert_eq!(frame.tag, tag);
             assert_eq!(frame.payload, payload);
         }
+    }
+
+    #[test]
+    fn heartbeat_timeout_has_jitter_margin_over_interval() {
+        // timeout 이 interval 보다 넉넉히 커야 한다 — 한 heartbeat 를 놓쳐도(스케줄링
+        // 지연/일시적 혼잡) 바로 오탐 disconnect 로 이어지지 않게. 최소 2 회분 이상의
+        // 여유(문서화된 설계는 4 배).
+        assert!(HEARTBEAT_TIMEOUT >= HEARTBEAT_INTERVAL * 2);
+        assert_eq!(HEARTBEAT_TIMEOUT, HEARTBEAT_INTERVAL * 4);
+    }
+
+    #[test]
+    fn ping_frame_has_empty_payload_roundtrip() {
+        // heartbeat 로 실제 보내는 형태(빈 payload)가 그대로 왕복되는지 — 태그 자체는
+        // frame_roundtrip 에서 이미 검증하지만, 여기선 heartbeat 가 실제로 쓰는 정확한
+        // 모양(빈 payload)만 별도로 못박아 둔다.
+        let mut buf = Vec::new();
+        write_frame(&mut buf, StreamTag::Ping, &[]).unwrap();
+        let mut cur = Cursor::new(buf);
+        let frame = read_frame(&mut cur).unwrap();
+        assert_eq!(frame.tag, StreamTag::Ping);
+        assert!(frame.payload.is_empty());
     }
 
     #[test]
