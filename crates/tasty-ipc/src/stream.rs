@@ -429,6 +429,15 @@ pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::R
 
 /// Read a single framed message. Returns `Err` on EOF, an unknown tag, or a
 /// length prefix exceeding [`MAX_FRAME_LEN`].
+///
+/// Deliberate design: if a socket read timeout (heartbeat protocol) fires
+/// while only part of the 5-byte header (or payload) has been read, this
+/// propagates that `Err` immediately rather than retrying — any bytes already
+/// consumed by the interrupted `read_exact` are discarded, so a retry would
+/// desync from the frame boundary. Every read loop that calls this (server,
+/// GUI client, CLI client) treats *all* `Err` results — EOF, malformed frame,
+/// or a mid-frame timeout alike — as an unconditional disconnect, so no caller
+/// ever tries to resume a torn frame on the same connection.
 pub fn read_frame<R: Read>(r: &mut R) -> io::Result<StreamFrame> {
     let mut hdr = [0u8; 5];
     r.read_exact(&mut hdr)?;
