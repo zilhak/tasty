@@ -351,6 +351,13 @@ impl TastyInstance {
         self.process.id()
     }
 
+    /// Loopback IPC port — attach stream 핸드셰이크처럼 `call()` 이 감싸지 않는
+    /// raw `TcpStream` 을 직접 여는 test binary 용.
+    #[allow(dead_code)] // 일부 test binary 만 사용
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// Shutdown the instance gracefully.
     pub fn shutdown(&self) {
         let _ = self.call("system.shutdown", serde_json::json!({}));
