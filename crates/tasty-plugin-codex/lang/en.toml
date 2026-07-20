@@ -3,6 +3,16 @@ desc = "Manage Codex CLI child sessions"
 
 [codex]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
+"settings.default_approval_policy" = "Default approval policy"
+"settings.default_sandbox_mode" = "Default sandbox mode"
+"settings.approval.inherit" = "Inherit (codex default)"
+"settings.approval.untrusted" = "Untrusted (prompt for untrusted commands)"
+"settings.approval.on_request" = "On request (model decides)"
+"settings.approval.never" = "Never (no approval prompts)"
+"settings.sandbox.inherit" = "Inherit (codex default)"
+"settings.sandbox.read_only" = "Read-only"
+"settings.sandbox.workspace_write" = "Workspace write"
+"settings.sandbox.danger_full_access" = "Danger: full access"
 
 [settings.subtab]
 codex = "Codex"

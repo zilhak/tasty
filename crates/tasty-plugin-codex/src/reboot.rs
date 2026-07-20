@@ -36,6 +36,8 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
+use crate::handlers::resolve_policy_args;
+
 /// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
 const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
@@ -77,6 +79,9 @@ pub(crate) fn handle_reboot(
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface(params)?;
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
+    // resume 명령에 붙일 승인/샌드박스 정책(TODO 07) — spawn/launch/respawn 과 동일한
+    // 우선순위(호출별 override > 전역 기본값 > codex 자체 기본값)로 해석한다.
+    let policy_args = resolve_policy_args(host, params)?;
 
     // 요청 시점 캡처.
     let session_id = fetch_session_id(host, surface_id)?;
@@ -109,6 +114,7 @@ pub(crate) fn handle_reboot(
     let thread_host = host.clone();
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
+    let thread_policy_args = policy_args.clone();
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
@@ -120,6 +126,7 @@ pub(crate) fn handle_reboot(
                 exit_c0,
                 banner_c0,
                 extra_prompt.as_deref(),
+                &thread_policy_args,
             );
             if let Ok(mut set) = thread_inflight.lock() {
                 set.remove(&surface_id);
@@ -199,9 +206,18 @@ pub(crate) fn is_safe_session_id(id: &str) -> bool {
 /// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
 /// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
 /// codex 도 hook 이 항상 fire 되게 한다(`handlers::make_codex_command` 와 동일 이유).
-pub(crate) fn resume_command(session_id: &str) -> String {
+///
+/// `policy_args` 는 `handlers::resolve_policy_args` 가 만든 `-a ...`/`-s ...`/
+/// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열) — resume 된
+/// codex 도 원래 기동과 같은 승인/샌드박스 정책 해석 규칙을 따른다(TODO 07).
+pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
+    let policy_suffix = if policy_args.is_empty() {
+        String::new()
+    } else {
+        format!(" {policy_args}")
+    };
     format!(
-        "codex resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false {session_id}\r"
+        "codex resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r"
     )
 }
 
@@ -232,6 +248,7 @@ fn run_reboot_sequence(
     exit_c0: usize,
     banner_c0: usize,
     extra_prompt: Option<&str>,
+    policy_args: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
 
@@ -266,7 +283,7 @@ fn run_reboot_sequence(
 
     if let Err(e) = host.call(
         "surface.send",
-        json!({ "surface_id": surface_id, "text": resume_command(session_id) }),
+        json!({ "surface_id": surface_id, "text": resume_command(session_id, policy_args) }),
     ) {
         tracing::warn!("codex reboot s{surface_id}: resume send failed: {e}");
         return;
@@ -400,8 +417,16 @@ mod tests {
     #[test]
     fn resume_command_disables_update_prompt_and_submits() {
         assert_eq!(
-            resume_command("019f55e7-3dfa"),
+            resume_command("019f55e7-3dfa", ""),
             "codex resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r"
+        );
+    }
+
+    #[test]
+    fn resume_command_includes_policy_args_when_present() {
+        assert_eq!(
+            resume_command("019f55e7-3dfa", "-a never -s read-only"),
+            "codex resume --dangerously-bypass-hook-trust -a never -s read-only -c check_for_update_on_startup=false 019f55e7-3dfa\r"
         );
     }
 

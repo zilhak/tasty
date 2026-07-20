@@ -3,6 +3,16 @@ desc = "Codex CLI 자식 세션 관리"
 
 [codex]
 "settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
+"settings.default_approval_policy" = "기본 승인 정책"
+"settings.default_sandbox_mode" = "기본 샌드박스 모드"
+"settings.approval.inherit" = "상속 (codex 기본값)"
+"settings.approval.untrusted" = "Untrusted (신뢰되지 않은 명령만 승인 요청)"
+"settings.approval.on_request" = "On request (모델이 판단)"
+"settings.approval.never" = "Never (승인 프롬프트 없음)"
+"settings.sandbox.inherit" = "상속 (codex 기본값)"
+"settings.sandbox.read_only" = "읽기 전용"
+"settings.sandbox.workspace_write" = "워크스페이스 쓰기 허용"
+"settings.sandbox.danger_full_access" = "위험: 전체 접근"
 
 [settings.subtab]
 codex = "Codex"

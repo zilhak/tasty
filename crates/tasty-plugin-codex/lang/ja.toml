@@ -3,6 +3,16 @@ desc = "Codex CLI 子セッションの管理"
 
 [codex]
 "settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
+"settings.default_approval_policy" = "デフォルト承認ポリシー"
+"settings.default_sandbox_mode" = "デフォルトサンドボックスモード"
+"settings.approval.inherit" = "継承（codex のデフォルト）"
+"settings.approval.untrusted" = "Untrusted（信頼されないコマンドのみ承認を要求）"
+"settings.approval.on_request" = "On request（モデルが判断）"
+"settings.approval.never" = "Never（承認プロンプトなし）"
+"settings.sandbox.inherit" = "継承（codex のデフォルト）"
+"settings.sandbox.read_only" = "読み取り専用"
+"settings.sandbox.workspace_write" = "ワークスペース書き込み許可"
+"settings.sandbox.danger_full_access" = "危険：フルアクセス"
 
 [settings.subtab]
 codex = "Codex"

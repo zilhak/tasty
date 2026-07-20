@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.18"
+version = "0.1.19"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -58,6 +58,9 @@ flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"codex\")" },
     { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching codex" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to codex as --task <text>" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
 ]
 
 [contributes.cli.arg_groups.parent_args]
@@ -83,6 +86,9 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only — use \"never\" for unattended automation so approval prompts can't stall the child forever" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -114,19 +120,25 @@ flags = [
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
-    { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "child",    type = "u32",    flag = "--child",    required = true,  help = "Child index to respawn" },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Override working directory for the respawned process" },
-    { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
-    { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
-    { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "child",     type = "u32",    flag = "--child",     required = true,  help = "Child index to respawn" },
+    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Override working directory for the respawned process" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child" },
+    { name = "role",      type = "string", flag = "--role",      required = false, help = "Replace the role label of the child" },
+    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Replace the display nickname of the child" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)" },
-    { name = "delay",   type = "u32",    flag = "--delay",   required = false, help = "Seconds to wait before killing Codex (default: 5)" },
-    { name = "prompt",  type = "string", flag = "--prompt",  required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Codex" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "delay",     type = "u32",    flag = "--delay",     required = false, help = "Seconds to wait before killing Codex (default: 5)" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Codex" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
@@ -152,3 +164,29 @@ label_key = "codex.settings.spawn_child_warn_threshold"
 storage_key = "spawn_child_warn_threshold"
 default = 6.0
 min = 1.0
+
+[[contributes.settings_pages.items]]
+kind = "select"
+id = "default_approval_policy"
+label_key = "codex.settings.default_approval_policy"
+storage_key = "default_approval_policy"
+default = "inherit"
+options = [
+    { value = "inherit",    label_key = "codex.settings.approval.inherit" },
+    { value = "untrusted",  label_key = "codex.settings.approval.untrusted" },
+    { value = "on-request", label_key = "codex.settings.approval.on_request" },
+    { value = "never",      label_key = "codex.settings.approval.never" },
+]
+
+[[contributes.settings_pages.items]]
+kind = "select"
+id = "default_sandbox_mode"
+label_key = "codex.settings.default_sandbox_mode"
+storage_key = "default_sandbox_mode"
+default = "inherit"
+options = [
+    { value = "inherit",             label_key = "codex.settings.sandbox.inherit" },
+    { value = "read-only",           label_key = "codex.settings.sandbox.read_only" },
+    { value = "workspace-write",     label_key = "codex.settings.sandbox.workspace_write" },
+    { value = "danger-full-access",  label_key = "codex.settings.sandbox.danger_full_access" },
+]

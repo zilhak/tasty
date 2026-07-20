@@ -60,15 +60,103 @@ fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
 /// 심으므로(hook source 를 스스로 vet함) 이 플래그의 정당한 사용 대상이다 —
 /// 이게 없으면 codex 가 hook 을 fire 하지 않아 `codex-idle` 알림이 영원히 오지
 /// 않는다.
-fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
+///
+/// `policy_args` 는 [`resolve_policy_args`] 가 만든 `-a ...`/`-s ...`/
+/// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열)이다 — 승인
+/// 프롬프트가 자동화 흐름에서 자식을 영구히 멈추게 하는 문제(TODO 07)의 해결책.
+fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
     let prefix = format!("TASTY_SURFACE_ID={surface_id} ");
+    let policy_suffix = if policy_args.is_empty() {
+        String::new()
+    } else {
+        format!(" {policy_args}")
+    };
     match prompt {
         Some(p) if !p.is_empty() => {
             let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("{prefix}codex --dangerously-bypass-hook-trust \"{escaped}\"\r")
+            format!("{prefix}codex --dangerously-bypass-hook-trust{policy_suffix} \"{escaped}\"\r")
         }
-        _ => format!("{prefix}codex --dangerously-bypass-hook-trust\r"),
+        _ => format!("{prefix}codex --dangerously-bypass-hook-trust{policy_suffix}\r"),
     }
+}
+
+const VALID_APPROVAL_POLICIES: &[&str] = &["untrusted", "on-request", "never"];
+const VALID_SANDBOX_MODES: &[&str] = &["read-only", "workspace-write", "danger-full-access"];
+
+fn validate_choice(flag_name: &str, value: &str, valid: &[&str]) -> Result<(), IpcMethodError> {
+    if valid.contains(&value) {
+        Ok(())
+    } else {
+        Err(IpcMethodError::invalid_params(&format!(
+            "invalid '{flag_name}' value '{value}' (expected one of: {})",
+            valid.join(", ")
+        )))
+    }
+}
+
+/// 전역 설정(`default_approval_policy`/`default_sandbox_mode`)에서 fallback 값을
+/// 읽는다. 미설정이거나 `"inherit"`(= codex 자체 기본값을 그대로 쓰겠다는 의미)
+/// 이면 None — 즉 플래그를 아예 붙이지 않는다.
+fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<String> {
+    host.call(
+        "settings.get_plugin_setting",
+        json!({ "storage_key": storage_key }),
+    )
+    .ok()
+    .and_then(|v| v.get("value").and_then(|v| v.as_str()).map(String::from))
+    .filter(|s| s != "inherit" && !s.is_empty())
+}
+
+/// `--approval`/`--sandbox`/`--full-auto` 요청 params 를 codex CLI 인자 조각으로
+/// 해석한다. 우선순위: 호출별 명시 파라미터 > 전역 설정(`default_approval_policy`/
+/// `default_sandbox_mode`) > 아무 것도 안 붙임(codex 자체 기본 동작 유지).
+///
+/// `full_auto` 는 `--dangerously-bypass-approvals-and-sandbox` 로 승인/샌드박스를
+/// 완전히 우회한다 — `approval`/`sandbox` 와 동시에 오면 모순(둘 다 우회하면서
+/// 개별 정책을 지정하는 셈)이므로 명시적으로 거부해 호출자의 의도 오해를 막는다.
+pub(crate) fn resolve_policy_args<H: HostCall>(
+    host: &H,
+    params: &Value,
+) -> Result<String, IpcMethodError> {
+    let full_auto = params
+        .get("full_auto")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let approval = optional_str(params, "approval");
+    let sandbox = optional_str(params, "sandbox");
+
+    if full_auto {
+        if approval.is_some() || sandbox.is_some() {
+            return Err(IpcMethodError::invalid_params(
+                "'full_auto' cannot be combined with 'approval'/'sandbox' — it already bypasses both",
+            ));
+        }
+        return Ok("--dangerously-bypass-approvals-and-sandbox".to_string());
+    }
+
+    let approval = match approval {
+        Some(v) => {
+            validate_choice("approval", &v, VALID_APPROVAL_POLICIES)?;
+            Some(v)
+        }
+        None => global_policy_default(host, "default_approval_policy"),
+    };
+    let sandbox = match sandbox {
+        Some(v) => {
+            validate_choice("sandbox", &v, VALID_SANDBOX_MODES)?;
+            Some(v)
+        }
+        None => global_policy_default(host, "default_sandbox_mode"),
+    };
+
+    let mut parts = Vec::new();
+    if let Some(a) = approval {
+        parts.push(format!("-a {a}"));
+    }
+    if let Some(s) = sandbox {
+        parts.push(format!("-s {s}"));
+    }
+    Ok(parts.join(" "))
 }
 
 pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
@@ -103,7 +191,8 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let cmd = make_codex_command(sid, task.as_deref());
+        let policy_args = resolve_policy_args(host, &params)?;
+        let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
         host_call(
             host,
             "surface.send",
@@ -168,7 +257,8 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
         })?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
-    let cmd = make_codex_command(child_sid, prompt.as_deref());
+    let policy_args = resolve_policy_args(host, &params)?;
+    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
         "surface.send",
@@ -419,7 +509,8 @@ pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMeth
         })?;
 
     // 2) codex 특화 기동 명령 재전송.
-    let cmd = make_codex_command(child_sid, prompt.as_deref());
+    let policy_args = resolve_policy_args(host, &params)?;
+    let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
         "surface.send",
@@ -761,11 +852,11 @@ mod tests {
     #[test]
     fn make_codex_command_no_prompt() {
         assert_eq!(
-            make_codex_command(42, None),
+            make_codex_command(42, None, ""),
             "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
         );
         assert_eq!(
-            make_codex_command(42, Some("")),
+            make_codex_command(42, Some(""), ""),
             "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
         );
     }
@@ -773,14 +864,14 @@ mod tests {
     #[test]
     fn make_codex_command_with_plain_prompt() {
         assert_eq!(
-            make_codex_command(42, Some("hello")),
+            make_codex_command(42, Some("hello"), ""),
             "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust \"hello\"\r"
         );
     }
 
     #[test]
     fn make_codex_command_with_prompt_escapes_quotes() {
-        let cmd = make_codex_command(7, Some(r#"fix "bug" please"#));
+        let cmd = make_codex_command(7, Some(r#"fix "bug" please"#), "");
         assert_eq!(
             cmd,
             "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"fix \\\"bug\\\" please\"\r"
@@ -789,11 +880,112 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_prompt_escapes_backslash() {
-        let cmd = make_codex_command(7, Some(r"path\to\file"));
+        let cmd = make_codex_command(7, Some(r"path\to\file"), "");
         assert_eq!(
             cmd,
             "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"path\\\\to\\\\file\"\r"
         );
+    }
+
+    #[test]
+    fn make_codex_command_with_policy_args_no_prompt() {
+        assert_eq!(
+            make_codex_command(42, None, "-a never -s read-only"),
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust -a never -s read-only\r"
+        );
+    }
+
+    #[test]
+    fn make_codex_command_with_policy_args_and_prompt() {
+        assert_eq!(
+            make_codex_command(42, Some("hello"), "-a never"),
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust -a never \"hello\"\r"
+        );
+    }
+
+    #[test]
+    fn make_codex_command_with_full_auto_bypass() {
+        assert_eq!(
+            make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox"),
+            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r"
+        );
+    }
+
+    #[test]
+    fn resolve_policy_args_defaults_to_empty_when_nothing_set() {
+        let host = MockHost::new();
+        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "");
+    }
+
+    #[test]
+    fn resolve_policy_args_uses_explicit_approval_and_sandbox() {
+        let host = MockHost::new();
+        let params = json!({ "approval": "never", "sandbox": "read-only" });
+        assert_eq!(
+            resolve_policy_args(&host, &params).unwrap(),
+            "-a never -s read-only"
+        );
+    }
+
+    #[test]
+    fn resolve_policy_args_rejects_invalid_approval_value() {
+        let host = MockHost::new();
+        let err = resolve_policy_args(&host, &json!({ "approval": "yolo" })).unwrap_err();
+        assert!(format!("{err:?}").contains("invalid 'approval'"));
+    }
+
+    #[test]
+    fn resolve_policy_args_rejects_invalid_sandbox_value() {
+        let host = MockHost::new();
+        let err = resolve_policy_args(&host, &json!({ "sandbox": "yolo" })).unwrap_err();
+        assert!(format!("{err:?}").contains("invalid 'sandbox'"));
+    }
+
+    #[test]
+    fn resolve_policy_args_full_auto_bypasses_both() {
+        let host = MockHost::new();
+        let params = json!({ "full_auto": true });
+        assert_eq!(
+            resolve_policy_args(&host, &params).unwrap(),
+            "--dangerously-bypass-approvals-and-sandbox"
+        );
+    }
+
+    #[test]
+    fn resolve_policy_args_full_auto_rejects_combination_with_approval() {
+        let host = MockHost::new();
+        let params = json!({ "full_auto": true, "approval": "never" });
+        let err = resolve_policy_args(&host, &params).unwrap_err();
+        assert!(format!("{err:?}").contains("full_auto"));
+    }
+
+    #[test]
+    fn resolve_policy_args_falls_back_to_global_defaults() {
+        let host = MockHost::new();
+        host.set_setting("default_approval_policy", "never");
+        host.set_setting("default_sandbox_mode", "workspace-write");
+        assert_eq!(
+            resolve_policy_args(&host, &json!({})).unwrap(),
+            "-a never -s workspace-write"
+        );
+    }
+
+    #[test]
+    fn resolve_policy_args_per_call_override_wins_over_global_default() {
+        let host = MockHost::new();
+        host.set_setting("default_approval_policy", "never");
+        let params = json!({ "approval": "on-request" });
+        assert_eq!(
+            resolve_policy_args(&host, &params).unwrap(),
+            "-a on-request"
+        );
+    }
+
+    #[test]
+    fn resolve_policy_args_global_inherit_means_no_flag() {
+        let host = MockHost::new();
+        host.set_setting("default_approval_policy", "inherit");
+        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "");
     }
 
     #[test]
@@ -1071,6 +1263,7 @@ trusted_hash = "sha256:xyz"
         hooks: RefCell<Vec<MockHook>>,
         next_id: RefCell<u64>,
         alive: RefCell<std::collections::HashSet<u32>>,
+        settings: RefCell<std::collections::HashMap<String, String>>,
     }
 
     impl MockHost {
@@ -1079,7 +1272,16 @@ trusted_hash = "sha256:xyz"
                 hooks: RefCell::new(Vec::new()),
                 next_id: RefCell::new(1),
                 alive: RefCell::new(std::collections::HashSet::new()),
+                settings: RefCell::new(std::collections::HashMap::new()),
             }
+        }
+
+        /// `settings.get_plugin_setting` 응답을 시뮬레이션 — 전역 기본 정책
+        /// (`default_approval_policy`/`default_sandbox_mode`) fallback 테스트용.
+        fn set_setting(&self, storage_key: &str, value: &str) {
+            self.settings
+                .borrow_mut()
+                .insert(storage_key.to_string(), value.to_string());
         }
 
         /// event 발화 시뮬레이션 — 매칭 once-hook 제거(호스트 `check_and_fire` retain 동일).
@@ -1152,6 +1354,13 @@ trusted_hash = "sha256:xyz"
                     let sid = params["surface_id"].as_u64().unwrap() as u32;
                     let exists = self.alive.borrow().contains(&sid);
                     Ok(json!({ "surface_id": sid, "exists": exists }))
+                }
+                "settings.get_plugin_setting" => {
+                    let key = params["storage_key"].as_str().unwrap();
+                    match self.settings.borrow().get(key) {
+                        Some(v) => Ok(json!({ "value": v })),
+                        None => Ok(json!({})),
+                    }
                 }
                 _ => Ok(json!({})),
             }
