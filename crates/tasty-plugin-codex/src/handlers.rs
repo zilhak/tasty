@@ -95,8 +95,7 @@ fn validate_choice(flag_name: &str, value: &str, valid: &[&str]) -> Result<(), I
 }
 
 /// 전역 설정(`default_approval_policy`/`default_sandbox_mode`)에서 fallback 값을
-/// 읽는다. 미설정이거나 `"inherit"`(= codex 자체 기본값을 그대로 쓰겠다는 의미)
-/// 이면 None — 즉 플래그를 아예 붙이지 않는다.
+/// 읽는다. 미설정이거나 `"inherit"`이면 None.
 fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<String> {
     host.call(
         "settings.get_plugin_setting",
@@ -109,7 +108,21 @@ fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<Str
 
 /// `--approval`/`--sandbox`/`--full-auto` 요청 params 를 codex CLI 인자 조각으로
 /// 해석한다. 우선순위: 호출별 명시 파라미터 > 전역 설정(`default_approval_policy`/
-/// `default_sandbox_mode`) > 아무 것도 안 붙임(codex 자체 기본 동작 유지).
+/// `default_sandbox_mode`) > **하드코드 기본값**.
+///
+/// **승인(`approval`)은 결정되지 않으면 무조건 `never`로 떨어진다** — tasty 가 spawn 하는
+/// codex 자식은 전부 완료 알림(idle/exit hook)만 기다리는 무인 자동화 흐름이고, codex 에는
+/// needs_input 류 hook 이 없어 승인 프롬프트가 뜨면 아무도 응답할 수 없는 채로 영구 정지한다
+/// (TODO 07 이 원래 고치려던 문제 — c645e3c2 는 옵트인 플래그만 추가했을 뿐 기본값을 무해하게
+/// 두지 않아 이 정지가 그대로 재현됐다). "설정을 안 건드리면 codex 자체 인터랙티브 기본값을
+/// 쓴다"는 옛 의미는 더 이상 유효하지 않다 — 인터랙티브 승인이 필요하면 호출자가 `--approval
+/// untrusted`/`on-request` 를 **명시적으로** 넘겨야 한다.
+/// 샌드박스(`sandbox`)는 승인과 달리 결정 안 됐다고 자체적으로 멈추는 축이 아니므로(그 자체는
+/// 프롬프트를 띄우지 않는다) 기존대로 미설정 시 플래그를 아예 안 붙여 codex 자체 기본값을 쓴다
+/// — 단 이 프로젝트 sandbox(bubblewrap 기반 user namespace 격리)에서는 `read-only`/
+/// `workspace-write` 처럼 codex 자체 샌드박스를 켜는 값이 중첩 샌드박스 환경에서 실패할 수 있어
+/// (`RTM_NEWADDR: Operation not permitted` 류), 그런 환경의 호출자는 `full_auto`(샌드박스까지
+/// 완전 우회)를 명시적으로 골라야 한다.
 ///
 /// `full_auto` 는 `--dangerously-bypass-approvals-and-sandbox` 로 승인/샌드박스를
 /// 완전히 우회한다 — `approval`/`sandbox` 와 동시에 오면 모순(둘 다 우회하면서
@@ -139,7 +152,10 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
             validate_choice("approval", &v, VALID_APPROVAL_POLICIES)?;
             Some(v)
         }
-        None => global_policy_default(host, "default_approval_policy"),
+        None => Some(
+            global_policy_default(host, "default_approval_policy")
+                .unwrap_or_else(|| "never".to_string()),
+        ),
     };
     let sandbox = match sandbox {
         Some(v) => {
@@ -912,9 +928,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_policy_args_defaults_to_empty_when_nothing_set() {
+    fn resolve_policy_args_defaults_to_never_approval_when_nothing_set() {
+        // 승인 프롬프트가 무인 spawn 자식을 영구 정지시키는 문제(TODO 07) 재발 방지 —
+        // approval 은 아무것도 설정되지 않아도 무조건 "never" 로 떨어져야 한다.
+        // sandbox 는 그 자체로 정지를 유발하지 않으므로 기존대로 미설정 시 빈 채로 둔다.
         let host = MockHost::new();
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "");
+        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
     }
 
     #[test]
@@ -982,10 +1001,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_policy_args_global_inherit_means_no_flag() {
+    fn resolve_policy_args_global_inherit_still_falls_back_to_never() {
+        // 전역 설정을 명시적으로 "inherit" 로 둬도(=touch 안 한 것과 구분 불가) 하드코드
+        // 기본값(never)이 적용된다 — "inherit" 을 골라도 더 이상 인터랙티브 승인으로
+        // 되돌아가지 않는다(의도된 동작, 위 resolve_policy_args 문서 주석 참고).
         let host = MockHost::new();
         host.set_setting("default_approval_policy", "inherit");
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "");
+        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
     }
 
     #[test]
