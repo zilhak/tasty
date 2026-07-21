@@ -537,11 +537,11 @@ impl MarkdownPlugin {
         if addr.editing && !prev_editing {
             let fetched = fetch_recent(&ctx.host);
             addr.recent = fetched;
-            // clear-on-focus — 편집 진입 프레임에 버퍼를 비워 최근 목록이 필터 없이 전부
-            // 펼쳐지게 하고(빈 substring 은 전건 매치), 이후 타이핑이 typeahead 필터가 되게
-            // 한다. 진입 첫 draw 는 버퍼=현재 경로였어도 여기서 비워 재-paint 하므로, 필터로
-            // 목록이 비는 프레임이 사용자에게 노출되지 않는다.
-            addr.buffer.clear();
+            // 편집 진입 프레임에 recent 를 fetch 해 곧바로 재-paint 한다 — egui-mesh 는 입력
+            // 있을 때만 재-forward 되므로, 여기서 즉시 재그리지 않으면 드롭다운 후보가 다음
+            // 입력까지 안 뜬다. 버퍼는 비우지 않고 현재 경로(L480 동기화값)를 유지한다 —
+            // explorer 와 동일하게 편집 진입 시 경로가 남아 그대로 선택·편집 가능하다. 진입
+            // 드롭다운은 그 경로 substring 으로 필터되며, 이후 타이핑이 typeahead 필터가 된다.
             // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
             let result = mesh.repaint_last(&ctx.host, |egui_ctx| {
                 draw(

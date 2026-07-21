@@ -28,8 +28,9 @@ prose 는 뷰포트에서 wrap 시키고 뷰포트보다 넓은 표(라이브러
 
 본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — explorer 와 공유하는 `PathField` 위젯
 (`tasty-ui-widgets/src/path_field.rs` — `AutoComplete` 트리거 `Input` + 후보 드롭다운 + 우측
-Go `IconButton`)을 그대로 쓴다. 편집 진입 시 clear-on-focus 로 최근목록을 필터 없이 전부
-펼치고, 타이핑은 `MatchMode::Substring` typeahead 필터 + 매치 highlight 로 좁힌다. 아이콘은
+Go `IconButton`)을 그대로 쓴다. 편집 진입 시 버퍼는 현재 경로를 유지하고(explorer 와 동일 —
+경로가 남아 선택·편집 가능), 최근목록 드롭다운은 그 경로 substring 으로 필터되며 타이핑은
+`MatchMode::Substring` typeahead 필터 + 매치 highlight 로 좁힌다. 아이콘은
 `tasty-icons` 빌드타임 베이크 벡터를 위젯에 painter 로 주입한다([ADR-0036](../../../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
 
 | UI 요소 | 토큰 / 비례 | 비고 |
@@ -38,7 +39,7 @@ Go `IconButton`)을 그대로 쓴다. 편집 진입 시 clear-on-focus 로 최�
 | 주소창 바 | `bg-sidebar` · 40px | 공유 `PathField`(AutoComplete 트리거 + Go IconButton) |
 | 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` | `AutoComplete` 트리거 leading 아이콘(베이크 벡터) |
 | 경로 필드(트리거) | `Input` — `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px · mono caption(11) | 비편집=`text-secondary`, 편집=`text-primary` |
-| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `recent.query {kind:"markdown"}` 최신순 최대 10개 · clear-on-focus 로 전건 노출 후 substring 필터 |
+| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `recent.query {kind:"markdown"}` 최신순 최대 10개 · 버퍼=현재 경로 유지 후 그 경로 substring 필터 |
 | 드롭다운 후보 행 | `MenuItem` 언어 · 28px · middle-ellipsis 경로 · 매치 구간 highlight · hover=`overlay-hover` / keyboard-active=`surface-active`(2단계 분리) | 행 선두 `FILE` 아이콘 · empty="No recent files"(`text-muted`) |
 | Go 버튼 | `ARROW_RIGHT` glyph · `IconButton`(sm) | `PathField` 우측 · `tasty-icons` 베이크 벡터를 painter 주입(raw `→` 제거) |
 | 본문 텍스트 | `text-secondary` · 본문 leading 은 egui_commonmark 소유 | 헤딩 색은 단계별 차별화. `line-height-prose` override 미노출 → 토큰 은퇴·제거됨 |
