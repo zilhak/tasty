@@ -426,6 +426,74 @@ pub struct SettingsPanelCtx<'a> {
     pub user_config_path: Option<&'a std::path::Path>,
 }
 
+/// 단축키 충돌 팝업에 표시할 안내 문자열을 구성한다. 팝업 draw 와 open 직전
+/// 크기 산정 양쪽이 같은 문자열을 쓰도록 단일 출처로 둔다.
+fn conflict_message_text(pending: &PendingBinding) -> String {
+    let conflict_label = if let Some(label) = &pending.conflicting_label {
+        label.clone()
+    } else {
+        let raw = crate::settings::KeybindingSettings::label_key_for(&pending.conflicting_field)
+            .map(t)
+            .unwrap_or(pending.conflicting_field.as_str());
+        raw.trim_end_matches(':').trim().to_string()
+    };
+    let combo_display = crate::settings::KeybindingSettings::format_display(&pending.combo);
+    crate::i18n::t_fmt2(
+        "settings.keybindings.conflict_message",
+        &combo_display,
+        &conflict_label,
+    )
+}
+
+/// 충돌 팝업의 크기를 콘텐츠 기준으로 산정한다.
+///
+/// 안내문은 팝업 폭에서 wrap 되는데, wrap 줄 수가 폰트 metrics(플랫폼별 한글
+/// 폰트)·UI zoom·로케일·`conflicting_label` 길이에 따라 달라진다. 고정 높이로
+/// 등록하면 여유가 딱 3줄분뿐이라 4줄이 되는 순간 하단 버튼이 clip 으로 잘린다
+/// (macOS 재현). 실제 galley 높이를 재서 타이틀바·여백·버튼 높이를 더해 팝업
+/// 크기를 그때그때 결정하면 잘림이 사라진다. 폭은 zoom 을 곱해 콘텐츠 스케일과
+/// 정합시킨다(theme 토큰은 이미 zoom 반영, 고정 폭만 미반영이던 비대칭 제거).
+fn conflict_popup_size(
+    ui: &egui::Ui,
+    th: &Theme,
+    pending: &PendingBinding,
+    zoom: f32,
+) -> egui::Vec2 {
+    use crate::adapters::ui::popup::content_margin;
+    let width = (340.0 * zoom).round();
+    let content_w = (width - 2.0 * content_margin()).max(1.0);
+    let galley = ui.fonts(|f| {
+        f.layout(
+            conflict_message_text(pending),
+            egui::FontId::proportional(th.font_size_body.value()),
+            egui::Color32::WHITE, // 측정 전용 — 색은 높이에 무관
+            content_w,
+        )
+    });
+    conflict_popup_dims(th, galley.size().y, zoom)
+}
+
+/// 안내문 galley 높이(`label_h`)로부터 팝업 크기를 조립한다. galley 측정
+/// (egui fonts 의존)과 분리해 순수 계산만 담당 — 단위 테스트가 폰트 없이도 조립
+/// 로직(라벨↔버튼 공간 보장, zoom 폭 반영)을 검증할 수 있게 한다.
+///
+/// 세로: 타이틀바 + top margin + 라벨 galley + (라벨↔버튼 vspace) + 버튼행
+/// + bottom margin + 소폭 여유. 버튼행 높이는 `item_height_interactive`
+/// (zoom 반영)로 근사한다(실제 egui 버튼보다 넉넉).
+fn conflict_popup_dims(th: &Theme, label_h: f32, zoom: f32) -> egui::Vec2 {
+    use crate::adapters::ui::popup::{content_margin, title_bar_height};
+    let width = (340.0 * zoom).round();
+    let margin = content_margin();
+    let height = title_bar_height()
+        + margin
+        + label_h
+        + th.spacing_sm.value()
+        + th.item_height_interactive.value()
+        + margin
+        + th.spacing_xs.value();
+    egui::vec2(width, height.round())
+}
+
 /// Draw settings directly as a full-window panel (for modal windows).
 /// Returns true if Save was clicked, false if Cancel was clicked, None otherwise.
 pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> Option<bool> {
@@ -576,9 +644,22 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의
                             // 별도 PopupManager. host Intent 큐(AppState.popups) 와 별개 —
                             // sub-modal 내부 lifecycle 이므로 직접 호출 유지.
-                            if ui_state.pending_binding.is_some()
-                                && !ui_state.popups.is_open("keybinding_conflict")
-                            {
+                            // 고정 크기(잘림 위험) 대신 콘텐츠 galley 높이로 팝업 크기를
+                            // 산정해 하단 버튼이 항상 보이게 한다. zoom 은 draft(현재 편집
+                            // 중 값) 기준. size 를 먼저 계산해 pending 불변 borrow 를 닫은 뒤
+                            // popups 를 가변으로 만진다.
+                            let conflict_size = if !ui_state.popups.is_open("keybinding_conflict") {
+                                ui_state.pending_binding.as_ref().map(|pending| {
+                                    let zoom = draft.appearance.ui_scale_factor();
+                                    conflict_popup_size(ui, &th, pending, zoom)
+                                })
+                            } else {
+                                None
+                            };
+                            if let Some(size) = conflict_size {
+                                if let Some(p) = ui_state.popups.get_mut("keybinding_conflict") {
+                                    p.size = size;
+                                }
                                 ui_state.popups.open_centered_focused("keybinding_conflict");
                             }
 
@@ -638,26 +719,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 if id == "keybinding_conflict"
                     && let Some(pending) = &pending
                 {
-                    // quick-switch 슬롯 충돌은 일반 필드 라벨 맵에 없으므로 precomputed
-                    // 라벨을 우선 사용. 없으면 일반 필드 label_key_for 경로.
-                    let conflict_label = if let Some(label) = &pending.conflicting_label {
-                        label.clone()
-                    } else {
-                        let raw = crate::settings::KeybindingSettings::label_key_for(
-                            &pending.conflicting_field,
-                        )
-                        .map(t)
-                        .unwrap_or(pending.conflicting_field.as_str());
-                        raw.trim_end_matches(':').trim().to_string()
-                    };
-                    let combo_display =
-                        crate::settings::KeybindingSettings::format_display(&pending.combo);
-
-                    ui.label(crate::i18n::t_fmt2(
-                        "settings.keybindings.conflict_message",
-                        &combo_display,
-                        &conflict_label,
-                    ));
+                    // 안내 문자열은 open 직전 크기 산정과 동일 출처를 쓴다
+                    // (quick-switch 슬롯 충돌 라벨 처리 포함 — conflict_message_text).
+                    ui.label(conflict_message_text(pending));
                     vspace(ui, th.spacing_sm);
                     ui.horizontal(|ui| {
                         if ui.button(t("button.cancel")).clicked() {
@@ -1502,5 +1566,38 @@ mod tab_key_tests {
             assert_eq!(st.file_handler_sub_tab, FileHandlerSubTab::HookHandlers);
         }
         assert!(!st.select_section_by_key("unknown-section"));
+    }
+
+    /// 충돌 팝업 크기 조립이 안내문 높이(=wrap 줄 수)에 비례해 커지고, 어떤 경우에도
+    /// 하단 버튼행 공간이 galley 아래에 포함된다 — 고정 120px 시절 macOS 에서 4줄 wrap
+    /// 시 버튼이 clip 으로 잘리던 회귀의 가드. galley 측정(egui fonts)과 분리된 순수
+    /// 조립 로직 `conflict_popup_dims` 를 직접 검증한다(테스트 Context 엔 폰트 미로드).
+    #[test]
+    fn conflict_popup_dims_fits_content() {
+        use crate::adapters::ui::popup::title_bar_height;
+        let th = crate::theme::theme();
+        // 라벨 galley 높이를 3줄분·4줄분으로 흉내 낸다(줄높이는 폰트 상한 이하).
+        let line = th.font_size_body.value() * 1.4;
+        let three = conflict_popup_dims(&th, line * 3.0, 1.0);
+        let four = conflict_popup_dims(&th, line * 4.0, 1.0);
+        // 한 줄 더 wrap 되면 팝업이 그만큼 커진다(≈ 한 줄 높이).
+        assert!(four.y > three.y, "four.y={} three.y={}", four.y, three.y);
+        assert!(
+            (four.y - three.y - line).abs() < 1.0,
+            "height delta should equal one line: four={} three={} line={}",
+            four.y,
+            three.y,
+            line
+        );
+        // 라벨이 0 높이여도 최소한 타이틀바 + 버튼행 높이 이상을 확보한다(버튼 clip 방지).
+        let floor = title_bar_height() + th.item_height_interactive.value();
+        assert!(
+            conflict_popup_dims(&th, 0.0, 1.0).y >= floor,
+            "empty-label height must clear title+button floor"
+        );
+        // 폭은 zoom 을 반영한다(고정 폭 비대칭 제거).
+        let base = conflict_popup_dims(&th, line * 3.0, 1.0);
+        let zoomed = conflict_popup_dims(&th, line * 3.0, 1.2);
+        assert!(zoomed.x > base.x, "zoomed.x={} base.x={}", zoomed.x, base.x);
     }
 }
