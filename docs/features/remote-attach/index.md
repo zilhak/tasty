@@ -25,6 +25,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 
 - **surface attach**: 단일 터미널 surface 를 mirror. 한 연결 = 한 터미널.
 - **workspace attach**: 워크스페이스를 점유하면 그 안 **모든 터미널 surface 를 트리째 mirror**(분할 방향/비율 포함)하고, **비-터미널 surface**(markdown/image/explorer 등)는 mirror 불가라 placeholder 로 숨긴다. workspace lock 은 멤버 터미널 전부를 surface lock 에도 등록하므로, 멤버가 이미 다른 client 에 점유돼 있으면 workspace attach 를 **거부**(부분 점유 충돌 방지).
+  - **이 mirror 불가는 기술적 미구현이지 보안상 의도적 배제가 아니다.** attach 로 나가는 콘텐츠 전체는 이미 SSH+loopback 연결 경계 신뢰 모델([ADR-0004](../../adr/0004-ipc-transport-tcp.md), [attach-behavior "IPC 표면"](../../dev-guide/attach-behavior.md#ipc-표면-attach))에 위임돼 있다 — 향후 비-터미널 surface mirror 를 구현하더라도, 콘텐츠 종류가 다르다는 이유로 별도 권한 게이트를 새로 만들 근거는 없다.
 
 ### 화면 동기화
 
