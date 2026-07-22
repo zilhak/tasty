@@ -23,6 +23,8 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 `handle_cursor_moved` / `handle_mouse_input` / `handle_mouse_wheel` 이 모두 같은 가드(`egui_consumed || overlay_open || state.popup_hovered || state.banner_hovered || state.modifier_hint_hovered`)로 상위 레이어를 먼저 거른 뒤 divider → terminal 로 내려간다. 배너는 **자기 영역의 마우스를 소비**(뒤로 전파 X)하는 focus-less 오버레이라 popup 과 같은 precedence 에서 차단한다(Toast 는 입력을 통과시키므로 이 가드에 없다 — [banner 시스템](../design/systems/banner.md)).
 
+**진행 중인 divider 드래그는 surface 콘텐츠보다 우선한다(순서 6 > 순서 7).** egui-mesh surface(마크다운·이미지)는 포인터 이동/버튼을 surface-local 로 forward 하고 소비하는 별도 경로(`egui_mesh_target_at`)를 갖는데, 이 forward 는 표의 순서 7(콘텐츠) 성격이므로 **`dragging_divider.is_some()` 일 때는 건너뛴다** — `handle_cursor_moved`(포인터 이동)와 `handle_mouse_input`(버튼)의 egui-mesh forward 가드에 `dragging_divider.is_none()` 조건을 둔다. 없으면 드래그 중 커서가 egui-mesh surface 영역으로 들어갈 때 forward 가 early-return 하여 divider 갱신이 멈추고(멈춤), release 도 forward 로 소비돼 드래그가 확정/해제되지 않는다(sticky). 터미널/explorer surface 는 egui-mesh 가 아니라 이 경로를 타지 않아 원래도 정상.
+
 **Modifier-hint 오버레이**(modifier 홀드 시 뜨는 focus-less 패널)도 마우스를 소비하지만 배너보다 한 단계 강하다: 위 통합 가드(소비·휠·커서)에 더해 **click-to-activate 전환 가드**(`!popup_hovered && !modifier_hint_hovered`)에도 들어가, 오버레이 위 좌클릭이 하위 surface 로 **포커스를 옮기지 못하게** 막는다(popup 과 동급, banner 와 차이). 오버레이 드래그 이동·테두리/코너 리사이즈·X 클릭이 터미널 포커스·selection·마우스 리포트로 새지 않는다 — 키보드 포커스는 애초에 취득하지 않는다(원칙3, [banner 와 동일한 focus-less 성질]). 4지점 배선: `handle_mouse_input` 의 click-to-activate press 가드 + 통합 소비 가드, `handle_mouse_wheel`, `handle_cursor_moved`.
 
 ### 비활성 surface 클릭 = 전환 우선 (click-to-activate swallow)

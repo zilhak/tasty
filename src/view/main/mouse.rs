@@ -147,7 +147,14 @@ impl MainView {
 
         // egui-mesh surface 위 포인터 이동 forward (A1-S7): hover/interact_pos 추적용.
         // 합성 채널이라 host 의 selection/링크 hover 와 무관 — 누적 후 소비한다.
-        if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y) {
+        // 단 divider 드래그 진행 중에는 forward 하지 않는다: divider(입력 z-order 순서 6)
+        // 가 surface 콘텐츠(순서 7, egui-mesh 포함)보다 우선해야, 드래그 중 커서가
+        // egui-mesh surface 영역으로 들어가도 아래 divider 갱신이 계속 실행된다
+        // (docs/architecture/input-layer.md). 이 가드가 없으면 여기서 early-return 되어
+        // divider 가 커서를 따라오지 못하고 멈춘다.
+        if self.dragging_divider.is_none()
+            && let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y)
+        {
             self.egui_mesh_push_pointer_moved(sid, rect, x, y);
             self.mark_dirty();
             return;
@@ -264,7 +271,13 @@ impl MainView {
             return;
         }
 
-        if self.try_forward_egui_mesh_button(button, button_state) {
+        // divider 드래그 진행 중이면 egui-mesh 로 버튼을 forward 하지 않는다: 마크다운/
+        // 이미지(egui-mesh) surface 위에서 좌클릭을 떼도 release 가 handle_left_release
+        // 로 흘러 divider 를 확정(resize 반영)하고 dragging_divider 를 해제해야 한다.
+        // forward 로 소비되면 드래그가 확정/해제되지 않아 sticky divider 가 된다.
+        if self.dragging_divider.is_none()
+            && self.try_forward_egui_mesh_button(button, button_state)
+        {
             return;
         }
 
