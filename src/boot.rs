@@ -321,7 +321,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // mesh_demo)의 실제 plugin 프로세스가 필요하다. 상시 초기화는 회귀
                 // 위험이 넓어(스코프 결정) attach 세션이 실제로 시작되는 이 지점에서만
                 // lazy 초기화한다. 이후엔 프로세스 수명 동안 유지(tear-down 없음).
-                if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty()
+                if !outcome.attach_requests.is_empty()
+                    || !outcome.workspace_attach_requests.is_empty()
                 {
                     headless_plugins::ensure_plugin_manager(&mut app, &engine);
                 }
@@ -406,6 +407,54 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         cols,
                         rows,
                     );
+                }
+                for (
+                    client_id,
+                    surface_id,
+                    width_px,
+                    height_px,
+                    pixels_per_point,
+                    theme,
+                    focused,
+                ) in outcome.mesh_context_requests
+                {
+                    // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability
+                    // negotiation(TODO 15 결정 #1). holder 불일치/미점유 surface 는
+                    // 명시 MeshError 로 회신한다(TODO 15 결정 #1: 무시 대신 오류).
+                    let ok = engine.apply_attached_mesh_context(
+                        surface_id,
+                        client_id,
+                        width_px,
+                        height_px,
+                        pixels_per_point,
+                        theme,
+                        focused,
+                    );
+                    if !ok {
+                        let reply = crate::ipc::stream::StreamControl::MeshError {
+                            surface_id,
+                            reason: "not_attached".to_string(),
+                        };
+                        let frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Control,
+                            serde_json::to_vec(&reply).unwrap_or_default(),
+                        );
+                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
+                    }
+                }
+                for (client_id, surface_id) in outcome.mesh_full_resend_requests {
+                    let ok = engine.apply_attached_mesh_full_resend(surface_id, client_id);
+                    if !ok {
+                        let reply = crate::ipc::stream::StreamControl::MeshError {
+                            surface_id,
+                            reason: "not_attached".to_string(),
+                        };
+                        let frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Control,
+                            serde_json::to_vec(&reply).unwrap_or_default(),
+                        );
+                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
+                    }
                 }
                 for (client_id, msg) in outcome.capture_uploads {
                     // (03) screenshot→remote-clipboard: mirror client 가 이 headless
@@ -524,6 +573,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     engine.attach.release_all_for_client(client_id);
                     // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     engine.bulk_transfers.clear_client(client_id);
+                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
+                    engine.mesh_mirror.remove_for_client(client_id);
                 }
             }
             AppEvent::BusyPoll => {

@@ -23,6 +23,7 @@ pub(crate) mod file;
 pub(crate) mod fs_list;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
+pub(crate) mod mesh_mirror;
 pub(crate) mod pty_registry;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;

@@ -46,6 +46,65 @@ impl CoreState {
         false
     }
 
+    /// mesh-mirror 후보 판정(단일 surface attach 용, `.claude-workspace/todo/18-attach-server-mesh-context-forward.md`).
+    /// `surface_id`가 어느 workspace 든 leaf 로 존재하고 `Surface::attach_mesh_info()`가
+    /// `Some`을 반환하면 그 `(kind, plugin_id)`를 돌려준다 — 화이트리스트 검증은
+    /// 호출자(`attach_surface_for_stream`)가 `mesh_mirror_candidates`와 동일한
+    /// `is_egui_mesh_allowed` 게이트로 별도 수행한다.
+    pub(crate) fn find_mesh_surface_info(&self, surface_id: u32) -> Option<(String, String)> {
+        for ws in &self.workspaces {
+            let pane_ids = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                    for tab in &pane.tabs {
+                        if let Some(layout) = tab.layout_if_initialized()
+                            && let Some(surface) = layout.find_surface(surface_id)
+                            && let Some((kind, plugin_id)) = surface.attach_mesh_info()
+                        {
+                            return Some((kind.to_string(), plugin_id.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// [`Self::find_mesh_surface_info`]의 전체 메타데이터 버전 — attach mesh forward
+    /// 루프(`src/boot/headless_plugins.rs`)가 `surface.create` bootstrap 에 필요한
+    /// `file`/`display_name`까지 필요해 `EguiMeshSurface`(app 계층)로 직접 downcast
+    /// 한다. `tasty-model`의 `Surface::attach_mesh_info()`는 `(kind, plugin_id)`만
+    /// 노출하도록 최소화됐다(TODO 16 결정 #2 — crate 경계) — 여기는 `tasty` 본체
+    /// crate 내부라 `plugin_bridge::EguiMeshSurface` 참조가 경계를 넘지 않는다.
+    ///
+    /// 현재 소비처는 headless-as-attach-서버 forward 루프뿐이라(gui-as-attach-서버는
+    /// `.claude-workspace/todo/24-attach-gui-server-mesh-forward.md`로 후속 이관)
+    /// gui 빌드에선 아직 미사용 — `-D dead-code`를 gui 한정 침묵한다.
+    #[cfg_attr(feature = "gui", allow(dead_code))]
+    pub(crate) fn find_egui_mesh_surface(
+        &self,
+        surface_id: u32,
+    ) -> Option<&crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface> {
+        for ws in &self.workspaces {
+            let pane_ids = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                    for tab in &pane.tabs {
+                        if let Some(layout) = tab.layout_if_initialized()
+                            && let Some(surface) = layout.find_surface(surface_id)
+                            && let Some(ms) = surface
+                                .as_any()
+                                .downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>()
+                        {
+                            return Some(ms);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Lazy PTY init for a deferred surface. Returns `true` if a PTY was just
     /// spawned for this surface, `false` otherwise (already initialized or the
     /// surface_id isn't a known deferred placeholder).

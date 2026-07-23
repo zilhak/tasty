@@ -82,6 +82,26 @@ pub struct PumpOutcome {
     /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
     /// tap echoes the settled grid back as a `Resize` (no extra push here).
     pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
+    /// `(client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused)`
+    /// mesh-mirror subscribe/geometry-update requests from an attach client
+    /// ([`StreamControl::MeshContext`](crate::ipc::stream::StreamControl)). The
+    /// subscribe request itself doubles as capability negotiation (TODO 15 결정
+    /// #1) — no separate handshake. The main loop validates holder authority +
+    /// mesh whitelist membership before applying to `CoreState::mesh_mirror`.
+    #[allow(clippy::type_complexity)]
+    pub mesh_context_requests: Vec<(
+        StreamClientId,
+        u32,
+        u32,
+        u32,
+        f32,
+        Option<tasty_plugin_protocol::protocol::ThemeWire>,
+        bool,
+    )>,
+    /// `(client_id, surface_id)` explicit full-texture-resend requests
+    /// ([`StreamControl::MeshFullResendRequest`](crate::ipc::stream::StreamControl)),
+    /// e.g. after a client-side decode error or reconnect.
+    pub mesh_full_resend_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, msg)` — (03) screenshot→remote-clipboard upload chunks/commit
     /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::ipc::stream::StreamControl)
     /// variant (that enum is a concurrent workstream's file) — it rides the same
@@ -392,6 +412,29 @@ impl StreamHub {
                                 }) => out
                                     .bulk_events
                                     .push((client_id, BulkEvent::Commit { transfer_id })),
+                                Ok(crate::ipc::stream::StreamControl::MeshContext {
+                                    surface_id,
+                                    width_px,
+                                    height_px,
+                                    pixels_per_point,
+                                    theme,
+                                    focused,
+                                }) => {
+                                    out.mesh_context_requests.push((
+                                        client_id,
+                                        surface_id,
+                                        width_px,
+                                        height_px,
+                                        pixels_per_point,
+                                        theme,
+                                        focused,
+                                    ));
+                                }
+                                Ok(crate::ipc::stream::StreamControl::MeshFullResendRequest {
+                                    surface_id,
+                                }) => {
+                                    out.mesh_full_resend_requests.push((client_id, surface_id));
+                                }
                                 Ok(_) => {}
                                 Err(_) => {
                                     if let Ok(msg) =
@@ -600,6 +643,52 @@ mod tests {
         // Not misclassified as a structural op or input.
         assert!(out.structural_ops.is_empty());
         assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_mesh_context() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshContext {
+            surface_id: 7,
+            width_px: 800,
+            height_px: 600,
+            pixels_per_point: 2.0,
+            theme: None,
+            focused: true,
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 9,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(
+            out.mesh_context_requests,
+            vec![(9u32, 7u32, 800u32, 600u32, 2.0f32, None, true)]
+        );
+        assert!(out.resize_requests.is_empty());
+        assert!(out.structural_ops.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_mesh_full_resend_request() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload =
+            serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshFullResendRequest {
+                surface_id: 7,
+            })
+            .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 9,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.mesh_full_resend_requests, vec![(9u32, 7u32)]);
+        assert!(out.mesh_context_requests.is_empty());
     }
 
     #[test]

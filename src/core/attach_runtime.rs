@@ -40,8 +40,18 @@ impl CoreState {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        // 대상 검증: 실재(또는 deferred) 터미널 surface 만 점유 대상.
+        // 터미널(또는 deferred) 이 아니면 mesh-mirror 후보인지 확인한다(TODO 18 —
+        // 단일 surface attach 도 화이트리스트된 mesh surface 를 받아들이도록 확장).
+        // PTY 스냅샷/tap 이 없는 별도 경로(`attach_mesh_surface_for_stream`)로 분기.
         if !self.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
+            if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
+                && crate::engine::surface_registry::egui_mesh::is_egui_mesh_allowed(
+                    &kind, &plugin_id,
+                )
+            {
+                self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
+                return;
+            }
             reject_attach(hub, client_id, "not_found", None);
             return;
         }
@@ -125,6 +135,85 @@ impl CoreState {
         });
 
         tracing::debug!("attach: surface {surface_id} -> client {client_id}");
+    }
+
+    /// mesh surface(egui-mesh 화이트리스트 plugin) 단일 attach. 터미널 경로와 달리
+    /// PTY 가 없어 bulk 스냅샷/출력 tap/resize tap 이 존재하지 않는다 — lock 만 획득하고
+    /// `attached` 통지를 보낸다. 실제 구독 시작은 client 가 뒤이어 보내는
+    /// `StreamControl::MeshContext` 요청이 트리거한다(TODO 15 결정 #1: 구독 요청 자체가
+    /// capability negotiation). mesh 바이트 forward 는 `PluginManager` 접근권이 있는
+    /// App 계층(`src/boot/headless_plugins.rs`)의 몫이라 여기서는 다루지 않는다.
+    fn attach_mesh_surface_for_stream(
+        &mut self,
+        surface_id: SurfaceId,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        match self.attach.acquire(surface_id, client_id) {
+            Ok(_) => {}
+            Err(AttachError::AlreadyAttached { holder }) => {
+                reject_attach(hub, client_id, "already_attached", Some(holder));
+                return;
+            }
+            Err(_) => {
+                reject_attach(hub, client_id, "lock_error", None);
+                return;
+            }
+        }
+        let attached = serde_json::json!({
+            "event": "attached",
+            "surface_id": surface_id,
+            "kind": "mesh",
+        });
+        let attached_frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&attached).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, attached_frame); // best-effort 통지 — client 끊김 시 무해.
+        tracing::debug!("attach: mesh surface {surface_id} -> client {client_id}");
+    }
+
+    /// attach client 의 mesh 구독/geometry·theme·focus 갱신 요청을 반영
+    /// (`StreamControl::MeshContext`). holder 검증: 이 client 가 이 surface 를 실제로
+    /// 점유 중이어야 한다(단일 surface attach 로 획득한 lock). 반환: 반영 성공 여부
+    /// (false = holder 불일치/미점유 → 호출자는 `MeshError` 회신).
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_attached_mesh_context(
+        &mut self,
+        surface_id: SurfaceId,
+        client_id: AttachClientId,
+        width_px: u32,
+        height_px: u32,
+        pixels_per_point: f32,
+        theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+        focused: bool,
+    ) -> bool {
+        if self.attach.holder(surface_id) != Some(client_id) {
+            return false;
+        }
+        self.mesh_mirror.upsert(
+            surface_id,
+            client_id,
+            width_px,
+            height_px,
+            pixels_per_point,
+            theme,
+            focused,
+        );
+        true
+    }
+
+    /// 명시 full-texture-resend 요청(`StreamControl::MeshFullResendRequest`) 반영.
+    /// holder 검증은 [`Self::apply_attached_mesh_context`]와 동일. 반환: 성공 여부.
+    pub fn apply_attached_mesh_full_resend(
+        &mut self,
+        surface_id: SurfaceId,
+        client_id: AttachClientId,
+    ) -> bool {
+        if self.attach.holder(surface_id) != Some(client_id) {
+            return false;
+        }
+        self.mesh_mirror.request_full_resend(surface_id)
     }
 
     /// client 입력 Data 프레임을 그 client 가 점유한 surface 의 PTY 로 전달한다.
@@ -1069,7 +1158,11 @@ mod mesh_mirror_candidate_tests {
             mesh_candidates: vec![
                 (10, "markdown".to_string(), "com.tasty.markdown".to_string()),
                 (11, "image".to_string(), "com.tasty.image".to_string()),
-                (12, "mesh_demo".to_string(), "com.tasty.mesh-demo".to_string()),
+                (
+                    12,
+                    "mesh_demo".to_string(),
+                    "com.tasty.mesh-demo".to_string(),
+                ),
                 // 화이트리스트 밖(가상의 3rd-party 조합) — rejected 로 떨어져야 한다.
                 (13, "widget".to_string(), "com.example.widget".to_string()),
             ],

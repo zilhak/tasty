@@ -153,9 +153,11 @@ impl Workspace {
                     tab.for_each_surface(&mut |s| {
                         let Some(id) = s.surface_id() else { return };
                         if let Some((kind, plugin_id)) = s.attach_mesh_info() {
-                            class
-                                .mesh_candidates
-                                .push((id, kind.to_string(), plugin_id.to_string()));
+                            class.mesh_candidates.push((
+                                id,
+                                kind.to_string(),
+                                plugin_id.to_string(),
+                            ));
                             return;
                         }
                         let is_terminal = s.kind() == "terminal"

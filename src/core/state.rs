@@ -286,6 +286,12 @@ pub struct CoreState {
     /// 휘발성 — 직렬화/복원 안 함(decision 2). client_id 는 단계 1 StreamClientId.
     pub(crate) attach: crate::core::attach::OccupancyRegistry,
 
+    /// attach mesh mirror 구독 상태(`.claude-workspace/todo/18-attach-server-mesh-context-forward.md`).
+    /// surface_id → 최신 geometry/theme/focus + forward 진행 상태. `PluginManager`
+    /// 는 `App` 소유라 여기 둘 수 없다 — 이 필드는 순수 상태만, 실제 plugin 구동은
+    /// `src/boot/headless_plugins.rs` 가 이 상태를 읽어 수행한다. 휘발성(직렬화 안 함).
+    pub(crate) mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry,
+
     /// child-terminal registry (ADR-0040 / occupancy-04). 에이전트가 `terminal.spawn`
     /// 으로 만든 자식 터미널 surface 의 parent/index/idle/needs_input 매핑. 부팅 시
     /// `~/.tasty/child-terminals.json` 에서 로드, 등록/제거마다 즉시 save. soft 점유
@@ -501,6 +507,7 @@ impl CoreState {
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
+            mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
             pty_registry: crate::core::pty_registry::PtyRegistry::new(),
             readonly_views: HashMap::new(),

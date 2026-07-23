@@ -1197,10 +1197,8 @@ mod tests {
             serde_json::from_str::<StreamControl>(&ctx).unwrap(),
             StreamControl::MeshContext { .. }
         ));
-        let resend = serde_json::to_string(&StreamControl::MeshFullResendRequest {
-            surface_id: 1,
-        })
-        .unwrap();
+        let resend =
+            serde_json::to_string(&StreamControl::MeshFullResendRequest { surface_id: 1 }).unwrap();
         assert!(matches!(
             serde_json::from_str::<StreamControl>(&resend).unwrap(),
             StreamControl::MeshFullResendRequest { .. }

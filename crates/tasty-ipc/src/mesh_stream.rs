@@ -256,7 +256,10 @@ mod tests {
             .map(|i| (i % 256) as u8)
             .collect();
         let chunks = split_mesh_frame(3, 1, 10, 20, false, &bytes);
-        assert!(chunks.len() > 1, "must actually split across multiple chunks");
+        assert!(
+            chunks.len() > 1,
+            "must actually split across multiple chunks"
+        );
 
         // 각 청크를 실제 StreamTag::MeshData 프레임으로 왕복(프레이밍 계층까지 포함)
         // 시켜 MAX_FRAME_LEN 위반이 없는지도 함께 검증한다.

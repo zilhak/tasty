@@ -1077,6 +1077,8 @@ impl App {
                     main.core_state.attach.release_all_for_client(cid);
                     // (06) bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     main.core_state.bulk_transfers.clear_client(cid);
+                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
+                    main.core_state.mesh_mirror.remove_for_client(cid);
                 }
             }
         }
@@ -1084,6 +1086,7 @@ impl App {
             for &cid in clients {
                 engine.attach.release_all_for_client(cid);
                 engine.bulk_transfers.clear_client(cid);
+                engine.mesh_mirror.remove_for_client(cid);
             }
         }
     }
@@ -1141,6 +1144,36 @@ impl App {
         // 자동 fan-out 한다(여기서 추가 push 없음).
         for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
             self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
+        }
+
+        // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability negotiation
+        // (TODO 15 결정 #1). holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다.
+        // 참고: 실제 plugin 구동 + mesh 바이트 forward 는 아직 headless(attach mesh
+        // mirror 의 주 시나리오, `src/boot/headless_plugins.rs`)에만 배선했다 — gui 가
+        // attach 서버인 경우의 실제 forward 루프는 out-of-scope 로 남기고
+        // `.claude-workspace/todo/`에 후속 TODO 로 기록했다(로컬 redraw 와의 geometry
+        // 권위 조정이 필요해 범위가 커진다).
+        for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
+            outcome.mesh_context_requests
+        {
+            let ok = self.apply_mesh_context_on_owning_engine(
+                surface_id,
+                client_id,
+                width_px,
+                height_px,
+                pixels_per_point,
+                theme,
+                focused,
+            );
+            if !ok {
+                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+            }
+        }
+        for (client_id, surface_id) in outcome.mesh_full_resend_requests {
+            let ok = self.apply_mesh_full_resend_on_owning_engine(surface_id, client_id);
+            if !ok {
+                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+            }
         }
 
         // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
@@ -1275,6 +1308,71 @@ impl App {
         }
         for (_, engine) in self.parked_states.iter_mut() {
             if engine.feed_attached_input(client_id, bytes) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 대상 mesh surface 를 점유(holder)한 engine 을 찾아 구독/geometry 갱신을
+    /// 반영한다(TODO 18). holder 검증은 `CoreState::apply_attached_mesh_context`
+    /// 내부에서 하므로, 여기선 "이 client 가 그 surface 의 attach lock 을 쥔 engine"만
+    /// 찾으면 된다 — 못 찾으면 false(호출자가 `MeshError` 회신).
+    #[allow(clippy::too_many_arguments)]
+    fn apply_mesh_context_on_owning_engine(
+        &mut self,
+        surface_id: u32,
+        client_id: u32,
+        width_px: u32,
+        height_px: u32,
+        pixels_per_point: f32,
+        theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+        focused: bool,
+    ) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.apply_attached_mesh_context(
+                    surface_id,
+                    client_id,
+                    width_px,
+                    height_px,
+                    pixels_per_point,
+                    theme.clone(),
+                    focused,
+                )
+            {
+                return true;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.apply_attached_mesh_context(
+                surface_id,
+                client_id,
+                width_px,
+                height_px,
+                pixels_per_point,
+                theme.clone(),
+                focused,
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// [`Self::apply_mesh_context_on_owning_engine`]과 동형의 full-resend 버전.
+    fn apply_mesh_full_resend_on_owning_engine(&mut self, surface_id: u32, client_id: u32) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main
+                    .core_state
+                    .apply_attached_mesh_full_resend(surface_id, client_id)
+            {
+                return true;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.apply_attached_mesh_full_resend(surface_id, client_id) {
                 return true;
             }
         }
@@ -1666,4 +1764,23 @@ fn push_structural_delta(
         serde_json::to_vec(delta).unwrap_or_default(),
     );
     let _ = hub.push(client_id, frame); // best-effort delta — client 끊김 시 무해.
+}
+
+/// `MeshError`(TODO 15 결정 #1: 미지원/미점유 mesh 요청은 무시 대신 명시 오류) 회신
+/// 프레임을 client 에 push(best-effort).
+fn reply_mesh_error(
+    hub: &crate::adapters::production::stream_hub::StreamHub,
+    client_id: u32,
+    surface_id: u32,
+    reason: &str,
+) {
+    let reply = crate::ipc::stream::StreamControl::MeshError {
+        surface_id,
+        reason: reason.to_string(),
+    };
+    let frame = crate::ipc::stream::StreamFrame::new(
+        crate::ipc::stream::StreamTag::Control,
+        serde_json::to_vec(&reply).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 오류 회신 — client 끊김 시 무해.
 }
