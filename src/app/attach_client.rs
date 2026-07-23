@@ -124,6 +124,14 @@ pub(crate) struct AttachClientSession {
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
+    /// (06) bulk 파일 전송(ADR-0053)이 결속할 **원격** workspace id. 대화형 attach 가
+    /// `open_attach_workspace` 에 넘긴 그 값 — 전용 bulk 연결의 `open_bulk` 가 이 값을
+    /// 서버에 실어 "이 ws 의 holder 가 존재하는가" 인가의 근거로 삼는다(06-α 서버 검증).
+    remote_workspace: u32,
+    /// (06) bulk 전용 연결이 두 번째 `TcpStream::connect` 를 걸 로컬 포트. 대화형 attach
+    /// 가 쓴 포트와 동일(자동 attach 는 `tunnel.local_port`, 수동/loopback 은 직접 포트) —
+    /// 같은 `ssh -L` 터널/포워딩을 재사용하므로 별도 인프라가 필요 없다.
+    bulk_port: u16,
     /// 단계 7 — 자동 attach 의 SSH 터널 핸들. 세션이 살아있는 동안 보관해 Drop(자식
     /// ssh kill)을 막는다. 수동 트리거(`attach.into_gui`)·loopback 은 None.
     #[allow(dead_code)]
@@ -500,6 +508,8 @@ impl App {
             disconnected,
             frame_tx,
             client_id,
+            remote_workspace: workspace,
+            bulk_port: port,
             tunnel,
             anchor_ws_id,
             op_seq: 0,
@@ -1578,6 +1588,19 @@ fn next_capture_upload_id() -> u64 {
     NEXT_CAPTURE_UPLOAD_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// (06) bulk 파일 전송의 transfer_id 발급기. 프로세스 내 단조 증가(원격은 client_id
+/// 로 연결이 구분되므로 재기동 간 유일성 불필요 — capture 와 동일 근거).
+static NEXT_BULK_TRANSFER_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_bulk_transfer_id() -> u64 {
+    NEXT_BULK_TRANSFER_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// (06) 한 bulk `Data` 청크의 raw payload 크기 상한 = `MAX_FRAME_LEN - BULK_CHUNK_HEADER_LEN`.
+/// binary sub-header(`[transfer_id u64][seq u32]`) 를 얹어도 프레임이 1 MiB 를 넘지
+/// 않게 한다. base64 를 쓰지 않으므로 capture(700 KiB)보다 크게 잡을 수 있다.
+const BULK_CHUNK_RAW_LEN: usize = stream::MAX_FRAME_LEN as usize - stream::BULK_CHUNK_HEADER_LEN;
+
 /// 한 청크의 raw payload 크기 상한. base64 인코딩(약 4/3 팽창) 후에도
 /// `StreamTag::Control` 프레임의 `MAX_FRAME_LEN`(1MiB) 에 JSON 오버헤드를 포함해
 /// 여유 있게 들어가도록 700KiB 로 잡는다(대부분의 스크린샷은 청크 1~2개).
@@ -1768,11 +1791,186 @@ fn send_capture_control_frame(
     Ok(())
 }
 
+impl App {
+    /// (06) native bulk 파일 전송(ADR-0053) — `local_ws_id` mirror 세션이 결속한 원격
+    /// tasty 로 파일 바이트를 **전용 연결**로 올리고, 원격이 저장한 **절대경로**를
+    /// 돌려받는다. 캡처(03)와 달리 대화형 attach 스트림 큐(`frame_tx`)를 재사용하지
+    /// 않고, 같은 포워딩 포트에 두 번째 `TcpStream::connect` → `open_bulk` 로 소켓을
+    /// 분리해 대량 전송이 터미널 I/O 를 head-of-line 블로킹하지 않게 한다.
+    ///
+    /// **동기·블로킹**: 연결 open → begin/chunk/commit 송신 → `BulkResult` 수신까지
+    /// 이 호출 스레드에서 완결한다(전송마다 여닫는 최소 구현 — 상시연결/resume 은 범위
+    /// 밖). 대용량 업로드로 UI 를 막지 않으려면 **호출자가 백그라운드 스레드에서
+    /// 부른다**(그래서 세션에서 뽑은 `(port, remote_ws)` 만 있으면 `&self` 없이도
+    /// 돌도록 실제 전송은 자유 함수 [`upload_file_over_bulk`] 로 분리). 08(이미지
+    /// 붙여넣기)·09(팝업)가 이 반환 경로를 소비한다.
+    // 06-β 가 완성한 업로드 API — 실제 호출자(경로 삽입/팝업)는 08/09. 그 전까진 미사용.
+    #[allow(dead_code)]
+    pub(crate) fn upload_file_to_remote(
+        &self,
+        local_ws_id: u32,
+        file_name: &str,
+        bytes: &[u8],
+    ) -> anyhow::Result<String> {
+        let (port, remote_ws) = {
+            let sess = self
+                .attach_client_sessions
+                .iter()
+                .find(|s| s.local_workspace == local_ws_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("no attach session for mirror workspace {local_ws_id}")
+                })?;
+            (sess.bulk_port, sess.remote_workspace)
+        };
+        upload_file_over_bulk(port, remote_ws, file_name, bytes)
+    }
+}
+
+/// (06) 전용 bulk 연결 하나의 전 수명을 동기로 수행: `127.0.0.1:port` 에 connect →
+/// `open_bulk(remote_ws)` → begin/chunk/commit 송신 → `BulkResult` 수신 → detach.
+/// 성공 시 원격 절대경로, 실패 시 원격 사유(또는 전송/프로토콜 에러)를 `Err`.
+///
+/// 세션 상태(`&self`)에 의존하지 않으므로 호출자가 백그라운드 스레드로 오프로드하기
+/// 쉽다(세션에서 `(port, remote_ws)` 만 미리 뽑으면 됨). 전용 연결도 heartbeat/TTL
+/// (ADR-0052)·인가(bulk_workspace holder 결속, 06-α 서버가 검증)를 그대로 탄다.
+/// (06) 파일 바이트를 bulk `Data` 프레임 payload 시퀀스로 청킹한다(각 원소는
+/// `[transfer_id u64][seq u32][part]`). 순수 함수 — 네트워크 없이 청킹 경계·seq·헤더
+/// 인코딩을 검증할 수 있다. 빈 입력은 청크 0개(begin→commit 만으로 0바이트 저장).
+fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
+    bytes
+        .chunks(BULK_CHUNK_RAW_LEN)
+        .enumerate()
+        .map(|(seq, part)| stream::encode_bulk_chunk(transfer_id, seq as u32, part))
+        .collect()
+}
+
+#[allow(dead_code)] // 06-β API — 호출자는 08/09.
+fn upload_file_over_bulk(
+    port: u16,
+    remote_ws: u32,
+    file_name: &str,
+    bytes: &[u8],
+) -> anyhow::Result<String> {
+    let transfer_id = next_bulk_transfer_id();
+
+    // 대화형 attach 와 동일한 read/write timeout — silent 단절 감지 + write 백프레셔
+    // 백스톱(ADR-0052 heartbeat). open_bulk 이 핸드셰이크 ack 를 읽고 돌아온다.
+    let sock = TcpStream::connect(("127.0.0.1", port))?;
+    if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+        tracing::warn!("bulk upload: failed to set read timeout: {e}");
+    }
+    if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+        tracing::warn!("bulk upload: failed to set write timeout: {e}");
+    }
+    let (mut conn, _client_id) = StreamConnection::open_bulk(sock, STREAM_PROTO, remote_ws)?;
+
+    // begin(파일명·총 크기) — 서버가 basename 안전화·용량 승인(07)의 입력으로 쓴다.
+    let begin = StreamControl::BulkBegin {
+        transfer_id,
+        filename: file_name.to_string(),
+        total_size: bytes.len() as u64,
+    };
+    conn.send(StreamTag::Control, &serde_json::to_vec(&begin)?)?;
+
+    // chunk — raw 바이트를 (MAX_FRAME_LEN - header) 미만으로 청킹, 각 part 앞에 binary
+    // sub-header(transfer_id/seq)를 얹어 Data 프레임으로. base64 미사용. 빈 파일도
+    // begin→commit 만으로 0바이트 저장되도록 청크 루프를 건너뛴다.
+    for framed in bulk_chunk_frames(transfer_id, bytes) {
+        conn.send(StreamTag::Data, &framed)?;
+    }
+
+    // commit — 전송 완료. 서버가 저장 확정 후 BulkResult 회신.
+    let commit = StreamControl::BulkCommit { transfer_id };
+    conn.send(StreamTag::Control, &serde_json::to_vec(&commit)?)?;
+
+    // result 수신 — heartbeat Ping/기타 프레임은 흘리고 이 transfer 의 BulkResult 를
+    // 기다린다. read timeout 이 걸려 있어 서버 무응답 시 무기한 대기하지 않는다.
+    loop {
+        let frame = conn.recv()?;
+        match frame.tag {
+            StreamTag::Control => {
+                match serde_json::from_slice::<StreamControl>(&frame.payload) {
+                    Ok(StreamControl::BulkResult {
+                        transfer_id: tid,
+                        ok,
+                        path,
+                        reason,
+                    }) if tid == transfer_id => {
+                        if let Err(e) = conn.detach() {
+                            // graceful close 실패 — 소켓 Drop 이 정리하므로 무해, 진단만.
+                            tracing::debug!("bulk upload: detach after result failed: {e}");
+                        }
+                        return if ok {
+                            path.ok_or_else(|| {
+                                anyhow::anyhow!("bulk result ok but carried no path")
+                            })
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "remote rejected bulk upload: {}",
+                                reason.unwrap_or_else(|| "unknown".to_string())
+                            ))
+                        };
+                    }
+                    // 다른 transfer 의 result 나 미지 Control(전방 호환) — 무시하고 계속.
+                    _ => {}
+                }
+            }
+            StreamTag::Detach => {
+                anyhow::bail!("remote detached before delivering bulk result");
+            }
+            // Ping(heartbeat)/기타 Data 는 result 채널에서 무의미 — 흘린다.
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::state::IdGenerator;
     use crate::ipc::stream::SplitAxis;
+
+    /// (06) bulk 청킹/시퀀스/헤더 인코딩 라운드트립: 각 프레임이 올바른
+    /// transfer_id·seq 를 달고, 파트를 순서대로 이으면 원본과 바이트 동일해야 한다.
+    #[test]
+    fn bulk_chunk_frames_roundtrip_and_reassembly() {
+        let transfer_id = 0xABCD_1234_5678_9F01u64;
+        // 2.5 청크 분량(>1 MiB 를 포함해 다중 파트 경계를 밟는다).
+        let total = BULK_CHUNK_RAW_LEN * 2 + 777;
+        let data: Vec<u8> = (0..total).map(|i| (i % 251) as u8).collect();
+
+        let frames = bulk_chunk_frames(transfer_id, &data);
+        assert_eq!(frames.len(), 3, "2.5 청크 = 3 파트");
+
+        let mut reassembled = Vec::new();
+        for (expected_seq, framed) in frames.iter().enumerate() {
+            // 프레임은 MAX_FRAME_LEN 을 넘지 않아야 한다(수신측 read_frame 이 거부).
+            assert!(framed.len() <= stream::MAX_FRAME_LEN as usize);
+            let (tid, seq, part) =
+                stream::decode_bulk_chunk(framed).expect("valid bulk chunk header");
+            assert_eq!(tid, transfer_id);
+            assert_eq!(seq as usize, expected_seq);
+            reassembled.extend_from_slice(part);
+        }
+        assert_eq!(reassembled, data, "재조립 바이트가 원본과 동일");
+    }
+
+    /// (06) 빈 파일: 청크 0개(begin→commit 만으로 0바이트 저장).
+    #[test]
+    fn bulk_chunk_frames_empty_is_zero_chunks() {
+        assert!(bulk_chunk_frames(1, &[]).is_empty());
+    }
+
+    /// (06) 정확히 한 청크 상한 크기: 파트 1개, 경계에서 분할이 새지 않는다.
+    #[test]
+    fn bulk_chunk_frames_exact_boundary_is_single_chunk() {
+        let data = vec![7u8; BULK_CHUNK_RAW_LEN];
+        let frames = bulk_chunk_frames(9, &data);
+        assert_eq!(frames.len(), 1);
+        let (_, seq, part) = stream::decode_bulk_chunk(&frames[0]).unwrap();
+        assert_eq!(seq, 0);
+        assert_eq!(part.len(), BULK_CHUNK_RAW_LEN);
+    }
 
     /// to_tree_json_full → SurfaceLayout 재구성: 분할 방향/비율/focus 보존 +
     /// remote→local id 재매핑 + 터미널/placeholder kind 구분.
