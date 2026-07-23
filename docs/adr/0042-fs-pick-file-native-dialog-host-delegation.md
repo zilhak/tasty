@@ -1,6 +1,8 @@
 # ADR-0042: native 파일 선택 다이얼로그는 host `fs.pick_file`(FsRead)로 위임한다
 
-- **Status**: Accepted
+- **Status**: Accepted — 로컬 전용·동기 회신 유스케이스(예: markdown plugin browse 버튼) 한정.
+  원격 인지 + 비동기 파일 브라우징은 [ADR-0053](0053-native-file-picker-remote-attach-channel.md)
+  이 별개 메커니즘으로 다룬다(본 ADR 의 개정이 아니다 — 전제 자체가 달라 분리).
 - **Date**: 2026-07-09
 - **Tags**: plugin, ipc, fs, native-dialog, rfd, permission, fs-read, host-delegation, markdown, focus-independence, adr-0028
 
