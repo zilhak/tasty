@@ -1,4 +1,4 @@
-mod clipboard;
+pub(crate) mod clipboard;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_input;
 mod divider_drag;

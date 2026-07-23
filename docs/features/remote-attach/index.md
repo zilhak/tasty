@@ -130,6 +130,14 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **GUI 설정**: 디자인 시안 확정 후 별도 구현 예정(gallery-first) — 현재는 IPC/CLI 로만 조작.
 - **용량 사전 거부**: 전송 시작(`BulkBegin.total_size`) 시점에 `현재 폴더 사용량 + total_size` 가 상한을 넘으면 청크 수신 전에 거부하고 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(경계 `== max` 는 허용, `> max` 거부). 폴더 사용량은 1-depth 파일 크기 단순 합산.
 
+## mirror 터미널 이미지 붙여넣기 → 원격 경로 삽입 (08)
+
+mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로컬 PNG 경로 대신 그 이미지를 06 bulk 채널로 원격에 업로드하고 **원격 파일시스템 경로**를 터미널 입력에 삽입한다(원격이 읽을 수 있는 경로). 로컬(비-mirror) 터미널의 이미지 붙여넣기는 기존대로 로컬 temp PNG 경로를 삽입한다(회귀 없음). 텍스트 붙여넣기는 mirror 여부와 무관하게 불변.
+
+- **호스트 generic**: surface kind/claude 특화가 아니라 모든 mirror 터미널에 적용된다(claude CLI 가 그 경로 포맷을 인식하는지는 런타임 외부 동작 — 범위 밖).
+- **판정**: 붙여넣기 시점에 focused surface 가 mirror workspace(`Workspace.mirror`) 소속인지로 mirror/로컬을 가른다(판정을 트리거 시점에 끝내 업로드 완료 전 포커스 변경에 흔들리지 않게).
+- **비동기**: 업로드(블로킹)는 백그라운드 스레드에서 수행하고(메인 루프 무블록), 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격 PTY stdin 에 투명 전달되므로 별도 삽입 API 가 없다. 실패(용량 초과 등 `BulkResult{ok:false}`)면 경로 삽입 없이 Warning toast(`attach.toast.mirror_image_upload_failed`).
+
 ## 비-목표 (Out of scope)
 
 - **자체 원격 프로토콜/암호화/인증** — 전부 SSH 에 위임. attach 채널에 별도 토큰 없음(연결 경계 = 권한 경계).
@@ -159,6 +167,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC(`remote.workspaces`/`remote.attach`)는 `src/app/ipc/app_methods.rs`(워커 스레드+지연 회신). focus 중립 mirror 생성은 `src/app/auto_attach.rs`(수동 트리거 `anchor=None` 재사용) → `src/app/attach_client.rs::start_gui_attach`(`workspaces.push` 만, `active_workspace` 불변; 새 mirror ws id 반환).
 - GUI picker 팝업(사용자 경로): `src/adapters/ui/popup/remote_attach.rs`(2-pane 상태머신 + browse 워커 폴링), `defs.rs`(headless PopupDef), 진입 컨텍스트 메뉴 2곳 `src/view/main/redraw.rs`(NewWorkspaceButton / Workspace). Connect → `CoreState.pending_gui_attach_user` 큐 → `App::dispatch_pending_gui_attach`(사용자 경로 drain) → `start_gui_attach` + `focus_mirror_workspace`(새 mirror 로 focus 이동, 사용자 경로 전용). 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/remote_attach.rs`(4상태).
 - mirror 비영속: `src/engine/layout_persistence/capture.rs`(`SavedLayout::capture` 가 `ws.mirror` 제외 + active 인덱스 remap). 회귀 테스트 `core::state` `mirror_workspace_not_persisted`.
+- (08) mirror 이미지 paste → 원격 업로드: `src/view/main/clipboard.rs`(이미지 분기에서 `Workspace.mirror` 판정 → `CoreState.pending_image_uploads` 큐에 PNG 바이트 push, 비-mirror 는 기존 로컬 PNG 경로 유지), `src/app/image_upload.rs`(`poll_image_uploads`: 큐 drain → 백그라운드 `upload_file_over_bulk` → 결과 채널 → `dispatch_paste`(원격 경로 삽입) 또는 실패 toast). 업로드 API 는 `src/app/attach_client.rs::upload_file_over_bulk`(06-β, 동기 블로킹).
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-cli/src/remote_browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선).
 

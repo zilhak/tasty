@@ -1824,6 +1824,17 @@ impl App {
         };
         upload_file_over_bulk(port, remote_ws, file_name, bytes)
     }
+
+    /// (08) `local_ws_id` mirror 세션의 bulk 업로드 대상 `(local port, remote workspace)`
+    /// 를 뽑는다. 백그라운드 스레드는 `&self`(세션)를 들 수 없으므로, 메인 스레드에서
+    /// 이 값만 미리 뽑아 자유 함수 [`upload_file_over_bulk`] 에 넘긴다. 세션이 없으면
+    /// (정리됨) `None`.
+    pub(crate) fn bulk_target_for(&self, local_ws_id: u32) -> Option<(u16, u32)> {
+        self.attach_client_sessions
+            .iter()
+            .find(|s| s.local_workspace == local_ws_id)
+            .map(|s| (s.bulk_port, s.remote_workspace))
+    }
 }
 
 /// (06) 전용 bulk 연결 하나의 전 수명을 동기로 수행: `127.0.0.1:port` 에 connect →
@@ -1844,8 +1855,8 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-#[allow(dead_code)] // 06-β API — 호출자는 08/09.
-fn upload_file_over_bulk(
+// 06-β 가 완성한 전송 자유 함수 — 08(이미지 paste)이 백그라운드 스레드에서 호출한다.
+pub(crate) fn upload_file_over_bulk(
     port: u16,
     remote_ws: u32,
     file_name: &str,

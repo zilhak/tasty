@@ -22,6 +22,8 @@ pub(crate) mod event;
 #[cfg(feature = "gui")]
 pub(crate) mod event_handler;
 #[cfg(feature = "gui")]
+pub(crate) mod image_upload;
+#[cfg(feature = "gui")]
 pub(crate) mod ipc;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
@@ -189,6 +191,11 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_rx:
         std::sync::mpsc::Receiver<screenshot_capture::ScreenshotCaptureOutcome>,
+    /// (08) mirror 이미지 paste 업로드 워커 스레드 → 메인 루프 결과 채널.
+    #[cfg(feature = "gui")]
+    pub(crate) image_upload_tx: std::sync::mpsc::Sender<image_upload::ImageUploadOutcome>,
+    #[cfg(feature = "gui")]
+    pub(crate) image_upload_rx: std::sync::mpsc::Receiver<image_upload::ImageUploadOutcome>,
     /// 모든 윈도우가 공유하는 wgpu `Instance`. 부트(`App::new`) 시 `Backends::all()`
     /// 로 1회 생성한다. 창마다 `Instance::new`(~50ms) 를 반복하지 않으려고 App 이
     /// 소유 — 모든 surface 가 이 instance 에서 만들어지고 그 수명에 의존하므로
@@ -221,6 +228,7 @@ impl App {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
         let (screenshot_capture_tx, screenshot_capture_rx) = std::sync::mpsc::channel();
+        let (image_upload_tx, image_upload_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
@@ -259,6 +267,8 @@ impl App {
             auto_attach_rx,
             screenshot_capture_tx,
             screenshot_capture_rx,
+            image_upload_tx,
+            image_upload_rx,
             // 공유 wgpu instance — 부트 시 1회. `Backends::all()` 로 백엔드 자동
             // 선택을 유지한다(어댑터는 첫 윈도우 surface 로 지연 생성 → gpu_adapter).
             gpu_instance: Arc::new(wgpu::Instance::new(&wgpu::InstanceDescriptor {

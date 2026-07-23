@@ -83,6 +83,11 @@ pub(crate) enum AppEvent {
     /// 로컬 클립보드에 기록하거나 mirror 세션으로 업로드한다.
     #[cfg(feature = "gui")]
     ScreenshotCaptureReady,
+    /// (08) mirror 이미지 paste 업로드 워커 스레드가 bulk 업로드를 마치면 보내는 wake
+    /// 신호. App 이 결과 채널(`image_upload_rx`)을 drain 해 성공 시 원격 경로를 대상
+    /// mirror surface 입력에 삽입하거나(실패 시 Warning toast) 처리한다.
+    #[cfg(feature = "gui")]
+    ImageUploadReady,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.

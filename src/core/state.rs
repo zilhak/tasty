@@ -133,6 +133,24 @@ pub(crate) struct GuiAttachUserReq {
     pub(crate) tunnel: Option<tasty_cli::ssh::SshTunnel>,
 }
 
+/// (08) mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에
+/// mirror 판정을 끝내 두고(포커스가 업로드 완료 전에 바뀌어도 삽입 대상이 흔들리지
+/// 않게), 실제 bulk 업로드(블로킹, ADR-0053)는 `App::poll_image_uploads` 가 백그라운드
+/// 스레드에서 수행한다. 완료 시 원격 절대경로를 `surface_id`(=paste 시점 mirror surface)
+/// 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격에 투명 전달된다.
+pub(crate) struct PendingImageUpload {
+    /// 업로드 대상 로컬 mirror workspace id(attach 세션 `local_workspace`).
+    pub(crate) mirror_ws_id: u32,
+    /// 원격 경로를 삽입할 로컬 mirror surface id(paste 시점 포커스).
+    pub(crate) surface_id: u32,
+    /// 삽입 시 bracketed paste 로 감쌀지(paste 시점 터미널 상태).
+    pub(crate) bracketed: bool,
+    /// 원격 저장 basename(`paste-<ms>.png` 규약).
+    pub(crate) file_name: String,
+    /// 메모리에서 인코딩한 PNG 바이트.
+    pub(crate) png_bytes: Vec<u8>,
+}
+
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
 ///
@@ -305,6 +323,13 @@ pub struct CoreState {
     /// 캡처 완료 전에 바뀌어도 흔들리지 않게), 실제 OS 캡처(블로킹)는
     /// `App::poll_screenshot_captures` 가 백그라운드 스레드에서 수행한다.
     pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
+
+    /// (08) mirror 터미널 이미지 paste → 원격 업로드 트리거 큐. `MainView::paste_to_terminal`
+    /// 의 이미지 분기가 focused surface 가 mirror workspace 소속일 때 push 한다. App 이
+    /// `about_to_wait`(`poll_image_uploads`)에서 drain 해 백그라운드 스레드로 bulk 업로드를
+    /// 수행하고, 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다. mirror client 는
+    /// 항상 GUI 라 headless 에서는 채워지지 않는다.
+    pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
 
     /// (03) attach 서버측 — mirror client 가 청크로 보내는 캡처 파일 바이트를
     /// upload_id 단위로 누적한다. `StreamTag::Control` 채널(기존 `StreamControl` enum
@@ -481,6 +506,7 @@ impl CoreState {
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_screenshot_captures: Vec::new(),
+            pending_image_uploads: Vec::new(),
             capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
             bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry::new(),
             pending_structural_forward: Vec::new(),

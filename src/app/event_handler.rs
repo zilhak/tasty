@@ -114,6 +114,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ScreenshotCaptureReady => {
                 self.drain_screenshot_capture_results();
             }
+            // (08) mirror 이미지 paste 업로드 워커가 완료됐다(wake). 결과를 drain 해
+            // 원격 경로 삽입 또는 실패 toast 를 적용한다.
+            AppEvent::ImageUploadReady => {
+                self.drain_image_upload_results();
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,
@@ -379,6 +384,10 @@ impl ApplicationHandler<AppEvent> for App {
         // (03) 스크린샷→클립보드: 신규 키바인딩이 쌓은 트리거 큐를 drain 해 캡처
         // 워커를 spawn 하고, 완료된 결과를 로컬 클립보드/mirror 세션에 적용한다.
         self.poll_screenshot_captures();
+
+        // (08) mirror 이미지 paste: 트리거 큐를 drain 해 백그라운드 bulk 업로드를 spawn
+        // 하고, 완료된 결과(원격 경로 삽입/실패 toast)를 적용한다.
+        self.poll_image_uploads();
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
