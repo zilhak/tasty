@@ -434,6 +434,10 @@ impl PluginManager {
         self.cancel_pending_namespace_calls(plugin_id, "plugin swap restart");
         self.plugin_buffers.remove(plugin_id);
         self.settings_pages.unregister_plugin(plugin_id);
+        // registered_plugins gate 해제 — disable() 과 동일한 이유(Task 14). 여기서
+        // 안 지우면 swap_respawn_internal 이 띄운 새 프로세스의 hello 가 pump 의
+        // "이미 등록됨" 게이트에 막혀 finalize_plugin_hello 재실행이 안 된다.
+        self.registered_plugins.remove(plugin_id);
         Ok(())
     }
 

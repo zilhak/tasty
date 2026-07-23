@@ -655,4 +655,33 @@ mod tests {
             "post-disable hello must be queued for re-registration"
         );
     }
+
+    /// 회귀 재현(swap 경로) — `auto_reload_one`/`upgrade_builtins --restart-running`
+    /// 이 쓰는 `swap_shutdown_internal` 도 `disable()` 과 동일한 gate 미해제 버그를
+    /// 갖고 있었다. `swap_shutdown_internal` 은 `config.save()` 를 호출하지 않으므로
+    /// (disable() 과 달리 `config.disabled.ids` 를 안 건드림) TASTY_HOME 격리가
+    /// 필요 없다.
+    #[test]
+    fn swap_shutdown_internal_clears_registered_plugins_so_restart_hello_reregisters() {
+        let mut mgr = mgr();
+        let plugin_id = "com.example.test";
+        mgr.registered_plugins.insert(plugin_id.to_string());
+
+        mgr.swap_shutdown_internal(plugin_id)
+            .expect("swap_shutdown_internal should succeed");
+        assert!(
+            !mgr.registered_plugins.contains(plugin_id),
+            "swap_shutdown_internal() must clear the registered_plugins gate so the \
+             respawned process's hello re-registers hook events"
+        );
+
+        // swap_respawn_internal 이 띄운 새 프로세스가 다시 hello 를 보낸 상황.
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(plugin_id, hello(plugin_id), &mut out);
+        assert_eq!(
+            out.to_register,
+            vec![plugin_id.to_string()],
+            "post-swap hello must be queued for re-registration"
+        );
+    }
 }
