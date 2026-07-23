@@ -292,6 +292,13 @@ pub struct CoreState {
     /// `src/boot/headless_plugins.rs` 가 이 상태를 읽어 수행한다. 휘발성(직렬화 안 함).
     pub(crate) mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry,
 
+    /// attach mesh mirror **클라이언트측** 최신 frame 저장소(`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+    /// `mesh_mirror`(서버측 구독 상태)와 반대편 — attach client 로 붙어있을 때, TCP 로
+    /// 재조립한 원격 mesh 바이트를 `AttachMeshSurface` local id 별로 보관한다. 렌더은
+    /// `gfx/gpu/egui_mesh_prepare.rs::render_attach_mesh_surfaces`가 매 frame 읽는다.
+    /// 휘발성(직렬화 안 함).
+    pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
+
     /// child-terminal registry (ADR-0040 / occupancy-04). 에이전트가 `terminal.spawn`
     /// 으로 만든 자식 터미널 surface 의 parent/index/idle/needs_input 매핑. 부팅 시
     /// `~/.tasty/child-terminals.json` 에서 로드, 등록/제거마다 즉시 save. soft 점유
@@ -381,6 +388,14 @@ pub struct CoreState {
     /// `MirrorEvent::ListDirResult` 로 별도 이벤트 큐를 통해 되돌아온다(이 큐는
     /// 요청 방향 전용, 응답은 여기 담기지 않음).
     pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
+    /// attach mesh mirror(TODO 19) full 재전송 요청 forward 큐. GPU 렌더 prepare
+    /// (`render_attach_mesh_surfaces`)가 텍스처 delta 체인 단절을 감지해
+    /// `GpuState::take_attach_mesh_full_requests`로 drain된 **로컬** surface_id 를
+    /// 여기 담는다. App 이 `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`,
+    /// gui)에서 drain 해 세션 매핑으로 원격 id 치환 후
+    /// `StreamControl::MeshFullResendRequest` 로 forward 한다. `pending_resize_forward`
+    /// 와 동형(mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다).
+    pub(crate) pending_mesh_full_resend_forward: std::collections::HashSet<u32>,
 
     /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
@@ -508,6 +523,7 @@ impl CoreState {
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
+            attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
             pty_registry: crate::core::pty_registry::PtyRegistry::new(),
             readonly_views: HashMap::new(),
@@ -519,6 +535,7 @@ impl CoreState {
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
             pending_list_dir_forward: Vec::new(),
+            pending_mesh_full_resend_forward: std::collections::HashSet::new(),
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {

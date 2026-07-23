@@ -67,6 +67,35 @@ impl AppState {
         out
     }
 
+    /// 전체 workspace 의 모든 tab(비활성 탭 포함)에 **존재**하는 attach mesh mirror
+    /// surface(`AttachMeshSurface`) local id 일람. [`Self::egui_mesh_surfaces_existing`]의
+    /// attach 대응 — plugin_id 는 `PluginManager` 조회에 쓰이지 않으므로(로컬에 plugin
+    /// 프로세스가 없다) id 만 반환한다.
+    pub fn attach_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<u32> {
+        use crate::model::AttachMeshSurface;
+        let mut out: Vec<u32> = Vec::new();
+        for ws in &engine.workspaces {
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                    continue;
+                };
+                for tab in &pane.tabs {
+                    let Some(layout) = tab.layout_if_initialized() else {
+                        continue;
+                    };
+                    for sid in layout.all_surface_ids() {
+                        if let Some(s) = layout.find_surface(sid)
+                            && s.as_any().downcast_ref::<AttachMeshSurface>().is_some()
+                        {
+                            out.push(sid);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Reify (lazy PTY spawn) every deferred placeholder that is about to be
     /// drawn this frame: the active workspace's panes, each pane's active tab,
     /// and every deferred leaf within it.

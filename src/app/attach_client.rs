@@ -90,6 +90,10 @@ pub(crate) enum MirrorEvent {
         truncated: bool,
         reason: Option<String>,
     },
+    /// 원격 attach mesh surface 의 완전 재조립된 frame(TODO 19). `(remote_surface_id,
+    /// generation, frame_seq, full_textures, bytes)` — `bytes` 는 이미 footer 없는 순수
+    /// payload(서버 `headless_plugins::forward_mesh_frames`가 footer 를 벗겨 보낸다).
+    Mesh(u32, u64, u64, bool, Vec<u8>),
 }
 
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
@@ -106,6 +110,16 @@ struct OutFrame {
 
 /// [`OutFrame`] 을 write 스레드로 보내는 큐 sender. 세션·heartbeat·forwarder 가 공유한다.
 type FrameSender = std::sync::mpsc::Sender<OutFrame>;
+
+/// attach mesh mirror(TODO 19) leaf 를 `AttachMeshSurface`로 재구성하는 데 필요한
+/// 표시용 메타. `build_layout`이 `term`(터미널 local id 집합)과 나란히 받아, 로컬
+/// surface_id 가 mesh role 이면 이 정보로 `AttachMeshSurface`를 만든다.
+#[derive(Debug, Clone)]
+struct MirrorMeshInfo {
+    kind: String,
+    plugin_id: String,
+    display_name: String,
+}
 
 /// client 가 점유한 원격 워크스페이스의 로컬 mirror 세션(작업 J).
 pub(crate) struct AttachClientSession {
@@ -304,6 +318,7 @@ impl App {
         let proxy;
         let mut remote_to_local: HashMap<u32, u32> = HashMap::new();
         let mut terminal_locals: HashSet<u32> = HashSet::new();
+        let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
         {
             let Some(main) = self.focused_window_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
@@ -316,13 +331,40 @@ impl App {
                 let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 let local_id = ids.next_surface();
                 remote_to_local.insert(remote_id, local_id);
-                if s.get("role").and_then(|v| v.as_str()) == Some("terminal") {
-                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, local_id, cols, rows, &frame_tx, engine);
-                    terminal_locals.insert(local_id);
+                match s.get("role").and_then(|v| v.as_str()) {
+                    Some("terminal") => {
+                        let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                        let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+                        make_mirror_surface(remote_id, local_id, cols, rows, &frame_tx, engine);
+                        terminal_locals.insert(local_id);
+                    }
+                    // attach mesh mirror(TODO 19) — 로컬에 plugin 프로세스는 없다.
+                    // 표시용 kind/plugin_id 만 기록해 `build_layout` 이 `AttachMeshSurface`
+                    // 를 만들게 한다. GPU 렌더은 `CoreState::attach_mesh_frames`(reader
+                    // thread 가 push)를 읽는다.
+                    Some("mesh") => {
+                        let kind = s
+                            .get("kind")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("mesh")
+                            .to_string();
+                        let plugin_id = s
+                            .get("plugin_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        mesh_locals.insert(
+                            local_id,
+                            MirrorMeshInfo {
+                                display_name: kind.clone(),
+                                kind,
+                                plugin_id,
+                            },
+                        );
+                    }
+                    // 나머지 비-터미널은 mirror 불가(design §4.4) → 로컬 id 만(placeholder leaf).
+                    _ => {}
                 }
-                // 비-터미널은 mirror 불가(design §4.4) → 로컬 id 만(placeholder leaf).
             }
 
             local_ws_id = ids.next_workspace();
@@ -333,6 +375,7 @@ impl App {
                 &ids,
                 &remote_to_local,
                 &terminal_locals,
+                &mesh_locals,
             );
             // client mirror 표식 — 사이드바 이름 앞 하늘색 glyph(레일=우하단 chip)로 표시
             // (로컬 ws 와 구분; status dot 은 실행상태 전용). 상세 view.rs draw_workspace_card.
@@ -375,6 +418,7 @@ impl App {
             let output = output.clone();
             let disconnected = disconnected.clone();
             std::thread::spawn(move || {
+                let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
                 loop {
                     match conn.recv() {
                         Ok(frame) => match frame.tag {
@@ -457,10 +501,26 @@ impl App {
                             // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋
                             // 하므로 별도 처리 불필요.
                             StreamTag::Ping => {}
-                            // TODO 19(attach 클라이언트 mesh 렌더)가 청크 재조립 +
-                            // MirrorEvent 로의 연결을 구현한다 — 15번(프로토콜)만
-                            // 완료된 이 시점엔 아직 소비자가 없어 무시.
-                            StreamTag::MeshData => {}
+                            // attach mesh mirror 청크(TODO 19) — frame_id 완성 시에만
+                            // MirrorEvent::Mesh 를 push. 손상 청크는 조용히 버린다(다음
+                            // full 재전송이 self-heal — GPU 측 chain_ok 게이트가 이미
+                            // 이런 유실을 전제로 설계됨).
+                            StreamTag::MeshData => {
+                                if let Ok(Some((meta, bytes))) =
+                                    mesh_assembler.push_chunk(&frame.payload)
+                                    && let Ok(mut buf) = output.lock()
+                                {
+                                    buf.push(MirrorEvent::Mesh(
+                                        meta.surface_id,
+                                        meta.generation,
+                                        meta.frame_seq,
+                                        meta.full_textures,
+                                        bytes,
+                                    ));
+                                    drop(buf);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
+                                }
+                            }
                         },
                         Err(_) => {
                             disconnected.store(true, Ordering::SeqCst);
@@ -728,6 +788,15 @@ impl App {
                                     }
                                 }
                             }
+                            MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
+                                // attach mesh mirror(TODO 19): GPU 렌더은 다음 프레임
+                                // `AttachMeshFrameStore` 를 읽는다 — 여기선 저장만.
+                                if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+                                    main.core_state
+                                        .attach_mesh_frames
+                                        .update(local, bytes, generation, frame_seq, full);
+                                }
+                            }
                         }
                     }
                     main.mark_dirty();
@@ -767,6 +836,7 @@ impl App {
             for &local in sess.remote_to_local.values() {
                 engine.terminals.remove(local);
                 engine.forget_mirror_surface_busy(local);
+                engine.attach_mesh_frames.remove(local);
             }
             engine.workspaces.remove(pos);
             // active_workspace 인덱스 클램프(제거로 out-of-range 방지).
@@ -1013,6 +1083,59 @@ impl App {
             }
         }
     }
+
+    /// `about_to_wait` 에서 호출 — GPU 렌더 prepare 가 attach mesh mirror surface 의
+    /// 텍스처 delta 체인 단절을 감지해 쌓은 로컬 surface_id 큐(TODO 19)를 drain 해
+    /// 원격에 `MeshFullResendRequest` 를 forward 한다. `dispatch_pending_resize_forwards`
+    /// 와 동형.
+    pub(crate) fn dispatch_pending_mesh_full_resend_forwards(&mut self) {
+        let mut pending: Vec<u32> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.extend(main.core_state.pending_mesh_full_resend_forward.drain());
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.extend(e.pending_mesh_full_resend_forward.drain());
+        }
+        for local_sid in pending {
+            self.forward_one_mesh_full_resend_request(local_sid);
+        }
+    }
+
+    /// full 재전송 요청 큐의 항목 하나를 담당 mirror 세션으로 전송한다.
+    /// `forward_one_resize` 와 동형 — 세션/원격 id 를 못 찾으면 warn 후 drop.
+    fn forward_one_mesh_full_resend_request(&mut self, local_sid: u32) {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter_mut()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
+        else {
+            tracing::warn!(
+                "mesh full-resend forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop"
+            );
+            return;
+        };
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_sid)
+            .map(|(&r, _)| r)
+        else {
+            tracing::warn!(
+                "mesh full-resend forward: 로컬 surface {local_sid} 의 원격 id 없음 — drop"
+            );
+            return;
+        };
+        let payload = serde_json::to_vec(&StreamControl::MeshFullResendRequest {
+            surface_id: remote_sid,
+        })
+        .unwrap_or_default();
+        if let Err(e) = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        }) {
+            tracing::warn!("mesh full-resend forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+        }
+    }
 }
 
 /// 원격 surface 하나에 대응하는 mirror 터미널을 만들어 `engine` 에 삽입한다.
@@ -1155,12 +1278,14 @@ fn apply_mirror_structural_delta(
     // 성공 시 focus 를 옮길 대상 후보).
     let mut new_map: HashMap<u32, u32> = HashMap::new();
     let mut terminal_locals: HashSet<u32> = HashSet::new();
+    let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let is_terminal = s.get("role").and_then(|v| v.as_str()) == Some("terminal");
+        let role = s.get("role").and_then(|v| v.as_str());
+        let is_terminal = role == Some("terminal");
         let local_id = match sess.remote_to_local.get(&remote_id) {
-            Some(&l) => l, // survivor — 기존 local id 재사용(터미널 유지).
+            Some(&l) => l, // survivor — 기존 local id 재사용(터미널/mesh 프레임 캐시 유지).
             None => {
                 let l = ids.next_surface();
                 if is_terminal {
@@ -1174,16 +1299,36 @@ fn apply_mirror_structural_delta(
         };
         if is_terminal {
             terminal_locals.insert(local_id);
+        } else if role == Some("mesh") {
+            let kind = s
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("mesh")
+                .to_string();
+            let plugin_id = s
+                .get("plugin_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            mesh_locals.insert(
+                local_id,
+                MirrorMeshInfo {
+                    display_name: kind.clone(),
+                    kind,
+                    plugin_id,
+                },
+            );
         }
         new_map.insert(remote_id, local_id);
     }
 
     // 3. removed — 기존 매핑 중 새 surfaces 에 없는 것: mirror 터미널 제거(입력
-    //    forwarder 는 sink drop 으로 자연 종료).
+    //    forwarder 는 sink drop 으로 자연 종료) + attach mesh frame 캐시 정리.
     for (&remote_id, &local_id) in sess.remote_to_local.iter() {
         if !new_map.contains_key(&remote_id) {
             engine.terminals.remove(local_id);
             engine.forget_mirror_surface_busy(local_id);
+            engine.attach_mesh_frames.remove(local_id);
         }
     }
 
@@ -1205,6 +1350,7 @@ fn apply_mirror_structural_delta(
             &ids,
             &sess.remote_to_local,
             &terminal_locals,
+            &mesh_locals,
         );
         ws.mirror = true;
 
@@ -1330,6 +1476,7 @@ fn build_pane_from_json(
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
 ) -> Pane {
     let tabs_json = p
         .get("tabs")
@@ -1340,7 +1487,7 @@ fn build_pane_from_json(
     let mut active_tab = 0usize;
     for (i, t) in tabs_json.iter().enumerate() {
         let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
-        let layout = build_layout(&layout_json, ids, map, term).unwrap_or_else(|| {
+        let layout = build_layout(&layout_json, ids, map, term, mesh).unwrap_or_else(|| {
             SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
         });
         let remote_focus = t
@@ -1395,17 +1542,19 @@ fn build_pane_from_json(
 /// `pane_id_map` 에 기록해, 호출부가 focused_pane remote→local 해석에 재사용한다
 /// (트리 재귀 파서는 기존 `local_panes: Vec<(remote_id, Pane)>` 평면 리스트가
 /// 없으므로 이 매핑이 그 대체 경로다).
+#[allow(clippy::too_many_arguments)] // reason: mirror 트리 재귀 파서 컨텍스트 전체
 fn build_pane_node(
     node: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
     pane_id_map: &mut HashMap<u32, u32>,
 ) -> Option<PaneNode> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
             let remote_pane = node.get("id").and_then(|v| v.as_u64())? as u32;
-            let pane = build_pane_from_json(node, ids, map, term);
+            let pane = build_pane_from_json(node, ids, map, term, mesh);
             pane_id_map.insert(remote_pane, pane.id);
             Some(PaneNode::Leaf(pane))
         }
@@ -1415,8 +1564,8 @@ fn build_pane_node(
                 _ => SplitDirection::Horizontal,
             };
             let ratio = node.get("ratio").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let first = build_pane_node(node.get("first")?, ids, map, term, pane_id_map)?;
-            let second = build_pane_node(node.get("second")?, ids, map, term, pane_id_map)?;
+            let first = build_pane_node(node.get("first")?, ids, map, term, mesh, pane_id_map)?;
+            let second = build_pane_node(node.get("second")?, ids, map, term, mesh, pane_id_map)?;
             Some(PaneNode::Split {
                 direction,
                 ratio,
@@ -1436,6 +1585,7 @@ fn build_pane_node(
 /// 기존 fallback 을 그대로 유지한다. 각 pane 의 tab 별 `SurfaceLayout`(분할 방향/비율)은
 /// 두 경로 모두 `to_tree_json_full` 로 보존돼 정확히 재현된다. remote leaf id 는 `map`
 /// 으로 로컬 id 치환.
+#[allow(clippy::too_many_arguments)] // reason: mirror workspace 재구성 컨텍스트 전체
 fn build_mirror_workspace(
     ws_id: u32,
     name: &str,
@@ -1443,6 +1593,7 @@ fn build_mirror_workspace(
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
 ) -> Workspace {
     let remote_focused_pane = tree
         .get("focused_pane")
@@ -1452,7 +1603,7 @@ fn build_mirror_workspace(
     // 신버전 서버: "pane_layout" 트리 필드로 direction/ratio 보존 파싱.
     if let Some(layout_json) = tree.get("pane_layout").filter(|v| !v.is_null()) {
         let mut pane_id_map = HashMap::new();
-        if let Some(node) = build_pane_node(layout_json, ids, map, term, &mut pane_id_map) {
+        if let Some(node) = build_pane_node(layout_json, ids, map, term, mesh, &mut pane_id_map) {
             let focused_local_pane = pane_id_map
                 .get(&remote_focused_pane)
                 .copied()
@@ -1478,7 +1629,7 @@ fn build_mirror_workspace(
     let mut local_panes: Vec<(u32, Pane)> = Vec::new();
     for p in &panes_json {
         let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        local_panes.push((remote_pane, build_pane_from_json(p, ids, map, term)));
+        local_panes.push((remote_pane, build_pane_from_json(p, ids, map, term, mesh)));
     }
 
     if local_panes.is_empty() {
@@ -1530,12 +1681,14 @@ fn build_mirror_workspace(
 
 /// `to_tree_json_full` JSON → `SurfaceLayout`(분할 방향/비율/focus 보존). leaf 의 remote
 /// id 는 `map` 으로 로컬 치환하고, 터미널이면 `TerminalSurface`(mirror grid 가 store 에
-/// 있음), 아니면 placeholder `EmptySurface` leaf 로 만든다.
+/// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(TODO 19), 그 외엔 placeholder
+/// `EmptySurface` leaf 로 만든다.
 fn build_layout(
     node: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
 ) -> Option<SurfaceLayout> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
@@ -1547,6 +1700,13 @@ fn build_layout(
                 .unwrap_or_else(|| ids.next_surface());
             let surface: Box<dyn Surface> = if term.contains(&local) {
                 Box::new(TerminalSurface { id: local })
+            } else if let Some(info) = mesh.get(&local) {
+                Box::new(crate::model::AttachMeshSurface::new(
+                    local,
+                    &info.kind,
+                    info.plugin_id.clone(),
+                    info.display_name.clone(),
+                ))
             } else {
                 Box::new(EmptySurface::new(local))
             };
@@ -1562,8 +1722,8 @@ fn build_layout(
                 .get("focus_second")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let first = build_layout(node.get("first")?, ids, map, term)?;
-            let second = build_layout(node.get("second")?, ids, map, term)?;
+            let first = build_layout(node.get("first")?, ids, map, term, mesh)?;
+            let second = build_layout(node.get("second")?, ids, map, term, mesh)?;
             Some(SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -2028,7 +2188,7 @@ mod tests {
             "first": { "type": "Leaf", "id": 100, "kind": "terminal" },
             "second": { "type": "Leaf", "id": 101, "kind": "empty" },
         });
-        let layout = build_layout(&node, &ids, &map, &term).expect("layout");
+        let layout = build_layout(&node, &ids, &map, &term, &HashMap::new()).expect("layout");
         match layout {
             SurfaceLayout::Split {
                 direction,
@@ -2069,7 +2229,7 @@ mod tests {
                 } ]
             } ]
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         assert_eq!(ws.id, 99);
         // mirror surface = 로컬 50 (remote 1 재매핑).
         assert_eq!(ws.all_surface_ids(), vec![50]);
@@ -2107,7 +2267,7 @@ mod tests {
                 } ]
             } ]
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         let sids = ws.all_surface_ids();
         assert!(
             sids.contains(&survivor_local),
@@ -2126,7 +2286,15 @@ mod tests {
         let ids = IdGenerator::new();
         let map = HashMap::new();
         let term = HashSet::new();
-        let ws = build_mirror_workspace(1, "remote", &serde_json::Value::Null, &ids, &map, &term);
+        let ws = build_mirror_workspace(
+            1,
+            "remote",
+            &serde_json::Value::Null,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+        );
         assert_eq!(ws.id, 1);
         assert_eq!(ws.all_surface_ids().len(), 1);
     }
@@ -2149,7 +2317,7 @@ mod tests {
                 "second": { "type": "Leaf", "id": 8, "tabs": [] }
             }
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         match ws.pane_layout() {
             PaneNode::Split {
                 direction,
@@ -2192,7 +2360,7 @@ mod tests {
             ]
             // "pane_layout" 필드 없음 — 구버전 서버 흉내.
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         match ws.pane_layout() {
             PaneNode::Split {
                 direction, ratio, ..
@@ -2235,7 +2403,7 @@ mod tests {
                 ] }
             }
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         assert_eq!(
             capture_focused_remote(&ws, &map),
             Some(3),
@@ -2280,7 +2448,15 @@ mod tests {
                 ] }
             }
         });
-        let mut before_ws = build_mirror_workspace(99, "remote", &before_tree, &ids, &map, &term);
+        let mut before_ws = build_mirror_workspace(
+            99,
+            "remote",
+            &before_tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+        );
 
         // 사용자가 로컬에서 pane B, tab2 로 이동한다 — 순수 클릭/키보드 네비게이션이라
         // 원격에는 아무것도 forward 되지 않는다(버그의 1번 원인). 서버가 선언한
@@ -2328,8 +2504,15 @@ mod tests {
                 ] }
             }
         });
-        let mut after_ws =
-            build_mirror_workspace(99, "remote", &after_tree, &ids, &after_map, &term);
+        let mut after_ws = build_mirror_workspace(
+            99,
+            "remote",
+            &after_tree,
+            &ids,
+            &after_map,
+            &term,
+            &HashMap::new(),
+        );
 
         // 대조군 — 복원 없이 그대로 두면 pane A(원격의 고정값)에 focus 가 있다(버그 재현).
         let pane_a_local_surface = *after_map.get(&1).unwrap();
@@ -2390,7 +2573,8 @@ mod tests {
                 ] }
             }
         });
-        let mut ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let mut ws =
+            build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         let untouched_focused_pane = ws.focused_pane;
 
         // 캡처된 surface(remote 3)는 이 map/tree 어디에도 없다 — 이미 닫힌 상태를 흉내.
@@ -2429,7 +2613,8 @@ mod tests {
                 ] }
             }
         });
-        let mut ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term);
+        let mut ws =
+            build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
         let local_b = *map.get(&2).unwrap();
 
         assert!(set_focus_to_surface(&mut ws, local_b));

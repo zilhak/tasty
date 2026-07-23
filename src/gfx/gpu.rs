@@ -91,6 +91,16 @@ pub struct GpuState {
     pub(in crate::gfx::gpu) egui_mesh_popup_full_requests: std::collections::HashSet<u64>,
     /// banner 대응 full 재전송 요청 대기열 (instance_id).
     pub(in crate::gfx::gpu) egui_mesh_banner_full_requests: std::collections::HashSet<u64>,
+    /// attach mesh mirror surface(`AttachMeshSurface`) local surface_id → 전용
+    /// `egui_wgpu::Renderer` + 디코드 캐시 (`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+    /// `egui_mesh_targets`와 별도 맵인 이유는
+    /// [`egui_mesh_prepare::GpuState::render_attach_mesh_surfaces`] 문서 참조.
+    pub(in crate::gfx::gpu) attach_mesh_targets:
+        std::collections::HashMap<u32, egui_mesh_prepare::EguiMeshRenderTarget>,
+    /// attach mesh mirror surface 의 텍스처 delta 체인 단절 → full 재전송 요청 대기열.
+    /// [`Self::take_attach_mesh_full_requests`]로 drain, `attach_client`가 소비해
+    /// `StreamControl::MeshFullResendRequest`를 서버로 보낸다.
+    pub(in crate::gfx::gpu) attach_mesh_full_requests: std::collections::HashSet<u32>,
     /// When set, the next render will capture the full window frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// When set, the next render will capture the given terminal surface to this
@@ -270,6 +280,8 @@ impl GpuState {
             egui_mesh_full_requests: std::collections::HashSet::new(),
             egui_mesh_popup_full_requests: std::collections::HashSet::new(),
             egui_mesh_banner_full_requests: std::collections::HashSet::new(),
+            attach_mesh_targets: std::collections::HashMap::new(),
+            attach_mesh_full_requests: std::collections::HashSet::new(),
             pending_screenshot: None,
             pending_surface_screenshot: None,
             perf: PerfAggregator::new(),
@@ -328,6 +340,12 @@ impl GpuState {
     /// banner 대응 full 재전송 요청(instance_id) drain — [`Self::take_egui_mesh_full_requests`].
     pub fn take_egui_mesh_banner_full_requests(&mut self) -> std::collections::HashSet<u64> {
         std::mem::take(&mut self.egui_mesh_banner_full_requests)
+    }
+
+    /// attach mesh mirror surface 의 full 재전송 요청(local surface_id) drain —
+    /// `attach_client`가 매 tick 소비해 owning 세션에 `MeshFullResendRequest`를 보낸다.
+    pub fn take_attach_mesh_full_requests(&mut self) -> std::collections::HashSet<u32> {
+        std::mem::take(&mut self.attach_mesh_full_requests)
     }
 
     /// Render the full frame: egui UI + terminal surfaces.
@@ -541,6 +559,25 @@ impl GpuState {
             }
         }
 
+        // attach mesh mirror surface 합성 (TODO 19): 위 egui-mesh 합성과 동형이되
+        // `PluginManager` 없이(원격에만 plugin 이 있음) `AttachMeshFrameStore`(TCP 로 받은
+        // 최신 바이트)를 읽는다. `plugin_manager` 게이트가 없다 — attach 는 이 데이터에
+        // 의존하지 않는다.
+        let attach_mesh_targets =
+            egui_mesh_prepare::collect_attach_mesh_targets(state, engine, terminal_rect);
+        let attach_mesh_existing = state.attach_mesh_surfaces_existing(engine);
+        if !attach_mesh_targets.is_empty()
+            || !attach_mesh_existing.is_empty()
+            || !self.attach_mesh_targets.is_empty()
+        {
+            self.render_attach_mesh_surfaces(
+                &view,
+                &attach_mesh_targets,
+                &attach_mesh_existing,
+                &engine.attach_mesh_frames,
+            );
+        }
+
         let t0 = std::time::Instant::now();
         self.render_egui_pass(
             &view,
@@ -623,6 +660,7 @@ impl GpuState {
             "egui_mesh_targets": self.egui_mesh_targets.len(),
             "egui_mesh_popup_targets": self.egui_mesh_popup_targets.len(),
             "egui_mesh_banner_targets": self.egui_mesh_banner_targets.len(),
+            "attach_mesh_targets": self.attach_mesh_targets.len(),
             "atlas": {
                 "eviction_count": self.renderer.atlas.eviction_count(),
                 "active_pages": self.renderer.atlas.active_page_count(),

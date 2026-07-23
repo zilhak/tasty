@@ -13,6 +13,7 @@
 
 pub(crate) mod agent;
 pub(crate) mod attach;
+pub(crate) mod attach_mesh_frames;
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
 pub(crate) mod builder;

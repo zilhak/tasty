@@ -279,6 +279,29 @@ pub(super) fn collect_egui_mesh_targets(
     out
 }
 
+/// 활성 workspace 에서 attach mesh mirror surface(`AttachMeshSurface`)의 (surface_id, 물리
+/// rect) 일람. [`collect_egui_mesh_targets`]의 attach 대응 — plugin_id 는 로컬에 plugin
+/// 프로세스가 없어 무의미하므로 반환하지 않는다.
+pub(super) fn collect_attach_mesh_targets(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+    terminal_rect: PhysicalRect,
+) -> Vec<(u32, PhysicalRect)> {
+    let mut out: Vec<(u32, PhysicalRect)> = Vec::new();
+    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
+        for r in regions {
+            if r.surface
+                .as_any()
+                .downcast_ref::<crate::model::AttachMeshSurface>()
+                .is_some()
+            {
+                out.push((r.id, r.rect));
+            }
+        }
+    }
+    out
+}
+
 /// primitives 를 surface origin 만큼 평행이동하고 clip_rect 를 surface 경계로 클립한다.
 ///
 /// - `offset` (points): surface origin = (rect.x / ppp, rect.y / ppp).
@@ -363,7 +386,37 @@ fn decode_mesh_into_target(
         return DecodeOutcome::Deferred;
     }
     let user = tasty_shm::footer::user_slice(raw);
+    decode_mesh_bytes_into_target(
+        device,
+        queue,
+        target,
+        user,
+        generation,
+        frame_seq,
+        full_textures,
+        chain_ok,
+        host_ppp,
+        log_id,
+    )
+}
 
+/// [`decode_mesh_into_target`]의 source-neutral 본체. `SharedBuffer` footer 를 이미
+/// 벗긴 순수 payload(`user`)를 직접 받는다 — attach mesh mirror 클라이언트(TCP 로 이미
+/// footer 없는 바이트를 수신, `mesh_stream::MeshFrameAssembler`가 순서·완전성을 보장)와
+/// 로컬 plugin(SharedBuffer, footer 검증 후 `user` 추출) 두 경로가 이 함수를 공유한다.
+#[allow(clippy::too_many_arguments)]
+fn decode_mesh_bytes_into_target(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &mut EguiMeshRenderTarget,
+    user: &[u8],
+    generation: u64,
+    frame_seq: u64,
+    full_textures: bool,
+    chain_ok: bool,
+    host_ppp: f32,
+    log_id: &str,
+) -> DecodeOutcome {
     let decoded = match tasty_plugin_protocol::mesh_wire::decode_paint(user) {
         Ok(d) => d,
         Err(e) => {
@@ -653,6 +706,101 @@ impl GpuState {
         let size_in_pixels = [self.size.width, self.size.height];
         for (sid, _plugin_id, rect) in targets {
             if let Some(t) = self.egui_mesh_targets.get_mut(sid) {
+                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+            }
+        }
+    }
+
+    /// attach mesh mirror surface(`AttachMeshSurface`)들을 전용 Renderer 로 합성한다
+    /// (`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+    ///
+    /// [`Self::render_egui_mesh_surfaces`]의 attach 대응 — 유일한 차이는 frame 소스다:
+    /// 로컬 plugin 은 `PluginManager` + `SharedBuffer`(footer 로 generation 검증)에서
+    /// 읽지만, attach mirror 는 TCP 로 이미 재조립·footer-strip 된 바이트를
+    /// `AttachMeshFrameStore`에서 읽는다(`decode_mesh_bytes_into_target` 공유 — footer
+    /// 가드가 없다). **별도 맵**(`self.attach_mesh_targets`)을 쓴다 — surface_id 네임스페이스
+    /// 자체는 로컬 egui-mesh 와 겹치지 않지만(전역 `IdGenerator`), 두 렌더 경로가 각자
+    /// 독립적인 `existing` 집합으로 retain-prune 하므로 맵을 공유하면 한쪽의 prune 이
+    /// 다른 쪽 target 을 오정리한다 — 맵 분리로 이 문제를 원천 차단한다.
+    ///
+    /// - `targets`: 보이는 attach mesh surface(surface_id, 물리 rect).
+    /// - `existing`: layout 에 존재하는 전체 attach mesh surface(비가시 포함) — GPU 자원
+    ///   retain 대상.
+    pub(super) fn render_attach_mesh_surfaces(
+        &mut self,
+        view: &wgpu::TextureView,
+        targets: &[(u32, PhysicalRect)],
+        existing: &[u32],
+        frame_store: &crate::core::attach_mesh_frames::AttachMeshFrameStore,
+    ) {
+        // layout 에서 사라진(닫힌) surface 의 전용 Renderer 정리 (GPU 자원 해제).
+        let live: HashSet<u32> = existing.iter().copied().collect();
+        self.attach_mesh_targets.retain(|sid, _| live.contains(sid));
+
+        let host_ppp = self.scale_factor;
+        for sid in existing {
+            let Some(frame) = frame_store.get(*sid) else {
+                continue;
+            };
+
+            if !self.attach_mesh_targets.contains_key(sid) {
+                let renderer =
+                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
+                self.attach_mesh_targets
+                    .insert(*sid, EguiMeshRenderTarget::new(renderer));
+            }
+
+            let (needs_decode, chain_ok, awaiting) = {
+                let t = &self.attach_mesh_targets[sid];
+                (
+                    !t.has_content || t.generation != frame.generation,
+                    t.chain_accepts(frame.frame_seq, frame.full_textures),
+                    t.awaiting_full,
+                )
+            };
+            if !needs_decode {
+                if awaiting {
+                    self.attach_mesh_full_requests.insert(*sid);
+                }
+                continue;
+            }
+
+            let outcome = decode_mesh_bytes_into_target(
+                &self.device,
+                &self.queue,
+                self.attach_mesh_targets
+                    .get_mut(sid)
+                    .expect("ensured above"),
+                &frame.bytes,
+                frame.generation,
+                frame.frame_seq,
+                frame.full_textures,
+                chain_ok,
+                host_ppp,
+                "attach-mesh",
+            );
+            if matches!(
+                outcome,
+                DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
+            ) {
+                if !awaiting {
+                    tracing::debug!(
+                        surface = sid,
+                        frame_seq = frame.frame_seq,
+                        "attach-mesh prepare: texture delta chain broken; requesting full resend"
+                    );
+                    self.attach_mesh_targets
+                        .get_mut(sid)
+                        .expect("ensured above")
+                        .awaiting_full = true;
+                }
+                self.attach_mesh_full_requests.insert(*sid);
+            }
+        }
+
+        let size_in_pixels = [self.size.width, self.size.height];
+        for (sid, rect) in targets {
+            if let Some(t) = self.attach_mesh_targets.get_mut(sid) {
                 composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
             }
         }

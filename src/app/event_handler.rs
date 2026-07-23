@@ -380,6 +380,9 @@ impl ApplicationHandler<AppEvent> for App {
         // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
         // 로 비동기 수신(아래 apply_attach_client_output 경로).
         self.dispatch_pending_list_dir_forwards();
+        // TODO 19 — attach mesh mirror surface 의 텍스처 delta 체인 단절을 GPU 렌더
+        // prepare 가 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다.
+        self.dispatch_pending_mesh_full_resend_forwards();
 
         // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror

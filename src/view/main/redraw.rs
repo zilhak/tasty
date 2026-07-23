@@ -131,6 +131,17 @@ impl MainView {
                     .extend(banner_full_reqs);
                 self.base.dirty = true;
             }
+
+            // attach mesh mirror(TODO 19) full 재전송 요청 drain — 위와 동형이되 대상이
+            // 로컬 plugin 이 아니라 원격이므로, `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`)
+            // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
+            let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
+            if !attach_full_reqs.is_empty() {
+                self.core_state
+                    .pending_mesh_full_resend_forward
+                    .extend(attach_full_reqs);
+                self.base.dirty = true;
+            }
         }
 
         // Command palette pending dispatch — popup writes `pending_run` when
