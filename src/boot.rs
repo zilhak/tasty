@@ -20,6 +20,8 @@ pub(crate) mod cli_routing;
 pub(crate) mod event_loop;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_dispatch;
+#[cfg(not(feature = "gui"))]
+pub(crate) mod headless_plugins;
 pub(crate) mod locale;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
@@ -300,6 +302,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     }
                     None => {
                         let _ = app.core.process_all_pty_output(&mut engine); // default: 전체 drain — CoreEvent 무시 사유는 위 주석 참조
+                        // plugin 프로세스 수신 스레드도 이 default waker 를 공유한다
+                        // (headless_plugins 모듈 주석 참조) — hello 응답/PaintFrame 등
+                        // plugin 이벤트도 이 wake 로 도착하므로 여기서 함께 pump.
+                        headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
                     }
                 }
             }
@@ -311,6 +317,14 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // lock+스냅샷+출력 forward, 입력 Data → 점유 surface PTY, 끊김 →
                 // lock free 환원(단계 3). 비-attach client 의 Data 는 debug echo.
                 let outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
+                // 17번 TODO — attach mesh mirror 는 plugin surface(markdown/image/
+                // mesh_demo)의 실제 plugin 프로세스가 필요하다. 상시 초기화는 회귀
+                // 위험이 넓어(스코프 결정) attach 세션이 실제로 시작되는 이 지점에서만
+                // lazy 초기화한다. 이후엔 프로세스 수명 동안 유지(tear-down 없음).
+                if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty()
+                {
+                    headless_plugins::ensure_plugin_manager(&mut app, &engine);
+                }
                 for (client_id, surface_id) in outcome.attach_requests {
                     engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
                 }
@@ -519,6 +533,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
                 engine.refresh_busy_surfaces();
                 engine.forward_busy_activity(&app.stream_hub);
+                // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록 1Hz
+                // 안전망으로 편승(주 wake 경로는 TerminalOutput(None), 위 참조).
+                headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
             }
             AppEvent::AttachPoll => {
                 // headless 는 렌더가 없어 readonly display mirror·client mirror 가
