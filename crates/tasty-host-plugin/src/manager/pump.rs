@@ -555,3 +555,104 @@ impl PluginManager {
         }
     }
 }
+
+// Task 14 회귀 테스트 — disable→재기동 시 `registered_plugins` gate 가 풀려
+// 새 프로세스의 hello 가 다시 `to_register` 에 잡히는지 검증.
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tasty_terminal::waker_factory::NoopWakerFactory;
+
+    use super::*;
+    use crate::protocol::PluginEvent;
+
+    fn mgr() -> PluginManager {
+        PluginManager::new(Arc::new(NoopWakerFactory))
+    }
+
+    fn hello(plugin_id: &str) -> PluginEvent {
+        PluginEvent::Hello {
+            plugin_id: plugin_id.to_string(),
+            version: "1.0.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn classify_event_hello_queues_to_register_when_not_registered() {
+        let mgr = mgr();
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event("com.example.test", hello("com.example.test"), &mut out);
+        assert_eq!(out.to_register, vec!["com.example.test".to_string()]);
+    }
+
+    #[test]
+    fn classify_event_hello_skips_to_register_when_already_registered() {
+        let mut mgr = mgr();
+        mgr.registered_plugins
+            .insert("com.example.test".to_string());
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event("com.example.test", hello("com.example.test"), &mut out);
+        assert!(out.to_register.is_empty());
+    }
+
+    /// TASTY_HOME env 변경은 프로세스 전역이라 이 모듈 테스트는 직렬화한다
+    /// (`disable()` 이 `config.save()` 로 실 파일을 건드리므로 격리도 필요).
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct HomeGuard {
+        _dir: tempfile::TempDir,
+        prev: Option<String>,
+    }
+    impl HomeGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let prev = std::env::var("TASTY_HOME").ok();
+            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+            unsafe { std::env::set_var("TASTY_HOME", dir.path()) };
+            Self { _dir: dir, prev }
+        }
+    }
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                // SAFETY: new() 와 동일 — 테스트 프로세스 단독, SERIAL 락으로 병렬 간섭 차단.
+                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var("TASTY_HOME") },
+            }
+        }
+    }
+
+    /// 회귀 재현: hello 로 한 번 등록된 plugin 이 disable 을 거친 뒤 재기동
+    /// (새 프로세스의 새 hello) 하면, gate 가 풀려 다시 `to_register` 에 잡혀야
+    /// `finalize_plugin_hello` → `hook_event_registry.register()` 가 재실행된다.
+    /// 고치기 전에는 `disable()` 이 `registered_plugins` 를 지우지 않아 두 번째
+    /// hello 가 여기서 조용히 무시됐다 (crates/tasty-host-plugin/src/manager.rs:263).
+    #[test]
+    fn disable_clears_registered_plugins_so_restart_hello_reregisters() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+
+        let mut mgr = mgr();
+        let plugin_id = "com.example.test";
+        // 최초 hello 등록을 시뮬레이션 (finalize_plugin_hello 가 정상 시 하는 일).
+        mgr.registered_plugins.insert(plugin_id.to_string());
+
+        mgr.disable(plugin_id).expect("disable should succeed");
+        assert!(
+            !mgr.registered_plugins.contains(plugin_id),
+            "disable() must clear the registered_plugins gate so a restarted \
+             process's hello re-registers hook events"
+        );
+
+        // 재기동한 새 프로세스가 다시 hello 를 보낸 상황.
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(plugin_id, hello(plugin_id), &mut out);
+        assert_eq!(
+            out.to_register,
+            vec![plugin_id.to_string()],
+            "post-disable hello must be queued for re-registration"
+        );
+    }
+}

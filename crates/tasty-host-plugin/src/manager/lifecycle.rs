@@ -391,6 +391,11 @@ impl PluginManager {
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         self.plugin_buffers.remove(plugin_id);
         self.settings_pages.unregister_plugin(plugin_id);
+        // registered_plugins gate 해제 — 이걸 안 지우면 재기동 후 새 프로세스의
+        // hello 가 pump::classify_event 에서 "이미 등록됨"으로 오판돼
+        // finalize_plugin_hello(→ hook_event_registry.register 등)가 재실행되지
+        // 않는다. plugin_remove 도 내부적으로 이 disable() 을 거치므로 함께 커버된다.
+        self.registered_plugins.remove(plugin_id);
         Ok(())
     }
 
