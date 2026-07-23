@@ -1062,6 +1062,9 @@ mirror_structural_forward_failed = "The remote workspace couldn't apply that cha
 mirror_capture_saved = "Screenshot copied to the remote clipboard."
 # Shown when that upload/remote clipboard write fails.
 mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
+# Shown when a mirror workspace is torn down because the remote connection was
+# lost (EOF / force-detach / heartbeat timeout / an outbound frame write failed).
+mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
 
 # Webview(html) surface host chrome — painted by the host before/around the
 # native WebView overlay (placeholder when no page, boundary backdrop otherwise).

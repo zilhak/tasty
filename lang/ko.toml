@@ -1059,6 +1059,9 @@ mirror_structural_forward_failed = "원격 워크스페이스가 그 변경을 �
 mirror_capture_saved = "스크린샷을 원격 클립보드로 복사했습니다."
 # 위 업로드/원격 클립보드 반영이 실패했을 때 표시.
 mirror_capture_failed = "스크린샷을 원격 클립보드로 복사하지 못했습니다."
+# 원격 연결이 끊겨(EOF / force-detach / heartbeat 타임아웃 / 송신 프레임 write 실패)
+# mirror 워크스페이스가 정리될 때 표시.
+mirror_disconnected = "원격 연결이 끊어졌습니다. 미러 워크스페이스를 닫았습니다."
 
 # Webview(html) surface 의 host chrome — native WebView overlay 가 붙기 전/숨겨질 때
 # host 가 그린다(URL 없으면 placeholder, 있으면 boundary backdrop).

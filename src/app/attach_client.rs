@@ -95,6 +95,18 @@ pub(crate) enum MirrorEvent {
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
 pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<MirrorEvent>>>;
 
+/// write 전용 스레드로 보내는 한 프레임(TODO 05). forwarder(Data)/heartbeat(Ping)/
+/// resize·structural(Control)/detach(Detach)가 모두 이 큐에 push 만 하고, 단일 write
+/// 스레드가 순차로 소켓에 `write_frame` 한다 — 여러 스레드가 writer 를 각자 lock 후
+/// 직접 쓰던 구조(락 경합·heartbeat 굶김)를 대체한다.
+struct OutFrame {
+    tag: StreamTag,
+    payload: Vec<u8>,
+}
+
+/// [`OutFrame`] 을 write 스레드로 보내는 큐 sender. 세션·heartbeat·forwarder 가 공유한다.
+type FrameSender = std::sync::mpsc::Sender<OutFrame>;
+
 /// client 가 점유한 원격 워크스페이스의 로컬 mirror 세션(작업 J).
 pub(crate) struct AttachClientSession {
     /// 로컬에 추가된 mirror Workspace 의 id.
@@ -105,8 +117,10 @@ pub(crate) struct AttachClientSession {
     output: RemoteOutputBuffer,
     /// reader thread 가 EOF/force-detach 를 만나면 set. apply 가 보고 mirror 정리.
     disconnected: Arc<AtomicBool>,
-    /// 입력/Detach 프레임 송신용 writer(다중 forwarder 와 직렬화 공유).
-    writer: Arc<Mutex<TcpStream>>,
+    /// 원격으로 나가는 모든 프레임(입력 Data / resize·structural Control / Detach)을
+    /// 단일 write 스레드로 보내는 큐 sender(TODO 05). 여러 forwarder/heartbeat 가 각자
+    /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거.
+    frame_tx: FrameSender,
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
@@ -228,6 +242,14 @@ impl App {
         if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
             tracing::warn!("gui attach: failed to set read timeout: {e}");
         }
+        // write 방향 백스톱(TODO 05): forwarder/heartbeat 프레임 write 가 백프레셔로
+        // 무기한 막히지 않도록 write timeout 을 건다. 만료(WouldBlock)는 write 스레드
+        // 에서 세션 disconnect 로 승격된다. read timeout 은 silent disconnect 감지
+        // 계약이라 건드리지 않는다. (try_clone_writer 로 뜬 write half 는 같은 소켓
+        // fd 를 공유하므로 이 timeout 을 그대로 물려받는다.)
+        if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+            tracing::warn!("gui attach: failed to set write timeout: {e}");
+        }
         let (mut conn, client_id) =
             StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
         let first = conn.recv()?;
@@ -259,8 +281,12 @@ impl App {
             .unwrap_or_default();
         let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
 
-        // 입력/Detach 송신용 writer(forwarder 들과 직렬화 공유 — 프레임 인터리브 방지).
-        let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
+        // 원격으로 나가는 모든 프레임을 단일 write 스레드로 직렬화하는 큐(TODO 05).
+        // forwarder(Data)/heartbeat(Ping)/resize·structural(Control)/detach 가 이 큐에
+        // push 만 하고, write 스레드 하나가 순차로 소켓에 write_frame 한다 — writer 락
+        // 경합/heartbeat 굶김 원천 제거. write half 는 그 스레드가 단독 소유한다.
+        let (frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
+        let write_half = conn.try_clone_writer()?;
 
         // 2. focus 엔진에 mirror 구성(스코프 borrow). 로컬 id 재매핑 + mirror terminal +
         //    입력 sink forwarder.
@@ -285,7 +311,7 @@ impl App {
                 if s.get("role").and_then(|v| v.as_str()) == Some("terminal") {
                     let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                     let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, local_id, cols, rows, &writer, engine);
+                    make_mirror_surface(remote_id, local_id, cols, rows, &frame_tx, engine);
                     terminal_locals.insert(local_id);
                 }
                 // 비-터미널은 mirror 불가(design §4.4) → 로컬 id 만(placeholder leaf).
@@ -310,6 +336,33 @@ impl App {
         // 3. reader thread: 원격 출력 → 버퍼(remote_id 키). EOF/force → disconnected.
         let output: RemoteOutputBuffer = Arc::new(Mutex::new(Vec::new()));
         let disconnected = Arc::new(AtomicBool::new(false));
+
+        // 3.5. write 전용 스레드: frame_rx 를 순차 소비해 소켓에 write_frame. 여러
+        //      스레드가 writer 를 각자 lock 후 직접 쓰던 구조를 단일화(TODO 05) —
+        //      forwarder/heartbeat/forward 는 큐에 push 만 하므로 락 경합·heartbeat
+        //      굶김이 사라진다. write 실패(write timeout=WouldBlock 포함, BrokenPipe
+        //      등)는 무기한 블록/조용한 유실 대신 세션 disconnect 로 승격한다 —
+        //      부분전송 프레임으로 서버가 프레임 경계를 잃으므로(desync) 같은 소켓
+        //      재시도 없이 세션 정리로만 귀결한다. cleanup/EOF 로 모든 sender 가 drop
+        //      되면 for 루프가 자연 종료한다.
+        {
+            let disconnected = disconnected.clone();
+            let proxy = proxy.clone();
+            std::thread::spawn(move || {
+                let mut write_half = write_half;
+                for item in frame_rx {
+                    if let Err(e) = stream::write_frame(&mut write_half, item.tag, &item.payload) {
+                        tracing::warn!(
+                            "attach write thread: 프레임 write 실패 — 세션 disconnect 승격: {e}"
+                        );
+                        disconnected.store(true, Ordering::SeqCst);
+                        let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
+                        break;
+                    }
+                }
+            });
+        }
+
         {
             let output = output.clone();
             let disconnected = disconnected.clone();
@@ -416,7 +469,7 @@ impl App {
         //    forwarder 스레드의 "마지막 전송 시각"을 공유 상태로 조율하는 비용이
         //    더 크다.
         {
-            let writer = writer.clone();
+            let frame_tx = frame_tx.clone();
             let disconnected = disconnected.clone();
             std::thread::spawn(move || {
                 loop {
@@ -424,11 +477,16 @@ impl App {
                     if disconnected.load(Ordering::SeqCst) {
                         break;
                     }
-                    let sent = match writer.lock() {
-                        Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Ping, &[]).is_ok(),
-                        Err(_) => false,
-                    };
-                    if !sent {
+                    // 큐에 push 만 하므로 백프레셔로 write 가 막혀도 heartbeat 는 굶지
+                    // 않는다(TODO 05). write 스레드가 사망(receiver drop)했으면 send 가
+                    // Err → 종료.
+                    if frame_tx
+                        .send(OutFrame {
+                            tag: StreamTag::Ping,
+                            payload: Vec::new(),
+                        })
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -440,7 +498,7 @@ impl App {
             remote_to_local,
             output,
             disconnected,
-            writer,
+            frame_tx,
             client_id,
             tunnel,
             anchor_ws_id,
@@ -704,6 +762,16 @@ impl App {
             } else if pos < main.state.active_workspace {
                 main.state.active_workspace -= 1;
             }
+            // 원격발 disconnect(EOF/force-detach/heartbeat TTL/ write 실패 승격)로 mirror
+            // 가 정리될 때만 사용자에게 통지한다(TODO 04·05). 사용자가 mirror ws 를 직접
+            // 닫은 경로(from_disconnect=false)는 스스로 걷어낸 것이라 toast 하지 않는다.
+            if from_disconnect {
+                main.state.toasts.push(
+                    crate::i18n::t("attach.toast.mirror_disconnected").to_string(),
+                    crate::adapters::ui::ToastKind::Warning,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+            }
             main.mark_dirty();
             break;
         }
@@ -711,10 +779,12 @@ impl App {
         // 포함해 여기서 항상 set. 안 하면 그 스레드가 writer(Arc) 를 계속 붙들어 세션이
         // 이미 정리된 뒤에도 소켓이 살아있고 Ping 이 무의미하게 계속 나간다.
         sess.disconnected.store(true, Ordering::SeqCst);
-        // 원격에 detach 통지(best-effort).
-        if let Ok(mut w) = sess.writer.lock() {
-            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 종료 경로, 실패 무시
-        }
+        // 원격에 detach 통지(best-effort). write 큐로 보내 write 스레드가 쓴다. 종료
+        // 경로라 send 실패(write 스레드 이미 종료)는 의도적 무시.
+        let _ = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Detach,
+            payload: Vec::new(),
+        }); // 종료 경로 best-effort — write 스레드가 이미 죽었으면 무시(의도적)
         // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
         if let Some(anchor) = sess.anchor_ws_id {
             self.auto_attach_active.remove(&anchor);
@@ -827,13 +897,12 @@ impl App {
 
         let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
             .unwrap_or_default();
-        match sess.writer.lock() {
-            Ok(mut w) => {
-                if let Err(e) = stream::write_frame(&mut *w, StreamTag::Control, &payload) {
-                    tracing::warn!("structural forward send 실패: {e}");
-                }
-            }
-            Err(_) => tracing::warn!("structural forward: writer lock 실패 — drop"),
+        // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
+        if let Err(e) = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        }) {
+            tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
         }
     }
 
@@ -895,17 +964,13 @@ impl App {
             rows,
         })
         .unwrap_or_default();
-        match sess.writer.lock() {
-            Ok(mut w) => {
-                if let Err(e) = stream::write_frame(&mut *w, StreamTag::Control, &payload) {
-                    tracing::warn!("resize forward send 실패: {e}");
-                    return;
-                }
-            }
-            Err(_) => {
-                tracing::warn!("resize forward: writer lock 실패 — drop");
-                return;
-            }
+        // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
+        if let Err(e) = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        }) {
+            tracing::warn!("resize forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+            return;
         }
         sess.last_forwarded_resize.insert(remote_sid, (cols, rows));
     }
@@ -947,19 +1012,33 @@ fn make_mirror_surface(
     local_id: u32,
     cols: usize,
     rows: usize,
-    writer: &Arc<Mutex<TcpStream>>,
+    frame_tx: &FrameSender,
     engine: &mut crate::core::CoreState,
 ) {
     let mut mirror = Terminal::new_detached(cols, rows);
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     mirror.set_input_sink(tx);
-    let fwd_writer = writer.clone();
+    let frame_tx = frame_tx.clone();
+    // 입력 forwarder: mpsc 로 온 각 chunk 를 MAX_FRAME_LEN-4(mux prefix 4byte) 미만
+    // 조각으로 분할(TODO 04 — paste 가 1 MiB 캡을 넘겨 write_frame 이 거부·스레드
+    // 사망하던 결함)해 순차로 write 큐에 push. 단일 forwarder 스레드가 rx 를 FIFO
+    // 소비하므로 bracketed paste(\x1b[200~ → text → \x1b[201~) 순서가 보존된다.
+    // write 큐 send 실패는 write 스레드가 이미 종료(세션 정리 중)한 것이므로 조용히
+    // 종료 — disconnect 승격은 write 스레드가 담당한다.
     std::thread::spawn(move || {
+        const MAX_BODY: usize = (stream::MAX_FRAME_LEN as usize) - 4;
         for chunk in rx {
-            let framed = stream::encode_mux(remote_id, &chunk);
-            let Ok(mut w) = fwd_writer.lock() else { break };
-            if stream::write_frame(&mut *w, StreamTag::Data, &framed).is_err() {
-                break;
+            for part in chunk.chunks(MAX_BODY) {
+                let framed = stream::encode_mux(remote_id, part);
+                if frame_tx
+                    .send(OutFrame {
+                        tag: StreamTag::Data,
+                        payload: framed,
+                    })
+                    .is_err()
+                {
+                    return;
+                }
             }
         }
     });
@@ -1073,7 +1152,7 @@ fn apply_mirror_structural_delta(
                 if is_terminal {
                     let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                     let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, l, cols, rows, &sess.writer, engine);
+                    make_mirror_surface(remote_id, l, cols, rows, &sess.frame_tx, engine);
                 }
                 newly_created_remote_ids.push(remote_id);
                 l
@@ -1618,7 +1697,7 @@ impl App {
         else {
             anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
         };
-        let writer = sess.writer.clone();
+        let frame_tx = sess.frame_tx.clone();
         let upload_id = next_capture_upload_id();
 
         use base64::Engine as _;
@@ -1636,14 +1715,14 @@ impl App {
                 "total": total,
                 "data_b64": base64::engine::general_purpose::STANDARD.encode(chunk),
             });
-            send_capture_control_frame(&writer, &msg)?;
+            send_capture_control_frame(&frame_tx, &msg)?;
         }
         let commit = serde_json::json!({
             "event": "capture_commit",
             "upload_id": upload_id,
             "file_name": file_name,
         });
-        send_capture_control_frame(&writer, &commit)
+        send_capture_control_frame(&frame_tx, &commit)
     }
 
     /// (04) file picker — `local_ws_id` mirror 세션의 attach 채널로
@@ -1669,21 +1748,23 @@ impl App {
             "request_id": request_id,
             "dir": dir,
         });
-        send_capture_control_frame(&sess.writer, &msg)
+        send_capture_control_frame(&sess.frame_tx, &msg)
     }
 }
 
 /// (03) capture_chunk/capture_commit JSON 하나를 `StreamTag::Control` 프레임으로
 /// 직렬화해 보낸다.
 fn send_capture_control_frame(
-    writer: &Arc<Mutex<TcpStream>>,
+    frame_tx: &FrameSender,
     msg: &serde_json::Value,
 ) -> anyhow::Result<()> {
     let payload = serde_json::to_vec(msg)?;
-    let mut w = writer
-        .lock()
-        .map_err(|_| anyhow::anyhow!("attach writer lock poisoned"))?;
-    stream::write_frame(&mut *w, StreamTag::Control, &payload)?;
+    frame_tx
+        .send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        })
+        .map_err(|_| anyhow::anyhow!("attach write queue closed (write thread gone)"))?;
     Ok(())
 }
 
