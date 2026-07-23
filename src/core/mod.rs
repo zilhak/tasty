@@ -19,6 +19,7 @@ pub(crate) mod builder;
 pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod file;
+pub(crate) mod fs_list;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
 pub(crate) mod pty_registry;

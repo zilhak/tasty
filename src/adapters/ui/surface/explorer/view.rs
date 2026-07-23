@@ -6,22 +6,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
 
-/// 디렉토리 엔트리 한 줄의 메타데이터 (디스크에서 1회 읽어 캐시).
-#[derive(Clone)]
-pub struct DirEntryInfo {
-    pub path: PathBuf,
-    pub name: String,
-    pub is_dir: bool,
-    /// 파일 바이트 크기 (디렉토리는 0).
-    pub size: u64,
-    pub modified: Option<SystemTime>,
-    /// 소문자 확장자 (없으면 빈 문자열).
-    pub ext: String,
-}
+pub(crate) use crate::core::fs_list::{DirEntryInfo, human_size};
+use crate::core::fs_list::{read_dir_entries, sort_entries};
 
 /// 디렉토리 로드 결과 상태 (content 중앙 상태 텍스트로 표현 — design §3.8).
 #[derive(Clone, PartialEq, Eq)]
@@ -220,82 +209,6 @@ impl ExplorerViewStore {
 
     pub fn drop_view(&mut self, sid: SurfaceId) {
         self.views.remove(&sid);
-    }
-}
-
-/// 디렉토리 엔트리를 읽어 메타데이터로 변환. 숨김 파일은 포함(필터는 뷰 레벨).
-fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        let meta = entry.metadata().ok();
-        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-        let modified = meta.as_ref().and_then(|m| m.modified().ok());
-        let ext = if is_dir {
-            String::new()
-        } else {
-            path.extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
-                .unwrap_or_default()
-        };
-        out.push(DirEntryInfo {
-            path,
-            name,
-            is_dir,
-            size,
-            modified,
-            ext,
-        });
-    }
-    Ok(out)
-}
-
-/// 엔트리 정렬: 디렉토리 우선, 그 다음 선택된 컬럼/방향.
-fn sort_entries(entries: &mut [DirEntryInfo], col: SortColumn, dir: SortDir) {
-    entries.sort_by(|a, b| {
-        // 디렉토리는 항상 위 (방향 무관).
-        if a.is_dir != b.is_dir {
-            return b.is_dir.cmp(&a.is_dir);
-        }
-        let ord = match col {
-            SortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            SortColumn::Size => a.size.cmp(&b.size),
-            SortColumn::Modified => a.modified.cmp(&b.modified),
-            SortColumn::Type => a
-                .ext
-                .cmp(&b.ext)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-        };
-        match dir {
-            SortDir::Asc => ord,
-            SortDir::Desc => ord.reverse(),
-        }
-    });
-}
-
-/// 사람이 읽는 파일 크기 (e.g. "4 KB"). 디렉토리는 "—".
-pub fn human_size(is_dir: bool, size: u64) -> String {
-    if is_dir {
-        return "—".to_string();
-    }
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut s = size as f64;
-    let mut u = 0;
-    while s >= 1024.0 && u < UNITS.len() - 1 {
-        s /= 1024.0;
-        u += 1;
-    }
-    if u == 0 {
-        format!("{} {}", size, UNITS[0])
-    } else {
-        format!("{:.1} {}", s, UNITS[u])
     }
 }
 
