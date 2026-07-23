@@ -97,6 +97,14 @@ pub struct StreamOpenParams {
     /// `target` 와 상호배타 — 둘 다 지정되면 서버가 거부한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_workspace: Option<u32>,
+    /// bulk 파일 전송 전용 연결(ADR-0053). `Some(ws)` 이면 이 연결은 대화형 attach 를
+    /// 하지 않고(= workspace holder 가 되지 않음), 그 `Data` 프레임을 PTY 입력이 아니라
+    /// **파일 청크**(`decode_bulk_chunk`)로 분류하도록 서버가 이 연결을 bulk 로 태깅한다.
+    /// 결속 workspace(`ws`)는 저장·인가의 대상: 서버는 이 ws 에 활성 holder 가 존재할
+    /// 때만 전송을 수락한다(전용 연결 자체는 holder 가 아니므로 별도 결속 필요 —
+    /// 조사 §6). `target`/`target_workspace` 와 상호배타(bulk 연결은 mirror 하지 않는다).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bulk_workspace: Option<u32>,
 }
 
 /// workspace attach(단계 6, D3) 의 `Data` 프레임 다중화 인코딩.
@@ -116,6 +124,35 @@ pub fn decode_mux(buf: &[u8]) -> Option<(u32, &[u8])> {
     }
     let sid = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
     Some((sid, &buf[4..]))
+}
+
+/// bulk 파일 전송(ADR-0053)의 `Data` 프레임 sub-header 길이 = `[transfer_id: u64 BE][seq: u32 BE]`.
+pub const BULK_CHUNK_HEADER_LEN: usize = 12;
+
+/// bulk 파일 청크 `Data` 프레임 인코딩. 페이로드 앞에 12바이트 binary sub-header
+/// (`[transfer_id: u64 BE][seq: u32 BE]`)를 붙여 raw 파일 바이트를 실어 나른다.
+/// `encode_mux`(surface 다중화)와 달리 transfer/seq 를 실으며, base64 를 쓰지 않는다.
+/// `seq` 는 진단·검증용(TCP 는 연결당 순서 보장이라 재정렬에 쓰지 않는다 — 캡처
+/// 업로드와 동일 근거).
+pub fn encode_bulk_chunk(transfer_id: u64, seq: u32, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(BULK_CHUNK_HEADER_LEN + bytes.len());
+    out.extend_from_slice(&transfer_id.to_be_bytes());
+    out.extend_from_slice(&seq.to_be_bytes());
+    out.extend_from_slice(bytes);
+    out
+}
+
+/// [`encode_bulk_chunk`] 의 역연산. 12바이트(sub-header) 미만이면 `None`(잘린 프레임).
+/// 반환: `(transfer_id, seq, 파일 바이트 슬라이스)`.
+pub fn decode_bulk_chunk(buf: &[u8]) -> Option<(u64, u32, &[u8])> {
+    if buf.len() < BULK_CHUNK_HEADER_LEN {
+        return None;
+    }
+    let transfer_id = u64::from_be_bytes([
+        buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+    ]);
+    let seq = u32::from_be_bytes([buf[8], buf[9], buf[10], buf[11]]);
+    Some((transfer_id, seq, &buf[BULK_CHUNK_HEADER_LEN..]))
 }
 
 /// Control payload the server sends immediately after a successful upgrade.
@@ -266,6 +303,35 @@ pub enum StreamControl {
         /// `surfaces`: `{remote_id, role, cols, rows}` for terminals /
         /// `{remote_id, role, kind}` for placeholders).
         surfaces: Vec<serde_json::Value>,
+    },
+    /// bulk 파일 전송(ADR-0053)의 control-plane 시작 메시지. 전용 bulk 연결에서
+    /// 실제 파일 바이트(`Data` 프레임, [`encode_bulk_chunk`])에 앞서 파일명·총 크기를
+    /// 알린다. 서버는 `total_size` 를 사전 용량 승인(07)의 입력으로 쓰고, `transfer_id`
+    /// 단위로 청크를 누적한다. 저장 dir 결정·경로 회신은 `commit` 에서 확정.
+    ///
+    /// Direction: **client→server**.
+    BulkBegin {
+        transfer_id: u64,
+        filename: String,
+        total_size: u64,
+    },
+    /// bulk 전송 완료 신호. 서버는 누적 바이트를 파일로 저장 확정하고
+    /// [`StreamControl::BulkResult`] 로 원격 절대경로(또는 실패사유)를 회신한다.
+    ///
+    /// Direction: **client→server**.
+    BulkCommit { transfer_id: u64 },
+    /// bulk 전송 결과. `ok=true` 면 `path` 에 원격 파일시스템 절대경로, `ok=false` 면
+    /// `reason` 에 실패사유(용량 초과·미인가·저장 실패 등). 소비자(08/09)가 이 경로를
+    /// 대화형 스트림에 삽입하거나 진행 UI 에 표시한다.
+    ///
+    /// Direction: **server→client**.
+    BulkResult {
+        transfer_id: u64,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
 }
 
@@ -556,6 +622,97 @@ mod tests {
     fn decode_mux_rejects_truncated() {
         assert!(decode_mux(&[0u8, 1, 2]).is_none());
         assert!(decode_mux(&[]).is_none());
+    }
+
+    #[test]
+    fn bulk_chunk_roundtrip() {
+        let enc = encode_bulk_chunk(0x0102_0304_0506_0708, 42, b"payload");
+        // sub-header: 8 bytes transfer_id BE + 4 bytes seq BE.
+        assert_eq!(&enc[..8], &0x0102_0304_0506_0708u64.to_be_bytes());
+        assert_eq!(&enc[8..12], &42u32.to_be_bytes());
+        let (tid, seq, rest) = decode_bulk_chunk(&enc).unwrap();
+        assert_eq!(tid, 0x0102_0304_0506_0708);
+        assert_eq!(seq, 42);
+        assert_eq!(rest, b"payload");
+        // empty payload still carries the full header.
+        let empty = encode_bulk_chunk(7, 0, b"");
+        let (tid2, seq2, rest2) = decode_bulk_chunk(&empty).unwrap();
+        assert_eq!(tid2, 7);
+        assert_eq!(seq2, 0);
+        assert!(rest2.is_empty());
+    }
+
+    #[test]
+    fn decode_bulk_chunk_rejects_truncated() {
+        // anything shorter than the 12-byte sub-header is a torn frame.
+        assert!(decode_bulk_chunk(&[]).is_none());
+        assert!(decode_bulk_chunk(&[0u8; 11]).is_none());
+        // exactly 12 bytes = valid header, empty payload.
+        assert!(decode_bulk_chunk(&[0u8; 12]).is_some());
+    }
+
+    #[test]
+    fn stream_control_bulk_begin_commit_result_roundtrip() {
+        let begin = StreamControl::BulkBegin {
+            transfer_id: 9,
+            filename: "img.png".to_string(),
+            total_size: 123_456,
+        };
+        let s = serde_json::to_string(&begin).unwrap();
+        assert!(s.contains(r#""event":"bulk_begin""#));
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), begin);
+
+        let commit = StreamControl::BulkCommit { transfer_id: 9 };
+        let s = serde_json::to_string(&commit).unwrap();
+        assert!(s.contains(r#""event":"bulk_commit""#));
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), commit);
+
+        // success (path, no reason) and failure (reason, no path).
+        let ok = StreamControl::BulkResult {
+            transfer_id: 9,
+            ok: true,
+            path: Some("/home/u/.tasty/transfers/img.png".to_string()),
+            reason: None,
+        };
+        let s = serde_json::to_string(&ok).unwrap();
+        assert!(s.contains(r#""event":"bulk_result""#));
+        assert!(!s.contains("reason")); // skipped when None
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), ok);
+
+        let fail = StreamControl::BulkResult {
+            transfer_id: 9,
+            ok: false,
+            path: None,
+            reason: Some("bound workspace has no active holder".to_string()),
+        };
+        let s = serde_json::to_string(&fail).unwrap();
+        assert!(!s.contains("path")); // skipped when None
+        assert!(s.contains("no active holder"));
+        assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), fail);
+    }
+
+    #[test]
+    fn bulk_events_are_distinct_from_capture_and_structural() {
+        // A bulk_begin must not be misread as a foreign event and vice-versa —
+        // the `event` tag keeps the mid-session control messages disjoint.
+        let begin = serde_json::to_string(&StreamControl::BulkBegin {
+            transfer_id: 1,
+            filename: "x".to_string(),
+            total_size: 0,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&begin).unwrap(),
+            StreamControl::BulkBegin { .. }
+        ));
+        // The (03) capture-upload events are NOT StreamControl variants — they must
+        // still fail to parse as one (bulk added no accidental collision).
+        for capture in [
+            r#"{"event":"capture_chunk","upload_id":1,"seq":0,"total":1,"data_b64":"AA=="}"#,
+            r#"{"event":"capture_commit","upload_id":1,"file_name":"x.png"}"#,
+        ] {
+            assert!(serde_json::from_str::<StreamControl>(capture).is_err());
+        }
     }
 
     #[test]
@@ -854,13 +1011,38 @@ mod tests {
             proto: 1,
             target: None,
             target_workspace: Some(9),
+            bulk_workspace: None,
         };
         let s = serde_json::to_string(&p).unwrap();
         let back: StreamOpenParams = serde_json::from_str(&s).unwrap();
         assert_eq!(back.target_workspace, Some(9));
         assert_eq!(back.target, None);
+        assert_eq!(back.bulk_workspace, None);
         // 구버전(필드 없음) 호환.
         let old: StreamOpenParams = serde_json::from_str(r#"{"proto":1}"#).unwrap();
         assert_eq!(old.target_workspace, None);
+        assert_eq!(old.bulk_workspace, None);
+    }
+
+    #[test]
+    fn open_params_bulk_workspace_roundtrip_and_backward_compat() {
+        // bulk 필드 추가 = 하위호환: 새 필드로 직렬화한 payload 도, 옛 payload 도 모두 파싱.
+        let p = StreamOpenParams {
+            proto: 1,
+            target: None,
+            target_workspace: None,
+            bulk_workspace: Some(7),
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        assert!(s.contains(r#""bulk_workspace":7"#));
+        let back: StreamOpenParams = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.bulk_workspace, Some(7));
+        assert_eq!(back.target, None);
+        assert_eq!(back.target_workspace, None);
+        // bulk_workspace 를 모르는 옛 서버가 만든 payload(필드 없음)도 그대로 수용.
+        let old: StreamOpenParams =
+            serde_json::from_str(r#"{"proto":1,"target_workspace":3}"#).unwrap();
+        assert_eq!(old.bulk_workspace, None);
+        assert_eq!(old.target_workspace, Some(3));
     }
 }

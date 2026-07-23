@@ -96,6 +96,40 @@ pub struct PumpOutcome {
     /// `StreamTag::Control` channel as a raw JSON "event"-tagged payload, tried
     /// after `CaptureUploadMsg` fails to parse.
     pub list_dir_requests: Vec<(StreamClientId, ListDirRequestMsg)>,
+    /// `(client_id, event)` — (06) native bulk 파일 전송의 begin/chunk/commit 을
+    /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
+    /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
+    /// 두 벡터로 담으면 라우팅이 chunk 를 begin 보다 먼저 처리해(별도 pass) 미등록
+    /// transfer 에 청크를 흘려 **전량 폐기 + 빈 파일 성공 오보**가 난다. 그래서 (03)
+    /// capture(`CaptureChunk`/`CaptureCommit` 단일 벡터)와 동형으로 순서를 보존한다 —
+    /// 라우팅은 이 벡터를 순서대로 match 해 등록/누적/확정한다. 결속 workspace 는 이
+    /// 이벤트가 아니라 연결-단위 bulk 결속([`StreamHub::bulk_workspace`])에서 조회.
+    pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
+}
+
+/// (06) native bulk 파일 전송의 client→server 이벤트를 **도착 순서 그대로** 담기 위한
+/// 통합 enum. begin/commit 은 wire 상 [`StreamControl::BulkBegin`](crate::ipc::stream::StreamControl)
+/// / [`StreamControl::BulkCommit`](crate::ipc::stream::StreamControl) (Control 프레임),
+/// chunk 는 [`decode_bulk_chunk`](crate::ipc::stream::decode_bulk_chunk)로 뜯은 Data
+/// 프레임이지만, `PumpOutcome` 는 이 셋을 한 벡터에 순서보존해 라우팅이 begin→chunk→
+/// commit 을 올바른 순서로 처리하게 한다(capture 의 `CaptureUploadMsg` 와 동형).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BulkEvent {
+    /// 전송 시작 — 파일명·총 크기 통지. `total_size` 는 사전 용량 승인(07)의 입력.
+    Begin {
+        transfer_id: u64,
+        filename: String,
+        total_size: u64,
+    },
+    /// 파일 청크 — bulk 연결 Data 프레임에서 뜯은 raw 바이트. `seq` 는 진단용(TCP 는
+    /// 연결당 순서 보장이라 재정렬에 쓰지 않는다).
+    Chunk {
+        transfer_id: u64,
+        seq: u32,
+        bytes: Vec<u8>,
+    },
+    /// 전송 완료 — 서버가 저장 확정 후 `BulkResult` 회신.
+    Commit { transfer_id: u64 },
 }
 
 /// (03) screenshot→remote-clipboard mid-session control messages. See
@@ -165,6 +199,13 @@ pub struct StreamContext {
 pub struct StreamHub {
     sinks: Arc<Mutex<HashMap<StreamClientId, StreamSink>>>,
     next_id: Arc<AtomicU32>,
+    /// bulk 파일 전송 전용 연결(ADR-0053): `client_id → 결속 workspace_id`. 이 맵에
+    /// 든 연결의 `Data` 프레임은 PTY 입력이 아니라 파일 청크로 분류되고(연결-단위
+    /// 태깅 — [`pump_inbound`](Self::pump_inbound)), begin/commit 인가 시 서버가 그
+    /// workspace 의 holder 존재를 검증하는 결속 근거가 된다(조사 §6). 핸드셰이크에서
+    /// [`register_bulk`](Self::register_bulk)로 등록, [`unregister`](Self::unregister)
+    /// 로 정리.
+    bulk_bindings: Arc<Mutex<HashMap<StreamClientId, u32>>>,
 }
 
 impl Default for StreamHub {
@@ -178,6 +219,7 @@ impl StreamHub {
         Self {
             sinks: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(AtomicU32::new(1)),
+            bulk_bindings: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -197,11 +239,33 @@ impl StreamHub {
     }
 
     /// Drop a client's sink (its write thread then exits when the sender drops).
-    /// Idempotent.
+    /// Idempotent. bulk 결속(있으면)도 함께 청소한다.
     pub fn unregister(&self, id: StreamClientId) {
         if let Ok(mut sinks) = self.sinks.lock() {
             sinks.remove(&id);
         }
+        if let Ok(mut bulk) = self.bulk_bindings.lock() {
+            bulk.remove(&id);
+        }
+    }
+
+    /// bulk 전송 전용 연결(ADR-0053)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
+    /// 결속 workspace 로 기록하며, 이 등록은 [`register`](Self::register)와 read 루프
+    /// 시작 사이(같은 accept 스레드)에서 이뤄지므로 이후 pump 되는 모든 프레임에서
+    /// [`bulk_workspace`](Self::bulk_workspace)로 조회된다.
+    pub fn register_bulk(&self, id: StreamClientId, workspace_id: u32) {
+        if let Ok(mut bulk) = self.bulk_bindings.lock() {
+            bulk.insert(id, workspace_id);
+        }
+    }
+
+    /// 이 연결이 bulk 전용이면 결속 workspace_id, 아니면 `None`. pump_inbound 의
+    /// Data 분류(파일 청크 vs PTY 입력)와 begin/commit 인가에서 참조한다.
+    pub fn bulk_workspace(&self, id: StreamClientId) -> Option<u32> {
+        self.bulk_bindings
+            .lock()
+            .ok()
+            .and_then(|b| b.get(&id).copied())
     }
 
     /// Push a frame to one client. Non-blocking: a full sink drops the frame and,
@@ -264,16 +328,38 @@ impl StreamHub {
                     .workspace_attach_requests
                     .push((client_id, target_workspace_id)),
                 StreamInbound::Frame { client_id, frame } => {
+                    // 연결-단위 bulk 태깅: bulk 전용 연결이면 그 Data 는 PTY 입력이
+                    // 아니라 파일 청크다(같은 `StreamTag::Data` 를 두 의미로 쓰므로
+                    // 연결 단위로 구분해야 한다 — ADR-0053, 전용 연결이 필수인 이유).
+                    let bulk_ws = self.bulk_workspace(client_id);
                     match frame.tag {
+                        crate::ipc::stream::StreamTag::Data if bulk_ws.is_some() => {
+                            match crate::ipc::stream::decode_bulk_chunk(&frame.payload) {
+                                Some((transfer_id, seq, data)) => {
+                                    out.bulk_events.push((
+                                        client_id,
+                                        BulkEvent::Chunk {
+                                            transfer_id,
+                                            seq,
+                                            bytes: data.to_vec(),
+                                        },
+                                    ));
+                                }
+                                None => tracing::warn!(
+                                    "bulk transfer: truncated chunk frame from client {client_id} (< sub-header) — dropping"
+                                ),
+                            }
+                        }
                         crate::ipc::stream::StreamTag::Data => {
                             out.input_frames.push((client_id, frame.payload));
                         }
                         crate::ipc::stream::StreamTag::Control => {
                             // Client→server Control messages: `StructuralOp`
-                            // (split/new-tab/close/move forward) and `ClientResize`
-                            // (client-driven mirror geometry). Any other
-                            // `StreamControl` variant (server→client only) is
-                            // ignored; a payload that isn't a `StreamControl` at
+                            // (split/new-tab/close/move forward), `ClientResize`
+                            // (client-driven mirror geometry), and the (06) native
+                            // bulk transfer control-plane (`BulkBegin`/`BulkCommit`).
+                            // Any other `StreamControl` variant (server→client only)
+                            // is ignored; a payload that isn't a `StreamControl` at
                             // all falls to `Err` and is tried against the (03)
                             // capture-upload mini-protocol before being dropped.
                             match serde_json::from_slice(&frame.payload) {
@@ -289,6 +375,23 @@ impl StreamHub {
                                     out.resize_requests
                                         .push((client_id, surface_id, cols, rows));
                                 }
+                                Ok(crate::ipc::stream::StreamControl::BulkBegin {
+                                    transfer_id,
+                                    filename,
+                                    total_size,
+                                }) => out.bulk_events.push((
+                                    client_id,
+                                    BulkEvent::Begin {
+                                        transfer_id,
+                                        filename,
+                                        total_size,
+                                    },
+                                )),
+                                Ok(crate::ipc::stream::StreamControl::BulkCommit {
+                                    transfer_id,
+                                }) => out
+                                    .bulk_events
+                                    .push((client_id, BulkEvent::Commit { transfer_id })),
                                 Ok(_) => {}
                                 Err(_) => {
                                     if let Ok(msg) =
@@ -582,6 +685,222 @@ mod tests {
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn bulk_binding_register_and_unregister() {
+        let hub = StreamHub::new();
+        assert_eq!(hub.bulk_workspace(5), None);
+        hub.register_bulk(5, 42);
+        assert_eq!(hub.bulk_workspace(5), Some(42));
+        // 다른 client 는 영향 없음.
+        assert_eq!(hub.bulk_workspace(6), None);
+        hub.unregister(5);
+        assert_eq!(hub.bulk_workspace(5), None);
+    }
+
+    #[test]
+    fn pump_inbound_bulk_connection_data_is_chunk_not_input() {
+        // (06) bulk 로 태깅된 연결의 Data 는 파일 청크(bulk_events::Chunk)로 분류되고
+        // input_frames(PTY)로 새지 않는다.
+        let hub = StreamHub::new();
+        hub.register_bulk(7, 3); // client 7 = bulk 연결(ws 3 결속)
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload = crate::ipc::stream::encode_bulk_chunk(99, 2, b"filebytes");
+        tx.send(StreamInbound::Frame {
+            client_id: 7,
+            frame: frame(StreamTag::Data, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(
+            out.bulk_events,
+            vec![(
+                7u32,
+                BulkEvent::Chunk {
+                    transfer_id: 99,
+                    seq: 2,
+                    bytes: b"filebytes".to_vec(),
+                }
+            )]
+        );
+        assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_non_bulk_data_still_input() {
+        // 비-bulk 연결의 Data 는 종전대로 PTY 입력으로 간다(회귀 방지).
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::Frame {
+            client_id: 8,
+            frame: frame(StreamTag::Data, b"keystrokes"),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.input_frames, vec![(8u32, b"keystrokes".to_vec())]);
+        assert!(out.bulk_events.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_bulk_begin_and_commit() {
+        use crate::ipc::stream::StreamControl;
+        let hub = StreamHub::new();
+        hub.register_bulk(9, 1);
+        let (tx, inbound_rx) = mpsc::channel();
+        let begin = serde_json::to_vec(&StreamControl::BulkBegin {
+            transfer_id: 100,
+            filename: "img.png".to_string(),
+            total_size: 2048,
+        })
+        .unwrap();
+        let commit = serde_json::to_vec(&StreamControl::BulkCommit { transfer_id: 100 }).unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 9,
+            frame: frame(StreamTag::Control, &begin),
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 9,
+            frame: frame(StreamTag::Control, &commit),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.bulk_events.len(), 2);
+        assert_eq!(
+            out.bulk_events[0],
+            (
+                9u32,
+                BulkEvent::Begin {
+                    transfer_id: 100,
+                    filename: "img.png".to_string(),
+                    total_size: 2048,
+                }
+            )
+        );
+        assert_eq!(
+            out.bulk_events[1],
+            (9u32, BulkEvent::Commit { transfer_id: 100 })
+        );
+        // 구조 op / capture 로 오분류되지 않음.
+        assert!(out.structural_ops.is_empty());
+        assert!(out.capture_uploads.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_preserves_bulk_begin_chunk_commit_order() {
+        // 회귀 방지(Gate4): begin+chunk*2+commit 이 **한 배치**에 함께 drain 돼도
+        // bulk_events 가 도착 순서를 그대로 보존해야 한다(분리 벡터였을 때의
+        // chunk-before-begin data-loss 결함 재발 방지). 라우팅이 이 순서대로 처리하면
+        // begin→append→append→finalize 로 전량 저장된다.
+        use crate::ipc::stream::{StreamControl, encode_bulk_chunk};
+        let hub = StreamHub::new();
+        hub.register_bulk(5, 2);
+        let (tx, inbound_rx) = mpsc::channel();
+        let begin = serde_json::to_vec(&StreamControl::BulkBegin {
+            transfer_id: 7,
+            filename: "f.bin".to_string(),
+            total_size: 6,
+        })
+        .unwrap();
+        let commit = serde_json::to_vec(&StreamControl::BulkCommit { transfer_id: 7 }).unwrap();
+        for f in [
+            frame(StreamTag::Control, &begin),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 0, b"abc")),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 1, b"def")),
+            frame(StreamTag::Control, &commit),
+        ] {
+            tx.send(StreamInbound::Frame {
+                client_id: 5,
+                frame: f,
+            })
+            .unwrap();
+        }
+        let out = hub.pump_inbound(&inbound_rx);
+        let events: Vec<&BulkEvent> = out.bulk_events.iter().map(|(_, e)| e).collect();
+        assert!(matches!(events[0], BulkEvent::Begin { transfer_id: 7, .. }));
+        assert!(matches!(
+            events[1],
+            BulkEvent::Chunk {
+                transfer_id: 7,
+                seq: 0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            events[2],
+            BulkEvent::Chunk {
+                transfer_id: 7,
+                seq: 1,
+                ..
+            }
+        ));
+        assert!(matches!(events[3], BulkEvent::Commit { transfer_id: 7 }));
+    }
+
+    #[test]
+    fn ordered_batch_routes_to_intact_bytes() {
+        // 회귀(Gate4) end-to-end: begin+chunk0+chunk1+commit 이 **한 pump 배치**에
+        // 함께 도착 → 라우팅이 bulk_events 를 순서대로 레지스트리에 반영하면 최종
+        // take 된 bytes 가 전량 온전해야 한다. (분리 벡터 시절엔 chunk pass 가 begin
+        // pass 보다 먼저 돌아 청크가 미등록 transfer 로 폐기 → 빈 파일이 저장됐다.)
+        use crate::core::bulk_transfer::BulkTransferRegistry;
+        use crate::ipc::stream::{StreamControl, encode_bulk_chunk};
+
+        let hub = StreamHub::new();
+        hub.register_bulk(5, 2);
+        let (tx, inbound_rx) = mpsc::channel();
+        let begin = serde_json::to_vec(&StreamControl::BulkBegin {
+            transfer_id: 7,
+            filename: "f.bin".to_string(),
+            total_size: 6,
+        })
+        .unwrap();
+        let commit = serde_json::to_vec(&StreamControl::BulkCommit { transfer_id: 7 }).unwrap();
+        for f in [
+            frame(StreamTag::Control, &begin),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 0, b"abc")),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 1, b"def")),
+            frame(StreamTag::Control, &commit),
+        ] {
+            tx.send(StreamInbound::Frame {
+                client_id: 5,
+                frame: f,
+            })
+            .unwrap();
+        }
+        let out = hub.pump_inbound(&inbound_rx);
+
+        // 라우팅(boot.rs/event_handler.rs)이 하는 것과 동형: 단일 벡터를 순서대로 처리.
+        let mut reg = BulkTransferRegistry::new();
+        let mut committed: Option<(String, Vec<u8>)> = None;
+        for (client_id, event) in out.bulk_events {
+            match event {
+                BulkEvent::Begin {
+                    transfer_id,
+                    filename,
+                    total_size,
+                } => reg.begin(client_id, transfer_id, filename, total_size),
+                BulkEvent::Chunk {
+                    transfer_id,
+                    seq,
+                    bytes,
+                } => {
+                    assert!(
+                        reg.append(client_id, transfer_id, seq, &bytes),
+                        "chunk must land on a registered transfer (begin already processed)"
+                    );
+                }
+                BulkEvent::Commit { transfer_id } => {
+                    committed = reg.take(client_id, transfer_id);
+                }
+            }
+        }
+        assert_eq!(
+            committed,
+            Some(("f.bin".to_string(), b"abcdef".to_vec())),
+            "commit 시 누적 bytes 가 전량 온전해야 한다"
+        );
     }
 
     #[test]

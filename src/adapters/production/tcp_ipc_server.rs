@@ -229,6 +229,14 @@ impl TcpIpcServer {
         let open_params = serde_json::from_value::<stream::StreamOpenParams>(req.params).ok();
         let attach_target = open_params.as_ref().and_then(|p| p.target);
         let attach_workspace = open_params.as_ref().and_then(|p| p.target_workspace);
+        // bulk 전용 연결(ADR-0053): 이 연결은 mirror/attach 를 하지 않고(= holder 가
+        // 되지 않고) 파일 청크만 나른다. 여기서 hub 에 bulk 로 태깅하면 read 루프가
+        // 프레임을 보내기 전에 결속이 서므로, 이후 pump_inbound 가 이 연결의 Data 를
+        // 파일 청크로 분류한다(연결-단위 태깅). attach 분기와 상호배타.
+        let bulk_workspace = open_params.as_ref().and_then(|p| p.bulk_workspace);
+        if let Some(ws) = bulk_workspace {
+            ctx.hub.register_bulk(client_id, ws);
+        }
 
         // Write thread: drain the push sink (fed by the main loop) to the socket.
         // `recv_timeout` 대신 blocking iterator 를 쓰던 옛 구현은 sink 가 idle 이면

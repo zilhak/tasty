@@ -28,7 +28,7 @@ impl StreamConnection {
     /// `Control` ack frame. Returns the connection and the server-assigned
     /// client id.
     pub fn open(stream: TcpStream, proto: u32) -> Result<(Self, u32)> {
-        Self::open_with(stream, proto, None, None)
+        Self::open_with(stream, proto, None, None, None)
     }
 
     /// Like [`open`](Self::open) but requests attach to `target` (a surface_id):
@@ -37,7 +37,7 @@ impl StreamConnection {
     /// (success/`attach_error`) arrives as a *separate* `Control` frame after the
     /// handshake ack — callers must read it (see `commands::attach`).
     pub fn open_attach(stream: TcpStream, proto: u32, target: u32) -> Result<(Self, u32)> {
-        Self::open_with(stream, proto, Some(target), None)
+        Self::open_with(stream, proto, Some(target), None, None)
     }
 
     /// Like [`open_attach`](Self::open_attach) but attaches a whole workspace
@@ -48,7 +48,18 @@ impl StreamConnection {
         proto: u32,
         workspace: u32,
     ) -> Result<(Self, u32)> {
-        Self::open_with(stream, proto, None, Some(workspace))
+        Self::open_with(stream, proto, None, Some(workspace), None)
+    }
+
+    /// bulk 파일 전송 전용 연결(ADR-0053)로 업그레이드한다. `open_attach_workspace`
+    /// 와 달리 workspace 를 mirror 하지 않고(= holder 가 되지 않고), 이 연결의 `Data`
+    /// 프레임을 서버가 파일 청크(`encode_bulk_chunk`)로 분류하도록 bulk 로 태깅한다.
+    /// `workspace` 는 저장·인가의 결속 대상(서버는 그 ws 에 활성 holder 가 있을 때만
+    /// 수락). 같은 `ssh -L` 터널의 `127.0.0.1:<local_port>` 에 두 번째로 열어 대화형
+    /// attach 스트림과 소켓을 분리한다(HOL 방지). ※ 06-β(클라 송신)가 이 진입점을
+    /// 호출한다 — 06-α 는 시그니처만 정의.
+    pub fn open_bulk(stream: TcpStream, proto: u32, workspace: u32) -> Result<(Self, u32)> {
+        Self::open_with(stream, proto, None, None, Some(workspace))
     }
 
     fn open_with(
@@ -56,6 +67,7 @@ impl StreamConnection {
         proto: u32,
         target: Option<u32>,
         target_workspace: Option<u32>,
+        bulk_workspace: Option<u32>,
     ) -> Result<(Self, u32)> {
         // 조용한 네트워크 단절 감지용 read timeout. writer/reader 는 이 소켓의 clone이라
         // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
@@ -71,6 +83,9 @@ impl StreamConnection {
         }
         if let Some(w) = target_workspace {
             params["target_workspace"] = serde_json::json!(w);
+        }
+        if let Some(w) = bulk_workspace {
+            params["bulk_workspace"] = serde_json::json!(w);
         }
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),

@@ -24,7 +24,7 @@ use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, encode_mux};
-use crate::model::{AttachSurfaceClass, SurfaceId};
+use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 
 impl CoreState {
     /// stream client 의 attach 요청 처리(`stream.open` 의 `target`). 성공 시 그 client
@@ -641,28 +641,105 @@ pub(crate) fn finalize_capture_upload(
 }
 
 /// `file_name` 의 basename 만 취해(경로 조작 방지) `~/.tasty/screenshots/` 밑에
-/// 저장하고, 그 절대경로 문자열을 로컬 클립보드에 기록한다.
+/// 저장하고, 그 절대경로 문자열을 로컬 클립보드에 기록한다. 파일 저장 자체는 일반
+/// [`save_bulk_file`] 로 위임하고, 클립보드 기록(스크린샷 특화 정책)만 여기 남긴다.
 fn save_capture_and_set_clipboard(
     core: &Core,
     file_name: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
+    let dir = crate::paths::tasty_home()
+        .map(|h| h.join("screenshots"))
+        .ok_or_else(|| "no tasty home directory".to_string())?;
+    let path_str = save_bulk_file(&dir, file_name, "screenshot.png", bytes)?;
+    core.clipboard_arc()
+        .write_text(&path_str)
+        .map_err(|e| e.to_string())?;
+    Ok(path_str)
+}
+
+/// 일반 파일 저장 원자: `file_name` 의 basename 만 취해(경로 조작 방지) `dir` 밑에
+/// 쓰고 그 절대경로 문자열을 돌려준다. 저장 위치(`dir`)는 **인자**로 받아 하드코딩을
+/// 피한다 — 07(용량·지정 폴더 설정)이 나중에 설정값을 주입할 수 있는 훅이다. 캡처의
+/// 클립보드 기록 같은 소비자-특화 후처리는 이 함수 밖에서 한다(bulk 는 경로만 회신).
+/// basename 이 비면 `fallback_name` 을 쓴다.
+fn save_bulk_file(
+    dir: &std::path::Path,
+    file_name: &str,
+    fallback_name: &str,
     bytes: &[u8],
 ) -> Result<String, String> {
     let safe_name = std::path::Path::new(file_name)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "screenshot.png".to_string());
-    let dir = crate::paths::tasty_home()
-        .map(|h| h.join("screenshots"))
-        .ok_or_else(|| "no tasty home directory".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        .unwrap_or_else(|| fallback_name.to_string());
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let path = dir.join(safe_name);
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    let path_str = path.to_string_lossy().to_string();
-    core.clipboard_arc()
-        .write_text(&path_str)
-        .map_err(|e| e.to_string())?;
-    Ok(path_str)
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// bulk 전송 파일의 기본 저장 폴더 `~/.tasty/transfers/`(홈 미확인 시 `None`). 07 이
+/// 지정 폴더 설정을 제공하면 라우팅이 그 값을 대신 [`finalize_bulk_transfer`] 에
+/// 넘긴다 — 이 기본값은 그때까지의 폴백이다.
+pub(crate) fn default_bulk_transfer_dir() -> Option<std::path::PathBuf> {
+    crate::paths::tasty_home().map(|h| h.join("transfers"))
+}
+
+/// (06) bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
+/// (ADR-0053). `finalize_capture_upload` 와 동형의 일반화 버전이다.
+///
+/// **인가(조사 §6/E)**: 전용 bulk 연결은 workspace holder 가 아니므로
+/// (`client_holds_workspace(bulk_client)==false`) capture 의 holder 검증을 그대로 쓸 수
+/// 없다. 대신 이 연결이 핸드셰이크에서 결속한 `bulk_workspace` 에 **활성 holder 가
+/// 존재하는가**(누군가 그 워크스페이스를 attach 중인가)를 검증한다. 같은 SSH 경계·
+/// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(ADR-0053 decision#5),
+/// holder 존재 확인은 "이 워크스페이스가 실제 attach 중"이라는 타겟 유효성 검증이다.
+///
+/// `dir` 은 저장 폴더(07 이 주입, `None` 이면 홈 미확인). 클립보드 기록 같은
+/// 소비자-특화 후처리는 하지 않는다 — bulk 는 경로만 `BulkResult` 로 회신한다.
+pub(crate) fn finalize_bulk_transfer(
+    engine: &mut CoreState,
+    hub: &StreamHub,
+    client_id: u32,
+    transfer_id: u64,
+    bulk_workspace: WorkspaceId,
+    dir: Option<std::path::PathBuf>,
+) {
+    let authorized = engine.attach.workspace_holder(bulk_workspace).is_some();
+    // 미인가여도 누적분을 꺼내 메모리를 비운다(대용량 partial 잔존 방지).
+    let taken = engine.bulk_transfers.take(client_id, transfer_id);
+    let result = if !authorized {
+        Err("bound workspace has no active holder".to_string())
+    } else {
+        match (taken, dir) {
+            (None, _) => Err("no uploaded bytes for this transfer_id".to_string()),
+            (Some(_), None) => Err("no tasty home directory".to_string()),
+            (Some((filename, bytes)), Some(d)) => {
+                save_bulk_file(&d, &filename, "bulk-file", &bytes)
+            }
+        }
+    };
+    let reply = match result {
+        Ok(path) => StreamControl::BulkResult {
+            transfer_id,
+            ok: true,
+            path: Some(path),
+            reason: None,
+        },
+        Err(reason) => StreamControl::BulkResult {
+            transfer_id,
+            ok: false,
+            path: None,
+            reason: Some(reason),
+        },
+    };
+    let frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&reply).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
 }
 
 /// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`

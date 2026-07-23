@@ -16,6 +16,7 @@ pub(crate) mod attach;
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
 pub(crate) mod builder;
+pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod file;

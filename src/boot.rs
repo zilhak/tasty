@@ -446,8 +446,61 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         &dir,
                     );
                 }
+                for (client_id, event) in outcome.bulk_events {
+                    // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서
+                    // 그대로** 처리한다(단일 벡터라 chunk 가 begin 을 앞지르지 않음 —
+                    // 분리 벡터 시절의 전량 폐기 + 빈 파일 성공 오보 결함 방지). 결속
+                    // workspace 는 연결-단위 bulk 태깅에서 조회(begin 이 ws 를 싣지 않음).
+                    use crate::adapters::production::stream_hub::BulkEvent;
+                    let Some(ws) = app.stream_hub.bulk_workspace(client_id) else {
+                        tracing::warn!(
+                            "bulk transfer: event from non-bulk client {client_id} — ignoring"
+                        );
+                        continue;
+                    };
+                    match event {
+                        BulkEvent::Begin {
+                            transfer_id,
+                            filename,
+                            total_size,
+                        } => {
+                            engine.bulk_transfers.begin(
+                                client_id,
+                                transfer_id,
+                                filename,
+                                total_size,
+                            );
+                        }
+                        BulkEvent::Chunk {
+                            transfer_id,
+                            seq,
+                            bytes,
+                        } => {
+                            if !engine
+                                .bulk_transfers
+                                .append(client_id, transfer_id, seq, &bytes)
+                            {
+                                tracing::warn!(
+                                    "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"
+                                );
+                            }
+                        }
+                        BulkEvent::Commit { transfer_id } => {
+                            crate::core::attach_runtime::finalize_bulk_transfer(
+                                &mut engine,
+                                &app.stream_hub,
+                                client_id,
+                                transfer_id,
+                                ws,
+                                crate::core::attach_runtime::default_bulk_transfer_dir(),
+                            );
+                        }
+                    }
+                }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
+                    // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
+                    engine.bulk_transfers.clear_client(client_id);
                 }
             }
             AppEvent::BusyPoll => {

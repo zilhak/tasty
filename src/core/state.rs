@@ -313,6 +313,13 @@ pub struct CoreState {
     /// 양쪽 `StreamReady` 처리부가 공유한다(attach 서버는 어느 빌드든 될 수 있음).
     pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
 
+    /// (06) attach 서버측 — 전용 bulk 연결(ADR-0053)이 나른 파일 청크를
+    /// `(client_id, transfer_id)` 단위로 누적한다. 캡처(`capture_uploads`)의 일반화
+    /// 병렬 신설이며, begin 에서 파일명·총 크기를 먼저 받고 이후 `Data` 프레임
+    /// (`decode_bulk_chunk`)의 청크를 append 한 뒤 commit 에서 저장 확정한다.
+    /// gui/headless 양쪽 `StreamReady` 처리부가 공유한다.
+    pub(crate) bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry,
+
     /// mirror 워크스페이스 구조 변경 forward 큐(2단계). `Core::apply` 가 mirror
     /// 워크스페이스의 구조 op 를 로컬 실행 대신 여기 push 하고(로컬 mutation 없음),
     /// App 이 `about_to_wait` 에서 drain 해 anchor **로컬** surface id 를 원격 id 로
@@ -475,6 +482,7 @@ impl CoreState {
             pending_gui_attach: Vec::new(),
             pending_screenshot_captures: Vec::new(),
             capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
+            bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry::new(),
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
             pending_list_dir_forward: Vec::new(),

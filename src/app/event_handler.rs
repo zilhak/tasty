@@ -1061,12 +1061,15 @@ impl App {
             if let Some(main) = w.as_main_mut() {
                 for &cid in clients {
                     main.core_state.attach.release_all_for_client(cid);
+                    // (06) bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
+                    main.core_state.bulk_transfers.clear_client(cid);
                 }
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
             for &cid in clients {
                 engine.attach.release_all_for_client(cid);
+                engine.bulk_transfers.clear_client(cid);
             }
         }
     }
@@ -1137,6 +1140,18 @@ impl App {
         // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         for (client_id, msg) in outcome.list_dir_requests {
             self.apply_list_dir_request_msg(client_id, msg, &hub);
+        }
+        // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
+        // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
+        // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
+        // ws 는 연결-단위 bulk 태깅에서 조회.
+        for (client_id, event) in outcome.bulk_events {
+            match hub.bulk_workspace(client_id) {
+                Some(ws) => self.apply_bulk_event(client_id, event, ws, &hub),
+                None => tracing::warn!(
+                    "bulk transfer: event from non-bulk client {client_id} — ignoring"
+                ),
+            }
         }
 
         if !outcome.disconnected.is_empty() {
@@ -1485,6 +1500,118 @@ impl App {
             serde_json::to_vec(&payload).unwrap_or_default(),
         );
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+    }
+
+    /// (06) native bulk 파일 전송 이벤트(begin/chunk/commit) 하나를 결속
+    /// workspace(`bulk_ws`)를 **소유한** engine 으로 라우팅한다. 호출자가 이 메서드를
+    /// `bulk_events` 순서대로 부르므로 begin→chunk→commit 이 올바른 순서로 같은
+    /// engine 에 도착한다. bulk 연결은 holder 가 아니므로(조사 §6)
+    /// `client_holds_workspace` 로 engine 을 못 찾는다 — workspace **소유** 기준
+    /// (`find_workspace_index_for_id`)으로 라우팅해 begin/chunk/commit 이 항상 같은
+    /// engine 에 모이게 한다. begin=등록, chunk=append, commit=finalize(인가 검증 +
+    /// 저장 + `BulkResult` 회신). 소유 engine 이 없으면 commit 은 실패 회신, begin/
+    /// chunk 는 warn 후 드롭.
+    fn apply_bulk_event(
+        &mut self,
+        client_id: u32,
+        event: crate::adapters::production::stream_hub::BulkEvent,
+        bulk_ws: u32,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        use crate::adapters::production::stream_hub::BulkEvent;
+        match event {
+            BulkEvent::Begin {
+                transfer_id,
+                filename,
+                total_size,
+            } => {
+                if self
+                    .with_bulk_ws_engine(bulk_ws, |engine| {
+                        engine
+                            .bulk_transfers
+                            .begin(client_id, transfer_id, filename, total_size);
+                    })
+                    .is_none()
+                {
+                    tracing::warn!(
+                        "bulk transfer: no engine owns workspace {bulk_ws} — dropping begin"
+                    );
+                }
+            }
+            BulkEvent::Chunk {
+                transfer_id,
+                seq,
+                bytes,
+            } => {
+                let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
+                    engine
+                        .bulk_transfers
+                        .append(client_id, transfer_id, seq, &bytes)
+                });
+                match found {
+                    Some(true) => {}
+                    Some(false) => tracing::warn!(
+                        "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"
+                    ),
+                    None => tracing::warn!(
+                        "bulk transfer: no engine owns workspace {bulk_ws} — dropping chunk"
+                    ),
+                }
+            }
+            BulkEvent::Commit { transfer_id } => {
+                let dir = crate::core::attach_runtime::default_bulk_transfer_dir();
+                let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
+                    crate::core::attach_runtime::finalize_bulk_transfer(
+                        engine,
+                        hub,
+                        client_id,
+                        transfer_id,
+                        bulk_ws,
+                        dir,
+                    );
+                });
+                if found.is_none() {
+                    // 소유 engine 없음 → bulk_result 실패 회신.
+                    let reply = crate::ipc::stream::StreamControl::BulkResult {
+                        transfer_id,
+                        ok: false,
+                        path: None,
+                        reason: Some("no engine owns the bound workspace".to_string()),
+                    };
+                    let frame = crate::ipc::stream::StreamFrame::new(
+                        crate::ipc::stream::StreamTag::Control,
+                        serde_json::to_vec(&reply).unwrap_or_default(),
+                    );
+                    let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+                }
+            }
+        }
+    }
+
+    /// `bulk_ws` 를 소유한 engine(활성 main view 또는 parked)을 찾아 `f` 를 그 engine 에
+    /// 적용하고 반환값을 돌려준다. 소유 engine 이 없으면 `None`. begin/chunk/commit 이
+    /// 항상 같은 소유 engine 으로 가도록 라우팅을 한 곳에 모은다.
+    fn with_bulk_ws_engine<R>(
+        &mut self,
+        bulk_ws: u32,
+        f: impl FnOnce(&mut crate::core::CoreState) -> R,
+    ) -> Option<R> {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main
+                    .core_state
+                    .find_workspace_index_for_id(bulk_ws)
+                    .is_some()
+            {
+                return Some(f(&mut main.core_state));
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.find_workspace_index_for_id(bulk_ws).is_some() {
+                return Some(f(engine));
+            }
+        }
+        None
     }
 }
 
