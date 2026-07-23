@@ -78,6 +78,10 @@ impl MainView {
             && let Some(cb) = self.clipboard.as_mut()
         {
             cb.set_text(&text);
+            self.state.toasts.push_info(
+                crate::i18n::t("toast.copied_path"),
+                crate::adapters::ui::ToastScope::Surface(sid),
+            );
         }
         self.mark_dirty();
         true

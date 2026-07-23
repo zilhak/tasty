@@ -25,8 +25,9 @@ impl MainView {
         let proxy = self.proxy.clone();
         let proxy = &proxy;
         // copy_path 등 clipboard 쓰기는 self.clipboard 차용이 필요해 match(=state/engine
-        // 차용) 종료 후 처리하도록 텍스트만 모아둔다.
+        // 차용) 종료 후 처리하도록 텍스트만 모아둔다. 토스트 스코프(sid)도 함께 모아둔다.
         let mut pending_copy_text: Option<String> = None;
+        let mut pending_copy_scope: Option<u32> = None;
         let state = &mut self.state;
         let engine = &mut self.core_state;
 
@@ -372,6 +373,9 @@ impl MainView {
                         .explorer_views
                         .get(sid)
                         .and_then(|v| v.selected_paths_text());
+                    if pending_copy_text.is_some() {
+                        pending_copy_scope = Some(sid);
+                    }
                 }
             }
             "explorer_refresh" => {
@@ -420,6 +424,12 @@ impl MainView {
             && let Some(cb) = self.clipboard.as_mut()
         {
             cb.set_text(&text);
+            if let Some(sid) = pending_copy_scope {
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.copied_path"),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                );
+            }
         }
         self.base.dirty = true;
         true

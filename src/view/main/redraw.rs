@@ -1277,7 +1277,7 @@ impl MainView {
             cb.set_text(&text);
         }
         self.state.toasts.push_info(
-            crate::i18n::t("toast.copied"),
+            crate::i18n::t("toast.copied_path"),
             crate::adapters::ui::ToastScope::Surface(surface_id),
         );
     }
