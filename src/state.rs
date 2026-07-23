@@ -561,6 +561,8 @@ pub struct DialogState {
     pub(crate) approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
     pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
+    /// 네이티브 파일 피커(04) popup 의 내비게이션/로딩/선택 상태. `None` 이면 popup 미오픈.
+    pub(crate) file_picker: Option<FilePickerData>,
     /// 도구 메뉴 클릭 / preset save 후속 — PresetView 를 열어달라는 요청.
     /// `selection` 이 `Some` 이면 PresetView 가 열린 뒤 해당 preset 을 선택한다.
     /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
@@ -646,6 +648,7 @@ impl DialogState {
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
+            file_picker: None,
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
             preset_picker_selected: None,
@@ -709,6 +712,60 @@ pub enum FileHandlerPickerResult {
     Selected(crate::file::handler::HandlerId),
     /// 취소 또는 ESC — dispatch 없음.
     Cancelled,
+}
+
+/// 네이티브 파일 피커(04) 의 디렉토리 로드 상태. gallery specimen `FpState` 와 1:1
+/// 대응 — `ErrorConn` 은 원격(mirror) 전용, 로컬은 `ErrorPerm`/`Loaded`/`Empty` 만 쓴다.
+#[derive(Debug, Clone)]
+pub(crate) enum FpLoadState {
+    /// 원격 조회 요청을 보내고 응답 대기 중. `sent_at` 기준 soft timeout 이 지나면
+    /// wrapper 가 `ErrorConn` 으로 전이시킨다(응답 없는 "서버는 살아있는데 응답이
+    /// 안 오는" 케이스 — 세션의 `disconnected` 플래그만으론 못 잡는다).
+    Loading {
+        request_id: u64,
+        sent_at: std::time::Instant,
+    },
+    /// 엔트리 로드 완료(`FilePickerData::entries` 참조, 비어있지 않음).
+    Loaded,
+    /// 로드 완료했으나 디렉토리가 비어있음.
+    Empty,
+    /// 권한 거부(로컬/원격 공통 — 파일시스템 자체의 read 실패).
+    ErrorPerm(String),
+    /// 원격 연결 끊김/타임아웃(원격 전용 — mirror 세션의 `disconnected` 플래그 또는
+    /// soft timeout).
+    ErrorConn(String),
+}
+
+/// 네이티브 파일 피커(04) popup 의 상태. `file_handler_picker` 와 동일하게 popup
+/// 은 직접 dispatch 하지 않고 결과를 [`FilePickerData::result`] 에 남긴다 — host
+/// 본체 layer(`app::dispatch::file_picker`)가 frame 끝에 소비한다.
+pub(crate) struct FilePickerData {
+    /// `Some(local mirror workspace id)` 면 원격 브라우징(호스트 배지 렌더), `None`
+    /// 이면 로컬. 트리거 시점의 **활성 workspace**(`AppState::active_workspace`) 기준으로
+    /// 1회 판별해 고정한다(트리거 이후 활성 workspace 가 바뀌어도 popup 대상은 흔들리지
+    /// 않음).
+    pub(crate) mirror_ws_id: Option<u32>,
+    /// 헤더 host 배지 문자열(`mirror_ws_id.is_some()` 일 때만 유효).
+    pub(crate) remote_host: Option<String>,
+    /// 현재 표시 중인 디렉토리(로컬: 절대경로, 원격: 원격 경로 문자열).
+    pub(crate) current_dir: String,
+    pub(crate) load: FpLoadState,
+    /// 현재 디렉토리의 엔트리(`load` 가 `Loaded`/`Empty` 일 때만 최신).
+    pub(crate) entries: Vec<crate::core::fs_list::DirEntryInfo>,
+    /// 선택된 엔트리 이름(현재 `current_dir` 기준). 현재는 단일 선택만 지원 —
+    /// `Select` action 이 매번 통째로 교체한다(멀티 셀렉트 토글 UI 는 스코프 밖).
+    pub(crate) selected: Vec<String>,
+    /// Confirm/Cancel 결과. host 본체 layer 가 frame 끝에서 소비.
+    pub(crate) result: Option<FilePickerResult>,
+}
+
+/// 네이티브 파일 피커(04) 의 닫기 사유.
+#[derive(Debug, Clone)]
+pub(crate) enum FilePickerResult {
+    /// 취소 또는 ESC — dispatch 없음.
+    Cancelled,
+    /// 사용자가 [열기] — 선택된 절대/원격 경로들과 원격 여부.
+    Confirmed { paths: Vec<String>, is_remote: bool },
 }
 
 /// What is being renamed.
