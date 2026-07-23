@@ -138,6 +138,7 @@ impl PluginManager {
                 generation,
                 frame_seq,
                 full_textures,
+                byte_len,
             } => {
                 // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
                 // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
@@ -150,6 +151,7 @@ impl PluginManager {
                         generation,
                         frame_seq,
                         full_textures,
+                        byte_len,
                     },
                 ));
             }
@@ -170,6 +172,9 @@ impl PluginManager {
                         generation,
                         frame_seq,
                         full_textures,
+                        // popup 은 attach mesh mirror 스코프 밖(surface 전용, TODO
+                        // 15/18) — wire 에 byte_len 이 없어 0(구버전과 동일 fallback).
+                        byte_len: 0,
                     },
                 ));
             }
@@ -190,6 +195,8 @@ impl PluginManager {
                         generation,
                         frame_seq,
                         full_textures,
+                        // banner 도 attach mesh mirror 스코프 밖 — 위 popup 과 동일 사유.
+                        byte_len: 0,
                     },
                 ));
             }

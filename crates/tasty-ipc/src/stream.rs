@@ -53,6 +53,12 @@ pub enum StreamTag {
     Ping = 2,
     /// Graceful close signal (empty payload), either direction.
     Detach = 3,
+    /// Opaque plugin egui-mesh frame bytes, chunked (`crate::mesh_stream`). Kept
+    /// distinct from [`StreamTag::Data`] (which carries PTY bytes, optionally
+    /// surface-muxed) so a mesh consumer never has to disambiguate mesh chunks
+    /// from terminal output at the demux layer — attach mesh mirror
+    /// (`.claude-workspace/todo/15-attach-protocol-mesh-messages.md`).
+    MeshData = 4,
 }
 
 impl StreamTag {
@@ -62,6 +68,7 @@ impl StreamTag {
             1 => Some(Self::Control),
             2 => Some(Self::Ping),
             3 => Some(Self::Detach),
+            4 => Some(Self::MeshData),
             _ => None,
         }
     }
@@ -333,6 +340,72 @@ pub enum StreamControl {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// The attach client's mesh mirror pane pushes the plugin egui-mesh context
+    /// (geometry/scale/theme/focus) it wants the remote surface driven with —
+    /// mirrors `SurfaceSetContextParams` minus the per-frame input batch (that's
+    /// [`StreamControl::MeshInput`]). Sending this **is** the subscribe signal
+    /// (no separate handshake capability negotiation, TODO 15 decision, mirrors
+    /// the existing [`StreamControl::ClientResize`] "request itself declares
+    /// intent" pattern): the server activates mesh forwarding for `surface_id`
+    /// the first time it sees one of these, and re-drives the remote plugin's
+    /// `set_context` any time geometry/theme/focus changes thereafter.
+    ///
+    /// Direction: **client→server**.
+    MeshContext {
+        /// Remote surface id (client-mapped, like every other mirror message).
+        surface_id: u32,
+        /// Physical pixel width of the client's local mirror pane.
+        width_px: u32,
+        /// Physical pixel height of the client's local mirror pane.
+        height_px: u32,
+        /// Logical→physical scale (egui `ScreenDescriptor.pixels_per_point`).
+        pixels_per_point: f32,
+        /// The client's own resolved theme — the mirror should visually match
+        /// what the *attach client* is displaying, not the (possibly headless,
+        /// possibly differently-themed) server.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+        /// Whether the local mirror pane currently has keyboard focus.
+        #[serde(default)]
+        focused: bool,
+    },
+    /// Local input captured over the mesh mirror pane, forwarded verbatim as a
+    /// `RawInputWire` batch (the same wire shape the host already sends plugins
+    /// via `SurfaceSetContextParams.raw_input` — no new event schema). Includes
+    /// `PointerGone`/focus/modifier state, not just discrete clicks/keys, so the
+    /// remote plugin's hover/focus state never drifts from the client's.
+    ///
+    /// Direction: **client→server**. No reply — the resulting
+    /// [`StreamControl`]`::Mesh*` data push (once the remote repaints) is the
+    /// only feedback, same as local (same-process) egui-mesh input forwarding.
+    MeshInput {
+        surface_id: u32,
+        input: tasty_plugin_protocol::protocol::RawInputWire,
+    },
+    /// The client requests the remote re-send **all** of a mesh surface's
+    /// current texture state as a `full_textures=true` frame — sent when the
+    /// client detects a `frame_seq` chain break (fresh subscribe, or a gap after
+    /// reconnect: the server's `SharedBuffer` poll only ever sees the *latest*
+    /// generation, so a client that missed intermediate texture deltas has no
+    /// other way to recover a consistent state). The server answers by setting
+    /// `SurfaceSetContextParams.need_full_textures = true` on its next forward to
+    /// the plugin.
+    ///
+    /// Direction: **client→server**. No explicit ack — the next
+    /// [`StreamTag::MeshData`] chunk sequence for this `surface_id` arriving with
+    /// `full_textures = true` (carried in the chunk header,
+    /// `mesh_stream::MeshChunkMeta`) is the confirmation.
+    MeshFullResendRequest { surface_id: u32 },
+    /// The requested `surface_id` in a [`StreamControl::MeshContext`] is not a
+    /// mesh-mirrorable surface on the remote (not found, not a bundled
+    /// egui-mesh-whitelisted kind, or the surface's plugin isn't running) — a
+    /// **one-shot explicit error**, mirroring the existing
+    /// `execute_forwarded_structural_op` `ok:false`+`reason` convention (TODO 15
+    /// decision: explicit failure over silent drop, so the client never waits
+    /// forever for mesh data that will never arrive).
+    ///
+    /// Direction: **server→client**.
+    MeshError { surface_id: u32, reason: String },
 }
 
 /// The concrete structural operation carried by [`StreamControl::StructuralOp`].
@@ -1003,6 +1076,146 @@ mod tests {
     fn split_axis_ipc_str() {
         assert_eq!(SplitAxis::Vertical.as_ipc_str(), "vertical");
         assert_eq!(SplitAxis::Horizontal.as_ipc_str(), "horizontal");
+    }
+
+    #[test]
+    fn stream_control_mesh_context_roundtrip() {
+        use tasty_plugin_protocol::protocol::ThemeWire;
+        use tasty_type_appearance::theme::ThemeColors;
+
+        // raw JSON 문자열로 ThemeColors 를 만든다(44필드라 `json!` 매크로가 재귀
+        // 한계에 걸림, `set_context_theme_snapshot_round_trips` 의 패턴 재사용).
+        // 값 자체는 무관 — round-trip 동일성만 본다.
+        const COLORS_JSON: &str = r##"{
+            "crust":"#11111b","mantle":"#181825","base":"#1e1e2e","surface0":"#313244",
+            "surface1":"#45475a","surface2":"#585b70","overlay0":"#6c7086","overlay1":"#7f849c",
+            "overlay2":"#9399b2","text":"#cdd6f4","subtext1":"#bac2de","subtext0":"#a6adc8",
+            "placeholder":"#9399b2","blue":"#89b4fa","green":"#a6e3a1","red":"#f38ba8",
+            "yellow":"#f9e2af","peach":"#fab387","mauve":"#cba6f7","teal":"#94e2d5",
+            "sky":"#89dceb","lavender":"#b4befe","flamingo":"#f2cdcd","pink":"#f5c2e7",
+            "maroon":"#eba0ac","rosewater":"#f5e0dc","selection_bg":"#585b70",
+            "vi_cursor_bg":"#f9e2af","search_match_bg":"#f9e2af","search_match_active_bg":"#fab387",
+            "ansi_black":"#45475a","ansi_red":"#f38ba8","ansi_green":"#a6e3a1","ansi_yellow":"#f9e2af",
+            "ansi_blue":"#89b4fa","ansi_magenta":"#f5c2e7","ansi_cyan":"#94e2d5","ansi_white":"#bac2de",
+            "ansi_bright_black":"#585b70","ansi_bright_red":"#f38ba8","ansi_bright_green":"#a6e3a1",
+            "ansi_bright_yellow":"#f9e2af","ansi_bright_blue":"#89b4fa","ansi_bright_magenta":"#f5c2e7",
+            "ansi_bright_cyan":"#94e2d5","ansi_bright_white":"#a6adc8"
+        }"##;
+        let colors: ThemeColors = serde_json::from_str(COLORS_JSON).unwrap();
+
+        let msg = StreamControl::MeshContext {
+            surface_id: 5,
+            width_px: 800,
+            height_px: 600,
+            pixels_per_point: 2.0,
+            theme: Some(ThemeWire {
+                colors,
+                is_light: false,
+                ui_zoom: 1.0,
+            }),
+            focused: true,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"mesh_context""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+
+        // theme 없이도(headless-only, 클라이언트 테마 미확정 등) round-trip.
+        let no_theme = StreamControl::MeshContext {
+            surface_id: 6,
+            width_px: 100,
+            height_px: 100,
+            pixels_per_point: 1.0,
+            theme: None,
+            focused: false,
+        };
+        let s2 = serde_json::to_string(&no_theme).unwrap();
+        assert!(!s2.contains("theme"));
+        assert_eq!(
+            serde_json::from_str::<StreamControl>(&s2).unwrap(),
+            no_theme
+        );
+    }
+
+    #[test]
+    fn stream_control_mesh_input_roundtrip() {
+        use tasty_plugin_protocol::protocol::{RawInputEventWire, RawInputWire};
+
+        let msg = StreamControl::MeshInput {
+            surface_id: 8,
+            input: RawInputWire {
+                time: Some(1.5),
+                focused: true,
+                modifiers: Default::default(),
+                events: vec![
+                    RawInputEventWire::PointerMoved { x: 10.0, y: 20.0 },
+                    RawInputEventWire::PointerGone,
+                ],
+            },
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"mesh_input""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_mesh_full_resend_request_roundtrip() {
+        let msg = StreamControl::MeshFullResendRequest { surface_id: 3 };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"mesh_full_resend_request""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_mesh_error_roundtrip() {
+        let msg = StreamControl::MeshError {
+            surface_id: 11,
+            reason: "surface is not egui-mesh whitelisted".to_string(),
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"mesh_error""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn mesh_events_are_distinct_from_each_other_and_existing_events() {
+        // event tag 가 서로 다른 mesh variant 로 오인식되지 않는지 + 기존 이벤트와도
+        // 섞이지 않는지.
+        let ctx = serde_json::to_string(&StreamControl::MeshContext {
+            surface_id: 1,
+            width_px: 1,
+            height_px: 1,
+            pixels_per_point: 1.0,
+            theme: None,
+            focused: false,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&ctx).unwrap(),
+            StreamControl::MeshContext { .. }
+        ));
+        let resend = serde_json::to_string(&StreamControl::MeshFullResendRequest {
+            surface_id: 1,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&resend).unwrap(),
+            StreamControl::MeshFullResendRequest { .. }
+        ));
+        // 기존 이벤트(resize)가 mesh variant 로 잘못 파싱되지 않는다.
+        let resize = serde_json::to_string(&StreamControl::Resize {
+            surface_id: 1,
+            cols: 80,
+            rows: 24,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<StreamControl>(&resize).unwrap(),
+            StreamControl::Resize { .. }
+        ));
     }
 
     #[test]

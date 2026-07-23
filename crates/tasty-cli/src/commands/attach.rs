@@ -362,6 +362,10 @@ fn run_workspace_mirror_dump(
                 // 처리 불필요. 이 dump 는 기본 500ms 로 짧게 끝나 client 발 Ping 송신은
                 // 두지 않았다(HEARTBEAT_TIMEOUT 20s 이내).
                 StreamTag::Ping => {}
+                // CLI mirror-dump 는 terminal grid 재구성만 한다 — mesh 바이트를
+                // 디코드/렌더할 GPU 파이프라인이 없으므로 무시(attach mesh mirror
+                // 는 GUI client 전용, TODO 15/19).
+                StreamTag::MeshData => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => break,
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -452,6 +456,8 @@ fn run_mirror_dump(
                 // 처리 불필요. 이 dump 도 기본 500ms 로 짧게 끝나 client 발 Ping 송신은
                 // 두지 않았다(HEARTBEAT_TIMEOUT 20s 이내).
                 StreamTag::Ping => {}
+                // 위와 동일 사유 — CLI dump 는 mesh 를 소비하지 않는다.
+                StreamTag::MeshData => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => break, // 정상: deadline 도달.
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -643,6 +649,8 @@ fn raw_bridge_main_loop(
                 // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
                 // 처리 불필요.
                 StreamTag::Ping => {}
+                // raw 브리지는 순수 PTY passthrough — mesh 는 소비 대상이 아니다.
+                StreamTag::MeshData => {}
             },
             Ok(RawEvent::ServerRecvErr) => return Ok(AttachExit::Disconnected),
             // 두 송신 스레드가 모두 죽어야만 발생 — 사실상 도달 불가(stdin 스레드는

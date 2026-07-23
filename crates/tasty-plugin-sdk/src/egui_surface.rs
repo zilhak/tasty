@@ -408,6 +408,7 @@ impl EguiMeshSurface {
         let Some(frame) = self.run_frame_inner(params, run_ui) else {
             return Ok(None);
         };
+        let byte_len = frame.bytes.len() as u32;
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PaintFrame {
             surface_id: self.surface_id,
@@ -415,6 +416,7 @@ impl EguiMeshSurface {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            byte_len,
         })?;
         Ok(Some(generation))
     }
@@ -432,6 +434,7 @@ impl EguiMeshSurface {
         let Some(frame) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
+        let byte_len = frame.bytes.len() as u32;
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PaintFrame {
             surface_id: self.surface_id,
@@ -439,6 +442,7 @@ impl EguiMeshSurface {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            byte_len,
         })?;
         Ok(Some(generation))
     }

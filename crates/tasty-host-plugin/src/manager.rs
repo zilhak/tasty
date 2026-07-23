@@ -224,6 +224,11 @@ pub struct EguiMeshFrame {
     /// 이 frame 의 textures_delta 가 plugin 의 전체 텍스처 상태를 full image 로
     /// 담고 있는가. true 면 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
     pub full_textures: bool,
+    /// `mesh_wire::encode_paint` 가 실제로 만든 바이트 길이(shared buffer 의
+    /// power-of-two capacity 가 아니라). attach mesh mirror(TODO 15/18)가 네트워크로
+    /// 정확한 payload 만 내보내는 데 필요. 0 이면 구버전 plugin — consumer 는 버퍼
+    /// capacity 전체를 fallback 으로 쓴다.
+    pub byte_len: u32,
 }
 
 pub struct PluginManager {

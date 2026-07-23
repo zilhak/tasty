@@ -424,6 +424,7 @@ fn paint_frame_event_round_trip() {
         generation: 1234,
         frame_seq: 56,
         full_textures: true,
+        byte_len: 777,
     };
     let s = serde_json::to_string(&ev).unwrap();
     assert!(s.contains("\"kind\":\"paint_frame\""), "{s}");
@@ -435,12 +436,14 @@ fn paint_frame_event_round_trip() {
             generation,
             frame_seq,
             full_textures,
+            byte_len,
         } => {
             assert_eq!(surface_id, 42);
             assert_eq!(buffer_id, SharedBufferId(9));
             assert_eq!(generation, 1234);
             assert_eq!(frame_seq, 56);
             assert!(full_textures);
+            assert_eq!(byte_len, 777);
         }
         other => panic!("expected PaintFrame, got {other:?}"),
     }
@@ -456,10 +459,12 @@ fn texture_chain_fields_default_for_legacy_json() {
         PluginEvent::PaintFrame {
             frame_seq,
             full_textures,
+            byte_len,
             ..
         } => {
             assert_eq!(frame_seq, 0);
             assert!(!full_textures);
+            assert_eq!(byte_len, 0);
         }
         other => panic!("expected PaintFrame, got {other:?}"),
     }

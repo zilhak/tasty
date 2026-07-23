@@ -5782,6 +5782,7 @@ dependencies = [
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-telemetry",
+ "tasty-type-appearance",
  "tasty-utils",
  "tempfile",
  "thiserror 1.0.69",

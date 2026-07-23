@@ -457,6 +457,10 @@ impl App {
                             // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋
                             // 하므로 별도 처리 불필요.
                             StreamTag::Ping => {}
+                            // TODO 19(attach 클라이언트 mesh 렌더)가 청크 재조립 +
+                            // MirrorEvent 로의 연결을 구현한다 — 15번(프로토콜)만
+                            // 완료된 이 시점엔 아직 소비자가 없어 무시.
+                            StreamTag::MeshData => {}
                         },
                         Err(_) => {
                             disconnected.store(true, Ordering::SeqCst);

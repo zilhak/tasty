@@ -406,6 +406,15 @@ pub enum PluginEvent {
         /// true 면 host 는 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
         #[serde(default)]
         full_textures: bool,
+        /// `mesh_wire::encode_paint` 가 실제로 만든 바이트 길이. shared buffer 는
+        /// `size.next_power_of_two()` 로 할당돼 뒤쪽에 이전 frame 의 잔여(trailing
+        /// capacity) 바이트가 남을 수 있다 — 로컬(같은 프로세스) GPU 디코드는
+        /// self-terminating 파싱이라 이를 무시하지만, attach mesh mirror 가 buffer
+        /// 를 네트워크로 그대로 내보낼 때는 정확한 payload 경계가 필요하다(attach
+        /// mesh mirror TODO 15/18). 0 이면 구버전 plugin — attach 쪽은 버퍼 전체
+        /// capacity 를 fallback 으로 쓴다.
+        #[serde(default)]
+        byte_len: u32,
     },
     /// egui-mesh popup: plugin 이 popup 인스턴스용 mesh 를 commit 했음을 알린다.
     /// [`PluginEvent::PaintFrame`] 의 popup 대응 — surface_id 대신 host 발급
