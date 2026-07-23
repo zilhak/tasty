@@ -1601,6 +1601,13 @@ fn next_bulk_transfer_id() -> u64 {
 /// 않게 한다. base64 를 쓰지 않으므로 capture(700 KiB)보다 크게 잡을 수 있다.
 const BULK_CHUNK_RAW_LEN: usize = stream::MAX_FRAME_LEN as usize - stream::BULK_CHUNK_HEADER_LEN;
 
+/// (09) 원격이 begin/commit 을 거부(`BulkResult{ok:false}`)했을 때 `upload_file_over_bulk`
+/// 이 반환하는 `Err` 메시지의 접두. **거부 vs 전송 에러**를 소비자(08 결과 처리)가
+/// 구분하는 안정 계약이다 — 이 접두면 원격 정책 거부(예: 07 capacity exceeded)라 재시도가
+/// 무의미(실패 팝업 Dismiss 단독), 아니면 전송/프로토콜 에러라 재시도 가능(Retry). 문자열
+/// 매칭이지만 생산·소비가 같은 크레이트라 이 const 로 계약을 고정한다.
+pub(crate) const BULK_REJECT_PREFIX: &str = "remote rejected bulk upload: ";
+
 /// 한 청크의 raw payload 크기 상한. base64 인코딩(약 4/3 팽창) 후에도
 /// `StreamTag::Control` 프레임의 `MAX_FRAME_LEN`(1MiB) 에 JSON 오버헤드를 포함해
 /// 여유 있게 들어가도록 700KiB 로 잡는다(대부분의 스크린샷은 청크 1~2개).
@@ -1822,7 +1829,8 @@ impl App {
                 })?;
             (sess.bulk_port, sess.remote_workspace)
         };
-        upload_file_over_bulk(port, remote_ws, file_name, bytes)
+        // 진행 통지 불필요한 동기 편의 래퍼(현 미사용) — no-op 콜백.
+        upload_file_over_bulk(port, remote_ws, file_name, bytes, |_, _| {})
     }
 
     /// (08) `local_ws_id` mirror 세션의 bulk 업로드 대상 `(local port, remote workspace)`
@@ -1856,11 +1864,17 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
 }
 
 // 06-β 가 완성한 전송 자유 함수 — 08(이미지 paste)이 백그라운드 스레드에서 호출한다.
+//
+// `on_progress(sent, total)` (09): 각 청크 전송 직후 누적 전송 바이트를 통지한다. 호출자
+// (08 워커)가 이 콜백으로 진행 이벤트를 메인 루프에 흘려 determinate progress 팝업을
+// 갱신한다. 전송 시작 시 1회(0, total) 로도 발화해 0% 프레임을 즉시 띄운다. 통지가
+// 필요 없으면 `|_, _| {}` 를 넘긴다. 06 전송 로직 자체는 불변 — 콜백 호출만 추가.
 pub(crate) fn upload_file_over_bulk(
     port: u16,
     remote_ws: u32,
     file_name: &str,
     bytes: &[u8],
+    on_progress: impl Fn(u64, u64),
 ) -> anyhow::Result<String> {
     let transfer_id = next_bulk_transfer_id();
 
@@ -1886,8 +1900,17 @@ pub(crate) fn upload_file_over_bulk(
     // chunk — raw 바이트를 (MAX_FRAME_LEN - header) 미만으로 청킹, 각 part 앞에 binary
     // sub-header(transfer_id/seq)를 얹어 Data 프레임으로. base64 미사용. 빈 파일도
     // begin→commit 만으로 0바이트 저장되도록 청크 루프를 건너뛴다.
+    let total = bytes.len() as u64;
+    // 09: 시작 즉시 0% 프레임을 띄우도록 초기 통지(빈 파일은 이 1회만).
+    on_progress(0, total);
+    let mut sent: u64 = 0;
     for framed in bulk_chunk_frames(transfer_id, bytes) {
+        // raw part 길이 = framed 길이 − binary sub-header(transfer_id/seq).
+        let part_len = (framed.len() - stream::BULK_CHUNK_HEADER_LEN) as u64;
         conn.send(StreamTag::Data, &framed)?;
+        sent += part_len;
+        // 09: 청크 전송 진행 통지(누적 바이트). 콜백이 채널/AppEvent 로 메인에 흘린다.
+        on_progress(sent, total);
     }
 
     // commit — 전송 완료. 서버가 저장 확정 후 BulkResult 회신.
@@ -1917,7 +1940,7 @@ pub(crate) fn upload_file_over_bulk(
                             })
                         } else {
                             Err(anyhow::anyhow!(
-                                "remote rejected bulk upload: {}",
+                                "{BULK_REJECT_PREFIX}{}",
                                 reason.unwrap_or_else(|| "unknown".to_string())
                             ))
                         };

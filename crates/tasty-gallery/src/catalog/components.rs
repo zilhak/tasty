@@ -63,3 +63,4 @@ pub mod switch_overlay;
 pub mod tab_bar;
 pub mod toast;
 pub mod tools_menu;
+pub mod transfer;

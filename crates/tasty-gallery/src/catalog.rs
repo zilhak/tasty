@@ -785,6 +785,28 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "transfer",
+                    "Remote file transfer",
+                    vec![
+                        spec(
+                            "transfer-progress",
+                            "Progress — determinate bar (system's first)",
+                            Some(
+                                "400px · scrim-centered · recessed 4px track + accent fill, 0ms · row-repeat for multiple files",
+                            ),
+                            components::transfer::draw,
+                        ),
+                        spec(
+                            "transfer-failed",
+                            "Failed — rejected (Dismiss) vs. mid-transfer (Retry)",
+                            Some(
+                                "danger glyph · mono reason well (command-well) · no danger-fill button",
+                            ),
+                            components::transfer::draw_error,
+                        ),
+                    ],
+                ),
+                section(
                     "search",
                     "Search bar",
                     vec![spec(

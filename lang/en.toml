@@ -1072,13 +1072,28 @@ mirror_structural_forward_failed = "The remote workspace couldn't apply that cha
 mirror_capture_saved = "Screenshot copied to the remote clipboard."
 # Shown when that upload/remote clipboard write fails.
 mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
-# Shown when a clipboard image pasted into a mirror workspace terminal couldn't be
-# uploaded to the remote (e.g. remote storage capacity exceeded, transfer error).
-# No path is inserted in that case.
-mirror_image_upload_failed = "Couldn't upload the pasted image to the remote."
 # Shown when a mirror workspace is torn down because the remote connection was
 # lost (EOF / force-detach / heartbeat timeout / an outbound frame write failed).
 mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
+
+# (09) Remote file-transfer feedback popups — progress (determinate) + failed.
+[transfer.progress]
+# Header of the transfer progress popup (download glyph). Framed from the
+# receiving side (the remote instance receives the file being uploaded).
+title = "Receiving file"
+# Ghost button — stops watching progress (the background transfer still finishes).
+cancel = "Cancel"
+
+[transfer.error]
+# Header of the transfer failed popup (danger glyph).
+title = "Transfer failed"
+# Follows the (bold) file name: "<name> could not be received."
+body_suffix = " could not be received."
+# Dismiss the failure. Sole action when the remote rejected the transfer
+# (e.g. capacity exceeded) — retrying wouldn't help.
+dismiss = "Dismiss"
+# Re-attempt — shown only when the transfer failed mid-flight (transport error).
+retry = "Retry"
 
 # Webview(html) surface host chrome — painted by the host before/around the
 # native WebView overlay (placeholder when no page, boundary backdrop otherwise).

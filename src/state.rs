@@ -25,6 +25,8 @@ use std::collections::VecDeque;
 
 #[cfg(feature = "gui")]
 use crate::adapters::ui::info_modal::InfoModal;
+#[cfg(feature = "gui")]
+use crate::adapters::ui::popup::transfer::{TransferError, TransferProgress};
 use crate::core::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
 #[cfg(feature = "gui")]
@@ -584,6 +586,14 @@ pub struct DialogState {
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
     /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
     pub(crate) pending_script_confirm: Option<PendingScriptConfirm>,
+    /// (09) 원격 전송 진행 팝업(`transfer_progress`) 상태. 진행 중인 파일 행들을 담고,
+    /// 08 워커 진행 이벤트가 갱신한다. 모든 행이 끝나면 `None` + 팝업 self-close.
+    #[cfg(feature = "gui")]
+    pub(crate) transfer_progress: Option<TransferProgress>,
+    /// (09) 원격 전송 실패 팝업(`transfer_error`) 큐. 전송 실패/거부 시 push, Dismiss 시
+    /// pop(큐가 비면 팝업 닫힘 — info_modal 큐 패턴). head 가 현재 화면.
+    #[cfg(feature = "gui")]
+    pub(crate) transfer_error: VecDeque<TransferError>,
 }
 
 /// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031 TODO 06).
@@ -656,6 +666,10 @@ impl DialogState {
             rail_category_popup: None,
             pending_category_delete: None,
             pending_script_confirm: None,
+            #[cfg(feature = "gui")]
+            transfer_progress: None,
+            #[cfg(feature = "gui")]
+            transfer_error: VecDeque::new(),
         }
     }
 

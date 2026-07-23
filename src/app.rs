@@ -196,6 +196,12 @@ pub(crate) struct App {
     pub(crate) image_upload_tx: std::sync::mpsc::Sender<image_upload::ImageUploadOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) image_upload_rx: std::sync::mpsc::Receiver<image_upload::ImageUploadOutcome>,
+    /// (09) mirror 파일 전송 진행 이벤트 채널 — 업로드 워커 on_progress → 메인 루프.
+    /// 진행 팝업의 determinate bar/바이트/속도를 갱신한다(`drain_transfer_progress`).
+    #[cfg(feature = "gui")]
+    pub(crate) transfer_progress_tx: std::sync::mpsc::Sender<image_upload::TransferProgressMsg>,
+    #[cfg(feature = "gui")]
+    pub(crate) transfer_progress_rx: std::sync::mpsc::Receiver<image_upload::TransferProgressMsg>,
     /// 모든 윈도우가 공유하는 wgpu `Instance`. 부트(`App::new`) 시 `Backends::all()`
     /// 로 1회 생성한다. 창마다 `Instance::new`(~50ms) 를 반복하지 않으려고 App 이
     /// 소유 — 모든 surface 가 이 instance 에서 만들어지고 그 수명에 의존하므로
@@ -229,6 +235,7 @@ impl App {
         let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
         let (screenshot_capture_tx, screenshot_capture_rx) = std::sync::mpsc::channel();
         let (image_upload_tx, image_upload_rx) = std::sync::mpsc::channel();
+        let (transfer_progress_tx, transfer_progress_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
@@ -269,6 +276,8 @@ impl App {
             screenshot_capture_rx,
             image_upload_tx,
             image_upload_rx,
+            transfer_progress_tx,
+            transfer_progress_rx,
             // 공유 wgpu instance — 부트 시 1회. `Backends::all()` 로 백엔드 자동
             // 선택을 유지한다(어댑터는 첫 윈도우 surface 로 지연 생성 → gpu_adapter).
             gpu_instance: Arc::new(wgpu::Instance::new(&wgpu::InstanceDescriptor {

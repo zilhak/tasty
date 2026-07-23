@@ -222,6 +222,40 @@ pub fn all_defs() -> &'static [PopupDef] {
                 min_size: None,
                 draw_fn: super::remote_attach::draw_remote_attach_popup,
             },
+            // (09) 원격 전송 진행 — scrim 중앙 headless, close_on_outside_click=false
+            // (전송 중 실수 dismiss 방지), 모든 행 완료 시 draw_fn 이 self-close.
+            PopupDef {
+                id: super::transfer::TRANSFER_PROGRESS_POPUP_ID,
+                title_key: "transfer.progress.title",
+                title_fn: None,
+                default_size: egui::vec2(400.0, 180.0),
+                sizer: Some(super::transfer::transfer_progress_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: true,
+                sticky_focus: false,
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::transfer::draw_transfer_progress,
+            },
+            // (09) 원격 전송 실패 — scrim 중앙 headless, 기본 dismiss(Esc/scrim). Retry 는
+            // 전송 중 실패만(draw_fn 이 판정). danger-fill 버튼 금지.
+            PopupDef {
+                id: super::transfer::TRANSFER_ERROR_POPUP_ID,
+                title_key: "transfer.error.title",
+                title_fn: None,
+                default_size: egui::vec2(400.0, 200.0),
+                sizer: Some(super::transfer::transfer_error_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::transfer::draw_transfer_error,
+            },
             PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                 title_key: "preset.popup.apply_workspace_title",

@@ -277,3 +277,23 @@ Tier-3 블록 (changelog `2026-07-09-settings-preset-drilldown`). 위젯
 
 > desc 줄과 라벨 사이 1px 간격(디자인 `.tasty-listctrl__text { gap: 1px }`)은 spacing
 > 스텝 밖 구조 간격 → `tasty-ui-widgets::tokens::STRUCT_GAP_1` (primitive size-1 대응 관례).
+
+## Remote file transfer (progress/error 09)
+
+디자인 `tokens/components.css` 의 `--tasty-transfer-popup-width` + `--tasty-progress-*`(5종).
+09 진행/실패 팝업(`popup/transfer.rs`)의 프레임 폭 + **시스템 최초 determinate progress bar**.
+switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·primitive 로 종착 → 신규 Theme
+필드 0**([design-parity-notes](design-parity-notes.md) "component-tier 토큰은 신규 필드 안 만듦").
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
+|---|---|---|---|
+| `--tasty-transfer-popup-width` | → `size-400` (400px) | 화면 전용 popup `default_size.x` const 400 (token-policy §c) | 진행+실패 프레임 폭. popup 좌표라 typed-length 밖(egui `Vec2`) |
+| `--tasty-progress-height` | → `size-4` (4px) | `Theme::spacing_xs`(=4) | determinate bar 두께. size-4 = space-xs 값 일치 → 기존 필드 재사용 |
+| `--tasty-progress-radius` | → `radius-sm` (2px) | `Theme::corner_radius_sm` | bar 라운드 |
+| `--tasty-progress-track-bg` | → `bg-app` | `Theme::bg_app()` | recessed track(패널보다 어둡게) |
+| `--tasty-progress-fill-bg` | → `accent-primary` | `Theme::accent_primary()` | determinate fill(0ms, 폭=바이트) |
+
+> **화면 전용 raw px(token-policy §c, egui popup 좌표)**: 헤더/푸터 패딩(14/12/10)·바디 패딩(14)·
+> gap(10)·헤더 콘텐츠 높이(20)는 디자인 inline raw 로 `popup/transfer.rs`·specimen module const.
+> reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
+> painter 인라인(track `bg_app` + fill `accent_primary`).

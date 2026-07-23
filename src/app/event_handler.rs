@@ -119,6 +119,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ImageUploadReady => {
                 self.drain_image_upload_results();
             }
+            // (09) mirror 파일 전송 진행 이벤트(청크 전송)가 도착했다. 진행 채널을 drain 해
+            // 진행 팝업 행(바이트/속도/determinate bar)을 갱신한다.
+            AppEvent::TransferProgressTick => {
+                self.drain_transfer_progress();
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,

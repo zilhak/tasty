@@ -550,3 +550,38 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 `elide()` 재사용 검토). **신규 Theme 필드 0** — 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
+
+## Remote file transfer 팝업 (Overlays) — 진행 + 실패 (09)
+
+디자인 `gallery/overlays-shared.jsx` `TransferProgressFrame`(09a) / `TransferErrorFrame`(09b)
+↔ 본체 `src/adapters/ui/popup/transfer.rs`(PopupDef `transfer_progress` / `transfer_error`)
+↔ 갤러리 `catalog/components/transfer.rs`. 06 bulk 전송 + 08 이미지 paste 업로드에 대한
+사용자 피드백 UI. **진행은 시스템 최초 determinate progress bar**(indeterminate `Spinner` 와 구분).
+
+| 디자인 jsx | 본체 함수 (`popup/transfer.rs`) | 갤러리 함수 (`components/transfer.rs`) |
+|---|---|---|
+| `TransferProgressFrame`(container) | `draw_transfer_progress` (PopupDef draw_fn) | `progress_card` |
+| 헤더(download glyph + "Receiving file" + mono pct) | `header_band` | `header_band` |
+| 파일 행(file glyph + mono ellipsis name) | `progress_row` | `progress_row` |
+| determinate 4px bar(track+fill) | `progress_bar` | `progress_bar` |
+| done/total · rate (mono muted, space-between) | `progress_row` 내 | `progress_row` 내 |
+| ghost Cancel(footer) | `footer_buttons` + `Button::Ghost` | `footer_buttons` + `Button::Ghost` |
+| `TransferErrorFrame`(container) | `draw_transfer_error` (PopupDef draw_fn) | `error_card` |
+| 헤더(warn glyph + "Transfer failed") | `header_band`(ALERT_TRIANGLE·accent-danger) | `header_band` |
+| prose(`<b>name</b> could not be received.`) | `horizontal_wrapped` mono bold + 산문 | 동 |
+| reason well(command-well: bg-app+separator, mono danger) | `reason_well` | `reason_well` |
+| Dismiss / (mid-transfer)Retry (danger-fill 금지) | `footer_buttons`(Secondary/Ghost) | 동 |
+
+**본체 vs 갤러리 차이**: 갤러리는 main 바이너리 비의존이라 `draw_transfer_*`(DialogState 의존)을
+직접 못 부르고 같은 구조·토큰으로 미러(정적 seed 데이터). scrim dim 은 본체 `draw.rs` 가 그리므로
+갤러리 specimen 은 프레임을 클러스터에 **직접** 렌더한다(scrim 스테이지 미사용 — file_picker 관례,
+[design-parity-notes](design-parity-notes.md) "transfer — scrim_backdrop 스테이지…" 참조). 진행
+determinate bar 는 `Spinner` 처럼 위젯화하지 않고 painter 인라인(track `bg_app` + fill `accent_primary`,
+0ms). **신규 Theme 필드 0** — 전부 기존 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
+i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suffix,dismiss,retry}`).
+
+**본체 배선(06/08)**: 진행률은 `upload_file_over_bulk` 에 `on_progress(sent,total)` 콜백을 추가해
+청크마다 통지 → 08 워커가 `transfer_progress` 채널로 흘림 → `drain_transfer_progress` 가 행 갱신.
+실패는 08 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
+`BULK_REJECT_PREFIX`(원격 거부) 면 Dismiss 단독, 아니면 Retry(재큐잉). 상세
+[features/attach/remote-file-transfer](../../features/attach/index.md).

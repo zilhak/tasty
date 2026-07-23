@@ -511,3 +511,16 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   "Both address bars integrated: the shared PathField …". 소스 `crates/tasty-ui-widgets/src/path_field.rs`,
   specimen `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
   후속 TODO. 2026-07-09 반영.
+
+## transfer 팝업 — scrim_backdrop 스테이지가 카드보다 짧으면 클러스터가 겹친다 (2026-07-23)
+
+- **증상**: 갤러리 transfer specimen 을 `kit::scrim_backdrop`(고정 height) 안에 카드를 얹어
+  그렸더니, 다중 파일(2행) 진행 카드가 스테이지 높이(240)를 넘쳐 아래 클러스터와 겹쳐 렌더됐다.
+- **원인(검증)**: `scrim_backdrop` 은 고정 rect 를 allocate 하고 모달을 `new_child` **오버레이**로
+  그린다 — 카드는 부모 flow 의 커서를 진행시키지 않아(오버레이) 스테이지보다 크면 아래로 새어
+  다음 cluster 위에 겹친다. 카드 높이가 가변(행 수)이라 고정 스테이지로는 담을 수 없다.
+- **처방**: 실제 scrim dim 은 본체 `draw.rs`(scrim id-set)가 그리므로, 갤러리 specimen 은
+  scrim 스테이지 없이 프레임을 **클러스터에 직접 렌더**한다(`egui::Frame` 이 flow 에서 정상
+  공간 확보). file_picker specimen 이 이미 이 관례(card 를 cluster 에 직접) — 동일하게 맞췄다.
+- **근거**: `crates/tasty-gallery/src/catalog/components/transfer.rs`. 캡처 검증(Overlays 페이지
+  임시 상단 배치 → `TASTY_GALLERY_SHOT=3` → 겹침 해소 확인).

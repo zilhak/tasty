@@ -88,6 +88,11 @@ pub(crate) enum AppEvent {
     /// mirror surface 입력에 삽입하거나(실패 시 Warning toast) 처리한다.
     #[cfg(feature = "gui")]
     ImageUploadReady,
+    /// (09) mirror 파일 전송 업로드 워커의 진행 이벤트(청크 전송)가 도착했다는 wake 신호.
+    /// App 이 진행 채널(`transfer_progress_rx`)을 drain 해 진행 팝업의 행(바이트/속도/
+    /// determinate bar)을 갱신한다.
+    #[cfg(feature = "gui")]
+    TransferProgressTick,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.

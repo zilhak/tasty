@@ -280,7 +280,12 @@ impl PopupManager {
             if !scrim_painted
                 && matches!(
                     popup_id,
-                    "remote_tool" | "remote_attach" | "command_palette" | "port_scanner"
+                    "remote_tool"
+                        | "remote_attach"
+                        | "command_palette"
+                        | "port_scanner"
+                        | super::transfer::TRANSFER_PROGRESS_POPUP_ID
+                        | super::transfer::TRANSFER_ERROR_POPUP_ID
                 )
             {
                 painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
@@ -294,6 +299,8 @@ impl PopupManager {
                 "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
                     th.bg_panel().into()
                 }
+                super::transfer::TRANSFER_PROGRESS_POPUP_ID
+                | super::transfer::TRANSFER_ERROR_POPUP_ID => th.bg_panel().into(),
                 _ => th.surface_raised().into(),
             };
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);

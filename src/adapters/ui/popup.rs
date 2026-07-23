@@ -12,6 +12,7 @@ pub(crate) mod rail_category;
 pub(crate) mod remote_attach;
 pub(crate) mod remote_tool;
 pub(crate) mod script_confirm;
+pub(crate) mod transfer;
 
 use crate::state::AppState;
 
@@ -303,7 +304,12 @@ impl PopupState {
         // 직접 준다 (design-parity: 통짜 패딩으로 뭉개지 않기 위함).
         let margin = if matches!(
             self.id,
-            "remote_tool" | "remote_attach" | "command_palette" | "port_scanner"
+            "remote_tool"
+                | "remote_attach"
+                | "command_palette"
+                | "port_scanner"
+                | transfer::TRANSFER_PROGRESS_POPUP_ID
+                | transfer::TRANSFER_ERROR_POPUP_ID
         ) {
             0.0
         } else {
