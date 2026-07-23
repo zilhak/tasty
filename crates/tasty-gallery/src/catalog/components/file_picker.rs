@@ -11,9 +11,10 @@
 //! C 프레임보더) 중 **A 배지가 사용자 확정**되어 이 specimen 은 A만 반영한다 —
 //! B/C 는 코드화하지 않는다(디자인측 changelog 에만 후보로 남는다).
 //!
-//! **본체(egui `PopupDef`) 미구현** — 원격 디렉토리 탐색 채널 아키텍처가 아직
-//! 결정되지 않아 이번 반영은 갤러리 specimen 까지만(gallery-first 1단계, 본체 배선은
-//! 별도 후속 작업).
+//! **본체 구현**: `src/adapters/ui/popup/file_picker.rs`(`PopupDef` id
+//! `"file_picker"`, Tools 메뉴 트리거). 이 specimen 은 mock 데이터로 독립 렌더 —
+//! 본체와 코드 공유는 하지 않는다(`file_handler_picker` 갤러리 specimen과 동일
+//! 관례). 원격 채널 설계는 `docs/adr/0046-native-file-picker-remote-attach.md`.
 //!
 //! `draw` = 개요(로컬/원격 loaded 나란히). `draw_states` = loading·empty·
 //! permission-denied·connection-lost·multi-select 5상태. 키보드 focus-ring 은
