@@ -14,7 +14,7 @@
 //! **본체 구현**: `src/adapters/ui/popup/file_picker.rs`(`PopupDef` id
 //! `"file_picker"`, Tools 메뉴 트리거). 이 specimen 은 mock 데이터로 독립 렌더 —
 //! 본체와 코드 공유는 하지 않는다(`file_handler_picker` 갤러리 specimen과 동일
-//! 관례). 원격 채널 설계는 `docs/adr/0046-native-file-picker-remote-attach.md`.
+//! 관례). 원격 채널 설계는 `docs/adr/0053-native-file-picker-remote-attach-channel.md`.
 //!
 //! `draw` = 개요(로컬/원격 loaded 나란히). `draw_states` = loading·empty·
 //! permission-denied·connection-lost·multi-select 5상태. 키보드 focus-ring 은
