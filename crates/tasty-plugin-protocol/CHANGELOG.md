@@ -23,6 +23,7 @@
 - IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
 - `AuthAck { ok, reason }` + `AuthAckEnvelope { auth_ack }` — plugin이 `AuthMessage` 송신 후 호스트로부터 받는 단일 노티. ok=true면 메인 루프 진입, ok=false면 즉시 거부. 메인 루프의 `PluginRequest`와 다른 envelope(`auth_ack` 키)로 파서가 분리된다. SDK 측에서 `PluginError::HandshakeRejected`/`HandshakeTimeout`으로 매핑됨. (additive, api_version 유지)
 - (PR 4에서 제거됨)
+- `PluginEvent::PaintFrame` 에 `byte_len: u32`(optional + default 0, additive) 추가 — SharedBuffer 는 `size.next_power_of_two()` 로 할당돼 뒤쪽에 이전 frame 의 잔여 capacity 바이트가 남을 수 있다. 로컬(같은 프로세스) GPU 디코드는 self-terminating 파싱이라 이를 무시했지만, attach mesh mirror(host가 원본 mesh 바이트를 네트워크로 그대로 재중계하는 경로, [`docs/dev-guide/egui-mesh-channel.md` "attach mesh mirror 소비 경로"](../../docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로))는 정확한 payload 경계가 필요해 추가됐다. 구버전 plugin(필드 미송신)은 `0`으로 파싱되고, attach 쪽은 그 경우 버퍼 전체 capacity 를 fallback 으로 쓴다.
 
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`이 `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list`(점 표기)로 정규화됨. 핸들러/method_meta는 새 이름만 등록.

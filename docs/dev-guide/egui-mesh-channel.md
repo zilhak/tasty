@@ -267,6 +267,53 @@ bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` �
 때만 등록된다 (epaint 와이어가 host·plugin 동일 컴파일을 강제하는 동안의 보호). 현재
 허용: `(markdown, com.tasty.markdown)`, `(mesh_demo, com.tasty.mesh-demo)`.
 
+## attach mesh mirror 소비 경로
+
+위 채널은 host 가 **자기 프로세스의 plugin** 을 구동하는 경로를 전제한다. attach(원격
+피점유측)에서는 이 채널의 소비자가 하나 더 있다 — mirror 를 붙인 **client** 가 원격의
+plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원격으로 되돌려 보낸다. 프로토콜
+결선(어떤 `StreamControl` variant 로 무엇을 나르는지)은
+[attach-behavior.md "mesh mirror 채널"](attach-behavior.md#mesh-mirror-채널) 에 있다.
+여기서는 이 소비자가 위 채널의 각 구성 요소를 어떻게 재사용/대체하는지만 정리한다.
+
+- **서버측: 헤드리스 `PluginManager` 부트스트랩 (기존 채널 그대로 재사용)** — attach 서버는
+  현재 헤드리스 한정(`boot::run_headless`)이라, 위 표의 "host→plugin set_context + 입력
+  forward"/"host 합성" 두 축 중 **입력 forward 축만** 대체되고 **plugin 프로세스 구동
+  자체는 기존 `PluginManager`/`crates/tasty-host-plugin` 를 그대로 쓴다** — attach 전용
+  plugin 매니저가 별도로 있는 게 아니다. `src/boot/headless_plugins.rs::forward_mesh_frames`
+  가 매 tick `MeshMirrorRegistry`(`src/core/mesh_mirror.rs`)의 dirty/누적 입력/modifiers 를
+  읽어 위 "데이터 흐름"의 `surface.set_context` 를 그대로 호출하고, 되돌아오는
+  `PaintFrame` 을 그대로 받아 `StreamTag::MeshData` 로 client 에 재중계한다 — **host 합성
+  (`egui_wgpu::Renderer`, TextureId 격리, frame_seq 체인 검증)은 여기서 전혀 일어나지
+  않는다**(서버는 화면이 없다). 원본 바이트를 그대로 client 에 넘길 뿐이다.
+- **client측: host 합성 축의 재구현** — client 가 원본 `PaintFrame` 바이트를 받아 **자기
+  화면에서** 위 "host 합성" 단계(decode → 전용 `egui_wgpu::Renderer` → surface rect 합성)를
+  그대로 재현한다. `decode_mesh_into_target` 은 이 재사용을 위해 SharedBuffer 파싱 부분과
+  디코드 로직을 분리했다 — attach 경로는 SharedBuffer 가 없으므로(네트워크로 바이트가 옴)
+  `decode_mesh_bytes_into_target`(source-neutral)을 직접 부른다. 텍스처 delta 체인 검증
+  (`frame_seq`/`chain_ok`/`AcceptedStale`/`NeedsFull`, 위 "텍스처 상태 수명 + delta 체인")
+  규칙은 로컬 경로와 **완전히 동일**하게 client 에서도 적용된다 — 다만 복구 요청
+  (`need_full_textures`)이 로컬 IPC 대신 `StreamControl::MeshFullResendRequest` 네트워크
+  프레임으로 나간다는 점만 다르다.
+- **surface stand-in**: 로컬 `EguiMeshSurface`(`src/plugin_bridge/egui_mesh_surface.rs`)의
+  attach 대응은 `AttachMeshSurface`(`crates/tasty-model/src/attach_mesh_surface.rs`) —
+  plugin 콘텐츠(예: markdown 파일 경로)를 소유하지 않는 순수 표시용 stand-in이라 `file` 필드가
+  없다(원격이 이미 콘텐츠를 소유·bootstrap 한 상태이므로 client 가 재전달할 게 없다).
+- **입력 forward 축의 대응 모듈**: `src/view/main/egui_mesh.rs`(로컬) ↔
+  `src/view/main/attach_mesh_input.rs`(attach) — 후자는 좌표/modifier 변환 헬퍼
+  (`mesh_local_point`/`mesh_modifiers`/`mesh_theme_snapshot`/`map_button`/`key_wire_event`)를
+  그대로 재사용하고, 목적지만 로컬 `PluginManager` 대신 `CoreState` forward 큐(네트워크)로
+  바꾼다. IME candidate 위치 한계·클립보드 미지원 등 위 "알려진 한계"는 attach 경로에도
+  동일하게 적용된다(입력 자체가 같은 wire 이벤트를 타므로).
+- **개방 정책은 서버측에서 재검증**: client 는 서버가 보낸 디스크립터의 `role: "mesh"` 를
+  신뢰하지 않고, 서버(`build_workspace_tree_surfaces`, `src/core/attach_runtime.rs`)가
+  `Surface::attach_mesh_info()` + 위 "개방 정책" 화이트리스트(`is_egui_mesh_allowed`)로 재검증한
+  결과만 `role: "mesh"` 로 내려보낸다 — 화이트리스트 밖 kind 는 attach 에서도 `role:
+  "placeholder"` 로 남아 mirror 렌더 대상이 아니다.
+- **gui-as-server 미지원**: 헤드리스만 위 서버측 소비를 배선했다 — gui 인스턴스가 attach
+  서버가 되는 경우 로컬 `PluginManager` 소유권과의 공존 방식이 아직 설계돼 있지 않다(TODO
+  24 로 분리 예정).
+
 ## plugin 작성
 
 `tasty-plugin.toml` 의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하고,

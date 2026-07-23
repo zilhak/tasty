@@ -24,8 +24,9 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 ### surface 단위 vs workspace 단위
 
 - **surface attach**: 단일 터미널 surface 를 mirror. 한 연결 = 한 터미널.
-- **workspace attach**: 워크스페이스를 점유하면 그 안 **모든 터미널 surface 를 트리째 mirror**(분할 방향/비율 포함)하고, **비-터미널 surface**(markdown/image/explorer 등)는 mirror 불가라 placeholder 로 숨긴다. workspace lock 은 멤버 터미널 전부를 surface lock 에도 등록하므로, 멤버가 이미 다른 client 에 점유돼 있으면 workspace attach 를 **거부**(부분 점유 충돌 방지).
-  - **이 mirror 불가는 기술적 미구현이지 보안상 의도적 배제가 아니다.** attach 로 나가는 콘텐츠 전체는 이미 SSH+loopback 연결 경계 신뢰 모델([ADR-0004](../../adr/0004-ipc-transport-tcp.md), [attach-behavior "IPC 표면"](../../dev-guide/attach-behavior.md#ipc-표면-attach))에 위임돼 있다 — 향후 비-터미널 surface mirror 를 구현하더라도, 콘텐츠 종류가 다르다는 이유로 별도 권한 게이트를 새로 만들 근거는 없다.
+- **workspace attach**: 워크스페이스를 점유하면 그 안 **모든 터미널 surface 를 트리째 mirror**(분할 방향/비율 포함)한다. **bundled egui-mesh surface**(markdown/image/mesh_demo — bundled 화이트리스트에 등록된 kind 한정)는 **mesh mirror** 로 실제 콘텐츠가 보이고 클릭/타이핑까지 원격 plugin 에 도달한다(인터랙티브). 그 외 비-터미널 surface(explorer 등, 화이트리스트 밖 kind 포함)는 여전히 mirror 불가라 placeholder 로 숨긴다. workspace lock 은 멤버 터미널 전부를 surface lock 에도 등록하므로, 멤버가 이미 다른 client 에 점유돼 있으면 workspace attach 를 **거부**(부분 점유 충돌 방지).
+  - **mesh mirror 범위는 headless-as-attach-서버 한정이다.** 서버가 GUI 인스턴스(창 보유)면 로컬 창의 자체 redraw 가 이미 그 plugin 을 구동 중이라, attach forward 가 이를 피기백하려면 별도 geometry 권위 조정이 필요해 의도적으로 범위 밖으로 남겼다 — [dev-guide/egui-mesh-channel "attach mesh mirror"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로) 참고.
+  - **placeholder 로 남는 비-터미널 surface 의 mirror 불가는 기술적 미구현이지 보안상 의도적 배제가 아니다.** attach 로 나가는 콘텐츠 전체는 이미 SSH+loopback 연결 경계 신뢰 모델([ADR-0004](../../adr/0004-ipc-transport-tcp.md), [attach-behavior "IPC 표면"](../../dev-guide/attach-behavior.md#ipc-표면-attach))에 위임돼 있다 — mesh mirror 가 bundled 화이트리스트 밖 kind 나 서드파티 plugin 으로 확장되더라도, 콘텐츠 종류가 다르다는 이유로 별도 권한 게이트를 새로 만들 근거는 없다([dev-guide/plugin-permissions](../../dev-guide/plugin-permissions.md) 참고).
 
 ### 화면 동기화
 
@@ -164,6 +165,9 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - [ ] Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
 - [ ] Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
 - [ ] Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
+- [ ] Given workspace attach 대상에 bundled egui-mesh surface(markdown/image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님).
+- [ ] Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
+- [ ] Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 
 > 전부 headless 검증 가능 — 동일 머신 다중 인스턴스 + loopback 직결(`127.0.0.1:PORT`)로 SSH 없이도 attach 파이프라인을 재현, `--dump-after` 로 grid 일치 확인.
 
@@ -178,6 +182,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - (08) mirror 이미지 paste → 원격 업로드: `src/view/main/clipboard.rs`(이미지 분기에서 `Workspace.mirror` 판정 → `CoreState.pending_image_uploads` 큐에 PNG 바이트 push, 비-mirror 는 기존 로컬 PNG 경로 유지), `src/app/image_upload.rs`(`poll_image_uploads`: 큐 drain → 백그라운드 `upload_file_over_bulk` → 결과 채널 → `dispatch_paste`(원격 경로 삽입) 또는 09 실패 팝업 승격). 업로드 API 는 `src/app/attach_client.rs::upload_file_over_bulk`(06-β, 동기 블로킹).
 - (09) 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `notification.rs`. 진행률 배선: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(06 침범 최소) → 08 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러). 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종). i18n `[transfer.progress]`/`[transfer.error]`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-cli/src/remote_browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
+- mesh mirror(bundled egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선).
 
 ## 화면
