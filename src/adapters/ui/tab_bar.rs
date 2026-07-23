@@ -100,6 +100,11 @@ pub enum TabBarAction {
     ScrollRight {
         pane_id: u32,
     },
+    /// 탭바의 탭 없는 빈 영역(뷰포트) primary click — 탭 전환 없이 그 pane 으로
+    /// focus 만 이동한다.
+    FocusPane {
+        pane_id: u32,
+    },
     OpenContextMenu {
         pane_id: u32,
         tab_index: usize,
@@ -125,6 +130,33 @@ pub enum TabBarAction {
     DragEnd {
         pane_id: u32,
     },
+}
+
+impl TabBarAction {
+    /// 이 액션이 유래한 pane. `Some` 이면 처리 전에 그 pane 으로 focus 를 옮긴다
+    /// (탭바 primary-click 계열 — 탭 클릭/닫기/스크롤/빈 영역 클릭/+·split·search 버튼).
+    /// 우클릭 컨텍스트 메뉴는 대상 `pane_id`/`tab_index` 를 메뉴 항목에 그대로 실어
+    /// 나르므로 focus 이동이 필요 없고(조회/메뉴-오픈이지 조작 commit 이 아님), drag
+    /// 계열도 `DragStart` 시점의 탭 클릭이 이미 같은 프레임의 `SwitchTab` 등과 함께
+    /// 오지 않으므로 별도 focus 이동 없이 `None`.
+    fn focus_target_pane(&self) -> Option<u32> {
+        match *self {
+            TabBarAction::SwitchTab { pane_id, .. }
+            | TabBarAction::CloseTab { pane_id, .. }
+            | TabBarAction::AddTab { pane_id }
+            | TabBarAction::RequestSplit { pane_id }
+            | TabBarAction::OpenSearch { pane_id }
+            | TabBarAction::ScrollLeft { pane_id }
+            | TabBarAction::ScrollRight { pane_id }
+            | TabBarAction::FocusPane { pane_id } => Some(pane_id),
+            TabBarAction::OpenContextMenu { .. }
+            | TabBarAction::OpenPaneContextMenu { .. }
+            | TabBarAction::OpenNewTabButtonContextMenu { .. }
+            | TabBarAction::DragStart { .. }
+            | TabBarAction::DragUpdate { .. }
+            | TabBarAction::DragEnd { .. } => None,
+        }
+    }
 }
 
 /// View 의 출력 — 사용자 의도 리스트 + 측정된 탭 바 높이.
@@ -260,6 +292,14 @@ pub fn draw_pane_tab_bars_view(
                                     egui::Stroke::new(2.0, th.accent_success()),
                                     egui::StrokeKind::Inside,
                                 );
+                            } else if viewport_resp.clicked() {
+                                // 탭이 없는 빈 영역 primary click — 탭 전환 없이 그
+                                // pane 으로 focus 만 이동. 탭 rect 클릭 시에도 같은
+                                // 프레임에 SwitchTab 이 함께 emit 될 수 있으나 동일
+                                // pane_id 라 focus 적용은 멱등(idempotent).
+                                output.actions.push(TabBarAction::FocusPane {
+                                    pane_id: info.pane_id,
+                                });
                             }
 
                             let painter = ui.painter().with_clip_rect(clip_rect);
@@ -854,9 +894,29 @@ pub fn draw_pane_tab_bars(
         state.tab_bar_height = PhysicalPx(h_phys);
     }
 
+    apply_tab_bar_actions(state, engine, output.actions, &panes, tab_w, scale_factor);
+}
+
+/// 탭바 유래 액션을 상태에 반영한다. egui `Context` 비의존이라 단위 테스트 가능.
+///
+/// primary-click 계열 액션은 개별 처리 전에 그 pane 으로 `focused_pane` 을 먼저
+/// 옮긴다([`TabBarAction::focus_target_pane`]) — 탭바 클릭은 그 pane 을 직접
+/// 조작하는 사용자 행위이므로, 콘텐츠 영역 클릭(경로 B)과 대칭으로 focus 가 따라가는
+/// 것이 일관된 동작이다.
+pub fn apply_tab_bar_actions(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    actions: Vec<TabBarAction>,
+    panes: &[PaneTabBarView],
+    tab_w: f32,
+    scale_factor: f32,
+) {
     let separator_w: f32 = 1.0;
 
-    for action in output.actions {
+    for action in actions {
+        if let Some(pane_id) = action.focus_target_pane() {
+            state.active_workspace_mut(engine).focused_pane = pane_id;
+        }
         match action {
             TabBarAction::SwitchTab { pane_id, tab_index } => {
                 let mut to_wake: Vec<u32> = Vec::new();
@@ -877,18 +937,16 @@ pub fn draw_pane_tab_bars(
             TabBarAction::CloseTab { pane_id, tab_index } => {
                 state.close_tab(engine, pane_id, tab_index);
             }
-            TabBarAction::AddTab { pane_id } => {
-                state.active_workspace_mut(engine).focused_pane = pane_id;
+            TabBarAction::AddTab { pane_id: _ } => {
                 if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
                 }
             }
-            TabBarAction::RequestSplit { pane_id } => {
-                // 단축키(`split_pane_vertical`)와 동일 경로. 사용자 클릭이므로 대상 pane
-                // 으로 focus 이동 후 split (cascade 가 새 pane 으로 focus 이동).
+            TabBarAction::RequestSplit { pane_id: _ } => {
+                // 단축키(`split_pane_vertical`)와 동일 경로. focus 는 위에서 이미 대상
+                // pane 으로 이동했다(cascade 가 새 pane 으로 다시 focus 이동).
                 use crate::intent::Intent;
                 use crate::model::SplitDirection;
-                state.active_workspace_mut(engine).focused_pane = pane_id;
                 state.dispatch_intent(
                     Intent::SplitPane {
                         direction: SplitDirection::Vertical,
@@ -896,11 +954,11 @@ pub fn draw_pane_tab_bars(
                     .from_user_shortcut("split_pane_vertical"),
                 );
             }
-            TabBarAction::OpenSearch { pane_id } => {
+            TabBarAction::OpenSearch { pane_id: _ } => {
                 // 단축키(`find`)와 동일 경로 — 대상 pane 활성 surface 에 검색창을 연다.
+                // focus 는 위에서 이미 대상 pane 으로 이동했다.
                 use crate::adapters::ui::popup::PopupScope;
                 use crate::intent::{OpenPopupMode, UiIntent};
-                state.active_workspace_mut(engine).focused_pane = pane_id;
                 if state.popups.is_open("search_bar") {
                     state.popups.set_focused("search_bar", true);
                 } else if let Some(sid) = state.focused_surface_id(engine) {
@@ -932,6 +990,9 @@ pub fn draw_pane_tab_bars(
                     pane.tab_scroll_offset += tab_w;
                 }
             }
+            // 빈 영역 클릭은 focus 이동이 전부다(탭 전환 없음) — 위 pre-match 에서 이미
+            // 처리됐으므로 여기선 추가 작업이 없다.
+            TabBarAction::FocusPane { pane_id: _ } => {}
             TabBarAction::OpenContextMenu {
                 pane_id,
                 tab_index,
@@ -974,43 +1035,65 @@ pub fn draw_pane_tab_bars(
                 }
             }
             TabBarAction::DragEnd { pane_id } => {
-                if let Some(drag) = state.dialogs.tab_drag.take()
-                    && drag.pane_id == pane_id
-                    && let Some(pane_info) = panes.iter().find(|i| i.pane_id == pane_id)
-                {
-                    let pane_logical_x = (pane_info.rect.x.value() / scale_factor).round_ui();
-                    let pane_logical_w = (pane_info.rect.width.value() / scale_factor).round_ui();
-                    let target = compute_drop_index(
-                        drag.current_x,
-                        pane_logical_x,
-                        pane_info.scroll_offset,
-                        pane_info.tab_names.len(),
-                        tab_w,
-                        separator_w,
-                        pane_logical_w,
-                    );
-                    // mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을 원격으로
-                    // forward 한다(로컬 실행은 원격 트리와 어긋남).
-                    if target != drag.tab_index {
-                        let mirror_op = engine
-                            .find_pane_by_id(pane_id)
-                            .and_then(|p| p.tabs.get(p.active_tab))
-                            .and_then(|t| t.focused_surface_id())
-                            .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
-                                anchor_surface_id: sid,
-                                from_index: drag.tab_index,
-                                to_index: target,
-                            });
-                        if !state.forward_mirror_structural(engine, mirror_op, Vec::new())
-                            && let Some(pane) = state
-                                .active_workspace_mut(engine)
-                                .pane_layout_mut()
-                                .find_pane_mut(pane_id)
-                        {
-                            pane.move_tab(drag.tab_index, target);
-                        }
-                    }
-                }
+                apply_drag_end(
+                    state,
+                    engine,
+                    panes,
+                    tab_w,
+                    scale_factor,
+                    separator_w,
+                    pane_id,
+                );
+            }
+        }
+    }
+}
+
+/// [`TabBarAction::DragEnd`] 적용 — drag 중이던 탭을 실제 drop 위치로 옮긴다.
+/// `apply_tab_bar_actions` 의 cognitive complexity 를 낮추기 위해 분리.
+fn apply_drag_end(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    panes: &[PaneTabBarView],
+    tab_w: f32,
+    scale_factor: f32,
+    separator_w: f32,
+    pane_id: u32,
+) {
+    if let Some(drag) = state.dialogs.tab_drag.take()
+        && drag.pane_id == pane_id
+        && let Some(pane_info) = panes.iter().find(|i| i.pane_id == pane_id)
+    {
+        let pane_logical_x = (pane_info.rect.x.value() / scale_factor).round_ui();
+        let pane_logical_w = (pane_info.rect.width.value() / scale_factor).round_ui();
+        let target = compute_drop_index(
+            drag.current_x,
+            pane_logical_x,
+            pane_info.scroll_offset,
+            pane_info.tab_names.len(),
+            tab_w,
+            separator_w,
+            pane_logical_w,
+        );
+        // mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을 원격으로
+        // forward 한다(로컬 실행은 원격 트리와 어긋남).
+        if target != drag.tab_index {
+            let mirror_op = engine
+                .find_pane_by_id(pane_id)
+                .and_then(|p| p.tabs.get(p.active_tab))
+                .and_then(|t| t.focused_surface_id())
+                .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
+                    anchor_surface_id: sid,
+                    from_index: drag.tab_index,
+                    to_index: target,
+                });
+            if !state.forward_mirror_structural(engine, mirror_op, Vec::new())
+                && let Some(pane) = state
+                    .active_workspace_mut(engine)
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+            {
+                pane.move_tab(drag.tab_index, target);
             }
         }
     }
@@ -1019,6 +1102,68 @@ pub fn draw_pane_tab_bars(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_target_pane_primary_click_actions_carry_pane_id() {
+        let primary = [
+            TabBarAction::SwitchTab {
+                pane_id: 7,
+                tab_index: 0,
+            },
+            TabBarAction::CloseTab {
+                pane_id: 7,
+                tab_index: 0,
+            },
+            TabBarAction::AddTab { pane_id: 7 },
+            TabBarAction::RequestSplit { pane_id: 7 },
+            TabBarAction::OpenSearch { pane_id: 7 },
+            TabBarAction::ScrollLeft { pane_id: 7 },
+            TabBarAction::ScrollRight { pane_id: 7 },
+            TabBarAction::FocusPane { pane_id: 7 },
+        ];
+        for action in primary {
+            assert_eq!(
+                action.focus_target_pane(),
+                Some(7),
+                "{action:?} 는 그 pane 으로 focus 를 옮겨야 한다"
+            );
+        }
+    }
+
+    #[test]
+    fn focus_target_pane_context_menu_and_drag_actions_are_none() {
+        let non_focus = [
+            TabBarAction::OpenContextMenu {
+                pane_id: 7,
+                tab_index: 0,
+                pos: egui::Pos2::ZERO,
+            },
+            TabBarAction::OpenPaneContextMenu {
+                pane_id: 7,
+                pos: egui::Pos2::ZERO,
+            },
+            TabBarAction::OpenNewTabButtonContextMenu {
+                pane_id: 7,
+                pos: egui::Pos2::ZERO,
+            },
+            TabBarAction::DragStart {
+                pane_id: 7,
+                tab_index: 0,
+            },
+            TabBarAction::DragUpdate {
+                pane_id: 7,
+                mouse_x: 0.0,
+            },
+            TabBarAction::DragEnd { pane_id: 7 },
+        ];
+        for action in non_focus {
+            assert_eq!(
+                action.focus_target_pane(),
+                None,
+                "{action:?} 는 focus 를 옮기면 안 된다(우클릭/드래그는 조작 commit 이 아님)"
+            );
+        }
+    }
 
     #[test]
     fn compute_drop_index_first_slot() {

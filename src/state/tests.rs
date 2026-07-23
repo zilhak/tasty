@@ -1055,3 +1055,204 @@ fn set_explorer_cwd_moves_root_and_clears_history() {
     assert_eq!(ex.current_root(), std::path::Path::new("/other"));
     assert!(!ex.active_tab().can_go_back());
 }
+
+// ---- 19: 탭바 클릭 → 비-focused pane 으로 focus 이동 ----
+//
+// 2-pane 구성(pane_a=원래 pane, pane_b=split 로 새로 생긴 pane — split 직후
+// focused)에서, pane_a(비-focused) 유래 탭바 액션을 `apply_tab_bar_actions` 로
+// 적용했을 때 `focused_pane` 이 pane_a 로 옮겨가는지 검증한다.
+
+/// pane 이 2개(pane_a, pane_b)인 워크스페이스를 만들고, split 직후 focus 인
+/// pane_b 와 비-focused pane_a 의 ID를 반환한다.
+fn two_pane_setup(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+) -> (
+    u32, /* pane_a: 비focused */
+    u32, /* pane_b: focused */
+) {
+    let pane_a = state.active_workspace(engine).focused_pane;
+    state
+        .test_split_pane(engine, SplitDirection::Vertical)
+        .unwrap();
+    let pane_b = state.active_workspace(engine).focused_pane;
+    assert_ne!(pane_a, pane_b, "split 은 새 pane 을 만들어야 한다");
+    (pane_a, pane_b)
+}
+
+#[test]
+fn switch_tab_on_other_pane_moves_focus() {
+    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
+
+    let (mut state, mut engine) = test_state();
+    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+    assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+
+    apply_tab_bar_actions(
+        &mut state,
+        &mut engine,
+        vec![TabBarAction::SwitchTab {
+            pane_id: pane_a,
+            tab_index: 0,
+        }],
+        &[],
+        160.0,
+        1.0,
+    );
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        pane_a,
+        "비-focused pane 의 탭 클릭은 그 pane 으로 focus 를 옮겨야 한다"
+    );
+}
+
+#[test]
+fn focus_pane_action_moves_focus_without_switching_tab() {
+    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
+
+    let (mut state, mut engine) = test_state();
+    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+
+    // pane_a 에 탭을 하나 더 추가하고 두번째 탭을 활성으로 만든다(빈 영역 클릭이
+    // active_tab 을 건드리지 않는지 확인하기 위한 대조군).
+    state.active_workspace_mut(&mut engine).focused_pane = pane_a;
+    state.add_tab(&mut engine).unwrap();
+    let active_before = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_a)
+        .unwrap()
+        .active_tab;
+    assert_eq!(active_before, 1);
+    state.active_workspace_mut(&mut engine).focused_pane = pane_b;
+
+    apply_tab_bar_actions(
+        &mut state,
+        &mut engine,
+        vec![TabBarAction::FocusPane { pane_id: pane_a }],
+        &[],
+        160.0,
+        1.0,
+    );
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        pane_a,
+        "탭바 빈 영역 클릭은 그 pane 으로 focus 를 옮겨야 한다"
+    );
+    let active_after = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_a)
+        .unwrap()
+        .active_tab;
+    assert_eq!(
+        active_after, active_before,
+        "빈 영역 클릭은 focus 만 이동하고 active_tab 은 건드리지 않아야 한다"
+    );
+}
+
+#[test]
+fn scroll_left_and_right_on_other_pane_move_focus() {
+    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
+
+    for action_of in [
+        (|pane_id| TabBarAction::ScrollLeft { pane_id }) as fn(u32) -> TabBarAction,
+        (|pane_id| TabBarAction::ScrollRight { pane_id }) as fn(u32) -> TabBarAction,
+    ] {
+        let (mut state, mut engine) = test_state();
+        let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+        assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+
+        apply_tab_bar_actions(
+            &mut state,
+            &mut engine,
+            vec![action_of(pane_a)],
+            &[],
+            160.0,
+            1.0,
+        );
+
+        assert_eq!(
+            state.active_workspace(&engine).focused_pane,
+            pane_a,
+            "스크롤 화살표 클릭도 그 pane 으로 focus 를 옮겨야 한다"
+        );
+    }
+}
+
+#[test]
+fn close_tab_on_other_pane_moves_focus() {
+    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
+
+    let (mut state, mut engine) = test_state();
+    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+
+    // close_tab 은 마지막 탭을 보호하므로(pane.rs::close_tab) pane_a 에 탭을 하나
+    // 더 추가해 close 가 실제로 일어나게 한다 — pane 자체는 사라지지 않는다.
+    state.active_workspace_mut(&mut engine).focused_pane = pane_a;
+    state.add_tab(&mut engine).unwrap();
+    state.active_workspace_mut(&mut engine).focused_pane = pane_b;
+
+    apply_tab_bar_actions(
+        &mut state,
+        &mut engine,
+        vec![TabBarAction::CloseTab {
+            pane_id: pane_a,
+            tab_index: 0,
+        }],
+        &[],
+        160.0,
+        1.0,
+    );
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        pane_a,
+        "다른 pane 의 탭을 close 해도 그 pane 으로 focus 를 옮겨야 한다"
+    );
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(pane_a)
+            .unwrap()
+            .tabs
+            .len(),
+        1,
+        "탭이 실제로 닫혀야 한다"
+    );
+}
+
+#[test]
+fn context_menu_actions_do_not_move_focus() {
+    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
+
+    let (mut state, mut engine) = test_state();
+    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+    assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+
+    let actions = vec![
+        TabBarAction::OpenContextMenu {
+            pane_id: pane_a,
+            tab_index: 0,
+            pos: egui::Pos2::ZERO,
+        },
+        TabBarAction::OpenPaneContextMenu {
+            pane_id: pane_a,
+            pos: egui::Pos2::ZERO,
+        },
+        TabBarAction::OpenNewTabButtonContextMenu {
+            pane_id: pane_a,
+            pos: egui::Pos2::ZERO,
+        },
+    ];
+    apply_tab_bar_actions(&mut state, &mut engine, actions, &[], 160.0, 1.0);
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        pane_b,
+        "우클릭 컨텍스트 메뉴는 focus 를 옮기면 안 된다(대상은 pending_native_menu 의 pane_id 로 이미 결정됨)"
+    );
+}

@@ -21,8 +21,13 @@
 - **AddTab** — 우측 `+` → 새 탭. `+` 우클릭은 **OpenNewTabButtonContextMenu**(프리셋으로 탭/페인 생성).
 - **RequestSplit** / **OpenSearch** — 스트립 우측 split·search 아이콘 → 해당 Pane 분할 / 활성 surface 검색.
 - **ScrollLeft / ScrollRight** — 탭이 넘치면 좌우 스크롤 화살표(가로 스크롤 `scroll_offset`).
+- **FocusPane** — 탭이 없는 빈 영역 primary click → 탭 전환 없이 그 Pane 으로 focus 만 이동.
 - **DragStart / DragUpdate / DragEnd** — 탭 드래그로 순서 변경(`TabDragState`, drop 위치는 `compute_drop_index`). UI 전용 상태(영속 안 함).
 - **OpenContextMenu** / **OpenPaneContextMenu** — 탭 우클릭 / Pane 우클릭 컨텍스트 메뉴.
+
+### 클릭 → Pane focus 이동
+
+**비-focused Pane 의 탭 스트립을 primary click 하면(탭 본체·빈 영역·스크롤 화살표·+/split/search 버튼) 그 Pane 으로 focus 가 이동한다** — 콘텐츠 영역 클릭과 대칭. 탭 전환(`SwitchTab`)과 focus 이동은 독립적이라, 빈 영역 클릭은 focus 만 옮기고 `active_tab` 은 그대로 둔다. 우클릭 컨텍스트 메뉴 3종(`OpenContextMenu`/`OpenPaneContextMenu`/`OpenNewTabButtonContextMenu`)은 대상 `pane_id`/`tab_index` 를 메뉴 항목에 직접 실어 나르므로 focus 이동이 없다. 사용자 마우스 클릭에 의한 이동이라 [focus 정책](../../design/policies/focus.md)의 "CLI/IPC 포커스 독립 원칙"과 무충돌(그 원칙은 IPC/CLI/에이전트 유래 focus 강제를 막는 것). 구현: `TabBarAction::focus_target_pane` + `apply_tab_bar_actions`(`src/adapters/ui/tab_bar.rs`).
 
 ### 탭 표시
 
@@ -53,6 +58,8 @@
 - [ ] Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
 - [ ] Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
 - [ ] Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.
+- [ ] Given 비-focused Pane When 그 Pane 의 탭/빈 영역/스크롤 화살표를 클릭 Then 그 Pane 으로 focus 가 이동한다(빈 영역 클릭은 `active_tab` 불변).
+- [ ] Given 비-focused Pane When 그 Pane 의 탭/빈 영역 우클릭 Then focus 는 이동하지 않는다(컨텍스트 메뉴만 열림).
 
 > GUI 위젯이라 시각은 스크린샷, 결과(탭 전환/닫기/순서)는 work-area `tasty list tabs` 로 교차 확인.
 
@@ -60,6 +67,7 @@
 
 - view: `src/adapters/ui/tab_bar.rs` — `draw_pane_tab_bars_view`(props→`PaneTabBarsOutput{actions, measured_height}`), `compute_drop_index`(드래그 drop 위치).
 - props: `PaneTabBarView`(pane별 탭명/kind/알림/busy/active/focus/scroll), `PaneTabBarsProps`(테마/탭폭/폰트/drag).
+- 액션 반영: `apply_tab_bar_actions`(`src/adapters/ui/tab_bar.rs`) — `TabBarAction::focus_target_pane` 로 primary-click 계열 액션 처리 전 focus 를 선-이동한다.
 - drag 상태: `src/state.rs` `TabDragState`(UI 전용, 비영속).
 
 ## 화면
