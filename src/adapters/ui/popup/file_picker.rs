@@ -365,7 +365,17 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     ui.add_space(th.spacing_sm.value());
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let can_open = matches!(props.state, FpViewState::Loaded) && !props.selected.is_empty();
+            // 디렉토리는 [열기] 로 확정할 수 없다 — 더블클릭으로 진입해야 한다.
+            // 단일 선택만이 아니라 selected 전원이 파일이어야 활성화(멀티 선택 확장 대비).
+            let can_open = matches!(props.state, FpViewState::Loaded)
+                && !props.selected.is_empty()
+                && props.selected.iter().all(|name| {
+                    props
+                        .entries
+                        .iter()
+                        .find(|e| &e.name == name)
+                        .is_some_and(|e| !e.is_dir)
+                });
             ui.add_enabled_ui(can_open, |ui| {
                 if ui.button(props.open_label).clicked() {
                     action = FilePickerAction::Confirm;
@@ -639,12 +649,20 @@ fn apply_action(
         FilePickerAction::Confirm => {
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 let is_remote = d.mirror_ws_id.is_some();
+                // 방어적 재확인 — view 의 `can_open` 게이트를 우회해도(예: 향후 다른
+                // 호출 경로) 디렉토리를 파일로 확정하지 않는다.
+                let all_files = d.selected.iter().all(|name| {
+                    d.entries
+                        .iter()
+                        .find(|e| &e.name == name)
+                        .is_some_and(|e| !e.is_dir)
+                });
                 let paths: Vec<String> = d
                     .selected
                     .iter()
                     .map(|name| join_dir(is_remote, &d.current_dir, name))
                     .collect();
-                if !paths.is_empty() {
+                if all_files && !paths.is_empty() {
                     d.result = Some(FilePickerResult::Confirmed { paths, is_remote });
                     return PopupAction::Close;
                 }
@@ -766,9 +784,22 @@ fn navigate(
     }
 }
 
+/// 원격 경로가 Windows 스타일(`C:\Users\alice`)인지 — 원격 host OS 는 client 가
+/// 미리 알 수 없으므로, 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 판별한다.
+/// POSIX 경로는 `\` 를 파일명에 거의 쓰지 않으므로 이 휴리스틱으로 충분하다.
+fn is_windows_style_remote_path(p: &str) -> bool {
+    p.contains('\\')
+}
+
 fn join_dir(is_remote: bool, dir: &str, name: &str) -> String {
     if is_remote {
-        if dir.ends_with('/') {
+        if is_windows_style_remote_path(dir) {
+            if dir.ends_with('\\') {
+                format!("{dir}{name}")
+            } else {
+                format!("{dir}\\{name}")
+            }
+        } else if dir.ends_with('/') {
             format!("{dir}{name}")
         } else {
             format!("{dir}/{name}")
@@ -779,18 +810,37 @@ fn join_dir(is_remote: bool, dir: &str, name: &str) -> String {
 }
 
 /// root 부터 현재 경로까지의 조상 목록(문자열 형태) — 브레드크럼 라벨/내비게이션
-/// 타깃 둘 다 이 목록에서 유도한다(로컬은 `Path` 컴포넌트 기반이라 Windows
-/// 드라이브 루트도 정확히 다룬다, 원격은 POSIX 문자열 분해).
+/// 타깃 둘 다 이 목록에서 유도한다. 로컬은 `Path` 컴포넌트 기반이라 Windows 드라이브
+/// 루트도 정확히 다룬다. 원격은 문자열 분해인데, `is_windows_style_remote_path` 로
+/// POSIX(`/`)와 Windows(`\`, 드라이브 루트 보존) 를 분기한다.
 fn path_ancestors(is_remote: bool, current_dir: &str) -> Vec<String> {
     if is_remote {
-        let mut out = vec!["/".to_string()];
-        let mut acc = String::new();
-        for seg in current_dir.split('/').filter(|s| !s.is_empty()) {
-            acc.push('/');
-            acc.push_str(seg);
-            out.push(acc.clone());
+        if is_windows_style_remote_path(current_dir) {
+            let mut segs = current_dir.split('\\').filter(|s| !s.is_empty());
+            let Some(drive) = segs.next() else {
+                return vec![current_dir.to_string()];
+            };
+            let root = format!("{drive}\\");
+            let mut out = vec![root.clone()];
+            let mut acc = root;
+            for seg in segs {
+                if !acc.ends_with('\\') {
+                    acc.push('\\');
+                }
+                acc.push_str(seg);
+                out.push(acc.clone());
+            }
+            out
+        } else {
+            let mut out = vec!["/".to_string()];
+            let mut acc = String::new();
+            for seg in current_dir.split('/').filter(|s| !s.is_empty()) {
+                acc.push('/');
+                acc.push_str(seg);
+                out.push(acc.clone());
+            }
+            out
         }
-        out
     } else {
         let mut v: Vec<PathBuf> = Path::new(current_dir)
             .ancestors()
@@ -808,6 +858,17 @@ fn crumb_label(is_remote: bool, full_path: &str) -> String {
         return "/".to_string();
     }
     if is_remote {
+        if is_windows_style_remote_path(full_path) {
+            if full_path.ends_with('\\') {
+                return full_path.to_string(); // 드라이브 루트 — 그대로("C:\\").
+            }
+            return full_path
+                .rsplit('\\')
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(full_path)
+                .to_string();
+        }
         full_path
             .rsplit('/')
             .next()
@@ -819,5 +880,62 @@ fn crumb_label(is_remote: bool, full_path: &str) -> String {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| full_path.to_string())
+    }
+}
+
+#[cfg(test)]
+mod path_helper_tests {
+    use super::{crumb_label, join_dir, path_ancestors};
+
+    #[test]
+    fn join_dir_remote_posix() {
+        assert_eq!(
+            join_dir(true, "/home/alice", "notes.txt"),
+            "/home/alice/notes.txt"
+        );
+        assert_eq!(join_dir(true, "/", "etc"), "/etc");
+    }
+
+    #[test]
+    fn join_dir_remote_windows() {
+        assert_eq!(
+            join_dir(true, "C:\\Users\\alice", "notes.txt"),
+            "C:\\Users\\alice\\notes.txt"
+        );
+        assert_eq!(join_dir(true, "C:\\", "Users"), "C:\\Users");
+    }
+
+    #[test]
+    fn join_dir_local_uses_platform_path() {
+        let joined = join_dir(false, "/tmp/dir", "file.txt");
+        assert!(joined.ends_with("file.txt"));
+    }
+
+    #[test]
+    fn path_ancestors_remote_posix() {
+        assert_eq!(
+            path_ancestors(true, "/home/alice/proj"),
+            vec!["/", "/home", "/home/alice", "/home/alice/proj"]
+        );
+    }
+
+    #[test]
+    fn path_ancestors_remote_windows() {
+        assert_eq!(
+            path_ancestors(true, "C:\\Users\\alice"),
+            vec!["C:\\", "C:\\Users", "C:\\Users\\alice"]
+        );
+    }
+
+    #[test]
+    fn crumb_label_remote_windows_root_and_segment() {
+        assert_eq!(crumb_label(true, "C:\\"), "C:\\");
+        assert_eq!(crumb_label(true, "C:\\Users\\alice"), "alice");
+    }
+
+    #[test]
+    fn crumb_label_remote_posix_root_and_segment() {
+        assert_eq!(crumb_label(true, "/"), "/");
+        assert_eq!(crumb_label(true, "/home/alice"), "alice");
     }
 }

@@ -941,6 +941,7 @@ loading_body_local = "로컬 디렉토리를 읽는 중입니다."
 loading_body_remote = "원격 디렉토리 목록을 기다리는 중입니다."
 remote_confirm_copied = "원격 경로를 클립보드에 복사했습니다."
 remote_confirm_clipboard_failed = "원격 경로를 클립보드에 복사하지 못했습니다."
+remote_listing_truncated = "원격 디렉토리의 항목이 너무 많아 전부 표시할 수 없습니다 — 목록이 잘렸습니다."
 
 [filepicker.error_perm]
 title = "권한 거부됨"

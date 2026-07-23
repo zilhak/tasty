@@ -689,14 +689,14 @@ pub(crate) fn handle_list_dir_request(
     };
     let payload = match result {
         Ok((resolved_dir, entries)) => {
-            let wire_entries: Vec<serde_json::Value> =
-                entries.iter().map(list_dir_entry_wire).collect();
+            let (wire_entries, truncated) = list_dir_entries_wire_capped(&entries);
             serde_json::json!({
                 "event": "list_dir_result",
                 "request_id": request_id,
                 "ok": true,
                 "dir": resolved_dir,
                 "entries": wire_entries,
+                "truncated": truncated,
             })
         }
         Err(reason) => serde_json::json!({
@@ -740,6 +740,42 @@ fn list_dir_for_request(
     Ok((path.to_string_lossy().to_string(), entries))
 }
 
+/// `list_dir_result` 프레임 하나의 entries 배열에 허용하는 직렬화 바이트 예산.
+/// attach 채널의 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
+/// 충분히 작게 잡아 `event`/`request_id`/`dir` 등 envelope 오버헤드 + serde_json
+/// 이스케이프 팽창분을 흡수한다. 이 상한 없이 대형 디렉토리(수천 개 엔트리)를 그대로
+/// 실으면 `write_frame` 이 `MAX_FRAME_LEN` 초과로 에러를 반환하고, 그 attach 세션의
+/// write thread 전체가 종료돼(다른 forward/tap 도 동반) mirror 연결 자체가 끊긴다 —
+/// 이 상한은 그 회귀를 막는 안전장치다.
+const LIST_DIR_ENTRIES_BYTE_BUDGET: usize = 700 * 1024;
+
+/// 엔트리를 wire JSON 으로 변환하되 [`LIST_DIR_ENTRIES_BYTE_BUDGET`] 을 넘기 전에
+/// 멈춘다. 두 번째 반환값은 잘렸는지 여부 — client 는 이를 toast 로 사용자에게
+/// 알린다(`attach_client.rs` `MirrorEvent::ListDirResult` 처리).
+fn list_dir_entries_wire_capped(
+    entries: &[crate::core::fs_list::DirEntryInfo],
+) -> (Vec<serde_json::Value>, bool) {
+    list_dir_entries_wire_capped_with_budget(entries, LIST_DIR_ENTRIES_BYTE_BUDGET)
+}
+
+/// 테스트 용이성을 위해 예산을 파라미터로 뺀 실제 구현.
+fn list_dir_entries_wire_capped_with_budget(
+    entries: &[crate::core::fs_list::DirEntryInfo],
+    mut budget: usize,
+) -> (Vec<serde_json::Value>, bool) {
+    let mut out = Vec::with_capacity(entries.len());
+    for e in entries {
+        let wire = list_dir_entry_wire(e);
+        let approx_len = serde_json::to_vec(&wire).map(|b| b.len()).unwrap_or(0);
+        if approx_len > budget {
+            return (out, true);
+        }
+        budget -= approx_len;
+        out.push(wire);
+    }
+    (out, false)
+}
+
 /// `DirEntryInfo` 한 줄 → wire JSON. `modified: Option<SystemTime>` 은 JSON 에 그대로
 /// 실을 수 없어 unix epoch 초(`modified_unix`)로 변환한다 — 사람이 읽는 포맷팅은
 /// 클라이언트의 view 렌더 직전에서만 한다(포맷 변환을 wire 조립 지점과 분리).
@@ -755,6 +791,52 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
         "modified_unix": modified_unix,
         "ext": e.ext,
     })
+}
+
+#[cfg(test)]
+mod list_dir_entries_wire_capped_tests {
+    use super::list_dir_entries_wire_capped_with_budget;
+    use crate::core::fs_list::DirEntryInfo;
+
+    fn entry(name: &str) -> DirEntryInfo {
+        DirEntryInfo {
+            path: name.into(),
+            name: name.to_string(),
+            is_dir: false,
+            size: 0,
+            modified: None,
+            ext: String::new(),
+        }
+    }
+
+    #[test]
+    fn fits_within_budget_untruncated() {
+        let entries: Vec<_> = (0..10).map(|i| entry(&format!("f{i}"))).collect();
+        let (wire, truncated) = list_dir_entries_wire_capped_with_budget(&entries, 10_000);
+        assert_eq!(wire.len(), 10);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn stops_before_exceeding_budget() {
+        // 각 엔트리의 직렬화 크기를 먼저 재서, 정확히 3개만 들어가는 예산을 계산한다
+        // (하드코드된 바이트 수에 의존하면 wire 포맷이 바뀔 때 이 test 가 깨진다).
+        let entries: Vec<_> = (0..20).map(|i| entry(&format!("file_{i:03}"))).collect();
+        let one_entry_len = serde_json::to_vec(&super::list_dir_entry_wire(&entries[0]))
+            .unwrap()
+            .len();
+        let budget = one_entry_len * 3;
+        let (wire, truncated) = list_dir_entries_wire_capped_with_budget(&entries, budget);
+        assert_eq!(wire.len(), 3, "expected exactly 3 entries to fit: {wire:?}");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn empty_input_is_never_truncated() {
+        let (wire, truncated) = list_dir_entries_wire_capped_with_budget(&[], 0);
+        assert!(wire.is_empty());
+        assert!(!truncated);
+    }
 }
 
 /// attach 거부/실패 통지: `attach_error` Control + Detach 로 연결 종료 유도.

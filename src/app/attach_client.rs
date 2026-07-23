@@ -85,6 +85,9 @@ pub(crate) enum MirrorEvent {
         ok: bool,
         dir: Option<String>,
         entries: Option<Vec<crate::core::fs_list::DirEntryInfo>>,
+        /// 서버가 프레임 크기 상한(`attach_runtime::LIST_DIR_ENTRIES_BYTE_BUDGET`)
+        /// 때문에 entries 를 잘랐는지 — client 는 toast 로 알린다.
+        truncated: bool,
         reason: Option<String>,
     },
 }
@@ -600,6 +603,7 @@ impl App {
                                 ok,
                                 dir,
                                 entries,
+                                truncated,
                                 reason,
                             } => {
                                 // (04) 원격이 이 세션의 list_dir_request 를 처리한
@@ -630,6 +634,16 @@ impl App {
                                             if picker.remote_host.is_none() {
                                                 picker.remote_host =
                                                     Some(sess.remote_label.clone());
+                                            }
+                                            if truncated {
+                                                main.state.toasts.push(
+                                                    crate::i18n::t(
+                                                        "filepicker.remote_listing_truncated",
+                                                    )
+                                                    .to_string(),
+                                                    crate::adapters::ui::ToastKind::Warning,
+                                                    crate::adapters::ui::ToastScope::Window,
+                                                );
                                             }
                                         } else {
                                             let reason_str = reason.unwrap_or_default();
@@ -1542,6 +1556,8 @@ struct ListDirResultWire {
     #[serde(default)]
     entries: Option<Vec<ListDirEntryWire>>,
     #[serde(default)]
+    truncated: bool,
+    #[serde(default)]
     reason: Option<String>,
 }
 
@@ -1577,6 +1593,7 @@ fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
         ok: wire.ok,
         dir: wire.dir,
         entries,
+        truncated: wire.truncated,
         reason: wire.reason,
     })
 }

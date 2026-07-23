@@ -941,6 +941,7 @@ loading_body_local = "ローカルディレクトリを読み込んでいます�
 loading_body_remote = "リモートディレクトリの一覧を待っています。"
 remote_confirm_copied = "リモートパスをクリップボードにコピーしました。"
 remote_confirm_clipboard_failed = "リモートパスをクリップボードにコピーできませんでした。"
+remote_listing_truncated = "リモートディレクトリの項目が多すぎてすべて表示できません — リストは切り詰められました。"
 
 [filepicker.error_perm]
 title = "権限がありません"

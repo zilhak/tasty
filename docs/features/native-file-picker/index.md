@@ -61,6 +61,16 @@ Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_m
 `fs_list::format_modified`)은 view 렌더 직전에만 계산 — 로컬/원격 어느 쪽도 이 함수 하나를
 공유한다.
 
+### 대형 디렉토리 truncation (프레임 크기 안전장치)
+
+attach 채널의 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)을 넘는 `list_dir_result`
+는 `write_frame` 이 에러를 반환하고, 그 결과 그 attach 세션의 write thread 전체가 종료된다(다른
+forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊긴다). `handle_list_dir_request`
+는 이를 막기 위해 entries 를 직렬화하며 누적 바이트를 추적하다 예산
+(`LIST_DIR_ENTRIES_BYTE_BUDGET`, 700KiB)을 넘기기 직전에 멈추고 `truncated: true` 를 wire 에
+싣는다. client 는 `truncated` 를 받으면 toast(`filepicker.remote_listing_truncated`)로 알린다 —
+현재 UI 는 "다음 페이지" 개념이 없어 사실상 상위 700KiB 분량만 보여주는 제약이다(비-목표 참고).
+
 ### 확정(Confirm)
 
 - **로컬**: 선택 경로로 `DomainIntent::DispatchFile { depth: Deep, .. }` 를 발화해 기존 파일 핸들러
@@ -68,6 +78,15 @@ Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_m
 - **원격**: 이번 구현은 **디렉토리 나열까지만** 스코프이며 원격 파일 **내용**을 이 세션으로 가져오는
   fetch 는 하지 않는다. 선택 경로를 클립보드에 복사하고 결과 toast 를 띄운다
   (`src/app/dispatch/file_picker.rs::apply_remote_confirm`).
+- **디렉토리는 확정할 수 없다**: [열기] 버튼은 선택된 엔트리가 전부 파일일 때만 활성화되고
+  (`draw_file_picker_view` 의 `can_open`), wrapper 의 `apply_action` 도 동일 조건을 다시
+  확인한다(방어적 중복 검증). 디렉토리는 더블클릭으로만 진입한다.
+
+### 원격 경로 구분자(POSIX/Windows)
+
+원격 host 의 OS 는 client 가 사전에 알 수 없다 — `path_ancestors`/`join_dir`/`crumb_label` 은
+서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 Windows 스타일(`C:\Users\alice`, 드라이브 루트
+보존)과 POSIX(`/`)를 구분한다(`is_windows_style_remote_path`).
 
 ## 인터페이스
 
@@ -89,6 +108,8 @@ Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_m
   교체). 파일명 텍스트 편집 필드도 없다 — footer 는 선택된 이름을 읽기전용으로 보여줄 뿐이다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
   태그를 같은 채널에 얹었다.
+- **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만
+  처리한다(toast 통지). "다음 페이지 로드" 는 이번 스코프 밖.
 
 ## Acceptance Criteria
 
@@ -108,6 +129,13 @@ Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_m
   fetch 는 일어나지 않는다).
 - [x] Given X 버튼/ESC/외부 클릭으로 popup 이 닫힘 Then 결과가 `Cancelled` 로 명시되어 dialog
   상태가 정리된다(다음 오픈에 이전 상태가 새지 않음).
+- [x] Given 디렉토리 엔트리가 선택됨(더블클릭 아님) Then [열기] 버튼이 비활성화되고, 우회
+  호출로 Confirm 이 와도 wrapper 가 다시 거부한다(디렉토리는 파일로 확정되지 않는다).
+- [x] Given entries 직렬화가 바이트 예산(700KiB)을 넘는 대형 원격 디렉토리 Then 서버가
+  entries 를 잘라 `truncated: true` 로 회신하고, client 는 경고 toast 를 띄운다(attach 세션
+  자체는 끊기지 않는다).
+- [x] Given 원격 host 의 경로가 Windows 스타일(`C:\Users\alice`) Then 브레드크럼/내비게이션이
+  `\` 구분자와 드라이브 루트를 올바르게 다룬다(POSIX 원격도 계속 정상 동작).
 
 > **검증 한계(문서화)**: 원격 attach loopback e2e(`--ssh 127.0.0.1:<port>`)로 실제 GUI 두
 > 인스턴스를 띄워 popup 을 열고 눈으로 확인하는 것은 이 headless 작업 환경(GPU 디스플레이
@@ -141,12 +169,15 @@ Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_m
   `MirrorEvent::ListDirResult`, `apply_attach_client_output` 반영, `dispatch_pending_list_dir_forwards`).
 - 원격 수신(server): `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg`, `pump_inbound`
   분류), `src/core/attach_runtime.rs`(`handle_list_dir_request`, `list_dir_for_request`,
-  `list_dir_entry_wire`). GUI(`src/app/event_handler.rs::apply_list_dir_request_msg`)와
-  headless(`src/boot.rs`) 양쪽 진입점에서 동일 서버 로직을 호출.
+  `list_dir_entry_wire`, `list_dir_entries_wire_capped`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI
+  (`src/app/event_handler.rs::apply_list_dir_request_msg`)와 headless(`src/boot.rs`) 양쪽
+  진입점에서 동일 서버 로직을 호출.
 - Popup 상태: `src/state.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).
 - i18n: `lang/{en,ko,ja}.toml` `[filepicker]`/`[filepicker.error_perm]`/`[filepicker.error_conn]`.
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`.
 - 테스트: `src/adapters/production/stream_hub.rs`(`pump_inbound_classifies_list_dir_request`),
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
+  `src/core/attach_runtime.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
+  `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3종 — 성공/디렉토리
   없음 에러/attach 점유 없는 client 거부).

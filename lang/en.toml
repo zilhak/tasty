@@ -941,6 +941,7 @@ loading_body_local = "Reading the local directory."
 loading_body_remote = "Waiting for the remote directory listing."
 remote_confirm_copied = "Remote path copied to clipboard."
 remote_confirm_clipboard_failed = "Could not copy the remote path to clipboard."
+remote_listing_truncated = "The remote directory has too many entries to show all of them — the list was truncated."
 
 [filepicker.error_perm]
 title = "Permission denied"
