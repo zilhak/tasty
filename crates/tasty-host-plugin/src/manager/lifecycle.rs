@@ -100,6 +100,7 @@ impl PluginManager {
             banner_instances: HashMap::new(),
             next_banner_instance_id: 1,
             banner_mesh_frames: HashMap::new(),
+            invalidated_surfaces: Vec::new(),
             file_format,
             file_handler,
             hook_handler: None,

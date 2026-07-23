@@ -12,6 +12,7 @@
 //! host-side `MarkdownView` render path stays compiled until C1 removes it.
 
 mod render;
+mod watch;
 
 /// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
 /// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
@@ -24,6 +25,7 @@ mod baked_icons {
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Instant, SystemTime};
 
 use render::{LinkClick, MdCache};
@@ -35,6 +37,7 @@ use tasty_plugin_sdk::{
     SurfaceSetContextCtx, Translator,
 };
 use tasty_type_appearance::theme::Theme;
+use watch::WatchCmd;
 
 #[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshPopup;
@@ -130,8 +133,9 @@ impl MdDoc {
     }
 
     /// Throttled mtime poll; refresh content on external change. Runs on each paint, so a
-    /// changed file is picked up the next time the surface paints (i.e. on user input —
-    /// idle auto-reload without input awaits the `SurfaceInvalidated` re-forward path).
+    /// changed file is picked up the next time the surface paints — on user input, or on
+    /// the idle `SurfaceInvalidated` re-forward path (`watch.rs`, 단계 06) which the host
+    /// turns into an input-less re-paint within `RELOAD_CHECK_INTERVAL_SECS`.
     fn poll_reload(&mut self) {
         // 대용량 확인 대기 중이면 아직 읽지 않는다([열기] 확정 전).
         if self.pending_large {
@@ -249,6 +253,10 @@ struct MarkdownPlugin {
     popup_fonts_installed: std::collections::HashSet<u64>,
     /// plugin lang 카탈로그 (state.failed / state.empty 등 UI 문자열).
     tr: Translator,
+    /// idle auto-reload 감시 worker(`watch::run`) 로 등록/해제 명령을 보내는 채널
+    /// (단계 06). `on_start` 에서 worker 를 spawn 하며 채워진다 — 그 전에는 감시가
+    /// 비활성(사실상 도달하지 않음, worker_loop 이 on_start 를 먼저 호출).
+    watch_tx: Option<mpsc::Sender<WatchCmd>>,
 }
 
 impl MarkdownPlugin {
@@ -272,6 +280,7 @@ impl MarkdownPlugin {
             #[cfg(any(unix, windows))]
             popup_fonts_installed: std::collections::HashSet::new(),
             tr,
+            watch_tx: None,
         }
     }
 }
@@ -285,10 +294,22 @@ impl Plugin for MarkdownPlugin {
         PLUGIN_VERSION
     }
 
-    fn on_start(&mut self, _host: HostHandle, bus: BusHandle) {
+    fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
         // large-file 확인 이벤트를 발행하려면 Event Bus 핸들이 필요하다(create_surface 에는
         // host/bus 가 없으므로 여기서 저장).
         self.bus = Some(bus);
+
+        // idle auto-reload(단계 06): paint 에 종속되지 않는 별도 스레드가 mtime 을
+        // 폴링하다가 변경을 감지하면 `SurfaceInvalidated` 를 emit 한다. worker는 emit만
+        // 하고 실제 read 는 다음 재-forward 의 기존 `MdDoc::poll_reload` 가 담당한다.
+        let (tx, rx) = mpsc::channel();
+        self.watch_tx = Some(tx);
+        if let Err(e) = std::thread::Builder::new()
+            .name("markdown-watch".to_string())
+            .spawn(move || watch::run(host, rx))
+        {
+            tracing::warn!("markdown watch worker spawn failed — idle auto-reload disabled: {e}");
+        }
     }
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
@@ -301,8 +322,11 @@ impl Plugin for MarkdownPlugin {
         // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
         // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
         let file = surface_param_file(&ctx.params);
-        let doc = self.make_doc(file, ctx.surface_id);
+        let doc = self.make_doc(file.clone(), ctx.surface_id);
         self.docs.insert(ctx.surface_id, doc);
+        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
+        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
+        self.watch_register(ctx.surface_id, file);
         SurfaceResult::default()
     }
 
@@ -316,6 +340,7 @@ impl Plugin for MarkdownPlugin {
         }
         self.docs.remove(&surface_id);
         self.addr.remove(&surface_id);
+        self.watch_unregister(surface_id);
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
@@ -446,6 +471,28 @@ impl MarkdownPlugin {
             tracing::warn!("markdown large-file gate: event bus unavailable — loading anyway");
         }
         MdDoc::new(file)
+    }
+
+    /// idle 감시 worker(단계 06)에 surface 의 감시 대상 경로를 등록/갱신한다.
+    /// worker 가 없으면(spawn 실패) 조용히 무시 — idle auto-reload 만 비활성화되고
+    /// 기존 paint-종속 폴링(`MdDoc::poll_reload`)은 그대로 동작한다.
+    fn watch_register(&self, surface_id: u32, path: Option<String>) {
+        let Some(tx) = &self.watch_tx else { return };
+        if tx.send(WatchCmd::Register { surface_id, path }).is_err() {
+            tracing::warn!(
+                "markdown watch: register send failed for surface {surface_id} (worker gone)"
+            );
+        }
+    }
+
+    /// idle 감시 worker(단계 06)에서 surface 를 해제한다.
+    fn watch_unregister(&self, surface_id: u32) {
+        let Some(tx) = &self.watch_tx else { return };
+        if tx.send(WatchCmd::Unregister { surface_id }).is_err() {
+            tracing::warn!(
+                "markdown watch: unregister send failed for surface {surface_id} (worker gone)"
+            );
+        }
     }
 
     /// `set_context` 한 frame 을 그려 host 에 mesh 를 회신한다.

@@ -39,6 +39,9 @@ struct CollectedPluginEvents {
     new_popup_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
     // egui-mesh banner paint_frame 알림 (A3): (instance_id, frame 메타).
     new_banner_paint_frames: Vec<(u64, super::EguiMeshFrame)>,
+    // SurfaceInvalidated 알림 (단계 06): idle 상태에서 plugin 이 파일 변경 등을 알린
+    // surface_id. `App::event_handler` 가 pump 후 `take_invalidated_surfaces` 로 드레인.
+    new_invalidated: Vec<u32>,
     // plugin 이 폐기한 shared buffer (성장 재생성 등): (plugin_id, buffer_id).
     // host 매핑을 해제하지 않으면 구세대 버퍼가 plugin 수명 내내 남는다.
     released_buffers: Vec<(String, SharedBufferId)>,
@@ -81,6 +84,13 @@ impl PluginManager {
         hello_pairs
     }
 
+    /// `SurfaceInvalidated`(단계 06) 누적을 드레인한다. `App::event_handler` 가
+    /// `pump()` 직후 호출해, idle 상태에서 파일이 바뀐 egui-mesh surface(markdown 등)의
+    /// View 를 dirty 표시하는 데 쓴다.
+    pub fn take_invalidated_surfaces(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.invalidated_surfaces)
+    }
+
     /// plugin→호스트 이벤트를 `processes` 순회로 수집. self 를 읽기만 하며
     /// (부수효과는 `apply_collected_events` 에서), 각 프로세스의 큐를 순서대로
     /// 비운다 — 수집 순서를 원본 그대로 보존한다.
@@ -117,8 +127,10 @@ impl PluginManager {
                 "warn" => tracing::warn!("[plugin {}] {}", id, message),
                 _ => tracing::info!("[plugin {}] {}", id, message),
             },
-            PluginEvent::SurfaceInvalidated { .. } => {
-                // 단계 06에서 처리
+            PluginEvent::SurfaceInvalidated { surface_id } => {
+                // idle 상태(입력 무)에서도 plugin 이 파일 변경 등을 알렸다 — 다음 tick 에서
+                // 해당 View 의 forward 게이트를 무장해 입력 없이 재-forward 되게 한다.
+                out.new_invalidated.push(surface_id);
             }
             PluginEvent::PaintFrame {
                 surface_id,
@@ -238,6 +250,7 @@ impl PluginManager {
             new_paint_frames,
             new_popup_paint_frames,
             new_banner_paint_frames,
+            new_invalidated,
             released_buffers,
             disconnected,
         } = collected;
@@ -260,6 +273,9 @@ impl PluginManager {
         }
         for (instance_id, frame) in new_banner_paint_frames {
             self.banner_mesh_frames.insert(instance_id, frame);
+        }
+        if !new_invalidated.is_empty() {
+            self.invalidated_surfaces.extend(new_invalidated);
         }
         for (plugin_id, buffer_id) in released_buffers {
             self.release_plugin_buffer(&plugin_id, buffer_id);

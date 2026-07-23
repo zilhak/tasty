@@ -384,6 +384,36 @@ impl ApplicationHandler<AppEvent> for App {
         // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
         // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
         self.finalize_plugin_hello(hello_pairs);
+        // SurfaceInvalidated(단계 06): plugin 이 idle 상태(입력 무)에서 파일 변경을
+        // 알리면 그 surface 를 dirty 표시해 다음 redraw 에서 무입력 재-forward →
+        // 기존 poll_reload 가 새 내용을 읽게 한다. paint 에 종속된 egui_mesh.rs 게이트의
+        // 유일한 예외 진입점. 어느 window 소관인지 몰라 전 View 를 순회한다.
+        let invalidated_surfaces = self
+            .plugin_manager
+            .as_mut()
+            .map(|mgr| mgr.take_invalidated_surfaces())
+            .unwrap_or_default();
+        if !invalidated_surfaces.is_empty() {
+            for w in self.view.views.values_mut() {
+                let touched = match w.as_main_mut() {
+                    Some(main) => {
+                        // `any()`는 첫 true 에서 멈춰 나머지 surface_id 를 못 마크한다 —
+                        // 전부 순회해야 하므로 명시 루프.
+                        let mut any_touched = false;
+                        for &sid in &invalidated_surfaces {
+                            if main.mark_surface_invalidated(sid) {
+                                any_touched = true;
+                            }
+                        }
+                        any_touched
+                    }
+                    None => false,
+                };
+                if touched {
+                    w.mark_dirty();
+                }
+            }
+        }
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
         // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.

@@ -323,6 +323,10 @@ pub struct PluginManager {
     /// `BannerPaintFrame` 알림마다 갱신되고, 호스트 banner 합성기가 instance_id 로
     /// lookup 한다. banner 가 닫히거나 plugin 이 종료되면 해당 엔트리를 정리한다.
     pub(super) banner_mesh_frames: HashMap<u64, EguiMeshFrame>,
+    /// `SurfaceInvalidated`(단계 06) 로 알려진 surface_id 누적 — idle 상태(입력 무)에서
+    /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
+    /// `take_invalidated_surfaces` 가 드레인한다.
+    pub(super) invalidated_surfaces: Vec<u32>,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
     /// 호스트 본문이 CoreState 와 같은 Arc 를 공유 (trait object 로 의존성 격리).
     pub file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,

@@ -73,11 +73,38 @@ write 하면서 동시에 reader 스레드가 plugin 의 Dirty 를 blocking read
 
 정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp, theme,
 focused) 를 추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 미paint(bootstrap) ·
-포커스 변화** 중 하나일 때만 보낸다. 포커스 변화를 트리거에 넣는 이유: markdown 등이
-focused/unfocused 로 배경을 바꾸므로, 입력 없이 포커스만 잃는 경우(다른 surface 클릭)에도
-재전송돼야 배경이 즉시 전환된다. focused 를 안 쓰는 plugin 은 출력 바이트가 불변이라 SDK
-출력 해시 dedup 이 PaintFrame 을 흡수 — 스퍼리어스 재합성 없음. plugin 이 paint 를 보낸
-뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로 frame 이 사라지면 다시 bootstrap 한다.
+포커스 변화 · plugin 의 `SurfaceInvalidated` 알림** 중 하나일 때만 보낸다. 포커스 변화를
+트리거에 넣는 이유: markdown 등이 focused/unfocused 로 배경을 바꾸므로, 입력 없이
+포커스만 잃는 경우(다른 surface 클릭)에도 재전송돼야 배경이 즉시 전환된다.
+`SurfaceInvalidated`(`MeshForwardState::invalidated`, 단계 06)는 plugin 이 out-of-band
+로 감지한 변경(예: idle 상태에서 외부 파일 수정)을 host 에 알려 **입력 없이도** 재forward
+를 트리거하는 유일한 plugin-발 경로다 — 아래 "idle invalidate" 절 참조. focused 를 안 쓰는
+plugin 은 출력 바이트가 불변이라 SDK 출력 해시 dedup 이 PaintFrame 을 흡수 — 스퍼리어스
+재합성 없음. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
+frame 이 사라지면 다시 bootstrap 한다.
+
+## idle invalidate (SurfaceInvalidated, 단계 06)
+
+위 5개 host-side 트리거와 별개로, plugin 은 `HostHandle::notify(&PluginEvent::SurfaceInvalidated
+{ surface_id })` 로 **입력과 무관하게** 재forward 를 요청할 수 있다. host 수신 스레드는
+어떤 이벤트든 라인마다 waker 를 깨우므로(`process.rs`) idle(입력 없는) 상태에서도 이
+알림이 도착하면 다음 tick 에서 즉시 처리된다:
+
+1. `PluginManager::pump()` 가 이벤트를 `invalidated_surfaces` 에 누적하고
+   `take_invalidated_surfaces()` 로 드레인된다(`crates/tasty-host-plugin/src/manager/pump.rs`).
+2. `App::event_handler` 가 pump 직후 이를 소비해, surface_id 가 속한 `MainView` 를 찾아
+   `MeshForwardState::set_invalidated()` + `mark_dirty()`(redraw 요청)를 건다
+   (`src/app/event_handler.rs`).
+3. 다음 `forward_egui_mesh_context` 게이트에서 `invalidated` 플래그가 (다른 트리거 없이도)
+   빈 입력 `set_context` 를 1회 통과시키고, 송신 시 플래그를 소거한다(`src/view/main/egui_mesh.rs`).
+4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태(예: markdown 의
+   `MdDoc::poll_reload`)를 재확인·재-read 한다.
+
+**소비자**: markdown plugin(`crates/tasty-plugin-markdown/src/watch.rs`) — `on_start` 에서
+받은 `HostHandle` 을 별도 스레드로 넘겨 `RELOAD_CHECK_INTERVAL_SECS`(1초) 주기로 열린
+surface 들의 파일 mtime 을 stat 하다가 변경 시 emit 한다. worker 는 **emit 만 하고 read 는
+안 함** — 실제 재-read 는 이 무입력 frame 안에서 기존 `poll_reload` 가 담당해 plugin state
+를 두 곳에서 공유하지 않는다.
 
 ## plugin self-repaint (out-of-band 상태 변경)
 
@@ -100,10 +127,9 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 퇴행한다(markdown 주소창 진동 버그의 원인이었다). 캐시된 theme 은 `last_theme()` 로
 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
 
-소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤).
-git-viewer 는 모든 상태 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가
-필요 없다. markdown 의 mtime 아이들 auto-reload(입력 없이 파일 변경)는 plugin 에 주기 tick 이
-없어 별도 과제다 — `poll_reload` 는 paint 시점(입력 발생 시)에만 돈다.
+소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤,
+그리고 이 문서의 "idle invalidate" 경로가 만든 무입력 frame 뒤). git-viewer 는 모든 상태
+변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다.
 
 ## Theme 스냅샷 (generic parity)
 
