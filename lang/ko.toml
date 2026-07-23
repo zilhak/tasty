@@ -930,6 +930,29 @@ recent_heading = "최근 선택"
 open_button = "열기"
 empty = "등록된 핸들러가 없습니다."
 
+[filepicker]
+title = "파일 열기"
+tools_menu_item = "파일 열기…"
+name_field_label = "선택됨:"
+open_button = "열기"
+empty = "이 폴더는 비어 있습니다."
+loading = "불러오는 중…"
+loading_body_local = "로컬 디렉토리를 읽는 중입니다."
+loading_body_remote = "원격 디렉토리 목록을 기다리는 중입니다."
+remote_confirm_copied = "원격 경로를 클립보드에 복사했습니다."
+remote_confirm_clipboard_failed = "원격 경로를 클립보드에 복사하지 못했습니다."
+
+[filepicker.error_perm]
+title = "권한 거부됨"
+retry = "재시도"
+reason_permission = "이 디렉토리를 읽을 권한이 없습니다."
+
+[filepicker.error_conn]
+title = "연결 끊김"
+reconnect = "재연결"
+session_lost = "원격 세션이 더 이상 연결되어 있지 않습니다."
+timeout = "원격 호스트가 제시간에 응답하지 않았습니다."
+
 [file_drop]
 hover_label = "여기에 드롭하여 열기"
 multi_files = "{n}개 파일"

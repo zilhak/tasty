@@ -930,6 +930,29 @@ recent_heading = "最近の選択"
 open_button = "開く"
 empty = "登録されたハンドラがありません。"
 
+[filepicker]
+title = "ファイルを開く"
+tools_menu_item = "ファイルを開く…"
+name_field_label = "選択済み:"
+open_button = "開く"
+empty = "このフォルダは空です。"
+loading = "読み込み中…"
+loading_body_local = "ローカルディレクトリを読み込んでいます。"
+loading_body_remote = "リモートディレクトリの一覧を待っています。"
+remote_confirm_copied = "リモートパスをクリップボードにコピーしました。"
+remote_confirm_clipboard_failed = "リモートパスをクリップボードにコピーできませんでした。"
+
+[filepicker.error_perm]
+title = "権限がありません"
+retry = "再試行"
+reason_permission = "このディレクトリを読み取る権限がありません。"
+
+[filepicker.error_conn]
+title = "接続が切断されました"
+reconnect = "再接続"
+session_lost = "リモートセッションは既に切断されています。"
+timeout = "リモートホストが時間内に応答しませんでした。"
+
 [file_drop]
 hover_label = "ドロップして開く"
 multi_files = "{n}個のファイル"

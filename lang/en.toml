@@ -930,6 +930,29 @@ recent_heading = "Recent"
 open_button = "Open"
 empty = "No handlers registered."
 
+[filepicker]
+title = "Open File"
+tools_menu_item = "Open File…"
+name_field_label = "Selected:"
+open_button = "Open"
+empty = "This folder is empty."
+loading = "Loading…"
+loading_body_local = "Reading the local directory."
+loading_body_remote = "Waiting for the remote directory listing."
+remote_confirm_copied = "Remote path copied to clipboard."
+remote_confirm_clipboard_failed = "Could not copy the remote path to clipboard."
+
+[filepicker.error_perm]
+title = "Permission denied"
+retry = "Retry"
+reason_permission = "You don't have permission to read this directory."
+
+[filepicker.error_conn]
+title = "Connection lost"
+reconnect = "Reconnect"
+session_lost = "The remote session is no longer attached."
+timeout = "The remote host did not respond in time."
+
 [file_drop]
 hover_label = "Drop to open"
 multi_files = "{n} files"
