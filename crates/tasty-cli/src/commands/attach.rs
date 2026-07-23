@@ -480,12 +480,33 @@ fn run_mirror_dump(
     })
 }
 
+/// raw 브리지 내부 이벤트 — stdin 스레드와 server reader 스레드가 하나의 채널에
+/// merge 해 보낸다. main 은 이 채널에만 블록하므로 더 이상 stdin syscall 에 직접
+/// 갇히지 않고, 서버 쪽 단절을 즉시 감지해 `AttachExit::Disconnected` 를 반환할 수
+/// 있다(mirror-dump 의 `rx.recv_timeout` 패턴과 동일한 아이디어 — 여기선 deadline
+/// 이 없으므로 `recv()`).
+enum RawEvent {
+    Stdin(Vec<u8>),
+    StdinEof,
+    Server(StreamFrame),
+    /// server reader 의 `conn.recv()` 가 `Err` — 조용한 끊김(재연결 대상).
+    ServerRecvErr,
+}
+
 /// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
 /// 단계 4 옵션(완전 raw TTY 설정은 추후) — 기본 passthrough.
 ///
-/// 항상 `Completed` 를 반환한다(사용자 detach/EOF). 서버/터널이 먼저 닫으면 reader
-/// 스레드가 프로세스를 종료하므로 raw 모드는 attach 후 자동 재연결을 하지 않는다
-/// (블로킹 stdin 을 깰 수 없음 — 완전 raw TTY + 재연결 UX 는 후속, plan §6.4 R6).
+/// stdin 과 server 출력을 각각 별도 스레드로 분리해 하나의 `mpsc` 채널에 merge 한다
+/// (mirror-dump 와 동일 패턴). main 은 채널 `recv()` 에만 블록하므로 서버 단절을
+/// `RawEvent::ServerRecvErr` 로 즉시 감지해 `AttachExit::Disconnected` 를 정상
+/// 반환할 수 있다 — `process::exit` 는 쓰지 않는다.
+///
+/// stdin 스레드는 blocking `read()` 를 깨울 방법이 없어 종료 신호를 못 받는다 —
+/// 재연결 루프에서 이 함수가 재호출될 때마다 이전 stdin 스레드는 버려진 채 계속
+/// blocking read 에 갇혀 남는다(join 하지 않음). 재연결 횟수만큼 좀비 스레드가
+/// 쌓이지만 CPU 를 쓰지 않고 스택 메모리만 소모한다 — 완전 non-blocking stdin(플랫폼별
+/// poll/self-pipe/WaitForMultipleObjects)은 크로스플랫폼 복잡도가 커 이번 스코프에서
+/// 배제했다.
 fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
@@ -498,8 +519,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
     // heartbeat thread: 이 세션은 raw 브리지라 stdin 이 조용하면(사용자가 그냥 보기만
     // 하는 동안) 오래 idle 할 수 있다 — 주기적으로 Ping 을 보내 서버측 read timeout 을
     // 갱신한다(반대 방향은 서버 write thread 의 동일 로직이 처리). 별도 종료 신호 없이
-    // 프로세스 종료(아래 reader 의 `process::exit` 또는 main 함수 반환)에 맡긴다 — CLI
-    // 프로세스라 스레드 정리를 기다릴 이유가 없다.
+    // 프로세스 종료(main 함수 반환)에 맡긴다 — CLI 프로세스라 스레드 정리를 기다릴
+    // 이유가 없다.
     {
         let writer = writer.clone();
         thread::spawn(move || {
@@ -516,64 +537,120 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
         });
     }
 
-    // reader thread: 서버 출력 → stdout. force-detach/Detach 시 프로세스 종료.
-    let mut conn = conn;
-    let reader = thread::spawn(move || {
-        let stdout = std::io::stdout();
-        while let Ok(frame) = conn.recv() {
-            match frame.tag {
+    let (tx, rx) = mpsc::channel::<RawEvent>();
+
+    // stdin thread: blocking read → 채널. EOF/에러 시 1 회 통지 후 스레드 종료.
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let mut stdin = std::io::stdin();
+            loop {
+                match stdin.read(&mut buf) {
+                    Ok(0) => {
+                        let _ = tx.send(RawEvent::StdinEof);
+                        break;
+                    }
+                    Ok(n) => {
+                        if tx.send(RawEvent::Stdin(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = tx.send(RawEvent::StdinEof);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // server reader thread: 서버 출력 → 채널. `conn.recv()` 가 `Err` 면 명시적으로
+    // `ServerRecvErr` 를 보낸다(채널 drop 감지에 기대지 않음 — tx clone 이 stdin
+    // 스레드에도 남아있어 drop 만으로는 신호가 안 된다).
+    {
+        let mut conn = conn;
+        let tx = tx.clone();
+        thread::spawn(move || {
+            loop {
+                match conn.recv() {
+                    Ok(frame) => {
+                        let is_detach = frame.tag == StreamTag::Detach;
+                        if tx.send(RawEvent::Server(frame)).is_err() || is_detach {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = tx.send(RawEvent::ServerRecvErr);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    drop(tx); // 남은 건 두 스레드가 쥔 clone 뿐 — 원본은 더 필요 없음.
+
+    // main: 채널 이벤트를 기다린다(더 이상 stdin syscall 에 직접 블록하지 않음).
+    raw_bridge_main_loop(rx, writer)
+}
+
+/// `run_raw_bridge` 의 이벤트 디스패치 루프 — stdin/server 스레드가 실제 OS 자원에
+/// 블록하는 부분과 분리해뒀다. 채널 로직만 이 함수가 담당하므로, 유닛 테스트가
+/// 실제 stdin/소켓 없이 `RawEvent` 를 직접 채널에 흘려 종료 사유 판정을 검증할 수
+/// 있다(아래 `raw_bridge_tests`).
+fn raw_bridge_main_loop(
+    rx: mpsc::Receiver<RawEvent>,
+    writer: Arc<Mutex<TcpStream>>,
+) -> Result<AttachExit> {
+    let stdout = std::io::stdout();
+    loop {
+        match rx.recv() {
+            Ok(RawEvent::Stdin(data)) => {
+                if let Some(pos) = data.iter().position(|&b| b == 0x1c) {
+                    // Ctrl+\ 이전 바이트만 보내고 detach.
+                    if pos > 0
+                        && let Ok(mut w) = writer.lock()
+                    {
+                        let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                    }
+                    if let Ok(mut w) = writer.lock() {
+                        let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                    }
+                    return Ok(AttachExit::Completed);
+                }
+                let write_ok = match writer.lock() {
+                    Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &data).is_ok(),
+                    Err(_) => false,
+                };
+                if !write_ok {
+                    return Ok(AttachExit::Completed);
+                }
+            }
+            Ok(RawEvent::StdinEof) => return Ok(AttachExit::Completed),
+            Ok(RawEvent::Server(frame)) => match frame.tag {
                 StreamTag::Data => {
                     let mut h = stdout.lock();
                     let _ = h.write_all(&frame.payload); // best-effort stdout 미러 — 무시
                     let _ = h.flush(); // best-effort flush — 무시
                 }
-                StreamTag::Detach => break,
+                StreamTag::Detach => return Ok(AttachExit::Completed),
                 StreamTag::Control => {
                     if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
                         eprintln!("\r\nforce-detached by server");
-                        break;
+                        return Ok(AttachExit::Completed);
                     }
                 }
                 // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
                 // 처리 불필요.
                 StreamTag::Ping => {}
-            }
-        }
-        std::process::exit(0);
-    });
-
-    // main: stdin → 서버. detach 전용 키 Ctrl+\ (0x1c) 감지 시 종료.
-    let mut buf = [0u8; 4096];
-    let mut stdin = std::io::stdin();
-    loop {
-        match stdin.read(&mut buf) {
-            Ok(0) => break, // stdin EOF
-            Ok(n) => {
-                if let Some(pos) = buf[..n].iter().position(|&b| b == 0x1c) {
-                    // Ctrl+\ 이전 바이트만 보내고 detach.
-                    if pos > 0
-                        && let Ok(mut w) = writer.lock()
-                    {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Data, &buf[..pos]); // 종료 경로 best-effort 송신 — 무시
-                    }
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
-                    }
-                    break;
-                }
-                let write_ok = match writer.lock() {
-                    Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &buf[..n]).is_ok(),
-                    Err(_) => false,
-                };
-                if !write_ok {
-                    break;
-                }
-            }
-            Err(_) => break,
+            },
+            Ok(RawEvent::ServerRecvErr) => return Ok(AttachExit::Disconnected),
+            // 두 송신 스레드가 모두 죽어야만 발생 — 사실상 도달 불가(stdin 스레드는
+            // 항상 종료 전 StdinEof 를 보내고, 있는대로 서버 스레드도 ServerRecvErr
+            // 를 보낸다).
+            Err(_) => return Ok(AttachExit::Completed),
         }
     }
-    let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
-    Ok(AttachExit::Completed)
 }
 
 /// 입력 문자열의 escape 를 raw 바이트로 디코딩: `\r \n \t \0 \\ \xNN`.
@@ -650,5 +727,120 @@ mod tests {
     fn decode_passthrough_unknown() {
         assert_eq!(decode_escapes("a\\qb"), b"a\\qb".to_vec());
         assert_eq!(decode_escapes("plain"), b"plain".to_vec());
+    }
+}
+
+/// `raw_bridge_main_loop` 채널 로직 단위 테스트 — 실제 stdin/소켓 대신 `RawEvent`
+/// 를 채널에 직접 흘려 종료 사유별 `AttachExit` 판정을 검증한다. 이 항목이 고치는
+/// 결함은 "서버 쪽 단절을 감지해도 raw 브리지가 `AttachExit::Disconnected` 를 반환하지
+/// 못하고(과거엔 `process::exit` 로 프로세스 자체가 죽어 반환 지점에 도달 못함)
+/// 백오프 재연결이 발동하지 않는" 것이었다 — 아래 `server_recv_err_reports_disconnected`
+/// 가 바로 그 회귀를 잡는다.
+#[cfg(test)]
+mod raw_bridge_tests {
+    use std::io::Read;
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::thread;
+
+    use tasty_ipc::stream::{StreamFrame, StreamTag};
+
+    use super::{AttachExit, RawEvent, raw_bridge_main_loop};
+
+    /// writer.lock() 이 실제로 잠글 대상이 필요할 뿐 내용은 검사하지 않으므로,
+    /// loopback 소켓 한쪽을 열어 반대쪽에서 계속 읽어 버림으로써 send-buffer 가
+    /// 차 write 가 막히는 일이 없게 한다.
+    fn dummy_writer() -> Arc<Mutex<TcpStream>> {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let client = TcpStream::connect(addr).expect("connect");
+        let (mut server_side, _) = listener.accept().expect("accept");
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = server_side.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+            }
+        });
+        Arc::new(Mutex::new(client))
+    }
+
+    #[test]
+    fn server_recv_err_reports_disconnected() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        tx.send(RawEvent::ServerRecvErr).unwrap();
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Disconnected));
+    }
+
+    #[test]
+    fn server_detach_frame_reports_completed() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        tx.send(RawEvent::Server(StreamFrame::new(
+            StreamTag::Detach,
+            vec![],
+        )))
+        .unwrap();
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Completed));
+    }
+
+    #[test]
+    fn server_force_detached_control_reports_completed() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        let payload = br#"{"event":"force_detached"}"#.to_vec();
+        tx.send(RawEvent::Server(StreamFrame::new(
+            StreamTag::Control,
+            payload,
+        )))
+        .unwrap();
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Completed));
+    }
+
+    #[test]
+    fn stdin_eof_reports_completed() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        tx.send(RawEvent::StdinEof).unwrap();
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Completed));
+    }
+
+    #[test]
+    fn stdin_detach_key_reports_completed() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        tx.send(RawEvent::Stdin(vec![b'a', 0x1c, b'b'])).unwrap(); // Ctrl+\ 포함
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Completed));
+    }
+
+    /// 서버 프레임(Data)이 먼저 여러 번 오고, 그 다음 단절되는 순서도 정상 처리되는지
+    /// — 재연결 전까지 정상 출력이 이어지다 끊김만 감지하는 실사용 패턴.
+    #[test]
+    fn data_frames_then_server_recv_err_reports_disconnected() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        tx.send(RawEvent::Server(StreamFrame::new(
+            StreamTag::Data,
+            b"hello".to_vec(),
+        )))
+        .unwrap();
+        tx.send(RawEvent::Server(StreamFrame::new(StreamTag::Ping, vec![])))
+            .unwrap();
+        tx.send(RawEvent::ServerRecvErr).unwrap();
+        drop(tx);
+
+        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        assert!(matches!(exit, AttachExit::Disconnected));
     }
 }

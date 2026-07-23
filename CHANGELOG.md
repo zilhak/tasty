@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `tasty remote attach --raw`(및 `tasty attach --raw`): 서버/터널 연결이 끊겨도 `--reconnect`(기본 ON) 백오프 재연결이 전혀 동작하지 않던 결함 수정. raw 브리지가 종료 사유와 무관하게 `process::exit(0)` 으로 프로세스를 죽여 재연결 판단 지점(`AttachExit::Disconnected`)에 도달하지 못했다 — 이제 mirror-dump 와 동일하게 채널 기반으로 종료 사유를 구분해 정상 반환한다.
+
 ## [0.9.7] - 2026-07-15
 
 많은 변경이 있었음(누적된 릴리스 갭).
