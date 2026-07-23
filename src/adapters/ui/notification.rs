@@ -279,6 +279,21 @@ pub fn draw_popups(
         p.result = Some(crate::state::FileHandlerPickerResult::Cancelled);
     }
 
+    // file_picker (04) — file_handler_picker 와 동일 관례: X 버튼/외부 닫기는
+    // dispatch 없이 닫힘으로 간주하고 Cancelled 로 명시, 실제 정리는 호스트
+    // 본체의 result-drain(`dispatch_pending_file_picker_results`)이 담당.
+    let file_picker_closed = dispatch_closed
+        .contains(&crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID)
+        || draw_result
+            .closed
+            .contains(&crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID);
+    if file_picker_closed
+        && let Some(p) = state.dialogs.file_picker.as_mut()
+        && p.result.is_none()
+    {
+        p.result = Some(crate::state::FilePickerResult::Cancelled);
+    }
+
     // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서
     // 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음 head 로 다시 연다.
     let approval_closed = dispatch_closed

@@ -665,6 +665,98 @@ fn save_capture_and_set_clipboard(
     Ok(path_str)
 }
 
+/// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
+/// 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든
+/// 점유(holder)해야 신뢰한다(구조 op forward/캡처 업로드와 동일한 "attach 점유 =
+/// 권한" 원칙 — 로컬 `fs.pick_file` IPC 의 `FsRead` 권한 게이트와는 다른 신뢰
+/// 모델, 하이브리드 설계 근거는 신규 ADR 참고). 대상 디렉토리를 공유
+/// `read_dir_entries`(`crate::core::fs_list`)로 읽어 wire entries 로 변환해
+/// 회신한다(best-effort — `StreamControl` enum 은 그대로 두고 그 enum 이 인식
+/// 못 하는 "event" 값을 같은 `StreamTag::Control` 채널에 실어 보낸다, capture_result
+/// 와 동일 패턴).
+pub(crate) fn handle_list_dir_request(
+    engine: &mut CoreState,
+    hub: &StreamHub,
+    client_id: u32,
+    request_id: u64,
+    dir: &str,
+) {
+    let is_holder = engine.attach.client_holds_workspace(client_id);
+    let result = if !is_holder {
+        Err("client does not hold a workspace attach".to_string())
+    } else {
+        list_dir_for_request(dir)
+    };
+    let payload = match result {
+        Ok((resolved_dir, entries)) => {
+            let wire_entries: Vec<serde_json::Value> =
+                entries.iter().map(list_dir_entry_wire).collect();
+            serde_json::json!({
+                "event": "list_dir_result",
+                "request_id": request_id,
+                "ok": true,
+                "dir": resolved_dir,
+                "entries": wire_entries,
+            })
+        }
+        Err(reason) => serde_json::json!({
+            "event": "list_dir_result",
+            "request_id": request_id,
+            "ok": false,
+            "reason": reason,
+        }),
+    };
+    let frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&payload).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+}
+
+/// `dir` 이 빈 문자열이면 원격(=이 인스턴스) 홈 디렉토리를 루트로, 아니면 그
+/// 경로를 그대로 읽는다. 이름순 정렬(디렉토리 우선)까지 마쳐 반환.
+fn list_dir_for_request(
+    dir: &str,
+) -> Result<(String, Vec<crate::core::fs_list::DirEntryInfo>), String> {
+    let path = if dir.trim().is_empty() {
+        directories::BaseDirs::new()
+            .map(|d| d.home_dir().to_path_buf())
+            .ok_or_else(|| "no home directory".to_string())?
+    } else {
+        std::path::PathBuf::from(dir)
+    };
+    let mut entries = crate::core::fs_list::read_dir_entries(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            "permission denied".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+    crate::core::fs_list::sort_entries(
+        &mut entries,
+        tasty_model::SortColumn::Name,
+        tasty_model::SortDir::Asc,
+    );
+    Ok((path.to_string_lossy().to_string(), entries))
+}
+
+/// `DirEntryInfo` 한 줄 → wire JSON. `modified: Option<SystemTime>` 은 JSON 에 그대로
+/// 실을 수 없어 unix epoch 초(`modified_unix`)로 변환한다 — 사람이 읽는 포맷팅은
+/// 클라이언트의 view 렌더 직전에서만 한다(포맷 변환을 wire 조립 지점과 분리).
+fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Value {
+    let modified_unix = e
+        .modified
+        .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+    serde_json::json!({
+        "name": e.name,
+        "is_dir": e.is_dir,
+        "size": e.size,
+        "modified_unix": modified_unix,
+        "ext": e.ext,
+    })
+}
+
 /// attach 거부/실패 통지: `attach_error` Control + Detach 로 연결 종료 유도.
 /// 어떤 engine 도 대상 surface 를 소유하지 않을 때 메인루프(gui)도 호출한다.
 pub(crate) fn reject_attach(

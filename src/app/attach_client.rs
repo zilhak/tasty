@@ -77,6 +77,16 @@ pub(crate) enum MirrorEvent {
         path: Option<String>,
         reason: Option<String>,
     },
+    /// (04) file picker — 원격이 이 mirror 세션의 `list_dir_request` 를 처리한 결과
+    /// (`list_dir_result` 커스텀 이벤트 — capture_result 와 동일하게 `StreamControl`
+    /// enum 밖). 성공 시 `dir`(echo 된 절대경로)과 `entries`, 실패 시 `reason`.
+    ListDirResult {
+        request_id: u64,
+        ok: bool,
+        dir: Option<String>,
+        entries: Option<Vec<crate::core::fs_list::DirEntryInfo>>,
+        reason: Option<String>,
+    },
 }
 
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
@@ -122,6 +132,11 @@ pub(crate) struct AttachClientSession {
     /// 네트워크 프레임 폭주를 막는다(서버측 동일값 no-op 이 2차 방어). TCP 는 신뢰
     /// 전송이라 한 번 보낸 값은 도달이 보장돼 재전송이 불필요하다.
     last_forwarded_resize: HashMap<u32, (usize, usize)>,
+    /// (04) 파일 피커 원격 host 배지에 쓰이는 표시 문자열. attach 확립 시점의
+    /// loopback 엔드포인트(`127.0.0.1:<port>`)로 채운다 — SSH 프로필의 실제
+    /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
+    /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
+    remote_label: String,
 }
 
 impl App {
@@ -361,9 +376,11 @@ impl App {
                                             surfaces,
                                         }),
                                         // StreamControl 이 인식 못 하는 payload — (03)
-                                        // capture_result 커스텀 이벤트인지 확인(별도
-                                        // enum, StreamControl 비수정 — parse_capture_result 참조).
-                                        Ok(_) | Err(_) => parse_capture_result(&frame.payload),
+                                        // capture_result 또는 (04) list_dir_result
+                                        // 커스텀 이벤트인지 확인(별도 enum, StreamControl
+                                        // 비수정 — parse_capture_result/parse_list_dir_result 참조).
+                                        Ok(_) | Err(_) => parse_capture_result(&frame.payload)
+                                            .or_else(|| parse_list_dir_result(&frame.payload)),
                                     };
                                 if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
@@ -428,6 +445,7 @@ impl App {
             pending_op_focus: HashMap::new(),
             next_delta_focus: None,
             last_forwarded_resize: HashMap::new(),
+            remote_label: format!("127.0.0.1:{port}"),
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -576,6 +594,53 @@ impl App {
                                     kind,
                                     crate::adapters::ui::ToastScope::Window,
                                 );
+                            }
+                            MirrorEvent::ListDirResult {
+                                request_id,
+                                ok,
+                                dir,
+                                entries,
+                                reason,
+                            } => {
+                                // (04) 원격이 이 세션의 list_dir_request 를 처리한
+                                // 결과 — popup 이 열려 있고 그 요청을 아직 기다리는
+                                // 중일 때만 반영(다른 요청/이미 닫힌 popup 응답은
+                                // 조용히 무시 — stale reply).
+                                if let Some(picker) = main.state.dialogs.file_picker.as_mut() {
+                                    let is_pending = matches!(
+                                        &picker.load,
+                                        crate::state::FpLoadState::Loading { request_id: rid, .. }
+                                            if *rid == request_id
+                                    );
+                                    if is_pending {
+                                        if ok {
+                                            let es = entries.unwrap_or_default();
+                                            if let Some(d) = dir {
+                                                picker.current_dir = d;
+                                            }
+                                            picker.load = if es.is_empty() {
+                                                crate::state::FpLoadState::Empty
+                                            } else {
+                                                crate::state::FpLoadState::Loaded
+                                            };
+                                            picker.entries = es;
+                                            // host 배지 라벨 — App 이 소유한
+                                            // attach_client_sessions 에만 있어(popup
+                                            // wrapper 도달 불가) 첫 성공 응답에 실어온다.
+                                            if picker.remote_host.is_none() {
+                                                picker.remote_host =
+                                                    Some(sess.remote_label.clone());
+                                            }
+                                        } else {
+                                            let reason_str = reason.unwrap_or_default();
+                                            picker.load = if reason_str == "permission denied" {
+                                                crate::state::FpLoadState::ErrorPerm(reason_str)
+                                            } else {
+                                                crate::state::FpLoadState::ErrorConn(reason_str)
+                                            };
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -829,6 +894,31 @@ impl App {
             }
         }
         sess.last_forwarded_resize.insert(remote_sid, (cols, rows));
+    }
+
+    /// `about_to_wait` 에서 호출 — (04) 파일 피커 popup wrapper 가 쌓은 원격
+    /// 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)를 drain 해
+    /// 각 요청을 해당 mirror 세션의 attach 채널로 전송한다(구조 op/resize forward 와
+    /// 동일한 "domain 이 큐에 push, App 이 drain 해 소켓 IO" 패턴). 세션을 못 찾으면
+    /// (예: 그 사이 세션이 정리됨) warn 후 drop — 응답을 못 받으므로 popup 은 자체
+    /// soft timeout 으로 `ErrorConn` 전이한다.
+    pub(crate) fn dispatch_pending_list_dir_forwards(&mut self) {
+        let mut pending: Vec<crate::core::PendingListDirForward> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.append(&mut main.core_state.pending_list_dir_forward);
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.append(&mut e.pending_list_dir_forward);
+        }
+        for req in pending {
+            if let Err(e) = self.send_list_dir_request(req.local_ws_id, req.request_id, &req.dir) {
+                tracing::warn!(
+                    "list_dir_request send 실패 (mirror ws {}, request {}): {e}",
+                    req.local_ws_id,
+                    req.request_id
+                );
+            }
+        }
     }
 }
 
@@ -1427,6 +1517,70 @@ fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
     })
 }
 
+/// `parse_list_dir_result`가 쓰는 wire shape — 서버(`attach_runtime::handle_list_dir_request`)
+/// 의 `list_dir_entry_wire` 와 대칭. `modified_unix`(unix epoch 초) 는 여기서
+/// `SystemTime` 으로 복원한다 — `DirEntryInfo` 가 로컬/원격 어디서 만들어지든
+/// 동일한 `Option<SystemTime>` 셰이프를 유지하게(사람이 읽는 포맷팅은 view 렌더
+/// 직전에서만 한다).
+#[derive(serde::Deserialize)]
+struct ListDirEntryWire {
+    name: String,
+    is_dir: bool,
+    size: u64,
+    #[serde(default)]
+    modified_unix: Option<u64>,
+    #[serde(default)]
+    ext: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ListDirResultWire {
+    request_id: u64,
+    ok: bool,
+    #[serde(default)]
+    dir: Option<String>,
+    #[serde(default)]
+    entries: Option<Vec<ListDirEntryWire>>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// `frame.payload` 가 (04) `list_dir_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
+/// 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른 미지 이벤트와
+/// 동일하게 조용히 무시 — 전방 호환).
+fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    if value.get("event").and_then(|v| v.as_str()) != Some("list_dir_result") {
+        return None;
+    }
+    let wire: ListDirResultWire = serde_json::from_value(value).ok()?;
+    let entries = wire.entries.map(|es| {
+        es.into_iter()
+            .map(|e| crate::core::fs_list::DirEntryInfo {
+                path: wire
+                    .dir
+                    .as_deref()
+                    .map(|d| std::path::Path::new(d).join(&e.name))
+                    .unwrap_or_else(|| std::path::PathBuf::from(&e.name)),
+                name: e.name,
+                is_dir: e.is_dir,
+                size: e.size,
+                modified: e
+                    .modified_unix
+                    .map(|secs| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)),
+                ext: e.ext,
+            })
+            .collect()
+    });
+    Some(MirrorEvent::ListDirResult {
+        request_id: wire.request_id,
+        ok: wire.ok,
+        dir: wire.dir,
+        entries,
+        reason: wire.reason,
+    })
+}
+
 impl App {
     /// (03) 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
     /// 업로드하고, 완료 시 원격이 그 경로를 원격 클립보드에 쓰도록 요청한다.
@@ -1473,6 +1627,32 @@ impl App {
             "file_name": file_name,
         });
         send_capture_control_frame(&writer, &commit)
+    }
+
+    /// (04) file picker — `local_ws_id` mirror 세션의 attach 채널로
+    /// `list_dir_request` 를 보낸다. 응답은 reader thread 가 비동기로 받아
+    /// `MirrorEvent::ListDirResult` 로 기존 이벤트 큐에 흘려보낸다(`apply_attach_client_output`
+    /// 이 소비 — capture_result 와 동일한 reader-thread→큐→메인루프 drain 경로,
+    /// `remote_attach.rs` 류 독자 폴링 슬롯 불필요).
+    pub(crate) fn send_list_dir_request(
+        &mut self,
+        local_ws_id: u32,
+        request_id: u64,
+        dir: &str,
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter()
+            .find(|s| s.local_workspace == local_ws_id)
+        else {
+            anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
+        };
+        let msg = serde_json::json!({
+            "event": "list_dir_request",
+            "request_id": request_id,
+            "dir": dir,
+        });
+        send_capture_control_frame(&sess.writer, &msg)
     }
 }
 

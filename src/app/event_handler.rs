@@ -366,6 +366,11 @@ impl ApplicationHandler<AppEvent> for App {
         // reflow 결과는 기존 server→client Resize echo 로 mirror 에 반영된다.
         self.dispatch_pending_resize_forwards();
 
+        // (04) 파일 피커 — popup wrapper 가 쌓은 원격 디렉토리 목록 forward 큐를
+        // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
+        // 로 비동기 수신(아래 apply_attach_client_output 경로).
+        self.dispatch_pending_list_dir_forwards();
+
         // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).
@@ -438,6 +443,9 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_handler_ipc();
         // 파일 handler picker popup 의 result 슬롯 drain (D.3.C.G.3.c).
         self.dispatch_pending_picker_results();
+        // Native file picker(04) popup 의 result 슬롯 drain — 로컬은 DispatchFile,
+        // 원격은 클립보드 복사 + toast.
+        self.dispatch_pending_file_picker_results();
         // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0031 TODO 06).
         self.dispatch_pending_script_confirm();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
@@ -1125,6 +1133,12 @@ impl App {
             self.apply_capture_upload_msg(client_id, msg, &hub);
         }
 
+        // (04) file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
+        // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
+        for (client_id, msg) in outcome.list_dir_requests {
+            self.apply_list_dir_request_msg(client_id, msg, &hub);
+        }
+
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
         }
@@ -1423,6 +1437,54 @@ impl App {
                 let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
             }
         }
+    }
+
+    /// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
+    /// 하나를 적용한다. `client_id` 가 워크스페이스를 점유(holder)한 engine 을 찾아
+    /// `attach_runtime::handle_list_dir_request` 로 위임(holder 검증 + 디렉토리
+    /// 읽기 + `list_dir_result` 회신까지 그 함수가 담당).
+    fn apply_list_dir_request_msg(
+        &mut self,
+        client_id: u32,
+        msg: crate::adapters::production::stream_hub::ListDirRequestMsg,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        use crate::adapters::production::stream_hub::ListDirRequestMsg;
+        let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.attach.client_holds_workspace(client_id)
+            {
+                crate::core::attach_runtime::handle_list_dir_request(
+                    &mut main.core_state,
+                    hub,
+                    client_id,
+                    request_id,
+                    &dir,
+                );
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.attach.client_holds_workspace(client_id) {
+                crate::core::attach_runtime::handle_list_dir_request(
+                    engine, hub, client_id, request_id, &dir,
+                );
+                return;
+            }
+        }
+        // holder 를 못 찾음 — list_dir_result 실패 회신(commit-without-holder 와 동일 처리).
+        let payload = serde_json::json!({
+            "event": "list_dir_result",
+            "request_id": request_id,
+            "ok": false,
+            "reason": "client does not hold a workspace attach",
+        });
+        let frame = crate::ipc::stream::StreamFrame::new(
+            crate::ipc::stream::StreamTag::Control,
+            serde_json::to_vec(&payload).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 }
 

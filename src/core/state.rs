@@ -335,6 +335,15 @@ pub struct CoreState {
     /// mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
     pub(crate) pending_resize_forward: std::collections::HashMap<u32, (usize, usize)>,
 
+    /// (04) 파일 피커 원격 디렉토리 목록 forward 큐. popup wrapper
+    /// (`adapters::ui::popup::file_picker::draw_file_picker`)가 mirror 워크스페이스에서
+    /// 디렉토리 조회가 필요할 때 여기 push 하고, App 이 `about_to_wait`
+    /// (`dispatch_pending_list_dir_forwards`)에서 drain 해 세션의 attach 채널로
+    /// `list_dir_request` 를 전송한다. 응답은 reader thread 가 받아
+    /// `MirrorEvent::ListDirResult` 로 별도 이벤트 큐를 통해 되돌아온다(이 큐는
+    /// 요청 방향 전용, 응답은 여기 담기지 않음).
+    pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
+
     /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
     /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
@@ -468,6 +477,7 @@ impl CoreState {
             capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
+            pending_list_dir_forward: Vec::new(),
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {

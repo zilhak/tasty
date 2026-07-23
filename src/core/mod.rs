@@ -108,6 +108,29 @@ impl PendingStructuralForward {
     }
 }
 
+/// (04) 파일 피커 원격 `list_dir_request` id 시퀀스 — 프로세스 내 유일성만 필요
+/// (capture 의 `upload_id` 시퀀스와 동일 근거).
+static NEXT_LIST_DIR_REQUEST_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+/// 다음 list_dir_request id 발급. 파일 피커 popup wrapper
+/// (`adapters::ui::popup::file_picker`)가 원격 조회를 트리거할 때 호출.
+pub(crate) fn next_list_dir_request_id() -> u64 {
+    NEXT_LIST_DIR_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
+/// 의 원소. popup wrapper 가 (mirror 판별 후) push, App 이 `about_to_wait` 에서
+/// drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 — 구조 op forward
+/// (`PendingStructuralForward`)/resize forward(`pending_resize_forward`)와 동형의
+/// "popup/domain 이 큐에 push, App 레이어가 drain 해 실제 소켓 IO" 패턴.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingListDirForward {
+    pub(crate) local_ws_id: u32,
+    pub(crate) request_id: u64,
+    pub(crate) dir: String,
+}
+
 /// `core.apply(...)`가 mirror-block+forward 로 방금 push 한 **마지막** op 를 "사용자
 /// GUI 조작 유래"로 표시한다(08). `err` 가 `forwarded=true`인 `MirrorStructuralBlocked`
 /// 가 아니거나 `origin` 이 사용자가 아니면 no-op(기본 `false` 유지) — 다른 이유의

@@ -89,6 +89,13 @@ pub struct PumpOutcome {
     /// `StreamControl`'s tagged parse doesn't recognize, so it falls through to the
     /// `Err(_)` arm below rather than colliding with a real `StreamControl` message.
     pub capture_uploads: Vec<(StreamClientId, CaptureUploadMsg)>,
+    /// `(client_id, msg)` — (04) file picker directory-listing requests from a
+    /// mirror client (mirror asking the remote/holder side to list a directory
+    /// over the same attach channel, capture-upload pattern). Same "not a
+    /// `StreamControl` variant" rationale as `capture_uploads` above — rides the
+    /// `StreamTag::Control` channel as a raw JSON "event"-tagged payload, tried
+    /// after `CaptureUploadMsg` fails to parse.
+    pub list_dir_requests: Vec<(StreamClientId, ListDirRequestMsg)>,
 }
 
 /// (03) screenshot→remote-clipboard mid-session control messages. See
@@ -108,6 +115,19 @@ pub enum CaptureUploadMsg {
     /// Marks the upload complete — the main loop finalizes (write file + set the
     /// local clipboard to its path) and replies with a `capture_result` event.
     CaptureCommit { upload_id: u64, file_name: String },
+}
+
+/// (04) file picker mid-session control messages — mirror client asking the
+/// remote/holder side to list a directory. See [`PumpOutcome::list_dir_requests`]
+/// doc for why this lives outside `StreamControl`. Trust model matches the (03)
+/// capture-upload channel: "attach occupancy = trust", no separate `FsRead`-style
+/// permission gate (the local `fs.pick_file` IPC method's gate does not apply here
+/// — see ADR-0042/0046).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ListDirRequestMsg {
+    /// `dir` empty means "use the remote home directory" (server-side convention).
+    ListDirRequest { request_id: u64, dir: String },
 }
 
 /// Per-client push sink held in the registry.
@@ -275,6 +295,10 @@ impl StreamHub {
                                         serde_json::from_slice::<CaptureUploadMsg>(&frame.payload)
                                     {
                                         out.capture_uploads.push((client_id, msg));
+                                    } else if let Ok(msg) =
+                                        serde_json::from_slice::<ListDirRequestMsg>(&frame.payload)
+                                    {
+                                        out.list_dir_requests.push((client_id, msg));
                                     }
                                 }
                             }
@@ -524,6 +548,37 @@ mod tests {
             other => panic!("expected CaptureCommit, got {other:?}"),
         }
         // Not misclassified as a structural op / resize / input frame.
+        assert!(out.structural_ops.is_empty());
+        assert!(out.resize_requests.is_empty());
+        assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_list_dir_request() {
+        // (04) file picker: same "outside StreamControl" pattern as capture upload,
+        // tried only after CaptureUploadMsg fails to parse.
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let req = serde_json::json!({
+            "event": "list_dir_request",
+            "request_id": 7,
+            "dir": "/tmp",
+        });
+        tx.send(StreamInbound::Frame {
+            client_id: 3,
+            frame: frame(StreamTag::Control, req.to_string().as_bytes()),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.list_dir_requests.len(), 1);
+        match &out.list_dir_requests[0] {
+            (3, ListDirRequestMsg::ListDirRequest { request_id, dir }) => {
+                assert_eq!(*request_id, 7);
+                assert_eq!(dir, "/tmp");
+            }
+            other => panic!("expected ListDirRequest from client 3, got {other:?}"),
+        }
+        assert!(out.capture_uploads.is_empty());
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());

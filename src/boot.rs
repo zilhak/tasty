@@ -432,6 +432,20 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         }
                     }
                 }
+                for (client_id, msg) in outcome.list_dir_requests {
+                    // (04) file picker: mirror client 가 이 headless 인스턴스로
+                    // 디렉토리 목록을 요청 — headless 는 단일 engine 이라 gui 의
+                    // holder 순회가 필요 없다. holder 검증은 핸들러 내부.
+                    use crate::adapters::production::stream_hub::ListDirRequestMsg;
+                    let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
+                    crate::core::attach_runtime::handle_list_dir_request(
+                        &mut engine,
+                        &app.stream_hub,
+                        client_id,
+                        request_id,
+                        &dir,
+                    );
+                }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
                 }

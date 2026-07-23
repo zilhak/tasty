@@ -37,6 +37,10 @@ enum BuiltinAction {
     OpenPopup(&'static str),
     /// 별도 winit 윈도우 열기. 현재 사용처는 PresetView 하나.
     OpenWindow(WindowKind),
+    /// 파일 피커(04) — 단순 `OpenPopup` 과 달리 여는 *전* 활성 workspace 의
+    /// mirror 여부로 로컬/원격을 판별해 `state.dialogs.file_picker` 를 채워야 하므로
+    /// 별도 분기.
+    OpenFilePicker,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,6 +71,10 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
             crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
         ),
     },
+    BuiltinTool {
+        label_key: "filepicker.tools_menu_item",
+        action: BuiltinAction::OpenFilePicker,
+    },
 ];
 
 pub fn draw_tools_menu(
@@ -84,6 +92,7 @@ pub fn draw_tools_menu(
     // Built-in entries first.
     let mut open_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
+    let mut open_file_picker = false;
     for entry in BUILTIN_TOOLS {
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
@@ -106,8 +115,13 @@ pub fn draw_tools_menu(
             match entry.action {
                 BuiltinAction::OpenPopup(id) => open_popup = Some(id),
                 BuiltinAction::OpenWindow(k) => open_window = Some(k),
+                BuiltinAction::OpenFilePicker => open_file_picker = true,
             }
         }
+    }
+    if open_file_picker {
+        popup::file_picker::open(state, engine);
+        return PopupAction::Close;
     }
     if let Some(popup_id) = open_popup {
         // 명령 팔레트/포트 스캐너 등은 모달 popup — center + focus 가 자연스러우므로
