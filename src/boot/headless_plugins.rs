@@ -116,9 +116,15 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
         let pixels_per_point = ctx.pixels_per_point;
         let theme = ctx.theme.clone();
         let focused = ctx.focused;
+        let modifiers = ctx.last_modifiers;
 
         let dirty = engine.mesh_mirror.take_dirty(sid);
         let need_full = engine.mesh_mirror.take_need_full_textures(sid);
+        // attach client → plugin 입력 forward(TODO 20) — `MeshInput`으로 누적된
+        // 이벤트를 이번 set_context 에 실어 보낸다. dirty(위 take_dirty)는
+        // push_input 이 이미 세워두므로, 입력만 있고 geometry/theme/focus 변경이
+        // 없어도 이 블록에 진입한다.
+        let events = engine.mesh_mirror.take_pending_events(sid);
 
         if dirty {
             let has_frame = mgr.egui_mesh_frame(sid).is_some();
@@ -139,11 +145,8 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
                 raw_input: tasty_plugin_protocol::RawInputWire {
                     time: None,
                     focused,
-                    modifiers: Default::default(),
-                    // attach client → plugin 입력 forward 는 20번 TODO(마지막 구현
-                    // 단계) — 그 전까지는 항상 비운다(geometry/theme/focus 변경
-                    // 반영은 여기서 이미 동작).
-                    events: Vec::new(),
+                    modifiers,
+                    events,
                 },
                 theme,
                 need_full_textures: need_full,

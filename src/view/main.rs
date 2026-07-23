@@ -1,3 +1,4 @@
+mod attach_mesh_input;
 pub(crate) mod clipboard;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_input;
@@ -86,6 +87,11 @@ pub struct MainView {
     pub(crate) last_terminal_paste_at: Option<std::time::Instant>,
     /// egui-mesh surface 별 host→plugin set_context forward 추적 (A1-S7).
     pub(crate) egui_mesh: std::collections::HashMap<u32, egui_mesh::MeshForwardState>,
+    /// attach mesh mirror surface(`AttachMeshSurface`) 별 client→server MeshContext/
+    /// MeshInput forward 추적(TODO 20). `egui_mesh`의 attach 대응 —
+    /// `attach_mesh_input.rs` 참고.
+    pub(crate) attach_mesh_input:
+        std::collections::HashMap<u32, attach_mesh_input::AttachMeshForwardState>,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
     /// 실제 우클릭은 `process_pending_native_menu` 가 `TrackPopupMenu`(Windows) 등
     /// **블로킹 모달** 로 즉시 소비하므로, 헤드리스 주입 테스트에서 우클릭 라우팅을
@@ -142,6 +148,7 @@ impl MainView {
             hovered_link: None,
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),
+            attach_mesh_input: std::collections::HashMap::new(),
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
         }

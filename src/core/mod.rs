@@ -31,7 +31,7 @@ pub(crate) mod session;
 pub(crate) mod state;
 pub(crate) mod terminal_store;
 
-pub(crate) use state::{CoreState, GuiAttachUserReq, PendingImageUpload};
+pub(crate) use state::{AttachMeshContextForward, CoreState, GuiAttachUserReq, PendingImageUpload};
 
 use std::sync::{Arc, Mutex, OnceLock};
 

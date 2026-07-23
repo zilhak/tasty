@@ -159,6 +159,13 @@ impl MainView {
             self.mark_dirty();
             return;
         }
+        // attach mesh mirror surface 위 포인터 이동 forward (TODO 20) — 위와 동형이되
+        // 목적지가 원격.
+        if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
+            self.attach_mesh_push_pointer_moved(sid, rect, x, y);
+            self.mark_dirty();
+            return;
+        }
 
         if self.update_hovered_link() {
             self.mark_dirty();
@@ -280,6 +287,9 @@ impl MainView {
         {
             return;
         }
+        if self.try_forward_attach_mesh_button(button, button_state) {
+            return;
+        }
 
         match button {
             MouseButton::Right => self.handle_right_button(button_state),
@@ -381,6 +391,27 @@ impl MainView {
                     self.left_mouse_down = false;
                 }
                 self.egui_mesh_push_pointer_button(sid, rect, x, y, button, pressed);
+                self.mark_dirty();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// attach mesh mirror surface 입력 forward (TODO 20) — 위와 동형이되 목적지가 원격.
+    fn try_forward_attach_mesh_button(
+        &mut self,
+        button: MouseButton,
+        button_state: ElementState,
+    ) -> bool {
+        if let Some(pos) = self.cursor_position {
+            let (x, y) = (pos.x as f32, pos.y as f32);
+            if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
+                let pressed = super::egui_mesh::is_pressed(button_state);
+                if !pressed {
+                    self.left_mouse_down = false;
+                }
+                self.attach_mesh_push_pointer_button(sid, rect, x, y, button, pressed);
                 self.mark_dirty();
                 return true;
             }
@@ -863,6 +894,20 @@ impl MainView {
                         }
                     };
                     self.egui_mesh_push_scroll(sid, dx, dy);
+                    self.mark_dirty();
+                    return;
+                }
+                // attach mesh mirror surface 휠 forward (TODO 20) — 위와 동형이되
+                // 목적지가 원격.
+                if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::PixelDelta(p) => {
+                            let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
+                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                        }
+                    };
+                    self.attach_mesh_push_scroll(sid, dx, dy);
                     self.mark_dirty();
                     return;
                 }

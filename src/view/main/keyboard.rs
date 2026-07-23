@@ -87,6 +87,9 @@ impl MainView {
                 // html/empty/None 등 비-mesh surface 는 여전히 no-op.
                 if let Some(sid) = self.focused_egui_mesh_surface_id() {
                     self.forward_key_to_egui_mesh(sid, event);
+                } else if let Some(sid) = self.focused_attach_mesh_surface_id() {
+                    // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격.
+                    self.forward_key_to_attach_mesh(sid, event);
                 }
             }
         }
@@ -276,6 +279,20 @@ impl MainView {
             let is_cmd = self.base.modifiers.control_key() || self.base.modifiers.super_key();
             if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
                 self.egui_mesh_push_text(surface_id, text.as_str());
+            }
+        }
+        self.mark_dirty();
+    }
+
+    /// [`Self::forward_key_to_egui_mesh`]의 attach mesh mirror 대응(TODO 20) — 목적지가
+    /// 원격 plugin 이라는 점만 다르다.
+    fn forward_key_to_attach_mesh(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
+        self.attach_mesh_push_key(surface_id, event);
+
+        if let Some(text) = &event.text {
+            let is_cmd = self.base.modifiers.control_key() || self.base.modifiers.super_key();
+            if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
+                self.attach_mesh_push_text(surface_id, text.as_str());
             }
         }
         self.mark_dirty();

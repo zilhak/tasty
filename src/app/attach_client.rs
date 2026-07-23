@@ -1084,6 +1084,121 @@ impl App {
         }
     }
 
+    /// `about_to_wait` 에서 호출 — attach mesh mirror pane 의 redraw 스윕
+    /// (`forward_attach_mesh_context`)이 geometry/theme/focus 변경을 감지해 쌓은
+    /// 로컬 surface_id 큐(TODO 20)를 drain 해 원격에 `MeshContext` 를 forward한다.
+    /// `dispatch_pending_resize_forwards` 와 동형.
+    pub(crate) fn dispatch_pending_mesh_context_forwards(&mut self) {
+        let mut pending: Vec<(u32, crate::core::AttachMeshContextForward)> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.extend(main.core_state.pending_mesh_context_forward.drain());
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.extend(e.pending_mesh_context_forward.drain());
+        }
+        for (local_sid, ctx) in pending {
+            self.forward_one_mesh_context(local_sid, ctx);
+        }
+    }
+
+    /// context 큐의 항목 하나를 담당 mirror 세션으로 전송한다. `forward_one_resize`
+    /// 와 동형 — 세션/원격 id 를 못 찾으면 warn 후 drop. dedup 은 클라이언트측
+    /// `AttachMeshForwardState`(호출 이전 단계)가 이미 담당하므로 여기선 무조건 전송.
+    fn forward_one_mesh_context(
+        &mut self,
+        local_sid: u32,
+        ctx: crate::core::AttachMeshContextForward,
+    ) {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter_mut()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
+        else {
+            tracing::warn!(
+                "mesh context forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop"
+            );
+            return;
+        };
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_sid)
+            .map(|(&r, _)| r)
+        else {
+            tracing::warn!("mesh context forward: 로컬 surface {local_sid} 의 원격 id 없음 — drop");
+            return;
+        };
+        let payload = serde_json::to_vec(&StreamControl::MeshContext {
+            surface_id: remote_sid,
+            width_px: ctx.width_px,
+            height_px: ctx.height_px,
+            pixels_per_point: ctx.pixels_per_point,
+            theme: ctx.theme,
+            focused: ctx.focused,
+        })
+        .unwrap_or_default();
+        if let Err(e) = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        }) {
+            tracing::warn!("mesh context forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+        }
+    }
+
+    /// `about_to_wait` 에서 호출 — attach mesh mirror pane 위 로컬 입력을 누적한
+    /// 큐(TODO 20)를 drain 해 원격에 `MeshInput` 을 forward한다.
+    pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
+        let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.extend(main.core_state.pending_mesh_input_forward.drain());
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.extend(e.pending_mesh_input_forward.drain());
+        }
+        for (local_sid, input) in pending {
+            self.forward_one_mesh_input(local_sid, input);
+        }
+    }
+
+    /// 입력 큐의 항목 하나를 담당 mirror 세션으로 전송한다. `forward_one_mesh_context`
+    /// 와 동형.
+    fn forward_one_mesh_input(
+        &mut self,
+        local_sid: u32,
+        input: tasty_plugin_protocol::protocol::RawInputWire,
+    ) {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter_mut()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
+        else {
+            tracing::warn!(
+                "mesh input forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않음 — drop"
+            );
+            return;
+        };
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_sid)
+            .map(|(&r, _)| r)
+        else {
+            tracing::warn!("mesh input forward: 로컬 surface {local_sid} 의 원격 id 없음 — drop");
+            return;
+        };
+        let payload = serde_json::to_vec(&StreamControl::MeshInput {
+            surface_id: remote_sid,
+            input,
+        })
+        .unwrap_or_default();
+        if let Err(e) = sess.frame_tx.send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        }) {
+            tracing::warn!("mesh input forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+        }
+    }
+
     /// `about_to_wait` 에서 호출 — GPU 렌더 prepare 가 attach mesh mirror surface 의
     /// 텍스처 delta 체인 단절을 감지해 쌓은 로컬 surface_id 큐(TODO 19)를 drain 해
     /// 원격에 `MeshFullResendRequest` 를 forward 한다. `dispatch_pending_resize_forwards`

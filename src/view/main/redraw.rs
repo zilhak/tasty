@@ -71,6 +71,9 @@ impl MainView {
             if let Some(mgr) = plugin_manager {
                 self.forward_egui_mesh_context(mgr);
             }
+            // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격이라
+            // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
+            self.forward_attach_mesh_context();
             let link_hover = self
                 .hovered_link
                 .as_ref()

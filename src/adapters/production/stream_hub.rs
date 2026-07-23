@@ -102,6 +102,16 @@ pub struct PumpOutcome {
     /// ([`StreamControl::MeshFullResendRequest`](crate::ipc::stream::StreamControl)),
     /// e.g. after a client-side decode error or reconnect.
     pub mesh_full_resend_requests: Vec<(StreamClientId, u32)>,
+    /// `(client_id, surface_id, input)` — local input captured over an attach
+    /// client's mesh mirror pane, forwarded verbatim
+    /// ([`StreamControl::MeshInput`](crate::ipc::stream::StreamControl), TODO 20).
+    /// The main loop validates holder authority before appending to
+    /// `CoreState::mesh_mirror`'s pending-input queue.
+    pub mesh_input_events: Vec<(
+        StreamClientId,
+        u32,
+        tasty_plugin_protocol::protocol::RawInputWire,
+    )>,
     /// `(client_id, msg)` — (03) screenshot→remote-clipboard upload chunks/commit
     /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::ipc::stream::StreamControl)
     /// variant (that enum is a concurrent workstream's file) — it rides the same
@@ -435,6 +445,12 @@ impl StreamHub {
                                 }) => {
                                     out.mesh_full_resend_requests.push((client_id, surface_id));
                                 }
+                                Ok(crate::ipc::stream::StreamControl::MeshInput {
+                                    surface_id,
+                                    input,
+                                }) => {
+                                    out.mesh_input_events.push((client_id, surface_id, input));
+                                }
                                 Ok(_) => {}
                                 Err(_) => {
                                     if let Ok(msg) =
@@ -689,6 +705,36 @@ mod tests {
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.mesh_full_resend_requests, vec![(9u32, 7u32)]);
         assert!(out.mesh_context_requests.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_mesh_input() {
+        use tasty_plugin_protocol::protocol::{ModifiersWire, RawInputEventWire, RawInputWire};
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let input = RawInputWire {
+            time: None,
+            focused: true,
+            modifiers: ModifiersWire {
+                shift: true,
+                ..Default::default()
+            },
+            events: vec![RawInputEventWire::PointerMoved { x: 3.0, y: 4.0 }],
+        };
+        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshInput {
+            surface_id: 7,
+            input: input.clone(),
+        })
+        .unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: 9,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.mesh_input_events, vec![(9u32, 7u32, input)]);
+        assert!(out.mesh_context_requests.is_empty());
+        assert!(out.mesh_full_resend_requests.is_empty());
     }
 
     #[test]

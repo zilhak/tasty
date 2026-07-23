@@ -384,6 +384,11 @@ impl ApplicationHandler<AppEvent> for App {
         // prepare 가 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다.
         self.dispatch_pending_mesh_full_resend_forwards();
 
+        // TODO 20 — attach mesh mirror pane 의 geometry/theme/focus 변경 + 누적 입력을
+        // drain 해 원격에 forward한다(구독 유지 + 인터랙티브 입력).
+        self.dispatch_pending_mesh_context_forwards();
+        self.dispatch_pending_mesh_input_forwards();
+
         // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
         // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).
@@ -1178,6 +1183,15 @@ impl App {
                 reply_mesh_error(&hub, client_id, surface_id, "not_attached");
             }
         }
+        // attach mesh mirror 입력 역방향 forward(TODO 20) — 위 mesh_context_requests
+        // 와 동일 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는
+        // TODO 24 로 이연.
+        for (client_id, surface_id, input) in outcome.mesh_input_events {
+            let ok = self.apply_mesh_input_on_owning_engine(surface_id, client_id, input);
+            if !ok {
+                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+            }
+        }
 
         // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
         // 캡처 업로드 청크/커밋. holder(그 client 가 점유한 워크스페이스를 가진
@@ -1357,6 +1371,30 @@ impl App {
                 theme.clone(),
                 focused,
             ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// [`Self::apply_mesh_context_on_owning_engine`]과 동형의 입력 forward 버전(TODO 20).
+    fn apply_mesh_input_on_owning_engine(
+        &mut self,
+        surface_id: u32,
+        client_id: u32,
+        input: tasty_plugin_protocol::protocol::RawInputWire,
+    ) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main
+                    .core_state
+                    .apply_attached_mesh_input(surface_id, client_id, input.clone())
+            {
+                return true;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.apply_attached_mesh_input(surface_id, client_id, input.clone()) {
                 return true;
             }
         }

@@ -129,7 +129,7 @@ impl MainView {
     /// 현재 resolved 전역 Theme 을 wire 스냅샷으로. plugin 이 host 와 동일 Theme 을
     /// 재구성하도록 색 집합 + is_light + UI zoom 을 담는다(sizing 은 plugin 이 zoom 으로
     /// 재도출). 매 forward 마다 1회 만들어, 테마 변경을 set_context 재송신 트리거로 쓴다.
-    fn mesh_theme_snapshot(&self) -> ThemeWire {
+    pub(super) fn mesh_theme_snapshot(&self) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
             colors: theme.to_colors(),
@@ -138,8 +138,9 @@ impl MainView {
         }
     }
 
-    /// 현재 modifier 상태를 wire 형태로.
-    fn mesh_modifiers(&self) -> ModifiersWire {
+    /// 현재 modifier 상태를 wire 형태로. `pub(super)` — attach mesh mirror(TODO 20,
+    /// `attach_mesh_input.rs`)의 로컬 입력 캡처가 동일 좌표계/modifier 계산을 재사용한다.
+    pub(super) fn mesh_modifiers(&self) -> ModifiersWire {
         let m = &self.base.modifiers;
         let cmd = if cfg!(target_os = "macos") {
             m.super_key()
@@ -155,8 +156,9 @@ impl MainView {
         }
     }
 
-    /// 물리 window 좌표를 surface-local 논리 포인트로 변환.
-    fn mesh_local_point(&self, rect: PhysicalRect, x: f32, y: f32) -> (f32, f32) {
+    /// 물리 window 좌표를 surface-local 논리 포인트로 변환. `pub(super)` —
+    /// `attach_mesh_input.rs` 재사용.
+    pub(super) fn mesh_local_point(&self, rect: PhysicalRect, x: f32, y: f32) -> (f32, f32) {
         let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
         ((x - rect.x.value()) / ppp, (y - rect.y.value()) / ppp)
     }
@@ -439,7 +441,8 @@ impl MainView {
 }
 
 /// winit 마우스 버튼 → wire 포인터 버튼. 매핑 불가한 버튼(Back/Forward/Other)은 무시.
-fn map_button(button: MouseButton) -> Option<PointerButtonWire> {
+/// `pub(super)` — `attach_mesh_input.rs` 재사용.
+pub(super) fn map_button(button: MouseButton) -> Option<PointerButtonWire> {
     match button {
         MouseButton::Left => Some(PointerButtonWire::Primary),
         MouseButton::Right => Some(PointerButtonWire::Secondary),
@@ -457,7 +460,7 @@ pub(super) fn is_pressed(state: ElementState) -> bool {
 /// wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK 가 `Key::from_name` 으로
 /// 복원한다(매핑 불가 키는 plugin 도 무시). `KeyEvent` 전체가 아니라 구성요소를
 /// 받아 `KeyEvent` 생성 없이 단위테스트가 가능하게 한다.
-fn key_wire_event(
+pub(super) fn key_wire_event(
     logical: &WinitKey,
     physical: PhysicalKey,
     pressed: bool,

@@ -82,6 +82,12 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         w.mark_dirty();
         return;
     }
+    // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격.
+    if let Some(sid) = w.focused_attach_mesh_surface_id() {
+        forward_ime_to_attach_mesh(w, sid, event);
+        w.mark_dirty();
+        return;
+    }
 
     match event {
         Ime::Enabled => w.ime_active = true,
@@ -110,6 +116,24 @@ fn forward_ime_to_egui_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
         Ime::Commit(text) => ImeWire::Commit { text },
     };
     w.egui_mesh_push_ime(surface_id, wire);
+}
+
+/// [`forward_ime_to_egui_mesh`]의 attach mesh mirror 대응(TODO 20) — 목적지가 원격
+/// plugin 이라는 점만 다르다.
+fn forward_ime_to_attach_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
+    let wire = match event {
+        Ime::Enabled => {
+            w.ime_active = true;
+            ImeWire::Enabled
+        }
+        Ime::Disabled => {
+            w.ime_active = false;
+            ImeWire::Disabled
+        }
+        Ime::Preedit(text, _cursor) => ImeWire::Preedit { text },
+        Ime::Commit(text) => ImeWire::Commit { text },
+    };
+    w.attach_mesh_push_ime(surface_id, wire);
 }
 
 /// PTY 출력이 도착해 terminal cursor(또는 TUI의 fake cursor)가 움직였을 수 있을

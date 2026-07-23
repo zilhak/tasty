@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 
 use crate::core::attach::AttachClientId;
-use tasty_plugin_protocol::protocol::ThemeWire;
+use tasty_plugin_protocol::protocol::{ModifiersWire, RawInputEventWire, RawInputWire, ThemeWire};
 
 /// 한 mesh surface 의 최신 구독 상태.
 #[derive(Debug, Clone)]
@@ -48,6 +48,14 @@ pub(crate) struct MeshMirrorContext {
     /// `frame_seq`(plugin 렌더 코어의 시퀀스)와는 별개 — 이건 순수 attach 전송 계층의
     /// 재조립 키다.
     next_frame_id: u64,
+    /// [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)로 누적된, 아직
+    /// plugin 에 forward 하지 않은 입력 이벤트(TODO 20). forward 루프가 dirty 를 소비할
+    /// 때 [`Self::take_pending_events`]로 함께 가져간다.
+    pending_events: Vec<RawInputEventWire>,
+    /// 마지막으로 받은 modifier 스냅샷 — `MeshInput`이 갱신한다. `MeshContext`는
+    /// modifier 를 나르지 않으므로(geometry/theme/focus 전용) 여기 보관한 값이
+    /// forward 시 `SurfaceSetContextParams.raw_input.modifiers`의 소스가 된다.
+    pub(crate) last_modifiers: ModifiersWire,
 }
 
 impl MeshMirrorContext {
@@ -110,6 +118,8 @@ impl MeshMirrorRegistry {
                         need_full_textures: true,
                         last_forwarded_generation: None,
                         next_frame_id: 0,
+                        pending_events: Vec::new(),
+                        last_modifiers: ModifiersWire::default(),
                     },
                 );
             }
@@ -171,6 +181,31 @@ impl MeshMirrorRegistry {
         let id = ctx.next_frame_id;
         ctx.next_frame_id += 1;
         Some(id)
+    }
+
+    /// client→server [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)를
+    /// 반영(TODO 20) — 이벤트를 누적하고 modifiers 를 최신화, `dirty` 를 세워 geometry
+    /// 무변이어도(입력만으로) forward 루프가 재전송하게 한다. 구독돼 있지 않으면
+    /// `false`(호출자는 MeshError 회신).
+    pub(crate) fn push_input(&mut self, surface_id: u32, input: RawInputWire) -> bool {
+        match self.contexts.get_mut(&surface_id) {
+            Some(ctx) => {
+                ctx.last_modifiers = input.modifiers;
+                ctx.pending_events.extend(input.events);
+                ctx.dirty = true;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// forward 루프 전용 — 누적된 입력 이벤트를 비우며 가져간다(`take_dirty`/
+    /// `take_need_full_textures`와 동형, 순서 독립적으로 분리).
+    pub(crate) fn take_pending_events(&mut self, surface_id: u32) -> Vec<RawInputEventWire> {
+        self.contexts
+            .get_mut(&surface_id)
+            .map(|c| std::mem::take(&mut c.pending_events))
+            .unwrap_or_default()
     }
 
     /// 구독 중인 모든 surface_id 스냅샷(순회 중 mutate 를 피하기 위해 collect 해 반환).
@@ -261,6 +296,30 @@ mod tests {
         reg.remove_for_client(100);
         assert!(reg.get(1).is_none());
         assert!(reg.get(2).is_some());
+    }
+
+    #[test]
+    fn push_input_requires_existing_subscription() {
+        let mut reg = MeshMirrorRegistry::default();
+        let input = RawInputWire {
+            time: None,
+            focused: true,
+            modifiers: ModifiersWire {
+                ctrl: true,
+                ..Default::default()
+            },
+            events: vec![RawInputEventWire::PointerMoved { x: 1.0, y: 2.0 }],
+        };
+        assert!(!reg.push_input(9, input.clone())); // 구독 없음
+        reg.upsert(9, 1, 10, 10, 1.0, None, false);
+        reg.take_dirty(9);
+        assert!(reg.push_input(9, input));
+        assert!(reg.take_dirty(9)); // 입력만으로도 재dirty
+        let events = reg.take_pending_events(9);
+        assert_eq!(events.len(), 1);
+        assert!(reg.get(9).unwrap().last_modifiers.ctrl);
+        // 소비 후 재조회는 빈 벡터.
+        assert!(reg.take_pending_events(9).is_empty());
     }
 
     #[test]

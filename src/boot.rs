@@ -456,6 +456,24 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
                     }
                 }
+                for (client_id, surface_id, input) in outcome.mesh_input_events {
+                    // attach mesh mirror 입력 역방향 forward(TODO 20) — holder 검증은
+                    // apply_attached_mesh_input 이 담당. 실제 plugin 구동은
+                    // headless_plugins::forward_mesh_frames 가 다음 tick 에 누적된
+                    // 이벤트를 소비한다.
+                    let ok = engine.apply_attached_mesh_input(surface_id, client_id, input);
+                    if !ok {
+                        let reply = crate::ipc::stream::StreamControl::MeshError {
+                            surface_id,
+                            reason: "not_attached".to_string(),
+                        };
+                        let frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Control,
+                            serde_json::to_vec(&reply).unwrap_or_default(),
+                        );
+                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
+                    }
+                }
                 for (client_id, msg) in outcome.capture_uploads {
                     // (03) screenshot→remote-clipboard: mirror client 가 이 headless
                     // 인스턴스로 화면 캡처를 업로드 — headless 는 단일 engine 이라

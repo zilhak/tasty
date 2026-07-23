@@ -216,6 +216,21 @@ impl CoreState {
         self.mesh_mirror.request_full_resend(surface_id)
     }
 
+    /// attach mesh mirror 클라이언트가 mesh pane 위에서 캡처한 입력
+    /// (`StreamControl::MeshInput`, TODO 20) 반영. holder 검증은
+    /// [`Self::apply_attached_mesh_context`]와 동일. 반환: 성공 여부.
+    pub fn apply_attached_mesh_input(
+        &mut self,
+        surface_id: SurfaceId,
+        client_id: AttachClientId,
+        input: tasty_plugin_protocol::protocol::RawInputWire,
+    ) -> bool {
+        if self.attach.holder(surface_id) != Some(client_id) {
+            return false;
+        }
+        self.mesh_mirror.push_input(surface_id, input)
+    }
+
     /// client 입력 Data 프레임을 그 client 가 점유한 surface 의 PTY 로 전달한다.
     /// 서버 로컬 입력 차단(`apply_send_to_surface` 의 is_hard_occupied 거부)을 우회하는
     /// 유일한 정규 경로 — holder 검증을 거치므로 점유자만 입력할 수 있다.

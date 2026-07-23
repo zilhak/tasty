@@ -151,6 +151,17 @@ pub(crate) struct PendingImageUpload {
     pub(crate) png_bytes: Vec<u8>,
 }
 
+/// attach mesh mirror(TODO 20) client→server `MeshContext` forward 요청 하나의 payload.
+/// `StreamControl::MeshContext`의 필드를 그대로 미러(surface_id 는 큐의 키라 여기 없음).
+#[derive(Debug, Clone)]
+pub(crate) struct AttachMeshContextForward {
+    pub(crate) width_px: u32,
+    pub(crate) height_px: u32,
+    pub(crate) pixels_per_point: f32,
+    pub(crate) theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+    pub(crate) focused: bool,
+}
+
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
 ///
@@ -397,6 +408,22 @@ pub struct CoreState {
     /// 와 동형(mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다).
     pub(crate) pending_mesh_full_resend_forward: std::collections::HashSet<u32>,
 
+    /// attach mesh mirror(TODO 20) client→server `MeshContext` forward 큐.
+    /// `MainView::forward_attach_mesh_context`(redraw 스윕)가 `AttachMeshSurface`
+    /// pane 의 geometry/theme/focus 변경을 감지해 **로컬** surface_id 키로 최신값만
+    /// 채운다(HashMap coalesce — `pending_resize_forward`와 동형). App 이
+    /// `about_to_wait`(`dispatch_pending_mesh_context_forwards`, gui)에서 drain 해
+    /// 세션 매핑으로 원격 id 치환 후 `StreamControl::MeshContext` 로 forward한다.
+    pub(crate) pending_mesh_context_forward:
+        std::collections::HashMap<u32, AttachMeshContextForward>,
+
+    /// attach mesh mirror(TODO 20) client→server `MeshInput` forward 큐. 로컬
+    /// surface_id → 그 redraw 사이클에 누적된 입력 배치(`RawInputWire`). App 이
+    /// `about_to_wait`(`dispatch_pending_mesh_input_forwards`, gui)에서 drain 해
+    /// `StreamControl::MeshInput` 으로 forward한다.
+    pub(crate) pending_mesh_input_forward:
+        std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
+
     /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
     /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
@@ -536,6 +563,8 @@ impl CoreState {
             pending_resize_forward: std::collections::HashMap::new(),
             pending_list_dir_forward: Vec::new(),
             pending_mesh_full_resend_forward: std::collections::HashSet::new(),
+            pending_mesh_context_forward: std::collections::HashMap::new(),
+            pending_mesh_input_forward: std::collections::HashMap::new(),
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {
