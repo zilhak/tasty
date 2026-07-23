@@ -680,11 +680,86 @@ fn save_bulk_file(
     Ok(path.to_string_lossy().to_string())
 }
 
-/// bulk 전송 파일의 기본 저장 폴더 `~/.tasty/transfers/`(홈 미확인 시 `None`). 07 이
-/// 지정 폴더 설정을 제공하면 라우팅이 그 값을 대신 [`finalize_bulk_transfer`] 에
-/// 넘긴다 — 이 기본값은 그때까지의 폴백이다.
+/// bulk 전송 파일의 기본 저장 폴더 `~/.tasty/transfers/`(홈 미확인 시 `None`).
+/// [`resolve_bulk_transfer_dir`] 가 설정값이 비었을 때 도출하는 폴백이다.
 pub(crate) fn default_bulk_transfer_dir() -> Option<std::path::PathBuf> {
     crate::paths::tasty_home().map(|h| h.join("transfers"))
+}
+
+/// (07) 원격 전송 저장 폴더 결정: 설정된 `remote_transfer.dir` 가 비어있지 않으면 그
+/// 경로, 비었으면 기본 폴더(`~/.tasty/transfers/`). begin 용량 판정·commit 저장이
+/// 공유한다(같은 폴더 기준이어야 사용량 계산과 저장 위치가 일치).
+pub(crate) fn resolve_bulk_transfer_dir(
+    settings: &tasty_settings::Settings,
+) -> Option<std::path::PathBuf> {
+    let configured = settings.remote_transfer.dir.trim();
+    if configured.is_empty() {
+        default_bulk_transfer_dir()
+    } else {
+        Some(std::path::PathBuf::from(configured))
+    }
+}
+
+/// (07) 지정 폴더의 사용량(바이트) — 1-depth 파일 크기 단순 합산. 폴더가 없으면 0
+/// (첫 전송 전). 하위 디렉토리·심볼릭 링크는 세지 않는다(재귀/캐시는 후속 과제).
+pub(crate) fn dir_used_bytes(dir: &std::path::Path) -> u64 {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    rd.flatten()
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// (07) 용량 판정 술어: 저장 폴더 사용량 + 유입 파일 크기가 상한을 넘는지. 경계
+/// `used + incoming == max_bytes` 는 허용, `> max_bytes` 는 거부(`>` 비교).
+/// `saturating_add` 로 u64 오버플로 시에도 거부 쪽으로 안전하게 수렴한다.
+fn exceeds_capacity(used: u64, incoming: u64, max_bytes: u64) -> bool {
+    used.saturating_add(incoming) > max_bytes
+}
+
+/// (07) begin 단계 용량 사전판정 + 등록. `resolve_bulk_transfer_dir` 사용량 +
+/// `total_size` 가 `remote_transfer.max_mb` 상한을 넘으면 전송을 **등록하지 않고**
+/// 즉시 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(청크가 한
+/// 바이트도 수신·저장되지 않음 — 09 실패 팝업의 입력). 경계: `used + total_size ==
+/// max` 는 허용, `> max` 는 거부(`>` 비교). 통과 시 registry 에 begin 등록한다.
+pub(crate) fn begin_bulk_transfer(
+    engine: &mut CoreState,
+    hub: &StreamHub,
+    client_id: u32,
+    transfer_id: u64,
+    filename: String,
+    total_size: u64,
+) {
+    let dir = resolve_bulk_transfer_dir(&engine.settings);
+    let max_bytes = engine
+        .settings
+        .remote_transfer
+        .max_mb
+        .saturating_mul(1024 * 1024);
+    let used = dir.as_deref().map(dir_used_bytes).unwrap_or(0);
+    if exceeds_capacity(used, total_size, max_bytes) {
+        tracing::warn!(
+            "bulk transfer: capacity exceeded (used={used}, incoming={total_size}, max={max_bytes}) — rejecting begin"
+        );
+        let reply = StreamControl::BulkResult {
+            transfer_id,
+            ok: false,
+            path: None,
+            reason: Some("capacity exceeded".to_string()),
+        };
+        let frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&reply).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, frame); // best-effort 거부 회신 — client 끊김 시 무해.
+        return;
+    }
+    engine
+        .bulk_transfers
+        .begin(client_id, transfer_id, filename, total_size);
 }
 
 /// (06) bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
@@ -1505,5 +1580,52 @@ mod forward_exec_tests {
             "점유되지 않은 workspace 의 tab.create 는 허용돼야 한다: {:?}",
             resp.error
         );
+    }
+}
+
+#[cfg(test)]
+mod bulk_capacity_tests {
+    //! (07) 저장 폴더 사용량 합산 + 용량 경계 판정.
+    use super::{dir_used_bytes, exceeds_capacity};
+
+    #[test]
+    fn dir_used_bytes_sums_top_level_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.bin"), vec![0u8; 100]).unwrap();
+        std::fs::write(dir.path().join("b.bin"), vec![0u8; 250]).unwrap();
+        // 하위 디렉토리는 세지 않는다(1-depth 합산).
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("c.bin"), vec![0u8; 999]).unwrap();
+        assert_eq!(dir_used_bytes(dir.path()), 350);
+    }
+
+    #[test]
+    fn dir_used_bytes_missing_dir_is_zero() {
+        let missing = std::path::Path::new("/nonexistent/tasty/transfers/xyz");
+        assert_eq!(dir_used_bytes(missing), 0);
+    }
+
+    #[test]
+    fn capacity_boundary_equal_is_allowed() {
+        // used + incoming == max → 허용(거부 false).
+        assert!(!exceeds_capacity(400, 100, 500));
+        assert!(!exceeds_capacity(0, 500, 500));
+        assert!(!exceeds_capacity(500, 0, 500));
+    }
+
+    #[test]
+    fn capacity_boundary_over_is_rejected() {
+        // used + incoming > max → 거부(true).
+        assert!(exceeds_capacity(400, 101, 500));
+        assert!(exceeds_capacity(0, 501, 500));
+    }
+
+    #[test]
+    fn capacity_saturates_on_overflow() {
+        // used + incoming 이 u64 를 넘겨도 saturating_add 로 MAX 에 고정되어
+        // 유한한 상한을 확실히 초과(거부)한다.
+        assert!(exceeds_capacity(u64::MAX, 1, 500));
+        assert!(exceeds_capacity(u64::MAX - 1, 100, 1_000_000));
     }
 }

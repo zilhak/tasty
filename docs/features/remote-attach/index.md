@@ -122,6 +122,14 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **로컬 self attach**: 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
 
+## 원격 파일 전송 수신측 저장 정책 (07)
+
+원격 attach 채널 위 native bulk 파일 전송(ADR-0053)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
+
+- **IPC/CLI (focus 독립, 전역 설정)**: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only) · `tasty settings {get-remote-transfer, set-remote-transfer --dir --max-mb}`.
+- **GUI 설정**: 디자인 시안 확정 후 별도 구현 예정(gallery-first) — 현재는 IPC/CLI 로만 조작.
+- **용량 사전 거부**: 전송 시작(`BulkBegin.total_size`) 시점에 `현재 폴더 사용량 + total_size` 가 상한을 넘으면 청크 수신 전에 거부하고 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(경계 `== max` 는 허용, `> max` 거부). 폴더 사용량은 1-depth 파일 크기 단순 합산.
+
 ## 비-목표 (Out of scope)
 
 - **자체 원격 프로토콜/암호화/인증** — 전부 SSH 에 위임. attach 채널에 별도 토큰 없음(연결 경계 = 권한 경계).

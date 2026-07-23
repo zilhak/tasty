@@ -200,6 +200,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: MemoryCommands,
     },
+    /// Global settings — remote-transfer 저장 폴더/용량 상한 get/set (07).
+    Settings {
+        #[command(subcommand)]
+        command: SettingsCommands,
+    },
     /// Structured output observer (parsers + sink fan-out)
     Output {
         #[command(subcommand)]

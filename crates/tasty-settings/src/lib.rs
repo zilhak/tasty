@@ -30,7 +30,7 @@ pub use scripts::{
 };
 pub use types::{
     AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
-    OverlaySettings, PerformanceSettings,
+    OverlaySettings, PerformanceSettings, RemoteTransferSettings,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +50,9 @@ pub struct Settings {
     /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
     pub modifier_hint: ModifierHintSettings,
+    /// 원격 전송(06 bulk 파일 채널) 수신측 저장 폴더 + 용량 상한(07).
+    /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 dir="", max_mb=500).
+    pub remote_transfer: RemoteTransferSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
     /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
     /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.
@@ -533,6 +536,29 @@ ui_scale = "large"
         // 섹션은 있으나 키가 비어도 동일.
         let parsed: Settings = toml::from_str("[modifier_hint]").unwrap();
         assert!(parsed.modifier_hint.enabled);
+    }
+
+    #[test]
+    fn remote_transfer_missing_key_uses_defaults() {
+        // 신규 키가 없는 구버전 config.toml 마이그레이션: dir="", max_mb=500.
+        let parsed: Settings = toml::from_str("").unwrap();
+        assert_eq!(parsed.remote_transfer.dir, "");
+        assert_eq!(parsed.remote_transfer.max_mb, 500);
+        // 섹션은 있으나 키가 비어도 동일.
+        let parsed: Settings = toml::from_str("[remote_transfer]").unwrap();
+        assert_eq!(parsed.remote_transfer.dir, "");
+        assert_eq!(parsed.remote_transfer.max_mb, 500);
+    }
+
+    #[test]
+    fn remote_transfer_roundtrip() {
+        let mut settings = Settings::default();
+        settings.remote_transfer.dir = "/tmp/xfer".to_string();
+        settings.remote_transfer.max_mb = 42;
+        let toml_str = toml::to_string_pretty(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.remote_transfer.dir, "/tmp/xfer");
+        assert_eq!(parsed.remote_transfer.max_mb, 42);
     }
 
     #[test]

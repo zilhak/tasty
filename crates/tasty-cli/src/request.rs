@@ -6,6 +6,7 @@ mod memory;
 mod output;
 mod plugin_cmd;
 mod presets;
+mod settings;
 mod telemetry;
 
 use agent::agent_command_to_method_params;
@@ -20,6 +21,7 @@ use presets::{
     file_handler_command_to_method_params, hook_handler_command_to_method_params,
     preset_command_to_method_params,
 };
+use settings::settings_command_to_method_params;
 use telemetry::telemetry_command_to_method_params;
 
 use super::{
@@ -231,6 +233,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Tool { command } => tool_command_to_method_params(command),
         Commands::Plugin { command } => plugin_command_to_method_params(command),
         Commands::Memory { command } => memory_command_to_method_params(command),
+        Commands::Settings { command } => settings_command_to_method_params(command),
         Commands::Output { command } => output_command_to_method_params(command),
         Commands::Approval { command } => approval_command_to_method_params(command),
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),

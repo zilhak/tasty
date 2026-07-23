@@ -117,3 +117,27 @@ impl Default for NotificationSettings {
         }
     }
 }
+
+/// 원격 전송(06 bulk 파일 채널) 수신측 저장 정책. 전송받은 파일을 저장할 폴더와
+/// 그 폴더의 최대 용량 상한을 둔다(ADR-0053 "원격이 경로를 소유"). `begin.total_size`
+/// 기반 사전 용량 판정(07)이 `dir` 사용량 + 전송 크기가 상한을 넘으면 전송을 시작 전
+/// 거부한다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteTransferSettings {
+    /// 저장 폴더 경로. 빈 문자열이면 기본 폴더(`~/.tasty/transfers/`)로 도출한다
+    /// (경로 관례는 `GeneralSettings.shell`/`startup_command` 와 동형 — 빈=미설정).
+    pub dir: String,
+    /// 저장 폴더 최대 용량(MiB). MemorySettings 와 동일한 MiB u64 관례. 기본 500 MiB.
+    /// 용량 비교 시 `* 1024 * 1024` 로 바이트 환산한다.
+    pub max_mb: u64,
+}
+
+impl Default for RemoteTransferSettings {
+    fn default() -> Self {
+        Self {
+            dir: String::new(),
+            max_mb: 500,
+        }
+    }
+}

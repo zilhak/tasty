@@ -464,7 +464,11 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                             filename,
                             total_size,
                         } => {
-                            engine.bulk_transfers.begin(
+                            // (07) 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
+                            // 회신(청크 0바이트 수신). 통과 시 begin 등록.
+                            crate::core::attach_runtime::begin_bulk_transfer(
+                                &mut engine,
+                                &app.stream_hub,
                                 client_id,
                                 transfer_id,
                                 filename,
@@ -486,13 +490,18 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                             }
                         }
                         BulkEvent::Commit { transfer_id } => {
+                            // (07) 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량
+                            // 판정과 같은 폴더 기준.
+                            let dir = crate::core::attach_runtime::resolve_bulk_transfer_dir(
+                                &engine.settings,
+                            );
                             crate::core::attach_runtime::finalize_bulk_transfer(
                                 &mut engine,
                                 &app.stream_hub,
                                 client_id,
                                 transfer_id,
                                 ws,
-                                crate::core::attach_runtime::default_bulk_transfer_dir(),
+                                dir,
                             );
                         }
                     }

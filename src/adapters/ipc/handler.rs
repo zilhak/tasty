@@ -653,6 +653,11 @@ fn route_engine_handler(
         "settings.get_plugin_setting" => {
             settings::handle_get_plugin_setting(engine, caller, id, &request.params)
         }
+        // settings.remote_transfer (07 원격 전송 저장 폴더 + 용량 상한 get/set)
+        "settings.get_remote_transfer" => settings::handle_get_remote_transfer(engine, id),
+        "settings.set_remote_transfer" => {
+            settings::handle_set_remote_transfer(state, engine, id, &request.params)
+        }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => {
             approval::handle_request(core, state, engine, caller, id, &request.params)

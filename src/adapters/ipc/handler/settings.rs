@@ -34,6 +34,54 @@ pub fn handle_get_plugin_setting(
     JsonRpcResponse::success(id, json!({ "value": value }))
 }
 
+/// `settings.get_remote_transfer {}` → `RemoteTransferSettings` 직렬화
+/// (`{ "dir": <string>, "max_mb": <u64> }`). 07 원격 전송 저장 정책 조회.
+pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcResponse {
+    match serde_json::to_value(&engine.settings.remote_transfer) {
+        Ok(v) => JsonRpcResponse::success(id, v),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("failed to serialize settings: {e}")),
+    }
+}
+
+/// `settings.set_remote_transfer { dir?, max_mb? }` — 제공된 필드만 현재 설정 위에
+/// 덮어쓴 뒤 `UpdateSettings` intent 로 dispatch 한다(라이브 `engine.settings` 직접
+/// mutate 금지 — collapse 가 prev/new 를 비교하므로 pre-mutate 시 분기가 죽는다.
+/// clone 위에서만 수정). 이후 기존 파이프라인이 config.toml save 까지 처리한다.
+pub fn handle_set_remote_transfer(
+    state: &mut crate::state::AppState,
+    engine: &CoreState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    // 라이브 설정의 clone 위에서만 수정(직접 mutate 금지).
+    let mut new_settings = engine.settings.clone();
+    let mut changed = false;
+
+    if let Some(dir) = params.get("dir") {
+        let Some(dir) = dir.as_str() else {
+            return JsonRpcResponse::invalid_params(id, "'dir' must be a string");
+        };
+        new_settings.remote_transfer.dir = dir.to_string();
+        changed = true;
+    }
+    if let Some(max_mb) = params.get("max_mb") {
+        let Some(max_mb) = max_mb.as_u64() else {
+            return JsonRpcResponse::invalid_params(id, "'max_mb' must be a non-negative integer");
+        };
+        new_settings.remote_transfer.max_mb = max_mb;
+        changed = true;
+    }
+    if !changed {
+        return JsonRpcResponse::invalid_params(id, "expected at least one of 'dir', 'max_mb'");
+    }
+
+    let applied = serde_json::to_value(&new_settings.remote_transfer).unwrap_or(Value::Null);
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
+    );
+    JsonRpcResponse::success(id, json!({ "applied": true, "remote_transfer": applied }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +131,28 @@ mod tests {
         );
         assert!(resp.error.is_none());
         assert_eq!(resp.result.unwrap()["value"], Value::Null);
+    }
+
+    #[test]
+    fn get_remote_transfer_returns_defaults() {
+        let e = engine();
+        let resp = handle_get_remote_transfer(&e, json!(1));
+        assert!(resp.error.is_none());
+        let v = resp.result.unwrap();
+        assert_eq!(v["dir"], json!(""));
+        assert_eq!(v["max_mb"], json!(500));
+    }
+
+    #[test]
+    fn get_remote_transfer_reflects_live_settings() {
+        let mut e = engine();
+        // 라이브 설정을 직접 바꿔도(테스트 편의) get 이 그 값을 반영하는지 확인.
+        e.settings.remote_transfer.dir = "/tmp/xfer".to_string();
+        e.settings.remote_transfer.max_mb = 42;
+        let resp = handle_get_remote_transfer(&e, json!(1));
+        let v = resp.result.unwrap();
+        assert_eq!(v["dir"], json!("/tmp/xfer"));
+        assert_eq!(v["max_mb"], json!(42));
     }
 
     #[test]

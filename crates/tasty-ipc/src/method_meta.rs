@@ -342,6 +342,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 동일 권한으로 게이트한다. caller_plugin_id 는 요청 파라미터가 아니라
         // CallerContext 에서 강제 도출 — 다른 plugin 값 조회 불가.
         ("settings.get_plugin_setting", plugin(&[UiSettingsPage])),
+        // ── settings.remote_transfer (07 원격 전송 저장 정책 get/set) ──────
+        // general settings 전역 read/write 라 plugin 권한 모델에 대응 variant 가
+        // 없다 — memory.gc / system.gpu_stats 처럼 local_only 로 두어 plugin 에는
+        // 노출하지 않고 로컬 IPC(CLI·에이전트)만 조작한다. focus 독립(전역 설정,
+        // 대상 ID 불요). set 은 핸들러가 UpdateSettings intent 로 태워 collapse/save
+        // 파이프라인을 재사용한다.
+        ("settings.get_remote_transfer", local_only()),
+        ("settings.set_remote_transfer", local_only()),
         // ── file_handler.* (host config 관리 — local-only) ───────────
         // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
         // 도 reload 영향 밖이라) local 전용.

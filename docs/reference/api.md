@@ -62,6 +62,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
 - 시스템: `system.info` · `system.gpu_stats` (local-only, GPU 리소스 카운트 스냅샷 — wgpu 전역 리포트 + 창별 렌더러 카운트, 메모리 누수 soak 검증용. CLI `tasty list gpu-stats`) — [memory-leak-soak](../dev-guide/memory-leak-soak.md)
 - Plugin 설정 read-back: `settings.get_plugin_setting {storage_key}` — 자기 자신의 `plugin_settings` 값만 조회(caller 로 스코프 강제)
+- 원격 전송 저장 정책: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only, focus 독립 — 전역 설정) — 원격 bulk 파일 전송 수신측 저장 폴더(`dir`, 빈 값=기본 `~/.tasty/transfers/`)와 폴더 최대 용량(`max_mb`, MiB). set 은 지정 필드만 현재 설정 위에 덮어써 저장한다. CLI `tasty settings {get-remote-transfer,set-remote-transfer}`. — [remote-attach](../features/remote-attach/index.md)
 
 ### Plugin 관리 (`plugin.*`, local-only)
 `list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission` · `audit_{query,summary,follow,clear}` · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
