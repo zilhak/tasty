@@ -47,6 +47,20 @@ pub trait Surface: Any + Send {
         self.all_surface_ids().contains(&surface_id)
     }
 
+    /// attach mesh mirror 후보 판별(`.claude-workspace/todo/16-attach-surface-classification-mesh.md`).
+    /// `Some((kind, plugin_id))` 를 반환하면 이 surface 는 plugin egui-mesh
+    /// surface 라는 뜻 — `Workspace::classify_attach_surfaces` 가 이 신호로
+    /// mesh 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)` 조합이
+    /// mirror 허용인지)은 이 crate 밖(앱 계층, `src/core/attach_runtime.rs`)의
+    /// 책임으로 남긴다 — `tasty-model` 은 자신에 의존하는 상위 crate(`src/`)의
+    /// `EguiMeshSurface` 구체 타입을 모른 채로 "mesh 기반이다" 라는 계약만 정의한다
+    /// (trait 정의는 하위 crate, 구현은 상위 crate — crate 의존 방향 유지).
+    ///
+    /// 기본 구현은 `None`(mesh 아님) — 대다수 surface(터미널/explorer 등)에 영향 없음.
+    fn attach_mesh_info(&self) -> Option<(&str, &str)> {
+        None
+    }
+
     /// Resize-fitting hook. Layout 가 leaf 의 rect 를 알릴 때 호출. 기본 no-op.
     /// 현재 모든 구현 (TerminalSurface 포함) 이 default 만 — Terminal resize 는
     /// 별 PTY resize 경로로 분리. 본 메서드는 후속 surface kind 들의 옵션.

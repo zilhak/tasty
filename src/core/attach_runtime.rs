@@ -158,10 +158,14 @@ impl CoreState {
             return;
         };
         let class = self.workspaces[idx].classify_attach_surfaces();
+        // 점유(occupancy) 는 mirror 가능 여부와 무관하게 workspace 의 *모든* surface 를
+        // 대상으로 한다(기존 동작과 동일 — mesh 후보가 화이트리스트에 없어 placeholder
+        // 로 떨어지더라도 여전히 이 workspace 의 멤버이므로 lock 범위에 포함).
         let members: Vec<SurfaceId> = class
             .terminals
             .iter()
             .chain(class.non_terminals.iter())
+            .chain(class.mesh_candidates.iter().map(|(sid, _, _)| sid))
             .copied()
             .collect();
 
@@ -198,10 +202,12 @@ impl CoreState {
             self.tap_surface_for_stream(sid, client_id, hub);
         }
 
+        let (mesh_whitelisted, _mesh_rejected) = mesh_mirror_candidates(&class);
         tracing::debug!(
-            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} placeholders)",
+            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} placeholders)",
             class.terminals.len(),
-            class.non_terminals.len(),
+            mesh_whitelisted.len(),
+            class.non_terminals.len() + (class.mesh_candidates.len() - mesh_whitelisted.len()),
         );
     }
 
@@ -374,6 +380,10 @@ impl CoreState {
                 }
             }
         }
+        // TODO 16 — mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
+        // non_terminals 와 동일하게 placeholder 로 내려간다.
+        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
+
         let mut surfaces = Vec::new();
         for &sid in &class.terminals {
             let (cols, rows) = self
@@ -388,7 +398,15 @@ impl CoreState {
                 "rows": rows,
             }));
         }
-        for &sid in &class.non_terminals {
+        for (sid, kind, plugin_id) in &mesh_whitelisted {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "mesh",
+                "kind": kind,
+                "plugin_id": plugin_id,
+            }));
+        }
+        for &sid in class.non_terminals.iter().chain(mesh_rejected.iter()) {
             surfaces.push(serde_json::json!({
                 "remote_id": sid,
                 "role": "placeholder",
@@ -1010,6 +1028,58 @@ pub(crate) fn reject_attach(
     );
     let _ = hub.push(client_id, error_frame); // best-effort attach_error 통지 — PushResult(Result 아님) 무시: client 끊겼으면 무해.
     let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new())); // best-effort detach 신호 — 무시.
+}
+
+/// TODO 16 — `AttachSurfaceClass::mesh_candidates`(raw, `tasty-model` 이 화이트리스트를
+/// 모른 채 `Surface::attach_mesh_info()` 만으로 모은 후보)를 bundled 화이트리스트
+/// (`is_egui_mesh_allowed`)로 재검증한다. `tasty-model`은 `is_egui_mesh_allowed`(앱
+/// 계층, `src/`)를 참조할 수 없어(crate 의존 방향) 이 최종 판정은 여기(앱 계층)의
+/// 책임이다.
+///
+/// 반환: `(whitelisted, rejected)`. `rejected`는 `class.non_terminals`와 동일하게
+/// placeholder로 취급해야 한다 — 호출자는 이 둘을 합쳐 최종 placeholder 목록을 얻는다.
+pub(crate) fn mesh_mirror_candidates(
+    class: &AttachSurfaceClass,
+) -> (Vec<(SurfaceId, &str, &str)>, Vec<SurfaceId>) {
+    let mut whitelisted = Vec::new();
+    let mut rejected = Vec::new();
+    for (sid, kind, plugin_id) in &class.mesh_candidates {
+        if crate::engine::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id) {
+            whitelisted.push((*sid, kind.as_str(), plugin_id.as_str()));
+        } else {
+            rejected.push(*sid);
+        }
+    }
+    (whitelisted, rejected)
+}
+
+#[cfg(test)]
+mod mesh_mirror_candidate_tests {
+    //! TODO 16 완료 확인 절차의 예시 테스트 — bundled 화이트리스트에 있는 mesh 후보만
+    //! whitelisted 로, 나머지(미등록 kind/plugin_id 조합)는 rejected(=placeholder 유지)로
+    //! 분류되는지.
+    use super::mesh_mirror_candidates;
+    use crate::model::AttachSurfaceClass;
+
+    #[test]
+    fn mesh_mirror_candidates_filters_by_whitelist() {
+        let class = AttachSurfaceClass {
+            terminals: vec![1],
+            non_terminals: vec![2], // 예: explorer — 애초에 mesh 후보조차 아님
+            mesh_candidates: vec![
+                (10, "markdown".to_string(), "com.tasty.markdown".to_string()),
+                (11, "image".to_string(), "com.tasty.image".to_string()),
+                (12, "mesh_demo".to_string(), "com.tasty.mesh-demo".to_string()),
+                // 화이트리스트 밖(가상의 3rd-party 조합) — rejected 로 떨어져야 한다.
+                (13, "widget".to_string(), "com.example.widget".to_string()),
+            ],
+        };
+        let (whitelisted, rejected) = mesh_mirror_candidates(&class);
+        let mut whitelisted_ids: Vec<u32> = whitelisted.iter().map(|(sid, _, _)| *sid).collect();
+        whitelisted_ids.sort_unstable();
+        assert_eq!(whitelisted_ids, vec![10, 11, 12]);
+        assert_eq!(rejected, vec![13]);
+    }
 }
 
 #[cfg(test)]

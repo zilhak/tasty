@@ -27,7 +27,7 @@ fn leak_str(s: &str) -> &'static str {
 /// ADR-0028 scope 에 따라 markdown(B1)
 /// 을 첫 소비자로 두고, image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh
 /// 로 렌더)가 뒤따른다.
-fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
+pub(crate) fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
     matches!(
         (kind, plugin_id),
         ("markdown", "com.tasty.markdown")

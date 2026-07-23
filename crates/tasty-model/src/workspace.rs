@@ -7,12 +7,19 @@ use super::{
 ///
 /// - `terminals`: kind=="terminal" 또는 deferred `EmptySurface`(아직 PTY 안 뜬 터미널
 ///   자리). attach 시 각각 mirror 되고 surface_locks 점유 대상.
-/// - `non_terminals`: markdown/image/explorer 등. mirror 불가 → client placeholder,
-///   서버에서도 숨김(decision 3).
+/// - `non_terminals`: markdown/image/explorer 등 중 mesh 후보가 **아닌** surface.
+///   mirror 불가 → client placeholder, 서버에서도 숨김(decision 3).
+/// - `mesh_candidates`: `Surface::attach_mesh_info()` 가 `Some` 을 반환한 surface
+///   (surface_id, kind, plugin_id). **최종 화이트리스트 판정은 여기 포함되지
+///   않는다** — 앱 계층(`src/core/attach_runtime.rs`)이 bundled 화이트리스트로
+///   재검증한 뒤에야 실제 mesh mirror 대상인지 확정한다(TODO 16). 판정에서
+///   떨어진 후보는 호출자가 `non_terminals` 와 동일하게(placeholder) 취급해야
+///   한다 — `tasty-model` 은 화이트리스트를 모르므로 스스로 최종 분류하지 않는다.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct AttachSurfaceClass {
     pub terminals: Vec<SurfaceId>,
     pub non_terminals: Vec<SurfaceId>,
+    pub mesh_candidates: Vec<(SurfaceId, String, String)>,
 }
 
 /// Workspace - one sidebar item. Contains a PaneLayout (binary split tree of Panes).
@@ -145,6 +152,12 @@ impl Workspace {
                 for tab in &pane.tabs {
                     tab.for_each_surface(&mut |s| {
                         let Some(id) = s.surface_id() else { return };
+                        if let Some((kind, plugin_id)) = s.attach_mesh_info() {
+                            class
+                                .mesh_candidates
+                                .push((id, kind.to_string(), plugin_id.to_string()));
+                            return;
+                        }
                         let is_terminal = s.kind() == "terminal"
                             || s.as_any()
                                 .downcast_ref::<EmptySurface>()
