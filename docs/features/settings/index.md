@@ -16,7 +16,7 @@
 
 상단 L1 7탭, 각 탭은 좌측에 L2 섹션 목록을 가진다 (이 순서):
 
-- **General** — L2: General / Notifications / Accessibility / Overlay(오버레이류 표시 설정 — 현재는 토스트 자동 소멸 시간 `Toast duration` 1~10s 1행 → [toast](../../design/systems/toast.md)).
+- **General** — L2: General / Notifications / Accessibility / Overlay(오버레이류 표시 설정 — 현재는 토스트 자동 소멸 시간 `Toast duration` 1~10s 1행 → [toast](../../design/systems/toast.md)) / Remote transfer(원격 mirror 파일 전송 수신측 저장 정책 — `Save folder`(mono 경로 Input + Browse… native 폴더 피커, 기본 `~/.tasty/transfers/`) + `Maximum size`(정수 mono Input + 정적 `MiB` suffix, 기본 500 MiB) 2행, `RemoteTransferSettings{dir, max_mb}` 편집 → [remote-attach](../remote-attach/index.md)).
 - **Terminal** — L2: General(터미널 동작 설정 — 셸/스타트업/스크롤백/링크 수식키, macOS 빌드는 "Use Option as Meta" 토글 추가 → [terminal](../terminal/index.md) 키보드 입력) / Mouse Capture(마우스 캡처 안내 배너 토글 + Shift 우회 Note + 캡처 비활성화 블랙리스트 에디터) / TUI(OSC 52 클립보드 읽기 허용 토글 + 바로 아래 bordered warning callout → [clipboard](../clipboard/index.md)) / Performance.
 - **Appearance** — L2: Theme / Colors / General / Display / Tasty / Terminal + 플러그인 기여 페이지(동적). Display = UI 스케일(sm/md/lg) 전용. Tasty = 앱 크롬 색상(accent / sidebar bg / active tab indicator). HTML viewer 설정은 호스트 고정 탭이 아니라 `com.tasty.html` 플러그인이 기여하는 동적 페이지다.
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).

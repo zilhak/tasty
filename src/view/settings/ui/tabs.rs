@@ -9,6 +9,7 @@ mod notifications;
 mod overlay;
 mod performance;
 mod plugin;
+mod remote_transfer;
 mod terminal;
 
 pub use accessibility::draw_accessibility_tab;
@@ -21,4 +22,5 @@ pub use notifications::draw_notifications_tab;
 pub use overlay::draw_overlay_tab;
 pub use performance::draw_performance_tab;
 pub use plugin::draw_plugin_tab;
+pub use remote_transfer::draw_remote_transfer_tab;
 pub use terminal::{draw_terminal_mouse_capture_tab, draw_terminal_tab, draw_terminal_tui_tab};

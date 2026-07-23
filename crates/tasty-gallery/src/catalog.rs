@@ -988,6 +988,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::settings_handler::draw_hook_handlers,
                         ),
+                        spec(
+                            "settings-remote-transfer",
+                            "General › Remote transfer",
+                            Some(
+                                "Save folder (mono Input + Browse…) · Maximum size (numeric + MiB) · settings-row grid",
+                            ),
+                            components::settings_remote_transfer::draw,
+                        ),
                     ],
                 ),
                 section(

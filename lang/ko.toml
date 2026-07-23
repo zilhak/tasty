@@ -100,6 +100,7 @@ terminal = "터미널"
 appearance = "외관"
 notifications = "알림"
 overlay = "오버레이"
+remote_transfer = "원격 전송"
 keybindings = "단축키"
 file_handler = "핸들러"
 misc = "기타"
@@ -123,6 +124,15 @@ modifier_hint_desc = "수정자 키(Ctrl / Alt / Shift — macOS 는 Cmd / Optio
 [settings.overlay]
 toast_duration = "토스트 표시 시간"
 toast_duration_desc = "토스트가 자동으로 사라지기 전 화면에 머무는 시간입니다. 좌우로 드래그하거나 클릭해 값을 입력하세요."
+
+[settings.remote_transfer]
+section = "수신 파일"
+dir = "저장 폴더"
+dir_placeholder = "~/.tasty/transfers/"
+dir_desc = "원격 워크스페이스에서 받은 파일이 저장되는 위치입니다."
+browse = "찾아보기…"
+max_capacity = "최대 용량"
+max_capacity_desc = "폴더가 보관할 수 있는 총 용량입니다. 이 한도를 넘기게 될 전송은 시작 전에 거부됩니다."
 
 [settings.file_handler]
 coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."

@@ -102,8 +102,9 @@ pub(crate) enum PluginSubTab {
 
 /// L2 section within the General L1 tab.
 ///
-/// 디자인 General L2 = General / Notifications / Accessibility / Overlay.
-/// (Clipboard 는 플러그인 기능이라 네이티브 설정에서 제외, Updates 는 Misc 로 이동.)
+/// 디자인 General L2 = General / Notifications / Accessibility / Overlay /
+/// Remote transfer. (Clipboard 는 플러그인 기능이라 네이티브 설정에서 제외,
+/// Updates 는 Misc 로 이동.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
     General,
@@ -111,6 +112,9 @@ pub(crate) enum GeneralSubTab {
     Accessibility,
     /// 오버레이류(토스트 등) 표시 설정. 현재는 토스트 수명 1행.
     Overlay,
+    /// 원격(mirror) 파일 전송 수신측 저장 정책(저장 폴더 + 용량 상한). 백엔드는
+    /// `RemoteTransferSettings`(06/07).
+    RemoteTransfer,
 }
 
 /// L2 section within the Terminal L1 tab.
@@ -289,6 +293,7 @@ impl SettingsUiState {
                     "notifications" => GeneralSubTab::Notifications,
                     "accessibility" => GeneralSubTab::Accessibility,
                     "overlay" => GeneralSubTab::Overlay,
+                    "remote_transfer" | "remote-transfer" => GeneralSubTab::RemoteTransfer,
                     _ => return false,
                 };
                 true
@@ -804,6 +809,10 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                     t("settings.misc.subtab.accessibility"),
                 ),
                 (GeneralSubTab::Overlay, t("settings.tab.overlay")),
+                (
+                    GeneralSubTab::RemoteTransfer,
+                    t("settings.tab.remote_transfer"),
+                ),
             ]
             .into_iter()
             .map(|(tab, label)| L2Section {
@@ -1458,6 +1467,7 @@ fn draw_active_content(
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Overlay => draw_overlay_tab(ui, draft),
+            GeneralSubTab::RemoteTransfer => draw_remote_transfer_tab(ui, draft),
         },
         SettingsTab::Terminal => match ui_state.terminal_sub_tab {
             TerminalSubTab::General => draw_terminal_tab(ui, draft),

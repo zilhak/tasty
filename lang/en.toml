@@ -100,6 +100,7 @@ terminal = "Terminal"
 appearance = "Appearance"
 notifications = "Notifications"
 overlay = "Overlay"
+remote_transfer = "Remote transfer"
 keybindings = "Keybindings"
 file_handler = "Handler"
 misc = "Misc"
@@ -123,6 +124,15 @@ modifier_hint_desc = "Show a floating panel of the available shortcuts while you
 [settings.overlay]
 toast_duration = "Toast duration"
 toast_duration_desc = "How long a toast stays on screen before it auto-dismisses. Drag left–right to adjust, or click to type a value."
+
+[settings.remote_transfer]
+section = "Received files"
+dir = "Save folder"
+dir_placeholder = "~/.tasty/transfers/"
+dir_desc = "Where files received from a remote workspace are saved."
+browse = "Browse…"
+max_capacity = "Maximum size"
+max_capacity_desc = "Total the folder may hold. A transfer that would push it past this limit is rejected before it starts."
 
 [settings.file_handler]
 coming_soon = "This sub-tab will be available in a future update."

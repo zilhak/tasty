@@ -486,6 +486,38 @@ changelog: `changelog/2026-07-11-settings-handler-tab.md`.
   user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
   편집 대신 mono 요약. intro copy 의 priority 방향은 엔진 규약(낮을수록 먼저)으로 기술.
 
+## Settings › General › Remote transfer (07-UI)
+
+General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(06/07)
+수신측 저장 정책(`RemoteTransferSettings{dir, max_mb}`) 편집. 디자인:
+`gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` + `gallery/overlays-windows.jsx`
+"Settings · General › Remote transfer" spec. 백엔드는 이미 merge(d6eeecf5), 이번은 UI 만.
+
+| 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| `SettingsRemoteTransferFrame`(콘텐츠 컬럼) | `src/view/settings/ui/tabs/remote_transfer.rs::draw_remote_transfer_tab` | `components/settings_remote_transfer.rs::draw` (`settings` 섹션 `settings-remote-transfer` spec) |
+| `Mono`("Received files") | `mono` 헤딩(micro uppercase muted) | `mono_head` |
+| `Row`(Save folder, grid 150px + control) | `settings_row` + right_to_left(Browse→Input) | `xfer_row` |
+| `Input block mono` + `Button secondary sm folder`(Browse…) | `Input::mono` + `Button::Secondary/Sm/FOLDER` + `rfd::FileDialog::pick_folder` | 동(rfd 없이 시각만) |
+| `Row`(Maximum size) + `Input mono width88` + 정적 `MiB` | `settings_row` + `Input::mono.width(field_width_xs)` + mono muted "MiB" 라벨 (정수 버퍼 파싱, `draw_plugin_number` 선례) | `xfer_row` + 동 |
+| `Note`(행별 muted 설명) | `row_desc`(caption muted) | `row_desc` |
+| 행 사이 `borderTop separator` | `row_separator`(`th.separator` hline) | `separator_line` |
+
+**전사 노트**:
+- 라벨 컬럼 150px(`gridTemplateColumns: "150px 1fr"`)·행 gap 12(space-md)·행 높이
+  `settings_row_min_height`(32). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
+  가 제공(형제 탭 관례 — 재패딩 안 함).
+- **size Input 폭**: 디자인 `width: 88` 은 field-width 토큰 세트(90/110/160/200) 밖 specimen
+  값 → mono narrow numeric 토큰 `field_width_xs`(90)로 매핑(host·gallery 동일, 2px 차).
+- **"MiB" 는 필드 밖 정적 mono suffix**(Toast 의 " s" 와 동형, addon/Tag 아님). i18n 단위
+  기호 예외로 리터럴.
+- **신규 Theme 필드 0** — 전부 기존 접근자(`settings_row_min_height`/`field_width_xs`/
+  `separator`/`text_muted`/`font_size_micro`/`font_size_caption`)·기존 위젯(`Input`/`Button`).
+  i18n 8키(`settings.tab.remote_transfer` + `settings.remote_transfer.{section,dir,dir_placeholder,dir_desc,browse,max_capacity,max_capacity_desc}`).
+- 갤러리는 본체 미의존이라 host `draw_remote_transfer_tab`(Settings 저장소 의존)을 직접
+  못 부르고 같은 위젯·토큰으로 미러(settings_handler 서브탭 specimen 전례). rfd 폴더 피커는
+  specimen 에서 no-op.
+
 ## File picker (Overlays) — gallery-first 1단계, 본체 미배선
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`

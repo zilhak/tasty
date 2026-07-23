@@ -100,6 +100,7 @@ terminal = "ターミナル"
 appearance = "外観"
 notifications = "通知"
 overlay = "オーバーレイ"
+remote_transfer = "リモート転送"
 keybindings = "キーバインド"
 file_handler = "ハンドラ"
 misc = "その他"
@@ -123,6 +124,15 @@ modifier_hint_desc = "修飾キー（Ctrl / Alt / Shift — macOS では Cmd / O
 [settings.overlay]
 toast_duration = "トースト表示時間"
 toast_duration_desc = "トーストが自動的に消えるまで画面に表示される時間です。左右にドラッグするか、クリックして値を入力します。"
+
+[settings.remote_transfer]
+section = "受信ファイル"
+dir = "保存フォルダ"
+dir_placeholder = "~/.tasty/transfers/"
+dir_desc = "リモートワークスペースから受信したファイルの保存先です。"
+browse = "参照…"
+max_capacity = "最大サイズ"
+max_capacity_desc = "フォルダが保持できる合計容量です。この上限を超える転送は開始前に拒否されます。"
 
 [settings.file_handler]
 coming_soon = "このサブタブは今後のアップデートで利用可能になります。"
