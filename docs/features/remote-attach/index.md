@@ -124,7 +124,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 ## 원격 파일 전송 수신측 저장 정책 (07)
 
-원격 attach 채널 위 native bulk 파일 전송(ADR-0053)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
+원격 attach 채널 위 native bulk 파일 전송(ADR-0054)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
 
 - **IPC/CLI (focus 독립, 전역 설정)**: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only) · `tasty settings {get-remote-transfer, set-remote-transfer --dir --max-mb}`.
 - **GUI 설정**: 디자인 시안 확정 후 별도 구현 예정(gallery-first) — 현재는 IPC/CLI 로만 조작.

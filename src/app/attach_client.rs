@@ -124,7 +124,7 @@ pub(crate) struct AttachClientSession {
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
-    /// (06) bulk 파일 전송(ADR-0053)이 결속할 **원격** workspace id. 대화형 attach 가
+    /// (06) bulk 파일 전송(ADR-0054)이 결속할 **원격** workspace id. 대화형 attach 가
     /// `open_attach_workspace` 에 넘긴 그 값 — 전용 bulk 연결의 `open_bulk` 가 이 값을
     /// 서버에 실어 "이 ws 의 holder 가 존재하는가" 인가의 근거로 삼는다(06-α 서버 검증).
     remote_workspace: u32,
@@ -1799,7 +1799,7 @@ fn send_capture_control_frame(
 }
 
 impl App {
-    /// (06) native bulk 파일 전송(ADR-0053) — `local_ws_id` mirror 세션이 결속한 원격
+    /// (06) native bulk 파일 전송(ADR-0054) — `local_ws_id` mirror 세션이 결속한 원격
     /// tasty 로 파일 바이트를 **전용 연결**로 올리고, 원격이 저장한 **절대경로**를
     /// 돌려받는다. 캡처(03)와 달리 대화형 attach 스트림 큐(`frame_tx`)를 재사용하지
     /// 않고, 같은 포워딩 포트에 두 번째 `TcpStream::connect` → `open_bulk` 로 소켓을

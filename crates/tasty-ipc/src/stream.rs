@@ -97,7 +97,7 @@ pub struct StreamOpenParams {
     /// `target` 와 상호배타 — 둘 다 지정되면 서버가 거부한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_workspace: Option<u32>,
-    /// bulk 파일 전송 전용 연결(ADR-0053). `Some(ws)` 이면 이 연결은 대화형 attach 를
+    /// bulk 파일 전송 전용 연결(ADR-0054). `Some(ws)` 이면 이 연결은 대화형 attach 를
     /// 하지 않고(= workspace holder 가 되지 않음), 그 `Data` 프레임을 PTY 입력이 아니라
     /// **파일 청크**(`decode_bulk_chunk`)로 분류하도록 서버가 이 연결을 bulk 로 태깅한다.
     /// 결속 workspace(`ws`)는 저장·인가의 대상: 서버는 이 ws 에 활성 holder 가 존재할
@@ -126,7 +126,7 @@ pub fn decode_mux(buf: &[u8]) -> Option<(u32, &[u8])> {
     Some((sid, &buf[4..]))
 }
 
-/// bulk 파일 전송(ADR-0053)의 `Data` 프레임 sub-header 길이 = `[transfer_id: u64 BE][seq: u32 BE]`.
+/// bulk 파일 전송(ADR-0054)의 `Data` 프레임 sub-header 길이 = `[transfer_id: u64 BE][seq: u32 BE]`.
 pub const BULK_CHUNK_HEADER_LEN: usize = 12;
 
 /// bulk 파일 청크 `Data` 프레임 인코딩. 페이로드 앞에 12바이트 binary sub-header
@@ -304,7 +304,7 @@ pub enum StreamControl {
         /// `{remote_id, role, kind}` for placeholders).
         surfaces: Vec<serde_json::Value>,
     },
-    /// bulk 파일 전송(ADR-0053)의 control-plane 시작 메시지. 전용 bulk 연결에서
+    /// bulk 파일 전송(ADR-0054)의 control-plane 시작 메시지. 전용 bulk 연결에서
     /// 실제 파일 바이트(`Data` 프레임, [`encode_bulk_chunk`])에 앞서 파일명·총 크기를
     /// 알린다. 서버는 `total_size` 를 사전 용량 승인(07)의 입력으로 쓰고, `transfer_id`
     /// 단위로 청크를 누적한다. 저장 dir 결정·경로 회신은 `commit` 에서 확정.

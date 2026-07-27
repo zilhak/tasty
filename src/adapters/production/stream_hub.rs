@@ -199,7 +199,7 @@ pub struct StreamContext {
 pub struct StreamHub {
     sinks: Arc<Mutex<HashMap<StreamClientId, StreamSink>>>,
     next_id: Arc<AtomicU32>,
-    /// bulk 파일 전송 전용 연결(ADR-0053): `client_id → 결속 workspace_id`. 이 맵에
+    /// bulk 파일 전송 전용 연결(ADR-0054): `client_id → 결속 workspace_id`. 이 맵에
     /// 든 연결의 `Data` 프레임은 PTY 입력이 아니라 파일 청크로 분류되고(연결-단위
     /// 태깅 — [`pump_inbound`](Self::pump_inbound)), begin/commit 인가 시 서버가 그
     /// workspace 의 holder 존재를 검증하는 결속 근거가 된다(조사 §6). 핸드셰이크에서
@@ -249,7 +249,7 @@ impl StreamHub {
         }
     }
 
-    /// bulk 전송 전용 연결(ADR-0053)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
+    /// bulk 전송 전용 연결(ADR-0054)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
     /// 결속 workspace 로 기록하며, 이 등록은 [`register`](Self::register)와 read 루프
     /// 시작 사이(같은 accept 스레드)에서 이뤄지므로 이후 pump 되는 모든 프레임에서
     /// [`bulk_workspace`](Self::bulk_workspace)로 조회된다.
@@ -330,7 +330,7 @@ impl StreamHub {
                 StreamInbound::Frame { client_id, frame } => {
                     // 연결-단위 bulk 태깅: bulk 전용 연결이면 그 Data 는 PTY 입력이
                     // 아니라 파일 청크다(같은 `StreamTag::Data` 를 두 의미로 쓰므로
-                    // 연결 단위로 구분해야 한다 — ADR-0053, 전용 연결이 필수인 이유).
+                    // 연결 단위로 구분해야 한다 — ADR-0054, 전용 연결이 필수인 이유).
                     let bulk_ws = self.bulk_workspace(client_id);
                     match frame.tag {
                         crate::ipc::stream::StreamTag::Data if bulk_ws.is_some() => {

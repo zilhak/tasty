@@ -51,7 +51,7 @@ impl StreamConnection {
         Self::open_with(stream, proto, None, Some(workspace), None)
     }
 
-    /// bulk 파일 전송 전용 연결(ADR-0053)로 업그레이드한다. `open_attach_workspace`
+    /// bulk 파일 전송 전용 연결(ADR-0054)로 업그레이드한다. `open_attach_workspace`
     /// 와 달리 workspace 를 mirror 하지 않고(= holder 가 되지 않고), 이 연결의 `Data`
     /// 프레임을 서버가 파일 청크(`encode_bulk_chunk`)로 분류하도록 bulk 로 태깅한다.
     /// `workspace` 는 저장·인가의 결속 대상(서버는 그 ws 에 활성 holder 가 있을 때만

@@ -1,5 +1,5 @@
 //! (06) native bulk 파일 전송 서버측 — 전용 bulk 연결이 나른 파일 청크를
-//! `(client_id, transfer_id)` 단위로 누적하는 버퍼(ADR-0053).
+//! `(client_id, transfer_id)` 단위로 누적하는 버퍼(ADR-0054).
 //!
 //! (03) 캡처 업로드([`CaptureUploadRegistry`](crate::core::capture_upload))의 일반화
 //! 버전이며 **병렬 신설**이다(캡처 경로는 그대로 유지). 차이:

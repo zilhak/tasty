@@ -135,7 +135,7 @@ pub(crate) struct GuiAttachUserReq {
 
 /// (08) mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에
 /// mirror 판정을 끝내 두고(포커스가 업로드 완료 전에 바뀌어도 삽입 대상이 흔들리지
-/// 않게), 실제 bulk 업로드(블로킹, ADR-0053)는 `App::poll_image_uploads` 가 백그라운드
+/// 않게), 실제 bulk 업로드(블로킹, ADR-0054)는 `App::poll_image_uploads` 가 백그라운드
 /// 스레드에서 수행한다. 완료 시 원격 절대경로를 `surface_id`(=paste 시점 mirror surface)
 /// 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격에 투명 전달된다.
 pub(crate) struct PendingImageUpload {
@@ -338,7 +338,7 @@ pub struct CoreState {
     /// 양쪽 `StreamReady` 처리부가 공유한다(attach 서버는 어느 빌드든 될 수 있음).
     pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
 
-    /// (06) attach 서버측 — 전용 bulk 연결(ADR-0053)이 나른 파일 청크를
+    /// (06) attach 서버측 — 전용 bulk 연결(ADR-0054)이 나른 파일 청크를
     /// `(client_id, transfer_id)` 단위로 누적한다. 캡처(`capture_uploads`)의 일반화
     /// 병렬 신설이며, begin 에서 파일명·총 크기를 먼저 받고 이후 `Data` 프레임
     /// (`decode_bulk_chunk`)의 청크를 append 한 뒤 commit 에서 저장 확정한다.

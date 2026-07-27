@@ -4,7 +4,7 @@
 //! `MainView::paste_to_terminal` 의 이미지 분기가 focused surface 가 mirror workspace
 //! 소속일 때 `CoreState::pending_image_uploads` 큐에 PNG 바이트 + 대상 surface 를 push
 //! 한다(mirror 판별은 paste 시점에 끝내 둔다 — 업로드 완료 전에 포커스가 바뀌어도 삽입
-//! 대상이 흔들리지 않게). 실제 bulk 업로드(ADR-0053, 블로킹)는 여기서 백그라운드 스레드
+//! 대상이 흔들리지 않게). 실제 bulk 업로드(ADR-0054, 블로킹)는 여기서 백그라운드 스레드
 //! 로 수행한다.
 //!
 //! ```text

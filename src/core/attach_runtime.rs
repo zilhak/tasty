@@ -763,13 +763,13 @@ pub(crate) fn begin_bulk_transfer(
 }
 
 /// (06) bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
-/// (ADR-0053). `finalize_capture_upload` 와 동형의 일반화 버전이다.
+/// (ADR-0054). `finalize_capture_upload` 와 동형의 일반화 버전이다.
 ///
 /// **인가(조사 §6/E)**: 전용 bulk 연결은 workspace holder 가 아니므로
 /// (`client_holds_workspace(bulk_client)==false`) capture 의 holder 검증을 그대로 쓸 수
 /// 없다. 대신 이 연결이 핸드셰이크에서 결속한 `bulk_workspace` 에 **활성 holder 가
 /// 존재하는가**(누군가 그 워크스페이스를 attach 중인가)를 검증한다. 같은 SSH 경계·
-/// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(ADR-0053 decision#5),
+/// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(ADR-0054 decision#5),
 /// holder 존재 확인은 "이 워크스페이스가 실제 attach 중"이라는 타겟 유효성 검증이다.
 ///
 /// `dir` 은 저장 폴더(07 이 주입, `None` 이면 홈 미확인). 클립보드 기록 같은
