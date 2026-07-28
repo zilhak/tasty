@@ -77,11 +77,14 @@ impl From<anyhow::Error> for ApplyError {
 
 impl AppState {
     /// WorkspacePreset 적용 — 새 워크스페이스를 push.
+    /// `category` 가 `Some` 이고 존재하는 카테고리면 그 소속으로 지정한다(없거나
+    /// dangling 이면 normal 유지 — `apply_create_workspace_inner` 와 동일 정책).
     /// 반환은 새 워크스페이스의 인덱스.
     pub fn apply_workspace_preset(
         &mut self,
         engine: &mut CoreState,
         preset: &WorkspacePreset,
+        category: Option<crate::model::WorkspaceCategoryId>,
         opts: ApplyOptions,
     ) -> Result<usize, ApplyError> {
         let ws_id = engine.next_ids.next_workspace();
@@ -101,6 +104,12 @@ impl AppState {
         ws.description = preset.description.clone();
         engine.workspaces.push(ws);
         let idx = engine.workspaces.len() - 1;
+
+        if let Some(cat_id) = category
+            && let Err(e) = engine.set_workspace_category(ws_id, cat_id)
+        {
+            tracing::warn!("apply_workspace_preset: set_workspace_category failed: {e:?}");
+        }
 
         if opts.focus {
             self.active_workspace = idx;
@@ -471,9 +480,13 @@ fn shell_escape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::derive_cwd_from_fields;
+    use super::{ApplyOptions, derive_cwd_from_fields};
+    use crate::core::CoreState;
     use crate::engine::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
     use serde_json::json;
+    use tasty_presets::{
+        PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab, WorkspacePreset,
+    };
 
     fn file_field(param_key: &str, derive: bool, input: PresetFieldInput) -> PresetFieldSpec {
         PresetFieldSpec {
@@ -515,5 +528,103 @@ mod tests {
         assert!(derive_cwd_from_fields(&fields, &json!({ "file": "x.md" })).is_none());
         // param 부재 → 파생 안 함.
         assert!(derive_cwd_from_fields(&fields, &json!({})).is_none());
+    }
+
+    // ── apply_workspace_preset: category 지정 (TODO 22) ──────────────────
+
+    fn test_state() -> (crate::state::AppState, CoreState) {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut engine = CoreState::new(80, 24, waker).expect("CoreState::new");
+        let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_presets::PresetStore::load_default(),
+        ));
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            ));
+        let state = crate::state::AppState::new(&mut engine, preset_store, memory);
+        (state, engine)
+    }
+
+    fn minimal_workspace_preset() -> WorkspacePreset {
+        WorkspacePreset {
+            name: "test".to_string(),
+            subtitle: String::new(),
+            description: String::new(),
+            layout: PresetPaneNode::Leaf {
+                pane: PresetPane {
+                    tabs: vec![PresetTab {
+                        explicit_name: None,
+                        layout: PresetSurfaceLayout::Leaf {
+                            surface: PresetSurface {
+                                id: None,
+                                kind: "terminal".to_string(),
+                                cwd: None,
+                                startup_command: None,
+                                params: serde_json::Value::Null,
+                            },
+                        },
+                    }],
+                    active_tab: 0,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn apply_workspace_preset_sets_target_category() {
+        let (mut state, mut engine) = test_state();
+        let work = engine.create_category("Work").unwrap();
+        let preset = minimal_workspace_preset();
+
+        let idx = state
+            .apply_workspace_preset(
+                &mut engine,
+                &preset,
+                Some(work),
+                ApplyOptions { focus: false },
+            )
+            .expect("apply_workspace_preset");
+
+        assert_eq!(engine.workspaces[idx].category, work);
+    }
+
+    #[test]
+    fn apply_workspace_preset_without_category_stays_normal() {
+        let (mut state, mut engine) = test_state();
+        let preset = minimal_workspace_preset();
+
+        let idx = state
+            .apply_workspace_preset(&mut engine, &preset, None, ApplyOptions { focus: false })
+            .expect("apply_workspace_preset");
+
+        assert_eq!(
+            engine.workspaces[idx].category,
+            crate::model::NORMAL_CATEGORY_ID
+        );
+    }
+
+    #[test]
+    fn apply_workspace_preset_ignores_dangling_category() {
+        // 존재하지 않는 카테고리 id 를 넘기면 set_workspace_category 가 실패하고
+        // (경고 로그) normal 로 남는다 — apply_create_workspace_inner 의
+        // "없거나 dangling 이면 normal 유지" 정책과 동형.
+        let (mut state, mut engine) = test_state();
+        let dangling: crate::model::WorkspaceCategoryId = 9999;
+        let preset = minimal_workspace_preset();
+
+        let idx = state
+            .apply_workspace_preset(
+                &mut engine,
+                &preset,
+                Some(dangling),
+                ApplyOptions { focus: false },
+            )
+            .expect("apply_workspace_preset");
+
+        assert_eq!(
+            engine.workspaces[idx].category,
+            crate::model::NORMAL_CATEGORY_ID
+        );
     }
 }

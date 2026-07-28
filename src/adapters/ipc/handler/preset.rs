@@ -333,6 +333,9 @@ pub fn handle_apply(
         &name,
         target_pane_id,
         target_workspace_id,
+        // 카테고리 지정은 UI 로컬 임시 상태(카테고리 헤더 메뉴 진입)에만 필요 —
+        // IPC/CLI 공개 계약에는 없음(workspace.create 의 category 파라미터로 이미 커버).
+        None,
         opts,
     ) {
         Ok(ApplyOutcome::Workspace { workspace_id }) => JsonRpcResponse::success(

@@ -614,6 +614,9 @@ impl MainView {
         }
         if matches_any_binding(&kb.apply_workspace_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
+            // 방어적 리셋 — 카테고리 헤더 메뉴에서 열었다가 취소한 뒤 이 단축키로
+            // 재오픈해도 이전 카테고리가 누출되지 않도록 명시(원인 분석 3 참고).
+            state.dialogs.preset_apply_target_category = None;
             state.dispatch_intent(
                 UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
@@ -625,6 +628,7 @@ impl MainView {
         }
         if matches_any_binding(&kb.apply_tab_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
+            state.dialogs.preset_apply_target_category = None;
             state.dispatch_intent(
                 UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
@@ -636,6 +640,7 @@ impl MainView {
         }
         if matches_any_binding(&kb.apply_pane_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
+            state.dialogs.preset_apply_target_category = None;
             state.dispatch_intent(
                 UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,

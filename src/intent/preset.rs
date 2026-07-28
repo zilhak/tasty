@@ -56,7 +56,11 @@ pub fn handle(
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
-        Intent::ApplyPreset { kind, name } => apply(core, state, engine, intent, *kind, name),
+        Intent::ApplyPreset {
+            kind,
+            name,
+            category,
+        } => apply(core, state, engine, intent, *kind, name, *category),
         Intent::SavePreset {
             base_name,
             explicit_name,
@@ -76,6 +80,7 @@ pub fn handle(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // reason: preset apply intent 핸들러 컨텍스트
 fn apply(
     core: &crate::core::Core,
     state: &mut AppState,
@@ -83,12 +88,15 @@ fn apply(
     intent: &DispatchedIntent,
     kind: PresetKind,
     name: &str,
+    category: Option<crate::model::WorkspaceCategoryId>,
 ) {
     // P1: focus 정책은 origin 으로 자동 분기.
     let focus = intent.origin.is_user();
     let options = ApplyOptions { focus };
 
-    if let Err(e) = apply_inner(core, state, engine, kind, name, None, None, options) {
+    if let Err(e) = apply_inner(
+        core, state, engine, kind, name, None, None, category, options,
+    ) {
         tracing::warn!("preset apply failed: {e}");
         #[cfg(feature = "gui")]
         state.toasts.push(
@@ -227,7 +235,8 @@ fn clone_preset_from_store(
 }
 
 /// Preset 적용. store 에서 clone 후 lock 해제하고 본체를 호출한다.
-/// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만 의미가 있다.
+/// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만, `category`
+/// 는 workspace apply 시에만 의미가 있다(다른 kind 에는 무시된다).
 #[allow(clippy::too_many_arguments)] // reason: preset apply 도메인 파라미터
 pub fn apply_inner(
     core: &crate::core::Core,
@@ -237,6 +246,7 @@ pub fn apply_inner(
     name: &str,
     target_pane_id: Option<u32>,
     target_workspace_id: Option<u32>,
+    category: Option<crate::model::WorkspaceCategoryId>,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
     let cloned = clone_preset_from_store(state, core, kind, name)?.ok_or_else(|| {
@@ -249,7 +259,7 @@ pub fn apply_inner(
     match cloned {
         ClonedPreset::Workspace(p) => {
             let idx = state
-                .apply_workspace_preset(engine, &p, options)
+                .apply_workspace_preset(engine, &p, category, options)
                 .map_err(PresetMutationError::Apply)?;
             let workspace_id = engine.workspaces[idx].id;
             Ok(ApplyOutcome::Workspace { workspace_id })

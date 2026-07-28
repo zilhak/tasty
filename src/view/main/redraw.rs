@@ -978,6 +978,19 @@ impl MainView {
                     .from_user_context_menu(),
                 );
             }
+            Some(5) => {
+                // 이 카테고리 소속으로 프리셋 적용 — "+" 버튼 메뉴와 동일 팝업
+                // (APPLY_WORKSPACE_POPUP_ID) 재사용, 대상 카테고리만 임시 상태로 기억.
+                self.state.dialogs.preset_apply_target_category = Some(cat_id);
+                self.state.dialogs.preset_picker_selected = None;
+                self.state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_context_menu(),
+                );
+            }
             Some(1) => {
                 crate::adapters::ui::category_actions::open_rename_category_dialog(
                     &mut self.state,
@@ -1482,6 +1495,9 @@ impl MainView {
         match result {
             Some(1) => {
                 self.state.dialogs.preset_picker_selected = None;
+                // 방어적 리셋 — 카테고리 헤더 메뉴 경로가 아니므로 이전 값이 남아있지
+                // 않도록 명시(누출 방지, 원인 분석 3 참고).
+                self.state.dialogs.preset_apply_target_category = None;
                 self.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
                         id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
@@ -1542,14 +1558,18 @@ impl MainView {
 }
 
 /// 카테고리 헤더 우클릭 메뉴 항목 조립 (디자인 sidebar_context_menu.jsx category 분기
-/// 전사, 2026-07-02). additive 선두: Add workspace(3) · ─ · Add remote workspace(4,
-/// TODO 03) · ─ · [비-normal 한정: Rename(1) · Delete(2) · ─] · New category(100).
-/// reserved normal 은 rename/delete 만 금지 — add(로컬/원격) 는 노출한다. native 메뉴
-/// 조립은 순수 함수로 분리해 구성·순서를 단위 테스트로 고정한다.
+/// 전사, 2026-07-02). additive 선두: Add workspace(3) · Create from preset(5, TODO 22)
+/// · ─ · Add remote workspace(4, TODO 03) · ─ · [비-normal 한정: Rename(1) · Delete(2)
+/// · ─] · New category(100). reserved normal 은 rename/delete 만 금지 — add(로컬/
+/// 프리셋/원격) 는 노출한다. native 메뉴 조립은 순수 함수로 분리해 구성·순서를 단위
+/// 테스트로 고정한다.
 fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_menu::MenuItem> {
     use crate::platform::native_menu::MenuItem;
     let mut items = vec![
         MenuItem::new(3, crate::i18n::t("workspace_category.add_workspace")),
+        // "+" 버튼 메뉴와 동일 라벨/액션(프리셋 선택 → 워크스페이스 생성) 재사용 —
+        // 신규 i18n 키 불필요.
+        MenuItem::new(5, crate::i18n::t("preset.context.apply_workspace_preset")),
         MenuItem::separator(),
         MenuItem::new(4, crate::i18n::t("context_menu.add_remote_workspace")),
         MenuItem::separator(),
@@ -1586,12 +1606,14 @@ mod tests {
 
     #[test]
     fn category_header_menu_non_normal_order() {
-        // Add workspace · ─ · Add remote workspace · ─ · Rename · Delete · ─ · New category.
+        // Add workspace · Create from preset · ─ · Add remote workspace · ─ ·
+        // Rename · Delete · ─ · New category.
         let items = category_header_menu_items(false);
         assert_eq!(
             shape(&items),
             vec![
                 Some(3),
+                Some(5),
                 None,
                 Some(4),
                 None,
@@ -1605,10 +1627,13 @@ mod tests {
 
     #[test]
     fn category_header_menu_normal_is_additive_only() {
-        // reserved normal: Add workspace · ─ · Add remote workspace · ─ · New category
-        // (rename/delete 금지).
+        // reserved normal: Add workspace · Create from preset · ─ · Add remote
+        // workspace · ─ · New category (rename/delete 금지).
         let items = category_header_menu_items(true);
-        assert_eq!(shape(&items), vec![Some(3), None, Some(4), None, Some(100)]);
+        assert_eq!(
+            shape(&items),
+            vec![Some(3), Some(5), None, Some(4), None, Some(100)]
+        );
     }
 
     // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip) 의

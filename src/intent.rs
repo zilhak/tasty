@@ -98,6 +98,10 @@ pub enum Intent {
     ApplyPreset {
         kind: tasty_presets::PresetKind,
         name: String,
+        /// Workspace preset 적용 시 소속시킬 카테고리. `None` 이면 normal(기본).
+        /// 카테고리 헤더 우클릭 메뉴의 "프리셋으로부터 워크스페이스 생성" 이 그
+        /// 카테고리 id 를 실어 보낸다. Tab/Pane preset 에는 의미 없음(무시).
+        category: Option<crate::model::WorkspaceCategoryId>,
     },
     /// Preset 저장. `explicit_name` 우선, 없으면 `base_name` 으로 `store.unique_name`.
     /// User origin (우클릭) 은 보통 explicit_name=None + overwrite=false,

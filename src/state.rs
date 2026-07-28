@@ -578,6 +578,12 @@ pub struct DialogState {
     /// 축소 레일 카테고리 팝업(`rail_category`)이 대상으로 하는 카테고리 id.
     /// `---` 버튼 클릭 시 set, popup 닫힘 시 None.
     pub(crate) rail_category_popup: Option<crate::model::WorkspaceCategoryId>,
+    /// 카테고리 헤더 우클릭 메뉴의 "프리셋으로부터 워크스페이스 생성" 이 연 프리셋
+    /// 적용 팝업(`APPLY_WORKSPACE_POPUP_ID`)이 대상으로 하는 카테고리 id. Apply 시
+    /// `take()` 로 소비해 `Intent::ApplyPreset.category` 에 실어 보낸다. Cancel/다른
+    /// 경로의 팝업 오픈 시에도 방어적으로 `None` 리셋 — 그러지 않으면 취소 후 "+" 버튼/
+    /// 단축키로 같은 팝업을 다시 열었을 때 이전 카테고리가 누출된다.
+    pub(crate) preset_apply_target_category: Option<crate::model::WorkspaceCategoryId>,
     /// 카테고리 삭제 확인 다이얼로그(`confirm_delete_category`)의 대상 카테고리 id.
     /// Delete 액션 시 set, 확인/취소/닫힘 시 None.
     pub(crate) pending_category_delete: Option<crate::model::WorkspaceCategoryId>,
@@ -664,6 +670,7 @@ impl DialogState {
             preset_picker_selected: None,
             pending_enter_copy_mode: false,
             rail_category_popup: None,
+            preset_apply_target_category: None,
             pending_category_delete: None,
             pending_script_confirm: None,
             #[cfg(feature = "gui")]

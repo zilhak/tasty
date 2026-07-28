@@ -123,6 +123,9 @@ fn draw_apply_popup(
         ApplyPresetAction::None => PopupAction::None,
         ApplyPresetAction::Cancel => {
             state.dialogs.preset_picker_selected = None;
+            // 카테고리 헤더 메뉴에서 열었다가 취소한 경우 대상 카테고리가 남아있으면
+            // 안 된다 — 다음에 "+" 버튼/단축키로 같은 팝업을 열 때 누출된다.
+            state.dialogs.preset_apply_target_category = None;
             PopupAction::Close
         }
         ApplyPresetAction::Select(name) => {
@@ -130,10 +133,12 @@ fn draw_apply_popup(
             PopupAction::None
         }
         ApplyPresetAction::Apply(name) => {
+            let category = state.dialogs.preset_apply_target_category.take();
             state.dispatch_intent(
                 Intent::ApplyPreset {
                     kind,
                     name: name.clone(),
+                    category,
                 }
                 .from_user_menu("preset_apply_popup"),
             );
