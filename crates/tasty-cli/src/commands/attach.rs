@@ -558,6 +558,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
             loop {
                 match stdin.read(&mut buf) {
                     Ok(0) => {
+                        // 채널 receiver 가 이미 drop 된 정상 종료 케이스(메인 루프가
+                        // 다른 이벤트로 먼저 return) — 송신 실패 무시.
                         let _ = tx.send(RawEvent::StdinEof);
                         break;
                     }
@@ -567,6 +569,7 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                         }
                     }
                     Err(_) => {
+                        // 상동 — rx 가 이미 drop 된 정상 종료 경합, 송신 실패 무시.
                         let _ = tx.send(RawEvent::StdinEof);
                         break;
                     }
@@ -591,6 +594,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                         }
                     }
                     Err(_) => {
+                        // 채널 receiver 가 이미 drop 된 정상 종료 케이스(메인 루프가
+                        // stdin EOF/detach 등 다른 사유로 먼저 return) — 송신 실패 무시.
                         let _ = tx.send(RawEvent::ServerRecvErr);
                         break;
                     }
