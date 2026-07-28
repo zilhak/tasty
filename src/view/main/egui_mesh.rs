@@ -550,12 +550,18 @@ impl MainView {
             let Some(mem) = mgr.plugin_buffer(&frame.plugin_id, frame.buffer_id) else {
                 continue;
             };
-            // SAFETY: `headless_plugins::forward_mesh_frames` 와 동일한 계약 — plugin
-            // footer generation 을 Acquire 로 재확인해 writer 와의 tearing 을 피한다.
+            // SAFETY: `buffer_id`는 이 plugin 이 `host.shared_buffer.create`로 만든 뒤
+            // `PaintFrame` 이벤트로 알려온 값이라 `mem`은 유효한 매핑이다. footer
+            // 프로토콜은 plugin(writer)/host(reader) 양쪽이 합의한 8B 헤더 + user data
+            // 레이아웃이며(`tasty_shm::footer` 문서), 이 host 프로세스가 이 버퍼의 유일한
+            // reader 다 — `headless_plugins::forward_mesh_frames`의 동일 패턴과 동형.
             let raw = unsafe { mem.as_slice() };
             if raw.len() < tasty_shm::footer::SIZE {
                 continue;
             }
+            // SAFETY: 위에서 `raw.len() >= footer::SIZE`를 검증했고, mmap 매핑의 시작
+            // 주소는 항상 페이지 정렬(≥8B)이라 `AtomicU64` 재해석이 안전하다(`footer_atomic`
+            // 안전 조건 문서 참조).
             let gen_now =
                 unsafe { tasty_shm::footer::load(raw, std::sync::atomic::Ordering::Acquire) };
             if gen_now != frame.generation {
