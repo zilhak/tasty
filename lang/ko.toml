@@ -1076,8 +1076,14 @@ mirror_capture_saved = "스크린샷을 원격 클립보드로 복사했습니�
 # 위 업로드/원격 클립보드 반영이 실패했을 때 표시.
 mirror_capture_failed = "스크린샷을 원격 클립보드로 복사하지 못했습니다."
 # 원격 연결이 끊겨(EOF / force-detach / heartbeat 타임아웃 / 송신 프레임 write 실패)
-# mirror 워크스페이스가 정리될 때 표시.
+# mirror 워크스페이스가 정리될 때 표시. anchor 매핑 없이 임시로 attach 한 mirror 에만
+# 해당 — 매핑된 mirror 는 아래 세 키(자동 재연결 대상)로 대신 표시된다.
 mirror_disconnected = "원격 연결이 끊어졌습니다. 미러 워크스페이스를 닫았습니다."
+# 매핑된 mirror 워크스페이스의 연결이 끊겼을 때 표시 — 워크스페이스와 터미널(scrollback
+# 포함)은 그대로 유지한 채 백그라운드 backoff 재시도가 자동으로 재연결을 시도한다.
+mirror_reconnecting = "원격 연결이 끊어졌습니다. 재연결을 시도합니다…"
+# backoff 재시도가 성공해 mirror 가 다시 살아났을 때 표시.
+mirror_reconnected = "원격 워크스페이스에 다시 연결했습니다."
 
 # (09) 원격 파일 전송 피드백 팝업 — 진행(determinate) + 실패.
 [transfer.progress]

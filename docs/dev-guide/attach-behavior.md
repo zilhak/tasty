@@ -200,22 +200,65 @@ silent disconnect 정리(`cleanup_mirror_workspace`) 자체는 heartbeat TTL 만
     때문. 엣지를 모든 anchor 에 무차별 적용하면 후자(흔한 CLI 시나리오)까지 워크스페이스
     전환 전까지 트리거되지 않는 회귀가 생긴다.
 - **`detach_orphaned_mirror_sessions` 와의 관계**: 간섭 없음. `apply_attach_client_output`
-  (disconnect 정리, `cleanup_mirror_workspace(sess, from_disconnect=true)`)과
+  (disconnect 정리, anchor 있으면 `Reconnecting` 전이 / anchor 없으면
+  `cleanup_mirror_workspace(sess, from_disconnect=true)`)과
   `detach_orphaned_mirror_sessions`(사용자가 mirror ws 자체를 닫은 고아 세션 정리,
   `from_disconnect=false`)는 서로 다른 세션 식별 기준(전자는 `disconnected` 플래그, 후자는
   `local_workspace` 가 어느 창에도 없음)으로 동작하고, 둘 다 단일 스레드 메인루프에서
   순차 실행돼(레이스 없음) 겹치는 세션이 있어도 먼저 처리한 쪽이 세션을 vec 에서 제거해
   뒤쪽은 자연히 skip 한다. `from_disconnect` 플래그가 두 경로를 구분해 사용자가 mirror ws 를
-  직접 닫은 경우는 `auto_attach_pending_reactivation` 에 들어가지 않는다(재진입 대기 의미가
-  없음 — 사용자 스스로 걷어낸 것).
+  직접 닫은 경우는 `auto_attach_pending_reactivation`/`auto_attach_reconnect` 에 들어가지
+  않는다(재진입 대기·재연결 스케줄 의미가 없음 — 사용자 스스로 걷어낸 것).
+
+## 재연결 시 세션 상태 보존 (TODO 28)
+
+TODO 27 의 backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mirror workspace/터미널을
+만들면 scrollback 과 local id 가 재연결마다 사라진다. 이를 막기 위해 `reconnect_session`
+(`src/app/attach_client.rs`)은 `resolve_endpoint`/handshake 는 `start_gui_attach` 와 동일하게
+수행하되, 워크스페이스/터미널은 **기존 것을 그대로 재사용**한다:
+
+- **`merge_survivor_mapping`**: 기존 `apply_mirror_structural_delta` 의 survivor-mapping
+  로직(옛 remote_id→local_id 매핑과 새 원격 구조를 비교해 양쪽에 다 있는 surface 는
+  local id/Terminal 인스턴스를 그대로 재사용)을 공용 함수로 추출해, `start_gui_attach`(빈
+  old_map)·`apply_mirror_structural_delta`·`reconnect_session` 세 곳이 공유한다.
+  `reconnect_session` 은 재연결 직전의 `remote_to_local` 매핑을 old_map 으로 넘겨 재연결
+  전후 살아있는 surface 의 scrollback/local id 를 보존한다.
+- **`SharedFrameSender`(`Arc<Mutex<FrameSender>>`)**: 입력 forwarder 스레드(`make_mirror_surface`
+  가 만드는, surface 입력을 원격에 쓰는 장기 생존 스레드)는 연결이 바뀌어도(재연결로
+  reader/writer/heartbeat 스레드와 소켓 자체가 통째로 교체된다) 살아있는 채로 새 연결의
+  sender 를 봐야 한다. 그래서 `frame_tx` 를 값이 아니라 `Arc<Mutex<>>` 로 감싸 forwarder
+  스레드에 공유하고, `reconnect_session` 은 이 Arc 는 그대로 두고 **내부의 raw sender만
+  교체**한다. forwarder 스레드는 send 실패 시에도 (구 채널이 재연결 중 잠깐 죽어있는
+  것일 수 있으므로) 스레드를 종료하지 않고 그 청크만 drop 하고 계속 루프한다 — Codex
+  크로스체크가 지적한 "재연결 후 forwarder 가 죽은 채널을 계속 참조해 survivor 터미널
+  입력이 조용히 유실되는" 결함의 수정.
+- **`SessionState`(`Connected`/`Reconnecting`)**: 기존 `cleanup_mirror_workspace` 는
+  disconnect 즉시 mirror workspace/터미널을 통째로 걷어내, TODO 27 의 재연결 트리거가
+  발동할 시점엔 survivor-mapping 을 적용할 대상 자체가 남아있지 않았다(Codex 크로스체크
+  지적). 이를 막기 위해 anchor 가 있는 세션의 disconnect 는 `cleanup_mirror_workspace`
+  를 부르지 않고 `enter_reconnecting`(mirror workspace/터미널을 그대로 둔 채 상태만
+  `Reconnecting` 으로 전이, `auto_attach_active` 에서 제거해 재연결 트리거가 자유롭게
+  spawn 하게 함)으로 분기한다. anchor 가 없는 세션(임시 mirror)은 기존처럼 즉시
+  `cleanup_mirror_workspace`.
+- **레이스**: 재연결 워커가 엔드포인트 해석(`resolve_endpoint` — 프로필/포트 발견/SSH
+  터널 수립)을 끝내고 결과를 메인 루프로 보내기 전에, 사용자가 그 mirror workspace 를
+  직접 닫으면 `detach_orphaned_mirror_sessions` 가 먼저 세션을 정리해 vec 에서 제거한다.
+  `drain_auto_attach_results` 는 그 시점의 `anchor_ws_id() == Some(anchor) && state() ==
+  Reconnecting` 조건으로 세션을 다시 찾으므로, 이미 사라진 세션에 대해서는 매치가 없어
+  `reconnect_session` 자체를 부르지 않고 no-op(성공 취급)으로 넘어간다 — 해석해둔
+  터널 핸들은 그 자리에서 drop 되며(Drop 시 자식 ssh kill), 되살아난 연결이 이미 닫힌
+  workspace 에 잘못 쓰이는 사고는 없다.
 
 ## mirror 세션 종료 (client → 원격 점유 해제)
 
-client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(hard workspace lock)를 해제해야 한다. 종료 트리거는 두 가지이고 정리 경로(`cleanup_mirror_workspace`)를 공유한다.
+client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(hard workspace lock)를 해제해야 한다. 종료 트리거는 두 가지다.
 
-- **원격발 종료(EOF/force-detach/read timeout)**: reader 스레드가 `Detach`/`force_detached`/EOF 를 받거나(위 "연결 생존 확인" 참조) read timeout 으로 소켓 read 가 에러를 반환하면 `disconnected` 플래그 → `apply_attach_client_output` 이 세션 제거 + `cleanup_mirror_workspace`.
-- **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 존재 여부(`find_main_with_workspace`)를 확인해, 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
-- **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널 제거(이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 추가하지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
+- **원격발 종료(EOF/force-detach/read timeout)**: reader 스레드가 `Detach`/`force_detached`/EOF 를 받거나(위 "연결 생존 확인" 참조) read timeout 으로 소켓 read 가 에러를 반환하면 `disconnected` 플래그가 선다. `apply_attach_client_output` 이 이를 상태별로 분기한다 —
+  - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결(TODO 27)에 맡긴다.
+  - **anchor 없는 세션(임시 mirror, IPC `remote.attach` 등)**: 기존과 동일하게 세션 제거 + `cleanup_mirror_workspace(sess, from_disconnect=true)`.
+  - 이미 `Reconnecting` 상태인 세션(재연결 시도 자체가 실패해 다시 disconnected 로 관측되는 경우)은 이 분기에 다시 들어오지 않는다 — `disconnected && state == Connected` 조건이라 진입 시 이미 걸러진다.
+- **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). 이는 세션이 `Connected`/`Reconnecting` 어느 쪽이어도 동일하다. `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 존재 여부(`find_main_with_workspace`)를 확인해, 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
+- **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널 제거(이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발, anchor 없는 세션 한정)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 그 항목과 `auto_attach_reconnect` 스케줄 모두 명시적으로 제거해 이미 걷어낸 세션에 대한 재연결 시도를 남기지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
 
 ## force-detach
 

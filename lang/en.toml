@@ -1080,7 +1080,15 @@ mirror_capture_saved = "Screenshot copied to the remote clipboard."
 mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
 # Shown when a mirror workspace is torn down because the remote connection was
 # lost (EOF / force-detach / heartbeat timeout / an outbound frame write failed).
+# Only applies to mirrors that were attached ad-hoc (no workspace mapping) —
+# mapped mirrors instead go through the three keys below (they auto-reconnect).
 mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
+# Shown when a mapped mirror workspace's connection is lost — the workspace and
+# its terminals are kept (scrollback preserved) while a background backoff
+# retry tries to reconnect automatically.
+mirror_reconnecting = "The remote connection was lost. Trying to reconnect…"
+# Shown when a backoff retry succeeds and the mirror is live again.
+mirror_reconnected = "Reconnected to the remote workspace."
 
 # (09) Remote file-transfer feedback popups — progress (determinate) + failed.
 [transfer.progress]

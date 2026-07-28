@@ -111,6 +111,27 @@ struct OutFrame {
 /// [`OutFrame`] 을 write 스레드로 보내는 큐 sender. 세션·heartbeat·forwarder 가 공유한다.
 type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 
+/// 재연결(TODO 27/28) 시 write 스레드/소켓이 통째로 교체돼도, 그보다 수명이 긴 입력
+/// forwarder 스레드(터미널 생존 기간 내내 삶)가 최신 `FrameSender` 를 계속 가리킬 수
+/// 있게 하는 교체 가능한 핸들. `AttachClientSession::frame_tx` 와 각 forwarder 가 같은
+/// `Arc` 를 공유(clone)하고, 재연결 성공 시 `reconnect_session` 이 안쪽 값만 새
+/// sender 로 교체한다(Arc 자체는 그대로 — forwarder 는 clone 을 들고 있을 뿐이라 자동
+/// 반영). heartbeat/write 스레드는 연결 1 회 수명에 스코프돼 있어 이 간접 계층이
+/// 필요 없다 — 자신만의 raw `FrameSender` 를 직접 캡처한다.
+type SharedFrameSender = Arc<Mutex<FrameSender>>;
+
+/// mirror 세션의 transport 상태(TODO 28). `Connected` 만 실제 소켓 IO 가 살아있다 —
+/// `Reconnecting` 은 mirror workspace/터미널(scrollback 포함)을 살려둔 채 transport 만
+/// 끊긴 상태로, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 재시도를
+/// 담당한다. 세션이 완전히 닫히면(사용자 close 또는 anchor 없는 disconnect) 이 열거형
+/// 값을 두지 않고 `attach_client_sessions` 에서 바로 제거한다 — "Closed" 는 곧 그
+/// 세션이 vec 에 더 이상 없는 상태와 동치라 별도 variant 를 두지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionState {
+    Connected,
+    Reconnecting,
+}
+
 /// attach mesh mirror(TODO 19) leaf 를 `AttachMeshSurface`로 재구성하는 데 필요한
 /// 표시용 메타. `build_layout`이 `term`(터미널 local id 집합)과 나란히 받아, 로컬
 /// surface_id 가 mesh role 이면 이 정보로 `AttachMeshSurface`를 만든다.
@@ -133,8 +154,15 @@ pub(crate) struct AttachClientSession {
     disconnected: Arc<AtomicBool>,
     /// 원격으로 나가는 모든 프레임(입력 Data / resize·structural Control / Detach)을
     /// 단일 write 스레드로 보내는 큐 sender(TODO 05). 여러 forwarder/heartbeat 가 각자
-    /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거.
-    frame_tx: FrameSender,
+    /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거. TODO 28 —
+    /// 재연결 시 안쪽 sender 만 교체 가능하도록 `Arc<Mutex<_>>` 로 감쌌다(교체 이유는
+    /// [`SharedFrameSender`] 문서 참고).
+    frame_tx: SharedFrameSender,
+    /// TODO 28 — 이 세션의 transport 상태. `apply_attach_client_output` 이 disconnect
+    /// 를 감지하면(anchor 있는 세션 한정) mirror 를 지우는 대신 여기를 `Reconnecting`
+    /// 으로 전이시키고, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 으로
+    /// `Connected` 복귀를 시도한다.
+    state: SessionState,
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
@@ -176,6 +204,35 @@ pub(crate) struct AttachClientSession {
     /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
     /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
     remote_label: String,
+}
+
+impl AttachClientSession {
+    /// TODO 27 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 후보(anchor 매핑 +
+    /// `Reconnecting` 상태)를 찾는 데 쓴다. 필드가 모듈 비공개라 sibling 모듈
+    /// (`auto_attach.rs`)에서 직접 접근할 수 없어 최소 getter 로 노출한다.
+    pub(crate) fn state(&self) -> SessionState {
+        self.state
+    }
+
+    /// TODO 27 — 이 세션이 자동 attach 매핑(anchor)에서 만들어졌는지.
+    pub(crate) fn anchor_ws_id(&self) -> Option<u32> {
+        self.anchor_ws_id
+    }
+
+    /// `frame_tx` 공유 핸들을 lock 해 프레임 하나를 write 큐에 넣는다. 호출부가 매번
+    /// lock/에러 처리를 반복하지 않도록 모은 헬퍼(TODO 28 — `frame_tx` 가
+    /// `Arc<Mutex<_>>` 로 바뀌며 추가). mutex 오염(다른 스레드 panic)은 lock 자체를
+    /// 무효화할 이유가 없어 `into_inner`로 복구해 계속 진행한다.
+    fn send_frame(
+        &self,
+        tag: StreamTag,
+        payload: Vec<u8>,
+    ) -> Result<(), std::sync::mpsc::SendError<OutFrame>> {
+        self.frame_tx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .send(OutFrame { tag, payload })
+    }
 }
 
 impl App {
@@ -308,17 +365,19 @@ impl App {
         // push 만 하고, write 스레드 하나가 순차로 소켓에 write_frame 한다 — writer 락
         // 경합/heartbeat 굶김 원천 제거. write half 는 그 스레드가 단독 소유한다.
         let (frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
+        // TODO 28 — forwarder 가 재연결 후에도 최신 sender 를 찾을 수 있도록 공유 핸들로
+        // 감싼다(교체는 `reconnect_session` 이 담당, 이 Arc 자체는 세션 수명 내내 불변).
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(frame_tx));
         let write_half = conn.try_clone_writer()?;
 
-        // 2. focus 엔진에 mirror 구성(스코프 borrow). 로컬 id 재매핑 + mirror terminal +
-        //    입력 sink forwarder.
+        // 2. focus 엔진에 mirror 구성(스코프 borrow). survivor 매핑(신규 attach 라
+        //    old_map 은 빈 맵 — 전부 신규 취급)으로 로컬 id 발급 + mirror terminal +
+        //    입력 sink forwarder 를 만든다(재연결과 로직 공유, `merge_survivor_mapping`).
         let local_ws_id;
         // client mirror reader thread 가 원격 출력 수신 즉시 메인 루프를 깨우는 데 쓴다
         // (실시간 갱신 — 서버 readonly 의 3초 cadence 와 분리).
         let proxy;
-        let mut remote_to_local: HashMap<u32, u32> = HashMap::new();
-        let mut terminal_locals: HashSet<u32> = HashSet::new();
-        let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
+        let remote_to_local: HashMap<u32, u32>;
         {
             let Some(main) = self.focused_window_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
@@ -327,45 +386,9 @@ impl App {
             let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
-            for s in &surfaces {
-                let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                let local_id = ids.next_surface();
-                remote_to_local.insert(remote_id, local_id);
-                match s.get("role").and_then(|v| v.as_str()) {
-                    Some("terminal") => {
-                        let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                        let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                        make_mirror_surface(remote_id, local_id, cols, rows, &frame_tx, engine);
-                        terminal_locals.insert(local_id);
-                    }
-                    // attach mesh mirror(TODO 19) — 로컬에 plugin 프로세스는 없다.
-                    // 표시용 kind/plugin_id 만 기록해 `build_layout` 이 `AttachMeshSurface`
-                    // 를 만들게 한다. GPU 렌더은 `CoreState::attach_mesh_frames`(reader
-                    // thread 가 push)를 읽는다.
-                    Some("mesh") => {
-                        let kind = s
-                            .get("kind")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("mesh")
-                            .to_string();
-                        let plugin_id = s
-                            .get("plugin_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        mesh_locals.insert(
-                            local_id,
-                            MirrorMeshInfo {
-                                display_name: kind.clone(),
-                                kind,
-                                plugin_id,
-                            },
-                        );
-                    }
-                    // 나머지 비-터미널은 mirror 불가(design §4.4) → 로컬 id 만(placeholder leaf).
-                    _ => {}
-                }
-            }
+            let (new_map, terminal_locals, mesh_locals, _newly_created) =
+                merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, engine);
+            remote_to_local = new_map;
 
             local_ws_id = ids.next_workspace();
             let mut ws = build_mirror_workspace(
@@ -541,7 +564,11 @@ impl App {
         //    forwarder 스레드의 "마지막 전송 시각"을 공유 상태로 조율하는 비용이
         //    더 크다.
         {
-            let frame_tx = frame_tx.clone();
+            // heartbeat 는 이 연결 1 회 수명에만 스코프된다(TODO 28) — forwarder 와
+            // 달리 재연결을 가로질러 살아남지 않으므로 공유 핸들이 아닌 이 연결의 raw
+            // sender 를 직접 잡는다. `disconnected` 도 이 연결 전용 Arc — 재연결 후
+            // 새 연결은 별도의 새 heartbeat 스레드(새 raw sender/새 disconnected)를 띈다.
+            let raw_frame_tx = frame_tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
             let disconnected = disconnected.clone();
             std::thread::spawn(move || {
                 loop {
@@ -552,7 +579,7 @@ impl App {
                     // 큐에 push 만 하므로 백프레셔로 write 가 막혀도 heartbeat 는 굶지
                     // 않는다(TODO 05). write 스레드가 사망(receiver drop)했으면 send 가
                     // Err → 종료.
-                    if frame_tx
+                    if raw_frame_tx
                         .send(OutFrame {
                             tag: StreamTag::Ping,
                             payload: Vec::new(),
@@ -571,6 +598,7 @@ impl App {
             output,
             disconnected,
             frame_tx,
+            state: SessionState::Connected,
             client_id,
             remote_workspace: workspace,
             bulk_port: port,
@@ -586,6 +614,307 @@ impl App {
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
         );
         Ok(local_ws_id)
+    }
+
+    /// TODO 27/28 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 엔드포인트 해석에
+    /// 성공했을 때 호출. `sess_idx` 의 `Reconnecting` 세션을 **새 연결로 재개**한다.
+    /// `start_gui_attach` 와 달리 로컬 mirror workspace/터미널을 새로 만들지 않고,
+    /// `merge_survivor_mapping`(survivor local id/scrollback 보존) + 이전 focus 복원을
+    /// 적용한 뒤 reader/writer/heartbeat 스레드만 새로 띄운다. 입력 forwarder 는
+    /// `sess.frame_tx`(교체 가능 공유 핸들)의 내용물만 갈아끼우면 재결선 없이 새 연결을
+    /// 향하게 된다.
+    pub(crate) fn reconnect_session(
+        &mut self,
+        sess_idx: usize,
+        port: u16,
+        tunnel: Option<tasty_cli::ssh::SshTunnel>,
+    ) -> anyhow::Result<()> {
+        let (workspace, local_workspace) = {
+            let sess = &self.attach_client_sessions[sess_idx];
+            (sess.remote_workspace, sess.local_workspace)
+        };
+
+        // 1. 연결 + 핸드셰이크(신규 attach 와 동일 계약).
+        let sock = TcpStream::connect(("127.0.0.1", port))?;
+        if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+            tracing::warn!("gui reconnect: failed to set read timeout: {e}");
+        }
+        if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+            tracing::warn!("gui reconnect: failed to set write timeout: {e}");
+        }
+        let (mut conn, client_id) =
+            StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
+        let first = conn.recv()?;
+        if first.tag != StreamTag::Control {
+            anyhow::bail!("expected attach Control frame, got {:?}", first.tag);
+        }
+        let ctrl: Value = serde_json::from_slice(&first.payload)?;
+        match ctrl.get("event").and_then(|v| v.as_str()) {
+            Some("attached_workspace") => {}
+            Some("attach_error") => {
+                let reason = ctrl
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                anyhow::bail!("workspace attach rejected: {reason}");
+            }
+            other => anyhow::bail!("unexpected attach control event: {other:?}"),
+        }
+        let name = ctrl
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("remote")
+            .to_string();
+        let surfaces = ctrl
+            .get("surfaces")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
+
+        let (new_frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
+        let write_half = conn.try_clone_writer()?;
+        // 기존 세션이 들고 있던 **같은 Arc** 를 재사용 — 안쪽 sender 만 새 것으로 교체한다
+        // (Arc 를 새로 만들면 survivor 터미널의 입력 forwarder 가 여전히 옛 Arc 를
+        // 바라봐 갱신을 못 본다 — `SharedFrameSender` 문서 참고).
+        let shared_frame_tx: SharedFrameSender =
+            self.attach_client_sessions[sess_idx].frame_tx.clone();
+        *shared_frame_tx.lock().unwrap_or_else(|p| p.into_inner()) = new_frame_tx;
+
+        // 2. survivor 매핑 + mirror 트리 in-place 교체(같은 local_ws_id → scrollback/
+        //    local id 보존) + focus 복원(구조 delta 와 동일 패턴).
+        let Some(wid) = self.find_main_with_workspace(local_workspace) else {
+            anyhow::bail!(
+                "mirror workspace {local_workspace} 가 더 이상 어느 창에도 없음 — 재연결 취소"
+            );
+        };
+        let proxy;
+        {
+            // `sess`/`main` 을 같은 스코프에서 직접 field projection 으로 각각 얻는다
+            // (disjoint borrow — `apply_attach_client_output` 과 동일 패턴). 이후 클로저가
+            // `self` 대신 이미 로컬인 `sess` 를 캡처하게 해 자기참조 대여 문제를 피한다.
+            let sess = &mut self.attach_client_sessions[sess_idx];
+            let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
+            };
+            proxy = main.proxy.clone();
+            let engine = &mut main.core_state;
+            let ids = engine.next_ids.clone();
+
+            // focus 캡처(교체 전) — `apply_mirror_structural_delta` 와 동일 패턴.
+            let old_focused_remote: Option<u32> = engine
+                .workspaces
+                .iter()
+                .find(|w| w.id == local_workspace)
+                .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
+
+            let (new_map, terminal_locals, mesh_locals, _newly_created) = merge_survivor_mapping(
+                &sess.remote_to_local,
+                &surfaces,
+                &ids,
+                &shared_frame_tx,
+                engine,
+            );
+            sess.remote_to_local = new_map;
+
+            let Some(pos) = engine
+                .workspaces
+                .iter()
+                .position(|w| w.id == local_workspace)
+            else {
+                anyhow::bail!(
+                    "mirror workspace {local_workspace} 를 engine 에서 못 찾음 — 재연결 취소"
+                );
+            };
+            let mut ws = build_mirror_workspace(
+                local_workspace,
+                &name,
+                &tree,
+                &ids,
+                &sess.remote_to_local,
+                &terminal_locals,
+                &mesh_locals,
+            );
+            ws.mirror = true;
+            if !restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local) {
+                tracing::info!(
+                    "gui reconnect: 이전 focus surface 를 재연결 후 트리에서 찾지 못함 — 원격 기본 focus 유지"
+                );
+            }
+            engine.workspaces[pos] = ws;
+            main.state.toasts.push(
+                crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
+                crate::adapters::ui::ToastKind::Success,
+                crate::adapters::ui::ToastScope::Window,
+            );
+            main.mark_dirty();
+        }
+
+        // 3. reader thread — 신규 attach 와 동일 계약(새 output 버퍼/disconnected).
+        let output: RemoteOutputBuffer = Arc::new(Mutex::new(Vec::new()));
+        let disconnected = Arc::new(AtomicBool::new(false));
+
+        // 3.5. write 전용 스레드 — 이 연결 1 회 수명.
+        {
+            let disconnected = disconnected.clone();
+            let proxy = proxy.clone();
+            std::thread::spawn(move || {
+                let mut write_half = write_half;
+                for item in frame_rx {
+                    if let Err(e) = stream::write_frame(&mut write_half, item.tag, &item.payload) {
+                        tracing::warn!(
+                            "attach write thread(재연결): 프레임 write 실패 — 세션 disconnect 승격: {e}"
+                        );
+                        disconnected.store(true, Ordering::SeqCst);
+                        let _ = proxy.send_event(AppEvent::AttachClientData);
+                        break;
+                    }
+                }
+            });
+        }
+
+        {
+            let output = output.clone();
+            let disconnected = disconnected.clone();
+            std::thread::spawn(move || {
+                let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
+                loop {
+                    match conn.recv() {
+                        Ok(frame) => match frame.tag {
+                            StreamTag::Data => {
+                                if let Some((sid, payload)) = stream::decode_mux(&frame.payload)
+                                    && let Ok(mut buf) = output.lock()
+                                {
+                                    buf.push(MirrorEvent::Data(sid, payload.to_vec()));
+                                }
+                                let _ = proxy.send_event(AppEvent::AttachClientData);
+                            }
+                            StreamTag::Detach => {
+                                disconnected.store(true, Ordering::SeqCst);
+                                let _ = proxy.send_event(AppEvent::AttachClientData);
+                                break;
+                            }
+                            StreamTag::Control => {
+                                if String::from_utf8_lossy(&frame.payload)
+                                    .contains("force_detached")
+                                {
+                                    disconnected.store(true, Ordering::SeqCst);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData);
+                                    break;
+                                }
+                                let mirror_ev =
+                                    match serde_json::from_slice::<StreamControl>(&frame.payload) {
+                                        Ok(StreamControl::Resize {
+                                            surface_id,
+                                            cols,
+                                            rows,
+                                        }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
+                                        Ok(StreamControl::Activity { surface_id, busy }) => {
+                                            Some(MirrorEvent::Activity(surface_id, busy))
+                                        }
+                                        Ok(StreamControl::StructuralResult {
+                                            ok: false,
+                                            reason,
+                                            ..
+                                        }) => Some(MirrorEvent::StructuralFailed(
+                                            reason.unwrap_or_default(),
+                                        )),
+                                        Ok(StreamControl::StructuralResult {
+                                            ok: true,
+                                            op_id,
+                                            ..
+                                        }) => Some(MirrorEvent::StructuralSucceeded(op_id)),
+                                        Ok(StreamControl::StructuralDelta {
+                                            workspace_id,
+                                            tree,
+                                            surfaces,
+                                        }) => Some(MirrorEvent::StructuralDelta {
+                                            workspace_id,
+                                            tree,
+                                            surfaces,
+                                        }),
+                                        Ok(_) | Err(_) => parse_capture_result(&frame.payload)
+                                            .or_else(|| parse_list_dir_result(&frame.payload)),
+                                    };
+                                if let Some(ev) = mirror_ev
+                                    && let Ok(mut buf) = output.lock()
+                                {
+                                    buf.push(ev);
+                                    drop(buf);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData);
+                                }
+                            }
+                            StreamTag::Ping => {}
+                            StreamTag::MeshData => {
+                                if let Ok(Some((meta, bytes))) =
+                                    mesh_assembler.push_chunk(&frame.payload)
+                                    && let Ok(mut buf) = output.lock()
+                                {
+                                    buf.push(MirrorEvent::Mesh(
+                                        meta.surface_id,
+                                        meta.generation,
+                                        meta.frame_seq,
+                                        meta.full_textures,
+                                        bytes,
+                                    ));
+                                    drop(buf);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData);
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            disconnected.store(true, Ordering::SeqCst);
+                            let _ = proxy.send_event(AppEvent::AttachClientData);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // 4. heartbeat thread — 이 연결 전용 raw sender(TODO 28 — `make_mirror_surface`
+        //    문서 참고, heartbeat 는 재연결을 가로질러 살아남지 않는다).
+        {
+            let raw_frame_tx = shared_frame_tx
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let disconnected = disconnected.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(stream::HEARTBEAT_INTERVAL);
+                    if disconnected.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    if raw_frame_tx
+                        .send(OutFrame {
+                            tag: StreamTag::Ping,
+                            payload: Vec::new(),
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+
+        let sess = &mut self.attach_client_sessions[sess_idx];
+        sess.output = output;
+        sess.disconnected = disconnected;
+        sess.client_id = client_id;
+        sess.bulk_port = port;
+        sess.tunnel = tunnel;
+        sess.op_seq = 0;
+        sess.pending_op_focus.clear();
+        sess.next_delta_focus = None;
+        sess.last_forwarded_resize.clear();
+        sess.state = SessionState::Connected;
+        sess.remote_label = format!("127.0.0.1:{port}");
+        tracing::info!(
+            "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"
+        );
+        Ok(())
     }
 
     /// 사용자 경로 전용 — 새 mirror workspace 로 focus 를 옮긴다(원격 워크스페이스 추가
@@ -614,8 +943,9 @@ impl App {
             return;
         }
         let mut dead: Vec<usize> = Vec::new();
+        let mut reconnecting: Vec<usize> = Vec::new();
         for idx in 0..self.attach_client_sessions.len() {
-            let (drained, local_ws, disconnected) = {
+            let (drained, local_ws, disconnected, state, anchor_ws_id) = {
                 let sess = &self.attach_client_sessions[idx];
                 let drained: Vec<MirrorEvent> = match sess.output.lock() {
                     Ok(mut b) => std::mem::take(&mut *b),
@@ -625,6 +955,8 @@ impl App {
                     drained,
                     sess.local_workspace,
                     sess.disconnected.load(Ordering::SeqCst),
+                    sess.state,
+                    sess.anchor_ws_id,
                 )
             };
 
@@ -802,14 +1134,64 @@ impl App {
                     main.mark_dirty();
                 }
             }
-            if disconnected {
-                dead.push(idx);
+            // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
+            // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
+            // 않음) — `Connected` 일 때만 "방금 처음 감지"로 보고 1 회 반응, 이미
+            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(TODO 28).
+            if disconnected && state == SessionState::Connected {
+                // anchor(자동 attach 매핑) 가 있으면 재연결 가능 후보 — mirror 를 지우지
+                // 않고 Reconnecting 으로 전이(TODO 27/28). 없으면(수동/IPC attach) 재연결
+                // 트리거 소스가 없으므로 기존처럼 완전 정리.
+                if anchor_ws_id.is_some() {
+                    reconnecting.push(idx);
+                } else {
+                    dead.push(idx);
+                }
             }
+        }
+        for &idx in &reconnecting {
+            self.enter_reconnecting(idx);
         }
         for &idx in dead.iter().rev() {
             let sess = self.attach_client_sessions.remove(idx);
             self.cleanup_mirror_workspace(&sess, true);
         }
+    }
+
+    /// TODO 27/28 — disconnect 가 처음 감지된 anchor-매핑 세션을 mirror workspace/
+    /// 터미널을 살려둔 채 `Reconnecting` 으로 전이시킨다(완전 정리 대신). `auto_attach.rs`
+    /// 의 backoff 스케줄러가 이 상태의 세션을 찾아 `reconnect_session` 재시도를 건다.
+    fn enter_reconnecting(&mut self, idx: usize) {
+        let (anchor, local_workspace) = {
+            let sess = &mut self.attach_client_sessions[idx];
+            sess.state = SessionState::Reconnecting;
+            (sess.anchor_ws_id, sess.local_workspace)
+        };
+        // 재진입 대기 등록 — 기존 엣지(워크스페이스 전환) 트리거와 신규 backoff 트리거가
+        // 둘 다 이 집합을 게이트로 쓴다(auto_attach.rs).
+        if let Some(anchor) = anchor {
+            self.auto_attach_active.remove(&anchor);
+            self.auto_attach_pending_reactivation.insert(anchor);
+        }
+        for main in self.main_windows_iter_mut() {
+            if main
+                .core_state
+                .workspaces
+                .iter()
+                .any(|ws| ws.id == local_workspace)
+            {
+                main.state.toasts.push(
+                    crate::i18n::t("attach.toast.mirror_reconnecting").to_string(),
+                    crate::adapters::ui::ToastKind::Warning,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+                main.mark_dirty();
+                break;
+            }
+        }
+        tracing::info!(
+            "gui attach: mirror workspace {local_workspace} 재연결 대기(Reconnecting) 진입 (anchor {anchor:?})"
+        );
     }
 
     /// 끊긴(force-detach/EOF) 세션의 mirror workspace + mirror terminal 을 제거한다.
@@ -865,17 +1247,20 @@ impl App {
         sess.disconnected.store(true, Ordering::SeqCst);
         // 원격에 detach 통지(best-effort). write 큐로 보내 write 스레드가 쓴다. 종료
         // 경로라 send 실패(write 스레드 이미 종료)는 의도적 무시.
-        let _ = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Detach,
-            payload: Vec::new(),
-        }); // 종료 경로 best-effort — write 스레드가 이미 죽었으면 무시(의도적)
+        let _ = sess.send_frame(StreamTag::Detach, Vec::new()); // 종료 경로 best-effort — write 스레드가 이미 죽었으면 무시(의도적)
         // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
         if let Some(anchor) = sess.anchor_ws_id {
             self.auto_attach_active.remove(&anchor);
+            // TODO 27 — 완전 정리되는 세션은 더 이상 backoff 재시도 대상이 아니다(스케줄
+            // 슬롯이 있었다면 제거). `dead`(anchor 없음) 경로에선 애초에 슬롯이 없어 no-op.
+            self.auto_attach_reconnect.remove(&anchor);
             // disconnect 발 정리만 재진입 대기로 표시 — 사용자가 mirror ws 를 직접
-            // 닫은 경로는 "재진입 대기" 대상이 아니다(위 함수 docstring 참고).
+            // 닫은 경로(from_disconnect=false, 예: Reconnecting 중인 mirror 를 사용자가
+            // 스스로 닫음)는 "재진입 대기"/자동 재시도 대상이 아니다(위 함수 docstring 참고).
             if from_disconnect {
                 self.auto_attach_pending_reactivation.insert(anchor);
+            } else {
+                self.auto_attach_pending_reactivation.remove(&anchor);
             }
         }
         // 터널 핸들(sess.tunnel)은 여기서 Drop → 자식 ssh kill(고아 터널 방지).
@@ -982,10 +1367,7 @@ impl App {
         let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
             .unwrap_or_default();
         // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
-        if let Err(e) = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        }) {
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
         }
     }
@@ -1049,10 +1431,7 @@ impl App {
         })
         .unwrap_or_default();
         // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
-        if let Err(e) = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        }) {
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("resize forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
             return;
         }
@@ -1137,10 +1516,7 @@ impl App {
             focused: ctx.focused,
         })
         .unwrap_or_default();
-        if let Err(e) = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        }) {
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("mesh context forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
         }
     }
@@ -1191,10 +1567,7 @@ impl App {
             input,
         })
         .unwrap_or_default();
-        if let Err(e) = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        }) {
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("mesh input forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
         }
     }
@@ -1244,11 +1617,10 @@ impl App {
             surface_id: remote_sid,
         })
         .unwrap_or_default();
-        if let Err(e) = sess.frame_tx.send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        }) {
-            tracing::warn!("mesh full-resend forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
+            tracing::warn!(
+                "mesh full-resend forward: write 큐 send 실패(세션 종료 중) — drop: {e}"
+            );
         }
     }
 }
@@ -1256,15 +1628,15 @@ impl App {
 /// 원격 surface 하나에 대응하는 mirror 터미널을 만들어 `engine` 에 삽입한다.
 /// `Terminal::new_detached`(로컬 PTY 없음) + 입력 sink forwarder(로컬 키 입력 →
 /// `encode_mux(remote_id)` → writer → 원격 PTY, 서버 holder+workspace 검증) + 옵저버
-/// 게이트 초기화. 핸드셰이크(`start_gui_attach`)와 역반영(`apply_mirror_structural_delta`)이
-/// 공유한다. 입력 forwarder 는 mirror drop(세션 정리/역반영 remove) 시 sink 채널이 끊겨
-/// 자연 종료한다.
+/// 게이트 초기화. 핸드셰이크(`start_gui_attach`)와 역반영(`merge_survivor_mapping` 을 통해
+/// `apply_mirror_structural_delta`/`reconnect_session`)이 공유한다. 입력 forwarder 는
+/// mirror drop(세션 정리/역반영 remove) 시 sink 채널이 끊겨 자연 종료한다.
 fn make_mirror_surface(
     remote_id: u32,
     local_id: u32,
     cols: usize,
     rows: usize,
-    frame_tx: &FrameSender,
+    frame_tx: &SharedFrameSender,
     engine: &mut crate::core::CoreState,
 ) {
     let mut mirror = Terminal::new_detached(cols, rows);
@@ -1275,21 +1647,30 @@ fn make_mirror_surface(
     // 조각으로 분할(TODO 04 — paste 가 1 MiB 캡을 넘겨 write_frame 이 거부·스레드
     // 사망하던 결함)해 순차로 write 큐에 push. 단일 forwarder 스레드가 rx 를 FIFO
     // 소비하므로 bracketed paste(\x1b[200~ → text → \x1b[201~) 순서가 보존된다.
-    // write 큐 send 실패는 write 스레드가 이미 종료(세션 정리 중)한 것이므로 조용히
-    // 종료 — disconnect 승격은 write 스레드가 담당한다.
+    //
+    // TODO 28 — `frame_tx` 는 공유 핸들(`SharedFrameSender`)이라 매 전송마다 lock 해
+    // **그 순간의 최신** sender 를 읽는다. send 실패(transport disconnect 중 — 옛
+    // write 스레드가 이미 죽었거나 아직 재연결 전)는 이 청크만 버리고 루프를
+    // 계속한다 — 예전엔 `return`(스레드 종료)했지만, 그러면 재연결로 `frame_tx` 내부가
+    // 새 sender 로 교체돼도 이 forwarder 가 이미 죽어 있어 survivor 터미널의 입력이
+    // 영구히 원격에 닿지 못했다(Codex 크로스체크 지적). 이 스레드는 오직 `rx`(터미널
+    // 자체가 drop 될 때 sink 채널이 끊김)로만 종료한다.
     std::thread::spawn(move || {
         const MAX_BODY: usize = (stream::MAX_FRAME_LEN as usize) - 4;
         for chunk in rx {
             for part in chunk.chunks(MAX_BODY) {
                 let framed = stream::encode_mux(remote_id, part);
-                if frame_tx
+                let current = frame_tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                if current
                     .send(OutFrame {
                         tag: StreamTag::Data,
                         payload: framed,
                     })
                     .is_err()
                 {
-                    return;
+                    // 이 청크는 유실(disconnect 구간) — 다음 청크에서 재시도(재연결
+                    // 되면 그때는 최신 sender 로 성공한다).
+                    continue;
                 }
             }
         }
@@ -1351,6 +1732,90 @@ fn pending_op_focus_for(
     }
 }
 
+/// remote surfaces 디스크립터(구조 delta 또는 재연결 handshake)를 `old_map`(재구성
+/// 전의 remote→local 매핑)과 병합한다 — survivor(= `old_map` 에 이미 있던 remote_id)는
+/// **기존 local id 를 재사용**(터미널을 재생성하지 않아 scrollback/grid 보존), 신규는
+/// 로컬 id 발급 + `make_mirror_surface`(터미널만), `old_map` 에는 있었지만 이번
+/// surfaces 에 없는 것은 mirror 터미널을 제거한다. `apply_mirror_structural_delta`(구조
+/// 변경 역반영)와 `reconnect_session`(TODO 27/28 재연결)이 공유하는 핵심 로직 — 두
+/// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
+/// 구조적으로 동일하다.
+fn merge_survivor_mapping(
+    old_map: &HashMap<u32, u32>,
+    surfaces: &[Value],
+    ids: &crate::core::state::IdGenerator,
+    frame_tx: &SharedFrameSender,
+    engine: &mut crate::core::CoreState,
+) -> (
+    HashMap<u32, u32>,
+    HashSet<u32>,
+    HashMap<u32, MirrorMeshInfo>,
+    Vec<u32>,
+) {
+    let mut new_map: HashMap<u32, u32> = HashMap::new();
+    let mut terminal_locals: HashSet<u32> = HashSet::new();
+    let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
+    let mut newly_created_remote_ids: Vec<u32> = Vec::new();
+    for s in surfaces {
+        let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let role = s.get("role").and_then(|v| v.as_str());
+        let is_terminal = role == Some("terminal");
+        let local_id = match old_map.get(&remote_id) {
+            Some(&l) => l, // survivor — 기존 local id 재사용(터미널/mesh 프레임 캐시 유지).
+            None => {
+                let l = ids.next_surface();
+                if is_terminal {
+                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+                    make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
+                }
+                newly_created_remote_ids.push(remote_id);
+                l
+            }
+        };
+        if is_terminal {
+            terminal_locals.insert(local_id);
+        } else if role == Some("mesh") {
+            let kind = s
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("mesh")
+                .to_string();
+            let plugin_id = s
+                .get("plugin_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            mesh_locals.insert(
+                local_id,
+                MirrorMeshInfo {
+                    display_name: kind.clone(),
+                    kind,
+                    plugin_id,
+                },
+            );
+        }
+        new_map.insert(remote_id, local_id);
+    }
+
+    // removed — `old_map` 에 있었지만 이번 surfaces 에 없는 것: mirror 터미널 제거(입력
+    // forwarder 는 sink drop 으로 자연 종료) + attach mesh frame 캐시 정리.
+    for (&remote_id, &local_id) in old_map.iter() {
+        if !new_map.contains_key(&remote_id) {
+            engine.terminals.remove(local_id);
+            engine.forget_mirror_surface_busy(local_id);
+            engine.attach_mesh_frames.remove(local_id);
+        }
+    }
+
+    (
+        new_map,
+        terminal_locals,
+        mesh_locals,
+        newly_created_remote_ids,
+    )
+}
+
 /// 원격 구조 변경 delta(3단계 역반영)를 mirror 트리에 적용한다. 원격 ws 의 실행 후 전체
 /// 트리+surfaces 를 받아:
 /// 1. survivor(기존 매핑에 있는 remote_id)는 **기존 local id 를 재사용**(터미널을
@@ -1388,64 +1853,17 @@ fn apply_mirror_structural_delta(
         .find(|w| w.id == sess.local_workspace)
         .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
 
-    // 1·2. new_map(survivor 유지 + 신규 할당) + terminal_locals 수집. 이 op 으로 새로
-    // 생긴 remote surface(=이전 매핑에 없던 것)도 순서대로 기록해둔다(08 — new-tab/split
-    // 성공 시 focus 를 옮길 대상 후보).
-    let mut new_map: HashMap<u32, u32> = HashMap::new();
-    let mut terminal_locals: HashSet<u32> = HashSet::new();
-    let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
-    let mut newly_created_remote_ids: Vec<u32> = Vec::new();
-    for s in surfaces {
-        let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let role = s.get("role").and_then(|v| v.as_str());
-        let is_terminal = role == Some("terminal");
-        let local_id = match sess.remote_to_local.get(&remote_id) {
-            Some(&l) => l, // survivor — 기존 local id 재사용(터미널/mesh 프레임 캐시 유지).
-            None => {
-                let l = ids.next_surface();
-                if is_terminal {
-                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, l, cols, rows, &sess.frame_tx, engine);
-                }
-                newly_created_remote_ids.push(remote_id);
-                l
-            }
-        };
-        if is_terminal {
-            terminal_locals.insert(local_id);
-        } else if role == Some("mesh") {
-            let kind = s
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("mesh")
-                .to_string();
-            let plugin_id = s
-                .get("plugin_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            mesh_locals.insert(
-                local_id,
-                MirrorMeshInfo {
-                    display_name: kind.clone(),
-                    kind,
-                    plugin_id,
-                },
-            );
-        }
-        new_map.insert(remote_id, local_id);
-    }
-
-    // 3. removed — 기존 매핑 중 새 surfaces 에 없는 것: mirror 터미널 제거(입력
-    //    forwarder 는 sink drop 으로 자연 종료) + attach mesh frame 캐시 정리.
-    for (&remote_id, &local_id) in sess.remote_to_local.iter() {
-        if !new_map.contains_key(&remote_id) {
-            engine.terminals.remove(local_id);
-            engine.forget_mirror_surface_busy(local_id);
-            engine.attach_mesh_frames.remove(local_id);
-        }
-    }
+    // 1·2·3. survivor 유지 + 신규 할당 + 사라진 것 제거(재연결 `reconnect_session` 과
+    // 공유하는 `merge_survivor_mapping`). 이 op 으로 새로 생긴 remote surface(=이전
+    // 매핑에 없던 것)도 순서대로 받아둔다(08 — new-tab/split 성공 시 focus 를 옮길 대상
+    // 후보).
+    let (new_map, terminal_locals, mesh_locals, newly_created_remote_ids) = merge_survivor_mapping(
+        &sess.remote_to_local,
+        surfaces,
+        &ids,
+        &sess.frame_tx,
+        engine,
+    );
 
     // 매핑 교체(이후 같은 drain 의 Data 는 갱신된 매핑으로 라우팅된다).
     sess.remote_to_local = new_map;
@@ -2064,11 +2482,13 @@ impl App {
 /// (03) capture_chunk/capture_commit JSON 하나를 `StreamTag::Control` 프레임으로
 /// 직렬화해 보낸다.
 fn send_capture_control_frame(
-    frame_tx: &FrameSender,
+    frame_tx: &SharedFrameSender,
     msg: &serde_json::Value,
 ) -> anyhow::Result<()> {
     let payload = serde_json::to_vec(msg)?;
     frame_tx
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
         .send(OutFrame {
             tag: StreamTag::Control,
             payload,
