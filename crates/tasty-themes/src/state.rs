@@ -50,6 +50,7 @@ pub fn apply_theme<C: ThemeApplyContext + ?Sized>(ctx: &mut C, id: &str) {
     ctx.theme_overrides_mut().clear();
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 테마 적용 3갈래(발견/mocha 특수 폴백/재귀 폴백) — mocha 분기가 디스크 복구+상수 적용 절차를 통째로 안고 있어 쪼개면 ctx 전달 인자만 늘어남. 재귀 호출은 allow_recursion 가드로 1회 종료 보장.
 fn apply_inner<C: ThemeApplyContext + ?Sized>(
     ctx: &mut C,
     id: &str,

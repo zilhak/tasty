@@ -662,6 +662,7 @@ impl EguiMeshBanner {
 
 /// full image `base` 위에 증분 patch 를 (x, y) 오프셋으로 합성한다. kind 불일치나
 /// 경계 초과는 egui delta 계약 위반 — 기록만 하고 버린다(다음 full 재전송으로 자가 회복).
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: ImageData 종류(Color/Font)별 bounds-check + copy 나열 — egui delta 계약상 두 kind 처리가 구조적으로 대칭이라 분해해도 절반짜리 로직 두 함수로만 흩어짐.
 fn patch_image(base: &mut ImageData, patch: &ImageData, [x, y]: [usize; 2]) {
     match (base, patch) {
         (ImageData::Color(base), ImageData::Color(patch)) => {

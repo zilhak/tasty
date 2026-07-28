@@ -282,6 +282,7 @@ fn scan_panes(dir: &Path) -> BTreeMap<String, PanePreset> {
     scan_dir::<PanePreset>(dir)
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 디렉토리 스캔 — 확장자/스템/읽기/파싱/id-마이그레이션 되쓰기까지 파일 하나당 여러 실패 지점을 각각 continue 로 흡수하는 구조. 중첩은 얕지만 분기 수가 많음(tasty-themes::scan::do_scan 과 동형 패턴).
 fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
     let mut out = BTreeMap::new();
     let entries = match std::fs::read_dir(dir) {

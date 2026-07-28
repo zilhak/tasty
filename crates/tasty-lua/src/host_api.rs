@@ -17,6 +17,7 @@ use crate::engine::LuaEngineError;
 ///
 /// `tasty.on` 은 이미 엔진이 설치함. 이 함수는 추가 메서드를 등록한다.
 /// `command_tx` = 워커→메인 커맨드 큐, `snapshot` = 메인→워커 읽기전용 스냅샷.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: tree/log/warn/run_cli 4개 클로저를 순서대로 생성·set, 클로저 내부 에러 매핑(map_err(LuaEngineError::Init))이 정형적으로 반복된다. run_cli 클로저의 TrySendError 3-way match 는 enclosing 함수에 합산됨(lint 는 렉시컬 스코프라 내부 클로저까지 suppress).
 pub(crate) fn install(
     lua: &Lua,
     command_tx: SyncSender<HostCommand>,

@@ -354,6 +354,7 @@ impl RemoteProfiles {
 
     /// 로드한다. 파일이 없거나 파싱 실패면 빈 목록(default)으로 폴백한다
     /// (`Settings::load` 와 동형 — 잘못된 파일이 부팅을 막지 않는다).
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 파일 없음/읽기 실패/파싱 실패 3갈래를 각각 로그 후 기본값 폴백 — Passkeys::load 와 동형 패턴.
     pub fn load() -> Self {
         let Some(path) = Self::path() else {
             tracing::info!("no remote-profiles path available, using empty list");

@@ -111,6 +111,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
     ///
     /// 에러는 tracing::warn 으로 흡수하고 다음 task 로 진행 (runner thread 가 죽지
     /// 않게 — 사용자가 cancel/retry 로 정리 가능).
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 한 tick 안의 순차 3단계(Cancelled 흡수 → Running poll → Ready dispatch)가 self.running·set_state·set_result 클로저를 공유해, 쪼개면 세 함수에 동일 매개변수만 나열되고 흐름 추적이 어려워진다. 중첩은 얕음.
     pub fn tick<FS, FR>(
         &mut self,
         workspace_id: u32,

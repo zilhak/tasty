@@ -42,6 +42,7 @@ pub fn scan_themes() -> Vec<ThemeEntry> {
     guard.clone()
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 테마 디렉토리 스캔 — 확장자/스템/읽기/파싱 4단계 조기 continue 나열, tasty-presets::storage::scan_dir 와 동형 패턴.
 fn do_scan() -> Result<Vec<ThemeEntry>, ThemeStoreError> {
     let dir = themes_dir()?;
     let mut out = Vec::new();

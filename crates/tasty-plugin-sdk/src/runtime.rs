@@ -62,6 +62,7 @@ impl DispatchError {
     }
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: plugin 부트스트랩(connect/handshake/스레드 기동) 순차 설정 + 단일 while 메인 recv 루프 안의 host 라인 파싱·특수 메서드(ipc.result/shutdown) 분기. 루프 진입부터 worker join 까지가 한 함수의 생명주기라 쪼개면 reader/writer/pending/req_tx 전달만 늘어남.
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
     // macOS: 부모(tasty) 사망 감시 watchdog 시작. PDEATHSIG 등가물이 없어 자식
@@ -261,6 +262,7 @@ fn spawn_parent_death_watchdog() {}
 /// Windows=HANDLE u64)을 fd_pending에 매칭해 `HostHandle::create_shared_buffer` 대기자
 /// 에게 push하고, ping을 받으면 pong을 회신한다. 연결이 닫히면 조용히 종료.
 #[cfg(any(unix, windows))]
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 보조 채널 reader 루프 — recv_message 성공/실패 + 메시지 종류(HandleAttach/Ping/Pong/Dirty) 평면 match 나열, 중첩 얕은 디스패치.
 fn handle_reader_loop(
     mut reader: crate::handle_channel::HandleClientReader,
     fd_pending: SharedBufferFdPending,
@@ -297,6 +299,7 @@ fn handle_reader_loop(
 
 /// Unix: `HandleAttach` 동행 fd 를 매칭 waiter 에게 push. 미매칭이면 leak 방지 close.
 #[cfg(unix)]
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: sender 유무·send 성공 여부 조합이 전부 fd leak 방지 close 경로 — 쪼개면 unsafe 블록 위치만 함수 경계로 흩어짐.
 fn deliver_buffer_handle(
     fd_pending: &SharedBufferFdPending,
     request_id: u64,

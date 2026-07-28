@@ -250,6 +250,7 @@ impl Drop for LuaEngine {
 ///
 /// Lua 를 실행하는 job(Eval/Run/Fire)은 `budget` deadline 하에서 돈다 — 초과 시
 /// `set_interrupt` 훅이 abort(에러 반환)해 워커만 다음 job 으로 넘어가고 메인은 무영향.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: LuaJob 평면 match 디스패치 — job 종류별 guarded exec + reply/로그 나열. 워커 스레드가 job 을 직렬 처리하는 단일 루프라 쪼개면 job 별 소함수만 늘고 흐름 추적이 어려워짐, 중첩 얕음.
 fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: SharedDeadline) {
     while let Ok(job) = job_rx.recv() {
         match job {
@@ -390,6 +391,7 @@ fn exec_source(lua: &Lua, source: &str, name: Option<&str>) -> Result<(), LuaEng
 }
 
 /// 이벤트 hook 발화 — 등록 콜백을 순서대로 호출. 콜백 에러는 warn 로그만 (한 hook 이 전체를 막지 않게).
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: registry/ctx 조회 단계별 조기 반환 체인 + 콜백 순회 — 콜백 에러를 개별 격리(한 hook 실패가 전체를 막지 않음)하려면 단계마다 match 가 필요, 중첩은 얕음.
 fn fire_hooks(lua: &Lua, event: &str, ctx: &serde_json::Value) {
     let reg: Table = match lua.named_registry_value(HOOKS_REGISTRY_KEY) {
         Ok(t) => t,
