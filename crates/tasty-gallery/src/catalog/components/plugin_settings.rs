@@ -27,6 +27,15 @@ const WIDTH: f32 = 440.0;
 /// Color scheme 선택지 (디자인 `Follow theme` / `Light` / `Dark`).
 const SCHEME: &[&str] = &["Follow theme", "Light", "Dark"];
 
+/// 회귀 방지 전용 — 디자인 미러 대상 아님. `field_width_md`(160px) 가용 폭을 넘는
+/// 긴 옵션 라벨(Codex 플러그인 `default_approval_policy` 재현 케이스).
+const LONG_TEXT_OPTS: &[&str] = &[
+    "상속 (codex 기본값)",
+    "Untrusted (신뢰되지 않은 명령만 승인 요청)",
+    "On request (모델이 판단)",
+    "Never (승인 프롬프트 없음)",
+];
+
 struct State {
     zoom: f64,
     /// number Input 의 프레임 간 편집 버퍼(본체 egui-memory 버퍼 미러). 초기 "100".
@@ -34,6 +43,7 @@ struct State {
     scheme_idx: usize,
     allow_remote: bool,
     sandbox: bool,
+    long_text_idx: usize,
 }
 
 thread_local! {
@@ -44,6 +54,7 @@ thread_local! {
         scheme_idx: 0,
         allow_remote: false,
         sandbox: true,
+        long_text_idx: 3,
     });
 }
 
@@ -108,6 +119,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         // Sandbox scripts — Switch (on).
                         row(ui, theme, "Sandbox scripts:", |ui| {
                             switch(ui, theme, &mut st.sandbox, None, true);
+                        });
+                        // Approval policy (long text) — 디자인 미러 아님, select 긴 텍스트
+                        // 말줄임 회귀 방지 전용 케이스.
+                        row(ui, theme, "Approval policy:", |ui| {
+                            select(
+                                ui,
+                                theme,
+                                "plugin_settings_long_text",
+                                &mut st.long_text_idx,
+                                LONG_TEXT_OPTS,
+                                theme.field_width_md.value(),
+                                true,
+                            );
                         });
                     });
                     // Note.

@@ -12,12 +12,20 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
     static STATE: RefCell<FormState> = const {
-        RefCell::new(FormState { sel: 0, check_a: true, check_b: false, switch_a: true, switch_b: false })
+        RefCell::new(FormState {
+            sel: 0,
+            sel_long: 3,
+            check_a: true,
+            check_b: false,
+            switch_a: true,
+            switch_b: false,
+        })
     };
 }
 
 struct FormState {
     sel: usize,
+    sel_long: usize,
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -36,6 +44,25 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     theme,
                     "gallery_theme",
                     &mut st.sel,
+                    &opts,
+                    field_md,
+                    true,
+                );
+            });
+            // 회귀 방지: field_width_md(160px) 가용 폭(~108px)을 넘는 긴 옵션 라벨 —
+            // Codex 플러그인 default_approval_policy select 재현 케이스.
+            cluster(ui, theme, "Select (long text)", |ui| {
+                let opts = [
+                    "상속 (codex 기본값)",
+                    "Untrusted (신뢰되지 않은 명령만 승인 요청)",
+                    "On request (모델이 판단)",
+                    "Never (승인 프롬프트 없음)",
+                ];
+                select(
+                    ui,
+                    theme,
+                    "gallery_select_long",
+                    &mut st.sel_long,
                     &opts,
                     field_md,
                     true,

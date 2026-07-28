@@ -44,13 +44,17 @@ pub fn select(
         egui::Stroke::new(bw, dim(border.to_egui())),
         egui::StrokeKind::Inside,
     );
-    // 현재 값.
+    // 현재 값 — 가용 폭(좌 padding ~ chevron 앞) 초과 시 말줄임(truncate_at_width)으로
+    // border/chevron 침범 방지.
     let label = options.get(*selected).copied().unwrap_or("");
-    let galley = ui.painter().layout_no_wrap(
+    let text_max_width = (rect.right() - chevron_room - (rect.left() + pad_x)).max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_max_width);
+    let galley = ui.fonts(|f| f.layout_job(job));
     let text_pos = egui::pos2(
         rect.left() + pad_x,
         rect.center().y - galley.rect.height() * 0.5,
