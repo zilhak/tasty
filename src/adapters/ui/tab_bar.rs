@@ -136,9 +136,17 @@ impl TabBarAction {
     /// 이 액션이 유래한 pane. `Some` 이면 처리 전에 그 pane 으로 focus 를 옮긴다
     /// (탭바 primary-click 계열 — 탭 클릭/닫기/스크롤/빈 영역 클릭/+·split·search 버튼).
     /// 우클릭 컨텍스트 메뉴는 대상 `pane_id`/`tab_index` 를 메뉴 항목에 그대로 실어
-    /// 나르므로 focus 이동이 필요 없고(조회/메뉴-오픈이지 조작 commit 이 아님), drag
-    /// 계열도 `DragStart` 시점의 탭 클릭이 이미 같은 프레임의 `SwitchTab` 등과 함께
-    /// 오지 않으므로 별도 focus 이동 없이 `None`.
+    /// 나르므로 focus 이동이 필요 없다(조회/메뉴-오픈이지 조작 commit 이 아님).
+    ///
+    /// `DragStart` 도 focus 이동 대상에 포함한다 — egui 0.31.1 의 `clicked()`/
+    /// `drag_started_by()` 는 같은 press-release 상호작용에서 발생 프레임이 겹치지
+    /// 않고 상호 배타적이라(`clicked()` 는 pointer-up 프레임에서만, `drag_started_by()`
+    /// 는 그 이전에 drag threshold 를 넘는 프레임에서만 세팅됨 — vendored
+    /// `egui-0.31.1/src/{context.rs,interaction.rs}` 확인), 비-focused pane 의 탭을
+    /// 클릭 없이 곧장 드래그하면 `SwitchTab` 없이 `DragStart` 만 단독으로 발생한다.
+    /// 이 경우에도 "탭바 조작은 그 pane 을 조작하는 행위"라는 원칙(위 문단)을 그대로
+    /// 적용해 focus 가 따라가야 한다. `DragUpdate`/`DragEnd` 는 이미 `DragStart` 에서
+    /// focus 가 이동한 뒤에 오는 후속 프레임이라 별도 이동이 불필요.
     fn focus_target_pane(&self) -> Option<u32> {
         match *self {
             TabBarAction::SwitchTab { pane_id, .. }
@@ -148,11 +156,11 @@ impl TabBarAction {
             | TabBarAction::OpenSearch { pane_id }
             | TabBarAction::ScrollLeft { pane_id }
             | TabBarAction::ScrollRight { pane_id }
-            | TabBarAction::FocusPane { pane_id } => Some(pane_id),
+            | TabBarAction::FocusPane { pane_id }
+            | TabBarAction::DragStart { pane_id, .. } => Some(pane_id),
             TabBarAction::OpenContextMenu { .. }
             | TabBarAction::OpenPaneContextMenu { .. }
             | TabBarAction::OpenNewTabButtonContextMenu { .. }
-            | TabBarAction::DragStart { .. }
             | TabBarAction::DragUpdate { .. }
             | TabBarAction::DragEnd { .. } => None,
         }
@@ -1120,6 +1128,10 @@ mod tests {
             TabBarAction::ScrollLeft { pane_id: 7 },
             TabBarAction::ScrollRight { pane_id: 7 },
             TabBarAction::FocusPane { pane_id: 7 },
+            TabBarAction::DragStart {
+                pane_id: 7,
+                tab_index: 0,
+            },
         ];
         for action in primary {
             assert_eq!(
@@ -1131,7 +1143,7 @@ mod tests {
     }
 
     #[test]
-    fn focus_target_pane_context_menu_and_drag_actions_are_none() {
+    fn focus_target_pane_context_menu_and_drag_update_end_actions_are_none() {
         let non_focus = [
             TabBarAction::OpenContextMenu {
                 pane_id: 7,
@@ -1146,10 +1158,6 @@ mod tests {
                 pane_id: 7,
                 pos: egui::Pos2::ZERO,
             },
-            TabBarAction::DragStart {
-                pane_id: 7,
-                tab_index: 0,
-            },
             TabBarAction::DragUpdate {
                 pane_id: 7,
                 mouse_x: 0.0,
@@ -1160,7 +1168,7 @@ mod tests {
             assert_eq!(
                 action.focus_target_pane(),
                 None,
-                "{action:?} 는 focus 를 옮기면 안 된다(우클릭/드래그는 조작 commit 이 아님)"
+                "{action:?} 는 focus 를 옮기면 안 된다(우클릭은 조작 commit 이 아니고, DragUpdate/DragEnd 는 DragStart 에서 이미 focus 가 이동한 뒤의 후속 프레임)"
             );
         }
     }
