@@ -850,3 +850,103 @@ fn axis_combos_do_not_cross_route() {
     ));
     assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
 }
+
+// ── new_workspace 단축키가 현재 활성 카테고리를 계승하는지 (TODO 30) ──────────
+
+fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
+    let kb = crate::settings::KeybindingSettings::default();
+    kb.new_workspace
+        .first()
+        .and_then(|b| super::binding::parse_binding(b))
+        .map(|p| {
+            let mut mods = ModifiersState::empty();
+            if p.ctrl {
+                mods |= ModifiersState::CONTROL;
+            }
+            if p.shift {
+                mods |= ModifiersState::SHIFT;
+            }
+            if p.alt {
+                mods |= ModifiersState::ALT;
+            }
+            (k_char(p.key), mods)
+        })
+        .expect("default new_workspace binding must parse")
+}
+
+#[test]
+fn focused_workspace_category_returns_active_workspace_category() {
+    let (mut state, mut engine) = fresh_state();
+    let work = engine.create_category("Work").unwrap();
+    add_test_workspace(&mut state, &mut engine); // ws1, 아직 normal
+    let ws1_id = engine.workspaces[1].id;
+    engine.set_workspace_category(ws1_id, work).unwrap();
+    state.switch_workspace(&mut engine, 1);
+
+    assert_eq!(
+        super::focused_workspace_category(&state, &engine),
+        Some(work)
+    );
+}
+
+#[test]
+fn focused_workspace_category_is_none_when_parked() {
+    let (state, mut engine) = fresh_state();
+    engine.workspaces.clear(); // parked 상태 (마지막 윈도우가 닫힌 뒤) 재현.
+    assert_eq!(super::focused_workspace_category(&state, &engine), None);
+}
+
+#[test]
+fn shortcut_new_workspace_inherits_active_category() {
+    let (mut state, mut engine) = fresh_state();
+    let work = engine.create_category("Work").unwrap();
+    add_test_workspace(&mut state, &mut engine); // ws1
+    let ws1_id = engine.workspaces[1].id;
+    engine.set_workspace_category(ws1_id, work).unwrap();
+    state.switch_workspace(&mut engine, 1);
+
+    let kb = crate::settings::KeybindingSettings::default();
+    let (key, mods) = default_new_workspace_key_mods();
+
+    assert!(MainView::match_create_bindings(
+        &mut state,
+        &mut engine,
+        &kb,
+        &key,
+        mods
+    ));
+
+    let intents = state.take_pending_intents();
+    let category = intents.into_iter().find_map(|i| match i.body {
+        crate::intent::Intent::NewWorkspace { category, .. } => Some(category),
+        _ => None,
+    });
+    assert_eq!(category, Some(Some(work)));
+}
+
+#[test]
+fn shortcut_new_workspace_stays_normal_when_categories_off() {
+    // 카테고리 토글 off 상태(기본 = normal 하나뿐)에서도 회귀 없이 동작해야 한다 —
+    // 활성 워크스페이스가 항상 normal 이므로 Some(NORMAL_CATEGORY_ID) 가 나오고,
+    // apply_create_workspace_inner 입장에서는 기존 None 과 동일한 결과(normal)다.
+    let (mut state, mut engine) = fresh_state();
+    assert!(!engine.settings.general.workspace_categories_enabled);
+
+    let kb = crate::settings::KeybindingSettings::default();
+    let (key, mods) = default_new_workspace_key_mods();
+
+    assert!(MainView::match_create_bindings(
+        &mut state,
+        &mut engine,
+        &kb,
+        &key,
+        mods
+    ));
+
+    let intents = state.take_pending_intents();
+    let category = intents.into_iter().find_map(|i| match i.body {
+        crate::intent::Intent::NewWorkspace { category, .. } => Some(category),
+        _ => None,
+    });
+    assert_eq!(category, Some(Some(crate::model::NORMAL_CATEGORY_ID)));
+}

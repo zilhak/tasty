@@ -4,7 +4,7 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 use crate::view::main::MainView;
 
-use super::send_app_event;
+use super::{focused_workspace_category, send_app_event};
 
 impl MainView {
     /// Handle double-tap modifier shortcuts. Returns true if consumed.
@@ -75,11 +75,14 @@ impl MainView {
             if has_dt(bindings) {
                 match *action {
                     "new_workspace" => {
+                        // 현재 활성 워크스페이스의 카테고리를 계승 (keybinding.rs
+                        // match_create_bindings 와 동일 정책).
+                        let category = focused_workspace_category(&self.state, engine);
                         self.state.dispatch_intent(
                             Intent::NewWorkspace {
                                 kind: None,
                                 params: serde_json::Value::Null,
-                                category: None,
+                                category,
                             }
                             .from_user_shortcut("new_workspace"),
                         );

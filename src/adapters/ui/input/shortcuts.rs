@@ -87,6 +87,20 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
     Some(Key::Character(ch.into()))
 }
 
+/// 단축키/Command Palette 로 새 워크스페이스를 생성할 때 계승할 카테고리 — 현재
+/// 활성 워크스페이스의 소속. `active_workspace` 는 `engine.workspaces` 가 비어있지
+/// 않아야 하는 invariant 가 있으므로(parked 상태, 워크스페이스 0개), 그 경우엔
+/// `None`(생성 시 normal 로 fallback)을 반환해 패닉을 피한다.
+pub(crate) fn focused_workspace_category(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+) -> Option<crate::model::WorkspaceCategoryId> {
+    if engine.workspaces.is_empty() {
+        return None;
+    }
+    Some(state.active_workspace(engine).category)
+}
+
 /// 바인딩 목록 중 하나라도 매칭되면 true.
 /// Returns the surface ID of the focused image surface, if any.
 /// Returns the surface ID of the focused Explorer surface, if any.

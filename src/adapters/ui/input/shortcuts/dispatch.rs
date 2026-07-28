@@ -7,7 +7,7 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
 use super::matches_any_binding;
-use super::{focused_explorer_surface_id, send_app_event};
+use super::{focused_explorer_surface_id, focused_workspace_category, send_app_event};
 
 impl MainView {
     /// Dispatch a keybinding action by its stable `field_id` (예: `"new_workspace"`).
@@ -33,11 +33,15 @@ impl MainView {
 
         match action_id {
             "new_workspace" => {
+                // 현재 활성 워크스페이스의 카테고리를 계승 (keybinding.rs
+                // match_create_bindings 와 동일 정책 — Command Palette/자동화 진입점도
+                // 마우스 경로와 동일하게 카테고리 인지형 생성이어야 한다).
+                let category = focused_workspace_category(state, engine);
                 state.dispatch_intent(
                     Intent::NewWorkspace {
                         kind: None,
                         params: serde_json::Value::Null,
-                        category: None,
+                        category,
                     }
                     .from_user_shortcut("new_workspace"),
                 );

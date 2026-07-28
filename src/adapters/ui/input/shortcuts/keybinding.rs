@@ -15,7 +15,9 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 use crate::view::main::MainView;
 
-use super::{focused_explorer_surface_id, matches_any_binding, send_app_event};
+use super::{
+    focused_explorer_surface_id, focused_workspace_category, matches_any_binding, send_app_event,
+};
 
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
@@ -97,7 +99,11 @@ impl MainView {
     }
 
     /// 생성 계열: new_workspace / new_tab.
-    fn match_create_bindings(
+    ///
+    /// `pub(super)` — `focused_workspace_category` 계승 여부를 실제 dispatch 경로로
+    /// 검증하는 `shortcuts::tests` 단위 테스트가 직접 호출한다(zoom/numeric 과 동일한
+    /// 테스트 가시성 패턴).
+    pub(super) fn match_create_bindings(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
@@ -105,11 +111,15 @@ impl MainView {
         mods: ModifiersState,
     ) -> bool {
         if matches_any_binding(&kb.new_workspace, key, mods) {
+            // 현재 활성 워크스페이스의 카테고리를 계승 — 마우스 경로(레일 팝업/카테고리
+            // 메뉴)와 동일하게 카테고리 인지형 생성으로 맞춘다(항상 normal 로 고정되던
+            // 결함 수정).
+            let category = focused_workspace_category(state, engine);
             state.dispatch_intent(
                 Intent::NewWorkspace {
                     kind: None,
                     params: serde_json::Value::Null,
-                    category: None,
+                    category,
                 }
                 .from_user_shortcut("new_workspace"),
             );
