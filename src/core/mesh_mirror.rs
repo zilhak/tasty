@@ -13,7 +13,7 @@
 //! 현재 headless-as-attach-서버 시나리오(`src/boot/headless_plugins.rs`)에만 배선했다.
 //! gui 가 attach 서버인 경우(로컬 창이 이미 그 mesh surface 를 렌더 중일 때의 geometry
 //! 권위 조정까지 필요해 범위가 커짐 — TODO 18 결정 #4)는 의도적으로 범위 밖으로 남기고
-//! `.claude-workspace/todo/22-attach-gui-server-mesh-forward.md`에 후속 작업으로 기록했다.
+//! `.claude-workspace/todo/24-attach-gui-server-mesh-forward.md`에 후속 작업으로 기록했다.
 //! 그 결과 gui 빌드에서는 이 필드/메서드들이 아직 소비되지 않아 `-D dead-code`를
 //! feature-gate 로 침묵한다(headless 빌드는 정상적으로 전부 소비 — lint 유효).
 #![cfg_attr(feature = "gui", allow(dead_code))]
