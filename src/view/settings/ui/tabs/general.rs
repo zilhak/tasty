@@ -34,6 +34,18 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             );
             ui.end_row();
 
+            ui.label(t(
+                "settings.general.workspace_switch_crosses_category_label",
+            ));
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.workspace_switch_crosses_category,
+                None,
+                true,
+            );
+            ui.end_row();
+
             ui.label(t("settings.general.close_behavior_label"));
             egui::ComboBox::from_id_salt("close_behavior")
                 .selected_text(match settings.general.close_behavior.as_str() {

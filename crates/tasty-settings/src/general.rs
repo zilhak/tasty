@@ -154,6 +154,14 @@ pub struct GeneralSettings {
     /// 단축키·영속이 현행 평면 동작과 동일하다. on 으로 켜면 normal 외 사용자
     /// 카테고리를 만들 수 있고, off 로 끄면 모든 워크스페이스를 normal 로 귀속한다.
     pub workspace_categories_enabled: bool,
+    /// "다음/이전 워크스페이스" 전환(quick-switch)이 활성 카테고리의 경계에서 같은
+    /// 카테고리 안으로 wrap-around 하는 대신 인접 카테고리로 넘어간다. off(기본)면
+    /// 카테고리 로컬 wrap 을 유지한다(현행 동작). on 이면 카테고리 마지막 워크스페이스에서
+    /// "다음" → 다음 카테고리의 첫 워크스페이스로, 카테고리 첫 워크스페이스에서 "이전" →
+    /// 이전 카테고리의 마지막 워크스페이스로 이동하며, 카테고리 목록 자체도 wrap 한다.
+    /// 카테고리가 1개뿐이면(`workspace_categories_enabled` off 포함) on 이어도 기존
+    /// 로컬 wrap 과 동일하게 동작한다.
+    pub workspace_switch_crosses_category: bool,
     /// Explorer 의 마지막으로 선택한 view mode ("grid" | "list" | "detail"). 사용자가
     /// 툴바 segmented 로 형태를 바꾸면 여기에 기록되고, 새로 생성되는 explorer
     /// surface·내부 탭의 기본 표시 형태로 쓰인다. 알 수 없는 값은
@@ -219,6 +227,7 @@ impl Default for GeneralSettings {
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
             workspace_categories_enabled: false,
+            workspace_switch_crosses_category: false,
             explorer_view_mode: "detail".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,

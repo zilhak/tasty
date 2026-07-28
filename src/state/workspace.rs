@@ -77,8 +77,10 @@ impl AppState {
     }
 
     /// 현재 active 워크스페이스가 속한 카테고리 내에서 **다음** 워크스페이스로 이동한다.
-    /// 표시(=저장) 순서를 따르고, 마지막에서 다음으로 가면 첫 항목으로 wrap-around 한다.
-    /// 카테고리에 자기 자신뿐이면 no-op(`Pane::next_tab` 의 `len > 1` 가드와 동형).
+    /// 표시(=저장) 순서를 따르고, 마지막에서 다음으로 가면 `workspace_switch_crosses_category`
+    /// 설정에 따라 같은 카테고리의 첫 항목으로 wrap-around 하거나(off, 기본) 다음
+    /// 카테고리의 첫 워크스페이스로 넘어간다(on). 카테고리에 자기 자신뿐이면 옵션 off 시
+    /// no-op(`Pane::next_tab` 의 `len > 1` 가드와 동형), on 이면 인접 카테고리로 이동.
     /// 전역 인덱스만 뽑아 불변 빌림을 끝낸 뒤 [`switch_workspace`](Self::switch_workspace)
     /// 를 재사용하므로 active 보정 로직을 그대로 탄다.
     //
@@ -92,7 +94,8 @@ impl AppState {
 
     /// 현재 active 워크스페이스가 속한 카테고리 내에서 **이전** 워크스페이스로 이동한다.
     /// [`next_workspace_in_active_category`](Self::next_workspace_in_active_category) 의
-    /// 역방향(첫 항목에서 이전으로 가면 마지막 항목으로 wrap-around).
+    /// 역방향(첫 항목에서 이전으로 가면 `workspace_switch_crosses_category` off 시 마지막
+    /// 항목으로 wrap-around, on 시 이전 카테고리의 마지막 워크스페이스로 이동).
     // QS03 에서 사용자 키 경로로 호출 (next_ 동일).
     pub fn prev_workspace_in_active_category(&mut self, engine: &mut CoreState) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
@@ -100,10 +103,16 @@ impl AppState {
         }
     }
 
-    /// active 워크스페이스가 속한 카테고리 로컬 목록에서 `delta`(±1) 만큼 wrap-around
-    /// 이동한 대상의 **전역 인덱스** 를 반환한다. active OOB · 카테고리에 1개 이하 ·
-    /// 로컬 위치 미검출(방어) 시 `None`. 반환값은 usize 복사본이라 호출부에서
-    /// 불변 빌림 없이 가변 `switch_workspace` 를 호출할 수 있다.
+    /// active 워크스페이스가 속한 카테고리 로컬 목록에서 `delta`(±1) 만큼 이동한 대상의
+    /// **전역 인덱스** 를 반환한다. active OOB · 로컬 위치 미검출(방어) 시 `None`.
+    /// 반환값은 usize 복사본이라 호출부에서 불변 빌림 없이 가변 `switch_workspace` 를
+    /// 호출할 수 있다.
+    ///
+    /// `workspace_switch_crosses_category` 옵션이 on 이고 이동이 카테고리 경계를 벗어나면
+    /// [`relative_category_boundary_workspace`](Self::relative_category_boundary_workspace)
+    /// 로 인접 카테고리의 첫/마지막 워크스페이스로 넘어간다(카테고리가 1개뿐이라 넘어갈
+    /// 곳이 없으면 아래 로컬 wrap 으로 자연히 폴백). off 이거나 로컬 목록이 1개 이하면
+    /// 기존과 동일하게 카테고리 로컬 wrap 만 수행한다.
     fn relative_workspace_in_active_category(
         &self,
         engine: &CoreState,
@@ -115,15 +124,50 @@ impl AppState {
         let cat = engine.workspaces[self.active_workspace].category;
         let locals = engine.workspaces_in_category(cat);
         let len = locals.len();
-        if len <= 1 {
-            return None;
-        }
         let pos = locals
             .iter()
             .position(|(gi, _)| *gi == self.active_workspace)?;
+
+        if engine.settings.general.workspace_switch_crosses_category {
+            let raw = pos as isize + delta;
+            if raw < 0 || raw >= len as isize {
+                if let Some(target) = self.relative_category_boundary_workspace(engine, delta) {
+                    return Some(target);
+                }
+                // 인접 카테고리가 없음(카테고리 1개) → 아래 로컬 wrap 으로 폴백.
+            } else {
+                return Some(locals[raw as usize].0);
+            }
+        }
+
+        if len <= 1 {
+            return None;
+        }
         // len - 1 == delta.rem_euclid 을 위한 wrap: (pos + len ± 1) % len.
         let new_pos = (pos as isize + delta).rem_euclid(len as isize) as usize;
         Some(locals[new_pos].0)
+    }
+
+    /// `relative_workspace_in_active_category` 가 카테고리 경계를 넘을 때 호출한다.
+    /// `delta` 방향의 인접 카테고리로 넘어가 그 카테고리의 **첫**(다음 방향, `delta > 0`)
+    /// 또는 **마지막**(이전 방향) 워크스페이스의 전역 인덱스를 반환한다.
+    /// [`switch_to_category`](Self::switch_to_category) 의 last-active 착지와 달리
+    /// 항상 방향에 맞는 끝 원소로 착지해야 방향성이 유지된다. 카테고리가 1개 이하이면
+    /// [`relative_category_section`](Self::relative_category_section) 이 `None` 을
+    /// 반환해 호출부가 로컬 wrap 으로 폴백한다.
+    fn relative_category_boundary_workspace(
+        &self,
+        engine: &CoreState,
+        delta: isize,
+    ) -> Option<usize> {
+        let section_idx = self.relative_category_section(engine, delta)?;
+        let target_cat = engine.categories().get(section_idx)?.id;
+        let locals = engine.workspaces_in_category(target_cat);
+        if delta > 0 {
+            locals.first().map(|(gi, _)| *gi)
+        } else {
+            locals.last().map(|(gi, _)| *gi)
+        }
     }
 
     /// 현재 active 워크스페이스가 속한 카테고리의 **다음** 카테고리로 전환한다(T4WS

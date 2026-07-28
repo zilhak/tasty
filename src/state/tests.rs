@@ -769,6 +769,98 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
     assert_eq!(state.active_workspace, 3); // wrap → D
 }
 
+// ---- workspace_switch_crosses_category (workspace 축 next/prev 의 카테고리 경계 넘기) ----
+
+/// normal=A(0)/B(1), work=C(2)/D(3). 옵션 off(기본)면 카테고리 경계에서 로컬 wrap 만
+/// 유지한다(회귀 없음).
+#[test]
+fn crosses_category_off_keeps_local_wrap() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[2].set_category(work); // C
+    engine.workspaces[3].set_category(work); // D
+    assert!(!engine.settings.general.workspace_switch_crosses_category);
+
+    state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → A (normal 의 첫), work 로 넘어가지 않음
+}
+
+/// 옵션 on 이면 카테고리 마지막 워크스페이스에서 next 가 다음 카테고리의 **첫**
+/// 워크스페이스로 이동한다(last-active 착지 아님).
+#[test]
+fn crosses_category_on_next_lands_on_next_category_first() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[2].set_category(work); // C (work 의 first)
+    engine.workspaces[3].set_category(work); // D
+
+    // work 를 D(3) 로 마지막 방문해둬도 착지는 항상 first(C) 여야 한다(방향성 유지).
+    state.switch_workspace(&mut engine, 3);
+    state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
+    engine.settings.general.workspace_switch_crosses_category = true;
+
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // work 의 first = C (D 의 last-active 아님)
+}
+
+/// 옵션 on 이면 카테고리 첫 워크스페이스에서 prev 가 이전 카테고리의 **마지막**
+/// 워크스페이스로 이동한다.
+#[test]
+fn crosses_category_on_prev_lands_on_prev_category_last() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[2].set_category(work); // C
+    engine.workspaces[3].set_category(work); // D (work 의 last)
+    engine.settings.general.workspace_switch_crosses_category = true;
+
+    state.switch_workspace(&mut engine, 2); // active = C (work 의 첫)
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // normal 의 last = B
+}
+
+/// 옵션 on 이면 카테고리 목록 자체도 wrap 한다 — 마지막 카테고리의 마지막
+/// 워크스페이스에서 next 는 첫 카테고리의 첫 워크스페이스로 돌아온다.
+#[test]
+fn crosses_category_on_wraps_across_full_category_list() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[2].set_category(work); // C (work 의 first)
+    engine.workspaces[3].set_category(work); // D (work 의 last, 마지막 카테고리)
+    engine.settings.general.workspace_switch_crosses_category = true;
+
+    state.switch_workspace(&mut engine, 3); // active = D (마지막 카테고리의 마지막)
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → normal 의 first = A
+}
+
+/// 옵션 on 이어도 카테고리가 1개뿐이면(카테고리 기능 off 포함) 넘어갈 인접 카테고리가
+/// 없으므로 기존 로컬 wrap 과 동일하게 동작한다.
+#[test]
+fn crosses_category_on_single_category_falls_back_to_local_wrap() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    assert!(!engine.settings.general.workspace_categories_enabled);
+    engine.settings.general.workspace_switch_crosses_category = true;
+
+    state.switch_workspace(&mut engine, 2); // active = C (normal 의 마지막, 유일한 카테고리)
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → A, off 일 때와 동일
+}
+
 // ---- category quick-switch (T4WS ②⑤) ----
 
 /// normal=A(0)/C(2), work=B(1)/D(3). 카테고리 전환은 대상 카테고리의 last-active 로 착지한다.
