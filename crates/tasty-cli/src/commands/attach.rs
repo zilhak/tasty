@@ -508,11 +508,15 @@ enum RawEvent {
 /// 반환할 수 있다 — `process::exit` 는 쓰지 않는다.
 ///
 /// stdin 스레드는 blocking `read()` 를 깨울 방법이 없어 종료 신호를 못 받는다 —
-/// 재연결 루프에서 이 함수가 재호출될 때마다 이전 stdin 스레드는 버려진 채 계속
-/// blocking read 에 갇혀 남는다(join 하지 않음). 재연결 횟수만큼 좀비 스레드가
-/// 쌓이지만 CPU 를 쓰지 않고 스택 메모리만 소모한다 — 완전 non-blocking stdin(플랫폼별
-/// poll/self-pipe/WaitForMultipleObjects)은 크로스플랫폼 복잡도가 커 이번 스코프에서
-/// 배제했다.
+/// 재연결 루프에서 이 함수가 재호출될 때마다 이전(좀비) stdin 스레드는 join 되지
+/// 않고 blocking read 에 갇힌 채 남는다. **이건 단순 메모리 낭비가 아니라 기능
+/// 리스크다**: 좀비 스레드와 새 스레드가 같은 프로세스의 같은 stdin fd(`std::io::Stdin`
+/// 내부 전역 `Mutex<BufReader<..>>`)를 두고 경쟁하므로, 재연결 직후 사용자 입력을
+/// 좀비 스레드가 먼저 읽어가 유실시킬 수 있다(좀비 스레드는 자신의 이미 drop 된
+/// 채널로 송신을 시도하다 실패해 조용히 종료 — 읽어버린 바이트는 어디에도 전달되지
+/// 않는다). 상세 위험 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
+/// 완전 non-blocking stdin(플랫폼별 poll/self-pipe/WaitForMultipleObjects)으로 좀비
+/// 스레드 자체를 없애는 근본 수정은 크로스플랫폼 복잡도가 커 이번 스코프에서 배제했다.
 fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
