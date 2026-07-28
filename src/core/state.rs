@@ -258,6 +258,13 @@ pub struct CoreState {
     // matches `mouse_capture_blacklist`, so its click/drag capture is disabled.
     pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
 
+    // ── Mouse-capture banner suppression cache. Same 1Hz BusyPoll, independent
+    // axis from `mouse_capture_disabled_surfaces`: set membership = that
+    // surface's foreground process matches `mouse_capture_banner_blacklist`, so
+    // the "mouse capture active..." hint banner is suppressed while capture
+    // itself stays on.
+    pub(crate) mouse_capture_banner_suppressed_surfaces: std::collections::HashSet<u32>,
+
     // ── Foreground process-name cache (surface_id → display name). Updated by
     // the same 1Hz BusyPoll from the foreground programs it already resolves
     // (no extra process snapshot). The StatusBar reads this every frame instead
@@ -542,6 +549,7 @@ impl CoreState {
             last_forwarded_busy: std::collections::HashMap::new(),
             highlighted_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
+            mouse_capture_banner_suppressed_surfaces: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             pending_move_surface: None,
             explorer_clipboard: None,

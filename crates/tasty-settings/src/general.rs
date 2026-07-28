@@ -150,6 +150,13 @@ pub struct GeneralSettings {
     /// 제거·소문자화 후 substring 매칭(또는 `*` 와일드카드)이며, 빈 목록(기본값)이면
     /// 어떤 surface 도 비활성화하지 않는다.
     pub mouse_capture_blacklist: Vec<String>,
+    /// 마우스 캡처 **안내 배너만** 억제하는 블랙리스트 — foreground 프로세스 이름 패턴
+    /// 목록. `mouse_capture_blacklist`(캡처 자체를 끔)와 독립적인 별개 축이다: 여기
+    /// 매칭되는 TUI 가 surface 의 foreground 일 때는 캡처(클릭/드래그 앱 위임)는 평소대로
+    /// 유지하되 "마우스 캡처 중 — Shift 로 우회 가능" 안내 배너만 표시하지 않는다.
+    /// 매칭 규칙은 `mouse_capture_blacklist` 와 동일(`.exe` 제거·소문자화 후 substring
+    /// 또는 `*` 와일드카드). 빈 목록(기본값)이면 어떤 surface 도 억제하지 않는다.
+    pub mouse_capture_banner_blacklist: Vec<String>,
     /// 워크스페이스 카테고리(사이드바 폴더) 계층을 활성화한다. off(기본)면 사이드바·
     /// 단축키·영속이 현행 평면 동작과 동일하다. on 으로 켜면 normal 외 사용자
     /// 카테고리를 만들 수 있고, off 로 끄면 모든 워크스페이스를 normal 로 귀속한다.
@@ -226,6 +233,7 @@ impl Default for GeneralSettings {
             bell_notification: true,
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
+            mouse_capture_banner_blacklist: Vec::new(),
             workspace_categories_enabled: false,
             workspace_switch_crosses_category: false,
             explorer_view_mode: "detail".to_string(),
@@ -274,6 +282,28 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     true
 }
 
+/// `list` 에 `fg_name` 이 매칭되는지 판정하는 공용 헬퍼 — 마우스 캡처 블랙리스트와
+/// 배너 억제 블랙리스트가 동일한 매칭 규칙(소문자화·`.exe` 제거 후 substring 또는
+/// `*` glob)을 공유하므로 여기서 한 번만 구현한다. 빈 리스트면 항상 false.
+fn matches_blacklist(list: &[String], fg_name: &str) -> bool {
+    if list.is_empty() {
+        return false;
+    }
+    let lower = fg_name.to_ascii_lowercase();
+    let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+    list.iter().any(|pat| {
+        let pat = pat.trim().to_ascii_lowercase();
+        if pat.is_empty() {
+            return false;
+        }
+        if pat.contains('*') {
+            glob_match(&pat, stem)
+        } else {
+            stem.contains(&pat)
+        }
+    })
+}
+
 impl GeneralSettings {
     /// foreground 프로세스 이름이 마우스 캡처 블랙리스트에 걸리면 true → 그 surface
     /// 의 클릭/드래그 캡처를 끈다(휠은 별도로 계속 보고됨, 결정 ②).
@@ -282,22 +312,16 @@ impl GeneralSettings {
     /// 패턴(소문자·trim, 빈 줄은 무시)에 대해 — 패턴에 `*` 가 있으면 glob, 없으면
     /// substring — 으로 비교한다(결정 ①). 빈 블랙리스트면 항상 false.
     pub fn mouse_capture_disabled_for(&self, fg_name: &str) -> bool {
-        if self.mouse_capture_blacklist.is_empty() {
-            return false;
-        }
-        let lower = fg_name.to_ascii_lowercase();
-        let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
-        self.mouse_capture_blacklist.iter().any(|pat| {
-            let pat = pat.trim().to_ascii_lowercase();
-            if pat.is_empty() {
-                return false;
-            }
-            if pat.contains('*') {
-                glob_match(&pat, stem)
-            } else {
-                stem.contains(&pat)
-            }
-        })
+        matches_blacklist(&self.mouse_capture_blacklist, fg_name)
+    }
+
+    /// foreground 프로세스 이름이 마우스 캡처 **배너 억제** 블랙리스트에 걸리면 true →
+    /// 캡처 자체는 유지하되 "마우스 캡처 중..." 안내 배너만 표시하지 않는다.
+    /// [`mouse_capture_disabled_for`](Self::mouse_capture_disabled_for) 와 완전히
+    /// 독립적인 별도 필드(`mouse_capture_banner_blacklist`)를 참조하며 매칭 로직만
+    /// 공유한다.
+    pub fn mouse_capture_banner_disabled_for(&self, fg_name: &str) -> bool {
+        matches_blacklist(&self.mouse_capture_banner_blacklist, fg_name)
     }
 
     /// Detect bash (Git Bash on Windows, system bash on Unix).
@@ -611,6 +635,31 @@ mod tests {
     fn mouse_capture_blacklist_defaults_empty() {
         let g = GeneralSettings::default();
         assert!(g.mouse_capture_blacklist.is_empty());
+    }
+
+    #[test]
+    fn mouse_capture_banner_disabled_for_matches_pattern() {
+        let mut s = GeneralSettings::default();
+        s.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        assert!(s.mouse_capture_banner_disabled_for("vim"));
+        assert!(!s.mouse_capture_banner_disabled_for("htop"));
+    }
+
+    #[test]
+    fn mouse_capture_banner_blacklist_independent_of_capture_blacklist() {
+        let mut s = GeneralSettings::default();
+        s.mouse_capture_blacklist = vec!["htop".to_string()];
+        s.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        assert!(s.mouse_capture_disabled_for("htop"));
+        assert!(!s.mouse_capture_disabled_for("vim"));
+        assert!(s.mouse_capture_banner_disabled_for("vim"));
+        assert!(!s.mouse_capture_banner_disabled_for("htop"));
+    }
+
+    #[test]
+    fn mouse_capture_banner_blacklist_defaults_empty() {
+        let g = GeneralSettings::default();
+        assert!(g.mouse_capture_banner_blacklist.is_empty());
     }
 
     #[test]

@@ -285,6 +285,11 @@ mouse_capture_blacklist_empty = "No programs excluded — clicks are sent to cap
 mouse_capture_blacklist_add_placeholder = "process name or pattern, e.g. htop or ht*"
 mouse_capture_blacklist_add_button = "Add"
 mouse_capture_blacklist_notice = "When a listed program (e.g. htop) is in the foreground, clicks and drags are handled locally (select / context menu) instead of being sent to it. Matching is case-insensitive substring or * wildcard on the process name. The wheel is still sent to the program."
+mouse_capture_banner_blacklist_label = "Suppress the capture hint banner for these programs:"
+mouse_capture_banner_blacklist_empty = "No programs excluded — the hint banner shows as usual on first capture interaction."
+mouse_capture_banner_blacklist_add_placeholder = "process name or pattern, e.g. vim or vi*"
+mouse_capture_banner_blacklist_add_button = "Add"
+mouse_capture_banner_blacklist_notice = "When a listed program (e.g. vim) is in the foreground, mouse capture stays on (clicks/drags are still sent to it) but the \"mouse capture active\" hint banner is not shown. Matching is case-insensitive substring or * wildcard on the process name, independent of the capture-disable blacklist above."
 
 [settings.appearance]
 heading = "Appearance"

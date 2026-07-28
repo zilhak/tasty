@@ -285,6 +285,11 @@ mouse_capture_blacklist_empty = "除外プログラムなし — クリックは
 mouse_capture_blacklist_add_placeholder = "プロセス名またはパターン、例: htop や ht*"
 mouse_capture_blacklist_add_button = "追加"
 mouse_capture_blacklist_notice = "ここに登録したプログラム(例: htop)がフォアグラウンドのときは、クリックやドラッグをアプリに送らずローカル処理(テキスト選択 / コンテキストメニュー)します。マッチングはプロセス名に対する大文字小文字を区別しない部分一致または * ワイルドカードです。ホイールは引き続きアプリに送られます。"
+mouse_capture_banner_blacklist_label = "次のプログラムでは案内バナーのみ抑制:"
+mouse_capture_banner_blacklist_empty = "除外プログラムなし — 最初のキャプチャ操作で案内バナーが通常どおり表示されます。"
+mouse_capture_banner_blacklist_add_placeholder = "プロセス名またはパターン、例: vim や vi*"
+mouse_capture_banner_blacklist_add_button = "追加"
+mouse_capture_banner_blacklist_notice = "ここに登録したプログラム(例: vim)がフォアグラウンドのときは、マウスキャプチャ自体は維持され(クリック/ドラッグは引き続きアプリに送られます)、「マウスキャプチャ中」の案内バナーだけが表示されません。マッチングはプロセス名に対する大文字小文字を区別しない部分一致または * ワイルドカードで、上のキャプチャ無効化ブラックリストとは独立しています。"
 
 [settings.appearance]
 heading = "外観"

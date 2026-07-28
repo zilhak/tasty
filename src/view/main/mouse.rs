@@ -738,9 +738,20 @@ impl MainView {
     }
 
     /// 마우스 캡처 진입 후 첫 상호작용이면 "마우스 캡처 중 — Shift 로 우회 가능" 안내
-    /// 배너를 1회 띄운다(설정 ON 일 때). 좌·우 클릭 보고 경로가 같은
-    /// `take_mouse_capture_hint()` 를 공유하므로 먼저 발생한 쪽만 뜬다 (ADR-0022 ②).
+    /// 배너를 1회 띄운다(설정 ON + 배너 억제 리스트 미매칭일 때). 좌·우 클릭 보고
+    /// 경로가 같은 `take_mouse_capture_hint()` 를 공유하므로 먼저 발생한 쪽만 뜬다
+    /// (ADR-0022 ②). `mouse_capture_banner_blacklist` 매칭 surface 는 캡처 자체는
+    /// 유지한 채 이 함수 최상단에서 반환한다 — `take_mouse_capture_hint()` 를 아예
+    /// 호출하지 않으므로 armed 플래그도 소모하지 않는다. 이렇게 해야 같은 트래킹
+    /// 세션 도중 foreground 가 비억제 앱으로 바뀌면 그 시점에 배너를 정상적으로
+    /// 띄울 수 있다.
     fn report_left_press_capture(&mut self, surface_id: u32) {
+        if self
+            .core_state
+            .is_surface_mouse_capture_banner_suppressed(surface_id)
+        {
+            return;
+        }
         if self.core_state.settings.general.mouse_capture_hint {
             let show = self
                 .core_state

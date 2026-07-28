@@ -285,6 +285,11 @@ mouse_capture_blacklist_empty = "제외된 프로그램 없음 — 클릭이 캡
 mouse_capture_blacklist_add_placeholder = "프로세스 이름 또는 패턴, 예: htop 또는 ht*"
 mouse_capture_blacklist_add_button = "추가"
 mouse_capture_blacklist_notice = "여기 등록된 프로그램(예: htop)이 foreground 일 때는 클릭/드래그를 앱에 보내지 않고 로컬 처리(텍스트 선택 / 컨텍스트 메뉴)합니다. 매칭은 프로세스 이름에 대한 대소문자 무시 부분 문자열 또는 * 와일드카드입니다. 휠은 계속 앱에 전달됩니다."
+mouse_capture_banner_blacklist_label = "다음 프로그램에서 캡처 안내 배너만 억제:"
+mouse_capture_banner_blacklist_empty = "제외된 프로그램 없음 — 처음 캡처 상호작용 시 안내 배너가 평소대로 표시됩니다."
+mouse_capture_banner_blacklist_add_placeholder = "프로세스 이름 또는 패턴, 예: vim 또는 vi*"
+mouse_capture_banner_blacklist_add_button = "추가"
+mouse_capture_banner_blacklist_notice = "여기 등록된 프로그램(예: vim)이 foreground 일 때는 마우스 캡처는 그대로 유지되지만(클릭/드래그는 계속 앱에 전달) \"마우스 캡처 중\" 안내 배너만 표시되지 않습니다. 매칭은 프로세스 이름에 대한 대소문자 무시 부분 문자열 또는 * 와일드카드이며, 위 캡처 비활성화 블랙리스트와 독립적입니다."
 
 [settings.appearance]
 heading = "외관"

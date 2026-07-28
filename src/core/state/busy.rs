@@ -29,6 +29,10 @@ impl CoreState {
         // 즉시 false 라 비용 무시 가능.
         let mut mouse_capture_disabled: std::collections::HashSet<u32> =
             std::collections::HashSet::new();
+        // 캡처 블랙리스트와 독립적인 축 — 안내 배너만 억제하는 블랙리스트 매칭도
+        // 같은 foreground resolve 결과에 편승해 계산한다.
+        let mut mouse_capture_banner_suppressed: std::collections::HashSet<u32> =
+            std::collections::HashSet::new();
         // 같은 resolve 결과에서 StatusBar 용 foreground 이름도 함께 모은다. StatusBar 가
         // 매 프레임 프로세스 스냅샷을 다시 뜨는 대신 이 캐시를 읽는다.
         let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -43,6 +47,13 @@ impl CoreState {
                 if self.settings.general.mouse_capture_disabled_for(&f.name) {
                     mouse_capture_disabled.insert(sid);
                 }
+                if self
+                    .settings
+                    .general
+                    .mouse_capture_banner_disabled_for(&f.name)
+                {
+                    mouse_capture_banner_suppressed.insert(sid);
+                }
                 names.insert(sid, f.name.clone());
             }
         }
@@ -50,6 +61,7 @@ impl CoreState {
         // 에는 포함하지 않는다 — busy set 변화만으로 dirty 를 판정한다. 닫힌 surface 의
         // stale 엔트리가 남지 않도록 매 tick 맵 전체를 교체한다.
         self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
+        self.mouse_capture_banner_suppressed_surfaces = mouse_capture_banner_suppressed;
         self.foreground_names = names;
         let changed = self.busy_surfaces != busy;
         self.busy_surfaces = busy;
@@ -62,6 +74,16 @@ impl CoreState {
     /// select / context menu); the wheel is unaffected.
     pub fn is_surface_mouse_capture_disabled(&self, surface_id: u32) -> bool {
         self.mouse_capture_disabled_surfaces.contains(&surface_id)
+    }
+
+    /// Whether the given surface's foreground process matches the mouse-capture
+    /// **banner suppression** blacklist (cached from the last
+    /// `refresh_busy_surfaces` poll). When true, the capture-active hint banner
+    /// is skipped while capture itself remains on — independent of
+    /// [`is_surface_mouse_capture_disabled`](Self::is_surface_mouse_capture_disabled).
+    pub fn is_surface_mouse_capture_banner_suppressed(&self, surface_id: u32) -> bool {
+        self.mouse_capture_banner_suppressed_surfaces
+            .contains(&surface_id)
     }
 
     /// Whether the given surface is currently busy — either a local terminal
@@ -204,6 +226,29 @@ mod tests {
         e.set_mirror_surface_busy(42, true);
         e.forget_mirror_surface_busy(42);
         assert!(!e.is_surface_busy(42));
+    }
+
+    /// `is_surface_mouse_capture_banner_suppressed` 는 캐시(`mouse_capture_banner_suppressed_surfaces`)
+    /// 를 그대로 읽는 접근자다 — `is_surface_mouse_capture_disabled` 와 대칭.
+    #[test]
+    fn mouse_capture_banner_suppressed_accessor_reads_cache() {
+        let mut e = engine();
+        assert!(!e.is_surface_mouse_capture_banner_suppressed(42));
+        e.mouse_capture_banner_suppressed_surfaces.insert(42);
+        assert!(e.is_surface_mouse_capture_banner_suppressed(42));
+    }
+
+    /// `refresh_busy_surfaces` 는 로컬 PTY 가 없는 surface 에 대해 캡처 블랙리스트
+    /// 캐시와 배너 억제 캐시를 각각 독립적으로 통째로 교체한다(닫힌 surface 의 stale
+    /// 엔트리가 남지 않음 — 두 캐시 모두 대칭적으로 동작해야 한다).
+    #[test]
+    fn refresh_busy_surfaces_replaces_both_mouse_capture_caches() {
+        let mut e = engine();
+        e.mouse_capture_disabled_surfaces.insert(99);
+        e.mouse_capture_banner_suppressed_surfaces.insert(99);
+        e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 두 캐시 모두 빈 채로 재계산.
+        assert!(!e.is_surface_mouse_capture_disabled(99));
+        assert!(!e.is_surface_mouse_capture_banner_suppressed(99));
     }
 
     /// `busy_activity_forwards` 는 값이 실제로 바뀔 때만 forward 한다(중복 억제).

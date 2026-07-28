@@ -170,9 +170,9 @@ pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// Terminal › Mouse Capture L2 섹션 — 마우스 캡처 안내 배너 토글 + Shift 우회
-/// 설명 Note + 1px 구분선 + 캡처 비활성화 블랙리스트 에디터. 설정 모델은 무변경
-/// (`GeneralSettings.mouse_capture_hint` / `mouse_capture_blacklist` 재사용),
-/// 배치만 Terminal › General 에서 분리해 옮긴 것이다.
+/// 설명 Note + 1px 구분선 + 캡처 비활성화 블랙리스트 에디터 + 1px 구분선 + 배너만
+/// 억제하는 블랙리스트 에디터(`mouse_capture_banner_blacklist`, 캡처 자체는
+/// 그대로 두고 안내 배너만 끈다 — 캡처 비활성화 블랙리스트와 독립적인 축).
 pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
@@ -297,10 +297,105 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
     });
     ui.data_mut(|d| d.insert_temp(add_id, add_buf));
 
-    // match-rule notice — accent-warning 톤(빈 상태 neutral 과 구분).
+    // match-rule notice — accent-warning 톤(빈 상태 neutral 아님).
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.terminal.mouse_capture_blacklist_notice"))
+            .small()
+            .color(th.accent_warning()),
+    );
+
+    // 캡처 블랙리스트와 배너 억제 블랙리스트를 구분하는 1px 구분선(위와 동일 패턴).
+    vspace(ui, th.spacing_md);
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.noninteractive.bg_stroke =
+            egui::Stroke::new(1.0, th.separator.to_egui_premultiplied());
+        ui.separator();
+    });
+    vspace(ui, th.spacing_md);
+
+    // 마우스 캡처 "배너만 억제" 블랙리스트 — 캡처 블랙리스트 블록과 동일 패턴(패턴
+    // mono + × 제거 + 하단 Add 입력/버튼), 데이터 소스만 `mouse_capture_banner_blacklist`.
+    // 매칭 결과가 다르다: 캡처는 그대로 두고 안내 배너만 안 뜨게 한다.
+    ui.label(t("settings.terminal.mouse_capture_banner_blacklist_label"));
+    vspace(ui, th.spacing_xs);
+
+    if settings.general.mouse_capture_banner_blacklist.is_empty() {
+        ui.label(
+            egui::RichText::new(t("settings.terminal.mouse_capture_banner_blacklist_empty"))
+                .small()
+                .color(th.text_muted()),
+        );
+    } else {
+        let mut remove_idx: Option<usize> = None;
+        for (i, pattern) in settings
+            .general
+            .mouse_capture_banner_blacklist
+            .iter()
+            .enumerate()
+        {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(pattern)
+                        .monospace()
+                        .color(th.text_primary()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .show(ui, &th, &|ui, rect, c| {
+                            icons::CLOSE.image(rect.height(), c).paint_at(ui, rect);
+                        })
+                        .clicked()
+                    {
+                        remove_idx = Some(i);
+                    }
+                });
+            });
+        }
+        if let Some(i) = remove_idx {
+            settings.general.mouse_capture_banner_blacklist.remove(i);
+        }
+    }
+
+    vspace(ui, th.spacing_sm);
+    let banner_add_id = ui.id().with("mouse_capture_banner_blacklist_add");
+    let mut banner_add_buf: String =
+        ui.data_mut(|d| d.get_temp::<String>(banner_add_id).unwrap_or_default());
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        let can_add = !banner_add_buf.trim().is_empty();
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let add_clicked = Button::new(t(
+                "settings.terminal.mouse_capture_banner_blacklist_add_button",
+            ))
+            .variant(ButtonVariant::Secondary)
+            .size(ControlSize::Sm)
+            .enabled(can_add)
+            .show(ui, &th)
+            .clicked();
+            let resp = Input::new()
+                .placeholder(t(
+                    "settings.terminal.mouse_capture_banner_blacklist_add_placeholder",
+                ))
+                .mono(true)
+                .show(ui, &th, &mut banner_add_buf);
+            let submit = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if (add_clicked || submit) && !banner_add_buf.trim().is_empty() {
+                settings
+                    .general
+                    .mouse_capture_banner_blacklist
+                    .push(banner_add_buf.trim().to_string());
+                banner_add_buf.clear();
+            }
+        });
+    });
+    ui.data_mut(|d| d.insert_temp(banner_add_id, banner_add_buf));
+
+    vspace(ui, th.spacing_xs);
+    ui.label(
+        egui::RichText::new(t("settings.terminal.mouse_capture_banner_blacklist_notice"))
             .small()
             .color(th.accent_warning()),
     );
