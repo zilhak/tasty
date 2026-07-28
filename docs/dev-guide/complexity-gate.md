@@ -6,7 +6,7 @@
 
 | 축 | 도구 | 임계값 | 동결 위치 |
 |----|------|--------|-----------|
-| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 15곳) |
+| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 30곳) |
 | **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | code SLOC **1000** | `.complexity-file-allowlist` (현재 18개) |
 
 - cognitive 임계 20 은 외부 도구 rca cognitive ≈ 50 등가다. clippy 는 egui 즉시모드 draw 의 `ui.horizontal(|ui|{…})` 클로저를 부모에 합산하지 않아 구조적 draw 를 자동 배제 → 임계 초과 baseline 이 거의 순수 로직 함수라 신호가 깨끗하다.
