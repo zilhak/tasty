@@ -1085,6 +1085,9 @@ mirror_disconnected = "リモート接続が切断されました。ミラーワ
 mirror_reconnecting = "リモート接続が切断されました。再接続を試みています…"
 # backoff 再試行が成功し、ミラーが復帰した時に表示。
 mirror_reconnected = "リモートワークスペースに再接続しました。"
+# 繰り返し失敗して自動 backoff 再試行を諦めた時に1回表示。ワークスペースを離れて
+# 戻れば手動での再試行は引き続き有効。
+mirror_reconnect_giveup = "何度か試しましたが再接続できませんでした。このワークスペースを離れてから戻ると再試行します。"
 
 # (09) リモートファイル転送のフィードバックポップアップ — 進捗(determinate)+ 失敗。
 [transfer.progress]

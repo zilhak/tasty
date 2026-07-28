@@ -1089,6 +1089,9 @@ mirror_disconnected = "The remote connection was lost. The mirror workspace has 
 mirror_reconnecting = "The remote connection was lost. Trying to reconnect…"
 # Shown when a backoff retry succeeds and the mirror is live again.
 mirror_reconnected = "Reconnected to the remote workspace."
+# Shown once automatic backoff retries give up after repeated failures.
+# Switching away from and back to the workspace still retries manually.
+mirror_reconnect_giveup = "Couldn't reconnect after several attempts. Switch away and back to this workspace to retry."
 
 # (09) Remote file-transfer feedback popups — progress (determinate) + failed.
 [transfer.progress]

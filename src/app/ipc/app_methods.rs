@@ -1055,6 +1055,7 @@ impl App {
                 anchor_ws_id: None,
                 remote_ws,
                 result,
+                is_reconnect: false,
             };
             let _ = tx.send(outcome); // 수신자(메인 루프) drop 시에만 실패 — 무시.
             let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시

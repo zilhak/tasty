@@ -705,6 +705,18 @@ impl Backoff {
     /// 현재 백오프만큼 sleep 한 뒤 다음 간격을 2 배(상한 max)로 늘린다.
     pub fn sleep(&mut self) {
         std::thread::sleep(self.cur);
+        self.advance();
+    }
+
+    /// 현재 대기 간격을 조회한다(sleep 하지 않음) — GUI 메인 루프처럼 스레드를
+    /// 블록할 수 없는 논블로킹 스케줄러가 "다음 재시도 시각"을 계산하는 데 쓴다.
+    pub fn current(&self) -> Duration {
+        self.cur
+    }
+
+    /// sleep 없이 다음 간격으로 넘어간다(2 배, 상한 max) — 논블로킹 스케줄러 전용.
+    /// `sleep()`은 이 메서드 위에 blocking sleep 을 얹은 것과 동일하다.
+    pub fn advance(&mut self) {
         self.cur = (self.cur * 2).min(self.max);
     }
 
@@ -1057,15 +1069,16 @@ mod tests {
     #[test]
     fn backoff_grows_and_resets() {
         let mut b = Backoff::new();
-        assert_eq!(b.cur, Duration::from_millis(500));
-        // sleep 은 시간을 쓰므로 증가 로직만 직접 검증.
-        b.cur = (b.cur * 2).min(b.max);
-        assert_eq!(b.cur, Duration::from_secs(1));
+        assert_eq!(b.current(), Duration::from_millis(500));
+        // sleep 은 시간을 쓰므로 non-blocking `advance()`(TODO 27 — GUI 스케줄러 전용)로
+        // 증가 로직만 검증한다.
+        b.advance();
+        assert_eq!(b.current(), Duration::from_secs(1));
         b.cur = b.max; // 상한 확인
-        b.cur = (b.cur * 2).min(b.max);
-        assert_eq!(b.cur, Duration::from_secs(30));
+        b.advance();
+        assert_eq!(b.current(), Duration::from_secs(30));
         b.reset();
-        assert_eq!(b.cur, Duration::from_millis(500));
+        assert_eq!(b.current(), Duration::from_millis(500));
     }
 
     #[test]

@@ -184,6 +184,13 @@ pub(crate) struct App {
     pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_rx: std::sync::mpsc::Receiver<auto_attach::AutoAttachOutcome>,
+    /// TODO 27 — silent disconnect 로 `Reconnecting` 상태가 된 anchor 마다의 backoff
+    /// 재시도 스케줄(다음 시도 시각 + 백오프 간격 + 시도 횟수). `auto_attach.rs` 의
+    /// `maybe_trigger_reconnect` 가 매 프레임(`poll_auto_attach`) 확인해, 시각이 되면
+    /// 워커를 spawn 하고 백오프를 진행시킨다. 재연결 성공/사용자가 mirror 를 닫으면
+    /// 해당 anchor 항목을 제거한다.
+    #[cfg(feature = "gui")]
+    pub(crate) auto_attach_reconnect: std::collections::HashMap<u32, auto_attach::ReconnectSlot>,
     /// (03) 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_tx:
@@ -272,6 +279,7 @@ impl App {
             auto_attach_pending_reactivation: std::collections::HashSet::new(),
             auto_attach_tx,
             auto_attach_rx,
+            auto_attach_reconnect: std::collections::HashMap::new(),
             screenshot_capture_tx,
             screenshot_capture_rx,
             image_upload_tx,

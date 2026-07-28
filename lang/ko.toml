@@ -1084,6 +1084,9 @@ mirror_disconnected = "원격 연결이 끊어졌습니다. 미러 워크스페�
 mirror_reconnecting = "원격 연결이 끊어졌습니다. 재연결을 시도합니다…"
 # backoff 재시도가 성공해 mirror 가 다시 살아났을 때 표시.
 mirror_reconnected = "원격 워크스페이스에 다시 연결했습니다."
+# 반복 실패로 자동 backoff 재시도를 포기했을 때 1회 표시. 워크스페이스를 벗어났다가
+# 돌아오면 여전히 수동으로 재시도된다.
+mirror_reconnect_giveup = "여러 번 시도했지만 재연결하지 못했습니다. 이 워크스페이스에서 벗어났다가 돌아오면 다시 시도합니다."
 
 # (09) 원격 파일 전송 피드백 팝업 — 진행(determinate) + 실패.
 [transfer.progress]
