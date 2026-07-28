@@ -202,6 +202,14 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
+    /// 포인터가 이 egui-mesh surface 밖으로 나갔음을 1 회 forward(TODO 26) — 좌표
+    /// 없이(`PointerGone` 은 위치 필드가 없다) hover 상태 해제만 알린다. `mouse.rs`
+    /// 의 `update_mesh_hover` 가 hover 대상 전환 시점에 호출한다.
+    pub(super) fn egui_mesh_push_pointer_gone(&mut self, surface_id: u32) {
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::PointerGone);
+    }
+
     /// 스크롤 델타(논리 포인트)를 egui-mesh surface 에 누적.
     pub(super) fn egui_mesh_push_scroll(&mut self, surface_id: u32, dx: f32, dy: f32) {
         let st = self.egui_mesh.entry(surface_id).or_default();

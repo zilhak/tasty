@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 use winit::keyboard::ModifiersState;
-use winit::window::CursorIcon;
 
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, PhysicalRect};
@@ -92,6 +91,9 @@ pub struct MainView {
     /// `attach_mesh_input.rs` 참고.
     pub(crate) attach_mesh_input:
         std::collections::HashMap<u32, attach_mesh_input::AttachMeshForwardState>,
+    /// 마지막으로 pointer_moved 를 forward 한 mesh surface(TODO 26) — `CursorLeft` 및
+    /// surface 전환 시 `PointerGone` 1 회 forward 판정에 쓴다. `mouse.rs::update_mesh_hover`.
+    pub(crate) mesh_pointer_hover: Option<MeshHoverTarget>,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
     /// 실제 우클릭은 `process_pending_native_menu` 가 `TrackPopupMenu`(Windows) 등
     /// **블로킹 모달** 로 즉시 소비하므로, 헤드리스 주입 테스트에서 우클릭 라우팅을
@@ -112,6 +114,16 @@ pub(crate) struct HoveredLink {
     pub surface_id: u32,
     pub uri: String,
     pub highlight: crate::terminal_link::LinkHighlight,
+}
+
+/// 로컬 egui-mesh 또는 attach mesh mirror 중 현재 포인터가 hover 중인 surface(TODO
+/// 26). `CursorLeft`·surface 전환 시점에 이전 대상에 `PointerGone` 을 1 회 forward
+/// 하기 위한 단일 슬롯 — 두 경로는 `mouse.rs` 의 egui-mesh→attach-mesh 순차
+/// early-return 구조상 동시에 hover 상태일 수 없으므로 슬롯 하나로 충분하다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MeshHoverTarget {
+    Local(u32),
+    Attach(u32),
 }
 
 impl MainView {
@@ -149,6 +161,7 @@ impl MainView {
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),
             attach_mesh_input: std::collections::HashMap::new(),
+            mesh_pointer_hover: None,
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
         }
@@ -382,8 +395,7 @@ impl View for MainView {
                 self.handle_cursor_moved(position, egui_consumed);
             }
             WindowEvent::CursorLeft { .. } => {
-                self.cursor_position = None;
-                self.base.winit.set_cursor(CursorIcon::Default);
+                self.handle_cursor_left();
             }
             WindowEvent::MouseInput {
                 state: button_state,

@@ -120,6 +120,13 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
+    /// 포인터가 이 attach mesh surface 밖으로 나갔음을 1 회 forward(TODO 26).
+    /// [`super::egui_mesh::MainView::egui_mesh_push_pointer_gone`] 의 attach 대응.
+    pub(super) fn attach_mesh_push_pointer_gone(&mut self, surface_id: u32) {
+        let st = self.attach_mesh_input.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::PointerGone);
+    }
+
     /// 스크롤 델타(논리 포인트)를 attach mesh surface 에 누적.
     pub(super) fn attach_mesh_push_scroll(&mut self, surface_id: u32, dx: f32, dy: f32) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();

@@ -1,6 +1,7 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
+use winit::window::CursorIcon;
 
-use super::{DividerDrag, DividerDragKind, HoveredLink, MainView};
+use super::{DividerDrag, DividerDragKind, HoveredLink, MainView, MeshHoverTarget};
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
@@ -97,6 +98,30 @@ impl MainView {
         })
     }
 
+    /// `WindowEvent::CursorLeft` 처리(TODO 26) — 커서 상태 리셋 + hover 중이던 mesh
+    /// surface 가 있으면 `PointerGone` 을 forward 한다(egui-mesh/attach mesh mirror
+    /// 어느 쪽도 이 이벤트에서 직접 `PointerGone` 을 보내지 않던 gap 을 메운다).
+    pub(super) fn handle_cursor_left(&mut self) {
+        self.cursor_position = None;
+        self.base.winit.set_cursor(CursorIcon::Default);
+        self.update_mesh_hover(None);
+    }
+
+    /// mesh pointer hover 슬롯을 갱신한다(TODO 26). 대상이 바뀌면(다른 mesh surface
+    /// 로 전환되거나 어느 mesh surface 위도 아니게 되면) 이전 대상에 `PointerGone` 을
+    /// 1 회 forward 한다 — 안 그러면 plugin 쪽 egui 가 마지막 `PointerMoved` 위치에
+    /// 포인터가 계속 있다고 착각해 hover 하이라이트가 잔류할 수 있다.
+    pub(super) fn update_mesh_hover(&mut self, target: Option<MeshHoverTarget>) {
+        let (next, gone) = mesh_hover_transition(self.mesh_pointer_hover, target);
+        self.mesh_pointer_hover = next;
+        if let Some(prev) = gone {
+            match prev {
+                MeshHoverTarget::Local(sid) => self.egui_mesh_push_pointer_gone(sid),
+                MeshHoverTarget::Attach(sid) => self.attach_mesh_push_pointer_gone(sid),
+            }
+        }
+    }
+
     pub(super) fn handle_cursor_moved(
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
@@ -155,6 +180,7 @@ impl MainView {
         if self.dragging_divider.is_none()
             && let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y)
         {
+            self.update_mesh_hover(Some(MeshHoverTarget::Local(sid)));
             self.egui_mesh_push_pointer_moved(sid, rect, x, y);
             self.mark_dirty();
             return;
@@ -162,10 +188,15 @@ impl MainView {
         // attach mesh mirror surface 위 포인터 이동 forward (TODO 20) — 위와 동형이되
         // 목적지가 원격.
         if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
+            self.update_mesh_hover(Some(MeshHoverTarget::Attach(sid)));
             self.attach_mesh_push_pointer_moved(sid, rect, x, y);
             self.mark_dirty();
             return;
         }
+        // 어느 mesh surface 위도 아니다(TODO 26) — divider 드래그로 위 두 분기를
+        // 건너뛴 경우 포함. 직전까지 hover 중이던 mesh surface 가 있었다면
+        // `PointerGone` 을 1 회 forward 한다(mesh→mesh, mesh→non-mesh 전환 공통 처리).
+        self.update_mesh_hover(None);
 
         if self.update_hovered_link() {
             self.mark_dirty();
@@ -1105,6 +1136,20 @@ fn effective_click_tracking_decision(
     }
 }
 
+/// `update_mesh_hover`(MainView 메서드, TODO 26)의 순수 결정 로직. 슬롯의 다음 값과,
+/// `PointerGone` 을 보내야 할 이전 대상(있다면)을 반환한다. 대상이 안 바뀌면(같은
+/// surface 에 머무르거나 계속 `None`) `PointerGone` 을 보내지 않는다.
+fn mesh_hover_transition(
+    current: Option<MeshHoverTarget>,
+    new: Option<MeshHoverTarget>,
+) -> (Option<MeshHoverTarget>, Option<MeshHoverTarget>) {
+    if current == new {
+        (current, None)
+    } else {
+        (new, current)
+    }
+}
+
 #[cfg(test)]
 mod wheel_tests {
     use super::encode_wheel_report;
@@ -1295,5 +1340,66 @@ mod left_click_tests {
             false,
             true
         ));
+    }
+}
+
+#[cfg(test)]
+mod mesh_hover_tests {
+    use super::{MeshHoverTarget, mesh_hover_transition};
+
+    #[test]
+    fn same_target_is_not_a_transition() {
+        // 같은 local surface 에 계속 머무르면 PointerGone 을 보내지 않는다.
+        let (next, gone) = mesh_hover_transition(
+            Some(MeshHoverTarget::Local(1)),
+            Some(MeshHoverTarget::Local(1)),
+        );
+        assert_eq!(next, Some(MeshHoverTarget::Local(1)));
+        assert_eq!(gone, None);
+    }
+
+    #[test]
+    fn none_to_none_is_not_a_transition() {
+        let (next, gone) = mesh_hover_transition(None, None);
+        assert_eq!(next, None);
+        assert_eq!(gone, None);
+    }
+
+    #[test]
+    fn entering_a_surface_from_none_sends_no_gone() {
+        // 이전에 아무것도 hover 하지 않았으면 보낼 PointerGone 대상이 없다.
+        let (next, gone) = mesh_hover_transition(None, Some(MeshHoverTarget::Local(1)));
+        assert_eq!(next, Some(MeshHoverTarget::Local(1)));
+        assert_eq!(gone, None);
+    }
+
+    #[test]
+    fn leaving_window_sends_gone_for_previous_local_surface() {
+        // CursorLeft 등으로 target 이 None 이 되면 이전 local surface 에 PointerGone.
+        let (next, gone) = mesh_hover_transition(Some(MeshHoverTarget::Local(1)), None);
+        assert_eq!(next, None);
+        assert_eq!(gone, Some(MeshHoverTarget::Local(1)));
+    }
+
+    #[test]
+    fn switching_between_local_surfaces_sends_gone_for_the_old_one() {
+        // 창을 벗어나지 않고 다른 mesh surface 로 바로 넘어가도 이전 surface 에
+        // PointerGone 을 보낸다(TODO 26 제안 방향 3).
+        let (next, gone) = mesh_hover_transition(
+            Some(MeshHoverTarget::Local(1)),
+            Some(MeshHoverTarget::Local(2)),
+        );
+        assert_eq!(next, Some(MeshHoverTarget::Local(2)));
+        assert_eq!(gone, Some(MeshHoverTarget::Local(1)));
+    }
+
+    #[test]
+    fn switching_from_local_to_attach_sends_gone_for_local() {
+        let (next, gone) = mesh_hover_transition(
+            Some(MeshHoverTarget::Local(1)),
+            Some(MeshHoverTarget::Attach(9)),
+        );
+        assert_eq!(next, Some(MeshHoverTarget::Attach(9)));
+        assert_eq!(gone, Some(MeshHoverTarget::Local(1)));
     }
 }

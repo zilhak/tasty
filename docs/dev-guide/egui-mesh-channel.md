@@ -223,9 +223,18 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 입력 | wire 이벤트 | 누적 지점 |
 |---|---|---|
 | 포인터 버튼/이동/스크롤 | `PointerButton`/`PointerMoved`/`Scroll` | `egui_mesh_push_pointer_*`/`push_scroll` |
+| 포인터가 surface 밖으로 나감 | `PointerGone` | `egui_mesh_push_pointer_gone`/`attach_mesh_push_pointer_gone` ← `mouse.rs` `update_mesh_hover` |
 | 키 누름(press-only) | `Key { key: egui Key::name(), … }` | `egui_mesh_push_key` ← `keyboard.rs` `forward_key_to_egui_mesh` |
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
+
+`MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
+마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`
+(egui-mesh·attach mesh mirror 판정 지점)와 `handle_cursor_left`(`WindowEvent::CursorLeft`)가
+매번 `update_mesh_hover(new_target)` 를 거쳐 슬롯을 갱신하며, 대상이 바뀌면(다른 mesh
+surface 로 전환되거나 창 밖으로 나가 `None` 이 되면) **이전** 대상에 `PointerGone` 을 1 회
+forward 한다 — 안 그러면 plugin 쪽 egui 가 마지막 `PointerMoved` 위치에 포인터가 계속
+있다고 착각해 hover 하이라이트가 잔류할 수 있다.
 
 키/IME 는 **포커스된 egui-mesh surface 에만** 간다(`focused_egui_mesh_surface_id`
 downcast 판정). 중앙 키 디스패처(`keyboard.rs handle_keyboard_input`)가 단축키·vi·
