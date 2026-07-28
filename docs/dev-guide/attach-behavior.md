@@ -215,10 +215,21 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
     워크스페이스를 여전히 점유 — 영구적 충돌일 수 있음) 지수 증가 없이 max(30초) 간격에
     고정해 폭주 없이 계속 대기하고, 그 외(네트워크/SSH 등 일시적 실패)는 통상적인 지수
     백오프(0.5s→30s)로 늘린다. 간격에는 ±20% jitter 를 둬 여러 anchor 가 동시에 끊겼을
-    때 재시도가 한 tick 에 몰리는 것을 막는다. 시도 횟수가 `MAX_RECONNECT_ATTEMPTS`(20)를
-    넘으면 자동(backoff) 재시도만 멈추고 안내 toast(`mirror_reconnect_giveup`)를 1회
-    띄운다 — `auto_attach_pending_reactivation` 은 건드리지 않으므로 사용자가 그
+    때 재시도가 한 tick 에 몰리는 것을 막는다. 시도 횟수가 `MAX_RECONNECT_ATTEMPTS`(20)에
+    도달하면 `ReconnectSlot.given_up` 을 세우고 안내 toast(`mirror_reconnect_giveup`)를
+    1회 띄운다 — `auto_attach_pending_reactivation` 은 건드리지 않으므로 사용자가 그
     워크스페이스를 왕복하는 수동 재시도(엣지 트리거)는 계속 유효하다.
+    - **give-up 은 슬롯 제거가 아니라 플래그다(버그수정, Gate4)**: give-up 시 슬롯을
+      지워 부재(`None`)로 표현하면, `reconnect_due` 가 이를 "아직 한 번도 실패하지
+      않음"과 구분하지 못해 바로 다음 프레임에 자동 재시도가 재개돼버린다 — 실패하면
+      시도 횟수가 0부터 다시 쌓이고 상한마다 give-up→즉시재개를 무한 반복해
+      `MAX_RECONNECT_ATTEMPTS` 자체가 무의미해지는 회귀였다. `given_up: bool` 이 세워진
+      슬롯은 `next_attempt` 시각과 무관하게 `reconnect_due` 가 항상 `false` 를 반환해
+      자동 재시도 대상에서 계속 제외되고, 사용자가 그 워크스페이스로 돌아오는 edge
+      트리거(`should_reset_given_up`)만이 슬롯을 리셋해 재개를 허용한다. 실패 횟수
+      비교도 `attempts >= MAX_RECONNECT_ATTEMPTS`(`reconnect_exhausted`)로 — `attempts`
+      는 이번 실패를 반영해 1부터 증가시킨 값이라 `>` 를 쓰면 상한보다 한 번 더
+      실패해야(21번째) give-up 하는 off-by-one 이었다.
 - **`detach_orphaned_mirror_sessions` 와의 관계**: 간섭 없음. `apply_attach_client_output`
   (disconnect 감지, anchor 있으면 `Reconnecting` 전이 / anchor 없으면
   `cleanup_mirror_workspace(sess, from_disconnect=true)`)과

@@ -66,6 +66,14 @@ pub(crate) struct ReconnectSlot {
     backoff: Backoff,
     next_attempt: Instant,
     attempts: u32,
+    /// 버그수정(Gate4) — `MAX_RECONNECT_ATTEMPTS` 초과로 자동 재시도를 포기했는지.
+    /// 포기 시 슬롯을 지워 부재(`None`)로 표현하면 `reconnect_due` 가 "아직 한 번도
+    /// 실패하지 않음"과 구분할 수 없어 바로 다음 프레임에 다시 즉시 재시도가
+    /// 재개되고, 실패하면 시도 횟수가 0부터 다시 쌓여 상한마다 무한히 give-up→즉시
+    /// 재개를 반복하는 회귀가 있었다. give-up 은 슬롯을 지우지 않고 이 플래그로
+    /// 명시적으로 저장하며, 사용자가 그 워크스페이스로 돌아오는 edge 트리거만이
+    /// 해제(재개)할 수 있다.
+    given_up: bool,
 }
 
 impl ReconnectSlot {
@@ -74,8 +82,38 @@ impl ReconnectSlot {
             backoff: Backoff::new(),
             next_attempt: Instant::now(),
             attempts: 0,
+            given_up: false,
         }
     }
+}
+
+/// 버그수정(Gate4) — 자동(backoff) 재시도가 지금 due 인지 슬롯 상태로부터 판단하는
+/// 순수 함수. give-up 된 슬롯은 `next_attempt` 가 이미 지났어도 항상 자동 재시도
+/// 대상에서 제외한다(엣지 트리거로만 재개) — 그렇지 않으면 give-up 직후에도 다음
+/// backoff 시각이 되는 즉시 자동 재시도가 재개돼 상한이 무의미해진다.
+fn reconnect_due(slot: Option<&ReconnectSlot>, now: Instant) -> bool {
+    match slot {
+        Some(slot) if slot.given_up => false,
+        Some(slot) => now >= slot.next_attempt,
+        // 아직 실패한 적 없음(Reconnecting 진입 직후) — 1차 시도는 즉시.
+        None => true,
+    }
+}
+
+/// 버그수정(Gate4) — 실패 횟수가 상한에 도달했는지. `attempts` 는 이번 실패를 반영해
+/// 증가시킨 뒤(1부터 시작) 넘겨받으므로 `>=` 여야 "`MAX_RECONNECT_ATTEMPTS` 회 실패
+/// 후 자동 재시도 중단" 스펙과 일치한다(`>` 는 상한보다 한 번 더 실패해야(21번째)
+/// 중단하는 off-by-one 이었다).
+fn reconnect_exhausted(attempts: u32) -> bool {
+    attempts >= MAX_RECONNECT_ATTEMPTS
+}
+
+/// 버그수정(Gate4) — edge(사용자가 그 워크스페이스로 명시적으로 돌아옴) 트리거가
+/// give-up 상태의 슬롯을 재개(리셋)해야 하는지. give-up 이 아닌 슬롯(또는 슬롯 없음)
+/// 은 리셋 대상이 아니다 — 이미 정상 진행 중인 backoff 스케줄을 edge 가 매번
+/// 초기화해버리면 정상적인 지수 증가가 의미를 잃는다.
+fn should_reset_given_up(slot: Option<&ReconnectSlot>, edge_now: bool) -> bool {
+    edge_now && slot.is_some_and(|s| s.given_up)
 }
 
 /// 자동 attach 워커 스레드 → 메인 루프 결과. 터널 핸들/포트를 채널로 전달한다
@@ -213,13 +251,16 @@ impl App {
             }
             let edge_now =
                 current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
-            let due = match self.auto_attach_reconnect.get(&anchor) {
-                Some(slot) => Instant::now() >= slot.next_attempt,
-                // 아직 실패한 적 없음(Reconnecting 진입 직후) — 1차 시도는 즉시.
-                None => true,
-            };
+            let existing_slot = self.auto_attach_reconnect.get(&anchor);
+            let due = reconnect_due(existing_slot, Instant::now());
             if !edge_now && !due {
                 continue;
+            }
+            // 버그수정(Gate4) — give-up 된 슬롯은 위 `reconnect_due` 가 항상 false 를
+            // 반환하므로 여기 도달했다는 건 edge_now 가 true 라는 뜻. 사용자가 명시적으로
+            // 돌아온 것이니 give-up 을 풀고 시도 횟수/backoff 를 리셋해 재개를 허용한다.
+            if should_reset_given_up(existing_slot, edge_now) {
+                self.auto_attach_reconnect.remove(&anchor);
             }
             // mapping 재조회 — anchor 워크스페이스 자체가 삭제됐거나 attach_mapping 이
             // 그 사이 바뀌었으면(Codex 크로스체크 지적) 이 재연결 대상은 소멸한 것 —
@@ -353,8 +394,11 @@ impl App {
             .entry(anchor)
             .or_insert_with(ReconnectSlot::new);
         slot.attempts += 1;
-        if slot.attempts > MAX_RECONNECT_ATTEMPTS {
-            self.auto_attach_reconnect.remove(&anchor);
+        if reconnect_exhausted(slot.attempts) {
+            // 버그수정(Gate4) — 슬롯을 지우지 않고 give-up 만 표시한다. 지워버리면
+            // 다음 프레임에 `reconnect_due(None, _)` 가 "아직 실패한 적 없음"으로
+            // 오해해 즉시 재시도를 재개해버린다(무한 give-up→즉시재개 루프).
+            slot.given_up = true;
             self.notify_reconnect_giveup(anchor);
             return;
         }
@@ -537,5 +581,60 @@ mod tests {
         assert_eq!(parse_loopback_port("user@host"), None);
         assert_eq!(parse_loopback_port("192.168.0.10:45123"), None);
         assert_eq!(parse_loopback_port("example.com:22"), None);
+    }
+
+    // 버그수정(Gate4) — give-up 이후 자동 재시도가 재개되지 않는지, 수동 재진입(edge)
+    // 일 때만 재개되는지의 회귀 테스트. 원래 슬롯을 지워 `None` 으로 표현했을 때
+    // "아직 실패한 적 없음"과 구분이 안 돼 give-up 직후 바로 다음 프레임에 자동으로
+    // 재시도가 재개되던 버그(MAX_RECONNECT_ATTEMPTS 를 무의미하게 만듦)를 고쳤다.
+
+    #[test]
+    fn reconnect_due_when_no_slot_yet() {
+        // Reconnecting 진입 직후, 아직 한 번도 실패한 적 없음 — 1차 시도는 즉시.
+        assert!(reconnect_due(None, Instant::now()));
+    }
+
+    #[test]
+    fn reconnect_due_respects_backoff_next_attempt() {
+        let mut slot = ReconnectSlot::new();
+        slot.next_attempt = Instant::now() + std::time::Duration::from_secs(10);
+        assert!(!reconnect_due(Some(&slot), Instant::now()));
+        slot.next_attempt = Instant::now() - std::time::Duration::from_secs(1);
+        assert!(reconnect_due(Some(&slot), Instant::now()));
+    }
+
+    #[test]
+    fn reconnect_due_is_false_when_given_up_even_past_next_attempt() {
+        // 핵심 회귀 테스트: give-up 된 슬롯은 next_attempt 시각이 이미 지났어도
+        // 자동 재시도 대상이 아니다 — 그렇지 않으면 give-up 직후 바로 다음 프레임에
+        // 자동으로 재시도가 재개돼 MAX_RECONNECT_ATTEMPTS 상한이 무의미해진다.
+        let mut slot = ReconnectSlot::new();
+        slot.given_up = true;
+        slot.next_attempt = Instant::now() - std::time::Duration::from_secs(1);
+        assert!(!reconnect_due(Some(&slot), Instant::now()));
+    }
+
+    #[test]
+    fn reconnect_exhausted_at_max_not_before() {
+        // off-by-one 회귀 테스트: 상한(MAX_RECONNECT_ATTEMPTS)에 도달한 순간(그 다음이
+        // 아니라) 바로 give-up 되어야 "20회 실패 후 중단" 스펙과 맞는다.
+        assert!(!reconnect_exhausted(MAX_RECONNECT_ATTEMPTS - 1));
+        assert!(reconnect_exhausted(MAX_RECONNECT_ATTEMPTS));
+        assert!(reconnect_exhausted(MAX_RECONNECT_ATTEMPTS + 1));
+    }
+
+    #[test]
+    fn given_up_slot_resets_only_on_edge_reactivation() {
+        let mut slot = ReconnectSlot::new();
+        slot.given_up = true;
+        // due 가 될 수 없는 상태이므로(위 테스트) 이 경로는 오직 edge_now 로만 온다.
+        assert!(!should_reset_given_up(Some(&slot), false));
+        assert!(should_reset_given_up(Some(&slot), true));
+        // 이미 정상(give-up 아님) 진행 중인 슬롯은 edge 가 와도 리셋 대상이 아니다 —
+        // 정상 지수 백오프 진행을 edge 가 매번 초기화해버리면 안 된다.
+        slot.given_up = false;
+        assert!(!should_reset_given_up(Some(&slot), true));
+        // 슬롯 자체가 없으면(아직 실패한 적 없음) 리셋할 대상도 없다.
+        assert!(!should_reset_given_up(None, true));
     }
 }
