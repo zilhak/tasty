@@ -826,6 +826,7 @@ impl App {
                 event_loop,
                 modal_active: false,
                 plugin_manager: self.plugin_manager.as_ref(),
+                stream_hub: &self.stream_hub,
             };
             modal.handle_event(event, &mut ctx)
         } else {
@@ -888,6 +889,7 @@ impl App {
                     event_loop,
                     modal_active,
                     plugin_manager: self.plugin_manager.as_ref(),
+                    stream_hub: &self.stream_hub,
                 };
                 // MainView.handle_event는 항상 ViewAction::None을 반환한다.
                 // PresetView (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로

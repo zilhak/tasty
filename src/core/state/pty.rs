@@ -71,16 +71,16 @@ impl CoreState {
     }
 
     /// [`Self::find_mesh_surface_info`]의 전체 메타데이터 버전 — attach mesh forward
-    /// 루프(`src/boot/headless_plugins.rs`)가 `surface.create` bootstrap 에 필요한
-    /// `file`/`display_name`까지 필요해 `EguiMeshSurface`(app 계층)로 직접 downcast
-    /// 한다. `tasty-model`의 `Surface::attach_mesh_info()`는 `(kind, plugin_id)`만
-    /// 노출하도록 최소화됐다(TODO 16 결정 #2 — crate 경계) — 여기는 `tasty` 본체
-    /// crate 내부라 `plugin_bridge::EguiMeshSurface` 참조가 경계를 넘지 않는다.
+    /// 루프가 `surface.create` bootstrap 에 필요한 `file`/`display_name`까지 필요해
+    /// `EguiMeshSurface`(app 계층)로 직접 downcast 한다. `tasty-model`의
+    /// `Surface::attach_mesh_info()`는 `(kind, plugin_id)`만 노출하도록 최소화됐다
+    /// (TODO 16 결정 #2 — crate 경계) — 여기는 `tasty` 본체 crate 내부라
+    /// `plugin_bridge::EguiMeshSurface` 참조가 경계를 넘지 않는다.
     ///
-    /// 현재 소비처는 headless-as-attach-서버 forward 루프뿐이라(gui-as-attach-서버는
-    /// `.claude-workspace/todo/24-attach-gui-server-mesh-forward.md`로 후속 이관)
-    /// gui 빌드에선 아직 미사용 — `-D dead-code`를 gui 한정 침묵한다.
-    #[cfg_attr(feature = "gui", allow(dead_code))]
+    /// 소비처: headless-as-attach-서버 forward 루프(`src/boot/headless_plugins.rs`)와
+    /// gui-as-attach-서버 forward 훅(`src/view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`,
+    /// TODO 24) 둘 다 — 로컬에서 한 번도 렌더되지 않은 mesh surface 를 attach 구독이
+    /// 가리킬 때 `surface.create` bootstrap 에 필요한 전체 메타데이터를 공급한다.
     pub(crate) fn find_egui_mesh_surface(
         &self,
         surface_id: u32,

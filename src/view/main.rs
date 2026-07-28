@@ -417,7 +417,7 @@ impl View for MainView {
                 self.handle_dropped_file(path);
             }
             WindowEvent::RedrawRequested => {
-                self.handle_redraw(ctx.event_loop, ctx.plugin_manager);
+                self.handle_redraw(ctx.event_loop, ctx.plugin_manager, ctx.stream_hub);
             }
             _ => {}
         }

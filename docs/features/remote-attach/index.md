@@ -25,7 +25,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 
 - **surface attach**: 단일 터미널 surface 를 mirror. 한 연결 = 한 터미널.
 - **workspace attach**: 워크스페이스를 점유하면 그 안 **모든 터미널 surface 를 트리째 mirror**(분할 방향/비율 포함)한다. **bundled egui-mesh surface**(markdown/image/mesh_demo — bundled 화이트리스트에 등록된 kind 한정)는 **mesh mirror** 로 실제 콘텐츠가 보이고 클릭/타이핑까지 원격 plugin 에 도달한다(인터랙티브). 그 외 비-터미널 surface(explorer 등, 화이트리스트 밖 kind 포함)는 여전히 mirror 불가라 placeholder 로 숨긴다. workspace lock 은 멤버 터미널 전부를 surface lock 에도 등록하므로, 멤버가 이미 다른 client 에 점유돼 있으면 workspace attach 를 **거부**(부분 점유 충돌 방지).
-  - **mesh mirror 범위는 headless-as-attach-서버 한정이다.** 서버가 GUI 인스턴스(창 보유)면 로컬 창의 자체 redraw 가 이미 그 plugin 을 구동 중이라, attach forward 가 이를 피기백하려면 별도 geometry 권위 조정이 필요해 의도적으로 범위 밖으로 남겼다 — [dev-guide/egui-mesh-channel "attach mesh mirror"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로) 참고.
+  - **mesh 프레임 forward 는 서버가 headless 든 GUI 든 동작한다.** GUI 가 서버(창 보유)인 경우 로컬 창의 자체 redraw 가 이미 그 plugin 을 구동 중이므로, attach forward 는 그 결과(이미 만들어진 mesh 프레임)를 옆에서 읽어 client 에 중계할 뿐 별도 geometry 권위를 만들지 않는다(로컬 redraw 가 여전히 권위) — [dev-guide/attach-behavior "mesh mirror 채널"](../../dev-guide/attach-behavior.md#mesh-mirror-채널) 참고. 단, attach client 의 클릭/타이핑을 로컬 plugin 에 되먹이는 입력 역방향 forward 는 서버가 headless 일 때만 배선돼 있다 — GUI 가 서버면 mesh 콘텐츠는 보이지만 아직 인터랙티브하지 않다(후속 작업).
   - **placeholder 로 남는 비-터미널 surface 의 mirror 불가는 기술적 미구현이지 보안상 의도적 배제가 아니다.** attach 로 나가는 콘텐츠 전체는 이미 SSH+loopback 연결 경계 신뢰 모델([ADR-0004](../../adr/0004-ipc-transport-tcp.md), [attach-behavior "IPC 표면"](../../dev-guide/attach-behavior.md#ipc-표면-attach))에 위임돼 있다 — mesh mirror 가 bundled 화이트리스트 밖 kind 나 서드파티 plugin 으로 확장되더라도, 콘텐츠 종류가 다르다는 이유로 별도 권한 게이트를 새로 만들 근거는 없다([dev-guide/plugin-permissions](../../dev-guide/plugin-permissions.md) 참고).
 
 ### 화면 동기화

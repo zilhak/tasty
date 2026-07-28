@@ -39,6 +39,8 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
+use crate::adapters::production::stream_hub::{PushResult, StreamHub};
+use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
@@ -444,6 +446,150 @@ impl MainView {
                 need_full_textures: true,
             };
             mgr.send_surface_set_context(plugin_id, &params);
+        }
+    }
+
+    /// attach mesh mirror(TODO 18/19) 구독자에게 로컬 redraw 가 만든 `EguiMeshFrame` 을
+    /// 그대로 중계한다(TODO 24 — GUI가 attach 서버인 경우).
+    ///
+    /// [`forward_egui_mesh_context`]가 화면에 보이는 surface 의 `set_context` 를 매 프레임
+    /// 권위 있게 구동하므로(TODO 18 결정 #4), 이 함수는 별도 `set_context` 를 보내지
+    /// 않고 **이미 만들어진 frame 바이트를 읽어 StreamHub 로 relay** 할 뿐이다 — 로컬
+    /// authoritative loop 와 경합하지 않는다. 예외는 두 가지(TODO 24 항목 2 결정):
+    ///
+    /// - attach 구독 대상이 로컬에서 **한 번도 렌더되지 않은** surface(다른 탭/워크스페이스에
+    ///   있어 authoritative loop 의 대상 목록에 전혀 포함되지 않음)면 plugin 이 그
+    ///   surface_id 자체를 모른다 — 경합할 로컬 루프가 없으므로 이 함수가 최소
+    ///   bootstrap(`surface.create` + `set_context`)을 대신 1회 보낸다.
+    /// - 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이 들어와 전체 텍스처가
+    ///   필요하면, 직접 보내는 대신 기존 `pending_full`(비가시 full 재전송) 메커니즘에
+    ///   위임한다 — 다음 tick 의 authoritative/비가시 루프가 `need_full_textures` 를
+    ///   실어 보낸다. 이번 tick 은 relay 를 건너뛴다: 캐시된 frame 이 델타뿐일 수 있어
+    ///   새 구독자에게 그대로 흘리면 텍스처 상태가 깨진다.
+    pub(super) fn forward_mesh_to_attach_subscribers(
+        &mut self,
+        mgr: &PluginManager,
+        stream_hub: &StreamHub,
+    ) {
+        for sid in self.core_state.mesh_mirror.active_surface_ids() {
+            let Some(ctx) = self.core_state.mesh_mirror.get(sid) else {
+                continue;
+            };
+            let client_id = ctx.client_id;
+            let width_px = ctx.width_px;
+            let height_px = ctx.height_px;
+            let pixels_per_point = ctx.pixels_per_point;
+            let theme = ctx.theme.clone();
+            let focused = ctx.focused;
+
+            let need_full = self.core_state.mesh_mirror.take_need_full_textures(sid);
+            // geometry/theme/focus 변경 자체에 대한 실제 set_context 재송신은 로컬
+            // authoritative loop(가시 상태) 또는 아래 bootstrap/pending_full 경로(비가시
+            // 상태)가 각자 담당한다 — 여기선 다음 tick에 계속 dirty=true 로 안 남게
+            // drain 만 한다.
+            let _ = self.core_state.mesh_mirror.take_dirty(sid);
+
+            if mgr.egui_mesh_frame(sid).is_none() {
+                let Some(ms) = self.core_state.find_egui_mesh_surface(sid) else {
+                    // layout 에서도 사라진 surface(닫힘) — 구독을 정리해 매 프레임
+                    // 재시도하는 낭비를 막는다.
+                    self.core_state.mesh_mirror.remove(sid);
+                    continue;
+                };
+                let plugin_id = ms.plugin_id.clone();
+                mgr.send_egui_mesh_surface_create(
+                    &plugin_id,
+                    sid,
+                    ms.kind_static,
+                    ms.file.as_deref(),
+                    &ms.display_name,
+                );
+                mgr.send_surface_set_context(
+                    &plugin_id,
+                    &SurfaceSetContextParams {
+                        surface_id: sid,
+                        width_px,
+                        height_px,
+                        pixels_per_point,
+                        raw_input: RawInputWire {
+                            time: None,
+                            focused,
+                            modifiers: ModifiersWire::default(),
+                            events: Vec::new(),
+                        },
+                        theme: theme.clone(),
+                        need_full_textures: true,
+                    },
+                );
+
+                // 로컬 authoritative loop 가 나중에 이 surface 를 그리게 되거나, 다음
+                // 명시 재전송이 pending_full 경로를 타야 할 때를 위해 최소 forward
+                // 상태를 seed 해 둔다(그 경로는 last_geom/plugin_id 를 요구한다).
+                let st = self.egui_mesh.entry(sid).or_default();
+                st.plugin_id = Some(plugin_id);
+                st.last_geom = Some((width_px, height_px, pixels_per_point.to_bits()));
+                st.last_theme = theme;
+                st.last_focused = Some(focused);
+                st.bootstrap_sent = true;
+            } else if need_full {
+                self.egui_mesh.entry(sid).or_default().set_pending_full();
+                self.base.dirty = true;
+                continue;
+            }
+
+            let Some(frame) = mgr.egui_mesh_frame(sid) else {
+                continue;
+            };
+            if !self
+                .core_state
+                .mesh_mirror
+                .should_forward_generation(sid, frame.generation)
+            {
+                continue;
+            }
+            let Some(mem) = mgr.plugin_buffer(&frame.plugin_id, frame.buffer_id) else {
+                continue;
+            };
+            // SAFETY: `headless_plugins::forward_mesh_frames` 와 동일한 계약 — plugin
+            // footer generation 을 Acquire 로 재확인해 writer 와의 tearing 을 피한다.
+            let raw = unsafe { mem.as_slice() };
+            if raw.len() < tasty_shm::footer::SIZE {
+                continue;
+            }
+            let gen_now =
+                unsafe { tasty_shm::footer::load(raw, std::sync::atomic::Ordering::Acquire) };
+            if gen_now != frame.generation {
+                continue;
+            }
+            let user = tasty_shm::footer::user_slice(raw);
+            let byte_len = frame.byte_len as usize;
+            let bytes = if byte_len > 0 && byte_len <= user.len() {
+                &user[..byte_len]
+            } else {
+                user
+            };
+
+            let Some(frame_id) = self
+                .core_state
+                .mesh_mirror
+                .mark_forwarded(sid, frame.generation)
+            else {
+                continue;
+            };
+            for payload in tasty_ipc::mesh_stream::split_mesh_frame(
+                sid,
+                frame_id,
+                frame.generation,
+                frame.frame_seq,
+                frame.full_textures,
+                bytes,
+            ) {
+                let result =
+                    stream_hub.push(client_id, StreamFrame::new(StreamTag::MeshData, payload));
+                if matches!(result, PushResult::Unknown | PushResult::Disconnected) {
+                    break;
+                }
+            }
         }
     }
 }

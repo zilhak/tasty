@@ -8,15 +8,12 @@
 //!
 //! `apply_attached_mesh_context`/`apply_attached_mesh_full_resend`(둘 다 gui/headless
 //! 공용, `attach_runtime.rs`)를 통해 구독 상태(upsert/dirty/need_full_textures)는
-//! gui 빌드에서도 갱신된다 — 하지만 실제 forward 루프(`get`/`take_dirty`/
+//! gui/headless 양쪽에서 갱신된다. 실제 forward 루프(`get`/`take_dirty`/
 //! `should_forward_generation`/`mark_forwarded`/`active_surface_ids`/`remove` 소비)는
-//! 현재 headless-as-attach-서버 시나리오(`src/boot/headless_plugins.rs`)에만 배선했다.
-//! gui 가 attach 서버인 경우(로컬 창이 이미 그 mesh surface 를 렌더 중일 때의 geometry
-//! 권위 조정까지 필요해 범위가 커짐 — TODO 18 결정 #4)는 의도적으로 범위 밖으로 남기고
-//! `.claude-workspace/todo/24-attach-gui-server-mesh-forward.md`에 후속 작업으로 기록했다.
-//! 그 결과 gui 빌드에서는 이 필드/메서드들이 아직 소비되지 않아 `-D dead-code`를
-//! feature-gate 로 침묵한다(headless 빌드는 정상적으로 전부 소비 — lint 유효).
-#![cfg_attr(feature = "gui", allow(dead_code))]
+//! 두 시나리오 각각의 계층이 담당한다: headless-as-attach-서버는
+//! `src/boot/headless_plugins.rs`(`PluginManager`를 직접 구동), gui-as-attach-서버는
+//! `src/view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`(로컬 redraw 가
+//! 이미 만든 frame 을 relay, TODO 24)가 소비한다.
 
 use std::collections::HashMap;
 
@@ -132,6 +129,9 @@ impl MeshMirrorRegistry {
 
     /// 이 surface 가 지금 이 client 에 의해 구독 중인지 확인(holder 검증에 이미
     /// `attach` 레지스트리를 썼다는 전제 하에, 여기선 "실제로 등록돼 있는가"만 본다).
+    /// 아직 소비처가 없다 — forward 루프(headless/gui 공통)는 지금까지 `client_id`
+    /// 를 `get()`으로 직접 읽는 것만으로 충분했다.
+    #[cfg_attr(feature = "gui", allow(dead_code))]
     pub(crate) fn is_subscribed_by(&self, surface_id: u32, client_id: AttachClientId) -> bool {
         self.contexts
             .get(&surface_id)
@@ -200,7 +200,12 @@ impl MeshMirrorRegistry {
     }
 
     /// forward 루프 전용 — 누적된 입력 이벤트를 비우며 가져간다(`take_dirty`/
-    /// `take_need_full_textures`와 동형, 순서 독립적으로 분리).
+    /// `take_need_full_textures`와 동형, 순서 독립적으로 분리). headless-as-attach-서버
+    /// (`headless_plugins.rs`)가 소비한다. gui-as-attach-서버(TODO 24)는 mesh 바이트
+    /// forward(로컬 redraw 가 이미 만든 frame relay)만 구현했고, attach client 의
+    /// 입력을 로컬 plugin 에 되먹이는 배선은 아직 없다 — TODO 24 의 명시 범위(바이트
+    /// forward + bootstrap 결정)에는 포함되지 않아 별도 후속 작업으로 남는다.
+    #[cfg_attr(feature = "gui", allow(dead_code))]
     pub(crate) fn take_pending_events(&mut self, surface_id: u32) -> Vec<RawInputEventWire> {
         self.contexts
             .get_mut(&surface_id)

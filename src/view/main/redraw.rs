@@ -10,6 +10,7 @@ impl MainView {
         &mut self,
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
+        stream_hub: &crate::adapters::production::stream_hub::StreamHub,
     ) {
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
@@ -70,6 +71,10 @@ impl MainView {
             // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
             if let Some(mgr) = plugin_manager {
                 self.forward_egui_mesh_context(mgr);
+                // GUI가 attach 서버인 경우의 mesh mirror forward(TODO 24) — 로컬 redraw가
+                // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
+                // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
+                self.forward_mesh_to_attach_subscribers(mgr, stream_hub);
             }
             // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격이라
             // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).

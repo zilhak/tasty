@@ -77,6 +77,9 @@ pub(crate) struct ViewCtx<'a> {
     /// 현재 active plugin manager. MainView 가 frame prepare 시 plugin canvas의
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
+    /// attach 스트림 허브. MainView 가 로컬 redraw 로 만든 egui-mesh frame 을 attach
+    /// mesh mirror 구독자에게 중계할 때 쓴다(TODO 24) — Arc 기반 clone 이라 참조만 전달.
+    pub(crate) stream_hub: &'a crate::adapters::production::stream_hub::StreamHub,
 }
 
 pub(crate) struct ViewRegistry {

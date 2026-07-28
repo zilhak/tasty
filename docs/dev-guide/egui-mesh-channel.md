@@ -285,8 +285,8 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
 [attach-behavior.md "mesh mirror 채널"](attach-behavior.md#mesh-mirror-채널) 에 있다.
 여기서는 이 소비자가 위 채널의 각 구성 요소를 어떻게 재사용/대체하는지만 정리한다.
 
-- **서버측: 헤드리스 `PluginManager` 부트스트랩 (기존 채널 그대로 재사용)** — attach 서버는
-  현재 헤드리스 한정(`boot::run_headless`)이라, 위 표의 "host→plugin set_context + 입력
+- **서버측(헤드리스): `PluginManager` 직접 구동 (기존 채널 그대로 재사용)** — attach 서버가
+  헤드리스(`boot::run_headless`)일 때는, 위 표의 "host→plugin set_context + 입력
   forward"/"host 합성" 두 축 중 **입력 forward 축만** 대체되고 **plugin 프로세스 구동
   자체는 기존 `PluginManager`/`crates/tasty-host-plugin` 를 그대로 쓴다** — attach 전용
   plugin 매니저가 별도로 있는 게 아니다. `src/boot/headless_plugins.rs::forward_mesh_frames`
@@ -295,6 +295,23 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   `PaintFrame` 을 그대로 받아 `StreamTag::MeshData` 로 client 에 재중계한다 — **host 합성
   (`egui_wgpu::Renderer`, TextureId 격리, frame_seq 체인 검증)은 여기서 전혀 일어나지
   않는다**(서버는 화면이 없다). 원본 바이트를 그대로 client 에 넘길 뿐이다.
+- **서버측(GUI): 로컬 redraw 의 결과를 옆에서 relay** — attach 서버가 GUI(창 보유)일 때는
+  그 mesh surface 의 `set_context` 를 이미 로컬 창의 매 프레임 redraw
+  (`MainView::forward_egui_mesh_context`)가 권위 있게 구동 중이다. 헤드리스처럼
+  `PluginManager` 를 별도로 구동하면 이 로컬 authoritative loop 와 경합하므로,
+  `MainView::forward_mesh_to_attach_subscribers`(`src/view/main/egui_mesh.rs`, TODO 24)는
+  **별도 `set_context` 를 보내지 않고 이미 만들어진 `EguiMeshFrame` 바이트만 읽어
+  `StreamTag::MeshData` 로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도
+  렌더되지 않는 surface(다른 탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이
+  그 surface_id 자체를 모름)인 경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이
+  `find_egui_mesh_surface`(`src/core/state/pty.rs`)로 메타데이터를 조회해 최소
+  `surface.create` + `set_context` bootstrap 을 1회 대신 보낸다. 이미 렌더 중인 surface 에
+  새 구독(또는 명시 재전송 요청)이 들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬
+  `MeshForwardState::pending_full` 에 위임해 다음 tick 의 authoritative loop 가
+  `need_full_textures` 를 실어 보내게 한다(그 사이엔 캐시된 델타뿐일 수 있는 frame 을 새
+  구독자에 흘리지 않고 건너뛴다 — 텍스처 손상 방지). attach client 의 입력을 로컬 plugin 에
+  되먹이는 축(`MeshMirrorRegistry::take_pending_events`)은 아직 이 경로에 배선되지 않았다 —
+  gui-as-server 에서 mesh 콘텐츠는 보이지만 아직 인터랙티브하지 않다.
 - **client측: host 합성 축의 재구현** — client 가 원본 `PaintFrame` 바이트를 받아 **자기
   화면에서** 위 "host 합성" 단계(decode → 전용 `egui_wgpu::Renderer` → surface rect 합성)를
   그대로 재현한다. `decode_mesh_into_target` 은 이 재사용을 위해 SharedBuffer 파싱 부분과
@@ -319,10 +336,6 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   `Surface::attach_mesh_info()` + 위 "개방 정책" 화이트리스트(`is_egui_mesh_allowed`)로 재검증한
   결과만 `role: "mesh"` 로 내려보낸다 — 화이트리스트 밖 kind 는 attach 에서도 `role:
   "placeholder"` 로 남아 mirror 렌더 대상이 아니다.
-- **gui-as-server 미지원**: 헤드리스만 위 서버측 소비를 배선했다 — gui 인스턴스가 attach
-  서버가 되는 경우 로컬 `PluginManager` 소유권과의 공존 방식이 아직 설계돼 있지 않다(TODO
-  24 로 분리 예정).
-
 ## plugin 작성
 
 `tasty-plugin.toml` 의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하고,
