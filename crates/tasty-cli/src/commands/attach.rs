@@ -16,7 +16,8 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -499,24 +500,123 @@ enum RawEvent {
     ServerRecvErr,
 }
 
+/// raw 브리지의 stdin 라우팅 슬롯 — 현재 활성 세션의 sender. **쓰기는
+/// [`install_sender`] 만 수행한다**(TODO36 방향③ 불변식) — 리더 스레드는 읽기만
+/// 해서 ABA 경쟁을 피한다: 죽은 sender 로의 송신이 실패했다고 리더가 슬롯을
+/// 되돌리면, 그 사이 이미 설치된 새 세션의 sender 를 지워버릴 수 있다.
+type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
+
+/// 슬롯이 비어있는(세션 전환 중) 동안 발생한 진짜 stdin EOF/에러를 기억해두는
+/// latch. 리더 스레드가 세우고, [`install_sender`] 가 다음 세션 설치 시 확인해
+/// 즉시 `RawEvent::StdinEof` 를 전달한다 — 서버 단절→재연결 전환과 진짜 stdin
+/// EOF 가 겹치는 경쟁 대응(그렇지 않으면 EOF 통지가 영영 유실돼, 다음 세션이
+/// 이미 닫힌 stdin 을 무한정 기다리게 될 수 있다).
+type StdinEofLatch = Arc<AtomicBool>;
+
+/// 프로세스 생애주기 동안 단 하나만 존재하는 stdin 리더 스레드를 시작한다
+/// (TODO36 방향③) — `run_raw_bridge` 가 재연결마다 새 스레드를 스폰하던 기존
+/// 구조를 대체한다. stdin 을 읽는 스레드가 항상 정확히 1 개이므로, 좀비 스레드가
+/// 새 스레드와 전역 `std::io::Stdin`(내부 `Mutex<BufReader<..>>`)을 두고 경쟁해
+/// 재연결 직후 입력을 훔쳐가는 문제가 구조적으로 사라진다. 반환된 슬롯에 각 raw
+/// 세션이 [`install_sender`] 로 자신의 sender 를 설치해 라우팅 대상을 바꾼다.
+///
+/// 별도 종료 신호 없이 프로세스 종료에 정리를 맡긴다 — 기존 heartbeat 스레드와
+/// 동일한 전제(528행 근방 주석 참고, OS 가 프로세스 종료 시 blocking syscall 여부와
+/// 무관하게 모든 스레드를 회수한다)라 코드베이스 관행과 일치한다.
+fn spawn_stdin_reader() -> (StdinSlot, StdinEofLatch) {
+    let slot: StdinSlot = Arc::new(Mutex::new(None));
+    let eof_latch: StdinEofLatch = Arc::new(AtomicBool::new(false));
+    {
+        let slot = slot.clone();
+        let eof_latch = eof_latch.clone();
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let mut stdin = std::io::stdin();
+            loop {
+                match stdin.read(&mut buf) {
+                    Ok(0) => {
+                        route_stdin_eof(&slot, &eof_latch);
+                        break; // 진짜 EOF — 다시 읽어도 항상 0 이므로 더 읽지 않는다.
+                    }
+                    Ok(n) => route_stdin_chunk(&slot, &buf[..n]),
+                    Err(_) => {
+                        route_stdin_eof(&slot, &eof_latch);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    (slot, eof_latch)
+}
+
+/// 프로세스 전역 stdin 라우팅 슬롯 — 최초 호출 시 1 회 [`spawn_stdin_reader`] 로
+/// 초기화된다. 이후 모든 `run_raw_bridge` 호출(=재연결마다)은 이미 떠 있는 같은
+/// 리더 스레드의 슬롯에 자신의 sender 를 설치할 뿐, 새 스레드를 스폰하지 않는다.
+fn stdin_router() -> &'static (StdinSlot, StdinEofLatch) {
+    static ROUTER: OnceLock<(StdinSlot, StdinEofLatch)> = OnceLock::new();
+    ROUTER.get_or_init(spawn_stdin_reader)
+}
+
+/// stdin 에서 읽은 바이트를 현재 슬롯의 sender 로 라우팅한다. 슬롯이 비어있거나
+/// (세션 전환 사이) 이미 죽은 채널이면 이 청크만 조용히 버리고 계속 읽는다 —
+/// 오늘의 "송신 실패 시 스레드 종료" 와 달리, 리더가 항상 1 개만 존재해야 한다는
+/// 불변식을 지키기 위해 이 함수는 스레드를 종료시키지 않는다.
+///
+/// **불변식**: 이 함수는 `slot` 을 절대 쓰지 않는다(읽기만) — 위 [`StdinSlot`]
+/// 문서의 ABA 경쟁 방지 규칙 참고.
+fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
+    let sender = slot.lock().unwrap().clone();
+    if let Some(tx) = sender {
+        let _ = tx.send(RawEvent::Stdin(data.to_vec())); // 세션 전환 중 송신 실패는 버림 — 위 불변식 참고
+    }
+}
+
+/// stdin EOF/에러 통지를 현재 슬롯의 sender 로 라우팅한다. 활성 세션이 있어
+/// 전달에 성공하면 그걸로 끝. 슬롯이 비어있거나 전달에 실패하면(세션 전환 사이)
+/// [`StdinEofLatch`] 에 기억해뒀다가, 다음 세션이 [`install_sender`] 로 sender 를
+/// 설치하는 시점에 즉시 전달되게 한다. 위 [`route_stdin_chunk`] 와 동일한 이유로
+/// `slot` 은 쓰지 않는다.
+fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
+    let sender = slot.lock().unwrap().clone();
+    let delivered = match sender {
+        Some(tx) => tx.send(RawEvent::StdinEof).is_ok(),
+        None => false,
+    };
+    if !delivered {
+        eof_latch.store(true, Ordering::Release);
+    }
+}
+
+/// 새 raw 세션이 시작될 때 자신의 sender 를 슬롯에 설치한다 — `slot` 에 대한
+/// 유일한 쓰기 지점(위 [`StdinSlot`] 불변식). 설치 직전까지 [`StdinEofLatch`] 가
+/// 세워져 있었다면(슬롯이 비어있는 동안 진짜 stdin EOF 가 발생한 경우) 새로
+/// 설치한 sender 로 즉시 `RawEvent::StdinEof` 를 전달하고 latch 를 내린다.
+fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<RawEvent>) {
+    *slot.lock().unwrap() = Some(tx.clone());
+    if eof_latch.swap(false, Ordering::AcqRel) {
+        let _ = tx.send(RawEvent::StdinEof); // best-effort — 세션이 이미 끝났으면 무시.
+    }
+}
+
 /// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
 /// 단계 4 옵션(완전 raw TTY 설정은 추후) — 기본 passthrough.
 ///
-/// stdin 과 server 출력을 각각 별도 스레드로 분리해 하나의 `mpsc` 채널에 merge 한다
-/// (mirror-dump 와 동일 패턴). main 은 채널 `recv()` 에만 블록하므로 서버 단절을
+/// server 출력은 별도 스레드로 읽어 하나의 `mpsc` 채널에 merge 한다(mirror-dump
+/// 와 동일 패턴). main 은 채널 `recv()` 에만 블록하므로 서버 단절을
 /// `RawEvent::ServerRecvErr` 로 즉시 감지해 `AttachExit::Disconnected` 를 정상
 /// 반환할 수 있다 — `process::exit` 는 쓰지 않는다.
 ///
-/// stdin 스레드는 blocking `read()` 를 깨울 방법이 없어 종료 신호를 못 받는다 —
-/// 재연결 루프에서 이 함수가 재호출될 때마다 이전(좀비) stdin 스레드는 join 되지
-/// 않고 blocking read 에 갇힌 채 남는다. **이건 단순 메모리 낭비가 아니라 기능
-/// 리스크다**: 좀비 스레드와 새 스레드가 같은 프로세스의 같은 stdin fd(`std::io::Stdin`
-/// 내부 전역 `Mutex<BufReader<..>>`)를 두고 경쟁하므로, 재연결 직후 사용자 입력을
-/// 좀비 스레드가 먼저 읽어가 유실시킬 수 있다(좀비 스레드는 자신의 이미 drop 된
-/// 채널로 송신을 시도하다 실패해 조용히 종료 — 읽어버린 바이트는 어디에도 전달되지
-/// 않는다). 상세 위험 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
-/// 완전 non-blocking stdin(플랫폼별 poll/self-pipe/WaitForMultipleObjects)으로 좀비
-/// 스레드 자체를 없애는 근본 수정은 크로스플랫폼 복잡도가 커 이번 스코프에서 배제했다.
+/// stdin 은 이 함수가 직접 스레드를 스폰하지 않는다(TODO36 방향③) — 프로세스
+/// 생애주기 동안 [`stdin_router`] 가 1 회만 스폰한 리더 스레드가 있고, 이 함수는
+/// 매 호출(=매 재연결 세션)마다 [`install_sender`] 로 자신의 sender 를 그 리더의
+/// 라우팅 슬롯에 설치할 뿐이다. 재연결마다 새 stdin 스레드를 스폰하던 예전
+/// 구조는 이전 스레드가 종료 신호를 받을 방법이 없어 blocking read 에 갇힌 채
+/// 좀비로 남았고, 좀비와 새 스레드가 전역 stdin Mutex 를 두고 경쟁해 재연결
+/// 직후 입력이 비결정적으로 유실될 수 있었다(TODO23) — 리더가 항상 정확히 1 개인
+/// 지금은 이 경쟁 자체가 구조적으로 불가능하다. 남는 유실 창은 세션 전환의 아주
+/// 짧은 순간(이전 세션이 끝나 슬롯이 비거나 죽은 채널을 가리키는 동안 들어온
+/// 입력)뿐이다. 상세 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
 fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
@@ -549,38 +649,14 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
 
     let (tx, rx) = mpsc::channel::<RawEvent>();
 
-    // stdin thread: blocking read → 채널. EOF/에러 시 1 회 통지 후 스레드 종료.
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            let mut stdin = std::io::stdin();
-            loop {
-                match stdin.read(&mut buf) {
-                    Ok(0) => {
-                        // 채널 receiver 가 이미 drop 된 정상 종료 케이스(메인 루프가
-                        // 다른 이벤트로 먼저 return) — 송신 실패 무시.
-                        let _ = tx.send(RawEvent::StdinEof);
-                        break;
-                    }
-                    Ok(n) => {
-                        if tx.send(RawEvent::Stdin(buf[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        // 상동 — rx 가 이미 drop 된 정상 종료 경합, 송신 실패 무시.
-                        let _ = tx.send(RawEvent::StdinEof);
-                        break;
-                    }
-                }
-            }
-        });
-    }
+    // stdin 라우팅: 프로세스 전역 리더 스레드(있으면 재사용, 없으면 최초 1 회
+    // 스폰)의 슬롯에 이 세션의 sender 를 설치한다. 새 스레드는 스폰하지 않는다.
+    let (slot, eof_latch) = stdin_router();
+    install_sender(slot, eof_latch, tx.clone());
 
     // server reader thread: 서버 출력 → 채널. `conn.recv()` 가 `Err` 면 명시적으로
     // `ServerRecvErr` 를 보낸다(채널 drop 감지에 기대지 않음 — tx clone 이 stdin
-    // 스레드에도 남아있어 drop 만으로는 신호가 안 된다).
+    // 라우팅 슬롯에도 남아있어 drop 만으로는 신호가 안 된다).
     {
         let mut conn = conn;
         let tx = tx.clone();
@@ -603,7 +679,7 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
             }
         });
     }
-    drop(tx); // 남은 건 두 스레드가 쥔 clone 뿐 — 원본은 더 필요 없음.
+    drop(tx); // 남은 건 stdin 슬롯과 server 스레드가 쥔 clone 뿐 — 원본은 더 필요 없음.
 
     // main: 채널 이벤트를 기다린다(더 이상 stdin syscall 에 직접 블록하지 않음).
     raw_bridge_main_loop(rx, writer)
@@ -757,12 +833,16 @@ mod tests {
 mod raw_bridge_tests {
     use std::io::Read;
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
 
     use tasty_ipc::stream::{StreamFrame, StreamTag};
 
-    use super::{AttachExit, RawEvent, raw_bridge_main_loop};
+    use super::{
+        AttachExit, RawEvent, StdinEofLatch, StdinSlot, install_sender, raw_bridge_main_loop,
+        route_stdin_chunk, route_stdin_eof,
+    };
 
     /// writer.lock() 이 실제로 잠글 대상이 필요할 뿐 내용은 검사하지 않으므로,
     /// loopback 소켓 한쪽을 열어 반대쪽에서 계속 읽어 버림으로써 send-buffer 가
@@ -859,5 +939,69 @@ mod raw_bridge_tests {
 
         let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
         assert!(matches!(exit, AttachExit::Disconnected));
+    }
+
+    // --- TODO36 방향③: 단일 영속 stdin 리더의 슬롯 라우팅 회귀 테스트 ---
+    // 실제 stdin 을 못 쓰므로 `route_stdin_chunk`/`route_stdin_eof`/`install_sender`
+    // 를 직접 호출해 슬롯 교체·ABA 경쟁·EOF latch 를 검증한다.
+
+    /// 슬롯이 비어있는 동안 들어온 입력은 조용히 버려지고, 이후 sender 설치 후
+    /// 들어온 입력은 정상 전달된다 — 세션 전환 사이의 유실 창이 "그 청크만 버림"
+    /// 으로 국한되고 리더 자체는 계속 살아있음을 보여준다.
+    #[test]
+    fn route_stdin_chunk_drops_while_slot_empty_then_delivers_after_install() {
+        let slot: StdinSlot = Arc::new(Mutex::new(None));
+
+        route_stdin_chunk(&slot, b"lost during gap"); // slot 이 None — 조용히 버려짐.
+
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        *slot.lock().unwrap() = Some(tx);
+        route_stdin_chunk(&slot, b"delivered after reconnect");
+
+        match rx.recv().unwrap() {
+            RawEvent::Stdin(data) => assert_eq!(data, b"delivered after reconnect"),
+            _ => panic!("expected Stdin event"),
+        }
+    }
+
+    /// ABA 회귀: 죽은(rx 가 이미 drop 된) sender 로의 송신 실패를 처리하는 동안
+    /// `route_stdin_chunk` 가 `slot` 을 절대 쓰지 않으므로, 그 사이 이미 설치된
+    /// 새 sender 가 지워지지 않는다.
+    #[test]
+    fn stale_send_failure_does_not_clobber_freshly_installed_sender() {
+        let slot: StdinSlot = Arc::new(Mutex::new(None));
+        let (stale_tx, stale_rx) = mpsc::channel::<RawEvent>();
+        *slot.lock().unwrap() = Some(stale_tx);
+        drop(stale_rx); // 이전 세션 종료 — 이 sender 로의 send 는 이제 Err.
+
+        // 죽은 sender 로의 송신 실패 — slot 을 건드리지 않아야 한다(위 불변식).
+        route_stdin_chunk(&slot, b"lost - no live receiver");
+
+        let (fresh_tx, fresh_rx) = mpsc::channel::<RawEvent>();
+        *slot.lock().unwrap() = Some(fresh_tx); // 새 세션이 install_sender 로 교체했다고 가정.
+
+        route_stdin_chunk(&slot, b"should reach fresh session");
+        match fresh_rx.recv().unwrap() {
+            RawEvent::Stdin(data) => assert_eq!(data, b"should reach fresh session"),
+            _ => panic!("expected Stdin event"),
+        }
+    }
+
+    /// stdin EOF 가 슬롯이 `None` 인 동안(세션 전환 사이) 발생해도 latch 에
+    /// 기억해뒀다가, 이후 `install_sender` 로 새 sender 가 설치되는 시점에 즉시
+    /// `StdinEof` 로 전달된다.
+    #[test]
+    fn stdin_eof_during_gap_is_latched_and_delivered_on_next_install() {
+        let slot: StdinSlot = Arc::new(Mutex::new(None));
+        let eof_latch: StdinEofLatch = Arc::new(AtomicBool::new(false));
+
+        route_stdin_eof(&slot, &eof_latch); // slot 이 None 인 동안 EOF 발생.
+        assert!(eof_latch.load(Ordering::Acquire));
+
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        install_sender(&slot, &eof_latch, tx); // 새 세션 설치 — latch 된 EOF 를 즉시 전달해야 함.
+
+        assert!(matches!(rx.recv().unwrap(), RawEvent::StdinEof));
+        assert!(!eof_latch.load(Ordering::Acquire)); // 전달 후 latch 는 내려간다.
     }
 }
