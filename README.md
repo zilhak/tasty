@@ -4,16 +4,16 @@
 
 크로스 플랫폼 GPU 가속 터미널 에뮬레이터. AI 코딩 에이전트에 특화된 멀티에이전트 오케스트레이션 + 헤드리스 운용 + focus-independent IPC/CLI 동작 표면을 제공한다.
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.10-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#라이선스)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
-[![Workspace](https://img.shields.io/badge/workspace-34%20crates-orange)](crates/)
+[![Workspace](https://img.shields.io/badge/workspace-43%20crates-orange)](crates/)
 
 ## 핵심 가치
 
 - **크로스 플랫폼** — Windows / macOS / Linux 모두 네이티브 (winit + wgpu).
 - **GPU 가속 렌더** — 셀 기반 셰이더, 10+ surface 환경에서도 prepare/draw 안정.
-- **Hexagonal 아키텍처** — model + ports + adapters + view + host_api 분리, 34-crate workspace.
+- **Hexagonal 아키텍처** — model + ports + adapters + view + host_api 분리, 43-crate workspace.
 - **AI 에이전트 first-class** — IPC 와 CLI 의 모든 동작 표면이 focus-independent ID 기반. 사용자 행동과 에이전트 행동이 완전히 분리됨 (debug 격리).
 
 ## 설치
@@ -48,14 +48,17 @@ cargo build --release
 
 ```
 src/
-├─ model/        — 도메인 모델 (surface / pane / workspace 트리, 상태 머신)
+├─ core/         — 도메인 본체 (workspace/pane/tab/surface 상태, attach, registries) — GUI-free
 ├─ ports/        — 의존성 역전 인터페이스 (PtySpawner, ClipboardProvider 등)
-├─ adapters/     — 외부 시스템 어댑터 (ipc, clipboard, plugin, production/test)
+├─ adapters/     — 외부 시스템 어댑터 (ipc, clipboard, plugin_bridge 등 ports 구현)
 ├─ view/         — egui UI + 커스텀 GPU 셰이더
+├─ app/          — App(winit ApplicationHandler) 조립 + 이벤트/부팅 배선
 ├─ host_api/     — IPC handler + CLI command 라우터
-└─ engine/       — surface registry + layout persistence
+├─ engine/       — surface registry / command index / layout persistence (전환기 컨테이너)
+├─ model.rs      — crates/tasty-model re-export (도메인 모델 실체는 crate 로 이관됨)
+└─ boot/, gfx/, state/, store/, file/, intent/, plugin_bridge/, hook_handler/, webhook/, db/, clipboard/, platform/ 등
 
-crates/          — 34 개 도메인 크레이트 (tasty-agent / tasty-ipc / tasty-memory / ...)
+crates/          — 43 개 도메인 크레이트 (tasty-agent / tasty-ipc / tasty-memory / ...)
 ```
 
 자세한 구조: [`docs/architecture/`](docs/architecture/).
@@ -72,8 +75,8 @@ Tasty 의 모든 API 는 두 표면을 엄격히 분리한다.
 ## 문서
 
 - 인덱스: [`docs/index.md`](docs/index.md)
-- 사용자 가이드: [`docs/installation.md`](docs/installation.md), [`docs/features.md`](docs/features.md)
-- 에이전트 가이드: [`docs/agent-guide/`](docs/agent-guide/) (api-reference / blackboard / plan / cache / telemetry / agent / output-parsers)
+- 사용자 가이드: [`docs/installation.md`](docs/installation.md), [`docs/features/`](docs/features/index.md)
+- 에이전트 가이드: [`docs/reference/`](docs/reference/index.md) (api / event-catalog / output-parsers / environments / plan.schema.json)
 - 개발 가이드: [`docs/dev-guide/`](docs/dev-guide/)
 - 안정성 정책: [`docs/dev-guide/api-conventions.md`](docs/dev-guide/api-conventions.md) 의 "안정성 정책" 절
 
