@@ -518,15 +518,15 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
   못 부르고 같은 위젯·토큰으로 미러(settings_handler 서브탭 specimen 전례). rfd 폴더 피커는
   specimen 에서 no-op.
 
-## File picker (Overlays) — gallery-first 1단계, 본체 미배선
+## File picker (Overlays) — gallery-first 반영 완료, 본체 배선됨
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
 `catalog/components/file_picker.rs`. changelog: `changelog/2026-07-15-file-picker.md`.
 design-request: `design-request/07151555-design-request-remote-file-picker.md`. **본체
-(egui `PopupDef`) 미구현** — 원격 디렉토리 탐색 채널 아키텍처가 아직 결정되지 않아 이번
-반영은 갤러리 specimen 까지만([gallery-first](../../dev-guide/gallery-first.md) 1단계).
-본체 배선은 별도 후속 작업(그 때 이 표의 "본체 함수" 열을 채운다).
+(egui `PopupDef`) 구현 완료** — `src/adapters/ui/popup/file_picker.rs`(`FILE_PICKER_POPUP_ID`
+= `"file_picker"`, `draw_file_picker`)가 `defs.rs`에 등록되어 있다(커밋 `519d98f0`,
+2026-07-23).
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
@@ -584,4 +584,4 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 청크마다 통지 → 08 워커가 `transfer_progress` 채널로 흘림 → `drain_transfer_progress` 가 행 갱신.
 실패는 08 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
 `BULK_REJECT_PREFIX`(원격 거부) 면 Dismiss 단독, 아니면 Retry(재큐잉). 상세
-[features/attach/remote-file-transfer](../../features/attach/index.md).
+[features/remote-attach](../../features/remote-attach/index.md).

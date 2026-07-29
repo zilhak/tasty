@@ -91,8 +91,5 @@ pub struct Icon {
 
 ## 알려진 한계
 
-- **`clipboard` 별칭**: 본체는 현재 `COPY as CLIPBOARD` 별칭이라 `clipboard` 이름이 실제로는
-  copy 글리프로 해소된다. 진짜 clipboard 글리프를 노출하려면 별칭 재정리가 선행돼야 한다
-  (별도 과제).
 - **루트 `assets/icons/chevron-{left,right}.svg`**: 코드 참조가 없는 pre-existing dead asset.
   정리 후보이나 이 문서 시점에서는 그대로 둔다.
