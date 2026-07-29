@@ -244,17 +244,36 @@ fn npm_global_root() -> Option<PathBuf> {
     // shebang 의 `env node` 가 node 를 못 찾아 exit 127 로 실패한다 — npm 실행 파일을
     // 찾는 것과 npm 을 실행하는 것은 별개다. 탐지한 node 의 디렉토리를 자식 PATH 앞에
     // 얹어, node 탐지 성공이 곧 npm 실행 가능으로 이어지게 한다(§3.1 의도 완결).
-    if let Some(node_dir) = find_node().as_deref().and_then(|p| p.parent()) {
-        let existing = std::env::var_os("PATH").unwrap_or_default();
-        let mut dirs = vec![node_dir.to_path_buf()];
-        dirs.extend(std::env::split_paths(&existing));
-        match std::env::join_paths(dirs) {
-            Ok(joined) => {
-                cmd.env("PATH", joined);
-            }
-            Err(e) => tracing::warn!(error = %e, "npm 실행용 PATH 합성 실패 — 기존 PATH 유지"),
+    if let Some(path_env) = npm_path_with_node_prefix() {
+        cmd.env("PATH", path_env);
+    }
+    let stdout = run_npm_root(&mut cmd)?;
+    let root = String::from_utf8_lossy(&stdout).trim().to_string();
+    if root.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(root);
+    if path.is_dir() { Some(path) } else { None }
+}
+
+/// 탐지한 node 의 디렉토리를 기존 `PATH` 앞에 얹은 값. node 미탐지 또는 PATH 합성
+/// 실패 시 `None`(그 경우 기존 PATH 를 그대로 쓰라는 의미).
+fn npm_path_with_node_prefix() -> Option<std::ffi::OsString> {
+    let node_dir = find_node()?.parent()?.to_path_buf();
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs = vec![node_dir];
+    dirs.extend(std::env::split_paths(&existing));
+    match std::env::join_paths(dirs) {
+        Ok(joined) => Some(joined),
+        Err(e) => {
+            tracing::warn!(error = %e, "npm 실행용 PATH 합성 실패 — 기존 PATH 유지");
+            None
         }
     }
+}
+
+/// `npm root -g` 실행 후 stdout raw bytes. 실행 실패/비정상 종료 시 `None`.
+fn run_npm_root(cmd: &mut std::process::Command) -> Option<Vec<u8>> {
     let output = match cmd.output() {
         Ok(out) => out,
         Err(e) => {
@@ -266,12 +285,7 @@ fn npm_global_root() -> Option<PathBuf> {
         tracing::warn!(status = ?output.status, "`npm root -g` 비정상 종료");
         return None;
     }
-    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if root.is_empty() {
-        return None;
-    }
-    let path = PathBuf::from(root);
-    if path.is_dir() { Some(path) } else { None }
+    Some(output.stdout)
 }
 
 /// ms-playwright 캐시에서 `chromium-<revision>` 디렉토리(최고 revision)를 찾는다.

@@ -208,30 +208,36 @@ fn reader_loop(
                 break;
             }
         };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let msg: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(error = %e, line = %trimmed, "runner emitted non-JSON line");
-                continue;
-            }
-        };
-        let Some(id) = msg.get("id").and_then(Value::as_u64) else {
-            tracing::debug!(?msg, "runner message without id");
-            continue;
-        };
-        let sender = pending.lock().ok().and_then(|p| p.get(&id).cloned());
-        if let Some(tx) = sender {
-            // 수신자가 이미 사라졌으면(호출 측 타임아웃) 조용히 버린다.
-            if tx.send(msg).is_err() {
-                tracing::debug!(id, "runner reply arrived after caller dropped");
-            }
-        }
+        route_reader_line(&line, &pending);
     }
     tracing::info!("design runner reader thread ended (stdout closed)");
+}
+
+/// 런너 stdout 한 줄을 파싱해 `id` 로 대기 중인 요청자에게 라우팅한다. 빈 줄/
+/// 비-JSON/id 없음은 조용히 스킵 — NDJSON 프로토콜의 노이즈 라인 허용.
+fn route_reader_line(line: &str, pending: &Arc<Mutex<HashMap<u64, Sender<Value>>>>) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let msg: Value = match serde_json::from_str(trimmed) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, line = %trimmed, "runner emitted non-JSON line");
+            return;
+        }
+    };
+    let Some(id) = msg.get("id").and_then(Value::as_u64) else {
+        tracing::debug!(?msg, "runner message without id");
+        return;
+    };
+    let sender = pending.lock().ok().and_then(|p| p.get(&id).cloned());
+    if let Some(tx) = sender {
+        // 수신자가 이미 사라졌으면(호출 측 타임아웃) 조용히 버린다.
+        if tx.send(msg).is_err() {
+            tracing::debug!(id, "runner reply arrived after caller dropped");
+        }
+    }
 }
 
 /// 임베드된 런너 스크립트를 data_dir/runner/design-runner.js 로 기록하고 경로를 반환.

@@ -418,19 +418,21 @@ fn run_chat(
 /// 저장된 storageState 를 런너에 주입(set_auth). 없으면 no-op.
 fn inject_saved_auth(runner: &Runner, data_dir: &Path) {
     match auth::load_auth(data_dir) {
-        Ok(Some(state)) => {
-            if let Err(e) = runner.request(
-                "set_auth",
-                json!({ "storage_state": state }),
-                runner::DEFAULT_OP_TIMEOUT,
-            ) {
-                tracing::warn!(error = %e, "inject saved auth failed");
-            } else {
-                tracing::info!("saved design session injected into runner");
-            }
-        }
+        Ok(Some(state)) => send_saved_auth(runner, &state),
         Ok(None) => {}
         Err(e) => tracing::warn!(error = %e, "load saved auth failed"),
+    }
+}
+
+fn send_saved_auth(runner: &Runner, state: &str) {
+    if let Err(e) = runner.request(
+        "set_auth",
+        json!({ "storage_state": state }),
+        runner::DEFAULT_OP_TIMEOUT,
+    ) {
+        tracing::warn!(error = %e, "inject saved auth failed");
+    } else {
+        tracing::info!("saved design session injected into runner");
     }
 }
 
@@ -438,21 +440,27 @@ fn inject_saved_auth(runner: &Runner, data_dir: &Path) {
 /// storageState 를 디스크에 저장한다(런너 JS 가 자기 in-memory authState 도 갱신).
 fn run_login(runner: Arc<Runner>, data_dir: PathBuf) {
     match runner.request("login", json!({}), LOGIN_TIMEOUT) {
-        Ok(msg) => match msg.get("kind").and_then(Value::as_str) {
-            Some("login_ok") => {
-                let Some(state) = msg.get("storage_state").and_then(Value::as_str) else {
-                    tracing::error!("login_ok without storage_state");
-                    return;
-                };
-                match auth::save_auth(state, &data_dir) {
-                    Ok(()) => tracing::info!("design login captured and saved"),
-                    Err(e) => tracing::error!(error = %e, "save auth failed after login"),
-                }
-            }
-            Some("login_needed") => tracing::warn!("design login not completed within timeout"),
-            other => tracing::warn!(?other, "unexpected login response kind"),
-        },
+        Ok(msg) => handle_login_response(&msg, &data_dir),
         Err(e) => tracing::error!(error = %e, "design login op failed"),
+    }
+}
+
+fn handle_login_response(msg: &Value, data_dir: &Path) {
+    match msg.get("kind").and_then(Value::as_str) {
+        Some("login_ok") => save_login_result(msg, data_dir),
+        Some("login_needed") => tracing::warn!("design login not completed within timeout"),
+        other => tracing::warn!(?other, "unexpected login response kind"),
+    }
+}
+
+fn save_login_result(msg: &Value, data_dir: &Path) {
+    let Some(state) = msg.get("storage_state").and_then(Value::as_str) else {
+        tracing::error!("login_ok without storage_state");
+        return;
+    };
+    match auth::save_auth(state, data_dir) {
+        Ok(()) => tracing::info!("design login captured and saved"),
+        Err(e) => tracing::error!(error = %e, "save auth failed after login"),
     }
 }
 
