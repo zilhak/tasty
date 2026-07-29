@@ -515,22 +515,31 @@ pub fn load_user_bashrc() -> String {
 /// 사용자 편집 내용을 디스크에 쓰고, 파생 bashrc(builtin + user)를 재생성한다.
 pub fn save_user_bashrc(user_content: &str) {
     let user_path = tasty_bashrc_user_path();
-    let compiled_path = tasty_bashrc_path();
-    let p = std::path::Path::new(&user_path);
-    if let Some(parent) = p.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        tracing::warn!("create_dir_all for bashrc failed: {e}");
+    if !ensure_bashrc_parent_dir(&user_path) {
         return;
     }
     if let Err(e) = std::fs::write(&user_path, user_content) {
         tracing::warn!("write bashrc.user failed: {e}");
         return;
     }
+    let compiled_path = tasty_bashrc_path();
     let compiled = compose_tasty_mode_bashrc(user_content);
     if let Err(e) = std::fs::write(&compiled_path, compiled) {
         tracing::warn!("write compiled bashrc failed: {e}");
     }
+}
+
+/// `user_path` 의 부모 디렉토리를 보장한다. 생성 실패 시 `false`(호출자는 이후 쓰기
+/// 단계를 건너뛴다). 부모가 없는 경로(루트 등)는 이미 존재하는 것으로 간주.
+fn ensure_bashrc_parent_dir(user_path: &str) -> bool {
+    let Some(parent) = std::path::Path::new(user_path).parent() else {
+        return true;
+    };
+    if let Err(e) = std::fs::create_dir_all(parent) {
+        tracing::warn!("create_dir_all for bashrc failed: {e}");
+        return false;
+    }
+    true
 }
 
 /// 합성 rc 파일이 현재 빌트인 버전 스탬프(`BUILTIN_BASHRC_STAMP`)를 담고 있는지.

@@ -116,35 +116,39 @@ impl Settings {
             return Self::default();
         };
 
-        match fs::read_to_string(&path) {
-            Ok(contents) => {
-                // TOML을 Value로 먼저 파싱하여 keybindings 키 목록 추출
-                let existing_kb_keys: HashSet<String> = toml::from_str::<toml::Value>(&contents)
-                    .ok()
-                    .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
-                    .map(|t| t.keys().cloned().collect())
-                    .unwrap_or_default();
+        let Ok(contents) = fs::read_to_string(&path) else {
+            tracing::info!("no settings file at {}, using defaults", path.display());
+            return Self::default();
+        };
 
-                match toml::from_str::<Settings>(&contents) {
-                    Ok(mut settings) => {
-                        settings.appearance.migrate_legacy_font_overrides();
-                        settings
-                            .keybindings
-                            .remove_conflicts_from_defaults(&existing_kb_keys);
-                        tracing::info!("loaded settings from {}", path.display());
-                        settings
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to parse settings file: {e}, using defaults");
-                        Self::default()
-                    }
-                }
+        match Self::parse_with_migration(&contents) {
+            Ok(settings) => {
+                tracing::info!("loaded settings from {}", path.display());
+                settings
             }
-            Err(_) => {
-                tracing::info!("no settings file at {}, using defaults", path.display());
+            Err(e) => {
+                tracing::warn!("failed to parse settings file: {e}, using defaults");
                 Self::default()
             }
         }
+    }
+
+    /// TOML 파싱 + keybinding 충돌 제거 + 레거시 font override 마이그레이션. keybinding
+    /// 충돌 판정에 "원본 파일에 실제로 있던 키" 목록이 필요해, TOML 을 `toml::Value` 로
+    /// 먼저 훑어 `[keybindings]` 테이블의 키 이름을 뽑아둔다.
+    fn parse_with_migration(contents: &str) -> std::result::Result<Self, toml::de::Error> {
+        let existing_kb_keys: HashSet<String> = toml::from_str::<toml::Value>(contents)
+            .ok()
+            .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
+            .map(|t| t.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let mut settings = toml::from_str::<Settings>(contents)?;
+        settings.appearance.migrate_legacy_font_overrides();
+        settings
+            .keybindings
+            .remove_conflicts_from_defaults(&existing_kb_keys);
+        Ok(settings)
     }
 
     /// Save settings to the config file.
@@ -221,26 +225,13 @@ impl Settings {
                 &mut self.appearance.explorer_font.font_scale_mode,
             ),
         ] {
-            if let Some(mode) = opt.as_ref()
-                && !matches!(mode.as_str(), "auto" | "fixed")
-            {
-                let invalid = opt.take().unwrap();
-                tracing::warn!("invalid {label} \"{invalid}\" → unset");
-                report.changed = true;
-            }
+            normalize_optional_font_scale_mode(opt, label, &mut report.changed);
         }
 
         // plugin_font_overrides.<kind>.font_scale_mode (Option<String>)
         for (kind, ov) in self.appearance.plugin_font_overrides.iter_mut() {
-            if let Some(mode) = ov.font_scale_mode.as_ref()
-                && !matches!(mode.as_str(), "auto" | "fixed")
-            {
-                let invalid = ov.font_scale_mode.take().unwrap();
-                tracing::warn!(
-                    "invalid plugin_font_overrides.{kind}.font_scale_mode \"{invalid}\" → unset"
-                );
-                report.changed = true;
-            }
+            let label = format!("plugin_font_overrides.{kind}.font_scale_mode");
+            normalize_optional_font_scale_mode(&mut ov.font_scale_mode, &label, &mut report.changed);
         }
 
         // general.shell_mode — Windows 전용 필드. 기존 settings.toml 의
@@ -308,6 +299,20 @@ fn normalize_choice(
         tracing::warn!("invalid {label} \"{invalid}\" → {fallback}");
         *changed = true;
     }
+}
+
+/// `font_scale_mode` 류 `Option<String>` 필드가 `Some(x)` 인데 x 가 허용 값
+/// (`auto`/`fixed`) 이 아니면 unset(`None`) 한다. `None` 은 그대로 유효(미지정).
+fn normalize_optional_font_scale_mode(opt: &mut Option<String>, label: &str, changed: &mut bool) {
+    let Some(mode) = opt.as_deref() else {
+        return;
+    };
+    if matches!(mode, "auto" | "fixed") {
+        return;
+    }
+    let invalid = opt.take().unwrap_or_default();
+    tracing::warn!("invalid {label} \"{invalid}\" → unset");
+    *changed = true;
 }
 
 #[cfg(test)]
