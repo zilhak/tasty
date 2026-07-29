@@ -654,13 +654,32 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
     );
     let gap = theme.spacing_sm.value();
 
-    // 우 cluster: time + author (우측 정렬). refs pill 상한 폭을 정하려면 이 클러스터가
-    // 차지할 폭(right_start)을 left cluster 보다 먼저 알아야 한다.
+    // oid(info)는 항상 그려지는 고정 요소라 폭을 먼저 측정해 둔다 — 우 cluster가
+    // (author 가 아무리 길어도) 이 영역을 절대 침범하지 못하게 clip 상한으로 쓴다.
+    let oid_w = ui
+        .painter()
+        .layout_no_wrap(
+            entry.oid_short.clone(),
+            mono(theme.font_size_caption.value()),
+            Color32::PLACEHOLDER,
+        )
+        .rect
+        .width();
+    let right_clip_left = content.left() + oid_w + gap;
+
+    // 우 cluster: time + author (우측 정렬). author 가 길면 egui Label 은 자체적으로
+    // wrap/clip 하지 않고 폭 제한 없이 그려지므로(참고: `ch_row` 의 path clip 과 동일
+    // 이유), oid 영역을 덮어쓰지 않도록 `set_clip_rect` 로 명시적 상한을 건다 — 넘치는
+    // 부분은 summary/pill 과 동일하게 픽셀 단위로 잘릴 뿐 ellipsis 는 없다.
     let mut right = ui.new_child(
         UiBuilder::new()
             .max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
     );
+    right.set_clip_rect(Rect::from_min_max(
+        egui::pos2(right_clip_left, rect.top()),
+        egui::pos2(content.right(), rect.bottom()),
+    ));
     right.spacing_mut().item_spacing.x = gap;
     right.label(
         egui::RichText::new(&entry.time)
@@ -672,7 +691,14 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
             .size(theme.font_size_term_sm.value())
             .color(theme.text_muted().to_egui()),
     );
-    let right_start = right.min_rect().left();
+    // `min_rect()`는 clip 과 무관하게 라벨의 논리적(안 잘린) 전체 폭을 반영해 author 가
+    // 길면 content 밖(심지어 음수)까지 나갈 수 있다 — pill 상한은 실제로 화면에 보이는
+    // (=clip 된) 시작점을 써야 한다. author 가 짧아 clip 이 아예 걸리지 않는 보통
+    // 케이스는 natural 값이 이미 right_clip_left 보다 오른쪽이라 이 max 는 no-op —
+    // 8-refs 케이스 등 기존 동작에 영향 없다. author 가 길어 clip 이 걸리는 케이스는
+    // right_clip_left(=oid 우측 끝)로 클램프돼, pill 은 (남는 자리가 거의 없으므로)
+    // 대부분 "+N" 로도 다 못 그려질 수 있다 — oid 를 침범하지 않는 것이 우선이라 정상.
+    let right_start = right.min_rect().left().max(right_clip_left);
 
     // 좌 cluster: oid(info) + refs pills(info). pill 누적 폭이 right cluster를
     // 침범하기 전까지만 그리고, 넘치면 남은 개수를 "+N" pill로 축약한다.
