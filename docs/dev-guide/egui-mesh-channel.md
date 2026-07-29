@@ -288,33 +288,58 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
 [attach-behavior.md "mesh mirror 채널"](attach-behavior.md#mesh-mirror-채널) 에 있다.
 여기서는 이 소비자가 위 채널의 각 구성 요소를 어떻게 재사용/대체하는지만 정리한다.
 
+- **공용 구동/relay 함수**: `src/plugin_bridge/mesh_forward.rs` 가 `PluginManager` 접근권이
+  필요한 두 함수를 gui/headless 양쪽 빌드 공용으로 제공한다(`plugin_bridge` 는 gui 여부와
+  무관하게 컴파일되는 bin-side glue 모듈이라 아래 세 소비처 모두가 참조할 수 있다) — `mesh_mirror.rs`
+  자신은 설계상 `PluginManager` 를 모른다(registry 전용).
+  - `forward_mesh_frames_for_engine(engine, mgr, stream_hub)` — `MeshMirrorRegistry` 의
+    dirty/누적 입력/modifiers 를 직접 읽어 `surface.set_context` 를 구동하고(bootstrap 포함),
+    새 `PaintFrame` 을 relay 까지 한다. **로컬 authoritative render loop(살아있는 window)가
+    없는 engine 전용** — 아래 "헤드리스"와 "GUI parked engine" 두 소비처가 그대로 재사용한다.
+  - `relay_mesh_frame_if_new(engine, mgr, stream_hub, sid, client_id)` — 이미 만들어진
+    `EguiMeshFrame`(있다면)을 새 `set_context` 없이 순수 byte relay 만 한다. 위 함수의 꼬리
+    로직이자, "GUI 살아있는 window" 소비처가 유일하게 재사용하는 부분(아래 참조).
 - **서버측(헤드리스): `PluginManager` 직접 구동 (기존 채널 그대로 재사용)** — attach 서버가
   헤드리스(`boot::run_headless`)일 때는, 위 표의 "host→plugin set_context + 입력
   forward"/"host 합성" 두 축 중 **입력 forward 축만** 대체되고 **plugin 프로세스 구동
   자체는 기존 `PluginManager`/`crates/tasty-host-plugin` 를 그대로 쓴다** — attach 전용
-  plugin 매니저가 별도로 있는 게 아니다. `src/boot/headless_plugins.rs::forward_mesh_frames`
-  가 매 tick `MeshMirrorRegistry`(`src/core/mesh_mirror.rs`)의 dirty/누적 입력/modifiers 를
-  읽어 위 "데이터 흐름"의 `surface.set_context` 를 그대로 호출하고, 되돌아오는
+  plugin 매니저가 별도로 있는 게 아니다. `src/boot/headless_plugins.rs::pump_plugins` 가
+  매 tick 위 `forward_mesh_frames_for_engine` 을 단일 engine 에 대해 호출한다 — 되돌아오는
   `PaintFrame` 을 그대로 받아 `StreamTag::MeshData` 로 client 에 재중계한다 — **host 합성
   (`egui_wgpu::Renderer`, TextureId 격리, frame_seq 체인 검증)은 여기서 전혀 일어나지
   않는다**(서버는 화면이 없다). 원본 바이트를 그대로 client 에 넘길 뿐이다.
-- **서버측(GUI): 로컬 redraw 의 결과를 옆에서 relay** — attach 서버가 GUI(창 보유)일 때는
-  그 mesh surface 의 `set_context` 를 이미 로컬 창의 매 프레임 redraw
+- **서버측(GUI, 살아있는 window): 로컬 redraw 의 결과를 옆에서 relay** — attach 서버가
+  GUI(창 보유)일 때는 그 mesh surface 의 `set_context` 를 이미 로컬 창의 매 프레임 redraw
   (`MainView::forward_egui_mesh_context`)가 권위 있게 구동 중이다. 헤드리스처럼
-  `PluginManager` 를 별도로 구동하면 이 로컬 authoritative loop 와 경합하므로,
-  `MainView::forward_mesh_to_attach_subscribers`(`src/view/main/egui_mesh.rs`, TODO 24)는
-  **별도 `set_context` 를 보내지 않고 이미 만들어진 `EguiMeshFrame` 바이트만 읽어
-  `StreamTag::MeshData` 로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도
-  렌더되지 않는 surface(다른 탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이
-  그 surface_id 자체를 모름)인 경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이
-  `find_egui_mesh_surface`(`src/core/state/pty.rs`)로 메타데이터를 조회해 최소
-  `surface.create` + `set_context` bootstrap 을 1회 대신 보낸다. 이미 렌더 중인 surface 에
-  새 구독(또는 명시 재전송 요청)이 들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬
-  `MeshForwardState::pending_full` 에 위임해 다음 tick 의 authoritative loop 가
-  `need_full_textures` 를 실어 보내게 한다(그 사이엔 캐시된 델타뿐일 수 있는 frame 을 새
-  구독자에 흘리지 않고 건너뛴다 — 텍스처 손상 방지). attach client 의 입력을 로컬 plugin 에
-  되먹이는 축(`MeshMirrorRegistry::take_pending_events`)은 아직 이 경로에 배선되지 않았다 —
-  gui-as-server 에서 mesh 콘텐츠는 보이지만 아직 인터랙티브하지 않다.
+  `forward_mesh_frames_for_engine` 으로 `PluginManager` 를 직접 구동하면 이 로컬
+  authoritative loop 와 경합하므로 — attach client 가 요청한 (로컬과 다를 수 있는)
+  width_px/height_px 로 재구동해 로컬 화면이 튈 수 있다 — `MainView::forward_mesh_to_attach_subscribers`
+  (`src/view/main/egui_mesh.rs`, TODO 24)는 위 `relay_mesh_frame_if_new` 만 재사용해 **별도
+  `set_context` 를 보내지 않고 이미 만들어진 `EguiMeshFrame` 바이트만 읽어 `StreamTag::MeshData`
+  로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도 렌더되지 않는 surface(다른
+  탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이 그 surface_id 자체를 모름)인
+  경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이 `find_egui_mesh_surface`
+  (`src/core/state/pty.rs`)로 메타데이터를 조회해 최소 `surface.create` + `set_context`
+  bootstrap 을 1회 대신 보낸다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
+  들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 에
+  위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다(그
+  사이엔 캐시된 델타뿐일 수 있는 frame 을 새 구독자에 흘리지 않고 건너뛴다 — 텍스처 손상
+  방지). attach client 의 입력을 로컬 plugin 에 되먹이는 축(`MeshMirrorRegistry::take_pending_events`)
+  은 아직 이 경로에 배선되지 않았다 — gui-as-server 에서 mesh 콘텐츠는 보이지만 아직
+  인터랙티브하지 않다.
+- **서버측(GUI, parked engine): 헤드리스와 동일하게 직접 구동** — macOS 에서 window 를
+  최소화하면 `App::handle_minimize` 의 macOS 분기가 그 window 의 `MainView` 를 파괴하고
+  `(AppState, CoreState)` 를 `App::parked_states`(`src/app.rs`) 로 옮긴다. 이 engine 은
+  더 이상 `handle_redraw` 가 돌지 않으므로 "GUI 살아있는 window" 항목이 전제하는 로컬
+  authoritative loop 가 없다 — **처지가 헤드리스와 같다.** `App::about_to_wait`
+  (`src/app/event_handler.rs`, plugin manager `pump()` 호출 직후)가 `parked_states` 전부를
+  순회하며 각 engine 에 `forward_mesh_frames_for_engine` 을 호출한다(구독/입력 forward/
+  full-resend 요청 자체는 `apply_mesh_context_on_owning_engine` 류의 owning-engine 순회
+  패턴으로 이미 parked engine 에도 정상 반영되고 있었다 — 실제 frame 구동/relay 만
+  빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `parked_states.remove(0)` 으로 **1개씩만**
+  꺼내므로, 여러 window 가 동시에 minimize 돼 있으면 나머지는 계속 이 순회의 대상으로
+  남는다 — 첫 매치에서 멈추는 owning-engine 패턴과 달리, 이 순회는 매 tick `parked_states`
+  전부를 무조건 방문한다.
 - **client측: host 합성 축의 재구현** — client 가 원본 `PaintFrame` 바이트를 받아 **자기
   화면에서** 위 "host 합성" 단계(decode → 전용 `egui_wgpu::Renderer` → surface rect 합성)를
   그대로 재현한다. `decode_mesh_into_target` 은 이 재사용을 위해 SharedBuffer 파싱 부분과

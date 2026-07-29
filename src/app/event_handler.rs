@@ -411,6 +411,24 @@ impl ApplicationHandler<AppEvent> for App {
         // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
         // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
         self.finalize_plugin_hello(hello_pairs);
+        // parked engine(macOS 최소화로 window 가 파괴되고 CoreState 만 남은 경우,
+        // `handle_minimize` macOS 분기)의 mesh mirror 구독도 실제 frame relay 대상이
+        // 되도록 headless 와 동일한 구동 로직을 적용한다 — 살아있는 window 는
+        // `MainView::handle_redraw` 가 이미 매 프레임 이 surface 들을 구동하므로 여기
+        // 대상이 아니다. owning-engine 순회 패턴(`apply_mesh_context_on_owning_engine`
+        // 등)과 동형이나, 이 스텝은 그 쪽처럼 첫 매치에서 멈추지 않고 `parked_states`
+        // 전부를 순회한다 — 여러 window 가 동시에 최소화돼 있어도 각 engine 이
+        // 독립적으로 계속 forward 된다(첫 번째만 복원돼도 나머지는 계속 이 스텝의
+        // 대상으로 남는다, `window_lifecycle.rs`의 `remove(0)` 참조).
+        if let Some(ref mgr) = self.plugin_manager {
+            for (_, engine) in self.parked_states.iter_mut() {
+                crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
+                    engine,
+                    mgr,
+                    &self.stream_hub,
+                );
+            }
+        }
         // SurfaceInvalidated(단계 06): plugin 이 idle 상태(입력 무)에서 파일 변경을
         // 알리면 그 surface 를 dirty 표시해 다음 redraw 에서 무입력 재-forward →
         // 기존 poll_reload 가 새 내용을 읽게 한다. paint 에 종속된 egui_mesh.rs 게이트의

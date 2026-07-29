@@ -39,8 +39,7 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
-use crate::adapters::production::stream_hub::{PushResult, StreamHub};
-use crate::ipc::stream::{StreamFrame, StreamTag};
+use crate::adapters::production::stream_hub::StreamHub;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
@@ -537,65 +536,16 @@ impl MainView {
                 continue;
             }
 
-            let Some(frame) = mgr.egui_mesh_frame(sid) else {
-                continue;
-            };
-            if !self
-                .core_state
-                .mesh_mirror
-                .should_forward_generation(sid, frame.generation)
-            {
-                continue;
-            }
-            let Some(mem) = mgr.plugin_buffer(&frame.plugin_id, frame.buffer_id) else {
-                continue;
-            };
-            // SAFETY: `buffer_id`는 이 plugin 이 `host.shared_buffer.create`로 만든 뒤
-            // `PaintFrame` 이벤트로 알려온 값이라 `mem`은 유효한 매핑이다. footer
-            // 프로토콜은 plugin(writer)/host(reader) 양쪽이 합의한 8B 헤더 + user data
-            // 레이아웃이며(`tasty_shm::footer` 문서), 이 host 프로세스가 이 버퍼의 유일한
-            // reader 다 — `headless_plugins::forward_mesh_frames`의 동일 패턴과 동형.
-            let raw = unsafe { mem.as_slice() };
-            if raw.len() < tasty_shm::footer::SIZE {
-                continue;
-            }
-            // SAFETY: 위에서 `raw.len() >= footer::SIZE`를 검증했고, mmap 매핑의 시작
-            // 주소는 항상 페이지 정렬(≥8B)이라 `AtomicU64` 재해석이 안전하다(`footer_atomic`
-            // 안전 조건 문서 참조).
-            let gen_now =
-                unsafe { tasty_shm::footer::load(raw, std::sync::atomic::Ordering::Acquire) };
-            if gen_now != frame.generation {
-                continue;
-            }
-            let user = tasty_shm::footer::user_slice(raw);
-            let byte_len = frame.byte_len as usize;
-            let bytes = if byte_len > 0 && byte_len <= user.len() {
-                &user[..byte_len]
-            } else {
-                user
-            };
-
-            let Some(frame_id) = self
-                .core_state
-                .mesh_mirror
-                .mark_forwarded(sid, frame.generation)
-            else {
-                continue;
-            };
-            for payload in tasty_ipc::mesh_stream::split_mesh_frame(
+            // 이미 만들어진 frame(있다면)을 relay — headless/parked
+            // (`plugin_bridge::mesh_forward::forward_mesh_frames_for_engine`)와 공유하는
+            // 꼬리 로직.
+            crate::plugin_bridge::mesh_forward::relay_mesh_frame_if_new(
+                &mut self.core_state,
+                mgr,
+                stream_hub,
                 sid,
-                frame_id,
-                frame.generation,
-                frame.frame_seq,
-                frame.full_textures,
-                bytes,
-            ) {
-                let result =
-                    stream_hub.push(client_id, StreamFrame::new(StreamTag::MeshData, payload));
-                if matches!(result, PushResult::Unknown | PushResult::Disconnected) {
-                    break;
-                }
-            }
+                client_id,
+            );
         }
     }
 }

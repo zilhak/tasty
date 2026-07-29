@@ -11,6 +11,7 @@ pub mod egui_mesh_surface;
 pub mod key_dispatch;
 #[cfg(feature = "gui")]
 pub mod manifest_validate;
+pub mod mesh_forward;
 #[cfg(feature = "gui")]
 pub mod popup_render;
 #[cfg(feature = "gui")]

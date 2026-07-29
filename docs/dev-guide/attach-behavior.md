@@ -73,12 +73,44 @@ bundled egui-mesh surface(markdown/image/mesh_demo — `is_egui_mesh_allowed` �
 
 - **구독 = `MeshContext` (별도 핸드셰이크 없음)**: client 가 mesh surface 를 그리기 시작하면 `StreamControl::MeshContext{surface_id, width_px, height_px, pixels_per_point, theme, focused}` 를 보내는 것 자체가 구독 신호를 겸한다 — capability negotiation 을 위한 별도 확인/ack 프레임이 없다. 서버 `MeshMirrorRegistry::upsert`(`src/core/mesh_mirror.rs`)가 이 정보를 최초 수신 시점에 등록하고, 이후 값이 실제로 바뀔 때만(geometry/theme/focus 변경 시) client 가 재전송한다(`forward_attach_mesh_context`, `src/view/main/attach_mesh_input.rs`) — 매 프레임 재전송하지 않는다.
 - **`MeshInput` 누적**: 포인터/키/스크롤/IME 이벤트는 `AttachMeshForwardState.events`(client, dedup 없이 순서 보존)에 프레임마다 쌓였다가, 다음 redraw 의 `forward_attach_mesh_context` 호출에서 `RawInputWire{modifiers, events, ..}` 로 묶여 `MeshInput{surface_id, input}` 1회 전송된다. 서버는 `MeshMirrorRegistry::push_input` 이 `pending_events` 에 extend 하고 `last_modifiers` 를 갱신 + `dirty=true` 로 표시 — 구독이 없는 surface_id 면 `false` 를 반환해 서버 dispatch 가 `MeshError` 로 회신한다(아래).
-- **frame 소비·forward (headless-as-server)**: 헤드리스 부트스트랩의 `forward_mesh_frames`(`src/boot/headless_plugins.rs`)가 매 tick `mesh_mirror.take_dirty`/`take_pending_events`/`last_modifiers` 를 읽어 로컬 `PluginManager` 에 `SurfaceSetContextParams.raw_input` 으로 흘려보내고, plugin 이 그린 결과 mesh 프레임을 `StreamTag::MeshData` 청크로 client 에 push 한다(청크 분할 이유: 텍스처 델타 포함 paint frame 이 `MAX_FRAME_LEN` 을 초과할 수 있음). client reader 스레드는 `tasty_ipc::mesh_stream::MeshFrameAssembler` 로 청크를 재조립해 `MirrorEvent::Mesh(remote_surface_id, generation, frame_seq, full_textures, bytes)` 를 메인 스레드 버퍼에 쌓고, `AttachMeshFrameStore::update`(`src/core/attach_mesh_frames.rs`)에 저장된 것을 GPU 렌더 경로(`render_attach_mesh_surfaces`, `src/gfx/gpu/egui_mesh_prepare.rs`)가 소비해 화면에 그린다.
-- **frame 소비·forward (gui-as-server)**: gui 인스턴스가 attach 서버일 때는 `MainView::forward_mesh_to_attach_subscribers`(`src/view/main/egui_mesh.rs`, 매 redraw 마다 `forward_egui_mesh_context` 직후 호출)가 headless 와 대칭 역할을 한다. 다만 로컬 창의 `forward_egui_mesh_context` 가 화면에 보이는 mesh surface 의 `set_context` 를 이미 매 프레임 권위 있게 구동하므로, 이 훅은 별도 `set_context` 를 보내지 않고 **이미 만들어진 `EguiMeshFrame` 바이트를 읽어 relay** 만 한다(로컬 authoritative loop 와 경합 회피). 예외는 attach 구독 대상이 로컬 어디에서도 렌더되지 않는 surface(다른 탭/워크스페이스에 있어 로컬 target 목록에 전혀 없음)인 경우뿐 — 이땐 plugin 이 그 surface_id 자체를 모르므로 경합 없이 이 훅이 최소 `surface.create` + `set_context` bootstrap 을 1회 대신 보낸다(`find_egui_mesh_surface` 로 메타데이터 조회). 이미 렌더 중인 surface 에 새 구독이 들어와 전체 텍스처가 필요하면(신규 구독/명시 재전송), 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 메커니즘에 위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다 — 그동안(next tick 까지) 이 훅은 캐시된(델타뿐일 수 있는) frame 을 새 구독자에 흘리지 않고 건너뛴다.
+- **frame 소비·forward (headless-as-server / gui parked engine)**: 실제 구동/relay 로직은
+  `plugin_bridge::mesh_forward::forward_mesh_frames_for_engine`(`src/plugin_bridge/mesh_forward.rs`,
+  gui/headless 공용)에 있다 — `mesh_mirror.take_dirty`/`take_pending_events`/`last_modifiers`
+  를 읽어 로컬 `PluginManager` 에 `SurfaceSetContextParams.raw_input` 으로 흘려보내고, plugin
+  이 그린 결과 mesh 프레임을 `StreamTag::MeshData` 청크로 client 에 push 한다(청크 분할
+  이유: 텍스처 델타 포함 paint frame 이 `MAX_FRAME_LEN` 을 초과할 수 있음). 이 함수는 **로컬
+  authoritative render loop(살아있는 window)가 없는 engine 전용** — 두 소비처가 있다:
+  헤드리스 부트스트랩(`src/boot/headless_plugins.rs::pump_plugins` 가 매 tick 호출)과, gui
+  인스턴스에서 macOS 최소화로 window 가 파괴되고 `CoreState` 만 `App::parked_states` 로
+  옮겨진 engine(`App::about_to_wait`, `src/app/event_handler.rs` 가 매 tick `parked_states`
+  전부를 순회하며 호출 — `window_lifecycle.rs` 의 창 복원이 `remove(0)` 으로 1개씩만
+  꺼내므로, 여러 window 가 동시에 최소화돼 있어도 나머지는 계속 이 순회 대상으로 남는다).
+  client reader 스레드는 `tasty_ipc::mesh_stream::MeshFrameAssembler` 로 청크를 재조립해
+  `MirrorEvent::Mesh(remote_surface_id, generation, frame_seq, full_textures, bytes)` 를
+  메인 스레드 버퍼에 쌓고, `AttachMeshFrameStore::update`(`src/core/attach_mesh_frames.rs`)에
+  저장된 것을 GPU 렌더 경로(`render_attach_mesh_surfaces`, `src/gfx/gpu/egui_mesh_prepare.rs`)
+  가 소비해 화면에 그린다.
+- **frame 소비·forward (gui-as-server, 살아있는 window)**: gui 인스턴스가 attach 서버이고
+  그 mesh surface 가 실제로 window 를 가진 경우는 `MainView::forward_mesh_to_attach_subscribers`
+  (`src/view/main/egui_mesh.rs`, 매 redraw 마다 `forward_egui_mesh_context` 직후 호출)가
+  대칭 역할을 한다. 다만 로컬 창의 `forward_egui_mesh_context` 가 화면에 보이는 mesh surface
+  의 `set_context` 를 이미 매 프레임 권위 있게 구동하므로, 이 훅은 위 `forward_mesh_frames_for_engine`
+  전체가 아니라 그 꼬리 로직(`plugin_bridge::mesh_forward::relay_mesh_frame_if_new`)만
+  재사용해 별도 `set_context` 를 보내지 않고 **이미 만들어진 `EguiMeshFrame` 바이트를 읽어
+  relay** 만 한다(로컬 authoritative loop 와 경합 회피 — mesh_mirror ctx 의 width_px/height_px
+  는 attach client 가 요청한 값이라 로컬 렌더 해상도와 다를 수 있다). 예외는 attach 구독
+  대상이 로컬 어디에서도 렌더되지 않는 surface(다른 탭/워크스페이스에 있어 로컬 target
+  목록에 전혀 없음)인 경우뿐 — 이땐 plugin 이 그 surface_id 자체를 모르므로 경합 없이 이
+  훅이 최소 `surface.create` + `set_context` bootstrap 을 1회 대신 보낸다(`find_egui_mesh_surface`
+  로 메타데이터 조회). 이미 렌더 중인 surface 에 새 구독이 들어와 전체 텍스처가 필요하면
+  (신규 구독/명시 재전송), 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 메커니즘에
+  위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다 —
+  그동안(next tick 까지) 이 훅은 캐시된(델타뿐일 수 있는) frame 을 새 구독자에 흘리지 않고
+  건너뛴다.
 - **`MeshFullResendRequest` 복구**: 텍스처 델타 체인이 깨졌다고 판단되면(로컬 `EguiMeshRenderTarget` 의 generation 검증 실패 등) client 가 `attach_mesh_full_requests`(`GpuState`)에 surface_id 를 쌓고, `App::dispatch_pending_mesh_full_resend_forwards`가 `MeshFullResendRequest{surface_id}` 를 서버로 forward 한다. 서버는 이를 받으면 `MeshMirrorRegistry::request_full_resend` 로 해당 surface 의 다음 프레임을 풀 텍스처 포함(full_textures=true)으로 강제한다.
 - **`MeshError` — 명시적 단발 실패**: 구독 안 된 surface 로의 `MeshInput`(홀더 불일치 포함, `CoreState::apply_attached_mesh_input` 의 holder 검증) 등은 조용히 drop 하지 않고 `MeshError{surface_id, reason}` 를 1회 회신한다(TODO 15 결정 — 조용한 drop 보다 명시적 실패가 디버깅에 유리). client 측 소비는 현재 로그 레벨 처리만(재시도/toast 없음) — 세션이 정상이면 애초에 발생하지 않는 방어적 경로.
 - **App/CoreState 경계를 건너는 forward-queue 패턴**: `MainView`(redraw 시점)는 `App.attach_client_sessions`(소켓 writer 보유)에 접근할 수 없다. `forward_attach_mesh_context`/입력 캡처(`mouse.rs`/`keyboard.rs`/`ime.rs`)는 `CoreState.pending_mesh_context_forward`/`pending_mesh_input_forward`/`pending_mesh_full_resend_forward` 에 쌓아두기만 하고, `App::about_to_wait`(`attach_client.rs`)의 `dispatch_pending_mesh_*_forwards` 가 다음 tick 에 drain 해 세션 매핑으로 원격 id 를 치환한 뒤 실제 소켓 write 를 한다 — `pending_resize_forward`/`dispatch_pending_resize_forwards`(ADR-0045)와 동형 패턴을 3개 방향(context/input/full-resend)에 재사용한 것.
-- **gui-as-server 는 attach client 의 입력 역방향 forward 를 아직 로컬 plugin 에 되먹이지 않는다**: 위 gui-as-server 훅은 mesh 바이트 forward(서버→client)만 구현한다 — `MeshInput` 으로 도착해 `MeshMirrorRegistry::push_input`/`pending_events` 에 쌓인 attach client 의 클릭/키 입력을 로컬 plugin 의 `raw_input` 에 병합하는 배선은 headless(`forward_mesh_frames` 가 `take_pending_events` 소비)에만 있다 — gui 는 후속 작업.
+- **gui-as-server 의 살아있는 window 는 attach client 의 입력 역방향 forward 를 아직 로컬 plugin 에 되먹이지 않는다**: 위 "gui-as-server, 살아있는 window" 훅은 mesh 바이트 forward(서버→client)만 구현한다 — `MeshInput` 으로 도착해 `MeshMirrorRegistry::push_input`/`pending_events` 에 쌓인 attach client 의 클릭/키 입력을 로컬 plugin 의 `raw_input` 에 병합하는 배선은 `forward_mesh_frames_for_engine`(`take_pending_events` 소비)에만 있다 — gui 살아있는 window 는 이 함수를 쓰지 않으므로(경합 회피, 위 참조) 후속 작업으로 남는다. **예외**: gui parked engine 은 headless 와 동일하게 `forward_mesh_frames_for_engine` 을 그대로 쓰므로, window 가 최소화돼 있는 동안은 오히려 입력 forward 가 이미 동작한다 — window 복원 후 살아있는 window 로 전환되면 다시 이 제약이 적용된다.
 - **surface 디스크립터엔 display_name 없음**: `build_workspace_tree_surfaces` 가 보내는 mesh 디스크립터는 `{remote_id, role:"mesh", kind, plugin_id}` 뿐이라(`Surface::attach_mesh_info()` 가 `(&str, &str)` = kind/plugin_id 만 반환) client 의 `MirrorMeshInfo.display_name` 은 `kind` 문자열로 대체된다 — 탭 타이틀이 원격의 실제 display_name(예: 파일명)이 아니라 mesh kind(예: `"markdown"`)로 보일 수 있는 사소한 표시상 제약.
 
 ## mirror 구조 변경 forward
