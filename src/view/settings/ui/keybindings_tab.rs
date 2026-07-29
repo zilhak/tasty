@@ -146,35 +146,54 @@ pub fn draw_keybindings_tab(
                     (
                         "toggle_settings",
                         "settings.keybindings.toggle_settings_label",
+                        None,
                     ),
                     (
                         "toggle_notifications",
                         "settings.keybindings.toggle_notifications_label",
+                        None,
                     ),
                     (
                         "toggle_clipboard_viewer",
                         "settings.keybindings.toggle_clipboard_viewer_label",
+                        None,
                     ),
                     (
                         "restore_closed",
                         "settings.keybindings.restore_closed_label",
+                        None,
                     ),
-                    ("new_window", "settings.keybindings.new_window_label"),
-                    ("quit", "settings.keybindings.quit_label"),
+                    ("new_window", "settings.keybindings.new_window_label", None),
+                    (
+                        "quit",
+                        "settings.keybindings.quit_label",
+                        Some("settings.keybindings.quit_desc"),
+                    ),
                     (
                         "quit_immediate",
                         "settings.keybindings.quit_immediate_label",
+                        None,
                     ),
-                    ("quit_minimize", "settings.keybindings.quit_minimize_label"),
+                    (
+                        "quit_minimize",
+                        "settings.keybindings.quit_minimize_label",
+                        None,
+                    ),
                     (
                         "minimize_window",
                         "settings.keybindings.minimize_window_label",
+                        None,
                     ),
                     (
                         "maximize_window",
                         "settings.keybindings.maximize_window_label",
+                        None,
                     ),
-                    ("close_window", "settings.keybindings.close_window_label"),
+                    (
+                        "close_window",
+                        "settings.keybindings.close_window_label",
+                        None,
+                    ),
                 ],
             );
         }
@@ -186,18 +205,25 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 &[
-                    ("new_workspace", "settings.keybindings.new_workspace_label"),
+                    (
+                        "new_workspace",
+                        "settings.keybindings.new_workspace_label",
+                        None,
+                    ),
                     (
                         "rename_workspace",
                         "settings.keybindings.rename_workspace_label",
+                        None,
                     ),
                     (
                         "rename_workspace_subtitle",
                         "settings.keybindings.rename_workspace_subtitle_label",
+                        None,
                     ),
                     (
                         "close_workspace",
                         "settings.keybindings.close_workspace_label",
+                        None,
                     ),
                 ],
             );
@@ -239,20 +265,24 @@ pub fn draw_keybindings_tab(
                     (
                         "split_pane_vertical",
                         "settings.keybindings.split_pane_vertical_label",
+                        None,
                     ),
                     (
                         "split_pane_horizontal",
                         "settings.keybindings.split_pane_horizontal_label",
+                        None,
                     ),
                     (
                         "focus_pane_next",
                         "settings.keybindings.focus_pane_next_label",
+                        None,
                     ),
                     (
                         "focus_pane_prev",
                         "settings.keybindings.focus_pane_prev_label",
+                        None,
                     ),
-                    ("close_pane", "settings.keybindings.close_pane_label"),
+                    ("close_pane", "settings.keybindings.close_pane_label", None),
                 ],
             );
         }
@@ -264,12 +294,20 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 &[
-                    ("new_tab", "settings.keybindings.new_tab_label"),
-                    ("open_markdown", "settings.keybindings.open_markdown_label"),
-                    ("next_tab", "settings.keybindings.next_tab_label"),
-                    ("prev_tab", "settings.keybindings.prev_tab_label"),
-                    ("rename_tab", "settings.keybindings.rename_tab_label"),
-                    ("close_active", "settings.keybindings.close_active_label"),
+                    ("new_tab", "settings.keybindings.new_tab_label", None),
+                    (
+                        "open_markdown",
+                        "settings.keybindings.open_markdown_label",
+                        None,
+                    ),
+                    ("next_tab", "settings.keybindings.next_tab_label", None),
+                    ("prev_tab", "settings.keybindings.prev_tab_label", None),
+                    ("rename_tab", "settings.keybindings.rename_tab_label", None),
+                    (
+                        "close_active",
+                        "settings.keybindings.close_active_label",
+                        Some("settings.keybindings.close_active_desc"),
+                    ),
                 ],
             );
 
@@ -297,28 +335,38 @@ pub fn draw_keybindings_tab(
                     (
                         "split_surface_vertical",
                         "settings.keybindings.split_surface_vertical_label",
+                        None,
                     ),
                     (
                         "split_surface_horizontal",
                         "settings.keybindings.split_surface_horizontal_label",
+                        None,
                     ),
                     (
                         "focus_surface_next",
                         "settings.keybindings.focus_surface_next_label",
+                        None,
                     ),
                     (
                         "focus_surface_prev",
                         "settings.keybindings.focus_surface_prev_label",
+                        None,
                     ),
                     (
                         "convert_surface",
                         "settings.keybindings.convert_surface_label",
+                        None,
                     ),
                     (
                         "convert_to_markdown",
                         "settings.keybindings.convert_to_markdown_label",
+                        None,
                     ),
-                    ("close_surface", "settings.keybindings.close_surface_label"),
+                    (
+                        "close_surface",
+                        "settings.keybindings.close_surface_label",
+                        None,
+                    ),
                 ],
             );
         }
@@ -330,14 +378,15 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 &[
-                    ("copy", "settings.keybindings.copy_label"),
-                    ("copy_path", "settings.keybindings.copy_path_label"),
-                    ("cut", "settings.keybindings.cut_label"),
-                    ("select_all", "settings.keybindings.select_all_label"),
-                    ("paste", "settings.keybindings.paste_label"),
+                    ("copy", "settings.keybindings.copy_label", None),
+                    ("copy_path", "settings.keybindings.copy_path_label", None),
+                    ("cut", "settings.keybindings.cut_label", None),
+                    ("select_all", "settings.keybindings.select_all_label", None),
+                    ("paste", "settings.keybindings.paste_label", None),
                     (
                         "screenshot_to_clipboard",
                         "settings.keybindings.screenshot_to_clipboard_label",
+                        None,
                     ),
                 ],
             );
@@ -350,9 +399,9 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 &[
-                    ("zoom_in", "settings.keybindings.zoom_in_label"),
-                    ("zoom_out", "settings.keybindings.zoom_out_label"),
-                    ("zoom_reset", "settings.keybindings.zoom_reset_label"),
+                    ("zoom_in", "settings.keybindings.zoom_in_label", None),
+                    ("zoom_out", "settings.keybindings.zoom_out_label", None),
+                    ("zoom_reset", "settings.keybindings.zoom_reset_label", None),
                 ],
             );
         }
@@ -364,8 +413,8 @@ pub fn draw_keybindings_tab(
                 pending_binding,
                 &captured,
                 &[
-                    ("image_undo", "settings.keybindings.image_undo_label"),
-                    ("image_redo", "settings.keybindings.image_redo_label"),
+                    ("image_undo", "settings.keybindings.image_undo_label", None),
+                    ("image_redo", "settings.keybindings.image_redo_label", None),
                 ],
             );
         }
@@ -380,10 +429,12 @@ pub fn draw_keybindings_tab(
                     (
                         "explorer_refresh",
                         "settings.keybindings.explorer_refresh_label",
+                        None,
                     ),
                     (
                         "explorer_go_up",
                         "settings.keybindings.explorer_go_up_label",
+                        None,
                     ),
                 ],
             );
