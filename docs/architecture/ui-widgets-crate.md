@@ -16,7 +16,9 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 - **본체(`tasty`) 미의존** — widgets crate 는 본체 state·plugin·전역 `theme()` 를 모른다. 모든 함수는 `&Theme` 을 **명시적 인자**로 받는다.
 - 갤러리는 본체 빌드와 분리 — `cargo build` 기본 타깃이 `tasty-gallery` 를 의존하지 않는다. `cargo run -p tasty-gallery` 로만 실행되는 standalone 데모.
 
-## 위젯 카탈로그 (`src/`)
+## 레이아웃 idiom 카탈로그
+
+이 표는 **layout idiom**(화면 배치 패턴) 함수만 다룬다 — `button`/`select`/`table`/`toggle`/`chip`/`tooltip`/`spinner`/`autocomplete`/`segmented`/`tree_row`/`path_field`/`menu_item`/`icon_button`/`input`/`status_dot`/`warning_callout`/`help_hint` 등 이름으로 식별되는 보편 컴포넌트(아래 "확장 가이드" 1번 카테고리)는 `crates/tasty-ui-widgets/src/`에 각자 파일로 존재하지만 여기 표에는 나열하지 않는다 — 전체 위젯 목록·시각은 [`tasty-gallery`](../dev-guide/gallery-first.md)가 단일 출처다(gallery-completeness 정책상 본체의 모든 컴포넌트가 갤러리에 노출된다).
 
 | 함수 | 역할 |
 |------|------|
