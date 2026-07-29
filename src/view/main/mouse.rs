@@ -129,12 +129,13 @@ impl MainView {
     ) {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
-        if egui_consumed
-            || overlay_open
-            || self.state.popup_hovered
-            || self.state.banner_hovered
-            || self.state.modifier_hint_hovered
-        {
+        if cursor_moved_should_short_circuit(
+            egui_consumed,
+            overlay_open,
+            self.state.popup_hovered,
+            self.state.banner_hovered,
+            self.state.modifier_hint_hovered,
+        ) {
             // 콘텐츠/오버레이 위에서는 리사이즈 커서를 띄우지 않는다(콘텐츠 우선).
             // early-return 경로에서도 반드시 리셋해야 가장자리→콘텐츠 이동 시 ↔ 커서가
             // 남지 않는다.
@@ -142,6 +143,12 @@ impl MainView {
             if self.hovered_link.take().is_some() {
                 self.mark_dirty();
             }
+            // 이 분기에 진입했다는 것 자체가 "이번 프레임엔 mesh surface 위가 아니다"라는
+            // 뜻이므로(TODO 37) — 아래 mesh 판정 블록(180행대)에 도달하지 못한 채 return
+            // 하면 hover 중이던 mesh surface 가 PointerGone 을 영영 못 받는 gap 이 생긴다.
+            // mesh_hover_transition 이 멱등이라 같은 target 유지 중 매 프레임 호출돼도
+            // thrashing 없다.
+            self.update_mesh_hover(None);
             self.mark_dirty();
             return;
         }
@@ -1147,6 +1154,23 @@ fn effective_click_tracking_decision(
     }
 }
 
+/// `handle_cursor_moved`(MainView 메서드, TODO 37)의 early-return 판정을 뽑아낸 순수
+/// 로직. 참이면 이번 프레임은 mesh surface 판정을 건너뛰고 `update_mesh_hover(None)`을
+/// 호출한다 — `MainView`는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어(`GpuState`가
+/// 목/헤드리스 생성자를 제공하지 않음) `handle_cursor_moved` 자체를 단위 테스트로 직접
+/// 구동할 수 없다. 대신 이 조건과 `mesh_hover_transition`을 각각 단위 테스트해 둘의
+/// 조합(조건이 참일 때 `update_mesh_hover(None)`이 호출되고, 그 결과 슬롯이
+/// `Some(prev)` → `None`으로 전이하며 `PointerGone`이 발생함)으로 배선을 간접 검증한다.
+fn cursor_moved_should_short_circuit(
+    egui_consumed: bool,
+    overlay_open: bool,
+    popup_hovered: bool,
+    banner_hovered: bool,
+    modifier_hint_hovered: bool,
+) -> bool {
+    egui_consumed || overlay_open || popup_hovered || banner_hovered || modifier_hint_hovered
+}
+
 /// `update_mesh_hover`(MainView 메서드, TODO 26)의 순수 결정 로직. 슬롯의 다음 값과,
 /// `PointerGone` 을 보내야 할 이전 대상(있다면)을 반환한다. 대상이 안 바뀌면(같은
 /// surface 에 머무르거나 계속 `None`) `PointerGone` 을 보내지 않는다.
@@ -1412,5 +1436,82 @@ mod mesh_hover_tests {
         );
         assert_eq!(next, Some(MeshHoverTarget::Attach(9)));
         assert_eq!(gone, Some(MeshHoverTarget::Local(1)));
+    }
+}
+
+/// TODO 37 — `handle_cursor_moved`의 early-return 배선을 간접 검증한다. `MainView`는
+/// 실제 GPU/winit 컨텍스트 없이 구성 불가능해 `handle_cursor_moved` 자체를 직접
+/// 구동하는 단위 테스트는 이 코드베이스에 전례가 없다(다른 스테이트풀 메서드들도
+/// 전부 순수 결정 로직만 추출해 테스트한다 — `mesh_hover_tests`, `right_click_tests`
+/// 등). 대신 (1) early-return 판정이 참인 조건(Case A/B 포함)과 (2) 그 결과
+/// `update_mesh_hover(None)`이 호출됐을 때의 상태 전이를 각각 단위 테스트해, 실제
+/// `handle_cursor_moved` 코드(`self.update_mesh_hover(None)`이 early-return 블록
+/// 안에서 `return` 이전에 호출됨)와 조합하면 배선이 성립함을 보인다.
+#[cfg(test)]
+mod cursor_moved_early_return_tests {
+    use super::{MeshHoverTarget, cursor_moved_should_short_circuit, mesh_hover_transition};
+
+    #[test]
+    fn case_a_egui_consumed_short_circuits() {
+        // Case A: mesh surface 에서 host UI chrome(사이드바 등)으로 넘어가는 전환
+        // 이벤트 자체가 egui_consumed=true 다.
+        assert!(cursor_moved_should_short_circuit(
+            true, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn case_b_overlay_open_short_circuits() {
+        // Case B: 설정창 등 오버레이가 열려 있는 동안은 좌표와 무관하게 항상 참.
+        assert!(cursor_moved_should_short_circuit(
+            false, true, false, false, false
+        ));
+    }
+
+    #[test]
+    fn popup_banner_modifier_hint_each_short_circuit() {
+        assert!(cursor_moved_should_short_circuit(
+            false, false, true, false, false
+        ));
+        assert!(cursor_moved_should_short_circuit(
+            false, false, false, true, false
+        ));
+        assert!(cursor_moved_should_short_circuit(
+            false, false, false, false, true
+        ));
+    }
+
+    #[test]
+    fn no_flag_set_does_not_short_circuit() {
+        assert!(!cursor_moved_should_short_circuit(
+            false, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn short_circuit_frame_transitions_hovered_mesh_target_to_none_with_pointer_gone() {
+        // early-return 조건이 참인 프레임에서 `update_mesh_hover(None)`이 호출되면
+        // (수정된 handle_cursor_moved 배선), 직전까지 hover 중이던 local mesh surface
+        // 는 이 전환 이벤트 자체에서 None 으로 전이하고 PointerGone 이 1회 발생해야
+        // 한다 — 수정 전에는 이 호출 자체가 생략되어 슬롯이 `Some(Local(sid))`로 남았다.
+        assert!(cursor_moved_should_short_circuit(
+            true, false, false, false, false
+        ));
+        let (next, gone) = mesh_hover_transition(
+            Some(MeshHoverTarget::Local(7)),
+            None, /* update_mesh_hover(None) */
+        );
+        assert_eq!(next, None);
+        assert_eq!(gone, Some(MeshHoverTarget::Local(7)));
+    }
+
+    #[test]
+    fn short_circuit_frame_is_idempotent_when_already_none() {
+        // 오버레이가 열려있는 동안 여러 CursorMoved 가 연달아 이 분기를 타도(Case B),
+        // mesh_hover_transition 이 멱등이라 이미 None 인 슬롯에 대해서는 PointerGone 을
+        // 중복 발생시키지 않는다(thrashing 방지).
+        let (next, gone) = mesh_hover_transition(None, None);
+        assert_eq!(next, None);
+        assert_eq!(gone, None);
     }
 }
