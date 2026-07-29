@@ -28,6 +28,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | ID | 검사 |
 |----|------|
 | B.5 | `cargo check --workspace --all-targets` |
+| B.6 | `cargo check --no-default-features` (headless 빌드 — `gui` feature 없이 컴파일) |
 | B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness` |
 
 clippy 의 `style`/`pedantic` 은 warning 으로만(error 승격 안 함 — false positive 노이즈 방지).

@@ -10,7 +10,7 @@ workspace 단위 thread 1개가 `Ready` task 를 자동 dispatch 하고 `Running
 | `crates/tasty-agent/src/platform/` | cross-platform pid liveness probe(`process_alive`) |
 | `src/core/agent/runner_host.rs` | `HostExecutor` — `TaskExecutor` host 구현 + `RunnerContext`(memory + agent_seq + host_ipc injector) |
 | `src/core/agent/runner_thread.rs` | `RunnerRegistry` — workspace 별 thread start/stop/status + 재시작 정화 |
-| `src/app/ipc/host_call.rs` | `HostIpcInjector` — runner thread 가 plugin IPC 를 동기 호출하는 통로 |
+| `src/adapters/ipc/host_call.rs` | `HostIpcInjector` — runner thread 가 plugin IPC 를 동기 호출하는 통로 |
 | `src/adapters/ipc/handler/agent/` | `task`/`barrier`/`semaphore`/`lease`/`ratelimit` IPC 핸들러 |
 
 ## 모델
