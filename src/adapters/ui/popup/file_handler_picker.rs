@@ -41,14 +41,12 @@ const BUTTON_ROW_HEIGHT: f32 = 28.0;
 const VERTICAL_PADDING: f32 = 8.0;
 const HORIZONTAL_MARGIN: f32 = 8.0;
 
-/// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 짧은 이름 포함.
+/// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 전체 경로 포함.
+/// 타이틀바 폭에 맞춘 겹침 방지(elide)는 `popup/draw.rs`(모든 popup 공통)가 전담하므로
+/// 여기서는 축약하지 않고 원본 경로를 그대로 넘긴다.
 pub fn picker_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
     match &state.dialogs.file_handler_picker {
-        Some(p) => format!(
-            "{}: {}",
-            t("file_handler.picker.title"),
-            shorten_target(&p.target_display),
-        ),
+        Some(p) => format!("{}: {}", t("file_handler.picker.title"), p.target_display),
         None => t("file_handler.picker.title").to_string(),
     }
 }
@@ -85,7 +83,9 @@ pub struct FileHandlerPickerEntryView {
 /// 순수 시각 view 의 입력. AppState/CoreState 의존 없음.
 pub struct FileHandlerPickerProps<'a> {
     pub theme: &'a Theme,
-    /// 헤더에 보일 대상 표시 (이미 축약됨 — `shorten_target` 적용 후).
+    /// 헤더 본문("대상: ...")에 보일 대상 표시 (이미 축약됨 — `shorten_target` 적용 후).
+    /// 타이틀바 텍스트는 이 값을 쓰지 않는다 — `picker_title`이 원본 경로를 넘기고
+    /// `popup/draw.rs`의 공통 elide 로직이 타이틀 겹침 방지를 전담한다.
     pub target_display: &'a str,
     /// 탐지된 detector 라벨. `None` 이면 "알 수 없음" 텍스트로 표시.
     pub detector_label: Option<&'a str>,
@@ -398,6 +398,9 @@ pub fn draw_file_handler_picker(
     }
 }
 
+/// 헤더 본문("대상: ...") 한 줄 표시용 축약. 타이틀바 겹침 방지 목적으로는 쓰지
+/// 않는다(그건 `popup/draw.rs`의 폭 기준 elide 가 전담) — 이 함수는 문자 수(64) 기준의
+/// 대략적인 축약으로, 본문이 popup 폭을 크게 벗어나는 것만 막는다.
 fn shorten_target(s: &str) -> String {
     const MAX: usize = 64;
     if s.len() <= MAX {

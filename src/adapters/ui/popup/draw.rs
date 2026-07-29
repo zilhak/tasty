@@ -26,6 +26,34 @@ fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<Resiz
     }
 }
 
+/// 텍스트가 `max_width` 를 넘으면 뒤를 `…` 로 잘라 폭 안에 맞춘다(넘지 않으면 원본 그대로).
+/// popup 타이틀처럼 가용 폭이 좁을 수 있는 렌더링 경로 공통으로 쓴다 — 개별 popup 이
+/// 각자 타이틀 문자열을 축약할 필요 없이 이 함수가 겹침 방지를 전담한다.
+fn elide_for_width(ctx: &egui::Context, text: &str, font: egui::FontId, max_width: f32) -> String {
+    if max_width <= 0.0 {
+        return String::new();
+    }
+    let width_of = |t: &str| {
+        ctx.fonts(|f| {
+            f.layout_no_wrap(t.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
+                .rect
+                .width()
+        })
+    };
+    if width_of(text) <= max_width {
+        return text.to_owned();
+    }
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let candidate: String = chars.iter().collect::<String>() + "…";
+        if width_of(&candidate) <= max_width {
+            return candidate;
+        }
+    }
+    "…".to_owned()
+}
+
 /// 잡은 엣지 조합 → 리사이즈 커서. 모서리는 대각선, 단일 엣지는 수평/수직.
 fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
     use egui::CursorIcon as C;
@@ -335,12 +363,28 @@ impl PopupManager {
                     egui::Stroke::new(th.border_width.value(), th.border_strong()),
                 );
 
-                // Title text (centered)
-                painter.text(
-                    title_rect.center(),
-                    egui::Align2::CENTER_CENTER,
+                // Title text — close_btn_rect 를 침범하지 않는 가용 폭 기준으로 elide.
+                // (양쪽에 같은 패딩을 둬 close 버튼과의 간격 + 시각적 대칭을 함께 확보.)
+                let title_font = egui::FontId::proportional(th.font_size_body.value());
+                let title_pad = th.spacing_sm.value();
+                let title_avail_rect = egui::Rect::from_min_max(
+                    egui::pos2(title_rect.min.x + title_pad, title_rect.min.y),
+                    egui::pos2(
+                        (close_btn_rect.min.x - title_pad).max(title_rect.min.x + title_pad),
+                        title_rect.max.y,
+                    ),
+                );
+                let elided_title = elide_for_width(
+                    ctx,
                     &popup.title,
-                    egui::FontId::proportional(th.font_size_body.value()),
+                    title_font.clone(),
+                    title_avail_rect.width(),
+                );
+                painter.with_clip_rect(title_avail_rect).text(
+                    title_avail_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &elided_title,
+                    title_font,
                     th.text_primary().into(),
                 );
 
@@ -489,5 +533,52 @@ impl PopupManager {
                 .find(|(id, _)| *id == *surface_id)
                 .map(|(_, r)| *r),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `ctx.fonts()` 는 최소 한 프레임(`run`)이 지나야 폰트 정의가 로드된다.
+    fn with_ctx<R>(f: impl FnOnce(&egui::Context) -> R) -> R {
+        let ctx = egui::Context::default();
+        let mut out = None;
+        let mut f = Some(f);
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            out = Some((f.take().unwrap())(ctx));
+        }));
+        out.unwrap()
+    }
+
+    #[test]
+    fn elide_for_width_keeps_short_text_untouched() {
+        with_ctx(|ctx| {
+            let font = egui::FontId::proportional(14.0);
+            let text = "짧은 제목";
+            assert_eq!(elide_for_width(ctx, text, font, 1000.0), text);
+        });
+    }
+
+    #[test]
+    fn elide_for_width_truncates_long_text_with_ellipsis() {
+        with_ctx(|ctx| {
+            let font = egui::FontId::proportional(14.0);
+            // TODO 39 재현 케이스와 유사한 긴 경로 타이틀.
+            let text =
+                "파일 핸들러 선택: /Users/ljh/workspace/etc/teams-mcp-very-long-path/Cargo.toml";
+            let result = elide_for_width(ctx, text, font, 40.0);
+            assert!(result.chars().count() < text.chars().count());
+            assert!(result.ends_with('…'));
+        });
+    }
+
+    #[test]
+    fn elide_for_width_zero_or_negative_width_returns_empty() {
+        with_ctx(|ctx| {
+            let font = egui::FontId::proportional(14.0);
+            assert_eq!(elide_for_width(ctx, "anything", font.clone(), 0.0), "");
+            assert_eq!(elide_for_width(ctx, "anything", font, -5.0), "");
+        });
     }
 }
