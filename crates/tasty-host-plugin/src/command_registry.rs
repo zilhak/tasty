@@ -337,10 +337,7 @@ mod tests {
                 CommandScope::Global,
             )],
         ));
-        let mut global_ids: Vec<&str> = reg
-            .iter_global()
-            .map(|e| e.command_id.as_str())
-            .collect();
+        let mut global_ids: Vec<&str> = reg.iter_global().map(|e| e.command_id.as_str()).collect();
         global_ids.sort_unstable();
         assert_eq!(global_ids, vec!["a.global", "b.global"]);
     }

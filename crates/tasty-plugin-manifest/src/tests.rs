@@ -321,7 +321,10 @@ fn command_invalid_id_rejected() {
         title_i18n_key = "x.foo"
     "#;
     let err = parse(s).unwrap_err().to_string();
-    assert!(err.contains("invalid contributes.commands id"), "got: {err}");
+    assert!(
+        err.contains("invalid contributes.commands id"),
+        "got: {err}"
+    );
 }
 
 #[test]

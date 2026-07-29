@@ -236,10 +236,7 @@ mod tests {
     }
 
     fn ctrl_shift_r() -> (Key, ModifiersState) {
-        (
-            k_char("r"),
-            ModifiersState::CONTROL | ModifiersState::SHIFT,
-        )
+        (k_char("r"), ModifiersState::CONTROL | ModifiersState::SHIFT)
     }
 
     // ── match_global_shortcut ─────────────────────────────────────

@@ -41,10 +41,7 @@ impl App {
             // `OpenSettings` 는 Settings 모달을 여는 App 레이어 동작(winit
             // `ActiveEventLoop` 필요)이라 Core 로 내려보내지 않고 여기서 직접
             // 처리한다 — 나머지(Selected/Cancelled)만 기존 경로로 위임.
-            if matches!(
-                result,
-                crate::state::FileHandlerPickerResult::OpenSettings
-            ) {
+            if matches!(result, crate::state::FileHandlerPickerResult::OpenSettings) {
                 self.pending_settings_file_handler_tab = true;
                 crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             } else {

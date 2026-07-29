@@ -571,7 +571,11 @@ impl Manifest {
             ToolAction::OpenPopup { popup_id } => {
                 // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
                 if popup_id.is_empty() {
-                    anyhow::bail!("{} '{}': action.popup_id must not be empty", owner_label, id);
+                    anyhow::bail!(
+                        "{} '{}': action.popup_id must not be empty",
+                        owner_label,
+                        id
+                    );
                 }
             }
         }
@@ -714,11 +718,23 @@ impl Manifest {
             .map(|p| p.id.as_str())
             .collect();
         for tool in &self.contributes.tool {
-            Self::validate_popup_ref("contributes.tool", &tool.id, &tool.action, &self.id, &popup_ids)?;
+            Self::validate_popup_ref(
+                "contributes.tool",
+                &tool.id,
+                &tool.action,
+                &self.id,
+                &popup_ids,
+            )?;
         }
         for cmd in &self.contributes.commands {
             if let Some(action) = &cmd.action {
-                Self::validate_popup_ref("contributes.commands", &cmd.id, action, &self.id, &popup_ids)?;
+                Self::validate_popup_ref(
+                    "contributes.commands",
+                    &cmd.id,
+                    action,
+                    &self.id,
+                    &popup_ids,
+                )?;
             }
         }
         Ok(())
