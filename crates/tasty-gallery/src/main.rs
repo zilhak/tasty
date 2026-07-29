@@ -395,37 +395,52 @@ fn capture_to_png(
         let _ = tx.send(r); // rx 는 같은 스코프 — 송신 실패 시 결과만 유실(스크린샷 skip), 안전
     });
     let _ = device.poll(wgpu::Maintain::Wait); // map 콜백 구동용 동기 poll — 반환(queue 상태) 불필요
-    if let Ok(Ok(())) = rx.recv() {
-        let data = slice.get_mapped_range();
-        let mut pixels = Vec::with_capacity((width * height * 3) as usize);
-        for row in 0..height {
-            let off = (row * padded) as usize;
-            for col in 0..width {
-                let px = off + (col * bpp) as usize;
-                pixels.push(data[px + 2]); // R
-                pixels.push(data[px + 1]); // G
-                pixels.push(data[px]); // B
-            }
-        }
-        drop(data);
-        buffer.unmap();
-        if let Ok(file) = std::fs::File::create(path) {
-            let w = std::io::BufWriter::new(file);
-            let mut enc = png::Encoder::new(w, width, height);
-            enc.set_color(png::ColorType::Rgb);
-            enc.set_depth(png::BitDepth::Eight);
-            if let Ok(mut writer) = enc.write_header() {
-                if let Err(e) = writer.write_image_data(&pixels) {
-                    tracing::warn!(
-                        "gallery screenshot write failed for {}: {e}",
-                        path.display()
-                    );
-                } else {
-                    tracing::info!("gallery screenshot saved to {}", path.display());
-                }
-            }
-        }
-    } else {
+    if !matches!(rx.recv(), Ok(Ok(()))) {
         tracing::warn!("gallery screenshot capture failed");
+        return;
+    }
+
+    let data = slice.get_mapped_range();
+    let pixels = bgra_to_rgb_rows(&data, width, height, padded, bpp);
+    drop(data);
+    buffer.unmap();
+
+    write_rgb_png(path, width, height, &pixels);
+}
+
+/// row-padded BGRA 버퍼 → 패딩 없는 RGB 픽셀 버퍼 변환.
+fn bgra_to_rgb_rows(data: &[u8], width: u32, height: u32, padded: u32, bpp: u32) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+    for row in 0..height {
+        let off = (row * padded) as usize;
+        for col in 0..width {
+            let px = off + (col * bpp) as usize;
+            pixels.push(data[px + 2]); // R
+            pixels.push(data[px + 1]); // G
+            pixels.push(data[px]); // B
+        }
+    }
+    pixels
+}
+
+/// RGB 픽셀 버퍼를 PNG 파일로 저장.
+fn write_rgb_png(path: &std::path::Path, width: u32, height: u32, pixels: &[u8]) {
+    let Ok(file) = std::fs::File::create(path) else {
+        return;
+    };
+    let w = std::io::BufWriter::new(file);
+    let mut enc = png::Encoder::new(w, width, height);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    let Ok(mut writer) = enc.write_header() else {
+        return;
+    };
+    if let Err(e) = writer.write_image_data(pixels) {
+        tracing::warn!(
+            "gallery screenshot write failed for {}: {e}",
+            path.display()
+        );
+    } else {
+        tracing::info!("gallery screenshot saved to {}", path.display());
     }
 }

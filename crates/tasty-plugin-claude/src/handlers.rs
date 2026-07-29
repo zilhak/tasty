@@ -433,27 +433,30 @@ pub(crate) fn start_claude_in_surface(host: &HostHandle, surface_id: u32, prompt
         ),
         None => format!("TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} "),
     };
+    let text = match prompt {
+        Some(p) => claude_launch_command_with_prompt(surface_id, &agent_prefix, p),
+        None => format!("{agent_prefix}claude\r"),
+    };
 
-    if let Some(p) = prompt {
-        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", surface_id));
-        if let Err(e) = std::fs::write(&prompt_path, p) {
-            tracing::warn!("Failed to write prompt file: {e}");
-        }
-        if let Err(e) = host.call(
-            "surface.send",
-            json!({
-                "surface_id": surface_id,
-                "text": format!("{agent_prefix}claude \"$(cat '{}')\"\r", prompt_path.display()),
-            }),
-        ) {
-            tracing::warn!("surface.send (claude with prompt) failed: {e}");
-        }
-    } else if let Err(e) = host.call(
+    if let Err(e) = host.call(
         "surface.send",
-        json!({ "surface_id": surface_id, "text": format!("{agent_prefix}claude\r") }),
+        json!({ "surface_id": surface_id, "text": text }),
     ) {
         tracing::warn!("surface.send (claude) failed: {e}");
     }
+}
+
+/// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
+/// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
+fn claude_launch_command_with_prompt(surface_id: u32, agent_prefix: &str, prompt: &str) -> String {
+    let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{surface_id}.txt"));
+    if let Err(e) = std::fs::write(&prompt_path, prompt) {
+        tracing::warn!("Failed to write prompt file: {e}");
+    }
+    format!(
+        "{agent_prefix}claude \"$(cat '{}')\"\r",
+        prompt_path.display()
+    )
 }
 
 /// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의

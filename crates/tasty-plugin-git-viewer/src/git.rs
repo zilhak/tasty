@@ -166,74 +166,91 @@ pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Ve
     let mut out: Vec<WorktreeEntry> = Vec::new();
 
     // 1) main working tree 합성 (libgit2 worktrees() 가 안 줌).
-    if let Some(main_wd) = derive_main_workdir(repo) {
-        let is_valid = main_wd.is_dir();
-        let (branch, oid) = Repository::open(&main_wd)
-            .ok()
-            .map(|r| head_info(&r))
-            .unwrap_or((None, None));
-        out.push(WorktreeEntry {
-            name: dir_name(&main_wd, "main"),
-            branch,
-            oid,
-            is_main: true,
-            is_current: canon(&main_wd) == current_canon,
-            locked: false,
-            lock_reason: None,
-            is_valid,
-            path: display_path(&main_wd),
-        });
+    if let Some(entry) = main_worktree_entry(repo, &current_canon) {
+        out.push(entry);
     }
 
     // 2) linked worktrees.
     if let Ok(names) = repo.worktrees() {
         for name in names.iter().flatten() {
-            let wt = match repo.find_worktree(name) {
-                Ok(w) => w,
-                Err(e) => {
-                    tracing::debug!("find_worktree {name} failed: {e}");
-                    continue;
-                }
-            };
-            let wt_path = wt.path().to_path_buf();
-            let wt_canon = canon(&wt_path);
-            // main 합성분과 경로 중복 방지 (비표준 레이아웃 방어).
-            if out.iter().any(|e| canon(&e.path) == wt_canon) {
-                continue;
+            if let Some(entry) = linked_worktree_entry(repo, name, &current_canon, &out) {
+                out.push(entry);
             }
-            let is_valid = wt.validate().is_ok();
-            let (locked, lock_reason) = match wt.is_locked() {
-                Ok(WorktreeLockStatus::Locked(reason)) => (true, reason),
-                Ok(WorktreeLockStatus::Unlocked) => (false, None),
-                Err(e) => {
-                    tracing::debug!("is_locked {name} failed: {e}");
-                    (false, None)
-                }
-            };
-            // head 는 유효한 worktree 만 읽고 핸들은 바로 drop (목록 단계는 status/log 안 읽음).
-            let (branch, oid) = if is_valid {
-                Repository::open_from_worktree(&wt)
-                    .ok()
-                    .map(|r| head_info(&r))
-                    .unwrap_or((None, None))
-            } else {
-                (None, None)
-            };
-            out.push(WorktreeEntry {
-                name: name.to_string(),
-                branch,
-                oid,
-                is_main: false,
-                is_current: wt_canon == current_canon,
-                locked,
-                lock_reason,
-                is_valid,
-                path: display_path(&wt_path),
-            });
         }
     }
 
     Ok(out)
+}
+
+fn main_worktree_entry(repo: &Repository, current_canon: &Path) -> Option<WorktreeEntry> {
+    let main_wd = derive_main_workdir(repo)?;
+    let is_valid = main_wd.is_dir();
+    let (branch, oid) = Repository::open(&main_wd)
+        .ok()
+        .map(|r| head_info(&r))
+        .unwrap_or((None, None));
+    Some(WorktreeEntry {
+        name: dir_name(&main_wd, "main"),
+        branch,
+        oid,
+        is_main: true,
+        is_current: canon(&main_wd) == current_canon,
+        locked: false,
+        lock_reason: None,
+        is_valid,
+        path: display_path(&main_wd),
+    })
+}
+
+/// 단일 linked worktree 항목 조회. 중복(main 합성분과 경로 중복) · lookup 실패 시 `None`.
+fn linked_worktree_entry(
+    repo: &Repository,
+    name: &str,
+    current_canon: &Path,
+    existing: &[WorktreeEntry],
+) -> Option<WorktreeEntry> {
+    let wt = match repo.find_worktree(name) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::debug!("find_worktree {name} failed: {e}");
+            return None;
+        }
+    };
+    let wt_path = wt.path().to_path_buf();
+    let wt_canon = canon(&wt_path);
+    // main 합성분과 경로 중복 방지 (비표준 레이아웃 방어).
+    if existing.iter().any(|e| canon(&e.path) == wt_canon) {
+        return None;
+    }
+    let is_valid = wt.validate().is_ok();
+    let (locked, lock_reason) = match wt.is_locked() {
+        Ok(WorktreeLockStatus::Locked(reason)) => (true, reason),
+        Ok(WorktreeLockStatus::Unlocked) => (false, None),
+        Err(e) => {
+            tracing::debug!("is_locked {name} failed: {e}");
+            (false, None)
+        }
+    };
+    // head 는 유효한 worktree 만 읽고 핸들은 바로 drop (목록 단계는 status/log 안 읽음).
+    let (branch, oid) = if is_valid {
+        Repository::open_from_worktree(&wt)
+            .ok()
+            .map(|r| head_info(&r))
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+    Some(WorktreeEntry {
+        name: name.to_string(),
+        branch,
+        oid,
+        is_main: false,
+        is_current: wt_canon == current_canon,
+        locked,
+        lock_reason,
+        is_valid,
+        path: display_path(&wt_path),
+    })
 }
 
 pub fn discover_repo(start: &Path) -> Option<Repository> {

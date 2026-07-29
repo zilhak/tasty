@@ -219,47 +219,20 @@ fn run_reboot_sequence(
         return;
     };
 
-    if after_delay_action(&current, baseline) == AfterDelay::SendCtrlC {
-        for _ in 0..CTRL_C_COUNT {
-            if let Err(e) = host.call(
-                "surface.send_combo",
-                json!({ "surface_id": surface_id, "key": "c", "modifiers": ["ctrl"] }),
-            ) {
-                tracing::warn!("claude reboot s{surface_id}: send_combo failed: {e} — aborting");
+    match after_delay_action(&current, baseline) {
+        AfterDelay::SendCtrlC => {
+            if !kill_claude_via_ctrlc(host, surface_id, baseline) {
                 return;
             }
-            thread::sleep(CTRL_C_INTERVAL);
         }
-        // 종료 확인: 전경이 baseline 에서 이탈할 때까지. 실패 시 절대 진행 금지 —
-        // 살아있는 claude TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
-        if !poll_foreground(host, surface_id, EXIT_WAIT, |name| name != baseline) {
-            tracing::warn!(
-                "claude reboot s{surface_id}: claude still in foreground after {CTRL_C_COUNT}x Ctrl+C — aborting (nothing sent)"
+        AfterDelay::SkipToResume => {
+            tracing::info!(
+                "claude reboot s{surface_id}: foreground already '{current}' (was '{baseline}') — skipping Ctrl+C"
             );
-            return;
         }
-    } else {
-        tracing::info!(
-            "claude reboot s{surface_id}: foreground already '{current}' (was '{baseline}') — skipping Ctrl+C"
-        );
     }
 
-    if let Err(e) = host.call(
-        "surface.send",
-        json!({ "surface_id": surface_id, "text": resume_command(session_id) }),
-    ) {
-        tracing::warn!("claude reboot s{surface_id}: resume send failed: {e}");
-        return;
-    }
-
-    // 복귀 확인: 전경이 baseline(claude 계열 이름)으로 돌아올 때까지. 미복귀면
-    // 안내 프롬프트도 보내지 않는다 — 셸 프롬프트에 평문이 명령으로 실행되는
-    // 사고 방지.
-    if !poll_foreground(host, surface_id, RETURN_WAIT, |name| name == baseline) {
-        tracing::warn!(
-            "claude reboot s{surface_id}: claude did not return to foreground within {}s — resume sent but notice skipped",
-            RETURN_WAIT.as_secs()
-        );
+    if !resume_and_wait(host, surface_id, baseline, session_id) {
         return;
     }
     thread::sleep(TUI_READY_GRACE);
@@ -271,37 +244,68 @@ fn run_reboot_sequence(
     }
 }
 
+/// Ctrl+C ×N 전송 후 전경이 baseline 에서 이탈할 때까지 확인. 실패 시 `false` —
+/// 살아있는 claude TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
+fn kill_claude_via_ctrlc(host: &HostHandle, surface_id: u32, baseline: &str) -> bool {
+    for _ in 0..CTRL_C_COUNT {
+        if let Err(e) = host.call(
+            "surface.send_combo",
+            json!({ "surface_id": surface_id, "key": "c", "modifiers": ["ctrl"] }),
+        ) {
+            tracing::warn!("claude reboot s{surface_id}: send_combo failed: {e} — aborting");
+            return false;
+        }
+        thread::sleep(CTRL_C_INTERVAL);
+    }
+    // 종료 확인: 전경이 baseline 에서 이탈할 때까지. 실패 시 절대 진행 금지 —
+    // 살아있는 claude TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
+    if !poll_foreground(host, surface_id, EXIT_WAIT, |name| name != baseline) {
+        tracing::warn!(
+            "claude reboot s{surface_id}: claude still in foreground after {CTRL_C_COUNT}x Ctrl+C — aborting (nothing sent)"
+        );
+        return false;
+    }
+    true
+}
+
+/// resume 명령 전송 + 전경이 baseline(claude 계열 이름)으로 돌아올 때까지 확인.
+/// 미복귀면 `false` — 안내 프롬프트도 보내지 않는다(셸 프롬프트에 평문이 명령으로
+/// 실행되는 사고 방지).
+fn resume_and_wait(host: &HostHandle, surface_id: u32, baseline: &str, session_id: &str) -> bool {
+    if let Err(e) = host.call(
+        "surface.send",
+        json!({ "surface_id": surface_id, "text": resume_command(session_id) }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: resume send failed: {e}");
+        return false;
+    }
+
+    if !poll_foreground(host, surface_id, RETURN_WAIT, |name| name == baseline) {
+        tracing::warn!(
+            "claude reboot s{surface_id}: claude did not return to foreground within {}s — resume sent but notice skipped",
+            RETURN_WAIT.as_secs()
+        );
+        return false;
+    }
+    true
+}
+
 /// 안내 프롬프트를 제출하고 화면에 실제로 나타났는지 검증한다. TUI 초기화 중
 /// PTY 입력이 유실될 수 있어(실측: 복귀 직후 tell 이 소리 없이 사라짐) 확인될
 /// 때까지 재시도한다. 매 시도 전 전경이 여전히 claude(baseline)인지 재확인 —
 /// resume 이 실패해 셸로 떨어진 경우 평문이 셸 명령으로 실행되는 사고 방지.
 fn deliver_notice(host: &HostHandle, surface_id: u32, baseline: &str, notice: &str) -> bool {
     for attempt in 1..=NOTICE_ATTEMPTS {
-        match query_foreground(host, surface_id) {
-            Some(name) if name == baseline => {}
-            other => {
-                tracing::warn!(
-                    "claude reboot s{surface_id}: foreground changed to {other:?} before notice — aborting"
+        match try_deliver_notice_once(host, surface_id, baseline, notice) {
+            NoticeAttempt::Confirmed => return true,
+            NoticeAttempt::Aborted => return false,
+            NoticeAttempt::NotYetVisible => {
+                tracing::info!(
+                    "claude reboot s{surface_id}: notice attempt {attempt}/{NOTICE_ATTEMPTS} not visible yet — retrying"
                 );
-                return false;
+                thread::sleep(NOTICE_RETRY_INTERVAL);
             }
         }
-        if let Err(e) = host.call(
-            "terminal.tell",
-            json!({ "surface": surface_id, "text": notice }),
-        ) {
-            tracing::warn!("claude reboot s{surface_id}: notice tell failed: {e}");
-            return false;
-        }
-        thread::sleep(NOTICE_VERIFY_DELAY);
-        if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-            ensure_submitted(host, surface_id);
-            return true;
-        }
-        tracing::info!(
-            "claude reboot s{surface_id}: notice attempt {attempt}/{NOTICE_ATTEMPTS} not visible yet — retrying"
-        );
-        thread::sleep(NOTICE_RETRY_INTERVAL);
     }
     // 마지막 시도 직후 verify 가 아슬하게 놓쳤을 수 있으니 한 번 더 확인.
     if screen_contains(host, surface_id, NOTICE_SNIPPET) {
@@ -309,6 +313,49 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, baseline: &str, notice: &s
         return true;
     }
     false
+}
+
+/// 안내 프롬프트 제출 1회 시도 결과.
+enum NoticeAttempt {
+    /// 화면에서 확인, 제출까지 완료.
+    Confirmed,
+    /// 전경 변경/tell 실패 — 시퀀스 전체를 중단해야 함.
+    Aborted,
+    /// 제출은 했으나 아직 화면에 안 보임 — 재시도 대상.
+    NotYetVisible,
+}
+
+/// 전경이 여전히 baseline(claude) 인지 확인 후 안내 프롬프트를 `terminal.tell` 로
+/// 제출하고 화면에 나타났는지 검사한다.
+fn try_deliver_notice_once(
+    host: &HostHandle,
+    surface_id: u32,
+    baseline: &str,
+    notice: &str,
+) -> NoticeAttempt {
+    match query_foreground(host, surface_id) {
+        Some(name) if name == baseline => {}
+        other => {
+            tracing::warn!(
+                "claude reboot s{surface_id}: foreground changed to {other:?} before notice — aborting"
+            );
+            return NoticeAttempt::Aborted;
+        }
+    }
+    if let Err(e) = host.call(
+        "terminal.tell",
+        json!({ "surface": surface_id, "text": notice }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: notice tell failed: {e}");
+        return NoticeAttempt::Aborted;
+    }
+    thread::sleep(NOTICE_VERIFY_DELAY);
+    if screen_contains(host, surface_id, NOTICE_SNIPPET) {
+        ensure_submitted(host, surface_id);
+        NoticeAttempt::Confirmed
+    } else {
+        NoticeAttempt::NotYetVisible
+    }
 }
 
 /// 문구가 화면에 있어도 제출(`\r`)이 paste 로 흡수돼 입력창에 잔류할 수 있으므로

@@ -257,6 +257,26 @@ fn run_reboot_sequence(
         return;
     }
 
+    if !kill_codex_via_ctrlc(host, surface_id, exit_c0) {
+        return;
+    }
+
+    if !resume_and_wait(host, surface_id, session_id, policy_args, banner_c0) {
+        return;
+    }
+    thread::sleep(TUI_READY_GRACE);
+
+    if !deliver_notice(host, surface_id, &build_notice(extra_prompt)) {
+        tracing::warn!(
+            "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
+        );
+    }
+}
+
+/// Ctrl+C ×N 전송 후 exit 마커("run codex resume" 힌트)가 요청 시점(`exit_c0`)보다
+/// 늘어날 때까지 확인. 실패 시 `false` — 살아있는 codex TUI 입력창에 resume 명령이
+/// 타이핑되는 사고 방지.
+fn kill_codex_via_ctrlc(host: &HostHandle, surface_id: u32, exit_c0: usize) -> bool {
     // codex 는 Ctrl+C 1회로 종료된다(실측). 여분은 셸 프롬프트에서 no-op.
     for _ in 0..CTRL_C_COUNT {
         if let Err(e) = host.call(
@@ -264,29 +284,40 @@ fn run_reboot_sequence(
             json!({ "surface_id": surface_id, "key": "c", "modifiers": ["ctrl"] }),
         ) {
             tracing::warn!("codex reboot s{surface_id}: send_combo failed: {e} — aborting");
-            return;
+            return false;
         }
         thread::sleep(CTRL_C_INTERVAL);
     }
 
-    // 종료 확인: exit 마커("run codex resume" 힌트)가 요청 시점보다 늘어날 때까지.
-    // 실패 시 절대 진행 금지 — 살아있는 codex TUI 입력창에 resume 명령이
-    // 타이핑되는 사고 방지.
+    // 종료 확인: exit 마커가 요청 시점보다 늘어날 때까지. 실패 시 절대 진행 금지 —
+    // 살아있는 codex TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
     if !poll_screen(host, surface_id, EXIT_WAIT, |s| {
         count_occurrences(s, EXIT_MARKER) > exit_c0
     }) {
         tracing::warn!(
             "codex reboot s{surface_id}: exit marker did not appear after {CTRL_C_COUNT}x Ctrl+C — aborting (nothing sent)"
         );
-        return;
+        return false;
     }
+    true
+}
 
+/// resume 명령 전송 + 기동 배너 마커가 요청 시점(`banner_c0`)보다 늘어날 때까지
+/// 확인. 미복귀면 `false` — 안내 프롬프트도 보내지 않는다(셸 프롬프트에 평문이
+/// 명령으로 실행되는 사고 방지).
+fn resume_and_wait(
+    host: &HostHandle,
+    surface_id: u32,
+    session_id: &str,
+    policy_args: &str,
+    banner_c0: usize,
+) -> bool {
     if let Err(e) = host.call(
         "surface.send",
         json!({ "surface_id": surface_id, "text": resume_command(session_id, policy_args) }),
     ) {
         tracing::warn!("codex reboot s{surface_id}: resume send failed: {e}");
-        return;
+        return false;
     }
 
     // 복귀 확인: 기동 배너가 요청 시점보다 늘어날 때까지. 미복귀면 안내 프롬프트도
@@ -298,15 +329,9 @@ fn run_reboot_sequence(
             "codex reboot s{surface_id}: codex banner did not reappear within {}s — resume sent but notice skipped",
             RETURN_WAIT.as_secs()
         );
-        return;
+        return false;
     }
-    thread::sleep(TUI_READY_GRACE);
-
-    if !deliver_notice(host, surface_id, &build_notice(extra_prompt)) {
-        tracing::warn!(
-            "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
-        );
-    }
+    true
 }
 
 /// 안내 프롬프트를 제출하고 화면에 실제로 나타났는지 검증한다. TUI 초기화 중
