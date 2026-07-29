@@ -4,7 +4,7 @@
 - **주체**: AI Agent / 로컬 사용자 (`tasty codex` CLI · IPC)
 - **배포/통합**: bundled · cli + ipc_namespace + 멀티에이전트 — [plugins 개념](../../concepts/plugins.md)
 - **코드**: `crates/tasty-plugin-codex/`
-- **권한**: `process.spawn` 등 (매니페스트 `permissions`)
+- **권한**: `terminal.spawn` 등 (매니페스트 `permissions`)
 - **화면**: 없음 — CLI/IPC 오케스트레이션 플러그인 (headless).
 - **플로우**: claude 와 동형인 멀티에이전트 오케스트레이션 다이어그램 (spawn·tell·wait·hook·상태머신) — [Figma · Flows & IA](https://www.figma.com/design/ct3uPefwY2uk6i1i9wYpkU/Untitled?node-id=33-915).
 

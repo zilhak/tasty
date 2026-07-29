@@ -3,7 +3,7 @@
 - **부모 기획**: [../index.md](../index.md)
 - **시각 소스**: plugin egui-mesh 자가 렌더 — `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
 
-[작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 마크다운 렌더 surface. host 가 egui 로 그린다.
+[작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 자기 프로세스 egui Context 에서 직접 렌더한 mesh 를 host 가 합성한다(egui-mesh, ADR-0028 B1) — host 가 직접 그리는 게 아니다.
 
 ## 트리거
 

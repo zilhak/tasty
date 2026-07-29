@@ -4,7 +4,7 @@
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty markdown` CLI)
 - **배포/통합**: bundled · surface_kind(egui-mesh) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
 - **코드**: `crates/tasty-plugin-markdown/`(`src/render.rs` = Theme→`Visuals` 주입 + `egui_commonmark` 호출, `src/main.rs` surface/입력/링크) — [egui-mesh 채널](../../dev-guide/egui-mesh-channel.md) · egui 버전 lockstep은 [dep-issues](../../dev-guide/dep-issues.md)
-- **권한**: `surface.read/write`, `fs.read`(파일 읽기 + 링크 dispatch), `file_handler.*`, `ui.settings_page` (매니페스트 `permissions`)
+- **권한**: `surface.read/write`, `fs.read`(파일 읽기 + 링크 dispatch), `file_handler.*`, `ui.settings_page`, `ui.popup`(file-open/large-file-confirm 자가 렌더) (매니페스트 `permissions`)
 - **화면**: [screens/markdown.md](screens/markdown.md)
 
 > **예제로서**: egui-mesh surface(plugin 이 자기 프로세스 egui 로 렌더) + **파일 detector/handler** + cli + settings_page 를 한 플러그인에 모은 예제 → [plugin-development](../../dev-guide/plugin-development.md#파일-핸들러-detector--handler).
