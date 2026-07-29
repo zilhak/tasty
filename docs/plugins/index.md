@@ -15,6 +15,8 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 | [git-viewer](git-viewer/index.md) — `com.tasty.git-viewer` | git status/log/diff 뷰어 | 도구 메뉴 · popup |
 | [claude](claude/index.md) — `com.tasty.claude` | Claude Code CLI 통합 | cli · ipc · 멀티에이전트 |
 | [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 |
+| claude-design — `com.tasty.claude-design` (전용 문서 없음) | Claude Design(claude.ai/design) 캔버스 연동 | process.spawn(Playwright) · notification |
+| mesh-demo — `com.tasty.mesh-demo` (전용 문서 없음) | egui-mesh 채널 PoC(A1), `bundle=false`로 배포 제외 | surface_kind(egui-mesh) · popup |
 
 > 각 플러그인은 **제작 가이드의 예제**이기도 하다 — 각 문서 상단의 "예제로서" 노트가 어떤 기여 패턴의 레퍼런스인지와 [dev-guide/plugin-development](../dev-guide/plugin-development.md) 해당 절을 가리킨다.
 
