@@ -12,11 +12,11 @@
 | `tasty-plugin-claude-design` | `com.tasty.claude-design` |
 | `tasty-plugin-clipboard-viewer` | `com.tasty.clipboard-viewer` |
 | `tasty-plugin-codex` | `com.tasty.codex` |
-| `tasty-plugin-explorer` | `com.tasty.explorer` |
 | `tasty-plugin-git-viewer` | `com.tasty.git-viewer` |
 | `tasty-plugin-html` | `com.tasty.html` |
 | `tasty-plugin-image` | `com.tasty.image` |
 | `tasty-plugin-markdown` | `com.tasty.markdown` |
+| `tasty-plugin-mesh-demo` | `com.tasty.mesh-demo` |
 
 plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페스트) · `tasty-plugin.toml.sig`(서명 sidecar, non-debug 필수) · `lang/{en,ja,ko}.toml`.
 

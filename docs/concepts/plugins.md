@@ -14,7 +14,7 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 | **bundled plugin** (기본 플러그인) | `~/.tasty/plugins/<id>/` | ✓ | 첫 부팅 시 `BUILTINS` 자동 install | ✓ disable/remove |
 | **user plugin** (사용자 플러그인) | `~/.tasty/plugins/<id>/` | ✓ | `tasty plugin install <path>` | ✓ |
 
-- **host-native** 는 플러그인 메커니즘을 거치지 않는 host 코드다. 현재 등록 항목 0 — 모든 viewer 가 bundled 로 이전됨. (사용자가 플러그인으로 인식하지 않아야 하고 교체 여지를 원천 차단할 때만 쓰는 카테고리.)
+- **host-native** 는 플러그인 메커니즘을 거치지 않는 host 코드다. 대부분의 viewer 는 bundled 로 이전됐지만, `explorer` surface kind 는 T11 에서 plugin → host-native 로 역이전됐다([hierarchy.md](hierarchy.md) 참고) — 현재 유일한 host-native 항목. (사용자가 플러그인으로 인식하지 않아야 하고 교체 여지를 원천 차단할 때만 쓰는 카테고리.)
 - **bundled plugin** 은 tasty 에 동봉되어 첫 부팅에 자동 install 되지만, 이후엔 외부 플러그인과 동일 라이프사이클(활성/비활성/제거/권한)을 따른다. remove 하면 `removed_builtins` 에 박혀 재설치되지 않는다.
 - **user plugin** 은 사용자가 직접 install 한 외부 플러그인. host 가 자동 install 대상으로 인지하지 않을 뿐 디렉토리·라이프사이클은 동일.
 
@@ -26,13 +26,13 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 
 | 기여 | 무엇 | 예 |
 |------|------|----|
-| **surface_kind** | 새 Surface 종류 등록. `rendering` 으로 누가 그리나 결정 | explorer / markdown / image / html |
+| **surface_kind** | 새 Surface 종류 등록. `rendering` 으로 누가 그리나 결정 | markdown / image / html / mesh-demo |
 | **tool** | [도구 메뉴](../features/tools-menu/index.md) 항목 추가 (`ui.tool_item`) | clipboard-viewer / git-viewer |
 | **popup** | host popup 등록 (`ui.popup`) | clipboard-viewer / git-viewer |
 | **cli / ipc_namespace** | `tasty <prefix> …` CLI + IPC 메서드 추가 | claude / codex / html / image / markdown |
 | **detector / handler** | 파일 확장자 → surface 매핑(파일 열기) | markdown / image / html |
-| **settings_pages** | [설정 창](../features/settings/index.md)에 플러그인 페이지 추가 (`ui.settings_page`) | explorer / markdown |
-| **commands** | 명령 팔레트/단축키용 명령 | explorer |
+| **settings_pages** | [설정 창](../features/settings/index.md)에 플러그인 페이지 추가 (`ui.settings_page`) | markdown / html / claude / codex |
+| **commands** | 명령 팔레트/단축키용 명령 | 현재 선언한 번들 플러그인 없음 (`contributes.commands` 스키마는 존재) |
 | **event_subscribe / hooks** | host 이벤트 구독 / pre·post 훅 | claude·codex (`surface.closed`) |
 
 #### surface_kind 의 `rendering` — 누가 그리나
@@ -41,7 +41,7 @@ surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (�
 
 - **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(ADR-0028). bundled 전용 화이트리스트 + api_version 게이트. 예: markdown, image, mesh-demo.
 - **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html.
-- **(기본)** — 플러그인 프로세스가 직접 그린다. host 는 트리에 `RemoteSurface` marker 만 두고 plugin UI DSL 로 콘텐츠를 받는다. 예: explorer.
+- **(기본)** — 플러그인 프로세스가 직접 그린다. host 는 트리에 `RemoteSurface` marker 만 두고 plugin UI DSL 로 콘텐츠를 받는다. 현재 이 모드를 쓰는 번들 plugin 은 없다(과거 explorer 가 예시였으나 host-native 로 승격됨, [hierarchy.md](hierarchy.md) 참고) — 전부 `egui-mesh` 또는 `webview` 로 이전 완료.
 
 ## 권한 (Permissions)
 
