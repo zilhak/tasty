@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`file_handler.dispatch`) · plugin (contribute)
 - **ADR**: 없음
-- **코드**: `src/file/format/`(식별) + `src/file_handler/`(디스패치); IPC `file_handler.{reload,dispatch}`
+- **코드**: `src/file/format/`(식별) + `src/file/handler/`(디스패치); IPC `file_handler.{reload,dispatch}`
 - **화면**: [설정 창](../settings/screens/settings.md) Handler 탭의 파일 서브탭 3종 · file_handler_picker popup
 
 ## 목적
