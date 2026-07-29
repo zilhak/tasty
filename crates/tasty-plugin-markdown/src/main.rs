@@ -565,49 +565,22 @@ impl MarkdownPlugin {
             tracing::warn!("markdown surface {sid} paint failed: {e}");
         }
 
-        // 주소창 확정 이동 요청을 host 로 보낸다 (제자리 이동, 04). forward 된 실제
-        // 사용자 입력(Enter/Go)에서만 채워진다 — identity 경계 준수.
-        if let Some(path) = addr.pending_navigate.take() {
-            navigate(&ctx.host, sid, &path);
-        }
-
-        // show() 후 라이브러리 링크 훅에서 클릭된 destination 을 꺼내 dispatch
-        // (file → host, url → OS). 소비 시 훅을 리셋해 재발화하지 않는다.
-        if let Some(click) = render::take_clicked_link(cache, base_dir.as_deref()) {
-            dispatch_link(&ctx.host, sid, click);
-        }
-
-        // 편집 진입 프레임이면 `recent.query` 로 최근목록을 캐시하고, 이미 채워진 addr 로
-        // 마지막 컨텍스트를 재-paint 한다 — 진입 클릭 한 프레임 안에서 드롭다운이 채워진
-        // 채로 뜨게 한다(캐시가 비어 첫 프레임이 empty 로 뜨는 것을 막는다). 캐시 조회는
-        // 편집 진입 시 1회뿐 — 타이핑 프레임마다 host 를 호출하지 않는다.
-        if addr.editing && !prev_editing {
-            let fetched = fetch_recent(&ctx.host);
-            addr.recent = fetched;
-            // 편집 진입 프레임에 recent 를 fetch 해 곧바로 재-paint 한다 — egui-mesh 는 입력
-            // 있을 때만 재-forward 되므로, 여기서 즉시 재그리지 않으면 드롭다운 후보가 다음
-            // 입력까지 안 뜬다. 버퍼는 비우지 않고 현재 경로(L480 동기화값)를 유지한다 —
-            // explorer 와 동일하게 편집 진입 시 경로가 남아 그대로 선택·편집 가능하다. 진입
-            // 드롭다운은 그 경로 substring 으로 필터되며, 이후 타이핑이 typeahead 필터가 된다.
-            // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
-            let result = mesh.repaint_last(&ctx.host, |egui_ctx| {
-                draw(
-                    egui_ctx,
-                    &theme,
-                    body_px,
-                    cache,
-                    &content,
-                    load_error.as_deref(),
-                    tr,
-                    &file_path,
-                    addr,
-                    focused,
-                );
-            });
-            if let Err(e) = result {
-                tracing::warn!("markdown surface {sid} recent-repaint failed: {e}");
-            }
-        }
+        after_paint_side_effects(
+            &ctx.host,
+            sid,
+            &theme,
+            body_px,
+            cache,
+            &content,
+            load_error.as_deref(),
+            tr,
+            &file_path,
+            base_dir.as_deref(),
+            addr,
+            prev_editing,
+            focused,
+            mesh,
+        );
     }
 
     /// `markdown.reload` 로 내용이 out-of-band 로 갱신된 뒤, **입력 없이** 화면을 갱신한다
@@ -1075,25 +1048,29 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
 #[cfg(any(unix, windows))]
 fn dispatch_link(host: &HostHandle, sid: u32, click: LinkClick) {
     match click {
-        LinkClick::File(path) => {
-            if !path.exists() {
-                tracing::debug!("markdown link target does not exist: {}", path.display());
-                return;
-            }
-            let params = json!({
-                "path": path.to_string_lossy(),
-                "depth": "deep",
-                "origin_surface_id": sid,
-            });
-            if let Err(e) = host.call("file_handler.dispatch", params) {
-                tracing::warn!("markdown link file dispatch failed: {e}");
-            }
-        }
-        LinkClick::External(url) => {
-            if let Err(e) = webbrowser::open(&url) {
-                tracing::warn!("markdown external link open failed ({url}): {e}");
-            }
-        }
+        LinkClick::File(path) => dispatch_file_link(host, sid, &path),
+        LinkClick::External(url) => dispatch_external_link(&url),
+    }
+}
+
+fn dispatch_file_link(host: &HostHandle, sid: u32, path: &std::path::Path) {
+    if !path.exists() {
+        tracing::debug!("markdown link target does not exist: {}", path.display());
+        return;
+    }
+    let params = json!({
+        "path": path.to_string_lossy(),
+        "depth": "deep",
+        "origin_surface_id": sid,
+    });
+    if let Err(e) = host.call("file_handler.dispatch", params) {
+        tracing::warn!("markdown link file dispatch failed: {e}");
+    }
+}
+
+fn dispatch_external_link(url: &str) {
+    if let Err(e) = webbrowser::open(url) {
+        tracing::warn!("markdown external link open failed ({url}): {e}");
     }
 }
 
@@ -1283,6 +1260,64 @@ fn parse_recent(v: &Value) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// `paint` 의 mesh.paint(show()) 이후 부수효과 3가지: 주소창 확정 이동 dispatch,
+/// 라이브러리 링크 클릭 dispatch(file → host, url → OS), 편집 진입 프레임의 recent
+/// 캐시 fetch + 즉시 재-paint(드롭다운이 채워진 채로 뜨게 함).
+#[cfg(any(unix, windows))]
+#[allow(clippy::too_many_arguments)]
+fn after_paint_side_effects(
+    host: &HostHandle,
+    sid: u32,
+    theme: &Theme,
+    body_px: f32,
+    cache: &mut MdCache,
+    content: &str,
+    load_error: Option<&str>,
+    tr: &Translator,
+    file_path: &str,
+    base_dir: Option<&std::path::Path>,
+    addr: &mut AddrState,
+    prev_editing: bool,
+    focused: bool,
+    mesh: &mut EguiMeshSurface,
+) {
+    // 주소창 확정 이동 요청을 host 로 보낸다 (제자리 이동, 04). forward 된 실제
+    // 사용자 입력(Enter/Go)에서만 채워진다 — identity 경계 준수.
+    if let Some(path) = addr.pending_navigate.take() {
+        navigate(host, sid, &path);
+    }
+
+    // show() 후 라이브러리 링크 훅에서 클릭된 destination 을 꺼내 dispatch
+    // (file → host, url → OS). 소비 시 훅을 리셋해 재발화하지 않는다.
+    if let Some(click) = render::take_clicked_link(cache, base_dir) {
+        dispatch_link(host, sid, click);
+    }
+
+    // 편집 진입 프레임이면 `recent.query` 로 최근목록을 캐시하고, 이미 채워진 addr 로
+    // 마지막 컨텍스트를 재-paint 한다 — 진입 클릭 한 프레임 안에서 드롭다운이 채워진
+    // 채로 뜨게 한다(캐시가 비어 첫 프레임이 empty 로 뜨는 것을 막는다). 캐시 조회는
+    // 편집 진입 시 1회뿐 — 타이핑 프레임마다 host 를 호출하지 않는다.
+    if !(addr.editing && !prev_editing) {
+        return;
+    }
+    let fetched = fetch_recent(host);
+    addr.recent = fetched;
+    // 편집 진입 프레임에 recent 를 fetch 해 곧바로 재-paint 한다 — egui-mesh 는 입력
+    // 있을 때만 재-forward 되므로, 여기서 즉시 재그리지 않으면 드롭다운 후보가 다음
+    // 입력까지 안 뜬다. 버퍼는 비우지 않고 현재 경로(L480 동기화값)를 유지한다 —
+    // explorer 와 동일하게 편집 진입 시 경로가 남아 그대로 선택·편집 가능하다. 진입
+    // 드롭다운은 그 경로 substring 으로 필터되며, 이후 타이핑이 typeahead 필터가 된다.
+    // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
+    let result = mesh.repaint_last(host, |egui_ctx| {
+        draw(
+            egui_ctx, theme, body_px, cache, content, load_error, tr, file_path, addr, focused,
+        );
+    });
+    if let Err(e) = result {
+        tracing::warn!("markdown surface {sid} recent-repaint failed: {e}");
+    }
 }
 
 /// Load failure — "Failed to load" title (accent-danger) over the error in a muted caption.
