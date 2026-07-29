@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 40 개 라이브러리 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 43 개 라이브러리 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
 
 ## 기술 스택
 
@@ -32,22 +32,22 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. `src/engine/` 모듈명은 일부 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)의 전환기 컨테이너로 잠시 남아 있다.
 
-## 워크스페이스 크레이트 (40)
+## 워크스페이스 크레이트 (43)
 
 의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음.
 
 ### type-\* / primitive (leaf)
-`tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-utils`(path helper, leaf)
+`tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf)
 
 type-\* 끼리만 의존 가능. 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
 
 ### 도메인-IO
-`tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-shm`(공유 메모리) · `tasty-portscan` · `tasty-lua`(Lua 스크립트 — 워커 격리 + 고정 host API, ADR-0031) · `tasty-i18n`(번역) · `tasty-ssh-profiles`(SSH 프로필) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-geometry/utils, GUI-free)
+`tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-shm`(공유 메모리) · `tasty-portscan` · `tasty-reaper`(자식 프로세스를 호스트 수명에 결박 — Windows Job Object / 비-Windows no-op) · `tasty-lua`(Lua 스크립트 — 워커 격리 + 고정 host API, ADR-0031) · `tasty-i18n`(번역) · `tasty-remote-profiles`(원격 연결 프로필 + passkey, typed-tagged registry — attach/explorer/plugin 공유, ADR-0015/0032) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-geometry/utils, GUI-free)
 
 type-\* + 다른 도메인-IO 만 의존 가능.
 
 ### UI primitive
-`tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처). — [ui-widgets-crate](ui-widgets-crate.md)
+`tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처) · `tasty-icons`(line/fill 아이콘 SVG 단일 출처 — host/gallery/plugin build-time bake 공유). — [ui-widgets-crate](ui-widgets-crate.md)
 
 ### plugin host (IPC 인프라)
 `tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
@@ -58,10 +58,10 @@ type-\* + 다른 도메인-IO 만 의존 가능.
 이 계층은 도메인-IO 에 **직접 의존하지 않는다**(sandbox 경계) — protocol/sdk 만 통과.
 
 ### 번들 plugin (모두 `tasty-plugin-sdk` 의존)
-`tasty-plugin-claude` · `-codex` · `-explorer` · `-git-viewer` · `-clipboard-viewer` · `-image` · `-html` · `-markdown`(+ manifest). — [concepts/plugins](../concepts/plugins.md)
+`tasty-plugin-claude` · `-claude-design` · `-codex` · `-git-viewer` · `-clipboard-viewer` · `-image` · `-html` · `-markdown` · `-mesh-demo`(+ manifest). — [concepts/plugins](../concepts/plugins.md)
 
 ### CLI client
-`tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/ssh-profiles)
+`tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles)
 
 ### 도구 / standalone
 `tasty-tui-simulator`(E2E TUI 시뮬레이터, lib + `tasty-tui-sim` binary — 로직은 lib 공유, debug 빌드에선 `tasty debug sim` 으로도 노출) · `tasty-gallery`(ui-widgets 데모 바이너리, `cargo run -p tasty-gallery` — 본체 빌드와 분리)
