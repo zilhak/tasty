@@ -115,13 +115,21 @@ impl Settings {
             tracing::info!("no config path available, using defaults");
             return Self::default();
         };
+        Self::load_from_path(&path)
+    }
 
-        let Ok(contents) = fs::read_to_string(&path) else {
+    /// 확정된 config 경로에서 읽어 파싱한다. 파일 부재는 로그 후 기본값.
+    fn load_from_path(path: &std::path::Path) -> Self {
+        let Ok(contents) = fs::read_to_string(path) else {
             tracing::info!("no settings file at {}, using defaults", path.display());
             return Self::default();
         };
+        Self::parse_or_default(&contents, path)
+    }
 
-        match Self::parse_with_migration(&contents) {
+    /// 파싱 성공/실패를 각각 로그하고, 실패 시 기본값으로 폴백한다.
+    fn parse_or_default(contents: &str, path: &std::path::Path) -> Self {
+        match Self::parse_with_migration(contents) {
             Ok(settings) => {
                 tracing::info!("loaded settings from {}", path.display());
                 settings
@@ -231,7 +239,11 @@ impl Settings {
         // plugin_font_overrides.<kind>.font_scale_mode (Option<String>)
         for (kind, ov) in self.appearance.plugin_font_overrides.iter_mut() {
             let label = format!("plugin_font_overrides.{kind}.font_scale_mode");
-            normalize_optional_font_scale_mode(&mut ov.font_scale_mode, &label, &mut report.changed);
+            normalize_optional_font_scale_mode(
+                &mut ov.font_scale_mode,
+                &label,
+                &mut report.changed,
+            );
         }
 
         // general.shell_mode — Windows 전용 필드. 기존 settings.toml 의

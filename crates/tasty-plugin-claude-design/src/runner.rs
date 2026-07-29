@@ -231,12 +231,17 @@ fn route_reader_line(line: &str, pending: &Arc<Mutex<HashMap<u64, Sender<Value>>
         tracing::debug!(?msg, "runner message without id");
         return;
     };
-    let sender = pending.lock().ok().and_then(|p| p.get(&id).cloned());
-    if let Some(tx) = sender {
-        // 수신자가 이미 사라졌으면(호출 측 타임아웃) 조용히 버린다.
-        if tx.send(msg).is_err() {
-            tracing::debug!(id, "runner reply arrived after caller dropped");
-        }
+    route_to_pending(pending, id, msg);
+}
+
+/// id 로 대기 중인 요청자 채널에 메시지를 전달. 수신자가 이미 사라졌으면(호출 측
+/// 타임아웃) 조용히 버린다.
+fn route_to_pending(pending: &Arc<Mutex<HashMap<u64, Sender<Value>>>>, id: u64, msg: Value) {
+    let Some(tx) = pending.lock().ok().and_then(|p| p.get(&id).cloned()) else {
+        return;
+    };
+    if tx.send(msg).is_err() {
+        tracing::debug!(id, "runner reply arrived after caller dropped");
     }
 }
 

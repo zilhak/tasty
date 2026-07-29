@@ -219,17 +219,8 @@ fn run_reboot_sequence(
         return;
     };
 
-    match after_delay_action(&current, baseline) {
-        AfterDelay::SendCtrlC => {
-            if !kill_claude_via_ctrlc(host, surface_id, baseline) {
-                return;
-            }
-        }
-        AfterDelay::SkipToResume => {
-            tracing::info!(
-                "claude reboot s{surface_id}: foreground already '{current}' (was '{baseline}') — skipping Ctrl+C"
-            );
-        }
+    if !kill_or_skip(host, surface_id, baseline, &current) {
+        return;
     }
 
     if !resume_and_wait(host, surface_id, baseline, session_id) {
@@ -241,6 +232,20 @@ fn run_reboot_sequence(
         tracing::warn!(
             "claude reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
+    }
+}
+
+/// delay 후 판정(`AfterDelay`)에 따라 Ctrl+C 로 종료시키거나(SendCtrlC) 이미 바뀐
+/// 전경을 그대로 인정하고 넘어간다(SkipToResume). kill 실패 시 `false`.
+fn kill_or_skip(host: &HostHandle, surface_id: u32, baseline: &str, current: &str) -> bool {
+    match after_delay_action(current, baseline) {
+        AfterDelay::SendCtrlC => kill_claude_via_ctrlc(host, surface_id, baseline),
+        AfterDelay::SkipToResume => {
+            tracing::info!(
+                "claude reboot s{surface_id}: foreground already '{current}' (was '{baseline}') — skipping Ctrl+C"
+            );
+            true
+        }
     }
 }
 

@@ -453,6 +453,7 @@ fn handle_login_response(msg: &Value, data_dir: &Path) {
     }
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: let-else 1개 + match 2-arm 뿐인 이미 원자적인 함수 — 각 분기의 tracing 구조화 필드(`error = %e`) 매크로 전개를 clippy 가 과대계상(nursery lint 알려진 이슈, ADR-0037 Consequences). 더 쪼개면 1문장짜리 함수만 남는다.
 fn save_login_result(msg: &Value, data_dir: &Path) {
     let Some(state) = msg.get("storage_state").and_then(Value::as_str) else {
         tracing::error!("login_ok without storage_state");
