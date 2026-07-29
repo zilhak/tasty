@@ -3,7 +3,8 @@
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (도구 메뉴 → popup) · AI Agent (IPC trigger)
 - **배포/통합**: bundled · 도구 메뉴 항목 + popup — [plugins 개념](../../concepts/plugins.md)
-- **코드**: `crates/tasty-plugin-git-viewer/`
+- **코드**: `crates/tasty-plugin-git-viewer/` · 조회 로직은 host core 와 공유하는
+  `crates/tasty-git-core/`
 - **권한**: `ui.popup` · `ui.tool_item` · `fs.read`
 - **화면**: [screens/git-viewer.md](screens/git-viewer.md)
 
@@ -29,6 +30,15 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
   재바인딩한다. **실제 checkout/working dir/HEAD 변경은 없다**(플러그인 popup 내부 상태만 변경).
 - **fs 접근** — git2 가 파일을 직접 읽어(host fs 포트 우회) worktree 가 cwd 밖에 있어도 읽는다.
   권한 선언은 `fs.read` 유지.
+- **attach mirror 워크스페이스** — 로컬 프로세스에 실제 PTY/파일시스템이 없는 mirror surface
+  에서 열리면(`popup.open` context 의 `mirror`/`local_surface_id`), 로컬 `git2::Repository::
+  discover` 대신 host 가 attach 채널로 **원격**(mirror 대상) tasty 인스턴스에 조회를 왕복시킨다
+  (`git_viewer.query` plugin→host IPC → attach `git_query_request`/`git_query_result` 이벤트
+  쌍 → Event Bus unicast로 plugin 회신). status/log/diff/worktrees 전부 이 경로로 동작하며,
+  refresh·worktree 전환·파일→diff 클릭 각각 별도 왕복을 트리거한다. 서버는 client 가 forward한
+  cwd 문자열이 아니라 자신의 실제 원격 PTY(`surface_id` 로 찾은 `Terminal::get_cwd()`)로 저장소를
+  discover 한다. 응답이 크면(700KiB 예산) status/log/diff 순으로 잘라 보낸다. 설계 근거·wire
+  포맷 상세는 [ADR-0056](../../adr/0056-git-viewer-remote-attach-git-query-channel.md).
 
 ## 인터페이스
 
@@ -51,6 +61,9 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 - [ ] Given worktree 행 선택 Then status/log/diff 가 그 worktree 기준으로 전환되고
       실제 working dir/checkout 은 변하지 않는다.
 - [ ] Given worktree 가 없는 일반 repo Then rail 에 main 한 항목만 표시된다(하위 호환).
+- [ ] Given attach mirror 워크스페이스에서 popup 열기 Then 원격 저장소의 실제 status/log/diff/
+      worktrees 가 표시된다(로컬 host 의 정보나 "No git repository found" 오표시가 아님).
+- [ ] Given mirror popup 에서 Refresh Then 원격에 새 커밋이 생겼으면 목록에 반영된다.
 
 ## 화면
 

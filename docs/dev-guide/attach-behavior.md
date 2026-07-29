@@ -352,11 +352,49 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 **권한**: attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)** 에 위임(decision 5). 자체 권한 레이어 없음 — 소켓에 도달한 caller 는 attach 제어를 호출할 수 있다. 근거는 [identity §2](../identity.md), 주체 계약은 [actors](../concepts/actors.md).
 
+## 커스텀 이벤트 확장 (`StreamControl` 밖 raw JSON `event` 태그)
+
+`StreamControl` enum 을 건드리지 않고 같은 `StreamTag::Control` 채널에 raw JSON `{"event": "...",
+...}` 를 얹어 요청/응답 쌍을 왕복시키는 패턴 — 프로토콜 자체를 확장하지 않고 attach 채널을 다른
+용도(원격 디렉토리 나열, 스크린샷 업로드, git 조회 등)로 재사용할 때 쓴다. 인가는 전부 "attach 점유
+= 신뢰"(`engine.attach.client_holds_workspace(client_id)`, ADR-0040) — 별도 권한 게이트가 없다.
+수신측(`StreamHub::pump_inbound`)은 알려진 `StreamControl` 파싱이 실패하면 이 raw 이벤트들을
+순서대로 시도하고, 전부 실패하면 조용히 무시한다(전방 호환 — 모르는 이벤트를 에러로 취급하지
+않음).
+
+- **`list_dir_request`/`list_dir_result`**(ADR-0053) — 원격 디렉토리 나열(file picker). host popup
+  wrapper 가 요청을 소유하고 응답을 직접 소비 — 소유자가 host 프로세스 내부라 `sent_at.elapsed()`
+  로 매 프레임 soft timeout(8초)을 직접 판정할 수 있다.
+- **`git_query_request`/`git_query_result`**(ADR-0056) — 원격 저장소 status/log/diff/worktrees 조회
+  (git-viewer). 응답의 **소비자가 host 가 아니라 별도 프로세스인 plugin** 이라는 점이 file picker와
+  다르다 — host(`attach_client.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::
+  emit_host_event_to_plugin`(Event Bus 의 owner-unicast 경로, 구독 등록 여부 무관 —
+  `command.invoked` 와 동일 메커니즘)으로 `git_viewer.query_result` 이벤트를 plugin 에 전달만
+  한다. 요청 트리거도 plugin→host `git_viewer.query` IPC(비동기 accept — `request_id` 만 즉시
+  회신하고 실제 forward 는 `CoreState.pending_git_query_forward` 를 다음 tick 에 drain)로 plugin
+  이 직접 건다. **soft timeout 없음** — 소유자가 host 프로세스 밖(plugin)이라 ADR-0053 과 같은
+  매 프레임 판정 루프를 둘 자리가 마땅치 않아 이번 스코프에서 구현하지 않았다. 세션 자체가
+  끊기는 경우는 보내기 전(send-time 실패)이든 보낸 뒤(`cleanup_mirror_workspace` 가
+  `request_id=0` sentinel 로 강제 abandon)든 즉시 `ok:false` 로 커버된다 — 빠진 건 "연결은 계속
+  살아있는데 원격 tasty 프로세스 자체가 응답만 안 주는" 좁은 케이스뿐, ADR-0056
+  Reconsideration Trigger 참고. egui-mesh popup 은 `popup.set_context`
+  가 dirty 상태 변경시에만 나가 비동기 push 만으로는 다음 프레임 렌더가 보장되지 않으므로,
+  `AppState.plugin_mesh_popup_pending_repaint: HashSet<u64>` 로 강제 repaint 를 예약한다
+  (`popup_render.rs` 의 dirty OR-체인에 합류).
+- **cwd 판정 — client 신뢰 vs server 직접 판정**: `list_dir_request` 는 client 가 forward 한 `dir`
+  문자열을 그대로 쓴다. `git_query_request` 는 `worktree_path` 가 없으면 client 문자열을 신뢰하는
+  대신 서버가 `surface_id` 로 자신의 실제 원격 PTY 를 찾아 `Terminal::get_cwd()`(OSC-7 캐시 우선,
+  `/proc`·`proc_pidinfo` 폴백)를 직접 호출한다 — client 의 OSC-7 재생에 의존하지 않아 "원격 셸이
+  OSC 7 을 방출하지 않는 경우"도 커버한다. 두 표면이 다른 이유는 각자 작업 시점의 판단이며,
+  `list_dir_request` 를 이후 동일 방식으로 바꿀지는 별도 결정 사항.
+
 ## 관련
 
 - 결정 근거(원격 대상·로컬 debug 격리): [`ADR-0007`](../adr/0007-attach-targets-remote.md)
 - 동작·점유 규칙·CLI/IPC 사용법: [`features/remote-attach`](../features/remote-attach/index.md)
 - 주체(원격 사용자)·점유 모델 개념: [`concepts/actors`](../concepts/actors.md)
+- 원격 디렉토리 나열: [`ADR-0053`](../adr/0053-native-file-picker-remote-attach-channel.md)
+- 원격 git 조회(git-viewer): [`ADR-0056`](../adr/0056-git-viewer-remote-attach-git-query-channel.md)
 - SSH 프로필 관리: [`features/ssh-tool`](../features/remote-profiles/index.md)
 - 로컬 self attach 격리: [`dev-guide/debug-ipc`](debug-ipc.md)
 </content>
