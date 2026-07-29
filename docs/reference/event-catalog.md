@@ -28,7 +28,7 @@
 
 ```
 system, surface, tab, pane, workspace, window, command, ime, split,
-notification, hook, tool, plugin, extension, process, clipboard, theme, language, debug
+notification, hook, tool, plugin, extension, process, clipboard, theme, language, memory
 ```
 
 이 외는 plugin 자유 — 관례상 자기 `id`(`com.tasty.claude.*`)를 네임스페이스로.

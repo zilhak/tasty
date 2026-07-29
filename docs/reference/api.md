@@ -38,7 +38,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · secret(동일 verb) · `gc` · blackboard(`bb_*`) · plan(`plan_*`) · cache(`cache_*`). 모델·권한은 [design/systems/memory](../design/systems/memory.md).
 
 ### 에이전트 협업 (`agent.*`)
-`task_{create,list,get,await,cancel,retry,graph,set_result,run,reduce}` · `barrier_*` · `semaphore_*` · `lease_*` · `rate_limit_*`. 전부 `agent`(AgentManage) 권한. [agent-collaboration](../features/agent-collaboration/index.md).
+`task_{create,list,get,await,cancel,retry,graph,reduce}` · `barrier_*` · `semaphore_*` · `lease_*` · `rate_limit_*`. 전부 `agent`(AgentManage) 권한 — [method_meta.rs](../../crates/tasty-ipc/src/method_meta.rs)의 `METHOD_TABLE`에 매핑 안 된 메서드(`task_run`/`task_set_result`)는 plugin 호출이 아예 거부된다(local caller 전용). [agent-collaboration](../features/agent-collaboration/index.md).
 
 ### 휴먼 핸드오프 (`approval.*`)
 `request,respond,await,cancel,get,list,history,summary.{set,get}`. [human-handoff](../features/human-handoff/index.md).
@@ -57,7 +57,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
 - 훅 핸들러: `hook_handler.{list,reload,dispatch}` (local-only) — 훅/웹훅 공유 핸들러 레지스트리 조회(비활성 포함)·user config(`~/.tasty/hook-handlers.toml`) 재로드·id 로 수동 발화(IpcSequence/ShellCommand). dispatch 는 fire-and-forget(응답은 accepted ACK 만)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
-- SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)
+- 원격 연결 프로필: `remote.profile.{list,get,add,detect,remove}`(구 `tool.ssh.*`/`ssh.profile.*`는 alias로 한시 호환) — [remote-profiles](../features/remote-profiles/index.md)
 - webview: `webview.set_url`
 - 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
 - 시스템: `system.info` · `system.gpu_stats` (local-only, GPU 리소스 카운트 스냅샷 — wgpu 전역 리포트 + 창별 렌더러 카운트, 메모리 누수 soak 검증용. CLI `tasty list gpu-stats`) — [memory-leak-soak](../dev-guide/memory-leak-soak.md)
