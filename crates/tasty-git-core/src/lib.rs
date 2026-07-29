@@ -2,15 +2,22 @@
 //!
 //! 모든 함수는 **read-only**. mutate 작업(commit/stage/checkout 등) 없음.
 //!
-//! 본 바이너리 `src/git_viewer/data.rs`에서 그대로 이식.
+//! `tasty-plugin-git-viewer`(로컬 프로세스 내 직접 호출, 원격 attach 모드에서는 host
+//! 가 회신한 wire JSON 을 이 crate 의 타입으로 역직렬화)와 host core
+//! `src/core/attach_runtime.rs::handle_git_query_request`(원격 attach 세션의 git
+//! 조회 — host 는 `serde_json::json!` 로 직접 조립하고 `Serialize` 는 쓰지 않는다)
+//! 양쪽이 공유하는 순수 로직 crate. 의존은 `git2` + `anyhow` + `tasty-utils` +
+//! `serde`(plugin 원격 모드의 역직렬화 전용, plugin SDK/protocol 타입 비의존).
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use git2::{Repository, StatusOptions, WorktreeLockStatus};
+use serde::Deserialize;
 use tasty_utils::path::strip_verbatim_prefix;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FileStatus {
     Modified,
     Added,
@@ -20,13 +27,13 @@ pub enum FileStatus {
     Conflicted,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct StatusEntry {
     pub status: FileStatus,
     pub path: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct LogEntry {
     pub oid_short: String,
     pub summary: String,
@@ -35,14 +42,15 @@ pub struct LogEntry {
     pub refs: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DiffLineKind {
     Context,
     Addition,
     Deletion,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DiffLine {
     pub kind: DiffLineKind,
     pub content: String,
@@ -50,13 +58,13 @@ pub struct DiffLine {
     pub new_lineno: Option<u32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DiffData {
     pub file_path: String,
     pub hunks: Vec<DiffHunk>,
@@ -66,7 +74,7 @@ pub struct DiffData {
 ///
 /// libgit2 의 `worktrees()` 는 **linked worktree 만** 주므로 main working tree 는
 /// 별도로 합성해 목록 선두에 넣는다 (`git worktree list` 와 동등한 종합 목록).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct WorktreeEntry {
     /// 표시 이름 — 디렉토리 basename (linked 는 worktree 이름과 동일).
     pub name: String,
@@ -160,7 +168,9 @@ fn main_workdir_via_path(git_dir: &Path) -> Option<PathBuf> {
 /// `current_workdir` = popup 이 받은 cwd 에서 discover 한 repo 의 workdir.
 /// 각 항목의 `is_current` 는 이 경로와의 정규화 비교로 판정한다.
 ///
-/// 부분 실패(개별 worktree head 못 읽음 등)는 그 항목만 degrade 하고 전체는 Ok.
+/// 부분 실패(개별 worktree head 못 읽음 등)는 그 항목만 degrade 하고 전체는 Ok. 항목별
+/// 조립은 `main_worktree_entry`/`linked_worktree_entry` 로 분리돼 있다(clippy 복잡도 게이트 —
+/// `docs/adr/0037-complexity-gate.md`).
 pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Vec<WorktreeEntry>> {
     let current_canon = canon(current_workdir);
     let mut out: Vec<WorktreeEntry> = Vec::new();
@@ -182,6 +192,7 @@ pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Ve
     Ok(out)
 }
 
+/// main working tree 항목 합성. `derive_main_workdir` 이 못 찾으면(비표준 레이아웃 등) None.
 fn main_worktree_entry(repo: &Repository, current_canon: &Path) -> Option<WorktreeEntry> {
     let main_wd = derive_main_workdir(repo)?;
     let is_valid = main_wd.is_dir();

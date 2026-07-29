@@ -11,6 +11,7 @@ pub(crate) mod debug_plugin;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod fs;
+mod git_viewer;
 mod hook_handler;
 mod hooks;
 #[cfg(feature = "gui")]
@@ -525,6 +526,10 @@ fn route_engine_handler(
         // (파일열기 팝업 플러그인化의 유일 generic 갭, ADR-0042). rfd 는 gui feature.
         #[cfg(feature = "gui")]
         "fs.pick_file" => fs::handle_pick_file(id, &request.params),
+        // (TODO 40) git-viewer 원격 조회 트리거 — mirror workspace/attach 세션은
+        // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
+        // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
+        "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
         // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
         // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.

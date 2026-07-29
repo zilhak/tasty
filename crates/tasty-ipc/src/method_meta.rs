@@ -381,6 +381,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // kind/plugin 을 모른다. 사용자가 임의 경로를 고르는 read 관심사라 FsRead. filters
         // 는 caller(예: markdown plugin 이 md/markdown)가 채운다. ADR-0042.
         ("fs.pick_file", plugin(&[FsRead])),
+        // ── git_viewer.* (TODO 40 — 원격 attach mirror git 조회 트리거) ─
+        // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
+        // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
+        // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에
+        // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
+        // 없음). 임의 원격 경로 read 라 FsRead(로컬 fs.pick_file 과 동일 근거).
+        ("git_viewer.query", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —

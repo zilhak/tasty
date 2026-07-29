@@ -1067,6 +1067,341 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
     })
 }
 
+/// (TODO 40) git-viewer — mirror client 가 attach 채널로 보낸 `git_query_request`
+/// 하나를 처리한다(status/log/worktrees snapshot, 또는 단일 파일 diff).
+/// `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든 점유(holder)해야
+/// 신뢰한다(`handle_list_dir_request`/`finalize_capture_upload` 와 동일한 "attach
+/// 점유 = 권한" 원칙). `worktree_path` 가 없으면 `surface_id` 의 **실제 원격
+/// PTY**(`Terminal::get_cwd` — OSC 7 캐시 우선, 없으면 `/proc`(Linux)·`proc_pidinfo`
+/// (macOS) 폴백)로 cwd 를 직접 resolve 한다 — mirror 클라이언트의 OSC 7 재생에
+/// 의존하지 않으므로, TODO 40 원인 분석의 "원격 셸이 OSC 7 을 방출하지 않는 경우"도
+/// 커버한다(client 가 forward 하는 `cwd` 문자열을 신뢰하는 대신 서버가 직접 판정).
+/// 조회는 `tasty-git-core`(plugin 과 공유하는 순수 로직 crate)로 수행하고,
+/// `git_query_result` 이벤트로 회신한다(`StreamControl` enum 밖의 raw JSON "event"
+/// 태그, list_dir/capture 와 동일 패턴).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_git_query_request(
+    engine: &mut CoreState,
+    hub: &StreamHub,
+    client_id: u32,
+    request_id: u64,
+    surface_id: u32,
+    kind: crate::adapters::production::stream_hub::GitQueryKind,
+    worktree_path: Option<String>,
+    diff_path: Option<String>,
+) {
+    use crate::adapters::production::stream_hub::GitQueryKind;
+
+    let is_holder = engine.attach.client_holds_workspace(client_id);
+    let result: Result<serde_json::Value, String> = if !is_holder {
+        Err("client does not hold a workspace attach".to_string())
+    } else {
+        match kind {
+            GitQueryKind::Snapshot => {
+                git_query_snapshot(engine, surface_id, worktree_path.as_deref())
+            }
+            GitQueryKind::Diff => match diff_path.as_deref() {
+                Some(p) if !p.trim().is_empty() => {
+                    git_query_diff(engine, surface_id, worktree_path.as_deref(), p)
+                }
+                _ => Err("missing diff_path for kind=diff".to_string()),
+            },
+        }
+    };
+    let kind_wire = kind.as_wire_str();
+    let payload = match result {
+        Ok(mut data) => {
+            let obj = data
+                .as_object_mut()
+                .expect("git query helpers return objects");
+            obj.insert("event".to_string(), serde_json::json!("git_query_result"));
+            obj.insert("request_id".to_string(), serde_json::json!(request_id));
+            obj.insert("ok".to_string(), serde_json::json!(true));
+            obj.insert("kind".to_string(), serde_json::json!(kind_wire));
+            data
+        }
+        Err(reason) => serde_json::json!({
+            "event": "git_query_result",
+            "request_id": request_id,
+            "ok": false,
+            "kind": kind_wire,
+            "reason": reason,
+        }),
+    };
+    let frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&payload).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+}
+
+/// `worktree_path` 가 있으면 그 경로를 그대로(이전 응답이 돌려준 opaque 서버 경로
+/// echo), 없으면 `surface_id` 의 실제 원격 cwd 를 discover 시작점으로 쓴다.
+fn resolve_git_query_target(
+    engine: &CoreState,
+    surface_id: u32,
+    worktree_path: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(p) = worktree_path {
+        if p.trim().is_empty() {
+            return Err("empty worktree_path".to_string());
+        }
+        return Ok(std::path::PathBuf::from(p));
+    }
+    engine
+        .terminals
+        .get(surface_id)
+        .and_then(|t| t.get_cwd())
+        .ok_or_else(|| "remote surface has no known cwd".to_string())
+}
+
+/// git-viewer(원격) status/log/worktrees snapshot 한 건을 수집해 wire JSON(예산 캡
+/// 적용, envelope 필드 제외)으로 반환한다.
+fn git_query_snapshot(
+    engine: &CoreState,
+    surface_id: u32,
+    worktree_path: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let target = resolve_git_query_target(engine, surface_id, worktree_path)?;
+    let repo = tasty_git_core::discover_repo(&target)
+        .ok_or_else(|| "no git repository found".to_string())?;
+    let current_wd = repo
+        .workdir()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| repo.path().to_path_buf());
+    let worktrees =
+        tasty_git_core::collect_worktrees(&repo, &current_wd).map_err(|e| e.to_string())?;
+    // `is_current` 는 방금 discover 한 repo 자신을 가리키므로, 그 항목의 branch/oid 를
+    // 그대로 활성 정보로 재사용한다(별도 head_info 호출/공개 불필요).
+    let active = worktrees.iter().find(|w| w.is_current);
+    let branch = active.and_then(|w| w.branch.clone());
+    let oid = active.and_then(|w| w.oid.clone());
+
+    let status = tasty_git_core::collect_status(&repo).map_err(|e| e.to_string())?;
+    let log = tasty_git_core::collect_log(&repo, GIT_QUERY_LOG_LIMIT).map_err(|e| e.to_string())?;
+
+    let worktrees_wire: Vec<serde_json::Value> =
+        worktrees.iter().map(worktree_entry_wire).collect();
+    let mut budget = GIT_QUERY_BYTE_BUDGET.saturating_sub(wire_values_len(&worktrees_wire));
+    let (status_wire, truncated_status) =
+        cap_wire_values(budget, status.iter().map(status_entry_wire).collect());
+    budget = budget.saturating_sub(wire_values_len(&status_wire));
+    let (log_wire, truncated_log) =
+        cap_wire_values(budget, log.iter().map(log_entry_wire).collect());
+
+    Ok(serde_json::json!({
+        "active_worktree_path": display_path_lossy(&current_wd),
+        "branch": branch,
+        "oid": oid,
+        "worktrees": worktrees_wire,
+        "status_entries": status_wire,
+        "truncated_status": truncated_status,
+        "log_entries": log_wire,
+        "truncated_log": truncated_log,
+    }))
+}
+
+/// git-viewer(원격) 단일 파일 diff 한 건을 수집해 wire JSON(예산 캡 적용, envelope
+/// 필드 제외)으로 반환한다.
+fn git_query_diff(
+    engine: &CoreState,
+    surface_id: u32,
+    worktree_path: Option<&str>,
+    diff_path: &str,
+) -> Result<serde_json::Value, String> {
+    let target = resolve_git_query_target(engine, surface_id, worktree_path)?;
+    let repo = tasty_git_core::discover_repo(&target)
+        .ok_or_else(|| "no git repository found".to_string())?;
+    let diff = tasty_git_core::collect_diff(&repo, diff_path).map_err(|e| e.to_string())?;
+    let (hunks_wire, truncated) = cap_diff_hunks(GIT_QUERY_BYTE_BUDGET, &diff.hunks);
+    Ok(serde_json::json!({
+        "file_path": diff.file_path,
+        "hunks": hunks_wire,
+        "truncated_diff": truncated,
+    }))
+}
+
+fn display_path_lossy(p: &std::path::Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+fn worktree_entry_wire(w: &tasty_git_core::WorktreeEntry) -> serde_json::Value {
+    serde_json::json!({
+        "name": w.name,
+        "path": display_path_lossy(&w.path),
+        "branch": w.branch,
+        "oid": w.oid,
+        "is_main": w.is_main,
+        "is_current": w.is_current,
+        "locked": w.locked,
+        "lock_reason": w.lock_reason,
+        "is_valid": w.is_valid,
+    })
+}
+
+fn file_status_wire(s: tasty_git_core::FileStatus) -> &'static str {
+    use tasty_git_core::FileStatus;
+    match s {
+        FileStatus::Modified => "modified",
+        FileStatus::Added => "added",
+        FileStatus::Deleted => "deleted",
+        FileStatus::Renamed => "renamed",
+        FileStatus::Untracked => "untracked",
+        FileStatus::Conflicted => "conflicted",
+    }
+}
+
+fn status_entry_wire(e: &tasty_git_core::StatusEntry) -> serde_json::Value {
+    serde_json::json!({ "status": file_status_wire(e.status), "path": e.path })
+}
+
+fn log_entry_wire(e: &tasty_git_core::LogEntry) -> serde_json::Value {
+    serde_json::json!({
+        "oid_short": e.oid_short,
+        "summary": e.summary,
+        "author": e.author,
+        "time": e.time,
+        "refs": e.refs,
+    })
+}
+
+fn diff_line_wire(l: &tasty_git_core::DiffLine) -> serde_json::Value {
+    use tasty_git_core::DiffLineKind;
+    let kind = match l.kind {
+        DiffLineKind::Context => "context",
+        DiffLineKind::Addition => "addition",
+        DiffLineKind::Deletion => "deletion",
+    };
+    serde_json::json!({
+        "kind": kind,
+        "content": l.content,
+        "old_lineno": l.old_lineno,
+        "new_lineno": l.new_lineno,
+    })
+}
+
+fn diff_hunk_wire(h: &tasty_git_core::DiffHunk) -> serde_json::Value {
+    serde_json::json!({
+        "header": h.header,
+        "lines": h.lines.iter().map(diff_line_wire).collect::<Vec<_>>(),
+    })
+}
+
+/// [`LIST_DIR_ENTRIES_BYTE_BUDGET`] 과 동일 근거 — attach 프레임 하드 상한
+/// (`MAX_FRAME_LEN`, 1MiB)보다 충분히 작게 잡아 envelope 오버헤드를 흡수한다. 대형
+/// 저장소(수천 개 status entry, 긴 log, 큰 diff)를 이 상한 없이 그대로 실으면
+/// write thread 가 죽어 mirror 연결 자체가 끊긴다.
+const GIT_QUERY_BYTE_BUDGET: usize = 700 * 1024;
+
+/// `collect_log` 조회 상한 — plugin 로컬 `LOG_LIMIT`(main.rs)과 동일 값.
+const GIT_QUERY_LOG_LIMIT: usize = 200;
+
+fn wire_values_len(items: &[serde_json::Value]) -> usize {
+    items
+        .iter()
+        .map(|v| serde_json::to_vec(v).map(|b| b.len()).unwrap_or(0))
+        .sum()
+}
+
+/// 이미 조립된 wire value 목록을 예산 안에서 자른다(status/log 공용). 두 번째
+/// 반환값은 잘렸는지 여부.
+fn cap_wire_values(
+    mut budget: usize,
+    items: Vec<serde_json::Value>,
+) -> (Vec<serde_json::Value>, bool) {
+    let mut out = Vec::with_capacity(items.len());
+    for v in items {
+        let len = serde_json::to_vec(&v).map(|b| b.len()).unwrap_or(0);
+        if len > budget {
+            return (out, true);
+        }
+        budget -= len;
+        out.push(v);
+    }
+    (out, false)
+}
+
+/// diff hunk 단위로 예산 캡(hunk 내부 line 단위 부분 절단은 하지 않음 — 한 hunk 를
+/// 통째로 포함하거나 제외).
+fn cap_diff_hunks(
+    mut budget: usize,
+    hunks: &[tasty_git_core::DiffHunk],
+) -> (Vec<serde_json::Value>, bool) {
+    let mut out = Vec::with_capacity(hunks.len());
+    for h in hunks {
+        let wire = diff_hunk_wire(h);
+        let len = serde_json::to_vec(&wire).map(|b| b.len()).unwrap_or(0);
+        if len > budget {
+            return (out, true);
+        }
+        budget -= len;
+        out.push(wire);
+    }
+    (out, false)
+}
+
+#[cfg(test)]
+mod git_query_tests {
+    use super::*;
+
+    #[test]
+    fn cap_wire_values_stops_before_exceeding_budget() {
+        let items: Vec<serde_json::Value> = (0..20)
+            .map(|i| serde_json::json!({ "path": format!("file_{i:03}") }))
+            .collect();
+        let one_len = serde_json::to_vec(&items[0]).unwrap().len();
+        let budget = one_len * 3;
+        let (out, truncated) = cap_wire_values(budget, items);
+        assert_eq!(out.len(), 3, "expected exactly 3 entries to fit: {out:?}");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn cap_wire_values_empty_input_never_truncated() {
+        let (out, truncated) = cap_wire_values(0, Vec::new());
+        assert!(out.is_empty());
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn worktree_entry_wire_roundtrips_fields() {
+        let w = tasty_git_core::WorktreeEntry {
+            name: "main".to_string(),
+            path: std::path::PathBuf::from("/repo"),
+            branch: Some("main".to_string()),
+            oid: Some("abc1234".to_string()),
+            is_main: true,
+            is_current: true,
+            locked: false,
+            lock_reason: None,
+            is_valid: true,
+        };
+        let wire = worktree_entry_wire(&w);
+        assert_eq!(wire["name"], "main");
+        assert_eq!(wire["path"], "/repo");
+        assert_eq!(wire["is_current"], true);
+    }
+
+    fn test_engine() -> crate::core::CoreState {
+        let term_waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+        crate::core::CoreState::new(80, 24, term_waker).expect("engine")
+    }
+
+    #[test]
+    fn resolve_git_query_target_prefers_worktree_path_over_surface_cwd() {
+        let engine = test_engine();
+        let resolved = resolve_git_query_target(&engine, 999, Some("/explicit/path")).unwrap();
+        assert_eq!(resolved, std::path::PathBuf::from("/explicit/path"));
+    }
+
+    #[test]
+    fn resolve_git_query_target_errors_without_cwd_or_worktree_path() {
+        let engine = test_engine();
+        let err = resolve_git_query_target(&engine, 999, None).unwrap_err();
+        assert!(err.contains("no known cwd"));
+    }
+}
+
 #[cfg(test)]
 mod list_dir_entries_wire_capped_tests {
     use super::list_dir_entries_wire_capped_with_budget;

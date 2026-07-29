@@ -470,6 +470,15 @@ pub struct AppState {
     /// set_context 를 보낸다.
     pub(crate) plugin_mesh_popup_full_requests: std::collections::HashSet<u64>,
 
+    /// (TODO 40) 비동기 host→plugin push(예: git-viewer 원격 조회 결과, `event.dispatch`
+    /// unicast) 도착 후 강제 repaint 가 필요한 egui-mesh popup 인스턴스. 일반 dirty
+    /// 판정(geom/input/theme 변경)은 이런 "plugin 내부 상태만 바뀐" 갱신을 감지하지
+    /// 못하므로(`draw_plugin_popups`), 이 요청을 채워두면 다음 frame 이 geometry/입력
+    /// 변화 없이도 `set_context` 를 재forward 해 plugin 이 새 데이터로 다시 그리게
+    /// 한다(`plugin_mesh_popup_full_requests` 와 동형이나 텍스처가 아니라 repaint 자체를
+    /// 강제).
+    pub(crate) plugin_mesh_popup_pending_repaint: std::collections::HashSet<u64>,
+
     /// banner 대응 full 재전송 요청(popup full_requests 와 동형).
     pub(crate) plugin_mesh_banner_full_requests: std::collections::HashSet<u64>,
 
@@ -957,6 +966,7 @@ impl AppState {
             plugin_mesh_banner_bootstrapped: std::collections::HashSet::new(),
             plugin_mesh_banner_theme: std::collections::HashMap::new(),
             plugin_mesh_popup_full_requests: std::collections::HashSet::new(),
+            plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
             plugin_mesh_banner_full_requests: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }

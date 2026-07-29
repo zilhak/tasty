@@ -406,6 +406,13 @@ pub struct CoreState {
     /// `MirrorEvent::ListDirResult` 로 별도 이벤트 큐를 통해 되돌아온다(이 큐는
     /// 요청 방향 전용, 응답은 여기 담기지 않음).
     pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
+    /// git-viewer(원격) git 조회 forward 큐. `git_viewer.query` IPC 핸들러
+    /// (`adapters::ipc::handler::git_viewer`)가 mirror surface 에서 git 조회가
+    /// 필요할 때 여기 push 하고, App 이 `about_to_wait`
+    /// (`dispatch_pending_git_query_forwards`)에서 drain 해 세션의 attach 채널로
+    /// `git_query_request` 를 전송한다. 응답은 `MirrorEvent::GitQueryResult` 로
+    /// 되돌아온다(`pending_list_dir_forward` 와 동형).
+    pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
     /// attach mesh mirror(TODO 19) full 재전송 요청 forward 큐. GPU 렌더 prepare
     /// (`render_attach_mesh_surfaces`)가 텍스처 delta 체인 단절을 감지해
     /// `GpuState::take_attach_mesh_full_requests`로 drain된 **로컬** surface_id 를
@@ -570,6 +577,7 @@ impl CoreState {
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
             pending_list_dir_forward: Vec::new(),
+            pending_git_query_forward: Vec::new(),
             pending_mesh_full_resend_forward: std::collections::HashSet::new(),
             pending_mesh_context_forward: std::collections::HashMap::new(),
             pending_mesh_input_forward: std::collections::HashMap::new(),

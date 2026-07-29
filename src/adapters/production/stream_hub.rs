@@ -126,6 +126,10 @@ pub struct PumpOutcome {
     /// `StreamTag::Control` channel as a raw JSON "event"-tagged payload, tried
     /// after `CaptureUploadMsg` fails to parse.
     pub list_dir_requests: Vec<(StreamClientId, ListDirRequestMsg)>,
+    /// `(client_id, msg)` — 원격 attach mirror 세션의 git 조회 요청(status/log/
+    /// worktrees snapshot 또는 단일 파일 diff). `list_dir_requests` 와 동일한 이유로
+    /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
+    pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// `(client_id, event)` — (06) native bulk 파일 전송의 begin/chunk/commit 을
     /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
     /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
@@ -192,6 +196,48 @@ pub enum CaptureUploadMsg {
 pub enum ListDirRequestMsg {
     /// `dir` empty means "use the remote home directory" (server-side convention).
     ListDirRequest { request_id: u64, dir: String },
+}
+
+/// git-viewer(원격) mid-session control messages — mirror client asking the
+/// remote/holder side for git status/log/worktrees or a single-file diff. Same
+/// "outside `StreamControl`" rationale and trust model as [`ListDirRequestMsg`]
+/// (attach occupancy = trust, `client_holds_workspace`).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum GitQueryRequestMsg {
+    GitQueryRequest {
+        request_id: u64,
+        /// **원격** surface id — 서버가 자기 실제 PTY(`Terminal::get_cwd`)로 cwd 를
+        /// 직접 resolve 한다(mirror 의 OSC 7 재생 의존 없음). `worktree_path` 가
+        /// 있으면 이 필드는 무시된다.
+        surface_id: u32,
+        kind: GitQueryKind,
+        /// worktree 전환/새로고침 — 이전 응답이 돌려준 opaque 서버 경로를 그대로
+        /// echo. `None` 이면 `surface_id` 의 cwd 로 새로 discover.
+        #[serde(default)]
+        worktree_path: Option<String>,
+        /// `kind = Diff` 전용 — 대상 파일의 repo-relative 경로.
+        #[serde(default)]
+        diff_path: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitQueryKind {
+    Snapshot,
+    Diff,
+}
+
+impl GitQueryKind {
+    /// wire `kind` 필드 문자열. 서버 회신 조립(`attach_runtime`)과 클라이언트
+    /// 요청 조립(`attach_client`) 양쪽이 공유해 두 곳의 문자열이 drift 하지 않게 한다.
+    pub(crate) fn as_wire_str(self) -> &'static str {
+        match self {
+            GitQueryKind::Snapshot => "snapshot",
+            GitQueryKind::Diff => "diff",
+        }
+    }
 }
 
 /// Per-client push sink held in the registry.
@@ -461,6 +507,10 @@ impl StreamHub {
                                         serde_json::from_slice::<ListDirRequestMsg>(&frame.payload)
                                     {
                                         out.list_dir_requests.push((client_id, msg));
+                                    } else if let Ok(msg) =
+                                        serde_json::from_slice::<GitQueryRequestMsg>(&frame.payload)
+                                    {
+                                        out.git_query_requests.push((client_id, msg));
                                     }
                                 }
                             }
@@ -820,6 +870,47 @@ mod tests {
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_git_query_request() {
+        // git-viewer(원격): list_dir_request 와 동일한 "outside StreamControl" 패턴.
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        let req = serde_json::json!({
+            "event": "git_query_request",
+            "request_id": 9,
+            "surface_id": 42,
+            "kind": "snapshot",
+        });
+        tx.send(StreamInbound::Frame {
+            client_id: 3,
+            frame: frame(StreamTag::Control, req.to_string().as_bytes()),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.git_query_requests.len(), 1);
+        match &out.git_query_requests[0] {
+            (
+                3,
+                GitQueryRequestMsg::GitQueryRequest {
+                    request_id,
+                    surface_id,
+                    kind,
+                    worktree_path,
+                    diff_path,
+                },
+            ) => {
+                assert_eq!(*request_id, 9);
+                assert_eq!(*surface_id, 42);
+                assert_eq!(*kind, GitQueryKind::Snapshot);
+                assert_eq!(*worktree_path, None);
+                assert_eq!(*diff_path, None);
+            }
+            other => panic!("expected GitQueryRequest from client 3, got {other:?}"),
+        }
+        assert!(out.list_dir_requests.is_empty());
+        assert!(out.capture_uploads.is_empty());
     }
 
     #[test]

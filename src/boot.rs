@@ -527,6 +527,29 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         &dir,
                     );
                 }
+                for (client_id, msg) in outcome.git_query_requests {
+                    // (TODO 40) git-viewer: mirror client 가 이 headless 인스턴스로
+                    // git status/log/worktrees 또는 diff 조회를 요청 — list_dir 와
+                    // 동일하게 headless 는 단일 engine 이라 holder 순회 불요.
+                    use crate::adapters::production::stream_hub::GitQueryRequestMsg;
+                    let GitQueryRequestMsg::GitQueryRequest {
+                        request_id,
+                        surface_id,
+                        kind,
+                        worktree_path,
+                        diff_path,
+                    } = msg;
+                    crate::core::attach_runtime::handle_git_query_request(
+                        &mut engine,
+                        &app.stream_hub,
+                        client_id,
+                        request_id,
+                        surface_id,
+                        kind,
+                        worktree_path,
+                        diff_path,
+                    );
+                }
                 for (client_id, event) in outcome.bulk_events {
                     // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서
                     // 그대로** 처리한다(단일 벡터라 chunk 가 begin 을 앞지르지 않음 —

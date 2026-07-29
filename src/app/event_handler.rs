@@ -380,6 +380,11 @@ impl ApplicationHandler<AppEvent> for App {
         // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
         // 로 비동기 수신(아래 apply_attach_client_output 경로).
         self.dispatch_pending_list_dir_forwards();
+        // TODO 40 — git-viewer(원격) — `git_viewer.query` IPC 핸들러가 쌓은 원격 git
+        // 조회 forward 큐를 drain 해 원격에 전송한다. 응답은 reader thread 가
+        // `MirrorEvent::GitQueryResult` 로 비동기 수신(아래 apply_attach_client_output
+        // 경로) → `emit_host_event_to_plugin` 으로 plugin 에 push.
+        self.dispatch_pending_git_query_forwards();
         // TODO 19 — attach mesh mirror surface 의 텍스처 delta 체인 단절을 GPU 렌더
         // prepare 가 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다.
         self.dispatch_pending_mesh_full_resend_forwards();
@@ -1225,6 +1230,11 @@ impl App {
         for (client_id, msg) in outcome.list_dir_requests {
             self.apply_list_dir_request_msg(client_id, msg, &hub);
         }
+        // (TODO 40) git-viewer: mirror client 가 attach 채널로 보낸 git 조회 요청.
+        // holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
+        for (client_id, msg) in outcome.git_query_requests {
+            self.apply_git_query_request_msg(client_id, msg, &hub);
+        }
         // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
         // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
         // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
@@ -1666,6 +1676,70 @@ impl App {
             "event": "list_dir_result",
             "request_id": request_id,
             "ok": false,
+            "reason": "client does not hold a workspace attach",
+        });
+        let frame = crate::ipc::stream::StreamFrame::new(
+            crate::ipc::stream::StreamTag::Control,
+            serde_json::to_vec(&payload).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+    }
+
+    /// (TODO 40) git-viewer — mirror client 가 attach 채널로 보낸 `git_query_request`
+    /// 하나를 적용한다. `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을
+    /// 찾아 `attach_runtime::handle_git_query_request` 로 위임한다.
+    fn apply_git_query_request_msg(
+        &mut self,
+        client_id: u32,
+        msg: crate::adapters::production::stream_hub::GitQueryRequestMsg,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        use crate::adapters::production::stream_hub::GitQueryRequestMsg;
+        let GitQueryRequestMsg::GitQueryRequest {
+            request_id,
+            surface_id,
+            kind,
+            worktree_path,
+            diff_path,
+        } = msg;
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.attach.client_holds_workspace(client_id)
+            {
+                crate::core::attach_runtime::handle_git_query_request(
+                    &mut main.core_state,
+                    hub,
+                    client_id,
+                    request_id,
+                    surface_id,
+                    kind,
+                    worktree_path,
+                    diff_path,
+                );
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.attach.client_holds_workspace(client_id) {
+                crate::core::attach_runtime::handle_git_query_request(
+                    engine,
+                    hub,
+                    client_id,
+                    request_id,
+                    surface_id,
+                    kind,
+                    worktree_path,
+                    diff_path,
+                );
+                return;
+            }
+        }
+        // holder 를 못 찾음 — git_query_result 실패 회신(list_dir 과 동일 처리).
+        let payload = serde_json::json!({
+            "event": "git_query_result",
+            "request_id": request_id,
+            "ok": false,
+            "kind": kind.as_wire_str(),
             "reason": "client does not hold a workspace attach",
         });
         let frame = crate::ipc::stream::StreamFrame::new(

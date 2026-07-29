@@ -38,6 +38,14 @@ use crate::model::{
 };
 use crate::view::ui::View as _;
 
+/// (TODO 40) git-viewer plugin id — `crates/tasty-plugin-git-viewer/tasty-plugin.toml`
+/// 의 `id` 와 정합해야 한다. 별도 프로세스(plugin)라 상수를 공유할 crate 가 없어
+/// 문자열 리터럴로 중복(이 파일 + `adapters::ipc::handler::git_viewer`).
+const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";
+/// host → git-viewer plugin unicast event key(`emit_host_event_to_plugin`). plugin
+/// 의 `on_event` 가 이 key 로 매칭한다.
+const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
+
 /// reader thread 가 원격에서 받은 mirror 갱신 이벤트. 출력 바이트와 resize 통지를
 /// **한 버퍼에 순서대로** 담아 프레임 도착 순서(원격의 apply 순서)를 보존한다 —
 /// resize 앞뒤 출력이 올바른 그리드에서 재생되도록.
@@ -94,6 +102,21 @@ pub(crate) enum MirrorEvent {
     /// generation, frame_seq, full_textures, bytes)` — `bytes` 는 이미 footer 없는 순수
     /// payload(서버 `headless_plugins::forward_mesh_frames`가 footer 를 벗겨 보낸다).
     Mesh(u32, u64, u64, bool, Vec<u8>),
+    /// (TODO 40) git-viewer — 원격이 이 mirror 세션의 `git_query_request` 를 처리한
+    /// 결과(`git_query_result` 커스텀 이벤트 — `ListDirResult`/`CaptureResult` 와
+    /// 동일하게 `StreamControl` enum 밖). `data` 는 성공 시 kind 별 페이로드
+    /// (snapshot: worktrees/status/log, diff: hunks)를 그대로 담은 JSON, 실패 시
+    /// `None`(그때 `reason` 이 채워짐). 파싱을 최소화해 host 는 이 값을 그대로
+    /// `emit_host_event_to_plugin` 으로 plugin 에 전달한다(host 가 스키마를 해석할
+    /// 필요가 없다 — plugin 의 wire DTO 가 유일한 소비자).
+    GitQueryResult {
+        request_id: u64,
+        ok: bool,
+        kind: String,
+        data: Option<Value>,
+        truncated: bool,
+        reason: Option<String>,
+    },
 }
 
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
@@ -511,7 +534,8 @@ impl App {
                                         // 커스텀 이벤트인지 확인(별도 enum, StreamControl
                                         // 비수정 — parse_capture_result/parse_list_dir_result 참조).
                                         Ok(_) | Err(_) => parse_capture_result(&frame.payload)
-                                            .or_else(|| parse_list_dir_result(&frame.payload)),
+                                            .or_else(|| parse_list_dir_result(&frame.payload))
+                                            .or_else(|| parse_git_query_result(&frame.payload)),
                                     };
                                 if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
@@ -834,7 +858,8 @@ impl App {
                                             surfaces,
                                         }),
                                         Ok(_) | Err(_) => parse_capture_result(&frame.payload)
-                                            .or_else(|| parse_list_dir_result(&frame.payload)),
+                                            .or_else(|| parse_list_dir_result(&frame.payload))
+                                            .or_else(|| parse_git_query_result(&frame.payload)),
                                     };
                                 if let Some(ev) = mirror_ev
                                     && let Ok(mut buf) = output.lock()
@@ -1120,6 +1145,50 @@ impl App {
                                     }
                                 }
                             }
+                            MirrorEvent::GitQueryResult {
+                                request_id,
+                                ok,
+                                kind,
+                                data,
+                                truncated,
+                                reason,
+                            } => {
+                                // (TODO 40) host 는 페이로드를 해석하지 않고 그대로
+                                // plugin(별도 프로세스)에 unicast 이벤트로 전달한다 —
+                                // plugin 의 wire DTO 가 유일한 소비자. 인가/mirror
+                                // workspace 소멸 관측은 이미 send 단계(dispatch_pending_
+                                // git_query_forwards)에서 처리됐으므로 여기선 무조건
+                                // forward.
+                                if let Some(mgr) = self.plugin_manager.as_mut() {
+                                    let payload = serde_json::json!({
+                                        "request_id": request_id,
+                                        "ok": ok,
+                                        "kind": kind,
+                                        "data": data,
+                                        "truncated": truncated,
+                                        "reason": reason,
+                                    });
+                                    mgr.emit_host_event_to_plugin(
+                                        GIT_VIEWER_PLUGIN_ID,
+                                        GIT_VIEWER_QUERY_RESULT_EVENT,
+                                        &payload,
+                                        tasty_plugin_protocol::EventScope::System,
+                                    );
+                                    // set_context 는 geom/input/theme 변경시에만 나가
+                                    // (popup_render.rs dirty 판정) 이 push 만으론 다음
+                                    // frame 에 plugin 이 다시 그려지지 않는다 — 열려
+                                    // 있는 git-viewer popup 인스턴스 전부에 강제
+                                    // repaint 를 예약(단일 primary 인스턴스 모델이라
+                                    // 보통 최대 1개).
+                                    for (iid, inst) in mgr.popup_instances() {
+                                        if inst.plugin_id == GIT_VIEWER_PLUGIN_ID {
+                                            main.state
+                                                .plugin_mesh_popup_pending_repaint
+                                                .insert(iid);
+                                        }
+                                    }
+                                }
+                            }
                             MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
                                 // attach mesh mirror(TODO 19): GPU 렌더은 다음 프레임
                                 // `AttachMeshFrameStore` 를 읽는다 — 여기선 저장만.
@@ -1240,6 +1309,12 @@ impl App {
             }
             main.mark_dirty();
             break;
+        }
+        // (TODO 40) 원격발 disconnect 로 mirror 가 사라지면, 그 순간 진행 중이던
+        // git-viewer 원격 요청은 응답이 영영 오지 않아 popup 이 "Loading…" 에 무한정
+        // 멈출 수 있다 — sentinel 로 강제 abandon 을 알린다(자세한 이유는 함수 doc).
+        if from_disconnect {
+            self.notify_git_viewer_mirror_lost();
         }
         // heartbeat 스레드 종료 신호 — 사용자 close 경로(disconnected 가 아직 false)도
         // 포함해 여기서 항상 set. 안 하면 그 스레드가 writer(Arc) 를 계속 붙들어 세션이
@@ -1459,6 +1534,109 @@ impl App {
                     req.local_ws_id,
                     req.request_id
                 );
+            }
+        }
+    }
+
+    /// `about_to_wait` 에서 호출 — (TODO 40) `git_viewer.query` IPC 핸들러가 쌓은
+    /// 원격 git 조회 forward 큐(`CoreState::pending_git_query_forward`)를 drain 해
+    /// 각 요청을 해당 mirror 세션의 attach 채널로 전송한다
+    /// (`dispatch_pending_list_dir_forwards` 와 동형). 세션을 못 찾으면(예: mirror
+    /// workspace 소멸/재연결 중) ADR-0053 과 동일하게 **soft timeout 을 기다리지
+    /// 않고 즉시** 실패 결과를 plugin 에 회신한다(무한 로딩 없음).
+    pub(crate) fn dispatch_pending_git_query_forwards(&mut self) {
+        let mut pending: Vec<crate::core::PendingGitQueryForward> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.append(&mut main.core_state.pending_git_query_forward);
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.append(&mut e.pending_git_query_forward);
+        }
+        for req in pending {
+            let send_result = self.send_git_query_request(
+                req.local_surface_id,
+                req.request_id,
+                req.kind,
+                req.worktree_path.as_deref(),
+                req.diff_path.as_deref(),
+            );
+            if let Err(e) = send_result {
+                tracing::warn!(
+                    "git_query_request send 실패 (local surface {}, request {}): {e}",
+                    req.local_surface_id,
+                    req.request_id
+                );
+                self.fail_pending_git_query(req.request_id, req.kind, &e.to_string());
+            }
+        }
+    }
+
+    /// (TODO 40) 원격 전송 자체가 실패한 git 조회 요청을 plugin 에 `ok:false` 로
+    /// 즉시 회신하고, 열려 있는 git-viewer popup 인스턴스에 강제 repaint 를
+    /// 예약한다(`apply_attach_client_output`의 `MirrorEvent::GitQueryResult` 성공
+    /// 경로와 동형 — 여기는 attach 응답 자체가 오지 않는 케이스라 host 가 직접
+    /// 합성한다).
+    fn fail_pending_git_query(
+        &mut self,
+        request_id: u64,
+        kind: crate::adapters::production::stream_hub::GitQueryKind,
+        reason: &str,
+    ) {
+        self.broadcast_git_query_reply(serde_json::json!({
+            "request_id": request_id,
+            "ok": false,
+            "kind": kind.as_wire_str(),
+            "data": serde_json::Value::Null,
+            "truncated": false,
+            "reason": reason,
+        }));
+    }
+
+    /// (TODO 40) mirror workspace 가 disconnect 로 정리될 때 호출 — 그 시점에 진행
+    /// 중이던 git-viewer 원격 요청이 있으면 응답이 영영 오지 않아 popup 이
+    /// "Loading…" 에 무한정 멈춘다. host 는 plugin 내부 pending 상태(어떤
+    /// `request_id` 를 기다리는지)를 모르므로, `request_id = 0`(실제 발급은 1부터 —
+    /// `next_git_query_request_id`) 를 "지금 뭔가 기다리고 있다면 무조건 버려라"
+    /// sentinel 로 쓴다(plugin `apply_remote_reply` 가 해석). 여러 mirror workspace
+    /// 를 동시에 쓰는 중이면 다른(살아있는) workspace 의 git-viewer popup 까지 함께
+    /// 리셋될 수 있는 보수적 근사다 — git-viewer 는 단일 primary popup 인스턴스만
+    /// 활성 조회를 하므로 실질적으로는 그 하나만 영향받는다.
+    fn notify_git_viewer_mirror_lost(&mut self) {
+        self.broadcast_git_query_reply(serde_json::json!({
+            "request_id": 0,
+            "ok": false,
+            "kind": "",
+            "data": serde_json::Value::Null,
+            "truncated": false,
+            "reason": "mirror workspace disconnected",
+        }));
+    }
+
+    /// `fail_pending_git_query`/`notify_git_viewer_mirror_lost` 공용 — payload 를
+    /// git-viewer plugin 에 unicast 하고 열려 있는 모든 인스턴스에 강제 repaint 를
+    /// 예약한다.
+    fn broadcast_git_query_reply(&mut self, payload: serde_json::Value) {
+        let git_viewer_instances: Vec<u64> = match self.plugin_manager.as_mut() {
+            Some(mgr) => {
+                mgr.emit_host_event_to_plugin(
+                    GIT_VIEWER_PLUGIN_ID,
+                    GIT_VIEWER_QUERY_RESULT_EVENT,
+                    &payload,
+                    tasty_plugin_protocol::EventScope::System,
+                );
+                mgr.popup_instances()
+                    .filter(|(_, inst)| inst.plugin_id == GIT_VIEWER_PLUGIN_ID)
+                    .map(|(iid, _)| iid)
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        if git_viewer_instances.is_empty() {
+            return;
+        }
+        for main in self.main_windows_iter_mut() {
+            for iid in &git_viewer_instances {
+                main.state.plugin_mesh_popup_pending_repaint.insert(*iid);
             }
         }
     }
@@ -2404,6 +2582,51 @@ fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
     })
 }
 
+/// (TODO 40) `parse_git_query_result` 가 쓰는 wire shape. kind 별 페이로드
+/// (worktrees/status_entries/log_entries/… 또는 file_path/hunks)는 host 가 해석할
+/// 필요가 없다 — 유일한 소비자(git-viewer plugin)의 wire DTO 로 그대로 넘긴다. 이
+/// 필드들은 `#[serde(flatten)]` 으로 한꺼번에 캡처해 `MirrorEvent::GitQueryResult::data`
+/// 에 raw JSON 으로 싣는다(서버 `attach_runtime::handle_git_query_request` 와 대칭
+/// 이지만, list_dir 과 달리 host 는 이 값을 재해석하지 않고 그대로 forward 만 한다).
+#[derive(serde::Deserialize)]
+struct GitQueryResultWire {
+    request_id: u64,
+    ok: bool,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    truncated_status: bool,
+    #[serde(default)]
+    truncated_log: bool,
+    #[serde(default)]
+    truncated_diff: bool,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(flatten)]
+    rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `frame.payload` 가 (TODO 40) `git_query_result` 커스텀 이벤트인지 확인해
+/// `MirrorEvent` 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른
+/// 미지 이벤트와 동일하게 조용히 무시 — 전방 호환).
+fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    if value.get("event").and_then(|v| v.as_str()) != Some("git_query_result") {
+        return None;
+    }
+    let wire: GitQueryResultWire = serde_json::from_value(value).ok()?;
+    let truncated = wire.truncated_status || wire.truncated_log || wire.truncated_diff;
+    let data = wire.ok.then(|| Value::Object(wire.rest));
+    Some(MirrorEvent::GitQueryResult {
+        request_id: wire.request_id,
+        ok: wire.ok,
+        kind: wire.kind,
+        data,
+        truncated,
+        reason: wire.reason,
+    })
+}
+
 impl App {
     /// (03) 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
     /// 업로드하고, 완료 시 원격이 그 경로를 원격 클립보드에 쓰도록 요청한다.
@@ -2474,6 +2697,46 @@ impl App {
             "event": "list_dir_request",
             "request_id": request_id,
             "dir": dir,
+        });
+        send_capture_control_frame(&sess.frame_tx, &msg)
+    }
+
+    /// (TODO 40) `local_surface_id` 를 보유한 mirror 세션의 attach 채널로
+    /// `git_query_request` 를 보낸다. `local_surface_id` 는 popup 이 anchor 된
+    /// **로컬** mirror surface — `forward_one_resize` 와 동일한 조회로 원격 id 로
+    /// 치환한다(서버가 그 원격 surface 의 실제 cwd 로 discover 하므로, list_dir 과
+    /// 달리 client 가 cwd 문자열을 미리 계산해 보낼 필요가 없다). 응답은 reader
+    /// thread 가 비동기로 받아 `MirrorEvent::GitQueryResult` 로 흘려보낸다.
+    pub(crate) fn send_git_query_request(
+        &mut self,
+        local_surface_id: u32,
+        request_id: u64,
+        kind: crate::adapters::production::stream_hub::GitQueryKind,
+        worktree_path: Option<&str>,
+        diff_path: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter()
+            .find(|s| s.remote_to_local.values().any(|&l| l == local_surface_id))
+        else {
+            anyhow::bail!("no attach session for mirror surface {local_surface_id}");
+        };
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_surface_id)
+            .map(|(&r, _)| r)
+        else {
+            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
+        };
+        let msg = serde_json::json!({
+            "event": "git_query_request",
+            "request_id": request_id,
+            "surface_id": remote_sid,
+            "kind": kind.as_wire_str(),
+            "worktree_path": worktree_path,
+            "diff_path": diff_path,
         });
         send_capture_control_frame(&sess.frame_tx, &msg)
     }

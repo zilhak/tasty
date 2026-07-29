@@ -122,6 +122,17 @@ pub(crate) fn next_list_dir_request_id() -> u64 {
     NEXT_LIST_DIR_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// git-viewer(원격) `git_query_request` id 시퀀스 — `next_list_dir_request_id` 와
+/// 동일 근거(프로세스 내 유일성만 필요).
+static NEXT_GIT_QUERY_REQUEST_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+/// 다음 git_query_request id 발급. `git_viewer.query` IPC 핸들러
+/// (`adapters::ipc::handler::git_viewer`)가 원격 조회를 트리거할 때 호출.
+pub(crate) fn next_git_query_request_id() -> u64 {
+    NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
 /// 의 원소. popup wrapper 가 (mirror 판별 후) push, App 이 `about_to_wait` 에서
 /// drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 — 구조 op forward
@@ -132,6 +143,25 @@ pub(crate) struct PendingListDirForward {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
     pub(crate) dir: String,
+}
+
+/// git-viewer(원격) git 조회 forward 큐(`CoreState::pending_git_query_forward`)의
+/// 원소. `git_viewer.query` IPC 핸들러(plugin 이 host.call 로 트리거)가 push, App 이
+/// `about_to_wait` 에서 drain 해 mirror 세션의 attach 채널로 `git_query_request` 를
+/// 전송한다 — `PendingListDirForward` 와 동형.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingGitQueryForward {
+    /// popup 이 attach 된 **로컬** mirror surface id — 세션 조회(local→remote 치환)의
+    /// 앵커. `list_dir` 와 달리 cwd 를 클라이언트가 미리 계산해 보내지 않고, 서버가
+    /// 이 surface 의 원격 대응(`Terminal::get_cwd`)으로 직접 resolve 한다(OSC 7
+    /// mirror 재생 의존 제거).
+    pub(crate) local_surface_id: u32,
+    pub(crate) request_id: u64,
+    pub(crate) kind: crate::adapters::production::stream_hub::GitQueryKind,
+    /// worktree 전환/새로고침 — 이전 응답이 돌려준 opaque 서버 경로 echo.
+    pub(crate) worktree_path: Option<String>,
+    /// `kind = Diff` 전용.
+    pub(crate) diff_path: Option<String>,
 }
 
 /// `core.apply(...)`가 mirror-block+forward 로 방금 push 한 **마지막** op 를 "사용자

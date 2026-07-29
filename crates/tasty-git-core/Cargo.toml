@@ -1,0 +1,24 @@
+[package]
+name = "tasty-git-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Read-only git2 wrapper (repo discovery, status/log/diff/worktrees) shared by the host core (remote attach git query) and tasty-plugin-git-viewer (local)."
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+anyhow = "1"
+tracing = "0.1"
+# Read-only libgit2 binding — HTTPS/SSH 불필요라 default-features off.
+git2 = { version = "0.20", default-features = false }
+# Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
+tasty-utils = { path = "../tasty-utils" }
+# 원격 attach git 조회(TODO 40) — host 가 wire JSON 으로 회신한 결과를 plugin(별도
+# 프로세스)이 그대로 이 crate 의 타입으로 역직렬화한다(중복 wire DTO 회피).
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -15,13 +15,20 @@ tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
 tasty-utils = { path = "../tasty-utils" }
+# repo 탐색 + status/log/diff/worktrees 수집 — host core(원격 attach git 조회)와
+# 공유하는 순수 로직 crate.
+tasty-git-core = { path = "../tasty-git-core" }
+# tasty-git-core 와 동일 버전 — main.rs 가 `git2::Repository` 를 직접 참조(refresh_collections/
+# load_diff_for 시그니처)하므로 타입 정합을 위해 plugin 도 직접 의존한다.
+git2 = { version = "0.20", default-features = false }
 # Theme parity — set_context 의 ThemeWire 를 `Theme::with_colors_and_zoom` 으로 재구성해
 # 디자인 토큰대로 그린다. 공용 위젯(Tag/Button)은 tasty-ui-widgets 로 직접 호출한다.
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
-# Read-only libgit2 binding — HTTPS/SSH 불필요라 default-features off.
-git2 = { version = "0.20", default-features = false }
 serde_json = "1"
+# 원격(mirror) git 조회 응답 wire DTO(TODO 40) 역직렬화 전용 — tasty-git-core 도 동일
+# 이유로 의존한다.
+serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"

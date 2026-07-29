@@ -16,7 +16,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
 use crate::ViewerState;
-use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
+use tasty_git_core::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
 
 // ── 디자인 고정 px (git_viewer.jsx 의 화면 전용 치수 — Theme 토큰에 대응 없음) ──
 /// worktree rail 고정 폭(jsx `width: 232`). 2줄 행이 어떤 프레임 폭에서도 안 넘치게 고정.
@@ -58,7 +58,11 @@ pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Tr
             error_line(ui, theme, &err);
         }
         if state.repo_path.is_none() {
-            nonrepo(ui, theme, tr);
+            if state.loading {
+                loading(ui, theme, tr);
+            } else {
+                nonrepo(ui, theme, tr);
+            }
             return;
         }
         body(ui, theme, state, tr);
@@ -214,6 +218,22 @@ fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
             prop(theme.font_size_caption.value()),
             danger,
         );
+}
+
+/// (TODO 40) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
+fn loading(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
+    let h = ui.available_height().max(1.0);
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), h),
+        Layout::centered_and_justified(egui::Direction::TopDown),
+        |ui| {
+            ui.label(
+                egui::RichText::new(tr.t("git_viewer.loading"))
+                    .size(theme.font_size_body.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        },
+    );
 }
 
 fn nonrepo(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
