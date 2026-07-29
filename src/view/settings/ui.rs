@@ -257,6 +257,13 @@ impl SettingsUiState {
         self.active_tab = SettingsTab::Plugins;
     }
 
+    /// file handler picker popup 의 "설정에서 핸들러 등록" 클릭에서 호출 — 첫
+    /// 진입 탭을 `FileHandler` 로 설정. `select_plugin_tab` 과 동일하게 release
+    /// 빌드에서도 동작하는 일반 기능(디버그 전용 `select_tab_by_key` 와 다름).
+    pub fn select_file_handler_tab(&mut self) {
+        self.active_tab = SettingsTab::FileHandler;
+    }
+
     /// debug 전용 — 탭 키 문자열로 `active_tab` 을 설정한다 (`debug.settings.open`).
     /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
     #[cfg(debug_assertions)]

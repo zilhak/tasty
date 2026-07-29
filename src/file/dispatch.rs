@@ -85,12 +85,17 @@ fn hex_val(b: u8) -> Option<u8> {
 }
 
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
+///
+/// `candidates_are_fallback` 이 true 면 `candidates` 는 detector 매칭이 아니라
+/// `FileHandlerRegistry::all_handlers()` fallback 목록 — `recent` 와 겹치는 항목은
+/// 좌측 후보 열에서 제외한다(중복 표시 방지).
 pub(crate) fn open_picker(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
+    candidates_are_fallback: bool,
     ignore_size_limit: bool,
 ) {
     let recent_ids: Vec<HandlerId> = engine
@@ -104,13 +109,18 @@ pub(crate) fn open_picker(
         .filter_map(|id| engine.file_handler.get(id))
         .map(|h| handler_to_summary(&h))
         .collect();
-    let cand: Vec<_> = candidates.iter().map(handler_to_summary).collect();
+    let cand: Vec<_> = candidates
+        .iter()
+        .filter(|h| !recent_ids.contains(&h.id))
+        .map(handler_to_summary)
+        .collect();
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
         target,
         target_display,
         detector,
         candidates: cand,
+        candidates_are_fallback,
         recent,
         selected: None,
         result: None,

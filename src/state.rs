@@ -715,6 +715,11 @@ pub struct FileHandlerPickerData {
     pub(crate) detector: Option<crate::file::format::DetectorId>,
     /// 좌측 list 의 후보들 — handler id 사전순.
     pub(crate) candidates: Vec<PickerHandlerSummary>,
+    /// `candidates` 가 detector 매칭 결과가 아니라 `FileHandlerRegistry::all_handlers()`
+    /// fallback(이 포맷엔 매칭 핸들러가 없어 전체 핸들러를 대신 보여주는 경우)이면
+    /// true. draw wrapper 가 "후보" 대신 "추천 없음 — 전체 핸들러" 류 heading 을
+    /// 고르는 데 사용 — 1회성 dispatch 후보일 뿐 이 detector 에 영구 연결되지 않음.
+    pub(crate) candidates_are_fallback: bool,
     /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
     pub(crate) recent: Vec<PickerHandlerSummary>,
     /// 현재 선택된 handler. 더블클릭/[열기]로 dispatch.
@@ -733,6 +738,11 @@ pub enum FileHandlerPickerResult {
     Selected(crate::file::handler::HandlerId),
     /// 취소 또는 ESC — dispatch 없음.
     Cancelled,
+    /// 시스템 전체 handler 가 0개(빈 상태)일 때 "설정에서 핸들러 등록" 클릭.
+    /// App 레이어(`dispatch_pending_picker_results`)가 `Core::apply_file_picker_result`
+    /// 로 내려보내지 않고 직접 가로채 Settings 모달을 FileHandler 탭으로 연다 —
+    /// Core 는 winit `ActiveEventLoop` 에 접근할 수 없다.
+    OpenSettings,
 }
 
 /// 네이티브 파일 피커(04) 의 디렉토리 로드 상태. gallery specimen `FpState` 와 1:1

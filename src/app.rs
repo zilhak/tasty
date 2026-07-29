@@ -139,6 +139,13 @@ pub(crate) struct App {
     /// `Plugin` 으로 강제하기 위한 1회성 플래그. `open_settings_modal` 이 소비한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_settings_plugin_tab: bool,
+    /// file handler picker popup 의 "설정에서 핸들러 등록" 클릭(시스템 전체
+    /// handler 0개)이 Settings 모달을 열 때, 첫 진입 탭을 `FileHandler` 로
+    /// 강제하기 위한 1회성 플래그. `open_settings_modal` 이 소비한다. release
+    /// 빌드에서도 동작하는 일반 기능 — `pending_settings_tab`(debug 전용) 과
+    /// 달리 `#[cfg(debug_assertions)]` 로 막혀 있지 않다.
+    #[cfg(feature = "gui")]
+    pub(crate) pending_settings_file_handler_tab: bool,
     /// `debug.settings.open` 이 지정한 초기 탭 키 (예: `"appearance"`). 다음
     /// `open_settings_modal` 이 1회성으로 소비한다. 설정 모달을 코드로 강제로 여는
     /// 것은 사용자 조작 재현이므로 debug 빌드 전용 (시각 검증 자동화용).
@@ -269,6 +276,7 @@ impl App {
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             preset_view_id: None,
             pending_settings_plugin_tab: false,
+            pending_settings_file_handler_tab: false,
             #[cfg(debug_assertions)]
             pending_settings_tab: None,
             #[cfg(debug_assertions)]

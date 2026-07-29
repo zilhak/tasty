@@ -637,6 +637,7 @@ impl MainView {
                             None,
                             Vec::new(),
                             false,
+                            false,
                         );
                     } else {
                         self.state.dispatch_intent(

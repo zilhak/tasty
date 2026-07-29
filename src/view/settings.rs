@@ -73,6 +73,12 @@ impl SettingsView {
         self.settings_ui_state.select_plugin_tab();
     }
 
+    /// 첫 진입 탭을 `FileHandler` 로 설정 (file handler picker popup 의
+    /// "설정에서 핸들러 등록" 진입점).
+    pub fn focus_file_handler_tab(&mut self) {
+        self.settings_ui_state.select_file_handler_tab();
+    }
+
     /// debug 전용 — 첫 진입 탭을 키 문자열로 지정 (`debug.settings.open` 의 `tab` 인자).
     /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
     #[cfg(debug_assertions)]

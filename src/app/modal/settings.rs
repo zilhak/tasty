@@ -74,6 +74,11 @@ impl App {
         if std::mem::take(&mut self.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();
         }
+        // file handler picker popup 의 "설정에서 핸들러 등록" 이 요청했으면
+        // FileHandler 탭으로 진입.
+        if std::mem::take(&mut self.pending_settings_file_handler_tab) {
+            modal.focus_file_handler_tab();
+        }
         // debug.settings.open 이 탭을 지정했으면 그 탭으로 진입 (시각 검증용).
         #[cfg(debug_assertions)]
         if let Some(tab_key) = self.pending_settings_tab.take()

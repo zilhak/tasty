@@ -103,6 +103,9 @@ pub struct FileHandlerPickerProps<'a> {
     pub empty_label: &'a str,
     pub open_button_label: &'a str,
     pub cancel_button_label: &'a str,
+    /// 시스템 전체 handler 가 0개(진짜 빈 상태)일 때만 노출되는 "설정에서
+    /// 핸들러 등록" 버튼 라벨. Case A(fallback 후보 존재)에서는 쓰이지 않는다.
+    pub open_settings_button_label: &'a str,
 }
 
 /// View 가 발생시킨 사용자 의도. Wrapper 가 mutation 으로 변환.
@@ -115,6 +118,9 @@ pub enum FileHandlerPickerAction {
     Select(String),
     /// 더블클릭 또는 [열기] — result=Selected(id) 후 popup 닫기.
     Dispatch(String),
+    /// 진짜 빈 상태(시스템 전체 handler 0개)에서 [설정에서 핸들러 등록] —
+    /// result=OpenSettings 후 popup 닫기.
+    OpenSettings,
 }
 
 /// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
@@ -162,11 +168,18 @@ pub fn draw_file_handler_picker_view(
         );
         ui.add_space(VERTICAL_PADDING);
         let mut cancel_clicked = false;
+        let mut open_settings_clicked = false;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button(props.open_settings_button_label).clicked() {
+                open_settings_clicked = true;
+            }
             if ui.button(props.cancel_button_label).clicked() {
                 cancel_clicked = true;
             }
         });
+        if open_settings_clicked {
+            return FileHandlerPickerAction::OpenSettings;
+        }
         if cancel_clicked {
             return FileHandlerPickerAction::Cancel;
         }
@@ -348,11 +361,18 @@ pub fn draw_file_handler_picker(
     let target_label = t("file_handler.picker.target_label");
     let format_label = t("file_handler.picker.format_label");
     let unknown_format_label = t("file_handler.picker.unknown_format");
-    let candidates_heading = t("file_handler.picker.candidates_heading");
+    // Case A(fallback 후보) 는 detector 매칭이 아니라 전체 핸들러이므로 "후보"
+    // 대신 명시적으로 구분되는 heading 을 쓴다 — 두 케이스의 안내 문구 구분(TODO40).
+    let candidates_heading = if picker.candidates_are_fallback {
+        t("file_handler.picker.fallback_heading")
+    } else {
+        t("file_handler.picker.candidates_heading")
+    };
     let recent_heading = t("file_handler.picker.recent_heading");
     let empty_label = t("file_handler.picker.empty");
     let open_button_label = t("file_handler.picker.open_button");
     let cancel_button_label = t("button.cancel");
+    let open_settings_button_label = t("file_handler.picker.open_settings_button");
 
     let props = FileHandlerPickerProps {
         theme: &th,
@@ -369,6 +389,7 @@ pub fn draw_file_handler_picker(
         empty_label,
         open_button_label,
         cancel_button_label,
+        open_settings_button_label,
     };
 
     let action = draw_file_handler_picker_view(ui, &props);
@@ -392,6 +413,12 @@ pub fn draw_file_handler_picker(
                 p.result = Some(FileHandlerPickerResult::Selected(
                     crate::file::handler::HandlerId(id),
                 ));
+            }
+            PopupAction::Close
+        }
+        FileHandlerPickerAction::OpenSettings => {
+            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
+                p.result = Some(FileHandlerPickerResult::OpenSettings);
             }
             PopupAction::Close
         }
@@ -447,6 +474,7 @@ mod tests {
                     empty_label: "No handlers registered.",
                     open_button_label: "Open",
                     cancel_button_label: "Cancel",
+                    open_settings_button_label: "Open Settings",
                 };
                 out = draw_file_handler_picker_view(ui, &props);
             });

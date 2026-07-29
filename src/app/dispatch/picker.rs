@@ -38,13 +38,24 @@ impl App {
             let ignore_size_limit = data.ignore_size_limit;
             // 데이터 슬롯 즉시 해제 — 빠른 popup 재오픈 시에도 중복 처리 방지.
             main.state.dialogs.file_handler_picker = None;
-            core.apply_file_picker_result(
-                &mut main.state,
-                &mut main.core_state,
-                target,
+            // `OpenSettings` 는 Settings 모달을 여는 App 레이어 동작(winit
+            // `ActiveEventLoop` 필요)이라 Core 로 내려보내지 않고 여기서 직접
+            // 처리한다 — 나머지(Selected/Cancelled)만 기존 경로로 위임.
+            if matches!(
                 result,
-                ignore_size_limit,
-            );
+                crate::state::FileHandlerPickerResult::OpenSettings
+            ) {
+                self.pending_settings_file_handler_tab = true;
+                crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
+            } else {
+                core.apply_file_picker_result(
+                    &mut main.state,
+                    &mut main.core_state,
+                    target,
+                    result,
+                    ignore_size_limit,
+                );
+            }
             main.mark_dirty();
         }
     }

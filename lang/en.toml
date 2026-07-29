@@ -942,9 +942,11 @@ target_label = "Target:"
 format_label = "Format:"
 unknown_format = "unknown"
 candidates_heading = "Candidates"
+fallback_heading = "No match — choose from all handlers"
 recent_heading = "Recent"
 open_button = "Open"
 empty = "No handlers registered."
+open_settings_button = "Register handler in Settings"
 
 [filepicker]
 title = "Open File"

@@ -30,6 +30,8 @@ HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction
 
 핸들러가 모호하거나 사용자가 선택하게 할 때 `file_handler_picker` popup(후보 + 최근 2열, [열기]/[취소]). Recent 는 `~/.tasty/file-handler-recent.json` LRU(cap 10, atomic write). picker 는 dispatch 하지 않고 결과만 남기고 호스트 layer 가 frame 끝에 실행 + 저장.
 
+**empty-state**: 이 detector 에 매칭되는 handler 가 0개면 `handlers_for(d)` 대신 `all_handlers()` 를 fallback 후보로 보여준다(recent 와 중복 제거, heading 을 "후보"가 아니라 "추천 없음 — 전체 핸들러" 로 구분 표시) — 선택해도 이 detector 에 영구 등록되지 않는 **1회성 dispatch**(user TOML 미변경, 다음에 같은 포맷을 열면 다시 이 화면). 시스템 전체 handler 가 진짜 0개일 때만 "등록된 핸들러가 없습니다." 메시지 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈)을 보여준다.
+
 ### 권한
 
 `file_handler.define`(새 detector+handler) · `file_handler.extend:<id>`(기존 detector 에 rule) · `file_handler.handle:<id>`(기존 detector 에 handler). `$` sentinel 은 모든 토큰에서 reject. ([plugin-permissions](../../dev-guide/plugin-permissions.md).)
