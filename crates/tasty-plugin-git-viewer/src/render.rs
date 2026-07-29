@@ -13,7 +13,7 @@
 use egui::{Align, Align2, Color32, FontId, Layout, Rect, Sense, Stroke, UiBuilder, vec2};
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
 use crate::ViewerState;
 use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
@@ -654,24 +654,8 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
     );
     let gap = theme.spacing_sm.value();
 
-    // 좌 cluster: oid(info) + refs pills(info).
-    let mut left = ui.new_child(
-        UiBuilder::new()
-            .max_rect(content)
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    left.spacing_mut().item_spacing.x = gap;
-    left.label(
-        egui::RichText::new(&entry.oid_short)
-            .font(mono(theme.font_size_caption.value()))
-            .color(theme.accent_info().to_egui()),
-    );
-    for r in &entry.refs {
-        tag(&mut left, theme, r, TagVariant::Info, false);
-    }
-    let left_end = left.min_rect().right();
-
-    // 우 cluster: time + author (우측 정렬, 폭 압박 시 summary 보다 먼저 자리 확보).
+    // 우 cluster: time + author (우측 정렬). refs pill 상한 폭을 정하려면 이 클러스터가
+    // 차지할 폭(right_start)을 left cluster 보다 먼저 알아야 한다.
     let mut right = ui.new_child(
         UiBuilder::new()
             .max_rect(content)
@@ -689,6 +673,50 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
             .color(theme.text_muted().to_egui()),
     );
     let right_start = right.min_rect().left();
+
+    // 좌 cluster: oid(info) + refs pills(info). pill 누적 폭이 right cluster를
+    // 침범하기 전까지만 그리고, 넘치면 남은 개수를 "+N" pill로 축약한다.
+    let mut left = ui.new_child(
+        UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    left.spacing_mut().item_spacing.x = gap;
+    left.label(
+        egui::RichText::new(&entry.oid_short)
+            .font(mono(theme.font_size_caption.value()))
+            .color(theme.accent_info().to_egui()),
+    );
+    let pill_limit = (right_start - gap).max(left.min_rect().right());
+    let mut cursor_x = left.min_rect().right();
+    let mut shown = 0usize;
+    for r in &entry.refs {
+        let remaining_after = entry.refs.len() - shown - 1;
+        // 이 pill을 그린 뒤에도 남는 게 있으면 "+N" pill 자리를 반드시 남겨둔다.
+        let reserve = if remaining_after > 0 {
+            gap + tag_width(&left, theme, &format!("+{remaining_after}"))
+        } else {
+            0.0
+        };
+        let w = tag_width(&left, theme, r);
+        if cursor_x + gap + w + reserve > pill_limit {
+            break;
+        }
+        tag(&mut left, theme, r, TagVariant::Info, false);
+        cursor_x += gap + w;
+        shown += 1;
+    }
+    if shown < entry.refs.len() {
+        let remaining = entry.refs.len() - shown;
+        tag(
+            &mut left,
+            theme,
+            &format!("+{remaining}"),
+            TagVariant::Info,
+            false,
+        );
+    }
+    let left_end = left.min_rect().right();
 
     // summary — 가운데 남는 폭에 clip(truncate).
     let sx = left_end + gap;

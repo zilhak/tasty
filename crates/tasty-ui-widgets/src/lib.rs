@@ -39,7 +39,7 @@ pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };
 pub use button::{Button, ButtonVariant};
-pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag};
+pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag, tag_width};
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;

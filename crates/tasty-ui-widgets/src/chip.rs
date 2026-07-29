@@ -41,6 +41,20 @@ fn mono(size: f32) -> egui::FontId {
     egui::FontId::monospace(size)
 }
 
+/// `tag()`가 그릴 pill의 폭을 실제로 그리지 않고 미리 계산한다(`dot=false` 가정 —
+/// 현재 폭 계산이 필요한 호출부는 모두 dot 없는 pill). 호출부가 그리기 전에 상한
+/// 폭 안에 들어가는지 판단할 때 사용(예: git-viewer commit row의 refs pill 축약
+/// 판단, `cm_row`).
+pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
+    let pad_x = theme.tag_padding_x().value();
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        mono(theme.tag_font_size().value()),
+        egui::Color32::PLACEHOLDER,
+    );
+    galley.rect.width() + 2.0 * pad_x
+}
+
 /// Tag — 모노 라벨 chip. `dot` 이 true 면 선행 상태 점(현재 fg 색).
 pub fn tag(
     ui: &mut egui::Ui,
