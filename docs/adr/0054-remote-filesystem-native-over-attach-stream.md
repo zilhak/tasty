@@ -1,6 +1,6 @@
 # ADR-0054: 원격 파일 바이트 전송(bulk)은 attach 스트림 위 native binary 채널로 구현한다 (sftp/SMB 등 외부 프로토콜은 이 기능에 미사용)
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-23
 - **Tags**: remote, attach, mirror, file-transfer, native-protocol, stream, bulk-channel, no-base64, ssh-delegation, cross-platform, adr-0007, adr-0032, adr-0045
 
