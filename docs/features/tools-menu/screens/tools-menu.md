@@ -17,6 +17,9 @@
 │ Command palette          │  → command-palette
 │ Listening ports          │  → listening-ports
 │ Remote connections       │  → remote_tool
+│ Presets                  │  → preset
+│ Tutorial                 │  → tutorial
+│ Open File                │  → file-picker
 ├─────────────────────────┤  (빌트인 ↔ 플러그인 구분선)
 │ Clipboard history        │  → (플러그인 기여)
 │ …(plugin 항목)           │
@@ -29,6 +32,9 @@
   - **Command palette** — 명령 팔레트를 연다. → [`features/command-palette/`](../../command-palette/index.md)
   - **Listening ports** — 리스닝 포트 뷰어를 연다. → [`features/listening-ports/`](../../listening-ports/index.md)
   - **Remote connections** — 원격 접속 도구를 연다. → [`features/remote-profiles/`](../../remote-profiles/index.md)
+  - **Presets** — 레이아웃 프리셋 창을 연다. → [`features/layout-presets/`](../../layout-presets/index.md)
+  - **Tutorial** — 튜토리얼 토픽 popup 을 연다. → [`features/tutorial/`](../../tutorial/index.md)
+  - **Open File** — 네이티브 파일 피커를 연다. → [`features/native-file-picker/`](../../native-file-picker/index.md)
 - **구분선** — 빌트인과 플러그인 항목 사이 (둘 다 있을 때만).
 - **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). **이 문서엔 항목을 나열하지 않는다** — 공식(번들) 플러그인 메뉴는 [번들 플러그인 문서](../../../plugins/index.md)에서 다룬다.
 
