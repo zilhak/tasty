@@ -200,6 +200,18 @@ pub(super) fn event_pattern_covers(pattern: &str, key: &str) -> bool {
     false
 }
 
+/// `[[contributes.commands]] id` 형식 검증. `<namespace>.<action>` 관례
+/// (예: `"explorer.refresh"`, `"clipboard.copy"`)를 따르되 강제하진 않는다 — `.`으로
+/// 구분된 세그먼트(소문자 ascii + 숫자 + `_`, 알파벳 시작)가 1개 이상이면 된다.
+/// 길이 1..=64. `contributes.tool`/`contributes.popup` id(대시 기반, `is_valid_tool_id`)와
+/// 달리 command id는 기존 관례상 점(`.`) 구분자를 쓰므로 별도 규칙을 둔다.
+pub(super) fn is_valid_command_id(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    s.split('.').all(is_valid_event_segment)
+}
+
 fn is_valid_event_segment(s: &str) -> bool {
     if s.is_empty() {
         return false;

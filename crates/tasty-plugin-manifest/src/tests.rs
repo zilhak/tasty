@@ -183,6 +183,7 @@ fn accepts_full_manifest() {
         id = "explorer.refresh"
         title_i18n_key = "explorer.command.refresh"
         default_keybinding = "F5"
+        scope = "surface"
     "#;
     let m = parse(s).expect("should parse");
     assert_eq!(m.surface_kinds.len(), 1);
@@ -280,6 +281,273 @@ fn binding_mode_unknown_value_rejected() {
         binding_mode = "wat"
     "#;
     assert!(parse(s).is_err());
+}
+
+#[test]
+fn command_id_must_be_unique() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo.2"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
+}
+
+#[test]
+fn command_invalid_id_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "X-Foo!"
+        title_i18n_key = "x.foo"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("invalid contributes.commands id"), "got: {err}");
+}
+
+#[test]
+fn command_global_scope_single_key_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "F5"
+        scope = "global"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("combination key"), "got: {err}");
+}
+
+#[test]
+fn command_global_scope_combo_key_accepted() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "ctrl+shift+g"
+        scope = "global"
+    "#;
+    parse(s).expect("should parse");
+}
+
+#[test]
+fn command_surface_scope_single_key_accepted() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "F5"
+        scope = "surface"
+    "#;
+    parse(s).expect("should parse");
+}
+
+#[test]
+fn command_global_scope_is_default_when_unspecified() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+    "#;
+    let m = parse(s).expect("should parse");
+    assert_eq!(m.contributes.commands[0].scope, CommandScope::Global);
+}
+
+#[test]
+fn command_inherit_unknown_host_action_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        binding_mode = "inherit:tab.new"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("inherit whitelist"), "got: {err}");
+}
+
+#[test]
+fn command_inherit_known_host_action_accepted() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.copy"
+        title_i18n_key = "x.copy"
+        binding_mode = "inherit:clipboard.copy"
+    "#;
+    parse(s).expect("should parse");
+}
+
+#[test]
+fn command_action_invalid_event_key_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "ctrl+shift+g"
+        [contributes.commands.action]
+        kind = "event"
+        event_key = "not_a_dotted_key"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("concrete event key"), "got: {err}");
+}
+
+#[test]
+fn command_action_open_popup_requires_ui_popup_permission() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "ctrl+shift+g"
+        [contributes.commands.action]
+        kind = "open_popup"
+        popup_id = "com.example.x/main"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("'ui.popup'"), "got: {err}");
+}
+
+#[test]
+fn command_action_open_popup_unknown_popup_ref_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        permissions = ["ui.popup"]
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "ctrl+shift+g"
+        [contributes.commands.action]
+        kind = "open_popup"
+        popup_id = "com.example.x/ghost"
+
+        [[contributes.popup]]
+        id = "main"
+        [contributes.popup.trigger]
+        kind = "ipc"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("unknown popup"), "got: {err}");
+}
+
+#[test]
+fn command_action_open_popup_known_ref_accepted() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        permissions = ["ui.popup"]
+        [entry]
+        type = "process"
+        command = "x"
+        [[contributes.commands]]
+        id = "x.foo"
+        title_i18n_key = "x.foo"
+        default_keybinding = "ctrl+shift+g"
+        [contributes.commands.action]
+        kind = "open_popup"
+        popup_id = "com.example.x/main"
+
+        [[contributes.popup]]
+        id = "main"
+        [contributes.popup.trigger]
+        kind = "ipc"
+    "#;
+    let m = parse(s).expect("should parse");
+    assert!(matches!(
+        &m.contributes.commands[0].action,
+        Some(ToolAction::OpenPopup { .. })
+    ));
 }
 
 #[test]

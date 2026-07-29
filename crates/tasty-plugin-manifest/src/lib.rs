@@ -7,6 +7,7 @@
 //! 필요한 추가 검증 (detector rule schema 등) 은 호스트 본 바이너리의
 //! `plugin_bridge::manifest_validate` 가 담당.
 
+pub mod host_actions;
 pub mod package;
 pub mod types;
 pub mod validate;
@@ -15,6 +16,7 @@ pub mod validators;
 #[cfg(test)]
 mod tests;
 
+pub use host_actions::{INHERITABLE_HOST_ACTIONS, is_inheritable};
 pub use package::PluginPackage;
 pub use types::{
     AutoWaitDecl, BannerContribute, BannerRendering, BannerScopeDecl, BannerSizeHint,

@@ -7,16 +7,16 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::types::{
-    CliCommandDecl, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest,
-    Permission, PopupTrigger, PresetFieldInputType, SettingsItemDecl, SettingsPageContribute,
-    SurfaceKindDecl, ToolAction, ToolContribute,
+    BindingMode, CliCommandDecl, CommandDecl, CommandScope, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION,
+    HookMode, MANIFEST_VERSION, Manifest, Permission, PopupTrigger, PresetFieldInputType,
+    SettingsItemDecl, SettingsPageContribute, SurfaceKindDecl, ToolAction, ToolContribute,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
     is_reserved_event_namespace, is_reserved_hook_event_key, is_reserved_ipc_prefix,
-    is_valid_cli_name, is_valid_event_key, is_valid_event_pattern, is_valid_hook_event_key,
-    is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
-    is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
+    is_valid_cli_name, is_valid_command_id, is_valid_event_key, is_valid_event_pattern,
+    is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind,
+    is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -339,6 +339,7 @@ impl Manifest {
         let seen_prefixes = self.validate_contributed_ipc_namespaces()?;
         self.validate_contributed_cli(&seen_prefixes)?;
         self.validate_contributed_tools()?;
+        self.validate_contributed_commands()?;
         self.validate_contributed_popups()?;
         self.validate_contributed_banners()?;
         self.validate_contributed_windows()?;
@@ -534,12 +535,25 @@ impl Manifest {
         tool: &ToolContribute,
         surface_kinds: &HashSet<&str>,
     ) -> anyhow::Result<()> {
-        match &tool.action {
+        Self::validate_action("contributes.tool", &tool.id, &tool.action, surface_kinds)
+    }
+
+    /// `ToolAction`(`[[contributes.tool]].action` 및 `[[contributes.commands]].action`이
+    /// 공유하는 타입) 형식 검증. `owner_label`은 에러 메시지에 쓰이는 소속 표기
+    /// (`"contributes.tool"` / `"contributes.commands"`).
+    fn validate_action(
+        owner_label: &str,
+        id: &str,
+        action: &ToolAction,
+        surface_kinds: &HashSet<&str>,
+    ) -> anyhow::Result<()> {
+        match action {
             ToolAction::Event { event_key } => {
                 if !is_valid_event_key(event_key) {
                     anyhow::bail!(
-                        "contributes.tool '{}': action.event_key '{}' must be a concrete event key",
-                        tool.id,
+                        "{} '{}': action.event_key '{}' must be a concrete event key",
+                        owner_label,
+                        id,
                         event_key
                     );
                 }
@@ -547,8 +561,9 @@ impl Manifest {
             ToolAction::OpenSurface { surface_kind } => {
                 if !surface_kinds.contains(surface_kind.as_str()) {
                     anyhow::bail!(
-                        "contributes.tool '{}': action.surface_kind '{}' is not declared in this plugin's [[surface_kinds]]",
-                        tool.id,
+                        "{} '{}': action.surface_kind '{}' is not declared in this plugin's [[surface_kinds]]",
+                        owner_label,
+                        id,
                         surface_kind
                     );
                 }
@@ -556,12 +571,84 @@ impl Manifest {
             ToolAction::OpenPopup { popup_id } => {
                 // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
                 if popup_id.is_empty() {
-                    anyhow::bail!(
-                        "contributes.tool '{}': action.popup_id must not be empty",
-                        tool.id
-                    );
+                    anyhow::bail!("{} '{}': action.popup_id must not be empty", owner_label, id);
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// `[[contributes.commands]]` 검증: id 형식/중복, `binding_mode = "inherit:<action>"`
+    /// 대상이 호스트 화이트리스트에 있는지, `scope = "global"` 커맨드가 단일 키를
+    /// 쓰지 않는지(문서상 "조합키만 권장"을 여기서 강제), `action`(있다면) 형식.
+    fn validate_contributed_commands(&self) -> anyhow::Result<()> {
+        if self.contributes.commands.is_empty() {
+            return Ok(());
+        }
+        let has_popup_action = self
+            .contributes
+            .commands
+            .iter()
+            .any(|c| matches!(&c.action, Some(ToolAction::OpenPopup { .. })));
+        if has_popup_action && !self.permissions.iter().any(|p| p == "ui.popup") {
+            anyhow::bail!(
+                "[[contributes.commands]] with action.kind = 'open_popup' requires permission \
+                 'ui.popup' to be declared in manifest permissions[]"
+            );
+        }
+        let surface_kinds: HashSet<&str> =
+            self.surface_kinds.iter().map(|k| k.kind.as_str()).collect();
+        let mut seen_command_ids = HashSet::new();
+        for cmd in &self.contributes.commands {
+            Self::validate_command(cmd, &surface_kinds)?;
+            if !seen_command_ids.insert(cmd.id.clone()) {
+                anyhow::bail!(
+                    "contributes.commands id '{}' declared twice in this manifest",
+                    cmd.id
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_command(cmd: &CommandDecl, surface_kinds: &HashSet<&str>) -> anyhow::Result<()> {
+        if !is_valid_command_id(&cmd.id) {
+            anyhow::bail!(
+                "invalid contributes.commands id '{}': must be '.'-separated lowercase ascii + \
+                 digits + '_' segments (e.g. 'explorer.refresh'), length ≤ 64",
+                cmd.id
+            );
+        }
+        if cmd.title_i18n_key.is_empty() {
+            anyhow::bail!(
+                "contributes.commands '{}': title_i18n_key must not be empty",
+                cmd.id
+            );
+        }
+        if let BindingMode::InheritHost(action) = &cmd.binding_mode
+            && !crate::host_actions::is_inheritable(action)
+        {
+            anyhow::bail!(
+                "contributes.commands '{}': binding_mode 'inherit:{}' refers to a host action \
+                 not in the inherit whitelist",
+                cmd.id,
+                action
+            );
+        }
+        if cmd.scope == CommandScope::Global
+            && let Some(kb) = &cmd.default_keybinding
+            && !kb.is_empty()
+            && !kb.contains('+')
+        {
+            anyhow::bail!(
+                "contributes.commands '{}': scope 'global' commands must bind a combination key \
+                 (default_keybinding '{}' has no modifier) — single keys are reserved for scope 'surface'",
+                cmd.id,
+                kb
+            );
+        }
+        if let Some(action) = &cmd.action {
+            Self::validate_action("contributes.commands", &cmd.id, action, surface_kinds)?;
         }
         Ok(())
     }
@@ -618,8 +705,8 @@ impl Manifest {
     }
 
     fn validate_tool_popup_refs(&self) -> anyhow::Result<()> {
-        // [[contributes.tool]] action.open_popup이 이 plugin의 popup id를 가리킬 때
-        // 해당 id가 실제로 존재해야 한다.
+        // [[contributes.tool]]/[[contributes.commands]] action.open_popup이 이 plugin의
+        // popup id를 가리킬 때 해당 id가 실제로 존재해야 한다.
         let popup_ids: HashSet<&str> = self
             .contributes
             .popup
@@ -627,16 +714,33 @@ impl Manifest {
             .map(|p| p.id.as_str())
             .collect();
         for tool in &self.contributes.tool {
-            if let ToolAction::OpenPopup { popup_id } = &tool.action
-                && let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
-                && !popup_ids.contains(local_id)
-            {
-                anyhow::bail!(
-                    "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
-                    tool.id,
-                    popup_id
-                );
+            Self::validate_popup_ref("contributes.tool", &tool.id, &tool.action, &self.id, &popup_ids)?;
+        }
+        for cmd in &self.contributes.commands {
+            if let Some(action) = &cmd.action {
+                Self::validate_popup_ref("contributes.commands", &cmd.id, action, &self.id, &popup_ids)?;
             }
+        }
+        Ok(())
+    }
+
+    fn validate_popup_ref(
+        owner_label: &str,
+        id: &str,
+        action: &ToolAction,
+        plugin_id: &str,
+        popup_ids: &HashSet<&str>,
+    ) -> anyhow::Result<()> {
+        if let ToolAction::OpenPopup { popup_id } = action
+            && let Some(local_id) = popup_id.strip_prefix(&format!("{plugin_id}/"))
+            && !popup_ids.contains(local_id)
+        {
+            anyhow::bail!(
+                "{} '{}': action.popup_id '{}' references unknown popup in this plugin",
+                owner_label,
+                id,
+                popup_id
+            );
         }
         Ok(())
     }

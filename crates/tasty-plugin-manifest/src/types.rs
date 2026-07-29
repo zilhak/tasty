@@ -1189,6 +1189,18 @@ pub struct CommandDecl {
     /// 기본 `global`.
     #[serde(default)]
     pub scope: CommandScope,
+    /// 선언적 액션. `[[contributes.tool]].action`과 동일한 `ToolAction` 재사용 —
+    /// popup/surface/event 를 호스트가 `handle_command` IPC 없이 직접 처리한다.
+    ///
+    /// **우선순위**: `action`이 있으면 호스트가 그 액션만 직접 실행하고, 옛
+    /// `command.invoke` IPC(`handle_command`)는 이 command에 대해 아예 발사되지
+    /// 않는다 — plugin이 `handle_command`를 구현했더라도 호출되지 않는다(action과
+    /// handle_command 동시 실행은 popup 중복 오픈 등 부작용 위험이 있어 금지).
+    /// `action`이 없으면 기존 `handle_command` IPC 왕복 경로를 그대로 쓴다. Event
+    /// Bus `command.invoked` 통지는 `action` 유무와 무관하게 항상 발사된다
+    /// (informational — plugin이 옵저버 목적으로만 구독해도 안전).
+    #[serde(default)]
+    pub action: Option<ToolAction>,
 }
 
 /// command가 어떤 포커스 컨텍스트에서 발화하는지.

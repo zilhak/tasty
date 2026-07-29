@@ -73,8 +73,51 @@ tasty 가 직접 소유하는 OS 메뉴(macOS NSMenu / Windows AcceleratorTable 
 
 **예외**: OS 자체가 박아 tasty 가 무력화/덮어쓰기/가로채기 모두 불가능한 단축키(macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등)는 정책 범위 밖 — tasty 가 등록할 수도 끌 수도 없다.
 
+## Plugin 커맨드 단축키 우선순위
+
+Plugin 이 `[[contributes.commands]]` 로 선언한 단축키(`CommandDecl`)는 호스트
+`KeybindingSettings` 와 별도의 매칭 경로를 거치며, 겹치는 키에 대해 **항상 plugin
+이 우선**한다.
+
+- **디스패치 순서**: `App::try_plugin_shortcut` 이 매 키 입력마다 호스트 단축키
+  디스패치(`dispatch_window_event_to_view`)보다 **먼저** 호출된다
+  (`src/app/event_handler.rs`). Plugin command 가 매칭되면 이벤트가 그 자리에서
+  소모되어 호스트 디스패치로 흘러가지 않는다 — 즉 같은 키를 호스트
+  `KeybindingSettings` 에도 지정했다면 plugin 쪽이 이긴다. 이 순서는 의도적
+  설계 결정이다: plugin 은 사용자가 명시적으로 활성화·설정한 확장이므로, 사용자가
+  같은 키를 plugin 커맨드에도 지정했다면 그 의도를 존중한다.
+- **scope 별 매칭 대상**:
+  - 포커스된 surface 가 어떤 plugin 이 만든 `RemoteSurface` 이면, **그 plugin 의
+    커맨드만**(scope 무관 — `Global`/`Surface` 둘 다) 후보가 된다. "그 plugin 의
+    surface 가 포커스되어 있다"는 조건 자체가 `Surface` scope 의 발화 조건을
+    이미 만족하기 때문.
+  - 포커스된 plugin surface 가 없으면(순수 터미널 tab 등), 등록된 **모든**
+    plugin 의 `CommandScope::Global` 커맨드가 후보가 된다. `CommandScope::Surface`
+    커맨드는 이 경로에 나타나지 않는다 — owner surface 가 실제로 포커스되어
+    있을 때만 발화한다(문서상 "어디서나 동작"이 아니라 "그 plugin surface
+    포커스 시에만 동작"이 `Surface` scope 의 계약).
+- **여러 plugin 이 같은 키를 Global 로 등록한 경우**: 먼저 발견되는 plugin(등록
+  순서 — `PluginCommandRegistry` 내부 순회 순서, 결정론적이지만 사용자에게
+  노출되는 우선순위 규칙은 아님)이 이긴다. 여러 plugin 이 같은 Global 키를
+  등록하는 상황 자체가 plugin 작성 시점의 설계 실수에 가까우므로, 이 경우를 위한
+  전용 충돌 감지 UI 는 아직 없다(설정 UI 의 host-vs-host 중복 키 감지처럼 plugin
+  용도 확장은 후속 과제).
+- **동작 종류 우선순위(`action` vs `handle_command`)**: `CommandDecl.action`
+  이 선언되어 있으면 호스트가 그 액션(`ToolAction::Event`/`OpenSurface`/`OpenPopup`)
+  을 `[[contributes.tool]]` 과 동일하게 직접 실행하고, 옛 `command.invoke` IPC
+  (`handle_command`)는 이 커맨드에 대해 **발사되지 않는다** — 두 경로가 동시에
+  실행되면 popup 이 중복으로 열리는 등의 부작용이 있어 `action` 이 있으면
+  `handle_command` 는 완전히 스킵한다. `action` 이 없으면 기존 `handle_command`
+  IPC 왕복 경로를 그대로 쓴다. Event Bus `command.invoked` owner-unicast 통지는
+  `action` 유무·대상 surface 유무와 무관하게 매칭될 때마다 항상 발사되는
+  informational 통지다.
+
 ## 코드 위치
 
 - `KeybindingSettings`(바인딩 필드·`format_display`), 캡처/매칭 레이어, 프리셋 기본 바인딩.
 - OS 메뉴 배선: macOS NSMenu / Windows AcceleratorTable.
+- Plugin 커맨드: `crates/tasty-host-plugin/src/command_registry.rs`(`PluginCommandRegistry`,
+  `effective_binding`), `src/plugin_bridge/key_dispatch.rs`(`match_plugin_shortcut`/
+  `match_global_shortcut`/`dispatch_plugin_command`), `src/app/plugin_glue/shortcut.rs`
+  (`App::try_plugin_shortcut`).
 </content>

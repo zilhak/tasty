@@ -124,7 +124,15 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ### 단축키 (commands)
 
-`[[contributes.commands]]` — `id` · `default_keybinding` · `binding_mode`(`independent` 또는 `inherit:<host_action>`). 호스트가 키 매칭 시 `command.invoke` → SDK `handle_command`. 플러그인 키는 **focus surface 가 그 플러그인 소유일 때만** 호스트 키보다 우선.
+`[[contributes.commands]]` — `id` · `default_keybinding` · `binding_mode`(`independent` 또는 `inherit:<host_action>`) · `scope`(`global`(기본) 또는 `surface`) · `action`(선택, `[[contributes.tool]].action` 과 동일한 `ToolAction`).
+
+**scope 별 발화 조건**:
+
+- `scope = "global"`(기본값) — **어디서나 동작한다.** 포커스된 surface 가 무엇이든(다른 plugin surface, 터미널 tab, 아무 surface 도 없는 상태 포함) 등록된 키를 누르면 발화. 단일 키는 다른 곳(터미널 입력 등)과 충돌하기 쉬우므로 **조합키만 권장** — `default_keybinding` 이 modifier 없는 단일 키면 매니페스트 validate 단계에서 거부된다(`scope = "surface"` 로 바꾸거나 조합키를 쓸 것).
+- `scope = "surface"` — 이 플러그인이 만든 surface(`RemoteSurface`)에 포커스가 있을 때만 발화. 단일 키(F5 등)도 허용.
+- 포커스된 plugin surface 가 있으면(어떤 plugin 이든) 그 plugin 의 커맨드가 scope 무관하게 최우선 후보가 된다 — "그 plugin surface 가 포커스되어 있다"는 조건 자체가 `surface` scope 의 조건을 이미 만족하기 때문. 포커스된 plugin surface 가 없을 때는 등록된 모든 plugin 의 `global` 커맨드만 후보가 된다. 호스트 `KeybindingSettings` 와 같은 키가 겹치면 **plugin 이 항상 우선**(자세한 우선순위 규칙은 [`key-mapping.md`](../design/policies/key-mapping.md#plugin-커맨드-단축키-우선순위)).
+
+**동작 방식(`action` vs `handle_command`)**: `action` 을 선언하면 호스트가 `[[contributes.tool]]` 과 동일하게 그 액션(`event`/`open_surface`/`open_popup`)을 직접 실행하고, 옛 `command.invoke` IPC(SDK `handle_command`)는 이 커맨드에 대해 발사되지 않는다 — popup 을 여는 것뿐인 커맨드라면 `handle_command` 를 구현할 필요가 없다. `action` 을 선언하지 않으면 기존처럼 `command.invoke` → SDK `handle_command` 왕복 경로를 쓴다. Event Bus `command.invoked` owner-unicast 통지는 `action` 유무와 무관하게 항상 발사된다(관찰용, 구독 안 해도 무방).
 
 ### 설정 페이지
 

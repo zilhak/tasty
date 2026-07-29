@@ -95,9 +95,15 @@ impl App {
         settings_ui::PluginShortcutSnapshot { rows }
     }
 
-    /// 사용자 키 입력이 현재 포커스 surface 의 plugin 명령에 매칭되면 dispatch 한다.
-    /// 호출자(event_handler)는 normal window dispatch를 skip해 host action이
-    /// trigger되지 않게 한다.
+    /// 사용자 키 입력이 plugin 명령에 매칭되면 dispatch 한다. 호출자(event_handler)는
+    /// normal window dispatch를 skip해 host action이 trigger되지 않게 한다.
+    ///
+    /// 우선순위: 포커스된 plugin surface가 있으면 **그 plugin의 커맨드**(scope 무관 —
+    /// 이미 포커스 조건을 만족)만 후보로 본다. 없으면 등록된 **모든** plugin의
+    /// `CommandScope::Global` 커맨드를 후보로 본다 — `scope = "global"`(기본값)의
+    /// "어디서나 동작" 계약을 실제로 만족시키는 경로. `Surface` scope 커맨드는 이
+    /// 두번째 경로에 나타나지 않으므로 회귀 없이 그대로 "owner surface 포커스 시에만
+    /// 동작"을 유지한다.
     pub(crate) fn try_plugin_shortcut(
         &mut self,
         id: winit::window::WindowId,
@@ -111,10 +117,10 @@ impl App {
         if self.view.is_modal_active() {
             return false;
         }
-        let Some(w) = self.view.views.get(&id) else {
+        let Some(w) = self.view.views.get_mut(&id) else {
             return false;
         };
-        let Some(main) = w.as_main() else {
+        let Some(main) = w.as_main_mut() else {
             return false;
         };
         // overlay/popup이 키를 가져갈 상태면 patcher
@@ -124,14 +130,10 @@ impl App {
         {
             return false;
         }
-        let Some((plugin_id, surface_id)) =
-            crate::plugin_bridge::key_dispatch::focused_plugin_surface(
-                &main.state,
-                &main.core_state,
-            )
-        else {
-            return false;
-        };
+        let focused = crate::plugin_bridge::key_dispatch::focused_plugin_surface(
+            &main.state,
+            &main.core_state,
+        );
         // physical key fallback (IME 영향 회피) — keyboard.rs와 동일 규칙
         let mods = main.base.modifiers;
         let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
@@ -141,22 +143,70 @@ impl App {
             ke.logical_key.clone()
         };
         let host_kb = main.core_state.settings.keybindings.clone();
-        let cmd_id = {
+
+        // (plugin_id, command_id, 대상 surface — Surface 경로만 Some) 매칭 결과.
+        let matched = {
             let Some(mgr) = self.plugin_manager.as_ref() else {
                 return false;
             };
-            crate::plugin_bridge::key_dispatch::match_plugin_shortcut(
-                mgr,
-                &plugin_id,
-                &shortcut_key,
-                mods,
-                &host_kb,
-            )
+            match &focused {
+                Some((plugin_id, surface_id)) => {
+                    crate::plugin_bridge::key_dispatch::match_plugin_shortcut(
+                        mgr,
+                        plugin_id,
+                        &shortcut_key,
+                        mods,
+                        &host_kb,
+                    )
+                    .map(|cmd_id| (plugin_id.clone(), cmd_id, Some(*surface_id)))
+                }
+                None => crate::plugin_bridge::key_dispatch::match_global_shortcut(
+                    mgr,
+                    &shortcut_key,
+                    mods,
+                    &host_kb,
+                )
+                .map(|(plugin_id, cmd_id)| (plugin_id, cmd_id, None)),
+            }
         };
-        let Some(cmd_id) = cmd_id else {
+        let Some((plugin_id, cmd_id, surface_id)) = matched else {
             return false;
         };
-        if let Some(mgr) = self.plugin_manager.as_mut() {
+
+        let action = self
+            .plugin_manager
+            .as_ref()
+            .and_then(|mgr| mgr.command_registry.find(&plugin_id, &cmd_id))
+            .and_then(|e| e.action.clone());
+
+        if let Some(action) = action {
+            // action이 선언된 command: 호스트가 직접 실행 (`[[contributes.tool]]`과 동일
+            // 처리). Event Bus `command.invoked`는 informational로 여전히 발사하지만,
+            // 옛 `command.invoke` IPC(`handle_command`)는 이 경로에서 아예 발사하지
+            // 않는다 — action과 handle_command 동시 실행 시 popup 중복 오픈 등의
+            // 부작용을 막기 위함(`CommandDecl::action` 문서 참조).
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                crate::plugin_bridge::key_dispatch::emit_command_invoked(
+                    mgr, &plugin_id, &cmd_id, surface_id,
+                );
+            }
+            let item = plugin::tool_registry::ToolItem {
+                source: plugin::tool_registry::ToolSource::Plugin {
+                    plugin_id: plugin_id.clone(),
+                    tool_id: cmd_id.clone(),
+                },
+                key: format!("{plugin_id}/{cmd_id}"),
+                label_i18n_key: String::new(),
+                icon: None,
+                action,
+                order_hint: 0,
+            };
+            crate::adapters::ui::tools_menu::invoke_tool(
+                &mut main.state,
+                &mut main.core_state,
+                &item,
+            );
+        } else if let Some(mgr) = self.plugin_manager.as_mut() {
             crate::plugin_bridge::key_dispatch::dispatch_plugin_command(
                 mgr, &plugin_id, &cmd_id, surface_id,
             );

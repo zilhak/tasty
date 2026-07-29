@@ -16,7 +16,7 @@ use tasty_settings::KeybindingSettings;
 use crate::host_actions;
 
 use super::registry_state::ShortcutOverride;
-use tasty_plugin_manifest::{BindingMode, CommandDecl, CommandScope, Manifest};
+use tasty_plugin_manifest::{BindingMode, CommandDecl, CommandScope, Manifest, ToolAction};
 
 /// 한 plugin이 등록한 한 command의 메타데이터.
 #[derive(Debug, Clone)]
@@ -29,6 +29,10 @@ pub struct PluginCommandEntry {
     pub manifest_default: Option<String>,
     pub binding_mode: BindingMode,
     pub scope: CommandScope,
+    /// 선언적 액션(`[[contributes.tool]].action`과 동일한 `ToolAction`). `Some`이면
+    /// 디스패치 시 호스트가 이 액션을 직접 실행하고 옛 `command.invoke` IPC
+    /// (`handle_command`)는 생략한다 — 우선순위는 `CommandDecl::action` 문서 참조.
+    pub action: Option<ToolAction>,
 }
 
 impl PluginCommandEntry {
@@ -52,6 +56,7 @@ impl PluginCommandEntry {
             manifest_default: decl.default_keybinding.clone(),
             binding_mode: mode,
             scope: decl.scope,
+            action: decl.action.clone(),
         }
     }
 }
@@ -111,6 +116,16 @@ impl PluginCommandRegistry {
     /// 전체 entry 순회 — 설정 UI에서 plugin별 command snapshot을 만들 때 사용.
     pub fn iter_all(&self) -> impl Iterator<Item = &PluginCommandEntry> {
         self.by_plugin.values().flat_map(|v| v.iter())
+    }
+
+    /// 등록된 **모든** plugin의 `CommandScope::Global` command만 순회.
+    ///
+    /// 포커스된 plugin surface가 없는 상태에서 단축키를 전체 plugin의 Global
+    /// command와 매칭할 때 사용 (`key_dispatch::match_global_shortcut`).
+    /// `Surface` scope command는 이 iterator에 나타나지 않는다 — 그 owner
+    /// plugin의 surface가 포커스되어 있을 때만 `commands_for`로 매칭된다.
+    pub fn iter_global(&self) -> impl Iterator<Item = &PluginCommandEntry> {
+        self.iter_all().filter(|e| e.scope == CommandScope::Global)
     }
 
     /// `(plugin_id, command_id)` 로 단일 entry lookup.
@@ -229,12 +244,17 @@ mod tests {
     }
 
     fn cmd(id: &str, mode: BindingMode) -> CommandDecl {
+        cmd_with_scope(id, mode, CommandScope::default())
+    }
+
+    fn cmd_with_scope(id: &str, mode: BindingMode, scope: CommandScope) -> CommandDecl {
         CommandDecl {
             id: id.to_string(),
             title_i18n_key: format!("{id}.title"),
             default_keybinding: Some("F5".to_string()),
             binding_mode: mode,
-            scope: CommandScope::default(),
+            scope,
+            action: None,
         }
     }
 
@@ -300,6 +320,61 @@ mod tests {
     }
 
     #[test]
+    fn iter_global_only_yields_global_scope_across_plugins() {
+        let mut reg = PluginCommandRegistry::new();
+        reg.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![
+                cmd_with_scope("a.global", BindingMode::Independent, CommandScope::Global),
+                cmd_with_scope("a.surface", BindingMode::Independent, CommandScope::Surface),
+            ],
+        ));
+        reg.register_plugin(&manifest_with_commands(
+            "com.example.b",
+            vec![cmd_with_scope(
+                "b.global",
+                BindingMode::Independent,
+                CommandScope::Global,
+            )],
+        ));
+        let mut global_ids: Vec<&str> = reg
+            .iter_global()
+            .map(|e| e.command_id.as_str())
+            .collect();
+        global_ids.sort_unstable();
+        assert_eq!(global_ids, vec!["a.global", "b.global"]);
+    }
+
+    #[test]
+    fn iter_global_empty_when_no_global_commands() {
+        let mut reg = PluginCommandRegistry::new();
+        reg.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd_with_scope(
+                "a.surface",
+                BindingMode::Independent,
+                CommandScope::Surface,
+            )],
+        ));
+        assert_eq!(reg.iter_global().count(), 0);
+    }
+
+    #[test]
+    fn action_field_propagates_from_manifest_decl() {
+        let mut reg = PluginCommandRegistry::new();
+        let mut decl = cmd("x.open", BindingMode::Independent);
+        decl.action = Some(tasty_plugin_manifest::ToolAction::OpenPopup {
+            popup_id: "com.example.x/main".to_string(),
+        });
+        reg.register_plugin(&manifest_with_commands("com.example.x", vec![decl]));
+        let entry = reg.find("com.example.x", "x.open").unwrap();
+        assert!(matches!(
+            entry.action,
+            Some(tasty_plugin_manifest::ToolAction::OpenPopup { .. })
+        ));
+    }
+
+    #[test]
     fn empty_command_list_purges_plugin_entry() {
         let mut reg = PluginCommandRegistry::new();
         reg.register_plugin(&manifest_with_commands(
@@ -324,6 +399,7 @@ mod tests {
             manifest_default: default.map(|s| s.to_string()),
             binding_mode: mode,
             scope: CommandScope::default(),
+            action: None,
         }
     }
 
