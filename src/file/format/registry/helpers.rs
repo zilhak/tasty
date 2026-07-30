@@ -150,7 +150,11 @@ pub(super) fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKi
                 .filter(|s| !s.is_empty())
                 .collect(),
         },
-        DetectorRuleDecl::PathGlob { pattern } => DetectorRuleKind::PathGlob { pattern },
+        // 저장·비교는 항상 `/` 로 통일(TODO 58) — 등록 시점에 1회 정규화해두면
+        // evaluator/registry 쪽은 재정규화 없이 그대로 globset 에 넘길 수 있다.
+        DetectorRuleDecl::PathGlob { pattern } => DetectorRuleKind::PathGlob {
+            pattern: tasty_utils::path::to_slash(&pattern),
+        },
         DetectorRuleDecl::Mime { types } => DetectorRuleKind::Mime { types },
         DetectorRuleDecl::Magic { offset, bytes_hex } => {
             let bytes = hex_to_bytes(&bytes_hex)?;

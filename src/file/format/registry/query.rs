@@ -64,6 +64,16 @@ impl FileFormatRegistry {
             DetectDepth::Cheap => None,
         };
 
+        // PathGlob 매칭(TODO 58): 미리 컴파일된 GlobSet 을 파일 하나당 1회만 조회해
+        // 매칭 인덱스 집합을 구한다 — 아래 rule 루프에서 PathGlob rule 을 몇 번을
+        // 만나든 재컴파일/재매칭하지 않고 이 집합의 membership 조회로 끝낸다.
+        let matched_globs = target
+            .as_path()
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|name| inner.path_globs.matched_indices(name))
+            .unwrap_or_default();
+
         for (id, det) in inner.finalized.iter() {
             if det.disabled {
                 continue;
@@ -79,9 +89,14 @@ impl FileFormatRegistry {
             }
             // 매칭: OR — 하나라도 match 면 detector 매칭.
             for rule in &det.rules {
-                let matched = match deep_ctx.as_mut() {
-                    Some(ctx) => evaluate_deep(&rule.kind, target, ctx),
-                    None => evaluate_cheap(&rule.kind, target),
+                let matched = match &rule.kind {
+                    DetectorRuleKind::PathGlob { pattern } => {
+                        inner.path_globs.pattern_matched(pattern, &matched_globs)
+                    }
+                    _ => match deep_ctx.as_mut() {
+                        Some(ctx) => evaluate_deep(&rule.kind, target, ctx),
+                        None => evaluate_cheap(&rule.kind, target),
+                    },
                 };
                 if matched {
                     return Some(id.clone());

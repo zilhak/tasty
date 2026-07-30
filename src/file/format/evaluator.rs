@@ -105,13 +105,19 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
             .unwrap_or(false),
 
         DetectorRuleKind::PathGlob { pattern } => {
-            // 1단계: 파일명만 비교 (간단한 wildcard). 본격 glob 매칭은 globset crate 도입
-            // 시점에 교체. `Dockerfile`, `*.config.json` 같은 패턴 최소 지원.
+            // 파일명(마지막 컴포넌트)만 비교 — globset 표준 문법(`*`/`?`/`[...]`/`**`)
+            // 지원(TODO 58). `pattern` 은 `registry/helpers.rs::decl_rule_to_kind` 가
+            // 등록 시점에 이미 `to_slash` 로 정규화해뒀다는 전제. 이 경로는 registry
+            // 의 hot path(`registry/query.rs::identify`)가 아니다 — 그쪽은 파일마다
+            // 재컴파일하지 않도록 `registry/path_glob.rs::PathGlobCache` 를 쓰고,
+            // 여기(`evaluate_cheap` 단독 호출/테스트)만 매 호출마다 컴파일한다.
             let name = match path.file_name().and_then(|s| s.to_str()) {
                 Some(n) => n,
                 None => return false,
             };
-            simple_glob_match(pattern, name)
+            globset::Glob::new(pattern)
+                .map(|g| g.compile_matcher().is_match(name))
+                .unwrap_or(false)
         }
 
         DetectorRuleKind::IsDirectory => target.is_directory(),
@@ -175,7 +181,12 @@ pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut Dee
     }
 }
 
-/// 매우 단순한 glob 매처 — `*` 와 정확 일치만 지원. Phase B 에서 `globset` 도입.
+/// (구) 단순 glob 매처 — `PathGlob` 평가는 TODO 58 에서 `globset` 기반으로 교체
+/// 완료됐고, 이 함수는 더 이상 production 경로에서 쓰이지 않는다. 옛 매처와 새
+/// `globset` 매처의 동작 차이를 확인하는 호환성 회귀 테스트 전용으로만 남겨둔다
+/// (아래 `tests::glob_migration_compat` 모듈). `*` 는 여러 개 지원(prefix/middle/suffix
+/// 매칭) — `?`/`[...]`/`**` 같은 문법은 지원하지 않는다.
+#[cfg(test)]
 fn simple_glob_match(pattern: &str, name: &str) -> bool {
     if !pattern.contains('*') {
         return pattern == name;
@@ -239,6 +250,93 @@ mod tests {
         };
         assert!(evaluate_cheap(&wild, &target("foo/bar.config.json")));
         assert!(!evaluate_cheap(&wild, &target("foo/bar.json")));
+    }
+
+    #[test]
+    fn path_glob_supports_standard_glob_syntax() {
+        // TODO 58 완료 기준의 예시 그대로 — 옛 simple_glob_match 는 `*` 외 문법을
+        // 지원하지 않아 아래는 이전에는 전부 실패했다.
+        let question = DetectorRuleKind::PathGlob {
+            pattern: "file?.txt".into(),
+        };
+        assert!(evaluate_cheap(&question, &target("file1.txt")));
+        assert!(!evaluate_cheap(&question, &target("file12.txt")));
+
+        let bracket = DetectorRuleKind::PathGlob {
+            pattern: "[abc]*.rs".into(),
+        };
+        assert!(evaluate_cheap(&bracket, &target("a_test.rs")));
+        assert!(!evaluate_cheap(&bracket, &target("d_test.rs")));
+
+        let double_star = DetectorRuleKind::PathGlob {
+            pattern: "**/*.rs".into(),
+        };
+        // PathGlob 은 file_name() 만(디렉토리 세그먼트 없이) 비교하므로 `**` 자체가
+        // 여러 세그먼트를 가로지르는 효과를 낼 대상이 없다 — 그래도 문법 파싱/매칭
+        // 자체는 에러 없이 동작해야 한다는 것만 확인.
+        assert!(evaluate_cheap(&double_star, &target("nested/main.rs")));
+    }
+
+    // ── simple_glob_match(구) ↔ globset(신) 호환성 회귀 (TODO 58) ──────────
+    //
+    // simple_glob_match 는 여러 개의 `*` 도 이미 지원했다(prefix/middle/suffix
+    // 매칭) — "단일 `*` 만 지원" 이라는 TODO 문서 초기 서술과 달리 실제로는 그렇지
+    // 않았다. 아래는 그 실제 지원 범위를 기준으로 신구 매처가 일치하는지 확인한다.
+    #[test]
+    fn glob_migration_compat_agrees_on_previously_supported_patterns() {
+        let cases: &[(&str, &str, bool)] = &[
+            // 정확 일치 (와일드카드 없음)
+            ("Dockerfile", "Dockerfile", true),
+            ("Dockerfile", "dockerfile", false),
+            // 단일 `*`
+            ("*.config.json", "bar.config.json", true),
+            ("*.config.json", "bar.json", false),
+            ("test.*", "test.rs", true),
+            // 여러 `*` (prefix/middle/suffix) — 예전에도 이미 지원되던 범위.
+            ("a*b*c", "aXbYc", true),
+            ("a*b*c", "abc", true),
+            ("a*b*c", "ac", false),
+            ("*mid*", "xxmidyy", true),
+            ("*mid*", "nomatch", false),
+        ];
+        for (pattern, name, expect) in cases {
+            let old = simple_glob_match(pattern, name);
+            let new = globset::Glob::new(pattern)
+                .map(|g| g.compile_matcher().is_match(name))
+                .unwrap_or(false);
+            assert_eq!(
+                old, *expect,
+                "old matcher: pattern={pattern:?} name={name:?}"
+            );
+            assert_eq!(
+                new, *expect,
+                "new(globset) matcher regressed vs old: pattern={pattern:?} name={name:?}"
+            );
+            assert_eq!(
+                old, new,
+                "old/new matcher disagree: pattern={pattern:?} name={name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn glob_migration_new_matcher_accepts_syntax_old_matcher_rejected() {
+        // 옛 simple_glob_match 는 `*` 가 없으면 무조건 exact match 로 취급해
+        // `?`/`[...]` 를 리터럴 문자로 봤다 — globset 은 실제 와일드카드로 해석한다.
+        let cases: &[(&str, &str)] = &[("file?.txt", "file1.txt"), ("[abc]*.rs", "a_test.rs")];
+        for (pattern, name) in cases {
+            assert!(
+                !simple_glob_match(pattern, name),
+                "old matcher unexpectedly matched (test premise broken): {pattern:?} vs {name:?}"
+            );
+            let new = globset::Glob::new(pattern)
+                .map(|g| g.compile_matcher().is_match(name))
+                .unwrap_or(false);
+            assert!(
+                new,
+                "new matcher should accept richer glob syntax: {pattern:?} vs {name:?}"
+            );
+        }
     }
 
     #[test]

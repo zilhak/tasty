@@ -7,6 +7,7 @@ mod cleanup;
 mod helpers;
 mod install;
 mod io;
+mod path_glob;
 mod priority;
 mod query;
 #[cfg(test)]
@@ -23,6 +24,7 @@ use helpers::{
     install_one, parse_detector_section, parse_extension_priority_section,
     path_extension_lowercase, rule_kind_eq, rule_kind_to_toml,
 };
+use path_glob::PathGlobCache;
 use tracing::warn;
 
 use super::config::{
@@ -64,6 +66,9 @@ pub(super) struct Inner {
     pub(super) extension_priority: BTreeMap<String, ExtensionPriorityEntry>,
     /// finalize 결과 cache. dirty 시 lazy 재계산.
     pub(super) finalized: BTreeMap<DetectorId, FileFormatDetector>,
+    /// 전체 PathGlob 패턴을 하나로 묶어 컴파일한 매처(TODO 58). `finalized` 와 함께
+    /// dirty 시에만 재구성 — `identify` 는 파일마다 재컴파일하지 않고 재사용한다.
+    pub(super) path_globs: PathGlobCache,
     pub(super) dirty: bool,
 }
 
@@ -82,6 +87,7 @@ impl FileFormatRegistry {
                 install_order: BTreeMap::new(),
                 extension_priority: BTreeMap::new(),
                 finalized: BTreeMap::new(),
+                path_globs: PathGlobCache::default(),
                 dirty: false,
             }),
             next_install_order: AtomicU64::new(0),
@@ -140,6 +146,12 @@ impl FileFormatRegistry {
                 },
             );
         }
+        inner.path_globs = PathGlobCache::rebuild(next.values().flat_map(|det| {
+            det.rules.iter().filter_map(|r| match &r.kind {
+                DetectorRuleKind::PathGlob { pattern } => Some(pattern.as_str()),
+                _ => None,
+            })
+        }));
         inner.finalized = next;
         inner.dirty = false;
     }

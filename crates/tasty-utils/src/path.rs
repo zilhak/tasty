@@ -97,6 +97,27 @@ pub fn lexically_normalize(path: &Path) -> PathBuf {
     out
 }
 
+/// 경로 문자열의 백슬래시 구분자를 `/` 로 통일한다.
+///
+/// `file_format` 의 `PathGlob` 패턴처럼 저장·비교를 OS 와 무관하게 항상 `/` 로
+/// 해야 하는 문자열에 쓴다 — 입력이 어느 OS 에서 작성됐는지 알 수 없으므로(예:
+/// 동기화된 설정 파일) **실행 OS 와 무관하게 항상** 변환한다. 실제 파일시스템
+/// 호출 등 OS 경계에서만 [`from_slash`] 로 되돌린다.
+pub fn to_slash(p: &str) -> String {
+    p.replace('\\', "/")
+}
+
+/// [`to_slash`] 의 역변환 — `/` 를 **현재 OS** 네이티브 구분자로 되돌린다.
+/// `Path`/`PathBuf` 와 주고받는 지점(OS 경계)에서만 쓴다. non-Windows 는 이미
+/// `/` 가 네이티브 구분자라 no-op.
+pub fn from_slash(p: &str) -> String {
+    if cfg!(windows) {
+        p.replace('/', "\\")
+    } else {
+        p.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +184,24 @@ mod tests {
         // 비-Windows 에서는 어떤 입력이든 그대로 반환한다.
         assert_eq!(strip_verbatim_prefix("/usr/lib/tasty"), "/usr/lib/tasty");
         assert_eq!(strip_verbatim_prefix(r"\\?\X"), r"\\?\X");
+    }
+
+    #[test]
+    fn to_slash_replaces_backslash_regardless_of_os() {
+        assert_eq!(to_slash(r"src\file\format.rs"), "src/file/format.rs");
+        assert_eq!(to_slash("already/slash"), "already/slash");
+        assert_eq!(to_slash(r"mixed/a\b"), "mixed/a/b");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn from_slash_restores_backslash_on_windows() {
+        assert_eq!(from_slash("src/file/format.rs"), r"src\file\format.rs");
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn from_slash_is_noop_on_non_windows() {
+        assert_eq!(from_slash("src/file/format.rs"), "src/file/format.rs");
     }
 }

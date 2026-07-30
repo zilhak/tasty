@@ -249,6 +249,10 @@ semver = "1"
 # File type detection (file_format Deep evaluator — magic bytes + MIME)
 infer = { version = "0.16", default-features = false }
 
+# file_format PathGlob rule 매칭 (표준 glob 문법: *, ?, [...], ** — TODO 58).
+# 여러 패턴을 GlobSetBuilder 로 묶어 하나의 자동으로 컴파일해 재사용한다.
+globset = "0.4"
+
 # Lua sandbox for file_format Lua detector rules (host/user only)
 mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
 
