@@ -17,7 +17,7 @@ use tasty_plugin_protocol::SharedBufferId;
 
 use super::{
     AUTO_RELOAD_POLL_INTERVAL, HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall,
-    PendingRequestKind, PluginManager, RemoteSurfaceEntry,
+    PendingRequestKind, PluginManager, RSS_SAMPLE_INTERVAL, RemoteSurfaceEntry,
 };
 
 /// 한 tick 의 plugin→호스트 이벤트 수집 결과.
@@ -81,6 +81,9 @@ impl PluginManager {
         // H.f — auto-reload polling.
         self.poll_auto_reload();
 
+        // RssSurge 이상탐지(TODO 61) — Plugin 타입 RSS sampling.
+        self.sample_plugin_rss();
+
         hello_pairs
     }
 
@@ -89,6 +92,46 @@ impl PluginManager {
     /// View 를 dirty 표시하는 데 쓴다.
     pub fn take_invalidated_surfaces(&mut self) -> Vec<u32> {
         std::mem::take(&mut self.invalidated_surfaces)
+    }
+
+    /// `RSS_SAMPLE_INTERVAL` 경과 시 살아있는 plugin 프로세스 전부의 RSS 를
+    /// sysinfo 로 sampling 해 `pending_rss_samples` 에 누적한다. 검출/영속/알림은
+    /// 이 크레이트가 모르는 `tasty-telemetry`/host 책임이라 여기선 원시 값만 모은다
+    /// (`take_rss_samples` 로 드레인).
+    fn sample_plugin_rss(&mut self) {
+        if self.last_rss_sample.elapsed() < RSS_SAMPLE_INTERVAL {
+            return;
+        }
+        self.last_rss_sample = Instant::now();
+
+        let pids: Vec<(String, sysinfo::Pid)> = self
+            .processes
+            .iter()
+            .filter_map(|(id, proc)| {
+                proc.child_pid()
+                    .map(|pid| (id.clone(), sysinfo::Pid::from_u32(pid)))
+            })
+            .collect();
+        if pids.is_empty() {
+            return;
+        }
+        let pid_list: Vec<sysinfo::Pid> = pids.iter().map(|(_, pid)| *pid).collect();
+        self.sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::Some(&pid_list),
+            true,
+            sysinfo::ProcessRefreshKind::nothing().with_memory(),
+        );
+        for (plugin_id, pid) in pids {
+            if let Some(p) = self.sys.process(pid) {
+                self.pending_rss_samples.push((plugin_id, p.memory()));
+            }
+        }
+    }
+
+    /// `sample_plugin_rss` 누적을 드레인한다. `App::about_to_wait` 이 `pump()`
+    /// 직후 호출해, `CoreState.anomaly_detector` 에 공급한다.
+    pub fn take_rss_samples(&mut self) -> Vec<(String, u64)> {
+        std::mem::take(&mut self.pending_rss_samples)
     }
 
     /// plugin→호스트 이벤트를 `processes` 순회로 수집. self 를 읽기만 하며

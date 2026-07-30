@@ -7,7 +7,30 @@ use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{build_event, evaluate_caps_after_record, now_ms, persist_event};
+use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, record_rss_sample};
+
+/// Agent 타입 RSS self-report 감지. `telemetry.record`(`_batch`) 로 들어온
+/// 이벤트의 metric 이 [`tasty_telemetry::RSS_METRIC_NAME`] 이면 RssSurge
+/// 검출에 공급한다 — Plugin 타입(host sysinfo 직접 sampling)과 달리 PID 기반
+/// 측정이 구조적으로 불가능한 caller(원격/agent 프로세스) 를 위한 경로다.
+fn detect_rss_self_report(
+    core: &Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    ev: &tasty_telemetry::TelemetryEvent,
+) {
+    if ev.metric != tasty_telemetry::RSS_METRIC_NAME {
+        return;
+    }
+    record_rss_sample(
+        core,
+        state,
+        engine,
+        &ev.agent,
+        ev.value.max(0.0) as u64,
+        ev.ts,
+    );
+}
 
 pub fn handle_record(
     core: &mut Core,
@@ -40,6 +63,7 @@ pub fn handle_record(
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
     evaluate_caps_after_record(core, state, engine, &ev);
+    detect_rss_self_report(core, state, engine, &ev);
     response
 }
 
@@ -86,6 +110,7 @@ pub fn handle_record_batch(
     }
     for ev in &events {
         evaluate_caps_after_record(core, state, engine, ev);
+        detect_rss_self_report(core, state, engine, ev);
     }
     JsonRpcResponse::success(
         id,

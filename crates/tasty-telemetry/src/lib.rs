@@ -14,13 +14,12 @@
 //! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
 //! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
 //!
-//! ## 4.1 범위
+//! ## 기능 범위
 //!
 //! - record / record_batch (단일 이벤트 직렬화)
 //! - 조회: events → bucket aggregation, summary, top
-//! - 롤업 task / cap / anomaly 는 후속 sub-phase
-//!
-//! 자세한 스키마는 `.claude-workspace/plans/ai-first-depth/04-observability.md`.
+//! - cap 평가 도메인 로직 ([`cap`])
+//! - anomaly 검출 도메인 로직 ([`anomaly`]) — CallBurst / SlowLoop / RssSurge
 
 pub mod agent_id;
 

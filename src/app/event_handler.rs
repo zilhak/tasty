@@ -416,6 +416,23 @@ impl ApplicationHandler<AppEvent> for App {
         // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
         // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
         self.finalize_plugin_hello(hello_pairs);
+        // RssSurge 이상탐지(TODO 61) — PluginManager 가 sysinfo 로 직접 sampling 한
+        // (plugin_id, rss_bytes) 를 anomaly detector 에 공급. 어느 window 소관인지
+        // 몰라(PluginManager 는 App-level singleton) plugin lifecycle cascade 와
+        // 동일하게 첫 main window 를 대상으로 삼는다.
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            let rss_samples = mgr.take_rss_samples();
+            if !rss_samples.is_empty()
+                && let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut())
+            {
+                crate::adapters::ipc::handler::record_plugin_rss_samples(
+                    &self.core,
+                    &mut main.state,
+                    &mut main.core_state,
+                    &rss_samples,
+                );
+            }
+        }
         // parked engine(macOS 최소화로 window 가 파괴되고 CoreState 만 남은 경우,
         // `handle_minimize` macOS 분기)의 mesh mirror 구독도 실제 frame relay 대상이
         // 되도록 headless 와 동일한 구동 로직을 적용한다 — 살아있는 window 는

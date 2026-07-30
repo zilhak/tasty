@@ -168,7 +168,7 @@ pub fn handle_with_caller(
     // 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
     // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
-    telemetry::record_ipc_call(core, state, engine, caller, canonical);
+    telemetry::record_ipc_call(core, state, engine, caller, canonical, &request.params);
 
     // audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
     // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
@@ -237,6 +237,26 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
         return false;
     }
     true
+}
+
+/// Plugin 타입 RSS 이상탐지(TODO 61) 진입점. `telemetry` 하위모듈이
+/// `mod telemetry;`(private) 라 `App::about_to_wait` 같은 crate 외부(다른
+/// 서브트리)에서 직접 부를 수 없어, 이 함수가 유일한 공개 경유지다.
+///
+/// `PluginManager::pump()` 이 sysinfo 로 직접 sampling 한 (plugin_id,
+/// rss_bytes) 목록을 그대로 넘기면 된다 — Agent 타입 self-report 는 이
+/// 함수를 거치지 않고 `telemetry.record` 경로(`telemetry::record::handle_record`)
+/// 에서 처리된다.
+pub fn record_plugin_rss_samples(
+    core: &crate::core::Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    samples: &[(String, u64)],
+) {
+    let ts = telemetry::now_ms();
+    for (plugin_id, rss_bytes) in samples {
+        telemetry::record_rss_sample(core, state, engine, plugin_id, *rss_bytes, ts);
+    }
 }
 
 /// engine-substate handlers — UI에 의존하지 않음. 단계 07 권한 게이트 대상.

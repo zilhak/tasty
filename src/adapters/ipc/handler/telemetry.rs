@@ -92,6 +92,7 @@ pub(crate) fn record_ipc_call(
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     method: &str,
+    params: &Value,
 ) {
     if method.starts_with("telemetry.") {
         return;
@@ -118,22 +119,50 @@ pub(crate) fn record_ipc_call(
         return;
     }
     evaluate_caps_after_record(core, state, engine, &ev);
-    detect_anomalies_after_ipc(core, state, engine, agent.as_str(), method, ts);
+    detect_anomalies_after_ipc(core, state, engine, agent.as_str(), method, params, ts);
 }
 
-/// IPC 호출 후 anomaly 검출. `AnomalyDetector::record_call` 이 burst
-/// 임계를 넘는다고 보고하면 host 가 영속 + notification 으로 알린다.
+/// IPC 호출 후 anomaly 검출. `AnomalyDetector::record_call` 이 CallBurst/
+/// SlowLoop 중 하나라도 발화를 보고하면 각각 영속 + notification 으로 알린다.
 fn detect_anomalies_after_ipc(
     core: &Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     agent: &str,
     method: &str,
+    params: &Value,
     ts: u64,
 ) {
     let seq = engine.telemetry_seq.next();
     let detector = engine.anomaly_detector.clone();
-    let Some(anomaly) = detector.record_call(agent, method, ts, seq) else {
+    for anomaly in detector.record_call(agent, method, params, ts, seq) {
+        if let Err(e) = persist_anomaly(core, &anomaly) {
+            tracing::warn!("anomaly persist failed: {e}");
+        }
+        fire_anomaly_notification(state, engine, &anomaly);
+    }
+}
+
+/// RSS 샘플 1건을 anomaly detector 에 공급 + RssSurge 발화 시 영속·알림.
+///
+/// 두 caller type 이 각자 다른 경로로 이 함수에 도달한다:
+/// - Agent 타입: `telemetry.record`(`handle_record`/`handle_record_batch`)가
+///   metric == [`tasty_telemetry::RSS_METRIC_NAME`] 인 이벤트를 self-report
+///   로 받았을 때.
+/// - Plugin 타입: `App::about_to_wait` 이 `PluginManager` 가 sysinfo 로 직접
+///   sampling 한 (plugin_id, rss_bytes) 를 주기적으로 공급할 때
+///   ([`crate::adapters::ipc::handler::record_plugin_rss_samples`]).
+pub(crate) fn record_rss_sample(
+    core: &Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    agent: &str,
+    rss_bytes: u64,
+    ts: u64,
+) {
+    let seq = engine.telemetry_seq.next();
+    let detector = engine.anomaly_detector.clone();
+    let Some(anomaly) = detector.record_rss_sample(agent, rss_bytes, ts, seq) else {
         return;
     };
     if let Err(e) = persist_anomaly(core, &anomaly) {

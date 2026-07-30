@@ -34,6 +34,10 @@ pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
 /// H — auto-reload polling 간격. pump tick 안의 자연 debounce — 2초 내
 /// 발생한 연속 mtime 변경은 한 번의 swap 으로 흡수된다.
 pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// RssSurge 이상탐지(TODO 61) — plugin RSS sampling 주기. 너무 짧으면
+/// sysinfo 호출 비용이 매 tick 마다 누적되고, 너무 길면 5-샘플 sliding
+/// window(`RSS_SURGE_MIN_SAMPLES`)가 실제 급증을 늦게 잡는다.
+pub(super) const RSS_SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// IPC 응답을 최종적으로 어디로 회신해야 하는지를 식별. 호스트 외부 caller(CLI/사용자)는
 /// `Local`, 다른 plugin이면 `Plugin`.
@@ -332,6 +336,16 @@ pub struct PluginManager {
     /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
     /// `take_invalidated_surfaces` 가 드레인한다.
     pub(super) invalidated_surfaces: Vec<u32>,
+    /// RssSurge 이상탐지(TODO 61) — 마지막 sampling tick 시각. `RSS_SAMPLE_INTERVAL`
+    /// 경과마다 `processes` 의 각 `child_pid()` 를 sysinfo 로 sampling한다.
+    pub(super) last_rss_sample: Instant,
+    /// sysinfo 측정 핸들 — tick 마다 새로 만들지 않고 재사용(할당 비용 절감).
+    pub(super) sys: sysinfo::System,
+    /// 이번 sampling tick 에서 모인 (plugin_id, rss_bytes). `pump()` 가 채우고
+    /// `take_rss_samples` 가 드레인한다 — `App::about_to_wait` 이 host 가 직접 가진
+    /// `CoreState`/`AnomalyDetector` 로 넘겨 검출·영속·알림을 처리한다(본 크레이트는
+    /// telemetry anomaly 판정 로직을 모른다, plain data 만 반환).
+    pub(super) pending_rss_samples: Vec<(String, u64)>,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
     /// 호스트 본문이 CoreState 와 같은 Arc 를 공유 (trait object 로 의존성 격리).
     pub file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,

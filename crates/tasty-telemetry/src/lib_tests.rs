@@ -214,13 +214,26 @@ fn anomaly_kind_token() {
     assert_eq!(AnomalyKind::RssSurge.as_token(), "rss_surge");
 }
 
+/// CallBurst 를 SlowLoop 과 격리해 테스트하기 위해 호출마다 다른 params 를
+/// 준다 — 같은 params 를 1000회 넘게 반복하면 20회째에 SlowLoop 도 같이
+/// 발화해 CallBurst 전용 assertion 이 깨진다.
+fn varying_params(i: usize) -> serde_json::Value {
+    serde_json::json!({ "i": i })
+}
+
 #[test]
 fn anomaly_detector_under_threshold_silent() {
     let d = AnomalyDetector::new();
     for i in 0..(CALL_BURST_THRESHOLD - 1) {
         assert!(
-            d.record_call("agent_a", "ipc.foo", 1_000 + i as u64, i as u64)
-                .is_none()
+            d.record_call(
+                "agent_a",
+                "ipc.foo",
+                &varying_params(i),
+                1_000 + i as u64,
+                i as u64
+            )
+            .is_empty()
         );
     }
 }
@@ -230,20 +243,28 @@ fn anomaly_detector_burst_fires() {
     let d = AnomalyDetector::new();
     for i in 0..(CALL_BURST_THRESHOLD - 1) {
         assert!(
-            d.record_call("agent_a", "ipc.foo", 1_000 + i as u64, i as u64)
-                .is_none()
+            d.record_call(
+                "agent_a",
+                "ipc.foo",
+                &varying_params(i),
+                1_000 + i as u64,
+                i as u64
+            )
+            .is_empty()
         );
     }
     // 임계 번째 호출에서 발화.
-    let a = d
-        .record_call(
-            "agent_a",
-            "ipc.foo",
-            1_000 + CALL_BURST_THRESHOLD as u64,
-            9999,
-        )
-        .expect("anomaly fired");
-    assert_eq!(a.kind, AnomalyKind::CallBurst);
+    let anomalies = d.record_call(
+        "agent_a",
+        "ipc.foo",
+        &varying_params(CALL_BURST_THRESHOLD),
+        1_000 + CALL_BURST_THRESHOLD as u64,
+        9999,
+    );
+    let a = anomalies
+        .iter()
+        .find(|a| a.kind == AnomalyKind::CallBurst)
+        .expect("call_burst anomaly fired");
     assert_eq!(a.agent, "agent_a");
     assert_eq!(a.subject, "ipc.foo");
     assert!(a.detail["count"].as_u64().unwrap() >= CALL_BURST_THRESHOLD as u64);
@@ -255,12 +276,18 @@ fn anomaly_detector_dedup_within_cooldown() {
     // 1초 간격으로 임계 회 호출 → 발화.
     let base = 0u64;
     for i in 0..CALL_BURST_THRESHOLD {
-        let _ = d.record_call("a", "m", base + i as u64, i as u64);
+        let _ = d.record_call("a", "m", &varying_params(i), base + i as u64, i as u64);
     }
-    // 직후 동일 호출 — dedup 으로 None.
-    let after = d.record_call("a", "m", base + CALL_BURST_THRESHOLD as u64 + 1, 1);
+    // 직후 동일 호출 — dedup 으로 CallBurst 는 재발화 안 됨.
+    let after = d.record_call(
+        "a",
+        "m",
+        &varying_params(CALL_BURST_THRESHOLD),
+        base + CALL_BURST_THRESHOLD as u64 + 1,
+        1,
+    );
     assert!(
-        after.is_none(),
+        !after.iter().any(|a| a.kind == AnomalyKind::CallBurst),
         "second burst within cooldown must be deduped"
     );
 }
@@ -270,9 +297,85 @@ fn anomaly_detector_window_slides() {
     let d = AnomalyDetector::new();
     // 윈도우보다 오래된 호출은 evict 돼야 함.
     for i in 0..(CALL_BURST_THRESHOLD - 1) {
-        let _ = d.record_call("a", "m", i as u64, i as u64);
+        let _ = d.record_call("a", "m", &varying_params(i), i as u64, i as u64);
     }
     // 윈도우 밖에서 다시 1회 → 윈도우 카운트는 1 이라 trigger 안 됨.
     let far = CALL_BURST_WINDOW_MS + 1_000;
-    assert!(d.record_call("a", "m", far, 9999).is_none());
+    assert!(
+        !d.record_call("a", "m", &varying_params(CALL_BURST_THRESHOLD), far, 9999)
+            .iter()
+            .any(|a| a.kind == AnomalyKind::CallBurst)
+    );
+}
+
+#[test]
+fn slow_loop_anomaly_fires_when_identical_params_hash_repeats() {
+    let d = AnomalyDetector::new();
+    let params = serde_json::json!({ "path": "/tmp/x" });
+    let mut fired = None;
+    for i in 0..SLOW_LOOP_THRESHOLD {
+        let anomalies = d.record_call("agent_a", "fs.read", &params, 1_000 + i as u64, i as u64);
+        if let Some(a) = anomalies
+            .into_iter()
+            .find(|a| a.kind == AnomalyKind::SlowLoop)
+        {
+            fired = Some(a);
+        }
+    }
+    let a = fired.expect("slow_loop anomaly fired within threshold repeats");
+    assert_eq!(a.agent, "agent_a");
+    assert_eq!(a.subject, "fs.read");
+    assert!(a.detail["count"].as_u64().unwrap() >= SLOW_LOOP_THRESHOLD as u64);
+}
+
+#[test]
+fn slow_loop_anomaly_does_not_fire_when_params_vary() {
+    let d = AnomalyDetector::new();
+    for i in 0..(SLOW_LOOP_THRESHOLD * 2) {
+        let anomalies = d.record_call(
+            "agent_a",
+            "fs.read",
+            &varying_params(i),
+            1_000 + i as u64,
+            i as u64,
+        );
+        assert!(
+            !anomalies.iter().any(|a| a.kind == AnomalyKind::SlowLoop),
+            "distinct params must not accumulate into one slow_loop window"
+        );
+    }
+}
+
+#[test]
+fn rss_surge_anomaly_fires_on_sustained_monotonic_growth() {
+    let d = AnomalyDetector::new();
+    let mut fired = None;
+    for (i, rss) in [100u64, 200, 300, 400, 500].into_iter().enumerate() {
+        fired = d.record_rss_sample("plugin_a", rss, 1_000 + i as u64, i as u64);
+    }
+    let a = fired.expect("rss_surge anomaly fired on sustained monotonic growth");
+    assert_eq!(a.kind, AnomalyKind::RssSurge);
+    assert_eq!(a.agent, "plugin_a");
+    assert_eq!(a.subject, RSS_METRIC_NAME);
+    assert_eq!(a.detail["latest_rss_bytes"].as_u64().unwrap(), 500);
+}
+
+#[test]
+fn rss_surge_anomaly_does_not_fire_on_single_spike_then_plateau() {
+    let d = AnomalyDetector::new();
+    // 스파이크(300) 후 평탄화 — 마지막 min_samples 윈도우 안에서 엄격
+    // 단조증가가 깨지므로 발화하면 안 된다.
+    let samples = [100u64, 100, 300, 300, 300, 300, 300];
+    let mut any_fired = false;
+    for (i, rss) in samples.into_iter().enumerate() {
+        if d.record_rss_sample("plugin_a", rss, 1_000 + i as u64, i as u64)
+            .is_some()
+        {
+            any_fired = true;
+        }
+    }
+    assert!(
+        !any_fired,
+        "spike then plateau must not be treated as sustained growth"
+    );
 }

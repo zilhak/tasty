@@ -5681,6 +5681,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sysinfo",
  "tasty-ipc",
  "tasty-memory",
  "tasty-plugin-manifest",

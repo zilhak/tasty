@@ -31,6 +31,11 @@ toml = "0.8"
 ed25519-dalek = "2"
 sha2 = "0.10"
 base64 = "0.22"
+# 텔레메트리 RssSurge 이상탐지(TODO 61) — PluginProcess.child 의 PID로
+# 실제 RSS 를 host 가 직접 sampling(manager/pump.rs). Plugin 은 자기 자신의
+# 메모리를 정확히 보고할 유인이 없어(self-report 불신) 여기서만 PID 기반을
+# 쓴다 — Agent 타입은 telemetry.record 자가 보고로 별도 처리.
+sysinfo = "0.35"
 
 [features]
 # Phase J.C WASM POC stub gate. 본 feature 활성 시 src/wasm_poc.rs 컴파일.

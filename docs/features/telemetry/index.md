@@ -33,7 +33,15 @@ Metric(`input_tokens`/`ipc_calls`/…) × Agent(`tasty.<plugin_id>`/`cli.<exe>`/
 
 ### 이상 탐지
 
-`AnomalyDetector` 가 dispatcher 후크에서 (agent, method) sliding window 갱신. 활성 휴리스틱 `CallBurst`(1분 1000회↑ 발화, 1분 쿨다운 dedup). `SlowLoop`/`RssSurge` 는 타입만 정의(후속). 발화는 `tasty.telemetry.anomaly.*` 영속 + 알림.
+`AnomalyDetector` 가 세 휴리스틱을 유지한다 — **진짜 정체/누수 탐지가 아니라 값싼 신호 기반 후보 알림**이라는 전제로 소비해야 한다.
+
+| 휴리스틱 | 판정 | 기본값 |
+|---|---|---|
+| `CallBurst` | (agent, method) sliding window 호출 카운트 | 1분 1000회↑ |
+| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복) | 5분 20회↑ |
+| `RssSurge` | agent 당 최근 5개 RSS 샘플의 **엄격한 단조 증가**(스파이크 1회는 발화 안 함, 추세만) | 5 샘플 |
+
+RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 세 휴리스틱 모두 같은 (agent, kind, subject) 1분 쿨다운 dedup 을 공유하고, 발화는 동일하게 `tasty.telemetry.anomaly.*` 영속 + 알림.
 
 ### 세션 요약
 

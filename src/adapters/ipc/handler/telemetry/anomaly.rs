@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
-use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, anomaly_key};
+use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind, anomaly_key};
 
 use crate::core::Core;
 use crate::state::AppState;
@@ -38,24 +38,53 @@ pub(super) fn fire_anomaly_notification(
         return;
     };
     let ws_id = ws.id;
-    let count = anomaly
-        .detail
-        .get("count")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
     let title = format!(
         "이상 탐지: {} ({})",
         anomaly.kind.as_token(),
         anomaly.subject
     );
-    let body = format!(
-        "agent={} subject={} count={} ({}s 윈도우, anomaly={})",
-        anomaly.agent,
-        anomaly.subject,
-        count,
-        tasty_telemetry::CALL_BURST_WINDOW_MS / 1000,
-        anomaly.id,
-    );
+    // kind 마다 detail 의 필드 구성이 달라(CallBurst/SlowLoop 는 window_ms+count,
+    // RssSurge 는 min_samples+latest_rss_bytes) 본문도 분기한다 — 과거엔
+    // `CALL_BURST_WINDOW_MS` 를 kind 무관하게 하드코딩해 SlowLoop/RssSurge 에
+    // 잘못된 윈도우 값을 표시했었다.
+    let body = match anomaly.kind {
+        AnomalyKind::CallBurst | AnomalyKind::SlowLoop => {
+            let count = anomaly
+                .detail
+                .get("count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let window_ms = anomaly
+                .detail
+                .get("window_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!(
+                "agent={} subject={} count={} ({}s 윈도우, anomaly={})",
+                anomaly.agent,
+                anomaly.subject,
+                count,
+                window_ms / 1000,
+                anomaly.id,
+            )
+        }
+        AnomalyKind::RssSurge => {
+            let latest = anomaly
+                .detail
+                .get("latest_rss_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let min_samples = anomaly
+                .detail
+                .get("min_samples")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!(
+                "agent={} subject={} latest_rss_bytes={} ({}개 샘플 연속 증가, anomaly={})",
+                anomaly.agent, anomaly.subject, latest, min_samples, anomaly.id,
+            )
+        }
+    };
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
     state.dispatch_intent(
         crate::core::intent::DomainIntent::PushNotification {
