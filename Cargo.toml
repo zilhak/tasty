@@ -96,10 +96,6 @@ assets = [
     ["crates/tasty-plugin-claude/tasty-plugin.toml",  "usr/lib/tasty/plugins/com.tasty.claude/",            "644"],
     ["crates/tasty-plugin-claude/tasty-plugin.toml.sig", "usr/lib/tasty/plugins/com.tasty.claude/",         "644"],
     ["crates/tasty-plugin-claude/lang/*",             "usr/lib/tasty/plugins/com.tasty.claude/lang/",       "644"],
-    ["target/release/tasty-plugin-claude-design",     "usr/lib/tasty/plugins/com.tasty.claude-design/",     "755"],
-    ["crates/tasty-plugin-claude-design/tasty-plugin.toml", "usr/lib/tasty/plugins/com.tasty.claude-design/", "644"],
-    ["crates/tasty-plugin-claude-design/tasty-plugin.toml.sig", "usr/lib/tasty/plugins/com.tasty.claude-design/", "644"],
-    ["crates/tasty-plugin-claude-design/lang/*",      "usr/lib/tasty/plugins/com.tasty.claude-design/lang/", "644"],
     ["target/release/tasty-plugin-clipboard-viewer",             "usr/lib/tasty/plugins/com.tasty.clipboard-viewer/",             "755"],
     ["crates/tasty-plugin-clipboard-viewer/tasty-plugin.toml",   "usr/lib/tasty/plugins/com.tasty.clipboard-viewer/",             "644"],
     ["crates/tasty-plugin-clipboard-viewer/tasty-plugin.toml.sig", "usr/lib/tasty/plugins/com.tasty.clipboard-viewer/",          "644"],
@@ -145,10 +141,6 @@ assets = [
     { source = "crates/tasty-plugin-claude/tasty-plugin.toml",   dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml",                         mode = "644" },
     { source = "crates/tasty-plugin-claude/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml.sig",                   mode = "644" },
     { source = "crates/tasty-plugin-claude/lang/*",              dest = "/usr/lib/tasty/plugins/com.tasty.claude/lang/",                                     mode = "644" },
-    { source = "target/release/tasty-plugin-claude-design",      dest = "/usr/lib/tasty/plugins/com.tasty.claude-design/tasty-plugin-claude-design",         mode = "755" },
-    { source = "crates/tasty-plugin-claude-design/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.claude-design/tasty-plugin.toml",              mode = "644" },
-    { source = "crates/tasty-plugin-claude-design/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.claude-design/tasty-plugin.toml.sig",      mode = "644" },
-    { source = "crates/tasty-plugin-claude-design/lang/*",       dest = "/usr/lib/tasty/plugins/com.tasty.claude-design/lang/",                              mode = "644" },
     { source = "target/release/tasty-plugin-clipboard-viewer",             dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-viewer/tasty-plugin-clipboard-viewer", mode = "755" },
     { source = "crates/tasty-plugin-clipboard-viewer/tasty-plugin.toml",   dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-viewer/tasty-plugin.toml",   mode = "644" },
     { source = "crates/tasty-plugin-clipboard-viewer/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-viewer/tasty-plugin.toml.sig", mode = "644" },
@@ -466,8 +458,6 @@ opt-level = 3
 [profile.dev.package.tasty-output]
 opt-level = 3
 [profile.dev.package.tasty-plugin-claude]
-opt-level = 3
-[profile.dev.package.tasty-plugin-claude-design]
 opt-level = 3
 [profile.dev.package.tasty-plugin-clipboard-viewer]
 opt-level = 3

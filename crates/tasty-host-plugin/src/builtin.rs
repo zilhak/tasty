@@ -48,11 +48,6 @@ const BUILTINS: &[BuiltinSpec] = &[
         bin_name: "tasty-plugin-claude.exe",
     },
     BuiltinSpec {
-        id: "com.tasty.claude-design",
-        crate_dir: "tasty-plugin-claude-design",
-        bin_name: "tasty-plugin-claude-design.exe",
-    },
-    BuiltinSpec {
         id: "com.tasty.image",
         crate_dir: "tasty-plugin-image",
         bin_name: "tasty-plugin-image.exe",
@@ -95,11 +90,6 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.claude",
         crate_dir: "tasty-plugin-claude",
         bin_name: "tasty-plugin-claude",
-    },
-    BuiltinSpec {
-        id: "com.tasty.claude-design",
-        crate_dir: "tasty-plugin-claude-design",
-        bin_name: "tasty-plugin-claude-design",
     },
     BuiltinSpec {
         id: "com.tasty.image",
@@ -1203,6 +1193,12 @@ mod tests {
     fn explorer_is_not_builtin_plugin() {
         // T11: explorer 는 host builtin surface 로 승격되어 plugin 번들에서 제거됨.
         assert!(!is_builtin_plugin("com.tasty.explorer"));
+    }
+
+    #[test]
+    fn claude_design_is_not_builtin_plugin() {
+        // TODO64: 별도 프로젝트로 분리하며 tasty 본체 번들에서 완전히 제거됨.
+        assert!(!is_builtin_plugin("com.tasty.claude-design"));
     }
 
     #[test]
