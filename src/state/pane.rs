@@ -199,13 +199,21 @@ impl AppState {
             return true;
         }
         let surface_id;
-
+        // split 케이스의 closed-item 스냅샷용 tab_name — tab 이 mutate 되기 전(아래
+        // `focused_pane_mut` 블록 이전)에 여기서 미리 구해둔다. TODO63: close_case_split
+        // 과 동일한 캡처 로직이지만, 여기선 이미 이 블록이 `surface_id` 를 얻으려고
+        // `engine` 을 immutable 하게 빌리는 중이라 재사용한다(중복이면 헬퍼화가
+        // 바람직하나, borrow 형태가 서로 달라 강제하지 않음).
+        let mut tab_name_for_snapshot: Option<String> = None;
         if let Some(pane) = self.focused_pane(engine) {
             let tab = match pane.tabs.get(pane.active_tab) {
                 Some(t) => t,
                 None => return false,
             };
             surface_id = tab.focused_surface;
+            if tab.is_split() && terminal_surface_in_tab(tab, surface_id).is_some() {
+                tab_name_for_snapshot = Some(tab.display_name().to_string());
+            }
         } else {
             return false;
         }
@@ -214,6 +222,16 @@ impl AppState {
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
         let kind = self.surface_kind(engine, surface_id);
+        // tab.close_surface(surface_id) 로 mutate 되기 전에 스냅샷을 완성해둔다
+        // (순서 뒤바뀌면 이미 제거된 surface 정보를 읽게 됨 — close_case_split 참고).
+        let split_snapshot =
+            tab_name_for_snapshot.map(|tab_name| crate::model::ClosedItem::Surface {
+                surface: crate::model::closed_item::ClosedSurface::from_surface_id(
+                    surface_id,
+                    engine.terminals.get(surface_id),
+                ),
+                tab_name,
+            });
         let split_handled;
         if let Some(pane) = self.focused_pane_mut(engine) {
             let tab = match pane.active_tab_mut() {
@@ -232,6 +250,9 @@ impl AppState {
             return false;
         }
         if split_handled {
+            if let Some(item) = split_snapshot {
+                engine.push_closed_item(item);
+            }
             self.cleanup_surface(engine, surface_id, persist_id);
             self.enqueue_surface_closed(surface_id, kind, true);
             engine.mark_layout_dirty();

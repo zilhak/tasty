@@ -347,6 +347,45 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     }
 }
 
+/// TODO63 — split tab 안 surface 를 실제 로컬 close 경로(mirror 아님)로 닫으면
+/// closed-item 스냅샷이 남아 Ctrl+Shift+T 로 복원 가능해야 한다.
+#[test]
+fn close_active_surface_split_saves_closed_item_snapshot() {
+    let (mut state, mut engine) = test_state();
+    let sid_a = state.focused_surface_id(&engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
+    let sid_b = engine.next_ids.next_surface();
+    engine.workspaces[ws_idx]
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        .unwrap()
+        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
+        .unwrap();
+    engine
+        .terminals
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+    assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
+
+    assert_eq!(engine.closed_items.len(), 0);
+    assert!(state.close_active_surface(&mut engine));
+
+    assert_eq!(
+        engine.closed_items.len(),
+        1,
+        "split surface 를 닫으면 ClosedItem 이 하나 쌓여야 한다"
+    );
+    match engine.closed_items.list().next().unwrap() {
+        crate::model::ClosedItem::Surface { surface, .. } => {
+            assert_eq!(surface.id, sid_a);
+        }
+        crate::model::ClosedItem::Tab(_) => panic!("expected ClosedItem::Surface, got Tab"),
+        crate::model::ClosedItem::Workspace { .. } => {
+            panic!("expected ClosedItem::Surface, got Workspace")
+        }
+    }
+}
+
 /// 09 — pane 레벨 close(`close_active_pane`)는 후보를 계산하지 않는다(로컬도
 /// cascade 시 "워크스페이스 첫 pane" 으로 무조건 이동하는 것과 같은 스코프 결정).
 #[test]
