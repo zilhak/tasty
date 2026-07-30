@@ -5801,12 +5801,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "arboard",
  "egui",
  "serde_json",
+ "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -5814,6 +5815,7 @@ dependencies = [
  "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
+ "usvg",
 ]
 
 [[package]]

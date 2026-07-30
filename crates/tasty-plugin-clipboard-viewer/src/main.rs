@@ -174,15 +174,23 @@ impl ClipboardViewerPlugin {
             install_fonts(popup.context());
         }
 
+        // view::draw*는 header/footer Close 클릭 여부를 bool로 반환하지만, paint()의
+        // run_ui 클로저 자체는 반환값이 없다(FnMut(&Context)) — markdown 확인 팝업과
+        // 동형으로 클로저 밖에 캡처해둔 변수에 대입한 뒤, paint() 리턴 후 그 값을 보고
+        // close_popup 을 호출한다.
+        let mut close_requested = false;
         let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
-            match (is_primary, state.as_mut()) {
+            close_requested = match (is_primary, state.as_mut()) {
                 (true, Some(st)) => view::draw(egui_ctx, &theme, st, tr),
                 // 주 인스턴스가 아니거나(중복 open) 스냅샷이 없으면 "이미 열림" placeholder.
                 _ => view::draw_already_open(egui_ctx, &theme, tr),
-            }
+            };
         });
         if let Err(e) = result {
             tracing::warn!("clipboard popup {iid} paint failed: {e}");
+        }
+        if close_requested {
+            close_popup(&ctx.host, iid);
         }
     }
 
@@ -196,6 +204,18 @@ impl ClipboardViewerPlugin {
 #[cfg(any(unix, windows))]
 fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
+}
+
+/// host 에 팝업 인스턴스 닫기를 요청한다(셸 생명주기는 host 소유 — markdown 확인
+/// 팝업과 동일 패턴).
+#[cfg(any(unix, windows))]
+fn close_popup(host: &tasty_plugin_sdk::HostHandle, instance_id: u64) {
+    if let Err(e) = host.call(
+        "popup.close",
+        serde_json::json!({ "instance_id": instance_id }),
+    ) {
+        tracing::warn!("clipboard viewer popup close failed: {e}");
+    }
 }
 
 /// popup Context 에 CJK fallback 을 설치한다(markdown `install_fonts` 미러). egui 기본

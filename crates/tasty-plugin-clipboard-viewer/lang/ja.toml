@@ -6,9 +6,16 @@ open_viewer = "クリップボードビューアを開く"
 
 [clipboard_viewer.popup]
 title = "クリップボードビューア"
-empty = "クリップボードは空です"
-read_failed = "クリップボードの読み取りに失敗しました"
-already_open = "クリップボードビューアは既に開いています"
+header = "クリップボード"
+snapshot_badge = "スナップショット"
+close = "閉じる"
+close_tooltip = "閉じる (Esc)"
+empty_title = "クリップボードは空です"
+empty_sub = "テキスト、画像、ファイルをコピーしてから再度開くと、ここにスナップショットが表示されます。"
+read_failed_title = "クリップボードを読み取れませんでした"
+read_failed_sub = "システムクリップボードのハンドルを開けませんでした。それを占有している可能性のある他のアプリを閉じてから開き直してください。"
+already_open_title = "クリップボードビューアは既に開いています"
+already_open_sub = "スナップショットウィンドウは一度に1つだけ実行されます — 既存のウィンドウを前面に表示しました。"
 
 [clipboard_viewer.type]
 text = "テキスト"

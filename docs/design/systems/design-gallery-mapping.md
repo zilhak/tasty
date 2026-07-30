@@ -355,22 +355,25 @@ Hint text Section 바로 다음에 `Warning callout` Section 1개.
 
 ## clipboard-viewer (Plugins)
 
-plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::draw` (egui-mesh 자가 렌더, B4)
-↔ 갤러리 `catalog/components/clipboard_viewer.rs` (Plugins › `Clipboard viewer popup`).
-갤러리는 plugin crate 비의존이라 *구성*(master-detail + 버튼 목록 + mono 미리보기)을
-Theme 토큰 painter mock 으로 전사 — 픽셀 동일성 비목표.
+디자인 `ui_kits/terminal/overlays/clipboard_viewer.jsx` ↔ plugin
+`crates/tasty-plugin-clipboard-viewer/src/view.rs::draw`(egui-mesh 자가 렌더, B4) ↔ 갤러리
+`catalog/components/clipboard_viewer.rs` (Plugins › `Clipboard viewer popup`). 좌측 rail
+master-detail 레이아웃은 폐기됐다(TODO51) — header→type-bar→body→footer 4단 수직 스택으로
+구조 전사. 갤러리는 plugin crate 비의존이라 그 *구성*을 Theme 토큰 painter mock 으로
+전사 — 픽셀 동일성 비목표.
 
 | plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
-| 좌우 분할(LEFT_RATIO 0.3) | `separator` 1px divider | `master_detail` (split_x = w×0.3) |
-| 선택 타입 Button(primary) | `accent-primary` + `text-on-accent` | `master_detail` 타입 루프(selected) |
-| 유휴 타입 Button(secondary) | `surface-raised` + `text-secondary` | 동(idle) |
-| 상세 mono 미리보기 | mono `text-primary` | `master_detail` 미리보기 루프 |
-| empty 분기(중앙 한 줄) | `text-muted` | `state_box`(empty) |
-| read_error 분기 | `accent-danger` | `state_box`(read failed) |
+| header(아이콘+타이틀+snapshot 뱃지+close) | `text-muted`/`font-size-max`/`tag` Default | `header_row` |
+| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2, 갤러리는 ≤1만 재현) | `type_bar_row` |
+| body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `body_row` |
+| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row` |
+| CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
-화면 전용 고정값 480×360 / ratio 0.3 은 module const(token-policy §c). 3 상태(types/empty/
-read-failed) 를 `StageVariant::Wrap` 으로 나란히 노출.
+화면 전용 고정값 480×360 은 module const(token-policy §c). 4 상태(data/empty/read-failed/
+already-open) 를 `StageVariant::Wrap` 으로 나란히 노출. 세그먼트(2개 이상 타입) 상태는
+오늘의 실 데이터가 Text 뿐이라 아직 specimen 에 없다 — [[48/49/50/52]]가 타입을 늘리면
+추가한다.
 
 ## git-viewer (Plugins)
 

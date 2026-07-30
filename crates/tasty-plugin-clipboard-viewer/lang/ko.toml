@@ -6,9 +6,16 @@ open_viewer = "클립보드 뷰어 열기"
 
 [clipboard_viewer.popup]
 title = "클립보드 뷰어"
-empty = "클립보드가 비어 있습니다"
-read_failed = "클립보드를 읽지 못했습니다"
-already_open = "클립보드 뷰어가 이미 열려 있습니다"
+header = "클립보드"
+snapshot_badge = "스냅샷"
+close = "닫기"
+close_tooltip = "닫기 (Esc)"
+empty_title = "클립보드가 비어 있습니다"
+empty_sub = "텍스트, 이미지, 파일을 복사한 뒤 다시 열면 여기에 스냅샷이 표시됩니다."
+read_failed_title = "클립보드를 읽지 못했습니다"
+read_failed_sub = "시스템 클립보드 핸들을 열 수 없습니다. 이를 점유 중일 수 있는 다른 앱을 닫고 다시 열어보세요."
+already_open_title = "클립보드 뷰어가 이미 열려 있습니다"
+already_open_sub = "스냅샷 창은 한 번에 하나만 실행됩니다 — 기존 창을 앞으로 가져왔습니다."
 
 [clipboard_viewer.type]
 text = "텍스트"

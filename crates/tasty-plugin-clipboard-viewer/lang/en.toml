@@ -6,9 +6,16 @@ open_viewer = "Open Clipboard Viewer"
 
 [clipboard_viewer.popup]
 title = "Clipboard Viewer"
-empty = "Clipboard is empty"
-read_failed = "Failed to read the clipboard"
-already_open = "Clipboard viewer is already open"
+header = "Clipboard"
+snapshot_badge = "snapshot"
+close = "Close"
+close_tooltip = "Close (Esc)"
+empty_title = "Clipboard is empty"
+empty_sub = "Copy some text, an image, or files and reopen to see a snapshot here."
+read_failed_title = "Couldn't read the clipboard"
+read_failed_sub = "The system clipboard handle could not be opened. Close another app that may be holding it and reopen."
+already_open_title = "Clipboard viewer is already open"
+already_open_sub = "Only one snapshot window runs at a time — the existing one was brought to the front."
 
 [clipboard_viewer.type]
 text = "Text"

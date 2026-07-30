@@ -19,6 +19,13 @@ impl ClipboardType {
             ClipboardType::Text => "clipboard_viewer.type.text",
         }
     }
+
+    /// 푸터에 표시할 MIME 타입 문자열(design `t.mime`) — 기술 용어라 번역하지 않는다.
+    pub fn mime_str(self) -> &'static str {
+        match self {
+            ClipboardType::Text => "text/plain",
+        }
+    }
 }
 
 /// 한 타입의 표시용 표현. 추후 bytes / 공유버퍼 이미지 핸들 등으로 확장.

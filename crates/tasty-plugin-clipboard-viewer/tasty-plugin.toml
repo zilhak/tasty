@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.clipboard-viewer"
 name = "Clipboard Viewer"
-version = "0.1.8"
+version = "0.1.9"
 description = "Read-only viewer of the current system clipboard"
 api_version = "1"
 # clipboard.read 는 ADR-0009 상 이 plugin 엔 무의미(자기 프로세스 직접 read)하나
@@ -16,8 +16,9 @@ command = "tasty-plugin-clipboard-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
-# egui-mesh: plugin 이 popup 콘텐츠(master-detail)를 자기 프로세스에서 egui mesh 로
-# 그리고, host 는 셸(scrim/border/outside-click/Esc)만 그린 뒤 합성한다 (ADR-0028 / B4).
+# egui-mesh: plugin 이 popup 콘텐츠(header/type-bar/body/footer, TODO51)를 자기
+# 프로세스에서 egui mesh 로 그리고, host 는 셸(scrim/border/outside-click/Esc)만
+# 그린 뒤 합성한다 (ADR-0028 / B4).
 rendering = "egui-mesh"
 size_hint = { width = 480, height = 360 }
 anchor = "screen-center"
