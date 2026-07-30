@@ -28,11 +28,12 @@ use tasty_ui_widgets::{
 };
 
 use crate::i18n::{t, t_fmt, t_fmt2};
-use crate::settings::KeybindingSettings;
+use crate::settings::{GeneralSettings, KeybindingSettings};
 
 pub(super) fn draw_preset_subtab(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
+    general: &GeneralSettings,
     selected_preset: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
@@ -144,7 +145,7 @@ pub(super) fn draw_preset_subtab(
                             )
                         };
                         intro_note(ui, th, &note);
-                        draw_preset_diff_table(ui, th, keybindings, preset, name);
+                        draw_preset_diff_table(ui, th, keybindings, preset, name, general);
                     });
             },
             Some(&actions),
@@ -219,6 +220,7 @@ fn draw_preset_diff_table(
     current: &KeybindingSettings,
     preset: &KeybindingSettings,
     preset_name: &str,
+    general: &GeneralSettings,
 ) {
     let w = ui.available_width();
     // grid-template-columns: minmax(0,1.6fr) 1fr 1fr → 폭 비율 1.6/1/1.
@@ -279,11 +281,11 @@ fn draw_preset_diff_table(
             let cells: [(String, egui::FontId, egui::Color32); 3] = [
                 (action, action_font.clone(), th.text_secondary().to_egui()),
                 (
-                    fmt_bindings(cur_raw),
+                    fmt_bindings(cur_raw, general),
                     mono_font.clone(),
                     th.text_muted().to_egui(),
                 ),
-                (fmt_bindings(next_raw), mono_font.clone(), next_fg),
+                (fmt_bindings(next_raw, general), mono_font.clone(), next_fg),
             ];
 
             let (rect, _) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::hover());
@@ -308,12 +310,12 @@ fn draw_preset_diff_table(
 }
 
 /// 바인딩 목록 표시 문자열 — 비어 있으면 "None"(i18n).
-fn fmt_bindings(v: &[String]) -> String {
+fn fmt_bindings(v: &[String], general: &GeneralSettings) -> String {
     if v.is_empty() {
         t("settings.keybindings.hint_none").to_string()
     } else {
         v.iter()
-            .map(|b| KeybindingSettings::format_display(b))
+            .map(|b| KeybindingSettings::format_display(b, general))
             .collect::<Vec<_>>()
             .join(", ")
     }

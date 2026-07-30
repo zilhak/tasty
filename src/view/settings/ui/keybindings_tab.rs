@@ -155,6 +155,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -212,6 +213,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -246,6 +248,7 @@ pub fn draw_keybindings_tab(
             draw_quick_switch_section(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -259,6 +262,7 @@ pub fn draw_keybindings_tab(
             draw_quick_switch_section(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -269,6 +273,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -301,6 +306,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -329,6 +335,7 @@ pub fn draw_keybindings_tab(
             draw_quick_switch_section(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -339,6 +346,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -385,6 +393,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -406,6 +415,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -420,6 +430,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -433,6 +444,7 @@ pub fn draw_keybindings_tab(
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,
+                &settings.general,
                 recording_field,
                 pending_binding,
                 &captured,
@@ -454,7 +466,12 @@ pub fn draw_keybindings_tab(
             draw_script_bindings(ui, settings, recording_field, &captured);
         }
         KeybindingsSubTab::Preset => {
-            draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
+            draw_preset_subtab(
+                ui,
+                &mut settings.keybindings,
+                &settings.general,
+                selected_preset,
+            );
         }
         KeybindingsSubTab::Plugins => {
             draw_plugins_subtab(
@@ -463,6 +480,7 @@ pub fn draw_keybindings_tab(
                 plugin_shortcuts_selected,
                 plugin_shortcuts_draft,
                 &settings.keybindings,
+                &settings.general,
             );
         }
     }

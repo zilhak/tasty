@@ -368,7 +368,10 @@ fn draw_script_row(
                         kbd(
                             ui,
                             th,
-                            &rtl_combo(&KeybindingSettings::format_display(&combo)),
+                            &rtl_combo(&KeybindingSettings::format_display(
+                                &combo,
+                                &settings.general,
+                            )),
                         );
                     }
                 }

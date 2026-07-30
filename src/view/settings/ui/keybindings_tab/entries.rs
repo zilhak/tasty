@@ -1,5 +1,5 @@
 use crate::i18n::t;
-use crate::settings::KeybindingSettings;
+use crate::settings::{GeneralSettings, KeybindingSettings};
 use tasty_ui_widgets::{HelpHint, TooltipPlacement};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
@@ -7,6 +7,7 @@ use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 pub(super) fn draw_keybinding_entries(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
+    general: &GeneralSettings,
     recording_field: &mut Option<RecordingSlot>,
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
@@ -114,7 +115,7 @@ pub(super) fn draw_keybinding_entries(
                     let display_text = if is_recording {
                         t("settings.keybindings.hint_press_key").to_string()
                     } else {
-                        KeybindingSettings::format_display(&current)
+                        KeybindingSettings::format_display(&current, general)
                     };
 
                     let bg_color = if is_recording {

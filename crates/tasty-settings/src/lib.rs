@@ -285,6 +285,29 @@ impl Settings {
             &mut report.changed,
         );
 
+        // general.alt_display_style / option_display_style / shift_display_style
+        normalize_choice(
+            &mut self.general.alt_display_style,
+            &["alt", "cmd", "symbol"],
+            "alt",
+            "alt_display_style",
+            &mut report.changed,
+        );
+        normalize_choice(
+            &mut self.general.option_display_style,
+            &["option", "symbol"],
+            "option",
+            "option_display_style",
+            &mut report.changed,
+        );
+        normalize_choice(
+            &mut self.general.shift_display_style,
+            &["shift", "symbol"],
+            "shift",
+            "shift_display_style",
+            &mut report.changed,
+        );
+
         report
     }
 }
@@ -481,6 +504,9 @@ ui_scale = "large"
         }
         settings.general.close_behavior = "explode".to_string();
         settings.general.link_click_modifier = "meta".to_string();
+        settings.general.alt_display_style = "bogus".to_string();
+        settings.general.option_display_style = "bogus".to_string();
+        settings.general.shift_display_style = "bogus".to_string();
 
         let report = settings.normalize();
         assert!(report.changed);
@@ -492,6 +518,9 @@ ui_scale = "large"
         assert_eq!(settings.general.shell_mode, "default");
         assert_eq!(settings.general.close_behavior, "ask");
         assert_eq!(settings.general.link_click_modifier, "ctrl");
+        assert_eq!(settings.general.alt_display_style, "alt");
+        assert_eq!(settings.general.option_display_style, "option");
+        assert_eq!(settings.general.shift_display_style, "shift");
     }
 
     /// 기존 settings.toml 에 `shell_mode = "custom"` 이 남아 있을 때 normalize 가

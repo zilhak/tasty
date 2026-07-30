@@ -32,7 +32,7 @@
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
-use crate::settings::KeybindingSettings;
+use crate::settings::{GeneralSettings, KeybindingSettings};
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 use tasty_ui_widgets::vspace;
@@ -287,6 +287,7 @@ fn find_slot_conflict(
 pub(super) fn draw_quick_switch_section(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
+    general: &GeneralSettings,
     recording_field: &mut Option<RecordingSlot>,
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
@@ -318,7 +319,7 @@ pub(super) fn draw_quick_switch_section(
             let selected_text = if is_individual {
                 t("settings.keybindings.quick_switch_individual_label").to_string()
             } else {
-                KeybindingSettings::format_display(modifier)
+                KeybindingSettings::format_display(modifier, general)
             };
             // OS-aware 허용 조합만 열거(쓰레기 값 원천 차단, decision 1). macOS 는 option
             // 축 포함, 그 외 제외 — modifier_hint 의 조합 열거를 단일 소스로 재사용한다.
@@ -329,7 +330,7 @@ pub(super) fn draw_quick_switch_section(
                 .show_ui(ui, |ui| {
                     for combo in all_modifier_combos() {
                         let name = combo.name();
-                        let display = KeybindingSettings::format_display(&name);
+                        let display = KeybindingSettings::format_display(&name, general);
                         ui.selectable_value(modifier, name, display);
                     }
                     ui.selectable_value(
@@ -356,6 +357,7 @@ pub(super) fn draw_quick_switch_section(
         slot_row(
             ui,
             keybindings,
+            general,
             recording_field,
             can_record,
             kind.slot_target(i),
@@ -370,6 +372,7 @@ pub(super) fn draw_quick_switch_section(
         slot_row(
             ui,
             keybindings,
+            general,
             recording_field,
             can_record,
             tg,
@@ -447,6 +450,7 @@ fn apply_modifier_transition(
 fn slot_row(
     ui: &mut egui::Ui,
     keybindings: &KeybindingSettings,
+    general: &GeneralSettings,
     recording_field: &mut Option<RecordingSlot>,
     can_record: bool,
     target: BareTarget,
@@ -485,7 +489,7 @@ fn slot_row(
         } else if combo.is_empty() {
             t("settings.keybindings.hint_none").to_string()
         } else {
-            KeybindingSettings::format_display(&combo)
+            KeybindingSettings::format_display(&combo, general)
         };
         let bg = if is_recording {
             th.surface_hover()

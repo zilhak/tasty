@@ -20,7 +20,7 @@ macOS 의 **Cmd** 는 Windows/Linux 의 **Alt** 와 같은 물리적 위치다. 
 | `ctrl` | Ctrl | Ctrl | Control (⌃) |
 | `alt` | Alt | Alt | **Command (⌘)** |
 | `shift` | Shift | Shift | Shift |
-| (미사용) | Win | Super | Option (⌥) |
+| `option` | (미사용) | (미사용) | Option (⌥) |
 
 macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Linux 의 Alt 와 동일하므로). 예: 프리셋 `new_tab = "alt+t"` 는 Win/Linux 에서 Alt+T, macOS 에서 ⌘+T 로 눌린다. 프리셋은 **하나의 바인딩 문자열 집합**을 쓰지만 OS별 매핑으로 각 OS 에서 자연스러운 조합으로 느껴진다.
 
@@ -65,7 +65,9 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 
 ## 설정 파일 이식성
 
-`~/.tasty/config.toml` 의 바인딩 문자열은 **OS 독립**이다 — `"alt+n"` 은 어디서든 `"alt+n"`. 변환은 런타임 OS별 매핑 레이어가 한다. "OS 네이티브 표기로 표시"(예: macOS 에서 `⌘+N` 로 보여주기)를 한다면 **저장(항상 추상 토큰) ↔ 표시(OS별 표기)** 를 분리해야 이식성이 유지된다.
+`~/.tasty/config.toml` 의 바인딩 문자열은 **OS 독립**이다 — `"alt+n"` 은 어디서든 `"alt+n"`. 변환은 런타임 OS별 매핑 레이어가 한다. **저장(항상 추상 토큰) ↔ 표시(OS별/사용자 선택 표기)** 를 분리해 이식성을 유지한다.
+
+macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,option,shift}_display_style` 3 개 필드(설정 > 일반 > 표시, mac 전용 UI)로 Alt/Option/Shift 토큰의 화면 표기를 텍스트("Alt"/"Option"/"Shift", 기본값)와 macOS 심볼("⌘"/"⌥"/"⇧") 사이에서 독립적으로 고를 수 있다(`alt` 는 추가로 "Cmd" 텍스트도 선택 가능). `KeybindingSettings::format_display`/`format_display_parts` 가 이 설정을 받아 표시 문자열을 만든다 — 필드는 크로스플랫폼으로 존재하지만(직렬화 단순성), 값을 바꿀 수 있는 UI 는 macOS 에서만 노출된다. 저장 포맷(바인딩 문자열)에는 전혀 영향을 주지 않는다.
 
 ## OS 메뉴 key equivalent
 

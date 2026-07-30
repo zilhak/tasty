@@ -362,7 +362,7 @@ pub fn draw_status_bar(
         .keybindings
         .toggle_command_palette
         .first()
-        .map(|b| tasty_settings::KeybindingSettings::format_display(b))
+        .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general))
         .unwrap_or_default();
 
     let data = StatusBarData {

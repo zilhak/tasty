@@ -180,6 +180,20 @@ pub struct GeneralSettings {
     /// 동작을 보존한다(iTerm2 도 기본 off). 다른 OS 에는 Option 키가 없어 노출하지 않는다.
     #[cfg(target_os = "macos")]
     pub option_as_meta: bool,
+    /// 단축키 표시 시 `alt` 토큰의 텍스트: "alt" | "cmd" | "symbol"(⌘). 저장 포맷은
+    /// OS 독립 추상 토큰(`"alt+n"`)을 유지하고(`docs/design/policies/key-mapping.md`
+    /// 저장↔표시 분리 원칙), 이 필드는 화면 표시 레이어만 바꾼다
+    /// (`KeybindingSettings::format_display_parts` 가 소비). macOS 에서 물리적으로는
+    /// Cmd 키에 매핑되지만, 크로스플랫폼 필드로 두고 UI(설정 > 일반 > 표시)는 macOS
+    /// 에서만 노출한다 — 다른 OS 는 Alt 키/글리프 개념이 없어 값이 있어도 의미가 없고,
+    /// 항상 fallback(alt)로 조회된다. 기본값 "alt" — 기존 사용자에게 표시 변화 없음.
+    pub alt_display_style: String,
+    /// 단축키 표시 시 `option` 토큰의 텍스트: "option" | "symbol"(⌥). `alt_display_style`
+    /// 참고 — 저장↔표시 분리, macOS 전용 UI, 크로스플랫폼 필드. 기본값 "option".
+    pub option_display_style: String,
+    /// 단축키 표시 시 `shift` 토큰의 텍스트: "shift" | "symbol"(⇧). `alt_display_style`
+    /// 참고 — 저장↔표시 분리, macOS 전용 UI, 크로스플랫폼 필드. 기본값 "shift".
+    pub shift_display_style: String,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -239,6 +253,9 @@ impl Default for GeneralSettings {
             explorer_view_mode: "detail".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,
+            alt_display_style: "alt".to_string(),
+            option_display_style: "option".to_string(),
+            shift_display_style: "shift".to_string(),
         }
     }
 }

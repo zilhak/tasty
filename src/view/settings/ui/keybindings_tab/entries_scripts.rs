@@ -108,7 +108,7 @@ pub(super) fn draw_script_bindings(
             } else if current.is_empty() {
                 t("settings.keybindings.hint_none").to_string()
             } else {
-                KeybindingSettings::format_display(&current)
+                KeybindingSettings::format_display(&current, &settings.general)
             };
             let bg = if is_recording {
                 th.surface_hover() // 녹화중 버튼 배경(값-동일: surface1)

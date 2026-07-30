@@ -1,6 +1,7 @@
 //! `keybindings_tests` 단위 테스트.
 
 use super::*;
+use crate::general::GeneralSettings;
 use std::collections::HashSet;
 
 #[test]
@@ -197,7 +198,7 @@ fn single_string_keybinding_rejected() {
 #[test]
 fn format_display_basic() {
     assert_eq!(
-        KeybindingSettings::format_display("ctrl+shift+n"),
+        KeybindingSettings::format_display("ctrl+shift+n", &GeneralSettings::default()),
         "Ctrl+Shift+N"
     );
 }
@@ -205,31 +206,52 @@ fn format_display_basic() {
 #[test]
 fn format_display_ctrl_plus_key() {
     // "ctrl++"는 Ctrl + `+` 키. 표시상 "Ctrl++"여야 한다.
-    assert_eq!(KeybindingSettings::format_display("ctrl++"), "Ctrl++");
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl++", &GeneralSettings::default()),
+        "Ctrl++"
+    );
 }
 
 #[test]
 fn format_display_symbol_aliases() {
-    assert_eq!(KeybindingSettings::format_display("ctrl+plus"), "Ctrl++");
-    assert_eq!(KeybindingSettings::format_display("ctrl+minus"), "Ctrl+-");
-    assert_eq!(KeybindingSettings::format_display("ctrl+equals"), "Ctrl+=");
+    let general = GeneralSettings::default();
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl+plus", &general),
+        "Ctrl++"
+    );
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl+minus", &general),
+        "Ctrl+-"
+    );
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl+equals", &general),
+        "Ctrl+="
+    );
 }
 
 #[test]
 fn format_display_empty_and_minus() {
-    assert_eq!(KeybindingSettings::format_display(""), "");
-    assert_eq!(KeybindingSettings::format_display("ctrl+-"), "Ctrl+-");
-    assert_eq!(KeybindingSettings::format_display("ctrl+="), "Ctrl+=");
+    let general = GeneralSettings::default();
+    assert_eq!(KeybindingSettings::format_display("", &general), "");
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl+-", &general),
+        "Ctrl+-"
+    );
+    assert_eq!(
+        KeybindingSettings::format_display("ctrl+=", &general),
+        "Ctrl+="
+    );
 }
 
 #[test]
 fn format_display_parts_tokenizes() {
+    let general = GeneralSettings::default();
     assert_eq!(
-        KeybindingSettings::format_display_parts("alt+n"),
+        KeybindingSettings::format_display_parts("alt+n", &general),
         vec!["Alt", "N"]
     );
     assert_eq!(
-        KeybindingSettings::format_display_parts("ctrl+shift+v"),
+        KeybindingSettings::format_display_parts("ctrl+shift+v", &general),
         vec!["Ctrl", "Shift", "V"]
     );
 }
@@ -237,19 +259,94 @@ fn format_display_parts_tokenizes() {
 #[test]
 fn format_display_parts_plus_key_not_split() {
     // "ctrl++"는 Ctrl + `+`키 — 키캡 2개 [Ctrl][+] 로 분해되어야 한다.
+    let general = GeneralSettings::default();
     assert_eq!(
-        KeybindingSettings::format_display_parts("ctrl++"),
+        KeybindingSettings::format_display_parts("ctrl++", &general),
         vec!["Ctrl", "+"]
     );
     assert_eq!(
-        KeybindingSettings::format_display_parts("ctrl+plus"),
+        KeybindingSettings::format_display_parts("ctrl+plus", &general),
         vec!["Ctrl", "+"]
     );
 }
 
 #[test]
 fn format_display_parts_empty() {
-    assert!(KeybindingSettings::format_display_parts("").is_empty());
+    assert!(KeybindingSettings::format_display_parts("", &GeneralSettings::default()).is_empty());
+}
+
+// ── format_display: macOS 표시 스타일 (alt/option/shift) ───────────────
+
+#[test]
+fn format_display_mac_alt_cmd_style() {
+    let general = GeneralSettings {
+        alt_display_style: "cmd".to_string(),
+        ..GeneralSettings::default()
+    };
+    assert_eq!(
+        KeybindingSettings::format_display("alt+n", &general),
+        "Cmd+N"
+    );
+}
+
+#[test]
+fn format_display_mac_alt_symbol_style() {
+    let general = GeneralSettings {
+        alt_display_style: "symbol".to_string(),
+        ..GeneralSettings::default()
+    };
+    assert_eq!(KeybindingSettings::format_display("alt+n", &general), "⌘+N");
+}
+
+#[test]
+fn format_display_mac_option_symbol_style() {
+    let general = GeneralSettings {
+        option_display_style: "symbol".to_string(),
+        ..GeneralSettings::default()
+    };
+    assert_eq!(
+        KeybindingSettings::format_display("option+n", &general),
+        "⌥+N"
+    );
+}
+
+#[test]
+fn format_display_mac_shift_symbol_style() {
+    let general = GeneralSettings {
+        shift_display_style: "symbol".to_string(),
+        ..GeneralSettings::default()
+    };
+    assert_eq!(
+        KeybindingSettings::format_display("shift+n", &general),
+        "⇧+N"
+    );
+}
+
+#[test]
+fn format_display_parts_mac_symbol_styles() {
+    let general = GeneralSettings {
+        alt_display_style: "symbol".to_string(),
+        option_display_style: "symbol".to_string(),
+        shift_display_style: "symbol".to_string(),
+        ..GeneralSettings::default()
+    };
+    assert_eq!(
+        KeybindingSettings::format_display_parts("alt+shift+n", &general),
+        vec!["⌘", "⇧", "N"]
+    );
+}
+
+#[test]
+fn format_display_default_style_is_plain_text() {
+    // 기본값은 기존 사용자 경험을 그대로 유지해야 한다 (마이그레이션 시 표시 불변).
+    let general = GeneralSettings::default();
+    assert_eq!(general.alt_display_style, "alt");
+    assert_eq!(general.option_display_style, "option");
+    assert_eq!(general.shift_display_style, "shift");
+    assert_eq!(
+        KeybindingSettings::format_display("alt+option+shift+n", &general),
+        "Alt+Option+Shift+N"
+    );
 }
 
 /// TOML에 일부 필드만 있고 나머지가 누락된 경우,

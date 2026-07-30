@@ -2,7 +2,7 @@ use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::plugin_bridge::host_actions;
-use crate::settings::KeybindingSettings;
+use crate::settings::{GeneralSettings, KeybindingSettings};
 use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
 use tasty_ui_widgets::{hspace, vspace};
 
@@ -65,6 +65,7 @@ pub(super) fn draw_plugins_subtab(
     selected: &mut Option<String>,
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     host_kb: &KeybindingSettings,
+    general: &GeneralSettings,
 ) {
     let th = crate::theme::theme();
 
@@ -130,7 +131,7 @@ pub(super) fn draw_plugins_subtab(
         .drag_to_scroll(false)
         .show(ui, |ui| {
             for row in &rows {
-                draw_plugin_command_row(ui, row, draft, host_kb);
+                draw_plugin_command_row(ui, row, draft, host_kb, general);
                 ui.separator();
             }
         });
@@ -141,6 +142,7 @@ fn draw_plugin_command_row(
     row: &PluginShortcutRow,
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     host_kb: &KeybindingSettings,
+    general: &GeneralSettings,
 ) {
     let th = crate::theme::theme();
     let key = (row.plugin_id.clone(), row.command_id.clone());
@@ -237,7 +239,7 @@ fn draw_plugin_command_row(
                 let resolved = host_actions::host_action_for(host_kb, &active_source)
                     .map(|v| {
                         v.iter()
-                            .map(|s| KeybindingSettings::format_display(s))
+                            .map(|s| KeybindingSettings::format_display(s, general))
                             .collect::<Vec<_>>()
                             .join(", ")
                     })

@@ -166,7 +166,7 @@ pub fn debug_state_json(
         .iter()
         .map(|s| {
             json!({
-                "combo": combo_keycaps(s.combo),
+                "combo": combo_keycaps(s.combo, &settings.general),
                 "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
                 // ADR-0038: 빈 조합 섹션은 draw 가 "바인딩 없음" 플레이스홀더로 렌더한다.
@@ -187,7 +187,7 @@ pub fn debug_state_json(
         "reveal_delay_ms": delay,
         "visible": visible,
         "alpha": alpha,
-        "header_combo": combo_keycaps(held),
+        "header_combo": combo_keycaps(held, &settings.general),
         "sections": sections_json,
     })
 }
@@ -349,7 +349,15 @@ pub fn draw_modifier_hint(
     let mut ui = ui_at(ctx, layer, render_rect);
 
     draw_shell(&ui, theme, render_rect, alpha);
-    draw_content(&mut ui, theme, render_rect, held, &sections, alpha);
+    draw_content(
+        &mut ui,
+        theme,
+        render_rect,
+        held,
+        &sections,
+        alpha,
+        &settings.general,
+    );
     draw_shell_border(&ui, theme, render_rect, alpha);
 
     // ── 인터랙션: 드래그 스트립(이동) · 코너 그립(리사이즈) · X(dismiss) ──
@@ -502,6 +510,7 @@ fn draw_content(
     held: Combo,
     sections: &[HintSection],
     alpha: f32,
+    general: &tasty_settings::GeneralSettings,
 ) {
     let w = rect.width();
     let strip_h = theme.modhint_strip_height().value();
@@ -533,7 +542,7 @@ fn draw_content(
     strip_ui.set_opacity(alpha);
     strip_ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        kbd(ui, theme, &combo_keycaps(held));
+        kbd(ui, theme, &combo_keycaps(held, general));
         ui.label(
             egui::RichText::new(t("modifier_hint.held"))
                 .size(theme.font_size_caption.value())
@@ -578,7 +587,7 @@ fn draw_content(
                         if i > 0 {
                             ui.add_space(theme.modhint_section_gap().value());
                         }
-                        draw_section(ui, theme, sec);
+                        draw_section(ui, theme, sec, general);
                     }
                 });
         });
@@ -623,9 +632,14 @@ fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f32 {
 }
 
 /// 한 조합 섹션 — ChordHead(Kbd + separator) + HintRow* + RoleRow*.
-fn draw_section(ui: &mut egui::Ui, theme: &Theme, sec: &HintSection) {
+fn draw_section(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    sec: &HintSection,
+    general: &tasty_settings::GeneralSettings,
+) {
     // ChordHead.
-    kbd(ui, theme, &combo_keys(sec));
+    kbd(ui, theme, &combo_keys(sec, general));
     ui.add_space(theme.modhint_row_gap().value());
     let w = ui.available_width();
     let (hr, _) = ui.allocate_exact_size(
@@ -759,35 +773,52 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
         });
 }
 
-/// 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서, 플랫폼 표기). `"alt"` 축은 macOS 에서
-/// 물리 Cmd. 스트립 헤더(전체 홀드 조합)와 섹션 헤더가 같은 함수를 재사용해 표기를 일관화한다.
-fn combo_keycaps(c: Combo) -> String {
+/// 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서). Alt/Option/Shift 토큰 텍스트는
+/// `general`(`GeneralSettings::{alt,option,shift}_display_style`, TODO46)을 따른다 —
+/// `KeybindingSettings::format_display_parts` 와 동일한 스타일 규약(alt: Alt/Cmd/⌘,
+/// option: Option/⌥, shift: Shift/⇧)이며, 여기 하드코딩됐던 `cfg!(target_os = "macos")`
+/// alt→"Cmd" 치환은 이 설정으로 대체됐다(기본값 "alt" — 표시 스타일을 만지지 않은
+/// 사용자는 업그레이드 후 Alt/Cmd 표기가 바뀔 수 있음, 설정 > 일반 > 표시에서 다시
+/// 선택 가능). 스트립 헤더(전체 홀드 조합)와 섹션 헤더가 같은 함수를 재사용해 표기를
+/// 일관화한다.
+fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if c.ctrl {
         parts.push("Ctrl");
     }
     if c.alt {
-        parts.push(if cfg!(target_os = "macos") {
-            "Cmd"
-        } else {
-            "Alt"
+        parts.push(match general.alt_display_style.as_str() {
+            "cmd" => "Cmd",
+            "symbol" => "⌘",
+            _ => "Alt",
         });
     }
     if c.option {
-        parts.push("Option");
+        parts.push(match general.option_display_style.as_str() {
+            "symbol" => "⌥",
+            _ => "Option",
+        });
     }
     if c.shift {
-        parts.push("Shift");
+        parts.push(match general.shift_display_style.as_str() {
+            "symbol" => "⇧",
+            _ => "Shift",
+        });
     }
     parts.join("+")
 }
 
 /// 섹션 조합 → 키캡 문자열. [`combo_keycaps`] 를 섹션 헤더 draw 경로에서 재사용.
-fn combo_keys(sec: &HintSection) -> String {
-    combo_keycaps(sec.combo)
+fn combo_keys(sec: &HintSection, general: &tasty_settings::GeneralSettings) -> String {
+    combo_keycaps(sec.combo, general)
 }
 
 /// 바인딩 문자열(`"ctrl+shift+t"`) → 키캡 표기(`"Ctrl+Shift+T"`). 세그먼트별 첫 글자 대문자.
+///
+/// 표시 스타일(TODO46) 파라미터가 없다 — 두 호출부(`debug_state_json`/`draw_row`) 모두
+/// `binding_leaf(&row.binding)` 로 modifier 를 이미 전부 벗겨낸 leaf 키만 넘긴다
+/// (`binding_leaf` 테스트 참고). modifier 토큰을 볼 일이 없어 alt/option/shift 표시
+/// 스타일과 무관하다.
 fn prettify_binding(binding: &str) -> String {
     binding
         .split('+')

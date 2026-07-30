@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use super::KeybindingSettings;
+use crate::general::GeneralSettings;
 
 impl KeybindingSettings {
     /// 일반 단축키 필드 전체 목록 (modifier 필드 제외).
@@ -589,9 +590,12 @@ impl KeybindingSettings {
 
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     ///
+    /// `general` 은 Alt/Option/Shift 토큰의 표시 스타일(`GeneralSettings::{alt,option,shift}_display_style`,
+    /// TODO46) — [`Self::format_display_parts`] 참고.
+    ///
     /// [`Self::format_display_parts`] 의 토큰을 `+` 로 join 한 단일 문자열.
-    pub fn format_display(binding: &str) -> String {
-        Self::format_display_parts(binding).join("+")
+    pub fn format_display(binding: &str, general: &GeneralSettings) -> String {
+        Self::format_display_parts(binding, general).join("+")
     }
 
     /// Tokenize a binding into display키캡 단위 (e.g. "ctrl+shift+n" → ["Ctrl","Shift","N"]).
@@ -603,10 +607,29 @@ impl KeybindingSettings {
     /// 주의: `split('+')`은 쓸 수 없다. `"ctrl++"`(Ctrl+`+키`) 같은 바인딩에서 구분자
     /// `+`와 키 이름 `+`를 구분하지 못하기 때문. 왼쪽부터 모디파이어 프리픽스를 하나씩
     /// 떼어내고, 남은 부분을 통째로 키 토큰으로 본다.
-    pub fn format_display_parts(binding: &str) -> Vec<String> {
+    ///
+    /// `general` 의 표시 스타일 필드는 저장 포맷(OS 독립 추상 토큰)에는 영향을 주지
+    /// 않고 화면 표시 문자열만 바꾼다(`docs/design/policies/key-mapping.md` 저장↔표시
+    /// 분리 원칙). alt: "alt"→Alt, "cmd"→Cmd, "symbol"→⌘. option: "option"→Option,
+    /// "symbol"→⌥. shift: "shift"→Shift, "symbol"→⇧.
+    pub fn format_display_parts(binding: &str, general: &GeneralSettings) -> Vec<String> {
         if binding.is_empty() {
             return Vec::new();
         }
+
+        let alt_text = match general.alt_display_style.as_str() {
+            "cmd" => "Cmd",
+            "symbol" => "⌘",
+            _ => "Alt",
+        };
+        let option_text = match general.option_display_style.as_str() {
+            "symbol" => "⌥",
+            _ => "Option",
+        };
+        let shift_text = match general.shift_display_style.as_str() {
+            "symbol" => "⇧",
+            _ => "Shift",
+        };
 
         let mut parts: Vec<String> = Vec::new();
         let mut rest = binding;
@@ -619,15 +642,15 @@ impl KeybindingSettings {
                 rest = &rest[5..];
             } else if !shift && lower.starts_with("shift+") {
                 shift = true;
-                parts.push("Shift".into());
+                parts.push(shift_text.into());
                 rest = &rest[6..];
             } else if !alt && lower.starts_with("alt+") {
                 alt = true;
-                parts.push("Alt".into());
+                parts.push(alt_text.into());
                 rest = &rest[4..];
             } else if !option && lower.starts_with("option+") {
                 option = true;
-                parts.push("Option".into());
+                parts.push(option_text.into());
                 rest = &rest[7..];
             } else {
                 break;

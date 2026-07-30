@@ -440,7 +440,10 @@ pub struct SettingsPanelCtx<'a> {
 
 /// 단축키 충돌 팝업에 표시할 안내 문자열을 구성한다. 팝업 draw 와 open 직전
 /// 크기 산정 양쪽이 같은 문자열을 쓰도록 단일 출처로 둔다.
-fn conflict_message_text(pending: &PendingBinding) -> String {
+fn conflict_message_text(
+    pending: &PendingBinding,
+    general: &crate::settings::GeneralSettings,
+) -> String {
     let conflict_label = if let Some(label) = &pending.conflicting_label {
         label.clone()
     } else {
@@ -449,7 +452,8 @@ fn conflict_message_text(pending: &PendingBinding) -> String {
             .unwrap_or(pending.conflicting_field.as_str());
         raw.trim_end_matches(':').trim().to_string()
     };
-    let combo_display = crate::settings::KeybindingSettings::format_display(&pending.combo);
+    let combo_display =
+        crate::settings::KeybindingSettings::format_display(&pending.combo, general);
     crate::i18n::t_fmt2(
         "settings.keybindings.conflict_message",
         &combo_display,
@@ -470,13 +474,14 @@ fn conflict_popup_size(
     th: &Theme,
     pending: &PendingBinding,
     zoom: f32,
+    general: &crate::settings::GeneralSettings,
 ) -> egui::Vec2 {
     use crate::adapters::ui::popup::content_margin;
     let width = (340.0 * zoom).round();
     let content_w = (width - 2.0 * content_margin()).max(1.0);
     let galley = ui.fonts(|f| {
         f.layout(
-            conflict_message_text(pending),
+            conflict_message_text(pending, general),
             egui::FontId::proportional(th.font_size_body.value()),
             egui::Color32::WHITE, // 측정 전용 — 색은 높이에 무관
             content_w,
@@ -663,7 +668,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             let conflict_size = if !ui_state.popups.is_open("keybinding_conflict") {
                                 ui_state.pending_binding.as_ref().map(|pending| {
                                     let zoom = draft.appearance.ui_scale_factor();
-                                    conflict_popup_size(ui, &th, pending, zoom)
+                                    conflict_popup_size(ui, &th, pending, zoom, &settings.general)
                                 })
                             } else {
                                 None
@@ -733,7 +738,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 {
                     // 안내 문자열은 open 직전 크기 산정과 동일 출처를 쓴다
                     // (quick-switch 슬롯 충돌 라벨 처리 포함 — conflict_message_text).
-                    ui.label(conflict_message_text(pending));
+                    ui.label(conflict_message_text(pending, &settings.general));
                     vspace(ui, th.spacing_sm);
                     ui.horizontal(|ui| {
                         if ui.button(t("button.cancel")).clicked() {
