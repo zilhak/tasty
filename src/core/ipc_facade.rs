@@ -1,7 +1,7 @@
 //! `IpcHostFacade` trait 의 본 바이너리 impl.
 //!
-//! Phase F.B.0e-2: IPC dispatcher (caller.rs / audit.rs) 가 본 바이너리 Core 직접
-//! 결합을 끊고 `&dyn IpcHostFacade` 만 받도록 한다. 본 모듈이 그 trait 의 단일 impl.
+//! IPC dispatcher (caller.rs / audit.rs) 는 본 바이너리 Core 직접 결합을 끊고
+//! `&dyn IpcHostFacade` 만 받는다. 본 모듈이 그 trait 의 단일 impl.
 
 use tasty_ipc::{
     AuditCallerMarker, AuditDecision as ProtoDecision, IpcHostFacade, SessionResolution,

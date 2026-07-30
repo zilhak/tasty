@@ -2,7 +2,7 @@
 //!
 //! 본 crate 는 본 바이너리 `src/adapters/plugin/` 의 manager / handle_channel /
 //! process / listener / protocol / discovery / builtin / event_bus 등 다수
-//! 모듈을 흡수한다. host 본 바이너리 결합은 Phase F.B.0 의 6 host_port trait
+//! 모듈을 흡수했다. host 본 바이너리 결합은 6 개 host_port trait
 //! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
 //! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
 

@@ -3,9 +3,9 @@
 //! Tasty 호스트와 외부 caller (CLI / agent / plugin) 간 IPC wire framing 과
 //! caller-context 모델.
 //!
-//! Phase F.B.4: 본 바이너리 `src/adapters/ipc/` 의 wire/framing/method 모듈을
-//! 이 crate 로 이동. handler (`crate::adapters::ipc::handler`) 는 본 바이너리에
-//! 잔존 (AppState/Core 결합 깊음 — §4.1 of plan).
+//! 본 바이너리 `src/adapters/ipc/` 의 wire/framing/method 모듈을 이 crate 로
+//! 이동했다. handler (`crate::adapters::ipc::handler`) 는 본 바이너리에 잔존
+//! (AppState/Core 결합 깊음).
 
 pub mod alias;
 pub mod caller;

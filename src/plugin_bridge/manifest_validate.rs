@@ -1,10 +1,10 @@
 //! Manifest opaque payload (Vec<serde_json::Value>) 를 본 바이너리 file 도메인
 //! concrete 타입으로 deserialize 후 추가 검증.
 //!
-//! Phase F.B.2 에서 `ContributesDecl::detector` / `.handler` 가 opaque 화되어
-//! manifest crate 가 file 도메인을 의존하지 않게 되었다. 본 모듈은 manifest 가
-//! 검증할 수 없는 *file::format::config* / *file::handler::config* 차원의
-//! schema 를 추가로 검증한다 — `Manifest::validate()` 직후 호출.
+//! `ContributesDecl::detector` / `.handler` 는 opaque 화되어 있어 manifest crate 가
+//! file 도메인을 의존하지 않는다. 본 모듈은 manifest 가 검증할 수 없는
+//! *file::format::config* / *file::handler::config* 차원의 schema 를 추가로
+//! 검증한다 — `Manifest::validate()` 직후 호출.
 
 use anyhow::Result;
 

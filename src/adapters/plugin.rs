@@ -1,12 +1,12 @@
 //! Plugin 시스템 — tasty-host-plugin crate 의 thin re-export.
 //!
-//! Phase F.B.11-2 ~ B.11-4 후, manager / process / listener / protocol /
-//! discovery / builtin / event_bus / registry_state / extension_registry
-//! / tool_registry / ipc_namespace / command_registry / handle_channel 가 모두
-//! `tasty-host-plugin` 으로 이동. 본 모듈은 기존 호출처 `crate::plugin::*` 의
-//! 하위 호환을 위해 thin re-export 만 유지한다.
+//! manager / process / listener / protocol / discovery / builtin / event_bus /
+//! registry_state / extension_registry / tool_registry / ipc_namespace /
+//! command_registry / handle_channel 은 모두 `tasty-host-plugin` 으로 이동했다.
+//! 본 모듈은 기존 호출처 `crate::plugin::*` 의 하위 호환을 위해 thin re-export 만
+//! 유지한다.
 //!
-//! `manifest` 는 `tasty-plugin-manifest` 가 owning (F.B.6).
+//! `manifest` 는 `tasty-plugin-manifest` 가 owning.
 #![allow(unused_imports)]
 
 pub use tasty_host_plugin::{
