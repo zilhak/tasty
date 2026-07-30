@@ -1,11 +1,10 @@
-//! `preset-editor` specimen — 프리셋 데모 레이아웃 **미리보기(read-only)**.
-//! 디자인 `(3) gallery/preset_editor.jsx` 의 `SurfaceView` / `Pane` / `PaneTree` /
-//! `SurfaceBox` 표시 부분을 구조까지 1:1 전사한다.
+//! `preset-editor` specimen — 프리셋 데모 레이아웃 미리보기(read-only) + 편집 상태
+//! (selected surface 2px accent outline + handle cluster + inline leaf form)를
+//! 모두 시연한다. 디자인 `(3) gallery/preset_editor.jsx` 의 `SurfaceView` / `Pane` /
+//! `PaneTree` / `SurfaceBox` 표시 부분을 구조까지 1:1 전사한다.
 //!
-//! 이번(TODO 07) 범위는 read-only 미리보기뿐 — `LeafEditor` 의 인라인 편집·핸들과
-//! `PresetWindow` 의 목록/툴바 통합은 08/09 후속이라 만들지 않는다. 갤러리 specimen 은
-//! 정적(Theme-only, binary 미의존)이라 mini-tab 클릭 전환은 본체에서만 동작한다 —
-//! 여기서는 각 pane 의 **활성 탭**만 그린다.
+//! 갤러리 specimen 은 정적(Theme-only, binary 미의존)이라 mini-tab 클릭 전환은
+//! 본체에서만 동작한다 — 여기서는 각 pane 의 **활성 탭**만 그린다.
 //!
 //! 3종 구조 레벨을 서로 다른 시각 weight 로 구분(디자인 changelog):
 //!  - Pane split (상위 레이아웃) → 테두리 카드 + **5px bg-app gap** (무거운 divider).
@@ -1177,7 +1176,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         leaf_summary_demo(ui, theme, "degrade <46 · icon only", &icon_only, 40.0, 40.0);
     });
 
-    // 편집 상태(Phase 2 / TODO 09): selected surface 2px accent outline + handle
+    // 편집 상태: selected surface 2px accent outline + handle
     // cluster + inline leaf form. 선택 = Terminal leaf(startup 필드 노출).
     let edit_tab = build_tab();
     let edit_surf = match &edit_tab {

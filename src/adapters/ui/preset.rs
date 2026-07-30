@@ -5,10 +5,11 @@
 //!    subtitle. 선택 row = surface-active 채움 + 2px accent 좌측 bar. 헤더 = `N presets`
 //!    + New preset(`+`). 빈 scope → `preset.popup.empty`.
 //!  - 우측 detail(bg-panel): 44px 툴바(name/subtitle · rename·duplicate·delete · Edit)
-//!    위에 선택 preset 의 **데모 레이아웃 미리보기**(TODO 07 컴포넌트).
+//!    위에 선택 preset 의 **데모 레이아웃 미리보기**.
 //!
-//! 편집(WYSIWYG) 모드는 TODO 09 — 여기선 Edit 버튼 자리만(disabled). rename·
-//! duplicate·delete 는 기존 store API 에 직결돼 동작한다.
+//! Edit 버튼으로 read-only 미리보기(`DemoLayout::show`)와 편집(WYSIWYG) 모드
+//! (`DemoLayout::show_edit`)를 토글한다(Edit↔Done). rename·duplicate·delete 는
+//! 기존 store API 에 직결돼 동작한다.
 
 use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
 use tasty_settings::KeybindingSettings;
@@ -259,7 +260,7 @@ fn subtitle(store: &PresetStore, kind: PresetKind, name: &str) -> String {
 // PresetView 윈도우는 live layout(CoreState) 에 접근하지 않으므로 "현재 레이아웃
 // capture" 는 불가능(그건 컨텍스트 메뉴 "...프리셋으로 저장" 경로가 담당). 여기 `+`
 // 는 **terminal surface 1개짜리 최소 preset** 을 만들어 곧장 선택한다. 실제 내용 편집은
-// TODO 09(Edit 모드)에서 채운다.
+// Edit 모드(`DemoLayout::show_edit`)에서 한다.
 
 fn minimal_surface() -> PresetSurfaceLayout {
     use tasty_presets::PresetSurface;

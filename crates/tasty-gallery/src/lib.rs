@@ -6,13 +6,9 @@
 //! 주지 않으며, 본체와 동일한 lib crate (`tasty-egui-theme` 등) 의 함수를
 //! 직접 호출해 "데모 = 메인 = 같은 코드" 를 보장한다.
 //!
-//! Phase 1 범위: Tier 1 카탈로그 (Theme 만 의존하는 항목)
-//!   - color swatches
-//!   - typography
-//!   - spacing
-//!   - hint_text widget
-//!
-//! Tier 2/3 (popup / sidebar / tab_bar 의 props 분리) 는 후속 phase.
+//! 카탈로그(`catalog/`)는 Theme 만 의존하는 foundation 항목(color swatches,
+//! typography, spacing 등)부터 popup / sidebar / tab_bar 계열까지 본체 UI
+//! 컴포넌트를 폭넓게 포괄한다 — cut 금지, gallery-first(ADR-0020).
 
 pub mod catalog;
 pub mod host_shell;

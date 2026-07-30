@@ -1,4 +1,6 @@
-//! Preset 데모 레이아웃 미리보기 위젯 (본체, read-only — TODO 07 Phase 1).
+//! Preset 데모 레이아웃 미리보기 위젯 (본체). read-only 미리보기(`show`)와
+//! 편집 모드(`show_edit` — 선택·핸들 클러스터·inline leaf form·키보드 단축키)를
+//! 모두 지원한다.
 //!
 //! 저장된 `Preset*` 트리를 받아 **구조만** 축소 렌더한다 — pane split(상위) /
 //! tab strip / surface split(하위) / surface leaf(kind 표시명)을 서로 다른 시각
