@@ -293,11 +293,9 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites,
 
-    /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
-    /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
-    /// 점진적으로 *Terminal 인스턴스 / deferred / scrollback_persist / pending
-    /// scrollback inject / busy_surfaces* 가 이쪽으로 이전된다. cutover (E.4.f)
-    /// 시 위 `busy_surfaces` 필드는 store 안 동일 이름 필드로 통합 폐기 예정.
+    /// Terminal/PTY 데이터 owner (Surface 트리와 분리). Terminal 인스턴스와
+    /// 디스크 scrollback 영속 키(`scrollback_persist_ids`)를 store 가 단독
+    /// 소유하며, `crate::model::TerminalSurface` 는 `{ id }` 참조만 갖는다.
     pub(crate) terminals: crate::core::terminal_store::TerminalStore,
 
     /// 배타적 attach 점유 lock (attach/detach 단계 3). surface_id → 점유 client.

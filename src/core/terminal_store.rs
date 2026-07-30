@@ -1,18 +1,15 @@
 //! `TerminalStore` — Surface 트리와 분리된 Terminal/PTY 데이터 owner.
 //!
-//! Phase D D.3.E.4 — `TerminalSurface { id, terminal: Terminal, deferred_spawn,
-//! scrollback_persist_id }` 의 *PTY/Terminal 데이터* 를 본 store 로 이전한다.
-//! Surface 트리는 *render layer + id 참조* 로 좁혀지고, Terminal 의 lifecycle 은
-//! store 가 책임진다.
+//! `TerminalSurface`(Surface 트리의 leaf) 는 `{ id }` 만 갖는 id-marker 로
+//! 좁혀져 있고, 실제 Terminal 인스턴스와 그 디스크 scrollback 영속 키
+//! (`scrollback_persist_ids`) 는 본 store 가 단독 소유한다. read/mutate 양쪽
+//! 경로(`find_terminal_by_id*`, `replace_terminal_by_id`, Surface close 시
+//! `remove` cascade 등) 모두 store 를 통해서만 접근한다.
 //!
-//! 마이그레이션 단계 (substep 분할):
-//! - **E.4.a (현재)**: struct 신설 + CoreState 필드 추가. 호출처 0.
-//! - **E.4.b**: dual-write — Terminal 생성 콜사이트에서 store 에도 insert.
-//! - **E.4.c**: read API switch — `find_terminal_by_id*`/`process_*` 가 store 사용.
-//! - **E.4.d**: mutate API switch — `replace`/`ensure_initialized`/scrollback inject /
-//!   busy_surfaces 이전 + Surface close 시 store.remove cascade.
-//! - **E.4.e**: Surface trait 단순화 — terminal 관련 11→8 메서드.
-//! - **E.4.f**: cutover — `TerminalSurface.terminal` 필드 + dual-write 폐기.
+//! `busy_surfaces`/`pending_scrollback_inject`(`CoreState` 필드)와
+//! `deferred_spawn`(`EmptySurface` 필드)은 각자 별도 lifecycle 이 있어 본
+//! store 로 이전되지 않았다 — 이 store 의 책임은 Terminal 인스턴스 + scrollback
+//! persist id 로 좁혀져 있다.
 
 use std::collections::HashMap;
 
