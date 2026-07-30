@@ -306,6 +306,7 @@ impl SettingsUiState {
                     "accessibility" => GeneralSubTab::Accessibility,
                     "overlay" => GeneralSubTab::Overlay,
                     "remote_transfer" | "remote-transfer" => GeneralSubTab::RemoteTransfer,
+                    "display" => GeneralSubTab::Display,
                     _ => return false,
                 };
                 true
