@@ -9,14 +9,17 @@
 //! (ADR-0009 상 first-party 직접 read).
 //!
 //! 렌더 경로는 **egui-mesh popup**(ADR-0028 / B4): plugin 이 자기 프로세스에서 popup
-//! 콘텐츠(master-detail)를 egui 로 tessellate 한 mesh 를 host 가 content 영역에 합성한다.
-//! host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame 보내고, plugin 은 그것을
-//! `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로 그린다. chrome(scrim/
-//! border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 — plugin 은 content 만 그린다.
+//! 콘텐츠(header/type-bar/body/footer, TODO51)를 egui 로 tessellate 한 mesh 를 host 가
+//! content 영역에 합성한다. host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame
+//! 보내고, plugin 은 그것을 `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로
+//! 그린다. chrome(scrim/border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 — plugin
+//! 은 content 만 그린다.
 //!
-//! UI 는 master-detail: 좌측에 가용 클립보드 타입 목록, 우측에 선택 타입의 상세.
-//! 1차는 텍스트 타입만 지원하고, 이미지/헥스/HTML/RTF 등은 `clipboard::ClipboardType`
-//! enum arm + reader 추가로 확장한다. read-only 라 쓰기/붙여넣기/제거 액션은 없다.
+//! UI 는 header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지,
+//! 2개 이상이면 가로 세그먼트 스위치) → body(선택 타입의 상세) → footer(mime+Close)
+//! 4단 수직 스택(rail 없음, TODO51). 1차는 텍스트 타입만 지원하고, 이미지/HTML/기타
+//! 포맷/파일 목록 등은 `clipboard::ClipboardType` enum arm + reader 추가로 확장한다.
+//! read-only 라 쓰기/붙여넣기/제거 액션은 없다.
 
 mod clipboard;
 mod view;
