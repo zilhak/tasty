@@ -268,10 +268,11 @@ pub(crate) enum DomainIntent {
     },
 }
 
-/// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
-/// observer / replay / remote attach 의 기반.
+/// `Core::apply` 의 결과 — `handle_core_event` 가 소비해 도메인 cascade(설정 적용,
+/// 워크스페이스/탭 생성, 알림 등)를 구동한다.
+/// (관찰: observer/remote-attach 는 각자 별도 메커니즘으로 이미 완성돼 CoreEvent 를
+/// 쓸 계획이 없고, replay 는 기능 자체가 미착수 — TODO 59.)
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // 이유: Core::apply 이벤트 — observer/replay/remote attach consumer 미배선(D.3.C).
 #[allow(clippy::large_enum_variant)] // reason: event queue 의 Box 화는 alloc/clone 비용 큼
 pub(crate) enum CoreEvent {
     // ─── Settings (D.3.C.A.2) ───
@@ -326,7 +327,7 @@ pub(crate) enum CoreEvent {
         cleanup_targets: Vec<(u32, Option<String>)>,
     },
     /// tab 이동 완료. `moved=false` 면 no-op (pane 없음 / from==to / out-of-range).
-    TabMoved { pane_id: u32, moved: bool },
+    TabMoved { moved: bool },
 
     // ─── Pane lifecycle (D.3.C.B.3) ───
     /// pane split 완료. cascade 가 host event (PaneSplit) 발화 + (User origin
@@ -343,7 +344,6 @@ pub(crate) enum CoreEvent {
     SurfaceSplit {
         workspace_index: usize,
         pane_id: u32,
-        target_surface_id: u32,
         new_surface_id: u32,
     },
     /// pane close 완료. cleanup_targets 는 닫힌 pane 안의 (surface_id,
@@ -372,11 +372,7 @@ pub(crate) enum CoreEvent {
         workspaces_now_empty: bool,
     },
     /// surface 변환 완료. `replaced=false` 면 surface 못 찾음 또는 변환 실패.
-    SurfaceConverted {
-        surface_id: u32,
-        replaced: bool,
-        is_terminal: bool, // cascade 에서 send_fast_init 결정용
-    },
+    SurfaceConverted { surface_id: u32, replaced: bool },
     /// surface 이동(replace) 완료 (T9). `moved=false` 면 self-ref / source 무효 /
     /// target 못 찾음 (no-op, 슬롯만 비움).
     ///
@@ -396,7 +392,7 @@ pub(crate) enum CoreEvent {
         workspaces_now_empty: bool,
     },
     /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나 없음.
-    SurfaceSent { surface_id: u32, sent: bool },
+    SurfaceSent { sent: bool },
     /// terminal respawn 완료. `error` 가 Some 이면 spawn 실패 또는 surface
     /// 가 terminal 이 아님 — handler 가 invalid_params 반환.
     TerminalRespawned {
@@ -471,15 +467,17 @@ pub(crate) enum CoreEvent {
     /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
     /// `osc_title` 은 layout.json 영속 대상 아님 — mark_layout_dirty 호출 안 함.
     TabNameUpdated {
-        surface_id: u32,
-        tab_id: Option<u32>,
+        /// `apply_update_tab_name` 의 explicit_name 보존 분기 여부 — production
+        /// cascade 는 mark_dirty 만 하고 참조하지 않는다. 테스트 전용 관측 계약
+        /// (`non_focused_surface_title_does_not_change_tab_name` 등이 assert).
+        #[allow(dead_code)]
         skipped_explicit: bool,
     },
 
     // ─── Layout persistence (D.3.C.D.4) ───
-    /// `SaveLayoutNow` 결과. `saved=false` 면 settings.restore_layout=false 또는
-    /// debounce 미만 + force=false → skip. cascade 없음.
-    LayoutSaved { saved: bool },
+    /// `SaveLayoutNow` 결과 알림 — 저장/skip(설정 off 또는 debounce 미만 + force=false)
+    /// 여부와 무관하게 cascade 없음.
+    LayoutSaved,
 
     /// `ApplyPendingLayoutRestore` 결과. `restored=true` 면 caller 가
     /// `active_workspace` 로 `state.switch_workspace` 수행. `restored=false` 면
@@ -507,8 +505,12 @@ pub(crate) enum CoreEvent {
         reason: tasty_plugin_protocol::events::LifecycleReason,
     },
 
-    /// Plugin 실패 — spawn/runtime/pump 등 모든 error 통합. cascade 가 host
-    /// event + event_bus broadcast.
+    /// Plugin 실패 — spawn/runtime/pump 등 모든 error 통합. cascade(`cascade_plugin_error`)
+    /// 는 완전히 구현돼 host event + event_bus broadcast 까지 연결돼 있으나, 이 variant
+    /// 를 실제로 construct 하는 producer 가 아직 없다(TODO 59 재조사 시 발견 — 이 TODO
+    /// 의 범위 밖이라 미착수. plugin spawn/runtime/pump 실패 지점에서 이 event 를 발화
+    /// 하도록 배선하는 게 다음 단계).
+    #[allow(dead_code)]
     PluginError {
         plugin_id: String,
         error_kind: String,
@@ -551,7 +553,6 @@ pub(crate) enum PluginRegistryChange {
 
 /// `CoreEvent::ClosedItemRestored` 의 복원 결과 분류.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // 이유: CoreEvent::ClosedItemRestored 페이로드 — cascade consumer 미배선(D.3.C).
 pub(crate) enum RestoredKind {
     /// 비어있는 스택 또는 rebuild 실패.
     Nothing,
@@ -560,7 +561,7 @@ pub(crate) enum RestoredKind {
     /// Surface 또는 Tab 이 기존 pane 의 tab 으로 attach 됨.
     /// cascade 가 별도 mutate 없이 mark_dirty 만 발화 (Core::apply 가 이미
     /// mark_layout_dirty 처리).
-    TabIntoPane { pane_id: u32 },
+    TabIntoPane,
 }
 
 /// `CoreEvent::SurfaceClosed` 의 cascade 깊이 정보.
@@ -575,11 +576,8 @@ pub(crate) enum CascadeLevel {
 /// `Core::process_pty_output` 의 반환. PTY drain 의 부수효과를 *데이터로* 표현
 /// — 호출자 (event_handler) 가 cascade dispatch + state queue 분배.
 ///
-/// `events` 는 cascade dispatcher 가 처리할 CoreEvent. `processed` 는 어느
-/// surface 든 데이터를 실제 drain 했는지 (mark_dirty 결정 신호).
+/// `events` 는 cascade dispatcher 가 처리할 CoreEvent.
 #[derive(Debug, Default)]
-#[allow(dead_code)] // 이유: Core::process_pty_output 반환 — event_handler cascade 배선 후 사용(D.3.C).
 pub(crate) struct ProcessPtyOutcome {
     pub events: Vec<CoreEvent>,
-    pub processed: bool,
 }

@@ -652,21 +652,6 @@ impl Core {
         }
     }
 
-    /// runner thread 가 plugin IPC 메서드를 동기 호출. injector 미초기화 시 Err.
-    #[allow(dead_code)] // 이유: Core 흡수 layer(D.3.C) — runner thread plugin IPC dispatch 경로 미배선.
-    pub(crate) fn host_dispatch_plugin_method(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-        timeout: std::time::Duration,
-    ) -> Result<serde_json::Value, String> {
-        let inj = self
-            .host_ipc_injector
-            .get()
-            .ok_or_else(|| "host IPC injector not initialized".to_string())?;
-        inj.dispatch(method, params, timeout)
-    }
-
     /// Arc<OnceLock<HostIpcInjector>> 의 사본. 메인 스레드가 아닌 별도 스레드가
     /// 자체적으로 host IPC 를 재주입할 때 쓴다 — `terminal.tell`/`terminal.spawn`
     /// 의 제출 `\r` ack 대기 스레드(`adapters::ipc::handler::terminal`)가 소비.
@@ -752,20 +737,20 @@ impl Core {
         engine: &mut crate::core::CoreState,
         surface_id: u32,
     ) -> ProcessPtyOutcome {
-        let processed = engine.process_surface(surface_id);
+        engine.process_surface(surface_id);
         let events = self.drain_terminal_events(engine);
-        ProcessPtyOutcome { events, processed }
+        ProcessPtyOutcome { events }
     }
 
     /// 모든 workspace 의 모든 terminal 을 drain + 변환. 반환: cascade 가 처리할
-    /// CoreEvent 목록 + 어느 surface 든 데이터 drain 했는지.
+    /// CoreEvent 목록.
     pub(crate) fn process_all_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
     ) -> ProcessPtyOutcome {
-        let processed = engine.process_all();
+        engine.process_all();
         let events = self.drain_terminal_events(engine);
-        ProcessPtyOutcome { events, processed }
+        ProcessPtyOutcome { events }
     }
 
     /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
@@ -1172,11 +1157,11 @@ impl Core {
             g.restore_layout && engine.layout_dirty.should_flush()
         };
         if !should_save {
-            return CoreEvent::LayoutSaved { saved: false };
+            return CoreEvent::LayoutSaved;
         }
         crate::core::layout_persistence::save_to_disk(engine, active_workspace);
         engine.layout_dirty.clear();
-        CoreEvent::LayoutSaved { saved: true }
+        CoreEvent::LayoutSaved
     }
 
     /// `DomainIntent::ApplyPendingLayoutRestore` 본문. engine 의
@@ -1278,7 +1263,7 @@ impl Core {
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
-                RestoredKind::TabIntoPane { pane_id }
+                RestoredKind::TabIntoPane
             }
             ClosedItem::Tab(closed_tab) => {
                 let Some(result) = restore_rebuild::rebuild_surface(engine, closed_tab.panel)
@@ -1294,7 +1279,7 @@ impl Core {
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
-                RestoredKind::TabIntoPane { pane_id }
+                RestoredKind::TabIntoPane
             }
             ClosedItem::Workspace {
                 name,
@@ -1340,8 +1325,6 @@ impl Core {
         let trimmed = name.trim();
         if trimmed.is_empty() {
             return CoreEvent::TabNameUpdated {
-                surface_id,
-                tab_id: None,
                 skipped_explicit: false,
             };
         }
@@ -1351,11 +1334,8 @@ impl Core {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     for tab in &mut pane.tabs {
                         if tab.all_surface_ids().contains(&surface_id) {
-                            let tab_id = tab.id;
                             if tab.explicit_name.is_some() {
                                 return CoreEvent::TabNameUpdated {
-                                    surface_id,
-                                    tab_id: Some(tab_id),
                                     skipped_explicit: true,
                                 };
                             }
@@ -1367,15 +1347,11 @@ impl Core {
                             // 이 가드가 plugin 호환에 영향 없다.
                             if tab.focused_surface != surface_id {
                                 return CoreEvent::TabNameUpdated {
-                                    surface_id,
-                                    tab_id: Some(tab_id),
                                     skipped_explicit: false,
                                 };
                             }
                             tab.osc_title = Some(name);
                             return CoreEvent::TabNameUpdated {
-                                surface_id,
-                                tab_id: Some(tab_id),
                                 skipped_explicit: false,
                             };
                         }
@@ -1384,8 +1360,6 @@ impl Core {
             }
         }
         CoreEvent::TabNameUpdated {
-            surface_id,
-            tab_id: None,
             skipped_explicit: false,
         }
     }
@@ -1443,10 +1417,7 @@ impl Core {
         // (사용자 GUI 키 / IPC surface.send*) 이 PTY 에 닿지 못한다. client 경유
         // 입력은 단계 4 의 holder-검증 attach 채널로 들어와 이 경로를 우회한다.
         if engine.attach.is_hard_occupied(surface_id) {
-            return CoreEvent::SurfaceSent {
-                surface_id,
-                sent: false,
-            };
+            return CoreEvent::SurfaceSent { sent: false };
         }
         engine.ensure_surface_initialized(surface_id);
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
@@ -1462,7 +1433,7 @@ impl Core {
         } else {
             false
         };
-        CoreEvent::SurfaceSent { surface_id, sent }
+        CoreEvent::SurfaceSent { sent }
     }
 
     /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
@@ -1599,7 +1570,6 @@ impl Core {
         Ok(vec![CoreEvent::SurfaceSplit {
             workspace_index: ws_idx,
             pane_id,
-            target_surface_id,
             new_surface_id,
         }])
     }
@@ -1679,7 +1649,6 @@ impl Core {
                             return CoreEvent::SurfaceConverted {
                                 surface_id,
                                 replaced: false,
-                                is_terminal,
                             };
                         }
                     };
@@ -1701,7 +1670,6 @@ impl Core {
                             return CoreEvent::SurfaceConverted {
                                 surface_id,
                                 replaced: false,
-                                is_terminal,
                             };
                         }
                     };
@@ -1734,7 +1702,6 @@ impl Core {
                 return CoreEvent::SurfaceConverted {
                     surface_id,
                     replaced: false,
-                    is_terminal,
                 };
             }
         };
@@ -1748,7 +1715,6 @@ impl Core {
                     return CoreEvent::SurfaceConverted {
                         surface_id,
                         replaced: false,
-                        is_terminal,
                     };
                 }
             };
@@ -1782,7 +1748,6 @@ impl Core {
         CoreEvent::SurfaceConverted {
             surface_id,
             replaced,
-            is_terminal,
         }
     }
 
@@ -2343,7 +2308,7 @@ impl Core {
         if moved {
             engine.mark_layout_dirty();
         }
-        CoreEvent::TabMoved { pane_id, moved }
+        CoreEvent::TabMoved { moved }
     }
 
     /// `DomainIntent::CloseTab` 본문. tab 위치 + cleanup_targets 수집 →

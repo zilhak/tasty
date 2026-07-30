@@ -309,7 +309,6 @@ pub fn handle_split(
             let Some(crate::core::intent::CoreEvent::SurfaceSplit {
                 workspace_index,
                 pane_id,
-                target_surface_id: _,
                 new_surface_id,
             }) = events.into_iter().next()
             else {

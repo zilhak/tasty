@@ -174,7 +174,7 @@ impl App {
                     );
                 }
             }
-            CoreEvent::TabMoved { pane_id: _, moved } => {
+            CoreEvent::TabMoved { moved } => {
                 // 추가 cascade 없음 — mark_layout_dirty 는 Core::apply 가 이미 처리.
                 // main.mark_dirty 만 redraw 위해.
                 if moved
@@ -204,7 +204,6 @@ impl App {
             CoreEvent::SurfaceSplit {
                 workspace_index,
                 pane_id,
-                target_surface_id: _,
                 new_surface_id,
             } => {
                 self.dispatch_surface_split_cascade(
@@ -257,7 +256,6 @@ impl App {
             CoreEvent::SurfaceConverted {
                 surface_id,
                 replaced,
-                is_terminal: _,
             } => {
                 // mark_layout_dirty 와 send_fast_init 은 Core::apply 가 이미 처리.
                 // egui-mesh(markdown 등)로 제자리 변환 시 같은 surface_id 에 stale frame
@@ -341,11 +339,7 @@ impl App {
             CoreEvent::TerminalProcessExited { surface_id } => {
                 self.cascade_terminal_process_exited(source, surface_id);
             }
-            CoreEvent::TabNameUpdated {
-                surface_id: _,
-                tab_id: _,
-                skipped_explicit: _,
-            } => {
+            CoreEvent::TabNameUpdated { .. } => {
                 // osc_title 은 layout.json 영속 대상 아님 → mark_layout_dirty 호출 X.
                 // tab bar 표시 갱신을 위한 mark_dirty 만.
                 if let DispatchSource::Main(wid) = source
@@ -354,7 +348,7 @@ impl App {
                     main.mark_dirty();
                 }
             }
-            CoreEvent::LayoutSaved { saved: _ } => {
+            CoreEvent::LayoutSaved => {
                 // 추가 cascade 없음 — disk I/O + layout_dirty.clear() 는 Core::apply 에서 완료.
             }
             CoreEvent::LayoutRestored { .. } => {
@@ -1490,7 +1484,7 @@ pub(crate) fn cascade_closed_item_restored(
         RestoredKind::Workspace { new_ws_index } => {
             state.active_workspace = new_ws_index;
         }
-        RestoredKind::TabIntoPane { .. } => {
+        RestoredKind::TabIntoPane => {
             // engine 안에서 이미 attach 완료. AppState 측 변경 없음.
         }
     }
