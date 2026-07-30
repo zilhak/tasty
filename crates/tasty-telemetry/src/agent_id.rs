@@ -1,7 +1,17 @@
-//! Agent 식별자 — Phase 4 (관측/비용) 잠정 모델.
+//! Agent 식별자 — 관측/비용 추적용 모델.
 //!
-//! 현재 위조 가능: env `TASTY_AGENT_ID` 또는 plugin manifest id 를 그대로 신뢰한다.
-//! Phase 6 의 session token 인증이 도입되면 verifiable 로 승격한다.
+//! [`AgentId`] 타입 자체는 아무 문자열이나 담을 수 있는 plain wrapper다. 위조
+//! 가능 여부는 이 값을 *누가 채워 넣는지*(신뢰 경계를 넘는 지점)에 달려 있다 —
+//! 신뢰 경계를 넘나드는 `Plugin`/`Agent` 두 caller 경로는 이미
+//! `CallerContext`(`crates/tasty-ipc/src/caller.rs`) 레이어에서 검증된 값만
+//! 흘려보낸다: `Agent` 는 `SessionToken` 검증을 통과해야만 생성되는 호스트-부여
+//! `agent_id`, `Plugin` 은 호스트 dispatch 코드가 자신의 plugin 레지스트리에서
+//! 직접 구성하는 `plugin_id` 라 외부 IPC 페이로드로 자유롭게 실어 보낼 수 없다.
+//! `Local`(CLI/네트워크 IPC 클라이언트)만 env `TASTY_AGENT_ID` 를 그대로 신뢰하는데,
+//! `Local` 은 애초에 권한 검사 없이 무제한 허용되는 경로라(로컬 기기 액세스 전제)
+//! 이 값을 무엇으로 설정하든 telemetry 라벨링 외엔 영향이 없다 — 위조해도 얻는
+//! 게 없는 의도된 설계다. 자세한 근거는 `tasty-ipc` crate 의
+//! `CallerContext::agent_id` doc 참고.
 //!
 //! 사용처:
 //! - `telemetry.record` 등 메트릭의 agent 차원

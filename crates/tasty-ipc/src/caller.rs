@@ -179,7 +179,9 @@ impl CallerContext {
         }
     }
 
-    /// Phase 4 ~ 6 agent 식별자.
+    /// telemetry/dispatcher 미들웨어가 쓰는 agent 식별자. 신뢰 여부는 이 값을 누가
+    /// 채워 넣는지에 달려 있다(`tasty_telemetry::AgentId` 는 plain wrapper — 자세한
+    /// 근거는 [`tasty_telemetry::agent_id`] 모듈 doc 참고).
     ///
     /// - `Agent` → 호스트-부여 `agent_id` (verifiable, session token 검증 통과)
     /// - `Plugin` → manifest 의 `plugin_id` (telemetry 검증을 위해 점 등은 `_` 로 sanitize)
