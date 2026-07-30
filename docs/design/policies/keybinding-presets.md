@@ -53,12 +53,15 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 | toggle_settings | ctrl+, | alt+, | ctrl+, | ctrl+, |
 | toggle_notifications | ctrl+shift+i | alt+shift+i | ctrl+shift+i | ctrl+shift+i |
 | toggle_sidebar / _collapse | ctrl+shift+b / ctrl+b | alt+shift+b / alt+b | (ctrl 계열) | (ctrl 계열) |
-| toggle_clipboard_viewer | ctrl+shift+h | alt+shift+h | ctrl+shift+h | ctrl+shift+h |
 | quit | | alt+q | | ctrl+q |
 | quit_minimize | | alt+m | | |
 | convert_surface | alt+' | alt+' | alt+' | alt+' |
 
 > `quit_immediate` 는 실수 방지로 전 프리셋 기본값 없음. `apply_*_preset`(레이아웃 프리셋 적용)도 사용자가 직접 배정하도록 기본값 없음. Windows 는 Alt+F4 가 OS 종료라 `quit` 불요.
+
+> 이 표는 호스트 `KeybindingSettings` 프리셋 필드만 다룬다. 클립보드 뷰어(`toggle_clipboard_viewer`)·git
+> viewer 등 플러그인 커맨드의 단축키는 각 플러그인 매니페스트의 `[[contributes.commands]]`
+> `default_keybinding`으로 선언되며 프리셋과 무관하다 — [plugin-development](../../dev-guide/plugin-development.md#단축키-commands) 참조.
 
 ## 설계 원칙
 

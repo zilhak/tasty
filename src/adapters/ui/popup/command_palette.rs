@@ -482,7 +482,6 @@ fn icon_for(field_id: &str) -> Option<icons::Icon> {
         "open_markdown" => icons::MD,
         "toggle_settings" => icons::SETTINGS,
         "split_pane_vertical" => icons::SPLIT,
-        "toggle_clipboard_viewer" => icons::CLIPBOARD,
         _ => icons::COMMAND,
     })
 }

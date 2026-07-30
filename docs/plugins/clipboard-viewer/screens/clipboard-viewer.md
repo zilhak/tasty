@@ -7,7 +7,7 @@
 
 ## 트리거
 
-[도구 메뉴](../../../features/tools-menu/screens/tools-menu.md) `Clipboard Viewer` 또는 토글 단축키(`shortcut.toggle_clipboard_viewer`).
+[도구 메뉴](../../../features/tools-menu/screens/tools-menu.md) `Clipboard Viewer` 또는 플러그인 커맨드 `open_viewer`(설정 > 단축키 > 플러그인, 기본값 `ctrl+shift+h`).
 
 ## UI 요소 인벤토리
 

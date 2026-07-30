@@ -58,10 +58,6 @@ pub(super) fn emit_hook_fired(
     mgr.emit_host_event("hook.fired", &payload, scope);
 }
 
-pub(super) fn emit_raw(mgr: &mut PluginManager, key: String, payload: serde_json::Value) {
-    mgr.emit_host_event(&key, &payload, EventScope::System);
-}
-
 // ─── Plugin lifecycle (D.3.C.G.2.b) ───
 
 pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, version: String) {

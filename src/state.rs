@@ -205,13 +205,6 @@ pub enum PendingHostEvent {
         event_kind: String,
         surface_id: u32,
     },
-    /// 임의의 host event 발화. shortcut 핸들러처럼 plugin_manager에 직접 접근 못
-    /// 하는 callsite에서 host event를 발화할 때 사용. `EventScope::System` 고정.
-    Raw {
-        key: String,
-        payload: serde_json::Value,
-    },
-
     // ─── Plugin lifecycle (D.3.C.G.2) ───
     /// Plugin spawn 성공 후 hello 까지 완료.
     PluginLoaded {

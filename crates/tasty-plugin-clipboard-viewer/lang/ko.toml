@@ -1,6 +1,9 @@
 [clipboard_viewer.tool]
 label = "클립보드 뷰어"
 
+[clipboard_viewer.command]
+open_viewer = "클립보드 뷰어 열기"
+
 [clipboard_viewer.popup]
 title = "클립보드 뷰어"
 empty = "클립보드가 비어 있습니다"

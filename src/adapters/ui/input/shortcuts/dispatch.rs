@@ -144,12 +144,6 @@ impl MainView {
                     );
                 }
             }
-            "toggle_clipboard_viewer" => {
-                state.enqueue_host_event(crate::state::PendingHostEvent::Raw {
-                    key: "shortcut.toggle_clipboard_viewer".into(),
-                    payload: serde_json::Value::Null,
-                });
-            }
             "toggle_sidebar" => {
                 state.sidebar_visible = !state.sidebar_visible;
             }

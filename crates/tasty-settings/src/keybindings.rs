@@ -74,8 +74,6 @@ pub struct KeybindingSettings {
     pub next_tab: Vec<String>,
     /// Focus previous tab in the current pane.
     pub prev_tab: Vec<String>,
-    /// Toggle the clipboard history viewer popup.
-    pub toggle_clipboard_viewer: Vec<String>,
     /// (03) 화면을 인터랙티브하게 캡처해 경로를 클립보드에 복사한다. 포커스된
     /// surface 가 원격 attach(mirror) workspace 소속이면 캡처 파일을 원격으로
     /// 전송해 원격 클립보드에 경로를 기록한다(로컬이면 로컬 클립보드).

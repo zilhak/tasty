@@ -189,8 +189,7 @@ impl MainView {
         false
     }
 
-    /// 패널/오버레이 토글 계열: toggle_settings / toggle_notifications / find /
-    /// toggle_clipboard_viewer.
+    /// 패널/오버레이 토글 계열: toggle_settings / toggle_notifications / find.
     fn match_panel_bindings(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -239,14 +238,6 @@ impl MainView {
                     .from_user_shortcut("find_open"),
                 );
             }
-            return true;
-        }
-        if matches_any_binding(&kb.toggle_clipboard_viewer, key, mods) {
-            // 호스트는 단축키 신호만 publish하고 viewer는 clipboard-history plugin이 책임.
-            state.enqueue_host_event(crate::state::PendingHostEvent::Raw {
-                key: "shortcut.toggle_clipboard_viewer".into(),
-                payload: serde_json::Value::Null,
-            });
             return true;
         }
         false

@@ -163,7 +163,6 @@ impl App {
                     event_kind,
                     surface_id,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
-                PendingHostEvent::Raw { key, payload } => misc::emit_raw(mgr, key, payload),
                 // ─── Plugin lifecycle (D.3.C.G.2.b) ───
                 PendingHostEvent::PluginLoaded { plugin_id, version } => {
                     misc::emit_plugin_loaded(mgr, plugin_id, version)

@@ -1,6 +1,9 @@
 [clipboard_viewer.tool]
 label = "クリップボードビューア"
 
+[clipboard_viewer.command]
+open_viewer = "クリップボードビューアを開く"
+
 [clipboard_viewer.popup]
 title = "クリップボードビューア"
 empty = "クリップボードは空です"

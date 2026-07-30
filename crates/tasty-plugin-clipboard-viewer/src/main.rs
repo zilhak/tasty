@@ -2,9 +2,11 @@
 
 //! Tasty Clipboard Viewer plugin — 현재 시스템 클립보드(최신 하나)의 read-only 뷰어.
 //!
-//! 호스트 `shortcut.toggle_clipboard_viewer` 이벤트가 발화되면 popup contribute
-//! trigger 매처가 새 인스턴스를 연다. 클립보드는 plugin process 내에서 arboard 로
-//! **직접** 읽으며 호스트 IPC 를 경유하지 않는다 (ADR-0009 상 first-party 직접 read).
+//! Tools 메뉴 클릭(`[[contributes.tool]]`) 또는 단축키 커맨드(`[[contributes.commands]]`
+//! `open_viewer`, TODO43)가 `action = open_popup` 을 통해 host 로 하여금 popup 인스턴스를
+//! 직접 열게 한다 — 호스트가 plugin 전용 이벤트를 발행하는 구식 경로는 없다. 클립보드는
+//! plugin process 내에서 arboard 로 **직접** 읽으며 호스트 IPC 를 경유하지 않는다
+//! (ADR-0009 상 first-party 직접 read).
 //!
 //! 렌더 경로는 **egui-mesh popup**(ADR-0028 / B4): plugin 이 자기 프로세스에서 popup
 //! 콘텐츠(master-detail)를 egui 로 tessellate 한 mesh 를 host 가 content 영역에 합성한다.

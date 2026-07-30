@@ -170,11 +170,6 @@ pub fn draw_keybindings_tab(
                         None,
                     ),
                     (
-                        "toggle_clipboard_viewer",
-                        "settings.keybindings.toggle_clipboard_viewer_label",
-                        None,
-                    ),
-                    (
                         "restore_closed",
                         "settings.keybindings.restore_closed_label",
                         None,

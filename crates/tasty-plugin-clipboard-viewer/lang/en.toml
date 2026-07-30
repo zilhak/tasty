@@ -1,6 +1,9 @@
 [clipboard_viewer.tool]
 label = "Clipboard Viewer"
 
+[clipboard_viewer.command]
+open_viewer = "Open Clipboard Viewer"
+
 [clipboard_viewer.popup]
 title = "Clipboard Viewer"
 empty = "Clipboard is empty"

@@ -32,7 +32,7 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 | **cli / ipc_namespace** | `tasty <prefix> …` CLI + IPC 메서드 추가 | claude / codex / html / image / markdown |
 | **detector / handler** | 파일 확장자 → surface 매핑(파일 열기) | markdown / image / html |
 | **settings_pages** | [설정 창](../features/settings/index.md)에 플러그인 페이지 추가 (`ui.settings_page`) | markdown / html / claude / codex |
-| **commands** | 명령 팔레트/단축키용 명령 | git-viewer |
+| **commands** | 명령 팔레트/단축키용 명령 | clipboard-viewer / git-viewer |
 | **event_subscribe / hooks** | host 이벤트 구독 / pre·post 훅 | claude·codex (`surface.closed`) |
 
 #### surface_kind 의 `rendering` — 누가 그리나
