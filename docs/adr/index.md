@@ -28,7 +28,7 @@
 | 0015 | [원격 접속 프로필 = 범용 typed 레지스트리, attach 는 소비자](0015-remote-profiles-typed-registry.md) | Superseded by 0032 | 2026-06-19 | remote, profile, registry, attach, ssh, smb, extensibility, plugin, ubiquitous-language |
 | 0016 | [Passkey 저장소 — path 수렴 · 파일권한 위임 · 참조 모델](0016-passkey-store-path-convergence.md) | Accepted | 2026-06-19 | passkey, secret, security, file-permission, trust-boundary, remote-profile |
 | 0017 | [Windows 절전(suspend/resume) 후 PTY 헬스 복구는 Windows 전용](0017-windows-suspend-resume-pty-recovery.md) | Accepted | 2026-06-21 | pty, conpty, suspend, resume, power-management, windows, platform, lifecycle, terminal, cross-platform |
-| 0018 | [Claude Design 세션 자격증명은 평문으로 저장한다](0018-claude-design-auth-at-rest-plaintext.md) | Accepted | 2026-06-22 | claude-design, plugin, secret, security, encryption, auth, trust-boundary |
+| 0018 | [Claude Design 세션 자격증명은 평문으로 저장한다](0018-claude-design-auth-at-rest-plaintext.md) | Superseded by 0057 | 2026-06-22 | claude-design, plugin, secret, security, encryption, auth, trust-boundary |
 | 0019 | [마우스 버튼/드래그 리포팅 — 트래킹 앱에 전면 위임, 로컬 선택 우회는 보류](0019-mouse-button-reporting-app-delegation.md) | Accepted | 2026-06-24 | terminal, vte, mouse, mouse-reporting, sgr, input, selection, scope |
 | 0020 | [갤러리는 본체 UI 컴포넌트의 완전한 단일 출처 — cut 금지, gallery-first](0020-gallery-complete-component-source.md) | Accepted | 2026-06-24 | gallery, design-parity, demo-main, component-catalog, workflow, ui |
 | 0021 | [자체 업데이트 확인 기능(update-check) 전면 제거](0021-remove-update-check-feature.md) | Accepted | 2026-06-25 | update, auto-update, scope, distribution, removal, maintenance, cli, plugin |
@@ -67,3 +67,4 @@
 | 0054 | [원격 파일 바이트 전송(bulk)은 attach 스트림 위 native binary 채널로 구현한다 (sftp/SMB 등은 이 기능에 미사용)](0054-remote-filesystem-native-over-attach-stream.md) | Accepted | 2026-07-23 | remote, attach, mirror, file-transfer, native-protocol, stream, bulk-channel, no-base64, ssh-delegation, cross-platform, adr-0007, adr-0032, adr-0045 |
 | 0055 | [마우스 캡처 안내 배너 per-app 억제를 캡처 억제와 독립된 축으로 둔다](0055-mouse-capture-banner-suppress-list.md) | Accepted | 2026-07-28 | terminal, mouse, mouse-reporting, banner, settings, ux, adr-0022 |
 | 0056 | [git-viewer 원격(attach mirror) 조회 — 공유 crate + `git_viewer.query` 이벤트 채널](0056-git-viewer-remote-attach-git-query-channel.md) | Accepted | 2026-07-29 | git-viewer, plugin, attach, mirror, ipc, event-bus, wire-format, tools-menu, egui-mesh, popup, timeout, adr-0053, adr-0028, adr-0040 |
+| 0057 | [claude-design 플러그인 전면 제거](0057-remove-claude-design-plugin.md) | Accepted | 2026-07-30 | claude-design, plugin, removal, scope, maintenance, cli, playwright, external-project, adr-0018, adr-0025 |

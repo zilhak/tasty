@@ -1,6 +1,6 @@
 # ADR-0018: Claude Design 세션 자격증명은 평문으로 저장한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0057](0057-remove-claude-design-plugin.md) — claude-design 플러그인 자체가 제거되어 본 결정의 대상이 사라짐
 - **Date**: 2026-06-22
 - **Tags**: claude-design, plugin, secret, security, encryption, auth, trust-boundary
 
