@@ -92,9 +92,9 @@ pub enum DetectorRuleKind {
     Extension { values: Vec<String> },
     /// 파일명 glob (예: `Dockerfile`, `*.config.json`).
     PathGlob { pattern: String },
-    /// MIME 타입. Phase B 에서 본격 평가.
+    /// MIME 타입. `evaluate_deep` 이 `infer` crate 로 얻은 MIME 과 비교해 평가.
     Mime { types: Vec<String> },
-    /// magic bytes 비교. Phase B 에서 본격 평가.
+    /// magic bytes 비교. `evaluate_deep` 이 offset+bytes 슬라이스 비교로 평가.
     Magic { offset: usize, bytes: Vec<u8> },
     /// path 가 디렉토리인지.
     IsDirectory,
@@ -105,7 +105,7 @@ pub enum DetectorRuleKind {
     /// **Plugin 출처 거부**: plugin 매니페스트가 이 kind 를 쓰면 install 단계에서
     /// drop + warn. host/user 출처만 평가됨.
     Lua { script: String },
-    /// 구조 체크 (Phase D MD2). Phase D MD1 시점에는 schema 만, evaluator 미구현.
+    /// 구조 체크. `evaluate_deep` 이 `structure_eval::evaluate_structure` 로 평가.
     StructureCheck { spec_path: PathBuf },
     /// 미지의 kind — payload 보존 (forward-compat).
     Unknown { kind_name: String, raw: toml::Value },
@@ -137,6 +137,6 @@ pub struct FileFormatDetector {
 pub enum DetectDepth {
     /// 확장자 / path glob / is-directory 만. hover/목록 표시에 사용.
     Cheap,
-    /// + magic bytes + MIME + Lua/structure-check. Phase B 이후 활용.
+    /// + magic bytes + MIME + Lua/structure-check.
     Deep,
 }
