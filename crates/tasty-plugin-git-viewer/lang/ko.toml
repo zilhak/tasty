@@ -22,3 +22,6 @@ wt_linked = "링크됨"
 wt_current = "현재"
 wt_locked = "잠김"
 wt_invalid = "유효하지 않음"
+
+[git_viewer.command]
+open_viewer = "Git 뷰어 열기"

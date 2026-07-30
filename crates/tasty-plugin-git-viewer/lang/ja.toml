@@ -22,3 +22,6 @@ wt_linked = "リンク"
 wt_current = "現在"
 wt_locked = "ロック"
 wt_invalid = "無効"
+
+[git_viewer.command]
+open_viewer = "Git ビューアを開く"

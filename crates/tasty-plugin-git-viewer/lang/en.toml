@@ -22,3 +22,6 @@ wt_linked = "linked"
 wt_current = "current"
 wt_locked = "locked"
 wt_invalid = "invalid"
+
+[git_viewer.command]
+open_viewer = "Open Git Viewer"

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.git-viewer"
 name = "Git Viewer"
-version = "0.1.14"
+version = "0.1.15"
 description = "Read-only git status / log / diff popup"
 api_version = "1"
 permissions = ["ui.popup", "ui.tool_item", "fs.read"]
@@ -26,3 +26,12 @@ id = "open-viewer"
 label_i18n_key = "git_viewer.tools_menu_item"
 action = { kind = "open_popup", popup_id = "com.tasty.git-viewer/viewer" }
 order_hint = 130
+
+# 단축키로 뷰어를 열기 위한 커맨드. Tools 메뉴 항목과 동일한 popup 을 연다
+# (default_keybinding 미지정 — 사용자가 설정 > 단축키 > 플러그인에서 직접 지정).
+[[contributes.commands]]
+id = "open_viewer"
+title_i18n_key = "git_viewer.command.open_viewer"
+binding_mode = "independent"
+scope = "global"
+action = { kind = "open_popup", popup_id = "com.tasty.git-viewer/viewer" }
