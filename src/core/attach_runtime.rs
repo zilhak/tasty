@@ -45,9 +45,7 @@ impl CoreState {
         // PTY 스냅샷/tap 이 없는 별도 경로(`attach_mesh_surface_for_stream`)로 분기.
         if !self.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
             if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
-                && crate::engine::surface_registry::egui_mesh::is_egui_mesh_allowed(
-                    &kind, &plugin_id,
-                )
+                && crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(&kind, &plugin_id)
             {
                 self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
                 return;
@@ -1483,7 +1481,7 @@ pub(crate) fn mesh_mirror_candidates(
     let mut whitelisted = Vec::new();
     let mut rejected = Vec::new();
     for (sid, kind, plugin_id) in &class.mesh_candidates {
-        if crate::engine::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id) {
+        if crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id) {
             whitelisted.push((*sid, kind.as_str(), plugin_id.as_str()));
         } else {
             rejected.push(*sid);

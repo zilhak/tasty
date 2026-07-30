@@ -32,9 +32,19 @@ const COMMAND_HARD_CAP: u64 = 100_000;
 /// 호출자가 사용자 알림(`TerminalNotification`)으로 변환한다.
 pub enum CommandCapEvent {
     /// soft cap 도달 — 경고만(명령은 계속 기록됨). surface 당 1회.
-    SoftWarn { surface_id: u32, count: u64 },
+    SoftWarn {
+        // 이유: 호출자(Core::apply_terminal_event)가 이미 sid 를 알고 있어 미사용 —
+        // TODO63 (engine.rs → core/ 재배치)로 command_index 가 pub(crate) 로 캡슐화되며 드러남.
+        #[allow(dead_code)]
+        surface_id: u32,
+        count: u64,
+    },
     /// hard cap 도달 — 이후 명령 기록 중단. surface 당 1회.
-    HardBlocked { surface_id: u32 },
+    HardBlocked {
+        // 이유: 위 SoftWarn 과 동일 — 호출자가 이미 sid 를 알고 있어 미사용.
+        #[allow(dead_code)]
+        surface_id: u32,
+    },
 }
 
 /// Per-surface 명령 인덱서 상태.

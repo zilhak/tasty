@@ -27,7 +27,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, select};
 
 use crate::adapters::ui::icons::{self, Icon};
-use crate::engine::surface_registry::{
+use crate::core::surface_registry::{
     PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindRegistry,
 };
 use crate::i18n::t;

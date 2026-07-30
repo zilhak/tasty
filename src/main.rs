@@ -30,8 +30,6 @@ mod view;
 mod waker;
 mod webhook;
 
-pub mod engine;
-
 use anyhow::Result;
 
 pub use tasty_font as font;
@@ -41,6 +39,8 @@ use tasty_terminal as terminal;
 pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
 
+pub(crate) use crate::core::output_observer;
+pub(crate) use crate::core::surface_registry::meta as surface_meta;
 pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
 pub(crate) use adapters::plugin;
@@ -67,8 +67,6 @@ pub(crate) use app::event::AppEvent;
 pub(crate) use boot::waker as waker_factory_winit;
 #[cfg(feature = "gui")]
 pub(crate) use clipboard::ClipboardContext;
-pub(crate) use engine::output_observer;
-pub(crate) use engine::surface_registry::meta as surface_meta;
 #[cfg(feature = "gui")]
 pub(crate) use file::dispatch as file_dispatch;
 #[cfg(feature = "gui")]

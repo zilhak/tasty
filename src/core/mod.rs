@@ -20,15 +20,20 @@ pub(crate) mod builder;
 pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
+pub(crate) mod command_index;
 pub(crate) mod file;
 pub(crate) mod fs_list;
+pub(crate) mod hook_event_registry;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
+pub(crate) mod layout_persistence;
 pub(crate) mod mesh_mirror;
+pub(crate) mod output_observer;
 pub(crate) mod pty_registry;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;
 pub(crate) mod state;
+pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 
 pub(crate) use state::{AttachMeshContextForward, CoreState, GuiAttachUserReq, PendingImageUpload};
@@ -780,7 +785,7 @@ impl Core {
                     let mem = engine.memory.clone();
                     if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload)
                     {
-                        use crate::engine::command_index::CommandCapEvent;
+                        use crate::core::command_index::CommandCapEvent;
                         let (title, body) = match cap {
                             CommandCapEvent::SoftWarn { count, .. } => (
                                 crate::i18n::t("command_index.cap.soft.title").to_string(),
@@ -1169,7 +1174,7 @@ impl Core {
         if !should_save {
             return CoreEvent::LayoutSaved { saved: false };
         }
-        crate::engine::layout_persistence::save_to_disk(engine, active_workspace);
+        crate::core::layout_persistence::save_to_disk(engine, active_workspace);
         engine.layout_dirty.clear();
         CoreEvent::LayoutSaved { saved: true }
     }
@@ -1882,7 +1887,7 @@ impl Core {
             if pane.tabs.len() > 1 {
                 let snapshot_opt = {
                     let mut snap_fn =
-                        crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                        crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                     let terminals = &engine.terminals;
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
@@ -1982,7 +1987,7 @@ impl Core {
         if save_snapshot {
             let item = {
                 let mut snap_fn =
-                    crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[loc.ws_idx];
                 let terminals = &engine.terminals;
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
@@ -2788,7 +2793,7 @@ pub(crate) fn apply_create_workspace_inner(
 /// display_name 이 자동 적용된다. 옛 `ConvertSurfaceTarget::Markdown` arm 의 명명 동작을
 /// 본체 `kind == "markdown"` 하드코딩 없이 보존한다.
 fn derive_auto_name(
-    def: Option<&crate::engine::surface_registry::SurfaceKindDef>,
+    def: Option<&crate::core::surface_registry::SurfaceKindDef>,
     params: &serde_json::Value,
 ) -> Option<String> {
     let key = def.and_then(|d| d.name_from_param.as_deref())?;
@@ -2860,7 +2865,7 @@ mod osc52_clipboard_read_tests {
 #[cfg(test)]
 mod derive_auto_name_tests {
     use super::derive_auto_name;
-    use crate::engine::surface_registry::{SurfaceKindRegistry, register_builtin_kinds};
+    use crate::core::surface_registry::{SurfaceKindRegistry, register_builtin_kinds};
 
     #[test]
     fn name_from_param_kind_yields_basename_else_none() {

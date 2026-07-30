@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
@@ -193,7 +193,7 @@ pub struct CoreState {
 
     /// OSC 133 기반 명령 인덱서. PromptBoundary 이벤트가 도달할 때마다 호스트가
     /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
-    pub(crate) command_index: crate::engine::command_index::CommandIndex,
+    pub(crate) command_index: crate::core::command_index::CommandIndex,
 
     /// 출력 옵저버 라우터. OutputAppended 이벤트마다 dispatch 호출.
     pub(crate) observer_router: crate::output_observer::ObserverRouter,
@@ -461,7 +461,7 @@ pub struct CoreState {
     /// Plugin 이 manifest `[[contributes.hook_events]]` 로 선언한 surface hook
     /// 이벤트 키 집계. plugin hello 시 등록, unload/remove 시 제거. `hook.set` /
     /// `surface.fire_hook` 핸들러가 (내장 ∪ 활성 plugin 선언) 검증에 사용한다.
-    pub(crate) plugin_hook_events: Arc<crate::engine::hook_event_registry::PluginHookEventRegistry>,
+    pub(crate) plugin_hook_events: Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
 
     // ── File format / handler registries (file-handler-system) ──
     /// 파일 식별기 — host default + plugin contribute + user config 통합.
@@ -479,7 +479,7 @@ pub struct CoreState {
     pub(crate) identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
 
     // ── Layout persistence ──
-    pub(crate) layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker,
+    pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
     pub(crate) restored_active_workspace: Option<usize>,
     /// Deferred terminal surface 의 scrollback 복원 대기 큐. 값은
@@ -489,7 +489,7 @@ pub struct CoreState {
     pub(crate) pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
     /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
-    pub(crate) pending_layout_restore: Option<crate::engine::layout_persistence::SavedLayout>,
+    pub(crate) pending_layout_restore: Option<crate::core::layout_persistence::SavedLayout>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -507,6 +507,9 @@ impl CoreState {
     ///
     /// 테스트 / non-host 진입점용 변형. 내부에서 in-memory `MemoryStore` 를
     /// 생성해 주입한다. host 부팅 경로는 `new_with_ids` 를 사용한다.
+    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — TODO63 (engine.rs → core/ 재배치)로
+    // core 가 pub(crate) 로 캡슐화되며 드러남.
+    #[allow(dead_code)]
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
             std::sync::Arc::new(std::sync::Mutex::new(
@@ -541,7 +544,7 @@ impl CoreState {
             hook_manager: HookManager::new(),
             global_hook_manager: GlobalHookManager::new(),
             closed_items: crate::model::ClosedItemStore::new(),
-            command_index: crate::engine::command_index::CommandIndex::new(),
+            command_index: crate::core::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
@@ -585,11 +588,11 @@ impl CoreState {
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();
-                crate::engine::surface_registry::register_builtin_kinds(&reg);
+                crate::core::surface_registry::register_builtin_kinds(&reg);
                 Arc::new(reg)
             },
             plugin_hook_events: Arc::new(
-                crate::engine::hook_event_registry::PluginHookEventRegistry::new(),
+                crate::core::hook_event_registry::PluginHookEventRegistry::new(),
             ),
             file_format: {
                 let reg = crate::file::format::FileFormatRegistry::new();
@@ -616,7 +619,7 @@ impl CoreState {
             ),
             #[cfg(feature = "gui")]
             identify_worker: None,
-            layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker::new(),
+            layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
@@ -641,7 +644,7 @@ impl CoreState {
         // 지연한다 (`App::apply_pending_layout_restore`).
         let mut restored = false;
         if restore_layout {
-            if let Some(saved) = crate::engine::layout_persistence::load_from_disk() {
+            if let Some(saved) = crate::core::layout_persistence::load_from_disk() {
                 // layout.json 에 남아 있는 scrollback_ref 집합 외의 파일은 모두 orphan.
                 // capture 도중 크래시했거나 옛 surface 의 잔재이므로 삭제해 디스크 leak 방지.
                 let known = saved.collect_scrollback_refs();
@@ -825,7 +828,7 @@ impl CoreState {
     /// 리터럴. `home` 이 `None` 이면 `@home` 토큰은 건너뛴다. 하나라도 주입하면 `true`.
     pub(crate) fn apply_kind_default_params(
         &self,
-        def: &crate::engine::surface_registry::SurfaceKindDef,
+        def: &crate::core::surface_registry::SurfaceKindDef,
         params: &mut serde_json::Value,
         home: Option<&std::path::Path>,
     ) -> bool {
@@ -1425,7 +1428,7 @@ mod category_tests {
 
     #[test]
     fn collapsed_survives_layout_round_trip() {
-        use crate::engine::layout_persistence::SavedLayout;
+        use crate::core::layout_persistence::SavedLayout;
         // 접힘 상태를 설정한 뒤 layout capture→restore 왕복 후에도 유지되는지 회귀.
         let mut e = engine();
         let id = e.create_category("Services").unwrap();
@@ -1447,7 +1450,7 @@ mod category_tests {
 
     #[test]
     fn mirror_workspace_not_persisted() {
-        use crate::engine::layout_persistence::SavedLayout;
+        use crate::core::layout_persistence::SavedLayout;
         // N-RA02 회귀: 원격 attach 가 만드는 mirror workspace 는 layout.json 에 저장되면
         // 안 된다(재시작 시 원격 없는 죽은 일반 ws 로 복원되는 버그). capture 가 제외하고
         // active 인덱스도 필터 후 위치로 remap 하는지 확인.

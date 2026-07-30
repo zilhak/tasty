@@ -56,7 +56,7 @@ impl FocusedSurfaceType {
     pub fn kind_capability(
         &self,
         engine: &CoreState,
-        f: impl Fn(&crate::engine::surface_registry::SurfaceKindDef) -> bool,
+        f: impl Fn(&crate::core::surface_registry::SurfaceKindDef) -> bool,
     ) -> bool {
         match self {
             Self::Kind(k) => engine

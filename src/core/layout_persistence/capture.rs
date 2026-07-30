@@ -6,7 +6,7 @@
 use serde_json::json;
 
 use crate::core::CoreState;
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
@@ -317,7 +317,7 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    use crate::engine::surface_registry::SurfaceKindRegistry;
+    use crate::core::surface_registry::SurfaceKindRegistry;
 
     /// Fix B 회귀: deferred surface 의 `DeferredSpawn.restore_command` 가 None 이면,
     /// surface_meta 에 같은 id 의 (재사용된 stale) restore.command 가 있어도 capture 는

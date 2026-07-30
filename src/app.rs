@@ -63,10 +63,10 @@ use crate::{AppEvent, plugin, state};
 
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) struct App {
-    /// Phase C — 도메인 본체. 마이그레이션 중에는 빈 골격, sub-step 마다 한 필드씩
-    /// `CoreState` 에서 이쪽으로 이동한다.
+    /// 도메인 본체 — `CoreState` 의 mutate 로직을 점진 흡수한 Method wrapper 다수를
+    /// 이미 보유한다(수십 개 규모, 계속 증가 중). 잔여 흡수는 TODO 59/62 등이 이어간다.
     pub(crate) core: Core,
-    /// Phase C — 외부 통신 표면. ipc_server, port_file 보유.
+    /// 외부 통신 표면. ipc_server, port_file 보유.
     pub(crate) hub: Hub,
     /// Streaming-channel push registry (attach/detach step 1). The IPC accept
     /// threads register/unregister client sinks; the main loop pushes via this.
@@ -78,7 +78,7 @@ pub(crate) struct App {
     /// Receiver drained by the main loop on `AppEvent::StreamReady`.
     pub(crate) stream_inbound_rx:
         std::sync::mpsc::Receiver<crate::adapters::production::stream_hub::StreamInbound>,
-    /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, views HashMap 보유.
+    /// GUI 어댑터. proxy, modal/focus 식별자, views HashMap 보유.
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.

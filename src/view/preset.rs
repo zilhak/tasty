@@ -15,7 +15,7 @@ use tasty_settings::KeybindingSettings;
 
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};

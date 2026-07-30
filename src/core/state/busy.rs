@@ -113,6 +113,9 @@ impl CoreState {
     }
 
     /// Whether any surface in the given list is busy.
+    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — TODO63 (engine.rs → core/ 재배치)로
+    // core 가 pub(crate) 로 캡슐화되며 드러남.
+    #[allow(dead_code)]
     pub fn any_busy(&self, surface_ids: &[u32]) -> bool {
         surface_ids
             .iter()

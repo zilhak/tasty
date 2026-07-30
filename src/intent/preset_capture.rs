@@ -16,13 +16,13 @@
 //! `SurfaceKindRegistry` 의 terminal snapshot 은 의도적으로 `None` 을
 //! 반환한다 (PTY 는 host 책임). preset capture 는 이
 //! `None` 을 *실패* 가 아니라 *정상 신호* 로 받아들여야 한다. 같은 코드베이스의
-//! `engine::layout_persistence::capture::SavedSurface::capture_surface` 가 동일한
+//! `core::layout_persistence::capture::SavedSurface::capture_surface` 가 동일한
 //! 패턴을 쓰며, 본 모듈도 그와 정렬한다.
 
 use serde_json::Value;
 
 use crate::core::CoreState;
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::model::{
     EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
 };
@@ -238,7 +238,7 @@ fn capture_surface(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::surface_registry::register_builtin_kinds;
+    use crate::core::surface_registry::register_builtin_kinds;
     use crate::model::DeferredSpawn;
     use std::path::PathBuf;
     use std::sync::Arc;

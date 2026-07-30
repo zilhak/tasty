@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use crate::engine::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
+use crate::core::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
 use crate::model::Surface;
 use crate::plugin::manifest::{HOST_API_VERSION, SurfaceKindDecl};
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
@@ -134,7 +134,7 @@ pub fn register_egui_mesh_kind(
                 "file": ms.file,
             }))
         }),
-        preset_fields: crate::engine::surface_registry::PresetFieldSpec::from_decls(
+        preset_fields: crate::core::surface_registry::PresetFieldSpec::from_decls(
             &decl.preset_fields,
         ),
         param_aliases: decl.param_aliases.clone(),

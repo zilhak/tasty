@@ -341,7 +341,7 @@ impl App {
                                 "remote"
                             }
                             SurfaceKindRendering::Webview => {
-                                crate::engine::surface_registry::webview_kind::register_webview_kind(
+                                crate::core::surface_registry::webview_kind::register_webview_kind(
                                     plugin_id, &decl.kind,
                                 );
                                 crate::plugin_bridge::remote_kind::register_remote_kind(
@@ -353,7 +353,7 @@ impl App {
                                 "webview"
                             }
                             SurfaceKindRendering::EguiMesh => {
-                                crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+                                crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
                                     &registry,
                                     plugin_id,
                                     decl,

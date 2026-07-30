@@ -261,6 +261,9 @@ impl CoreState {
     /// Collect all terminal surface IDs across all workspaces.
     /// 현재는 CWD 폴링(macOS/Linux)에서만 사용된다.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
+    // 이유: 현재 실제 호출처 없음(소비자 배선 대기) — TODO63 (engine.rs → core/ 재배치)로
+    // core 가 pub(crate) 로 캡슐화되며 드러남.
+    #[allow(dead_code)]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
         self.terminals.iter().map(|(id, _)| id).collect()
     }

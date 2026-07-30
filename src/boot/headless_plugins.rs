@@ -168,7 +168,7 @@ fn finalize_plugin_hello_headless(
                         );
                     }
                     crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
-                        crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+                        crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
                             &registry,
                             plugin_id,
                             decl,

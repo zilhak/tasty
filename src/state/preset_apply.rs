@@ -427,10 +427,10 @@ impl AppState {
 /// 않고 다음 필드로 넘어간다. "file" 문자열을 하드코딩하지 않고 선언의 `param_key` 로만
 /// 참조한다.
 fn derive_cwd_from_fields(
-    fields: &[crate::engine::surface_registry::PresetFieldSpec],
+    fields: &[crate::core::surface_registry::PresetFieldSpec],
     params: &serde_json::Value,
 ) -> Option<std::path::PathBuf> {
-    use crate::engine::surface_registry::{PresetFieldInput, PresetFieldTarget};
+    use crate::core::surface_registry::{PresetFieldInput, PresetFieldTarget};
     for f in fields {
         if !f.derive_cwd || f.input != PresetFieldInput::FilePath {
             continue;
@@ -482,7 +482,7 @@ fn shell_escape(s: &str) -> String {
 mod tests {
     use super::{ApplyOptions, derive_cwd_from_fields};
     use crate::core::CoreState;
-    use crate::engine::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
+    use crate::core::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
     use serde_json::json;
     use tasty_presets::{
         PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab, WorkspacePreset,

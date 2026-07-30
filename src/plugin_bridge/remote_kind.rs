@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 
 use crate::model::Surface;
 
-use crate::engine::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
+use crate::core::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
 use crate::plugin::manifest::SurfaceKindDecl;
 use crate::plugin_bridge::host_cmd::HostCmd;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
@@ -40,7 +40,7 @@ pub fn register_remote_kind(
     // 직접 렌더하는 kind 를 remote 로 가로채지 못하게 한다. 예: T11 에서 explorer 가
     // host builtin 으로 승격된 뒤에도 `~/.tasty/plugins/com.tasty.explorer` 가 남아
     // remote "explorer" 를 재선언하면 native 렌더가 깨진다 — 여기서 차단한다.
-    if crate::engine::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
+    if crate::core::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
         tracing::warn!(
             "plugin '{}' declared remote kind '{}' which is a host builtin; ignoring \
              (host-rendered surface takes precedence)",
@@ -115,7 +115,7 @@ pub fn register_remote_kind(
             let rs = any.downcast_ref::<RemoteSurface>()?;
             rs.snapshot_cache.lock().ok()?.clone()
         }),
-        preset_fields: crate::engine::surface_registry::PresetFieldSpec::from_decls(
+        preset_fields: crate::core::surface_registry::PresetFieldSpec::from_decls(
             &decl.preset_fields,
         ),
         param_aliases: decl.param_aliases.clone(),

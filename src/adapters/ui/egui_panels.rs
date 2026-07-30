@@ -197,7 +197,7 @@ pub fn draw_egui_panels(
             // 미지정 / boundary=overlay backdrop). overlay 가 보일 땐 이 chrome 을
             // 덮고, overlay 가 숨겨지거나(메뉴/팝업) URL 이 없을 때 노출된다.
             // UiNode(tree) surface 렌더 경로는 제거됨(C1) — webview kind 만 그린다.
-            if crate::engine::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
+            if crate::core::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
                 // RemoteSurface mirror(host sync_webviews 가 native nav_state 를 복사)에서
                 // navigation 상태를 읽어 loading/error chrome 분기에 쓴다.

@@ -14,7 +14,7 @@ fn test_state() -> (AppState, crate::core::CoreState) {
     }))
     .expect("test SurfaceKindDecl");
     assert!(
-        crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+        crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
             &engine.surface_registry,
             "com.tasty.markdown",
             &decl,

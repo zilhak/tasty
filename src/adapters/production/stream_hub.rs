@@ -176,7 +176,11 @@ pub enum CaptureUploadMsg {
     /// per-connection), not reordered by `seq`.
     CaptureChunk {
         upload_id: u64,
+        // 이유: 문서에 명시된 대로 진단용으로만 wire 에 실리고 읽히지 않음 —
+        // TODO63 (engine.rs → core/ 재배치)로 crate 전역 reachability 가 좁아지며 드러남.
+        #[allow(dead_code)]
         seq: u32,
+        #[allow(dead_code)]
         total: u32,
         data_b64: String,
     },
@@ -375,6 +379,9 @@ impl StreamHub {
     }
 
     /// Number of currently connected stream clients.
+    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — TODO63 (engine.rs → core/ 재배치)로
+    // crate 전역 reachability 가 좁아지며 드러남.
+    #[allow(dead_code)]
     pub fn client_count(&self) -> usize {
         self.sinks.lock().map(|s| s.len()).unwrap_or(0)
     }

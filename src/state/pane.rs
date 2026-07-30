@@ -382,7 +382,7 @@ impl AppState {
             if pane.tabs.len() > 1 {
                 let snapshot_opt = {
                     let mut snap_fn =
-                        crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                        crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                     let terminals = &engine.terminals;
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
@@ -473,7 +473,7 @@ impl AppState {
         if save_snapshot {
             let item = {
                 let mut snap_fn =
-                    crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[loc.ws_idx];
                 let terminals = &engine.terminals;
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
@@ -583,7 +583,7 @@ impl AppState {
 pub(crate) fn default_tab_name_for_kind(
     kind: &str,
     params: &Value,
-    def: Option<&crate::engine::surface_registry::SurfaceKindDef>,
+    def: Option<&crate::core::surface_registry::SurfaceKindDef>,
 ) -> String {
     fn basename_or(path: &str, fallback: &str) -> String {
         path.split(['/', '\\'])
