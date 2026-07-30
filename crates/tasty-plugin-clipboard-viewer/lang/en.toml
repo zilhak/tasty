@@ -16,7 +16,9 @@ read_failed_title = "Couldn't read the clipboard"
 read_failed_sub = "The system clipboard handle could not be opened. Close another app that may be holding it and reopen."
 already_open_title = "Clipboard viewer is already open"
 already_open_sub = "Only one snapshot window runs at a time — the existing one was brought to the front."
+image_no_preview = "No inline image preview"
 
 [clipboard_viewer.type]
 text = "Text"
 files = "Files"
+image = "Image"

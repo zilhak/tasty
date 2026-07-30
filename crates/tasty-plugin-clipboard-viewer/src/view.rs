@@ -3,8 +3,8 @@
 //!
 //! rail(세로 타입 목록)은 폐기됐다 — 디자인 원칙: 단일 타입은 헤더 아래 뱃지로,
 //! 복수 타입은 가로 세그먼트 스위치([`type_switch`])로 표현한다. `SEG_COMPACT_AT`(5)
-//! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/`Files`
-//! 는 이 TODO(51/52)가 채운다 — Image/Html/Other 는 자매 TODO(48/49/50)가
+//! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/
+//! `Files`/`Image` 를 채운다(TODO51+52+48) — Html/Other 는 자매 TODO(49/50)가
 //! `ClipboardType`에 arm 을 추가하며 [`type_icon`]/[`type_body`]/[`footer_mime_text`]
 //! 에도 갈래를 보탠다.
 //!
@@ -15,9 +15,9 @@
 //! `draw_already_open` 이 `true` 를 반환하고, 호출부(`main.rs`)가 `popup.close` IPC 로
 //! host 에 닫기를 요청한다(host 가 chrome 생애주기를 계속 소유).
 
-// IMAGE/HTML/LAYERS 는 이 TODO(52)가 아직 안 쓴다(FILE 은 이 TODO가 씀) — 자매
-// TODO(48/49/50)가 ClipboardType 에 arm 을 추가하며 소비한다. build.rs 가 9개를
-// 한꺼번에 베이크해 그 TODO들이 build.rs 를 다시 건드릴 필요가 없게 해둔 의도된 상태.
+// HTML/LAYERS 는 아직 안 쓴다(FILE/IMAGE 는 이 브랜치 세트가 씀) — 자매 TODO(49/50)가
+// ClipboardType 에 arm 을 추가하며 소비한다. build.rs 가 9개를 한꺼번에 베이크해 그
+// TODO들이 build.rs 를 다시 건드릴 필요가 없게 해둔 의도된 상태(TODO51).
 #[allow(dead_code)]
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
@@ -47,6 +47,9 @@ const ICON_DRAW_RATIO: f32 = 0.7;
 /// CenterState 아이콘 크기(design 고정값 28 — Theme 아이콘 글리프 토큰은 16 상한이라
 /// 화면 전용 고정값으로 둔다, 기존 gallery specimen 의 480×360 선례와 동일 정책).
 const CENTER_ICON_SIZE: f32 = 28.0;
+
+/// image body 아이콘 크기(design 고정값 30 — `CENTER_ICON_SIZE` 와 동일 정책).
+const IMAGE_BODY_ICON_SIZE: f32 = 30.0;
 
 /// 주 인스턴스 popup 본문. 헤더는 항상 그리고, 그 아래는 read_error / empty / data
 /// 3분기(design `dataState`/`snap.status` 동형). 헤더·푸터의 Close 클릭 시 `true`.
@@ -185,10 +188,22 @@ fn data_state(
         .filter(|s| types.contains(s))
         .unwrap_or(types[0]);
 
-    // 우측 슬롯 — Text/Files 는 메타가 없다(빈 클로저). TODO49가 html 타입일
+    // 우측 슬롯 — design `t.meta`(html 이 아닌 타입 전체 공통 경로). Text/Files 는
+    // 메타가 없다(빈 클로저), Image 는 치수·크기 메타를 채운다. 클릭 반영 전(이번
+    // 프레임 진입 시점) active 기준으로 그린다 — type_switch 의 active 하이라이트도
+    // 동일하게 클릭 전 상태를 쓰므로 한 프레임 지연이 일관된다. TODO49가 html 타입일
     // 때 이 자리에 Pretty print 체크박스를 그리는 다른 클로저를 넘기면 된다 —
     // `type_bar` 시그니처는 바뀌지 않는다.
-    let picked = type_bar(ui, theme, tr, &types, active, |_ui, _theme| {});
+    let active_meta = state
+        .available
+        .iter()
+        .find(|(t, _)| *t == active)
+        .and_then(|(_, c)| c.meta_text());
+    let picked = type_bar(ui, theme, tr, &types, active, |ui, theme| {
+        if let Some(meta) = &active_meta {
+            meta_label(ui, theme, meta);
+        }
+    });
     if let Some(picked) = picked {
         state.selected = Some(picked);
     }
@@ -210,7 +225,7 @@ fn data_state(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     if let Some((ty, content)) = &cur {
-        type_body(&mut bui, theme, *ty, content);
+        type_body(&mut bui, theme, *ty, content, tr);
     }
 
     footer(ui, theme, tr, cur.as_ref().map(|(t, _)| *t), close);
@@ -378,14 +393,61 @@ fn type_bar(
     picked
 }
 
-/// design `TypeBody` — 이 TODO(52)는 Text/Files arm 을 채운다. Image/Html/Other 는
-/// 자매 TODO(48/49/50)가 이 match 에 arm 을 보탠다.
-fn type_body(ui: &mut egui::Ui, theme: &Theme, ty: ClipboardType, content: &ContentRepr) {
+/// design `TypeBody` — Text/Files/Image arm 을 채운다(TODO51+52+48). Html/Other 는
+/// 자매 TODO(49/50)가 이 match 에 arm 을 보탠다.
+fn type_body(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    ty: ClipboardType,
+    content: &ContentRepr,
+    tr: &Translator,
+) {
     match (ty, content) {
         (ClipboardType::Text, ContentRepr::Text(text)) => text_body(ui, theme, text),
         (ClipboardType::Files, ContentRepr::Files(files)) => files_body(ui, theme, files),
-        _ => {}
+        (ClipboardType::Image, ContentRepr::Image { .. }) => {
+            // meta_text() 는 Image 에 항상 Some — read_available() 이 항상 실제
+            // width/height/byte_len 을 채워 push 하므로.
+            let meta = content.meta_text().unwrap_or_default();
+            image_body(ui, theme, tr, &meta);
+        }
+        // ClipboardType 과 ContentRepr 는 read_available() 이 항상 같은 종류끼리만
+        // 짝지어 push 한다 — 다른 조합은 구조적으로 발생하지 않는다.
+        _ => unreachable!("ClipboardType/ContentRepr mismatch"),
     }
+}
+
+/// design `TypeBody` 의 image 분기 — 아이콘 + 메타(치수·크기) + "인라인 미리보기
+/// 없음" 안내 문구, well 안에 중앙 정렬(실제 픽셀 렌더링 없음 — design 결정, TODO48).
+fn image_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, meta: &str) {
+    well_centered(ui, theme, |ui| {
+        icon_glyph(
+            ui,
+            baked_icons::IMAGE,
+            IMAGE_BODY_ICON_SIZE,
+            theme.text_muted().to_egui(),
+        );
+        ui.add_space(theme.spacing_sm.value());
+        meta_label(ui, theme, meta);
+        ui.add_space(theme.spacing_xs.value());
+        ui.label(
+            egui::RichText::new(tr.t("clipboard_viewer.popup.image_no_preview"))
+                .italics()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_disabled().to_egui()),
+        );
+    });
+}
+
+/// design `cbMetaMono` — mono/caption 크기/text-muted 색의 메타 텍스트 한 줄(type-bar
+/// 우측 슬롯 + image body 공용).
+fn meta_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .monospace()
+            .size(theme.font_size_caption.value())
+            .color(theme.text_muted().to_egui()),
+    );
 }
 
 /// mono pre 텍스트 — well(border+radius+bg-app fill) 안에 스크롤(design `cbWell` +
@@ -455,9 +517,10 @@ fn truncated_galley(
     ui.fonts(|f| f.layout_job(job))
 }
 
-/// design `cbWell` — border+radius+bg-app fill 스크롤 컨테이너. 토큰 매핑:
-/// fill=`bg-app`, border=`separator`+`border-width`, radius=`corner_radius`.
-fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+/// design `cbWell` frame — border+radius+bg-app fill. 토큰 매핑: fill=`bg-app`,
+/// border=`separator`+`border-width`, radius=`corner_radius`. [`well`](스크롤)과
+/// [`well_centered`](중앙 정렬, image body) 가 공유한다.
+fn well_frame(theme: &Theme) -> egui::Frame {
     let margin = theme.spacing_md.value();
     egui::Frame::new()
         .fill(theme.bg_app().to_egui())
@@ -470,13 +533,33 @@ fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
             margin.round() as i8,
             theme.spacing_sm.value().round() as i8,
         ))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .id_salt("clip_body")
-                .show(ui, add);
-        });
+}
+
+/// design `cbWell` — 스크롤 컨테이너(text/html 같은 긴 콘텐츠).
+fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    well_frame(theme).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .id_salt("clip_body")
+            .show(ui, add);
+    });
+}
+
+/// design `cbWell` — 콘텐츠를 상하좌우 중앙에 배치(image body 전용, design jsx의
+/// image 분기가 `cbWell` 에 `display:flex; alignItems:center; justifyContent:center`
+/// 를 덧씌운 것과 동형).
+fn well_centered(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    well_frame(theme).show(ui, |ui| {
+        let h = ui.available_height().max(1.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), h),
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+            |ui| {
+                ui.vertical_centered(add);
+            },
+        );
+    });
 }
 
 /// 푸터 — mime 텍스트([`footer_mime_text`], 타입별 조건분기 수용 지점: 51 은
@@ -532,20 +615,23 @@ fn footer(
 }
 
 /// design 조건: 일반 타입은 `{mime}`, HTML 타입([[49-...]])은 `{mime} · {meta}`.
-/// Text/Files 는 기본 경로만 채운다 — `meta` 는 지금 미사용이지만 시그니처는 49가
-/// html arm 을 보탤 때 바꾸지 않아도 되게 남겨둔다.
+/// Text/Files/Image 는 기본 경로만 채운다 — `meta` 는 지금 미사용이지만 시그니처는
+/// 49가 html arm 을 보탤 때 바꾸지 않아도 되게 남겨둔다.
 fn footer_mime_text(ty: ClipboardType, _meta: Option<&str>) -> String {
     match ty {
-        ClipboardType::Text | ClipboardType::Files => ty.mime_str().to_string(),
+        ClipboardType::Text | ClipboardType::Files | ClipboardType::Image => {
+            ty.mime_str().to_string()
+        }
     }
 }
 
-/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Text/Files 는 이 TODO가 채운다 —
+/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Text/Files/Image 를 채운다 —
 /// 자매 TODO가 `ClipboardType`에 arm 을 추가하며 이 match 에도 갈래를 보탠다.
 fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     match ty {
         ClipboardType::Text => baked_icons::TEXT_LEFT,
         ClipboardType::Files => baked_icons::FILE,
+        ClipboardType::Image => baked_icons::IMAGE,
     }
 }
 
@@ -651,6 +737,11 @@ mod tests {
     }
 
     #[test]
+    fn footer_mime_text_image_is_rgba8_mime_only() {
+        assert_eq!(footer_mime_text(ClipboardType::Image, None), "image/rgba8");
+    }
+
+    #[test]
     fn type_icon_text_uses_text_left_glyph() {
         // 값 비교 — `const` 는 참조마다 다른 주소로 프로모트될 수 있어(ptr::eq 로는
         // 신뢰 불가) 폴리라인 내용 자체를 비교한다.
@@ -668,5 +759,10 @@ mod tests {
     #[test]
     fn type_icon_files_uses_file_glyph() {
         assert_eq!(type_icon(ClipboardType::Files), baked_icons::FILE);
+    }
+
+    #[test]
+    fn type_icon_image_uses_image_glyph() {
+        assert_eq!(type_icon(ClipboardType::Image), baked_icons::IMAGE);
     }
 }

@@ -10,17 +10,19 @@
 //! plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock 으로
 //! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
 //!
-//! 5 상태를 나란히 노출:
+//! 6 상태를 나란히 노출:
 //! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
 //! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
 //!   body 는 아이콘+경로 한 줄씩(TODO52).
+//! - **image** — Image 타입 body(아이콘 + 치수·크기 메타 + "인라인 미리보기 없음"
+//!   안내, 실제 픽셀 렌더링 없음 — design 결정, TODO48).
 //! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
 //!
-//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 2종
-//! (Text/Files)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한 한계이며
-//! [[48/49/50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
+//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 3종
+//! (Text/Files/Image)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한
+//! 한계이며 [[49/50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
 //! (`spec::note` 참고).
 
 use tasty_type_appearance::theme::Theme;
@@ -65,6 +67,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "files — type-bar(segmented Text/Files) / body(icon+path rows)",
             |ui| files_popup(ui, theme),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "image — icon + meta + \"no inline preview\"",
+            |ui| image_popup(ui, theme),
         );
         spec::cluster(ui, theme, "empty clipboard", |ui| {
             center_popup(
@@ -112,7 +120,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("footer", "mime(mono caption) + Close(secondary)"),
             (
                 "states",
-                "data(text) · data(files) · empty · read-failed · already-open",
+                "data(text) · data(files) · image · empty · read-failed · already-open",
             ),
         ],
         &[
@@ -140,16 +148,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "TODO51/52 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/body/\
-         footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 하나로만, \
-         2개(Text/Files, TODO52)면 가로 세그먼트로 보여준다 — `SEG_COMPACT_AT`(5) 이상의 \
-         압축 세그먼트(비활성 세그먼트가 아이콘 전용으로 축소)는 골격만 갖춰뒀고 \
-         [[48/49/50]]이 타입을 늘리면 실제로 재현된다(그때 이 specimen 도 압축 세그먼트 \
-         상태를 추가한다). files body 는 아이콘+mono 경로 한 줄씩, 긴 경로는 말줄임 \
-         처리한다(design ellipsis 전사). 헤더/푸터의 Close 버튼은 host 의 outside-click/\
-         Esc 와 기능 중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
+        "TODO51/52/48 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
+         body/footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 \
+         하나로만, 2개 이상(Text/Files, TODO52 · Text/Image, TODO48)이면 가로 세그먼트로 \
+         보여준다 — `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트(비활성 세그먼트가 아이콘 \
+         전용으로 축소)는 골격만 갖춰뒀고 [[49/50]]이 타입을 늘리면 실제로 재현된다(그때 \
+         이 specimen 도 압축 세그먼트 상태를 추가한다). files body 는 아이콘+mono 경로 \
+         한 줄씩, 긴 경로는 말줄임 처리한다(design ellipsis 전사). image body 는 실제 \
+         픽셀을 렌더링하지 않고 아이콘+치수·크기 메타+안내 문구만 중앙 정렬로 보여준다 \
+         (design 결정, TODO48). 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 \
+         기능 중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
     );
 }
+
+/// image body 메타 샘플 — design mock(`clipboard_viewer.html` `multi.types` image 항목)
+/// 과 동일한 예시 수치. 실제 값은 arboard `ImageData::width/height` + `bytes.len()`
+/// 근사(`crates/tasty-plugin-clipboard-viewer/src/clipboard.rs::format_bytes`).
+const IMAGE_META: &str = "1920×1080 · 7.9 MB";
 
 /// 정상 데이터 상태 — header + type-bar(배지) + body(well) + footer 4행.
 fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
@@ -169,6 +184,17 @@ fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
         type_bar_segmented_row(ui, theme);
         files_body_row(ui, theme);
         footer_row_files(ui, theme);
+    });
+}
+
+/// image 타입 상태 — header + type-bar(Image 뱃지+meta) + body(아이콘+메타+안내) +
+/// footer 4행(실제 렌더링 없음, TODO48).
+fn image_popup(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
+        header_row(ui, theme);
+        image_type_bar_row(ui, theme);
+        image_body_row(ui, theme);
+        image_footer_row(ui, theme);
     });
 }
 
@@ -207,6 +233,50 @@ fn type_bar_segmented_row(ui: &mut egui::Ui, theme: &Theme) {
                 seg(ui, theme, icons::FILE, "Files", true);
             });
         });
+
+    hline(ui, theme, rect.bottom());
+}
+
+/// type-bar — Image 뱃지(좌) + meta 텍스트(우, design `t.meta` 슬롯).
+fn image_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+
+    let content = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        egui::pos2(rect.right() - pad_x, rect.bottom()),
+    );
+    let mut lui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    lui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    kit::icon(
+        &mut lui,
+        icons::IMAGE,
+        theme.icon_glyph_size_sm.value(),
+        theme.text_muted().to_egui(),
+    );
+    tag(&mut lui, theme, "Image", TagVariant::Accent, false);
+
+    let mut rui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    rui.label(
+        egui::RichText::new(IMAGE_META)
+            .monospace()
+            .size(theme.font_size_caption.value())
+            .color(theme.text_muted().to_egui()),
+    );
 
     hline(ui, theme, rect.bottom());
 }
@@ -290,6 +360,62 @@ fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
+/// body — well 안에 아이콘(30px 고정) + 메타 + "인라인 미리보기 없음" 안내를 상하좌우
+/// 중앙 정렬(design jsx image 분기의 `cbWell` + `alignItems/justifyContent: center`).
+fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
+    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
+    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let h = POPUP_H - header_h - type_bar_h - footer_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+
+    let margin = theme.spacing_md.value();
+    let well = rect.shrink(margin);
+    let p = ui.painter();
+    p.rect(
+        well,
+        theme.corner_radius.value(),
+        theme.bg_app().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+
+    const IMAGE_BODY_ICON_SIZE: f32 = 30.0;
+    let gap = theme.spacing_sm.value();
+    let icon_h = IMAGE_BODY_ICON_SIZE;
+    let meta_h = theme.font_size_caption.value();
+    let sub_h = theme.font_size_caption.value();
+    let block_h = icon_h + gap + meta_h + theme.spacing_xs.value() + sub_h;
+    let mut y = well.center().y - block_h / 2.0;
+
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(well.center().x, y + icon_h / 2.0),
+        egui::vec2(icon_h, icon_h),
+    );
+    icons::IMAGE
+        .image(IMAGE_BODY_ICON_SIZE, theme.text_muted().to_egui())
+        .paint_at(ui, icon_rect);
+    y += icon_h + gap;
+
+    ui.painter().text(
+        egui::pos2(well.center().x, y),
+        egui::Align2::CENTER_TOP,
+        IMAGE_META,
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+    y += meta_h + theme.spacing_xs.value();
+
+    ui.painter().text(
+        egui::pos2(well.center().x, y),
+        egui::Align2::CENTER_TOP,
+        "No inline image preview",
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        theme.text_disabled().to_egui(),
+    );
+}
+
 /// footer(files) — mime(`text/uri-list`) + 우측 Close(secondary).
 fn footer_row_files(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
@@ -308,6 +434,49 @@ fn footer_row_files(ui: &mut egui::Ui, theme: &Theme) {
         egui::pos2(rect.left() + pad_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         "text/uri-list",
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    let btn_w = 64.0;
+    let btn_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
+        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
+    );
+    ui.painter().rect(
+        btn_rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        btn_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Close",
+        egui::FontId::proportional(theme.font_size_term_sm.value()),
+        theme.text_secondary().to_egui(),
+    );
+}
+
+/// footer — mime(`image/rgba8`) + 우측 Close(secondary).
+fn image_footer_row(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top() + theme.border_width.value() * 0.5,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "image/rgba8",
         egui::FontId::monospace(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );

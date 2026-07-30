@@ -15,7 +15,7 @@
 
 - **header** — 클립보드 아이콘 + "Clipboard" 타이틀(14px/600) + `snapshot` 뱃지(default tag) + 우측 close IconButton.
 - **type-bar** — 좌측 [`type_switch`]: 가용 타입이 1개면 아이콘 + accent 뱃지(읽기전용), 2개 이상이면 가로 세그먼트 버튼 그룹(rail 없음). 5개 이상(`SEG_COMPACT_AT`)이면 비활성 세그먼트가 아이콘 전용으로 압축되고 hover 시 전체 타입명 툴팁이 뜬다. 우측 슬롯은 메타 텍스트 또는 커스텀 위젯(예: HTML 타입의 Pretty print 체크박스)으로 스왑 가능.
-- **body** — well(border+radius+bg-app 스크롤 컨테이너) 안에 타입별 콘텐츠. 현재 Text(mono pre) · Files(아이콘+mono 경로 한 줄씩, 긴 경로는 말줄임) — Image/HTML/기타 포맷은 자매 작업이 추가.
+- **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠. Text 는 mono pre 스크롤(`well`). Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤). Image 는 **인라인 렌더링 없음**(design 결정, TODO48) — well 을 상하좌우 중앙 정렬로 바꿔(`well_centered`) 아이콘(30px 고정) + 치수·용량 메타(mono caption) + "인라인 미리보기 없음" 안내(caption, italic, `text-disabled`)만 표시한다. HTML/기타 포맷은 자매 작업이 추가.
 - **footer** — mime 텍스트(mono caption, 좌) + Close 버튼(secondary, 우). host 의 outside-click/Esc 와 기능 중복이지만 디자인이 명시적으로 요구.
 - (빈 상태) 아이콘 + 굵은 타이틀 + 옅은 부제 2줄.
 - (읽기 실패) 위와 동일 구조, danger 톤.
@@ -54,8 +54,11 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 | type-bar 행 배경 | `bg-sidebar` | |
 | 단일 타입 뱃지 | `tag`(Accent variant) + `text-muted` 아이콘 | |
 | 세그먼트(2개 이상) | `border-default` 그룹 보더 + `corner-radius`, active `accent-primary`/`text-on-accent`, idle `text-secondary` | |
-| body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `ScrollArea` |
+| body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `ScrollArea`(text) 또는 중앙 정렬(image, `well_centered`) |
 | body 미리보기 텍스트 | `font-size-term-sm`(12) mono + `text-primary` | |
+| type-bar 우측 메타(image 등) | `font-size-caption`(11) mono + `text-muted` | design `cbMetaMono`, `meta_label` |
+| image body 아이콘 | 고정 30px(Theme 아이콘 토큰 16 상한 밖) + `text-muted` | `CENTER_ICON_SIZE`(28)와 동일 정책 |
+| image body "미리보기 없음" 안내 | `font-size-caption`(11) italic + `text-disabled` | design `fontStyle: italic` |
 | footer mime 텍스트 | `font-size-caption`(11) mono + `text-muted` | |
 | footer Close 버튼 | `tasty_ui_widgets::Button`(Secondary) | |
 | CenterState 타이틀 | `font-size-body`(13) + `text-secondary`(또는 danger 시 `accent-danger`) | `.strong()` |
@@ -66,10 +69,11 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 
 `crates/tasty-gallery/src/catalog/components/clipboard_viewer.rs` — Overlays › `Clipboard viewer
 popup`. header/type-bar(배지)/body(well)/footer 4행(text) + header/type-bar(Text/Files 세그먼트)/
-body(아이콘+경로 행)/footer 4행(files) + empty/read-failed/already-open 3 CenterState 를 토큰으로
-전사(본체/plugin crate 비의존, 픽셀 동일성 비목표). `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는
-실 데이터가 2종(Text/Files)뿐이라 아직 specimen 에 없다 — [[48/49/50]]이 타입을 늘리면 추가한다.
-3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-overlays).
+body(아이콘+경로 행)/footer 4행(files) + image 상태(아이콘+메타+안내문구) + empty/read-failed/
+already-open 3 CenterState 를 토큰으로 전사(본체/plugin crate 비의존, 픽셀 동일성 비목표).
+`SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 실 데이터가 3종(Text/Files/Image)뿐이라 아직 specimen
+에 없다 — [[49/50]]이 타입을 늘리면 추가한다. 3자 매핑:
+[design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-overlays).
 
 ## 시각 소스
 

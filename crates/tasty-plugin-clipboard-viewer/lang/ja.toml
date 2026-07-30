@@ -16,7 +16,9 @@ read_failed_title = "クリップボードを読み取れませんでした"
 read_failed_sub = "システムクリップボードのハンドルを開けませんでした。それを占有している可能性のある他のアプリを閉じてから開き直してください。"
 already_open_title = "クリップボードビューアは既に開いています"
 already_open_sub = "スナップショットウィンドウは一度に1つだけ実行されます — 既存のウィンドウを前面に表示しました。"
+image_no_preview = "インラインプレビューには対応していません"
 
 [clipboard_viewer.type]
 text = "テキスト"
 files = "ファイル"
+image = "画像"
