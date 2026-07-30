@@ -7,14 +7,17 @@ use crate::settings_ui::PluginShortcutSnapshot;
 
 /// 키바인딩 탭 전 서브탭(`entries`/`quick_switch`/`entries_scripts`)이 공유하는
 /// 좌측 라벨 컬럼 고정폭. `remote_transfer.rs`(`LABEL_COL_WIDTH`)의 150px을
-/// 시작점으로 삼되, en/ko/ja 3개 언어 전체 라벨을 실제 egui 폰트 스택(CJK
-/// fallback 포함)으로 실측한 결과 그대로 쓰면 잘리는 라벨이 있어 올렸다. 최장
-/// 실측치는 ja `screenshot_to_clipboard_label`("スクリーンショットをクリップボードへ:")
-/// 의 237px((?) 아이콘 슬롯 포함) — 여기에 여유를 두고 4px 그리드에 맞춰 260으로
-/// 고정한다. 서브탭마다 최장 라벨의 실측 폭이 달라 컬럼 폭이 제각각이던 문제
-/// (TODO45)를 이 상수로 통일한다. 4px 그리드 밖 화면 전용 고정 치수 — 대응 Theme
-/// 필드 없음(theme.md 참고).
-pub(super) const LABEL_COL_WIDTH: LogicalPx = LogicalPx(260.0);
+/// 시작점으로 삼되, en/ko/ja 3개 언어 전체 라벨을 실제 프로덕션 egui 폰트
+/// 스택(`TextStyle::Body` = `Theme::font_size_body` 13.0px + CJK fallback, `label_width.rs`
+/// 참고)으로 실측한 결과 그대로 쓰면 잘리는 라벨이 있어 올렸다. 최장 실측치는
+/// ja `screenshot_to_clipboard_label`("スクリーンショットをクリップボードへ:")의
+/// 255.28px((?) 아이콘 슬롯 18px 포함) — 여기에 여유를 두고 4px 그리드에 맞춰
+/// 288로 고정한다. 이 실측치는 `label_width.rs`의 `labels_fit_within_fixed_column`
+/// 테스트로 항상 재현·재확인 가능하다(라벨 추가/번역 변경 시 실패해 알려준다).
+/// 서브탭마다 최장 라벨의 실측 폭이 달라 컬럼 폭이 제각각이던 문제(TODO45)를
+/// 이 상수로 통일한다. 4px 그리드 밖 화면 전용 고정 치수 — 대응 Theme 필드
+/// 없음(theme.md 참고).
+pub(super) const LABEL_COL_WIDTH: LogicalPx = LogicalPx(288.0);
 
 /// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
 #[derive(Debug, Clone)]
@@ -486,6 +489,8 @@ pub fn draw_keybindings_tab(
 mod capture;
 mod entries;
 mod entries_scripts;
+#[cfg(test)]
+mod label_width;
 mod plugins;
 mod preset;
 mod quick_switch;
