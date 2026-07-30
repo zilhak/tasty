@@ -351,22 +351,6 @@ pub(super) fn draw_quick_switch_section(
 
     let is_individual = is_individual_axis(keybindings, kind);
 
-    // 라벨 컬럼 폭 — 이 섹션의 모든 라벨(슬롯 + 다음/이전) 중 최장 기준.
-    let label_col_width = {
-        let font_id = egui::TextStyle::Body.resolve(ui.style());
-        kind.all_targets()
-            .iter()
-            .map(|&tg| {
-                let text = format!("{}:", bare_display_label(tg));
-                ui.ctx().fonts(|f| {
-                    f.layout_no_wrap(text, font_id.clone(), egui::Color32::WHITE)
-                        .size()
-                        .x
-                })
-            })
-            .fold(0.0_f32, f32::max)
-    };
-
     // 슬롯 1~N.
     for i in 0..kind.slot_count() {
         slot_row(
@@ -375,7 +359,6 @@ pub(super) fn draw_quick_switch_section(
             recording_field,
             can_record,
             kind.slot_target(i),
-            label_col_width,
             is_individual,
         );
     }
@@ -390,7 +373,6 @@ pub(super) fn draw_quick_switch_section(
             recording_field,
             can_record,
             tg,
-            label_col_width,
             is_individual,
         );
     }
@@ -468,7 +450,6 @@ fn slot_row(
     recording_field: &mut Option<RecordingSlot>,
     can_record: bool,
     target: BareTarget,
-    label_col_width: f32,
     is_individual: bool,
 ) {
     let th = crate::theme::theme();
@@ -483,9 +464,10 @@ fn slot_row(
     );
 
     ui.horizontal_top(|ui| {
+        // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(entries.rs 와 동일 관례).
         ui.allocate_ui_with_layout(
-            egui::vec2(label_col_width, BUTTON_HEIGHT),
-            egui::Layout::right_to_left(egui::Align::Center),
+            egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(format!("{}:", bare_display_label(target)));
             },

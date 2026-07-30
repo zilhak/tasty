@@ -67,37 +67,18 @@ pub(super) fn draw_keybinding_entries(
     const ROW_GAP: f32 = 4.0;
     const HELP_HINT_GAP: f32 = 4.0;
 
-    // (?) 아이콘 자리(아이콘 폭 + 라벨과의 간격). desc_key 유무와 무관하게 모든 행에서
-    // 동일하게 예약해야 Some/None 행이 섞여도 라벨 컬럼 정렬이 흐트러지지 않는다.
-    let help_hint_slot_width = th.icon_glyph_size_sm.value() + HELP_HINT_GAP;
-
-    // 라벨 컬럼 폭을 이 탭에 표시되는 모든 엔트리 중 가장 긴 라벨 기준으로 계산.
-    // 라벨 영역과 버튼 영역이 명확히 분리되고 모든 행에서 정렬되도록 한다.
-    let label_col_width = {
-        let font_id = egui::TextStyle::Body.resolve(ui.style());
-        entries
-            .iter()
-            .map(|(_, label_key, _)| {
-                let text = t(label_key).to_string();
-                ui.ctx().fonts(|f| {
-                    f.layout_no_wrap(text, font_id.clone(), egui::Color32::WHITE)
-                        .size()
-                        .x
-                })
-            })
-            .fold(0.0_f32, f32::max)
-            + help_hint_slot_width
-    };
-
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
-            // 라벨 컬럼: 고정 폭, 우측 정렬(콜론이 항상 버튼 영역 바로 앞).
-            // right_to_left 이므로 먼저 add한 위젯이 오른쪽 끝에 배치된다 — (?) 을
-            // 라벨보다 먼저 add해 "라벨: (?)" 순서(= (?) 가 버튼 쪽에 가장 가깝게)를 만든다.
+            // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(remote_transfer.rs
+            // 의 settings_row() 와 동일 관례). left_to_right 이므로 먼저 add한
+            // 위젯이 왼쪽 끝에 배치된다 — 라벨을 먼저 add해 "라벨 (?)" 순서(= (?)
+            // 가 라벨 바로 뒤에 이어짐)를 만든다.
             ui.allocate_ui_with_layout(
-                egui::vec2(label_col_width, BUTTON_HEIGHT),
-                egui::Layout::right_to_left(egui::Align::Center),
+                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
+                    ui.label(t(label_key));
+                    ui.add_space(HELP_HINT_GAP);
                     if let Some(desc_key) = desc_key {
                         HelpHint::new(t(desc_key))
                             .placement(TooltipPlacement::Bottom)
@@ -105,8 +86,6 @@ pub(super) fn draw_keybinding_entries(
                     } else {
                         ui.add_space(th.icon_glyph_size_sm.value());
                     }
-                    ui.add_space(HELP_HINT_GAP);
-                    ui.label(t(label_key));
                 },
             );
             ui.add_space(LABEL_GAP);

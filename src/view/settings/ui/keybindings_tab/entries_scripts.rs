@@ -79,20 +79,6 @@ pub(super) fn draw_script_bindings(
         })
         .collect();
 
-    let label_col_width = {
-        let font_id = egui::TextStyle::Body.resolve(ui.style());
-        scripts
-            .iter()
-            .map(|(_, name)| {
-                ui.ctx().fonts(|f| {
-                    f.layout_no_wrap(name.clone(), font_id.clone(), egui::Color32::WHITE)
-                        .size()
-                        .x
-                })
-            })
-            .fold(0.0_f32, f32::max)
-    };
-
     for (id, name) in &scripts {
         let slot_id = format!("{SCRIPT_SLOT_PREFIX}{id}");
         let is_recording = matches!(recording_field, Some(slot) if slot.field_id == slot_id);
@@ -103,11 +89,16 @@ pub(super) fn draw_script_bindings(
             .to_string();
 
         ui.horizontal_top(|ui| {
+            // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(entries.rs 와 동일
+            // 관례). 사용자 정의 스크립트 이름은 길이 상한이 없어 다른 서브탭과
+            // 달리 고정폭을 넘을 수 있다 — 잘리는 대신 말줄임(…) 처리하고, hover
+            // 툴팁으로 전체 이름을 확인할 수 있게 한다.
             ui.allocate_ui_with_layout(
-                egui::vec2(label_col_width, BUTTON_HEIGHT),
-                egui::Layout::right_to_left(egui::Align::Center),
+                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    ui.label(name);
+                    ui.add(egui::Label::new(name).truncate())
+                        .on_hover_text(name);
                 },
             );
             ui.add_space(LABEL_GAP);
