@@ -1,6 +1,6 @@
 //! `session.*` IPC 핸들러 — 자식 agent 에게 발급하는 [`SessionToken`] 관리.
 //!
-//! Phase 6.2c. 호스트가 띄운 child 프로세스(예: `claude.spawn`)는 시작 시
+//! 호스트가 띄운 child 프로세스(예: `claude.spawn`)는 시작 시
 //! 환경변수 `TASTY_SESSION_TOKEN` 으로 토큰을 받아 모든 IPC envelope 에 첨부한다.
 //! 호스트는 [`crate::ipc::session::SessionStore`] 로 검증해
 //! [`CallerContext::Agent`] 로 분기 — agent_id 위조 방지의 핵심.
@@ -324,7 +324,7 @@ pub fn handle_list_agent_permissions(
     }
 }
 
-/// Phase 6.4c — `plugin.request_permission` 핸들러. agent 가 자기 권한 부족을
+/// `plugin.request_permission` 핸들러. agent 가 자기 권한 부족을
 /// 미리 알고 capability_elevation approval 을 자체 발행할 entry point.
 ///
 /// params:

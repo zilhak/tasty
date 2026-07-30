@@ -9,9 +9,9 @@
 //!
 //! 영속: `tasty.agent.rate_limit.<id>` (Global scope — agent/workspace 무관).
 //!
-//! 본 단계(Phase 5.5)는 **CRUD + try_consume** 만 제공한다. IPC dispatcher
-//! 자동 평가 미들웨어는 후속 단계에서 결합 (`agent::check_rate_limit`).
-//! 호출자는 `try_consume` 으로 토큰 소비를 명시적으로 검사할 수 있다.
+//! CRUD + `try_consume` 을 제공하며, IPC dispatcher 미들웨어(`handler.rs` 의
+//! `should_rate_limit` + `rate_limit_try_consume`)가 매 호출마다 자동 평가한다.
+//! 호출자가 직접 `try_consume` 으로 토큰 소비를 검사할 수도 있다.
 //!
 //! 토큰 버킷:
 //! - 용량 = `burst` (기본 = `limit`)

@@ -236,7 +236,7 @@ pub fn handle_bb_exists(
     }
 }
 
-// ---- blackboard snapshot (Phase 7.4) ----
+// ---- blackboard snapshot ----
 
 pub fn handle_bb_snapshot(
     core: &Core,
@@ -378,7 +378,7 @@ pub fn handle_bb_snapshot_restore(
 }
 
 // ============================================================
-// Plan `memory.plan_*` — Phase 7.2
+// Plan `memory.plan_*`
 // ============================================================
 //
 // 워크스페이스 단위 선언적 work breakdown. 한 plan = `tasty.plan.<plan_id>`

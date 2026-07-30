@@ -7,7 +7,7 @@ pub struct JsonRpcRequest {
     #[serde(default)]
     pub params: serde_json::Value,
     pub id: Option<serde_json::Value>,
-    /// Phase 6.2 — 자식 agent (claude.spawn 등으로 호스트가 띄운 프로세스) 가
+    /// 자식 agent (claude.spawn 등으로 호스트가 띄운 프로세스) 가
     /// 호스트에 IPC 호출 시 자기 신원을 증명하는 token. 64-char lowercase hex.
     /// 호스트는 [`crate::ipc::session::SessionStore`] 로 resolve 해 `CallerContext::Agent`
     /// 를 만든다. 토큰이 invalid/expired/revoked 면 `permission_denied` 로 거부 —

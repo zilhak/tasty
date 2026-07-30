@@ -1,4 +1,4 @@
-//! Tasty Agent — 다중 에이전트 협업 primitive (Phase 5).
+//! Tasty Agent — 다중 에이전트 협업 primitive.
 //!
 //! 1차 시민으로 다음을 제공:
 //! - **Task DAG**: 의존성을 가진 task 그래프. state 머신과 사이클 검출.

@@ -318,7 +318,7 @@ pub fn handle_cap_reset(
 }
 
 // ============================================================
-// Cap 평가 / 액션 발화 — Phase 4.3b (Notify 만 우선)
+// Cap 평가 / 액션 발화
 // ============================================================
 
 /// 매 record 후 호출되는 best-effort 후크. agent+metric 이 일치하고 아직
@@ -326,8 +326,8 @@ pub fn handle_cap_reset(
 ///
 /// 모든 실패는 warn 로그로만 — record 자체의 응답에는 영향이 없다.
 ///
-/// Phase 4.3b: `Notify` 만 발화 (단순 알림 + 차단 없음). `Stop`/`Pause`/`RequireApproval`
-/// 는 후속 sub-phase (호출 전 evaluator + dispatcher 거부) 에서 결합한다.
+/// `Notify`/`RequireApproval`/`Pause` 모두 여기서 발화된다 — `Pause`/`RequireApproval`
+/// 의 실제 IPC 차단은 호출 전 [`check_cap_block`](super::check_cap_block) 이 담당한다.
 pub(super) fn evaluate_caps_after_record(
     core: &mut Core,
     state: &mut AppState,
@@ -371,9 +371,10 @@ pub(super) fn evaluate_caps_after_record(
     }
 }
 
-/// cap 액션을 실제 시스템으로 발화. Phase 4.3b 는 `Notify` 만 처리; 나머지 액션은
-/// 미래 sub-phase 에서 결합되며 현재는 로그만 남긴다 (memory 상의 `triggered` 필드는
-/// 이미 기록됐으므로 status 조회로 확인 가능).
+/// cap 액션을 실제 시스템으로 발화. `Notify` 는 알림만; `RequireApproval` 은
+/// approval.request 자동 발행 + IPC 차단; `Pause` 는 알림 + IPC 차단(차단 자체는
+/// `check_cap_block` 이 담당) — memory 상의 `triggered` 필드는 이미 기록됐으므로
+/// status 조회로도 확인 가능하다.
 pub(super) fn fire_cap_action(
     core: &mut Core,
     state: &mut AppState,
@@ -402,7 +403,7 @@ pub(super) fn fire_cap_action(
     }
 }
 
-/// `RequireApproval` 액션 (Phase 4.3d): cap 이 처음 triggered 되는 시점에
+/// `RequireApproval` 액션: cap 이 처음 triggered 되는 시점에
 /// host 가 approval.request 를 자동 발행한다. 이후 plugin 의 모든 IPC 는
 /// `check_cap_block` 이 거부 — 사용자는 popup 에서 승인 후 `cap.reset` 으로
 /// triggered 를 풀어야 plugin 이 재개된다 (또는 거부 후 그대로 둠).
@@ -498,5 +499,5 @@ pub(super) fn fire_notify(
 }
 
 // ============================================================
-// Anomaly — Phase 4.4
+// Anomaly
 // ============================================================

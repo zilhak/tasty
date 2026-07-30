@@ -273,6 +273,7 @@ pub fn handle_top(
 }
 
 // ============================================================
-// Cost cap — Phase 4.3a (CRUD + status/reset). eval/action wiring 은
-// 후속 sub-phase 에서 dispatcher 미들웨어에 결합한다.
+// Cost cap (CRUD + status/reset). eval/action 발화는 cap.rs 의
+// evaluate_caps_after_record/fire_cap_action, 차단은 handler.rs 의
+// check_cap_block 이 담당한다.
 // ============================================================

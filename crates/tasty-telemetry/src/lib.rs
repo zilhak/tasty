@@ -1,4 +1,4 @@
-//! Agent telemetry — 메트릭 기록·롤업·조회 + cap·anomaly (Phase 4).
+//! Agent telemetry — 메트릭 기록·롤업·조회 + cap·anomaly.
 //!
 //! ## 책임 범위
 //!

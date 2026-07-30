@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 /// `UserPromptSubmit` 은 child 가 *2 번째 이후 prompt* 를 받을 때 ClaudeState 의
 /// idle=true (직전 Stop hook 잔재) 를 clear 하는 데 필수. 미등록 시 multi-round
 /// 대화에서 idle 상태 조회(`terminal.children` 등)가 *진짜 active 인 child* 를
-/// idle 로 잘못 보고하는 transient state bug 발생 (Phase G.A 진행 중 확인).
+/// idle 로 잘못 보고하는 transient state bug 발생 (구현 중 확인됨).
 pub const MANAGED_HOOKS: &[(&str, &str)] = &[
     ("Stop", "stop"),
     ("Notification", "notification"),

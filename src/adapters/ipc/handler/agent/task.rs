@@ -567,7 +567,7 @@ pub fn handle_task_set_result(
 }
 
 // ============================================================
-// agent.rate_limit_*  (Phase 5.5)
+// agent.rate_limit_*
 // ============================================================
 
 pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {

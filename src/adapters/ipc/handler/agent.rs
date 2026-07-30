@@ -1,4 +1,4 @@
-//! `agent.*` IPC 핸들러 — 협업 primitive (Phase 5).
+//! `agent.*` IPC 핸들러 — 협업 primitive.
 //!
 //! 본 모듈은 `tasty-agent` 의 도메인 모델을 IPC 표면으로 노출한다. 영속은
 //! `tasty-memory` 의 workspace scope 에 위임. **task 실행 자체는 본 phase

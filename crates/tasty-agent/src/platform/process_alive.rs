@@ -1,8 +1,8 @@
 //! Cross-platform pid liveness probe — Unix `kill(pid, 0)` / Windows
 //! `OpenProcess + GetExitCodeProcess == STILL_ACTIVE`.
 //!
-//! 호스트 재시작 후 Running 잔여 task 의 자식 프로세스 부활 시나리오에서 사용
-//! 예정 (Phase H.F 본문에서는 호출 X — helper 만 준비).
+//! 호스트 재시작 후 Running 잔여 task 의 자식 프로세스 생존 여부를 판별하는 데
+//! 쓰인다 (`runner_thread::reload_persistent_handles`, `runner_host` 의 poll 경로).
 
 #[cfg(unix)]
 pub fn is_alive(pid: u32) -> bool {

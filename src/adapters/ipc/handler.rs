@@ -115,7 +115,7 @@ pub fn handle_with_caller(
         return JsonRpcResponse::error(id, -32001, format!("permission_denied: {e}"));
     }
 
-    // Phase 4.3c 텔레메트리 cap 차단: triggered + (Stop|Pause) 인 cap 이 있는
+    // 텔레메트리 cap 차단: triggered + (Pause|RequireApproval) 인 cap 이 있는
     // plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
     // `telemetry.cap.reset` 으로 해제 가능.
     if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
@@ -133,7 +133,7 @@ pub fn handle_with_caller(
         return JsonRpcResponse::error(id, -32007, format!("cap_blocked: {reason}"));
     }
 
-    // Phase I.A.2 rate_limit 미들웨어: 등록된 (agent, "ipc_calls") 한도 초과 시
+    // rate_limit 미들웨어: 등록된 (agent, "ipc_calls") 한도 초과 시
     // -32010 throttled 응답 + audit Deny. 자가 회복을 위해 agent.rate_limit_*
     // 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
     // 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
@@ -165,12 +165,12 @@ pub fn handle_with_caller(
         }
     }
 
-    // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
+    // 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
-    // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다 (Phase 4.3b).
+    // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
     telemetry::record_ipc_call(core, state, engine, caller, canonical);
 
-    // Phase 6.5a audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
+    // audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
     // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
     let seq = engine.telemetry_seq.next();
     crate::ipc::audit::record(
@@ -209,7 +209,7 @@ pub fn handle_with_caller(
     JsonRpcResponse::method_not_found(id, &request.method)
 }
 
-/// IPC rate_limit 미들웨어가 적용되는 caller/method 조합인가? (Phase I.A.2)
+/// IPC rate_limit 미들웨어가 적용되는 caller/method 조합인가?
 ///
 /// 제외 정책:
 /// - **Local**: 사용자가 직접 CLI/network 로 호출 — 무제한.
@@ -576,7 +576,7 @@ fn route_engine_handler(
         }
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(core, state, engine, caller, id, &request.params),
-        // memory: blackboard (Phase 7.1 — workspace-scoped 키-값 컬렉션)
+        // memory: blackboard (workspace-scoped 키-값 컬렉션)
         "memory.bb_create" => {
             memory::handle_bb_create(core, state, engine, caller, id, &request.params)
         }
@@ -600,7 +600,7 @@ fn route_engine_handler(
         "memory.bb_exists" => {
             memory::handle_bb_exists(core, state, engine, caller, id, &request.params)
         }
-        // memory: bb snapshot (Phase 7.4)
+        // memory: bb snapshot
         "memory.bb_snapshot" => {
             memory::handle_bb_snapshot(core, state, engine, caller, id, &request.params)
         }
@@ -616,7 +616,7 @@ fn route_engine_handler(
         "memory.bb_snapshot_restore" => {
             memory::handle_bb_snapshot_restore(core, state, engine, caller, id, &request.params)
         }
-        // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
+        // memory: plan (workspace-scoped 선언적 work breakdown)
         "memory.plan_create" => {
             memory::handle_plan_create(core, state, engine, caller, id, &request.params)
         }
@@ -638,7 +638,7 @@ fn route_engine_handler(
         "memory.plan_update_step" => {
             memory::handle_plan_update_step(core, state, engine, caller, id, &request.params)
         }
-        // memory: cache (Phase 7.3 — workspace-scoped TTL 캐시)
+        // memory: cache (workspace-scoped TTL 캐시)
         "memory.cache_put" => {
             memory::handle_cache_put(core, state, engine, caller, id, &request.params)
         }
@@ -698,7 +698,7 @@ fn route_engine_handler(
             telemetry::handle_timeseries(core, state, engine, caller, id, &request.params)
         }
         "telemetry.top" => telemetry::handle_top(core, state, engine, caller, id, &request.params),
-        // telemetry.cap — Phase 4.3 (CRUD; eval/action wiring 은 후속)
+        // telemetry.cap — CRUD + eval/action 발화(cap.rs)/차단(check_cap_block) 완전 결합
         "telemetry.cap.set" => {
             telemetry::handle_cap_set(core, state, engine, caller, id, &request.params)
         }
@@ -714,15 +714,15 @@ fn route_engine_handler(
         "telemetry.cap.reset" => {
             telemetry::handle_cap_reset(core, state, engine, caller, id, &request.params)
         }
-        // telemetry.anomaly — Phase 4.4 (영속 anomaly 조회만; 검출은 dispatcher 후크)
+        // telemetry.anomaly (영속 anomaly 조회만; 검출은 dispatcher 후크)
         "telemetry.anomaly.list" => {
             telemetry::handle_anomaly_list(core, state, engine, caller, id, &request.params)
         }
-        // telemetry.session_summary — Phase 4.5 (메트릭/승인/이상 집계)
+        // telemetry.session_summary (메트릭/승인/이상 집계)
         "telemetry.session_summary" => {
             telemetry::handle_session_summary(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_* — Phase 5.1 (DAG + state 머신)
+        // agent.task_* (DAG + state 머신)
         "agent.task_create" => {
             agent::handle_task_create(core, state, engine, caller, id, &request.params)
         }
@@ -744,15 +744,15 @@ fn route_engine_handler(
         "agent.task_graph" => {
             agent::handle_task_graph(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_set_result — Phase H.F (외부 task 완료 신호)
+        // agent.task_set_result (외부 task 완료 신호)
         "agent.task_set_result" => {
             agent::handle_task_set_result(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_run — Phase H.F (workspace runner thread 시작/중단/상태)
+        // agent.task_run (workspace runner thread 시작/중단/상태)
         "agent.task_run" => {
             agent::handle_task_run(core, state, engine, caller, id, &request.params)
         }
-        // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
+        // agent.barrier_* / semaphore_* (poll-based 동기화 primitive)
         "agent.barrier_create" => {
             agent::handle_barrier_create(core, state, engine, caller, id, &request.params)
         }
@@ -786,7 +786,7 @@ fn route_engine_handler(
         "agent.semaphore_delete" => {
             agent::handle_semaphore_delete(core, state, engine, caller, id, &request.params)
         }
-        // agent.lease_* — Phase 5.3 (협조적 점유 마커 + TTL)
+        // agent.lease_* (협조적 점유 마커 + TTL)
         "agent.lease_acquire" => {
             agent::handle_lease_acquire(core, state, engine, caller, id, &request.params)
         }
@@ -796,11 +796,11 @@ fn route_engine_handler(
         "agent.lease_list" => {
             agent::handle_lease_list(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_reduce — Phase 5.4 (결과 합성: first_success / all / merge_json / concat_text / custom)
+        // agent.task_reduce (결과 합성: first_success / all / merge_json / concat_text / custom)
         "agent.task_reduce" => {
             agent::handle_task_reduce(core, state, engine, caller, id, &request.params)
         }
-        // agent.rate_limit_* — Phase 5.5 (token bucket 시간당 비율 제한)
+        // agent.rate_limit_* (token bucket 시간당 비율 제한)
         "agent.rate_limit_set" => {
             agent::handle_rate_limit_set(core, state, engine, caller, id, &request.params)
         }
@@ -813,7 +813,7 @@ fn route_engine_handler(
         "agent.rate_limit_status" => {
             agent::handle_rate_limit_status(core, state, engine, caller, id, &request.params)
         }
-        // session.* — Phase 6.2c (자식 agent 신원 토큰 관리)
+        // session.* (자식 agent 신원 토큰 관리)
         "session.issue" => session::handle_issue(core, caller, id, &request.params),
         "session.revoke" => session::handle_revoke(core, id, &request.params),
         "session.list" => session::handle_list(core, id),

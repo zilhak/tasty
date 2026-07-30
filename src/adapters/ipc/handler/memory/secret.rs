@@ -209,7 +209,7 @@ pub fn handle_secret_stats(
 }
 
 // ============================================================
-// Blackboard `memory.bb_*` — Phase 7.1
+// Blackboard `memory.bb_*`
 // ============================================================
 //
 // 워크스페이스 단위 키-값 컬렉션. `Scope::Workspace(workspace_id)` 한정.

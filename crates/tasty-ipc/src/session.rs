@@ -1,4 +1,4 @@
-//! Phase 6.2b — Agent session token 영속 + 검증.
+//! Agent session token 영속 + 검증.
 //!
 //! `claude.spawn` 등으로 호스트가 띄운 자식 프로세스에 1:1 로 발급된
 //! [`SessionToken`] 의 라이프사이클을 관리한다. 자식이 IPC envelope 에 토큰을
@@ -32,7 +32,7 @@ fn session_key(token: &SessionToken) -> String {
     format!("{SESSION_KEY_PREFIX}{}", token.as_str())
 }
 
-/// Phase 6.3 — 임시 권한 grant. base `permissions` 외에 런타임에 추가/회수되는
+/// 임시 권한 grant. base `permissions` 외에 런타임에 추가/회수되는
 /// 권한을 별도로 관리해 base 와 분리한다. `expires_at_ms=None` 이면 명시적
 /// revoke 전까지 유효, `Some` 이면 시점 도달 시 자동 만료.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ pub struct AgentSession {
     /// 발급 시 부여된 base permission. `Permission::as_token` 직렬화.
     /// 일부 토큰은 `ipc.invoke:<prefix>` 동적 형태.
     pub permissions: Vec<String>,
-    /// Phase 6.3 — 런타임에 추가된 임시 grant. base 와 합쳐 effective set 을 만든다.
+    /// 런타임에 추가된 임시 grant. base 와 합쳐 effective set 을 만든다.
     #[serde(default)]
     pub temp_grants: Vec<TempGrant>,
     /// unix ms.

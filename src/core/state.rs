@@ -205,7 +205,7 @@ pub struct CoreState {
     pub(crate) telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
 
     /// Telemetry 이상 탐지 — 호스트 singleton. in-memory sliding window 만 보관
-    /// (Phase 4.4). 검출된 anomaly 레코드는 호스트가 memory store 에 영속.
+    /// 검출된 anomaly 레코드는 호스트가 memory store 에 영속.
     pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
 
     /// Agent task ID 시퀀스 — 같은 ms 안에서 task_id 충돌 방지용 단조 증가 카운터.

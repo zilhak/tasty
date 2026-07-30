@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::method_meta::method_meta;
 use tasty_plugin_manifest::Permission;
 
-/// Phase 6.2 — 자식 프로세스에 발급하는 32바이트 random session token.
+/// 자식 프로세스에 발급하는 32바이트 random session token.
 ///
 /// 환경변수 `TASTY_SESSION_TOKEN` 으로 자식에게 주입되고, 자식이 IPC envelope 에
 /// 함께 실어 보내면 호스트가 `SessionStore` 에서 검증해 `CallerContext::Agent` 로
@@ -91,7 +91,7 @@ pub enum CallerContext {
         /// 갱신되지 않고 전체를 새 Arc로 교체하므로, 동시 호출 안전.
         permissions: Arc<HashSet<Permission>>,
     },
-    /// Phase 6.2 — claude.spawn 등으로 호스트가 띄운 child Claude / 외부 agent.
+    /// claude.spawn 등으로 호스트가 띄운 child Claude / 외부 agent.
     /// SessionToken 으로 신원 검증한 뒤에만 이 variant 가 만들어진다.
     Agent {
         /// 'child:1', 'claude:abc' 등 호스트-부여 식별자.
@@ -228,7 +228,7 @@ fn check_permissions(
     Ok(())
 }
 
-/// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
+/// envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
 ///
 /// - `session_token` 가 None → `CallerContext::Local`
 /// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`

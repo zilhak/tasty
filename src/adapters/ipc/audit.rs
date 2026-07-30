@@ -1,4 +1,4 @@
-//! Phase 6.5 — IPC audit log.
+//! IPC audit log.
 //!
 //! 모든 IPC 호출(allow + deny) 을 `tasty.audit.{ts:013}.{seq:04}` 키로 영속한다.
 //! 권한 거부 사고 추적, agent 행동 감사, capability_elevation 사후 분석에 쓴다.
@@ -403,7 +403,7 @@ pub fn maybe_evict_on_append(store: &mut AuditStore, now_ms: u64) {
     }
 }
 
-/// Phase 6.5a dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
+/// dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
 /// 호출된다.
 pub fn record(

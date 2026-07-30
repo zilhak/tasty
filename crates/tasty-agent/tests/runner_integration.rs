@@ -238,7 +238,7 @@ fn tick_with_store<E: TaskExecutor>(
 }
 
 // =====================================================================
-// Phase I.A.S6 — semaphore-gated dispatch + WaitBarrier 통합 시나리오.
+// semaphore-gated dispatch + WaitBarrier 통합 시나리오.
 // HostExecutor 가 본 crate 외부에 있으므로, *test-local* SemaphoreAwareExec /
 // BarrierAwareExec 가 동일한 규약 (metadata.semaphore 컨벤션, BarrierPoll handle)
 // 을 사용해 runner 와 store 의 상호작용을 검증한다.
@@ -652,7 +652,7 @@ fn wait_barrier_task_succeeds_after_signals() {
 }
 
 // =====================================================================
-// Phase J.A.S1 — lease-gated dispatch 통합 시나리오.
+// lease-gated dispatch 통합 시나리오.
 // SemaphoreAwareExec 의 lease 변형. dispatch 시 metadata.lease 의
 // resource/holder 로 LeaseStore::acquire 호출. block 모드 + 점유 충돌 시 Deferred.
 // =====================================================================
@@ -894,7 +894,7 @@ fn lease_gated_dispatch_serializes_two_tasks() {
 }
 
 // =====================================================================
-// Phase J.A.S6 — DispatchHandle 영속 round-trip 통합 시나리오.
+// DispatchHandle 영속 round-trip 통합 시나리오.
 // runner_host / runner_thread 는 src/ (host adapter) 에 있으므로 여기서는
 // pure tasty-agent 측에서 DispatchHandle::serde 의 forward/backward-compat 와
 // 모든 variant 의 영속/복원 의미를 검증한다.

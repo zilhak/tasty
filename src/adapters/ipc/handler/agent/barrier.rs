@@ -90,7 +90,7 @@ pub fn handle_barrier_state(
     }
 }
 
-/// Phase 5.2 단계: poll-based — 상태 조회와 동일. 추후 blocking + wakeup 도입.
+/// poll-based — 상태 조회와 동일. 추후 blocking + wakeup 도입.
 pub fn handle_barrier_await(
     core: &Core,
     state: &mut AppState,

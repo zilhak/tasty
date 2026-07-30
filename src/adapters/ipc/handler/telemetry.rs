@@ -33,7 +33,7 @@ pub(crate) fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 호출 전 cap 차단 체크 (Phase 4.3c).
+/// 호출 전 cap 차단 체크.
 ///
 /// Plugin caller 의 agent 에 대해, `triggered` 가 있고 action 이 `Pause` 또는
 /// `RequireApproval` 인 cap 이 하나라도 있으면 차단 사유 문자열을 반환한다.
@@ -78,7 +78,7 @@ pub(crate) fn check_cap_block(
     None
 }
 
-/// dispatcher 미들웨어용 자동 카운트 (Phase 4.2).
+/// dispatcher 미들웨어용 자동 카운트.
 ///
 /// caller 가 `_host` 이거나 method 가 `telemetry.` 로 시작하면 skip한다 —
 /// 자기 자신을 측정하면 의미가 없고, telemetry 내부 호출은 재귀 폭주를 만든다.
@@ -121,7 +121,7 @@ pub(crate) fn record_ipc_call(
     detect_anomalies_after_ipc(core, state, engine, agent.as_str(), method, ts);
 }
 
-/// IPC 호출 후 anomaly 검출 (Phase 4.4). `AnomalyDetector::record_call` 이 burst
+/// IPC 호출 후 anomaly 검출. `AnomalyDetector::record_call` 이 burst
 /// 임계를 넘는다고 보고하면 host 가 영속 + notification 으로 알린다.
 fn detect_anomalies_after_ipc(
     core: &Core,

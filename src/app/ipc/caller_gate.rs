@@ -30,7 +30,7 @@ impl App {
         };
         tracing::warn!("ipc agent caller denied: {e}");
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        // Phase 6.5a audit: app-level dispatcher 의 deny 도 기록.
+        // audit: app-level dispatcher 의 deny 도 기록.
         if let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut()) {
             let ws = main
                 .core_state
@@ -48,7 +48,7 @@ impl App {
                 seq,
             );
         }
-        // Phase 6.4a — Agent caller 의 MissingPermission 은 elevation 발행.
+        // Agent caller 의 MissingPermission 은 elevation 발행.
         // NotPluginCallable/UnknownMethod 는 elevation 으로 회복되지 않으므로 단순 deny.
         let mut data = serde_json::json!(null);
         if let (

@@ -1,4 +1,4 @@
-//! Phase 6.5b — `plugin.audit_*` IPC 핸들러.
+//! `plugin.audit_*` IPC 핸들러.
 //!
 //! audit log 조회/집계/삭제. CallerContext 검사는 method_meta 의 `local_only`
 //! 가 dispatcher 레벨에서 거른다 (운영자 전용).

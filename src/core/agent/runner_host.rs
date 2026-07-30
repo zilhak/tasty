@@ -309,7 +309,7 @@ impl HostExecutor {
 
 impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
-        // Phase J.A.S1: lease + semaphore-gated dispatch. lease → semaphore 순서
+        // lease + semaphore-gated dispatch. lease → semaphore 순서
         // (lease 가 conflict 잦고 더 가벼움). 어느 한쪽이라도 막 점유한 후 다음 게이트가
         // 실패하면 점유한 자원 즉시 release (idempotent).
         match self.try_acquire_lease(task) {

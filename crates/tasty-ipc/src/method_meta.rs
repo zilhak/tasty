@@ -212,7 +212,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.secret.stats", plugin(&[MemorySecret])),
         // ── memory: 유지 보수 (host 전용) ─────────────────────────────
         ("memory.gc", local_only()),
-        // ── memory: blackboard (Phase 7.1 — workspace-scoped) ─────────
+        // ── memory: blackboard (workspace-scoped) ─────────────────────
         ("memory.bb_create", plugin(&[MemoryWrite])),
         ("memory.bb_put", plugin(&[MemoryWrite])),
         ("memory.bb_get", plugin(&[MemoryRead])),
@@ -222,13 +222,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.bb_delete", plugin(&[MemoryWrite])),
         ("memory.bb_list", plugin(&[MemoryRead])),
         ("memory.bb_exists", plugin(&[MemoryRead])),
-        // ── memory: bb snapshot (Phase 7.4) ───────────────────────────
+        // ── memory: bb snapshot ────────────────────────────────────────
         ("memory.bb_snapshot", plugin(&[MemoryWrite])),
         ("memory.bb_snapshot_get", plugin(&[MemoryRead])),
         ("memory.bb_snapshot_list", plugin(&[MemoryRead])),
         ("memory.bb_snapshot_delete", plugin(&[MemoryWrite])),
         ("memory.bb_snapshot_restore", plugin(&[MemoryWrite])),
-        // ── memory: plan (Phase 7.2 — workspace-scoped) ───────────────
+        // ── memory: plan (workspace-scoped) ───────────────────────────
         ("memory.plan_create", plugin(&[MemoryWrite])),
         ("memory.plan_get", plugin(&[MemoryRead])),
         ("memory.plan_list", plugin(&[MemoryRead])),
@@ -236,7 +236,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.plan_add_step", plugin(&[MemoryWrite])),
         ("memory.plan_remove_step", plugin(&[MemoryWrite])),
         ("memory.plan_update_step", plugin(&[MemoryWrite])),
-        // ── memory: cache (Phase 7.3 — TTL 캐시) ──────────────────────
+        // ── memory: cache (TTL 캐시) ───────────────────────────────────
         ("memory.cache_put", plugin(&[MemoryWrite])),
         ("memory.cache_get", plugin(&[MemoryRead])),
         ("memory.cache_invalidate", plugin(&[MemoryWrite])),
@@ -268,7 +268,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("telemetry.cap.reset", plugin(&[Telemetry])),
         ("telemetry.anomaly.list", plugin(&[Telemetry])),
         ("telemetry.session_summary", plugin(&[Telemetry])),
-        // ── agent (협업 primitive — Phase 5) ─────────────────────────
+        // ── agent (협업 primitive) ────────────────────────────────────
         ("agent.task_create", plugin(&[AgentManage])),
         ("agent.task_list", plugin(&[AgentManage])),
         ("agent.task_get", plugin(&[AgentManage])),
@@ -295,7 +295,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.rate_limit_list", plugin(&[AgentManage])),
         ("agent.rate_limit_remove", plugin(&[AgentManage])),
         ("agent.rate_limit_status", plugin(&[AgentManage])),
-        // ── session.* (자식 agent 신원 토큰 — Phase 6.2c) ─────────────
+        // ── session.* (자식 agent 신원 토큰) ──────────────────────────
         // issue/revoke 는 plugin 도 호출 가능 (claude plugin 등이 자식에게
         // 토큰을 발급해야 하므로). list 는 host 전용 — 감사/디버깅 목적이라
         // plugin 노출 불필요.
@@ -412,16 +412,16 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.permissions", local_only()),
         ("plugin.grant", local_only()),
         ("plugin.revoke", local_only()),
-        // Phase 6.3 — agent 임시 grant. grant/revoke 는 user/operator 만, list 는
+        // agent 임시 grant. grant/revoke 는 user/operator 만, list 는
         // readonly 라 plugin/agent 도 self-introspection 가능.
         ("plugin.grant_agent_permission", local_only()),
         ("plugin.revoke_agent_permission", local_only()),
         ("plugin.list_agent_permissions", plugin(&[])),
-        // Phase 6.4c — agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
+        // agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
         // 발행할 entry point. approval.request 와 동일한 의미이므로 Approval
         // 권한이 필요.
         ("plugin.request_permission", plugin(&[Approval])),
-        // Phase 6.5b — audit log 조회/집계/삭제. 운영자 전용.
+        // audit log 조회/집계/삭제. 운영자 전용.
         ("plugin.audit_query", local_only()),
         ("plugin.audit_summary", local_only()),
         ("plugin.audit_follow", local_only()),
