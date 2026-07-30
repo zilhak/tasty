@@ -103,8 +103,8 @@ pub(crate) enum PluginSubTab {
 /// L2 section within the General L1 tab.
 ///
 /// 디자인 General L2 = General / Notifications / Accessibility / Overlay /
-/// Remote transfer. (Clipboard 는 플러그인 기능이라 네이티브 설정에서 제외,
-/// Updates 는 Misc 로 이동.)
+/// Remote transfer + Display(macOS 전용, TODO47). (Clipboard 는 플러그인 기능이라
+/// 네이티브 설정에서 제외, Updates 는 Misc 로 이동.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
     General,
@@ -115,6 +115,11 @@ pub(crate) enum GeneralSubTab {
     /// 원격(mirror) 파일 전송 수신측 저장 정책(저장 폴더 + 용량 상한). 백엔드는
     /// `RemoteTransferSettings`(06/07).
     RemoteTransfer,
+    /// Alt/Option/Shift 키 표시 스타일(TODO47). macOS 전용 — 아이콘 글리프 개념이
+    /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
+    /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Display,
 }
 
 /// L2 section within the Terminal L1 tab.
@@ -809,8 +814,11 @@ struct L2Section {
 fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
     match ui_state.active_tab {
         SettingsTab::General => {
+            // Display(Alt/Option/Shift 표시 스타일)는 macOS 전용 — 아이콘 글리프
+            // 개념이 없는 Windows/Linux 에서는 push 하지 않는다.
             let cur = ui_state.general_sub_tab;
-            [
+            #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+            let mut items = vec![
                 (GeneralSubTab::General, t("settings.tab.general")),
                 (
                     GeneralSubTab::Notifications,
@@ -825,15 +833,18 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                     GeneralSubTab::RemoteTransfer,
                     t("settings.tab.remote_transfer"),
                 ),
-            ]
-            .into_iter()
-            .map(|(tab, label)| L2Section {
-                label: label.to_string(),
-                is_plugin: false,
-                selected: cur == tab,
-                select: L2Select::General(tab),
-            })
-            .collect()
+            ];
+            #[cfg(target_os = "macos")]
+            items.push((GeneralSubTab::Display, t("settings.tab.display")));
+            items
+                .into_iter()
+                .map(|(tab, label)| L2Section {
+                    label: label.to_string(),
+                    is_plugin: false,
+                    selected: cur == tab,
+                    select: L2Select::General(tab),
+                })
+                .collect()
         }
         SettingsTab::Terminal => {
             let cur = ui_state.terminal_sub_tab;
@@ -1480,6 +1491,19 @@ fn draw_active_content(
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Overlay => draw_overlay_tab(ui, draft),
             GeneralSubTab::RemoteTransfer => draw_remote_transfer_tab(ui, draft),
+            #[cfg(target_os = "macos")]
+            GeneralSubTab::Display => draw_general_display_tab(ui, draft),
+            #[cfg(not(target_os = "macos"))]
+            GeneralSubTab::Display => {
+                let th = crate::theme::theme();
+                ui.vertical_centered(|ui| {
+                    vspace(ui, th.spacing_xl);
+                    ui.label(
+                        egui::RichText::new(t("settings.misc.empty"))
+                            .color(th.text_muted().to_egui()),
+                    );
+                });
+            }
         },
         SettingsTab::Terminal => match ui_state.terminal_sub_tab {
             TerminalSubTab::General => draw_terminal_tab(ui, draft),
