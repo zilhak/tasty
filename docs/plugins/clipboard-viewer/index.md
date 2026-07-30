@@ -17,8 +17,9 @@
 
 - **tool** `open-viewer` — [도구 메뉴](../../features/tools-menu/index.md)에 항목 추가(`ui.tool_item`), action `open_popup{com.tasty.clipboard-viewer/viewer}`.
 - **command** `open_viewer` — 단축키로도 뷰어를 연다(`scope = "global"`, 기본값 `ctrl+shift+h` — 설정 > 단축키 > 플러그인에서 변경 가능). action 은 tool 항목과 동일한 `open_popup{com.tasty.clipboard-viewer/viewer}`(TODO43 — 구 호스트 하드코딩 `toggle_clipboard_viewer` 전용 필드에서 [git-viewer](../git-viewer/index.md)와 동일한 플러그인 커맨드 레지스트리로 마이그레이션).
-- **popup** `viewer` — trigger `ipc`. header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지, 2개 이상이면 가로 세그먼트 스위치) → body(well 스크롤 미리보기) → footer(mime+Close) 4단 구조(TODO51 — design-system 구조 전사, 이전의 좌측 rail master-detail 레이아웃은 폐기).
-- popup open 시 `arboard::Clipboard` 로 클립보드를 1회 읽어 사용 가능한 타입 목록을 만든다. 현재 Text/Files/Image 타입이 채워진다(TODO52 — Files 는 `arboard::Get::file_list()` · TODO48 — Image 는 `arboard::Clipboard::get_image()` 로 치수(width/height)와 바이트 수만 보존하고 픽셀 데이터 자체는 들고 있지 않는다, 렌더링을 안 하므로 필요 없다) — HTML/기타 포맷은 자매 작업이 추가한다. 타입 선택 → body 미리보기 갱신.
+- **popup** `viewer` — trigger `ipc`. header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지, 2개 이상이면 가로 세그먼트 스위치) → body(well 스크롤 미리보기) → footer(mime[+meta]+Close) 4단 구조(TODO51 — design-system 구조 전사, 이전의 좌측 rail master-detail 레이아웃은 폐기).
+- popup open 시 `arboard::Clipboard` 로 클립보드를 1회 읽어 사용 가능한 타입 목록을 만든다. 현재 Text/Files/Image/HTML 타입이 채워진다(TODO52 — Files 는 `arboard::Get::file_list()` · TODO48 — Image 는 `arboard::Clipboard::get_image()` 로 치수(width/height)와 바이트 수만 보존하고 픽셀 데이터 자체는 들고 있지 않는다, 렌더링을 안 하므로 필요 없다 · TODO49 — HTML 은 `arboard::Clipboard::get().html()`) — 기타 포맷은 자매 작업이 추가한다. 타입 선택 → body 미리보기 갱신.
+- **HTML 타입**(TODO49): 렌더링하지 않고 원본 소스를 text 타입과 동일한 mono 텍스트로 보여준다(기본 상태). type-bar 우측 슬롯에 "Pretty print" 체크박스가 뜨며, 체크하면 `html_format::prettify()`(새 의존성 없는 태그 깊이 인덴터, `<script>`/`<style>`/`<pre>` 는 원본 그대로 보존)를 거친 결과로 바뀐다. 체크 상태는 popup 인스턴스 생존 동안만 유지(닫으면 리셋, 설정에 영속화하지 않음). 밀려난 메타(문자수·줄수)는 푸터에서 `{mime} · {meta}` 로 결합 표시.
 - **단일 인스턴스**: 이미 열려 있으면 재호출은 무시(`already_open`).
 
 ## 인터페이스
@@ -39,6 +40,8 @@
 - [ ] Given 클립보드에 텍스트가 있음 Then type-bar 에 text 타입 뱃지가 보이고 body 에 내용이 미리보기된다.
 - [ ] Given 클립보드에 파일(경로 목록)이 있음 Then type-bar 에 files 타입이 보이고 선택 시 body 에 아이콘+경로 목록이 한 줄씩 표시된다.
 - [ ] Given 클립보드에 이미지가 있음 Then type-bar 에 image 타입이 노출되고, 선택 시 body 에 아이콘 + 치수/용량 메타 + "인라인 미리보기 없음" 안내 문구가 보인다(실제 그림은 렌더링하지 않음).
+- [ ] Given 클립보드에 HTML 이 있음 Then type-bar 에 HTML 타입이 보이고, body 에 렌더링되지 않은 원본 소스가 표시되며, type-bar 우측에 "Pretty print" 체크박스가 뜬다.
+- [ ] Given HTML 타입에서 "Pretty print" 체크 Then body 가 들여쓰기 적용된 형태로 바뀌고, 체크 해제 시 원본으로 돌아온다. 푸터에 `{mime} · {n} chars · {n} line(s)` 가 표시된다.
 - [ ] Given 클립보드가 비어 있음 Then 빈 상태 메시지가 보인다.
 
 ## 화면

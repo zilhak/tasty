@@ -1,9 +1,10 @@
 //! Type-keyed 클립보드 reader 추상화.
 //!
-//! 새 포맷(헥스 / HTML / RTF 등) 추가가 `ClipboardType` enum arm + `read_available`
-//! 내 reader 한 줄 추가로 끝나도록 설계한다. Text/Files 는 arboard 로 3 OS 공통
-//! read 한다. 플랫폼별 네이티브 포맷이 필요한 타입은 도입 시점에 `#[cfg(...)]`
-//! 분기로 reader 를 붙인다.
+//! 새 포맷(헥스 / RTF 등) 추가가 `ClipboardType` enum arm + `read_available`
+//! 내 reader 한 줄 추가로 끝나도록 설계한다. Text/Files/Image/Html 은 arboard 로 3 OS
+//! 공통 read 한다(TODO48 — Image 는 `get_image()`, TODO49 — Html 은 `get().html()`,
+//! feature gate 없이 제공). 플랫폼별 네이티브 포맷이 필요한 타입은 도입 시점에
+//! `#[cfg(...)]` 분기로 reader 를 붙인다.
 
 use std::path::PathBuf;
 
@@ -13,7 +14,8 @@ pub enum ClipboardType {
     Text,
     Files,
     Image,
-    // Hex, Html, Rtf — 추후 타입 도입 시 arm 추가.
+    Html,
+    // Hex, Rtf — 추후 타입 도입 시 arm 추가.
 }
 
 impl ClipboardType {
@@ -23,6 +25,7 @@ impl ClipboardType {
             ClipboardType::Text => "clipboard_viewer.type.text",
             ClipboardType::Files => "clipboard_viewer.type.files",
             ClipboardType::Image => "clipboard_viewer.type.image",
+            ClipboardType::Html => "clipboard_viewer.type.html",
         }
     }
 
@@ -36,6 +39,7 @@ impl ClipboardType {
             // "image/png" 는 예시 데이터일 뿐, 실제로 알 수 없는 원본 포맷을 사칭하지
             // 않고 arboard 가 실제로 반환하는 표현을 그대로 명명한다.
             ClipboardType::Image => "image/rgba8",
+            ClipboardType::Html => "text/html",
         }
     }
 }
@@ -52,13 +56,15 @@ pub enum ContentRepr {
         height: usize,
         byte_len: usize,
     },
+    Html(String),
 }
 
 impl ContentRepr {
     /// design `t.meta` — type-bar 우측 슬롯 + image body 안내에 쓰는 요약 문자열.
-    /// `Text`/`Files` 는 이 TODO 범위 밖(문자/줄 수·파일 개수 카운트 미구현,
+    /// `Text`/`Files`/`Html` 은 이 TODO 범위 밖(문자/줄 수·파일 개수 카운트 미구현,
     /// TODO51 부터 이어지는 defer)이라 `None` — 기존처럼 type-bar 우측 슬롯이 빈
-    /// 채로 유지된다.
+    /// 채로 유지된다(Html 은 대신 view.rs 의 Pretty print 체크박스가 그 슬롯을
+    /// 차지한다).
     pub fn meta_text(&self) -> Option<String> {
         match self {
             ContentRepr::Text(_) => None,
@@ -68,6 +74,7 @@ impl ContentRepr {
                 height,
                 byte_len,
             } => Some(format!("{width}×{height} · {}", format_bytes(*byte_len))),
+            ContentRepr::Html(_) => None,
         }
     }
 }
@@ -136,6 +143,18 @@ fn read_image(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRe
     }
 }
 
+/// Html 리더 — arboard `Get::html()` (feature gate 없이 3플랫폼 공통 제공).
+fn read_html(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRepr)> {
+    match clip.get().html() {
+        Ok(html) if !html.is_empty() => Some((ClipboardType::Html, ContentRepr::Html(html))),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::debug!("clipboard get_html: {e}");
+            None
+        }
+    }
+}
+
 /// 현재 시스템 클립보드에서 가용한 (타입, 내용) 목록을 수집한다.
 ///
 /// - `Ok(vec)` — 가용 타입 목록. 빈 vec 이면 표시할 내용이 없는 상태(빈 클립보드).
@@ -149,6 +168,7 @@ pub fn read_available() -> Result<Vec<(ClipboardType, ContentRepr)>, String> {
     out.extend(read_text(&mut clip));
     out.extend(read_files(&mut clip));
     out.extend(read_image(&mut clip));
+    out.extend(read_html(&mut clip));
     Ok(out)
 }
 
@@ -180,11 +200,25 @@ mod tests {
     }
 
     #[test]
+    fn html_meta_text_is_none() {
+        assert_eq!(ContentRepr::Html("<p>x</p>".into()).meta_text(), None);
+    }
+
+    #[test]
     fn image_type_uses_own_label_and_mime() {
         assert_eq!(
             ClipboardType::Image.label_i18n_key(),
             "clipboard_viewer.type.image"
         );
         assert_eq!(ClipboardType::Image.mime_str(), "image/rgba8");
+    }
+
+    #[test]
+    fn html_type_uses_own_label_and_mime() {
+        assert_eq!(
+            ClipboardType::Html.label_i18n_key(),
+            "clipboard_viewer.type.html"
+        );
+        assert_eq!(ClipboardType::Html.mime_str(), "text/html");
     }
 }

@@ -3,8 +3,9 @@
 //!
 //! rail(세로 타입 목록)은 폐기됐다 — 디자인 원칙: 단일 타입은 헤더 아래 뱃지로,
 //! 복수 타입은 가로 세그먼트 스위치([`type_switch`])로 표현한다. `SEG_COMPACT_AT`(5)
-//! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/
-//! `Files`/`Image` 를 채운다(TODO51+52+48) — Html/Other 는 자매 TODO(49/50)가
+//! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/`Files`/
+//! `Image`(TODO48)/`Html`(TODO49 — HTML 은 raw 소스 표시 + Pretty print 체크박스,
+//! [`crate::html_format`])을 채운다(51/52/48/49) — Other 는 자매 TODO(50)가
 //! `ClipboardType`에 arm 을 추가하며 [`type_icon`]/[`type_body`]/[`footer_mime_text`]
 //! 에도 갈래를 보탠다.
 //!
@@ -15,7 +16,7 @@
 //! `draw_already_open` 이 `true` 를 반환하고, 호출부(`main.rs`)가 `popup.close` IPC 로
 //! host 에 닫기를 요청한다(host 가 chrome 생애주기를 계속 소유).
 
-// HTML/LAYERS 는 아직 안 쓴다(FILE/IMAGE 는 이 브랜치 세트가 씀) — 자매 TODO(49/50)가
+// LAYERS 는 아직 안 쓴다(FILE/IMAGE/HTML 은 이 브랜치 세트가 씀) — 자매 TODO(50)가
 // ClipboardType 에 arm 을 추가하며 소비한다. build.rs 가 9개를 한꺼번에 베이크해 그
 // TODO들이 build.rs 를 다시 건드릴 필요가 없게 해둔 의도된 상태(TODO51).
 #[allow(dead_code)]
@@ -25,10 +26,11 @@ mod baked_icons {
 
 use tasty_plugin_sdk::{Translator, baked_icon};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVariant, tag};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVariant, checkbox, tag};
 
 use crate::ViewerState;
 use crate::clipboard::{ClipboardType, ContentRepr};
+use crate::html_format::prettify;
 
 /// 세그먼트가 5개 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다(design
 /// `SEG_COMPACT_AT`).
@@ -189,21 +191,31 @@ fn data_state(
         .unwrap_or(types[0]);
 
     // 우측 슬롯 — design `t.meta`(html 이 아닌 타입 전체 공통 경로). Text/Files 는
-    // 메타가 없다(빈 클로저), Image 는 치수·크기 메타를 채운다. 클릭 반영 전(이번
-    // 프레임 진입 시점) active 기준으로 그린다 — type_switch 의 active 하이라이트도
-    // 동일하게 클릭 전 상태를 쓰므로 한 프레임 지연이 일관된다. TODO49가 html 타입일
-    // 때 이 자리에 Pretty print 체크박스를 그리는 다른 클로저를 넘기면 된다 —
-    // `type_bar` 시그니처는 바뀌지 않는다.
+    // 메타가 없다(빈 클로저), Image 는 치수·크기 메타를 채운다. HTML 타입일 때만
+    // "Pretty print" 체크박스로 스왑된다(design 확정 결과, TODO49) — 그 경우
+    // meta_text()(Html 은 항상 None)는 쓰지 않는다. 클릭 반영 전(이번 프레임 진입
+    // 시점) active 기준으로 그린다 — type_switch 의 active 하이라이트도 동일하게
+    // 클릭 전 상태를 쓰므로 한 프레임 지연이 일관된다.
     let active_meta = state
         .available
         .iter()
         .find(|(t, _)| *t == active)
         .and_then(|(_, c)| c.meta_text());
+    let mut html_pretty = state.html_pretty;
     let picked = type_bar(ui, theme, tr, &types, active, |ui, theme| {
-        if let Some(meta) = &active_meta {
+        if active == ClipboardType::Html {
+            checkbox(
+                ui,
+                theme,
+                &mut html_pretty,
+                tr.t("clipboard_viewer.popup.pretty_print"),
+                true,
+            );
+        } else if let Some(meta) = &active_meta {
             meta_label(ui, theme, meta);
         }
     });
+    state.html_pretty = html_pretty;
     if let Some(picked) = picked {
         state.selected = Some(picked);
     }
@@ -225,10 +237,22 @@ fn data_state(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     if let Some((ty, content)) = &cur {
-        type_body(&mut bui, theme, *ty, content, tr);
+        type_body(&mut bui, theme, *ty, content, tr, state.html_pretty);
     }
 
-    footer(ui, theme, tr, cur.as_ref().map(|(t, _)| *t), close);
+    // HTML 타입은 밀려난 메타(문자수/줄수)를 푸터에서 `{mime} · {meta}` 로 결합해
+    // 노출한다(design 확정 결과) — 다른 타입은 기존처럼 mime만.
+    let footer_meta = cur
+        .as_ref()
+        .and_then(|(ty, content)| html_footer_meta(tr, *ty, content));
+    footer(
+        ui,
+        theme,
+        tr,
+        cur.as_ref().map(|(t, _)| *t),
+        footer_meta,
+        close,
+    );
 }
 
 /// design `TypeSwitch` — 1개면 아이콘+뱃지(읽기전용), 2개 이상이면 가로 세그먼트
@@ -351,8 +375,8 @@ fn seg_shows_label(compact: bool, active: bool) -> bool {
 
 /// 타입바 행 — 좌측 [`type_switch`] + 우측 슬롯(메타 텍스트 또는 커스텀 위젯,
 /// design "type-bar 우측 슬롯"). 우측 슬롯을 클로저로 받아 텍스트 고정을 피한다 —
-/// TODO49가 html 타입일 때 이 자리에 Pretty print 체크박스를 그리도록 다른 클로저를
-/// 넘기면 된다(구조 변경 없음).
+/// HTML 타입일 때 [`data_state`]가 이 자리에 Pretty print 체크박스를 그리는 클로저를
+/// 넘긴다(TODO49, 구조 변경 없음).
 fn type_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -393,14 +417,15 @@ fn type_bar(
     picked
 }
 
-/// design `TypeBody` — Text/Files/Image arm 을 채운다(TODO51+52+48). Html/Other 는
-/// 자매 TODO(49/50)가 이 match 에 arm 을 보탠다.
+/// design `TypeBody` — Text/Files/Image/Html arm 을 채운다(51/52/48/49). Other 는
+/// 자매 TODO(50)가 이 match 에 arm 을 보탠다.
 fn type_body(
     ui: &mut egui::Ui,
     theme: &Theme,
     ty: ClipboardType,
     content: &ContentRepr,
     tr: &Translator,
+    html_pretty: bool,
 ) {
     match (ty, content) {
         (ClipboardType::Text, ContentRepr::Text(text)) => text_body(ui, theme, text),
@@ -410,6 +435,15 @@ fn type_body(
             // width/height/byte_len 을 채워 push 하므로.
             let meta = content.meta_text().unwrap_or_default();
             image_body(ui, theme, tr, &meta);
+        }
+        (ClipboardType::Html, ContentRepr::Html(html)) => {
+            // 렌더링 없이 원본 소스 그대로 — 체크 시에만 인덴터를 거친 결과로 교체.
+            // 위젯 구조 자체는 text 타입과 동일(design 확정 결과).
+            if html_pretty {
+                text_body(ui, theme, &prettify(html));
+            } else {
+                text_body(ui, theme, html);
+            }
         }
         // ClipboardType 과 ContentRepr 는 read_available() 이 항상 같은 종류끼리만
         // 짝지어 push 한다 — 다른 조합은 구조적으로 발생하지 않는다.
@@ -571,6 +605,7 @@ fn footer(
     theme: &Theme,
     tr: &Translator,
     ty: Option<ClipboardType>,
+    meta: Option<String>,
     close: &mut bool,
 ) {
     let full_w = ui.available_width();
@@ -589,7 +624,7 @@ fn footer(
         ui.painter().text(
             egui::pos2(rect.left() + pad_x, rect.center().y),
             egui::Align2::LEFT_CENTER,
-            footer_mime_text(ty, None),
+            footer_mime_text(ty, meta.as_deref()),
             egui::FontId::monospace(theme.font_size_caption.value()),
             theme.text_muted().to_egui(),
         );
@@ -614,24 +649,45 @@ fn footer(
     }
 }
 
-/// design 조건: 일반 타입은 `{mime}`, HTML 타입([[49-...]])은 `{mime} · {meta}`.
-/// Text/Files/Image 는 기본 경로만 채운다 — `meta` 는 지금 미사용이지만 시그니처는
-/// 49가 html arm 을 보탤 때 바꾸지 않아도 되게 남겨둔다.
-fn footer_mime_text(ty: ClipboardType, _meta: Option<&str>) -> String {
-    match ty {
-        ClipboardType::Text | ClipboardType::Files | ClipboardType::Image => {
-            ty.mime_str().to_string()
-        }
+/// design 조건: 일반 타입은 `{mime}`, HTML 타입은 `{mime} · {meta}`(TODO49 확정 결과).
+/// Text/Files/Image 는 기본 경로만 채운다.
+fn footer_mime_text(ty: ClipboardType, meta: Option<&str>) -> String {
+    match (ty, meta) {
+        (ClipboardType::Html, Some(meta)) => format!("{} · {meta}", ty.mime_str()),
+        _ => ty.mime_str().to_string(),
     }
 }
 
-/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Text/Files/Image 를 채운다 —
-/// 자매 TODO가 `ClipboardType`에 arm 을 추가하며 이 match 에도 갈래를 보탠다.
+/// HTML 타입일 때만 푸터 메타(`{n} chars · {n} line(s)`, design 확정 결과 예시
+/// `312 chars · 1 line`)를 만든다. 다른 타입은 `None`(mime만 표시).
+fn html_footer_meta(tr: &Translator, ty: ClipboardType, content: &ContentRepr) -> Option<String> {
+    match (ty, content) {
+        (ClipboardType::Html, ContentRepr::Html(html)) => Some(format_html_meta(tr, html)),
+        _ => None,
+    }
+}
+
+fn format_html_meta(tr: &Translator, html: &str) -> String {
+    let chars = html.chars().count();
+    let lines = html.lines().count().max(1);
+    let key = if lines == 1 {
+        "clipboard_viewer.popup.html_meta_line"
+    } else {
+        "clipboard_viewer.popup.html_meta_lines"
+    };
+    tr.t(key)
+        .replace("{chars}", &chars.to_string())
+        .replace("{lines}", &lines.to_string())
+}
+
+/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Text/Files/Image/Html 을 채운다 —
+/// 자매 TODO(50)가 `ClipboardType`에 arm 을 추가하며 이 match 에도 갈래를 보탠다.
 fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     match ty {
         ClipboardType::Text => baked_icons::TEXT_LEFT,
         ClipboardType::Files => baked_icons::FILE,
         ClipboardType::Image => baked_icons::IMAGE,
+        ClipboardType::Html => baked_icons::HTML,
     }
 }
 
@@ -764,5 +820,58 @@ mod tests {
     #[test]
     fn type_icon_image_uses_image_glyph() {
         assert_eq!(type_icon(ClipboardType::Image), baked_icons::IMAGE);
+    }
+
+    #[test]
+    fn footer_mime_text_html_without_meta_is_mime_only() {
+        assert_eq!(footer_mime_text(ClipboardType::Html, None), "text/html");
+    }
+
+    #[test]
+    fn footer_mime_text_html_with_meta_combines_mime_and_meta() {
+        assert_eq!(
+            footer_mime_text(ClipboardType::Html, Some("312 chars · 1 line")),
+            "text/html · 312 chars · 1 line"
+        );
+    }
+
+    #[test]
+    fn type_icon_html_uses_html_glyph() {
+        assert_eq!(type_icon(ClipboardType::Html), baked_icons::HTML);
+    }
+
+    #[test]
+    fn html_footer_meta_is_none_for_non_html_types() {
+        assert_eq!(
+            html_footer_meta(
+                &Translator::default(),
+                ClipboardType::Text,
+                &ContentRepr::Text("x".into())
+            ),
+            None
+        );
+    }
+
+    fn test_translator() -> Translator {
+        Translator::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang"),
+            "en",
+        )
+    }
+
+    #[test]
+    fn format_html_meta_singular_line_uses_singular_key() {
+        assert_eq!(
+            format_html_meta(&test_translator(), "<p>x</p>"),
+            "8 chars · 1 line"
+        );
+    }
+
+    #[test]
+    fn format_html_meta_plural_lines_uses_plural_key() {
+        assert_eq!(
+            format_html_meta(&test_translator(), "line one\nline two"),
+            "17 chars · 2 lines"
+        );
     }
 }

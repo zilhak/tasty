@@ -10,23 +10,27 @@
 //! plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock 으로
 //! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
 //!
-//! 6 상태를 나란히 노출:
+//! 8 상태를 나란히 노출:
 //! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
 //! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
 //!   body 는 아이콘+경로 한 줄씩(TODO52).
 //! - **image** — Image 타입 body(아이콘 + 치수·크기 메타 + "인라인 미리보기 없음"
 //!   안내, 실제 픽셀 렌더링 없음 — design 결정, TODO48).
+//! - **html — raw source** — HTML 타입, Pretty print 체크박스 미체크(원본 그대로).
+//! - **html — pretty print** — 같은 데이터, 체크박스 체크(인덴트 적용, TODO49).
 //! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
 //!
-//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 3종
-//! (Text/Files/Image)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한
-//! 한계이며 [[49/50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
+//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 4종
+//! (Text/Files/Image/Html)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한
+//! 한계이며 [[50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
 //! (`spec::note` 참고).
 
+use std::cell::RefCell;
+
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{TagVariant, tag};
+use tasty_ui_widgets::{TagVariant, checkbox, tag};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -54,6 +58,19 @@ const FILE_PREVIEW: &[&str] = &[
     "/home/user/workspace/tasty/Cargo.toml",
 ];
 
+/// HTML specimen 원본 소스(raw). `HTML_PRETTY` 는 같은 내용을 plugin
+/// `html_format::prettify()` 와 동형 규칙(태그 깊이 인덴트)으로 손으로 정리해둔
+/// 짝(design 의 `html`/`htmlPretty` specimen 과 동형) — 갤러리는 plugin crate 를
+/// 의존할 수 없어 알고리즘을 다시 부르는 대신 결과물을 그대로 박아둔다.
+const HTML_RAW: &str = "<div class=\"card\"><p>Hello <b>world</b></p></div>";
+const HTML_PRETTY: &str =
+    "<div class=\"card\">\n  <p>\n    Hello\n    <b>\n      world\n    </b>\n  </p>\n</div>";
+
+thread_local! {
+    static HTML_RAW_PRETTY_ON: RefCell<bool> = const { RefCell::new(false) };
+    static HTML_PRETTY_PRETTY_ON: RefCell<bool> = const { RefCell::new(true) };
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(
@@ -73,6 +90,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "image — icon + meta + \"no inline preview\"",
             |ui| image_popup(ui, theme),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "html — raw source (TODO49, Pretty print unchecked)",
+            |ui| data_popup_html(ui, theme, &HTML_RAW_PRETTY_ON, HTML_RAW),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "html — pretty print (TODO49, Pretty print checked)",
+            |ui| data_popup_html(ui, theme, &HTML_PRETTY_PRETTY_ON, HTML_PRETTY),
         );
         spec::cluster(ui, theme, "empty clipboard", |ui| {
             center_popup(
@@ -117,10 +146,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "≤1: icon+tag(accent) · ≥2: segmented(border-default)",
             ),
             ("body", "well(border+radius+bg-app) · mono scroll"),
-            ("footer", "mime(mono caption) + Close(secondary)"),
+            (
+                "footer",
+                "mime(mono caption)[+meta for html] + Close(secondary)",
+            ),
+            (
+                "html type-bar right slot",
+                "Pretty print checkbox(TODO49) swaps in for meta text",
+            ),
             (
                 "states",
-                "data(text) · data(files) · image · empty · read-failed · already-open",
+                "data(text) · data(files) · image · html(raw/pretty) · empty · read-failed · already-open",
             ),
         ],
         &[
@@ -148,16 +184,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "TODO51/52/48 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
+        "TODO51/52/48/49 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
          body/footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 \
-         하나로만, 2개 이상(Text/Files, TODO52 · Text/Image, TODO48)이면 가로 세그먼트로 \
-         보여준다 — `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트(비활성 세그먼트가 아이콘 \
-         전용으로 축소)는 골격만 갖춰뒀고 [[49/50]]이 타입을 늘리면 실제로 재현된다(그때 \
-         이 specimen 도 압축 세그먼트 상태를 추가한다). files body 는 아이콘+mono 경로 \
+         하나로만, 2개 이상(Text/Files, TODO52)이면 가로 세그먼트로 보여준다 — \
+         `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트(비활성 세그먼트가 아이콘 전용으로 \
+         축소)는 골격만 갖춰뒀고 [[50]]이 타입을 늘리면 실제로 재현된다(그때 이 \
+         specimen 도 압축 세그먼트 상태를 추가한다). files body 는 아이콘+mono 경로 \
          한 줄씩, 긴 경로는 말줄임 처리한다(design ellipsis 전사). image body 는 실제 \
          픽셀을 렌더링하지 않고 아이콘+치수·크기 메타+안내 문구만 중앙 정렬로 보여준다 \
-         (design 결정, TODO48). 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 \
-         기능 중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
+         (design 결정, TODO48). TODO49 — HTML 타입은 렌더링하지 않고 원본 소스를 text \
+         타입과 동일한 mono well 로 보여준다. type-bar 우측의 메타 슬롯이 HTML 타입일 \
+         때만 Pretty print 체크박스로 스왑되고, 밀려난 메타(문자수·줄수)는 푸터로 \
+         이동해 mime 과 `·` 로 결합 표시된다(`text/html · N chars · N line(s)`). \
+         체크박스 on 상태의 인덴트 결과는 plugin `html_format::prettify()`(새 의존성 \
+         없는 태그 깊이 인덴터, script/style/pre 는 verbatim 보존)와 동일 규칙으로 \
+         수기 정리한 샘플이다 — 갤러리는 plugin crate 를 의존할 수 없어 결과 문자열을 \
+         직접 박아둔다. 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 기능 \
+         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
     );
 }
 
@@ -502,6 +545,22 @@ fn image_footer_row(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 정상 데이터 상태(HTML) — header + type-bar(배지 + 우측 Pretty print 체크박스) +
+/// body(well, 원본/포맷 텍스트) + footer(mime · meta + Close) 4행(TODO49).
+fn data_popup_html(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    pretty_on: &'static std::thread::LocalKey<RefCell<bool>>,
+    content: &str,
+) {
+    kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
+        header_row(ui, theme);
+        type_bar_row_html(ui, theme, pretty_on);
+        body_row_text(ui, theme, content);
+        footer_row_html(ui, theme, content);
+    });
+}
+
 /// header — 클립보드 아이콘 + "Clipboard" + snapshot 뱃지 + 우측 close.
 fn header_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
@@ -586,6 +645,55 @@ fn type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
+/// type-bar(HTML) — 좌측 아이콘+accent 뱃지는 동일, 우측 슬롯이 Pretty print
+/// 체크박스로 스왑된다(design 확정 결과, TODO49). 다른 타입의 빈 우측 슬롯과 달리
+/// 여기만 실제 상호작용 위젯을 그린다 — 갤러리 specimen 이라 클릭 시 로컬
+/// `thread_local` 상태가 토글된다(다른 특수 checkbox specimen, `settings.rs` 의
+/// Colors override 행과 동일 패턴).
+fn type_bar_row_html(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    pretty_on: &'static std::thread::LocalKey<RefCell<bool>>,
+) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+
+    let content = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        egui::pos2(rect.right() - pad_x, rect.bottom()),
+    );
+    let mut lui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    lui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    kit::icon(
+        &mut lui,
+        icons::HTML,
+        theme.icon_glyph_size_sm.value(),
+        theme.text_muted().to_egui(),
+    );
+    tag(&mut lui, theme, "HTML", TagVariant::Accent, false);
+
+    let mut rui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    pretty_on.with_borrow_mut(|checked| {
+        checkbox(&mut rui, theme, checked, "Pretty print", true);
+    });
+
+    hline(ui, theme, rect.bottom());
+}
+
 /// body — well(border+radius+bg-app) 안에 mono 미리보기.
 fn body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
@@ -619,6 +727,89 @@ fn body_row(ui: &mut egui::Ui, theme: &Theme) {
         );
         ty += line_h;
     }
+}
+
+/// body(HTML) — [`body_row`]와 동일 well, 임의 문자열(원본 또는 prettify 결과)을
+/// 줄 단위로 그린다. text 타입과 완전히 동일한 스타일(design 확정 결과).
+fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
+    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
+    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let h = POPUP_H - header_h - type_bar_h - footer_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+
+    let margin = theme.spacing_md.value();
+    let well = rect.shrink(margin);
+    let p = ui.painter();
+    p.rect(
+        well,
+        theme.corner_radius.value(),
+        theme.bg_app().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+
+    let tx = well.left() + theme.spacing_sm.value();
+    let mut ty = well.top() + theme.spacing_sm.value();
+    let line_h = theme.font_size_term_sm.value() + theme.spacing_xs.value();
+    for line in content.lines() {
+        p.text(
+            egui::pos2(tx, ty),
+            egui::Align2::LEFT_TOP,
+            line,
+            egui::FontId::monospace(theme.font_size_term_sm.value()),
+            theme.text_primary().to_egui(),
+        );
+        ty += line_h;
+    }
+}
+
+/// footer(HTML) — [`footer_row`]와 동일 레이아웃이나 mime 뒤에 `· {n} chars · {n}
+/// line(s)` 메타를 결합한다(design 확정 결과 예시 `text/html · 312 chars · 1 line`).
+fn footer_row_html(ui: &mut egui::Ui, theme: &Theme, content: &str) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top() + theme.border_width.value() * 0.5,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    let chars = content.chars().count();
+    let lines = content.lines().count().max(1);
+    let word = if lines == 1 { "line" } else { "lines" };
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        format!("text/html · {chars} chars · {lines} {word}"),
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    let btn_w = 64.0;
+    let btn_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
+        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
+    );
+    ui.painter().rect(
+        btn_rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        btn_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Close",
+        egui::FontId::proportional(theme.font_size_term_sm.value()),
+        theme.text_secondary().to_egui(),
+    );
 }
 
 /// footer — mime(mono caption) + 우측 Close(secondary).

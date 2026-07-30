@@ -17,11 +17,12 @@
 //!
 //! UI 는 header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지,
 //! 2개 이상이면 가로 세그먼트 스위치) → body(선택 타입의 상세) → footer(mime+Close)
-//! 4단 수직 스택(rail 없음, TODO51). 1차는 텍스트 타입만 지원하고, 이미지/HTML/기타
+//! 4단 수직 스택(rail 없음, TODO51). Text/HTML(TODO49) 타입을 지원하고, 이미지/기타
 //! 포맷/파일 목록 등은 `clipboard::ClipboardType` enum arm + reader 추가로 확장한다.
 //! read-only 라 쓰기/붙여넣기/제거 액션은 없다.
 
 mod clipboard;
+mod html_format;
 mod view;
 
 use tasty_plugin_sdk::{
@@ -51,6 +52,9 @@ pub(crate) struct ViewerState {
     pub(crate) available: Vec<(ClipboardType, ContentRepr)>,
     pub(crate) read_error: Option<String>,
     pub(crate) selected: Option<ClipboardType>,
+    /// HTML 타입의 "Pretty print" 체크박스 상태(TODO49). popup 인스턴스 생존 동안만
+    /// 유지 — 설정에 영속화하지 않고 `load()`(popup 재오픈)마다 리셋된다.
+    pub(crate) html_pretty: bool,
 }
 
 impl ViewerState {
@@ -63,6 +67,7 @@ impl ViewerState {
                     available,
                     read_error: None,
                     selected,
+                    html_pretty: false,
                 }
             }
             Err(e) => {
@@ -71,6 +76,7 @@ impl ViewerState {
                     available: Vec::new(),
                     read_error: Some(e),
                     selected: None,
+                    html_pretty: false,
                 }
             }
         }

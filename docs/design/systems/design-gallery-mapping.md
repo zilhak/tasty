@@ -365,17 +365,17 @@ master-detail 레이아웃은 폐기됐다(TODO51) — header→type-bar→body�
 | plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
 | header(아이콘+타이틀+snapshot 뱃지+close) | `text-muted`/`font-size-max`/`tag` Default | `header_row` |
-| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files, TODO52) / `image_type_bar_row`(image, 우측에 meta 텍스트) |
-| body well(text) | `bg-app` fill + `separator`+`border-width` + `corner-radius`, mono 스크롤 | `body_row` |
+| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files, TODO52) / `image_type_bar_row`(image, 우측에 meta 텍스트) / `type_bar_row_html`(TODO49, 우측 Pretty print 체크박스) |
+| body well(text/html) | `bg-app` fill + `separator`+`border-width` + `corner-radius`, mono 스크롤 | `body_row` / `body_row_text`(TODO49, 임의 문자열) |
 | body well(files, TODO52) | 위와 동일 + 아이콘(`text-muted`)+mono 경로 한 줄씩 | `files_body_row` |
 | body well(image, TODO48 — 인라인 렌더 없음) | 위와 동일 fill/border, 콘텐츠는 중앙 정렬(아이콘 30px 고정 + `text-muted` + mono caption 메타 + `text-disabled` italic 안내) | `image_body_row` |
-| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row`(text) / `footer_row_files`(TODO52) / `image_footer_row`(image, `image/rgba8`) |
+| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row`(text) / `footer_row_files`(TODO52) / `image_footer_row`(image, `image/rgba8`) / `footer_row_html`(TODO49, `{mime} · {meta}`) |
 | CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
-화면 전용 고정값 480×360 은 module const(token-policy §c). 6 상태(data-text/data-files/image/
-empty/read-failed/already-open) 를 `StageVariant::Wrap` 으로 나란히 노출. `SEG_COMPACT_AT`(5)
-이상의 압축 세그먼트는 실 데이터가 3종(Text/Files/Image)뿐이라 아직 specimen 에 없다 —
-[[49/50]]이 타입을 늘리면 추가한다.
+화면 전용 고정값 480×360 은 module const(token-policy §c). 8 상태(data-text/data-files/image/
+html-raw/html-pretty/empty/read-failed/already-open) 를 `StageVariant::Wrap` 으로 나란히
+노출. `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 실 데이터가 4종(Text/Files/Image/Html)뿐이라
+아직 specimen 에 없다 — [[50]]이 타입을 늘리면 추가한다.
 
 ## git-viewer (Plugins)
 
