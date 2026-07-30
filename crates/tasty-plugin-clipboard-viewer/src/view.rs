@@ -5,9 +5,8 @@
 //! 복수 타입은 가로 세그먼트 스위치([`type_switch`])로 표현한다. `SEG_COMPACT_AT`(5)
 //! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/`Files`/
 //! `Image`(TODO48)/`Html`(TODO49 — HTML 은 raw 소스 표시 + Pretty print 체크박스,
-//! [`crate::html_format`])을 채운다(51/52/48/49) — Other 는 자매 TODO(50)가
-//! `ClipboardType`에 arm 을 추가하며 [`type_icon`]/[`type_body`]/[`footer_mime_text`]
-//! 에도 갈래를 보탠다.
+//! [`crate::html_format`])/`Other`(TODO50 — text/files/image/html 가 아닌 raw 포맷을
+//! 포맷별 블록으로 나열, [`crate::raw_formats`])을 채운다(51/52/48/49/50).
 //!
 //! chrome(scrim/border/outside-click/Esc)은 host 소유 — plugin 은 content 영역만
 //! 그린다. 색·폰트·간격은 전부 host 가 보낸 `Theme` 토큰에서 가져온다(from_rgb/raw
@@ -16,10 +15,6 @@
 //! `draw_already_open` 이 `true` 를 반환하고, 호출부(`main.rs`)가 `popup.close` IPC 로
 //! host 에 닫기를 요청한다(host 가 chrome 생애주기를 계속 소유).
 
-// LAYERS 는 아직 안 쓴다(FILE/IMAGE/HTML 은 이 브랜치 세트가 씀) — 자매 TODO(50)가
-// ClipboardType 에 arm 을 추가하며 소비한다. build.rs 가 9개를 한꺼번에 베이크해 그
-// TODO들이 build.rs 를 다시 건드릴 필요가 없게 해둔 의도된 상태(TODO51).
-#[allow(dead_code)]
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
 }
@@ -29,7 +24,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVariant, checkbox, tag};
 
 use crate::ViewerState;
-use crate::clipboard::{ClipboardType, ContentRepr};
+use crate::clipboard::{ClipboardType, ContentRepr, OtherFormatEntry, format_bytes};
 use crate::html_format::prettify;
 
 /// 세그먼트가 5개 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다(design
@@ -52,6 +47,11 @@ const CENTER_ICON_SIZE: f32 = 28.0;
 
 /// image body 아이콘 크기(design 고정값 30 — `CENTER_ICON_SIZE` 와 동일 정책).
 const IMAGE_BODY_ICON_SIZE: f32 = 30.0;
+
+/// "기타" 버킷 한 블록의 미리보기 최대 줄 수 — 넘으면 `+N more lines`로 절삭(design은
+/// 구체적 상한을 구현에 위임, TODO50). 목록 자체(포맷 개수)는 절대 접지 않는다(design
+/// §6.5 확정) — 이건 블록 "내부" 콘텐츠 줄 수 상한일 뿐이다.
+const OTHER_PREVIEW_MAX_LINES: usize = 20;
 
 /// 주 인스턴스 popup 본문. 헤더는 항상 그리고, 그 아래는 read_error / empty / data
 /// 3분기(design `dataState`/`snap.status` 동형). 헤더·푸터의 Close 클릭 시 `true`.
@@ -201,8 +201,15 @@ fn data_state(
         .iter()
         .find(|(t, _)| *t == active)
         .and_then(|(_, c)| c.meta_text());
+    // "기타" 세그먼트 tooltip(design "{n} unrecognized formats", TODO50)에 쓰는 포맷
+    // 개수 — Other 가 available 에 없으면 None(다른 타입 뿐이면 tooltip 없이 기본
+    // 라벨 유지).
+    let other_count = state.available.iter().find_map(|(t, c)| match (t, c) {
+        (ClipboardType::Other, ContentRepr::Other(entries)) => Some(entries.len()),
+        _ => None,
+    });
     let mut html_pretty = state.html_pretty;
-    let picked = type_bar(ui, theme, tr, &types, active, |ui, theme| {
+    let picked = type_bar(ui, theme, tr, &types, active, other_count, |ui, theme| {
         if active == ClipboardType::Html {
             checkbox(
                 ui,
@@ -241,10 +248,11 @@ fn data_state(
     }
 
     // HTML 타입은 밀려난 메타(문자수/줄수)를 푸터에서 `{mime} · {meta}` 로 결합해
-    // 노출한다(design 확정 결과) — 다른 타입은 기존처럼 mime만.
-    let footer_meta = cur
-        .as_ref()
-        .and_then(|(ty, content)| html_footer_meta(tr, *ty, content));
+    // 노출한다(design 확정 결과) — Other 는 mime 자체가 없어 포맷 개수 문구가
+    // mime 을 대체한다(`footer_mime_text`). 다른 타입은 기존처럼 mime만.
+    let footer_meta = cur.as_ref().and_then(|(ty, content)| {
+        html_footer_meta(tr, *ty, content).or_else(|| other_footer_meta(tr, *ty, content))
+    });
     footer(
         ui,
         theme,
@@ -258,12 +266,17 @@ fn data_state(
 /// design `TypeSwitch` — 1개면 아이콘+뱃지(읽기전용), 2개 이상이면 가로 세그먼트
 /// 버튼 그룹(rail 재도입 금지). `SEG_COMPACT_AT` 이상이면 비활성 세그먼트를 아이콘
 /// 전용으로 압축(active 만 라벨 유지) + `.on_hover_text()`로 전체 타입명 노출.
+///
+/// `other_count` — Other 타입이 available 이면 그 포맷 개수(design "{n} unrecognized
+/// formats", TODO50). Other 세그먼트/뱃지의 tooltip 이 기본 라벨("Other") 대신 이
+/// 개수 문구를 쓴다 — 다른 타입은 영향 없음.
 fn type_switch(
     ui: &mut egui::Ui,
     theme: &Theme,
     tr: &Translator,
     types: &[ClipboardType],
     active: ClipboardType,
+    other_count: Option<usize>,
 ) -> Option<ClipboardType> {
     if types.len() <= 1 {
         let ty = types.first().copied().unwrap_or(active);
@@ -273,13 +286,18 @@ fn type_switch(
             theme.icon_glyph_size_sm.value(),
             theme.text_muted().to_egui(),
         );
-        tag(
+        let resp = tag(
             ui,
             theme,
             tr.t(ty.label_i18n_key()),
             TagVariant::Accent,
             false,
         );
+        if ty == ClipboardType::Other
+            && let Some(n) = other_count
+        {
+            resp.on_hover_text(other_unrecognized_text(tr, n));
+        }
         return None;
     }
 
@@ -355,7 +373,11 @@ fn type_switch(
                             fg,
                         );
                     }
-                    if resp.on_hover_text(label).clicked() && !on {
+                    let tooltip = match (ty, other_count) {
+                        (ClipboardType::Other, Some(n)) => other_unrecognized_text(tr, n),
+                        _ => label.to_string(),
+                    };
+                    if resp.on_hover_text(tooltip).clicked() && !on {
                         picked = Some(ty);
                     }
                 }
@@ -383,6 +405,7 @@ fn type_bar(
     tr: &Translator,
     types: &[ClipboardType],
     active: ClipboardType,
+    other_count: Option<usize>,
     right_slot: impl FnOnce(&mut egui::Ui, &Theme),
 ) -> Option<ClipboardType> {
     let full_w = ui.available_width();
@@ -404,7 +427,7 @@ fn type_bar(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     lui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-    let picked = type_switch(&mut lui, theme, tr, types, active);
+    let picked = type_switch(&mut lui, theme, tr, types, active, other_count);
 
     let mut rui = ui.new_child(
         egui::UiBuilder::new()
@@ -417,8 +440,7 @@ fn type_bar(
     picked
 }
 
-/// design `TypeBody` — Text/Files/Image/Html arm 을 채운다(51/52/48/49). Other 는
-/// 자매 TODO(50)가 이 match 에 arm 을 보탠다.
+/// design `TypeBody` — Text/Files/Image/Html/Other arm 을 채운다(51/52/48/49/50).
 fn type_body(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -445,6 +467,7 @@ fn type_body(
                 text_body(ui, theme, html);
             }
         }
+        (ClipboardType::Other, ContentRepr::Other(entries)) => other_body(ui, theme, tr, entries),
         // ClipboardType 과 ContentRepr 는 read_available() 이 항상 같은 종류끼리만
         // 짝지어 push 한다 — 다른 조합은 구조적으로 발생하지 않는다.
         _ => unreachable!("ClipboardType/ContentRepr mismatch"),
@@ -535,6 +558,105 @@ fn files_body(ui: &mut egui::Ui, theme: &Theme, files: &[std::path::PathBuf]) {
             );
         }
     });
+}
+
+/// "기타" 버킷 본문 — 발견된 포맷마다 한 블록씩 세로 나열, 블록 사이 1px
+/// separator(design `TypeBody` `other` 분기 1:1 전사, TODO50). 목록 자체는 절대 접지
+/// 않는다(design §6.5 확정) — well 이 이미 스크롤되므로 포맷이 몇 개든 전부 그린다.
+fn other_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entries: &[OtherFormatEntry]) {
+    well(ui, theme, |ui| {
+        for (i, entry) in entries.iter().enumerate() {
+            if i > 0 {
+                ui.add_space(theme.spacing_sm.value());
+                let full_w = ui.available_width();
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(full_w, theme.border_width.value()),
+                    egui::Sense::hover(),
+                );
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.center().y,
+                    egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                );
+                ui.add_space(theme.spacing_sm.value());
+            }
+            other_format_block(ui, theme, tr, entry);
+        }
+    });
+}
+
+/// "기타" 버킷 한 블록 — 첫 줄 이름+크기(같은 줄), 그 아래 텍스트화된 미리보기,
+/// `OTHER_PREVIEW_MAX_LINES` 초과 시 이탤릭 `+N more lines`(design 확정 결과).
+fn other_format_block(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &OtherFormatEntry) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(&entry.name)
+                .monospace()
+                .strong()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_secondary().to_egui()),
+        );
+        ui.label(
+            egui::RichText::new(format_bytes(entry.byte_len))
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    });
+    ui.add_space(theme.spacing_xs.value());
+    let (shown, truncated_lines) = truncate_lines(&entry.preview, OTHER_PREVIEW_MAX_LINES);
+    // 바이너리 fallback(hex 요약)은 실제 클립보드 내용이 아니라 대체 표현이라는
+    // 것을 이탤릭으로 구분한다 — 사용자가 hex 를 원본 텍스트로 오인하지 않게.
+    let mut preview_text = egui::RichText::new(shown)
+        .monospace()
+        .size(theme.font_size_term_sm.value())
+        .color(theme.text_primary().to_egui());
+    if entry.is_binary {
+        preview_text = preview_text.italics();
+    }
+    ui.add(egui::Label::new(preview_text).wrap());
+    if truncated_lines > 0 {
+        ui.add_space(theme.spacing_xs.value());
+        ui.label(
+            egui::RichText::new(other_more_lines_text(tr, truncated_lines))
+                .italics()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    }
+}
+
+/// 순수 함수 — `text`를 최대 `max_lines`줄로 절삭하고 잘려나간 줄 수를 반환한다.
+/// 렌더 없이 단위 테스트 가능.
+fn truncate_lines(text: &str, max_lines: usize) -> (String, usize) {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() <= max_lines {
+        return (text.to_string(), 0);
+    }
+    (lines[..max_lines].join("\n"), lines.len() - max_lines)
+}
+
+/// design "+{n} more lines" — 블록 본문 절삭 문구.
+fn other_more_lines_text(tr: &Translator, n: usize) -> String {
+    tr.t("clipboard_viewer.popup.other_more_lines")
+        .replace("{n}", &n.to_string())
+}
+
+/// design "{n} unrecognized formats" — Other 세그먼트/뱃지 tooltip 문구(TODO50).
+fn other_unrecognized_text(tr: &Translator, n: usize) -> String {
+    tr.t("clipboard_viewer.popup.other_unrecognized_formats")
+        .replace("{n}", &n.to_string())
+}
+
+/// Other 타입일 때 푸터 메타 — `{n} unrecognized formats`(mime 이 없어 이 문구가
+/// mime 자리를 대체한다, `footer_mime_text`). 다른 타입은 `None`.
+fn other_footer_meta(tr: &Translator, ty: ClipboardType, content: &ContentRepr) -> Option<String> {
+    match (ty, content) {
+        (ClipboardType::Other, ContentRepr::Other(entries)) => {
+            Some(other_unrecognized_text(tr, entries.len()))
+        }
+        _ => None,
+    }
 }
 
 /// 한 줄 말줄임 galley — 폭 초과 시 '…' 로 잘라낸다(`tasty-ui-widgets::listctrl` 정본
@@ -650,10 +772,12 @@ fn footer(
 }
 
 /// design 조건: 일반 타입은 `{mime}`, HTML 타입은 `{mime} · {meta}`(TODO49 확정 결과).
+/// Other 는 mime 자체가 없어 meta(포맷 개수 문구)가 mime 을 통째로 대체한다(TODO50).
 /// Text/Files/Image 는 기본 경로만 채운다.
 fn footer_mime_text(ty: ClipboardType, meta: Option<&str>) -> String {
     match (ty, meta) {
         (ClipboardType::Html, Some(meta)) => format!("{} · {meta}", ty.mime_str()),
+        (ClipboardType::Other, Some(meta)) => meta.to_string(),
         _ => ty.mime_str().to_string(),
     }
 }
@@ -680,14 +804,15 @@ fn format_html_meta(tr: &Translator, html: &str) -> String {
         .replace("{lines}", &lines.to_string())
 }
 
-/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Text/Files/Image/Html 을 채운다 —
-/// 자매 TODO(50)가 `ClipboardType`에 arm 을 추가하며 이 match 에도 갈래를 보탠다.
+/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Other 는 `layers`(design 확정
+/// 결과 — "여러 겹" = 여러 포맷이 쌓여있다는 은유, TODO50).
 fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     match ty {
         ClipboardType::Text => baked_icons::TEXT_LEFT,
         ClipboardType::Files => baked_icons::FILE,
         ClipboardType::Image => baked_icons::IMAGE,
         ClipboardType::Html => baked_icons::HTML,
+        ClipboardType::Other => baked_icons::LAYERS,
     }
 }
 
@@ -872,6 +997,91 @@ mod tests {
         assert_eq!(
             format_html_meta(&test_translator(), "line one\nline two"),
             "17 chars · 2 lines"
+        );
+    }
+
+    #[test]
+    fn type_icon_other_uses_layers_glyph() {
+        assert_eq!(type_icon(ClipboardType::Other), baked_icons::LAYERS);
+    }
+
+    #[test]
+    fn footer_mime_text_other_without_meta_falls_back_to_mime_str() {
+        // read_available() 은 entries 가 비어 있으면 Other 를 애초에 push 하지
+        // 않으므로 실전에서는 발생하지 않지만, 함수 자체는 두 인자 조합 모두에
+        // 대해 정의돼야 한다.
+        assert_eq!(
+            footer_mime_text(ClipboardType::Other, None),
+            "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn footer_mime_text_other_with_meta_replaces_mime_entirely() {
+        assert_eq!(
+            footer_mime_text(ClipboardType::Other, Some("2 unrecognized formats")),
+            "2 unrecognized formats"
+        );
+    }
+
+    #[test]
+    fn other_footer_meta_is_none_for_non_other_types() {
+        assert_eq!(
+            other_footer_meta(
+                &test_translator(),
+                ClipboardType::Text,
+                &ContentRepr::Text("x".into())
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn other_footer_meta_counts_entries() {
+        let entries = vec![
+            OtherFormatEntry::from_bytes("A".into(), b"1", 1024),
+            OtherFormatEntry::from_bytes("B".into(), b"2", 1024),
+        ];
+        assert_eq!(
+            other_footer_meta(
+                &test_translator(),
+                ClipboardType::Other,
+                &ContentRepr::Other(entries)
+            )
+            .as_deref(),
+            Some("2 unrecognized formats")
+        );
+    }
+
+    #[test]
+    fn truncate_lines_keeps_short_text_untouched() {
+        assert_eq!(truncate_lines("a\nb\nc", 20), ("a\nb\nc".to_string(), 0));
+    }
+
+    #[test]
+    fn truncate_lines_cuts_and_counts_remainder() {
+        let text = (0..25)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (shown, cut) = truncate_lines(&text, 20);
+        assert_eq!(shown.lines().count(), 20);
+        assert_eq!(cut, 5);
+    }
+
+    #[test]
+    fn other_more_lines_text_interpolates_count() {
+        assert_eq!(
+            other_more_lines_text(&test_translator(), 7),
+            "+7 more lines"
+        );
+    }
+
+    #[test]
+    fn other_unrecognized_text_interpolates_count() {
+        assert_eq!(
+            other_unrecognized_text(&test_translator(), 3),
+            "3 unrecognized formats"
         );
     }
 }

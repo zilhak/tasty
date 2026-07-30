@@ -23,6 +23,7 @@
 
 mod clipboard;
 mod html_format;
+mod raw_formats;
 mod view;
 
 use tasty_plugin_sdk::{

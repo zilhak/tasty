@@ -20,9 +20,12 @@ image_no_preview = "No inline image preview"
 pretty_print = "Pretty print"
 html_meta_line = "{chars} chars · {lines} line"
 html_meta_lines = "{chars} chars · {lines} lines"
+other_more_lines = "+{n} more lines"
+other_unrecognized_formats = "{n} unrecognized formats"
 
 [clipboard_viewer.type]
 text = "Text"
 files = "Files"
 image = "Image"
 html = "HTML"
+other = "Other"

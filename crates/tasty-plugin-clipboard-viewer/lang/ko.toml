@@ -20,9 +20,12 @@ image_no_preview = "인라인 미리보기를 지원하지 않습니다"
 pretty_print = "보기 좋게 정리"
 html_meta_line = "{chars}자 · {lines}줄"
 html_meta_lines = "{chars}자 · {lines}줄"
+other_more_lines = "그 외 {n}줄 더"
+other_unrecognized_formats = "인식되지 않는 포맷 {n}개"
 
 [clipboard_viewer.type]
 text = "텍스트"
 files = "파일"
 image = "이미지"
 html = "HTML"
+other = "기타"

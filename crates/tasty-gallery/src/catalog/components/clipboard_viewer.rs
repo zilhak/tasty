@@ -10,7 +10,7 @@
 //! plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock 으로
 //! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
 //!
-//! 8 상태를 나란히 노출:
+//! 9 상태를 나란히 노출:
 //! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
 //! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
 //!   body 는 아이콘+경로 한 줄씩(TODO52).
@@ -18,14 +18,15 @@
 //!   안내, 실제 픽셀 렌더링 없음 — design 결정, TODO48).
 //! - **html — raw source** — HTML 타입, Pretty print 체크박스 미체크(원본 그대로).
 //! - **html — pretty print** — 같은 데이터, 체크박스 체크(인덴트 적용, TODO49).
+//! - **other** — text/files/image/html 가 아닌 raw 포맷을 이름+크기+미리보기 블록으로
+//!   나열, 블록 사이 separator, 긴 미리보기는 `+N more lines`로 절삭(TODO50).
 //! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
 //!
-//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 4종
-//! (Text/Files/Image/Html)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한
-//! 한계이며 [[50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
-//! (`spec::note` 참고).
+//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 5종
+//! (Text/Files/Image/Html/Other)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와
+//! 동일한 한계다(`spec::note` 참고).
 
 use std::cell::RefCell;
 
@@ -66,6 +67,36 @@ const HTML_RAW: &str = "<div class=\"card\"><p>Hello <b>world</b></p></div>";
 const HTML_PRETTY: &str =
     "<div class=\"card\">\n  <p>\n    Hello\n    <b>\n      world\n    </b>\n  </p>\n</div>";
 
+/// "기타" specimen 한 포맷 블록 — 실 데이터는 plugin
+/// `clipboard::OtherFormatEntry`(이름/바이트 길이/미리보기)지만 갤러리는 plugin
+/// crate 를 의존할 수 없어 (이름, 크기 문자열, 미리보기, 절삭 줄 수) 를 직접 박아
+/// 둔다(TODO50).
+struct OtherSample {
+    name: &'static str,
+    size: &'static str,
+    preview: &'static str,
+    /// `Some(n)` 이면 그 블록에 `+n more lines` 절삭 문구를 함께 그린다(design
+    /// 확정 결과 — 내용이 길면 이탤릭 텍스트로 절삭 표시).
+    more_lines: Option<usize>,
+}
+
+/// text/files/image/html 어디에도 안 걸린 raw 포맷 예시 2종 — 하나는 짧은 순수 텍스트
+/// (Windows 드래그앤드롭 힌트류), 하나는 절삭이 필요한 긴 JSON(커스텀 앱 전용 포맷).
+const OTHER_SAMPLES: &[OtherSample] = &[
+    OtherSample {
+        name: "Files Drop Effect",
+        size: "4 B",
+        preview: "DROPEFFECT_COPY",
+        more_lines: None,
+    },
+    OtherSample {
+        name: "Custom App Format",
+        size: "1.2 KB",
+        preview: "{\"id\":\"note-8842\",\"kind\":\"reference\"}\n{\"id\":\"note-8843\",\"kind\":\"reference\"}\n{\"id\":\"note-8844\",\"kind\":\"reference\"}",
+        more_lines: Some(6),
+    },
+];
+
 thread_local! {
     static HTML_RAW_PRETTY_ON: RefCell<bool> = const { RefCell::new(false) };
     static HTML_PRETTY_PRETTY_ON: RefCell<bool> = const { RefCell::new(true) };
@@ -102,6 +133,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "html — pretty print (TODO49, Pretty print checked)",
             |ui| data_popup_html(ui, theme, &HTML_PRETTY_PRETTY_ON, HTML_PRETTY),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "other — raw format bucket (TODO50, unrecognized formats)",
+            |ui| other_popup(ui, theme),
         );
         spec::cluster(ui, theme, "empty clipboard", |ui| {
             center_popup(
@@ -156,7 +193,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "states",
-                "data(text) · data(files) · image · html(raw/pretty) · empty · read-failed · already-open",
+                "data(text) · data(files) · image · html(raw/pretty) · other · empty · read-failed · already-open",
             ),
         ],
         &[
@@ -200,7 +237,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          없는 태그 깊이 인덴터, script/style/pre 는 verbatim 보존)와 동일 규칙으로 \
          수기 정리한 샘플이다 — 갤러리는 plugin crate 를 의존할 수 없어 결과 문자열을 \
          직접 박아둔다. 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 기능 \
-         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
+         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다. TODO50 — text/files/\
+         image/html 어디에도 속하지 않는 raw 포맷은 \"Other\" 타입 하나로 묶여 \
+         type-bar 에 나타난다. body 는 발견된 포맷마다 이름(mono, text-secondary, \
+         굵게)+크기(mono, text-muted)를 같은 줄에, 그 아래 텍스트화된 미리보기를 \
+         보여주는 블록을 세로로 나열하고 블록 사이는 1px separator 로 구분한다 — \
+         목록 자체(포맷 개수)는 절대 접지 않는다(design §6.5 확정). 미리보기가 길면 \
+         `+N more lines`로 절삭 표시한다. footer 는 mime 자리에 \"{n} unrecognized \
+         formats\" 문구가 대신 들어간다(여러 이종 포맷을 묶은 버킷이라 단일 mime 이 \
+         없음). 실제 raw 열거는 plugin `raw_formats`(Windows `clipboard-win`/macOS \
+         `objc2-app-kit`/Linux `x11rb` TARGETS)가 text/files/image/html 로 이미 소비된 \
+         변형을 플랫폼별 매핑 테이블로 제외한 나머지를 읽는다 — 갤러리는 그 결과 \
+         문자열만 손으로 정리해 박아둔다.",
     );
 }
 
@@ -520,6 +568,182 @@ fn image_footer_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::pos2(rect.left() + pad_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         "image/rgba8",
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    let btn_w = 64.0;
+    let btn_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
+        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
+    );
+    ui.painter().rect(
+        btn_rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        btn_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Close",
+        egui::FontId::proportional(theme.font_size_term_sm.value()),
+        theme.text_secondary().to_egui(),
+    );
+}
+
+/// "기타" 버킷 상태 — header + type-bar(Other 뱃지) + body(포맷 블록 나열) + footer
+/// 4행(design 확정 결과, TODO50).
+fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
+        header_row(ui, theme);
+        other_type_bar_row(ui, theme);
+        other_body_row(ui, theme);
+        other_footer_row(ui, theme);
+    });
+}
+
+/// type-bar — 타입이 Other 하나뿐인 상태 — 아이콘(layers)+accent 뱃지(design 확정
+/// 결과, TODO50). 다른 단일 타입 뱃지([`type_bar_row`])와 동일 구조, 라벨만 다르다.
+fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+
+    let content = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        egui::pos2(rect.right() - pad_x, rect.bottom()),
+    );
+    let mut lui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    lui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    kit::icon(
+        &mut lui,
+        icons::LAYERS,
+        theme.icon_glyph_size_sm.value(),
+        theme.text_muted().to_egui(),
+    );
+    tag(&mut lui, theme, "Other", TagVariant::Accent, false);
+
+    hline(ui, theme, rect.bottom());
+}
+
+/// body(기타) — well 안에 [`OTHER_SAMPLES`] 포맷 블록을 세로로 나열, 블록 사이 1px
+/// separator(design `TypeBody` `other` 분기 1:1 전사, TODO50). 목록 자체는 접지
+/// 않는다(design §6.5 확정) — well 이 이미 스크롤 컨테이너다.
+fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
+    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
+    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let h = POPUP_H - header_h - type_bar_h - footer_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+
+    let margin = theme.spacing_md.value();
+    let well = rect.shrink(margin);
+    let p = ui.painter();
+    p.rect(
+        well,
+        theme.corner_radius.value(),
+        theme.bg_app().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+
+    let tx = well.left() + theme.spacing_sm.value();
+    let mut ty = well.top() + theme.spacing_sm.value();
+    let name_font = egui::FontId::monospace(theme.font_size_caption.value());
+    let name_h = theme.font_size_caption.value();
+    let line_h = theme.font_size_term_sm.value() + theme.spacing_xs.value();
+
+    for (i, sample) in OTHER_SAMPLES.iter().enumerate() {
+        if i > 0 {
+            ty += theme.spacing_sm.value();
+            p.hline(
+                egui::Rangef::new(well.left(), well.right()),
+                ty,
+                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            );
+            ty += theme.spacing_sm.value();
+        }
+
+        let name_w = ui
+            .fonts(|f| {
+                f.layout_no_wrap(
+                    sample.name.to_owned(),
+                    name_font.clone(),
+                    egui::Color32::PLACEHOLDER,
+                )
+            })
+            .size()
+            .x;
+        p.text(
+            egui::pos2(tx, ty),
+            egui::Align2::LEFT_TOP,
+            sample.name,
+            name_font.clone(),
+            theme.text_secondary().to_egui(),
+        );
+        p.text(
+            egui::pos2(tx + name_w + theme.spacing_sm.value(), ty),
+            egui::Align2::LEFT_TOP,
+            sample.size,
+            name_font.clone(),
+            theme.text_muted().to_egui(),
+        );
+        ty += name_h + theme.spacing_xs.value();
+
+        for line in sample.preview.lines() {
+            p.text(
+                egui::pos2(tx, ty),
+                egui::Align2::LEFT_TOP,
+                line,
+                egui::FontId::monospace(theme.font_size_term_sm.value()),
+                theme.text_primary().to_egui(),
+            );
+            ty += line_h;
+        }
+        if let Some(n) = sample.more_lines {
+            p.text(
+                egui::pos2(tx, ty),
+                egui::Align2::LEFT_TOP,
+                format!("+{n} more lines"),
+                name_font.clone(),
+                theme.text_muted().to_egui(),
+            );
+            ty += line_h;
+        }
+    }
+}
+
+/// footer(기타) — mime 자리에 "{n} unrecognized formats" 문구(mime 이 없어 대체,
+/// design 확정 결과) + 우측 Close(secondary).
+fn other_footer_row(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top() + theme.border_width.value() * 0.5,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        format!("{} unrecognized formats", OTHER_SAMPLES.len()),
         egui::FontId::monospace(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );

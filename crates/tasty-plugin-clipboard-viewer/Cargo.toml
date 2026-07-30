@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only viewer of the current system clipboard"
@@ -47,6 +47,28 @@ tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 [build-dependencies]
 usvg = "0.37"
 tasty-icons = { path = "../tasty-icons", default-features = false }
+
+# "기타" 버킷의 raw 포맷 열거(TODO50) — arboard 는 열거 자체를 노출하지 않아
+# 플랫폼 raw API 를 직접 호출한다. 세 크레이트 다 arboard 가 이미 transitive
+# dependency 로 끌어온 것과 semver 호환 버전을 선언해 동일 인스턴스로 재사용한다
+# (버전이 어긋나면 중복 컴파일 + Cargo.lock 비대화, `cargo tree -d` 로 검증).
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSPasteboard",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSData",
+    "NSString",
+] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = "0.13"
 
 [lints]
 workspace = true

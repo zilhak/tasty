@@ -5802,11 +5802,14 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "anyhow",
  "arboard",
+ "clipboard-win",
  "egui",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "serde_json",
  "tasty-icons",
  "tasty-plugin-manifest",
@@ -5817,6 +5820,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "usvg",
+ "x11rb",
 ]
 
 [[package]]
