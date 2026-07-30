@@ -120,7 +120,7 @@ pub fn handle_cap_set(
         Err(_) => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("invalid 'action' '{action_str}' (stop|pause|require_approval|notify)"),
+                format!("invalid 'action' '{action_str}' (pause|require_approval|notify)"),
             );
         }
     };
@@ -384,7 +384,7 @@ pub(super) fn fire_cap_action(
     match cap.action {
         CapAction::Notify => fire_notify(state, engine, cap, current),
         CapAction::RequireApproval => fire_require_approval(core, state, engine, cap, current),
-        CapAction::Stop | CapAction::Pause => {
+        CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
             // 보이지 않도록.

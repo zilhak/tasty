@@ -35,8 +35,8 @@ pub(crate) fn now_ms() -> u64 {
 
 /// 호출 전 cap 차단 체크 (Phase 4.3c).
 ///
-/// Plugin caller 의 agent 에 대해, `triggered` 가 있고 action 이 `Stop` 또는
-/// `Pause` 인 cap 이 하나라도 있으면 차단 사유 문자열을 반환한다.
+/// Plugin caller 의 agent 에 대해, `triggered` 가 있고 action 이 `Pause` 또는
+/// `RequireApproval` 인 cap 이 하나라도 있으면 차단 사유 문자열을 반환한다.
 ///
 /// 모든 메서드를 차단한다 (telemetry.* 포함). `telemetry.cap.reset` 으로 해제는
 /// **Local caller (CLI/사용자)** 만 가능 — Local 은 본 함수의 검사 대상이 아니므로
@@ -67,10 +67,7 @@ pub(crate) fn check_cap_block(
         if cap.triggered.is_none() {
             continue;
         }
-        if !matches!(
-            cap.action,
-            CapAction::Stop | CapAction::Pause | CapAction::RequireApproval
-        ) {
+        if !matches!(cap.action, CapAction::Pause | CapAction::RequireApproval) {
             continue;
         }
         return Some(format!(

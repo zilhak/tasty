@@ -155,7 +155,6 @@ fn cap_window_parse() {
 
 #[test]
 fn cap_action_parse() {
-    assert!(matches!(CapAction::from_str("stop"), Ok(CapAction::Stop)));
     assert!(matches!(CapAction::from_str("pause"), Ok(CapAction::Pause)));
     assert!(matches!(
         CapAction::from_str("require_approval"),
@@ -166,6 +165,25 @@ fn cap_action_parse() {
         Ok(CapAction::Notify)
     ));
     assert!(CapAction::from_str("bogus").is_err());
+}
+
+/// `Stop` variant 제거 후에도 과거에 `action: "stop"`으로 저장된 cap 설정
+/// 파일은 `#[serde(alias = "stop")]`로 깨지지 않고 `Pause`로 로드돼야 한다.
+#[test]
+fn legacy_stop_action_deserializes_as_pause() {
+    let cap: CostCap = serde_json::from_str(
+        r#"{"id":"x","agent":"a","metric":"m","threshold":1.0,"window":"total","action":"stop","created_at":0}"#,
+    )
+    .unwrap();
+    assert_eq!(cap.action, CapAction::Pause);
+}
+
+/// `FromStr`(신규 등록 IPC 파싱)은 `"stop"`을 더 이상 유효 입력으로 받지 않는다 —
+/// `Deserialize`(파일 로드, 위 테스트)와는 별개 경로라 다르게 처리된다.
+#[test]
+fn stop_is_no_longer_a_valid_new_action() {
+    assert!(CapAction::from_str("stop").is_err());
+    assert!(matches!(CapAction::from_str("pause"), Ok(CapAction::Pause)));
 }
 
 #[test]
