@@ -22,7 +22,7 @@
 |----------|------|------|
 | 개념 (concepts) | [concepts/index.md](concepts/index.md) | ✅ |
 | 기능 (기획·화면) | [features/index.md](features/index.md) | ✅ |
-| 번들 플러그인 | [plugins/index.md](plugins/index.md) | ✅ (9종, 전용 문서는 7종) |
+| 번들 플러그인 | [plugins/index.md](plugins/index.md) | ✅ (8종, 전용 문서는 7종) |
 | 설계 (design) | [policies/](design/policies/focus.md) · [systems/](design/systems/theme.md) ([popup](design/systems/popup.md)·[toast](design/systems/toast.md)·[banner](design/systems/banner.md)·[icons](design/systems/icons.md)·[token-crosswalk](design/systems/token-crosswalk.md)) · [flows/](design/flows/index.md) | ✅ (정책 · 시스템 · 흐름) |
 | 레퍼런스 (조회) | [reference/index.md](reference/index.md) | ✅ |
 | 개발 가이드 | [dev-guide/index.md](dev-guide/index.md) | ✅ |

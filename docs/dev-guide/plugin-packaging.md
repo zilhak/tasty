@@ -4,12 +4,11 @@
 
 ## 번들 plugin 목록 (SoT)
 
-`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처. 9 종:
+`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처. 8 종:
 
 | crate | plugin ID |
 |-------|-----------|
 | `tasty-plugin-claude` | `com.tasty.claude` |
-| `tasty-plugin-claude-design` | `com.tasty.claude-design` |
 | `tasty-plugin-clipboard-viewer` | `com.tasty.clipboard-viewer` |
 | `tasty-plugin-codex` | `com.tasty.codex` |
 | `tasty-plugin-git-viewer` | `com.tasty.git-viewer` |
