@@ -10,15 +10,17 @@
 //! plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock 으로
 //! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
 //!
-//! 4 상태를 나란히 노출:
-//! - **data** — 정상 4단(오늘의 실 데이터는 Text 뿐이라 type-bar 는 배지로 표시).
+//! 5 상태를 나란히 노출:
+//! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
+//! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
+//!   body 는 아이콘+경로 한 줄씩(TODO52).
 //! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
 //!
-//! 세그먼트(2개 이상 타입, `SEG_COMPACT_AT`=5 압축)는 이 TODO 시점엔 실 데이터가
-//! Text 하나뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한 한계이며
-//! [[48/49/50/52]]가 타입을 늘리면 그때 specimen 도 세그먼트 상태를 추가한다
+//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 2종
+//! (Text/Files)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와 동일한 한계이며
+//! [[48/49/50]]이 타입을 늘리면 그때 specimen 도 압축 세그먼트 상태를 추가한다
 //! (`spec::note` 참고).
 
 use tasty_type_appearance::theme::Theme;
@@ -43,6 +45,13 @@ const PREVIEW: &[&str] = &[
     "tasty read screen --surface 3",
 ];
 
+/// files 상태 body 미리보기 샘플 — 파일 탐색기에서 복사한 경로 목록(TODO52).
+const FILE_PREVIEW: &[&str] = &[
+    "/home/user/Documents/report.pdf",
+    "/home/user/Pictures/screenshot-2026-07-30.png",
+    "/home/user/workspace/tasty/Cargo.toml",
+];
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(
@@ -50,6 +59,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "text only — header / type-bar(badge) / body / footer",
             |ui| data_popup(ui, theme),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "files — type-bar(segmented Text/Files) / body(icon+path rows)",
+            |ui| files_popup(ui, theme),
         );
         spec::cluster(ui, theme, "empty clipboard", |ui| {
             center_popup(
@@ -95,7 +110,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("body", "well(border+radius+bg-app) · mono scroll"),
             ("footer", "mime(mono caption) + Close(secondary)"),
-            ("states", "data · empty · read-failed · already-open"),
+            (
+                "states",
+                "data(text) · data(files) · empty · read-failed · already-open",
+            ),
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
@@ -122,13 +140,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "TODO51 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/body/\
-         footer 4단 수직 스택으로 교체했다. 오늘의 유일한 실 타입(Text)은 type-bar 를 \
-         배지 하나로만 보여준다 — 세그먼트(2개 이상 가로 버튼 그룹, 5개 이상이면 \
-         비활성 세그먼트가 아이콘 전용으로 압축)는 골격만 갖춰뒀고 [[48/49/50/52]]가 \
-         타입을 늘리면 실제로 재현된다(그때 이 specimen 도 세그먼트 상태를 추가한다). \
-         헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 기능 중복이지만 디자인이 \
-         명시적으로 요구해 그대로 반영했다.",
+        "TODO51/52 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/body/\
+         footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 하나로만, \
+         2개(Text/Files, TODO52)면 가로 세그먼트로 보여준다 — `SEG_COMPACT_AT`(5) 이상의 \
+         압축 세그먼트(비활성 세그먼트가 아이콘 전용으로 축소)는 골격만 갖춰뒀고 \
+         [[48/49/50]]이 타입을 늘리면 실제로 재현된다(그때 이 specimen 도 압축 세그먼트 \
+         상태를 추가한다). files body 는 아이콘+mono 경로 한 줄씩, 긴 경로는 말줄임 \
+         처리한다(design ellipsis 전사). 헤더/푸터의 Close 버튼은 host 의 outside-click/\
+         Esc 와 기능 중복이지만 디자인이 명시적으로 요구해 그대로 반영했다.",
     );
 }
 
@@ -140,6 +159,178 @@ fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
         body_row(ui, theme);
         footer_row(ui, theme);
     });
+}
+
+/// files 상태 — header + type-bar(Text/Files 세그먼트) + body(경로 행) + footer 4행
+/// (TODO52).
+fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
+        header_row(ui, theme);
+        type_bar_segmented_row(ui, theme);
+        files_body_row(ui, theme);
+        footer_row_files(ui, theme);
+    });
+}
+
+/// type-bar — 타입 2개(Text/Files) 가로 세그먼트, active=Files(accent 채움).
+fn type_bar_segmented_row(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+
+    let content = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        egui::pos2(rect.right() - pad_x, rect.bottom()),
+    );
+    let mut lui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::ZERO)
+        .show(&mut lui, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            ui.horizontal(|ui| {
+                seg(ui, theme, icons::TEXT_LEFT, "Text", false);
+                seg(ui, theme, icons::FILE, "Files", true);
+            });
+        });
+
+    hline(ui, theme, rect.bottom());
+}
+
+/// 세그먼트 한 칸 — active 면 accent 채움 + on-accent 텍스트.
+fn seg(ui: &mut egui::Ui, theme: &Theme, glyph: MockGlyph, label: &str, active: bool) {
+    let h = theme.item_height_tab.value();
+    let icon_sz = theme.icon_glyph_size_xs.value();
+    let pad_x = theme.spacing_sm.value();
+    let gap = theme.spacing_xs.value();
+    let font = egui::FontId::proportional(theme.font_size_term_sm.value());
+    let label_w = ui
+        .fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), egui::Color32::PLACEHOLDER))
+        .size()
+        .x;
+    let w = pad_x * 2.0 + icon_sz + gap + label_w;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    if active {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.accent_primary().to_egui());
+    }
+    let fg = if active {
+        theme.text_on_accent()
+    } else {
+        theme.text_secondary()
+    }
+    .to_egui();
+    let icon_center = egui::pos2(rect.left() + pad_x + icon_sz * 0.5, rect.center().y);
+    let icon_rect = egui::Rect::from_center_size(icon_center, egui::vec2(icon_sz, icon_sz));
+    glyph.image(icon_sz, fg).paint_at(ui, icon_rect);
+    ui.painter().text(
+        egui::pos2(icon_center.x + icon_sz * 0.5 + gap, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font,
+        fg,
+    );
+}
+
+/// body(files) — well 안에 아이콘 + mono 경로 한 줄씩(design ellipsis 전사).
+fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
+    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
+    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let h = POPUP_H - header_h - type_bar_h - footer_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+
+    let margin = theme.spacing_md.value();
+    let well = rect.shrink(margin);
+    let p = ui.painter();
+    p.rect(
+        well,
+        theme.corner_radius.value(),
+        theme.bg_app().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+
+    let icon_sz = theme.icon_glyph_size_sm.value();
+    let gap = theme.spacing_sm.value();
+    let tx = well.left() + theme.spacing_sm.value();
+    let mut ty = well.top() + theme.spacing_sm.value();
+    let line_h = icon_sz.max(theme.font_size_term_sm.value()) + theme.spacing_xs.value();
+    for path in FILE_PREVIEW {
+        let icon_rect = egui::Rect::from_center_size(
+            egui::pos2(tx + icon_sz * 0.5, ty + line_h * 0.5),
+            egui::vec2(icon_sz, icon_sz),
+        );
+        icons::FILE
+            .image(icon_sz, theme.text_muted().to_egui())
+            .paint_at(ui, icon_rect);
+        p.text(
+            egui::pos2(tx + icon_sz + gap, ty + line_h * 0.5),
+            egui::Align2::LEFT_CENTER,
+            path,
+            egui::FontId::monospace(theme.font_size_term_sm.value()),
+            theme.text_primary().to_egui(),
+        );
+        ty += line_h;
+    }
+}
+
+/// footer(files) — mime(`text/uri-list`) + 우측 Close(secondary).
+fn footer_row_files(ui: &mut egui::Ui, theme: &Theme) {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let ctrl_h = theme.item_height_tab.value();
+    let h = pad_y * 2.0 + ctrl_h;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top() + theme.border_width.value() * 0.5,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "text/uri-list",
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    let btn_w = 64.0;
+    let btn_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
+        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
+    );
+    ui.painter().rect(
+        btn_rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        btn_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Close",
+        egui::FontId::proportional(theme.font_size_term_sm.value()),
+        theme.text_secondary().to_egui(),
+    );
 }
 
 /// header — 클립보드 아이콘 + "Clipboard" + snapshot 뱃지 + 우측 close.
@@ -194,7 +385,7 @@ fn header_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
-/// type-bar — 오늘의 유일한 실 타입(Text)은 세그먼트가 아니라 아이콘+accent 뱃지.
+/// type-bar — 타입이 1개(Text)뿐인 상태는 세그먼트가 아니라 아이콘+accent 뱃지.
 fn type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();

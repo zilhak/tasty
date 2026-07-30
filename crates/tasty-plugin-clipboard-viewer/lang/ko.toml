@@ -19,3 +19,4 @@ already_open_sub = "스냅샷 창은 한 번에 하나만 실행됩니다 — �
 
 [clipboard_viewer.type]
 text = "텍스트"
+files = "파일"

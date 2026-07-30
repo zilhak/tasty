@@ -19,3 +19,4 @@ already_open_sub = "Only one snapshot window runs at a time — the existing one
 
 [clipboard_viewer.type]
 text = "Text"
+files = "Files"

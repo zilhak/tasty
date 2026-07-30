@@ -365,15 +365,16 @@ master-detail 레이아웃은 폐기됐다(TODO51) — header→type-bar→body�
 | plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
 | header(아이콘+타이틀+snapshot 뱃지+close) | `text-muted`/`font-size-max`/`tag` Default | `header_row` |
-| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2, 갤러리는 ≤1만 재현) | `type_bar_row` |
-| body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `body_row` |
-| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row` |
+| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row` / `type_bar_segmented_row`(Text/Files, TODO52) |
+| body well(text) | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `body_row` |
+| body well(files, TODO52) | 위와 동일 + 아이콘(`text-muted`)+mono 경로 한 줄씩 | `files_body_row` |
+| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row` / `footer_row_files`(TODO52) |
 | CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
-화면 전용 고정값 480×360 은 module const(token-policy §c). 4 상태(data/empty/read-failed/
-already-open) 를 `StageVariant::Wrap` 으로 나란히 노출. 세그먼트(2개 이상 타입) 상태는
-오늘의 실 데이터가 Text 뿐이라 아직 specimen 에 없다 — [[48/49/50/52]]가 타입을 늘리면
-추가한다.
+화면 전용 고정값 480×360 은 module const(token-policy §c). 5 상태(data-text/data-files/empty/
+read-failed/already-open) 를 `StageVariant::Wrap` 으로 나란히 노출. `SEG_COMPACT_AT`(5) 이상의
+압축 세그먼트는 실 데이터가 2종(Text/Files)뿐이라 아직 specimen 에 없다 — [[48/49/50]]이
+타입을 늘리면 추가한다.
 
 ## git-viewer (Plugins)
 

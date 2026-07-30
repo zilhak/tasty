@@ -19,3 +19,4 @@ already_open_sub = "スナップショットウィンドウは一度に1つだ�
 
 [clipboard_viewer.type]
 text = "テキスト"
+files = "ファイル"
