@@ -23,8 +23,8 @@
 //!
 //! ## Phase D 진행 중
 //!
-//! 현재는 *trait 정의 만*. production adapter / test mock 은 D.3.A.2 / D.3.A.3 에서.
-//! Core 가 trait object 보유는 D.3.A.5 에서.
+//! 본 모듈은 *trait 정의 만*. production adapter / test mock 은 `src/adapters/`
+//! 에 구현돼 있고, Core 는 그 구현들을 trait object 로 보유해 실제로 호출한다.
 
 pub mod clipboard;
 pub mod clock;

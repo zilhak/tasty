@@ -266,7 +266,7 @@ impl MemoryStore {
         Self::prepare(conn, path, config)
     }
 
-    /// 인메모리. test + production 의 placeholder (D.3.A 진행 중) 양쪽 사용.
+    /// 인메모리. test + production 의 placeholder 양쪽 사용.
     pub fn open_in_memory() -> std::result::Result<Self, MemoryInitError> {
         Self::open_in_memory_with_config(MemoryConfig::default())
     }

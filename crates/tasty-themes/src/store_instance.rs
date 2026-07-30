@@ -4,7 +4,7 @@
 //! 보유하는 instance. 같은 *resolve / install / apply / rescan / first_run_init /
 //! ensure_mocha_exists* 동작.
 //!
-//! 호환: D.3.A.4 시점에는 *기존 free function (`global::theme()`, `state::install_global`,
+//! 호환: *기존 free function (`global::theme()`, `state::install_global`,
 //! `state::apply_theme`, etc.) 그대로 유지*. 호출처 변경은 Phase D.3.C 에서.
 
 use std::sync::{Arc, RwLock};
