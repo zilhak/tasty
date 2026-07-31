@@ -462,6 +462,47 @@ pub(crate) fn handle_kill(
     )
 }
 
+/// child 를 닫지 않고 관계·soft 점유만 해제한다 — TODO17 / ADR-0040 §45 유보분(release
+/// 쪽). `handle_kill`(421-463행)과 동일한 `remove_child`+`save` 순서를 따르되, 점유
+/// 해제에 tier-무관 `release_occupancy` 대신 주체 검증판 `release_soft_occupancy` 를
+/// 쓰고(hard 점유는 구조적으로 손대지 않음), `surface.close` 호출을 생략한다 — 이 생략이
+/// kill 과의 유일한 동작 차이다. `release_soft_occupancy` 가 desync(이미 점유만 풀린
+/// 경우) 로 실패해도 registry 정리(관계 해제)는 그대로 성공 처리한다.
+pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+    engine.reconcile_child_terminals();
+    let parent = match resolve_parent(engine, params, &id) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let child_index = match require_u32(params, "child", &id) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("child {child_index} not found under surface {parent}"),
+        );
+    };
+    engine.child_terminals.save();
+
+    if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent) {
+        tracing::warn!(
+            "terminal.release: soft occupancy release failed for surface {} \
+             (parent {parent}): {e:?} — registry relationship removed anyway",
+            removed.child_surface_id
+        );
+    }
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "released_surface_id": removed.child_surface_id,
+            "child_index": removed.index,
+        }),
+    )
+}
+
 /// 임의의 기존 surface 를 명시적으로 `parent` 의 child 로 등록(soft 점유) —
 /// TODO16 / ADR-0040 §45 유보분. `handle_spawn`(317-336행)의 관계등록+점유
 /// 블록과 동일 시퀀스를 "PTY 생성 없이, 호출자가 지정한 기존 surface_id" 에
@@ -888,6 +929,69 @@ mod tests {
         // 실패 시 registry 에 아무 흔적도 남지 않아야 한다(연산 순서 검증).
         assert!(e.child_terminals.parent_of_child(target).is_none());
         assert!(e.attach.is_hard_occupied(target)); // 기존 hard 점유는 건드리지 않음
+    }
+
+    #[test]
+    fn release_clears_registry_and_occupancy_but_keeps_surface() {
+        // child_terminals.save() 는 실제 `~/.tasty/child-terminals.json` 에 쓰므로,
+        // 다른 테스트(병렬 실행)와 같은 surface id 를 재사용하면 파일 경합으로
+        // 서로 오염될 수 있다 — 이 모듈의 다른 테스트가 안 쓰는 값을 쓴다.
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let c = 5701u32;
+        add_extra_surface(&mut e, c);
+
+        let idx = e.child_terminals.next_index_for(parent);
+        e.child_terminals.register_child(parent, child(c, idx));
+        e.occupy_soft(c, parent, Some("worker".into())).unwrap();
+
+        let resp = handle_release(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "child": idx }),
+        );
+        assert!(resp.error.is_none());
+
+        // 관계·점유는 사라짐. surface.close 를 호출하지 않았다는 사실은
+        // handle_release 구현에 그 호출이 없다는 코드 리뷰로 재확인.
+        assert!(e.child_terminals.find_child(parent, idx).is_none());
+        assert!(e.attach.occupancy_of(c).is_none());
+    }
+
+    #[test]
+    fn release_rejects_unregistered_child_index() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let resp = handle_release(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "child": 999u32 }),
+        );
+        assert!(resp.error.is_some());
+    }
+
+    #[test]
+    fn release_does_not_touch_unrelated_hard_occupancy() {
+        // release 가 tier-무관 release_occupancy 가 아니라 release_soft_occupancy 를
+        // 쓴다는 핵심 불변식 — 대상이 우연히 hard 점유 중이어도 절대 손대지 않아야 한다.
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let c = 5702u32;
+        add_extra_surface(&mut e, c);
+        let idx = e.child_terminals.next_index_for(parent);
+        e.child_terminals.register_child(parent, child(c, idx));
+        e.occupy_soft(c, parent, None).unwrap();
+        let other = 5703u32;
+        e.attach.acquire(other, 1).unwrap();
+
+        let resp = handle_release(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "child": idx }),
+        );
+        assert!(resp.error.is_none());
+        assert!(e.attach.occupancy_of(c).is_none()); // soft 는 정상 해제
+        assert!(e.attach.is_hard_occupied(other)); // 무관한 hard 점유는 그대로
     }
 
     #[test]

@@ -129,4 +129,14 @@ pub enum TerminalCommands {
         #[arg(long)]
         nickname: Option<String>,
     },
+    /// Release a child terminal from the registry (drops the parent/child
+    /// relationship and soft occupancy) without closing its surface.
+    Release {
+        /// Parent surface ID (defaults to the single known parent)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Child index to release
+        #[arg(long)]
+        child: u32,
+    },
 }

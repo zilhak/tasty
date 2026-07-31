@@ -140,6 +140,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // occupy_soft)만 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
         // (terminal.kill/terminal.set_state 와 동일 컨벤션).
         ("terminal.adopt", plugin(&[SurfaceWrite])),
+        // child 관계·soft 점유만 해제하고 surface 는 닫지 않음 — TODO17. adopt 와
+        // 대칭으로 순수 in-process core 함수(remove_child/release_soft_occupancy)만
+        // 쓰므로 SurfaceWrite 단독.
+        ("terminal.release", plugin(&[SurfaceWrite])),
         // ── headless PTY primitive (TODO 18 / pty_registry) ───────────
         // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
         // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만

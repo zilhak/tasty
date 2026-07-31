@@ -142,6 +142,7 @@ fn terminal_star_is_plugin_callable_within_agent_plugin_permissions() {
         "terminal.broadcast",
         "terminal.set_state",
         "terminal.adopt",
+        "terminal.release",
     ] {
         let m = method_meta(method).unwrap_or_else(|| panic!("{method} not registered"));
         assert!(m.plugin_callable, "{method} must be plugin-callable");

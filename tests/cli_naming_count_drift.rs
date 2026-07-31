@@ -43,7 +43,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("system", 2),
     ("tab", 4),
     ("telemetry", 12),
-    ("terminal", 9),
+    ("terminal", 10),
     ("ui", 1),
     ("view", 3),
     ("webhook", 6),

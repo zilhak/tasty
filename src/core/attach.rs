@@ -204,9 +204,8 @@ impl OccupancyRegistry {
     }
 
     /// soft 점유 self-release(ADR-0040: 주체 본인 해제). parent(주체 식별자) 불일치 →
-    /// `NotHolder`, 엔트리 없음 → `NotOccupied`. force-detach/focus 부재-청소 경로는
-    /// 작업 03 이 배선(tier 공용 또는 분리).
-    #[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
+    /// `NotHolder`, 엔트리 없음 → `NotOccupied`. `terminal.release`(TODO17)가
+    /// in-process 호출한다.
     pub fn release_soft(
         &mut self,
         surface_id: SurfaceId,

@@ -28,9 +28,8 @@ impl CoreState {
     }
 
     /// soft 점유 self-release(ADR-0040: 주체 본인 해제). 주체(`parent`) 불일치 →
-    /// `NotHolder`, 엔트리 없음 → `NotOccupied`(hard `release` 와 동형). `terminal.kill`
-    /// (작업 04)이 in-process 호출한다.
-    #[allow(dead_code)] // 소비자(terminal.kill, 작업 04) 배선 전까지 호출자 없음.
+    /// `NotHolder`, 엔트리 없음 → `NotOccupied`(hard `release` 와 동형). `terminal.release`
+    /// (TODO17)가 in-process 호출한다.
     pub fn release_soft_occupancy(
         &mut self,
         surface_id: u32,

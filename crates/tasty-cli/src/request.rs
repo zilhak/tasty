@@ -754,6 +754,12 @@ fn terminal_command_to_method_params(
             put_str(&mut m, "nickname", nickname);
             ("terminal.adopt", Value::Object(m))
         }
+        T::Release { surface, child } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            m.insert("child".into(), Value::from(*child));
+            ("terminal.release", Value::Object(m))
+        }
     }
 }
 
@@ -1062,6 +1068,23 @@ mod tests {
         assert_eq!(req.params["target"].as_u64(), Some(42));
         assert_eq!(req.params["nickname"].as_str(), Some("worker"));
         assert!(req.params.get("role").is_none());
+    }
+
+    #[test]
+    fn terminal_release_maps_child_index() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "terminal",
+            "release",
+            "--surface",
+            "7",
+            "--child",
+            "2",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.release");
+        assert_eq!(req.params["surface"].as_u64(), Some(7));
+        assert_eq!(req.params["child"].as_u64(), Some(2));
     }
 
     #[test]
