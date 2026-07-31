@@ -6,7 +6,7 @@ use crate::AppEvent;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
+use crate::view::{ModalView, ViewAction, ViewBase, ViewCtx};
 use tasty_ui_widgets::{hspace, vspace};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
@@ -33,17 +33,6 @@ impl View for QuitView {
     fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
-    fn modality(&self) -> Modality {
-        MODAL_MODALITY
-    }
-
-    fn as_modal(&self) -> Option<&dyn ModalView> {
-        Some(self)
-    }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
-        Some(self)
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

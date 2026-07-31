@@ -12,7 +12,7 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use crate::settings_ui::{self, PluginShortcutSnapshot, SettingsUiState};
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
+use crate::view::{ModalView, ViewAction, ViewBase, ViewCtx};
 
 /// 설정 모달 윈도우. egui 기반 설정 UI를 렌더한다.
 pub struct SettingsView {
@@ -55,12 +55,6 @@ impl SettingsView {
             should_close: false,
             toasts: ToastManager::new(),
         }
-    }
-
-    /// modal entry 의 일부 — view/* 재구성 시 활성화.
-    #[allow(dead_code)] // scaffolding — view/* 재구성 시 modal entry 로 배선 예정, 현 호출처 0
-    pub fn render_settings(&mut self) {
-        self.render();
     }
 
     /// Plugins 서브탭에서 표시할 plugin command snapshot을 주입한다.
@@ -119,17 +113,6 @@ impl View for SettingsView {
     fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
-    fn modality(&self) -> Modality {
-        MODAL_MODALITY
-    }
-
-    fn as_modal(&self) -> Option<&dyn ModalView> {
-        Some(self)
-    }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
-        Some(self)
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

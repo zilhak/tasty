@@ -6,14 +6,12 @@
 //! 본 모듈 안 형제.
 
 pub(crate) mod base;
-pub(crate) mod editor;
 pub(crate) mod main;
 pub(crate) mod modal;
 pub(crate) mod plugins;
 pub(crate) mod preset;
 pub(crate) mod quit;
 pub(crate) mod settings;
-pub(crate) mod terminal_host;
 pub(crate) mod ui;
 
 pub(crate) use base::ViewBase;
@@ -23,7 +21,6 @@ pub(crate) use plugins::PluginsView;
 pub(crate) use preset::PresetView;
 pub(crate) use quit::QuitView;
 pub(crate) use settings::SettingsView;
-pub(crate) use terminal_host::TerminalHostView;
 
 use std::collections::HashMap;
 
@@ -40,22 +37,6 @@ pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainView>> {
     }
     let any: Box<dyn std::any::Any> = w;
     any.downcast::<MainView>().ok()
-}
-
-/// View 의 모달리티.
-///
-/// 도메인 용어(`docs/concepts/ubiquitous-language.md`): View는 modality
-/// (Modeless/Modal)와 계열(ModalView/TerminalHostView/EditorView)을 속성으로 갖는다.
-/// 현재 trait dispatch 경로에서 호출 0이지만 5개 구현체가 `fn modality()`로
-/// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
-#[allow(dead_code)] // view 추상화 scaffolding — *_MODALITY const 가 구현체별로 보유, dispatch 미배선
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Modality {
-    /// 일반 View. 다른 View 와 독립적으로 포커스됨.
-    Modeless,
-    /// 모달 View. 활성 상태에선 다른 모든 View 의 입력이 차단됨.
-    /// 엔진 전역에서 최대 1개만 존재한다.
-    Modal,
 }
 
 /// 이벤트 처리 결과로 View 가 요청하는 동작.

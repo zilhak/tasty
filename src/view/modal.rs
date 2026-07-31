@@ -1,5 +1,5 @@
+use crate::view::ViewAction;
 use crate::view::ui::View;
-use crate::view::{Modality, ViewAction};
 
 /// 모달 계열 윈도우가 공유하는 동작.
 ///
@@ -26,11 +26,3 @@ pub(crate) trait ModalView: View {
         ViewAction::Close
     }
 }
-
-/// 모달 구현체가 `View::modality`에 반환해야 하는 값.
-/// (blanket impl로 자동화하면 ViewBase와 겹치므로 각 구현체에서 한 줄 반환.)
-///
-/// quit/preset/plugins/settings 4개 modal 구현체가 사용. `View::modality()`
-/// trait dispatch가 호출 0이라 추적상 dead로 잡히지만 도메인 표현으로 보존.
-#[allow(dead_code)] // view 추상화 scaffolding — quit/preset/plugins/settings 구현체가 import, dispatch 미배선
-pub(crate) const MODAL_MODALITY: Modality = Modality::Modal;

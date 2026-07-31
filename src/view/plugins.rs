@@ -15,7 +15,7 @@ use crate::adapters::ui::{LayoutContext, ToastManager};
 use crate::gpu::GpuState;
 use crate::plugins_ui::{self, PluginsAction, PluginsSnapshot, PluginsUiState};
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
+use crate::view::{ModalView, ViewAction, ViewBase, ViewCtx};
 
 pub struct PluginsView {
     pub base: ViewBase,
@@ -65,17 +65,6 @@ impl View for PluginsView {
     fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
-    fn modality(&self) -> Modality {
-        MODAL_MODALITY
-    }
-
-    fn as_modal(&self) -> Option<&dyn ModalView> {
-        Some(self)
-    }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
-        Some(self)
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

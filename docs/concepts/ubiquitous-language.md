@@ -92,7 +92,7 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 | Engine | `core::Core` + `core::CoreState` |
 | 구조 도메인 트리 | `core::CoreState` (Workspace…Surface 보유) |
 | View(상위) | `view::ui::View` (sealed trait) |
-| View 계열 | `ModalView` / `TerminalHostView` / `EditorView` supertrait |
+| View 계열 | `ModalView` supertrait(모달 외 구현체는 `View`+`sealed::Sealed` 직접 구현) |
 | View 구현체 | `MainView` / `SettingsView` / `QuitView` / `PluginsView` / `PresetView` |
 | 상위 레이아웃 | `PaneNode` (이진 트리: Leaf/Split) |
 | Pane / Tab | `Pane` / `Tab` |

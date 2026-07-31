@@ -15,7 +15,7 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
     └── focused_view_id: Option<WindowId>
 ```
 
-모든 윈도우(모달 포함)는 단일 `views` 맵에 저장된다. 모달은 별개 엔티티가 아니라 View 의 `Modality::Modal` 변형이며, 활성 모달은 `active_modal_id` 로 식별한다. (옛 `Engine` struct 는 삭제됐고 그 역할이 Core/Hub/ViewRegistry 로 분산됐다.)
+모든 윈도우(모달 포함)는 단일 `views` 맵에 저장된다. 모달은 별개 엔티티가 아니라 `active_modal_id: Option<WindowId>` 로 식별되는 View 상태이며, 활성 모달은 이 필드로 식별한다. (옛 `Engine` struct 는 삭제됐고 그 역할이 Core/Hub/ViewRegistry 로 분산됐다.)
 
 ## Window 트레잇 계층 (`src/view/`)
 
@@ -25,14 +25,13 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 │   ├── SettingsView   (설정 모달)
 │   ├── QuitView       (종료 확인 모달)
 │   └── PluginsView    (plugin 매니저 모달)
-├── TerminalHostView  (supertrait)
-│   └── MainView       (터미널 호스트 — 워크스페이스/패인/탭/서피스)
-└── EditorView        (supertrait)
+└── (그 외 — View + sealed::Sealed 직접 구현)
+    ├── MainView       (터미널 호스트 — 워크스페이스/패인/탭/서피스)
     └── PresetView     (프리셋 편집기, modeless)
 ```
 
 - **`View`**: 공통 인터페이스. `sealed::Sealed` supertrait 으로 크레이트 외부 구현 차단. `Any` 로 downcast.
-- **supertrait**(ModalView/TerminalHostView/EditorView): 계열별 default 동작 marker.
+- **`ModalView`**: 모달 계열의 default 동작 marker(`shown`/`set_shown`/`reveal_after_first_render`/`on_escape`). 그 외 구현체(`MainView`/`PresetView`)는 `View` + `sealed::Sealed` 를 직접 구현한다.
 - **`ViewBase`**: 모든 구현체가 `pub base: ViewBase` 로 합성하는 공통 필드(gpu·winit·dirty·modifiers·focused·close_requested).
 
 > 용어: 여기서 "윈도우"는 winit OS-level 윈도우다. tasty 도메인 계층의 Window/Workspace/Pane/Tab/Surface 와 다르다 — [구조 계층](../concepts/hierarchy.md).

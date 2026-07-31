@@ -26,13 +26,11 @@ use crate::model::{PhysicalPx, PhysicalRect};
 use crate::selection::TextSelection;
 use crate::state::AppState;
 use crate::view::ui::{View, sealed};
-use crate::view::{
-    Modality, TerminalHostView, ViewAction, ViewBase, ViewCtx, terminal_host::MODELESS_MODALITY,
-};
+use crate::view::{ViewAction, ViewBase, ViewCtx};
 use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
-/// `TerminalHostView` 계열의 대표 구현체.
+/// `View` + `sealed::Sealed` 를 직접 구현한다.
 pub struct MainView {
     pub base: ViewBase,
     pub(crate) state: AppState,
@@ -239,10 +237,6 @@ impl View for MainView {
     fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
-    fn modality(&self) -> Modality {
-        MODELESS_MODALITY
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -435,7 +429,5 @@ impl View for MainView {
         // 창에서는 호출되지 않는다.
     }
 }
-
-impl TerminalHostView for MainView {}
 
 impl sealed::Sealed for MainView {}

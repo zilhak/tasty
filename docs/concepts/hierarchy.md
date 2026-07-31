@@ -17,9 +17,9 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 
 | 구현체 | 계열 (supertrait) | 무엇 |
 |--------|-------------------|------|
-| **`MainView`** | `TerminalHostView` | 사이드바 + 워크스페이스를 호스팅하는 주 윈도우. 여러 개 가능. ← 이 문서가 주로 다루는 것 |
+| **`MainView`** | `View` + `sealed::Sealed` 직접 구현 | 사이드바 + 워크스페이스를 호스팅하는 주 윈도우. 여러 개 가능. ← 이 문서가 주로 다루는 것 |
 | `SettingsView` / `PluginsView` / `QuitView` | `ModalView` | 모달 윈도우 — 전역 1개, 활성 시 입력 차단 |
-| `PresetView` | `EditorView` | 에디터 윈도우 — modeless |
+| `PresetView` | `View` + `sealed::Sealed` 직접 구현 | 에디터 윈도우 — modeless |
 
 (**Engine** = 진입점 + 서버. IPC 포트 소유, 모든 윈도우 생명주기 관리. **headless 에선 View(GUI) 없이 Engine + `CoreState` 만 동작** — 아래 구조 계층은 그 `CoreState` 의 도메인이라 GUI 없이도 구성된다.)
 

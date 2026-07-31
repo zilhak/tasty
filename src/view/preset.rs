@@ -19,10 +19,7 @@ use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
-use crate::view::{
-    Modality, ViewAction, ViewBase, ViewCtx,
-    editor::{EDITOR_MODALITY, EditorView},
-};
+use crate::view::{ViewAction, ViewBase, ViewCtx};
 
 pub struct PresetView {
     pub base: ViewBase,
@@ -89,10 +86,6 @@ impl View for PresetView {
     fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
-    fn modality(&self) -> Modality {
-        EDITOR_MODALITY
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -215,5 +208,4 @@ impl View for PresetView {
     }
 }
 
-impl EditorView for PresetView {}
 impl sealed::Sealed for PresetView {}

@@ -8,7 +8,7 @@
 
 ## 목적
 
-tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭·surface·상태바로 사용자가 실제 작업하는 메인 화면이다. `View` 의 구현체이며 계열은 `TerminalHostView` ([구조 계층](../../concepts/hierarchy.md)).
+tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭·surface·상태바로 사용자가 실제 작업하는 메인 화면이다. `View` + `sealed::Sealed` 를 직접 구현한다 ([구조 계층](../../concepts/hierarchy.md)).
 
 ## 내부 동작
 
