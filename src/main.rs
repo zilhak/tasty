@@ -22,7 +22,6 @@ mod model;
 mod platform;
 mod plugin_bridge;
 mod ports;
-mod scheduler;
 mod state;
 mod store;
 #[cfg(feature = "gui")]

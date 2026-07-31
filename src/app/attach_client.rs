@@ -2761,40 +2761,6 @@ fn send_capture_control_frame(
 }
 
 impl App {
-    /// (06) native bulk 파일 전송(ADR-0054) — `local_ws_id` mirror 세션이 결속한 원격
-    /// tasty 로 파일 바이트를 **전용 연결**로 올리고, 원격이 저장한 **절대경로**를
-    /// 돌려받는다. 캡처(03)와 달리 대화형 attach 스트림 큐(`frame_tx`)를 재사용하지
-    /// 않고, 같은 포워딩 포트에 두 번째 `TcpStream::connect` → `open_bulk` 로 소켓을
-    /// 분리해 대량 전송이 터미널 I/O 를 head-of-line 블로킹하지 않게 한다.
-    ///
-    /// **동기·블로킹**: 연결 open → begin/chunk/commit 송신 → `BulkResult` 수신까지
-    /// 이 호출 스레드에서 완결한다(전송마다 여닫는 최소 구현 — 상시연결/resume 은 범위
-    /// 밖). 대용량 업로드로 UI 를 막지 않으려면 **호출자가 백그라운드 스레드에서
-    /// 부른다**(그래서 세션에서 뽑은 `(port, remote_ws)` 만 있으면 `&self` 없이도
-    /// 돌도록 실제 전송은 자유 함수 [`upload_file_over_bulk`] 로 분리). 08(이미지
-    /// 붙여넣기)·09(팝업)가 이 반환 경로를 소비한다.
-    // 06-β 가 완성한 업로드 API — 실제 호출자(경로 삽입/팝업)는 08/09. 그 전까진 미사용.
-    #[allow(dead_code)]
-    pub(crate) fn upload_file_to_remote(
-        &self,
-        local_ws_id: u32,
-        file_name: &str,
-        bytes: &[u8],
-    ) -> anyhow::Result<String> {
-        let (port, remote_ws) = {
-            let sess = self
-                .attach_client_sessions
-                .iter()
-                .find(|s| s.local_workspace == local_ws_id)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("no attach session for mirror workspace {local_ws_id}")
-                })?;
-            (sess.bulk_port, sess.remote_workspace)
-        };
-        // 진행 통지 불필요한 동기 편의 래퍼(현 미사용) — no-op 콜백.
-        upload_file_over_bulk(port, remote_ws, file_name, bytes, |_, _| {})
-    }
-
     /// (08) `local_ws_id` mirror 세션의 bulk 업로드 대상 `(local port, remote workspace)`
     /// 를 뽑는다. 백그라운드 스레드는 `&self`(세션)를 들 수 없으므로, 메인 스레드에서
     /// 이 값만 미리 뽑아 자유 함수 [`upload_file_over_bulk`] 에 넘긴다. 세션이 없으면
