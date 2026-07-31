@@ -325,6 +325,59 @@ fn notify_caller_message(kind: &str, target: u32) -> String {
     format!("surface {target} 작업 완료 (호출 방식: {kind})")
 }
 
+/// 샌드박스(bwrap) 초기화 실패 감지 마커 — 오탐 최소화를 위해 특이도가 가장 높은
+/// 토큰만 본다. `"bwrap:"`만 쓰면 일반 대화 텍스트에 우연히 매치될 여지가 있지만,
+/// `RTM_NEWADDR`는 사실상 이 실패 상황에서만 등장한다(TODO 18).
+const SANDBOX_FAILURE_MARKER: &str = "RTM_NEWADDR";
+
+/// 힌트 문구 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과 수동
+/// 우회법 `--full-auto`가 이미 문서화된 곳)의 안내를 완료 알림 채널에 요약해
+/// 싣는다. 이 텍스트는 `tasty-cli`가 사람에게 보여주는 stdout/stderr 표면이
+/// 아니라 `~/.tasty/notify/*.log`에 append 되는 내부 채널 문자열이라
+/// `docs/dev-guide/i18n.md`의 "CLI 출력 문자열" 규정(사람이 보는 CLI 표면) 적용
+/// 대상이 아니다.
+const SANDBOX_FAILURE_HINT: &str = "⚠ sandbox 초기화 실패로 보임(RTM_NEWADDR 감지) — 이 실행 환경은 nested sandbox(bwrap)를 지원하지 않을 수 있습니다. --full-auto 로 재시도해보세요.";
+
+/// `screen_text`(대상 surface 의 최근 출력)에서 샌드박스 초기화 실패 시그니처를
+/// 찾으면 힌트 문구를 반환한다. best-effort 탐지 — 순수 함수라 단위 테스트 대상.
+fn detect_sandbox_failure_hint(screen_text: &str) -> Option<&'static str> {
+    if screen_text.contains(SANDBOX_FAILURE_MARKER) {
+        Some(SANDBOX_FAILURE_HINT)
+    } else {
+        None
+    }
+}
+
+/// 완료 알림 본문에 (있으면) 샌드박스 실패 힌트를 덧붙인다. `screen_text`가
+/// `None`(조회 자체가 실패 — soft-fail)이거나 마커가 없으면 `base`를 그대로
+/// 돌려준다(회귀 없음). 순수 함수 — 단위 테스트 대상.
+fn append_sandbox_hint_if_detected(base: String, screen_text: Option<&str>) -> String {
+    match screen_text.and_then(detect_sandbox_failure_hint) {
+        Some(hint) => format!("{base} {hint}"),
+        None => base,
+    }
+}
+
+/// 힌트 탐지용으로 스캔할 최근 화면 줄 수 — 실제 관찰된 사례에서 샌드박스 실패
+/// 메시지가 대화 초반(수백 줄 전)에 찍히고 그 뒤로 긴 응답이 이어졌다. 완벽한
+/// 탐지가 목표가 아니므로(놓치면 힌트가 안 붙을 뿐, 기존 동작에 위해 없음)
+/// 넉넉한 값으로 시작한다.
+const SCREEN_TEXT_SCAN_LINES: u64 = 800;
+
+/// 힌트 탐지를 위해 대상 surface 의 최근 화면 출력을 조회한다. soft-fail —
+/// `surface.screen_text` 호출 자체가 실패해도(예: 대상 surface 가 이미 사라짐)
+/// `None`을 돌려줄 뿐 알림 전송에는 영향 없다(`compute_spawn_warning`과 동일
+/// 패턴). `TerminalRead` 권한은 이미 codex 플러그인이 보유하고 있어 신규 권한
+/// 부여가 필요 없다.
+fn fetch_screen_text_for_hint<H: HostCall>(host: &H, target: u32) -> Option<String> {
+    host.call(
+        "surface.screen_text",
+        json!({ "surface_id": target, "lines": SCREEN_TEXT_SCAN_LINES }),
+    )
+    .ok()
+    .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
+}
+
 /// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
 /// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
 /// 순수 선택이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
@@ -388,6 +441,10 @@ pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Valu
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
     let message = notify_caller_message(&kind, target);
+    // 샌드박스 초기화 실패 힌트(TODO 18) — soft-fail, 조회 실패/미탐지 시 message
+    // 그대로.
+    let screen_text = fetch_screen_text_for_hint(host, target);
+    let message = append_sandbox_hint_if_detected(message, screen_text.as_deref());
 
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
     // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
@@ -1286,6 +1343,9 @@ trusted_hash = "sha256:xyz"
         next_id: RefCell<u64>,
         alive: RefCell<std::collections::HashSet<u32>>,
         settings: RefCell<std::collections::HashMap<String, String>>,
+        /// `surface.screen_text` 응답 시뮬레이션(TODO 18) — `None`이면 조회 자체가
+        /// 실패(soft-fail 경로 재현), `Some`이면 그 문자열을 `text`로 돌려준다.
+        screen_text: RefCell<Option<String>>,
     }
 
     impl MockHost {
@@ -1295,7 +1355,13 @@ trusted_hash = "sha256:xyz"
                 next_id: RefCell::new(1),
                 alive: RefCell::new(std::collections::HashSet::new()),
                 settings: RefCell::new(std::collections::HashMap::new()),
+                screen_text: RefCell::new(None),
             }
+        }
+
+        /// `surface.screen_text` 가 이 텍스트를 `text` 필드로 돌려주도록 세팅한다.
+        fn set_screen_text(&self, text: &str) {
+            *self.screen_text.borrow_mut() = Some(text.to_string());
         }
 
         /// `settings.get_plugin_setting` 응답을 시뮬레이션 — 전역 기본 정책
@@ -1384,6 +1450,13 @@ trusted_hash = "sha256:xyz"
                         None => Ok(json!({})),
                     }
                 }
+                "surface.screen_text" => match self.screen_text.borrow().as_ref() {
+                    Some(text) => Ok(json!({ "text": text })),
+                    None => Err(tasty_plugin_sdk::PluginError::HostCall {
+                        method: method.to_string(),
+                        message: "no screen_text set (mock soft-fail)".to_string(),
+                    }),
+                },
                 _ => Ok(json!({})),
             }
         }
@@ -1426,6 +1499,90 @@ trusted_hash = "sha256:xyz"
                 "옛 오독 유발 포맷으로 회귀함: {msg}"
             );
         }
+    }
+
+    // ── 샌드박스 초기화 실패 힌트 (TODO 18) ──
+
+    #[test]
+    fn detect_sandbox_failure_hint_matches_rtm_newaddr() {
+        let text = "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...";
+        assert!(detect_sandbox_failure_hint(text).is_some());
+    }
+
+    #[test]
+    fn detect_sandbox_failure_hint_ignores_unrelated_text() {
+        assert!(detect_sandbox_failure_hint("normal codex output, no errors here").is_none());
+    }
+
+    #[test]
+    fn append_sandbox_hint_if_detected_appends_when_marker_present() {
+        let base = notify_caller_message("spawn", 100);
+        let text = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted";
+        let msg = append_sandbox_hint_if_detected(base.clone(), Some(text));
+        assert!(
+            msg.starts_with(&base),
+            "기존 base 메시지는 그대로 유지: {msg}"
+        );
+        assert!(msg.contains("full-auto"), "우회법 안내 누락: {msg}");
+        assert!(msg.contains("RTM_NEWADDR"), "탐지 근거 노출 누락: {msg}");
+    }
+
+    #[test]
+    fn append_sandbox_hint_if_detected_unchanged_when_no_marker() {
+        let base = notify_caller_message("spawn", 100);
+        let msg = append_sandbox_hint_if_detected(base.clone(), Some("normal codex output"));
+        assert_eq!(msg, base, "마커 없으면 회귀 없이 base 그대로여야 함");
+    }
+
+    #[test]
+    fn append_sandbox_hint_if_detected_unchanged_when_query_failed() {
+        // screen_text 조회 자체가 실패(soft-fail)한 경우 — None.
+        let base = notify_caller_message("spawn", 100);
+        let msg = append_sandbox_hint_if_detected(base.clone(), None);
+        assert_eq!(
+            msg, base,
+            "조회 실패 시 알림 전송 자체는 회귀 없이 그대로여야 함"
+        );
+    }
+
+    #[test]
+    fn notify_caller_appends_sandbox_hint_when_rtm_newaddr_detected() {
+        let host = MockHost::new();
+        host.set_screen_text(
+            "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...",
+        );
+        let base = notify_caller_message("spawn", 100);
+        let screen_text = fetch_screen_text_for_hint(&host, 100);
+        let msg = append_sandbox_hint_if_detected(base, screen_text.as_deref());
+        assert!(
+            msg.contains("full-auto"),
+            "힌트가 실제로 덧붙어야 함: {msg}"
+        );
+    }
+
+    #[test]
+    fn notify_caller_message_unchanged_when_no_sandbox_failure() {
+        let host = MockHost::new();
+        host.set_screen_text("normal codex output, no errors here");
+        let base = notify_caller_message("spawn", 100);
+        let screen_text = fetch_screen_text_for_hint(&host, 100);
+        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        assert_eq!(
+            msg, base,
+            "실패 시그니처가 없으면 회귀 없이 base 그대로여야 함"
+        );
+    }
+
+    #[test]
+    fn notify_caller_message_unchanged_when_screen_text_query_fails() {
+        // MockHost::new() 는 screen_text 를 세팅하지 않은 상태 — surface.screen_text
+        // 호출이 실패하는 경우를 재현(soft-fail).
+        let host = MockHost::new();
+        let base = notify_caller_message("spawn", 100);
+        let screen_text = fetch_screen_text_for_hint(&host, 100);
+        assert!(screen_text.is_none(), "조회 실패는 None 이어야 함");
+        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        assert_eq!(msg, base);
     }
 
     #[test]
