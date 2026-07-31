@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime};
 
 /// Condition that triggers a global hook.
 #[derive(Debug, Clone)]
@@ -8,12 +9,18 @@ pub enum HookCondition {
     Interval(Duration),
     /// Fires once after `Duration` has elapsed since the hook was added.
     Once(Duration),
+    /// Fires whenever the file at this path changes mtime (1Hz poll,
+    /// `GlobalHookManager::tick` 편승 — 별도 watcher 불필요).
+    File(PathBuf),
 }
 
 impl HookCondition {
     /// Parse a condition string of the form:
     /// - `"interval:SECS"` → Interval
     /// - `"once:SECS"` → Once
+    /// - `"file:PATH"` → File. `file:` 뒤 나머지 전체를 경로로 그대로 받는다 —
+    ///   추가로 `:` 를 기준 분리하지 않으므로 Windows 드라이브 문자
+    ///   (`file:C:\Users\...`)도 별도 처리 없이 올바르게 `C:\Users\...` 로 파싱된다.
     pub fn parse(s: &str) -> Option<Self> {
         if let Some(rest) = s.strip_prefix("interval:") {
             let secs: f64 = rest.parse().ok()?;
@@ -21,6 +28,12 @@ impl HookCondition {
         } else if let Some(rest) = s.strip_prefix("once:") {
             let secs: f64 = rest.parse().ok()?;
             Some(HookCondition::Once(Duration::from_secs_f64(secs)))
+        } else if let Some(rest) = s.strip_prefix("file:") {
+            if rest.is_empty() {
+                None
+            } else {
+                Some(HookCondition::File(PathBuf::from(rest)))
+            }
         } else {
             None
         }
@@ -31,6 +44,7 @@ impl HookCondition {
         match self {
             HookCondition::Interval(d) => format!("interval:{}", d.as_secs_f64()),
             HookCondition::Once(d) => format!("once:{}", d.as_secs_f64()),
+            HookCondition::File(p) => format!("file:{}", p.display()),
         }
     }
 }
@@ -54,6 +68,10 @@ pub struct GlobalHookManager {
     created_at: HashMap<u32, Instant>,
     /// Set of Once hook IDs that have already fired and should be removed.
     fired_once: Vec<u32>,
+    /// Last observed mtime of each File hook's target path. `None` 이면 마지막
+    /// 관찰 시점에 파일이 존재하지 않았음(등록 시 미존재 포함) — 이후 파일이
+    /// 나타나면 "변경"으로 간주해 발화한다.
+    last_mtime: HashMap<u32, Option<SystemTime>>,
 }
 
 impl GlobalHookManager {
@@ -64,6 +82,7 @@ impl GlobalHookManager {
             last_fired: HashMap::new(),
             created_at: HashMap::new(),
             fired_once: Vec::new(),
+            last_mtime: HashMap::new(),
         }
     }
 
@@ -79,6 +98,10 @@ impl GlobalHookManager {
             }
             HookCondition::Once(_) => {
                 self.created_at.insert(id, now);
+            }
+            HookCondition::File(path) => {
+                // 등록 시점의 mtime 을 기준선으로만 기록 — 즉시 발화하지 않는다.
+                self.last_mtime.insert(id, file_mtime(path));
             }
         }
 
@@ -98,6 +121,7 @@ impl GlobalHookManager {
     pub fn remove(&mut self, id: u32) -> bool {
         self.last_fired.remove(&id);
         self.created_at.remove(&id);
+        self.last_mtime.remove(&id);
         self.hooks.remove(&id).is_some()
     }
 
@@ -121,6 +145,7 @@ impl GlobalHookManager {
     pub fn tick(&mut self) -> Vec<(u32, String)> {
         let now = Instant::now();
         let mut to_fire: Vec<(u32, String)> = Vec::new();
+        let mut file_mtime_updates: Vec<(u32, Option<SystemTime>)> = Vec::new();
 
         for (id, hook) in &self.hooks {
             match &hook.condition {
@@ -135,6 +160,19 @@ impl GlobalHookManager {
                     if now.duration_since(created) >= *delay {
                         to_fire.push((*id, hook.command.clone()));
                         self.fired_once.push(*id);
+                    }
+                }
+                HookCondition::File(path) => {
+                    let current = file_mtime(path);
+                    // 파일이 사라진 경우(metadata 에러)는 "변경 없음"으로 취급 —
+                    // interval/once 와의 일관성(외부 요인으로 훅이 조용히 사라지지
+                    // 않음) 유지. 마지막 관찰값도 갱신하지 않고 그대로 둔다.
+                    if let Some(mtime) = current {
+                        let last = self.last_mtime.get(id).copied().unwrap_or(None);
+                        if last != Some(mtime) {
+                            to_fire.push((*id, hook.command.clone()));
+                            file_mtime_updates.push((*id, Some(mtime)));
+                        }
                     }
                 }
             }
@@ -153,6 +191,11 @@ impl GlobalHookManager {
         let to_remove: Vec<u32> = self.fired_once.drain(..).collect();
         for id in to_remove {
             self.remove(id);
+        }
+
+        // Record newly observed mtimes for File hooks that fired.
+        for (id, mtime) in file_mtime_updates {
+            self.last_mtime.insert(id, mtime);
         }
 
         to_fire
@@ -179,6 +222,16 @@ impl GlobalHookManager {
             tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
         }
     }
+}
+
+/// 파일 mtime 조회. 심볼릭 링크는 `std::fs::metadata`(링크를 따라감)로 대상
+/// 파일의 mtime을 관찰한다 — 별도 처리 없이 자연스럽게 동작. 디렉토리 경로도
+/// `metadata`가 그대로 mtime을 반환하므로 디렉토리 자체의 변경(항목 추가/삭제
+/// 등으로 갱신되는 디렉토리 엔트리의 mtime)을 감지하는 용도로도 동작하지만,
+/// 파일 하나만 공식 지원 범위다(디렉토리 감지는 스코프 밖 — 문서 참고).
+/// 조회 실패(파일 없음 등)는 `None`.
+fn file_mtime(path: &std::path::Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 #[cfg(test)]
@@ -238,5 +291,111 @@ mod tests {
         assert!(mgr.list().is_empty(), "once 훅은 발화 후 제거되어야 한다");
         // 이미 제거됐으니 이후 tick 에서 다시 발화하면 안 된다.
         assert!(mgr.tick().is_empty());
+    }
+
+    #[test]
+    fn parse_accepts_file_condition() {
+        assert!(matches!(
+            HookCondition::parse("file:/tmp/foo.txt"),
+            Some(HookCondition::File(p)) if p == std::path::PathBuf::from("/tmp/foo.txt")
+        ));
+        // Windows 드라이브 문자 — "file:" 뒤 나머지 전체를 그대로 경로로 받으므로
+        // 추가 콜론 분리 없이 올바르게 파싱된다.
+        assert!(matches!(
+            HookCondition::parse(r"file:C:\Users\foo\bar.txt"),
+            Some(HookCondition::File(p)) if p == std::path::PathBuf::from(r"C:\Users\foo\bar.txt")
+        ));
+        assert!(HookCondition::parse("file:").is_none());
+    }
+
+    #[test]
+    fn tick_does_not_fire_file_hook_when_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("watched.txt");
+        std::fs::write(&path, "v1").unwrap();
+        let mut mgr = GlobalHookManager::new();
+        mgr.add(
+            HookCondition::File(path.clone()),
+            "echo x".to_string(),
+            None,
+        );
+        assert!(mgr.tick().is_empty(), "등록 직후 발화 없음");
+        assert!(mgr.tick().is_empty(), "변경 없으면 계속 발화 없음");
+    }
+
+    #[test]
+    fn tick_fires_file_hook_repeatedly_on_each_mtime_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("watched.txt");
+        std::fs::write(&path, "v1").unwrap();
+        let mut mgr = GlobalHookManager::new();
+        let id = mgr.add(
+            HookCondition::File(path.clone()),
+            "echo x".to_string(),
+            None,
+        );
+        assert!(mgr.tick().is_empty());
+
+        std::thread::sleep(Duration::from_millis(10));
+        std::fs::write(&path, "v2").unwrap();
+        assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
+        assert!(mgr.tick().is_empty(), "같은 변경으로 두 번 발화하지 않음");
+
+        std::thread::sleep(Duration::from_millis(10));
+        std::fs::write(&path, "v3").unwrap();
+        // interval 처럼 반복 발화, 훅 자체는 사라지지 않는다.
+        assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
+        assert_eq!(mgr.list().len(), 1);
+    }
+
+    #[test]
+    fn tick_fires_file_hook_when_file_appears_after_being_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("not-yet.txt");
+        let mut mgr = GlobalHookManager::new();
+        let id = mgr.add(
+            HookCondition::File(path.clone()),
+            "echo x".to_string(),
+            None,
+        );
+        // 파일이 아직 없으므로 발화하지 않는다.
+        assert!(mgr.tick().is_empty());
+
+        std::fs::write(&path, "v1").unwrap();
+        assert_eq!(
+            mgr.tick(),
+            vec![(id, "echo x".to_string())],
+            "등록 후 파일이 새로 생기면 변경으로 간주해 발화"
+        );
+        assert!(mgr.tick().is_empty());
+    }
+
+    #[test]
+    fn tick_treats_deleted_file_as_no_change_and_keeps_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("watched.txt");
+        std::fs::write(&path, "v1").unwrap();
+        let mut mgr = GlobalHookManager::new();
+        let id = mgr.add(
+            HookCondition::File(path.clone()),
+            "echo x".to_string(),
+            None,
+        );
+        assert!(mgr.tick().is_empty());
+
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            mgr.tick().is_empty(),
+            "파일 삭제는 변경으로 취급하지 않는다"
+        );
+        assert_eq!(mgr.list().len(), 1, "훅이 자동 제거되지 않는다");
+
+        std::thread::sleep(Duration::from_millis(10));
+        std::fs::write(&path, "v2").unwrap();
+        assert_eq!(
+            mgr.tick(),
+            vec![(id, "echo x".to_string())],
+            "파일이 다시 생기면 재감지한다"
+        );
     }
 }
