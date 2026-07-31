@@ -78,6 +78,7 @@ fn lazy_sweep(engine: &mut CoreState) {
 /// `pty.spawn` — headless PTY 를 띄우고 pty id 를 반환한다. 상한 초과 시
 /// [`PtySpawnError::LimitReached`] 를 IPC 에러로 변환한다(panic 하지 않음).
 pub(crate) fn handle_spawn(
+    core: &mut crate::core::Core,
     engine: &mut CoreState,
     caller: &CallerContext,
     id: Value,
@@ -90,7 +91,8 @@ pub(crate) fn handle_spawn(
     let owner_agent_id = caller.agent_id().as_str().to_string();
 
     // 1) registry 등록(상한 게이트). 실패하면 아무 자원도 만들지 않고 즉시 반환.
-    let now = Instant::now();
+    // Clock port 경유(TODO 04) — outbound port 실제 소비 경로.
+    let now = core.now_instant();
     let pty_id = match engine.pty_registry.register(
         PtySpawnSpec {
             owner_agent_id: owner_agent_id.clone(),
@@ -383,6 +385,46 @@ mod tests {
         CoreState::new(80, 24, waker).expect("engine")
     }
 
+    /// `handle_spawn` 이 소비하는 `Core::now_instant`(Clock port, TODO 04) 용 최소
+    /// fixture. `TempDir` 은 호출자가 명명된 binding 으로 받아 즉시 drop 되지 않게 한다.
+    fn core() -> (crate::core::Core, tempfile::TempDir) {
+        use std::sync::{Arc, Mutex};
+
+        use tasty_memory::MemoryStorage;
+        use tasty_themes::{ThemeStorage, ThemeStore};
+
+        use crate::adapters::test::{
+            fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
+            mock_process::MockProcessSpawner, tmp_home::TmpHome,
+        };
+        use crate::core::builder::CoreBuilder;
+        use crate::ports::notification_sound::NoopPlayer;
+
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
+        let home_tmp = tempfile::tempdir().expect("test tempdir");
+        let home = TmpHome::new(home_tmp.path().to_path_buf());
+
+        let core = CoreBuilder::new()
+            .with_fs(Arc::new(MemFileSystem::new()))
+            .with_clock(Arc::new(FakeClock::default()))
+            .with_clipboard(Arc::new(MockClipboard::default()))
+            .with_process(Arc::new(MockProcessSpawner::default()))
+            .with_home(Arc::new(home))
+            .with_sound_player(Arc::new(NoopPlayer))
+            .with_memory(memory)
+            .with_themes(themes)
+            .with_preset_store(preset_store)
+            .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
+            .build()
+            .expect("test Core build");
+
+        (core, home_tmp)
+    }
+
     fn ok(resp: JsonRpcResponse) -> Value {
         resp.result.expect("expected success result")
     }
@@ -403,10 +445,11 @@ mod tests {
     #[test]
     fn spawn_write_wait_kill_list_e2e() {
         let mut e = engine();
+        let (mut c, _home) = core();
         let caller = CallerContext::Local;
 
         // spawn: bare shell (command 없음). pty id 는 disjoint 고범위.
-        let resp = handle_spawn(&mut e, &caller, json!(1), &json!({}));
+        let resp = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let spawned = ok(resp);
         let pty_id = spawned["pty_id"].as_u64().unwrap() as u32;
         assert!(pty_id >= crate::core::pty_registry::PTY_ID_BASE);
@@ -448,8 +491,10 @@ mod tests {
     fn spawn_with_command_captures_exit_code() {
         // command 를 initial_input 으로 즉시 실행하는 경로 + exit-code 캡처 검증.
         let mut e = engine();
+        let (mut c, _home) = core();
         let caller = CallerContext::Local;
         let resp = handle_spawn(
+            &mut c,
             &mut e,
             &caller,
             json!(1),
@@ -465,19 +510,23 @@ mod tests {
     #[test]
     fn spawn_beyond_limit_returns_error() {
         let mut e = engine();
+        let (mut c, _home) = core();
         // 상한을 2 로 낮춰 3 번째 spawn 이 LimitReached 로 실패하는지 확인.
         e.pty_registry = crate::core::pty_registry::PtyRegistry::with_limits(
             2,
             crate::core::pty_registry::DEFAULT_IDLE_TTL,
         );
         let caller = CallerContext::Local;
-        let a = handle_spawn(&mut e, &caller, json!(1), &json!({}));
-        let b = handle_spawn(&mut e, &caller, json!(2), &json!({}));
+        let a = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
+        let b = handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({}));
         assert!(a.result.is_some());
         assert!(b.result.is_some());
-        let c = handle_spawn(&mut e, &caller, json!(3), &json!({}));
-        assert!(c.error.is_some(), "3rd spawn must fail with LimitReached");
-        let err = c.error.unwrap();
+        let resp = handle_spawn(&mut c, &mut e, &caller, json!(3), &json!({}));
+        assert!(
+            resp.error.is_some(),
+            "3rd spawn must fail with LimitReached"
+        );
+        let err = resp.error.unwrap();
         assert!(
             err.message.contains("limit"),
             "error should mention limit: {}",
@@ -495,16 +544,17 @@ mod tests {
     fn kill_forgets_only_target_waker_gate() {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
         let mut e = engine();
+        let (mut c, _home) = core();
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.waker_factory = Some(shared);
         let caller = CallerContext::Local;
 
         // spawn 2 개 — 각 pty_id 로 targeted 게이트가 생성된다(make_waker → factory).
-        let a = ok(handle_spawn(&mut e, &caller, json!(1), &json!({})))["pty_id"]
+        let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
             .as_u64()
             .unwrap() as u32;
-        let b = ok(handle_spawn(&mut e, &caller, json!(2), &json!({})))["pty_id"]
+        let b = ok(handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({})))["pty_id"]
             .as_u64()
             .unwrap() as u32;
         assert!(
@@ -533,6 +583,7 @@ mod tests {
     fn idle_sweep_forgets_waker_gate() {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
         let mut e = engine();
+        let (mut c, _home) = core();
         // TTL 0: 다음 접근(lazy_sweep) 시 touch 안 된 headless PTY 는 즉시 만료 회수.
         e.pty_registry =
             crate::core::pty_registry::PtyRegistry::with_limits(8, std::time::Duration::ZERO);
@@ -541,7 +592,7 @@ mod tests {
         e.waker_factory = Some(shared);
         let caller = CallerContext::Local;
 
-        let a = ok(handle_spawn(&mut e, &caller, json!(1), &json!({})))["pty_id"]
+        let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
             .as_u64()
             .unwrap() as u32;
         assert!(factory.made().contains(&a), "spawn 이 게이트를 만든다");

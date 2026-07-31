@@ -448,6 +448,12 @@ impl Core {
     // 호출). Phase D 진행 중에는 wrapper 가 `engine` 도 함께 받아 그쪽을 mutate
     // 한다 — 도메인 데이터의 Core 흡수가 완료되면 `engine` 인자 제거 예정.
 
+    /// `Clock` port 경유 현재 시각(monotonic). TODO 04 — outbound port 실제 소비 경로
+    /// 최소 1곳 확보(`pty.spawn`, `handler/pty.rs`).
+    pub(crate) fn now_instant(&self) -> std::time::Instant {
+        self.clock.now_instant()
+    }
+
     /// Surface message 전송. 옛 `engine.send_message` 의 Core 진입점.
     pub(crate) fn send_surface_message(
         &mut self,

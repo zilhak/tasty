@@ -402,7 +402,7 @@ fn route_engine_handler(
         }
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         // headless PTY primitive (TODO 18 / pty_registry) — Surface 없는 백그라운드 PTY
-        "pty.spawn" => pty::handle_spawn(engine, caller, id, &request.params),
+        "pty.spawn" => pty::handle_spawn(core, engine, caller, id, &request.params),
         "pty.write" => pty::handle_write(engine, id, &request.params),
         "pty.read" => pty::handle_read(engine, id, &request.params),
         "pty.wait" => pty::handle_wait(engine, id, &request.params),
