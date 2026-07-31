@@ -27,8 +27,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
-    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+    ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
+    PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, ResetEvent};
 
@@ -240,16 +240,6 @@ pub(super) fn create_pipe_instance(name: &str, first: bool) -> io::Result<PipeSe
 /// 파이프 인스턴스에서 클라이언트 연결을 blocking 으로 기다린다.
 pub(super) fn accept(stream: &PipeServerStream) -> io::Result<()> {
     stream.accept()
-}
-
-/// 한 클라이언트 처리 후 인스턴스를 재사용 가능 상태로 되돌린다(현재 미사용 — 인스턴스를
-/// 매번 새로 만든다. 향후 인스턴스 풀 도입 시 재연결 경로).
-#[allow(dead_code)]
-pub(super) fn disconnect(stream: &PipeServerStream) {
-    // SAFETY: 유효 핸들. 실패는 무시 가능(이미 끊긴 경우 등).
-    unsafe {
-        DisconnectNamedPipe(stream.handle.as_raw());
-    }
 }
 
 /// 프로세스 유일 파이프 이름. Unix 의 socket path 대응(pid + 단조 seq).
