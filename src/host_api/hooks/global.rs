@@ -235,10 +235,7 @@ mod tests {
         );
         std::thread::sleep(Duration::from_millis(15));
         assert_eq!(mgr.tick(), vec![(id, "echo once".to_string())]);
-        assert!(
-            mgr.list().is_empty(),
-            "once 훅은 발화 후 제거되어야 한다"
-        );
+        assert!(mgr.list().is_empty(), "once 훅은 발화 후 제거되어야 한다");
         // 이미 제거됐으니 이후 tick 에서 다시 발화하면 안 된다.
         assert!(mgr.tick().is_empty());
     }
