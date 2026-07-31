@@ -55,6 +55,8 @@ IPC / `tasty surface completion`). completion ≠ highlight — 향후 completio
 - producer 별로 **다른** 시각 효과(색·아이콘·우선순위)가 요구되어 단일 상태로 표현이 불가능해질 때.
 - highlight 에 카테고리/의미(예: "확인필요" vs "완료")가 추가돼 단순 bool 집합으로 부족할 때.
 - 해제 규칙이 실 포커스 외(예: 타이머·명시적 clear IPC)로 확장되며 상태 모델 재설계가 필요할 때.
+  - 2026-07-31: 읽음 처리로 해제 규칙이 확장됐으나(TODO23) 상태 모델 변경 없이 기존
+    `clear_surface_highlight` 재사용으로 해결 — 이 트리거는 미발동으로 판단.
 
 ## References
 
