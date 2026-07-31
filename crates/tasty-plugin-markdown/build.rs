@@ -16,10 +16,11 @@ use std::path::Path;
 use usvg::tiny_skia_path::PathSegment;
 use usvg::{Options, TreeParsing};
 
-/// (생성 상수명, canonical `tasty-icons` const). 주소창에서 쓰는 아이콘 subset.
+/// (생성 상수명, canonical `tasty-icons` const). 주소창 + 파일열기 팝업에서 쓰는 아이콘 subset.
 const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("ARROW_RIGHT", tasty_icons::ARROW_RIGHT),
     ("FILE", tasty_icons::FILE),
+    ("FOLDER", tasty_icons::FOLDER),
 ];
 
 /// 베지어 평탄화 허용 오차 (viewBox 24 단위, px). 작을수록 곡선이 매끄럽고 점이 많다.

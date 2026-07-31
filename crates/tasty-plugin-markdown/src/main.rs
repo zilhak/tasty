@@ -45,7 +45,8 @@ use tasty_plugin_sdk::EguiMeshPopup;
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PathField, PathFieldOutcome, TagVariant, margin_all, tag, vspace,
+    Button, ButtonVariant, ControlSize, PathField, PathFieldOutcome, TagVariant, margin_all, tag,
+    vspace,
 };
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
@@ -987,29 +988,45 @@ fn draw_file_open(
                 .color(theme.text_secondary().to_egui()),
         );
 
-        // 경로 입력 + browse.
+        // 경로 입력 + browse. right_to_left 로 Browse 를 먼저(우측) 배치해 실제 렌더
+        // 폭(아이콘+라벨+패딩)만큼 자연히 소비시키고, 입력 필드는 남은
+        // `ui.available_width()` 를 그대로 쓴다 — misc.rs/remote_transfer.rs 의 Browse
+        // 선례와 동형이라 고정 spacing 상수를 빼는 수동 계산(클리핑 원인)이 필요 없다.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            let browse =
-                Button::new(tr.t("markdown.file_open.browse")).variant(ButtonVariant::Ghost);
-            // browse 버튼 폭을 확보하고 남은 폭을 입력 필드에 준다.
-            let field_w =
-                (ui.available_width() - theme.spacing_xl.value()).max(theme.spacing_xl.value());
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut st.path_input)
-                    .desired_width(field_w)
-                    .hint_text(tr.t("markdown.file_open.path_label"))
-                    .font(egui::FontId::new(
-                        theme.font_size_body.value(),
-                        egui::FontFamily::Monospace,
-                    )),
-            );
-            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                action = FileOpenAction::Open;
-            }
-            if browse.show(ui, theme).clicked() {
-                action = FileOpenAction::Browse;
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let browse_clicked = Button::new(tr.t("markdown.file_open.browse"))
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .leading_icon(&|ui, rect, c| {
+                        tasty_plugin_sdk::baked_icon::draw(
+                            ui.painter(),
+                            baked_icons::FOLDER,
+                            rect.center(),
+                            rect.width(),
+                            c,
+                        );
+                    })
+                    .show(ui, theme)
+                    .clicked();
+
+                let field_w = ui.available_width();
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut st.path_input)
+                        .desired_width(field_w)
+                        .hint_text(tr.t("markdown.file_open.path_label"))
+                        .font(egui::FontId::new(
+                            theme.font_size_body.value(),
+                            egui::FontFamily::Monospace,
+                        )),
+                );
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    action = FileOpenAction::Open;
+                }
+                if browse_clicked {
+                    action = FileOpenAction::Browse;
+                }
+            });
         });
 
         vspace(ui, theme.spacing_xs);
