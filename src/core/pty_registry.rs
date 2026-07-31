@@ -22,12 +22,6 @@
 //! **비영속**: headless PTY 자식 프로세스는 호스트와 수명을 같이하므로(재부팅 후 살아있는
 //! PTY 는 없다) `child_terminal` 과 달리 JSON 영속화하지 않는다.
 
-// 18-a(Registry + IO)는 데이터 모델·exit-code 캡처만 만든다 — 이 API 의 실제 호출자
-// (IPC 핸들러 `pty.spawn`/`write`/`read`/`wait`/`kill`/`list`, 상태바 카운트, sweep
-// 배선)는 18-b/18-c 에서 붙는다. soft_occupancy.rs 와 동일하게 배선 전까지 dead_code
-// 를 억제한다(18-b 소비 시점에 제거).
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -114,10 +108,14 @@ impl PtyEntry {
         self.exit().is_some()
     }
 
+    // 이유: 상태바/진단 노출용 introspection getter — 18-b/18-c 소비 시점까지 production
+    // 호출자가 없다(현재는 단위 테스트에서만 사용).
+    #[allow(dead_code)]
     pub fn created_at(&self) -> Instant {
         self.created_at
     }
 
+    #[allow(dead_code)]
     pub fn last_activity(&self) -> Instant {
         self.last_activity
     }
@@ -157,6 +155,10 @@ impl PtyRegistry {
     }
 
     /// 상한/TTL override 생성자 — `rate_limit.rs` 철학(기본값은 박되 호출자 지정 가능).
+    // 이유: production 은 항상 `new()`(=`default()`)만 쓴다(`state.rs`) — override 는
+    // 현재 단위 테스트 전용(limit/TTL 경계 시나리오 재현). 설정 노출(18-b/18-c) 전까지
+    // dead_code.
+    #[allow(dead_code)]
     pub fn with_limits(max_concurrent: usize, idle_ttl: Duration) -> Self {
         Self {
             max_concurrent,
@@ -165,10 +167,14 @@ impl PtyRegistry {
         }
     }
 
+    // 이유: 상태바/진단 노출용 introspection getter — 18-b/18-c 소비 시점까지 production
+    // 호출자가 없다(현재는 단위 테스트에서만 사용).
+    #[allow(dead_code)]
     pub fn max_concurrent(&self) -> usize {
         self.max_concurrent
     }
 
+    #[allow(dead_code)]
     pub fn idle_ttl(&self) -> Duration {
         self.idle_ttl
     }
@@ -251,15 +257,22 @@ impl PtyRegistry {
         self.entries.contains_key(&id)
     }
 
+    // 이유: 단위 테스트 전용 편의 getter — `pty.list`(handle_list, 18-b)는 실제로는
+    // `iter()`를 쓰고 있어 production 호출자가 없다.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// 살아있는 headless PTY id 목록(`pty.list` 용, 18-b). 순서 미보장.
+    /// 살아있는 headless PTY id 목록. 순서 미보장.
+    // 이유: 단위 테스트 전용(kill 대상 id 순회) — production 은 `iter()`로 entry 전체를
+    // 순회한다(`handle_list`).
+    #[allow(dead_code)]
     pub fn ids(&self) -> Vec<u32> {
         self.entries.keys().copied().collect()
     }
