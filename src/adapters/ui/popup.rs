@@ -392,16 +392,6 @@ impl PopupManager {
         self.popups.push(popup);
     }
 
-    /// `sizer`가 정의된 popup에 한해 open 직전 크기를 재계산한다. caller가 사이즈
-    /// 갱신 후 `open*` 계열을 호출하는 규약.
-    /// popup 표준 API — context menu/단축키 통합 시 호출.
-    #[allow(dead_code)] // pub PopupManager API 표면 — 현 호출처 0, 통합 시 배선
-    pub fn refresh_size(&mut self, id: PopupId, size: egui::Vec2) {
-        if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
-            p.size = size;
-        }
-    }
-
     /// Register a popup. Call once during init. Does nothing if already registered.
     pub fn register(&mut self, popup: PopupState) {
         if !self.popups.iter().any(|p| p.id == popup.id) {
@@ -431,8 +421,6 @@ impl PopupManager {
 
     /// Open a popup centered on screen **without** focus (agent-initiated).
     /// 사용자의 포커스를 훔치지 않는다. CLI/IPC 경유 open에 사용.
-    /// popup 표준 API — agent 발화 경로 통합 시 호출.
-    #[allow(dead_code)] // pub PopupManager API 표면 — 현 호출처 0(open_centered_focused 가 실사용)
     pub fn open_centered(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
@@ -490,17 +478,6 @@ impl PopupManager {
             // 리사이즈 상태 리셋 → 다음 open 시 sizer 가 크기를 다시 결정하도록 복원.
             p.resizing = None;
             p.size_user_overridden = false;
-        }
-    }
-
-    /// Toggle a popup open/closed.
-    /// popup 표준 API — 단축키 통합 시 호출.
-    #[allow(dead_code)] // pub PopupManager API 표면 — 현 호출처 0, 단축키 통합 시 배선
-    pub fn toggle(&mut self, id: PopupId) {
-        if self.is_open(id) {
-            self.close(id);
-        } else {
-            self.open(id);
         }
     }
 
