@@ -187,7 +187,6 @@ impl From<UiIntent> for Intent {
 ///
 /// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
 /// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
-#[allow(dead_code)]
 impl UiIntent {
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Ui(self).from_user_shortcut(id)
@@ -205,14 +204,20 @@ impl UiIntent {
         Intent::Ui(self).from_agent_ipc()
     }
 
+    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
     }
 
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Ui(self).from_agent_cli()
     }
 
+    /// cascade 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Ui(self).cascaded_from(parent)
     }
@@ -224,7 +229,6 @@ impl UiIntent {
 /// origin 분기 builder set — context_menu / agent_plugin / agent_cli / cascade
 /// 발화 경로가 wiring 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이
 /// 필요하므로 보존.
-#[allow(dead_code)]
 impl crate::core::intent::DomainIntent {
     pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Domain(self).from_user_shortcut(id)
@@ -242,10 +246,14 @@ impl crate::core::intent::DomainIntent {
         Intent::Domain(self).from_agent_ipc()
     }
 
+    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub(crate) fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Domain(self).from_agent_plugin(plugin_id)
     }
 
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub(crate) fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Domain(self).from_agent_cli()
     }
@@ -261,6 +269,8 @@ impl crate::core::intent::DomainIntent {
         }
     }
 
+    /// cascade 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub(crate) fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Domain(self).cascaded_from(parent)
     }
@@ -368,7 +378,6 @@ impl IntentOrigin {
 ///
 /// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
 /// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
-#[allow(dead_code)]
 impl Intent {
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
@@ -410,6 +419,8 @@ impl Intent {
         }
     }
 
+    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -420,6 +431,8 @@ impl Intent {
         }
     }
 
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -431,6 +444,8 @@ impl Intent {
     }
 
     /// cascade: 직전 Intent 의 origin 을 명시적으로 전파. `trace_id` 도 그대로.
+    /// 비-테스트 호출처 없음(TODO13) — cfg(test) 에서만 직접 호출됨.
+    #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
