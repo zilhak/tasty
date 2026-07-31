@@ -109,4 +109,24 @@ pub enum TerminalCommands {
         #[arg(long)]
         state: String,
     },
+    /// Register an already-existing surface as a child (soft occupancy), without
+    /// spawning a new tab. Fails if the target is already a registered child of
+    /// some parent (release it first) or is hard-occupied (remote attach).
+    Adopt {
+        /// Parent surface ID (defaults to caller's TASTY_SURFACE_ID)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Existing surface ID to adopt as a child
+        #[arg(long)]
+        target: u32,
+        /// Working directory to record for the child
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Role label attached to the child (used by broadcast --role)
+        #[arg(long)]
+        role: Option<String>,
+        /// Display nickname shown on the tab
+        #[arg(long)]
+        nickname: Option<String>,
+    },
 }

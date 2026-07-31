@@ -462,6 +462,87 @@ pub(crate) fn handle_kill(
     )
 }
 
+/// 임의의 기존 surface 를 명시적으로 `parent` 의 child 로 등록(soft 점유) —
+/// TODO16 / ADR-0040 §45 유보분. `handle_spawn`(317-336행)의 관계등록+점유
+/// 블록과 동일 시퀀스를 "PTY 생성 없이, 호출자가 지정한 기존 surface_id" 에
+/// 대해 수행한다.
+///
+/// 연산 순서는 `handle_spawn` 과 **반대**다 — spawn 의 대상(방금 생성된 surface)은
+/// 실전에서 거의 절대 이미 점유돼 있을 수 없어 `register_child` → `occupy_soft`
+/// 순서에 `occupy_soft` 실패를 관용해도 무해하지만, adopt 의 대상은 임의의 기존
+/// surface 라 이미 점유돼 있을 확률이 훨씬 높다. 순서를 뒤집어 `occupy_soft` 를
+/// 먼저 시도하고, 실패하면 registry 를 전혀 건드리지 않은 채 즉시 에러 반환한다
+/// ("children 목록 = 점유 목록" 동치성 보존).
+pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+    engine.reconcile_child_terminals();
+    let parent = match resolve_parent(engine, params, &id) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let target = match require_u32(params, "target", &id) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    if engine.find_surface_by_id(target).is_none() {
+        return JsonRpcResponse::invalid_params(id, format!("surface {target} not found"));
+    }
+    if parent == target {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "cannot adopt a surface as its own child".to_string(),
+        );
+    }
+    if let Some(existing_parent) = engine.child_terminals.parent_of_child(target) {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!(
+                "surface {target} is already a child of {existing_parent} \
+                 (release it first — see 'tasty terminal release')"
+            ),
+        );
+    }
+    // hard 점유(원격 attach) 대상은 거부 — `occupy_soft` 자체는 hard lock 을 검사하지
+    // 않으므로 여기서 명시적으로 막는다(hard 점유는 이 TODO 스코프 밖).
+    if engine.attach.is_hard_occupied(target) {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("surface {target} is hard-occupied (remote attach) — cannot adopt"),
+        );
+    }
+
+    let role = optional_str(params, "role");
+    let nickname = optional_str(params, "nickname");
+    let cwd = optional_str(params, "cwd");
+    let label = nickname.clone().or_else(|| role.clone());
+    // occupy_soft 를 먼저 시도 — 실패하면(다른 parent 가 이미 soft 점유 중)
+    // registry 는 손대지 않고 바로 에러 반환.
+    if let Err(e) = engine.occupy_soft(target, parent, label) {
+        return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {e:?}"));
+    }
+
+    let index = engine.child_terminals.next_index_for(parent);
+    engine.child_terminals.register_child(
+        parent,
+        ChildEntry {
+            child_surface_id: target,
+            index,
+            cwd,
+            role,
+            nickname,
+        },
+    );
+    engine.child_terminals.save();
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "child_surface_id": target,
+            "child_index": index,
+        }),
+    )
+}
+
 pub(crate) fn handle_respawn(
     core: &mut Core,
     state: &mut AppState,
@@ -676,6 +757,26 @@ mod tests {
         resp.result.expect("expected success result")
     }
 
+    /// `engine()`의 기본 workspace 는 surface 1개뿐이라, adopt 테스트가 필요로 하는
+    /// "parent 와 별개인 이미 존재하는 surface"를 만들려면 두 번째 tab 을 직접
+    /// 끼워 넣어야 한다. `find_surface_by_id`는 Surface 트리만 순회하므로(터미널
+    /// 실제 PTY/`engine.terminals` 등록 여부와 무관) id-marker `TerminalSurface`
+    /// 하나로 충분하다.
+    fn add_extra_surface(e: &mut CoreState, surface_id: u32) {
+        let pane_id = e.workspaces[0].pane_layout().all_pane_ids()[0];
+        let tab = crate::model::Tab::new_with_surface(
+            e.next_ids.next_tab(),
+            "extra".to_string(),
+            Box::new(crate::model::TerminalSurface { id: surface_id }),
+        );
+        e.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("default pane")
+            .tabs
+            .push(tab);
+    }
+
     #[test]
     fn spawn_kill_occupancy_wiring() {
         // handle_spawn/handle_kill 이 소비하는 03 경계(occupy_soft/release_occupancy)를
@@ -699,6 +800,94 @@ mod tests {
         assert!(e.child_terminals.remove_child(parent, idx).is_some());
         e.release_occupancy(c);
         assert!(e.attach.occupancy_of(c).is_none());
+    }
+
+    #[test]
+    fn adopt_registers_existing_surface_without_new_tab() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let target = 6000u32; // 이미 존재하는(=spawn 아닌) surface
+        add_extra_surface(&mut e, target);
+
+        let resp = handle_adopt(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "target": target }),
+        );
+        assert!(resp.error.is_none());
+
+        let occ = e
+            .attach
+            .occupancy_of(target)
+            .expect("soft occupancy present");
+        assert_eq!(occ.tier, OccupancyTier::Soft);
+        assert_eq!(occ.parent, Some(parent));
+        assert_eq!(e.child_terminals.parent_of_child(target), Some(parent));
+    }
+
+    #[test]
+    fn adopt_rejects_already_registered_child() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let target = 6000u32;
+        add_extra_surface(&mut e, target);
+
+        let _ = handle_adopt(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "target": target }),
+        );
+        let resp2 = handle_adopt(
+            &mut e,
+            json!(2),
+            &json!({ "surface": parent, "target": target }),
+        );
+        assert!(resp2.error.is_some()); // 중복 등록 거부
+    }
+
+    #[test]
+    fn adopt_rejects_nonexistent_surface() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let resp = handle_adopt(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "target": 999999u32 }),
+        );
+        assert!(resp.error.is_some());
+    }
+
+    #[test]
+    fn adopt_rejects_self_adoption() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let resp = handle_adopt(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "target": parent }),
+        );
+        assert!(resp.error.is_some());
+    }
+
+    #[test]
+    fn adopt_rejects_hard_occupied_target_and_leaves_registry_unchanged() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let target = 6000u32;
+        add_extra_surface(&mut e, target);
+        e.attach
+            .acquire(target, /* hard occupancy client id */ 1)
+            .unwrap();
+
+        let resp = handle_adopt(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent, "target": target }),
+        );
+        assert!(resp.error.is_some());
+        // 실패 시 registry 에 아무 흔적도 남지 않아야 한다(연산 순서 검증).
+        assert!(e.child_terminals.parent_of_child(target).is_none());
+        assert!(e.attach.is_hard_occupied(target)); // 기존 hard 점유는 건드리지 않음
     }
 
     #[test]

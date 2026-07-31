@@ -737,6 +737,23 @@ fn terminal_command_to_method_params(
             "terminal.set_state",
             serde_json::json!({ "surface": surface, "state": state }),
         ),
+        T::Adopt {
+            surface,
+            target,
+            cwd,
+            role,
+            nickname,
+        } => {
+            let mut m = Map::new();
+            put_u32(&mut m, "surface", resolve_surface_id(*surface));
+            m.insert("target".into(), Value::from(*target));
+            if let Some(c) = normalize_cwd_or_exit(cwd.as_deref()) {
+                m.insert("cwd".into(), Value::from(c));
+            }
+            put_str(&mut m, "role", role);
+            put_str(&mut m, "nickname", nickname);
+            ("terminal.adopt", Value::Object(m))
+        }
     }
 }
 
@@ -1024,6 +1041,27 @@ mod tests {
         assert_eq!(req.method, "terminal.kill");
         assert_eq!(req.params["surface"].as_u64(), Some(7));
         assert_eq!(req.params["child"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn terminal_adopt_maps_target_and_optional_fields() {
+        let cmd = cmd_from(&[
+            "tasty",
+            "terminal",
+            "adopt",
+            "--surface",
+            "7",
+            "--target",
+            "42",
+            "--nickname",
+            "worker",
+        ]);
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "terminal.adopt");
+        assert_eq!(req.params["surface"].as_u64(), Some(7));
+        assert_eq!(req.params["target"].as_u64(), Some(42));
+        assert_eq!(req.params["nickname"].as_str(), Some("worker"));
+        assert!(req.params.get("role").is_none());
     }
 
     #[test]

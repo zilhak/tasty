@@ -135,6 +135,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.broadcast", plugin(&[TerminalWrite])),
         // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
         ("terminal.set_state", plugin(&[SurfaceWrite])),
+        // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) — TODO16.
+        // sibling IPC 핸들러를 호출하지 않고 순수 in-process core 함수(register_child/
+        // occupy_soft)만 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
+        // (terminal.kill/terminal.set_state 와 동일 컨벤션).
+        ("terminal.adopt", plugin(&[SurfaceWrite])),
         // ── headless PTY primitive (TODO 18 / pty_registry) ───────────
         // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
         // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만
