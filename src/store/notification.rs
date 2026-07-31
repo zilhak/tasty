@@ -98,20 +98,8 @@ impl NotificationStore {
         self.notifications.iter().filter(|n| !n.read).count()
     }
 
-    /// Unread count for a specific workspace.
-    /// per-workspace 변종 — workspace tab badge 추가 시 호출.
-    // 이유: 단위 테스트(이 파일 #[cfg(test)])가 검증하는 production API. 비-test 빌드에선 미사용 → 유지.
-    #[allow(dead_code)]
-    pub fn unread_count_for_workspace(&self, workspace_id: WorkspaceId) -> usize {
-        self.notifications
-            .iter()
-            .filter(|n| !n.read && n.source_workspace == workspace_id)
-            .count()
-    }
-
     /// Whether any unread notification originates from the given surface.
-    /// `unread_count_for_workspace` 와 같은 필터 패턴을 surface 기준으로 변형 — 알림
-    /// 읽음 처리 시 그 surface 의 highlight 를 지워도 되는지 판단하는 데 쓰인다.
+    /// 알림 읽음 처리 시 그 surface 의 highlight 를 지워도 되는지 판단하는 데 쓰인다.
     pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
         self.notifications
             .iter()
@@ -168,16 +156,6 @@ mod tests {
         assert_eq!(store.unread_count(), 2);
         store.mark_all_read();
         assert_eq!(store.unread_count(), 0);
-    }
-
-    #[test]
-    fn unread_count_for_workspace() {
-        let mut store = NotificationStore::with_coalesce_ms(500);
-        store.add(1, 1, "A".into(), "".into());
-        store.add(2, 1, "B".into(), "".into());
-        assert_eq!(store.unread_count_for_workspace(1), 1);
-        assert_eq!(store.unread_count_for_workspace(2), 1);
-        assert_eq!(store.unread_count_for_workspace(99), 0);
     }
 
     #[test]
