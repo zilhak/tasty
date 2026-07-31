@@ -625,6 +625,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
                 engine.refresh_busy_surfaces();
                 engine.forward_busy_activity(&app.stream_hub);
+                // 글로벌 훅(TODO12) — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
+                // 동형(엔진 1 개라 순회 불필요).
+                engine.poll_global_hooks();
                 // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록 1Hz
                 // 안전망으로 편승(주 wake 경로는 TerminalOutput(None), 위 참조).
                 headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);

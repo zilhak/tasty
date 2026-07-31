@@ -1199,6 +1199,7 @@ fn file_handler_recent_path() -> std::path::PathBuf {
 
 mod busy;
 mod finders;
+mod global_hooks;
 mod highlight;
 mod message;
 mod pty;

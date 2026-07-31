@@ -53,11 +53,6 @@ pub struct GlobalHookManager {
     /// Creation time for Once hooks, to measure elapsed time.
     created_at: HashMap<u32, Instant>,
     /// Set of Once hook IDs that have already fired and should be removed.
-    ///
-    /// `tick()` 내부에서 drain → remove 흐름으로만 쓰이므로 *external read* 가
-    /// 없어 dead 로 잡힌다. tick 자체가 event loop 통합 전이라 함께 allow —
-    /// hook lifecycle 통합 시 read 경로가 생긴다.
-    #[allow(dead_code)]
     fired_once: Vec<u32>,
 }
 
@@ -121,12 +116,8 @@ impl GlobalHookManager {
     }
 
     /// Check all hooks and return `(hook_id, command)` pairs that should be
-    /// executed right now. Called periodically (e.g. every ~250 ms) from the
-    /// event loop.
-    ///
-    /// event loop 통합이 아직 안 됨 — add/remove 만 활성. tick 호출 경로 추가
-    /// 후 allow 제거.
-    #[allow(dead_code)]
+    /// executed right now. `CoreState::poll_global_hooks` 가 `AppEvent::BusyPoll`
+    /// 1Hz cadence 에 편승해 호출한다(TODO12).
     pub fn tick(&mut self) -> Vec<(u32, String)> {
         let now = Instant::now();
         let mut to_fire: Vec<(u32, String)> = Vec::new();
@@ -170,9 +161,6 @@ impl GlobalHookManager {
     /// Execute a shell command in a fire-and-forget fashion.
     /// Spawn 실패는 사용자 hook이 발동했다고 보이지만 실제로는 자식이 안 뜬 상태라
     /// 디버깅이 어렵다. warn으로 흔적을 남긴다.
-    ///
-    /// tick 결과를 실제로 dispatch 하는 event loop wiring 통합 후 사용 예정.
-    #[allow(dead_code)]
     pub fn execute_command(command: &str) {
         #[cfg(windows)]
         let mut cmd = {
@@ -190,5 +178,68 @@ impl GlobalHookManager {
         if let Err(e) = result {
             tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_accepts_interval_and_once() {
+        assert!(matches!(
+            HookCondition::parse("interval:5"),
+            Some(HookCondition::Interval(d)) if d == Duration::from_secs(5)
+        ));
+        assert!(matches!(
+            HookCondition::parse("once:1.5"),
+            Some(HookCondition::Once(d)) if d == Duration::from_secs_f64(1.5)
+        ));
+        assert!(HookCondition::parse("garbage:1").is_none());
+    }
+
+    #[test]
+    fn tick_does_not_fire_interval_hook_before_period_elapses() {
+        let mut mgr = GlobalHookManager::new();
+        mgr.add(
+            HookCondition::Interval(Duration::from_secs(60)),
+            "echo x".to_string(),
+            None,
+        );
+        assert!(mgr.tick().is_empty());
+    }
+
+    #[test]
+    fn tick_fires_interval_hook_repeatedly_after_each_period() {
+        let mut mgr = GlobalHookManager::new();
+        let id = mgr.add(
+            HookCondition::Interval(Duration::from_millis(10)),
+            "echo x".to_string(),
+            None,
+        );
+        std::thread::sleep(Duration::from_millis(15));
+        assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
+        // Interval 훅은 발화 후에도 남아 있어야 다음 주기에 다시 발화한다.
+        assert_eq!(mgr.list().len(), 1);
+        std::thread::sleep(Duration::from_millis(15));
+        assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
+    }
+
+    #[test]
+    fn tick_fires_once_hook_exactly_once_then_removes_it() {
+        let mut mgr = GlobalHookManager::new();
+        let id = mgr.add(
+            HookCondition::Once(Duration::from_millis(10)),
+            "echo once".to_string(),
+            None,
+        );
+        std::thread::sleep(Duration::from_millis(15));
+        assert_eq!(mgr.tick(), vec![(id, "echo once".to_string())]);
+        assert!(
+            mgr.list().is_empty(),
+            "once 훅은 발화 후 제거되어야 한다"
+        );
+        // 이미 제거됐으니 이후 tick 에서 다시 발화하면 안 된다.
+        assert!(mgr.tick().is_empty());
     }
 }
