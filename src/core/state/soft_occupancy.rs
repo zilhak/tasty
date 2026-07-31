@@ -14,10 +14,9 @@ use crate::core::attach::{OccupancyError, OccupancyTier};
 
 impl CoreState {
     /// soft 점유 획득(표시만, write 차단 없음 — ADR-0040). 주체 = `parent` surface.
-    /// in-process 전용(IPC method 아님) — `terminal.spawn`(작업 04)이 child 를 soft
-    /// 점유할 때 호출한다. 대상 surface_id 는 **필수**(포커스 독립, 원칙1) — ID 로 직접
+    /// in-process 전용(IPC method 아님) — `terminal.spawn`/`terminal.adopt` 이 child 를
+    /// soft 점유할 때 호출한다. 대상 surface_id 는 **필수**(포커스 독립, 원칙1) — ID 로 직접
     /// 지정. 같은 주체 재-acquire 는 멱등(라벨만 갱신), 다른 주체면 `AlreadyOccupied`.
-    #[allow(dead_code)] // 소비자(terminal.spawn, 작업 04) 배선 전까지 호출자 없음.
     pub fn occupy_soft(
         &mut self,
         surface_id: u32,

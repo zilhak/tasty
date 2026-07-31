@@ -86,7 +86,6 @@ pub struct Occupancy {
 }
 
 /// soft 점유 연산 실패 사유(hard 의 `AttachError` 와 분리 — holder 표현이 다름).
-#[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OccupancyError {
     /// 이미 다른 주체(parent)가 soft 점유 중(1:1 배타, ADR-0040).
@@ -99,7 +98,6 @@ pub enum OccupancyError {
 
 /// soft 점유 내부 엔트리. hard(`AttachLock`)와 **분리 저장** — hard 기계(workspace_locks/
 /// notifier/force-detach/release_all_for_client)는 이 맵에 진입하지 않는다.
-#[allow(dead_code)] // 필드는 occupancy_of(작업 02 소비)에서만 읽힘.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SoftEntry {
     parent: SurfaceId,
@@ -176,8 +174,7 @@ impl OccupancyRegistry {
 
     /// soft 점유 획득(표시만, write 제한 없음 — ADR-0040). 같은 parent 재-acquire 는
     /// 멱등(라벨만 갱신). 이미 다른 주체의 soft 점유면 `AlreadyOccupied`. hard 기계와
-    /// 무관 — StreamHub/gui 없이 동작(headless 안전). 배선(작업 03)이 호출한다.
-    #[allow(dead_code)] // 작업 03 배선 전까지 gui 빌드에 소비처 없음.
+    /// 무관 — StreamHub/gui 없이 동작(headless 안전). `CoreState::occupy_soft` 가 호출한다.
     pub fn acquire_soft(
         &mut self,
         surface_id: SurfaceId,
@@ -426,8 +423,9 @@ impl OccupancyRegistry {
 
     /// surface 가 속한 점유 workspace 의 holder(placeholder 표시·force-detach UI 용).
     ///
-    /// 현재는 호출처가 자체 테스트뿐 — placeholder UI / force-detach 메뉴 통합 후
-    /// 본격 사용 예정. 공개 API 이므로 외부 호출자 대비 dead 제거가 아닌 allow 만.
+    /// 현재 호출처는 `attach_runtime.rs` 의 테스트뿐(`forward_split_inherits_workspace_occupancy`)
+    /// — non-test 빌드엔 실사용처가 없어 `dead_code` 가 뜬다. placeholder UI / force-detach
+    /// 메뉴 통합 후 본격 사용 예정. 공개 API 이므로 삭제가 아닌 allow 만.
     #[allow(dead_code)]
     pub fn workspace_holder_of(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.workspace_of_surface(surface_id)
