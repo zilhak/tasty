@@ -39,6 +39,39 @@ impl CoreState {
             .filter(|sid| self.highlighted_surfaces.contains(sid))
             .count()
     }
+
+    /// 알림 읽음 처리(TODO 23) — 두 번째 clear producer. 특정 알림을 읽음 처리하고,
+    /// 그 알림의 source surface 를 source 로 하는 다른 안읽음 알림이 남아있지 않은
+    /// 경우에만 highlight 를 지운다. 같은 surface 의 다른 알림이 아직 안읽음이면
+    /// clear 하지 않는다(엣지 케이스 — 무조건 clear 시 오해제 발생).
+    pub(crate) fn mark_notification_read(&mut self, id: u64) {
+        let source_surface = self
+            .notifications
+            .all()
+            .find(|n| n.id == id)
+            .map(|n| n.source_surface);
+        self.notifications.mark_read(id);
+        if let Some(surface_id) = source_surface {
+            if !self.notifications.has_unread_for_surface(surface_id) {
+                self.clear_surface_highlight(surface_id);
+            }
+        }
+    }
+
+    /// 모든 알림 읽음 처리(TODO 23). 전부 읽음 처리되므로 엣지 케이스 없이, 읽음
+    /// 처리 전 안읽음이었던 모든 알림의 source surface highlight 를 지운다.
+    pub(crate) fn mark_all_notifications_read(&mut self) {
+        let unread_surfaces: std::collections::HashSet<u32> = self
+            .notifications
+            .all()
+            .filter(|n| !n.read)
+            .map(|n| n.source_surface)
+            .collect();
+        self.notifications.mark_all_read();
+        for surface_id in unread_surfaces {
+            self.clear_surface_highlight(surface_id);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -48,6 +81,15 @@ mod tests {
     fn state() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    /// 같은 source_surface 로 연달아 `add()` 해도 coalesce(기본 500ms 창)되지 않게
+    /// coalesce window 를 0 으로 둔 state. 한 surface 에서 온 알림 2건 이상을
+    /// 별개 엔트리로 만들어야 하는 엣지 케이스 테스트 전용.
+    fn state_no_coalesce() -> CoreState {
+        let mut s = state();
+        s.notifications = crate::notification::NotificationStore::with_coalesce_ms(0);
+        s
     }
 
     #[test]
@@ -84,5 +126,96 @@ mod tests {
         s.raise_surface_highlight(5);
         assert_eq!(s.highlight_count(&[1, 2, 3, 4, 5]), 3);
         assert_eq!(s.highlight_count(&[3, 4]), 0);
+    }
+
+    /// TODO 23 — 개별 읽음 처리 시 그 surface 에 다른 안읽음 알림이 남아있지 않으면
+    /// highlight 가 지워진다.
+    #[test]
+    fn mark_notification_read_clears_highlight_when_no_unread_left() {
+        let mut s = state();
+        let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        s.raise_surface_highlight(100);
+        assert!(s.is_surface_highlighted(100));
+
+        s.mark_notification_read(id);
+
+        assert!(!s.is_surface_highlighted(100));
+    }
+
+    /// TODO 23 핵심 엣지 케이스 — 같은 surface 에서 온 다른 알림이 아직 안읽음이면
+    /// 하나만 읽음 처리해도 highlight 가 지워지면 안 된다.
+    #[test]
+    fn mark_notification_read_keeps_highlight_when_sibling_unread_remains() {
+        let mut s = state_no_coalesce();
+        let id1 = s
+            .notifications
+            .add(1, 100, "t1".into(), "b1".into())
+            .unwrap();
+        let _id2 = s
+            .notifications
+            .add(1, 100, "t2".into(), "b2".into())
+            .unwrap();
+        s.raise_surface_highlight(100);
+
+        s.mark_notification_read(id1);
+
+        assert!(
+            s.is_surface_highlighted(100),
+            "다른 알림(id2)이 아직 안읽음이므로 highlight 가 유지돼야 한다"
+        );
+
+        s.mark_notification_read(_id2);
+        assert!(
+            !s.is_surface_highlighted(100),
+            "마지막 안읽음 알림까지 읽음 처리되면 highlight 가 지워져야 한다"
+        );
+    }
+
+    /// TODO 23 — 존재하지 않는 알림 id 를 넘겨도 panic 없이 no-op.
+    #[test]
+    fn mark_notification_read_unknown_id_is_noop() {
+        let mut s = state();
+        s.raise_surface_highlight(100);
+        s.mark_notification_read(9999);
+        assert!(s.is_surface_highlighted(100));
+    }
+
+    /// TODO 23 — "모두 읽음"은 엣지 케이스 없이 안읽음이었던 모든 surface 의
+    /// highlight 를 지운다.
+    #[test]
+    fn mark_all_notifications_read_clears_all_unread_surfaces() {
+        let mut s = state_no_coalesce();
+        s.notifications.add(1, 100, "t1".into(), "b1".into());
+        s.notifications.add(1, 100, "t2".into(), "b2".into());
+        s.notifications.add(1, 200, "t3".into(), "b3".into());
+        s.raise_surface_highlight(100);
+        s.raise_surface_highlight(200);
+
+        s.mark_all_notifications_read();
+
+        assert!(!s.is_surface_highlighted(100));
+        assert!(!s.is_surface_highlighted(200));
+    }
+
+    /// TODO 23 회귀 방지 — 이미 읽은 알림만 있는 surface 의 highlight 는
+    /// `mark_all_notifications_read` 가 건드리지 않아도 원래 그 surface 는 안읽음
+    /// 집합에서 제외되므로 clear 대상에 포함되지 않는다(다른 surface 의 highlight 는
+    /// 보존).
+    #[test]
+    fn mark_all_notifications_read_leaves_unrelated_surface_highlight_untouched() {
+        let mut s = state();
+        let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        s.notifications.mark_read(id); // 이미 읽음 처리된 알림
+        s.raise_surface_highlight(100); // 알림과 무관한 producer(toast 등)가 건 highlight
+        s.raise_surface_highlight(200);
+        s.notifications.add(1, 200, "t2".into(), "b2".into());
+
+        s.mark_all_notifications_read();
+
+        assert!(
+            s.is_surface_highlighted(100),
+            "100 은 안읽음 알림이 없었으므로 clear 대상이 아니다 — 무관 producer 의 highlight 보존"
+        );
+        assert!(!s.is_surface_highlighted(200));
     }
 }

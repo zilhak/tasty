@@ -109,6 +109,15 @@ impl NotificationStore {
             .count()
     }
 
+    /// Whether any unread notification originates from the given surface.
+    /// `unread_count_for_workspace` 와 같은 필터 패턴을 surface 기준으로 변형 — 알림
+    /// 읽음 처리 시 그 surface 의 highlight 를 지워도 되는지 판단하는 데 쓰인다.
+    pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
+        self.notifications
+            .iter()
+            .any(|n| !n.read && n.source_surface == surface_id)
+    }
+
     /// Get all notifications (newest last).
     pub fn all(&self) -> impl DoubleEndedIterator<Item = &Notification> + ExactSizeIterator {
         self.notifications.iter()
@@ -190,6 +199,26 @@ mod tests {
         store.add(1, 1, "A".into(), "".into());
         store.add(1, 2, "B".into(), "".into()); // different surface
         assert_eq!(store.all().len(), 2);
+    }
+
+    #[test]
+    fn has_unread_for_surface_reflects_remaining_unread() {
+        let mut store = NotificationStore::with_coalesce_ms(0);
+        let id1 = store.add(1, 100, "t1".into(), "b1".into()).unwrap();
+        let _id2 = store.add(1, 100, "t2".into(), "b2".into()).unwrap(); // 다른 알림, 같은 surface
+        assert!(store.has_unread_for_surface(100));
+        store.mark_read(id1);
+        assert!(store.has_unread_for_surface(100)); // id2 아직 안읽음
+    }
+
+    #[test]
+    fn has_unread_for_surface_false_when_none_or_all_read() {
+        let mut store = NotificationStore::with_coalesce_ms(0);
+        assert!(!store.has_unread_for_surface(100));
+        let id = store.add(1, 100, "t".into(), "b".into()).unwrap();
+        assert!(store.has_unread_for_surface(100));
+        store.mark_read(id);
+        assert!(!store.has_unread_for_surface(100));
     }
 
     #[test]
