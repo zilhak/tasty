@@ -52,8 +52,6 @@ pub struct RemoteSurface {
     pub plugin_id: String,
     /// snapshot 데이터 캐시 — plugin이 미리 보낸 값. 영속화 시 사용.
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
-    /// surface가 plugin에 의해 invalidated 됐는지 — true면 호스트가 다음 프레임에 redraw.
-    pub invalidated: Arc<Mutex<bool>>,
     /// 탭 제목 등에 표시되는 이름. plugin이 surface.create / event 응답에서 갱신 가능.
     pub display_name: Arc<Mutex<String>>,
     /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
@@ -82,7 +80,6 @@ impl RemoteSurface {
             kind_static,
             plugin_id,
             snapshot_cache: Arc::new(Mutex::new(None)),
-            invalidated: Arc::new(Mutex::new(true)),
             display_name: Arc::new(Mutex::new(initial_name)),
             webview_url: Arc::new(Mutex::new(None)),
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
@@ -120,23 +117,6 @@ impl RemoteSurface {
     pub fn set_display_name(&self, name: String) {
         if let Ok(mut slot) = self.display_name.lock() {
             *slot = name;
-        }
-    }
-
-    pub fn take_invalidated(&self) -> bool {
-        match self.invalidated.lock() {
-            Ok(mut slot) => {
-                let was = *slot;
-                *slot = false;
-                was
-            }
-            Err(_) => false,
-        }
-    }
-
-    pub fn mark_invalidated(&self) {
-        if let Ok(mut slot) = self.invalidated.lock() {
-            *slot = true;
         }
     }
 
@@ -204,15 +184,6 @@ impl Surface for RemoteSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn invalidated_take_resets() {
-        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
-        assert!(s.take_invalidated()); // 초기값 true
-        assert!(!s.take_invalidated());
-        s.mark_invalidated();
-        assert!(s.take_invalidated());
-    }
 
     #[test]
     fn surface_kind_returns_static() {

@@ -1,16 +1,15 @@
-//! egui-mesh surface 의 host 측 stand-in (빈 골격, A1-S1).
+//! egui-mesh surface 의 host 측 자리표.
 //!
 //! plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성하는
-//! 채널(ADR-0028)의 surface 측 자리표. A1-S1 단계에서는 taxonomy/화이트리스트
-//! 등록과 layout 라우팅(생성·식별·영속화)만 담당한다. 실제 mesh 수신·합성
-//! (buffer_id/generation/ppp 추적, raw_input forward, 전용 `egui_wgpu::Renderer`)
-//! 은 A1-S5 에서 채운다 — **현재는 렌더 동작이 없다**.
+//! 채널(ADR-0028)의 surface 측 모델. taxonomy/화이트리스트 등록과 layout
+//! 라우팅(생성·식별·영속화)을 담당하고, 실제 mesh 수신·합성(buffer_id/
+//! generation/ppp 추적, raw_input forward, 전용 `egui_wgpu::Renderer`)은
+//! `gfx/gpu/egui_mesh_prepare.rs`/`view/main/egui_mesh.rs` 가 이 타입을 받아
+//! 담당한다 — A1-S5(`4f7cde24`) 이후 렌더 경로가 이미 붙어있다.
 //!
 //! `RemoteSurface` 형제다. `Surface` trait 의 `kind() -> &'static str` 제약 때문에
 //! plugin manifest 의 동적 kind 문자열은 `register_egui_mesh_kind` 에서 `Box::leak`
 //! 으로 한 번 정적화한다 (plugin 등록 시 1회).
-
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 

@@ -127,17 +127,6 @@ impl MeshMirrorRegistry {
         self.contexts.get(&surface_id)
     }
 
-    /// 이 surface 가 지금 이 client 에 의해 구독 중인지 확인(holder 검증에 이미
-    /// `attach` 레지스트리를 썼다는 전제 하에, 여기선 "실제로 등록돼 있는가"만 본다).
-    /// 아직 소비처가 없다 — forward 루프(headless/gui 공통)는 지금까지 `client_id`
-    /// 를 `get()`으로 직접 읽는 것만으로 충분했다.
-    #[cfg_attr(feature = "gui", allow(dead_code))]
-    pub(crate) fn is_subscribed_by(&self, surface_id: u32, client_id: AttachClientId) -> bool {
-        self.contexts
-            .get(&surface_id)
-            .is_some_and(|c| c.client_id == client_id)
-    }
-
     /// full-resend 요청을 반영. 구독돼 있지 않으면 `false`(호출자는 MeshError 회신).
     pub(crate) fn request_full_resend(&mut self, surface_id: u32) -> bool {
         match self.contexts.get_mut(&surface_id) {
@@ -201,11 +190,8 @@ impl MeshMirrorRegistry {
 
     /// forward 루프 전용 — 누적된 입력 이벤트를 비우며 가져간다(`take_dirty`/
     /// `take_need_full_textures`와 동형, 순서 독립적으로 분리). headless-as-attach-서버
-    /// (`headless_plugins.rs`)가 소비한다. gui-as-attach-서버(TODO 24)는 mesh 바이트
-    /// forward(로컬 redraw 가 이미 만든 frame relay)만 구현했고, attach client 의
-    /// 입력을 로컬 plugin 에 되먹이는 배선은 아직 없다 — TODO 24 의 명시 범위(바이트
-    /// forward + bootstrap 결정)에는 포함되지 않아 별도 후속 작업으로 남는다.
-    #[cfg_attr(feature = "gui", allow(dead_code))]
+    /// (`headless_plugins.rs`)와 gui-as-attach-서버(`plugin_bridge/mesh_forward.rs`)
+    /// 양쪽 forward 루프가 소비한다.
     pub(crate) fn take_pending_events(&mut self, surface_id: u32) -> Vec<RawInputEventWire> {
         self.contexts
             .get_mut(&surface_id)
@@ -325,14 +311,5 @@ mod tests {
         assert!(reg.get(9).unwrap().last_modifiers.ctrl);
         // 소비 후 재조회는 빈 벡터.
         assert!(reg.take_pending_events(9).is_empty());
-    }
-
-    #[test]
-    fn is_subscribed_by_checks_current_holder() {
-        let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 100, 1, 1, 1.0, None, false);
-        assert!(reg.is_subscribed_by(1, 100));
-        assert!(!reg.is_subscribed_by(1, 200));
-        assert!(!reg.is_subscribed_by(2, 100));
     }
 }
