@@ -731,12 +731,6 @@ impl GpuState {
         self.scale_factor
     }
 
-    /// debug overlay 후보 — egui frame counter 노출용.
-    #[allow(dead_code)] // pub 진단 accessor — debug overlay 배선 시 사용, 현 호출처 0
-    pub fn egui_frame_nr(&self) -> u64 {
-        self.egui_ctx.cumulative_pass_nr()
-    }
-
     /// Get egui's actual pixels_per_point (what it uses for rendering).
     // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
     // release 빌드에서 미사용으로 잡힌다.
