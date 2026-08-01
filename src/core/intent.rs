@@ -465,9 +465,10 @@ pub(crate) enum CoreEvent {
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
     TerminalCwdChanged { surface_id: u32 },
 
-    /// OSC 133 D phase(TODO34) — 셸 통합이 명령 완료 + exit code 를 보고했다.
-    /// cascade 가 `HookEvent::CommandCompleted(Some(exit_code))` 로 훅을 발화한다.
-    /// highlight 연결은 없다(별도 TODO67).
+    /// OSC 133 D phase(TODO34) — 셸 통합이 명령 완료 + exit code 를 보고했다. cascade
+    /// 가 exit code 무관하게 항상 surface highlight 를 발동하고(자동 경로), 동시에
+    /// `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다(커스터마이즈 경로,
+    /// TODO67 — 두 경로는 상호 배타적이지 않다).
     TerminalCommandCompleted {
         surface_id: u32,
         exit_code: Option<i32>,

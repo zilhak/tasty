@@ -816,7 +816,8 @@ impl Core {
                         });
                     }
                     // OSC 133 D phase(TODO34) — 명령 완료 + exit code. 항상 발화(필터
-                    // 없음), highlight 연결은 하지 않는다(별도 TODO67).
+                    // 없음) — cascade 가 highlight 자동 발동 + hook 커스터마이즈 경로
+                    // 둘 다 처리한다(TODO67).
                     if phase == 'D' {
                         let exit_code = crate::core::command_index::extract_exit_code(&payload);
                         out.push(CoreEvent::TerminalCommandCompleted {

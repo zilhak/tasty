@@ -303,4 +303,46 @@ mod tests {
         assert!(!idx.soft_warned.contains(&sid));
         assert!(!idx.hard_notified.contains(&sid));
     }
+
+    /// TODO67 — surface highlight 자동 발동을 D phase cascade 에 추가해도 exit code
+    /// 정보가 memory 기록에서 유실되지 않아야 한다(성공/실패 양쪽). highlight 발동
+    /// 자체는 `App::cascade_terminal_command_completed` 가 무조건 호출하므로(분기
+    /// 없음) 이 memory 기록이 그 무분기 호출과 별개로 exit code 를 보존하는지가
+    /// 실질적인 회귀 지점이다.
+    #[test]
+    fn on_boundary_persists_exit_code_for_success_and_failure() {
+        use std::sync::{Arc, Mutex};
+        use tasty_memory::{ListOpts, MemoryStore, MemoryValue};
+
+        let mem: MemArc = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let mut idx = CommandIndex::new();
+
+        // 서로 다른 surface 를 써서 동일 밀리초에 발생해도 memory key(`tasty.commands.
+        // <unix_ms>`) 충돌 없이 각자의 scope 에 남는다.
+        assert!(idx.on_boundary(&mem, 501, 'D', "0").is_none());
+        assert!(idx.on_boundary(&mem, 502, 'D', "7").is_none());
+
+        let read_exit_code = |sid: u32| -> Option<i64> {
+            let guard = mem.lock().unwrap();
+            let entries = guard
+                .list(&Scope::Surface(sid), &ListOpts::default())
+                .expect("list should succeed");
+            assert_eq!(entries.len(), 1, "surface {sid} 에 정확히 1건 기록돼야 함");
+            let MemoryValue::Json(v) = &entries[0].value else {
+                panic!("expected Json value");
+            };
+            v["exit_code"].as_i64()
+        };
+
+        assert_eq!(
+            read_exit_code(501),
+            Some(0),
+            "성공(exit 0) 도 exit_code 보존"
+        );
+        assert_eq!(
+            read_exit_code(502),
+            Some(7),
+            "실패(exit 7) 도 exit_code 보존"
+        );
+    }
 }

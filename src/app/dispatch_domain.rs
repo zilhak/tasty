@@ -642,12 +642,18 @@ impl App {
         }
     }
 
-    /// `TerminalCommandCompleted` cascade — OSC 133 D phase(TODO34). exit code
-    /// 필터링 없이 항상 `HookEvent::CommandCompleted` 로 훅을 발화한다(등록된 패턴이
-    /// `None` 이면 임의 exit code 에, `Some(n)` 이면 그 값에만 매치). Bell/Notification
-    /// 과 달리 설정 gate 가 없다 — 훅은 사용자가 명시적으로 등록한 자동화라 항상
-    /// 그대로 둔다(`cascade_terminal_output_match` 와 동형). highlight 연결은 여기
-    /// 없다(별도 TODO67).
+    /// `TerminalCommandCompleted` cascade — OSC 133 D phase(TODO34). 두 경로가
+    /// 공존한다(TODO67):
+    /// - **자동 경로**: exit code 무관하게 항상 `raise_surface_highlight` — 설정 없이
+    ///   즉시 동작하는 기본 완료 신호.
+    /// - **커스터마이즈 경로**: exit code 필터링 없이 항상 `HookEvent::CommandCompleted`
+    ///   로 훅을 발화한다(등록된 패턴이 `None` 이면 임의 exit code 에, `Some(n)` 이면
+    ///   그 값에만 매치). Bell/Notification 과 달리 설정 gate 가 없다 — 훅은 사용자가
+    ///   명시적으로 등록한 자동화라 항상 그대로 둔다(`cascade_terminal_output_match`
+    ///   와 동형).
+    ///
+    /// 두 경로 모두 같은 `exit_code` 를 그대로 참조만 할 뿐 소비하지 않는다 — 실제
+    /// exit code 보존은 `command_index::on_boundary` 의 memory 기록(TODO34)이 담당.
     fn cascade_terminal_command_completed(
         &mut self,
         source: DispatchSource,
@@ -668,6 +674,22 @@ impl App {
                 (state, engine, None)
             }
         };
+        // 자동 경로(TODO67) — 성공/실패(exit_code) 무관하게 항상 highlight. exit_code
+        // 자체는 이 호출로 소비되지 않고 아래 hook 이벤트(`HookEvent::CommandCompleted`)
+        // payload 와 `command_index::on_boundary` 의 memory 기록(`tasty.commands.*`
+        // 의 `exit_code` 필드, TODO34)에 그대로 보존된다 — highlight 발동이 그 정보를
+        // 대체하거나 지우지 않는다.
+        tracing::debug!(
+            surface_id,
+            exit_code = ?exit_code,
+            "command completed — raising surface highlight"
+        );
+        engine.raise_surface_highlight(surface_id);
+        engine.mark_layout_dirty();
+        // 커스터마이즈 경로(TODO67) — `HookEvent::CommandCompleted` 발화는 TODO34가
+        // 이미 배선해뒀다. 위 자동 highlight 와 상호 배타적이지 않다 — 사용자가
+        // `tasty set hook --event command-completed[:N] --command "..."` 로 원하는
+        // exit code 만 골라 별도 동작(알림음 등)을 추가로 걸 수 있다.
         let fired = engine.hook_manager.check_and_fire(
             surface_id,
             &[tasty_hooks::HookEvent::CommandCompleted(exit_code)],

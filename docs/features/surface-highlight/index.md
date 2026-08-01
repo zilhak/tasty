@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: AI Agent · 로컬 사용자
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md)
-- **코드**: `src/core/state/highlight.rs` (상태·헬퍼) · `src/gfx/gpu.rs` (focus 해제) · `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) · `src/adapters/ipc/handler/surface/completion.rs` (completion producer) · `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer)
+- **코드**: `src/core/state/highlight.rs` (상태·헬퍼) · `src/gfx/gpu.rs` (focus 해제) · `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) · `src/adapters/ipc/handler/surface/completion.rs` (completion producer) · `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) · `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer)
 - **화면**: 없음 — 세 소비처(테두리·탭·사이드바)에 투영되는 상태 (전용 화면 없음)
 
 ## 목적
@@ -51,8 +51,21 @@ highlight 를 발동시키는 경로. 여러 종류가 공존한다 — highligh
   `"active"`(작업 시작 신호)는 대상이 아니다. `tasty claude install`이 등록한 Stop hook
   (`crates/tasty-plugin-claude/src/install.rs`)을 통해 Claude 세션이 한 턴을 마칠 때마다
   자동 발동 — 별도 사용자 조작 불필요.
-- **후속(미구현)** — 명령완료 자동감지(non-Claude 셸 명령어 완료 감지 등) · 그 외 plugin.
-  highlight API 는 이들이 호출 가능하게 계속 열려 있다.
+- **OSC 133 명령 완료 (셸 통합, 이번 범위)** — `cascade_terminal_command_completed`
+  (`src/app/dispatch_domain.rs`, TODO34+TODO67)가 OSC 133 D phase(개별 셸 명령 종료)
+  를 받을 때마다 exit code(성공/실패) 무관하게 항상 `raise_surface_highlight` 를
+  호출한다 — Claude plugin 과 달리 IPC 왕복 없이 host 프로세스 내부에서 engine 을
+  직접 호출(같은 cascade 함수가 이미 `engine`을 들고 있음). exit code 정보는 이
+  호출로 소비되지 않고 같은 이벤트가 이미 채우는
+  `command_index::on_boundary` 의 memory 기록(`tasty.commands.*` 의 `exit_code`
+  필드, TODO34)과 `HookEvent::CommandCompleted(exit_code)` 훅 payload 양쪽에
+  그대로 보존된다. 셸 프로세스 자체의 시작/끝(`terminal.spawn`/`ProcessExit`)이
+  아니라 그 **안에서 실행되는 개별 명령**(`docker build` 등) 단위로 발동한다는 점이
+  Claude producer 와의 차이 — 셸이 OSC 133 통합을 로드해야만 동작(미설치 시
+  "셸 통합 미설치" 안내 배너만 뜨고 highlight 는 발동하지 않음).
+- **후속(미구현)** — 그 외 plugin(non-Claude AI 코딩 에이전트 등)이 자체 완료 신호를
+  이 highlight API 에 연결하는 것. highlight API 는 이들이 호출 가능하게 계속
+  열려 있다.
 
 ## 인터페이스
 
@@ -86,6 +99,13 @@ highlight 를 발동시키는 경로. 여러 종류가 공존한다 — highligh
       S 가 동일하게 highlight.
 - [ ] Given surface S 에서 Claude 가 `prompt-submit`/`session-start`/`active`(작업 시작) 신호를
       보낼 때 Then highlight 는 발동하지 않는다(완료/확인대기와 구분, 회귀 방지).
+- [ ] Given surface S 에서 OSC 133 셸 통합이 설치된 셸이 명령을 성공으로 종료(exit code 0)
+      When D phase 가 도착 Then S 가 highlight 되어 `has_highlight([S])` 가 true(TODO67).
+- [ ] Given 위와 동일 상황이지만 명령이 실패로 종료(exit code != 0) Then 동일하게 S 가
+      highlight (성공/실패 무관, exit code 로 필터링하지 않음).
+- [ ] Given 위 두 케이스 모두 Then exit code 정보가 `command_index` memory 기록과
+      `HookEvent::CommandCompleted` 훅 payload 양쪽에서 유실되지 않는다(하나의 이벤트가
+      세 소비처— highlight/memory/hook —로 fan-out, TODO67).
 
 ## 구현
 
@@ -95,6 +115,11 @@ highlight 를 발동시키는 경로. 여러 종류가 공존한다 — highligh
 - Claude hook producer: `apply_hook` (`crates/tasty-plugin-claude/src/hook.rs`) → `HostCall::
   SurfaceCompletion { surface_id }` → `deliver()` 가 `surface.completion` IPC 호출로 매핑 →
   위 completion producer 경로 그대로 재사용.
+- OSC 133 명령 완료 producer: `Core::apply_terminal_event` (`src/core/mod.rs`, D phase 파싱)
+  → `CoreEvent::TerminalCommandCompleted { surface_id, exit_code }` (`src/core/intent.rs`)
+  → `App::cascade_terminal_command_completed` (`src/app/dispatch_domain.rs`)가
+  `engine.raise_surface_highlight` 직접 호출(자동 경로) + `HookEvent::CommandCompleted`
+  훅 발화(커스터마이즈 경로) 동시 처리.
 - 알림 읽음 clear: `CoreState::mark_notification_read`/`mark_all_notifications_read`
   (`src/core/state/highlight.rs`) — `NotificationStore::has_unread_for_surface`
   (`src/store/notification.rs`)로 잔여 안읽음을 확인 후 clear. 호출부는
