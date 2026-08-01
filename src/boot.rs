@@ -41,6 +41,33 @@ use crate::{cli, hooks};
 /// 누적으로 인한 디스크 증가와 1GB regular quota 도달을 막는 count 기반 retention 이다.
 /// 최근 N 개만 남기고 조용히(이벤트 없이) 삭제 후, 단편화가 크면 1회 VACUUM 으로 회수.
 /// 최초 1회만 대량(수십만 행) 삭제로 ~2s 소요될 수 있고 이후 부팅은 초과분만 정리한다.
+fn prune_one_prefix(store: &mut tasty_memory::MemoryStore, prefix: &str, keep: u64) -> u64 {
+    match store.prune_prefix_keep_recent(prefix, keep) {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!("boot memory maintenance: prune {prefix} failed: {e}");
+            0
+        }
+    }
+}
+
+fn log_vacuum_result(result: tasty_memory::Result<bool>) {
+    match result {
+        Ok(true) => tracing::info!("boot memory maintenance: vacuumed memory.db"),
+        Ok(false) => {}
+        Err(e) => tracing::warn!("boot memory maintenance: vacuum failed: {e}"),
+    }
+}
+
+/// 대량 삭제 직후에만 압축(freelist 가 클 때) — `pruned == 0` 이면 평소 부팅처럼 no-op.
+fn vacuum_if_needed(store: &mut tasty_memory::MemoryStore, pruned: u64) {
+    if pruned == 0 {
+        return;
+    }
+    tracing::info!("boot memory maintenance: pruned {pruned} stale log rows");
+    log_vacuum_result(store.vacuum_if_fragmented(10_000));
+}
+
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
     // 로그 키별 보존 개수 상한. audit 은 보안 감사용이라 넉넉히, telemetry 는 짧게.
     const AUDIT_KEEP: u64 = 50_000;
@@ -55,20 +82,9 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
         (crate::adapters::ipc::audit::AUDIT_KEY_PREFIX, AUDIT_KEEP),
         (tasty_telemetry::EVENT_KEY_PREFIX, TELEMETRY_KEEP),
     ] {
-        match store.prune_prefix_keep_recent(prefix, keep) {
-            Ok(n) => pruned += n,
-            Err(e) => tracing::warn!("boot memory maintenance: prune {prefix} failed: {e}"),
-        }
+        pruned += prune_one_prefix(&mut store, prefix, keep);
     }
-    if pruned > 0 {
-        tracing::info!("boot memory maintenance: pruned {pruned} stale log rows");
-        // 대량 삭제 직후에만 압축 (freelist 가 클 때). 평소 부팅은 no-op.
-        match store.vacuum_if_fragmented(10_000) {
-            Ok(true) => tracing::info!("boot memory maintenance: vacuumed memory.db"),
-            Ok(false) => {}
-            Err(e) => tracing::warn!("boot memory maintenance: vacuum failed: {e}"),
-        }
-    }
+    vacuum_if_needed(&mut store, pruned);
 }
 
 pub(crate) fn run() -> anyhow::Result<()> {
