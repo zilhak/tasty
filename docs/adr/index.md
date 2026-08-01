@@ -68,3 +68,4 @@
 | 0055 | [마우스 캡처 안내 배너 per-app 억제를 캡처 억제와 독립된 축으로 둔다](0055-mouse-capture-banner-suppress-list.md) | Accepted | 2026-07-28 | terminal, mouse, mouse-reporting, banner, settings, ux, adr-0022 |
 | 0056 | [git-viewer 원격(attach mirror) 조회 — 공유 crate + `git_viewer.query` 이벤트 채널](0056-git-viewer-remote-attach-git-query-channel.md) | Accepted | 2026-07-29 | git-viewer, plugin, attach, mirror, ipc, event-bus, wire-format, tools-menu, egui-mesh, popup, timeout, adr-0053, adr-0028, adr-0040 |
 | 0057 | [claude-design 플러그인 전면 제거](0057-remove-claude-design-plugin.md) | Accepted | 2026-07-30 | claude-design, plugin, removal, scope, maintenance, cli, playwright, external-project, adr-0018, adr-0025 |
+| 0058 | [plugin이 트리거하는 host 소유 popup은 즉시 ack + 이벤트 push로 비동기 결과를 회신한다](0058-plugin-triggered-host-popup-async-ack-push.md) | Accepted | 2026-08-01 | plugin, ipc, popup, async, event-bus, host-delegation, file-picker, host-agnostic, adr-0042, adr-0043, adr-0053, adr-0056 |
