@@ -24,6 +24,8 @@ pub(crate) mod event_handler;
 #[cfg(feature = "gui")]
 pub(crate) mod global_hooks;
 #[cfg(feature = "gui")]
+pub(crate) mod idle_hooks;
+#[cfg(feature = "gui")]
 pub(crate) mod image_upload;
 #[cfg(feature = "gui")]
 pub(crate) mod ipc;

@@ -1201,6 +1201,7 @@ mod busy;
 mod finders;
 mod global_hooks;
 mod highlight;
+mod idle_hooks;
 mod message;
 mod pty;
 mod soft_occupancy;

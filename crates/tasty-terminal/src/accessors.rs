@@ -141,6 +141,19 @@ impl Terminal {
         st.last_output_at.elapsed() < BUSY_OUTPUT_WINDOW
     }
 
+    /// PTY 가 마지막으로 non-empty 출력을 낸 시각. `IdleTimeout` 훅의 idle
+    /// 경과시간 계산에 쓰인다. 논블로킹(ADR-0002) — 락이 막혀 있으면 파서가
+    /// 한창 ingest 중이라는 뜻이므로 "지금 막 활동 중"으로 간주해
+    /// `Instant::now()` 를 반환한다(`busy_with_foreground` 의 WouldBlock=busy
+    /// 처리와 동형).
+    pub fn last_output_at(&self) -> std::time::Instant {
+        match self.state.try_lock() {
+            Ok(st) => st.last_output_at,
+            Err(std::sync::TryLockError::WouldBlock) => std::time::Instant::now(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().last_output_at,
+        }
+    }
+
     /// Get the current working directory of the child process. Prefers the CWD
     /// cached from OSC 7; falls back to an OS-level query (not cached).
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {

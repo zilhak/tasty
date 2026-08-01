@@ -630,6 +630,26 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 글로벌 훅(TODO12) — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
                 // 동형(엔진 1 개라 순회 불필요).
                 engine.poll_global_hooks();
+                // IdleTimeout 훅(TODO30) — gui `app/idle_hooks.rs` 의
+                // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요). 바인딩
+                // 실행 + host event enqueue 는 여기서 직접 한다(엔진 레이어는 순수
+                // 조회만 함 — `CoreState::poll_idle_timeout_hooks` 참조).
+                {
+                    let injector = app.core.host_ipc_injector.get().cloned();
+                    for (surface_id, f) in engine.poll_idle_timeout_hooks() {
+                        crate::hook_handler::trigger::execute_binding(
+                            &f.binding,
+                            injector.as_ref(),
+                            &f.event,
+                            surface_id,
+                        );
+                        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                            hook_id: f.hook_id,
+                            event_kind: "idle-timeout".to_string(),
+                            surface_id,
+                        });
+                    }
+                }
                 // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록 1Hz
                 // 안전망으로 편승(주 wake 경로는 TerminalOutput(None), 위 참조).
                 headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);

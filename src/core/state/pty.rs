@@ -183,8 +183,11 @@ impl CoreState {
     /// terminal 생성 콜사이트가 게이트 초기화를 신경 쓸 필요가 없다.
     pub(crate) fn sync_output_event_gates(&mut self) {
         let router = &self.observer_router;
+        let hook_manager = &self.hook_manager;
         for (sid, t) in self.terminals.iter_mut() {
-            t.set_output_events_enabled(router.wants(sid));
+            t.set_output_events_enabled(
+                router.wants(sid) || hook_manager.has_output_match_hook(sid),
+            );
         }
     }
 
@@ -221,7 +224,8 @@ impl CoreState {
     /// Process a single terminal by surface ID (read PTY output).
     /// Returns true if data was processed.
     pub fn process_surface(&mut self, surface_id: u32) -> bool {
-        let enabled = self.observer_router.wants(surface_id);
+        let enabled = self.observer_router.wants(surface_id)
+            || self.hook_manager.has_output_match_hook(surface_id);
         if let Some(t) = self.terminals.get_mut(surface_id) {
             t.set_output_events_enabled(enabled);
         }

@@ -327,6 +327,9 @@ impl App {
             CoreEvent::TerminalBellRing { surface_id } => {
                 self.cascade_terminal_bell_ring(source, surface_id);
             }
+            CoreEvent::TerminalOutputMatch { surface_id, text } => {
+                self.cascade_terminal_output_match(source, surface_id, text);
+            }
             CoreEvent::TerminalTitleChanged { surface_id, title } => {
                 self.cascade_terminal_title_changed(source, surface_id, title);
             }
@@ -514,6 +517,51 @@ impl App {
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
                 hook_id: f.hook_id,
                 event_kind: "bell".to_string(),
+                surface_id,
+            });
+        }
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalOutputMatch` cascade — 완성된 라인 하나를 등록된 `OutputMatch`
+    /// 훅과 비교해 발화한다(TODO30). Bell/Notification 과 달리 토스트/설정
+    /// gate 가 없다 — 훅은 사용자가 명시적으로 등록한 자동화라 항상 그대로 둔다.
+    fn cascade_terminal_output_match(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        text: String,
+    ) {
+        let (state, engine, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (&mut main.state, &mut main.core_state, Some(&mut main.base))
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, engine, None)
+            }
+        };
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
+        let injector = self.core.host_ipc_injector.get().cloned();
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(
+                &f.binding,
+                injector.as_ref(),
+                &f.event,
+                surface_id,
+            );
+            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                hook_id: f.hook_id,
+                event_kind: "output-match".to_string(),
                 surface_id,
             });
         }

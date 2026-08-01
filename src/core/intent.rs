@@ -456,6 +456,12 @@ pub(crate) enum CoreEvent {
     /// `DomainIntent::PushNotification { title: "Bell" }` 발행 + hook 발화.
     TerminalBellRing { surface_id: u32 },
 
+    /// PTY 출력이 완성된 한 라인을 이뤘다(TODO30). cascade 가 등록된
+    /// `OutputMatch` 훅과 이 라인 텍스트를 비교해 발화한다. `has_output_match_hook`
+    /// 로 게이트돼 있어 이 surface 에 `OutputMatch` 훅이 없으면 애초에 발행되지
+    /// 않는다.
+    TerminalOutputMatch { surface_id: u32, text: String },
+
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
     TerminalCwdChanged { surface_id: u32 },
 

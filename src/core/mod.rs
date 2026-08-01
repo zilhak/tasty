@@ -770,7 +770,18 @@ impl Core {
             let sid = ev.surface_id;
             match ev.kind {
                 TerminalEventKind::OutputAppended { text } => {
-                    engine.observer_router.dispatch_text(sid, &text);
+                    let completed_lines = engine.observer_router.dispatch_text(sid, &text);
+                    // OutputMatch 훅 발사도 이 라인 버퍼를 공유(TODO30) — 완성된
+                    // 라인 단위로만 매칭한다(패턴이 청크 경계에 걸쳐 있으면 라인이
+                    // 완성될 때까지 매칭 안 됨).
+                    if engine.hook_manager.has_output_match_hook(sid) {
+                        for line in completed_lines {
+                            out.push(CoreEvent::TerminalOutputMatch {
+                                surface_id: sid,
+                                text: line,
+                            });
+                        }
+                    }
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
                     let mem = engine.memory.clone();

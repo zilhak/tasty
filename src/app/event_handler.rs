@@ -96,6 +96,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::BusyPoll => {
                 self.poll_busy_states();
                 self.poll_global_hooks();
+                self.poll_idle_timeout_hooks();
             }
             AppEvent::AttachPoll => {
                 self.poll_attach_views();

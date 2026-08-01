@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
+use std::time::Instant;
 
 pub type HookId = u64;
 
@@ -59,6 +60,10 @@ pub struct SurfaceHook {
     pub once: bool,
     /// Pre-compiled regex for OutputMatch events (cached at registration time).
     pub compiled_regex: Option<regex::Regex>,
+    /// `check_idle_timeouts`가 마지막으로 발사했을 때의 `last_output_at` epoch.
+    /// 같은 epoch 동안엔 다시 발사하지 않고(anti-spam), 새 출력이 그 epoch을
+    /// 갱신하면 재무장된다. `IdleTimeout` 외 이벤트는 항상 `None`.
+    pub idle_fired_epoch: Option<Instant>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -88,6 +93,9 @@ impl HookEvent {
             (HookEvent::Bell, HookEvent::Bell) => true,
             (HookEvent::Notification, HookEvent::Notification) => true,
             (HookEvent::Custom(a), HookEvent::Custom(b)) => a == b,
+            (HookEvent::IdleTimeout(threshold), HookEvent::IdleTimeout(elapsed)) => {
+                elapsed >= threshold
+            }
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
                 if let Some(re) = compiled_regex {
@@ -175,6 +183,7 @@ impl HookManager {
             binding,
             once,
             compiled_regex,
+            idle_fired_epoch: None,
         });
         id
     }
@@ -218,6 +227,65 @@ impl HookManager {
         }
 
         // Remove once-hooks that fired
+        let fired_set: HashSet<HookId> = fired.iter().map(|f| f.hook_id).collect();
+        self.hooks.retain(|h| !h.once || !fired_set.contains(&h.id));
+
+        fired
+    }
+
+    /// 이 surface 에 `OutputMatch` 훅이 하나라도 등록돼 있는가 — PTY `OutputAppended`
+    /// emit 게이트(`CoreState::sync_output_event_gates`/`process_surface`)가
+    /// 참조한다. observer 가 없어도 이 훅이 있으면 라인 버퍼링을 켜야 한다.
+    pub fn has_output_match_hook(&self, surface_id: u32) -> bool {
+        self.hooks
+            .iter()
+            .any(|h| h.surface_id == surface_id && matches!(h.event, HookEvent::OutputMatch(_)))
+    }
+
+    /// 이 surface 에 `IdleTimeout` 훅이 하나라도 등록돼 있는가 — idle 폴링
+    /// (`CoreState::poll_idle_timeout_hooks`)이 어느 surface 를 검사할지 고를 때
+    /// 쓴다.
+    pub fn has_idle_timeout_hook(&self, surface_id: u32) -> bool {
+        self.hooks
+            .iter()
+            .any(|h| h.surface_id == surface_id && matches!(h.event, HookEvent::IdleTimeout(_)))
+    }
+
+    /// 한 surface 의 idle 경과시간을 등록된 `IdleTimeout` 훅과 비교해 발사한다.
+    ///
+    /// anti-spam: `idle_fired_epoch` 에 발사 당시의 `last_output_at`(epoch)을
+    /// 기록해, 같은 epoch(=그 사이 새 출력이 없었음) 동안엔 다시 발사하지
+    /// 않는다. `last_output_at` 이 새 출력으로 갱신되면 epoch 이 달라져
+    /// 재무장된다(`GlobalHookManager::tick()` 의 `File` 조건 anti-spam 과 동형).
+    pub fn check_idle_timeouts(
+        &mut self,
+        surface_id: u32,
+        elapsed_secs: u64,
+        last_output_epoch: Instant,
+    ) -> Vec<FiredHook> {
+        let observed = HookEvent::IdleTimeout(elapsed_secs);
+        let mut fired = Vec::new();
+
+        for hook in &mut self.hooks {
+            if hook.surface_id != surface_id {
+                continue;
+            }
+            if !matches!(hook.event, HookEvent::IdleTimeout(_)) {
+                continue;
+            }
+            if hook.idle_fired_epoch == Some(last_output_epoch) {
+                continue; // 이 epoch 에서 이미 발사됨 — 스팸 방지.
+            }
+            if hook.event.matches(&observed, None) {
+                hook.idle_fired_epoch = Some(last_output_epoch);
+                fired.push(FiredHook {
+                    hook_id: hook.id,
+                    binding: hook.binding.clone(),
+                    event: hook.event.clone(),
+                });
+            }
+        }
+
         let fired_set: HashSet<HookId> = fired.iter().map(|f| f.hook_id).collect();
         self.hooks.retain(|h| !h.once || !fired_set.contains(&h.id));
 
@@ -414,5 +482,63 @@ mod tests {
             HookBinding::Handler("user/foo".into()).to_display_string(),
             "handler:user/foo"
         );
+    }
+
+    #[test]
+    fn idle_timeout_matches_when_elapsed_exceeds_threshold() {
+        let registered = HookEvent::IdleTimeout(30);
+        let observed_short = HookEvent::IdleTimeout(10);
+        let observed_long = HookEvent::IdleTimeout(31);
+        assert!(!registered.matches(&observed_short, None));
+        assert!(registered.matches(&observed_long, None));
+    }
+
+    #[test]
+    fn has_output_match_and_idle_timeout_hook_are_per_surface() {
+        let mut manager = HookManager::new();
+        assert!(!manager.has_output_match_hook(1));
+        assert!(!manager.has_idle_timeout_hook(1));
+        manager.add_hook(
+            1,
+            HookEvent::OutputMatch("ERROR".into()),
+            shell("echo matched"),
+            false,
+        );
+        manager.add_hook(1, HookEvent::IdleTimeout(30), shell("echo idle"), false);
+        assert!(manager.has_output_match_hook(1));
+        assert!(manager.has_idle_timeout_hook(1));
+        // 다른 surface 는 영향받지 않는다.
+        assert!(!manager.has_output_match_hook(2));
+        assert!(!manager.has_idle_timeout_hook(2));
+    }
+
+    #[test]
+    fn check_idle_timeouts_fires_once_per_epoch_then_rearms_on_new_output() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::IdleTimeout(30), shell("echo idle"), false);
+        let epoch_a = Instant::now();
+
+        // 임계값 미만 — 발사 없음.
+        assert!(manager.check_idle_timeouts(1, 10, epoch_a).is_empty());
+        // 임계값 초과 — 발사.
+        assert_eq!(manager.check_idle_timeouts(1, 31, epoch_a).len(), 1);
+        // 같은 epoch(=그 사이 새 출력 없음) 이면 다시 발사하지 않는다(anti-spam).
+        assert!(manager.check_idle_timeouts(1, 32, epoch_a).is_empty());
+
+        // 새 출력으로 epoch 이 바뀌면 재무장된다.
+        let epoch_b = epoch_a + std::time::Duration::from_secs(5);
+        assert!(manager.check_idle_timeouts(1, 10, epoch_b).is_empty());
+        assert_eq!(manager.check_idle_timeouts(1, 31, epoch_b).len(), 1);
+    }
+
+    #[test]
+    fn check_idle_timeouts_removes_once_hook_after_fire() {
+        let mut manager = HookManager::new();
+        let id = manager.add_hook(1, HookEvent::IdleTimeout(5), shell("echo once"), true);
+        let epoch = Instant::now();
+        let fired = manager.check_idle_timeouts(1, 6, epoch);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].hook_id, id);
+        assert!(manager.list_hooks(None).is_empty());
     }
 }

@@ -274,11 +274,11 @@ impl ObserverRouter {
         })
     }
 
-    /// PTY 가 emit 한 텍스트를 라인 단위로 쪼개 매칭 옵저버에 dispatch.
-    pub fn dispatch_text(&mut self, surface_id: u32, text: &str) {
-        if self.observers.is_empty() {
-            return;
-        }
+    /// PTY 가 emit 한 텍스트를 라인 단위로 쪼개 매칭 옵저버에 dispatch하고,
+    /// 이번 호출로 완성된 라인들을 반환한다(TODO30 — hook `OutputMatch` 가 이
+    /// 라인 버퍼를 공유해서 쓴다, `HookManager::has_output_match_hook` 가 켠
+    /// surface 는 옵저버가 하나도 없어도 라인 분리는 계속된다).
+    pub fn dispatch_text(&mut self, surface_id: u32, text: &str) -> Vec<String> {
         let buf = self.line_buffers.entry(surface_id).or_default();
         buf.partial.push_str(text);
 
@@ -296,12 +296,17 @@ impl ObserverRouter {
         }
 
         if completed_lines.is_empty() {
-            return;
+            return Vec::new();
         }
 
+        let mut lines = Vec::with_capacity(completed_lines.len());
         for (idx, line) in completed_lines {
-            self.dispatch_line(surface_id, idx, &line);
+            if !self.observers.is_empty() {
+                self.dispatch_line(surface_id, idx, &line);
+            }
+            lines.push(line);
         }
+        lines
     }
 
     fn dispatch_line(&mut self, surface_id: u32, line_idx: u32, line: &str) {
@@ -510,6 +515,49 @@ mod tests {
         // ObserverRouter::dispatch_text is the public surface; with no observers
         // there are no externally observable effects. The test just ensures
         // the buffer-and-split path doesn't panic on partial chunks.
+    }
+
+    // TODO30: dispatch_text 의 반환값(완성된 라인)은 OutputMatch 훅이 공유하는
+    // 라인 버퍼다 — 옵저버가 하나도 없어도(has_output_match_hook 만으로 게이트가
+    // 열린 surface) 정확히 동작해야 한다.
+    #[test]
+    fn dispatch_text_returns_completed_lines_split_across_chunks() {
+        let mut r = ObserverRouter::new();
+        // 패턴이 두 청크에 걸쳐 있으면(줄바꿈 전) 완성된 라인이 아직 없다.
+        assert_eq!(r.dispatch_text(1, "partial ERR"), Vec::<String>::new());
+        // 줄바꿈이 도착해 라인이 완성되면 그제서야 반환된다.
+        assert_eq!(
+            r.dispatch_text(1, "OR\n"),
+            vec!["partial ERROR".to_string()]
+        );
+    }
+
+    #[test]
+    fn dispatch_text_returns_multiple_completed_lines_in_order() {
+        let mut r = ObserverRouter::new();
+        assert_eq!(
+            r.dispatch_text(1, "one\ntwo\nthree"),
+            vec!["one".to_string(), "two".to_string()]
+        );
+        assert_eq!(r.dispatch_text(1, "\n"), vec!["three".to_string()]);
+    }
+
+    #[test]
+    fn dispatch_text_line_buffers_are_isolated_per_surface() {
+        let mut r = ObserverRouter::new();
+        assert_eq!(
+            r.dispatch_text(1, "surface-one partial"),
+            Vec::<String>::new()
+        );
+        // 다른 surface 의 partial 이 섞여 들어가지 않는다.
+        assert_eq!(
+            r.dispatch_text(2, "surface-two\n"),
+            vec!["surface-two".to_string()]
+        );
+        assert_eq!(
+            r.dispatch_text(1, " completed\n"),
+            vec!["surface-one partial completed".to_string()]
+        );
     }
 
     #[test]
