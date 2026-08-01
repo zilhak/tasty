@@ -643,7 +643,7 @@ mod tests {
         assert_ne!(out, "claude --task fix the bug", "must be escaped");
     }
 
-    // ── 완료 알림 문구 (TODO 07: "spawn 완료" 오독 방지) ──
+    // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
 
     #[test]
     fn notify_done_message_leads_with_work_completion() {
@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(err.code, -32602);
     }
 
-    // ── 형제 once-hook 정리 재현 (TODO 23) ──
+    // ── 형제 once-hook 정리 재현 (docs/plugins/claude/index.md 의 notify-done 형제 hook 정리 절 참조) ──
 
     use std::cell::RefCell;
 
@@ -857,7 +857,7 @@ mod tests {
         );
     }
 
-    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (TODO 08) ──
+    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (docs/plugins/claude/index.md 의 자기재무장 절 참조) ──
     //
     // 배경: needs-input/claude-idle 은 process-exit 와 달리 "child 가 아직 살아있는
     // 상태 전환"일 수 있다(예: 애매한 지시에 되묻고 다시 작업 재개). 형제 hook 이

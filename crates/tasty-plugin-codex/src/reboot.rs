@@ -79,8 +79,9 @@ pub(crate) fn handle_reboot(
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface(params)?;
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
-    // resume 명령에 붙일 승인/샌드박스 정책(TODO 07) — spawn/launch/respawn 과 동일한
-    // 우선순위(호출별 override > 전역 기본값 > codex 자체 기본값)로 해석한다.
+    // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
+    // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
+    // 전역 기본값 > codex 자체 기본값)로 해석한다.
     let policy_args = resolve_policy_args(host, params)?;
 
     // 요청 시점 캡처.
@@ -209,7 +210,8 @@ pub(crate) fn is_safe_session_id(id: &str) -> bool {
 ///
 /// `policy_args` 는 `handlers::resolve_policy_args` 가 만든 `-a ...`/`-s ...`/
 /// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열) — resume 된
-/// codex 도 원래 기동과 같은 승인/샌드박스 정책 해석 규칙을 따른다(TODO 07).
+/// codex 도 원래 기동과 같은 승인/샌드박스 정책 해석 규칙을 따른다
+/// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조).
 pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
     let policy_suffix = if policy_args.is_empty() {
         String::new()

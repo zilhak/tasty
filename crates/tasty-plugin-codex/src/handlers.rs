@@ -63,7 +63,8 @@ fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
 ///
 /// `policy_args` 는 [`resolve_policy_args`] 가 만든 `-a ...`/`-s ...`/
 /// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열)이다 — 승인
-/// 프롬프트가 자동화 흐름에서 자식을 영구히 멈추게 하는 문제(TODO 07)의 해결책.
+/// 프롬프트가 자동화 흐름에서 자식을 영구히 멈추게 하는 문제
+/// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조)의 해결책.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
     let prefix = format!("TASTY_SURFACE_ID={surface_id} ");
     let policy_suffix = if policy_args.is_empty() {
@@ -113,8 +114,8 @@ fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<Str
 /// **승인(`approval`)은 결정되지 않으면 무조건 `never`로 떨어진다** — tasty 가 spawn 하는
 /// codex 자식은 전부 완료 알림(idle/exit hook)만 기다리는 무인 자동화 흐름이고, codex 에는
 /// needs_input 류 hook 이 없어 승인 프롬프트가 뜨면 아무도 응답할 수 없는 채로 영구 정지한다
-/// (TODO 07 이 원래 고치려던 문제 — c645e3c2 는 옵트인 플래그만 추가했을 뿐 기본값을 무해하게
-/// 두지 않아 이 정지가 그대로 재현됐다). "설정을 안 건드리면 codex 자체 인터랙티브 기본값을
+/// (기본값이 무해하지 않으면 이 정지가 그대로 재현된다 — docs/plugins/codex/index.md 의
+/// 승인/샌드박스 정책 플래그 절 참조). "설정을 안 건드리면 codex 자체 인터랙티브 기본값을
 /// 쓴다"는 옛 의미는 더 이상 유효하지 않다 — 인터랙티브 승인이 필요하면 호출자가 `--approval
 /// untrusted`/`on-request` 를 **명시적으로** 넘겨야 한다.
 /// 샌드박스(`sandbox`)는 승인과 달리 결정 안 됐다고 자체적으로 멈추는 축이 아니므로(그 자체는
@@ -327,7 +328,7 @@ fn notify_caller_message(kind: &str, target: u32) -> String {
 
 /// 샌드박스(bwrap) 초기화 실패 감지 마커 — 오탐 최소화를 위해 특이도가 가장 높은
 /// 토큰만 본다. `"bwrap:"`만 쓰면 일반 대화 텍스트에 우연히 매치될 여지가 있지만,
-/// `RTM_NEWADDR`는 사실상 이 실패 상황에서만 등장한다(TODO 18).
+/// `RTM_NEWADDR`는 사실상 이 실패 상황에서만 등장한다.
 const SANDBOX_FAILURE_MARKER: &str = "RTM_NEWADDR";
 
 /// 힌트 문구 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과 수동
@@ -441,8 +442,8 @@ pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Valu
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
     let message = notify_caller_message(&kind, target);
-    // 샌드박스 초기화 실패 힌트(TODO 18) — soft-fail, 조회 실패/미탐지 시 message
-    // 그대로.
+    // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
+    // 절 참조) — soft-fail, 조회 실패/미탐지 시 message 그대로.
     let screen_text = fetch_screen_text_for_hint(host, target);
     let message = append_sandbox_hint_if_detected(message, screen_text.as_deref());
 
@@ -986,8 +987,9 @@ mod tests {
 
     #[test]
     fn resolve_policy_args_defaults_to_never_approval_when_nothing_set() {
-        // 승인 프롬프트가 무인 spawn 자식을 영구 정지시키는 문제(TODO 07) 재발 방지 —
-        // approval 은 아무것도 설정되지 않아도 무조건 "never" 로 떨어져야 한다.
+        // 승인 프롬프트가 무인 spawn 자식을 영구 정지시키는 문제(docs/plugins/codex/index.md
+        // 의 승인/샌드박스 정책 플래그 절 참조) 재발 방지 — approval 은 아무것도 설정되지
+        // 않아도 무조건 "never" 로 떨어져야 한다.
         // sandbox 는 그 자체로 정지를 유발하지 않으므로 기존대로 미설정 시 빈 채로 둔다.
         let host = MockHost::new();
         assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
@@ -1323,7 +1325,7 @@ trusted_hash = "sha256:xyz"
         ));
     }
 
-    // ── 형제 once-hook 정리 재현 (TODO 23) ──
+    // ── 형제 once-hook 정리 재현 (docs/plugins/codex/index.md 의 notify-caller 형제 hook 정리 절 참조) ──
 
     use std::cell::RefCell;
 
@@ -1343,7 +1345,8 @@ trusted_hash = "sha256:xyz"
         next_id: RefCell<u64>,
         alive: RefCell<std::collections::HashSet<u32>>,
         settings: RefCell<std::collections::HashMap<String, String>>,
-        /// `surface.screen_text` 응답 시뮬레이션(TODO 18) — `None`이면 조회 자체가
+        /// `surface.screen_text` 응답 시뮬레이션(docs/plugins/codex/index.md 의 샌드박스
+        /// 초기화 실패 힌트 절 참조) — `None`이면 조회 자체가
         /// 실패(soft-fail 경로 재현), `Some`이면 그 문자열을 `text`로 돌려준다.
         screen_text: RefCell<Option<String>>,
     }
@@ -1474,7 +1477,7 @@ trusted_hash = "sha256:xyz"
         assert_eq!(siblings_to_unset(&hooks, &spawn_cmd), vec![1, 3]);
     }
 
-    // ── 완료 알림 문구 (TODO 07: "spawn 완료" 오독 방지) ──
+    // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
 
     #[test]
     fn notify_caller_message_leads_with_work_completion() {
@@ -1501,7 +1504,7 @@ trusted_hash = "sha256:xyz"
         }
     }
 
-    // ── 샌드박스 초기화 실패 힌트 (TODO 18) ──
+    // ── 샌드박스 초기화 실패 힌트 (docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트 절 참조) ──
 
     #[test]
     fn detect_sandbox_failure_hint_matches_rtm_newaddr() {
@@ -1641,7 +1644,7 @@ trusted_hash = "sha256:xyz"
         );
     }
 
-    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (TODO 08) ──
+    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (docs/plugins/codex/index.md 의 자기재무장 절 참조) ──
     //
     // 배경: codex-idle 은 process-exit 와 달리 "child 가 아직 살아있는 상태 전환"일 수
     // 있다. 형제 hook 이 once=true 라 한 번 fire 하면 남은 형제도 정리돼 그 spawn/tell
