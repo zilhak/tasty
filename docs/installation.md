@@ -6,7 +6,7 @@ Tasty 는 GitHub Releases 에서 OS·아키텍처·설치 형태별 산출물로
 
 | OS | 아키텍처 | 산출물 | 비고 |
 |----|---------|--------|------|
-| Linux | x86_64 | `tasty-{ver}-linux-x64.tar.gz` | 정적 바이너리 |
+| Linux | x86_64 | `tasty-{ver}-linux-x64.tar.gz` | 동적 링크 · glibc/freetype/fontconfig/GTK 등 시스템 라이브러리 필요 |
 | Linux | x86_64 | `tasty_{ver}-1_amd64.deb` | Debian/Ubuntu/Mint |
 | Linux | x86_64 | `tasty-{ver}-1.x86_64.rpm` | Fedora/RHEL/openSUSE |
 | Linux | x86_64 | `Tasty-{ver}-x86_64.AppImage` | distro 무관 단일 파일 |
@@ -34,13 +34,23 @@ chmod +x Tasty-{ver}-x86_64.AppImage && ./Tasty-{ver}-x86_64.AppImage
 tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 ```
 
-- `.deb`/`.rpm`: `tasty` 가 PATH 등록 + 데스크톱 메뉴 아이콘 등록. 의존성은 패키지 메타데이터(`libfreetype6`/`libfontconfig1`/`libgtk-3`/`libwebkit2gtk-4.1` 등)로 자동 분석.
+- `.deb`/`.rpm`: `tasty` 가 PATH 등록 + 데스크톱 메뉴 아이콘 등록. 의존성은 패키지 메타데이터(`libfreetype6`/`libfontconfig1`/`libgtk-3`/`libwebkit2gtk-4.1` 등)로 자동 분석. GPU 가속(Vulkan)은 `libvulkan1`/`vulkan-loader` 를 Recommends 로만 요구 — 없어도 설치·실행은 되고 소프트웨어 렌더러로 fallback 한다.
 - `.AppImage`: 의존 라이브러리를 모두 번들. 데스크톱 메뉴 등록은 수동(`appimaged` 또는 `.desktop` 을 `~/.local/share/applications/`).
-- `.tar.gz`: PATH·메뉴 등록 사용자 직접. 편한 등록을 원하면 `.deb`/`.rpm`/`.AppImage` 권장.
+- `.tar.gz`: PATH·메뉴 등록 사용자 직접. 편한 등록을 원하면 `.deb`/`.rpm`/`.AppImage` 권장. 필요 `.so` 가
+  없으면 실행 전 `tasty` wrapper 가 감지해 안내 후 종료한다(`tasty.bin` 이 실제 바이너리).
+- **최소 glibc**: 빌드 환경(Ubuntu 24.04, glibc 2.39)보다 오래된 배포판(Ubuntu 20.04/Debian 11 등)은
+  `tasty: /lib/x86_64-linux-gnu/libc.so.6: version 'GLIBC_2.39' not found` 로 실행이 안 될 수 있다.
+  구배포판 지원을 위한 별도 빌드는 제공하지 않는다 — 필요하면 소스 빌드([dev-guide/build](dev-guide/build.md)).
 
 ## macOS
 
 `.dmg` 더블클릭 → `Tasty.app` 을 `Applications` 로 드래그. 첫 실행 시 Gatekeeper 경고가 나오면 시스템 설정 > 개인정보 보호 및 보안에서 허용(코드 사인 미인증 빌드 한정).
+
+터미널에서 바로 우회하려면:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Tasty.app
+```
 
 ## Windows
 
@@ -49,6 +59,10 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 # .zip (수동)
 Expand-Archive tasty-{ver}-windows-x64.zip; .\tasty\tasty.exe
 ```
+
+### SmartScreen 경고 우회
+
+Authenticode 서명이 없어 첫 실행 시 "Windows의 PC 보호" 경고가 뜬다. **추가 정보 → 그래도 실행**을 선택하면 실행된다.
 
 ### 제거 (.msi)
 
@@ -61,6 +75,10 @@ Expand-Archive tasty-{ver}-windows-x64.zip; .\tasty\tasty.exe
 > `.zip` 은 설치 개념이 없으므로 압축 해제한 폴더를 지우면 끝. 단 `~/.tasty/` 사용자 데이터는 수동 삭제해야 한다.
 
 빌드 측면은 [dev-guide/build](dev-guide/build.md) "Windows MSI".
+
+## GPU 요구사항
+
+Tasty 는 GPU 가속 렌더링(wgpu, Vulkan/DX12/Metal)을 쓴다. 하드웨어 GPU 어댑터가 없으면(GPU 미탑재 서버·VM·컨테이너 등) 소프트웨어 렌더러로 한 번 더 시도하고, 그마저 없으면 안내 메시지를 낸 뒤 종료한다. 위 배포 산출물은 모두 GUI 빌드라 `--headless` 플래그가 없다 — GPU 없이 IPC/CLI 만 쓰려면 소스에서 `cargo build --no-default-features` 로 headless 빌드해야 한다([dev-guide/build](dev-guide/build.md)).
 
 ## 검증
 
