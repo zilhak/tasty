@@ -28,6 +28,8 @@ pkill -f "target/debug/tasty\$"                          # 종료
 
 **이미 다른 tasty 인스턴스(사용자의 release 등)가 떠 있어도 충돌하지 않는다.** `cargo run` 은 debug 빌드라 데이터 루트가 `~/.tasty-debug/`(포트파일 `~/.tasty-debug/tasty.port`)로 release 의 `~/.tasty/` 와 **완전히 분리**된다 — 포트·layout·scrollback 모두 별도. 그러니 인스턴스가 떠 있는지 따지지 말고 그냥 `cargo run` 으로 자기 debug 인스턴스를 띄워 검증한다. (격리 표·`TASTY_HOME` override: [independent-verification.md](independent-verification.md))
 
+**tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `boot.rs:111` 의 GUI 부팅 skip 조건(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
+
 ### 자주 쓰는 시나리오
 
 - **PTY 입출력**: `send text` → `read screen` 으로 echo/명령 결과 확인. `read screen`(`surface.screen_text`/`pty.read`)은 dim(ghost-suggestion, 예: Claude Code CLI 가 그리는 미제출 자동완성 제안) 셀을 기본 제외한다 — 제안 텍스트가 실제 입력된 것처럼 오독되는 걸 막기 위함. 제안까지 보고 싶으면 `--show-dim`.
