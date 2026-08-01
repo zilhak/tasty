@@ -566,7 +566,11 @@ fn stdin_router() -> &'static (StdinSlot, StdinEofLatch) {
 /// **불변식**: 이 함수는 `slot` 을 절대 쓰지 않는다(읽기만) — 위 [`StdinSlot`]
 /// 문서의 ABA 경쟁 방지 규칙 참고.
 fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
-    let sender = slot.lock().unwrap().clone();
+    // poison 이어도 계속 진행 — 감싼 `Option<Sender>` 은 항상 유효한 값이라 poison
+    // 후에도 안전하게 읽을 수 있다(tearing 불가). 이 상시 리더 스레드는 `OnceLock`
+    // 초기화로 프로세스 생애주기에 1번만 도므로, 여기서 패닉하면 재시작 없이 영구
+    // 사망해 이후 모든 재연결 세션이 stdin 을 못 받는다.
+    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
     if let Some(tx) = sender {
         let _ = tx.send(RawEvent::Stdin(data.to_vec())); // 세션 전환 중 송신 실패는 버림 — 위 불변식 참고
     }
@@ -578,7 +582,9 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
 /// 설치하는 시점에 즉시 전달되게 한다. 위 [`route_stdin_chunk`] 와 동일한 이유로
 /// `slot` 은 쓰지 않는다.
 fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
-    let sender = slot.lock().unwrap().clone();
+    // route_stdin_chunk 와 동일한 이유로 poison 을 무시하고 계속 진행한다 — 이
+    // 함수도 같은 상시 리더 스레드에서 돌므로 여기서 패닉하면 마찬가지로 영구 사망.
+    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
     let delivered = match sender {
         Some(tx) => tx.send(RawEvent::StdinEof).is_ok(),
         None => false,
@@ -593,7 +599,10 @@ fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
 /// 세워져 있었다면(슬롯이 비어있는 동안 진짜 stdin EOF 가 발생한 경우) 새로
 /// 설치한 sender 로 즉시 `RawEvent::StdinEof` 를 전달하고 latch 를 내린다.
 fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<RawEvent>) {
-    *slot.lock().unwrap() = Some(tx.clone());
+    // poison 이어도 대입은 안전(값 자체가 tearing 불가) — 이 함수는 메인 스레드
+    // (재연결 루프)에서 매 세션마다 호출되므로, 여기서 패닉하면 백오프 재연결
+    // 루프조차 못 돌고 `tasty attach --raw --ssh` 프로세스 자체가 종료된다.
+    *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tx.clone());
     if eof_latch.swap(false, Ordering::AcqRel) {
         let _ = tx.send(RawEvent::StdinEof); // best-effort — 세션이 이미 끝났으면 무시.
     }
@@ -1003,5 +1012,22 @@ mod raw_bridge_tests {
 
         assert!(matches!(rx.recv().unwrap(), RawEvent::StdinEof));
         assert!(!eof_latch.load(Ordering::Acquire)); // 전달 후 latch 는 내려간다.
+    }
+
+    /// TODO25 회귀: `StdinSlot` 이 poison 된 뒤에도 `route_stdin_chunk` 가 패닉하지
+    /// 않고 계속 진행해야 한다 — poison 되면 이 함수가 도는 상시 리더 스레드가
+    /// 영구 사망해 이후 모든 재연결 세션이 stdin 을 못 받게 되기 때문.
+    #[test]
+    fn route_stdin_chunk_survives_poisoned_slot() {
+        let slot: StdinSlot = Arc::new(Mutex::new(None));
+        let poisoned = slot.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = poisoned.lock().unwrap();
+            panic!("simulate poison");
+        })
+        .join(); // Err 무시 — poison 을 의도적으로 남긴다.
+
+        // 패닉하지 않고 정상 진행되면 통과.
+        route_stdin_chunk(&slot, b"after poison");
     }
 }
