@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
 - **ADR**: 없음
-- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 실행 배선 `src/hook_handler/trigger.rs`
+- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 실행 배선 `src/hook_handler/trigger.rs`. IdleTimeout 폴링·발화 배선: `src/core/state/idle_hooks.rs`(엔진 쿼리) + `src/app/idle_hooks.rs`(GUI 실행)/`src/boot.rs`(headless 실행). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
 - **화면**: 없음
 
 ## 목적
@@ -21,11 +21,26 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 | 이벤트 | 발화 |
 |--------|------|
 | `ProcessExit` | 셸 프로세스 종료 |
-| `OutputMatch(pattern)` | PTY 출력이 정규식 매칭(등록 시 사전 컴파일) |
+| `OutputMatch(pattern)` | PTY 출력이 정규식 매칭(등록 시 사전 컴파일) — **완성된 라인 단위로만** 매칭 |
 | `Bell` | BEL 수신 |
 | `Notification` | OSC 알림 수신 |
-| `IdleTimeout(secs)` | N초간 PTY 출력 없음 |
+| `IdleTimeout(secs)` | N초간 PTY 출력 없음 — **1Hz 해상도**(BusyPoll tick) |
 | `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
+
+#### OutputMatch — 완성된 라인 단위 매칭
+
+`OutputMatch` 는 PTY 출력을 별도로 누적하지 않고 `ObserverRouter::dispatch_text`(`output.observe` 옵저버가 쓰는 것과 **동일한** per-surface `LineBuffer`)를 공유한다. `dispatch_text` 가 그 청크에서 완성된(`\n` 로 끝난) 줄만 반환하고, 그 줄들에 대해서만 정규식 매칭을 시도한다.
+
+- 줄바꿈 없이 끝나는 청크(예: 프롬프트 대기 중 부분 출력)는 매칭 대상이 아니다 — 다음 청크가 도착해 줄이 완성돼야 매칭된다. 패턴이 청크 경계에 걸쳐 있어도(`"partial ERR"` + `"OR\n"` → `"partial ERROR"`) 완성 시점에 합쳐진 전체 줄로 매칭된다.
+- 옵저버(`output.observe`)가 하나도 등록되지 않은 surface 도 OutputMatch 훅만으로 라인 버퍼 게이트가 열린다(`has_output_match_hook`) — 옵저버 등록이 OutputMatch 동작의 전제조건이 아니다.
+
+#### IdleTimeout — 1Hz 폴링 + epoch 기반 anti-spam
+
+`IdleTimeout` 은 별도 타이머/watcher 가 아니라 기존 `BusyPoll`(1Hz) tick 에 얹혀 동작한다. tick 마다 `Terminal::last_output_at()` 로 마지막 출력 시각과의 경과초를 계산해 임계값과 비교한다.
+
+- 최대 1초 지연: PTY 출력 정지 시점과 훅 발화 시점 사이에 최대 1초의 오차가 있다(Global hook 의 `file:` 조건과 동일한 해상도).
+- **epoch 기반 anti-spam**: 한 번 발화하면 그 시점의 `last_output_at` 값(epoch)을 기록해, 같은 epoch 동안은 재발화하지 않는다(persistent 훅이 매 tick 마다 스팸처럼 재발화하는 것을 막음). 새 출력이 들어와 `last_output_at` 이 갱신되면 자동으로 재무장된다.
+- `once` 훅은 발화 후 즉시 제거된다(Global hook 의 `once:SECS` 와 동일한 시맨틱).
 
 #### 이벤트 키 검증 (내장 + 플러그인 선언)
 
