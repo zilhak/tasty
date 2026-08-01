@@ -22,9 +22,12 @@ static WEBVIEW_KINDS: RwLock<Option<HashSet<String>>> = RwLock::new(None);
 
 /// plugin manager 가 hello 직후 매니페스트에 `rendering = "webview"` 선언이 있을 때 호출.
 pub fn register_webview_kind(plugin_id: &str, kind: &str) {
-    let mut guard = WEBVIEW_KINDS.write().unwrap();
-    let set = guard.get_or_insert_with(HashSet::new);
-    if set.insert(kind.to_string()) {
+    let inserted = {
+        let mut guard = WEBVIEW_KINDS.write().unwrap_or_else(|p| p.into_inner());
+        let set = guard.get_or_insert_with(HashSet::new);
+        set.insert(kind.to_string())
+    };
+    if inserted {
         tracing::info!(
             "registered webview-enabled surface kind '{}' for plugin '{}'",
             kind,
@@ -38,15 +41,15 @@ pub fn register_webview_kind(plugin_id: &str, kind: &str) {
 pub fn is_webview_kind(kind: &str) -> bool {
     WEBVIEW_KINDS
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|s| s.contains(kind)))
-        .unwrap_or(false)
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+        .is_some_and(|s| s.contains(kind))
 }
 
 /// test only — 등록된 kind 모두 제거.
 #[cfg(test)]
 pub fn reset_for_test() {
-    *WEBVIEW_KINDS.write().unwrap() = None;
+    *WEBVIEW_KINDS.write().unwrap_or_else(|p| p.into_inner()) = None;
 }
 
 #[cfg(test)]
@@ -60,5 +63,24 @@ mod tests {
         register_webview_kind("com.example", "foo");
         assert!(is_webview_kind("foo"));
         assert!(!is_webview_kind("bar"));
+    }
+
+    #[test]
+    fn register_and_is_webview_kind_survive_poison() {
+        reset_for_test();
+
+        // 의도적으로 poison 유발
+        let _ = std::thread::spawn(|| {
+            let _guard = WEBVIEW_KINDS.write().unwrap();
+            panic!("simulate poison");
+        })
+        .join();
+
+        // poison 이후에도 패닉하지 않고 정상 등록/조회되어야 한다.
+        register_webview_kind("plugin-a", "html");
+        assert!(is_webview_kind("html"));
+        assert!(!is_webview_kind("markdown"));
+
+        reset_for_test();
     }
 }
