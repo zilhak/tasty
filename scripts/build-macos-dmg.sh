@@ -19,6 +19,21 @@ fi
 
 cd "$(dirname "$0")/.."
 
+# Universal binary(Apple Silicon + Intel 모두 배포) 빌드에 필요한 두 타깃 + 도구.
+TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
+for t in "${TARGETS[@]}"; do
+    if ! rustup target list --installed 2>/dev/null | grep -qx "$t"; then
+        echo "Error: rust target '$t' not installed. Run: rustup target add $t" >&2
+        exit 1
+    fi
+done
+for tool in lipo codesign; do
+    command -v "$tool" &>/dev/null || {
+        echo "Error: '$tool' not found (part of Xcode Command Line Tools)." >&2
+        exit 1
+    }
+done
+
 # Parse arguments
 # 기본은 dist 프로필 (full LTO)을 써서 가장 빠른 바이너리를 배포한다.
 # 개발 중 빠르게 .app만 만들고 싶을 땐 --release(thin LTO) 또는 --debug 사용.
@@ -48,8 +63,10 @@ if [[ "$PROFILE" != "debug" ]]; then
     export SIGN_KEY_PATH
 fi
 
-echo "==> Building tasty ($PROFILE)..."
-cargo build $CARGO_FLAGS
+echo "==> Building tasty ($PROFILE) for ${TARGETS[*]}..."
+for t in "${TARGETS[@]}"; do
+    cargo build $CARGO_FLAGS --target "$t"
+done
 
 # Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
 # Matches build-linux.sh / build-windows.ps1 — keep in sync. A manifest with
@@ -70,12 +87,26 @@ if [[ ${#PLUGIN_CRATES[@]} -eq 0 ]]; then
     exit 1
 fi
 
-echo "==> Building ${#PLUGIN_CRATES[@]} plugins ($PROFILE)..."
+echo "==> Building ${#PLUGIN_CRATES[@]} plugins ($PROFILE) for ${TARGETS[*]}..."
 PLUGIN_CARGO_ARGS=()
 for c in "${PLUGIN_CRATES[@]}"; do
     PLUGIN_CARGO_ARGS+=("-p" "$c")
 done
-cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
+for t in "${TARGETS[@]}"; do
+    cargo build $CARGO_FLAGS --target "$t" "${PLUGIN_CARGO_ARGS[@]}"
+done
+
+# Plugin 은 별도 프로세스로 spawn 되므로 host 와 마찬가지로 universal 이어야 한다
+# (item 1 열린 질문: 기본은 host 와 동일하게 둘 다 lipo — 빌드 시간이 실제 문제가
+# 되면 그때 가서 판단, 여기서 임의로 스킵하지 않는다).
+# $1 = 바이너리 이름 (target/<triple>/$PROFILE/<name> 아래에서 찾음), $2 = 출력 경로.
+lipo_universal() {
+    local name="$1" out="$2"
+    lipo -create \
+        "target/${TARGETS[0]}/$PROFILE/$name" \
+        "target/${TARGETS[1]}/$PROFILE/$name" \
+        -output "$out"
+}
 
 # release/dist builds: sign all plugin manifests (Ed25519) with the key
 # discovered (or auto-generated) before cargo build.
@@ -89,8 +120,8 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Copy executable
-cp "target/$PROFILE/tasty" "$APP_DIR/Contents/MacOS/tasty"
+# lipo 로 두 arch 를 하나의 universal Mach-O 로 합쳐 배치.
+lipo_universal tasty "$APP_DIR/Contents/MacOS/tasty"
 
 # Stage plugins next to the executable. `bundle_root()` (crates/tasty-host-plugin/
 # src/builtin.rs) discovers `<exe_dir>/plugins/` for packaged builds and syncs each
@@ -104,14 +135,16 @@ for c in "${PLUGIN_CRATES[@]}"; do
         echo "Error: cannot parse id from $manifest" >&2
         exit 1
     fi
-    src_bin="target/$PROFILE/$c"
-    if [[ ! -f "$src_bin" ]]; then
-        echo "Error: plugin binary missing: $src_bin" >&2
-        exit 1
-    fi
+    for t in "${TARGETS[@]}"; do
+        src_bin="target/$t/$PROFILE/$c"
+        if [[ ! -f "$src_bin" ]]; then
+            echo "Error: plugin binary missing: $src_bin" >&2
+            exit 1
+        fi
+    done
     dest="$PLUGINS_DIR/$id"
     mkdir -p "$dest"
-    cp "$src_bin" "$dest/$c"
+    lipo_universal "$c" "$dest/$c"
     cp "$manifest" "$dest/tasty-plugin.toml"
     # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
     # builds, optional otherwise (debug runtime warns instead of rejecting).
@@ -163,6 +196,14 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
+# Ad-hoc 서명 (무료, Apple 계정 불요) — Apple Silicon 의 "damaged/can't open" 하드
+# 블록을 완화한다. lipo·plugin staging 다음, DMG 생성 이전. Gatekeeper "미확인
+# 개발자" 경고는 이것으로 없어지지 않는다(공증 기각은 정책 결정 — docs에서 우회
+# 안내). Info.plist 생성 *이후*에 서명해야 한다 — 그 뒤에 번들 내용을 바꾸면
+# 서명이 깨진다. --deep 으로 Contents/MacOS/plugins/ 하위 plugin 바이너리까지 서명.
+echo "==> Ad-hoc signing $APP_NAME.app..."
+codesign --force --deep --sign - "$APP_DIR"
+
 # Verify the assembled .app (both install and DMG paths share this).
 echo "==> Verifying $APP_NAME.app..."
 "$APP_DIR/Contents/MacOS/tasty" --version >/dev/null || {
@@ -172,6 +213,15 @@ echo "==> Verifying $APP_NAME.app..."
 ARCH_LINE=$(file "$APP_DIR/Contents/MacOS/tasty")
 [[ "$ARCH_LINE" == *"Mach-O"* ]] || {
     echo "Error: not a Mach-O binary: $ARCH_LINE" >&2
+    exit 1
+}
+LIPO_ARCHS=$(lipo -archs "$APP_DIR/Contents/MacOS/tasty")
+[[ "$LIPO_ARCHS" == *"x86_64"* && "$LIPO_ARCHS" == *"arm64"* ]] || {
+    echo "Error: tasty is not a universal (x86_64+arm64) binary: $LIPO_ARCHS" >&2
+    exit 1
+}
+codesign -dv "$APP_DIR" 2>&1 | grep -q "Signature=adhoc" || {
+    echo "Error: $APP_NAME.app is not ad-hoc signed" >&2
     exit 1
 }
 PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
