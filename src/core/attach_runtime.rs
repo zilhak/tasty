@@ -267,6 +267,7 @@ impl CoreState {
             .terminals
             .iter()
             .chain(class.non_terminals.iter())
+            .chain(class.explorers.iter().map(|(sid, _)| sid))
             .chain(class.mesh_candidates.iter().map(|(sid, _, _)| sid))
             .copied()
             .collect();
@@ -506,6 +507,17 @@ impl CoreState {
                 "role": "mesh",
                 "kind": kind,
                 "plugin_id": plugin_id,
+            }));
+        }
+        // ADR-0059/TODO 36 — explorer 는 placeholder 가 아니라 전용 role. root(활성
+        // 탭의 현재 디렉토리)만 실어보낸다(cwd 는 별도 필드로 보내지 않고 client 가
+        // `ExplorerPanel::new(id, root)` 로 cwd == root 단순화 — ADR 이 위임한 좁은
+        // 구현 디테일).
+        for (sid, root) in &class.explorers {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "explorer",
+                "root": root.to_string_lossy(),
             }));
         }
         for &sid in class.non_terminals.iter().chain(mesh_rejected.iter()) {
@@ -1502,7 +1514,8 @@ mod mesh_mirror_candidate_tests {
     fn mesh_mirror_candidates_filters_by_whitelist() {
         let class = AttachSurfaceClass {
             terminals: vec![1],
-            non_terminals: vec![2], // 예: explorer — 애초에 mesh 후보조차 아님
+            non_terminals: vec![2],
+            explorers: vec![],
             mesh_candidates: vec![
                 (10, "markdown".to_string(), "com.tasty.markdown".to_string()),
                 (11, "image".to_string(), "com.tasty.image".to_string()),

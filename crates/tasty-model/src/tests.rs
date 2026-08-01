@@ -853,6 +853,25 @@ fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
     terms.sort_unstable();
     assert_eq!(terms, vec![100, 300]); // 실 터미널 + deferred
     assert_eq!(class.non_terminals, vec![200]); // 비-deferred empty
+    assert!(class.explorers.is_empty());
+}
+
+/// ADR-0059/TODO 36 — explorer 는 `non_terminals` 가 아니라 전용 `explorers` 버킷으로
+/// 분류되고, 활성 탭의 **현재(root)** 경로(고정 cwd 가 아니라)가 실려야 한다.
+#[test]
+fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_active_root() {
+    use super::{ExplorerPanel, Pane, Workspace};
+    use std::path::PathBuf;
+
+    let mut panel = ExplorerPanel::new(200, PathBuf::from("/proj"));
+    panel
+        .active_tab_mut()
+        .navigate_to(PathBuf::from("/proj/sub"));
+    let pane = Pane::new_with_surface(1, 1, "Explorer".into(), Box::new(panel));
+    let ws = Workspace::new_with_pane(1, "w".into(), pane);
+    let class = ws.classify_attach_surfaces();
+    assert!(class.non_terminals.is_empty());
+    assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
 }
 
 #[test]

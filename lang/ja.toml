@@ -669,6 +669,9 @@ empty = "このフォルダーは空です"
 no_items = "項目なし"
 no_permission = "権限がありません"
 loading = "読み込み中…"
+error_conn_timeout = "リモートホストが時間内に応答しませんでした。"
+remote_listing_truncated = "リモートディレクトリの項目が多すぎてすべて表示できません — リストは切り詰められました。"
+remote_open_unsupported = "リモートファイルを開く機能はまだサポートされていません。"
 
 [script.confirm]
 title = "登録後にスクリプトが変更されました"

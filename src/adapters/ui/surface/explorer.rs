@@ -93,6 +93,7 @@ pub fn draw_explorer(
     favorites: &[favorites::ExplorerFavorite],
     cut_pending: &HashSet<PathBuf>,
     recent_dirs: &[String],
+    mirror_ws_id: Option<u32>,
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
     let theme: &Theme = &th;
@@ -125,7 +126,7 @@ pub fn draw_explorer(
                 ui.allocate_ui_with_layout(
                     egui::vec2(SIDEBAR_W, ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
-                    |ui| sidebar(ui, theme, panel, view, favorites, &mut action),
+                    |ui| sidebar(ui, theme, panel, view, favorites, &mut action, mirror_ws_id),
                 );
                 // 사이드바 ↔ content 세로 구분선.
                 let (vrect, _) = ui.allocate_exact_size(
@@ -574,6 +575,7 @@ fn navigate_target(input: &str) -> Option<PathBuf> {
 }
 
 // ── 사이드바: 디렉토리 트리 ───────────────────────────────────────────────
+#[allow(clippy::too_many_arguments)]
 fn sidebar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -581,6 +583,7 @@ fn sidebar(
     view: &mut ExplorerView,
     favorites: &[favorites::ExplorerFavorite],
     action: &mut Option<ExplorerAction>,
+    mirror_ws_id: Option<u32>,
 ) {
     let full = ui.available_size();
     ui.painter().rect_filled(
@@ -600,7 +603,7 @@ fn sidebar(
             // Files 섹션(트리)이 위 — design ExpSidebar 순서. 트리 루트는 고정 cwd.
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.cwd().to_path_buf();
-            tree_node(ui, theme, view, &root, 0, &current, action);
+            tree_node(ui, theme, view, &root, 0, &current, action, mirror_ws_id);
             // 트리 ↔ 즐겨찾기 구분선 (design height 1 separator, margin 8px top).
             ui.add_space(theme.spacing_sm.value());
             let (sep, _) = ui.allocate_exact_size(
@@ -738,6 +741,7 @@ fn sidebar_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 /// 재귀 트리 노드. `dir` 자체 행을 그리고, 펼쳐져 있으면 하위 디렉토리도.
 /// `current` 와 같은 노드는 surface-active 로 하이라이트(design TreeNode active).
+#[allow(clippy::too_many_arguments)]
 fn tree_node(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -746,9 +750,10 @@ fn tree_node(
     depth: u16,
     current: &Path,
     action: &mut Option<ExplorerAction>,
+    mirror_ws_id: Option<u32>,
 ) {
     let open = view.expanded.contains(dir);
-    let has_children = !view.tree_children_of(dir).is_empty();
+    let has_children = !view.tree_children_of(dir, mirror_ws_id).is_empty();
     let name = dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -803,12 +808,21 @@ fn tree_node(
     }
     if open {
         let children: Vec<PathBuf> = view
-            .tree_children_of(dir)
+            .tree_children_of(dir, mirror_ws_id)
             .iter()
             .map(|e| e.path.clone())
             .collect();
         for child in children {
-            tree_node(ui, theme, view, &child, depth + 1, current, action);
+            tree_node(
+                ui,
+                theme,
+                view,
+                &child,
+                depth + 1,
+                current,
+                action,
+                mirror_ws_id,
+            );
         }
     }
 }
@@ -843,6 +857,10 @@ fn content(
                 }
                 LoadState::Error(_) => {
                     centered_state(ui, theme, t("explorer.state.empty"));
+                    return;
+                }
+                LoadState::Loading => {
+                    centered_state(ui, theme, t("explorer.state.loading"));
                     return;
                 }
                 LoadState::Ok => {}

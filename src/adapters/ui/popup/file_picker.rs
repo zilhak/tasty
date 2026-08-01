@@ -786,6 +786,7 @@ fn navigate(
                 local_ws_id: mirror_ws_id,
                 request_id,
                 dir: target,
+                consumer: None,
             });
         return;
     }

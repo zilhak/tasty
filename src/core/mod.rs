@@ -155,15 +155,21 @@ pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
 }
 
 /// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
-/// 의 원소. popup wrapper 가 (mirror 판별 후) push, App 이 `about_to_wait` 에서
-/// drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 — 구조 op forward
-/// (`PendingStructuralForward`)/resize forward(`pending_resize_forward`)와 동형의
-/// "popup/domain 이 큐에 push, App 레이어가 drain 해 실제 소켓 IO" 패턴.
+/// 의 원소. popup wrapper/`ExplorerViewStore` outbox 가 (mirror 판별 후) push, App 이
+/// `about_to_wait` 에서 drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 —
+/// 구조 op forward(`PendingStructuralForward`)/resize forward(`pending_resize_forward`)와
+/// 동형의 "popup/domain 이 큐에 push, App 레이어가 drain 해 실제 소켓 IO" 패턴.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingListDirForward {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
     pub(crate) dir: String,
+    /// (ADR-0059/TODO 36) 이 요청의 **소비자** — `None` = File Picker(기존 단일
+    /// `FpLoadState` 매칭), `Some(surface_id)` = explorer(그 surface 의 `ExplorerView`
+    /// 가 경로별 pending 상태로 자체 추적). `MirrorEvent::ListDirResult` 도착 시 App
+    /// 레이어가 이 태그로 라우팅을 분기한다 — host 범용 "request_id → consumer"
+    /// 레지스트리는 만들지 않는다(ADR-0059 Decision 4).
+    pub(crate) consumer: Option<u32>,
 }
 
 /// git-viewer(원격) git 조회 forward 큐(`CoreState::pending_git_query_forward`)의

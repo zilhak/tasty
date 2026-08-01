@@ -131,6 +131,7 @@ pub fn draw_egui_panels(
             });
 
         let ws = state.active_workspace_mut(engine);
+        let mirror_ws_id = ws.mirror.then_some(ws.id);
         let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
             Some(p) => p,
             None => continue,
@@ -163,7 +164,7 @@ pub fn draw_egui_panels(
             .as_any_mut()
             .downcast_mut::<crate::model::ExplorerPanel>()
         {
-            let view = explorer_views.get_or_init(ex_panel);
+            let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
             let act = draw_panel_frame(
                 ctx,
                 &format!("explorer_panel_{}", id_suffix),
@@ -180,6 +181,7 @@ pub fn draw_egui_panels(
                         &explorer_favorites,
                         &explorer_cut_pending,
                         &explorer_recent_dirs,
+                        mirror_ws_id,
                     )
                 },
             );
@@ -225,6 +227,20 @@ pub fn draw_egui_panels(
 
     // Restore extracted view stores before any further `state` access below.
     state.explorer_views = explorer_views;
+
+    // (ADR-0059/TODO 36) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
+    // 옮긴다 — 루프 안에서는 `engine` 이 이미 `ws`/`pane`/`tab`/`surface` 로 배타 차용
+    // 중이라 직접 push 할 수 없다(outbox 패턴, `pending_explorer_action` 과 동형).
+    for (sid, req) in state.explorer_views.drain_outbox() {
+        engine
+            .pending_list_dir_forward
+            .push(crate::core::PendingListDirForward {
+                local_ws_id: req.local_ws_id,
+                request_id: req.request_id,
+                dir: req.dir.to_string_lossy().to_string(),
+                consumer: Some(sid),
+            });
+    }
 
     // T11: explorer deferred action 적용 (view store 복원 후 — state/engine 가변 차용 가능).
     if let Some((sid, act)) = pending_explorer_action {
@@ -328,6 +344,22 @@ pub(crate) fn apply_explorer_action(
     use crate::explorer_ui::ExplorerAction as A;
     match &act {
         A::OpenFile(path) => {
+            // (ADR-0059 Decision 3) 원격 mirror explorer 는 browse-only — 파일 내용
+            // fetch(더블클릭 열기)는 스코프 밖이라 트리거하지 않고 toast 로 안내한다.
+            // 로컬 surface 는 기존과 동일하게 동작한다.
+            let is_mirror = engine
+                .find_workspace_index_for_surface(sid)
+                .and_then(|(idx, _)| engine.workspaces.get(idx))
+                .map(|ws| ws.mirror)
+                .unwrap_or(false);
+            if is_mirror {
+                state.toasts.push(
+                    crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
+                    crate::adapters::ui::ToastKind::Info,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+                return;
+            }
             state.dispatch_intent(
                 crate::core::intent::DomainIntent::DispatchFile {
                     target: crate::file::format::FileTarget::new(path.clone()),

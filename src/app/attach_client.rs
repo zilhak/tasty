@@ -33,8 +33,8 @@ use crate::AppEvent;
 use crate::app::App;
 use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag, StructuralOp};
 use crate::model::{
-    EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface,
-    Workspace,
+    EmptySurface, ExplorerPanel, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab,
+    TerminalSurface, Workspace,
 };
 use crate::view::ui::View as _;
 
@@ -227,6 +227,12 @@ pub(crate) struct AttachClientSession {
     /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
     /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
     remote_label: String,
+    /// (ADR-0059/TODO 36) 아직 응답을 못 받은 `list_dir_request` 의 `request_id →
+    /// 소비자 태그`(`None`=File Picker, `Some(surface_id)`=explorer). 서버 응답
+    /// (`list_dir_result`)엔 이 태그가 안 실려 오므로(wire 스키마 변경 없음, ADR
+    /// Decision 5), 보낼 때 여기 기록해뒀다가 응답 도착 시 꺼내 라우팅을 분기한다.
+    /// 응답을 소비하면(성공/실패 무관) 제거 — stale 재사용 없음.
+    pending_list_dir_consumers: HashMap<u64, Option<u32>>,
 }
 
 impl AttachClientSession {
@@ -409,7 +415,7 @@ impl App {
             let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
-            let (new_map, terminal_locals, mesh_locals, _newly_created) =
+            let (new_map, terminal_locals, mesh_locals, explorer_locals, _newly_created) =
                 merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, engine);
             remote_to_local = new_map;
 
@@ -422,6 +428,7 @@ impl App {
                 &remote_to_local,
                 &terminal_locals,
                 &mesh_locals,
+                &explorer_locals,
             );
             // client mirror 표식 — 사이드바 이름 앞 하늘색 glyph(레일=우하단 chip)로 표시
             // (로컬 ws 와 구분; status dot 은 실행상태 전용). 상세 view.rs draw_workspace_card.
@@ -633,6 +640,7 @@ impl App {
             next_delta_focus: None,
             last_forwarded_resize: HashMap::new(),
             remote_label: format!("127.0.0.1:{port}"),
+            pending_list_dir_consumers: HashMap::new(),
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -732,13 +740,14 @@ impl App {
                 .find(|w| w.id == local_workspace)
                 .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
 
-            let (new_map, terminal_locals, mesh_locals, _newly_created) = merge_survivor_mapping(
-                &sess.remote_to_local,
-                &surfaces,
-                &ids,
-                &shared_frame_tx,
-                engine,
-            );
+            let (new_map, terminal_locals, mesh_locals, explorer_locals, _newly_created) =
+                merge_survivor_mapping(
+                    &sess.remote_to_local,
+                    &surfaces,
+                    &ids,
+                    &shared_frame_tx,
+                    engine,
+                );
             sess.remote_to_local = new_map;
 
             let Some(pos) = engine
@@ -758,6 +767,7 @@ impl App {
                 &sess.remote_to_local,
                 &terminal_locals,
                 &mesh_locals,
+                &explorer_locals,
             );
             ws.mirror = true;
             if !restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local) {
@@ -934,6 +944,10 @@ impl App {
         sess.pending_op_focus.clear();
         sess.next_delta_focus = None;
         sess.last_forwarded_resize.clear();
+        // ADR-0059 Decision 6 — 재연결 시 pending list_dir 요청 폐기(끊긴 연결에
+        // 물려 있던 request_id 는 다시 응답이 안 온다). explorer/File Picker 쪽의
+        // Loading 상태는 각자의 soft timeout 으로 알아서 ErrorConn 전이한다.
+        sess.pending_list_dir_consumers.clear();
         sess.state = SessionState::Connected;
         sess.remote_label = format!("127.0.0.1:{port}");
         tracing::info!(
@@ -1095,6 +1109,45 @@ impl App {
                                 truncated,
                                 reason,
                             } => {
+                                // (ADR-0059/TODO 36) 이 요청의 소비자 태그로 분기 —
+                                // `None` = File Picker(기존 로직), `Some(surface_id)`
+                                // = explorer(그 surface 의 `ExplorerView` 로 라우팅).
+                                // 태그가 없으면(세션이 이미 재연결로 지워졌거나 stale)
+                                // 조용히 무시한다.
+                                let consumer = sess
+                                    .pending_list_dir_consumers
+                                    .remove(&request_id)
+                                    .flatten();
+                                if let Some(surface_id) = consumer {
+                                    let result = if ok {
+                                        Ok(entries.unwrap_or_default())
+                                    } else {
+                                        Err(reason.unwrap_or_default())
+                                    };
+                                    if let Some(panel) = main
+                                        .core_state
+                                        .find_surface_by_id(surface_id)
+                                        .and_then(|s| {
+                                            s.as_any().downcast_ref::<crate::model::ExplorerPanel>()
+                                        })
+                                    {
+                                        let is_err = result.is_err();
+                                        main.state.explorer_views.apply_remote_list_dir_result(
+                                            surface_id, request_id, panel, result,
+                                        );
+                                        if !is_err && truncated {
+                                            main.state.toasts.push(
+                                                crate::i18n::t(
+                                                    "explorer.state.remote_listing_truncated",
+                                                )
+                                                .to_string(),
+                                                crate::adapters::ui::ToastKind::Warning,
+                                                crate::adapters::ui::ToastScope::Window,
+                                            );
+                                        }
+                                    }
+                                    continue;
+                                }
                                 // (04) 원격이 이 세션의 list_dir_request 를 처리한
                                 // 결과 — popup 이 열려 있고 그 요청을 아직 기다리는
                                 // 중일 때만 반영(다른 요청/이미 닫힌 popup 응답은
@@ -1528,7 +1581,9 @@ impl App {
             pending.append(&mut e.pending_list_dir_forward);
         }
         for req in pending {
-            if let Err(e) = self.send_list_dir_request(req.local_ws_id, req.request_id, &req.dir) {
+            if let Err(e) =
+                self.send_list_dir_request(req.local_ws_id, req.request_id, &req.dir, req.consumer)
+            {
                 tracing::warn!(
                     "list_dir_request send 실패 (mirror ws {}, request {}): {e}",
                     req.local_ws_id,
@@ -1928,11 +1983,13 @@ fn merge_survivor_mapping(
     HashMap<u32, u32>,
     HashSet<u32>,
     HashMap<u32, MirrorMeshInfo>,
+    HashMap<u32, std::path::PathBuf>,
     Vec<u32>,
 ) {
     let mut new_map: HashMap<u32, u32> = HashMap::new();
     let mut terminal_locals: HashSet<u32> = HashSet::new();
     let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
+    let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
@@ -1972,6 +2029,13 @@ fn merge_survivor_mapping(
                     plugin_id,
                 },
             );
+        } else if role == Some("explorer") {
+            let root = s
+                .get("root")
+                .and_then(|v| v.as_str())
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default();
+            explorer_locals.insert(local_id, root);
         }
         new_map.insert(remote_id, local_id);
     }
@@ -1990,6 +2054,7 @@ fn merge_survivor_mapping(
         new_map,
         terminal_locals,
         mesh_locals,
+        explorer_locals,
         newly_created_remote_ids,
     )
 }
@@ -2035,13 +2100,14 @@ fn apply_mirror_structural_delta(
     // 공유하는 `merge_survivor_mapping`). 이 op 으로 새로 생긴 remote surface(=이전
     // 매핑에 없던 것)도 순서대로 받아둔다(08 — new-tab/split 성공 시 focus 를 옮길 대상
     // 후보).
-    let (new_map, terminal_locals, mesh_locals, newly_created_remote_ids) = merge_survivor_mapping(
-        &sess.remote_to_local,
-        surfaces,
-        &ids,
-        &sess.frame_tx,
-        engine,
-    );
+    let (new_map, terminal_locals, mesh_locals, explorer_locals, newly_created_remote_ids) =
+        merge_survivor_mapping(
+            &sess.remote_to_local,
+            surfaces,
+            &ids,
+            &sess.frame_tx,
+            engine,
+        );
 
     // 매핑 교체(이후 같은 drain 의 Data 는 갱신된 매핑으로 라우팅된다).
     sess.remote_to_local = new_map;
@@ -2062,6 +2128,7 @@ fn apply_mirror_structural_delta(
             &sess.remote_to_local,
             &terminal_locals,
             &mesh_locals,
+            &explorer_locals,
         );
         ws.mirror = true;
 
@@ -2182,12 +2249,14 @@ fn find_pane_and_tab_for_surface(ws: &Workspace, surface_id: u32) -> Option<(u32
 /// → 로컬 `Pane`. 새 local pane id 발급 + 각 tab 의 layout(`build_layout`)/
 /// focused_surface remote→local 매핑. `build_mirror_workspace`의 평면 fallback
 /// 경로와 `build_pane_node`(트리 파서)가 공유한다.
+#[allow(clippy::too_many_arguments)] // reason: mirror pane 파서 컨텍스트 전체
 fn build_pane_from_json(
     p: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
 ) -> Pane {
     let tabs_json = p
         .get("tabs")
@@ -2198,9 +2267,10 @@ fn build_pane_from_json(
     let mut active_tab = 0usize;
     for (i, t) in tabs_json.iter().enumerate() {
         let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
-        let layout = build_layout(&layout_json, ids, map, term, mesh).unwrap_or_else(|| {
-            SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
-        });
+        let layout =
+            build_layout(&layout_json, ids, map, term, mesh, explorer).unwrap_or_else(|| {
+                SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
+            });
         let remote_focus = t
             .get("focused_surface")
             .and_then(|v| v.as_u64())
@@ -2260,12 +2330,13 @@ fn build_pane_node(
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
     pane_id_map: &mut HashMap<u32, u32>,
 ) -> Option<PaneNode> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
             let remote_pane = node.get("id").and_then(|v| v.as_u64())? as u32;
-            let pane = build_pane_from_json(node, ids, map, term, mesh);
+            let pane = build_pane_from_json(node, ids, map, term, mesh, explorer);
             pane_id_map.insert(remote_pane, pane.id);
             Some(PaneNode::Leaf(pane))
         }
@@ -2275,8 +2346,24 @@ fn build_pane_node(
                 _ => SplitDirection::Horizontal,
             };
             let ratio = node.get("ratio").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let first = build_pane_node(node.get("first")?, ids, map, term, mesh, pane_id_map)?;
-            let second = build_pane_node(node.get("second")?, ids, map, term, mesh, pane_id_map)?;
+            let first = build_pane_node(
+                node.get("first")?,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                pane_id_map,
+            )?;
+            let second = build_pane_node(
+                node.get("second")?,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                pane_id_map,
+            )?;
             Some(PaneNode::Split {
                 direction,
                 ratio,
@@ -2305,6 +2392,7 @@ fn build_mirror_workspace(
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
 ) -> Workspace {
     let remote_focused_pane = tree
         .get("focused_pane")
@@ -2314,7 +2402,15 @@ fn build_mirror_workspace(
     // 신버전 서버: "pane_layout" 트리 필드로 direction/ratio 보존 파싱.
     if let Some(layout_json) = tree.get("pane_layout").filter(|v| !v.is_null()) {
         let mut pane_id_map = HashMap::new();
-        if let Some(node) = build_pane_node(layout_json, ids, map, term, mesh, &mut pane_id_map) {
+        if let Some(node) = build_pane_node(
+            layout_json,
+            ids,
+            map,
+            term,
+            mesh,
+            explorer,
+            &mut pane_id_map,
+        ) {
             let focused_local_pane = pane_id_map
                 .get(&remote_focused_pane)
                 .copied()
@@ -2340,7 +2436,10 @@ fn build_mirror_workspace(
     let mut local_panes: Vec<(u32, Pane)> = Vec::new();
     for p in &panes_json {
         let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        local_panes.push((remote_pane, build_pane_from_json(p, ids, map, term, mesh)));
+        local_panes.push((
+            remote_pane,
+            build_pane_from_json(p, ids, map, term, mesh, explorer),
+        ));
     }
 
     if local_panes.is_empty() {
@@ -2400,6 +2499,7 @@ fn build_layout(
     map: &HashMap<u32, u32>,
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
 ) -> Option<SurfaceLayout> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
@@ -2418,6 +2518,9 @@ fn build_layout(
                     info.plugin_id.clone(),
                     info.display_name.clone(),
                 ))
+            } else if let Some(root) = explorer.get(&local) {
+                // (ADR-0059/TODO 36) cwd == root 단순화 — wire 는 root 만 싣는다.
+                Box::new(ExplorerPanel::new(local, root.clone()))
             } else {
                 Box::new(EmptySurface::new(local))
             };
@@ -2433,8 +2536,8 @@ fn build_layout(
                 .get("focus_second")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let first = build_layout(node.get("first")?, ids, map, term, mesh)?;
-            let second = build_layout(node.get("second")?, ids, map, term, mesh)?;
+            let first = build_layout(node.get("first")?, ids, map, term, mesh, explorer)?;
+            let second = build_layout(node.get("second")?, ids, map, term, mesh, explorer)?;
             Some(SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -2675,8 +2778,10 @@ impl App {
         send_capture_control_frame(&frame_tx, &commit)
     }
 
-    /// (04) file picker — `local_ws_id` mirror 세션의 attach 채널로
-    /// `list_dir_request` 를 보낸다. 응답은 reader thread 가 비동기로 받아
+    /// (04) file picker/explorer(ADR-0059) — `local_ws_id` mirror 세션의 attach
+    /// 채널로 `list_dir_request` 를 보낸다. `consumer`(`None`=File Picker,
+    /// `Some(surface_id)`=explorer)는 응답 도착 시 라우팅에 쓰도록 세션에 기록해둔다
+    /// (wire 엔 안 실림 — ADR-0059 Decision 5). 응답은 reader thread 가 비동기로 받아
     /// `MirrorEvent::ListDirResult` 로 기존 이벤트 큐에 흘려보낸다(`apply_attach_client_output`
     /// 이 소비 — capture_result 와 동일한 reader-thread→큐→메인루프 drain 경로,
     /// `remote_attach.rs` 류 독자 폴링 슬롯 불필요).
@@ -2685,10 +2790,11 @@ impl App {
         local_ws_id: u32,
         request_id: u64,
         dir: &str,
+        consumer: Option<u32>,
     ) -> anyhow::Result<()> {
         let Some(sess) = self
             .attach_client_sessions
-            .iter()
+            .iter_mut()
             .find(|s| s.local_workspace == local_ws_id)
         else {
             anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
@@ -2698,7 +2804,11 @@ impl App {
             "request_id": request_id,
             "dir": dir,
         });
-        send_capture_control_frame(&sess.frame_tx, &msg)
+        let result = send_capture_control_frame(&sess.frame_tx, &msg);
+        if result.is_ok() {
+            sess.pending_list_dir_consumers.insert(request_id, consumer);
+        }
+        result
     }
 
     /// (TODO 40) `local_surface_id` 를 보유한 mirror 세션의 attach 채널로
@@ -2952,7 +3062,8 @@ mod tests {
             "first": { "type": "Leaf", "id": 100, "kind": "terminal" },
             "second": { "type": "Leaf", "id": 101, "kind": "empty" },
         });
-        let layout = build_layout(&node, &ids, &map, &term, &HashMap::new()).expect("layout");
+        let layout = build_layout(&node, &ids, &map, &term, &HashMap::new(), &HashMap::new())
+            .expect("layout");
         match layout {
             SurfaceLayout::Split {
                 direction,
@@ -2975,6 +3086,32 @@ mod tests {
         }
     }
 
+    /// (ADR-0059/TODO 36) `role=="explorer"` leaf 는 `explorer` 맵의 root 로
+    /// `ExplorerPanel::new(local, root)`(cwd == root 단순화)를 구성해야 한다.
+    #[test]
+    fn build_layout_constructs_explorer_panel_from_explorer_map() {
+        let ids = IdGenerator::new();
+        let map = HashMap::from([(200u32, 9u32)]);
+        let term = HashSet::new();
+        let mesh = HashMap::new();
+        let explorer = HashMap::from([(9u32, std::path::PathBuf::from("/remote/project"))]);
+        let node = serde_json::json!({ "type": "Leaf", "id": 200, "kind": "explorer" });
+        let layout = build_layout(&node, &ids, &map, &term, &mesh, &explorer).expect("layout");
+        let SurfaceLayout::Leaf(surface) = layout else {
+            panic!("expected Leaf");
+        };
+        assert_eq!(surface.kind(), "explorer");
+        let panel = surface
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .expect("ExplorerPanel");
+        assert_eq!(panel.id, 9);
+        assert_eq!(
+            panel.current_root(),
+            std::path::Path::new("/remote/project")
+        );
+    }
+
     /// 단일 pane·tab 디스크립터 → mirror Workspace: 로컬 id 발급 + 트리 보존.
     #[test]
     fn build_mirror_workspace_single_pane_tab() {
@@ -2993,7 +3130,16 @@ mod tests {
                 } ]
             } ]
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         assert_eq!(ws.id, 99);
         // mirror surface = 로컬 50 (remote 1 재매핑).
         assert_eq!(ws.all_surface_ids(), vec![50]);
@@ -3031,7 +3177,16 @@ mod tests {
                 } ]
             } ]
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let sids = ws.all_surface_ids();
         assert!(
             sids.contains(&survivor_local),
@@ -3058,6 +3213,7 @@ mod tests {
             &map,
             &term,
             &HashMap::new(),
+            &HashMap::new(),
         );
         assert_eq!(ws.id, 1);
         assert_eq!(ws.all_surface_ids().len(), 1);
@@ -3081,7 +3237,16 @@ mod tests {
                 "second": { "type": "Leaf", "id": 8, "tabs": [] }
             }
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         match ws.pane_layout() {
             PaneNode::Split {
                 direction,
@@ -3124,7 +3289,16 @@ mod tests {
             ]
             // "pane_layout" 필드 없음 — 구버전 서버 흉내.
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         match ws.pane_layout() {
             PaneNode::Split {
                 direction, ratio, ..
@@ -3167,7 +3341,16 @@ mod tests {
                 ] }
             }
         });
-        let ws = build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         assert_eq!(
             capture_focused_remote(&ws, &map),
             Some(3),
@@ -3219,6 +3402,7 @@ mod tests {
             &ids,
             &map,
             &term,
+            &HashMap::new(),
             &HashMap::new(),
         );
 
@@ -3275,6 +3459,7 @@ mod tests {
             &ids,
             &after_map,
             &term,
+            &HashMap::new(),
             &HashMap::new(),
         );
 
@@ -3337,8 +3522,16 @@ mod tests {
                 ] }
             }
         });
-        let mut ws =
-            build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let mut ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let untouched_focused_pane = ws.focused_pane;
 
         // 캡처된 surface(remote 3)는 이 map/tree 어디에도 없다 — 이미 닫힌 상태를 흉내.
@@ -3377,8 +3570,16 @@ mod tests {
                 ] }
             }
         });
-        let mut ws =
-            build_mirror_workspace(99, "remote", &tree, &ids, &map, &term, &HashMap::new());
+        let mut ws = build_mirror_workspace(
+            99,
+            "remote",
+            &tree,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let local_b = *map.get(&2).unwrap();
 
         assert!(set_focus_to_surface(&mut ws, local_b));
