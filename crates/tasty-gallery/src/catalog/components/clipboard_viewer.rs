@@ -125,19 +125,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(
             ui,
             theme,
-            "html — raw source (TODO49, Pretty print unchecked)",
+            "html — raw source (Pretty print unchecked)",
             |ui| data_popup_html(ui, theme, &HTML_RAW_PRETTY_ON, HTML_RAW),
         );
         spec::cluster(
             ui,
             theme,
-            "html — pretty print (TODO49, Pretty print checked)",
+            "html — pretty print (Pretty print checked)",
             |ui| data_popup_html(ui, theme, &HTML_PRETTY_PRETTY_ON, HTML_PRETTY),
         );
         spec::cluster(
             ui,
             theme,
-            "other — raw format bucket (TODO50, unrecognized formats)",
+            "other — raw format bucket (unrecognized formats)",
             |ui| other_popup(ui, theme),
         );
         spec::cluster(ui, theme, "empty clipboard", |ui| {
@@ -189,7 +189,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "html type-bar right slot",
-                "Pretty print checkbox(TODO49) swaps in for meta text",
+                "Pretty print checkbox swaps in for meta text",
             ),
             (
                 "states",
@@ -221,15 +221,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "TODO51/52/48/49 구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
+        "구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
          body/footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 \
-         하나로만, 2개 이상(Text/Files, TODO52)이면 가로 세그먼트로 보여준다 — \
+         하나로만, 2개 이상(Text/Files)이면 가로 세그먼트로 보여준다 — \
          `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트(비활성 세그먼트가 아이콘 전용으로 \
          축소)는 골격만 갖춰뒀고 [[50]]이 타입을 늘리면 실제로 재현된다(그때 이 \
          specimen 도 압축 세그먼트 상태를 추가한다). files body 는 아이콘+mono 경로 \
          한 줄씩, 긴 경로는 말줄임 처리한다(design ellipsis 전사). image body 는 실제 \
-         픽셀을 렌더링하지 않고 아이콘+치수·크기 메타+안내 문구만 중앙 정렬로 보여준다 \
-         (design 결정, TODO48). TODO49 — HTML 타입은 렌더링하지 않고 원본 소스를 text \
+         픽셀을 렌더링하지 않고 아이콘+치수·크기 메타+안내 문구만 중앙 정렬로 보여준다\
+         (design 결정). HTML 타입은 렌더링하지 않고 원본 소스를 text \
          타입과 동일한 mono well 로 보여준다. type-bar 우측의 메타 슬롯이 HTML 타입일 \
          때만 Pretty print 체크박스로 스왑되고, 밀려난 메타(문자수·줄수)는 푸터로 \
          이동해 mime 과 `·` 로 결합 표시된다(`text/html · N chars · N line(s)`). \
@@ -237,7 +237,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          없는 태그 깊이 인덴터, script/style/pre 는 verbatim 보존)와 동일 규칙으로 \
          수기 정리한 샘플이다 — 갤러리는 plugin crate 를 의존할 수 없어 결과 문자열을 \
          직접 박아둔다. 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 기능 \
-         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다. TODO50 — text/files/\
+         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다. text/files/\
          image/html 어디에도 속하지 않는 raw 포맷은 \"Other\" 타입 하나로 묶여 \
          type-bar 에 나타난다. body 는 발견된 포맷마다 이름(mono, text-secondary, \
          굵게)+크기(mono, text-muted)를 같은 줄에, 그 아래 텍스트화된 미리보기를 \
