@@ -358,6 +358,13 @@ fn apply_block_state(
 
 /// Convert logical bounds (top-left origin) to NSRect,
 /// handling macOS coordinate system (bottom-left origin for non-flipped views).
+///
+/// # Safety
+///
+/// 호출자는 메인 스레드에서 호출해야 한다 — `parent.frame()`/
+/// `parent.isFlipped()`는 AppKit 뷰 상태 조회이며 AppKit은 메인 스레드
+/// 전용이다(objc2의 `frame()`/`isFlipped()` 자체는 안전한 `fn`으로
+/// 노출되어 있어 이 계약은 objc2가 아니라 AppKit의 스레딩 모델에서 온다).
 unsafe fn logical_to_nsrect(parent: &NSView, bounds: WebViewBounds, _scale_factor: f64) -> NSRect {
     let is_flipped = parent.isFlipped();
     let parent_h = parent.frame().size.height;
