@@ -40,8 +40,9 @@ impl CoreState {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        // 터미널(또는 deferred) 이 아니면 mesh-mirror 후보인지 확인한다(TODO 18 —
-        // 단일 surface attach 도 화이트리스트된 mesh surface 를 받아들이도록 확장).
+        // 터미널(또는 deferred) 이 아니면 mesh-mirror 후보인지 확인한다(`docs/dev-guide/
+        // attach-behavior.md` "mesh mirror 채널" 절 — 단일 surface attach 도 화이트리스트된
+        // mesh surface 를 받아들이도록 확장).
         // PTY 스냅샷/tap 이 없는 별도 경로(`attach_mesh_surface_for_stream`)로 분기.
         if !self.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
             if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
@@ -138,8 +139,9 @@ impl CoreState {
     /// mesh surface(egui-mesh 화이트리스트 plugin) 단일 attach. 터미널 경로와 달리
     /// PTY 가 없어 bulk 스냅샷/출력 tap/resize tap 이 존재하지 않는다 — lock 만 획득하고
     /// `attached` 통지를 보낸다. 실제 구독 시작은 client 가 뒤이어 보내는
-    /// `StreamControl::MeshContext` 요청이 트리거한다(TODO 15 결정 #1: 구독 요청 자체가
-    /// capability negotiation). mesh 바이트 forward 는 `PluginManager` 접근권이 있는
+    /// `StreamControl::MeshContext` 요청이 트리거한다(`docs/dev-guide/attach-behavior.md`
+    /// "구독 = MeshContext" 절: 구독 요청 자체가 capability negotiation). mesh 바이트
+    /// forward 는 `PluginManager` 접근권이 있는
     /// App 계층(`src/boot/headless_plugins.rs`)의 몫이라 여기서는 다루지 않는다.
     fn attach_mesh_surface_for_stream(
         &mut self,
@@ -215,7 +217,8 @@ impl CoreState {
     }
 
     /// attach mesh mirror 클라이언트가 mesh pane 위에서 캡처한 입력
-    /// (`StreamControl::MeshInput`, TODO 20) 반영. holder 검증은
+    /// (`StreamControl::MeshInput`, `docs/dev-guide/attach-behavior.md` "MeshInput 누적"
+    /// 절) 반영. holder 검증은
     /// [`Self::apply_attached_mesh_context`]와 동일. 반환: 성공 여부.
     pub fn apply_attached_mesh_input(
         &mut self,
@@ -483,7 +486,7 @@ impl CoreState {
                 }
             }
         }
-        // TODO 16 — mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
+        // mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
         // non_terminals 와 동일하게 placeholder 로 내려간다.
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
 
@@ -509,7 +512,7 @@ impl CoreState {
                 "plugin_id": plugin_id,
             }));
         }
-        // ADR-0059/TODO 36 — explorer 는 placeholder 가 아니라 전용 role. root(활성
+        // ADR-0059 — explorer 는 placeholder 가 아니라 전용 role. root(활성
         // 탭의 현재 디렉토리)만 실어보낸다(cwd 는 별도 필드로 보내지 않고 client 가
         // `ExplorerPanel::new(id, root)` 로 cwd == root 단순화 — ADR 이 위임한 좁은
         // 구현 디테일).
@@ -1077,15 +1080,16 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
     })
 }
 
-/// (TODO 40) git-viewer — mirror client 가 attach 채널로 보낸 `git_query_request`
+/// git-viewer(ADR-0056) — mirror client 가 attach 채널로 보낸 `git_query_request`
 /// 하나를 처리한다(status/log/worktrees snapshot, 또는 단일 파일 diff).
 /// `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든 점유(holder)해야
 /// 신뢰한다(`handle_list_dir_request`/`finalize_capture_upload` 와 동일한 "attach
 /// 점유 = 권한" 원칙). `worktree_path` 가 없으면 `surface_id` 의 **실제 원격
 /// PTY**(`Terminal::get_cwd` — OSC 7 캐시 우선, 없으면 `/proc`(Linux)·`proc_pidinfo`
 /// (macOS) 폴백)로 cwd 를 직접 resolve 한다 — mirror 클라이언트의 OSC 7 재생에
-/// 의존하지 않으므로, TODO 40 원인 분석의 "원격 셸이 OSC 7 을 방출하지 않는 경우"도
-/// 커버한다(client 가 forward 하는 `cwd` 문자열을 신뢰하는 대신 서버가 직접 판정).
+/// 의존하지 않으므로, ADR-0056 Context 절에서 설명한 "원격 셸이 OSC 7 을 방출하지
+/// 않는 경우"도 커버한다(client 가 forward 하는 `cwd` 문자열을 신뢰하는 대신 서버가
+/// 직접 판정).
 /// 조회는 `tasty-git-core`(plugin 과 공유하는 순수 로직 crate)로 수행하고,
 /// `git_query_result` 이벤트로 회신한다(`StreamControl` enum 밖의 raw JSON "event"
 /// 태그, list_dir/capture 와 동일 패턴).
@@ -1479,7 +1483,7 @@ pub(crate) fn reject_attach(
     let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new())); // best-effort detach 신호 — 무시.
 }
 
-/// TODO 16 — `AttachSurfaceClass::mesh_candidates`(raw, `tasty-model` 이 화이트리스트를
+/// `AttachSurfaceClass::mesh_candidates`(raw, `tasty-model` 이 화이트리스트를
 /// 모른 채 `Surface::attach_mesh_info()` 만으로 모은 후보)를 bundled 화이트리스트
 /// (`is_egui_mesh_allowed`)로 재검증한다. `tasty-model`은 `is_egui_mesh_allowed`(앱
 /// 계층, `src/`)를 참조할 수 없어(crate 의존 방향) 이 최종 판정은 여기(앱 계층)의
@@ -1504,7 +1508,7 @@ pub(crate) fn mesh_mirror_candidates(
 
 #[cfg(test)]
 mod mesh_mirror_candidate_tests {
-    //! TODO 16 완료 확인 절차의 예시 테스트 — bundled 화이트리스트에 있는 mesh 후보만
+    //! bundled 화이트리스트에 있는 mesh 후보만
     //! whitelisted 로, 나머지(미등록 kind/plugin_id 조합)는 rejected(=placeholder 유지)로
     //! 분류되는지.
     use super::mesh_mirror_candidates;
@@ -1770,7 +1774,7 @@ mod forward_exec_tests {
         assert!(r.is_err(), "missing anchor must fail");
     }
 
-    // ─── hard-occupied dispatch 가드 (TODO 10/11) 회귀 방지 ──────────────
+    // ─── hard-occupied dispatch 가드 회귀 방지 ──────────────
     //
     // `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)는 일반 IPC
     // method-string dispatch 에만 걸려 있고, 이 파일의 `execute_forwarded_structural_op`
@@ -1952,7 +1956,8 @@ mod forward_exec_tests {
         assert_eq!(engine.terminals.iter().count(), before - 1);
     }
 
-    /// (TODO 10) 비-holder 경로: hard-occupied 워크스페이스에 일반 IPC(`split`/
+    /// 비-holder 경로(`docs/dev-guide/attach-behavior.md` "서버(피점유)측 비-holder
+    /// 구조 변경 차단" 절): hard-occupied 워크스페이스에 일반 IPC(`split`/
     /// `tab.create`)로 직접 호출하면 거부되고 트리가 그대로 유지돼야 한다.
     #[test]
     fn dispatch_denies_structural_create_when_hard_occupied() {
@@ -2009,9 +2014,10 @@ mod forward_exec_tests {
         );
     }
 
-    /// (TODO 11) 비-holder 경로: hard-occupied 워크스페이스에 일반 IPC(`pane.close`/
-    /// `tab.close`/`tab.move`/`surface.close`)로 직접 호출하면 거부되고 트리가 그대로
-    /// 유지돼야 한다.
+    /// 비-holder 경로(`docs/dev-guide/attach-behavior.md` "서버(피점유)측 비-holder
+    /// 구조 변경 차단" 절 — 극단 케이스는 이 가드로 도달 불가능해짐): hard-occupied
+    /// 워크스페이스에 일반 IPC(`pane.close`/`tab.close`/`tab.move`/`surface.close`)로
+    /// 직접 호출하면 거부되고 트리가 그대로 유지돼야 한다.
     #[test]
     fn dispatch_denies_structural_close_move_when_hard_occupied() {
         let (mut core, mut state, mut engine, _home) = make_core_state();

@@ -139,8 +139,9 @@ impl MainView {
         }
     }
 
-    /// 현재 modifier 상태를 wire 형태로. `pub(super)` — attach mesh mirror(TODO 20,
-    /// `attach_mesh_input.rs`)의 로컬 입력 캡처가 동일 좌표계/modifier 계산을 재사용한다.
+    /// 현재 modifier 상태를 wire 형태로. `pub(super)` — attach mesh mirror(`docs/dev-guide/
+    /// attach-behavior.md` "MeshInput 누적" 절, `attach_mesh_input.rs`)의 로컬 입력
+    /// 캡처가 동일 좌표계/modifier 계산을 재사용한다.
     pub(super) fn mesh_modifiers(&self) -> ModifiersWire {
         let m = &self.base.modifiers;
         let cmd = if cfg!(target_os = "macos") {
@@ -203,7 +204,7 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
-    /// 포인터가 이 egui-mesh surface 밖으로 나갔음을 1 회 forward(TODO 26) — 좌표
+    /// 포인터가 이 egui-mesh surface 밖으로 나갔음을 1 회 forward — 좌표
     /// 없이(`PointerGone` 은 위치 필드가 없다) hover 상태 해제만 알린다. `mouse.rs`
     /// 의 `update_mesh_hover` 가 hover 대상 전환 시점에 호출한다.
     pub(super) fn egui_mesh_push_pointer_gone(&mut self, surface_id: u32) {
@@ -448,13 +449,14 @@ impl MainView {
         }
     }
 
-    /// attach mesh mirror(TODO 18/19) 구독자에게 로컬 redraw 가 만든 `EguiMeshFrame` 을
-    /// 그대로 중계한다(TODO 24 — GUI가 attach 서버인 경우).
+    /// attach mesh mirror(`docs/dev-guide/attach-behavior.md` "frame 소비·forward
+    /// (gui-as-server)" 절) 구독자에게 로컬 redraw 가 만든 `EguiMeshFrame` 을 그대로
+    /// 중계한다(GUI가 attach 서버인 경우).
     ///
     /// [`forward_egui_mesh_context`]가 화면에 보이는 surface 의 `set_context` 를 매 프레임
-    /// 권위 있게 구동하므로(TODO 18 결정 #4), 이 함수는 별도 `set_context` 를 보내지
+    /// 권위 있게 구동하므로, 이 함수는 별도 `set_context` 를 보내지
     /// 않고 **이미 만들어진 frame 바이트를 읽어 StreamHub 로 relay** 할 뿐이다 — 로컬
-    /// authoritative loop 와 경합하지 않는다. 예외는 두 가지(TODO 24 항목 2 결정):
+    /// authoritative loop 와 경합하지 않는다. 예외는 두 가지:
     ///
     /// - attach 구독 대상이 로컬에서 **한 번도 렌더되지 않은** surface(다른 탭/워크스페이스에
     ///   있어 authoritative loop 의 대상 목록에 전혀 포함되지 않음)면 plugin 이 그

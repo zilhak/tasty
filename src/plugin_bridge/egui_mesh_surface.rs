@@ -87,7 +87,7 @@ impl Surface for EguiMeshSurface {
         })
     }
 
-    /// attach mesh mirror 후보 신호(TODO 16) — 화이트리스트 판정은 앱 계층
+    /// attach mesh mirror 후보 신호 — 화이트리스트 판정은 앱 계층
     /// (`is_egui_mesh_allowed`)의 책임, 여기선 raw (kind, plugin_id) 만 알린다.
     fn attach_mesh_info(&self) -> Option<(&str, &str)> {
         Some((self.kind_static, &self.plugin_id))

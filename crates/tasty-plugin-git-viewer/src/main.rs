@@ -34,7 +34,7 @@ const PLUGIN_ID: &str = "com.tasty.git-viewer";
 // Cargo.toml 이 SoT — 하드코딩 드리프트(0.1.8 vs 0.1.10 실재했음)를 컴파일 타임에 차단.
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: usize = 200;
-/// (TODO 40) host → 이 plugin unicast 이벤트 key. host 측 대응값은
+/// (ADR-0056) host → 이 plugin unicast 이벤트 key. host 측 대응값은
 /// `src/app/attach_client.rs::GIT_VIEWER_QUERY_RESULT_EVENT` — 공유 crate 가 없어
 /// 리터럴을 양쪽에 중복 정의한다(둘 다 바꿀 때 동기화 필요).
 const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
@@ -54,7 +54,7 @@ pub(crate) struct ViewerState {
     log_entries: Vec<git::LogEntry>,
     selected_file: Option<usize>,
     diff_content: Option<git::DiffData>,
-    /// (TODO 40) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
+    /// (ADR-0056) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
     /// discover 대신 host 왕복(`git_viewer.query` IPC → `git_viewer.query_result`
     /// event)으로 조회한다. None 이면 기존 로컬 경로(변경 없음).
     remote: Option<RemoteCtx>,
@@ -442,7 +442,7 @@ struct GitViewerPlugin {
     /// CJK fallback 폰트를 이미 설치한 popup instance_id.
     fonts_installed: HashSet<u64>,
     tr: Translator,
-    /// (TODO 40) `on_start` 에서 1 회 수신 — mirror popup 이 원격 git 조회를 트리거할 때
+    /// (ADR-0056) `on_start` 에서 1 회 수신 — mirror popup 이 원격 git 조회를 트리거할 때
     /// `ViewerState::new_remote` 에 clone 해 넘긴다.
     host: Option<HostHandle>,
 }
@@ -522,7 +522,7 @@ impl Plugin for GitViewerPlugin {
         // primary 로 삼는다. 이후 인스턴스는 paint_popup 에서 "이미 열림" 을 그린다.
         if self.primary.is_none() {
             self.primary = Some(ctx.instance_id);
-            // (TODO 40) mirror workspace 면 로컬 discover 대신 host 왕복으로 조회한다
+            // (ADR-0056) mirror workspace 면 로컬 discover 대신 host 왕복으로 조회한다
             // (`tools_menu.rs` 가 context 에 `mirror`/`local_surface_id` 를 실어 보냄).
             let is_mirror = ctx
                 .context

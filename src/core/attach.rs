@@ -201,7 +201,7 @@ impl OccupancyRegistry {
     }
 
     /// soft 점유 self-release(ADR-0040: 주체 본인 해제). parent(주체 식별자) 불일치 →
-    /// `NotHolder`, 엔트리 없음 → `NotOccupied`. `terminal.release`(TODO17)가
+    /// `NotHolder`, 엔트리 없음 → `NotOccupied`. `terminal.release` IPC 가
     /// in-process 호출한다.
     pub fn release_soft(
         &mut self,
@@ -226,7 +226,8 @@ impl OccupancyRegistry {
     }
 
     /// surface 의 점유 client(없으면 None). 단계 4 placeholder 렌더("client N 점유
-    /// 중")·force-detach UI + mesh context/full-resend 요청의 holder 검증(TODO 18,
+    /// 중")·force-detach UI + mesh context/full-resend 요청의 holder 검증
+    /// (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널" 절,
     /// `CoreState::apply_attached_mesh_context`)이 사용.
     pub fn holder(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.surface_locks.get(&surface_id).map(|l| l.holder)

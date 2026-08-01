@@ -1,4 +1,5 @@
-//! attach mesh mirror(TODO 19) pane 의 로컬→원격 입력 forward (TODO 20).
+//! attach mesh mirror(`docs/dev-guide/attach-behavior.md` "MeshFullResendRequest 복구"
+//! 절) pane 의 로컬→원격 입력 forward("MeshInput 누적" 절).
 //!
 //! [`egui_mesh`](super::egui_mesh) 는 host 가 **자기 프로세스**의 plugin 을 IPC 로
 //! 구동하는 경로(로컬 `PluginManager`)다. 이 모듈은 그 대응이되 목적지가
@@ -10,7 +11,7 @@
 //!
 //! - **bootstrap/pending_full 없음**: 원격 surface 는 이미 존재하므로 `surface.create`
 //!   가 필요 없고, 텍스처 delta 체인 복구는 서버측 명시 요청
-//!   ([`StreamControl::MeshFullResendRequest`], TODO 19
+//!   ([`StreamControl::MeshFullResendRequest`],
 //!   `dispatch_pending_mesh_full_resend_forwards`)이 이미 별도로 담당한다.
 //! - **좌표/modifier 변환 재사용**: `mesh_local_point`/`mesh_modifiers`/
 //!   `mesh_theme_snapshot`/`map_button`/`key_wire_event`(모두 `egui_mesh.rs`)를 그대로
@@ -120,7 +121,7 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
-    /// 포인터가 이 attach mesh surface 밖으로 나갔음을 1 회 forward(TODO 26).
+    /// 포인터가 이 attach mesh surface 밖으로 나갔음을 1 회 forward.
     /// [`super::egui_mesh::MainView::egui_mesh_push_pointer_gone`] 의 attach 대응.
     pub(super) fn attach_mesh_push_pointer_gone(&mut self, surface_id: u32) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();

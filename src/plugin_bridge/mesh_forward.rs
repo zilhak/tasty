@@ -1,5 +1,5 @@
 //! `CoreState::mesh_mirror`(구독 상태, `src/core/mesh_mirror.rs`) 구동 + relay —
-//! GUI/headless 공용(`.claude-workspace/todo/38-attach-mesh-forward-parked-engine-gap.md`).
+//! GUI/headless 공용(`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절).
 //!
 //! `mesh_mirror.rs` 자신은 `PluginManager` 접근권이 없어(설계상 registry 전용) 실제
 //! plugin 구동은 이 모듈이 맡는다. 세 호출부가 있다:
@@ -27,7 +27,8 @@ use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::plugin::PluginManager;
 
 /// `CoreState::mesh_mirror`(구독 상태)를 읽어 plugin 을 구동하고, 새 frame 을 attach
-/// client 에 chunk forward 한다(TODO 18). headless 는 `pump_plugins` 호출 tick 마다,
+/// client 에 chunk forward 한다(`docs/dev-guide/attach-behavior.md` "frame 소비·forward
+/// (headless-as-server / gui parked engine)" 절). headless 는 `pump_plugins` 호출 tick 마다,
 /// parked engine 은 GUI 의 App-level tick(`about_to_wait`, `mgr.pump()` 호출 지점)
 /// 마다 실행돼 `PaintFrame` 도착 즉시(또는 1Hz busy-poll 안전망 tick 에) 반응한다 —
 /// 별도 wake 채널 불필요(headless_plugins 모듈 문서 §pump 트리거 참조).
@@ -77,7 +78,8 @@ pub(crate) fn forward_mesh_frames_for_engine(
 
         let dirty = engine.mesh_mirror.take_dirty(sid);
         let need_full = engine.mesh_mirror.take_need_full_textures(sid);
-        // attach client → plugin 입력 forward(TODO 20) — `MeshInput`으로 누적된
+        // attach client → plugin 입력 forward(`docs/dev-guide/attach-behavior.md`
+        // "MeshInput 누적" 절) — `MeshInput`으로 누적된
         // 이벤트를 이번 set_context 에 실어 보낸다. dirty(위 take_dirty)는
         // push_input 이 이미 세워두므로, 입력만 있고 geometry/theme/focus 변경이
         // 없어도 이 블록에 진입한다.
@@ -117,7 +119,8 @@ pub(crate) fn forward_mesh_frames_for_engine(
 
 /// mesh mirror 구독 1개에 대해, plugin 이 이미 만들어 둔 최신 `EguiMeshFrame`(있다면)을
 /// attach client 로 relay 한다 — 새 `set_context` 는 보내지 않는 순수 byte relay다
-/// (TODO 18/24). headless/parked([`forward_mesh_frames_for_engine`])와 GUI 살아있는
+/// (`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절). headless/parked
+/// ([`forward_mesh_frames_for_engine`])와 GUI 살아있는
 /// window(`view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`) 양쪽의 공용
 /// 꼬리 로직 — 두 호출부 모두 "이 tick 에 새로 구동할지"는 각자 판단하고, "구동
 /// 후(또는 무관하게) 이미 있는 frame 을 client 에 흘리는" 이 부분만 공유한다.
@@ -243,8 +246,9 @@ mod tests {
         (engine, surface_id)
     }
 
-    /// TODO 38 gap 의 핵심 회귀 시나리오: macOS 에서 window 여러 개가 동시에
-    /// minimize 되어 `App::parked_states` 에 engine 이 2개 이상 쌓인 경우.
+    /// 핵심 회귀 시나리오(`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절):
+    /// macOS 에서 window 여러 개가 동시에 minimize 되어 `App::parked_states` 에
+    /// engine 이 2개 이상 쌓인 경우.
     /// `window_lifecycle.rs` 의 복원이 `remove(0)` 으로 1개씩만 꺼내므로, 이 구동
     /// 함수는 owning-engine 순회 패턴처럼 **첫 매치에서 멈추면 안 되고** parked
     /// 전부를 독립적으로 서비스해야 한다.

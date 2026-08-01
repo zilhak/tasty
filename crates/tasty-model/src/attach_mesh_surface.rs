@@ -40,7 +40,7 @@ impl AttachMeshSurface {
 }
 
 /// 서버가 이미 `is_egui_mesh_allowed` 화이트리스트로 검증한 kind 문자열만 이 타입에
-/// 도달한다(TODO 16/18) — 클라이언트·서버가 같은 바이너리(같은 bundled plugin 상수
+/// 도달한다 — 클라이언트·서버가 같은 바이너리(같은 bundled plugin 상수
 /// 집합)이므로 `Box::leak` 없이 고정 리터럴로 매핑 가능하다(호스트측
 /// `register_egui_mesh_kind`의 `leak_str`은 *임의* manifest 문자열을 다루는 서버
 /// 전용 필요라 이 클라이언트 경로에는 해당하지 않는다).

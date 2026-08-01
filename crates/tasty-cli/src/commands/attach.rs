@@ -365,7 +365,8 @@ fn run_workspace_mirror_dump(
                 StreamTag::Ping => {}
                 // CLI mirror-dump 는 terminal grid 재구성만 한다 — mesh 바이트를
                 // 디코드/렌더할 GPU 파이프라인이 없으므로 무시(attach mesh mirror
-                // 는 GUI client 전용, TODO 15/19).
+                // 는 GUI client 전용, `docs/dev-guide/attach-behavior.md` "mesh
+                // mirror 채널" 절).
                 StreamTag::MeshData => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => break,
@@ -501,7 +502,8 @@ enum RawEvent {
 }
 
 /// raw 브리지의 stdin 라우팅 슬롯 — 현재 활성 세션의 sender. **쓰기는
-/// [`install_sender`] 만 수행한다**(TODO36 방향③ 불변식) — 리더 스레드는 읽기만
+/// [`install_sender`] 만 수행한다**(`docs/dev-guide/attach-behavior.md` "SSH 터널"
+/// "stdin 라우팅(단일 영속 리더 + 슬롯 교체)" 절 불변식) — 리더 스레드는 읽기만
 /// 해서 ABA 경쟁을 피한다: 죽은 sender 로의 송신이 실패했다고 리더가 슬롯을
 /// 되돌리면, 그 사이 이미 설치된 새 세션의 sender 를 지워버릴 수 있다.
 type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
@@ -514,7 +516,8 @@ type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
 type StdinEofLatch = Arc<AtomicBool>;
 
 /// 프로세스 생애주기 동안 단 하나만 존재하는 stdin 리더 스레드를 시작한다
-/// (TODO36 방향③) — `run_raw_bridge` 가 재연결마다 새 스레드를 스폰하던 기존
+/// (`docs/dev-guide/attach-behavior.md` "SSH 터널" "stdin 라우팅(단일 영속 리더 +
+/// 슬롯 교체)" 절) — `run_raw_bridge` 가 재연결마다 새 스레드를 스폰하던 기존
 /// 구조를 대체한다. stdin 을 읽는 스레드가 항상 정확히 1 개이므로, 좀비 스레드가
 /// 새 스레드와 전역 `std::io::Stdin`(내부 `Mutex<BufReader<..>>`)을 두고 경쟁해
 /// 재연결 직후 입력을 훔쳐가는 문제가 구조적으로 사라진다. 반환된 슬롯에 각 raw
@@ -616,13 +619,13 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
 /// `RawEvent::ServerRecvErr` 로 즉시 감지해 `AttachExit::Disconnected` 를 정상
 /// 반환할 수 있다 — `process::exit` 는 쓰지 않는다.
 ///
-/// stdin 은 이 함수가 직접 스레드를 스폰하지 않는다(TODO36 방향③) — 프로세스
+/// stdin 은 이 함수가 직접 스레드를 스폰하지 않는다 — 프로세스
 /// 생애주기 동안 [`stdin_router`] 가 1 회만 스폰한 리더 스레드가 있고, 이 함수는
 /// 매 호출(=매 재연결 세션)마다 [`install_sender`] 로 자신의 sender 를 그 리더의
 /// 라우팅 슬롯에 설치할 뿐이다. 재연결마다 새 stdin 스레드를 스폰하던 예전
 /// 구조는 이전 스레드가 종료 신호를 받을 방법이 없어 blocking read 에 갇힌 채
 /// 좀비로 남았고, 좀비와 새 스레드가 전역 stdin Mutex 를 두고 경쟁해 재연결
-/// 직후 입력이 비결정적으로 유실될 수 있었다(TODO23) — 리더가 항상 정확히 1 개인
+/// 직후 입력이 비결정적으로 유실될 수 있었다 — 리더가 항상 정확히 1 개인
 /// 지금은 이 경쟁 자체가 구조적으로 불가능하다. 남는 유실 창은 세션 전환의 아주
 /// 짧은 순간(이전 세션이 끝나 슬롯이 비거나 죽은 채널을 가리키는 동안 들어온
 /// 입력)뿐이다. 상세 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
@@ -950,7 +953,7 @@ mod raw_bridge_tests {
         assert!(matches!(exit, AttachExit::Disconnected));
     }
 
-    // --- TODO36 방향③: 단일 영속 stdin 리더의 슬롯 라우팅 회귀 테스트 ---
+    // --- 단일 영속 stdin 리더의 슬롯 라우팅 회귀 테스트 ---
     // 실제 stdin 을 못 쓰므로 `route_stdin_chunk`/`route_stdin_eof`/`install_sender`
     // 를 직접 호출해 슬롯 교체·ABA 경쟁·EOF latch 를 검증한다.
 
@@ -1014,7 +1017,7 @@ mod raw_bridge_tests {
         assert!(!eof_latch.load(Ordering::Acquire)); // 전달 후 latch 는 내려간다.
     }
 
-    /// TODO25 회귀: `StdinSlot` 이 poison 된 뒤에도 `route_stdin_chunk` 가 패닉하지
+    /// 회귀 방지: `StdinSlot` 이 poison 된 뒤에도 `route_stdin_chunk` 가 패닉하지
     /// 않고 계속 진행해야 한다 — poison 되면 이 함수가 도는 상시 리더 스레드가
     /// 영구 사망해 이후 모든 재연결 세션이 stdin 을 못 받게 되기 때문.
     #[test]

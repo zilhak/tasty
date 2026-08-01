@@ -22,7 +22,8 @@
 //!   skip. 세션 정리(force-detach/EOF) 시 제거해 재활성 시 재attach 가능.
 //! - **원칙 3**: `remote_workspace` 가 None 이면 자동 attach skip(ID 명시 필요).
 //!
-//! ## TODO 27 — silent disconnect 후 backoff 자동 재연결
+//! ## silent disconnect 후 backoff 자동 재연결(`docs/dev-guide/attach-behavior.md`
+//! "GUI 자동 재연결 스코프" "backoff 재연결 트리거" 절)
 //!
 //! disconnect 로 anchor 세션이 `Reconnecting` 상태(`attach_client.rs`)가 되면, 위
 //! 레벨/엣지 트리거와 **병행해** 아래 backoff 스케줄이 돈다:
@@ -33,7 +34,8 @@
 //!   │     - 사용자가 지금 그 워크스페이스로 전환해왔으면(엣지) 즉시, 아니면
 //!   │       backoff `next_attempt` 시각이 됐으면 → 워커 spawn(`is_reconnect: true`)
 //!   └─ drain_auto_attach_results: `is_reconnect` 로 성공 시 `reconnect_session`
-//!         (survivor mapping, TODO 28) vs `start_gui_attach` 분기. 실패는
+//!         (survivor mapping, `docs/dev-guide/attach-behavior.md` "재연결 시 세션
+//!         상태 보존" 절) vs `start_gui_attach` 분기. 실패는
 //!         `on_reconnect_attempt_failed` 로 backoff 갱신(`already_attached` 는
 //!         영구 충돌로 취급해 지수 증가 없이 max 간격 고정, 그 외엔 통상 지수 증가).
 //!         시도 상한(`MAX_RECONNECT_ATTEMPTS`) 초과 시 자동 재시도만 중단(안내
@@ -54,13 +56,13 @@ use crate::app::App;
 use crate::model::WorkspaceAttachTarget;
 use crate::view::ui::View as _;
 
-/// TODO 27 — anchor 하나당 backoff 재연결 시도 상한. 초과하면 자동(backoff) 재시도를
+/// anchor 하나당 backoff 재연결 시도 상한. 초과하면 자동(backoff) 재시도를
 /// 멈추고 안내 toast 를 띄운다 — 무한 재시도로 조용히 CPU/네트워크를 계속 쓰는 것을
 /// 막는다. 사용자가 워크스페이스를 왕복하는 엣지 트리거는 이 상한과 무관하게 계속
 /// 동작한다(수동 재시도는 항상 가능).
 const MAX_RECONNECT_ATTEMPTS: u32 = 20;
 
-/// TODO 27 — anchor 하나의 backoff 재연결 스케줄. `Reconnecting` 진입 시 생성되지
+/// anchor 하나의 backoff 재연결 스케줄. `Reconnecting` 진입 시 생성되지
 /// 않고(첫 시도는 즉시), 시도가 **실패**할 때만 갱신되며 다음 시도 시각을 저장한다.
 pub(crate) struct ReconnectSlot {
     backoff: Backoff,
@@ -127,7 +129,7 @@ pub(crate) struct AutoAttachOutcome {
     pub(crate) remote_ws: u32,
     /// 엔드포인트 해석 결과: `(터널 핸들 or None, 접속 포트)`.
     pub(crate) result: anyhow::Result<(Option<SshTunnel>, u16)>,
-    /// TODO 27 — 이 워커가 backoff 재연결 트리거(`maybe_trigger_reconnect`)로
+    /// 이 워커가 backoff 재연결 트리거(`maybe_trigger_reconnect`)로
     /// spawn 됐는지. `drain_auto_attach_results` 가 성공 시 `reconnect_session`
     /// (survivor mapping)과 `start_gui_attach`(완전 신규) 중 무엇을 부를지, 실패 시
     /// backoff 스케줄을 갱신할지 결정하는 데 쓴다.
@@ -183,7 +185,7 @@ impl App {
         let Some((anchor, mapping)) = candidate else {
             return;
         };
-        // TODO 27 — 이 anchor 에 이미 `Reconnecting` 세션이 있으면 재연결은
+        // 이 anchor 에 이미 `Reconnecting` 세션이 있으면 재연결은
         // `maybe_trigger_reconnect` 전담 대상이다. 그쪽이 `auto_attach_active` 를 아직
         // 안 채운 순간(레이스 윈도우)에 여기가 먼저 완전 신규 `start_gui_attach` 를
         // 트리거해버리면 같은 anchor 에 mirror workspace 가 중복 생성된다 — 반드시
@@ -231,7 +233,7 @@ impl App {
         });
     }
 
-    /// TODO 27 — `Reconnecting` 세션이 있는 각 anchor 의 backoff 스케줄을 확인해
+    /// `Reconnecting` 세션이 있는 각 anchor 의 backoff 스케줄을 확인해
     /// 재연결 워커를 spawn 한다. 두 트리거를 병행: ① 사용자가 **지금** 그 anchor
     /// 워크스페이스로 전환해 돌아왔으면(엣지, `current_ws_id == anchor` 한정 — 다른
     /// 워크스페이스로의 무관한 전환까지 모든 Reconnecting anchor 를 깨우면 안 된다)
@@ -303,7 +305,8 @@ impl App {
     /// 워커가 보낸 엔드포인트 결과를 적용한다 — 성공이면 mirror 를 띄우고(터널 핸들
     /// 세션에 보관), 실패면 anchor 게이트를 풀어 재활성 시 재시도 가능하게 한다.
     /// `is_reconnect` 로 신규 attach(`start_gui_attach`) 와 재연결(`reconnect_session`,
-    /// TODO 27/28)을 분기한다.
+    /// `docs/dev-guide/attach-behavior.md` "GUI 자동 재연결 스코프"/"재연결 시 세션
+    /// 상태 보존" 절)을 분기한다.
     pub(crate) fn drain_auto_attach_results(&mut self) {
         while let Ok(outcome) = self.auto_attach_rx.try_recv() {
             let AutoAttachOutcome {
@@ -380,7 +383,7 @@ impl App {
         }
     }
 
-    /// TODO 27 — 재연결 시도 실패 후 backoff 스케줄을 갱신한다. `already_attached`
+    /// 재연결 시도 실패 후 backoff 스케줄을 갱신한다. `already_attached`
     /// (다른 클라이언트가 여전히 그 원격 워크스페이스를 점유 중 — 영구적 충돌일 수
     /// 있음)는 지수 증가 대신 max 간격으로 고정해 폭주 없이 계속 대기하고, 그 외
     /// (네트워크/SSH 등 일시적 실패)는 통상적인 지수 백오프로 늘린다. 시도 횟수가
@@ -417,7 +420,7 @@ impl App {
         slot.next_attempt = Instant::now() + base.mul_f64(jitter);
     }
 
-    /// TODO 27 — `MAX_RECONNECT_ATTEMPTS` 초과로 자동 재시도를 포기했음을 anchor
+    /// `MAX_RECONNECT_ATTEMPTS` 초과로 자동 재시도를 포기했음을 anchor
     /// 워크스페이스에 1 회 안내한다. `auto_attach_pending_reactivation` 은 여기서
     /// 건드리지 않는다 — 사용자가 그 워크스페이스를 왕복하는 엣지 트리거는 여전히
     /// 유효해야 한다("자동만 멈춤, 수동은 항상 가능").
@@ -561,8 +564,9 @@ mod tests {
     #[test]
     fn disconnected_anchor_waits_for_transition_before_retrigger() {
         // disconnect 로 정리된(= auto_attach_pending_reactivation 에 있음) anchor 는
-        // 워크스페이스가 계속 활성 상태(전환 없음)면 재트리거되지 않는다 — 기존
-        // TODO 06 목표(조용한 자동 재연결 억제) 유지 확인.
+        // 워크스페이스가 계속 활성 상태(전환 없음)면 재트리거되지 않는다 —
+        // `docs/dev-guide/attach-behavior.md` "레벨/엣지 트리거"의 "재진입 대기"
+        // 목표(조용한 자동 재연결 억제) 유지 확인.
         assert!(!is_attach_trigger_allowed(true, Some(1), Some(1)));
         // 다른 워크스페이스로 갔다가 돌아오는 등 실제 전환이 있으면 허용.
         assert!(is_attach_trigger_allowed(true, Some(1), Some(2)));

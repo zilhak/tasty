@@ -13,7 +13,8 @@
 //! 두 시나리오 각각의 계층이 담당한다: headless-as-attach-서버는
 //! `src/boot/headless_plugins.rs`(`PluginManager`를 직접 구동), gui-as-attach-서버는
 //! `src/view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`(로컬 redraw 가
-//! 이미 만든 frame 을 relay, TODO 24)가 소비한다.
+//! 이미 만든 frame 을 relay, `docs/dev-guide/attach-behavior.md` "frame 소비·forward
+//! (gui-as-server)" 절)가 소비한다.
 
 use std::collections::HashMap;
 
@@ -33,7 +34,7 @@ pub(crate) struct MeshMirrorContext {
     /// full-resend 요청) — forward 루프가 이 surface 에 `surface.set_context` 를
     /// 다시 보내야 함을 뜻한다. 매 tick 무조건 재전송하지 않는 이유: 입력이 없는
     /// idle 구독에 반복 재-context 를 보내면 plugin CPU 를 불필요하게 태운다
-    /// (TODO 18 "불필요한 plugin CPU 낭비 방지").
+    /// (불필요한 plugin CPU 낭비 방지).
     pub(crate) dirty: bool,
     /// 다음 forward 시 `SurfaceSetContextParams.need_full_textures` 를 세워야 하는가
     /// (신규 구독 또는 명시적 [`crate::ipc::stream::StreamControl::MeshFullResendRequest`]).
@@ -46,8 +47,9 @@ pub(crate) struct MeshMirrorContext {
     /// 재조립 키다.
     next_frame_id: u64,
     /// [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)로 누적된, 아직
-    /// plugin 에 forward 하지 않은 입력 이벤트(TODO 20). forward 루프가 dirty 를 소비할
-    /// 때 [`Self::take_pending_events`]로 함께 가져간다.
+    /// plugin 에 forward 하지 않은 입력 이벤트(`docs/dev-guide/attach-behavior.md`
+    /// "MeshInput 누적" 절). forward 루프가 dirty 를 소비할 때
+    /// [`Self::take_pending_events`]로 함께 가져간다.
     pending_events: Vec<RawInputEventWire>,
     /// 마지막으로 받은 modifier 스냅샷 — `MeshInput`이 갱신한다. `MeshContext`는
     /// modifier 를 나르지 않으므로(geometry/theme/focus 전용) 여기 보관한 값이
@@ -173,7 +175,8 @@ impl MeshMirrorRegistry {
     }
 
     /// client→server [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)를
-    /// 반영(TODO 20) — 이벤트를 누적하고 modifiers 를 최신화, `dirty` 를 세워 geometry
+    /// 반영(`docs/dev-guide/attach-behavior.md` "MeshInput 누적" 절) — 이벤트를
+    /// 누적하고 modifiers 를 최신화, `dirty` 를 세워 geometry
     /// 무변이어도(입력만으로) forward 루프가 재전송하게 한다. 구독돼 있지 않으면
     /// `false`(호출자는 MeshError 회신).
     pub(crate) fn push_input(&mut self, surface_id: u32, input: RawInputWire) -> bool {
@@ -210,7 +213,7 @@ impl MeshMirrorRegistry {
     }
 
     /// attach client 연결 종료 시 그 client 가 구독하던 전부를 정리 — 불필요한
-    /// plugin CPU 낭비 방지(TODO 18 완료 확인 절차 "detach 시 context 전달 중단").
+    /// plugin CPU 낭비 방지("detach 시 context 전달 중단").
     pub(crate) fn remove_for_client(&mut self, client_id: AttachClientId) {
         self.contexts.retain(|_, c| c.client_id != client_id);
     }

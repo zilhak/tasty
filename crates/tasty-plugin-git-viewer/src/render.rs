@@ -220,7 +220,7 @@ fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
         );
 }
 
-/// (TODO 40) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
+/// (ADR-0056) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
 fn loading(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
     let h = ui.available_height().max(1.0);
     ui.allocate_ui_with_layout(

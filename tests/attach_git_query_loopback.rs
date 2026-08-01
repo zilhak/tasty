@@ -1,4 +1,4 @@
-//! (TODO 40) git-viewer 원격(attach mirror) 조회 — attach 채널의 `git_query_request`/
+//! git-viewer 원격(attach mirror) 조회(ADR-0056) — attach 채널의 `git_query_request`/
 //! `git_query_result` 왕복을 loopback `TcpStream` 으로 실제 실행 중인 서버 인스턴스에
 //! 대해 검증한다.
 //!
@@ -210,9 +210,9 @@ fn git_query_snapshot_matches_real_repo_over_attach_channel() {
 
 #[test]
 fn git_query_snapshot_reflects_new_commit_after_refresh() {
-    // TODO 40 완료 확인 체크리스트 "새 커밋이 추가된 뒤 다시 로드하면 반영되는가" 를
-    // 그대로 재현 — 첫 조회 이후 서버 디스크에 커밋을 하나 더 만들고 재조회(refresh
-    // 와 동형의 두 번째 요청)하면 COMMITS 목록에 반영돼야 한다.
+    // 새 커밋이 추가된 뒤 다시 로드하면 반영되는가 를 재현 — 첫 조회 이후 서버
+    // 디스크에 커밋을 하나 더 만들고 재조회(refresh 와 동형의 두 번째 요청)하면
+    // COMMITS 목록에 반영돼야 한다.
     let server = TastyInstance::spawn();
     let ws_id = first_workspace_id(&server);
     let sid = server.first_surface_id();

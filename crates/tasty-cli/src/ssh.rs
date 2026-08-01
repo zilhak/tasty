@@ -158,7 +158,8 @@ pub fn resolve_attach_target(
     })?;
 
     // 유효 ssh 소스에서 (SshTarget, 비활성, 셸) 을 얻는다. 셸은 port_mode 도출용
-    // (detect-split: 셸 감지는 ssh 레이어, port_mode 도출은 attach 레이어 — TODO 02/04).
+    // (detect-split: 셸 감지는 ssh 레이어, port_mode 도출은 attach 레이어 —
+    // `docs/adr/0032-remote-attach-two-layer-split.md`).
     let (target, disabled, shell) = match v.ssh_ref() {
         Some(ref_name) => {
             let ssh_profile = profiles.get(ref_name).ok_or_else(|| {
@@ -489,7 +490,8 @@ fn discover_single_mode(
 }
 
 /// 자동감지: 프로브 체인([`AUTO_FALLBACK_CHAIN`])을 순서대로 시도해 **첫 성공 모드**를
-/// 돌려준다(셸 종류를 묻는 단일 명령이 없으므로 프로브 성패가 곧 감지 결과 — TODO 04).
+/// 돌려준다(셸 종류를 묻는 단일 명령이 없으므로 프로브 성패가 곧 감지 결과 —
+/// `docs/adr/0032-remote-attach-two-layer-split.md`).
 /// 전 프로브 실패 시 마지막 에러를 반환한다.
 ///
 /// `try_mode` 는 단일 모드를 시도해 포트를 내는 클로저 — 실제 SSH 실행([`detect_port_mode`])
@@ -1070,8 +1072,8 @@ mod tests {
     fn backoff_grows_and_resets() {
         let mut b = Backoff::new();
         assert_eq!(b.current(), Duration::from_millis(500));
-        // sleep 은 시간을 쓰므로 non-blocking `advance()`(TODO 27 — GUI 스케줄러 전용)로
-        // 증가 로직만 검증한다.
+        // sleep 은 시간을 쓰므로 non-blocking `advance()`(`docs/dev-guide/attach-behavior.md`
+        // "non-blocking 스케줄링" 절 — GUI 스케줄러 전용)로 증가 로직만 검증한다.
         b.advance();
         assert_eq!(b.current(), Duration::from_secs(1));
         b.cur = b.max; // 상한 확인

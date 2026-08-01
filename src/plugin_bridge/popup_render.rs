@@ -170,7 +170,7 @@ pub fn draw_plugin_popups(
         let need_full = state
             .plugin_mesh_popup_full_requests
             .remove(&snap.instance_id);
-        // (TODO 40) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
+        // (ADR-0056) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
         // repaint — geom/input/theme 변경 없이도 plugin 이 새 내부 상태로 다시
         // 그리도록 이번 frame 에 set_context 를 보낸다.
         let need_repaint = state
