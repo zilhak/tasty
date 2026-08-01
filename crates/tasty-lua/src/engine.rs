@@ -530,7 +530,7 @@ mod tests {
         engine.eval("assert(_G.fired == false)").unwrap();
     }
 
-    // --- 워커 인프라 (TODO 01) ---
+    // --- 워커 인프라 (ADR-0031) ---
 
     #[test]
     fn run_script_is_serialized_with_eval() {
@@ -616,7 +616,7 @@ mod tests {
             .expect("worker alive after error");
     }
 
-    // --- deadline / 무한루프 방어 (TODO 07) ---
+    // --- deadline / 무한루프 방어 (ADR-0031) ---
 
     #[test]
     fn infinite_loop_aborts_within_deadline() {

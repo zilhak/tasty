@@ -1,6 +1,6 @@
 //! `markdown_viewer` specimen — Markdown surface 의 host egui 패널 (Layouts).
 //!
-//! 본체 렌더 경로(소스 TODO 08 이후): `crates/tasty-plugin-markdown` 이 **`egui_commonmark`
+//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md` 참고): `crates/tasty-plugin-markdown` 이 **`egui_commonmark`
 //! 라이브러리**로 마크다운을 그린다(hand-rolled 렌더러 은퇴). 색은 전부 `egui::Visuals` 에서
 //! 읽으므로 plugin 이 Theme 시맨틱 토큰을 `Visuals`/text-style 에 주입해 디자인 토큰이 출력을
 //! 몬다. toolbar·헤더 없이 surface 타일 전체를 본문이 채운다.

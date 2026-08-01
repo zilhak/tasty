@@ -199,7 +199,7 @@ impl Terminal {
     }
 
     /// Hand off ownership of the waitable child process so an external owner (the
-    /// headless `pty_registry` exit-watcher, TODO 18) can call `child.wait()` for a
+    /// headless `pty_registry` exit-watcher, ADR-0050) can call `child.wait()` for a
     /// real exit code. After this the terminal's own exit-detection
     /// ([`check_process_alive`](Self::check_process_alive)) and Drop-time kill/reap
     /// no longer apply to that child — the new owner is responsible for kill/reap.

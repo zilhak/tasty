@@ -40,7 +40,7 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 
 ## workspace mux
 
-한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. per-surface role 은 3종: `{remote_id, role:"terminal", cols, rows}`(mirror 가능) / `{remote_id, role:"mesh", kind, plugin_id}`(bundled egui-mesh 화이트리스트 통과 — mesh mirror, 아래 절) / `{remote_id, role:"placeholder", kind}`(그 외 비-터미널, mirror 불가). 이 role 분류는 `build_workspace_tree_surfaces`(`src/core/attach_runtime.rs`)가 `Surface::attach_mesh_info()`(TODO 16) + `is_egui_mesh_allowed` 화이트리스트 재검증으로 만든다.
+한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. per-surface role 은 3종: `{remote_id, role:"terminal", cols, rows}`(mirror 가능) / `{remote_id, role:"mesh", kind, plugin_id}`(bundled egui-mesh 화이트리스트 통과 — mesh mirror, 아래 절) / `{remote_id, role:"placeholder", kind}`(그 외 비-터미널, mirror 불가). 이 role 분류는 `build_workspace_tree_surfaces`(`src/core/attach_runtime.rs`)가 `Surface::attach_mesh_info()` + `is_egui_mesh_allowed` 화이트리스트 재검증으로 만든다.
 
 ## 갱신 cadence 분리
 

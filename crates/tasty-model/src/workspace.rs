@@ -14,12 +14,13 @@ use super::{
 /// - `mesh_candidates`: `Surface::attach_mesh_info()` 가 `Some` 을 반환한 surface
 ///   (surface_id, kind, plugin_id). **최종 화이트리스트 판정은 여기 포함되지
 ///   않는다** — 앱 계층(`src/core/attach_runtime.rs`)이 bundled 화이트리스트로
-///   재검증한 뒤에야 실제 mesh mirror 대상인지 확정한다(TODO 16). 판정에서
+///   재검증한 뒤에야 실제 mesh mirror 대상인지 확정한다(`docs/dev-guide/attach-behavior.md`
+///   참고). 판정에서
 ///   떨어진 후보는 호출자가 `non_terminals` 와 동일하게(placeholder) 취급해야
 ///   한다 — `tasty-model` 은 화이트리스트를 모르므로 스스로 최종 분류하지 않는다.
 /// - `explorers`: `(surface_id, root)` — explorer surface 와 **활성 탭의 현재
 ///   디렉토리**(ADR-0059 Decision 1, 전체 탭이 아니라 활성 탭만). browse-only 원격
-///   mirror 대상(TODO 36).
+///   mirror 대상(ADR-0059).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct AttachSurfaceClass {
     pub terminals: Vec<SurfaceId>,

@@ -56,9 +56,9 @@ pub struct TerminalConfig<'a> {
     /// 호출자는 줄바꿈(`\r`) 등 submit 문자를 직접 포함해야 한다.
     pub initial_input: Option<&'a str>,
     /// 자식 셸 프로세스에 추가로 심을 환경변수. `GeneralSettings::effective_shell_envs`
-    /// (TODO35, zsh `ZDOTDIR` 스왑 등 셸 통합 자동 주입용) 가 채운다 — args
-    /// 기반 주입(bash `--rcfile`)과 달리 CLI 인자가 아니라 환경변수로만 넘길 수
-    /// 있는 값이 있어 별도 필드로 분리했다.
+    /// (zsh `ZDOTDIR` 스왑 등 셸 통합 자동 주입용) 가 채운다 — args 기반 주입
+    /// (bash `--rcfile`)과 달리 CLI 인자가 아니라 환경변수로만 넘길 수 있는
+    /// 값이 있어 별도 필드로 분리했다.
     pub extra_env: &'a [(&'a str, &'a str)],
 }
 
@@ -102,7 +102,7 @@ struct PtyBackend {
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
     /// `Some` for a normally-owned PTY (Surface 터미널). `None` only after
     /// [`Terminal::take_child`] hands the waitable child off to an external owner
-    /// (headless `pty_registry` exit-watcher, TODO 18) — Surface 터미널은 절대
+    /// (headless `pty_registry` exit-watcher, ADR-0050) — Surface 터미널은 절대
     /// take_child 를 호출하지 않으므로 항상 `Some` 이고 kill/reap 경로가 그대로 산다.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
@@ -363,10 +363,11 @@ pub struct Terminal {
     /// The parser thread's wake callback, held behind a mutex so it can be
     /// re-targeted after construction. A headless PTY's Terminal is created with
     /// a waker targeting its pty id; when it is promoted to a real Surface
-    /// (`pty.attach_surface`, TODO 18-c) its store key changes to the new
-    /// surface_id, so the waker must be [rewired](Terminal::rewire_waker) to that
-    /// id — otherwise targeted PTY polling would keep draining the stale key and
-    /// the promoted terminal would appear frozen. `None` for a detached mirror.
+    /// (`pty.attach_surface`, `docs/features/headless-pty/index.md`, ADR-0050) its
+    /// store key changes to the new surface_id, so the waker must be
+    /// [rewired](Terminal::rewire_waker) to that id — otherwise targeted PTY polling
+    /// would keep draining the stale key and the promoted terminal would appear
+    /// frozen. `None` for a detached mirror.
     waker: Arc<Mutex<Waker>>,
 }
 
@@ -426,7 +427,7 @@ fn build_shell_command(
     let mut cmd = CommandBuilder::new(shell);
     // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded —
     // *unless* `args` already carries an explicit `--rcfile`-based bash startup
-    // (`GeneralSettings::effective_shell_args`, TODO35): bash's `--rcfile` is
+    // (`GeneralSettings::effective_shell_args`): bash's `--rcfile` is
     // silently ignored for login shells (`bash(1)`: it only applies to
     // interactive *non-login* shells), so login mode must be dropped in that
     // case — the args themselves append `-i` to keep the shell interactive.
@@ -792,7 +793,8 @@ impl Terminal {
 
     /// Re-target the parser thread's wake callback. Used when a headless PTY's
     /// Terminal is re-keyed to a new `surface_id` during promotion to a real
-    /// Surface (`pty.attach_surface`, TODO 18-c): the host installs a waker for
+    /// Surface (`pty.attach_surface`, `docs/features/headless-pty/index.md`, ADR-0050):
+    /// the host installs a waker for
     /// the new id so targeted PTY polling drains the terminal at its new store
     /// key. Detached mirrors have no parser thread, so this is inert for them.
     pub fn rewire_waker(&self, waker: Waker) {

@@ -411,7 +411,7 @@ pub enum PluginEvent {
         /// capacity) 바이트가 남을 수 있다 — 로컬(같은 프로세스) GPU 디코드는
         /// self-terminating 파싱이라 이를 무시하지만, attach mesh mirror 가 buffer
         /// 를 네트워크로 그대로 내보낼 때는 정확한 payload 경계가 필요하다(attach
-        /// mesh mirror TODO 15/18). 0 이면 구버전 plugin — attach 쪽은 버퍼 전체
+        /// mesh mirror가 소비). 0 이면 구버전 plugin — attach 쪽은 버퍼 전체
         /// capacity 를 fallback 으로 쓴다.
         #[serde(default)]
         byte_len: u32,

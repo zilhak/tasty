@@ -559,7 +559,8 @@ impl GpuState {
             }
         }
 
-        // attach mesh mirror surface 합성 (TODO 19): 위 egui-mesh 합성과 동형이되
+        // attach mesh mirror surface 합성(`docs/dev-guide/attach-behavior.md` 참고): 위
+        // egui-mesh 합성과 동형이되
         // `PluginManager` 없이(원격에만 plugin 이 있음) `AttachMeshFrameStore`(TCP 로 받은
         // 최신 바이트)를 읽는다. `plugin_manager` 게이트가 없다 — attach 는 이 데이터에
         // 의존하지 않는다.

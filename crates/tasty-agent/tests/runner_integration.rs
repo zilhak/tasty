@@ -1,7 +1,8 @@
 //! Runner 통합 테스트 — Real TaskStore + Mock executor 로 ready → running →
 //! succeeded → downstream ready 까지 검증.
 // 테스트 fixture 의 mock 채널/큐 타입이 깊게 중첩되지만 테스트 한정
-// 가독성 문제라 alias 도입 가치가 낮다 — 파일 단위 허용 (TODO 17 결정 B).
+// 가독성 문제라 alias 도입 가치가 낮다 — 파일 단위 허용
+// (`docs/dev-guide/clippy-policy.md` 참고).
 #![allow(clippy::type_complexity)]
 
 use std::collections::HashMap;

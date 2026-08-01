@@ -45,7 +45,7 @@ winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5b
 
 ## `egui_commonmark` — egui 버전 lockstep (egui 업글 안전장치)
 
-`crates/tasty-plugin-markdown` 이 마크다운 렌더를 `egui_commonmark` 라이브러리로 위임한다(소스 TODO 08). 이 라이브러리는 egui 와 **lockstep**이다:
+`crates/tasty-plugin-markdown` 이 마크다운 렌더를 `egui_commonmark` 라이브러리로 위임한다. 이 라이브러리는 egui 와 **lockstep**이다:
 
 ```toml
 # crates/tasty-plugin-markdown/Cargo.toml
@@ -61,4 +61,4 @@ egui_commonmark = { version = "0.20.0", ... }   # ↔ egui 0.31
 
 - **egui(및 egui-wgpu/egui-winit/egui_extras) 를 bump 하기 전에** `egui_commonmark` 가 그 egui 버전을 지원하는 릴리스를 냈는지 [crates.io](https://crates.io/crates/egui_commonmark) 에서 먼저 확인한다. 없으면 egui 업글 보류(또는 `egui_commonmark` upstream 대응 릴리스 대기).
 - 확인 위치: `egui_commonmark` Cargo.toml 의 `[dependencies.egui]` version. 이 값이 올리려는 egui major.minor 와 맞아야 한다.
-- syntect 기반 하이라이팅(`better_syntax_highlighting`)·이미지 로더(`load-images`) feature 는 현재 끔 — 코드 하이라이팅은 `egui_extras` 내장 경로로 충분하고, 이미지 렌더는 후속 단계(TODO 08 bonus). 활성화 시 syntect(빌드타임·바이너리 증가)·`image` crate 비용을 고려한다.
+- syntect 기반 하이라이팅(`better_syntax_highlighting`)·이미지 로더(`load-images`) feature 는 현재 끔 — 코드 하이라이팅은 `egui_extras` 내장 경로로 충분하고, 이미지 렌더는 후속 과제로 남아있다. 활성화 시 syntect(빌드타임·바이너리 증가)·`image` crate 비용을 고려한다.

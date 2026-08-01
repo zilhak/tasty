@@ -15,7 +15,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Default, Clone)]
 pub struct LuaSnapshot {
     /// `handle_tree`(IPC/CLI `list tree`) 와 동형인 워크스페이스 트리.
-    /// TODO 02 에서 메인이 채우고 `tasty.tree` 가 소비한다.
+    /// 메인이 프레임 안전지점에서 채우고 `tasty.tree`(`docs/features/lua-hooks/index.md`
+    /// 참고)가 소비한다.
     pub tree: Vec<serde_json::Value>,
 }
 

@@ -662,7 +662,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
 /// `tasty tool attach ...` — tasty-attach 프로필로 attach 실행 또는 `--list` 목록만.
 ///
 /// `--list` 면 tasty-attach kind 목록만 출력하고 종료. name 이 있으면 그 프로필을
-/// resolve(TODO 02 ref/inline)해 기존 attach 엔진(`run_attach_ssh`/`run_attach_workspace_ssh`)
+/// resolve(ADR-0032 ref/inline)해 기존 attach 엔진(`run_attach_ssh`/`run_attach_workspace_ssh`)
 /// 을 재사용한다. 대상이 없으면 usage 를 안내한다.
 #[allow(clippy::too_many_arguments)]
 fn run_tool_attach(

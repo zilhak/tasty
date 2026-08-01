@@ -766,7 +766,7 @@ fn terminal_command_to_method_params(
     }
 }
 
-/// `pty.*` headless PTY primitive (TODO 18). `terminal.*`(자식 터미널 surface) 와
+/// `pty.*` headless PTY primitive (ADR-0050). `terminal.*`(자식 터미널 surface) 와
 /// 별개 네임스페이스 — pty id 로만 조작하고 Surface 를 만들지 않는다.
 fn pty_command_to_method_params(
     command: &crate::commands::PtyCommands,
@@ -913,7 +913,7 @@ mod tests {
         // case 1b: hook.list 는 포커스 독립 list — env(TASTY_SURFACE_ID=42)가 있어도
         // 무필터면 surface_id 를 null 로 보내 호스트가 전 워크스페이스를 순회하게 한다.
         // resolve_surface_id 의 env 폴백을 여기 적용하면 현재 surface 로 암묵 필터링돼
-        // 전체 조회가 불가능해지는 회귀(TODO 22)를 막는다.
+        // 전체 조회가 불가능해지는 회귀를 막는다.
         let hooks_no_filter = command_to_request(&cmd_from(&["tasty", "list", "hooks"]));
         assert_eq!(hooks_no_filter.method, "hook.list");
         assert!(

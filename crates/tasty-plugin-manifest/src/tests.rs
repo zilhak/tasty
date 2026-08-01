@@ -877,10 +877,11 @@ fn bundled_image_plugin_manifest_validates() {
     assert!(m.contributes.cli.iter().any(|c| c.name == "image"));
 }
 
-/// 번들된 com.tasty.claude plugin 의 실제 매니페스트가 파서를 통과하는지 확인
-/// (선행 인프라 TODO 01 — 02 에서 `settings_pages`/`ui.settings_page` 를 추가할 때
-/// 이 smoke test 가 기준선이 되어, 권한 누락 회귀는 `settings_pages_requires_ui_permission`
-/// 가 이미 파서 레벨에서 잡는다).
+/// 번들된 com.tasty.claude plugin 의 실제 매니페스트가 파서를 통과하는지 확인.
+/// 이 plugin 의 `settings_pages`/`ui.settings_page` 는 이미 추가되어 있고, 이
+/// smoke test 가 그 기준선이 되어 권한 누락 회귀는 `settings_pages_requires_ui_permission`
+/// (`docs/dev-guide/plugin-development.md`, `docs/dev-guide/plugin-permissions.md`
+/// 참고)가 파서 레벨에서 잡는다.
 #[test]
 fn bundled_claude_plugin_manifest_validates() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -890,10 +891,11 @@ fn bundled_claude_plugin_manifest_validates() {
     assert_eq!(m.id, "com.tasty.claude");
 }
 
-/// 번들된 com.tasty.codex plugin 의 실제 매니페스트가 파서를 통과하는지 확인
-/// (선행 인프라 TODO 01 — 03 에서 `settings_pages`/`ui.settings_page` 를 추가할 때
-/// 이 smoke test 가 기준선이 되어, 권한 누락 회귀는 `settings_pages_requires_ui_permission`
-/// 가 이미 파서 레벨에서 잡는다).
+/// 번들된 com.tasty.codex plugin 의 실제 매니페스트가 파서를 통과하는지 확인.
+/// 이 plugin 의 `settings_pages`/`ui.settings_page` 는 이미 추가되어 있고, 이
+/// smoke test 가 그 기준선이 되어 권한 누락 회귀는 `settings_pages_requires_ui_permission`
+/// (`docs/dev-guide/plugin-development.md`, `docs/dev-guide/plugin-permissions.md`
+/// 참고)가 파서 레벨에서 잡는다.
 #[test]
 fn bundled_codex_plugin_manifest_validates() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

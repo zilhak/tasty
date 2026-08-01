@@ -1,4 +1,4 @@
-//! `tasty pty` subcommand — headless PTY primitive (TODO 18 / 18-b).
+//! `tasty pty` subcommand — headless PTY primitive (ADR-0050).
 //!
 //! 에이전트가 **Surface 없이** 백그라운드에서 굴리는 1 회성 PTY 를 다룬다. 자식
 //! 터미널 *surface* 를 만드는 `tasty terminal`(ADR-0040) 과는 **별개 네임스페이스** 다 —

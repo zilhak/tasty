@@ -591,7 +591,7 @@ impl KeybindingSettings {
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     ///
     /// `general` 은 Alt/Option/Shift 토큰의 표시 스타일(`GeneralSettings::{alt,option,shift}_display_style`,
-    /// TODO46) — [`Self::format_display_parts`] 참고.
+    /// `docs/design/policies/key-mapping.md` 참고) — [`Self::format_display_parts`] 참고.
     ///
     /// [`Self::format_display_parts`] 의 토큰을 `+` 로 join 한 단일 문자열.
     pub fn format_display(binding: &str, general: &GeneralSettings) -> String {

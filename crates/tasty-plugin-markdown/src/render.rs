@@ -1,5 +1,6 @@
-//! Markdown rendering via **`egui_commonmark`** (library-driven, ADR-0028 / B1, source
-//! TODO 08). The former hand-rolled pulldown-cmark → egui layout renderer is retired: the
+//! Markdown rendering via **`egui_commonmark`** (library-driven, ADR-0028 / B1; token
+//! exceptions documented in `docs/plugins/markdown/screens/markdown.md`). The former
+//! hand-rolled pulldown-cmark → egui layout renderer is retired: the
 //! plugin now hands the markdown text to [`egui_commonmark::CommonMarkViewer`], which reads
 //! every color from `egui::Visuals`. We inject the host `Theme` semantic tokens into the
 //! `Visuals`/text-styles right before `show`, so the design tokens still drive the output.

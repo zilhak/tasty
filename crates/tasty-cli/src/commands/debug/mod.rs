@@ -332,7 +332,7 @@ pub enum BannerDebugCommands {
 pub enum LuaDebugCommands {
     /// Inject arbitrary Lua source and run it in the host worker (fire-and-forget).
     /// Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding
-    /// sources are aborted by the worker (ADR-0031 TODO 07).
+    /// sources are aborted by the worker (ADR-0031).
     Eval {
         /// Lua source to execute. e.g. 'tasty.log("hi from debug")'
         #[arg()]

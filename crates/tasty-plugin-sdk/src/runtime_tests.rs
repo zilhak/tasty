@@ -1,6 +1,7 @@
 //! `runtime_tests` 단위 테스트.
 // 테스트 fixture 의 hook 캡처 타입이 깊게 중첩되지만 테스트 한정
-// 가독성 문제라 alias 도입 가치가 낮다 — 파일 단위 허용 (TODO 17 결정 B).
+// 가독성 문제라 alias 도입 가치가 낮다 — 파일 단위 허용
+// (`docs/dev-guide/clippy-policy.md` 참고).
 #![allow(clippy::type_complexity)]
 
 use super::*;
