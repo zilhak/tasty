@@ -40,8 +40,14 @@ pub struct HookShellEnv {
 /// 컨텍스트를 `(이름, 값)` env 목록으로 조립한다.
 ///
 /// key 정규화: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 이미
-/// 있는 변수(예약 3종 포함)와 겹치면 **먼저 온 값이 이기고** 나머지는 warn 후
-/// 무시한다(정규화 접힘 충돌 방침). 영숫자가 하나도 없는 key 는 건너뛴다.
+/// 있는 변수(예약 3종 포함)와 겹치면 **먼저 온 값이 이기고** 나머지는 무시한다
+/// (정규화 접힘 충돌 방침). **예약 변수와의 충돌은 조용히**(warn 없이) 무시한다 —
+/// 트리거 payload(`trigger_payload`)는 IpcSequence `${body.surface_id}` 대칭을
+/// 위해 `surface_id` 를 payload 에도 항상 담으므로, `TASTY_HOOK_SURFACE_ID` 와의
+/// 충돌은 **모든 훅 발화마다 발생하는 정상 경로**이지 이례적 상황이 아니다(같은
+/// 값의 중복이라 첫 값 유지가 곧 정답). 반대로 **payload 안에서 서로 다른 원본
+/// key 가 정규화 후 충돌**하는 경우(예: `"pr-id"` vs `"pr_id"`)는 저자가 모를 수
+/// 있는 이례적 상황이라 그대로 warn 한다. 영숫자가 하나도 없는 key 는 건너뛴다.
 pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
     let mut vars: Vec<(String, String)> = vec![
         ("TASTY_HOOK_EVENT".into(), sanitize_value(ctx.event.clone())),
@@ -50,6 +56,7 @@ pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
     if let Some(sid) = ctx.surface_id {
         vars.push(("TASTY_HOOK_SURFACE_ID".into(), sid.to_string()));
     }
+    let reserved_count = vars.len();
     if let Value::Object(map) = &ctx.payload {
         for (key, value) in map {
             let Some(fragment) = env_key_fragment(key) else {
@@ -59,10 +66,12 @@ pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
                 continue;
             };
             let name = format!("TASTY_HOOK_{fragment}");
-            if vars.iter().any(|(existing, _)| *existing == name) {
-                tracing::warn!(
-                    "hook shell env: payload key '{key}' collides with existing '{name}' — first value kept"
-                );
+            if let Some(idx) = vars.iter().position(|(existing, _)| *existing == name) {
+                if idx >= reserved_count {
+                    tracing::warn!(
+                        "hook shell env: payload key '{key}' collides with existing '{name}' — first value kept"
+                    );
+                }
                 continue;
             }
             vars.push((name, sanitize_value(render_value(value))));
@@ -189,6 +198,21 @@ mod tests {
         let vars = build_env(&ctx(Some(1), json!({"event": "spoof", "surface_id": "9"})));
         assert_eq!(get(&vars, "TASTY_HOOK_EVENT"), Some("bell"));
         assert_eq!(get(&vars, "TASTY_HOOK_SURFACE_ID"), Some("1"));
+    }
+
+    /// `trigger_payload`(TODO80 §C-2)는 IpcSequence `${body.surface_id}` 대칭을
+    /// 위해 payload 에 `surface_id` 를 **항상** 담는다 — 즉 이 충돌은 매 훅 발화마다
+    /// 발생하는 정상 경로다. 값이 일치(동일 출처)하므로 결과가 흔들리지 않고,
+    /// 중복 항목도 생기지 않아야 한다(vars 개수가 payload 유무와 무관하게 동일).
+    #[test]
+    fn payload_surface_id_matches_reserved_is_routine_not_exceptional() {
+        let without_payload = build_env(&ctx(Some(7), Value::Null));
+        let with_matching_payload = build_env(&ctx(Some(7), json!({"surface_id": 7})));
+        assert_eq!(without_payload.len(), with_matching_payload.len());
+        assert_eq!(
+            get(&with_matching_payload, "TASTY_HOOK_SURFACE_ID"),
+            Some("7")
+        );
     }
 
     #[test]

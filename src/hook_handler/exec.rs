@@ -125,9 +125,17 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 ///
 /// 각 스텝의 `method` 는 owner 가 고정한 리터럴(치환 대상 아님)이고, `params` 만
 /// 페이로드로 치환한다. IPC 응답은 내부 로깅에만 쓰이고 반환하지 않는다 — 이
-/// 함수가 `()` 를 반환하므로 실행 결과가 웹훅 ACK 로 샐 수 없다(단방향 불변식).
+/// 함수가 `()` 를 반환하므로 실행 결과가 웹훅 ACK 로 샐 수 없다(단방향 불변식,
+/// 이 불변식은 유지한다 — 반환값 추가는 하지 않는다).
 ///
 /// MVP: 한 스텝이 실패해도 다음 스텝을 계속 진행한다(관측만). 조건분기는 후속.
+///
+/// 실패 로그는 `error!`(TODO80 §C-3) — 예를 들어 이 스텝이 `agent.task_set_result`
+/// 라면, 실패는 곧 "그 task 가 조용히 영원히 끝나지 않는다"는 뜻이다. 반환값이 없어
+/// 호출자가 이 실패를 감지할 방법이 없으므로(단방향 불변식), 로그가 유일한 관측
+/// 지점이다 — 일상적 경고(`warn!`)로는 운영 중 놓치기 쉽다. push 완료 전략의
+/// 필수 timeout(§C-3, 레지스트리 쪽 트랙)이 이 실패로 인한 task 영구 hang 자체의
+/// 안전망이고, 이 로그 레벨 변경은 그 안전망이 왜 발동했는지 진단 가능하게 한다.
 pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &SubstitutionContext) {
     for (i, call) in calls.iter().enumerate() {
         let params = substitute_params(&call.params, ctx);
@@ -136,7 +144,7 @@ pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &Sub
                 tracing::debug!("webhook IpcSequence step {i} ({}) ok", call.method);
             }
             Err(e) => {
-                tracing::warn!("webhook IpcSequence step {i} ({}) failed: {e}", call.method);
+                tracing::error!("webhook IpcSequence step {i} ({}) failed: {e}", call.method);
             }
         }
     }

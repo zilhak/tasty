@@ -641,6 +641,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                             &f.binding,
                             injector.as_ref(),
                             &f.event,
+                            &f.received,
                             surface_id,
                         );
                         state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {

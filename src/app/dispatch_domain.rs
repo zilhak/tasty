@@ -467,6 +467,7 @@ impl App {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -521,6 +522,7 @@ impl App {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -566,6 +568,7 @@ impl App {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -700,6 +703,7 @@ impl App {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -796,6 +800,7 @@ impl App {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {

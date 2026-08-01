@@ -20,7 +20,7 @@ use tasty_hooks::{HookBinding, HookEvent};
 use super::env::{HookShellEnv, build_env};
 use super::exec::{SubstitutionContext, execute_sequence};
 use super::registry::global;
-use super::types::{HookHandlerAction, HookHandlerId, TriggerSource, validate_binding};
+use super::types::{HookHandlerAction, HookHandlerId, IpcCall, TriggerSource, validate_binding};
 use crate::adapters::ipc::host_call::HostIpcInjector;
 
 /// 발사된 훅의 바인딩을 실행한다 (fire-and-forget).
@@ -28,55 +28,108 @@ use crate::adapters::ipc::host_call::HostIpcInjector;
 /// `injector` 는 IpcSequence 핸들러 실행에만 필요하다 — 없으면 IpcSequence 는
 /// 건너뛰고 warn 을 남긴다(셸은 injector 불요). `event`(등록 이벤트) + `surface_id`
 /// 는 셸 핸들러 자식 프로세스에 `TASTY_HOOK_*` env 로 노출되는 트리거 컨텍스트다
-/// ([`super::env`]).
+/// ([`super::env`]). `received`(실제 관측 이벤트, [`tasty_hooks::FiredHook::received`])
+/// 로부터 단일 payload `Value` 를 여기서 한 번 조립해(TODO80 §C-2) 셸(`build_env`
+/// 의 `payload`)과 IpcSequence(`SubstitutionContext.body`) 양쪽에 같은 소스로
+/// 공급한다 — 두 경로가 각자 빈 값을 공급하던 것을 하나로 모은다.
 pub fn execute_binding(
     binding: &HookBinding,
     injector: Option<&HostIpcInjector>,
     event: &HookEvent,
+    received: &HookEvent,
     surface_id: u32,
 ) {
+    let payload = trigger_payload(received, surface_id);
     let shell_env = || {
         build_env(&HookShellEnv {
             event: event.to_display_string(),
             source: "hook",
             surface_id: Some(surface_id),
-            // hook 트리거엔 HTTP 페이로드가 없다(IpcSequence 의 빈 치환 컨텍스트와
-            // 대칭). payload env 는 hook_handler.dispatch 경로에서만 채워진다.
-            payload: serde_json::Value::Null,
+            payload: payload.clone(),
         })
     };
     match binding {
         // 하위호환: 익명 셸 핸들러. 옛 check_and_fire 의 셸 spawn 과 동일 동작.
         HookBinding::InlineShell(command) => spawn_shell(command.clone(), Vec::new(), shell_env()),
         // 레지스트리 핸들러 참조 — 조회 + source 게이트 후 action 분기.
-        HookBinding::Handler(id) => {
-            let handler = match global().get(&HookHandlerId(id.clone())) {
-                Some(h) => h,
-                None => {
-                    tracing::warn!("hook references unknown handler '{id}' — skipped");
-                    return;
-                }
-            };
-            if let Err(e) = validate_binding(&handler, TriggerSource::Hook) {
-                tracing::warn!("hook handler '{id}' cannot bind to hook trigger: {e} — skipped");
-                return;
-            }
-            match handler.action {
-                HookHandlerAction::ShellCommand { command, args } => {
-                    spawn_shell(command, args, shell_env())
-                }
-                HookHandlerAction::IpcSequence { calls } => match injector {
-                    Some(inj) => {
-                        // hook 트리거엔 HTTP 페이로드가 없으므로 빈 치환 컨텍스트.
-                        execute_sequence(inj, &calls, &SubstitutionContext::default());
-                    }
-                    None => tracing::warn!(
-                        "hook handler '{id}' is an IpcSequence but no IPC injector is available — skipped"
-                    ),
-                },
-            }
+        HookBinding::Handler(id) => execute_handler_binding(id, injector, &payload, shell_env),
+    }
+}
+
+/// [`HookBinding::Handler`] 참조 실행 — 레지스트리 조회 + `source` 게이트 +
+/// ShellCommand/IpcSequence 분기. `execute_binding` 에서 분리(cognitive complexity
+/// 게이트, TODO80 §C-2 payload 조립 추가로 초과).
+fn execute_handler_binding(
+    id: &str,
+    injector: Option<&HostIpcInjector>,
+    payload: &serde_json::Value,
+    shell_env: impl FnOnce() -> Vec<(String, String)>,
+) {
+    let Some(handler) = global().get(&HookHandlerId(id.to_string())) else {
+        tracing::warn!("hook references unknown handler '{id}' — skipped");
+        return;
+    };
+    if let Err(e) = validate_binding(&handler, TriggerSource::Hook) {
+        tracing::warn!("hook handler '{id}' cannot bind to hook trigger: {e} — skipped");
+        return;
+    }
+    match handler.action {
+        HookHandlerAction::ShellCommand { command, args } => {
+            spawn_shell(command, args, shell_env())
+        }
+        HookHandlerAction::IpcSequence { calls } => {
+            execute_ipc_sequence_handler(id, injector, payload, &calls)
         }
     }
+}
+
+/// `execute_handler_binding` 의 `IpcSequence` 분기 — injector 부재 게이트 +
+/// 실행. 별도 함수로 뺀 것 자체가 cognitive complexity 완화 목적(중첩 match 제거).
+fn execute_ipc_sequence_handler(
+    id: &str,
+    injector: Option<&HostIpcInjector>,
+    payload: &serde_json::Value,
+    calls: &[IpcCall],
+) {
+    let Some(inj) = injector else {
+        tracing::warn!(
+            "hook handler '{id}' is an IpcSequence but no IPC injector is available — skipped"
+        );
+        return;
+    };
+    let ctx = SubstitutionContext {
+        body: payload.clone(),
+        ..Default::default()
+    };
+    execute_sequence(inj, calls, &ctx);
+}
+
+/// 훅 트리거 payload 조립 — 셸 env(`TASTY_HOOK_*`)와 IpcSequence(`${body.*}`) 양쪽이
+/// 같은 소스에서 파생되는 단일 지점(TODO80 §C-2). `surface_id` 는 모든 이벤트에
+/// 공통, 그 외 키는 `received` 의 실제 관측값에서 이벤트별로 채운다 — 등록 패턴이
+/// 아니라 실제 수신값이어야 하는 이유는 [`tasty_hooks::FiredHook::received`] 참조.
+fn trigger_payload(received: &HookEvent, surface_id: u32) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("surface_id".to_string(), serde_json::json!(surface_id));
+    match received {
+        HookEvent::CommandCompleted(exit_code) => {
+            obj.insert("exit_code".to_string(), serde_json::json!(exit_code));
+        }
+        HookEvent::OutputMatch(text) => {
+            obj.insert("matched_text".to_string(), serde_json::json!(text));
+        }
+        HookEvent::IdleTimeout(elapsed_secs) => {
+            obj.insert(
+                "idle_elapsed_secs".to_string(),
+                serde_json::json!(elapsed_secs),
+            );
+        }
+        HookEvent::Custom(name) => {
+            obj.insert("custom_event".to_string(), serde_json::json!(name));
+        }
+        HookEvent::ProcessExit | HookEvent::Bell | HookEvent::Notification => {}
+    }
+    serde_json::Value::Object(obj)
 }
 
 /// 셸 명령을 백그라운드 스레드에서 fire-and-forget 실행. spawn 실패는 warn.
@@ -134,7 +187,13 @@ mod tests {
         // 호출은 옛 tasty-hooks 와 동일하며, 여기선 공백 없는 temp 경로를 쓴다).
         let cmd = format!("echo ok > {}", marker.display());
 
-        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 1);
+        execute_binding(
+            &HookBinding::InlineShell(cmd),
+            None,
+            &HookEvent::Bell,
+            &HookEvent::Bell,
+            1,
+        );
 
         // fire-and-forget 백그라운드 스레드 — 파일 생성까지 폴링.
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -167,7 +226,13 @@ mod tests {
             )
         };
 
-        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 42);
+        execute_binding(
+            &HookBinding::InlineShell(cmd),
+            None,
+            &HookEvent::Bell,
+            &HookEvent::Bell,
+            42,
+        );
 
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline && !marker.exists() {
@@ -203,7 +268,13 @@ mod tests {
         // basename 은 해시만 포함(공백 없음)이라 인용부호 불필요 — 기존 테스트 관례.
         let cmd = format!("{basename} --list > {}", marker.display());
 
-        execute_binding(&HookBinding::InlineShell(cmd), None, &HookEvent::Bell, 1);
+        execute_binding(
+            &HookBinding::InlineShell(cmd),
+            None,
+            &HookEvent::Bell,
+            &HookEvent::Bell,
+            1,
+        );
 
         // 존재가 아니라 실제 stdout 이 담길 때까지 폴링한다. 해결 실패 시 marker 는
         // 0바이트인 채로 남아 deadline 까지 조건을 못 채운다.
@@ -233,7 +304,56 @@ mod tests {
             &HookBinding::Handler("user/does-not-exist".into()),
             None,
             &HookEvent::Bell,
+            &HookEvent::Bell,
             1,
         );
+    }
+
+    #[test]
+    fn trigger_payload_carries_command_completed_exit_code() {
+        let payload = trigger_payload(&HookEvent::CommandCompleted(Some(1)), 7);
+        assert_eq!(payload["surface_id"], serde_json::json!(7));
+        assert_eq!(payload["exit_code"], serde_json::json!(1));
+    }
+
+    #[test]
+    fn trigger_payload_carries_output_match_text() {
+        let payload = trigger_payload(&HookEvent::OutputMatch("boom detected".into()), 3);
+        assert_eq!(payload["matched_text"], serde_json::json!("boom detected"));
+    }
+
+    #[test]
+    fn trigger_payload_carries_idle_elapsed_secs() {
+        let payload = trigger_payload(&HookEvent::IdleTimeout(42), 9);
+        assert_eq!(payload["idle_elapsed_secs"], serde_json::json!(42));
+    }
+
+    /// exit code 가 셸 자식 프로세스 env 까지 실제로 도달하는지 end-to-end 로
+    /// 증명한다 — TODO80 §C-2 결함(payload 가 항상 Null 이라 `$TASTY_HOOK_EXIT_CODE`
+    /// 가 존재하지 않던 문제)의 회귀 방어.
+    #[test]
+    fn shell_binding_receives_command_completed_exit_code_env() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = dir.path().join("exit-code.txt");
+        let cmd = if cfg!(windows) {
+            format!("echo %TASTY_HOOK_EXIT_CODE% > {}", marker.display())
+        } else {
+            format!("echo \"$TASTY_HOOK_EXIT_CODE\" > {}", marker.display())
+        };
+
+        execute_binding(
+            &HookBinding::InlineShell(cmd),
+            None,
+            &HookEvent::CommandCompleted(None),
+            &HookEvent::CommandCompleted(Some(1)),
+            1,
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !marker.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let content = std::fs::read_to_string(&marker).expect("marker written");
+        assert_eq!(content.trim(), "1");
     }
 }

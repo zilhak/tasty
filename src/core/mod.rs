@@ -614,6 +614,7 @@ impl Core {
                 &f.binding,
                 injector.as_ref(),
                 &f.event,
+                &f.received,
                 surface_id,
             );
             ids.push(f.hook_id);

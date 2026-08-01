@@ -43,12 +43,16 @@ impl HookBinding {
 /// `hook_handler::trigger::execute_binding` 으로 실행하고 `hook_id` 로 host event 를
 /// 큐잉한다. `event` 는 **등록된** 훅 이벤트의 사본이다(수신 이벤트가 아님 —
 /// OutputMatch 는 매칭 텍스트가 아니라 등록 패턴) — 셸 핸들러 env
-/// (`TASTY_HOOK_EVENT`) 등 트리거 컨텍스트 전파용.
+/// (`TASTY_HOOK_EVENT`) 등 트리거 컨텍스트 전파용. `received` 는 실제 관측값(TODO80
+/// §C-2) — `CommandCompleted` 의 실제 exit code, `OutputMatch` 의 실제 매칭 텍스트,
+/// `IdleTimeout` 의 실제 경과초 등 — 트리거 payload(`TASTY_HOOK_*` / `${body.*}`)
+/// 조립에 쓴다.
 #[derive(Clone, Debug)]
 pub struct FiredHook {
     pub hook_id: HookId,
     pub binding: HookBinding,
     pub event: HookEvent,
+    pub received: HookEvent,
 }
 
 #[derive(Clone, Debug)]
@@ -243,6 +247,7 @@ impl HookManager {
                         hook_id: hook.id,
                         binding: hook.binding.clone(),
                         event: hook.event.clone(),
+                        received: event.clone(),
                     });
                 }
             }
@@ -304,6 +309,7 @@ impl HookManager {
                     hook_id: hook.id,
                     binding: hook.binding.clone(),
                     event: hook.event.clone(),
+                    received: observed.clone(),
                 });
             }
         }
@@ -466,6 +472,10 @@ mod tests {
         );
         let fired = manager.check_and_fire(1, &[HookEvent::CommandCompleted(Some(0))]);
         assert_eq!(fired.len(), 1);
+        // 등록은 와일드카드(None)지만, received 는 실제 관측값(exit code 0)이어야
+        // 한다 — TODO80 §C-2 exit code 소실 결함의 회귀 방지.
+        assert_eq!(fired[0].event, HookEvent::CommandCompleted(None));
+        assert_eq!(fired[0].received, HookEvent::CommandCompleted(Some(0)));
     }
 
     #[test]
@@ -508,6 +518,29 @@ mod tests {
         let pattern = HookEvent::OutputMatch("error.*".into());
         let text = HookEvent::OutputMatch("error: something went wrong".into());
         assert!(pattern.matches(&text, None));
+    }
+
+    #[test]
+    fn check_and_fire_received_carries_actual_matched_output_text() {
+        let mut manager = HookManager::new();
+        manager.add_hook(
+            1,
+            HookEvent::OutputMatch("error.*".into()),
+            shell("echo matched"),
+            false,
+        );
+        let fired = manager.check_and_fire(
+            1,
+            &[HookEvent::OutputMatch("error: something went wrong".into())],
+        );
+        assert_eq!(fired.len(), 1);
+        // event 는 등록 패턴, received 는 실제 매칭된 라인 — 이전엔 둘 다 등록
+        // 패턴만 전달돼 실제 매칭 텍스트가 소실됐다(TODO80 §C-2).
+        assert_eq!(fired[0].event, HookEvent::OutputMatch("error.*".into()));
+        assert_eq!(
+            fired[0].received,
+            HookEvent::OutputMatch("error: something went wrong".into())
+        );
     }
 
     fn shell(cmd: &str) -> HookBinding {
@@ -632,8 +665,11 @@ mod tests {
 
         // 임계값 미만 — 발사 없음.
         assert!(manager.check_idle_timeouts(1, 10, epoch_a).is_empty());
-        // 임계값 초과 — 발사.
-        assert_eq!(manager.check_idle_timeouts(1, 31, epoch_a).len(), 1);
+        // 임계값 초과 — 발사. received 는 등록 임계값(30)이 아니라 실제 경과초(31).
+        let fired = manager.check_idle_timeouts(1, 31, epoch_a);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].event, HookEvent::IdleTimeout(30));
+        assert_eq!(fired[0].received, HookEvent::IdleTimeout(31));
         // 같은 epoch(=그 사이 새 출력 없음) 이면 다시 발사하지 않는다(anti-spam).
         assert!(manager.check_idle_timeouts(1, 32, epoch_a).is_empty());
 
