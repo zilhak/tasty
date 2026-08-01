@@ -10,6 +10,8 @@ mod debug;
 pub(crate) mod debug_plugin;
 mod file_handler;
 #[cfg(feature = "gui")]
+mod file_picker;
+#[cfg(feature = "gui")]
 mod fs;
 mod git_viewer;
 mod hook_handler;
@@ -552,6 +554,12 @@ fn route_engine_handler(
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
+        // (TODO 21, ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
+        // 여는 UI state 변경이라 fs.pick_file 과 동일하게 gui feature 전용.
+        #[cfg(feature = "gui")]
+        "file_picker.trigger" => {
+            file_picker::handle_trigger(state, engine, caller, id, &request.params)
+        }
         // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
         // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.

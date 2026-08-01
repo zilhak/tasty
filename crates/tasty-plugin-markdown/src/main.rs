@@ -32,9 +32,9 @@ use render::{LinkClick, MdCache};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    BusHandle, EventScope, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, PopupClosedCtx,
-    PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx, SurfaceResult,
-    SurfaceSetContextCtx, Translator,
+    BusHandle, EventDispatchCtx, EventScope, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv,
+    PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx,
+    SurfaceResult, SurfaceSetContextCtx, Translator,
 };
 use tasty_type_appearance::theme::Theme;
 use watch::WatchCmd;
@@ -246,6 +246,10 @@ struct MarkdownPlugin {
     confirm: HashMap<u64, LargeFileConfirm>,
     /// popup instance_id → 파일열기 팝업 상태(경로 입력 버퍼).
     file_open: HashMap<u64, FileOpenState>,
+    /// `file_picker.trigger`(TODO 21, ADR-0058) 로 보낸 요청의 `request_id` → 그
+    /// 요청을 낸 파일열기 팝업 instance_id. `"file_picker.result"` 이벤트 수신 시
+    /// 이 맵으로 상관관계를 맞춰 `path_input` 을 채운다.
+    pending_file_picker: HashMap<u64, u64>,
     /// popup instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유).
     #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
@@ -276,6 +280,7 @@ impl MarkdownPlugin {
             bus: None,
             confirm: HashMap::new(),
             file_open: HashMap::new(),
+            pending_file_picker: HashMap::new(),
             #[cfg(any(unix, windows))]
             popups: HashMap::new(),
             #[cfg(any(unix, windows))]
@@ -433,6 +438,33 @@ impl Plugin for MarkdownPlugin {
         // 확인 없이 닫힘(취소/outside-click/Esc)이면 surface 는 대기(빈) 상태로 유지한다.
         self.confirm.remove(&iid);
         self.file_open.remove(&iid);
+        // 이 팝업이 낸 file_picker.trigger 요청이 아직 응답 전이면 상관관계 항목을
+        // 같이 정리한다 — 늦게 도착한 결과는 (그때 iid 를 못 찾으므로) 조용히 무시된다.
+        self.pending_file_picker.retain(|_, v| *v != iid);
+    }
+
+    /// host 가 push 하는 이벤트. `"file_picker.result"`(TODO 21, ADR-0058) 만 처리 —
+    /// `file_picker.trigger` 로 받은 `request_id` 로 어느 파일열기 팝업의 요청인지
+    /// 상관관계를 맞춰 `path_input` 을 채운다(취소/빈 선택이면 무동작).
+    fn on_event(&mut self, ctx: EventDispatchCtx) {
+        if ctx.envelope.key != FILE_PICKER_RESULT_EVENT {
+            return;
+        }
+        let Ok(reply) = serde_json::from_value::<FilePickerResultWire>(ctx.envelope.payload) else {
+            tracing::warn!("markdown: malformed file_picker.result event");
+            return;
+        };
+        let Some(iid) = self.pending_file_picker.remove(&reply.request_id) else {
+            return;
+        };
+        if reply.cancelled {
+            return;
+        }
+        if let (Some(path), Some(st)) =
+            (reply.paths.into_iter().next(), self.file_open.get_mut(&iid))
+        {
+            st.path_input = path;
+        }
     }
 }
 
@@ -731,12 +763,12 @@ impl MarkdownPlugin {
 
         match action {
             FileOpenAction::Browse => {
-                // native 파일 다이얼로그는 plugin 프로세스에서 못 연다 → host 에 위임(fs.pick_file).
-                // host UI 스레드가 rfd 모달을 여는 동안 이 호출은 블로킹되나 데드락은 없다.
-                if let Some(path) = pick_markdown_file(&ctx.host)
-                    && let Some(st) = self.file_open.get_mut(&iid)
-                {
-                    st.path_input = path;
+                // host 소유 file_picker popup 을 트리거(TODO 21, ADR-0058) — attach
+                // (원격) workspace 에서도 동작한다(native rfd 다이얼로그와 달리 원격
+                // 개념이 있다). 즉시 request_id 만 돌아오고, 실제 선택 결과는 나중에
+                // `on_event` 의 `"file_picker.result"` 로 비동기 도착한다.
+                if let Some(request_id) = trigger_file_picker(&ctx.host) {
+                    self.pending_file_picker.insert(request_id, iid);
                 }
             }
             FileOpenAction::Open => {
@@ -919,21 +951,41 @@ enum FileOpenAction {
     Cancel,
 }
 
-/// browse — host 에 native 파일 다이얼로그(rfd)를 위임한다(fs.pick_file). plugin 프로세스는
-/// native OS 다이얼로그를 못 열기 때문. markdown 확장자로 필터. 선택 경로(취소면 None)를
-/// 반환한다. host UI 스레드가 모달을 여는 동안 이 호출은 블로킹되나 데드락은 없다(ADR-0042).
+/// host → 이 plugin unicast 이벤트 key(TODO 21, ADR-0058). host 측 대응값은
+/// `src/app/dispatch/file_picker.rs::FILE_PICKER_RESULT_EVENT` — 공유 crate 가
+/// 없어 리터럴을 양쪽에 중복 정의한다(git-viewer 의 `GIT_VIEWER_QUERY_RESULT_EVENT`
+/// 와 동일 근거). `on_event`(cfg 무관 — `Plugin` trait 필수 메서드)가 참조하므로
+/// 이 리터럴/wire 타입 자체는 gate 하지 않는다(gate 된 건 발화부 `trigger_file_picker`
+/// 뿐 — 다른 OS 에선 애초에 이 이벤트가 발화되지 않으므로 무해).
+const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
+
+/// `"file_picker.result"` 이벤트 payload wire — ADR-0058 Decision 4 의 최소 필드
+/// (`request_id`/`paths`/`cancelled`) 그대로.
+#[derive(serde::Deserialize)]
+struct FilePickerResultWire {
+    request_id: u64,
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default)]
+    cancelled: bool,
+}
+
+/// browse — host 소유 `file_picker` popup 을 트리거한다(`file_picker.trigger`,
+/// TODO 21, ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
+/// popup 도 직접 못 열기 때문에 host 에 위임한다. markdown 확장자로 필터. 반환값은
+/// **선택 경로가 아니라** 이 요청의 `request_id` — 실제 경로는 나중에 `on_event`
+/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
+/// 옛 `fs.pick_file`/rfd 동기 모달과 달리 이 호출 자체는 popup 확정을 기다리지 않고
+/// 곧장 반환된다).
 #[cfg(any(unix, windows))]
-fn pick_markdown_file(host: &HostHandle) -> Option<String> {
+fn trigger_file_picker(host: &HostHandle) -> Option<u64> {
     match host.call(
-        "fs.pick_file",
-        json!({ "filters": [{ "name": "Markdown", "exts": ["md", "markdown"] }] }),
+        "file_picker.trigger",
+        json!({ "filters": ["md", "markdown"] }),
     ) {
-        Ok(v) => v
-            .get("path")
-            .and_then(|p| p.as_str())
-            .map(|s| s.to_string()),
+        Ok(v) => v.get("request_id").and_then(Value::as_u64),
         Err(e) => {
-            tracing::warn!("markdown file-open browse (fs.pick_file) failed: {e}");
+            tracing::warn!("markdown file-open browse (file_picker.trigger) failed: {e}");
             None
         }
     }

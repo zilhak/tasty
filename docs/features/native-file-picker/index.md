@@ -1,9 +1,9 @@
 # 네이티브 파일 피커 (로컬+원격 겸용)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (Tools 메뉴 트리거)
-- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델). 관련: [ADR-0042](../../adr/0042-fs-pick-file-native-dialog-host-delegation.md)(로컬 전용 `fs.pick_file`, 별개 메커니즘으로 계속 유효)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(트리거), `src/app/dispatch/file_picker.rs`(result drain), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류)
+- **주체**: 로컬 사용자 (Tools 메뉴 트리거) + plugin(`file_picker.trigger` IPC, TODO 21)
+- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0042](../../adr/0042-fs-pick-file-native-dialog-host-delegation.md)(로컬 전용 `fs.pick_file`, 별개 메커니즘으로 계속 유효)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/main.rs`(Browse 버튼 caller)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -88,28 +88,76 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 Windows 스타일(`C:\Users\alice`, 드라이브 루트
 보존)과 POSIX(`/`)를 구분한다(`is_windows_style_remote_path`).
 
+### plugin 트리거(TODO 21, ADR-0058) — 즉시 ack + 이벤트 push
+
+markdown plugin 의 "파일 열기" 팝업 Browse 버튼처럼, host 소유 popup 을 열고 사용자가 몇 프레임
+뒤에나 확정/취소할지 모르는 인터랙션을 **plugin 이** 트리거해야 하는 경우의 IPC 경로다.
+`fs.pick_file`(동기 inline dispatch — OS native 모달이 자기 run loop 를 돌리므로 host 메인
+스레드를 블로킹해도 안전)과 달리, host 자체 egui popup 은 OS 가 대신 블로킹해주지 않는다 —
+지연 회신 방식(`host.call` 자체를 확정 시점까지 붙잡아 둠)은 plugin 의 렌더/입력 루프를
+멈추고 60 초 `HostCallTimeout` 위험을 진다(ADR-0058 Alternatives Considered).
+
+1. plugin 이 `file_picker.trigger { filters?: string[] }` 를 호출한다(`FsRead` 권한,
+   `gui` feature 전용). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
+   회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
+2. host 는 `(plugin_id, request_id)` 를 `FilePickerData.requester`(`FilePickerRequester`)
+   에 기록하고 popup 을 연다 — 이후 로컬/원격 판별·엔트리 로드는 위 기존 경로(Tools 메뉴
+   트리거와 동일)를 그대로 탄다.
+3. 사용자가 확정/취소하면(`dispatch_pending_file_picker_results`/`apply_remote_confirm`),
+   기존 동작(로컬 `DomainIntent::DispatchFile`, 원격 클립보드 복사+toast)에 **더해**
+   `PluginManager::emit_host_event_to_plugin` 으로 `"file_picker.result"` 이벤트를 그
+   plugin 에만 unicast 한다: `{ request_id, paths, cancelled }`(확정도 취소도 항상 이 세
+   필드를 전부 채운다 — 취소는 `paths: []`/`cancelled: true`).
+4. plugin 은 `on_event` 에서 이 key 를 받아 자기 `request_id` pending-map 으로 상관관계를
+   맞춘다(신규 SDK 콜백 불필요 — 기존 `EventDispatchCtx` 재사용).
+
+**`filters`**: 확장자 목록(점 없이, 예: `["md", "markdown"]`) — `draw_file_picker` 가 렌더
+직전 `matches_filters` 로 파일 엔트리만 걸러낸다(디렉토리는 필터와 무관하게 항상 표시 —
+내비게이션 대상이라 숨기면 하위로 못 들어간다).
+
+**동시성 정책(ADR-0058 이 이 구현에 위임한 결정)**: `file_picker` popup 은 단일 인스턴스만
+존재한다. 이미 열려 있는 상태에서 두 번째 `file_picker.trigger` 가 오면 **거부**한다(즉시
+`-32000` JSON-RPC 에러) — "이전 요청을 대체" 는 채택하지 않았다. 트리거 핸들러는 `CoreState`
+에만 접근하고 `PluginManager`(이벤트 emit 에 필요)에 접근권이 없어(이 코드베이스의 확립된
+관례 — IPC 핸들러는 pending 을 큐잉하고 App 레벨 dispatch 가 실제 emit), "대체" 를 택하면
+밀려난 요청의 plugin 에게 즉시 취소를 통지할 방법이 없어 그 plugin 의 pending-map 항목이
+응답을 영영 못 받는다(ADR-0058 이 세운 "모든 트리거는 정확히 하나의 결과를 받는다" 계약
+위반). 거부는 두 번째 plugin 의 `host.call` 이 그 자리에서 에러로 끝나 재시도 여부를
+판단하게 하므로 이 계약을 지킨다. 근거 전문: `src/adapters/ipc/handler/file_picker.rs` 모듈
+doc.
+
+**Origin 태깅**: `file_picker.trigger` 로 연 popup 의 `OpenPopup` intent 는
+`Intent::from_agent_plugin(plugin_id)` 로 발화한다(Tools 메뉴는 `from_user_menu` 그대로) —
+`from_agent_plugin` 은 이 작업 전까지 실사용처가 없던 builder 였다(TODO13 wiring 전 상태,
+`src/intent.rs`).
+
 ## 인터페이스
 
 - **사용자 트리거**: Tools 메뉴 "파일 열기…"(`filepicker.tools_menu_item`). 목록 행 더블클릭
   (디렉토리는 진입, 파일은 즉시 확정) / 브레드크럼 클릭 / 상위 폴더 버튼 / 새로고침 버튼 /
   ESC(취소) / X 버튼(취소).
-- **AI Agent (IPC/CLI)**: 없음 — 이 popup 은 순수 로컬 사용자 트리거 UI 다(release 의 사용자
-  입력 재현 금지 원칙과 무관 — 에이전트가 이 popup 을 열거나 조작하는 진입점 자체가 없다).
+- **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
+  UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
+  `file_picker.trigger` IPC 로 plugin 에 열려 있다(TODO 21, ADR-0058) — markdown Browse
+  버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
+  UI 를 사용자에게 대신 띄워준다" 는 위임이라 원칙과 상충하지 않는다(뒤이은 선택/확정은
+  여전히 사용자 몫).
 - **원격 / 점유**: 원격 디렉토리 요청은 그 attach 세션이 대상 workspace 를 이미 점유하고 있어야
   서버가 응답한다(mirror 워크스페이스 존재의 전제조건과 동일).
 
 ## 비-목표 (Out of scope)
 
-- **원격 파일 내용 fetch** — 디렉토리 나열만. 확정 시 클립보드 복사 + toast 로 그친다.
-- **`fs.pick_file` 호출부 교체(markdown plugin 등)** — 그 호출은 cross-process·동기라 스왑하려면
-  별도의 async plugin↔host IPC 설계가 선행돼야 한다(ADR-0053 Reconsideration Trigger). 이번
-  작업은 그 3곳을 건드리지 않고 Tools 메뉴에 독립된 신규 진입점만 추가했다.
+- **원격 파일 내용 fetch** — 디렉토리 나열만. 확정 시 클립보드 복사 + toast 로 그친다. 이건
+  `file_picker.trigger` 로 열린 경우도 동일 — 확정 결과는 plugin 에 `paths` 로만 전달되고,
+  그 경로의 내용을 이 세션으로 가져오는 fetch 는 없다.
 - **멀티 셀렉트 / 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected` 는 매번
   교체). 파일명 텍스트 편집 필드도 없다 — footer 는 선택된 이름을 읽기전용으로 보여줄 뿐이다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
   태그를 같은 채널에 얹었다.
 - **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만
   처리한다(toast 통지). "다음 페이지 로드" 는 이번 스코프 밖.
+- **다중 plugin 트리거 큐잉/대체** — 동시성 정책은 "거부" 뿐이다. 대체/큐잉을 원하는
+  케이스가 실사용에서 반복되면 ADR-0058 의 Reconsideration Triggers 대상이다.
 
 ## Acceptance Criteria
 
@@ -136,6 +184,15 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
   자체는 끊기지 않는다).
 - [x] Given 원격 host 의 경로가 Windows 스타일(`C:\Users\alice`) Then 브레드크럼/내비게이션이
   `\` 구분자와 드라이브 루트를 올바르게 다룬다(POSIX 원격도 계속 정상 동작).
+- [x] Given plugin 이 `file_picker.trigger` 를 호출 When popup 이 아직 열려있지 않음 Then
+  즉시 `{ request_id }` 로 회신하고 popup 이 열린다(확정을 기다리지 않음).
+- [x] Given `file_picker` popup 이 이미 열려 있음 When 두 번째 `file_picker.trigger` 가 옴
+  Then 거부(`-32000` 에러) — 첫 요청의 `requester` 는 대체되지 않고 그대로 유지된다.
+- [x] Given `filters: ["md"]` 로 트리거됨 Then 렌더된 엔트리 목록에서 `.md` 가 아닌 파일은
+  제외되고(디렉토리는 필터와 무관하게 항상 표시), 확정/취소 시 `"file_picker.result"` 가
+  그 요청을 낸 plugin 에만(unicast) push 된다.
+- [x] Given Tools 메뉴로 연 기존 흐름(`requester: None`) Then `file_picker.trigger` 도입 후에도
+  동일하게 동작하고 결과 이벤트가 발화되지 않는다(회귀 없음).
 
 > **검증 한계(문서화)**: 원격 attach loopback e2e(`--ssh 127.0.0.1:<port>`)로 실제 GUI 두
 > 인스턴스를 띄워 popup 을 열고 눈으로 확인하는 것은 이 headless 작업 환경(GPU 디스플레이
@@ -151,6 +208,16 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 > `docs/features/remote-attach/index.md` / `remote-screenshot-clipboard/index.md` 가 이미
 > 기록한 것과 동일한 종류의 한계이되, 이번 작업은 실제 서버 프로세스를 상대로 한 프로토콜
 > 왕복까지는 실행 검증했다는 점에서 그 두 문서보다 한 단계 더 나아간 커버리지다.
+>
+> **`file_picker.trigger`(TODO 21) 검증**: 격리된 `TASTY_HOME` 으로 기동한 실제 debug
+> `tasty` 인스턴스에 raw `TcpStream` 으로 JSON-RPC(`file_picker.trigger`)를 직접 보내
+> `route_engine_handler` 라우팅 전체(dispatch table → `handle_trigger` → `popup::file_picker::
+> open`)를 실행 검증했다 — 1 차 호출은 `{ request_id: 1 }` 로 성공, popup 이 열린 상태에서의
+> 2 차 호출은 정확히 그 자리에서 설계한 busy 에러(`-32000`, "file_picker popup is already
+> open — retry after it closes")로 거부됨을 확인했다. plugin 프로세스(markdown)가 실제로
+> `trigger_file_picker`/`on_event` 를 왕복하는 것과 popup 의 픽셀 렌더는 이 환경에서
+> 실행하지 못해 코드 리뷰로 대체했다 — 다만 그 왕복이 재사용하는 `emit_host_event_to_plugin`
+> 자체는 `git_viewer.query_result` 로 이미 프로덕션에서 검증된 동일 경로다.
 
 ## 구현
 
@@ -160,9 +227,19 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
   `Cancelled` 명시).
 - 공유 나열: `src/core/fs_list.rs`(`DirEntryInfo`/`read_dir_entries`/`sort_entries`/`human_size`/
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
-- 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`).
+- 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
+  `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
+  트리거, TODO 21/ADR-0058), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
+  `FsRead`).
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
-  `apply_remote_confirm`), `src/app/event_handler.rs`(`about_to_wait` 호출).
+  `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면
+  `"file_picker.result"` unicast), `src/app/event_handler.rs`(`about_to_wait` 호출).
+- plugin 요청자 상태: `src/state.rs`(`FilePickerRequester`, `FilePickerData.requester`/
+  `filters`), `src/core/mod.rs`(`next_file_picker_trigger_request_id` — `FpLoadState::Loading`
+  의 내부 `request_id` 와 별개 네임스페이스), `src/intent.rs`(`Intent`/`UiIntent::
+  from_agent_plugin` — 이 트리거가 첫 실사용처).
+- plugin caller: `crates/tasty-plugin-markdown/src/main.rs`(`trigger_file_picker`,
+  `pending_file_picker`, `on_event` 의 `"file_picker.result"` 수신, `FILE_PICKER_RESULT_EVENT`).
 - 원격 요청 큐: `src/core/mod.rs`(`PendingListDirForward`, `next_list_dir_request_id`),
   `src/core/state.rs`(`CoreState.pending_list_dir_forward`).
 - 원격 전송(client): `src/app/attach_client.rs`(`send_list_dir_request`, `parse_list_dir_result`,
@@ -178,6 +255,9 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 - 테스트: `src/adapters/production/stream_hub.rs`(`pump_inbound_classifies_list_dir_request`),
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
   `src/core/attach_runtime.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
-  `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리),
+  `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리 +
+  `matches_filters_*` 확장자 필터), `src/adapters/ipc/handler/file_picker.rs`(`tests` —
+  trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `AppState`/`CoreState` fixture),
+  `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3종 — 성공/디렉토리
   없음 에러/attach 점유 없는 client 거부).

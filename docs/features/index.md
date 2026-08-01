@@ -33,7 +33,7 @@
 | [notifications](notifications/index.md) — 알림 (OSC/시스템/패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
 | [surface-highlight](surface-highlight/index.md) — Surface 주의 환기 (공유 상태·3채널·completion) | AI Agent · 로컬 사용자 | 없음 (테두리/탭/배지) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
-| [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴) | 로컬 사용자 | popup (갤러리 specimen) |
+| [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · plugin 트리거) | 로컬 사용자 · plugin | popup (갤러리 specimen) |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [0031](../adr/0031-lua-host-api-only-worker-isolated.md) |
 | [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | 없음 |

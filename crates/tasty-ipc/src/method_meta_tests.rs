@@ -117,6 +117,16 @@ fn surface_list_requires_surface_read() {
     assert!(m.required.contains(&Permission::SurfaceRead));
 }
 
+/// TODO 21 / ADR-0058: `file_picker.trigger` 는 `fs.pick_file`/`git_viewer.query` 와
+/// 동일 근거(파일을 고르는 read 관심사)로 FsRead 권한이 필요하고, plugin 이 직접
+/// host.call 로 호출 가능해야 한다.
+#[test]
+fn file_picker_trigger_requires_fs_read() {
+    let m = method_meta("file_picker.trigger").expect("registered");
+    assert!(m.plugin_callable);
+    assert!(m.required.contains(&Permission::FsRead));
+}
+
 /// occupancy-05: codex/claude plugin 이 자식 관리를 호스트 `terminal.*` 로 위임할 수
 /// 있어야 한다. 모든 terminal.* 메서드가 plugin_callable 이고, 요구 권한이 두
 /// plugin 이 매니페스트에 이미 선언한 권한 집합(surface.read/write, terminal.spawn/

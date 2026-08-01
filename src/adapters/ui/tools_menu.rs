@@ -120,7 +120,7 @@ pub fn draw_tools_menu(
         }
     }
     if open_file_picker {
-        popup::file_picker::open(state, engine);
+        popup::file_picker::open(state, engine, None, Vec::new());
         return PopupAction::Close;
     }
     if let Some(popup_id) = open_popup {

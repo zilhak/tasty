@@ -204,8 +204,7 @@ impl UiIntent {
         Intent::Ui(self).from_agent_ipc()
     }
 
-    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
-    #[allow(dead_code)]
+    /// agent plugin 발화 — `file_picker.trigger`(TODO 21, ADR-0058)가 실사용처.
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
     }
@@ -419,8 +418,7 @@ impl Intent {
         }
     }
 
-    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
-    #[allow(dead_code)]
+    /// agent plugin 발화 — `file_picker.trigger`(TODO 21, ADR-0058)가 실사용처.
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         DispatchedIntent {
             body: self,

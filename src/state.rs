@@ -769,6 +769,17 @@ pub(crate) enum FpLoadState {
     ErrorConn(String),
 }
 
+/// `file_picker.trigger` IPC(TODO 21, ADR-0058)로 popup 을 연 plugin 의 요청자 정보.
+/// Tools 메뉴가 연 경우(`requester: None`)와 구분해, 확정/취소 시
+/// `"file_picker.result"` 이벤트를 이 plugin 에만 unicast 하는 데 쓴다.
+#[derive(Debug, Clone)]
+pub(crate) struct FilePickerRequester {
+    pub(crate) plugin_id: String,
+    /// `next_file_picker_trigger_request_id()` 발급 값 — `FpLoadState::Loading` 의
+    /// 내부 `request_id` 와는 별개 네임스페이스(`core::mod` 문서 참고).
+    pub(crate) request_id: u64,
+}
+
 /// 네이티브 파일 피커(04) popup 의 상태. `file_handler_picker` 와 동일하게 popup
 /// 은 직접 dispatch 하지 않고 결과를 [`FilePickerData::result`] 에 남긴다 — host
 /// 본체 layer(`app::dispatch::file_picker`)가 frame 끝에 소비한다.
@@ -790,6 +801,13 @@ pub(crate) struct FilePickerData {
     pub(crate) selected: Vec<String>,
     /// Confirm/Cancel 결과. host 본체 layer 가 frame 끝에서 소비.
     pub(crate) result: Option<FilePickerResult>,
+    /// `Some` 이면 `file_picker.trigger` IPC 로 이 popup 을 연 plugin(TODO 21).
+    /// Tools 메뉴 트리거는 `None`.
+    pub(crate) requester: Option<FilePickerRequester>,
+    /// `file_picker.trigger` 의 `filters?: string[]`(확장자, 점 없이) — 비어 있으면
+    /// 필터 없음(모든 엔트리 표시). Tools 메뉴 트리거는 항상 비어 있음. 디렉토리는
+    /// 필터와 무관하게 항상 표시한다(내비게이션 대상이라 필터로 숨기면 하위로 못 감).
+    pub(crate) filters: Vec<String>,
 }
 
 /// 네이티브 파일 피커(04) 의 닫기 사유.

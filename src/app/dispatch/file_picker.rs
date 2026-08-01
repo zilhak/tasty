@@ -6,11 +6,22 @@
 //! 로(explorer/markdown 오픈과 동일 경로), 원격 확정은 컨텐츠 fetch 가 스코프 밖이라
 //! 경로를 클립보드에 복사 + toast 로 알린다(트리거 지점 결정과 함께 신규 ADR에 근거
 //! 기록).
+//!
+//! `FilePickerData.requester` 가 `Some` 이면(TODO 21, ADR-0058 — `file_picker.trigger`
+//! 로 이 popup 을 연 plugin) 위 기존 동작에 **더해** `"file_picker.result"` 이벤트를
+//! 그 plugin 에 unicast 한다 — `emit_host_event_to_plugin` 은 `PluginManager`(`App`
+//! 소유) 접근이 필요해, `file_picker.trigger` IPC 핸들러(`CoreState` 큐잉만 가능)가
+//! 아니라 이 App 레벨 drain 이 담당한다(`git_viewer.query_result` 와 동형 위치).
 
 use crate::app::App;
 use crate::core::intent::DomainIntent;
-use crate::state::FilePickerResult;
+use crate::state::{FilePickerRequester, FilePickerResult};
 use crate::view::ui::View;
+
+/// `file_picker.result` 이벤트 payload — ADR-0058 Decision 4 가 고정한 최소 wire
+/// 필드(`request_id`/`paths`/`cancelled`). 확정도 취소도 항상 세 필드 전부를 채워
+/// plugin 이 하나의 구조체로 역직렬화할 수 있게 한다(확정 시 `cancelled: false`).
+const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
 
 impl App {
     /// 모든 main window 의 file_picker result 슬롯 drain. parked state 는 *focused
@@ -28,6 +39,7 @@ impl App {
             .collect();
         for id in pending {
             let core = &mut self.core;
+            let plugin_manager = self.plugin_manager.as_mut();
             let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
                 continue;
             };
@@ -37,18 +49,23 @@ impl App {
             let Some(result) = data.result.take() else {
                 continue;
             };
+            let requester = data.requester.clone();
             // 데이터 슬롯 즉시 해제 — 빠른 popup 재오픈 시에도 중복 처리 방지.
             main.state.dialogs.file_picker = None;
             match result {
-                FilePickerResult::Cancelled => {}
+                FilePickerResult::Cancelled => {
+                    if let Some(req) = requester {
+                        emit_file_picker_result(plugin_manager, &req, Vec::new(), true);
+                    }
+                }
                 FilePickerResult::Confirmed { paths, is_remote } => {
                     if is_remote {
                         apply_remote_confirm(core, &mut main.state, &paths);
                     } else {
-                        for path in paths {
+                        for path in &paths {
                             main.state.dispatch_intent(
                                 DomainIntent::DispatchFile {
-                                    target: crate::file::format::FileTarget::new(path),
+                                    target: crate::file::format::FileTarget::new(path.clone()),
                                     depth: crate::file::format::DetectDepth::Deep,
                                     origin_surface_id: None,
                                     ignore_size_limit: false,
@@ -57,11 +74,38 @@ impl App {
                             );
                         }
                     }
+                    if let Some(req) = requester {
+                        emit_file_picker_result(plugin_manager, &req, paths, false);
+                    }
                 }
             }
             main.mark_dirty();
         }
     }
+}
+
+/// `requester` 에게 `"file_picker.result"` 를 owner-unicast 로 push. plugin 이 이미
+/// 종료됐으면 `emit_host_event_to_plugin` 이 조용히 폐기한다(정상 — 결과를 받을
+/// 대상이 없을 뿐 에러 아님).
+fn emit_file_picker_result(
+    plugin_manager: Option<&mut crate::plugin::PluginManager>,
+    requester: &FilePickerRequester,
+    paths: Vec<String>,
+    cancelled: bool,
+) {
+    let Some(mgr) = plugin_manager else {
+        return;
+    };
+    mgr.emit_host_event_to_plugin(
+        &requester.plugin_id,
+        FILE_PICKER_RESULT_EVENT,
+        &serde_json::json!({
+            "request_id": requester.request_id,
+            "paths": paths,
+            "cancelled": cancelled,
+        }),
+        tasty_plugin_protocol::EventScope::System,
+    );
 }
 
 /// 원격 확정 — 컨텐츠를 이 세션으로 가져오는 것은 이번 구현 스코프 밖(디렉토리

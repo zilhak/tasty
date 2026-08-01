@@ -540,6 +540,7 @@ pub fn draw_file_picker(
     let view_entries: Vec<FilePickerEntryView> = data
         .entries
         .iter()
+        .filter(|e| e.is_dir || matches_filters(&data.filters, &e.name))
         .map(|e| FilePickerEntryView {
             name: e.name.clone(),
             is_dir: e.is_dir,
@@ -684,11 +685,21 @@ fn apply_action(
     }
 }
 
-/// Tools 메뉴 항목 클릭 진입점 — 현재 활성 workspace 가 mirror 인지로 로컬/원격을
-/// 판별해 [`crate::state::FilePickerData`] 를 채우고 popup 을 연다. 원격이면
-/// `navigate` 가 `pending_list_dir_forward` 를 큐잉(홈 디렉토리 = 빈 `dir`), 로컬이면
-/// 즉시 동기 로드한다.
-pub fn open(state: &mut AppState, engine: &mut crate::core::CoreState) {
+/// Tools 메뉴 항목 클릭 또는 `file_picker.trigger` IPC(TODO 21, ADR-0058) 진입점 —
+/// 현재 활성 workspace 가 mirror 인지로 로컬/원격을 판별해 [`crate::state::FilePickerData`]
+/// 를 채우고 popup 을 연다. 원격이면 `navigate` 가 `pending_list_dir_forward` 를
+/// 큐잉(홈 디렉토리 = 빈 `dir`), 로컬이면 즉시 동기 로드한다.
+///
+/// `requester`: `Some` 이면 `file_picker.trigger` 로 이 popup 을 연 plugin — 확정/취소
+/// 시 `app::dispatch::file_picker` 가 `"file_picker.result"` 이벤트를 이 plugin 에만
+/// push 한다(ADR-0058 Decision 4). Tools 메뉴는 `None`.
+/// `filters`: 확장자 필터(점 없이) — 비면 필터 없음.
+pub fn open(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    requester: Option<crate::state::FilePickerRequester>,
+    filters: Vec<String>,
+) {
     let mirror_ws_id = engine
         .workspaces
         .get(state.active_workspace)
@@ -714,17 +725,38 @@ pub fn open(state: &mut AppState, engine: &mut crate::core::CoreState) {
         entries: Vec::new(),
         selected: Vec::new(),
         result: None,
+        requester,
+        filters,
     });
 
     navigate(state, engine, |dir, _is_remote| dir.to_string());
 
-    state.dispatch_intent(
-        crate::intent::UiIntent::OpenPopup {
-            id: FILE_PICKER_POPUP_ID,
-            mode: crate::intent::OpenPopupMode::CenteredFocused,
-        }
-        .from_user_menu("tools_menu"),
-    );
+    let open_popup = crate::intent::UiIntent::OpenPopup {
+        id: FILE_PICKER_POPUP_ID,
+        mode: crate::intent::OpenPopupMode::CenteredFocused,
+    };
+    let dispatched = match state
+        .dialogs
+        .file_picker
+        .as_ref()
+        .and_then(|d| d.requester.as_ref())
+    {
+        Some(req) => open_popup.from_agent_plugin(req.plugin_id.clone()),
+        None => open_popup.from_user_menu("tools_menu"),
+    };
+    state.dispatch_intent(dispatched);
+}
+
+/// 파일명이 확장자 필터에 매치하는지 — 대소문자 무시, 점 없는 확장자 비교.
+/// `filters` 가 비면 항상 통과(필터 없음).
+fn matches_filters(filters: &[String], name: &str) -> bool {
+    if filters.is_empty() {
+        return true;
+    }
+    let Some(ext) = Path::new(name).extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    filters.iter().any(|f| f.eq_ignore_ascii_case(ext))
 }
 
 /// 새 대상 디렉토리로 내비게이트: 선택 초기화 + 로컬은 즉시 동기 로드, 원격은
@@ -885,7 +917,28 @@ fn crumb_label(is_remote: bool, full_path: &str) -> String {
 
 #[cfg(test)]
 mod path_helper_tests {
-    use super::{crumb_label, join_dir, path_ancestors};
+    use super::{crumb_label, join_dir, matches_filters, path_ancestors};
+
+    #[test]
+    fn matches_filters_empty_always_passes() {
+        assert!(matches_filters(&[], "notes.txt"));
+        assert!(matches_filters(&[], "README.md"));
+    }
+
+    #[test]
+    fn matches_filters_matches_case_insensitive_extension() {
+        let filters = vec!["md".to_string(), "markdown".to_string()];
+        assert!(matches_filters(&filters, "notes.md"));
+        assert!(matches_filters(&filters, "NOTES.MD"));
+        assert!(matches_filters(&filters, "readme.markdown"));
+    }
+
+    #[test]
+    fn matches_filters_rejects_non_matching_extension() {
+        let filters = vec!["md".to_string()];
+        assert!(!matches_filters(&filters, "notes.txt"));
+        assert!(!matches_filters(&filters, "no_extension"));
+    }
 
     #[test]
     fn join_dir_remote_posix() {

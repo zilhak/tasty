@@ -138,6 +138,22 @@ pub(crate) fn next_git_query_request_id() -> u64 {
     NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `file_picker.trigger` IPC(TODO 21, ADR-0058) 요청 id 시퀀스 — `next_list_dir_request_id`
+/// 와 동일 근거(프로세스 내 유일성만 필요). **주의**: 이 id 는 `FpLoadState::Loading`
+/// 의 (popup 내부 원격 디렉토리 나열 요청 상관관계) `request_id` 와 완전히 별개의
+/// 네임스페이스다 — 둘 다 필드명이 `request_id` 라 혼동하기 쉽다. 이 id 는
+/// plugin↔host `file_picker.trigger`/`"file_picker.result"` 왕복 전체를 상관관계
+/// 짓고, 저건 popup 내부의 개별 `list_dir` 왕복(디렉토리 이동마다 새로 발급)만
+/// 상관관계 짓는다 — 하나의 트리거 생명주기 동안 후자는 여러 번 재발급될 수 있다.
+static NEXT_FILE_PICKER_TRIGGER_REQUEST_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+/// 다음 `file_picker.trigger` request id 발급. `file_picker.trigger` IPC 핸들러
+/// (`adapters::ipc::handler::file_picker`)가 plugin 요청을 접수할 때 호출.
+pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
+    NEXT_FILE_PICKER_TRIGGER_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
 /// 의 원소. popup wrapper 가 (mirror 판별 후) push, App 이 `about_to_wait` 에서
 /// drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 — 구조 op forward
