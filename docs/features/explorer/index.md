@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
-- **ADR**: [ADR-0058](../../adr/0058-explorer-remote-attach-list-dir-reuse-browse-only.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용 + browse-only)
+- **ADR**: [ADR-0059](../../adr/0059-explorer-remote-attach-list-dir-reuse-browse-only.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용 + browse-only)
 - **코드**: surface kind 등록 `register_explorer` (`src/engine/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
 - **화면**: host 내장 egui surface (터미널과 동궤의 surface 타입, T11 host builtin)
 
