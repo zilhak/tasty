@@ -61,31 +61,61 @@ impl FileHandlerEditDraft {
     }
 
     pub fn apply(self, file_format: &FileFormatRegistry, file_handler: &FileHandlerRegistry) {
-        for (id, enabled) in &self.detector_enabled {
-            // enabled = true 인데 detector 가 host/plugin default 로 이미 enabled 면 user
-            // override 를 굳이 추가하지 않는다 (불필요한 user contribution 회피). 그러나
-            // 현재 상태를 정확히 모르므로 단순화: 항상 명시적으로 set, 동일 값이면 patch
-            // semantics 상 no-op.
-            file_format.set_user_detector_disabled(id, !enabled);
+        apply_detector_changes(
+            &self.detector_enabled,
+            &self.remove_detector,
+            self.add_detector,
+            file_format,
+        );
+        apply_handler_changes(
+            &self.handler_enabled,
+            &self.remove_handler,
+            self.add_handler,
+            file_handler,
+        );
+    }
+}
+
+/// detector 관련 draft(enabled 토글/삭제/추가)를 registry 에 commit.
+fn apply_detector_changes(
+    detector_enabled: &BTreeMap<DetectorId, bool>,
+    remove_detector: &BTreeSet<DetectorId>,
+    add_detector: Vec<DetectorDecl>,
+    file_format: &FileFormatRegistry,
+) {
+    for (id, enabled) in detector_enabled {
+        // enabled = true 인데 detector 가 host/plugin default 로 이미 enabled 면 user
+        // override 를 굳이 추가하지 않는다 (불필요한 user contribution 회피). 그러나
+        // 현재 상태를 정확히 모르므로 단순화: 항상 명시적으로 set, 동일 값이면 patch
+        // semantics 상 no-op.
+        file_format.set_user_detector_disabled(id, !enabled);
+    }
+    for id in remove_detector {
+        file_format.remove_user_detector(id);
+    }
+    for decl in add_detector {
+        if let Err(e) = file_format.upsert_user_detector(decl) {
+            tracing::warn!("file_handler tab: upsert_user_detector failed: {e}");
         }
-        for (id, enabled) in &self.handler_enabled {
-            file_handler.set_user_handler_disabled(id, !enabled);
-        }
-        for id in &self.remove_detector {
-            file_format.remove_user_detector(id);
-        }
-        for id in &self.remove_handler {
-            file_handler.remove_user_handler(id);
-        }
-        for decl in self.add_detector {
-            if let Err(e) = file_format.upsert_user_detector(decl) {
-                tracing::warn!("file_handler tab: upsert_user_detector failed: {e}");
-            }
-        }
-        for decl in self.add_handler {
-            if let Err(e) = file_handler.upsert_user_handler(decl) {
-                tracing::warn!("file_handler tab: upsert_user_handler failed: {e}");
-            }
+    }
+}
+
+/// handler 관련 draft(enabled 토글/삭제/추가)를 registry 에 commit.
+fn apply_handler_changes(
+    handler_enabled: &BTreeMap<HandlerId, bool>,
+    remove_handler: &BTreeSet<HandlerId>,
+    add_handler: Vec<UserHandlerUpsertDecl>,
+    file_handler: &FileHandlerRegistry,
+) {
+    for (id, enabled) in handler_enabled {
+        file_handler.set_user_handler_disabled(id, !enabled);
+    }
+    for id in remove_handler {
+        file_handler.remove_user_handler(id);
+    }
+    for decl in add_handler {
+        if let Err(e) = file_handler.upsert_user_handler(decl) {
+            tracing::warn!("file_handler tab: upsert_user_handler failed: {e}");
         }
     }
 }

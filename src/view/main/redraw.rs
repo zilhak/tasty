@@ -12,16 +12,7 @@ impl MainView {
         plugin_manager: Option<&PluginManager>,
         stream_hub: &crate::adapters::production::stream_hub::StreamHub,
     ) {
-        // Check if settings button was clicked (ui.rs sets state.settings_open = true)
-        if self.state.settings_open {
-            self.state.settings_open = false;
-            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenSettings);
-        }
-        // Same flow for plugins modal.
-        if self.state.plugins_open {
-            self.state.plugins_open = false;
-            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenPlugins);
-        }
+        self.dispatch_pending_modal_opens();
 
         // PTY drain 은 전적으로 AppEvent::TerminalOutput 핸들러 몫이다. 과거의
         // per-frame process_all safety net 은 제거됨 — 코얼레싱 게이트의
@@ -33,17 +24,7 @@ impl MainView {
         // event_handler 의 AppEvent::TerminalOutput 처리 안에서 수행한다.
         // redraw 는 더 이상 collect_events 분기를 가지지 않는다.
 
-        // Re-sync scale factor before render — macOS may not fire
-        // ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
-        if self.base.gpu.sync_scale_factor(&self.base.winit) {
-            let new_size = self.base.winit.inner_size();
-            self.base.gpu.resize(new_size);
-            let terminal_rect = self.compute_terminal_rect();
-            let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            self.core_state.update_grid_size(cols, rows);
-            // Schedule another redraw to verify scale factor has stabilized.
-            self.base.dirty = true;
-        }
+        self.resync_scale_factor();
 
         // Resize all terminals to match their current layout rects.
         // After structural changes (split, new tab, close pane) the terminal's
@@ -63,121 +44,9 @@ impl MainView {
         }
 
         // Render
-        if self.base.dirty {
-            self.base.dirty = false;
-            self.update_ime_cursor_area();
-            // egui-mesh surface 에 렌더 컨텍스트(크기/ppp/입력) forward (A1-S7) — 합성
-            // (gpu.render) 직전. plugin 이 PaintFrame 으로 회신하면 합성기가 그린다.
-            // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
-            if let Some(mgr) = plugin_manager {
-                self.forward_egui_mesh_context(mgr);
-                // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
-                // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
-                // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
-                self.forward_mesh_to_attach_subscribers(mgr, stream_hub);
-            }
-            // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
-            // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
-            self.forward_attach_mesh_context();
-            let link_hover = self
-                .hovered_link
-                .as_ref()
-                .map(|h| (h.surface_id, &h.highlight));
-            let active_sel = self.active_text_selection();
-            let vi_cursor = self.vi_copy.as_ref().map(|v| (v.surface_id, v.cursor));
-            match self.base.gpu.render(
-                &mut self.state,
-                &mut self.core_state,
-                &self.base.winit,
-                self.ime_preedit.as_ref(),
-                active_sel.as_ref(),
-                vi_cursor,
-                link_hover,
-                plugin_manager,
-            ) {
-                Ok(()) => {
-                    // T7 (부팅 계측): 첫 present 성공 시각. Lost/Outdated 재시도
-                    // 프레임은 present 가 안 되므로 Ok 분기에서만 기록 (원샷).
-                    crate::boot::trace::mark_first_paint();
-                }
-                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    self.base.gpu.resize(self.base.winit.inner_size());
-                    // Surface was lost/outdated; resize recovers it, but we must
-                    // re-render now that it's ready. dirty was set to false above,
-                    // so restore it and request another frame.
-                    self.base.dirty = true;
-                }
-                Err(wgpu::SurfaceError::OutOfMemory) => {
-                    tracing::error!("GPU out of memory");
-                    crate::crash_report::record_error("GPU out of memory");
-                }
-                Err(e) => {
-                    let msg = format!("surface error: {e}");
-                    tracing::warn!("{}", msg);
-                    crate::crash_report::record_error(&msg);
-                }
-            }
+        self.render_if_dirty(plugin_manager, stream_hub);
 
-            // egui-mesh full 재전송 요청 drain — 렌더 prepare 가 textures_delta 체인
-            // 단절을 감지한 대상들. surface 는 forward 추적 상태에, popup/banner 는
-            // AppState 에 옮겨 두면 다음 tick 의 forward 가 need_full_textures
-            // set_context 를 보낸다. plugin 은 스스로 재송신하지 않으므로 다음 tick 을
-            // dirty 로 보장한다.
-            let full_reqs = self.base.gpu.take_egui_mesh_full_requests();
-            let popup_full_reqs = self.base.gpu.take_egui_mesh_popup_full_requests();
-            let banner_full_reqs = self.base.gpu.take_egui_mesh_banner_full_requests();
-            if !full_reqs.is_empty() || !popup_full_reqs.is_empty() || !banner_full_reqs.is_empty()
-            {
-                for sid in full_reqs {
-                    self.egui_mesh.entry(sid).or_default().set_pending_full();
-                }
-                self.state
-                    .plugin_mesh_popup_full_requests
-                    .extend(popup_full_reqs);
-                self.state
-                    .plugin_mesh_banner_full_requests
-                    .extend(banner_full_reqs);
-                self.base.dirty = true;
-            }
-
-            // attach mesh mirror(`docs/dev-guide/attach-behavior.md#mesh-mirror-채널` 참고)
-            // full 재전송 요청 drain — 위와 동형이되 대상이
-            // 로컬 plugin 이 아니라 원격이므로, `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`)
-            // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
-            let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
-            if !attach_full_reqs.is_empty() {
-                self.core_state
-                    .pending_mesh_full_resend_forward
-                    .extend(attach_full_reqs);
-                self.base.dirty = true;
-            }
-        }
-
-        // Command palette pending dispatch — popup writes `pending_run` when
-        // user hits Enter or clicks a row. We drain after render so the popup
-        // is already closed by the time the action fires (avoids racing with
-        // any window state the action might mutate).
-        //
-        // 호스트 명령은 이 자리에서 바로 dispatch(기존 동작 유지). Plugin 명령은
-        // `PluginManager`에 접근할 수 없는 이 스코프(`MainView`) 대신
-        // `pending_plugin_command_invokes` 큐에 enqueue해 App 메인 루프가 drain하게
-        // 한다 (`pending_tool_events`와 동형).
-        if let Some(cmd) = self.state.command_palette.pending_run.take() {
-            match cmd {
-                crate::state::command_palette::PaletteCommand::Host { id, .. } => {
-                    self.dispatch_action_by_id(id);
-                }
-                crate::state::command_palette::PaletteCommand::Plugin {
-                    plugin_id,
-                    command_id,
-                    ..
-                } => {
-                    self.state
-                        .pending_plugin_command_invokes
-                        .push((plugin_id, command_id));
-                }
-            }
-        }
+        self.dispatch_pending_command_palette();
 
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
@@ -201,6 +70,171 @@ impl MainView {
 
         if self.base.dirty {
             self.base.winit.request_redraw();
+        }
+    }
+
+    /// settings/plugins 모달 오픈 요청 dispatch. `ui.rs`가 `state.settings_open`/
+    /// `state.plugins_open`을 true로 세팅하면 여기서 소비해 `AppEvent`로 변환한다.
+    fn dispatch_pending_modal_opens(&mut self) {
+        // Check if settings button was clicked (ui.rs sets state.settings_open = true)
+        if self.state.settings_open {
+            self.state.settings_open = false;
+            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenSettings);
+        }
+        // Same flow for plugins modal.
+        if self.state.plugins_open {
+            self.state.plugins_open = false;
+            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenPlugins);
+        }
+    }
+
+    /// Re-sync scale factor before render — macOS may not fire
+    /// ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
+    fn resync_scale_factor(&mut self) {
+        if self.base.gpu.sync_scale_factor(&self.base.winit) {
+            let new_size = self.base.winit.inner_size();
+            self.base.gpu.resize(new_size);
+            let terminal_rect = self.compute_terminal_rect();
+            let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
+            self.core_state.update_grid_size(cols, rows);
+            // Schedule another redraw to verify scale factor has stabilized.
+            self.base.dirty = true;
+        }
+    }
+
+    /// `self.base.dirty`일 때만 실제 프레임을 그린다 — egui-mesh forward,
+    /// `gpu.render`, full-textures 재전송 요청 drain(로컬 3종 + attach mesh mirror)
+    /// 을 한 트랜잭션으로 묶는다.
+    fn render_if_dirty(
+        &mut self,
+        plugin_manager: Option<&PluginManager>,
+        stream_hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        if !self.base.dirty {
+            return;
+        }
+        self.base.dirty = false;
+        self.update_ime_cursor_area();
+        // egui-mesh surface 에 렌더 컨텍스트(크기/ppp/입력) forward (A1-S7) — 합성
+        // (gpu.render) 직전. plugin 이 PaintFrame 으로 회신하면 합성기가 그린다.
+        // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
+        if let Some(mgr) = plugin_manager {
+            self.forward_egui_mesh_context(mgr);
+            // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
+            // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
+            // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
+            self.forward_mesh_to_attach_subscribers(mgr, stream_hub);
+        }
+        // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
+        // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
+        self.forward_attach_mesh_context();
+        self.submit_gpu_frame(plugin_manager);
+        self.drain_full_texture_requests();
+    }
+
+    /// 실제 GPU 프레임 제출 + surface 에러 분기 처리.
+    fn submit_gpu_frame(&mut self, plugin_manager: Option<&PluginManager>) {
+        let link_hover = self
+            .hovered_link
+            .as_ref()
+            .map(|h| (h.surface_id, &h.highlight));
+        let active_sel = self.active_text_selection();
+        let vi_cursor = self.vi_copy.as_ref().map(|v| (v.surface_id, v.cursor));
+        match self.base.gpu.render(
+            &mut self.state,
+            &mut self.core_state,
+            &self.base.winit,
+            self.ime_preedit.as_ref(),
+            active_sel.as_ref(),
+            vi_cursor,
+            link_hover,
+            plugin_manager,
+        ) {
+            Ok(()) => {
+                // T7 (부팅 계측): 첫 present 성공 시각. Lost/Outdated 재시도
+                // 프레임은 present 가 안 되므로 Ok 분기에서만 기록 (원샷).
+                crate::boot::trace::mark_first_paint();
+            }
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                self.base.gpu.resize(self.base.winit.inner_size());
+                // Surface was lost/outdated; resize recovers it, but we must
+                // re-render now that it's ready. dirty was set to false above,
+                // so restore it and request another frame.
+                self.base.dirty = true;
+            }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                tracing::error!("GPU out of memory");
+                crate::crash_report::record_error("GPU out of memory");
+            }
+            Err(e) => {
+                let msg = format!("surface error: {e}");
+                tracing::warn!("{}", msg);
+                crate::crash_report::record_error(&msg);
+            }
+        }
+    }
+
+    /// egui-mesh(로컬 plugin 대상) + attach mesh mirror(원격 대상) full 재전송
+    /// 요청 drain — 렌더 prepare 가 textures_delta 체인 단절을 감지한 대상들.
+    /// surface 는 forward 추적 상태에, popup/banner 는 AppState 에 옮겨 두면
+    /// 다음 tick 의 forward 가 need_full_textures `set_context`/`MeshFullResendRequest`
+    /// 를 보낸다. plugin/원격은 스스로 재송신하지 않으므로 다음 tick 을 dirty 로
+    /// 보장한다.
+    fn drain_full_texture_requests(&mut self) {
+        let full_reqs = self.base.gpu.take_egui_mesh_full_requests();
+        let popup_full_reqs = self.base.gpu.take_egui_mesh_popup_full_requests();
+        let banner_full_reqs = self.base.gpu.take_egui_mesh_banner_full_requests();
+        if !full_reqs.is_empty() || !popup_full_reqs.is_empty() || !banner_full_reqs.is_empty() {
+            for sid in full_reqs {
+                self.egui_mesh.entry(sid).or_default().set_pending_full();
+            }
+            self.state
+                .plugin_mesh_popup_full_requests
+                .extend(popup_full_reqs);
+            self.state
+                .plugin_mesh_banner_full_requests
+                .extend(banner_full_reqs);
+            self.base.dirty = true;
+        }
+
+        // attach mesh mirror(`docs/dev-guide/attach-behavior.md#mesh-mirror-채널` 참고)
+        // full 재전송 요청 drain — 위와 동형이되 대상이
+        // 로컬 plugin 이 아니라 원격이므로, `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`)
+        // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
+        let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
+        if !attach_full_reqs.is_empty() {
+            self.core_state
+                .pending_mesh_full_resend_forward
+                .extend(attach_full_reqs);
+            self.base.dirty = true;
+        }
+    }
+
+    /// Command palette pending dispatch — popup writes `pending_run` when
+    /// user hits Enter or clicks a row. We drain after render so the popup
+    /// is already closed by the time the action fires (avoids racing with
+    /// any window state the action might mutate).
+    ///
+    /// 호스트 명령은 이 자리에서 바로 dispatch(기존 동작 유지). Plugin 명령은
+    /// `PluginManager`에 접근할 수 없는 이 스코프(`MainView`) 대신
+    /// `pending_plugin_command_invokes` 큐에 enqueue해 App 메인 루프가 drain하게
+    /// 한다 (`pending_tool_events`와 동형).
+    fn dispatch_pending_command_palette(&mut self) {
+        if let Some(cmd) = self.state.command_palette.pending_run.take() {
+            match cmd {
+                crate::state::command_palette::PaletteCommand::Host { id, .. } => {
+                    self.dispatch_action_by_id(id);
+                }
+                crate::state::command_palette::PaletteCommand::Plugin {
+                    plugin_id,
+                    command_id,
+                    ..
+                } => {
+                    self.state
+                        .pending_plugin_command_invokes
+                        .push((plugin_id, command_id));
+                }
+            }
         }
     }
 
@@ -580,66 +614,18 @@ impl MainView {
     }
 
     fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
-        let tab_count = self
-            .state
-            .active_workspace(engine)
-            .pane_layout()
-            .find_pane(pane_id)
-            .map(|p| p.tabs.len())
-            .unwrap_or(0);
-        let can_move_left = tab_index > 0;
-        let can_move_right = tab_index + 1 < tab_count;
-
-        let move_left = if can_move_left {
-            MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
-        } else {
-            MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
-        };
-        let move_right = if can_move_right {
-            MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
-        } else {
-            MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
-        };
-
-        let items = [
-            MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
-            MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
-            MenuItem::separator(),
-            move_left,
-            move_right,
-            MenuItem::separator(),
-            MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
-            MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
-        ];
+        use crate::platform::native_menu::show_context_menu;
+        let items = self.build_tab_context_menu_items(pane_id, tab_index);
         let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
         match result {
-            Some(1) => {
-                // Rename
-                let current_name = self
-                    .state
-                    .active_workspace(engine)
-                    .pane_layout()
-                    .find_pane(pane_id)
-                    .and_then(|p| p.tabs.get(tab_index))
-                    .map(|t| t.display_name())
-                    .unwrap_or_default();
-                let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
-                let scope = target.popup_scope();
-                self.state.dialogs.rename = Some((target, current_name));
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: "rename",
-                        mode: crate::intent::OpenPopupMode::WithScope(scope),
-                    }
-                    .from_user_context_menu(),
-                );
-            }
+            Some(1) => self.rename_tab(pane_id, tab_index),
             Some(2) => {
                 // Close tab (모든 surface 포함). 이전엔 첫 surface 만 닫아 split
                 // 상태에서 surface 하나만 사라지던 버그가 있었음.
-                if self.state.close_tab(engine, pane_id, tab_index) && engine.workspaces.is_empty()
+                if self
+                    .state
+                    .close_tab(&mut self.core_state, pane_id, tab_index)
+                    && self.core_state.workspaces.is_empty()
                 {
                     self.request_close();
                 }
@@ -648,55 +634,13 @@ impl MainView {
                 // Move Left — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
                 // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
                 if tab_index > 0 {
-                    let mirror_op = self
-                        .core_state
-                        .find_pane_by_id(pane_id)
-                        .and_then(|p| p.tabs.get(p.active_tab))
-                        .and_then(|t| t.focused_surface_id())
-                        .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
-                            anchor_surface_id: sid,
-                            from_index: tab_index,
-                            to_index: tab_index - 1,
-                        });
-                    if !self.state.forward_mirror_structural(
-                        &mut self.core_state,
-                        mirror_op,
-                        Vec::new(),
-                    ) && let Some(pane) = self
-                        .state
-                        .active_workspace_mut(&mut self.core_state)
-                        .pane_layout_mut()
-                        .find_pane_mut(pane_id)
-                    {
-                        pane.move_tab(tab_index, tab_index - 1);
-                    }
+                    self.move_tab_via_mirror_or_local(pane_id, tab_index, tab_index - 1);
                 }
             }
             Some(4) => {
                 // Move Right — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
                 // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
-                let mirror_op = self
-                    .core_state
-                    .find_pane_by_id(pane_id)
-                    .and_then(|p| p.tabs.get(p.active_tab))
-                    .and_then(|t| t.focused_surface_id())
-                    .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
-                        anchor_surface_id: sid,
-                        from_index: tab_index,
-                        to_index: tab_index + 1,
-                    });
-                if !self.state.forward_mirror_structural(
-                    &mut self.core_state,
-                    mirror_op,
-                    Vec::new(),
-                ) && let Some(pane) = self
-                    .state
-                    .active_workspace_mut(&mut self.core_state)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-                {
-                    pane.move_tab(tab_index, tab_index + 1);
-                }
+                self.move_tab_via_mirror_or_local(pane_id, tab_index, tab_index + 1);
             }
             Some(5) => {
                 if let Err(e) = self.save_tab_preset_from_pane_tab(pane_id, tab_index) {
@@ -721,6 +665,101 @@ impl MainView {
             _ => {}
         }
         self.mark_dirty();
+    }
+
+    /// tab 우클릭 컨텍스트 메뉴 항목 8개 구성. move left/right 는 인접 위치
+    /// 존재 여부로 활성/비활성을 미리 계산한다.
+    fn build_tab_context_menu_items(
+        &mut self,
+        pane_id: u32,
+        tab_index: usize,
+    ) -> [crate::platform::native_menu::MenuItem; 8] {
+        use crate::platform::native_menu::MenuItem;
+        let engine = &mut self.core_state;
+        let tab_count = self
+            .state
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .map(|p| p.tabs.len())
+            .unwrap_or(0);
+        let can_move_left = tab_index > 0;
+        let can_move_right = tab_index + 1 < tab_count;
+
+        let move_left = if can_move_left {
+            MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
+        } else {
+            MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
+        };
+        let move_right = if can_move_right {
+            MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
+        } else {
+            MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
+        };
+
+        [
+            MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
+            MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
+            MenuItem::separator(),
+            move_left,
+            move_right,
+            MenuItem::separator(),
+            MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
+            MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
+        ]
+    }
+
+    /// tab 을 `from_index` → `to_index` 로 이동. mirror 워크스페이스는 로컬 탭
+    /// 순서를 직접 바꾸지 않고 `MoveTab` 을 원격으로 forward 한다(로컬 실행은
+    /// 원격 트리와 어긋남) — forward 가 안 먹힌(비-mirror) 워크스페이스에서만
+    /// 로컬 `pane.move_tab` 을 수행한다. Move Left/Right 양쪽에서 동일 로직이라
+    /// 공용화(과거엔 두 곳에 중복 — TODO79 배치7).
+    fn move_tab_via_mirror_or_local(&mut self, pane_id: u32, from_index: usize, to_index: usize) {
+        let mirror_op = self
+            .core_state
+            .find_pane_by_id(pane_id)
+            .and_then(|p| p.tabs.get(p.active_tab))
+            .and_then(|t| t.focused_surface_id())
+            .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
+                anchor_surface_id: sid,
+                from_index,
+                to_index,
+            });
+        if !self
+            .state
+            .forward_mirror_structural(&mut self.core_state, mirror_op, Vec::new())
+            && let Some(pane) = self
+                .state
+                .active_workspace_mut(&mut self.core_state)
+                .pane_layout_mut()
+                .find_pane_mut(pane_id)
+        {
+            pane.move_tab(from_index, to_index);
+        }
+    }
+
+    /// tab rename 팝업을 연다 — 현재 표시명을 prefill 하고 `RenameTarget::TabName`
+    /// scope 로 `rename` 팝업을 dispatch.
+    fn rename_tab(&mut self, pane_id: u32, tab_index: usize) {
+        let engine = &mut self.core_state;
+        let current_name = self
+            .state
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .and_then(|p| p.tabs.get(tab_index))
+            .map(|t| t.display_name())
+            .unwrap_or_default();
+        let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
+        let scope = target.popup_scope();
+        self.state.dialogs.rename = Some((target, current_name));
+        self.state.dispatch_intent(
+            crate::intent::UiIntent::OpenPopup {
+                id: "rename",
+                mode: crate::intent::OpenPopupMode::WithScope(scope),
+            }
+            .from_user_context_menu(),
+        );
     }
 
     fn handle_pane_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
@@ -811,8 +850,86 @@ impl MainView {
     }
 
     fn handle_workspace_native_menu(&mut self, ws_idx: usize, x: f32, y: f32) {
+        use crate::platform::native_menu::show_context_menu;
+        let (items, move_targets) = self.build_workspace_context_menu_items(ws_idx);
+        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
         let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        if ws_idx < engine.workspaces.len() {
+            match result {
+                Some(1) => {
+                    let name = engine.workspaces[ws_idx].name.clone();
+                    self.open_rename_workspace_dialog(
+                        crate::state::RenameTarget::WorkspaceName { ws_idx },
+                        name,
+                    );
+                }
+                Some(2) => {
+                    let subtitle = engine.workspaces[ws_idx].subtitle.clone();
+                    self.open_rename_workspace_dialog(
+                        crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
+                        subtitle,
+                    );
+                }
+                Some(3) => {
+                    // Move Up
+                    if ws_idx > 0 {
+                        self.state.move_workspace(engine, ws_idx, ws_idx - 1);
+                    }
+                }
+                Some(4) => {
+                    // Move Down
+                    if ws_idx + 1 < engine.workspaces.len() {
+                        self.state.move_workspace(engine, ws_idx, ws_idx + 1);
+                    }
+                }
+                Some(5) => {
+                    if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
+                        tracing::warn!("save workspace preset failed: {e}");
+                        self.state.toasts.push(
+                            crate::i18n::t("preset.toast.save_failed"),
+                            crate::adapters::ui::ToastKind::Error,
+                            crate::adapters::ui::ToastScope::Window,
+                        );
+                    }
+                }
+                // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
+                // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
+                // 독자에게 함정이 된다.
+                #[allow(clippy::collapsible_match)]
+                Some(6) => {
+                    // Close workspace (모든 surface + closed_item snapshot)
+                    if self.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
+                    {
+                        self.request_close();
+                    }
+                }
+                Some(100) => {
+                    // 새 카테고리 생성 다이얼로그.
+                    crate::adapters::ui::category_actions::open_new_category_dialog(
+                        &mut self.state,
+                    );
+                }
+                Some(id) if id >= 200 => {
+                    self.move_workspace_to_category(ws_idx, &move_targets, id);
+                }
+                _ => {}
+            }
+        }
+        self.mark_dirty();
+    }
+
+    /// workspace 우클릭 컨텍스트 메뉴 항목 구성 + "카테고리로 이동" 대상 목록.
+    /// 반환된 `Vec<WorkspaceCategoryId>` 는 인덱스 i 가 메뉴 항목 id `200+i` 에
+    /// 대응한다(카테고리 토글이 꺼져 있으면 빈 벡터).
+    fn build_workspace_context_menu_items(
+        &mut self,
+        ws_idx: usize,
+    ) -> (
+        Vec<crate::platform::native_menu::MenuItem>,
+        Vec<crate::model::WorkspaceCategoryId>,
+    ) {
+        use crate::platform::native_menu::MenuItem;
+        let engine = &mut self.core_state;
         let ws_count = engine.workspaces.len();
         let can_move_up = ws_idx > 0;
         let can_move_down = ws_idx + 1 < ws_count;
@@ -876,88 +993,44 @@ impl MainView {
             crate::i18n::t("context_menu.close_workspace"),
         ));
 
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        if ws_idx < engine.workspaces.len() {
-            match result {
-                Some(1) => {
-                    let name = engine.workspaces[ws_idx].name.clone();
-                    let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
-                    let scope = target.popup_scope();
-                    self.state.dialogs.rename = Some((target, name));
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: "rename",
-                            mode: crate::intent::OpenPopupMode::WithScope(scope),
-                        }
-                        .from_user_context_menu(),
-                    );
-                }
-                Some(2) => {
-                    let subtitle = engine.workspaces[ws_idx].subtitle.clone();
-                    let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
-                    let scope = target.popup_scope();
-                    self.state.dialogs.rename = Some((target, subtitle));
-                    self.state.dispatch_intent(
-                        crate::intent::UiIntent::OpenPopup {
-                            id: "rename",
-                            mode: crate::intent::OpenPopupMode::WithScope(scope),
-                        }
-                        .from_user_context_menu(),
-                    );
-                }
-                Some(3) => {
-                    // Move Up
-                    if ws_idx > 0 {
-                        self.state.move_workspace(engine, ws_idx, ws_idx - 1);
-                    }
-                }
-                Some(4) => {
-                    // Move Down
-                    if ws_idx + 1 < engine.workspaces.len() {
-                        self.state.move_workspace(engine, ws_idx, ws_idx + 1);
-                    }
-                }
-                Some(5) => {
-                    if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
-                        tracing::warn!("save workspace preset failed: {e}");
-                        self.state.toasts.push(
-                            crate::i18n::t("preset.toast.save_failed"),
-                            crate::adapters::ui::ToastKind::Error,
-                            crate::adapters::ui::ToastScope::Window,
-                        );
-                    }
-                }
-                // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
-                // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
-                // 독자에게 함정이 된다.
-                #[allow(clippy::collapsible_match)]
-                Some(6) => {
-                    // Close workspace (모든 surface + closed_item snapshot)
-                    if self.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
-                    {
-                        self.request_close();
-                    }
-                }
-                Some(100) => {
-                    // 새 카테고리 생성 다이얼로그.
-                    crate::adapters::ui::category_actions::open_new_category_dialog(
-                        &mut self.state,
-                    );
-                }
-                Some(id) if id >= 200 => {
-                    // 카테고리로 이동 — move_targets[id-200] 로 소속 변경.
-                    if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
-                        let ws_id = engine.workspaces[ws_idx].id;
-                        if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
-                            tracing::warn!("set_workspace_category failed: {e:?}");
-                        }
-                        engine.mark_layout_dirty();
-                    }
-                }
-                _ => {}
+        (items, move_targets)
+    }
+
+    /// workspace 이름/부제 rename 팝업을 연다 — 현재 값을 prefill 하고 `target`
+    /// scope 로 `rename` 팝업을 dispatch(제목/부제 공용 — 값과 target 만 다르다).
+    fn open_rename_workspace_dialog(
+        &mut self,
+        target: crate::state::RenameTarget,
+        current_value: String,
+    ) {
+        let scope = target.popup_scope();
+        self.state.dialogs.rename = Some((target, current_value));
+        self.state.dispatch_intent(
+            crate::intent::UiIntent::OpenPopup {
+                id: "rename",
+                mode: crate::intent::OpenPopupMode::WithScope(scope),
             }
+            .from_user_context_menu(),
+        );
+    }
+
+    /// workspace 를 `move_targets[id-200]` 카테고리로 이동. `id` 는 컨텍스트
+    /// 메뉴가 회신한 원본 값(200 이상 — `build_workspace_context_menu_items`
+    /// 참고) 그대로 받는다.
+    fn move_workspace_to_category(
+        &mut self,
+        ws_idx: usize,
+        move_targets: &[crate::model::WorkspaceCategoryId],
+        id: u32,
+    ) {
+        let engine = &mut self.core_state;
+        if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
+            let ws_id = engine.workspaces[ws_idx].id;
+            if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
+                tracing::warn!("set_workspace_category failed: {e:?}");
+            }
+            engine.mark_layout_dirty();
         }
-        self.mark_dirty();
     }
 
     fn handle_workspace_category_header_native_menu(

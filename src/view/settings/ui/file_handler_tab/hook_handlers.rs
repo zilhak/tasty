@@ -90,46 +90,66 @@ impl HookHandlerEditDraft {
     /// draft 를 registry 에 commit 한다. 디스크 영속(`save_user_config`)은 호출측
     /// (Settings Save) 책임 — 파일 핸들러 sub-tab 과 동일 분업.
     pub fn apply(self, reg: &HookHandlerRegistry) {
-        for (id, enabled) in &self.enabled {
-            reg.set_user_handler_disabled(id, !enabled);
+        apply_enabled(&self.enabled, reg);
+        apply_cmd_edits(&self.cmd_edits, reg);
+        apply_removals(&self.remove, reg);
+        apply_additions(self.add, reg);
+    }
+}
+
+/// enabled 토글 draft 를 user-origin `disabled` override 로 commit.
+fn apply_enabled(enabled: &BTreeMap<HookHandlerId, bool>, reg: &HookHandlerRegistry) {
+    for (id, is_enabled) in enabled {
+        reg.set_user_handler_disabled(id, !is_enabled);
+    }
+}
+
+/// ShellCommand 행 인라인 명령 편집 draft 를 commit.
+fn apply_cmd_edits(cmd_edits: &BTreeMap<HookHandlerId, String>, reg: &HookHandlerRegistry) {
+    for (id, cmd) in cmd_edits {
+        // 인라인 편집은 전체 명령 문자열 하나 — `command` 에 그대로 담고
+        // args 는 비운다 (hook 트리거 실행 경로가 셸 경유로 해석).
+        // ShellCommand 는 source=hook 불변식이 있어 명시적으로 함께 적는다.
+        let decl = UserHookHandlerUpsertDecl {
+            id: id.as_str().to_string(),
+            source: Some(HookSource::Hook),
+            priority: None,
+            display_name_i18n_key: None,
+            disabled: None,
+            action: Some(UserHookHandlerActionDecl::ShellCommand {
+                command: cmd.clone(),
+                args: Vec::new(),
+            }),
+        };
+        if let Err(e) = reg.upsert_user_handler(decl) {
+            tracing::warn!("hook_handlers tab: cmd edit upsert failed: {e}");
         }
-        for (id, cmd) in &self.cmd_edits {
-            // 인라인 편집은 전체 명령 문자열 하나 — `command` 에 그대로 담고
-            // args 는 비운다 (hook 트리거 실행 경로가 셸 경유로 해석).
-            // ShellCommand 는 source=hook 불변식이 있어 명시적으로 함께 적는다.
-            let decl = UserHookHandlerUpsertDecl {
-                id: id.as_str().to_string(),
-                source: Some(HookSource::Hook),
-                priority: None,
-                display_name_i18n_key: None,
-                disabled: None,
-                action: Some(UserHookHandlerActionDecl::ShellCommand {
-                    command: cmd.clone(),
-                    args: Vec::new(),
-                }),
-            };
-            if let Err(e) = reg.upsert_user_handler(decl) {
-                tracing::warn!("hook_handlers tab: cmd edit upsert failed: {e}");
-            }
-        }
-        for id in &self.remove {
-            reg.remove_user_handler(id);
-        }
-        for add in self.add {
-            let decl = UserHookHandlerUpsertDecl {
-                id: format!("user/{}", add.short),
-                source: Some(HookSource::Hook),
-                priority: Some(add.priority),
-                display_name_i18n_key: None,
-                disabled: Some(false),
-                action: Some(UserHookHandlerActionDecl::ShellCommand {
-                    command: add.cmd,
-                    args: Vec::new(),
-                }),
-            };
-            if let Err(e) = reg.upsert_user_handler(decl) {
-                tracing::warn!("hook_handlers tab: add upsert failed: {e}");
-            }
+    }
+}
+
+/// user-origin 핸들러 삭제 draft 를 commit.
+fn apply_removals(remove: &BTreeSet<HookHandlerId>, reg: &HookHandlerRegistry) {
+    for id in remove {
+        reg.remove_user_handler(id);
+    }
+}
+
+/// 신규 user 핸들러 추가 draft 를 commit.
+fn apply_additions(add: Vec<PendingHookAdd>, reg: &HookHandlerRegistry) {
+    for add in add {
+        let decl = UserHookHandlerUpsertDecl {
+            id: format!("user/{}", add.short),
+            source: Some(HookSource::Hook),
+            priority: Some(add.priority),
+            display_name_i18n_key: None,
+            disabled: Some(false),
+            action: Some(UserHookHandlerActionDecl::ShellCommand {
+                command: add.cmd,
+                args: Vec::new(),
+            }),
+        };
+        if let Err(e) = reg.upsert_user_handler(decl) {
+            tracing::warn!("hook_handlers tab: add upsert failed: {e}");
         }
     }
 }

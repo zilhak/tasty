@@ -1387,91 +1387,126 @@ fn draw_settings_footer(
             .show(ui, th)
             .clicked()
         {
-            let prev_restore_surface_content = settings.general.restore_surface_content;
-            if let Some(draft) = &ui_state.draft {
-                *settings = draft.clone();
-            }
-            // restore_surface_content 를 끈 경우 기존 scrollback 정리.
-            if prev_restore_surface_content && !settings.general.restore_surface_content {
-                crate::scrollback_store::clear_all();
-            }
-            // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
-            #[cfg(windows)]
-            if let Some(bashrc) = &ui_state.bashrc_user_draft {
-                crate::settings::general::save_user_bashrc(bashrc);
-            }
-            // 테마 install 은 여기서 하지 않는다. Save → 모달 close 시
-            // `close_active_modal` 이 `UpdateSettings` 인텐트를 큐잉하고,
-            // `cascade_settings_updated`(about_to_wait, 렌더 밖)가
-            // `install_global_with_zoom` 으로 전역 Theme 를 적용한다.
-            // 렌더 클로저는 `draw_settings_panel` 의 `THEME.read()` guard 를
-            // 보유 중이므로, 여기서 `set_theme`(=`THEME.write()`)을 호출하면
-            // std RwLock self-deadlock 으로 hang 한다. install 은 렌더 밖에서만.
-            // FileHandler 탭 편집 draft 를 registry commit + 디스크 저장.
-            let mut fh_touched = false;
-            if let Some(draft) = ui_state.extension_priority_draft.take() {
-                for (ext, order) in &draft {
-                    if order.is_empty() {
-                        file_format.clear_user_extension_priority(ext);
-                    } else {
-                        file_format.set_user_extension_priority(ext, order.clone());
-                    }
-                }
-                fh_touched = true;
-            }
-            {
-                let fh = std::mem::take(&mut ui_state.fh_edit_draft);
-                if fh.has_changes() {
-                    fh.apply(file_format, file_handler);
-                    fh_touched = true;
-                }
-            }
-            if fh_touched
-                && let Some(path) = user_config_path
-                && let Err(e) = crate::file::handler::save::save_combined_user_config(
-                    file_format,
-                    file_handler,
-                    path,
-                )
-            {
-                tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
-            }
-            // Hook Handlers sub-tab draft 를 전역 훅 핸들러 레지스트리에 commit +
-            // `~/.tasty/hook-handlers.toml` 저장 (파일 핸들러와 동형 경로).
-            {
-                let hh = std::mem::take(&mut ui_state.hook_edit_draft);
-                if hh.has_changes() {
-                    let reg = crate::hook_handler::global();
-                    hh.apply(reg);
-                    match crate::hook_handler::user_config_path() {
-                        Some(path) => {
-                            if let Err(e) = reg.save_user_config(&path) {
-                                tracing::warn!(
-                                    "hook_handlers tab: save_user_config failed: {e}"
-                                );
-                            }
-                        }
-                        None => tracing::warn!(
-                            "hook_handlers tab: user config path unavailable — changes not persisted"
-                        ),
-                    }
-                }
-            }
-            *result = Some(true);
+            commit_settings_save(
+                settings,
+                ui_state,
+                file_format,
+                file_handler,
+                user_config_path,
+                result,
+            );
         }
         if Button::new(t("button.cancel"))
             .variant(ButtonVariant::Ghost)
             .show(ui, th)
             .clicked()
         {
-            // Cancel: 다음 오픈 시 디스크에서 다시 로드되도록 draft 폐기.
-            ui_state.bashrc_user_draft = None;
-            ui_state.extension_priority_draft = None;
-            ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
-            ui_state.hook_edit_draft = file_handler_tab::HookHandlerEditDraft::default();
-            *result = Some(false);
+            discard_settings_draft(ui_state, result);
         }
     });
+}
+
+/// Save 클릭 시의 비-UI 커밋 로직 — draft 를 settings 에 반영하고, FileHandler/
+/// HookHandler 탭 draft 를 각 레지스트리에 commit + 디스크 저장까지 수행한다.
+/// 테마 install 은 여기서 하지 않는다. Save → 모달 close 시 `close_active_modal`
+/// 이 `UpdateSettings` 인텐트를 큐잉하고, `cascade_settings_updated`(about_to_wait,
+/// 렌더 밖)가 `install_global_with_zoom` 으로 전역 Theme 를 적용한다. 렌더 클로저는
+/// `draw_settings_panel` 의 `THEME.read()` guard 를 보유 중이므로, 여기서
+/// `set_theme`(=`THEME.write()`)을 호출하면 std RwLock self-deadlock 으로
+/// hang 한다. install 은 렌더 밖에서만.
+fn commit_settings_save(
+    settings: &mut Settings,
+    ui_state: &mut SettingsUiState,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+    user_config_path: Option<&std::path::Path>,
+    result: &mut Option<bool>,
+) {
+    apply_settings_draft(settings, ui_state);
+    commit_file_handler_draft(ui_state, file_format, file_handler, user_config_path);
+    commit_hook_handler_draft(ui_state);
+    *result = Some(true);
+}
+
+/// draft 를 settings 에 반영 + 그로 인한 부수효과(scrollback 정리, bashrc 저장).
+fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState) {
+    let prev_restore_surface_content = settings.general.restore_surface_content;
+    if let Some(draft) = &ui_state.draft {
+        *settings = draft.clone();
+    }
+    // restore_surface_content 를 끈 경우 기존 scrollback 정리.
+    if prev_restore_surface_content && !settings.general.restore_surface_content {
+        crate::scrollback_store::clear_all();
+    }
+    // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
+    #[cfg(windows)]
+    if let Some(bashrc) = &ui_state.bashrc_user_draft {
+        crate::settings::general::save_user_bashrc(bashrc);
+    }
+}
+
+/// FileHandler 탭 편집 draft 를 registry commit + 디스크 저장.
+fn commit_file_handler_draft(
+    ui_state: &mut SettingsUiState,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+    user_config_path: Option<&std::path::Path>,
+) {
+    let mut fh_touched = false;
+    if let Some(draft) = ui_state.extension_priority_draft.take() {
+        for (ext, order) in &draft {
+            if order.is_empty() {
+                file_format.clear_user_extension_priority(ext);
+            } else {
+                file_format.set_user_extension_priority(ext, order.clone());
+            }
+        }
+        fh_touched = true;
+    }
+    {
+        let fh = std::mem::take(&mut ui_state.fh_edit_draft);
+        if fh.has_changes() {
+            fh.apply(file_format, file_handler);
+            fh_touched = true;
+        }
+    }
+    if fh_touched
+        && let Some(path) = user_config_path
+        && let Err(e) =
+            crate::file::handler::save::save_combined_user_config(file_format, file_handler, path)
+    {
+        tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
+    }
+}
+
+/// Hook Handlers sub-tab draft 를 전역 훅 핸들러 레지스트리에 commit +
+/// `~/.tasty/hook-handlers.toml` 저장 (파일 핸들러와 동형 경로).
+fn commit_hook_handler_draft(ui_state: &mut SettingsUiState) {
+    let hh = std::mem::take(&mut ui_state.hook_edit_draft);
+    if hh.has_changes() {
+        let reg = crate::hook_handler::global();
+        hh.apply(reg);
+        match crate::hook_handler::user_config_path() {
+            Some(path) => {
+                if let Err(e) = reg.save_user_config(&path) {
+                    tracing::warn!("hook_handlers tab: save_user_config failed: {e}");
+                }
+            }
+            None => tracing::warn!(
+                "hook_handlers tab: user config path unavailable — changes not persisted"
+            ),
+        }
+    }
+}
+
+/// Cancel 클릭 시 draft 폐기 — 다음 오픈 시 디스크에서 다시 로드되도록 모든
+/// 탭의 편집 draft(bashrc/extension-priority/file-handler/hook-handler)를 지운다.
+fn discard_settings_draft(ui_state: &mut SettingsUiState, result: &mut Option<bool>) {
+    ui_state.bashrc_user_draft = None;
+    ui_state.extension_priority_draft = None;
+    ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
+    ui_state.hook_edit_draft = file_handler_tab::HookHandlerEditDraft::default();
+    *result = Some(false);
 }
 
 // ── 콘텐츠 디스패치 ───────────────────────────────────────────────────────

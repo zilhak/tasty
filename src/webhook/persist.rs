@@ -130,9 +130,16 @@ fn load_persisted() -> Vec<PersistedWebhook> {
 /// 보존**하고 `webhook` 배열만 교체한다. 실패는 삼키지 않고 경고.
 pub(super) fn write(persistent: &[PersistedWebhook]) {
     let path = config_path();
+    let Some(doc) = merge_webhook_section(&path, persistent) else {
+        return;
+    };
+    render_and_write(&path, &doc);
+}
 
-    // 기존 문서를 파싱(없으면 빈 table)해 webhook 키만 교체 → 나머지 보존.
-    let mut doc: toml::Table = std::fs::read_to_string(&path)
+/// 기존 문서를 파싱(없으면 빈 table)해 `webhook` 키만 교체 → 나머지 보존.
+/// 직렬화 실패 시 경고 로그 후 `None`(호출자는 저장을 포기한다).
+fn merge_webhook_section(path: &Path, persistent: &[PersistedWebhook]) -> Option<toml::Table> {
+    let mut doc: toml::Table = std::fs::read_to_string(path)
         .ok()
         .and_then(|s| toml::from_str::<toml::Table>(&s).ok())
         .unwrap_or_default();
@@ -146,12 +153,17 @@ pub(super) fn write(persistent: &[PersistedWebhook]) {
             }
             Err(e) => {
                 tracing::warn!("webhook persist serialize failed: {e}");
-                return;
+                return None;
             }
         }
     }
+    Some(doc)
+}
 
-    let text = match toml::to_string_pretty(&doc) {
+/// `doc` 를 pretty TOML 로 렌더해 atomic write. 렌더/쓰기 실패는 경고 로그만
+/// (fire-and-forget 저장 — 호출자는 이 실패를 별도로 처리하지 않는다).
+fn render_and_write(path: &Path, doc: &toml::Table) {
+    let text = match toml::to_string_pretty(doc) {
         Ok(t) => t,
         Err(e) => {
             tracing::warn!("webhooks.toml render failed: {e}");
@@ -159,7 +171,7 @@ pub(super) fn write(persistent: &[PersistedWebhook]) {
         }
     };
 
-    if let Err(e) = atomic_write(&path, &text) {
+    if let Err(e) = atomic_write(path, &text) {
         tracing::warn!("webhooks.toml write failed ({}): {e}", path.display());
     }
 }

@@ -33,24 +33,35 @@ pub fn init(injector: HostIpcInjector, bind_addr: &str, port: u16) -> WebhookIni
     }
     let addr = format!("{bind_addr}:{port}");
     match tiny_http::Server::http(addr.as_str()) {
-        Ok(server) => {
-            registry::mark_bound();
-            tracing::info!("webhook listener bound on {addr}");
-            if let Err(e) = thread::Builder::new()
-                .name("webhook-accept".into())
-                .spawn(move || accept_loop(server))
-            {
-                tracing::warn!("webhook accept thread spawn failed: {e}");
-            }
-            WebhookInitReport::Bound
-        }
-        Err(e) => {
-            let error = e.to_string();
-            tracing::warn!(
-                "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
-            );
-            WebhookInitReport::BindFailed { port, error }
-        }
+        Ok(server) => on_bind_success(server, &addr),
+        Err(e) => on_bind_failed(e.to_string(), &addr, port),
+    }
+}
+
+/// bind 성공 시 registry 를 bound 로 표시하고 accept 스레드를 띄운다.
+fn on_bind_success(server: tiny_http::Server, addr: &str) -> WebhookInitReport {
+    registry::mark_bound();
+    tracing::info!("webhook listener bound on {addr}");
+    spawn_accept_thread(server);
+    WebhookInitReport::Bound
+}
+
+/// bind 실패를 경고 로그로 남기고(자동 폴백 없음 — 사용자가 직접 조치) 보고서로 변환.
+fn on_bind_failed(error: String, addr: &str, port: u16) -> WebhookInitReport {
+    tracing::warn!(
+        "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
+    );
+    WebhookInitReport::BindFailed { port, error }
+}
+
+/// accept 스레드 스폰. 실패해도 bind 자체는 이미 성공했으므로 경고만 남긴다
+/// (재시도 없음 — 다중 bind 가드가 재호출을 무해하게 만들 뿐 자동 복구는 안 함).
+fn spawn_accept_thread(server: tiny_http::Server) {
+    if let Err(e) = thread::Builder::new()
+        .name("webhook-accept".into())
+        .spawn(move || accept_loop(server))
+    {
+        tracing::warn!("webhook accept thread spawn failed: {e}");
     }
 }
 
@@ -63,19 +74,13 @@ fn accept_loop(server: tiny_http::Server) {
 }
 
 /// 한 요청 처리: (남용차단) → 파싱 → 매칭 → ACK 응답 → fire-and-forget 실행.
-fn handle_request(mut request: tiny_http::Request) {
+fn handle_request(request: tiny_http::Request) {
     // 출처 IP(포트 제외 — 스캐너는 IP 를 재사용하며 포트만 바꾼다).
     let source = request.remote_addr().map(|a| a.ip().to_string());
 
-    // 남용 차단: 쿨다운 중 출처는 파싱/실행 전 즉시 429 로 거부한다.
-    if let Some(src) = source.as_deref()
-        && abuse::is_source_blocked(src)
-    {
-        if let Err(e) = request.respond(build_ack(AckStatus::TooManyRequests)) {
-            tracing::debug!("webhook 429 respond failed: {e}");
-        }
+    let Some(mut request) = reject_if_abusive(request, source.as_deref()) else {
         return;
-    }
+    };
 
     let url = request.url().to_string();
     let method = request.method().to_string().to_ascii_uppercase();
@@ -87,37 +92,10 @@ fn handle_request(mut request: tiny_http::Request) {
     let path = path_raw.trim_start_matches('/').to_string();
     let query = parse_query(query_str);
 
-    let mut headers = BTreeMap::new();
-    for h in request.headers() {
-        headers.insert(
-            h.field.as_str().as_str().to_ascii_lowercase(),
-            h.value.as_str().to_string(),
-        );
-    }
+    let headers = collect_headers(&request);
+    let body = read_json_body(&mut request);
 
-    let mut body_str = String::new();
-    if let Err(e) = request.as_reader().read_to_string(&mut body_str) {
-        tracing::debug!("webhook body read failed: {e}");
-    }
-    let body = serde_json::from_str::<Value>(&body_str).unwrap_or(Value::Null);
-
-    let (ack, exec) = match registry::match_request(&path, &method) {
-        MatchResult::NotFound => (AckStatus::NotFound, None),
-        MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
-        MatchResult::Expired => (AckStatus::Gone, None),
-        MatchResult::Matched {
-            calls,
-            injector,
-            auth,
-        } => {
-            // 인증이 설정된 웹훅은 실행 전 토큰을 검증한다. 미설정(None)은 통과.
-            // 검증은 ACK 상태코드 선택에만 관여하고 실행/응답바디에 데이터를 싣지 않음.
-            match &auth {
-                Some(a) if !a.verify(&headers, &query, &body) => (AckStatus::Unauthorized, None),
-                _ => (AckStatus::Received, Some((calls, injector))),
-            }
-        }
-    };
+    let (ack, exec) = resolve_ack(&path, &method, &headers, &query, &body);
 
     // 404/405 는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
     // 정상 매칭(200)은 집계하지 않으므로 정상 웹훅 트래픽은 영향받지 않는다.
@@ -140,6 +118,77 @@ fn handle_request(mut request: tiny_http::Request) {
             query,
         };
         execute_sequence(&injector, &calls, &ctx);
+    }
+}
+
+/// 남용 차단(쿨다운 중) 출처면 즉시 429 로 응답하고 `None`(요청 소비 완료,
+/// 호출자는 더 진행하지 않음)을 반환한다. 아니면 `request` 소유권을 그대로
+/// 돌려준다.
+fn reject_if_abusive(
+    request: tiny_http::Request,
+    source: Option<&str>,
+) -> Option<tiny_http::Request> {
+    if let Some(src) = source
+        && abuse::is_source_blocked(src)
+    {
+        if let Err(e) = request.respond(build_ack(AckStatus::TooManyRequests)) {
+            tracing::debug!("webhook 429 respond failed: {e}");
+        }
+        return None;
+    }
+    Some(request)
+}
+
+/// 요청 헤더를 소문자 필드명 맵으로 수집.
+fn collect_headers(request: &tiny_http::Request) -> BTreeMap<String, String> {
+    let mut headers = BTreeMap::new();
+    for h in request.headers() {
+        headers.insert(
+            h.field.as_str().as_str().to_ascii_lowercase(),
+            h.value.as_str().to_string(),
+        );
+    }
+    headers
+}
+
+/// 요청 바디를 읽어 JSON 으로 파싱. 읽기 실패/비-JSON 바디는 `Value::Null`.
+fn read_json_body(request: &mut tiny_http::Request) -> Value {
+    let mut body_str = String::new();
+    if let Err(e) = request.as_reader().read_to_string(&mut body_str) {
+        tracing::debug!("webhook body read failed: {e}");
+    }
+    serde_json::from_str::<Value>(&body_str).unwrap_or(Value::Null)
+}
+
+/// 매칭된 웹훅 실행에 필요한 (호출 시퀀스, injector). injector 는 아직 준비되지
+/// 않았을 수 있어(주입 전) `Option`.
+type PendingExec = (Vec<crate::hook_handler::IpcCall>, Option<HostIpcInjector>);
+
+/// path/method 매칭 + (설정돼 있으면) 인증 검증까지 수행해 응답할 ACK 상태와,
+/// 실행할 게 있으면 그 `(calls, injector)` 를 반환한다.
+fn resolve_ack(
+    path: &str,
+    method: &str,
+    headers: &BTreeMap<String, String>,
+    query: &BTreeMap<String, String>,
+    body: &Value,
+) -> (AckStatus, Option<PendingExec>) {
+    match registry::match_request(path, method) {
+        MatchResult::NotFound => (AckStatus::NotFound, None),
+        MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
+        MatchResult::Expired => (AckStatus::Gone, None),
+        MatchResult::Matched {
+            calls,
+            injector,
+            auth,
+        } => {
+            // 인증이 설정된 웹훅은 실행 전 토큰을 검증한다. 미설정(None)은 통과.
+            // 검증은 ACK 상태코드 선택에만 관여하고 실행/응답바디에 데이터를 싣지 않음.
+            match &auth {
+                Some(a) if !a.verify(headers, query, body) => (AckStatus::Unauthorized, None),
+                _ => (AckStatus::Received, Some((calls, injector))),
+            }
+        }
     }
 }
 
