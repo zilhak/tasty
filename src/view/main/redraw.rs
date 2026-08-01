@@ -154,6 +154,9 @@ impl MainView {
                 // T7 (부팅 계측): 첫 present 성공 시각. Lost/Outdated 재시도
                 // 프레임은 present 가 안 되므로 Ok 분기에서만 기록 (원샷).
                 crate::boot::trace::mark_first_paint();
+                if self.base.gpu.take_terminal_cursor_restore_pending() {
+                    self.base.dirty = true;
+                }
             }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 self.base.gpu.resize(self.base.winit.inner_size());

@@ -27,6 +27,49 @@ fn test_terminal(cols: usize, rows: usize) -> Terminal {
     .expect("terminal creation")
 }
 
+#[test]
+#[cfg(windows)]
+fn cursor_suppression_hides_program_output_burst() {
+    let terminal = Terminal::new_detached(80, 24);
+    {
+        let mut st = terminal.lock_state();
+        let now = std::time::Instant::now();
+        st.last_input_at = now - INPUT_ECHO_WINDOW - std::time::Duration::from_millis(1);
+        st.last_output_at = now;
+    }
+
+    assert!(terminal.should_suppress_cursor_during_output());
+}
+
+#[test]
+#[cfg(windows)]
+fn cursor_suppression_ignores_recent_input_echo() {
+    let terminal = Terminal::new_detached(80, 24);
+    {
+        let mut st = terminal.lock_state();
+        let now = std::time::Instant::now();
+        st.last_input_at = now;
+        st.last_output_at = now + std::time::Duration::from_millis(1);
+    }
+
+    assert!(!terminal.should_suppress_cursor_during_output());
+}
+
+#[test]
+#[cfg(windows)]
+fn cursor_suppression_expires_after_output_quiets() {
+    let terminal = Terminal::new_detached(80, 24);
+    {
+        let mut st = terminal.lock_state();
+        let now = std::time::Instant::now();
+        st.last_input_at = now - INPUT_ECHO_WINDOW - std::time::Duration::from_millis(1);
+        st.last_output_at =
+            now - CURSOR_OUTPUT_SUPPRESS_WINDOW - std::time::Duration::from_millis(1);
+    }
+
+    assert!(!terminal.should_suppress_cursor_during_output());
+}
+
 // ---- DECSET/DECRST mode toggling tests ----
 
 #[test]

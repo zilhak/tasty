@@ -6,6 +6,8 @@
 
 use termwiz::surface::Surface;
 
+#[cfg(windows)]
+use crate::CURSOR_OUTPUT_SUPPRESS_WINDOW;
 use crate::{
     BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW, Terminal, TerminalEvent, TerminalState, cwd,
     foreground_process,
@@ -154,6 +156,30 @@ impl Terminal {
         }
     }
 
+    /// Whether the renderer should temporarily hide the focused text cursor
+    /// while a program is repainting terminal output. This suppresses visible
+    /// intermediate cursor hops from redraw-heavy TUIs/CLIs, but leaves user
+    /// typing alone by treating output inside the input echo window as normal
+    /// echo rather than program-driven repaint.
+    pub fn should_suppress_cursor_during_output(&self) -> bool {
+        #[cfg(not(windows))]
+        {
+            false
+        }
+        #[cfg(windows)]
+        {
+            match self.state.try_lock() {
+                Ok(st) => st.should_suppress_cursor_during_output(),
+                // Parser holds the lock while ingesting output, so this is exactly
+                // the burst window where drawing an intermediate cursor is noisy.
+                Err(std::sync::TryLockError::WouldBlock) => true,
+                Err(std::sync::TryLockError::Poisoned(p)) => {
+                    p.into_inner().should_suppress_cursor_during_output()
+                }
+            }
+        }
+    }
+
     /// Get the current working directory of the child process. Prefers the CWD
     /// cached from OSC 7; falls back to an OS-level query (not cached).
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
@@ -258,5 +284,15 @@ impl Terminal {
     /// Read output since the last mark. If no mark was set, reads from the beginning.
     pub fn read_since_mark(&self, strip_ansi: bool) -> String {
         self.lock_state().read_since_mark(strip_ansi)
+    }
+}
+
+#[cfg(windows)]
+impl TerminalState {
+    fn should_suppress_cursor_during_output(&self) -> bool {
+        if self.last_output_at.elapsed() >= CURSOR_OUTPUT_SUPPRESS_WINDOW {
+            return false;
+        }
+        self.last_output_at > self.last_input_at + INPUT_ECHO_WINDOW
     }
 }

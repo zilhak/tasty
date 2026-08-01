@@ -48,6 +48,8 @@ xterm-256color(ANSI 16 + 216 큐브 + 24 그레이) + TrueColor. 색은 Theme �
 
 파서 스레드가 ingest 직후 `AppEvent::TerminalOutput` 으로 메인 루프를 깨운다(`Waker`). 메인은 파싱이 아니라 변경된 grid 의 렌더·이벤트 수집만. 무조건 redraw 제거 — 실제 변경 시에만. **가시성 게이트**: 안 보이는 surface(비활성 워크스페이스/탭)는 출력을 항상 drain·파싱하되 `request_redraw` 는 생략(데이터 무손실, 재렌더만 절약). 출력·입력 없으면 CPU 0%.
 
+Windows 에서는 focused terminal cursor 를 프로그램 주도 출력 burst 동안 짧게 숨긴다. 기준은 최근 PTY 출력 120ms 이내이면서, 마지막 사용자 입력 뒤 echo window(200ms) 밖인 경우다. Codex 같은 redraw-heavy CLI 가 `\r`/커서 이동/줄 지우기를 빠르게 내보낼 때 중간 cursor hop 을 화면에 드러내지 않기 위한 렌더 정책이며, 사용자가 직접 타이핑해 발생한 echo 는 커서를 숨기지 않는다. 커서를 숨긴 프레임은 후속 redraw 를 한 번 예약해 출력이 조용해진 뒤 커서가 다시 나타나게 한다. 다른 OS 에서는 이 억제 정책을 적용하지 않는다.
+
 ## 인터페이스
 
 - **사용자**: 키보드/마우스 직접 입력.

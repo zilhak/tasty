@@ -110,6 +110,10 @@ pub struct GpuState {
     pub pending_surface_screenshot: Option<(u32, std::path::PathBuf)>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
     pub(super) perf: PerfAggregator,
+    /// Set when a frame hid the focused terminal cursor during an output burst.
+    /// The view consumes this to request one follow-up redraw so the cursor
+    /// reappears after the burst settles even if no more PTY bytes arrive.
+    pub(super) terminal_cursor_restore_pending: bool,
     /// winit 이벤트 루프 proxy — CSD titlebar close 버튼이 per-window 닫기
     /// (`AppEvent::CloseWindow`)를 발화하는 경로. egui repaint callback 과 별개 사본.
     pub(super) proxy: EventLoopProxy<AppEvent>,
@@ -285,6 +289,7 @@ impl GpuState {
             pending_screenshot: None,
             pending_surface_screenshot: None,
             perf: PerfAggregator::new(),
+            terminal_cursor_restore_pending: false,
             proxy,
         })
     }
@@ -346,6 +351,12 @@ impl GpuState {
     /// `attach_client`가 매 tick 소비해 owning 세션에 `MeshFullResendRequest`를 보낸다.
     pub fn take_attach_mesh_full_requests(&mut self) -> std::collections::HashSet<u32> {
         std::mem::take(&mut self.attach_mesh_full_requests)
+    }
+
+    /// Whether the last render hid a terminal cursor and needs one follow-up
+    /// frame to restore it after the output burst quiets down.
+    pub fn take_terminal_cursor_restore_pending(&mut self) -> bool {
+        std::mem::take(&mut self.terminal_cursor_restore_pending)
     }
 
     /// Render the full frame: egui UI + terminal surfaces.

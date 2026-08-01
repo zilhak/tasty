@@ -377,6 +377,13 @@ pub(crate) const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::
 /// Maximum delay between user input and its PTY echo (echo is not "busy").
 pub(crate) const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
 
+/// Short renderer-side grace period that hides the focused cursor during
+/// program-driven output bursts. This prevents redraw-heavy CLIs from exposing
+/// intermediate cursor hops while keeping user input echo visible.
+#[cfg(windows)]
+pub(crate) const CURSOR_OUTPUT_SUPPRESS_WINDOW: std::time::Duration =
+    std::time::Duration::from_millis(120);
+
 /// Minimum interval between child-alive `try_wait` syscalls in `process()`.
 pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 

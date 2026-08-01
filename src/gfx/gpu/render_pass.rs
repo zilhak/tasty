@@ -58,6 +58,7 @@ impl GpuState {
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
         search: Option<&crate::search_state::SearchState>,
     ) {
+        self.terminal_cursor_restore_pending = false;
         let theme = crate::theme::theme();
         let term_surface = theme.surface("terminal");
         // ANSI 16 팔레트는 *프레임당 1회* 만 추출 — 셀별 lock 비용 제거.
@@ -143,6 +144,12 @@ impl GpuState {
                     });
                 let search_ref = search_highlights.as_ref();
 
+                let suppress_cursor = is_focused && terminal.should_suppress_cursor_during_output();
+                if suppress_cursor {
+                    self.terminal_cursor_restore_pending = true;
+                }
+                let show_cursor = is_focused && !suppress_cursor;
+
                 self.renderer.append_terminal_viewport(
                     terminal,
                     &self.queue,
@@ -150,7 +157,7 @@ impl GpuState {
                     &ansi,
                     bg,
                     fg,
-                    is_focused,
+                    show_cursor,
                     sel_ref,
                     vi_cursor_ref,
                     render_preedit_ref,
