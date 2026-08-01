@@ -70,15 +70,18 @@ pub struct SurfaceHook {
 #[serde(rename_all = "kebab-case")]
 pub enum HookEvent {
     ProcessExit,
-    /// Output matches a regex pattern.
-    /// TODO: Implement OutputMatch detection in terminal.rs by checking registered patterns
-    /// against accumulated output_buffer after each process() call.
+    /// Output matches a regex pattern (pre-compiled at registration time). Matches only
+    /// against *completed* lines (`\n`-terminated) — the pattern is checked against the
+    /// same per-surface `LineBuffer` that `output.observe` observers share
+    /// (`ObserverRouter::dispatch_text`), so an OutputMatch hook alone (with no
+    /// `output.observe` observer registered) is enough to open that buffer's gate.
     OutputMatch(String),
     Bell,
     Notification,
-    /// Fire after N seconds of no PTY output.
-    /// TODO: Implement IdleTimeout by tracking last output timestamp per terminal and
-    /// emitting an event when the idle threshold is exceeded.
+    /// Fire after N seconds of no PTY output. Piggybacks on the existing `BusyPoll` 1Hz
+    /// tick (no separate timer/watcher) — each tick compares elapsed time since
+    /// `Terminal::last_output_at()` against the threshold. `SurfaceHook::idle_fired_epoch`
+    /// gates re-firing to once per idle epoch (anti-spam) until new output re-arms it.
     IdleTimeout(u64),
     /// OSC 133 D phase — a shell-integrated command finished. `None` registered
     /// (e.g. `command-completed`) matches any exit code; `Some(code)` registered
