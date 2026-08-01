@@ -10,6 +10,7 @@
 //! 않는다 — TODO-agent.md §3 참조.
 
 pub(crate) mod barrier;
+pub(crate) mod completion_strategy;
 pub(crate) mod lease;
 pub(crate) mod ratelimit;
 pub(crate) mod runner_host;

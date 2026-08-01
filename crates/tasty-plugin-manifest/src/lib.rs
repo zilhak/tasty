@@ -21,11 +21,11 @@ pub use package::PluginPackage;
 pub use types::{
     AutoWaitDecl, BannerContribute, BannerRendering, BannerScopeDecl, BannerSizeHint,
     BannerTrigger, BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl,
-    CommandDecl, CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability,
-    ExtendsDecl, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookEventDecl, HookMode, IpcHookDecl,
-    IpcNamespaceDecl, MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PollingDecl,
-    PopupAnchor, PopupContribute, PopupRendering, PopupSizeHint, PopupTrigger, PresetFieldDecl,
-    PresetFieldInputType, SelectOptionDecl, SettingsCategory, SettingsItemDecl,
-    SettingsPageContribute, SurfaceKindDecl, SurfaceKindRendering, ToolAction, ToolContribute,
-    WindowContribute, WindowSizeHint,
+    CommandDecl, CommandScope, CompletionStrategyDecl, Contributes, Entry, EventEmittedDecl,
+    EventHookDecl, EventStability, ExtendsDecl, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION,
+    HookEventDecl, HookMode, IpcHookDecl, IpcNamespaceDecl, MANIFEST_VERSION, Manifest,
+    MenuItemDecl, Permission, PollingDecl, PopupAnchor, PopupContribute, PopupRendering,
+    PopupSizeHint, PopupTrigger, PresetFieldDecl, PresetFieldInputType, SelectOptionDecl,
+    SettingsCategory, SettingsItemDecl, SettingsPageContribute, SurfaceKindDecl,
+    SurfaceKindRendering, ToolAction, ToolContribute, WindowContribute, WindowSizeHint,
 };

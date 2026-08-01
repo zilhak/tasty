@@ -3054,3 +3054,139 @@ fn rejects_subcommand_with_both_polling_and_auto_wait() {
     let err = parse(s).unwrap_err().to_string();
     assert!(err.contains("auto_wait"), "got: {err}");
 }
+
+fn auto_wait_strategy_manifest(strategy: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.ipc_namespace]]
+        prefix = "ex"
+
+        [[contributes.cli]]
+        name = "ex"
+        subcommands = [
+          {{ name = "spawn", ipc_method = "ex.spawn", args = "g", auto_wait = {{ method = "ex.wait", strategy = "{strategy}" }} }},
+        ]
+
+        [contributes.cli.arg_groups.g]
+    "#
+    )
+}
+
+#[test]
+fn auto_wait_strategy_parses_when_owner_prefix_matches_plugin_id() {
+    // strategy 의 owner-prefix 가 자기 자신의 plugin id 와 같으면 통과.
+    let s = auto_wait_strategy_manifest("com.example.x/wait-ready");
+    let m = parse(&s).expect("own-prefixed strategy reference should parse");
+    let aw = m.contributes.cli[0].subcommands[0]
+        .auto_wait
+        .as_ref()
+        .expect("auto_wait declared");
+    assert_eq!(aw.strategy.as_deref(), Some("com.example.x/wait-ready"));
+    assert!(aw.polling.is_none());
+}
+
+#[test]
+fn auto_wait_strategy_rejects_mismatched_owner_prefix() {
+    // 다른 plugin 의 strategy 를 참조하면 거부 — CLI 는 어차피 같은 매니페스트
+    // 안에서만 이름을 해석하므로, 이건 조기 실패용 방어선.
+    let s = auto_wait_strategy_manifest("com.other.plugin/wait-ready");
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("does not"), "got: {err}");
+}
+
+#[test]
+fn auto_wait_strategy_rejects_missing_owner_prefix() {
+    // '/' 구분자가 없으면 owner-prefix 를 판정할 수 없어 거부.
+    let s = auto_wait_strategy_manifest("wait-ready");
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("no owner prefix"), "got: {err}");
+}
+
+#[test]
+fn auto_wait_rejects_neither_polling_nor_strategy() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.ipc_namespace]]
+        prefix = "ex"
+
+        [[contributes.cli]]
+        name = "ex"
+        subcommands = [
+          { name = "spawn", ipc_method = "ex.spawn", args = "g", auto_wait = { method = "ex.wait" } },
+        ]
+
+        [contributes.cli.arg_groups.g]
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("neither"), "got: {err}");
+}
+
+#[test]
+fn auto_wait_rejects_both_polling_and_strategy() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.ipc_namespace]]
+        prefix = "ex"
+
+        [[contributes.cli]]
+        name = "ex"
+        subcommands = [
+          { name = "spawn", ipc_method = "ex.spawn", args = "g", auto_wait = { method = "ex.wait", strategy = "com.example.x/wait-ready", polling = { state_field = "state", terminal_states = ["idle"], interval_ms = 500 } } },
+        ]
+
+        [contributes.cli.arg_groups.g]
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("both"), "got: {err}");
+}
+
+#[test]
+fn completion_strategy_decl_parses_with_defaults_and_converts_to_polling_decl() {
+    // CompletionStrategyDecl 은 아직 어떤 [[contributes.*]] 배열에도 담기지 않는다
+    // (registry 트랙 몫) — 여기서는 타입 자체의 deserialize 기본값과
+    // to_polling_decl() 변환만 확인한다.
+    let s = r#"
+        poll_method = "ex.wait"
+        state_field = "state"
+        terminal_states = ["idle", "exited"]
+    "#;
+    let decl: CompletionStrategyDecl = toml::from_str(s).expect("minimal decl should parse");
+    assert_eq!(decl.interval_ms, 500, "interval_ms should default to 500");
+    assert_eq!(decl.timeout_ms, None);
+    assert!(decl.map_from_response.is_empty());
+    assert!(decl.map_from_request.is_empty());
+
+    let polling = decl.to_polling_decl();
+    assert_eq!(polling.state_field, "state");
+    assert_eq!(polling.terminal_states, vec!["idle", "exited"]);
+    assert_eq!(polling.interval_ms, 500);
+    assert_eq!(
+        polling.timeout_field, None,
+        "named-strategy path does not support a CLI --timeout override in this round"
+    );
+}

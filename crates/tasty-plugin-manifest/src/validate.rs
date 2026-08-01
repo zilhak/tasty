@@ -7,9 +7,10 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::types::{
-    BindingMode, CliCommandDecl, CommandDecl, CommandScope, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION,
-    HookMode, MANIFEST_VERSION, Manifest, Permission, PopupTrigger, PresetFieldInputType,
-    SettingsItemDecl, SettingsPageContribute, SurfaceKindDecl, ToolAction, ToolContribute,
+    AutoWaitDecl, BindingMode, CliCommandDecl, CliSubcommandDecl, CommandDecl, CommandScope,
+    HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
+    PopupTrigger, PresetFieldInputType, SettingsItemDecl, SettingsPageContribute, SurfaceKindDecl,
+    ToolAction, ToolContribute,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
@@ -393,7 +394,7 @@ impl Manifest {
             if !seen_cli_names.insert(cli.name.clone()) {
                 anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }
-            Self::validate_cli_subcommands(cli, seen_prefixes)?;
+            Self::validate_cli_subcommands(cli, seen_prefixes, &self.id)?;
             Self::validate_cli_arg_groups(cli)?;
         }
         Ok(())
@@ -402,6 +403,7 @@ impl Manifest {
     fn validate_cli_subcommands(
         cli: &CliCommandDecl,
         seen_prefixes: &HashSet<String>,
+        plugin_id: &str,
     ) -> anyhow::Result<()> {
         let mut seen_sub_names = HashSet::new();
         for sub in &cli.subcommands {
@@ -435,6 +437,9 @@ impl Manifest {
                     sub.name
                 );
             }
+            if let Some(aw) = &sub.auto_wait {
+                Self::validate_auto_wait_strategy(cli, sub, aw, plugin_id)?;
+            }
             // ipc_method는 plugin 자기 namespace로 시작해야 한다.
             let Some(dot) = sub.ipc_method.find('.') else {
                 anyhow::bail!(
@@ -457,6 +462,69 @@ impl Manifest {
             }
         }
         Ok(())
+    }
+
+    /// `AutoWaitDecl.polling`/`.strategy` 는 정확히 하나만 선언해야 한다. `strategy`
+    /// 를 선언했으면 값은 `<plugin_id>/<short-name>` 형식이고, prefix 는 반드시
+    /// 이 매니페스트 자신의 `id` 와 같아야 한다 — 다른 plugin 의 completion
+    /// strategy 를 이름으로 훔쳐 참조하는 것을 여기서 막는다(CLI 는 어차피 같은
+    /// 매니페스트 안에서만 이름을 해석하므로, 이 검증은 조기 실패용 방어선).
+    fn validate_auto_wait_strategy(
+        cli: &CliCommandDecl,
+        sub: &CliSubcommandDecl,
+        aw: &AutoWaitDecl,
+        plugin_id: &str,
+    ) -> anyhow::Result<()> {
+        match (&aw.polling, &aw.strategy) {
+            (Some(_), Some(_)) => anyhow::bail!(
+                "cli subcommand '{} {}' auto_wait declares both 'polling' and 'strategy' \
+                     — choose one",
+                cli.name,
+                sub.name
+            ),
+            (None, None) => anyhow::bail!(
+                "cli subcommand '{} {}' auto_wait declares neither 'polling' nor 'strategy'",
+                cli.name,
+                sub.name
+            ),
+            (Some(_), None) => Ok(()),
+            (None, Some(strategy)) => {
+                let Some(slash) = strategy.find('/') else {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' auto_wait.strategy '{}' has no owner prefix \
+                             (expected '<plugin_id>/<short-name>')",
+                        cli.name,
+                        sub.name,
+                        strategy
+                    );
+                };
+                let prefix = &strategy[..slash];
+                if prefix != plugin_id {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' auto_wait.strategy '{}' prefix '{}' does not \
+                             match this plugin's id '{}' — a plugin can only reference its own \
+                             completion strategies",
+                        cli.name,
+                        sub.name,
+                        strategy,
+                        prefix,
+                        plugin_id
+                    );
+                }
+                let short_name = &strategy[slash + 1..];
+                if !is_valid_hook_handler_id(short_name) {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' auto_wait.strategy '{}' short-name '{}' is \
+                             invalid (must match [a-z0-9-]{{1,32}})",
+                        cli.name,
+                        sub.name,
+                        strategy,
+                        short_name
+                    );
+                }
+                Ok(())
+            }
+        }
     }
 
     fn validate_cli_arg_groups(cli: &CliCommandDecl) -> anyhow::Result<()> {

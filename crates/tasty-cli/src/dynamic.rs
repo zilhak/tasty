@@ -13,7 +13,8 @@ use serde_json::{Map, Value};
 
 use tasty_ipc::protocol::JsonRpcRequest;
 use tasty_plugin_manifest::{
-    AutoWaitDecl, CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest, PollingDecl,
+    AutoWaitDecl, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CompletionStrategyDecl,
+    Manifest, PollingDecl,
 };
 
 /// `spawn` / `tell` 같이 1 차 응답 후 chained wait 가 필요한 명령의 실행 계획.
@@ -242,10 +243,17 @@ pub fn matches_to_request(
         }
     }
 
+    // Track B(completion strategy registry)가 아직 병합되지 않아 이 매니페스트가
+    // 실제로 이름으로 등록한 strategy 를 조회할 곳이 없다 — registry 가 들어오면
+    // `entry`(혹은 그 소속 Manifest)에서 모은 실 데이터를 여기 채운다. 그때까지
+    // `AutoWaitDecl.strategy` 는 항상 "unknown strategy" 로 reject 된다(인라인
+    // `polling` 경로는 이 맵과 무관하게 그대로 동작).
+    let available_strategies: HashMap<String, CompletionStrategyDecl> = HashMap::new();
     let auto_wait_plan = sub_decl
         .auto_wait
         .as_ref()
-        .map(|aw| build_auto_wait_plan(aw, &params));
+        .map(|aw| build_auto_wait_plan(aw, &params, &available_strategies))
+        .transpose()?;
 
     Ok((
         JsonRpcRequest {
@@ -262,22 +270,58 @@ pub fn matches_to_request(
     ))
 }
 
+/// `AutoWaitDecl.polling`(인라인) 또는 `.strategy`(이름 참조)를 실행 가능한
+/// `PollingDecl` 로 해석한다. manifest validator 가 이미 정확히 하나만
+/// 선언되도록 강제하므로(§ `validate_auto_wait_strategy`) 여기서는 그 불변식을
+/// 신뢰해 매칭한다 — validator 를 통과했는데도 실패할 수 있는 경우는 오직
+/// `available_strategies` 에 그 이름이 아직 없을 때뿐이다(같은 매니페스트 안의
+/// registry 조회 실패).
+fn resolve_auto_wait_polling(
+    aw: &AutoWaitDecl,
+    available_strategies: &HashMap<String, CompletionStrategyDecl>,
+) -> Result<PollingDecl> {
+    if let Some(polling) = &aw.polling {
+        return Ok(polling.clone());
+    }
+    let strategy = aw.strategy.as_ref().ok_or_else(|| {
+        anyhow!(
+            "auto_wait '{}' declares neither 'polling' nor 'strategy'",
+            aw.method
+        )
+    })?;
+    available_strategies
+        .get(strategy)
+        .map(CompletionStrategyDecl::to_polling_decl)
+        .ok_or_else(|| {
+            anyhow!(
+                "auto_wait '{}' references unknown strategy '{}'",
+                aw.method,
+                strategy
+            )
+        })
+}
+
 /// `AutoWaitDecl` 와 1 차 요청 params 로 실행 계획을 구성한다.
 /// `--no-wait` (params 의 `no_wait_field` 가 true 인 경우) 면 `skipped = true`.
-fn build_auto_wait_plan(aw: &AutoWaitDecl, request_params: &Map<String, Value>) -> AutoWaitPlan {
+fn build_auto_wait_plan(
+    aw: &AutoWaitDecl,
+    request_params: &Map<String, Value>,
+    available_strategies: &HashMap<String, CompletionStrategyDecl>,
+) -> Result<AutoWaitPlan> {
     let skipped = request_params
         .get(&aw.no_wait_field)
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    AutoWaitPlan {
+    let polling = resolve_auto_wait_polling(aw, available_strategies)?;
+    Ok(AutoWaitPlan {
         method: aw.method.clone(),
-        polling: aw.polling.clone(),
+        polling,
         map_from_response: aw.map_from_response.clone(),
         map_from_request: aw.map_from_request.clone(),
         timeout_field: aw.timeout_field.clone(),
         request_params: request_params.clone(),
         skipped,
-    }
+    })
 }
 
 /// stdin 이 TTY 가 아닐 때 (= pipe / redirect 로 입력이 들어올 때) stdin 전체를
@@ -592,15 +636,20 @@ mod tests {
             method: "claude.wait_by_surface".into(),
             map_from_response,
             map_from_request,
-            polling: PollingDecl {
+            polling: Some(PollingDecl {
                 state_field: "state".into(),
                 terminal_states: vec!["idle".into(), "exited".into()],
                 interval_ms: 100,
                 timeout_field: Some("timeout".into()),
-            },
+            }),
+            strategy: None,
             no_wait_field: "no_wait".into(),
             timeout_field: "timeout".into(),
         }
+    }
+
+    fn empty_strategies() -> HashMap<String, CompletionStrategyDecl> {
+        HashMap::new()
     }
 
     #[test]
@@ -610,7 +659,7 @@ mod tests {
         let mut params = Map::new();
         params.insert("no_wait".into(), Value::Bool(true));
         params.insert("surface".into(), Value::from(7_u32));
-        let plan = build_auto_wait_plan(&aw, &params);
+        let plan = build_auto_wait_plan(&aw, &params, &empty_strategies()).unwrap();
         assert!(plan.skipped, "no_wait=true should skip chain");
         assert_eq!(plan.method, "claude.wait_by_surface");
     }
@@ -621,12 +670,12 @@ mod tests {
         let aw = sample_auto_wait_decl();
         let mut params = Map::new();
         params.insert("surface".into(), Value::from(7_u32));
-        let plan = build_auto_wait_plan(&aw, &params);
+        let plan = build_auto_wait_plan(&aw, &params, &empty_strategies()).unwrap();
         assert!(!plan.skipped);
 
         let mut params2 = Map::new();
         params2.insert("no_wait".into(), Value::Bool(false));
-        let plan2 = build_auto_wait_plan(&aw, &params2);
+        let plan2 = build_auto_wait_plan(&aw, &params2, &empty_strategies()).unwrap();
         assert!(!plan2.skipped);
     }
 
@@ -638,7 +687,7 @@ mod tests {
         let mut params = Map::new();
         params.insert("surface".into(), Value::from(42_u32));
         params.insert("prompt".into(), Value::String("hi".into()));
-        let plan = build_auto_wait_plan(&aw, &params);
+        let plan = build_auto_wait_plan(&aw, &params, &empty_strategies()).unwrap();
         assert_eq!(
             plan.request_params.get("surface"),
             Some(&Value::from(42_u32))
@@ -662,7 +711,7 @@ mod tests {
     fn auto_wait_plan_carries_polling_and_timeout_field() {
         // polling 사양 + timeout_field 가 그대로 plan 에 전파되는지.
         let aw = sample_auto_wait_decl();
-        let plan = build_auto_wait_plan(&aw, &Map::new());
+        let plan = build_auto_wait_plan(&aw, &Map::new(), &empty_strategies()).unwrap();
         assert_eq!(plan.polling.state_field, "state");
         assert_eq!(plan.polling.terminal_states, vec!["idle", "exited"]);
         assert_eq!(plan.polling.interval_ms, 100);
@@ -677,11 +726,51 @@ mod tests {
         let mut params = Map::new();
         params.insert("skip_chain".into(), Value::Bool(true));
         // 표준 "no_wait" 키는 true 가 아니므로 만약 잘못 보면 skipped=false.
-        let plan = build_auto_wait_plan(&aw, &params);
+        let plan = build_auto_wait_plan(&aw, &params, &empty_strategies()).unwrap();
         assert!(
             plan.skipped,
             "custom no_wait_field='skip_chain' should be honored"
         );
+    }
+
+    fn sample_auto_wait_decl_with_strategy(strategy: &str) -> AutoWaitDecl {
+        let mut aw = sample_auto_wait_decl();
+        aw.polling = None;
+        aw.strategy = Some(strategy.into());
+        aw
+    }
+
+    #[test]
+    fn resolve_auto_wait_polling_finds_registered_strategy() {
+        let aw = sample_auto_wait_decl_with_strategy("com.example.x/wait-ready");
+        let decl: CompletionStrategyDecl = toml::from_str(
+            r#"
+                poll_method = "ex.wait"
+                state_field = "state"
+                terminal_states = ["idle"]
+                interval_ms = 250
+            "#,
+        )
+        .unwrap();
+        let mut strategies = HashMap::new();
+        strategies.insert("com.example.x/wait-ready".to_string(), decl);
+        let plan = build_auto_wait_plan(&aw, &Map::new(), &strategies).unwrap();
+        assert_eq!(plan.polling.state_field, "state");
+        assert_eq!(plan.polling.terminal_states, vec!["idle"]);
+        assert_eq!(plan.polling.interval_ms, 250);
+        assert_eq!(
+            plan.polling.timeout_field, None,
+            "named-strategy resolution does not carry a CLI --timeout override"
+        );
+    }
+
+    #[test]
+    fn resolve_auto_wait_polling_errors_on_unknown_strategy() {
+        let aw = sample_auto_wait_decl_with_strategy("com.example.x/wait-ready");
+        let err = build_auto_wait_plan(&aw, &Map::new(), &empty_strategies())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown strategy"), "got: {err}");
     }
 
     #[test]

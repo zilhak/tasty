@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- agent DAG `TaskCommand::Custom.poll`(`PollSpec`)의 `interval_ms` 필드가 생략 가능해졌다 — 기본값 500ms. 이전에는 필수 필드라 생략 시 역직렬화가 실패했다.
+
 ### Removed
 
 - (BREAK) `tasty design *` CLI 서브커맨드 11종(`login`/`logout`/`import-session`/`status`/`projects`/`detect`/`probe`/`chat`/`chat-status`/`turn-status`/`protocol`) 및 그 IPC(`design.*`) 전체 제거 — `claude-design` 플러그인이 tasty 본체에서 완전히 빠지며 별도 프로젝트로 분리된다. 대체/alias 없음. 상세: [ADR-0057](docs/adr/0057-remove-claude-design-plugin.md).

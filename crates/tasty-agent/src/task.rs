@@ -150,8 +150,13 @@ pub enum TaskCommand {
 ///
 /// dispatch IPC 호출 후, 응답의 `state_field` 가 `terminal_states` 중 하나에 도달할
 /// 때까지 `poll_method` 를 반복 호출한다. 필드 의미는 plugin manifest 의
-/// `AutoWaitDecl`/`PollingDecl`(CLI auto_wait 경로)와 동형으로 맞춘다 — 폴링 semantics 를
-/// CLI/agent 양쪽에서 통일하기 위함. 두 곳의 필드 의미는 동기화 책임을 가진다.
+/// `CompletionStrategyDecl`/`AutoWaitDecl`/`PollingDecl`(CLI auto_wait 경로)와
+/// 동형으로 맞춘다 — 폴링 semantics 를 CLI/agent 양쪽에서 통일하기 위함. 두 곳의
+/// 필드 대응은 (본 크레이트가 `tasty-plugin-manifest` 를 의존할 수 없어) 주석만으로
+/// 지켜지는 불변식이 아니라, host 측 변환 함수
+/// `completion_strategy_to_poll_spec()`(`src/core/agent/completion_strategy.rs`)
+/// 와 그 옆의 단위테스트가 필드 대응을 컴파일/테스트 타임에 강제한다 — 필드가
+/// 갈라지면 그 변환 함수/테스트가 깨진다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PollSpec {
     /// 폴링 시 호출할 IPC method (예: `"<plugin>.wait"`).
@@ -168,11 +173,17 @@ pub struct PollSpec {
     /// terminal 로 간주할 상태값 목록 (예: `["idle","needs_input","exited"]`).
     /// 비-terminal 상태는 모두 계속 폴링(Active)으로 취급한다.
     pub terminal_states: Vec<String>,
-    /// 폴링 간격 (ms). 핸들에 보존된다.
+    /// 폴링 간격 (ms). 핸들에 보존된다. 기본 500ms — 생략해도 역직렬화가 실패하지
+    /// 않는다(이전에는 필수 필드였다).
+    #[serde(default = "default_poll_interval_ms")]
     pub interval_ms: u64,
     /// 전체 폴링 timeout (ms). `None` 이면 무한 대기.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+}
+
+fn default_poll_interval_ms() -> u64 {
+    500
 }
 
 /// Reducer 합성 전략.

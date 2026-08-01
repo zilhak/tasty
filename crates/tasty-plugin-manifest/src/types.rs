@@ -1089,8 +1089,16 @@ pub struct AutoWaitDecl {
     pub map_from_request: std::collections::HashMap<String, String>,
     /// wait 폴링 사양 (`PollingDecl` 과 동일 모양 — state_field / terminal_states /
     /// interval_ms). `timeout_field` 는 본 `AutoWaitDecl` 의 `timeout_field` 가
-    /// 우선이므로 무시된다.
-    pub polling: PollingDecl,
+    /// 우선이므로 무시된다. `strategy` 와 동시 선언 금지, 정확히 하나만 선언해야
+    /// 한다(validator 강제, `validate_cli_subcommands`).
+    #[serde(default)]
+    pub polling: Option<PollingDecl>,
+    /// 이름으로 등록된 completion strategy 참조. 형식 `<plugin_id>/<short-name>`
+    /// (`HookHandlerId` 와 동일 관례). `polling` 과 동시 선언 금지, prefix 는 반드시
+    /// 자기 자신의 plugin id 와 일치해야 한다(validator 강제) — 다른 plugin 의
+    /// strategy 를 참조할 수 없다. CLI 는 같은 매니페스트 안에서만 이름을 해석한다.
+    #[serde(default)]
+    pub strategy: Option<String>,
     /// `--no-wait` flag 의 CLI arg name. CLI 가 이 키를 true 로 받으면 chain skip.
     /// 기본 `"no_wait"`.
     #[serde(default = "default_no_wait_field")]
@@ -1127,6 +1135,59 @@ pub struct PollingDecl {
 
 fn default_polling_interval_ms() -> u64 {
     500
+}
+
+/// Plugin 이 이름으로 등록하는 완결 감지 전략(completion strategy) 선언.
+///
+/// `AutoWaitDecl.strategy` 가 이름으로 참조하는 CLI 측 실행형(`PollingDecl`)과
+/// `tasty_agent::task::PollSpec`(agent DAG `TaskCommand::Custom.poll`) 양쪽으로
+/// 변환될 수 있는 host-facing 공통 표현이다. 이 타입 자체는 `[[contributes.*]]`
+/// 배열에 담기는 opaque 계약 필드가 아니다 — 계약 필드는 해당 registry(host 측)
+/// 가 별도로 소유하고, 여기서는 그 값을 이 타입으로 디코드한 뒤 아래 변환
+/// 메서드로 실행형을 얻는다.
+///
+/// 필드 의미는 `PollSpec`/`PollingDecl` 과 동형으로 맞춘다. 필드가 갈라지면
+/// `to_polling_decl()`/host 측 `completion_strategy_to_poll_spec()` 변환과 그
+/// 단위테스트가 깨지므로, 대응 관계는 컴파일/테스트로 강제된다(주석만으로
+/// 지켜지는 불변식이 아니다).
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompletionStrategyDecl {
+    /// 폴링 시 호출할 IPC method.
+    pub poll_method: String,
+    /// dispatch 응답 키 → poll params 키 매핑.
+    #[serde(default)]
+    pub map_from_response: HashMap<String, String>,
+    /// 원 dispatch params 키 → poll params 키 매핑.
+    #[serde(default)]
+    pub map_from_request: HashMap<String, String>,
+    /// 응답에서 상태를 읽을 필드명.
+    pub state_field: String,
+    /// terminal 로 간주할 상태값 목록.
+    pub terminal_states: Vec<String>,
+    /// 폴링 간격 (밀리초). 기본 500ms.
+    #[serde(default = "default_polling_interval_ms")]
+    pub interval_ms: u64,
+    /// 전체 폴링 timeout (밀리초). `None` 이면 무한 대기.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+impl CompletionStrategyDecl {
+    /// CLI `AutoWaitDecl.strategy` 경로용 변환. `PollingDecl.timeout_field` 는
+    /// 항상 `None` 으로 고정된다 — named strategy 는 이름으로 공유되는 고정
+    /// 사양이라 CLI 요청마다 다른 `--timeout` 오버라이드 키를 가질 수 없다
+    /// (`PollingDecl` 자신의 shape 은 불변으로 유지, 인라인 `polling` 경로만
+    /// 여전히 CLI `--timeout` 오버라이드를 지원). `timeout_ms` 는 이 경로에서
+    /// 쓰이지 않는다 — CLI 폴링은 raw ms 데드라인이 아니라 요청 params 조회
+    /// 기반이라 표현 형태가 근본적으로 다르다(§ 대표 doc comment 참조).
+    pub fn to_polling_decl(&self) -> PollingDecl {
+        PollingDecl {
+            state_field: self.state_field.clone(),
+            terminal_states: self.terminal_states.clone(),
+            interval_ms: self.interval_ms,
+            timeout_field: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
