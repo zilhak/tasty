@@ -28,14 +28,14 @@ Tasty 의 모든 API 는 **사용자 행동**(키보드/마우스/OS 네이티�
 
 자세한 절차: [`docs/installation.md`](docs/installation.md).
 
+**[GitHub Releases](https://github.com/zilhak/tasty/releases/latest)** 에서 macOS(DMG) / Windows(MSI) / Linux(AppImage 등) 배포 산출물을 바로 받을 수 있다. 소스 최신 커밋이 항상 최신 릴리스보다 앞서 있을 수 있으므로, 가장 최신 기능이 필요하면 아래 소스 빌드를 사용한다.
+
 ```bash
 # 소스 빌드 (모든 플랫폼 공통)
 git clone https://github.com/zilhak/tasty.git
 cd tasty
 cargo build --release
 ./target/release/tasty
-
-# 배포 산출물 (DMG / MSI / AppImage) — GitHub Releases 참조
 ```
 
 ## 핵심 기능
