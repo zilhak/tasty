@@ -454,48 +454,10 @@ fn decode_mesh_bytes_into_target(
     // 유실된 delta 로 인한 스테일/미등록 텍스처 오염을 막기 위해 delta 를 적용하지 않고
     // mesh(기하)만 채택한다 — live_textures 도 건드리지 않는다.
     if chain_ok {
-        // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
-        // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
         if full_textures {
-            let full_ids: HashSet<TextureId> = decoded
-                .textures_delta
-                .set
-                .iter()
-                .map(|(id, _)| *id)
-                .collect();
-            let stale: Vec<TextureId> = target
-                .live_textures
-                .keys()
-                .filter(|id| !full_ids.contains(id))
-                .copied()
-                .collect();
-            for id in stale {
-                target.renderer.free_texture(&id);
-                target.live_textures.remove(&id);
-            }
+            free_stale_textures(target, &decoded.textures_delta);
         }
-
-        // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
-        // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
-        // render 전에 풀어도 안전(set/free 는 서로소).
-        for (id, delta) in &decoded.textures_delta.set {
-            target.renderer.update_texture(device, queue, *id, delta);
-            // 크기 기록: full(pos=None) delta 는 텍스처를 (재)생성하며 새 크기를 확정한다.
-            // 부분(pos=Some) delta 는 크기를 바꾸지 않으므로(deltas_fit 로 기존 크기 안에
-            // 들어감이 보장됨) 기존 값을 유지한다.
-            if delta.pos.is_none() {
-                target.live_textures.insert(*id, delta.image.size());
-            } else {
-                target
-                    .live_textures
-                    .entry(*id)
-                    .or_insert_with(|| delta.image.size());
-            }
-        }
-        for id in &decoded.textures_delta.free {
-            target.renderer.free_texture(id);
-            target.live_textures.remove(id);
-        }
+        apply_texture_deltas(target, device, queue, &decoded.textures_delta);
     }
 
     target.primitives = decoded.primitives;
@@ -512,6 +474,53 @@ fn decode_mesh_bytes_into_target(
     // 다음 tick 에도 체인 단절로 남아 caller 가 full 재전송을 계속 무장한다(불변식). mesh 는
     // 이번 frame 합성엔 채택되므로 최신 기하는 반영된다. awaiting_full 은 caller 가 설정한다.
     outcome
+}
+
+/// full frame 수신 시, plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된
+/// (=plugin 이 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존
+/// 텍스처를 free.
+fn free_stale_textures(target: &mut EguiMeshRenderTarget, textures_delta: &TexturesDelta) {
+    let full_ids: HashSet<TextureId> = textures_delta.set.iter().map(|(id, _)| *id).collect();
+    let stale: Vec<TextureId> = target
+        .live_textures
+        .keys()
+        .filter(|id| !full_ids.contains(id))
+        .copied()
+        .collect();
+    for id in stale {
+        target.renderer.free_texture(&id);
+        target.live_textures.remove(&id);
+    }
+}
+
+/// `textures_delta` 를 전용 Renderer 에 적용(set → free). 전용 Renderer 라
+/// TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free 순서로
+/// frame 경계에서 원자 처리 — free 대상은 primitives 가 참조하지 않으므로
+/// render 전에 풀어도 안전(set/free 는 서로소).
+fn apply_texture_deltas(
+    target: &mut EguiMeshRenderTarget,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    textures_delta: &TexturesDelta,
+) {
+    for (id, delta) in &textures_delta.set {
+        target.renderer.update_texture(device, queue, *id, delta);
+        // 크기 기록: full(pos=None) delta 는 텍스처를 (재)생성하며 새 크기를 확정한다.
+        // 부분(pos=Some) delta 는 크기를 바꾸지 않으므로(deltas_fit 로 기존 크기 안에
+        // 들어감이 보장됨) 기존 값을 유지한다.
+        if delta.pos.is_none() {
+            target.live_textures.insert(*id, delta.image.size());
+        } else {
+            target
+                .live_textures
+                .entry(*id)
+                .or_insert_with(|| delta.image.size());
+        }
+    }
+    for id in &textures_delta.free {
+        target.renderer.free_texture(id);
+        target.live_textures.remove(id);
+    }
 }
 
 /// 캐시된 mesh 를 물리 rect 영역에 합성한다(전용 Renderer + 전용 pass).
@@ -591,6 +600,74 @@ fn composite_mesh_target(
     queue.submit(std::iter::once(encoder.finish()));
 }
 
+/// `targets` 에 `key` 항목이 없으면 전용 `egui_wgpu::Renderer` 를 새로 만들어
+/// 삽입한다. surface/popup/banner 세 렌더 경로의 초기화가 완전히 동일해 공유한다.
+fn ensure_mesh_target<K: std::hash::Hash + Eq + Copy>(
+    targets: &mut HashMap<K, EguiMeshRenderTarget>,
+    key: K,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) {
+    targets.entry(key).or_insert_with(|| {
+        let renderer = egui_wgpu::Renderer::new(device, format, None, 1, false);
+        EguiMeshRenderTarget::new(renderer)
+    });
+}
+
+/// plugin SharedMemory 에서 mesh frame 을 읽어 디코드하고, 결과(`NeedsFull`/
+/// `AcceptedStale`)에 따라 full 재전송을 재무장한다. surface/popup/banner 세
+/// 곳이 "buffer 조회 → unsafe read → decode → outcome 처리"까지 완전히 동일한
+/// 시퀀스라 공유한다 — 로그 필드 이름 등 사이트별 차이는 클로저로 주입한다.
+#[allow(clippy::too_many_arguments)]
+fn decode_and_track<K: std::hash::Hash + Eq + Copy>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    plugin_manager: &PluginManager,
+    targets: &mut HashMap<K, EguiMeshRenderTarget>,
+    full_requests: &mut HashSet<K>,
+    key: K,
+    plugin_id: &str,
+    buffer_id: tasty_plugin_protocol::SharedBufferId,
+    generation: u64,
+    frame_seq: u64,
+    full_textures: bool,
+    chain_ok: bool,
+    awaiting: bool,
+    host_ppp: f32,
+    log_not_registered: impl FnOnce(),
+    log_chain_broken: impl FnOnce(),
+) {
+    let Some(mem) = plugin_manager.plugin_buffer(plugin_id, buffer_id) else {
+        log_not_registered();
+        return;
+    };
+    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+    let raw = unsafe { mem.as_slice() };
+    let outcome = decode_mesh_into_target(
+        device,
+        queue,
+        targets.get_mut(&key).expect("ensured above"),
+        raw,
+        generation,
+        frame_seq,
+        full_textures,
+        chain_ok,
+        host_ppp,
+        plugin_id,
+    );
+    if !matches!(
+        outcome,
+        DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
+    ) {
+        return;
+    }
+    if !awaiting {
+        log_chain_broken();
+        targets.get_mut(&key).expect("ensured above").awaiting_full = true;
+    }
+    full_requests.insert(key);
+}
+
 impl GpuState {
     /// egui-mesh surface 들을 전용 Renderer 로 framebuffer 에 합성한다.
     ///
@@ -608,6 +685,10 @@ impl GpuState {
         existing: &[(u32, String)],
         plugin_manager: &PluginManager,
     ) {
+        // 게이팅: 보이는/존재하는 target 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
+        if targets.is_empty() && existing.is_empty() && self.egui_mesh_targets.is_empty() {
+            return;
+        }
         // layout 에서 사라진(닫힌) surface 의 전용 Renderer 정리 (GPU 자원 해제).
         // 탭 전환/workspace 전환으로 안 보이게 된 것은 existing 에 남아 있어 보존된다.
         let live: HashSet<u32> = existing.iter().map(|t| t.0).collect();
@@ -628,13 +709,12 @@ impl GpuState {
             let frame_seq = frame.frame_seq;
             let frame_full = frame.full_textures;
 
-            // 전용 Renderer ensure.
-            if !self.egui_mesh_targets.contains_key(sid) {
-                let renderer =
-                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
-                self.egui_mesh_targets
-                    .insert(*sid, EguiMeshRenderTarget::new(renderer));
-            }
+            ensure_mesh_target(
+                &mut self.egui_mesh_targets,
+                *sid,
+                &self.device,
+                self.config.format,
+            );
 
             // generation 이 바뀌었거나 아직 콘텐츠가 없을 때만 디코드.
             let (needs_decode, chain_ok, awaiting) = {
@@ -654,52 +734,41 @@ impl GpuState {
                 }
                 continue;
             }
-            if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
-                // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
-                let raw = unsafe { mem.as_slice() };
-                // mesh 채택은 chain 연속과 분리 — seq 점프여도 참조 텍스처가 상주하면 최신
-                // reflow mesh 를 채택한다. delta 는 chain_ok 일 때만 적용(decode 내부).
-                let outcome = decode_mesh_into_target(
-                    &self.device,
-                    &self.queue,
-                    self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
-                    raw,
-                    frame_generation,
-                    frame_seq,
-                    frame_full,
-                    chain_ok,
-                    host_ppp,
-                    plugin_id,
-                );
-                // NeedsFull: mesh 보류. AcceptedStale: mesh 는 채택했으나 atlas 내용 정합
-                // 미보장(유실 delta) — 둘 다 full 재전송을 요청한다. 요청한 full frame 이
-                // latest-wins 버퍼에서 유실될 수 있으므로 수락될 때까지 매 tick 재무장한다
-                // (single-shot deadlock 제거). 로그는 최초 1 회만.
-                if matches!(
-                    outcome,
-                    DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
-                ) {
-                    if !awaiting {
-                        tracing::debug!(
-                            surface = sid,
-                            frame_seq,
-                            "egui-mesh prepare: texture delta chain broken; requesting full resend"
-                        );
-                        self.egui_mesh_targets
-                            .get_mut(sid)
-                            .expect("ensured above")
-                            .awaiting_full = true;
-                    }
-                    self.egui_mesh_full_requests.insert(*sid);
-                }
-            } else {
-                tracing::warn!(
-                    plugin = %plugin_id,
-                    buffer = frame_buffer_id.0,
-                    surface = sid,
-                    "egui-mesh prepare: SharedMemory not registered"
-                );
-            }
+            // mesh 채택은 chain 연속과 분리 — seq 점프여도 참조 텍스처가 상주하면 최신
+            // reflow mesh 를 채택한다. delta 는 chain_ok 일 때만 적용(decode 내부). 요청한
+            // full frame 은 latest-wins 버퍼에서 유실될 수 있으므로 수락될 때까지 매 tick
+            // 재무장한다(single-shot deadlock 제거). 로그는 최초 1 회만.
+            decode_and_track(
+                &self.device,
+                &self.queue,
+                plugin_manager,
+                &mut self.egui_mesh_targets,
+                &mut self.egui_mesh_full_requests,
+                *sid,
+                plugin_id,
+                frame_buffer_id,
+                frame_generation,
+                frame_seq,
+                frame_full,
+                chain_ok,
+                awaiting,
+                host_ppp,
+                || {
+                    tracing::warn!(
+                        plugin = %plugin_id,
+                        buffer = frame_buffer_id.0,
+                        surface = sid,
+                        "egui-mesh prepare: SharedMemory not registered"
+                    );
+                },
+                || {
+                    tracing::debug!(
+                        surface = sid,
+                        frame_seq,
+                        "egui-mesh prepare: texture delta chain broken; requesting full resend"
+                    );
+                },
+            );
         }
 
         // 합성 pass — 보이는 surface 만 (framebuffer 가 매 frame clear 되므로 매 frame).
@@ -818,6 +887,10 @@ impl GpuState {
         regions: &[(u64, PhysicalRect)],
         plugin_manager: &PluginManager,
     ) {
+        // 게이팅: 보이는 region 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
+        if regions.is_empty() && self.egui_mesh_popup_targets.is_empty() {
+            return;
+        }
         // 닫힌 popup 의 전용 Renderer 정리 (GPU 자원 해제).
         let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
         self.egui_mesh_popup_targets
@@ -835,12 +908,12 @@ impl GpuState {
             let frame_full = frame.full_textures;
             let host_ppp = self.scale_factor;
 
-            if !self.egui_mesh_popup_targets.contains_key(iid) {
-                let renderer =
-                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
-                self.egui_mesh_popup_targets
-                    .insert(*iid, EguiMeshRenderTarget::new(renderer));
-            }
+            ensure_mesh_target(
+                &mut self.egui_mesh_popup_targets,
+                *iid,
+                &self.device,
+                self.config.format,
+            );
 
             let (needs_decode, chain_ok, awaiting) = {
                 let t = &self.egui_mesh_popup_targets[iid];
@@ -851,51 +924,40 @@ impl GpuState {
                 )
             };
             if needs_decode {
-                if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
-                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
-                    let raw = unsafe { mem.as_slice() };
-                    // mesh 채택과 delta 적용 분리 (surface 와 동형).
-                    let outcome = decode_mesh_into_target(
-                        &self.device,
-                        &self.queue,
-                        self.egui_mesh_popup_targets
-                            .get_mut(iid)
-                            .expect("ensured above"),
-                        raw,
-                        frame_generation,
-                        frame_seq,
-                        frame_full,
-                        chain_ok,
-                        host_ppp,
-                        &frame_plugin_id,
-                    );
-                    // NeedsFull(보류) 또는 AcceptedStale(채택했으나 atlas 정합 미보장) —
-                    // 둘 다 full 재전송을 매 tick 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
-                    if matches!(
-                        outcome,
-                        DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
-                    ) {
-                        if !awaiting {
-                            tracing::debug!(
-                                popup = iid,
-                                frame_seq,
-                                "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
-                            );
-                            self.egui_mesh_popup_targets
-                                .get_mut(iid)
-                                .expect("ensured above")
-                                .awaiting_full = true;
-                        }
-                        self.egui_mesh_popup_full_requests.insert(*iid);
-                    }
-                } else {
-                    tracing::warn!(
-                        plugin = %frame_plugin_id,
-                        buffer = frame_buffer_id.0,
-                        popup = iid,
-                        "egui-mesh popup prepare: SharedMemory not registered"
-                    );
-                }
+                // mesh 채택과 delta 적용 분리 (surface 와 동형). NeedsFull(보류) 또는
+                // AcceptedStale(채택했으나 atlas 정합 미보장) — 둘 다 full 재전송을 매 tick
+                // 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
+                decode_and_track(
+                    &self.device,
+                    &self.queue,
+                    plugin_manager,
+                    &mut self.egui_mesh_popup_targets,
+                    &mut self.egui_mesh_popup_full_requests,
+                    *iid,
+                    &frame_plugin_id,
+                    frame_buffer_id,
+                    frame_generation,
+                    frame_seq,
+                    frame_full,
+                    chain_ok,
+                    awaiting,
+                    host_ppp,
+                    || {
+                        tracing::warn!(
+                            plugin = %frame_plugin_id,
+                            buffer = frame_buffer_id.0,
+                            popup = iid,
+                            "egui-mesh popup prepare: SharedMemory not registered"
+                        );
+                    },
+                    || {
+                        tracing::debug!(
+                            popup = iid,
+                            frame_seq,
+                            "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
+                        );
+                    },
+                );
             } else if awaiting {
                 // AcceptedStale 로 generation 갱신됐으나 미수렴 — 매 tick full 재무장(surface 동형).
                 self.egui_mesh_popup_full_requests.insert(*iid);
@@ -922,6 +984,10 @@ impl GpuState {
         regions: &[(u64, PhysicalRect)],
         plugin_manager: &PluginManager,
     ) {
+        // 게이팅: 보이는 region 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
+        if regions.is_empty() && self.egui_mesh_banner_targets.is_empty() {
+            return;
+        }
         // 닫힌 banner 의 전용 Renderer 정리 (GPU 자원 해제).
         let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
         self.egui_mesh_banner_targets
@@ -939,12 +1005,12 @@ impl GpuState {
             let frame_full = frame.full_textures;
             let host_ppp = self.scale_factor;
 
-            if !self.egui_mesh_banner_targets.contains_key(iid) {
-                let renderer =
-                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
-                self.egui_mesh_banner_targets
-                    .insert(*iid, EguiMeshRenderTarget::new(renderer));
-            }
+            ensure_mesh_target(
+                &mut self.egui_mesh_banner_targets,
+                *iid,
+                &self.device,
+                self.config.format,
+            );
 
             let (needs_decode, chain_ok, awaiting) = {
                 let t = &self.egui_mesh_banner_targets[iid];
@@ -955,51 +1021,40 @@ impl GpuState {
                 )
             };
             if needs_decode {
-                if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
-                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
-                    let raw = unsafe { mem.as_slice() };
-                    // mesh 채택과 delta 적용 분리 (surface 와 동형).
-                    let outcome = decode_mesh_into_target(
-                        &self.device,
-                        &self.queue,
-                        self.egui_mesh_banner_targets
-                            .get_mut(iid)
-                            .expect("ensured above"),
-                        raw,
-                        frame_generation,
-                        frame_seq,
-                        frame_full,
-                        chain_ok,
-                        host_ppp,
-                        &frame_plugin_id,
-                    );
-                    // NeedsFull(보류) 또는 AcceptedStale(채택했으나 atlas 정합 미보장) —
-                    // 둘 다 full 재전송을 매 tick 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
-                    if matches!(
-                        outcome,
-                        DecodeOutcome::NeedsFull | DecodeOutcome::AcceptedStale
-                    ) {
-                        if !awaiting {
-                            tracing::debug!(
-                                banner = iid,
-                                frame_seq,
-                                "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
-                            );
-                            self.egui_mesh_banner_targets
-                                .get_mut(iid)
-                                .expect("ensured above")
-                                .awaiting_full = true;
-                        }
-                        self.egui_mesh_banner_full_requests.insert(*iid);
-                    }
-                } else {
-                    tracing::warn!(
-                        plugin = %frame_plugin_id,
-                        buffer = frame_buffer_id.0,
-                        banner = iid,
-                        "egui-mesh banner prepare: SharedMemory not registered"
-                    );
-                }
+                // mesh 채택과 delta 적용 분리 (surface 와 동형). NeedsFull(보류) 또는
+                // AcceptedStale(채택했으나 atlas 정합 미보장) — 둘 다 full 재전송을 매 tick
+                // 재무장 요청한다(surface 동형). 로그는 최초 1 회만.
+                decode_and_track(
+                    &self.device,
+                    &self.queue,
+                    plugin_manager,
+                    &mut self.egui_mesh_banner_targets,
+                    &mut self.egui_mesh_banner_full_requests,
+                    *iid,
+                    &frame_plugin_id,
+                    frame_buffer_id,
+                    frame_generation,
+                    frame_seq,
+                    frame_full,
+                    chain_ok,
+                    awaiting,
+                    host_ppp,
+                    || {
+                        tracing::warn!(
+                            plugin = %frame_plugin_id,
+                            buffer = frame_buffer_id.0,
+                            banner = iid,
+                            "egui-mesh banner prepare: SharedMemory not registered"
+                        );
+                    },
+                    || {
+                        tracing::debug!(
+                            banner = iid,
+                            frame_seq,
+                            "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
+                        );
+                    },
+                );
             } else if awaiting {
                 // AcceptedStale 로 generation 갱신됐으나 미수렴 — 매 tick full 재무장(surface 동형).
                 self.egui_mesh_banner_full_requests.insert(*iid);

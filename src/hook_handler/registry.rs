@@ -488,27 +488,8 @@ impl HookHandlerRegistry {
     ///
     /// **Transactional**: read/parse 실패 시 기존 user contribution 보존.
     pub fn reload_user_config(&self, path: &Path) {
-        let decls = match std::fs::read_to_string(path) {
-            Ok(text) => match parse_user_handler_section(&text) {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!(
-                        path = %path.display(),
-                        error = %e,
-                        "hook_handler: reload aborted — parse failed, keeping previous user config",
-                    );
-                    return;
-                }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => {
-                warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "hook_handler: reload aborted — read failed, keeping previous user config",
-                );
-                return;
-            }
+        let Some(decls) = read_user_decls(path) else {
+            return;
         };
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -544,70 +525,121 @@ impl HookHandlerRegistry {
         }
         let mut next = BTreeMap::new();
         for (id, contribs) in inner.contributions.iter() {
-            let Some(base) = contribs.first() else {
-                continue;
-            };
-            let mut source = base.source;
-            let mut priority = base.priority;
-            let mut display = base.display_name_i18n_key.clone();
-            let mut disabled = base.disabled_override.unwrap_or(false);
-            let mut action = base.action.clone();
-            let mut owner = base.owner.clone();
-
-            for c in contribs.iter().skip(1) {
-                if c.source.is_some() {
-                    source = c.source;
-                }
-                if c.priority.is_some() {
-                    priority = c.priority;
-                }
-                if c.display_name_i18n_key.is_some() {
-                    display = c.display_name_i18n_key.clone();
-                }
-                if let Some(d) = c.disabled_override {
-                    disabled = d;
-                }
-                if c.action.is_some() {
-                    action = c.action.clone();
-                }
-                owner = c.owner.clone();
+            if let Some(handler) = merge_contribution(id, contribs) {
+                next.insert(id.clone(), handler);
             }
-
-            // source + action 둘 다 있어야 등록.
-            let (Some(source), Some(action)) = (source, action) else {
-                warn!(
-                    handler_id = id.as_str(),
-                    "hook_handler: handler missing required source or action — dropped"
-                );
-                continue;
-            };
-            // 셸 불변식(구조적 강제): ShellCommand 는 source == Hook 만 산다.
-            if matches!(action, HookHandlerAction::ShellCommand { .. })
-                && source != HookSource::Hook
-            {
-                warn!(
-                    handler_id = id.as_str(),
-                    "hook_handler: shell command with non-hook source — dropped (invariant)"
-                );
-                continue;
-            }
-            let priority = priority.unwrap_or(100);
-            next.insert(
-                id.clone(),
-                HookHandler {
-                    id: id.clone(),
-                    source,
-                    priority,
-                    owner,
-                    action,
-                    display_name_i18n_key: display,
-                    disabled,
-                },
-            );
         }
         inner.finalized = next;
         inner.dirty = false;
     }
+}
+
+/// 사용자 설정 파일을 읽고 파싱한다. read/parse 실패는 `None`(호출자는 기존
+/// user contribution 을 그대로 보존해야 함) — 실패 사유는 여기서 warn 로그로
+/// 남긴다. 파일 부재(`NotFound`)는 실패가 아니라 "빈 설정"으로 취급한다.
+fn read_user_decls(path: &Path) -> Option<Vec<UserHookHandlerSettingsDecl>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => match parse_user_handler_section(&text) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "hook_handler: reload aborted — parse failed, keeping previous user config",
+                );
+                None
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(e) => {
+            warn!(
+                path = %path.display(),
+                error = %e,
+                "hook_handler: reload aborted — read failed, keeping previous user config",
+            );
+            None
+        }
+    }
+}
+
+/// [`merge_contribution`] 의 patch-fold 누산기 — Host → Plugin → User 순서로
+/// 순회하며 `Some`/override 필드만 덮어쓴 중간 상태.
+struct MergeAcc {
+    source: Option<HookSource>,
+    priority: Option<i32>,
+    display: Option<String>,
+    disabled: bool,
+    action: Option<HookHandlerAction>,
+    owner: HookHandlerOwner,
+}
+
+/// `acc` 에 `c` 의 override 필드를 patch semantics(설정된 필드만 덮어씀)로 접는다.
+fn apply_contribution(acc: &mut MergeAcc, c: &HookHandlerContribution) {
+    if c.source.is_some() {
+        acc.source = c.source;
+    }
+    if c.priority.is_some() {
+        acc.priority = c.priority;
+    }
+    if c.display_name_i18n_key.is_some() {
+        acc.display = c.display_name_i18n_key.clone();
+    }
+    if let Some(d) = c.disabled_override {
+        acc.disabled = d;
+    }
+    if c.action.is_some() {
+        acc.action = c.action.clone();
+    }
+    acc.owner = c.owner.clone();
+}
+
+/// 한 handler id 의 3출처 contribution 을 patch semantics(Host → Plugin → User
+/// 순서로 `Some` 필드만 덮어씀)로 병합해 최종 `HookHandler` 를 만든다. 필수
+/// 필드(source/action) 누락이나 셸 불변식 위반이면 `None`(호출자는 drop) —
+/// 사유는 여기서 warn 로그로 남긴다.
+fn merge_contribution(
+    id: &HookHandlerId,
+    contribs: &[HookHandlerContribution],
+) -> Option<HookHandler> {
+    let base = contribs.first()?;
+    let mut acc = MergeAcc {
+        source: base.source,
+        priority: base.priority,
+        display: base.display_name_i18n_key.clone(),
+        disabled: base.disabled_override.unwrap_or(false),
+        action: base.action.clone(),
+        owner: base.owner.clone(),
+    };
+    for c in contribs.iter().skip(1) {
+        apply_contribution(&mut acc, c);
+    }
+
+    // source + action 둘 다 있어야 등록.
+    let (Some(source), Some(action)) = (acc.source, acc.action) else {
+        warn!(
+            handler_id = id.as_str(),
+            "hook_handler: handler missing required source or action — dropped"
+        );
+        return None;
+    };
+    // 셸 불변식(구조적 강제): ShellCommand 는 source == Hook 만 산다.
+    if matches!(action, HookHandlerAction::ShellCommand { .. }) && source != HookSource::Hook {
+        warn!(
+            handler_id = id.as_str(),
+            "hook_handler: shell command with non-hook source — dropped (invariant)"
+        );
+        return None;
+    }
+    let priority = acc.priority.unwrap_or(100);
+    Some(HookHandler {
+        id: id.clone(),
+        source,
+        priority,
+        owner: acc.owner,
+        action,
+        display_name_i18n_key: acc.display,
+        disabled: acc.disabled,
+    })
 }
 
 impl Default for HookHandlerRegistry {

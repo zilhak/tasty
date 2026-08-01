@@ -79,6 +79,48 @@ impl AutofireGuard {
     }
 }
 
+/// entry 하나를 읽고 TOFU 재검 후 통과분만 실행 제출한다. 소스 read 실패/TOFU
+/// 불일치는 warn 로그만 남기고 조용히 스킵(호출자는 다음 entry 로 계속 진행).
+fn try_run_entry(
+    lua: &tasty_lua::LuaEngine,
+    guard: &mut AutofireGuard,
+    event: &str,
+    entry: &tasty_settings::ScriptEntry,
+) {
+    let source = match std::fs::read_to_string(&entry.path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                target: "tasty_lua",
+                "autofire '{event}': script read failed {}: {e}",
+                entry.path.display()
+            );
+            return;
+        }
+    };
+    // TOFU 재검 — 불일치는 차단. 해시 자동 갱신 금지(자동 승인은 TOFU 무의미).
+    if tasty_settings::hash_bytes(source.as_bytes()) != entry.sha256 {
+        tracing::warn!(
+            target: "tasty_lua",
+            "autofire '{event}': '{}' blocked — file changed since registration \
+             (re-approve in Settings › Misc › Scripts)",
+            entry.name
+        );
+        return;
+    }
+    let name = if entry.name.is_empty() {
+        entry
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| entry.id.clone())
+    } else {
+        entry.name.clone()
+    };
+    lua.run_script_tracked(&source, Some(&name), guard.token());
+    guard.note_submitted();
+}
+
 /// `event` 를 트리거로 등록한 스크립트를 모두 실행한다 (TOFU 재검 통과분만).
 ///
 /// 억제 판정은 fire 단위 — 같은 fire 에 바인딩된 복수 스크립트는 함께 실행되고,
@@ -101,38 +143,7 @@ pub(crate) fn dispatch(
         return;
     }
     for entry in scripts.entries_for_event(event) {
-        let source = match std::fs::read_to_string(&entry.path) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!(
-                    target: "tasty_lua",
-                    "autofire '{event}': script read failed {}: {e}",
-                    entry.path.display()
-                );
-                continue;
-            }
-        };
-        // TOFU 재검 — 불일치는 차단. 해시 자동 갱신 금지(자동 승인은 TOFU 무의미).
-        if tasty_settings::hash_bytes(source.as_bytes()) != entry.sha256 {
-            tracing::warn!(
-                target: "tasty_lua",
-                "autofire '{event}': '{}' blocked — file changed since registration \
-                 (re-approve in Settings › Misc › Scripts)",
-                entry.name
-            );
-            continue;
-        }
-        let name = if entry.name.is_empty() {
-            entry
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| entry.id.clone())
-        } else {
-            entry.name.clone()
-        };
-        lua.run_script_tracked(&source, Some(&name), guard.token());
-        guard.note_submitted();
+        try_run_entry(lua, guard, event, entry);
     }
 }
 

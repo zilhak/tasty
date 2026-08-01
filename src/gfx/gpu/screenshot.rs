@@ -2,6 +2,42 @@ use crate::model::{PhysicalPx, PhysicalRect};
 
 use super::GpuState;
 
+/// Convert a padded BGRA readback buffer into a tightly-packed RGB pixel
+/// buffer suitable for PNG encoding.
+fn bgra_to_rgb(data: &[u8], width: u32, height: u32, padded_bytes_per_row: u32) -> Vec<u8> {
+    let bytes_per_pixel = 4u32;
+    let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+    for row in 0..height {
+        let offset = (row * padded_bytes_per_row) as usize;
+        for col in 0..width {
+            let px = offset + (col * bytes_per_pixel) as usize;
+            // BGRA → RGB
+            pixels.push(data[px + 2]); // R
+            pixels.push(data[px + 1]); // G
+            pixels.push(data[px]); // B
+        }
+    }
+    pixels
+}
+
+/// Write `pixels` (tightly-packed RGB) to `path` as a PNG. Failures are
+/// logged, not propagated — screenshot capture is best-effort.
+fn write_png(pixels: &[u8], width: u32, height: u32, path: &std::path::Path) {
+    if let Ok(file) = std::fs::File::create(path) {
+        let writer = std::io::BufWriter::new(file);
+        let mut encoder = png::Encoder::new(writer, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        if let Ok(mut writer) = encoder.write_header() {
+            if let Err(e) = writer.write_image_data(pixels) {
+                tracing::warn!("screenshot write_image_data failed: {e}");
+            } else {
+                tracing::info!("screenshot saved to {}", path.display());
+            }
+        }
+    }
+}
+
 impl GpuState {
     /// Capture a texture of the given pixel dimensions to a PNG file.
     ///
@@ -16,8 +52,26 @@ impl GpuState {
         height: u32,
         path: &std::path::Path,
     ) {
+        let (buffer, padded_bytes_per_row) =
+            self.copy_texture_to_readback_buffer(texture, width, height);
+        let Some(data) = self.map_and_read(&buffer) else {
+            tracing::warn!("failed to capture screenshot");
+            return;
+        };
+        let pixels = bgra_to_rgb(&data, width, height, padded_bytes_per_row);
+        write_png(&pixels, width, height, path);
+    }
+
+    /// Copy `texture` into a freshly allocated readback buffer (rows padded to
+    /// wgpu's 256-byte row alignment) and submit the copy. Returns the buffer
+    /// and its per-row stride (needed to de-pad during [`bgra_to_rgb`]).
+    fn copy_texture_to_readback_buffer(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> (wgpu::Buffer, u32) {
         let bytes_per_pixel = 4u32;
-        // wgpu requires rows to be aligned to 256 bytes
         let unpadded_bytes_per_row = width * bytes_per_pixel;
         let padded_bytes_per_row = (unpadded_bytes_per_row + 255) & !255;
 
@@ -57,8 +111,13 @@ impl GpuState {
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
+        (buffer, padded_bytes_per_row)
+    }
 
-        // Map the buffer and read pixels
+    /// Map `buffer` for CPU read, block until the map completes, and copy the
+    /// mapped bytes out (so the buffer can be unmapped before returning).
+    /// Returns `None` if the map itself failed.
+    fn map_and_read(&self, buffer: &wgpu::Buffer) -> Option<Vec<u8>> {
         let buffer_slice = buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -70,38 +129,12 @@ impl GpuState {
 
         if let Ok(Ok(())) = rx.recv() {
             let data = buffer_slice.get_mapped_range();
-
-            // Convert BGRA -> RGB for PNG encoding
-            let mut pixels = Vec::with_capacity((width * height * 3) as usize);
-            for row in 0..height {
-                let offset = (row * padded_bytes_per_row) as usize;
-                for col in 0..width {
-                    let px = offset + (col * bytes_per_pixel) as usize;
-                    // BGRA → RGB
-                    pixels.push(data[px + 2]); // R
-                    pixels.push(data[px + 1]); // G
-                    pixels.push(data[px]); // B
-                }
-            }
+            let owned = data.to_vec();
             drop(data);
             buffer.unmap();
-
-            // Write as PNG
-            if let Ok(file) = std::fs::File::create(path) {
-                let writer = std::io::BufWriter::new(file);
-                let mut encoder = png::Encoder::new(writer, width, height);
-                encoder.set_color(png::ColorType::Rgb);
-                encoder.set_depth(png::BitDepth::Eight);
-                if let Ok(mut writer) = encoder.write_header() {
-                    if let Err(e) = writer.write_image_data(&pixels) {
-                        tracing::warn!("screenshot write_image_data failed: {e}");
-                    } else {
-                        tracing::info!("screenshot saved to {}", path.display());
-                    }
-                }
-            }
+            Some(owned)
         } else {
-            tracing::warn!("failed to capture screenshot");
+            None
         }
     }
 

@@ -369,18 +369,7 @@ impl GpuState {
         // frame so the shared renderer accumulator (reset by `render_terminals`'
         // `begin_frame`) and the projection uniform (restored inside the helper)
         // stay coherent for the visible frame that follows.
-        if let Some((surface_id, path)) = self.pending_surface_screenshot.take() {
-            let reverse_screen = engine.settings.general.reverse_screen_enabled;
-            // A hard-occupied surface shows a readonly mirror server-side; capture
-            // what the user would see (mirror), else the live terminal.
-            let terminal = engine.visible_terminal(surface_id);
-            match terminal {
-                Some(t) => self.capture_surface_to_png(t, reverse_screen, &path),
-                None => tracing::warn!(
-                    "surface screenshot: surface {surface_id} has no terminal to capture"
-                ),
-            }
-        }
+        self.handle_pending_surface_screenshot(engine);
 
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
@@ -450,22 +439,8 @@ impl GpuState {
         // already set a ResizeXxx icon. Skip the surface/link overrides so the
         // border cursor is not overwritten by the terminal surface I-beam.
         // (macOS never sets this field, so the guard is a no-op there.)
-        if state.pending_resize_cursor.is_none()
-            && !self.egui_ctx.is_pointer_over_area()
-            && !state.popup_hovered
-            && !state.banner_hovered
-            && !state.modifier_hint_hovered
-            && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
-        {
-            let px = pos.x * self.scale_factor;
-            let py = pos.y * self.scale_factor;
-            if let Some(icon) = state.winit_cursor_icon_at(engine, px, py, terminal_rect, 4.0) {
-                full_output.platform_output.cursor_icon = icon;
-            }
-        }
-        // Link hover overrides cursor to pointing-hand (unless on a resize border).
-        if link_hover.is_some() && state.pending_resize_cursor.is_none() {
-            full_output.platform_output.cursor_icon = egui::CursorIcon::PointingHand;
+        if let Some(icon) = self.resolve_cursor_icon(state, engine, terminal_rect, link_hover) {
+            full_output.platform_output.cursor_icon = icon;
         }
 
         // 4. Post-egui updates (theme/font refresh)
@@ -479,11 +454,6 @@ impl GpuState {
         // Pre-set allow_ime=false so that when egui computes allow_ime=false
         // (no text field), the check false!=false is false and it skips
         // the set_ime_allowed(false) call entirely.
-        let t0 = std::time::Instant::now();
-        self.egui_state.set_allow_ime(false);
-        self.egui_state
-            .handle_platform_output(window, full_output.platform_output);
-
         // popup이 focused면 IME를 비활성화하여 KeyboardInput이 직접 발생하도록 한다.
         // 이렇게 하면 한글 IME 활성 상태에서도 popup 단축키가 physical_key로 매칭된다.
         //
@@ -492,13 +462,8 @@ impl GpuState {
         // (VK_HANGUL) 토글을 가끔 망가뜨린다(다른 앱으로 갔다 오면 풀리는 증상의 원인).
         // Windows winit은 IME 활성 상태에서도 KeyboardInput과 physical_key를 정상 emit하므로,
         // popup 단축키 매칭에 IME 비활성화가 필요 없다. 따라서 Windows는 항상 IME를 허용한다.
-        #[cfg(not(windows))]
-        {
-            let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
-            window.set_ime_allowed(!disable_ime);
-        }
-        #[cfg(windows)]
-        window.set_ime_allowed(true);
+        let t0 = std::time::Instant::now();
+        self.apply_platform_output(window, state, full_output.platform_output);
         let platform_output_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 5. Tessellate egui
@@ -546,17 +511,12 @@ impl GpuState {
         // egui-mesh surface 합성 (A1-S5): terminal 콘텐츠와 같은 layer(host chrome 아래).
         // plugin 이 자기 프로세스에서 tessellate 한 mesh 를 전용 Renderer 로 영역 합성한다.
         // existing(비활성 탭/workspace 포함)이 비어도 호출해 닫힌 surface 의 GPU 자원을
-        // retain 으로 정리한다.
+        // retain 으로 정리한다(빈 target 게이팅은 `render_egui_mesh_surfaces` 내부에서 처리).
         if let Some(mgr) = plugin_manager {
             let mesh_targets =
                 egui_mesh_prepare::collect_egui_mesh_targets(state, engine, terminal_rect);
             let mesh_existing = state.egui_mesh_surfaces_existing(engine);
-            if !mesh_targets.is_empty()
-                || !mesh_existing.is_empty()
-                || !self.egui_mesh_targets.is_empty()
-            {
-                self.render_egui_mesh_surfaces(&view, &mesh_targets, &mesh_existing, mgr);
-            }
+            self.render_egui_mesh_surfaces(&view, &mesh_targets, &mesh_existing, mgr);
         }
 
         // attach mesh mirror surface 합성(`docs/dev-guide/attach-behavior.md` 참고): 위
@@ -595,10 +555,7 @@ impl GpuState {
         // 돌아야 마지막 popup 이 닫힌 프레임에 전용 Renderer/텍스처가 해제된다
         // (surface 게이트의 `|| !egui_mesh_targets.is_empty()` 와 동형. 없으면 다음
         // popup 이 열릴 때까지 target 1개가 GPU 자원을 쥔 채 상주 — 실측 확인).
-        if let Some(mgr) = plugin_manager
-            && (!state.plugin_mesh_popup_regions.is_empty()
-                || !self.egui_mesh_popup_targets.is_empty())
-        {
+        if let Some(mgr) = plugin_manager {
             let regions = state.plugin_mesh_popup_regions.clone();
             self.render_egui_mesh_popups(&view, &regions, mgr);
         }
@@ -607,10 +564,7 @@ impl GpuState {
         // plugin mesh 를 얹는다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
         // manager)가 그렸고, content 만 여기서 합성된다. `draw_plugin_banners` 가 적재한 영역.
         // popup 과 동일 — 잔존 target prune 을 위해 빈 regions 에서도 호출.
-        if let Some(mgr) = plugin_manager
-            && (!state.plugin_mesh_banner_regions.is_empty()
-                || !self.egui_mesh_banner_targets.is_empty())
-        {
+        if let Some(mgr) = plugin_manager {
             let regions = state.plugin_mesh_banner_regions.clone();
             self.render_egui_mesh_banners(&view, &regions, mgr);
         }
@@ -649,6 +603,86 @@ impl GpuState {
         });
 
         Ok(())
+    }
+
+    /// Pending offscreen surface screenshot(agent action, focus-independent) 소비.
+    /// A hard-occupied surface shows a readonly mirror server-side; capture what
+    /// the user would see (mirror), else the live terminal.
+    fn handle_pending_surface_screenshot(&mut self, engine: &crate::core::CoreState) {
+        let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
+            return;
+        };
+        let reverse_screen = engine.settings.general.reverse_screen_enabled;
+        match engine.visible_terminal(surface_id) {
+            Some(t) => self.capture_surface_to_png(t, reverse_screen, &path),
+            None => {
+                tracing::warn!(
+                    "surface screenshot: surface {surface_id} has no terminal to capture"
+                )
+            }
+        }
+    }
+
+    /// Cursor decision: egui first, then winit area (dividers + surfaces), then
+    /// link hover. Resize-border cursor takes priority: when the pointer is on a
+    /// window resize border, `pending_resize_cursor` is Some and the egui frame
+    /// has already set a ResizeXxx icon, so the surface/link overrides below are
+    /// skipped to avoid overwriting the border cursor with the terminal I-beam.
+    /// (macOS never sets this field, so the guard is a no-op there.) Returns the
+    /// icon to apply, or `None` to leave egui's own decision untouched.
+    fn resolve_cursor_icon(
+        &self,
+        state: &AppState,
+        engine: &crate::core::CoreState,
+        terminal_rect: PhysicalRect,
+        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+    ) -> Option<egui::CursorIcon> {
+        let mut icon = None;
+        if state.pending_resize_cursor.is_none()
+            && !self.egui_ctx.is_pointer_over_area()
+            && !state.popup_hovered
+            && !state.banner_hovered
+            && !state.modifier_hint_hovered
+            && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
+        {
+            let px = pos.x * self.scale_factor;
+            let py = pos.y * self.scale_factor;
+            icon = state.winit_cursor_icon_at(engine, px, py, terminal_rect, 4.0);
+        }
+        // Link hover overrides cursor to pointing-hand (unless on a resize border).
+        if link_hover.is_some() && state.pending_resize_cursor.is_none() {
+            icon = Some(egui::CursorIcon::PointingHand);
+        }
+        icon
+    }
+
+    /// egui `PlatformOutput` 적용 + IME 허용 여부 갱신.
+    ///
+    /// popup이 focused면 IME를 비활성화하여 KeyboardInput이 직접 발생하도록 한다.
+    /// 이렇게 하면 한글 IME 활성 상태에서도 popup 단축키가 physical_key로 매칭된다.
+    ///
+    /// Windows 예외: winit Windows의 set_ime_allowed는 ImmAssociateContextEx(IACE_DEFAULT/
+    /// IACE_CHILDREN)로 IMC를 매번 attach/detach시킨다. 이 association churn이 한/영 키
+    /// (VK_HANGUL) 토글을 가끔 망가뜨린다(다른 앱으로 갔다 오면 풀리는 증상의 원인).
+    /// Windows winit은 IME 활성 상태에서도 KeyboardInput과 physical_key를 정상 emit하므로,
+    /// popup 단축키 매칭에 IME 비활성화가 필요 없다. 따라서 Windows는 항상 IME를 허용한다.
+    fn apply_platform_output(
+        &mut self,
+        window: &Window,
+        state: &AppState,
+        platform_output: egui::PlatformOutput,
+    ) {
+        self.egui_state.set_allow_ime(false);
+        self.egui_state
+            .handle_platform_output(window, platform_output);
+
+        #[cfg(not(windows))]
+        {
+            let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
+            window.set_ime_allowed(!disable_ime);
+        }
+        #[cfg(windows)]
+        window.set_ime_allowed(true);
     }
 
     /// GPU 리소스 카운트 스냅샷 — `system.gpu_stats` IPC 가 창 단위로 노출한다.

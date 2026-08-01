@@ -279,6 +279,69 @@ pub fn apply_inner(
     }
 }
 
+/// `explicit_name`이 있으면 사용(overwrite=false면 충돌 시 `None` = skip 신호),
+/// 없으면 `base_name` 기반 unique_name 자동 부여.
+fn resolve_save_name(
+    store: &tasty_presets::PresetStore,
+    kind: PresetKind,
+    base_name: &str,
+    explicit_name: Option<&str>,
+    overwrite: bool,
+) -> Option<String> {
+    match explicit_name {
+        Some(n) => {
+            if !overwrite {
+                let exists = match kind {
+                    PresetKind::Workspace => store.get_workspace(n).is_some(),
+                    PresetKind::Tab => store.get_tab(n).is_some(),
+                    PresetKind::Pane => store.get_pane(n).is_some(),
+                };
+                if exists {
+                    tracing::warn!("SavePreset: name '{n}' exists, overwrite=false → skip");
+                    return None;
+                }
+            }
+            Some(n.to_string())
+        }
+        None => Some(store.unique_name(kind, base_name)),
+    }
+}
+
+/// preset kind 별로 `name` 을 적용해 store 에 반영(overwrite 여부에 따라 대응 메서드 분기).
+fn store_preset(
+    store: &mut tasty_presets::PresetStore,
+    preset: ClonedPreset,
+    name: String,
+    overwrite: bool,
+) -> Result<(), PresetError> {
+    match preset {
+        ClonedPreset::Workspace(mut p) => {
+            p.name = name;
+            if overwrite {
+                store.save_workspace_overwrite(p)
+            } else {
+                store.save_workspace(p)
+            }
+        }
+        ClonedPreset::Tab(mut p) => {
+            p.name = name;
+            if overwrite {
+                store.save_tab_overwrite(p)
+            } else {
+                store.save_tab(p)
+            }
+        }
+        ClonedPreset::Pane(mut p) => {
+            p.name = name;
+            if overwrite {
+                store.save_pane_overwrite(p)
+            } else {
+                store.save_pane(p)
+            }
+        }
+    }
+}
+
 /// Preset 저장. `explicit_name` 이 있으면 사용 (overwrite=false 면 충돌 시 skip),
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
@@ -298,52 +361,11 @@ pub fn save_inner(
     };
 
     let kind = preset.kind();
-    let name = match explicit_name {
-        Some(n) => {
-            if !overwrite {
-                let exists = match kind {
-                    PresetKind::Workspace => store.get_workspace(n).is_some(),
-                    PresetKind::Tab => store.get_tab(n).is_some(),
-                    PresetKind::Pane => store.get_pane(n).is_some(),
-                };
-                if exists {
-                    tracing::warn!("SavePreset: name '{n}' exists, overwrite=false → skip");
-                    return Ok(SaveOutcome::SkippedExists);
-                }
-            }
-            n.to_string()
-        }
-        None => store.unique_name(kind, base_name),
+    let Some(name) = resolve_save_name(&store, kind, base_name, explicit_name, overwrite) else {
+        return Ok(SaveOutcome::SkippedExists);
     };
 
-    let result: Result<(), PresetError> = match preset {
-        ClonedPreset::Workspace(mut p) => {
-            p.name = name.clone();
-            if overwrite {
-                store.save_workspace_overwrite(p)
-            } else {
-                store.save_workspace(p)
-            }
-        }
-        ClonedPreset::Tab(mut p) => {
-            p.name = name.clone();
-            if overwrite {
-                store.save_tab_overwrite(p)
-            } else {
-                store.save_tab(p)
-            }
-        }
-        ClonedPreset::Pane(mut p) => {
-            p.name = name.clone();
-            if overwrite {
-                store.save_pane_overwrite(p)
-            } else {
-                store.save_pane(p)
-            }
-        }
-    };
-
-    result
+    store_preset(&mut store, preset, name.clone(), overwrite)
         .map(|_| SaveOutcome::Saved(name))
         .map_err(PresetMutationError::Store)
 }

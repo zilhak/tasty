@@ -50,6 +50,35 @@ pub fn create_tray_icon() -> Option<(TrayIcon, TrayMenuIds)> {
     }
 }
 
+/// Append `item` to `menu`, logging (not propagating) any failure — a single
+/// failed menu item shouldn't abort the whole tray creation.
+fn append_or_warn(menu: &Menu, item: &MenuItem, label: &str) {
+    if let Err(e) = menu.append(item) {
+        tracing::warn!("Failed to append {label} menu item: {e}");
+    }
+}
+
+/// Builds the tray context menu (Show Window / New Window / Quit) and the
+/// item-id table the caller needs for event dispatch.
+fn build_tray_menu() -> (Menu, TrayMenuIds) {
+    let show_item = MenuItem::new("Show Window", true, None);
+    let new_window_item = MenuItem::new("New Window", true, None);
+    let quit_item = MenuItem::new("Quit", true, None);
+
+    let ids = TrayMenuIds {
+        show_window: show_item.id().0.clone(),
+        new_window: new_window_item.id().0.clone(),
+        quit: quit_item.id().0.clone(),
+    };
+
+    let menu = Menu::new();
+    append_or_warn(&menu, &show_item, "Show Window");
+    append_or_warn(&menu, &new_window_item, "New Window");
+    append_or_warn(&menu, &quit_item, "Quit");
+
+    (menu, ids)
+}
+
 fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::error::Error>> {
     // Linux: `tray-icon` (AppIndicator) assumes GTK is already initialized on the
     // calling thread and does not init it itself. Initialize lazily; if GTK is
@@ -62,27 +91,7 @@ fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::erro
     let icon =
         crate::app_icon::tray_icon().ok_or("failed to decode tray icon from embedded PNG")?;
 
-    // Build context menu
-    let show_item = MenuItem::new("Show Window", true, None);
-    let new_window_item = MenuItem::new("New Window", true, None);
-    let quit_item = MenuItem::new("Quit", true, None);
-
-    let ids = TrayMenuIds {
-        show_window: show_item.id().0.clone(),
-        new_window: new_window_item.id().0.clone(),
-        quit: quit_item.id().0.clone(),
-    };
-
-    let menu = Menu::new();
-    if let Err(e) = menu.append(&show_item) {
-        tracing::warn!("Failed to append Show Window menu item: {e}");
-    }
-    if let Err(e) = menu.append(&new_window_item) {
-        tracing::warn!("Failed to append New Window menu item: {e}");
-    }
-    if let Err(e) = menu.append(&quit_item) {
-        tracing::warn!("Failed to append Quit menu item: {e}");
-    }
+    let (menu, ids) = build_tray_menu();
 
     // `with_icon_as_template(true)` is a no-op off macOS; on macOS it lets the
     // menu bar tint the icon for light/dark mode instead of showing raw colors.
