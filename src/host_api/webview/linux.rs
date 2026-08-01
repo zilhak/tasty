@@ -66,11 +66,11 @@ impl PlatformWebView {
         let h = (bounds.height * scale_factor) as u32;
 
         // Get X11 display
-        // SAFETY: XOpenDisplay(null)는 DISPLAY env에서 기본 디스플레이를 연다.
-        // 호출 실패 시 null 반환 — 아래 is_null 체크로 처리.
-        // PlatformWebView::new는 winit event loop (main thread)에서만 호출되므로
-        // Xlib 단일 thread 가정 충족.
         let display = if x11_display_ptr.is_null() {
+            // SAFETY: XOpenDisplay(null)는 DISPLAY env에서 기본 디스플레이를 연다.
+            // 호출 실패 시 null 반환 — 아래 is_null 체크로 처리.
+            // PlatformWebView::new는 winit event loop (main thread)에서만 호출되므로
+            // Xlib 단일 thread 가정 충족.
             unsafe { (xlib.XOpenDisplay)(std::ptr::null()) }
         } else {
             x11_display_ptr as _

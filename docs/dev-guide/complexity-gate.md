@@ -6,7 +6,7 @@
 
 | 축 | 도구 | 임계값 | 동결 위치 |
 |----|------|--------|-----------|
-| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 33곳) |
+| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 35곳) |
 | **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | code SLOC **1000** | `.complexity-file-allowlist` (현재 18개) |
 
 - 카운트 기준: `grep -rn 'allow(clippy::cognitive_complexity)'` 로 센 **전체** 위치 수. `// complexity-exempt:` 태그는 감사(grep) 가능성을 위한 필수 컨벤션이라, `#[allow(clippy::cognitive_complexity)]`가 있는데 태그가 없는 레거시가 발견되면 그 자리에서 태그를 붙여 카운트에 편입한다(둘을 별도 숫자로 두지 않는다).

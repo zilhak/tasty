@@ -34,6 +34,7 @@ fn ensure_gtk() -> bool {
     }
 }
 
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: GTK/X11 grab 타이밍이 selected/done/grabbed/timed_out 4개 Rc<Cell<_>>를 공유하는 여러 클로저(activate/selection-done/button-press/idle/timeout)의 등록 순서 자체에 의미론이 있음(GDK Seat::grab을 idle 콜백에서 호출해야 하고 timeout이 없으면 앱 전체가 무한 행) — 클로저를 분리하면 각 함수가 4~5개 Rc<Cell<>> 핸들을 인자로 주고받아야 하고 실행 순서와 코드 위치가 물리적으로 분리되어 가독성이 오히려 나빠짐
 pub fn show_context_menu(
     window: &impl HasWindowHandle,
     x: f64,

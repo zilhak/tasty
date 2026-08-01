@@ -8,6 +8,7 @@ use crate::view::{ViewAction, ViewCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit AppEvent 최상위 dispatch — 20여개 variant 대부분이 이미 추출된 핸들러로 1~5줄 위임하는 평면 match, cfg 게이트까지 섞여 있어 더 쪼개면 "이벤트→핸들러" 매치 테이블의 가독성이 오히려 떨어짐
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         // 부팅 상태 머신 진행 중 — 종료 계열 외 AppEvent 는 부팅 완료 후 재생하도록
         // 지연한다. 구 코드에서 resumed() 가 블로킹하는 동안 winit 큐에 쌓이던 것과

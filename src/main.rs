@@ -24,6 +24,8 @@ mod plugin_bridge;
 mod ports;
 mod state;
 mod store;
+#[cfg(test)]
+mod test_support;
 #[cfg(feature = "gui")]
 mod view;
 mod waker;

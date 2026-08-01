@@ -23,7 +23,7 @@
 
 - **cognitive (함수)**: `Cargo.toml [workspace.lints.clippy]` 에 `cognitive_complexity = "deny"`, `clippy.toml` 에 `cognitive-complexity-threshold = 20`. nursery lint 라 명시 활성화가 필요하다. deny 라 그 자체로 에러가 되므로 `-D warnings` 는 여전히 쓰지 않는다(S-1 정책 존치). 신규 초과 함수는 기존 Windows clippy CI 잡이 자동 차단한다.
 - **파일 SLOC**: `scripts/check-file-size.sh` 가 `tokei --output json` 으로 Rust 파일 code SLOC 를 재고, 1000 초과 파일 중 `.complexity-file-allowlist` 에 없고 skip(테스트 모듈·생성/전사 코드) 대상도 아닌 것이 있으면 exit 1. CI 배선은 `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64, `pull_request:[main]` 자동 + tokei 설치 가드)이 담당한다. cognitive 와 관심사 1:1 로 분리하고 tokei 기반 무컴파일이라 mac/win 러너 부담을 피하려 전용 경량 워크플로로 둔다.
-- **baseline 동결(래칫)**: 별도 baseline.json 을 두지 않는다. 동결은 **위치 그 자체**가 담당한다 — 함수는 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: <사유>`(현재 33곳 — `grep -rn 'allow(clippy::cognitive_complexity)'` 전체 개수 기준, 태그 없는 레거시는 발견 즉시 태그를 붙여 편입한다), 파일은 `.complexity-file-allowlist`(현재 18개). 리팩터로 임계 이하로 내려가면 allow/allowlist 항목을 삭제해 래칫을 한 칸 조인다.
+- **baseline 동결(래칫)**: 별도 baseline.json 을 두지 않는다. 동결은 **위치 그 자체**가 담당한다 — 함수는 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: <사유>`(현재 35곳 — `grep -rn 'allow(clippy::cognitive_complexity)'` 전체 개수 기준, 태그 없는 레거시는 발견 즉시 태그를 붙여 편입한다), 파일은 `.complexity-file-allowlist`(현재 18개). 리팩터로 임계 이하로 내려가면 allow/allowlist 항목을 삭제해 래칫을 한 칸 조인다.
 - **예외 사유 필수**: `complexity-exempt` 주석은 **왜 분해가 부적절/무의미한지**를 구체적으로 적는다(빈 사유·"TODO" 금지). raw px `#[allow]`·`disallowed-methods` 예외·`intent-exempt` 와 동일한 위치 단위 정당화 관행이다.
 - **clippy-policy.md 재맥락화**: "clippy 내장 threshold 를 봐주기용으로 풀지 않는다"(존치)와 "복잡도 상한은 게이트가 담당"(신설)을 계층 분리로 병기.
 

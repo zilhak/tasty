@@ -116,7 +116,9 @@ mod tests {
         fn new() -> Self {
             let dir = tempfile::tempdir().expect("tempdir");
             let prev = std::env::var("TASTY_HOME").ok();
-            // SAFETY: 테스트 프로세스 단독 — 아래 serial 락으로 병렬 간섭 차단.
+            // SAFETY: 호출부가 crate::test_support::TASTY_HOME_ENV_LOCK 을 잡은
+            // 상태에서만 생성되므로(이 crate 내 TASTY_HOME 변경 테스트 전부와 직렬화),
+            // 동시 접근에 의한 데이터 레이스가 없다.
             unsafe { std::env::set_var("TASTY_HOME", dir.path()) };
             Self { _dir: dir, prev }
         }
@@ -125,7 +127,7 @@ mod tests {
         fn drop(&mut self) {
             match &self.prev {
                 Some(v) => {
-                    // SAFETY: new() 와 동일 — 테스트 프로세스 단독, serial 락으로 병렬 간섭 차단.
+                    // SAFETY: new() 와 동일 — TASTY_HOME_ENV_LOCK 으로 직렬화되어 안전하다.
                     unsafe { std::env::set_var("TASTY_HOME", v) }
                 }
                 None => {
@@ -136,12 +138,17 @@ mod tests {
         }
     }
 
-    // env 변경은 프로세스 전역이라 이 모듈 테스트는 직렬화한다.
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // TASTY_HOME 은 프로세스 전역 상태라 이 crate 안에서 이를 건드리는 모든
+    // 테스트(platform::screen_capture 포함)와 공유 락으로 직렬화한다.
+    fn home_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::test_support::TASTY_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
 
     #[test]
     fn seeds_default_port_when_absent() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _s = home_lock();
         let _home = HomeGuard::new();
         // 파일 부재 → 시드값 반환 + 파일 생성.
         assert_eq!(load_or_seed(), Some(SEED_PORT));
@@ -153,7 +160,7 @@ mod tests {
 
     #[test]
     fn empty_port_yields_none() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _s = home_lock();
         let _home = HomeGuard::new();
         // port 없는 파일을 직접 써 둔다(S5 가 다른 키만 쓴 상태를 흉내).
         std::fs::write(config_path(), "other_key = 1\n").unwrap();
@@ -163,7 +170,7 @@ mod tests {
 
     #[test]
     fn set_port_preserves_other_keys() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _s = home_lock();
         let _home = HomeGuard::new();
         // S5 소유 키를 미리 심어 두고 set_port 가 보존하는지 확인.
         std::fs::write(config_path(), "keep_me = \"s5\"\nport = 100\n").unwrap();
@@ -179,7 +186,7 @@ mod tests {
 
     #[test]
     fn out_of_range_port_ignored() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _s = home_lock();
         let _home = HomeGuard::new();
         std::fs::write(config_path(), "port = 70000\n").unwrap();
         assert_eq!(read_port(), None);
