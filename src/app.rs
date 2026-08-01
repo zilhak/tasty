@@ -76,7 +76,10 @@ pub(crate) struct NoGpuAdapter;
 #[cfg(feature = "gui")]
 impl std::fmt::Display for NoGpuAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "no compatible GPU adapter found (hardware or software fallback)")
+        write!(
+            f,
+            "no compatible GPU adapter found (hardware or software fallback)"
+        )
     }
 }
 
