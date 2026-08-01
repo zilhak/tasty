@@ -51,11 +51,44 @@ __tasty_title() {
     fi
     printf '\033]0;%s\007' "$name"
 }
+
+# OSC 133 (TODO 35) — command-boundary reporting so the host can index
+# command/exit-code records (surface.commands IPC). D reports the command
+# that just finished (using $?), A announces a fresh prompt; both fire from
+# PROMPT_COMMAND, D first — $? MUST be captured as this function's very
+# first statement, since it reflects the last foreground pipeline's status
+# only until something else runs (see BUILTIN_BASHRC_PROMPT: this function
+# is prepended first in the PROMPT_COMMAND chain for exactly this reason).
+__tasty_osc133_precmd() {
+    local ec=$?
+    printf '\033]133;D;%s\033\\' "$ec"
+    printf '\033]133;A\033\\'
+}
+
+# C: about to execute a command. bash has no `preexec` hook (that's a zsh
+# feature); the closest equivalent is `PS0` (bash 4.4+), which is expanded
+# and displayed right after a command line is read, before it executes.
+# bash < 4.4 (e.g. macOS's system bash 3.2) has no PS0 and is unsupported —
+# no DEBUG-trap fallback is added (see TODO35 design decision 5: PS0-only).
+#
+# NOTE(bash-specific limitation): the command text is intentionally omitted
+# (`cmd=` payload) here, unlike zsh's preexec. Both `$BASH_COMMAND` and
+# `fc -ln -1`/`history 1` were verified (manual PTY test, TODO35) to lag one
+# command behind at PS0-evaluation time — bash hasn't finished recording the
+# about-to-run command yet at that point, only the *previous* one. Emitting
+# a wrong `cmd=` would be worse than omitting it (OSC133 payload is optional
+# by spec; `command_index.rs` already tolerates a missing command string).
+__tasty_osc133_preexec() {
+    printf '\033]133;C\033\\'
+}
 "#;
 
-/// 빌트인 bashrc 의 *후반부* — `PROMPT_COMMAND` 설정. 합성 rc 의 *맨 뒤* 에 append
-/// 되어 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 빌트인 훅이 마지막에 prepend.
-pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc7;__tasty_title${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+/// 빌트인 bashrc 의 *후반부* — `PROMPT_COMMAND`/`PS0` 설정. 합성 rc 의 *맨 뒤* 에
+/// append 되어 사용자 rc 가 PROMPT_COMMAND/PS0 를 덮어쓰더라도 빌트인 훅이 마지막에
+/// 이긴다(PROMPT_COMMAND 는 prepend, PS0 는 통째로 덮어씀 — OSC133 C phase 는
+/// 선택적 기능이 아니라 필수 배선이라 사용자 PS0 커스터마이즈보다 우선한다).
+pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc133_precmd;__tasty_osc7;__tasty_title${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+PS0='$(__tasty_osc133_preexec)'
 
 # === end tasty built-in ===
 "#;
@@ -66,8 +99,9 @@ pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc7;__tasty_
 /// 동작으로는 빌트인 블록 변경이 기존 설치본에 반영되지 않기 때문.
 ///
 /// **빌트인 블록(`BUILTIN_BASHRC_PRE`/`BUILTIN_BASHRC_PROMPT`) 내용을 바꿀
-/// 때마다 숫자를 +1 할 것.** (v1 = 스탬프 도입 전 무표기 세대.)
-pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v2";
+/// 때마다 숫자를 +1 할 것.** (v1 = 스탬프 도입 전 무표기 세대, v3 = OSC133 훅
+/// 추가 — TODO35.)
+pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v3";
 
 /// `~/.tasty/bashrc.user`의 초기 시드. 사용자가 자유롭게 수정/리셋할 수 있는 기본값.
 pub const INITIAL_USER_BASHRC: &str = r#"# Tasty user bashrc — edit freely.
@@ -436,51 +470,106 @@ impl GeneralSettings {
         }
     }
 
-    /// Resolve effective shell arguments based on shell_mode.
-    ///
-    /// 시그니처는 OS 공통 — 호출자가 cfg 분기를 하지 않도록 유지한다. 비-Windows
-    /// 에서는 셸 모드 개념 자체가 없어 항상 빈 vec 을 반환한다.
+    /// Resolve effective shell **arguments** for auto-injected shell integration
+    /// (OSC7/OSC133/title hooks). bash 는 `--rcfile` 기반 인자로 주입한다(아래
+    /// [`bash_rcfile_args`]). zsh 는 인자가 아니라 `ZDOTDIR` 환경변수로 주입하므로
+    /// ([`effective_shell_envs`]) 여기서는 항상 빈 벡터 — fish/nu/pwsh 등 기타
+    /// 셸도 이번 범위 밖이라 마찬가지로 빈 벡터(TODO35).
     pub fn effective_shell_args(&self) -> Vec<String> {
-        // tasty 빌트인(OSC7 cwd emit, MSYS PATH 주입)은 **Windows 전용 가치**다.
-        //
-        // - Windows: 다른 프로세스의 cwd 를 조회하는 표준 API 가 없어 새 탭 cwd
-        //   상속을 OSC7 에 의존한다. 그래서 bash 를 `--rcfile <bashrc>` 로 띄워
-        //   빌트인을 startup 에 *직접* source 시킨다. (예전처럼 `--norc` 로 띄운 뒤
-        //   `. <bashrc>` 를 PTY 입력으로 보내면 화면 echo / 복원 시 claude 입력창
-        //   오염 문제가 있었다. forward slash 경로여야 Git Bash 가 올바로 읽는다.)
-        //
-        // - 비-Windows: zsh 는 `--rcfile`/`--norc` 를 *모르고* (옵션 거부 → 셸
-        //   즉사), bash login 셸은 `--rcfile` 을 *무시*한다. 게다가 새 탭 cwd 는
-        //   `get_cwd_of_pid`(macOS `proc_pidinfo` / Linux `/proc/<pid>/cwd`)로
-        //   이미 상속되므로 OSC7 이 불필요하다. 셸 모드 UI 자체를 노출하지 않고
-        //   사용자 셸을 그대로 띄운다.
-        #[cfg(windows)]
-        {
-            // OSC7 빌트인은 셸 모드와 무관하게 강제 주입한다 — Windows 는 다른 프로세스
-            // cwd 조회 API 가 없어 새 탭 cwd 상속이 OSC7 emit 에만 의존하기 때문.
-            // 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정한다:
-            //   - tasty: ~/.tasty/bashrc          (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT)
-            //   - default (or unknown): ~/.tasty/bashrc.default (BUILTIN_PRE + source ~/.bashrc + BUILTIN_PROMPT)
-            ensure_compiled_bashrc();
-            let rcfile = match self.shell_mode.as_str() {
-                "tasty" => tasty_bashrc_path().replace('\\', "/"),
-                _ => tasty_bashrc_default_path().replace('\\', "/"),
-            };
-            vec!["--rcfile".to_string(), rcfile]
+        match tasty_utils::shell_family::ShellFamily::detect(&self.shell) {
+            tasty_utils::shell_family::ShellFamily::Bash => {
+                ensure_compiled_bashrc();
+                bash_rcfile_args(self)
+            }
+            _ => Vec::new(),
         }
-        #[cfg(not(windows))]
+    }
+
+    /// Resolve effective shell **environment variables** for auto-injected shell
+    /// integration. 현재는 zsh 의 `ZDOTDIR` 스왑(TODO35 신설)만 여기 산다 — bash 는
+    /// 인자([`effective_shell_args`])로 주입하므로 관여하지 않는다.
+    pub fn effective_shell_envs(&self) -> Vec<(String, String)> {
+        if tasty_utils::shell_family::ShellFamily::detect(&self.shell)
+            != tasty_utils::shell_family::ShellFamily::Zsh
         {
-            Vec::new()
+            return Vec::new();
         }
+        ensure_compiled_zshenv();
+        let mut envs = vec![(
+            "ZDOTDIR".to_string(),
+            tasty_zsh_integration_dir().to_string_lossy().to_string(),
+        )];
+        // wrapper `.zshenv` 가 원래 ZDOTDIR 로 정확히 복원할 수 있도록 원래 값을
+        // 함께 넘긴다(설계결정 3). "미설정"과 "빈 문자열"을 구분해야 하므로(Codex
+        // 지적) 마커 env 로 분리한다 — 마커가 없으면 원래 미설정이었다는 뜻이라
+        // wrapper 가 unset 으로 복원한다.
+        if let Ok(orig) = std::env::var("ZDOTDIR") {
+            envs.push(("__TASTY_ORIG_ZDOTDIR_SET".to_string(), "1".to_string()));
+            envs.push(("__TASTY_ORIG_ZDOTDIR".to_string(), orig));
+        }
+        envs
     }
 }
 
+// bash 의 `--rcfile` 주입 인자 조립 — TODO35 설계결정 2가 요구한 "기존
+// #[cfg(windows)] 로직과 통합 가능한지" 조사 결과:
+//
+// - **소싱 인프라(BUILTIN_BASHRC_PRE/PROMPT 상수, compose_*_bashrc, 버전 스탬프,
+//   ensure_compiled_bashrc, 경로 헬퍼)는 전부 공유한다** — OSC133 훅 스크립트
+//   내용은 OS 와 무관하게 동일해야 하므로(같은 bash, 같은 셸 통합) 이 부분을
+//   플랫폼별로 중복시키는 건 정당화가 안 된다.
+// - **다만 최종 CLI 인자 모양은 플랫폼마다 다르게 나와야 한다**(진짜 제약,
+//   Windows 고유 사정): Windows(Git Bash) 는 `build_shell_command` 가 `-li`
+//   (로그인 셸)를 애초에 non-Windows 에만 추가해왔다 — 즉 Windows bash 는
+//   이미 non-login 상태로 떠서 `--rcfile` 이 그대로 먹힌다(기존 테스트
+//   `tasty_mode_uses_tasty_rc_file` 이 인자 2개 `["--rcfile", path]` 를 정확히
+//   검증). 반대로 비-Windows 는 지금까지 무조건 `-li` 를 추가해왔는데, bash 의
+//   로그인 셸 판정은 `--rcfile` 유무와 무관하게 우선한다(bash(1): `--rcfile`
+//   은 "interactive **non-login**" 셸에만 적용) — `-li` 를 유지한 채 `--rcfile`
+//   만 얹으면 조용히 무시된다. 그래서 비-Windows 경로는 명시적 `-i` 를 추가로
+//   반환해야 하고(순서: `--rcfile <path> -i`), `build_shell_command` 쪽에서
+//   `--rcfile` 이 인자에 있으면 `-li` 추가를 건너뛰도록 맞춰야 한다(tasty-terminal
+//   담당, 별도 커밋 아님— 같은 배선).
+// - 결론: 목적(로그인 셸처럼 사용자 rc 를 소싱하며 훅 주입)은 두 플랫폼 다
+//   달성 가능하므로 **인프라는 통합**하되, "그 결과로 나오는 CLI 인자 모양"은
+//   플랫폼별 사실을 그대로 반영해 함수 자체를 분리한다(억지로 한 반환값에
+//   합치면 Windows 기존 테스트가 검증하는 정확한 인자 모양이 깨진다) — 이
+//   함수(`bash_rcfile_args`)가 그 분리 지점이다.
+#[cfg(windows)]
+fn bash_rcfile_args(settings: &GeneralSettings) -> Vec<String> {
+    // OSC7/OSC133 빌트인은 셸 모드와 무관하게 강제 주입한다 — Windows 는 다른
+    // 프로세스 cwd 조회 API 가 없어 새 탭 cwd 상속이 OSC7 emit 에만 의존하기
+    // 때문. 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정한다:
+    //   - tasty: ~/.tasty/bashrc          (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT)
+    //   - default (or unknown): ~/.tasty/bashrc.default (BUILTIN_PRE + source ~/.bashrc + BUILTIN_PROMPT)
+    let rcfile = match settings.shell_mode.as_str() {
+        "tasty" => tasty_bashrc_path().replace('\\', "/"),
+        _ => tasty_bashrc_default_path().replace('\\', "/"),
+    };
+    vec!["--rcfile".to_string(), rcfile]
+}
+
+/// 비-Windows bash 전용 경로(TODO35 신설, 위 rationale 참고). `shell_mode` UI
+/// 개념이 Windows 전용이라 비-Windows 는 "default 모드"(사용자 로그인 프로필
+/// 소싱, `default_mode_user_source` 참고) 하나만 쓴다.
+#[cfg(not(windows))]
+fn bash_rcfile_args(_settings: &GeneralSettings) -> Vec<String> {
+    vec![
+        "--rcfile".to_string(),
+        tasty_bashrc_default_path(),
+        "-i".to_string(),
+    ]
+}
+
 /// Path to Tasty's compiled bashrc for **tasty 모드** (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT).
+/// Windows 전용 개념(`shell_mode` UI 토글) — 비-Windows 는 이 파일을 만들지 않는다.
 pub fn tasty_bashrc_path() -> String {
     tasty_dir().join("bashrc").to_string_lossy().to_string()
 }
 
-/// Path to Tasty's compiled bashrc for **default 모드** (BUILTIN_PRE + `source ~/.bashrc` + BUILTIN_PROMPT).
+/// Path to Tasty's compiled bashrc for **default 모드**
+/// (BUILTIN_PRE + [`default_mode_user_source`] + BUILTIN_PROMPT). 비-Windows 는
+/// 유일하게 쓰는 합성 rc 파일이다(셸 모드 토글이 없어 이거 하나뿐).
 pub fn tasty_bashrc_default_path() -> String {
     tasty_dir()
         .join("bashrc.default")
@@ -488,7 +577,7 @@ pub fn tasty_bashrc_default_path() -> String {
         .to_string()
 }
 
-/// Path to the user-editable bashrc fragment.
+/// Path to the user-editable bashrc fragment. Windows 전용(tasty 모드에서만 쓰임).
 pub fn tasty_bashrc_user_path() -> String {
     tasty_dir()
         .join("bashrc.user")
@@ -496,17 +585,47 @@ pub fn tasty_bashrc_user_path() -> String {
         .to_string()
 }
 
-/// default 모드용 합성 rc 본문. BUILTIN PRE → 사용자 `~/.bashrc` source → BUILTIN PROMPT.
-/// 사용자 rc 가 PROMPT_COMMAND 를 덮어써도 마지막에 `__tasty_osc7` 이 prepend.
+/// `~/.tasty/zsh-integration/` — zsh `ZDOTDIR` 스왑 대상 디렉토리(TODO35 신설).
+/// 이 안의 `.zshenv` 가 zsh 가 셸 인스턴스당 정확히 한 번, 가장 먼저 읽는 파일이라
+/// 셸 통합 진입점이 된다.
+pub fn tasty_zsh_integration_dir() -> std::path::PathBuf {
+    tasty_dir().join("zsh-integration")
+}
+
+/// default 모드 합성 rc 에서 사용자 커스터마이즈를 로드하는 스니펫. Windows(Git
+/// Bash) 는 `~/.bashrc` 를 직접 source 하는 게 기존 관례(그 파일이 사실상 유일한
+/// 커스터마이즈 지점) — 그대로 보존한다. 비-Windows 는 진짜 login 셸의 파일 탐색
+/// 순서(`~/.bash_profile` → `~/.bash_login` → `~/.profile`, 최초 존재하는 파일
+/// 하나만)를 그대로 재현한다 — `--rcfile` 로 로그인 모드 자체를 포기하는 대신
+/// wrapper 가 login 셸의 소싱 규칙을 흉내내는 것(TODO35 설계결정 2). 이 규칙을
+/// 따르는 사용자 profile 은 관례상 스스로 `~/.bashrc` 를 source 하므로(예:
+/// `[ -f ~/.bashrc ] && . ~/.bashrc`) 이중 소싱 없이 자연히 이어진다 — profile 이
+/// 그렇게 안 되어 있으면 `~/.bashrc` 는 로드되지 않는데, 이는 실제 login 셸의
+/// 동작과 동일하다(새 버그가 아니라 login 셸 표준 동작의 정확한 재현).
+#[cfg(windows)]
+fn default_mode_user_source() -> &'static str {
+    "[ -f ~/.bashrc ] && source ~/.bashrc\n"
+}
+#[cfg(not(windows))]
+fn default_mode_user_source() -> &'static str {
+    "if [ -f ~/.bash_profile ]; then\n    source ~/.bash_profile\nelif [ -f ~/.bash_login ]; then\n    source ~/.bash_login\nelif [ -f ~/.profile ]; then\n    source ~/.profile\nfi\n"
+}
+
+/// default 모드용 합성 rc 본문. BUILTIN PRE → [`default_mode_user_source`] → BUILTIN
+/// PROMPT. 사용자 rc 가 PROMPT_COMMAND/PS0 를 덮어써도 마지막에 빌트인 훅이 이긴다.
 pub fn compose_default_mode_bashrc() -> String {
     format!(
-        "{}\n{}\n[ -f ~/.bashrc ] && source ~/.bashrc\n{}",
-        BUILTIN_BASHRC_STAMP, BUILTIN_BASHRC_PRE, BUILTIN_BASHRC_PROMPT,
+        "{}\n{}\n{}{}",
+        BUILTIN_BASHRC_STAMP,
+        BUILTIN_BASHRC_PRE,
+        default_mode_user_source(),
+        BUILTIN_BASHRC_PROMPT,
     )
 }
 
 /// tasty 모드용 합성 rc 본문. BUILTIN PRE → tasty user rc → BUILTIN PROMPT.
 /// 사용자 영역 (`~/.tasty/bashrc.user`) 이 PROMPT_COMMAND 를 덮어써도 마지막에 prepend.
+/// Windows 전용(`shell_mode` UI 토글이 있어야 의미가 있다).
 pub fn compose_tasty_mode_bashrc(user_content: &str) -> String {
     format!(
         "{}\n{}\n{}\n{}",
@@ -541,9 +660,7 @@ pub fn save_user_bashrc(user_content: &str) {
     }
     let compiled_path = tasty_bashrc_path();
     let compiled = compose_tasty_mode_bashrc(user_content);
-    if let Err(e) = std::fs::write(&compiled_path, compiled) {
-        tracing::warn!("write compiled bashrc failed: {e}");
-    }
+    write_generated_file(std::path::Path::new(&compiled_path), &compiled);
 }
 
 /// `user_path` 의 부모 디렉토리를 보장한다. 생성 실패 시 `false`(호출자는 이후 쓰기
@@ -559,40 +676,158 @@ fn ensure_bashrc_parent_dir(user_path: &str) -> bool {
     true
 }
 
-/// 합성 rc 파일이 현재 빌트인 버전 스탬프(`BUILTIN_BASHRC_STAMP`)를 담고 있는지.
-/// 파일이 없거나 스탬프가 다르면 (구버전/무표기) false — 재생성 대상.
-#[cfg(windows)]
-fn bashrc_stamp_current(path: &str) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|s| s.lines().any(|l| l.trim() == BUILTIN_BASHRC_STAMP))
+/// 셸 통합 스크립트를 원자적으로 쓴다 — 같은 디렉토리의 임시 파일에 먼저 쓰고
+/// rename 으로 교체해, 쓰는 도중 크래시하거나 다른 프로세스가 half-write 상태를
+/// 읽는 상황을 막는다(Codex 지적, TODO35). 부모 디렉토리는 호출자가 이미 보장한
+/// 상태여야 한다. Unix 는 권한을 0o644 로 명시 — 비밀은 없는 평범한 셸 스크립트라
+/// 다른 사용자도 읽을 수 있으면 충분하고, 소유자만 쓰기 가능하면 된다.
+fn write_generated_file(path: &std::path::Path, content: &str) {
+    let Some(file_name) = path.file_name().and_then(|f| f.to_str()) else {
+        tracing::warn!("write_generated_file: path has no file name: {path:?}");
+        return;
+    };
+    let tmp_path = path.with_file_name(format!("{file_name}.tmp"));
+    if !write_tmp_file(&tmp_path, content) {
+        return;
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        tracing::warn!("rename {tmp_path:?} -> {path:?} failed: {e}");
+    }
 }
 
-/// Windows 셸 시작 시 두 합성 rc (`~/.tasty/bashrc`, `~/.tasty/bashrc.default`) 가
+/// [`write_generated_file`]의 tmp-write + 권한설정 단계만 분리 — 인지 복잡도
+/// 상한 때문에 뺐다(동작은 인라인이었을 때와 동일).
+fn write_tmp_file(tmp_path: &std::path::Path, content: &str) -> bool {
+    if let Err(e) = std::fs::write(tmp_path, content) {
+        tracing::warn!("write {tmp_path:?} failed: {e}");
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(tmp_path, std::fs::Permissions::from_mode(0o644)) {
+            tracing::warn!("set_permissions for {tmp_path:?} failed: {e}");
+        }
+    }
+    true
+}
+
+/// 합성 rc/wrapper 파일이 주어진 버전 스탬프를 담고 있는지. 파일이 없거나 스탬프가
+/// 다르면 (구버전/무표기) false — 재생성 대상. bash/zsh 양쪽이 공유하는 스탬프
+/// 판정 로직(스탬프 문자열만 다르다).
+fn generated_file_stamp_current(path: &str, stamp: &str) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|s| s.lines().any(|l| l.trim() == stamp))
+}
+
+/// 두 합성 bash rc (`~/.tasty/bashrc`(Windows 전용) / `~/.tasty/bashrc.default`) 가
 /// 존재하고 최신 빌트인 버전인지 보장한다. 파일이 없거나 버전 스탬프가 현재와
 /// 다르면 재생성한다 (스탬프 없이 "빠진 파일만 채우면" 빌트인 블록 변경이 기존
 /// 설치본에 영원히 반영되지 않는다). 사용자 편집 영역(`bashrc.user`)은 건드리지
 /// 않는다 — tasty 모드 재생성은 `save_user_bashrc` 경유라 사용자 본문이 보존된다.
-#[cfg(windows)]
+///
+/// TODO35 이전엔 `#[cfg(windows)]` 전용이었다 — bash 셸 통합 자체가 Windows
+/// 전용이었기 때문. 비-Windows bash 지원 신설로 게이트를 없애 항상 호출되게
+/// 하고, "tasty 모드"(shell_mode UI 토글) 재생성만 Windows 전용으로 남긴다(그
+/// 개념 자체가 Windows 전용이므로).
 fn ensure_compiled_bashrc() {
-    // tasty 모드 합성 rc.
-    let tasty_path = tasty_bashrc_path();
-    if !bashrc_stamp_current(&tasty_path) {
-        let user = load_user_bashrc();
-        save_user_bashrc(&user);
+    // tasty 모드 합성 rc — Windows 전용(shell_mode UI 토글이 있어야 의미 있음).
+    #[cfg(windows)]
+    {
+        let tasty_path = tasty_bashrc_path();
+        if !generated_file_stamp_current(&tasty_path, BUILTIN_BASHRC_STAMP) {
+            let user = load_user_bashrc();
+            save_user_bashrc(&user);
+        }
     }
-    // default 모드 합성 rc.
+    // default 모드 합성 rc — 양쪽 플랫폼 공통(비-Windows 는 이거 하나만 쓴다).
     let default_path = tasty_bashrc_default_path();
-    if !bashrc_stamp_current(&default_path) {
+    if !generated_file_stamp_current(&default_path, BUILTIN_BASHRC_STAMP) {
         let compiled = compose_default_mode_bashrc();
-        if let Some(parent) = std::path::Path::new(&default_path).parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            tracing::warn!("create_dir_all for bashrc.default failed: {e}");
+        if !ensure_bashrc_parent_dir(&default_path) {
             return;
         }
-        if let Err(e) = std::fs::write(&default_path, compiled) {
-            tracing::warn!("write bashrc.default failed: {e}");
-        }
+        write_generated_file(std::path::Path::new(&default_path), &compiled);
     }
+}
+
+/// zsh `ZDOTDIR` wrapper 의 `.zshenv` 본문(TODO35 신설). OSC133 훅 정의(zsh 네이티브
+/// `precmd`/`preexec` 훅 배열 사용 — bash 의 PS0 우회가 필요 없다), `ZDOTDIR` 원복,
+/// 원본 `.zshenv` source 를 이 순서로 담는다. `ZDOTDIR` 는 zsh 가 셸 인스턴스당
+/// 정확히 한 번, 가장 먼저 읽는 파일이라(설계결정 3) 이 파일이 곧 셸 통합 진입점이다.
+pub const BUILTIN_ZSHENV_BODY: &str = r#"# This section is regenerated every time settings are saved. Do not edit.
+
+# OSC 133 (TODO 35) — see tasty bashrc for phase semantics. zsh has native
+# precmd/preexec hook arrays via `add-zsh-hook`, so no PS0-style workaround
+# (needed for bash) is required here.
+autoload -Uz add-zsh-hook
+
+__tasty_osc133_precmd() {
+    local ec=$?
+    printf '\033]133;D;%s\033\\' "$ec"
+    printf '\033]133;A\033\\'
+}
+__tasty_osc133_preexec() {
+    printf '\033]133;C;cmd=%s\033\\' "$1"
+}
+add-zsh-hook precmd __tasty_osc133_precmd
+add-zsh-hook preexec __tasty_osc133_preexec
+
+# NOTE(known limitation, TODO35): if the user's own .zshrc later reassigns
+# precmd_functions=(...)/preexec_functions=(...) wholesale (instead of +=),
+# or redefines a same-named function, these hooks can be silently dropped.
+# zsh's hook-array model makes this far less likely than bash's single
+# PROMPT_COMMAND slot, but it is not impossible — documented, not mitigated.
+
+# Restore ZDOTDIR to the user's original value (unset if it wasn't set), then
+# source the user's real .zshenv — that file is normally read exactly once per
+# shell instance, and this wrapper already consumed that one read. Restore
+# *immediately*, then source right after, in that order (design decision 3).
+if [ -n "${__TASTY_ORIG_ZDOTDIR_SET:-}" ]; then
+    export ZDOTDIR="$__TASTY_ORIG_ZDOTDIR"
+else
+    unset ZDOTDIR
+fi
+unset __TASTY_ORIG_ZDOTDIR_SET __TASTY_ORIG_ZDOTDIR
+
+__tasty_real_zdotdir="${ZDOTDIR:-$HOME}"
+[ -f "$__tasty_real_zdotdir/.zshenv" ] && source "$__tasty_real_zdotdir/.zshenv"
+unset __tasty_real_zdotdir
+"#;
+
+/// 합성 zshenv 버전 스탬프. [`compose_zsh_zshenv`] 가 출력 맨 앞에 심고,
+/// [`ensure_compiled_zshenv`] 가 기존 파일에서 이 줄이 일치하지 않으면 강제
+/// 재생성한다(bash 스탬프와 동일한 이유 — `BUILTIN_BASHRC_STAMP` 참고).
+/// **`BUILTIN_ZSHENV_BODY` 내용을 바꿀 때마다 숫자를 +1 할 것.**
+pub const BUILTIN_ZSHENV_STAMP: &str = "# tasty-zshenv-v1";
+
+/// Path to Tasty's compiled zsh wrapper `.zshenv` (`~/.tasty/zsh-integration/.zshenv`).
+pub fn tasty_zshenv_path() -> std::path::PathBuf {
+    tasty_zsh_integration_dir().join(".zshenv")
+}
+
+/// 합성 `.zshenv` 본문. 스탬프 + [`BUILTIN_ZSHENV_BODY`].
+pub fn compose_zsh_zshenv() -> String {
+    format!("{}\n{}", BUILTIN_ZSHENV_STAMP, BUILTIN_ZSHENV_BODY)
+}
+
+/// wrapper `.zshenv` 가 존재하고 최신 빌트인 버전인지 보장한다. 파일이 없거나
+/// 버전 스탬프가 현재와 다르면 재생성한다(bash 의 `ensure_compiled_bashrc` 와
+/// 동형 — 사용자 편집 영역이 없어 훨씬 단순하다: zsh 는 wrapper 가 사용자 콘텐츠를
+/// 감싸지 않고 그대로 원본 `.zshenv` 로 넘기므로 재생성이 사용자 데이터를 건드릴
+/// 위험 자체가 없다).
+fn ensure_compiled_zshenv() {
+    let dir = tasty_zsh_integration_dir();
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!("create_dir_all for zsh-integration failed: {e}");
+        return;
+    }
+    let path = tasty_zshenv_path();
+    let path_str = path.to_string_lossy().to_string();
+    if generated_file_stamp_current(&path_str, BUILTIN_ZSHENV_STAMP) {
+        return;
+    }
+    let compiled = compose_zsh_zshenv();
+    write_generated_file(&path, &compiled);
 }
 
 #[cfg(test)]
@@ -772,23 +1007,34 @@ mod tests {
     #[cfg(windows)]
     fn settings_with_mode(mode: &str) -> GeneralSettings {
         GeneralSettings {
+            // 명시적 bash 경로 — CI 러너에 실제 Git Bash 가 설치돼 있는지와
+            // 무관하게 `ShellFamily::detect` 가 항상 Bash 로 판정하도록 한다
+            // (TODO35: effective_shell_args 가 이제 shell 필드도 본다).
+            shell: "bash.exe".to_string(),
             shell_mode: mode.to_string(),
             ..GeneralSettings::default()
         }
     }
 
+    #[cfg(not(windows))]
+    fn settings_with_shell(shell: &str) -> GeneralSettings {
+        GeneralSettings {
+            shell: shell.to_string(),
+            ..GeneralSettings::default()
+        }
+    }
+
     // TASTY_HOME env 변경은 프로세스 전역이라, tasty_home() 경로를 읽거나 바꾸는
-    // 테스트(effective_shell_args / ensure_compiled_bashrc 계열)는 직렬화한다.
-    #[cfg(windows)]
+    // 테스트(effective_shell_args/envs, ensure_compiled_bashrc/zshenv 계열)는
+    // 직렬화한다. TODO35 이전엔 Windows 전용이었다(비-Windows 는 이 경로를 아예
+    // 안 탔으므로) — 비-Windows bash/zsh 지원 신설로 모든 플랫폼에서 필요해졌다.
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// 테스트마다 격리된 TASTY_HOME (실 홈의 bashrc 를 건드리지 않도록).
-    #[cfg(windows)]
+    /// 테스트마다 격리된 TASTY_HOME (실 홈의 bashrc/zshenv 를 건드리지 않도록).
     struct HomeGuard {
         _dir: tempfile::TempDir,
         prev: Option<String>,
     }
-    #[cfg(windows)]
     impl HomeGuard {
         fn new() -> Self {
             let dir = tempfile::tempdir().expect("tempdir");
@@ -798,7 +1044,6 @@ mod tests {
             Self { _dir: dir, prev }
         }
     }
-    #[cfg(windows)]
     impl Drop for HomeGuard {
         fn drop(&mut self) {
             match &self.prev {
@@ -851,12 +1096,27 @@ mod tests {
         assert!(args.iter().all(|a| !a.ends_with("bashrc.default")));
     }
 
-    // default 모드 합성 rc 는 BUILTIN PRE / 사용자 ~/.bashrc source / BUILTIN PROMPT 셋 다 포함.
+    // default 모드 합성 rc(Windows) 는 BUILTIN PRE / 사용자 ~/.bashrc source /
+    // BUILTIN PROMPT 셋 다 포함.
+    #[cfg(windows)]
     #[test]
     fn default_mode_compiled_rc_sources_user_bashrc() {
         let compiled = compose_default_mode_bashrc();
         assert!(compiled.contains("__tasty_osc7")); // BUILTIN PRE 적용
         assert!(compiled.contains("source ~/.bashrc")); // 사용자 rc 호출
+        assert!(compiled.contains("PROMPT_COMMAND=")); // BUILTIN PROMPT 적용
+    }
+
+    // default 모드 합성 rc(비-Windows) 는 진짜 login 셸의 프로필 탐색 순서를
+    // 재현한다(TODO35 설계결정 2) — bash_profile/bash_login/profile 셋 다 언급.
+    #[cfg(not(windows))]
+    #[test]
+    fn default_mode_compiled_rc_searches_login_profiles_on_unix() {
+        let compiled = compose_default_mode_bashrc();
+        assert!(compiled.contains("__tasty_osc7")); // BUILTIN PRE 적용
+        assert!(compiled.contains(".bash_profile"));
+        assert!(compiled.contains(".bash_login"));
+        assert!(compiled.contains(".profile"));
         assert!(compiled.contains("PROMPT_COMMAND=")); // BUILTIN PROMPT 적용
     }
 
@@ -882,9 +1142,32 @@ mod tests {
         ] {
             assert!(compiled.contains("__tasty_title()"), "definition missing");
             assert!(
-                compiled.contains(r#"PROMPT_COMMAND="__tasty_osc7;__tasty_title"#),
+                compiled.contains(
+                    r#"PROMPT_COMMAND="__tasty_osc133_precmd;__tasty_osc7;__tasty_title"#
+                ),
                 "PROMPT_COMMAND joint missing"
             );
+        }
+    }
+
+    // OSC133 훅(TODO35) — 정의 + PROMPT_COMMAND(A/D) + PS0(C) 배선 모두 포함.
+    #[test]
+    fn compiled_rcs_wire_osc133_hooks() {
+        for compiled in [compose_default_mode_bashrc(), compose_tasty_mode_bashrc("")] {
+            assert!(
+                compiled.contains("__tasty_osc133_precmd()"),
+                "precmd definition missing"
+            );
+            assert!(
+                compiled.contains("__tasty_osc133_preexec()"),
+                "preexec definition missing"
+            );
+            assert!(compiled.contains(r#"PS0='$(__tasty_osc133_preexec)'"#));
+            assert!(compiled.contains(r#"\033]133;A\033\\"#));
+            // bash C phase 는 cmd= 를 싣지 않는다(PS0 시점 command-text 조회가
+            // 신뢰 불가 — 위 __tasty_osc133_preexec 주석의 수동 PTY 검증 참고).
+            assert!(compiled.contains(r#"\033]133;C\033\\"#));
+            assert!(compiled.contains(r#"\033]133;D;%s\033\\"#));
         }
     }
 
@@ -900,20 +1183,29 @@ mod tests {
     }
 
     // 스탬프 없는 (구버전) 기존 합성 rc 는 ensure_compiled_bashrc 가 강제 재생성한다.
-    #[cfg(windows)]
+    // default_path 는 양쪽 플랫폼 공통 경로, tasty_path 는 Windows 전용(shell_mode
+    // UI 토글이 있어야 의미 있음)이라 그 부분만 추가로 windows 게이트한다.
     #[test]
     fn ensure_compiled_bashrc_regenerates_stale_files() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let _home = HomeGuard::new();
-        let tasty_path = tasty_bashrc_path();
         let default_path = tasty_bashrc_default_path();
-        std::fs::create_dir_all(std::path::Path::new(&tasty_path).parent().unwrap()).unwrap();
-        std::fs::write(&tasty_path, "# old builtin without stamp\n").unwrap();
+        std::fs::create_dir_all(std::path::Path::new(&default_path).parent().unwrap()).unwrap();
         std::fs::write(&default_path, "# old builtin without stamp\n").unwrap();
+        #[cfg(windows)]
+        let tasty_path = {
+            let p = tasty_bashrc_path();
+            std::fs::write(&p, "# old builtin without stamp\n").unwrap();
+            p
+        };
 
         ensure_compiled_bashrc();
 
-        for path in [&tasty_path, &default_path] {
+        #[cfg(windows)]
+        let paths = [default_path.as_str(), tasty_path.as_str()];
+        #[cfg(not(windows))]
+        let paths = [default_path.as_str()];
+        for path in paths {
             let content = std::fs::read_to_string(path).unwrap();
             assert!(
                 content.lines().any(|l| l.trim() == BUILTIN_BASHRC_STAMP),
@@ -926,7 +1218,9 @@ mod tests {
         }
     }
 
-    // 현재 스탬프를 담은 파일은 재생성하지 않는다 (사용자 저장 결과 보존).
+    // 현재 스탬프를 담은 파일은 재생성하지 않는다 (사용자 저장 결과 보존). Windows
+    // 전용(shell_mode UI 로 저장되는 tasty 모드 rc 를 검증) — 비-Windows 동형 검증은
+    // `ensure_compiled_zshenv_keeps_current_file`(zsh)로 커버한다.
     #[cfg(windows)]
     #[test]
     fn ensure_compiled_bashrc_keeps_current_files() {
@@ -946,11 +1240,119 @@ mod tests {
         );
     }
 
-    // 비-Windows: 셸 모드 필드 자체가 없으므로 effective_shell_args 는 항상 빈 vec.
+    // 비-Windows bash: `--rcfile <default rc> -i` — `-i` 는 `-li`(로그인 셸)를
+    // 유지한 채로는 `--rcfile` 이 무시되기 때문에 필요하다(TODO35 설계결정 2).
     #[cfg(not(windows))]
     #[test]
-    fn effective_shell_args_empty_on_unix() {
-        let s = GeneralSettings::default();
+    fn unix_bash_effective_args_use_rcfile_and_interactive() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let args = settings_with_shell("/bin/bash").effective_shell_args();
+        assert_eq!(args.len(), 3);
+        assert_eq!(args[0], "--rcfile");
+        assert!(args[1].ends_with("bashrc.default"));
+        assert_eq!(args[2], "-i");
+    }
+
+    // 비-Windows bash 는 env 로 아무것도 주입하지 않는다(전부 args 경로).
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_bash_effective_envs_are_empty() {
+        assert!(
+            settings_with_shell("/bin/bash")
+                .effective_shell_envs()
+                .is_empty()
+        );
+    }
+
+    // 비-Windows zsh 는 args 가 아니라 env(ZDOTDIR)로만 주입한다.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_zsh_effective_args_are_empty() {
+        assert!(
+            settings_with_shell("/bin/zsh")
+                .effective_shell_args()
+                .is_empty()
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_zsh_effective_envs_set_zdotdir() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let envs = settings_with_shell("/bin/zsh").effective_shell_envs();
+        let zdotdir = envs
+            .iter()
+            .find(|(k, _)| k == "ZDOTDIR")
+            .map(|(_, v)| v.as_str())
+            .expect("ZDOTDIR present");
+        assert!(zdotdir.ends_with("zsh-integration"));
+    }
+
+    // 기타 셸(fish 등)은 이번 범위 밖 — args/env 둘 다 빈 채로 조용히 넘어간다.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_other_shell_args_and_envs_are_empty() {
+        let s = settings_with_shell("/usr/bin/fish");
         assert!(s.effective_shell_args().is_empty());
+        assert!(s.effective_shell_envs().is_empty());
+    }
+
+    // zsh wrapper .zshenv 는 OSC133 훅 정의 + ZDOTDIR 복원/원본 소싱을 모두 포함.
+    #[test]
+    fn zsh_zshenv_contains_osc133_hooks_and_zdotdir_restore() {
+        let compiled = compose_zsh_zshenv();
+        assert!(compiled.contains("__tasty_osc133_precmd()"));
+        assert!(compiled.contains("__tasty_osc133_preexec()"));
+        assert!(compiled.contains("add-zsh-hook precmd __tasty_osc133_precmd"));
+        assert!(compiled.contains("add-zsh-hook preexec __tasty_osc133_preexec"));
+        assert!(compiled.contains("__TASTY_ORIG_ZDOTDIR_SET"));
+        assert!(compiled.contains("source \"$__tasty_real_zdotdir/.zshenv\""));
+    }
+
+    #[test]
+    fn zsh_zshenv_carries_version_stamp() {
+        assert!(
+            compose_zsh_zshenv()
+                .lines()
+                .any(|l| l.trim() == BUILTIN_ZSHENV_STAMP)
+        );
+    }
+
+    // 스탬프 없는 기존 wrapper .zshenv 는 강제 재생성된다.
+    #[test]
+    fn ensure_compiled_zshenv_regenerates_stale_file() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let path = tasty_zshenv_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# old wrapper without stamp\n").unwrap();
+
+        ensure_compiled_zshenv();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.lines().any(|l| l.trim() == BUILTIN_ZSHENV_STAMP));
+        assert!(content.contains("__tasty_osc133_precmd()"));
+    }
+
+    // 현재 스탬프를 담은 wrapper .zshenv 는 재생성하지 않는다.
+    #[test]
+    fn ensure_compiled_zshenv_keeps_current_file() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = HomeGuard::new();
+        let path = tasty_zshenv_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // 스탬프는 있지만 임의로 조작해 재생성되면 바로 드러나는 sentinel 을 심는다.
+        let current = format!("{}\n# SENTINEL\n", BUILTIN_ZSHENV_STAMP);
+        std::fs::write(&path, &current).unwrap();
+
+        ensure_compiled_zshenv();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("# SENTINEL"),
+            "current-stamped file must not be overwritten"
+        );
     }
 }

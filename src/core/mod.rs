@@ -1437,6 +1437,7 @@ impl Core {
                 rows,
                 shell: sh.shell_ref(),
                 args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 surface_id,
                 working_dir: cwd.as_deref(),
                 initial_input: None,
@@ -1526,6 +1527,7 @@ impl Core {
                     rows,
                     shell: sh.shell_ref(),
                     shell_args: &sh.args_ref(),
+                    extra_env: &sh.envs_ref(),
                     waker,
                     working_dir: cwd.as_deref(),
                 },
@@ -1590,6 +1592,7 @@ impl Core {
                     rows,
                     shell: sh.shell_ref(),
                     args: &sh.args_ref(),
+                    extra_env: &sh.envs_ref(),
                     surface_id: new_surface_id,
                     working_dir: cwd.as_deref(),
                     initial_input: None,
@@ -1695,6 +1698,7 @@ impl Core {
                             rows,
                             shell: sh.shell_ref(),
                             args: &sh.args_ref(),
+                            extra_env: &sh.envs_ref(),
                             surface_id,
                             working_dir: cwd.as_deref(),
                             initial_input: None,
@@ -2462,6 +2466,7 @@ impl Core {
                 rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 waker,
                 working_dir: cwd.as_deref(),
             };
@@ -2736,6 +2741,11 @@ pub(crate) fn apply_create_workspace_inner(
         };
         let shell_args_owned = engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let shell_envs_owned = engine.settings.general.effective_shell_envs();
+        let shell_envs: Vec<(&str, &str)> = shell_envs_owned
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         let terminal = crate::model::Pane::spawn_terminal(
             surface_id,
             crate::model::ShellSpawnOpts {
@@ -2743,6 +2753,7 @@ pub(crate) fn apply_create_workspace_inner(
                 rows: engine.default_rows,
                 shell,
                 shell_args: &shell_args,
+                extra_env: &shell_envs,
                 waker: engine.make_waker(surface_id),
                 working_dir: cwd.as_deref(),
             },
@@ -3636,6 +3647,7 @@ mod mirror_structural_guard_tests {
                 rows: 24,
                 shell: sh.shell_ref(),
                 args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 surface_id: pty_id,
                 working_dir: None,
                 initial_input: None,
@@ -3756,6 +3768,7 @@ mod mirror_structural_guard_tests {
                 rows: 24,
                 shell: sh.shell_ref(),
                 args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 surface_id: pty_id,
                 working_dir: None,
                 initial_input: None,

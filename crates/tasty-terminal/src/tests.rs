@@ -20,6 +20,7 @@ fn test_terminal(cols: usize, rows: usize) -> Terminal {
             surface_id: 0,
             working_dir: None,
             initial_input: None,
+            extra_env: &[],
         },
         waker,
     )
@@ -1183,6 +1184,7 @@ fn process_exited_eventually_emitted() {
             surface_id: 0,
             working_dir: None,
             initial_input: Some("exit\r"),
+            extra_env: &[],
         },
         waker,
     )

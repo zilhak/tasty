@@ -327,6 +327,7 @@ mod tests {
                 surface_id: 0,
                 working_dir: None,
                 initial_input: None,
+                extra_env: &[],
             },
             waker,
         )

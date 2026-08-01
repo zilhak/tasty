@@ -19,6 +19,9 @@ pub struct TerminalSurface {
 pub struct DeferredSpawn {
     pub shell: Option<String>,
     pub shell_args: Vec<String>,
+    /// 자식 셸에 추가로 심을 환경변수(TODO35). `shell_args` 와 마찬가지로 spawn
+    /// 시점까지 owned 로 들고 있다가, 실제 PTY spawn 순간 `TerminalConfig` 로 넘긴다.
+    pub extra_env: Vec<(String, String)>,
     pub cols: usize,
     pub rows: usize,
     pub waker: tasty_terminal::Waker,

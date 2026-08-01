@@ -83,6 +83,11 @@ pub(crate) fn rebuild_surface_node(
     };
     let shell_args_owned = engine.settings.general.effective_shell_args();
     let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+    let shell_envs_owned = engine.settings.general.effective_shell_envs();
+    let shell_envs: Vec<(&str, &str)> = shell_envs_owned
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let waker = engine.make_waker(surface_id);
 
     // PTY 의 첫 입력으로 cd + restore_command 를 합쳐 한 번에 주입한다. shell 이
@@ -107,6 +112,7 @@ pub(crate) fn rebuild_surface_node(
             rows,
             shell: shell.as_deref(),
             args: &shell_args,
+            extra_env: &shell_envs,
             surface_id,
             working_dir: None,
             initial_input,

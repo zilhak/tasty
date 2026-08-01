@@ -570,6 +570,7 @@ impl AppState {
                 rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 waker: engine.make_waker(new_surface_id),
                 working_dir: cwd.as_deref(),
             },

@@ -55,6 +55,11 @@ pub struct TerminalConfig<'a> {
     /// (`claude -r <uuid>\r`) 처럼 spawn 과 동시에 실행되어야 할 명령을 넘기는 용도.
     /// 호출자는 줄바꿈(`\r`) 등 submit 문자를 직접 포함해야 한다.
     pub initial_input: Option<&'a str>,
+    /// 자식 셸 프로세스에 추가로 심을 환경변수. `GeneralSettings::effective_shell_envs`
+    /// (TODO35, zsh `ZDOTDIR` 스왑 등 셸 통합 자동 주입용) 가 채운다 — args
+    /// 기반 주입(bash `--rcfile`)과 달리 CLI 인자가 아니라 환경변수로만 넘길 수
+    /// 있는 값이 있어 별도 필드로 분리했다.
+    pub extra_env: &'a [(&'a str, &'a str)],
 }
 
 /// Information about a single cell for debug inspection.
@@ -416,15 +421,26 @@ fn build_shell_command(
     args: &[&str],
     surface_id: u32,
     working_dir: Option<&std::path::Path>,
+    extra_env: &[(&str, &str)],
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell);
-    // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
+    // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded —
+    // *unless* `args` already carries an explicit `--rcfile`-based bash startup
+    // (`GeneralSettings::effective_shell_args`, TODO35): bash's `--rcfile` is
+    // silently ignored for login shells (`bash(1)`: it only applies to
+    // interactive *non-login* shells), so login mode must be dropped in that
+    // case — the args themselves append `-i` to keep the shell interactive.
     #[cfg(not(windows))]
-    cmd.arg("-li");
+    if !args.contains(&"--rcfile") {
+        cmd.arg("-li");
+    }
     for arg in args {
         if !arg.is_empty() {
             cmd.arg(arg);
         }
+    }
+    for (key, value) in extra_env {
+        cmd.env(key, value);
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
@@ -657,7 +673,13 @@ impl Terminal {
             Some(s) if !s.is_empty() => s.to_string(),
             _ => Self::default_shell(),
         };
-        let cmd = build_shell_command(&shell, config.args, surface_id, working_dir);
+        let cmd = build_shell_command(
+            &shell,
+            config.args,
+            surface_id,
+            working_dir,
+            config.extra_env,
+        );
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);

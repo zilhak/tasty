@@ -34,6 +34,7 @@ impl AppState {
                 rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
                 waker,
                 working_dir: cwd.as_deref(),
             },

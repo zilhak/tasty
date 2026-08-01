@@ -127,6 +127,7 @@ pub(crate) fn handle_spawn(
             rows,
             shell: sh.shell_ref(),
             args: &sh.args_ref(),
+            extra_env: &sh.envs_ref(),
             surface_id: pty_id,
             working_dir,
             initial_input: initial_input.as_deref(),

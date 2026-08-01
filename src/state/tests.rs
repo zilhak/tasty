@@ -579,6 +579,11 @@ fn add_deferred_tab(state: &mut AppState, engine: &mut crate::core::CoreState) -
     let spawn = crate::model::DeferredSpawn {
         shell: sh.shell_ref().map(|s| s.to_string()),
         shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
+        extra_env: sh
+            .envs_ref()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
         cols: engine.default_cols,
         rows: engine.default_rows,
         waker,

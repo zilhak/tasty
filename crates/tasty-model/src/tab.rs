@@ -497,6 +497,11 @@ fn spawn_terminal_from_deferred(
 ) -> Result<Terminal, String> {
     let shell_ref = spawn.shell.as_deref();
     let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
+    let extra_env: Vec<(&str, &str)> = spawn
+        .extra_env
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let working_dir = spawn.working_dir.as_deref();
     // PTY master 의 첫 입력으로 restore_command 를 미리 적재. Terminal::new 가
     // writer thread spawn 전에 동기 write 하므로, shell 이 stdin 을 처음 read
@@ -512,6 +517,7 @@ fn spawn_terminal_from_deferred(
             surface_id,
             working_dir,
             initial_input,
+            extra_env: &extra_env,
         },
         spawn.waker,
     ) {
@@ -544,6 +550,7 @@ mod tests {
         DeferredSpawn {
             shell: shell.map(|s| s.to_string()),
             shell_args: Vec::new(),
+            extra_env: Vec::new(),
             cols: 80,
             rows: 24,
             waker: Arc::new(|| {}) as tasty_terminal::Waker,

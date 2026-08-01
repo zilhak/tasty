@@ -726,6 +726,7 @@ fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
     let spawn = super::terminal_surface::DeferredSpawn {
         shell: None,
         shell_args: Vec::new(),
+        extra_env: Vec::new(),
         cols: 80,
         rows: 24,
         waker,

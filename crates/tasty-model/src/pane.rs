@@ -16,6 +16,8 @@ pub struct ShellSpawnOpts<'a> {
     pub shell_args: &'a [&'a str],
     pub waker: Waker,
     pub working_dir: Option<&'a std::path::Path>,
+    /// 자식 셸에 추가로 심을 환경변수(TODO35, `ShellConfig::envs_ref` 참고).
+    pub extra_env: &'a [(&'a str, &'a str)],
 }
 
 /// A screen region with its own independent tab bar.
@@ -73,6 +75,7 @@ impl Pane {
                 surface_id,
                 working_dir: spawn.working_dir,
                 initial_input: None,
+                extra_env: spawn.extra_env,
             },
             spawn.waker,
         )

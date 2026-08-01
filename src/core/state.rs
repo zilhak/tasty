@@ -91,6 +91,9 @@ impl IdGenerator {
 pub struct ShellConfig {
     pub shell: String,
     pub args: Vec<String>,
+    /// 자식 셸에 추가로 심을 환경변수(TODO35 — 예: zsh `ZDOTDIR` 스왑). bash 는
+    /// `args`(`--rcfile`) 로 주입하므로 이 필드는 비어 있다.
+    pub envs: Vec<(String, String)>,
 }
 
 impl ShellConfig {
@@ -98,6 +101,7 @@ impl ShellConfig {
         Self {
             shell: settings.general.shell.clone(),
             args: settings.general.effective_shell_args(),
+            envs: settings.general.effective_shell_envs(),
         }
     }
 
@@ -111,6 +115,13 @@ impl ShellConfig {
 
     pub fn args_ref(&self) -> Vec<&str> {
         self.args.iter().map(|s| s.as_str()).collect()
+    }
+
+    pub fn envs_ref(&self) -> Vec<(&str, &str)> {
+        self.envs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect()
     }
 }
 
@@ -687,6 +698,7 @@ impl CoreState {
                     rows,
                     shell: sh.shell_ref(),
                     shell_args: &sh.args_ref(),
+                    extra_env: &sh.envs_ref(),
                     waker,
                     working_dir: None,
                 },
