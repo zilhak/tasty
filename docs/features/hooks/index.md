@@ -25,6 +25,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 | `Bell` | BEL 수신 |
 | `Notification` | OSC 알림 수신 |
 | `IdleTimeout(secs)` | N초간 PTY 출력 없음 — **1Hz 해상도**(BusyPoll tick) |
+| `CommandCompleted(Option<i32>)` | OSC 133 D phase — 셸 통합이 개별 명령(`docker build`, `just run` 등)의 종료 + exit code 를 보고 |
 | `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
 
 #### OutputMatch — 완성된 라인 단위 매칭
@@ -42,11 +43,20 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 - **epoch 기반 anti-spam**: 한 번 발화하면 그 시점의 `last_output_at` 값(epoch)을 기록해, 같은 epoch 동안은 재발화하지 않는다(persistent 훅이 매 tick 마다 스팸처럼 재발화하는 것을 막음). 새 출력이 들어와 `last_output_at` 이 갱신되면 자동으로 재무장된다.
 - `once` 훅은 발화 후 즉시 제거된다(Global hook 의 `once:SECS` 와 동일한 시맨틱).
 
+#### CommandCompleted — OSC 133 명령 완료(exit code)
+
+셸 프로세스 자체의 종료(`ProcessExit`)와 달리, 셸 *안에서* 실행되는 개별 명령(`docker build`, `just run build` 등)의 완료를 감지한다 — 서브프로세스 종료는 `process-exit` 으로 원리적으로 감지 불가능하다(portable-pty 의 `Child` 추상화가 단일 pid 만 wait). OSC 133 셸 통합(zsh/bash preexec 등)이 D phase(`\e]133;D;<exit_code>\a`)를 보내면 [`command_index`](../terminal-output/index.md)가 이미 인덱싱하는 것과 별개로, 이 훅이 항상(exit code 필터링 없이) 발화한다.
+
+- **등록**: `command-completed` = 임의 exit code 매치. `command-completed:<N>` = 그 exit code 만 매치(예: `command-completed:1` 로 실패한 명령만 구독). 실제 발생 이벤트는 항상 특정 exit code 를 담으므로, `None` 등록만 모든 발생과 매치되고 `Some(n)` 등록은 그 값과 일치할 때만 매치된다.
+- **전제 조건**: 셸이 OSC 133 셸 통합 스크립트를 로드해야 한다. 미설치 셸은 D phase 자체가 안 와 이 훅이 절대 발화하지 않는다 — surface 가 출력을 내는데도 일정 시간(10 초) 지나도록 OSC 133 boundary 를 한 번도 못 받으면 "셸 통합 미설치" 안내 배너(`shell-integration-missing`, 마우스 캡처 안내 배너와 동일한 형태 — 자동 조치 없이 설명만)를 surface 스코프로 1 회 띄운다.
+- **surface highlight 미연결**: 이 훅은 발화만 한다 — surface 테두리/탭 강조(highlight) 자동 연결은 이번 범위 밖이다(별도 후속 작업). highlight 로 이어 붙이려면 훅 바인딩에서 `tasty surface completion --surface <id>` 같은 커맨드를 직접 등록해야 한다.
+- **구현 메모**: termwiz 는 OSC 133("133")을 미리 알려진 코드로 인식해 `Unspecified` 가 아니라 전용 `FinalTermSemanticPrompt` variant 로 구조화해 반환한다(A/C/D 는 항상 이 경로 — B 만 셸이 `cmd=` 등 부가 토큰을 붙이면 termwiz 의 엄격 파서가 실패해 `Unspecified` 로 폴백). `crates/tasty-terminal/src/vte_handler/osc.rs`가 이 variant 를 tasty 공통 `PromptBoundary{phase, payload}` 로 평평하게 변환해 이후 로직(command_index/이 훅)이 phase 문자만 보고 동작한다.
+
 #### 이벤트 키 검증 (내장 + 플러그인 선언)
 
 `HookEvent::parse` 는 미인식 문자열을 `Custom(String)` 으로 무조건 수용하므로(파싱·검증 책임 분리), `hook.set` / `surface.fire_hook` 핸들러 단계에서 키를 **(내장 ∪ 활성 플러그인 선언)** 집합으로 검증한다.
 
-- **내장 이벤트**(`process-exit` / `bell` / `notification` / `output-match:` / `idle-timeout:`)는 플러그인 무관하게 항상 허용.
+- **내장 이벤트**(`process-exit` / `bell` / `notification` / `output-match:` / `idle-timeout:` / `command-completed` / `command-completed:<N>`)는 플러그인 무관하게 항상 허용.
 - **플러그인 선언 이벤트**는 플러그인이 manifest `[[contributes.hook_events]]` 로 자기가 발사하는 키를 선언해야 한다. 코어는 이름을 하드코딩하지 않고 이 카탈로그를 활성 플러그인 hello 시 집계한다(언로드/제거 시 제거). `disable`→`enable`(또는 `upgrade-builtins`)로 재기동된 새 프로세스의 hello 도 다시 집계된다 — `PluginManager::disable`(`crates/tasty-host-plugin/src/manager/lifecycle.rs`)이 `registered_plugins` gate 를 함께 지워야 재기동 후 hello 가 `finalize_plugin_hello`(→`hook_event_registry.register`)까지 재도달한다. 이 gate 를 안 지우면 재기동 후 hello 가 host 에 "이미 등록된 plugin" 으로 오판되어 조용히 무시되고, 그 plugin 이 선언한 hook 이벤트 전부가 완료 알림 없이 사라진다.
 - 내장도 아니고 활성 플러그인이 선언하지도 않은 키(오타·미존재 이벤트)는 **등록 거부**(`invalid_params`, 에러 메시지에 내장 + 활성 선언 목록 안내). 죽은 hook 등록을 막는다.
 - 따라서 **플러그인이 비활성이면 그 플러그인의 이벤트 hook 등록도 거부**된다(예: claude plugin 비활성 시 `claude-idle` hook 등록 불가 — 의도된 dead-setting 방지). claude plugin 은 위 3개 키를 manifest 로 선언한다.

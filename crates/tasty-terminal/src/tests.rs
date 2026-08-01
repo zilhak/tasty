@@ -782,6 +782,85 @@ fn osc52_write_still_emits_clipboard_set() {
     );
 }
 
+// OSC 133(TODO34) — termwiz parses "133" into its own dedicated
+// `FinalTermSemanticPrompt` variant (never `Unspecified`, for A/C/D at least),
+// so this must produce a `PromptBoundary` event via that variant's match arm,
+// not the (now largely dead for A/C/D) `Unspecified` fallback.
+#[test]
+fn osc133_a_phase_emits_prompt_boundary() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]133;A\x07");
+    let events = t.take_events();
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'A')
+        ),
+        "OSC 133;A should emit PromptBoundary{{phase: 'A', ..}}"
+    );
+}
+
+#[test]
+fn osc133_c_phase_emits_prompt_boundary() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]133;C\x07");
+    let events = t.take_events();
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'C')
+        ),
+        "OSC 133;C should emit PromptBoundary{{phase: 'C', ..}}"
+    );
+}
+
+// D phase is the one TODO34's hook wiring depends on — termwiz always parses
+// it into `FinalTermSemanticPrompt::CommandStatus{status,..}` (never falls
+// back to `Unspecified`), so the exit code must round-trip through the
+// `status.to_string()` payload into `PromptBoundary{phase: 'D', payload}`.
+#[test]
+fn osc133_d_phase_carries_exit_code_as_payload() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]133;D;0\x07");
+    let events = t.take_events();
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            TerminalEventKind::PromptBoundary { phase, payload } if *phase == 'D' && payload == "0"
+        )),
+        "OSC 133;D;0 should emit PromptBoundary{{phase: 'D', payload: \"0\"}}"
+    );
+}
+
+#[test]
+fn osc133_d_phase_nonzero_exit_code() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]133;D;127\x07");
+    let events = t.take_events();
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            TerminalEventKind::PromptBoundary { phase, payload } if *phase == 'D' && payload == "127"
+        )),
+        "OSC 133;D;127 should emit PromptBoundary{{phase: 'D', payload: \"127\"}}"
+    );
+}
+
+// Bare B (no `cmd=` payload) is the common case real shell integration scripts
+// send — termwiz parses this successfully into `FinalTermSemanticPrompt`
+// too (unlike a `cmd=`-carrying B, which fails termwiz's strict single-token
+// parse and falls back to `Unspecified`).
+#[test]
+fn osc133_bare_b_phase_emits_prompt_boundary() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]133;B\x07");
+    let events = t.take_events();
+    assert!(
+        events.iter().any(
+            |e| matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'B')
+        ),
+        "bare OSC 133;B should emit PromptBoundary{{phase: 'B', ..}}"
+    );
+}
+
 #[test]
 fn da2_query_emits_secondary_attributes_response() {
     use std::sync::mpsc;

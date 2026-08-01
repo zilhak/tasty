@@ -465,6 +465,19 @@ pub(crate) enum CoreEvent {
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
     TerminalCwdChanged { surface_id: u32 },
 
+    /// OSC 133 D phase(TODO34) — 셸 통합이 명령 완료 + exit code 를 보고했다.
+    /// cascade 가 `HookEvent::CommandCompleted(Some(exit_code))` 로 훅을 발화한다.
+    /// highlight 연결은 없다(별도 TODO67).
+    TerminalCommandCompleted {
+        surface_id: u32,
+        exit_code: Option<i32>,
+    },
+
+    /// 이 surface 가 출력을 내고 있는데도 일정 시간 `PromptBoundary` 를 한 번도
+    /// 못 받았다(TODO34) — OSC 133 셸 통합 미설치로 추정. cascade 가 안내 배너를
+    /// 1 회 띄운다(자동 조치 없음).
+    TerminalShellIntegrationHint { surface_id: u32 },
+
     /// OSC 52 clipboard set. cascade 가 `toast.copied_osc52` 토스트만 발행한다.
     /// 시스템 clipboard 쓰기는 Core::process_pty_output 이 self.clipboard 로 직접 처리한다.
     /// `surface_id` 는 토스트를 Surface 스코프로 띄우기 위함 (호스트가 stamp 한 실제 sid).

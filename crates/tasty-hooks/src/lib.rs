@@ -80,6 +80,11 @@ pub enum HookEvent {
     /// TODO: Implement IdleTimeout by tracking last output timestamp per terminal and
     /// emitting an event when the idle threshold is exceeded.
     IdleTimeout(u64),
+    /// OSC 133 D phase — a shell-integrated command finished. `None` registered
+    /// (e.g. `command-completed`) matches any exit code; `Some(code)` registered
+    /// (e.g. `command-completed:1`) matches only that exact code. The *observed*
+    /// instance the core fires always carries `Some(actual exit code)`.
+    CommandCompleted(Option<i32>),
     /// An arbitrary event identifier owned by a plugin (or any caller). The core
     /// does not know these names — it matches them by exact string equality. This
     /// keeps agent-specific events (e.g. claude's `claude-idle`) out of the core.
@@ -95,6 +100,12 @@ impl HookEvent {
             (HookEvent::Custom(a), HookEvent::Custom(b)) => a == b,
             (HookEvent::IdleTimeout(threshold), HookEvent::IdleTimeout(elapsed)) => {
                 elapsed >= threshold
+            }
+            (HookEvent::CommandCompleted(want), HookEvent::CommandCompleted(actual)) => {
+                match want {
+                    None => true,
+                    Some(w) => actual.as_ref() == Some(w),
+                }
             }
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
@@ -122,6 +133,12 @@ impl HookEvent {
             Some(HookEvent::OutputMatch(pattern.to_string()))
         } else if let Some(secs) = s.strip_prefix("idle-timeout:") {
             secs.parse::<u64>().ok().map(HookEvent::IdleTimeout)
+        } else if s == "command-completed" {
+            Some(HookEvent::CommandCompleted(None))
+        } else if let Some(code) = s.strip_prefix("command-completed:") {
+            code.parse::<i32>()
+                .ok()
+                .map(|c| HookEvent::CommandCompleted(Some(c)))
         } else {
             // Unknown identifiers fall back to a plugin-owned custom event,
             // matched later by exact string equality.
@@ -137,6 +154,8 @@ impl HookEvent {
             HookEvent::Notification => "notification".to_string(),
             HookEvent::OutputMatch(pattern) => format!("output-match:{}", pattern),
             HookEvent::IdleTimeout(secs) => format!("idle-timeout:{}", secs),
+            HookEvent::CommandCompleted(None) => "command-completed".to_string(),
+            HookEvent::CommandCompleted(Some(code)) => format!("command-completed:{}", code),
             HookEvent::Custom(s) => s.clone(),
         }
     }
@@ -376,6 +395,96 @@ mod tests {
             let parsed = HookEvent::parse(&s);
             assert!(parsed.is_some(), "failed to roundtrip: {}", s);
         }
+    }
+
+    #[test]
+    fn hook_event_parse_command_completed_any() {
+        assert_eq!(
+            HookEvent::parse("command-completed"),
+            Some(HookEvent::CommandCompleted(None))
+        );
+    }
+
+    #[test]
+    fn hook_event_parse_command_completed_specific_code() {
+        assert_eq!(
+            HookEvent::parse("command-completed:1"),
+            Some(HookEvent::CommandCompleted(Some(1)))
+        );
+        assert_eq!(
+            HookEvent::parse("command-completed:0"),
+            Some(HookEvent::CommandCompleted(Some(0)))
+        );
+    }
+
+    #[test]
+    fn hook_event_parse_command_completed_bad_code_is_none() {
+        assert_eq!(HookEvent::parse("command-completed:not-a-number"), None);
+    }
+
+    #[test]
+    fn command_completed_matches_any_exit_code_when_unspecified() {
+        let registered = HookEvent::CommandCompleted(None);
+        assert!(registered.matches(&HookEvent::CommandCompleted(Some(0)), None));
+        assert!(registered.matches(&HookEvent::CommandCompleted(Some(1)), None));
+        assert!(registered.matches(&HookEvent::CommandCompleted(Some(127)), None));
+    }
+
+    #[test]
+    fn command_completed_matches_only_specific_exit_code_when_filtered() {
+        let registered = HookEvent::CommandCompleted(Some(1));
+        assert!(registered.matches(&HookEvent::CommandCompleted(Some(1)), None));
+        assert!(!registered.matches(&HookEvent::CommandCompleted(Some(0)), None));
+        assert!(!registered.matches(&HookEvent::CommandCompleted(Some(2)), None));
+    }
+
+    #[test]
+    fn command_completed_display_roundtrip() {
+        let any = HookEvent::CommandCompleted(None);
+        assert_eq!(any.to_display_string(), "command-completed");
+        assert_eq!(HookEvent::parse(&any.to_display_string()), Some(any));
+
+        let specific = HookEvent::CommandCompleted(Some(127));
+        assert_eq!(specific.to_display_string(), "command-completed:127");
+        assert_eq!(
+            HookEvent::parse(&specific.to_display_string()),
+            Some(specific)
+        );
+    }
+
+    #[test]
+    fn hook_manager_check_and_fire_matches_command_completed_any() {
+        let mut manager = HookManager::new();
+        manager.add_hook(
+            1,
+            HookEvent::CommandCompleted(None),
+            shell("echo done"),
+            false,
+        );
+        let fired = manager.check_and_fire(1, &[HookEvent::CommandCompleted(Some(0))]);
+        assert_eq!(fired.len(), 1);
+    }
+
+    #[test]
+    fn hook_manager_check_and_fire_filters_command_completed_by_code() {
+        let mut manager = HookManager::new();
+        manager.add_hook(
+            1,
+            HookEvent::CommandCompleted(Some(1)),
+            shell("echo failed"),
+            false,
+        );
+        assert!(
+            manager
+                .check_and_fire(1, &[HookEvent::CommandCompleted(Some(0))])
+                .is_empty()
+        );
+        assert_eq!(
+            manager
+                .check_and_fire(1, &[HookEvent::CommandCompleted(Some(1))])
+                .len(),
+            1
+        );
     }
 
     #[test]

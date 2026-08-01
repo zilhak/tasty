@@ -782,8 +782,16 @@ impl Core {
                             });
                         }
                     }
+                    // OSC 133 셸 통합 미설치 감지(TODO34) — 첫 출력 시각을 기록하고,
+                    // 지연 시간이 지나도록 PromptBoundary 를 한 번도 못 받았으면 안내
+                    // 배너 cascade 를 1 회 요청한다.
+                    engine.note_first_output(sid);
+                    if engine.take_shell_integration_hint_due(sid) {
+                        out.push(CoreEvent::TerminalShellIntegrationHint { surface_id: sid });
+                    }
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
+                    engine.note_prompt_boundary_seen(sid);
                     let mem = engine.memory.clone();
                     if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload)
                     {
@@ -805,6 +813,15 @@ impl Core {
                             surface_id: sid,
                             title,
                             body,
+                        });
+                    }
+                    // OSC 133 D phase(TODO34) — 명령 완료 + exit code. 항상 발화(필터
+                    // 없음), highlight 연결은 하지 않는다(별도 TODO67).
+                    if phase == 'D' {
+                        let exit_code = crate::core::command_index::extract_exit_code(&payload);
+                        out.push(CoreEvent::TerminalCommandCompleted {
+                            surface_id: sid,
+                            exit_code,
                         });
                     }
                 }

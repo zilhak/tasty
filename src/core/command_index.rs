@@ -225,7 +225,7 @@ fn extract_cmd(payload: &str) -> Option<String> {
     None
 }
 
-fn extract_exit_code(payload: &str) -> Option<i32> {
+pub(crate) fn extract_exit_code(payload: &str) -> Option<i32> {
     // `D` 페이로드는 첫 토큰이 exit code (예: `D;0` → payload="0", `D;127;aid=x` → "127;aid=x")
     let first = payload.split(';').next()?;
     first.trim().parse::<i32>().ok()

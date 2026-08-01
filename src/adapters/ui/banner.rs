@@ -50,9 +50,10 @@ pub struct BannerDef {
     /// 고유 id = kind. 같은 id 는 한 스코프에 하나만 존재한다.
     pub id: BannerId,
     /// TTL(초). `None` 이면 사용자 닫기까지 유지, `Some` 이면 카운트다운 후 자동 소멸.
-    // 이유: 선언용 필드 — 현재 유일한 `BannerDef`(BANNER_MOUSE_CAPTURE)는
-    // `BannerState::persistent`로 직접 열려 이 필드를 거치지 않는다. def→state
-    // 변환 지점이 생기면 여기서 읽어야 한다 (판단필요 — conductor 검토).
+    // 이유: 선언용 필드 — 현재 모든 `BannerDef`(BANNER_MOUSE_CAPTURE,
+    // BANNER_SHELL_INTEGRATION_MISSING)는 `BannerState::persistent`로 직접 열려
+    // 이 필드를 거치지 않는다. def→state 변환 지점이 생기면 여기서 읽어야 한다
+    // (판단필요 — conductor 검토).
     #[allow(dead_code)]
     pub ttl_seconds: Option<u32>,
     /// 셸 내부 콘텐츠 draw 함수.
@@ -839,6 +840,39 @@ pub mod defs {
         });
     }
 
+    /// OSC 133 셸 통합 미설치 안내(TODO34). surface 가 출력을 내고 있는데도 일정
+    /// 시간이 지나도록 `PromptBoundary` 를 한 번도 못 받았을 때 표시 — 설명만
+    /// 하고 자동 조치는 없다(mouse-capture 배너와 동일 형태).
+    pub const BANNER_SHELL_INTEGRATION_MISSING: BannerId = "shell-integration-missing";
+
+    fn content_shell_integration_missing(ui: &mut egui::Ui, theme: &Theme) {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+            let glyph = theme.icon_glyph_size_md.value();
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            icons::TERM
+                .image(glyph, theme.banner_icon_fg().to_egui())
+                .paint_at(ui, rect);
+            ui.vertical(|ui| {
+                ui.set_max_width(
+                    (ui.available_width() - theme.item_height_interactive.value()).max(0.0),
+                );
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.label(
+                    egui::RichText::new(t("banner.shell_integration_missing.title"))
+                        .size(theme.font_size_body.value())
+                        .strong()
+                        .color(theme.banner_fg().to_egui()),
+                );
+                ui.label(
+                    egui::RichText::new(t("banner.shell_integration_missing.body"))
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            });
+        });
+    }
+
     /// 전체 빌트인 배너 정의.
     // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)뿐이라 release 빌드에서
     // 미사용으로 잡힌다.
@@ -847,11 +881,18 @@ pub mod defs {
         &DEFS
     }
 
-    static DEFS: [BannerDef; 1] = [BannerDef {
-        id: BANNER_MOUSE_CAPTURE,
-        ttl_seconds: None,
-        content_fn: content_mouse_capture,
-    }];
+    static DEFS: [BannerDef; 2] = [
+        BannerDef {
+            id: BANNER_MOUSE_CAPTURE,
+            ttl_seconds: None,
+            content_fn: content_mouse_capture,
+        },
+        BannerDef {
+            id: BANNER_SHELL_INTEGRATION_MISSING,
+            ttl_seconds: None,
+            content_fn: content_shell_integration_missing,
+        },
+    ];
 
     /// id 로 정의 조회. 런타임 문자열(IPC/CLI 입력)도 조회할 수 있도록 `&str` 을
     /// 받는다 — 매칭된 def 의 `id` 는 여전히 `&'static str` 이다.

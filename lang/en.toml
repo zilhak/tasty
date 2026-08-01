@@ -772,6 +772,10 @@ bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and c
 title = "Mouse input captured"
 body = "This app is capturing the mouse. Use Shift+drag to select text, Shift+Right-click for the tasty menu."
 
+[banner.shell_integration_missing]
+title = "Shell integration not detected"
+body = "Command-completion hooks (docker build, just run, etc.) need OSC 133 shell integration. See docs/features/hooks for setup."
+
 [port_scanner]
 heading = "Listening ports"
 no_ports = "No listening TCP ports in this terminal's process tree."

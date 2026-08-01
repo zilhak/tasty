@@ -265,6 +265,18 @@ pub struct CoreState {
     // itself stays on.
     pub(crate) mouse_capture_banner_suppressed_surfaces: std::collections::HashSet<u32>,
 
+    // ── OSC 133 셸 통합 미설치 안내 배너 판정 상태 (TODO34). `shell_integration_hint.rs`
+    // 참조. highlight 연결은 없음(별도 TODO67) — 순수 안내 배너 트리거용.
+    /// surface 의 첫 PTY 출력 관측 시각. 이 시각 이후 일정 시간이 지나도록
+    /// `PromptBoundary` 를 한 번도 못 받으면 배너 대상 후보가 된다.
+    pub(crate) shell_integration_first_output_at:
+        std::collections::HashMap<u32, std::time::Instant>,
+    /// `PromptBoundary`(OSC 133 A/B/C/D 아무 phase)를 한 번이라도 받은 surface 집합 —
+    /// 셸 통합이 설치돼 있다는 확정 증거라 이후 배너 판정에서 영구 제외한다.
+    pub(crate) shell_integration_boundary_seen: std::collections::HashSet<u32>,
+    /// 셸 통합 미설치 배너를 이미 1회 띄운 surface 집합 (재표시 방지).
+    pub(crate) shell_integration_hint_shown: std::collections::HashSet<u32>,
+
     // ── Foreground process-name cache (surface_id → display name). Updated by
     // the same 1Hz BusyPoll from the foreground programs it already resolves
     // (no extra process snapshot). The StatusBar reads this every frame instead
@@ -558,6 +570,9 @@ impl CoreState {
             highlighted_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             mouse_capture_banner_suppressed_surfaces: std::collections::HashSet::new(),
+            shell_integration_first_output_at: std::collections::HashMap::new(),
+            shell_integration_boundary_seen: std::collections::HashSet::new(),
+            shell_integration_hint_shown: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             pending_move_surface: None,
             explorer_clipboard: None,
@@ -1204,6 +1219,7 @@ mod highlight;
 mod idle_hooks;
 mod message;
 mod pty;
+mod shell_integration_hint;
 mod soft_occupancy;
 mod terminal_finders;
 

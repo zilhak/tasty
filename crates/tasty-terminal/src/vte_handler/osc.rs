@@ -179,12 +179,40 @@ impl TerminalState {
                     kind: TerminalEventKind::ClipboardQuery,
                 });
             }
+            // OSC 133(TODO34) — termwiz 는 "133" 을 미리 알려진 코드로 취급해
+            // `Unspecified` 대신 이 전용 variant 로 구조화해 반환한다(A/C/D 는
+            // 항상 이 경로 — B 는 셸이 `cmd=` 등 부가 토큰을 붙이면 termwiz 의
+            // 엄격한 단일-토큰 파서가 실패해 `Unspecified` 로 폴백하고, 그 경우는
+            // 아래 `Unspecified` 분기가 그대로 처리한다). tasty 공통
+            // `PromptBoundary{phase, payload}` 로 평평하게 만들어 이후
+            // command_index/hook 배선이 phase 문자만 보고 동작하게 한다.
+            OperatingSystemCommand::FinalTermSemanticPrompt(prompt) => {
+                use termwiz::escape::osc::FinalTermSemanticPrompt as Ftsp;
+                let (phase, payload) = match prompt {
+                    Ftsp::FreshLineAndStartPrompt { .. } => ('A', String::new()),
+                    Ftsp::MarkEndOfPromptAndStartOfInputUntilNextMarker => ('B', String::new()),
+                    Ftsp::MarkEndOfInputAndStartOfOutput { .. } => ('C', String::new()),
+                    Ftsp::CommandStatus { status, .. } => ('D', status.to_string()),
+                    // FreshLine / MarkEndOfCommandWithFreshLine / StartPrompt /
+                    // MarkEndOfPromptAndStartOfInputUntilEndOfLine 은 tasty 의
+                    // A/B/C/D 4-phase 모델 밖(다른 셸 통합 확장 마커) — 무시.
+                    _ => return,
+                };
+                self.events.push(TerminalEvent {
+                    surface_id: 0,
+                    kind: TerminalEventKind::PromptBoundary { phase, payload },
+                });
+            }
             OperatingSystemCommand::Unspecified(params) => {
                 if let Some(first) = params.first() {
                     if first == b"133" {
                         // OSC 133 ; <A|B|C|D> [; payload ...] (BEL or ST).
                         // params[0] = "133", params[1] = "A"/"B"/"C"/"D" (or with payload),
                         // params[2..] = extra payload tokens (often `cmd=...`, exit_code, etc).
+                        // (실제로는 termwiz 가 133 을 알려진 코드로 처리해 위
+                        // `FinalTermSemanticPrompt` 로 먼저 매칭되므로, 이 분기는
+                        // termwiz 의 엄격 파서가 실패하는 케이스(B 에 `cmd=` 등 부가
+                        // 토큰이 붙어 `bail!` 하는 경우)의 폴백으로만 도달한다.
                         if let Some(second) = params.get(1)
                             && let Some(&phase_byte) = second.first()
                             && matches!(phase_byte, b'A' | b'B' | b'C' | b'D')

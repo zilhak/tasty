@@ -336,6 +336,15 @@ impl App {
             CoreEvent::TerminalCwdChanged { surface_id } => {
                 self.cascade_terminal_pty_cwd_changed(source, surface_id);
             }
+            CoreEvent::TerminalCommandCompleted {
+                surface_id,
+                exit_code,
+            } => {
+                self.cascade_terminal_command_completed(source, surface_id, exit_code);
+            }
+            CoreEvent::TerminalShellIntegrationHint { surface_id } => {
+                self.cascade_terminal_shell_integration_hint(source, surface_id);
+            }
             CoreEvent::TerminalClipboardSet { surface_id } => {
                 self.cascade_terminal_clipboard_set(source, surface_id);
             }
@@ -628,6 +637,84 @@ impl App {
         state.dispatch_intent(
             crate::core::intent::DomainIntent::SurfaceCwdChanged { surface_id }.from_system(),
         );
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalCommandCompleted` cascade — OSC 133 D phase(TODO34). exit code
+    /// 필터링 없이 항상 `HookEvent::CommandCompleted` 로 훅을 발화한다(등록된 패턴이
+    /// `None` 이면 임의 exit code 에, `Some(n)` 이면 그 값에만 매치). Bell/Notification
+    /// 과 달리 설정 gate 가 없다 — 훅은 사용자가 명시적으로 등록한 자동화라 항상
+    /// 그대로 둔다(`cascade_terminal_output_match` 와 동형). highlight 연결은 여기
+    /// 없다(별도 TODO67).
+    fn cascade_terminal_command_completed(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        exit_code: Option<i32>,
+    ) {
+        let (state, engine, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (&mut main.state, &mut main.core_state, Some(&mut main.base))
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, engine, None)
+            }
+        };
+        let fired = engine.hook_manager.check_and_fire(
+            surface_id,
+            &[tasty_hooks::HookEvent::CommandCompleted(exit_code)],
+        );
+        let injector = self.core.host_ipc_injector.get().cloned();
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(
+                &f.binding,
+                injector.as_ref(),
+                &f.event,
+                surface_id,
+            );
+            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                hook_id: f.hook_id,
+                event_kind: "command-completed".to_string(),
+                surface_id,
+            });
+        }
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalShellIntegrationHint` cascade — OSC 133 셸 통합 미설치 추정(TODO34).
+    /// 마우스 캡처 안내 배너와 동일한 형태로 자동 조치 없이 설명만 하는 배너를 1 회
+    /// 띄운다. highlight 는 여기서 전혀 건드리지 않는다.
+    fn cascade_terminal_shell_integration_hint(&mut self, source: DispatchSource, surface_id: u32) {
+        let (state, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (&mut main.state, Some(&mut main.base))
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, None)
+            }
+        };
+        state
+            .banners
+            .push(crate::adapters::ui::BannerState::persistent(
+                crate::adapters::ui::banner::defs::BANNER_SHELL_INTEGRATION_MISSING,
+                crate::adapters::ui::BannerScope::Surface(surface_id),
+            ));
         if let Some(base) = dirty_main {
             base.dirty = true;
         }

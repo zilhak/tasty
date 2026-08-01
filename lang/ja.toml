@@ -772,6 +772,10 @@ bind_failed = "Webhook ポート {} をバインドできませんでした（{}
 title = "マウス入力をキャプチャ中"
 body = "このアプリがマウスをキャプチャしています。テキスト選択は Shift+ドラッグ、tasty メニューは Shift+右クリックを使用してください。"
 
+[banner.shell_integration_missing]
+title = "シェル統合が検出されませんでした"
+body = "コマンド完了フック（docker build、just run など）には OSC 133 シェル統合が必要です。設定方法は docs/features/hooks を参照してください。"
+
 [port_scanner]
 heading = "受信ポート"
 no_ports = "このターミナルのプロセスツリーには受信中の TCP ポートがありません。"

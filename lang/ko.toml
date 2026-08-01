@@ -772,6 +772,10 @@ bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포
 title = "마우스 입력 캡처 중"
 body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭을 사용하세요."
 
+[banner.shell_integration_missing]
+title = "셸 통합이 감지되지 않았습니다"
+body = "명령 완료 훅(docker build, just run 등)은 OSC 133 셸 통합이 필요합니다. 설정 방법은 docs/features/hooks 를 참고하세요."
+
 [port_scanner]
 heading = "리스닝 포트"
 no_ports = "이 터미널의 프로세스 트리에서 리스닝 중인 TCP 포트가 없습니다."
