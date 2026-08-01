@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: AI Agent · 로컬 사용자
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md)
-- **코드**: `src/core/state/highlight.rs` (상태·헬퍼) · `src/gfx/gpu.rs` (focus 해제) · `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) · `src/adapters/ipc/handler/surface/completion.rs` (completion producer)
+- **코드**: `src/core/state/highlight.rs` (상태·헬퍼) · `src/gfx/gpu.rs` (focus 해제) · `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) · `src/adapters/ipc/handler/surface/completion.rs` (completion producer) · `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer)
 - **화면**: 없음 — 세 소비처(테두리·탭·사이드바)에 투영되는 상태 (전용 화면 없음)
 
 ## 목적
@@ -40,9 +40,19 @@ highlight 를 발동시키는 경로. 여러 종류가 공존한다 — highligh
 
 - **Toast 알림** — toast 알림이 신규 발화(coalesce 아님)되면 그 source surface 를 highlight
   (`dispatch_domain.rs` 주경로 + `event_handler.rs` windows resume 경로).
-- **Completion (IPC/CLI, 이번 범위)** — surface 가 작업을 완료했다는 신호. `surface.completion`
+- **Completion (IPC/CLI)** — surface 가 작업을 완료했다는 신호. `surface.completion`
   IPC / `tasty surface completion --surface <id>` CLI. cascade 가 `raise_surface_highlight` + redraw.
-- **후속(미구현)** — hook · 명령완료 자동감지 · plugin. highlight API 는 이들이 호출 가능하게 열려 있다.
+- **Claude hook (plugin, 이번 범위)** — `crates/tasty-plugin-claude/src/hook.rs` 의
+  `apply_hook`이 `"stop"`/`"subagent-stop"`(턴 완료)·`"session-end"`(세션 종료)·
+  `"notification"`(needs-input — 승인/plan 허락 등 사용자 확인 대기) 세 이벤트 각각에서
+  `HostCall::SurfaceCompletion { surface_id }`를 산출하고, `deliver()`가 이를 위 `surface.completion`
+  IPC(`{ "surface_id": surface_id }`)로 매핑해 그대로 재사용한다 — 새 프로토콜을 만들지 않고
+  기존 completion producer 를 plugin 이 호출하는 형태. `"prompt-submit"`/`"session-start"`/
+  `"active"`(작업 시작 신호)는 대상이 아니다. `tasty claude install`이 등록한 Stop hook
+  (`crates/tasty-plugin-claude/src/install.rs`)을 통해 Claude 세션이 한 턴을 마칠 때마다
+  자동 발동 — 별도 사용자 조작 불필요.
+- **후속(미구현)** — 명령완료 자동감지(non-Claude 셸 명령어 완료 감지 등) · 그 외 plugin.
+  highlight API 는 이들이 호출 가능하게 계속 열려 있다.
 
 ## 인터페이스
 
@@ -68,12 +78,23 @@ highlight 를 발동시키는 경로. 여러 종류가 공존한다 — highligh
 - [ ] Given surface S 발 안읽음 알림 1건 When 그 알림을 읽음 처리 Then S 의 highlight 해제.
 - [ ] Given surface S 발 안읽음 알림 2건 When 그중 1건만 읽음 처리 Then S 의 highlight 유지(엣지
       케이스, TODO 23) — 나머지도 읽음 처리하면 그제서야 해제.
+- [ ] Given surface S 에서 Claude 세션 실행 중 When Claude 가 한 턴 응답을 마쳐 Stop hook
+      (`claude.hook stop`)이 발동 Then S 가 highlight 되어 `has_highlight([S])` 가 true(TODO 33).
+- [ ] Given surface S 에서 Claude 가 승인/plan 허락 등 확인이 필요해 `notification` hook 이
+      발동 Then S 가 동일하게 highlight (완료뿐 아니라 확인 대기도 주의 환기 대상, TODO 33).
+- [ ] Given surface S 에서 Claude 세션이 끝나(`session-end` hook) 자식 상태가 정리될 때 Then
+      S 가 동일하게 highlight.
+- [ ] Given surface S 에서 Claude 가 `prompt-submit`/`session-start`/`active`(작업 시작) 신호를
+      보낼 때 Then highlight 는 발동하지 않는다(완료/확인대기와 구분, 회귀 방지).
 
 ## 구현
 
 - 상태·헬퍼: `src/core/state/highlight.rs` (`raise/clear/is/has/count`).
 - completion producer: intent `SurfaceCompletion` → event `SurfaceCompletionRequested`
   (`src/core/{intent.rs,mod.rs}`) → `cascade_surface_completion` (`src/app/dispatch_domain.rs`).
+- Claude hook producer: `apply_hook` (`crates/tasty-plugin-claude/src/hook.rs`) → `HostCall::
+  SurfaceCompletion { surface_id }` → `deliver()` 가 `surface.completion` IPC 호출로 매핑 →
+  위 completion producer 경로 그대로 재사용.
 - 알림 읽음 clear: `CoreState::mark_notification_read`/`mark_all_notifications_read`
   (`src/core/state/highlight.rs`) — `NotificationStore::has_unread_for_surface`
   (`src/store/notification.rs`)로 잔여 안읽음을 확인 후 clear. 호출부는

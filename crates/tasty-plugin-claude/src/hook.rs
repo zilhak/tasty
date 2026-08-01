@@ -49,6 +49,11 @@ pub enum HostCall {
         value: f64,
         surface_id: u32,
     },
+    /// `surface.completion { surface_id }` — surface highlight(주의 환기) 발동.
+    /// "Claude가 명령을 끝냈다"/"확인이 필요하다" 신호를
+    /// `docs/features/surface-highlight/index.md` 의 producer 중립 highlight API 로
+    /// 연결한다(TODO 33).
+    SurfaceCompletion { surface_id: u32 },
 }
 
 pub fn handle_claude_hook(
@@ -212,6 +217,7 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
+            calls.push(HostCall::SurfaceCompletion { surface_id });
         }
         "session-end" => {
             calls.push(HostCall::SetState {
@@ -230,6 +236,7 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
+            calls.push(HostCall::SurfaceCompletion { surface_id });
         }
         "notification" => {
             calls.push(HostCall::SetState {
@@ -240,6 +247,7 @@ pub fn apply_hook(
                 surface_id,
                 event: "needs-input",
             });
+            calls.push(HostCall::SurfaceCompletion { surface_id });
         }
         "prompt-submit" | "session-start" | "active" => {
             calls.push(HostCall::SetState {
@@ -304,6 +312,9 @@ fn deliver(host: &HostHandle, call: &HostCall) {
                 "tags": { "surface_id": surface_id.to_string() },
             }),
         ),
+        HostCall::SurfaceCompletion { surface_id } => {
+            ("surface.completion", json!({ "surface_id": surface_id }))
+        }
     };
     if let Err(e) = host.call(method, params) {
         tracing::warn!("claude hook host call '{method}' failed: {e}");
@@ -345,7 +356,8 @@ mod tests {
                 HostCall::FireHook {
                     surface_id: 100,
                     event: "claude-idle",
-                }
+                },
+                HostCall::SurfaceCompletion { surface_id: 100 },
             ]
         );
     }
@@ -363,7 +375,8 @@ mod tests {
                 HostCall::FireHook {
                     surface_id: 7,
                     event: "claude-idle",
-                }
+                },
+                HostCall::SurfaceCompletion { surface_id: 7 },
             ]
         );
     }
@@ -381,7 +394,8 @@ mod tests {
                 HostCall::FireHook {
                     surface_id: 100,
                     event: "needs-input",
-                }
+                },
+                HostCall::SurfaceCompletion { surface_id: 100 },
             ]
         );
     }
@@ -408,7 +422,66 @@ mod tests {
                     surface_id: 100,
                     event: "claude-idle",
                 },
+                HostCall::SurfaceCompletion { surface_id: 100 },
             ]
+        );
+    }
+
+    // ── surface highlight 배선 (TODO 33: stop/subagent-stop/session-end/notification
+    // 각각에서 SurfaceCompletion 이 나가는지 개별 확인 — 위 4개 테스트가 이미 전체
+    // 시퀀스에 포함됨을 검증하지만, 여기서는 "완료/확인필요 신호에는 항상 highlight 가
+    // 딸려온다"는 계약 자체를 명시적으로 이름 붙여 pin 한다) ──
+
+    #[test]
+    fn stop_also_raises_surface_completion_highlight() {
+        let calls = apply_hook("stop", 100, None).unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
+        );
+    }
+
+    #[test]
+    fn subagent_stop_also_raises_surface_completion_highlight() {
+        let calls = apply_hook("subagent-stop", 7, None).unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 7 }))
+        );
+    }
+
+    #[test]
+    fn session_end_also_raises_surface_completion_highlight() {
+        let calls = apply_hook("session-end", 100, None).unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
+        );
+    }
+
+    #[test]
+    fn notification_also_raises_surface_completion_highlight() {
+        let calls = apply_hook("notification", 100, None).unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
+        );
+    }
+
+    #[test]
+    fn prompt_submit_does_not_raise_surface_completion_highlight() {
+        // "작업 시작" 신호는 완료/확인필요가 아니므로 highlight 대상이 아니다 —
+        // apply_hook의 "prompt-submit"|"session-start"|"active" 분기는 건드리지 않는다
+        // (TODO 33 "사용자 결정 확정" §1).
+        let calls = apply_hook("prompt-submit", 100, None).unwrap();
+        assert!(
+            !calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { .. }))
         );
     }
 
