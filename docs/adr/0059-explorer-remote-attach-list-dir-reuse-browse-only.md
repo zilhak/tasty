@@ -1,4 +1,4 @@
-# ADR-0058: explorer 원격(attach mirror) 브라우징 — 기존 list_dir 채널 재사용 + browse-only
+# ADR-0059: explorer 원격(attach mirror) 브라우징 — 기존 list_dir 채널 재사용 + browse-only
 
 - **Status**: Accepted
 - **Date**: 2026-08-01
