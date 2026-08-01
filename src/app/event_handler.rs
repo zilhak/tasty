@@ -1128,6 +1128,8 @@ impl App {
                     main.core_state.attach.release_all_for_client(cid);
                     // (06) bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     main.core_state.bulk_transfers.clear_client(cid);
+                    // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소(TODO27).
+                    main.core_state.capture_uploads.clear_client(cid);
                     // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
                     main.core_state.mesh_mirror.remove_for_client(cid);
                 }
@@ -1137,6 +1139,7 @@ impl App {
             for &cid in clients {
                 engine.attach.release_all_for_client(cid);
                 engine.bulk_transfers.clear_client(cid);
+                engine.capture_uploads.clear_client(cid);
                 engine.mesh_mirror.remove_for_client(cid);
             }
         }

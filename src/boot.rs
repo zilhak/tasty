@@ -614,6 +614,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     engine.attach.release_all_for_client(client_id);
                     // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     engine.bulk_transfers.clear_client(client_id);
+                    // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소(TODO27).
+                    engine.capture_uploads.clear_client(client_id);
                     // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
                     engine.mesh_mirror.remove_for_client(client_id);
                 }

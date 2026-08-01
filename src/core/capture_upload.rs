@@ -8,11 +8,8 @@ use std::collections::HashMap;
 /// `(client_id, upload_id)` → 누적된 바이트. 여러 mirror client 가 동시에 업로드해도
 /// 서로 섞이지 않는다.
 ///
-/// TODO(follow-up, scope 밖): commit 없이 중단된 업로드(client 가 청크 도중 끊김 등)의
-/// partial 엔트리가 영구히 남는다 — 만료/청소(예: 마지막 append 시각 기록 + 주기적
-/// sweep, 또는 client 연결 종료 시 그 client 의 남은 partial 일괄 제거) 가 없다.
-/// 스크린샷 1건은 최대 몇 MB 라 즉각적 위험은 낮지만, 이 게이트에서 막을 이슈로
-/// 취급하지 않는다 — 별도 후속 작업으로 남긴다.
+/// disconnect 시 `clear_client`로 청소한다(연결 유지 상태에서 commit이 영원히 안 오는
+/// 극단 케이스는 TTL 없음 — 필요 시 후속 과제, `PtyRegistry::sweep_idle` 패턴 참고).
 #[derive(Default)]
 pub(crate) struct CaptureUploadRegistry {
     partials: HashMap<(u32, u64), Vec<u8>>,
@@ -35,6 +32,13 @@ impl CaptureUploadRegistry {
     /// chunk 가 하나도 안 왔거나 이미 소비된 경우).
     pub(crate) fn take(&mut self, client_id: u32, upload_id: u64) -> Option<Vec<u8>> {
         self.partials.remove(&(client_id, upload_id))
+    }
+
+    /// 한 client의 모든 진행 중 캡처 업로드를 폐기한다(연결 종료 시 partial 청소 —
+    /// `BulkTransferRegistry::clear_client`와 동형). commit 없이 끊긴 업로드가 메모리에
+    /// 영구 잔존하지 않게 한다.
+    pub(crate) fn clear_client(&mut self, client_id: u32) {
+        self.partials.retain(|(cid, _), _| *cid != client_id);
     }
 }
 
@@ -67,5 +71,17 @@ mod tests {
     fn take_without_chunks_is_none() {
         let mut reg = CaptureUploadRegistry::new();
         assert_eq!(reg.take(9, 9), None);
+    }
+
+    #[test]
+    fn clear_client_drops_only_that_clients_partials() {
+        let mut reg = CaptureUploadRegistry::new();
+        reg.append(1, 1, b"a");
+        reg.append(1, 2, b"b");
+        reg.append(2, 1, b"c");
+        reg.clear_client(1);
+        assert_eq!(reg.take(1, 1), None);
+        assert_eq!(reg.take(1, 2), None);
+        assert_eq!(reg.take(2, 1), Some(b"c".to_vec()));
     }
 }
