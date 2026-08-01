@@ -81,6 +81,10 @@ support for AI coding agents. Built on wgpu (Vulkan/DX12/Metal) and winit,
 it exposes both an IPC API and a CLI surface so agents can drive the
 terminal programmatically alongside human use."""
 depends = "$auto, libfreetype6, libfontconfig1"
+# libvulkan1: wgpu 의 Vulkan 백엔드는 링크타임이 아니라 dlopen(ash 로더)이라
+# $auto(ELF NEEDED 스캔)가 못 잡는다. 없어도 GL/다른 백엔드로 fallback 가능하므로
+# hard depends 가 아니라 Recommends 급으로만 노출한다.
+recommends = "libvulkan1"
 section = "utils"
 priority = "optional"
 assets = [
@@ -175,6 +179,10 @@ assets = [
 [package.metadata.generate-rpm.requires]
 freetype = "*"
 fontconfig = "*"
+
+# libvulkan1 항목과 동일 사유(dlopen, non-hard) — Fedora 패키지명은 vulkan-loader.
+[package.metadata.generate-rpm.recommends]
+vulkan-loader = "*"
 
 [dependencies]
 # Workspace crates

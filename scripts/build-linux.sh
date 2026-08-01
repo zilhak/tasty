@@ -236,7 +236,46 @@ echo "==> Assembling archive..."
 rm -rf "$DIST_DIR/$PKG_DIR"
 mkdir -p "$DIST_DIR/$PKG_DIR"
 
-cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty"
+# 패키지 매니저 없는 배포(tar.gz) 는 `$auto`/apt 의존성 해석이 없다 — 링크타임 so 가
+# 하나라도 없으면 동적 링커가 main() 진입 전에 프로세스를 죽여, 바이너리 자신은 어떤
+# 메시지도 낼 기회가 없다. 실제 바이너리를 tasty.bin 으로 옮기고, 그 자리에 실행 전
+# `ldd` 로 누락 so 를 감지해 안내 후 종료하는 얇은 wrapper 를 대신 배치한다.
+cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty.bin"
+cat > "$DIST_DIR/$PKG_DIR/tasty" <<'WRAPPER_EOF'
+#!/usr/bin/env bash
+# Tasty launcher wrapper — 실행 전 필수 공유 라이브러리(so) 존재를 확인한다.
+# 링크타임 so 부족은 동적 링커가 실제 바이너리를 exec 하는 즉시(= main() 진입 전)
+# 프로세스를 죽이므로, 바이너리 자신은 진단 메시지를 낼 수 없다. 이 wrapper 가
+# `ldd` 로 먼저 확인해 사람이 읽을 수 있는 안내를 낸 뒤 대체 경로를 제공한다.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="$HERE/tasty.bin"
+
+if command -v ldd &>/dev/null; then
+    MISSING=$(ldd "$BIN" 2>/dev/null | awk '/not found/ {print $1}' || true)
+    if [[ -n "$MISSING" ]]; then
+        echo "Error: tasty is missing required shared libraries:" >&2
+        echo "$MISSING" | sed 's/^/  /' >&2
+        echo "" >&2
+        echo "Find the package that provides each library with your distro's tools:" >&2
+        if command -v apt-get &>/dev/null; then
+            echo "  apt-file search <library-name>   (may need: sudo apt install apt-file && sudo apt-file update)" >&2
+        elif command -v dnf &>/dev/null; then
+            echo "  dnf provides '*/<library-name>'" >&2
+        elif command -v zypper &>/dev/null; then
+            echo "  zypper what-provides <library-name>" >&2
+        elif command -v pacman &>/dev/null; then
+            echo "  pacman -F <library-name>" >&2
+        fi
+        echo "See docs/installation.md for the known dependency list." >&2
+        exit 1
+    fi
+fi
+
+exec "$BIN" "$@"
+WRAPPER_EOF
+chmod +x "$DIST_DIR/$PKG_DIR/tasty"
+
 stage_plugins "$DIST_DIR/$PKG_DIR/plugins"
 
 echo "==> Creating $ARCHIVE_NAME..."
