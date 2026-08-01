@@ -38,7 +38,7 @@ use crate::model::{
 };
 use crate::view::ui::View as _;
 
-/// (TODO 40) git-viewer plugin id — `crates/tasty-plugin-git-viewer/tasty-plugin.toml`
+/// (ADR-0056 참고) git-viewer plugin id — `crates/tasty-plugin-git-viewer/tasty-plugin.toml`
 /// 의 `id` 와 정합해야 한다. 별도 프로세스(plugin)라 상수를 공유할 crate 가 없어
 /// 문자열 리터럴로 중복(이 파일 + `adapters::ipc::handler::git_viewer`).
 const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";
@@ -98,11 +98,11 @@ pub(crate) enum MirrorEvent {
         truncated: bool,
         reason: Option<String>,
     },
-    /// 원격 attach mesh surface 의 완전 재조립된 frame(TODO 19). `(remote_surface_id,
+    /// 원격 attach mesh surface 의 완전 재조립된 frame(attach-behavior.md#mesh-mirror-채널 참고). `(remote_surface_id,
     /// generation, frame_seq, full_textures, bytes)` — `bytes` 는 이미 footer 없는 순수
     /// payload(서버 `headless_plugins::forward_mesh_frames`가 footer 를 벗겨 보낸다).
     Mesh(u32, u64, u64, bool, Vec<u8>),
-    /// (TODO 40) git-viewer — 원격이 이 mirror 세션의 `git_query_request` 를 처리한
+    /// (ADR-0056 참고) git-viewer — 원격이 이 mirror 세션의 `git_query_request` 를 처리한
     /// 결과(`git_query_result` 커스텀 이벤트 — `ListDirResult`/`CaptureResult` 와
     /// 동일하게 `StreamControl` enum 밖). `data` 는 성공 시 kind 별 페이로드
     /// (snapshot: worktrees/status/log, diff: hunks)를 그대로 담은 JSON, 실패 시
@@ -122,7 +122,7 @@ pub(crate) enum MirrorEvent {
 /// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
 pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<MirrorEvent>>>;
 
-/// write 전용 스레드로 보내는 한 프레임(TODO 05). forwarder(Data)/heartbeat(Ping)/
+/// write 전용 스레드로 보내는 한 프레임. forwarder(Data)/heartbeat(Ping)/
 /// resize·structural(Control)/detach(Detach)가 모두 이 큐에 push 만 하고, 단일 write
 /// 스레드가 순차로 소켓에 `write_frame` 한다 — 여러 스레드가 writer 를 각자 lock 후
 /// 직접 쓰던 구조(락 경합·heartbeat 굶김)를 대체한다.
@@ -134,7 +134,7 @@ struct OutFrame {
 /// [`OutFrame`] 을 write 스레드로 보내는 큐 sender. 세션·heartbeat·forwarder 가 공유한다.
 type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 
-/// 재연결(TODO 27/28) 시 write 스레드/소켓이 통째로 교체돼도, 그보다 수명이 긴 입력
+/// 재연결(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고) 시 write 스레드/소켓이 통째로 교체돼도, 그보다 수명이 긴 입력
 /// forwarder 스레드(터미널 생존 기간 내내 삶)가 최신 `FrameSender` 를 계속 가리킬 수
 /// 있게 하는 교체 가능한 핸들. `AttachClientSession::frame_tx` 와 각 forwarder 가 같은
 /// `Arc` 를 공유(clone)하고, 재연결 성공 시 `reconnect_session` 이 안쪽 값만 새
@@ -143,7 +143,7 @@ type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 /// 필요 없다 — 자신만의 raw `FrameSender` 를 직접 캡처한다.
 type SharedFrameSender = Arc<Mutex<FrameSender>>;
 
-/// mirror 세션의 transport 상태(TODO 28). `Connected` 만 실제 소켓 IO 가 살아있다 —
+/// mirror 세션의 transport 상태(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고). `Connected` 만 실제 소켓 IO 가 살아있다 —
 /// `Reconnecting` 은 mirror workspace/터미널(scrollback 포함)을 살려둔 채 transport 만
 /// 끊긴 상태로, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 재시도를
 /// 담당한다. 세션이 완전히 닫히면(사용자 close 또는 anchor 없는 disconnect) 이 열거형
@@ -155,7 +155,7 @@ pub(crate) enum SessionState {
     Reconnecting,
 }
 
-/// attach mesh mirror(TODO 19) leaf 를 `AttachMeshSurface`로 재구성하는 데 필요한
+/// attach mesh mirror(attach-behavior.md#mesh-mirror-채널 참고) leaf 를 `AttachMeshSurface`로 재구성하는 데 필요한
 /// 표시용 메타. `build_layout`이 `term`(터미널 local id 집합)과 나란히 받아, 로컬
 /// surface_id 가 mesh role 이면 이 정보로 `AttachMeshSurface`를 만든다.
 #[derive(Debug, Clone)]
@@ -176,12 +176,13 @@ pub(crate) struct AttachClientSession {
     /// reader thread 가 EOF/force-detach 를 만나면 set. apply 가 보고 mirror 정리.
     disconnected: Arc<AtomicBool>,
     /// 원격으로 나가는 모든 프레임(입력 Data / resize·structural Control / Detach)을
-    /// 단일 write 스레드로 보내는 큐 sender(TODO 05). 여러 forwarder/heartbeat 가 각자
-    /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거. TODO 28 —
+    /// 단일 write 스레드로 보내는 큐 sender. 여러 forwarder/heartbeat 가 각자
+    /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거.
+    /// attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 —
     /// 재연결 시 안쪽 sender 만 교체 가능하도록 `Arc<Mutex<_>>` 로 감쌌다(교체 이유는
     /// [`SharedFrameSender`] 문서 참고).
     frame_tx: SharedFrameSender,
-    /// TODO 28 — 이 세션의 transport 상태. `apply_attach_client_output` 이 disconnect
+    /// attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — 이 세션의 transport 상태. `apply_attach_client_output` 이 disconnect
     /// 를 감지하면(anchor 있는 세션 한정) mirror 를 지우는 대신 여기를 `Reconnecting`
     /// 으로 전이시키고, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 으로
     /// `Connected` 복귀를 시도한다.
@@ -227,7 +228,7 @@ pub(crate) struct AttachClientSession {
     /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
     /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
     remote_label: String,
-    /// (ADR-0059/TODO 36) 아직 응답을 못 받은 `list_dir_request` 의 `request_id →
+    /// (ADR-0059 참고) 아직 응답을 못 받은 `list_dir_request` 의 `request_id →
     /// 소비자 태그`(`None`=File Picker, `Some(surface_id)`=explorer). 서버 응답
     /// (`list_dir_result`)엔 이 태그가 안 실려 오므로(wire 스키마 변경 없음, ADR
     /// Decision 5), 보낼 때 여기 기록해뒀다가 응답 도착 시 꺼내 라우팅을 분기한다.
@@ -236,20 +237,20 @@ pub(crate) struct AttachClientSession {
 }
 
 impl AttachClientSession {
-    /// TODO 27 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 후보(anchor 매핑 +
+    /// attach-behavior.md#gui-자동-재연결-스코프 참고 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 후보(anchor 매핑 +
     /// `Reconnecting` 상태)를 찾는 데 쓴다. 필드가 모듈 비공개라 sibling 모듈
     /// (`auto_attach.rs`)에서 직접 접근할 수 없어 최소 getter 로 노출한다.
     pub(crate) fn state(&self) -> SessionState {
         self.state
     }
 
-    /// TODO 27 — 이 세션이 자동 attach 매핑(anchor)에서 만들어졌는지.
+    /// attach-behavior.md#gui-자동-재연결-스코프 참고 — 이 세션이 자동 attach 매핑(anchor)에서 만들어졌는지.
     pub(crate) fn anchor_ws_id(&self) -> Option<u32> {
         self.anchor_ws_id
     }
 
     /// `frame_tx` 공유 핸들을 lock 해 프레임 하나를 write 큐에 넣는다. 호출부가 매번
-    /// lock/에러 처리를 반복하지 않도록 모은 헬퍼(TODO 28 — `frame_tx` 가
+    /// lock/에러 처리를 반복하지 않도록 모은 헬퍼(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `frame_tx` 가
     /// `Arc<Mutex<_>>` 로 바뀌며 추가). mutex 오염(다른 스레드 panic)은 lock 자체를
     /// 무효화할 이유가 없어 `into_inner`로 복구해 계속 진행한다.
     fn send_frame(
@@ -350,7 +351,7 @@ impl App {
         if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
             tracing::warn!("gui attach: failed to set read timeout: {e}");
         }
-        // write 방향 백스톱(TODO 05): forwarder/heartbeat 프레임 write 가 백프레셔로
+        // write 방향 백스톱: forwarder/heartbeat 프레임 write 가 백프레셔로
         // 무기한 막히지 않도록 write timeout 을 건다. 만료(WouldBlock)는 write 스레드
         // 에서 세션 disconnect 로 승격된다. read timeout 은 silent disconnect 감지
         // 계약이라 건드리지 않는다. (try_clone_writer 로 뜬 write half 는 같은 소켓
@@ -389,12 +390,12 @@ impl App {
             .unwrap_or_default();
         let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
 
-        // 원격으로 나가는 모든 프레임을 단일 write 스레드로 직렬화하는 큐(TODO 05).
+        // 원격으로 나가는 모든 프레임을 단일 write 스레드로 직렬화하는 큐.
         // forwarder(Data)/heartbeat(Ping)/resize·structural(Control)/detach 가 이 큐에
         // push 만 하고, write 스레드 하나가 순차로 소켓에 write_frame 한다 — writer 락
         // 경합/heartbeat 굶김 원천 제거. write half 는 그 스레드가 단독 소유한다.
         let (frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
-        // TODO 28 — forwarder 가 재연결 후에도 최신 sender 를 찾을 수 있도록 공유 핸들로
+        // attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — forwarder 가 재연결 후에도 최신 sender 를 찾을 수 있도록 공유 핸들로
         // 감싼다(교체는 `reconnect_session` 이 담당, 이 Arc 자체는 세션 수명 내내 불변).
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(frame_tx));
         let write_half = conn.try_clone_writer()?;
@@ -442,7 +443,7 @@ impl App {
         let disconnected = Arc::new(AtomicBool::new(false));
 
         // 3.5. write 전용 스레드: frame_rx 를 순차 소비해 소켓에 write_frame. 여러
-        //      스레드가 writer 를 각자 lock 후 직접 쓰던 구조를 단일화(TODO 05) —
+        //      스레드가 writer 를 각자 lock 후 직접 쓰던 구조를 단일화 —
         //      forwarder/heartbeat/forward 는 큐에 push 만 하므로 락 경합·heartbeat
         //      굶김이 사라진다. write 실패(write timeout=WouldBlock 포함, BrokenPipe
         //      등)는 무기한 블록/조용한 유실 대신 세션 disconnect 로 승격한다 —
@@ -555,7 +556,7 @@ impl App {
                             // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋
                             // 하므로 별도 처리 불필요.
                             StreamTag::Ping => {}
-                            // attach mesh mirror 청크(TODO 19) — frame_id 완성 시에만
+                            // attach mesh mirror 청크 — frame_id 완성 시에만
                             // MirrorEvent::Mesh 를 push. 손상 청크는 조용히 버린다(다음
                             // full 재전송이 self-heal — GPU 측 chain_ok 게이트가 이미
                             // 이런 유실을 전제로 설계됨).
@@ -595,7 +596,7 @@ impl App {
         //    forwarder 스레드의 "마지막 전송 시각"을 공유 상태로 조율하는 비용이
         //    더 크다.
         {
-            // heartbeat 는 이 연결 1 회 수명에만 스코프된다(TODO 28) — forwarder 와
+            // heartbeat 는 이 연결 1 회 수명에만 스코프된다(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고) — forwarder 와
             // 달리 재연결을 가로질러 살아남지 않으므로 공유 핸들이 아닌 이 연결의 raw
             // sender 를 직접 잡는다. `disconnected` 도 이 연결 전용 Arc — 재연결 후
             // 새 연결은 별도의 새 heartbeat 스레드(새 raw sender/새 disconnected)를 띈다.
@@ -608,7 +609,7 @@ impl App {
                         break;
                     }
                     // 큐에 push 만 하므로 백프레셔로 write 가 막혀도 heartbeat 는 굶지
-                    // 않는다(TODO 05). write 스레드가 사망(receiver drop)했으면 send 가
+                    // 않는다. write 스레드가 사망(receiver drop)했으면 send 가
                     // Err → 종료.
                     if raw_frame_tx
                         .send(OutFrame {
@@ -648,7 +649,7 @@ impl App {
         Ok(local_ws_id)
     }
 
-    /// TODO 27/28 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 엔드포인트 해석에
+    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 엔드포인트 해석에
     /// 성공했을 때 호출. `sess_idx` 의 `Reconnecting` 세션을 **새 연결로 재개**한다.
     /// `start_gui_attach` 와 달리 로컬 mirror workspace/터미널을 새로 만들지 않고,
     /// `merge_survivor_mapping`(survivor local id/scrollback 보존) + 이전 focus 복원을
@@ -907,7 +908,7 @@ impl App {
             });
         }
 
-        // 4. heartbeat thread — 이 연결 전용 raw sender(TODO 28 — `make_mirror_surface`
+        // 4. heartbeat thread — 이 연결 전용 raw sender(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `make_mirror_surface`
         //    문서 참고, heartbeat 는 재연결을 가로질러 살아남지 않는다).
         {
             let raw_frame_tx = shared_frame_tx
@@ -1109,7 +1110,7 @@ impl App {
                                 truncated,
                                 reason,
                             } => {
-                                // (ADR-0059/TODO 36) 이 요청의 소비자 태그로 분기 —
+                                // (ADR-0059 참고) 이 요청의 소비자 태그로 분기 —
                                 // `None` = File Picker(기존 로직), `Some(surface_id)`
                                 // = explorer(그 surface 의 `ExplorerView` 로 라우팅).
                                 // 태그가 없으면(세션이 이미 재연결로 지워졌거나 stale)
@@ -1206,7 +1207,7 @@ impl App {
                                 truncated,
                                 reason,
                             } => {
-                                // (TODO 40) host 는 페이로드를 해석하지 않고 그대로
+                                // host 는 페이로드를 해석하지 않고 그대로
                                 // plugin(별도 프로세스)에 unicast 이벤트로 전달한다 —
                                 // plugin 의 wire DTO 가 유일한 소비자. 인가/mirror
                                 // workspace 소멸 관측은 이미 send 단계(dispatch_pending_
@@ -1243,7 +1244,7 @@ impl App {
                                 }
                             }
                             MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
-                                // attach mesh mirror(TODO 19): GPU 렌더은 다음 프레임
+                                // attach mesh mirror: GPU 렌더은 다음 프레임
                                 // `AttachMeshFrameStore` 를 읽는다 — 여기선 저장만.
                                 if let Some(&local) = sess.remote_to_local.get(&remote_id) {
                                     main.core_state
@@ -1259,10 +1260,10 @@ impl App {
             // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
             // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
             // 않음) — `Connected` 일 때만 "방금 처음 감지"로 보고 1 회 반응, 이미
-            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(TODO 28).
+            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고).
             if disconnected && state == SessionState::Connected {
                 // anchor(자동 attach 매핑) 가 있으면 재연결 가능 후보 — mirror 를 지우지
-                // 않고 Reconnecting 으로 전이(TODO 27/28). 없으면(수동/IPC attach) 재연결
+                // 않고 Reconnecting 으로 전이(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고). 없으면(수동/IPC attach) 재연결
                 // 트리거 소스가 없으므로 기존처럼 완전 정리.
                 if anchor_ws_id.is_some() {
                     reconnecting.push(idx);
@@ -1280,7 +1281,7 @@ impl App {
         }
     }
 
-    /// TODO 27/28 — disconnect 가 처음 감지된 anchor-매핑 세션을 mirror workspace/
+    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고 — disconnect 가 처음 감지된 anchor-매핑 세션을 mirror workspace/
     /// 터미널을 살려둔 채 `Reconnecting` 으로 전이시킨다(완전 정리 대신). `auto_attach.rs`
     /// 의 backoff 스케줄러가 이 상태의 세션을 찾아 `reconnect_session` 재시도를 건다.
     fn enter_reconnecting(&mut self, idx: usize) {
@@ -1351,7 +1352,7 @@ impl App {
                 main.state.active_workspace -= 1;
             }
             // 원격발 disconnect(EOF/force-detach/heartbeat TTL/ write 실패 승격)로 mirror
-            // 가 정리될 때만 사용자에게 통지한다(TODO 04·05). 사용자가 mirror ws 를 직접
+            // 가 정리될 때만 사용자에게 통지한다. 사용자가 mirror ws 를 직접
             // 닫은 경로(from_disconnect=false)는 스스로 걷어낸 것이라 toast 하지 않는다.
             if from_disconnect {
                 main.state.toasts.push(
@@ -1363,7 +1364,7 @@ impl App {
             main.mark_dirty();
             break;
         }
-        // (TODO 40) 원격발 disconnect 로 mirror 가 사라지면, 그 순간 진행 중이던
+        // 원격발 disconnect 로 mirror 가 사라지면, 그 순간 진행 중이던
         // git-viewer 원격 요청은 응답이 영영 오지 않아 popup 이 "Loading…" 에 무한정
         // 멈출 수 있다 — sentinel 로 강제 abandon 을 알린다(자세한 이유는 함수 doc).
         if from_disconnect {
@@ -1379,7 +1380,7 @@ impl App {
         // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
         if let Some(anchor) = sess.anchor_ws_id {
             self.auto_attach_active.remove(&anchor);
-            // TODO 27 — 완전 정리되는 세션은 더 이상 backoff 재시도 대상이 아니다(스케줄
+            // attach-behavior.md#gui-자동-재연결-스코프 참고 — 완전 정리되는 세션은 더 이상 backoff 재시도 대상이 아니다(스케줄
             // 슬롯이 있었다면 제거). `dead`(anchor 없음) 경로에선 애초에 슬롯이 없어 no-op.
             self.auto_attach_reconnect.remove(&anchor);
             // disconnect 발 정리만 재진입 대기로 표시 — 사용자가 mirror ws 를 직접
@@ -1494,7 +1495,7 @@ impl App {
 
         let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
             .unwrap_or_default();
-        // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
+        // write 큐로 보내 write 스레드가 순차로 쓴다(락 직접 획득 제거).
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
         }
@@ -1558,7 +1559,7 @@ impl App {
             rows,
         })
         .unwrap_or_default();
-        // write 큐로 보내 write 스레드가 순차로 쓴다(TODO 05 — 락 직접 획득 제거).
+        // write 큐로 보내 write 스레드가 순차로 쓴다(락 직접 획득 제거).
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("resize forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
             return;
@@ -1593,7 +1594,7 @@ impl App {
         }
     }
 
-    /// `about_to_wait` 에서 호출 — (TODO 40) `git_viewer.query` IPC 핸들러가 쌓은
+    /// `about_to_wait` 에서 호출 — `git_viewer.query` IPC 핸들러가 쌓은
     /// 원격 git 조회 forward 큐(`CoreState::pending_git_query_forward`)를 drain 해
     /// 각 요청을 해당 mirror 세션의 attach 채널로 전송한다
     /// (`dispatch_pending_list_dir_forwards` 와 동형). 세션을 못 찾으면(예: mirror
@@ -1626,7 +1627,7 @@ impl App {
         }
     }
 
-    /// (TODO 40) 원격 전송 자체가 실패한 git 조회 요청을 plugin 에 `ok:false` 로
+    /// (ADR-0056 참고) 원격 전송 자체가 실패한 git 조회 요청을 plugin 에 `ok:false` 로
     /// 즉시 회신하고, 열려 있는 git-viewer popup 인스턴스에 강제 repaint 를
     /// 예약한다(`apply_attach_client_output`의 `MirrorEvent::GitQueryResult` 성공
     /// 경로와 동형 — 여기는 attach 응답 자체가 오지 않는 케이스라 host 가 직접
@@ -1647,7 +1648,7 @@ impl App {
         }));
     }
 
-    /// (TODO 40) mirror workspace 가 disconnect 로 정리될 때 호출 — 그 시점에 진행
+    /// (ADR-0056 참고) mirror workspace 가 disconnect 로 정리될 때 호출 — 그 시점에 진행
     /// 중이던 git-viewer 원격 요청이 있으면 응답이 영영 오지 않아 popup 이
     /// "Loading…" 에 무한정 멈춘다. host 는 plugin 내부 pending 상태(어떤
     /// `request_id` 를 기다리는지)를 모르므로, `request_id = 0`(실제 발급은 1부터 —
@@ -1698,7 +1699,7 @@ impl App {
 
     /// `about_to_wait` 에서 호출 — attach mesh mirror pane 의 redraw 스윕
     /// (`forward_attach_mesh_context`)이 geometry/theme/focus 변경을 감지해 쌓은
-    /// 로컬 surface_id 큐(TODO 20)를 drain 해 원격에 `MeshContext` 를 forward한다.
+    /// 로컬 surface_id 큐(attach-behavior.md#mesh-mirror-채널, "App/CoreState 경계를 건너는 forward-queue 패턴" 참고)를 drain 해 원격에 `MeshContext` 를 forward한다.
     /// `dispatch_pending_resize_forwards` 와 동형.
     pub(crate) fn dispatch_pending_mesh_context_forwards(&mut self) {
         let mut pending: Vec<(u32, crate::core::AttachMeshContextForward)> = Vec::new();
@@ -1755,7 +1756,7 @@ impl App {
     }
 
     /// `about_to_wait` 에서 호출 — attach mesh mirror pane 위 로컬 입력을 누적한
-    /// 큐(TODO 20)를 drain 해 원격에 `MeshInput` 을 forward한다.
+    /// 큐(attach-behavior.md#mesh-mirror-채널, "App/CoreState 경계를 건너는 forward-queue 패턴" 참고)를 drain 해 원격에 `MeshInput` 을 forward한다.
     pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
         let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
         for main in self.main_windows_iter_mut() {
@@ -1806,7 +1807,7 @@ impl App {
     }
 
     /// `about_to_wait` 에서 호출 — GPU 렌더 prepare 가 attach mesh mirror surface 의
-    /// 텍스처 delta 체인 단절을 감지해 쌓은 로컬 surface_id 큐(TODO 19)를 drain 해
+    /// 텍스처 delta 체인 단절을 감지해 쌓은 로컬 surface_id 큐(attach-behavior.md#mesh-mirror-채널 참고)를 drain 해
     /// 원격에 `MeshFullResendRequest` 를 forward 한다. `dispatch_pending_resize_forwards`
     /// 와 동형.
     pub(crate) fn dispatch_pending_mesh_full_resend_forwards(&mut self) {
@@ -1877,11 +1878,11 @@ fn make_mirror_surface(
     mirror.set_input_sink(tx);
     let frame_tx = frame_tx.clone();
     // 입력 forwarder: mpsc 로 온 각 chunk 를 MAX_FRAME_LEN-4(mux prefix 4byte) 미만
-    // 조각으로 분할(TODO 04 — paste 가 1 MiB 캡을 넘겨 write_frame 이 거부·스레드
+    // 조각으로 분할(paste 가 1 MiB 캡을 넘겨 write_frame 이 거부·스레드
     // 사망하던 결함)해 순차로 write 큐에 push. 단일 forwarder 스레드가 rx 를 FIFO
     // 소비하므로 bracketed paste(\x1b[200~ → text → \x1b[201~) 순서가 보존된다.
     //
-    // TODO 28 — `frame_tx` 는 공유 핸들(`SharedFrameSender`)이라 매 전송마다 lock 해
+    // attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `frame_tx` 는 공유 핸들(`SharedFrameSender`)이라 매 전송마다 lock 해
     // **그 순간의 최신** sender 를 읽는다. send 실패(transport disconnect 중 — 옛
     // write 스레드가 이미 죽었거나 아직 재연결 전)는 이 청크만 버리고 루프를
     // 계속한다 — 예전엔 `return`(스레드 종료)했지만, 그러면 재연결로 `frame_tx` 내부가
@@ -1970,7 +1971,7 @@ fn pending_op_focus_for(
 /// **기존 local id 를 재사용**(터미널을 재생성하지 않아 scrollback/grid 보존), 신규는
 /// 로컬 id 발급 + `make_mirror_surface`(터미널만), `old_map` 에는 있었지만 이번
 /// surfaces 에 없는 것은 mirror 터미널을 제거한다. `apply_mirror_structural_delta`(구조
-/// 변경 역반영)와 `reconnect_session`(TODO 27/28 재연결)이 공유하는 핵심 로직 — 두
+/// 변경 역반영)와 `reconnect_session`(재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고)이 공유하는 핵심 로직 — 두
 /// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
 /// 구조적으로 동일하다.
 fn merge_survivor_mapping(
@@ -2491,7 +2492,7 @@ fn build_mirror_workspace(
 
 /// `to_tree_json_full` JSON → `SurfaceLayout`(분할 방향/비율/focus 보존). leaf 의 remote
 /// id 는 `map` 으로 로컬 치환하고, 터미널이면 `TerminalSurface`(mirror grid 가 store 에
-/// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(TODO 19), 그 외엔 placeholder
+/// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(attach-behavior.md#mesh-mirror-채널 참고), 그 외엔 placeholder
 /// `EmptySurface` leaf 로 만든다.
 fn build_layout(
     node: &Value,
@@ -2519,7 +2520,7 @@ fn build_layout(
                     info.display_name.clone(),
                 ))
             } else if let Some(root) = explorer.get(&local) {
-                // (ADR-0059/TODO 36) cwd == root 단순화 — wire 는 root 만 싣는다.
+                // (ADR-0059 참고) cwd == root 단순화 — wire 는 root 만 싣는다.
                 Box::new(ExplorerPanel::new(local, root.clone()))
             } else {
                 Box::new(EmptySurface::new(local))
@@ -2685,7 +2686,7 @@ fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
     })
 }
 
-/// (TODO 40) `parse_git_query_result` 가 쓰는 wire shape. kind 별 페이로드
+/// `parse_git_query_result` 가 쓰는 wire shape. kind 별 페이로드
 /// (worktrees/status_entries/log_entries/… 또는 file_path/hunks)는 host 가 해석할
 /// 필요가 없다 — 유일한 소비자(git-viewer plugin)의 wire DTO 로 그대로 넘긴다. 이
 /// 필드들은 `#[serde(flatten)]` 으로 한꺼번에 캡처해 `MirrorEvent::GitQueryResult::data`
@@ -2709,7 +2710,7 @@ struct GitQueryResultWire {
     rest: serde_json::Map<String, serde_json::Value>,
 }
 
-/// `frame.payload` 가 (TODO 40) `git_query_result` 커스텀 이벤트인지 확인해
+/// `frame.payload` 가 `git_query_result` 커스텀 이벤트인지 확인해
 /// `MirrorEvent` 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른
 /// 미지 이벤트와 동일하게 조용히 무시 — 전방 호환).
 fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
@@ -2811,7 +2812,7 @@ impl App {
         result
     }
 
-    /// (TODO 40) `local_surface_id` 를 보유한 mirror 세션의 attach 채널로
+    /// `local_surface_id` 를 보유한 mirror 세션의 attach 채널로
     /// `git_query_request` 를 보낸다. `local_surface_id` 는 popup 이 anchor 된
     /// **로컬** mirror surface — `forward_one_resize` 와 동일한 조회로 원격 id 로
     /// 치환한다(서버가 그 원격 surface 의 실제 cwd 로 discover 하므로, list_dir 과
@@ -3086,7 +3087,7 @@ mod tests {
         }
     }
 
-    /// (ADR-0059/TODO 36) `role=="explorer"` leaf 는 `explorer` 맵의 root 로
+    /// (ADR-0059 참고) `role=="explorer"` leaf 는 `explorer` 맵의 root 로
     /// `ExplorerPanel::new(local, root)`(cwd == root 단순화)를 구성해야 한다.
     #[test]
     fn build_layout_constructs_explorer_panel_from_explorer_map() {
@@ -3358,7 +3359,7 @@ mod tests {
         );
     }
 
-    /// 핵심 회귀 테스트(TODO 01-mirror-workspace-focus-jump): 클라이언트가 로컬에서만
+    /// 핵심 회귀 테스트(mirror-workspace-focus-jump): 클라이언트가 로컬에서만
     /// pane B 의 두 번째 탭으로 이동해둔 상태에서 구조 변경 delta 가 도착하면(원격의
     /// focused_pane 은 forward 되는 순수 focus op 가 없어 항상 최초 pane=pane A 로
     /// 고정), 패치 전에는 재구성된 트리가 pane A(첫 pane)로 focus 를 되돌렸다.
