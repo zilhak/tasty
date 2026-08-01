@@ -493,10 +493,12 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
 
 // ── 경고 배지 ────────────────────────────────────────────────────────────
 fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) {
-    ui.label(
-        egui::RichText::new(format!("⚠ {text}"))
-            .color(th.accent_warning())
-            .size(th.font_size_caption.value()),
+    selectable_label(
+        ui,
+        &format!("⚠ {text}"),
+        th.accent_warning(),
+        th.font_size_caption.value(),
+        false,
     )
     .on_hover_text(tooltip);
 }
@@ -578,11 +580,14 @@ fn draw_profile_list(
     if !has_non_attach {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
-            ui.label(
-                egui::RichText::new(t("remote_tool.profile_empty"))
-                    .color(th.text_muted())
-                    .italics()
-                    .size(th.font_size_body.value()),
+            selectable_text(
+                ui,
+                t("remote_tool.profile_empty"),
+                th.text_muted(),
+                th.font_size_body.value(),
+                false,
+                true,
+                TextWrap::None,
             );
         });
         return;
@@ -595,11 +600,14 @@ fn draw_profile_list(
     if !any_visible {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
-            ui.label(
-                egui::RichText::new(t("remote_tool.profile_filter_empty"))
-                    .color(th.text_muted())
-                    .italics()
-                    .size(th.font_size_body.value()),
+            selectable_text(
+                ui,
+                t("remote_tool.profile_filter_empty"),
+                th.text_muted(),
+                th.font_size_body.value(),
+                false,
+                true,
+                TextWrap::None,
             );
         });
         return;
@@ -708,11 +716,12 @@ fn draw_protocol_filter(
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
             ui.set_min_width(216.0);
-            ui.label(
-                egui::RichText::new(t("remote_tool.filter_title"))
-                    .color(th.text_muted())
-                    .size(th.font_size_caption.value())
-                    .monospace(),
+            selectable_label(
+                ui,
+                t("remote_tool.filter_title"),
+                th.text_muted(),
+                th.font_size_caption.value(),
+                true,
             );
             ui.add_space(th.spacing_xs.value());
             egui::ScrollArea::vertical()
@@ -804,42 +813,48 @@ fn draw_profile_row(
                     Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
                     _ => p.name.clone(),
                 };
-                ui.label(
-                    egui::RichText::new(title)
-                        // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
-                        .color(if disabled {
-                            th.text_placeholder()
-                        } else {
-                            th.text_primary()
-                        })
-                        .size(th.font_size_body.value())
-                        .strong(),
+                selectable_label(
+                    ui,
+                    &title,
+                    // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
+                    if disabled {
+                        th.text_placeholder()
+                    } else {
+                        th.text_primary()
+                    },
+                    th.font_size_body.value(),
+                    false,
                 );
                 if is_builtin_kind(&p.kind) || KNOWN_TYPES.contains(&p.kind.as_str()) {
-                    ui.label(
-                        egui::RichText::new(&p.kind)
-                            .color(th.text_muted())
-                            .size(th.font_size_caption.value()),
+                    selectable_label(
+                        ui,
+                        &p.kind,
+                        th.text_muted(),
+                        th.font_size_caption.value(),
+                        false,
                     );
                 } else {
                     warn_badge(ui, th, &p.kind, t("remote_tool.type_unknown_hint"));
                 }
             });
             // row2: target summary
-            ui.label(
-                egui::RichText::new(profile_summary(p))
-                    .color(th.text_muted())
-                    .size(th.font_size_caption.value())
-                    .monospace(),
+            selectable_label(
+                ui,
+                &profile_summary(p),
+                th.text_muted(),
+                th.font_size_caption.value(),
+                true,
             );
             // row3: passkey + (ssh) shell/state
             ui.horizontal(|ui| {
                 match &p.passkey_ref {
                     Some(pr) if !pr.is_empty() => {
-                        ui.label(
-                            egui::RichText::new(format!("passkey: {pr}"))
-                                .color(th.text_muted())
-                                .size(th.font_size_caption.value()),
+                        selectable_label(
+                            ui,
+                            &format!("passkey: {pr}"),
+                            th.text_muted(),
+                            th.font_size_caption.value(),
+                            false,
                         );
                         if !passkey_names.contains(pr) {
                             warn_badge(
@@ -851,31 +866,39 @@ fn draw_profile_row(
                         }
                     }
                     _ => {
-                        ui.label(
-                            egui::RichText::new("passkey: —")
-                                .color(th.text_muted())
-                                .size(th.font_size_caption.value()),
+                        selectable_label(
+                            ui,
+                            "passkey: —",
+                            th.text_muted(),
+                            th.font_size_caption.value(),
+                            false,
                         );
                     }
                 }
                 if let Some(v) = &ssh {
-                    ui.label(
-                        egui::RichText::new(format!("shell: {}", v.shell()))
-                            .color(th.text_muted())
-                            .size(th.font_size_caption.value()),
+                    selectable_label(
+                        ui,
+                        &format!("shell: {}", v.shell()),
+                        th.text_muted(),
+                        th.font_size_caption.value(),
+                        false,
                     );
                     if detecting_now {
                         ui.add(egui::Spinner::new().size(th.font_size_caption.value()));
-                        ui.label(
-                            egui::RichText::new(t("remote_tool.detecting"))
-                                .color(th.text_muted())
-                                .size(th.font_size_caption.value()),
+                        selectable_label(
+                            ui,
+                            t("remote_tool.detecting"),
+                            th.text_muted(),
+                            th.font_size_caption.value(),
+                            false,
                         );
                     } else if disabled {
-                        ui.label(
-                            egui::RichText::new(t("remote_tool.detect_failed"))
-                                .color(th.accent_danger())
-                                .size(th.font_size_caption.value()),
+                        selectable_label(
+                            ui,
+                            t("remote_tool.detect_failed"),
+                            th.accent_danger(),
+                            th.font_size_caption.value(),
+                            false,
                         );
                     }
                 }
@@ -1032,15 +1055,16 @@ fn draw_profile_form(
                         })
                         .show(ui, |ui| {
                             let editing = st.pform.editing_original.is_some();
-                            ui.label(
-                                egui::RichText::new(if editing {
+                            selectable_label(
+                                ui,
+                                if editing {
                                     t("remote_tool.profile_form_edit")
                                 } else {
                                     t("remote_tool.profile_form_add")
-                                })
-                                .color(th.text_primary())
-                                .size(th.font_size_body.value())
-                                .strong(),
+                                },
+                                th.text_primary(),
+                                th.font_size_body.value(),
+                                false,
                             );
                             ui.add_space(th.spacing_md.value());
 
@@ -1085,9 +1109,10 @@ fn draw_profile_form(
                             if unknown {
                                 indented_hint(
                                     ui,
-                                    egui::RichText::new(t("remote_tool.type_unknown_hint"))
-                                        .color(th.accent_warning())
-                                        .size(th.font_size_caption.value()),
+                                    th,
+                                    t("remote_tool.type_unknown_hint"),
+                                    th.accent_warning(),
+                                    false,
                                 );
                             }
 
@@ -1151,9 +1176,10 @@ fn draw_profile_form(
                                 if f.shell == "auto" {
                                     indented_hint(
                                         ui,
-                                        egui::RichText::new(t("remote_tool.shell_auto_hint"))
-                                            .color(th.text_muted())
-                                            .size(th.font_size_caption.value()),
+                                        th,
+                                        t("remote_tool.shell_auto_hint"),
+                                        th.text_muted(),
+                                        false,
                                     );
                                 }
                             } else {
@@ -1177,11 +1203,12 @@ fn draw_profile_form(
                                 ui.add_space(th.spacing_xs.value());
                                 // Fields 헤더 — 좌측 mono caption 라벨 + 우측 ghost "Add field"(space-between).
                                 ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(t("remote_tool.fields_section"))
-                                            .color(th.text_muted())
-                                            .size(th.font_size_caption.value())
-                                            .monospace(),
+                                    selectable_label(
+                                        ui,
+                                        t("remote_tool.fields_section"),
+                                        th.text_muted(),
+                                        th.font_size_caption.value(),
+                                        true,
                                     );
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
@@ -1197,10 +1224,10 @@ fn draw_profile_form(
                                 if f.fields.is_empty() {
                                     indented_hint(
                                         ui,
-                                        egui::RichText::new(t("remote_tool.fields_empty"))
-                                            .color(th.text_muted())
-                                            .italics()
-                                            .size(th.font_size_caption.value()),
+                                        th,
+                                        t("remote_tool.fields_empty"),
+                                        th.text_muted(),
+                                        true,
                                     );
                                 }
                                 let mut remove_idx = None;
@@ -1236,12 +1263,7 @@ fn draw_profile_form(
                             }
 
                             if let Some(err) = &st.perr {
-                                indented_hint(
-                                    ui,
-                                    egui::RichText::new(err)
-                                        .color(th.accent_danger())
-                                        .size(th.font_size_caption.value()),
-                                );
+                                indented_hint(ui, th, err, th.accent_danger(), false);
                             }
                         });
                 });
@@ -1413,11 +1435,14 @@ fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &
     if !has_attach {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
-            ui.label(
-                egui::RichText::new(t("remote_tool.attach_empty"))
-                    .color(th.text_muted())
-                    .italics()
-                    .size(th.font_size_body.value()),
+            selectable_text(
+                ui,
+                t("remote_tool.attach_empty"),
+                th.text_muted(),
+                th.font_size_body.value(),
+                false,
+                true,
+                TextWrap::None,
             );
         });
         return;
@@ -1503,20 +1528,23 @@ fn draw_attach_row(
                     Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
                     _ => p.name.clone(),
                 };
-                ui.label(
-                    egui::RichText::new(title)
-                        .color(if inactive {
-                            th.text_disabled()
-                        } else {
-                            th.text_primary()
-                        })
-                        .size(th.font_size_body.value())
-                        .strong(),
+                selectable_label(
+                    ui,
+                    &title,
+                    if inactive {
+                        th.text_disabled()
+                    } else {
+                        th.text_primary()
+                    },
+                    th.font_size_body.value(),
+                    false,
                 );
-                ui.label(
-                    egui::RichText::new(mode_tag)
-                        .color(th.text_muted())
-                        .size(th.font_size_caption.value()),
+                selectable_label(
+                    ui,
+                    mode_tag,
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    false,
                 );
                 if inactive {
                     warn_badge(
@@ -1529,11 +1557,12 @@ fn draw_attach_row(
             });
             // row2: target 요약 + dangling ref 배지
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(target)
-                        .color(th.text_muted())
-                        .size(th.font_size_caption.value())
-                        .monospace(),
+                selectable_label(
+                    ui,
+                    &target,
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    true,
                 );
                 if missing {
                     warn_badge(
@@ -1546,15 +1575,19 @@ fn draw_attach_row(
             });
             // row3: remote tasty + port mode 캡션
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("tasty: {}", v.remote_tasty()))
-                        .color(th.text_muted())
-                        .size(th.font_size_caption.value()),
+                selectable_label(
+                    ui,
+                    &format!("tasty: {}", v.remote_tasty()),
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    false,
                 );
-                ui.label(
-                    egui::RichText::new(format!("port: {}", v.port_mode()))
-                        .color(th.text_muted())
-                        .size(th.font_size_caption.value()),
+                selectable_label(
+                    ui,
+                    &format!("port: {}", v.port_mode()),
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    false,
                 );
             });
         });
@@ -1661,15 +1694,16 @@ fn draw_attach_form(
                         })
                         .show(ui, |ui| {
                             let editing = st.aform.editing_original.is_some();
-                            ui.label(
-                                egui::RichText::new(if editing {
+                            selectable_label(
+                                ui,
+                                if editing {
                                     t("remote_tool.attach_form_edit")
                                 } else {
                                     t("remote_tool.attach_form_add")
-                                })
-                                .color(th.text_primary())
-                                .size(th.font_size_body.value())
-                                .strong(),
+                                },
+                                th.text_primary(),
+                                th.font_size_body.value(),
+                                false,
                             );
                             ui.add_space(th.spacing_md.value());
 
@@ -1786,11 +1820,12 @@ fn draw_attach_form(
 
                             // Remote tasty 그룹 — 모드 무관 공통 (디자인 mono caps 헤더).
                             ui.add_space(th.spacing_xs.value());
-                            ui.label(
-                                egui::RichText::new(t("remote_tool.remote_tasty_section"))
-                                    .color(th.text_muted())
-                                    .size(th.font_size_caption.value())
-                                    .monospace(),
+                            selectable_label(
+                                ui,
+                                t("remote_tool.remote_tasty_section"),
+                                th.text_muted(),
+                                th.font_size_caption.value(),
+                                true,
                             );
                             text_row(
                                 ui,
@@ -1824,18 +1859,14 @@ fn draw_attach_form(
                             );
                             indented_hint(
                                 ui,
-                                egui::RichText::new(t("remote_tool.attach_exec_hint"))
-                                    .color(th.text_muted())
-                                    .size(th.font_size_caption.value()),
+                                th,
+                                t("remote_tool.attach_exec_hint"),
+                                th.text_muted(),
+                                false,
                             );
 
                             if let Some(err) = &st.aerr {
-                                indented_hint(
-                                    ui,
-                                    egui::RichText::new(err)
-                                        .color(th.accent_danger())
-                                        .size(th.font_size_caption.value()),
-                                );
+                                indented_hint(ui, th, err, th.accent_danger(), false);
                             }
                         });
                 });
@@ -1976,11 +2007,14 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
     if passkeys.passkeys.is_empty() {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
-            ui.label(
-                egui::RichText::new(t("remote_tool.passkey_empty"))
-                    .color(th.text_muted())
-                    .italics()
-                    .size(th.font_size_body.value()),
+            selectable_text(
+                ui,
+                t("remote_tool.passkey_empty"),
+                th.text_muted(),
+                th.font_size_body.value(),
+                false,
+                true,
+                TextWrap::None,
             );
         });
         return;
@@ -2039,17 +2073,20 @@ fn draw_passkey_row(
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(&k.name)
-                        .color(th.text_primary())
-                        .size(th.font_size_body.value())
-                        .strong(),
+                selectable_label(
+                    ui,
+                    &k.name,
+                    th.text_primary(),
+                    th.font_size_body.value(),
+                    false,
                 );
                 if KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str()) {
-                    ui.label(
-                        egui::RichText::new(&k.kind)
-                            .color(th.text_muted())
-                            .size(th.font_size_caption.value()),
+                    selectable_label(
+                        ui,
+                        &k.kind,
+                        th.text_muted(),
+                        th.font_size_caption.value(),
+                        false,
                     );
                 } else {
                     warn_badge(ui, th, &k.kind, t("remote_tool.kind_unknown_hint"));
@@ -2060,11 +2097,12 @@ fn draw_passkey_row(
             } else {
                 "••••••••".into()
             };
-            ui.label(
-                egui::RichText::new(format!("{} · {}", k.kind, val))
-                    .color(th.text_muted())
-                    .size(th.font_size_caption.value())
-                    .monospace(),
+            selectable_label(
+                ui,
+                &format!("{} · {}", k.kind, val),
+                th.text_muted(),
+                th.font_size_caption.value(),
+                true,
             );
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2169,15 +2207,16 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
                         })
                         .show(ui, |ui| {
                             let editing = st.kform.editing_original.is_some();
-                            ui.label(
-                                egui::RichText::new(if editing {
+                            selectable_label(
+                                ui,
+                                if editing {
                                     t("remote_tool.passkey_form_edit")
                                 } else {
                                     t("remote_tool.passkey_form_add")
-                                })
-                                .color(th.text_primary())
-                                .size(th.font_size_body.value())
-                                .strong(),
+                                },
+                                th.text_primary(),
+                                th.font_size_body.value(),
+                                false,
                             );
                             ui.add_space(th.spacing_md.value());
 
@@ -2205,16 +2244,20 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
                                     );
                                 }
                             });
-                            ui.label(
-                                egui::RichText::new(t("remote_tool.passkey_value_note"))
-                                    .color(th.text_muted())
-                                    .size(th.font_size_caption.value()),
+                            selectable_label(
+                                ui,
+                                t("remote_tool.passkey_value_note"),
+                                th.text_muted(),
+                                th.font_size_caption.value(),
+                                false,
                             );
                             if let Some(err) = &st.kerr {
-                                ui.label(
-                                    egui::RichText::new(err)
-                                        .color(th.accent_danger())
-                                        .size(th.font_size_caption.value()),
+                                selectable_label(
+                                    ui,
+                                    err,
+                                    th.accent_danger(),
+                                    th.font_size_caption.value(),
+                                    false,
                                 );
                             }
                         });
@@ -2283,17 +2326,15 @@ fn draw_confirm_delete(
 ) -> Option<bool> {
     let mut out = None;
     ui.add_space(th.spacing_sm.value());
-    ui.label(
-        egui::RichText::new(format!("{}: \"{name}\"?", noun))
-            .color(th.text_primary())
-            .size(th.font_size_body.value()),
+    selectable_label(
+        ui,
+        &format!("{}: \"{name}\"?", noun),
+        th.text_primary(),
+        th.font_size_body.value(),
+        false,
     );
     if let Some(h) = hint {
-        ui.label(
-            egui::RichText::new(h)
-                .color(th.text_muted())
-                .size(th.font_size_caption.value()),
-        );
+        selectable_label(ui, h, th.text_muted(), th.font_size_caption.value(), false);
     }
     ui.add_space(th.spacing_sm.value());
     ui.horizontal(|ui| {
@@ -2352,6 +2393,106 @@ const LABEL_COL_WIDTH: f32 = 112.0;
 /// 디자인 `marginLeft: 124px`.
 const HINT_INDENT: f32 = LABEL_COL_WIDTH + 12.0;
 
+// ── selectable 텍스트 (TODO 77) ──────────────────────────────────────────
+// egui `Label` 의 드래그 선택은 내장 `LabelSelectionState::cursor_for()` 가 처리하는데,
+// 드래그 중 포인터가 위젯 rect 밖으로 세로(y)로 나가는 경우만 처리하고 가로(x) 이탈은
+// 그 프레임에 selection cursor 갱신이 안 돼 선택이 멈춘다(egui 이슈 #3816 — "top-down
+// 레이아웃부터 지원, 좌우는 나중"이라는 의도적으로 축소된 설계 범위, upstream 이 자체
+// 수정할 근거 없음이 egui 0.35.0 dev 최신 커밋까지 확인됨). 반면 `TextEdit` 의 커서
+// 갱신은 `Galley::cursor_from_pos` 가 가로/세로 모두 위젯 범위 밖 좌표를 자동 clamp
+// 해서 이 버그가 없는 별개 코드 경로다 — 그래서 selectable 텍스트를 `TextEdit`
+// (read-only 취급) 기반으로 렌더링해 우회한다.
+//
+// `egui::RichText` 는 필드가 전부 private 라 이미 만들어진 값에서 색/크기 등을
+// introspect 하는 API가 없어, 스타일을 개별 파라미터로 받는다.
+//
+// `TextEdit::interactive(false)` 는 편집뿐 아니라 선택 자체도 막아버려 쓸 수 없다 —
+// 대신 매 프레임 지역 변수로 clone 한 버퍼를 넘겨, 사용자가 타이핑해도 다음 프레임에
+// 원래 텍스트로 되돌아가는 방식(편집 결과를 버림)으로 read-only 를 흉내낸다.
+
+/// `selectable_text` 의 줄바꿈 모드.
+#[derive(Clone, Copy)]
+enum TextWrap {
+    /// 줄바꿈 없음, 콘텐츠 폭만큼만 차지(`egui::Label` 기본값과 동형).
+    None,
+    /// 가용 폭에서 여러 줄로 줄바꿈(`Label::wrap()` 과 동형).
+    Wrap,
+    /// 지정 폭에서 한 줄로 말줄임(`Label::truncate()` 과 동형) — `…` 로 elide.
+    Truncate(f32),
+}
+
+/// selectable 텍스트 렌더 — 위 모듈 주석 참고.
+fn selectable_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    color: impl Into<egui::Color32>,
+    size: f32,
+    monospace: bool,
+    italic: bool,
+    wrap: TextWrap,
+) -> egui::Response {
+    let color = color.into();
+    let font_id = if monospace {
+        egui::FontId::monospace(size)
+    } else {
+        egui::FontId::proportional(size)
+    };
+    let mut buffer = text.to_string();
+    let mut layouter = move |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            text,
+            0.0,
+            egui::TextFormat {
+                font_id: font_id.clone(),
+                color,
+                italics: italic,
+                ..Default::default()
+            },
+        );
+        match wrap {
+            TextWrap::None => job.wrap.max_width = f32::INFINITY,
+            TextWrap::Wrap => {
+                job.wrap.max_width = wrap_width;
+                job.break_on_newline = true;
+            }
+            TextWrap::Truncate(w) => {
+                job.wrap.max_width = w;
+                job.wrap.max_rows = 1;
+                job.wrap.break_anywhere = true;
+            }
+        }
+        ui.fonts(|f| f.layout_job(job))
+    };
+    // Wrap 은 가용 폭까지 확장해야 실제로 줄바꿈된다. None/Truncate 는 콘텐츠(또는
+    // truncate 결과) 폭만큼만 차지해야 `Label` 과 동일하게 부모 레이아웃(가로 나열,
+    // 우측 정렬용 RTL 트릭 등)에 자연스럽게 맞물린다 — desired_width 를 고정폭으로
+    // 주면 짧은 텍스트도 그 폭을 다 차지해 정렬이 깨진다.
+    let desired_width = if matches!(wrap, TextWrap::Wrap) {
+        f32::INFINITY
+    } else {
+        0.0
+    };
+    ui.add(
+        egui::TextEdit::multiline(&mut buffer)
+            .frame(false)
+            .desired_rows(1)
+            .desired_width(desired_width)
+            .layouter(&mut layouter),
+    )
+}
+
+/// `selectable_text` 축약형 — 줄바꿈 없음·italic 아님(가장 흔한 경우).
+fn selectable_label(
+    ui: &mut egui::Ui,
+    text: &str,
+    color: impl Into<egui::Color32>,
+    size: f32,
+    monospace: bool,
+) -> egui::Response {
+    selectable_text(ui, text, color, size, monospace, false, TextWrap::None)
+}
+
 /// 폼 라벨 — 112px 고정폭 컬럼 + 우측 정렬(디자인 `rtLabel`). Grid 첫 컬럼과
 /// Type 행/passkey 행이 모두 같은 컬럼 폭으로 정렬되도록 폭을 강제한다.
 fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
@@ -2359,13 +2500,14 @@ fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
         egui::vec2(LABEL_COL_WIDTH, ui.spacing().interact_size.y),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(label)
-                        .color(th.text_muted())
-                        .size(th.font_size_body.value()),
-                )
-                .truncate(),
+            selectable_text(
+                ui,
+                label,
+                th.text_muted(),
+                th.font_size_body.value(),
+                false,
+                false,
+                TextWrap::Truncate(LABEL_COL_WIDTH),
             );
         },
     );
@@ -2373,10 +2515,24 @@ fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
 
 /// hint/error 문구를 입력 컬럼(124px)에 맞춰 들여써서 출력. 디자인의
 /// `marginLeft: 124px` 정합 — 라벨 컬럼 아래가 아니라 입력 칸에 맞춘다.
-fn indented_hint(ui: &mut egui::Ui, text: egui::RichText) {
+fn indented_hint(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    text: &str,
+    color: impl Into<egui::Color32>,
+    italic: bool,
+) {
     ui.horizontal(|ui| {
         ui.add_space(HINT_INDENT);
-        ui.add(egui::Label::new(text).wrap());
+        selectable_text(
+            ui,
+            text,
+            color,
+            th.font_size_caption.value(),
+            false,
+            italic,
+            TextWrap::Wrap,
+        );
     });
 }
 
