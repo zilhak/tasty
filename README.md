@@ -40,17 +40,17 @@ cargo build --release
 
 ## 핵심 기능
 
-- **멀티에이전트 오케스트레이션** — `agent.task_*` DAG + `barrier` / `semaphore` / `lease` / `task_reduce` / `rate_limit` primitive
-- **헤드리스 운용** — GUI 없이 CLI/IPC 만으로 surface 생성·종료·I/O (`--headless`)
-- **vi copy mode** — 키바인딩 기반 영역 선택/복사, GPU 커서 시각화
-- **dist 자동 빌드** — `cargo build --profile dist` + Justfile 래퍼 (DMG / MSI / AppImage)
-- **Plugin SDK** — `tasty-plugin-sdk` 크레이트 + 매니페스트 스키마 + 권한 시스템 (`api_version = 1`)
-- **공유 컨텍스트** — Blackboard / Plan / Cache (`memory.*` 위 래퍼)
-- **OSC 133 command indexing** — shell prompt 단위 출력 캡처
-- **출력 옵저버** — PTY 라인 → 빌트인 파서 → memory / file sink 팬아웃
-- **텔레메트리 + cost cap** — `telemetry.*` 측정/집계 + 토큰 cap 시 자동 차단
-- **테마 시스템** — 4px 그리드, 14px 폰트 상한, 사용자 정의 가능
-- **wait blocking IPC** — 자식 Claude 의 idle 상태까지 대기
+- **여러 AI 에이전트를 하나의 터미널에서 오케스트레이션한다** — task DAG + barrier / semaphore / lease / reduce / rate-limit 협업 primitive 로 병렬 작업을 조율([`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md))
+- **GUI 없이도 완전히 동작한다** — CLI/IPC 만으로 surface 를 만들고 끄고 입출력까지 다룰 수 있어 CI/서버 환경에 그대로 올라간다(`--headless`, [`docs/features/headless-pty/index.md`](docs/features/headless-pty/index.md))
+- **키보드만으로 화면을 선택·복사한다** — vi 스타일 카피 모드(hjkl 이동·visual 선택·검색)와 GPU 커서 시각화([`docs/features/clipboard/index.md`](docs/features/clipboard/index.md))
+- **배포용 설치 파일을 한 번에 뽑는다** — `cargo build --profile dist` + Justfile 로 DMG / MSI / AppImage 를 자동 빌드
+- **플러그인으로 기능을 직접 확장한다** — 매니페스트 스키마 + 권한 시스템을 갖춘 SDK 제공([`docs/features/plugin-system/index.md`](docs/features/plugin-system/index.md))
+- **에이전트끼리 정보를 공유한다** — Blackboard / Plan / Cache 로 여러 에이전트가 같은 작업 컨텍스트를 주고받음([`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md))
+- **셸 명령 단위로 출력을 정확히 짚어낸다** — shell prompt 경계를 인식해 "이 명령의 출력"만 골라 캡처([`docs/features/terminal-output/index.md`](docs/features/terminal-output/index.md))
+- **터미널 출력을 실시간으로 감시해 후속 작업을 건다** — PTY 출력 라인을 파싱해 memory/file sink 로 자동 팬아웃([`docs/features/terminal-output/index.md`](docs/features/terminal-output/index.md))
+- **에이전트 토큰 사용량을 재고 한도에서 자동으로 막는다** — 측정/집계 + cost cap 초과 시 자동 차단([`docs/features/telemetry/index.md`](docs/features/telemetry/index.md))
+- **테마를 내 취향대로 바꾼다** — 4px 그리드/14px 폰트 상한 기반 사용자 정의 테마 시스템([`docs/features/themes/index.md`](docs/features/themes/index.md))
+- **여러 자식 Claude 를 동시에 굴리고 끝나는 대로 알림을 받는다** — spawn/tell 은 즉시 반환하고, idle/추가입력필요/종료 시점마다 호출자에게 완료 알림이 자동으로 온다([`docs/plugins/claude/index.md`](docs/plugins/claude/index.md))
 
 ## 아키텍처
 
