@@ -1,5 +1,7 @@
 # Tasty
 
+<img src="assets/icons/tasty-melon.svg" alt="Tasty logo" width="96" height="96" />
+
 > **Tasty** is a cross-platform, GPU-accelerated terminal emulator purpose-built for AI coding agents. It provides multi-agent orchestration, headless operation, and a focus-independent IPC/CLI surface across Windows, macOS, and Linux. (Detailed docs below are in Korean — start at [`docs/index.md`](docs/index.md).)
 
 크로스 플랫폼 GPU 가속 터미널 에뮬레이터. AI 코딩 에이전트에 특화된 멀티에이전트 오케스트레이션 + 헤드리스 운용 + focus-independent IPC/CLI 동작 표면을 제공한다.
@@ -8,6 +10,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#라이선스)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
 [![Workspace](https://img.shields.io/badge/workspace-43%20crates-orange)](crates/)
+
+WezTerm / Alacritty 같은 GPU 가속 터미널이 사람의 타이핑 경험 자체에 집중한다면, Tasty 는 그 위에 "AI 에이전트가 직접 조작할 수 있는 터미널"이라는 좌표를 더한다 — 모든 동작 표면이 사람의 키보드/마우스뿐 아니라 IPC/CLI 로도 동일하게 열려 있다.
+
+## 정체성 — 사용자 행동과 에이전트 행동의 분리
+
+Tasty 의 모든 API 는 **사용자 행동**(키보드/마우스/OS 네이티브 입력)과 **에이전트 행동**(IPC 메서드/CLI 서브커맨드)을 엄격히 분리한다. 에이전트 행동의 부수효과는 사용자의 포커스·히스토리·선택 상태에 닿지 않는다 — 사용자 입력을 *재현*하는 기능(키 주입/포커스 강제 전환 등)은 release 빌드의 IPC/CLI 표면에 존재하지 않는다(debug 격리). 자세한 원칙: [`CLAUDE.md`](CLAUDE.md).
 
 ## 핵심 가치
 
@@ -62,15 +70,6 @@ crates/          — 43 개 도메인 크레이트 (tasty-agent / tasty-ipc / ta
 ```
 
 자세한 구조: [`docs/architecture/`](docs/architecture/).
-
-## 정체성 — 사용자 행동과 에이전트 행동의 분리
-
-Tasty 의 모든 API 는 두 표면을 엄격히 분리한다.
-
-- **사용자 행동** = 키보드 단축키 / 마우스 / OS 네이티브 입력. 사용자 자신이 만든다.
-- **에이전트 행동** = IPC 메서드 / CLI 서브커맨드. AI 에이전트가 자기 작업을 수행하기 위해 호출한다.
-
-에이전트 행동의 부수효과는 사용자의 포커스·히스토리·선택 상태에 닿지 않는다. 사용자 입력을 *재현* 하는 기능 (키 주입 / 포커스 강제 전환 등) 은 release 빌드의 IPC/CLI 표면에 존재하지 않는다 (debug 격리). 자세한 원칙: [`CLAUDE.md`](CLAUDE.md).
 
 ## 문서
 
