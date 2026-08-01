@@ -52,25 +52,6 @@ cargo build --release
 - **테마를 내 취향대로 바꾼다** — 4px 그리드/14px 폰트 상한 기반 사용자 정의 테마 시스템([`docs/features/themes/index.md`](docs/features/themes/index.md))
 - **여러 자식 Claude 를 동시에 굴리고 끝나는 대로 알림을 받는다** — spawn/tell 은 즉시 반환하고, idle/추가입력필요/종료 시점마다 호출자에게 완료 알림이 자동으로 온다([`docs/plugins/claude/index.md`](docs/plugins/claude/index.md))
 
-## 아키텍처
-
-```
-src/
-├─ core/         — 도메인 본체 (workspace/pane/tab/surface 상태, attach, registries) — GUI-free
-├─ ports/        — 의존성 역전 인터페이스 (PtySpawner, ClipboardProvider 등)
-├─ adapters/     — 외부 시스템 어댑터 (ipc, clipboard, plugin_bridge 등 ports 구현)
-├─ view/         — egui UI + 커스텀 GPU 셰이더
-├─ app/          — App(winit ApplicationHandler) 조립 + 이벤트/부팅 배선
-├─ host_api/     — IPC handler + CLI command 라우터
-├─ engine/       — surface registry / command index / layout persistence (전환기 컨테이너)
-├─ model.rs      — crates/tasty-model re-export (도메인 모델 실체는 crate 로 이관됨)
-└─ boot/, gfx/, state/, store/, file/, intent/, plugin_bridge/, hook_handler/, webhook/, db/, clipboard/, platform/ 등
-
-crates/          — 43 개 도메인 크레이트 (tasty-agent / tasty-ipc / tasty-memory / ...)
-```
-
-자세한 구조: [`docs/architecture/`](docs/architecture/).
-
 ## 문서
 
 - 인덱스: [`docs/index.md`](docs/index.md)
@@ -78,6 +59,10 @@ crates/          — 43 개 도메인 크레이트 (tasty-agent / tasty-ipc / ta
 - 에이전트 가이드: [`docs/reference/`](docs/reference/index.md) (api / event-catalog / output-parsers / environments / plan.schema.json)
 - 개발 가이드: [`docs/dev-guide/`](docs/dev-guide/)
 - 안정성 정책: [`docs/dev-guide/api-conventions.md`](docs/dev-guide/api-conventions.md) 의 "안정성 정책" 절
+
+## 아키텍처
+
+Hexagonal 아키텍처(model + ports + adapters + view + host_api 분리)의 43-crate workspace. 자세한 구조: [`docs/architecture/`](docs/architecture/).
 
 ## 라이선스
 
