@@ -700,6 +700,7 @@ fn terminal_command_to_method_params(
             ("terminal.children", Value::Object(m))
         }
         T::Parent { surface } => ("terminal.parent", serde_json::json!({ "surface": surface })),
+        T::State { surface } => ("terminal.state", serde_json::json!({ "surface": surface })),
         T::Kill { surface, child } => {
             let mut m = Map::new();
             put_u32(&mut m, "surface", resolve_surface_id(*surface));

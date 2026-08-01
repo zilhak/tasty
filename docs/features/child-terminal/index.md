@@ -26,6 +26,7 @@
   - `tasty terminal tell "<text>" [--surface]` ↔ `terminal.tell`
   - `tasty terminal children [--surface]` ↔ `terminal.children`
   - `tasty terminal parent --surface <child>` ↔ `terminal.parent`
+  - `tasty terminal state --surface <child>` ↔ `terminal.state` — 자식 단건 상태(`idle`/`needs_input`/`active`/`exited`) 조회. `terminal.children`의 항목별 `state`와 달리, 이미 registry 에서 정리된(reconcile 로 사라진) surface 도 라이브 트리와 직접 대조해 `"exited"`로 판별한다 — `ChildTerminalRegistry::state_of` 자체의 미등록 surface `"active"` fallback 계약은 그대로 둔 채, 이 getter 가 그 위에서 별도로 죽은 surface 를 걸러낸다
   - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill`
   - `tasty terminal respawn [--surface] --child <n> [--cwd] [--command] [--role] [--nickname]` ↔ `terminal.respawn`
   - `tasty terminal broadcast "<text>" [--surface] [--role]` ↔ `terminal.broadcast`
@@ -49,3 +50,5 @@
 - [x] Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).
 - [x] Given 등록되지 않은 child index When `terminal.release` Then 에러 반환.
 - [x] Given C 와 무관한 다른 surface 가 hard 점유 중 When `terminal.release{child=C}` Then 그 hard 점유는 영향받지 않음.
+- [x] Given 실행 중인 child C When `terminal.state{surface=C}` Then `{"state":"active","surface_id":C}`.
+- [x] Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `{"state":"exited","surface_id":C}` (`"active"`가 아님).

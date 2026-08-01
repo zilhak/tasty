@@ -90,6 +90,7 @@ impl Plugin for ClaudePlugin {
             },
             // 자식 관리 명령은 모두 호스트 `terminal.*` 로 위임(handlers.rs).
             "claude.parent" => handle_parent(&ctx.host, &ctx.params),
+            "claude.state" => handle_state(&ctx.host, &ctx.params),
             "claude.children" => handle_children(&ctx.host, &ctx.params),
             "claude.kill" => handle_kill(&ctx.host, &ctx.params),
             "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params),

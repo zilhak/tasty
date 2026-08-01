@@ -130,6 +130,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.tell", plugin(&[TerminalWrite])),
         ("terminal.children", plugin(&[SurfaceRead])),
         ("terminal.parent", plugin(&[SurfaceRead])),
+        // 자식 단건 상태 조회 (TODO80 §E). children/parent 와 동일하게 순수 조회라
+        // SurfaceRead 단독.
+        ("terminal.state", plugin(&[SurfaceRead])),
         ("terminal.kill", plugin(&[SurfaceWrite])),
         ("terminal.respawn", plugin(&[TerminalWrite, TerminalSpawn])),
         ("terminal.broadcast", plugin(&[TerminalWrite])),

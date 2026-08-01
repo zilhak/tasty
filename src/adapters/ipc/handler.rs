@@ -476,6 +476,7 @@ fn route_engine_handler(
         "terminal.tell" => terminal::handle_tell(core, state, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
+        "terminal.state" => terminal::handle_state(engine, id, &request.params),
         "terminal.kill" => terminal::handle_kill(core, state, engine, id, &request.params),
         "terminal.respawn" => terminal::handle_respawn(core, state, engine, id, &request.params),
         "terminal.broadcast" => {

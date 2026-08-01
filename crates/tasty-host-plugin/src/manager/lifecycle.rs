@@ -19,6 +19,25 @@ use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
 
+/// 완료 판정 전략 레지스트리(TODO80 §B)의 plugin owner 문자열. `[[contributes.
+/// completion_strategy]]`의 `poll_method`/`default_for_methods` 는 plugin 의
+/// 실제 IPC dispatch 접두어(`[[contributes.ipc_namespace]].prefix`, 예:
+/// `"claude"`)로 제한된다(결정 2) — 레지스트리는 owner 문자열과 그 접두어를
+/// 그대로 문자열 비교하므로, reverse-DNS 매니페스트 `id`(예:
+/// `"com.tasty.claude"`)를 owner 로 넘기면 어떤 실제 poll_method 접두어와도
+/// 겹치지 않아 결정 2 가 모든 poll 전략을 무조건 drop 시킨다. namespace 를
+/// 선언하지 않은 plugin 은 애초에 poll_method 로 참조할 자기 namespace 가
+/// 없으므로 manifest id 로 폴백해도(install/uninstall 양쪽에서 동일 폴백이라
+/// 서로 어긋나지 않음) 그 plugin 의 poll 전략은 여전히 (정당하게) 전부 drop된다.
+fn completion_strategy_owner_id(pkg: &PluginPackage) -> &str {
+    pkg.manifest
+        .contributes
+        .ipc_namespace
+        .first()
+        .map(|ns| ns.prefix.as_str())
+        .unwrap_or(pkg.manifest.id.as_str())
+}
+
 impl PluginManager {
     /// 기본 file_format/file_handler stub 으로 초기화 — 내부 unit test 전용.
     /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를 직접
@@ -232,7 +251,7 @@ impl PluginManager {
         }
         if let Some(cs) = &self.completion_strategy {
             cs.install_plugin_completion_strategies(
-                &pkg.manifest.id,
+                completion_strategy_owner_id(&pkg),
                 &pkg.manifest.contributes.completion_strategy,
             );
         }
@@ -398,7 +417,7 @@ impl PluginManager {
             }
             if let Some(cs) = &self.completion_strategy {
                 cs.install_plugin_completion_strategies(
-                    plugin_id,
+                    completion_strategy_owner_id(&pkg),
                     &pkg.manifest.contributes.completion_strategy,
                 );
             }
@@ -424,11 +443,17 @@ impl PluginManager {
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
         // G.D.b — runtime registry 도 mirror 해제. packages 에서 manifest 재조회
-        // 후 그 plugin 이 점유한 prefix 들을 unregister.
+        // 후 그 plugin 이 점유한 prefix 들을 unregister. completion_strategy 의
+        // owner id 도 install 시점과 동일 유도 규칙(completion_strategy_owner_id)
+        // 으로 계산해둔다 — install 은 ipc_namespace 접두어를 owner 로 쓰므로
+        // uninstall 도 같은 문자열로 지워야 매치된다(그냥 plugin_id 를 쓰면 서로
+        // 어긋나 등록은 되고 해제는 안 되는 stale 전략이 남는다).
+        let mut cs_owner_id: Option<String> = None;
         if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
             for ns in &pkg.manifest.contributes.ipc_namespace {
                 tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
             }
+            cs_owner_id = Some(completion_strategy_owner_id(pkg).to_string());
         }
         // file_format / file_handler / hook_handler / completion_strategy registry 에서
         // plugin 의 contribute 제거.
@@ -438,7 +463,7 @@ impl PluginManager {
             hh.uninstall_plugin(plugin_id);
         }
         if let Some(cs) = &self.completion_strategy {
-            cs.uninstall_plugin(plugin_id);
+            cs.uninstall_plugin(cs_owner_id.as_deref().unwrap_or(plugin_id));
         }
         // `plugin.unloaded` / `plugin.disabled` 발화는 D.3.C.G.2.b cascade 가 처리
         // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded

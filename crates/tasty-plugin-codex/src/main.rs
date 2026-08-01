@@ -60,6 +60,7 @@ impl Plugin for CodexPlugin {
             "codex.spawn" => handlers::handle_spawn(&host, params),
             "codex.children" => handlers::handle_children(&host, params),
             "codex.parent" => handlers::handle_parent(&host, params),
+            "codex.state" => handlers::handle_state(&host, params),
             "codex.tell" => handlers::handle_tell(&host, params),
             "codex.notify_caller" => handlers::handle_notify_caller(&host, params),
             "codex.broadcast" => handlers::handle_broadcast(&host, params),

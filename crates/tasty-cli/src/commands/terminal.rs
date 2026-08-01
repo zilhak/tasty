@@ -59,6 +59,16 @@ pub enum TerminalCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Return a single child's status: idle, needs_input, active, or exited.
+    ///
+    /// Unlike `set-state` (which agent hooks call to report idle/needs_input),
+    /// this reads the current status — cross-checked against live surfaces, so
+    /// a closed child reports `exited` instead of stale `active`.
+    State {
+        /// Child surface ID to query
+        #[arg(long)]
+        surface: u32,
+    },
     /// Kill a child terminal by child index (closes the tab, releases occupancy).
     Kill {
         /// Parent surface ID (defaults to the single known parent)

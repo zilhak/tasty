@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.22"
+version = "0.1.23"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -18,6 +18,8 @@ permissions = [
     # 자식이 호스트에 IPC 호출 시 envelope.session_token 으로 신원을 증명.
     "agent",
     "ui.settings_page",
+    # `claude.spawn` 기본 완료 전략(TODO80 §E) 선언에 필요.
+    "completion_strategy.define",
 ]
 lang_dir = "lang"
 
@@ -52,6 +54,7 @@ subcommands = [
     { name = "spawn",     ipc_method = "claude.spawn",     args = "spawn_args",     description = "Spawn a child Claude instance into a workspace. Returns immediately; a notification is delivered to the caller surface every time the child transitions to idle/needs_input, and once more when it exits — not just the first transition." },
     { name = "children",  ipc_method = "claude.children",  args = "children_args",  description = "List children of the specified Claude parent" },
     { name = "parent",    ipc_method = "claude.parent",    args = "parent_args",    description = "Show the parent of the specified Claude child" },
+    { name = "state",     ipc_method = "claude.state",     args = "state_args",     description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)" },
     { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      description = "Send a message to a Claude instance (multi-line, submits at end). Returns immediately; a notification is delivered to the caller surface every time the target transitions to idle/needs_input, and once more when it exits — not just the first transition." },
     { name = "broadcast", ipc_method = "claude.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Claude instance" },
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index" },
@@ -89,6 +92,11 @@ flags = [
 [contributes.cli.arg_groups.parent_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Claude surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)" },
+]
+
+[contributes.cli.arg_groups.state_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Claude surface ID to query (defaults to caller's TASTY_SURFACE_ID)" },
 ]
 
 [contributes.cli.arg_groups.tell_args]
@@ -150,6 +158,25 @@ flags = [
 ]
 
 [contributes.cli.arg_groups.no_args]
+
+# 완료 판정 전략(TODO80 §B/§E) — `claude.spawn` 의 기본 완료 판정(결정 6).
+# poll_method 는 owner 자기 namespace 로만 제한되므로(결정 2) 호스트
+# `terminal.state`(결정 3, terminal namespace 소유)를 직접 참조할 수 없다 —
+# 그래서 이 plugin 자신의 `claude.state`(그 위에 얇게 위임하는 wrapper,
+# handlers.rs 참고)를 poll_method 로 둔다. idle/needs_input 을 둘 다 terminal
+# 로 두는 것은 기존 spawn/tell 훅 알림이 이미 이 둘을 "자식이 작업을 멈췄다"로
+# 취급하는 것과 같은 기준이다(위 spawn/tell subcommand 설명 참고). exited 는
+# 결정 4 로 신설된 상태.
+[[contributes.completion_strategy]]
+id = "spawn-wait"
+priority = 100
+default_for_methods = ["claude.spawn"]
+
+[contributes.completion_strategy.spec]
+kind = "poll"
+poll_method = "claude.state"
+state_field = "state"
+terminal_states = ["idle", "needs_input", "exited"]
 
 [[contributes.settings_pages]]
 id = "claude"

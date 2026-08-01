@@ -400,6 +400,31 @@ pub(crate) fn handle_children(
     JsonRpcResponse::success(id, json!({ "children": children }))
 }
 
+/// 자식 단건 상태 조회 (TODO80 §E — 실증 소비자). `handle_children`/`handle_parent`
+/// 와 동형으로 대상 child surface 를 `surface` 파라미터로 직접 지정한다(포커스
+/// 독립 — CLAUDE.md 원칙 3).
+///
+/// **결정 4**: `ChildTerminalRegistry::state_of` 자신은 미등록 surface 에
+/// `"active"` fallback 계약을 그대로 유지한다(`src/core/child_terminal.rs:196-209`
+/// 와 그 테스트는 불변). 이 getter 는 그 위에서 라이브 surface 트리와 별도로
+/// 대조해, 실제로 죽은 surface 만 `"exited"` 로 구분한다 — registry 자체의
+/// self-heal(`reconcile_child_terminals`)이 이미 죽은 항목을 지웠더라도(관계가
+/// 사라져도) 그 surface 가 라이브인지는 독립적으로 판정해야 하므로 reconcile
+/// 결과에 기대지 않고 `live_surface_ids()` 를 직접 대조한다.
+pub(crate) fn handle_state(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+    engine.reconcile_child_terminals();
+    let surface_id = match require_u32(params, "surface", &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let state = if engine.live_surface_ids().contains(&surface_id) {
+        engine.child_terminals.state_of(surface_id)
+    } else {
+        "exited"
+    };
+    JsonRpcResponse::success(id, json!({ "state": state, "surface_id": surface_id }))
+}
+
 pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
     let child_surface = match require_u32(params, "surface", &id) {

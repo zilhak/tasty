@@ -325,6 +325,73 @@ fn plugin_display_name_i18n_key_is_preserved() {
 
 // ── patch semantics ───────────────────────────────────────────────────────
 
+// ── TODO80 §E 실증 — 번들 claude/codex 매니페스트가 실제로 결정 6 을 통과하는지 ──
+//
+// 배경(회귀 방지): plugin owner 를 매니페스트의 reverse-DNS `id`("com.tasty.claude")
+// 로 넘기면 poll_method("claude.state")의 dot-prefix("claude")와 절대 문자열이
+// 일치하지 않아 `method_allowed_for_owner`(결정 2)가 항상 drop 시킨다. 위쪽의
+// `plugin_poll_strategy_installs_and_resolves` 류 테스트는 `install_plugin_strategies`
+// 의 owner 인자로 처음부터 짧은 "acme" 를 직접 넘겨 이 불일치를 우연히 피해가므로
+// 실제 plugin 배선의 버그를 못 잡는다 — 여기서는 `lifecycle.rs::completion_strategy_
+// owner_id`(첫 `ipc_namespace` prefix, 없으면 manifest id 폴백)와 동일한 규칙으로
+// owner 를 유도해, 번들 매니페스트가 실제로 그 규칙을 통과하는지 확인한다.
+fn owner_id_for(m: &tasty_plugin_manifest::Manifest) -> &str {
+    m.contributes
+        .ipc_namespace
+        .first()
+        .map(|ns| ns.prefix.as_str())
+        .unwrap_or(m.id.as_str())
+}
+
+fn install_bundled_manifest_strategies(plugin_dir: &str) -> (CompletionStrategyRegistry, String) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join(plugin_dir);
+    let m = tasty_plugin_manifest::Manifest::load(&path).expect("bundled manifest should load");
+    let owner_id = owner_id_for(&m).to_string();
+    let decls: Vec<CompletionStrategyDecl> = m
+        .contributes
+        .completion_strategy
+        .iter()
+        .map(|v| {
+            serde_json::from_value(v.clone()).expect("bundled completion_strategy decl parses")
+        })
+        .collect();
+    assert!(
+        !decls.is_empty(),
+        "{plugin_dir} manifest should declare at least one completion strategy"
+    );
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_plugin_strategies(&owner_id, &decls);
+    (reg, owner_id)
+}
+
+#[test]
+fn bundled_claude_manifest_spawn_default_strategy_resolves() {
+    let (reg, owner_id) = install_bundled_manifest_strategies("tasty-plugin-claude");
+    assert_eq!(owner_id, "claude");
+    let winner = reg
+        .resolve_default_for_method("claude.spawn")
+        .expect("claude.spawn should resolve a default completion strategy (decision 6)");
+    match winner.kind {
+        CompletionStrategyKind::Poll(spec) => assert_eq!(spec.poll_method, "claude.state"),
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+}
+
+#[test]
+fn bundled_codex_manifest_spawn_default_strategy_resolves() {
+    let (reg, owner_id) = install_bundled_manifest_strategies("tasty-plugin-codex");
+    assert_eq!(owner_id, "codex");
+    let winner = reg
+        .resolve_default_for_method("codex.spawn")
+        .expect("codex.spawn should resolve a default completion strategy (decision 6)");
+    match winner.kind {
+        CompletionStrategyKind::Poll(spec) => assert_eq!(spec.poll_method, "codex.state"),
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+}
+
 #[test]
 fn user_override_patches_priority_only() {
     let dir = tempfile::tempdir().unwrap();

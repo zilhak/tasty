@@ -349,7 +349,7 @@ impl Manifest {
         self.validate_contributed_handlers()?;
         self.validate_contributed_detector_permissions()?;
         self.validate_contributed_hook_handlers()?;
-        self.validate_contributed_completion_strategies()?;
+        self.validate_contributed_completion_strategies(&seen_prefixes)?;
         Ok(())
     }
 
@@ -1162,12 +1162,22 @@ impl Manifest {
         Ok(())
     }
 
-    fn validate_contributed_completion_strategies(&self) -> anyhow::Result<()> {
+    fn validate_contributed_completion_strategies(
+        &self,
+        seen_prefixes: &HashSet<String>,
+    ) -> anyhow::Result<()> {
         // [[contributes.completion_strategy]] 검증 — schema-agnostic 만
         // (TODO80 §B, hook_handler 와 동일 지위). concrete spec(poll_method 매핑 등)
         // 은 host 측 `CompletionStrategyRegistryPort::install_plugin_completion_strategies`
         // 가 install 시점에 deserialize·검증한다. 여기서는 id 형식 + 유일성 +
         // define 권한 + (결정 2) poll_method 가 자기 namespace 인지만 확인한다.
+        //
+        // "자기 namespace"는 이 매니페스트가 실제로 선언한 `[[contributes.
+        // ipc_namespace]]` prefix 집합(`seen_prefixes`, 예: "claude")이다 —
+        // reverse-DNS `self.id`(예: "com.tasty.claude")가 아니다. 어떤 IPC
+        // method 도 `self.id` 를 dot-prefix 로 쓰지 않으므로 그걸 기준으로
+        // 비교하면 실제로 유효한 poll_method 를 전부 거부하게 된다
+        // (`validate_cli_subcommands` 의 ipc_method 검증과 동일 패턴 재사용).
         let has_define = self
             .permissions
             .iter()
@@ -1209,11 +1219,11 @@ impl Manifest {
                     .and_then(|m| m.as_str())
             {
                 let prefix = poll_method.split('.').next().unwrap_or("");
-                if prefix != self.id {
+                if !seen_prefixes.contains(prefix) {
                     anyhow::bail!(
                         "contributes.completion_strategy '{id}' poll_method '{poll_method}' \
-                         uses namespace '{prefix}' which is not this plugin's own ('{}')",
-                        self.id
+                         uses namespace '{prefix}' which is not declared in this plugin's \
+                         ipc_namespace"
                     );
                 }
             }
@@ -1226,11 +1236,11 @@ impl Manifest {
                         );
                     };
                     let prefix = method.split('.').next().unwrap_or("");
-                    if prefix != self.id {
+                    if !seen_prefixes.contains(prefix) {
                         anyhow::bail!(
                             "contributes.completion_strategy '{id}' default_for_methods '{method}' \
-                             uses namespace '{prefix}' which is not this plugin's own ('{}')",
-                            self.id
+                             uses namespace '{prefix}' which is not declared in this plugin's \
+                             ipc_namespace"
                         );
                     }
                 }

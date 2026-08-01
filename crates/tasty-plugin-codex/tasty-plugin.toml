@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.23"
+version = "0.1.24"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -13,6 +13,8 @@ permissions = [
     "fs.write",
     "notification",
     "ui.settings_page",
+    # `codex.spawn` 기본 완료 전략(TODO80 §E) 선언에 필요.
+    "completion_strategy.define",
 ]
 lang_dir = "lang"
 
@@ -42,6 +44,7 @@ subcommands = [
     { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition." },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent" },
     { name = "parent",        ipc_method = "codex.parent",        args = "parent_args",        description = "Return the parent Codex surface id for a given child surface" },
+    { name = "state",         ipc_method = "codex.state",         args = "state_args",         description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)" },
     { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a notification is sent to the caller surface every time the target becomes idle, and once more when it exits — not just the first transition." },
     { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: notify caller surface that a spawned/told child changed state, clean up the sibling once-hook, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm the sibling hooks so future transitions keep notifying until the child actually exits. Invoked by hooks registered from spawn/tell — not meant for direct use." },
     { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance" },
@@ -66,6 +69,11 @@ flags = [
 [contributes.cli.arg_groups.parent_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)" },
+]
+
+[contributes.cli.arg_groups.state_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to query (defaults to caller's TASTY_SURFACE_ID)" },
 ]
 
 [contributes.cli.arg_groups.tell_args]
@@ -151,6 +159,25 @@ flags = [
 ]
 
 [contributes.cli.arg_groups.no_args]
+
+# 완료 판정 전략(TODO80 §B/§E) — `codex.spawn` 의 기본 완료 판정(결정 6).
+# poll_method 는 owner 자기 namespace 로만 제한되므로(결정 2) 호스트
+# `terminal.state`(결정 3, terminal namespace 소유)를 직접 참조할 수 없다 —
+# 그래서 이 plugin 자신의 `codex.state`(그 위에 얇게 위임하는 wrapper,
+# handlers.rs 참고)를 poll_method 로 둔다. `needs_input` 을 terminal 목록에
+# 넣지 않는 이유는 codex 에 대응하는 hook 이벤트가 없어(위 hook_events 주석
+# 참고) registry 에 그 상태가 실제로 설정될 일이 없기 때문이다 — 거짓 계약을
+# 만들지 않는다.
+[[contributes.completion_strategy]]
+id = "spawn-wait"
+priority = 100
+default_for_methods = ["codex.spawn"]
+
+[contributes.completion_strategy.spec]
+kind = "poll"
+poll_method = "codex.state"
+state_field = "state"
+terminal_states = ["idle", "exited"]
 
 [[contributes.settings_pages]]
 id = "codex"
