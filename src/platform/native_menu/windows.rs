@@ -24,11 +24,14 @@ pub fn show_context_menu(
     // SAFETY: 네이티브 컨텍스트 메뉴는 winit 윈도우의 main thread (winit event loop)
     // 에서만 호출된다 (PendingNativeMenu 패턴, docs/dev-guide/context-menu.md 참조).
     // hwnd는 위에서 RawWindowHandle::Win32에서 가져온 활성 윈도우 핸들이고, AppendMenuW에
-    // 넘기는 PCWSTR은 호출 직전에 만든 local Vec<u16>의 포인터로 TrackPopupMenu 종료까지
-    // 살아있다. DestroyMenu는 마지막에 호출 (아래 정리부).
+    // 넘기는 PCWSTR은 `label_bufs`에 보관된 Vec<u16>의 포인터이며, `label_bufs`는 이
+    // unsafe 블록 전체(TrackPopupMenu, DestroyMenu 호출 포함)가 끝날 때까지 살아있다 —
+    // Win32의 문서화되지 않은 내부 복사 관례에 기대지 않는다. DestroyMenu는 마지막에
+    // 호출 (아래 정리부).
     unsafe {
         let hmenu = CreatePopupMenu().ok()?;
 
+        let mut label_bufs: Vec<Vec<u16>> = Vec::new();
         for item in items {
             if item.is_separator() {
                 if let Err(e) = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null()) {
@@ -37,12 +40,14 @@ pub fn show_context_menu(
             } else {
                 let flags = MF_STRING | if item.enabled { MF_ENABLED } else { MF_GRAYED };
                 // Encode label as null-terminated UTF-16.
-                let wide: Vec<u16> = item
-                    .label
-                    .encode_utf16()
-                    .chain(std::iter::once(0))
-                    .collect();
-                if let Err(e) = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide.as_ptr())) {
+                label_bufs.push(
+                    item.label
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect(),
+                );
+                let wide_ptr = label_bufs.last().unwrap().as_ptr();
+                if let Err(e) = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide_ptr)) {
                     tracing::warn!("AppendMenuW item '{}' failed: {e}", item.label);
                 }
             }
