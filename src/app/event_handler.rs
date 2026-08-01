@@ -504,6 +504,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_memory_changes();
         // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
         self.dispatch_pending_tool_events();
+        // Command palette에서 plugin 전역 command 실행으로 enqueue된 큐 drain.
+        self.dispatch_pending_palette_plugin_commands();
         // 호스트 내부 Intent 큐 drain — UI Intent 와 Domain Intent (Intent::Domain
         // wrapper) 모두 매 frame 일관 처리 (intent-ui-vs-domain.md §4.4).
         // dispatch_pending_intents 가 domain_batch 를 따로 모아 cascade 까지 일괄.

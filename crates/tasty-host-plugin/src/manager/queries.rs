@@ -67,6 +67,23 @@ impl PluginManager {
         out
     }
 
+    /// Command palette(TODO 46)에 노출할 plugin 전역(`CommandScope::Global`) command
+    /// 목록. 비활성 plugin은 제외한다 — `command_registry`(`iter_global`) 자체는
+    /// disabled 여부와 무관하게 모든 발견된 plugin의 command를 담고 있다(설정 UI가
+    /// 비활성 plugin도 단축키를 미리 바인딩할 수 있어야 하므로 의도된 동작,
+    /// `discover_and_start` 문서 참고). 하지만 팔레트는 "지금 실행 가능한" 명령만
+    /// 보여줘야 하는 실행 UI이므로 `plugin_tool_items`(Tools 메뉴)와 동일하게
+    /// `is_disabled` 로 필터링한다. `[[contributes.tool]]`의 `ui.tool_item`과 달리
+    /// `[[contributes.commands]]`는 별도 permission 게이트가 없다(매니페스트
+    /// validator 참고) — 그래서 permission 검사는 하지 않는다.
+    pub fn plugin_palette_commands(&self) -> Vec<crate::command_registry::PluginCommandEntry> {
+        self.command_registry
+            .iter_global()
+            .filter(|e| !self.config.is_disabled(&e.plugin_id))
+            .cloned()
+            .collect()
+    }
+
     /// `[[contributes.popup]]` 항목을 활성 + `ui.popup` grant된 plugin에서만
     /// 수집해 반환한다. 호스트의 popup 라우터(PR 4)가 trigger 매칭과 IPC 라우팅에
     /// 사용한다.
@@ -88,5 +105,93 @@ impl PluginManager {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod palette_commands_tests {
+    use super::*;
+    use tasty_plugin_manifest::{
+        BindingMode, CommandDecl, CommandScope, Contributes, Entry, Manifest,
+    };
+
+    fn mgr() -> PluginManager {
+        PluginManager::new(std::sync::Arc::new(
+            tasty_terminal::waker_factory::NoopWakerFactory,
+        ))
+    }
+
+    fn manifest_with_commands(id: &str, cmds: Vec<CommandDecl>) -> Manifest {
+        Manifest {
+            manifest_version: 1,
+            id: id.to_string(),
+            name: id.to_string(),
+            version: "0.1".to_string(),
+            authors: vec![],
+            description: String::new(),
+            homepage: String::new(),
+            api_version: "1".to_string(),
+            entry: Entry::Process {
+                command: "x".to_string(),
+                args: vec![],
+            },
+            surface_kinds: vec![],
+            permissions: vec![],
+            event_subscribe: vec![],
+            event_publish: vec![],
+            events_emitted: vec![],
+            contributes: Contributes {
+                commands: cmds,
+                ..Default::default()
+            },
+            extends: None,
+            lang_dir: "lang".to_string(),
+            bundle: true,
+        }
+    }
+
+    fn cmd(id: &str, scope: CommandScope) -> CommandDecl {
+        CommandDecl {
+            id: id.to_string(),
+            title_i18n_key: format!("{id}.title"),
+            default_keybinding: None,
+            binding_mode: BindingMode::Independent,
+            scope,
+            action: None,
+        }
+    }
+
+    #[test]
+    fn excludes_disabled_plugin_commands() {
+        let mut m = mgr();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd("a.open", CommandScope::Global)],
+        ));
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.b",
+            vec![cmd("b.open", CommandScope::Global)],
+        ));
+        m.config.disable("com.example.b");
+
+        let commands = m.plugin_palette_commands();
+        let ids: Vec<&str> = commands.iter().map(|e| e.command_id.as_str()).collect();
+        assert_eq!(ids, vec!["a.open"]);
+    }
+
+    #[test]
+    fn excludes_surface_scope_commands() {
+        let mut m = mgr();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd("a.surface_only", CommandScope::Surface)],
+        ));
+        assert!(m.plugin_palette_commands().is_empty());
+    }
+
+    #[test]
+    fn empty_registry_yields_empty_list() {
+        let m = mgr();
+        assert!(m.plugin_palette_commands().is_empty());
     }
 }

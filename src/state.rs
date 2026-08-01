@@ -388,6 +388,20 @@ pub struct AppState {
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
     pub(crate) tool_registry: crate::plugin::tool_registry::ToolRegistry,
 
+    /// Command palette(TODO 46)에 노출할 plugin 전역 command snapshot. `tool_registry`와
+    /// 동형 — PluginManager가 plugin 라이프사이클 변경 시
+    /// `mgr.plugin_palette_commands()`로 갱신한다(`App::refresh_palette_plugin_commands`,
+    /// `tool_registry_dirty`와 동일 트리거 조건). draw 함수는 `PluginManager`에 직접
+    /// 접근할 수 없는 `PopupDef` 고정 시그니처 제약 때문에 이 snapshot을 대신 읽는다.
+    pub(crate) palette_plugin_commands: Vec<crate::plugin::command_registry::PluginCommandEntry>,
+
+    /// Command palette에서 plugin 전역 command를 실행했을 때의 (plugin_id, command_id)
+    /// 큐. palette popup은 `&mut AppState`만 가지므로 PluginManager에 직접 접근할 수
+    /// 없어, 실행 시점에 enqueue하고 App 메인 루프가 drain해
+    /// `PluginManager::command_registry`로 action/IPC를 dispatch한다
+    /// (`App::dispatch_pending_palette_plugin_commands`, `pending_tool_events`와 동형).
+    pub(crate) pending_plugin_command_invokes: Vec<(String, String)>,
+
     /// 도구 메뉴 항목 클릭 시 publish해야 할 이벤트 큐. tools_menu가 `&mut AppState`만
     /// 가지므로 PluginManager에 직접 접근할 수 없어, 클릭 시점에 enqueue하고 App 메인
     /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
@@ -961,6 +975,8 @@ impl AppState {
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
+            palette_plugin_commands: Vec::new(),
+            pending_plugin_command_invokes: Vec::new(),
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
             pending_handler_ipc: Vec::new(),

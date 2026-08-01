@@ -2,33 +2,61 @@
 //! Command palette state + 매칭 로직.
 //!
 //! 팔레트는 사용자 입력으로만 열리는 popup이다 (Ctrl+Shift+P 또는 Tools 메뉴).
-//! popup이 query를 누적하고 후보를 매칭하면, Enter 시 `pending_run`에 action_id를
-//! 적재한다. `MainView` 메인 루프가 매 프레임 drain하여 keybinding 단축키와 동일한
-//! action body를 호출한다.
+//! popup이 query를 누적하고 후보를 매칭하면, Enter 시 `pending_run`에 실행할 명령을
+//! 적재한다. `MainView` 메인 루프가 매 프레임 drain하여 호스트 명령은 keybinding
+//! 단축키와 동일한 action body를, plugin 명령은 App 메인 루프의 dispatch 큐를
+//! 호출한다 (`src/view/main/redraw.rs`, `src/app/dispatch/palette_plugin_commands.rs`).
 //!
-//! 후보 목록은 `tasty_settings::KeybindingSettings::GENERAL_BINDING_FIELDS`에서
-//! 가져온다. 새 단축키를 추가하면 자동으로 팔레트에도 노출되므로 별도 등록 필요 없음.
+//! 후보 목록은 두 출처를 합친다:
+//! - 호스트: `tasty_settings::KeybindingSettings::GENERAL_BINDING_FIELDS`. 새
+//!   단축키를 추가하면 자동으로 팔레트에도 노출되므로 별도 등록 필요 없음.
+//! - Plugin: `AppState.palette_plugin_commands`(`PluginManager::plugin_palette_commands()`
+//!   snapshot, TODO 46). **`CommandScope::Global`만** 노출한다 — `Surface` scope
+//!   명령은 owner plugin의 surface가 포커스되어 있을 때만 의미가 있는데, 팔레트
+//!   실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키
+//!   경로 `match_global_shortcut`과 동일 판단 — `plugin_palette_commands()`가 이미
+//!   `iter_global()`로 필터링해 snapshot에 담아준다).
 
 use tasty_settings::KeybindingSettings;
 
-/// 팔레트가 보여줄 단일 항목.
-#[derive(Debug, Clone, Copy)]
-pub struct PaletteCommand {
-    /// keybinding `field_id` (예: `"new_workspace"`)
-    pub id: &'static str,
-    /// i18n 키 (예: `"settings.keybindings.new_workspace_label"`)
-    pub label_key: &'static str,
+/// 팔레트가 보여줄 단일 항목. 실행 시 필요한 최소 식별 정보를 담아 `pending_run`에도
+/// 그대로 재사용한다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaletteCommand {
+    /// 호스트 내장 명령 (keybinding field).
+    Host {
+        /// keybinding `field_id` (예: `"new_workspace"`)
+        id: &'static str,
+        /// i18n 키 (예: `"settings.keybindings.new_workspace_label"`)
+        label_key: &'static str,
+    },
+    /// Plugin이 `[[contributes.commands]]`로 선언한 전역(scope=Global) command.
+    Plugin {
+        plugin_id: String,
+        command_id: String,
+        /// plugin 자신의 lang 네임스페이스에서 해석해야 하는 i18n 키.
+        title_i18n_key: String,
+    },
 }
 
-/// 실행 가능한 명령 전체 목록. 단축키 필드와 1:1 대응.
+/// 실행 가능한 명령 전체 목록: 호스트 keybinding 필드 + `plugin_commands`(팔레트에
+/// 노출할 plugin 전역 command snapshot, 이미 비활성 plugin 필터링됨).
 ///
 /// `toggle_command_palette` 자신은 제외한다 (이미 팔레트 안이므로 의미 없음).
-pub fn all_commands() -> Vec<PaletteCommand> {
-    KeybindingSettings::GENERAL_BINDING_FIELDS
+pub fn all_commands(
+    plugin_commands: &[crate::plugin::command_registry::PluginCommandEntry],
+) -> Vec<PaletteCommand> {
+    let mut out: Vec<PaletteCommand> = KeybindingSettings::GENERAL_BINDING_FIELDS
         .iter()
         .filter(|(id, _)| *id != "toggle_command_palette")
-        .map(|(id, label_key)| PaletteCommand { id, label_key })
-        .collect()
+        .map(|(id, label_key)| PaletteCommand::Host { id, label_key })
+        .collect();
+    out.extend(plugin_commands.iter().map(|e| PaletteCommand::Plugin {
+        plugin_id: e.plugin_id.clone(),
+        command_id: e.command_id.clone(),
+        title_i18n_key: e.title_i18n_key.clone(),
+    }));
+    out
 }
 
 /// 팔레트 UI 상태. `AppState`가 소유한다.
@@ -39,7 +67,7 @@ pub struct CommandPaletteState {
     /// 현재 선택 인덱스 (필터링된 결과 기준).
     pub selected: usize,
     /// Enter 시 popup이 채워두면, MainView가 다음 프레임에 drain하여 dispatch한다.
-    pub pending_run: Option<&'static str>,
+    pub pending_run: Option<PaletteCommand>,
 }
 
 impl CommandPaletteState {
@@ -122,56 +150,64 @@ fn match_score(query: &str, text: &str) -> Option<i32> {
 mod tests {
     use super::*;
 
+    fn host(id: &'static str) -> PaletteCommand {
+        PaletteCommand::Host { id, label_key: "" }
+    }
+
     #[test]
     fn empty_query_returns_all() {
-        let cmds = all_commands();
-        let labels: Vec<String> = cmds.iter().map(|c| c.id.to_string()).collect();
+        let cmds = all_commands(&[]);
+        let labels: Vec<String> = cmds
+            .iter()
+            .map(|c| match c {
+                PaletteCommand::Host { id, .. } => id.to_string(),
+                PaletteCommand::Plugin { command_id, .. } => command_id.clone(),
+            })
+            .collect();
         let results = search("", &cmds, &labels);
         assert_eq!(results.len(), cmds.len());
     }
 
     #[test]
+    fn plugin_commands_are_appended() {
+        let plugin_entry = crate::plugin::command_registry::PluginCommandEntry {
+            plugin_id: "com.example.a".to_string(),
+            command_id: "a.open".to_string(),
+            title_i18n_key: "a.open.title".to_string(),
+            manifest_default: None,
+            binding_mode: tasty_plugin_manifest::BindingMode::Independent,
+            scope: tasty_plugin_manifest::CommandScope::Global,
+            action: None,
+        };
+        let cmds = all_commands(std::slice::from_ref(&plugin_entry));
+        assert!(cmds.iter().any(|c| matches!(
+            c,
+            PaletteCommand::Plugin { plugin_id, command_id, .. }
+                if plugin_id == "com.example.a" && command_id == "a.open"
+        )));
+    }
+
+    #[test]
     fn substring_outranks_subsequence() {
-        let cmds = vec![
-            PaletteCommand {
-                id: "a",
-                label_key: "",
-            },
-            PaletteCommand {
-                id: "b",
-                label_key: "",
-            },
-        ];
+        let cmds = vec![host("a"), host("b")];
         // "open" appears verbatim in first label, scattered in second.
         let labels = vec!["Open file".to_string(), "Other punks even".to_string()];
         let results = search("open", &cmds, &labels);
-        assert_eq!(results.first().unwrap().1.id, "a");
+        assert_eq!(results.first().unwrap().1, &cmds[0]);
     }
 
     #[test]
     fn word_start_gets_bonus() {
-        let cmds = vec![
-            PaletteCommand {
-                id: "early",
-                label_key: "",
-            },
-            PaletteCommand {
-                id: "late",
-                label_key: "",
-            },
-        ];
+        let cmds = vec![host("early"), host("late")];
         let labels = vec!["new tab".to_string(), "renew tab".to_string()];
         let results = search("new", &cmds, &labels);
         // "new tab" starts with "new" → higher score
-        assert_eq!(results.first().unwrap().1.id, "early");
+        assert_eq!(results.first().unwrap().1, &cmds[0]);
     }
 
     #[test]
     fn no_match_returns_empty() {
-        let cmds = vec![PaletteCommand {
-            id: "x",
-            label_key: "",
-        }];
+        let cmds = vec![host("x")];
         let labels = vec!["foo bar".to_string()];
         let results = search("xyz", &cmds, &labels);
         assert!(results.is_empty());

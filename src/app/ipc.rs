@@ -92,6 +92,7 @@ impl App {
         }
         if tool_registry_dirty {
             self.refresh_tool_registry();
+            self.refresh_palette_plugin_commands();
         }
         processed
     }

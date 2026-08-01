@@ -156,8 +156,26 @@ impl MainView {
         // user hits Enter or clicks a row. We drain after render so the popup
         // is already closed by the time the action fires (avoids racing with
         // any window state the action might mutate).
-        if let Some(cmd_id) = self.state.command_palette.pending_run.take() {
-            self.dispatch_action_by_id(cmd_id);
+        //
+        // 호스트 명령은 이 자리에서 바로 dispatch(기존 동작 유지). Plugin 명령은
+        // `PluginManager`에 접근할 수 없는 이 스코프(`MainView`) 대신
+        // `pending_plugin_command_invokes` 큐에 enqueue해 App 메인 루프가 drain하게
+        // 한다 (`pending_tool_events`와 동형 — TODO 46).
+        if let Some(cmd) = self.state.command_palette.pending_run.take() {
+            match cmd {
+                crate::state::command_palette::PaletteCommand::Host { id, .. } => {
+                    self.dispatch_action_by_id(id);
+                }
+                crate::state::command_palette::PaletteCommand::Plugin {
+                    plugin_id,
+                    command_id,
+                    ..
+                } => {
+                    self.state
+                        .pending_plugin_command_invokes
+                        .push((plugin_id, command_id));
+                }
+            }
         }
 
         // Process pending native context menu (after egui frame, before webview sync)

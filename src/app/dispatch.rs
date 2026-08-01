@@ -9,6 +9,7 @@ pub(crate) mod intents;
 pub(crate) mod list_global;
 pub(crate) mod lua_commands;
 pub(crate) mod memory_changes;
+pub(crate) mod palette_plugin_commands;
 pub(crate) mod picker;
 pub(crate) mod plugin_banner;
 pub(crate) mod plugin_ipc;

@@ -230,6 +230,7 @@ impl App {
         // uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
         // 바뀌었을 수 있으므로 매번 다시 수집한다 (low-cost).
         self.refresh_tool_registry();
+        self.refresh_palette_plugin_commands();
 
         // Close / Configure: 모달을 닫는다. 단일 모달 불변식상 Settings 를 열려면
         // 먼저 plugins 모달을 닫아야 한다. Configure 는 닫은 뒤 Settings 오픈 이벤트

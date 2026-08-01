@@ -369,6 +369,11 @@ impl App {
             state
                 .tool_registry
                 .set_plugin_items(mgr.plugin_tool_items());
+            // tool_registry와 동형 초기 populate — 이후 라이프사이클 변경은
+            // `App::refresh_palette_plugin_commands`(같은 `tool_registry_dirty`
+            // 트리거)가 갱신하지만, 첫 창 조립 시점엔 그 경로를 거치지 않으므로
+            // 여기서 한 번 채워야 새로 뜬 창의 팔레트가 처음부터 plugin 명령을 본다.
+            state.palette_plugin_commands = mgr.plugin_palette_commands();
         }
         state
     }

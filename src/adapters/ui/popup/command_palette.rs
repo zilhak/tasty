@@ -373,35 +373,38 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
     }
 }
 
-/// 매칭 결과를 `(items, static_ids)` 쌍으로 변환.
+/// 매칭 결과를 `(items, commands)` 쌍으로 변환.
 ///
-/// `static_ids[i]` 는 `items[i]` 의 원 `PaletteCommand.id` (`&'static str`).
-/// wrapper 가 view 의 `Execute { index }` 를 받아 `pending_run` 에 static id 를
-/// 저장하기 위해 같은 순서가 보존된 별도 vec 이 필요하다.
+/// `commands[i]` 는 `items[i]` 의 원 `PaletteCommand`(clone). wrapper 가 view 의
+/// `Execute { index }` 를 받아 `pending_run` 에 저장하기 위해 같은 순서가 보존된
+/// 별도 vec 이 필요하다.
 ///
 /// 별도 함수로 분리해 view 와 무관하게 단위 테스트 가능.
 fn items_from_state(
     commands: &[PaletteCommand],
     labels: &[String],
     query: &str,
-    keys_for: impl Fn(&str) -> Vec<String>,
-) -> (Vec<CommandItemView>, Vec<&'static str>) {
+    keys_for: impl Fn(&PaletteCommand) -> Vec<String>,
+) -> (Vec<CommandItemView>, Vec<PaletteCommand>) {
     let matches = command_palette::search(query, commands, labels);
     let mut items = Vec::with_capacity(matches.len());
     let mut ids = Vec::with_capacity(matches.len());
     for (_score, cmd) in matches {
+        // `cmd` 는 `commands` 슬라이스 원소의 참조이므로 포인터 동일성으로 같은
+        // 라벨을 되찾는다 (동적 `PaletteCommand::Plugin` 은 `==` 비교 대신도 되지만
+        // 포인터 비교가 더 저렴하고 검색 로직과 완전히 무관하다).
         let raw_label = commands
             .iter()
-            .position(|c| c.id == cmd.id)
+            .position(|c| std::ptr::eq(c, cmd))
             .and_then(|i| labels.get(i))
             .map(|s| s.trim_end_matches(':').to_string())
             .unwrap_or_default();
         items.push(CommandItemView {
             label: raw_label,
-            shortcut_keys: keys_for(cmd.id),
-            icon: icon_for(cmd.id),
+            shortcut_keys: keys_for(cmd),
+            icon: icon_for(cmd),
         });
-        ids.push(cmd.id);
+        ids.push(cmd.clone());
     }
     (items, ids)
 }
@@ -413,10 +416,16 @@ pub fn draw_command_palette_popup(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
-    let commands = command_palette::all_commands();
+    let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
-    let (items, static_ids) =
-        items_from_state(&commands, &labels, &state.command_palette.query, |id| {
+    let (items, matched_commands) =
+        items_from_state(&commands, &labels, &state.command_palette.query, |cmd| {
+            // Plugin 명령은 shortcut override 해석에 PluginManager 접근이 필요해
+            // (팔레트 draw 함수는 `PopupDef` 고정 시그니처상 접근 불가) 키캡을 표시하지
+            // 않는다 — 잘못된(override 반영 안 된) 키를 보여주는 것보다 안전.
+            let PaletteCommand::Host { id, .. } = cmd else {
+                return Vec::new();
+            };
             // 첫 바인딩(원문 `alt+n`)을 키캡 토큰(`["Alt","N"]`)으로 변환. `+`키
             // 모호성 회피를 위해 display 문자열 split 대신 format_display_parts 사용.
             engine
@@ -464,8 +473,8 @@ pub fn draw_command_palette_popup(
             PopupAction::None
         }
         CommandPaletteAction::Execute { index } => {
-            if let Some(action_id) = static_ids.get(index).copied() {
-                state.command_palette.pending_run = Some(action_id);
+            if let Some(cmd) = matched_commands.get(index) {
+                state.command_palette.pending_run = Some(cmd.clone());
             }
             state.command_palette.reset();
             PopupAction::Close
@@ -473,10 +482,13 @@ pub fn draw_command_palette_popup(
     }
 }
 
-/// keybinding `field_id` → leading 아이콘. 디자인(`command_palette.jsx`)이 명시한
-/// 6개 명령은 전용 아이콘, 나머지 동적 명령은 모두 `COMMAND` fallback 글리프.
-fn icon_for(field_id: &str) -> Option<icons::Icon> {
-    Some(match field_id {
+/// leading 아이콘. 디자인(`command_palette.jsx`)이 명시한 6개 호스트 명령은 전용
+/// 아이콘, 나머지(동적 호스트 명령 + plugin 명령)는 모두 `COMMAND` fallback 글리프.
+fn icon_for(cmd: &PaletteCommand) -> Option<icons::Icon> {
+    let PaletteCommand::Host { id, .. } = cmd else {
+        return Some(icons::COMMAND);
+    };
+    Some(match *id {
         "new_workspace" => icons::PLUS,
         "new_tab" => icons::TERM,
         "open_markdown" => icons::MD,
@@ -486,9 +498,27 @@ fn icon_for(field_id: &str) -> Option<icons::Icon> {
     })
 }
 
-/// label_key를 통해 i18n 라벨을 얻되, 끝의 `:`는 떼어낸다 (Settings UI 라벨 재활용).
+/// i18n 라벨을 얻되, 끝의 `:`는 떼어낸다 (Settings UI 라벨 재활용).
+///
+/// Plugin 명령의 `title_i18n_key`는 그 plugin 자신의 lang 네임스페이스에 등록되어
+/// 있다 — 호스트 `t()`는 plugin discovery 시점에 각 plugin의 lang catalog를 같은
+/// 전역 resolver에 namespace로 등록해 두므로(`i18n.rs`의 `PluginLangPort::register`,
+/// tools_menu의 `label_i18n_key` 해석과 동일 메커니즘) 별도 라우팅 없이 그대로
+/// `t()`를 호출하면 된다. 다만 plugin 작성자가 카탈로그에 키를 등록하지 않았을 수
+/// 있으므로, `t()`가 키를 그대로 반환하는 경우(미해석) raw 키를 그대로 보여준다
+/// (tools_menu의 동일 fallback과 동형).
 fn label_for(cmd: &PaletteCommand) -> String {
-    let raw = t(cmd.label_key);
+    let raw = match cmd {
+        PaletteCommand::Host { label_key, .. } => t(label_key).to_string(),
+        PaletteCommand::Plugin { title_i18n_key, .. } => {
+            let translated = t(title_i18n_key);
+            if translated == title_i18n_key.as_str() {
+                title_i18n_key.clone()
+            } else {
+                translated.to_string()
+            }
+        }
+    };
     raw.trim_end_matches(':').to_string()
 }
 
@@ -496,20 +526,30 @@ fn label_for(cmd: &PaletteCommand) -> String {
 mod props_tests {
     use super::*;
 
+    fn host(id: &'static str, label_key: &'static str) -> PaletteCommand {
+        PaletteCommand::Host { id, label_key }
+    }
+
+    fn plugin_cmd(plugin_id: &str, command_id: &str) -> PaletteCommand {
+        PaletteCommand::Plugin {
+            plugin_id: plugin_id.to_string(),
+            command_id: command_id.to_string(),
+            title_i18n_key: format!("{plugin_id}.{command_id}.title"),
+        }
+    }
+
+    fn host_id(cmd: &PaletteCommand) -> &str {
+        match cmd {
+            PaletteCommand::Host { id, .. } => id,
+            PaletteCommand::Plugin { .. } => panic!("expected Host"),
+        }
+    }
+
     #[test]
     fn items_from_state_empty_query_returns_all_in_order() {
-        let cmds = vec![
-            PaletteCommand {
-                id: "a",
-                label_key: "k.a",
-            },
-            PaletteCommand {
-                id: "b",
-                label_key: "k.b",
-            },
-        ];
+        let cmds = vec![host("a", "k.a"), host("b", "k.b")];
         let labels = vec!["Alpha".to_string(), "Beta".to_string()];
-        let (items, ids) = items_from_state(&cmds, &labels, "", |id| match id {
+        let (items, ids) = items_from_state(&cmds, &labels, "", |cmd| match host_id(cmd) {
             "a" => vec!["Ctrl".to_string(), "A".to_string()],
             _ => Vec::new(),
         });
@@ -518,37 +558,35 @@ mod props_tests {
         assert_eq!(items[0].shortcut_keys, vec!["Ctrl", "A"]);
         assert_eq!(items[1].label, "Beta");
         assert!(items[1].shortcut_keys.is_empty());
-        assert_eq!(ids, vec!["a", "b"]);
+        assert_eq!(ids, vec![host("a", "k.a"), host("b", "k.b")]);
     }
 
     #[test]
     fn items_from_state_filters_by_query() {
-        let cmds = vec![
-            PaletteCommand {
-                id: "new_workspace",
-                label_key: "k.new",
-            },
-            PaletteCommand {
-                id: "close_tab",
-                label_key: "k.close",
-            },
-        ];
+        let cmds = vec![host("new_workspace", "k.new"), host("close_tab", "k.close")];
         let labels = vec!["New workspace".to_string(), "Close tab".to_string()];
         let (items, ids) = items_from_state(&cmds, &labels, "close", |_| Vec::new());
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "Close tab");
-        assert_eq!(ids, vec!["close_tab"]);
+        assert_eq!(ids, vec![host("close_tab", "k.close")]);
     }
 
     #[test]
     fn items_from_state_strips_trailing_colon_from_labels() {
-        let cmds = vec![PaletteCommand {
-            id: "a",
-            label_key: "k.a",
-        }];
+        let cmds = vec![host("a", "k.a")];
         let labels = vec!["Settings: New window:".to_string()];
         let (items, _ids) = items_from_state(&cmds, &labels, "", |_| Vec::new());
         assert_eq!(items[0].label, "Settings: New window");
+    }
+
+    #[test]
+    fn items_from_state_includes_plugin_commands() {
+        let cmds = vec![host("a", "k.a"), plugin_cmd("com.example.x", "x.open")];
+        let labels = vec!["Alpha".to_string(), "Open X".to_string()];
+        let (items, ids) = items_from_state(&cmds, &labels, "open", |_| Vec::new());
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "Open X");
+        assert_eq!(ids, vec![plugin_cmd("com.example.x", "x.open")]);
     }
 }
 
