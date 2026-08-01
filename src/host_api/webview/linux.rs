@@ -288,7 +288,12 @@ impl Drop for PlatformWebView {
     fn drop(&mut self) {
         // SAFETY: Drop은 self가 마지막으로 살아있는 시점. webview.destroy()와
         // XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
-        // PlatformWebView가 생성된 main thread에서만 일어난다 (!Send 기본).
+        // PlatformWebView가 생성된 main thread에서만 일어난다.
+        //
+        // 이 불변식은 더 이상 주석 규율이 아니라 타입 시스템이 강제한다: 본 타입은
+        // x11_display(raw pointer)와 Rc<Cell<_>> 필드로 인해 auto-trait 상 자연
+        // `!Send`이며(macOS/Windows 백엔드와 동일 패턴), 의도적으로 Send를 부여하지
+        // 않는다.
         unsafe {
             self.webview.destroy();
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
@@ -296,8 +301,3 @@ impl Drop for PlatformWebView {
         self.gtk_window.close();
     }
 }
-
-// SAFETY: PlatformWebView는 main thread에서만 생성/조작되지만, AppState 보관 목적상
-// Send를 요구하는 컨테이너에 넣어야 한다. 실제 thread 이동은 발생하지 않음 (단일 thread
-// affinity가 호출 측에서 유지됨). Sync는 의도적으로 추가하지 않는다.
-unsafe impl Send for PlatformWebView {}
