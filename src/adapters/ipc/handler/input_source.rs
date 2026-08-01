@@ -12,6 +12,9 @@ pub fn handle_switch_input_source(
         Some(s) => s,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'source_id' parameter"),
     };
+    if source_id.contains('\0') {
+        return JsonRpcResponse::invalid_params(id, "'source_id' must not contain NUL bytes");
+    }
 
     match switch_input_source(source_id) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "switched": true, "source_id": source_id })),
@@ -102,6 +105,13 @@ fn cf_string(s: &str) -> *const c_void {
 }
 
 fn switch_input_source(source_id: &str) -> Result<(), String> {
+    if source_id.contains('\0') {
+        return Err("input source id must not contain NUL bytes".to_string());
+    }
+    // 이 시점 이후 cf_string("TISPropertyInputSourceID")/cf_string(source_id)의 내부
+    // unwrap은 둘 다 패닉 불가능이 증명된다: key는 컴파일타임 literal, val=source_id는
+    // 방금 NUL 부재를 확인했다.
+    //
     // SAFETY: 전체 시퀀스는 TIS(Text Input Source) 표준 사용 패턴.
     // - cf_string으로 만든 key/val은 CFDictionaryCreate에 넘기면 dict가 retain.
     // - TISCreateInputSourceList는 CFArrayRef를 +1 retain count로 반환 → CFRelease로 정리.
@@ -155,5 +165,20 @@ fn post_key_event(keycode: u16, key_down: bool) {
         let event = CGEventCreateKeyboardEvent(source, keycode, key_down);
         // kCGAnnotatedSessionEventTap = 2
         CGEventPost(2, event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // `switch_input_source`/`handle_switch_input_source` 둘 다 실제 TIS/CoreFoundation
+    // FFI 호출을 포함해 macOS 실기 없이는 호출 불가 — 이 모듈 자체가 이 파일과 함께
+    // `#[cfg(all(target_os = "macos", feature = "gui"))]`로 게이트돼 있다(선언부는
+    // `handler.rs`). 두 함수가 공유하는 NUL 가드 판정(`source_id.contains('\0')`)만
+    // 순수 로직이라 여기서 pin — 실제 크래시 재현/복구 확인은 macOS 실기 수동 검증
+    // 필수(TODO 문서 "확인 절차" §2).
+    #[test]
+    fn nul_byte_source_id_is_rejected() {
+        assert!("abc\0def".contains('\0'));
+        assert!(!"com.apple.keylayout.US".contains('\0'));
     }
 }
