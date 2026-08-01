@@ -1,8 +1,8 @@
-//! macOS 전용 — Alt/Option/Shift 단축키 표시 스타일(TODO47).
+//! macOS 전용 — Alt/Option/Shift 단축키 표시 스타일.
 //!
 //! 저장 포맷(바인딩 문자열)은 건드리지 않고 화면 표시 문자열만 바꾼다
 //! (`docs/design/policies/key-mapping.md` 저장↔표시 분리 원칙). 백엔드는
-//! `GeneralSettings::{alt,option,shift}_display_style`(TODO46).
+//! `GeneralSettings::{alt,option,shift}_display_style`.
 
 use crate::i18n::t;
 use crate::settings::Settings;

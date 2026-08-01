@@ -455,7 +455,7 @@ impl MainView {
         false
     }
 
-    /// 사용자 스크립트 단축키 매칭 → Lua 워커 실행 요청 (ADR-0031, TODO 04).
+    /// 사용자 스크립트 단축키 매칭 → Lua 워커 실행 요청 (ADR-0031).
     ///
     /// combo 가 매칭되면 등록 스크립트를 조회해 소스를 읽고 `AppEvent::RunLuaScript` 로
     /// App(lua_engine 소유)에 넘긴다. 매칭됐으나 스크립트/파일이 없으면 이벤트는 소비하되
@@ -572,7 +572,7 @@ impl MainView {
             return true;
         }
 
-        // 사용자 스크립트 단축키 (ADR-0031, TODO 04) — 사용자 키 입력 경로에서만 발화.
+        // 사용자 스크립트 단축키 (ADR-0031) — 사용자 키 입력 경로에서만 발화.
         if self.try_dispatch_script_shortcut(key, mods) {
             self.base.dirty = true;
             return true;

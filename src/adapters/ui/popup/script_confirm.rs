@@ -1,4 +1,4 @@
-//! Lua 스크립트 TOFU 변경 확인 팝업 (`script_changed_confirm`) — ADR-0031 TODO 06.
+//! Lua 스크립트 TOFU 변경 확인 팝업 (`script_changed_confirm`) — ADR-0031.
 //!
 //! 단축키 발화 시 등록 해시(03)와 현재 파일 해시가 다르면 게이트가 실행을 보류하고
 //! 이 팝업을 띄운다. [실행] 확정 시에만 `App::dispatch_pending_script_confirm` 이 해시를

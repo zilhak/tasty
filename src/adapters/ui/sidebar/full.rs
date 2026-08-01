@@ -258,7 +258,8 @@ pub fn draw_full_sidebar(
             }
             SidebarFullAction::CategoryHeaderToggle(cat_id) => {
                 // 헤더 클릭 → 접힘 토글 + 영속(mark_layout_dirty). 접힘은 layout.json
-                // 대상이고 확장↔레일이 공유하는 per-category 상태(TODO 02 setter).
+                // 대상이고 확장↔레일이 공유하는 per-category 상태
+                // (`docs/features/workspace-category/index.md` 참고).
                 engine.toggle_category_collapsed(cat_id);
                 engine.mark_layout_dirty();
             }

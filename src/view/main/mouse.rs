@@ -98,7 +98,7 @@ impl MainView {
         })
     }
 
-    /// `WindowEvent::CursorLeft` 처리(TODO 26) — 커서 상태 리셋 + hover 중이던 mesh
+    /// `WindowEvent::CursorLeft` 처리 — 커서 상태 리셋 + hover 중이던 mesh
     /// surface 가 있으면 `PointerGone` 을 forward 한다(egui-mesh/attach mesh mirror
     /// 어느 쪽도 이 이벤트에서 직접 `PointerGone` 을 보내지 않던 gap 을 메운다).
     pub(super) fn handle_cursor_left(&mut self) {
@@ -107,7 +107,8 @@ impl MainView {
         self.update_mesh_hover(None);
     }
 
-    /// mesh pointer hover 슬롯을 갱신한다(TODO 26). 대상이 바뀌면(다른 mesh surface
+    /// mesh pointer hover 슬롯을 갱신한다(구성 요소는 `docs/dev-guide/egui-mesh-channel.md`
+    /// 참고). 대상이 바뀌면(다른 mesh surface
     /// 로 전환되거나 어느 mesh surface 위도 아니게 되면) 이전 대상에 `PointerGone` 을
     /// 1 회 forward 한다 — 안 그러면 plugin 쪽 egui 가 마지막 `PointerMoved` 위치에
     /// 포인터가 계속 있다고 착각해 hover 하이라이트가 잔류할 수 있다.
@@ -144,7 +145,8 @@ impl MainView {
                 self.mark_dirty();
             }
             // 이 분기에 진입했다는 것 자체가 "이번 프레임엔 mesh surface 위가 아니다"라는
-            // 뜻이므로(TODO 37) — 아래 mesh 판정 블록(180행대)에 도달하지 못한 채 return
+            // 뜻이므로(mouse hover early-return, `docs/dev-guide/egui-mesh-channel.md` 참고)
+            // — 아래 mesh 판정 블록(180행대)에 도달하지 못한 채 return
             // 하면 hover 중이던 mesh surface 가 PointerGone 을 영영 못 받는 gap 이 생긴다.
             // mesh_hover_transition 이 멱등이라 같은 target 유지 중 매 프레임 호출돼도
             // thrashing 없다.
@@ -192,15 +194,15 @@ impl MainView {
             self.mark_dirty();
             return;
         }
-        // attach mesh mirror surface 위 포인터 이동 forward (TODO 20) — 위와 동형이되
-        // 목적지가 원격.
+        // attach mesh mirror surface 위 포인터 이동 forward(`docs/dev-guide/egui-mesh-channel.md`
+        // 의 "attach mesh mirror 소비 경로" 참고) — 위와 동형이되 목적지가 원격.
         if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
             self.update_mesh_hover(Some(MeshHoverTarget::Attach(sid)));
             self.attach_mesh_push_pointer_moved(sid, rect, x, y);
             self.mark_dirty();
             return;
         }
-        // 어느 mesh surface 위도 아니다(TODO 26) — divider 드래그로 위 두 분기를
+        // 어느 mesh surface 위도 아니다 — divider 드래그로 위 두 분기를
         // 건너뛴 경우 포함. 직전까지 hover 중이던 mesh surface 가 있었다면
         // `PointerGone` 을 1 회 forward 한다(mesh→mesh, mesh→non-mesh 전환 공통 처리).
         self.update_mesh_hover(None);
@@ -436,7 +438,7 @@ impl MainView {
         false
     }
 
-    /// attach mesh mirror surface 입력 forward (TODO 20) — 위와 동형이되 목적지가 원격.
+    /// attach mesh mirror surface 입력 forward — 위와 동형이되 목적지가 원격.
     fn try_forward_attach_mesh_button(
         &mut self,
         button: MouseButton,
@@ -947,7 +949,7 @@ impl MainView {
                     self.mark_dirty();
                     return;
                 }
-                // attach mesh mirror surface 휠 forward (TODO 20) — 위와 동형이되
+                // attach mesh mirror surface 휠 forward — 위와 동형이되
                 // 목적지가 원격.
                 if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
@@ -1155,7 +1157,7 @@ fn effective_click_tracking_decision(
     }
 }
 
-/// `handle_cursor_moved`(MainView 메서드, TODO 37)의 early-return 판정을 뽑아낸 순수
+/// `handle_cursor_moved`(MainView 메서드)의 early-return 판정을 뽑아낸 순수
 /// 로직. 참이면 이번 프레임은 mesh surface 판정을 건너뛰고 `update_mesh_hover(None)`을
 /// 호출한다 — `MainView`는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어(`GpuState`가
 /// 목/헤드리스 생성자를 제공하지 않음) `handle_cursor_moved` 자체를 단위 테스트로 직접
@@ -1172,7 +1174,7 @@ fn cursor_moved_should_short_circuit(
     egui_consumed || overlay_open || popup_hovered || banner_hovered || modifier_hint_hovered
 }
 
-/// `update_mesh_hover`(MainView 메서드, TODO 26)의 순수 결정 로직. 슬롯의 다음 값과,
+/// `update_mesh_hover`(MainView 메서드)의 순수 결정 로직. 슬롯의 다음 값과,
 /// `PointerGone` 을 보내야 할 이전 대상(있다면)을 반환한다. 대상이 안 바뀌면(같은
 /// surface 에 머무르거나 계속 `None`) `PointerGone` 을 보내지 않는다.
 fn mesh_hover_transition(
@@ -1420,7 +1422,7 @@ mod mesh_hover_tests {
     #[test]
     fn switching_between_local_surfaces_sends_gone_for_the_old_one() {
         // 창을 벗어나지 않고 다른 mesh surface 로 바로 넘어가도 이전 surface 에
-        // PointerGone 을 보낸다(TODO 26 제안 방향 3).
+        // PointerGone 을 보낸다.
         let (next, gone) = mesh_hover_transition(
             Some(MeshHoverTarget::Local(1)),
             Some(MeshHoverTarget::Local(2)),
@@ -1440,7 +1442,7 @@ mod mesh_hover_tests {
     }
 }
 
-/// TODO 37 — `handle_cursor_moved`의 early-return 배선을 간접 검증한다. `MainView`는
+/// `handle_cursor_moved`의 early-return 배선을 간접 검증한다. `MainView`는
 /// 실제 GPU/winit 컨텍스트 없이 구성 불가능해 `handle_cursor_moved` 자체를 직접
 /// 구동하는 단위 테스트는 이 코드베이스에 전례가 없다(다른 스테이트풀 메서드들도
 /// 전부 순수 결정 로직만 추출해 테스트한다 — `mesh_hover_tests`, `right_click_tests`

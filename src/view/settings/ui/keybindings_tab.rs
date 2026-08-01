@@ -14,7 +14,7 @@ use crate::settings_ui::PluginShortcutSnapshot;
 /// 255.28px((?) 아이콘 슬롯 18px 포함) — 여기에 여유를 두고 4px 그리드에 맞춰
 /// 288로 고정한다. 이 실측치는 `label_width.rs`의 `labels_fit_within_fixed_column`
 /// 테스트로 항상 재현·재확인 가능하다(라벨 추가/번역 변경 시 실패해 알려준다).
-/// 서브탭마다 최장 라벨의 실측 폭이 달라 컬럼 폭이 제각각이던 문제(TODO45)를
+/// 서브탭마다 최장 라벨의 실측 폭이 달라 컬럼 폭이 제각각이던 문제를
 /// 이 상수로 통일한다. 4px 그리드 밖 화면 전용 고정 치수 — 대응 Theme 필드
 /// 없음(theme.md 참고).
 pub(super) const LABEL_COL_WIDTH: LogicalPx = LogicalPx(288.0);

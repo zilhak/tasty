@@ -468,7 +468,7 @@ fn slot_row(
     );
 
     ui.horizontal_top(|ui| {
-        // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(entries.rs 와 동일 관례).
+        // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(entries.rs 와 동일 관례).
         ui.allocate_ui_with_layout(
             egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
             egui::Layout::left_to_right(egui::Align::Center),

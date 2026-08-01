@@ -1,4 +1,4 @@
-//! Keybindings › Scripts 서브탭 — 등록 스크립트(03)에 단축키를 바인딩한다 (ADR-0031, TODO 04).
+//! Keybindings › Scripts 서브탭 — 등록 스크립트(03)에 단축키를 바인딩한다 (ADR-0031).
 //!
 //! 고정 액션과 달리 스크립트는 동적이라 `RecordingSlot.field_id` 를 `script:<id>` 규약으로
 //! 재사용한다. 바인딩 소유권은 이 탭에 있고(05 관리 창은 조회·진입만), combo 충돌은
@@ -89,7 +89,7 @@ pub(super) fn draw_script_bindings(
             .to_string();
 
         ui.horizontal_top(|ui| {
-            // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(entries.rs 와 동일
+            // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(entries.rs 와 동일
             // 관례). 사용자 정의 스크립트 이름은 길이 상한이 없어 다른 서브탭과
             // 달리 고정폭을 넘을 수 있다 — 잘리는 대신 말줄임(…) 처리하고, hover
             // 툴팁으로 전체 이름을 확인할 수 있게 한다.

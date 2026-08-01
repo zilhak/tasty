@@ -851,7 +851,8 @@ fn axis_combos_do_not_cross_route() {
     assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
 }
 
-// ── new_workspace 단축키가 현재 활성 카테고리를 계승하는지 (TODO 30) ──────────
+// ── new_workspace 단축키가 현재 활성 카테고리를 계승하는지
+// (`docs/features/workspace-category/index.md` 참고) ──────────
 
 fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
     let kb = crate::settings::KeybindingSettings::default();

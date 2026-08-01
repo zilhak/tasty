@@ -85,11 +85,11 @@ pub struct MainView {
     /// egui-mesh surface 별 host→plugin set_context forward 추적 (A1-S7).
     pub(crate) egui_mesh: std::collections::HashMap<u32, egui_mesh::MeshForwardState>,
     /// attach mesh mirror surface(`AttachMeshSurface`) 별 client→server MeshContext/
-    /// MeshInput forward 추적(TODO 20). `egui_mesh`의 attach 대응 —
-    /// `attach_mesh_input.rs` 참고.
+    /// MeshInput forward 추적(`docs/dev-guide/egui-mesh-channel.md`의 "attach mesh
+    /// mirror 소비 경로" 참고). `egui_mesh`의 attach 대응 — `attach_mesh_input.rs` 참고.
     pub(crate) attach_mesh_input:
         std::collections::HashMap<u32, attach_mesh_input::AttachMeshForwardState>,
-    /// 마지막으로 pointer_moved 를 forward 한 mesh surface(TODO 26) — `CursorLeft` 및
+    /// 마지막으로 pointer_moved 를 forward 한 mesh surface — `CursorLeft` 및
     /// surface 전환 시 `PointerGone` 1 회 forward 판정에 쓴다. `mouse.rs::update_mesh_hover`.
     pub(crate) mesh_pointer_hover: Option<MeshHoverTarget>,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).

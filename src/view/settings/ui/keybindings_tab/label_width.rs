@@ -1,4 +1,4 @@
-//! `LABEL_COL_WIDTH`(TODO45) 회귀 가드 — en/ko/ja 전 라벨을 실제 프로덕션 egui 폰트
+//! `LABEL_COL_WIDTH` 회귀 가드 — en/ko/ja 전 라벨을 실제 프로덕션 egui 폰트
 //! 스택으로 실측해 고정폭 컬럼을 넘는 라벨이 없는지 확인한다.
 //!
 //! **`tasty_egui_theme::apply_theme_to_egui` 호출이 핵심이다.** 이걸 빼먹으면
@@ -130,7 +130,7 @@ fn labels_fit_within_fixed_column() {
     tasty_egui_theme::install_cjk_fallback(&ctx);
     // 프로덕션과 동일한 TextStyle::Body 크기(Theme::font_size_body, 13.0px)를
     // 반드시 적용해야 한다 — 없으면 egui 기본값(12.5px)으로 측정돼 실제보다
-    // 좁게 나온다(TODO45 최초 구현의 버그).
+    // 좁게 나온다(최초 구현의 버그).
     tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &ctx);
 
     let langs: &[(&str, &str)] = &[

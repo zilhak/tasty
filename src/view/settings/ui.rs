@@ -103,7 +103,8 @@ pub(crate) enum PluginSubTab {
 /// L2 section within the General L1 tab.
 ///
 /// 디자인 General L2 = General / Notifications / Accessibility / Overlay /
-/// Remote transfer + Display(macOS 전용, TODO47). (Clipboard 는 플러그인 기능이라
+/// Remote transfer + Display(macOS 전용, `docs/design/policies/key-mapping.md` 참고).
+/// (Clipboard 는 플러그인 기능이라
 /// 네이티브 설정에서 제외, Updates 는 Misc 로 이동.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
@@ -115,7 +116,7 @@ pub(crate) enum GeneralSubTab {
     /// 원격(mirror) 파일 전송 수신측 저장 정책(저장 폴더 + 용량 상한). 백엔드는
     /// `RemoteTransferSettings`(06/07).
     RemoteTransfer,
-    /// Alt/Option/Shift 키 표시 스타일(TODO47). macOS 전용 — 아이콘 글리프 개념이
+    /// Alt/Option/Shift 키 표시 스타일. macOS 전용 — 아이콘 글리프 개념이
     /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
     /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

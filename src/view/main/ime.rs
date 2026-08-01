@@ -82,7 +82,7 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         w.mark_dirty();
         return;
     }
-    // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격.
+    // attach mesh mirror surface — 위와 동형이되 목적지가 원격.
     if let Some(sid) = w.focused_attach_mesh_surface_id() {
         forward_ime_to_attach_mesh(w, sid, event);
         w.mark_dirty();
@@ -118,7 +118,7 @@ fn forward_ime_to_egui_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
     w.egui_mesh_push_ime(surface_id, wire);
 }
 
-/// [`forward_ime_to_egui_mesh`]의 attach mesh mirror 대응(TODO 20) — 목적지가 원격
+/// [`forward_ime_to_egui_mesh`]의 attach mesh mirror 대응 — 목적지가 원격
 /// plugin 이라는 점만 다르다.
 fn forward_ime_to_attach_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
     let wire = match event {

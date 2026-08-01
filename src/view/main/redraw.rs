@@ -71,12 +71,12 @@ impl MainView {
             // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
             if let Some(mgr) = plugin_manager {
                 self.forward_egui_mesh_context(mgr);
-                // GUI가 attach 서버인 경우의 mesh mirror forward(TODO 24) — 로컬 redraw가
+                // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
                 // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
                 // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
                 self.forward_mesh_to_attach_subscribers(mgr, stream_hub);
             }
-            // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격이라
+            // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
             // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
             self.forward_attach_mesh_context();
             let link_hover = self
@@ -140,7 +140,8 @@ impl MainView {
                 self.base.dirty = true;
             }
 
-            // attach mesh mirror(TODO 19) full 재전송 요청 drain — 위와 동형이되 대상이
+            // attach mesh mirror(`docs/dev-guide/attach-behavior.md#mesh-mirror-채널` 참고)
+            // full 재전송 요청 drain — 위와 동형이되 대상이
             // 로컬 plugin 이 아니라 원격이므로, `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`)
             // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
             let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
@@ -160,7 +161,7 @@ impl MainView {
         // 호스트 명령은 이 자리에서 바로 dispatch(기존 동작 유지). Plugin 명령은
         // `PluginManager`에 접근할 수 없는 이 스코프(`MainView`) 대신
         // `pending_plugin_command_invokes` 큐에 enqueue해 App 메인 루프가 drain하게
-        // 한다 (`pending_tool_events`와 동형 — TODO 46).
+        // 한다 (`pending_tool_events`와 동형).
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
@@ -1038,7 +1039,8 @@ impl MainView {
     fn handle_sidebar_background_native_menu(&mut self, x: f32, y: f32) {
         use crate::platform::native_menu::{MenuItem, show_context_menu};
         // 빈 배경 우클릭 — 새 카테고리 · 원격 워크스페이스 추가. 그룹모드 배경(카테고리
-        // ON)·flat모드 배경(카테고리 OFF, TODO 03) 양쪽에서 이 핸들러로 라우팅되므로
+        // ON)·flat모드 배경(카테고리 OFF, `docs/features/workspace-category/index.md`
+        // 참고) 양쪽에서 이 핸들러로 라우팅되므로
         // 카테고리 상태 분기 없이 공통 메뉴로 노출한다.
         let items = [
             MenuItem::new(100, crate::i18n::t("workspace_category.new_category")),
@@ -1581,8 +1583,9 @@ impl MainView {
 }
 
 /// 카테고리 헤더 우클릭 메뉴 항목 조립 (디자인 sidebar_context_menu.jsx category 분기
-/// 전사, 2026-07-02). additive 선두: Add workspace(3) · Create from preset(5, TODO 22)
-/// · ─ · Add remote workspace(4, TODO 03) · ─ · [비-normal 한정: Rename(1) · Delete(2)
+/// 전사, 2026-07-02). additive 선두: Add workspace(3) · Create from preset(5,
+/// `docs/features/workspace-category/index.md` 참고)
+/// · ─ · Add remote workspace(4) · ─ · [비-normal 한정: Rename(1) · Delete(2)
 /// · ─] · New category(100). reserved normal 은 rename/delete 만 금지 — add(로컬/
 /// 프리셋/원격) 는 노출한다. native 메뉴 조립은 순수 함수로 분리해 구성·순서를 단위
 /// 테스트로 고정한다.

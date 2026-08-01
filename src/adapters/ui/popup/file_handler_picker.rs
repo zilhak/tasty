@@ -362,7 +362,8 @@ pub fn draw_file_handler_picker(
     let format_label = t("file_handler.picker.format_label");
     let unknown_format_label = t("file_handler.picker.unknown_format");
     // Case A(fallback 후보) 는 detector 매칭이 아니라 전체 핸들러이므로 "후보"
-    // 대신 명시적으로 구분되는 heading 을 쓴다 — 두 케이스의 안내 문구 구분(TODO40).
+    // 대신 명시적으로 구분되는 heading 을 쓴다 — 두 케이스의 안내 문구 구분
+    // (`docs/features/file-handler/index.md` 참고).
     let candidates_heading = if picker.candidates_are_fallback {
         t("file_handler.picker.fallback_heading")
     } else {

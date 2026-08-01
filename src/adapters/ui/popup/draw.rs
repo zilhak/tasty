@@ -564,7 +564,6 @@ mod tests {
     fn elide_for_width_truncates_long_text_with_ellipsis() {
         with_ctx(|ctx| {
             let font = egui::FontId::proportional(14.0);
-            // TODO 39 재현 케이스와 유사한 긴 경로 타이틀.
             let text =
                 "파일 핸들러 선택: /Users/ljh/workspace/etc/teams-mcp-very-long-path/Cargo.toml";
             let result = elide_for_width(ctx, text, font, 40.0);

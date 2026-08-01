@@ -88,7 +88,7 @@ impl MainView {
                 if let Some(sid) = self.focused_egui_mesh_surface_id() {
                     self.forward_key_to_egui_mesh(sid, event);
                 } else if let Some(sid) = self.focused_attach_mesh_surface_id() {
-                    // attach mesh mirror surface(TODO 20) — 위와 동형이되 목적지가 원격.
+                    // attach mesh mirror surface — 위와 동형이되 목적지가 원격.
                     self.forward_key_to_attach_mesh(sid, event);
                 }
             }
@@ -284,7 +284,7 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// [`Self::forward_key_to_egui_mesh`]의 attach mesh mirror 대응(TODO 20) — 목적지가
+    /// [`Self::forward_key_to_egui_mesh`]의 attach mesh mirror 대응 — 목적지가
     /// 원격 plugin 이라는 점만 다르다.
     fn forward_key_to_attach_mesh(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
         self.attach_mesh_push_key(surface_id, event);

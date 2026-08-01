@@ -70,7 +70,7 @@ pub(super) fn draw_keybinding_entries(
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
-            // 라벨 컬럼: 서브탭 공유 고정 폭(TODO45), 좌측 정렬(remote_transfer.rs
+            // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(remote_transfer.rs
             // 의 settings_row() 와 동일 관례). left_to_right 이므로 먼저 add한
             // 위젯이 왼쪽 끝에 배치된다 — 라벨을 먼저 add해 "라벨 (?)" 순서(= (?)
             // 가 라벨 바로 뒤에 이어짐)를 만든다.

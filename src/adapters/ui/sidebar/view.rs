@@ -586,8 +586,9 @@ pub fn draw_full_sidebar_view(
             }
 
             // 목록 아래 빈 배경 우클릭 → 배경 컨텍스트 메뉴(새 카테고리 / 원격
-            // 워크스페이스 추가). 그룹·평면 모드 공통(TODO 03 — 이전엔 그룹 모드
-            // 한정이었으나 평면 모드 배경 우클릭에도 원격 추가를 노출하도록 대칭화).
+            // 워크스페이스 추가). 그룹·평면 모드 공통(이전엔 그룹 모드 한정이었으나
+            // 평면 모드 배경 우클릭에도 원격 추가를 노출하도록 대칭화,
+            // `docs/features/workspace-category/index.md` 참고).
             // 남은 스크롤 영역 전체를 우클릭 감지 영역으로.
             let remaining = ui.available_size_before_wrap();
             if remaining.y > 1.0 {

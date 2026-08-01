@@ -220,9 +220,10 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
                     .resolve_inherit_cwd(engine)
                     .map(|p| p.to_string_lossy().into_owned());
                 let mut context = serde_json::json!({ "cwd": cwd });
-                // (TODO 40) mirror workspace 판별 — cwd 와 마찬가지로 generic 하게
-                // 채운다(git-viewer 전용 분기 아님). `inherit_cwd` 설정과 무관하게
-                // 항상 판정한다 — "원격 인지"는 그 설정이 꺼져 있어도 필요한 정보다.
+                // mirror workspace 판별(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`
+                // 참고) — cwd 와 마찬가지로 generic 하게 채운다(git-viewer 전용 분기
+                // 아님). `inherit_cwd` 설정과 무관하게 항상 판정한다 — "원격 인지"는
+                // 그 설정이 꺼져 있어도 필요한 정보다.
                 // `local_surface_id` 는 popup 이 이 mirror surface 를 앵커로 원격
                 // 조회(`git_viewer.query` IPC)를 트리거할 때 그대로 echo 한다.
                 if let Some(sid) = state.focused_surface_id(engine)

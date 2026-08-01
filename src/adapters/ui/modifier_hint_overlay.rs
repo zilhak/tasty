@@ -774,7 +774,8 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
 }
 
 /// 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서). Alt/Option/Shift 토큰 텍스트는
-/// `general`(`GeneralSettings::{alt,option,shift}_display_style`, TODO46)을 따른다 —
+/// `general`(`GeneralSettings::{alt,option,shift}_display_style`,
+/// `docs/design/policies/key-mapping.md` 참고)을 따른다 —
 /// `KeybindingSettings::format_display_parts` 와 동일한 스타일 규약(alt: Alt/Cmd/⌘,
 /// option: Option/⌥, shift: Shift/⇧)이며, 여기 하드코딩됐던 `cfg!(target_os = "macos")`
 /// alt→"Cmd" 치환은 이 설정으로 대체됐다(기본값 "alt" — 표시 스타일을 만지지 않은
@@ -815,7 +816,7 @@ fn combo_keys(sec: &HintSection, general: &tasty_settings::GeneralSettings) -> S
 
 /// 바인딩 문자열(`"ctrl+shift+t"`) → 키캡 표기(`"Ctrl+Shift+T"`). 세그먼트별 첫 글자 대문자.
 ///
-/// 표시 스타일(TODO46) 파라미터가 없다 — 두 호출부(`debug_state_json`/`draw_row`) 모두
+/// 표시 스타일 파라미터가 없다 — 두 호출부(`debug_state_json`/`draw_row`) 모두
 /// `binding_leaf(&row.binding)` 로 modifier 를 이미 전부 벗겨낸 leaf 키만 넘긴다
 /// (`binding_leaf` 테스트 참고). modifier 토큰을 볼 일이 없어 alt/option/shift 표시
 /// 스타일과 무관하다.
