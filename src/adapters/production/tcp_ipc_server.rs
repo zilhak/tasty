@@ -15,12 +15,18 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-use crate::adapters::production::stream_hub::{StreamContext, StreamInbound};
+use crate::adapters::production::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 use crate::ipc::port_file;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::ipc::server::{IpcCommand, IpcWaker};
 use crate::ipc::stream::{self, StreamAck, StreamFrame, StreamTag};
 use crate::ports::ipc_server::IpcServerPort;
+
+/// 스트리밍 핸드셰이크 params 에서 추출한 attach 대상(surface/workspace 중 하나).
+struct StreamHandshake {
+    attach_target: Option<u32>,
+    attach_workspace: Option<u32>,
+}
 
 /// TCP-backed IPC server. listening on 127.0.0.1:{dynamic} + writing port to
 /// `~/.tasty/tasty.port` 등 외부 통신 표면.
@@ -132,37 +138,16 @@ impl TcpIpcServer {
         waker: Option<IpcWaker>,
         stream_ctx: StreamContext,
     ) {
-        let peer = stream.peer_addr().ok();
-        tracing::debug!("IPC client connected from {:?}", peer);
-
-        // Listener is non-blocking for polling accept(), but each connection
-        // needs blocking I/O for the request-response loop.
-        if let Err(e) = stream.set_nonblocking(false) {
-            tracing::warn!("Failed to set stream to blocking mode: {}", e);
+        let Some((mut reader, mut writer, peer)) = Self::prepare_stream(stream) else {
             return;
-        }
-
-        let mut reader = BufReader::new(match stream.try_clone() {
-            Ok(s) => s,
-            Err(_) => return,
-        });
-        let mut writer = stream;
+        };
 
         // Read the first line manually so the BufReader retains any bytes
         // buffered after it. On a streaming-channel upgrade those buffered bytes
         // are the start of the binary frames following the handshake line.
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => {
-                tracing::debug!("IPC client disconnected (eof) {:?}", peer);
-                return;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!("IPC read error from {:?}: {}", peer, e);
-                return;
-            }
-        }
+        let Some(mut line) = Self::read_first_line(&mut reader, peer) else {
+            return;
+        };
 
         // Streaming upgrade: first line is `{"method":"stream.open",...}`. The
         // connection leaves the request-response model and becomes a framed
@@ -174,25 +159,86 @@ impl TcpIpcServer {
             return;
         }
 
-        // Normal request-response: handle the first line, then keep reading.
-        if Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break, // EOF
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!("IPC read error from {:?}: {}", peer, e);
-                        break;
-                    }
-                }
-                if !Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
+        Self::run_request_response_loop(&mut reader, &mut writer, &mut line, &cmd_tx, &waker, peer);
+
+        tracing::debug!("IPC client disconnected from {:?}", peer);
+    }
+
+    /// Listener 는 accept polling 을 위해 non-blocking 이지만, 각 연결의
+    /// request-response 루프는 blocking I/O 를 요구한다. peer addr 로그 + blocking
+    /// 전환 + reader/writer 분리(같은 소켓의 clone)를 담당. 실패 시 이미 로그를
+    /// 남기고 `None` 반환(호출자는 그대로 연결을 종료).
+    fn prepare_stream(
+        stream: std::net::TcpStream,
+    ) -> Option<(
+        BufReader<std::net::TcpStream>,
+        std::net::TcpStream,
+        Option<std::net::SocketAddr>,
+    )> {
+        let peer = stream.peer_addr().ok();
+        tracing::debug!("IPC client connected from {:?}", peer);
+
+        if let Err(e) = stream.set_nonblocking(false) {
+            tracing::warn!("Failed to set stream to blocking mode: {}", e);
+            return None;
+        }
+
+        let reader = BufReader::new(match stream.try_clone() {
+            Ok(s) => s,
+            Err(_) => return None,
+        });
+        let writer = stream;
+        Some((reader, writer, peer))
+    }
+
+    /// 스트리밍 업그레이드 판별을 위해 첫 줄을 수동으로 읽는다 — `BufReader` 가
+    /// 그 뒤에 이미 버퍼링된 바이트(업그레이드 시 핸드셰이크 뒤에 오는 바이너리
+    /// 프레임의 시작)를 보존하게 하기 위함. EOF/에러는 이미 로그 후 `None`.
+    fn read_first_line(
+        reader: &mut BufReader<std::net::TcpStream>,
+        peer: Option<std::net::SocketAddr>,
+    ) -> Option<String> {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                tracing::debug!("IPC client disconnected (eof) {:?}", peer);
+                None
+            }
+            Ok(_) => Some(line),
+            Err(e) => {
+                tracing::warn!("IPC read error from {:?}: {}", peer, e);
+                None
+            }
+        }
+    }
+
+    /// 일반 request-response 연결: 이미 읽은 첫 줄을 처리한 뒤, 연결이 닫히거나
+    /// 처리가 `false` 를 반환할 때까지 계속 다음 줄을 읽어 처리한다.
+    fn run_request_response_loop(
+        reader: &mut BufReader<std::net::TcpStream>,
+        writer: &mut std::net::TcpStream,
+        line: &mut String,
+        cmd_tx: &mpsc::Sender<IpcCommand>,
+        waker: &Option<IpcWaker>,
+        peer: Option<std::net::SocketAddr>,
+    ) {
+        if !Self::process_request_line(line, cmd_tx, waker, writer, peer) {
+            return;
+        }
+        loop {
+            line.clear();
+            match reader.read_line(line) {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("IPC read error from {:?}: {}", peer, e);
                     break;
                 }
             }
+            if !Self::process_request_line(line, cmd_tx, waker, writer, peer) {
+                break;
+            }
         }
-
-        tracing::debug!("IPC client disconnected from {:?}", peer);
     }
 
     /// Drive an upgraded streaming connection: a write thread drains the client's
@@ -209,42 +255,106 @@ impl TcpIpcServer {
         ctx: StreamContext,
         peer: Option<std::net::SocketAddr>,
     ) {
-        // 조용한(FIN/RST 없는) 네트워크 단절 감지용 read timeout. reader/writer 는 같은
-        // 소켓의 clone(둘 다 원래 `stream`에서 파생)이라 옵션이 공유돼 write 쪽에는 영향
-        // 없다 — read 만 타임아웃 대상. write thread(아래)가 이 주기 이내에 Ping 을 흘려
-        // idle 세션에서도 상대측 read timeout 이 갱신되게 한다.
+        Self::arm_stream_read_timeout(&reader);
+
+        let client_id = ctx.hub.alloc_id();
+        let sink_rx = ctx.hub.register(client_id);
+        tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
+
+        let handshake = Self::parse_stream_handshake(&ctx, client_id, req);
+        let write_handle = Self::spawn_stream_write_thread(writer, sink_rx);
+        Self::push_stream_ack(&ctx, client_id);
+        Self::dispatch_stream_attach(&ctx, client_id, &handshake);
+        Self::run_stream_read_loop(&ctx, client_id, &mut reader);
+        Self::finish_stream_connection(&ctx, client_id, write_handle, peer);
+    }
+
+    /// 조용한(FIN/RST 없는) 네트워크 단절 감지용 read timeout. reader/writer 는 같은
+    /// 소켓의 clone(둘 다 원래 `stream`에서 파생)이라 옵션이 공유돼 write 쪽에는 영향
+    /// 없다 — read 만 타임아웃 대상. write thread가 이 주기 이내에 Ping 을 흘려
+    /// idle 세션에서도 상대측 read timeout 이 갱신되게 한다.
+    fn arm_stream_read_timeout(reader: &BufReader<std::net::TcpStream>) {
         if let Err(e) = reader
             .get_ref()
             .set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT))
         {
             tracing::warn!("stream client: failed to set read timeout: {e}");
         }
+    }
 
-        let client_id = ctx.hub.alloc_id();
-        let sink_rx = ctx.hub.register(client_id);
-        tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
+    /// Handshake ack — pushed through the sink so the single write thread owns
+    /// all socket writes.
+    fn push_stream_ack(ctx: &StreamContext, client_id: StreamClientId) {
+        let ack = StreamAck {
+            ok: true,
+            client_id: Some(client_id),
+            proto: stream::STREAM_PROTO,
+            error: None,
+        };
+        let ack_bytes = serde_json::to_vec(&ack).unwrap_or_default();
+        let _ = ctx // best-effort ack push — PushResult(Result 아님) 무시: client 끊겼으면 무해.
+            .hub
+            .push(client_id, StreamFrame::new(StreamTag::Control, ack_bytes));
+    }
 
-        // attach 대상을 핸드셰이크 params 에서 추출. surface(단계 4) 또는 workspace
-        // (단계 6) 둘 중 하나. workspace 우선(둘 다 지정은 비정상이지만 안전 분기).
+    /// read loop 종료 후 정리: sink 등록 해제(write thread 자연 종료) → join →
+    /// 메인루프에 disconnect 통지(attach lock 해제 best-effort).
+    fn finish_stream_connection(
+        ctx: &StreamContext,
+        client_id: StreamClientId,
+        write_handle: thread::JoinHandle<()>,
+        peer: Option<std::net::SocketAddr>,
+    ) {
+        ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
+        let _ = write_handle.join(); // writer 스레드 join 실패(패닉) 무시 — 종료 경로
+        // Notify the main loop so it releases any attach locks this client held
+        // (attach/detach step 3). Best-effort: if the main loop is gone, nothing
+        // to release anyway.
+        if ctx
+            .inbound_tx
+            .send(StreamInbound::Disconnected { client_id })
+            .is_ok()
+        {
+            (ctx.waker)();
+        }
+        tracing::debug!("stream client {} disconnected from {:?}", client_id, peer);
+    }
+
+    /// attach 대상을 핸드셰이크 params 에서 추출. surface(단계 4) 또는 workspace
+    /// (단계 6) 둘 중 하나. bulk 전용 연결(ADR-0054)이면 hub 에 결속을 등록한다 —
+    /// 이 연결은 mirror/attach 를 하지 않고(= holder 가 되지 않고) 파일 청크만
+    /// 나른다. 여기서 hub 에 bulk 로 태깅하면 read 루프가 프레임을 보내기 전에
+    /// 결속이 서므로, 이후 pump_inbound 가 이 연결의 Data 를 파일 청크로
+    /// 분류한다(연결-단위 태깅). attach 분기와 상호배타.
+    fn parse_stream_handshake(
+        ctx: &StreamContext,
+        client_id: StreamClientId,
+        req: JsonRpcRequest,
+    ) -> StreamHandshake {
         let open_params = serde_json::from_value::<stream::StreamOpenParams>(req.params).ok();
         let attach_target = open_params.as_ref().and_then(|p| p.target);
         let attach_workspace = open_params.as_ref().and_then(|p| p.target_workspace);
-        // bulk 전용 연결(ADR-0054): 이 연결은 mirror/attach 를 하지 않고(= holder 가
-        // 되지 않고) 파일 청크만 나른다. 여기서 hub 에 bulk 로 태깅하면 read 루프가
-        // 프레임을 보내기 전에 결속이 서므로, 이후 pump_inbound 가 이 연결의 Data 를
-        // 파일 청크로 분류한다(연결-단위 태깅). attach 분기와 상호배타.
         let bulk_workspace = open_params.as_ref().and_then(|p| p.bulk_workspace);
         if let Some(ws) = bulk_workspace {
             ctx.hub.register_bulk(client_id, ws);
         }
+        StreamHandshake {
+            attach_target,
+            attach_workspace,
+        }
+    }
 
-        // Write thread: drain the push sink (fed by the main loop) to the socket.
-        // `recv_timeout` 대신 blocking iterator 를 쓰던 옛 구현은 sink 가 idle 이면
-        // 소켓에 아무것도 안 나가 client 쪽 read timeout 이 결국 만료된다 — sink 가
-        // HEARTBEAT_INTERVAL 동안 조용하면 빈 Ping 프레임을 대신 흘려보낸다. 실제
-        // Data/Control 트래픽이 있으면 그 자체가 liveness 라 Ping 은 나가지 않는다.
+    /// Write thread: drain the push sink (fed by the main loop) to the socket.
+    /// `recv_timeout` 대신 blocking iterator 를 쓰던 옛 구현은 sink 가 idle 이면
+    /// 소켓에 아무것도 안 나가 client 쪽 read timeout 이 결국 만료된다 — sink 가
+    /// HEARTBEAT_INTERVAL 동안 조용하면 빈 Ping 프레임을 대신 흘려보낸다. 실제
+    /// Data/Control 트래픽이 있으면 그 자체가 liveness 라 Ping 은 나가지 않는다.
+    fn spawn_stream_write_thread(
+        writer: std::net::TcpStream,
+        sink_rx: mpsc::Receiver<StreamFrame>,
+    ) -> thread::JoinHandle<()> {
         let mut w = writer;
-        let write_handle = thread::spawn(move || {
+        thread::spawn(move || {
             loop {
                 match sink_rx.recv_timeout(stream::HEARTBEAT_INTERVAL) {
                     Ok(frame) => {
@@ -263,25 +373,19 @@ impl TcpIpcServer {
                     Err(mpsc::RecvTimeoutError::Disconnected) => break, // unregister 됨
                 }
             }
-        });
+        })
+    }
 
-        // Handshake ack — pushed through the sink so the single write thread owns
-        // all socket writes.
-        let ack = StreamAck {
-            ok: true,
-            client_id: Some(client_id),
-            proto: stream::STREAM_PROTO,
-            error: None,
-        };
-        let ack_bytes = serde_json::to_vec(&ack).unwrap_or_default();
-        let _ = ctx // best-effort ack push — PushResult(Result 아님) 무시: client 끊겼으면 무해.
-            .hub
-            .push(client_id, StreamFrame::new(StreamTag::Control, ack_bytes));
-
-        // attach 요청이면 메인루프로 위임(엔진은 메인루프 단일소유 → accept thread 가
-        // 직접 acquire 불가). 메인루프가 lock 획득 + 스냅샷 push + 출력 tap 결선한다.
-        // attach 결과(성공/거부)는 별도 Control 프레임으로 client 에 통지된다.
-        if let Some(target_workspace_id) = attach_workspace {
+    /// attach 요청이면 메인루프로 위임(엔진은 메인루프 단일소유 → accept thread 가
+    /// 직접 acquire 불가). 메인루프가 lock 획득 + 스냅샷 push + 출력 tap 결선한다.
+    /// attach 결과(성공/거부)는 별도 Control 프레임으로 client 에 통지된다.
+    /// workspace 우선(둘 다 지정은 비정상이지만 안전 분기).
+    fn dispatch_stream_attach(
+        ctx: &StreamContext,
+        client_id: StreamClientId,
+        handshake: &StreamHandshake,
+    ) {
+        if let Some(target_workspace_id) = handshake.attach_workspace {
             if ctx
                 .inbound_tx
                 .send(StreamInbound::AttachWorkspaceRequest {
@@ -292,7 +396,7 @@ impl TcpIpcServer {
             {
                 (ctx.waker)();
             }
-        } else if let Some(target_surface_id) = attach_target
+        } else if let Some(target_surface_id) = handshake.attach_target
             && ctx
                 .inbound_tx
                 .send(StreamInbound::AttachRequest {
@@ -303,11 +407,17 @@ impl TcpIpcServer {
         {
             (ctx.waker)();
         }
+    }
 
-        // Read loop: forward inbound frames to the main loop (which echoes them
-        // back in debug builds; later steps interpret them as input/resize).
+    /// Read loop: forward inbound frames to the main loop (which echoes them
+    /// back in debug builds; later steps interpret them as input/resize).
+    fn run_stream_read_loop(
+        ctx: &StreamContext,
+        client_id: StreamClientId,
+        reader: &mut BufReader<std::net::TcpStream>,
+    ) {
         loop {
-            match stream::read_frame(&mut reader) {
+            match stream::read_frame(reader) {
                 Ok(frame) if frame.tag == StreamTag::Detach => break,
                 Ok(frame) => {
                     if ctx
@@ -322,20 +432,6 @@ impl TcpIpcServer {
                 Err(_) => break, // EOF / oversize / unknown tag
             }
         }
-
-        ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
-        let _ = write_handle.join(); // writer 스레드 join 실패(패닉) 무시 — 종료 경로
-        // Notify the main loop so it releases any attach locks this client held
-        // (attach/detach step 3). Best-effort: if the main loop is gone, nothing
-        // to release anyway.
-        if ctx
-            .inbound_tx
-            .send(StreamInbound::Disconnected { client_id })
-            .is_ok()
-        {
-            (ctx.waker)();
-        }
-        tracing::debug!("stream client {} disconnected from {:?}", client_id, peer);
     }
 
     /// Handle one request line of a request-response connection. Returns `false`
@@ -353,26 +449,55 @@ impl TcpIpcServer {
             return true;
         }
 
-        // Parse JSON-RPC request
         let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
-                let err_resp = JsonRpcResponse::error(
-                    serde_json::Value::Null,
-                    -32700,
-                    format!("Parse error: {}", e),
-                );
-                if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap()) {
-                    tracing::trace!("IPC parse-error response write failed: {e}");
-                }
-                if let Err(e) = writer.flush() {
-                    tracing::trace!("IPC parse-error response flush failed: {e}");
-                }
+                Self::send_parse_error(writer, e);
                 return true;
             }
         };
 
-        // Create a response channel for this request
+        Self::dispatch_and_await(request, cmd_tx, waker, writer, peer)
+    }
+
+    /// JSON 한 줄을 쓰고 flush 를 시도한다(write 가 실패해도 flush 는 그대로
+    /// 시도된다 — 두 결과를 각각 반환해 호출자가 로깅/제어흐름을 결정한다).
+    fn write_json_line(
+        writer: &mut std::net::TcpStream,
+        json: &str,
+    ) -> (std::io::Result<()>, std::io::Result<()>) {
+        let write_result = writeln!(writer, "{}", json);
+        let flush_result = writer.flush();
+        (write_result, flush_result)
+    }
+
+    /// JSON 파싱 실패 시 JSON-RPC parse error(-32700) 응답을 회신한다. 클라이언트
+    /// 로 향한 응답이라 실패해도 연결은 끊지 않는다(trace 로그만).
+    fn send_parse_error(writer: &mut std::net::TcpStream, e: serde_json::Error) {
+        let err_resp = JsonRpcResponse::error(
+            serde_json::Value::Null,
+            -32700,
+            format!("Parse error: {}", e),
+        );
+        let json = serde_json::to_string(&err_resp).unwrap();
+        let (write_result, flush_result) = Self::write_json_line(writer, &json);
+        if let Err(e) = write_result {
+            tracing::trace!("IPC parse-error response write failed: {e}");
+        }
+        if let Err(e) = flush_result {
+            tracing::trace!("IPC parse-error response flush failed: {e}");
+        }
+    }
+
+    /// 요청을 메인 스레드로 보내고 응답을 기다려 클라이언트로 회신한다. 반환값은
+    /// 연결 유지 여부.
+    fn dispatch_and_await(
+        request: JsonRpcRequest,
+        cmd_tx: &mpsc::Sender<IpcCommand>,
+        waker: &Option<IpcWaker>,
+        writer: &mut std::net::TcpStream,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
         let (resp_tx, resp_rx) = mpsc::sync_channel(1);
 
         let cmd = IpcCommand {
@@ -393,19 +518,7 @@ impl TcpIpcServer {
 
         // Wait for response from main thread
         match resp_rx.recv() {
-            Ok(response) => {
-                let json = serde_json::to_string(&response).unwrap();
-                if let Err(e) = writeln!(writer, "{}", json) {
-                    tracing::warn!("IPC write error: {}", e);
-                    return false;
-                }
-                if let Err(e) = writer.flush() {
-                    tracing::warn!("IPC flush error: {}", e);
-                    return false;
-                }
-                tracing::debug!("IPC response sent for {:?}", peer);
-                true
-            }
+            Ok(response) => Self::write_dispatch_response(writer, &response, peer),
             Err(e) => {
                 tracing::warn!(
                     "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
@@ -414,6 +527,37 @@ impl TcpIpcServer {
                 false
             }
         }
+    }
+
+    /// 메인 스레드가 만든 응답을 직렬화해 클라이언트로 회신. 반환값은 연결 유지 여부.
+    fn write_dispatch_response(
+        writer: &mut std::net::TcpStream,
+        response: &JsonRpcResponse,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
+        let json = serde_json::to_string(response).unwrap();
+        let (write_result, flush_result) = Self::write_json_line(writer, &json);
+        if !Self::log_dispatch_write_result(write_result, flush_result) {
+            return false;
+        }
+        tracing::debug!("IPC response sent for {:?}", peer);
+        true
+    }
+
+    /// write/flush 결과를 각각 확인해 실패 시 warn 로그. 둘 다 성공해야 `true`.
+    fn log_dispatch_write_result(
+        write_result: std::io::Result<()>,
+        flush_result: std::io::Result<()>,
+    ) -> bool {
+        if let Err(e) = write_result {
+            tracing::warn!("IPC write error: {}", e);
+            return false;
+        }
+        if let Err(e) = flush_result {
+            tracing::warn!("IPC flush error: {}", e);
+            return false;
+        }
+        true
     }
 
     /// Get the effective port file path for this instance.

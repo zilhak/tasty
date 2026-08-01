@@ -59,19 +59,32 @@ impl ExplorerFavorites {
             tracing::warn!("explorer: no favorites path available; not saving");
             return;
         };
+        if let Some(contents) = self.serialize() {
+            Self::persist_to_disk(&path, &contents);
+        }
+    }
+
+    /// TOML 로 직렬화. 실패는 warn 로그 후 `None`(호출자는 쓰기를 건너뛴다).
+    fn serialize(&self) -> Option<String> {
+        match toml::to_string_pretty(self) {
+            Ok(contents) => Some(contents),
+            Err(e) => {
+                tracing::warn!("explorer: failed to serialize favorites: {e}");
+                None
+            }
+        }
+    }
+
+    /// 부모 디렉토리를 만들고(필요 시) `contents` 를 `path` 에 기록한다.
+    fn persist_to_disk(path: &Path, contents: &str) {
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
             tracing::warn!("explorer: failed to create favorites dir: {e}");
             return;
         }
-        match toml::to_string_pretty(self) {
-            Ok(contents) => {
-                if let Err(e) = std::fs::write(&path, contents) {
-                    tracing::warn!("explorer: failed to write favorites: {e}");
-                }
-            }
-            Err(e) => tracing::warn!("explorer: failed to serialize favorites: {e}"),
+        if let Err(e) = std::fs::write(path, contents) {
+            tracing::warn!("explorer: failed to write favorites: {e}");
         }
     }
 

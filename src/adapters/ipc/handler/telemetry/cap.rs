@@ -342,33 +342,45 @@ pub(super) fn evaluate_caps_after_record(
         }
     };
     for mut cap in caps {
-        if cap.agent != ev.agent || cap.metric != ev.metric {
+        if !cap_matches_untriggered(&cap, ev) {
             continue;
         }
-        if cap.triggered.is_some() {
-            continue;
-        }
-        let current = match compute_current_value(core, &cap) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
-                continue;
-            }
-        };
-        if current < cap.threshold {
-            continue;
-        }
-        // 임계 초과 — triggered 마크 후 액션 발화.
-        cap.triggered = Some(tasty_telemetry::CapTriggered {
-            at: now_ms(),
-            value: current,
-        });
-        if let Err(e) = save_cap(core, &cap) {
-            tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
-            continue;
-        }
-        fire_cap_action(core, state, engine, &cap, current);
+        try_trigger_cap(core, state, engine, &mut cap);
     }
+}
+
+/// `ev` 와 agent+metric 이 일치하고 아직 triggered 되지 않은 cap 인가.
+fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
+    cap.agent == ev.agent && cap.metric == ev.metric && cap.triggered.is_none()
+}
+
+/// 현재 값을 계산해 임계를 넘었으면 `triggered` 마크 + 저장 + 액션 발화.
+fn try_trigger_cap(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    cap: &mut CostCap,
+) {
+    let current = match compute_current_value(core, cap) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
+            return;
+        }
+    };
+    if current < cap.threshold {
+        return;
+    }
+    // 임계 초과 — triggered 마크 후 액션 발화.
+    cap.triggered = Some(tasty_telemetry::CapTriggered {
+        at: now_ms(),
+        value: current,
+    });
+    if let Err(e) = save_cap(core, cap) {
+        tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
+        return;
+    }
+    fire_cap_action(core, state, engine, cap, current);
 }
 
 /// cap 액션을 실제 시스템으로 발화. `Notify` 는 알림만; `RequireApproval` 은

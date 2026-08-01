@@ -33,30 +33,7 @@ pub const MEMORY_BUDGET: usize = 8 * 1024 * 1024;
 /// `tracing::warn!` 로 기록되고 `false` 반환 — observe 안전 (detector 매칭은
 /// 추가/탈락 둘 다 안전 fail open 이 아님, 매치 안함이 안전한 fallback).
 pub fn evaluate_lua(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> bool {
-    let entry = ctx.entry(target).clone();
-    let lua = match build_sandboxed_lua() {
-        Ok(l) => l,
-        Err(e) => {
-            tracing::warn!("file_format lua: sandbox init failed: {e}");
-            return false;
-        }
-    };
-    let target_table = match build_target_table(&lua, target, &entry) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!("file_format lua: target table build failed: {e}");
-            return false;
-        }
-    };
-    if let Err(e) = lua.globals().set("target", target_table) {
-        tracing::warn!("file_format lua: failed to set target global: {e}");
-        return false;
-    }
-    let chunk = lua
-        .load(script)
-        .set_name("detector-rule")
-        .set_mode(ChunkMode::Text);
-    match chunk.eval::<Value>() {
+    match try_evaluate(script, target, ctx) {
         Ok(Value::Boolean(b)) => b,
         Ok(other) => {
             // 가독성: 다른 타입 (nil, number, table 등) 은 모두 false. 사용자가 자기
@@ -68,10 +45,32 @@ pub fn evaluate_lua(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> boo
             false
         }
         Err(e) => {
-            tracing::warn!("file_format lua: eval failed: {e}");
+            tracing::warn!("file_format lua: {e}");
             false
         }
     }
+}
+
+/// 샌드박스 초기화 → target 테이블 구성 → global 등록 → 평가의 4단계를 `?` 로
+/// 체이닝. 각 단계 실패는 다음 단계로 전파되기 전 원래 로그 문구를 그대로
+/// 보존하도록 에러 메시지에 단계 prefix 를 남긴다 — 최종 로그(호출자)는
+/// `evaluate_lua`가 그대로 출력한다.
+fn try_evaluate(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> mlua::Result<Value> {
+    let entry = ctx.entry(target).clone();
+    let lua = build_sandboxed_lua()
+        .map_err(|e| mlua::Error::external(format!("sandbox init failed: {e}")))?;
+    let target_table = build_target_table(&lua, target, &entry)
+        .map_err(|e| mlua::Error::external(format!("target table build failed: {e}")))?;
+    lua.globals()
+        .set("target", target_table)
+        .map_err(|e| mlua::Error::external(format!("failed to set target global: {e}")))?;
+    let chunk = lua
+        .load(script)
+        .set_name("detector-rule")
+        .set_mode(ChunkMode::Text);
+    chunk
+        .eval::<Value>()
+        .map_err(|e| mlua::Error::external(format!("eval failed: {e}")))
 }
 
 fn build_sandboxed_lua() -> mlua::Result<Lua> {

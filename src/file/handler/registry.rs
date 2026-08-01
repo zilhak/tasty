@@ -393,32 +393,51 @@ impl FileHandlerRegistry {
     /// **Transactional**: read/parse 실패 시 기존 user contribution 보존 (write lock 잡기 전에
     /// 검증). 파일이 없으면 user contribution 만 제거.
     pub fn reload_user_config(&self, path: &std::path::Path) {
-        let decls = match std::fs::read_to_string(path) {
+        let Some(decls) = Self::load_user_handler_decls(path) else {
+            return;
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        Self::purge_user_owned(&mut inner);
+        for decl in decls {
+            install_user(&mut inner, decl);
+        }
+        inner.dirty = true;
+    }
+
+    /// user config 파일을 읽어 handler 선언을 파싱한다. 파일이 없으면 빈 목록(=
+    /// user override 전부 해제), 읽기/파싱 실패는 이미 warn 로그 후 `None`(호출자는
+    /// 기존 user config 를 그대로 유지).
+    fn load_user_handler_decls(path: &std::path::Path) -> Option<Vec<UserHandlerSettingsDecl>> {
+        match std::fs::read_to_string(path) {
             Ok(text) => match parse_user_handler_section(&text) {
-                Ok(v) => v,
+                Ok(v) => Some(v),
                 Err(e) => {
                     warn!(
                         path = %path.display(),
                         error = %e,
                         "file_handler: reload aborted — parse failed, keeping previous user config",
                     );
-                    return;
+                    None
                 }
             },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
             Err(e) => {
                 warn!(
                     path = %path.display(),
                     error = %e,
                     "file_handler: reload aborted — read failed, keeping previous user config",
                 );
-                return;
+                None
             }
-        };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        }
+    }
+
+    /// 기존 user-owned contribution 을 모두 제거한다 (reload 는 항상 전체
+    /// 재설치이므로 재설치 전 정리).
+    fn purge_user_owned(inner: &mut Inner) {
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(|c| !matches!(c.owner, HandlerOwner::User));
@@ -429,10 +448,6 @@ impl FileHandlerRegistry {
         for id in empty_ids {
             inner.contributions.remove(&id);
         }
-        for decl in decls {
-            install_user(&mut inner, decl);
-        }
-        inner.dirty = true;
     }
 
     fn ensure_finalized(&self) {

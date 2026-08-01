@@ -21,6 +21,25 @@ use super::types::FileTarget;
 pub const STRUCTURE_FILE_CAP: u64 = 5 * 1024 * 1024;
 
 pub fn evaluate_structure(spec_path: &Path, target: &FileTarget) -> bool {
+    if !target_eligible(target) {
+        return false;
+    }
+    let Some(target_value) = read_json(target.as_path()) else {
+        return false;
+    };
+    let Some(schema_value) = read_and_parse_schema(spec_path) else {
+        return false;
+    };
+    let Some(validator) = compile_validator(spec_path, &schema_value) else {
+        return false;
+    };
+
+    validator.is_valid(&target_value)
+}
+
+/// 구조검증 후보 자격: 디렉토리가 아니고, 일반 파일이고, [`STRUCTURE_FILE_CAP`]
+/// 이하 크기이고, 확장자가 `.json` 인 target 만 통과. 현재 JSON 만 지원.
+fn target_eligible(target: &FileTarget) -> bool {
     if target.is_directory() {
         return false;
     }
@@ -32,24 +51,22 @@ pub fn evaluate_structure(spec_path: &Path, target: &FileTarget) -> bool {
     if !meta.is_file() || meta.len() > STRUCTURE_FILE_CAP {
         return false;
     }
-    // 현재 JSON 만 지원 — 확장자 기반 분기.
     let ext = target_path
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase());
-    if ext.as_deref() != Some("json") {
-        return false;
-    }
+    ext.as_deref() == Some("json")
+}
 
-    let target_bytes = match fs::read(target_path) {
-        Ok(b) => b,
-        Err(_) => return false,
-    };
-    let target_value: serde_json::Value = match serde_json::from_slice(&target_bytes) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
+/// 파일을 읽어 JSON 으로 파싱. 실패는 조용히 `None`(target 읽기/파싱 실패는 매치
+/// 안함으로 처리 — spec 읽기와 달리 warn 로그 없음, 기존 정책 유지).
+fn read_json(path: &Path) -> Option<serde_json::Value> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
 
+/// spec 파일을 읽어 JSON 으로 파싱. 읽기/파싱 실패는 각각 warn 로그.
+fn read_and_parse_schema(spec_path: &Path) -> Option<serde_json::Value> {
     let schema_bytes = match fs::read(spec_path) {
         Ok(b) => b,
         Err(e) => {
@@ -58,34 +75,38 @@ pub fn evaluate_structure(spec_path: &Path, target: &FileTarget) -> bool {
                 error = %e,
                 "structure-check: spec read failed",
             );
-            return false;
+            return None;
         }
     };
-    let schema_value: serde_json::Value = match serde_json::from_slice(&schema_bytes) {
-        Ok(v) => v,
+    match serde_json::from_slice(&schema_bytes) {
+        Ok(v) => Some(v),
         Err(e) => {
             tracing::warn!(
                 spec = %spec_path.display(),
                 error = %e,
                 "structure-check: spec is not valid JSON",
             );
-            return false;
+            None
         }
-    };
+    }
+}
 
-    let validator = match jsonschema::validator_for(&schema_value) {
-        Ok(v) => v,
+/// schema JSON 을 컴파일. 실패는 warn 로그.
+fn compile_validator(
+    spec_path: &Path,
+    schema_value: &serde_json::Value,
+) -> Option<jsonschema::Validator> {
+    match jsonschema::validator_for(schema_value) {
+        Ok(v) => Some(v),
         Err(e) => {
             tracing::warn!(
                 spec = %spec_path.display(),
                 error = %e,
                 "structure-check: schema compile failed",
             );
-            return false;
+            None
         }
-    };
-
-    validator.is_valid(&target_value)
+    }
 }
 
 #[cfg(test)]

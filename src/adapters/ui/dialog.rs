@@ -273,109 +273,163 @@ fn apply_rename(
 ) {
     match target {
         RenameTarget::WorkspaceName { ws_idx } => {
-            if !buffer.is_empty() {
-                let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
-                if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
-                    ws.name = buffer.clone();
-                }
-                if let Some(workspace_id) = workspace_id {
-                    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-                        workspace_id,
-                        name: Some(buffer),
-                        subtitle: None,
-                        description: None,
-                        user_direct: true,
-                    });
-                }
-            }
+            apply_rename_workspace_name(state, engine, ws_idx, buffer)
         }
         RenameTarget::WorkspaceSubtitle { ws_idx } => {
-            let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
-            if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
-                ws.subtitle = buffer.clone();
-            }
-            if let Some(workspace_id) = workspace_id {
-                state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-                    workspace_id,
-                    name: None,
-                    subtitle: Some(buffer),
-                    description: None,
-                    user_direct: true,
-                });
-            }
+            apply_rename_workspace_subtitle(state, engine, ws_idx, buffer)
         }
         RenameTarget::TabName { pane_id, tab_index } => {
-            let name = buffer.trim().to_string();
-            let clear = name.is_empty();
-            let mut located: Option<(u32, u32)> = None;
-            if let Some(pane) = state
-                .active_workspace_mut(engine)
-                .pane_layout_mut()
-                .find_pane_mut(pane_id)
-                && let Some(tab) = pane.tabs.get_mut(tab_index)
-            {
-                if clear {
-                    tab.explicit_name = None;
-                } else {
-                    tab.explicit_name = Some(name.clone());
-                }
-                located = Some((tab.id, tab.focused_surface));
-            }
-            if let Some((tab_id, focused)) = located {
-                // explicit_name 해제 시 focused surface 의 최신 title 을 osc_title 로
-                // 재투영해 표시명이 focused surface title 로 복귀하도록 한다 (기대동작 4).
-                if clear {
-                    engine.refresh_tab_osc_title(focused);
-                }
-                let title = state
-                    .active_workspace_mut(engine)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-                    .and_then(|pane| pane.tabs.get(tab_index))
-                    .map(|tab| tab.display_name().to_string())
-                    .unwrap_or_default();
-                state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
-                    tab_id,
-                    title,
-                    user_direct: true,
-                });
-            }
+            apply_rename_tab_name(state, engine, pane_id, tab_index, buffer)
         }
         RenameTarget::ExplorerEntry { surface_id, path } => {
-            let new_name = buffer.trim();
-            if !new_name.is_empty()
-                && let Some(parent) = path.parent()
-            {
-                let new_path = parent.join(new_name);
-                if new_path != path
-                    && let Err(e) = std::fs::rename(&path, &new_path)
-                {
-                    tracing::warn!("explorer: rename {} failed: {e}", path.display());
-                }
-            }
-            if let Some(view) = state.explorer_views.get_mut(surface_id) {
-                view.selected.clear();
-                view.anchor = None;
-                view.request_reload();
-            }
+            apply_rename_explorer_entry(state, surface_id, path, buffer)
         }
         RenameTarget::ExplorerAddFavorite { path } => {
-            engine.explorer_favorites.add(path, buffer);
-            engine.explorer_favorites.save();
+            apply_rename_explorer_add_favorite(engine, path, buffer)
         }
-        RenameTarget::NewCategory => {
-            // 뷰가 검증 통과 시에만 Confirm 하지만, CRUD 도 Result 라 방어적으로 로그.
-            if let Err(e) = engine.create_category(&buffer) {
-                tracing::warn!("create_category '{buffer}' failed: {e:?}");
-            }
-        }
-        RenameTarget::CategoryName { cat_id } => {
-            if let Err(e) = engine.rename_category(cat_id, &buffer) {
-                tracing::warn!("rename_category {cat_id} '{buffer}' failed: {e:?}");
-            }
-        }
+        RenameTarget::NewCategory => apply_rename_new_category(engine, buffer),
+        RenameTarget::CategoryName { cat_id } => apply_rename_category_name(engine, cat_id, buffer),
     }
     engine.mark_layout_dirty();
+}
+
+fn apply_rename_workspace_name(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    ws_idx: usize,
+    buffer: String,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+    let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
+    if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
+        ws.name = buffer.clone();
+    }
+    if let Some(workspace_id) = workspace_id {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+            workspace_id,
+            name: Some(buffer),
+            subtitle: None,
+            description: None,
+            user_direct: true,
+        });
+    }
+}
+
+fn apply_rename_workspace_subtitle(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    ws_idx: usize,
+    buffer: String,
+) {
+    let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
+    if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
+        ws.subtitle = buffer.clone();
+    }
+    if let Some(workspace_id) = workspace_id {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+            workspace_id,
+            name: None,
+            subtitle: Some(buffer),
+            description: None,
+            user_direct: true,
+        });
+    }
+}
+
+fn apply_rename_tab_name(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    pane_id: u32,
+    tab_index: usize,
+    buffer: String,
+) {
+    let name = buffer.trim().to_string();
+    let clear = name.is_empty();
+    let mut located: Option<(u32, u32)> = None;
+    if let Some(pane) = state
+        .active_workspace_mut(engine)
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        && let Some(tab) = pane.tabs.get_mut(tab_index)
+    {
+        if clear {
+            tab.explicit_name = None;
+        } else {
+            tab.explicit_name = Some(name.clone());
+        }
+        located = Some((tab.id, tab.focused_surface));
+    }
+    if let Some((tab_id, focused)) = located {
+        // explicit_name 해제 시 focused surface 의 최신 title 을 osc_title 로
+        // 재투영해 표시명이 focused surface title 로 복귀하도록 한다 (기대동작 4).
+        if clear {
+            engine.refresh_tab_osc_title(focused);
+        }
+        let title = state
+            .active_workspace_mut(engine)
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .and_then(|pane| pane.tabs.get(tab_index))
+            .map(|tab| tab.display_name().to_string())
+            .unwrap_or_default();
+        state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
+            tab_id,
+            title,
+            user_direct: true,
+        });
+    }
+}
+
+fn apply_rename_explorer_entry(
+    state: &mut AppState,
+    surface_id: u32,
+    path: std::path::PathBuf,
+    buffer: String,
+) {
+    let new_name = buffer.trim();
+    if !new_name.is_empty()
+        && let Some(parent) = path.parent()
+    {
+        let new_path = parent.join(new_name);
+        if new_path != path
+            && let Err(e) = std::fs::rename(&path, &new_path)
+        {
+            tracing::warn!("explorer: rename {} failed: {e}", path.display());
+        }
+    }
+    if let Some(view) = state.explorer_views.get_mut(surface_id) {
+        view.selected.clear();
+        view.anchor = None;
+        view.request_reload();
+    }
+}
+
+fn apply_rename_explorer_add_favorite(
+    engine: &mut crate::core::CoreState,
+    path: std::path::PathBuf,
+    buffer: String,
+) {
+    engine.explorer_favorites.add(path, buffer);
+    engine.explorer_favorites.save();
+}
+
+fn apply_rename_new_category(engine: &mut crate::core::CoreState, buffer: String) {
+    // 뷰가 검증 통과 시에만 Confirm 하지만, CRUD 도 Result 라 방어적으로 로그.
+    if let Err(e) = engine.create_category(&buffer) {
+        tracing::warn!("create_category '{buffer}' failed: {e:?}");
+    }
+}
+
+fn apply_rename_category_name(
+    engine: &mut crate::core::CoreState,
+    cat_id: crate::model::WorkspaceCategoryId,
+    buffer: String,
+) {
+    if let Err(e) = engine.rename_category(cat_id, &buffer) {
+        tracing::warn!("rename_category {cat_id} '{buffer}' failed: {e:?}");
+    }
 }
 
 #[cfg(test)]

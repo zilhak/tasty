@@ -1,12 +1,29 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
-use crate::model::SplitDirection;
+use crate::model::{PhysicalRect, SplitDirection};
 use crate::view::main::MainView;
 
 use super::{focused_workspace_category, send_app_event};
 
 impl MainView {
+    /// close 계열 double-tap 액션(`close_workspace`/`close_pane`/`close_surface`/
+    /// `close_active`) 공통 마무리: 워크스페이스가 전부 닫혔으면 창을 닫고,
+    /// 아니면 남은 레이아웃을 새 rect 로 재계산한다.
+    fn finish_after_possible_close(
+        &mut self,
+        terminal_rect: PhysicalRect,
+        cell_w: f32,
+        cell_h: f32,
+    ) {
+        if self.core_state.workspaces.is_empty() {
+            self.request_close();
+        } else {
+            let engine = &mut self.core_state;
+            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+        }
+    }
+
     /// Handle double-tap modifier shortcuts. Returns true if consumed.
     pub(crate) fn handle_double_tap_shortcut(
         &mut self,
@@ -90,11 +107,7 @@ impl MainView {
                     }
                     "close_workspace" => {
                         self.state.close_active_workspace(engine);
-                        if engine.workspaces.is_empty() {
-                            self.request_close();
-                        } else {
-                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                        }
+                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
                     }
                     "new_tab" => {
                         if let Err(e) = self.state.add_tab(engine) {
@@ -106,11 +119,7 @@ impl MainView {
                         if !self.state.close_active_pane(engine) {
                             self.state.close_active_workspace(engine);
                         }
-                        if engine.workspaces.is_empty() {
-                            self.request_close();
-                        } else {
-                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                        }
+                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
                     }
                     "split_pane_vertical" => {
                         self.state.dispatch_intent(
@@ -165,11 +174,7 @@ impl MainView {
                         if !closed && !self.state.close_active_pane(engine) {
                             self.state.close_active_workspace(engine);
                         }
-                        if engine.workspaces.is_empty() {
-                            self.request_close();
-                        } else {
-                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                        }
+                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
                     }
                     "restore_closed" => {
                         self.state.dispatch_intent(
@@ -237,11 +242,7 @@ impl MainView {
                         {
                             self.state.close_active_workspace(engine);
                         }
-                        if engine.workspaces.is_empty() {
-                            self.request_close();
-                        } else {
-                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                        }
+                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
                     }
                     "next_tab" => {
                         self.state.next_tab_in_pane(engine);

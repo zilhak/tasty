@@ -146,58 +146,14 @@ impl FileFormatRegistry {
     /// **Transactional**: 파일 read/parse 단계에서 실패하면 기존 user contribution 을 보존한다
     /// (write lock 잡기 전에 검증). 파일이 없으면 user contribution 만 제거 (= 설정 삭제).
     pub fn reload_user_config(&self, path: &Path) {
-        let (decls, priorities) = match std::fs::read_to_string(path) {
-            Ok(text) => {
-                let d = match parse_detector_section(&text) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        warn!(
-                            path = %path.display(),
-                            error = %e,
-                            "file_format: reload aborted — parse failed, keeping previous user config",
-                        );
-                        return;
-                    }
-                };
-                let p = parse_extension_priority_section(&text).unwrap_or_default();
-                (d, p)
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Vec::new(), Vec::new()),
-            Err(e) => {
-                warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "file_format: reload aborted — read failed, keeping previous user config",
-                );
-                return;
-            }
+        let Some((decls, priorities)) = Self::load_user_decls(path) else {
+            return;
         };
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
         };
-        // 기존 user origin contribution 모두 제거.
-        let mut empty_ids = Vec::new();
-        for (id, contribs) in inner.contributions.iter_mut() {
-            contribs.retain(|c| !matches!(c.origin, RuleOrigin::User));
-            if contribs.is_empty() {
-                empty_ids.push(id.clone());
-            }
-        }
-        for id in empty_ids {
-            inner.contributions.remove(&id);
-            inner.install_order.remove(&id);
-        }
-        // 기존 user origin extension_priority 모두 제거.
-        let user_keys: Vec<String> = inner
-            .extension_priority
-            .iter()
-            .filter(|(_, v)| matches!(v.origin, RuleOrigin::User))
-            .map(|(k, _)| k.clone())
-            .collect();
-        for k in user_keys {
-            inner.extension_priority.remove(&k);
-        }
+        Self::purge_user_contributions(&mut inner);
         // 새 user contribution install.
         for decl in decls {
             install_one(
@@ -212,5 +168,62 @@ impl FileFormatRegistry {
             install_extension_priority(&mut inner, p, RuleOrigin::User);
         }
         inner.dirty = true;
+    }
+
+    /// user config 파일을 읽어 detector/extension-priority 선언을 파싱한다. 파일이
+    /// 없으면 빈 목록(= user override 전부 해제), 읽기/파싱 실패는 이미 warn 로그
+    /// 후 `None`(호출자는 기존 user config 를 그대로 유지).
+    fn load_user_decls(path: &Path) -> Option<(Vec<DetectorDecl>, Vec<ExtensionPriorityDecl>)> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let d = match parse_detector_section(&text) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %e,
+                            "file_format: reload aborted — parse failed, keeping previous user config",
+                        );
+                        return None;
+                    }
+                };
+                let p = parse_extension_priority_section(&text).unwrap_or_default();
+                Some((d, p))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some((Vec::new(), Vec::new())),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "file_format: reload aborted — read failed, keeping previous user config",
+                );
+                None
+            }
+        }
+    }
+
+    /// 기존 user-origin contribution + extension_priority 항목을 모두 제거한다
+    /// (reload 는 항상 전체 재설치이므로 재설치 전 정리).
+    fn purge_user_contributions(inner: &mut super::Inner) {
+        let mut empty_ids = Vec::new();
+        for (id, contribs) in inner.contributions.iter_mut() {
+            contribs.retain(|c| !matches!(c.origin, RuleOrigin::User));
+            if contribs.is_empty() {
+                empty_ids.push(id.clone());
+            }
+        }
+        for id in empty_ids {
+            inner.contributions.remove(&id);
+            inner.install_order.remove(&id);
+        }
+        let user_keys: Vec<String> = inner
+            .extension_priority
+            .iter()
+            .filter(|(_, v)| matches!(v.origin, RuleOrigin::User))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in user_keys {
+            inner.extension_priority.remove(&k);
+        }
     }
 }

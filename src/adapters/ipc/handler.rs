@@ -93,111 +93,29 @@ pub fn handle_with_caller(
     // 에서 점진 사용. 현재는 *시그니처 통과* 만.
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
 
-    let canonical = alias::canonicalize(&request.method);
-    if alias::is_deprecated(&request.method) {
-        tracing::warn!(
-            "ipc method '{}' is deprecated; use '{canonical}' (will be removed at 1.0)",
-            request.method
-        );
-    }
-
+    let (canonical, routed) = canonicalize_and_route(request);
     let workspace_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
 
-    if let Err(e) = caller.ensure_allowed(canonical) {
-        tracing::warn!("ipc permission denied: {e}");
-        let seq = engine.telemetry_seq.next();
-        crate::ipc::audit::record(
-            core,
-            caller,
-            canonical,
-            crate::ipc::audit::AuditDecision::Deny,
-            Some(&format!("{e}")),
-            workspace_id,
-            seq,
-        );
-        return JsonRpcResponse::error(id, -32001, format!("permission_denied: {e}"));
+    if let Some(resp) = check_permission_gate(core, engine, caller, canonical, workspace_id, &id) {
+        return resp;
+    }
+    if let Some(resp) = check_cap_gate(core, engine, caller, canonical, workspace_id, &id) {
+        return resp;
+    }
+    if let Some(resp) = check_rate_limit_gate(core, engine, caller, canonical, workspace_id, &id) {
+        return resp;
     }
 
-    // 텔레메트리 cap 차단: triggered + (Pause|RequireApproval) 인 cap 이 있는
-    // plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
-    // `telemetry.cap.reset` 으로 해제 가능.
-    if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
-        tracing::warn!("ipc cap blocked: {reason}");
-        let seq = engine.telemetry_seq.next();
-        crate::ipc::audit::record(
-            core,
-            caller,
-            canonical,
-            crate::ipc::audit::AuditDecision::Deny,
-            Some(&format!("cap_blocked: {reason}")),
-            workspace_id,
-            seq,
-        );
-        return JsonRpcResponse::error(id, -32007, format!("cap_blocked: {reason}"));
-    }
-
-    // rate_limit 미들웨어: 등록된 (agent, "ipc_calls") 한도 초과 시
-    // -32010 throttled 응답 + audit Deny. 자가 회복을 위해 agent.rate_limit_*
-    // 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
-    // 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
-    // `RateLimit.throttled_count` 가 담당.
-    if should_rate_limit(caller, canonical) {
-        let agent_id = caller.agent_id();
-        let agent = agent_id.as_str();
-        match core.rate_limit_try_consume(agent, "ipc_calls", 1, telemetry::now_ms()) {
-            Ok(outcome) if !outcome.allowed => {
-                let reason = format!("throttled: tokens_left={:.2}", outcome.tokens_left);
-                tracing::warn!("ipc rate_limited: {reason}");
-                let seq = engine.telemetry_seq.next();
-                crate::ipc::audit::record(
-                    core,
-                    caller,
-                    canonical,
-                    crate::ipc::audit::AuditDecision::Deny,
-                    Some(&reason),
-                    workspace_id,
-                    seq,
-                );
-                return JsonRpcResponse::error(id, -32010, reason);
-            }
-            Ok(_) => {}
-            Err(e) => {
-                // fail-open: rate_limit 인프라 자체 실패는 전체 IPC 차단보다 통과 + warn.
-                tracing::warn!("rate_limit middleware error: {e}");
-            }
-        }
-    }
-
-    // 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
-    // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
-    // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
-    telemetry::record_ipc_call(core, state, engine, caller, canonical, &request.params);
-
-    // audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
-    // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
-    let seq = engine.telemetry_seq.next();
-    crate::ipc::audit::record(
+    record_telemetry_and_audit_allow(
         core,
+        state,
+        engine,
         caller,
         canonical,
-        crate::ipc::audit::AuditDecision::Allow,
-        None,
+        &request.params,
         workspace_id,
-        seq,
     );
 
-    // 옛 이름이면 method를 새 이름으로 교체한 임시 request를 라우터에 전달.
-    let routed: Cow<JsonRpcRequest> = if canonical == request.method {
-        Cow::Borrowed(request)
-    } else {
-        Cow::Owned(JsonRpcRequest {
-            jsonrpc: request.jsonrpc.clone(),
-            method: canonical.to_string(),
-            params: request.params.clone(),
-            id: request.id.clone(),
-            session_token: request.session_token.clone(),
-        })
-    };
     let request = routed.as_ref();
 
     if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
@@ -210,6 +128,165 @@ pub fn handle_with_caller(
     }
 
     JsonRpcResponse::method_not_found(id, &request.method)
+}
+
+/// method alias 정규화 + deprecated 경고 + 라우팅용 request 구성.
+/// 옛 이름이면 method 를 새 이름으로 교체한 임시 request 를 반환한다.
+fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcRequest>) {
+    let canonical = alias::canonicalize(&request.method);
+    if alias::is_deprecated(&request.method) {
+        tracing::warn!(
+            "ipc method '{}' is deprecated; use '{canonical}' (will be removed at 1.0)",
+            request.method
+        );
+    }
+
+    let routed: Cow<JsonRpcRequest> = if canonical == request.method {
+        Cow::Borrowed(request)
+    } else {
+        Cow::Owned(JsonRpcRequest {
+            jsonrpc: request.jsonrpc.clone(),
+            method: canonical.to_string(),
+            params: request.params.clone(),
+            id: request.id.clone(),
+            session_token: request.session_token.clone(),
+        })
+    };
+    (canonical, routed)
+}
+
+/// 권한 게이트: caller 가 `canonical` 을 호출할 권한이 없으면 거부 응답 + audit Deny.
+fn check_permission_gate(
+    core: &mut crate::core::Core,
+    engine: &mut crate::core::CoreState,
+    caller: &CallerContext,
+    canonical: &str,
+    workspace_id: Option<u32>,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    if let Err(e) = caller.ensure_allowed(canonical) {
+        tracing::warn!("ipc permission denied: {e}");
+        let seq = engine.telemetry_seq.next();
+        crate::ipc::audit::record(
+            core,
+            caller,
+            canonical,
+            crate::ipc::audit::AuditDecision::Deny,
+            Some(&format!("{e}")),
+            workspace_id,
+            seq,
+        );
+        return Some(JsonRpcResponse::error(
+            id.clone(),
+            -32001,
+            format!("permission_denied: {e}"),
+        ));
+    }
+    None
+}
+
+/// 텔레메트리 cap 차단 게이트: triggered + (Pause|RequireApproval) 인 cap 이 있는
+/// plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
+/// `telemetry.cap.reset` 으로 해제 가능.
+fn check_cap_gate(
+    core: &mut crate::core::Core,
+    engine: &mut crate::core::CoreState,
+    caller: &CallerContext,
+    canonical: &str,
+    workspace_id: Option<u32>,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
+        tracing::warn!("ipc cap blocked: {reason}");
+        let seq = engine.telemetry_seq.next();
+        crate::ipc::audit::record(
+            core,
+            caller,
+            canonical,
+            crate::ipc::audit::AuditDecision::Deny,
+            Some(&format!("cap_blocked: {reason}")),
+            workspace_id,
+            seq,
+        );
+        return Some(JsonRpcResponse::error(
+            id.clone(),
+            -32007,
+            format!("cap_blocked: {reason}"),
+        ));
+    }
+    None
+}
+
+/// rate_limit 미들웨어: 등록된 (agent, "ipc_calls") 한도 초과 시
+/// -32010 throttled 응답 + audit Deny. 자가 회복을 위해 agent.rate_limit_*
+/// 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
+/// 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
+/// `RateLimit.throttled_count` 가 담당.
+fn check_rate_limit_gate(
+    core: &mut crate::core::Core,
+    engine: &mut crate::core::CoreState,
+    caller: &CallerContext,
+    canonical: &str,
+    workspace_id: Option<u32>,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    if !should_rate_limit(caller, canonical) {
+        return None;
+    }
+    let agent_id = caller.agent_id();
+    let agent = agent_id.as_str();
+    match core.rate_limit_try_consume(agent, "ipc_calls", 1, telemetry::now_ms()) {
+        Ok(outcome) if !outcome.allowed => {
+            let reason = format!("throttled: tokens_left={:.2}", outcome.tokens_left);
+            tracing::warn!("ipc rate_limited: {reason}");
+            let seq = engine.telemetry_seq.next();
+            crate::ipc::audit::record(
+                core,
+                caller,
+                canonical,
+                crate::ipc::audit::AuditDecision::Deny,
+                Some(&reason),
+                workspace_id,
+                seq,
+            );
+            Some(JsonRpcResponse::error(id.clone(), -32010, reason))
+        }
+        Ok(_) => None,
+        Err(e) => {
+            // fail-open: rate_limit 인프라 자체 실패는 전체 IPC 차단보다 통과 + warn.
+            tracing::warn!("rate_limit middleware error: {e}");
+            None
+        }
+    }
+}
+
+/// 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
+/// `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
+/// 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
+///
+/// audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
+/// 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
+fn record_telemetry_and_audit_allow(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    caller: &CallerContext,
+    canonical: &str,
+    params: &serde_json::Value,
+    workspace_id: Option<u32>,
+) {
+    telemetry::record_ipc_call(core, state, engine, caller, canonical, params);
+
+    let seq = engine.telemetry_seq.next();
+    crate::ipc::audit::record(
+        core,
+        caller,
+        canonical,
+        crate::ipc::audit::AuditDecision::Allow,
+        None,
+        workspace_id,
+        seq,
+    );
 }
 
 /// IPC rate_limit 미들웨어가 적용되는 caller/method 조합인가?
