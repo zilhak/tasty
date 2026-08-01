@@ -15,9 +15,9 @@ use super::types::{
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
     is_reserved_event_namespace, is_reserved_hook_event_key, is_reserved_ipc_prefix,
-    is_valid_cli_name, is_valid_command_id, is_valid_event_key, is_valid_event_pattern,
-    is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind,
-    is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
+    is_valid_cli_name, is_valid_command_id, is_valid_completion_strategy_id, is_valid_event_key,
+    is_valid_event_pattern, is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix,
+    is_valid_kind, is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -349,6 +349,7 @@ impl Manifest {
         self.validate_contributed_handlers()?;
         self.validate_contributed_detector_permissions()?;
         self.validate_contributed_hook_handlers()?;
+        self.validate_contributed_completion_strategies()?;
         Ok(())
     }
 
@@ -1156,6 +1157,83 @@ impl Manifest {
                 anyhow::bail!(
                     "contributes.hook_handler '{id}' requires permission 'hook_handler.define'"
                 );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_contributed_completion_strategies(&self) -> anyhow::Result<()> {
+        // [[contributes.completion_strategy]] 검증 — schema-agnostic 만
+        // (TODO80 §B, hook_handler 와 동일 지위). concrete spec(poll_method 매핑 등)
+        // 은 host 측 `CompletionStrategyRegistryPort::install_plugin_completion_strategies`
+        // 가 install 시점에 deserialize·검증한다. 여기서는 id 형식 + 유일성 +
+        // define 권한 + (결정 2) poll_method 가 자기 namespace 인지만 확인한다.
+        let has_define = self
+            .permissions
+            .iter()
+            .any(|p| p == "completion_strategy.define");
+        let mut seen_ids = HashSet::new();
+        for v in &self.contributes.completion_strategy {
+            let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            if id.is_empty() {
+                anyhow::bail!(
+                    "contributes.completion_strategy entry missing required 'id' string field"
+                );
+            }
+            if !is_valid_completion_strategy_id(id) {
+                anyhow::bail!(
+                    "invalid contributes.completion_strategy id '{id}': must be lowercase ascii + digits + '-', length ≤ 32"
+                );
+            }
+            if !seen_ids.insert(id.to_string()) {
+                anyhow::bail!(
+                    "contributes.completion_strategy id '{id}' declared twice in this manifest"
+                );
+            }
+            if !has_define {
+                anyhow::bail!(
+                    "contributes.completion_strategy '{id}' requires permission 'completion_strategy.define'"
+                );
+            }
+            // 결정 2 — poll 형의 poll_method 는 plugin 자기 namespace 로 제한한다
+            // (CLI subcommand 의 ipc_method 검증과 동일 취지, `validate_cli_subcommands`
+            // 참고). host/user 출처는 host 측 레지스트리 finalize 가 권위 있게 강제
+            // — 여기서는 매니페스트가 스스로 선언 가능한 plugin 출처만 조기 검증한다.
+            if v.get("spec")
+                .and_then(|s| s.get("kind"))
+                .and_then(|k| k.as_str())
+                == Some("poll")
+                && let Some(poll_method) = v
+                    .get("spec")
+                    .and_then(|s| s.get("poll_method"))
+                    .and_then(|m| m.as_str())
+            {
+                let prefix = poll_method.split('.').next().unwrap_or("");
+                if prefix != self.id {
+                    anyhow::bail!(
+                        "contributes.completion_strategy '{id}' poll_method '{poll_method}' \
+                         uses namespace '{prefix}' which is not this plugin's own ('{}')",
+                        self.id
+                    );
+                }
+            }
+            // default_for_methods 도 같은 이유로 전원 자기 namespace 여야 한다(결정 6).
+            if let Some(methods) = v.get("default_for_methods").and_then(|m| m.as_array()) {
+                for m in methods {
+                    let Some(method) = m.as_str() else {
+                        anyhow::bail!(
+                            "contributes.completion_strategy '{id}' default_for_methods entries must be strings"
+                        );
+                    };
+                    let prefix = method.split('.').next().unwrap_or("");
+                    if prefix != self.id {
+                        anyhow::bail!(
+                            "contributes.completion_strategy '{id}' default_for_methods '{method}' \
+                             uses namespace '{prefix}' which is not this plugin's own ('{}')",
+                            self.id
+                        );
+                    }
+                }
             }
         }
         Ok(())

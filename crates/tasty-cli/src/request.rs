@@ -18,8 +18,8 @@ use memory::memory_command_to_method_params;
 use output::output_command_to_method_params;
 use plugin_cmd::plugin_command_to_method_params;
 use presets::{
-    file_handler_command_to_method_params, hook_handler_command_to_method_params,
-    preset_command_to_method_params,
+    completion_strategy_command_to_method_params, file_handler_command_to_method_params,
+    hook_handler_command_to_method_params, preset_command_to_method_params,
 };
 use settings::settings_command_to_method_params;
 use telemetry::telemetry_command_to_method_params;
@@ -241,6 +241,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
         Commands::Clipboard { command } => clipboard_command_to_method_params(command),
         Commands::HookHandler { command } => hook_handler_command_to_method_params(command),
+        Commands::CompletionStrategy { command } => {
+            completion_strategy_command_to_method_params(command)
+        }
         Commands::Preset { command } => preset_command_to_method_params(command),
         Commands::WorkspaceCategory { command } => {
             workspace_category_command_to_method_params(command)

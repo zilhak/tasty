@@ -37,12 +37,27 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | TaskCommand | dispatch | poll |
 |-------------|----------|------|
 | `Run { command, cwd }` | `Command::spawn` → pid → `ShellProcess`. 빈 command Err | watcher thread 의 `child.wait()` 결과 cell 조회 → exit 0 Done / 아니면 Failed |
-| `Custom { ipc_method, params, poll: None }` | host IPC dispatch(timeout 5s) → `CustomImmediate` | 즉시 Done |
-| `Custom { ipc_method, params, poll: Some(spec) }` | host IPC dispatch → `map_from_request`/`map_from_response` 로 `poll_params` 완성 → `PolledDispatch` | `poll_method` 호출 → `state_field` 가 `terminal_states` 중 하나면 Done(응답 전체가 산출물) / 아니면 Active(`deadline_ms` 초과 시 Failed) |
+| `Custom { ipc_method, params, poll: None }` | host IPC dispatch(timeout 5s) → 등록된 완료 판정 전략 중 `ipc_method` 를 `default_for_methods` 로 지목한 poll 전략이 있으면 그 사양 채택(아래 "완료 판정 전략 레지스트리" 결정 6), 없으면 `CustomImmediate` | 결정 6 적용 시 아래 `poll: Some` 행과 동일 / 아니면 즉시 Done |
+| `Custom { ipc_method, params, poll: Some(PollSpecRef::Inline(spec)) }` | host IPC dispatch → `map_from_request`/`map_from_response` 로 `poll_params` 완성 → `PolledDispatch` | `poll_method` 호출 → `state_field` 가 `terminal_states` 중 하나면 Done(응답 전체가 산출물) / 아니면 Active(`deadline_ms` 초과 시 Failed) |
+| `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }` | 완료 판정 전략 레지스트리에서 `strategy` 를 이름 해석(`resolve_poll_spec`) → 얻은 `PollSpec` 으로 위와 동일 처리. 미등록/비활성/push-kind 면 해석 실패 → dispatch 자체가 `PermanentFail`(Running 진입 전에 드러남) | 위와 동일 |
 | `Reduce { inputs, strategy }` | input 결과 collect → `reduce_with_custom` → `ReduceImmediate` | 즉시 Done |
 | `WaitBarrier { name }` | `BarrierPoll` | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
 
 > 자식 에이전트(예: `claude.spawn` + `claude.wait`)는 이 범용 `Custom { poll }` 메커니즘의 한 사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링을 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
+
+## 완료 판정 전략 레지스트리 (`src/completion_strategy/`)
+
+`Custom.poll` 이름 참조(`PollSpecRef::Named`)와 결정 6(`default_for_methods`) 이 가리키는 대상 — "임의 IPC dispatch 가 끝났는지"를 이름으로 등록해두는 독립 레지스트리다. `src/hook_handler/`(공유 훅 핸들러 레지스트리) 를 정본 템플릿으로 **형태만** 미러링한다 — 3출처 병합(host 내장 TOML + plugin manifest + user config `~/.tasty/completion-strategies.toml`), patch semantics(Host→Plugin→User, `Some` 필드만 override), id 규약(`<owner>/<short>`, `host`/`<plugin_id>`/`user`), 전역 싱글턴 `global()`. `HookHandlerId`(push 형이 참조) 외에는 훅 핸들러의 타입을 import 하지 않는다.
+
+전략 종류(`CompletionStrategyKind`):
+- **poll**: `tasty-agent::PollSpec` 그대로 재사용.
+- **push**: `notify_via: HookHandlerId` + 필수 `timeout_ms`(보고 유실 시 task 가 영구 Running 에 남지 않도록 하는 안전망). `notify_via` 는 등록 시점에 존재·owner(자기 자신 또는 `host`) 를 검증한다. **push 완료 신호 소비 배선은 아직 없다** — 등록 골격만 있고, dispatch 경로에서 push-kind 기본 전략이 매칭되면 warn 후 기존 즉시-성공 동작으로 폴백한다.
+
+네임스페이스 제한(결정 2): plugin 소유 전략의 `poll_method`/`default_for_methods` 는 자기 IPC namespace(`<plugin_id>.*`) 만 가리킬 수 있고, host/user 소유는 어떤 plugin namespace 도 가리킬 수 없다(`_host` 권한 우회 방지) — `tasty_ipc::method_meta::is_registered_plugin_prefix` 로 검증.
+
+결정 6(`default_for_methods`, 역방향 소유): 매니페스트에 메서드 단위 선언 축이 없어 전략이 자기가 기본이 될 IPC 메서드 목록을 든다. 여러 활성 전략이 같은 메서드를 지목하면 정렬 승자(priority↑ → owner tie-break user>plugin>host → id)가 채택되고 패자는 warn.
+
+IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tasty completion-strategy list`. reload/dispatch 대응물은 없다(user config 재로드 미노출, "발화" 개념 없음). 내장 host 기본값은 `src/completion_strategy/defaults/default-completion-strategies.toml`(예: `command-completed` — OSC 133 셸 통합 기반 push 전략. `notify_via = "host/command-completed"` 훅 핸들러가 아직 없어 등록 시 조용히 drop — 셸 완료 신호 배선이 끝나야 활성화된다).
 
 ## RunnerRegistry
 

@@ -4,6 +4,7 @@ pub mod agent;
 pub mod approval;
 pub mod attach;
 pub mod clipboard;
+pub mod completion_strategy;
 pub mod debug;
 pub mod file_handler;
 pub mod hook_handler;
@@ -33,6 +34,7 @@ pub mod workspace_category;
 pub use agent::AgentCommands;
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 pub use clipboard::ClipboardCommands;
+pub use completion_strategy::CompletionStrategyCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,

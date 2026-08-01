@@ -195,6 +195,11 @@ pub enum Permission {
     /// `file_handler.handle:<detector>` 미러 — 특정 핸들러 id 단위 grant 가시성을
     /// 위해 예약된 scoped 토큰.
     HookHandlerHandle(String),
+    /// 새 완료 판정 전략 정의 권한. 토큰 `completion_strategy.define`.
+    /// `[[contributes.completion_strategy]]` 로 전략(poll/push)을 선언할 때 필요.
+    /// 훅 핸들러 `hook_handler.define` 미러 — 별도 레지스트리이므로 레지스트리당
+    /// 1토큰 선례에 따라 재사용하지 않고 신설한다(TODO80 §B-3).
+    CompletionStrategyDefine,
 }
 
 impl Permission {
@@ -225,6 +230,7 @@ impl Permission {
             "window.spawn" => Self::WindowSpawn,
             "file_handler.define" => Self::FileHandlerDefine,
             "hook_handler.define" => Self::HookHandlerDefine,
+            "completion_strategy.define" => Self::CompletionStrategyDefine,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
                     if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -302,6 +308,7 @@ impl Permission {
             Self::FileHandlerHandle(id) => format!("file_handler.handle:{id}"),
             Self::HookHandlerDefine => "hook_handler.define".into(),
             Self::HookHandlerHandle(id) => format!("hook_handler.handle:{id}"),
+            Self::CompletionStrategyDefine => "completion_strategy.define".into(),
         }
     }
 }
@@ -642,6 +649,18 @@ pub struct Contributes {
     /// `HookHandlerRegistryPort` impl(install 시점)에서 수행한다.
     #[serde(default)]
     pub hook_handler: Vec<serde_json::Value>,
+    /// 완료 판정 전략 contribute (TODO80 §B — 독립 `CompletionStrategyRegistry`,
+    /// 훅 핸들러와 형태만 미러링, 코드/타입 공유 없음). poll 형(자체 폴링 사양)과
+    /// push 형(`notify_via: HookHandlerId` + 필수 timeout) 둘 다 이 필드로 선언한다.
+    /// 각 항목은 `[[contributes.completion_strategy]]` 한 블록이며
+    /// `completion_strategy.define` 권한을 요구한다.
+    ///
+    /// **Opaque payload** (F.B.2 동일 사유, hook_handler 와 동일) — manifest crate 가
+    /// 본 바이너리 `completion_strategy::config` 결합 없이 분리 가능하도록 raw JSON
+    /// Value 로 보관. concrete decl 변환/검증은 host
+    /// `CompletionStrategyRegistryPort` impl(install 시점)에서 수행한다.
+    #[serde(default)]
+    pub completion_strategy: Vec<serde_json::Value>,
     /// Plugin 이 설정 모달에 노출할 sub-page 정의. 항목당 `[[contributes.settings_pages]]`
     /// 한 블록. host 가 plugin registry 를 순회해 동적으로 sub-tab 을 그린다.
     /// 1 차 schema 는 `FontOverride` 항목만 지원 (Color/Bool/Enum 등은 후속 확장).

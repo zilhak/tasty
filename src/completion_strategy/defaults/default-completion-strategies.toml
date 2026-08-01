@@ -1,0 +1,30 @@
+# 호스트 default 완료 판정 전략 정의 (TODO80 §B, 훅 핸들러
+# `default-hook-handlers.toml` 과 나란한 별도 파일 — 섞지 않는다, §B-3).
+#
+# 각 전략은 `spec.kind` 로 poll/push 를 구분한다.
+#   - poll : 자체 폴링(`poll_method`/`state_field`/`terminal_states`/`interval_ms`).
+#   - push : 외부(훅 핸들러) 보고. `notify_via` 는 그 보고를 받을 훅 핸들러 id,
+#            `timeout_ms` 는 **필수**(보고 유실 시 영구 대기 방지, §B-3/§C-3).
+#
+# priority 는 낮을수록 우선(훅 핸들러 규약과 동일). `default_for_methods` 는
+# 결정 6 — 이 전략이 그 IPC 메서드들의 기본 완료 판정이 된다(poll 생략 시 적용).
+
+# 결정 7 — `command-completed` 셸 훅 기반 내장 push 전략. OSC 133 셸 통합이 로드된
+# surface 에서만 발화한다(전제, `src/core/state/shell_integration_hint.rs` 참고).
+#
+# **TODO80 §B-5 알려진 한계**: 이 전략이 참조하는 `notify_via = "host/command-completed"`
+# 훅 핸들러는 아직 존재하지 않는다 — hook_id → task_id 매핑(§B-4 (ii))과 트리거
+# payload 의 실제 exit_code 전달(§C-2)이 트랙 C 작업이기 때문이다. 그때까지 이
+# 항목은 레지스트리 finalize 의 notify_via 존재 검증에 걸려 **조용히 drop 되고
+# warn 로그만 남는다** — 골격만 미리 선언해 트랙 C 머지 후 훅 핸들러 쪽 대응
+# entry 만 추가하면 바로 살아나게 하기 위함이다. `Run` task(TaskCommand::Run)의
+# 완료 판정에도 재사용될 예정(TODO80 "후속 TODO 에 미치는 영향" 참고).
+[[strategy]]
+id = "command-completed"
+priority = 100
+default_for_methods = []
+
+[strategy.spec]
+kind = "push"
+notify_via = "host/command-completed"
+timeout_ms = 300000

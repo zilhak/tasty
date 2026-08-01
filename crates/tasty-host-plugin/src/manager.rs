@@ -355,6 +355,11 @@ pub struct PluginManager {
     /// `[[contributes.hook_handler]]` 등록/제거. 호스트가 setter 로 주입하며 None
     /// 이면 skip (headless 부팅 전/test — 훅 핸들러 없이도 코어 동작).
     pub hook_handler: Option<Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>>,
+    /// `[[contributes.completion_strategy]]` 등록/제거(TODO80 §B). 호스트가
+    /// setter 로 주입하며 None 이면 skip — hook_handler 와 동일 지위(독립
+    /// 레지스트리, 미주입 시 완료 판정 전략 없이도 코어 동작).
+    pub completion_strategy:
+        Option<Arc<dyn tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort>>,
     /// i18n namespace 등록 trait. None 이면 등록 skip (headless/test).
     pub i18n_registrar: Option<Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>>,
     /// 플러그인 자식 프로세스 수명을 호스트에 결박하는 크로스 플랫폼 reaper.

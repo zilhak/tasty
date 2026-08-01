@@ -455,19 +455,66 @@ impl HostExecutor {
                 params,
                 poll,
             } => {
-                // 동기 IPC dispatch. poll=None 이면 응답으로 즉시 종결, poll=Some 이면
-                // dispatch 후 terminal 상태 도달까지 범용 폴링.
+                // 동기 IPC dispatch. poll=None 이면 응답으로 즉시 종결(단, 결정 6 기본
+                // 전략이 매칭되면 그 poll 사양을 대신 사용), poll=Some(Inline) 이면 인라인
+                // 사양대로, poll=Some(Named) 이면 완료 판정 전략 레지스트리로 이름을
+                // 해석해 terminal 상태 도달까지 범용 폴링.
                 let value = self
                     .ctx
                     .dispatch_plugin(ipc_method, params.clone())
                     .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
-                let Some(spec) = poll else {
-                    return Ok(DispatchHandle::CustomImmediate(TaskResult {
-                        exit_code: Some(0),
-                        output: Some(value),
-                        error: None,
-                    }));
+                use tasty_agent::PollSpecRef;
+                let spec: tasty_agent::PollSpec = match poll {
+                    Some(PollSpecRef::Inline(spec)) => spec.clone(),
+                    Some(PollSpecRef::Named { strategy }) => {
+                        let id =
+                            crate::completion_strategy::CompletionStrategyId::new(strategy.clone());
+                        crate::completion_strategy::global()
+                            .resolve_poll_spec(&id)
+                            .map_err(|e| {
+                                format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
+                            })?
+                    }
+                    None => {
+                        match crate::completion_strategy::global()
+                            .resolve_default_for_method(ipc_method)
+                        {
+                            Some(strat) => match strat.kind {
+                                crate::completion_strategy::CompletionStrategyKind::Poll(spec) => {
+                                    spec
+                                }
+                                crate::completion_strategy::CompletionStrategyKind::Push {
+                                    ..
+                                } => {
+                                    // push 형 기본 전략은 이 dispatch 경로가 아직 소비할 수
+                                    // 없다(push 완료 통지 소비 파이프라인 미구현, TODO80
+                                    // 결정 7 — Track C 의 exit code 배선 이후 과제). 기존
+                                    // 즉시-성공 하위호환을 유지하되 가시화를 위해 warn.
+                                    tracing::warn!(
+                                        ipc_method = ipc_method.as_str(),
+                                        strategy_id = strat.id.as_str(),
+                                        "completion_strategy: push-kind default strategy \
+                                         matched but push completion consumption is not wired \
+                                         in dispatch — falling back to immediate success"
+                                    );
+                                    return Ok(DispatchHandle::CustomImmediate(TaskResult {
+                                        exit_code: Some(0),
+                                        output: Some(value),
+                                        error: None,
+                                    }));
+                                }
+                            },
+                            None => {
+                                return Ok(DispatchHandle::CustomImmediate(TaskResult {
+                                    exit_code: Some(0),
+                                    output: Some(value),
+                                    error: None,
+                                }));
+                            }
+                        }
+                    }
                 };
+                let spec = &spec;
                 // poll params 사전 해석: 원 요청 → 응답 순으로 채움 (응답이 요청보다 우선).
                 let mut poll_params = serde_json::Map::new();
                 for (req_key, poll_key) in &spec.map_from_request {
@@ -1032,7 +1079,7 @@ mod tests {
         use crate::ipc::protocol::JsonRpcResponse;
         use std::collections::HashMap;
         use std::sync::mpsc;
-        use tasty_agent::{OnFailure, PollSpec};
+        use tasty_agent::{OnFailure, PollSpec, PollSpecRef};
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -1090,7 +1137,7 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "fake.start".into(),
                 params: json!({ "surface_id": 7 }),
-                poll: Some(PollSpec {
+                poll: Some(PollSpecRef::Inline(PollSpec {
                     poll_method: "fake.poll".into(),
                     map_from_response,
                     map_from_request,
@@ -1098,7 +1145,7 @@ mod tests {
                     terminal_states: vec!["done".into()],
                     interval_ms: 1,
                     timeout_ms: None,
-                }),
+                })),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
@@ -1194,6 +1241,232 @@ mod tests {
             }
             other => panic!("expected CustomImmediate, got {other:?}"),
         }
+    }
+
+    /// TODO80 §B 체크리스트 7: `poll: Some(Named)` → 완료 판정 전략 레지스트리로
+    /// 이름 해석 후 그 `PollSpec` 대로 폴링(인라인과 동등하게 동작).
+    #[test]
+    fn custom_with_named_poll_strategy_resolves_and_polls() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::server::IpcCommand;
+        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
+
+        crate::completion_strategy::HostCompletionStrategyPort
+            .install_plugin_completion_strategies(
+                "rhtest1",
+                &[serde_json::json!({
+                    "id": "wait-done",
+                    "priority": 100,
+                    "spec": {
+                        "kind": "poll",
+                        "poll_method": "rhtest1.poll",
+                        "state_field": "state",
+                        "terminal_states": ["done"],
+                        "interval_ms": 1,
+                    },
+                })],
+            );
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv rhtest1.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({}),
+                ))
+                .expect("send start resp");
+            let poll = rx.recv().expect("recv rhtest1.poll");
+            poll.response_tx
+                .send(JsonRpcResponse::success(
+                    poll.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "state": "done" }),
+                ))
+                .expect("send poll resp");
+        });
+        let task = Task {
+            id: "t-named".to_string(),
+            workspace_id: 1,
+            name: "named".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "rhtest1.start".into(),
+                params: json!({}),
+                poll: Some(PollSpecRef::Named {
+                    strategy: "rhtest1/wait-done".into(),
+                }),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match exec.poll(&handle) {
+            PollOutcome::Done(r) => assert_eq!(r.output, Some(json!({ "state": "done" }))),
+            other => panic!("expected Done, got {other:?}"),
+        }
+        worker.join().unwrap();
+        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest1");
+    }
+
+    /// `poll: Some(Named)` 이 미등록 이름을 가리키면 dispatch 자체가 실패(PermanentFail)
+    /// — Running 진입 후가 아니라 dispatch 시점에 드러난다. dispatch 는 poll 해석
+    /// 전에 먼저 `ipc_method` 를 호출하므로 그 응답까지는 정상적으로 흘려보낸다.
+    #[test]
+    fn custom_with_unknown_named_poll_strategy_fails_dispatch() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv rhtest2.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({}),
+                ))
+                .expect("send start resp");
+        });
+        let task = Task {
+            id: "t-named-missing".to_string(),
+            workspace_id: 1,
+            name: "named-missing".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "rhtest2.start".into(),
+                params: json!({}),
+                poll: Some(PollSpecRef::Named {
+                    strategy: "rhtest2/does-not-exist".into(),
+                }),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        match exec.dispatch(&task) {
+            DispatchOutcome::PermanentFail(e) => assert!(e.contains("rhtest2/does-not-exist")),
+            other => panic!("expected PermanentFail, got {other:?}"),
+        }
+        worker.join().unwrap();
+    }
+
+    /// 결정 6 — `poll: None` 이라도 `default_for_methods` 로 그 IPC 메서드를 지목한
+    /// poll 전략이 있으면 그 사양을 대신 사용한다(즉시-성공 하위호환보다 우선).
+    #[test]
+    fn custom_without_poll_uses_default_for_method_strategy() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::OnFailure;
+        use tasty_ipc::server::IpcCommand;
+        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
+
+        crate::completion_strategy::HostCompletionStrategyPort
+            .install_plugin_completion_strategies(
+                "rhtest3",
+                &[serde_json::json!({
+                    "id": "auto-wait",
+                    "priority": 100,
+                    "default_for_methods": ["rhtest3.start"],
+                    "spec": {
+                        "kind": "poll",
+                        "poll_method": "rhtest3.poll",
+                        "state_field": "state",
+                        "terminal_states": ["done"],
+                        "interval_ms": 1,
+                    },
+                })],
+            );
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv rhtest3.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({}),
+                ))
+                .expect("send start resp");
+            let poll = rx.recv().expect("recv rhtest3.poll");
+            poll.response_tx
+                .send(JsonRpcResponse::success(
+                    poll.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "state": "done" }),
+                ))
+                .expect("send poll resp");
+        });
+        let task = Task {
+            id: "t-default".to_string(),
+            workspace_id: 1,
+            name: "default".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "rhtest3.start".into(),
+                params: json!({}),
+                poll: None,
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        // poll:None 이라도 default_for_methods 매칭 때문에 즉시 CustomImmediate 가
+        // 아니라 PolledDispatch 가 나와야 한다.
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        assert!(matches!(handle, DispatchHandle::PolledDispatch { .. }));
+        match exec.poll(&handle) {
+            PollOutcome::Done(r) => assert_eq!(r.output, Some(json!({ "state": "done" }))),
+            other => panic!("expected Done, got {other:?}"),
+        }
+        worker.join().unwrap();
+        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest3");
     }
 
     /// J.A.S2: evict 후 store 에서 사라짐.

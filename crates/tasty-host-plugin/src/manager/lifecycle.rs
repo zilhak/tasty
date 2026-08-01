@@ -107,6 +107,7 @@ impl PluginManager {
             file_format,
             file_handler,
             hook_handler: None,
+            completion_strategy: None,
             i18n_registrar: None,
             plugin_reaper,
         }
@@ -119,6 +120,16 @@ impl PluginManager {
         registry: Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>,
     ) {
         self.hook_handler = Some(registry);
+    }
+
+    /// 호스트가 완료 판정 전략 레지스트리 port 를 주입(TODO80 §B). headless/test 는
+    /// 호출 안 함. 주입 후에는 plugin enable/disable 시
+    /// `[[contributes.completion_strategy]]` 를 등록/해제한다.
+    pub fn set_completion_strategy_registry(
+        &mut self,
+        registry: Arc<dyn tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort>,
+    ) {
+        self.completion_strategy = Some(registry);
     }
 
     /// 호스트가 i18n namespace 등록 trait 을 주입. headless/test 는 호출 안 함.
@@ -217,6 +228,12 @@ impl PluginManager {
             hh.install_plugin_hook_handlers(
                 &pkg.manifest.id,
                 &pkg.manifest.contributes.hook_handler,
+            );
+        }
+        if let Some(cs) = &self.completion_strategy {
+            cs.install_plugin_completion_strategies(
+                &pkg.manifest.id,
+                &pkg.manifest.contributes.completion_strategy,
             );
         }
         self.start_plugin_internal(&pkg);
@@ -379,6 +396,12 @@ impl PluginManager {
             if let Some(hh) = &self.hook_handler {
                 hh.install_plugin_hook_handlers(plugin_id, &pkg.manifest.contributes.hook_handler);
             }
+            if let Some(cs) = &self.completion_strategy {
+                cs.install_plugin_completion_strategies(
+                    plugin_id,
+                    &pkg.manifest.contributes.completion_strategy,
+                );
+            }
 
             if !self.processes.contains_key(plugin_id) {
                 self.ensure_listener();
@@ -407,11 +430,15 @@ impl PluginManager {
                 tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
             }
         }
-        // file_format / file_handler / hook_handler registry 에서 plugin 의 contribute 제거.
+        // file_format / file_handler / hook_handler / completion_strategy registry 에서
+        // plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
         self.file_handler.uninstall_plugin(plugin_id);
         if let Some(hh) = &self.hook_handler {
             hh.uninstall_plugin(plugin_id);
+        }
+        if let Some(cs) = &self.completion_strategy {
+            cs.uninstall_plugin(plugin_id);
         }
         // `plugin.unloaded` / `plugin.disabled` 발화는 D.3.C.G.2.b cascade 가 처리
         // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded

@@ -45,6 +45,9 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
     ));
+    mgr.set_completion_strategy_registry(std::sync::Arc::new(
+        crate::completion_strategy::HostCompletionStrategyPort,
+    ));
     crate::plugin::install_builtins_if_needed(&mut mgr);
     mgr.refresh_packages();
     mgr.discover_and_start();

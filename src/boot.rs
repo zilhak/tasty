@@ -245,6 +245,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 바인딩·`hook_handler.*` 조회가 이 전역 레지스트리를 보므로 리스너 init 전에
         // 채운다(plugin contribution 은 이후 discover_and_start 에서 병합).
         crate::hook_handler::install_default_sources();
+        // 완료 판정 전략 레지스트리 시드(TODO80 §B) — 훅 핸들러와 대칭 위치.
+        // notify_via 참조 무결성 검증이 훅 핸들러 레지스트리를 보므로 그 뒤에 둔다.
+        crate::completion_strategy::install_default_sources();
         let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }

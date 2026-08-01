@@ -154,6 +154,11 @@ fn build_plugin_manager(
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
     ));
+    // 완료 판정 전략 레지스트리(전역 싱글턴) port 주입(TODO80 §B) — plugin
+    // enable/disable 시 `[[contributes.completion_strategy]]` 를 등록/해제한다.
+    mgr.set_completion_strategy_registry(std::sync::Arc::new(
+        crate::completion_strategy::HostCompletionStrategyPort,
+    ));
     // T3 은 discovery 와 spawn 을 나눠 찍는다 — 4부 escalate 확정 시 어느
     // 쪽이 병목인지 판단하기 위함.
     let t3 = std::time::Instant::now();

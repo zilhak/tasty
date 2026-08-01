@@ -240,6 +240,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: HookHandlerCommands,
     },
+    /// Completion strategy — task Custom-dispatch completion judge registry (list).
+    CompletionStrategy {
+        #[command(subcommand)]
+        command: CompletionStrategyCommands,
+    },
     /// Manage layout presets (workspace / tab / pane).
     Preset {
         #[command(subcommand)]

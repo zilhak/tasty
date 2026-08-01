@@ -56,6 +56,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 메시지 패싱: `message.{send,read,count,clear}`
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
 - 훅 핸들러: `hook_handler.{list,reload,dispatch}` (local-only) — 훅/웹훅 공유 핸들러 레지스트리 조회(비활성 포함)·user config(`~/.tasty/hook-handlers.toml`) 재로드·id 로 수동 발화(IpcSequence/ShellCommand). dispatch 는 fire-and-forget(응답은 accepted ACK 만)
+- 완료 판정 전략: `completion_strategy.list` (local-only) — `agent.task_create` 의 `Custom.poll` 이름 참조가 가리키는 완료 판정 전략 레지스트리 조회(비활성 포함). reload/dispatch 대응물 없음(판정 함수이지 발화 대상 아님) — [agent-runner](../dev-guide/agent-runner.md)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
 - 원격 연결 프로필: `remote.profile.{list,get,add,detect,remove}`(구 `tool.ssh.*`/`ssh.profile.*`는 alias로 한시 호환) — [remote-profiles](../features/remote-profiles/index.md)
 - webview: `webview.set_url`

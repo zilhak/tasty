@@ -22,3 +22,16 @@ pub trait HookHandlerRegistryPort: Send + Sync {
     fn install_plugin_hook_handlers(&self, plugin_id: &str, handlers: &[serde_json::Value]);
     fn uninstall_plugin(&self, plugin_id: &str);
 }
+
+/// 완료 판정 전략 레지스트리(TODO80 §B)를 plugin manager 가 의존 없이 받기 위한
+/// trait. 훅 핸들러와 동일 형태 — plugin enable/disable 시점에
+/// `[[contributes.completion_strategy]]` opaque payload 를 등록/해제한다. 호스트
+/// impl 이 concrete `CompletionStrategyDecl` 로 deserialize 한다.
+pub trait CompletionStrategyRegistryPort: Send + Sync {
+    fn install_plugin_completion_strategies(
+        &self,
+        plugin_id: &str,
+        strategies: &[serde_json::Value],
+    );
+    fn uninstall_plugin(&self, plugin_id: &str);
+}

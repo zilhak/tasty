@@ -4,7 +4,7 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
-    OnFailure, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
+    OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
     reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
@@ -52,6 +52,10 @@ pub fn handle_task_create(
         .unwrap_or_default();
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 
+    if let Err(e) = validate_poll_strategy_refs(&command, &on_failure) {
+        return JsonRpcResponse::invalid_params(id, e);
+    }
+
     let opts = TaskCreateOpts {
         workspace_id,
         name,
@@ -68,6 +72,40 @@ pub fn handle_task_create(
         },
         Err(e) => agent_err_to_response(id, e),
     }
+}
+
+/// `command` 및 `on_failure.Fallback.inline` 이 참조하는 `poll` 이름(완료 판정
+/// 전략)을 생성 시점에 검증한다(TODO80 §B 체크리스트 8: "task_create 시 미등록
+/// 전략 이름 거부"). 오타를 실행 시점(Custom dispatch)이 아니라 생성 시점에 잡아
+/// task 가 Running 에 진입한 뒤에야 실패하는 것을 막는다. `Custom` dispatch 이름
+/// 해석(`src/core/agent/runner_host.rs`)과 같은 `resolve_poll_spec` 을 공유한다.
+fn validate_poll_strategy_refs(
+    command: &TaskCommand,
+    on_failure: &OnFailure,
+) -> Result<(), String> {
+    validate_command_poll_ref(command)?;
+    if let OnFailure::Fallback {
+        inline: Some(spec), ..
+    } = on_failure
+    {
+        validate_command_poll_ref(&spec.command)?;
+        validate_poll_strategy_refs(&spec.command, &spec.on_failure)?;
+    }
+    Ok(())
+}
+
+fn validate_command_poll_ref(command: &TaskCommand) -> Result<(), String> {
+    if let TaskCommand::Custom {
+        poll: Some(PollSpecRef::Named { strategy }),
+        ..
+    } = command
+    {
+        let id = crate::completion_strategy::CompletionStrategyId::new(strategy.clone());
+        crate::completion_strategy::global()
+            .resolve_poll_spec(&id)
+            .map_err(|e| format!("poll strategy '{strategy}': {e}"))?;
+    }
+    Ok(())
 }
 
 // ============================================================
@@ -606,4 +644,109 @@ pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Resu
         )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+#[cfg(test)]
+mod poll_strategy_ref_tests {
+    use super::*;
+    use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
+
+    /// `crate::completion_strategy::global()` 는 프로세스 전역 싱글턴이라 다른 테스트
+    /// 파일과 공유된다 — 이 파일이 쓰는 id 는 충돌 방지를 위해 고유 접두어를 쓴다
+    /// (`src/completion_strategy/registry_tests.rs` 의 `cstest-*` 관례와 동일 이유).
+    fn install_poll_strategy(plugin_id: &str, short_id: &str) {
+        crate::completion_strategy::HostCompletionStrategyPort
+            .install_plugin_completion_strategies(
+                plugin_id,
+                &[json!({
+                    "id": short_id,
+                    "priority": 100,
+                    "spec": {
+                        "kind": "poll",
+                        "poll_method": format!("{plugin_id}.wait"),
+                        "state_field": "state",
+                        "terminal_states": ["done"],
+                    },
+                })],
+            );
+    }
+
+    #[test]
+    fn named_poll_ref_to_unregistered_strategy_is_rejected() {
+        let command = TaskCommand::Custom {
+            ipc_method: "tcpoll1.spawn".into(),
+            params: Value::Null,
+            poll: Some(PollSpecRef::Named {
+                strategy: "tcpoll1/does-not-exist".into(),
+            }),
+        };
+        let err = validate_poll_strategy_refs(&command, &OnFailure::Abort).unwrap_err();
+        assert!(err.contains("tcpoll1/does-not-exist"));
+    }
+
+    #[test]
+    fn named_poll_ref_to_registered_strategy_is_accepted() {
+        install_poll_strategy("tcpoll2", "spawn-wait");
+        let command = TaskCommand::Custom {
+            ipc_method: "tcpoll2.spawn".into(),
+            params: Value::Null,
+            poll: Some(PollSpecRef::Named {
+                strategy: "tcpoll2/spawn-wait".into(),
+            }),
+        };
+        assert!(validate_poll_strategy_refs(&command, &OnFailure::Abort).is_ok());
+    }
+
+    #[test]
+    fn named_poll_ref_inside_inline_fallback_is_validated() {
+        let bad_fallback = TaskCommand::Custom {
+            ipc_method: "tcpoll3.spawn".into(),
+            params: Value::Null,
+            poll: Some(PollSpecRef::Named {
+                strategy: "tcpoll3/does-not-exist".into(),
+            }),
+        };
+        let on_failure = OnFailure::Fallback {
+            task: None,
+            inline: Some(Box::new(tasty_agent::task::InlineFallbackSpec {
+                name: "fb".into(),
+                command: bad_fallback,
+                depends_on_override: None,
+                on_failure: OnFailure::Abort,
+                metadata: Value::Null,
+            })),
+        };
+        let main_command = TaskCommand::Custom {
+            ipc_method: "tcpoll3.main".into(),
+            params: Value::Null,
+            poll: None,
+        };
+        let err = validate_poll_strategy_refs(&main_command, &on_failure).unwrap_err();
+        assert!(err.contains("tcpoll3/does-not-exist"));
+    }
+
+    #[test]
+    fn inline_poll_spec_and_no_poll_are_unaffected() {
+        let inline_cmd = TaskCommand::Custom {
+            ipc_method: "tcpoll4.spawn".into(),
+            params: Value::Null,
+            poll: Some(PollSpecRef::Inline(tasty_agent::PollSpec {
+                poll_method: "tcpoll4.wait".into(),
+                map_from_response: Default::default(),
+                map_from_request: Default::default(),
+                state_field: "state".into(),
+                terminal_states: vec!["done".into()],
+                interval_ms: 500,
+                timeout_ms: None,
+            })),
+        };
+        assert!(validate_poll_strategy_refs(&inline_cmd, &OnFailure::Abort).is_ok());
+
+        let no_poll_cmd = TaskCommand::Custom {
+            ipc_method: "tcpoll4.spawn".into(),
+            params: Value::Null,
+            poll: None,
+        };
+        assert!(validate_poll_strategy_refs(&no_poll_cmd, &OnFailure::Abort).is_ok());
+    }
 }

@@ -81,6 +81,7 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 | `[extends]` | `ext:<target>` |
 | `[[contributes.detector]]` (신규) | `file_handler.define` |
 | `[[contributes.hook_handler]]` | `hook_handler.define` |
+| `[[contributes.completion_strategy]]` | `completion_strategy.define` |
 
 `event_subscribe` 는 별도 권한 없음 — 패턴 자체가 게이트.
 

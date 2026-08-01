@@ -4,6 +4,7 @@
 // unused_imports 침묵 — gui 빌드에선 검사 그대로.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
+mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
 #[cfg(debug_assertions)]
@@ -538,6 +539,10 @@ fn route_engine_handler(
         "hook_handler.list" => hook_handler::handle_list(id),
         "hook_handler.reload" => hook_handler::handle_reload(id),
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
+        // completion_strategy: 완료 판정 전략 레지스트리 조회(TODO80 §B). 상태는
+        // 전역 싱글턴이라 core/state/engine 미사용. reload/dispatch 대응물 없음
+        // (전략은 판정 함수, "발화" 대상 아님).
+        "completion_strategy.list" => completion_strategy::handle_list(id),
         // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),

@@ -1,0 +1,356 @@
+//! `CompletionStrategyRegistry` 단위 테스트 (TODO80 §B, 훅 핸들러
+//! `registry_tests.rs` 미러). Settings UI CRUD 표면이 아직 없으므로 export/save
+//! 류는 다루지 않는다 — 3출처 병합·patch semantics·id 규약·결정 2(namespace 제한)·
+//! push 참조 무결성·결정 6(default_for_methods 충돌)·plugin uninstall·이름 해석
+//! 을 커버한다.
+
+use super::*;
+use crate::completion_strategy::types::CompletionStrategyId;
+use crate::hook_handler::types::{
+    HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
+};
+
+fn poll_toml(id: &str, priority: i32, method: &str, default_for: &str) -> String {
+    format!(
+        r#"
+        [[strategy]]
+        id = "{id}"
+        priority = {priority}
+        default_for_methods = [{default_for}]
+        [strategy.spec]
+        kind = "poll"
+        poll_method = "{method}"
+        state_field = "state"
+        terminal_states = ["idle", "needs_input"]
+        "#
+    )
+}
+
+/// 훅 핸들러 전역 레지스트리에 `id` 를 IpcSequence 핸들러로 upsert한다 — push 형
+/// notify_via 참조 무결성 테스트용(전역 싱글턴이라 process 전체에서 공유되지만,
+/// 이 테스트 파일이 쓰는 id 는 다른 곳과 충돌하지 않는 고유 접두어로 고른다).
+fn ensure_hook_handler(id: &str, owner: HookHandlerOwner) {
+    crate::hook_handler::global()
+        .upsert_full_handler(HookHandler {
+            id: HookHandlerId::new(id),
+            source: HookSource::Hook,
+            priority: 100,
+            owner,
+            action: HookHandlerAction::IpcSequence { calls: vec![] },
+            display_name_i18n_key: None,
+            disabled: false,
+        })
+        .expect("test hook handler upsert");
+}
+
+// ── host defaults / 기본 install ────────────────────────────────────────
+
+#[test]
+fn plugin_poll_strategy_installs_and_resolves() {
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&poll_toml(
+        "spawn-wait",
+        100,
+        "acme.wait",
+        r#""acme.spawn""#,
+    ))
+    .expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+
+    let id = CompletionStrategyId::new("acme/spawn-wait");
+    let s = reg.get(&id).expect("strategy");
+    assert_eq!(s.owner, CompletionStrategyOwner::Plugin("acme".into()));
+    assert_eq!(s.priority, 100);
+    assert_eq!(s.default_for_methods, vec!["acme.spawn".to_string()]);
+    match &s.kind {
+        CompletionStrategyKind::Poll(spec) => {
+            assert_eq!(spec.poll_method, "acme.wait");
+            assert_eq!(spec.interval_ms, 500); // §A-5 기본값
+        }
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+
+    // 이름 해석(§B 체크리스트 "이름 → 실제 사양 해석").
+    let spec = reg.resolve_poll_spec(&id).expect("resolve");
+    assert_eq!(spec.poll_method, "acme.wait");
+
+    // 결정 6 — default_for_methods 인덱스 조회.
+    let winner = reg
+        .resolve_default_for_method("acme.spawn")
+        .expect("default");
+    assert_eq!(winner.id, id);
+}
+
+#[test]
+fn decl_to_pollspec_field_mapping_is_fixed() {
+    // §A-3 "필드 대응을 고정하는 단위 테스트" — decl 의 모든 poll 필드가 손실 없이
+    // PollSpec 에 대응하는지 확인.
+    let toml = r#"
+        [[strategy]]
+        id = "full-map"
+        priority = 5
+        [strategy.spec]
+        kind = "poll"
+        poll_method = "acme.wait"
+        map_from_response = { child_index = "child_index" }
+        map_from_request = { surface_id = "surface" }
+        state_field = "st"
+        terminal_states = ["done"]
+        interval_ms = 250
+        timeout_ms = 9000
+    "#;
+    let decls = parse_strategy_section(toml).expect("parse");
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_plugin_strategies("acme", &decls);
+    let spec = reg
+        .resolve_poll_spec(&CompletionStrategyId::new("acme/full-map"))
+        .expect("resolve");
+    assert_eq!(spec.poll_method, "acme.wait");
+    assert_eq!(
+        spec.map_from_response.get("child_index").unwrap(),
+        "child_index"
+    );
+    assert_eq!(spec.map_from_request.get("surface_id").unwrap(), "surface");
+    assert_eq!(spec.state_field, "st");
+    assert_eq!(spec.terminal_states, vec!["done".to_string()]);
+    assert_eq!(spec.interval_ms, 250);
+    assert_eq!(spec.timeout_ms, Some(9000));
+}
+
+// ── 결정 2 — namespace 제한 ─────────────────────────────────────────────
+
+#[test]
+fn plugin_poll_method_outside_own_namespace_is_dropped() {
+    let reg = CompletionStrategyRegistry::new();
+    // "acme" plugin 이 "other.wait" 를 poll_method 로 선언 — 자기 namespace 아님.
+    let decls = parse_strategy_section(&poll_toml("evil", 100, "other.wait", "")).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+    assert!(reg.get(&CompletionStrategyId::new("acme/evil")).is_none());
+}
+
+#[test]
+fn host_poll_method_inside_registered_plugin_prefix_is_dropped() {
+    tasty_ipc::method_meta::register_plugin_prefix("cstest_acme");
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_host_defaults(&poll_toml("h1", 100, "cstest_acme.wait", ""));
+    assert!(reg.get(&CompletionStrategyId::new("host/h1")).is_none());
+    tasty_ipc::method_meta::unregister_plugin_prefix("cstest_acme");
+}
+
+#[test]
+fn host_poll_method_outside_any_plugin_prefix_is_kept() {
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_host_defaults(&poll_toml("h2", 100, "terminal.child_state", ""));
+    assert!(reg.get(&CompletionStrategyId::new("host/h2")).is_some());
+}
+
+// ── push 참조 무결성 ─────────────────────────────────────────────────────
+
+fn push_toml(id: &str, notify_via: &str) -> String {
+    format!(
+        r#"
+        [[strategy]]
+        id = "{id}"
+        priority = 100
+        [strategy.spec]
+        kind = "push"
+        notify_via = "{notify_via}"
+        timeout_ms = 5000
+        "#
+    )
+}
+
+#[test]
+fn push_strategy_missing_hook_handler_is_dropped() {
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&push_toml("orphan", "acme/does-not-exist")).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+    assert!(reg.get(&CompletionStrategyId::new("acme/orphan")).is_none());
+}
+
+#[test]
+fn push_strategy_self_owned_hook_handler_resolves() {
+    ensure_hook_handler(
+        "cstest-plugin/notify-self",
+        HookHandlerOwner::Plugin("cstest-plugin".into()),
+    );
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&push_toml("notify-strategy", "cstest-plugin/notify-self"))
+        .expect("parse");
+    reg.install_plugin_strategies("cstest-plugin", &decls);
+    let s = reg
+        .get(&CompletionStrategyId::new("cstest-plugin/notify-strategy"))
+        .expect("kept");
+    match s.kind {
+        CompletionStrategyKind::Push { timeout_ms, .. } => assert_eq!(timeout_ms, 5000),
+        CompletionStrategyKind::Poll(_) => panic!("expected push"),
+    }
+}
+
+#[test]
+fn push_strategy_host_owned_hook_handler_resolves() {
+    ensure_hook_handler("host/cstest-notify", HookHandlerOwner::Host);
+    let reg = CompletionStrategyRegistry::new();
+    let decls =
+        parse_strategy_section(&push_toml("via-host", "host/cstest-notify")).expect("parse");
+    reg.install_plugin_strategies("cstest-plugin2", &decls);
+    assert!(
+        reg.get(&CompletionStrategyId::new("cstest-plugin2/via-host"))
+            .is_some()
+    );
+}
+
+#[test]
+fn push_strategy_other_plugin_owned_hook_handler_is_rejected() {
+    ensure_hook_handler(
+        "cstest-other/notify",
+        HookHandlerOwner::Plugin("cstest-other".into()),
+    );
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&push_toml("cross", "cstest-other/notify")).expect("parse");
+    reg.install_plugin_strategies("cstest-plugin3", &decls);
+    // owner 가 자기 자신도 host 도 아니므로 drop.
+    assert!(
+        reg.get(&CompletionStrategyId::new("cstest-plugin3/cross"))
+            .is_none()
+    );
+}
+
+// ── 결정 6 — default_for_methods 충돌 ───────────────────────────────────
+
+#[test]
+fn default_for_methods_conflict_picks_lower_priority_winner() {
+    let reg = CompletionStrategyRegistry::new();
+    let low = parse_strategy_section(&poll_toml("low-prio", 10, "acme.wait_a", r#""acme.spawn""#))
+        .expect("parse");
+    let high = parse_strategy_section(&poll_toml(
+        "high-prio",
+        200,
+        "acme.wait_b",
+        r#""acme.spawn""#,
+    ))
+    .expect("parse");
+    reg.install_plugin_strategies("acme", &low);
+    reg.install_plugin_strategies("acme", &high);
+    let winner = reg
+        .resolve_default_for_method("acme.spawn")
+        .expect("winner");
+    assert_eq!(winner.id, CompletionStrategyId::new("acme/low-prio"));
+}
+
+// ── plugin uninstall ─────────────────────────────────────────────────────
+
+#[test]
+fn uninstall_plugin_removes_its_strategies() {
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&poll_toml("temp", 100, "acme.wait", "")).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+    assert!(reg.get(&CompletionStrategyId::new("acme/temp")).is_some());
+    reg.uninstall_plugin("acme");
+    assert!(reg.get(&CompletionStrategyId::new("acme/temp")).is_none());
+}
+
+// ── 이름 해석 실패 사유 ───────────────────────────────────────────────────
+
+#[test]
+fn resolve_poll_spec_not_found() {
+    let reg = CompletionStrategyRegistry::new();
+    let err = reg
+        .resolve_poll_spec(&CompletionStrategyId::new("acme/nope"))
+        .unwrap_err();
+    assert!(matches!(err, StrategyResolveError::NotFound { .. }));
+}
+
+#[test]
+fn resolve_poll_spec_rejects_push_kind() {
+    ensure_hook_handler(
+        "cstest-plugin4/n",
+        HookHandlerOwner::Plugin("cstest-plugin4".into()),
+    );
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&push_toml("push-one", "cstest-plugin4/n")).expect("parse");
+    reg.install_plugin_strategies("cstest-plugin4", &decls);
+    let err = reg
+        .resolve_poll_spec(&CompletionStrategyId::new("cstest-plugin4/push-one"))
+        .unwrap_err();
+    assert!(matches!(err, StrategyResolveError::NotPollKind { .. }));
+}
+
+#[test]
+fn resolve_poll_spec_rejects_disabled() {
+    let reg = CompletionStrategyRegistry::new();
+    let toml = r#"
+        [[strategy]]
+        id = "disabled-one"
+        priority = 100
+        disabled = true
+        [strategy.spec]
+        kind = "poll"
+        poll_method = "acme.wait"
+        state_field = "state"
+        terminal_states = ["done"]
+    "#;
+    let decls = parse_strategy_section(toml).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+    let err = reg
+        .resolve_poll_spec(&CompletionStrategyId::new("acme/disabled-one"))
+        .unwrap_err();
+    assert!(matches!(err, StrategyResolveError::Disabled { .. }));
+}
+
+#[test]
+fn plugin_display_name_i18n_key_is_preserved() {
+    let toml = r#"
+        [[strategy]]
+        id = "with-label"
+        priority = 100
+        display_name_i18n_key = "acme.strategy.with_label"
+        [strategy.spec]
+        kind = "poll"
+        poll_method = "acme.wait"
+        state_field = "state"
+        terminal_states = ["done"]
+    "#;
+    let decls = parse_strategy_section(toml).expect("parse");
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_plugin_strategies("acme", &decls);
+    let s = reg
+        .get(&CompletionStrategyId::new("acme/with-label"))
+        .expect("kept");
+    assert_eq!(
+        s.display_name_i18n_key.as_deref(),
+        Some("acme.strategy.with_label")
+    );
+}
+
+// ── patch semantics ───────────────────────────────────────────────────────
+
+#[test]
+fn user_override_patches_priority_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let reg = CompletionStrategyRegistry::new();
+    let decls = parse_strategy_section(&poll_toml("patchme", 100, "acme.wait", "")).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+
+    let p = dir.path().join("completion-strategies.toml");
+    std::fs::write(
+        &p,
+        r#"
+        [[strategy]]
+        id = "acme/patchme"
+        priority = 1
+        "#,
+    )
+    .unwrap();
+    reg.install_user_config(&p);
+
+    let s = reg
+        .get(&CompletionStrategyId::new("acme/patchme"))
+        .expect("kept");
+    assert_eq!(s.priority, 1); // user 가 덮음
+    assert_eq!(s.owner, CompletionStrategyOwner::User); // 마지막 contributor 로 owner 갱신(훅 핸들러와 동일 동작)
+    match s.kind {
+        CompletionStrategyKind::Poll(spec) => assert_eq!(spec.poll_method, "acme.wait"), // plugin spec 유지
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+}

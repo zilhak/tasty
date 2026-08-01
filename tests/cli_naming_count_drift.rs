@@ -18,6 +18,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("attach", 6),
     ("banner", 2),
     ("clipboard", 1),
+    ("completion_strategy", 1),
     ("file_handler", 2),
     ("file_picker", 1),
     ("fs", 1),
