@@ -71,13 +71,21 @@ __tasty_osc133_precmd() {
 # bash < 4.4 (e.g. macOS's system bash 3.2) has no PS0 and is unsupported —
 # no DEBUG-trap fallback is added (see TODO35 design decision 5: PS0-only).
 #
-# NOTE(bash-specific limitation): the command text is intentionally omitted
-# (`cmd=` payload) here, unlike zsh's preexec. Both `$BASH_COMMAND` and
-# `fc -ln -1`/`history 1` were verified (manual PTY test, TODO35) to lag one
-# command behind at PS0-evaluation time — bash hasn't finished recording the
-# about-to-run command yet at that point, only the *previous* one. Emitting
-# a wrong `cmd=` would be worse than omitting it (OSC133 payload is optional
-# by spec; `command_index.rs` already tolerates a missing command string).
+# NOTE: the command text (`cmd=` payload) is intentionally omitted here.
+# The primary reason is independent of bash: tasty's current OSC133 C-phase
+# parser (`FinalTermSemanticPrompt::MarkEndOfInputAndStartOfOutput` arm in
+# crates/tasty-terminal/src/vte_handler/osc.rs, from TODO34) unconditionally
+# discards C's payload for every shell, bash and zsh alike — so a `cmd=`
+# emitted here would never reach `command_index.rs` regardless of how it's
+# obtained. Secondarily, and only relevant if that parser is later extended
+# to preserve C's payload: PS0-evaluation-time command-text lookup in bash is
+# inconsistent across candidates — `history 1` was verified (manual PTY test,
+# TODO35) to correctly reflect the about-to-run command, but `$BASH_COMMAND`
+# and `fc -ln -1` were verified to lag one command behind at that point (bash
+# hasn't finished recording the about-to-run command yet). Left omitted for
+# now rather than wiring up `history 1` for a payload the parser would just
+# discard (OSC133 payload is optional by spec; `command_index.rs` already
+# tolerates a missing command string).
 __tasty_osc133_preexec() {
     printf '\033]133;C\033\\'
 }
@@ -1164,8 +1172,10 @@ mod tests {
             );
             assert!(compiled.contains(r#"PS0='$(__tasty_osc133_preexec)'"#));
             assert!(compiled.contains(r#"\033]133;A\033\\"#));
-            // bash C phase 는 cmd= 를 싣지 않는다(PS0 시점 command-text 조회가
-            // 신뢰 불가 — 위 __tasty_osc133_preexec 주석의 수동 PTY 검증 참고).
+            // bash C phase 는 cmd= 를 싣지 않는다 — osc.rs 의 C phase 파서가
+            // 셸 무관하게 payload 를 버리는 게 주 이유고, bash PS0 시점
+            // command-text 조회 신뢰성 문제는 부차적(위 __tasty_osc133_preexec
+            // 주석 참고).
             assert!(compiled.contains(r#"\033]133;C\033\\"#));
             assert!(compiled.contains(r#"\033]133;D;%s\033\\"#));
         }

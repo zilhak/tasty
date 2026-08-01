@@ -2,8 +2,13 @@
 //!
 //! `GeneralSettings::shell`(바이너리 경로 문자열) 하나만으로 bash 전용 rcfile
 //! 주입(`--rcfile`)이나 zsh 전용 `ZDOTDIR` 스왑 같은 계열별 셸 통합 주입을 적용할지
-//! 결정해야 하는 tasty-settings/tasty-terminal 양쪽이 공유하는 하위 crate
-//! (`tasty-utils`)에 둔다 — 어느 한쪽 crate 전용으로 두면 반대쪽이 재사용할 수 없다.
+//! 결정하는 건 tasty-settings 뿐이다(`GeneralSettings::effective_shell_args`/
+//! `effective_shell_envs`) — tasty-terminal 은 `ShellFamily::detect` 를 직접
+//! 호출하지 않고, tasty-settings 가 이미 계열별로 분기해 계산한 `args`/
+//! `extra_env` 결과만 그대로 소비한다. 그럼에도 이 판정 로직을 tasty-terminal 도
+//! 참조 가능한 하위 crate(`tasty-utils`)에 두는 이유는, 계열 판정 자체가 특정
+//! crate 의 내부 구현이 아니라 셸 바이너리 경로만으로 결정되는 순수 판정이라
+//! 향후 tasty-terminal 쪽에서도 필요해질 수 있는 재사용 가능한 유틸이기 때문.
 
 /// 판정된 셸 계열. `Other` 는 미지원(fish/nu/pwsh 등 이번 범위 밖) — OSC133 자동
 /// 주입 없이 조용히 넘어간다(기존 미지원 셸과 동일한 동작, 회귀 아님).
