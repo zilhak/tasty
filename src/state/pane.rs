@@ -492,27 +492,11 @@ impl AppState {
     ) -> bool {
         // Capture workspace snapshot before removing (user actions only)
         if save_snapshot {
-            let item = {
-                let mut snap_fn =
-                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let ws = &engine.workspaces[loc.ws_idx];
-                let terminals = &engine.terminals;
-                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
-            };
+            let item = Self::capture_workspace_snapshot(engine, loc.ws_idx);
             engine.push_closed_item(item);
         }
         // Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
-        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        {
-            let ws = &engine.workspaces[loc.ws_idx];
-            for pid in ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    for tab in &pane.tabs {
-                        Self::collect_close_targets(tab, engine, &mut targets);
-                    }
-                }
-            }
-        }
+        let targets = Self::collect_workspace_close_targets(engine, loc.ws_idx);
         // workspaces.remove 이후엔 surface_kind 조회 불가 → 미리 캡쳐.
         let target_kinds: Vec<Option<&'static str>> = targets
             .iter()
@@ -524,21 +508,13 @@ impl AppState {
             self.active_workspace = engine.workspaces.len() - 1;
         }
         // Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀 workspace 도 사라지는 경로).
-        let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
-        match self.with_memory(|m| m.purge_scope(&ws_scope)) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                workspace_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-workspace scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-        }
-        for ((sid, pid), kind) in targets.into_iter().zip(target_kinds) {
-            self.cleanup_surface(engine, sid, pid);
-            self.enqueue_surface_closed(sid, kind, is_user_close);
-        }
+        self.purge_workspace_memory_scope(workspace_id);
+        let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
+            .into_iter()
+            .zip(target_kinds)
+            .map(|((sid, pid), kind)| (sid, pid, kind))
+            .collect();
+        self.cleanup_targets(engine, zipped, is_user_close);
         engine.mark_layout_dirty();
         true
     }

@@ -349,73 +349,92 @@ impl SavedSurface {
                 restore_command,
                 scrollback_ref,
             } => {
-                let sh = ShellConfig::from_settings(&engine.settings);
-                let waker = engine.make_waker(surface_id);
-                let working_dir = cwd.as_ref().map(PathBuf::from);
-                // PTY master 의 첫 입력으로 restore_command 를 미리 적재한다.
-                // Terminal::new 가 writer thread spawn 전에 동기 write 하므로,
-                // child shell 이 stdin 을 처음 read 하는 순간 이 바이트가 들어간다.
-                let initial = restore_command.as_deref().map(|c| format!("{c}\r"));
-                let initial_input = initial.as_deref();
-                let mut terminal = match tasty_terminal::Terminal::new(
-                    tasty_terminal::TerminalConfig {
-                        cols: engine.default_cols,
-                        rows: engine.default_rows,
-                        shell: sh.shell_ref(),
-                        args: &sh.args_ref(),
-                        extra_env: &sh.envs_ref(),
-                        surface_id,
-                        working_dir: working_dir.as_deref(),
-                        initial_input,
-                    },
-                    waker,
-                ) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        tracing::warn!("Failed to create terminal for restored surface: {e}");
-                        return None;
-                    }
-                };
-                // 즉시 복원 경로 — scrollback 을 inline 으로 inject. persist_id 는
-                // 새 TerminalSurface 의 필드에 직접 들어가 (surface_meta mirror 없이)
-                // 다음 capture 가 같은 ID 를 재사용한다.
-                if let Some(persist_id) = scrollback_ref.as_deref()
-                    && let Some(lines) = crate::scrollback_store::read(persist_id)
-                    && !lines.is_empty()
-                {
-                    terminal.inject_scrollback(lines);
-                    // 새 prompt 가 화면 중간부터 시작하도록 visible 상단
-                    // 절반에 옛 라인을 미리 그려둔다.
-                    let prefill = terminal.rows() / 2;
-                    terminal.prefill_visible_from_scrollback(prefill);
-                }
-                engine.terminals.insert(surface_id, terminal);
-                if let Some(pid) = scrollback_ref {
-                    engine.terminals.set_scrollback_persist_id(surface_id, pid);
-                }
-                engine.send_fast_init(surface_id);
-                Some(Box::new(TerminalSurface { id: surface_id }))
+                restore_terminal_immediate(engine, surface_id, cwd, restore_command, scrollback_ref)
             }
             SavedSurface::Generic { kind, data } => {
-                let registry = engine.surface_registry.clone();
-                let def = match registry.get(&kind) {
-                    Some(d) => d,
-                    None => {
-                        tracing::warn!(
-                            "Generic restore skipped: unknown kind '{}' (plugin not loaded?)",
-                            kind
-                        );
-                        return None;
-                    }
-                };
-                match (def.restore)(surface_id, &data) {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        tracing::warn!("Generic restore failed (kind={kind}): {e}");
-                        None
-                    }
-                }
+                restore_generic_immediate(engine, surface_id, kind, data)
             }
+        }
+    }
+}
+
+fn restore_terminal_immediate(
+    engine: &mut CoreState,
+    surface_id: u32,
+    cwd: Option<String>,
+    restore_command: Option<String>,
+    scrollback_ref: Option<String>,
+) -> Option<Box<dyn Surface>> {
+    let sh = ShellConfig::from_settings(&engine.settings);
+    let waker = engine.make_waker(surface_id);
+    let working_dir = cwd.as_ref().map(PathBuf::from);
+    // PTY master 의 첫 입력으로 restore_command 를 미리 적재한다.
+    // Terminal::new 가 writer thread spawn 전에 동기 write 하므로,
+    // child shell 이 stdin 을 처음 read 하는 순간 이 바이트가 들어간다.
+    let initial = restore_command.as_deref().map(|c| format!("{c}\r"));
+    let initial_input = initial.as_deref();
+    let mut terminal = match tasty_terminal::Terminal::new(
+        tasty_terminal::TerminalConfig {
+            cols: engine.default_cols,
+            rows: engine.default_rows,
+            shell: sh.shell_ref(),
+            args: &sh.args_ref(),
+            extra_env: &sh.envs_ref(),
+            surface_id,
+            working_dir: working_dir.as_deref(),
+            initial_input,
+        },
+        waker,
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("Failed to create terminal for restored surface: {e}");
+            return None;
+        }
+    };
+    // 즉시 복원 경로 — scrollback 을 inline 으로 inject. persist_id 는
+    // 새 TerminalSurface 의 필드에 직접 들어가 (surface_meta mirror 없이)
+    // 다음 capture 가 같은 ID 를 재사용한다.
+    if let Some(persist_id) = scrollback_ref.as_deref()
+        && let Some(lines) = crate::scrollback_store::read(persist_id)
+        && !lines.is_empty()
+    {
+        terminal.inject_scrollback(lines);
+        // 새 prompt 가 화면 중간부터 시작하도록 visible 상단
+        // 절반에 옛 라인을 미리 그려둔다.
+        let prefill = terminal.rows() / 2;
+        terminal.prefill_visible_from_scrollback(prefill);
+    }
+    engine.terminals.insert(surface_id, terminal);
+    if let Some(pid) = scrollback_ref {
+        engine.terminals.set_scrollback_persist_id(surface_id, pid);
+    }
+    engine.send_fast_init(surface_id);
+    Some(Box::new(TerminalSurface { id: surface_id }))
+}
+
+fn restore_generic_immediate(
+    engine: &mut CoreState,
+    surface_id: u32,
+    kind: String,
+    data: serde_json::Value,
+) -> Option<Box<dyn Surface>> {
+    let registry = engine.surface_registry.clone();
+    let def = match registry.get(&kind) {
+        Some(d) => d,
+        None => {
+            tracing::warn!(
+                "Generic restore skipped: unknown kind '{}' (plugin not loaded?)",
+                kind
+            );
+            return None;
+        }
+    };
+    match (def.restore)(surface_id, &data) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            tracing::warn!("Generic restore failed (kind={kind}): {e}");
+            None
         }
     }
 }

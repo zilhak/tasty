@@ -88,14 +88,11 @@ impl ChildTerminalRegistry {
         let Some(path) = self.path.as_ref() else {
             return;
         };
-        if let Some(parent) = path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            tracing::warn!(
-                "child-terminal registry mkdir {} failed: {e}",
-                parent.display()
-            );
-        }
+        ensure_parent_dir(path);
+        self.write_json_to(path);
+    }
+
+    fn write_json_to(&self, path: &std::path::Path) {
         match serde_json::to_string_pretty(self) {
             Ok(text) => {
                 if let Err(e) = std::fs::write(path, text) {
@@ -254,6 +251,17 @@ impl ChildTerminalRegistry {
         self.needs_input.retain(|sid, _| live.contains(sid));
 
         summary
+    }
+}
+
+fn ensure_parent_dir(path: &std::path::Path) {
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!(
+            "child-terminal registry mkdir {} failed: {e}",
+            parent.display()
+        );
     }
 }
 

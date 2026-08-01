@@ -310,16 +310,7 @@ impl ObserverRouter {
     }
 
     fn dispatch_line(&mut self, surface_id: u32, line_idx: u32, line: &str) {
-        // 매칭 옵저버 id 수집 (borrow 분리).
-        let matching_ids: Vec<ObserverId> = self
-            .observers
-            .iter()
-            .filter(|(_, e)| match e.spec.surface_id {
-                None => true,
-                Some(sid) => sid == surface_id,
-            })
-            .map(|(id, _)| *id)
-            .collect();
+        let matching_ids = self.matching_observer_ids(surface_id);
         if matching_ids.is_empty() {
             return;
         }
@@ -328,38 +319,26 @@ impl ObserverRouter {
             let Some(entry) = self.observers.get_mut(&oid) else {
                 continue;
             };
-            let mut items: Vec<ParsedItem> = Vec::new();
-            for p in &entry.parser_handles {
-                p.parse_line(line, line_idx, &mut items);
-            }
+            let items = parse_and_filter_items(entry, line, line_idx);
             if items.is_empty() {
                 continue;
             }
-            if let Some(filter) = &entry.kinds_filter {
-                items.retain(|it| filter.iter().any(|k| k == it.kind));
-            }
             for item in items {
-                entry.total_in += 1;
-                match entry.tx.try_send(item) {
-                    Ok(()) => {
-                        entry.total_out += 1;
-                        entry.last_event_ms = Some(unix_ms_now());
-                    }
-                    Err(TrySendError::Full(_)) => {
-                        entry.dropped += 1;
-                        if entry.dropped.is_multiple_of(1000) {
-                            tracing::warn!(
-                                "observer {oid}: dropped {} items (sink backpressure)",
-                                entry.dropped
-                            );
-                        }
-                    }
-                    Err(TrySendError::Disconnected(_)) => {
-                        tracing::warn!("observer {oid}: sink worker disconnected");
-                    }
-                }
+                send_item_to_sink(oid, entry, item);
             }
         }
+    }
+
+    /// `surface_id` 를 구독하는(wildcard 포함) 옵저버 id 목록 (borrow 분리).
+    fn matching_observer_ids(&self, surface_id: u32) -> Vec<ObserverId> {
+        self.observers
+            .iter()
+            .filter(|(_, e)| match e.spec.surface_id {
+                None => true,
+                Some(sid) => sid == surface_id,
+            })
+            .map(|(id, _)| *id)
+            .collect()
     }
 
     /// Surface 가 닫혔을 때 호출. 그 surface 에 매인 옵저버 (wildcard 가
@@ -391,6 +370,44 @@ impl Drop for ObserverRouter {
         let ids: Vec<ObserverId> = self.observers.keys().copied().collect();
         for id in ids {
             let _ = self.unregister(id); // best-effort on shutdown
+        }
+    }
+}
+
+/// 한 줄을 옵저버의 파서 체인에 통과시키고 kinds_filter 를 적용한다.
+fn parse_and_filter_items(entry: &ObserverEntry, line: &str, line_idx: u32) -> Vec<ParsedItem> {
+    let mut items: Vec<ParsedItem> = Vec::new();
+    for p in &entry.parser_handles {
+        p.parse_line(line, line_idx, &mut items);
+    }
+    if items.is_empty() {
+        return items;
+    }
+    if let Some(filter) = &entry.kinds_filter {
+        items.retain(|it| filter.iter().any(|k| k == it.kind));
+    }
+    items
+}
+
+/// 아이템 하나를 옵저버의 sink 채널로 try_send 하고 통계/drop 로깅을 갱신한다.
+fn send_item_to_sink(oid: ObserverId, entry: &mut ObserverEntry, item: ParsedItem) {
+    entry.total_in += 1;
+    match entry.tx.try_send(item) {
+        Ok(()) => {
+            entry.total_out += 1;
+            entry.last_event_ms = Some(unix_ms_now());
+        }
+        Err(TrySendError::Full(_)) => {
+            entry.dropped += 1;
+            if entry.dropped.is_multiple_of(1000) {
+                tracing::warn!(
+                    "observer {oid}: dropped {} items (sink backpressure)",
+                    entry.dropped
+                );
+            }
+        }
+        Err(TrySendError::Disconnected(_)) => {
+            tracing::warn!("observer {oid}: sink worker disconnected");
         }
     }
 }

@@ -271,44 +271,15 @@ impl AppState {
             return false;
         }
         // Capture workspace snapshot before closing
-        let snapshot = {
-            let mut snap_fn =
-                crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-            let terminals = &engine.terminals;
-            crate::model::ClosedItem::from_workspace(
-                &engine.workspaces[ws_idx],
-                &mut snap_fn,
-                &|id| terminals.get(id),
-            )
-        };
+        let snapshot = super::AppState::capture_workspace_snapshot(engine, ws_idx);
         engine.push_closed_item(snapshot);
         // Collect all (surface_id, persist_id) for cleanup before removing the workspace.
-        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        {
-            let ws = &engine.workspaces[ws_idx];
-            for pid in ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    for tab in &pane.tabs {
-                        super::AppState::collect_close_targets(tab, engine, &mut targets);
-                    }
-                }
-            }
-        }
+        let targets = super::AppState::collect_workspace_close_targets(engine, ws_idx);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         // Workspace scope 의 memory entry 정리. 안의 surface 들은 아래 cleanup_surface
         // 에서 각자 자기 scope 를 purge 한다.
-        let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
-        match self.with_memory(|m| m.purge_scope(&ws_scope)) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                workspace_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-workspace scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-        }
+        self.purge_workspace_memory_scope(workspace_id);
         // Adjust active workspace index
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
             self.active_workspace = engine.workspaces.len() - 1;
@@ -316,11 +287,14 @@ impl AppState {
         // Cleanup
         // workspace.remove 후엔 surface_kind 가 None 을 반환할 수 있으나, plugin
         // lifecycle 구독자는 surface_id 만으로 cleanup 가능 (R1 분석).
-        for (sid, pid) in targets {
-            let kind = self.surface_kind(engine, sid);
-            self.cleanup_surface(engine, sid, pid);
-            self.enqueue_surface_closed(sid, kind, true);
-        }
+        let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
+            .into_iter()
+            .map(|(sid, pid)| {
+                let kind = self.surface_kind(engine, sid);
+                (sid, pid, kind)
+            })
+            .collect();
+        self.cleanup_targets(engine, zipped, true);
         engine.mark_layout_dirty();
         true
     }

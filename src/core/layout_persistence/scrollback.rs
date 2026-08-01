@@ -39,39 +39,12 @@ pub(super) fn capture_scrollback_to_disk(
     seen_refs: &mut std::collections::HashSet<String>,
 ) -> Option<String> {
     let terminal = store.get(surface_id)?;
-    let total = terminal.scrollback_len();
-    let screen = terminal.screen_snapshot_lines();
-    if total == 0 && screen.is_empty() {
-        return None;
-    }
-    let mut lines = Vec::with_capacity(total + screen.len());
-    for i in 0..total {
-        if let Some(line) = terminal.scrollback_line_full(i) {
-            lines.push(line);
-        }
-    }
-    lines.extend(screen);
+    let lines = collect_capture_lines(terminal);
     if lines.is_empty() {
         return None;
     }
     // 중복 가드: 다른 surface 가 같은 사이클에서 이미 쓴 ID 면 fresh 로 교체.
-    let persist_id = match store.scrollback_persist_id(surface_id).map(str::to_string) {
-        Some(existing) if !seen_refs.contains(&existing) => existing,
-        Some(stale) => {
-            tracing::warn!(
-                "scrollback capture: duplicate persist_id {stale} for surface {} — reassigning fresh",
-                surface_id
-            );
-            let new_id = crate::scrollback_store::new_persist_id();
-            store.set_scrollback_persist_id(surface_id, new_id.clone());
-            new_id
-        }
-        None => {
-            let new_id = crate::scrollback_store::new_persist_id();
-            store.set_scrollback_persist_id(surface_id, new_id.clone());
-            new_id
-        }
-    };
+    let persist_id = resolve_capture_persist_id(surface_id, store, seen_refs);
     if let Err(e) = crate::scrollback_store::write(&persist_id, &lines) {
         tracing::warn!(
             "scrollback capture: write failed for surface {} ({persist_id}): {e}",
@@ -81,4 +54,45 @@ pub(super) fn capture_scrollback_to_disk(
     }
     seen_refs.insert(persist_id.clone());
     Some(persist_id)
+}
+
+/// scrollback 전체 + 현재 화면(visible) 라인을 이어붙인다. 둘 다 비어 있으면
+/// 빈 `Vec` — 호출자가 `is_empty()` 로 no-op 을 판정한다.
+fn collect_capture_lines(
+    terminal: &tasty_terminal::Terminal,
+) -> Vec<tasty_terminal::ScrollbackLine> {
+    let total = terminal.scrollback_len();
+    let screen = terminal.screen_snapshot_lines();
+    let mut lines = Vec::with_capacity(total + screen.len());
+    for i in 0..total {
+        if let Some(line) = terminal.scrollback_line_full(i) {
+            lines.push(line);
+        }
+    }
+    lines.extend(screen);
+    lines
+}
+
+/// 이 surface 가 쓸 persist_id 를 결정한다. 기존 ID 가 있고 이번 capture
+/// 사이클에서 아직 안 쓰였으면 재사용, 아니면(중복이거나 없으면) fresh 발급.
+fn resolve_capture_persist_id(
+    surface_id: crate::model::SurfaceId,
+    store: &mut crate::core::terminal_store::TerminalStore,
+    seen_refs: &std::collections::HashSet<String>,
+) -> String {
+    let existing = store.scrollback_persist_id(surface_id).map(str::to_string);
+    if let Some(id) = &existing
+        && !seen_refs.contains(id)
+    {
+        return id.clone();
+    }
+    if let Some(stale) = existing {
+        tracing::warn!(
+            "scrollback capture: duplicate persist_id {stale} for surface {} — reassigning fresh",
+            surface_id
+        );
+    }
+    let new_id = crate::scrollback_store::new_persist_id();
+    store.set_scrollback_persist_id(surface_id, new_id.clone());
+    new_id
 }

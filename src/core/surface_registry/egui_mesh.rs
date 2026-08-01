@@ -22,6 +22,24 @@ fn leak_str(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
 }
 
+/// `create`/`restore` 클로저 공용 — params/data JSON 에서 `display_name`(없으면
+/// `fallback_kind`) 과 `file` 을 뽑는다.
+fn extract_display_name_and_file(
+    data: &serde_json::Value,
+    fallback_kind: &str,
+) -> (String, Option<String>) {
+    let name = data
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| fallback_kind.to_string());
+    let file = data
+        .get("file")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    (name, file)
+}
+
 /// `(kind, plugin_id)` 쌍이 egui-mesh 채널로 허용된 bundled 조합인지 확인.
 ///
 /// ADR-0028 scope 에 따라 markdown(B1)
@@ -49,35 +67,80 @@ pub fn register_egui_mesh_kind(
     decl: &SurfaceKindDecl,
     api_version: &str,
 ) -> bool {
-    if !is_egui_mesh_allowed(&decl.kind, plugin_id) {
-        tracing::warn!(
-            "plugin '{}' declared egui-mesh kind '{}' which is not allowed by the host \
-             whitelist; ignoring",
-            plugin_id,
-            decl.kind
-        );
+    if !check_egui_mesh_whitelist(plugin_id, decl) {
         return false;
     }
-    if api_version != HOST_API_VERSION {
-        tracing::warn!(
-            "plugin '{}' egui-mesh kind '{}' has api_version '{}' incompatible with host \
-             '{}'; ignoring",
-            plugin_id,
-            decl.kind,
-            api_version,
-            HOST_API_VERSION
-        );
+    if !check_egui_mesh_api_version(plugin_id, decl, api_version) {
         return false;
     }
-    if registry.contains(&decl.kind) {
-        tracing::debug!(
-            "egui-mesh kind '{}' from plugin '{}' already registered",
-            decl.kind,
-            plugin_id
-        );
+    if registry_already_has_egui_mesh_kind(registry, plugin_id, decl) {
         return true;
     }
 
+    let kind_static = build_and_register_egui_mesh_kind_def(registry, plugin_id, decl);
+    log_egui_mesh_kind_registered(kind_static, plugin_id);
+    true
+}
+
+fn check_egui_mesh_whitelist(plugin_id: &str, decl: &SurfaceKindDecl) -> bool {
+    if is_egui_mesh_allowed(&decl.kind, plugin_id) {
+        return true;
+    }
+    tracing::warn!(
+        "plugin '{}' declared egui-mesh kind '{}' which is not allowed by the host \
+         whitelist; ignoring",
+        plugin_id,
+        decl.kind
+    );
+    false
+}
+
+fn check_egui_mesh_api_version(plugin_id: &str, decl: &SurfaceKindDecl, api_version: &str) -> bool {
+    if api_version == HOST_API_VERSION {
+        return true;
+    }
+    tracing::warn!(
+        "plugin '{}' egui-mesh kind '{}' has api_version '{}' incompatible with host \
+         '{}'; ignoring",
+        plugin_id,
+        decl.kind,
+        api_version,
+        HOST_API_VERSION
+    );
+    false
+}
+
+fn registry_already_has_egui_mesh_kind(
+    registry: &SurfaceKindRegistry,
+    plugin_id: &str,
+    decl: &SurfaceKindDecl,
+) -> bool {
+    if !registry.contains(&decl.kind) {
+        return false;
+    }
+    tracing::debug!(
+        "egui-mesh kind '{}' from plugin '{}' already registered",
+        decl.kind,
+        plugin_id
+    );
+    true
+}
+
+fn log_egui_mesh_kind_registered(kind_static: &str, plugin_id: &str) {
+    tracing::info!(
+        "registered egui-mesh surface kind '{}' for plugin '{}'",
+        kind_static,
+        plugin_id
+    );
+}
+
+/// `SurfaceKindDef` 를 조립해 registry 에 등록. 반환값은 leak 된 kind 문자열
+/// (호출자의 로그용).
+fn build_and_register_egui_mesh_kind_def(
+    registry: &SurfaceKindRegistry,
+    plugin_id: &str,
+    decl: &SurfaceKindDecl,
+) -> &'static str {
     let kind_static: &'static str = leak_str(&decl.kind);
     let i18n_key_static: &'static str = leak_str(&decl.display_name_i18n_key);
     let plugin_id_for_create = plugin_id.to_string();
@@ -92,40 +155,10 @@ pub fn register_egui_mesh_kind(
         // 송신한다(`MainView::forward_egui_mesh_context`) — 같은 plugin req 채널 FIFO 라
         // create 가 set_context 보다 먼저 도착해, set_context-before-create 레이스를 없앤다.
         create: Arc::new(move |sid, _cwd, params| {
-            let name = params
-                .get("display_name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| kind_static.to_string());
-            let file = params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            Ok(Box::new(EguiMeshSurface::new(
-                sid,
-                kind_static,
-                plugin_id_for_create.clone(),
-                name,
-                file,
-            )) as Box<dyn Surface>)
+            build_egui_mesh_surface(sid, params, kind_static, plugin_id_for_create.clone())
         }),
         restore: Arc::new(move |sid, data| {
-            let name = data
-                .get("display_name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| kind_static.to_string());
-            let file = data
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            Ok(Box::new(EguiMeshSurface::new(
-                sid,
-                kind_static,
-                plugin_id_for_restore.clone(),
-                name,
-                file,
-            )) as Box<dyn Surface>)
+            build_egui_mesh_surface(sid, data, kind_static, plugin_id_for_restore.clone())
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let ms = s.as_any().downcast_ref::<EguiMeshSurface>()?;
@@ -154,13 +187,25 @@ pub fn register_egui_mesh_kind(
             .as_ref()
             .map(|p| format!("{plugin_id}/{p}")),
     });
+    kind_static
+}
 
-    tracing::info!(
-        "registered egui-mesh surface kind '{}' for plugin '{}'",
+/// `create`/`restore` 클로저 공용 본체 — display_name/file 을 뽑아
+/// `EguiMeshSurface` stand-in 을 만든다.
+fn build_egui_mesh_surface(
+    sid: crate::model::SurfaceId,
+    data: &serde_json::Value,
+    kind_static: &'static str,
+    plugin_id: String,
+) -> anyhow::Result<Box<dyn Surface>> {
+    let (name, file) = extract_display_name_and_file(data, kind_static);
+    Ok(Box::new(EguiMeshSurface::new(
+        sid,
         kind_static,
-        plugin_id
-    );
-    true
+        plugin_id,
+        name,
+        file,
+    )) as Box<dyn Surface>)
 }
 
 #[cfg(test)]

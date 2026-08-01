@@ -1130,21 +1130,40 @@ impl AppState {
         surface_id: u32,
         persist_id: Option<String>,
     ) {
+        Self::delete_scrollback_persist(persist_id);
+        self.drop_terminal(engine, surface_id);
+        self.remove_surface_meta(surface_id);
+        self.drop_surface_indices(engine, surface_id);
+        self.purge_surface_memory_scope(surface_id);
+    }
+
+    fn delete_scrollback_persist(persist_id: Option<String>) {
         if let Some(pid) = persist_id {
             crate::scrollback_store::delete(&pid);
         }
+    }
+
+    /// **D.3.E.4.f** — TerminalStore 의 Terminal/부속 데이터 cascade 정리.
+    /// store.remove 가 Terminal drop → PTY SIGHUP 발사 + busy/scrollback_persist
+    /// /deferred/pending_scrollback_inject 까지 함께 정리.
+    fn drop_terminal(&mut self, engine: &mut CoreState, surface_id: u32) {
         engine.pending_scrollback_inject.remove(&surface_id);
-        // **D.3.E.4.f** — TerminalStore 의 Terminal/부속 데이터 cascade 정리.
-        // store.remove 가 Terminal drop → PTY SIGHUP 발사 + busy/scrollback_persist
-        // /deferred/pending_scrollback_inject 까지 함께 정리.
         if let Some(old_terminal) = engine.terminals.remove(surface_id) {
             drop(old_terminal); // SIGHUP — 명시 drop.
         }
+    }
+
+    fn remove_surface_meta(&mut self, surface_id: u32) {
         let remove_result =
             self.with_memory(|m| crate::surface_meta::SurfaceMetaStore::remove(m, surface_id));
         if let Err(e) = remove_result {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
+    }
+
+    /// per-surface 로 유지되는 host-side 인덱스/게이트를 모두 잊는다 — 미제거 시
+    /// surface 마다 영구 누적(누수).
+    fn drop_surface_indices(&mut self, engine: &mut CoreState, surface_id: u32) {
         #[cfg(feature = "gui")]
         {
             self.explorer_views.drop_view(surface_id);
@@ -1156,6 +1175,9 @@ impl AppState {
         if let Some(factory) = engine.waker_factory.as_ref() {
             factory.forget_surface(surface_id);
         }
+    }
+
+    fn purge_surface_memory_scope(&mut self, surface_id: u32) {
         let scope = tasty_memory::Scope::Surface(surface_id);
         match self.with_memory(|m| m.purge_scope(&scope)) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
@@ -1166,6 +1188,70 @@ impl AppState {
             ),
             Ok(_) => {}
             Err(e) => tracing::warn!(surface_id, "memory: purge_scope failed: {e}"),
+        }
+    }
+
+    // ── Workspace close — `close_case_workspace`(pane.rs)/`close_workspace_at`
+    //    (workspace.rs) 공유 헬퍼. 두 함수는 "ws 안 마지막 pane 이 닫혀 workspace
+    //    자체가 사라지는" 동일 로직이라 여기 모아 dedup 한다. ──
+
+    /// 지정 workspace 의 `ClosedItem` snapshot 을 만든다(push 는 호출자 책임 —
+    /// `close_case_workspace` 는 `save_snapshot` 조건부, `close_workspace_at` 은
+    /// 무조건이라 호출 여부 자체가 다르다).
+    fn capture_workspace_snapshot(engine: &CoreState, ws_idx: usize) -> crate::model::ClosedItem {
+        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
+        let ws = &engine.workspaces[ws_idx];
+        let terminals = &engine.terminals;
+        crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
+    }
+
+    /// workspace 전체(모든 pane 의 모든 tab)의 leaf surface `(id, persist_id)` 를
+    /// 제거 전에 수집한다.
+    fn collect_workspace_close_targets(
+        engine: &CoreState,
+        ws_idx: usize,
+    ) -> Vec<(u32, Option<String>)> {
+        let mut targets = Vec::new();
+        let ws = &engine.workspaces[ws_idx];
+        for pid in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                for tab in &pane.tabs {
+                    Self::collect_close_targets(tab, engine, &mut targets);
+                }
+            }
+        }
+        targets
+    }
+
+    /// workspace scope 의 memory entry 정리(안의 surface 들은 각자
+    /// `cleanup_surface` 가 자기 scope 를 purge).
+    fn purge_workspace_memory_scope(&mut self, workspace_id: u32) {
+        let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
+        match self.with_memory(|m| m.purge_scope(&ws_scope)) {
+            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                workspace_id,
+                regular = stats.regular,
+                secret = stats.secret,
+                "memory: purged closed-workspace scope",
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
+        }
+    }
+
+    /// 수집된 `(surface_id, persist_id, kind)` 각각을 cleanup + lifecycle 알림
+    /// enqueue. `kind` 를 어느 시점에 구하는지(remove 전/후)는 두 호출자가 서로
+    /// 다르므로 — remove 후엔 `surface_kind` 가 None 을 반환할 수 있다 — 여기서
+    /// 재계산하지 않고 호출자가 미리 resolve 한 값을 그대로 받는다.
+    fn cleanup_targets(
+        &mut self,
+        engine: &mut CoreState,
+        targets: Vec<(u32, Option<String>, Option<&'static str>)>,
+        is_user_close: bool,
+    ) {
+        for (sid, pid, kind) in targets {
+            self.cleanup_surface(engine, sid, pid);
+            self.enqueue_surface_closed(sid, kind, is_user_close);
         }
     }
 

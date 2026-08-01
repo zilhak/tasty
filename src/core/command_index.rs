@@ -148,57 +148,70 @@ impl CommandIndex {
                     "exit_code": exit_code,
                     "command": entry.command_text,
                 });
-                let key = format!("tasty.commands.{key_ts}");
                 *entry = Pending::default();
-
-                let mut guard = match memory.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                // 현재 행 수 확보(첫 'D' 때 1회 인덱스 COUNT, 이후 in-memory 증분).
-                let count = *self.counts.entry(surface_id).or_insert_with(|| {
-                    guard
-                        .count(&Scope::Surface(surface_id), Some("tasty.commands."))
-                        .unwrap_or(0)
-                });
-
-                // hard cap: 기록 중단(런어웨이 차단). surface 당 1회 알림.
-                if count >= self.hard_cap {
-                    if self.hard_notified.insert(surface_id) {
-                        let hard_cap = self.hard_cap;
-                        tracing::warn!(
-                            "command_index: surface {surface_id} reached hard cap {hard_cap}; \
-                             dropping further command records"
-                        );
-                        return Some(CommandCapEvent::HardBlocked { surface_id });
-                    }
-                    return None;
-                }
-
-                if let Err(e) = guard.put(
-                    HOST_OWNER,
-                    &Scope::Surface(surface_id),
-                    &key,
-                    &MemoryValue::Json(record),
-                    &PutOpts::default(),
-                ) {
-                    tracing::warn!(
-                        "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
-                    );
-                    return None;
-                }
-                let new_count = count + 1;
-                self.counts.insert(surface_id, new_count);
-
-                // soft cap: 막 도달했으면 1회 경고(기록은 계속).
-                if new_count >= self.soft_cap && self.soft_warned.insert(surface_id) {
-                    return Some(CommandCapEvent::SoftWarn {
-                        surface_id,
-                        count: new_count,
-                    });
-                }
+                return self.finalize_and_record_command(memory, surface_id, key_ts, record);
             }
             _ => {}
+        }
+        None
+    }
+
+    /// D phase(명령 종료) 처리 — cap 검사 후 memory 에 record 저장. hard cap
+    /// 도달/미달, 저장 성공/실패에 따라 알림 이벤트를 결정한다.
+    fn finalize_and_record_command(
+        &mut self,
+        memory: &MemArc,
+        surface_id: u32,
+        key_ts: i64,
+        record: serde_json::Value,
+    ) -> Option<CommandCapEvent> {
+        let key = format!("tasty.commands.{key_ts}");
+
+        let mut guard = match memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        // 현재 행 수 확보(첫 'D' 때 1회 인덱스 COUNT, 이후 in-memory 증분).
+        let count = *self.counts.entry(surface_id).or_insert_with(|| {
+            guard
+                .count(&Scope::Surface(surface_id), Some("tasty.commands."))
+                .unwrap_or(0)
+        });
+
+        // hard cap: 기록 중단(런어웨이 차단). surface 당 1회 알림.
+        if count >= self.hard_cap {
+            if self.hard_notified.insert(surface_id) {
+                let hard_cap = self.hard_cap;
+                tracing::warn!(
+                    "command_index: surface {surface_id} reached hard cap {hard_cap}; \
+                     dropping further command records"
+                );
+                return Some(CommandCapEvent::HardBlocked { surface_id });
+            }
+            return None;
+        }
+
+        if let Err(e) = guard.put(
+            HOST_OWNER,
+            &Scope::Surface(surface_id),
+            &key,
+            &MemoryValue::Json(record),
+            &PutOpts::default(),
+        ) {
+            tracing::warn!(
+                "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
+            );
+            return None;
+        }
+        let new_count = count + 1;
+        self.counts.insert(surface_id, new_count);
+
+        // soft cap: 막 도달했으면 1회 경고(기록은 계속).
+        if new_count >= self.soft_cap && self.soft_warned.insert(surface_id) {
+            return Some(CommandCapEvent::SoftWarn {
+                surface_id,
+                count: new_count,
+            });
         }
         None
     }

@@ -797,61 +797,10 @@ impl Core {
             let sid = ev.surface_id;
             match ev.kind {
                 TerminalEventKind::OutputAppended { text } => {
-                    let completed_lines = engine.observer_router.dispatch_text(sid, &text);
-                    // OutputMatch 훅 발사도 이 라인 버퍼를 공유(TODO30) — 완성된
-                    // 라인 단위로만 매칭한다(패턴이 청크 경계에 걸쳐 있으면 라인이
-                    // 완성될 때까지 매칭 안 됨).
-                    if engine.hook_manager.has_output_match_hook(sid) {
-                        for line in completed_lines {
-                            out.push(CoreEvent::TerminalOutputMatch {
-                                surface_id: sid,
-                                text: line,
-                            });
-                        }
-                    }
-                    // OSC 133 셸 통합 미설치 감지(TODO34) — 첫 출력 시각을 기록하고,
-                    // 지연 시간이 지나도록 PromptBoundary 를 한 번도 못 받았으면 안내
-                    // 배너 cascade 를 1 회 요청한다.
-                    engine.note_first_output(sid);
-                    if engine.take_shell_integration_hint_due(sid) {
-                        out.push(CoreEvent::TerminalShellIntegrationHint { surface_id: sid });
-                    }
+                    self.handle_output_appended(engine, sid, &text, &mut out);
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
-                    engine.note_prompt_boundary_seen(sid);
-                    let mem = engine.memory.clone();
-                    if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload)
-                    {
-                        use crate::core::command_index::CommandCapEvent;
-                        let (title, body) = match cap {
-                            CommandCapEvent::SoftWarn { count, .. } => (
-                                crate::i18n::t("command_index.cap.soft.title").to_string(),
-                                crate::i18n::t_fmt(
-                                    "command_index.cap.soft.body",
-                                    &count.to_string(),
-                                ),
-                            ),
-                            CommandCapEvent::HardBlocked { .. } => (
-                                crate::i18n::t("command_index.cap.hard.title").to_string(),
-                                crate::i18n::t("command_index.cap.hard.body").to_string(),
-                            ),
-                        };
-                        out.push(CoreEvent::TerminalNotification {
-                            surface_id: sid,
-                            title,
-                            body,
-                        });
-                    }
-                    // OSC 133 D phase(TODO34) — 명령 완료 + exit code. 항상 발화(필터
-                    // 없음) — cascade 가 highlight 자동 발동 + hook 커스터마이즈 경로
-                    // 둘 다 처리한다(TODO67).
-                    if phase == 'D' {
-                        let exit_code = crate::core::command_index::extract_exit_code(&payload);
-                        out.push(CoreEvent::TerminalCommandCompleted {
-                            surface_id: sid,
-                            exit_code,
-                        });
-                    }
+                    self.handle_prompt_boundary(engine, sid, phase, &payload, &mut out);
                 }
                 TerminalEventKind::ClipboardSet(text) => {
                     if let Err(e) = self.clipboard.write_text(&text) {
@@ -860,30 +809,7 @@ impl Core {
                     out.push(CoreEvent::TerminalClipboardSet { surface_id: sid });
                 }
                 TerminalEventKind::ClipboardQuery => {
-                    // OSC 52 read query. Security gate: off by default so an
-                    // arbitrary (possibly remote/untrusted) program cannot
-                    // silently read the local clipboard. When off, send nothing —
-                    // no reply byte must leave the host. Handled here (not via a
-                    // cascade) like the ClipboardSet write, since both need the
-                    // `self.clipboard` port together with the terminal engine.
-                    let allow = engine.settings.general.allow_clipboard_read;
-                    // Only touch the clipboard when allowed (default off → never read).
-                    let clip = if allow {
-                        match self.clipboard.read_text() {
-                            Ok(t) => Some(t),
-                            Err(e) => {
-                                tracing::warn!("OSC 52 clipboard read failed: {e}");
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    };
-                    if let Some(reply) = osc52_clipboard_read_reply(allow, clip.as_deref())
-                        && let Some(terminal) = engine.find_terminal_by_id_mut(sid)
-                    {
-                        terminal.send_bytes(&reply);
-                    }
+                    self.handle_clipboard_query(engine, sid);
                 }
                 TerminalEventKind::Notification { title, body } => {
                     out.push(CoreEvent::TerminalNotification {
@@ -910,6 +836,104 @@ impl Core {
             }
         }
         out
+    }
+
+    /// PTY 출력 청크 도착 — observer_router 라인 버퍼에 먹이고, OutputMatch 훅
+    /// (완성된 라인 단위 매칭) + OSC 133 셸 통합 미설치 힌트를 발화한다.
+    fn handle_output_appended(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        sid: u32,
+        text: &str,
+        out: &mut Vec<CoreEvent>,
+    ) {
+        let completed_lines = engine.observer_router.dispatch_text(sid, text);
+        // OutputMatch 훅 발사도 이 라인 버퍼를 공유 — 완성된 라인 단위로만
+        // 매칭한다(패턴이 청크 경계에 걸쳐 있으면 라인이 완성될 때까지 매칭 안 됨).
+        if engine.hook_manager.has_output_match_hook(sid) {
+            for line in completed_lines {
+                out.push(CoreEvent::TerminalOutputMatch {
+                    surface_id: sid,
+                    text: line,
+                });
+            }
+        }
+        // OSC 133 셸 통합 미설치 감지 — 첫 출력 시각을 기록하고, 지연 시간이
+        // 지나도록 PromptBoundary 를 한 번도 못 받았으면 안내 배너 cascade 를
+        // 1 회 요청한다.
+        engine.note_first_output(sid);
+        if engine.take_shell_integration_hint_due(sid) {
+            out.push(CoreEvent::TerminalShellIntegrationHint { surface_id: sid });
+        }
+    }
+
+    /// OSC 133 prompt boundary phase 도착 — command_index cap 알림 + D phase
+    /// (명령 완료 + exit code, highlight 자동 발동/hook 커스터마이즈 cascade 공용)
+    /// 를 발화한다.
+    fn handle_prompt_boundary(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        sid: u32,
+        phase: char,
+        payload: &str,
+        out: &mut Vec<CoreEvent>,
+    ) {
+        engine.note_prompt_boundary_seen(sid);
+        let mem = engine.memory.clone();
+        if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, payload) {
+            use crate::core::command_index::CommandCapEvent;
+            let (title, body) = match cap {
+                CommandCapEvent::SoftWarn { count, .. } => (
+                    crate::i18n::t("command_index.cap.soft.title").to_string(),
+                    crate::i18n::t_fmt("command_index.cap.soft.body", &count.to_string()),
+                ),
+                CommandCapEvent::HardBlocked { .. } => (
+                    crate::i18n::t("command_index.cap.hard.title").to_string(),
+                    crate::i18n::t("command_index.cap.hard.body").to_string(),
+                ),
+            };
+            out.push(CoreEvent::TerminalNotification {
+                surface_id: sid,
+                title,
+                body,
+            });
+        }
+        // 항상 발화(필터 없음) — cascade 가 highlight 자동 발동 + hook
+        // 커스터마이즈 경로 둘 다 처리한다.
+        if phase == 'D' {
+            let exit_code = crate::core::command_index::extract_exit_code(payload);
+            out.push(CoreEvent::TerminalCommandCompleted {
+                surface_id: sid,
+                exit_code,
+            });
+        }
+    }
+
+    /// OSC 52 clipboard read query. Security gate: off by default so an
+    /// arbitrary (possibly remote/untrusted) program cannot silently read the
+    /// local clipboard. When off, send nothing — no reply byte must leave the
+    /// host. Handled here (not via a cascade) like the ClipboardSet write,
+    /// since both need the `self.clipboard` port together with the terminal
+    /// engine.
+    fn handle_clipboard_query(&mut self, engine: &mut crate::core::CoreState, sid: u32) {
+        let allow = engine.settings.general.allow_clipboard_read;
+        // Only touch the clipboard when allowed (default off → never read).
+        let clip = if allow {
+            match self.clipboard.read_text() {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    tracing::warn!("OSC 52 clipboard read failed: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(reply) = osc52_clipboard_read_reply(allow, clip.as_deref())
+            && let Some(terminal) = engine.find_terminal_by_id_mut(sid)
+        {
+            terminal.send_bytes(&reply);
+        }
     }
 
     /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
@@ -1690,79 +1714,14 @@ impl Core {
         let is_terminal = matches!(target, ConvertSurfaceTarget::Terminal { .. });
 
         // Phase 1: 새 surface 생성 (실패 가능)
-        let (new_surface, new_name): (Box<dyn crate::model::Surface>, Option<Option<String>>) =
-            match target {
-                ConvertSurfaceTarget::Terminal { cwd } => {
-                    let cols = engine.default_cols;
-                    let rows = engine.default_rows;
-                    let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-                    let waker = engine.make_waker(surface_id);
-                    let terminal = match tasty_terminal::Terminal::new(
-                        tasty_terminal::TerminalConfig {
-                            cols,
-                            rows,
-                            shell: sh.shell_ref(),
-                            args: &sh.args_ref(),
-                            extra_env: &sh.envs_ref(),
-                            surface_id,
-                            working_dir: cwd.as_deref(),
-                            initial_input: None,
-                        },
-                        waker,
-                    ) {
-                        Ok(t) => t,
-                        Err(_) => {
-                            return CoreEvent::SurfaceConverted {
-                                surface_id,
-                                replaced: false,
-                            };
-                        }
-                    };
-                    engine.terminals.insert(surface_id, terminal);
-                    let node = crate::model::TerminalSurface { id: surface_id };
-                    // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
-                    (Box::new(node), Some(None))
-                }
-                ConvertSurfaceTarget::Kind { cwd, kind, params } => {
-                    let new_surface = match engine.create_surface_via_registry(
-                        &kind,
-                        surface_id,
-                        cwd.as_deref(),
-                        &params,
-                    ) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);
-                            return CoreEvent::SurfaceConverted {
-                                surface_id,
-                                replaced: false,
-                            };
-                        }
-                    };
-                    // markdown 등 file 기반 kind 는 옛 Markdown variant 처럼
-                    // file basename 으로 자동 명명. 그 외 kind 는 클리어 — surface
-                    // 자체의 display_name 이 사용된다.
-                    let auto_name =
-                        derive_auto_name(engine.surface_registry.get(&kind).as_deref(), &params);
-                    (new_surface, Some(auto_name))
-                }
+        let (new_surface, new_name) =
+            match Self::create_surface_for_convert(engine, surface_id, target) {
+                Ok(v) => v,
+                Err(ev) => return ev,
             };
 
         // Phase 2: location 찾기 (workspace index, pane id, tab index)
-        let mut location: Option<(usize, u32, usize)> = None;
-        'outer: for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
-            for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        if tab.contains_surface(surface_id) {
-                            location = Some((ws_idx, pid, tab_idx));
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
-        let (ws_idx, pane_id, tab_idx) = match location {
+        let (ws_idx, pane_id, tab_idx) = match Self::find_surface_location(engine, surface_id) {
             Some(loc) => loc,
             None => {
                 return CoreEvent::SurfaceConverted {
@@ -1773,28 +1732,21 @@ impl Core {
         };
 
         // Phase 3: replace
-        let replaced = {
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
-                Some(p) => p,
-                None => {
-                    return CoreEvent::SurfaceConverted {
-                        surface_id,
-                        replaced: false,
-                    };
-                }
-            };
-            let tab = &mut pane.tabs[tab_idx];
-            if tab.is_split() {
-                // Tab has split layout — replace just the leaf. Tab name 은 변경 X.
-                tab.layout_mut().replace_surface(surface_id, new_surface)
-            } else {
-                // Tab's sole surface — replace whole tab surface.
-                tab.put_surface(new_surface);
-                if let Some(name_opt) = new_name {
-                    tab.explicit_name = name_opt;
-                }
-                true
+        let replaced = match Self::replace_surface_in_tab(
+            engine,
+            ws_idx,
+            pane_id,
+            tab_idx,
+            surface_id,
+            new_surface,
+            new_name,
+        ) {
+            Some(r) => r,
+            None => {
+                return CoreEvent::SurfaceConverted {
+                    surface_id,
+                    replaced: false,
+                };
             }
         };
 
@@ -1814,6 +1766,118 @@ impl Core {
         CoreEvent::SurfaceConverted {
             surface_id,
             replaced,
+        }
+    }
+
+    /// Phase 1: target 에 맞는 새 surface 생성. 실패 시 `Err(CoreEvent)` 로
+    /// `apply_convert_surface` 가 그대로 반환할 실패 이벤트를 만들어 넘긴다.
+    fn create_surface_for_convert(
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        target: crate::core::intent::ConvertSurfaceTarget,
+    ) -> Result<(Box<dyn crate::model::Surface>, Option<Option<String>>), CoreEvent> {
+        use crate::core::intent::ConvertSurfaceTarget;
+        match target {
+            ConvertSurfaceTarget::Terminal { cwd } => {
+                let cols = engine.default_cols;
+                let rows = engine.default_rows;
+                let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+                let waker = engine.make_waker(surface_id);
+                let terminal = match tasty_terminal::Terminal::new(
+                    tasty_terminal::TerminalConfig {
+                        cols,
+                        rows,
+                        shell: sh.shell_ref(),
+                        args: &sh.args_ref(),
+                        extra_env: &sh.envs_ref(),
+                        surface_id,
+                        working_dir: cwd.as_deref(),
+                        initial_input: None,
+                    },
+                    waker,
+                ) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        return Err(CoreEvent::SurfaceConverted {
+                            surface_id,
+                            replaced: false,
+                        });
+                    }
+                };
+                engine.terminals.insert(surface_id, terminal);
+                let node = crate::model::TerminalSurface { id: surface_id };
+                // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
+                Ok((Box::new(node), Some(None)))
+            }
+            ConvertSurfaceTarget::Kind { cwd, kind, params } => {
+                let new_surface = match engine.create_surface_via_registry(
+                    &kind,
+                    surface_id,
+                    cwd.as_deref(),
+                    &params,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);
+                        return Err(CoreEvent::SurfaceConverted {
+                            surface_id,
+                            replaced: false,
+                        });
+                    }
+                };
+                // markdown 등 file 기반 kind 는 옛 Markdown variant 처럼
+                // file basename 으로 자동 명명. 그 외 kind 는 클리어 — surface
+                // 자체의 display_name 이 사용된다.
+                let auto_name =
+                    derive_auto_name(engine.surface_registry.get(&kind).as_deref(), &params);
+                Ok((new_surface, Some(auto_name)))
+            }
+        }
+    }
+
+    /// Phase 2: 대상 surface 를 담고 있는 (workspace index, pane id, tab index) 탐색.
+    fn find_surface_location(
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+    ) -> Option<(usize, u32, usize)> {
+        for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
+            for &pid in &workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
+                        if tab.contains_surface(surface_id) {
+                            return Some((ws_idx, pid, tab_idx));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Phase 3: 찾은 위치에 새 surface 를 반영. pane 을 못 찾으면 `None`
+    /// (호출자가 실패 이벤트로 변환).
+    fn replace_surface_in_tab(
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+        pane_id: u32,
+        tab_idx: usize,
+        surface_id: u32,
+        new_surface: Box<dyn crate::model::Surface>,
+        new_name: Option<Option<String>>,
+    ) -> Option<bool> {
+        let ws = &mut engine.workspaces[ws_idx];
+        let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
+        let tab = &mut pane.tabs[tab_idx];
+        if tab.is_split() {
+            // Tab has split layout — replace just the leaf. Tab name 은 변경 X.
+            Some(tab.layout_mut().replace_surface(surface_id, new_surface))
+        } else {
+            // Tab's sole surface — replace whole tab surface.
+            tab.put_surface(new_surface);
+            if let Some(name_opt) = new_name {
+                tab.explicit_name = name_opt;
+            }
+            Some(true)
         }
     }
 
@@ -2107,9 +2171,93 @@ impl Core {
             None => return noop(),
         };
 
-        // 2) B 위치 *재검색* (1 단계가 같은-tab 형제 끌어올림 / workspace 제거로
-        //    인덱스를 바꿨을 수 있음 — 인덱스 캐시 금지, 매번 id 재검색). 구조적
-        //    증명상 B 는 A detach 후에도 항상 살아있다 (B≠A, 공유 구조면 형제 승격).
+        Self::attach_a_to_target(
+            engine,
+            source_id,
+            target_id,
+            a_box,
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_id_purged,
+            workspaces_now_empty,
+        )
+    }
+
+    /// `apply_move_surface` 헬퍼 — 떼어낸 A(source) 를 B(target) 위치로 옮겨
+    /// 붙인다. B 위치 재검색(1 단계가 인덱스를 바꿨을 수 있어 매번 id 재검색) /
+    /// leaf replace / focused_surface 승계를 담당. 세 실패 분기 모두 구조적으로
+    /// unreachable 인 방어 코드라 동일한 `moved: false` 이벤트 조립을 공유한다.
+    #[allow(clippy::too_many_arguments)]
+    fn attach_a_to_target(
+        engine: &mut crate::core::CoreState,
+        source_id: u32,
+        target_id: u32,
+        a_box: Box<dyn crate::model::Surface>,
+        cascade_level: crate::core::intent::CascadeLevel,
+        closed_tab_ids: Vec<u32>,
+        closed_pane_ids: Vec<u32>,
+        workspace_id_purged: Option<u32>,
+        workspaces_now_empty: bool,
+    ) -> CoreEvent {
+        let fail =
+            |closed_tab_ids: &[u32], closed_pane_ids: &[u32]| CoreEvent::MoveSurfaceApplied {
+                moved: false,
+                b_cleanup: None,
+                cascade_level,
+                closed_tab_ids: closed_tab_ids.to_vec(),
+                closed_pane_ids: closed_pane_ids.to_vec(),
+                workspace_id_purged,
+                workspaces_now_empty,
+            };
+
+        // 2) B 위치 *재검색* + b_tab_idx/b_persist 수집.
+        let Some((ws_idx, pane_id, b_tab_idx, b_persist)) =
+            Self::locate_target_slot(engine, source_id, target_id)
+        else {
+            return fail(&closed_tab_ids, &closed_pane_ids);
+        };
+
+        // 3) B leaf 를 A 로 replace. B 의 옛 id-marker 는 drop 되지만 B 의 Terminal 은
+        //    아직 store 에 남아있다 → 4 단계 cleanup 이 PTY kill.
+        let replaced = Self::replace_b_with_a(engine, ws_idx, pane_id, b_tab_idx, target_id, a_box);
+        if !replaced {
+            tracing::error!(
+                source_id,
+                target_id,
+                "move surface: B replace failed (unreachable)"
+            );
+            return fail(&closed_tab_ids, &closed_pane_ids);
+        }
+
+        // B(target) 가 이 탭의 focused 였다면 그 자리를 A 가 승계하므로 focused_surface
+        // 를 A 로 이어준다 (put_surface 는 sole 케이스에서 이미 A 로 세팅하지만, split
+        // replace_surface 는 focused_surface 를 갱신하지 않아 dangling 방지 필요).
+        // 그 후 새 focused 의 title 로 탭 제목을 재투영해 죽는 B 의 title 이 남지 않게 한다.
+        Self::transfer_focus_to_a(engine, ws_idx, pane_id, b_tab_idx, source_id, target_id);
+        engine.mark_layout_dirty();
+        engine.refresh_tab_osc_title(source_id);
+
+        CoreEvent::MoveSurfaceApplied {
+            moved: true,
+            b_cleanup: Some((target_id, b_persist)),
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_id_purged,
+            workspaces_now_empty,
+        }
+    }
+
+    /// B(target) 위치 *재검색* (1 단계가 같은-tab 형제 끌어올림 / workspace 제거로
+    /// 인덱스를 바꿨을 수 있음 — 인덱스 캐시 금지, 매번 id 재검색. 구조적 증명상
+    /// B 는 A detach 후에도 항상 살아있다 — B≠A, 공유 구조면 형제 승격) + 그
+    /// tab 안 인덱스(b_tab_idx) + scrollback persist_id 수집.
+    fn locate_target_slot(
+        engine: &crate::core::CoreState,
+        source_id: u32,
+        target_id: u32,
+    ) -> Option<(usize, u32, usize, Option<String>)> {
         let (ws_idx, pane_id) = match engine.find_workspace_index_for_surface(target_id) {
             Some(v) => v,
             None => {
@@ -2118,25 +2266,13 @@ impl Core {
                     target_id,
                     "move surface: target vanished after detaching source (unreachable)"
                 );
-                return CoreEvent::MoveSurfaceApplied {
-                    moved: false,
-                    b_cleanup: None,
-                    cascade_level,
-                    closed_tab_ids,
-                    closed_pane_ids,
-                    workspace_id_purged,
-                    workspaces_now_empty,
-                };
+                return None;
             }
         };
-
-        // 3) B leaf 를 A 로 replace. B 의 옛 id-marker 는 drop 되지만 B 의 Terminal 은
-        //    아직 store 에 남아있다 → 4 단계 cleanup 이 PTY kill.
         let b_persist = engine
             .terminals
             .scrollback_persist_id(target_id)
             .map(str::to_string);
-
         let b_tab_idx = {
             let ws = &engine.workspaces[ws_idx];
             match ws.pane_layout().find_pane(pane_id) {
@@ -2152,76 +2288,52 @@ impl Core {
                     target_id,
                     "move surface: B tab not found (unreachable)"
                 );
-                return CoreEvent::MoveSurfaceApplied {
-                    moved: false,
-                    b_cleanup: None,
-                    cascade_level,
-                    closed_tab_ids,
-                    closed_pane_ids,
-                    workspace_id_purged,
-                    workspaces_now_empty,
-                };
+                return None;
             }
         };
+        Some((ws_idx, pane_id, b_tab_idx, b_persist))
+    }
 
-        let replaced = {
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = ws
-                .pane_layout_mut()
-                .find_pane_mut(pane_id)
-                .expect("pane re-search must hit (just found above)");
+    /// B leaf 를 A 로 replace.
+    fn replace_b_with_a(
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+        pane_id: u32,
+        b_tab_idx: usize,
+        target_id: u32,
+        a_box: Box<dyn crate::model::Surface>,
+    ) -> bool {
+        let ws = &mut engine.workspaces[ws_idx];
+        let pane = ws
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("pane re-search must hit (just found above)");
+        let tab = &mut pane.tabs[b_tab_idx];
+        if tab.is_split() {
+            // split 안 leaf 교체 — tab name 불변.
+            tab.layout_mut().replace_surface(target_id, a_box)
+        } else {
+            // B 가 sole 이던 tab — A 가 그 tab 의 단독 surface 가 된다.
+            tab.put_surface(a_box);
+            true
+        }
+    }
+
+    /// B(target) 가 이 탭의 focused 였다면 A(source) 로 승계.
+    fn transfer_focus_to_a(
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+        pane_id: u32,
+        b_tab_idx: usize,
+        source_id: u32,
+        target_id: u32,
+    ) {
+        let ws = &mut engine.workspaces[ws_idx];
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             let tab = &mut pane.tabs[b_tab_idx];
-            if tab.is_split() {
-                // split 안 leaf 교체 — tab name 불변.
-                tab.layout_mut().replace_surface(target_id, a_box)
-            } else {
-                // B 가 sole 이던 tab — A 가 그 tab 의 단독 surface 가 된다.
-                tab.put_surface(a_box);
-                true
+            if tab.focused_surface == target_id {
+                tab.focused_surface = source_id;
             }
-        };
-
-        if !replaced {
-            tracing::error!(
-                source_id,
-                target_id,
-                "move surface: B replace failed (unreachable)"
-            );
-            return CoreEvent::MoveSurfaceApplied {
-                moved: false,
-                b_cleanup: None,
-                cascade_level,
-                closed_tab_ids,
-                closed_pane_ids,
-                workspace_id_purged,
-                workspaces_now_empty,
-            };
-        }
-
-        // B(target) 가 이 탭의 focused 였다면 그 자리를 A 가 승계하므로 focused_surface
-        // 를 A 로 이어준다 (put_surface 는 sole 케이스에서 이미 A 로 세팅하지만, split
-        // replace_surface 는 focused_surface 를 갱신하지 않아 dangling 방지 필요).
-        // 그 후 새 focused 의 title 로 탭 제목을 재투영해 죽는 B 의 title 이 남지 않게 한다.
-        {
-            let ws = &mut engine.workspaces[ws_idx];
-            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                let tab = &mut pane.tabs[b_tab_idx];
-                if tab.focused_surface == target_id {
-                    tab.focused_surface = source_id;
-                }
-            }
-        }
-        engine.mark_layout_dirty();
-        engine.refresh_tab_osc_title(source_id);
-
-        CoreEvent::MoveSurfaceApplied {
-            moved: true,
-            b_cleanup: Some((target_id, b_persist)),
-            cascade_level,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_id_purged,
-            workspaces_now_empty,
         }
     }
 

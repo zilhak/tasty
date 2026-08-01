@@ -194,41 +194,11 @@ impl SavedSurfaceLayout {
 /// `apply_pending_scrollback_inject` 가 꺼내 inject 한다.
 impl SavedSurface {
     fn capture_surface(surface: &mut dyn Surface, ctx: &mut CaptureCtx<'_>) -> Self {
-        let registry = ctx.registry;
-        let capture_scrollback = ctx.capture_scrollback;
-        let memory = ctx.memory;
         if let Some(ts) = surface
             .as_any()
             .downcast_ref::<crate::model::TerminalSurface>()
         {
-            let surface_id = ts.id;
-            let restore_command = {
-                let mut guard = match memory.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                crate::surface_meta::SurfaceMetaStore::get(
-                    &mut *guard,
-                    surface_id,
-                    "restore.command",
-                )
-            };
-            let cwd = ctx
-                .terminals
-                .get(surface_id)
-                .and_then(|t| t.get_cwd())
-                .map(|p| p.to_string_lossy().to_string());
-            let scrollback_ref = if capture_scrollback {
-                capture_scrollback_to_disk(surface_id, ctx.terminals, ctx.seen_refs)
-            } else {
-                None
-            };
-
-            return SavedSurface::Terminal {
-                cwd,
-                restore_command,
-                scrollback_ref,
-            };
+            return Self::capture_terminal_surface(ts, ctx);
         }
         // 비활성 탭의 deferred EmptySurface 는 외부로는 Terminal 역할이지만
         // PTY 가 아직 안 떠 있어 TerminalSurface downcast 가 None 이다.
@@ -239,68 +209,117 @@ impl SavedSurface {
             .downcast_mut::<crate::model::EmptySurface>()
             && es.is_deferred()
         {
-            let surface_id = es.id;
-            let cwd = es
-                .deferred_spawn
-                .as_ref()
-                .and_then(|s| s.working_dir.as_ref())
-                .map(|p| p.to_string_lossy().to_string());
-            // deferred surface 복원 명령의 권위 출처는 `DeferredSpawn.restore_command`
-            // (복원 시 layout 에서 이관됨) 뿐이다. `surface_meta[id]` 로 fallback 하면
-            // 재사용된 id 에 남은 stale `claude -r …` 를 주워 담을 수 있으므로 읽지 않는다.
-            let restore_command = es
-                .deferred_spawn
-                .as_ref()
-                .and_then(|s| s.restore_command.clone());
-            // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
-            // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
-            //  파일은 startup GC 가 청소한다.)
-            let scrollback_ref = if capture_scrollback {
-                let stored = es
-                    .deferred_spawn
-                    .as_ref()
-                    .and_then(|s| s.scrollback_persist_id.clone());
-                match stored {
-                    Some(existing) if !ctx.seen_refs.contains(&existing) => {
-                        ctx.seen_refs.insert(existing.clone());
-                        Some(existing)
-                    }
-                    Some(stale) => {
-                        // PTY 가 안 떠 있어 직접 dump 불가 → 디스크 내용을 fresh
-                        // 파일로 복사하고 새 ID 를 발급. 한쪽이 라이브 surface 였다면
-                        // 그쪽은 이미 자기 데이터로 stale.bin 을 덮어쓴 후다.
-                        let new_id = crate::scrollback_store::new_persist_id();
-                        if let Some(lines) = crate::scrollback_store::read(&stale) {
-                            if let Err(e) = crate::scrollback_store::write(&new_id, &lines) {
-                                tracing::warn!(
-                                    "scrollback capture(deferred): copy {stale} → {new_id} failed for surface {surface_id}: {e}"
-                                );
-                            } else {
-                                tracing::warn!(
-                                    "scrollback capture(deferred): duplicate persist_id {stale} on surface {surface_id} → reassigned to {new_id}"
-                                );
-                            }
-                        }
-                        if let Some(spawn) = es.deferred_spawn.as_mut() {
-                            spawn.scrollback_persist_id = Some(new_id.clone());
-                        }
-                        ctx.seen_refs.insert(new_id.clone());
-                        Some(new_id)
-                    }
-                    None => None,
-                }
-            } else {
-                None
-            };
-            return SavedSurface::Terminal {
-                cwd,
-                restore_command,
-                scrollback_ref,
-            };
+            return Self::capture_deferred_surface(es, ctx);
         }
+        Self::capture_generic_surface(&*surface, ctx.registry)
+    }
+
+    fn capture_terminal_surface(
+        ts: &crate::model::TerminalSurface,
+        ctx: &mut CaptureCtx<'_>,
+    ) -> Self {
+        let surface_id = ts.id;
+        let restore_command = {
+            let mut guard = match ctx.memory.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            crate::surface_meta::SurfaceMetaStore::get(&mut *guard, surface_id, "restore.command")
+        };
+        let cwd = ctx
+            .terminals
+            .get(surface_id)
+            .and_then(|t| t.get_cwd())
+            .map(|p| p.to_string_lossy().to_string());
+        let scrollback_ref = if ctx.capture_scrollback {
+            capture_scrollback_to_disk(surface_id, ctx.terminals, ctx.seen_refs)
+        } else {
+            None
+        };
+
+        SavedSurface::Terminal {
+            cwd,
+            restore_command,
+            scrollback_ref,
+        }
+    }
+
+    // deferred surface 복원 명령의 권위 출처는 `DeferredSpawn.restore_command`
+    // (복원 시 layout 에서 이관됨) 뿐이다. `surface_meta[id]` 로 fallback 하면
+    // 재사용된 id 에 남은 stale `claude -r …` 를 주워 담을 수 있으므로 읽지 않는다.
+    fn capture_deferred_surface(
+        es: &mut crate::model::EmptySurface,
+        ctx: &mut CaptureCtx<'_>,
+    ) -> Self {
+        let surface_id = es.id;
+        let cwd = es
+            .deferred_spawn
+            .as_ref()
+            .and_then(|s| s.working_dir.as_ref())
+            .map(|p| p.to_string_lossy().to_string());
+        let restore_command = es
+            .deferred_spawn
+            .as_ref()
+            .and_then(|s| s.restore_command.clone());
+        // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
+        // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
+        //  파일은 startup GC 가 청소한다.)
+        let scrollback_ref = if ctx.capture_scrollback {
+            Self::resolve_deferred_scrollback_ref(es, ctx, surface_id)
+        } else {
+            None
+        };
+        SavedSurface::Terminal {
+            cwd,
+            restore_command,
+            scrollback_ref,
+        }
+    }
+
+    fn resolve_deferred_scrollback_ref(
+        es: &mut crate::model::EmptySurface,
+        ctx: &mut CaptureCtx<'_>,
+        surface_id: u32,
+    ) -> Option<String> {
+        let stored = es
+            .deferred_spawn
+            .as_ref()
+            .and_then(|s| s.scrollback_persist_id.clone());
+        match stored {
+            Some(existing) if !ctx.seen_refs.contains(&existing) => {
+                ctx.seen_refs.insert(existing.clone());
+                Some(existing)
+            }
+            Some(stale) => {
+                // PTY 가 안 떠 있어 직접 dump 불가 → 디스크 내용을 fresh
+                // 파일로 복사하고 새 ID 를 발급. 한쪽이 라이브 surface 였다면
+                // 그쪽은 이미 자기 데이터로 stale.bin 을 덮어쓴 후다.
+                let new_id = crate::scrollback_store::new_persist_id();
+                if let Some(lines) = crate::scrollback_store::read(&stale) {
+                    if let Err(e) = crate::scrollback_store::write(&new_id, &lines) {
+                        tracing::warn!(
+                            "scrollback capture(deferred): copy {stale} → {new_id} failed for surface {surface_id}: {e}"
+                        );
+                    } else {
+                        tracing::warn!(
+                            "scrollback capture(deferred): duplicate persist_id {stale} on surface {surface_id} → reassigned to {new_id}"
+                        );
+                    }
+                }
+                if let Some(spawn) = es.deferred_spawn.as_mut() {
+                    spawn.scrollback_persist_id = Some(new_id.clone());
+                }
+                ctx.seen_refs.insert(new_id.clone());
+                Some(new_id)
+            }
+            None => None,
+        }
+    }
+
+    fn capture_generic_surface(surface: &dyn Surface, registry: &SurfaceKindRegistry) -> Self {
         let kind = surface.kind().to_string();
         if let Some(def) = registry.get(&kind)
-            && let Some(data) = (def.snapshot)(&*surface)
+            && let Some(data) = (def.snapshot)(surface)
         {
             return SavedSurface::Generic { kind, data };
         }

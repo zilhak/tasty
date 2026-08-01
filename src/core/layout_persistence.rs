@@ -50,21 +50,31 @@ pub(crate) fn save_to_disk(engine: &mut CoreState, active_workspace: usize) {
             return;
         }
     };
+    let Some(json) = serialize_layout(engine, active_workspace) else {
+        return;
+    };
+    write_layout_json(&path, &json);
+}
+
+fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<String> {
     let saved = SavedLayout::capture(engine, active_workspace);
-    let json = match serde_json::to_string_pretty(&saved) {
-        Ok(j) => j,
+    match serde_json::to_string_pretty(&saved) {
+        Ok(j) => Some(j),
         Err(e) => {
             tracing::warn!("Failed to serialize layout: {e}");
-            return;
+            None
         }
-    };
+    }
+}
+
+fn write_layout_json(path: &std::path::Path, json: &str) {
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
         tracing::warn!("Failed to create dir for layout.json: {e}");
         return;
     }
-    if let Err(e) = std::fs::write(&path, json) {
+    if let Err(e) = std::fs::write(path, json) {
         tracing::warn!("Failed to write layout.json: {e}");
     }
 }
