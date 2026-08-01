@@ -1219,13 +1219,10 @@ impl App {
             self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
         }
 
-        // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability negotiation
-        // (TODO 15 결정 #1). holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다.
-        // 참고: 실제 plugin 구동 + mesh 바이트 forward 는 아직 headless(attach mesh
-        // mirror 의 주 시나리오, `src/boot/headless_plugins.rs`)에만 배선했다 — gui 가
-        // attach 서버인 경우의 실제 forward 루프는 out-of-scope 로 남기고
-        // `.claude-workspace/todo/`에 후속 TODO 로 기록했다(로컬 redraw 와의 geometry
-        // 권위 조정이 필요해 범위가 커진다).
+        // mesh 구독/geometry 갱신 — 구독 요청 자체가 capability negotiation이다.
+        // holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다. 실제 plugin 구동 +
+        // mesh 바이트 forward 는 GUI-live/GUI-parked/headless 세 경로 모두에 배선되어
+        // 있다(상세: docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
         for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
             outcome.mesh_context_requests
         {
