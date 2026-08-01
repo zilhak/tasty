@@ -7,7 +7,7 @@
 //!
 //! §0.1 분류표상 거의 모든 메서드가 **Method call** (응답 데이터를 가진
 //! mutate). fire-and-forget DomainIntent / CoreEvent 은 본 단계에서 신설하지
-//! 않는다 — TODO-agent.md §3 참조.
+//! 않는다.
 
 pub(crate) mod barrier;
 pub(crate) mod completion_strategy;
