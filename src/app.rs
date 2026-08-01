@@ -67,7 +67,7 @@ use crate::{AppEvent, plugin, state};
 
 /// GPU 어댑터를 하드웨어·소프트웨어 fallback 모두 못 찾았을 때의 구분 가능한 에러.
 /// 호출부(`event_handler`)가 `anyhow::Error::downcast_ref` 로 감지해 panic 대신
-/// `--headless` 안내 메시지를 낼 수 있게 한다(`crate::core::MirrorStructuralBlocked`
+/// 사람이 읽을 안내 메시지를 낼 수 있게 한다(`crate::core::MirrorStructuralBlocked`
 /// 와 동일한 marker-type 패턴).
 #[cfg(feature = "gui")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -418,7 +418,7 @@ impl App {
                     };
                     // 하드웨어 어댑터가 없으면(예: GPU 미탑재 CI/서버, 드라이버 미설치)
                     // 소프트웨어 rasterizer(lavapipe 등)로 한 번 더 시도한다. 그래도
-                    // 없으면 NoGpuAdapter 로 호출부(event_handler)가 --headless 안내를
+                    // 없으면 NoGpuAdapter 로 호출부(event_handler)가 안내 메시지를
                     // 낼 수 있게 구분 가능한 에러를 반환한다.
                     match instance.request_adapter(&opts).await {
                         Some(a) => a,

@@ -24,7 +24,7 @@ overflow = "99+"
 [boot.gpu_error]
 title = "GPU アダプタが見つかりません"
 body = "ソフトウェアフォールバックも試しましたが、互換性のある GPU アダプタが見つかりませんでした。多くの場合、このマシンに GPU ドライバ(Vulkan/OpenGL)が存在しません。"
-hint = "--headless オプションで実行すると、GPU アクセラレーションのウィンドウなしで Tasty を使用できます。または GPU ドライバをインストール・更新してください。"
+hint = "GPU ドライバをインストール・更新してください。GPU なしで使うには --no-default-features オプションでソースから headless ビルドしてください。"
 
 [plugins]
 title = "プラグイン"

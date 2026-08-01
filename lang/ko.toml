@@ -24,7 +24,7 @@ overflow = "99+"
 [boot.gpu_error]
 title = "GPU 어댑터를 찾을 수 없음"
 body = "소프트웨어 fallback 까지 시도했지만 호환되는 GPU 어댑터를 찾지 못했습니다. 대부분 이 머신에 GPU 드라이버(Vulkan/OpenGL)가 없다는 뜻입니다."
-hint = "--headless 옵션으로 실행하면 GPU 가속 창 없이 Tasty 를 사용할 수 있습니다. 또는 GPU 드라이버를 설치·업데이트하세요."
+hint = "GPU 드라이버를 설치·업데이트하세요. GPU 없이 사용하려면 --no-default-features 옵션으로 소스에서 headless 빌드하세요."
 
 [plugins]
 title = "플러그인"
