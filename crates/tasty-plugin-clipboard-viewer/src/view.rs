@@ -509,17 +509,26 @@ fn meta_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 /// mono pre 텍스트 — well(border+radius+bg-app fill) 안에 스크롤(design `cbWell` +
 /// `cbMono`).
+///
+/// `egui::Label` 대신 read-only 흉내를 낸 `egui::TextEdit` 를 쓴다 — `Label` 의 내장
+/// 드래그 선택(`LabelSelectionState`)은 세로 이탈만 처리하고 가로 이탈은 처리하지
+/// 않아(egui 의도적 설계 범위, upstream 미수정 확정 — TODO76) 포인터가 위젯을 가로로
+/// 빠르게 벗어나면 선택이 멈춘다. `TextEdit` 의 커서 갱신은 이 게이팅이 없다.
+/// `interactive(false)` 는 쓰지 않는다 — 편집뿐 아니라 선택 자체도 막아버린다
+/// (egui 소스 확인). 대신 매 프레임 지역 `String` 버퍼를 넘겨 편집 결과를 버린다.
 fn text_body(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     well(ui, theme, |ui| {
-        ui.style_mut().interaction.selectable_labels = true;
+        // 캐럿(편집 커서)만 숨긴다 — 이 well 스코프의 자식 ui 한정이라 다른 위젯에
+        // 새지 않는다. selection 하이라이트는 별도 스타일이라 영향 없음.
+        ui.visuals_mut().text_cursor.stroke = egui::Stroke::NONE;
+        let mut buf = text.to_owned();
         ui.add(
-            egui::Label::new(
-                egui::RichText::new(text)
-                    .monospace()
-                    .size(theme.font_size_term_sm.value())
-                    .color(theme.text_primary().to_egui()),
-            )
-            .wrap(),
+            egui::TextEdit::multiline(&mut buf)
+                .font(egui::FontId::monospace(theme.font_size_term_sm.value()))
+                .text_color(theme.text_primary().to_egui())
+                .frame(false)
+                .desired_width(ui.available_width())
+                .desired_rows(1),
         );
     });
 }
