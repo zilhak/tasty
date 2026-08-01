@@ -77,7 +77,9 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut AppState, engine: &mut Cor
 }
 
 /// `CoreState::mesh_mirror`(구독 상태)를 읽어 plugin 을 구동하고, 새 frame 을 attach
-/// client 에 chunk forward 한다(TODO 18). `pump_plugins` 호출 tick 마다 실행돼
+/// client 에 chunk forward 한다(상세
+/// `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
+/// `pump_plugins` 호출 tick 마다 실행돼
 /// `PaintFrame` 도착 즉시(또는 1Hz busy-poll 안전망 tick 에) 반응한다 — 별도 wake
 /// 채널 불필요(모듈 문서 §pump 트리거 참조).
 ///

@@ -394,17 +394,20 @@ impl ApplicationHandler<AppEvent> for App {
         // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
         // 로 비동기 수신(아래 apply_attach_client_output 경로).
         self.dispatch_pending_list_dir_forwards();
-        // TODO 40 — git-viewer(원격) — `git_viewer.query` IPC 핸들러가 쌓은 원격 git
-        // 조회 forward 큐를 drain 해 원격에 전송한다. 응답은 reader thread 가
-        // `MirrorEvent::GitQueryResult` 로 비동기 수신(아래 apply_attach_client_output
-        // 경로) → `emit_host_event_to_plugin` 으로 plugin 에 push.
+        // git-viewer(원격, `docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`)
+        // — `git_viewer.query` IPC 핸들러가 쌓은 원격 git 조회 forward 큐를 drain 해
+        // 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::GitQueryResult` 로
+        // 비동기 수신(아래 apply_attach_client_output 경로) → `emit_host_event_to_plugin`
+        // 으로 plugin 에 push.
         self.dispatch_pending_git_query_forwards();
-        // TODO 19 — attach mesh mirror surface 의 텍스처 delta 체인 단절을 GPU 렌더
-        // prepare 가 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다.
+        // attach mesh mirror surface 의 텍스처 delta 체인 단절을 GPU 렌더 prepare 가
+        // 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다(상세
+        // `docs/dev-guide/egui-mesh-channel.md` "텍스처 상태 수명 + delta 체인").
         self.dispatch_pending_mesh_full_resend_forwards();
 
-        // TODO 20 — attach mesh mirror pane 의 geometry/theme/focus 변경 + 누적 입력을
-        // drain 해 원격에 forward한다(구독 유지 + 인터랙티브 입력).
+        // attach mesh mirror pane 의 geometry/theme/focus 변경 + 누적 입력을 drain 해
+        // 원격에 forward한다(구독 유지 + 인터랙티브 입력, 상세
+        // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
         self.dispatch_pending_mesh_context_forwards();
         self.dispatch_pending_mesh_input_forwards();
 
@@ -430,7 +433,8 @@ impl ApplicationHandler<AppEvent> for App {
         // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
         // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
         self.finalize_plugin_hello(hello_pairs);
-        // RssSurge 이상탐지(TODO 61) — PluginManager 가 sysinfo 로 직접 sampling 한
+        // RssSurge 이상탐지(상세 `docs/features/telemetry/index.md`) — PluginManager
+        // 가 sysinfo 로 직접 sampling 한
         // (plugin_id, rss_bytes) 를 anomaly detector 에 공급. 어느 window 소관인지
         // 몰라(PluginManager 는 App-level singleton) plugin lifecycle cascade 와
         // 동일하게 첫 main window 를 대상으로 삼는다.
@@ -524,7 +528,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Native file picker(04) popup 의 result 슬롯 drain — 로컬은 DispatchFile,
         // 원격은 클립보드 복사 + toast.
         self.dispatch_pending_file_picker_results();
-        // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0031 TODO 06).
+        // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0031).
         self.dispatch_pending_script_confirm();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
@@ -1145,7 +1149,7 @@ impl App {
                     main.core_state.bulk_transfers.clear_client(cid);
                     // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소(TODO27).
                     main.core_state.capture_uploads.clear_client(cid);
-                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
+                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지.
                     main.core_state.mesh_mirror.remove_for_client(cid);
                 }
             }
@@ -1244,9 +1248,10 @@ impl App {
                 reply_mesh_error(&hub, client_id, surface_id, "not_attached");
             }
         }
-        // attach mesh mirror 입력 역방향 forward(TODO 20) — 위 mesh_context_requests
-        // 와 동일 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는
-        // TODO 24 로 이연.
+        // attach mesh mirror 입력 역방향 forward — 위 mesh_context_requests 와 동일
+        // 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는 아직
+        // 이 축이 배선되지 않았다(상세
+        // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
         for (client_id, surface_id, input) in outcome.mesh_input_events {
             let ok = self.apply_mesh_input_on_owning_engine(surface_id, client_id, input);
             if !ok {
@@ -1266,8 +1271,9 @@ impl App {
         for (client_id, msg) in outcome.list_dir_requests {
             self.apply_list_dir_request_msg(client_id, msg, &hub);
         }
-        // (TODO 40) git-viewer: mirror client 가 attach 채널로 보낸 git 조회 요청.
-        // holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
+        // git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`):
+        // mirror client 가 attach 채널로 보낸 git 조회 요청. holder(그 client 가
+        // 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         for (client_id, msg) in outcome.git_query_requests {
             self.apply_git_query_request_msg(client_id, msg, &hub);
         }
@@ -1398,7 +1404,8 @@ impl App {
     }
 
     /// 대상 mesh surface 를 점유(holder)한 engine 을 찾아 구독/geometry 갱신을
-    /// 반영한다(TODO 18). holder 검증은 `CoreState::apply_attached_mesh_context`
+    /// 반영한다(상세 `docs/dev-guide/egui-mesh-channel.md`). holder 검증은
+    /// `CoreState::apply_attached_mesh_context`
     /// 내부에서 하므로, 여기선 "이 client 가 그 surface 의 attach lock 을 쥔 engine"만
     /// 찾으면 된다 — 못 찾으면 false(호출자가 `MeshError` 회신).
     #[allow(clippy::too_many_arguments)]
@@ -1443,7 +1450,8 @@ impl App {
         false
     }
 
-    /// [`Self::apply_mesh_context_on_owning_engine`]과 동형의 입력 forward 버전(TODO 20).
+    /// [`Self::apply_mesh_context_on_owning_engine`]과 동형의 입력 forward 버전(상세
+    /// `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
     fn apply_mesh_input_on_owning_engine(
         &mut self,
         surface_id: u32,
@@ -1721,8 +1729,9 @@ impl App {
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 
-    /// (TODO 40) git-viewer — mirror client 가 attach 채널로 보낸 `git_query_request`
-    /// 하나를 적용한다. `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을
+    /// git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`) —
+    /// mirror client 가 attach 채널로 보낸 `git_query_request` 하나를 적용한다.
+    /// `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을
     /// 찾아 `attach_runtime::handle_git_query_request` 로 위임한다.
     fn apply_git_query_request_msg(
         &mut self,
@@ -1937,8 +1946,9 @@ fn push_structural_delta(
     let _ = hub.push(client_id, frame); // best-effort delta — client 끊김 시 무해.
 }
 
-/// `MeshError`(TODO 15 결정 #1: 미지원/미점유 mesh 요청은 무시 대신 명시 오류) 회신
-/// 프레임을 client 에 push(best-effort).
+/// `MeshError`(미지원/미점유 mesh 요청은 무시 대신 명시 오류로 회신, 상세
+/// `docs/dev-guide/attach-behavior.md` / `docs/dev-guide/egui-mesh-channel.md`)
+/// 회신 프레임을 client 에 push(best-effort).
 fn reply_mesh_error(
     hub: &crate::adapters::production::stream_hub::StreamHub,
     client_id: u32,

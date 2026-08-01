@@ -36,7 +36,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 임의 Lua 주입 (debug 전용, ADR-0031 TODO 08) — App 소유 lua_engine 워커로 실행.
+        // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);

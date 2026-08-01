@@ -421,9 +421,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     focused,
                 ) in outcome.mesh_context_requests
                 {
-                    // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability
-                    // negotiation(TODO 15 결정 #1). holder 불일치/미점유 surface 는
-                    // 명시 MeshError 로 회신한다(TODO 15 결정 #1: 무시 대신 오류).
+                    // mesh 구독/geometry 갱신(attach mesh mirror 소비 경로 — 상세
+                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`) —
+                    // 구독 요청 자체가 capability negotiation. holder 불일치/미점유
+                    // surface 는 명시 MeshError 로 회신한다(무시 대신 오류).
                     let ok = engine.apply_attached_mesh_context(
                         surface_id,
                         client_id,
@@ -460,8 +461,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     }
                 }
                 for (client_id, surface_id, input) in outcome.mesh_input_events {
-                    // attach mesh mirror 입력 역방향 forward(TODO 20) — holder 검증은
-                    // apply_attached_mesh_input 이 담당. 실제 plugin 구동은
+                    // attach mesh mirror 입력 역방향 forward(상세
+                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`) —
+                    // holder 검증은 apply_attached_mesh_input 이 담당. 실제 plugin 구동은
                     // headless_plugins::forward_mesh_frames 가 다음 tick 에 누적된
                     // 이벤트를 소비한다.
                     let ok = engine.apply_attached_mesh_input(surface_id, client_id, input);
@@ -531,9 +533,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     );
                 }
                 for (client_id, msg) in outcome.git_query_requests {
-                    // (TODO 40) git-viewer: mirror client 가 이 headless 인스턴스로
-                    // git status/log/worktrees 또는 diff 조회를 요청 — list_dir 와
-                    // 동일하게 headless 는 단일 engine 이라 holder 순회 불요.
+                    // git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`):
+                    // mirror client 가 이 headless 인스턴스로 git status/log/worktrees
+                    // 또는 diff 조회를 요청 — list_dir 와 동일하게 headless 는 단일
+                    // engine 이라 holder 순회 불요.
                     use crate::adapters::production::stream_hub::GitQueryRequestMsg;
                     let GitQueryRequestMsg::GitQueryRequest {
                         request_id,
@@ -619,7 +622,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     engine.bulk_transfers.clear_client(client_id);
                     // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소(TODO27).
                     engine.capture_uploads.clear_client(client_id);
-                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(TODO 18).
+                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(상세
+                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
                     engine.mesh_mirror.remove_for_client(client_id);
                 }
             }
@@ -630,7 +634,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
                 engine.refresh_busy_surfaces();
                 engine.forward_busy_activity(&app.stream_hub);
-                // 글로벌 훅(TODO12) — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
+                // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
                 // 동형(엔진 1 개라 순회 불필요).
                 engine.poll_global_hooks();
                 // IdleTimeout 훅(TODO30) — gui `app/idle_hooks.rs` 의

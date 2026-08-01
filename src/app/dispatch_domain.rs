@@ -1555,7 +1555,7 @@ impl App {
     /// 특정 알림 읽음 처리 cascade — 알림을 보유한 첫 main/parked engine 에 적용.
     /// NotificationId 는 모든 engine 에 걸쳐 unique 라 첫 매칭만 처리.
     /// highlight clear 엣지 케이스(같은 surface 의 다른 알림이 안읽음이면 유지)는
-    /// `CoreState::mark_notification_read`(TODO 23)가 처리한다.
+    /// `CoreState::mark_notification_read`가 처리한다.
     fn cascade_notification_read(&mut self, id: u64) {
         for main in self.main_windows_iter_mut() {
             main.core_state.mark_notification_read(id);
@@ -1567,7 +1567,7 @@ impl App {
     }
 
     /// 모든 알림 읽음 처리 cascade — main/parked 모두 적용.
-    /// highlight clear 는 `CoreState::mark_all_notifications_read`(TODO 23)가 처리한다.
+    /// highlight clear 는 `CoreState::mark_all_notifications_read`가 처리한다.
     fn cascade_all_notifications_read(&mut self) {
         for main in self.main_windows_iter_mut() {
             main.core_state.mark_all_notifications_read();
