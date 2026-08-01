@@ -11,7 +11,6 @@
 //! 차원이 아니라 owner 컨텍스트가 있어야 판정 가능하므로 `registry.rs` finalize
 //! 단계에서 강제한다.
 
-use std::collections::HashMap;
 use std::fmt;
 
 use serde::Deserialize;
@@ -20,7 +19,13 @@ use super::types::{
     CompletionStrategyId, CompletionStrategyKind, CompletionStrategyOwner,
     is_valid_completion_strategy_short_name,
 };
+use crate::core::agent::completion_strategy::completion_strategy_to_poll_spec;
 use crate::hook_handler::HookHandlerId;
+/// 트랙 A(`tasty-plugin-manifest`)가 CLI `AutoWaitDecl.strategy` 경로용으로 이미
+/// 정의한 poll decl 타입 — 필드 대응 단일 지점(§A-3)을 그대로 재사용한다. 본
+/// 파일의 `CompletionStrategyDecl`(plugin contribution 최상위 decl)과 이름이
+/// 겹치므로 별칭을 둔다.
+use tasty_plugin_manifest::CompletionStrategyDecl as PollStrategyDecl;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CompletionStrategyDecl {
@@ -42,53 +47,25 @@ pub struct CompletionStrategyDecl {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CompletionStrategySpecDecl {
-    /// 자체 폴링. 필드 의미는 `tasty-agent::task::PollSpec` 과 1:1 대응(TODO80 §A-1
-    /// 필드 대조표) — 이름까지 그대로 맞춰 변환 함수가 단순 필드 복사가 되게 한다.
-    Poll {
-        poll_method: String,
-        #[serde(default)]
-        map_from_response: HashMap<String, String>,
-        #[serde(default)]
-        map_from_request: HashMap<String, String>,
-        state_field: String,
-        terminal_states: Vec<String>,
-        /// 매니페스트 `PollingDecl` 과 동일 기본값(TODO80 §A-5).
-        #[serde(default = "default_interval_ms")]
-        interval_ms: u64,
-        #[serde(default)]
-        timeout_ms: Option<u64>,
-    },
+    /// 자체 폴링. 필드 의미·기본값은 트랙 A 의 [`PollStrategyDecl`]
+    /// (`tasty_plugin_manifest::CompletionStrategyDecl`)을 그대로 재사용한다 —
+    /// 여기서 필드를 다시 나열하면 두 크레이트가 같은 개념을 독립적으로 정의하는
+    /// 중복이 재발한다(TODO80 §B Gate4 리뷰 지적).
+    Poll(PollStrategyDecl),
     /// 외부 보고. `notify_via` 는 훅 핸들러 id(`<owner>/<short>`) 문자열.
     Push { notify_via: String, timeout_ms: u64 },
 }
 
-fn default_interval_ms() -> u64 {
-    500
-}
-
-/// decl → 런타임 `CompletionStrategyKind` 변환. **단일 지점** — 필드 대응이
-/// 어긋나면 여기서만 고치면 된다(TODO80 §A-3 "필드 대응을 고정하는 단위 테스트"
-/// 는 `registry_tests.rs` 에 둔다).
+/// decl → 런타임 `CompletionStrategyKind` 변환. **단일 지점** — poll 형은 트랙 A
+/// 가 만든 [`completion_strategy_to_poll_spec`]으로 위임한다(필드 대응은 그
+/// 함수의 단위테스트가 고정, TODO80 §A-3). 필드 대응이 어긋나면 그 테스트가
+/// 깨진다.
 impl From<CompletionStrategySpecDecl> for CompletionStrategyKind {
     fn from(d: CompletionStrategySpecDecl) -> Self {
         match d {
-            CompletionStrategySpecDecl::Poll {
-                poll_method,
-                map_from_response,
-                map_from_request,
-                state_field,
-                terminal_states,
-                interval_ms,
-                timeout_ms,
-            } => CompletionStrategyKind::Poll(tasty_agent::task::PollSpec {
-                poll_method,
-                map_from_response,
-                map_from_request,
-                state_field,
-                terminal_states,
-                interval_ms,
-                timeout_ms,
-            }),
+            CompletionStrategySpecDecl::Poll(decl) => {
+                CompletionStrategyKind::Poll(completion_strategy_to_poll_spec(&decl))
+            }
             CompletionStrategySpecDecl::Push {
                 notify_via,
                 timeout_ms,
@@ -165,13 +142,9 @@ mod tests {
         let w = parse(t).expect("parse");
         assert_eq!(w.strategies.len(), 1);
         match &w.strategies[0].spec {
-            CompletionStrategySpecDecl::Poll {
-                poll_method,
-                interval_ms,
-                ..
-            } => {
-                assert_eq!(poll_method, "claude.wait");
-                assert_eq!(*interval_ms, 500); // 기본값 (TODO80 §A-5)
+            CompletionStrategySpecDecl::Poll(decl) => {
+                assert_eq!(decl.poll_method, "claude.wait");
+                assert_eq!(decl.interval_ms, 500); // 기본값 (TODO80 §A-5, PollStrategyDecl 소유)
             }
             CompletionStrategySpecDecl::Push { .. } => panic!("expected poll"),
         }
@@ -211,7 +184,7 @@ mod tests {
                 assert_eq!(notify_via, "host/webhook-notify");
                 assert_eq!(*timeout_ms, 30000);
             }
-            CompletionStrategySpecDecl::Poll { .. } => panic!("expected push"),
+            CompletionStrategySpecDecl::Poll(_) => panic!("expected push"),
         }
     }
 

@@ -81,10 +81,16 @@ fn plugin_poll_strategy_installs_and_resolves() {
     assert_eq!(winner.id, id);
 }
 
+/// TOML → `CompletionStrategySpecDecl::Poll(PollStrategyDecl)` → 레지스트리
+/// install/finalize/resolve 전 구간이 필드를 안 잃고 통과하는지 확인하는
+/// **배선(wiring) 스모크 테스트**다 — poll 필드 하나하나의 이름·기본값 대응
+/// 자체는 `completion_strategy_to_poll_spec()`(`src/core/agent/
+/// completion_strategy.rs::field_correspondence_is_preserved`)가 이미 단일
+/// 지점에서 고정한다(TODO80 §A-3, Gate4 리뷰 지적으로 중복 제거). 여기서는
+/// map/scalar 필드 하나씩만 대표로 확인해 "레지스트리 경로가 그 함수를 실제로
+/// 거치는지"만 검증한다.
 #[test]
-fn decl_to_pollspec_field_mapping_is_fixed() {
-    // §A-3 "필드 대응을 고정하는 단위 테스트" — decl 의 모든 poll 필드가 손실 없이
-    // PollSpec 에 대응하는지 확인.
+fn poll_decl_survives_registry_install_and_resolve() {
     let toml = r#"
         [[strategy]]
         id = "full-map"
@@ -93,10 +99,8 @@ fn decl_to_pollspec_field_mapping_is_fixed() {
         kind = "poll"
         poll_method = "acme.wait"
         map_from_response = { child_index = "child_index" }
-        map_from_request = { surface_id = "surface" }
         state_field = "st"
         terminal_states = ["done"]
-        interval_ms = 250
         timeout_ms = 9000
     "#;
     let decls = parse_strategy_section(toml).expect("parse");
@@ -110,10 +114,6 @@ fn decl_to_pollspec_field_mapping_is_fixed() {
         spec.map_from_response.get("child_index").unwrap(),
         "child_index"
     );
-    assert_eq!(spec.map_from_request.get("surface_id").unwrap(), "surface");
-    assert_eq!(spec.state_field, "st");
-    assert_eq!(spec.terminal_states, vec!["done".to_string()]);
-    assert_eq!(spec.interval_ms, 250);
     assert_eq!(spec.timeout_ms, Some(9000));
 }
 
