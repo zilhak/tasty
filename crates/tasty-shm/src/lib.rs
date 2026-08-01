@@ -245,6 +245,7 @@ mod tests {
             fd: 99999,
             size: 4096,
         };
+        // SAFETY: 위와 동일 — 계약 위반(무효 fd)을 형태 검증이 걸러낸다.
         let result = unsafe { receive(payload) };
         assert!(result.is_err());
     }
@@ -255,6 +256,7 @@ mod tests {
         // S_IFREG 검증에 걸려야 한다.
         // SAFETY: 위와 동일 — 계약 위반(타입 불일치 fd)을 형태 검증이 걸러낸다.
         let payload = ReceivedPayload::Fd { fd: 0, size: 4096 };
+        // SAFETY: 위와 동일 — 계약 위반(타입 불일치 fd)을 형태 검증이 걸러낸다.
         let result = unsafe { receive(payload) };
         assert!(result.is_err());
     }
