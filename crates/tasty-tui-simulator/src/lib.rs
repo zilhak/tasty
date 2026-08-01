@@ -392,21 +392,11 @@ fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()>
 
         // ── Predefined scenarios (run inline) ──
         "scenario" => match args {
-            "cursor" => {
-                scenario_cursor_inline(out, 5, 10, "X");
-            }
-            "colors" => {
-                scenario_colors_inline(out);
-            }
-            "attrs" => {
-                scenario_attrs_inline(out);
-            }
-            "unicode" => {
-                scenario_unicode_inline(out);
-            }
-            "scroll-region" => {
-                scenario_scroll_region_inline(out);
-            }
+            "cursor" => scenario_cursor_inline(out, 5, 10, "X")?,
+            "colors" => scenario_colors_inline(out)?,
+            "attrs" => scenario_attrs_inline(out)?,
+            "unicode" => scenario_unicode_inline(out)?,
+            "scroll-region" => scenario_scroll_region_inline(out)?,
             _ => {
                 write!(out, "ERR: unknown scenario '{args}'\r\n")?;
             }
@@ -574,60 +564,69 @@ fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
 // and one-shot subcommands)
 // ═══════════════════════════════════════════════════════════════════
 
-fn scenario_cursor_inline(out: &mut io::Stdout, row: u16, col: u16, marker: &str) {
-    write!(out, "\x1b[2J\x1b[H").unwrap();
-    write!(out, "\x1b[{};{}H{}", row + 1, col + 1, marker).unwrap();
+fn scenario_cursor_inline(
+    out: &mut io::Stdout,
+    row: u16,
+    col: u16,
+    marker: &str,
+) -> io::Result<()> {
+    write!(out, "\x1b[2J\x1b[H")?;
+    write!(out, "\x1b[{};{}H{}", row + 1, col + 1, marker)?;
+    Ok(())
 }
 
-fn scenario_colors_inline(out: &mut io::Stdout) {
-    write!(out, "\x1b[2J\x1b[H").unwrap();
+fn scenario_colors_inline(out: &mut io::Stdout) -> io::Result<()> {
+    write!(out, "\x1b[2J\x1b[H")?;
     // Row 0: ANSI 16 fg
     for i in 0u8..16 {
-        write!(out, "\x1b[38;5;{i}m{:X}", i).unwrap();
+        write!(out, "\x1b[38;5;{i}m{:X}", i)?;
     }
-    write!(out, "\x1b[0m").unwrap();
+    write!(out, "\x1b[0m")?;
     // Row 1: ANSI 16 bg
-    write!(out, "\x1b[2;1H").unwrap();
+    write!(out, "\x1b[2;1H")?;
     for i in 0u8..16 {
-        write!(out, "\x1b[48;5;{i}m ").unwrap();
+        write!(out, "\x1b[48;5;{i}m ")?;
     }
-    write!(out, "\x1b[0m").unwrap();
+    write!(out, "\x1b[0m")?;
     // Row 2: TrueColor
-    write!(out, "\x1b[3;1H").unwrap();
+    write!(out, "\x1b[3;1H")?;
     write!(
         out,
         "\x1b[38;2;255;0;0mR\x1b[38;2;0;255;0mG\x1b[38;2;0;0;255mB\x1b[0m"
-    )
-    .unwrap();
+    )?;
+    Ok(())
 }
 
-fn scenario_attrs_inline(out: &mut io::Stdout) {
-    write!(out, "\x1b[2J\x1b[H").unwrap();
-    write!(out, "\x1b[1mBOLD\x1b[0m").unwrap();
-    write!(out, "\x1b[2;1H\x1b[3mITALIC\x1b[0m").unwrap();
-    write!(out, "\x1b[3;1H\x1b[4mUNDERLINE\x1b[0m").unwrap();
-    write!(out, "\x1b[4;1H\x1b[9mSTRIKE\x1b[0m").unwrap();
-    write!(out, "\x1b[5;1H\x1b[7mINVERSE\x1b[0m").unwrap();
-    write!(out, "\x1b[6;1H\x1b[1;3;4mCOMBO\x1b[0m").unwrap();
-    write!(out, "\x1b[7;1H\x1b[2mDIM\x1b[0m").unwrap();
+fn scenario_attrs_inline(out: &mut io::Stdout) -> io::Result<()> {
+    write!(out, "\x1b[2J\x1b[H")?;
+    write!(out, "\x1b[1mBOLD\x1b[0m")?;
+    write!(out, "\x1b[2;1H\x1b[3mITALIC\x1b[0m")?;
+    write!(out, "\x1b[3;1H\x1b[4mUNDERLINE\x1b[0m")?;
+    write!(out, "\x1b[4;1H\x1b[9mSTRIKE\x1b[0m")?;
+    write!(out, "\x1b[5;1H\x1b[7mINVERSE\x1b[0m")?;
+    write!(out, "\x1b[6;1H\x1b[1;3;4mCOMBO\x1b[0m")?;
+    write!(out, "\x1b[7;1H\x1b[2mDIM\x1b[0m")?;
+    Ok(())
 }
 
-fn scenario_unicode_inline(out: &mut io::Stdout) {
-    write!(out, "\x1b[2J\x1b[H").unwrap();
-    write!(out, "\u{D55C}\u{AE00}").unwrap();
-    write!(out, "\x1b[2;1H\u{6F22}\u{5B57}").unwrap();
-    write!(out, "\x1b[3;1HAB\u{D55C}CD").unwrap();
-    write!(out, "\x1b[4;1H\u{3042}\u{3044}\u{3046}").unwrap();
+fn scenario_unicode_inline(out: &mut io::Stdout) -> io::Result<()> {
+    write!(out, "\x1b[2J\x1b[H")?;
+    write!(out, "\u{D55C}\u{AE00}")?;
+    write!(out, "\x1b[2;1H\u{6F22}\u{5B57}")?;
+    write!(out, "\x1b[3;1HAB\u{D55C}CD")?;
+    write!(out, "\x1b[4;1H\u{3042}\u{3044}\u{3046}")?;
+    Ok(())
 }
 
-fn scenario_scroll_region_inline(out: &mut io::Stdout) {
-    write!(out, "\x1b[2J\x1b[H").unwrap();
-    write!(out, "\x1b[3;6r").unwrap();
+fn scenario_scroll_region_inline(out: &mut io::Stdout) -> io::Result<()> {
+    write!(out, "\x1b[2J\x1b[H")?;
+    write!(out, "\x1b[3;6r")?;
     for i in 0..8u16 {
-        write!(out, "\x1b[{};1HLINE{}", i + 1, i).unwrap();
+        write!(out, "\x1b[{};1HLINE{}", i + 1, i)?;
     }
-    write!(out, "\x1b[6;1H\nSCROLLED").unwrap();
-    write!(out, "\x1b[r").unwrap();
+    write!(out, "\x1b[6;1H\nSCROLLED")?;
+    write!(out, "\x1b[r")?;
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -639,15 +638,21 @@ fn clear_and_setup(out: &mut io::Stdout) {
     out.flush().unwrap();
 }
 
-fn finish(out: &mut io::Stdout, marker: &str, exit: bool) {
-    write!(out, "\x1b[999;1H{marker}").unwrap();
-    out.flush().unwrap();
+/// Writes the completion marker and (unless `exit`) blocks until the peer
+/// signals it's done inspecting the screen. Callers propagate/best-effort
+/// per their own context — the one-shot subcommands below are already at
+/// their last statement when they call this, so they just discard the
+/// result (nothing left to do if the peer is already gone).
+fn finish(out: &mut io::Stdout, marker: &str, exit: bool) -> io::Result<()> {
+    write!(out, "\x1b[999;1H{marker}")?;
+    out.flush()?;
     if !exit {
         // "keep open" 모드: stdin이 닫히면 Err — 정상적인 종료 신호이므로 무시.
         if let Err(e) = crossterm::event::read() {
             eprintln!("tasty-tui-sim: event wait ended: {e}");
         }
     }
+    Ok(())
 }
 
 fn scenario_cursor(row: u16, col: u16, marker: &str, exit: bool) {
@@ -655,21 +660,29 @@ fn scenario_cursor(row: u16, col: u16, marker: &str, exit: bool) {
     clear_and_setup(&mut out);
     write!(out, "\x1b[{};{}H{}", row + 1, col + 1, marker).unwrap();
     out.flush().unwrap();
-    finish(&mut out, "CURSOR_TEST_DONE", exit);
+    let _ = finish(&mut out, "CURSOR_TEST_DONE", exit);
 }
 
 fn scenario_colors(exit: bool) {
     let mut out = io::stdout();
-    scenario_colors_inline(&mut out);
-    out.flush().unwrap();
-    finish(&mut out, "COLORS_TEST_DONE", exit);
+    if scenario_colors_inline(&mut out).is_err() {
+        return; // 파이프가 이미 끊어짐 — 이어지는 flush/finish는 무의미
+    }
+    if out.flush().is_err() {
+        return;
+    }
+    let _ = finish(&mut out, "COLORS_TEST_DONE", exit);
 }
 
 fn scenario_attrs(exit: bool) {
     let mut out = io::stdout();
-    scenario_attrs_inline(&mut out);
-    out.flush().unwrap();
-    finish(&mut out, "ATTRS_TEST_DONE", exit);
+    if scenario_attrs_inline(&mut out).is_err() {
+        return;
+    }
+    if out.flush().is_err() {
+        return;
+    }
+    let _ = finish(&mut out, "ATTRS_TEST_DONE", exit);
 }
 
 fn scenario_altscreen(exit: bool) {
@@ -692,14 +705,22 @@ fn scenario_altscreen(exit: bool) {
 
 fn scenario_unicode(exit: bool) {
     let mut out = io::stdout();
-    scenario_unicode_inline(&mut out);
-    out.flush().unwrap();
-    finish(&mut out, "UNICODE_TEST_DONE", exit);
+    if scenario_unicode_inline(&mut out).is_err() {
+        return;
+    }
+    if out.flush().is_err() {
+        return;
+    }
+    let _ = finish(&mut out, "UNICODE_TEST_DONE", exit);
 }
 
 fn scenario_scroll_region(exit: bool) {
     let mut out = io::stdout();
-    scenario_scroll_region_inline(&mut out);
-    out.flush().unwrap();
-    finish(&mut out, "SCROLL_TEST_DONE", exit);
+    if scenario_scroll_region_inline(&mut out).is_err() {
+        return;
+    }
+    if out.flush().is_err() {
+        return;
+    }
+    let _ = finish(&mut out, "SCROLL_TEST_DONE", exit);
 }
