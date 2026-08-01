@@ -74,12 +74,14 @@ impl CoreState {
     /// 루프가 `surface.create` bootstrap 에 필요한 `file`/`display_name`까지 필요해
     /// `EguiMeshSurface`(app 계층)로 직접 downcast 한다. `tasty-model`의
     /// `Surface::attach_mesh_info()`는 `(kind, plugin_id)`만 노출하도록 최소화됐다
-    /// (TODO 16 결정 #2 — crate 경계) — 여기는 `tasty` 본체 crate 내부라
+    /// (attach-behavior.md "mesh mirror 채널" 참고 — crate 경계 최소화 결정) —
+    /// 여기는 `tasty` 본체 crate 내부라
     /// `plugin_bridge::EguiMeshSurface` 참조가 경계를 넘지 않는다.
     ///
     /// 소비처: headless-as-attach-서버 forward 루프(`src/boot/headless_plugins.rs`)와
     /// gui-as-attach-서버 forward 훅(`src/view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`,
-    /// TODO 24) 둘 다 — 로컬에서 한 번도 렌더되지 않은 mesh surface 를 attach 구독이
+    /// attach-behavior.md "mesh mirror 채널" 참고) 둘 다 — 로컬에서 한 번도 렌더되지
+    /// 않은 mesh surface 를 attach 구독이
     /// 가리킬 때 `surface.create` bootstrap 에 필요한 전체 메타데이터를 공급한다.
     pub(crate) fn find_egui_mesh_surface(
         &self,
@@ -265,7 +267,7 @@ impl CoreState {
     /// Collect all terminal surface IDs across all workspaces.
     /// 현재는 CWD 폴링(macOS/Linux)에서만 사용된다.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    // 이유: 현재 실제 호출처 없음(소비자 배선 대기) — TODO63 (engine.rs → core/ 재배치)로
+    // 이유: 현재 실제 호출처 없음(소비자 배선 대기) — 과거 engine.rs → core/ 재배치로
     // core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {

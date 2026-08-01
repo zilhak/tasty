@@ -1,4 +1,5 @@
-//! 호스트 headless PTY registry (TODO 18 / `pty.*` primitive — 18-a: Registry + IO).
+//! 호스트 headless PTY registry (`pty.*` primitive — Registry + IO. ADR-0050 ·
+//! features/headless-pty 참고).
 //!
 //! 에이전트가 Surface(Tab) 없이 백그라운드에서 굴리는 **headless PTY** 의 메타데이터와
 //! 실제 종료코드(exit-code)를 호스트가 단일 SoT 로 보관한다. `child_terminal.rs` 의

@@ -1,6 +1,6 @@
 //! Popup 도메인 Intent 핸들러.
 //!
-//! 정책 차이 (TODO 01 결정 13 — `docs/design/flows/action-dispatch.md` 참조):
+//! 정책 차이 (`docs/design/flows/action-dispatch.md` "User vs Agent 정책" 참고):
 //! dispatcher 는 origin 정책을 강제하지 않는다. 호출자가 적절한 `OpenPopupMode` 를
 //! 선택하고 (예: agent origin 인데 focus 가 필요 없다면 `Default` 또는 `CenteredFocused`
 //! 대신 focus 없는 변형을 발화), PR 리뷰에서 정책 위반을 잡는다.

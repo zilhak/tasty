@@ -347,7 +347,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     }
 }
 
-/// TODO63 — split tab 안 surface 를 실제 로컬 close 경로(mirror 아님)로 닫으면
+/// split tab 안 surface 를 실제 로컬 close 경로(mirror 아님)로 닫으면
 /// closed-item 스냅샷이 남아 Ctrl+Shift+T 로 복원 가능해야 한다.
 #[test]
 fn close_active_surface_split_saves_closed_item_snapshot() {

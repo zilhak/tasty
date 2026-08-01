@@ -54,8 +54,8 @@ impl Core {
         };
         if handlers.is_empty() {
             // 이 detector 에 매칭되는 handler 가 없다 — 시스템에 등록된 다른
-            // handler 라도 fallback 후보로 보여준다(picker 의 empty-state 완화,
-            // TODO40). 선택되어도 이 detector 에 영구 등록되지 않는 1회성 dispatch.
+            // handler 라도 fallback 후보로 보여준다(picker 의 empty-state 완화).
+            // 선택되어도 이 detector 에 영구 등록되지 않는 1회성 dispatch.
             let fallback = engine.file_handler.all_handlers();
             crate::file::dispatch::open_picker(
                 state,
@@ -143,7 +143,7 @@ mod tests {
     use super::*;
     use crate::core::builder::CoreBuilder;
 
-    /// TODO40 — `mirror_structural_guard_tests::build_test_core` 와 동형(모든 port
+    /// `mirror_structural_guard_tests::build_test_core` 와 동형(모든 port
     /// mock/in-memory 주입). `apply_identify_result` 의 empty-handler 분기는 어떤
     /// port 도 건드리지 않지만 메서드 자체가 `Core` 를 요구해 완전한 인스턴스가 필요.
     fn build_test_core() -> (Core, CoreState) {
@@ -183,7 +183,7 @@ mod tests {
     /// Case A — detector 가 매칭하는 handler 는 0개지만(`html-system` /
     /// `directory-system` 같은 host default 는 다른 detector 용으로 항상 존재)
     /// picker 는 empty-state 로 떨어지지 않고 `all_handlers()` fallback 을
-    /// 후보로 노출해야 한다 (TODO40 완료 조건).
+    /// 후보로 노출해야 한다.
     #[test]
     fn picker_falls_back_to_all_handlers_when_no_detector_match() {
         let (mut core, mut engine) = build_test_core();

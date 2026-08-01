@@ -536,7 +536,7 @@ mod tests {
         assert!(derive_cwd_from_fields(&fields, &json!({})).is_none());
     }
 
-    // ── apply_workspace_preset: category 지정 (TODO 22) ──────────────────
+    // ── apply_workspace_preset: category 지정 ──────────────────────────────
 
     fn test_state() -> (crate::state::AppState, CoreState) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});

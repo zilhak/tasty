@@ -477,7 +477,7 @@ pub struct AppState {
     /// set_context 를 보낸다.
     pub(crate) plugin_mesh_popup_full_requests: std::collections::HashSet<u64>,
 
-    /// (TODO 40) 비동기 host→plugin push(예: git-viewer 원격 조회 결과, `event.dispatch`
+    /// 비동기 host→plugin push(예: git-viewer 원격 조회 결과, `event.dispatch`
     /// unicast) 도착 후 강제 repaint 가 필요한 egui-mesh popup 인스턴스. 일반 dirty
     /// 판정(geom/input/theme 변경)은 이런 "plugin 내부 상태만 바뀐" 갱신을 감지하지
     /// 못하므로(`draw_plugin_popups`), 이 요청을 채워두면 다음 frame 이 geometry/입력
@@ -603,7 +603,7 @@ pub struct DialogState {
     /// 카테고리 삭제 확인 다이얼로그(`confirm_delete_category`)의 대상 카테고리 id.
     /// Delete 액션 시 set, 확인/취소/닫힘 시 None.
     pub(crate) pending_category_delete: Option<crate::model::WorkspaceCategoryId>,
-    /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0031 TODO 06).
+    /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0031).
     /// 등록 해시와 현재 파일 해시가 다르면 단축키 발화가 실행을 보류하고 이 값을 채운다 —
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
     /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
@@ -618,7 +618,7 @@ pub struct DialogState {
     pub(crate) transfer_error: VecDeque<TransferError>,
 }
 
-/// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031 TODO 06).
+/// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031).
 ///
 /// 단축키 발화 시 등록 해시(03)와 현재 파일 해시가 다르면 실행 대신 이 값을 채우고
 /// 확인 팝업을 띄운다. [실행] 확정 시 `new_hash` 로 레지스트리를 갱신·영속하고 워커에서 실행.

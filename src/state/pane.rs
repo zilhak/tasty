@@ -200,8 +200,8 @@ impl AppState {
         }
         let surface_id;
         // split 케이스의 closed-item 스냅샷용 tab_name — tab 이 mutate 되기 전(아래
-        // `focused_pane_mut` 블록 이전)에 여기서 미리 구해둔다. TODO63: close_case_split
-        // 과 동일한 캡처 로직이지만, 여기선 이미 이 블록이 `surface_id` 를 얻으려고
+        // `focused_pane_mut` 블록 이전)에 여기서 미리 구해둔다. close_case_split 과
+        // 동일한 캡처 로직이지만, 여기선 이미 이 블록이 `surface_id` 를 얻으려고
         // `engine` 을 immutable 하게 빌리는 중이라 재사용한다(중복이면 헬퍼화가
         // 바람직하나, borrow 형태가 서로 달라 강제하지 않음).
         let mut tab_name_for_snapshot: Option<String> = None;

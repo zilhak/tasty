@@ -313,8 +313,8 @@ impl SurfaceKindRegistry {
             .unwrap_or_default()
     }
 
-    // 이유: 현재 실제 호출처 없음(clippy len_without_is_empty 대응용 pair) — TODO63
-    // (engine.rs → core/ 재배치)로 core 가 pub(crate) 로 캡슐화되며 드러남.
+    // 이유: 현재 실제 호출처 없음(clippy len_without_is_empty 대응용 pair) — 과거
+    // engine.rs → core/ 재배치로 core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.kinds.read().map(|m| m.len()).unwrap_or(0)

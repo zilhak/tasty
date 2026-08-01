@@ -162,7 +162,8 @@ pub(crate) struct PendingImageUpload {
     pub(crate) png_bytes: Vec<u8>,
 }
 
-/// attach mesh mirror(TODO 20) client→server `MeshContext` forward 요청 하나의 payload.
+/// attach mesh mirror(attach-behavior.md "구독 = MeshContext" 참고) client→server
+/// `MeshContext` forward 요청 하나의 payload.
 /// `StreamControl::MeshContext`의 필드를 그대로 미러(surface_id 는 큐의 키라 여기 없음).
 #[derive(Debug, Clone)]
 pub(crate) struct AttachMeshContextForward {
@@ -345,7 +346,8 @@ pub struct CoreState {
     /// shell_children 과는 다른 서브시스템이다(파편화 방지 — child_terminal.rs 참조).
     pub(crate) child_terminals: crate::core::child_terminal::ChildTerminalRegistry,
 
-    /// headless PTY registry (TODO 18 / `pty.*` primitive). 에이전트가 Surface 없이
+    /// headless PTY registry (`pty.*` primitive — ADR-0050 · features/headless-pty
+    /// 참고). 에이전트가 Surface 없이
     /// 백그라운드에서 굴리는 PTY 의 메타데이터 + 진짜 exit-code 를 보관하고, 동시 개수
     /// 상한·idle TTL 로 좀비 누적을 막는다. child_terminals(자식 터미널 surface) 와는
     /// Surface 유무로 갈리는 별도 서브시스템이다(파편화 방지 — pty_registry.rs 참조).
@@ -434,7 +436,8 @@ pub struct CoreState {
     /// `git_query_request` 를 전송한다. 응답은 `MirrorEvent::GitQueryResult` 로
     /// 되돌아온다(`pending_list_dir_forward` 와 동형).
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
-    /// attach mesh mirror(TODO 19) full 재전송 요청 forward 큐. GPU 렌더 prepare
+    /// attach mesh mirror(attach-behavior.md "MeshFullResendRequest 복구" 참고) full
+    /// 재전송 요청 forward 큐. GPU 렌더 prepare
     /// (`render_attach_mesh_surfaces`)가 텍스처 delta 체인 단절을 감지해
     /// `GpuState::take_attach_mesh_full_requests`로 drain된 **로컬** surface_id 를
     /// 여기 담는다. App 이 `about_to_wait`(`dispatch_pending_mesh_full_resend_forwards`,
@@ -443,7 +446,8 @@ pub struct CoreState {
     /// 와 동형(mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다).
     pub(crate) pending_mesh_full_resend_forward: std::collections::HashSet<u32>,
 
-    /// attach mesh mirror(TODO 20) client→server `MeshContext` forward 큐.
+    /// attach mesh mirror(attach-behavior.md "구독 = MeshContext" 참고) client→server
+    /// `MeshContext` forward 큐.
     /// `MainView::forward_attach_mesh_context`(redraw 스윕)가 `AttachMeshSurface`
     /// pane 의 geometry/theme/focus 변경을 감지해 **로컬** surface_id 키로 최신값만
     /// 채운다(HashMap coalesce — `pending_resize_forward`와 동형). App 이
@@ -452,7 +456,8 @@ pub struct CoreState {
     pub(crate) pending_mesh_context_forward:
         std::collections::HashMap<u32, AttachMeshContextForward>,
 
-    /// attach mesh mirror(TODO 20) client→server `MeshInput` forward 큐. 로컬
+    /// attach mesh mirror(attach-behavior.md "MeshInput 누적" 참고) client→server
+    /// `MeshInput` forward 큐. 로컬
     /// surface_id → 그 redraw 사이클에 누적된 입력 배치(`RawInputWire`). App 이
     /// `about_to_wait`(`dispatch_pending_mesh_input_forwards`, gui)에서 drain 해
     /// `StreamControl::MeshInput` 으로 forward한다.
@@ -528,7 +533,7 @@ impl CoreState {
     ///
     /// 테스트 / non-host 진입점용 변형. 내부에서 in-memory `MemoryStore` 를
     /// 생성해 주입한다. host 부팅 경로는 `new_with_ids` 를 사용한다.
-    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — TODO63 (engine.rs → core/ 재배치)로
+    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — 과거 engine.rs → core/ 재배치로
     // core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {

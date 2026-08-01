@@ -9,7 +9,7 @@
 //!    `rename_inner`, `capture_inner`): IPC 핸들러가 sync 결과를 돌려주기 위해
 //!    직접 호출. 외부 caller 와 동일한 코드 경로를 보장한다.
 //!
-//! 정책 (TODO 01 결정 P1~P5, action-dispatch.md 참조):
+//! 정책 (action-dispatch.md 참조):
 //! - **ApplyPreset focus**: origin 으로 자동 분기 (User → focus=true, Agent → false).
 //! - **SavePreset naming**: `explicit_name` 우선, 없으면 `base_name` 으로 store.unique_name 자동.
 //! - **SavePreset cascade**: User origin 일 때만 save 후 PresetView 자동 오픈 + select.
@@ -20,8 +20,8 @@
 use super::{DispatchedIntent, Intent};
 
 /// preset Intent 가 운반하는 캡처된 preset payload.
-/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01
-/// 결정 P3 (CapturePreset 별도 Intent 미설치) 반영.
+/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — CapturePreset 을
+/// 별도 Intent 로 두지 않기로 한 결정 반영.
 #[derive(Debug, Clone)]
 pub enum ClonedPreset {
     Workspace(tasty_presets::WorkspacePreset),

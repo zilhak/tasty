@@ -40,7 +40,8 @@ impl CoreState {
             .count()
     }
 
-    /// 알림 읽음 처리(TODO 23) — 두 번째 clear producer. 특정 알림을 읽음 처리하고,
+    /// 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고) — 두 번째 clear producer.
+    /// 특정 알림을 읽음 처리하고,
     /// 그 알림의 source surface 를 source 로 하는 다른 안읽음 알림이 남아있지 않은
     /// 경우에만 highlight 를 지운다. 같은 surface 의 다른 알림이 아직 안읽음이면
     /// clear 하지 않는다(엣지 케이스 — 무조건 clear 시 오해제 발생).
@@ -58,7 +59,8 @@ impl CoreState {
         }
     }
 
-    /// 모든 알림 읽음 처리(TODO 23). 전부 읽음 처리되므로 엣지 케이스 없이, 읽음
+    /// 모든 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고). 전부 읽음
+    /// 처리되므로 엣지 케이스 없이, 읽음
     /// 처리 전 안읽음이었던 모든 알림의 source surface highlight 를 지운다.
     pub(crate) fn mark_all_notifications_read(&mut self) {
         let unread_surfaces: std::collections::HashSet<u32> = self
@@ -128,8 +130,8 @@ mod tests {
         assert_eq!(s.highlight_count(&[3, 4]), 0);
     }
 
-    /// TODO 23 — 개별 읽음 처리 시 그 surface 에 다른 안읽음 알림이 남아있지 않으면
-    /// highlight 가 지워진다.
+    /// 개별 읽음 처리 시 그 surface 에 다른 안읽음 알림이 남아있지 않으면
+    /// highlight 가 지워진다(ADR-0039 Reconsideration Triggers 참고).
     #[test]
     fn mark_notification_read_clears_highlight_when_no_unread_left() {
         let mut s = state();
@@ -142,8 +144,9 @@ mod tests {
         assert!(!s.is_surface_highlighted(100));
     }
 
-    /// TODO 23 핵심 엣지 케이스 — 같은 surface 에서 온 다른 알림이 아직 안읽음이면
-    /// 하나만 읽음 처리해도 highlight 가 지워지면 안 된다.
+    /// 핵심 엣지 케이스(ADR-0039 Reconsideration Triggers 참고) — 같은 surface 에서
+    /// 온 다른 알림이 아직 안읽음이면 하나만 읽음 처리해도 highlight 가 지워지면
+    /// 안 된다.
     #[test]
     fn mark_notification_read_keeps_highlight_when_sibling_unread_remains() {
         let mut s = state_no_coalesce();
@@ -171,7 +174,7 @@ mod tests {
         );
     }
 
-    /// TODO 23 — 존재하지 않는 알림 id 를 넘겨도 panic 없이 no-op.
+    /// 존재하지 않는 알림 id 를 넘겨도 panic 없이 no-op.
     #[test]
     fn mark_notification_read_unknown_id_is_noop() {
         let mut s = state();
@@ -180,8 +183,8 @@ mod tests {
         assert!(s.is_surface_highlighted(100));
     }
 
-    /// TODO 23 — "모두 읽음"은 엣지 케이스 없이 안읽음이었던 모든 surface 의
-    /// highlight 를 지운다.
+    /// "모두 읽음"은 엣지 케이스 없이 안읽음이었던 모든 surface 의 highlight 를
+    /// 지운다.
     #[test]
     fn mark_all_notifications_read_clears_all_unread_surfaces() {
         let mut s = state_no_coalesce();
@@ -197,7 +200,7 @@ mod tests {
         assert!(!s.is_surface_highlighted(200));
     }
 
-    /// TODO 23 회귀 방지 — 이미 읽은 알림만 있는 surface 의 highlight 는
+    /// 회귀 방지 — 이미 읽은 알림만 있는 surface 의 highlight 는
     /// `mark_all_notifications_read` 가 건드리지 않아도 원래 그 surface 는 안읽음
     /// 집합에서 제외되므로 clear 대상에 포함되지 않는다(다른 surface 의 highlight 는
     /// 보존).

@@ -104,8 +104,9 @@ pub(crate) enum DomainIntent {
         from_index: usize,
         to_index: usize,
     },
-    /// headless PTY(`pty_registry`, TODO 18)를 실제 Surface 로 **승격(adopt)** 한다
-    /// (`pty.attach_surface`, 18-c). `CreateTab` 처럼 새 tab_id/surface_id 를 발급받아
+    /// headless PTY(`pty_registry`, ADR-0050 · features/headless-pty 참고)를 실제
+    /// Surface 로 **승격(adopt)** 한다(`pty.attach_surface`). `CreateTab` 처럼 새
+    /// tab_id/surface_id 를 발급받아
     /// Tab/Pane 트리에 marker 를 꽂되, **새 Terminal 을 spawn 하지 않는다** — 이미
     /// headless(`PTY_ID_BASE` 이상) id 로 `TerminalStore` 에 존재하는 Terminal 을
     /// 새 surface_id 로 re-key 하고 `pty_registry` 에서 제거한다. `RespawnTerminal`
@@ -271,7 +272,7 @@ pub(crate) enum DomainIntent {
 /// `Core::apply` 의 결과 — `handle_core_event` 가 소비해 도메인 cascade(설정 적용,
 /// 워크스페이스/탭 생성, 알림 등)를 구동한다.
 /// (관찰: observer/remote-attach 는 각자 별도 메커니즘으로 이미 완성돼 CoreEvent 를
-/// 쓸 계획이 없고, replay 는 기능 자체가 미착수 — TODO 59.)
+/// 쓸 계획이 없고, replay 는 기능 자체가 미착수.)
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: event queue 의 Box 화는 alloc/clone 비용 큼
 pub(crate) enum CoreEvent {
@@ -527,9 +528,9 @@ pub(crate) enum CoreEvent {
 
     /// Plugin 실패 — spawn/runtime/pump 등 모든 error 통합. cascade(`cascade_plugin_error`)
     /// 는 완전히 구현돼 host event + event_bus broadcast 까지 연결돼 있으나, 이 variant
-    /// 를 실제로 construct 하는 producer 가 아직 없다(TODO 59 재조사 시 발견 — 이 TODO
-    /// 의 범위 밖이라 미착수. plugin spawn/runtime/pump 실패 지점에서 이 event 를 발화
-    /// 하도록 배선하는 게 다음 단계).
+    /// 를 실제로 construct 하는 producer 가 아직 없다(범위 밖이라 미착수. plugin
+    /// spawn/runtime/pump 실패 지점에서 이 event 를 발화하도록 배선하는 게 다음
+    /// 단계).
     #[allow(dead_code)]
     PluginError {
         plugin_id: String,

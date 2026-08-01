@@ -209,13 +209,13 @@ impl UiIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Ui(self).from_agent_cli()
     }
 
-    /// cascade 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// cascade 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Ui(self).cascaded_from(parent)
@@ -245,13 +245,13 @@ impl crate::core::intent::DomainIntent {
         Intent::Domain(self).from_agent_ipc()
     }
 
-    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub(crate) fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Domain(self).from_agent_plugin(plugin_id)
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub(crate) fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Domain(self).from_agent_cli()
@@ -268,7 +268,7 @@ impl crate::core::intent::DomainIntent {
         }
     }
 
-    /// cascade 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// cascade 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub(crate) fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Domain(self).cascaded_from(parent)
@@ -429,7 +429,7 @@ impl Intent {
         }
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음(TODO13).
+    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
     #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         DispatchedIntent {
@@ -442,7 +442,7 @@ impl Intent {
     }
 
     /// cascade: 직전 Intent 의 origin 을 명시적으로 전파. `trace_id` 도 그대로.
-    /// 비-테스트 호출처 없음(TODO13) — cfg(test) 에서만 직접 호출됨.
+    /// 비-테스트 호출처 없음 — cfg(test) 에서만 직접 호출됨.
     #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         DispatchedIntent {

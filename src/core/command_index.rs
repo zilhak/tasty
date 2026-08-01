@@ -34,7 +34,7 @@ pub enum CommandCapEvent {
     /// soft cap 도달 — 경고만(명령은 계속 기록됨). surface 당 1회.
     SoftWarn {
         // 이유: 호출자(Core::apply_terminal_event)가 이미 sid 를 알고 있어 미사용 —
-        // TODO63 (engine.rs → core/ 재배치)로 command_index 가 pub(crate) 로 캡슐화되며 드러남.
+        // 과거 engine.rs → core/ 재배치로 command_index 가 pub(crate) 로 캡슐화되며 드러남.
         #[allow(dead_code)]
         surface_id: u32,
         count: u64,
