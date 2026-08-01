@@ -5,9 +5,7 @@
 //! 호스트 측은 제거되고 본 모듈이 단일 출처가 된다.
 //!
 //! `is_tasty_stop_hook_installed`는 tasty Stop hook 설치 여부를 점검하는
-//! 별도 노출 함수다.
-
-#![allow(dead_code)]
+//! 별도 노출 함수다 — 실사용 소비자가 생긴 적은 없다(TODO10).
 
 use std::path::PathBuf;
 
@@ -71,6 +69,9 @@ fn entry_matches_marker(entry: &Value, marker: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// 비-테스트 빌드에서 유일한 호출자가 `is_tasty_stop_hook_installed`(그 자체도
+/// 실사용처 없음)뿐이라 함께 개별 억제한다(TODO10). 테스트에서는 직접 호출된다.
+#[allow(dead_code)]
 pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
     let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else {
         return false;
@@ -82,7 +83,9 @@ pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str
 }
 
 /// `~/.claude/settings.json`을 읽어 tasty Stop hook이 설치돼 있는지. 파일이
-/// 없으면 false.
+/// 없으면 false. 별도 노출 함수로 만들어졌으나 실사용 소비자가 생긴 적이
+/// 없다(TODO10) — 삭제 대신 유지, 개별 억제만 부여.
+#[allow(dead_code)]
 pub fn is_tasty_stop_hook_installed() -> Result<bool> {
     let path = claude_settings_path()?;
     if !path.exists() {

@@ -13,9 +13,12 @@
 //! state 변이/host side effect 계산을 [`apply_hook`]으로 분리해 단위 테스트에서는
 //! host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
 
+use std::sync::{Arc, Mutex};
+
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
+use crate::error_scan::ErrorScanner;
 use crate::state::ClaudeState;
 
 /// hook 처리 후 plugin이 호스트에 보낼 IPC 호출 1건.
@@ -50,6 +53,7 @@ pub enum HostCall {
 
 pub fn handle_claude_hook(
     state: &mut ClaudeState,
+    scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
@@ -74,7 +78,30 @@ pub fn handle_claude_hook(
     for call in &calls {
         deliver(host, call);
     }
+
+    if is_new_turn_event(event) {
+        reset_dedupe_if_enabled(scanner, surface_id);
+    }
+
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
+}
+
+/// 새 턴 시작(=idle 상태 해제) 신호 — `apply_hook` 이 `SetState{state:"active"}` 로
+/// 묶는 이벤트 집합과 동일하다. 이 시점에 error dedupe 를 초기화해, 지난 턴의 에러
+/// 텍스트로 눌려있던 dedupe 가 이번 턴에 나는 새 에러까지 억제하지 않게 한다.
+fn is_new_turn_event(event: &str) -> bool {
+    matches!(event, "prompt-submit" | "session-start" | "active")
+}
+
+/// scanner 가 이 surface 를 추적 중일 때만 dedupe 를 초기화한다 — error_scan 은
+/// `handle_launch` 가 등록한 surface 만 enable 하므로(`handle_spawn` 자식 등은
+/// 추적 대상이 아님), 추적하지 않는 surface 의 hook 이벤트는 조용히 건너뛴다.
+fn reset_dedupe_if_enabled(scanner: &Arc<Mutex<ErrorScanner>>, surface_id: u32) {
+    if let Ok(mut s) = scanner.lock()
+        && s.is_enabled(surface_id)
+    {
+        s.reset_dedupe(surface_id);
+    }
 }
 
 fn now_ms() -> u64 {
@@ -524,5 +551,54 @@ mod tests {
         }
         let err = resolve_surface_id(&json!({})).unwrap_err();
         assert_eq!(err.code, -32602);
+    }
+
+    // ── error dedupe 초기화 배선 (TODO10: disable/reset_dedupe/is_enabled 재배선) ──
+
+    #[test]
+    fn is_new_turn_event_matches_active_transition_only() {
+        for event in ["prompt-submit", "session-start", "active"] {
+            assert!(is_new_turn_event(event), "{event} 은 새 턴 신호여야 함");
+        }
+        for event in ["stop", "subagent-stop", "notification", "session-end"] {
+            assert!(!is_new_turn_event(event), "{event} 은 새 턴 신호가 아님");
+        }
+    }
+
+    #[test]
+    fn reset_dedupe_if_enabled_clears_tracked_surface() {
+        let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
+        scanner.lock().unwrap().enable(7);
+        scanner
+            .lock()
+            .unwrap()
+            .seed_dedupe_for_test(7, "API Error: boom");
+
+        reset_dedupe_if_enabled(&scanner, 7);
+
+        assert!(
+            !scanner.lock().unwrap().has_dedupe_state(7),
+            "추적 중인 surface 는 dedupe 가 초기화돼야 함"
+        );
+    }
+
+    #[test]
+    fn reset_dedupe_if_enabled_skips_untracked_surface() {
+        // handle_spawn 자식처럼 error_scan 이 애초에 enable 하지 않은 surface — hook
+        // 이벤트가 와도 조용히 무시해야 한다. dedupe 상태가 (다른 경로로) 이미
+        // 있더라도 is_enabled 가 false 면 건드리지 않아야 함을 직접 확인한다.
+        let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
+        scanner
+            .lock()
+            .unwrap()
+            .seed_dedupe_for_test(99, "unrelated");
+
+        reset_dedupe_if_enabled(&scanner, 99);
+
+        assert!(!scanner.lock().unwrap().is_enabled(99));
+        assert!(
+            scanner.lock().unwrap().has_dedupe_state(99),
+            "추적 대상이 아니면 dedupe 상태를 건드리지 않아야 함"
+        );
     }
 }

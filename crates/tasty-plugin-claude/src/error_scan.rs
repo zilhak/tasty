@@ -10,10 +10,14 @@
 //! 간격으로 호출. 짧은 polling 간격(800ms 권장)으로 호스트 메모리 스캔과의
 //! 정확도 차이를 좁힌다.
 //!
-//! enable/disable/reset_dedupe는 step 03/04에서 spawn/kill/hook 핸들러가 들어오면
-//! 그때 호출된다. 본 단계는 모듈만 자리 잡는다 — `#[allow(dead_code)]`로 임시 허용.
-
-#![allow(dead_code)]
+//! `enable`은 `handlers.rs::handle_launch`가 호출한다. `disable`은
+//! `ef57061d`(2026-07-07)가 걷어낸 `on_surface_lifecycle`/`surface.closed`
+//! 구독을 되살리는 대신, `main.rs::error_scan_loop`의 800ms 폴링 주기에 편승해
+//! `surface.locate`로 생존을 주기적으로 대조하는 방식으로 대체했다(TODO10) — 추가
+//! 구독 배선 없이 기존 poll 인프라만으로 "surface 종료 시 dedupe 상태 정리"를
+//! 만족한다. `reset_dedupe`는 `hook.rs`가 새 턴 시작(prompt-submit 등) hook
+//! 이벤트에서 호출해, 이전 턴의 에러 텍스트로 눌린 dedupe 가 새 턴의 에러까지
+//! 억제하지 않게 한다.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -80,6 +84,19 @@ impl ErrorScanner {
     /// enabled set의 snapshot. polling thread가 lock을 짧게 잡고 빠져나오도록.
     pub fn enabled_snapshot(&self) -> Vec<u32> {
         self.enabled.iter().copied().collect()
+    }
+
+    /// 테스트 전용 — dedupe 상태를 직접 시딩한다. `scan_one`은 host 호출이 필요해
+    /// `hook.rs`의 `reset_dedupe` 배선 테스트에서 직접 쓰기 어렵다.
+    #[cfg(test)]
+    pub(crate) fn seed_dedupe_for_test(&mut self, surface_id: u32, snippet: &str) {
+        self.last_fired.insert(surface_id, snippet.to_string());
+    }
+
+    /// 테스트 전용 — dedupe 상태 존재 여부.
+    #[cfg(test)]
+    pub(crate) fn has_dedupe_state(&self, surface_id: u32) -> bool {
+        self.last_fired.contains_key(&surface_id)
     }
 
     /// 한 surface에 대해 1회 스캔 + 매치 시 hook 발사. 호스트 IPC 두 번 호출

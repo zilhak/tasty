@@ -77,7 +77,9 @@ impl Plugin for ClaudePlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            "claude.hook" => hook::handle_claude_hook(&mut self.state, &ctx.host, &ctx.params),
+            "claude.hook" => {
+                hook::handle_claude_hook(&mut self.state, &self.scanner, &ctx.host, &ctx.params)
+            }
             "claude.install" => match install::run_install() {
                 Ok(added) => Ok(json!({ "installed": added })),
                 Err(e) => Err(IpcMethodError::new(format!("install failed: {e}"))),
@@ -104,9 +106,10 @@ impl Plugin for ClaudePlugin {
 
     fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
         // PTY error scan 을 위한 background polling thread 만 띄운다. child registry
-        // lifecycle(surface.closed 구독 + reconcile)은 호스트가 소유하므로 여기서
-        // 하지 않는다 — error_scan 은 launch surface 에 대해 enable 되며, 죽은
-        // surface 는 `scan_one` 의 `surface.read_since_mark` 실패 시 자연히 no-op 이 된다.
+        // lifecycle(spawn/kill/reconcile)은 호스트가 소유하므로 여기서 하지 않는다 —
+        // error_scan 은 launch surface 에 대해서만 enable 되며, 그 surface 가 죽으면
+        // 이 스레드 자신이 매 tick `surface.locate` 로 생존을 확인해 disable 한다
+        // (`error_scan_loop` 참조, TODO10).
         let scanner = self.scanner.clone();
         std::thread::Builder::new()
             .name("claude-error-scan".into())
@@ -128,12 +131,32 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
             }
         };
         for sid in surfaces {
+            // surface.closed 구독(ef57061d 로 제거됨) 대신, 이미 도는 폴링 주기에
+            // 편승해 생존을 확인한다 — 죽은 surface 는 disable 해 enabled/dedupe
+            // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음. TODO10).
+            if !surface_is_alive(&host, sid) {
+                if let Ok(mut s) = scanner.lock() {
+                    s.disable(sid);
+                }
+                continue;
+            }
             if let Ok(mut s) = scanner.lock() {
                 // 반환값(매치된 snippet)은 단위 테스트용. polling 루프에서는 무시.
                 s.scan_one(&host, sid);
             }
         }
     }
+}
+
+/// `surface_id` 가 host 에 여전히 존재하는지 `surface.locate` 로 확인한다. 조회
+/// 실패(IPC 오류 등)는 "죽었다"로 단정하지 않고 "살아있다"로 폴백한다 — enable 은
+/// launch 시점에만 일어나므로, 일시적 오류로 오인 disable 되면 그 surface 의 에러
+/// 감시가 재활성화 경로 없이 영구적으로 멈춘다(오탐 유지가 오탐 정리보다 안전).
+fn surface_is_alive(host: &HostHandle, surface_id: u32) -> bool {
+    host.call("surface.locate", json!({ "surface_id": surface_id }))
+        .ok()
+        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
+        .unwrap_or(true)
 }
 
 fn main() -> anyhow::Result<()> {
