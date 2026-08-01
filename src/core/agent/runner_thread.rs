@@ -397,7 +397,17 @@ fn reload_persistent_handles(
             }
             // PolledDispatch/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
             // PolledDispatch 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
-            DispatchHandle::PolledDispatch { .. } | DispatchHandle::BarrierPoll { .. } => {
+            //
+            // AwaitExternal 도 동형으로 복원한다(TODO80 §B-4/§C) — poll 은 항상
+            // Active 인 no-op 이지만, 진짜 종결은 `self.running` 과 무관하게
+            // store 를 직접 전이시키는 외부 경로가 담당한다. 여기서 복원하지
+            // 않으면(= stale 로 evict) 그 외부 완료가 도착했을 때 0단계 terminal
+            // 흡수가 handle 을 찾지 못해 `release_permit` 이 누락된다 — 이
+            // variant 를 도입한 목적(permit 누수 방지)이 재시작 시나리오에서
+            // 깨지는 것이므로 반드시 복원해야 한다.
+            DispatchHandle::PolledDispatch { .. }
+            | DispatchHandle::BarrierPoll { .. }
+            | DispatchHandle::AwaitExternal { .. } => {
                 alive.push((task_id, handle));
             }
             // Immediate* / ImmediateFail 은 영속 대상 아님 — 도달 시 방어적 evict.

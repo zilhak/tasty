@@ -132,6 +132,7 @@ impl CoreBuilder {
             preset_store,
             host_ipc_injector: Arc::new(OnceLock::new()),
             runner_registry: Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new()),
+            hook_task_waits: Arc::new(crate::core::agent::hook_wait::HookTaskWaits::new()),
         })
     }
 }

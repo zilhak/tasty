@@ -11,6 +11,7 @@
 
 pub(crate) mod barrier;
 pub(crate) mod completion_strategy;
+pub(crate) mod hook_wait;
 pub(crate) mod lease;
 pub(crate) mod ratelimit;
 pub(crate) mod runner_host;

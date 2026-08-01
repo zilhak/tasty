@@ -25,6 +25,7 @@ impl App {
                 main.state.detect_tab_lifecycle(engine);
                 let events = main.state.take_pending_host_events();
                 reproject_osc_title_on_focus(engine, &events);
+                resolve_hook_fired_task_waits(&self.core, engine, &events);
                 drained.extend(events);
             }
         }
@@ -36,6 +37,7 @@ impl App {
             s.detect_tab_lifecycle(engine);
             let events = s.take_pending_host_events();
             reproject_osc_title_on_focus(engine, &events);
+            resolve_hook_fired_task_waits(&self.core, engine, &events);
             drained.extend(events);
         }
         if drained.is_empty() {
@@ -208,6 +210,24 @@ fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEve
     for ev in events {
         if let PendingHostEvent::SurfaceFocused { surface_id, .. } = ev {
             engine.refresh_tab_osc_title(*surface_id);
+        }
+    }
+}
+
+/// TODO80 §B-4/§C: 이 drain 배치의 `HookFired` 마다 hook_id→task_id 매핑을
+/// 조회해, 대기 중인 push 완료 전략 task 가 있으면 마감한다. flatten(`drained`)
+/// 되기 전, 이 배치가 나온 그 window/parked-state 의 `engine` 이 아직 유효할 때
+/// 호출해야 한다 — `resolve_hook_task_wait` 이 waker 발화(`task_waker_hub`)에
+/// 그 engine 을 그대로 쓰므로, 틀린 engine 을 넘기면 `agent.task_await` 대기자가
+/// 엉뚱한 hub 에서 깨어나길 기다리게 된다.
+fn resolve_hook_fired_task_waits(
+    core: &crate::core::Core,
+    engine: &CoreState,
+    events: &[PendingHostEvent],
+) {
+    for ev in events {
+        if let PendingHostEvent::HookFired { hook_id, .. } = ev {
+            core.resolve_hook_task_wait(engine, *hook_id);
         }
     }
 }

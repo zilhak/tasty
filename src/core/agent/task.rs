@@ -143,6 +143,44 @@ impl Core {
         })
     }
 
+    /// TODO80 §B-4/§C: `task_id` 가 `hook_id` 의 완료를 기다리도록 등록한다.
+    /// 오늘은 이 메서드를 호출하는 러너 경로가 없다(§B 완료 전략 레지스트리가
+    /// push 형 전략의 dispatch 시점에 호출할 예정) — `AwaitExternal` 핸들을
+    /// 반환하는 dispatch 구현이 그 자리다.
+    // 이유: `HookTaskWaits::register` 와 동일 — 등록자(§B)가 아직 없다.
+    #[allow(dead_code)]
+    pub(crate) fn register_hook_task_wait(&self, hook_id: u64, workspace_id: u32, task_id: TaskId) {
+        self.hook_task_waits
+            .register(hook_id, workspace_id, task_id);
+    }
+
+    /// TODO80 §B-4/§C: `hook_id` 에 매핑된 대기 중 task 가 있으면 완료 처리
+    /// (Succeeded)한다. 없으면 no-op — 등록하는 러너 경로가 아직 없어(§B 미구현)
+    /// 오늘은 모든 훅 발화가 여기 해당한다. `engine` 은 `task_set_state` 의
+    /// waker 발화(`task_waker_hub`)에 필요하다 — 호출자는 이 훅이 발화한 그
+    /// window/state 의 engine 을 넘겨야 `agent.task_await` 대기자가 정확히
+    /// 깨어난다(다른 window 의 engine 을 넘기면 waker 가 엉뚱한 hub 에 발화한다).
+    pub(crate) fn resolve_hook_task_wait(&self, engine: &CoreState, hook_id: u64) {
+        let Some((workspace_id, task_id)) = self.hook_task_waits.resolve(hook_id) else {
+            return;
+        };
+        let result = TaskResult {
+            exit_code: None,
+            output: None,
+            error: None,
+        };
+        if let Err(e) = self.task_set_result(engine, workspace_id, &task_id, result) {
+            tracing::warn!("resolve_hook_task_wait: set_result {task_id} failed: {e}");
+            return;
+        }
+        let now_ms = self.clock.now_unix_millis() as u64;
+        if let Err(e) =
+            self.task_set_state(engine, workspace_id, &task_id, TaskState::Succeeded, now_ms)
+        {
+            tracing::warn!("resolve_hook_task_wait: set_state {task_id} failed: {e}");
+        }
+    }
+
     /// Reducer 단계 1: 입력 task 들의 결과를 `ReducerInput` 형태로 수집.
     /// 실제 reducer / shell I/O 는 handler 가 *memory lock 바깥에서* 실행.
     pub(crate) fn task_reduce_collect(
@@ -169,5 +207,141 @@ impl Core {
             }
             Ok(out)
         })
+    }
+}
+
+#[cfg(test)]
+mod hook_wait_tests {
+    use std::sync::{Arc, Mutex};
+
+    use tasty_agent::task::{OnFailure, TaskCommand};
+    use tasty_memory::MemoryStorage;
+    use tasty_themes::{ThemeStorage, ThemeStore};
+
+    use crate::adapters::test::{
+        fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
+        mock_process::MockProcessSpawner, tmp_home::TmpHome,
+    };
+    use crate::core::CoreState;
+    use crate::core::builder::CoreBuilder;
+    use crate::ports::notification_sound::NoopPlayer;
+
+    use super::*;
+
+    fn engine() -> CoreState {
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    fn core() -> (Core, tempfile::TempDir) {
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
+        let home_tmp = tempfile::tempdir().expect("test tempdir");
+        let home = TmpHome::new(home_tmp.path().to_path_buf());
+
+        let core = CoreBuilder::new()
+            .with_fs(Arc::new(MemFileSystem::new()))
+            .with_clock(Arc::new(FakeClock::default()))
+            .with_clipboard(Arc::new(MockClipboard::default()))
+            .with_process(Arc::new(MockProcessSpawner::default()))
+            .with_home(Arc::new(home))
+            .with_sound_player(Arc::new(NoopPlayer))
+            .with_memory(memory)
+            .with_themes(themes)
+            .with_preset_store(preset_store)
+            .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
+            .build()
+            .expect("test Core build");
+        (core, home_tmp)
+    }
+
+    fn mk_ready_task(core: &Core, engine: &CoreState, workspace_id: u32) -> TaskId {
+        let opts = TaskCreateOpts {
+            workspace_id,
+            name: "t".to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".into()],
+                workspace_id,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            on_failure: OnFailure::default(),
+            metadata: serde_json::Value::Null,
+            now_ms: 1,
+        };
+        core.task_create(engine, opts).expect("task_create").id
+    }
+
+    /// TODO80 §B-4/§C 전체 생애주기: register → (해당 hook 발화 시뮬레이션인)
+    /// resolve 호출 → task 가 Succeeded 로 마감. `agent.task_set_result` 외부
+    /// 호출과 동형의 결과를 훅 경유로 재현한다.
+    #[test]
+    fn register_then_resolve_completes_the_waiting_task() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+        // dispatch 가 됐다고 가정 — Ready → Running (실제 러너의 0단계 전이와 동형).
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        core.register_hook_task_wait(42, ws, task_id.clone());
+        core.resolve_hook_task_wait(&engine, 42);
+
+        let task = core
+            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .expect("collect")
+            .remove(0);
+        assert!(
+            task.succeeded,
+            "task should be Succeeded after hook resolve"
+        );
+    }
+
+    /// 등록되지 않은 hook_id 는 no-op — 대부분의 훅 발화(§B 미구현이라 오늘은
+    /// 전부)가 여기 해당하므로 반드시 안전해야 한다.
+    #[test]
+    fn resolve_unregistered_hook_id_does_not_touch_any_task() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        // 아무것도 등록 안 한 채 임의 hook_id resolve — task 는 Running 그대로.
+        core.resolve_hook_task_wait(&engine, 999);
+
+        let task = core
+            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .expect("collect")
+            .remove(0);
+        assert!(!task.succeeded);
+    }
+
+    /// resolve 는 1회성 소비 — 같은 hook_id 가 두 번 발화해도(예: 재등록 없이
+    /// 중복 이벤트) 두 번째는 이미 소비된 매핑이라 no-op(에러 없이 조용히 무시).
+    #[test]
+    fn resolve_is_one_shot() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        core.register_hook_task_wait(7, ws, task_id.clone());
+        core.resolve_hook_task_wait(&engine, 7);
+        // 두 번째 발화 — 매핑이 이미 소비돼 no-op. 패닉/에러 없이 조용히 지나간다.
+        core.resolve_hook_task_wait(&engine, 7);
+
+        let task = core
+            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .expect("collect")
+            .remove(0);
+        assert!(task.succeeded);
     }
 }

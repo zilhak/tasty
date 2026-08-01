@@ -28,6 +28,9 @@ use crate::{AgentError, Result};
 /// - `ImmediateFail`: dispatch 가 실패. transition 표상 Ready → Failed 직접 전이가
 ///   불허이므로 *먼저 Running 으로 보낸 후* poll 결과로 Failed 로 흡수하기 위한
 ///   우회 variant.
+/// - `AwaitExternal`: poll 은 관여하지 않는(항상 Active) 외부 push 대기. 종결은
+///   host 가 밖에서 store 를 직접 전이시켜 이뤄지고, `tick` 0단계(terminal 흡수)
+///   가 다음 tick 에 handle 정리를 담당한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum DispatchHandle {
@@ -53,6 +56,23 @@ pub enum DispatchHandle {
     BarrierPoll {
         workspace_id: u32,
         name: String,
+    },
+    /// 외부 push 신호(예: 훅 완료)를 기다리는 핸들(TODO80 §B-4/§C). `poll` 은
+    /// host executor 구현에서 **항상** [`PollOutcome::Active`] 를 반환해야 한다 —
+    /// 이 handle 의 진짜 종결은 poll 이 아니라 host 가 외부에서(예: `HookFired`
+    /// 소비 경로) `task_set_result`/`task_set_state` 를 직접 호출해 이뤄진다.
+    /// `wait_key` 는 이 크레이트가 의미를 해석하지 않는 host-opaque 식별자(예:
+    /// hook_id 의 문자열화) — host 가 자신의 `wait_key → task_id` 매핑에서 이
+    /// task 를 다시 찾을 때 쓴다. 다른 영속 handle 과 동일하게
+    /// `tasty.agent.handle.<id>` 로 영속되므로 호스트 재시작도 버틴다 — 외부
+    /// 완료는 `self.running`(runner in-memory)과 무관하게 store 를 직접
+    /// 전이시키므로, 재시작 후에도 handle 을 `PolledDispatch`/`BarrierPoll` 과
+    /// 동형으로 **복원**해야 한다(host reload 경로). 복원하지 않으면 0단계
+    /// terminal 흡수가 이 task 를 찾지 못해 `release_permit` 이 누락된다 — 그
+    /// permit 누수를 막는 것이 이 variant 를 도입한 목적이므로, 재시작
+    /// 시나리오에서도 지켜야 한다.
+    AwaitExternal {
+        wait_key: String,
     },
 }
 
@@ -111,7 +131,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
     ///
     /// 에러는 tracing::warn 으로 흡수하고 다음 task 로 진행 (runner thread 가 죽지
     /// 않게 — 사용자가 cancel/retry 로 정리 가능).
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 한 tick 안의 순차 3단계(Cancelled 흡수 → Running poll → Ready dispatch)가 self.running·set_state·set_result 클로저를 공유해, 쪼개면 세 함수에 동일 매개변수만 나열되고 흐름 추적이 어려워진다. 중첩은 얕음.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 한 tick 안의 순차 3단계(외부 terminal 흡수 → Running poll → Ready dispatch)가 self.running·set_state·set_result 클로저를 공유해, 쪼개면 세 함수에 동일 매개변수만 나열되고 흐름 추적이 어려워진다. 중첩은 얕음.
     pub fn tick<FS, FR>(
         &mut self,
         workspace_id: u32,
@@ -123,10 +143,20 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
         FR: FnMut(u32, &TaskId, TaskResult) -> Result<()>,
     {
-        // 0. Cancelled 흡수 — `agent.task_cancel` 이 외부에서 store 의 Running →
-        //    Cancelled 로 직접 전이시켰을 수 있다. handle 정리 + permit 해제.
+        // 0. 외부 terminal 전이 흡수(TODO80 §C-2 누수 수정) — `agent.task_cancel` /
+        //    `agent.task_set_result` 가 외부에서 store 의 Running 을 어느
+        //    terminal 상태로든(Succeeded/Failed/Cancelled/Skipped,
+        //    `TaskState::is_terminal()`) 직접 전이시켰을 수 있다. **이전엔
+        //    `Cancelled` 만 흡수했다** — `task_set_result` 로 Succeeded/Failed 로
+        //    전이된 task 는 이 0단계를 통과해 버려 handle 이 `self.running` 에
+        //    영구 잔존하고 `release_permit` 이 결코 호출되지 않았다(semaphore
+        //    permit·lease 누수). 이번 tick 시작 시점에 이미 Running 이 아니라면
+        //    (즉 이 tick 의 1단계 poll 로 방금 종결된 게 아니라 그 이전에 이미
+        //    외부에서 종결됐다면) handle 정리 + permit 해제를 이 자리에서
+        //    선제 흡수한다. handle 이 없으면(에초에 dispatch 이력이 없는 task)
+        //    `remove` 가 no-op 이라 안전하다.
         for task in tasks {
-            if !matches!(task.state, TaskState::Cancelled) {
+            if !task.state.is_terminal() {
                 continue;
             }
             if self.running.remove(&task.id).is_some() {
@@ -518,6 +548,9 @@ mod tests {
                 workspace_id: 1,
                 name: "b".into(),
             },
+            DispatchHandle::AwaitExternal {
+                wait_key: "42".into(),
+            },
         ];
         for h in cases {
             let v = serde_json::to_value(&h).expect("serialize");
@@ -527,6 +560,104 @@ mod tests {
             // Debug equality (DispatchHandle 는 PartialEq 안 받음 → format 비교).
             assert_eq!(format!("{h:?}"), format!("{back:?}"));
         }
+    }
+
+    /// TODO80 §B-4/§C: `AwaitExternal` 핸들의 의도된 전체 생애주기 — dispatch 로
+    /// 생성된 뒤 여러 tick 동안 poll 이 항상 `Active` 라 Running 이 유지되고
+    /// (executor 는 이 핸들에 절대 관여하지 않는다), 외부(hook 완료 등)가 store 를
+    /// 직접 Succeeded 로 전이시키면 **다음 tick 의 0단계**가 handle 제거 +
+    /// release_permit 을 흡수한다 — 0단계가 `Cancelled` 만 흡수하던 예전 버전이면
+    /// 이 시나리오에서 handle 이 영구 잔존해 이 테스트가 실패했을 것이다.
+    #[test]
+    fn await_external_stays_active_until_externally_resolved_then_absorbed() {
+        struct AwaitExec {
+            released: std::cell::RefCell<Vec<TaskId>>,
+        }
+        impl TaskExecutor for AwaitExec {
+            fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+                DispatchOutcome::Started(DispatchHandle::AwaitExternal {
+                    wait_key: "hook-99".into(),
+                })
+            }
+            fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+                // 계약: AwaitExternal 은 poll 이 절대 종결시키지 않는다.
+                assert!(matches!(handle, DispatchHandle::AwaitExternal { .. }));
+                PollOutcome::Active
+            }
+            fn release_permit(&mut self, task_id: &TaskId) {
+                self.released.borrow_mut().push(task_id.clone());
+            }
+        }
+        let mut runner = RunnerLoop::new(AwaitExec {
+            released: std::cell::RefCell::new(Vec::new()),
+        });
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![mk_task("t-1", &[])],
+        });
+
+        // tick 1: Ready → Running, AwaitExternal handle 보관.
+        let snap1 = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            100,
+            &snap1,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
+        assert!(matches!(
+            runner.running.get("t-1"),
+            Some(DispatchHandle::AwaitExternal { .. })
+        ));
+
+        // tick 2~3: poll 은 항상 Active — Running 유지, handle 잔존.
+        for now in [200, 300] {
+            let snap = store.borrow().tasks.clone();
+            runner.tick(
+                1,
+                now,
+                &snap,
+                |ws, id, st, n| store.borrow_mut().set_state(ws, id, st, n),
+                |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            );
+            assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
+            assert!(runner.running.contains_key("t-1"));
+        }
+        assert!(runner.executor.released.borrow().is_empty());
+
+        // 외부(hook_id → task_id 매핑 소비 등)가 poll 을 거치지 않고 store 를
+        // 직접 Succeeded 로 전이 — `agent.task_set_result` 시나리오와 동형.
+        store
+            .borrow_mut()
+            .set_result(
+                1,
+                &"t-1".to_string(),
+                TaskResult {
+                    exit_code: Some(0),
+                    output: None,
+                    error: None,
+                },
+            )
+            .expect("set_result");
+        store
+            .borrow_mut()
+            .set_state(1, &"t-1".to_string(), TaskState::Succeeded, 400)
+            .expect("set_state");
+
+        // tick 4: 0단계가 이 외부 전이를 흡수 — handle 제거 + release_permit.
+        let snap4 = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            400,
+            &snap4,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert!(!runner.running.contains_key("t-1"));
+        assert_eq!(
+            runner.executor.released.borrow().clone(),
+            vec!["t-1".to_string()]
+        );
     }
 
     /// I.A.S6: Cancelled task — running map 에서 제거 + release_permit 호출.
@@ -571,5 +702,112 @@ mod tests {
         assert!(!runner.running.contains_key("t-1"));
         let released = runner.executor.released.borrow().clone();
         assert_eq!(released, vec!["t-1".to_string()]);
+    }
+
+    struct TrackReleases {
+        released: std::cell::RefCell<Vec<TaskId>>,
+    }
+    impl TaskExecutor for TrackReleases {
+        fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+            DispatchOutcome::Started(DispatchHandle::ShellProcess { pid: 1 })
+        }
+        fn poll(&mut self, _h: &DispatchHandle) -> PollOutcome {
+            PollOutcome::Active
+        }
+        fn release_permit(&mut self, task_id: &TaskId) {
+            self.released.borrow_mut().push(task_id.clone());
+        }
+    }
+
+    /// TODO80 §C-2 누수 회귀 방지 — `agent.task_set_result` 로 외부에서 Running 을
+    /// 곧장 Succeeded 로 전이시킨 task(0단계가 예전엔 `Cancelled` 만 흡수해
+    /// 이 경우를 놓쳤다)도 handle 제거 + release_permit 이 일어나야 한다.
+    #[test]
+    fn externally_succeeded_running_task_is_purged_and_permit_released() {
+        let exec = TrackReleases {
+            released: std::cell::RefCell::new(Vec::new()),
+        };
+        let mut runner = RunnerLoop::new(exec);
+        runner
+            .running
+            .insert("t-1".to_string(), DispatchHandle::ShellProcess { pid: 1 });
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![Task {
+                state: TaskState::Succeeded,
+                ..mk_task("t-1", &[])
+            }],
+        });
+        let snap = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            300,
+            &snap,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert!(!runner.running.contains_key("t-1"));
+        assert_eq!(
+            runner.executor.released.borrow().clone(),
+            vec!["t-1".to_string()]
+        );
+    }
+
+    /// 위와 동형 — `Failed`. 두 상태 모두 `TaskState::is_terminal()` 로 흡수된다.
+    #[test]
+    fn externally_failed_running_task_is_purged_and_permit_released() {
+        let exec = TrackReleases {
+            released: std::cell::RefCell::new(Vec::new()),
+        };
+        let mut runner = RunnerLoop::new(exec);
+        runner
+            .running
+            .insert("t-1".to_string(), DispatchHandle::ShellProcess { pid: 1 });
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![Task {
+                state: TaskState::Failed {
+                    error: "boom".into(),
+                },
+                ..mk_task("t-1", &[])
+            }],
+        });
+        let snap = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            300,
+            &snap,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert!(!runner.running.contains_key("t-1"));
+        assert_eq!(
+            runner.executor.released.borrow().clone(),
+            vec!["t-1".to_string()]
+        );
+    }
+
+    /// 0단계는 handle 이 없는(dispatch 이력 없는) terminal task 에는 no-op —
+    /// release_permit 을 호출하지 않는다(과호출 방지).
+    #[test]
+    fn terminal_task_without_handle_does_not_call_release_permit() {
+        let exec = TrackReleases {
+            released: std::cell::RefCell::new(Vec::new()),
+        };
+        let mut runner = RunnerLoop::new(exec);
+        // self.running 에 아무것도 없음 — 예: 재시작 후 Skipped 로 이미 종결된 task.
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![Task {
+                state: TaskState::Skipped,
+                ..mk_task("t-1", &[])
+            }],
+        });
+        let snap = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            300,
+            &snap,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert!(runner.executor.released.borrow().is_empty());
     }
 }
