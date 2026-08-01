@@ -66,7 +66,7 @@ pub(super) struct Inner {
     pub(super) extension_priority: BTreeMap<String, ExtensionPriorityEntry>,
     /// finalize 결과 cache. dirty 시 lazy 재계산.
     pub(super) finalized: BTreeMap<DetectorId, FileFormatDetector>,
-    /// 전체 PathGlob 패턴을 하나로 묶어 컴파일한 매처(TODO 58). `finalized` 와 함께
+    /// 전체 PathGlob 패턴을 하나로 묶어 컴파일한 매처. `finalized` 와 함께
     /// dirty 시에만 재구성 — `identify` 는 파일마다 재컴파일하지 않고 재사용한다.
     pub(super) path_globs: PathGlobCache,
     pub(super) dirty: bool,

@@ -242,7 +242,8 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
     true
 }
 
-/// Plugin 타입 RSS 이상탐지(TODO 61) 진입점. `telemetry` 하위모듈이
+/// Plugin 타입 RSS 이상탐지(`docs/features/telemetry/index.md` RssSurge) 진입점.
+/// `telemetry` 하위모듈이
 /// `mod telemetry;`(private) 라 `App::about_to_wait` 같은 crate 외부(다른
 /// 서브트리)에서 직접 부를 수 없어, 이 함수가 유일한 공개 경유지다.
 ///
@@ -406,7 +407,8 @@ fn route_engine_handler(
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         "terminal.adopt" => terminal::handle_adopt(engine, id, &request.params),
         "terminal.release" => terminal::handle_release(engine, id, &request.params),
-        // headless PTY primitive (TODO 18 / pty_registry) — Surface 없는 백그라운드 PTY
+        // headless PTY primitive (docs/adr/0050-headless-pty-primitive.md /
+        // pty_registry) — Surface 없는 백그라운드 PTY
         "pty.spawn" => pty::handle_spawn(core, engine, caller, id, &request.params),
         "pty.write" => pty::handle_write(engine, id, &request.params),
         "pty.read" => pty::handle_read(engine, id, &request.params),
@@ -555,7 +557,8 @@ fn route_engine_handler(
         // (파일열기 팝업 플러그인化의 유일 generic 갭, ADR-0042). rfd 는 gui feature.
         #[cfg(feature = "gui")]
         "fs.pick_file" => fs::handle_pick_file(id, &request.params),
-        // (TODO 40) git-viewer 원격 조회 트리거 — mirror workspace/attach 세션은
+        // (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md) git-viewer
+        // 원격 조회 트리거 — mirror workspace/attach 세션은
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),

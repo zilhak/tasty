@@ -344,9 +344,9 @@ pub enum StreamControl {
     /// (geometry/scale/theme/focus) it wants the remote surface driven with —
     /// mirrors `SurfaceSetContextParams` minus the per-frame input batch (that's
     /// [`StreamControl::MeshInput`]). Sending this **is** the subscribe signal
-    /// (no separate handshake capability negotiation, TODO 15 decision, mirrors
-    /// the existing [`StreamControl::ClientResize`] "request itself declares
-    /// intent" pattern): the server activates mesh forwarding for `surface_id`
+    /// (no separate handshake capability negotiation, mirroring the existing
+    /// [`StreamControl::ClientResize`] "request itself declares intent"
+    /// pattern): the server activates mesh forwarding for `surface_id`
     /// the first time it sees one of these, and re-drives the remote plugin's
     /// `set_context` any time geometry/theme/focus changes thereafter.
     ///
@@ -400,9 +400,9 @@ pub enum StreamControl {
     /// mesh-mirrorable surface on the remote (not found, not a bundled
     /// egui-mesh-whitelisted kind, or the surface's plugin isn't running) — a
     /// **one-shot explicit error**, mirroring the existing
-    /// `execute_forwarded_structural_op` `ok:false`+`reason` convention (TODO 15
-    /// decision: explicit failure over silent drop, so the client never waits
-    /// forever for mesh data that will never arrive).
+    /// `execute_forwarded_structural_op` `ok:false`+`reason` convention:
+    /// explicit failure over silent drop, so the client never waits forever
+    /// for mesh data that will never arrive.
     ///
     /// Direction: **server→client**.
     MeshError { surface_id: u32, reason: String },

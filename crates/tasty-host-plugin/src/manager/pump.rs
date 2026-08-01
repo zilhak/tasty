@@ -81,7 +81,7 @@ impl PluginManager {
         // H.f — auto-reload polling.
         self.poll_auto_reload();
 
-        // RssSurge 이상탐지(TODO 61) — Plugin 타입 RSS sampling.
+        // RssSurge 이상탐지 — Plugin 타입 RSS sampling.
         self.sample_plugin_rss();
 
         hello_pairs

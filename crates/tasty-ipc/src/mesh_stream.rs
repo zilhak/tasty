@@ -1,12 +1,11 @@
-//! attach mesh mirror(plugin egui-mesh surface)의 바이너리 chunk 프로토콜
-//! (`.claude-workspace/todo/15-attach-protocol-mesh-messages.md`).
+//! attach mesh mirror(plugin egui-mesh surface)의 바이너리 chunk 프로토콜.
 //!
 //! mesh 프레임(`mesh_wire::encode_paint` 가 만든 POD 바이트, `tasty-plugin-protocol`)은
 //! 큰 텍스처(512×512 RGBA 급이면 ~1MiB)를 포함할 수 있어 [`crate::stream::MAX_FRAME_LEN`]
 //! (1MiB)을 쉽게 초과한다. JSON(`StreamControl`)+base64 는 33% 오버헤드를 더하므로
 //! 배제하고, 여기서는 opaque 바이트를 청크로 쪼개 [`crate::stream::StreamTag::MeshData`]
 //! 프레임으로 나른다 — **이 crate 는 mesh 바이트를 디코드하지 않는다**(`mesh_wire` 는
-//! egui-mesh feature 에 묶여 있어 non-GUI 빌드에 새는 것을 막는다, TODO 15 원인분석).
+//! egui-mesh feature 에 묶여 있어 non-GUI 빌드에 새는 것을 막는다).
 //!
 //! 헤더 레이아웃 (전부 big-endian, [`MESH_CHUNK_HEADER_LEN`] 바이트):
 //! `[surface_id:u32][frame_id:u64][chunk_index:u32][chunk_count:u32][total_len:u32]

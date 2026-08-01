@@ -106,7 +106,7 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
 
         DetectorRuleKind::PathGlob { pattern } => {
             // 파일명(마지막 컴포넌트)만 비교 — globset 표준 문법(`*`/`?`/`[...]`/`**`)
-            // 지원(TODO 58). `pattern` 은 `registry/helpers.rs::decl_rule_to_kind` 가
+            // 지원. `pattern` 은 `registry/helpers.rs::decl_rule_to_kind` 가
             // 등록 시점에 이미 `to_slash` 로 정규화해뒀다는 전제. 이 경로는 registry
             // 의 hot path(`registry/query.rs::identify`)가 아니다 — 그쪽은 파일마다
             // 재컴파일하지 않도록 `registry/path_glob.rs::PathGlobCache` 를 쓰고,
@@ -181,8 +181,8 @@ pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut Dee
     }
 }
 
-/// (구) 단순 glob 매처 — `PathGlob` 평가는 TODO 58 에서 `globset` 기반으로 교체
-/// 완료됐고, 이 함수는 더 이상 production 경로에서 쓰이지 않는다. 옛 매처와 새
+/// (구) 단순 glob 매처 — `PathGlob` 평가는 `globset` 기반으로 교체 완료됐고,
+/// 이 함수는 더 이상 production 경로에서 쓰이지 않는다. 옛 매처와 새
 /// `globset` 매처의 동작 차이를 확인하는 호환성 회귀 테스트 전용으로만 남겨둔다
 /// (아래 `tests::glob_migration_compat` 모듈). `*` 는 여러 개 지원(prefix/middle/suffix
 /// 매칭) — `?`/`[...]`/`**` 같은 문법은 지원하지 않는다.
@@ -254,8 +254,8 @@ mod tests {
 
     #[test]
     fn path_glob_supports_standard_glob_syntax() {
-        // TODO 58 완료 기준의 예시 그대로 — 옛 simple_glob_match 는 `*` 외 문법을
-        // 지원하지 않아 아래는 이전에는 전부 실패했다.
+        // 옛 simple_glob_match 는 `*` 외 문법을 지원하지 않아 아래는 이전에는
+        // 전부 실패했다.
         let question = DetectorRuleKind::PathGlob {
             pattern: "file?.txt".into(),
         };
@@ -277,7 +277,7 @@ mod tests {
         assert!(evaluate_cheap(&double_star, &target("nested/main.rs")));
     }
 
-    // ── simple_glob_match(구) ↔ globset(신) 호환성 회귀 (TODO 58) ──────────
+    // ── simple_glob_match(구) ↔ globset(신) 호환성 회귀 ──────────────────
     //
     // simple_glob_match 는 여러 개의 `*` 도 이미 지원했다(prefix/middle/suffix
     // 매칭) — "단일 `*` 만 지원" 이라는 TODO 문서 초기 서술과 달리 실제로는 그렇지

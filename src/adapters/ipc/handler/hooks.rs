@@ -8,7 +8,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 내장 surface hook 이벤트 안내 문자열 (검증 실패 메시지용).
 const BUILTIN_HOOK_EVENTS: &str = "process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, command-completed, command-completed:EXIT_CODE";
 
-/// `HookEvent::parse` 는 미인식 문자열을 `Custom(_)` 으로 무조건 수용하므로(TODO 15),
+/// `HookEvent::parse` 는 미인식 문자열을 `Custom(_)` 으로 무조건 수용하므로,
 /// 여기서 (내장 ∪ 활성 plugin 선언) 집합으로 검증한다. 내장 이벤트는 parse 단계에서
 /// 이미 비-Custom 변형으로 해석되므로 항상 허용된다. `Custom(key)` 만 plugin 선언
 /// 카탈로그 멤버십을 확인하고, 미선언이면 동적 안내 메시지와 함께 거부한다.

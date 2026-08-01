@@ -34,7 +34,8 @@ pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
 /// H — auto-reload polling 간격. pump tick 안의 자연 debounce — 2초 내
 /// 발생한 연속 mtime 변경은 한 번의 swap 으로 흡수된다.
 pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
-/// RssSurge 이상탐지(TODO 61) — plugin RSS sampling 주기. 너무 짧으면
+/// RssSurge 이상탐지(`docs/features/telemetry/index.md`) — plugin RSS sampling
+/// 주기. 너무 짧으면
 /// sysinfo 호출 비용이 매 tick 마다 누적되고, 너무 길면 5-샘플 sliding
 /// window(`RSS_SURGE_MIN_SAMPLES`)가 실제 급증을 늦게 잡는다.
 pub(super) const RSS_SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
@@ -229,7 +230,7 @@ pub struct EguiMeshFrame {
     /// 담고 있는가. true 면 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
     pub full_textures: bool,
     /// `mesh_wire::encode_paint` 가 실제로 만든 바이트 길이(shared buffer 의
-    /// power-of-two capacity 가 아니라). attach mesh mirror(TODO 15/18)가 네트워크로
+    /// power-of-two capacity 가 아니라). attach mesh mirror 가 네트워크로
     /// 정확한 payload 만 내보내는 데 필요. 0 이면 구버전 plugin — consumer 는 버퍼
     /// capacity 전체를 fallback 으로 쓴다.
     pub byte_len: u32,
@@ -336,7 +337,7 @@ pub struct PluginManager {
     /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
     /// `take_invalidated_surfaces` 가 드레인한다.
     pub(super) invalidated_surfaces: Vec<u32>,
-    /// RssSurge 이상탐지(TODO 61) — 마지막 sampling tick 시각. `RSS_SAMPLE_INTERVAL`
+    /// RssSurge 이상탐지 — 마지막 sampling tick 시각. `RSS_SAMPLE_INTERVAL`
     /// 경과마다 `processes` 의 각 `child_pid()` 를 sysinfo 로 sampling한다.
     pub(super) last_rss_sample: Instant,
     /// sysinfo 측정 핸들 — tick 마다 새로 만들지 않고 재사용(할당 비용 절감).

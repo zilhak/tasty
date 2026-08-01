@@ -1,5 +1,5 @@
 //! `DetectorRuleKind::PathGlob` 패턴 전체를 하나의 `globset::GlobSet` 으로 묶어
-//! 컴파일하고 캐시하는 헬퍼(TODO 58).
+//! 컴파일하고 캐시하는 헬퍼.
 //!
 //! 개별 `Glob::is_match()` 를 파일마다 N(rule 개수)회 호출하는 대신, 등록된
 //! 패턴 전부를 `GlobSetBuilder` 로 하나의 자동에 합쳐 컴파일해두고 파일 하나당

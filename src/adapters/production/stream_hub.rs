@@ -85,8 +85,8 @@ pub struct PumpOutcome {
     /// `(client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused)`
     /// mesh-mirror subscribe/geometry-update requests from an attach client
     /// ([`StreamControl::MeshContext`](crate::ipc::stream::StreamControl)). The
-    /// subscribe request itself doubles as capability negotiation (TODO 15 결정
-    /// #1) — no separate handshake. The main loop validates holder authority +
+    /// subscribe request itself doubles as capability negotiation — no
+    /// separate handshake. The main loop validates holder authority +
     /// mesh whitelist membership before applying to `CoreState::mesh_mirror`.
     #[allow(clippy::type_complexity)]
     pub mesh_context_requests: Vec<(
@@ -104,7 +104,7 @@ pub struct PumpOutcome {
     pub mesh_full_resend_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, surface_id, input)` — local input captured over an attach
     /// client's mesh mirror pane, forwarded verbatim
-    /// ([`StreamControl::MeshInput`](crate::ipc::stream::StreamControl), TODO 20).
+    /// ([`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)).
     /// The main loop validates holder authority before appending to
     /// `CoreState::mesh_mirror`'s pending-input queue.
     pub mesh_input_events: Vec<(
@@ -177,7 +177,7 @@ pub enum CaptureUploadMsg {
     CaptureChunk {
         upload_id: u64,
         // 이유: 문서에 명시된 대로 진단용으로만 wire 에 실리고 읽히지 않음 —
-        // TODO63 (engine.rs → core/ 재배치)로 crate 전역 reachability 가 좁아지며 드러남.
+        // engine.rs → core/ 재배치로 crate 전역 reachability 가 좁아지며 드러남.
         #[allow(dead_code)]
         seq: u32,
         #[allow(dead_code)]
@@ -379,7 +379,7 @@ impl StreamHub {
     }
 
     /// Number of currently connected stream clients.
-    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — TODO63 (engine.rs → core/ 재배치)로
+    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — engine.rs → core/ 재배치로
     // crate 전역 reachability 가 좁아지며 드러남.
     #[allow(dead_code)]
     pub fn client_count(&self) -> usize {

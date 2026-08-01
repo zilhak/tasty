@@ -64,7 +64,7 @@ impl FileFormatRegistry {
             DetectDepth::Cheap => None,
         };
 
-        // PathGlob 매칭(TODO 58): 미리 컴파일된 GlobSet 을 파일 하나당 1회만 조회해
+        // PathGlob 매칭: 미리 컴파일된 GlobSet 을 파일 하나당 1회만 조회해
         // 매칭 인덱스 집합을 구한다 — 아래 rule 루프에서 PathGlob rule 을 몇 번을
         // 만나든 재컴파일/재매칭하지 않고 이 집합의 membership 조회로 끝낸다.
         let matched_globs = target

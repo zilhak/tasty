@@ -1253,7 +1253,8 @@ mod tests {
 
     #[test]
     fn claude_design_is_not_builtin_plugin() {
-        // TODO64: 별도 프로젝트로 분리하며 tasty 본체 번들에서 완전히 제거됨.
+        // docs/adr/0057-remove-claude-design-plugin.md: 별도 프로젝트로 분리하며
+        // tasty 본체 번들에서 완전히 제거됨.
         assert!(!is_builtin_plugin("com.tasty.claude-design"));
     }
 

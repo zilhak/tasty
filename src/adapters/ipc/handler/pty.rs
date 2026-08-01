@@ -1,4 +1,5 @@
-//! `pty.*` IPC 핸들러 — headless PTY primitive (TODO 18 / 18-b: IPC/CLI 표면).
+//! `pty.*` IPC 핸들러 — headless PTY primitive 의 IPC/CLI 표면
+//! (`docs/adr/0050-headless-pty-primitive.md`, `docs/features/headless-pty/index.md`).
 //!
 //! 에이전트가 **Surface(Tab) 없이** 백그라운드에서 굴리는 1 회성 PTY 를 spawn/write/
 //! read/wait/kill/list 한다. 상위 `child_terminal`(`terminal.*`) 은 자식 터미널
@@ -8,9 +9,9 @@
 //! + idle TTL 로 막는다.
 //!
 //! **두 store 정합**: 메타데이터·exit-code cell 은 `engine.pty_registry`, 실제 headless
-//! `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다(18-a
-//! 가 pty id 를 [`PTY_ID_BASE`](crate::core::pty_registry::PTY_ID_BASE) 이상 disjoint
-//! 범위에서 발급해 surface id 와 충돌하지 않는다). 어느 한 쪽만 지우면 누수/좀비가
+//! `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다(pty id
+//! 는 [`PTY_ID_BASE`](crate::core::pty_registry::PTY_ID_BASE) 이상 disjoint 범위에서
+//! 발급되어 surface id 와 충돌하지 않는다). 어느 한 쪽만 지우면 누수/좀비가
 //! 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
 
 use std::time::Instant;
@@ -91,7 +92,7 @@ pub(crate) fn handle_spawn(
     let owner_agent_id = caller.agent_id().as_str().to_string();
 
     // 1) registry 등록(상한 게이트). 실패하면 아무 자원도 만들지 않고 즉시 반환.
-    // Clock port 경유(TODO 04) — outbound port 실제 소비 경로.
+    // Clock port 경유 — outbound port 실제 소비 경로.
     let now = core.now_instant();
     let pty_id = match engine.pty_registry.register(
         PtySpawnSpec {
@@ -386,7 +387,7 @@ mod tests {
         CoreState::new(80, 24, waker).expect("engine")
     }
 
-    /// `handle_spawn` 이 소비하는 `Core::now_instant`(Clock port, TODO 04) 용 최소
+    /// `handle_spawn` 이 소비하는 `Core::now_instant`(Clock port) 용 최소
     /// fixture. `TempDir` 은 호출자가 명명된 binding 으로 받아 즉시 drop 되지 않게 한다.
     fn core() -> (crate::core::Core, tempfile::TempDir) {
         use std::sync::{Arc, Mutex};

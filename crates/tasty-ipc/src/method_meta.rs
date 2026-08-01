@@ -135,19 +135,22 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.broadcast", plugin(&[TerminalWrite])),
         // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
         ("terminal.set_state", plugin(&[SurfaceWrite])),
-        // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) — TODO16.
-        // sibling IPC 핸들러를 호출하지 않고 순수 in-process core 함수(register_child/
-        // occupy_soft)만 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
+        // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) —
+        // `docs/features/child-terminal/index.md`("adopt" 절). sibling IPC 핸들러를
+        // 호출하지 않고 순수 in-process core 함수(register_child/occupy_soft)만
+        // 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
         // (terminal.kill/terminal.set_state 와 동일 컨벤션).
         ("terminal.adopt", plugin(&[SurfaceWrite])),
-        // child 관계·soft 점유만 해제하고 surface 는 닫지 않음 — TODO17. adopt 와
-        // 대칭으로 순수 in-process core 함수(remove_child/release_soft_occupancy)만
-        // 쓰므로 SurfaceWrite 단독.
+        // child 관계·soft 점유만 해제하고 surface 는 닫지 않음 —
+        // `docs/features/child-terminal/index.md`("release" 절). adopt 와 대칭으로
+        // 순수 in-process core 함수(remove_child/release_soft_occupancy)만 쓰므로
+        // SurfaceWrite 단독.
         ("terminal.release", plugin(&[SurfaceWrite])),
-        // ── headless PTY primitive (TODO 18 / pty_registry) ───────────
+        // ── headless PTY primitive (docs/adr/0050-headless-pty-primitive.md /
+        // pty_registry) ────────────────────────────────────────────────
         // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
         // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만
-        // 사용한다(TODO 18 research §3). spawn 은 Surface 를 안 만들어 SurfaceWrite
+        // 사용한다(위 ADR Decision 참고). spawn 은 Surface 를 안 만들어 SurfaceWrite
         // 불필요, wait 는 라이브 트리 대신 PtyEntry exit cell 로 판정해 SurfaceRead
         // 불필요, kill 은 Surface 를 닫지 않고 프로세스만 종료해 SurfaceWrite 불필요.
         ("pty.spawn", plugin(&[TerminalSpawn])),
@@ -156,7 +159,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("pty.wait", plugin(&[TerminalRead])),
         ("pty.kill", plugin(&[TerminalWrite])),
         ("pty.list", plugin(&[TerminalRead])),
-        // 승격 경로(18-c): headless PTY 를 실제 Surface 로 만든다 — spawn/write/... 와
+        // 승격 경로: headless PTY 를 실제 Surface 로 만든다 — spawn/write/... 와
         // 달리 Surface 트리를 새로 만들므로 terminal.spawn 과 동일하게 SurfaceWrite 를
         // 더한다(TerminalSpawn 은 새 터미널 surface 생성 권한).
         ("pty.attach_surface", plugin(&[SurfaceWrite, TerminalSpawn])),
@@ -395,7 +398,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // kind/plugin 을 모른다. 사용자가 임의 경로를 고르는 read 관심사라 FsRead. filters
         // 는 caller(예: markdown plugin 이 md/markdown)가 채운다. ADR-0042.
         ("fs.pick_file", plugin(&[FsRead])),
-        // ── git_viewer.* (TODO 40 — 원격 attach mirror git 조회 트리거) ─
+        // ── git_viewer.* (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md
+        // — 원격 attach mirror git 조회 트리거) ─
         // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
         // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
         // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에

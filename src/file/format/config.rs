@@ -259,7 +259,7 @@ pub fn validate_detector_decl(
                 // 등록 시점에 컴파일까지 시도해 잘못된 glob 문법을 바로 거부한다 —
                 // evaluator 까지 흘려보내 매 파일마다 실패하는 대신 여기서 1회 확인.
                 // 실제 evaluator/registry 도 동일하게 `to_slash` 정규화된 패턴을 쓰므로
-                // (TODO 58, PathGlob 은 항상 `/` 로 저장·비교) 검증도 같은 형태로 한다.
+                // (PathGlob 은 항상 `/` 로 저장·비교) 검증도 같은 형태로 한다.
                 let normalized = tasty_utils::path::to_slash(pattern);
                 if let Err(e) = globset::Glob::new(&normalized) {
                     return Err(DetectorDeclError::InvalidPathGlob {

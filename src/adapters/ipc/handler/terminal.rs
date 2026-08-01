@@ -462,8 +462,8 @@ pub(crate) fn handle_kill(
     )
 }
 
-/// child 를 닫지 않고 관계·soft 점유만 해제한다 — TODO17 / ADR-0040 §45 유보분(release
-/// 쪽). `handle_kill`(421-463행)과 동일한 `remove_child`+`save` 순서를 따르되, 점유
+/// child 를 닫지 않고 관계·soft 점유만 해제한다 — `docs/features/child-terminal/index.md`
+/// ("release" 절). `handle_kill`(421-463행)과 동일한 `remove_child`+`save` 순서를 따르되, 점유
 /// 해제에 tier-무관 `release_occupancy` 대신 주체 검증판 `release_soft_occupancy` 를
 /// 쓰고(hard 점유는 구조적으로 손대지 않음), `surface.close` 호출을 생략한다 — 이 생략이
 /// kill 과의 유일한 동작 차이다. `release_soft_occupancy` 가 desync(이미 점유만 풀린
@@ -504,9 +504,9 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
 }
 
 /// 임의의 기존 surface 를 명시적으로 `parent` 의 child 로 등록(soft 점유) —
-/// TODO16 / ADR-0040 §45 유보분. `handle_spawn`(317-336행)의 관계등록+점유
-/// 블록과 동일 시퀀스를 "PTY 생성 없이, 호출자가 지정한 기존 surface_id" 에
-/// 대해 수행한다.
+/// `docs/features/child-terminal/index.md`("adopt" 절). `handle_spawn`(317-336행)의
+/// 관계등록+점유 블록과 동일 시퀀스를 "PTY 생성 없이, 호출자가 지정한 기존
+/// surface_id" 에 대해 수행한다.
 ///
 /// 연산 순서는 `handle_spawn` 과 **반대**다 — spawn 의 대상(방금 생성된 surface)은
 /// 실전에서 거의 절대 이미 점유돼 있을 수 없어 `register_child` → `occupy_soft`
