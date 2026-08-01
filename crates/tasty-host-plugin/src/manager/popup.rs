@@ -51,40 +51,10 @@ impl PluginManager {
             );
             return None;
         }
-        // 단일 인스턴스 가드: 같은 (plugin_id, popup_id) 인스턴스가 이미 열려 있으면 새로
-        // 열지 않고 기존 인스턴스 id 를 돌려준다. 사용자 조작(popup open)이 중복 인스턴스를
-        // 쌓지 않게 하는 host 소유 정책 (identity 원칙 1 — 셸 생명주기는 host 소유).
-        if let Some((existing, _)) = self
-            .popup_instances
-            .iter()
-            .find(|(_, inst)| inst.plugin_id == plugin_id && inst.popup_id == popup_id)
-        {
-            tracing::debug!(
-                "popup.open: '{plugin_id}/{popup_id}' already open (instance {existing}); dedup"
-            );
-            return Some(*existing);
+        if let Some(existing) = self.find_open_popup_instance(plugin_id, popup_id) {
+            return Some(existing);
         }
-        let pkg = self.packages.iter().find(|p| p.manifest.id == plugin_id)?;
-        let contribute = pkg
-            .manifest
-            .contributes
-            .popup
-            .iter()
-            .find(|p| p.id == popup_id)
-            .cloned()?;
-        // egui-mesh popup 은 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-        // api_version 일치를 게이트한다(surface egui-mesh 등록 정책 미러, ADR-0028).
-        if contribute.rendering == tasty_plugin_manifest::PopupRendering::EguiMesh
-            && pkg.manifest.api_version != tasty_plugin_manifest::HOST_API_VERSION
-        {
-            tracing::warn!(
-                "popup.open: egui-mesh popup '{plugin_id}/{popup_id}' has api_version '{}' \
-                 incompatible with host '{}'; ignoring",
-                pkg.manifest.api_version,
-                tasty_plugin_manifest::HOST_API_VERSION
-            );
-            return None;
-        }
+        let contribute = self.resolve_open_popup_contribute(plugin_id, popup_id)?;
         let instance_id = self.next_popup_instance_id;
         self.next_popup_instance_id = self.next_popup_instance_id.wrapping_add(1);
         self.popup_instances.insert(
@@ -106,6 +76,50 @@ impl PluginManager {
             PendingRequestKind::PopupOpen { instance_id },
         );
         Some(instance_id)
+    }
+
+    /// 단일 인스턴스 가드: 같은 (plugin_id, popup_id) 인스턴스가 이미 열려 있으면 그 id.
+    /// 사용자 조작(popup open)이 중복 인스턴스를 쌓지 않게 하는 host 소유 정책
+    /// (identity 원칙 1 — 셸 생명주기는 host 소유).
+    fn find_open_popup_instance(&self, plugin_id: &str, popup_id: &str) -> Option<u64> {
+        let (existing, _) = self
+            .popup_instances
+            .iter()
+            .find(|(_, inst)| inst.plugin_id == plugin_id && inst.popup_id == popup_id)?;
+        tracing::debug!(
+            "popup.open: '{plugin_id}/{popup_id}' already open (instance {existing}); dedup"
+        );
+        Some(*existing)
+    }
+
+    /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
+    /// egui-mesh popup 은 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
+    /// api_version 일치를 게이트한다(surface egui-mesh 등록 정책 미러, ADR-0028).
+    fn resolve_open_popup_contribute(
+        &self,
+        plugin_id: &str,
+        popup_id: &str,
+    ) -> Option<tasty_plugin_manifest::PopupContribute> {
+        let pkg = self.packages.iter().find(|p| p.manifest.id == plugin_id)?;
+        let contribute = pkg
+            .manifest
+            .contributes
+            .popup
+            .iter()
+            .find(|p| p.id == popup_id)
+            .cloned()?;
+        if contribute.rendering == tasty_plugin_manifest::PopupRendering::EguiMesh
+            && pkg.manifest.api_version != tasty_plugin_manifest::HOST_API_VERSION
+        {
+            tracing::warn!(
+                "popup.open: egui-mesh popup '{plugin_id}/{popup_id}' has api_version '{}' \
+                 incompatible with host '{}'; ignoring",
+                pkg.manifest.api_version,
+                tasty_plugin_manifest::HOST_API_VERSION
+            );
+            return None;
+        }
+        Some(contribute)
     }
 
     /// popup 인스턴스를 닫는다. plugin에 `popup.closed` fire-and-forget IPC를 보내고

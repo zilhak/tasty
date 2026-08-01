@@ -417,64 +417,106 @@ fn handle_incoming_unix(
     stream: std::os::unix::net::UnixStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
 ) {
+    let Some(auth) = read_auth_unix(&stream) else {
+        return;
+    };
+    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+    match tx_opt {
+        Some(tx) => accept_handshake_unix(stream, auth, tx),
+        None => reject_handshake_unix(&stream, &auth),
+    }
+}
+
+/// 인증 라인을 읽어 파싱 — 실패하면 warn 후 `None`(caller 는 그대로 drop).
+/// 성공하면 read_timeout 을 해제한 상태로 반환(핸드셰이크 이후 정상 read 재개 대비).
+#[cfg(unix)]
+fn read_auth_unix(stream: &std::os::unix::net::UnixStream) -> Option<AuthMessage> {
     if let Err(e) = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT)) {
         tracing::warn!("handle channel: set_read_timeout failed: {e}");
     }
+    let auth = read_auth_message_unix(stream)?;
+    if let Err(e) = stream.set_read_timeout(None) {
+        tracing::warn!("handle channel: clearing read_timeout failed: {e}");
+    }
+    Some(auth)
+}
+
+/// stream 을 clone 해 한 줄 읽고 `AuthMessage` 로 파싱. 실패 사유는 내부에서 warn.
+#[cfg(unix)]
+fn read_auth_message_unix(stream: &std::os::unix::net::UnixStream) -> Option<AuthMessage> {
+    let line = read_auth_line_unix(stream)?;
+    match serde_json::from_str(line.trim()) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            tracing::warn!("handle channel: invalid auth message: {e}");
+            None
+        }
+    }
+}
+
+/// stream 을 clone 해 인증 라인 한 줄을 읽는다.
+#[cfg(unix)]
+fn read_auth_line_unix(stream: &std::os::unix::net::UnixStream) -> Option<String> {
     let cloned = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("handle channel: stream clone failed: {e}");
-            return;
+            return None;
         }
     };
     let mut reader = BufReader::new(cloned);
     let mut line = String::new();
     if let Err(e) = reader.read_line(&mut line) {
         tracing::warn!("handle channel: auth read failed: {e}");
+        return None;
+    }
+    Some(line)
+}
+
+/// 토큰 매칭 성공 — auth_ack(true) 송신 후 `HandleStream` 을 대기 중인 spawn 측에 handoff.
+#[cfg(unix)]
+fn accept_handshake_unix(
+    stream: std::os::unix::net::UnixStream,
+    auth: AuthMessage,
+    tx: mpsc::Sender<HandleStream>,
+) {
+    if !send_auth_ack_unix_ok(&stream, &auth) {
         return;
     }
-    let auth: AuthMessage = match serde_json::from_str(line.trim()) {
-        Ok(a) => a,
-        Err(e) => {
-            tracing::warn!("handle channel: invalid auth message: {e}");
-            return;
-        }
-    };
-    if let Err(e) = stream.set_read_timeout(None) {
-        tracing::warn!("handle channel: clearing read_timeout failed: {e}");
+    tracing::debug!(
+        "handle channel: plugin '{}' authenticated on aux channel",
+        auth.plugin_id
+    );
+    if let Err(e) = tx.send(HandleStream::from_unix(stream)) {
+        tracing::warn!(
+            "handle channel: plugin '{}' handle stream handoff failed: {e}",
+            auth.plugin_id
+        );
     }
+}
 
-    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+/// 성공 auth_ack 송신. 실패하면 warn 후 false(caller 는 그대로 drop).
+#[cfg(unix)]
+fn send_auth_ack_unix_ok(stream: &std::os::unix::net::UnixStream, auth: &AuthMessage) -> bool {
+    if let Err(e) = send_auth_ack_unix(stream, true, None) {
+        tracing::warn!(
+            "handle channel: plugin '{}' auth_ack send failed: {e} — dropping",
+            auth.plugin_id
+        );
+        return false;
+    }
+    true
+}
 
-    match tx_opt {
-        Some(tx) => {
-            if let Err(e) = send_auth_ack_unix(&stream, true, None) {
-                tracing::warn!(
-                    "handle channel: plugin '{}' auth_ack send failed: {e} — dropping",
-                    auth.plugin_id
-                );
-                return;
-            }
-            tracing::debug!(
-                "handle channel: plugin '{}' authenticated on aux channel",
-                auth.plugin_id
-            );
-            if let Err(e) = tx.send(HandleStream::from_unix(stream)) {
-                tracing::warn!(
-                    "handle channel: plugin '{}' handle stream handoff failed: {e}",
-                    auth.plugin_id
-                );
-            }
-        }
-        None => {
-            tracing::warn!(
-                "handle channel: auth with unknown/expired token (plugin_id={})",
-                auth.plugin_id
-            );
-            if let Err(e) = send_auth_ack_unix(&stream, false, Some("token mismatch")) {
-                tracing::debug!("handle channel: auth_ack(false) send failed: {e}");
-            }
-        }
+/// 토큰 매칭 실패(unknown/expired) — 거부 ack 송신 후 drop.
+#[cfg(unix)]
+fn reject_handshake_unix(stream: &std::os::unix::net::UnixStream, auth: &AuthMessage) {
+    tracing::warn!(
+        "handle channel: auth with unknown/expired token (plugin_id={})",
+        auth.plugin_id
+    );
+    if let Err(e) = send_auth_ack_unix(stream, false, Some("token mismatch")) {
+        tracing::debug!("handle channel: auth_ack(false) send failed: {e}");
     }
 }
 

@@ -320,50 +320,74 @@ fn sync_builtin_dev(
     spec: &BuiltinSpec,
 ) -> bool {
     let plugin_bin = exe_dir.join(spec.bin_name);
-    let src_manifest = workspace
-        .join("crates")
-        .join(spec.crate_dir)
-        .join("tasty-plugin.toml");
+    let crate_dir = workspace.join("crates").join(spec.crate_dir);
+    let src_manifest = crate_dir.join("tasty-plugin.toml");
     if !plugin_bin.exists() || !src_manifest.exists() {
         return false;
     }
 
     let dest_dir = bundle_root.join(spec.id);
-    if let Err(e) = std::fs::create_dir_all(&dest_dir) {
-        tracing::warn!("dev bundle: mkdir {} failed: {e}", dest_dir.display());
+    if !sync_builtin_dev_required(&plugin_bin, &src_manifest, &dest_dir, spec) {
         return false;
     }
-    if let Err(e) = copy_if_newer(&src_manifest, &dest_dir.join("tasty-plugin.toml")) {
-        tracing::warn!("dev bundle: copy manifest for {} failed: {e}", spec.id);
+    sync_builtin_dev_sig(&crate_dir, &dest_dir, spec);
+    sync_builtin_dev_lang(&crate_dir, &dest_dir, spec);
+    true
+}
+
+/// mkdir + 매니페스트 + 바이너리 복사 — 이 중 하나라도 실패하면 dev bundle
+/// 자체가 무효(fatal). sig/lang 은 별도 best-effort 스텝으로 분리되어 있다.
+/// 세 스텝을 `&&`로 묶어 첫 실패에서 단락 — 순서·조건은 원본과 동일.
+fn sync_builtin_dev_required(
+    plugin_bin: &Path,
+    src_manifest: &Path,
+    dest_dir: &Path,
+    spec: &BuiltinSpec,
+) -> bool {
+    dev_sync_step(
+        || std::fs::create_dir_all(dest_dir),
+        || format!("dev bundle: mkdir {} failed", dest_dir.display()),
+    ) && dev_sync_step(
+        || copy_if_newer(src_manifest, &dest_dir.join("tasty-plugin.toml")),
+        || format!("dev bundle: copy manifest for {} failed", spec.id),
+    ) && dev_sync_step(
+        || copy_if_newer(plugin_bin, &dest_dir.join(spec.bin_name)),
+        || format!("dev bundle: copy binary for {} failed", spec.id),
+    )
+}
+
+/// 한 fallible 스텝 실행 — 실패 시 `<msg>: <e>` 형식으로 warn 후 `false`.
+fn dev_sync_step(op: impl FnOnce() -> std::io::Result<()>, msg: impl FnOnce() -> String) -> bool {
+    if let Err(e) = op() {
+        tracing::warn!("{}: {e}", msg());
         return false;
     }
-    // 매니페스트 서명 sidecar(.sig)가 있으면 함께 동기화한다. 없으면 (미서명 dev
-    // workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하지만,
-    // release/dist 산출물을 *직접 실행* 할 때는 sign-bundle.sh 로 생성된 .sig 가
-    // bundle 에 있어야 install 후 trust gate(임베드 dev-pubkey)를 통과한다.
-    // 복사 실패는 비치명 (debug 는 어차피 우회) 이므로 warn 만 남긴다.
-    let src_sig = workspace
-        .join("crates")
-        .join(spec.crate_dir)
-        .join("tasty-plugin.toml.sig");
+    true
+}
+
+/// 매니페스트 서명 sidecar(.sig)가 있으면 함께 동기화한다. 없으면 (미서명 dev
+/// workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하지만,
+/// release/dist 산출물을 *직접 실행* 할 때는 sign-bundle.sh 로 생성된 .sig 가
+/// bundle 에 있어야 install 후 trust gate(임베드 dev-pubkey)를 통과한다.
+/// 복사 실패는 비치명 (debug 는 어차피 우회) 이므로 warn 만 남긴다.
+fn sync_builtin_dev_sig(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) {
+    let src_sig = crate_dir.join("tasty-plugin.toml.sig");
     if src_sig.exists()
         && let Err(e) = copy_if_newer(&src_sig, &dest_dir.join("tasty-plugin.toml.sig"))
     {
         tracing::warn!("dev bundle: copy sig for {} failed: {e}", spec.id);
     }
-    if let Err(e) = copy_if_newer(&plugin_bin, &dest_dir.join(spec.bin_name)) {
-        tracing::warn!("dev bundle: copy binary for {} failed: {e}", spec.id);
-        return false;
-    }
-    // plugin lang/ 디렉토리도 함께 동기화 (i18n 키 호스트 머지에 필요).
-    let src_lang = workspace.join("crates").join(spec.crate_dir).join("lang");
+}
+
+/// plugin lang/ 디렉토리도 함께 동기화 (i18n 키 호스트 머지에 필요) — best-effort.
+fn sync_builtin_dev_lang(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) {
+    let src_lang = crate_dir.join("lang");
     if src_lang.is_dir() {
         let dest_lang = dest_dir.join("lang");
         if let Err(e) = sync_dir_if_newer(&src_lang, &dest_lang) {
             tracing::warn!("dev bundle: copy lang for {} failed: {e}", spec.id);
         }
     }
-    true
 }
 
 fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -522,13 +546,19 @@ fn install_builtin_bundle_step(
     if already_present {
         install_builtin_overwrite_present(spec, &src, dest)
     } else {
-        if let Err(e) = copy_dir_recursive(&src, dest) {
-            tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
-            return true;
-        }
-        tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
-        false
+        install_builtin_fresh_copy(spec, &src, dest)
     }
+}
+
+/// 사용자 디렉터리에 아직 없는 builtin 을 번들에서 신규 복사.
+/// 반환값: `true` 면 실패(warn 후 계속) — caller 는 Step 2 skip.
+fn install_builtin_fresh_copy(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bool {
+    if let Err(e) = copy_dir_recursive(src, dest) {
+        tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
+        return true;
+    }
+    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+    false
 }
 
 /// already-present builtin 을 번들 대비 갱신 (install 경로는 항상 force=true → 무조건 덮어씀).
@@ -538,47 +568,62 @@ fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path
     let bundle_v = read_bundle_version(src);
     match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), true) {
         BuiltinUpgradeDecision::Skip => {
-            tracing::debug!(
-                "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
-                spec.id,
-                installed_v.as_ref().map(|v| v.to_string()),
-                bundle_v.as_ref().map(|v| v.to_string()),
-            );
+            log_builtin_up_to_date(spec.id, installed_v.as_ref(), bundle_v.as_ref());
             false
         }
         BuiltinUpgradeDecision::ResyncSameVersion => {
-            if let Err(e) = sync_dir_recursive_if_newer(src, dest) {
-                tracing::warn!("install_builtins: resync '{}' failed: {e}", spec.id);
-                return true;
-            }
-            false
+            run_dir_sync_step(|| sync_dir_recursive_if_newer(src, dest), spec.id, "resync")
         }
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
             tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
-            if let Err(e) = overwrite_builtin_dir(src, dest) {
-                tracing::warn!("install_builtins: upgrade '{}' failed: {e}", spec.id);
-                return true;
-            }
-            false
+            run_dir_sync_step(|| overwrite_builtin_dir(src, dest), spec.id, "upgrade")
         }
         BuiltinUpgradeDecision::ForceOverwrite => {
             // TASTY_FORCE_BUILTIN_OVERWRITE 경로 — 버전/mtime 무시하고 덮어쓴다.
-            tracing::info!(
-                "force-overwriting builtin '{}' (installed v{:?}, bundle v{:?})",
+            log_builtin_force_overwrite(spec.id, installed_v.as_ref(), bundle_v.as_ref());
+            run_dir_sync_step(
+                || overwrite_builtin_dir(src, dest),
                 spec.id,
-                installed_v.as_ref().map(|v| v.to_string()),
-                bundle_v.as_ref().map(|v| v.to_string()),
-            );
-            if let Err(e) = overwrite_builtin_dir(src, dest) {
-                tracing::warn!(
-                    "install_builtins: force-overwrite '{}' failed: {e}",
-                    spec.id
-                );
-                return true;
-            }
-            false
+                "force-overwrite",
+            )
         }
     }
+}
+
+fn log_builtin_up_to_date(
+    id: &str,
+    installed_v: Option<&semver::Version>,
+    bundle_v: Option<&semver::Version>,
+) {
+    tracing::debug!(
+        "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
+        id,
+        installed_v.map(|v| v.to_string()),
+        bundle_v.map(|v| v.to_string()),
+    );
+}
+
+fn log_builtin_force_overwrite(
+    id: &str,
+    installed_v: Option<&semver::Version>,
+    bundle_v: Option<&semver::Version>,
+) {
+    tracing::info!(
+        "force-overwriting builtin '{}' (installed v{:?}, bundle v{:?})",
+        id,
+        installed_v.map(|v| v.to_string()),
+        bundle_v.map(|v| v.to_string()),
+    );
+}
+
+/// 디렉터리 동기화 스텝 실행 공통 헬퍼 — 실패 시 `install_builtins: <verb> '<id>' failed`
+/// 형식으로 warn 후 `true`(실패) 반환, 성공 시 `false`.
+fn run_dir_sync_step(op: impl FnOnce() -> std::io::Result<()>, id: &str, verb: &str) -> bool {
+    if let Err(e) = op() {
+        tracing::warn!("install_builtins: {verb} '{id}' failed: {e}");
+        return true;
+    }
+    false
 }
 
 /// `install_builtins_if_needed` Step 2 — dest 존재 시 매니페스트 권한을 grant entry에 반영.
@@ -734,23 +779,34 @@ fn restore_removed_builtins(
     restore_removed: &[String],
     restore_all: bool,
 ) {
-    let mut removed_cleared = false;
-    if restore_all {
-        if mgr.config.clear_removed_builtins() {
-            removed_cleared = true;
-            tracing::info!("upgrade_builtins: cleared all removed_builtins (restore_all)");
-        }
-    } else {
-        for id in restore_removed {
-            if mgr.config.unmark_builtin_removed(id) {
-                removed_cleared = true;
-                tracing::info!("upgrade_builtins: restored '{id}' from removed_builtins");
-            }
-        }
-    }
+    let removed_cleared = apply_restore_removed(mgr, restore_removed, restore_all);
     if removed_cleared && let Err(e) = mgr.config.save() {
         tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
     }
+}
+
+/// `restore_all` 이면 전체 clear(명시된 id 무시), 아니면 명시된 id 만 unmark.
+/// 반환값: 하나라도 실제로 바뀌었으면 `true`(caller 가 save 여부 판단).
+fn apply_restore_removed(
+    mgr: &mut PluginManager,
+    restore_removed: &[String],
+    restore_all: bool,
+) -> bool {
+    if restore_all {
+        let cleared = mgr.config.clear_removed_builtins();
+        if cleared {
+            tracing::info!("upgrade_builtins: cleared all removed_builtins (restore_all)");
+        }
+        return cleared;
+    }
+    let mut removed_cleared = false;
+    for id in restore_removed {
+        if mgr.config.unmark_builtin_removed(id) {
+            removed_cleared = true;
+            tracing::info!("upgrade_builtins: restored '{id}' from removed_builtins");
+        }
+    }
+    removed_cleared
 }
 
 /// 한 builtin spec 의 upgrade 처리 결과. `changed` 면 caller 가 changed_ids 에 push.

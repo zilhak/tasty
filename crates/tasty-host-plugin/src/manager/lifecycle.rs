@@ -161,21 +161,7 @@ impl PluginManager {
             tracing::info!("plugin auto-reload: enabled (TASTY_PLUGIN_AUTO_RELOAD)");
         }
         self.refresh_packages();
-
-        // command registry에 모든 발견된 plugin의 commands를 등록.
-        // disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을
-        // 보여줘야 사용자가 미리 키를 잡아둘 수 있다.
-        self.command_registry = crate::command_registry::PluginCommandRegistry::new();
-        for pkg in &self.packages {
-            self.command_registry.register_plugin(&pkg.manifest);
-            // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
-            // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
-            let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
-            if let Some(reg) = &self.i18n_registrar {
-                reg.register(&pkg.manifest.id, &lang_dir);
-            }
-        }
-
+        self.register_all_package_commands();
         self.recompute_extensions();
 
         let to_start: Vec<String> = self
@@ -193,49 +179,82 @@ impl PluginManager {
         }
         self.ensure_listener();
         for id in &to_start {
-            if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() {
-                // 부팅 경로에서도 enable() 과 대칭으로 정적 contribute 를 두 registry 에
-                // 등록한다. spawn 성공 여부와 무관하게 detector/handler 가 즉시
-                // 활성화되도록 start_plugin_internal(spawn) 과 분리해 enabled 판정 직후
-                // install. (멱등 — push_contribution 이 같은 owner 를 retain 으로 교체.)
-                self.file_format
-                    .install_plugin_detectors(&pkg.manifest.id, &pkg.manifest.contributes.detector);
-                self.file_handler
-                    .install_plugin_handlers(&pkg.manifest.id, &pkg.manifest.contributes.handler);
-                if let Some(hh) = &self.hook_handler {
-                    hh.install_plugin_hook_handlers(
-                        &pkg.manifest.id,
-                        &pkg.manifest.contributes.hook_handler,
-                    );
-                }
-                self.start_plugin_internal(&pkg);
+            self.start_enabled_package(id);
+        }
+    }
+
+    /// command registry에 모든 발견된 plugin의 commands를 등록.
+    /// disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을
+    /// 보여줘야 사용자가 미리 키를 잡아둘 수 있다.
+    fn register_all_package_commands(&mut self) {
+        self.command_registry = crate::command_registry::PluginCommandRegistry::new();
+        for pkg in &self.packages {
+            self.command_registry.register_plugin(&pkg.manifest);
+            // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
+            // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
+            let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
+            if let Some(reg) = &self.i18n_registrar {
+                reg.register(&pkg.manifest.id, &lang_dir);
             }
         }
     }
 
+    /// `discover_and_start` 부팅 경로 — enable() 과 대칭으로 정적 contribute 를
+    /// 등록 후 spawn 시도. `id` 가 packages 에 없으면(레이스) no-op.
+    fn start_enabled_package(&mut self, id: &str) {
+        let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() else {
+            return;
+        };
+        // 부팅 경로에서도 enable() 과 대칭으로 정적 contribute 를 두 registry 에
+        // 등록한다. spawn 성공 여부와 무관하게 detector/handler 가 즉시
+        // 활성화되도록 start_plugin_internal(spawn) 과 분리해 enabled 판정 직후
+        // install. (멱등 — push_contribution 이 같은 owner 를 retain 으로 교체.)
+        self.file_format
+            .install_plugin_detectors(&pkg.manifest.id, &pkg.manifest.contributes.detector);
+        self.file_handler
+            .install_plugin_handlers(&pkg.manifest.id, &pkg.manifest.contributes.handler);
+        if let Some(hh) = &self.hook_handler {
+            hh.install_plugin_hook_handlers(
+                &pkg.manifest.id,
+                &pkg.manifest.contributes.hook_handler,
+            );
+        }
+        self.start_plugin_internal(&pkg);
+    }
+
     fn ensure_listener(&mut self) {
-        if self.listener.is_none() {
-            match HostListener::bind() {
-                Ok(l) => {
-                    tracing::info!("plugin host listener on 127.0.0.1:{}", l.port());
-                    self.listener = Some(l);
-                }
-                Err(e) => {
-                    tracing::error!("plugin host listener bind failed: {e}");
-                }
+        self.ensure_tcp_listener();
+        self.ensure_handle_listener();
+    }
+
+    fn ensure_tcp_listener(&mut self) {
+        if self.listener.is_some() {
+            return;
+        }
+        match HostListener::bind() {
+            Ok(l) => {
+                tracing::info!("plugin host listener on 127.0.0.1:{}", l.port());
+                self.listener = Some(l);
+            }
+            Err(e) => {
+                tracing::error!("plugin host listener bind failed: {e}");
             }
         }
-        if self.handle_listener.is_none() {
-            match HandleListener::bind() {
-                Ok(l) => {
-                    tracing::info!("plugin handle channel listener at {}", l.endpoint());
-                    self.handle_listener = Some(l);
-                }
-                Err(e) => {
-                    // 보조 채널 없이도 plugin 본 기능은 동작. shared buffer를 쓰는 plugin만
-                    // 이후 핸드셰이크 단계에서 실패.
-                    tracing::warn!("plugin handle channel listener bind failed: {e}");
-                }
+    }
+
+    fn ensure_handle_listener(&mut self) {
+        if self.handle_listener.is_some() {
+            return;
+        }
+        match HandleListener::bind() {
+            Ok(l) => {
+                tracing::info!("plugin handle channel listener at {}", l.endpoint());
+                self.handle_listener = Some(l);
+            }
+            Err(e) => {
+                // 보조 채널 없이도 plugin 본 기능은 동작. shared buffer를 쓰는 plugin만
+                // 이후 핸드셰이크 단계에서 실패.
+                tracing::warn!("plugin handle channel listener bind failed: {e}");
             }
         }
     }
@@ -259,49 +278,57 @@ impl PluginManager {
             self.waker.clone(),
             &self.plugin_reaper,
         ) {
-            Ok(p) => {
-                tracing::info!("plugin started: {}", p.plugin_id);
-                self.processes.insert(pkg.manifest.id.clone(), p);
-                self.spawn_failures.remove(&pkg.manifest.id);
-                // H.b — spawn 성공 분기에서만 baseline 캡처. 무한 swap loop 회피용
-                // 기준점. 실패 시 entry 가 디스크에 없거나 metadata 실패해도
-                // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
-                // 없으면 skip.
-                self.capture_plugin_baseline(&pkg.manifest.id);
-                // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
-                // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
-                // 발화는 제거 (이중 발화 회피).
-                // manifest의 ipc_namespace contribute를 registry에 흡수.
-                for ns in &pkg.manifest.contributes.ipc_namespace {
-                    if let Err(e) = self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix) {
-                        tracing::warn!(
-                            "plugin '{}' ipc namespace registration failed: {}",
-                            pkg.manifest.id,
-                            e
-                        );
-                        continue;
-                    }
-                    // G.D.b — `tasty-ipc::method_meta` runtime registry 도 mirror
-                    // 등록. host registry 실패한 prefix 는 runtime mirror 도 skip
-                    // 하여 두 registry 의 *항상 동조* 불변식 유지.
-                    tasty_ipc::method_meta::register_plugin_prefix(&ns.prefix);
-                }
-            }
-            Err(e) => {
-                tracing::error!("plugin '{}' spawn failed: {}", pkg.manifest.id, e);
-                {
-                    use tasty_plugin_protocol::EventScope;
-                    use tasty_plugin_protocol::events::payloads::PluginError;
-                    let payload = PluginError {
-                        plugin_id: pkg.manifest.id.clone(),
-                        error_kind: "spawn_failed".to_string(),
-                        message: e.to_string(),
-                    };
-                    self.emit_host_event("plugin.error", &payload, EventScope::System);
-                }
-                self.record_spawn_failure(&pkg.manifest.id);
-            }
+            Ok(p) => self.on_plugin_spawn_success(pkg, p),
+            Err(e) => self.on_plugin_spawn_failure(pkg, e),
         }
+    }
+
+    fn on_plugin_spawn_success(&mut self, pkg: &PluginPackage, p: PluginProcess) {
+        tracing::info!("plugin started: {}", p.plugin_id);
+        self.processes.insert(pkg.manifest.id.clone(), p);
+        self.spawn_failures.remove(&pkg.manifest.id);
+        // H.b — spawn 성공 분기에서만 baseline 캡처. 무한 swap loop 회피용
+        // 기준점. 실패 시 entry 가 디스크에 없거나 metadata 실패해도
+        // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
+        // 없으면 skip.
+        self.capture_plugin_baseline(&pkg.manifest.id);
+        // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
+        // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
+        // 발화는 제거 (이중 발화 회피).
+        self.register_plugin_ipc_namespaces(pkg);
+    }
+
+    /// manifest의 ipc_namespace contribute를 registry에 흡수(host + runtime mirror).
+    fn register_plugin_ipc_namespaces(&mut self, pkg: &PluginPackage) {
+        for ns in &pkg.manifest.contributes.ipc_namespace {
+            if let Err(e) = self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix) {
+                tracing::warn!(
+                    "plugin '{}' ipc namespace registration failed: {}",
+                    pkg.manifest.id,
+                    e
+                );
+                continue;
+            }
+            // G.D.b — `tasty-ipc::method_meta` runtime registry 도 mirror
+            // 등록. host registry 실패한 prefix 는 runtime mirror 도 skip
+            // 하여 두 registry 의 *항상 동조* 불변식 유지.
+            tasty_ipc::method_meta::register_plugin_prefix(&ns.prefix);
+        }
+    }
+
+    fn on_plugin_spawn_failure(&mut self, pkg: &PluginPackage, e: anyhow::Error) {
+        tracing::error!("plugin '{}' spawn failed: {}", pkg.manifest.id, e);
+        {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::PluginError;
+            let payload = PluginError {
+                plugin_id: pkg.manifest.id.clone(),
+                error_kind: "spawn_failed".to_string(),
+                message: e.to_string(),
+            };
+            self.emit_host_event("plugin.error", &payload, EventScope::System);
+        }
+        self.record_spawn_failure(&pkg.manifest.id);
     }
 
     fn record_spawn_failure(&mut self, plugin_id: &str) {

@@ -157,6 +157,12 @@ impl PluginManager {
     /// 단일 `PluginEvent` 를 종류별 누산기로 분류. 부수효과 없이 `out` 에만
     /// push 하며(Log 만 즉시 로깅 — 원본 동일), 누산기 mutation 을 원본 arm 과
     /// 1:1 로 유지한다.
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: PluginEvent 종류별
+    // 12-arm 평면 dispatch — 각 arm 은 얕은 단일 push/log 이며 중첩이 없다(Log
+    // arm 내부의 level 3-way match 만 예외). 이벤트 종류 수는 프로토콜이 정의한
+    // 열거형 variant 개수의 필연이라, arm 을 별 함수로 쪼개도 이 함수가 인지해야
+    // 하는 분기 수 자체는 줄지 않는다 — complexity-gate.md 의 "평면 match
+    // 디스패치(arm 많으나 중첩 얕음)" 전형적 정당 초과 케이스.
     fn classify_event(&self, id: &str, ev: PluginEvent, out: &mut CollectedPluginEvents) {
         match ev {
             PluginEvent::Hello { plugin_id, version } => {
@@ -305,13 +311,7 @@ impl PluginManager {
             disconnected,
         } = collected;
 
-        // 죽은 plugin 의 egui-mesh frame 을 즉시 비운다 — 60초 healthcheck 를 기다리지
-        // 않고 surface 를 blank 로 전환해 stale mesh 합성을 막는다 (research-a1 §9-7).
-        for dead in &disconnected {
-            self.egui_mesh_frames.retain(|_, f| &f.plugin_id != dead);
-            self.popup_mesh_frames.retain(|_, f| &f.plugin_id != dead);
-            self.banner_mesh_frames.retain(|_, f| &f.plugin_id != dead);
-        }
+        self.clear_dead_plugin_frames(&disconnected);
         if !new_calls.is_empty() {
             self.pending_plugin_calls.extend(new_calls);
         }
@@ -330,13 +330,36 @@ impl PluginManager {
         for (plugin_id, buffer_id) in released_buffers {
             self.release_plugin_buffer(&plugin_id, buffer_id);
         }
+        self.log_hello_and_check_drift(hello_log);
+        let hello_pairs = self.register_new_hellos(&to_register);
+        self.apply_event_bus_changes(
+            new_event_subscribes,
+            new_event_unsubscribes,
+            new_event_publishes,
+        );
+
+        hello_pairs
+    }
+
+    /// 죽은(disconnected) plugin 이 남긴 egui-mesh/popup/banner frame 메타를 즉시
+    /// 비운다 — 60초 healthcheck 를 기다리지 않고 surface 를 blank 로 전환해 stale
+    /// mesh 합성을 막는다 (research-a1 §9-7).
+    fn clear_dead_plugin_frames(&mut self, disconnected: &[String]) {
+        for dead in disconnected {
+            self.egui_mesh_frames.retain(|_, f| &f.plugin_id != dead);
+            self.popup_mesh_frames.retain(|_, f| &f.plugin_id != dead);
+            self.banner_mesh_frames.retain(|_, f| &f.plugin_id != dead);
+        }
+    }
+
+    /// hello 수신 로그와 버전 drift 경고(바이너리 hello 보고 버전 vs 설치 매니페스트
+    /// 버전 불일치). dev bundle 은 매니페스트(소스)와 바이너리(target exe)를
+    /// 독립적으로 copy_if_newer 하므로, plugin 을 재빌드하지 않으면 최신 매니페스트와
+    /// stale exe 조합이 조용히 설치된다 — e2e markdown.recent 회귀의 원인.
+    /// 동작은 막지 않고(런타임 호환 판정은 api_version 몫) 소리만 낸다.
+    fn log_hello_and_check_drift(&self, hello_log: Vec<(String, String)>) {
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
-            // drift 감지: 바이너리(hello 보고 버전)와 설치 매니페스트 버전 불일치.
-            // dev bundle 은 매니페스트(소스)와 바이너리(target exe)를 독립적으로
-            // copy_if_newer 하므로, plugin 을 재빌드하지 않으면 "최신 매니페스트 +
-            // stale exe" 조합이 조용히 설치된다 — e2e markdown.recent 회귀의 원인.
-            // 동작은 막지 않고(런타임 호환 판정은 api_version 몫) 소리만 낸다.
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id)
                 && pkg.manifest.version != version
             {
@@ -347,9 +370,15 @@ impl PluginManager {
                 );
             }
         }
-        let hello_pairs = self.register_new_hellos(&to_register);
+    }
 
-        // Event Bus: plugin이 보낸 subscribe/unsubscribe/publish 처리.
+    /// Event Bus: plugin이 보낸 subscribe/unsubscribe/publish 를 원본 순서대로 처리.
+    fn apply_event_bus_changes(
+        &mut self,
+        new_event_subscribes: Vec<(String, u64, String)>,
+        new_event_unsubscribes: Vec<(String, u64)>,
+        new_event_publishes: Vec<(String, tasty_plugin_protocol::EventEnvelope)>,
+    ) {
         for (plugin_id, sub_id, pattern) in new_event_subscribes {
             if let Err(e) = self
                 .event_bus
@@ -364,8 +393,6 @@ impl PluginManager {
         for (plugin_id, envelope) in new_event_publishes {
             self.route_plugin_event_publish(&plugin_id, envelope);
         }
-
-        hello_pairs
     }
 
     /// hello 를 처음 받은 plugin 의 권한 set / event_bus 패턴 / settings_pages 동기화.

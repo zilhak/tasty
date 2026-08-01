@@ -46,59 +46,24 @@ impl PluginManager {
             PendingRequestKind::SurfaceCreate { surface_id }
             | PendingRequestKind::SurfaceRestore { surface_id }
             | PendingRequestKind::CommandInvoke { surface_id } => {
-                let result_value = match resp.result {
-                    Some(v) => v,
-                    None => return,
-                };
-                let parsed: SurfaceResult = match serde_json::from_value(result_value) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::warn!("plugin '{plugin_id}' surface response decode error: {e}");
-                        return;
-                    }
-                };
-                if let Some(entry) = self.surfaces.get(&surface_id) {
-                    if let Some(name) = parsed.display_name
-                        && let Ok(mut slot) = entry.handles.display_name.lock()
-                    {
-                        *slot = name;
-                    }
-                    if let Some(snapshot) = parsed.snapshot
-                        && let Ok(mut slot) = entry.handles.snapshot_cache.lock()
-                    {
-                        *slot = Some(snapshot);
-                    }
-                }
+                self.apply_surface_response(plugin_id, surface_id, resp.result);
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
-                // egui-mesh popup 은 open 응답에 별도 콘텐츠 계약이 없다 — 디코드만
-                // 검증하고 성공은 무시한다.
-                let result_value = match resp.result {
-                    Some(v) => v,
-                    None => return,
-                };
-                if let Err(e) = serde_json::from_value::<protocol::PopupOpenResult>(result_value) {
-                    tracing::warn!(
-                        "plugin '{plugin_id}' popup.open response decode error (instance {instance_id}): {e}"
-                    );
-                }
+                handle_popup_open_response(plugin_id, instance_id, resp.result);
             }
             PendingRequestKind::NamespaceInvoke {
                 plugin_id: _,
                 response_tx,
                 original_id,
             } => {
-                let response = if let Some(err) = resp.error {
-                    let code = resp.error_code.unwrap_or(-32000);
-                    JsonRpcResponse::error(original_id, code, &err)
-                } else {
-                    JsonRpcResponse::success(
-                        original_id,
-                        resp.result.unwrap_or(serde_json::Value::Null),
-                    )
-                };
-                send_response(&response_tx, response);
+                send_namespace_result(
+                    &response_tx,
+                    original_id,
+                    resp.error,
+                    resp.error_code,
+                    resp.result,
+                );
             }
             PendingRequestKind::PluginToPluginNamespace {
                 plugin_id: _,
@@ -153,11 +118,7 @@ impl PluginManager {
                 final_caller,
                 deadline: _,
             } => {
-                if resp.error.is_some() {
-                    self.record_hook_failure(&extension_plugin_id, &method);
-                } else {
-                    self.record_hook_success(&extension_plugin_id, &method);
-                }
+                self.record_hook_outcome(&extension_plugin_id, &method, resp.error.is_some());
                 self.handle_post_ipc_hook_response(
                     post_hook_mode,
                     target_outcome,
@@ -187,11 +148,7 @@ impl PluginManager {
                 event_key,
                 deadline: _,
             } => {
-                if resp.error.is_some() {
-                    self.record_hook_failure(&extension_plugin_id, &event_key);
-                } else {
-                    self.record_hook_success(&extension_plugin_id, &event_key);
-                }
+                self.record_hook_outcome(&extension_plugin_id, &event_key, resp.error.is_some());
                 // post-event는 결과를 무시 (이미 fan-out 완료).
             }
             #[cfg(debug_assertions)]
@@ -199,17 +156,57 @@ impl PluginManager {
                 response_tx,
                 original_id,
             } => {
-                let response = if let Some(err) = resp.error {
-                    let code = resp.error_code.unwrap_or(-32000);
-                    JsonRpcResponse::error(original_id, code, &err)
-                } else {
-                    JsonRpcResponse::success(
-                        original_id,
-                        resp.result.unwrap_or(serde_json::Value::Null),
-                    )
-                };
-                send_response(&response_tx, response);
+                send_namespace_result(
+                    &response_tx,
+                    original_id,
+                    resp.error,
+                    resp.error_code,
+                    resp.result,
+                );
             }
+        }
+    }
+
+    /// post-hook 응답의 성공/실패를 hook 실패 카운터에 반영하는 공통 스텝
+    /// (ExtensionPostIpcHook/ExtensionPostEventHook 두 arm 이 공유).
+    fn record_hook_outcome(&mut self, extension_id: &str, key: &str, failed: bool) {
+        if failed {
+            self.record_hook_failure(extension_id, key);
+        } else {
+            self.record_hook_success(extension_id, key);
+        }
+    }
+
+    /// `SurfaceCreate`/`SurfaceRestore`/`CommandInvoke` 공통 응답 처리 —
+    /// display_name/snapshot 동기화. 결과 없음/디코드 실패/surface 미존재는 조용히 skip.
+    fn apply_surface_response(
+        &mut self,
+        plugin_id: &str,
+        surface_id: u32,
+        result: Option<serde_json::Value>,
+    ) {
+        let Some(result_value) = result else {
+            return;
+        };
+        let parsed: SurfaceResult = match serde_json::from_value(result_value) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("plugin '{plugin_id}' surface response decode error: {e}");
+                return;
+            }
+        };
+        let Some(entry) = self.surfaces.get(&surface_id) else {
+            return;
+        };
+        if let Some(name) = parsed.display_name
+            && let Ok(mut slot) = entry.handles.display_name.lock()
+        {
+            *slot = name;
+        }
+        if let Some(snapshot) = parsed.snapshot
+            && let Ok(mut slot) = entry.handles.snapshot_cache.lock()
+        {
+            *slot = Some(snapshot);
         }
     }
 
@@ -403,8 +400,18 @@ impl PluginManager {
     /// 타임아웃된 pre/post hook pending을 sweep해서 fail-open 처리.
     pub(super) fn sweep_expired_hooks(&mut self) {
         let now = Instant::now();
-        let expired: Vec<u64> = self
-            .pending_requests
+        let expired = self.collect_expired_hook_ids(now);
+        for id in expired {
+            if let Some(kind) = self.pending_requests.remove(&id) {
+                self.fail_open_expired_hook(kind);
+            }
+        }
+    }
+
+    /// 현재 pending 중인 4종 hook(pre/post × ipc/event) 요청 가운데 `now` 시점
+    /// deadline 을 넘긴 request id 목록.
+    fn collect_expired_hook_ids(&self, now: Instant) -> Vec<u64> {
+        self.pending_requests
             .iter()
             .filter_map(|(id, kind)| match kind {
                 PendingRequestKind::ExtensionPreIpcHook { deadline, .. }
@@ -415,84 +422,126 @@ impl PluginManager {
                 }
                 _ => None,
             })
-            .collect();
-        for id in expired {
-            let kind = match self.pending_requests.remove(&id) {
-                Some(k) => k,
-                None => continue,
-            };
-            match kind {
-                PendingRequestKind::ExtensionPreIpcHook {
-                    target_plugin_id,
-                    extension_plugin_id,
-                    method,
-                    params,
-                    pre_hook_mode: _,
-                    final_caller,
-                    post_hook,
-                    deadline: _,
-                } => {
-                    tracing::warn!(
-                        "pre-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
-                    );
-                    self.record_hook_failure(&extension_plugin_id, &method);
-                    let post_pair = post_hook.map(|p| (extension_plugin_id.clone(), p));
-                    self.dispatch_target_invoke(
-                        target_plugin_id,
-                        method,
-                        params,
-                        None,
-                        final_caller,
-                        post_pair,
-                    );
-                }
-                PendingRequestKind::ExtensionPostIpcHook {
-                    extension_plugin_id,
-                    method,
-                    post_hook_mode: _,
-                    target_outcome,
-                    final_caller,
-                    deadline: _,
-                } => {
-                    tracing::warn!(
-                        "post-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
-                    );
-                    self.record_hook_failure(&extension_plugin_id, &method);
-                    self.finalize_target_outcome(final_caller, target_outcome);
-                }
-                PendingRequestKind::ExtensionPreEventHook {
-                    publisher_plugin_id,
-                    extension_plugin_id,
-                    envelope,
-                    pre_hook_mode: _,
-                    post_hook,
-                    deadline: _,
-                } => {
-                    tracing::warn!(
-                        "pre-event-hook timeout: ext='{extension_plugin_id}' event='{}' — fail-open",
-                        envelope.key
-                    );
-                    self.record_hook_failure(&extension_plugin_id, &envelope.key);
-                    self.fan_out_then_post(
-                        &publisher_plugin_id,
-                        envelope,
-                        extension_plugin_id,
-                        post_hook,
-                    );
-                }
-                PendingRequestKind::ExtensionPostEventHook {
-                    extension_plugin_id,
-                    event_key,
-                    deadline: _,
-                } => {
-                    tracing::warn!(
-                        "post-event-hook timeout: ext='{extension_plugin_id}' event='{event_key}'"
-                    );
-                    self.record_hook_failure(&extension_plugin_id, &event_key);
-                }
-                _ => {}
-            }
+            .collect()
+    }
+
+    /// 타임아웃된 hook 요청 한 건을 fail-open 처리 — target/publisher 는 원본
+    /// payload 로 그대로 진행시키고, 해당 extension 은 실패로 기록한다.
+    fn fail_open_expired_hook(&mut self, kind: PendingRequestKind) {
+        match kind {
+            PendingRequestKind::ExtensionPreIpcHook {
+                target_plugin_id,
+                extension_plugin_id,
+                method,
+                params,
+                pre_hook_mode: _,
+                final_caller,
+                post_hook,
+                deadline: _,
+            } => self.fail_open_pre_ipc_hook(
+                target_plugin_id,
+                extension_plugin_id,
+                method,
+                params,
+                final_caller,
+                post_hook,
+            ),
+            PendingRequestKind::ExtensionPostIpcHook {
+                extension_plugin_id,
+                method,
+                post_hook_mode: _,
+                target_outcome,
+                final_caller,
+                deadline: _,
+            } => self.fail_open_post_ipc_hook(
+                extension_plugin_id,
+                method,
+                target_outcome,
+                final_caller,
+            ),
+            PendingRequestKind::ExtensionPreEventHook {
+                publisher_plugin_id,
+                extension_plugin_id,
+                envelope,
+                pre_hook_mode: _,
+                post_hook,
+                deadline: _,
+            } => self.fail_open_pre_event_hook(
+                publisher_plugin_id,
+                extension_plugin_id,
+                envelope,
+                post_hook,
+            ),
+            PendingRequestKind::ExtensionPostEventHook {
+                extension_plugin_id,
+                event_key,
+                deadline: _,
+            } => self.fail_open_post_event_hook(extension_plugin_id, event_key),
+            _ => {}
         }
+    }
+
+    fn fail_open_pre_ipc_hook(
+        &mut self,
+        target_plugin_id: String,
+        extension_plugin_id: String,
+        method: String,
+        params: serde_json::Value,
+        final_caller: FinalCaller,
+        post_hook: Option<IpcHookDecl>,
+    ) {
+        tracing::warn!(
+            "pre-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
+        );
+        self.record_hook_failure(&extension_plugin_id, &method);
+        let post_pair = post_hook.map(|p| (extension_plugin_id.clone(), p));
+        self.dispatch_target_invoke(
+            target_plugin_id,
+            method,
+            params,
+            None,
+            final_caller,
+            post_pair,
+        );
+    }
+
+    fn fail_open_post_ipc_hook(
+        &mut self,
+        extension_plugin_id: String,
+        method: String,
+        target_outcome: TargetOutcome,
+        final_caller: FinalCaller,
+    ) {
+        tracing::warn!(
+            "post-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
+        );
+        self.record_hook_failure(&extension_plugin_id, &method);
+        self.finalize_target_outcome(final_caller, target_outcome);
+    }
+
+    fn fail_open_pre_event_hook(
+        &mut self,
+        publisher_plugin_id: String,
+        extension_plugin_id: String,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+        post_hook: Option<EventHookDecl>,
+    ) {
+        tracing::warn!(
+            "pre-event-hook timeout: ext='{extension_plugin_id}' event='{}' — fail-open",
+            envelope.key
+        );
+        self.record_hook_failure(&extension_plugin_id, &envelope.key);
+        self.fan_out_then_post(
+            &publisher_plugin_id,
+            envelope,
+            extension_plugin_id,
+            post_hook,
+        );
+    }
+
+    fn fail_open_post_event_hook(&mut self, extension_plugin_id: String, event_key: String) {
+        tracing::warn!("post-event-hook timeout: ext='{extension_plugin_id}' event='{event_key}'");
+        self.record_hook_failure(&extension_plugin_id, &event_key);
     }
 
     /// post-hook 응답을 처리. transform이면 result 교체, 그 외는 원 target 응답 사용.
@@ -523,4 +572,39 @@ impl PluginManager {
             }
         }
     }
+}
+
+/// `PopupOpen` 응답 처리 — egui-mesh popup 은 open 응답에 별도 콘텐츠 계약이
+/// 없다. 디코드만 검증하고 성공은 무시한다.
+fn handle_popup_open_response(
+    plugin_id: &str,
+    instance_id: u64,
+    result: Option<serde_json::Value>,
+) {
+    let Some(result_value) = result else {
+        return;
+    };
+    if let Err(e) = serde_json::from_value::<protocol::PopupOpenResult>(result_value) {
+        tracing::warn!(
+            "plugin '{plugin_id}' popup.open response decode error (instance {instance_id}): {e}"
+        );
+    }
+}
+
+/// `NamespaceInvoke`/`DebugExtensionInvokeHook` 공통 응답 회신 — plugin 응답을
+/// `JsonRpcResponse` 로 매핑해 caller 의 `response_tx` 에 그대로 전달한다.
+fn send_namespace_result(
+    response_tx: &mpsc::SyncSender<JsonRpcResponse>,
+    original_id: serde_json::Value,
+    error: Option<String>,
+    error_code: Option<i32>,
+    result: Option<serde_json::Value>,
+) {
+    let response = if let Some(err) = error {
+        let code = error_code.unwrap_or(-32000);
+        JsonRpcResponse::error(original_id, code, &err)
+    } else {
+        JsonRpcResponse::success(original_id, result.unwrap_or(serde_json::Value::Null))
+    };
+    send_response(response_tx, response);
 }

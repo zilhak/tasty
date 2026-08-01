@@ -53,31 +53,42 @@ pub fn discover_with_rejections() -> (Vec<PluginPackage>, Vec<RejectedPlugin>) {
     let mut packages = Vec::new();
     let mut rejected = Vec::new();
     for entry in read_dir.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        if !dir.join("tasty-plugin.toml").exists() {
-            continue;
-        }
-        // F.B.11-4: host file 도메인 결합 (bridge::validate_bin_extras) 은 본
-        // 바이너리 caller (App::plugin_install / cli::plugin / view::add) 가 chain.
-        // discover 자체는 schema 검증만으로 충분 — 잘못된 detector/handler 는
-        // install_plugin_handlers 시점에 거부된다.
-        match Manifest::load(&dir) {
-            Ok(manifest) => match trust_outcome(&dir, &manifest) {
-                TrustOutcome::Trusted => packages.push(PluginPackage { dir, manifest }),
-                TrustOutcome::Rejected(rej) => {
-                    tracing::warn!("plugin '{}' not auto-loaded ({:?})", rej.id, rej.reason);
-                    rejected.push(rej);
-                }
-            },
-            Err(e) => tracing::warn!("plugin '{}' rejected: {}", dir.display(), e),
-        }
+        classify_discovery_entry(entry.path(), &mut packages, &mut rejected);
     }
     packages.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
-
     // (정렬 + dedup 은 trust gate 와 무관 — 위에서 이미 filter 완료.)
+    dedup_packages_by_id(&mut packages);
+    (packages, rejected)
+}
+
+/// 한 디렉토리 항목을 검사해 trust gate 통과 여부에 따라 packages/rejected 에 분류.
+/// plugin 디렉토리가 아니거나 매니페스트가 없으면 조용히 skip.
+fn classify_discovery_entry(
+    dir: PathBuf,
+    packages: &mut Vec<PluginPackage>,
+    rejected: &mut Vec<RejectedPlugin>,
+) {
+    if !dir.is_dir() || !dir.join("tasty-plugin.toml").exists() {
+        return;
+    }
+    // F.B.11-4: host file 도메인 결합 (bridge::validate_bin_extras) 은 본
+    // 바이너리 caller (App::plugin_install / cli::plugin / view::add) 가 chain.
+    // discover 자체는 schema 검증만으로 충분 — 잘못된 detector/handler 는
+    // install_plugin_handlers 시점에 거부된다.
+    match Manifest::load(&dir) {
+        Ok(manifest) => match trust_outcome(&dir, &manifest) {
+            TrustOutcome::Trusted => packages.push(PluginPackage { dir, manifest }),
+            TrustOutcome::Rejected(rej) => {
+                tracing::warn!("plugin '{}' not auto-loaded ({:?})", rej.id, rej.reason);
+                rejected.push(rej);
+            }
+        },
+        Err(e) => tracing::warn!("plugin '{}' rejected: {}", dir.display(), e),
+    }
+}
+
+/// 정렬된 packages 에서 중복 id 를 제거 — 먼저 나온(정렬 후 첫) 항목만 보존.
+fn dedup_packages_by_id(packages: &mut Vec<PluginPackage>) {
     let mut seen = std::collections::HashSet::new();
     packages.retain(|pkg| {
         if seen.contains(&pkg.manifest.id) {
@@ -92,7 +103,6 @@ pub fn discover_with_rejections() -> (Vec<PluginPackage>, Vec<RejectedPlugin>) {
             true
         }
     });
-    (packages, rejected)
 }
 
 /// trust gate 에서 거부된 plugin 한 건. UI "확인 필요" 탭 + 사이드바 경고 배지

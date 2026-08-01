@@ -93,72 +93,18 @@ impl PluginProcess {
         let log_path = log_dir.join(format!("{}.log", sanitize_id(&package.manifest.id)));
         let log_file = std::fs::File::create(&log_path)?;
         let log_clone = log_file.try_clone()?;
-
         let entry_path = package.entry_command_path();
-        let mut cmd = Command::new(&entry_path);
-        // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
-        // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
-        tasty_utils::process::hide_console(&mut cmd);
-        // 플러그인 수명을 호스트에 결박: spawn *전* 준비(Linux PDEATHSIG pre_exec /
-        // macOS TASTY_HOST_PID env 주입). Windows assign 은 spawn *후*(adopt).
-        reaper.prepare(&mut cmd);
-        cmd.args(package.entry_args())
-            .env("TASTY_PLUGIN_ID", &package.manifest.id)
-            .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
-            .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
-            .env("TASTY_PLUGIN_TOKEN", &token)
-            .env("TASTY_PLUGIN_DIR", &package.dir)
-            // F.B.11-4: i18n 호스트 함수 결합 회피 — 환경변수를 그대로 전달.
-            // 호스트 본 바이너리는 부팅 시 TASTY_LOCALE 을 자신의 env 에 set 하므로
-            // 그 값을 그대로 자식 plugin process 에 propagate 한다.
-            .env(
-                "TASTY_LOCALE",
-                std::env::var("TASTY_LOCALE").unwrap_or_else(|_| "en".to_string()),
-            )
-            .current_dir(&package.dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(log_file))
-            .stderr(Stdio::from(log_clone));
 
-        // 보조 채널 endpoint를 plugin에 알려주고, mailbox를 미리 등록한다. listener가
-        // 없거나 stub인 경우 env를 주입하지 않아 plugin SDK가 보조 채널을 skip한다.
-        //
-        // 중요: mailbox 등록은 *child spawn 전*에 일어나야 한다. 그래야 SDK가 빠르게
-        // connect해도 accept thread가 호출 시점에 매핑할 sender를 찾을 수 있다.
-        let handle_stream_rx = if let Some(hl) = handle_listener {
-            cmd.env("TASTY_PLUGIN_HANDLE_ENDPOINT", hl.endpoint());
-            Some(hl.register_token(&token))
-        } else {
-            None
-        };
-
-        // plugin별 격리 디렉터리. 디렉터리 생성은 호스트가 미리 보장한다 — plugin이
-        // fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
-        if let Some(home) = tasty_utils::path::tasty_home() {
-            let data_dir = home.join("plugin-data").join(&package.manifest.id);
-            let config_path = home
-                .join("plugin-config")
-                .join(format!("{}.toml", &package.manifest.id));
-            if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                tracing::warn!("plugin data dir {} create failed: {e}", data_dir.display());
-            }
-            if let Some(parent) = config_path.parent()
-                && let Err(e) = std::fs::create_dir_all(parent)
-            {
-                tracing::warn!("plugin config dir {} create failed: {e}", parent.display());
-            }
-            cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
-            cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
-            cmd.env("TASTY_PLUGIN_LOG_PATH", &log_path);
-            // host 가 부팅 시 확정한 데이터 루트를 자식에 정보성으로 내려준다
-            // (completion-log 경로 판별용). **`TASTY_HOME` 이 아니라
-            // `TASTY_PARENT_HOME`** 으로 주입한다 — `TASTY_HOME` 은 tasty_home()
-            // (self-determination, override 전용)의 1순위라, 정보성 값을 그 이름으로
-            // 주입하면 자식이 그걸 자기 데이터 루트 override 로 오인한다(release 안에서
-            // debug 실행 시 격리 붕괴). notify_log_path() 가 `TASTY_PARENT_HOME` 을
-            // 최우선으로 보므로 writer(plugin)/reader(conductor) 경로는 계속 일치한다.
-            cmd.env("TASTY_PARENT_HOME", &home);
-        }
+        let (mut cmd, handle_stream_rx) = build_plugin_command(
+            package,
+            listener,
+            handle_listener,
+            reaper,
+            &token,
+            log_file,
+            log_clone,
+        );
+        inject_plugin_data_env(&mut cmd, package, &log_path);
 
         // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
         // 결박되므로(단명 부트 워커에서 직접 spawn 하면 그 스레드 종료 시 plugin
@@ -202,56 +148,16 @@ impl PluginProcess {
         let (resp_tx, resp_rx) = mpsc::channel::<PluginResponse>();
         let (event_tx, event_rx) = mpsc::channel::<PluginEvent>();
 
-        // 송신 스레드
-        let mut writer = stream.try_clone()?;
-        let plugin_id_tx = package.manifest.id.clone();
-        std::thread::Builder::new()
-            .name(format!("plugin-tx-{}", sanitize_id(&plugin_id_tx)))
-            .spawn(move || {
-                for req in req_rx.iter() {
-                    let line = match serde_json::to_string(&req) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::warn!("plugin '{}' request encode error: {}", plugin_id_tx, e);
-                            continue;
-                        }
-                    };
-                    if writeln!(writer, "{line}").is_err() {
-                        break;
-                    }
-                    if writer.flush().is_err() {
-                        break;
-                    }
-                }
-            })?;
-
-        // 수신 스레드
-        let waker_clone = waker.clone();
-        let last_pong_clone = last_pong.clone();
-        let plugin_id_rx = package.manifest.id.clone();
-        std::thread::Builder::new()
-            .name(format!("plugin-rx-{}", sanitize_id(&plugin_id_rx)))
-            .spawn(move || {
-                let reader = BufReader::new(stream);
-                for line in reader.lines() {
-                    let line = match line {
-                        Ok(l) => l,
-                        Err(_) => break,
-                    };
-                    let trim = line.trim();
-                    if trim.is_empty() {
-                        continue;
-                    }
-                    handle_incoming_line(
-                        trim,
-                        &resp_tx,
-                        &event_tx,
-                        &last_pong_clone,
-                        &plugin_id_rx,
-                    );
-                    waker_clone.make_default_waker()();
-                }
-            })?;
+        let writer = stream.try_clone()?;
+        spawn_tx_thread(&package.manifest.id, writer, req_rx)?;
+        spawn_rx_thread(
+            &package.manifest.id,
+            stream,
+            waker,
+            last_pong.clone(),
+            resp_tx,
+            event_tx,
+        )?;
 
         let initial_state = match handle_stream_rx {
             Some(rx) => HandleStreamState::Pending(rx),
@@ -291,8 +197,6 @@ impl PluginProcess {
             HandleStreamState::Unavailable => return None,
             HandleStreamState::Pending(_) => {}
         }
-        // Pending → recv_timeout 안에 plugin이 connect했는지 시도.
-        // 실패 시 rx를 다시 Pending에 넣어 후속 호출이 재시도할 수 있게 한다.
         let rx = match std::mem::replace(&mut *state, HandleStreamState::Unavailable) {
             HandleStreamState::Pending(rx) => rx,
             other => {
@@ -300,6 +204,29 @@ impl PluginProcess {
                 return None;
             }
         };
+        match self.materialize_handle_stream(rx) {
+            Ok(arc) => {
+                *state = HandleStreamState::Ready(arc.clone());
+                Some(arc)
+            }
+            // 재시도 가능(timeout) — rx 를 Pending 으로 되돌려 다음 호출이 이어받는다.
+            Err(Some(rx)) => {
+                *state = HandleStreamState::Pending(rx);
+                None
+            }
+            // 영구 불가(disconnected / reader split 실패 / reader thread spawn 실패)
+            // — state 는 이미 Unavailable 로 replace 되어 있다.
+            Err(None) => None,
+        }
+    }
+
+    /// Pending mailbox 에서 stream 을 꺼내 reader 스레드까지 띄운다.
+    /// `Err(Some(rx))` 는 재시도 가능(timeout) — caller 가 rx 를 Pending 으로
+    /// 되돌린다. `Err(None)` 은 영구 불가.
+    fn materialize_handle_stream(
+        &self,
+        rx: mpsc::Receiver<HandleStream>,
+    ) -> Result<Arc<Mutex<HandleStream>>, Option<mpsc::Receiver<HandleStream>>> {
         let stream = match rx.recv_timeout(HANDLE_STREAM_MATERIALIZE_TIMEOUT) {
             Ok(s) => s,
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -307,12 +234,11 @@ impl PluginProcess {
                     "plugin '{}' handle stream not yet available",
                     self.plugin_id
                 );
-                *state = HandleStreamState::Pending(rx);
-                return None;
+                return Err(Some(rx));
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 // accept thread가 종료됨. 영구적으로 사용 불가.
-                return None;
+                return Err(None);
             }
         };
         let reader = match stream.reader() {
@@ -322,12 +248,24 @@ impl PluginProcess {
                     "plugin '{}' handle stream reader split failed: {e}",
                     self.plugin_id
                 );
-                return None;
+                return Err(None);
             }
         };
         let arc = Arc::new(Mutex::new(stream));
+        if !self.spawn_aux_reader_thread(arc.clone(), reader) {
+            return Err(None);
+        }
+        Ok(arc)
+    }
+
+    /// aux 채널 reader 스레드를 띄운다. thread spawn 실패 시 false(caller 는
+    /// 영구 Unavailable 로 처리).
+    fn spawn_aux_reader_thread(
+        &self,
+        writer: Arc<Mutex<HandleStream>>,
+        reader: HandleStreamReader,
+    ) -> bool {
         let dirty = self.dirty_rects.clone();
-        let writer = arc.clone();
         let plugin_id = self.plugin_id.clone();
         if let Err(e) = std::thread::Builder::new()
             .name(format!("plugin-aux-rx-{}", sanitize_id(&plugin_id)))
@@ -337,10 +275,9 @@ impl PluginProcess {
                 "plugin '{}' aux reader thread spawn failed: {e}",
                 self.plugin_id
             );
-            return None;
+            return false;
         }
-        *state = HandleStreamState::Ready(arc.clone());
-        Some(arc)
+        true
     }
 
     /// reader 스레드가 누적한 dirty rect를 drain. 호스트 main loop이 frame 합성 직전에
@@ -383,29 +320,40 @@ impl PluginProcess {
         }) {
             tracing::trace!("plugin shutdown send dropped (writer exited): {e}");
         }
-        if let Some(mut child) = self.child.take() {
-            let deadline = Instant::now() + timeout;
-            loop {
-                match child.try_wait() {
-                    Ok(Some(_)) => return,
-                    Ok(None) => {
-                        if Instant::now() > deadline {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => break,
+        if let Some(child) = self.child.take() {
+            shutdown_child(child, timeout);
+        }
+    }
+}
+
+/// shutdown 메시지 전송 후 자식이 `timeout` 내 스스로 종료하는지 대기, 아니면 강제 kill.
+fn shutdown_child(mut child: Child, timeout: Duration) {
+    if wait_for_child_exit(&mut child, Instant::now() + timeout) {
+        return;
+    }
+    // shutdown 메시지 전송 실패 / 타임아웃 시 강제 종료. kill 실패는 이미
+    // 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든 호스트가
+    // 추가로 할 수 있는 일이 없으므로 trace로만 흔적을 남긴다.
+    if let Err(e) = child.kill() {
+        tracing::trace!("plugin child kill failed (already exited?): {e}");
+    }
+    if let Err(e) = child.wait() {
+        tracing::trace!("plugin child wait failed: {e}");
+    }
+}
+
+/// `deadline` 까지 폴링하며 자식이 스스로 종료하길 대기. 종료를 관측했으면 true.
+fn wait_for_child_exit(child: &mut Child, deadline: Instant) -> bool {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {
+                if Instant::now() > deadline {
+                    return false;
                 }
+                std::thread::sleep(Duration::from_millis(50));
             }
-            // shutdown 메시지 전송 실패 / 타임아웃 시 강제 종료. kill 실패는 이미
-            // 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든 호스트가
-            // 추가로 할 수 있는 일이 없으므로 trace로만 흔적을 남긴다.
-            if let Err(e) = child.kill() {
-                tracing::trace!("plugin child kill failed (already exited?): {e}");
-            }
-            if let Err(e) = child.wait() {
-                tracing::trace!("plugin child wait failed: {e}");
-            }
+            Err(_) => return false,
         }
     }
 }
@@ -423,6 +371,144 @@ impl Drop for PluginProcess {
     }
 }
 
+/// `PluginProcess::spawn` 의 `Command` 조립 스텝 — entry/args/필수 env 설정 후
+/// 보조 채널 endpoint 를 알려주고 mailbox 를 등록한다. mailbox 등록은 *child
+/// spawn 전*에 일어나야 SDK 가 빠르게 connect 해도 accept thread 가 매핑할
+/// sender 를 찾을 수 있다. `log_file`/`log_clone` 은 stdout/stderr 로 소비된다.
+fn build_plugin_command(
+    package: &PluginPackage,
+    listener: &HostListener,
+    handle_listener: Option<&HandleListener>,
+    reaper: &crate::reaper::PluginReaper,
+    token: &str,
+    log_file: std::fs::File,
+    log_clone: std::fs::File,
+) -> (Command, Option<mpsc::Receiver<HandleStream>>) {
+    let entry_path = package.entry_command_path();
+    let mut cmd = Command::new(&entry_path);
+    // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
+    // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
+    tasty_utils::process::hide_console(&mut cmd);
+    // 플러그인 수명을 호스트에 결박: spawn *전* 준비(Linux PDEATHSIG pre_exec /
+    // macOS TASTY_HOST_PID env 주입). Windows assign 은 spawn *후*(adopt).
+    reaper.prepare(&mut cmd);
+    cmd.args(package.entry_args())
+        .env("TASTY_PLUGIN_ID", &package.manifest.id)
+        .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
+        .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
+        .env("TASTY_PLUGIN_TOKEN", token)
+        .env("TASTY_PLUGIN_DIR", &package.dir)
+        // F.B.11-4: i18n 호스트 함수 결합 회피 — 환경변수를 그대로 전달.
+        // 호스트 본 바이너리는 부팅 시 TASTY_LOCALE 을 자신의 env 에 set 하므로
+        // 그 값을 그대로 자식 plugin process 에 propagate 한다.
+        .env(
+            "TASTY_LOCALE",
+            std::env::var("TASTY_LOCALE").unwrap_or_else(|_| "en".to_string()),
+        )
+        .current_dir(&package.dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_clone));
+
+    let handle_stream_rx = if let Some(hl) = handle_listener {
+        cmd.env("TASTY_PLUGIN_HANDLE_ENDPOINT", hl.endpoint());
+        Some(hl.register_token(token))
+    } else {
+        None
+    };
+    (cmd, handle_stream_rx)
+}
+
+/// plugin별 격리 디렉터리 env 주입. 디렉터리 생성은 호스트가 미리 보장한다 —
+/// plugin이 fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
+fn inject_plugin_data_env(cmd: &mut Command, package: &PluginPackage, log_path: &Path) {
+    let Some(home) = tasty_utils::path::tasty_home() else {
+        return;
+    };
+    let data_dir = home.join("plugin-data").join(&package.manifest.id);
+    let config_path = home
+        .join("plugin-config")
+        .join(format!("{}.toml", &package.manifest.id));
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        tracing::warn!("plugin data dir {} create failed: {e}", data_dir.display());
+    }
+    if let Some(parent) = config_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!("plugin config dir {} create failed: {e}", parent.display());
+    }
+    cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
+    cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
+    cmd.env("TASTY_PLUGIN_LOG_PATH", log_path);
+    // host 가 부팅 시 확정한 데이터 루트를 자식에 정보성으로 내려준다
+    // (completion-log 경로 판별용). **`TASTY_HOME` 이 아니라
+    // `TASTY_PARENT_HOME`** 으로 주입한다 — `TASTY_HOME` 은 tasty_home()
+    // (self-determination, override 전용)의 1순위라, 정보성 값을 그 이름으로
+    // 주입하면 자식이 그걸 자기 데이터 루트 override 로 오인한다(release 안에서
+    // debug 실행 시 격리 붕괴). notify_log_path() 가 `TASTY_PARENT_HOME` 을
+    // 최우선으로 보므로 writer(plugin)/reader(conductor) 경로는 계속 일치한다.
+    cmd.env("TASTY_PARENT_HOME", &home);
+}
+
+/// 송신 스레드 — `req_rx` 로 들어오는 요청을 NDJSON 한 줄씩 `writer` 에 기록.
+fn spawn_tx_thread(
+    plugin_id: &str,
+    mut writer: std::net::TcpStream,
+    req_rx: mpsc::Receiver<PluginRequest>,
+) -> io::Result<()> {
+    let plugin_id_tx = plugin_id.to_string();
+    std::thread::Builder::new()
+        .name(format!("plugin-tx-{}", sanitize_id(&plugin_id_tx)))
+        .spawn(move || {
+            for req in req_rx.iter() {
+                let line = match serde_json::to_string(&req) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("plugin '{}' request encode error: {}", plugin_id_tx, e);
+                        continue;
+                    }
+                };
+                if writeln!(writer, "{line}").is_err() {
+                    break;
+                }
+                if writer.flush().is_err() {
+                    break;
+                }
+            }
+        })?;
+    Ok(())
+}
+
+/// 수신 스레드 — `stream` 에서 한 줄씩 읽어 `handle_incoming_line` 으로 분류.
+fn spawn_rx_thread(
+    plugin_id: &str,
+    stream: std::net::TcpStream,
+    waker: tasty_terminal::waker_factory::SharedWakerFactory,
+    last_pong: Arc<Mutex<Instant>>,
+    resp_tx: mpsc::Sender<PluginResponse>,
+    event_tx: mpsc::Sender<PluginEvent>,
+) -> io::Result<()> {
+    let plugin_id_rx = plugin_id.to_string();
+    std::thread::Builder::new()
+        .name(format!("plugin-rx-{}", sanitize_id(&plugin_id_rx)))
+        .spawn(move || {
+            let reader = BufReader::new(stream);
+            for line in reader.lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+                let trim = line.trim();
+                if trim.is_empty() {
+                    continue;
+                }
+                handle_incoming_line(trim, &resp_tx, &event_tx, &last_pong, &plugin_id_rx);
+                waker.make_default_waker()();
+            }
+        })?;
+    Ok(())
+}
+
 fn handle_incoming_line(
     line: &str,
     resp_tx: &mpsc::Sender<PluginResponse>,
@@ -438,31 +524,48 @@ fn handle_incoming_line(
         }
     };
     if v.get("id").and_then(|x| x.as_u64()).is_some() {
-        match serde_json::from_value::<PluginResponse>(v) {
-            Ok(resp) => {
-                if let Ok(mut p) = last_pong.lock() {
-                    *p = Instant::now();
-                }
-                if let Err(e) = resp_tx.send(resp) {
-                    tracing::trace!("plugin response forward dropped (consumer exited): {e}");
-                }
-            }
-            Err(e) => {
-                tracing::warn!("plugin '{plugin_id}' response decode error: {e}");
-            }
-        }
+        handle_incoming_response(v, resp_tx, last_pong, plugin_id);
         return;
     }
     if let Some(ev_value) = v.get("event") {
-        match serde_json::from_value::<PluginEvent>(ev_value.clone()) {
-            Ok(ev) => {
-                if let Err(e) = event_tx.send(ev) {
-                    tracing::trace!("plugin event forward dropped (consumer exited): {e}");
-                }
+        handle_incoming_event(ev_value.clone(), event_tx, plugin_id);
+    }
+}
+
+fn handle_incoming_response(
+    v: serde_json::Value,
+    resp_tx: &mpsc::Sender<PluginResponse>,
+    last_pong: &Arc<Mutex<Instant>>,
+    plugin_id: &str,
+) {
+    match serde_json::from_value::<PluginResponse>(v) {
+        Ok(resp) => {
+            if let Ok(mut p) = last_pong.lock() {
+                *p = Instant::now();
             }
-            Err(e) => {
-                tracing::warn!("plugin '{plugin_id}' event decode error: {e}");
+            if let Err(e) = resp_tx.send(resp) {
+                tracing::trace!("plugin response forward dropped (consumer exited): {e}");
             }
+        }
+        Err(e) => {
+            tracing::warn!("plugin '{plugin_id}' response decode error: {e}");
+        }
+    }
+}
+
+fn handle_incoming_event(
+    ev_value: serde_json::Value,
+    event_tx: &mpsc::Sender<PluginEvent>,
+    plugin_id: &str,
+) {
+    match serde_json::from_value::<PluginEvent>(ev_value) {
+        Ok(ev) => {
+            if let Err(e) = event_tx.send(ev) {
+                tracing::trace!("plugin event forward dropped (consumer exited): {e}");
+            }
+        }
+        Err(e) => {
+            tracing::warn!("plugin '{plugin_id}' event decode error: {e}");
         }
     }
 }
@@ -475,6 +578,11 @@ fn handle_incoming_line(
 /// - `HandleAttach`: plugin→host로 오는 일은 없어야 함. 받으면 fd 즉시 close 후 경고.
 ///
 /// EOF가 도착하면 (plugin 종료/재시작 또는 정상 shutdown) 조용히 종료.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 4-arm 평면 메시지
+// dispatch 루프 — HandleAttach arm 의 fd 소유권 정리만 플랫폼별 cfg 분기다.
+// `aux: Option<RawFd>` (unix) / `Option<u64>` (windows) 로 타입이 cfg 에 따라
+// 달라서 arm 을 별 함수로 뽑으려면 cfg 게이트를 그대로 복제해야 하고, fd
+// close 책임 소재가 흐려질 위험이 이득보다 크다 — 이 자리에 두는 편이 더 안전.
 fn aux_reader_loop(
     mut reader: HandleStreamReader,
     dirty: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,

@@ -36,38 +36,10 @@ impl PluginManager {
             );
             return None;
         }
-        // 단일 인스턴스 dedup: 같은 (plugin_id, banner_id) 가 열려 있으면 기존 id 반환.
-        if let Some((existing, _)) = self
-            .banner_instances
-            .iter()
-            .find(|(_, inst)| inst.plugin_id == plugin_id && inst.banner_id == banner_id)
-        {
-            tracing::debug!(
-                "banner.open: '{plugin_id}/{banner_id}' already open (instance {existing}); dedup"
-            );
-            return Some(*existing);
+        if let Some(existing) = self.find_open_banner_instance(plugin_id, banner_id) {
+            return Some(existing);
         }
-        let pkg = self.packages.iter().find(|p| p.manifest.id == plugin_id)?;
-        let contribute = pkg
-            .manifest
-            .contributes
-            .banner
-            .iter()
-            .find(|b| b.id == banner_id)
-            .cloned()?;
-        // egui-mesh banner 는 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-        // api_version 일치를 게이트한다(surface/popup egui-mesh 등록 정책 미러, ADR-0028).
-        if contribute.rendering == tasty_plugin_manifest::BannerRendering::EguiMesh
-            && pkg.manifest.api_version != tasty_plugin_manifest::HOST_API_VERSION
-        {
-            tracing::warn!(
-                "banner.open: egui-mesh banner '{plugin_id}/{banner_id}' has api_version '{}' \
-                 incompatible with host '{}'; ignoring",
-                pkg.manifest.api_version,
-                tasty_plugin_manifest::HOST_API_VERSION
-            );
-            return None;
-        }
+        let contribute = self.resolve_open_banner_contribute(plugin_id, banner_id)?;
         let instance_id = self.next_banner_instance_id;
         self.next_banner_instance_id = self.next_banner_instance_id.wrapping_add(1);
         self.banner_instances.insert(
@@ -91,6 +63,48 @@ impl PluginManager {
             PendingRequestKind::Other,
         );
         Some(instance_id)
+    }
+
+    /// 단일 인스턴스 dedup: 같은 (plugin_id, banner_id) 가 이미 열려 있으면 그 id.
+    fn find_open_banner_instance(&self, plugin_id: &str, banner_id: &str) -> Option<u64> {
+        let (existing, _) = self
+            .banner_instances
+            .iter()
+            .find(|(_, inst)| inst.plugin_id == plugin_id && inst.banner_id == banner_id)?;
+        tracing::debug!(
+            "banner.open: '{plugin_id}/{banner_id}' already open (instance {existing}); dedup"
+        );
+        Some(*existing)
+    }
+
+    /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
+    /// egui-mesh banner 는 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
+    /// api_version 일치를 게이트한다(surface/popup egui-mesh 등록 정책 미러, ADR-0028).
+    fn resolve_open_banner_contribute(
+        &self,
+        plugin_id: &str,
+        banner_id: &str,
+    ) -> Option<tasty_plugin_manifest::BannerContribute> {
+        let pkg = self.packages.iter().find(|p| p.manifest.id == plugin_id)?;
+        let contribute = pkg
+            .manifest
+            .contributes
+            .banner
+            .iter()
+            .find(|b| b.id == banner_id)
+            .cloned()?;
+        if contribute.rendering == tasty_plugin_manifest::BannerRendering::EguiMesh
+            && pkg.manifest.api_version != tasty_plugin_manifest::HOST_API_VERSION
+        {
+            tracing::warn!(
+                "banner.open: egui-mesh banner '{plugin_id}/{banner_id}' has api_version '{}' \
+                 incompatible with host '{}'; ignoring",
+                pkg.manifest.api_version,
+                tasty_plugin_manifest::HOST_API_VERSION
+            );
+            return None;
+        }
+        Some(contribute)
     }
 
     /// banner 인스턴스를 닫는다. plugin 에 `banner.closed` fire-and-forget IPC 를 보내고

@@ -74,57 +74,91 @@ fn handle_incoming(
     stream: TcpStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
 ) {
+    let Some(auth) = read_auth_tcp(&stream) else {
+        return;
+    };
+    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+    match tx_opt {
+        Some(tx) => accept_handshake_tcp(stream, auth, tx),
+        None => reject_handshake_tcp(&stream, &auth),
+    }
+}
+
+/// 인증 라인을 읽어 파싱 — 실패하면 warn 후 `None`(caller 는 그대로 drop).
+/// 성공하면 read_timeout 을 해제한 상태로 반환(핸드셰이크 이후 정상 read 재개 대비).
+fn read_auth_tcp(stream: &TcpStream) -> Option<AuthMessage> {
     if let Err(e) = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT)) {
         tracing::warn!("plugin listener: set_read_timeout failed: {e}");
     }
+    let auth = read_auth_message_tcp(stream)?;
+    if let Err(e) = stream.set_read_timeout(None) {
+        tracing::warn!("plugin listener: clearing read_timeout failed: {e}");
+    }
+    Some(auth)
+}
+
+/// stream 을 clone 해 한 줄 읽고 `AuthMessage` 로 파싱. 실패 사유는 내부에서 warn.
+fn read_auth_message_tcp(stream: &TcpStream) -> Option<AuthMessage> {
+    let line = read_auth_line_tcp(stream)?;
+    match serde_json::from_str(line.trim()) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            tracing::warn!("plugin listener: invalid auth message: {e}");
+            None
+        }
+    }
+}
+
+/// stream 을 clone 해 인증 라인 한 줄을 읽는다.
+fn read_auth_line_tcp(stream: &TcpStream) -> Option<String> {
     let cloned = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("plugin listener: stream clone failed: {e}");
-            return;
+            return None;
         }
     };
     let mut reader = BufReader::new(cloned);
     let mut line = String::new();
     if let Err(e) = reader.read_line(&mut line) {
         tracing::warn!("plugin listener: auth read failed: {e}");
+        return None;
+    }
+    Some(line)
+}
+
+/// 토큰 매칭 성공 — auth_ack(true) 송신 후 `TcpStream` 을 대기 중인 spawn 측에 handoff.
+fn accept_handshake_tcp(stream: TcpStream, auth: AuthMessage, tx: mpsc::Sender<TcpStream>) {
+    if !send_auth_ack_ok(&stream, &auth) {
         return;
     }
-    let auth: AuthMessage = match serde_json::from_str(line.trim()) {
-        Ok(a) => a,
-        Err(e) => {
-            tracing::warn!("plugin listener: invalid auth message: {e}");
-            return;
-        }
-    };
-    if let Err(e) = stream.set_read_timeout(None) {
-        tracing::warn!("plugin listener: clearing read_timeout failed: {e}");
+    tracing::info!("plugin '{}' authenticated", auth.plugin_id);
+    if let Err(e) = tx.send(stream) {
+        tracing::warn!("plugin '{}' stream handoff failed: {e}", auth.plugin_id);
     }
-    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
-    match tx_opt {
-        Some(tx) => {
-            if let Err(e) = send_auth_ack(&stream, true, None) {
-                tracing::warn!(
-                    "plugin '{}' auth_ack send failed: {e} — dropping",
-                    auth.plugin_id
-                );
-                return;
-            }
-            tracing::info!("plugin '{}' authenticated", auth.plugin_id);
-            if let Err(e) = tx.send(stream) {
-                tracing::warn!("plugin '{}' stream handoff failed: {e}", auth.plugin_id);
-            }
-        }
-        None => {
-            tracing::warn!(
-                "plugin auth with unknown/expired token (plugin_id={})",
-                auth.plugin_id
-            );
-            // 명시적 거부 ack 송신 후 drop — SDK가 즉시 HandshakeRejected로 실패.
-            if let Err(e) = send_auth_ack(&stream, false, Some("token mismatch")) {
-                tracing::debug!("plugin auth_ack(false) send failed: {e}");
-            }
-        }
+}
+
+/// 성공 auth_ack 송신. 실패하면 warn 후 false(caller 는 그대로 drop).
+fn send_auth_ack_ok(stream: &TcpStream, auth: &AuthMessage) -> bool {
+    if let Err(e) = send_auth_ack(stream, true, None) {
+        tracing::warn!(
+            "plugin '{}' auth_ack send failed: {e} — dropping",
+            auth.plugin_id
+        );
+        return false;
+    }
+    true
+}
+
+/// 토큰 매칭 실패(unknown/expired) — 거부 ack 송신 후 drop.
+/// SDK가 즉시 HandshakeRejected로 실패하도록 명시적 거부 ack 를 보낸다.
+fn reject_handshake_tcp(stream: &TcpStream, auth: &AuthMessage) {
+    tracing::warn!(
+        "plugin auth with unknown/expired token (plugin_id={})",
+        auth.plugin_id
+    );
+    if let Err(e) = send_auth_ack(stream, false, Some("token mismatch")) {
+        tracing::debug!("plugin auth_ack(false) send failed: {e}");
     }
 }
 
