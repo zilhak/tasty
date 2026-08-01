@@ -65,6 +65,24 @@ use crate::view::ViewRegistry;
 #[cfg(feature = "gui")]
 use crate::{AppEvent, plugin, state};
 
+/// GPU 어댑터를 하드웨어·소프트웨어 fallback 모두 못 찾았을 때의 구분 가능한 에러.
+/// 호출부(`event_handler`)가 `anyhow::Error::downcast_ref` 로 감지해 panic 대신
+/// `--headless` 안내 메시지를 낼 수 있게 한다(`crate::core::MirrorStructuralBlocked`
+/// 와 동일한 marker-type 패턴).
+#[cfg(feature = "gui")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NoGpuAdapter;
+
+#[cfg(feature = "gui")]
+impl std::fmt::Display for NoGpuAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no compatible GPU adapter found (hardware or software fallback)")
+    }
+}
+
+#[cfg(feature = "gui")]
+impl std::error::Error for NoGpuAdapter {}
+
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) struct App {
     /// 도메인 본체 — `CoreState` 의 mutate 로직을 점진 흡수한 Method wrapper 다수를
@@ -393,14 +411,25 @@ impl App {
                 // new_shared 가 다시 생성한다(같은 윈도우, 순차 — 동시 보유 아님).
                 let adapter = {
                     let probe = instance.create_surface(window.clone())?;
-                    instance
-                        .request_adapter(&wgpu::RequestAdapterOptions {
-                            power_preference: wgpu::PowerPreference::default(),
-                            compatible_surface: Some(&probe),
-                            force_fallback_adapter: false,
-                        })
-                        .await
-                        .ok_or_else(|| anyhow::anyhow!("no compatible GPU adapter found"))?
+                    let opts = wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::default(),
+                        compatible_surface: Some(&probe),
+                        force_fallback_adapter: false,
+                    };
+                    // 하드웨어 어댑터가 없으면(예: GPU 미탑재 CI/서버, 드라이버 미설치)
+                    // 소프트웨어 rasterizer(lavapipe 등)로 한 번 더 시도한다. 그래도
+                    // 없으면 NoGpuAdapter 로 호출부(event_handler)가 --headless 안내를
+                    // 낼 수 있게 구분 가능한 에러를 반환한다.
+                    match instance.request_adapter(&opts).await {
+                        Some(a) => a,
+                        None => instance
+                            .request_adapter(&wgpu::RequestAdapterOptions {
+                                force_fallback_adapter: true,
+                                ..opts
+                            })
+                            .await
+                            .ok_or_else(|| anyhow::Error::new(NoGpuAdapter))?,
+                    }
                 };
                 self.gpu_adapter = Some(Arc::new(adapter));
             }

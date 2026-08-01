@@ -199,9 +199,20 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         let t2 = std::time::Instant::now();
-        let mut gpu = self
-            .create_gpu_state(window.clone(), &init_settings.appearance)
-            .expect("failed to initialize GPU");
+        let mut gpu = match self.create_gpu_state(window.clone(), &init_settings.appearance) {
+            Ok(gpu) => gpu,
+            Err(e) if e.downcast_ref::<crate::app::NoGpuAdapter>().is_some() => {
+                // GPU 어댑터가 없다는 건 드라이버 미설치 등 정상적으로 발생 가능한
+                // 환경 문제다 — panic(크래시 리포트 대상)이 아니라 사람이 읽을 안내를
+                // stderr 로 내고 조용히 종료한다. 그 외 에러는 예상 밖 실패이므로
+                // 기존처럼 panic 시켜 크래시 리포팅 경로를 유지한다.
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.title"));
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.body"));
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.hint"));
+                std::process::exit(1);
+            }
+            Err(e) => panic!("failed to initialize GPU: {e}"),
+        };
         tracing::info!(
             target: "tasty::boot",
             ms = t2.elapsed().as_secs_f64() * 1000.0,

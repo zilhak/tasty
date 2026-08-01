@@ -21,6 +21,11 @@ jump_to_workspace = "Switch to this workspace"
 [badge]
 overflow = "99+"
 
+[boot.gpu_error]
+title = "No GPU adapter found"
+body = "Tasty could not find a compatible GPU adapter, even after trying a software fallback. This usually means no GPU driver (Vulkan/OpenGL) is available on this machine."
+hint = "Run Tasty with --headless to use it without a GPU-accelerated window, or install/update your GPU driver."
+
 [plugins]
 title = "Plugins"
 empty = "No plugins installed."
