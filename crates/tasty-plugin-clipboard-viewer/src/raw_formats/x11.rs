@@ -1,4 +1,4 @@
-//! Linux(X11/XWayland) raw 클립보드 타겟 열거 — "기타" 버킷(TODO50).
+//! Linux(X11/XWayland) raw 클립보드 타겟 열거 — "기타" 버킷.
 //!
 //! arboard 는 포맷 열거를 노출하지 않아 ICCCM 표준 절차(`TARGETS` atom 을
 //! `ConvertSelection` 으로 요청 → `SelectionNotify` 응답 → `GetProperty` 로 atom 목록
@@ -10,8 +10,7 @@
 //! 쓴다) XWayland 경유로만 동작한다 — 순수 Wayland(XWayland 미실행) 세션에서는 연결
 //! 자체가 실패하며, 이건 새 회귀가 아니라 기존 한계의 연장이지만 조용히 빈 목록만
 //! 내보내면 "기타 포맷이 없다"와 "애초에 조회를 못 했다"가 구분이 안 돼 사용자를
-//! 오도한다 — 그래서 실패 시 `tracing::debug!` 로 원인을 남긴다(TODO50 Codex
-//! 크로스체크).
+//! 오도한다 — 그래서 실패 시 `tracing::debug!` 로 원인을 남긴다.
 //!
 //! arboard 의 x11 백엔드는 자기 연결/윈도우를 노출하지 않으므로, 이 모듈은 완전히
 //! 별개의 독립 연결과 임시 윈도우를 새로 만든다 — read-only 1회성 조회라 공유가
@@ -153,7 +152,7 @@ fn try_read_other() -> Result<Vec<OtherFormatEntry>, String> {
         match convert_and_read(&conn, win, &atoms, atom) {
             Ok(Some(bytes)) => out.push(OtherFormatEntry::from_bytes(name, &bytes, MAX_RAW_BYTES)),
             // TARGETS 조회와 개별 재조회 사이 클립보드 소유자가 바뀌는 race 등으로
-            // 오너가 이 타겟을 거절한 경우 — 정상적인 개별 격리 대상(TODO50).
+            // 오너가 이 타겟을 거절한 경우 — 정상적인 개별 격리 대상.
             Ok(None) => tracing::debug!("clipboard other-format {name}: owner declined"),
             Err(e) => tracing::debug!("clipboard other-format {name} read failed: {e}"),
         }

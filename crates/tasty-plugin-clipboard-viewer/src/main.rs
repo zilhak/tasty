@@ -3,13 +3,13 @@
 //! Tasty Clipboard Viewer plugin — 현재 시스템 클립보드(최신 하나)의 read-only 뷰어.
 //!
 //! Tools 메뉴 클릭(`[[contributes.tool]]`) 또는 단축키 커맨드(`[[contributes.commands]]`
-//! `open_viewer`, TODO43)가 `action = open_popup` 을 통해 host 로 하여금 popup 인스턴스를
+//! `open_viewer`)가 `action = open_popup` 을 통해 host 로 하여금 popup 인스턴스를
 //! 직접 열게 한다 — 호스트가 plugin 전용 이벤트를 발행하는 구식 경로는 없다. 클립보드는
 //! plugin process 내에서 arboard 로 **직접** 읽으며 호스트 IPC 를 경유하지 않는다
 //! (ADR-0009 상 first-party 직접 read).
 //!
 //! 렌더 경로는 **egui-mesh popup**(ADR-0028 / B4): plugin 이 자기 프로세스에서 popup
-//! 콘텐츠(header/type-bar/body/footer, TODO51)를 egui 로 tessellate 한 mesh 를 host 가
+//! 콘텐츠(header/type-bar/body/footer)를 egui 로 tessellate 한 mesh 를 host 가
 //! content 영역에 합성한다. host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame
 //! 보내고, plugin 은 그것을 `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로
 //! 그린다. chrome(scrim/border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 — plugin
@@ -17,7 +17,7 @@
 //!
 //! UI 는 header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지,
 //! 2개 이상이면 가로 세그먼트 스위치) → body(선택 타입의 상세) → footer(mime+Close)
-//! 4단 수직 스택(rail 없음, TODO51). Text/HTML(TODO49) 타입을 지원하고, 이미지/기타
+//! 4단 수직 스택(rail 없음). Text/HTML 타입을 지원하고, 이미지/기타
 //! 포맷/파일 목록 등은 `clipboard::ClipboardType` enum arm + reader 추가로 확장한다.
 //! read-only 라 쓰기/붙여넣기/제거 액션은 없다.
 
@@ -53,7 +53,7 @@ pub(crate) struct ViewerState {
     pub(crate) available: Vec<(ClipboardType, ContentRepr)>,
     pub(crate) read_error: Option<String>,
     pub(crate) selected: Option<ClipboardType>,
-    /// HTML 타입의 "Pretty print" 체크박스 상태(TODO49). popup 인스턴스 생존 동안만
+    /// HTML 타입의 "Pretty print" 체크박스 상태. popup 인스턴스 생존 동안만
     /// 유지 — 설정에 영속화하지 않고 `load()`(popup 재오픈)마다 리셋된다.
     pub(crate) html_pretty: bool,
 }

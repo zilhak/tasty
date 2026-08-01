@@ -1,4 +1,4 @@
-//! 플랫폼별 raw 클립보드 포맷 열거("기타" 버킷, TODO50).
+//! 플랫폼별 raw 클립보드 포맷 열거("기타" 버킷).
 //!
 //! arboard 는 이 열거를 노출하지 않는다 — `Error::ContentNotAvailable`의 doc comment
 //! (`arboard-3.6.1/src/common.rs:20-24`)가 "클립보드가 비어있는 것과 요청한 포맷이
@@ -22,7 +22,7 @@ mod macos;
 
 // wayland-data-control feature 를 켜지 않아(text/image/html 도 이미 이 경로) Linux 는
 // X11/XWayland 백엔드만 쓴다 — 순수 Wayland(XWayland 미실행)에서는 연결 자체가
-// 실패해 빈 벡터 + debug 로그로 처리한다(x11.rs 내부, TODO50 Codex 크로스체크).
+// 실패해 빈 벡터 + debug 로그로 처리한다(x11.rs 내부).
 #[cfg(all(unix, not(target_os = "macos")))]
 mod x11;
 
@@ -38,7 +38,7 @@ pub(crate) const MAX_RAW_BYTES: usize = 16 * 1024;
 /// 이 셋 다 아닌 예외적 빌드 타깃) 조회 자체가 안 되면 빈 벡터 — 호출부
 /// (`clipboard::read_other`)가 이를 "Other 타입 자체가 없음"으로 처리한다(빈
 /// 클립보드와 조회 실패를 구분해야 할 필요가 있다면 서브모듈이 개별적으로
-/// `tracing::debug!` 로 남긴다, TODO50).
+/// `tracing::debug!` 로 남긴다).
 pub(crate) fn read_other() -> Vec<OtherFormatEntry> {
     #[cfg(target_os = "windows")]
     {

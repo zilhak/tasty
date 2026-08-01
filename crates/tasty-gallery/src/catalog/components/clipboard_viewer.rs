@@ -1,5 +1,5 @@
 //! `clipboard_viewer` specimen — clipboard-viewer plugin 의 header/type-bar/body/
-//! footer popup (egui-mesh popup 전사, Overlays, TODO51).
+//! footer popup (egui-mesh popup 전사, Overlays).
 //!
 //! 본체 렌더 경로: plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs` 가
 //! **egui-mesh popup**(ADR-0028 / B4)으로 popup 콘텐츠를 자기 프로세스에서 egui 로
@@ -13,13 +13,13 @@
 //! 9 상태를 나란히 노출:
 //! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
 //! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
-//!   body 는 아이콘+경로 한 줄씩(TODO52).
+//!   body 는 아이콘+경로 한 줄씩.
 //! - **image** — Image 타입 body(아이콘 + 치수·크기 메타 + "인라인 미리보기 없음"
-//!   안내, 실제 픽셀 렌더링 없음 — design 결정, TODO48).
+//!   안내, 실제 픽셀 렌더링 없음 — design 결정).
 //! - **html — raw source** — HTML 타입, Pretty print 체크박스 미체크(원본 그대로).
-//! - **html — pretty print** — 같은 데이터, 체크박스 체크(인덴트 적용, TODO49).
+//! - **html — pretty print** — 같은 데이터, 체크박스 체크(인덴트 적용).
 //! - **other** — text/files/image/html 가 아닌 raw 포맷을 이름+크기+미리보기 블록으로
-//!   나열, 블록 사이 separator, 긴 미리보기는 `+N more lines`로 절삭(TODO50).
+//!   나열, 블록 사이 separator, 긴 미리보기는 `+N more lines`로 절삭.
 //! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
@@ -52,7 +52,7 @@ const PREVIEW: &[&str] = &[
     "tasty read screen --surface 3",
 ];
 
-/// files 상태 body 미리보기 샘플 — 파일 탐색기에서 복사한 경로 목록(TODO52).
+/// files 상태 body 미리보기 샘플 — 파일 탐색기에서 복사한 경로 목록.
 const FILE_PREVIEW: &[&str] = &[
     "/home/user/Documents/report.pdf",
     "/home/user/Pictures/screenshot-2026-07-30.png",
@@ -70,7 +70,7 @@ const HTML_PRETTY: &str =
 /// "기타" specimen 한 포맷 블록 — 실 데이터는 plugin
 /// `clipboard::OtherFormatEntry`(이름/바이트 길이/미리보기)지만 갤러리는 plugin
 /// crate 를 의존할 수 없어 (이름, 크기 문자열, 미리보기, 절삭 줄 수) 를 직접 박아
-/// 둔다(TODO50).
+/// 둔다.
 struct OtherSample {
     name: &'static str,
     size: &'static str,
@@ -267,8 +267,7 @@ fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// files 상태 — header + type-bar(Text/Files 세그먼트) + body(경로 행) + footer 4행
-/// (TODO52).
+/// files 상태 — header + type-bar(Text/Files 세그먼트) + body(경로 행) + footer 4행.
 fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -279,7 +278,7 @@ fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// image 타입 상태 — header + type-bar(Image 뱃지+meta) + body(아이콘+메타+안내) +
-/// footer 4행(실제 렌더링 없음, TODO48).
+/// footer 4행(실제 렌더링 없음).
 fn image_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -594,7 +593,7 @@ fn image_footer_row(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// "기타" 버킷 상태 — header + type-bar(Other 뱃지) + body(포맷 블록 나열) + footer
-/// 4행(design 확정 결과, TODO50).
+/// 4행(design 확정 결과).
 fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -605,7 +604,7 @@ fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// type-bar — 타입이 Other 하나뿐인 상태 — 아이콘(layers)+accent 뱃지(design 확정
-/// 결과, TODO50). 다른 단일 타입 뱃지([`type_bar_row`])와 동일 구조, 라벨만 다르다.
+/// 결과). 다른 단일 타입 뱃지([`type_bar_row`])와 동일 구조, 라벨만 다르다.
 fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
@@ -638,7 +637,7 @@ fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// body(기타) — well 안에 [`OTHER_SAMPLES`] 포맷 블록을 세로로 나열, 블록 사이 1px
-/// separator(design `TypeBody` `other` 분기 1:1 전사, TODO50). 목록 자체는 접지
+/// separator(design `TypeBody` `other` 분기 1:1 전사). 목록 자체는 접지
 /// 않는다(design §6.5 확정) — well 이 이미 스크롤 컨테이너다.
 fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
@@ -770,7 +769,7 @@ fn other_footer_row(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 정상 데이터 상태(HTML) — header + type-bar(배지 + 우측 Pretty print 체크박스) +
-/// body(well, 원본/포맷 텍스트) + footer(mime · meta + Close) 4행(TODO49).
+/// body(well, 원본/포맷 텍스트) + footer(mime · meta + Close) 4행.
 fn data_popup_html(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -870,7 +869,7 @@ fn type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// type-bar(HTML) — 좌측 아이콘+accent 뱃지는 동일, 우측 슬롯이 Pretty print
-/// 체크박스로 스왑된다(design 확정 결과, TODO49). 다른 타입의 빈 우측 슬롯과 달리
+/// 체크박스로 스왑된다(design 확정 결과). 다른 타입의 빈 우측 슬롯과 달리
 /// 여기만 실제 상호작용 위젯을 그린다 — 갤러리 specimen 이라 클릭 시 로컬
 /// `thread_local` 상태가 토글된다(다른 특수 checkbox specimen, `settings.rs` 의
 /// Colors override 행과 동일 패턴).

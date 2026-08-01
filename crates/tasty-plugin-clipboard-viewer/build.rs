@@ -10,10 +10,9 @@
 //! **바이트 동일한 같은 `<svg>` 문자열**을 여기서 베이크한다. 아이콘을 추가하려면
 //! `ICONS` 에 (상수명, `tasty_icons::<ICON>`) 쌍만 더한다.
 //!
-//! 9개 전부(TODO51 — clipboard-viewer 구조 전사) 베이크: TEXT_LEFT 만 이 TODO가
-//! 실제로 그리고, IMAGE/HTML/LAYERS/FILE 은 자매 TODO(48/49/50/52)가 arm 을
-//! 추가할 때 이미 베이크되어 있도록 미리 포함한다(그 TODO들이 build.rs 를 다시
-//! 건드릴 필요 없음).
+//! 9개 전부(clipboard-viewer 구조 전사) 베이크: TEXT_LEFT 만 처음부터 실제로 그리고,
+//! IMAGE/HTML/LAYERS/FILE 은 이후 각 타입별 arm 이 추가되며 이미 베이크되어 있던
+//! 아이콘을 그대로 쓴다(그때 build.rs 를 다시 건드릴 필요 없음).
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -22,7 +21,7 @@ use usvg::tiny_skia_path::PathSegment;
 use usvg::{Options, TreeParsing};
 
 /// (생성 상수명, canonical `tasty-icons` const). clipboard-viewer popup 이 쓰는
-/// 아이콘 전체(design `CB` 맵 9개 — TODO51 "디자인 확정 결과" 참고).
+/// 아이콘 전체(design `CB` 맵 9개, "디자인 확정 결과" 참고).
 const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("CLIPBOARD", tasty_icons::CLIPBOARD),
     ("TEXT_LEFT", tasty_icons::TEXT_LEFT),

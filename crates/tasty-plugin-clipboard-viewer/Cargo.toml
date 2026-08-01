@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.14"
+version = "0.1.15"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only viewer of the current system clipboard"
@@ -43,12 +43,12 @@ tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 # Cargo.lock 에 vendored 한 0.37 을 그대로 쓴다 — build-dep 라 런타임 바이너리 크기 영향 0.
 # tasty-icons 는 canonical SVG 소스 — `default-features=false` 로 egui 를 끈다(build.rs
 # 는 egui 를 링크하지 않는다). host/gallery 런타임 렌더와 바이트 동일한 소스를 베이크
-# (`tasty-plugin-image/build.rs` 정본 패턴 이식, TODO51).
+# (`tasty-plugin-image/build.rs` 정본 패턴 이식).
 [build-dependencies]
 usvg = "0.37"
 tasty-icons = { path = "../tasty-icons", default-features = false }
 
-# "기타" 버킷의 raw 포맷 열거(TODO50) — arboard 는 열거 자체를 노출하지 않아
+# "기타" 버킷의 raw 포맷 열거 — arboard 는 열거 자체를 노출하지 않아
 # 플랫폼 raw API 를 직접 호출한다. 세 크레이트 다 arboard 가 이미 transitive
 # dependency 로 끌어온 것과 semver 호환 버전을 선언해 동일 인스턴스로 재사용한다
 # (버전이 어긋나면 중복 컴파일 + Cargo.lock 비대화, `cargo tree -d` 로 검증).

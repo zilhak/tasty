@@ -1,9 +1,9 @@
-//! HTML 미리보기용 경량 인덴터(TODO49) — 정규 HTML5 파서가 아니라 태그 깊이를 세는
+//! HTML 미리보기용 경량 인덴터 — 정규 HTML5 파서가 아니라 태그 깊이를 세는
 //! 휴리스틱 토크나이저. Display-only re-indenter — DOM 을 구성하지 않고
 //! sanitize/render 도 하지 않는다. 새 외부 의존성 없이 순수 함수로 구현한다.
 //!
 //! 태그 깊이 추적 본체는 Claude Design 시안이 실제로 구현·검증한 JS 참조 알고리즘
-//! (`prettyHtml()`, TODO49 요구사항 문서 참고)을 그대로 포팅한 것이다: `>\s+<` 공백
+//! (`prettyHtml()`)을 그대로 포팅한 것이다: `>\s+<` 공백
 //! 정규화 → `<...>` 태그 경계 split → 닫는 태그(`</`)는 먼저 depth 감소, 여는 태그는
 //! 출력 후 depth 증가(void element/self-closing 은 증가 없음).
 //!

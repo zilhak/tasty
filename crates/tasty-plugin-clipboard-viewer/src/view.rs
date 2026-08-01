@@ -1,12 +1,12 @@
 //! egui-mesh popup 콘텐츠 렌더 — header → type-bar → body → footer 4단 구조
-//! (design-system `overlays/clipboard_viewer.jsx` 구조 전사, TODO51).
+//! (design-system `overlays/clipboard_viewer.jsx` 구조 전사).
 //!
 //! rail(세로 타입 목록)은 폐기됐다 — 디자인 원칙: 단일 타입은 헤더 아래 뱃지로,
 //! 복수 타입은 가로 세그먼트 스위치([`type_switch`])로 표현한다. `SEG_COMPACT_AT`(5)
 //! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/`Files`/
-//! `Image`(TODO48)/`Html`(TODO49 — HTML 은 raw 소스 표시 + Pretty print 체크박스,
-//! [`crate::html_format`])/`Other`(TODO50 — text/files/image/html 가 아닌 raw 포맷을
-//! 포맷별 블록으로 나열, [`crate::raw_formats`])을 채운다(51/52/48/49/50).
+//! `Image`/`Html`(HTML 은 raw 소스 표시 + Pretty print 체크박스, [`crate::html_format`])/
+//! `Other`(text/files/image/html 가 아닌 raw 포맷을 포맷별 블록으로 나열,
+//! [`crate::raw_formats`])을 채운다.
 //!
 //! chrome(scrim/border/outside-click/Esc)은 host 소유 — plugin 은 content 영역만
 //! 그린다. 색·폰트·간격은 전부 host 가 보낸 `Theme` 토큰에서 가져온다(from_rgb/raw
@@ -49,7 +49,7 @@ const CENTER_ICON_SIZE: f32 = 28.0;
 const IMAGE_BODY_ICON_SIZE: f32 = 30.0;
 
 /// "기타" 버킷 한 블록의 미리보기 최대 줄 수 — 넘으면 `+N more lines`로 절삭(design은
-/// 구체적 상한을 구현에 위임, TODO50). 목록 자체(포맷 개수)는 절대 접지 않는다(design
+/// 구체적 상한을 구현에 위임). 목록 자체(포맷 개수)는 절대 접지 않는다(design
 /// §6.5 확정) — 이건 블록 "내부" 콘텐츠 줄 수 상한일 뿐이다.
 const OTHER_PREVIEW_MAX_LINES: usize = 20;
 
@@ -192,7 +192,7 @@ fn data_state(
 
     // 우측 슬롯 — design `t.meta`(html 이 아닌 타입 전체 공통 경로). Text/Files 는
     // 메타가 없다(빈 클로저), Image 는 치수·크기 메타를 채운다. HTML 타입일 때만
-    // "Pretty print" 체크박스로 스왑된다(design 확정 결과, TODO49) — 그 경우
+    // "Pretty print" 체크박스로 스왑된다(design 확정 결과) — 그 경우
     // meta_text()(Html 은 항상 None)는 쓰지 않는다. 클릭 반영 전(이번 프레임 진입
     // 시점) active 기준으로 그린다 — type_switch 의 active 하이라이트도 동일하게
     // 클릭 전 상태를 쓰므로 한 프레임 지연이 일관된다.
@@ -201,7 +201,7 @@ fn data_state(
         .iter()
         .find(|(t, _)| *t == active)
         .and_then(|(_, c)| c.meta_text());
-    // "기타" 세그먼트 tooltip(design "{n} unrecognized formats", TODO50)에 쓰는 포맷
+    // "기타" 세그먼트 tooltip(design "{n} unrecognized formats")에 쓰는 포맷
     // 개수 — Other 가 available 에 없으면 None(다른 타입 뿐이면 tooltip 없이 기본
     // 라벨 유지).
     let other_count = state.available.iter().find_map(|(t, c)| match (t, c) {
@@ -268,7 +268,7 @@ fn data_state(
 /// 전용으로 압축(active 만 라벨 유지) + `.on_hover_text()`로 전체 타입명 노출.
 ///
 /// `other_count` — Other 타입이 available 이면 그 포맷 개수(design "{n} unrecognized
-/// formats", TODO50). Other 세그먼트/뱃지의 tooltip 이 기본 라벨("Other") 대신 이
+/// formats"). Other 세그먼트/뱃지의 tooltip 이 기본 라벨("Other") 대신 이
 /// 개수 문구를 쓴다 — 다른 타입은 영향 없음.
 fn type_switch(
     ui: &mut egui::Ui,
@@ -398,7 +398,7 @@ fn seg_shows_label(compact: bool, active: bool) -> bool {
 /// 타입바 행 — 좌측 [`type_switch`] + 우측 슬롯(메타 텍스트 또는 커스텀 위젯,
 /// design "type-bar 우측 슬롯"). 우측 슬롯을 클로저로 받아 텍스트 고정을 피한다 —
 /// HTML 타입일 때 [`data_state`]가 이 자리에 Pretty print 체크박스를 그리는 클로저를
-/// 넘긴다(TODO49, 구조 변경 없음).
+/// 넘긴다(구조 변경 없음).
 fn type_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -475,7 +475,7 @@ fn type_body(
 }
 
 /// design `TypeBody` 의 image 분기 — 아이콘 + 메타(치수·크기) + "인라인 미리보기
-/// 없음" 안내 문구, well 안에 중앙 정렬(실제 픽셀 렌더링 없음 — design 결정, TODO48).
+/// 없음" 안내 문구, well 안에 중앙 정렬(실제 픽셀 렌더링 없음 — design 결정).
 fn image_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, meta: &str) {
     well_centered(ui, theme, |ui| {
         icon_glyph(
@@ -512,7 +512,7 @@ fn meta_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 ///
 /// `egui::Label` 대신 read-only 흉내를 낸 `egui::TextEdit` 를 쓴다 — `Label` 의 내장
 /// 드래그 선택(`LabelSelectionState`)은 세로 이탈만 처리하고 가로 이탈은 처리하지
-/// 않아(egui 의도적 설계 범위, upstream 미수정 확정 — TODO76) 포인터가 위젯을 가로로
+/// 않아(egui 의도적 설계 범위, upstream 미수정 확정) 포인터가 위젯을 가로로
 /// 빠르게 벗어나면 선택이 멈춘다. `TextEdit` 의 커서 갱신은 이 게이팅이 없다.
 /// `interactive(false)` 는 쓰지 않는다 — 편집뿐 아니라 선택 자체도 막아버린다
 /// (egui 소스 확인). 대신 매 프레임 지역 `String` 버퍼를 넘겨 편집 결과를 버린다.
@@ -570,7 +570,7 @@ fn files_body(ui: &mut egui::Ui, theme: &Theme, files: &[std::path::PathBuf]) {
 }
 
 /// "기타" 버킷 본문 — 발견된 포맷마다 한 블록씩 세로 나열, 블록 사이 1px
-/// separator(design `TypeBody` `other` 분기 1:1 전사, TODO50). 목록 자체는 절대 접지
+/// separator(design `TypeBody` `other` 분기 1:1 전사). 목록 자체는 절대 접지
 /// 않는다(design §6.5 확정) — well 이 이미 스크롤되므로 포맷이 몇 개든 전부 그린다.
 fn other_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entries: &[OtherFormatEntry]) {
     well(ui, theme, |ui| {
@@ -651,7 +651,7 @@ fn other_more_lines_text(tr: &Translator, n: usize) -> String {
         .replace("{n}", &n.to_string())
 }
 
-/// design "{n} unrecognized formats" — Other 세그먼트/뱃지 tooltip 문구(TODO50).
+/// design "{n} unrecognized formats" — Other 세그먼트/뱃지 tooltip 문구.
 fn other_unrecognized_text(tr: &Translator, n: usize) -> String {
     tr.t("clipboard_viewer.popup.other_unrecognized_formats")
         .replace("{n}", &n.to_string())
@@ -780,8 +780,8 @@ fn footer(
     }
 }
 
-/// design 조건: 일반 타입은 `{mime}`, HTML 타입은 `{mime} · {meta}`(TODO49 확정 결과).
-/// Other 는 mime 자체가 없어 meta(포맷 개수 문구)가 mime 을 통째로 대체한다(TODO50).
+/// design 조건: 일반 타입은 `{mime}`, HTML 타입은 `{mime} · {meta}`(확정 결과).
+/// Other 는 mime 자체가 없어 meta(포맷 개수 문구)가 mime 을 통째로 대체한다.
 /// Text/Files/Image 는 기본 경로만 채운다.
 fn footer_mime_text(ty: ClipboardType, meta: Option<&str>) -> String {
     match (ty, meta) {
@@ -814,7 +814,7 @@ fn format_html_meta(tr: &Translator, html: &str) -> String {
 }
 
 /// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Other 는 `layers`(design 확정
-/// 결과 — "여러 겹" = 여러 포맷이 쌓여있다는 은유, TODO50).
+/// 결과 — "여러 겹" = 여러 포맷이 쌓여있다는 은유).
 fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     match ty {
         ClipboardType::Text => baked_icons::TEXT_LEFT,

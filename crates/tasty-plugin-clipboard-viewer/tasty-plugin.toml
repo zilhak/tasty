@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.clipboard-viewer"
 name = "Clipboard Viewer"
-version = "0.1.14"
+version = "0.1.15"
 description = "Read-only viewer of the current system clipboard"
 api_version = "1"
 # clipboard.read 는 ADR-0009 상 이 plugin 엔 무의미(자기 프로세스 직접 read)하나
@@ -16,7 +16,7 @@ command = "tasty-plugin-clipboard-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
-# egui-mesh: plugin 이 popup 콘텐츠(header/type-bar/body/footer, TODO51)를 자기
+# egui-mesh: plugin 이 popup 콘텐츠(header/type-bar/body/footer)를 자기
 # 프로세스에서 egui mesh 로 그리고, host 는 셸(scrim/border/outside-click/Esc)만
 # 그린 뒤 합성한다 (ADR-0028 / B4).
 rendering = "egui-mesh"
@@ -30,8 +30,8 @@ label_i18n_key = "clipboard_viewer.tool.label"
 action = { kind = "open_popup", popup_id = "com.tasty.clipboard-viewer/viewer" }
 order_hint = 100
 
-# 단축키로 뷰어를 열기 위한 커맨드(TODO43 — 구 호스트 하드코딩 `toggle_clipboard_viewer`
-# 필드에서 마이그레이션). Tools 메뉴 항목과 동일한 popup 을 연다. 기존 기본값
+# 단축키로 뷰어를 열기 위한 커맨드(구 호스트 하드코딩 `toggle_clipboard_viewer` 필드에서
+# 마이그레이션). Tools 메뉴 항목과 동일한 popup 을 연다. 기존 기본값
 # (ctrl+shift+h/alt+shift+h, 프리셋마다 다름)은 자동 이관하지 않고 단일 기본값으로
 # 재설정한다 — 프리셋별 커스텀 값이 있던 사용자는 최초 실행 시 이 기본값으로
 # 리셋되며, 필요하면 설정 > 단축키 > 플러그인에서 다시 바꾸면 된다.

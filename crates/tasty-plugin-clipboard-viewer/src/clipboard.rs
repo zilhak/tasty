@@ -2,8 +2,8 @@
 //!
 //! 새 포맷(헥스 / RTF 등) 추가가 `ClipboardType` enum arm + `read_available`
 //! 내 reader 한 줄 추가로 끝나도록 설계한다. Text/Files/Image/Html 은 arboard 로 3 OS
-//! 공통 read 한다(TODO48 — Image 는 `get_image()`, TODO49 — Html 은 `get().html()`,
-//! feature gate 없이 제공). Other(TODO50)는 arboard 가 노출하지 않는 raw 포맷 열거를
+//! 공통 read 한다(Image 는 `get_image()`, Html 은 `get().html()`, feature gate 없이
+//! 제공). Other 는 arboard 가 노출하지 않는 raw 포맷 열거를
 //! `crate::raw_formats`(플랫폼별 `#[cfg(...)]` 분기)로 직접 구현해 text/files/image/
 //! html 로 이미 소비된 변형을 제외한 나머지를 하나로 묶는다.
 
@@ -16,8 +16,8 @@ pub enum ClipboardType {
     Files,
     Image,
     Html,
-    /// text/files/image/html 어디에도 속하지 않는 raw 포맷들을 하나로 묶은 버킷
-    /// (TODO50). 개별 포맷이 아니라 "그 외 전부"라 다른 arm 과 달리 항상 여러
+    /// text/files/image/html 어디에도 속하지 않는 raw 포맷들을 하나로 묶은 버킷.
+    /// 개별 포맷이 아니라 "그 외 전부"라 다른 arm 과 달리 항상 여러
     /// 포맷을 하나의 값으로 들고 다닌다(`ContentRepr::Other`).
     Other,
 }
@@ -59,7 +59,7 @@ impl ClipboardType {
 pub enum ContentRepr {
     Text(String),
     Files(Vec<PathBuf>),
-    /// 이미지는 렌더링하지 않는다(design 결정, TODO48) — 픽셀 바이트를 들고 있을
+    /// 이미지는 렌더링하지 않는다(design 결정) — 픽셀 바이트를 들고 있을
     /// 필요가 없어 치수/바이트 수 메타만 보존한다.
     Image {
         width: usize,
@@ -67,7 +67,7 @@ pub enum ContentRepr {
         byte_len: usize,
     },
     Html(String),
-    /// text/files/image/html 어디에도 안 걸린 raw 포맷 전부(TODO50) — 포맷 이름 +
+    /// text/files/image/html 어디에도 안 걸린 raw 포맷 전부 — 포맷 이름 +
     /// 텍스트화된 미리보기의 목록. 비어 있으면 애초에 `read_available()`가 이 arm
     /// 을 push 하지 않는다(항상 비어있지 않음).
     Other(Vec<OtherFormatEntry>),
@@ -75,8 +75,8 @@ pub enum ContentRepr {
 
 impl ContentRepr {
     /// design `t.meta` — type-bar 우측 슬롯 + image body 안내에 쓰는 요약 문자열.
-    /// `Text`/`Files`/`Html`/`Other` 은 이 TODO 범위 밖(문자/줄 수·파일 개수 카운트
-    /// 미구현, TODO51 부터 이어지는 defer)이라 `None` — 기존처럼 type-bar 우측 슬롯이
+    /// `Text`/`Files`/`Html`/`Other` 은 아직 범위 밖(문자/줄 수·파일 개수 카운트
+    /// 미구현, 후속 라운드로 defer)이라 `None` — 기존처럼 type-bar 우측 슬롯이
     /// 빈 채로 유지된다(Html 은 대신 view.rs 의 Pretty print 체크박스가, Other 는
     /// 포맷 개수 tooltip 이 그 슬롯 대신 type-bar 세그먼트 쪽을 차지한다).
     pub fn meta_text(&self) -> Option<String> {
@@ -95,7 +95,7 @@ impl ContentRepr {
 }
 
 /// "기타" 버킷 한 포맷 항목 — 포맷 이름 + raw 바이트를 텍스트화한 미리보기(design
-/// 확정 결과, TODO50). `crate::raw_formats`의 플랫폼별 모듈이 raw 바이트를 읽은 뒤
+/// 확정 결과). `crate::raw_formats`의 플랫폼별 모듈이 raw 바이트를 읽은 뒤
 /// [`OtherFormatEntry::from_bytes`]로 변환해 채운다.
 #[derive(Clone, Debug)]
 pub struct OtherFormatEntry {
@@ -105,7 +105,7 @@ pub struct OtherFormatEntry {
     pub byte_len: usize,
     /// 텍스트화된 미리보기. 바이너리로 판단되면 hex 요약(`is_binary` 참고), 아니면
     /// `from_utf8_lossy` 결과 — 어느 쪽이든 raw 바이트 자체를 로그에 남기지 않는다
-    /// (TODO50 — 민감 데이터일 수 있음).
+    /// (민감 데이터일 수 있음).
     pub preview: String,
     /// `preview`가 hex 요약(바이너리 fallback)인지 — 뷰가 스타일을 달리할 수 있게.
     pub is_binary: bool,
@@ -113,8 +113,8 @@ pub struct OtherFormatEntry {
 
 impl OtherFormatEntry {
     /// raw 바이트 → 표시용 항목. `cap`(바이트)을 넘는 데이터는 미리보기 생성 전에
-    /// 잘라낸다(TODO50 "크기 상한" 요구사항 — 거대한 바이너리 포맷을 통째로 문자열화
-    /// 하지 않는다). U+FFFD(치환 문자) 비율이 높으면 텍스트가 아니라 바이너리로 보고
+    /// 잘라낸다("크기 상한" 요구사항 — 거대한 바이너리 포맷을 통째로 문자열화 하지
+    /// 않는다). U+FFFD(치환 문자) 비율이 높으면 텍스트가 아니라 바이너리로 보고
     /// hex 요약으로 대체한다.
     pub(crate) fn from_bytes(name: String, bytes: &[u8], cap: usize) -> Self {
         let byte_len = bytes.len();
@@ -153,8 +153,8 @@ fn hex_summary(bytes: &[u8]) -> String {
 
 /// 사람이 읽는 바이트 크기 문자열(`src/core/fs_list.rs::human_size` 와 동형 — 이
 /// plugin 은 별도 프로세스 바이너리라 그 crate 를 의존할 수 없어 로컬 재구현).
-/// TODO48 은 원본 파일 크기가 아니라 `ImageData::bytes`(raw RGBA8) 길이의 근사치로
-/// 썼고, TODO50 의 "기타" 포맷 크기 표시도 이 함수를 그대로 재사용한다.
+/// Image 는 원본 파일 크기가 아니라 `ImageData::bytes`(raw RGBA8) 길이의 근사치로
+/// 썼고, "기타" 포맷 크기 표시도 이 함수를 그대로 재사용한다.
 pub(crate) fn format_bytes(n: usize) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut s = n as f64;
@@ -227,7 +227,7 @@ fn read_html(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRep
     }
 }
 
-/// Other 리더(TODO50) — arboard 를 거치지 않고 `crate::raw_formats`(플랫폼별 raw
+/// Other 리더 — arboard 를 거치지 않고 `crate::raw_formats`(플랫폼별 raw
 /// 열거)로 text/files/image/html 이 아닌 나머지 포맷을 모은다. arboard 는 포맷
 /// 열거 자체를 노출하지 않아 이 타입만 별도 경로를 쓴다.
 fn read_other() -> Option<(ClipboardType, ContentRepr)> {
