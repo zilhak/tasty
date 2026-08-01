@@ -581,8 +581,13 @@ mod integration_tests {
     /// 현재 동작: `Untrusted { UnknownKey }` 또는 `Err(NoValidTrustedKeys)` 중 하나
     /// (ed25519-dalek 버전에 따라 zero pubkey 의 `from_bytes` 결과가 다름).
     ///
-    /// TODO(0.7+): release-pubkey.bin 이 zero 일 때 *build.rs* 가 cargo:warning 으로
-    /// 명시적 misconfig 안내. 본 테스트는 placeholder 인 동안 *invariant 만* 검증.
+    /// release-pubkey.bin 슬롯이 zero(placeholder)로 남는 것 자체는 정상 정책이다
+    /// (영구 신뢰 루트를 두지 않음) — 이미 `build.rs`(release 빌드, `stage_key`
+    /// 호출부)가 release·dev 두 슬롯이 **동시에** zero 일 때만 `cargo:warning` 으로
+    /// misconfig 를 알린다(dev 슬롯이 실질 검증을 담당하므로 release 단독 zero 는
+    /// 경고 대상이 아니다). 본 테스트는 그 경고와 별개로, placeholder 상태에서도
+    /// `verify_bundle_signature` 가 `Trusted` 를 반환하지 않는다는 invariant 만
+    /// 검증한다.
     #[test]
     fn placeholder_embed_with_empty_db_never_trusts() {
         let home_tmp = TempDir::new().unwrap();
