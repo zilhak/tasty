@@ -117,16 +117,54 @@ pub(crate) fn prepare_send(
     Ok(PlatformPayload { fd: sendable.fd })
 }
 
-pub(crate) fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
+/// # Safety
+/// 상위 `tasty_shm::receive`의 계약과 동일 — `fd`는 방금 커널이 이 프로세스로
+/// 전달한, 아직 소유되지 않은 fd여야 한다.
+pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
     let ReceivedPayload::Fd { fd, size } = payload;
     if size == 0 {
+        // SAFETY: fd는 계약상 이미 우리 소유 — 조기 반환 전에 명시적으로 닫는다(leak 방지).
+        unsafe { libc::close(fd) };
         return Err(ShmError::ZeroSize);
     }
     if size > MAX_SIZE {
+        // SAFETY: 위와 동일 이유.
+        unsafe { libc::close(fd) };
         return Err(ShmError::TooLarge(size));
     }
 
-    // SAFETY: 호출자가 socketmsg cmsg에서 받은 유효한 fd라고 약속. 소유권이 우리에게 이전.
+    // 방어 코드: fd가 현재 프로세스에서 열려 있고, memfd_create/shm_open이 만드는
+    // backing과 같은 타입(regular file)인지 형태 검증. 무작위/닫힌/타입불일치 fd를
+    // 소유권 편입 전에 걸러내 UB 대신 Err로 실패시킨다. 완전한 증명은 아니다 — 다른
+    // 목적의 regular-file fd까지는 걸러내지 못한다(상위 `receive`의 `# Safety` 참조).
+    // SAFETY: fcntl(F_GETFD)는 fd 값 자체는 아직 소유하지 않은 채 조회만 한다.
+    if unsafe { libc::fcntl(fd, libc::F_GETFD) } < 0 {
+        let err = io::Error::last_os_error();
+        // SAFETY: 검증 실패 fd도 계약상 이미 우리 소유 — 닫아야 leak 되지 않는다.
+        // fcntl 자체가 실패했다는 건 fd가 이미 무효(닫힘)했을 가능성이 높지만, close는
+        // EBADF를 반환할 뿐 안전하므로 무조건 시도한다.
+        unsafe { libc::close(fd) };
+        return Err(ShmError::Os(err));
+    }
+    // SAFETY: libc::stat은 all-zero가 유효한 초기값(fstat이 모든 필드를 채운다).
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    // SAFETY: fstat도 조회 전용, fd 소유권에 영향 없음.
+    if unsafe { libc::fstat(fd, &mut st) } < 0 {
+        let err = io::Error::last_os_error();
+        // SAFETY: 위와 동일 — 검증 실패 경로에서 leak 방지.
+        unsafe { libc::close(fd) };
+        return Err(ShmError::Os(err));
+    }
+    if st.st_mode & libc::S_IFMT != libc::S_IFREG {
+        // SAFETY: 형태 불일치로 거부하는 fd도 계약상 이미 우리 소유 — leak 방지.
+        unsafe { libc::close(fd) };
+        return Err(ShmError::Os(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "received fd is not a regular file (memfd/shm backing expected)",
+        )));
+    }
+
+    // SAFETY: 호출자가 상위 `receive`의 `# Safety` 계약을 지켰고, 위 형태 검증도 통과한 fd.
     let owned = unsafe { OwnedFd::from_raw_fd(fd) };
     let ptr = mmap_shared(owned.as_raw_fd(), size)?;
     Ok(SharedMemory {

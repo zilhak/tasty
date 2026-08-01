@@ -38,6 +38,11 @@ let_underscore_must_use = "warn"
 # 위반 6건이 조용히 유입됐던 전례 → deny 로 승격. 예외는 위치 단위
 # `#[allow(clippy::disallowed_methods)]` + 사유 주석 (clippy.toml 의 예외 컨벤션).
 disallowed_methods = "deny"
+# 모든 `pub unsafe fn`에 `# Safety` 문서 절 필수(TODO26). `undocumented_unsafe_blocks`가
+# unsafe *블록*의 SAFETY 주석을 강제하는 것과 대칭 — 이건 unsafe *fn 자체*의 호출자 계약
+# 문서화를 강제한다. `tasty_shm::receive`처럼 raw fd/handle 소유권 이전을 요구하는 함수가
+# safe fn 뒤에 숨어 계약이 코드로 강제되지 않는 사고를 막는다.
+missing_safety_doc = "deny"
 
 # `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
 # unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스

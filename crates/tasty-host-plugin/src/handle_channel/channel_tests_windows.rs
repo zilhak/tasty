@@ -125,10 +125,14 @@ fn windows_handle_channel_round_trip() {
             }
             other => panic!("expected HandleAttach, got {other:?}"),
         };
-        let mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Handle {
-            handle,
-            size: size as usize,
-        })
+        // SAFETY: handle은 방금 host가 보낸 HandleAttach 메시지에서 받은, in-band
+        // DuplicateHandle 복제 값 — 다른 곳에서 소유되지 않았다.
+        let mem = unsafe {
+            tasty_shm::receive(tasty_shm::ReceivedPayload::Handle {
+                handle,
+                size: size as usize,
+            })
+        }
         .expect("receive");
         // SAFETY: 방금 매핑한 공유 메모리. 단독 접근.
         let slice = unsafe { mem.as_mut_slice() };

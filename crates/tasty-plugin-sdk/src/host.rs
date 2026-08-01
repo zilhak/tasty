@@ -209,7 +209,12 @@ impl HostHandle {
             fd,
             size: parsed.size as usize,
         };
-        let mem = tasty_shm::receive(payload).map_err(|e| PluginError::Shm(e.to_string()))?;
+        // SAFETY: fd는 보조 채널 reader 스레드(spawn_handle_reader)가 SCM_RIGHTS
+        // recvmsg로 커널로부터 이 프로세스에 방금 dup 받아, call_id로 매칭해 넘겨준
+        // 값 — 다른 곳에서 소유되지 않았고 아직 receive되지 않았음을 mpsc 단일
+        // 소비(위 fd_rx.recv_timeout)로 보장한다.
+        let mem =
+            unsafe { tasty_shm::receive(payload) }.map_err(|e| PluginError::Shm(e.to_string()))?;
 
         Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }
@@ -272,7 +277,12 @@ impl HostHandle {
             handle,
             size: parsed.size as usize,
         };
-        let mem = tasty_shm::receive(payload).map_err(|e| PluginError::Shm(e.to_string()))?;
+        // SAFETY: handle은 host가 DuplicateHandle로 이 프로세스 핸들 테이블에 방금
+        // 복제해, 보조 채널 reader 스레드가 call_id로 매칭해 넘겨준 값 — 다른
+        // 곳에서 소유되지 않았고 아직 receive되지 않았음을 mpsc 단일 소비(위
+        // handle_rx.recv_timeout)로 보장한다.
+        let mem =
+            unsafe { tasty_shm::receive(payload) }.map_err(|e| PluginError::Shm(e.to_string()))?;
 
         Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }

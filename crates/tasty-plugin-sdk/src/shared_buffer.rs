@@ -172,10 +172,13 @@ mod tests {
         // SAFETY: fd는 payload가 살아있는 동안 유효하다. libc::dup은 OS 콜로 새 fd를 반환.
         let dup_fd = unsafe { libc::dup(fd) };
         assert!(dup_fd >= 0, "dup failed");
-        let host_mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
-            fd: dup_fd,
-            size: total,
-        })
+        // SAFETY: dup_fd는 방금 dup()으로 만든 새 fd — 다른 어디에도 소유되지 않았다.
+        let host_mem = unsafe {
+            tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
+                fd: dup_fd,
+                size: total,
+            })
+        }
         .expect("host receive");
         // payload는 더 필요 없음.
         drop(payload);

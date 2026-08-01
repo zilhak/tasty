@@ -213,6 +213,49 @@ pub fn prepare_send(handle: SendableHandle, peer: PeerPid) -> Result<TransportPa
 }
 
 /// 받은 transport 페이로드로부터 현재 프로세스에 영역을 매핑한다.
-pub fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
-    platform::receive(payload)
+///
+/// # Safety
+///
+/// `payload`가 담은 fd(unix) 또는 handle(windows)은 대응하는 `prepare_send`가 만든
+/// 페이로드로부터 **SCM_RIGHTS recvmsg(unix) 또는 `DuplicateHandle`(windows)로 이
+/// 프로세스에 방금 전달되어, 아직 어디에도 소유되지 않은 값**이어야 한다. 임의의
+/// 정수, 이미 다른 목적으로 열려 있는 fd/handle, 또는 이미 close/receive된 값을
+/// 넘기면 소유권 이중화(double-close, use-after-close, fd/handle aliasing) UB가
+/// 발생한다. 호출자는 이 값의 출처를 직접 추적할 수 있는 코드에서만 호출해야 한다.
+///
+/// fd/handle 형태(열려 있는지, regular file/매핑 객체인지)는 내부적으로 검증해
+/// 명백히 잘못된 값은 `Err`로 걸러내지만, "다른 목적으로 쓰이는 유효한 값"까지는
+/// 구분하지 못한다 — 이 계약은 형태 검증으로 대체되지 않는다.
+pub unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
+    // SAFETY: 호출자가 위 계약을 지켰다는 전제 하에 platform::receive에 위임.
+    unsafe { platform::receive(payload) }
+}
+
+#[cfg(all(unix, test))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn receive_rejects_invalid_fd() {
+        // 이미 닫혔거나 존재한 적 없는 fd 번호 — fcntl(F_GETFD)에서 EBADF로 걸려야 한다.
+        // SAFETY: 이 테스트 자체가 "계약 위반(무효 fd)을 넘겼을 때 UB 대신 Err가
+        // 나오는가"를 검증하는 목적 — fcntl/fstat 형태 검증이 mmap 전에 걸러내므로
+        // 실제로는 UB가 발생하지 않는다.
+        let payload = ReceivedPayload::Fd {
+            fd: 99999,
+            size: 4096,
+        };
+        let result = unsafe { receive(payload) };
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn receive_rejects_non_regular_file_fd() {
+        // stdin(fd 0)은 열려는 있지만 memfd/shm backing과 다른 타입 — fstat의
+        // S_IFREG 검증에 걸려야 한다.
+        // SAFETY: 위와 동일 — 계약 위반(타입 불일치 fd)을 형태 검증이 걸러낸다.
+        let payload = ReceivedPayload::Fd { fd: 0, size: 4096 };
+        let result = unsafe { receive(payload) };
+        assert!(result.is_err());
+    }
 }

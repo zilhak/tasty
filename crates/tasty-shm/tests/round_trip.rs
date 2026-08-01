@@ -34,7 +34,9 @@ mod unix {
         let (mem_a, handle) = tasty_shm::create(size).expect("create");
         let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
         let received = send_to_self(payload);
-        let mem_b = tasty_shm::receive(received).expect("receive");
+        // SAFETY: received의 fd는 send_to_self가 방금 dup()으로 만든 새 fd — 다른
+        // 곳에서 소유되지 않았다.
+        let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
         assert_eq!(mem_a.len(), size);
         assert_eq!(mem_b.len(), size);
@@ -61,7 +63,8 @@ mod unix {
         let (mem_a, handle) = tasty_shm::create(8).expect("create");
         let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
         let received = send_to_self(payload);
-        let mem_b = tasty_shm::receive(received).expect("receive");
+        // SAFETY: 위와 동일 — send_to_self가 dup()으로 만든 새 fd.
+        let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
         // mem_b가 쓴 값이 mem_a에서 보이는가.
         // SAFETY: 단일 스레드.
@@ -81,7 +84,8 @@ mod unix {
             let (mem_a, handle) = tasty_shm::create(size).expect("create");
             let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
-            let mem_b = tasty_shm::receive(received).expect("receive");
+            // SAFETY: 위와 동일 — send_to_self가 dup()으로 만든 새 fd.
+            let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
             assert_eq!(mem_a.len(), size);
             assert_eq!(mem_b.len(), size);
@@ -110,7 +114,8 @@ mod unix {
             assert_eq!(mem_a.len(), size);
             let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
-            let mem_b = tasty_shm::receive(received).expect("receive");
+            // SAFETY: 위와 동일 — send_to_self가 dup()으로 만든 새 fd.
+            let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
             assert_eq!(mem_b.len(), size);
         }
     }
@@ -122,7 +127,8 @@ mod unix {
             let (mem, handle) = tasty_shm::create(64).expect("create");
             let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
-            let mem2 = tasty_shm::receive(received).expect("receive");
+            // SAFETY: 위와 동일 — send_to_self가 dup()으로 만든 새 fd.
+            let mem2 = unsafe { tasty_shm::receive(received) }.expect("receive");
             drop(mem);
             drop(mem2);
         }
@@ -139,7 +145,9 @@ mod unix {
         // SAFETY: dup syscall. fd 유효.
         let dup = unsafe { libc::dup(fd) };
         assert!(dup >= 0);
-        let _mem_b = tasty_shm::receive(ReceivedPayload::Fd { fd: dup, size }).expect("receive");
+        // SAFETY: dup은 방금 dup()으로 만든 새 fd — 다른 곳에서 소유되지 않았다.
+        let _mem_b =
+            unsafe { tasty_shm::receive(ReceivedPayload::Fd { fd: dup, size }) }.expect("receive");
         // payload는 함수 끝에서 drop → 원본 fd close. dup된 fd는 _mem_b가 들고 있어 살아있음.
         drop(payload);
     }
@@ -165,7 +173,9 @@ mod win {
         let (mem_a, handle) = tasty_shm::create(size).expect("create");
         let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
         let received = send_to_self(payload);
-        let mem_b = tasty_shm::receive(received).expect("receive");
+        // SAFETY: received의 handle은 prepare_send(PeerPid::Same)가 DuplicateHandle로
+        // 이 프로세스 핸들 테이블에 방금 복제한, 별도 소유 값이다.
+        let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
         assert_eq!(mem_a.len(), size);
         assert_eq!(mem_b.len(), size);
@@ -189,7 +199,8 @@ mod win {
         let (mem_a, handle) = tasty_shm::create(8).expect("create");
         let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
         let received = send_to_self(payload);
-        let mem_b = tasty_shm::receive(received).expect("receive");
+        // SAFETY: 위와 동일 — prepare_send(PeerPid::Same)가 DuplicateHandle로 복제한 값.
+        let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
         // SAFETY: 단일 스레드.
         unsafe {
@@ -207,7 +218,8 @@ mod win {
             let (mem, handle) = tasty_shm::create(64).expect("create");
             let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
-            let mem2 = tasty_shm::receive(received).expect("receive");
+            // SAFETY: 위와 동일 — prepare_send(PeerPid::Same)가 DuplicateHandle로 복제한 값.
+            let mem2 = unsafe { tasty_shm::receive(received) }.expect("receive");
             drop(mem);
             drop(mem2);
         }

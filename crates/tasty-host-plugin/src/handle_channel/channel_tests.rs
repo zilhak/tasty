@@ -136,10 +136,14 @@ fn shared_buffer_roundtrip_via_handle_channel() {
     assert_eq!(got_msg, attach);
 
     // plugin 측: 받은 fd를 tasty_shm::receive로 매핑.
-    let plugin_mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
-        fd: fds[0],
-        size: 4096,
-    })
+    // SAFETY: fds[0]은 방금 recv_with_fd(SCM_RIGHTS recvmsg)가 커널로부터 이
+    // 프로세스에 새로 받아온 fd — 다른 곳에서 소유되지 않았다.
+    let plugin_mem = unsafe {
+        tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
+            fd: fds[0],
+            size: 4096,
+        })
+    }
     .expect("receive map");
     assert_eq!(plugin_mem.len(), 4096);
     assert_eq!(host_mem.len(), 4096);

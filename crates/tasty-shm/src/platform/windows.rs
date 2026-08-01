@@ -8,7 +8,8 @@ use std::io;
 use std::ptr;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, INVALID_HANDLE_VALUE,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, GetHandleInformation, HANDLE,
+    INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::System::Memory::{
     CreateFileMappingW, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile,
@@ -176,25 +177,53 @@ pub(crate) fn prepare_send(
     })
 }
 
-pub(crate) fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
+/// # Safety
+/// 상위 `tasty_shm::receive`의 계약과 동일 — `handle`은 `DuplicateHandle`로 이
+/// 프로세스의 핸들 테이블에 방금 복제되어, 아직 소유되지 않은 값이어야 한다.
+///
+/// 아래 `GetHandleInformation` 검증은 "이 정수가 현재 프로세스 핸들 테이블에
+/// 유효하게 존재하는가"만 확인한다 — Unix 쪽(`fcntl`+`fstat`으로 open 여부와
+/// 객체 **타입**을 모두 검증)보다 약한 방어다. Win32엔 표준 문서화 API로 "이
+/// HANDLE이 file-mapping 객체인가"를 물을 방법이 마땅치 않아(비공식
+/// `NtQueryObject` 정도), 이미 유효하지만 다른 용도인 핸들(로그 파일 HANDLE 등)이
+/// 실수로 넘어오는 경우까지는 걸러내지 못한다 — `MapViewOfFile` 자체가 타입
+/// 불일치 시 실패하는 것에 의존한다.
+pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
     let ReceivedPayload::Handle { handle, size } = payload;
+    let raw = handle as HANDLE;
     if size == 0 {
+        // SAFETY: handle은 계약상 이미 우리 소유 — 조기 반환 전에 명시적으로 닫는다.
+        close_received_handle(raw);
         return Err(ShmError::ZeroSize);
     }
     if size > MAX_SIZE {
+        // SAFETY: 위와 동일 이유.
+        close_received_handle(raw);
         return Err(ShmError::TooLarge(size));
     }
 
-    let raw = handle as HANDLE;
     if raw.is_null() {
         return Err(ShmError::Os(io::Error::new(
             io::ErrorKind::InvalidInput,
             "received null handle",
         )));
     }
+
+    // 방어 코드: handle이 현재 프로세스 핸들 테이블에 유효하게 존재하는지 형태 검증
+    // (Unix의 fcntl(F_GETFD)에 대응). 무효/이미 닫힌 값을 소유권 편입 전에 걸러내
+    // UB 대신 Err로 실패시킨다. 위 doc 참조 — 객체 타입까지는 검증하지 못한다.
+    let mut flags: u32 = 0;
+    // SAFETY: GetHandleInformation은 조회 전용, handle 소유권에 영향 없음.
+    if unsafe { GetHandleInformation(raw, &mut flags) } == 0 {
+        let err = io::Error::last_os_error();
+        close_received_handle(raw);
+        return Err(ShmError::Os(err));
+    }
+
     let owned = OwnedHandle(raw);
 
-    // SAFETY: MapViewOfFile. handle은 호출자가 valid라 약속.
+    // SAFETY: MapViewOfFile. handle은 위에서 유효성을 확인했고, 호출자가 상위
+    // `receive`의 `# Safety` 계약을 지켰다는 전제.
     let view = unsafe { MapViewOfFile(owned.as_raw(), FILE_MAP_ALL_ACCESS, 0, 0, size) };
     if view.Value.is_null() {
         return Err(ShmError::Os(io::Error::last_os_error()));
@@ -208,6 +237,18 @@ pub(crate) fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError
             _handle: owned,
         },
     })
+}
+
+/// 검증 실패 경로에서 계약상 이미 우리 소유인 handle을 명시적으로 닫는다(leak
+/// 방지). null/INVALID는 닫을 대상이 아니므로 건너뛴다.
+fn close_received_handle(raw: HANDLE) {
+    if !raw.is_null() && raw != INVALID_HANDLE_VALUE {
+        // SAFETY: null/INVALID가 아님을 위에서 확인. 이 함수는 검증 실패 후 1회만
+        // 호출되므로 double-close 위험 없음.
+        unsafe {
+            CloseHandle(raw);
+        }
+    }
 }
 
 fn duplicate_to_self(source: HANDLE) -> Result<HANDLE, ShmError> {
