@@ -30,13 +30,8 @@ fn test_terminal(cols: usize, rows: usize) -> Terminal {
 #[test]
 #[cfg(windows)]
 fn cursor_suppression_hides_program_output_burst() {
-    let terminal = Terminal::new_detached(80, 24);
-    {
-        let mut st = terminal.lock_state();
-        let now = std::time::Instant::now();
-        st.last_input_at = now - INPUT_ECHO_WINDOW - std::time::Duration::from_millis(1);
-        st.last_output_at = now;
-    }
+    let mut terminal = Terminal::new_detached(80, 24);
+    terminal.process_bytes(b"\x1b[2K\r");
 
     assert!(terminal.should_suppress_cursor_during_output());
 }
@@ -44,27 +39,41 @@ fn cursor_suppression_hides_program_output_burst() {
 #[test]
 #[cfg(windows)]
 fn cursor_suppression_ignores_recent_input_echo() {
-    let terminal = Terminal::new_detached(80, 24);
+    let mut terminal = Terminal::new_detached(80, 24);
     {
         let mut st = terminal.lock_state();
-        let now = std::time::Instant::now();
-        st.last_input_at = now;
-        st.last_output_at = now + std::time::Duration::from_millis(1);
+        st.last_input_at = std::time::Instant::now();
     }
+    terminal.process_bytes(b"x");
 
     assert!(!terminal.should_suppress_cursor_during_output());
 }
 
 #[test]
 #[cfg(windows)]
-fn cursor_suppression_expires_after_output_quiets() {
-    let terminal = Terminal::new_detached(80, 24);
+fn cursor_suppression_detects_repaint_immediately_after_input() {
+    let mut terminal = Terminal::new_detached(80, 24);
     {
         let mut st = terminal.lock_state();
-        let now = std::time::Instant::now();
-        st.last_input_at = now - INPUT_ECHO_WINDOW - std::time::Duration::from_millis(1);
-        st.last_output_at =
-            now - CURSOR_OUTPUT_SUPPRESS_WINDOW - std::time::Duration::from_millis(1);
+        st.last_input_at = std::time::Instant::now();
+    }
+    terminal.process_bytes(b"\x1b[3D\x1b[2K");
+
+    assert!(terminal.should_suppress_cursor_during_output());
+}
+
+#[test]
+#[cfg(windows)]
+fn cursor_suppression_expires_after_output_quiets() {
+    let mut terminal = Terminal::new_detached(80, 24);
+    terminal.process_bytes(b"\r");
+    {
+        let mut st = terminal.lock_state();
+        st.last_screen_control_at = Some(
+            std::time::Instant::now()
+                - CURSOR_OUTPUT_SUPPRESS_WINDOW
+                - std::time::Duration::from_millis(1),
+        );
     }
 
     assert!(!terminal.should_suppress_cursor_during_output());

@@ -29,9 +29,9 @@ use std::thread;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use termwiz::cell::CellAttributes;
-use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
+use termwiz::escape::{Action, ControlCode, Esc, EscCode};
 use termwiz::surface::Surface;
 
 pub use color::{ColorPalette, TerminalRgb};
@@ -272,6 +272,9 @@ pub(crate) struct TerminalState {
     last_output_at: std::time::Instant,
     /// Timestamp of the most recent user input sent to the PTY.
     last_input_at: std::time::Instant,
+    /// Timestamp of the most recent output action that repositioned the cursor
+    /// or edited the screen.
+    last_screen_control_at: Option<std::time::Instant>,
     /// Whether `OutputAppended` events are pushed during ingest.
     emit_output_events: bool,
     /// Mirror of the active Surface's current pen (text attributes). termwiz's
@@ -539,6 +542,7 @@ impl TerminalState {
             last_output_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
+            last_screen_control_at: None,
             emit_output_events: false,
             current_pen: CellAttributes::default(),
             saved_pen: CellAttributes::default(),
@@ -570,6 +574,9 @@ impl TerminalState {
         let mut changed = false;
         let actions = self.parser.parse_as_vec(data);
         for action in actions {
+            if is_screen_repaint_action(&action) {
+                self.last_screen_control_at = Some(std::time::Instant::now());
+            }
             // Intercept Mode actions (DECSET/DECRST) -- they affect Terminal
             // state rather than Surface content.
             if let Action::CSI(CSI::Mode(ref mode)) = action {
@@ -655,6 +662,17 @@ impl TerminalState {
                 Err(mpsc::TrySendError::Disconnected(_)) => false,
             });
     }
+}
+
+fn is_screen_repaint_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::CSI(CSI::Cursor(_) | CSI::Edit(_))
+            | Action::Control(ControlCode::CarriageReturn)
+            | Action::Esc(Esc::Code(
+                EscCode::DecSaveCursorPosition | EscCode::DecRestoreCursorPosition
+            ))
+    )
 }
 
 impl Terminal {

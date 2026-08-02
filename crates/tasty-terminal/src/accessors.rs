@@ -158,9 +158,9 @@ impl Terminal {
 
     /// Whether the renderer should temporarily hide the focused text cursor
     /// while a program is repainting terminal output. This suppresses visible
-    /// intermediate cursor hops from redraw-heavy TUIs/CLIs, but leaves user
-    /// typing alone by treating output inside the input echo window as normal
-    /// echo rather than program-driven repaint.
+    /// intermediate cursor hops from redraw-heavy TUIs/CLIs, but leaves plain
+    /// user-input echo visible because printable output alone is not a
+    /// screen-control action.
     pub fn should_suppress_cursor_during_output(&self) -> bool {
         #[cfg(not(windows))]
         {
@@ -290,9 +290,7 @@ impl Terminal {
 #[cfg(windows)]
 impl TerminalState {
     fn should_suppress_cursor_during_output(&self) -> bool {
-        if self.last_output_at.elapsed() >= CURSOR_OUTPUT_SUPPRESS_WINDOW {
-            return false;
-        }
-        self.last_output_at > self.last_input_at + INPUT_ECHO_WINDOW
+        self.last_screen_control_at
+            .is_some_and(|at| at.elapsed() < CURSOR_OUTPUT_SUPPRESS_WINDOW)
     }
 }
