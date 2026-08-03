@@ -120,6 +120,7 @@ impl PluginManager {
             next_banner_instance_id: 1,
             banner_mesh_frames: HashMap::new(),
             invalidated_surfaces: Vec::new(),
+            invalidated_popups: Vec::new(),
             last_rss_sample: Instant::now(),
             sys: sysinfo::System::new(),
             pending_rss_samples: Vec::new(),

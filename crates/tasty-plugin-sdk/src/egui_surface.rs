@@ -32,6 +32,7 @@
 
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 use egui::epaint::textures::{TextureOptions, TexturesDelta};
 use egui::epaint::{ImageData, ImageDelta, TextureId};
@@ -80,6 +81,13 @@ struct EguiMeshCore {
     /// mesh POD 블록을 쓰는 shared buffer. 필요 크기보다 작아지면 재생성한다.
     #[cfg(any(unix, windows))]
     buffer: Option<SharedBuffer>,
+    /// 직전 `render()` 가 egui `viewport_output` 에서 읽은 self-repaint 요청(있다면).
+    /// egui 의 스크롤 스무딩 등 다중 프레임 애니메이션이 `ctx.request_repaint_after`로
+    /// "다음 pass 도 그려달라"고 신호하면 여기 채워진다. 이 채널은 host-side 이벤트가
+    /// 있을 때만 pass 를 구동하므로(`docs/dev-guide/egui-mesh-channel.md` "set_context
+    /// 송신 정책"), 이 신호를 누군가 읽어 host 에 재-invalidate 를 요청하지 않으면
+    /// 유휴 상태에서 애니메이션이 방치된다([`EguiMeshSurface`]가 소비).
+    pending_self_repaint: Option<Duration>,
 }
 
 /// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
@@ -124,6 +132,7 @@ impl EguiMeshCore {
             frame_seq: 0,
             #[cfg(any(unix, windows))]
             buffer: None,
+            pending_self_repaint: None,
         }
     }
 
@@ -182,6 +191,14 @@ impl EguiMeshCore {
         self.last_ctx.as_ref().and_then(|c| c.theme.as_ref())
     }
 
+    /// 직전 `render()` 가 egui `viewport_output` 에서 읽은 self-repaint 지연(있다면).
+    /// egui 의 스크롤 스무딩(`unprocessed_scroll_delta` drain, egui 0.31
+    /// `input_state/mod.rs`) 등 다중 프레임 애니메이션이 아직 안 끝났으면 `Duration`
+    /// 이 채워진다(0 이면 즉시). 완전히 안정되면 `None`.
+    fn pending_self_repaint(&self) -> Option<Duration> {
+        self.pending_self_repaint
+    }
+
     /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
     /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
     ///
@@ -195,6 +212,15 @@ impl EguiMeshCore {
         run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
         let full = self.ctx.run(raw, run_ui);
+        // egui 가 이번 pass 에서 추가 pass 를 요청했는지 읽어둔다 — dedup(아래) 으로
+        // 이번 frame 이 송신 생략되더라도 유실되지 않도록 매 render() 마다 갱신한다.
+        // egui-mesh 는 단일 ROOT viewport 만 쓴다(`build_raw_input` 이 viewport_id 를
+        // 항상 기본값 ROOT 로 둔다) — `Duration::MAX` 는 egui 관례상 "요청 없음".
+        self.pending_self_repaint = full
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.repaint_delay)
+            .filter(|d| *d < Duration::MAX);
         // tessellate 는 plugin 이 수행한다(폰트 atlas 를 plugin 이 소유, research-a1 §2-1).
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
         // 이 frame 의 delta 를 누적 상태에 먼저 반영한다 — full 재구성은 항상 최신 상태 기준.
@@ -332,11 +358,53 @@ impl EguiMeshCore {
     }
 }
 
+/// [`EguiMeshCore::pending_self_repaint`] 가 있으면(egui 가 다음 pass 를 요청), 그
+/// 지연 뒤 `notify` 를 1회 실행하는 타이머 스레드를 스폰한다. `armed`(이 코어 인스턴스가
+/// 소유한 가드)가 이미 세팅돼 있으면 아무것도 하지 않는다 — 타이머가 fire 하면 다시
+/// 풀리고, 그 다음 `render()` 가 여전히 지연이 필요하면 재-arm 한다(자연 수렴, idle
+/// 상태에서 스레드가 폭주하지 않는다). Surface/Popup 공용 — 각자 자기 id 를 실은
+/// `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
+#[cfg(any(unix, windows))]
+fn spawn_self_repaint_timer(
+    delay: Duration,
+    armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    host: &HostHandle,
+    notify: impl FnOnce(&HostHandle) -> Result<(), PluginError> + Send + 'static,
+) {
+    if armed
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return;
+    }
+    let host = host.clone();
+    let armed = std::sync::Arc::clone(armed);
+    std::thread::spawn(move || {
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        armed.store(false, std::sync::atomic::Ordering::Release);
+        if let Err(e) = notify(&host) {
+            tracing::warn!("egui-mesh self-repaint notify failed: {e}");
+        }
+    });
+}
+
 /// 한 egui-mesh surface 의 plugin 측 렌더 상태. surface 하나당 인스턴스 하나를 둔다
 /// (여러 surface 면 `surface_id` 별로 분리). drop 시 shared buffer 매핑이 해제된다.
 pub struct EguiMeshSurface {
     surface_id: u32,
     core: EguiMeshCore,
+    /// `schedule_self_repaint` 가 중복 타이머 스레드를 만들지 않도록 거는 가드.
+    /// 타이머가 fire 하면 다시 풀리고(`False`), 그 다음 `render()` 가 여전히 지연이
+    /// 필요하면 재-arm 한다 — 스레드가 폭주하지 않고 자연 수렴한다.
+    #[cfg(any(unix, windows))]
+    self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl EguiMeshSurface {
@@ -346,6 +414,8 @@ impl EguiMeshSurface {
         Self {
             surface_id,
             core: EguiMeshCore::new(),
+            #[cfg(any(unix, windows))]
+            self_repaint_armed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -405,7 +475,9 @@ impl EguiMeshSurface {
         params: &SurfaceSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.run_frame_inner(params, run_ui) else {
+        let frame = self.run_frame_inner(params, run_ui);
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let byte_len = frame.bytes.len() as u32;
@@ -421,6 +493,26 @@ impl EguiMeshSurface {
         Ok(Some(generation))
     }
 
+    /// egui 가 `viewport_output` 으로 self-repaint 를 요청했으면(스크롤 스무딩 등 남은
+    /// 다중 프레임 애니메이션), 그 지연 뒤 host 에 [`PluginEvent::SurfaceInvalidated`]
+    /// 를 보내 기존 idle-invalidate 재forward 경로에 편승한다
+    /// (`docs/dev-guide/egui-mesh-channel.md` "plugin self-repaint" · "idle
+    /// invalidate"). host 의 `forward_egui_mesh_context` 는 host-side 이벤트(입력/
+    /// geom/theme 변경 등)가 있을 때만 다음 pass 를 구동하므로, 이 신호가 없으면
+    /// 유휴 상태(무입력)에서 egui 내장 애니메이션이 끝까지 재생되지 못하고 방치된다
+    /// (스크롤 델타가 남은 채 정지) — 이후 무관한 입력(마우스 이동 등)이 와야만
+    /// 뒤늦게 몰아서 반영되는 버그의 원인.
+    #[cfg(any(unix, windows))]
+    fn schedule_self_repaint(&self, host: &HostHandle) {
+        let Some(delay) = self.core.pending_self_repaint() else {
+            return;
+        };
+        let surface_id = self.surface_id;
+        spawn_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
+            host.notify(&PluginEvent::SurfaceInvalidated { surface_id })
+        });
+    }
+
     /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
     /// 재-paint 한다(옵션 A). 캐시된 geom/ppp/focused 로 재-run → 출력이 바뀌면
     /// [`PluginEvent::PaintFrame`] 송신, 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
@@ -431,7 +523,9 @@ impl EguiMeshSurface {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.core.repaint_last(run_ui) else {
+        let frame = self.core.repaint_last(run_ui);
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let byte_len = frame.bytes.len() as u32;
@@ -454,6 +548,10 @@ impl EguiMeshSurface {
 pub struct EguiMeshPopup {
     instance_id: u64,
     core: EguiMeshCore,
+    /// [`EguiMeshSurface::self_repaint_armed`] 와 동형 — `schedule_self_repaint` 중복
+    /// 타이머 방지 가드.
+    #[cfg(any(unix, windows))]
+    self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl EguiMeshPopup {
@@ -463,6 +561,8 @@ impl EguiMeshPopup {
         Self {
             instance_id,
             core: EguiMeshCore::new(),
+            #[cfg(any(unix, windows))]
+            self_repaint_armed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -516,7 +616,9 @@ impl EguiMeshPopup {
         params: &PopupSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.run_frame_inner(params, run_ui) else {
+        let frame = self.run_frame_inner(params, run_ui);
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
@@ -539,7 +641,9 @@ impl EguiMeshPopup {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.core.repaint_last(run_ui) else {
+        let frame = self.core.repaint_last(run_ui);
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
@@ -551,6 +655,20 @@ impl EguiMeshPopup {
             full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
+    }
+
+    /// [`EguiMeshSurface::schedule_self_repaint`] 의 popup 대응 —
+    /// [`PluginEvent::PopupInvalidated`] 로 host 의 popup pending-repaint 경로
+    /// (ADR-0056 `plugin_mesh_popup_pending_repaint`)에 편승한다.
+    #[cfg(any(unix, windows))]
+    fn schedule_self_repaint(&self, host: &HostHandle) {
+        let Some(delay) = self.core.pending_self_repaint() else {
+            return;
+        };
+        let instance_id = self.instance_id;
+        spawn_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
+            host.notify(&PluginEvent::PopupInvalidated { instance_id })
+        });
     }
 }
 
@@ -1264,5 +1382,122 @@ mod tests {
             let mapped = map_event(&RawInputEventWire::Ime { event: wire });
             assert_eq!(mapped, Some(Event::Ime(expected)));
         }
+    }
+
+    /// TODO 15 회귀 방지: egui 가 `ctx.request_repaint_after` 로 "다음 pass 도
+    /// 그려달라"고 요청하면, `render()` 는 그 신호를 버리지 않고
+    /// `pending_self_repaint()` 로 노출해야 한다 — 과거에는 `full.viewport_output`
+    /// 을 완전히 무시해 이 정보가 유실됐다(markdown 트랙패드 스크롤이 유휴 상태에서
+    /// 몰아서 뒤늦게 반영되던 결함의 근본 원인).
+    #[test]
+    fn render_captures_egui_repaint_request_instead_of_dropping_it() {
+        let mut surface = EguiMeshSurface::new(1);
+        let params = ctx_params(320, 200, 1.0);
+        let draw_static = |ctx: &Context| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("static");
+            });
+        };
+
+        // bootstrap frame(폰트 atlas 업로드 등 첫 frame 특유의 repaint 요청이 섞일 수
+        // 있어 baseline 값 자체는 단언하지 않는다 — 안정화 목적으로만 1회 그린다).
+        surface.run_frame(&params, draw_static);
+
+        // egui 내부 애니메이션(스크롤 스무딩 등)에 의존하지 않고, `request_repaint_after`
+        // 를 직접 호출해 "다음 pass 필요" 신호를 결정적으로 재현한다.
+        surface.run_frame(&params, |ctx| {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            draw_static(ctx);
+        });
+        let delay = surface
+            .core
+            .pending_self_repaint()
+            .expect("egui's repaint request must not be dropped by render()");
+        assert!(
+            delay <= std::time::Duration::from_millis(50),
+            "captured delay must reflect (or be tighter than) the requested 50ms, got {delay:?}"
+        );
+
+        // 다음 pass 부터는 더 이상 요청하지 않으면 정보가 stale 하게 남지 않고
+        // 갱신된다 — 몇 프레임 안에 None 으로 수렴해야 한다(첫 몇 frame 은 egui 의
+        // 자체 안정화 repaint 요청이 섞일 수 있어 `static_frame_stabilizes_to_no_change`
+        // 와 동일하게 수렴 여부만 확인한다).
+        let converged = (0..5).any(|_| {
+            surface.run_frame(&params, draw_static);
+            surface.core.pending_self_repaint().is_none()
+        });
+        assert!(
+            converged,
+            "pending_self_repaint must not stay stuck once egui stops requesting repaints"
+        );
+    }
+
+    /// 실제 버그 재현 경로: `Point` 단위 8pt 이상 스크롤 델타(예: 물리 마우스 휠
+    /// notch 가 `mouse.rs` 에서 `*50.0` 스케일된 값)는 egui 내부에서
+    /// `is_smooth=false` 로 판정돼 `unprocessed_scroll_delta` 에 적립되고, 여러
+    /// pass 에 걸쳐 지수완화로 drain 된다(egui 0.31 `input_state/mod.rs:340-394`).
+    /// drain 이 끝나기 전까지 `wants_repaint_after()` 는 `Duration::ZERO`(즉시
+    /// repaint)를 반환하므로, 이 pass 뒤 `pending_self_repaint()` 도 채워져야 한다.
+    #[test]
+    fn large_scroll_delta_leaves_a_pending_self_repaint_request() {
+        let mut surface = EguiMeshSurface::new(1);
+
+        // bootstrap — 폰트 atlas 업로드 등 첫 frame 특유의 잡음을 먼저 안정화한다.
+        surface.run_frame(&ctx_params(320, 200, 1.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("scrollable content");
+            });
+        });
+
+        let mut params = ctx_params(320, 200, 1.0);
+        params.raw_input.events = vec![RawInputEventWire::Scroll { x: 0.0, y: -50.0 }];
+        surface.run_frame(&params, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("scrollable content");
+            });
+        });
+
+        let delay = surface
+            .core
+            .pending_self_repaint()
+            .expect("large scroll delta must leave egui wanting another pass");
+        assert_eq!(
+            delay,
+            Duration::ZERO,
+            "unprocessed scroll delta requests an immediate repaint"
+        );
+    }
+
+    /// [`EguiMeshPopup`] 도 [`EguiMeshCore::pending_self_repaint`] 를 공유한다 — 위
+    /// surface 테스트와 동형으로, popup 채널(git-viewer/clipboard-viewer)도 같은
+    /// 정보 유실 없이 self-repaint 요청을 캡처해야 한다(TODO 15 popup 대응,
+    /// `PopupInvalidated`).
+    #[test]
+    fn popup_also_captures_egui_repaint_request() {
+        let mut popup = EguiMeshPopup::new(1);
+        let params = PopupSetContextParams {
+            instance_id: 1,
+            width_px: 320,
+            height_px: 200,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        };
+        popup.run_frame(&params, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("popup content");
+            });
+        });
+        popup.run_frame(&params, |ctx| {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("popup content");
+            });
+        });
+        assert!(
+            popup.core.pending_self_repaint().is_some(),
+            "popup render() must not drop egui's repaint request either"
+        );
     }
 }

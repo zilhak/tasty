@@ -106,6 +106,29 @@ surface 들의 파일 mtime 을 stat 하다가 변경 시 emit 한다. worker �
 안 함** — 실제 재-read 는 이 무입력 frame 안에서 기존 `poll_reload` 가 담당해 plugin state
 를 두 곳에서 공유하지 않는다.
 
+### popup 대응 — `PopupInvalidated` (TODO 15)
+
+`SurfaceInvalidated` 는 surface 전용이다. egui-mesh popup(git-viewer/clipboard-viewer 등,
+아래 "egui-mesh popup 채널")도 동일하게 무입력 재-forward 가 필요한 경우가 있어(아래
+"egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용" 참조) `PluginEvent::PopupInvalidated
+{ instance_id }` 를 별도로 둔다. 처리 경로는 surface 와 대칭이되 종착지만 다르다:
+
+1. `PluginManager::pump()` 가 `invalidated_popups` 에 누적, `take_invalidated_popups()` 로 드레인.
+2. `App::mark_invalidated_popups_dirty`(`src/app/event_handler.rs`, `about_to_wait()` 에서
+   `mark_invalidated_surfaces_dirty` 직후 호출)가 이를 소비한다. popup instance 는 surface 와
+   달리 특정 window 에 귀속되지 않으므로(단일 인스턴스 가드로 host 전체에 하나), 몇 번째
+   window 가 그 popup 을 그리는지 알 수 없다 — 그래서 **전 main window** 를
+   `main_windows_iter_mut()` 로 순회하며 broadcast 한다(`attach_client.rs` 의 기존
+   `plugin_mesh_popup_pending_repaint` 예약 패턴과 동형).
+3. 새 set_context 트리거가 아니라, popup 이 이미 갖고 있던
+   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0056 — 비동기 host→plugin push 후 강제
+   repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
+   프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
+   동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
+4. banner 는 아직 이 경로가 없다 — 현재 banner egui-mesh 채널은 검증용 PoC 소비자
+   (`tasty-plugin-mesh-demo`)뿐이라 실질 영향이 없고, 실제 소비자가 생기면 popup 과 동형으로
+   `BannerInvalidated` + `plugin_mesh_banner_pending_repaint` 를 추가하면 된다.
+
 ## plugin self-repaint (out-of-band 상태 변경)
 
 위 5개 트리거(크기/ppp · 입력 · 테마 · bootstrap · 포커스)는 전부 **host-side** 요인이라, plugin 이
@@ -130,6 +153,55 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤,
 그리고 이 문서의 "idle invalidate" 경로가 만든 무입력 frame 뒤). git-viewer 는 모든 상태
 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다.
+
+## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용 (TODO 15)
+
+위 "set_context 송신 정책"의 이벤트 기반 게이팅(host-side 이벤트가 있을 때만 pass 를
+구동)은 **egui 자신의 다중 프레임 애니메이션**(스크롤 스무딩, `ctx.request_repaint_after`
+류 전반)이 매 프레임 무관하게 이어지는 pass 를 전제로 설계됐다는 사실과 충돌할 수 있다.
+egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::render`(SDK)가
+`ctx.run()` 의 반환값 `FullOutput::viewport_output`(egui 가 "다음 pass 도 그려달라"고
+신호하는 채널, `repaint_delay: Duration`)을 전혀 읽지 않고 버렸다.
+
+**증상**: 트랙패드로 스크롤(휠 드래그 제스처)하고 손을 떼면, egui 내부에
+`unprocessed_scroll_delta`(egui 0.31 `input_state/mod.rs` — `Point` 단위 8pt 이상이거나
+`Line`/`Page` 단위 델타는 즉시 반영되지 않고 지수완화로 여러 pass 에 걸쳐 drain 된다)가
+아직 남아있어도, host 는 더 이상 host-side 이벤트가 없으므로 다음 pass 를 구동하지 않는다
+— 스크롤이 입력한 양만큼 반영되지 않고 멈춘 채 방치된다. 이후 무관한 입력(마우스 이동
+등)이 들어와야 host 가 다시 pass 를 구동해 남은 delta 가 그 시점에 몰아서 반영된다.
+
+**고친 지점(두 가지, 병행)**:
+
+1. **self-repaint 편승** (`crates/tasty-plugin-sdk/src/egui_surface.rs`) —
+   `EguiMeshCore::render` 가 매 pass 마다 `full.viewport_output.get(&ViewportId::ROOT)`
+   (egui-mesh 는 단일 ROOT viewport 만 씀)의 `repaint_delay` 를 읽어
+   `pending_self_repaint`(`Duration::MAX` = 요청 없음 → `None`)로 캐시한다.
+   `EguiMeshSurface`/`EguiMeshPopup` 의 `paint`/`repaint_last` 는 매 호출 뒤(frame 이
+   `None` 이어도) 이 값을 확인해 `Some(delay)` 면 `delay` 뒤 위 "idle invalidate" 채널
+   (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청하는 타이머
+   스레드를 스폰한다 — `self_repaint_armed`(`AtomicBool`) 로 중복 스레드를 막고, 타이머가
+   fire 하면 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다(자연 수렴, idle 상태에서
+   스레드가 폭주하지 않음). 이 채널은 host-side 코드 변경 없이(surface) 또는 이미 있던
+   popup pending-repaint 필드에 편승해(popup) 동작한다 — `EguiMeshCore` 를 공유하는
+   surface/popup 전체에 적용된다(banner 는 실 소비자가 아직 없어 미적용, 위 "popup 대응"
+   참조).
+2. **raw_input.time 보정** (`src/view/main/egui_mesh.rs`) — `forward_egui_mesh_context`
+   가 surface 로 보내는 `set_context.raw_input.time` 이 과거엔 항상 `None` 이었다. egui는
+   `time` 이 없으면 `predicted_dt`(1/60초 고정)로만 dt 를 추정하므로, 1번의 idle-invalidate
+   재forward 처럼 실제 forward 간격이 그보다 훨씬 길어도 egui 는 매번 "짧은 프레임"으로
+   착각해 스크롤 스무딩의 지수완화 계수(`exponential_smooth_factor`)가 실제보다 느리게
+   수렴한다. `mesh_time_now()`(프로세스 시작 시 고정한 `Instant` 로부터의 경과 초 — 절대
+   기준은 의미 없고 단조 증가만 필요) 를 채워 보내 실제 경과 시간을 반영한다. 현재는
+   local surface forward 경로(가시·비가시 pending_full 재전송)에만 적용했고, attach mesh
+   mirror 경로(`attach_mesh_input.rs`/`mesh_forward.rs`/`stream_hub.rs`/`mesh_mirror.rs`)와
+   popup/banner forward(`popup_render.rs`/`banner_render.rs`)는 아직 `time: None` 그대로다
+   — 위 1번(self-repaint)만으로 "유휴 상태 방치" 증상 자체는 해소되므로 필수는 아니었고,
+   범위를 넓히면 손대는 파일이 늘어 이번 TODO 는 실제 버그 재현 경로(markdown surface)에
+   한정했다. 필요해지면 같은 패턴으로 확장 가능.
+
+**popup(git-viewer/clipboard-viewer)도 같은 결함을 안고 있었다** — `EguiMeshCore` 를
+공유하므로 스크롤 가능한 popup 콘텐츠도 이론상 동일 증상을 재현할 수 있었다. 1번을 popup
+에도 적용했으므로(`PopupInvalidated`, 위 "popup 대응" 절) 이 TODO 로 함께 해소된다.
 
 ## Theme 스냅샷 (generic parity)
 

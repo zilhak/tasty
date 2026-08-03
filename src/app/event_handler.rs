@@ -354,6 +354,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.record_plugin_rss_samples_if_present();
         self.forward_mesh_frames_for_parked();
         self.mark_invalidated_surfaces_dirty();
+        self.mark_invalidated_popups_dirty();
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
         // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.
@@ -618,6 +619,33 @@ impl App {
             if touched {
                 w.mark_dirty();
             }
+        }
+    }
+
+    /// `about_to_wait()` 지원 — `PopupInvalidated`(TODO 15): egui-mesh popup
+    /// (git-viewer/clipboard-viewer 등) plugin 이 egui `viewport_output` self-repaint
+    /// 를 요청(예: 스크롤 스무딩이 유휴 상태에서 아직 안 끝남)하면, 다음 프레임에
+    /// 무입력으로 재-forward 되도록 예약한다. [`mark_invalidated_surfaces_dirty`] 의
+    /// popup 대응이지만, popup 의 forward 게이팅(`popup_render.rs`)은 이미 이 목적의
+    /// `AppState::plugin_mesh_popup_pending_repaint`(ADR-0056, 비동기 host→plugin
+    /// push 후 강제 repaint)를 갖고 있어 그대로 재사용한다 — 어느 window 가 이
+    /// popup 을 그리는지 몰라(popup instance 는 window 소유권을 안 나름) 전 main
+    /// window 에 broadcast 한다(`attach_client.rs` 의 기존 pending_repaint 예약
+    /// 패턴과 동형).
+    fn mark_invalidated_popups_dirty(&mut self) {
+        let invalidated_popups = self
+            .plugin_manager
+            .as_mut()
+            .map(|mgr| mgr.take_invalidated_popups())
+            .unwrap_or_default();
+        if invalidated_popups.is_empty() {
+            return;
+        }
+        for main in self.main_windows_iter_mut() {
+            for &iid in &invalidated_popups {
+                main.state.plugin_mesh_popup_pending_repaint.insert(iid);
+            }
+            main.mark_dirty();
         }
     }
 

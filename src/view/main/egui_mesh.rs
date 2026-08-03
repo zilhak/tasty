@@ -30,6 +30,8 @@
 //! 포인트(좌상단 0,0)로 변환한다. wire 의 좌표는 egui interop ABI 미러라 raw f32.
 
 use std::collections::HashSet;
+use std::sync::OnceLock;
+use std::time::Instant;
 
 use winit::event::{ElementState, MouseButton};
 use winit::keyboard::{Key as WinitKey, KeyCode, NamedKey, PhysicalKey};
@@ -45,6 +47,20 @@ use crate::plugin::PluginManager;
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 
 use super::MainView;
+
+/// `set_context.raw_input.time` 로 보낼 공유 기준시각의 경과 초. egui 는 두 연속
+/// pass 의 `time` **차이**만으로 dt 를 계산하므로 절대 기준(epoch)은 의미가 없고
+/// 단조 증가만 보장하면 된다 — 프로세스 시작 시 1 회 고정한 [`Instant`] 로부터의
+/// 경과 시간을 쓴다.
+///
+/// 이 값을 항상 `None` 으로 보내면(과거 동작) egui 가 `predicted_dt`(1/60초) 로만
+/// dt 를 추정한다 — idle-invalidate 재forward 처럼 실제 forward 간격이 그보다 훨씬
+/// 길어도 egui 는 짧은 프레임으로 착각해, 스크롤 스무딩의 지수완화 계수가 실제보다
+/// 느리게 수렴한다(`docs/dev-guide/egui-mesh-channel.md` "plugin self-repaint" 참조).
+fn mesh_time_now() -> f64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
 
 /// 한 egui-mesh surface 의 host 측 forward 추적 상태.
 ///
@@ -404,7 +420,7 @@ impl MainView {
                 height_px: h,
                 pixels_per_point: ppp,
                 raw_input: RawInputWire {
-                    time: None,
+                    time: Some(mesh_time_now()),
                     focused: is_focused,
                     modifiers,
                     events,
@@ -437,7 +453,7 @@ impl MainView {
                 height_px: h,
                 pixels_per_point: f32::from_bits(ppp_bits),
                 raw_input: RawInputWire {
-                    time: None,
+                    time: Some(mesh_time_now()),
                     focused: false,
                     modifiers: ModifiersWire::default(),
                     events: Vec::new(),

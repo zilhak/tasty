@@ -337,6 +337,11 @@ pub struct PluginManager {
     /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
     /// `take_invalidated_surfaces` 가 드레인한다.
     pub(super) invalidated_surfaces: Vec<u32>,
+    /// `PopupInvalidated`(TODO 15) 로 알려진 popup instance_id 누적 — egui
+    /// `viewport_output` self-repaint 요청(스크롤 스무딩 등) 처럼 무입력 상태에서
+    /// plugin 이 재-forward 를 요청한 egui-mesh popup(git-viewer/clipboard-viewer 등).
+    /// `pump()` 가 채우고 `take_invalidated_popups` 가 드레인한다.
+    pub(super) invalidated_popups: Vec<u64>,
     /// RssSurge 이상탐지 — 마지막 sampling tick 시각. `RSS_SAMPLE_INTERVAL`
     /// 경과마다 `processes` 의 각 `child_pid()` 를 sysinfo 로 sampling한다.
     pub(super) last_rss_sample: Instant,

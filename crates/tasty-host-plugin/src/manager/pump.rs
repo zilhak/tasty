@@ -42,6 +42,10 @@ struct CollectedPluginEvents {
     // SurfaceInvalidated 알림 (단계 06): idle 상태에서 plugin 이 파일 변경 등을 알린
     // surface_id. `App::event_handler` 가 pump 후 `take_invalidated_surfaces` 로 드레인.
     new_invalidated: Vec<u32>,
+    // PopupInvalidated 알림 (TODO 15): idle 상태에서 plugin 이 self-repaint(egui
+    // viewport_output) 를 요청한 popup instance_id. `App::event_handler` 가 pump 후
+    // `take_invalidated_popups` 로 드레인.
+    new_invalidated_popups: Vec<u64>,
     // plugin 이 폐기한 shared buffer (성장 재생성 등): (plugin_id, buffer_id).
     // host 매핑을 해제하지 않으면 구세대 버퍼가 plugin 수명 내내 남는다.
     released_buffers: Vec<(String, SharedBufferId)>,
@@ -92,6 +96,14 @@ impl PluginManager {
     /// View 를 dirty 표시하는 데 쓴다.
     pub fn take_invalidated_surfaces(&mut self) -> Vec<u32> {
         std::mem::take(&mut self.invalidated_surfaces)
+    }
+
+    /// `PopupInvalidated`(TODO 15) 누적을 드레인한다. `App::event_handler` 가
+    /// `pump()` 직후 호출해, self-repaint 를 요청한 egui-mesh popup instance 에
+    /// 무입력 재-forward 를 예약한다(ADR-0056 `plugin_mesh_popup_pending_repaint`
+    /// 재사용, `mark_invalidated_popups_dirty` 참조).
+    pub fn take_invalidated_popups(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.invalidated_popups)
     }
 
     /// `RSS_SAMPLE_INTERVAL` 경과 시 살아있는 plugin 프로세스 전부의 RSS 를
@@ -180,6 +192,11 @@ impl PluginManager {
                 // idle 상태(입력 무)에서도 plugin 이 파일 변경 등을 알렸다 — 다음 tick 에서
                 // 해당 View 의 forward 게이트를 무장해 입력 없이 재-forward 되게 한다.
                 out.new_invalidated.push(surface_id);
+            }
+            PluginEvent::PopupInvalidated { instance_id } => {
+                // popup 대응 — egui viewport_output self-repaint 등, 무입력 상태에서
+                // plugin 이 재-forward 를 요청했다.
+                out.new_invalidated_popups.push(instance_id);
             }
             PluginEvent::PaintFrame {
                 surface_id,
@@ -307,6 +324,7 @@ impl PluginManager {
             new_popup_paint_frames,
             new_banner_paint_frames,
             new_invalidated,
+            new_invalidated_popups,
             released_buffers,
             disconnected,
         } = collected;
@@ -326,6 +344,9 @@ impl PluginManager {
         }
         if !new_invalidated.is_empty() {
             self.invalidated_surfaces.extend(new_invalidated);
+        }
+        if !new_invalidated_popups.is_empty() {
+            self.invalidated_popups.extend(new_invalidated_popups);
         }
         for (plugin_id, buffer_id) in released_buffers {
             self.release_plugin_buffer(&plugin_id, buffer_id);
