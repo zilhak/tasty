@@ -84,32 +84,37 @@ impl App {
                 }
             };
             match mirror_ws_id {
-                None => {
-                    let path_str = path.to_string_lossy().to_string();
-                    if let Err(e) = self.core.clipboard_arc().write_text(&path_str) {
-                        tracing::warn!("screenshot capture: local clipboard write failed: {e}");
-                    }
-                }
-                Some(ws_id) => {
-                    let Some(bytes) = bytes else {
-                        tracing::warn!(
-                            "screenshot capture: mirror upload requested but no bytes were read"
-                        );
-                        continue;
-                    };
-                    let file_name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "screenshot.png".to_string());
-                    if let Err(e) =
-                        self.forward_capture_to_remote_clipboard(ws_id, &file_name, &bytes)
-                    {
-                        tracing::warn!(
-                            "screenshot capture: forward to mirror workspace {ws_id} failed: {e}"
-                        );
-                    }
-                }
+                None => self.write_capture_to_local_clipboard(&path),
+                Some(ws_id) => self.upload_capture_to_mirror(ws_id, &path, bytes),
             }
+        }
+    }
+
+    /// 로컬 클립보드에 캡처 파일 경로를 기록한다.
+    fn write_capture_to_local_clipboard(&mut self, path: &std::path::Path) {
+        let path_str = path.to_string_lossy().to_string();
+        if let Err(e) = self.core.clipboard_arc().write_text(&path_str) {
+            tracing::warn!("screenshot capture: local clipboard write failed: {e}");
+        }
+    }
+
+    /// mirror workspace 의 attach 세션으로 캡처 파일을 업로드한다.
+    fn upload_capture_to_mirror(
+        &mut self,
+        ws_id: u32,
+        path: &std::path::Path,
+        bytes: Option<Vec<u8>>,
+    ) {
+        let Some(bytes) = bytes else {
+            tracing::warn!("screenshot capture: mirror upload requested but no bytes were read");
+            return;
+        };
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "screenshot.png".to_string());
+        if let Err(e) = self.forward_capture_to_remote_clipboard(ws_id, &file_name, &bytes) {
+            tracing::warn!("screenshot capture: forward to mirror workspace {ws_id} failed: {e}");
         }
     }
 }

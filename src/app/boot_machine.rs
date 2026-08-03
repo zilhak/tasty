@@ -102,23 +102,7 @@ impl App {
         boot_t0: Instant,
         window_hidden: bool,
     ) {
-        // T2.5: db + theme. theme 는 첫 present *전*에 설치해 로딩 프레임부터
-        // 사용자 theme 배경으로 그린다 (부팅 중 배경색 전환 방지). state.db 는
-        // create_app_state(엔진 초기화) 이전 필수 선행이라 같은 스텝에 묶는다 —
-        // 구 init_app_state 선두와 동일 순서. memory.db 는 boot 가 App::new 이전에
-        // 이미 초기화함 (D.3.C.M.1).
-        let t_db_theme = Instant::now();
-        let db_init_error = crate::db::init().err();
-        let invalid_theme_name =
-            crate::app::window_lifecycle::boot_apply_theme(&mut settings.appearance);
-        if let Err(e) = settings.save() {
-            tracing::warn!("failed to persist settings after theme apply: {e}");
-        }
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t_db_theme.elapsed().as_secs_f64() * 1000.0,
-            "T2.5 db_theme (begin_boot enter -> first loading frame)"
-        );
+        let (db_init_error, invalid_theme_name) = Self::init_boot_db_and_theme(&mut settings);
 
         let mut boot = BootState {
             window,
@@ -132,9 +116,37 @@ impl App {
             pending_events: Vec::new(),
         };
 
-        // 첫 로딩 프레임 — hidden 창은 RedrawRequested 를 못 받을 수 있으므로
-        // 이벤트 대기 없이 즉시 그린다. 실패해도 창은 표시한다 (영구 hidden 방지
-        // fallback — 그 경우 OS 기본 배경이 짧게 보일 수 있으나 부팅은 진행된다).
+        Self::present_first_boot_frame(&mut boot, boot_t0, window_hidden);
+        self.boot = Some(boot);
+    }
+
+    /// T2.5: db + theme. theme 는 첫 present *전*에 설치해 로딩 프레임부터
+    /// 사용자 theme 배경으로 그린다 (부팅 중 배경색 전환 방지). state.db 는
+    /// create_app_state(엔진 초기화) 이전 필수 선행이라 같은 스텝에 묶는다 —
+    /// 구 init_app_state 선두와 동일 순서. memory.db 는 boot 가 App::new 이전에
+    /// 이미 초기화함 (D.3.C.M.1).
+    fn init_boot_db_and_theme(
+        settings: &mut crate::settings::Settings,
+    ) -> (Option<crate::db::DbInitError>, Option<String>) {
+        let t_db_theme = Instant::now();
+        let db_init_error = crate::db::init().err();
+        let invalid_theme_name =
+            crate::app::window_lifecycle::boot_apply_theme(&mut settings.appearance);
+        if let Err(e) = settings.save() {
+            tracing::warn!("failed to persist settings after theme apply: {e}");
+        }
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t_db_theme.elapsed().as_secs_f64() * 1000.0,
+            "T2.5 db_theme (begin_boot enter -> first loading frame)"
+        );
+        (db_init_error, invalid_theme_name)
+    }
+
+    /// 첫 로딩 프레임 — hidden 창은 RedrawRequested 를 못 받을 수 있으므로
+    /// 이벤트 대기 없이 즉시 그린다. 실패해도 창은 표시한다 (영구 hidden 방지
+    /// fallback — 그 경우 OS 기본 배경이 짧게 보일 수 있으나 부팅은 진행된다).
+    fn present_first_boot_frame(boot: &mut BootState, boot_t0: Instant, window_hidden: bool) {
         if let Err(e) = boot.gpu.render_loading(&boot.window, &boot.phase) {
             tracing::warn!("boot loading first frame render failed: {e} — showing window anyway");
         }
@@ -147,7 +159,6 @@ impl App {
             );
         }
         boot.window.request_redraw();
-        self.boot = Some(boot);
     }
 
     /// 부팅 1프레임: 현재 phase 1스텝 수행 → (미완이면) 로딩 프레임 렌더 +
@@ -182,96 +193,117 @@ impl App {
 
     /// 현재 phase 1스텝. 부팅 완료(Ready 도달) 시 true.
     fn boot_step(&mut self, boot: &mut BootState) -> bool {
-        match &mut boot.phase {
-            BootPhase::GpuInit => {
-                // 원자 스텝(T2.6·T3)을 워커 스레드로 — cols/rows 는 GPU cell
-                // metrics 의존이라 메인에서 계산해 전달한다. 워커가 도는 동안
-                // 메인은 WaitingEngine 에서 매 프레임 로딩 렌더를 지속한다.
-                let rx = self.spawn_engine_worker(boot);
-                boot.phase = BootPhase::WaitingEngine {
-                    started: Instant::now(),
-                    rx,
-                    frames: 0,
-                };
-                false
-            }
-            BootPhase::WaitingEngine {
-                started,
+        if matches!(boot.phase, BootPhase::GpuInit) {
+            // 원자 스텝(T2.6·T3)을 워커 스레드로 — cols/rows 는 GPU cell
+            // metrics 의존이라 메인에서 계산해 전달한다. 워커가 도는 동안
+            // 메인은 WaitingEngine 에서 매 프레임 로딩 렌더를 지속한다.
+            let rx = self.spawn_engine_worker(boot);
+            boot.phase = BootPhase::WaitingEngine {
+                started: Instant::now(),
                 rx,
-                frames,
-            } => {
-                *frames += 1;
-                match rx.try_recv() {
-                    Ok((engine, mgr)) => {
-                        let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
-                        let frames = *frames;
-                        self.core_state = Some(engine);
-                        self.plugin_manager = Some(mgr);
-                        tracing::info!(
-                            target: "tasty::boot",
-                            ms = wait_ms,
-                            frames,
-                            "T2.7 engine_wait (워커 체류; frames = 그동안 돈 로딩 프레임 스텝 수)"
-                        );
-                        self.boot_transition_after_engine(boot)
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => false,
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // 워커 panic (예: engine 생성 expect) — 결과 없이 채널이
-                        // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
-                        // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
-                        // 원인이면 부팅이 정상 진행된다.
-                        tracing::error!(
-                            "boot engine worker channel disconnected — synchronous fallback"
-                        );
-                        self.ensure_engine_and_plugins(
-                            &boot.gpu,
-                            boot.settings.appearance.sidebar_width,
-                        );
-                        self.boot_transition_after_engine(boot)
-                    }
-                }
+                frames: 0,
+            };
+            return false;
+        }
+        if matches!(boot.phase, BootPhase::WaitingEngine { .. }) {
+            return self.boot_step_waiting_engine(boot);
+        }
+        if matches!(boot.phase, BootPhase::WaitingPlugins { .. }) {
+            return self.boot_step_waiting_plugins(boot);
+        }
+        self.boot_step_restoring_layout(boot)
+    }
+
+    /// `WaitingEngine` 스텝 — 워커 채널 폴링 후 결과 수신 시 core/plugin 장착,
+    /// disconnect 시 동기 fallback. 반환: 부팅 완료 여부.
+    fn boot_step_waiting_engine(&mut self, boot: &mut BootState) -> bool {
+        let BootPhase::WaitingEngine {
+            started,
+            rx,
+            frames,
+        } = &mut boot.phase
+        else {
+            unreachable!("boot_step_waiting_engine called outside WaitingEngine phase");
+        };
+        *frames += 1;
+        match rx.try_recv() {
+            Ok((engine, mgr)) => {
+                let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
+                let frames = *frames;
+                self.core_state = Some(engine);
+                self.plugin_manager = Some(mgr);
+                tracing::info!(
+                    target: "tasty::boot",
+                    ms = wait_ms,
+                    frames,
+                    "T2.7 engine_wait (워커 체류; frames = 그동안 돈 로딩 프레임 스텝 수)"
+                );
+                self.boot_transition_after_engine(boot)
             }
-            BootPhase::WaitingPlugins {
-                started,
-                deadline,
-                needed,
-            } => {
-                let satisfied = self.boot_pump_step_plugins_registered(needed);
-                // deadline 초과 시 기존 동기 루프와 동일하게 그대로 진행 (안전망
-                // 의미론 유지 — apply 는 어차피 수행되고 carry 가 layout 을 보호).
-                if satisfied || Instant::now() >= *deadline {
-                    tracing::info!(
-                        target: "tasty::boot",
-                        ms = started.elapsed().as_secs_f64() * 1000.0,
-                        reason = if satisfied { "satisfied" } else { "deadline" },
-                        "T4 layout_wait_plugins (deadline 300ms)"
-                    );
-                    // 전이 시 1회 apply — 구 코드의 "1차 루프 탈출 → apply → 2차
-                    // 루프 진입" 순서와 동일. 단일 take 는 Intent 본문이 보장.
-                    boot.restored_idx = self.boot_apply_pending_layout_restore();
-                    let now = Instant::now();
-                    boot.phase = BootPhase::RestoringLayout {
-                        started: now,
-                        deadline: now + Duration::from_millis(500),
-                    };
-                }
-                false
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                // 워커 panic (예: engine 생성 expect) — 결과 없이 채널이
+                // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
+                // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
+                // 원인이면 부팅이 정상 진행된다.
+                tracing::error!("boot engine worker channel disconnected — synchronous fallback");
+                self.ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width);
+                self.boot_transition_after_engine(boot)
             }
-            BootPhase::RestoringLayout { started, deadline } => {
-                let done = self.boot_pump_step_remote_restores_done();
-                if done || Instant::now() >= *deadline {
-                    tracing::info!(
-                        target: "tasty::boot",
-                        ms = started.elapsed().as_secs_f64() * 1000.0,
-                        reason = if done { "satisfied" } else { "deadline" },
-                        "T6 remote_surface_wait (deadline 500ms)"
-                    );
-                    true
-                } else {
-                    false
-                }
-            }
+        }
+    }
+
+    /// `WaitingPlugins` 스텝 — pending layout restore 가 요구하는 plugin surface
+    /// kind 등록 여부를 확인, satisfied/deadline 시 apply 후 `RestoringLayout` 로
+    /// 전이. 반환: 항상 false (이 스텝만으로는 부팅이 완료되지 않음).
+    fn boot_step_waiting_plugins(&mut self, boot: &mut BootState) -> bool {
+        let BootPhase::WaitingPlugins {
+            started,
+            deadline,
+            needed,
+        } = &mut boot.phase
+        else {
+            unreachable!("boot_step_waiting_plugins called outside WaitingPlugins phase");
+        };
+        let satisfied = self.boot_pump_step_plugins_registered(needed);
+        // deadline 초과 시 기존 동기 루프와 동일하게 그대로 진행 (안전망
+        // 의미론 유지 — apply 는 어차피 수행되고 carry 가 layout 을 보호).
+        if satisfied || Instant::now() >= *deadline {
+            tracing::info!(
+                target: "tasty::boot",
+                ms = started.elapsed().as_secs_f64() * 1000.0,
+                reason = if satisfied { "satisfied" } else { "deadline" },
+                "T4 layout_wait_plugins (deadline 300ms)"
+            );
+            // 전이 시 1회 apply — 구 코드의 "1차 루프 탈출 → apply → 2차
+            // 루프 진입" 순서와 동일. 단일 take 는 Intent 본문이 보장.
+            boot.restored_idx = self.boot_apply_pending_layout_restore();
+            let now = Instant::now();
+            boot.phase = BootPhase::RestoringLayout {
+                started: now,
+                deadline: now + Duration::from_millis(500),
+            };
+        }
+        false
+    }
+
+    /// `RestoringLayout` 스텝 — RemoteSurface 복원 round-trip 완료 여부를 확인.
+    /// 반환: 부팅 완료 여부 (satisfied 또는 deadline 초과 시 true).
+    fn boot_step_restoring_layout(&mut self, boot: &mut BootState) -> bool {
+        let BootPhase::RestoringLayout { started, deadline } = &mut boot.phase else {
+            unreachable!("boot_step_restoring_layout called outside RestoringLayout phase");
+        };
+        let done = self.boot_pump_step_remote_restores_done();
+        if done || Instant::now() >= *deadline {
+            tracing::info!(
+                target: "tasty::boot",
+                ms = started.elapsed().as_secs_f64() * 1000.0,
+                reason = if done { "satisfied" } else { "deadline" },
+                "T6 remote_surface_wait (deadline 500ms)"
+            );
+            true
+        } else {
+            false
         }
     }
 
@@ -384,7 +416,47 @@ impl App {
         } = boot;
 
         let mut state = self.assemble_app_state(restored_idx);
+        Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
+        self.start_boot_ipc_and_webhooks(&mut state);
 
+        let mut core_state = self
+            .core_state
+            .take()
+            .expect("App.core_state must be present to register a main window");
+        // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록
+        // IPC 서버와 동일한 StreamHub 를 attach registry 에 주입.
+        core_state.attach.set_notifier(self.stream_hub.clone());
+        self.register_window(gpu, state, core_state, window.clone());
+        self.emit_startup_complete_event();
+
+        tracing::info!(
+            target: "tasty::boot",
+            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
+            "boot_total (boot start -> Ready; T2.5~T6 + 미계측 잔여 합)"
+        );
+        // T7 기준 시각 — 부팅 완료(Ready). 구 코드의 resumed() 말미와 등가 시점.
+        crate::boot::trace::mark_resumed_done();
+
+        // 첫 실 UI 프레임 — MainView 는 dirty=true 로 시작하므로 redraw 요청만.
+        window.request_redraw();
+
+        // 부팅 중 지연된 AppEvent 재생 (도착 순서 유지). TerminalOutput 의 waker
+        // dedup 게이트가 "이벤트 소비됐는데 engine 은 views 밖" 상태로 닫힌 채
+        // 유실되지 않도록, 반드시 register_window *후* 에 재생한다.
+        for ev in pending_events {
+            use winit::application::ApplicationHandler;
+            self.user_event(event_loop, ev);
+        }
+    }
+
+    /// 부팅 초기화 에러(DB init 실패 / theme 이름 정정) 를 `state` 에 InfoModal 로
+    /// 반영한다 — `create_new_window` 와 동일한 안내 방식. `self`/App 상태에는
+    /// 닿지 않고 전달된 `state` 만 변형하는 순수 변환 함수.
+    fn report_boot_init_errors(
+        state: &mut crate::state::AppState,
+        db_init_error: Option<crate::db::DbInitError>,
+        invalid_theme_name: Option<String>,
+    ) {
         // DB 초기화 실패 알림 — create_new_window 와 동일하게 InfoModal 로 안내 후 Exit(1).
         if let Some(err) = db_init_error {
             tracing::error!("state.db init failed: {err}");
@@ -395,7 +467,7 @@ impl App {
                 _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
             };
             crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
+                state,
                 crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("db_error.title").to_string(),
                     body,
@@ -407,7 +479,7 @@ impl App {
         // Theme fallback 알림 — normalize 가 잘못된 theme 이름을 정정한 경우.
         if let Some(invalid) = invalid_theme_name {
             crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
+                state,
                 crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("theme_error.title").to_string(),
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
@@ -415,7 +487,11 @@ impl App {
                 },
             );
         }
+    }
 
+    /// IPC/stream 서버 시작 + 웹훅 리스너 init — `finish_boot` 의 첫 윈도우 등록
+    /// 직전 1회 지점. 웹훅 bind 실패는 `state` 에 Warning 토스트로 반영한다.
+    fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::AppState) {
         let ipc_proxy = self.view.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);
@@ -454,16 +530,11 @@ impl App {
             }
             self.core.set_host_ipc_injector(injector);
         }
-        let mut core_state = self
-            .core_state
-            .take()
-            .expect("App.core_state must be present to register a main window");
-        // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록
-        // IPC 서버와 동일한 StreamHub 를 attach registry 에 주입.
-        core_state.attach.set_notifier(self.stream_hub.clone());
-        self.register_window(gpu, state, core_state, window.clone());
-        // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
-        // finish_boot 는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
+    }
+
+    /// Event Bus 1.0: `system.startup_complete` 를 부팅 완료 직후 1회 발화.
+    /// `finish_boot` 는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
+    fn emit_startup_complete_event(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::SystemStartupComplete;
@@ -472,25 +543,6 @@ impl App {
                 &SystemStartupComplete::default(),
                 EventScope::System,
             );
-        }
-
-        tracing::info!(
-            target: "tasty::boot",
-            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
-            "boot_total (boot start -> Ready; T2.5~T6 + 미계측 잔여 합)"
-        );
-        // T7 기준 시각 — 부팅 완료(Ready). 구 코드의 resumed() 말미와 등가 시점.
-        crate::boot::trace::mark_resumed_done();
-
-        // 첫 실 UI 프레임 — MainView 는 dirty=true 로 시작하므로 redraw 요청만.
-        window.request_redraw();
-
-        // 부팅 중 지연된 AppEvent 재생 (도착 순서 유지). TerminalOutput 의 waker
-        // dedup 게이트가 "이벤트 소비됐는데 engine 은 views 밖" 상태로 닫힌 채
-        // 유실되지 않도록, 반드시 register_window *후* 에 재생한다.
-        for ev in pending_events {
-            use winit::application::ApplicationHandler;
-            self.user_event(event_loop, ev);
         }
     }
 

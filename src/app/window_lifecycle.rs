@@ -26,20 +26,22 @@ use crate::{plugin, window};
 ///
 /// 반환: `settings.appearance.theme` 가 디스크/캐시에 없어 mocha 로 fallback 된 경우 원래 요청 id.
 /// (호출자가 InfoModal 로 사용자에게 알린다.)
+/// `boot_apply_theme` 의 3단계(first_run_init/sync_builtin_themes/rescan)가
+/// 반복하는 "실패해도 계속 진행 + warn 로그" 패턴을 통합.
+fn warn_on_theme_err<T, E: std::fmt::Display>(step: &str, result: Result<T, E>) {
+    if let Err(e) = result {
+        tracing::warn!("{step} failed: {e}");
+    }
+}
+
 pub(super) fn boot_apply_theme(
     appearance: &mut tasty_settings::AppearanceSettings,
 ) -> Option<String> {
-    if let Err(e) = tasty_themes::first_run_init() {
-        tracing::warn!("themes first_run_init failed: {e}");
-    }
+    warn_on_theme_err("themes first_run_init", tasty_themes::first_run_init());
     // 빌트인 테마(앱 소유)를 임베드 정본과 동기화 — 옛 스키마/색의 디스크 복사본을
     // 갱신한다. mocha 정본 보장도 겸한다(ensure_mocha_exists 의 상위 집합).
-    if let Err(e) = tasty_themes::sync_builtin_themes() {
-        tracing::warn!("sync_builtin_themes failed: {e}");
-    }
-    if let Err(e) = tasty_themes::rescan() {
-        tracing::warn!("themes rescan failed: {e}");
-    }
+    warn_on_theme_err("sync_builtin_themes", tasty_themes::sync_builtin_themes());
+    warn_on_theme_err("themes rescan", tasty_themes::rescan());
     let requested = appearance.theme.clone();
     tasty_themes::apply_theme(appearance, &requested);
     // host UI zoom 을 항상 실어 부팅 직후 steady state 도 올바른 배율로 설치한다.
@@ -556,31 +558,44 @@ impl App {
         // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
         let db_init_error = crate::db::init().err();
 
-        let mut settings = crate::settings::Settings::load();
-        // 모든 enum-like 필드 정규화. invalid 가 있었으면 즉시 파일에 반영해서
-        // 다음 부팅에 같은 popup / 잘못된 동작이 재발하지 않게 한다.
-        let normalize_report = settings.normalize();
-        if normalize_report.changed
-            && let Err(e) = settings.save()
-        {
-            tracing::warn!("failed to persist normalized settings: {e}");
-        }
-
-        // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
-
-        // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
-        let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
-        if (invalid_theme_name.is_some() || normalize_report.changed)
-            && let Err(e) = settings.save()
-        {
-            tracing::warn!("failed to persist settings after theme apply: {e}");
-        }
+        let (settings, invalid_theme_name) = boot_load_and_normalize_settings();
         let gpu = self
             .create_gpu_state(window.clone(), &settings.appearance)
             .expect("failed to initialize GPU");
 
+        let (mut state, mut core_state) =
+            self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width);
+        self.ensure_at_least_one_workspace(&mut core_state, &mut state);
+
+        // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
+        if let Some(err) = db_init_error {
+            crate::adapters::ui::info_modal::show_info_modal(
+                &mut state,
+                build_db_init_error_modal(&err),
+            );
+        }
+
+        // Theme fallback 알림 (잘못된 theme 이름이었던 경우).
+        if let Some(invalid) = invalid_theme_name {
+            crate::adapters::ui::info_modal::show_info_modal(
+                &mut state,
+                build_theme_fallback_modal(&invalid),
+            );
+        }
+
+        self.register_window(gpu, state, core_state, window);
+        tracing::info!("created new window {:?}", self.view.focused_view_id);
+    }
+
+    /// `create_new_window` 지원 — parked state 가 있으면 재사용, 없으면
+    /// `create_app_state`(+ `App.core_state` take)로 새로 만든다.
+    fn acquire_app_state_and_engine(
+        &mut self,
+        gpu: &GpuState,
+        sidebar_width: tasty_type_geometry::length::LogicalPx,
+    ) -> (crate::state::AppState, crate::core::CoreState) {
         // Reuse parked state if available (restoring previous session)
-        let (mut state, parked_engine) = if !self.parked_states.is_empty() {
+        let (state, parked_engine) = if !self.parked_states.is_empty() {
             let parked = self.parked_states.remove(0);
             tracing::info!(
                 "restoring parked state, {} remaining",
@@ -589,7 +604,7 @@ impl App {
             let (st, eng) = parked;
             (st, Some(eng))
         } else {
-            let st = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+            let st = self.create_app_state(gpu, sidebar_width);
             (st, None)
         };
 
@@ -597,54 +612,84 @@ impl App {
         // 를 take. create_app_state 가 항상 self.core_state 를 set 하므로
         // 두 번째 main window 생성 시에도 새 engine 이 만들어져 들어와 있음
         // (글로벌 Arc 들은 첫 engine 과 공유 — create_app_state 의 shared 분기 참조).
-        let mut core_state = if let Some(e) = parked_engine {
-            e
-        } else {
-            self.core_state
+        let core_state = match parked_engine {
+            Some(e) => e,
+            None => self
+                .core_state
                 .take()
-                .expect("App.core_state must be present to register a main window")
+                .expect("App.core_state must be present to register a main window"),
         };
+        (state, core_state)
+    }
 
-        // Ensure at least one workspace exists for the new window
+    /// `create_new_window` 지원 — 새 윈도우의 engine 이 워크스페이스가 하나도 없으면
+    /// (parked 재사용이 아닌 신규 생성 경로) 기본 워크스페이스를 부트스트랩한다.
+    fn ensure_at_least_one_workspace(
+        &mut self,
+        core_state: &mut crate::core::CoreState,
+        state: &mut crate::state::AppState,
+    ) {
         if core_state.workspaces.is_empty() {
-            match self.core.create_default_workspace(&mut core_state) {
+            match self.core.create_default_workspace(core_state) {
                 Ok(idx) => state.active_workspace = idx,
                 Err(e) => tracing::error!("bootstrap workspace failed: {e}"),
             }
         }
+    }
+}
 
-        // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
-        if let Some(err) = db_init_error {
-            tracing::error!("state.db init failed: {err}");
-            let (key, args) = err.user_message_i18n();
-            let body = match args.len() {
-                0 => crate::i18n::t(key).to_string(),
-                1 => crate::i18n::t_fmt(key, &args[0]),
-                _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
-            };
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t("db_error.title").to_string(),
-                    body,
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
-                },
-            );
-        }
+/// `create_new_window` 지원 — 설정 로드+정규화+저장, theme 적용까지 한 단계로 묶는다
+/// (`resumed()`의 `App::boot_load_normalized_settings`와 로직 유사하나, 이쪽은 theme
+/// 적용까지 포함해 완전히 동일하진 않다).
+fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<String>) {
+    let mut settings = crate::settings::Settings::load();
+    // 모든 enum-like 필드 정규화. invalid 가 있었으면 즉시 파일에 반영해서
+    // 다음 부팅에 같은 popup / 잘못된 동작이 재발하지 않게 한다.
+    let normalize_report = settings.normalize();
+    if normalize_report.changed
+        && let Err(e) = settings.save()
+    {
+        tracing::warn!("failed to persist normalized settings: {e}");
+    }
 
-        // Theme fallback 알림 (잘못된 theme 이름이었던 경우).
-        if let Some(invalid) = invalid_theme_name {
-            crate::adapters::ui::info_modal::show_info_modal(
-                &mut state,
-                crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t("theme_error.title").to_string(),
-                    body: crate::i18n::t_fmt("theme_error.body", &invalid),
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
-                },
-            );
-        }
+    // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
 
-        self.register_window(gpu, state, core_state, window);
-        tracing::info!("created new window {:?}", self.view.focused_view_id);
+    // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
+    let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
+    if (invalid_theme_name.is_some() || normalize_report.changed)
+        && let Err(e) = settings.save()
+    {
+        tracing::warn!("failed to persist settings after theme apply: {e}");
+    }
+    (settings, invalid_theme_name)
+}
+
+/// `create_new_window` 지원 — state.db 초기화 실패 안내 모달을 만든다(pure builder).
+fn build_db_init_error_modal(
+    err: &crate::db::DbInitError,
+) -> crate::adapters::ui::info_modal::InfoModal {
+    tracing::error!("state.db init failed: {err}");
+    let (key, args) = err.user_message_i18n();
+    let body = match args.len() {
+        0 => crate::i18n::t(key).to_string(),
+        1 => crate::i18n::t_fmt(key, &args[0]),
+        _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
+    };
+    crate::adapters::ui::info_modal::InfoModal {
+        title: crate::i18n::t("db_error.title").to_string(),
+        body,
+        on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
+    }
+}
+
+/// `create_new_window` 지원 — theme fallback(잘못된 theme 이름) 안내 모달을 만든다
+/// (pure builder).
+fn build_theme_fallback_modal(
+    invalid_theme_name: &str,
+) -> crate::adapters::ui::info_modal::InfoModal {
+    crate::adapters::ui::info_modal::InfoModal {
+        title: crate::i18n::t("theme_error.title").to_string(),
+        body: crate::i18n::t_fmt("theme_error.body", invalid_theme_name),
+        on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
     }
 }

@@ -19,33 +19,16 @@ impl App {
             self.preset_view_id = None;
         }
 
-        use winit::window::WindowAttributes;
-        let mut attrs = WindowAttributes::default()
-            .with_title(crate::i18n::t("preset.window.title"))
-            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(760, 480))
-            .with_visible(false);
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                tracing::warn!("failed to create preset window: {e}");
-                return;
-            }
+        let attrs = Self::preset_window_attributes();
+        let window = match Self::create_window_or_warn(event_loop, attrs) {
+            Some(w) => w,
+            None => return,
         };
 
-        let appearance = self
-            .focused_window()
-            .map(|w| w.core_state.settings.appearance.clone())
-            .unwrap_or_else(|| crate::settings::Settings::load().appearance);
+        let appearance = self.focused_appearance_or_disk();
         // 편집 모드 표준 단축키 스냅샷 — appearance 와 동일하게 focused window
         // 설정에서 clone(부재 시 디스크 로드). 설정 변경은 창 재오픈 시 반영.
-        let keybindings = self
-            .focused_window()
-            .map(|w| w.core_state.settings.keybindings.clone())
-            .unwrap_or_else(|| crate::settings::Settings::load().keybindings);
+        let keybindings = self.focused_keybindings_or_disk();
         let gpu = match self.create_gpu_state(window.clone(), &appearance) {
             Ok(g) => g,
             Err(e) => {
@@ -73,6 +56,48 @@ impl App {
         self.view.views.insert(window_id, Box::new(preset));
         self.preset_view_id = Some(window_id);
         tracing::info!("opened preset window {:?}", window_id);
+    }
+
+    /// PresetView 신규 윈도우 생성용 `WindowAttributes` 조립.
+    fn preset_window_attributes() -> winit::window::WindowAttributes {
+        use winit::window::WindowAttributes;
+        let mut attrs = WindowAttributes::default()
+            .with_title(crate::i18n::t("preset.window.title"))
+            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(760, 480))
+            .with_visible(false);
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
+        attrs
+    }
+
+    /// focused main window 의 appearance 를 clone(부재 시 디스크에서 로드).
+    fn focused_appearance_or_disk(&self) -> crate::settings::AppearanceSettings {
+        self.focused_window()
+            .map(|w| w.core_state.settings.appearance.clone())
+            .unwrap_or_else(|| crate::settings::Settings::load().appearance)
+    }
+
+    /// focused main window 의 keybindings 를 clone(부재 시 디스크에서 로드).
+    fn focused_keybindings_or_disk(&self) -> crate::settings::KeybindingSettings {
+        self.focused_window()
+            .map(|w| w.core_state.settings.keybindings.clone())
+            .unwrap_or_else(|| crate::settings::Settings::load().keybindings)
+    }
+
+    /// winit 윈도우 생성. 실패 시 warn 로그 후 `None`.
+    fn create_window_or_warn(
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        attrs: winit::window::WindowAttributes,
+    ) -> Option<Arc<winit::window::Window>> {
+        match event_loop.create_window(attrs) {
+            Ok(w) => Some(Arc::new(w)),
+            Err(e) => {
+                tracing::warn!("failed to create preset window: {e}");
+                None
+            }
+        }
     }
 
     /// PresetView close 시 정리. store 는 Arc<Mutex<>> 공유라 별도 회수 불필요.

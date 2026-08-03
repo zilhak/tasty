@@ -154,106 +154,29 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(target_os = "macos")]
         crate::macos_delegate::inject_delegate_methods();
 
-        use std::sync::Arc;
-        use winit::window::WindowAttributes;
-
         // 부팅 구간 계측 (T1~T7, target: "tasty::boot") — 흰 화면 시간 분해용 상시 계측.
         let boot_t0 = std::time::Instant::now();
 
         // 축A: hidden 생성 — 첫 로딩 프레임 present 후에야 표시해 OS 기본 배경(흰)
         // 프레임을 제거한다. 3 OS 공통 winit API (표시는 begin_boot / shell setup
         // 분기가 수행, 실패 시에도 fallback 으로 반드시 표시).
-        let mut attrs = WindowAttributes::default()
-            .with_visible(false)
-            .with_title(if cfg!(debug_assertions) {
-                "Tasty (Debug)"
-            } else {
-                "Tasty"
-            })
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-        // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
-        attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
+        let window = Self::boot_create_hidden_window(event_loop, boot_t0);
 
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create window"),
-        );
-        tracing::info!(
-            target: "tasty::boot",
-            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
-            "T1 window_create (resumed enter -> create_window return)"
-        );
+        let mut init_settings = Self::boot_load_normalized_settings();
 
-        let mut init_settings = crate::settings::Settings::load();
-        // Validate enum-like fields up-front so GPU init and downstream consumers
-        // see normalized values, and so disk reflects fallback (no recurring popups).
-        let normalize_report = init_settings.normalize();
-        if normalize_report.changed
-            && let Err(e) = init_settings.save()
+        let gpu = self.try_init_boot_gpu(&window, &init_settings.appearance);
+
+        let (window, gpu) = match self.enter_shell_setup_if_needed(&mut init_settings, window, gpu)
         {
-            tracing::warn!("failed to persist normalized settings: {e}");
-        }
-
-        let t2 = std::time::Instant::now();
-        let mut gpu = match self.create_gpu_state(window.clone(), &init_settings.appearance) {
-            Ok(gpu) => gpu,
-            Err(e) if e.downcast_ref::<crate::app::NoGpuAdapter>().is_some() => {
-                // GPU 어댑터가 없다는 건 드라이버 미설치 등 정상적으로 발생 가능한
-                // 환경 문제다 — panic(크래시 리포트 대상)이 아니라 사람이 읽을 안내를
-                // stderr 로 내고 조용히 종료한다. 그 외 에러는 예상 밖 실패이므로
-                // 기존처럼 panic 시켜 크래시 리포팅 경로를 유지한다.
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.title"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.body"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.hint"));
-                std::process::exit(1);
-            }
-            Err(e) => panic!("failed to initialize GPU: {e}"),
+            Some(pair) => pair,
+            None => return,
         };
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t2.elapsed().as_secs_f64() * 1000.0,
-            "T2 gpu_init (create_gpu_state)"
-        );
-
-        if !init_settings.general.is_shell_valid() {
-            if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
-                tracing::info!("configured shell invalid; auto-detected bash at {detected}");
-                init_settings.general.shell = detected;
-                if let Err(e) = init_settings.save() {
-                    tracing::warn!("failed to save auto-detected shell: {e}");
-                }
-            } else {
-                tracing::warn!("bash not found; entering shell setup mode");
-                self.shell_setup_mode = true;
-                self.shell_setup_path = String::new();
-                // 축A: hidden 생성이므로 setup 화면 첫 프레임을 그린 뒤 표시한다.
-                // 렌더 실패 시에도 표시 — 창이 영영 hidden 이 되지 않게 하는 fallback.
-                // Ok(action) 은 버린다 — 사용자 입력 전 첫 프레임이라 항상 None.
-                if let Err(e) = gpu.render_shell_setup(&window, &mut self.shell_setup_path) {
-                    tracing::warn!(
-                        "shell setup first frame render failed: {e} — showing window anyway"
-                    );
-                }
-                window.set_visible(true);
-                self.shell_setup_gpu = Some(gpu);
-                self.shell_setup_window = Some(window);
-                return;
-            }
-        }
 
         window.set_ime_allowed(true);
         // 부팅 상태 머신 시작 — theme/db 초기화 + 첫 로딩 프레임 present 후 즉시
         // 반환한다. 엔진·plugin·layout 복원은 이후 프레임 스텝(drive_boot_frame)이
         // 진행하고, Ready 도달 시 finish_boot 가 MainView 로 합류한다.
         self.begin_boot(window, gpu, init_settings, boot_t0, true);
-        // invalid_theme_name 보고는 부팅 상태 머신이 직접 수행하므로 normalize_report 는 더
-        // 이상 여기서 소비되지 않는다. 변수 자체는 normalize 호출 결과 보존용으로 둔다.
-        drop(normalize_report);
 
         #[cfg(windows)]
         crate::jump_list::setup_jump_list();
@@ -266,12 +189,7 @@ impl ApplicationHandler<AppEvent> for App {
             any(windows, target_os = "macos", target_os = "linux"),
             feature = "gui"
         ))]
-        if self.tray_icon.is_none()
-            && let Some((tray, ids)) = crate::system_tray::create_tray_icon()
-        {
-            self.tray_icon = Some(tray);
-            self.tray_menu_ids = Some(ids);
-        }
+        self.ensure_tray_icon_once();
 
         tracing::info!(
             target: "tasty::boot",
@@ -433,72 +351,9 @@ impl ApplicationHandler<AppEvent> for App {
         // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
         // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
         self.finalize_plugin_hello(hello_pairs);
-        // RssSurge 이상탐지(상세 `docs/features/telemetry/index.md`) — PluginManager
-        // 가 sysinfo 로 직접 sampling 한
-        // (plugin_id, rss_bytes) 를 anomaly detector 에 공급. 어느 window 소관인지
-        // 몰라(PluginManager 는 App-level singleton) plugin lifecycle cascade 와
-        // 동일하게 첫 main window 를 대상으로 삼는다.
-        if let Some(mgr) = self.plugin_manager.as_mut() {
-            let rss_samples = mgr.take_rss_samples();
-            if !rss_samples.is_empty()
-                && let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut())
-            {
-                crate::adapters::ipc::handler::record_plugin_rss_samples(
-                    &self.core,
-                    &mut main.state,
-                    &mut main.core_state,
-                    &rss_samples,
-                );
-            }
-        }
-        // parked engine(macOS 최소화로 window 가 파괴되고 CoreState 만 남은 경우,
-        // `handle_minimize` macOS 분기)의 mesh mirror 구독도 실제 frame relay 대상이
-        // 되도록 headless 와 동일한 구동 로직을 적용한다 — 살아있는 window 는
-        // `MainView::handle_redraw` 가 이미 매 프레임 이 surface 들을 구동하므로 여기
-        // 대상이 아니다. owning-engine 순회 패턴(`apply_mesh_context_on_owning_engine`
-        // 등)과 동형이나, 이 스텝은 그 쪽처럼 첫 매치에서 멈추지 않고 `parked_states`
-        // 전부를 순회한다 — 여러 window 가 동시에 최소화돼 있어도 각 engine 이
-        // 독립적으로 계속 forward 된다(첫 번째만 복원돼도 나머지는 계속 이 스텝의
-        // 대상으로 남는다, `window_lifecycle.rs`의 `remove(0)` 참조).
-        if let Some(ref mgr) = self.plugin_manager {
-            for (_, engine) in self.parked_states.iter_mut() {
-                crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
-                    engine,
-                    mgr,
-                    &self.stream_hub,
-                );
-            }
-        }
-        // SurfaceInvalidated(단계 06): plugin 이 idle 상태(입력 무)에서 파일 변경을
-        // 알리면 그 surface 를 dirty 표시해 다음 redraw 에서 무입력 재-forward →
-        // 기존 poll_reload 가 새 내용을 읽게 한다. paint 에 종속된 egui_mesh.rs 게이트의
-        // 유일한 예외 진입점. 어느 window 소관인지 몰라 전 View 를 순회한다.
-        let invalidated_surfaces = self
-            .plugin_manager
-            .as_mut()
-            .map(|mgr| mgr.take_invalidated_surfaces())
-            .unwrap_or_default();
-        if !invalidated_surfaces.is_empty() {
-            for w in self.view.views.values_mut() {
-                let touched = match w.as_main_mut() {
-                    Some(main) => {
-                        // `any()`는 첫 true 에서 멈춰 나머지 surface_id 를 못 마크한다 —
-                        // 전부 순회해야 하므로 명시 루프.
-                        let mut any_touched = false;
-                        for &sid in &invalidated_surfaces {
-                            if main.mark_surface_invalidated(sid) {
-                                any_touched = true;
-                            }
-                        }
-                        any_touched
-                    }
-                    None => false,
-                };
-                if touched {
-                    w.mark_dirty();
-                }
-            }
-        }
+        self.record_plugin_rss_samples_if_present();
+        self.forward_mesh_frames_for_parked();
+        self.mark_invalidated_surfaces_dirty();
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
         // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.
@@ -538,6 +393,238 @@ impl ApplicationHandler<AppEvent> for App {
         // 자체는 Intent 큐 (`dispatch_pending_intents`) 가 처리한다.
         self.process_pending_open_preset_window(event_loop);
 
+        self.poll_tray_menu_events();
+
+        // Tick modal shake animation.
+        self.tick_modal_shake();
+
+        // Flush layout persistence (debounced).
+        self.flush_layout_persistence(false);
+
+        self.flush_pending_pty_resizes();
+    }
+}
+
+impl App {
+    /// `resumed()` 축A: hidden 상태로 첫 winit window 를 만든다. 표시는 begin_boot /
+    /// shell setup 분기가 담당(첫 로딩 프레임 present 후에야 표시해 OS 기본 배경(흰)
+    /// 프레임을 제거한다).
+    fn boot_create_hidden_window(
+        event_loop: &ActiveEventLoop,
+        boot_t0: std::time::Instant,
+    ) -> std::sync::Arc<winit::window::Window> {
+        use winit::window::WindowAttributes;
+        let mut attrs = WindowAttributes::default()
+            .with_visible(false)
+            .with_title(if cfg!(debug_assertions) {
+                "Tasty (Debug)"
+            } else {
+                "Tasty"
+            })
+            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
+        // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
+        attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
+        let window = std::sync::Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create window"),
+        );
+        tracing::info!(
+            target: "tasty::boot",
+            ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
+            "T1 window_create (resumed enter -> create_window return)"
+        );
+        window
+    }
+
+    /// `resumed()` 의 설정 로드+정규화 단계. enum-like 필드를 GPU init 전에 정규화해
+    /// 다운스트림이 정규화된 값을 보게 하고, normalize 결과가 바뀌었으면 즉시
+    /// 디스크에 반영해 다음 부팅에 같은 popup/잘못된 동작이 재발하지 않게 한다.
+    fn boot_load_normalized_settings() -> crate::settings::Settings {
+        let mut settings = crate::settings::Settings::load();
+        let normalize_report = settings.normalize();
+        if normalize_report.changed
+            && let Err(e) = settings.save()
+        {
+            tracing::warn!("failed to persist normalized settings: {e}");
+        }
+        settings
+    }
+
+    /// `resumed()` 의 GPU 초기화. 어댑터가 아예 없으면(드라이버 미설치 등 정상적으로
+    /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 안내를
+    /// stderr 로 내고 조용히 종료한다. 그 외 에러는 예상 밖 실패이므로 panic 시켜
+    /// 크래시 리포팅 경로를 유지한다.
+    fn try_init_boot_gpu(
+        &mut self,
+        window: &std::sync::Arc<winit::window::Window>,
+        appearance: &crate::settings::AppearanceSettings,
+    ) -> crate::gpu::GpuState {
+        let t2 = std::time::Instant::now();
+        let gpu = match self.create_gpu_state(window.clone(), appearance) {
+            Ok(gpu) => gpu,
+            Err(e) if e.downcast_ref::<crate::app::NoGpuAdapter>().is_some() => {
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.title"));
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.body"));
+                eprintln!("{}", crate::i18n::t("boot.gpu_error.hint"));
+                std::process::exit(1);
+            }
+            Err(e) => panic!("failed to initialize GPU: {e}"),
+        };
+        tracing::info!(
+            target: "tasty::boot",
+            ms = t2.elapsed().as_secs_f64() * 1000.0,
+            "T2 gpu_init (create_gpu_state)"
+        );
+        gpu
+    }
+
+    /// `resumed()` 의 shell-setup 진입 판정. 설정된 shell 이 유효하면(또는 bash
+    /// auto-detect 성공 시) `Some((window, gpu))` 로 그대로 돌려줘 caller 가 부팅을
+    /// 계속 진행하게 한다. bash 조차 없으면 shell-setup 모드로 진입하고 (window, gpu)
+    /// 소유권을 `self` 로 넘긴 뒤 `None` — caller 는 즉시 `resumed()` 를 return 해야 한다.
+    fn enter_shell_setup_if_needed(
+        &mut self,
+        settings: &mut crate::settings::Settings,
+        window: std::sync::Arc<winit::window::Window>,
+        gpu: crate::gpu::GpuState,
+    ) -> Option<(std::sync::Arc<winit::window::Window>, crate::gpu::GpuState)> {
+        if settings.general.is_shell_valid() {
+            return Some((window, gpu));
+        }
+        if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
+            tracing::info!("configured shell invalid; auto-detected bash at {detected}");
+            settings.general.shell = detected;
+            if let Err(e) = settings.save() {
+                tracing::warn!("failed to save auto-detected shell: {e}");
+            }
+            return Some((window, gpu));
+        }
+        self.enter_shell_setup_mode(window, gpu);
+        None
+    }
+
+    /// `enter_shell_setup_if_needed` 의 실제 진입부 — bash 조차 없을 때 shell-setup
+    /// 모드로 진입한다: setup 화면 첫 프레임을 그리고(렌더 실패 시에도 표시 — 창이
+    /// 영영 hidden 이 되지 않게 하는 fallback) window/GPU 소유권을 `self` 로 넘긴다.
+    fn enter_shell_setup_mode(
+        &mut self,
+        window: std::sync::Arc<winit::window::Window>,
+        mut gpu: crate::gpu::GpuState,
+    ) {
+        tracing::warn!("bash not found; entering shell setup mode");
+        self.shell_setup_mode = true;
+        self.shell_setup_path = String::new();
+        // Ok(action) 은 버린다 — 사용자 입력 전 첫 프레임이라 항상 None.
+        if let Err(e) = gpu.render_shell_setup(&window, &mut self.shell_setup_path) {
+            tracing::warn!("shell setup first frame render failed: {e} — showing window anyway");
+        }
+        window.set_visible(true);
+        self.shell_setup_gpu = Some(gpu);
+        self.shell_setup_window = Some(window);
+    }
+
+    /// `resumed()` 의 tray 아이콘 최초 생성(best-effort, ADR-0001). macOS 는 state 를
+    /// park 하고 window 를 재생성하므로, 재생성 때마다 tray 가 다시 만들어지지 않게
+    /// 가드한다. `None` = tray 불가 — 앱은 taskbar/dock minimize 로 degrade.
+    #[cfg(all(
+        any(windows, target_os = "macos", target_os = "linux"),
+        feature = "gui"
+    ))]
+    fn ensure_tray_icon_once(&mut self) {
+        if self.tray_icon.is_none()
+            && let Some((tray, ids)) = crate::system_tray::create_tray_icon()
+        {
+            self.tray_icon = Some(tray);
+            self.tray_menu_ids = Some(ids);
+        }
+    }
+
+    /// `about_to_wait()` 지원 — RssSurge 이상탐지(TODO 61): PluginManager 가 sysinfo 로
+    /// 직접 sampling 한 (plugin_id, rss_bytes) 를 anomaly detector 에 공급. 어느 window
+    /// 소관인지 몰라(PluginManager 는 App-level singleton) plugin lifecycle cascade 와
+    /// 동일하게 첫 main window 를 대상으로 삼는다.
+    fn record_plugin_rss_samples_if_present(&mut self) {
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            let rss_samples = mgr.take_rss_samples();
+            if !rss_samples.is_empty()
+                && let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut())
+            {
+                crate::adapters::ipc::handler::record_plugin_rss_samples(
+                    &self.core,
+                    &mut main.state,
+                    &mut main.core_state,
+                    &rss_samples,
+                );
+            }
+        }
+    }
+
+    /// `about_to_wait()` 지원 — parked engine(macOS 최소화로 window 가 파괴되고
+    /// CoreState 만 남은 경우, `handle_minimize` macOS 분기)의 mesh mirror 구독도
+    /// 실제 frame relay 대상이 되도록 headless 와 동일한 구동 로직을 적용한다 —
+    /// 살아있는 window 는 `MainView::handle_redraw` 가 이미 매 프레임 이 surface 들을
+    /// 구동하므로 여기 대상이 아니다. owning-engine 순회 패턴
+    /// (`apply_mesh_context_on_owning_engine` 등)과 동형이나, 이 스텝은 그 쪽처럼 첫
+    /// 매치에서 멈추지 않고 `parked_states` 전부를 순회한다 — 여러 window 가 동시에
+    /// 최소화돼 있어도 각 engine 이 독립적으로 계속 forward 된다(첫 번째만 복원돼도
+    /// 나머지는 계속 이 스텝의 대상으로 남는다, `window_lifecycle.rs`의 `remove(0)` 참조).
+    fn forward_mesh_frames_for_parked(&mut self) {
+        if let Some(ref mgr) = self.plugin_manager {
+            for (_, engine) in self.parked_states.iter_mut() {
+                crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
+                    engine,
+                    mgr,
+                    &self.stream_hub,
+                );
+            }
+        }
+    }
+
+    /// `about_to_wait()` 지원 — SurfaceInvalidated(단계 06): plugin 이 idle 상태(입력
+    /// 무)에서 파일 변경을 알리면 그 surface 를 dirty 표시해 다음 redraw 에서 무입력
+    /// 재-forward → 기존 poll_reload 가 새 내용을 읽게 한다. paint 에 종속된
+    /// egui_mesh.rs 게이트의 유일한 예외 진입점. 어느 window 소관인지 몰라 전 View 를
+    /// 순회한다.
+    fn mark_invalidated_surfaces_dirty(&mut self) {
+        let invalidated_surfaces = self
+            .plugin_manager
+            .as_mut()
+            .map(|mgr| mgr.take_invalidated_surfaces())
+            .unwrap_or_default();
+        if invalidated_surfaces.is_empty() {
+            return;
+        }
+        for w in self.view.views.values_mut() {
+            let touched = match w.as_main_mut() {
+                Some(main) => {
+                    // `any()`는 첫 true 에서 멈춰 나머지 surface_id 를 못 마크한다 —
+                    // 전부 순회해야 하므로 명시 루프.
+                    let mut any_touched = false;
+                    for &sid in &invalidated_surfaces {
+                        if main.mark_surface_invalidated(sid) {
+                            any_touched = true;
+                        }
+                    }
+                    any_touched
+                }
+                None => false,
+            };
+            if touched {
+                w.mark_dirty();
+            }
+        }
+    }
+
+    /// `about_to_wait()` 지원 — tray 메뉴 이벤트 폴링(Windows/macOS/Linux) + Linux GTK
+    /// pump. tasty 는 전용 GTK 메인루프가 없어 winit 루프에서 직접 구동해야 Linux
+    /// tray(AppIndicator)가 메뉴 클릭을 dispatch 할 수 있다 — tray 미생성/비-Linux 면
+    /// no-op.
+    fn poll_tray_menu_events(&mut self) {
         // Pump GTK so the Linux tray (AppIndicator) can dispatch its menu clicks —
         // tasty has no dedicated GTK main loop, so we drive it from the winit loop.
         // No-op when no tray was created / off Linux.
@@ -599,16 +686,12 @@ impl ApplicationHandler<AppEvent> for App {
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             }
         }
+    }
 
-        // Tick modal shake animation.
-        self.tick_modal_shake();
-
-        // Flush layout persistence (debounced).
-        self.flush_layout_persistence(false);
-
-        // Flush deferred PTY resizes (throttled to 100ms intervals).
-        // If any terminal still has a pending resize (throttled), request a redraw
-        // so we retry on the next frame.
+    /// `about_to_wait()` 지원 — Flush deferred PTY resizes (throttled to 100ms
+    /// intervals). 아직 pending 인 terminal 이 있으면 다음 프레임에 재시도하도록
+    /// redraw 를 요청한다.
+    fn flush_pending_pty_resizes(&mut self) {
         let mut any_pending = false;
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut()
@@ -628,9 +711,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
     }
-}
 
-impl App {
     /// dedup 게이트 early reset — Some → 해당 surface 게이트, None → 글로벌 게이트.
     /// surface 가 없는 factory 의 `note_drained` 는 무해한 no-op 이므로 전 view/parked
     /// 를 순회한다. `handle_terminal_output` 의 채널 drain 직전 사전 패스.
@@ -820,6 +901,27 @@ impl App {
     /// shell setup mode 의 `WindowEvent` 핸들러. RedrawRequested 시 setup 화면을
     /// 렌더하고 사용자 확정/종료를 처리하며, 그 외 이벤트는 egui 로 forward 한다.
     /// 항상 이벤트를 소비한다(caller 는 호출 후 즉시 return).
+    /// `handle_shell_setup_window_event` 의 `ShellSetupAction::Confirmed` 처리 —
+    /// 사용자가 shell setup 화면에서 확정한 경로를 설정에 반영·저장하고, setup 창/GPU
+    /// 를 `begin_boot` 로 넘겨 부팅 상태 머신을 시작한다(진입 경로 ②). 창은 이미
+    /// setup 화면으로 보이는 상태라 축A(set_visible)는 스킵(window_hidden=false),
+    /// phase 구동은 일반 경로와 동일. boot_t0 는 Confirmed 시각.
+    fn finish_shell_setup_confirmed(&mut self) {
+        let mut settings = crate::settings::Settings::load();
+        let normalize_report = settings.normalize();
+        settings.general.shell = self.shell_setup_path.clone();
+        if let Err(e) = settings.save() {
+            tracing::error!("failed to save settings: {e}");
+        }
+        self.shell_setup_mode = false;
+        let window = self.shell_setup_window.take().unwrap();
+        let gpu = self.shell_setup_gpu.take().unwrap();
+        self.begin_boot(window, gpu, settings, std::time::Instant::now(), false);
+        // invalid_theme_name 처리는 부팅 상태 머신 내부로 이동했으므로
+        // normalize_report 는 여기서 별도 소비할 필요 없음.
+        drop(normalize_report);
+    }
+
     fn handle_shell_setup_window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -832,22 +934,7 @@ impl App {
                 match result {
                     Ok(crate::gpu::ShellSetupAction::None) => {}
                     Ok(crate::gpu::ShellSetupAction::Confirmed) => {
-                        let mut settings = crate::settings::Settings::load();
-                        let normalize_report = settings.normalize();
-                        settings.general.shell = self.shell_setup_path.clone();
-                        if let Err(e) = settings.save() {
-                            tracing::error!("failed to save settings: {e}");
-                        }
-                        self.shell_setup_mode = false;
-                        let window = self.shell_setup_window.take().unwrap();
-                        let gpu = self.shell_setup_gpu.take().unwrap();
-                        // 진입 경로 ② — 부팅 상태 머신 시작. 창은 이미 setup 화면으로
-                        // 보이는 상태라 축A(set_visible)는 스킵(window_hidden=false),
-                        // phase 구동은 일반 경로와 동일. boot_t0 는 Confirmed 시각.
-                        self.begin_boot(window, gpu, settings, std::time::Instant::now(), false);
-                        // invalid_theme_name 처리는 부팅 상태 머신 내부로 이동했으므로
-                        // normalize_report 는 여기서 별도 소비할 필요 없음.
-                        drop(normalize_report);
+                        self.finish_shell_setup_confirmed();
                     }
                     Ok(crate::gpu::ShellSetupAction::Exit) => {
                         event_loop.exit();
@@ -1174,25 +1261,95 @@ impl App {
         // StreamHub 는 Arc clone(저렴) — 필드 동시 차용 회피용.
         let hub = self.stream_hub.clone();
 
-        for (client_id, surface_id) in outcome.attach_requests {
-            if !self.attach_on_owning_engine(surface_id, client_id, &hub) {
-                // 어떤 engine 도 이 surface 를 소유하지 않음 → 거부.
-                crate::core::attach_runtime::reject_attach(&hub, client_id, "not_found", None);
-            }
+        self.apply_attach_requests_batch(outcome.attach_requests, &hub);
+        self.apply_workspace_attach_requests_batch(outcome.workspace_attach_requests, &hub);
+        self.apply_input_frames_batch(outcome.input_frames);
+        self.apply_structural_ops_batch(outcome.structural_ops, &hub);
+        // client-driven mirror geometry(ADR-0045): mirror client 가 요청한 크기로
+        // 원격 PTY 를 resize. holder 검증은 `apply_attached_workspace_resize` 가
+        // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
+        // 자동 fan-out 한다(여기서 추가 push 없음).
+        self.apply_resize_requests_batch(outcome.resize_requests);
+        // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability negotiation
+        // (TODO 15 결정 #1). holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다.
+        // 참고: 실제 plugin 구동 + mesh 바이트 forward 는 아직 headless(attach mesh
+        // mirror 의 주 시나리오, `src/boot/headless_plugins.rs`)에만 배선했다 — gui 가
+        // attach 서버인 경우의 실제 forward 루프는 out-of-scope 로 남기고
+        // `.claude-workspace/todo/`에 후속 TODO 로 기록했다(로컬 redraw 와의 geometry
+        // 권위 조정이 필요해 범위가 커진다).
+        self.apply_mesh_context_requests_batch(outcome.mesh_context_requests, &hub);
+        self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
+        // attach mesh mirror 입력 역방향 forward(TODO 20) — 위 mesh_context_requests
+        // 와 동일 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는
+        // TODO 24 로 이연.
+        self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
+
+        // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
+        // 캡처 업로드 청크/커밋. holder(그 client 가 점유한 워크스페이스를 가진
+        // engine)를 찾아 누적/커밋한다.
+        self.apply_capture_uploads_batch(outcome.capture_uploads, &hub);
+        // (04) file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
+        // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
+        self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
+        // (TODO 40) git-viewer: mirror client 가 attach 채널로 보낸 git 조회 요청.
+        // holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
+        self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
+        // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
+        // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
+        // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
+        // ws 는 연결-단위 bulk 태깅에서 조회.
+        self.apply_bulk_events_batch(outcome.bulk_events, &hub);
+
+        if !outcome.disconnected.is_empty() {
+            self.release_attach_for_disconnected(&outcome.disconnected);
         }
 
-        for (client_id, workspace_id) in outcome.workspace_attach_requests {
-            if !self.attach_workspace_on_owning_engine(workspace_id, client_id, &hub) {
+        // 작업 J: attach/detach 직후 즉시 서버 readonly display mirror 를 채워(또는
+        // 해제분 정리) 첫 3초 tick 전 blank 를 없앤다. 점유 mirror 있는 window 만 dirty.
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.refresh_readonly_views()
+            {
+                w.mark_dirty();
+            }
+        }
+    }
+
+    /// `apply_stream_outcome` 지원 — `attach_requests` 배치 적용.
+    fn apply_attach_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<Item = (u32, u32)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, surface_id) in requests {
+            if !self.attach_on_owning_engine(surface_id, client_id, hub) {
+                // 어떤 engine 도 이 surface 를 소유하지 않음 → 거부.
+                crate::core::attach_runtime::reject_attach(hub, client_id, "not_found", None);
+            }
+        }
+    }
+
+    /// `apply_stream_outcome` 지원 — `workspace_attach_requests` 배치 적용.
+    fn apply_workspace_attach_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<Item = (u32, u32)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, workspace_id) in requests {
+            if !self.attach_workspace_on_owning_engine(workspace_id, client_id, hub) {
                 crate::core::attach_runtime::reject_attach(
-                    &hub,
+                    hub,
                     client_id,
                     "workspace_not_found",
                     None,
                 );
             }
         }
+    }
 
-        for (client_id, bytes) in outcome.input_frames {
+    /// `apply_stream_outcome` 지원 — `input_frames` 배치 적용.
+    fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
+        for (client_id, bytes) in frames {
             let routed = self.feed_stream_input(client_id, &bytes);
             #[cfg(debug_assertions)]
             if !routed {
@@ -1206,25 +1363,51 @@ impl App {
             #[cfg(not(debug_assertions))]
             let _ = routed; // release: echo 분기 없어 routed 미사용 — 값 drop(Result 아님).
         }
+    }
 
-        for (client_id, op_id, op) in outcome.structural_ops {
-            self.apply_forwarded_structural_op(client_id, op_id, &op, &hub);
+    /// `apply_stream_outcome` 지원 — `structural_ops` 배치 적용.
+    fn apply_structural_ops_batch(
+        &mut self,
+        ops: impl IntoIterator<Item = (u32, u64, crate::ipc::stream::StructuralOp)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, op_id, op) in ops {
+            self.apply_forwarded_structural_op(client_id, op_id, &op, hub);
         }
+    }
 
-        // client-driven mirror geometry(ADR-0045): mirror client 가 요청한 크기로
-        // 원격 PTY 를 resize. holder 검증은 `apply_attached_workspace_resize` 가
-        // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
-        // 자동 fan-out 한다(여기서 추가 push 없음).
-        for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
+    /// `apply_stream_outcome` 지원 — `resize_requests` 배치 적용.
+    fn apply_resize_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<Item = (u32, u32, usize, usize)>,
+    ) {
+        for (client_id, remote_surface_id, cols, rows) in requests {
             self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
         }
+    }
 
-        // mesh 구독/geometry 갱신 — 구독 요청 자체가 capability negotiation이다.
-        // holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다. 실제 plugin 구동 +
-        // mesh 바이트 forward 는 GUI-live/GUI-parked/headless 세 경로 모두에 배선되어
-        // 있다(상세: docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
+    /// `apply_stream_outcome` 지원 — `mesh_context_requests` 배치 적용. mesh
+    /// 구독/geometry 갱신 — 구독 요청 자체가 capability negotiation이다. holder
+    /// 불일치/미점유 surface 는 명시 MeshError 로 회신한다. 실제 plugin 구동 + mesh
+    /// 바이트 forward 는 GUI-live/GUI-parked/headless 세 경로 모두에 배선되어 있다(상세:
+    /// docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
+    fn apply_mesh_context_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<
+            Item = (
+                u32,
+                u32,
+                u32,
+                u32,
+                f32,
+                Option<tasty_plugin_protocol::protocol::ThemeWire>,
+                bool,
+            ),
+        >,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
         for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
-            outcome.mesh_context_requests
+            requests
         {
             let ok = self.apply_mesh_context_on_owning_engine(
                 surface_id,
@@ -1236,68 +1419,106 @@ impl App {
                 focused,
             );
             if !ok {
-                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
             }
         }
-        for (client_id, surface_id) in outcome.mesh_full_resend_requests {
+    }
+
+    /// `apply_stream_outcome` 지원 — `mesh_full_resend_requests` 배치 적용.
+    fn apply_mesh_full_resend_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<Item = (u32, u32)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, surface_id) in requests {
             let ok = self.apply_mesh_full_resend_on_owning_engine(surface_id, client_id);
             if !ok {
-                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
             }
         }
-        // attach mesh mirror 입력 역방향 forward — 위 mesh_context_requests 와 동일
-        // 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는 아직
-        // 이 축이 배선되지 않았다(상세
-        // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
-        for (client_id, surface_id, input) in outcome.mesh_input_events {
+    }
+
+    /// `apply_stream_outcome` 지원 — `mesh_input_events` 배치 적용. attach mesh
+    /// mirror 입력 역방향 forward — 위 `mesh_context_requests` 와 동일 배선
+    /// 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는 아직 이 축이
+    /// 배선되지 않았다(상세 `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-
+    /// 소비-경로`).
+    fn apply_mesh_input_events_batch(
+        &mut self,
+        events: impl IntoIterator<Item = (u32, u32, tasty_plugin_protocol::protocol::RawInputWire)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, surface_id, input) in events {
             let ok = self.apply_mesh_input_on_owning_engine(surface_id, client_id, input);
             if !ok {
-                reply_mesh_error(&hub, client_id, surface_id, "not_attached");
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
             }
         }
+    }
 
-        // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
-        // 캡처 업로드 청크/커밋. holder(그 client 가 점유한 워크스페이스를 가진
-        // engine)를 찾아 누적/커밋한다.
-        for (client_id, msg) in outcome.capture_uploads {
-            self.apply_capture_upload_msg(client_id, msg, &hub);
+    /// `apply_stream_outcome` 지원 — `capture_uploads` 배치 적용.
+    fn apply_capture_uploads_batch(
+        &mut self,
+        uploads: impl IntoIterator<
+            Item = (
+                u32,
+                crate::adapters::production::stream_hub::CaptureUploadMsg,
+            ),
+        >,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, msg) in uploads {
+            self.apply_capture_upload_msg(client_id, msg, hub);
         }
+    }
 
-        // (04) file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
-        // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
-        for (client_id, msg) in outcome.list_dir_requests {
-            self.apply_list_dir_request_msg(client_id, msg, &hub);
+    /// `apply_stream_outcome` 지원 — `list_dir_requests` 배치 적용.
+    fn apply_list_dir_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<
+            Item = (
+                u32,
+                crate::adapters::production::stream_hub::ListDirRequestMsg,
+            ),
+        >,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, msg) in requests {
+            self.apply_list_dir_request_msg(client_id, msg, hub);
         }
-        // git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`):
-        // mirror client 가 attach 채널로 보낸 git 조회 요청. holder(그 client 가
-        // 점유한 워크스페이스를 가진 engine)를 찾아 처리.
-        for (client_id, msg) in outcome.git_query_requests {
-            self.apply_git_query_request_msg(client_id, msg, &hub);
+    }
+
+    /// `apply_stream_outcome` 지원 — `git_query_requests` 배치 적용.
+    /// git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`):
+    /// mirror client 가 attach 채널로 보낸 git 조회 요청. holder(그 client 가 점유한
+    /// 워크스페이스를 가진 engine)를 찾아 처리.
+    fn apply_git_query_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<
+            Item = (
+                u32,
+                crate::adapters::production::stream_hub::GitQueryRequestMsg,
+            ),
+        >,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, msg) in requests {
+            self.apply_git_query_request_msg(client_id, msg, hub);
         }
-        // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
-        // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
-        // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
-        // ws 는 연결-단위 bulk 태깅에서 조회.
-        for (client_id, event) in outcome.bulk_events {
+    }
+
+    /// `apply_stream_outcome` 지원 — `bulk_events` 배치 적용.
+    fn apply_bulk_events_batch(
+        &mut self,
+        events: impl IntoIterator<Item = (u32, crate::adapters::production::stream_hub::BulkEvent)>,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, event) in events {
             match hub.bulk_workspace(client_id) {
-                Some(ws) => self.apply_bulk_event(client_id, event, ws, &hub),
+                Some(ws) => self.apply_bulk_event(client_id, event, ws, hub),
                 None => tracing::warn!(
                     "bulk transfer: event from non-bulk client {client_id} — ignoring"
                 ),
-            }
-        }
-
-        if !outcome.disconnected.is_empty() {
-            self.release_attach_for_disconnected(&outcome.disconnected);
-        }
-
-        // 작업 J: attach/detach 직후 즉시 서버 readonly display mirror 를 채워(또는
-        // 해제분 정리) 첫 3초 tick 전 blank 를 없앤다. 점유 mirror 있는 window 만 dirty.
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.refresh_readonly_views()
-            {
-                w.mark_dirty();
             }
         }
     }
@@ -1613,67 +1834,48 @@ impl App {
                     );
                     return;
                 };
-                for w in self.view.views.values_mut() {
-                    if let Some(main) = w.as_main_mut()
-                        && main.core_state.attach.client_holds_workspace(client_id)
-                    {
-                        main.core_state
-                            .capture_uploads
-                            .append(client_id, upload_id, &bytes);
-                        return;
-                    }
+                match find_workspace_holder_engine_mut(
+                    &mut self.view.views,
+                    &mut self.parked_states,
+                    client_id,
+                ) {
+                    Some(engine) => engine.capture_uploads.append(client_id, upload_id, &bytes),
+                    None => tracing::warn!(
+                        "capture upload: client {client_id} does not hold a workspace — dropping chunk"
+                    ),
                 }
-                for (_, engine) in self.parked_states.iter_mut() {
-                    if engine.attach.client_holds_workspace(client_id) {
-                        engine.capture_uploads.append(client_id, upload_id, &bytes);
-                        return;
-                    }
-                }
-                tracing::warn!(
-                    "capture upload: client {client_id} does not hold a workspace — dropping chunk"
-                );
             }
             CaptureUploadMsg::CaptureCommit {
                 upload_id,
                 file_name,
             } => {
                 let core = &self.core;
-                for w in self.view.views.values_mut() {
-                    if let Some(main) = w.as_main_mut()
-                        && main.core_state.attach.client_holds_workspace(client_id)
-                    {
-                        crate::core::attach_runtime::finalize_capture_upload(
-                            &mut main.core_state,
-                            core,
-                            hub,
-                            client_id,
-                            upload_id,
-                            &file_name,
-                        );
-                        return;
-                    }
-                }
-                for (_, engine) in self.parked_states.iter_mut() {
-                    if engine.attach.client_holds_workspace(client_id) {
+                match find_workspace_holder_engine_mut(
+                    &mut self.view.views,
+                    &mut self.parked_states,
+                    client_id,
+                ) {
+                    Some(engine) => {
                         crate::core::attach_runtime::finalize_capture_upload(
                             engine, core, hub, client_id, upload_id, &file_name,
                         );
-                        return;
+                    }
+                    None => {
+                        // holder 를 못 찾음(예: chunk 하나 없이 commit 만 도착, 혹은 이미
+                        // detach) — capture_result 실패 회신.
+                        let payload = serde_json::json!({
+                            "event": "capture_result",
+                            "upload_id": upload_id,
+                            "ok": false,
+                            "reason": "client does not hold a workspace attach",
+                        });
+                        let frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Control,
+                            serde_json::to_vec(&payload).unwrap_or_default(),
+                        );
+                        let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
                     }
                 }
-                // holder 를 못 찾음(예: chunk 하나 없이 commit 만 도착, 혹은 이미
-                // detach) — capture_result 실패 회신.
-                let payload = serde_json::json!({
-                    "event": "capture_result",
-                    "upload_id": upload_id,
-                    "ok": false,
-                    "reason": "client does not hold a workspace attach",
-                });
-                let frame = crate::ipc::stream::StreamFrame::new(
-                    crate::ipc::stream::StreamTag::Control,
-                    serde_json::to_vec(&payload).unwrap_or_default(),
-                );
-                let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
             }
         }
     }
@@ -1844,15 +2046,7 @@ impl App {
                         .bulk_transfers
                         .append(client_id, transfer_id, seq, &bytes)
                 });
-                match found {
-                    Some(true) => {}
-                    Some(false) => tracing::warn!(
-                        "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"
-                    ),
-                    None => tracing::warn!(
-                        "bulk transfer: no engine owns workspace {bulk_ws} — dropping chunk"
-                    ),
-                }
+                log_bulk_chunk_result(found, client_id, transfer_id, bulk_ws);
             }
             BulkEvent::Commit { transfer_id } => {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
@@ -1871,17 +2065,7 @@ impl App {
                 });
                 if found.is_none() {
                     // 소유 engine 없음 → bulk_result 실패 회신.
-                    let reply = crate::ipc::stream::StreamControl::BulkResult {
-                        transfer_id,
-                        ok: false,
-                        path: None,
-                        reason: Some("no engine owns the bound workspace".to_string()),
-                    };
-                    let frame = crate::ipc::stream::StreamFrame::new(
-                        crate::ipc::stream::StreamTag::Control,
-                        serde_json::to_vec(&reply).unwrap_or_default(),
-                    );
-                    let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+                    send_bulk_commit_failure(hub, client_id, transfer_id);
                 }
             }
         }
@@ -1915,6 +2099,62 @@ impl App {
 }
 
 /// `StructuralResult` 회신 프레임을 client 에 push(best-effort).
+/// `client_id` 가 워크스페이스를 점유(holder)한 engine 을 찾는다(main view 우선,
+/// 다음 parked). `apply_capture_upload_msg` 의 `CaptureChunk`/`CaptureCommit` 두 arm이
+/// 중복하던 holder 탐색을 공용화. `App::` 메서드(`&mut self`) 대신 개별 필드를 받아 —
+/// 호출자가 `self.core` 등 다른 필드를 동시에 빌릴 수 있게 한다.
+fn find_workspace_holder_engine_mut<'a>(
+    views: &'a mut std::collections::HashMap<WindowId, Box<dyn View>>,
+    parked_states: &'a mut [(crate::state::AppState, crate::core::CoreState)],
+    client_id: u32,
+) -> Option<&'a mut crate::core::CoreState> {
+    for w in views.values_mut() {
+        if let Some(main) = w.as_main_mut()
+            && main.core_state.attach.client_holds_workspace(client_id)
+        {
+            return Some(&mut main.core_state);
+        }
+    }
+    parked_states
+        .iter_mut()
+        .map(|(_, engine)| engine)
+        .find(|engine| engine.attach.client_holds_workspace(client_id))
+}
+
+/// `apply_bulk_event` 의 `Chunk` 처리 결과 로깅 — begin 없이 청크가 온 경우(no
+/// transfer)와 소유 engine 자체가 없는 경우를 구분해 warn.
+fn log_bulk_chunk_result(found: Option<bool>, client_id: u32, transfer_id: u64, bulk_ws: u32) {
+    match found {
+        Some(true) => {}
+        Some(false) => tracing::warn!(
+            "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"
+        ),
+        None => {
+            tracing::warn!("bulk transfer: no engine owns workspace {bulk_ws} — dropping chunk")
+        }
+    }
+}
+
+/// `apply_bulk_event` 의 `Commit` 처리 — 소유 engine 을 못 찾았을 때 `BulkResult`
+/// 실패 회신을 client 에 push(best-effort).
+fn send_bulk_commit_failure(
+    hub: &crate::adapters::production::stream_hub::StreamHub,
+    client_id: u32,
+    transfer_id: u64,
+) {
+    let reply = crate::ipc::stream::StreamControl::BulkResult {
+        transfer_id,
+        ok: false,
+        path: None,
+        reason: Some("no engine owns the bound workspace".to_string()),
+    };
+    let frame = crate::ipc::stream::StreamFrame::new(
+        crate::ipc::stream::StreamTag::Control,
+        serde_json::to_vec(&reply).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+}
+
 fn reply_structural_result(
     hub: &crate::adapters::production::stream_hub::StreamHub,
     client_id: u32,

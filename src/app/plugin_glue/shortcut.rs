@@ -4,6 +4,51 @@ use crate::app::App;
 use crate::plugin::registry_state::shortcut_override_display;
 use crate::{plugin, settings_ui, shortcuts};
 
+/// `apply_plugin_shortcut_draft`의 단일 (plugin_id, command_id) 항목 적용.
+/// 값이 `Some(ov)`이면 set, `None`이면 clear. 실제로 값이 바뀐 경우에만
+/// `command.shortcut_changed` emit 용 튜플을 반환한다.
+fn apply_single_shortcut_override(
+    mgr: &mut plugin::PluginManager,
+    plugin_id: String,
+    command_id: String,
+    value: Option<plugin::registry_state::ShortcutOverride>,
+) -> Option<(String, String, Option<String>, Option<String>)> {
+    let prev_display =
+        shortcut_override_display(mgr.config.shortcut_override(&plugin_id, &command_id));
+    let new_display = match &value {
+        Some(ov) => shortcut_override_display(Some(ov)),
+        None => None,
+    };
+    let local_changed = match value {
+        Some(ov) => {
+            mgr.config
+                .set_shortcut_override(&plugin_id, &command_id, ov);
+            true
+        }
+        None => mgr.config.clear_shortcut_override(&plugin_id, &command_id),
+    };
+    local_changed.then_some((plugin_id, command_id, new_display, prev_display))
+}
+
+/// `apply_plugin_shortcut_draft`에서 모인 변경분에 대해
+/// `command.shortcut_changed` host event를 순서대로 emit.
+fn emit_shortcut_changed_events(
+    mgr: &mut plugin::PluginManager,
+    emit_queue: Vec<(String, String, Option<String>, Option<String>)>,
+) {
+    for (plugin_id, command_id, shortcut, prev_shortcut) in emit_queue {
+        use tasty_plugin_protocol::EventScope;
+        use tasty_plugin_protocol::events::payloads::CommandShortcutChanged;
+        let payload = CommandShortcutChanged {
+            plugin_id,
+            command_id,
+            shortcut,
+            prev_shortcut,
+        };
+        mgr.emit_host_event("command.shortcut_changed", &payload, EventScope::System);
+    }
+}
+
 impl App {
     /// SettingsView가 회수해 온 plugin shortcut override draft를 PluginsConfig에
     /// 반영하고 디스크에 저장. 값이 `Some(ov)`이면 set, `None`이면 clear.
@@ -24,40 +69,16 @@ impl App {
         let mut changed = false;
         let mut emit_queue: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
         for ((plugin_id, command_id), value) in draft {
-            let prev_display =
-                shortcut_override_display(mgr.config.shortcut_override(&plugin_id, &command_id));
-            let new_display = match &value {
-                Some(ov) => shortcut_override_display(Some(ov)),
-                None => None,
-            };
-            let local_changed = match value {
-                Some(ov) => {
-                    mgr.config
-                        .set_shortcut_override(&plugin_id, &command_id, ov);
-                    true
-                }
-                None => mgr.config.clear_shortcut_override(&plugin_id, &command_id),
-            };
-            if local_changed {
+            if let Some(entry) = apply_single_shortcut_override(mgr, plugin_id, command_id, value) {
                 changed = true;
-                emit_queue.push((plugin_id, command_id, new_display, prev_display));
+                emit_queue.push(entry);
             }
         }
         if changed {
             if let Err(e) = mgr.config.save() {
                 tracing::warn!("plugins.toml save failed after shortcut update: {e}");
             }
-            for (plugin_id, command_id, shortcut, prev_shortcut) in emit_queue {
-                use tasty_plugin_protocol::EventScope;
-                use tasty_plugin_protocol::events::payloads::CommandShortcutChanged;
-                let payload = CommandShortcutChanged {
-                    plugin_id,
-                    command_id,
-                    shortcut,
-                    prev_shortcut,
-                };
-                mgr.emit_host_event("command.shortcut_changed", &payload, EventScope::System);
-            }
+            emit_shortcut_changed_events(mgr, emit_queue);
         }
     }
 

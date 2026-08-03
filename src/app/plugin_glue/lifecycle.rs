@@ -12,7 +12,7 @@
 use crate::app::App;
 use crate::core::intent::{CoreEvent, PluginRegistryChange};
 use crate::plugin::manifest::{Permission, SurfaceKindRendering};
-use crate::plugin::{Manifest, PluginManager};
+use crate::plugin::{Manifest, PluginManager, PluginPackage};
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
@@ -48,6 +48,79 @@ fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
         .filter(|p| granted.contains(&p.as_token()))
         .collect();
     mgr.set_plugin_permissions(plugin_id, perms);
+}
+
+/// `pkg.manifest.surface_kinds` 선언들을 `registry` 에 등록 (rendering
+/// 방식별 remote/webview/egui-mesh 분기) 하고, 각 등록에 대한
+/// `PluginSurfaceKindRegistered` CoreEvent 를 모아 반환한다.
+fn register_plugin_surface_kinds(
+    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    plugin_id: &str,
+    pkg: &PluginPackage,
+    tx: &std::sync::mpsc::Sender<crate::plugin_bridge::host_cmd::HostCmd>,
+) -> Vec<CoreEvent> {
+    let mut events = Vec::new();
+    for decl in &pkg.manifest.surface_kinds {
+        if let Some(default) = &decl.default_colors {
+            tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
+        }
+        let rendering = match decl.rendering {
+            SurfaceKindRendering::Remote => {
+                crate::plugin_bridge::remote_kind::register_remote_kind(
+                    registry,
+                    plugin_id,
+                    decl,
+                    tx.clone(),
+                );
+                "remote"
+            }
+            SurfaceKindRendering::Webview => {
+                crate::core::surface_registry::webview_kind::register_webview_kind(
+                    plugin_id, &decl.kind,
+                );
+                crate::plugin_bridge::remote_kind::register_remote_kind(
+                    registry,
+                    plugin_id,
+                    decl,
+                    tx.clone(),
+                );
+                "webview"
+            }
+            SurfaceKindRendering::EguiMesh => {
+                crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
+                    registry,
+                    plugin_id,
+                    decl,
+                    &pkg.manifest.api_version,
+                );
+                "egui-mesh"
+            }
+        };
+        events.push(CoreEvent::PluginSurfaceKindRegistered {
+            plugin_id: plugin_id.to_string(),
+            kind: decl.kind.clone(),
+            rendering: rendering.to_string(),
+        });
+    }
+    events
+}
+
+/// `pkg.manifest.contributes.window` 선언들을 로그로 남기고 각각에 대한
+/// `PluginWindowDeclared` CoreEvent 를 모아 반환한다.
+fn collect_window_declared_events(plugin_id: &str, pkg: &PluginPackage) -> Vec<CoreEvent> {
+    let mut events = Vec::new();
+    for w in &pkg.manifest.contributes.window {
+        tracing::info!(
+            "plugin '{}' declared window '{}' (runtime spawn: pending — schema-only in 1.0)",
+            plugin_id,
+            w.id
+        );
+        events.push(CoreEvent::PluginWindowDeclared {
+            plugin_id: plugin_id.to_string(),
+            window_id: w.id.clone(),
+        });
+    }
+    events
 }
 
 impl App {
@@ -326,59 +399,10 @@ impl App {
                     .find(|p| &p.manifest.id == plugin_id)
                     .cloned()
                 {
-                    for decl in &pkg.manifest.surface_kinds {
-                        if let Some(default) = &decl.default_colors {
-                            tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
-                        }
-                        let rendering = match decl.rendering {
-                            SurfaceKindRendering::Remote => {
-                                crate::plugin_bridge::remote_kind::register_remote_kind(
-                                    &registry,
-                                    plugin_id,
-                                    decl,
-                                    tx.clone(),
-                                );
-                                "remote"
-                            }
-                            SurfaceKindRendering::Webview => {
-                                crate::core::surface_registry::webview_kind::register_webview_kind(
-                                    plugin_id, &decl.kind,
-                                );
-                                crate::plugin_bridge::remote_kind::register_remote_kind(
-                                    &registry,
-                                    plugin_id,
-                                    decl,
-                                    tx.clone(),
-                                );
-                                "webview"
-                            }
-                            SurfaceKindRendering::EguiMesh => {
-                                crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
-                                    &registry,
-                                    plugin_id,
-                                    decl,
-                                    &pkg.manifest.api_version,
-                                );
-                                "egui-mesh"
-                            }
-                        };
-                        events.push(CoreEvent::PluginSurfaceKindRegistered {
-                            plugin_id: plugin_id.clone(),
-                            kind: decl.kind.clone(),
-                            rendering: rendering.to_string(),
-                        });
-                    }
-                    for w in &pkg.manifest.contributes.window {
-                        tracing::info!(
-                            "plugin '{}' declared window '{}' (runtime spawn: pending — schema-only in 1.0)",
-                            plugin_id,
-                            w.id
-                        );
-                        events.push(CoreEvent::PluginWindowDeclared {
-                            plugin_id: plugin_id.clone(),
-                            window_id: w.id.clone(),
-                        });
-                    }
+                    events.extend(register_plugin_surface_kinds(
+                        &registry, plugin_id, &pkg, &tx,
+                    ));
+                    events.extend(collect_window_declared_events(plugin_id, &pkg));
                 }
                 mgr.registered_plugins.insert(plugin_id.clone());
                 events.push(CoreEvent::PluginLoaded {

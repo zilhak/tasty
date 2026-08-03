@@ -17,23 +17,44 @@ impl App {
         let label = if force { "final" } else { "tick" };
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                let intent = DomainIntent::SaveLayoutNow {
-                    active_workspace: main.state.active_workspace,
+                Self::flush_one_engine(
+                    &mut self.core,
+                    &mut main.core_state,
+                    main.state.active_workspace,
                     force,
-                };
-                if let Err(e) = self.core.apply(&mut main.core_state, intent) {
-                    tracing::warn!("SaveLayoutNow({label}) failed (main): {e}");
-                }
+                    label,
+                    "main",
+                );
             }
         }
         for (state, engine) in self.parked_states.iter_mut() {
-            let intent = DomainIntent::SaveLayoutNow {
-                active_workspace: state.active_workspace,
+            Self::flush_one_engine(
+                &mut self.core,
+                engine,
+                state.active_workspace,
                 force,
-            };
-            if let Err(e) = self.core.apply(engine, intent) {
-                tracing::warn!("SaveLayoutNow({label}) failed (parked): {e}");
-            }
+                label,
+                "parked",
+            );
+        }
+    }
+
+    /// `flush_layout_persistence` 의 공용 루프 바디 — main-view engine 과
+    /// parked engine 모두 동일 로직(intent 생성 + apply + 실패 warn)이라 통합.
+    fn flush_one_engine(
+        core: &mut crate::core::Core,
+        engine: &mut crate::core::CoreState,
+        active_workspace: usize,
+        force: bool,
+        label: &str,
+        kind: &str,
+    ) {
+        let intent = DomainIntent::SaveLayoutNow {
+            active_workspace,
+            force,
+        };
+        if let Err(e) = core.apply(engine, intent) {
+            tracing::warn!("SaveLayoutNow({label}) failed ({kind}): {e}");
         }
     }
 }

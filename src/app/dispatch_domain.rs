@@ -1675,20 +1675,52 @@ pub(crate) fn cascade_surface_closed(
     workspaces_now_empty: bool,
     is_user_close: bool,
 ) {
-    // cleanup_targets 의 sibling 들이 plugin lifecycle 큐에 빠짐없이 들어가야
-    // ClaudeState child registry leak 이 발생하지 않음 (R1 분석 참조).
-    // Core::apply_close_surface 가 이미 layout mutate 후 cleanup_targets 를 채우므로
-    // surface_kind 가 None 일 수 있음 — payload 변환에서 빈 문자열로 폴백한다.
+    // 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
+    cleanup_closed_surfaces(state, engine, cleanup_targets, is_user_close);
+
+    // 2. cascade_level 별 host event (`tab.closed` / `pane.closed`) enqueue +
+    //    baseline 동기화. `surface.closed` 자체는 별 큐
+    //    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
+    enqueue_closed_tab_events(state, &closed_tab_ids, &closed_pane_ids);
+    enqueue_closed_pane_events(state, &closed_pane_ids);
+
+    // 3. workspace_id_purged 가 Some 이면 memory scope purge
+    purge_closed_workspace_memory(state, workspace_id_purged);
+
+    // 4. cascade_level == Workspace 면 active_workspace 보정
+    fix_active_workspace_after_cascade(state, engine, cascade_level);
+
+    recreate_workspace_if_now_empty(core, state, engine, workspaces_now_empty);
+}
+
+/// `cascade_surface_closed` 1 단계: cleanup_targets 의 sibling 들이 plugin
+/// lifecycle 큐에 빠짐없이 들어가야 ClaudeState child registry leak 이 발생하지
+/// 않음 (R1 분석 참조). `Core::apply_close_surface` 가 이미 layout mutate 후
+/// cleanup_targets 를 채우므로 surface_kind 가 None 일 수 있음 — payload 변환에서
+/// 빈 문자열로 폴백한다.
+fn cleanup_closed_surfaces(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    is_user_close: bool,
+) {
     for (sid, pid) in cleanup_targets {
         let kind = state.surface_kind(engine, sid);
         state.cleanup_surface(engine, sid, pid);
         state.enqueue_surface_closed(sid, kind, is_user_close);
     }
+}
 
-    for tab_id in &closed_tab_ids {
-        // pane_id 는 close 후 못 찾으므로 closed_pane_ids 의 첫 항목 사용
-        // (Tab level cascade 는 pane 안 닫혀 closed_pane_ids 비어 있음 — 이때는
-        // baseline 에서 lookup).
+/// `cascade_surface_closed` 2 단계 (tab): 닫힌 tab 마다 `tab.closed` host event
+/// enqueue + baseline 에서 제거. pane_id 는 close 후 못 찾으므로 closed_pane_ids
+/// 의 첫 항목을 사용한다 (Tab level cascade 는 pane 안 닫혀 closed_pane_ids 비어
+/// 있음 — 이때는 baseline 에서 lookup).
+fn enqueue_closed_tab_events(
+    state: &mut crate::state::AppState,
+    closed_tab_ids: &[u32],
+    closed_pane_ids: &[u32],
+) {
+    for tab_id in closed_tab_ids {
         let pane_id = closed_pane_ids.first().copied().unwrap_or_else(|| {
             state
                 .last_tab_locations
@@ -1703,45 +1735,75 @@ pub(crate) fn cascade_surface_closed(
         });
         state.lifecycle_baseline_remove_tab(*tab_id);
     }
-    for pane_id in &closed_pane_ids {
+}
+
+/// `cascade_surface_closed` 2 단계 (pane): 닫힌 pane 마다 `pane.closed` host
+/// event enqueue.
+fn enqueue_closed_pane_events(state: &mut crate::state::AppState, closed_pane_ids: &[u32]) {
+    for pane_id in closed_pane_ids {
         state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
     }
+}
 
-    if let Some(workspace_id) = workspace_id_purged {
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
-        let scope = tasty_memory::Scope::Workspace(workspace_id);
-        let mut guard = match state.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        match guard.purge_scope(&scope) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                workspace_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-workspace scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-        }
+/// `cascade_surface_closed` 3 단계: `workspace_id_purged` 가 Some 이면
+/// `workspace.closed` host event enqueue + memory scope purge.
+fn purge_closed_workspace_memory(
+    state: &mut crate::state::AppState,
+    workspace_id_purged: Option<u32>,
+) {
+    let Some(workspace_id) = workspace_id_purged else {
+        return;
+    };
+    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
+    let scope = tasty_memory::Scope::Workspace(workspace_id);
+    let mut guard = match state.memory.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    match guard.purge_scope(&scope) {
+        Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+            workspace_id,
+            regular = stats.regular,
+            secret = stats.secret,
+            "memory: purged closed-workspace scope",
+        ),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
     }
+}
 
+/// `cascade_surface_closed` 4 단계: `cascade_level == Workspace` 면
+/// `active_workspace` 가 범위를 벗어났을 때 마지막 workspace 로 보정.
+fn fix_active_workspace_after_cascade(
+    state: &mut crate::state::AppState,
+    engine: &crate::core::CoreState,
+    cascade_level: crate::core::intent::CascadeLevel,
+) {
     if matches!(cascade_level, crate::core::intent::CascadeLevel::Workspace)
         && state.active_workspace >= engine.workspaces.len()
         && !engine.workspaces.is_empty()
     {
         state.active_workspace = engine.workspaces.len() - 1;
     }
+}
 
-    // 마지막 surface 가 닫혀 workspaces 가 비면 invariant 복구 위해 새 workspace
-    // 자동 생성. 사용자/에이전트/시스템 누구의 close 든 origin 분기 없이 동일 처리
-    // — 빈 화면 redraw panic 방지가 목적. 옛 *세 호출처* (intent/surface.rs, ipc/close.rs,
-    // pane.rs::close_surface_by_id_no_snapshot) 의 중복 분기를 단일 지점으로 통합.
-    if workspaces_now_empty {
-        match core.create_default_workspace(engine) {
-            Ok(idx) => state.active_workspace = idx,
-            Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
-        }
+/// `cascade_surface_closed` 마지막 단계: 마지막 surface 가 닫혀 workspaces 가
+/// 비면 invariant 복구 위해 새 workspace 자동 생성. 사용자/에이전트/시스템 누구의
+/// close 든 origin 분기 없이 동일 처리 — 빈 화면 redraw panic 방지가 목적. 옛
+/// *세 호출처* (intent/surface.rs, ipc/close.rs,
+/// pane.rs::close_surface_by_id_no_snapshot) 의 중복 분기를 단일 지점으로 통합.
+fn recreate_workspace_if_now_empty(
+    core: &mut crate::core::Core,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    workspaces_now_empty: bool,
+) {
+    if !workspaces_now_empty {
+        return;
+    }
+    match core.create_default_workspace(engine) {
+        Ok(idx) => state.active_workspace = idx,
+        Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
     }
 }
 

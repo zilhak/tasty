@@ -5,6 +5,17 @@ use std::sync::Arc;
 use crate::app::App;
 use crate::view;
 
+/// Settings 모달을 새로 만드는 데 필요한, 현재 focused window(있다면) 로부터
+/// 뽑아낸 초기 데이터. `focused_window()` 유무에 따른 분기와 fallback 을
+/// [`App::resolve_settings_init_data`] 안에 모아둔다.
+struct SettingsInitData {
+    settings: crate::settings::Settings,
+    file_format: Arc<crate::file::format::FileFormatRegistry>,
+    file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
+    user_config_path: Option<std::path::PathBuf>,
+    plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry>,
+}
+
 impl App {
     /// Open settings as a modal window.
     pub(crate) fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -29,17 +40,52 @@ impl App {
                 .expect("failed to create settings window"),
         );
 
+        let init = self.resolve_settings_init_data();
+
+        let gpu = self
+            .create_gpu_state(window.clone(), &init.settings.appearance)
+            .expect("failed to initialize GPU for settings");
+
+        let modal_window_id = window.id();
+        let mut modal = view::SettingsView::new(
+            gpu,
+            window,
+            init.settings,
+            init.file_format,
+            init.file_handler,
+            init.user_config_path,
+        );
+        modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
+        modal.set_plugin_settings_pages(init.plugin_pages);
+        self.apply_pending_tab_overrides(&mut modal);
+        // On Windows, hidden windows do not receive RedrawRequested events,
+        // so render the first frame immediately instead of waiting for the event loop.
+        // On other platforms, mark_dirty() + request_redraw() is sufficient.
+        #[cfg(windows)]
+        {
+            use crate::view::ui::View as _;
+            modal.render();
+        }
+        #[cfg(not(windows))]
+        {
+            use crate::view::ui::View as _;
+            modal.mark_dirty();
+        }
+        self.open_modal(Box::new(modal), modal_window_id);
+        tracing::info!("opened settings modal {:?}", modal_window_id);
+    }
+
+    /// [`open_settings_modal`](Self::open_settings_modal) 이 필요로 하는 settings/file
+    /// registry/plugin pages 초기값을 focused window(있다면) 로부터 뽑아낸다. focused
+    /// window 가 없는 fallback 경로(거의 없지만 main 창 없이 settings 가 열리는 경우)는
+    /// 빈 registry 와 기본 Settings 를 사용한다.
+    fn resolve_settings_init_data(&self) -> SettingsInitData {
         let settings = if let Some(w) = self.focused_window() {
             w.core_state.settings.clone()
         } else {
             crate::settings::Settings::load()
         };
 
-        let gpu = self
-            .create_gpu_state(window.clone(), &settings.appearance)
-            .expect("failed to initialize GPU for settings");
-
-        let modal_window_id = window.id();
         let (file_format, file_handler) = if let Some(w) = self.focused_window() {
             (
                 w.core_state.file_format.clone(),
@@ -55,21 +101,25 @@ impl App {
         };
         let user_config_path =
             tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
-        let mut modal = view::SettingsView::new(
-            gpu,
-            window,
-            settings,
-            file_format,
-            file_handler,
-            user_config_path,
-        );
-        modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         let plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry> = self
             .plugin_manager
             .as_ref()
             .map(|mgr| mgr.settings_pages.iter().cloned().collect())
             .unwrap_or_default();
-        modal.set_plugin_settings_pages(plugin_pages);
+
+        SettingsInitData {
+            settings,
+            file_format,
+            file_handler,
+            user_config_path,
+            plugin_pages,
+        }
+    }
+
+    /// 모달 생성 시점에 대기 중이던 탭/서브탭 진입 요청을 적용한다: Plugins 모달의
+    /// Configure, file handler picker 의 "설정에서 핸들러 등록", 그리고
+    /// `debug.settings.open` 이 지정한 탭/서브탭(시각 검증용, debug 빌드 전용).
+    fn apply_pending_tab_overrides(&mut self, modal: &mut view::SettingsView) {
         // Plugins 모달의 Configure 진입점이 요청했으면 Plugin 탭으로 진입.
         if std::mem::take(&mut self.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();
@@ -95,20 +145,5 @@ impl App {
         {
             tracing::warn!("debug.settings.open: unknown settings subtab '{subtab_key}'");
         }
-        // On Windows, hidden windows do not receive RedrawRequested events,
-        // so render the first frame immediately instead of waiting for the event loop.
-        // On other platforms, mark_dirty() + request_redraw() is sufficient.
-        #[cfg(windows)]
-        {
-            use crate::view::ui::View as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::view::ui::View as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), modal_window_id);
-        tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 }

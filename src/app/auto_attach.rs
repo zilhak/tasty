@@ -309,74 +309,100 @@ impl App {
     /// 상태 보존" 절)을 분기한다.
     pub(crate) fn drain_auto_attach_results(&mut self) {
         while let Ok(outcome) = self.auto_attach_rx.try_recv() {
-            let AutoAttachOutcome {
-                anchor_ws_id,
-                remote_ws,
-                result,
-                is_reconnect,
-            } = outcome;
-            match result {
-                Ok((tunnel, port)) => {
-                    // self(loopback) mirror 차단(원칙 1 ②): resolve 된 포트가 이 인스턴스
-                    // 자신의 IPC 포트면 자기 화면 mirror = 사용자 입력 재현 성격이라
-                    // release 에서 거부한다. SSH 터널의 local_port 는 자기 포트와 다르므로
-                    // 원격 attach 는 통과한다. 로컬 self-mirror 검증은 debug 빌드로.
-                    #[cfg(not(debug_assertions))]
-                    if self.hub.ipc_server.as_ref().map(|s| s.port()) == Some(port) {
-                        tracing::warn!(
-                            "self(loopback) attach (port={port}) 는 release 빌드에서 차단됩니다 \
-                             — 로컬 self-attach 는 debug 빌드 전용."
-                        );
-                        if let Some(anchor) = anchor_ws_id {
-                            self.auto_attach_active.remove(&anchor);
-                        }
-                        continue;
-                    }
-                    let attach_result = if is_reconnect {
-                        let idx = anchor_ws_id.and_then(|anchor| {
-                            self.attach_client_sessions.iter().position(|s| {
-                                s.anchor_ws_id() == Some(anchor)
-                                    && s.state() == SessionState::Reconnecting
-                            })
-                        });
-                        match idx {
-                            Some(idx) => self.reconnect_session(idx, port, tunnel),
-                            // Reconnecting 세션이 그 사이 사라짐(사용자가 mirror 를
-                            // 직접 닫는 등) — 재연결 대상 소멸, no-op 성공 취급.
-                            None => Ok(()),
-                        }
-                    } else {
-                        self.start_gui_attach(port, remote_ws, tunnel, anchor_ws_id)
-                            .map(|_| ())
-                    };
-                    match attach_result {
-                        Ok(()) => {
-                            if let Some(anchor) = anchor_ws_id {
-                                self.auto_attach_reconnect.remove(&anchor);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
-                            );
-                            if let Some(anchor) = anchor_ws_id {
-                                self.auto_attach_active.remove(&anchor);
-                                if is_reconnect {
-                                    self.on_reconnect_attempt_failed(anchor, &e);
-                                }
-                            }
-                        }
+            self.apply_auto_attach_outcome(outcome);
+        }
+    }
+
+    /// 워커 결과 하나를 적용한다 — 성공/실패를 갈라 성공은
+    /// `handle_auto_attach_connected` 에, 실패는 anchor 게이트 해제 + (재연결 시)
+    /// backoff 갱신으로 처리한다.
+    fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
+        let AutoAttachOutcome {
+            anchor_ws_id,
+            remote_ws,
+            result,
+            is_reconnect,
+        } = outcome;
+        match result {
+            Ok((tunnel, port)) => {
+                self.handle_auto_attach_connected(
+                    anchor_ws_id,
+                    remote_ws,
+                    is_reconnect,
+                    tunnel,
+                    port,
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
+                );
+                if let Some(anchor) = anchor_ws_id {
+                    self.auto_attach_active.remove(&anchor);
+                    if is_reconnect {
+                        self.on_reconnect_attempt_failed(anchor, &e);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        "attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
-                    );
-                    if let Some(anchor) = anchor_ws_id {
-                        self.auto_attach_active.remove(&anchor);
-                        if is_reconnect {
-                            self.on_reconnect_attempt_failed(anchor, &e);
-                        }
+            }
+        }
+    }
+
+    /// 엔드포인트 해석에 성공한 워커 결과를 적용한다 — self(loopback) mirror 는
+    /// release 에서 거부하고, 그 외엔 신규 attach(`start_gui_attach`) 또는 재연결
+    /// (`reconnect_session`)을 시도한 뒤 성공/실패에 따라 anchor 상태를 갱신한다.
+    fn handle_auto_attach_connected(
+        &mut self,
+        anchor_ws_id: Option<u32>,
+        remote_ws: u32,
+        is_reconnect: bool,
+        tunnel: Option<SshTunnel>,
+        port: u16,
+    ) {
+        // self(loopback) mirror 차단(원칙 1 ②): resolve 된 포트가 이 인스턴스
+        // 자신의 IPC 포트면 자기 화면 mirror = 사용자 입력 재현 성격이라
+        // release 에서 거부한다. SSH 터널의 local_port 는 자기 포트와 다르므로
+        // 원격 attach 는 통과한다. 로컬 self-mirror 검증은 debug 빌드로.
+        #[cfg(not(debug_assertions))]
+        if self.hub.ipc_server.as_ref().map(|s| s.port()) == Some(port) {
+            tracing::warn!(
+                "self(loopback) attach (port={port}) 는 release 빌드에서 차단됩니다 \
+                 — 로컬 self-attach 는 debug 빌드 전용."
+            );
+            if let Some(anchor) = anchor_ws_id {
+                self.auto_attach_active.remove(&anchor);
+            }
+            return;
+        }
+        let attach_result = if is_reconnect {
+            let idx = anchor_ws_id.and_then(|anchor| {
+                self.attach_client_sessions.iter().position(|s| {
+                    s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting
+                })
+            });
+            match idx {
+                Some(idx) => self.reconnect_session(idx, port, tunnel),
+                // Reconnecting 세션이 그 사이 사라짐(사용자가 mirror 를
+                // 직접 닫는 등) — 재연결 대상 소멸, no-op 성공 취급.
+                None => Ok(()),
+            }
+        } else {
+            self.start_gui_attach(port, remote_ws, tunnel, anchor_ws_id)
+                .map(|_| ())
+        };
+        match attach_result {
+            Ok(()) => {
+                if let Some(anchor) = anchor_ws_id {
+                    self.auto_attach_reconnect.remove(&anchor);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
+                );
+                if let Some(anchor) = anchor_ws_id {
+                    self.auto_attach_active.remove(&anchor);
+                    if is_reconnect {
+                        self.on_reconnect_attempt_failed(anchor, &e);
                     }
                 }
             }

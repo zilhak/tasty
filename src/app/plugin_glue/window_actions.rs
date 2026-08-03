@@ -32,7 +32,132 @@ fn record_trust_then_install(
     app.plugin_install(std::path::PathBuf::from(src_path))
 }
 
+/// `Install`/`TrustAndInstall` 공용 — `plugin_install` 이 반환한 이벤트 목록에서
+/// `CoreEvent::PluginRegistryChanged` 의 `plugin_id` 를 추출한다. 두 arm 모두 성공
+/// toast 문구에 실제로 설치된 plugin id 를 넣기 위해 동일한 패턴을 썼었다
+/// (fallback 값만 서로 다름 — 호출부에서 `.unwrap_or_default()` /
+/// `.unwrap_or(plugin_id.clone())` 로 처리).
+fn extract_installed_plugin_id(events: &[crate::core::intent::CoreEvent]) -> Option<String> {
+    events.iter().find_map(|ev| match ev {
+        crate::core::intent::CoreEvent::PluginRegistryChanged { plugin_id, .. } => {
+            Some(plugin_id.clone())
+        }
+        _ => None,
+    })
+}
+
 impl App {
+    /// `SetEnabled` action — enable/disable 토글을 매니저에 반영하고 결과 이벤트를
+    /// cascade 한다. 실패는 toast 없이 로그만 남긴다 (이 액션은 원래 그렇게 조용히
+    /// 처리되던 흐름을 그대로 보존).
+    fn handle_set_enabled(&mut self, id: String, enabled: bool) {
+        let result = if enabled {
+            self.plugin_enable(id.clone())
+        } else {
+            self.plugin_disable(id.clone())
+        };
+        match result {
+            Ok(events) => self.cascade_plugin_events(events),
+            Err(e) => {
+                tracing::warn!("plugins modal: set_enabled({id}, {enabled}) failed: {e}")
+            }
+        }
+    }
+
+    /// `Uninstall` action — plugin 을 제거하고, 성공 시 builtin 목록에서도
+    /// removed 로 표시한다 (재설치 판단에 필요).
+    fn handle_uninstall(&mut self, id: String) {
+        match self.plugin_remove(id.clone()) {
+            Ok(events) => {
+                self.cascade_plugin_events(events);
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    plugin::mark_builtin_removed(mgr, &id);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("plugins modal: uninstall({id}) failed: {e}");
+            }
+        }
+    }
+
+    /// `Reapprove` action — 재신뢰 절차를 실행하고 결과를 toast 로 변환한다.
+    fn handle_reapprove(&mut self, id: String) -> (String, crate::adapters::ui::ToastKind) {
+        match self.reapprove_plugin(&id) {
+            Ok(()) => (
+                crate::i18n::t_fmt("plugins.attn_reapproved", &id),
+                crate::adapters::ui::ToastKind::Success,
+            ),
+            Err(e) => {
+                tracing::warn!("plugins modal: reapprove({id}) failed: {e}");
+                (
+                    crate::i18n::t_fmt("plugins.attn_reapprove_failed", &e.to_string()),
+                    crate::adapters::ui::ToastKind::Error,
+                )
+            }
+        }
+    }
+
+    /// `OpenInstallDir` action — 설치 경로를 OS 파일 탐색기 등으로 연다.
+    fn handle_open_install_dir(&self, path: &str) {
+        if !crate::terminal_link::open_uri(path) {
+            tracing::warn!("plugins modal: open install dir failed: {path}");
+        }
+    }
+
+    /// `Install` action — 서명 검증된(또는 이미 신뢰된) plugin 을 설치하고 결과를
+    /// toast 로 변환한다.
+    fn handle_install(&mut self, src_path: &str) -> (String, crate::adapters::ui::ToastKind) {
+        match self.plugin_install(std::path::PathBuf::from(src_path)) {
+            Ok(events) => {
+                let installed = extract_installed_plugin_id(&events).unwrap_or_default();
+                self.cascade_plugin_events(events);
+                (
+                    crate::i18n::t_fmt("plugins.add_installed", &installed),
+                    crate::adapters::ui::ToastKind::Success,
+                )
+            }
+            Err(e) => (
+                crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
+                crate::adapters::ui::ToastKind::Error,
+            ),
+        }
+    }
+
+    /// `TrustAndInstall` action — known-plugins.toml 에 trust entry 를 먼저 기록한
+    /// 뒤 일반 install 흐름을 진행하고 결과를 toast 로 변환한다.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_trust_and_install(
+        &mut self,
+        src_path: &str,
+        plugin_id: &str,
+        pubkey_b64: &str,
+        permissions: &[String],
+        publisher_fingerprint: &str,
+    ) -> (String, crate::adapters::ui::ToastKind) {
+        match record_trust_then_install(
+            self,
+            src_path,
+            plugin_id,
+            pubkey_b64,
+            permissions,
+            publisher_fingerprint,
+        ) {
+            Ok(events) => {
+                let installed =
+                    extract_installed_plugin_id(&events).unwrap_or_else(|| plugin_id.to_string());
+                self.cascade_plugin_events(events);
+                (
+                    crate::i18n::t_fmt("plugins.add_installed", &installed),
+                    crate::adapters::ui::ToastKind::Success,
+                )
+            }
+            Err(e) => (
+                crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
+                crate::adapters::ui::ToastKind::Error,
+            ),
+        }
+    }
+
     /// `Attention` 탭의 `Re-approve` — 권한 변경으로 거부된 plugin 을 현재 매니페스트
     /// 권한으로 재신뢰한다. known-plugins.toml 의 권한 스냅샷을 디스크 매니페스트와
     /// 맞추고(다음 trust 검증 통과), grant 갱신 + discover 재호출 + enable 으로 즉시
@@ -104,85 +229,26 @@ impl App {
         for action in actions {
             match action {
                 plugins_ui::PluginsAction::SetEnabled { id, enabled } => {
-                    let result = if enabled {
-                        self.plugin_enable(id.clone())
-                    } else {
-                        self.plugin_disable(id.clone())
-                    };
-                    match result {
-                        Ok(events) => self.cascade_plugin_events(events),
-                        Err(e) => tracing::warn!(
-                            "plugins modal: set_enabled({id}, {enabled}) failed: {e}"
-                        ),
-                    }
+                    self.handle_set_enabled(id, enabled);
                 }
                 plugins_ui::PluginsAction::Uninstall { id } => {
-                    match self.plugin_remove(id.clone()) {
-                        Ok(events) => {
-                            self.cascade_plugin_events(events);
-                            if let Some(mgr) = self.plugin_manager.as_mut() {
-                                plugin::mark_builtin_removed(mgr, &id);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("plugins modal: uninstall({id}) failed: {e}");
-                        }
-                    }
+                    self.handle_uninstall(id);
                 }
                 plugins_ui::PluginsAction::OpenSettings => {
                     close_modal = true;
                     open_settings_plugin_tab = true;
                 }
                 plugins_ui::PluginsAction::Reapprove { id } => {
-                    let toast = match self.reapprove_plugin(&id) {
-                        Ok(()) => (
-                            crate::i18n::t_fmt("plugins.attn_reapproved", &id),
-                            crate::adapters::ui::ToastKind::Success,
-                        ),
-                        Err(e) => {
-                            tracing::warn!("plugins modal: reapprove({id}) failed: {e}");
-                            (
-                                crate::i18n::t_fmt("plugins.attn_reapprove_failed", &e.to_string()),
-                                crate::adapters::ui::ToastKind::Error,
-                            )
-                        }
-                    };
-                    pending_toasts.push(toast);
+                    pending_toasts.push(self.handle_reapprove(id));
                 }
                 plugins_ui::PluginsAction::Close => {
                     close_modal = true;
                 }
                 plugins_ui::PluginsAction::OpenInstallDir { path } => {
-                    if !crate::terminal_link::open_uri(&path) {
-                        tracing::warn!("plugins modal: open install dir failed: {path}");
-                    }
+                    self.handle_open_install_dir(&path);
                 }
                 plugins_ui::PluginsAction::Install { src_path } => {
-                    let toast = match self.plugin_install(std::path::PathBuf::from(&src_path)) {
-                        Ok(events) => {
-                            // CoreEvent::PluginRegistryChanged 의 plugin_id 추출.
-                            let installed = events
-                                .iter()
-                                .find_map(|ev| match ev {
-                                    crate::core::intent::CoreEvent::PluginRegistryChanged {
-                                        plugin_id,
-                                        ..
-                                    } => Some(plugin_id.clone()),
-                                    _ => None,
-                                })
-                                .unwrap_or_default();
-                            self.cascade_plugin_events(events);
-                            (
-                                crate::i18n::t_fmt("plugins.add_installed", &installed),
-                                crate::adapters::ui::ToastKind::Success,
-                            )
-                        }
-                        Err(e) => (
-                            crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
-                            crate::adapters::ui::ToastKind::Error,
-                        ),
-                    };
-                    pending_toasts.push(toast);
+                    pending_toasts.push(self.handle_install(&src_path));
                 }
                 plugins_ui::PluginsAction::TrustAndInstall {
                     src_path,
@@ -191,37 +257,13 @@ impl App {
                     permissions,
                     publisher_fingerprint,
                 } => {
-                    let toast = match record_trust_then_install(
-                        self,
+                    pending_toasts.push(self.handle_trust_and_install(
                         &src_path,
                         &plugin_id,
                         &pubkey_b64,
                         &permissions,
                         &publisher_fingerprint,
-                    ) {
-                        Ok(events) => {
-                            let installed = events
-                                .iter()
-                                .find_map(|ev| match ev {
-                                    crate::core::intent::CoreEvent::PluginRegistryChanged {
-                                        plugin_id,
-                                        ..
-                                    } => Some(plugin_id.clone()),
-                                    _ => None,
-                                })
-                                .unwrap_or(plugin_id.clone());
-                            self.cascade_plugin_events(events);
-                            (
-                                crate::i18n::t_fmt("plugins.add_installed", &installed),
-                                crate::adapters::ui::ToastKind::Success,
-                            )
-                        }
-                        Err(e) => (
-                            crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
-                            crate::adapters::ui::ToastKind::Error,
-                        ),
-                    };
-                    pending_toasts.push(toast);
+                    ));
                 }
             }
         }
