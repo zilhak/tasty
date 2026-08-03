@@ -47,15 +47,26 @@ pub(super) fn task_id_param(params: &Value, id: &Value) -> Result<TaskId, JsonRp
 
 pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcResponse {
     use AgentError::*;
+    // 메시지를 먼저 뽑아둔다 — 아래 `TaskReferenced { referenced_by, .. }` 처럼
+    // 필드를 값으로 바인딩하는 arm 이 있으면, match 안에서 `err.to_string()` 을
+    // 또 부르는 건 partial move 이후라 컴파일이 안 된다.
+    let msg = err.to_string();
     match err {
-        TaskNotFound(_) => JsonRpcResponse::error(id, -32004, err.to_string()),
+        TaskNotFound(_) => JsonRpcResponse::error(id, -32004, msg),
         DependencyCycle(_)
         | UnknownDependency(_)
         | InvalidArgument(_)
-        | InvalidTransition { .. } => JsonRpcResponse::invalid_params(id, err.to_string()),
-        AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, err.to_string()),
-        LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, err.to_string()),
-        Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, err.to_string()),
+        | InvalidTransition { .. } => JsonRpcResponse::invalid_params(id, msg),
+        AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, msg),
+        LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, msg),
+        TaskReferenced { referenced_by, .. } => JsonRpcResponse::error_with_data(
+            id,
+            -32010,
+            msg,
+            serde_json::json!({ "referenced_by": referenced_by }),
+        ),
+        TaskRunning(_) => JsonRpcResponse::error(id, -32011, msg),
+        Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, msg),
     }
 }
 

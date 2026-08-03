@@ -22,7 +22,8 @@ use tasty_agent::{LeaseStore, SemaphoreStore, TaskId, TaskResult, TaskState, Tas
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
-    HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, handle_key, load_run_result,
+    HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, evict_task_side_keys,
+    handle_key, load_run_result,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -685,6 +686,87 @@ pub(crate) fn purge_stale_agent_state_on_boot(ctx: &RunnerContext, workspace_ids
         // reload 결과(되살아난 handle)는 버린다 — 이 시점엔 그걸 넘겨받아
         // poll 할 runner 가 없다. 다음 수동 start 가 다시 reload 한다.
         let _ = purge_and_reload_on_restart(ctx, workspace_id);
+        // TODO11 결정 4: 자동 GC 도 같은 부팅 정화 경로에 얹는다.
+        gc_stale_tasks(ctx, workspace_id);
+    }
+}
+
+/// TODO11 결정 4 — 자동 GC 임계값(잠정치, provisional). 사용자가 수동으로
+/// 지우지 않은 task 는 보통 며칠 안에 확인한다는 추정으로 7일을 잡았다 — 실사용
+/// 데이터가 쌓이면 재검토 대상(설정 가능하게 노출하는 것도 후보).
+const AGENT_TASK_GC_MIN_AGE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// TODO11 결정 4 — 부팅 시 정화 경로에 얹는 자동 GC. `PutOpts.expires_at` 류의
+/// memory 자체 TTL 은 쓰지 않는다: task 삭제는 참조 무결성(결정 1)·Running 거부
+/// (결정 2) 검사를 반드시 거쳐야 하는데, TTL 만료는 그 검사를 우회한 채 그냥
+/// 지워버려 dangling 참조/자원 누수를 재도입하기 때문이다 — 그래서 항상 검증된
+/// 경로(`TaskStore::plan_sweep`/`apply_sweep_plan`, `Core::task_purge` 와 동일
+/// 로직)만 태운다. 상태를 terminal 로 제한하지 않는 이유는 결정 2 의 근거와
+/// 같다 — 방치된 `Waiting` task(예: 미완 Reduce 입력)를 terminal 로 한정하면
+/// 영원히 못 지우고, 그게 참조로 자기 입력들을 붙잡아 그 입력들도 GC 대상에서
+/// 빠진다. `Running` 은 `plan_sweep` 이 항상 제외하므로 여기서 따로 막지 않는다.
+fn gc_stale_tasks(ctx: &RunnerContext, workspace_id: u32) {
+    let Some(plan) = gc_plan_sweep(ctx, workspace_id) else {
+        return;
+    };
+    if plan.deleted.is_empty() {
+        return;
+    }
+    if !gc_apply_sweep_plan(ctx, workspace_id, &plan) {
+        return;
+    }
+    for id in &plan.deleted {
+        evict_task_side_keys(ctx, workspace_id, id);
+    }
+    tracing::info!(
+        "agent runner ws{workspace_id}: GC swept {} stale task(s), {} retained (still referenced)",
+        plan.deleted.len(),
+        plan.retained.len()
+    );
+}
+
+/// [`gc_stale_tasks`] 의 후보 계산 단계. 실패 시 `None`(로그만 남기고 이번
+/// workspace 는 건너뜀 — 다음 부팅 때 재시도).
+fn gc_plan_sweep(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+) -> Option<tasty_agent::task::TaskSweepPlan> {
+    let filter = tasty_agent::task::TaskPurgeFilter {
+        states: None,
+        older_than_ms: Some(AGENT_TASK_GC_MIN_AGE_MS),
+        now_ms: now_ms(),
+    };
+    let seq = ctx.agent_seq.clone();
+    let plan = ctx.with_memory(|mem| {
+        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store.plan_sweep(workspace_id, &filter)
+    });
+    match plan {
+        Ok(p) => Some(p),
+        Err(e) => {
+            tracing::warn!("agent task GC ws{workspace_id}: plan_sweep failed: {e}");
+            None
+        }
+    }
+}
+
+/// [`gc_stale_tasks`] 의 실제 삭제 단계. 성공 여부를 반환(실패 시 로그만).
+fn gc_apply_sweep_plan(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    plan: &tasty_agent::task::TaskSweepPlan,
+) -> bool {
+    let seq = ctx.agent_seq.clone();
+    let res = ctx.with_memory(|mem| {
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store.apply_sweep_plan(workspace_id, plan)
+    });
+    match res {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!("agent task GC ws{workspace_id}: apply_sweep_plan failed: {e}");
+            false
+        }
     }
 }
 

@@ -1,12 +1,15 @@
 //! Task store wrapper. handler 의 `core.with_memory + TaskStore::new` 조립을
 //! 본 모듈로 흡수. `agent_seq` 의 시퀀스 공유는 그대로 유지.
 
-use tasty_agent::task::TaskCreateOpts;
+use tasty_agent::task::{
+    TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
+};
 use tasty_agent::{AgentError, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::agent::runner_host::evict_task_side_keys;
 
 impl Core {
     /// Task 생성 — `TaskStore::create` wrapper.
@@ -211,6 +214,66 @@ impl Core {
             Ok(out)
         })
     }
+
+    /// Task 삭제 — `TaskStore::delete_checked`(참조 무결성 + Running 거부, TODO11
+    /// 결정 1·2)로 지운 뒤, 실제로 지워진 task 마다 host 측 side-key(handle/
+    /// run_result)도 정리한다. side-key 정리는 memory lock 을 놓은 뒤 별도로
+    /// 순회한다 — `with_memory` 안에서 `RunnerContext::with_memory` 를 또 호출하면
+    /// 같은 `Arc<Mutex<_>>` 재진입 lock 으로 deadlock.
+    pub(crate) fn task_delete(
+        &self,
+        engine: &CoreState,
+        workspace_id: u32,
+        task_id: &TaskId,
+        opts: TaskDeleteOpts,
+    ) -> Result<TaskDeleteReport, AgentError> {
+        let seq = engine.agent_seq.clone();
+        let report = self.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.delete_checked(workspace_id, task_id, opts)
+        })?;
+        let ctx = self.runner_context(engine);
+        for id in &report.deleted {
+            evict_task_side_keys(&ctx, workspace_id, id);
+        }
+        Ok(report)
+    }
+
+    /// Task 일괄 정리(TODO11 결정 3) — `filter` 로 선정된 후보를 sweep. 상태/
+    /// 경과시간 둘 다 미지정이면 워크스페이스 전체가 후보가 되어버려 위험하므로
+    /// 여기서 거부한다(IPC 로 직접 호출되는 경로라 CLI 가드만으로는 부족).
+    /// `dry_run=true` 면 계획만 계산하고 아무것도 지우지 않는다 — `plan_sweep`
+    /// 자체가 순수 함수라 dry-run/실제 실행이 후보 선정 로직을 100% 공유한다.
+    pub(crate) fn task_purge(
+        &self,
+        engine: &CoreState,
+        workspace_id: u32,
+        filter: TaskPurgeFilter,
+        dry_run: bool,
+    ) -> Result<TaskSweepPlan, AgentError> {
+        if filter.states.is_none() && filter.older_than_ms.is_none() {
+            return Err(AgentError::InvalidArgument(
+                "task_purge requires at least one of 'states'/'older_than_ms'".into(),
+            ));
+        }
+        let seq = engine.agent_seq.clone();
+        let plan = self.with_memory(|mem| {
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.plan_sweep(workspace_id, &filter)
+        })?;
+        if dry_run {
+            return Ok(plan);
+        }
+        self.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.apply_sweep_plan(workspace_id, &plan)
+        })?;
+        let ctx = self.runner_context(engine);
+        for id in &plan.deleted {
+            evict_task_side_keys(&ctx, workspace_id, id);
+        }
+        Ok(plan)
+    }
 }
 
 #[cfg(test)]
@@ -371,5 +434,168 @@ mod hook_wait_tests {
             .expect("task exists");
         assert!(matches!(task.state, TaskState::Failed { .. }));
         assert_eq!(task.result.and_then(|r| r.exit_code), Some(1));
+    }
+}
+
+/// TODO11 "완료 확인 방법" #3·#4 — host 층(`Core::task_delete`) 이 실제로
+/// side-key(handle/run_result) 를 정리하고, `Running` 삭제 거부가 자원(세마포어
+/// permit)을 건드리지 않는지 검증. store 층의 참조/상태 검사 자체는
+/// `crates/tasty-agent/src/task/tests.rs` 가 더 폭넓게 덮는다.
+#[cfg(test)]
+mod task_delete_tests {
+    use std::sync::{Arc, Mutex};
+
+    use tasty_agent::task::{OnFailure, TaskCommand};
+    use tasty_agent::{AgentError, SemaphoreStore};
+    use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
+    use tasty_themes::{ThemeStorage, ThemeStore};
+
+    use crate::adapters::test::{
+        fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
+        mock_process::MockProcessSpawner, tmp_home::TmpHome,
+    };
+    use crate::core::CoreState;
+    use crate::core::agent::runner_host::{handle_key, run_result_key};
+    use crate::core::builder::CoreBuilder;
+    use crate::ports::notification_sound::NoopPlayer;
+
+    use super::*;
+
+    fn engine() -> CoreState {
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    fn core() -> (Core, tempfile::TempDir) {
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
+        let home_tmp = tempfile::tempdir().expect("test tempdir");
+        let home = TmpHome::new(home_tmp.path().to_path_buf());
+
+        let core = CoreBuilder::new()
+            .with_fs(Arc::new(MemFileSystem::new()))
+            .with_clock(Arc::new(FakeClock::default()))
+            .with_clipboard(Arc::new(MockClipboard::default()))
+            .with_process(Arc::new(MockProcessSpawner::default()))
+            .with_home(Arc::new(home))
+            .with_sound_player(Arc::new(NoopPlayer))
+            .with_memory(memory)
+            .with_themes(themes)
+            .with_preset_store(preset_store)
+            .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
+            .build()
+            .expect("test Core build");
+        (core, home_tmp)
+    }
+
+    fn mk_ready_task(core: &Core, engine: &CoreState, workspace_id: u32) -> TaskId {
+        let opts = TaskCreateOpts {
+            workspace_id,
+            name: "t".to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".into()],
+                workspace_id,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            on_failure: OnFailure::default(),
+            metadata: serde_json::Value::Null,
+            now_ms: 1,
+        };
+        core.task_create(engine, opts).expect("task_create").id
+    }
+
+    /// 시나리오 4: terminal 로 마감된 task 를 지우면 `tasty.agent.handle.<id>`/
+    /// `tasty.agent.run_result.<id>` 두 side-key 가 모두 evict 된다.
+    #[test]
+    fn task_delete_evicts_handle_and_run_result_side_keys() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+
+        core.with_memory(|mem| {
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &handle_key(&task_id),
+                &MemoryValue::Json(serde_json::json!({"kind": "shell_process", "pid": 123})),
+                &PutOpts::default(),
+            )
+        })
+        .expect("persist handle");
+        core.with_memory(|mem| {
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &run_result_key(&task_id),
+                &MemoryValue::Json(serde_json::json!({"kind": "done", "exit_code": 0})),
+                &PutOpts::default(),
+            )
+        })
+        .expect("persist run_result");
+
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+        core.task_set_state(&engine, ws, &task_id, TaskState::Succeeded, 3)
+            .expect("Running -> Succeeded");
+
+        core.task_delete(&engine, ws, &task_id, TaskDeleteOpts::default())
+            .expect("delete succeeded task");
+
+        let handle_gone = core
+            .with_memory(|mem| mem.get(&Scope::Workspace(ws), &handle_key(&task_id)))
+            .expect("get handle");
+        let run_result_gone = core
+            .with_memory(|mem| mem.get(&Scope::Workspace(ws), &run_result_key(&task_id)))
+            .expect("get run_result");
+        assert!(
+            handle_gone.is_none(),
+            "handle side-key must be evicted on delete"
+        );
+        assert!(
+            run_result_gone.is_none(),
+            "run_result side-key must be evicted on delete"
+        );
+    }
+
+    /// 시나리오 3: `Running` task 는 세마포어 permit 을 쥐고 있어도(결정 2에
+    /// 따라) 항상 거부된다 — 그리고 거부된 삭제 시도는 그 permit 을 건드리지
+    /// 않는다(부분 실패로 인한 자원 누수 없음).
+    #[test]
+    fn task_delete_rejects_running_task_without_touching_held_semaphore_permit() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+
+        core.with_memory(|mem| {
+            let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
+            sem.create(ws, "gate", 1, 1)?;
+            sem.acquire(ws, "gate", &task_id)?;
+            Ok::<_, AgentError>(())
+        })
+        .expect("acquire permit");
+
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        let err = core
+            .task_delete(&engine, ws, &task_id, TaskDeleteOpts::default())
+            .expect_err("Running task delete must be rejected");
+        assert!(matches!(err, AgentError::TaskRunning(_)));
+
+        let sem_after = core
+            .with_memory(|mem| SemaphoreStore::new(mem, HOST_OWNER).get(ws, "gate"))
+            .expect("get semaphore")
+            .expect("semaphore exists");
+        assert_eq!(
+            sem_after.holders,
+            vec![task_id.clone()],
+            "rejected delete must not touch the held permit"
+        );
     }
 }

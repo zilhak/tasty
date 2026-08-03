@@ -124,6 +124,40 @@ pub enum AgentCommands {
         #[arg(long)]
         exit_code: Option<i32>,
     },
+    /// Delete a task. Rejected by default if other tasks still reference it
+    /// (depends_on / on_failure.fallback.task / reduce.inputs) — the
+    /// referencing task IDs are returned. `Running` tasks are always
+    /// rejected regardless of `--cascade`/`--force` (cancel first).
+    TaskDelete {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+        /// Also delete every task that transitively references this one.
+        #[arg(long, default_value_t = false)]
+        cascade: bool,
+        /// Skip the reference check only — state constraints (Running) still apply.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+    /// Bulk-delete tasks matching state/age filters. At least one of
+    /// `--states`/`--older-than-ms` is required. Only tasks that are safe
+    /// to delete (not Running, not referenced from outside the matched set)
+    /// are actually removed; the rest are reported as retained.
+    TaskPurge {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Comma-separated state names (waiting|ready|running|succeeded|failed|cancelled|skipped|unknown).
+        #[arg(long, value_delimiter = ',')]
+        states: Vec<String>,
+        /// Only tasks whose age (created_at, or finished_at for terminal
+        /// tasks) exceeds this many milliseconds are candidates.
+        #[arg(long)]
+        older_than_ms: Option<u64>,
+        /// Compute and print the plan without deleting anything.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// Create a barrier (N개 신호가 모일 때까지 대기).
     BarrierCreate {
         #[arg(long)]

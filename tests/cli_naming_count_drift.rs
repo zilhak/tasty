@@ -13,7 +13,7 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 /// host namespace 별 기대 메서드 수 스냅샷. `METHOD_TABLE` 이 SoT 이고 본 표는 그 카운트
 /// 미러다. 메서드 추가/제거 시 동기화한다 (추가 = 같은 minor 내 OK, 제거 = SemVer major).
 const EXPECTED: &[(&str, usize)] = &[
-    ("agent", 27),
+    ("agent", 29),
     ("approval", 9),
     ("attach", 6),
     ("banner", 2),

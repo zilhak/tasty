@@ -198,5 +198,53 @@ impl<'a> TaskGraph<'a> {
 }
 
 // ============================================================
-// 영속 (memory-backed)
+// 참조 수집 — 삭제(TaskStore::delete_checked)와 생성(TaskStore::create) 양쪽이
+// 공유하는 정방향/역방향 헬퍼. `TaskGraph`(readiness 용 그래프, `depends_on` ∪
+// `Reduce.inputs` 만 엣지)와 달리, 여기서는 `Fallback.task` 도 포함한 3종
+// 전부를 "참조"로 다룬다 — 삭제 시 dangling 참조를 만들 수 있는 참조는 이
+// 3종이 전부이기 때문(생성 검증도 같은 3종을 본다, `store.rs::create`).
 // ============================================================
+
+/// `task` 하나가 참조하는 다른 task id 전체 — `depends_on` ∪
+/// `OnFailure::Fallback.task` ∪ `TaskCommand::Reduce.inputs`. `Fallback.inline`
+/// 은 생성 시점에 대상이 아직 존재하지 않는 게 정상(실패 전이 시 동적 생성)
+/// 이므로 제외한다.
+pub fn referenced_task_ids(task: &Task) -> Vec<TaskId> {
+    let mut out = task.depends_on.clone();
+    if let OnFailure::Fallback {
+        task: Some(fb_id), ..
+    } = &task.on_failure
+    {
+        out.push(fb_id.clone());
+    }
+    if let TaskCommand::Reduce { inputs, .. } = &task.command {
+        out.extend(inputs.iter().cloned());
+    }
+    out
+}
+
+/// `target_id` 를 직접 참조하는 task id 전체 (역방향, 1-hop).
+pub fn referencing_task_ids(tasks: &[Task], target_id: &TaskId) -> Vec<TaskId> {
+    tasks
+        .iter()
+        .filter(|t| referenced_task_ids(t).iter().any(|r| r == target_id))
+        .map(|t| t.id.clone())
+        .collect()
+}
+
+/// `target_id` 를 참조하는 task 전체 (직접 + transitive) — cascade 삭제용.
+/// `target_id` 를 참조하는 X, X 를 참조하는 Y, ... 를 전부 모은다. `target_id`
+/// 자신은 포함하지 않는다(호출자가 필요하면 별도로 더한다).
+pub fn transitive_referencing_task_ids(tasks: &[Task], target_id: &TaskId) -> Vec<TaskId> {
+    let mut seen: HashSet<TaskId> = HashSet::new();
+    let mut queue: Vec<TaskId> = referencing_task_ids(tasks, target_id);
+    let mut out = Vec::new();
+    while let Some(cur) = queue.pop() {
+        if !seen.insert(cur.clone()) {
+            continue;
+        }
+        out.push(cur.clone());
+        queue.extend(referencing_task_ids(tasks, &cur));
+    }
+    out
+}

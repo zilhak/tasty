@@ -1120,3 +1120,500 @@ fn legacy_dangling_fallback_target_leaves_downstream_waiting() {
         "dangling fallback 은 관측 가능한 경고만 남기고 downstream 은 영구 Waiting"
     );
 }
+
+// ============================================================
+// TODO11: delete_checked / plan_sweep / apply_sweep_plan
+// ============================================================
+
+#[test]
+fn delete_checked_rejects_when_referenced_by_depends_on() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".into(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let err = store
+        .delete_checked(1, &a.id, TaskDeleteOpts::default())
+        .unwrap_err();
+    match err {
+        AgentError::TaskReferenced {
+            task,
+            referenced_by,
+        } => {
+            assert_eq!(task, a.id);
+            assert_eq!(referenced_by, vec![b.id.clone()]);
+        }
+        other => panic!("expected TaskReferenced, got {other:?}"),
+    }
+    // 거부됐으니 A 는 여전히 존재해야 한다.
+    assert!(store.get(1, &a.id).unwrap().is_some());
+}
+
+#[test]
+fn delete_checked_rejects_when_referenced_by_fallback_task() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let fb = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "FB".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let main = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "MAIN".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(fb.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let err = store
+        .delete_checked(1, &fb.id, TaskDeleteOpts::default())
+        .unwrap_err();
+    match err {
+        AgentError::TaskReferenced {
+            task,
+            referenced_by,
+        } => {
+            assert_eq!(task, fb.id);
+            assert_eq!(referenced_by, vec![main.id.clone()]);
+        }
+        other => panic!("expected TaskReferenced, got {other:?}"),
+    }
+}
+
+#[test]
+fn delete_checked_rejects_when_referenced_by_reduce_inputs() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let input = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "IN".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let reducer = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "REDUCE".into(),
+            command: reduce_cmd(vec![input.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let err = store
+        .delete_checked(1, &input.id, TaskDeleteOpts::default())
+        .unwrap_err();
+    match err {
+        AgentError::TaskReferenced {
+            task,
+            referenced_by,
+        } => {
+            assert_eq!(task, input.id);
+            assert_eq!(referenced_by, vec![reducer.id.clone()]);
+        }
+        other => panic!("expected TaskReferenced, got {other:?}"),
+    }
+}
+
+/// 가장 중요한 시나리오(TODO11 문서 "완료 확인 방법" #1): 참조 있는 task 를
+/// cascade 삭제하면 참조자까지 함께 지워지고, 그 뒤 같은 workspace 에 새 task
+/// 를 만드는 게 여전히 성공한다 — raw `delete()` 를 그대로 노출했다면 dangling
+/// `depends_on` 이 남아 이후 모든 `create()` 가 `detect_cycles` 의
+/// `UnknownDependency` 로 깨졌을 것.
+#[test]
+fn cascade_delete_removes_referencers_and_workspace_stays_creatable() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".into(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let report = store
+        .delete_checked(
+            1,
+            &a.id,
+            TaskDeleteOpts {
+                cascade: true,
+                force: false,
+            },
+        )
+        .unwrap();
+    assert_eq!(report.deleted.len(), 2);
+    assert!(report.deleted.contains(&a.id));
+    assert!(report.deleted.contains(&b.id));
+    assert!(store.get(1, &a.id).unwrap().is_none());
+    assert!(store.get(1, &b.id).unwrap().is_none());
+
+    // scenario 2: B 가 영구 Waiting 으로 남지 않는다 — 아예 존재하지 않는다.
+    // scenario 1 뒷부분: 이후 create() 가 여전히 정상 동작.
+    let c = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 2000,
+        })
+        .unwrap();
+    assert_eq!(c.state, TaskState::Ready);
+}
+
+#[test]
+fn delete_checked_force_bypasses_reference_check_but_not_running() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".into(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let report = store
+        .delete_checked(
+            1,
+            &a.id,
+            TaskDeleteOpts {
+                cascade: false,
+                force: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(report.deleted, vec![a.id.clone()]);
+    assert!(store.get(1, &a.id).unwrap().is_none());
+    // force 는 상태 제약은 못 뚫는다 — 남은 B 는 dangling 참조 위에서 그냥
+    // 영구 Waiting 으로 남는다(사용자가 명시적으로 감수한 결과).
+    assert_eq!(
+        store.get(1, &b.id).unwrap().unwrap().state,
+        TaskState::Waiting
+    );
+}
+
+#[test]
+fn delete_checked_rejects_running_regardless_of_cascade_or_force() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+
+    for opts in [
+        TaskDeleteOpts::default(),
+        TaskDeleteOpts {
+            cascade: false,
+            force: true,
+        },
+        TaskDeleteOpts {
+            cascade: true,
+            force: false,
+        },
+    ] {
+        let err = store.delete_checked(1, &a.id, opts).unwrap_err();
+        assert!(
+            matches!(err, AgentError::TaskRunning(ref id) if *id == a.id),
+            "expected TaskRunning, got {err:?}"
+        );
+    }
+    assert!(store.get(1, &a.id).unwrap().is_some());
+}
+
+#[test]
+fn delete_checked_allows_waiting_ready_and_terminal_states() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+
+    // Ready (no deps, no referencers).
+    let ready = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "READY".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    assert_eq!(ready.state, TaskState::Ready);
+    store
+        .delete_checked(1, &ready.id, TaskDeleteOpts::default())
+        .unwrap();
+
+    // Waiting (Reduce 대기 중 — 아직 input 이 terminal 아님).
+    let input = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "IN".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    let waiting = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "WAIT".into(),
+            command: reduce_cmd(vec![input.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
+        .unwrap();
+    assert_eq!(waiting.state, TaskState::Waiting);
+    store
+        .delete_checked(1, &waiting.id, TaskDeleteOpts::default())
+        .unwrap();
+
+    // Succeeded (terminal).
+    let term = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "TERM".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1003,
+        })
+        .unwrap();
+    store
+        .set_state(1, &term.id, TaskState::Running, 2000)
+        .unwrap();
+    store
+        .set_state(1, &term.id, TaskState::Succeeded, 3000)
+        .unwrap();
+    store
+        .delete_checked(1, &term.id, TaskDeleteOpts::default())
+        .unwrap();
+
+    assert!(store.get(1, &ready.id).unwrap().is_none());
+    assert!(store.get(1, &waiting.id).unwrap().is_none());
+    assert!(store.get(1, &term.id).unwrap().is_none());
+}
+
+/// TODO11 문서 "완료 확인 방법" #5: 자동 GC 가 완전히 얽힌 `Waiting` 그래프를
+/// 실제로 드레인하는지 — 방치된 `Reduce` (X) 가 그 input(Y) 을 참조로 붙잡고
+/// 있어도, `Waiting` 은 금지 상태가 아니므로(결정 2) 후보 집합 안에서 둘 다
+/// 함께 지워져야 한다(terminal 로 제한했다면 영원히 못 지웠을 그래프).
+#[test]
+fn plan_sweep_drains_entangled_waiting_reduce_graph() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let y = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "Y".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    assert_eq!(y.state, TaskState::Ready);
+    let x = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "X".into(),
+            command: reduce_cmd(vec![y.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    assert_eq!(
+        x.state,
+        TaskState::Waiting,
+        "Y 가 terminal 이 아니라 X 는 영원히 Waiting — 방치된 Reduce 재현"
+    );
+
+    let filter = TaskPurgeFilter {
+        states: None,
+        older_than_ms: Some(1000),
+        now_ms: 50_000,
+    };
+    let plan = store.plan_sweep(1, &filter).unwrap();
+    assert!(plan.retained.is_empty(), "retained: {:?}", plan.retained);
+    assert!(plan.deleted.contains(&x.id));
+    assert!(plan.deleted.contains(&y.id));
+
+    store.apply_sweep_plan(1, &plan).unwrap();
+    assert!(store.get(1, &x.id).unwrap().is_none());
+    assert!(store.get(1, &y.id).unwrap().is_none());
+}
+
+#[test]
+fn plan_sweep_retains_task_referenced_from_outside_candidate_set() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    // B 는 A 에 의존하지만 최근에 생성됨(older_than_ms 필터에 안 걸림) → 후보
+    // 집합 밖에서 A 를 참조하는 상황을 만든다.
+    let _b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".into(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 49_500,
+        })
+        .unwrap();
+
+    let filter = TaskPurgeFilter {
+        states: None,
+        older_than_ms: Some(10_000),
+        now_ms: 50_000,
+    };
+    let plan = store.plan_sweep(1, &filter).unwrap();
+    assert_eq!(plan.deleted, Vec::<TaskId>::new());
+    assert_eq!(plan.retained, vec![a.id.clone()]);
+
+    store.apply_sweep_plan(1, &plan).unwrap();
+    assert!(store.get(1, &a.id).unwrap().is_some());
+}
+
+#[test]
+fn plan_sweep_filters_by_state_name() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let ready = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "READY".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let term = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "TERM".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    store
+        .set_state(1, &term.id, TaskState::Running, 2000)
+        .unwrap();
+    store
+        .set_state(1, &term.id, TaskState::Succeeded, 3000)
+        .unwrap();
+
+    let filter = TaskPurgeFilter {
+        states: Some(vec!["succeeded".to_string()]),
+        older_than_ms: None,
+        now_ms: 50_000,
+    };
+    let plan = store.plan_sweep(1, &filter).unwrap();
+    assert_eq!(plan.deleted, vec![term.id.clone()]);
+    assert!(!plan.deleted.contains(&ready.id));
+}

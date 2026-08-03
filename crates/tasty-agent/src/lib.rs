@@ -49,6 +49,18 @@ pub enum AgentError {
     InvalidArgument(String),
     #[error("lease conflict: '{resource}' held by '{holder}'")]
     LeaseConflict { resource: String, holder: String },
+    /// task 삭제 시 다른 task 가 여전히 참조 중(`depends_on`/`Fallback.task`/
+    /// `Reduce.inputs`) — `--cascade`/`--force` 없이는 거부. `referenced_by` 를
+    /// 응답 `error.data` 에 실어 호출자가 다음 행동을 정할 수 있게 한다.
+    #[error("task {task} is referenced by: {referenced_by:?}")]
+    TaskReferenced {
+        task: TaskId,
+        referenced_by: Vec<TaskId>,
+    },
+    /// task 삭제 금지 상태는 `Running` 하나뿐 — `cancel` 로 먼저 정리해야 한다.
+    /// `--force` 도 이 제약은 뚫지 못한다.
+    #[error("cannot delete task {0} while it is Running — cancel it first")]
+    TaskRunning(TaskId),
     #[error("memory: {0}")]
     Memory(#[from] tasty_memory::MemoryError),
     #[error("serde: {0}")]

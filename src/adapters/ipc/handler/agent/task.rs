@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use crate::core::Core;
 use crate::state::AppState;
-use tasty_agent::task::TaskCreateOpts;
+use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId,
     TaskResult, TaskState, reduce_with_custom,
@@ -667,6 +667,98 @@ pub fn handle_task_set_result(
             json!({
                 "task": task,
                 "cascaded": cascaded,
+            }),
+        ),
+    }
+}
+
+// ============================================================
+// agent.task_delete
+// ============================================================
+
+/// task 삭제(TODO11 결정 1·2) — 참조(depends_on/Fallback.task/Reduce.inputs)가
+/// 있으면 기본 거부하고 참조자 목록을 `error.data.referenced_by` 로 반환한다.
+/// `cascade` 는 전이적 참조자 전부를 함께 지우고, `force` 는 참조 검사만
+/// 우회한다(상태 제약은 못 뚫음 — `Running` 은 항상 거부).
+pub fn handle_task_delete(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let task_id = match task_id_param(params, &id) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let cascade = params
+        .get("cascade")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let force = params
+        .get("force")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    match core.task_delete(
+        engine,
+        workspace_id,
+        &task_id,
+        TaskDeleteOpts { cascade, force },
+    ) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok(report) => JsonRpcResponse::success(id, json!({ "deleted": report.deleted })),
+    }
+}
+
+// ============================================================
+// agent.task_purge
+// ============================================================
+
+/// task 일괄 삭제(TODO11 결정 3) — 상태 이름 목록(`states`, `TaskState::name()`
+/// 값들)과 경과시간(`older_than_ms`) 필터로 후보를 고르고, 참조 안전 + `Running`
+/// 제외를 지킨 것만 실제로 지운다. 둘 다 생략하면 워크스페이스 전체가 후보가
+/// 되어 위험하므로 `core.task_purge` 가 거부한다. `dry_run=true` 면 아무것도
+/// 지우지 않고 계획(`deleted`/`retained`)만 반환한다.
+pub fn handle_task_purge(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let states: Option<Vec<String>> = params.get("states").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect()
+    });
+    let older_than_ms = params.get("older_than_ms").and_then(|v| v.as_u64());
+    let dry_run = params
+        .get("dry_run")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let filter = TaskPurgeFilter {
+        states,
+        older_than_ms,
+        now_ms: now_ms(),
+    };
+    match core.task_purge(engine, workspace_id, filter, dry_run) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok(plan) => JsonRpcResponse::success(
+            id,
+            json!({
+                "deleted": plan.deleted,
+                "retained": plan.retained,
+                "dry_run": dry_run,
             }),
         ),
     }

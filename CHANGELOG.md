@@ -20,10 +20,13 @@
 
 - `terminal.state`(CLI `tasty terminal state --surface <child>`) — 자식 단건 상태(`idle`/`needs_input`/`active`/`exited`) 조회. `terminal.children`의 항목별 조회와 달리, registry에서 이미 정리된 surface 도 라이브 트리와 대조해 `"exited"`로 구분한다.
 - `claude.state`/`codex.state`(CLI `tasty claude state`/`tasty codex state`) — 위 `terminal.state`를 각 plugin 이 자기 namespace 안에서 위임하는 wrapper. `claude.spawn`/`codex.spawn`에 기본 완료 판정 전략(`[[contributes.completion_strategy]] default_for_methods`)이 새로 연결되어, 이 두 메서드에 한해 DAG `poll` 생략 시 spawn 접수를 완료로 오인하던 기존 동작이 뒤집힌다 — 자식이 실제로 idle/exited 가 될 때까지 `running` 을 유지한다.
-- `agent.task_run`(workspace runner thread start/stop/status)이 이제 plugin 에서도 호출 가능하다(`AgentManage` 권한) — 호스트 재시작 후 runner 는 자동으로 켜지지 않으므로(아래 Changed 참조), plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수단이 필요했다. local-only 로 남는 건 `agent.task_set_result` 뿐이다.
+- `agent.task_run`(workspace runner thread start/stop/status)이 이제 plugin 에서도 호출 가능하다(`AgentManage` 권한) — 호스트 재시작 후 runner 는 자동으로 켜지지 않으므로(아래 Changed 참조), plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수단이 필요했다. local-only 로 남는 건 `agent.task_set_result` 와(아래 Changed 참조) `agent.task_await` 뿐이다.
 - `agent.task_list`/`agent.task_graph` 응답에 `runner: { running, crashed, ready_count, running_count }` 가 동반된다 — runner 가 꺼져 있어도 `ready_count`/`running_count` 는 store 를 직접 조회한 실제 값이라, "할 일은 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다.
 - `agent.task_get` 응답에 `awaiting_external: { wait_key, deadline_ms }` 가 추가됐다 — task 가 push 완료 전략(`AwaitExternal` handle)으로 외부 신호를 기다리는 중일 때만 실려, `state: "running"` 만으로는 구분 안 되던 "그냥 실행 중"과 "외부 보고 대기 중"을 구분할 수 있다.
 - `tasty agent task-list`/`task-get`/`task-run` CLI 출력이 raw JSON pretty-print 대신 사람이 터미널에서 바로 읽는 텍스트로 렌더된다(`state  id  name` 목록 + `runner: running (ready=N running=M)` 요약 줄, 정지 상태면 재개 커맨드 안내 포함). 다른 `agent` 서브커맨드(barrier/semaphore/lease/rate-limit/task-graph 등)는 기존과 동일하게 JSON.
+- `agent.task_delete`(CLI `tasty agent task-delete`) — task 삭제. 참조(`depends_on`/`Fallback.task`/`Reduce.inputs`) 가 있으면 기본 거부하고 참조자 목록을 `error.data.referenced_by` 에 실어 반환(`-32010`), `--cascade` 는 전이적 참조자까지 함께 삭제, `--force` 는 참조 검사만 우회(상태 제약은 못 뚫음). 삭제 금지 상태는 `running` 하나뿐이며 `--cascade`/`--force` 로도 뚫지 못한다(`-32011`).
+- `agent.task_purge`(CLI `tasty agent task-purge`) — 상태 이름(`--states`)·경과시간(`--older-than-ms`) 필터 기반 일괄 삭제. `agent.task_delete` 와 동일한 참조 안전 검사를 적용해, 후보 집합 밖에서 여전히 참조되는 task 는 자동으로 보존한다. `--dry-run` 으로 실제 삭제 없이 계획만 확인 가능.
+- 부팅 시 정화 경로(`purge_stale_agent_state_on_boot`)에 자동 GC 가 추가됐다 — 상태 무관 + 7일(잠정) 이상 방치된 task 를 `agent.task_purge` 와 동일한 로직으로 정리한다. memory 자체 TTL(`PutOpts.expires_at`) 은 쓰지 않는다.
 
 ### Changed
 

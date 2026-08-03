@@ -93,12 +93,16 @@ impl MemoryStorage for InMemoryStorage {
         Ok(())
     }
 
-    fn list(&self, scope: &Scope, _opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
+    fn list(&self, scope: &Scope, opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
         let token = scope.as_token();
         Ok(self
             .regular
             .values()
             .filter(|e| e.scope == token)
+            .filter(|e| match &opts.prefix {
+                Some(p) => e.key.starts_with(p.as_str()),
+                None => true,
+            })
             .cloned()
             .collect())
     }

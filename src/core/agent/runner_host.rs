@@ -955,6 +955,34 @@ pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: 
     }
 }
 
+/// 영속된 `DispatchHandle` 를 workspace_id 를 이미 아는 호출자가 직접 지운다.
+/// `HostExecutor::evict_handle` 과 달리 `held_handles`(러너 스레드 로컬 북키핑)
+/// 없이 동작 — task 삭제(`Core::task_delete`/GC sweep) 는 러너 스레드 밖(IPC
+/// 핸들러 스레드, 부팅 시점)에서 일어나 `HostExecutor` 인스턴스에 접근할 수
+/// 없으므로 필요하다. non-ShellProcess task 는 애초에 이 키가 없을 뿐이라
+/// delete 자체는 idempotent(no-op)다.
+pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
+    let res = ctx.with_memory(|mem| {
+        mem.delete(
+            HOST_OWNER,
+            &Scope::Workspace(workspace_id),
+            &handle_key(task_id),
+            None,
+        )
+    });
+    if let Err(e) = res {
+        tracing::warn!("evict handle {task_id}: {e}");
+    }
+}
+
+/// task 삭제 시 정리해야 할 host 측 side-key 전부 — `tasty.agent.handle.<id>`
+/// + `tasty.agent.run_result.<id>`(TODO11 결정 4: 정상 종료 경로 밖에서 지워지는
+/// task 도 이 두 키가 orphan 으로 남지 않아야 한다).
+pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
+    evict_handle_key(ctx, workspace_id, task_id);
+    evict_run_result(ctx, workspace_id, task_id);
+}
+
 fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
     match outcome {
         PollOutcome::Done(r) => json!({

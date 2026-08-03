@@ -123,6 +123,49 @@ pub(super) fn agent_command_to_method_params(
             }
             ("agent.task_set_result", p)
         }
+        TaskDelete {
+            workspace_id,
+            id,
+            cascade,
+            force,
+        } => (
+            "agent.task_delete",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "id": id,
+                "cascade": *cascade,
+                "force": *force,
+            }),
+        ),
+        TaskPurge {
+            workspace_id,
+            states,
+            older_than_ms,
+            dry_run,
+        } => {
+            if states.is_empty() && older_than_ms.is_none() {
+                eprintln!(
+                    "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
+                );
+                std::process::exit(1);
+            }
+            let mut p = serde_json::json!({
+                "workspace_id": *workspace_id,
+                "dry_run": *dry_run,
+            });
+            if !states.is_empty() {
+                p["states"] = serde_json::Value::Array(
+                    states
+                        .iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect(),
+                );
+            }
+            if let Some(t) = older_than_ms {
+                p["older_than_ms"] = serde_json::Value::from(*t);
+            }
+            ("agent.task_purge", p)
+        }
         BarrierCreate {
             workspace_id,
             name,

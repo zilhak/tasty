@@ -68,6 +68,26 @@ impl JsonRpcResponse {
     pub fn internal_error(id: serde_json::Value, msg: impl Into<String>) -> Self {
         Self::error(id, -32603, msg)
     }
+
+    /// `error` 와 동일하되 `error.data` 도 함께 싣는다 — 호출자가 에러 메시지
+    /// 문자열 파싱 없이 구조화된 부가정보(예: 참조 중인 task id 목록)를 받을 때.
+    pub fn error_with_data(
+        id: serde_json::Value,
+        code: i32,
+        message: impl Into<String>,
+        data: serde_json::Value,
+    ) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data: Some(data),
+            }),
+            id,
+        }
+    }
 }
 
 #[cfg(test)]

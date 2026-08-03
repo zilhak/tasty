@@ -299,6 +299,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // workspace 의 runner 를 스스로 되살릴 수단이 필요하다 — start/stop 은
         // idempotent, status 는 순수 조회.
         ("agent.task_run", plugin(&[AgentManage])),
+        // TODO11: 참조 검사(cascade/force) + 상태 제약(Running 거부)을 지키는
+        // 단건/일괄 삭제.
+        ("agent.task_delete", plugin(&[AgentManage])),
+        ("agent.task_purge", plugin(&[AgentManage])),
         ("agent.barrier_create", plugin(&[AgentManage])),
         ("agent.barrier_signal", plugin(&[AgentManage])),
         ("agent.barrier_await", plugin(&[AgentManage])),
