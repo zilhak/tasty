@@ -111,6 +111,15 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
   - **위젯 우선 중재(`is_using_pointer`)**: 이동/리사이즈의 *START 판정* 은 콘텐츠 렌더 **뒤** 에서 `ctx.is_using_pointer()` 게이트로 한다. 이번 프레임에 egui 위젯(버튼·입력)이 프레스를 가져갔으면 이동/리사이즈는 발동하지 않는다 → 핸들 띠가 위젯과 겹쳐도 **위젯이 항상 우선**(입력 우선순위: 위젯 > 리사이즈 > 이동). 따라서 `Region` 은 헤더 띠 전체처럼 넓은 영역을 가리켜도 안전하다(예: `port_scanner` 가 좁은 폭에서 좌측 띠와 검색 입력이 겹쳐도 입력 클릭이 우선). 단 **close 버튼은 매니저가 직접 페인팅** 한 영역이라 egui 위젯이 아니므로 `is_using_pointer` 에 안 잡힌다 → close 는 콘텐츠 렌더 *전* 에 따로 hit-test 해 우선 처리한다.
 - **리사이즈**: `resizable: true` 팝업은 테두리 밴드(약 6px)를 잡아 8방향으로 크기 조절. 우선순위는 **close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠**.
 
+### Outside-click / hover 히트테스트와 자식 오버레이(드롭다운)
+
+`PopupManager::draw`의 outside-click/hover 판정(`hovered_popup`)은 기본적으로 각 popup 의 `popup_rect()`만 히트테스트한다. 하지만 `draw_fn` 내부에서 `egui::popup_below_widget`/`popup_above_or_below_widget` 같은 **egui 네이티브 API로 별도 생성되는 드롭다운 Area**는 `PopupManager`가 전혀 모르는 독립 레이어라, 팝업이 좁거나 화면 가장자리에 있어 드롭다운이 `popup_rect` 밖으로 삐져나가면 그 위 클릭이 "바깥 클릭"으로 오판되어 `close_on_outside_click` 팝업 전체가 드롭다운째 닫혀버린다.
+
+- **해결**: 드롭다운을 그리는 뷰가 `popup::report_child_overlay_rect(ctx, popup_id, overlay_key, rect)`로 실측 rect를 매 프레임 보고한다(닫혀 있으면 반드시 `None` — stale rect 방지). `overlay_key`는 오버레이별 고유 문자열(보통 그 드롭다운의 egui popup id 문자열)로, 한 popup 에 오버레이가 여러 개(`port_scanner`의 state_filter + column_chooser)여도 report 호출 순서와 무관하게 서로 덮어쓰지 않는다.
+- **hit-test 반영**: `PopupManager::draw`의 pre-content 판정은 `popup_rect().contains(pos)`가 실패하면 그 popup 소유의 등록된 오버레이 rect 들도 추가로 확인한다(`child_overlay_hit`). 여기 걸리면 `hovered_popup`이 그 popup으로 설정되어 outside-click 으로도, hover 기반 입력 게이팅(`PopupDrawResult.hovered` → `state.popup_hovered`)에도 "바깥"으로 취급되지 않는다 — 드롭다운이 시각적으로 떠 있는 동안은 그 위 터미널 입력도 계속 차단되는 게 맞는 동작이다. close 버튼/리사이즈 엣지/드래그 핸들 판정은 `popup_rect` 자체에만 유효하므로 오버레이 hit 은 여기 관여하지 않는다.
+- **1프레임 지연**: 보고는 hit-test보다 뒤(콘텐츠 렌더 시점)라 직전 프레임 값을 쓴다 — `report_header_drag_rect`와 동일한 트레이드오프(사실상 인지 불가).
+- **적용 예**: `port_scanner.rs`의 `draw_state_filter`/`draw_column_chooser`, `remote_tool.rs`의 `draw_protocol_filter`. `remote_tool`은 부모 popup 이 `close_on_outside_click: false`라 증상 자체는 안 드러나지만 구조는 동일하게 맞춰져 있다.
+
 ## 타이틀 길이 처리 (elide)
 
 타이틀바 텍스트가 길면 우측 상단 close 버튼(`close_btn_rect`)과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — `close_btn_rect`를 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).

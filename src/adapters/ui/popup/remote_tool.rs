@@ -780,6 +780,20 @@ fn draw_protocol_filter(
             });
         },
     );
+    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
+    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
+    // remote_tool 은 현재 close_on_outside_click=false 라 증상이 드러나지 않지만,
+    // 구조적으로 port_scanner 와 동일한 결함을 갖고 있어 함께 고쳐둔다.
+    let overlay_rect = ui
+        .memory(|m| m.is_popup_open(popup_id))
+        .then(|| ui.memory(|m| m.area_rect(popup_id)))
+        .flatten();
+    super::report_child_overlay_rect(
+        ui.ctx(),
+        REMOTE_TOOL_POPUP_ID,
+        FILTER_POPUP_ID,
+        overlay_rect,
+    );
     if applied.is_some() {
         ui.memory_mut(|m| m.close_popup());
     }

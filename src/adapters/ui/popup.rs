@@ -194,6 +194,55 @@ fn reported_header_drag_rect(ctx: &egui::Context, popup_id: PopupId) -> Option<e
     ctx.memory(|m| m.data.get_temp(header_drag_rect_id(popup_id)))
 }
 
+/// `draw_fn` 내부에서 egui 네이티브 API(`popup_below_widget` 등)로 그려지는 자식
+/// 오버레이(드롭다운) rect 레지스트리를 담는 egui temp memory Id. 전역 단일 슬롯 —
+/// 개별 오버레이는 `overlay_key` 로 서로 구분되어 report 호출 순서와 무관하게
+/// 클로버링되지 않는다(예: port_scanner 는 state_filter/column_chooser 두 드롭다운을
+/// 매 프레임 함께 report 한다).
+fn child_overlay_registry_id() -> egui::Id {
+    egui::Id::new("popup.child_overlay_registry")
+}
+
+type ChildOverlayMap = std::collections::HashMap<&'static str, (PopupId, egui::Rect)>;
+
+/// 자식 오버레이(드롭다운 등)의 실측 rect 를 보고한다. `PopupManager::draw` 의
+/// outside-click/hover 판정이 부모 `popup_rect` 뿐 아니라 이 rect 도 히트테스트에
+/// 포함해, 드롭다운이 팝업 경계를 넘어가도 그 위 클릭이 "바깥 클릭"으로 오판되지
+/// 않는다. `overlay_key` 는 오버레이별 고유 문자열(예: 드롭다운의 egui popup id
+/// 문자열) — 같은 `popup_id` 에 오버레이가 여러 개(port_scanner 의 state_filter +
+/// column_chooser)여도 서로 덮어쓰지 않는다. 오버레이가 닫히면 반드시 `None` 으로
+/// 보고해 stale rect 가 남지 않게 한다.
+pub fn report_child_overlay_rect(
+    ctx: &egui::Context,
+    popup_id: PopupId,
+    overlay_key: &'static str,
+    rect: Option<egui::Rect>,
+) {
+    let id = child_overlay_registry_id();
+    ctx.memory_mut(|m| {
+        let mut map: ChildOverlayMap = m.data.get_temp(id).unwrap_or_default();
+        match rect {
+            Some(r) => {
+                map.insert(overlay_key, (popup_id, r));
+            }
+            None => {
+                map.remove(overlay_key);
+            }
+        }
+        m.data.insert_temp(id, map);
+    });
+}
+
+/// `popup_id` 소유의 자식 오버레이 중 `pos` 를 포함하는 것이 있는지 hit-test.
+fn child_overlay_hit(ctx: &egui::Context, popup_id: PopupId, pos: egui::Pos2) -> bool {
+    let id = child_overlay_registry_id();
+    ctx.memory(|m| {
+        let map: ChildOverlayMap = m.data.get_temp(id).unwrap_or_default();
+        map.values()
+            .any(|(pid, rect)| *pid == popup_id && rect.contains(pos))
+    })
+}
+
 impl PopupState {
     pub fn new(id: PopupId, title: impl Into<String>, default_size: egui::Vec2) -> Self {
         Self {

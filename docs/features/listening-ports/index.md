@@ -98,6 +98,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - [ ] 검색어 입력 시 모든 컬럼에 substring 매칭으로 행이 필터된다.
 - [ ] 행이 0개일 때 scope/검색/상태필터 조합에 맞는 빈 메시지(search_zero / state_filtered / system_empty / tasty_empty)가 뜬다.
 - [ ] 기본 열림 시 LISTEN 상태 행만 표시된다. 상태 필터로 ESTABLISHED 등을 켜면 해당 행이 나타나고 footer `{shown} of {total}` 이 갱신된다. 드롭다운 열림 중 Escape 는 드롭다운만 닫는다.
+- [ ] 팝업이 좁거나 화면 가장자리에 있어 상태 필터/컬럼 chooser 드롭다운이 팝업 경계 밖으로 삐져나가도, 그 밖으로 나간 부분(체크박스 등)을 클릭하면 정상적으로 토글되고 드롭다운·팝업 모두 열린 상태를 유지한다(바깥 클릭으로 오판되어 닫히지 않는다).
 - [ ] footer 는 팝업을 리사이즈해도 항상 하단에 고정되고, 행이 적을 때 빈 공간은 목록 영역 하단(footer 위)에 생긴다.
 - [ ] 행 클릭 시 선택 강조되고 재클릭 시 해제된다. 클릭으로 브라우저가 열리지 않는다.
 - [ ] footer `Copy address` 는 선택 시에만 활성화되고, 클릭 시 선택 행의 주소가 클립보드에 복사된다.

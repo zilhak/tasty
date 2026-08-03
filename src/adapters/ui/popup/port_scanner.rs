@@ -359,6 +359,8 @@ const STATE_FILTER_DRAFT_ID: &str = "port_scanner.state_filter_draft";
 /// egui popup id for the state-filter dropdown. Used both to open/toggle the
 /// `popup_above_or_below_widget` and for the Escape guard's open check.
 const STATE_FILTER_POPUP_ID: &str = "port_scanner.state_filter_popup";
+/// egui popup id for the column-chooser dropdown (`draw_column_chooser`).
+const COLUMN_CHOOSER_POPUP_ID: &str = "port_scanner.columns_chooser";
 
 fn read_filter_state(ctx: &egui::Context) -> FilterState {
     ctx.memory(|mem| {
@@ -1159,7 +1161,7 @@ fn draw_column_chooser(
         })
         .on_hover_text(props.label_columns_button);
 
-    let popup_id = ui.make_persistent_id("port_scanner.columns_chooser");
+    let popup_id = ui.make_persistent_id(COLUMN_CHOOSER_POPUP_ID);
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
@@ -1186,6 +1188,18 @@ fn draw_column_chooser(
                 }
             }
         },
+    );
+    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
+    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
+    let overlay_rect = ui
+        .memory(|m| m.is_popup_open(popup_id))
+        .then(|| ui.memory(|m| m.area_rect(popup_id)))
+        .flatten();
+    super::report_child_overlay_rect(
+        ui.ctx(),
+        PORT_SCANNER_POPUP_ID,
+        COLUMN_CHOOSER_POPUP_ID,
+        overlay_rect,
     );
 
     out
@@ -1370,6 +1384,18 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
                 });
             });
         },
+    );
+    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
+    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
+    let overlay_rect = ui
+        .memory(|m| m.is_popup_open(popup_id))
+        .then(|| ui.memory(|m| m.area_rect(popup_id)))
+        .flatten();
+    super::report_child_overlay_rect(
+        ui.ctx(),
+        PORT_SCANNER_POPUP_ID,
+        STATE_FILTER_POPUP_ID,
+        overlay_rect,
     );
     if applied.is_some() {
         ui.memory_mut(|m| m.close_popup());

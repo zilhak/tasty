@@ -124,6 +124,13 @@ impl PopupManager {
                         hovered_handle = Some(popup.id);
                     }
                     break; // topmost popup wins
+                } else if super::child_overlay_hit(ctx, popup.id, pos) {
+                    // draw_fn 이 egui 네이티브 API로 그린 자식 오버레이(드롭다운 등)가
+                    // popup_rect 밖으로 삐져나간 경우 — 그 위 클릭은 이 popup 에 대한
+                    // "안쪽 클릭"으로 취급한다(close_btn/resize/handle 판정은 popup_rect
+                    // 자체에만 유효하므로 여기선 생략).
+                    hovered_popup = Some(popup.id);
+                    break;
                 }
             }
         }
