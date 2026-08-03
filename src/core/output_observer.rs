@@ -275,9 +275,9 @@ impl ObserverRouter {
     }
 
     /// PTY 가 emit 한 텍스트를 라인 단위로 쪼개 매칭 옵저버에 dispatch하고,
-    /// 이번 호출로 완성된 라인들을 반환한다(TODO30 — hook `OutputMatch` 가 이
+    /// 이번 호출로 완성된 라인들을 반환한다 — hook `OutputMatch` 가 이
     /// 라인 버퍼를 공유해서 쓴다, `HookManager::has_output_match_hook` 가 켠
-    /// surface 는 옵저버가 하나도 없어도 라인 분리는 계속된다).
+    /// surface 는 옵저버가 하나도 없어도 라인 분리는 계속된다.
     pub fn dispatch_text(&mut self, surface_id: u32, text: &str) -> Vec<String> {
         let buf = self.line_buffers.entry(surface_id).or_default();
         buf.partial.push_str(text);
@@ -534,7 +534,7 @@ mod tests {
         // the buffer-and-split path doesn't panic on partial chunks.
     }
 
-    // TODO30: dispatch_text 의 반환값(완성된 라인)은 OutputMatch 훅이 공유하는
+    // dispatch_text 의 반환값(완성된 라인)은 OutputMatch 훅이 공유하는
     // 라인 버퍼다 — 옵저버가 하나도 없어도(has_output_match_hook 만으로 게이트가
     // 열린 surface) 정확히 동작해야 한다.
     #[test]

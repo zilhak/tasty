@@ -840,7 +840,7 @@ pub mod defs {
         });
     }
 
-    /// OSC 133 셸 통합 미설치 안내(TODO34). surface 가 출력을 내고 있는데도 일정
+    /// OSC 133 셸 통합 미설치 안내. surface 가 출력을 내고 있는데도 일정
     /// 시간이 지나도록 `PromptBoundary` 를 한 번도 못 받았을 때 표시 — 설명만
     /// 하고 자동 조치는 없다(mouse-capture 배너와 동일 형태).
     pub const BANNER_SHELL_INTEGRATION_MISSING: BannerId = "shell-integration-missing";

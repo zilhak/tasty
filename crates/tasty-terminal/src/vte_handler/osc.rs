@@ -179,7 +179,7 @@ impl TerminalState {
                     kind: TerminalEventKind::ClipboardQuery,
                 });
             }
-            // OSC 133(TODO34) — termwiz 는 "133" 을 미리 알려진 코드로 취급해
+            // OSC 133 — termwiz 는 "133" 을 미리 알려진 코드로 취급해
             // `Unspecified` 대신 이 전용 variant 로 구조화해 반환한다(A/C/D 는
             // 항상 이 경로 — B 는 셸이 `cmd=` 등 부가 토큰을 붙이면 termwiz 의
             // 엄격한 단일-토큰 파서가 실패해 `Unspecified` 로 폴백하고, 그 경우는

@@ -457,7 +457,7 @@ pub(crate) enum CoreEvent {
     /// `DomainIntent::PushNotification { title: "Bell" }` 발행 + hook 발화.
     TerminalBellRing { surface_id: u32 },
 
-    /// PTY 출력이 완성된 한 라인을 이뤘다(TODO30). cascade 가 등록된
+    /// PTY 출력이 완성된 한 라인을 이뤘다. cascade 가 등록된
     /// `OutputMatch` 훅과 이 라인 텍스트를 비교해 발화한다. `has_output_match_hook`
     /// 로 게이트돼 있어 이 surface 에 `OutputMatch` 훅이 없으면 애초에 발행되지
     /// 않는다.
@@ -466,17 +466,17 @@ pub(crate) enum CoreEvent {
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
     TerminalCwdChanged { surface_id: u32 },
 
-    /// OSC 133 D phase(TODO34) — 셸 통합이 명령 완료 + exit code 를 보고했다. cascade
+    /// OSC 133 D phase — 셸 통합이 명령 완료 + exit code 를 보고했다. cascade
     /// 가 exit code 무관하게 항상 surface highlight 를 발동하고(자동 경로), 동시에
-    /// `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다(커스터마이즈 경로,
-    /// TODO67 — 두 경로는 상호 배타적이지 않다).
+    /// `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다(커스터마이즈 경로 —
+    /// 두 경로는 상호 배타적이지 않다. 상세: `docs/features/surface-highlight/index.md`).
     TerminalCommandCompleted {
         surface_id: u32,
         exit_code: Option<i32>,
     },
 
     /// 이 surface 가 출력을 내고 있는데도 일정 시간 `PromptBoundary` 를 한 번도
-    /// 못 받았다(TODO34) — OSC 133 셸 통합 미설치로 추정. cascade 가 안내 배너를
+    /// 못 받았다 — OSC 133 셸 통합 미설치로 추정. cascade 가 안내 배너를
     /// 1 회 띄운다(자동 조치 없음).
     TerminalShellIntegrationHint { surface_id: u32 },
 

@@ -317,11 +317,11 @@ mod tests {
         assert!(!idx.hard_notified.contains(&sid));
     }
 
-    /// TODO67 — surface highlight 자동 발동을 D phase cascade 에 추가해도 exit code
-    /// 정보가 memory 기록에서 유실되지 않아야 한다(성공/실패 양쪽). highlight 발동
-    /// 자체는 `App::cascade_terminal_command_completed` 가 무조건 호출하므로(분기
-    /// 없음) 이 memory 기록이 그 무분기 호출과 별개로 exit code 를 보존하는지가
-    /// 실질적인 회귀 지점이다.
+    /// surface highlight 자동 발동(상세 `docs/features/surface-highlight/index.md`)을
+    /// D phase cascade 에 추가해도 exit code 정보가 memory 기록에서 유실되지 않아야
+    /// 한다(성공/실패 양쪽). highlight 발동 자체는 `App::cascade_terminal_command_completed`
+    /// 가 무조건 호출하므로(분기 없음) 이 memory 기록이 그 무분기 호출과 별개로
+    /// exit code 를 보존하는지가 실질적인 회귀 지점이다.
     #[test]
     fn on_boundary_persists_exit_code_for_success_and_failure() {
         use std::sync::{Arc, Mutex};

@@ -278,8 +278,9 @@ pub struct CoreState {
     // itself stays on.
     pub(crate) mouse_capture_banner_suppressed_surfaces: std::collections::HashSet<u32>,
 
-    // ── OSC 133 셸 통합 미설치 안내 배너 판정 상태 (TODO34). `shell_integration_hint.rs`
-    // 참조. highlight 연결은 없음(별도 TODO67) — 순수 안내 배너 트리거용.
+    // ── OSC 133 셸 통합 미설치 안내 배너 판정 상태. `shell_integration_hint.rs`
+    // 참조. highlight 연결은 없음(별도 경로 — 상세 `docs/features/surface-highlight/index.md`) —
+    // 순수 안내 배너 트리거용.
     /// surface 의 첫 PTY 출력 관측 시각. 이 시각 이후 일정 시간이 지나도록
     /// `PromptBoundary` 를 한 번도 못 받으면 배너 대상 후보가 된다.
     pub(crate) shell_integration_first_output_at:

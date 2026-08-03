@@ -1,10 +1,10 @@
-//! OSC 133 셸 통합 미설치 감지(TODO34). surface 가 PTY 출력을 내고 있는데도 일정
+//! OSC 133 셸 통합 미설치 감지. surface 가 PTY 출력을 내고 있는데도 일정
 //! 시간이 지나도록 `PromptBoundary`(A/B/C/D 아무 phase)를 한 번도 못 받으면, 그
 //! 셸에는 OSC 133 통합 스크립트가 로드되지 않았다고 보고 안내 배너를 1회 띄운다.
 //!
 //! 마우스 캡처 안내 배너(`mouse_capture_banner_suppressed_surfaces`)와 동일하게
-//! 자동 조치 없이 설명만 한다 — highlight 연결은 이 판정과 무관하며 별도 TODO67 로
-//! 분리되어 있다(여기서는 다루지 않음).
+//! 자동 조치 없이 설명만 한다 — highlight 연결은 이 판정과 무관하며 별도 경로로
+//! 분리되어 있다(여기서는 다루지 않음, 상세 `docs/features/surface-highlight/index.md`).
 
 use super::CoreState;
 

@@ -636,7 +636,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     engine.attach.release_all_for_client(client_id);
                     // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     engine.bulk_transfers.clear_client(client_id);
-                    // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소(TODO27).
+                    // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소.
                     engine.capture_uploads.clear_client(client_id);
                     // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(상세
                     // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
@@ -653,7 +653,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
                 // 동형(엔진 1 개라 순회 불필요).
                 engine.poll_global_hooks();
-                // IdleTimeout 훅(TODO30) — gui `app/idle_hooks.rs` 의
+                // IdleTimeout 훅 — gui `app/idle_hooks.rs` 의
                 // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요). 바인딩
                 // 실행 + host event enqueue 는 여기서 직접 한다(엔진 레이어는 순수
                 // 조회만 함 — `CoreState::poll_idle_timeout_hooks` 참조).

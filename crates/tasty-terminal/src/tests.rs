@@ -783,7 +783,7 @@ fn osc52_write_still_emits_clipboard_set() {
     );
 }
 
-// OSC 133(TODO34) — termwiz parses "133" into its own dedicated
+// OSC 133 — termwiz parses "133" into its own dedicated
 // `FinalTermSemanticPrompt` variant (never `Unspecified`, for A/C/D at least),
 // so this must produce a `PromptBoundary` event via that variant's match arm,
 // not the (now largely dead for A/C/D) `Unspecified` fallback.
@@ -813,10 +813,11 @@ fn osc133_c_phase_emits_prompt_boundary() {
     );
 }
 
-// D phase is the one TODO34's hook wiring depends on — termwiz always parses
-// it into `FinalTermSemanticPrompt::CommandStatus{status,..}` (never falls
-// back to `Unspecified`), so the exit code must round-trip through the
-// `status.to_string()` payload into `PromptBoundary{phase: 'D', payload}`.
+// D phase is the one the command-completed hook wiring depends on — termwiz
+// always parses it into `FinalTermSemanticPrompt::CommandStatus{status,..}`
+// (never falls back to `Unspecified`), so the exit code must round-trip
+// through the `status.to_string()` payload into `PromptBoundary{phase: 'D',
+// payload}`.
 #[test]
 fn osc133_d_phase_carries_exit_code_as_payload() {
     let mut t = Terminal::new_detached(80, 24);
