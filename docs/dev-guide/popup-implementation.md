@@ -130,6 +130,8 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 **주의**: `lost_focus()` 만으로 닫지 않는다 — 팝업 내 다른 영역 클릭에도 TextEdit 는 포커스를 잃는다. **Enter/Escape 또는 명시적 버튼**으로만 닫는다.
 
+**IME**: 텍스트 입력이 있는 팝업이라고 별도로 등록할 것은 없다 — IME 활성 여부는 `src/gfx/gpu.rs`의 `GpuState::apply_platform_output()`이 `egui::PlatformOutput::ime`(그 프레임에 IME가 필요한 위젯이 실제로 focus 중일 때만 `Some`)로 자동 판정한다. popup이 focus를 가졌더라도 그 안의 `TextEdit`이 실제로 focus되어 있으면 IME는 켜진 채로 유지되고, 텍스트 입력이 없는 화면(목록/네비게이션 등)에서는 꺼져 Escape/화살표 등 단축키가 physical_key로 매칭된다. 즉 popup 종류를 열거하는 예외 목록이 없으므로, 새 popup에 텍스트 입력을 추가해도 이 문서 밖에서 추가로 손댈 곳이 없다.
+
 ## 콘텐츠 레이어 — `egui::Area` 등록 (스크롤·클립)
 
 팝업 콘텐츠(`draw_fn`)는 `PopupManager::draw`(`popup/draw.rs`)에서 **`egui::Area` 로 등록**되어 렌더된다. Area id = bg/title painter 와 동일한 layer_id(`Id("popup")+popup_id+z_idx`) → 한 레이어로 통합(z-order 자동 정합).

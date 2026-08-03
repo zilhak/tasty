@@ -454,14 +454,8 @@ impl GpuState {
         // Pre-set allow_ime=false so that when egui computes allow_ime=false
         // (no text field), the check false!=false is false and it skips
         // the set_ime_allowed(false) call entirely.
-        // popup이 focused면 IME를 비활성화하여 KeyboardInput이 직접 발생하도록 한다.
-        // 이렇게 하면 한글 IME 활성 상태에서도 popup 단축키가 physical_key로 매칭된다.
-        //
-        // Windows 예외: winit Windows의 set_ime_allowed는 ImmAssociateContextEx(IACE_DEFAULT/
-        // IACE_CHILDREN)로 IMC를 매번 attach/detach시킨다. 이 association churn이 한/영 키
-        // (VK_HANGUL) 토글을 가끔 망가뜨린다(다른 앱으로 갔다 오면 풀리는 증상의 원인).
-        // Windows winit은 IME 활성 상태에서도 KeyboardInput과 physical_key를 정상 emit하므로,
-        // popup 단축키 매칭에 IME 비활성화가 필요 없다. 따라서 Windows는 항상 IME를 허용한다.
+        // 나머지 판정(popup focus + 텍스트 입력 위젯 focus 여부)은
+        // `apply_platform_output` 문서 참조.
         let t0 = std::time::Instant::now();
         self.apply_platform_output(window, state, full_output.platform_output);
         let platform_output_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -658,8 +652,17 @@ impl GpuState {
 
     /// egui `PlatformOutput` 적용 + IME 허용 여부 갱신.
     ///
-    /// popup이 focused면 IME를 비활성화하여 KeyboardInput이 직접 발생하도록 한다.
-    /// 이렇게 하면 한글 IME 활성 상태에서도 popup 단축키가 physical_key로 매칭된다.
+    /// popup이 focused면서 그 안의 텍스트 입력 위젯은 focus되어 있지 않을 때만 IME를
+    /// 비활성화하여 KeyboardInput이 직접 발생하도록 한다. 이렇게 하면 한글 IME 활성
+    /// 상태에서도 popup 단축키(Escape/화살표 등)가 physical_key로 매칭된다.
+    ///
+    /// "텍스트 입력 위젯이 focus되어 있는가"는 popup id를 열거하는 대신 egui가 매
+    /// 프레임 계산해 주는 `PlatformOutput::ime`(IME가 필요한 위젯이 실제로 focus
+    /// 중일 때만 `Some`)로 판정한다 — search_bar/command_palette/port_scanner/
+    /// approval/remote_tool/rename 등 텍스트 입력을 가진 모든 popup을 한 번에 커버하고,
+    /// remote_tool처럼 폼 화면과 목록/네비게이션 화면이 한 popup 안에 공존해도 프레임
+    /// 단위로 정확하다. `platform_output`은 아래에서 `handle_platform_output`에 통째로
+    /// move되므로, `ime` 필드는 그 전에 먼저 읽어 둔다.
     ///
     /// Windows 예외: winit Windows의 set_ime_allowed는 ImmAssociateContextEx(IACE_DEFAULT/
     /// IACE_CHILDREN)로 IMC를 매번 attach/detach시킨다. 이 association churn이 한/영 키
@@ -673,12 +676,16 @@ impl GpuState {
         platform_output: egui::PlatformOutput,
     ) {
         self.egui_state.set_allow_ime(false);
+
+        #[cfg(not(windows))]
+        let ime_widget_focused = platform_output.ime.is_some();
+
         self.egui_state
             .handle_platform_output(window, platform_output);
 
         #[cfg(not(windows))]
         {
-            let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
+            let disable_ime = state.popups.has_focused() && !ime_widget_focused;
             window.set_ime_allowed(!disable_ime);
         }
         #[cfg(windows)]
