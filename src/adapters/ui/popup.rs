@@ -7,6 +7,7 @@ mod draw;
 pub(crate) mod file_handler_picker;
 pub(crate) mod file_picker;
 pub(crate) mod port_scanner;
+pub(crate) mod port_scanner_favorites;
 pub(crate) mod preset_apply;
 pub(crate) mod rail_category;
 pub(crate) mod remote_attach;

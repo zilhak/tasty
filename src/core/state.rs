@@ -319,6 +319,16 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites,
 
+    /// 포트 스캐너 즐겨찾기. 전역(surface 무관)·영속 — 부팅 시
+    /// `PortFavorites::load()` 로 `~/.tasty/port-favorites.toml` 에서 읽고, 추가/제거
+    /// 시 메모리 갱신 + `save()` 로 즉시 디스크 반영한다. 사용자 직접 조작으로만
+    /// 변경되므로 release 경로에서 직접 갱신(도메인 snapshot 비대상).
+    /// (소비자가 전부 gui 어댑터라 headless 빌드에선 필드째 제외.)
+    /// UI 결선(별도 TODO) 전까지 실사용처 없음 — wiring 전.
+    #[cfg(feature = "gui")]
+    #[allow(dead_code)]
+    pub(crate) port_favorites: crate::adapters::ui::popup::port_scanner_favorites::PortFavorites,
+
     /// Terminal/PTY 데이터 owner (Surface 트리와 분리). Terminal 인스턴스와
     /// 디스크 scrollback 영속 키(`scrollback_persist_ids`)를 store 가 단독
     /// 소유하며, `crate::model::TerminalSurface` 는 `{ id }` 참조만 갖는다.
@@ -596,6 +606,9 @@ impl CoreState {
             explorer_clipboard: None,
             #[cfg(feature = "gui")]
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
+            #[cfg(feature = "gui")]
+            port_favorites: crate::adapters::ui::popup::port_scanner_favorites::PortFavorites::load(
+            ),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
