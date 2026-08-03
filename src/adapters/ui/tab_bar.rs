@@ -100,6 +100,13 @@ pub enum TabBarAction {
     ScrollRight {
         pane_id: u32,
     },
+    /// 활성 탭 전환(또는 pane 리사이즈)으로 활성 탭이 뷰포트 밖으로 밀려났을 때
+    /// view 가 계산한 보정 스크롤 오프셋. 사용자가 직접 누른 액션이 아니라 뷰
+    /// 렌더링 결과에 대한 보정이므로 `focus_target_pane` 대상에서 제외한다.
+    AutoScrollToActiveTab {
+        pane_id: u32,
+        offset: f32,
+    },
     /// 탭바의 탭 없는 빈 영역(뷰포트) primary click — 탭 전환 없이 그 pane 으로
     /// focus 만 이동한다.
     FocusPane {
@@ -162,7 +169,8 @@ impl TabBarAction {
             | TabBarAction::OpenPaneContextMenu { .. }
             | TabBarAction::OpenNewTabButtonContextMenu { .. }
             | TabBarAction::DragUpdate { .. }
-            | TabBarAction::DragEnd { .. } => None,
+            | TabBarAction::DragEnd { .. }
+            | TabBarAction::AutoScrollToActiveTab { .. } => None,
         }
     }
 }
@@ -221,7 +229,43 @@ pub fn draw_pane_tab_bars_view(
             avail_w
         };
         let max_scroll = (content_w - viewport_w).max(0.0);
-        let scroll = info.scroll_offset.clamp(0.0, max_scroll);
+        let mut scroll = info.scroll_offset.clamp(0.0, max_scroll);
+
+        // 활성 탭 추종 스크롤 — 활성 인덱스가 바뀌었거나(키보드/마우스 전환 공통)
+        // pane 지오메트리(폭/탭 수)가 바뀌어 이전엔 보이던 활성 탭이 뷰포트 밖으로
+        // 밀려난 경우에만 보정한다. 매 프레임 무조건 트리거하면 사용자가 화살표로
+        // 수동 스크롤해 둔 상태(활성 탭 변경 없음)를 덮어써 버리므로, 직전 프레임과
+        // 비교 가능한 상태를 `egui::Context` persistent memory 에 추적한다
+        // (`switch_overlay::appear_fade` 와 동일 패턴 — view 는 AppState/CoreState
+        // 비의존을 유지하면서 프레임 간 상태를 ctx 에 위임).
+        let scroll_track_id = egui::Id::new("tab_bar_active_scroll_track").with(info.pane_id);
+        let prev_track: Option<(usize, f32, usize)> = ctx.data(|d| d.get_temp(scroll_track_id));
+        let active_changed = match prev_track {
+            Some((active, _, _)) => active != info.active_tab,
+            None => true,
+        };
+        let geometry_changed = match prev_track {
+            Some((_, w, count)) => (w - logical_w).abs() > 0.5 || count != n,
+            None => false,
+        };
+        ctx.data_mut(|d| d.insert_temp(scroll_track_id, (info.active_tab, logical_w, n)));
+
+        if n > 0 && (active_changed || geometry_changed) {
+            let active_start = info.active_tab as f32 * (tab_w + separator_w);
+            let active_end = active_start + tab_w;
+            if active_start < scroll {
+                scroll = active_start;
+            } else if active_end > scroll + viewport_w {
+                scroll = active_end - viewport_w;
+            }
+            scroll = scroll.clamp(0.0, max_scroll);
+            if (scroll - info.scroll_offset).abs() > f32::EPSILON {
+                output.actions.push(TabBarAction::AutoScrollToActiveTab {
+                    pane_id: info.pane_id,
+                    offset: scroll,
+                });
+            }
+        }
 
         let area_response = egui::Area::new(egui::Id::new(format!("pane_tabs_{}", info.pane_id)))
             .fixed_pos(egui::pos2(logical_x, logical_y))
@@ -1002,6 +1046,9 @@ pub fn apply_tab_bar_actions(
                     pane.tab_scroll_offset += tab_w;
                 }
             }
+            TabBarAction::AutoScrollToActiveTab { pane_id, offset } => {
+                apply_auto_scroll(state, engine, pane_id, offset);
+            }
             // 빈 영역 클릭은 focus 이동이 전부다(탭 전환 없음) — 위 pre-match 에서 이미
             // 처리됐으므로 여기선 추가 작업이 없다.
             TabBarAction::FocusPane { pane_id: _ } => {}
@@ -1058,6 +1105,24 @@ pub fn apply_tab_bar_actions(
                 );
             }
         }
+    }
+}
+
+/// [`TabBarAction::AutoScrollToActiveTab`] 적용 — view 가 계산한 보정 오프셋을
+/// 그대로 pane 에 반영한다. `apply_tab_bar_actions` 의 cognitive complexity 를
+/// 낮추기 위해 분리.
+fn apply_auto_scroll(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    pane_id: u32,
+    offset: f32,
+) {
+    if let Some(pane) = state
+        .active_workspace_mut(engine)
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+    {
+        pane.tab_scroll_offset = offset;
     }
 }
 
@@ -1167,6 +1232,10 @@ mod tests {
                 mouse_x: 0.0,
             },
             TabBarAction::DragEnd { pane_id: 7 },
+            TabBarAction::AutoScrollToActiveTab {
+                pane_id: 7,
+                offset: 0.0,
+            },
         ];
         for action in non_focus {
             assert_eq!(
@@ -1209,7 +1278,17 @@ mod tests {
     }
 
     fn run_view(panes: Vec<PaneTabBarView>, drag: Option<TabDragView>) -> PaneTabBarsOutput {
-        let ctx = egui::Context::default();
+        run_view_on(&egui::Context::default(), panes, drag)
+    }
+
+    /// [`run_view`] 와 동일하되 호출자가 `egui::Context` 를 직접 제공한다 — 활성
+    /// 탭 추종 스크롤은 프레임 간 상태를 `ctx` persistent memory 에 추적하므로,
+    /// "여러 프레임에 걸친 변화"를 검증하려면 같은 ctx 를 재사용해 여러 번 호출해야 한다.
+    fn run_view_on(
+        ctx: &egui::Context,
+        panes: Vec<PaneTabBarView>,
+        drag: Option<TabDragView>,
+    ) -> PaneTabBarsOutput {
         let theme = test_theme();
         let kb = crate::settings::KeybindingSettings::default();
         let mut out = PaneTabBarsOutput::default();
@@ -1231,13 +1310,23 @@ mod tests {
     }
 
     fn mk_pane(pane_id: u32, names: &[&str], active: usize, focused: bool) -> PaneTabBarView {
+        mk_pane_w(pane_id, names, active, focused, 800.0)
+    }
+
+    fn mk_pane_w(
+        pane_id: u32,
+        names: &[&str],
+        active: usize,
+        focused: bool,
+        width: f32,
+    ) -> PaneTabBarView {
         let n = names.len();
         PaneTabBarView {
             pane_id,
             rect: PhysicalRect {
                 x: PhysicalPx(0.0),
                 y: PhysicalPx(0.0),
-                width: PhysicalPx(800.0),
+                width: PhysicalPx(width),
                 height: PhysicalPx(600.0),
             },
             tab_names: names.iter().map(|s| s.to_string()).collect(),
@@ -1248,6 +1337,114 @@ mod tests {
             is_focused: focused,
             scroll_offset: 0.0,
         }
+    }
+
+    /// [`TabBarAction::AutoScrollToActiveTab`] 중 주어진 pane 대상인 것의 offset.
+    fn auto_scroll_offset(out: &PaneTabBarsOutput, pane_id: u32) -> Option<f32> {
+        out.actions.iter().find_map(|a| match *a {
+            TabBarAction::AutoScrollToActiveTab { pane_id: p, offset } if p == pane_id => {
+                Some(offset)
+            }
+            _ => None,
+        })
+    }
+
+    // 아래 스크롤 보정 테스트들의 공통 지오메트리 (tab_w=160, separator_w=1,
+    // plus_w=28, right_icons_w=56, arrow_w=20 — `draw_pane_tab_bars_view` 상수와 동일):
+    // pane 폭 800 · 탭 8개 → content_w=1316, avail_w=744, needs_scroll,
+    // viewport_w=704, max_scroll=612.
+
+    #[test]
+    fn switching_to_offscreen_tab_scrolls_it_into_view() {
+        // 탭 8개, 화면에는 앞쪽 몇 개만 보이는 좁은 pane 폭. 마지막 탭(인덱스 7)으로
+        // 전환 — 현재 뷰포트(scroll=0) 밖.
+        let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 7, true);
+        let out = run_view(vec![pane], None);
+
+        let tab_w = 160.0;
+        let separator_w = 1.0;
+        let viewport_w = 704.0;
+        let tab_start = 7.0 * (tab_w + separator_w);
+        let tab_end = tab_start + tab_w;
+
+        let offset = auto_scroll_offset(&out, 1).expect("offscreen 전환은 보정을 emit 해야 한다");
+        assert!(offset <= tab_start);
+        assert!(offset + viewport_w >= tab_end);
+    }
+
+    #[test]
+    fn switching_to_first_tab_wraps_scroll_back_into_view() {
+        // 마지막 탭에서 스크롤이 오른쪽 끝까지 밀려난 상태(scroll=max_scroll)에서
+        // 첫 탭(인덱스 0)으로 wrap-around 전환 — 왼쪽으로 다시 보정돼야 한다.
+        let ctx = egui::Context::default();
+        let mut pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 7, true);
+        pane.scroll_offset = 612.0; // max_scroll
+        run_view_on(&ctx, vec![pane], None);
+
+        let mut pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
+        pane.scroll_offset = 612.0;
+        let out = run_view_on(&ctx, vec![pane], None);
+
+        let offset = auto_scroll_offset(&out, 1).expect("wrap-around 전환도 보정을 emit 해야 한다");
+        assert_eq!(offset, 0.0, "첫 탭은 뷰포트 좌측 끝(0)에서 보여야 한다");
+    }
+
+    #[test]
+    fn active_tab_unchanged_does_not_override_manual_scroll() {
+        // 같은 ctx 로 두 프레임 연속 렌더 — active_tab 도 pane 지오메트리도 바뀌지
+        // 않았다면, 활성 탭(0)이 사용자가 화살표로 스크롤해 가려 놓은 상태(scroll=400,
+        // 탭 0 은 뷰포트 밖)라도 보정을 강제하면 안 된다.
+        let ctx = egui::Context::default();
+        let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
+        run_view_on(&ctx, vec![pane], None);
+
+        let mut pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
+        pane.scroll_offset = 400.0;
+        let out = run_view_on(&ctx, vec![pane], None);
+
+        assert_eq!(
+            auto_scroll_offset(&out, 1),
+            None,
+            "활성 탭이 그대로면 수동 스크롤 상태를 덮어쓰면 안 된다"
+        );
+    }
+
+    #[test]
+    fn pane_resize_reveals_correction_even_without_active_change() {
+        // 1프레임: 넓은 pane(2000px) — 스크롤 불필요, 탭 7 전체가 이미 보임.
+        // 2프레임: 같은 ctx, 같은 active_tab(7) 이지만 pane 이 800px 로 좁아져
+        // 스크롤이 필요해짐 — active_tab 은 안 바뀌었어도 지오메트리 변화로 보정돼야 한다.
+        let ctx = egui::Context::default();
+        let wide = mk_pane_w(
+            1,
+            &["A", "B", "C", "D", "E", "F", "G", "H"],
+            7,
+            true,
+            2000.0,
+        );
+        run_view_on(&ctx, vec![wide], None);
+
+        let narrow = mk_pane_w(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 7, true, 800.0);
+        let out = run_view_on(&ctx, vec![narrow], None);
+
+        let tab_w = 160.0;
+        let separator_w = 1.0;
+        let viewport_w = 704.0;
+        let tab_start = 7.0 * (tab_w + separator_w);
+        let tab_end = tab_start + tab_w;
+        let offset =
+            auto_scroll_offset(&out, 1).expect("resize 로 out-of-view 가 된 경우도 보정해야 한다");
+        assert!(offset <= tab_start);
+        assert!(offset + viewport_w >= tab_end);
+    }
+
+    #[test]
+    fn viewport_that_already_shows_active_tab_emits_no_correction() {
+        // 첫 탭(인덱스 0)이 활성이고 scroll=0 이면 이미 뷰포트 안 — 아무 보정도
+        // 필요 없다(경계값: 스크롤 화살표/"+" 버튼 폭을 뺀 뒤에도 첫 탭은 항상 보임).
+        let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
+        let out = run_view(vec![pane], None);
+        assert_eq!(auto_scroll_offset(&out, 1), None);
     }
 
     #[test]
