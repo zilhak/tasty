@@ -110,7 +110,7 @@ impl Plugin for ClaudePlugin {
         // lifecycle(spawn/kill/reconcile)은 호스트가 소유하므로 여기서 하지 않는다 —
         // error_scan 은 launch surface 에 대해서만 enable 되며, 그 surface 가 죽으면
         // 이 스레드 자신이 매 tick `surface.locate` 로 생존을 확인해 disable 한다
-        // (`error_scan_loop` 참조, TODO10).
+        // (`error_scan_loop` 참조).
         let scanner = self.scanner.clone();
         std::thread::Builder::new()
             .name("claude-error-scan".into())
@@ -134,7 +134,7 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
         for sid in surfaces {
             // surface.closed 구독(ef57061d 로 제거됨) 대신, 이미 도는 폴링 주기에
             // 편승해 생존을 확인한다 — 죽은 surface 는 disable 해 enabled/dedupe
-            // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음. TODO10).
+            // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음).
             if !surface_is_alive(&host, sid) {
                 if let Ok(mut s) = scanner.lock() {
                     s.disable(sid);

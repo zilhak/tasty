@@ -13,7 +13,7 @@
 //! `enable`은 `handlers.rs::handle_launch`가 호출한다. `disable`은
 //! `ef57061d`(2026-07-07)가 걷어낸 `on_surface_lifecycle`/`surface.closed`
 //! 구독을 되살리는 대신, `main.rs::error_scan_loop`의 800ms 폴링 주기에 편승해
-//! `surface.locate`로 생존을 주기적으로 대조하는 방식으로 대체했다(TODO10) — 추가
+//! `surface.locate`로 생존을 주기적으로 대조하는 방식으로 대체했다 — 추가
 //! 구독 배선 없이 기존 poll 인프라만으로 "surface 종료 시 dedupe 상태 정리"를
 //! 만족한다. `reset_dedupe`는 `hook.rs`가 새 턴 시작(prompt-submit 등) hook
 //! 이벤트에서 호출해, 이전 턴의 에러 텍스트로 눌린 dedupe 가 새 턴의 에러까지

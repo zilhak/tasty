@@ -52,7 +52,7 @@ pub enum HostCall {
     /// `surface.completion { surface_id }` — surface highlight(주의 환기) 발동.
     /// "Claude가 명령을 끝냈다"/"확인이 필요하다" 신호를
     /// `docs/features/surface-highlight/index.md` 의 producer 중립 highlight API 로
-    /// 연결한다(TODO 33).
+    /// 연결한다.
     SurfaceCompletion { surface_id: u32 },
 }
 
@@ -427,10 +427,11 @@ mod tests {
         );
     }
 
-    // ── surface highlight 배선 (TODO 33: stop/subagent-stop/session-end/notification
-    // 각각에서 SurfaceCompletion 이 나가는지 개별 확인 — 위 4개 테스트가 이미 전체
-    // 시퀀스에 포함됨을 검증하지만, 여기서는 "완료/확인필요 신호에는 항상 highlight 가
-    // 딸려온다"는 계약 자체를 명시적으로 이름 붙여 pin 한다) ──
+    // ── surface highlight 배선(`docs/features/surface-highlight/index.md`) —
+    // stop/subagent-stop/session-end/notification 각각에서 SurfaceCompletion 이
+    // 나가는지 개별 확인 — 위 4개 테스트가 이미 전체 시퀀스에 포함됨을 검증하지만,
+    // 여기서는 "완료/확인필요 신호에는 항상 highlight 가 딸려온다"는 계약 자체를
+    // 명시적으로 이름 붙여 pin 한다 ──
 
     #[test]
     fn stop_also_raises_surface_completion_highlight() {
@@ -476,7 +477,7 @@ mod tests {
     fn prompt_submit_does_not_raise_surface_completion_highlight() {
         // "작업 시작" 신호는 완료/확인필요가 아니므로 highlight 대상이 아니다 —
         // apply_hook의 "prompt-submit"|"session-start"|"active" 분기는 건드리지 않는다
-        // (TODO 33 "사용자 결정 확정" §1).
+        // (`docs/features/surface-highlight/index.md` 참고).
         let calls = apply_hook("prompt-submit", 100, None).unwrap();
         assert!(
             !calls
@@ -626,7 +627,7 @@ mod tests {
         assert_eq!(err.code, -32602);
     }
 
-    // ── error dedupe 초기화 배선 (TODO10: disable/reset_dedupe/is_enabled 재배선) ──
+    // ── error dedupe 초기화 배선 (disable/reset_dedupe/is_enabled 재배선) ──
 
     #[test]
     fn is_new_turn_event_matches_active_transition_only() {
