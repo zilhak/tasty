@@ -544,10 +544,11 @@ impl App {
         }
     }
 
-    /// `about_to_wait()` 지원 — RssSurge 이상탐지(TODO 61): PluginManager 가 sysinfo 로
-    /// 직접 sampling 한 (plugin_id, rss_bytes) 를 anomaly detector 에 공급. 어느 window
-    /// 소관인지 몰라(PluginManager 는 App-level singleton) plugin lifecycle cascade 와
-    /// 동일하게 첫 main window 를 대상으로 삼는다.
+    /// `about_to_wait()` 지원 — RssSurge 이상탐지(상세 `docs/features/telemetry/index.md`):
+    /// PluginManager 가 sysinfo 로 직접 sampling 한 (plugin_id, rss_bytes) 를 anomaly
+    /// detector 에 공급. 어느 window 소관인지 몰라(PluginManager 는 App-level
+    /// singleton) plugin lifecycle cascade 와 동일하게 첫 main window 를 대상으로
+    /// 삼는다.
     fn record_plugin_rss_samples_if_present(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             let rss_samples = mgr.take_rss_samples();
@@ -1270,18 +1271,8 @@ impl App {
         // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
         // 자동 fan-out 한다(여기서 추가 push 없음).
         self.apply_resize_requests_batch(outcome.resize_requests);
-        // mesh 구독/geometry 갱신(TODO 18) — 구독 요청 자체가 capability negotiation
-        // (TODO 15 결정 #1). holder 불일치/미점유 surface 는 명시 MeshError 로 회신한다.
-        // 참고: 실제 plugin 구동 + mesh 바이트 forward 는 아직 headless(attach mesh
-        // mirror 의 주 시나리오, `src/boot/headless_plugins.rs`)에만 배선했다 — gui 가
-        // attach 서버인 경우의 실제 forward 루프는 out-of-scope 로 남기고
-        // `.claude-workspace/todo/`에 후속 TODO 로 기록했다(로컬 redraw 와의 geometry
-        // 권위 조정이 필요해 범위가 커진다).
         self.apply_mesh_context_requests_batch(outcome.mesh_context_requests, &hub);
         self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
-        // attach mesh mirror 입력 역방향 forward(TODO 20) — 위 mesh_context_requests
-        // 와 동일 배선 범위(headless 만 실제 plugin 구동). gui 가 attach 서버인 경우는
-        // TODO 24 로 이연.
         self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
 
         // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
@@ -1291,8 +1282,6 @@ impl App {
         // (04) file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
         // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
-        // (TODO 40) git-viewer: mirror client 가 attach 채널로 보낸 git 조회 요청.
-        // holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
         // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
         // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
