@@ -324,6 +324,11 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
 ///   Failed 마감 (precise), 없으면 `Failed("host restart: pid {pid} died (exit_code unknown)")`.
 /// - `PolledDispatch` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick 에서 poll.
 ///   PolledDispatch 의 첫 poll 이 injector 미준비여도 K.A-2 grace (30s) 안에서는 Active 유지.
+/// - `AwaitExternal { deadline_ms, .. }` : `deadline_ms` 가 이미 지났으면 즉시
+///   `Failed("...deadline already expired")` 로 마감(구 포맷도 `deadline_ms` 기본값
+///   0 이라 이 분기로 걸린다). 아직이면 그대로 복원 — `hook_wait` 매핑은 재시작으로
+///   사라졌으므로 훅으로는 못 깨어나고, 다음 reload(다음 재시작) 때 다시 이
+///   deadline 판정을 받는다(결정 4 — 계약: 재시작 후 hook_wait 은 비영속).
 /// - `Immediate*` / `ImmediateFail` : 영속 대상 아니므로 도달 안 됨 (방어적 evict).
 ///
 /// 반환: 복원할 (task_id, handle) 쌍 — RunnerLoop.running 에 insert.
@@ -347,7 +352,7 @@ fn reload_persistent_handles(
     let mut precise: Vec<(TaskId, PollOutcome)> = Vec::new();
 
     for e in entries {
-        match classify_persisted_handle(ctx, workspace_id, e) {
+        match classify_persisted_handle(ctx, workspace_id, now, e) {
             HandleClassification::Alive(task_id, handle) => alive.push((task_id, handle)),
             HandleClassification::Dead(task_id, err) => dead.push((task_id, err)),
             HandleClassification::Stale(task_id) => stale.push(task_id),
@@ -385,6 +390,7 @@ enum HandleClassification {
 fn classify_persisted_handle(
     ctx: &RunnerContext,
     workspace_id: u32,
+    now: u64,
     e: tasty_memory::MemoryEntry,
 ) -> HandleClassification {
     let task_id = e
@@ -432,16 +438,29 @@ fn classify_persisted_handle(
                 )
             }
         }
+        // AwaitExternal 의 deadline 이 이미 지났으면 — `hook_wait` 매핑(재시작 시
+        // 비영속)이 사라져 훅으로는 더 이상 깨어날 수 없으므로, handle 에 실린
+        // deadline(결정 4)으로 즉시 마감한다. 구 포맷(deadline_ms 없음 → 0)도 이
+        // 분기로 걸려 즉시 만료 처리된다.
+        DispatchHandle::AwaitExternal { deadline_ms, .. } if *deadline_ms <= now => {
+            HandleClassification::Dead(
+                task_id,
+                "host restart: push completion strategy deadline already expired".to_string(),
+            )
+        }
         // PolledDispatch/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
         // PolledDispatch 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
         //
-        // AwaitExternal 도 동형으로 복원한다 — poll 은 항상
+        // AwaitExternal(미만료) 도 동형으로 복원한다 — poll 은 항상
         // Active 인 no-op 이지만, 진짜 종결은 `self.running` 과 무관하게
         // store 를 직접 전이시키는 외부 경로가 담당한다. 여기서 복원하지
         // 않으면(= stale 로 evict) 그 외부 완료가 도착했을 때 0단계 terminal
         // 흡수가 handle 을 찾지 못해 `release_permit` 이 누락된다 — 이
         // variant 를 도입한 목적(permit 누수 방지)이 재시작 시나리오에서
-        // 깨지는 것이므로 반드시 복원해야 한다.
+        // 깨지는 것이므로 반드시 복원해야 한다. `hook_wait` 매핑은 재시작 시
+        // 사라지므로 이 task 는 훅으로는 깨어나지 못하고, 이후 매 tick 의
+        // `expire_overdue_hook_waits` 도 이 task 를 더는 추적하지 못한다 —
+        // 대신 다음 reload(재-재시작) 때 이 분기가 deadline 으로 마감한다.
         DispatchHandle::PolledDispatch { .. }
         | DispatchHandle::BarrierPoll { .. }
         | DispatchHandle::AwaitExternal { .. } => HandleClassification::Alive(task_id, handle),
@@ -633,10 +652,44 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
     }
 }
 
+/// 재시작 정화 3종 세트 — semaphore/lease holder 회수(+ 해당 task
+/// `Failed("host restart")` 마감) 및 persisted `DispatchHandle` reload. 원래
+/// `run_loop` 진입부에 있던 로직을 분리한 것 — runner thread 없이도(부팅 경로,
+/// [`purge_stale_agent_state_on_boot`]) 호출 가능해야 하기 때문이다.
+///
+/// 반환값은 reload 로 되살아난 (task_id, handle) 목록 — runner 가 있으면
+/// `RunnerLoop.running` 에 삽입해 이어서 poll 한다. 부팅 경로처럼 runner 가
+/// 없으면 그냥 버려도 안전하다: `alive` 분류는 부수효과가 없고(핸들을 그대로
+/// 반환할 뿐), 다음 수동 `agent.task_run --action start` 가 같은 handle 목록을
+/// 다시 reload 해 `RunnerLoop.running` 에 넣는다. `dead`/`stale`/`precise` 분류는
+/// 이미 이 호출에서 마감·evict 됐으므로 재호출(수동 start 시 run_loop 진입)해도
+/// 대상이 남아있지 않아 no-op — 즉 이 함수는 여러 번 호출해도 안전(idempotent)
+/// 하다.
+fn purge_and_reload_on_restart(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+) -> Vec<(TaskId, DispatchHandle)> {
+    purge_stale_semaphore_holders(ctx, workspace_id);
+    purge_stale_lease_holders(ctx, workspace_id);
+    reload_persistent_handles(ctx, workspace_id)
+}
+
+/// 결정 2: 부팅 시 1회 — 라이브 workspace 전부에 재시작 정화만 적용하고 runner
+/// thread 는 켜지 않는다(결정 1: 자동 시작 없음). `workspace_ids` 는 호출자가
+/// 라이브 workspace 목록에서 그대로 넘긴다 — task 가 없는 workspace 는 내부
+/// 정화 함수들이 candidates 없음으로 조기 반환하므로 별도 필터링 불필요(이미
+/// 사라진 workspace id 는애초에 이 목록에 없으므로 자연히 제외된다 — "라이브
+/// workspace ∩ task 보유 workspace" 교집합과 동치).
+pub(crate) fn purge_stale_agent_state_on_boot(ctx: &RunnerContext, workspace_ids: &[u32]) {
+    for &workspace_id in workspace_ids {
+        // reload 결과(되살아난 handle)는 버린다 — 이 시점엔 그걸 넘겨받아
+        // poll 할 runner 가 없다. 다음 수동 start 가 다시 reload 한다.
+        let _ = purge_and_reload_on_restart(ctx, workspace_id);
+    }
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
-    purge_stale_semaphore_holders(&ctx, workspace_id);
-    purge_stale_lease_holders(&ctx, workspace_id);
-    let reloaded = reload_persistent_handles(&ctx, workspace_id);
+    let reloaded = purge_and_reload_on_restart(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     for (task_id, handle) in reloaded {
@@ -1049,6 +1102,125 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap().state
         });
         assert!(matches!(state, TaskState::Ready), "got {state:?}");
+    }
+
+    /// 결정 4: 재시작 reload 시점에 `AwaitExternal.deadline_ms` 가 이미 지났으면
+    /// (`hook_wait` 매핑은 재시작으로 사라져 훅으로 못 깨어난다) 즉시 Failed 로
+    /// 마감하고 handle 을 evict — 영구 Running 으로 남지 않는다.
+    #[test]
+    fn reload_persistent_handles_fails_await_external_past_deadline() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Custom {
+                        ipc_method: "acme.start".into(),
+                        params: serde_json::json!({}),
+                        poll: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+        // now_ms() 는 실제 현재 시각을 쓰므로, 이미 지난 deadline 은 1(unix epoch
+        // 근처)로 고정하면 항상 과거다.
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::AwaitExternal {
+                wait_key: "hook-1".into(),
+                deadline_ms: 1,
+            },
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(
+            alive.is_empty(),
+            "past-deadline AwaitExternal must not restore alive"
+        );
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        match task.state {
+            TaskState::Failed { error } => assert!(
+                error.contains("deadline already expired"),
+                "unexpected error: {error}"
+            ),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+
+        let still_there: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!still_there, "expired handle should be evicted");
+    }
+
+    /// 결정 4 대칭 케이스: deadline 이 아직 안 지난 `AwaitExternal` 은 그대로
+    /// alive 복원(다음 tick 에서 poll — 여전히 Active 인 no-op, 진짜 종결은 외부
+    /// 경로 몫).
+    #[test]
+    fn reload_persistent_handles_restores_await_external_before_deadline() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Custom {
+                        ipc_method: "acme.start".into(),
+                        params: serde_json::json!({}),
+                        poll: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::AwaitExternal {
+                wait_key: "hook-2".into(),
+                deadline_ms: u64::MAX,
+            },
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert_eq!(
+            alive.len(),
+            1,
+            "not-yet-expired AwaitExternal should restore"
+        );
+        assert_eq!(alive[0].0, task_id);
+
+        let state: TaskState = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap().state
+        });
+        assert!(matches!(state, TaskState::Running), "got {state:?}");
     }
 
     /// push 전략의 timeout 안전망. deadline 이 지난

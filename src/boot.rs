@@ -283,6 +283,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let mut engine =
         crate::core::CoreState::new_with_ids(80, 24, base_waker, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);
+    // agent task runner 재시작 정화(결정 2) — 자동 시작은 하지 않는다(결정 1).
+    // CoreState 확보 직후, 어떤 client 도 아직 붙기 전에 1 회만 수행.
+    app.core.purge_stale_agent_state_on_boot(&engine);
     // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록 IPC
     // 서버와 동일한 StreamHub 를 attach registry 에 주입.
     engine.attach.set_notifier(app.stream_hub.clone());

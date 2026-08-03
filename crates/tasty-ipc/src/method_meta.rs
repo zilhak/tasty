@@ -291,6 +291,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.task_cancel", plugin(&[AgentManage])),
         ("agent.task_retry", plugin(&[AgentManage])),
         ("agent.task_graph", plugin(&[AgentManage])),
+        // 자동 시작이 없으므로(재시작 정화는 부팅 경로 전용) plugin 이 자기
+        // workspace 의 runner 를 스스로 되살릴 수단이 필요하다 — start/stop 은
+        // idempotent, status 는 순수 조회.
+        ("agent.task_run", plugin(&[AgentManage])),
         ("agent.barrier_create", plugin(&[AgentManage])),
         ("agent.barrier_signal", plugin(&[AgentManage])),
         ("agent.barrier_await", plugin(&[AgentManage])),

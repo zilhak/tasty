@@ -223,6 +223,7 @@ fn agent_task_methods_require_agent_manage() {
         "agent.task_cancel",
         "agent.task_retry",
         "agent.task_graph",
+        "agent.task_run",
     ] {
         let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
         assert!(m.plugin_callable, "{name} should be plugin-callable");

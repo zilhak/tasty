@@ -1,13 +1,130 @@
-use super::{Commands, ListCommands};
+use super::{AgentCommands, Commands, ListCommands};
 
 pub fn format_output(command: &Commands, result: &serde_json::Value) {
     match command {
         Commands::List { command } => format_list_output(command, result),
+        Commands::Agent { command } => format_agent_output(command, result),
         _ => {
             // Pretty print JSON
             println!("{}", serde_json::to_string_pretty(result).unwrap());
         }
     }
+}
+
+/// `tasty agent task-{list,get,run}` 만 사람이 터미널에서 바로 읽는 텍스트로
+/// 렌더한다 — 결정 5(CLI 관측 표면): "runner 가 꺼져 있다"/"이 task 는 외부
+/// 신호를 기다린다" 를 raw JSON 을 눈으로 파싱하지 않고 바로 알아볼 수 있어야
+/// 한다. 그 외 커맨드(barrier/semaphore/lease/rate_limit/task-graph 등)는 구조적
+/// 데이터라 pretty JSON 그대로가 적절 — GUI 는 만들지 않는다(결정 5).
+fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) {
+    match command {
+        AgentCommands::TaskList { .. } => format_task_list(result),
+        AgentCommands::TaskGet { .. } => format_task_get(result),
+        AgentCommands::TaskRun { .. } => format_task_run(result),
+        _ => println!("{}", serde_json::to_string_pretty(result).unwrap()),
+    }
+}
+
+/// runner 요약 한 줄 — `{running, crashed, ready_count, running_count}` 형태의
+/// `runner` 서브객체를 공유(`task_list`/`task_graph`/`task_run` 응답 공통 shape).
+fn format_runner_summary(runner: &serde_json::Value) -> String {
+    let running = runner
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let crashed = runner
+        .get("crashed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let ready = runner
+        .get("ready_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let inflight = runner
+        .get("running_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let status = if crashed {
+        "crashed"
+    } else if running {
+        "running"
+    } else {
+        "stopped"
+    };
+    let mut line = format!("runner: {status} (ready={ready} running={inflight})");
+    if !running && (ready > 0 || inflight > 0) {
+        line.push_str(" — pending work but no runner; `agent task-run --action start` to resume");
+    }
+    line
+}
+
+/// `state` 는 `TaskState` 의 internally-tagged 직렬화(`{"kind": "...", ...}`)라
+/// 최상위 문자열이 아니다 — `kind` 서브필드를 꺼내야 한다.
+fn task_state_kind(task: &serde_json::Value) -> &str {
+    task.get("state")
+        .and_then(|s| s.get("kind"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("?")
+}
+
+fn format_task_list(result: &serde_json::Value) {
+    let tasks = result.get("tasks").and_then(|v| v.as_array());
+    let Some(tasks) = tasks else {
+        println!("{}", serde_json::to_string_pretty(result).unwrap());
+        return;
+    };
+    if tasks.is_empty() {
+        println!("No tasks");
+    } else {
+        for t in tasks {
+            let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+            let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let state = task_state_kind(t);
+            println!("{state:<10} {id}  {name}");
+        }
+    }
+    if let Some(runner) = result.get("runner") {
+        println!("{}", format_runner_summary(runner));
+    }
+}
+
+fn format_task_get(result: &serde_json::Value) {
+    let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let name = result.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let state = task_state_kind(result);
+    println!("id: {id}");
+    println!("name: {name}");
+    if let Some(error) = result
+        .get("state")
+        .and_then(|s| s.get("error"))
+        .and_then(|v| v.as_str())
+    {
+        println!("state: {state} ({error})");
+    } else {
+        println!("state: {state}");
+    }
+    // 결정 5: AwaitExternal 로 외부 신호를 기다리는 task 는 "그냥 running" 과
+    // 텍스트로도 구분되게 wait_key/deadline 을 함께 보여준다.
+    if let Some(wait) = result.get("awaiting_external") {
+        let wait_key = wait.get("wait_key").and_then(|v| v.as_str()).unwrap_or("?");
+        let deadline_ms = wait
+            .get("deadline_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        println!("awaiting external signal — wait_key={wait_key}, deadline_ms={deadline_ms}");
+    }
+    if let Some(result_val) = result.get("result")
+        && !result_val.is_null()
+    {
+        println!(
+            "result: {}",
+            serde_json::to_string_pretty(result_val).unwrap()
+        );
+    }
+}
+
+fn format_task_run(result: &serde_json::Value) {
+    println!("{}", format_runner_summary(result));
 }
 
 fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
@@ -271,8 +388,46 @@ fn format_notification_list(result: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::render_layout;
+    use super::{format_runner_summary, render_layout};
     use serde_json::json;
+
+    #[test]
+    fn runner_summary_stopped_with_no_pending_work_has_no_hint() {
+        let s = format_runner_summary(&json!({
+            "running": false, "crashed": false, "ready_count": 0, "running_count": 0,
+        }));
+        assert_eq!(s, "runner: stopped (ready=0 running=0)");
+    }
+
+    /// 결정 1 — "정지 상태 발견 가능성": runner 가 꺼져 있는데 대기 중인 task 가
+    /// 있으면 재개 방법까지 안내한다.
+    #[test]
+    fn runner_summary_stopped_with_pending_work_hints_resume() {
+        let s = format_runner_summary(&json!({
+            "running": false, "crashed": false, "ready_count": 2, "running_count": 1,
+        }));
+        assert_eq!(
+            s,
+            "runner: stopped (ready=2 running=1) — pending work but no runner; \
+             `agent task-run --action start` to resume"
+        );
+    }
+
+    #[test]
+    fn runner_summary_crashed_takes_precedence_over_running() {
+        let s = format_runner_summary(&json!({
+            "running": true, "crashed": true, "ready_count": 0, "running_count": 0,
+        }));
+        assert_eq!(s, "runner: crashed (ready=0 running=0)");
+    }
+
+    #[test]
+    fn runner_summary_running_with_pending_work_has_no_hint() {
+        let s = format_runner_summary(&json!({
+            "running": true, "crashed": false, "ready_count": 3, "running_count": 1,
+        }));
+        assert_eq!(s, "runner: running (ready=3 running=1)");
+    }
 
     #[test]
     fn render_layout_nested_split_tree() {

@@ -426,6 +426,10 @@ impl App {
         // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록
         // IPC 서버와 동일한 StreamHub 를 attach registry 에 주입.
         core_state.attach.set_notifier(self.stream_hub.clone());
+        // agent task runner 재시작 정화(결정 2) — headless `boot.rs` 와 동일 정책.
+        // 자동 시작은 하지 않는다(결정 1). 첫 윈도우 등록(= client 노출) 전에
+        // 1 회만 수행.
+        self.core.purge_stale_agent_state_on_boot(&core_state);
         self.register_window(gpu, state, core_state, window.clone());
         self.emit_startup_complete_event();
 

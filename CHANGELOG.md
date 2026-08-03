@@ -20,12 +20,18 @@
 
 - `terminal.state`(CLI `tasty terminal state --surface <child>`) — 자식 단건 상태(`idle`/`needs_input`/`active`/`exited`) 조회. `terminal.children`의 항목별 조회와 달리, registry에서 이미 정리된 surface 도 라이브 트리와 대조해 `"exited"`로 구분한다.
 - `claude.state`/`codex.state`(CLI `tasty claude state`/`tasty codex state`) — 위 `terminal.state`를 각 plugin 이 자기 namespace 안에서 위임하는 wrapper. `claude.spawn`/`codex.spawn`에 기본 완료 판정 전략(`[[contributes.completion_strategy]] default_for_methods`)이 새로 연결되어, 이 두 메서드에 한해 DAG `poll` 생략 시 spawn 접수를 완료로 오인하던 기존 동작이 뒤집힌다 — 자식이 실제로 idle/exited 가 될 때까지 `running` 을 유지한다.
+- `agent.task_run`(workspace runner thread start/stop/status)이 이제 plugin 에서도 호출 가능하다(`AgentManage` 권한) — 호스트 재시작 후 runner 는 자동으로 켜지지 않으므로(아래 Changed 참조), plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수단이 필요했다. local-only 로 남는 건 `agent.task_set_result` 뿐이다.
+- `agent.task_list`/`agent.task_graph` 응답에 `runner: { running, crashed, ready_count, running_count }` 가 동반된다 — runner 가 꺼져 있어도 `ready_count`/`running_count` 는 store 를 직접 조회한 실제 값이라, "할 일은 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다.
+- `agent.task_get` 응답에 `awaiting_external: { wait_key, deadline_ms }` 가 추가됐다 — task 가 push 완료 전략(`AwaitExternal` handle)으로 외부 신호를 기다리는 중일 때만 실려, `state: "running"` 만으로는 구분 안 되던 "그냥 실행 중"과 "외부 보고 대기 중"을 구분할 수 있다.
+- `tasty agent task-list`/`task-get`/`task-run` CLI 출력이 raw JSON pretty-print 대신 사람이 터미널에서 바로 읽는 텍스트로 렌더된다(`state  id  name` 목록 + `runner: running (ready=N running=M)` 요약 줄, 정지 상태면 재개 커맨드 안내 포함). 다른 `agent` 서브커맨드(barrier/semaphore/lease/rate-limit/task-graph 등)는 기존과 동일하게 JSON.
 
 ### Changed
 
 - agent DAG `TaskCommand::Custom.poll`(`PollSpec`)의 `interval_ms` 필드가 생략 가능해졌다 — 기본값 500ms. 이전에는 필수 필드라 생략 시 역직렬화가 실패했다.
 - (BREAK) agent DAG `TaskCommand::Reduce.inputs` 가 `depends_on` 과 동일한 암묵적 의존성으로 승격됐다. 이전에는 `depends_on` 없는 `Reduce` task 가 생성 즉시 `ready`→dispatch 되어, 아직 미완인 입력을 `succeeded:false`+`output:null` 로 조용히 수집하고 `Succeeded` 로 마감했다(`all`/`merge_json`/`concat_text` 전략에서 특히 위험 — 실제로 존재하는 값 대신 `null` 을 합성). 이제는 입력이 전부 종결(성공/실패 무관, terminal 상태)될 때까지 `waiting` 을 유지한 뒤 `ready` 로 진행한다. `Reduce.inputs` 는 사이클 검출 대상에도 포함된다.
 - agent DAG `TaskCommand::Run`(`agent.task_create`)이 stdout/stderr 를 캡처한다 — 이전에는 자식이 호스트의 stdio 를 그대로 상속해 `result.output` 이 `{"pid": N}` 뿐이었다. 이제 성공 시 `result.output` 에 `stdout`/`stderr` 각각 마지막 64KiB(tail) + `truncated`/`dropped_bytes` 가 담기고, 실패(비0 exit) 시엔 같은 내용이 `result.error` 문자열에 포함된다 — `cargo build` 등을 `Run` 으로 돌렸을 때 실패 원인을 exit code 만으로 추측하지 않아도 된다.
+- 호스트 재시작 후 agent task runner 의 재시작 정화(stale semaphore/lease holder 회수, 직전 `Running` task 의 `Failed("host restart")` 마감, persisted handle reload)가 이제 **부팅 시 1회, runner thread 없이도** 라이브 workspace 전부에 적용된다. 이전에는 이 정화가 `agent.task_run --action start` 로 runner 를 수동으로 켜야만 동작해, 재시작 후 `start` 를 안 하면 유령 `Running` task 가 무기한 남았다. **자동 시작 자체는 여전히 도입하지 않는다** — 정화만 부팅 시 돌고, dispatch 재개는 여전히 수동(또는 plugin) `agent.task_run --action start` 가 필요하다.
+- `DispatchHandle::AwaitExternal`(push 완료 전략) 의 영속 포맷에 `deadline_ms` 필드가 추가됐다(dispatch 시점 `now + timeout_ms`). `hook_task_waits`(hook_id → task_id) 매핑은 여전히 비영속이라 재시작하면 그 task 는 훅으로는 깨어날 수 없는데, 기존엔 이를 마감할 수단이 전혀 없어 그런 task 가 영구 `Running` 으로 남았다 — 이제 handle 자체의 `deadline_ms` 로 재시작 후에도 만료 판정이 가능하다. 이 필드 도입 이전에 영속된 handle(필드 없음)은 다음 reload 시 `deadline_ms = 0`(즉시 만료)으로 해석돼 `Failed`로 마감된다 — 재시작을 넘겨 살아있던 push-대기 task 가 있었다면, 업그레이드 후 첫 reload 에서 그 task 가 실패 처리된다.
 
 ### Removed
 

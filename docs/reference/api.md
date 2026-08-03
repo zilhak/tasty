@@ -38,7 +38,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · secret(동일 verb) · `gc` · blackboard(`bb_*`) · plan(`plan_*`) · cache(`cache_*`). 모델·권한은 [design/systems/memory](../design/systems/memory.md).
 
 ### 에이전트 협업 (`agent.*`)
-`task_{create,list,get,await,cancel,retry,graph,reduce}` · `barrier_*` · `semaphore_*` · `lease_*` · `rate_limit_*`. 전부 `agent`(AgentManage) 권한 — [method_meta.rs](../../crates/tasty-ipc/src/method_meta.rs)의 `METHOD_TABLE`에 매핑 안 된 메서드(`task_run`/`task_set_result`)는 plugin 호출이 아예 거부된다(local caller 전용). `task_command.kind = "run"`(Surface 없는 bare subprocess)의 결과는 `task_get`/`task_await` 의 `result.output` 에 stdout/stderr 캡처(각 마지막 64KiB tail + `truncated`/`dropped_bytes`)를 싣는다 — 실패(비0 exit)는 `result.error` 문자열에 같은 내용이 포함된다. [agent-collaboration](../features/agent-collaboration/index.md).
+`task_{create,list,get,await,cancel,retry,graph,reduce,run}` · `barrier_*` · `semaphore_*` · `lease_*` · `rate_limit_*`. 전부 `agent`(AgentManage) 권한 — `task_run`(workspace runner thread start/stop/status)도 포함(호스트가 재시작 시 runner 를 자동으로 다시 켜지 않으므로, plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수 있어야 한다). [method_meta.rs](../../crates/tasty-ipc/src/method_meta.rs)의 `METHOD_TABLE`에 매핑 안 된 메서드(`task_set_result`)만 plugin 호출이 거부된다(local caller 전용). `task_command.kind = "run"`(Surface 없는 bare subprocess)의 결과는 `task_get`/`task_await` 의 `result.output` 에 stdout/stderr 캡처(각 마지막 64KiB tail + `truncated`/`dropped_bytes`)를 싣는다 — 실패(비0 exit)는 `result.error` 문자열에 같은 내용이 포함된다. [agent-collaboration](../features/agent-collaboration/index.md).
 
 ### 휴먼 핸드오프 (`approval.*`)
 `request,respond,await,cancel,get,list,history,summary.{set,get}`. [human-handoff](../features/human-handoff/index.md).

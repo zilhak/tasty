@@ -4,8 +4,8 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
-    OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
-    reduce_with_custom,
+    DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId,
+    TaskResult, TaskState, reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -146,9 +146,55 @@ pub fn handle_task_list(
                 json!({
                     "total": tasks.len(),
                     "tasks": tasks,
+                    "runner": runner_status_json(core, engine, workspace_id),
                 }),
             )
         }
+    }
+}
+
+// ============================================================
+// 결정 1/5: "runner 가 꺼져 있다" 를 조회로 드러내기 — 새 메서드 없이
+// task_list/task_graph 에 runner 상태를 동반하고, task_get 에 hook_wait 대기
+// 상태를 동반한다.
+// ============================================================
+
+/// `task_run --action status` 와 동일 형태의 runner 상태 요약. runner thread
+/// 유무와 무관하게 store 를 직접 조회하므로, runner 가 꺼져 있어도(즉
+/// `running: false` 여도) `ready_count`/`running_count` 는 실제 값을 낸다 —
+/// "비-terminal task 는 있는데 아무도 안 돌리고 있다"가 `task_list`/`task_graph`
+/// 응답만으로 드러나는 이유.
+fn runner_status_json(core: &Core, engine: &crate::core::CoreState, workspace_id: u32) -> Value {
+    let ctx = core.runner_context(engine);
+    let status = core.agent_runner_registry().status(&ctx, workspace_id);
+    json!({
+        "running": status.running,
+        "crashed": status.crashed,
+        "ready_count": status.ready_count,
+        "running_count": status.running_count,
+    })
+}
+
+/// task 가 `AwaitExternal` handle 로 외부 신호를 기다리는 중이면 그 사실 +
+/// deadline 을 노출한다. `task_get` 이 이 값을 실어야 "그냥 running" 과
+/// 구분된다(결정 5) — `AwaitExternal` 의 poll 은 계약상 항상 Active 라 state 만
+/// 봐서는 대기 이유를 알 수 없기 때문이다.
+fn awaiting_external_json(
+    core: &Core,
+    engine: &crate::core::CoreState,
+    workspace_id: u32,
+    task_id: &str,
+) -> Option<Value> {
+    let ctx = core.runner_context(engine);
+    match crate::core::agent::runner_host::load_dispatch_handle(&ctx, workspace_id, task_id)? {
+        DispatchHandle::AwaitExternal {
+            wait_key,
+            deadline_ms,
+        } => Some(json!({
+            "wait_key": wait_key,
+            "deadline_ms": deadline_ms,
+        })),
+        _ => None,
     }
 }
 
@@ -175,7 +221,19 @@ pub fn handle_task_get(
     match core.task_get(engine, workspace_id, &task_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
-        Ok(Some(t)) => JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null)),
+        Ok(Some(t)) => {
+            let is_running = matches!(t.state, TaskState::Running);
+            let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
+            // 결정 5: Running 인데 AwaitExternal 로 외부 신호를 기다리는 task 는
+            // "그냥 running" 과 구분되게 대기 정보(+deadline)를 함께 싣는다.
+            if is_running
+                && let Some(obj) = v.as_object_mut()
+                && let Some(info) = awaiting_external_json(core, engine, workspace_id, &task_id)
+            {
+                obj.insert("awaiting_external".to_string(), info);
+            }
+            JsonRpcResponse::success(id, v)
+        }
     }
 }
 
@@ -361,6 +419,7 @@ pub fn handle_task_graph(
 
     // 사이클은 detection 만 — graph 그리기는 그대로 한다.
     let cycle = TaskGraph::build(&tasks).detect_cycles().err();
+    let runner = runner_status_json(core, engine, workspace_id);
 
     match format.as_str() {
         "dot" => {
@@ -396,6 +455,7 @@ pub fn handle_task_graph(
                     "format": "dot",
                     "dot": out,
                     "cycle": cycle.as_ref().map(|e| e.to_string()),
+                    "runner": runner,
                 }),
             )
         }
@@ -425,6 +485,7 @@ pub fn handle_task_graph(
                     "nodes": nodes,
                     "edges": edges,
                     "cycle": cycle.as_ref().map(|e| e.to_string()),
+                    "runner": runner,
                 }),
             )
         }

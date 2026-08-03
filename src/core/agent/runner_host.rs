@@ -29,6 +29,26 @@ pub fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
 }
 
+/// 영속된 handle 을 읽기 전용으로 조회한다(mutate 없음) — IPC 조회
+/// (`task_get`) 가 "이 task 가 어떤 외부 신호를 기다리는 중인지"(`AwaitExternal`
+/// 이면 `wait_key`/`deadline_ms`)를 노출할 때 쓴다. 결정 5 — `hook_wait` 자체는
+/// 워크스페이스 무관 in-memory 매핑이라 조회 표면이 없지만, 그 매핑을 만든
+/// `AwaitExternal` handle 은 영속되므로 이 경로로 조회 가능하다.
+pub fn load_dispatch_handle(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    task_id: &str,
+) -> Option<DispatchHandle> {
+    let scope = Scope::Workspace(workspace_id);
+    ctx.with_memory(|mem| {
+        let entry = mem.get(&scope, &handle_key(task_id)).ok().flatten()?;
+        match entry.value {
+            MemoryValue::Json(v) => serde_json::from_value(v).ok(),
+            _ => None,
+        }
+    })
+}
+
 /// K.A-1: ShellProcess Run task 의 정확한 종료 결과 영속 key prefix.
 /// watcher thread 가 자식 `wait()` 종료 직후 기록 → 호스트가 재시작돼도 다음 reload
 /// 단계가 exit_code 까지 정확히 마감할 수 있다 (단, watcher 가 기록을 마치기 전에
@@ -645,8 +665,12 @@ impl HostExecutor {
         self.ctx
             .hook_task_waits
             .register(hook_id, task.workspace_id, task.id.clone(), deadline_ms);
+        // deadline 을 handle 자체에도 실어 둔다 — `hook_task_waits` 매핑은
+        // 재시작 시 비영속으로 사라지지만, 영속되는 handle 쪽 deadline 은
+        // 재시작 후 reload 경로가 만료 판정에 쓸 수 있다(결정 4).
         Ok(DispatchHandle::AwaitExternal {
             wait_key: hook_id.to_string(),
+            deadline_ms,
         })
     }
 
@@ -1806,7 +1830,16 @@ mod tests {
         };
         worker.join().unwrap();
         match &handle {
-            DispatchHandle::AwaitExternal { wait_key } => assert_eq!(wait_key, "999"),
+            DispatchHandle::AwaitExternal {
+                wait_key,
+                deadline_ms,
+            } => {
+                assert_eq!(wait_key, "999");
+                assert!(
+                    *deadline_ms > 0,
+                    "deadline must be populated from timeout_ms"
+                );
+            }
             other => panic!("expected AwaitExternal, got {other:?}"),
         }
         // 계약: poll 은 절대 종결시키지 않는다.

@@ -71,8 +71,20 @@ pub enum DispatchHandle {
     /// terminal 흡수가 이 task 를 찾지 못해 `release_permit` 이 누락된다 — 그
     /// permit 누수를 막는 것이 이 variant 를 도입한 목적이므로, 재시작
     /// 시나리오에서도 지켜야 한다.
+    ///
+    /// `deadline_ms` 는 unix epoch ms 절대 시각 — dispatch 시점에 push 전략의
+    /// `timeout_ms` 로부터 host 가 계산해 채운다. `hook_id → task_id` 매핑
+    /// (host 의 `hook_wait` 모듈)은 비영속이라 재시작하면 사라지지만, 이
+    /// `deadline_ms` 는 handle 자체에 실려 함께 영속되므로 재시작 후에도 만료
+    /// 판정이 가능하다 — 훅으로 깨어날 수는 없어도 deadline 으로는 마감된다.
+    /// `#[serde(default)]` 는 이 필드 도입 이전에 영속된 구 포맷(필드 없음)을
+    /// `0`으로 채운다 — 즉 **즉시 만료** 로 취급한다(무한 대기로 잔존하는 것이
+    /// 바로 이 variant 가 없애려는 상태이므로, 정보 없는 구 handle 을 무한으로
+    /// 보는 선택지는 배제한다).
     AwaitExternal {
         wait_key: String,
+        #[serde(default)]
+        deadline_ms: u64,
     },
 }
 
@@ -550,6 +562,7 @@ mod tests {
             },
             DispatchHandle::AwaitExternal {
                 wait_key: "42".into(),
+                deadline_ms: 999_999,
             },
         ];
         for h in cases {
@@ -559,6 +572,30 @@ mod tests {
             let back: DispatchHandle = serde_json::from_value(v).expect("deserialize");
             // Debug equality (DispatchHandle 는 PartialEq 안 받음 → format 비교).
             assert_eq!(format!("{h:?}"), format!("{back:?}"));
+        }
+    }
+
+    /// 구 포맷(deadline_ms 도입 전 영속된 `AwaitExternal` — `wait_key` 만 있음)의
+    /// 하위호환. `#[serde(default)]` 가 누락 필드를 `0`으로 채우고, 이는
+    /// (실사용 시각이 항상 0 보다 큰 이상) 항상 만료로 판정된다 — 무한 대기로
+    /// 남는 것을 막으려는 의도적 설계.
+    #[test]
+    fn await_external_old_format_without_deadline_defaults_to_immediately_expired() {
+        let old_format = serde_json::json!({
+            "kind": "await_external",
+            "data": { "wait_key": "hook-1" },
+        });
+        let handle: DispatchHandle =
+            serde_json::from_value(old_format).expect("old format deserialize");
+        match handle {
+            DispatchHandle::AwaitExternal {
+                wait_key,
+                deadline_ms,
+            } => {
+                assert_eq!(wait_key, "hook-1");
+                assert_eq!(deadline_ms, 0, "missing field must default to 0 (=expired)");
+            }
+            other => panic!("expected AwaitExternal, got {other:?}"),
         }
     }
 
@@ -577,6 +614,7 @@ mod tests {
             fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
                 DispatchOutcome::Started(DispatchHandle::AwaitExternal {
                     wait_key: "hook-99".into(),
+                    deadline_ms: u64::MAX,
                 })
             }
             fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {

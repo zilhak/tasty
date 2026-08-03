@@ -710,6 +710,19 @@ impl Core {
         }
     }
 
+    /// 결정 2: 부팅 경로(headless `boot.rs` / GUI `boot_machine.rs`)가 host IPC
+    /// injector 등록 + `CoreState` 확보 직후 1 회 호출한다. 자동 시작은 하지
+    /// 않는다(결정 1) — 라이브 workspace 전부의 재시작 정화(stale semaphore/
+    /// lease holder 회수, persisted handle reload, `Running`→`Failed("host
+    /// restart")` 마감)만 runner thread 없이 수행해, 사용자가 나중에
+    /// `agent.task_run --action start` 로 수동 재개할 때 유령 상태를 만나지
+    /// 않게 한다.
+    pub(crate) fn purge_stale_agent_state_on_boot(&self, engine: &crate::core::CoreState) {
+        let ctx = self.runner_context(engine);
+        let workspace_ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        crate::core::agent::runner_thread::purge_stale_agent_state_on_boot(&ctx, &workspace_ids);
+    }
+
     pub(crate) fn agent_runner_registry(
         &self,
     ) -> Arc<crate::core::agent::runner_thread::RunnerRegistry> {
