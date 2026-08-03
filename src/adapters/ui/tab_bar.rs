@@ -780,6 +780,17 @@ pub fn draw_pane_tab_bars_view(
     output
 }
 
+/// 탭별 busy(녹색 점) 여부 계산. `is_surface_busy()`(로컬 ∪ mirror busy 합집합)를
+/// 거쳐야 원격 attach mirror surface 를 담은 탭도 dot 이 뜬다.
+fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Tab]) -> Vec<bool> {
+    tabs.iter()
+        .map(|t| {
+            let sids = t.all_surface_ids();
+            sids.iter().any(|sid| engine.is_surface_busy(*sid))
+        })
+        .collect()
+}
+
 /// Mouse x → drop target tab index. Pure 함수 — view/wrapper 양쪽에서 호출.
 pub fn compute_drop_index(
     mouse_x: f32,
@@ -825,14 +836,7 @@ pub fn draw_pane_tab_bars(
                     engine.has_highlight(&sids)
                 })
                 .collect();
-            let tab_is_busy: Vec<bool> = pane
-                .tabs
-                .iter()
-                .map(|t| {
-                    let sids = t.all_surface_ids();
-                    sids.iter().any(|sid| engine.busy_surfaces.contains(sid))
-                })
-                .collect();
+            let tab_is_busy = compute_tab_is_busy(engine, &pane.tabs);
             panes.push(PaneTabBarView {
                 pane_id,
                 rect: pane_rect,
@@ -1282,5 +1286,43 @@ mod tests {
         let out = run_view(panes, drag);
         // drag overlay 자체는 actions 를 추가하지 않음
         assert!(out.actions.is_empty());
+    }
+
+    fn test_engine() -> crate::core::CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        crate::core::CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    fn tab_with_surface(sid: crate::model::SurfaceId) -> crate::model::Tab {
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::EmptySurface::new(sid));
+        crate::model::Tab::new_with_surface(1, "t".to_string(), surface)
+    }
+
+    /// mirror surface(로컬 PTY 없음, `set_mirror_surface_busy` 로만 채워짐)를 담은
+    /// 탭도 `compute_tab_is_busy` 가 busy 로 판정해야 한다 — `busy_surfaces` 를 직접
+    /// 참조하던 예전 코드는 mirror surface 를 절대 못 봐서 dot 이 안 떴던 버그의
+    /// 회귀 테스트.
+    #[test]
+    fn compute_tab_is_busy_true_for_mirror_only_surface() {
+        let mut engine = test_engine();
+        let sid = 4242;
+        engine.set_mirror_surface_busy(sid, true);
+        let tabs = vec![tab_with_surface(sid)];
+
+        let result = compute_tab_is_busy(&engine, &tabs);
+
+        assert_eq!(result, vec![true]);
+    }
+
+    #[test]
+    fn compute_tab_is_busy_false_when_idle() {
+        let engine = test_engine();
+        let sid = 4343;
+        let tabs = vec![tab_with_surface(sid)];
+
+        let result = compute_tab_is_busy(&engine, &tabs);
+
+        assert_eq!(result, vec![false]);
     }
 }
