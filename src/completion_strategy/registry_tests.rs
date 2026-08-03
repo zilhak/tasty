@@ -325,7 +325,7 @@ fn plugin_display_name_i18n_key_is_preserved() {
 
 // ── patch semantics ───────────────────────────────────────────────────────
 
-// ── TODO80 §E 실증 — 번들 claude/codex 매니페스트가 실제로 결정 6 을 통과하는지 ──
+// ── 실증 — 번들 claude/codex 매니페스트가 실제로 결정 6 을 통과하는지 ──
 //
 // 배경(회귀 방지): plugin owner 를 매니페스트의 reverse-DNS `id`("com.tasty.claude")
 // 로 넘기면 poll_method("claude.state")의 dot-prefix("claude")와 절대 문자열이

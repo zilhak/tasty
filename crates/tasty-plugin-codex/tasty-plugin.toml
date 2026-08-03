@@ -13,7 +13,7 @@ permissions = [
     "fs.write",
     "notification",
     "ui.settings_page",
-    # `codex.spawn` 기본 완료 전략(TODO80 §E) 선언에 필요.
+    # `codex.spawn` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",
 ]
 lang_dir = "lang"
@@ -160,7 +160,7 @@ flags = [
 
 [contributes.cli.arg_groups.no_args]
 
-# 완료 판정 전략(TODO80 §B/§E) — `codex.spawn` 의 기본 완료 판정(결정 6).
+# 완료 판정 전략 — `codex.spawn` 의 기본 완료 판정(결정 6).
 # poll_method 는 owner 자기 namespace 로만 제한되므로(결정 2) 호스트
 # `terminal.state`(결정 3, terminal namespace 소유)를 직접 참조할 수 없다 —
 # 그래서 이 plugin 자신의 `codex.state`(그 위에 얇게 위임하는 wrapper,

@@ -19,7 +19,7 @@ use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
 
-/// 완료 판정 전략 레지스트리(TODO80 §B)의 plugin owner 문자열. `[[contributes.
+/// 완료 판정 전략 레지스트리의 plugin owner 문자열. `[[contributes.
 /// completion_strategy]]`의 `poll_method`/`default_for_methods` 는 plugin 의
 /// 실제 IPC dispatch 접두어(`[[contributes.ipc_namespace]].prefix`, 예:
 /// `"claude"`)로 제한된다(결정 2) — 레지스트리는 owner 문자열과 그 접두어를
@@ -141,7 +141,7 @@ impl PluginManager {
         self.hook_handler = Some(registry);
     }
 
-    /// 호스트가 완료 판정 전략 레지스트리 port 를 주입(TODO80 §B). headless/test 는
+    /// 호스트가 완료 판정 전략 레지스트리 port 를 주입. headless/test 는
     /// 호출 안 함. 주입 후에는 plugin enable/disable 시
     /// `[[contributes.completion_strategy]]` 를 등록/해제한다.
     pub fn set_completion_strategy_registry(

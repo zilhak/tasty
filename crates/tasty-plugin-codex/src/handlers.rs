@@ -230,7 +230,7 @@ pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
-/// 자식 surface 단건 상태 조회 — 호스트 `terminal.state` 로 위임(TODO80 §E).
+/// 자식 surface 단건 상태 조회 — 호스트 `terminal.state` 로 위임.
 /// `codex` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `codex.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).

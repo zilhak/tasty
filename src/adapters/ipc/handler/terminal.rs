@@ -400,7 +400,7 @@ pub(crate) fn handle_children(
     JsonRpcResponse::success(id, json!({ "children": children }))
 }
 
-/// 자식 단건 상태 조회 (TODO80 §E — 실증 소비자). `handle_children`/`handle_parent`
+/// 자식 단건 상태 조회. `handle_children`/`handle_parent`
 /// 와 동형으로 대상 child surface 를 `surface` 파라미터로 직접 지정한다(포커스
 /// 독립 — CLAUDE.md 원칙 3).
 ///
