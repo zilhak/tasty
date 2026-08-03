@@ -1,5 +1,5 @@
-//! `CompletionStrategyRegistry` 단위 테스트 (TODO80 §B, 훅 핸들러
-//! `registry_tests.rs` 미러). Settings UI CRUD 표면이 아직 없으므로 export/save
+//! `CompletionStrategyRegistry` 단위 테스트 (훅 핸들러 `registry_tests.rs`
+//! 미러). Settings UI CRUD 표면이 아직 없으므로 export/save
 //! 류는 다루지 않는다 — 3출처 병합·patch semantics·id 규약·결정 2(namespace 제한)·
 //! push 참조 무결성·결정 6(default_for_methods 충돌)·plugin uninstall·이름 해석
 //! 을 커버한다.
@@ -86,7 +86,7 @@ fn plugin_poll_strategy_installs_and_resolves() {
 /// **배선(wiring) 스모크 테스트**다 — poll 필드 하나하나의 이름·기본값 대응
 /// 자체는 `completion_strategy_to_poll_spec()`(`src/core/agent/
 /// completion_strategy.rs::field_correspondence_is_preserved`)가 이미 단일
-/// 지점에서 고정한다(TODO80 §A-3, Gate4 리뷰 지적으로 중복 제거). 여기서는
+/// 지점에서 고정한다(Gate4 리뷰 지적으로 중복 제거). 여기서는
 /// map/scalar 필드 하나씩만 대표로 확인해 "레지스트리 경로가 그 함수를 실제로
 /// 거치는지"만 검증한다.
 #[test]

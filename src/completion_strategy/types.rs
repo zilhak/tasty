@@ -1,14 +1,15 @@
-//! 완료 판정 전략 레지스트리의 도메인 타입 (TODO80 §B).
+//! 완료 판정 전략 레지스트리의 도메인 타입(상세: `docs/dev-guide/agent-runner.md`
+//! "완료 판정 전략 레지스트리").
 //!
 //! `src/hook_handler/types.rs` 구조를 미러링하되, 게이트가 아니라 "끝났는지 판정하는
 //! 방법"을 표현한다. **재사용하는 것은 형태이지 코드가 아니다** — `HookSource` /
 //! `TriggerSource` / `HookHandlerAction` 은 이 모듈이 import 하지 않는다
-//! (TODO80 §B-2: action 은 "실행 대상", 전략은 "판정 기준" — 다른 개념).
+//! (action 은 "실행 대상", 전략은 "판정 기준" — 다른 개념).
 //!
 //! ## 불변식 (타입으로 강제)
 //! - **push 전략은 timeout 이 필수**다 — `CompletionStrategyKind::Push.timeout_ms` 는
 //!   `Option` 이 아니라 `u64`. 보고 유실 시 task 가 영구 Running 에 남지 않도록 하는
-//!   유일한 안전망(TODO80 §B-3, §C-3).
+//!   유일한 안전망이다.
 
 use tasty_agent::task::PollSpec;
 
@@ -68,11 +69,11 @@ impl CompletionStrategyOwner {
 /// 완료를 어떻게 판정하는가 — poll(자체 폴링) 또는 push(외부 보고).
 ///
 /// **불변식**: `Push` 는 `timeout_ms` 가 값 타입(필수) — 보고 주체(훅 핸들러)가
-/// disable/uninstall 되어도 task 가 영원히 Running 에 남지 않도록 한다
-/// (TODO80 §B-3 "지연 파손 주의").
+/// disable/uninstall 되어도 task 가 영원히 Running 에 남지 않도록 하는 지연
+/// 파손 방지 안전망이다.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompletionStrategyKind {
-    /// 자체 폴링 사양. 매니페스트 decl → host 변환 결과가 여기 담긴다(TODO80 §A-3).
+    /// 자체 폴링 사양. 매니페스트 decl → host 변환 결과가 여기 담긴다.
     /// `tasty-agent::task::PollSpec` 을 그대로 재사용 — 새 타입을 만들지 않는다.
     Poll(PollSpec),
     /// 외부(훅 핸들러) 보고. 참조 무결성은 등록 시점에 검증(존재 여부) +
@@ -99,7 +100,8 @@ pub struct CompletionStrategy {
 
 /// `default_for_methods` 충돌(같은 메서드를 두 전략이 기본으로 선언) 해소에 쓰는
 /// 정렬 키 — 훅 핸들러 레지스트리의 우선순위 정렬(priority↑ → owner tie-break
-/// user>plugin>host → id)을 그대로 재사용한다(TODO80 결정 6 "미러링한 정렬 로직").
+/// user>plugin>host → id)을 그대로 재사용한다(`docs/dev-guide/agent-runner.md`
+/// 결정 6 참고).
 pub fn strategy_sort_key(s: &CompletionStrategy) -> (i32, u8, &str) {
     (s.priority, owner_rank(&s.owner), s.id.as_str())
 }
@@ -112,8 +114,8 @@ pub fn owner_rank(owner: &CompletionStrategyOwner) -> u8 {
     }
 }
 
-/// 이름 참조가 실패하는 사유 — `task_create` 검증(TODO80 §B 체크리스트) 및
-/// `Custom` dispatch 이름 해석(runner_host.rs) 양쪽에서 공유한다.
+/// 이름 참조가 실패하는 사유 — `task_create` 검증 및 `Custom` dispatch 이름
+/// 해석(runner_host.rs) 양쪽에서 공유한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrategyResolveError {
     /// 그 이름의 전략이 레지스트리에 없음(오타 등).

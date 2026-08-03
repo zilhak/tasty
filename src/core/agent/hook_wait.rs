@@ -1,10 +1,10 @@
-//! 훅 완료 신호 → agent task 매핑 (TODO80 §B-4/§C).
+//! 훅 완료 신호 → agent task 매핑.
 //!
-//! 완료 전략 레지스트리(TODO80 §B, 아직 미구현)의 push 형 전략이 훅 핸들러
+//! 완료 전략 레지스트리(`src/completion_strategy/`)의 push 형 전략이 훅 핸들러
 //! (`notify_via: HookHandlerId`)로 완료를 보고할 때, 그 훅이 "어느 task 의"
 //! 완료인지는 훅 정의 자체엔 담을 수 없다 — owner 가 등록 시 고정되고
 //! (`HookHandlerAction` 의 데이터/흐름 분리 불변식), task id 를 담을 슬롯이
-//! 없다. §B-4 결정 (ii) 가 채택한 해법이 이 모듈이다: 러너(host executor)가
+//! 없다. 그 해법이 이 모듈이다: 러너(host executor)가
 //! `AwaitExternal` 핸들로 dispatch 하며 `register` 하고, `PendingHostEvent::
 //! HookFired` 소비부(`Core::resolve_hook_task_wait`)가 훅 발화마다 조회해
 //! 매칭되면 task 를 마감한다.

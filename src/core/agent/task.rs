@@ -278,7 +278,7 @@ mod hook_wait_tests {
         core.task_create(engine, opts).expect("task_create").id
     }
 
-    /// TODO80 §B-4/§C 전체 생애주기: register → (해당 hook 발화 시뮬레이션인)
+    /// hook_task_wait 전체 생애주기: register → (해당 hook 발화 시뮬레이션인)
     /// resolve 호출 → task 가 Succeeded 로 마감. `agent.task_set_result` 외부
     /// 호출과 동형의 결과를 훅 경유로 재현한다.
     #[test]

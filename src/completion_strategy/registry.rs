@@ -1,4 +1,5 @@
-//! 완료 판정 전략 레지스트리 — TODO80 §B: **훅 핸들러 풀미러**.
+//! 완료 판정 전략 레지스트리 — **훅 핸들러 풀미러**(상세: `docs/dev-guide/
+//! agent-runner.md` "완료 판정 전략 레지스트리").
 //!
 //! `src/hook_handler/registry.rs` 를 정본 템플릿으로 3출처 병합을 갖춘다: host
 //! embedded TOML + plugin manifest + user config(`~/.tasty/completion-strategies.toml`).
@@ -220,7 +221,7 @@ impl CompletionStrategyRegistry {
     }
 
     /// plugin uninstall/disable 시 그 plugin 이 기여한 전략을 집합에서 제거
-    /// (훅 핸들러 `uninstall_plugin` 미러, TODO80 체크리스트 B).
+    /// (훅 핸들러 `uninstall_plugin` 미러).
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,

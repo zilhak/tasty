@@ -1,5 +1,5 @@
-//! Completion strategy TOML/manifest schema (TODO80 §B, 파일 핸들러/훅 핸들러
-//! `config.rs` 미러).
+//! Completion strategy TOML/manifest schema (파일 핸들러/훅 핸들러 `config.rs`
+//! 미러 — 상세: `docs/dev-guide/agent-runner.md` "완료 판정 전략 레지스트리").
 //!
 //! 훅 핸들러와 달리 actor(host/plugin/user)별 spec 종류 차이가 없다 — poll/push
 //! 둘 다 세 출처 모두 선언 가능하다(셸 action 처럼 특정 actor 만 배제하는 불변식이
@@ -50,7 +50,7 @@ pub enum CompletionStrategySpecDecl {
     /// 자체 폴링. 필드 의미·기본값은 트랙 A 의 [`PollStrategyDecl`]
     /// (`tasty_plugin_manifest::CompletionStrategyDecl`)을 그대로 재사용한다 —
     /// 여기서 필드를 다시 나열하면 두 크레이트가 같은 개념을 독립적으로 정의하는
-    /// 중복이 재발한다(TODO80 §B Gate4 리뷰 지적).
+    /// 중복이 재발한다(Gate4 리뷰 지적).
     Poll(PollStrategyDecl),
     /// 외부 보고. `notify_via` 는 훅 핸들러 id(`<owner>/<short>`) 문자열.
     Push { notify_via: String, timeout_ms: u64 },
@@ -58,7 +58,7 @@ pub enum CompletionStrategySpecDecl {
 
 /// decl → 런타임 `CompletionStrategyKind` 변환. **단일 지점** — poll 형은 트랙 A
 /// 가 만든 [`completion_strategy_to_poll_spec`]으로 위임한다(필드 대응은 그
-/// 함수의 단위테스트가 고정, TODO80 §A-3). 필드 대응이 어긋나면 그 테스트가
+/// 함수의 단위테스트가 고정). 필드 대응이 어긋나면 그 테스트가
 /// 깨진다.
 impl From<CompletionStrategySpecDecl> for CompletionStrategyKind {
     fn from(d: CompletionStrategySpecDecl) -> Self {
@@ -144,7 +144,7 @@ mod tests {
         match &w.strategies[0].spec {
             CompletionStrategySpecDecl::Poll(decl) => {
                 assert_eq!(decl.poll_method, "claude.wait");
-                assert_eq!(decl.interval_ms, 500); // 기본값 (TODO80 §A-5, PollStrategyDecl 소유)
+                assert_eq!(decl.interval_ms, 500); // 기본값 (PollStrategyDecl 소유)
             }
             CompletionStrategySpecDecl::Push { .. } => panic!("expected poll"),
         }

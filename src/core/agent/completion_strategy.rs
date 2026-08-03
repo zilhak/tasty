@@ -7,10 +7,10 @@
 //! `src/hook_handler/config.rs` 의 `impl From<PluginHookHandlerActionDecl> for
 //! HookHandlerAction` 과 동일한 지위의 host-side decl→runtime 변환.
 //!
-//! `src/completion_strategy/config.rs`(완료 판정 전략 레지스트리, TODO80 §B) 의
+//! `src/completion_strategy/config.rs`(완료 판정 전략 레지스트리) 의
 //! `CompletionStrategySpecDecl::Poll(PollStrategyDecl)` → `CompletionStrategyKind`
 //! 변환이 이 함수를 호출한다 — 필드 대응은 이 파일의 단위테스트가 단일 지점에서
-//! 고정한다(TODO80 §A-3).
+//! 고정한다.
 
 use tasty_agent::PollSpec;
 use tasty_plugin_manifest::CompletionStrategyDecl;
