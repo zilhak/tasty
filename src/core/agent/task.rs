@@ -143,7 +143,7 @@ impl Core {
         })
     }
 
-    /// TODO80 §B-4/§C/결정 7: `hook_id` 에 매핑된 대기 중 task 가 있으면 완료
+    /// `hook_id` 에 매핑된 대기 중 task 가 있으면 완료
     /// 처리한다. 없으면 no-op. `engine` 은 `task_set_state` 의 waker 발화
     /// (`task_waker_hub`)에 필요하다 — 호출자는 이 훅이 발화한 그 window/state
     /// 의 engine 을 넘겨야 `agent.task_await` 대기자가 정확히 깨어난다(다른

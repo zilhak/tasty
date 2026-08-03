@@ -9,8 +9,8 @@
 //! HookFired` 소비부(`Core::resolve_hook_task_wait`)가 훅 발화마다 조회해
 //! 매칭되면 task 를 마감한다.
 //!
-//! 등록자는 runner thread(`HostExecutor::dispatch_command` 의 push-kind 분기,
-//! TODO80 §B/결정 7)다 — `Custom` task 가 push-kind 완료 전략을 참조하면 그
+//! 등록자는 runner thread(`HostExecutor::dispatch_command` 의 push-kind 분기)다
+//! — `Custom` task 가 push-kind 완료 전략을 참조하면 그
 //! 시점에 `register` 를 호출한다. 소비부(`resolve`)는 실제로 살아 있는
 //! `HookFired` 이벤트 스트림에 매 발화마다 실행되는 코드다 — 등록되지 않은
 //! hook_id 는 안전한 no-op.
@@ -40,7 +40,7 @@ impl HookTaskWaits {
     /// 시각 — push 전략의 `timeout_ms` 로부터 호출자가 계산해 넘긴다.
     ///
     /// 등록자는 runner thread(`HostExecutor::dispatch_command` 의 push-kind
-    /// 분기, TODO80 §B/결정 7) — `RunnerContext.hook_task_waits` 로 이 구조체의
+    /// 분기) — `RunnerContext.hook_task_waits` 로 이 구조체의
     /// `Arc` 를 그대로 공유해 `Core` 를 거치지 않고 직접 호출한다(runner thread
     /// 는 main thread 소유 `Core`/`CoreState` 에 접근할 수 없다 — `task_waker_hub`
     /// 공유와 동형).

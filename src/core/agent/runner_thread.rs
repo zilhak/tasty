@@ -643,7 +643,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
         runner.running.insert(task_id, handle);
     }
     loop {
-        // 0. push 완료 전략 timeout 안전망(TODO80 §C-3/결정 7) — tick 본문보다
+        // 0. push 완료 전략 timeout 안전망 — tick 본문보다
         //    먼저 돌려 이번 tick 의 0단계(terminal 흡수)가 방금 Failed 된 task 의
         //    handle 정리 + release_permit 까지 같은 루프에서 마무리하게 한다.
         let now = now_ms();
@@ -1051,7 +1051,7 @@ mod tests {
         assert!(matches!(state, TaskState::Ready), "got {state:?}");
     }
 
-    /// TODO80 §C-3/결정 7 — push 전략의 timeout 안전망. deadline 이 지난
+    /// push 전략의 timeout 안전망. deadline 이 지난
     /// `hook_task_waits` 항목은 task 를 Failed 로 강제 마감하고 맵에서 제거한다.
     #[test]
     fn expire_overdue_hook_waits_fails_the_task_and_removes_the_entry() {

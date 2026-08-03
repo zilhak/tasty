@@ -72,7 +72,7 @@ pub struct RunnerContext {
     /// 시 fire. R-5 회피: runner_thread 가 Core wrapper 를 우회하기 때문에 RunnerContext
     /// 에 직접 포함시켜야 누락 없음.
     pub task_waker_hub: Arc<crate::core::agent::task_waker::TaskWakerHub>,
-    /// hook_id → task_id 대기 매핑(TODO80 §B-4/§C/결정 7). push-kind `Custom`
+    /// hook_id → task_id 대기 매핑. push-kind `Custom`
     /// dispatch 가 여기 `register` 해 `AwaitExternal` 로 전이하고,
     /// `runner_thread.rs::expire_overdue_hook_waits` 가 timeout 안전망으로
     /// `sweep_expired` 를 돈다. `task_waker_hub` 와 동일 사유로 `Core` 를 거치지
@@ -563,7 +563,7 @@ impl HostExecutor {
         }
     }
 
-    /// push-kind 완료 전략 dispatch(TODO80 §B-4/결정 7). `notify_via` 가 가리키는
+    /// push-kind 완료 전략 dispatch. `notify_via` 가 가리키는
     /// 훅 핸들러를 대상 surface 에 1회성(`once: true`)으로 바인딩해 살아있는
     /// `hook_id` 를 얻고, `hook_task_waits` 에 `(workspace_id, task_id, deadline)`
     /// 로 등록한 뒤 `AwaitExternal` 로 전이한다. 실제 종결(Succeeded/Failed)은
