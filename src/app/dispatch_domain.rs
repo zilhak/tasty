@@ -474,6 +474,7 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "notification".to_string(),
                 surface_id,
+                exit_code: None,
             });
         }
         if let Some(base) = dirty_main {
@@ -529,6 +530,7 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "bell".to_string(),
                 surface_id,
+                exit_code: None,
             });
         }
         if let Some(base) = dirty_main {
@@ -575,6 +577,7 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "output-match".to_string(),
                 surface_id,
+                exit_code: None,
             });
         }
         if let Some(base) = dirty_main {
@@ -710,6 +713,9 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "command-completed".to_string(),
                 surface_id,
+                // TODO80 결정 7 — 실제 관측된 exit code. push 완료 전략의 성공/실패
+                // 판정(exit 0 → Succeeded, 비-0 → Failed)이 여기서만 값을 받는다.
+                exit_code,
             });
         }
         if let Some(base) = dirty_main {
@@ -807,6 +813,7 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "process-exit".to_string(),
                 surface_id,
+                exit_code: None,
             });
         }
         state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited { surface_id });

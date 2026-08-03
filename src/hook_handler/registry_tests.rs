@@ -14,6 +14,8 @@ fn load_host(reg: &HookHandlerRegistry) {
 }
 
 const HOST_NOTIFY_ID: &str = "host/webhook-notify";
+/// TODO80 결정 7 — `host/command-completed` 완료 판정 전략의 `notify_via` 대상.
+const HOST_COMMAND_COMPLETED_ID: &str = "host/command-completed";
 
 fn plugin_ipc(
     short: &str,
@@ -61,11 +63,15 @@ fn host_defaults_load() {
 fn all_handlers_returns_every_enabled() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    // host default 1개 (webhook-notify).
-    assert_eq!(reg.all_handlers().len(), 1);
+    // host default 2개(webhook-notify, command-completed) — 둘 다 priority=100
+    // 이라 id 알파벳순(tie-break) → command-completed 가 먼저.
+    assert_eq!(reg.all_handlers().len(), 2);
     assert_eq!(
         reg.list_handlers(),
-        vec![HookHandlerId::new(HOST_NOTIFY_ID)]
+        vec![
+            HookHandlerId::new(HOST_COMMAND_COMPLETED_ID),
+            HookHandlerId::new(HOST_NOTIFY_ID),
+        ]
     );
 }
 
@@ -73,15 +79,23 @@ fn all_handlers_returns_every_enabled() {
 fn all_handlers_including_disabled_shows_disabled() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    // user override 로 host 핸들러 비활성화.
+    // user override 로 host 핸들러 둘 다 비활성화.
     reg.set_user_handler_disabled(&HookHandlerId::new(HOST_NOTIFY_ID), true);
+    reg.set_user_handler_disabled(&HookHandlerId::new(HOST_COMMAND_COMPLETED_ID), true);
     // 활성 목록엔 없다.
     assert!(reg.all_handlers().is_empty());
     // 비활성 포함 목록엔 남아 있고 disabled=true 로 노출된다(재활성 대상 가시화).
     let full = reg.all_handlers_including_disabled();
-    assert_eq!(full.len(), 1);
-    assert_eq!(full[0].id, HookHandlerId::new(HOST_NOTIFY_ID));
-    assert!(full[0].disabled);
+    assert_eq!(full.len(), 2);
+    assert!(full.iter().all(|h| h.disabled));
+    assert!(
+        full.iter()
+            .any(|h| h.id == HookHandlerId::new(HOST_NOTIFY_ID))
+    );
+    assert!(
+        full.iter()
+            .any(|h| h.id == HookHandlerId::new(HOST_COMMAND_COMPLETED_ID))
+    );
 }
 
 // ── plugin install / 정렬 ─────────────────────────────────────────────────
@@ -119,11 +133,12 @@ fn uninstall_plugin_removes_only_its_handlers() {
             "notification.create",
         )],
     );
-    assert_eq!(reg.all_handlers().len(), 2);
+    assert_eq!(reg.all_handlers().len(), 3);
     reg.uninstall_plugin("com.example.hook");
     let v = reg.all_handlers();
-    assert_eq!(v.len(), 1);
-    assert_eq!(v[0].id.as_str(), HOST_NOTIFY_ID);
+    assert_eq!(v.len(), 2);
+    assert!(v.iter().any(|h| h.id.as_str() == HOST_NOTIFY_ID));
+    assert!(v.iter().any(|h| h.id.as_str() == HOST_COMMAND_COMPLETED_ID));
 }
 
 #[test]
@@ -139,7 +154,7 @@ fn plugin_reinstall_is_idempotent() {
     reg.install_plugin_handlers("com.example.hook", &decls);
     reg.install_plugin_handlers("com.example.hook", &decls);
     // 같은 owner 재install → retain 으로 교체, 중복 누적 없음.
-    assert_eq!(reg.all_handlers().len(), 2);
+    assert_eq!(reg.all_handlers().len(), 3);
 }
 
 // ── owner tie-break (user > plugin > host) ────────────────────────────────

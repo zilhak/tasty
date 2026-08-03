@@ -71,6 +71,23 @@ pub(crate) fn handle_hook_set(
         return resp;
     }
 
+    // TODO80 결정 7: `command-completed` 는 OSC 133 셸 통합이 로드된 셸에서만
+    // 발화한다(전제). 그 surface 가 boundary 를 한 번도 못 받았다면 이 훅은
+    // 영원히 발사되지 않을 수 있다 — 거부는 아니다(시간 기반 추정이라 이제 막
+    // 뜬 surface 를 오탐할 수 있음, `shell_integration_hint.rs` 참고), 경고만
+    // 남겨 가시화한다. 등록 주체(사용자 `hook.set` 든 push 완료 전략의 내부
+    // dispatch 든) 무관하게 이 지점 하나에서 검사한다.
+    if matches!(event, HookEvent::CommandCompleted(_))
+        && !engine.shell_integration_boundary_seen.contains(&surface_id)
+    {
+        tracing::warn!(
+            surface_id,
+            "hook.set: 'command-completed' hook registered on a surface that has never shown \
+             an OSC 133 prompt boundary — this hook may never fire if shell integration is not \
+             loaded"
+        );
+    }
+
     // S9: hook 은 공유 훅 핸들러 레지스트리를 참조한다. `handler` 파라미터가 있으면
     // 핸들러 id 참조(레지스트리 조회 + hook 트리거 source 게이트 검증), 없으면 옛
     // `command` 를 인라인 셸(익명 hook 핸들러)로 감싼다(하위호환 어댑터).
@@ -268,11 +285,19 @@ pub(crate) fn handle_surface_fire_hook(
 
     let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
     let event_kind = event.to_display_string();
+    // TODO80 결정 7: 수동 발화도 CommandCompleted 라면 실제 exit code 를 실어
+    // 보낸다 — `tasty surface fire-hook --event command-completed:1` 로 push
+    // 전략 대기 task 를 테스트/시뮬레이션할 수 있어야 한다.
+    let exit_code = match &event {
+        HookEvent::CommandCompleted(code) => *code,
+        _ => None,
+    };
     for hook_id in &fired {
         state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
             hook_id: *hook_id,
             event_kind: event_kind.clone(),
             surface_id,
+            exit_code,
         });
     }
     JsonRpcResponse::success(id, json!({ "fired": fired.len() }))

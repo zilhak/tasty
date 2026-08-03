@@ -72,6 +72,13 @@ pub struct RunnerContext {
     /// 시 fire. R-5 회피: runner_thread 가 Core wrapper 를 우회하기 때문에 RunnerContext
     /// 에 직접 포함시켜야 누락 없음.
     pub task_waker_hub: Arc<crate::core::agent::task_waker::TaskWakerHub>,
+    /// hook_id → task_id 대기 매핑(TODO80 §B-4/§C/결정 7). push-kind `Custom`
+    /// dispatch 가 여기 `register` 해 `AwaitExternal` 로 전이하고,
+    /// `runner_thread.rs::expire_overdue_hook_waits` 가 timeout 안전망으로
+    /// `sweep_expired` 를 돈다. `task_waker_hub` 와 동일 사유로 `Core` 를 거치지
+    /// 않고 이 `Arc` 를 직접 공유(runner thread 는 main thread 소유 `Core`/
+    /// `CoreState` 에 접근 불가).
+    pub hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
 }
 
 impl RunnerContext {
@@ -456,9 +463,11 @@ impl HostExecutor {
                 poll,
             } => {
                 // 동기 IPC dispatch. poll=None 이면 응답으로 즉시 종결(단, 결정 6 기본
-                // 전략이 매칭되면 그 poll 사양을 대신 사용), poll=Some(Inline) 이면 인라인
-                // 사양대로, poll=Some(Named) 이면 완료 판정 전략 레지스트리로 이름을
-                // 해석해 terminal 상태 도달까지 범용 폴링.
+                // 전략이 매칭되면 그 전략의 사양을 대신 사용), poll=Some(Inline) 이면
+                // 인라인 사양대로, poll=Some(Named) 이면 완료 판정 전략 레지스트리로
+                // 이름을 해석한다. poll/push 두 kind 모두 kind-agnostic
+                // `resolve_strategy`(§B 결정 7)로 다룬다 — poll 이면 기존과 동일하게
+                // `PolledDispatch`, push 면 `dispatch_push_strategy`로 `AwaitExternal`.
                 let value = self
                     .ctx
                     .dispatch_plugin(ipc_method, params.clone())
@@ -469,11 +478,27 @@ impl HostExecutor {
                     Some(PollSpecRef::Named { strategy }) => {
                         let id =
                             crate::completion_strategy::CompletionStrategyId::new(strategy.clone());
-                        crate::completion_strategy::global()
-                            .resolve_poll_spec(&id)
+                        let strat = crate::completion_strategy::global()
+                            .resolve_strategy(&id)
                             .map_err(|e| {
                                 format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
-                            })?
+                            })?;
+                        match strat.kind {
+                            crate::completion_strategy::CompletionStrategyKind::Poll(spec) => spec,
+                            crate::completion_strategy::CompletionStrategyKind::Push {
+                                notify_via,
+                                timeout_ms,
+                            } => {
+                                return self.dispatch_push_strategy(
+                                    task,
+                                    ipc_method,
+                                    params,
+                                    strat.id.as_str(),
+                                    &notify_via,
+                                    timeout_ms,
+                                );
+                            }
+                        }
                     }
                     None => {
                         match crate::completion_strategy::global()
@@ -484,24 +509,17 @@ impl HostExecutor {
                                     spec
                                 }
                                 crate::completion_strategy::CompletionStrategyKind::Push {
-                                    ..
+                                    notify_via,
+                                    timeout_ms,
                                 } => {
-                                    // push 형 기본 전략은 이 dispatch 경로가 아직 소비할 수
-                                    // 없다(push 완료 통지 소비 파이프라인 미구현, TODO80
-                                    // 결정 7 — Track C 의 exit code 배선 이후 과제). 기존
-                                    // 즉시-성공 하위호환을 유지하되 가시화를 위해 warn.
-                                    tracing::warn!(
-                                        ipc_method = ipc_method.as_str(),
-                                        strategy_id = strat.id.as_str(),
-                                        "completion_strategy: push-kind default strategy \
-                                         matched but push completion consumption is not wired \
-                                         in dispatch — falling back to immediate success"
+                                    return self.dispatch_push_strategy(
+                                        task,
+                                        ipc_method,
+                                        params,
+                                        strat.id.as_str(),
+                                        &notify_via,
+                                        timeout_ms,
                                     );
-                                    return Ok(DispatchHandle::CustomImmediate(TaskResult {
-                                        exit_code: Some(0),
-                                        output: Some(value),
-                                        error: None,
-                                    }));
                                 }
                             },
                             None => {
@@ -543,6 +561,68 @@ impl HostExecutor {
                 name: name.clone(),
             }),
         }
+    }
+
+    /// push-kind 완료 전략 dispatch(TODO80 §B-4/결정 7). `notify_via` 가 가리키는
+    /// 훅 핸들러를 대상 surface 에 1회성(`once: true`)으로 바인딩해 살아있는
+    /// `hook_id` 를 얻고, `hook_task_waits` 에 `(workspace_id, task_id, deadline)`
+    /// 로 등록한 뒤 `AwaitExternal` 로 전이한다. 실제 종결(Succeeded/Failed)은
+    /// 이 dispatch 가 아니라 `PendingHostEvent::HookFired` 소비부
+    /// (`Core::resolve_hook_task_wait`, exit code 로 성공/실패 분기)와 timeout
+    /// 안전망(`runner_thread::expire_overdue_hook_waits`)이 담당한다 —
+    /// `AwaitExternal` 의 poll 은 계약대로 항상 `Active` 다(§C-2).
+    ///
+    /// **범위 제한**: 오늘 유일한 push 전략(`host/command-completed`)의 필요만
+    /// 반영해 이벤트를 `HookEvent::CommandCompleted(None)`(모든 exit code 매칭)
+    /// 으로 고정한다. 두 번째 push 유스케이스가 실제로 생기면(예: 향후
+    /// claude/codex idle 신호) 그때 전략에 이벤트를 싣는 필드를 추가해
+    /// 일반화한다 — 지금 존재하지 않는 요구를 미리 설계하지 않는다.
+    ///
+    /// surface_id 는 원 dispatch `params.surface_id` 에서 얻는다 — `surface.send`
+    /// 등 surface 대상 IPC 메서드 대다수가 이 키를 쓰는 host 공통 관례
+    /// (`require_surface_id`, `src/adapters/ipc/handler.rs`)를 그대로 재사용한다.
+    fn dispatch_push_strategy(
+        &mut self,
+        task: &Task,
+        ipc_method: &str,
+        params: &serde_json::Value,
+        strategy_id: &str,
+        notify_via: &crate::hook_handler::HookHandlerId,
+        timeout_ms: u64,
+    ) -> Result<DispatchHandle, String> {
+        let surface_id = params
+            .get("surface_id")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| {
+                format!(
+                    "Custom '{ipc_method}' push strategy '{strategy_id}': missing 'surface_id' \
+                 param — push completion needs a target surface to bind the completion hook to"
+                )
+            })?;
+        let hook_params = json!({
+            "surface_id": surface_id,
+            "event": "command-completed",
+            "handler": notify_via.as_str(),
+            "once": true,
+        });
+        let hook_resp = self
+            .ctx
+            .dispatch_plugin("hook.set", hook_params)
+            .map_err(|e| {
+                format!("Custom '{ipc_method}' push strategy '{strategy_id}': hook.set failed: {e}")
+            })?;
+        let hook_id = hook_resp.get("hook_id").and_then(|v| v.as_u64()).ok_or_else(|| {
+            format!(
+                "Custom '{ipc_method}' push strategy '{strategy_id}': hook.set response missing 'hook_id'"
+            )
+        })?;
+        let deadline_ms = now_ms() + timeout_ms;
+        self.ctx
+            .hook_task_waits
+            .register(hook_id, task.workspace_id, task.id.clone(), deadline_ms);
+        Ok(DispatchHandle::AwaitExternal {
+            wait_key: hook_id.to_string(),
+        })
     }
 
     /// 내부 poll 본체.
@@ -787,6 +867,7 @@ mod tests {
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
+            hook_task_waits: Arc::new(crate::core::agent::hook_wait::HookTaskWaits::new()),
         };
         (td, ctx)
     }
@@ -1325,6 +1406,216 @@ mod tests {
         }
         worker.join().unwrap();
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest1");
+    }
+
+    /// TODO80 결정 7 — `poll: Some(Named)` 이 push-kind 전략을 가리키면
+    /// `AwaitExternal` 로 전이한다: `hook.set` 를 통해 대상 surface(`params.
+    /// surface_id`)에 1회성 훅을 등록하고, 그 hook_id 를 `hook_task_waits` 에
+    /// 등록한다. poll 은 계약대로 절대 종결시키지 않는다(항상 Active) — 종결은
+    /// `Core::resolve_hook_task_wait`(훅 발화 소비부)의 몫.
+    #[test]
+    fn custom_with_named_push_strategy_registers_hook_and_awaits_external() {
+        use crate::hook_handler::types::{
+            HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
+        };
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::server::IpcCommand;
+        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
+
+        crate::hook_handler::global()
+            .upsert_full_handler(HookHandler {
+                id: HookHandlerId::new("rhtest-push/notify"),
+                source: HookSource::Hook,
+                priority: 100,
+                owner: HookHandlerOwner::Plugin("rhtest-push".into()),
+                action: HookHandlerAction::IpcSequence { calls: vec![] },
+                display_name_i18n_key: None,
+                disabled: false,
+            })
+            .expect("test hook handler upsert");
+
+        crate::completion_strategy::HostCompletionStrategyPort
+            .install_plugin_completion_strategies(
+                "rhtest-push",
+                &[serde_json::json!({
+                    "id": "wait-done",
+                    "priority": 100,
+                    "spec": {
+                        "kind": "push",
+                        "notify_via": "rhtest-push/notify",
+                        "timeout_ms": 60000,
+                    },
+                })],
+            );
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv rhtest-push.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({}),
+                ))
+                .expect("send start resp");
+            let hook_set = rx.recv().expect("recv hook.set");
+            assert_eq!(hook_set.request.method, "hook.set");
+            assert_eq!(hook_set.request.params.get("surface_id"), Some(&json!(7)));
+            assert_eq!(
+                hook_set.request.params.get("event"),
+                Some(&json!("command-completed"))
+            );
+            assert_eq!(
+                hook_set.request.params.get("handler"),
+                Some(&json!("rhtest-push/notify"))
+            );
+            assert_eq!(hook_set.request.params.get("once"), Some(&json!(true)));
+            hook_set
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    hook_set
+                        .request
+                        .id
+                        .clone()
+                        .unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "hook_id": 999 }),
+                ))
+                .expect("send hook.set resp");
+        });
+        let task = Task {
+            id: "t-push".to_string(),
+            workspace_id: 1,
+            name: "push".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "rhtest-push.start".into(),
+                params: json!({ "surface_id": 7 }),
+                poll: Some(PollSpecRef::Named {
+                    strategy: "rhtest-push/wait-done".into(),
+                }),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        worker.join().unwrap();
+        match &handle {
+            DispatchHandle::AwaitExternal { wait_key } => assert_eq!(wait_key, "999"),
+            other => panic!("expected AwaitExternal, got {other:?}"),
+        }
+        // 계약: poll 은 절대 종결시키지 않는다.
+        assert!(matches!(exec.poll(&handle), PollOutcome::Active));
+        // hook_task_waits 에 실제로 등록됐는지 확인(1회성 소비 — resolve 로 검증).
+        assert_eq!(
+            ctx.hook_task_waits.resolve(999),
+            Some((1, "t-push".to_string()))
+        );
+
+        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push");
+    }
+
+    /// TODO80 결정 7 — push 전략인데 원 dispatch `params` 에 `surface_id` 가 없으면
+    /// hook 을 어느 surface 에 걸지 알 수 없다 — dispatch 자체가 실패한다.
+    #[test]
+    fn custom_with_push_strategy_missing_surface_id_fails_dispatch() {
+        use crate::hook_handler::types::{
+            HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
+        };
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::server::IpcCommand;
+        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
+
+        crate::hook_handler::global()
+            .upsert_full_handler(HookHandler {
+                id: HookHandlerId::new("rhtest-push2/notify"),
+                source: HookSource::Hook,
+                priority: 100,
+                owner: HookHandlerOwner::Plugin("rhtest-push2".into()),
+                action: HookHandlerAction::IpcSequence { calls: vec![] },
+                display_name_i18n_key: None,
+                disabled: false,
+            })
+            .expect("test hook handler upsert");
+
+        crate::completion_strategy::HostCompletionStrategyPort
+            .install_plugin_completion_strategies(
+                "rhtest-push2",
+                &[serde_json::json!({
+                    "id": "wait-done",
+                    "priority": 100,
+                    "spec": {
+                        "kind": "push",
+                        "notify_via": "rhtest-push2/notify",
+                        "timeout_ms": 60000,
+                    },
+                })],
+            );
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv rhtest-push2.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({}),
+                ))
+                .expect("send start resp");
+        });
+        let task = Task {
+            id: "t-push-no-surface".to_string(),
+            workspace_id: 1,
+            name: "push-no-surface".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "rhtest-push2.start".into(),
+                params: json!({}),
+                poll: Some(PollSpecRef::Named {
+                    strategy: "rhtest-push2/wait-done".into(),
+                }),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        match exec.dispatch(&task) {
+            DispatchOutcome::PermanentFail(e) => assert!(e.contains("surface_id")),
+            other => panic!("expected PermanentFail, got {other:?}"),
+        }
+        worker.join().unwrap();
+        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push2");
     }
 
     /// `poll: Some(Named)` 이 미등록 이름을 가리키면 dispatch 자체가 실패(PermanentFail)

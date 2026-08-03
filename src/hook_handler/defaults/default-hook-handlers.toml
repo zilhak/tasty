@@ -22,3 +22,21 @@ priority = 100
 [handler.action]
 kind = "ipc_sequence"
 calls = [{ method = "notification.create", params = { title = "Webhook", body = "${body.message}" } }]
+
+# TODO80 결정 7 — `host/command-completed` 완료 판정 전략(`../../completion_strategy/
+# defaults/default-completion-strategies.toml`)의 `notify_via` 대상. 훅 자체의
+# 완료 판정 배선은 이 액션과 무관하다 — 러너(`HostExecutor::dispatch_push_strategy`)
+# 가 이 핸들러를 `hook.set --event command-completed --handler host/command-completed
+# --once` 로 대상 surface 에 1 회성 바인딩하면, 발화 시 host event 큐(`HookFired`)
+# 가 `hook_id → task_id` 매핑을 조회해 task 를 마감한다(`Core::resolve_hook_task_wait`)
+# — 이 IpcSequence 실행은 순수 부가 효과(가시성용 알림)일 뿐이다. 사용자가
+# `hook.set --event command-completed --handler host/command-completed` 로 직접
+# 걸어도 같은 알림을 받을 수 있다.
+[[handler]]
+id = "command-completed"
+source = "hook"
+priority = 100
+
+[handler.action]
+kind = "ipc_sequence"
+calls = [{ method = "notification.create", params = { title = "Command completed", body = "exit code ${body.exit_code}" } }]

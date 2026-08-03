@@ -35,6 +35,7 @@ impl App {
                         hook_id: f.hook_id,
                         event_kind: "idle-timeout".to_string(),
                         surface_id,
+                        exit_code: None,
                     });
             }
             main.base.dirty = true;
@@ -54,6 +55,7 @@ impl App {
                     hook_id: f.hook_id,
                     event_kind: "idle-timeout".to_string(),
                     surface_id,
+                    exit_code: None,
                 });
             }
         }

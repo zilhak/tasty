@@ -706,6 +706,7 @@ impl Core {
             agent_seq: engine.agent_seq.clone(),
             host_ipc: self.host_ipc_injector.clone(),
             task_waker_hub: engine.task_waker_hub.clone(),
+            hook_task_waits: self.hook_task_waits.clone(),
         }
     }
 

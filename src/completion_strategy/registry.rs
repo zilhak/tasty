@@ -104,6 +104,28 @@ impl CompletionStrategyRegistry {
         }
     }
 
+    /// kind-agnostic 조회 — 존재/활성만 검증하고 poll/push 를 가리지 않고
+    /// `CompletionStrategy` 전체(kind 포함)를 반환한다. `resolve_poll_spec` 은
+    /// poll 전용 소비자(예: 다른 곳에서도 poll spec 만 필요로 하는 호출부가
+    /// 있을 수 있다)를 위해 그대로 유지 — 이 메서드는 `Custom` dispatch
+    /// (`runner_host.rs`)처럼 poll/push 를 모두 다뤄야 하는 호출부가 쓴다
+    /// (TODO80 결정 7). push-kind 의 timeout 필수는 `CompletionStrategyKind::
+    /// Push.timeout_ms` 가 `Option` 이 아닌 값 타입이라 타입 레벨에서 이미
+    /// 강제된다 — 이 메서드에서 별도 검증이 필요 없다.
+    pub fn resolve_strategy(
+        &self,
+        id: &CompletionStrategyId,
+    ) -> Result<CompletionStrategy, StrategyResolveError> {
+        let name = id.as_str().to_string();
+        let Some(s) = self.get(id) else {
+            return Err(StrategyResolveError::NotFound { name });
+        };
+        if s.disabled {
+            return Err(StrategyResolveError::Disabled { name });
+        }
+        Ok(s)
+    }
+
     /// 결정 6 — 주어진 IPC 메서드의 기본 완료 전략(활성 + 충돌 승자만). 없으면
     /// `None`(기존 즉시-성공 동작 유지, 하위호환).
     pub fn resolve_default_for_method(&self, method: &str) -> Option<CompletionStrategy> {

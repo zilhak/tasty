@@ -576,6 +576,63 @@ fn evict_precise_handles(
     }
 }
 
+/// push 완료 전략의 timeout 안전망. `HookTaskWaits` 에
+/// 등록된 대기 중 deadline 이 지난 항목을 Failed 로 강제 마감한다. 보고(훅
+/// 발화) 유실 시 task 가 영구 Running 에 남는 것을 막는 유일한 장치 — poll 은
+/// 여전히 관여하지 않는다(`AwaitExternal` 계약 불변, `runner_host.rs` 의
+/// `poll_handle` 참조), 이 sweep 이 "외부에서 store 를 직접 전이" 경로로
+/// 종결시킨다.
+///
+/// `HookTaskWaits` 는 워크스페이스 무관 전역 맵이다 — 어느 workspace 의 runner
+/// thread 든 자기 tick 에 편승해 이 sweep 을 돌려도 안전하다: memory store 는
+/// `Core` 전역에서 공유되는 같은 `Arc<Mutex<>>`(`TaskStore::set_state` 가
+/// workspace_id 를 인자로 받아 정확한 scope 에 쓴다), `sweep_expired` 자체가
+/// 원자적 remove 라 여러 thread 가 동시에 돌아도 항목이 중복 처리되지 않는다.
+fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
+    let overdue = ctx.hook_task_waits.sweep_expired(now_ms);
+    for (workspace_id, task_id) in overdue {
+        let error = "push completion strategy timed out waiting for external report".to_string();
+        let fire_target = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let result = TaskResult {
+                exit_code: None,
+                output: None,
+                error: Some(error.clone()),
+            };
+            if let Err(e) = store.set_result(workspace_id, &task_id, result) {
+                tracing::warn!("hook wait timeout: set_result {task_id} failed: {e}");
+                return None;
+            }
+            match store.set_state(
+                workspace_id,
+                &task_id,
+                TaskState::Failed {
+                    error: error.clone(),
+                },
+                now_ms,
+            ) {
+                Ok((task, _downstream)) => Some((task.state, task.result)),
+                Err(e) => {
+                    tracing::warn!("hook wait timeout: set_state {task_id} failed: {e}");
+                    None
+                }
+            }
+        });
+        if let Some((state, result)) = fire_target {
+            ctx.task_waker_hub.fire(
+                workspace_id,
+                &task_id,
+                crate::core::agent::task_waker::TerminalSnapshot { state, result },
+            );
+        }
+        tracing::warn!(
+            "agent task {task_id} (ws {workspace_id}): push completion strategy timed out \
+             waiting for external report — marked Failed"
+        );
+    }
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
     purge_stale_semaphore_holders(&ctx, workspace_id);
     purge_stale_lease_holders(&ctx, workspace_id);
@@ -586,6 +643,12 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
         runner.running.insert(task_id, handle);
     }
     loop {
+        // 0. push 완료 전략 timeout 안전망(TODO80 §C-3/결정 7) — tick 본문보다
+        //    먼저 돌려 이번 tick 의 0단계(terminal 흡수)가 방금 Failed 된 task 의
+        //    handle 정리 + release_permit 까지 같은 루프에서 마무리하게 한다.
+        let now = now_ms();
+        expire_overdue_hook_waits(&ctx, now);
+
         // 1. tick 본문.
         let snapshot = ctx.with_memory(|mem| {
             let seq = ctx.agent_seq.clone();
@@ -593,7 +656,6 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
             store.list(workspace_id).unwrap_or_default()
         });
 
-        let now = now_ms();
         let ctx_for_set = ctx.clone();
         let ctx_for_res = ctx.clone();
         runner.tick(
@@ -661,6 +723,7 @@ mod tests {
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
+            hook_task_waits: Arc::new(crate::core::agent::hook_wait::HookTaskWaits::new()),
         };
         (td, ctx)
     }
@@ -986,5 +1049,91 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap().state
         });
         assert!(matches!(state, TaskState::Ready), "got {state:?}");
+    }
+
+    /// TODO80 §C-3/결정 7 — push 전략의 timeout 안전망. deadline 이 지난
+    /// `hook_task_waits` 항목은 task 를 Failed 로 강제 마감하고 맵에서 제거한다.
+    #[test]
+    fn expire_overdue_hook_waits_fails_the_task_and_removes_the_entry() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Custom {
+                        ipc_method: "acme.start".into(),
+                        params: serde_json::json!({}),
+                        poll: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+
+        ctx.hook_task_waits.register(1, 1, task_id.clone(), 2000);
+        expire_overdue_hook_waits(&ctx, 5000);
+
+        // 맵에서 제거됐다 — 재조회는 None.
+        assert_eq!(ctx.hook_task_waits.resolve(1), None);
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        assert!(
+            matches!(task.state, TaskState::Failed { .. }),
+            "got {:?}",
+            task.state
+        );
+        assert!(task.result.is_some());
+    }
+
+    /// deadline 이 아직 안 지난 항목은 손대지 않는다.
+    #[test]
+    fn expire_overdue_hook_waits_leaves_fresh_entries_alone() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Custom {
+                        ipc_method: "acme.start".into(),
+                        params: serde_json::json!({}),
+                        poll: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+
+        ctx.hook_task_waits.register(2, 1, task_id.clone(), 9999);
+        expire_overdue_hook_waits(&ctx, 5000);
+
+        // 아직 대기 중 — 제거되지 않았다.
+        assert_eq!(ctx.hook_task_waits.resolve(2), Some((1, task_id.clone())));
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        assert!(matches!(task.state, TaskState::Running));
     }
 }

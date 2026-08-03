@@ -671,6 +671,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                             hook_id: f.hook_id,
                             event_kind: "idle-timeout".to_string(),
                             surface_id,
+                            exit_code: None,
                         });
                     }
                 }

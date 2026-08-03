@@ -298,6 +298,101 @@ fn resolve_poll_spec_rejects_disabled() {
     assert!(matches!(err, StrategyResolveError::Disabled { .. }));
 }
 
+/// TODO80 결정 7 — 실제 host defaults TOML 두 파일(`hook_handler`/
+/// `completion_strategy` 각자의 `defaults/`)이 서로의 참조를 만족하는지 확인하는
+/// 배선 스모크 테스트. `notify_via = "host/command-completed"` 가 가리키는 훅
+/// 핸들러가 실제로 존재해야 이 전략이 조용히 drop 되지 않는다(§B-5).
+#[test]
+fn host_command_completed_default_strategy_resolves_after_hook_handler_registered() {
+    // hook_handler 전역에 실제 host defaults 를 설치 — `host/command-completed`
+    // 핸들러가 여기서 나온다. 다른 테스트와 공유하는 프로세스 전역이지만
+    // install 은 idempotent(같은 owner 재설치는 덮어씀)이라 순서 무관 안전.
+    crate::hook_handler::global().install_host_defaults(include_str!(
+        "../hook_handler/defaults/default-hook-handlers.toml"
+    ));
+
+    let reg = CompletionStrategyRegistry::new();
+    reg.install_host_defaults(include_str!("defaults/default-completion-strategies.toml"));
+
+    let strat = reg
+        .resolve_strategy(&CompletionStrategyId::new("host/command-completed"))
+        .expect("host/command-completed should resolve now that its hook handler exists");
+    match strat.kind {
+        CompletionStrategyKind::Push {
+            notify_via,
+            timeout_ms,
+        } => {
+            assert_eq!(notify_via.as_str(), "host/command-completed");
+            assert_eq!(timeout_ms, 300_000);
+        }
+        CompletionStrategyKind::Poll(_) => panic!("expected push"),
+    }
+}
+
+// ── resolve_strategy (kind-agnostic, TODO80 결정 7) ─────────────────────
+
+#[test]
+fn resolve_strategy_returns_poll_kind() {
+    let reg = CompletionStrategyRegistry::new();
+    let decls =
+        parse_strategy_section(&poll_toml("spawn-wait", 100, "acme.wait", "")).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+
+    let s = reg
+        .resolve_strategy(&CompletionStrategyId::new("acme/spawn-wait"))
+        .expect("resolve");
+    assert!(matches!(s.kind, CompletionStrategyKind::Poll(_)));
+}
+
+#[test]
+fn resolve_strategy_returns_push_kind_unlike_resolve_poll_spec() {
+    ensure_hook_handler(
+        "cstest-resolve-strategy/h",
+        HookHandlerOwner::Plugin("cstest-resolve-strategy".into()),
+    );
+    let reg = CompletionStrategyRegistry::new();
+    let decls =
+        parse_strategy_section(&push_toml("push-one", "cstest-resolve-strategy/h")).expect("parse");
+    reg.install_plugin_strategies("cstest-resolve-strategy", &decls);
+
+    let id = CompletionStrategyId::new("cstest-resolve-strategy/push-one");
+    // resolve_poll_spec 은 push-kind 를 거부하지만(위 rejects_push_kind 테스트),
+    // kind-agnostic resolve_strategy 는 poll/push 를 가리지 않고 반환한다.
+    let s = reg.resolve_strategy(&id).expect("resolve");
+    assert!(matches!(s.kind, CompletionStrategyKind::Push { .. }));
+}
+
+#[test]
+fn resolve_strategy_not_found() {
+    let reg = CompletionStrategyRegistry::new();
+    let err = reg
+        .resolve_strategy(&CompletionStrategyId::new("acme/nope"))
+        .unwrap_err();
+    assert!(matches!(err, StrategyResolveError::NotFound { .. }));
+}
+
+#[test]
+fn resolve_strategy_rejects_disabled() {
+    let reg = CompletionStrategyRegistry::new();
+    let toml = r#"
+        [[strategy]]
+        id = "disabled-one"
+        priority = 100
+        disabled = true
+        [strategy.spec]
+        kind = "poll"
+        poll_method = "acme.wait"
+        state_field = "state"
+        terminal_states = ["done"]
+    "#;
+    let decls = parse_strategy_section(toml).expect("parse");
+    reg.install_plugin_strategies("acme", &decls);
+    let err = reg
+        .resolve_strategy(&CompletionStrategyId::new("acme/disabled-one"))
+        .unwrap_err();
+    assert!(matches!(err, StrategyResolveError::Disabled { .. }));
+}
+
 #[test]
 fn plugin_display_name_i18n_key_is_preserved() {
     let toml = r#"

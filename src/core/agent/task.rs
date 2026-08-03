@@ -143,29 +143,28 @@ impl Core {
         })
     }
 
-    /// TODO80 §B-4/§C: `task_id` 가 `hook_id` 의 완료를 기다리도록 등록한다.
-    /// 오늘은 이 메서드를 호출하는 러너 경로가 없다(§B 완료 전략 레지스트리가
-    /// push 형 전략의 dispatch 시점에 호출할 예정) — `AwaitExternal` 핸들을
-    /// 반환하는 dispatch 구현이 그 자리다.
-    // 이유: `HookTaskWaits::register` 와 동일 — 등록자(§B)가 아직 없다.
-    #[allow(dead_code)]
-    pub(crate) fn register_hook_task_wait(&self, hook_id: u64, workspace_id: u32, task_id: TaskId) {
-        self.hook_task_waits
-            .register(hook_id, workspace_id, task_id);
-    }
-
-    /// TODO80 §B-4/§C: `hook_id` 에 매핑된 대기 중 task 가 있으면 완료 처리
-    /// (Succeeded)한다. 없으면 no-op — 등록하는 러너 경로가 아직 없어(§B 미구현)
-    /// 오늘은 모든 훅 발화가 여기 해당한다. `engine` 은 `task_set_state` 의
-    /// waker 발화(`task_waker_hub`)에 필요하다 — 호출자는 이 훅이 발화한 그
-    /// window/state 의 engine 을 넘겨야 `agent.task_await` 대기자가 정확히
-    /// 깨어난다(다른 window 의 engine 을 넘기면 waker 가 엉뚱한 hub 에 발화한다).
-    pub(crate) fn resolve_hook_task_wait(&self, engine: &CoreState, hook_id: u64) {
+    /// TODO80 §B-4/§C/결정 7: `hook_id` 에 매핑된 대기 중 task 가 있으면 완료
+    /// 처리한다. 없으면 no-op. `engine` 은 `task_set_state` 의 waker 발화
+    /// (`task_waker_hub`)에 필요하다 — 호출자는 이 훅이 발화한 그 window/state
+    /// 의 engine 을 넘겨야 `agent.task_await` 대기자가 정확히 깨어난다(다른
+    /// window 의 engine 을 넘기면 waker 가 엉뚱한 hub 에 발화한다).
+    ///
+    /// `exit_code` — 실제 관측된 값(`HookEvent::CommandCompleted` 발화만 보유,
+    /// 그 외 push 신호는 `None`). `Some(0)` 또는 `None` 이면 Succeeded,
+    /// `Some(비0)` 이면 그 코드를 실은 Failed — 결정 7 "exit 0 은 succeeded,
+    /// 비-0 은 failed" 를 여기서 강제한다. exit code 개념이 없는 임의 push
+    /// 완료 신호(예: 향후 claude/codex 전략)는 `None` 이라 기존처럼 Succeeded.
+    pub(crate) fn resolve_hook_task_wait(
+        &self,
+        engine: &CoreState,
+        hook_id: u64,
+        exit_code: Option<i32>,
+    ) {
         let Some((workspace_id, task_id)) = self.hook_task_waits.resolve(hook_id) else {
             return;
         };
         let result = TaskResult {
-            exit_code: None,
+            exit_code,
             output: None,
             error: None,
         };
@@ -174,9 +173,13 @@ impl Core {
             return;
         }
         let now_ms = self.clock.now_unix_millis() as u64;
-        if let Err(e) =
-            self.task_set_state(engine, workspace_id, &task_id, TaskState::Succeeded, now_ms)
-        {
+        let new_state = match exit_code {
+            Some(code) if code != 0 => TaskState::Failed {
+                error: format!("command exited with code {code}"),
+            },
+            _ => TaskState::Succeeded,
+        };
+        if let Err(e) = self.task_set_state(engine, workspace_id, &task_id, new_state, now_ms) {
             tracing::warn!("resolve_hook_task_wait: set_state {task_id} failed: {e}");
         }
     }
@@ -288,8 +291,9 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.register_hook_task_wait(42, ws, task_id.clone());
-        core.resolve_hook_task_wait(&engine, 42);
+        core.hook_task_waits
+            .register(42, ws, task_id.clone(), u64::MAX);
+        core.resolve_hook_task_wait(&engine, 42, Some(0));
 
         let task = core
             .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
@@ -313,7 +317,7 @@ mod hook_wait_tests {
             .expect("Ready -> Running");
 
         // 아무것도 등록 안 한 채 임의 hook_id resolve — task 는 Running 그대로.
-        core.resolve_hook_task_wait(&engine, 999);
+        core.resolve_hook_task_wait(&engine, 999, None);
 
         let task = core
             .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
@@ -333,15 +337,39 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.register_hook_task_wait(7, ws, task_id.clone());
-        core.resolve_hook_task_wait(&engine, 7);
+        core.hook_task_waits
+            .register(7, ws, task_id.clone(), u64::MAX);
+        core.resolve_hook_task_wait(&engine, 7, None);
         // 두 번째 발화 — 매핑이 이미 소비돼 no-op. 패닉/에러 없이 조용히 지나간다.
-        core.resolve_hook_task_wait(&engine, 7);
+        core.resolve_hook_task_wait(&engine, 7, None);
 
         let task = core
             .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(task.succeeded);
+    }
+
+    /// 결정 7 — 비-0 exit code 로 발화하면 task 는 Failed 로 마감된다(Succeeded
+    /// 아님). `command-completed` 내장 push 전략의 핵심 계약.
+    #[test]
+    fn resolve_with_nonzero_exit_code_fails_the_task() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let task_id = mk_ready_task(&core, &engine, ws);
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        core.hook_task_waits
+            .register(1, ws, task_id.clone(), u64::MAX);
+        core.resolve_hook_task_wait(&engine, 1, Some(1));
+
+        let task = core
+            .task_get(&engine, ws, &task_id)
+            .expect("task_get")
+            .expect("task exists");
+        assert!(matches!(task.state, TaskState::Failed { .. }));
+        assert_eq!(task.result.and_then(|r| r.exit_code), Some(1));
     }
 }

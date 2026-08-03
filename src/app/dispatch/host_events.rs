@@ -164,6 +164,7 @@ impl App {
                     hook_id,
                     event_kind,
                     surface_id,
+                    exit_code: _,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
                 // ─── Plugin lifecycle (D.3.C.G.2.b) ───
                 PendingHostEvent::PluginLoaded { plugin_id, version } => {
@@ -226,8 +227,11 @@ fn resolve_hook_fired_task_waits(
     events: &[PendingHostEvent],
 ) {
     for ev in events {
-        if let PendingHostEvent::HookFired { hook_id, .. } = ev {
-            core.resolve_hook_task_wait(engine, *hook_id);
+        if let PendingHostEvent::HookFired {
+            hook_id, exit_code, ..
+        } = ev
+        {
+            core.resolve_hook_task_wait(engine, *hook_id, *exit_code);
         }
     }
 }
