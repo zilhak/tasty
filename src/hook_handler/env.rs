@@ -200,8 +200,8 @@ mod tests {
         assert_eq!(get(&vars, "TASTY_HOOK_SURFACE_ID"), Some("1"));
     }
 
-    /// `trigger_payload`(TODO80 §C-2)는 IpcSequence `${body.surface_id}` 대칭을
-    /// 위해 payload 에 `surface_id` 를 **항상** 담는다 — 즉 이 충돌은 매 훅 발화마다
+    /// `trigger_payload`는 IpcSequence `${body.surface_id}` 대칭을 위해 payload
+    /// 에 `surface_id` 를 **항상** 담는다 — 즉 이 충돌은 매 훅 발화마다
     /// 발생하는 정상 경로다. 값이 일치(동일 출처)하므로 결과가 흔들리지 않고,
     /// 중복 항목도 생기지 않아야 한다(vars 개수가 payload 유무와 무관하게 동일).
     #[test]

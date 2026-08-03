@@ -462,8 +462,8 @@ pub(crate) struct Core {
     /// `agent.task_run` IPC + 통합 테스트가 사용.
     pub(crate) runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
 
-    /// hook_id → 대기 중인 agent task 매핑(TODO80 §B-4/§C). `HookFired` 소비부가
-    /// 매 발화마다 조회한다 — [`crate::core::agent::hook_wait`] 참조.
+    /// hook_id → 대기 중인 agent task 매핑. `HookFired` 소비부가 매 발화마다
+    /// 조회한다 — [`crate::core::agent::hook_wait`] 참조.
     pub(crate) hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
 }
 

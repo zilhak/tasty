@@ -725,10 +725,10 @@ impl HostExecutor {
                     Err(e) => PollOutcome::Failed(format!("barrier poll '{name}': {e}")),
                 }
             }
-            // TODO80 §B-4/§C: 계약대로 poll 은 절대 종결시키지 않는다 — 종결은
+            // AwaitExternal 계약대로 poll 은 절대 종결시키지 않는다 — 종결은
             // 외부(hook_id → task_id 매핑 소비 등)가 store 를 직접 전이시켜
-            // 이뤄지고, `RunnerLoop::tick` 0단계(terminal 흡수, TODO80 §C-2)가
-            // 다음 tick 에 handle 정리 + release_permit 을 담당한다.
+            // 이뤄지고, `RunnerLoop::tick` 0단계(terminal 흡수)가 다음 tick 에
+            // handle 정리 + release_permit 을 담당한다.
             DispatchHandle::AwaitExternal { .. } => PollOutcome::Active,
         }
     }
@@ -1324,8 +1324,8 @@ mod tests {
         }
     }
 
-    /// TODO80 §B 체크리스트 7: `poll: Some(Named)` → 완료 판정 전략 레지스트리로
-    /// 이름 해석 후 그 `PollSpec` 대로 폴링(인라인과 동등하게 동작).
+    /// `poll: Some(Named)` → 완료 판정 전략 레지스트리로 이름 해석 후 그
+    /// `PollSpec` 대로 폴링한다(인라인과 동등하게 동작).
     #[test]
     fn custom_with_named_poll_strategy_resolves_and_polls() {
         use crate::ipc::host_call::HostIpcInjector;

@@ -130,7 +130,7 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 ///
 /// MVP: 한 스텝이 실패해도 다음 스텝을 계속 진행한다(관측만). 조건분기는 후속.
 ///
-/// 실패 로그는 `error!`(TODO80 §C-3) — 예를 들어 이 스텝이 `agent.task_set_result`
+/// 실패 로그는 `error!` — 예를 들어 이 스텝이 `agent.task_set_result`
 /// 라면, 실패는 곧 "그 task 가 조용히 영원히 끝나지 않는다"는 뜻이다. 반환값이 없어
 /// 호출자가 이 실패를 감지할 방법이 없으므로(단방향 불변식), 로그가 유일한 관측
 /// 지점이다 — 일상적 경고(`warn!`)로는 운영 중 놓치기 쉽다. push 완료 전략의

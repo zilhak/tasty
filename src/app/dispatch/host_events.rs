@@ -215,8 +215,8 @@ fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEve
     }
 }
 
-/// TODO80 §B-4/§C: 이 drain 배치의 `HookFired` 마다 hook_id→task_id 매핑을
-/// 조회해, 대기 중인 push 완료 전략 task 가 있으면 마감한다. flatten(`drained`)
+/// 이 drain 배치의 `HookFired` 마다 hook_id→task_id 매핑을 조회해, 대기 중인
+/// push 완료 전략 task 가 있으면 마감한다. flatten(`drained`)
 /// 되기 전, 이 배치가 나온 그 window/parked-state 의 `engine` 이 아직 유효할 때
 /// 호출해야 한다 — `resolve_hook_task_wait` 이 waker 발화(`task_waker_hub`)에
 /// 그 engine 을 그대로 쓰므로, 틀린 engine 을 넘기면 `agent.task_await` 대기자가

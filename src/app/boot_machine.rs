@@ -518,7 +518,7 @@ impl App {
             // 바인딩·`hook_handler.*` 조회가 이 전역 레지스트리를 보므로 리스너 init
             // 전에 채운다(plugin contribution 은 discover_and_start 에서 병합).
             crate::hook_handler::install_default_sources();
-            // 완료 판정 전략 레지스트리 시드(TODO80 §B) — 훅 핸들러와 대칭 위치.
+            // 완료 판정 전략 레지스트리 시드 — 훅 핸들러와 대칭 위치.
             crate::completion_strategy::install_default_sources();
             let report = crate::webhook::init_from_config(injector.clone());
             if let Some(msg) = report.user_warning() {

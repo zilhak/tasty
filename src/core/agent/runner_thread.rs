@@ -435,7 +435,7 @@ fn classify_persisted_handle(
         // PolledDispatch/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
         // PolledDispatch 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
         //
-        // AwaitExternal 도 동형으로 복원한다(TODO80 §B-4/§C) — poll 은 항상
+        // AwaitExternal 도 동형으로 복원한다 — poll 은 항상
         // Active 인 no-op 이지만, 진짜 종결은 `self.running` 과 무관하게
         // store 를 직접 전이시키는 외부 경로가 담당한다. 여기서 복원하지
         // 않으면(= stale 로 evict) 그 외부 완료가 도착했을 때 0단계 terminal

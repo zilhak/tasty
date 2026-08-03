@@ -619,7 +619,7 @@ fn route_engine_handler(
         "hook_handler.list" => hook_handler::handle_list(id),
         "hook_handler.reload" => hook_handler::handle_reload(id),
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
-        // completion_strategy: 완료 판정 전략 레지스트리 조회(TODO80 §B). 상태는
+        // completion_strategy: 완료 판정 전략 레지스트리 조회. 상태는
         // 전역 싱글턴이라 core/state/engine 미사용. reload/dispatch 대응물 없음
         // (전략은 판정 함수, "발화" 대상 아님).
         "completion_strategy.list" => completion_strategy::handle_list(id),

@@ -75,8 +75,8 @@ pub fn handle_task_create(
 }
 
 /// `command` 및 `on_failure.Fallback.inline` 이 참조하는 `poll` 이름(완료 판정
-/// 전략)을 생성 시점에 검증한다(TODO80 §B 체크리스트 8: "task_create 시 미등록
-/// 전략 이름 거부"). 오타를 실행 시점(Custom dispatch)이 아니라 생성 시점에 잡아
+/// 전략)을 생성 시점에 검증한다 — task_create 시 미등록 전략 이름을 거부하기
+/// 위함이다. 오타를 실행 시점(Custom dispatch)이 아니라 생성 시점에 잡아
 /// task 가 Running 에 진입한 뒤에야 실패하는 것을 막는다. `Custom` dispatch 이름
 /// 해석(`src/core/agent/runner_host.rs`)과 같은 `resolve_poll_spec` 을 공유한다.
 fn validate_poll_strategy_refs(

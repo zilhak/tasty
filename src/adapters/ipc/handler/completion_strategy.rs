@@ -1,4 +1,4 @@
-//! `completion_strategy.*` IPC 핸들러 — 완료 판정 전략 레지스트리 조회 (TODO80 §B).
+//! `completion_strategy.*` IPC 핸들러 — 완료 판정 전략 레지스트리 조회.
 //!
 //! `hook_handler.list`(`src/adapters/ipc/handler/hook_handler.rs`)를 미러링한다.
 //! 상태는 `crate::completion_strategy` 전역 싱글턴이라 engine/state 를 받지 않는다.

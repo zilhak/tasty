@@ -29,7 +29,7 @@ use crate::adapters::ipc::host_call::HostIpcInjector;
 /// 건너뛰고 warn 을 남긴다(셸은 injector 불요). `event`(등록 이벤트) + `surface_id`
 /// 는 셸 핸들러 자식 프로세스에 `TASTY_HOOK_*` env 로 노출되는 트리거 컨텍스트다
 /// ([`super::env`]). `received`(실제 관측 이벤트, [`tasty_hooks::FiredHook::received`])
-/// 로부터 단일 payload `Value` 를 여기서 한 번 조립해(TODO80 §C-2) 셸(`build_env`
+/// 로부터 단일 payload `Value` 를 여기서 한 번 조립해 셸(`build_env`
 /// 의 `payload`)과 IpcSequence(`SubstitutionContext.body`) 양쪽에 같은 소스로
 /// 공급한다 — 두 경로가 각자 빈 값을 공급하던 것을 하나로 모은다.
 pub fn execute_binding(
@@ -58,7 +58,7 @@ pub fn execute_binding(
 
 /// [`HookBinding::Handler`] 참조 실행 — 레지스트리 조회 + `source` 게이트 +
 /// ShellCommand/IpcSequence 분기. `execute_binding` 에서 분리(cognitive complexity
-/// 게이트, TODO80 §C-2 payload 조립 추가로 초과).
+/// 게이트, payload 조립 추가로 초과).
 fn execute_handler_binding(
     id: &str,
     injector: Option<&HostIpcInjector>,
@@ -105,7 +105,7 @@ fn execute_ipc_sequence_handler(
 }
 
 /// 훅 트리거 payload 조립 — 셸 env(`TASTY_HOOK_*`)와 IpcSequence(`${body.*}`) 양쪽이
-/// 같은 소스에서 파생되는 단일 지점(TODO80 §C-2). `surface_id` 는 모든 이벤트에
+/// 같은 소스에서 파생되는 단일 지점. `surface_id` 는 모든 이벤트에
 /// 공통, 그 외 키는 `received` 의 실제 관측값에서 이벤트별로 채운다 — 등록 패턴이
 /// 아니라 실제 수신값이어야 하는 이유는 [`tasty_hooks::FiredHook::received`] 참조.
 fn trigger_payload(received: &HookEvent, surface_id: u32) -> serde_json::Value {
@@ -329,7 +329,7 @@ mod tests {
     }
 
     /// exit code 가 셸 자식 프로세스 env 까지 실제로 도달하는지 end-to-end 로
-    /// 증명한다 — TODO80 §C-2 결함(payload 가 항상 Null 이라 `$TASTY_HOOK_EXIT_CODE`
+    /// 증명한다 — payload 조립 결함(payload 가 항상 Null 이라 `$TASTY_HOOK_EXIT_CODE`
     /// 가 존재하지 않던 문제)의 회귀 방어.
     #[test]
     fn shell_binding_receives_command_completed_exit_code_env() {
