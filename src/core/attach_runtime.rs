@@ -376,6 +376,37 @@ impl CoreState {
         });
     }
 
+    /// attach 점유 중인 workspace 에 **로컬에서** 새로 생긴 멤버 surface 를 편입한다
+    /// (occupancy 등록 + 즉시 스트림 tap). forward-op 경로(`execute_forwarded_structural_op`
+    /// 의 `add_workspace_member` 호출 + `event_handler.rs` 의 `tap_surface_for_stream`
+    /// 후속 호출)와 동일한 최종 효과를, 로컬 생성 경로(create-tab/split-pane/
+    /// split-surface/adopt-terminal)에도 준다. workspace 가 점유돼 있지 않으면
+    /// `add_workspace_member` 가 no-op(false)이라 그대로 반환. notifier(StreamHub)
+    /// 가 미주입(테스트/headless)이어도 occupancy 등록까지는 되고 tap 만 스킵된다.
+    pub(crate) fn tap_new_workspace_member(
+        &mut self,
+        workspace_id: WorkspaceId,
+        surface_id: SurfaceId,
+        is_terminal: bool,
+    ) {
+        if !self
+            .attach
+            .add_workspace_member(workspace_id, surface_id, is_terminal)
+        {
+            return;
+        }
+        if !is_terminal {
+            return;
+        }
+        let Some(holder) = self.attach.workspace_holder(workspace_id) else {
+            return;
+        };
+        let Some(hub) = self.attach.notifier() else {
+            return;
+        };
+        self.tap_surface_for_stream(surface_id, holder, &hub);
+    }
+
     /// workspace mode client 의 입력(surface-prefixed)을 지정 remote surface 의 PTY 로.
     /// holder 가 그 workspace 를 점유 중일 때만 통과(타 workspace surface 주입 차단).
     pub fn feed_attached_workspace_input(

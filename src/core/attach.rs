@@ -142,6 +142,15 @@ impl OccupancyRegistry {
         self.notifier = Some(hub);
     }
 
+    /// 주입된 notifier(StreamHub)를 clone 해 반환(`StreamHub` 는 Arc 기반이라 clone
+    /// 저렴, 위 `set_notifier` doc 참조). hard 점유 중인 workspace 에 로컬에서 새로
+    /// 편입된 surface 를 즉시 tap 하는 경로(`CoreState::tap_new_workspace_member`)가
+    /// 쓴다 — `hub`/`client_id` 를 `core/mod.rs` 의 순수 mutate 계층까지 파라미터로
+    /// 꿰지 않고 boot 시 주입된 것을 재사용한다(`notify_detached` 와 동일 패턴).
+    pub(crate) fn notifier(&self) -> Option<StreamHub> {
+        self.notifier.clone()
+    }
+
     /// surface 가 **hard 점유** 중인지(서버 입력 차단·list `attached` 필드·readonly
     /// mirror·content-hidden 판정용). ADR-0040 이후 이 술어는 **hard 전용** 이다 —
     /// soft 점유는 절대 true 로 만들지 않는다(입력차단/mirror 회귀 방지). 소비처 5곳

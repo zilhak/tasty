@@ -1588,6 +1588,11 @@ impl Core {
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
 
+        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
+        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        let ws_id = engine.workspaces[ws_idx].id;
+        engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
+
         Ok(vec![CoreEvent::PaneSplit {
             workspace_index: ws_idx,
             original_pane_id: target_pane_id,
@@ -1656,6 +1661,11 @@ impl Core {
         // Phase 3: engine mutate (pane borrow 끝)
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
+
+        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
+        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        let ws_id = engine.workspaces[ws_idx].id;
+        engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
         Ok(vec![CoreEvent::SurfaceSplit {
             workspace_index: ws_idx,
@@ -2613,6 +2623,13 @@ impl Core {
         }
         engine.mark_layout_dirty();
 
+        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
+        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
+            let ws_id = engine.workspaces[ws_idx].id;
+            engine.tap_new_workspace_member(ws_id, surface_id, is_terminal);
+        }
+
         let (tab_count, active_tab) = engine
             .find_pane_by_id(pane_id)
             .map(|p| (p.tabs.len(), p.active_tab))
@@ -2683,6 +2700,14 @@ impl Core {
             factory.forget_surface(pty_id);
         }
         engine.mark_layout_dirty();
+
+        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
+        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        // adopt-terminal 은 항상 터미널을 승격한다(headless PTY).
+        if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
+            let ws_id = engine.workspaces[ws_idx].id;
+            engine.tap_new_workspace_member(ws_id, surface_id, true);
+        }
 
         let (tab_count, active_tab) = engine
             .find_pane_by_id(pane_id)
@@ -3733,6 +3758,199 @@ mod mirror_structural_guard_tests {
             before + 1,
             "비-mirror split 은 로컬 터미널을 1개 늘려야 한다(회귀)"
         );
+    }
+
+    /// (docs/todo-conductor 04) attach 로 이미 점유된 workspace 에서 로컬 생성 경로
+    /// (create-tab/split-pane/split-surface/adopt-terminal)로 새 터미널 surface 가
+    /// 생기면, forward-op 경로(`forward_split_inherits_workspace_occupancy`)와 동형으로
+    /// 그 hard 점유를 상속해야 한다 — 등록이 빠지면 attach 클라이언트에 그 새 surface 가
+    /// 검정 화면으로만 보인다(스트림 tap 이 시작되지 않으므로).
+    #[test]
+    fn create_tab_in_occupied_workspace_inherits_occupancy() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 42;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::CreateTab {
+                    pane_id: pane,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    name: None,
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect("create tab must succeed");
+        let Some(CoreEvent::TabCreated { surface_id, .. }) = events.into_iter().next() else {
+            panic!("expected TabCreated event");
+        };
+
+        assert!(
+            engine.attach.is_hard_occupied(surface_id),
+            "새 tab 의 터미널은 hard 점유를 상속해야 한다"
+        );
+        assert_eq!(
+            engine.attach.workspace_of_surface(surface_id),
+            Some(ws_id),
+            "새 surface 는 점유 workspace 멤버로 등록돼야 한다"
+        );
+        assert_eq!(
+            engine.attach.workspace_holder_of(surface_id),
+            Some(client_id),
+            "새 surface 의 holder 는 workspace holder 와 동일해야 한다"
+        );
+    }
+
+    /// create-tab 과 동형 — `SplitPane` 경로도 같은 gap 후보였다.
+    #[test]
+    fn split_pane_in_occupied_workspace_inherits_occupancy() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 7;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitPane {
+                    target_pane_id: pane,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect("split pane must succeed");
+        let Some(CoreEvent::PaneSplit { new_surface_id, .. }) = events.into_iter().next() else {
+            panic!("expected PaneSplit event");
+        };
+
+        assert!(engine.attach.is_hard_occupied(new_surface_id));
+        assert_eq!(
+            engine.attach.workspace_of_surface(new_surface_id),
+            Some(ws_id)
+        );
+        assert_eq!(
+            engine.attach.workspace_holder_of(new_surface_id),
+            Some(client_id)
+        );
+    }
+
+    /// create-tab 과 동형 — `SplitSurface` 경로도 같은 gap 후보였다.
+    #[test]
+    fn split_surface_in_occupied_workspace_inherits_occupancy() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 9;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect("split surface must succeed");
+        let Some(CoreEvent::SurfaceSplit { new_surface_id, .. }) = events.into_iter().next() else {
+            panic!("expected SurfaceSplit event");
+        };
+
+        assert!(engine.attach.is_hard_occupied(new_surface_id));
+        assert_eq!(
+            engine.attach.workspace_of_surface(new_surface_id),
+            Some(ws_id)
+        );
+        assert_eq!(
+            engine.attach.workspace_holder_of(new_surface_id),
+            Some(client_id)
+        );
+    }
+
+    /// adopt-terminal(headless PTY 승격)도 새 surface_id 를 발급하는 생성 경로라 같은
+    /// gap 후보였다(문서 "범위" 절 참고 — 실측 재현은 안 됐으나 구조적으로 동일).
+    #[test]
+    fn adopt_terminal_in_occupied_workspace_inherits_occupancy() {
+        use crate::core::pty_registry::PtySpawnSpec;
+
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 13;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+
+        let pty_id = engine
+            .pty_registry
+            .register(
+                PtySpawnSpec {
+                    owner_agent_id: "agent-x".into(),
+                    cwd: None,
+                    command: vec![],
+                },
+                std::time::Instant::now(),
+            )
+            .expect("register headless pty");
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(pty_id);
+        let terminal = tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols: 80,
+                rows: 24,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                extra_env: &sh.envs_ref(),
+                surface_id: pty_id,
+                working_dir: None,
+                initial_input: None,
+            },
+            waker,
+        )
+        .expect("spawn headless terminal");
+        engine.terminals.insert(pty_id, terminal);
+
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::AdoptTerminal {
+                    pane_id: pane,
+                    pty_id,
+                },
+            )
+            .expect("adopt must succeed");
+        let Some(CoreEvent::TabCreated { surface_id, .. }) = events.into_iter().next() else {
+            panic!("expected TabCreated event");
+        };
+
+        assert!(engine.attach.is_hard_occupied(surface_id));
+        assert_eq!(engine.attach.workspace_of_surface(surface_id), Some(ws_id));
+        assert_eq!(
+            engine.attach.workspace_holder_of(surface_id),
+            Some(client_id)
+        );
+
+        engine.terminals.remove(surface_id);
     }
 
     /// 18-c e2e: headless PTY spawn 흉내 → `AdoptTerminal` 승격 → (1) 같은 Terminal
