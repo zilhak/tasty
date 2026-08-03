@@ -84,6 +84,16 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 **연결이 끊기면 mirror 는 살아있는 채로 자동 재연결을 시도한다**: heartbeat TTL 만료·force-detach 등 원격발 disconnect 로 앵커(매핑된 워크스페이스) 세션이 끊기면, mirror workspace/터미널을 걷어내는 대신 `Reconnecting` 상태로 전이해 살려두고(`src/app/attach_client.rs::enter_reconnecting`), 지수 백오프(0.5s→30s, ±20% jitter)로 재연결을 자동 시도한다(`src/app/auto_attach.rs::maybe_trigger_reconnect`). 재연결에 성공하면 살아있던 surface 는 scrollback/local id 를 그대로 유지한 채(survivor mapping, `merge_survivor_mapping`) 연결만 새로 맺는다 — 사용자가 아무 조작을 하지 않아도(그 워크스페이스를 계속 보고 있어도) 백그라운드에서 재시도가 진행된다. 사용자가 그 워크스페이스로 전환해 돌아오면(엣지) 백오프 대기 없이 즉시 한 번 더 시도한다. 다른 클라이언트가 여전히 그 원격 워크스페이스를 점유 중이면(`already_attached`) 지수 증가 없이 30초 간격으로 계속 대기하고, 20회 시도 후에도 실패하면 자동 재시도를 멈추고 안내 toast 를 띄운다(단, 그 워크스페이스를 왕복하는 수동 재시도는 계속 유효). 앵커가 없는 임시 mirror(IPC `remote.attach` 등)는 이 대상이 아니라 기존처럼 즉시 정리된다. 상세: [`dev-guide/attach-behavior` "GUI 자동 재연결 스코프"](../../dev-guide/attach-behavior.md#gui-자동-재연결-스코프) / ["재연결 시 세션 상태 보존"](../../dev-guide/attach-behavior.md#재연결-시-세션-상태-보존-todo-28).
 
+### 원격 포트 발견 실패 진단
+
+포트 발견(`ssh.rs::discover_remote_port`, auto fallback 체인 subcommand→file-unix→file-windows)이 전 단계 실패하면 `PortDiscoveryError` 로 원인을 3분류한다 — **원격 stderr 문자열 매칭에 의존하지 않는다**(원격 로케일에 따라 문자열이 달라져 신뢰 불가, 실측: 한국어 "그런 파일이나 디렉터리가 없습니다" / 영어 "No such file or directory"). 대신 ssh(1) exit code 로 로케일 독립적으로 판정한다:
+
+- **SSH 연결 자체 실패**(exit 255, 시그널 종료, 로컬 ssh spawn 실패) — 네트워크/인증 문제.
+- **원격 인스턴스 미실행**(그 외 비정상 종료 — 원격 명령까지는 도달했다는 확정 신호) — 관례 위치에 포트 파일이 없거나 `tasty port` 가 실패. 이 저장소가 다루는 attach 실패의 대다수를 차지하는 케이스.
+- **포트 파싱 실패**(exit 0, stdout 을 포트 숫자로 못 읽음) — 연결·명령은 성공했지만 출력이 이례적(원격 tasty 버전 불일치 등).
+
+각 분류는 `lang/{en,ko,ja}.toml` `[ssh.port_discovery]` 의 번역된 문구로만 노출된다 — 원격 raw stderr·내부 명령(`cat`/`type`)·포트 파일 경로는 에러의 `Display` 에 담기지 않고 생성 시점에 `tracing::debug!` 로만 로그된다(`PortDiscoveryError::detail()`). Auto 체인이 전 단계 실패하면 가장 확정적인 분류(SSH 연결 실패 > 인스턴스 미실행 > 파싱 실패 순)를 대표 에러로 고른다 — 마지막 단계 에러만 남기면 정보량이 가장 적은 사유가 노출되던 문제를 막는다. 이 분류는 `ssh::discover_remote_port`/`remote_browse::resolve_endpoint` 를 공유 소비하는 모든 경로(GUI 원격 워크스페이스 추가 팝업, `tasty remote check`/`remote workspaces`/`tool attach`, IPC `remote.workspaces`/`remote.attach`, 자동 재연결)에 동일하게 적용된다.
+
 ### 원격 생존 확인
 
 `tasty remote check --ssh|--profile` — 원격 인스턴스가 *지금 살아있는지* 단발 판정. 포트 발견만으론 stale 포트 파일을 오판할 수 있어, 터널 수립 후 가벼운 IPC(`system.info`) 1회 응답까지 확인해야 alive(exit 0). 실패(거부/EOF/타임아웃)는 dead(exit≠0).
@@ -184,7 +194,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - (09) 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `notification.rs`. 진행률 배선: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(06 침범 최소) → 08 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러). 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종). i18n `[transfer.progress]`/`[transfer.error]`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-cli/src/remote_browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - mesh mirror(bundled egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
-- CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선).
+- CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선 + `PortDiscoveryError`/`PortDiscoveryFailureKind` 원인 분류, `pick_most_informative` 로 auto 체인 대표 에러 선택).
 
 ## 화면
 

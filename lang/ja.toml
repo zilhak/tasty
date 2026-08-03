@@ -1140,10 +1140,18 @@ no_page = "ページが読み込まれていません"
 loading = "読み込み中…"
 error = "読み込みに失敗しました"
 
+# リモートポート探索失敗の分類(`crates/tasty-cli/src/ssh.rs` `PortDiscoveryError`)。
+# CLI と GUI(リモートワークスペース追加ポップアップ)の両方が共有するため `cli.` prefix
+# を付けない。
+[ssh.port_discovery]
+connection_failed = "SSH 接続に失敗しました(ネットワークまたは認証の問題の可能性があります)。"
+instance_not_running = "リモートホストで実行中の tasty インスタンスが見つからないようです。"
+parse_failed = "リモートホストが報告したポートを解析できませんでした — リモートの tasty バージョンが想定と異なる可能性があります。"
+
 # CLI 出力文字列。`tasty-cli` クレートが共有 i18n ストアを介して読み取る
 # (CLI ブートパスで `run_client` の前に初期化される)。
 [cli.remote_check]
-not_found = "リモート tasty が見つかりません: ポート探索に失敗 (対象={}, 探索モード={})。リモートで tasty が起動しているか確認してください。"
+not_found = "リモート tasty が見つかりません (対象={}, 探索モード={})。"
 tunnel_failed = "リモート tasty は停止している可能性があります: ポート {} は見つかりましたが ssh -L トンネルの確立に失敗 (対象={})。"
 no_ipc_response = "リモート tasty 停止 (stale ポート): ポート {} を発見・トンネル確立しましたが IPC 応答がありません (対象={})。ポートファイルは残っていますがサーバーは停止しているようです。"
 alive_full = "alive: {} (port {}, version {}, {} workspaces)"

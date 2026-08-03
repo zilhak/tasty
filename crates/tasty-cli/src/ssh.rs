@@ -321,13 +321,90 @@ fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
     }
 }
 
-/// 원격에서 한 줄 명령을 실행하고 stdout 을 캡처한다(포트 발견용).
+/// 원격 포트 발견 실패의 원인 분류(로케일 독립 — exit code 기반).
+///
+/// 원격 stderr 문자열 매칭에 의존하지 않는다 — 원격 로케일에 따라 문자열이 달라져
+/// 신뢰할 수 없다(실측: 한국어 로케일은 "그런 파일이나 디렉터리가 없습니다", 영어는
+/// "No such file or directory"). exit code 는 로케일 무관하게 안정적이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortDiscoveryFailureKind {
+    /// SSH 연결/인증 자체가 실패했다(exit 255, 시그널 종료, 또는 로컬 spawn 실패).
+    SshConnectionFailed,
+    /// SSH 연결과 원격 명령 실행은 됐으나 포트를 얻지 못했다(원격에 tasty 인스턴스가
+    /// 없는 것으로 추정 — 관례 위치의 포트 파일 부재, `tasty port` 실패 등).
+    RemoteInstanceNotRunning,
+    /// 명령은 성공했으나(exit 0) stdout 에서 포트 숫자를 파싱하지 못했다.
+    PortParseFailed,
+}
+
+impl PortDiscoveryFailureKind {
+    /// 사용자 노출용 문구 키(`lang/{en,ko,ja}.toml` `[ssh.port_discovery]`). ssh.rs 는
+    /// CLI 전용이 아니라 GUI(remote_attach 팝업)도 공유하므로 `cli.` prefix 를 쓰지
+    /// 않는다(`docs/dev-guide/i18n.md` 일반 네이밍 규칙).
+    fn i18n_key(self) -> &'static str {
+        match self {
+            Self::SshConnectionFailed => "ssh.port_discovery.connection_failed",
+            Self::RemoteInstanceNotRunning => "ssh.port_discovery.instance_not_running",
+            Self::PortParseFailed => "ssh.port_discovery.parse_failed",
+        }
+    }
+}
+
+/// 원격 포트 발견 실패 에러. `kind` 는 사용자 노출/분기 판정용, `detail` 은 원격 raw
+/// stderr·파싱 실패 원문을 담되 **`Display` 에 노출하지 않는다** — 로케일 의존 문자열과
+/// 내부 디스커버리 구현(포트 파일 경로·`cat`/`type` 명령)이 최종 사용자 문구로 새어나가지
+/// 않게 하기 위함(raw stderr 노출 이슈의 근본 수정 지점). 진단이 필요하면 생성 시점에
+/// `tracing::debug!` 로 한 번 남긴다 — 상위에서 `anyhow::Context` 로 감싸도(`.with_context`)
+/// 이 타입의 `Display` 자체가 안전하므로 체인 어디서 출력되어도 raw stderr 가 섞이지 않는다.
+#[derive(Debug)]
+pub struct PortDiscoveryError {
+    pub kind: PortDiscoveryFailureKind,
+    detail: String,
+}
+
+impl PortDiscoveryError {
+    fn new(kind: PortDiscoveryFailureKind, detail: impl Into<String>) -> Self {
+        let detail = detail.into();
+        tracing::debug!(?kind, %detail, "원격 포트 발견 실패");
+        Self { kind, detail }
+    }
+
+    /// 진단용 원문(로그 전용) — `Display` 에는 포함하지 않는다.
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+impl std::fmt::Display for PortDiscoveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", tasty_i18n::t(self.kind.i18n_key()))
+    }
+}
+
+impl std::error::Error for PortDiscoveryError {}
+
+/// `ssh` 프로세스 종료코드를 원인 분류로 매핑한다(순수 함수 — 단위 테스트 대상).
+///
+/// exit 255 는 ssh(1) 자체의 연결/인증 실패 관례 코드(OpenSSH 매뉴얼). 시그널 종료
+/// (`code=None`) 도 원격 명령까지 도달했다고 볼 수 없어 같은 분류. 그 외 코드는 원격
+/// 셸이 명령을 실행하고 낸 종료코드 — "연결은 됐다"는 확정 신호라 인스턴스 미실행으로
+/// 본다. 원격 명령이 이론상 255 를 자체적으로 반환할 가능성은 남지만(문서 한계로 명시),
+/// exit code 가 원격 로케일에 무관한 유일한 신호라 그 한계를 감수한다.
+fn classify_by_exit_code(code: Option<i32>) -> PortDiscoveryFailureKind {
+    match code {
+        Some(255) | None => PortDiscoveryFailureKind::SshConnectionFailed,
+        Some(_) => PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+    }
+}
+
+/// 원격에서 한 줄 명령을 실행하고 stdout 을 캡처한다(포트 발견용). 실패 원인은
+/// [`classify_by_exit_code`] 로 분류해 [`PortDiscoveryError`] 에 담는다.
 fn run_ssh_capture(
     ssh: &Path,
     target: &SshTarget,
     verify: bool,
     remote_argv: &[&str],
-) -> Result<String> {
+) -> Result<String, PortDiscoveryError> {
     let mut args: Vec<String> = Vec::new();
     push_common_opts(&mut args, target, verify);
     args.push(target.destination.clone());
@@ -338,20 +415,25 @@ fn run_ssh_capture(
         .args(&args)
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| anyhow::anyhow!("ssh spawn 실패({}): {e}", ssh.display()))?;
+        .map_err(|e| {
+            PortDiscoveryError::new(
+                PortDiscoveryFailureKind::SshConnectionFailed,
+                format!("ssh spawn 실패({}): {e}", ssh.display()),
+            )
+        })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "원격 명령 실패(code={:?}): {}",
-            output.status.code(),
-            stderr.trim()
-        );
+        let code = output.status.code();
+        return Err(PortDiscoveryError::new(
+            classify_by_exit_code(code),
+            format!("code={code:?}: {}", stderr.trim()),
+        ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// stdout 텍스트에서 포트 숫자를 파싱한다(trailing newline/CR 허용).
-fn parse_port(stdout: &str) -> Result<u16> {
+fn parse_port(stdout: &str) -> Result<u16, PortDiscoveryError> {
     stdout
         .trim()
         .lines()
@@ -359,7 +441,9 @@ fn parse_port(stdout: &str) -> Result<u16> {
         .unwrap_or("")
         .trim()
         .parse::<u16>()
-        .map_err(|_| anyhow::anyhow!("원격 포트 파싱 실패: {:?}", stdout.trim()))
+        .map_err(|_| {
+            PortDiscoveryError::new(PortDiscoveryFailureKind::PortParseFailed, stdout.trim())
+        })
 }
 
 /// debug/release 빌드에 맞는 원격 루트 디렉터리명.
@@ -376,7 +460,7 @@ fn discover_via_subcommand(
     target: &SshTarget,
     remote_tasty: &str,
     verify: bool,
-) -> Result<u16> {
+) -> Result<u16, PortDiscoveryError> {
     let out = run_ssh_capture(ssh, target, verify, &[remote_tasty, "port"])?;
     parse_port(&out)
 }
@@ -396,7 +480,7 @@ fn discover_via_explicit_file(
     target: &SshTarget,
     port_file: &str,
     verify: bool,
-) -> Result<u16> {
+) -> Result<u16, PortDiscoveryError> {
     let cmds = explicit_file_commands(port_file);
     match run_ssh_capture(ssh, target, verify, &[&cmds[0]]).and_then(|o| parse_port(&o)) {
         Ok(port) => return Ok(port),
@@ -413,7 +497,7 @@ fn discover_via_file(
     windows: bool,
     verify: bool,
     debug: bool,
-) -> Result<u16> {
+) -> Result<u16, PortDiscoveryError> {
     let dir = remote_tasty_dir(debug);
     let remote_cmd = if windows {
         format!("type %USERPROFILE%\\{dir}\\tasty.port")
@@ -436,12 +520,36 @@ const AUTO_FALLBACK_CHAIN: [PortMode; 3] = [
     PortMode::FileWindows,
 ];
 
+/// Auto 체인 실패 시 대표로 보여줄 에러 하나를 고른다. 세 단계 모두 실패하면 원인이
+/// 섞일 수 있는데(예: subcommand 는 Windows release 에서 빈 출력으로 파싱 실패, 나머지
+/// 둘은 포트 파일이 없어 인스턴스 미실행) 마지막 단계 에러만 남기면 정보량이 가장 적은
+/// 사유가 사용자에게 보인다(원래 버그). 확실성이 높은 분류를 우선한다:
+/// SSH 연결 자체 실패(다른 무엇도 알 수 없음) > 인스턴스 미실행(원격 명령까지는 도달해
+/// 얻은 확정적 신호) > 포트 파싱 실패(가장 모호함 — 연결·명령 성공, 출력만 이례적).
+/// 동일 kind 가 여럿이면 체인에서 먼저 시도된 것을 쓴다.
+fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryError {
+    const PRIORITY: [PortDiscoveryFailureKind; 3] = [
+        PortDiscoveryFailureKind::SshConnectionFailed,
+        PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+        PortDiscoveryFailureKind::PortParseFailed,
+    ];
+    for kind in PRIORITY {
+        if let Some(pos) = errors.iter().position(|e| e.kind == kind) {
+            return errors.remove(pos);
+        }
+    }
+    errors
+        .pop()
+        .expect("errors 는 AUTO_FALLBACK_CHAIN 시도 횟수만큼 채워져 비어있지 않음")
+}
+
 /// 원격 tasty 데몬의 IPC 포트를 발견한다(plan §4.4).
 ///
 /// `Auto` 는 [`AUTO_FALLBACK_CHAIN`] 순서로 단일 모드를 차례로 시도하고, 한 모드라도
 /// 포트를 내면 즉시 반환한다. subcommand 는 Windows release 에서 "빈 출력 + exit 0"
 /// 으로 조용히 실패할 수 있는데, 이 경우 [`parse_port`] 가 에러를 내며 다음 단계로
-/// 넘어간다(exit code 만으로는 감지 불가).
+/// 넘어간다(exit code 만으로는 감지 불가). 전 단계 실패 시 [`pick_most_informative`] 로
+/// 대표 에러를 고른다.
 pub fn discover_remote_port(
     ssh: &Path,
     target: &SshTarget,
@@ -453,23 +561,30 @@ pub fn discover_remote_port(
 ) -> Result<u16> {
     // 명시 port_file 은 관례 체인보다 최우선 — 비표준 위치의 port 파일도 발견 가능.
     if let Some(pf) = port_file {
-        return discover_via_explicit_file(ssh, target, pf, verify);
+        return Ok(discover_via_explicit_file(ssh, target, pf, verify)?);
     }
     if mode != PortMode::Auto {
-        return discover_single_mode(ssh, target, remote_tasty, mode, verify, debug);
+        return Ok(discover_single_mode(
+            ssh,
+            target,
+            remote_tasty,
+            mode,
+            verify,
+            debug,
+        )?);
     }
 
-    let mut last_err = None;
+    let mut errors = Vec::with_capacity(AUTO_FALLBACK_CHAIN.len());
     for m in AUTO_FALLBACK_CHAIN {
         match discover_single_mode(ssh, target, remote_tasty, m, verify, debug) {
             Ok(port) => return Ok(port),
             Err(e) => {
                 tracing::debug!("{m:?} 포트 발견 실패({e}) — 다음 모드로 fallback");
-                last_err = Some(e);
+                errors.push(e);
             }
         }
     }
-    Err(last_err.expect("AUTO_FALLBACK_CHAIN 은 비어있지 않음"))
+    Err(pick_most_informative(errors).into())
 }
 
 /// 단일(비-Auto) 모드 1회 시도. `Auto` 는 호출 전 체인으로 분해되므로 unreachable.
@@ -480,7 +595,7 @@ fn discover_single_mode(
     mode: PortMode,
     verify: bool,
     debug: bool,
-) -> Result<u16> {
+) -> Result<u16, PortDiscoveryError> {
     match mode {
         PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
         PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
@@ -498,19 +613,22 @@ fn discover_single_mode(
 /// 또는 테스트용 mock 을 주입할 수 있다.
 fn detect_first_success<F>(mut try_mode: F) -> Result<PortMode>
 where
-    F: FnMut(PortMode) -> Result<u16>,
+    F: FnMut(PortMode) -> Result<u16, PortDiscoveryError>,
 {
-    let mut last_err = None;
+    let mut errors = Vec::with_capacity(AUTO_FALLBACK_CHAIN.len());
     for m in AUTO_FALLBACK_CHAIN {
         match try_mode(m) {
             Ok(_) => return Ok(m),
             Err(e) => {
                 tracing::debug!("{m:?} 감지 프로브 실패({e}) — 다음 모드");
-                last_err = Some(e);
+                errors.push(e);
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("프로브 체인이 비어있음")))
+    if errors.is_empty() {
+        return Err(anyhow::anyhow!("프로브 체인이 비어있음"));
+    }
+    Err(pick_most_informative(errors).into())
 }
 
 /// 원격 셸 자동감지 — 프로브 체인을 실제 SSH 로 1회씩 돌려 첫 성공 모드를 반환한다.
@@ -914,6 +1032,91 @@ mod tests {
     }
 
     #[test]
+    fn parse_port_failure_is_classified_as_parse_failed() {
+        // exit 0 + 빈/비숫자 stdout → 포트 파싱 실패로 분류(완료 확인 방법 절 시나리오).
+        assert_eq!(
+            parse_port("").unwrap_err().kind,
+            PortDiscoveryFailureKind::PortParseFailed
+        );
+        assert_eq!(
+            parse_port("not-a-port").unwrap_err().kind,
+            PortDiscoveryFailureKind::PortParseFailed
+        );
+    }
+
+    #[test]
+    fn classify_exit_255_or_signal_is_ssh_connection_failed() {
+        // ssh(1) 관례: 255 = 연결/인증 자체 실패. 시그널 종료(None) 도 원격 명령까지
+        // 도달 못 했다고 보아 같은 분류(완료 확인 방법 절 시나리오).
+        assert_eq!(
+            classify_by_exit_code(Some(255)),
+            PortDiscoveryFailureKind::SshConnectionFailed
+        );
+        assert_eq!(
+            classify_by_exit_code(None),
+            PortDiscoveryFailureKind::SshConnectionFailed
+        );
+    }
+
+    #[test]
+    fn classify_other_exit_codes_are_remote_instance_not_running() {
+        // exit 1 (원격 명령은 실행됐으나 실패) → 인스턴스 미실행으로 분류. 로케일과
+        // 무관하게 exit code 만으로 판정된다(완료 확인 방법 절 "임의 stderr" 시나리오).
+        assert_eq!(
+            classify_by_exit_code(Some(1)),
+            PortDiscoveryFailureKind::RemoteInstanceNotRunning
+        );
+        assert_eq!(
+            classify_by_exit_code(Some(127)),
+            PortDiscoveryFailureKind::RemoteInstanceNotRunning
+        );
+    }
+
+    #[test]
+    fn port_discovery_error_display_never_contains_raw_detail() {
+        // raw stderr(내부 명령·경로 포함)가 Display 로 새어나가지 않는지 회귀 고정.
+        let raw = "cat: /home/zilhak/.tasty/tasty.port: 그런 파일이나 디렉터리가 없습니다";
+        let err = PortDiscoveryError::new(PortDiscoveryFailureKind::RemoteInstanceNotRunning, raw);
+        assert_eq!(err.detail(), raw);
+        assert!(!err.to_string().contains("tasty.port"));
+        assert!(!err.to_string().contains("cat:"));
+    }
+
+    #[test]
+    fn pick_most_informative_prefers_ssh_connection_failed() {
+        let errors = vec![
+            PortDiscoveryError::new(PortDiscoveryFailureKind::PortParseFailed, "a"),
+            PortDiscoveryError::new(PortDiscoveryFailureKind::SshConnectionFailed, "b"),
+            PortDiscoveryError::new(PortDiscoveryFailureKind::RemoteInstanceNotRunning, "c"),
+        ];
+        assert_eq!(
+            pick_most_informative(errors).kind,
+            PortDiscoveryFailureKind::SshConnectionFailed
+        );
+    }
+
+    #[test]
+    fn pick_most_informative_prefers_instance_not_running_over_parse_failed() {
+        // 실측 시나리오: subcommand 는 빈 출력(parse 실패), file-unix/file-windows 는
+        // 포트 파일 없음(인스턴스 미실행) — 더 확정적인 "미실행" 을 대표로 고른다.
+        let errors = vec![
+            PortDiscoveryError::new(PortDiscoveryFailureKind::PortParseFailed, "empty output"),
+            PortDiscoveryError::new(
+                PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+                "no file",
+            ),
+            PortDiscoveryError::new(
+                PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+                "no file",
+            ),
+        ];
+        assert_eq!(
+            pick_most_informative(errors).kind,
+            PortDiscoveryFailureKind::RemoteInstanceNotRunning
+        );
+    }
+
+    #[test]
     fn auto_fallback_chain_order_covers_all_shells() {
         // 회귀 고정: Auto 는 subcommand → file-unix → file-windows 순서여야 한다.
         // 이 순서가 깨지면 cmd DefaultShell 원격(file-windows 만 성공)에서 attach 불가.
@@ -952,7 +1155,10 @@ mod tests {
             if m == PortMode::FileWindows {
                 Ok(45123)
             } else {
-                Err(anyhow::anyhow!("probe {m:?} failed"))
+                Err(PortDiscoveryError::new(
+                    PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+                    format!("probe {m:?} failed"),
+                ))
             }
         })
         .unwrap();
@@ -983,7 +1189,12 @@ mod tests {
 
     #[test]
     fn detect_first_success_all_fail_is_err() {
-        let r = detect_first_success(|m| Err(anyhow::anyhow!("{m:?} down")));
+        let r = detect_first_success(|m| {
+            Err(PortDiscoveryError::new(
+                PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+                format!("{m:?} down"),
+            ))
+        });
         assert!(r.is_err());
     }
 

@@ -1146,10 +1146,18 @@ no_page = "No page loaded"
 loading = "Loading…"
 error = "Failed to load"
 
+# Remote port discovery failure classification (`crates/tasty-cli/src/ssh.rs`
+# `PortDiscoveryError`). Shared by CLI and GUI (remote workspace attach popup),
+# so no `cli.` prefix.
+[ssh.port_discovery]
+connection_failed = "SSH connection failed (this may be a network or authentication problem)."
+instance_not_running = "No tasty instance appears to be running on the remote host."
+parse_failed = "Could not parse the port reported by the remote host — the remote tasty version may be unexpected."
+
 # CLI output strings. The `tasty-cli` crate reads these through the shared
 # i18n store (initialized on the CLI boot path before `run_client`).
 [cli.remote_check]
-not_found = "Remote tasty not found: port discovery failed (target={}, discovery mode={}). Check that tasty is running on the remote."
+not_found = "Remote tasty not found (target={}, discovery mode={})."
 tunnel_failed = "Remote tasty likely dead: port {} found but ssh -L tunnel setup failed (target={})."
 no_ipc_response = "Remote tasty dead (stale port): port {} found and tunnel established, but no IPC response (target={}). The port file remains but the server appears to be dead."
 alive_full = "alive: {} (port {}, version {}, {} workspaces)"

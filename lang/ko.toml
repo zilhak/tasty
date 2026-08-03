@@ -1139,10 +1139,17 @@ no_page = "로드된 페이지 없음"
 loading = "불러오는 중…"
 error = "불러오지 못했습니다"
 
+# 원격 포트 발견 실패 분류(`crates/tasty-cli/src/ssh.rs` `PortDiscoveryError`). CLI와
+# GUI(원격 워크스페이스 추가 팝업) 양쪽이 공유하므로 `cli.` prefix 를 쓰지 않는다.
+[ssh.port_discovery]
+connection_failed = "SSH 연결에 실패했습니다 (네트워크 또는 인증 문제일 수 있습니다)."
+instance_not_running = "원격 호스트에 실행 중인 tasty 인스턴스가 없는 것 같습니다."
+parse_failed = "원격 호스트가 보고한 포트를 해석하지 못했습니다 — 원격 tasty 버전이 예상과 다를 수 있습니다."
+
 # CLI 출력 문자열. `tasty-cli` 크레이트가 공용 i18n 스토어를 통해 읽는다
 # (CLI 부트 경로에서 `run_client` 이전에 초기화됨).
 [cli.remote_check]
-not_found = "원격 tasty 미발견: 포트 발견 실패 (대상={}, 발견 모드={}). 원격에 tasty 가 떠 있는지 확인하세요."
+not_found = "원격 tasty 미발견 (대상={}, 발견 모드={})."
 tunnel_failed = "원격 tasty 죽음 추정: 포트 {} 발견했으나 ssh -L 터널 수립 실패 (대상={})."
 no_ipc_response = "원격 tasty 죽음(stale 포트): 포트 {} 발견·터널 수립했으나 IPC 응답 없음 (대상={}). 포트 파일은 남았지만 서버가 죽은 상태로 보입니다."
 alive_full = "alive: {} (port {}, version {}, {} workspaces)"

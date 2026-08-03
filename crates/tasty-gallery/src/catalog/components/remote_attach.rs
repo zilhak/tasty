@@ -410,6 +410,10 @@ fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState
             "Establishing the SSH tunnel to gb10 and listing workspaces. This can take a few seconds.",
             false,
         ),
+        // 실제 에러 클래스와 동기화(갤러리 완전성 정책) — `PortDiscoveryFailureKind::
+        // RemoteInstanceNotRunning` (`crates/tasty-cli/src/ssh.rs`), 문구는
+        // `lang/en.toml` `ssh.port_discovery.instance_not_running` 과 동일. 원격
+        // stderr/포트 파일 경로 같은 내부 구현은 노출하지 않는다.
         RaState::Error => center_state(
             ui,
             theme,
@@ -419,7 +423,7 @@ fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState
             false,
             "Can't connect",
             theme.text_primary(),
-            "SSH authentication failed — passkey \u{201c}old-rsa\u{201d} was rejected by legacy-box.",
+            "No tasty instance appears to be running on the remote host.",
             true,
         ),
         RaState::Empty => center_state(
