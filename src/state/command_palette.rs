@@ -11,7 +11,7 @@
 //! - 호스트: `tasty_settings::KeybindingSettings::GENERAL_BINDING_FIELDS`. 새
 //!   단축키를 추가하면 자동으로 팔레트에도 노출되므로 별도 등록 필요 없음.
 //! - Plugin: `AppState.palette_plugin_commands`(`PluginManager::plugin_palette_commands()`
-//!   snapshot, TODO 46). **`CommandScope::Global`만** 노출한다 — `Surface` scope
+//!   snapshot). **`CommandScope::Global`만** 노출한다 — `Surface` scope
 //!   명령은 owner plugin의 surface가 포커스되어 있을 때만 의미가 있는데, 팔레트
 //!   실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키
 //!   경로 `match_global_shortcut`과 동일 판단 — `plugin_palette_commands()`가 이미

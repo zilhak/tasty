@@ -392,7 +392,7 @@ pub struct AppState {
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
     pub(crate) tool_registry: crate::plugin::tool_registry::ToolRegistry,
 
-    /// Command palette(TODO 46)에 노출할 plugin 전역 command snapshot. `tool_registry`와
+    /// Command palette에 노출할 plugin 전역 command snapshot. `tool_registry`와
     /// 동형 — PluginManager가 plugin 라이프사이클 변경 시
     /// `mgr.plugin_palette_commands()`로 갱신한다(`App::refresh_palette_plugin_commands`,
     /// `tool_registry_dirty`와 동일 트리거 조건). draw 함수는 `PluginManager`에 직접

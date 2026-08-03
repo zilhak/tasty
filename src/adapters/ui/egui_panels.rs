@@ -228,7 +228,7 @@ pub fn draw_egui_panels(
     // Restore extracted view stores before any further `state` access below.
     state.explorer_views = explorer_views;
 
-    // (ADR-0059/TODO 36) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
+    // (ADR-0059) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
     // 옮긴다 — 루프 안에서는 `engine` 이 이미 `ws`/`pane`/`tab`/`surface` 로 배타 차용
     // 중이라 직접 push 할 수 없다(outbox 패턴, `pending_explorer_action` 과 동형).
     for (sid, req) in state.explorer_views.drain_outbox() {

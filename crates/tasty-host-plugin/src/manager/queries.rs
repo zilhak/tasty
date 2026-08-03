@@ -67,7 +67,7 @@ impl PluginManager {
         out
     }
 
-    /// Command palette(TODO 46)에 노출할 plugin 전역(`CommandScope::Global`) command
+    /// Command palette에 노출할 plugin 전역(`CommandScope::Global`) command
     /// 목록. 비활성 plugin은 제외한다 — `command_registry`(`iter_global`) 자체는
     /// disabled 여부와 무관하게 모든 발견된 plugin의 command를 담고 있다(설정 UI가
     /// 비활성 plugin도 단축키를 미리 바인딩할 수 있어야 하므로 의도된 동작,

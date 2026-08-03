@@ -164,7 +164,7 @@ pub(crate) struct PendingListDirForward {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
     pub(crate) dir: String,
-    /// (ADR-0059/TODO 36) 이 요청의 **소비자** — `None` = File Picker(기존 단일
+    /// (ADR-0059) 이 요청의 **소비자** — `None` = File Picker(기존 단일
     /// `FpLoadState` 매칭), `Some(surface_id)` = explorer(그 surface 의 `ExplorerView`
     /// 가 경로별 pending 상태로 자체 추적). `MirrorEvent::ListDirResult` 도착 시 App
     /// 레이어가 이 태그로 라우팅을 분기한다 — host 범용 "request_id → consumer"

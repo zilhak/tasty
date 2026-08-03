@@ -2393,7 +2393,7 @@ const LABEL_COL_WIDTH: f32 = 112.0;
 /// 디자인 `marginLeft: 124px`.
 const HINT_INDENT: f32 = LABEL_COL_WIDTH + 12.0;
 
-// ── selectable 텍스트 (TODO 77) ──────────────────────────────────────────
+// ── selectable 텍스트 ──────────────────────────────────────────────────
 // egui `Label` 의 드래그 선택은 내장 `LabelSelectionState::cursor_for()` 가 처리하는데,
 // 드래그 중 포인터가 위젯 rect 밖으로 세로(y)로 나가는 경우만 처리하고 가로(x) 이탈은
 // 그 프레임에 selection cursor 갱신이 안 돼 선택이 멈춘다(egui 이슈 #3816 — "top-down

@@ -26,7 +26,7 @@ pub enum LoadState {
     Error(String),
 }
 
-/// (ADR-0059/TODO 36) 원격 mirror 디렉토리 응답 소프트 타임아웃 — File Picker
+/// (ADR-0059) 원격 mirror 디렉토리 응답 소프트 타임아웃 — File Picker
 /// (`file_picker.rs::LIST_DIR_SOFT_TIMEOUT`)와 동일 값. 상수 자체를 공유하진 않는다
 /// (두 모듈이 서로를 참조할 근거가 없는 독립 소비자 — 값의 우연한 일치일 뿐).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);

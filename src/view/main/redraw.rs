@@ -713,7 +713,7 @@ impl MainView {
     /// 순서를 직접 바꾸지 않고 `MoveTab` 을 원격으로 forward 한다(로컬 실행은
     /// 원격 트리와 어긋남) — forward 가 안 먹힌(비-mirror) 워크스페이스에서만
     /// 로컬 `pane.move_tab` 을 수행한다. Move Left/Right 양쪽에서 동일 로직이라
-    /// 공용화(과거엔 두 곳에 중복 — TODO79 배치7).
+    /// 공용화(과거엔 두 곳에 중복).
     fn move_tab_via_mirror_or_local(&mut self, pane_id: u32, from_index: usize, to_index: usize) {
         let mirror_op = self
             .core_state
