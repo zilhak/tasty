@@ -25,6 +25,7 @@
 
 - agent DAG `TaskCommand::Custom.poll`(`PollSpec`)의 `interval_ms` 필드가 생략 가능해졌다 — 기본값 500ms. 이전에는 필수 필드라 생략 시 역직렬화가 실패했다.
 - (BREAK) agent DAG `TaskCommand::Reduce.inputs` 가 `depends_on` 과 동일한 암묵적 의존성으로 승격됐다. 이전에는 `depends_on` 없는 `Reduce` task 가 생성 즉시 `ready`→dispatch 되어, 아직 미완인 입력을 `succeeded:false`+`output:null` 로 조용히 수집하고 `Succeeded` 로 마감했다(`all`/`merge_json`/`concat_text` 전략에서 특히 위험 — 실제로 존재하는 값 대신 `null` 을 합성). 이제는 입력이 전부 종결(성공/실패 무관, terminal 상태)될 때까지 `waiting` 을 유지한 뒤 `ready` 로 진행한다. `Reduce.inputs` 는 사이클 검출 대상에도 포함된다.
+- agent DAG `TaskCommand::Run`(`agent.task_create`)이 stdout/stderr 를 캡처한다 — 이전에는 자식이 호스트의 stdio 를 그대로 상속해 `result.output` 이 `{"pid": N}` 뿐이었다. 이제 성공 시 `result.output` 에 `stdout`/`stderr` 각각 마지막 64KiB(tail) + `truncated`/`dropped_bytes` 가 담기고, 실패(비0 exit) 시엔 같은 내용이 `result.error` 문자열에 포함된다 — `cargo build` 등을 `Run` 으로 돌렸을 때 실패 원인을 exit code 만으로 추측하지 않아도 된다.
 
 ### Removed
 

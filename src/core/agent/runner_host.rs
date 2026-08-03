@@ -424,22 +424,47 @@ impl HostExecutor {
                 if let Some(c) = cwd {
                     cmd.current_dir(c);
                 }
+                cmd.stdout(std::process::Stdio::piped());
+                cmd.stderr(std::process::Stdio::piped());
                 let mut child = cmd
                     .spawn()
                     .map_err(|e| format!("Run spawn '{program}': {e}"))?;
                 let pid = child.id();
+                // 파이프 교착 회피: `wait()` 전에 stdout/stderr 를 각각 별도 스레드로
+                // 드레인 시작. 읽지 않고 wait() 하면 자식이 OS 파이프 버퍼(16~64KB)를
+                // 채우고 block, 부모는 그 자식의 종료를 기다리므로 둘 다 영원히 멈춘다.
+                let stdout_pipe = child.stdout.take().expect("stdout piped");
+                let stderr_pipe = child.stderr.take().expect("stderr piped");
+                let stdout_thread = thread::Builder::new()
+                    .name(format!("agent-shell-stdout-pid{pid}"))
+                    .spawn(move || drain_capped(stdout_pipe))
+                    .map_err(|e| format!("Run stdout drain spawn '{program}': {e}"))?;
+                let stderr_thread = thread::Builder::new()
+                    .name(format!("agent-shell-stderr-pid{pid}"))
+                    .spawn(move || drain_capped(stderr_pipe))
+                    .map_err(|e| format!("Run stderr drain spawn '{program}': {e}"))?;
                 let result_cell: Arc<Mutex<Option<PollOutcome>>> = Arc::new(Mutex::new(None));
                 let cell_clone = result_cell.clone();
                 let mem_clone = self.ctx.memory.clone();
                 let task_id_clone = task.id.clone();
                 let ws = task.workspace_id;
+                // task 당 스레드가 3개(watcher + stdout/stderr drain)로 는다 — drain
+                // 스레드가 EOF 까지 읽는 동안 watcher 는 child.wait() 로 exit status 를
+                // 기다리고, 그 뒤 두 drain 스레드를 join 해 캡처 결과를 조립한다.
                 let watcher = thread::Builder::new()
                     .name(format!("agent-shell-watcher-pid{pid}"))
                     .spawn(move || {
-                        let outcome = match child.wait() {
-                            Ok(status) => {
-                                shell_outcome_from_status(pid, status.code(), status.success())
-                            }
+                        let status = child.wait();
+                        let stdout = stdout_thread.join().unwrap_or_default();
+                        let stderr = stderr_thread.join().unwrap_or_default();
+                        let outcome = match status {
+                            Ok(status) => shell_outcome_from_status(
+                                pid,
+                                status.code(),
+                                status.success(),
+                                stdout,
+                                stderr,
+                            ),
                             Err(e) => PollOutcome::Failed(format!("Run wait: {e}")),
                         };
                         persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
@@ -742,16 +767,108 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 스트림당 tail 상한 (64 KiB). 캡처 결과는 `run_result` 키 하나로 memory store 에
+/// JSON 직렬화되어 들어가는데, 그 store 는 값 하나당 1 MiB(`MemoryConfig::entry_max_bytes`)
+/// 를 넘으면 거부한다. JSON 이스케이프 최악의 경우(cargo 출력의 ANSI ESC 등 제어문자가
+/// `\u00XX` 6바이트로 팽창)를 가정해도 64 KiB × 2스트림 raw → 최악 768 KiB 로 1 MiB
+/// 아래에 안전하게 들어간다. tail(마지막 N바이트)을 남기는 이유: 빌드 도구는 실패
+/// 요약과 실패 지점을 대개 출력 뒤쪽에 남긴다 — 첫 에러가 앞쪽에 있으면 놓친다는
+/// 한계가 있고(v1 범위), ANSI 는 벗기지 않고 그대로 보존한다(벗기는 구현은 후속).
+const CAPTURE_TAIL_CAP: usize = 64 * 1024;
+
+/// 자식 stdout/stderr 드레인 스레드가 모은 결과 — 마지막 [`CAPTURE_TAIL_CAP`] 바이트만
+/// 보관한다. `truncated`/`dropped_bytes` 는 절단이 실제로 일어났는지, 얼마나 버렸는지
+/// 를 담아 `TaskResult.output` 에 그대로 실린다.
+#[derive(Debug, Default)]
+pub(crate) struct DrainedStream {
+    data: Vec<u8>,
+    truncated: bool,
+    dropped_bytes: u64,
+}
+
+impl DrainedStream {
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.data).into_owned()
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        json!({
+            "text": self.text(),
+            "truncated": self.truncated,
+            "dropped_bytes": self.dropped_bytes,
+        })
+    }
+}
+
+/// 자식 stdout/stderr 파이프를 EOF 까지 계속 읽으면서 마지막 [`CAPTURE_TAIL_CAP`]
+/// 바이트만 남긴다(ring buffer 대신 단순 drain — 상한이 64KiB 라 성능 문제 없음).
+///
+/// **호출자 주의**: 이 함수는 자식이 stdio 를 닫을 때까지(보통 종료 시점) block 한다.
+/// `child.wait()` 와 **반드시 별도 스레드**에서 동시에 돌려야 한다 — 안 그러면 자식이
+/// OS 파이프 버퍼를 채우고 block, 부모가 그 자식의 wait() 를 기다리는 교착이 생긴다.
+fn drain_capped<R: std::io::Read>(mut reader: R) -> DrainedStream {
+    let mut data = Vec::with_capacity(CAPTURE_TAIL_CAP);
+    let mut dropped_bytes: u64 = 0;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                data.extend_from_slice(&chunk[..n]);
+                if data.len() > CAPTURE_TAIL_CAP {
+                    let excess = data.len() - CAPTURE_TAIL_CAP;
+                    data.drain(0..excess);
+                    dropped_bytes += excess as u64;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    DrainedStream {
+        truncated: dropped_bytes > 0,
+        dropped_bytes,
+        data,
+    }
+}
+
 /// K.A-1: `ExitStatus` → `PollOutcome` 변환 (poll 의 try_wait fast path 와 동일 의미).
-pub(crate) fn shell_outcome_from_status(pid: u32, code: Option<i32>, success: bool) -> PollOutcome {
+/// 결정 2·3: stdout/stderr 캡처(각 tail 64KiB + truncated/dropped_bytes)를 성공 시엔
+/// `TaskResult.output` 에, 실패 시엔(Failed 가 `String` 하나만 나를 수 있는 계약이라)
+/// 에러 메시지에 함께 실어 실패 진단(예: `cargo build` 컴파일 에러 본문)을 가능하게 한다.
+pub(crate) fn shell_outcome_from_status(
+    pid: u32,
+    code: Option<i32>,
+    success: bool,
+    stdout: DrainedStream,
+    stderr: DrainedStream,
+) -> PollOutcome {
     if success {
         PollOutcome::Done(TaskResult {
             exit_code: code,
-            output: Some(json!({ "pid": pid })),
+            output: Some(json!({
+                "pid": pid,
+                "stdout": stdout.to_json(),
+                "stderr": stderr.to_json(),
+            })),
             error: None,
         })
     } else {
-        PollOutcome::Failed(format!("Run exited non-zero: code={:?}", code))
+        let stdout_note = if stdout.truncated {
+            format!(" (truncated, {} bytes dropped)", stdout.dropped_bytes)
+        } else {
+            String::new()
+        };
+        let stderr_note = if stderr.truncated {
+            format!(" (truncated, {} bytes dropped)", stderr.dropped_bytes)
+        } else {
+            String::new()
+        };
+        PollOutcome::Failed(format!(
+            "Run exited non-zero: code={:?}\n--- stdout{stdout_note} ---\n{}\n--- stderr{stderr_note} ---\n{}",
+            code,
+            stdout.text(),
+            stderr.text(),
+        ))
     }
 }
 
@@ -1017,6 +1134,177 @@ mod tests {
         }
         // shell_children 에서도 제거됐는지.
         assert!(!exec.shell_children.contains_key(&pid));
+    }
+
+    /// 테스트 전용 Run task 빌더 — 필드 대부분이 테스트마다 동일해 중복 축소.
+    #[cfg(unix)]
+    fn mk_run_task(id: &str, command: Vec<&str>) -> Task {
+        use tasty_agent::OnFailure;
+        Task {
+            id: id.to_string(),
+            workspace_id: 1,
+            name: id.to_string(),
+            command: TaskCommand::Run {
+                command: command.into_iter().map(str::to_string).collect(),
+                workspace_id: 1,
+                cwd: None,
+            },
+            state: tasty_agent::TaskState::Running,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        }
+    }
+
+    /// dispatch 후 `exec.poll` 을 terminal 상태 도달까지 반복 — 도달 못 하면(교착 등)
+    /// `max_ticks * 50ms` 후 panic 해 회귀를 잡는다("영원히 hang" 대신 실패로 드러남).
+    #[cfg(unix)]
+    fn poll_until_terminal(
+        exec: &mut HostExecutor,
+        handle: &DispatchHandle,
+        max_ticks: u32,
+    ) -> PollOutcome {
+        for _ in 0..max_ticks {
+            match exec.poll(handle) {
+                PollOutcome::Active => std::thread::sleep(Duration::from_millis(50)),
+                other => return other,
+            }
+        }
+        panic!(
+            "task did not reach a terminal state within {}ms — possible pipe deadlock",
+            max_ticks * 50
+        );
+    }
+
+    /// A: 출력이 있는 Run 명령의 stdout 이 `TaskResult.output` 에 담기는지 확인
+    /// (완료 확인 방법 §1 — 구현 전에는 output 이 `{"pid": N}` 뿐이라 반드시 실패).
+    #[cfg(unix)]
+    #[test]
+    fn shell_dispatch_captures_stdout_in_output() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let task = mk_run_task("t-sh-capture", vec!["sh", "-c", "echo hello; exit 0"]);
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match poll_until_terminal(&mut exec, &handle, 40) {
+            PollOutcome::Done(r) => {
+                assert_eq!(r.exit_code, Some(0));
+                let stdout_text = r
+                    .output
+                    .as_ref()
+                    .and_then(|o| o.get("stdout"))
+                    .and_then(|s| s.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                assert!(
+                    stdout_text.contains("hello"),
+                    "expected stdout text to contain 'hello', got {stdout_text:?}"
+                );
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// A: 비0 종료 — state 는 Failed, exit code 는 에러 메시지에 명시(완료 확인 방법 §2).
+    #[cfg(unix)]
+    #[test]
+    fn shell_dispatch_nonzero_exit_fails_with_exit_code_in_error() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let task = mk_run_task("t-sh-fail", vec!["sh", "-c", "exit 3"]);
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match poll_until_terminal(&mut exec, &handle, 40) {
+            PollOutcome::Failed(err) => assert!(
+                err.contains("Some(3)"),
+                "expected error to mention exit code 3, got {err}"
+            ),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    /// B: 대용량 stdout(파이프 버퍼 상한을 훌쩍 넘는 2MB) 을 내는 명령이 교착 없이
+    /// 종결되는지 확인 — `Stdio::piped()` 만 붙이고 드레인을 안 하면 여기서 hang 한다.
+    #[cfg(unix)]
+    #[test]
+    fn shell_dispatch_large_stdout_does_not_deadlock() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let task = mk_run_task("t-sh-bigout", vec!["sh", "-c", "yes | head -c 2000000"]);
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        // 대용량 출력 드레인 여유를 두고 넉넉한 timeout(10s).
+        match poll_until_terminal(&mut exec, &handle, 200) {
+            PollOutcome::Done(r) => {
+                assert_eq!(r.exit_code, Some(0));
+                let stdout = r.output.as_ref().and_then(|o| o.get("stdout")).cloned();
+                let truncated = stdout
+                    .as_ref()
+                    .and_then(|s| s.get("truncated"))
+                    .and_then(|t| t.as_bool())
+                    .unwrap_or(false);
+                assert!(truncated, "2MB stdout should exceed the 64KiB tail cap");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// B: stderr 만 대량 출력하는 케이스 — 한 스트림만 안 읽어도 교착하므로 별도 확인.
+    #[cfg(unix)]
+    #[test]
+    fn shell_dispatch_large_stderr_does_not_deadlock() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let task = mk_run_task(
+            "t-sh-bigerr",
+            vec!["sh", "-c", "yes | head -c 2000000 1>&2"],
+        );
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match poll_until_terminal(&mut exec, &handle, 200) {
+            PollOutcome::Done(r) => {
+                assert_eq!(r.exit_code, Some(0));
+                let stderr = r.output.as_ref().and_then(|o| o.get("stderr")).cloned();
+                let truncated = stderr
+                    .as_ref()
+                    .and_then(|s| s.get("truncated"))
+                    .and_then(|t| t.as_bool())
+                    .unwrap_or(false);
+                assert!(truncated, "2MB stderr should exceed the 64KiB tail cap");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// 결정 2: `drain_capped` 가 상한 초과 시 tail 만 남기고 dropped_bytes 를 정확히
+    /// 누적하는지 — 파이프/스레드 없이 순수 로직만 단위 테스트.
+    #[test]
+    fn drain_capped_truncates_to_tail_and_tracks_dropped_bytes() {
+        // CAPTURE_TAIL_CAP(64KiB) 보다 큰 입력 — 앞부분은 버려지고 뒷부분(tail)만 남아야.
+        let total = CAPTURE_TAIL_CAP + 100;
+        let mut input = vec![b'a'; total];
+        // 마지막 100 바이트만 다른 값으로 표시해 tail 이 실제로 "끝부분"인지 확인.
+        for b in input.iter_mut().rev().take(100) {
+            *b = b'b';
+        }
+        let result = drain_capped(std::io::Cursor::new(input));
+        assert_eq!(result.data.len(), CAPTURE_TAIL_CAP);
+        assert!(result.truncated);
+        assert_eq!(result.dropped_bytes, 100);
+        assert!(result.data.iter().all(|&b| b == b'b' || b == b'a'));
+        assert!(result.data.ends_with(&[b'b'; 100]));
     }
 
     /// 범용 폴링 핸들 헬퍼 — 특정 에이전트와 무관한 임의 poll method 로.

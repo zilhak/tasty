@@ -1,10 +1,10 @@
 //! Task primitive — DAG, 상태 머신, memory 영속.
 //!
 //! 의도적으로 IPC/GUI와 독립적이다. 호스트는 본 모듈의 API를 호출해 task 모델을
-//! 영속하고, 별도 스케줄러가 `Ready` 상태 task를 실제로 실행한다 (`Run`은
-//! `tab.create + cmd`, `Custom`은 임의 IPC dispatch — 옵션 폴링 포함, `Reduce`는 본
-//! 크레이트 내부 reducer로). 실행 완료 신호가 들어오면 호스트가 `TaskStore::set_state`로
-//! 진행시키고 downstream의 readiness가 갱신된다.
+//! 영속하고, 별도 스케줄러가 `Ready` 상태 task를 실제로 실행한다 (`Run`은 Surface
+//! 없는 bare subprocess spawn + stdout/stderr 캡처, `Custom`은 임의 IPC dispatch —
+//! 옵션 폴링 포함, `Reduce`는 본 크레이트 내부 reducer로). 실행 완료 신호가 들어오면
+//! 호스트가 `TaskStore::set_state`로 진행시키고 downstream의 readiness가 갱신된다.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -116,7 +116,9 @@ pub struct InlineFallbackSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskCommand {
-    /// 새 terminal surface에서 일반 명령 실행.
+    /// Surface(Tab) 없는 bare subprocess 로 일반 명령 실행. stdout/stderr 를 각각
+    /// 마지막 64KiB(tail)까지 캡처해 `TaskResult.output`(성공 시) 또는 에러 메시지
+    /// (실패 시)에 싣는다 — tty 가 필요한 명령은 지원하지 않는다(그건 `pty.*`의 몫).
     Run {
         command: Vec<String>,
         workspace_id: WorkspaceId,
@@ -230,7 +232,11 @@ pub struct TaskResult {
     /// 종료 코드 (Run의 exit_code 등).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    /// 실행 산출물 (Custom의 IPC 응답, 폴링 종료 시 마지막 응답 등).
+    /// 실행 산출물 (Custom의 IPC 응답, 폴링 종료 시 마지막 응답 등). `Run`(성공 시)은
+    /// `{"pid", "stdout": {"text","truncated","dropped_bytes"}, "stderr": {..}}` 형태 —
+    /// 각 스트림은 마지막 64KiB(tail)만 보관하고, 상한을 넘긴 만큼만 `truncated`/
+    /// `dropped_bytes` 로 알린다. `Run` 실패 시엔 이 필드가 아니라 `error` 에 캡처
+    /// 결과가 실린다(`TaskExecutor::poll` 계약상 `Failed` 는 문자열 하나만 나른다).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<serde_json::Value>,
     /// 에러 사유 (Failed 상태에서만).

@@ -32,7 +32,7 @@
 ## Alternatives Considered
 
 - **A. 기존 `terminal.*` 확장** (자식 터미널 기계에 headless 플래그/옵션을 추가) — 기각. `terminal.*` 은 Surface 생성·라이브 트리 판정·Surface 닫기에 묶여 있고 권한도 `Surface*` 를 포함한다. headless 를 여기 얹으면 "Surface 를 만들되 안 보이게" 같은 특수 분기가 핵심 경로에 번지고, headless 인데도 `SurfaceWrite`/`SurfaceRead` 권한을 요구하게 되어 사용자 상태 비접촉 원칙이 깨진다. Surface 유무는 옵션이 아니라 **다른 축**이라 네임스페이스를 가르는 게 더 깨끗하다.
-- **B. `runner_host` 의 shell 서브프로세스 관리에 편입** — 기각. `runner_host` 의 `shell_children` 은 `agent.task` DAG 러너의 subprocess 추적에 특화돼 있고, PTY(터미널 emulation·화면 텍스트 읽기·stdin 주입) 가 아니라 stdout/stderr 캡처 모델이다. `pty.read`(화면 텍스트)·`pty.write`(as-is stdin) 요구와 맞지 않는다. exit-code watcher **패턴**만 이식하고 registry 는 분리했다.
+- **B. `runner_host` 의 shell 서브프로세스 관리에 편입** — 기각. `runner_host` 의 `shell_children` 은 `agent.task` DAG 러너의 subprocess 추적에 특화돼 있고, PTY(터미널 emulation·화면 텍스트 읽기·stdin 주입) 가 아니라 stdout/stderr 캡처 모델이다(실제로 `Stdio::piped()` + 드레인 스레드로 스트림당 64KiB tail 을 캡처한다 — [dev-guide/agent-runner](../dev-guide/agent-runner.md#run-출력-캡처)). `pty.read`(화면 텍스트)·`pty.write`(as-is stdin) 요구와 맞지 않는다. exit-code watcher **패턴**만 이식하고 registry 는 분리했다.
 - **C. `pty.*` 전용 새 권한 토큰(`PtySpawn`/`PtyWrite`/…) 신설** — 기각. 기존 `TerminalSpawn`/`TerminalWrite`/`TerminalRead` 3종이 "Surface 유무와 무관한 PTY 자체 권한"으로 이미 세분화돼 있어 그대로 재사용 가능하다. 새 토큰은 `plugin-permissions.md` 의 5단계 추가 절차를 요구하고, 기존 plugin 이 별도 재승인을 받아야 해서 승인 피로만 늘린다.
 
 ## Reconsideration Triggers

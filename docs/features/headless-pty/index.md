@@ -39,7 +39,7 @@
 ## 비-목표 (Out of scope)
 
 - **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(ADR-0040)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
-- **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess 를 이 primitive 위로 옮기는 것은 별도 작업(TODO 19).
+- **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess(`runner_host.rs` 의 `shell_children`) 를 이 primitive 위로 옮기는 것은 범위 밖이다. `Run` 은 bare subprocess + `Stdio::piped()` 캡처로 대응한다(argv 의미·exit code 주체·재시작 수명을 그대로 유지하는 게 우선이라 tty 지원은 필요해질 때 재검토) — [dev-guide/agent-runner](../../dev-guide/agent-runner.md#run-출력-캡처).
 - **blocking wait** — `pty.wait` 는 즉시 반환 폴링이다(다른 poll-based 모델과 동일). 호출자가 반복 폴링한다.
 
 ## Acceptance Criteria
