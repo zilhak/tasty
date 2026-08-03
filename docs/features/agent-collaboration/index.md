@@ -13,9 +13,11 @@
 
 ## 내부 동작
 
-### Poll-based 모델
+### `*_await` — 메서드마다 다르다
 
-`*_await` 는 blocking 이 아니라 **현재 상태 즉시 응답**(poll). 호출자가 terminal 상태가 아니면 반복 호출한다 — blocking await 의 lock-up 위험을 피하기 위해. (scheduler 도입 시 long-poll 로 분기 예정.)
+`barrier_await` 는 blocking 이 아니라 **현재 상태 즉시 응답**(poll, `barrier_state` 의 alias) — 호출자가 terminal 상태가 아니면 반복 호출한다.
+
+`task_await` 는 **진짜 blocking** 이다(`TaskWakerHub` 기반, 워커 스레드에서 처리). `timeout_ms` 생략 시 기본 10분(600,000ms, 잠정값 — 실사용 경험이 쌓이면 재조정)까지 대기하고, 그 안에 terminal 에 도달하지 못하면 `{"outcome":"timed_out"}` 으로 반환한다. `timeout_ms: 0` 을 명시하면 이 기본값을 우회해 무한 대기한다. **local caller 전용**(`local_only`) — `approval.await` 와 대칭으로, plugin SDK 는 단일 워커 스레드가 요청을 직렬 처리하므로 plugin 이 `task_await` 로 블록되면 자기 자신의 다른 host→plugin 요청을 전혀 처리하지 못한다(자기 자신이 호출한 응답 수신은 별도 경로라 자기-교착까지는 아니지만, 그 task 가 자신을 다시 호출하는 구성이면 dispatch 타임아웃(5s)으로 정상 작업이 실패한다). plugin 은 대신 완료 판정 전략(`[[contributes.completion_strategy]]`)을 선언해 러너가 대신 기다리게 하거나, `task_get` 을 폴링한다.
 
 ### 6 primitive
 

@@ -308,14 +308,24 @@ pub fn handle_task_retry(
 //
 // J.A.S5: `await_task_blocking` 가 worker thread 안에서 호출되어 (app_methods 의
 // `ipc_dispatch_task_await` 분기), 현 state 가 종결이면 즉시 반환, 아니면 hub 에
-// waiter 등록 후 recv_timeout. `timeout_ms == None | 0` = 무한 대기 (approval 과
-// 다른 정책 — task 는 record-level timeout 없음).
+// waiter 등록 후 recv_timeout. `timeout_ms` 생략 시 [`DEFAULT_TASK_AWAIT_TIMEOUT_MS`]
+// (10분)로 대체된다 — 무한 대기가 기본값이면 호출자가 잊고 넘어간 순간 영구 hang
+// 이 되므로, 명시적으로 `timeout_ms: 0` 을 넘긴 경우에만 무한 대기를 허용한다
+// (approval 과 다른 지점 — task 는 record-level timeout 이 없어 이 IPC 파라미터가
+// 유일한 상한이다).
 //
 // 응답 형식:
 //   { outcome: "terminal" | "timed_out" | "not_found",
 //     state: "succeeded" | "failed" | ...,  // outcome=terminal 일 때만
 //     result: { ... },                        // outcome=terminal 일 때만, 있으면
 //   }
+
+/// `timeout_ms` 파라미터 생략 시 기본값(10분). **잠정값** — 근거 있는 측정에서
+/// 나온 수치가 아니라 "무한보다는 낫다" 수준의 출발점이다. 실사용 경험이 쌓이면
+/// 적정값으로 재조정 필요. 명시적으로 `timeout_ms: 0` 을 넘기면 이 기본값을
+/// 우회하고 무한 대기한다(CLI `tasty agent task-await --timeout-ms 0`).
+pub const DEFAULT_TASK_AWAIT_TIMEOUT_MS: u64 = 600_000;
+
 pub fn await_task_blocking(
     hub: &crate::core::agent::task_waker::TaskWakerHub,
     memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
@@ -334,7 +344,13 @@ pub fn await_task_blocking(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+    // 생략 시 기본 10분(잠정) — 명시적 0 만 무한 대기로 우회.
+    let timeout_ms = Some(
+        params
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_TASK_AWAIT_TIMEOUT_MS),
+    );
 
     // 1. 현 state snapshot.
     let snap_opt: Option<TerminalSnapshot> = {
@@ -373,21 +389,6 @@ pub fn await_task_blocking(
             JsonRpcResponse::success(rpc_id, json!({ "outcome": "timed_out" }))
         }
     }
-}
-
-/// 하위 호환을 위한 sync 진입점은 *제거* — handler.rs 의 라우터 분기는 더 이상
-/// 본 함수로 보내지 않고, app_methods 의 blocking arm 으로 흐른다. 만약 어떤
-/// 경로가 본 함수를 직접 호출하더라도 동작하도록 즉시 응답 fallback 만 제공:
-/// 현재 상태를 task_get 처럼 돌려준다.
-pub fn handle_task_await(
-    core: &Core,
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    caller: &CallerContext,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    handle_task_get(core, state, engine, caller, id, params)
 }
 
 // ============================================================

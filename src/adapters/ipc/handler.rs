@@ -848,9 +848,12 @@ fn route_engine_handler(
         "agent.task_get" => {
             agent::handle_task_get(core, state, engine, caller, id, &request.params)
         }
-        "agent.task_await" => {
-            agent::handle_task_await(core, state, engine, caller, id, &request.params)
-        }
+        // agent.task_await 는 여기 없다(approval.await 와 동형) — 진짜 blocking 은
+        // gui 빌드의 `App::process_ipc` app_methods 단계(`ipc_dispatch_task_await`)
+        // 가 라우팅 전에 가로챈다. headless 빌드(`boot/headless_dispatch.rs`)는 그
+        // 단계가 없어 이 라우터로 직접 오는데, 팔을 두면 비차단 fallback 이 진짜
+        // blocking 응답과 다른 모양으로 조용히 성공해 버리므로 method_not_found 로
+        // 정직하게 떨어지는 쪽을 택한다(local_only 라 plugin 경로에는 영향 없음).
         "agent.task_cancel" => {
             agent::handle_task_cancel(core, state, engine, caller, id, &request.params)
         }

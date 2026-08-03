@@ -287,7 +287,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.task_create", plugin(&[AgentManage])),
         ("agent.task_list", plugin(&[AgentManage])),
         ("agent.task_get", plugin(&[AgentManage])),
-        ("agent.task_await", plugin(&[AgentManage])),
+        // approval.await(:265)와 대칭 — 진짜 blocking(worker thread 위임) 이라 plugin
+        // 이 호출하면 단일 워커 스레드가 막혀 다른 host→plugin 요청을 못 받는다.
+        // plugin 은 완료 판정 전략 선언(러너가 대신 기다림) 또는 task_get 폴링으로
+        // 우회한다 — docs/dev-guide/agent-runner.md "완료 판정 전략 레지스트리".
+        ("agent.task_await", local_only()),
         ("agent.task_cancel", plugin(&[AgentManage])),
         ("agent.task_retry", plugin(&[AgentManage])),
         ("agent.task_graph", plugin(&[AgentManage])),

@@ -59,8 +59,8 @@ pub enum AgentCommands {
         #[arg(long)]
         id: String,
     },
-    /// Wait for a task to reach a terminal state (blocking). `--timeout-ms 0` or
-    /// omitted = wait indefinitely.
+    /// Wait for a task to reach a terminal state (blocking). Omitted = wait up
+    /// to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely.
     TaskAwait {
         #[arg(long)]
         workspace_id: u32,

@@ -219,7 +219,6 @@ fn agent_task_methods_require_agent_manage() {
         "agent.task_create",
         "agent.task_list",
         "agent.task_get",
-        "agent.task_await",
         "agent.task_cancel",
         "agent.task_retry",
         "agent.task_graph",
@@ -232,6 +231,14 @@ fn agent_task_methods_require_agent_manage() {
             "{name} should require AgentManage"
         );
     }
+}
+
+// approval.await 와 대칭 — 진짜 blocking 이라 plugin 의 단일 워커 스레드를 막을
+// 위험이 있어 local caller 전용으로 닫는다.
+#[test]
+fn agent_task_await_is_local_only() {
+    let m = method_meta("agent.task_await").expect("registered");
+    assert!(!m.plugin_callable);
 }
 
 #[test]
