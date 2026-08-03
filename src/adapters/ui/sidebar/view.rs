@@ -281,6 +281,14 @@ fn resolve_drop_section(spans: &[SectionSpan], y: f32) -> Option<&SectionSpan> {
     spans.iter().find(|s| y < s.end_y).or_else(|| spans.last())
 }
 
+/// 활성 워크스페이스 자동 스크롤 트리거 판정. `prev` 는 직전 프레임에 저장해 둔 active
+/// 전역 인덱스(`None` 이면 아직 한 번도 기록된 적 없는 최초 프레임), `current` 은 이번
+/// 프레임의 active 전역 인덱스. 최초 프레임에 트리거하지 않아야 시작 시 불필요한 점프가
+/// 없고, 값이 그대로면 사용자가 수동으로 스크롤해 둔 상태를 덮어쓰지 않는다.
+fn should_scroll_to_active_workspace(prev: Option<Option<usize>>, current: Option<usize>) -> bool {
+    matches!(prev, Some(prev) if prev != current)
+}
+
 /// Pure view: full sidebar 내부 (SidePanel 안쪽 ui) 를 그리고 action 리스트
 /// 를 반환. 호출처는 SidePanel 을 직접 연다.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — ScrollArea show 클로저 내부 위젯 나열이 구조적(clippy 가 클로저를 과대계상)
@@ -339,6 +347,18 @@ pub fn draw_full_sidebar_view(
             }
             vspace(ui, th.spacing_sm);
         });
+
+    // 활성 워크스페이스로 자동 스크롤 — `props.workspaces` 는 그룹/평면 모드 공통으로
+    // 전체 목록을 담으므로 여기서 active 전역 인덱스를 한 번만 구하면 모든 전환 경로
+    // (quick-switch, 카테고리 경계 이동, 클릭)를 커버한다. egui 메모리에 직전 프레임의
+    // active 인덱스를 저장해 두고, 판정 자체는 순수 함수 `should_scroll_to_active_workspace`
+    // 로 분리(단위 테스트 대상) — 매 프레임 강제 스크롤하면 사용자의 수동 스크롤을
+    // 덮어쓰게 되므로 "실제로 바뀐 프레임"에만 트리거한다.
+    let active_idx = props.workspaces.iter().position(|w| w.is_active);
+    let active_scroll_track_id = egui::Id::new("sidebar_workspace_active_scroll_track");
+    let prev_active_idx: Option<Option<usize>> = ui.data(|d| d.get_temp(active_scroll_track_id));
+    let should_scroll_to_active = should_scroll_to_active_workspace(prev_active_idx, active_idx);
+    ui.data_mut(|d| d.insert_temp(active_scroll_track_id, active_idx));
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -427,6 +447,7 @@ pub fn draw_full_sidebar_view(
                                 *global_idx,
                                 ws,
                                 switch_digit,
+                                should_scroll_to_active,
                                 &mut actions,
                                 &mut card_rects,
                             );
@@ -469,6 +490,7 @@ pub fn draw_full_sidebar_view(
                         i,
                         ws,
                         switch_digit,
+                        should_scroll_to_active,
                         &mut actions,
                         &mut card_rects,
                     );
@@ -972,6 +994,9 @@ fn draw_ws_row(
     // 대체할 키캡 문자. 호출부(섹션 루프)가 로컬 인덱스·active 카테고리 여부를 판단해
     // 넘긴다(SC05). None 이면 원래 status dot 유지.
     switch_digit: Option<&str>,
+    // 활성 인덱스가 이번 프레임에 바뀌었을 때만 true — 이 행이 active 면 뷰포트 안으로
+    // 스크롤을 보정한다(호출부에서 프레임당 한 번 계산, 매 프레임 강제 스크롤 방지).
+    should_scroll_to_active: bool,
     actions: &mut Vec<SidebarFullAction>,
     card_rects: &mut Vec<(usize, egui::Rect)>,
 ) {
@@ -992,6 +1017,10 @@ fn draw_ws_row(
         switch_digit,
         fade,
     );
+    if ws.is_active && should_scroll_to_active {
+        // align=None → 이미 뷰포트 안이면 스크롤 무변화, 밖이면 최소 이동으로만 보정.
+        ui.scroll_to_rect(card_rect, None);
+    }
     let card_response = ui.interact(
         card_rect,
         egui::Id::new(("ws_card", global_idx)),
@@ -1539,6 +1568,29 @@ mod tests {
     fn resolve_drop_section_empty_spans_yields_none() {
         // 평면 모드(토글 off): spans 비어 있음 → None (기존 reorder 경로 유지).
         assert!(resolve_drop_section(&[], 42.0).is_none());
+    }
+
+    #[test]
+    fn should_scroll_to_active_workspace_skips_first_frame() {
+        // 최초 프레임(직전 기록 없음) — 시작 시 불필요한 점프 방지.
+        assert!(!should_scroll_to_active_workspace(None, Some(3)));
+        assert!(!should_scroll_to_active_workspace(None, None));
+    }
+
+    #[test]
+    fn should_scroll_to_active_workspace_skips_when_unchanged() {
+        // 활성 인덱스가 그대로면 사용자가 수동 스크롤해 둔 상태를 덮어쓰지 않는다.
+        assert!(!should_scroll_to_active_workspace(Some(Some(3)), Some(3)));
+        assert!(!should_scroll_to_active_workspace(Some(None), None));
+    }
+
+    #[test]
+    fn should_scroll_to_active_workspace_triggers_on_change() {
+        // quick-switch/카테고리 경계 이동 등으로 active 전역 인덱스가 바뀐 프레임.
+        assert!(should_scroll_to_active_workspace(Some(Some(3)), Some(7)));
+        // 워크스페이스가 전부 닫혀 active 가 없어진 경우도 "바뀜"으로 취급.
+        assert!(should_scroll_to_active_workspace(Some(Some(3)), None));
+        assert!(should_scroll_to_active_workspace(Some(None), Some(0)));
     }
 
     fn run_full(workspaces: Vec<WorkspaceEntryView>, switch_held: bool) -> Vec<SidebarFullAction> {
