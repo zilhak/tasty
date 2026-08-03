@@ -204,7 +204,7 @@ pub enum PendingHostEvent {
         hook_id: u64,
         event_kind: String,
         surface_id: u32,
-        /// 실제 관측된 exit code(TODO80 결정 7) — `CommandCompleted` 발화일 때만
+        /// 실제 관측된 exit code — `CommandCompleted` 발화일 때만
         /// `Some`. `resolve_hook_fired_task_waits` 가 push 완료 전략의 성공/실패
         /// 판정에 쓴다(exit 0 → Succeeded, 비-0 → Failed). 다른 이벤트는 `None`.
         exit_code: Option<i32>,

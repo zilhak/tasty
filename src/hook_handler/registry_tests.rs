@@ -14,7 +14,7 @@ fn load_host(reg: &HookHandlerRegistry) {
 }
 
 const HOST_NOTIFY_ID: &str = "host/webhook-notify";
-/// TODO80 결정 7 — `host/command-completed` 완료 판정 전략의 `notify_via` 대상.
+/// `host/command-completed` 완료 판정 전략의 `notify_via` 대상.
 const HOST_COMMAND_COMPLETED_ID: &str = "host/command-completed";
 
 fn plugin_ipc(

@@ -71,7 +71,7 @@ pub(crate) fn handle_hook_set(
         return resp;
     }
 
-    // TODO80 결정 7: `command-completed` 는 OSC 133 셸 통합이 로드된 셸에서만
+    // `command-completed` 는 OSC 133 셸 통합이 로드된 셸에서만
     // 발화한다(전제). 그 surface 가 boundary 를 한 번도 못 받았다면 이 훅은
     // 영원히 발사되지 않을 수 있다 — 거부는 아니다(시간 기반 추정이라 이제 막
     // 뜬 surface 를 오탐할 수 있음, `shell_integration_hint.rs` 참고), 경고만
@@ -285,7 +285,7 @@ pub(crate) fn handle_surface_fire_hook(
 
     let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
     let event_kind = event.to_display_string();
-    // TODO80 결정 7: 수동 발화도 CommandCompleted 라면 실제 exit code 를 실어
+    // 수동 발화도 CommandCompleted 라면 실제 exit code 를 실어
     // 보낸다 — `tasty surface fire-hook --event command-completed:1` 로 push
     // 전략 대기 task 를 테스트/시뮬레이션할 수 있어야 한다.
     let exit_code = match &event {

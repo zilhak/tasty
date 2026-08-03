@@ -713,7 +713,7 @@ impl App {
                 hook_id: f.hook_id,
                 event_kind: "command-completed".to_string(),
                 surface_id,
-                // TODO80 결정 7 — 실제 관측된 exit code. push 완료 전략의 성공/실패
+                // 실제 관측된 exit code. push 완료 전략의 성공/실패
                 // 판정(exit 0 → Succeeded, 비-0 → Failed)이 여기서만 값을 받는다.
                 exit_code,
             });

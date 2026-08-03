@@ -23,7 +23,7 @@ priority = 100
 kind = "ipc_sequence"
 calls = [{ method = "notification.create", params = { title = "Webhook", body = "${body.message}" } }]
 
-# TODO80 결정 7 — `host/command-completed` 완료 판정 전략(`../../completion_strategy/
+# `host/command-completed` 완료 판정 전략(`../../completion_strategy/
 # defaults/default-completion-strategies.toml`)의 `notify_via` 대상. 훅 자체의
 # 완료 판정 배선은 이 액션과 무관하다 — 러너(`HostExecutor::dispatch_push_strategy`)
 # 가 이 핸들러를 `hook.set --event command-completed --handler host/command-completed

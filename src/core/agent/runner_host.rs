@@ -1408,7 +1408,7 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest1");
     }
 
-    /// TODO80 결정 7 — `poll: Some(Named)` 이 push-kind 전략을 가리키면
+    /// `poll: Some(Named)` 이 push-kind 전략을 가리키면
     /// `AwaitExternal` 로 전이한다: `hook.set` 를 통해 대상 surface(`params.
     /// surface_id`)에 1회성 훅을 등록하고, 그 hook_id 를 `hook_task_waits` 에
     /// 등록한다. poll 은 계약대로 절대 종결시키지 않는다(항상 Active) — 종결은
@@ -1532,7 +1532,7 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push");
     }
 
-    /// TODO80 결정 7 — push 전략인데 원 dispatch `params` 에 `surface_id` 가 없으면
+    /// push 전략인데 원 dispatch `params` 에 `surface_id` 가 없으면
     /// hook 을 어느 surface 에 걸지 알 수 없다 — dispatch 자체가 실패한다.
     #[test]
     fn custom_with_push_strategy_missing_surface_id_fails_dispatch() {

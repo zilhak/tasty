@@ -298,7 +298,7 @@ fn resolve_poll_spec_rejects_disabled() {
     assert!(matches!(err, StrategyResolveError::Disabled { .. }));
 }
 
-/// TODO80 결정 7 — 실제 host defaults TOML 두 파일(`hook_handler`/
+/// 실제 host defaults TOML 두 파일(`hook_handler`/
 /// `completion_strategy` 각자의 `defaults/`)이 서로의 참조를 만족하는지 확인하는
 /// 배선 스모크 테스트. `notify_via = "host/command-completed"` 가 가리키는 훅
 /// 핸들러가 실제로 존재해야 이 전략이 조용히 drop 되지 않는다(§B-5).
@@ -329,7 +329,7 @@ fn host_command_completed_default_strategy_resolves_after_hook_handler_registere
     }
 }
 
-// ── resolve_strategy (kind-agnostic, TODO80 결정 7) ─────────────────────
+// ── resolve_strategy (kind-agnostic) ─────────────────────────────────────
 
 #[test]
 fn resolve_strategy_returns_poll_kind() {

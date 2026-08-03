@@ -108,8 +108,8 @@ impl CompletionStrategyRegistry {
     /// `CompletionStrategy` 전체(kind 포함)를 반환한다. `resolve_poll_spec` 은
     /// poll 전용 소비자(예: 다른 곳에서도 poll spec 만 필요로 하는 호출부가
     /// 있을 수 있다)를 위해 그대로 유지 — 이 메서드는 `Custom` dispatch
-    /// (`runner_host.rs`)처럼 poll/push 를 모두 다뤄야 하는 호출부가 쓴다
-    /// (TODO80 결정 7). push-kind 의 timeout 필수는 `CompletionStrategyKind::
+    /// (`runner_host.rs`)처럼 poll/push 를 모두 다뤄야 하는 호출부가 쓴다.
+    /// push-kind 의 timeout 필수는 `CompletionStrategyKind::
     /// Push.timeout_ms` 가 `Option` 이 아닌 값 타입이라 타입 레벨에서 이미
     /// 강제된다 — 이 메서드에서 별도 검증이 필요 없다.
     pub fn resolve_strategy(
