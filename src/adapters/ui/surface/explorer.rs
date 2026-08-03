@@ -35,6 +35,16 @@ const CELL_W: f32 = 80.0;
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
 const SIDEBAR_W: f32 = 196.0;
 
+// ── Favorites 하단 고정(pin) 영역 치수 (design favPinHeight) ────────────────
+/// 기본 고정 높이.
+const FAV_PIN_BASE_H: f32 = 240.0;
+/// 사이드바 본문 높이가 이 값 미만이면 고정 높이 대신 비율(`FAV_PIN_RATIO`)을 쓴다.
+const FAV_PIN_THRESHOLD_H: f32 = 600.0;
+/// 좁은 사이드바에서 Favorites 가 차지하는 본문 높이 비율.
+const FAV_PIN_RATIO: f32 = 0.4;
+/// Favorites 고정 영역 최소 높이 하한.
+const FAV_PIN_MIN_H: f32 = 120.0;
+
 /// `draw_explorer` 가 호스트에 위임하는 액션. 렌더 루프 종료 후 적용된다.
 #[derive(Clone, Debug)]
 pub enum ExplorerAction {
@@ -591,40 +601,74 @@ fn sidebar(
         0.0,
         theme.bg_sidebar().to_egui(),
     );
-    ui.add_space(theme.spacing_xs.value());
     ui.spacing_mut().item_spacing.y = 0.0;
 
     // 현재 폴더 — 트리/즐겨찾기 하이라이트 기준 (design active).
     let current = panel.current_root().to_path_buf();
-    egui::ScrollArea::vertical()
-        .id_salt("explorer_sidebar")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            // Files 섹션(트리)이 위 — design ExpSidebar 순서. 트리 루트는 고정 cwd.
+
+    // 2-region 고정 분할: 상단 Files 는 flex(남는 공간 전부) + 자체 스크롤, 하단
+    // Favorites 는 계산된 고정 높이 + 자체 스크롤. 경계는 트리 길이와 무관한 고정
+    // 좌표에 그려진다(design "hard 전환", 보간 없음).
+    let fav_h = favorites_pin_height(full.y);
+    let files_h = (full.y - fav_h - theme.border_width.value()).max(0.0);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(full.x, files_h),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.add_space(theme.spacing_xs.value());
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.cwd().to_path_buf();
-            tree_node(ui, theme, view, &root, 0, &current, action, mirror_ws_id);
-            // 트리 ↔ 즐겨찾기 구분선 (design height 1 separator, margin 8px top).
-            ui.add_space(theme.spacing_sm.value());
-            let (sep, _) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), theme.border_width.value()),
-                egui::Sense::hover(),
-            );
-            ui.painter().hline(
-                sep.x_range(),
-                sep.center().y,
-                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-            );
+            egui::ScrollArea::vertical()
+                .id_salt("explorer_sidebar_files")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    tree_node(ui, theme, view, &root, 0, &current, action, mirror_ws_id);
+                });
+        },
+    );
+
+    // 트리 ↔ 즐겨찾기 구분선 — 하단 고정 영역의 상단 경계(고정 좌표).
+    let (sep, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), theme.border_width.value()),
+        egui::Sense::hover(),
+    );
+    ui.painter().hline(
+        sep.x_range(),
+        sep.center().y,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(full.x, fav_h),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
             // Favorites 섹션 — 캡션은 항상 표시(0개여도 발견 가능), 비면 empty state.
             sidebar_caption(ui, theme, t("explorer.sidebar.favorites"));
-            if favorites.is_empty() {
-                favorites_empty(ui, theme);
-            } else {
-                for fav in favorites {
-                    favorite_row(ui, theme, fav, &current, action);
-                }
-            }
-        });
+            egui::ScrollArea::vertical()
+                .id_salt("explorer_sidebar_favorites")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    if favorites.is_empty() {
+                        favorites_empty(ui, theme);
+                    } else {
+                        for fav in favorites {
+                            favorite_row(ui, theme, fav, &current, action);
+                        }
+                    }
+                });
+        },
+    );
+}
+
+/// Favorites 하단 고정 영역 높이 (design `favPinHeight`): 사이드바 본문 높이가
+/// `FAV_PIN_THRESHOLD_H` 이상이면 `FAV_PIN_BASE_H` 고정, 미만이면 본문 높이의
+/// `FAV_PIN_RATIO` 를 4px 그리드로 스냅한 값과 `FAV_PIN_MIN_H` 중 큰 값.
+fn favorites_pin_height(body_h: f32) -> f32 {
+    if body_h <= 0.0 || body_h >= FAV_PIN_THRESHOLD_H {
+        return FAV_PIN_BASE_H;
+    }
+    ((body_h * FAV_PIN_RATIO / 4.0).round() * 4.0).max(FAV_PIN_MIN_H)
 }
 
 /// 즐겨찾기 빈 상태 (design `FavoritesEmpty`): 흐린 별 + "No favorites yet" + 힌트.
@@ -1541,8 +1585,21 @@ fn type_label(e: &DirEntryInfo) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::navigate_target;
+    use super::{favorites_pin_height, navigate_target};
     use std::path::PathBuf;
+
+    /// design 시안 pin 높이 사다리: 본문 높이 → 고정 높이.
+    #[test]
+    fn favorites_pin_height_matches_design_ladder() {
+        assert_eq!(favorites_pin_height(620.0), 240.0);
+        assert_eq!(favorites_pin_height(600.0), 240.0);
+        assert_eq!(favorites_pin_height(560.0), 224.0);
+        assert_eq!(favorites_pin_height(420.0), 168.0);
+        assert_eq!(favorites_pin_height(300.0), 120.0);
+        // 하한 미만으로 내려가지 않는다.
+        assert_eq!(favorites_pin_height(100.0), 120.0);
+        assert_eq!(favorites_pin_height(0.0), 240.0);
+    }
 
     /// 존재하는 디렉토리 → Some(그 경로).
     #[test]
