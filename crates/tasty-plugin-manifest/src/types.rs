@@ -198,7 +198,7 @@ pub enum Permission {
     /// 새 완료 판정 전략 정의 권한. 토큰 `completion_strategy.define`.
     /// `[[contributes.completion_strategy]]` 로 전략(poll/push)을 선언할 때 필요.
     /// 훅 핸들러 `hook_handler.define` 미러 — 별도 레지스트리이므로 레지스트리당
-    /// 1토큰 선례에 따라 재사용하지 않고 신설한다(TODO80 §B-3).
+    /// 1토큰 선례에 따라 재사용하지 않고 신설한다.
     CompletionStrategyDefine,
 }
 
@@ -649,7 +649,7 @@ pub struct Contributes {
     /// `HookHandlerRegistryPort` impl(install 시점)에서 수행한다.
     #[serde(default)]
     pub hook_handler: Vec<serde_json::Value>,
-    /// 완료 판정 전략 contribute (TODO80 §B — 독립 `CompletionStrategyRegistry`,
+    /// 완료 판정 전략 contribute (독립 `CompletionStrategyRegistry`,
     /// 훅 핸들러와 형태만 미러링, 코드/타입 공유 없음). poll 형(자체 폴링 사양)과
     /// push 형(`notify_via: HookHandlerId` + 필수 timeout) 둘 다 이 필드로 선언한다.
     /// 각 항목은 `[[contributes.completion_strategy]]` 한 블록이며

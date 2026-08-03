@@ -356,7 +356,7 @@ pub struct PluginManager {
     /// `[[contributes.hook_handler]]` 등록/제거. 호스트가 setter 로 주입하며 None
     /// 이면 skip (headless 부팅 전/test — 훅 핸들러 없이도 코어 동작).
     pub hook_handler: Option<Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>>,
-    /// `[[contributes.completion_strategy]]` 등록/제거(TODO80 §B). 호스트가
+    /// `[[contributes.completion_strategy]]` 등록/제거. 호스트가
     /// setter 로 주입하며 None 이면 skip — hook_handler 와 동일 지위(독립
     /// 레지스트리, 미주입 시 완료 판정 전략 없이도 코어 동작).
     pub completion_strategy:

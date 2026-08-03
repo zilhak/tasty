@@ -1167,7 +1167,7 @@ impl Manifest {
         seen_prefixes: &HashSet<String>,
     ) -> anyhow::Result<()> {
         // [[contributes.completion_strategy]] 검증 — schema-agnostic 만
-        // (TODO80 §B, hook_handler 와 동일 지위). concrete spec(poll_method 매핑 등)
+        // (hook_handler 와 동일 지위). concrete spec(poll_method 매핑 등)
         // 은 host 측 `CompletionStrategyRegistryPort::install_plugin_completion_strategies`
         // 가 install 시점에 deserialize·검증한다. 여기서는 id 형식 + 유일성 +
         // define 권한 + (결정 2) poll_method 가 자기 namespace 인지만 확인한다.

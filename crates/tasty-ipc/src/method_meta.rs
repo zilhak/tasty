@@ -130,7 +130,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.tell", plugin(&[TerminalWrite])),
         ("terminal.children", plugin(&[SurfaceRead])),
         ("terminal.parent", plugin(&[SurfaceRead])),
-        // 자식 단건 상태 조회 (TODO80 §E). children/parent 와 동일하게 순수 조회라
+        // 자식 단건 상태 조회. children/parent 와 동일하게 순수 조회라
         // SurfaceRead 단독.
         ("terminal.state", plugin(&[SurfaceRead])),
         ("terminal.kill", plugin(&[SurfaceWrite])),
@@ -383,7 +383,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("hook_handler.reload", local_only()),
         ("hook_handler.dispatch", local_only()),
         // ── completion_strategy.* (완료 판정 전략 레지스트리 — local-only) ──
-        // TODO80 §B. hook_handler.list 미러 — 등록된 전략(비활성 포함) 조회만.
+        // hook_handler.list 미러 — 등록된 전략(비활성 포함) 조회만.
         // reload/dispatch 대응물 없음: "발화" 개념이 없고(판정 함수일 뿐),
         // user config 재로드는 아직 노출하지 않는다(Settings UI CRUD 표면 없음).
         ("completion_strategy.list", local_only()),
@@ -589,7 +589,7 @@ pub fn clear_plugin_prefixes_for_tests() {
 }
 
 /// `prefix` 가 어떤 plugin 의 `[[contributes.ipc_namespace]]` 로 runtime 등록돼
-/// 있는지 조회. host/user 소유 완료 판정 전략(TODO80)이 `_host` 권한으로 남의
+/// 있는지 조회. host/user 소유 완료 판정 전략이 `_host` 권한으로 남의
 /// plugin namespace 를 호출하는 권한 우회를 막는 데 쓰인다 — register/unregister
 /// 는 기존에 있었으나 read 전용 조회가 없어 추가.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {

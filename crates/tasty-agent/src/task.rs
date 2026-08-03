@@ -133,8 +133,8 @@ pub enum TaskCommand {
         ipc_method: String,
         #[serde(default)]
         params: serde_json::Value,
-        /// 인라인 `PollSpec` 또는 등록된 완료 판정 전략 이름(TODO80 §B 체크리스트
-        /// "PollSpec 이 이름 참조를 받도록 확장"). `None` 이면 결정 6(기본 전략)이
+        /// 인라인 `PollSpec` 또는 등록된 완료 판정 전략 이름 — PollSpec 이 이름
+        /// 참조를 받도록 확장한 형태다. `None` 이면 결정 6(기본 전략)이
         /// 적용될 수 있다 — host 가 `ipc_method` 에 매칭되는 `default_for_methods`
         /// 전략을 찾아 대신 사용한다. 매칭되는 기본 전략도 없으면 기존 동작
         /// (dispatch 응답 즉시 `Succeeded`, `CustomImmediate`) 을 유지한다.
@@ -192,7 +192,7 @@ fn default_poll_interval_ms() -> u64 {
 }
 
 /// `TaskCommand::Custom.poll` 이 받아들이는 두 형태 — 인라인 사양 또는 이름 참조
-/// (TODO80 §B "PollSpec 이 이름 참조를 받도록 확장, 인라인 형태 하위호환 유지").
+/// (PollSpec 이 이름 참조를 받도록 확장, 인라인 형태 하위호환 유지).
 ///
 /// `#[serde(untagged)]`: `{"strategy": "<이름>"}` 형태(다른 필드 없음)는 `Named` 로,
 /// 그 외(기존 인라인 `PollSpec` 의 필수 필드들 — `poll_method`/`state_field`/

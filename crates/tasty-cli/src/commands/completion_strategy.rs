@@ -1,5 +1,4 @@
-//! `tasty completion-strategy` subcommand 정의 — 완료 판정 전략 레지스트리 조회
-//! (TODO80 §B).
+//! `tasty completion-strategy` subcommand 정의 — 완료 판정 전략 레지스트리 조회.
 //!
 //! `hook-handler` CLI 구조를 미러링한다(원칙 2·3: id 로 직접 지정 — 다만 list 만
 //! 있으므로 해당 없음, 전 범위 조회는 포커스 독립). reload/dispatch 대응물은

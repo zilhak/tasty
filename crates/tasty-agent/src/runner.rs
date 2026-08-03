@@ -57,7 +57,7 @@ pub enum DispatchHandle {
         workspace_id: u32,
         name: String,
     },
-    /// 외부 push 신호(예: 훅 완료)를 기다리는 핸들(TODO80 §B-4/§C). `poll` 은
+    /// 외부 push 신호(예: 훅 완료)를 기다리는 핸들. `poll` 은
     /// host executor 구현에서 **항상** [`PollOutcome::Active`] 를 반환해야 한다 —
     /// 이 handle 의 진짜 종결은 poll 이 아니라 host 가 외부에서(예: `HookFired`
     /// 소비 경로) `task_set_result`/`task_set_state` 를 직접 호출해 이뤄진다.
@@ -143,7 +143,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
         FR: FnMut(u32, &TaskId, TaskResult) -> Result<()>,
     {
-        // 0. 외부 terminal 전이 흡수(TODO80 §C-2 누수 수정) — `agent.task_cancel` /
+        // 0. 외부 terminal 전이 흡수(누수 수정) — `agent.task_cancel` /
         //    `agent.task_set_result` 가 외부에서 store 의 Running 을 어느
         //    terminal 상태로든(Succeeded/Failed/Cancelled/Skipped,
         //    `TaskState::is_terminal()`) 직접 전이시켰을 수 있다. **이전엔
@@ -562,7 +562,7 @@ mod tests {
         }
     }
 
-    /// TODO80 §B-4/§C: `AwaitExternal` 핸들의 의도된 전체 생애주기 — dispatch 로
+    /// `AwaitExternal` 핸들의 의도된 전체 생애주기 — dispatch 로
     /// 생성된 뒤 여러 tick 동안 poll 이 항상 `Active` 라 Running 이 유지되고
     /// (executor 는 이 핸들에 절대 관여하지 않는다), 외부(hook 완료 등)가 store 를
     /// 직접 Succeeded 로 전이시키면 **다음 tick 의 0단계**가 handle 제거 +
@@ -719,7 +719,7 @@ mod tests {
         }
     }
 
-    /// TODO80 §C-2 누수 회귀 방지 — `agent.task_set_result` 로 외부에서 Running 을
+    /// 누수 회귀 방지 — `agent.task_set_result` 로 외부에서 Running 을
     /// 곧장 Succeeded 로 전이시킨 task(0단계가 예전엔 `Cancelled` 만 흡수해
     /// 이 경우를 놓쳤다)도 handle 제거 + release_permit 이 일어나야 한다.
     #[test]

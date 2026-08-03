@@ -39,8 +39,8 @@ pub(super) fn is_valid_hook_handler_id(s: &str) -> bool {
 }
 
 /// 완료 판정 전략 short-name 형식 검증 (manifest 측 schema 차원). 소문자 ascii +
-/// 숫자 + `-`, 길이 1..=32 — hook handler short-name 과 동일 규칙(TODO80 §B-3
-/// "id 규약 미러링"). host 측 `completion_strategy::types::is_valid_completion_strategy_short_name`
+/// 숫자 + `-`, 길이 1..=32 — hook handler short-name 과 동일 규칙(id 규약
+/// 미러링). host 측 `completion_strategy::types::is_valid_completion_strategy_short_name`
 /// 과 동일 규칙이며, 본 함수는 manifest 가 host completion_strategy 도메인 결합
 /// 없이 schema 검증을 마치기 위한 자체 복제다.
 pub(super) fn is_valid_completion_strategy_id(s: &str) -> bool {
