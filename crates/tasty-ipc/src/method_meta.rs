@@ -409,7 +409,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
         // 없음). 임의 원격 경로 read 라 FsRead(로컬 fs.pick_file 과 동일 근거).
         ("git_viewer.query", plugin(&[FsRead])),
-        // ── file_picker.* (TODO 21 — plugin 트리거 host 소유 file_picker popup) ─
+        // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
         // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
         // ADR-0058), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast

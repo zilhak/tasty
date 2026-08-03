@@ -640,7 +640,7 @@ fn route_engine_handler(
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
-        // (TODO 21, ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
+        // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
         // 여는 UI state 변경이라 fs.pick_file 과 동일하게 gui feature 전용.
         #[cfg(feature = "gui")]
         "file_picker.trigger" => {

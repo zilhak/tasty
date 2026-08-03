@@ -7,7 +7,7 @@
 //! 경로를 클립보드에 복사 + toast 로 알린다(트리거 지점 결정과 함께 신규 ADR에 근거
 //! 기록).
 //!
-//! `FilePickerData.requester` 가 `Some` 이면(TODO 21, ADR-0058 — `file_picker.trigger`
+//! `FilePickerData.requester` 가 `Some` 이면(ADR-0058 — `file_picker.trigger`
 //! 로 이 popup 을 연 plugin) 위 기존 동작에 **더해** `"file_picker.result"` 이벤트를
 //! 그 plugin 에 unicast 한다 — `emit_host_event_to_plugin` 은 `PluginManager`(`App`
 //! 소유) 접근이 필요해, `file_picker.trigger` IPC 핸들러(`CoreState` 큐잉만 가능)가

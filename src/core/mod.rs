@@ -138,7 +138,7 @@ pub(crate) fn next_git_query_request_id() -> u64 {
     NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `file_picker.trigger` IPC(TODO 21, ADR-0058) 요청 id 시퀀스 — `next_list_dir_request_id`
+/// `file_picker.trigger` IPC(ADR-0058) 요청 id 시퀀스 — `next_list_dir_request_id`
 /// 와 동일 근거(프로세스 내 유일성만 필요). **주의**: 이 id 는 `FpLoadState::Loading`
 /// 의 (popup 내부 원격 디렉토리 나열 요청 상관관계) `request_id` 와 완전히 별개의
 /// 네임스페이스다 — 둘 다 필드명이 `request_id` 라 혼동하기 쉽다. 이 id 는

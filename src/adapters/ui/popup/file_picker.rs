@@ -685,7 +685,7 @@ fn apply_action(
     }
 }
 
-/// Tools 메뉴 항목 클릭 또는 `file_picker.trigger` IPC(TODO 21, ADR-0058) 진입점 —
+/// Tools 메뉴 항목 클릭 또는 `file_picker.trigger` IPC(ADR-0058) 진입점 —
 /// 현재 활성 workspace 가 mirror 인지로 로컬/원격을 판별해 [`crate::state::FilePickerData`]
 /// 를 채우고 popup 을 연다. 원격이면 `navigate` 가 `pending_list_dir_forward` 를
 /// 큐잉(홈 디렉토리 = 빈 `dir`), 로컬이면 즉시 동기 로드한다.

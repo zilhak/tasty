@@ -787,7 +787,7 @@ pub(crate) enum FpLoadState {
     ErrorConn(String),
 }
 
-/// `file_picker.trigger` IPC(TODO 21, ADR-0058)로 popup 을 연 plugin 의 요청자 정보.
+/// `file_picker.trigger` IPC(ADR-0058)로 popup 을 연 plugin 의 요청자 정보.
 /// Tools 메뉴가 연 경우(`requester: None`)와 구분해, 확정/취소 시
 /// `"file_picker.result"` 이벤트를 이 plugin 에만 unicast 하는 데 쓴다.
 #[derive(Debug, Clone)]
@@ -819,7 +819,7 @@ pub(crate) struct FilePickerData {
     pub(crate) selected: Vec<String>,
     /// Confirm/Cancel 결과. host 본체 layer 가 frame 끝에서 소비.
     pub(crate) result: Option<FilePickerResult>,
-    /// `Some` 이면 `file_picker.trigger` IPC 로 이 popup 을 연 plugin(TODO 21).
+    /// `Some` 이면 `file_picker.trigger` IPC 로 이 popup 을 연 plugin.
     /// Tools 메뉴 트리거는 `None`.
     pub(crate) requester: Option<FilePickerRequester>,
     /// `file_picker.trigger` 의 `filters?: string[]`(확장자, 점 없이) — 비어 있으면

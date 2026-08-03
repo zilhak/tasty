@@ -1,4 +1,4 @@
-//! `file_picker.trigger` IPC(TODO 21, ADR-0058) — plugin 이 host 소유 `file_picker`
+//! `file_picker.trigger` IPC(ADR-0058) — plugin 이 host 소유 `file_picker`
 //! popup(ADR-0053, `adapters::ui::popup::file_picker`)을 열도록 트리거한다.
 //!
 //! **popup 확정을 기다리지 않고** `request_id` 만 즉시 회신한다(비동기 accept) —
@@ -6,7 +6,7 @@
 //! `"file_picker.result"` 이벤트로 plugin 에 push 한다. `git_viewer.query`
 //! (ADR-0056)와 동일한 "즉시 ack + 이벤트 push" shape.
 //!
-//! # 동시성 정책(TODO 21이 위임받은 결정)
+//! # 동시성 정책
 //!
 //! `file_picker` popup 은 단일 인스턴스만 존재한다(`AppState::dialogs.file_picker:
 //! Option<..>`). 이미 열려 있는 상태에서 두 번째 `file_picker.trigger` 가 들어오면
@@ -135,7 +135,7 @@ mod tests {
         assert!(data.requester.is_none());
     }
 
-    /// 동시성 정책(TODO 21 위임 결정) — 이미 popup 이 열려 있으면 두 번째 trigger 를
+    /// 동시성 정책 — 이미 popup 이 열려 있으면 두 번째 trigger 를
     /// 거부한다("대체" 아님). 근거는 이 파일 모듈 doc 참고.
     #[test]
     fn second_trigger_while_open_is_rejected() {

@@ -246,7 +246,7 @@ struct MarkdownPlugin {
     confirm: HashMap<u64, LargeFileConfirm>,
     /// popup instance_id → 파일열기 팝업 상태(경로 입력 버퍼).
     file_open: HashMap<u64, FileOpenState>,
-    /// `file_picker.trigger`(TODO 21, ADR-0058) 로 보낸 요청의 `request_id` → 그
+    /// `file_picker.trigger`(ADR-0058) 로 보낸 요청의 `request_id` → 그
     /// 요청을 낸 파일열기 팝업 instance_id. `"file_picker.result"` 이벤트 수신 시
     /// 이 맵으로 상관관계를 맞춰 `path_input` 을 채운다.
     pending_file_picker: HashMap<u64, u64>,
@@ -443,7 +443,7 @@ impl Plugin for MarkdownPlugin {
         self.pending_file_picker.retain(|_, v| *v != iid);
     }
 
-    /// host 가 push 하는 이벤트. `"file_picker.result"`(TODO 21, ADR-0058) 만 처리 —
+    /// host 가 push 하는 이벤트. `"file_picker.result"`(ADR-0058) 만 처리 —
     /// `file_picker.trigger` 로 받은 `request_id` 로 어느 파일열기 팝업의 요청인지
     /// 상관관계를 맞춰 `path_input` 을 채운다(취소/빈 선택이면 무동작).
     fn on_event(&mut self, ctx: EventDispatchCtx) {
@@ -763,7 +763,7 @@ impl MarkdownPlugin {
 
         match action {
             FileOpenAction::Browse => {
-                // host 소유 file_picker popup 을 트리거(TODO 21, ADR-0058) — attach
+                // host 소유 file_picker popup 을 트리거(ADR-0058) — attach
                 // (원격) workspace 에서도 동작한다(native rfd 다이얼로그와 달리 원격
                 // 개념이 있다). 즉시 request_id 만 돌아오고, 실제 선택 결과는 나중에
                 // `on_event` 의 `"file_picker.result"` 로 비동기 도착한다.
@@ -951,7 +951,7 @@ enum FileOpenAction {
     Cancel,
 }
 
-/// host → 이 plugin unicast 이벤트 key(TODO 21, ADR-0058). host 측 대응값은
+/// host → 이 plugin unicast 이벤트 key(ADR-0058). host 측 대응값은
 /// `src/app/dispatch/file_picker.rs::FILE_PICKER_RESULT_EVENT` — 공유 crate 가
 /// 없어 리터럴을 양쪽에 중복 정의한다(git-viewer 의 `GIT_VIEWER_QUERY_RESULT_EVENT`
 /// 와 동일 근거). `on_event`(cfg 무관 — `Plugin` trait 필수 메서드)가 참조하므로
@@ -971,7 +971,7 @@ struct FilePickerResultWire {
 }
 
 /// browse — host 소유 `file_picker` popup 을 트리거한다(`file_picker.trigger`,
-/// TODO 21, ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
+/// ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
 /// popup 도 직접 못 열기 때문에 host 에 위임한다. markdown 확장자로 필터. 반환값은
 /// **선택 경로가 아니라** 이 요청의 `request_id` — 실제 경로는 나중에 `on_event`
 /// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
