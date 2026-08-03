@@ -12,11 +12,12 @@
 //! 핵심 불변식은 [`types`] 모듈 문서 참조 — push 형 timeout 필수, 결정 2(owner
 //! namespace 제한), notify_via 참조 무결성(owner 자기 자신 또는 host).
 //!
-//! **범위 경고**: 이 모듈은 선언·설치·이름 해석·참조 무결성 검증까지만 다룬다.
-//! push 형이 실제로 완료를 보고받는 배선(host executor 가 push-kind 기본 전략
-//! dispatch 시 [`crate::core::agent::hook_wait::HookTaskWaits::register`] 를
-//! 호출하는 경로)은 아직 없다 — 매칭 시 warn 후 기존 즉시-성공 동작으로
-//! 폴백한다(상세: `docs/dev-guide/agent-runner.md` "완료 판정 전략 레지스트리").
+//! **범위**: 이 모듈은 선언·설치·이름 해석·참조 무결성 검증까지만 다룬다.
+//! push 형이 실제로 완료를 보고받는 배선(host executor 의
+//! `dispatch_push_strategy` 가 push-kind 기본 전략 dispatch 시
+//! [`crate::core::agent::hook_wait::HookTaskWaits::register`] 를 호출해
+//! `AwaitExternal` 로 전이하는 경로)은 이미 구현돼 있다(상세: `docs/dev-guide/
+//! agent-runner.md` "완료 판정 전략 레지스트리").
 
 pub mod config;
 pub mod registry;
