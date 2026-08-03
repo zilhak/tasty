@@ -24,6 +24,7 @@
 ### Changed
 
 - agent DAG `TaskCommand::Custom.poll`(`PollSpec`)의 `interval_ms` 필드가 생략 가능해졌다 — 기본값 500ms. 이전에는 필수 필드라 생략 시 역직렬화가 실패했다.
+- (BREAK) agent DAG `TaskCommand::Reduce.inputs` 가 `depends_on` 과 동일한 암묵적 의존성으로 승격됐다. 이전에는 `depends_on` 없는 `Reduce` task 가 생성 즉시 `ready`→dispatch 되어, 아직 미완인 입력을 `succeeded:false`+`output:null` 로 조용히 수집하고 `Succeeded` 로 마감했다(`all`/`merge_json`/`concat_text` 전략에서 특히 위험 — 실제로 존재하는 값 대신 `null` 을 합성). 이제는 입력이 전부 종결(성공/실패 무관, terminal 상태)될 때까지 `waiting` 을 유지한 뒤 `ready` 로 진행한다. `Reduce.inputs` 는 사이클 검출 대상에도 포함된다.
 
 ### Removed
 
@@ -33,6 +34,7 @@
 
 - `tasty remote attach --raw`(및 `tasty attach --raw`): 서버/터널 연결이 끊겨도 `--reconnect`(기본 ON) 백오프 재연결이 전혀 동작하지 않던 결함 수정. raw 브리지가 종료 사유와 무관하게 `process::exit(0)` 으로 프로세스를 죽여 재연결 판단 지점(`AttachExit::Disconnected`)에 도달하지 못했다 — 이제 mirror-dump 와 동일하게 채널 기반으로 종료 사유를 구분해 정상 반환한다.
 - 완료 판정 전략(`[[contributes.completion_strategy]]`)의 `default_for_methods`/`poll_method` namespace 검증이 plugin owner 를 매니페스트의 reverse-DNS id(예: `com.tasty.claude`)로 비교해, 실제 IPC dispatch 접두어(`claude`)와 절대 일치하지 않아 plugin 소유 전략이 등록 시점에 전부 조용히 drop 되던 결함 수정 — 이제 그 plugin 이 실제로 선언한 `ipc_namespace` 접두어와 비교한다.
+- `agent.task_create` 가 `depends_on` 과 달리 `OnFailure::Fallback{task}`/`TaskCommand::Reduce.inputs` 가 가리키는 task id 의 존재를 검증하지 않던 결함 수정. 미존재 fallback 은 main 실패 시 조용히 무시되어 그 main 에 의존하는 downstream 이 영구 `waiting` 에 빠졌고, 미존재 reduce 입력은 dispatch 시점에야 뒤늦게 실패했다. 이제 둘 다 생성 시점에 `-32602` 로 거부된다. 검증 도입 이전에 이미 저장된 dangling 참조는 마이그레이션하지 않는다(신규 생성만 차단) — 그런 참조가 실패 전이를 타면 `tracing::warn!` 을 남긴다.
 
 ## [0.9.7] - 2026-07-15
 

@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{OnFailure, Task, TaskId, TaskState};
+use super::{OnFailure, Task, TaskCommand, TaskId, TaskState};
 use crate::{AgentError, Result};
 
 pub struct TaskGraph<'a> {
@@ -48,16 +48,21 @@ impl<'a> TaskGraph<'a> {
                     .get_key_value(dep)
                     .map(|(k, _)| *k)
                     .ok_or_else(|| AgentError::UnknownDependency(dep.clone()))?;
-                match color.get(dep_ref).copied().unwrap_or(0) {
-                    0 => self.dfs_cycle(dep_ref, color, stack)?,
-                    1 => {
-                        // cycle: stack의 dep_ref 이후 부분을 반환
-                        let from = stack.iter().position(|t| *t == dep_ref).unwrap_or(0);
-                        let cycle: Vec<TaskId> =
-                            stack[from..].iter().map(|t| (*t).clone()).collect();
-                        return Err(AgentError::DependencyCycle(cycle));
-                    }
-                    _ => {}
+                self.visit_cycle_edge(dep_ref, color, stack)?;
+            }
+            // `Reduce.inputs` 는 암묵적 의존성 엣지 (결정 1) — 사이클 검출 대상에
+            // 포함한다. `depends_on` 과 달리 미존재 참조를 에러로 만들지 않는다:
+            // 본 검증(`TaskStore::create`)이 도입되기 전에 저장된 dangling 참조가
+            // 있으면(마이그레이션 안 함, 결정 3) 그 워크스페이스의 모든 후속
+            // `create()` 호출이 이 순회를 거치므로 하드 에러는 무관한 task 생성
+            // 까지 깨뜨린다. 신규 생성 시점 검증은 `TaskStore::create` 가 별도로
+            // 수행하므로, 여기서는 존재하는 참조만 순회하면 충분하다.
+            if let TaskCommand::Reduce { inputs, .. } = &task.command {
+                for dep in inputs {
+                    let Some((dep_ref, _)) = self.tasks.get_key_value(dep) else {
+                        continue;
+                    };
+                    self.visit_cycle_edge(dep_ref, color, stack)?;
                 }
             }
         }
@@ -66,11 +71,33 @@ impl<'a> TaskGraph<'a> {
         Ok(())
     }
 
+    fn visit_cycle_edge(
+        &self,
+        dep_ref: &'a TaskId,
+        color: &mut HashMap<&'a TaskId, u8>,
+        stack: &mut Vec<&'a TaskId>,
+    ) -> Result<()> {
+        match color.get(dep_ref).copied().unwrap_or(0) {
+            0 => self.dfs_cycle(dep_ref, color, stack)?,
+            1 => {
+                // cycle: stack의 dep_ref 이후 부분을 반환
+                let from = stack.iter().position(|t| *t == dep_ref).unwrap_or(0);
+                let cycle: Vec<TaskId> = stack[from..].iter().map(|t| (*t).clone()).collect();
+                return Err(AgentError::DependencyCycle(cycle));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     /// `task_id`의 직접 downstream (이 task에 의존하는 task들).
+    /// `depends_on` 뿐 아니라 `Reduce.inputs` 도 암묵적 의존성으로 취급한다(결정 1).
     pub fn downstream_of(&self, task_id: &TaskId) -> Vec<TaskId> {
         let mut out = Vec::new();
         for (id, t) in &self.tasks {
-            if t.depends_on.iter().any(|d| d == task_id) {
+            let is_dep = t.depends_on.iter().any(|d| d == task_id)
+                || matches!(&t.command, TaskCommand::Reduce { inputs, .. } if inputs.iter().any(|d| d == task_id));
+            if is_dep {
                 out.push((*id).clone());
             }
         }
@@ -99,6 +126,22 @@ impl<'a> TaskGraph<'a> {
     /// - `None` — 아직 대기 (dep에 미완료가 있음)
     pub fn evaluate_readiness(&self, task_id: &TaskId) -> Option<TaskState> {
         let task = self.tasks.get(task_id)?;
+
+        // `Reduce.inputs` 는 암묵적 의존성이지만 `depends_on` 과 의미가 다르다:
+        // reducer(특히 `all`)는 실패한 입력도 의도적으로 수집하는 것이 계약이므로
+        // (`reducer.rs` 의 `all_collects_outputs_in_order_regardless_of_status`),
+        // 입력 하나가 실패했다고 이 task 를 Skipped 로 몰지 않는다. 대신 입력
+        // 전부가 종결(terminal) 상태에 도달할 때까지만 대기시켜, 미완 입력 위에서
+        // 조용히 `[null, ...]` 을 만들어내는 결함(결정 1)을 막는다.
+        if let TaskCommand::Reduce { inputs, .. } = &task.command {
+            for input_id in inputs {
+                let input = self.tasks.get(input_id)?;
+                if !input.state.is_terminal() {
+                    return None;
+                }
+            }
+        }
+
         if task.depends_on.is_empty() {
             return Some(TaskState::Ready);
         }

@@ -79,6 +79,12 @@ pub fn handle_task_create(
 /// 위함이다. 오타를 실행 시점(Custom dispatch)이 아니라 생성 시점에 잡아
 /// task 가 Running 에 진입한 뒤에야 실패하는 것을 막는다. `Custom` dispatch 이름
 /// 해석(`src/core/agent/runner_host.rs`)과 같은 `resolve_poll_spec` 을 공유한다.
+///
+/// **범위 주의**: 이 함수는 poll 전략 *이름*만 검증한다. `OnFailure::Fallback.task`
+/// 와 `TaskCommand::Reduce.inputs` 가 가리키는 task id 의 존재 검증은 여기가 아니라
+/// `core.task_create` → `TaskStore::create`(store 층, `crates/tasty-agent/src/task/
+/// store.rs`)가 담당한다 — store 불변식이라 이 handler 를 거치지 않는 호출자에도
+/// 적용돼야 하기 때문이다. 두 검증은 서로 다른 거부 사유를 다루므로 겹치지 않는다.
 fn validate_poll_strategy_refs(
     command: &TaskCommand,
     on_failure: &OnFailure,

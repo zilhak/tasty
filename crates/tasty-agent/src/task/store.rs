@@ -7,8 +7,8 @@ use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 use tasty_utils::id::WorkspaceId;
 
 use super::{
-    OnFailure, TASK_KEY_PREFIX, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
-    apply_on_failure, is_valid_transition, task_key,
+    InlineFallbackSpec, OnFailure, TASK_KEY_PREFIX, Task, TaskCommand, TaskGraph, TaskId,
+    TaskResult, TaskState, apply_on_failure, is_valid_transition, task_key,
 };
 use crate::{AgentError, Result};
 
@@ -145,6 +145,31 @@ impl<'a> TaskStore<'a> {
             }
         }
 
+        // `OnFailure::Fallback { task }` 대상 존재 검증. 미존재를 그대로 저장하면
+        // main 이 실패할 때 조용히 무시되고(아래 `set_state`), 그 main 에 의존하는
+        // downstream 이 영구 `Waiting` 에 빠진다 — `depends_on` 과 동일한 정책으로
+        // 생성 시점에 거부한다(결정 2). `inline` 은 생성 시점엔 아직 존재하지
+        // 않는 게 정상(실패 전이 시 동적 생성)이므로 검증 대상이 아니다.
+        if let OnFailure::Fallback {
+            task: Some(fb_id), ..
+        } = &on_failure
+            && !known.contains(fb_id)
+        {
+            return Err(AgentError::UnknownDependency(fb_id.clone()));
+        }
+
+        // `TaskCommand::Reduce { inputs }` 대상 존재 검증. 그래프 엣지 자체(암묵적
+        // 의존성 승격, 사이클 검출 포함)는 `TaskGraph`(graph.rs) 가 담당하고, 여기
+        // 서는 신규 생성 시점의 존재 검증만 한다(결정 1) — 미검증 시 dispatch
+        // 시점에야 실패하거나(구 동작), 미완 입력 위에서 조용히 오답을 낸다.
+        if let TaskCommand::Reduce { inputs, .. } = &command {
+            for input_id in inputs {
+                if !known.contains(input_id) {
+                    return Err(AgentError::UnknownDependency(input_id.clone()));
+                }
+            }
+        }
+
         let mut new_task = Task {
             id: id.clone(),
             workspace_id,
@@ -222,51 +247,16 @@ impl<'a> TaskStore<'a> {
         {
             // 케이스 1: existing fallback (기존 동작).
             if let Some(fb_id) = fb_id_opt
-                && let Some(mut fb) = self.get(workspace_id, &fb_id)?
+                && let Some(fb) = self.advance_existing_fallback(workspace_id, &task.id, &fb_id)?
             {
-                let all_now = self.list(workspace_id)?;
-                if let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(&fb_id)
-                    && target != TaskState::Waiting
-                    && is_valid_transition(&fb.state, &target)
-                {
-                    fb.state = target;
-                    self.put(&fb)?;
-                    transitioned.push(fb);
-                }
+                transitioned.push(fb);
             }
             // 케이스 2: inline → 동적 생성.
-            if let Some(spec) = inline_opt {
-                let existing = self.list(workspace_id)?;
-                // idempotency: 같은 main 가 이미 inline fallback 을 만든 적 있는지.
-                let already = existing.iter().any(|t| {
-                    t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(task.id.as_str())
-                });
-                if !already {
-                    let mut metadata = spec.metadata.clone();
-                    if !metadata.is_object() {
-                        metadata = serde_json::json!({});
-                    }
-                    if let Some(obj) = metadata.as_object_mut() {
-                        obj.insert(
-                            "fallback_of".into(),
-                            serde_json::Value::String(task.id.clone()),
-                        );
-                    }
-                    let opts = TaskCreateOpts {
-                        workspace_id,
-                        name: spec.name.clone(),
-                        command: spec.command.clone(),
-                        depends_on: spec
-                            .depends_on_override
-                            .clone()
-                            .unwrap_or_else(|| task.depends_on.clone()),
-                        on_failure: spec.on_failure.clone(),
-                        metadata,
-                        now_ms,
-                    };
-                    let new_fb = self.create(opts)?;
-                    transitioned.push(new_fb);
-                }
+            if let Some(spec) = inline_opt
+                && let Some(new_fb) =
+                    self.materialize_inline_fallback(workspace_id, &task, *spec, now_ms)?
+            {
+                transitioned.push(new_fb);
             }
         }
 
@@ -310,6 +300,80 @@ impl<'a> TaskStore<'a> {
         }
         let _ = became; // 이전 state 스냅샷 — 현재 미사용(향후 전이 로그 후보). 값 drop, Result 아님.
         Ok((task, transitioned))
+    }
+
+    /// `set_state`의 Failed→Fallback 분기 중 "케이스 1: existing fallback" 처리.
+    /// fallback 대상이 `Ready`/`Skipped` 로 진행 가능하면 그 상태로 올리고 반환.
+    fn advance_existing_fallback(
+        &mut self,
+        workspace_id: WorkspaceId,
+        main_task_id: &TaskId,
+        fb_id: &TaskId,
+    ) -> Result<Option<Task>> {
+        let Some(mut fb) = self.get(workspace_id, fb_id)? else {
+            // `create()` 가 이제 신규 생성 시점에 `Fallback.task` 존재를 검증하므로
+            // (결정 2) 정상적으로는 도달하지 않는다 — 이 경로는 본 검증 도입 이전에
+            // 저장된 dangling 참조(결정 3, 마이그레이션 안 함)에서만 발생한다.
+            // 조용히 무시하면 이 main 에 의존하는 downstream 이 영구 `Waiting` 에
+            // 빠지는데 원인을 알 방법이 없으므로, 최소한 관측 가능한 신호를 남긴다.
+            tracing::warn!(
+                task_id = %main_task_id,
+                fallback_task_id = %fb_id,
+                "on_failure.fallback.task references a task that no longer exists; \
+                 downstream depending on this task will remain Waiting indefinitely"
+            );
+            return Ok(None);
+        };
+        let all_now = self.list(workspace_id)?;
+        let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(fb_id) else {
+            return Ok(None);
+        };
+        if target == TaskState::Waiting || !is_valid_transition(&fb.state, &target) {
+            return Ok(None);
+        }
+        fb.state = target;
+        self.put(&fb)?;
+        Ok(Some(fb))
+    }
+
+    /// `set_state`의 Failed→Fallback 분기 중 "케이스 2: inline → 동적 생성" 처리.
+    /// 같은 main 이 이미 inline fallback 을 만든 적 있으면(idempotency) `None`.
+    fn materialize_inline_fallback(
+        &mut self,
+        workspace_id: WorkspaceId,
+        main_task: &Task,
+        spec: InlineFallbackSpec,
+        now_ms: u64,
+    ) -> Result<Option<Task>> {
+        let existing = self.list(workspace_id)?;
+        let already = existing.iter().any(|t| {
+            t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(main_task.id.as_str())
+        });
+        if already {
+            return Ok(None);
+        }
+        let mut metadata = spec.metadata;
+        if !metadata.is_object() {
+            metadata = serde_json::json!({});
+        }
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert(
+                "fallback_of".into(),
+                serde_json::Value::String(main_task.id.clone()),
+            );
+        }
+        let opts = TaskCreateOpts {
+            workspace_id,
+            name: spec.name,
+            command: spec.command,
+            depends_on: spec
+                .depends_on_override
+                .unwrap_or_else(|| main_task.depends_on.clone()),
+            on_failure: spec.on_failure,
+            metadata,
+            now_ms,
+        };
+        Ok(Some(self.create(opts)?))
     }
 
     /// task의 result를 기록 (state 전이는 별도). 보통 set_state(Succeeded/Failed) 전에 호출.

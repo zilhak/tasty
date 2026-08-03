@@ -20,6 +20,13 @@ fn run_cmd() -> TaskCommand {
     }
 }
 
+fn reduce_cmd(inputs: Vec<TaskId>) -> TaskCommand {
+    TaskCommand::Reduce {
+        inputs,
+        strategy: ReducerStrategy::All,
+    }
+}
+
 #[test]
 fn create_single_task_starts_ready() {
     let (_td, mut mem, seq) = fresh_store();
@@ -837,5 +844,279 @@ fn fallback_validation_rejects_neither_task_nor_inline() {
     assert!(
         matches!(err, AgentError::InvalidArgument(_)),
         "expected InvalidArgument, got {err:?}"
+    );
+}
+
+// ============================================================
+// TODO14 회귀: Fallback.task / Reduce.inputs 참조 검증
+// ============================================================
+
+#[test]
+fn create_rejects_unknown_reduce_input() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let err = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "R".into(),
+            command: reduce_cmd(vec!["t-does-not-exist".into()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentError::UnknownDependency(ref id) if id == "t-does-not-exist"),
+        "expected UnknownDependency, got {err:?}"
+    );
+}
+
+#[test]
+fn create_rejects_unknown_fallback_task() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let err = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some("t-does-not-exist".into()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentError::UnknownDependency(ref id) if id == "t-does-not-exist"),
+        "expected UnknownDependency, got {err:?}"
+    );
+}
+
+#[test]
+fn fallback_inline_is_not_rejected_as_unknown_target() {
+    // inline fallback 은 생성 시점엔 아직 존재하지 않는 게 정상 — task 존재
+    // 검증 대상이 아니어야 한다 (fallback_validation_rejects_* 와는 다른 축).
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let t = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: None,
+                inline: Some(Box::new(InlineFallbackSpec {
+                    name: "A_prime".into(),
+                    command: run_cmd(),
+                    depends_on_override: None,
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::json!({}),
+                })),
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    assert_eq!(t.state, TaskState::Ready);
+}
+
+/// 결정 1 (가장 중요): `Reduce.inputs` 가 암묵적 의존성으로 승격되어, 입력이
+/// 전부 종결되기 전에는 Reduce 가 `Ready` 로 올라가지 않는다. 승격 이전에는
+/// `depends_on` 없는 Reduce 가 생성 즉시 `Ready` → dispatch 되어 미완 입력을
+/// `Null` 로 조용히 수집하고 `Succeeded` 로 마감했다 (현상 §3, 조용한 오답).
+#[test]
+fn reduce_waits_for_inputs_to_terminate_before_ready() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A (slow)".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    // depends_on 을 일부러 비워둔다 — 승격 전에는 이 경로가 즉시 Ready 였다.
+    let r = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "R".into(),
+            command: reduce_cmd(vec![a.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    assert_eq!(
+        r.state,
+        TaskState::Waiting,
+        "A 가 아직 미완이므로 R 은 생성 즉시 Ready 가 되면 안 된다"
+    );
+
+    // A 가 여전히 실행 중이어도 R 은 계속 Waiting.
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    let r_mid = store.get(1, &r.id).unwrap().unwrap();
+    assert_eq!(r_mid.state, TaskState::Waiting);
+
+    // A 가 종결(Succeeded)되어야 R 이 Ready.
+    let (_, cascaded) = store
+        .set_state(1, &a.id, TaskState::Succeeded, 3000)
+        .unwrap();
+    let r_after = store.get(1, &r.id).unwrap().unwrap();
+    assert_eq!(r_after.state, TaskState::Ready);
+    assert!(cascaded.iter().any(|t| t.id == r.id));
+}
+
+/// Reducer(특히 `all`)는 실패한 입력도 의도적으로 수집하는 계약이므로, 입력이
+/// 실패했다고 Reduce 를 `depends_on` 처럼 `Skipped` 로 몰면 안 된다 — 종결
+/// 되었으면 (성공이든 실패든) `Ready` 로 진행되어야 dispatch 가 실제로
+/// 그 실패 결과를 합성할 수 있다.
+#[test]
+fn reduce_becomes_ready_after_failed_input_not_skipped() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let r = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "R".into(),
+            command: reduce_cmd(vec![a.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+    let r_after = store.get(1, &r.id).unwrap().unwrap();
+    assert_eq!(
+        r_after.state,
+        TaskState::Ready,
+        "실패한 입력도 종결이므로 Reduce 는 Ready — Skipped 로 몰지 않는다"
+    );
+}
+
+#[test]
+fn reduce_input_cycle_via_implicit_edge_is_detected() {
+    // A -> R (Reduce.inputs 로 R 이 A 에 의존). 이후 A 에 depends_on=[R] 을
+    // 강제로 주입(create 검증 우회, cycle_detected 테스트와 동일 기법)하면
+    // A -> R -> A 사이클이 만들어진다. depends_on 만 엣지였다면 못 잡는다.
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let r = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "R".into(),
+            command: reduce_cmd(vec![a.id.clone()]),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    let mut a_mut = a.clone();
+    a_mut.depends_on = vec![r.id.clone()];
+    store.put(&a_mut).unwrap();
+    let all = store.list(1).unwrap();
+    let err = TaskGraph::build(&all).detect_cycles().unwrap_err();
+    assert!(matches!(err, AgentError::DependencyCycle(_)));
+}
+
+/// 결정 3: 본 검증 도입 이전에 저장된 dangling `Fallback.task` 참조는
+/// 마이그레이션하지 않는다 — `create()` 우회로 그 상태를 재현하고, main 이
+/// 실패해도 패닉하지 않고 downstream 이 영구 `Waiting` 으로 남는지 확인한다.
+#[test]
+fn legacy_dangling_fallback_target_leaves_downstream_waiting() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let c = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".into(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    // create() 를 우회해 dangling fallback 참조를 강제로 주입 (레거시 데이터 재현).
+    let mut a_mut = a.clone();
+    a_mut.on_failure = OnFailure::Fallback {
+        task: Some("t-does-not-exist".into()),
+        inline: None,
+    };
+    store.put(&a_mut).unwrap();
+
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    let (_, _cascaded) = store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+
+    let c_after = store.get(1, &c.id).unwrap().unwrap();
+    assert_eq!(
+        c_after.state,
+        TaskState::Waiting,
+        "dangling fallback 은 관측 가능한 경고만 남기고 downstream 은 영구 Waiting"
     );
 }
