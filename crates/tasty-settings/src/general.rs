@@ -52,7 +52,7 @@ __tasty_title() {
     printf '\033]0;%s\007' "$name"
 }
 
-# OSC 133 (TODO 35) — command-boundary reporting so the host can index
+# OSC 133 (docs/features/terminal-output/index.md#명령-인덱싱-osc-133) — command-boundary reporting so the host can index
 # command/exit-code records (surface.commands IPC). D reports the command
 # that just finished (using $?), A announces a fresh prompt; both fire from
 # PROMPT_COMMAND, D first — $? MUST be captured as this function's very
@@ -69,18 +69,18 @@ __tasty_osc133_precmd() {
 # feature); the closest equivalent is `PS0` (bash 4.4+), which is expanded
 # and displayed right after a command line is read, before it executes.
 # bash < 4.4 (e.g. macOS's system bash 3.2) has no PS0 and is unsupported —
-# no DEBUG-trap fallback is added (see TODO35 design decision 5: PS0-only).
+# no DEBUG-trap fallback is added (PS0-only; see docs/features/terminal-output/index.md#명령-인덱싱-osc-133).
 #
 # NOTE: the command text (`cmd=` payload) is intentionally omitted here.
 # The primary reason is independent of bash: tasty's current OSC133 C-phase
 # parser (`FinalTermSemanticPrompt::MarkEndOfInputAndStartOfOutput` arm in
-# crates/tasty-terminal/src/vte_handler/osc.rs, from TODO34) unconditionally
+# crates/tasty-terminal/src/vte_handler/osc.rs; see docs/features/terminal-output/index.md#명령-인덱싱-osc-133) unconditionally
 # discards C's payload for every shell, bash and zsh alike — so a `cmd=`
 # emitted here would never reach `command_index.rs` regardless of how it's
 # obtained. Secondarily, and only relevant if that parser is later extended
 # to preserve C's payload: PS0-evaluation-time command-text lookup in bash is
 # inconsistent across candidates — `history 1` was verified (manual PTY test,
-# TODO35) to correctly reflect the about-to-run command, but `$BASH_COMMAND`
+# manual PTY test) to correctly reflect the about-to-run command, but `$BASH_COMMAND`
 # and `fc -ln -1` were verified to lag one command behind at that point (bash
 # hasn't finished recording the about-to-run command yet). Left omitted for
 # now rather than wiring up `history 1` for a payload the parser would just
@@ -108,7 +108,7 @@ PS0='$(__tasty_osc133_preexec)'
 ///
 /// **빌트인 블록(`BUILTIN_BASHRC_PRE`/`BUILTIN_BASHRC_PROMPT`) 내용을 바꿀
 /// 때마다 숫자를 +1 할 것.** (v1 = 스탬프 도입 전 무표기 세대, v3 = OSC133 훅
-/// 추가 — TODO35.)
+/// 추가.)
 pub const BUILTIN_BASHRC_STAMP: &str = "# tasty-bashrc-v3";
 
 /// `~/.tasty/bashrc.user`의 초기 시드. 사용자가 자유롭게 수정/리셋할 수 있는 기본값.
@@ -482,7 +482,7 @@ impl GeneralSettings {
     /// (OSC7/OSC133/title hooks). bash 는 `--rcfile` 기반 인자로 주입한다(아래
     /// [`bash_rcfile_args`]). zsh 는 인자가 아니라 `ZDOTDIR` 환경변수로 주입하므로
     /// ([`effective_shell_envs`]) 여기서는 항상 빈 벡터 — fish/nu/pwsh 등 기타
-    /// 셸도 이번 범위 밖이라 마찬가지로 빈 벡터(TODO35).
+    /// 셸도 이번 범위 밖이라 마찬가지로 빈 벡터(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고).
     pub fn effective_shell_args(&self) -> Vec<String> {
         match tasty_utils::shell_family::ShellFamily::detect(&self.shell) {
             tasty_utils::shell_family::ShellFamily::Bash => {
@@ -494,7 +494,7 @@ impl GeneralSettings {
     }
 
     /// Resolve effective shell **environment variables** for auto-injected shell
-    /// integration. 현재는 zsh 의 `ZDOTDIR` 스왑(TODO35 신설)만 여기 산다 — bash 는
+    /// integration. 현재는 zsh 의 `ZDOTDIR` 스왑(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고)만 여기 산다 — bash 는
     /// 인자([`effective_shell_args`])로 주입하므로 관여하지 않는다.
     pub fn effective_shell_envs(&self) -> Vec<(String, String)> {
         if tasty_utils::shell_family::ShellFamily::detect(&self.shell)
@@ -519,8 +519,8 @@ impl GeneralSettings {
     }
 }
 
-// bash 의 `--rcfile` 주입 인자 조립 — TODO35 설계결정 2가 요구한 "기존
-// #[cfg(windows)] 로직과 통합 가능한지" 조사 결과:
+// bash 의 `--rcfile` 주입 인자 조립 — 기존
+// #[cfg(windows)] 로직과 통합 가능한지 조사한 결과:
 //
 // - **소싱 인프라(BUILTIN_BASHRC_PRE/PROMPT 상수, compose_*_bashrc, 버전 스탬프,
 //   ensure_compiled_bashrc, 경로 헬퍼)는 전부 공유한다** — OSC133 훅 스크립트
@@ -557,7 +557,7 @@ fn bash_rcfile_args(settings: &GeneralSettings) -> Vec<String> {
     vec!["--rcfile".to_string(), rcfile]
 }
 
-/// 비-Windows bash 전용 경로(TODO35 신설, 위 rationale 참고). `shell_mode` UI
+/// 비-Windows bash 전용 경로(위 rationale 참고). `shell_mode` UI
 /// 개념이 Windows 전용이라 비-Windows 는 "default 모드"(사용자 로그인 프로필
 /// 소싱, `default_mode_user_source` 참고) 하나만 쓴다.
 #[cfg(not(windows))]
@@ -593,7 +593,7 @@ pub fn tasty_bashrc_user_path() -> String {
         .to_string()
 }
 
-/// `~/.tasty/zsh-integration/` — zsh `ZDOTDIR` 스왑 대상 디렉토리(TODO35 신설).
+/// `~/.tasty/zsh-integration/` — zsh `ZDOTDIR` 스왑 대상 디렉토리(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고).
 /// 이 안의 `.zshenv` 가 zsh 가 셸 인스턴스당 정확히 한 번, 가장 먼저 읽는 파일이라
 /// 셸 통합 진입점이 된다.
 pub fn tasty_zsh_integration_dir() -> std::path::PathBuf {
@@ -605,7 +605,7 @@ pub fn tasty_zsh_integration_dir() -> std::path::PathBuf {
 /// 커스터마이즈 지점) — 그대로 보존한다. 비-Windows 는 진짜 login 셸의 파일 탐색
 /// 순서(`~/.bash_profile` → `~/.bash_login` → `~/.profile`, 최초 존재하는 파일
 /// 하나만)를 그대로 재현한다 — `--rcfile` 로 로그인 모드 자체를 포기하는 대신
-/// wrapper 가 login 셸의 소싱 규칙을 흉내내는 것(TODO35 설계결정 2). 이 규칙을
+/// wrapper 가 login 셸의 소싱 규칙을 흉내내는 것이다. 이 규칙을
 /// 따르는 사용자 profile 은 관례상 스스로 `~/.bashrc` 를 source 하므로(예:
 /// `[ -f ~/.bashrc ] && . ~/.bashrc`) 이중 소싱 없이 자연히 이어진다 — profile 이
 /// 그렇게 안 되어 있으면 `~/.bashrc` 는 로드되지 않는데, 이는 실제 login 셸의
@@ -686,7 +686,7 @@ fn ensure_bashrc_parent_dir(user_path: &str) -> bool {
 
 /// 셸 통합 스크립트를 원자적으로 쓴다 — 같은 디렉토리의 임시 파일에 먼저 쓰고
 /// rename 으로 교체해, 쓰는 도중 크래시하거나 다른 프로세스가 half-write 상태를
-/// 읽는 상황을 막는다(Codex 지적, TODO35). 부모 디렉토리는 호출자가 이미 보장한
+/// 읽는 상황을 막는다(Codex 지적). 부모 디렉토리는 호출자가 이미 보장한
 /// 상태여야 한다. Unix 는 권한을 0o644 로 명시 — 비밀은 없는 평범한 셸 스크립트라
 /// 다른 사용자도 읽을 수 있으면 충분하고, 소유자만 쓰기 가능하면 된다.
 fn write_generated_file(path: &std::path::Path, content: &str) {
@@ -733,7 +733,7 @@ fn generated_file_stamp_current(path: &str, stamp: &str) -> bool {
 /// 설치본에 영원히 반영되지 않는다). 사용자 편집 영역(`bashrc.user`)은 건드리지
 /// 않는다 — tasty 모드 재생성은 `save_user_bashrc` 경유라 사용자 본문이 보존된다.
 ///
-/// TODO35 이전엔 `#[cfg(windows)]` 전용이었다 — bash 셸 통합 자체가 Windows
+/// 비-Windows bash 지원 이전엔 `#[cfg(windows)]` 전용이었다 — bash 셸 통합 자체가 Windows
 /// 전용이었기 때문. 비-Windows bash 지원 신설로 게이트를 없애 항상 호출되게
 /// 하고, "tasty 모드"(shell_mode UI 토글) 재생성만 Windows 전용으로 남긴다(그
 /// 개념 자체가 Windows 전용이므로).
@@ -758,13 +758,13 @@ fn ensure_compiled_bashrc() {
     }
 }
 
-/// zsh `ZDOTDIR` wrapper 의 `.zshenv` 본문(TODO35 신설). OSC133 훅 정의(zsh 네이티브
+/// zsh `ZDOTDIR` wrapper 의 `.zshenv` 본문(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고). OSC133 훅 정의(zsh 네이티브
 /// `precmd`/`preexec` 훅 배열 사용 — bash 의 PS0 우회가 필요 없다), `ZDOTDIR` 원복,
 /// 원본 `.zshenv` source 를 이 순서로 담는다. `ZDOTDIR` 는 zsh 가 셸 인스턴스당
 /// 정확히 한 번, 가장 먼저 읽는 파일이라(설계결정 3) 이 파일이 곧 셸 통합 진입점이다.
 pub const BUILTIN_ZSHENV_BODY: &str = r#"# This section is regenerated every time settings are saved. Do not edit.
 
-# OSC 133 (TODO 35) — see tasty bashrc for phase semantics. zsh has native
+# OSC 133 (docs/features/terminal-output/index.md#명령-인덱싱-osc-133) — see tasty bashrc for phase semantics. zsh has native
 # precmd/preexec hook arrays via `add-zsh-hook`, so no PS0-style workaround
 # (needed for bash) is required here.
 autoload -Uz add-zsh-hook
@@ -780,7 +780,7 @@ __tasty_osc133_preexec() {
 add-zsh-hook precmd __tasty_osc133_precmd
 add-zsh-hook preexec __tasty_osc133_preexec
 
-# NOTE(known limitation, TODO35): if the user's own .zshrc later reassigns
+# NOTE(known limitation; see docs/features/terminal-output/index.md#명령-인덱싱-osc-133): if the user's own .zshrc later reassigns
 # precmd_functions=(...)/preexec_functions=(...) wholesale (instead of +=),
 # or redefines a same-named function, these hooks can be silently dropped.
 # zsh's hook-array model makes this far less likely than bash's single
@@ -1017,7 +1017,7 @@ mod tests {
         GeneralSettings {
             // 명시적 bash 경로 — CI 러너에 실제 Git Bash 가 설치돼 있는지와
             // 무관하게 `ShellFamily::detect` 가 항상 Bash 로 판정하도록 한다
-            // (TODO35: effective_shell_args 가 이제 shell 필드도 본다).
+            // (effective_shell_args 가 이제 shell 필드도 본다).
             shell: "bash.exe".to_string(),
             shell_mode: mode.to_string(),
             ..GeneralSettings::default()
@@ -1034,7 +1034,7 @@ mod tests {
 
     // TASTY_HOME env 변경은 프로세스 전역이라, tasty_home() 경로를 읽거나 바꾸는
     // 테스트(effective_shell_args/envs, ensure_compiled_bashrc/zshenv 계열)는
-    // 직렬화한다. TODO35 이전엔 Windows 전용이었다(비-Windows 는 이 경로를 아예
+    // 직렬화한다. 비-Windows bash/zsh 지원 이전엔 Windows 전용이었다(비-Windows 는 이 경로를 아예
     // 안 탔으므로) — 비-Windows bash/zsh 지원 신설로 모든 플랫폼에서 필요해졌다.
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -1116,7 +1116,7 @@ mod tests {
     }
 
     // default 모드 합성 rc(비-Windows) 는 진짜 login 셸의 프로필 탐색 순서를
-    // 재현한다(TODO35 설계결정 2) — bash_profile/bash_login/profile 셋 다 언급.
+    // 재현한다(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고) — bash_profile/bash_login/profile 셋 다 언급.
     #[cfg(not(windows))]
     #[test]
     fn default_mode_compiled_rc_searches_login_profiles_on_unix() {
@@ -1158,7 +1158,7 @@ mod tests {
         }
     }
 
-    // OSC133 훅(TODO35) — 정의 + PROMPT_COMMAND(A/D) + PS0(C) 배선 모두 포함.
+    // OSC133 훅 — 정의 + PROMPT_COMMAND(A/D) + PS0(C) 배선 모두 포함.
     #[test]
     fn compiled_rcs_wire_osc133_hooks() {
         for compiled in [compose_default_mode_bashrc(), compose_tasty_mode_bashrc("")] {
@@ -1251,7 +1251,7 @@ mod tests {
     }
 
     // 비-Windows bash: `--rcfile <default rc> -i` — `-i` 는 `-li`(로그인 셸)를
-    // 유지한 채로는 `--rcfile` 이 무시되기 때문에 필요하다(TODO35 설계결정 2).
+    // 유지한 채로는 `--rcfile` 이 무시되기 때문에 필요하다(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고).
     #[cfg(not(windows))]
     #[test]
     fn unix_bash_effective_args_use_rcfile_and_interactive() {

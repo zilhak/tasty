@@ -91,7 +91,8 @@ impl IdGenerator {
 pub struct ShellConfig {
     pub shell: String,
     pub args: Vec<String>,
-    /// 자식 셸에 추가로 심을 환경변수(TODO35 — 예: zsh `ZDOTDIR` 스왑). bash 는
+    /// 자식 셸에 추가로 심을 환경변수(docs/features/terminal-output/index.md#명령-인덱싱-osc-133
+    /// — 예: zsh `ZDOTDIR` 스왑). bash 는
     /// `args`(`--rcfile`) 로 주입하므로 이 필드는 비어 있다.
     pub envs: Vec<(String, String)>,
 }
