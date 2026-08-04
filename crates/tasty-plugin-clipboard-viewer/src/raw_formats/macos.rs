@@ -53,7 +53,7 @@ pub(super) fn read_other() -> Vec<OtherFormatEntry> {
         if CONSUMED_TYPE_NAMES.contains(&name.as_str()) {
             continue;
         }
-        match pasteboard.dataForType(ty) {
+        match pasteboard.dataForType(&ty) {
             Some(data) => {
                 let bytes = data.to_vec();
                 out.push(OtherFormatEntry::from_bytes(name, &bytes, MAX_RAW_BYTES));
