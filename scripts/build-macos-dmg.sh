@@ -202,15 +202,28 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# 코드 서명 (ad-hoc — 무료, Apple 계정 불요). Apple Silicon 의 "damaged/can't open"
-# 하드 블록을 완화한다. lipo·plugin staging·Info.plist 생성 *이후*, DMG 생성 이전 —
-# 서명 뒤에 번들 내용을 바꾸면 서명이 깨진다. Gatekeeper "미확인 개발자" 경고는
-# 이것으로 없어지지 않는다(공증 기각은 정책 결정 — docs 에서 우회 안내).
+# 코드 서명. Apple Silicon 의 "damaged/can't open" 하드 블록을 완화한다. lipo·
+# plugin staging·Info.plist 생성 *이후*, DMG 생성 이전 — 서명 뒤에 번들 내용을
+# 바꾸면 서명이 깨진다. Gatekeeper "미확인 개발자" 경고는 이것으로 없어지지
+# 않는다(공증 기각은 정책 결정 — docs 에서 우회 안내).
+#
+# 기본은 ad-hoc(`-`, 무료·Apple 계정 불요). $TASTY_CODESIGN_IDENTITY 가 설정돼
+# 있으면 그 identity 로 서명한다. ad-hoc 서명은 designated requirement 가 cdhash
+# 뿐이라 재빌드할 때마다 macOS 가 전혀 다른 앱으로 보고, TCC(개인정보 보호) 승인이
+# 매번 초기화된다 — "다른 앱의 데이터에 접근하려고 합니다" 가 무한 반복되는 원인.
+# 인증서로 서명하면 DR 에 certificate leaf 가 들어가 재빌드해도 승인이 유지된다.
+# 인증서 발급/조회: ./scripts/macos-codesign-identity.sh
 #
 # --deep 은 쓰지 않는다 (Apple 이 deprecate 했고, 여기선 불필요) — plugin 은
 # Contents/Resources/ 아래의 일반 리소스로 봉인된다.
-echo "==> Ad-hoc signing $APP_NAME.app..."
-codesign --force --sign - "$APP_DIR"
+SIGN_IDENTITY="${TASTY_CODESIGN_IDENTITY:--}"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "==> Ad-hoc signing $APP_NAME.app..."
+    echo "    (TCC 승인을 재빌드 후에도 유지하려면 ./scripts/macos-codesign-identity.sh 참고)"
+else
+    echo "==> Signing $APP_NAME.app with identity '$SIGN_IDENTITY'..."
+fi
+codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 # Verify the assembled .app (both install and DMG paths share this).
 echo "==> Verifying $APP_NAME.app..."
