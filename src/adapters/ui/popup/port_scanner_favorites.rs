@@ -34,9 +34,8 @@ pub struct PortFavorites {
     pub items: Vec<PortFavorite>,
 }
 
-// UI 결선(별도 TODO)이 이 API를 소비하기 전까지 `save`/`add`/`remove`/`contains`
-// 등은 테스트 밖에서 실사용처가 없다 — wiring 전.
-#[allow(dead_code)]
+// 포트 스캐너 팝업(`port_scanner.rs`)의 별 토글 + 상단 즐겨찾기 섹션이 이 API
+// (`contains`/`add`/`remove`/`save`)를 소비한다.
 impl PortFavorites {
     /// 저장 파일 경로: `~/.tasty/port-favorites.toml`.
     pub fn config_path() -> Option<PathBuf> {

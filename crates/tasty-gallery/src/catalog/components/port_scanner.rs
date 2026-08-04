@@ -197,87 +197,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 즐겨찾기 섹션 (design FavoritesSection) — 캡션(22px: "Favorites · N" +
             // 우측 "system-wide") + bounded 리스트(최대 112px, 행 22px). bg-sidebar
             // 배경 + 하단 separator. 별 컬럼 폭은 메인 테이블과 정렬(FAV_COL_WIDTH).
-            let fav_row_h = theme.item_height_tree.value();
-            let fav_ir = egui::Frame::NONE
-                .fill(theme.bg_sidebar().to_egui())
-                .show(ui, |ui| {
-                    kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(ui.available_width(), fav_row_h),
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
-                                kit::caption(
-                                    ui,
-                                    theme,
-                                    &format!("Favorites · {}", FAVORITE_ROWS.len()),
-                                    false,
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        kit::caption(ui, theme, "system-wide", false);
-                                    },
-                                );
-                            },
-                        );
-                        for fav in FAVORITE_ROWS {
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(), fav_row_h),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(FAV_COL_WIDTH, fav_row_h),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| star(ui, theme, true),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(fav.key)
-                                            .monospace()
-                                            .size(theme.font_size_caption.value())
-                                            .color(theme.text_primary().to_egui()),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            match fav.listening {
-                                                Some(true) => status_dot(
-                                                    ui,
-                                                    theme,
-                                                    StatusKind::Running,
-                                                    "LISTEN",
-                                                    true,
-                                                    false,
-                                                ),
-                                                Some(false) => status_dot(
-                                                    ui,
-                                                    theme,
-                                                    StatusKind::Waiting,
-                                                    "CLOSE_WAIT",
-                                                    false,
-                                                    false,
-                                                ),
-                                                None => status_dot(
-                                                    ui,
-                                                    theme,
-                                                    StatusKind::Idle,
-                                                    "NONE",
-                                                    false,
-                                                    false,
-                                                ),
-                                            };
-                                            kit::caption(ui, theme, fav.detail, false);
-                                        },
-                                    );
-                                },
-                            );
-                        }
-                    });
-                });
-            ui.painter().hline(
-                fav_ir.response.rect.x_range(),
-                fav_ir.response.rect.bottom(),
-                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-            );
+            // 혼합 상태(매칭 1 + NONE 1) — 빈 상태는 아래 별도 stage 에서 시연한다.
+            draw_favorites_section(ui, theme, FAVORITE_ROWS);
 
             // Table — 컬럼별 최소폭 + 가로 스크롤. 최소폭 합(708)이 660 프레임을 넘어
             // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
@@ -372,6 +293,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
+    // 즐겨찾기 섹션 — 빈 상태(0개). design §6.4 확정: 0개여도 캡션은 유지하고
+    // 흐린 별(37%) + 안내 문구 1행을 보여준다(Explorer 사이드바 즐겨찾기와 동일
+    // 관례). 위 모달의 "즐겨찾기 1개 이상"(혼합 상태) 시연과 별개로 gallery-first
+    // 정책에 따라 노출한다.
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+            draw_favorites_section(ui, theme, &[]);
+        });
+    });
+
     spec::meta(
         ui,
         theme,
@@ -386,6 +317,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             (
                 "favorites",
                 "bounded caption(22) + list(max 112) · system-wide",
+            ),
+            (
+                "favorites empty",
+                "caption stays · faded star(37%) + hint row",
             ),
             ("columns", "chooser hides cols (Workspace hidden here)"),
             (
@@ -500,6 +435,117 @@ fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'
         align,
         sort_id: None,
     }
+}
+
+/// `FavoritesSection` mock — 캡션(22px: "Favorites"(+개수, 0개면 생략) + 우측
+/// "system-wide") + bounded 리스트(최대 112px, 행 22px) 또는 빈 상태(흐린 별 37% +
+/// 안내 1행). `favorites` 가 비면 빈 상태를 그린다(design §6.4). 본체
+/// `port_scanner.rs::draw_favorites_section` 전사.
+fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[FavoriteRow]) {
+    let fav_row_h = theme.item_height_tree.value();
+    let fav_ir = egui::Frame::NONE
+        .fill(theme.bg_sidebar().to_egui())
+        .show(ui, |ui| {
+            kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), fav_row_h),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        let heading = if favorites.is_empty() {
+                            "Favorites".to_string()
+                        } else {
+                            format!("Favorites · {}", favorites.len())
+                        };
+                        kit::caption(ui, theme, &heading, false);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            kit::caption(ui, theme, "system-wide", false);
+                        });
+                    },
+                );
+
+                if favorites.is_empty() {
+                    // 빈 상태 — Explorer 사이드바 즐겨찾기와 동일 관례(흐린 별 + 안내 1행).
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), fav_row_h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                            let sz = theme.icon_glyph_size_sm.value();
+                            let (r, _) =
+                                ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                            icons::STAR
+                                .image(sz, theme.text_muted().to_egui().gamma_multiply(0.37))
+                                .paint_at(ui, r);
+                            ui.label(
+                                egui::RichText::new(
+                                    "No favorites yet — click a star in the list below to pin a port.",
+                                )
+                                .italics()
+                                .size(theme.font_size_caption.value())
+                                .color(theme.text_muted().to_egui()),
+                            );
+                        },
+                    );
+                } else {
+                    for fav in favorites {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), fav_row_h),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(FAV_COL_WIDTH, fav_row_h),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| star(ui, theme, true),
+                                );
+                                ui.label(
+                                    egui::RichText::new(fav.key)
+                                        .monospace()
+                                        .size(theme.font_size_caption.value())
+                                        .color(theme.text_primary().to_egui()),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        match fav.listening {
+                                            Some(true) => status_dot(
+                                                ui,
+                                                theme,
+                                                StatusKind::Running,
+                                                "LISTEN",
+                                                true,
+                                                false,
+                                            ),
+                                            Some(false) => status_dot(
+                                                ui,
+                                                theme,
+                                                StatusKind::Waiting,
+                                                "CLOSE_WAIT",
+                                                false,
+                                                false,
+                                            ),
+                                            None => status_dot(
+                                                ui,
+                                                theme,
+                                                StatusKind::Idle,
+                                                "NONE",
+                                                false,
+                                                false,
+                                            ),
+                                        };
+                                        kit::caption(ui, theme, fav.detail, false);
+                                    },
+                                );
+                            },
+                        );
+                    }
+                }
+            });
+        });
+    ui.painter().hline(
+        fav_ir.response.rect.x_range(),
+        fav_ir.response.rect.bottom(),
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
 }
 
 /// `PortStar` mock — 22×22, on(채운 STAR_FILL + accent-warning) / off(outline STAR
