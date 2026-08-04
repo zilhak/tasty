@@ -8,7 +8,7 @@
 #
 # Reuses build-macos-dmg.sh to assemble dist/Tasty.app (NO_DMG skips packaging),
 # then overwrites /Applications/Tasty.app with the freshly built bundle. The
-# bundled plugins ride inside the .app (Contents/MacOS/plugins/) and the host
+# bundled plugins ride inside the .app (Contents/Resources/plugins/) and the host
 # force-overwrites ~/.tasty/plugins/<id>/ on first launch — so after install the
 # app body AND every plugin are at the latest built version.
 

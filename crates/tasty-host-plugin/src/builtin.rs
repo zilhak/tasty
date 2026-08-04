@@ -227,13 +227,14 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// 번들 plugin 디렉터리들이 있는 루트 경로.
 ///
 /// - 첫째: `TASTY_BUILTIN_PLUGINS_DIR` 환경 변수 강제 override.
-/// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사,
-///   portable .tar.gz / .app / .zip 설치).
-/// - 셋째: workspace 빌드일 때 자동 탐색 — `target/<profile>/builtin-plugins/`에
+/// - 둘째 (macOS 한정): `.app` 번들의 `Contents/Resources/plugins/`.
+/// - 셋째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사,
+///   portable .tar.gz / .zip 설치).
+/// - 넷째: workspace 빌드일 때 자동 탐색 — `target/<profile>/builtin-plugins/`에
 ///   각 builtin plugin의 매니페스트와 빌드된 바이너리를 mtime 비교 후 갱신.
 ///   `cargo build [--release] --workspace` 후 실행하면 자동 반영됨. workspace 가
-///   없는 배포 패키지에서는 둘째(`plugins/`)에서 이미 반환되어 여기 도달하지 않는다.
-/// - 넷째 (linux 한정): FHS 표준 경로 `/usr/lib/tasty/plugins/`,
+///   없는 배포 패키지에서는 앞선 항목에서 이미 반환되어 여기 도달하지 않는다.
+/// - 다섯째 (linux 한정): FHS 표준 경로 `/usr/lib/tasty/plugins/`,
 ///   `/usr/share/tasty/plugins/` — `.deb` / `.rpm` 패키지가 `/usr/bin/tasty` 옆이
 ///   아닌 FHS 친화 위치에 plugin 을 설치한다. exe-relative 보다 우선순위가
 ///   낮음 — 같은 머신에 portable archive 가 풀려있으면 그쪽이 항상 우선이라
@@ -265,6 +266,25 @@ pub fn bundle_root() -> Option<PathBuf> {
 fn bundle_root_exe_relative() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
+    #[cfg(target_os = "macos")]
+    {
+        // .app 번들: `Contents/Resources/plugins/`. exe 옆(`Contents/MacOS/`)이
+        // 아닌 이유는 codesign 이 `Contents/MacOS/` 하위의 실행 파일 디렉터리를
+        // nested bundle 로 파싱하려다 실패하기 때문(bundle format unrecognized).
+        // 아래 exe-relative 보다 먼저 본다 — 구 배치가 남아 있어도 새 것 우선.
+        // exe 가 `Contents/MacOS/` 안에 있을 때로 한정한다. 그 확인이 없으면 번들이
+        // 아닌 배치(예: `target/<profile>/tasty`)에서 우연히 `../Resources/plugins`
+        // 가 존재할 때 exe 옆 `plugins/` 를 가로챈다.
+        let bundle_contents = exe_dir
+            .parent()
+            .filter(|_| exe_dir.file_name().is_some_and(|n| n == "MacOS"));
+        if let Some(contents) = bundle_contents {
+            let in_resources = contents.join("Resources").join("plugins");
+            if in_resources.is_dir() {
+                return Some(in_resources);
+            }
+        }
+    }
     let next_to_exe = exe_dir.join("plugins");
     if next_to_exe.is_dir() {
         return Some(next_to_exe);

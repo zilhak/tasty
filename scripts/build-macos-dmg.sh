@@ -123,10 +123,16 @@ mkdir -p "$APP_DIR/Contents/Resources"
 # lipo 로 두 arch 를 하나의 universal Mach-O 로 합쳐 배치.
 lipo_universal tasty "$APP_DIR/Contents/MacOS/tasty"
 
-# Stage plugins next to the executable. `bundle_root()` (crates/tasty-host-plugin/
-# src/builtin.rs) discovers `<exe_dir>/plugins/` for packaged builds and syncs each
-# `<plugin-id>/` into `~/.tasty/plugins/<id>/` on first launch.
-PLUGINS_DIR="$APP_DIR/Contents/MacOS/plugins"
+# Stage plugins under Contents/Resources/. `bundle_root()` (crates/tasty-host-plugin/
+# src/builtin.rs) discovers `Contents/Resources/plugins/` for .app bundles and syncs
+# each `<plugin-id>/` into `~/.tasty/plugins/<id>/` on first launch.
+#
+# NOT Contents/MacOS/ — codesign treats any directory holding an executable under
+# Contents/MacOS/ as nested code and tries to parse it as a bundle. These plugin
+# directories have no Contents/Info.plist, so signing fails outright with
+# "bundle format unrecognized, invalid, or unsuitable". Under Contents/Resources/
+# they are sealed as ordinary resources and the bundle signs cleanly.
+PLUGINS_DIR="$APP_DIR/Contents/Resources/plugins"
 mkdir -p "$PLUGINS_DIR"
 for c in "${PLUGIN_CRATES[@]}"; do
     manifest="crates/$c/tasty-plugin.toml"
@@ -196,13 +202,15 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# Ad-hoc 서명 (무료, Apple 계정 불요) — Apple Silicon 의 "damaged/can't open" 하드
-# 블록을 완화한다. lipo·plugin staging 다음, DMG 생성 이전. Gatekeeper "미확인
-# 개발자" 경고는 이것으로 없어지지 않는다(공증 기각은 정책 결정 — docs에서 우회
-# 안내). Info.plist 생성 *이후*에 서명해야 한다 — 그 뒤에 번들 내용을 바꾸면
-# 서명이 깨진다. --deep 으로 Contents/MacOS/plugins/ 하위 plugin 바이너리까지 서명.
+# 코드 서명 (ad-hoc — 무료, Apple 계정 불요). Apple Silicon 의 "damaged/can't open"
+# 하드 블록을 완화한다. lipo·plugin staging·Info.plist 생성 *이후*, DMG 생성 이전 —
+# 서명 뒤에 번들 내용을 바꾸면 서명이 깨진다. Gatekeeper "미확인 개발자" 경고는
+# 이것으로 없어지지 않는다(공증 기각은 정책 결정 — docs 에서 우회 안내).
+#
+# --deep 은 쓰지 않는다 (Apple 이 deprecate 했고, 여기선 불필요) — plugin 은
+# Contents/Resources/ 아래의 일반 리소스로 봉인된다.
 echo "==> Ad-hoc signing $APP_NAME.app..."
-codesign --force --deep --sign - "$APP_DIR"
+codesign --force --sign - "$APP_DIR"
 
 # Verify the assembled .app (both install and DMG paths share this).
 echo "==> Verifying $APP_NAME.app..."
@@ -220,10 +228,29 @@ LIPO_ARCHS=$(lipo -archs "$APP_DIR/Contents/MacOS/tasty")
     echo "Error: tasty is not a universal (x86_64+arm64) binary: $LIPO_ARCHS" >&2
     exit 1
 }
-codesign -dv "$APP_DIR" 2>&1 | grep -q "Signature=adhoc" || {
-    echo "Error: $APP_NAME.app is not ad-hoc signed" >&2
+# 서명 검증. `codesign -dv | grep Signature=adhoc` 만으로는 부족하다 — 링커가
+# 자동으로 붙이는 서명(linker-signed)도 "Signature=adhoc" 를 출력하므로, codesign
+# 이 아예 실행되지 않은 번들도 통과한다. 실제로 서명됐는지는 _CodeSignature/ 봉인,
+# Identifier 가 번들 ID 로 잡혔는지, linker-signed 플래그가 사라졌는지로 판별한다.
+if [[ ! -d "$APP_DIR/Contents/_CodeSignature" ]]; then
+    echo "Error: $APP_NAME.app has no _CodeSignature (codesign did not run)" >&2
     exit 1
-}
+fi
+# `|| true` — codesign -dv 자체가 실패해도 아래 검사에서 진단 메시지를 내고 죽도록.
+CODESIGN_INFO=$(codesign -dv "$APP_DIR" 2>&1 || true)
+if ! grep -Fxq "Identifier=$BUNDLE_ID" <<<"$CODESIGN_INFO"; then
+    echo "Error: signing identifier is not $BUNDLE_ID:" >&2
+    grep "^Identifier=" <<<"$CODESIGN_INFO" >&2 || true
+    exit 1
+fi
+if grep -q "linker-signed" <<<"$CODESIGN_INFO"; then
+    echo "Error: $APP_NAME.app carries only the linker's automatic signature" >&2
+    exit 1
+fi
+if ! codesign --verify --deep --strict "$APP_DIR"; then
+    echo "Error: $APP_NAME.app failed codesign --verify" >&2
+    exit 1
+fi
 PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
 [[ "$PLIST_VER" == "$VERSION" ]] || {
     echo "Error: Info.plist version $PLIST_VER != Cargo.toml $VERSION" >&2

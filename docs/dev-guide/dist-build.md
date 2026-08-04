@@ -31,7 +31,7 @@ cargo build --profile dist        # 워크스페이스 컴파일
 
 산출물: `dist/Tasty.app/...`(`CFBundleVersion` = Cargo version) · `dist/Tasty-{version}-macos.dmg`. `build-macos-dmg.sh` 마지막에 자동 sanity check(`tasty --version` / Mach-O / `CFBundleVersion` 일치 / DMG 존재) — 실패 시 빌드 fail. `dist` 는 `release` 상속(`strip=true`)이라 `nm` 이 거의 빈 건 정상.
 
-**서명/공증은 범위 밖** — dist 산출물은 미서명(`codesign --display`/`spctl -a` 로 확인, Gatekeeper rejected 가 정상). 사용자는 Finder 우클릭→열기로 우회. universal binary(arm64+x86_64)도 별도 작업(`--target x86_64-apple-darwin` + `lipo`).
+**서명은 ad-hoc, 공증은 범위 밖** — `build-macos-dmg.sh` 가 `codesign --sign -` 로 ad-hoc 서명한다(Apple Silicon 의 "손상됨" 하드 블록 완화). 인증서 서명이 아니라 Gatekeeper 는 여전히 rejected 이므로(`spctl -a` 로 확인) 사용자는 Finder 우클릭→열기로 우회. 번들 plugin 은 `Contents/Resources/plugins/` 에 staging 해야 서명이 통과한다 — `Contents/MacOS/` 하위면 codesign 이 그 디렉터리를 nested bundle 로 파싱하려다 실패한다([build.md](build.md#배포-패키징)). universal binary(arm64+x86_64)는 스크립트가 두 타깃을 빌드해 `lipo` 로 합친다.
 
 ## Windows
 
