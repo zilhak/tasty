@@ -324,9 +324,8 @@ pub struct CoreState {
     /// 시 메모리 갱신 + `save()` 로 즉시 디스크 반영한다. 사용자 직접 조작으로만
     /// 변경되므로 release 경로에서 직접 갱신(도메인 snapshot 비대상).
     /// (소비자가 전부 gui 어댑터라 headless 빌드에선 필드째 제외.)
-    /// UI 결선(별도 TODO) 전까지 실사용처 없음 — wiring 전.
+    /// 포트 스캐너 팝업(`port_scanner.rs`)의 별 토글 + 상단 즐겨찾기 섹션이 소비한다.
     #[cfg(feature = "gui")]
-    #[allow(dead_code)]
     pub(crate) port_favorites: crate::adapters::ui::popup::port_scanner_favorites::PortFavorites,
 
     /// Terminal/PTY 데이터 owner (Surface 트리와 분리). Terminal 인스턴스와

@@ -318,6 +318,12 @@ pub struct AppState {
     /// Reset to `Idle` when the popup closes.
     #[cfg(feature = "gui")]
     pub(crate) port_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
+    /// System-wide scan backing the favorites section's LISTEN/NONE badges.
+    /// Independent of `port_scan`'s scope (Tasty/System) — always a full
+    /// `scan_all()`, kicked only while at least one favorite is registered.
+    /// Reset to `Idle` when the popup closes.
+    #[cfg(feature = "gui")]
+    pub(crate) port_favorites_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
     /// Command palette UI state — query buffer, selection cursor, and a pending
     /// dispatch slot that MainView drains each frame.
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
@@ -971,6 +977,8 @@ impl AppState {
             search: crate::search_state::SearchState::new(),
             #[cfg(feature = "gui")]
             port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
+            #[cfg(feature = "gui")]
+            port_favorites_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
             #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),

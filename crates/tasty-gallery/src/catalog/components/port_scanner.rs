@@ -1,13 +1,14 @@
 //! Listening ports — 디자인(4) Overlays `ports` Spec.
 //!
 //! 660×520 모달. 헤더(port icon + title + count Tag + filter + columns + refresh +
-//! close) · Show-all 체크행 · 최소폭 컬럼 Table(가로 스크롤, Workspace 숨김 케이스) ·
+//! close) · Show-all 체크행 · 즐겨찾기 섹션(bounded, system-wide LISTEN/NONE) ·
+//! 최소폭 컬럼 Table(가로 스크롤, Workspace 숨김 케이스, leading fav 컬럼) ·
 //! footer(count + Copy address + Close). 색·치수는 Theme 토큰, Table 은 공용 위젯.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Table, TableAlign, TableColumn,
-    TableColumnWidth, TagVariant, tag,
+    Button, ButtonVariant, IconButton, IconButtonVariant, StatusKind, Table, TableAlign,
+    TableColumn, TableColumnWidth, TagVariant, status_dot, tag,
 };
 
 use crate::catalog::icons;
@@ -15,6 +16,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 const WIDTH: f32 = 660.0;
+/// 즐겨찾기 별 컬럼 폭 — 본체 `port_scanner.rs` 의 `FAV_COL_WIDTH` 미러.
+const FAV_COL_WIDTH: f32 = 28.0;
 
 struct PortRow {
     port: &'static str,
@@ -25,7 +28,29 @@ struct PortRow {
     ws: &'static str,
     state: &'static str,
     selected: bool,
+    favorited: bool,
 }
+
+/// 즐겨찾기 섹션 1행 mock — 매칭(LISTEN/other) 또는 NONE.
+struct FavoriteRow {
+    key: &'static str,
+    detail: &'static str,
+    /// `None` → NONE 배지(idle). `Some(true)` → running(pulse). `Some(false)` → waiting.
+    listening: Option<bool>,
+}
+
+const FAVORITE_ROWS: &[FavoriteRow] = &[
+    FavoriteRow {
+        key: "127.0.0.1:3000",
+        detail: "node · 48213 · Project A",
+        listening: Some(true),
+    },
+    FavoriteRow {
+        key: "0.0.0.0:9443",
+        detail: "not running",
+        listening: None,
+    },
+];
 
 const ROWS: &[PortRow] = &[
     PortRow {
@@ -37,6 +62,7 @@ const ROWS: &[PortRow] = &[
         ws: "Project A",
         state: "LISTEN",
         selected: false,
+        favorited: true,
     },
     PortRow {
         port: "5173",
@@ -47,6 +73,7 @@ const ROWS: &[PortRow] = &[
         ws: "Project A",
         state: "LISTEN",
         selected: false,
+        favorited: false,
     },
     PortRow {
         port: "8080",
@@ -57,6 +84,7 @@ const ROWS: &[PortRow] = &[
         ws: "Project B",
         state: "LISTEN",
         selected: true,
+        favorited: false,
     },
     PortRow {
         port: "8443",
@@ -67,6 +95,7 @@ const ROWS: &[PortRow] = &[
         ws: "Project B",
         state: "LISTEN",
         selected: false,
+        favorited: false,
     },
     PortRow {
         port: "9229",
@@ -77,6 +106,7 @@ const ROWS: &[PortRow] = &[
         ws: "Project A",
         state: "CLOSE_WAIT",
         selected: false,
+        favorited: false,
     },
 ];
 
@@ -164,11 +194,98 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
+            // 즐겨찾기 섹션 (design FavoritesSection) — 캡션(22px: "Favorites · N" +
+            // 우측 "system-wide") + bounded 리스트(최대 112px, 행 22px). bg-sidebar
+            // 배경 + 하단 separator. 별 컬럼 폭은 메인 테이블과 정렬(FAV_COL_WIDTH).
+            let fav_row_h = theme.item_height_tree.value();
+            let fav_ir = egui::Frame::NONE
+                .fill(theme.bg_sidebar().to_egui())
+                .show(ui, |ui| {
+                    kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), fav_row_h),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                kit::caption(
+                                    ui,
+                                    theme,
+                                    &format!("Favorites · {}", FAVORITE_ROWS.len()),
+                                    false,
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        kit::caption(ui, theme, "system-wide", false);
+                                    },
+                                );
+                            },
+                        );
+                        for fav in FAVORITE_ROWS {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), fav_row_h),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(FAV_COL_WIDTH, fav_row_h),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| star(ui, theme, true),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(fav.key)
+                                            .monospace()
+                                            .size(theme.font_size_caption.value())
+                                            .color(theme.text_primary().to_egui()),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            match fav.listening {
+                                                Some(true) => status_dot(
+                                                    ui,
+                                                    theme,
+                                                    StatusKind::Running,
+                                                    "LISTEN",
+                                                    true,
+                                                    false,
+                                                ),
+                                                Some(false) => status_dot(
+                                                    ui,
+                                                    theme,
+                                                    StatusKind::Waiting,
+                                                    "CLOSE_WAIT",
+                                                    false,
+                                                    false,
+                                                ),
+                                                None => status_dot(
+                                                    ui,
+                                                    theme,
+                                                    StatusKind::Idle,
+                                                    "NONE",
+                                                    false,
+                                                    false,
+                                                ),
+                                            };
+                                            kit::caption(ui, theme, fav.detail, false);
+                                        },
+                                    );
+                                },
+                            );
+                        }
+                    });
+                });
+            ui.painter().hline(
+                fav_ir.response.rect.x_range(),
+                fav_ir.response.rect.bottom(),
+                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            );
+
             // Table — 컬럼별 최소폭 + 가로 스크롤. 최소폭 합(708)이 660 프레임을 넘어
             // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
-            // 상태(컬럼 표시/숨김 시각 케이스).
+            // 상태(컬럼 표시/숨김 시각 케이스). leading fav 컬럼(28px, 헤더 라벨 없음)
+            // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
             kit::region_sym(ui, theme.spacing_sm.value(), 0.0, |ui| {
                 let cols = vec![
+                    col("", TableColumnWidth::Exact(FAV_COL_WIDTH), TableAlign::Left),
                     col("Port", TableColumnWidth::Exact(84.0), TableAlign::Right),
                     col("Proto", TableColumnWidth::Exact(76.0), TableAlign::Left),
                     col("Address", TableColumnWidth::Exact(140.0), TableAlign::Left),
@@ -265,6 +382,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "icon · title · count · filter · columns · refresh · close",
             ),
             ("table", "min-width cols · h-scroll · sticky header"),
+            ("fav column", "leading 28px, no header label, always shown"),
+            (
+                "favorites",
+                "bounded caption(22) + list(max 112) · system-wide",
+            ),
             ("columns", "chooser hides cols (Workspace hidden here)"),
             (
                 "state filter",
@@ -286,6 +408,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "listening",
                 theme.accent_success().to_egui(),
             ),
+            TokenChip::new(
+                "accent-warning",
+                "star on (favorited)",
+                theme.accent_warning().to_egui(),
+            ),
         ],
     );
 
@@ -299,7 +426,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          Selecting a row enables Copy address; the sticky header keeps column \
          labels visible while scrolling. The state filter (funnel button, filter \
          row) defaults to LISTEN-only; its dropdown is a shown set — checked \
-         states are shown, Reset restores LISTEN-only, Apply commits the draft.",
+         states are shown, Reset restores LISTEN-only, Apply commits the draft. \
+         The favorites section (between the filter row and the table) always \
+         shows pinned ports regardless of the table's scope/search/state \
+         filter — its LISTEN/NONE judgment is system-wide. Its list is bounded \
+         to 112px (5 rows) before scrolling; a leading 28px star column (no \
+         header label, not hideable) toggles favorites in both the section and \
+         the main table.",
     );
 }
 
@@ -369,6 +502,24 @@ fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'
     }
 }
 
+/// `PortStar` mock — 22×22, on(채운 STAR_FILL + accent-warning) / off(outline STAR
+/// + text-muted). 본체 `port_scanner.rs::draw_port_star` 전사.
+fn star(ui: &mut egui::Ui, theme: &Theme, on: bool) {
+    let side = theme.item_height_tree.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    let glyph = theme.icon_glyph_size_sm.value();
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    if on {
+        icons::STAR_FILL
+            .image(glyph, theme.accent_warning().to_egui())
+            .paint_at(ui, icon_rect);
+    } else {
+        icons::STAR
+            .image(glyph, theme.text_muted().to_egui())
+            .paint_at(ui, icon_rect);
+    }
+}
+
 fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
     let mono = |ui: &mut egui::Ui, text: &str, color: egui::Color32| {
         ui.label(
@@ -378,18 +529,20 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
                 .color(color),
         );
     };
-    // 컬럼: Port / Proto / Address / Process / State / copy (Workspace 는 chooser 로 숨김).
+    // 컬럼: fav / Port / Proto / Address / Process / State / copy (Workspace 는
+    // chooser 로 숨김). c==0 은 leading fav 컬럼(28px, 나머지는 기존대로 1 씩 밀림).
     let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
     match c {
-        0 => mono(ui, row.port, theme.text_primary().to_egui()),
-        1 => mono(ui, row.proto, theme.text_muted().to_egui()),
-        2 => mono(ui, row.addr, theme.text_secondary().to_egui()),
-        3 => {
+        0 => star(ui, theme, row.favorited),
+        1 => mono(ui, row.port, theme.text_primary().to_egui()),
+        2 => mono(ui, row.proto, theme.text_muted().to_egui()),
+        3 => mono(ui, row.addr, theme.text_secondary().to_egui()),
+        4 => {
             // Process name + pid Tag (design: <span>{proc}<Tag>{pid}</Tag></span>).
             mono(ui, row.proc, theme.text_secondary().to_egui());
             tag(ui, theme, row.pid, TagVariant::Default, false);
         }
-        4 => {
+        5 => {
             let v = if row.state == "LISTEN" {
                 TagVariant::Success
             } else {

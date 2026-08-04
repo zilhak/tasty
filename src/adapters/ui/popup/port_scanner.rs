@@ -23,6 +23,7 @@ use std::sync::mpsc;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::popup::port_scanner_favorites::PortFavorites;
 use crate::core::CoreState;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
@@ -69,6 +70,32 @@ pub struct PortRowView {
     pub process_name: Option<String>,
     pub source: SourceTag,
     /// TCP connection state, drives the STATE column dot color/pulse + label.
+    pub state: PortState,
+    /// Whether `(addr_display, port)` is in `engine.port_favorites`. Filled by
+    /// the wrapper after the background scan returns (`run_scan` has no
+    /// `CoreState` access) — always `false` fresh off the scan thread.
+    pub favorited: bool,
+}
+
+/// One row of the always-visible favorites section — a pinned `(addr, port)`
+/// paired with its current system-wide observation (`None` = not currently
+/// listening/connected anywhere on the host, drawn as the `NONE` state).
+#[derive(Clone, Debug)]
+pub struct FavoriteRowView {
+    pub addr_display: String,
+    pub port: u16,
+    pub matched: Option<FavoriteMatch>,
+}
+
+/// The system-wide scan row a favorite currently matches, projected down to
+/// what the favorites row needs (full `PortRowView` carries scope/source
+/// details the summary row doesn't show).
+#[derive(Clone, Debug)]
+pub struct FavoriteMatch {
+    pub process_name: Option<String>,
+    pub pid: Option<u32>,
+    /// `Some` only when the matched socket belongs to a Tasty process tree.
+    pub workspace_name: Option<String>,
     pub state: PortState,
 }
 
@@ -279,6 +306,10 @@ pub struct PortScannerProps<'a> {
     pub theme: &'a Theme,
     pub view_state: PortScannerViewState<'a>,
     pub filter: PortScannerFilter<'a>,
+    /// Pinned favorites, rendered by the always-visible section above the
+    /// table regardless of the table's scope/search/state filter. LISTEN/NONE
+    /// judgment here is system-wide (see `matched` on each row).
+    pub favorites: &'a [FavoriteRowView],
     /// TCP states present in the current scope (before any filter), for the
     /// state-filter dropdown list + select-all / apply intersection. LISTEN
     /// first, then `label()` alphabetical.
@@ -328,6 +359,24 @@ pub struct PortScannerProps<'a> {
     pub label_state_filter_apply: &'a str,
     /// Empty-body message when the state filter hid every scope row.
     pub label_no_ports_state_filtered: &'a str,
+    /// Favorites section caption when the list is empty (no count suffix).
+    pub label_favorites_heading: &'a str,
+    /// Favorites section caption format string with `{n}`, e.g. `"Favorites · {n}"`.
+    pub label_favorites_count: &'a str,
+    /// Favorites section caption's right-aligned "system-wide" hint.
+    pub label_favorites_system_wide: &'a str,
+    /// Favorites section empty-state hint line.
+    pub label_favorites_empty: &'a str,
+    /// Favorites row detail text when the target has no system-wide match.
+    pub label_favorites_not_running: &'a str,
+    /// Status label for a favorite with no system-wide match (`StatusKind::Idle`).
+    pub label_state_none: &'a str,
+    /// Star tooltip format string with `{key}` (the `addr:port` string), shown
+    /// when the row is not yet favorited.
+    pub label_favorite_add: &'a str,
+    /// Star tooltip format string with `{key}`, shown when the row is already
+    /// favorited (click removes it).
+    pub label_favorite_remove: &'a str,
 }
 
 /// User intent surfaced by the view. The wrapper translates these into
@@ -349,6 +398,10 @@ pub enum PortScannerAction {
     SetColumnVisible(ColumnId, bool),
     /// State filter Apply → replace the shown TCP-state set.
     SetVisibleStates(HashSet<PortState>),
+    /// Star icon clicked (main table row or favorites section) → toggle
+    /// favorite status for this `(addr, port)`. `addr` is the row's
+    /// display-form address string (round-trips through `str::parse`).
+    ToggleFavorite(String, u16),
 }
 
 const FILTER_MEMORY_ID: &str = "port_scanner.filter";
@@ -398,7 +451,15 @@ pub fn draw_port_scanner_popup(
         _ => false,
     };
     if need_kick {
-        kick_off_scan(state, engine, &ctx, target_show_all_system);
+        kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
+    }
+
+    // 즐겨찾기 판정은 항상 system-wide 라 메인 scope(Tasty/System) 와 무관한 별도 스캔이
+    // 필요하다(direction (a) — 즐겨찾기가 있을 때만 병행 실행). 메인 scope 토글에는
+    // 반응하지 않고, 즐겨찾기가 비면 재스캔하지 않는다(리소스 절약).
+    let has_favorites = !engine.port_favorites.items.is_empty();
+    if has_favorites && matches!(state.port_favorites_scan, PortScanState::Idle) {
+        kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
     }
 
     // 상태 필터 + 검색 + 정렬: Ready rows 에 대해서만 적용. 상태 필터를 검색보다 **먼저**
@@ -419,10 +480,25 @@ pub fn draw_port_scanner_popup(
                 .cloned()
                 .collect();
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
+            // 별 토글 표시 — background scan 은 CoreState 를 몰라 채우지 못한 필드를
+            // wrapper 가 여기서 채운다.
+            for row in &mut v {
+                if let Ok(addr) = row.addr_display.parse::<IpAddr>() {
+                    row.favorited = engine.port_favorites.contains(addr, row.port);
+                }
+            }
             (v, state_total)
         }
         _ => (Vec::new(), 0),
     };
+
+    // 즐겨찾기 섹션 rows — engine.port_favorites 전체(메인 테이블의 scope/검색/상태
+    // 필터와 무관) 에 system-wide 스캔 결과를 매칭한다.
+    let favorite_system_rows: Option<&[PortRowView]> = match &state.port_favorites_scan {
+        PortScanState::Ready { rows, .. } => Some(rows.as_slice()),
+        _ => None,
+    };
+    let favorite_rows = build_favorite_rows(&engine.port_favorites, favorite_system_rows);
 
     // scope rows 에 존재하는 상태들(필터 전) — 드롭다운 목록 + 모두선택/적용의 교집합 대상.
     let present_states: Vec<PortState> = match &state.port_scan {
@@ -457,6 +533,7 @@ pub fn draw_port_scanner_popup(
         view_state,
         present_states: &present_states,
         reduced_motion: engine.settings.accessibility.reduced_motion,
+        favorites: &favorite_rows,
         filter: PortScannerFilter {
             show_all_system: filter_state.show_all_system,
             query: &filter_state.query,
@@ -499,6 +576,14 @@ pub fn draw_port_scanner_popup(
         label_state_filter_reset: t("port_scanner.state_filter_reset"),
         label_state_filter_apply: t("port_scanner.state_filter_apply"),
         label_no_ports_state_filtered: t("port_scanner.no_ports_state_filtered"),
+        label_favorites_heading: t("port_scanner.favorites_heading"),
+        label_favorites_count: t("port_scanner.favorites_count"),
+        label_favorites_system_wide: t("port_scanner.favorites_system_wide"),
+        label_favorites_empty: t("port_scanner.favorites_empty"),
+        label_favorites_not_running: t("port_scanner.favorites_not_running"),
+        label_state_none: t("port_scanner.state_none_label"),
+        label_favorite_add: t("port_scanner.favorite_add_tooltip"),
+        label_favorite_remove: t("port_scanner.favorite_remove_tooltip"),
     };
 
     let action = draw_port_scanner_view(ui, &props);
@@ -508,11 +593,16 @@ pub fn draw_port_scanner_popup(
         PortScannerAction::Close => {
             // ⑦ close → Idle reset. 백그라운드 thread 의 rx 가 drop 되어 send 가 실패할 뿐.
             state.port_scan = PortScanState::Idle;
+            state.port_favorites_scan = PortScanState::Idle;
             PopupAction::Close
         }
         PortScannerAction::Refresh => {
-            // ③ Refresh 클릭: 현재 scope 그대로 재 kick.
-            kick_off_scan(state, engine, &ctx, target_show_all_system);
+            // ③ Refresh 클릭: 현재 scope 그대로 재 kick. 즐겨찾기가 있으면 system-wide
+            // 판정용 스캔도 함께 재스캔한다.
+            kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
+            if has_favorites {
+                kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
+            }
             PopupAction::None
         }
         PortScannerAction::Select(port) => {
@@ -568,6 +658,20 @@ pub fn draw_port_scanner_popup(
             // 유지(LISTEN-only 기본은 휘발 시 복원).
             filter_state.visible_states = set;
             write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::ToggleFavorite(addr_display, port) => {
+            // 별 클릭 → 즉시 토글, 확인 절차 없음. 라벨은 표시용 `addr:port` 로 채운다
+            // (친숙한 이름을 입력받는 UI 가 없다 — 시안에 없음).
+            if let Ok(addr) = addr_display.parse::<IpAddr>() {
+                if engine.port_favorites.contains(addr, port) {
+                    engine.port_favorites.remove(addr, port);
+                } else {
+                    let label = format_host_port(&addr_display, port);
+                    engine.port_favorites.add(addr, port, label);
+                }
+                engine.port_favorites.save();
+            }
             PopupAction::None
         }
     }
@@ -725,11 +829,14 @@ fn build_snapshot(engine: &CoreState, show_all_system: bool) -> ScanSnapshot {
     }
 }
 
-/// Move the state machine into `Loading`, spawning a background thread that
-/// computes the row set and reports back through an mpsc channel. The thread
-/// requests an egui repaint after sending so the main loop wakes up.
+/// Move `slot` into `Loading`, spawning a background thread that computes the
+/// row set and reports back through an mpsc channel. The thread requests an
+/// egui repaint after sending so the main loop wakes up. Shared by the main
+/// `state.port_scan` (Tasty/System scope, user-driven) and
+/// `state.port_favorites_scan` (always system-wide, favorites-driven) — both
+/// are `PortScanState` slots with no other coupling.
 pub fn kick_off_scan(
-    state: &mut AppState,
+    slot: &mut PortScanState,
     engine: &CoreState,
     ctx: &egui::Context,
     show_all_system: bool,
@@ -737,7 +844,7 @@ pub fn kick_off_scan(
     let snapshot = build_snapshot(engine, show_all_system);
     let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
     let scope = scope_from_flag(show_all_system);
-    state.port_scan = PortScanState::Loading { rx, scope };
+    *slot = PortScanState::Loading { rx, scope };
     let ctx = ctx.clone();
     std::thread::spawn(move || {
         let result = run_scan(snapshot);
@@ -781,6 +888,7 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
                     process_name: p.process_name,
                     source,
                     state: p.state,
+                    favorited: false,
                 }
             })
             .collect();
@@ -805,6 +913,7 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
                     process_name: p.process_name,
                     source,
                     state: p.state,
+                    favorited: false,
                 }
             })
             .collect();
@@ -812,9 +921,48 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
     }
 }
 
-/// Drain a pending result from the channel. No-op when not in `Loading`.
+/// Project `favorites` into display rows, matching each `(addr, port)`
+/// against `system_rows` (the favorites-scan's `Ready` rows, or `None` while
+/// it hasn't completed yet — favorites render with `matched: None` until
+/// then, same as a genuine "not observed" result). A favorite with more than
+/// one matching socket (e.g. a LISTEN plus an inbound ESTABLISHED sharing the
+/// port) prefers the LISTEN row.
+fn build_favorite_rows(
+    favorites: &PortFavorites,
+    system_rows: Option<&[PortRowView]>,
+) -> Vec<FavoriteRowView> {
+    favorites
+        .items
+        .iter()
+        .map(|fav| {
+            let addr_display = format_addr(fav.addr);
+            let matched = system_rows.and_then(|rows| {
+                rows.iter()
+                    .filter(|r| r.addr_display == addr_display && r.port == fav.port)
+                    .max_by_key(|r| r.state.is_listen())
+            });
+            FavoriteRowView {
+                addr_display,
+                port: fav.port,
+                matched: matched.map(|r| FavoriteMatch {
+                    process_name: r.process_name.clone(),
+                    pid: r.pid,
+                    workspace_name: match &r.source {
+                        SourceTag::Tasty { workspace_name, .. } => Some(workspace_name.clone()),
+                        SourceTag::External => None,
+                    },
+                    state: r.state,
+                }),
+            }
+        })
+        .collect()
+}
+
+/// Drain a pending result from the channel for both scan slots (main +
+/// favorites). No-op for a slot that isn't `Loading`.
 pub fn poll_scan(state: &mut AppState) {
     poll_state(&mut state.port_scan);
+    poll_state(&mut state.port_favorites_scan);
 }
 
 /// Pure state-machine step on `PortScanState` — exposed so unit tests can
@@ -915,6 +1063,14 @@ pub fn draw_port_scanner_view(
     ui.painter()
         .hline(full.x_range(), f_ir.response.rect.bottom(), sep);
 
+    // 즐겨찾기 섹션 — 필터 행과 테이블 사이, bounded(캡션 22 + 리스트 최대 112)로
+    // 삽입한다. footer 가 아래에서 TopBottomPanel::bottom 으로 먼저 하단을 예약하는
+    // 것과 대칭으로, 이 구역은 위에서 먼저 자기 높이만큼 소비하고 CentralPanel(테이블)
+    // 이 그 사이 남은 높이를 채운다.
+    if let Some(a) = draw_favorites_section(ui, props) {
+        action = a;
+    }
+
     // footer — 디자인 padding 9 14 + borderTop. TopBottomPanel 로 popup 하단에 고정해
     // 그린다(remote_tool 폼 footer 미러 `:928`). 패널이 하단 공간을 **먼저** 예약하므로
     // CentralPanel 보다 앞서 호출해야 한다. 본문 테이블의 가로 스크롤은 자체 ScrollArea
@@ -965,15 +1121,21 @@ pub fn draw_port_scanner_view(
     action
 }
 
-/// Address string copied by the footer "Copy address" button: `host:port`,
-/// bracketing bare IPv6 literals (e.g. `[::]:8080`, `127.0.0.1:3000`).
-fn row_copy_address(row: &PortRowView) -> String {
-    let host = if row.addr_display.contains(':') {
-        format!("[{}]", row.addr_display)
+/// `host:port` string, bracketing bare IPv6 literals (e.g. `[::]:8080`,
+/// `127.0.0.1:3000`). Shared by the footer "Copy address" button, the star
+/// tooltip's `{key}`, and the favorites section's address cell.
+fn format_host_port(addr_display: &str, port: u16) -> String {
+    let host = if addr_display.contains(':') {
+        format!("[{addr_display}]")
     } else {
-        row.addr_display.clone()
+        addr_display.to_string()
     };
-    format!("{host}:{}", row.port)
+    format!("{host}:{port}")
+}
+
+/// Address string copied by the footer "Copy address" button.
+fn row_copy_address(row: &PortRowView) -> String {
+    format_host_port(&row.addr_display, row.port)
 }
 
 /// footer: 좌측 카운터 + 우측 `Copy address`(선택 없으면 disabled) + `Close`.
@@ -1429,6 +1591,231 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     out
 }
 
+/// 즐겨찾기 별/컬럼 폭(design `--tasty-port-star-col-width`) — 메인 테이블의 leading
+/// fav 컬럼과 즐겨찾기 섹션 행의 별 컬럼이 시각적으로 정렬되도록 공용한다. 디자이너
+/// 확정값이라 `column_layout` 의 다른 컬럼 최소폭들과 같은 방식으로 리터럴 유지.
+const FAV_COL_WIDTH: f32 = 28.0;
+
+/// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
+/// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
+const FAVORITES_LIST_MAX_H: f32 = 112.0;
+
+/// `PortStar` (design `PortStar`) — 22×22(`item_height_tree`) 별 토글. `on` 이면 채운
+/// `STAR_FILL` + accent-warning(Explorer 즐겨찾기와 동일 골드), 아니면 outline `STAR`
+/// 와 text-muted. hover 배경 = overlay-hover. 클릭 시 즉시 토글(확인 절차 없음) — 호출
+/// 측이 `clicked()` 를 보고 액션을 emit 한다.
+fn draw_port_star(ui: &mut egui::Ui, th: &Theme, on: bool) -> egui::Response {
+    let side = th.item_height_tree.value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, th.corner_radius_sm.value(), th.overlay_hover());
+    }
+    let glyph = th.icon_glyph_size_sm.value();
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    if on {
+        icons::STAR_FILL
+            .image(glyph, th.accent_warning().into())
+            .paint_at(ui, icon_rect);
+    } else {
+        icons::STAR
+            .image(glyph, th.text_muted().into())
+            .paint_at(ui, icon_rect);
+    }
+    resp
+}
+
+/// `FavoritesSection` (design `FavoritesSection`) — 상단 즐겨찾기 섹션. 항상 노출되는
+/// 캡션(22px: "Favorites"(+개수) · 우측 "system-wide") + 빈 상태(37% 투명 별 + 안내
+/// 22px) 또는 스크롤 리스트(최대 112px, 행 22px). 배경 bg-sidebar + 하단 separator.
+fn draw_favorites_section(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    let row_h = th.item_height_tree.value();
+    let full = ui.max_rect();
+
+    let ir = egui::Frame::NONE
+        .fill(th.bg_sidebar().into())
+        .inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 0,
+            bottom: 0,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+
+            // 캡션 행 — 좌측 "Favorites"(+개수, 0개면 생략) / 우측 "system-wide".
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), row_h),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let heading = if props.favorites.is_empty() {
+                        props.label_favorites_heading.to_string()
+                    } else {
+                        props
+                            .label_favorites_count
+                            .replace("{n}", &props.favorites.len().to_string())
+                    };
+                    ui.label(
+                        egui::RichText::new(heading)
+                            .color(th.text_muted())
+                            .size(th.font_size_caption.value())
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(props.label_favorites_system_wide)
+                                .color(th.text_muted())
+                                .size(th.font_size_caption.value()),
+                        );
+                    });
+                },
+            );
+
+            if props.favorites.is_empty() {
+                // 빈 상태 — Explorer 사이드바 즐겨찾기와 동일 관례(흐린 별 + 안내 1행).
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), row_h),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                        let sz = th.icon_glyph_size_sm.value();
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                        icons::STAR
+                            .image(sz, th.text_muted().to_egui().gamma_multiply(0.37))
+                            .paint_at(ui, r);
+                        ui.label(
+                            egui::RichText::new(props.label_favorites_empty)
+                                .color(th.text_muted())
+                                .italics()
+                                .size(th.font_size_caption.value()),
+                        );
+                    },
+                );
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt("port_scanner.favorites_scroll")
+                    .max_height(FAVORITES_LIST_MAX_H)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for fav in props.favorites {
+                            if let Some(a) = draw_favorite_row(ui, props, fav, row_h) {
+                                out = Some(a);
+                            }
+                        }
+                    });
+            }
+        });
+
+    ui.painter().hline(
+        full.x_range(),
+        ir.response.rect.bottom(),
+        egui::Stroke::new(th.border_width.value(), th.separator),
+    );
+    out
+}
+
+/// 즐겨찾기 리스트 1행(요약형) — 별(항상 on, 클릭 시 제거) · `{addr}:{port}`(mono) ·
+/// 매칭 있으면 `{process} · {pid}`(+workspace) 없으면 "not running" · 우측 상태 배지
+/// (LISTEN → running+pulse, 그 외 매칭 → waiting, 매칭 없음(NONE) → idle+"NONE").
+fn draw_favorite_row(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+    fav: &FavoriteRowView,
+    row_h: f32,
+) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    let key = format_host_port(&fav.addr_display, fav.port);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), row_h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(FAV_COL_WIDTH, row_h),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let resp = draw_port_star(ui, th, true)
+                        .on_hover_text(props.label_favorite_remove.replace("{key}", &key));
+                    if resp.clicked() {
+                        out = Some(PortScannerAction::ToggleFavorite(
+                            fav.addr_display.clone(),
+                            fav.port,
+                        ));
+                    }
+                },
+            );
+            ui.label(
+                egui::RichText::new(&key)
+                    .monospace()
+                    .color(th.text_primary())
+                    .size(th.font_size_caption.value()),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                match &fav.matched {
+                    Some(m) if m.state.is_listen() => {
+                        status_dot(
+                            ui,
+                            th,
+                            StatusKind::Running,
+                            m.state.label(),
+                            true,
+                            props.reduced_motion,
+                        );
+                    }
+                    Some(m) => {
+                        status_dot(
+                            ui,
+                            th,
+                            StatusKind::Waiting,
+                            m.state.label(),
+                            false,
+                            props.reduced_motion,
+                        );
+                    }
+                    None => {
+                        status_dot(
+                            ui,
+                            th,
+                            StatusKind::Idle,
+                            props.label_state_none,
+                            false,
+                            props.reduced_motion,
+                        );
+                    }
+                }
+                let detail = match &fav.matched {
+                    Some(m) => {
+                        let proc = m.process_name.as_deref().unwrap_or("—");
+                        let mut s = match m.pid {
+                            Some(pid) => format!("{proc} · {pid}"),
+                            None => proc.to_string(),
+                        };
+                        if let Some(ws) = &m.workspace_name {
+                            s.push_str(" · ");
+                            s.push_str(ws);
+                        }
+                        s
+                    }
+                    None => props.label_favorites_not_running.to_string(),
+                };
+                ui.label(
+                    egui::RichText::new(detail)
+                        .color(th.text_muted())
+                        .size(th.font_size_caption.value()),
+                );
+            });
+        },
+    );
+    out
+}
+
 /// 콘텐츠 중앙 horizontal: Spinner + "Collecting…" 텍스트.
 fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
@@ -1547,31 +1934,43 @@ fn draw_table(
         .filter(|c| props.filter.columns.is_visible(*c))
         .collect();
 
-    // 본문 가용폭: 세로 스크롤바 폭만큼 빼서, 세로 스크롤이 생겨도 가짜 가로 스크롤이
-    // 뜨지 않게 한다.
+    // 본문 가용폭: 세로 스크롤바 폭 + leading fav 컬럼(28px, ColumnId 밖 — chooser 로
+    // 숨길 수 없는 상시 컬럼) 만큼 빼서, 세로 스크롤이 생겨도 가짜 가로 스크롤이 뜨지
+    // 않게 하고 나머지 7컬럼 폭 계산은 기존 그대로 둔다.
     let scrollbar_reserve = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
-    let available = (ui.available_width() - scrollbar_reserve).max(0.0);
+    let fav_reserve = FAV_COL_WIDTH + ui.spacing().item_spacing.x;
+    let available = (ui.available_width() - scrollbar_reserve - fav_reserve).max(0.0);
     let widths = compute_column_widths(&visible, ui.spacing().item_spacing.x, available);
 
-    let columns: Vec<TableColumn<SortKey>> = visible
-        .iter()
-        .zip(&widths)
-        .map(|(id, w)| {
-            let (_, _, align, sort_id) = column_layout(*id);
-            TableColumn {
-                title: column_label(*id, props),
-                width: TableColumnWidth::Exact(*w),
-                align,
-                sort_id,
-            }
-        })
-        .collect();
+    let mut columns: Vec<TableColumn<SortKey>> = Vec::with_capacity(visible.len() + 1);
+    // fav 컬럼 — 헤더 라벨 없음, 정렬 불가, 항상 표시(컬럼 chooser 대상 아님).
+    columns.push(TableColumn {
+        title: "",
+        width: TableColumnWidth::Exact(FAV_COL_WIDTH),
+        align: TableAlign::Left,
+        sort_id: None,
+    });
+    columns.extend(visible.iter().zip(&widths).map(|(id, w)| {
+        let (_, _, align, sort_id) = column_layout(*id);
+        TableColumn {
+            title: column_label(*id, props),
+            width: TableColumnWidth::Exact(*w),
+            align,
+            sort_id,
+        }
+    }));
 
     let sort_dir = match props.filter.sort_dir {
         SortDir::Asc => TableSortDir::Asc,
         SortDir::Desc => TableSortDir::Desc,
     };
     let selected_port = props.filter.selected_port;
+
+    // 별 클릭은 여기서 직접 캡처해 행 선택과 분리한다: egui_extras 는 셀 콘텐츠와
+    // 별개로 행 전체에도 click sense 를 걸어 겹치는 클릭을 판정하므로(선택 가능
+    // 테이블의 구조상 특성), Table 의 `clicked_row` 결과보다 이 플래그를 우선한다 —
+    // 별을 클릭한 프레임엔 행 선택을 바꾸지 않고 즐겨찾기만 토글한다.
+    let mut fav_click: Option<(String, u16)> = None;
 
     let output = Table::new(columns)
         .id_salt("port_scanner.table")
@@ -1591,52 +1990,72 @@ fn draw_table(
             rows,
             |row: &PortRowView| selected_port == Some(row.port),
             // 컬럼이 숨겨지면 인덱스가 밀리므로, 보이는 컬럼 인덱스 → ColumnId 로
-            // 매핑해 셀을 분기한다(위치 인덱스 하드코딩 금지).
-            |ui, th, row, col_index| match visible[col_index] {
-                // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
-                ColumnId::Port => {
-                    hspace(ui, th.spacing_md);
-                    ui.label(
-                        egui::RichText::new(row.port.to_string())
-                            .color(th.text_primary())
-                            .size(th.font_size_body.value()),
-                    );
-                }
-                ColumnId::Proto => cell_l(ui, |ui| {
-                    // Proto derived from the address family: IPv6 displays
-                    // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
-                    let proto = if row.addr_display.contains(':') {
-                        "tcp6"
+            // 매핑해 셀을 분기한다(위치 인덱스 하드코딩 금지). index 0 은 fav 컬럼이라
+            // `visible` 매핑 전에 먼저 분기하고, 나머지는 1 만큼 당겨 조회한다.
+            |ui, th, row, col_index| {
+                if col_index == 0 {
+                    let key = format_host_port(&row.addr_display, row.port);
+                    let tooltip = if row.favorited {
+                        props.label_favorite_remove.replace("{key}", &key)
                     } else {
-                        "tcp"
+                        props.label_favorite_add.replace("{key}", &key)
                     };
-                    ui.label(
-                        egui::RichText::new(proto)
-                            .color(th.text_muted())
-                            .size(th.font_size_body.value()),
-                    );
-                }),
-                ColumnId::Address => cell_l(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(&row.addr_display)
-                            .color(th.text_muted())
-                            .size(th.font_size_body.value())
-                            .monospace(),
-                    );
-                }),
-                ColumnId::Process => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
-                ColumnId::Workspace => cell_l(ui, |ui| {
-                    draw_workspace_cell(ui, th, row, props.label_external_dash)
-                }),
-                ColumnId::Tab => cell_l(ui, |ui| {
-                    draw_tab_cell(ui, th, row, props.label_external_dash)
-                }),
-                ColumnId::State => cell_l(ui, |ui| {
-                    draw_state_cell(ui, th, props.reduced_motion, row.state)
-                }),
+                    let resp = draw_port_star(ui, th, row.favorited).on_hover_text(tooltip);
+                    if resp.clicked() {
+                        fav_click = Some((row.addr_display.clone(), row.port));
+                    }
+                    return;
+                }
+                match visible[col_index - 1] {
+                    // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
+                    ColumnId::Port => {
+                        hspace(ui, th.spacing_md);
+                        ui.label(
+                            egui::RichText::new(row.port.to_string())
+                                .color(th.text_primary())
+                                .size(th.font_size_body.value()),
+                        );
+                    }
+                    ColumnId::Proto => cell_l(ui, |ui| {
+                        // Proto derived from the address family: IPv6 displays
+                        // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
+                        let proto = if row.addr_display.contains(':') {
+                            "tcp6"
+                        } else {
+                            "tcp"
+                        };
+                        ui.label(
+                            egui::RichText::new(proto)
+                                .color(th.text_muted())
+                                .size(th.font_size_body.value()),
+                        );
+                    }),
+                    ColumnId::Address => cell_l(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(&row.addr_display)
+                                .color(th.text_muted())
+                                .size(th.font_size_body.value())
+                                .monospace(),
+                        );
+                    }),
+                    ColumnId::Process => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
+                    ColumnId::Workspace => cell_l(ui, |ui| {
+                        draw_workspace_cell(ui, th, row, props.label_external_dash)
+                    }),
+                    ColumnId::Tab => cell_l(ui, |ui| {
+                        draw_tab_cell(ui, th, row, props.label_external_dash)
+                    }),
+                    ColumnId::State => cell_l(ui, |ui| {
+                        draw_state_cell(ui, th, props.reduced_motion, row.state)
+                    }),
+                }
             },
         );
 
+    // 별 클릭이 이 프레임에 있었다면 행 선택보다 우선한다(위 주석 참고).
+    if let Some((addr, port)) = fav_click {
+        return Some(PortScannerAction::ToggleFavorite(addr, port));
+    }
     // B5: 행 클릭 → 선택 토글, 헤더 클릭 → 정렬 토글 (wrapper 에서 처리). 두 영역은
     // 상호 배타라 한 프레임에 동시 발생하지 않는다.
     if let Some(i) = output.clicked_row {
@@ -1794,6 +2213,7 @@ mod tests {
             process_name: None,
             source: SourceTag::External,
             state: PortState::Listen,
+            favorited: false,
         }
     }
 
@@ -1813,6 +2233,7 @@ mod tests {
             view_state,
             present_states: &[],
             reduced_motion: false,
+            favorites: &[],
             filter: PortScannerFilter {
                 show_all_system,
                 query,
@@ -1855,6 +2276,14 @@ mod tests {
             label_state_filter_reset: "Reset (LISTEN only)",
             label_state_filter_apply: "Apply",
             label_no_ports_state_filtered: "No ports match the state filter.",
+            label_favorites_heading: "Favorites",
+            label_favorites_count: "Favorites · {n}",
+            label_favorites_system_wide: "system-wide",
+            label_favorites_empty: "No favorites yet — click a star in the list below to pin a port.",
+            label_favorites_not_running: "not running",
+            label_state_none: "NONE",
+            label_favorite_add: "Add {key} to favorites",
+            label_favorite_remove: "Remove {key} from favorites",
         }
     }
 
@@ -1984,6 +2413,7 @@ mod tests {
                 tab_name: tab.map(str::to_string),
             },
             state: PortState::Listen,
+            favorited: false,
         }
     }
 
@@ -2099,6 +2529,7 @@ mod tests {
             process_name: process.map(str::to_string),
             source: SourceTag::External,
             state: PortState::Listen,
+            favorited: false,
         }
     }
 
@@ -2380,6 +2811,7 @@ mod tests {
             process_name: None,
             source: SourceTag::External,
             state,
+            favorited: false,
         }
     }
 
@@ -2441,5 +2873,97 @@ mod tests {
         let set = HashSet::from([PortState::Listen, PortState::Established]);
         fs.visible_states = set.clone();
         assert_eq!(fs.visible_states, set);
+    }
+
+    #[test]
+    fn format_host_port_brackets_ipv6_and_leaves_ipv4_bare() {
+        assert_eq!(format_host_port("127.0.0.1", 3000), "127.0.0.1:3000");
+        assert_eq!(format_host_port("::", 8080), "[::]:8080");
+    }
+
+    fn favorite(
+        addr: &str,
+        port: u16,
+    ) -> crate::adapters::ui::popup::port_scanner_favorites::PortFavorite {
+        crate::adapters::ui::popup::port_scanner_favorites::PortFavorite {
+            label: format!("{addr}:{port}"),
+            addr: addr.parse().unwrap(),
+            port,
+        }
+    }
+
+    #[test]
+    fn build_favorite_rows_none_when_scan_not_ready() {
+        let mut favs = PortFavorites::default();
+        favs.items.push(favorite("127.0.0.1", 3000));
+        let rows = build_favorite_rows(&favs, None);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].matched.is_none());
+    }
+
+    #[test]
+    fn build_favorite_rows_matches_by_addr_and_port() {
+        // tasty_row() fixes addr_display to "0.0.0.0" — match on that address.
+        let mut favs = PortFavorites::default();
+        favs.items.push(favorite("0.0.0.0", 3000));
+        favs.items.push(favorite("0.0.0.0", 9999)); // no matching scan row
+        let system_rows = vec![tasty_row(3000, "frontend", Some("dev"))];
+        let rows = build_favorite_rows(&favs, Some(&system_rows));
+        assert_eq!(rows.len(), 2);
+        let matched = rows[0].matched.as_ref().expect("3000 should match");
+        assert_eq!(matched.process_name.as_deref(), Some("node"));
+        assert_eq!(matched.workspace_name.as_deref(), Some("frontend"));
+        assert!(matched.state.is_listen());
+        assert!(rows[1].matched.is_none(), "9999 has no scan row → NONE");
+    }
+
+    #[test]
+    fn build_favorite_rows_prefers_listen_when_multiple_matches() {
+        let mut favs = PortFavorites::default();
+        favs.items.push(favorite("127.0.0.1", 3000));
+        let system_rows = vec![
+            row_with_state(3000, PortState::Established),
+            row_with_state(3000, PortState::Listen),
+        ];
+        let rows = build_favorite_rows(&favs, Some(&system_rows));
+        assert!(rows[0].matched.as_ref().unwrap().state.is_listen());
+    }
+
+    #[test]
+    fn view_renders_with_favorites_without_panic() {
+        let theme = test_theme();
+        let rows: Vec<PortRowView> = Vec::new();
+        let view_state = PortScannerViewState::Ready {
+            rows: &rows,
+            total: 0,
+            listening: 0,
+        };
+        let mut props = default_props(&theme, view_state, "", false);
+        let favorites = vec![
+            FavoriteRowView {
+                addr_display: "127.0.0.1".into(),
+                port: 3000,
+                matched: Some(FavoriteMatch {
+                    process_name: Some("node".into()),
+                    pid: Some(42),
+                    workspace_name: None,
+                    state: PortState::Listen,
+                }),
+            },
+            FavoriteRowView {
+                addr_display: "0.0.0.0".into(),
+                port: 9999,
+                matched: None,
+            },
+        ];
+        props.favorites = &favorites;
+        let ctx = egui::Context::default();
+        let mut out = PortScannerAction::None;
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                out = draw_port_scanner_view(ui, &props);
+            });
+        }));
+        assert_eq!(out, PortScannerAction::None);
     }
 }
