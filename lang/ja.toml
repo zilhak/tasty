@@ -935,6 +935,7 @@ next_match_tooltip = "次の一致"
 case_tooltip = "大文字と小文字を区別"
 regex_tooltip = "正規表現"
 whole_word_tooltip = "単語単位で一致"
+close_tooltip = "閉じる (Esc)"
 
 [theme_error]
 title = "テーマが見つかりません"

@@ -935,6 +935,7 @@ next_match_tooltip = "다음 일치"
 case_tooltip = "대소문자 구분"
 regex_tooltip = "정규식"
 whole_word_tooltip = "단어 단위 일치"
+close_tooltip = "닫기 (Esc)"
 
 [theme_error]
 title = "테마를 찾을 수 없습니다"

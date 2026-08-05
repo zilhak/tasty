@@ -20,15 +20,17 @@ pub fn draw_search_bar(
     let mut action = PopupAction::None;
 
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
 
         // Search input field — flex: 남은 가용 폭을 채우되 최소 60px. (디자인 canonical:
         // search_bar.jsx `flex:1; minWidth:60`.) 뒤따르는 고정폭 요소(카운터 40px +
         // IconButton sm 5개)와 그 사이 간격을 가용 폭에서 빼서 input 폭을 산출한다.
         let spacing = ui.spacing().item_spacing.x;
         let btn_size = theme.item_height_tab.value();
-        // 카운터(40) + nav 2개 + 토글 3개 = 5개 버튼, input 뒤로 6개의 간격.
-        let reserved = 40.0 + 5.0 * btn_size + 6.0 * spacing;
+        let divider_width = theme.border_width.value();
+        // 카운터(40) + nav 2개 + 토글 3개 + close 1개 = 6개 버튼, input 뒤로 8개의
+        // 간격 + divider 폭 1개.
+        let reserved = 40.0 + 6.0 * btn_size + 8.0 * spacing + divider_width;
         let input_width = (ui.available_width() - reserved).max(60.0);
 
         let response = ui.add(
@@ -171,6 +173,15 @@ pub fn draw_search_bar(
             state.search.whole_word = !state.search.whole_word;
             run_search(state, engine);
         }
+
+        // Divider + close — 토글 그룹과 close 버튼을 시각적으로 구분한다.
+        // (디자인 search_bar.jsx: "· divider · ✕ close (Esc)")
+        draw_divider(ui, &theme);
+        if nav_button(ui, &theme, icons::CLOSE, true, t("search.close_tooltip")) {
+            // X 클릭 = Escape 와 동일 동작: 검색 상태 clear + 팝업 닫기.
+            state.search.clear();
+            action = PopupAction::Close;
+        }
     });
 
     action
@@ -188,6 +199,24 @@ fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
             .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), color);
     let pos = rect.center() - galley.size() * 0.5;
     ui.painter().galley(pos, galley, color);
+}
+
+/// 토글 그룹과 close 버튼 사이 세로 구분선. (디자인 search_bar.jsx: divider,
+/// 갤러리 specimen `catalog/components/search_bar.rs` 와 동일 규격)
+fn draw_divider(ui: &mut egui::Ui, theme: &Theme) {
+    let height = theme.item_height_tab.value() * 0.6;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(theme.border_width.value(), height),
+        egui::Sense::hover(),
+    );
+    ui.painter().vline(
+        rect.center().x,
+        rect.y_range(),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.separator),
+        ),
+    );
 }
 
 /// IconButton sm 규격의 정사각 슬롯을 할당하고 hover/active 배경 오버레이를

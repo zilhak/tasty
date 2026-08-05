@@ -935,6 +935,7 @@ next_match_tooltip = "Next match"
 case_tooltip = "Match case"
 regex_tooltip = "Regular expression"
 whole_word_tooltip = "Match whole word"
+close_tooltip = "Close (Esc)"
 
 [theme_error]
 title = "Theme not found"
