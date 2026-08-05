@@ -220,6 +220,14 @@ pub fn apply_hook(
             calls.push(HostCall::SurfaceCompletion { surface_id });
         }
         "session-end" => {
+            // 이 발화가 정상적인 세션 종료인지, 아니면 예상 밖 타이밍(중복
+            // Ctrl+C, 크래시 등)에 잘못 발화해 `claude-session-id` meta 를
+            // 지워버린 것인지는 이 함수만으로 구분할 수 없다 — 사고(2026-08-05,
+            // surface 3095) 재발 시 이 로그와 session-start 로그의 순서를 대조해
+            // 판단한다.
+            tracing::info!(
+                "claude hook session-end s{surface_id}: clearing claude-session-id/restore.command meta"
+            );
             calls.push(HostCall::SetState {
                 surface_id,
                 state: "idle",
@@ -254,19 +262,32 @@ pub fn apply_hook(
                 surface_id,
                 state: "active",
             });
-            if event == "session-start"
-                && let Some(session_id) = session
-            {
-                calls.push(HostCall::MetaSet {
-                    surface_id,
-                    key: "claude-session-id",
-                    value: session_id.to_string(),
-                });
-                calls.push(HostCall::MetaSet {
-                    surface_id,
-                    key: "restore.command",
-                    value: format!("claude -r {session_id}"),
-                });
+            if event == "session-start" {
+                match session {
+                    Some(session_id) => {
+                        calls.push(HostCall::MetaSet {
+                            surface_id,
+                            key: "claude-session-id",
+                            value: session_id.to_string(),
+                        });
+                        calls.push(HostCall::MetaSet {
+                            surface_id,
+                            key: "restore.command",
+                            value: format!("claude -r {session_id}"),
+                        });
+                    }
+                    None => {
+                        // stdin JSON 에 session_id 가 없었다 — `read_stdin_json`
+                        // 이 None 을 반환했거나(TTY/파싱 실패), Claude Code 가
+                        // payload 에 session_id 를 채우지 않은 케이스. 이 경로를
+                        // 타면 `claude-session-id` meta 가 기록되지 않아 이후
+                        // `tasty claude reboot` 가 "meta not set" 으로 실패한다
+                        // (사고 2026-08-05, surface 3095).
+                        tracing::warn!(
+                            "claude hook session-start s{surface_id}: no session_id in payload — claude-session-id meta NOT set (tasty claude reboot will fail until the next session-start carries a session_id)"
+                        );
+                    }
+                }
             }
         }
         other => {

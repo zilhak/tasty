@@ -324,21 +324,68 @@ fn build_auto_wait_plan(
     })
 }
 
+/// `read_stdin_json`이 값을 만들지 못한 이유. 어느 경로였는지 로그로 구분하기
+/// 위한 것 — `claude hook session-start`가 이 경로 중 하나로 `None`을 받으면
+/// `claude-session-id` meta 가 기록되지 않는다(사고 2026-08-05, surface 3095).
+enum StdinSkipReason {
+    /// 사람이 터미널에서 직접 커맨드를 입력한 경우 정상적으로 발생.
+    Tty,
+    ReadError(std::io::Error),
+    /// non-TTY 인데도 payload 가 비어 있음 — 호출자(예: Claude Code hook
+    /// 시스템)가 stdin 을 채우지 않은 상태.
+    Empty,
+    ParseError(serde_json::Error),
+}
+
+impl StdinSkipReason {
+    /// TTY 는 사람이 직접 커맨드를 입력했을 때 정상적으로 발생 — warn 대상이
+    /// 아니다. 나머지(non-TTY 인데 값이 없음)는 호출자가 payload 를 못 채운
+    /// 것이므로 warn.
+    fn is_expected(&self) -> bool {
+        matches!(self, Self::Tty)
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Self::Tty => "stdin is a TTY".to_string(),
+            Self::ReadError(e) => format!("failed to read stdin (non-TTY): {e}"),
+            Self::Empty => "stdin was empty (non-TTY but no data piped)".to_string(),
+            Self::ParseError(e) => format!("failed to parse stdin as JSON: {e}"),
+        }
+    }
+}
+
 /// stdin 이 TTY 가 아닐 때 (= pipe / redirect 로 입력이 들어올 때) stdin 전체를
 /// JSON 한 덩이로 파싱한다. TTY 이거나 파싱 실패 시 `None`. blocking read 를
 /// 피하기 위해 TTY 체크를 먼저 한다 — TTY 라면 사용자가 enter 칠 때까지 멈춰
 /// 있을 위험이 있다.
 fn read_stdin_json() -> Option<Value> {
+    let reason = match try_read_stdin_json() {
+        Ok(v) => return Some(v),
+        Err(reason) => reason,
+    };
+    if reason.is_expected() {
+        tracing::debug!("read_stdin_json: {}", reason.describe());
+    } else {
+        tracing::warn!("read_stdin_json: {}", reason.describe());
+    }
+    None
+}
+
+fn try_read_stdin_json() -> Result<Value, StdinSkipReason> {
     use std::io::{IsTerminal, Read};
     let mut stdin = std::io::stdin();
     if stdin.is_terminal() {
-        return None;
+        return Err(StdinSkipReason::Tty);
     }
     let mut buf = String::new();
-    if stdin.read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
-        return None;
+    stdin
+        .read_to_string(&mut buf)
+        .map_err(StdinSkipReason::ReadError)?;
+    if buf.trim().is_empty() {
+        return Err(StdinSkipReason::Empty);
     }
-    serde_json::from_str(&buf).ok()
+    serde_json::from_str(&buf).map_err(StdinSkipReason::ParseError)
 }
 
 /// CLI 로 지정되지 않은 params 필드를, stdin JSON 의 해당 키에서 꺼내 채운다.
