@@ -14,14 +14,10 @@ impl MainView {
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
     pub(crate) fn update_hovered_link(&mut self) -> bool {
         let engine = &mut self.core_state;
-        let prev = self.hovered_link.as_ref().map(|h| {
-            (
-                h.surface_id,
-                h.highlight.start_col,
-                h.highlight.end_col,
-                h.highlight.absolute_row,
-            )
-        });
+        let prev = self
+            .hovered_link
+            .as_ref()
+            .map(|h| (h.surface_id, h.highlight.segments.clone()));
 
         let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
         let mods = &self.base.modifiers;
@@ -38,14 +34,9 @@ impl MainView {
         };
 
         let changed = prev
-            != new_link.as_ref().map(|h| {
-                (
-                    h.surface_id,
-                    h.highlight.start_col,
-                    h.highlight.end_col,
-                    h.highlight.absolute_row,
-                )
-            });
+            != new_link
+                .as_ref()
+                .map(|h| (h.surface_id, h.highlight.segments.clone()));
         self.hovered_link = new_link;
         changed
     }
@@ -85,9 +76,7 @@ impl MainView {
         let span = terminal_link::link_at(terminal, point.col, point.absolute_row)?;
         let th = theme::theme();
         let highlight = LinkHighlight {
-            start_col: span.start_col,
-            end_col: span.end_col,
-            absolute_row: span.absolute_row,
+            segments: span.segments,
             fg: th.accent_primary().to_gpu_rgba(),
             bg: th.selection_bg.to_gpu_rgba(),
         };

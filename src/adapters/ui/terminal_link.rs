@@ -16,23 +16,54 @@ use termwiz::cell::CellAttributes;
 
 use crate::renderer::unicode_width;
 
-/// 검출된 링크 1건.
-#[derive(Debug, Clone)]
-pub struct LinkSpan {
+/// 링크가 걸쳐 있는 화면상 한 행의 컬럼 범위.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkSegment {
+    /// 절대 row (scrollback 0 = 가장 오래된 라인).
+    pub absolute_row: usize,
     /// 시작 컬럼(포함).
     pub start_col: usize,
     /// 끝 컬럼(포함).
     pub end_col: usize,
+}
+
+/// 검출된 링크 1건. 단일 행이면 `segments`가 원소 1개, wrap 으로 여러 화면
+/// 행에 걸치면 화면 순서(위→아래)대로 여러 개 — 각 세그먼트는 그 행 안에서의
+/// 정확한 컬럼 범위를 담는다.
+#[derive(Debug, Clone)]
+pub struct LinkSpan {
+    pub segments: Vec<LinkSegment>,
     /// 링크 대상 URI.
     pub uri: String,
-    /// 절대 row (scrollback 0 = 가장 오래된 라인).
-    pub absolute_row: usize,
 }
 
 impl LinkSpan {
-    /// (col, absolute_row)가 이 링크 범위 안에 있는지.
+    /// 단일 행짜리 span 생성 (기존 `detect_scrollback_line`/`detect_screen_line`
+    /// 등 한 행만 보는 검출 경로용).
+    fn single(absolute_row: usize, start_col: usize, end_col: usize, uri: String) -> Self {
+        Self {
+            segments: vec![LinkSegment {
+                absolute_row,
+                start_col,
+                end_col,
+            }],
+            uri,
+        }
+    }
+
+    /// (col, absolute_row)가 이 링크 범위 안에 있는지 — 세그먼트 중 하나라도 덮으면 true.
     pub fn contains(&self, col: usize, absolute_row: usize) -> bool {
-        self.absolute_row == absolute_row && col >= self.start_col && col <= self.end_col
+        self.segments
+            .iter()
+            .any(|s| s.absolute_row == absolute_row && col >= s.start_col && col <= s.end_col)
+    }
+
+    /// `absolute_row` 행에서의 컬럼 범위(있으면).
+    fn range_at(&self, absolute_row: usize) -> Option<(usize, usize)> {
+        self.segments
+            .iter()
+            .find(|s| s.absolute_row == absolute_row)
+            .map(|s| (s.start_col, s.end_col))
     }
 }
 
@@ -138,21 +169,11 @@ pub fn detect_scrollback_line(
         match (&mut current, uri) {
             (Some(cur), Some(u)) if cur.0 == u => cur.2 = end_col,
             (Some(cur), Some(u)) => {
-                result.push(LinkSpan {
-                    start_col: cur.1,
-                    end_col: cur.2,
-                    uri: cur.0.clone(),
-                    absolute_row,
-                });
+                result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0.clone()));
                 *cur = (u, col, end_col);
             }
             (Some(cur), None) => {
-                result.push(LinkSpan {
-                    start_col: cur.1,
-                    end_col: cur.2,
-                    uri: cur.0.clone(),
-                    absolute_row,
-                });
+                result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0.clone()));
                 current = None;
             }
             (None, Some(u)) => current = Some((u, col, end_col)),
@@ -161,12 +182,7 @@ pub fn detect_scrollback_line(
         col += width;
     }
     if let Some(cur) = current {
-        result.push(LinkSpan {
-            start_col: cur.1,
-            end_col: cur.2,
-            uri: cur.0,
-            absolute_row,
-        });
+        result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0));
     }
 
     // 2) 일반 텍스트에서 URL regex 검출. OSC8 범위와 겹치지 않는 경우만 추가.
@@ -199,21 +215,11 @@ pub fn detect_screen_line(
         match (&mut current, uri) {
             (Some(cur), Some(u)) if cur.0 == u => cur.2 = end_col,
             (Some(cur), Some(u)) => {
-                result.push(LinkSpan {
-                    start_col: cur.1,
-                    end_col: cur.2,
-                    uri: cur.0.clone(),
-                    absolute_row,
-                });
+                result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0.clone()));
                 *cur = (u, col, end_col);
             }
             (Some(cur), None) => {
-                result.push(LinkSpan {
-                    start_col: cur.1,
-                    end_col: cur.2,
-                    uri: cur.0.clone(),
-                    absolute_row,
-                });
+                result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0.clone()));
                 current = None;
             }
             (None, Some(u)) => current = Some((u, col, end_col)),
@@ -221,12 +227,7 @@ pub fn detect_screen_line(
         }
     }
     if let Some(cur) = current {
-        result.push(LinkSpan {
-            start_col: cur.1,
-            end_col: cur.2,
-            uri: cur.0,
-            absolute_row,
-        });
+        result.push(LinkSpan::single(absolute_row, cur.1, cur.2, cur.0));
     }
 
     append_regex_matches(&text, &col_of_byte, absolute_row, &mut result);
@@ -263,22 +264,170 @@ fn append_regex_matches(
 
         // 이미 OSC8이 덮고 있으면 스킵.
         let overlap = out.iter().any(|s| {
-            s.absolute_row == absolute_row && !(end_col < s.start_col || start_col > s.end_col)
+            s.range_at(absolute_row)
+                .is_some_and(|(s_start, s_end)| !(end_col < s_start || start_col > s_end))
         });
         if overlap {
             continue;
         }
-        out.push(LinkSpan {
+        out.push(LinkSpan::single(
+            absolute_row,
             start_col,
             end_col,
-            uri: trimmed.to_string(),
-            absolute_row,
-        });
+            trimmed.to_string(),
+        ));
     }
 }
 
-/// 주어진 (col, absolute_row)에 있는 링크를 터미널에서 찾는다.
-/// scrollback과 screen 양쪽을 처리.
+/// 주어진 절대 row 하나에서 링크를 검출한다 — scrollback/screen 판별 포함.
+fn detect_row_links(
+    terminal: &tasty_terminal::Terminal,
+    absolute_row: usize,
+    scrollback_len: usize,
+    cwd: Option<&Path>,
+    mirror: bool,
+) -> Option<Vec<LinkSpan>> {
+    if absolute_row < scrollback_len {
+        let line = terminal.scrollback_line_owned(absolute_row)?;
+        Some(detect_scrollback_line(&line, absolute_row, cwd, mirror))
+    } else {
+        let screen_row = absolute_row - scrollback_len;
+        let lines = terminal.screen_lines();
+        let line = lines.get(screen_row)?;
+        Some(detect_screen_line(line, absolute_row, cwd, mirror))
+    }
+}
+
+/// `absolute_row` 가 소프트 wrap 됐는지(다음 행이 논리적 연속인지) — scrollback 은
+/// 캡처 시점에 기록된 `ScrollbackLine.wrapped` 플래그를 그대로 쓰고, screen(live)
+/// 행은 그 플래그가 없어 동일 휴리스틱(맨 오른쪽 컬럼이 공백 아닌 grapheme 로
+/// 채워져 있으면 wrap)을 여기서 재현한다 — `tasty_terminal::TerminalState::
+/// line_was_soft_wrapped` 와 같은 판정이지만 그 API는 크레이트 밖에 노출되지 않는다.
+fn row_wrapped(
+    terminal: &tasty_terminal::Terminal,
+    absolute_row: usize,
+    scrollback_len: usize,
+) -> Option<bool> {
+    if absolute_row < scrollback_len {
+        terminal.scrollback_line_wrapped(absolute_row)
+    } else {
+        let screen_row = absolute_row - scrollback_len;
+        let lines = terminal.screen_lines();
+        let line = lines.get(screen_row)?;
+        Some(screen_line_soft_wrapped(line, line.len()))
+    }
+}
+
+/// `absolute_row` 행의 컬럼 수(그 행 자체의 셀 개수 — 과거 리사이즈로 현재
+/// 터미널 폭과 다를 수 있는 scrollback 행도 정확히 반영).
+fn row_cols(
+    terminal: &tasty_terminal::Terminal,
+    absolute_row: usize,
+    scrollback_len: usize,
+) -> Option<usize> {
+    if absolute_row < scrollback_len {
+        terminal
+            .scrollback_line_owned(absolute_row)
+            .map(|l| l.len())
+    } else {
+        let screen_row = absolute_row - scrollback_len;
+        terminal.screen_lines().get(screen_row).map(|l| l.len())
+    }
+}
+
+/// screen 라인 소프트 wrap 휴리스틱: 맨 오른쪽 컬럼이 공백 아닌 grapheme 로
+/// 채워져 있으면 wrap. `tasty-terminal` 의 scrollback 캡처용 휴리스틱과 동일 기준.
+fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) -> bool {
+    if cols == 0 {
+        return false;
+    }
+    for cell in line.visible_cells() {
+        let idx = cell.cell_index();
+        let width = cell.width().max(1);
+        if idx + width == cols {
+            let s = cell.str();
+            return !s.is_empty() && s.trim() != "";
+        }
+    }
+    false
+}
+
+/// OSC8 wrap 체인을 아래 방향으로 병합한다. `span`의 마지막 행이 wrapped 이고
+/// 다음 행이 col 0 부터 동일 `uri`의 OSC8 링크로 시작하면 그 행의 세그먼트를
+/// 이어붙이고, 그 행도 wrapped 면 계속 내려간다(3행 이상 체인 대응).
+fn merge_wrap_chain_down(
+    terminal: &tasty_terminal::Terminal,
+    scrollback_len: usize,
+    cwd: Option<&Path>,
+    mirror: bool,
+    span: &mut LinkSpan,
+) {
+    while let Some(last) = span.segments.last() {
+        let last_row = last.absolute_row;
+        if row_wrapped(terminal, last_row, scrollback_len) != Some(true) {
+            break;
+        }
+        let next_row = last_row + 1;
+        let Some(next_spans) = detect_row_links(terminal, next_row, scrollback_len, cwd, mirror)
+        else {
+            break;
+        };
+        let next = next_spans.into_iter().find(|s| {
+            s.uri == span.uri
+                && s.segments
+                    .first()
+                    .is_some_and(|seg| seg.absolute_row == next_row && seg.start_col == 0)
+        });
+        let Some(next) = next else { break };
+        span.segments.extend(next.segments);
+    }
+}
+
+/// OSC8 wrap 체인을 위 방향으로 병합한다 — `merge_wrap_chain_down`과 대칭.
+/// `span`의 첫 행 바로 위 행이 wrapped(그 행이 현재 행으로 이어짐)이고 동일
+/// `uri`의 OSC8 링크로 끝나면 그 행의 세그먼트를 앞에 붙이고 계속 올라간다.
+fn merge_wrap_chain_up(
+    terminal: &tasty_terminal::Terminal,
+    scrollback_len: usize,
+    cwd: Option<&Path>,
+    mirror: bool,
+    span: &mut LinkSpan,
+) {
+    while let Some(first) = span.segments.first() {
+        let first_row = first.absolute_row;
+        let Some(prev_row) = first_row.checked_sub(1) else {
+            break;
+        };
+        if row_wrapped(terminal, prev_row, scrollback_len) != Some(true) {
+            break;
+        }
+        let Some(prev_spans) = detect_row_links(terminal, prev_row, scrollback_len, cwd, mirror)
+        else {
+            break;
+        };
+        let Some(prev_cols) = row_cols(terminal, prev_row, scrollback_len) else {
+            break;
+        };
+        let prev = prev_spans.into_iter().find(|s| {
+            s.uri == span.uri
+                && s.segments
+                    .iter()
+                    .any(|seg| seg.absolute_row == prev_row && seg.end_col + 1 == prev_cols)
+        });
+        let Some(prev) = prev else { break };
+        let mut merged = prev.segments;
+        merged.append(&mut span.segments);
+        span.segments = merged;
+    }
+}
+
+/// 주어진 (col, absolute_row)에 있는 링크를 터미널에서 찾는다. scrollback과
+/// screen 양쪽을 처리하고, OSC8 하이퍼링크가 소프트 wrap 으로 여러 화면 행에
+/// 걸쳐 있으면(`ScrollbackLine.wrapped`/동등 휴리스틱 + 동일 uri) 그 체인 전체를
+/// 위/아래 양방향으로 병합해 반환한다. plain-text URL/경로(regex 검출)는 wrap
+/// continuation 행에 스킴 프리픽스가 없어 그 행 자체에서 애초에 매치가 나지
+/// 않으므로(따라서 uri 도 일치하지 않으므로) 별도 처리 없이도 병합 대상이 되지
+/// 않는다 — merge 조건(`uri` 일치)이 자연히 걸러낸다.
 pub fn link_at(
     terminal: &tasty_terminal::Terminal,
     col: usize,
@@ -294,32 +443,28 @@ pub fn link_at(
     //  find_terminal_by_id 가 보는 GUI store 기준이고, 그 store 안에서 detached 인 것은
     //  attach_client::start_gui_attach 의 mirror 뿐이라 process_id().is_none() ⟺ mirror.)
     let mirror = terminal.process_id().is_none();
-    let spans = if absolute_row < scrollback_len {
-        let line = terminal.scrollback_line_owned(absolute_row)?;
-        detect_scrollback_line(&line, absolute_row, cwd_ref, mirror)
-    } else {
-        let screen_row = absolute_row - scrollback_len;
-        let lines = terminal.screen_lines();
-        let line = lines.get(screen_row)?;
-        detect_screen_line(line, absolute_row, cwd_ref, mirror)
-    };
-    spans.into_iter().find(|s| s.contains(col, absolute_row))
+    let spans = detect_row_links(terminal, absolute_row, scrollback_len, cwd_ref, mirror)?;
+    let mut found = spans.into_iter().find(|s| s.contains(col, absolute_row))?;
+    merge_wrap_chain_down(terminal, scrollback_len, cwd_ref, mirror, &mut found);
+    merge_wrap_chain_up(terminal, scrollback_len, cwd_ref, mirror, &mut found);
+    Some(found)
 }
 
-/// 렌더러에 전달하는 링크 하이라이트 정보. hovered된 단일 링크를
-/// 해당 셀 범위에 대해 fg/bg 색으로 오버라이드한다.
+/// 렌더러에 전달하는 링크 하이라이트 정보. hovered된 단일 링크를(wrap 으로
+/// 여러 화면 행에 걸치면 그 모든 행을) 해당 셀 범위에 대해 fg/bg 색으로
+/// 오버라이드한다.
 #[derive(Debug, Clone)]
 pub struct LinkHighlight {
-    pub start_col: usize,
-    pub end_col: usize,
-    pub absolute_row: usize,
+    pub segments: Vec<LinkSegment>,
     pub fg: tasty_type_appearance::color::GpuRgba,
     pub bg: tasty_type_appearance::color::GpuRgba,
 }
 
 impl LinkHighlight {
     pub fn covers(&self, col: usize, absolute_row: usize) -> bool {
-        self.absolute_row == absolute_row && col >= self.start_col && col <= self.end_col
+        self.segments
+            .iter()
+            .any(|s| s.absolute_row == absolute_row && col >= s.start_col && col <= s.end_col)
     }
 }
 
@@ -396,17 +541,13 @@ fn append_path_matches(
         let end_ch = text[..end_byte].chars().next_back().unwrap_or(' ');
         let end_col = last_start_col + unicode_width(end_ch).saturating_sub(1);
         let overlap = out.iter().any(|s| {
-            s.absolute_row == absolute_row && !(end_col < s.start_col || start_col > s.end_col)
+            s.range_at(absolute_row)
+                .is_some_and(|(s_start, s_end)| !(end_col < s_start || start_col > s_end))
         });
         if overlap {
             continue;
         }
-        out.push(LinkSpan {
-            start_col,
-            end_col,
-            uri,
-            absolute_row,
-        });
+        out.push(LinkSpan::single(absolute_row, start_col, end_col, uri));
     }
 }
 
@@ -547,6 +688,62 @@ mod tests {
         // 원격 절대경로는 cwd 없이도 그대로 emit.
         let uri = resolve_link_target("/remote/abs/file.rs", None, true);
         assert_eq!(uri.as_deref(), Some("file:///remote/abs/file.rs"));
+    }
+
+    #[test]
+    fn link_span_contains_checks_all_segments() {
+        let span = LinkSpan {
+            uri: "https://example.com/a/b".into(),
+            segments: vec![
+                LinkSegment {
+                    absolute_row: 5,
+                    start_col: 10,
+                    end_col: 19,
+                },
+                LinkSegment {
+                    absolute_row: 6,
+                    start_col: 0,
+                    end_col: 7,
+                },
+            ],
+        };
+        assert!(span.contains(10, 5));
+        assert!(span.contains(19, 5));
+        assert!(span.contains(0, 6));
+        assert!(!span.contains(9, 5), "5행 시작 컬럼 이전은 범위 밖");
+        assert!(
+            !span.contains(0, 5),
+            "다른 행 컬럼은 그 행에 매치되면 안 됨"
+        );
+        assert!(!span.contains(8, 6), "6행 끝 컬럼 다음은 범위 밖");
+    }
+
+    #[test]
+    fn link_highlight_covers_checks_all_segments() {
+        let highlight = LinkHighlight {
+            segments: vec![
+                LinkSegment {
+                    absolute_row: 5,
+                    start_col: 10,
+                    end_col: 19,
+                },
+                LinkSegment {
+                    absolute_row: 6,
+                    start_col: 0,
+                    end_col: 7,
+                },
+            ],
+            fg: tasty_type_appearance::color::GpuRgba::dangerously_force_from_array([
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            bg: tasty_type_appearance::color::GpuRgba::dangerously_force_from_array([
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+        };
+        assert!(highlight.covers(15, 5));
+        assert!(highlight.covers(3, 6));
+        assert!(!highlight.covers(15, 6), "행이 다르면 매치되면 안 됨");
+        assert!(!highlight.covers(20, 5));
     }
 
     #[test]
