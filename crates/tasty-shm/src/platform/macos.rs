@@ -190,12 +190,20 @@ pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, S
         unsafe { libc::close(fd) };
         return Err(ShmError::Os(err));
     }
-    if st.st_mode & libc::S_IFMT != libc::S_IFREG {
+    // macOS의 shm_open fd는 **파일시스템에 없는 커널 객체**라 fstat이 파일 타입 비트를
+    // 채우지 않는다 — `st_mode & S_IFMT == 0` 으로 나온다(st_size 등 나머지 필드는 정상).
+    // Linux판(`linux.rs`)의 memfd/shm은 S_IFREG로 나오므로 거기서는 S_IFREG를 요구하지만,
+    // 그 조건을 그대로 가져오면 macOS에서는 정상 fd가 100% 거부된다.
+    //
+    // 따라서 여기서는 "타입 비트 없음(= shm 객체)" 또는 S_IFREG만 통과시킨다. 소켓·파이프·
+    // tty·디렉터리 등 다른 타입은 여전히 걸러지므로 방어 목적은 유지된다.
+    let ifmt = st.st_mode & libc::S_IFMT;
+    if ifmt != 0 && ifmt != libc::S_IFREG {
         // SAFETY: 형태 불일치로 거부하는 fd도 계약상 이미 우리 소유 — leak 방지.
         unsafe { libc::close(fd) };
         return Err(ShmError::Os(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "received fd is not a regular file (shm_open backing expected)",
+            "received fd is not a shared-memory object (shm_open backing expected)",
         )));
     }
 

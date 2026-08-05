@@ -60,6 +60,16 @@ mesh 는 GPU shared memory 버퍼에 써서 host 가 합성한다. 그 버퍼를
 `crates/tasty-host-plugin/src/handle_channel/channel_tests_windows.rs`(Windows) ·
 `channel_tests.rs`(Unix).
 
+**Unix 수신측 fd 형태 검증은 OS 별로 기준이 다르다 (필수)**: `tasty_shm::receive` 는 넘겨받은
+fd 를 소유권 편입 전에 `fstat` 으로 형태 검증한다. 이때 통과 기준이 Linux 와 macOS 에서
+다르다 — Linux 의 memfd/shm fd 는 `S_IFMT == S_IFREG` 로 보이지만, **macOS 의 `shm_open` fd 는
+파일시스템에 없는 커널 객체라 `S_IFMT == 0`** 으로 보인다(`st_size` 등 나머지 필드는 정상).
+그래서 `platform/macos.rs` 는 `S_IFMT ∈ {0, S_IFREG}` 를, `platform/linux.rs` 는 `S_IFREG` 를
+요구한다. 한쪽 조건을 다른 쪽에 그대로 복사하면 **정상 fd 가 전량 거부되어 mesh paint 가
+100% 실패**하고, 그 결과는 에러 없는 빈 surface 로만 나타난다. 회귀는
+`crates/tasty-shm/tests/round_trip.rs` 가 잡지만, 이 테스트는 **각 OS 에서 실제로 실행되어야**
+의미가 있다 — 통합테스트라 `--lib --bins` 만 도는 CI 잡에서는 컴파일조차 되지 않는다.
+
 **Windows overlapped I/O (필수)**: 이 채널은 full-duplex 다 — host 는 HandleAttach 를
 write 하면서 동시에 reader 스레드가 plugin 의 Dirty 를 blocking read 한다. Windows 의
 *동기* 파일 핸들은 같은 file object 의 I/O 를 직렬화하고 `DuplicateHandle`(try_clone)은
