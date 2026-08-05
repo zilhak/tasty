@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.24"
+version = "0.1.25"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -176,6 +176,11 @@ default_for_methods = ["codex.spawn"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "codex.state"
+# `codex.spawn` 응답의 `child_surface_id` 를 poll 호출(`codex.state`) 의
+# 필수 파라미터 `surface` 로 옮긴다 — claude 와 키 이름이 다르다
+# (`handlers.rs` 의 `require_u32(&params, "surface")`). 매핑이 없으면
+# poll params 가 비어 매 tick 실패한다.
+map_from_response = { child_surface_id = "surface" }
 state_field = "state"
 terminal_states = ["idle", "exited"]
 

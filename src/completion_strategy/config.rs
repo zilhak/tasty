@@ -188,6 +188,78 @@ mod tests {
         }
     }
 
+    /// bundled plugin 매니페스트에서 `[[contributes.completion_strategy]]` 만
+    /// 뽑아내는 최소 wrapper. 다른 `contributes.*` 필드는 무시한다.
+    #[derive(Deserialize)]
+    struct BundledManifestProbe {
+        contributes: BundledContributesProbe,
+    }
+
+    #[derive(Deserialize)]
+    struct BundledContributesProbe {
+        #[serde(default)]
+        completion_strategy: Vec<CompletionStrategyDecl>,
+    }
+
+    /// `crates/<plugin_crate>/tasty-plugin.toml` 을 실제로 읽어 파싱한다.
+    /// 이 회귀 테스트가 지키려는 것은 "코드가 올바르다"가 아니라 "매니페스트
+    /// 선언 자체가 올바르다" — `claude/spawn-wait`·`codex/spawn-wait` 의
+    /// `map_from_response` 가 다시 빠지면(예: 무심코 되돌리는 편집) 여기서
+    /// 잡는다.
+    fn load_bundled_completion_strategies(plugin_crate: &str) -> Vec<CompletionStrategyDecl> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("crates")
+            .join(plugin_crate)
+            .join("tasty-plugin.toml");
+        let s = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} read 실패: {e}", path.display()));
+        let parsed: BundledManifestProbe =
+            toml::from_str(&s).unwrap_or_else(|e| panic!("{} parse 실패: {e}", path.display()));
+        parsed.contributes.completion_strategy
+    }
+
+    fn spawn_wait_poll_decl(strategies: &[CompletionStrategyDecl]) -> &PollStrategyDecl {
+        let spawn_wait = strategies
+            .iter()
+            .find(|s| s.id == "spawn-wait")
+            .expect("spawn-wait strategy declared in manifest");
+        match &spawn_wait.spec {
+            CompletionStrategySpecDecl::Poll(decl) => decl,
+            CompletionStrategySpecDecl::Push { .. } => panic!("spawn-wait expected to be poll"),
+        }
+    }
+
+    /// 회귀 테스트: `claude.spawn` 응답의 `child_surface_id` 가 `claude.state`
+    /// 폴링 호출의 `surface_id` 파라미터로 매핑되어 있어야 한다. 매핑이 없으면
+    /// poll params 가 비어 `claude.state` 가 "Missing required 'surface_id'
+    /// parameter" 로 매 tick 실패한다.
+    #[test]
+    fn claude_spawn_wait_manifest_maps_child_surface_id_to_surface_id() {
+        let strategies = load_bundled_completion_strategies("tasty-plugin-claude");
+        let decl = spawn_wait_poll_decl(&strategies);
+        assert_eq!(
+            decl.map_from_response
+                .get("child_surface_id")
+                .map(String::as_str),
+            Some("surface_id")
+        );
+    }
+
+    /// 회귀 테스트: `codex.spawn` 응답의 `child_surface_id` 가 `codex.state`
+    /// 폴링 호출의 `surface` 파라미터로 매핑되어 있어야 한다 (claude 와 키
+    /// 이름이 다르다).
+    #[test]
+    fn codex_spawn_wait_manifest_maps_child_surface_id_to_surface() {
+        let strategies = load_bundled_completion_strategies("tasty-plugin-codex");
+        let decl = spawn_wait_poll_decl(&strategies);
+        assert_eq!(
+            decl.map_from_response
+                .get("child_surface_id")
+                .map(String::as_str),
+            Some("surface")
+        );
+    }
+
     #[test]
     fn validate_rejects_bad_short_name() {
         let decl = CompletionStrategyDecl {

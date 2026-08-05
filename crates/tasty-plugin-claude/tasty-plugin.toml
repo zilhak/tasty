@@ -175,6 +175,11 @@ default_for_methods = ["claude.spawn"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "claude.state"
+# `claude.spawn` 응답의 `child_surface_id` 를 poll 호출(`claude.state`) 의
+# 필수 파라미터 `surface_id` 로 옮긴다 — 이 매핑이 없으면 poll params 가
+# 비어 `claude.state` 가 "Missing required 'surface_id' parameter" 로 매 tick
+# 실패한다(handlers.rs 의 `require_surface_id`).
+map_from_response = { child_surface_id = "surface_id" }
 state_field = "state"
 terminal_states = ["idle", "needs_input", "exited"]
 
