@@ -56,7 +56,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
-          gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-macos.dmg"
+          gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-macos-arm64.dmg"
           gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-macos.txt"
 
       - name: Clean up dist

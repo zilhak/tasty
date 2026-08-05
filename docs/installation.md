@@ -11,7 +11,7 @@ Tasty 는 GitHub Releases 에서 OS·아키텍처·설치 형태별 산출물로
 | Linux | x86_64 | `tasty-{ver}-1.x86_64.rpm` | Fedora/RHEL/openSUSE |
 | Linux | x86_64 | `Tasty-{ver}-x86_64.AppImage` | distro 무관 단일 파일 |
 | Linux | aarch64 | `tasty-{ver}-linux-arm64.tar.gz` / `_arm64.deb` / `.aarch64.rpm` / `-aarch64.AppImage` | ARM64 |
-| macOS | universal | `Tasty-{ver}-macos.dmg` | App Bundle 드래그 설치 |
+| macOS | arm64 | `Tasty-{ver}-macos-arm64.dmg` | App Bundle 드래그 설치 (Apple Silicon 전용) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 바이너리만 압축 |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 시작 메뉴/제거 등록 인스톨러 |
 
