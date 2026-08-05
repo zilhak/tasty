@@ -2197,6 +2197,99 @@ mod forward_exec_tests {
         );
     }
 
+    /// 비-holder 경로(ADR-0060): `terminal.spawn`(`tasty claude/codex spawn` 이 호출하는
+    /// IPC)도 hard-occupied 워크스페이스에 대해서는 거부되고 tab/surface 가 전혀
+    /// 생성되지 않아야 한다 — spawn 이 성공 응답을 준 직후 `tap_new_workspace_member`
+    /// 로 새 surface 가 hard lock 을 상속받아, spawn 을 호출한 쪽조차 자기 결과물에
+    /// 입력을 못 넣게 되는 부작용을 애초에 막는다.
+    #[test]
+    fn dispatch_denies_terminal_spawn_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+
+        let terminals_before = engine.terminals.iter().count();
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let tabs_before = engine.workspaces[0]
+            .pane_layout()
+            .find_pane(pane_id)
+            .expect("pane exists")
+            .tabs
+            .len();
+
+        let req = ipc_request(
+            "terminal.spawn",
+            serde_json::json!({ "parent": a, "workspace": ws_id.to_string() }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+        let err = resp.error.unwrap_or_else(|| {
+            panic!("hard-occupied 워크스페이스로의 terminal.spawn 은 거부돼야 한다")
+        });
+        assert!(
+            err.message.to_lowercase().contains("occupied"),
+            "에러 메시지에 점유 안내가 있어야 한다 (got: {})",
+            err.message
+        );
+
+        assert_eq!(
+            engine.terminals.iter().count(),
+            terminals_before,
+            "거부된 spawn 은 새 터미널을 만들면 안 된다"
+        );
+        assert_eq!(
+            engine.workspaces[0]
+                .pane_layout()
+                .find_pane(pane_id)
+                .expect("pane exists")
+                .tabs
+                .len(),
+            tabs_before,
+            "거부된 spawn 은 새 tab 을 만들면 안 된다"
+        );
+    }
+
+    /// 점유가 없는 workspace 로의 `terminal.spawn` 은 가드 추가 후에도 기존처럼
+    /// 정상 동작해야 한다(회귀 방지).
+    #[test]
+    fn dispatch_allows_terminal_spawn_when_not_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let terminals_before = engine.terminals.iter().count();
+
+        let req = ipc_request(
+            "terminal.spawn",
+            serde_json::json!({ "parent": a, "workspace": ws_id.to_string() }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+        assert!(
+            resp.error.is_none(),
+            "점유되지 않은 workspace 의 terminal.spawn 은 허용돼야 한다: {:?}",
+            resp.error
+        );
+        assert_eq!(
+            engine.terminals.iter().count(),
+            terminals_before + 1,
+            "정상 spawn 은 새 터미널을 만들어야 한다"
+        );
+    }
+
     /// 점유가 없는 워크스페이스에서는 가드가 오탐하지 않고 정상 통과해야 한다
     /// (false-positive 방지 — 가드가 hard-occupied 가 아닌 workspace 까지 막으면
     /// 일반 사용자의 로컬 작업 자체가 회귀한다).

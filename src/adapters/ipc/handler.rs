@@ -346,8 +346,16 @@ pub fn record_plugin_rss_samples(
 /// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
 /// 좁힐 예정 (별도 작업).
 /// hard-occupied workspace 에 대한 **비-holder** 구조 변경 IPC 를 차단한다
-/// (`split`/`tab.create` 생성 계열, `pane.close`/`tab.close`/`tab.move`/`surface.close`
-/// close·이동 계열).
+/// (`split`/`tab.create`/`terminal.spawn` 생성 계열, `pane.close`/`tab.close`/
+/// `tab.move`/`surface.close` close·이동 계열).
+///
+/// **`terminal.spawn` 은 예외가 아니다**: 과거엔 "새 리소스를 추가만 하는 생성
+/// 경로는 holder 의 화면을 안 흔드니 차단 대상이 아니다"로 문서화돼 있었으나,
+/// 그 논거는 holder 관점만 다뤘다 — spawn 을 호출한 로컬 agent 자신이 그 직후
+/// `tap_new_workspace_member`(`core/attach_runtime.rs`)로 새 surface 가 즉시 같은
+/// hard lock 을 상속받아 자기 결과물에 입력을 못 넣게 되는 부작용은 검토되지
+/// 않았다. 이 사각지대 때문에 정책을 뒤집어 `terminal.spawn` 도 차단 대상에
+/// 포함한다(근거: ADR-0060, ADR-0040 은 유지).
 ///
 /// **왜 여기(문자열 method dispatch)인가**: `execute_forwarded_structural_op`
 /// (`src/core/attach_runtime.rs`)는 attach 점유 holder 가 forward 한 구조 변경을
@@ -407,6 +415,11 @@ fn hard_occupied_structural_guard(
             engine
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
+        }
+        "terminal.spawn" => {
+            let workspace_param = params.get("workspace").and_then(|v| v.as_str())?;
+            let ws_id = terminal::resolve_workspace_id(engine, workspace_param)?;
+            engine.find_workspace_index_for_id(ws_id)?
         }
         _ => return None,
     };

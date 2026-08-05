@@ -268,7 +268,10 @@ fn send_body_then_submit(
 }
 
 /// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭 우선, 아니면 name 매칭.
-fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
+///
+/// `pub(super)`: `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)가
+/// `terminal.spawn` 의 hard-occupied 판정에 동일 로직을 재사용한다.
+pub(super) fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
     if let Ok(target_id) = target.parse::<u32>()
         && engine.workspaces.iter().any(|w| w.id == target_id)
     {
