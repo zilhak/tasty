@@ -50,6 +50,76 @@ fn require_str(params: &Value, key: &str, id: &Value) -> Result<String, JsonRpcR
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), format!("missing '{key}'")))
 }
 
+/// child 조회 실패 시 **왜** 못 찾았는지까지 담은 메시지. kill/release/respawn 공용.
+///
+/// `--child` 는 부모별 index(`next_index_for` 가 0부터 발급)지 `child_surface_id` 가
+/// 아닌데, 둘 다 그냥 정수라 혼동하기 쉽다. 레지스트리는 이미 구분에 필요한 걸 다
+/// 갖고 있으므로(`parent_of_child`), 사실만 알리지 말고 다음 행동을 지목한다.
+///
+/// 두 번호 공간은 실제로 겹칠 수 있어(새 인스턴스는 surface id 가 1,2,3…) 넘어온 값을
+/// surface_id 로 **자동 해석하지는 않는다** — 안내만 하고 인자 의미는 index 로 고정한다.
+fn child_not_found_message(
+    reg: &crate::core::child_terminal::ChildTerminalRegistry,
+    parent: u32,
+    given: u32,
+) -> String {
+    let base = format!("child {given} not found under surface {parent}");
+
+    // 넘어온 값이 실은 child_surface_id 인 경우 — 대응하는 index 를 짚어준다.
+    if let Some(owner) = reg.parent_of_child(given)
+        && let Some(index) = reg
+            .list_children(owner)
+            .iter()
+            .find(|c| c.child_surface_id == given)
+            .map(|c| c.index)
+    {
+        return if owner == parent {
+            format!(
+                "{base}. {given} is a child_surface_id, not a child index — use `--child {index}`"
+            )
+        } else {
+            format!(
+                "{base}. {given} is a child_surface_id under a different parent \
+                 — use `--surface {owner} --child {index}`"
+            )
+        };
+    }
+
+    // 그 외(오타·범위 밖·이미 정리됨) — 유효한 index 를 제시한다.
+    let mut indices: Vec<u32> = reg.list_children(parent).iter().map(|c| c.index).collect();
+    if indices.is_empty() {
+        return format!("{base} (no children registered under surface {parent})");
+    }
+    indices.sort_unstable();
+    let count = indices.len();
+    format!(
+        "{base} (valid child indices: {}; {count} children)",
+        format_index_ranges(&indices)
+    )
+}
+
+/// 정렬된 index 목록을 사람이 읽을 범위 표기로 압축한다 — `0-42, 45, 48-57`.
+/// kill 로 중간이 빠진 목록을 `0-57` 로 뭉뚱그리면 없는 index 를 있다고 말하게 된다.
+fn format_index_ranges(sorted: &[u32]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < sorted.len() {
+        let start = sorted[i];
+        let mut end = start;
+        while i + 1 < sorted.len() && sorted[i + 1] == end + 1 {
+            i += 1;
+            end = sorted[i];
+        }
+        parts.push(if start == end {
+            start.to_string()
+        } else {
+            format!("{start}-{end}")
+        });
+        i += 1;
+    }
+    parts.join(", ")
+}
+
 /// `--surface`(parent) 명시가 없으면 유일 parent 로 폴백. 0 또는 2+ 면 에러(호출자 명시 요구).
 fn resolve_parent(engine: &CoreState, params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     if let Some(p) = optional_u32(params, "surface") {
@@ -462,7 +532,7 @@ pub(crate) fn handle_kill(
     let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
         return JsonRpcResponse::invalid_params(
             id,
-            format!("child {child_index} not found under surface {parent}"),
+            child_not_found_message(&engine.child_terminals, parent, child_index),
         );
     };
     engine.child_terminals.save();
@@ -506,7 +576,7 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
     let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
         return JsonRpcResponse::invalid_params(
             id,
-            format!("child {child_index} not found under surface {parent}"),
+            child_not_found_message(&engine.child_terminals, parent, child_index),
         );
     };
     engine.child_terminals.save();
@@ -632,7 +702,7 @@ pub(crate) fn handle_respawn(
     else {
         return JsonRpcResponse::invalid_params(
             id,
-            format!("child {child_index} not found under surface {parent}"),
+            child_not_found_message(&engine.child_terminals, parent, child_index),
         );
     };
     let new_cwd = optional_str(params, "cwd");
@@ -821,6 +891,56 @@ mod tests {
 
     fn ok(resp: JsonRpcResponse) -> Value {
         resp.result.expect("expected success result")
+    }
+
+    /// index 목록 압축 — 연속 구간은 `a-b`, 단독은 그대로, 빈 구간은 건너뛴다.
+    #[test]
+    fn index_ranges_compress_contiguous_runs() {
+        assert_eq!(format_index_ranges(&[0, 1, 2, 3]), "0-3");
+        assert_eq!(format_index_ranges(&[7]), "7");
+        assert_eq!(format_index_ranges(&[0, 1, 2, 5, 8, 9]), "0-2, 5, 8-9");
+        // kill 로 중간이 빠진 목록을 `0-57` 로 뭉뚱그리지 않는다.
+        assert_eq!(format_index_ranges(&[0, 57]), "0, 57");
+    }
+
+    /// surface_id 를 `--child` 에 넣은 흔한 오용 — 같은 부모면 올바른 index 를 짚어준다.
+    #[test]
+    fn child_not_found_points_at_index_when_given_a_surface_id() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        reg.register_child(3157, child(3204, 31));
+        let msg = child_not_found_message(&reg, 3157, 3204);
+        assert!(msg.contains("child_surface_id, not a child index"), "{msg}");
+        assert!(msg.contains("`--child 31`"), "{msg}");
+    }
+
+    /// 다른 부모에 속한 child_surface_id 면 부모까지 함께 제시한다.
+    #[test]
+    fn child_not_found_points_at_other_parent() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        reg.register_child(9000, child(3204, 4));
+        let msg = child_not_found_message(&reg, 3157, 3204);
+        assert!(msg.contains("under a different parent"), "{msg}");
+        assert!(msg.contains("`--surface 9000 --child 4`"), "{msg}");
+    }
+
+    /// surface_id 도 아닌 값(오타/범위 밖)이면 유효 index 범위를 제시한다.
+    #[test]
+    fn child_not_found_lists_valid_indices() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        for i in 0..3 {
+            reg.register_child(3157, child(100 + i, i));
+        }
+        let msg = child_not_found_message(&reg, 3157, 999);
+        assert!(msg.contains("valid child indices: 0-2"), "{msg}");
+        assert!(msg.contains("3 children"), "{msg}");
+    }
+
+    /// child 가 하나도 없는 부모는 범위 대신 그 사실을 알린다.
+    #[test]
+    fn child_not_found_reports_empty_parent() {
+        let reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let msg = child_not_found_message(&reg, 3157, 0);
+        assert!(msg.contains("no children registered"), "{msg}");
     }
 
     /// `engine()`의 기본 workspace 는 surface 1개뿐이라, adopt 테스트가 필요로 하는

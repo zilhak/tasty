@@ -34,6 +34,23 @@
   - `tasty terminal adopt --target <surface> [--surface <parent>] [--cwd] [--role] [--nickname]` ↔ `terminal.adopt` — 새 탭을 만들지 않고, 이미 존재하는 임의의 surface 를 지금 시점에 명시적으로 child 로 등록(soft 점유)한다
   - `tasty terminal release [--surface <parent>] --child <n>` ↔ `terminal.release` — child 관계와 soft 점유만 해제한다. surface(탭) 자체는 닫지 않는다(`terminal.kill`과 달리)
 
+### `--child <n>` 은 index 지 surface_id 가 아니다
+
+`--child` 는 부모별로 0 부터 발급되는 **child index**(`ChildTerminalRegistry::next_index_for`)를
+받는다. `terminal.children` 이 반환하는 `surface_id` 와는 다른 번호 공간이며, 둘 다 정수라
+혼동하기 쉽다. 두 공간은 **실제로 겹칠 수 있다** — 새 인스턴스는 surface id 도 1, 2, 3… 이라
+`--child 2` 가 index 2 인지 surface 2 인지 구조적으로 구분되지 않는다. 그래서 넘어온 값을
+surface_id 로 자동 해석하지 않고, **인자 의미는 index 로 고정한 채 에러 메시지가 안내**한다:
+
+| 넘긴 값 | 응답 |
+|---|---|
+| 같은 부모의 `child_surface_id` | `… 4 is a child_surface_id, not a child index — use \`--child 2\`` |
+| 다른 부모의 `child_surface_id` | `… under a different parent — use \`--surface 9000 --child 4\`` |
+| 그 외(오타·범위 밖·이미 정리됨) | `… (valid child indices: 0, 2; 2 children)` |
+
+kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1` + stderr 이므로, 일괄
+처리 스크립트는 **호출당 종료코드를 확인해야 한다** — 버리면 전건 실패를 성공으로 오인한다.
+
 ## 비-목표 (Out of scope)
 
 - **에이전트 특화 로직** — codex/claude 바이너리 command 빌더, hook/trust, telemetry 는 플러그인에 잔류한다. 호스트는 임의 command 만 붙인다.
