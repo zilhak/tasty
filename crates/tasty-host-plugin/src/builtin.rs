@@ -443,6 +443,15 @@ fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// (Taskgated). rename은 inode를 교체하므로 kernel이 새 시그니처를 다시 읽는다.
 ///
 /// Linux/Windows에서도 동일하게 동작 — partial-write race 방지 효과까지 덤으로 얻는다.
+///
+/// macOS: rename 성공 후 `dest`의 `com.apple.quarantine` xattr을 best-effort로
+/// 제거한다(`strip_quarantine`) — dist(.app) 번들은 Finder가 quarantine된 DMG에서
+/// 드래그/추출될 때 내부 파일에도 재귀적으로 quarantine xattr을 남기고, 이 상태로
+/// 남은 plugin 바이너리는 ad-hoc 서명(비공증)이라 Gatekeeper가 exec 자체를 막는다.
+/// plugin 서브프로세스가 조용히 spawn 실패하면 host는 frame을 영원히 못 받아
+/// surface가 완전히 빈 채로 멈춘다 — 이미 앱 자체의 Gatekeeper 승인을 통과해
+/// 실행 중인 이 프로세스가 자신이 번들에서 방금 풀어낸 리소스의 quarantine을
+/// 스스로 제거하는 것은 안전하다.
 fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
     let parent = dest.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -476,7 +485,34 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
         }
         return Err(e);
     }
+    #[cfg(target_os = "macos")]
+    strip_quarantine(dest);
     Ok(())
+}
+
+/// `dest`의 `com.apple.quarantine` xattr을 제거한다(있으면). 속성이 애초에 없는
+/// 경우(`ENOATTR`)는 정상 상태(quarantine되지 않은 파일)이므로 조용히 넘어가고,
+/// 그 외 실패는 warn만 남긴다 — 이 정리가 실패해도 파일 자체는 정상 복사됐으니
+/// 설치 흐름을 막을 이유가 없다(best-effort).
+#[cfg(target_os = "macos")]
+fn strip_quarantine(dest: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+
+    let Ok(c_path) = std::ffi::CString::new(dest.as_os_str().as_bytes()) else {
+        return;
+    };
+    // SAFETY: c_path/c_attr 모두 유효한 NUL-terminated 버퍼이고, removexattr은
+    // 이를 읽기만 한다(dest 파일 자체는 변경하지 않고 xattr만 제거).
+    let ret = unsafe { libc::removexattr(c_path.as_ptr(), c"com.apple.quarantine".as_ptr(), 0) };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() != Some(libc::ENOATTR) {
+            tracing::warn!(
+                "strip quarantine xattr for {} failed: {err}",
+                dest.display()
+            );
+        }
+    }
 }
 
 /// 모든 기본 제공 플러그인을 점검:
