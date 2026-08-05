@@ -423,7 +423,14 @@ impl App {
             "",
         );
 
-        spawn_attach_reader_thread(conn, output.clone(), disconnected.clone(), proxy.clone());
+        spawn_attach_reader_thread(
+            conn,
+            output.clone(),
+            disconnected.clone(),
+            proxy.clone(),
+            local_ws_id,
+            "",
+        );
 
         // 4. heartbeat thread: 서버측 read timeout 갱신용으로 주기적으로 Ping 송신.
         // heartbeat 는 이 연결 1 회 수명에만 스코프된다(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고) — forwarder 와
@@ -572,7 +579,14 @@ impl App {
             "(재연결)",
         );
 
-        spawn_attach_reader_thread(conn, output.clone(), disconnected.clone(), proxy.clone());
+        spawn_attach_reader_thread(
+            conn,
+            output.clone(),
+            disconnected.clone(),
+            proxy.clone(),
+            local_workspace,
+            "(재연결)",
+        );
 
         // 4. heartbeat thread — 이 연결 전용 raw sender(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `make_mirror_surface`
         //    문서 참고, heartbeat 는 재연결을 가로질러 살아남지 않는다).
@@ -734,6 +748,7 @@ impl App {
     /// 재연결을 억제하게 한다 — 사용자가 명시적으로 mirror ws 를 닫은 경우는 "재진입
     /// 대기" 의미가 없어(사용자 스스로 걷어낸 것) 게이팅 대상이 아니다.
     fn cleanup_mirror_workspace(&mut self, sess: &AttachClientSession, from_disconnect: bool) {
+        log_mirror_cleanup(sess, from_disconnect);
         for main in self.main_windows_iter_mut() {
             let engine = &mut main.core_state;
             let Some(pos) = engine
@@ -1286,6 +1301,29 @@ fn attach_handshake(
     Ok((conn, client_id, write_half, name, surfaces, tree))
 }
 
+/// `cleanup_mirror_workspace` 진입 시 세션 식별 정보를 로깅한다 — anchor 없는
+/// 세션(수동/IPC attach)의 disconnect 정리는 `enter_reconnecting` 의 info 로그로
+/// 이어지지 않는 유일한 경로라 여기가 유일한 관측 지점이다. `from_disconnect`
+/// 여부에 따라 원인(원격발 disconnect vs 로컬 사용자 close)이 갈리므로 레벨도
+/// 그에 맞춘다(write 스레드 disconnect 승격 warn 과 일관).
+fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
+    if from_disconnect {
+        tracing::warn!(
+            "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 원격발 disconnect 로 정리",
+            sess.local_workspace,
+            sess.remote_workspace,
+            sess.anchor_ws_id
+        );
+    } else {
+        tracing::info!(
+            "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 사용자 close 로 정리",
+            sess.local_workspace,
+            sess.remote_workspace,
+            sess.anchor_ws_id
+        );
+    }
+}
+
 /// 원격으로 나가는 프레임을 직렬화해 소켓에 쓰는 write 전용 스레드를 띄운다.
 /// `frame_rx`(모든 sender drop 시 자연 EOF)를 순차 소비해 `write_frame`, 실패(write
 /// timeout=WouldBlock 포함, BrokenPipe 등)는 세션 disconnect 로 승격한다 —
@@ -1320,12 +1358,15 @@ fn spawn_attach_write_thread(
 /// 띄운다. Data/Resize/Activity/StructuralFailed/StructuralSucceeded/
 /// StructuralDelta/Mesh 이벤트를 `MirrorEvent` 로 변환, Detach/force_detached/
 /// recv 실패는 세션 disconnect 로 승격. `start_gui_attach`/`reconnect_session`
-/// 이 공유(스레드 본문이 두 곳에서 100% 동일).
+/// 이 공유(스레드 본문이 두 곳에서 100% 동일) — `log_suffix` 로 로그 문구 차이만
+/// 흡수(write 스레드와 동일 패턴: "" vs "(재연결)").
 fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
     output: RemoteOutputBuffer,
     disconnected: Arc<AtomicBool>,
     proxy: EventLoopProxy<AppEvent>,
+    local_workspace: u32,
+    log_suffix: &'static str,
 ) {
     std::thread::spawn(move || {
         let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
@@ -1426,7 +1467,14 @@ fn spawn_attach_reader_thread(
                         }
                     }
                 },
-                Err(_) => {
+                Err(e) => {
+                    // 조용한 네트워크 단절(케이블 단절/NAT 타임아웃 등 FIN/RST 없는 끊김)의
+                    // 실질적 감지 진입점 — heartbeat TTL(HEARTBEAT_TIMEOUT) 만료로 인한
+                    // read timeout 이 여기로 들어온다. write 스레드의 대칭 로그(위 참고)와
+                    // 일관되게 원인(`e`)을 남긴다.
+                    tracing::warn!(
+                        "attach reader thread{log_suffix}: mirror workspace {local_workspace} 원격 recv 실패 — 세션 disconnect 승격: {e}"
+                    );
                     disconnected.store(true, Ordering::SeqCst);
                     let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                     break;
