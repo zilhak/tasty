@@ -355,6 +355,22 @@ plugin 의 `egui_mesh_frames` 를 즉시 비운다. 합성기는 frame 이 없�
 surface 가 곧장 blank 로 전환되어 마지막 mesh 가 stale 합성되지 않는다. host 는 죽지
 않으며, 60초 healthcheck 가 plugin 을 재시작하면 bootstrap set_context 로 재합성된다.
 
+### 빈 surface 감지 (host 로그)
+
+blank 전환 자체는 정상 동작이지만, **왜** 비었는지는 host 가 알 수 없다 — plugin 의 paint
+실패는 plugin 자체 로그(`tasty plugin logs <id>`)에만 남고 host 에는 통지되지 않는다. host
+forward 루프는 frame 이 없는 surface 를 조용히 건너뛰므로, host stderr 만 보는 사람에게는
+아무 징후 없이 빈 화면만 남는다.
+
+그래서 `view/main/egui_mesh.rs` 는 bootstrap set_context 송신 시각을 기록해두고,
+`BLANK_SURFACE_GRACE`(3초)가 지나도록 frame 이 하나도 오지 않으면 surface 당 **1회**
+`ERROR` 로 그 사실과 plugin 로그 확인 경로를 남긴다. frame 이 도착하면 래치가 풀려, 이후
+crash 로 다시 비면 재경고한다. 원인 자체는 여전히 plugin 로그에서 확인해야 한다 — 이
+로그는 "어디를 볼지"를 가리키는 신호다.
+
+검사는 forward 루프(= redraw) 안에서 돈다. 완전 idle 상태면 다음 redraw 까지 지연되지만,
+빈 화면을 보고 조작하는 순간 발화한다.
+
 ## 개방 정책
 
 bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` 이 호스트와 일치할

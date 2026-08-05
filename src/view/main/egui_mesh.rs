@@ -92,6 +92,12 @@ pub(crate) struct MeshForwardState {
     /// 파일 변경이 반영되게 하는 유일한 진입점 — `App::event_handler` 가
     /// `mark_surface_invalidated` 로 세팅한다.
     invalidated: bool,
+    /// bootstrap set_context 를 보낸 시각. 이후에도 frame 이 오지 않으면
+    /// [`BLANK_SURFACE_GRACE`] 경과 시점에 1회 경고한다 — `blank_warned` 참조.
+    bootstrap_at: Option<Instant>,
+    /// "빈 surface" 경고를 이미 냈다 — 매 frame 반복 로그를 막는 래치.
+    /// frame 이 한 번이라도 도착하면 해제되어, 이후 plugin crash 로 다시 비면 재경고한다.
+    blank_warned: bool,
 }
 
 impl MeshForwardState {
@@ -106,6 +112,14 @@ impl MeshForwardState {
         self.invalidated = true;
     }
 }
+
+/// bootstrap set_context 를 보낸 뒤 이 시간이 지나도록 plugin 이 frame 을 하나도
+/// 보내지 않으면 그 surface 는 사실상 빈 화면으로 멈춘 것으로 본다.
+///
+/// 정상 경로에서 첫 paint 는 수십 ms 안에 온다(plugin 프로세스는 이미 기동·handshake
+/// 완료 상태이고 남은 일은 콘텐츠 적재 + tessellate 뿐). 3초는 느린 디스크의 대용량
+/// 파일 적재까지 흡수하면서 실제 고장을 놓치지 않는 선.
+const BLANK_SURFACE_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// forward 대상 egui-mesh surface 1개의 메타 — set_context 송신 + bootstrap create 용.
 struct MeshTarget {
@@ -366,6 +380,28 @@ impl MainView {
             if has_frame {
                 // 건강 상태 — 이후 crash 로 frame 이 사라지면 재bootstrap 하도록 무장.
                 st.bootstrap_sent = false;
+                st.bootstrap_at = None;
+                st.blank_warned = false;
+            } else if !st.blank_warned
+                && st.bootstrap_sent
+                && st
+                    .bootstrap_at
+                    .is_some_and(|t| t.elapsed() >= BLANK_SURFACE_GRACE)
+            {
+                // bootstrap 을 보냈는데 frame 이 하나도 오지 않았다 = 사용자에게는 빈
+                // surface 로 보인다. plugin 쪽 실패(paint 에러/hang/crash)는 plugin 자체
+                // 로그에만 남고 host 는 이 루프에서 조용히 `continue` 하므로, host stderr
+                // 만 보는 사람에게는 아무 징후도 없다. 그 침묵을 여기서 깬다.
+                //
+                // 원인은 여기서 알 수 없다(host 는 실패 통지를 받지 않는다) — plugin 로그
+                // 경로를 함께 찍어 다음 확인처를 명시한다.
+                tracing::error!(
+                    "egui-mesh surface {sid} (kind '{kind}', plugin '{plugin_id}') has received \
+                     no frame {:.0}s after bootstrap — it is blank on screen. \
+                     Check the plugin's own log: `tasty plugin logs {plugin_id}`",
+                    BLANK_SURFACE_GRACE.as_secs_f32(),
+                );
+                st.blank_warned = true;
             }
             let is_focused = focused == Some(sid);
             let geom_changed = st.last_geom != Some(geom);
@@ -399,6 +435,9 @@ impl MainView {
             st.invalidated = false;
             if !has_frame {
                 st.bootstrap_sent = true;
+                // 첫 bootstrap 시각만 기록 — 이후 입력/리사이즈로 재forward 될 때마다
+                // 갱신하면 grace 가 계속 밀려 빈 화면을 영영 못 잡는다.
+                st.bootstrap_at.get_or_insert_with(Instant::now);
             }
 
             // 첫 bootstrap(아직 paint 못 받음): set_context 직전에 surface.create 를
