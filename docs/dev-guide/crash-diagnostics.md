@@ -43,18 +43,21 @@ TASTY_LOG=debug tasty 2>/tmp/tasty.log                          # 전체 debug
 TASTY_LOG=tasty::ipc=debug,tasty::engine=debug tasty 2>/tmp/tasty.log  # 모듈별
 ```
 
-tracing 출력처는 빌드 모드에 따라 다르다:
+tracing 출력처는 **모든 빌드 모드에서 stderr + 파일**이다. 파일 필터는 `TASTY_LOG`(stderr 필터)와 독립적으로 고정된다:
 
-| 빌드 | tracing 출력 |
-|------|--------------|
-| **release / dist** | **stderr 만** |
-| **dev** | stderr **+ 파일** `~/.tasty/debug-dev.log` |
+| 빌드 | tracing 출력 | 파일 경로 | 파일 필터 |
+|------|--------------|-----------|-----------|
+| **release / dist** | stderr + 파일 | `~/.tasty/debug.log` | `warn,wgpu_hal=warn,wgpu_core=warn,naga=warn` |
+| **dev** | stderr + 파일 | `~/.tasty/debug-dev.log` | `debug,wgpu_hal=warn,wgpu_core=warn,naga=warn` |
 
-`debug-dev.log` 는 dev 빌드에서만 생성되며, 파일 필터는 `debug,wgpu_hal=warn,wgpu_core=warn,naga=warn`(ANSI 없음), **매 실행 시 새로 truncate** 된다. 디렉토리 생성/파일 생성 실패 시 stderr-only 로 자동 폴백.
+release 파일 필터가 `warn` 이상으로 제한된 이유는 상시 전체 debug 로깅에 따른 디스크 사용량을 피하면서도, attach disconnect 같은 진단 가치가 있는 로그는 release 실사용자 환경에서도 사후 확인 가능하게 하기 위함이다(dist 도 동일). 두 파일 모두 ANSI 없음, **매 실행 시 새로 truncate**(rotation 없음). 디렉토리 생성/파일 생성 실패 시 stderr-only 로 자동 폴백.
 
 ```bash
-cargo run                  # dev
-cat ~/.tasty/debug-dev.log # 직전 실행의 전체 debug 로그
+cargo run                          # dev
+cat ~/.tasty/debug-dev.log         # 직전 실행의 전체 debug 로그
+
+cargo build --release && ./target/release/tasty
+cat ~/.tasty/debug.log             # 직전 실행의 warn 이상 로그
 ```
 
 ## 에러 루프 자동 감지 (dev 전용)
@@ -74,7 +77,7 @@ Error loop detected! The following error repeated 100 times in 1s:
 |---|---|---|
 | crash report 파일 | ✅ | ✅ |
 | stderr panic + backtrace | ✅ | ✅ |
-| `debug-dev.log` 전체 tracing | ✗ | ✅ |
+| 파일 tracing | ✅ `debug.log`(warn 이상) | ✅ `debug-dev.log`(전체 debug) |
 | 에러 루프 자동 감지 | ✗ (no-op) | ✅ |
 | 심볼 / backtrace 품질 | `strip = true` 라 함수명 제한 → 주소만 보일 수 있음 | 미최적화·전 심볼 → 정확한 스택트레이스 |
 
@@ -104,7 +107,8 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 | 파일 / 경로 | 빌드 | 내용 |
 |-------------|------|------|
 | `~/.tasty/crash-reports/crash-*.log` | 모두 | panic 시 자동(버전·OS·위치·메시지·backtrace) |
-| `~/.tasty/debug-dev.log` | dev 만 | 전체 tracing(매 실행 truncate) |
+| `~/.tasty/debug-dev.log` | dev 만 | 전체 debug tracing(매 실행 truncate) |
+| `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(매 실행 truncate) |
 | stderr | 모두 | panic 메시지 + backtrace, `TASTY_LOG` 레벨의 tracing |
 
 ## 관련

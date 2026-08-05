@@ -102,8 +102,8 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
 /// Initialize crash reporting and tracing.
 ///
 /// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.
-///   Initializes tracing with stderr output.
-/// - **Debug builds only**: Additionally writes all tracing output to `~/.tasty/debug-dev.log`.
+///   Initializes tracing with stderr output, plus a file layer under `~/.tasty/` (independent of
+///   the stderr `TASTY_LOG` filter — see `init_tracing`).
 pub fn init() {
     // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
@@ -127,16 +127,13 @@ fn make_env_filter() -> EnvFilter {
     })
 }
 
-/// Release builds: stderr-only tracing.
-#[cfg(not(debug_assertions))]
-fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_env_filter(make_env_filter())
-        .init();
-}
-
-/// Debug builds: stderr + file tracing.
-#[cfg(debug_assertions)]
+/// stderr + file tracing, all build modes. stderr 필터는 `make_env_filter()`
+/// (`TASTY_LOG`, 기본 warn) 를 따르지만, 파일 필터는 그와 독립적으로 고정된다 —
+/// dev 는 `debug-dev.log` 에 `debug` 레벨(기존 동작 유지), release/dist 는
+/// `debug.log` 에 `warn` 이상만 남긴다(디스크 사용량 제한 — attach disconnect 같은
+/// 진단 가치가 있는 로그만 release 사용자 환경에 보존하는 게 목적이라 전체 debug
+/// 상시 로깅까진 필요 없다). 두 모드 모두 매 실행마다 파일을 truncate 한다(기존
+/// dev 동작과 동일 — rotation 은 이번 스코프 밖).
 fn init_tracing() {
     use tracing_subscriber::Layer as _;
     use tracing_subscriber::layer::SubscriberExt;
@@ -153,19 +150,23 @@ fn init_tracing() {
         if let Err(e) = fs::create_dir_all(&dir) {
             eprintln!("tasty: failed to create log dir {}: {e}", dir.display());
         }
-        let log_filename = if cfg!(debug_assertions) {
-            "debug-dev.log"
+        let (log_filename, file_filter) = if cfg!(debug_assertions) {
+            (
+                "debug-dev.log",
+                EnvFilter::new("debug,wgpu_hal=warn,wgpu_core=warn,naga=warn"),
+            )
         } else {
-            "debug.log"
+            (
+                "debug.log",
+                EnvFilter::new("warn,wgpu_hal=warn,wgpu_core=warn,naga=warn"),
+            )
         };
         let log_path = dir.join(log_filename);
         if let Ok(file) = fs::File::create(&log_path) {
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::sync::Mutex::new(file))
                 .with_ansi(false)
-                .with_filter(EnvFilter::new(
-                    "debug,wgpu_hal=warn,wgpu_core=warn,naga=warn",
-                ));
+                .with_filter(file_filter);
 
             registry.with(file_layer).init();
             return;
