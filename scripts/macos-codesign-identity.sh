@@ -17,8 +17,10 @@
 #   ./scripts/macos-codesign-identity.sh            # 현재 identity 확인
 #   ./scripts/macos-codesign-identity.sh --create   # self-signed 인증서 발급
 #
-# 발급 후 빌드:
-#   TASTY_CODESIGN_IDENTITY="Tasty Dev" ./scripts/install-macos.sh
+# 발급 후 빌드 — install-macos.sh 가 키체인에서 자동으로 집는다:
+#   ./scripts/install-macos.sh
+#
+# 다른 identity 를 쓰려면 $TASTY_CODESIGN_IDENTITY 로 지정한다.
 #
 # 배포용 산출물(DMG)에는 쓰지 마라 — 다른 사람 머신에서는 이 인증서를 신뢰하지 않아
 # ad-hoc 과 다를 게 없다. 어디까지나 로컬 개발 편의용이다.
@@ -42,7 +44,7 @@ if [[ "${1:-}" != "--create" ]]; then
     echo ""
     if list_identities | grep -q "$IDENTITY_NAME"; then
         echo "'$IDENTITY_NAME' 사용 가능. 빌드 시:"
-        echo "  TASTY_CODESIGN_IDENTITY=\"$IDENTITY_NAME\" ./scripts/install-macos.sh"
+        echo "  ./scripts/install-macos.sh    # 키체인에서 자동으로 집는다"
     else
         echo "'$IDENTITY_NAME' 이(가) 없다. 발급하려면:"
         echo "  $0 --create"
@@ -55,7 +57,7 @@ fi
 
 if list_identities | grep -q "$IDENTITY_NAME"; then
     echo "==> '$IDENTITY_NAME' 이(가) 이미 있다. 발급을 건너뛴다."
-    echo "  TASTY_CODESIGN_IDENTITY=\"$IDENTITY_NAME\" ./scripts/install-macos.sh"
+    echo "  ./scripts/install-macos.sh    # 키체인에서 '$IDENTITY_NAME' 를 자동으로 집는다"
     exit 0
 fi
 
@@ -113,7 +115,7 @@ security add-trusted-cert -r trustRoot -p codeSign \
 echo ""
 if list_identities | grep -q "$IDENTITY_NAME"; then
     echo "완료. '$IDENTITY_NAME' 로 서명하려면:"
-    echo "  TASTY_CODESIGN_IDENTITY=\"$IDENTITY_NAME\" ./scripts/install-macos.sh"
+    echo "  ./scripts/install-macos.sh    # 키체인에서 '$IDENTITY_NAME' 를 자동으로 집는다"
     echo ""
     echo "첫 실행에서 권한 프롬프트가 한 번 더 뜬 뒤, 이후 재빌드부터는 유지된다."
 else

@@ -202,10 +202,25 @@ PLIST
 #
 # --deep 은 쓰지 않는다 (Apple 이 deprecate 했고, 여기선 불필요) — plugin 은
 # Contents/Resources/ 아래의 일반 리소스로 봉인된다.
-SIGN_IDENTITY="${TASTY_CODESIGN_IDENTITY:--}"
+DEV_IDENTITY_NAME="Tasty Dev"
+SIGN_IDENTITY="${TASTY_CODESIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+    # 로컬 설치 빌드(NO_DMG=1)에서만 개발 인증서를 자동으로 집는다. DMG 는 이
+    # 인증서를 신뢰하지 않는 남의 머신으로 가므로 ad-hoc 을 유지해야 한다 —
+    # self-hosted 러너의 키체인에 개발 인증서가 있어도 배포본이 오염되지 않는다.
+    if [[ "${NO_DMG:-}" == "1" ]] &&
+        security find-identity -v -p codesigning 2>/dev/null |
+        grep -q "\"$DEV_IDENTITY_NAME\""; then
+        SIGN_IDENTITY="$DEV_IDENTITY_NAME"
+    else
+        SIGN_IDENTITY="-"
+    fi
+fi
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
     echo "==> Ad-hoc signing $APP_NAME.app..."
-    echo "    (TCC 승인을 재빌드 후에도 유지하려면 ./scripts/macos-codesign-identity.sh 참고)"
+    if [[ "${NO_DMG:-}" == "1" ]]; then
+        echo "    (TCC 승인을 재빌드 후에도 유지하려면 ./scripts/macos-codesign-identity.sh 참고)"
+    fi
 else
     echo "==> Signing $APP_NAME.app with identity '$SIGN_IDENTITY'..."
 fi
