@@ -376,13 +376,19 @@ impl CoreState {
         });
     }
 
-    /// attach 점유 중인 workspace 에 **로컬에서** 새로 생긴 멤버 surface 를 편입한다
-    /// (occupancy 등록 + 즉시 스트림 tap). forward-op 경로(`execute_forwarded_structural_op`
-    /// 의 `add_workspace_member` 호출 + `event_handler.rs` 의 `tap_surface_for_stream`
-    /// 후속 호출)와 동일한 최종 효과를, 로컬 생성 경로(create-tab/split-pane/
-    /// split-surface/adopt-terminal)에도 준다. workspace 가 점유돼 있지 않으면
-    /// `add_workspace_member` 가 no-op(false)이라 그대로 반환. notifier(StreamHub)
-    /// 가 미주입(테스트/headless)이어도 occupancy 등록까지는 되고 tap 만 스킵된다.
+    /// attach 점유 중인 workspace 에 새로 생긴 멤버 surface 를 편입한다(occupancy
+    /// 등록 + 즉시 스트림 tap). create-tab/split-pane/split-surface/adopt-terminal
+    /// 이 공통으로 호출하는데, 이 함수들은 **로컬 생성 경로**(`tasty claude spawn`
+    /// 등)와 **forward-op 경로**(`execute_forwarded_structural_op` 가 재사용하는
+    /// `handle_split`/`handle_tab_create`) 양쪽에서 재사용된다. 로컬 경로는 여기서
+    /// 즉시 tap 되는 게 맞지만, forward-op 경로는 호출측(`event_handler.rs`/
+    /// `boot.rs`)이 `StructuralDelta` 전송 **후** 별도로 직접 tap 하므로 여기서
+    /// 또 tap 하면 이중 tap(todo-conductor 09)이 된다 — `attach.is_auto_tap_suppressed()`
+    /// 가 forward-op 실행 구간을 표시해 이 경로만 스킵시킨다.
+    ///
+    /// workspace 가 점유돼 있지 않으면 `add_workspace_member` 가 no-op(false)이라
+    /// 그대로 반환. notifier(StreamHub)가 미주입(테스트/headless)이어도 occupancy
+    /// 등록까지는 되고 tap 만 스킵된다.
     pub(crate) fn tap_new_workspace_member(
         &mut self,
         workspace_id: WorkspaceId,
@@ -396,6 +402,12 @@ impl CoreState {
             return;
         }
         if !is_terminal {
+            return;
+        }
+        // forward-op 실행 중(`execute_forwarded_structural_op`)이면 호출측이
+        // `StructuralDelta` 전송 후 정확한 순서로 직접 tap 한다 — 여기서 또 tap 하면
+        // 이중 tap(문자 중복 echo, todo-conductor 09)이 된다.
+        if self.attach.is_auto_tap_suppressed() {
             return;
         }
         let Some(holder) = self.attach.workspace_holder(workspace_id) else {
@@ -643,7 +655,14 @@ pub(crate) fn execute_forwarded_structural_op(
                     "type": surface_kind,
                 }),
             );
-            pane::handle_split(core, state, engine, rid, &p)
+            // 이 핸들러는 새 터미널을 만들면 내부에서 `tap_new_workspace_member` 를
+            // 호출한다 — 그 즉시-tap 을 억제한다(이 함수 끝의 added_terminals 루프가
+            // delta 전송 후 정확한 순서로 직접 tap 한다). 핸들러 호출은 `Result` 를
+            // 반환하지 않아 사이에 `?` 로 새는 경로가 없다.
+            engine.attach.set_auto_tap_suppressed(true);
+            let resp = pane::handle_split(core, state, engine, rid, &p);
+            engine.attach.set_auto_tap_suppressed(false);
+            resp
         }
         StructuralOp::SplitPane {
             anchor_surface_id,
@@ -661,7 +680,10 @@ pub(crate) fn execute_forwarded_structural_op(
                     "type": surface_kind,
                 }),
             );
-            pane::handle_split(core, state, engine, rid, &p)
+            engine.attach.set_auto_tap_suppressed(true);
+            let resp = pane::handle_split(core, state, engine, rid, &p);
+            engine.attach.set_auto_tap_suppressed(false);
+            resp
         }
         StructuralOp::NewTab {
             anchor_surface_id,
@@ -672,7 +694,10 @@ pub(crate) fn execute_forwarded_structural_op(
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} not found"))?;
             let p = structural_params(params, json!({ "pane_id": pane_id, "type": surface_kind }));
-            tab::handle_tab_create(core, state, engine, rid, &p)
+            engine.attach.set_auto_tap_suppressed(true);
+            let resp = tab::handle_tab_create(core, state, engine, rid, &p);
+            engine.attach.set_auto_tap_suppressed(false);
+            resp
         }
         StructuralOp::CloseSurface { surface_id } => {
             let p = json!({ "surface_id": surface_id });
@@ -1716,6 +1741,58 @@ mod forward_exec_tests {
             engine.attach.workspace_holder_of(new_sid),
             Some(client_id),
             "새 surface 의 holder 는 workspace holder 와 동일해야 한다"
+        );
+    }
+
+    /// 회귀 가드(todo-conductor 09 — 이중 tap 으로 attach client 화면에 타이핑 글자가
+    /// 중복 렌더링되던 버그). 이전 코드는 `execute_forwarded_structural_op` 내부에서
+    /// (재사용 핸들러가 호출하는 `apply_split_pane`/`apply_split_surface`/
+    /// `apply_create_tab` 를 통해) 즉시 tap 하고, 호출측(`event_handler.rs`/`boot.rs`)이
+    /// `StructuralDelta` 전송 후 `added_terminals` 를 **또** tap 해 같은 surface 에
+    /// tap 이 2개 등록됐다(`Terminal::fan_out_to_taps` 는 등록된 모든 tap 에 매 PTY
+    /// 청크를 전부 내보내므로 tap 2개 = client 도착 2번). 이전 테스트들(`set_notifier`
+    /// 미주입)은 `tap_new_workspace_member` 의 `notifier()` 가드에 걸려 tap 호출 자체가
+    /// 스킵돼 이 회귀를 잡지 못했다 — 이 테스트는 실제 `StreamHub` 를 주입해 그 가드를
+    /// 통과시킨다.
+    #[test]
+    fn forward_split_surface_taps_exactly_once_with_real_stream_hub() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 7;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+        let hub = crate::adapters::production::stream_hub::StreamHub::new();
+        let _rx = hub.register(client_id);
+        engine.attach.set_notifier(hub.clone());
+
+        let op = StructuralOp::SplitSurface {
+            surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("expected Ok")
+            .expect("split delta");
+        let new_sid = fd.added_terminals[0];
+
+        assert_eq!(
+            engine.terminals.get(new_sid).unwrap().output_tap_count(),
+            0,
+            "execute_forwarded_structural_op 자체는 tap 하면 안 된다 — 순서 보장은 \
+             호출측이 StructuralDelta 전송 후 tap 하는 것에 있다(초기 스냅샷이 client \
+             매핑 생성 전에 도착해 드롭되는 것도 방지)"
+        );
+
+        // 호출측(event_handler.rs/boot.rs)이 delta 전송 후 하는 것과 동일한 후속 tap.
+        engine.tap_surface_for_stream(new_sid, client_id, &hub);
+        assert_eq!(
+            engine.terminals.get(new_sid).unwrap().output_tap_count(),
+            1,
+            "호출측 tap 이후엔 정확히 1개만 등록돼야 한다 — 2개면 이중 tap 회귀"
         );
     }
 

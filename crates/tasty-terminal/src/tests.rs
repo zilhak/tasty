@@ -1038,6 +1038,20 @@ fn output_tap_is_non_destructive() {
 }
 
 #[test]
+fn output_tap_count_reflects_registrations() {
+    // Regression guard for todo-conductor 09: a caller that means to tap a
+    // surface exactly once must end up with exactly one registered tap — a
+    // second accidental `add_output_tap()` call for the same surface fans
+    // every subsequent chunk (including echoed keystrokes) out twice.
+    let mut t = Terminal::new_detached(40, 12);
+    assert_eq!(t.output_tap_count(), 0);
+    let _rx1 = t.add_output_tap();
+    assert_eq!(t.output_tap_count(), 1);
+    let _rx2 = t.add_output_tap();
+    assert_eq!(t.output_tap_count(), 2);
+}
+
+#[test]
 fn output_tap_disconnected_is_pruned() {
     let mut t = Terminal::new_detached(40, 12);
     let rx = t.add_output_tap();

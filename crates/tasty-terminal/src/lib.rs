@@ -621,6 +621,18 @@ impl TerminalState {
         rx
     }
 
+    /// Currently registered output tap count (disconnected taps are only
+    /// pruned lazily on the next `fan_out_to_taps`, so this can over-count
+    /// until the next ingest). Not `#[cfg(test)]`-gated because it must be
+    /// callable from the downstream `tasty` crate's own test suite (a
+    /// dependent crate never sees a dependency's test-only items) — lets a
+    /// regression test assert a caller registered exactly one tap instead of
+    /// accidentally two (todo-conductor 09 — double-tap duplicated echoed
+    /// input on attach clients).
+    pub(crate) fn output_tap_count(&self) -> usize {
+        self.output_taps.len()
+    }
+
     /// Register a server-side subscriber to this terminal's grid resizes. The
     /// receiver yields `(cols, rows)` on every actual dimension change.
     pub(crate) fn add_resize_tap(&mut self) -> mpsc::Receiver<(usize, usize)> {
@@ -909,6 +921,12 @@ impl Terminal {
     /// Register a server-side subscriber to this terminal's raw PTY output.
     pub fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
         self.lock_state().add_output_tap()
+    }
+
+    /// Currently registered output tap count. See
+    /// [`TerminalState::output_tap_count`] for why this isn't `#[cfg(test)]`-gated.
+    pub fn output_tap_count(&self) -> usize {
+        self.lock_state().output_tap_count()
     }
 
     /// Register a server-side subscriber to this terminal's grid resizes. Yields

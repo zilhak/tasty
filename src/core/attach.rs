@@ -128,6 +128,15 @@ pub struct OccupancyRegistry {
     /// `is_hard_occupied` 를 true 로 만들지 않는다(입력차단/mirror/`"attached"`/content-hidden
     /// 회귀 0). gui/StreamHub 비의존이라 headless 컴파일·동작. holder=주체(parent surface).
     soft: HashMap<SurfaceId, SoftEntry>,
+    /// `true` 인 동안 [`CoreState::tap_new_workspace_member`](crate::core::CoreState::tap_new_workspace_member)
+    /// 는 멤버 편입(`add_workspace_member`)만 하고 실제 stream tap(`tap_surface_for_stream`)
+    /// 은 스킵한다. forward-op 실행(`execute_forwarded_structural_op`)이 재사용 IPC
+    /// 핸들러(`handle_split`/`handle_tab_create`)를 호출하는 동안만 켠다 — 그 경로는
+    /// 호출측(`apply_forwarded_structural_op`/`boot.rs`)이 `StructuralDelta` 전송 **후**
+    /// 정확한 순서로 직접 tap 하므로, 핸들러 내부의 즉시-tap 이 겹치면 이중 tap(문자
+    /// 중복 echo)이 된다. 로컬 생성 경로(예: `tasty claude spawn`)는 이 플래그가 항상
+    /// `false`라 기존대로 즉시 tap 된다.
+    suppress_auto_tap: bool,
 }
 
 impl OccupancyRegistry {
@@ -149,6 +158,19 @@ impl OccupancyRegistry {
     /// 꿰지 않고 boot 시 주입된 것을 재사용한다(`notify_detached` 와 동일 패턴).
     pub(crate) fn notifier(&self) -> Option<StreamHub> {
         self.notifier.clone()
+    }
+
+    /// [`Self::suppress_auto_tap`] 현재 값(`tap_new_workspace_member` 가 즉시-tap 을
+    /// 스킵해야 하는지).
+    pub(crate) fn is_auto_tap_suppressed(&self) -> bool {
+        self.suppress_auto_tap
+    }
+
+    /// forward-op 실행 구간 동안 즉시-tap 을 켜고/끈다. `execute_forwarded_structural_op`
+    /// 가 재사용 핸들러 호출 직전/직후에만 짧게 감싼다(early-return 경로 없음 —
+    /// 핸들러 호출 자체는 `Result` 를 반환하지 않아 `?` 로 건너뛸 수 없다).
+    pub(crate) fn set_auto_tap_suppressed(&mut self, suppressed: bool) {
+        self.suppress_auto_tap = suppressed;
     }
 
     /// surface 가 **hard 점유** 중인지(서버 입력 차단·list `attached` 필드·readonly
