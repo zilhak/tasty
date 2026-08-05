@@ -108,6 +108,12 @@ pub struct BannerState {
     pub remaining_ms: f32,
     /// 콘텐츠 출처(host fn / plugin mesh). 생명주기는 공유, content 만 분기(D2).
     pub content: BannerContentSource,
+    /// 이 배너를 유발한 foreground 인스턴스의 generation
+    /// (`CoreState::foreground_generation`). `None`이면 origin 추적 대상이 아닌
+    /// 배너(예: 셸 통합 미설치 안내) — 자동 origin-mismatch 닫힘(`close_shown_if_id`
+    /// 호출부, `App::poll_busy_states`)의 대상이 아니다. 현재는 mouse-capture 배너만
+    /// `with_origin_generation` 으로 채운다.
+    pub origin_generation: Option<u64>,
 }
 
 impl BannerState {
@@ -119,7 +125,16 @@ impl BannerState {
             ttl_ms: None,
             remaining_ms: 0.0,
             content: BannerContentSource::Host,
+            origin_generation: None,
         }
+    }
+
+    /// `origin_generation` 을 부여한다(빌더). 유발한 foreground 인스턴스를 추적해야
+    /// 하는 배너(현재는 mouse-capture)만 사용 — 다른 배너는 기본 `None`(추적 대상
+    /// 아님) 그대로 둔다.
+    pub fn with_origin_generation(mut self, generation: u64) -> Self {
+        self.origin_generation = Some(generation);
+        self
     }
 
     /// TTL(초) 배너 — 카운트다운 0 에서 자동 소멸.
@@ -134,6 +149,7 @@ impl BannerState {
             ttl_ms: Some(ms),
             remaining_ms: ms,
             content: BannerContentSource::Host,
+            origin_generation: None,
         }
     }
 
@@ -157,6 +173,7 @@ impl BannerState {
                 instance_id,
                 height,
             },
+            origin_generation: None,
         }
     }
 
@@ -193,6 +210,9 @@ pub enum BannerPushOutcome {
     ResetCountdown,
     /// 무시됨 (큐의 동일 id 중복 / 큐 가득 참 / TTL 없는 표시 중 동일 id).
     Ignored,
+    /// 동일 id 가 표시 중이지만 `origin_generation` 이 달라(다른 foreground 인스턴스가
+    /// 유발) 재사용하지 않고 새 배너로 교체됨.
+    Replaced,
 }
 
 /// plugin egui-mesh 배너가 host 측 생명주기에서 닫힌 사유(D3). host-plugin manager 의
@@ -265,6 +285,14 @@ impl BannerManager {
         if let Some(shown) = lane.shown.as_mut()
             && shown.key() == banner.key()
         {
+            // 같은 id 라도 유발한 foreground 인스턴스(origin_generation)가 다르면
+            // 재사용하지 않고 교체한다 — 그렇지 않으면 새 TUI 의 배너가 이전 TUI 의
+            // 카운트다운/문맥을 그대로 물려받는다(TODO03: 서로 다른 TUI 간 배너 구분).
+            // 둘 다 추적 대상이 아닌 배너(`None == None`)는 기존 동작 그대로 유지된다.
+            if shown.origin_generation != banner.origin_generation {
+                *shown = banner;
+                return BannerPushOutcome::Replaced;
+            }
             return if shown.ttl_ms.is_some() {
                 shown.reset_countdown();
                 BannerPushOutcome::ResetCountdown
@@ -299,6 +327,19 @@ impl BannerManager {
             self.scopes.remove(scope);
         }
         Some(removed)
+    }
+
+    /// 스코프에 표시 중인 배너의 id 가 주어진 id 와 일치할 때만 닫는다 —
+    /// `close_shown` 의 안전 버전. 같은 스코프에 다른 배너(id 다름)가 떠 있을 때
+    /// id 확인 없이 무조건 닫으면 오폭(엉뚱한 배너가 닫힘)이 나므로, 자동/비-사용자
+    /// 트리거 닫기 경로(`App::poll_busy_states` 의 TUI-종료 감지 등)는 이 API 를
+    /// 쓴다. id 가 다르면 아무 것도 하지 않고 `None`.
+    pub fn close_shown_if_id(&mut self, scope: &BannerScope, id: BannerId) -> Option<BannerState> {
+        let lane = self.scopes.get(scope)?;
+        if lane.shown.as_ref()?.id != id {
+            return None;
+        }
+        self.close_shown(scope)
     }
 
     /// plugin egui-mesh 배너를 instance_id 로 닫는다 (plugin 요청 `banner.close` /
@@ -1053,6 +1094,59 @@ mod tests {
         assert_eq!(b2.remaining_seconds(), Some(5));
         let p = BannerState::persistent("p", BannerScope::View);
         assert_eq!(p.remaining_seconds(), None);
+    }
+
+    /// TODO03: 같은 id 라도 `origin_generation` 이 다르면(다른 TUI 인스턴스가 유발)
+    /// 재사용(카운트다운 리셋)이 아니라 교체된다.
+    #[test]
+    fn push_replaces_shown_when_origin_generation_differs() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(1);
+        mgr.push(persistent("mouse-capture", scope.clone()).with_origin_generation(1));
+        let out = mgr.push(persistent("mouse-capture", scope.clone()).with_origin_generation(2));
+        assert_eq!(out, BannerPushOutcome::Replaced);
+        assert_eq!(mgr.shown_banners().count(), 1);
+        assert_eq!(
+            mgr.shown_banners().next().unwrap().origin_generation,
+            Some(2)
+        );
+    }
+
+    /// origin_generation 이 같으면(또는 둘 다 추적 대상이 아니면) 기존 동작대로
+    /// 재사용(무시)된다 — 회귀 없음.
+    #[test]
+    fn push_ignores_shown_when_origin_generation_matches() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(1);
+        mgr.push(persistent("mouse-capture", scope.clone()).with_origin_generation(1));
+        let out = mgr.push(persistent("mouse-capture", scope.clone()).with_origin_generation(1));
+        assert_eq!(out, BannerPushOutcome::Ignored);
+        assert_eq!(mgr.shown_banners().count(), 1);
+    }
+
+    #[test]
+    fn close_shown_if_id_closes_matching_id_only() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(1);
+        mgr.push(persistent("mouse-capture", scope.clone()));
+        // 다른 id 로 시도 — 오폭 없음, 배너는 그대로.
+        assert!(
+            mgr.close_shown_if_id(&scope, "shell-integration-missing")
+                .is_none()
+        );
+        assert_eq!(mgr.shown_banners().count(), 1);
+        // 일치하는 id — 닫힘.
+        assert!(mgr.close_shown_if_id(&scope, "mouse-capture").is_some());
+        assert!(!mgr.has_any());
+    }
+
+    #[test]
+    fn close_shown_if_id_on_empty_scope_is_none() {
+        let mut mgr = BannerManager::new();
+        assert!(
+            mgr.close_shown_if_id(&BannerScope::Surface(99), "mouse-capture")
+                .is_none()
+        );
     }
 
     #[test]

@@ -757,12 +757,14 @@ impl MainView {
                 .find_terminal_by_id(surface_id)
                 .is_some_and(|t| t.take_mouse_capture_hint());
             if show {
-                self.state
-                    .banners
-                    .push(crate::adapters::ui::BannerState::persistent(
+                let generation = self.core_state.foreground_generation(surface_id);
+                self.state.banners.push(
+                    crate::adapters::ui::BannerState::persistent(
                         crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
                         crate::adapters::ui::BannerScope::Surface(surface_id),
-                    ));
+                    )
+                    .with_origin_generation(generation),
+                );
             }
         }
     }

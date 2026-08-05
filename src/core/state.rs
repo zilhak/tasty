@@ -298,6 +298,13 @@ pub struct CoreState {
     // tick so names of closed surfaces never linger.
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
 
+    /// Per-surface foreground "incarnation" generation counter — bumped by the
+    /// same 1Hz BusyPoll whenever the resolved foreground name changes (shell↔TUI
+    /// or TUI↔TUI). See `CoreState::foreground_generation` accessor
+    /// (`core/state/busy.rs`) for how banners use this to auto-close when the TUI
+    /// that triggered them is no longer foreground.
+    pub(crate) foreground_generation: std::collections::HashMap<u32, u64>,
+
     /// Surface *cut/move* slot (T9). 사용자가 우클릭 컨텍스트 메뉴에서 "잘라내기"
     /// 한 surface 의 id 를 들고 있다가, 다른 위치에서 "여기로 이동" 하면 그 surface 를
     /// 살아있는 채로 이동(replace)한다. 단일 슬롯·세션 휘발(스냅샷 아님, layout.json
@@ -601,6 +608,7 @@ impl CoreState {
             shell_integration_boundary_seen: std::collections::HashSet::new(),
             shell_integration_hint_shown: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
+            foreground_generation: std::collections::HashMap::new(),
             pending_move_surface: None,
             explorer_clipboard: None,
             #[cfg(feature = "gui")]

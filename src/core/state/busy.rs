@@ -57,6 +57,14 @@ impl CoreState {
                 names.insert(sid, f.name.clone());
             }
         }
+        // foreground 이름이 바뀐 surface 의 generation 을 올린다 — 덮어쓰기(다음 줄) 전에
+        // 옛 이름과 비교해야 하므로 `self.foreground_names` 교체 직전에 호출한다.
+        bump_foreground_generations(
+            &mut self.foreground_generation,
+            &self.foreground_names,
+            &names,
+        );
+
         // 블랙리스트·이름 캐시는 다음 입력/프레임 조회로 반영되므로 redraw 신호(changed)
         // 에는 포함하지 않는다 — busy set 변화만으로 dirty 를 판정한다. 닫힌 surface 의
         // stale 엔트리가 남지 않도록 매 tick 맵 전체를 교체한다.
@@ -100,6 +108,27 @@ impl CoreState {
     /// poll resolves the surface (≤1s after spawn) or if it has no PID.
     pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
         self.foreground_names.get(&surface_id).map(String::as_str)
+    }
+
+    /// The current foreground "incarnation" generation for a surface — bumped
+    /// every time its resolved foreground process **name** changes (shell↔TUI or
+    /// TUI↔TUI transitions alike), cached by the last `refresh_busy_surfaces`
+    /// poll. `0` until the first poll resolves the surface.
+    ///
+    /// Used to tell whether a banner pinned to a specific foreground instance
+    /// (`BannerState::origin_generation`) is still about *this* incarnation or a
+    /// stale one from before a transition — the auto-close condition in
+    /// `App::poll_busy_states` is `origin_generation != foreground_generation`.
+    ///
+    /// Name-based, so back-to-back runs of the *same* program (`vim` exits,
+    /// `vim` starts again before the next poll) are not distinguished as a new
+    /// incarnation — a known limitation shared with the mouse-capture blacklist
+    /// matching (ADR-0055), which is also name-based rather than pid-based.
+    pub fn foreground_generation(&self, surface_id: u32) -> u64 {
+        self.foreground_generation
+            .get(&surface_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Union of the local (foreground-process) and mirror (remote-forwarded)
@@ -179,6 +208,25 @@ impl CoreState {
         }
         out
     }
+}
+
+/// 이전/현재 foreground 이름 스냅샷을 비교해 이름이 바뀐 surface 의 generation 을 1
+/// 올린다(처음 관측되는 surface 도 `None != Some(name)` 이라 1로 시작). 더 이상 foreground
+/// 가 resolve 되지 않는(surface 가 닫혔거나 PTY 를 잃은) surface 의 엔트리는 제거한다 —
+/// `foreground_names` 와 동일하게 stale 값이 남지 않아야 한다.
+///
+/// 순수 함수(engine 비의존)라 `refresh_busy_surfaces` 호출 없이 결정론적으로 테스트한다.
+fn bump_foreground_generations(
+    generations: &mut std::collections::HashMap<u32, u64>,
+    old_names: &std::collections::HashMap<u32, String>,
+    new_names: &std::collections::HashMap<u32, String>,
+) {
+    for (&sid, new_name) in new_names.iter() {
+        if old_names.get(&sid) != Some(new_name) {
+            *generations.entry(sid).or_insert(0) += 1;
+        }
+    }
+    generations.retain(|sid, _| new_names.contains_key(sid));
 }
 
 #[cfg(test)]
@@ -297,5 +345,58 @@ mod tests {
             vec![(9, sid, false)],
             "재획득 후에는 값이 이전과 같아도(false) 새 holder 에게 다시 push"
         );
+    }
+
+    /// TODO02 시나리오: 이전 tick=vim(비-쉘), 이번 tick=bash(쉘) — 이름이 바뀌었으니
+    /// generation 이 올라간다("전이가 감지된다"). 같은 이름이 유지되면 올라가지 않는다
+    /// (TODO03 시나리오).
+    #[test]
+    fn foreground_generation_bumps_on_name_change_and_holds_when_unchanged() {
+        let mut gens = std::collections::HashMap::new();
+        let mut old = std::collections::HashMap::new();
+        let mut new = std::collections::HashMap::new();
+
+        // 최초 관측(surface 7 = vim) — 처음 보는 surface 도 새 incarnation 으로 센다.
+        new.insert(7u32, "vim".to_string());
+        super::bump_foreground_generations(&mut gens, &old, &new);
+        assert_eq!(gens[&7], 1);
+
+        // 같은 이름 유지 — 증가 없음.
+        old = new.clone();
+        super::bump_foreground_generations(&mut gens, &old, &new);
+        assert_eq!(gens[&7], 1);
+
+        // vim(비-쉘) → bash(쉘) 전이 — 증가.
+        old = new.clone();
+        new.insert(7, "bash".to_string());
+        super::bump_foreground_generations(&mut gens, &old, &new);
+        assert_eq!(gens[&7], 2);
+
+        // TUI → TUI 전이(쉘 경유 없음)도 동일하게 감지된다.
+        old = new.clone();
+        new.insert(7, "htop".to_string());
+        super::bump_foreground_generations(&mut gens, &old, &new);
+        assert_eq!(gens[&7], 3);
+    }
+
+    /// surface 가 닫혀 더 이상 foreground 가 resolve 되지 않으면 generation 엔트리도
+    /// `foreground_names` 와 동일하게 정리된다(stale 잔류 방지).
+    #[test]
+    fn foreground_generation_prunes_entries_for_surfaces_no_longer_resolved() {
+        let mut gens = std::collections::HashMap::new();
+        gens.insert(9u32, 3u64);
+        let old = std::collections::HashMap::new();
+        let new = std::collections::HashMap::new(); // surface 9 더 이상 관측 안 됨.
+        super::bump_foreground_generations(&mut gens, &old, &new);
+        assert!(!gens.contains_key(&9));
+    }
+
+    /// `foreground_generation` 접근자는 캐시를 그대로 읽고, 관측 전 surface 는 0.
+    #[test]
+    fn foreground_generation_accessor_reads_cache_and_defaults_to_zero() {
+        let mut e = engine();
+        assert_eq!(e.foreground_generation(42), 0);
+        e.foreground_generation.insert(42, 5);
+        assert_eq!(e.foreground_generation(42), 5);
     }
 }
