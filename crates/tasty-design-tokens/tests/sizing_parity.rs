@@ -5,7 +5,9 @@
 //! 여기서 어긋나면 소스 치수와 디자인 토큰이 드리프트한 것 — 값을 임의로 맞추지
 //! 말고 디자인 판정을 먼저 확인할 것.
 //!
-//! 대응표 전거: 디자인 changelog 2026-07-02 token-coverage 의 Request 2 표.
+//! 대응표 자체가 유일한 근거(single source of truth)다 — `dtcg.rs` 의
+//! `SEMANTIC_DIM_TO_THEME_FIELD` 정의를 기준으로 이 테스트가 `SIZING` 값과의
+//! 정합을 검증한다.
 
 use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, SEMANTIC_DIM_TO_THEME_FIELD, ThemeMode};

@@ -1,7 +1,6 @@
 //! Keybindings › Preset 서브탭 — drill-down (content-swap) 전사.
 //!
-//! 디자인 `settings_window.jsx` `PresetSubtab`/`PresetDiffTable` + changelog
-//! `2026-07-09-settings-preset-drilldown` Request 2. 구 좌(120px 목록)/우(미리보기)
+//! 디자인 `settings_window.jsx` `PresetSubtab`/`PresetDiffTable`. 구 좌(120px 목록)/우(미리보기)
 //! split 을 [`DrillDown`] + [`ListCtrl`] 로 재작성:
 //!
 //! - **List view** — 풀폭 [`ListCtrl`] 프리셋 목록. 각 행: 이름 + 한 줄 설명 +
@@ -10,7 +9,8 @@
 //!   (jsx `selectedId={activeId}`). 행 클릭 → 디테일 진입.
 //! - **Detail view** — back bar(← + "{이름} preset" 제목 + **우측 Apply**) 아래
 //!   Action/Current/{프리셋} 3열 diff 테이블. 변경 행은 accent-primary 강조(색상만,
-//!   bold 없음 — changelog `2026-07-12-keybindings-preset-diff-accent` 근거).
+//!   bold 없음 — semibold 은 egui 폰트 두께 표현 한계로 색상 강조가 관례,
+//!   `button.rs` 참조).
 //! - **Apply 배치** — back bar 우측 슬롯. footer 의 Cancel/Save 와 물리적으로
 //!   분리: Apply = 선택 프리셋을 settings **draft** 에 기록(사용 중 프리셋이면
 //!   "Applied" 비활성 — 적용할 diff 없음), footer Save = draft 전체를 디스크에

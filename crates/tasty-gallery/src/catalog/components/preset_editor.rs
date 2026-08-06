@@ -6,7 +6,7 @@
 //! 갤러리 specimen 은 정적(Theme-only, binary 미의존)이라 mini-tab 클릭 전환은
 //! 본체에서만 동작한다 — 여기서는 각 pane 의 **활성 탭**만 그린다.
 //!
-//! 3종 구조 레벨을 서로 다른 시각 weight 로 구분(디자인 changelog):
+//! 3종 구조 레벨을 서로 다른 시각 weight 로 구분:
 //!  - Pane split (상위 레이아웃) → 테두리 카드 + **5px bg-app gap** (무거운 divider).
 //!  - Surface split (하위 레이아웃) → **1px border-default hairline** (가벼운 divider).
 //!  - Surface leaf → kind 아이콘 + 표시명 + 값 요약(`키 값`, 가운데, mono). 좁으면 degrade.
@@ -643,7 +643,7 @@ fn draw_surface_box_edit(
 }
 
 /// 우상단 handle cluster mock — remove(danger) 단독. split-right/down 핸들은 경계
-/// hover-split 존이 대체해 제거됐다(디자인 changelog 2026-07-02 · preset-edit-03).
+/// hover-split 존이 대체해 제거됐다.
 fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let remove = egui::Rect::from_min_size(
         egui::pos2(

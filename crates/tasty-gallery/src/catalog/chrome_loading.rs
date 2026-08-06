@@ -1,6 +1,5 @@
 //! Chrome · Boot loading screen — 워드마크 + 스피너 + phase 문구 중앙 스택
-//! (S-17, `guidelines/brand-logo.html` 브랜드 락업 + 디자인 확정
-//! `changelog/2026-07-13-startup-loading-screen.md`).
+//! (S-17, `guidelines/brand-logo.html` 브랜드 락업).
 //!
 //! 실 렌더 경로(`src/gfx/gpu/loading.rs::render_loading`)와 동일한 스택 구성을
 //! egui 로 재현한다. 갤러리는 root 바이너리 크레이트를 의존하지 않으므로

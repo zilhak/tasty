@@ -182,7 +182,7 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: f32) {
                 );
                 ui.add_space(theme.spacing_sm.value());
                 // 탭들. 우측 close ✕ 는 없다 — 닫기는 footer Cancel + OS 타이틀바
-                // (design changelog 2026-07-09-settings-preset-drilldown).
+                // 로 일원화(중복 닫기 동작 방지).
                 for (i, t) in L1_TABS.iter().enumerate() {
                     l1_tab(ui, theme, t, band_h, i == L1_ACTIVE);
                 }

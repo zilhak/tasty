@@ -2,8 +2,7 @@
 //!
 //! 전사 원본: `ui_kits/terminal/overlays/settings_window.jsx` `body()` 의
 //! FileHandler 분기(File Extension Mapping / File Detectors / File Handlers,
-//! jsx:910-964) + `HookHandlers`/`HookRow` 컴포넌트(jsx:442-545,
-//! changelog/2026-07-11-settings-handler-tab.md).
+//! jsx:910-964) + `HookHandlers`/`HookRow` 컴포넌트(jsx:442-545).
 //!
 //! `settings` specimen(창 셸)은 L2 를 탐색할 수 없어 이 서브탭 콘텐츠들이
 //! 카탈로그에서 누락돼 있었다(ADR 0020 갤러리 완전성 갭) — 여기서 서브탭별

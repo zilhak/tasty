@@ -13,7 +13,7 @@
 //!  - leaf 라벨을 주입된 resolver(런타임 kind→표시명)로 해석.
 //!  - mini-tab 이 **live** — 클릭 시 미리보기의 active 탭만 바꾼다(저장본 불변).
 //!
-//! 3종 구조 레벨의 시각 weight (디자인 changelog 2026-06-25):
+//! 3종 구조 레벨의 시각 weight:
 //!  - Pane split (상위) → 테두리 카드 + **5px bg-app gap** (무거운 divider).
 //!  - Surface split (하위) → **1px border-default hairline** (가벼운 divider).
 //!  - Surface leaf → kind 아이콘(accent) + 표시명(가운데, mono). 내용 렌더 안 함.
@@ -2010,7 +2010,7 @@ fn draw_split_zone_overlay(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, z
 }
 
 /// 우상단 핸들 클러스터 — remove(danger) 단독. split-right/down 핸들은 경계
-/// hover-split 존이 대체해 제거됐다(디자인 changelog 2026-07-02).
+/// hover-split 존이 대체해 제거됐다.
 fn draw_handle_cluster(
     ui: &mut egui::Ui,
     theme: &Theme,

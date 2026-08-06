@@ -8,7 +8,7 @@
 //! - 후보 행 = `navigation/MenuItem` 언어(control-height 28, space-md 패딩). 단 경로
 //!   가독을 위해 우측 clip 대신 **middle-ellipsis**(파일명 꼬리 보존)로 그린다.
 //!
-//! 계약(디자인 `AutoComplete.jsx` / changelog `2026-07-09-autocomplete`):
+//! 계약(디자인 `AutoComplete.jsx`):
 //! - **필터**: `match` = `Substring`(기본·경로친화) · `Prefix` · `None`. 트리거 텍스트를
 //!   질의로 후보를 좁힌다(대소문자 무시). `None` 은 필터 없이 전체 노출(구 히스토리 동작).
 //! - **highlight**: 매치 구간을 accent-primary 로 강조(egui 폰트 weight 한계상 색만 —

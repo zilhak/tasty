@@ -7,7 +7,7 @@
 //! 리스트로 돌아온다. "풀폭 리스트 하나 → 항목 선택 → 디테일 → back" 모델 어디든
 //! 사용 — 예: Settings › Keybindings › Preset ([`crate::ListCtrl`] 와 짝).
 //!
-//! 디자인 계약 (`DrillDown.jsx` / changelog `2026-07-09-settings-preset-drilldown`):
+//! 디자인 계약 (`DrillDown.jsx`):
 //! - **Controlled** — 어느 뷰를 보일지는 호출측이 `view` 로 소유한다.
 //! - 전환은 **즉시**(0ms) — calm/0ms-terminal 시스템 준수. 디자인의 opt-in
 //!   `animate`(reduced-motion 인지 cross-fade)는 장식이므로 전사하지 않는다.

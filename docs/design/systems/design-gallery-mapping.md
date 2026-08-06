@@ -36,7 +36,9 @@ Attach 갤러리 specimen 은 디자인 **gallery 미러**(`gallery/overlays-sha
 tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전사한 것으로, 본체
 함수 호출이 아니다(컨테이너 미등록 사유와 동일 — 본체는 상태/IO 의존). 디자인 미러가 세그먼트
 active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-primary` 세그먼트를
-쓴다 — changelog(2026-07-01-remote-attach-tab) 명시 사항으로 갤러리/본체가 의도적으로 다르다.
+쓴다 — 갤러리 미러가 참조하는 `gallery/overlays-shared.jsx`와 본체가 따르는 `ui_kits` jsx,
+두 디자인 소스 자체가 서로 다른 세그먼트 색을 쓰고 있어 생긴 차이다. 갤러리는 각자의 디자인
+소스를 그대로 전사하므로 이 차이를 임의로 통일하지 않는다.
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::
@@ -424,7 +426,7 @@ module const(token-policy §c).
 
 설정 modal Misc 탭 › Scripts 관리 창. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
 (`ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge`). 갤러리 미러:
-`gallery/overlays-shared.jsx` `ScriptManagerFrame({empty})`. changelog: `changelog/2026-07-01-lua-script-manager.md`.
+`gallery/overlays-shared.jsx` `ScriptManagerFrame({empty})`.
 
 | 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
@@ -443,13 +445,14 @@ module const(token-policy §c).
 - 헤더: 좌 "Scripts" `font-size-max` semibold + muted 설명(`measure-md`/`line-height-ui`), 우 "Add script"(secondary sm, plus leadingIcon).
 
 **신규 glyph 필요** (gallery `icons.rs`): `SCRIPT`(file+lines: `M14 3v4a1 1 0 0 0 1 1h4` / `M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z` / `M9 13h4M9 17h6`), `KEYBOARD`(`rect x2 y6 w20 h12 rx2` + `M6 10h.01…M8 14h8`). 기존 재사용: PLUS/EDIT/TRASH/FOLDER/ALERT_TRIANGLE.
-**신규 토큰 없음**(changelog 확인). i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,display_name,browse,unbound,changed_badge,changed_help,empty_title,empty_body,remove_confirm}`).
+**신규 토큰 없음** — `script_manager.rs`/`draw_scripts_subtab`가 쓰는 토큰은 전부 기존
+`spacing_*`/`font_size_*`/`text_*`/`accent_warning`/`border_default` 등 범용 접근자다.
+i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,display_name,browse,unbound,changed_badge,changed_help,empty_title,empty_body,remove_confirm}`).
 
 ## Settings › Keybindings › Preset drill-down (settings-preset-drilldown)
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` `PresetSubtab`/`PresetDiffTable` ↔ 본체
-`src/view/settings/ui/keybindings_tab/preset.rs`. changelog:
-`changelog/2026-07-09-settings-preset-drilldown.md`. 구 좌(120px)/우 split 을
+`src/view/settings/ui/keybindings_tab/preset.rs`. 구 좌(120px)/우 split 을
 공용 위젯 [`DrillDown`+`ListCtrl`](#primitive-컴포넌트-레이어-components) 소비로 재작성 —
 두 위젯의 첫 본체 소비처.
 
@@ -473,7 +476,6 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)하고 Hook Handlers
 서브탭을 추가한 개편. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
 (`L1_LABEL`·`L2.FileHandler`·`HookHandlers`/`HookRow`/`SEED_HOOKS`/`HOOK_ORIGIN`).
-changelog: `changelog/2026-07-11-settings-handler-tab.md`.
 
 | 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
@@ -486,7 +488,9 @@ changelog: `changelog/2026-07-11-settings-handler-tab.md`.
 **전사 노트**:
 - jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 egui letter-spacing 미지원 —
   기존 관례(mono `font-size-micro` uppercase `text-muted`)로 전사.
-- **신규 토큰 0** (changelog 확인). 화면 전용 고정값(라벨폭 74/100, priority step 10)은
+- **신규 토큰 0** — `hook_handlers.rs`/`settings_handler.rs`가 쓰는 토큰은 전부 기존
+  `spacing_*`/`font_size_*`/`text_*`/`border_*` 등 범용 접근자이며 이 기능 전용으로
+  추가된 Theme 필드가 없다. 화면 전용 고정값(라벨폭 74/100, priority step 10)은
   module const(token-policy §c).
 - 본체 Hook Handlers 는 레지스트리 정책 적용으로 jsx 와 두 곳이 다르다: 제거 버튼은
   user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
@@ -528,7 +532,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
-`catalog/components/file_picker.rs`. changelog: `changelog/2026-07-15-file-picker.md`.
+`catalog/components/file_picker.rs`.
 design-request: `design-request/07151555-design-request-remote-file-picker.md`. **본체
 (egui `PopupDef`) 구현 완료** — `src/adapters/ui/popup/file_picker.rs`(`FILE_PICKER_POPUP_ID`
 = `"file_picker"`, `draw_file_picker`)가 `defs.rs`에 등록되어 있다(커밋 `519d98f0`,
@@ -537,7 +541,7 @@ design-request: `design-request/07151555-design-request-remote-file-picker.md`. 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
 C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 코드화한다 — B/C 는
-반영하지 않는다(디자인측 changelog 에만 후보로 남는다).
+미채택 대안이라 반영하지 않는다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 함수 (`file_picker.rs`) | 비고 |
 |---|---|---|

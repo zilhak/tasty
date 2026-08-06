@@ -6,7 +6,7 @@
 //! chevron(클릭 시 디테일 진입 신호). [`crate::DrillDown`] 과 짝지어 list → detail
 //! content-swap 에 쓴다.
 //!
-//! 디자인 계약 (`ListCtrl.jsx` / changelog `2026-07-09-settings-preset-drilldown`):
+//! 디자인 계약 (`ListCtrl.jsx`):
 //! - 행 상태: default / hover(`overlay-hover`) / selected(`surface-active` + 2px
 //!   accent 좌측 바 — sidebar/list idiom) / disabled(opacity, chevron 숨김).
 //! - `divided`(기본 on): 마지막 행 제외 `separator` 헤어라인 + 해당 행 radius 0.

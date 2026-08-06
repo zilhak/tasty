@@ -634,7 +634,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             // Keybindings › Preset 은 자체 padding + 내부 스크롤을
                             // 가진 DrillDown 이라 표준 패딩/스크롤 래퍼 밖에서
                             // full-bleed 로 그린다 (디자인 settings_window.jsx
-                            // `fullBleed`, changelog 2026-07-09).
+                            // `fullBleed`).
                             let full_bleed = ui_state.active_tab == SettingsTab::Keybindings
                                 && ui_state.keybindings_sub_tab == KeybindingsSubTab::Preset;
                             if full_bleed {
@@ -1143,8 +1143,7 @@ fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
 /// 디자인 header band 전사 (settings_window.jsx): bg-sidebar 위 좌측 bold
 /// "Settings" 타이틀 + 세로 구분선 → 7 개 L1 탭(active 는 text-primary +
 /// 2px accent underline, inactive 는 text-muted). 우측 close ✕ 는 없다 —
-/// 닫기/취소는 footer Cancel + OS 타이틀바 close 로 일원화
-/// (design changelog 2026-07-09-settings-preset-drilldown).
+/// 닫기/취소는 footer Cancel + OS 타이틀바 close 로 일원화(중복 닫기 동작 방지).
 fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) {
     let tabs = [
         (SettingsTab::General, t("settings.tab.general")),

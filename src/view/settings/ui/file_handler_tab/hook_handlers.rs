@@ -1,7 +1,7 @@
 //! Handler › Hook Handlers sub-tab — 공유 훅 핸들러 레지스트리 매핑 테이블.
 //!
 //! 디자인 전사 원본: `ui_kits/terminal/overlays/settings_window.jsx` 의
-//! `HookHandlers` / `HookRow` (changelog/2026-07-11-settings-handler-tab.md).
+//! `HookHandlers` / `HookRow`.
 //! intro copy + "Add handler" 버튼 → 인라인 draft 카드 → Mono caps 섹션 헤드 →
 //! bordered list rows (id · origin Tag · prio · Switch · remove / Shell cmd Input).
 //!

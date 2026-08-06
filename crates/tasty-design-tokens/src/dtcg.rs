@@ -541,12 +541,12 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.font-size-max", "font_size_max"),
     ("semantic.font-size-prose-h1", "font_size_prose_h1"),
     // `semantic.font-size-prose-h2` 는 은퇴·제거됨 — egui_commonmark 이 헤딩을 보간해
-    // per-H2 픽셀을 받지 못한다 (2026-07-08-tokens, vendor json 에서도 제거).
+    // per-H2 픽셀을 받지 못한다(vendor json 에서도 제거됨).
     ("semantic.font-size-term-sm", "font_size_term_sm"),
     ("semantic.font-size-term", "font_size_term"),
     ("semantic.font-size-term-lg", "font_size_term_lg"),
     // `semantic.line-height-prose` 는 은퇴·제거됨 — markdown body leading 을
-    // egui_commonmark 이 소유해 override 미노출 (2026-07-08-tokens, vendor json 에서도 제거).
+    // egui_commonmark 이 소유해 override 미노출(vendor json 에서도 제거됨).
     // 아이콘 글리프
     ("semantic.icon-size-xs", "icon_glyph_size_xs"),
     ("semantic.icon-size-sm", "icon_glyph_size_sm"),
@@ -691,12 +691,11 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-success", "accent_success", "green"),
     ("semantic.accent-warning", "accent_warning", "yellow"),
     // accent-attention: plugin/occupancy "needs-attention" notice role. accent-warning
-    // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분
-    // (2026-07-03-accent-attention 디자인 판정).
+    // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분한다.
     ("semantic.accent-attention", "accent_attention", "peach"),
-    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (ADR-0040,
-    // 2026-07-07-occupancy-borders 디자인 판정). soft=green(협조 신호, write 제한
-    // 없음), hard=peach(readonly + force-detach). accent-success(green)·accent-
+    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (ADR-0040).
+    // soft=green(협조 신호, write 제한 없음), hard=peach(readonly + force-detach).
+    // accent-success(green)·accent-
     // attention(peach) 와 primitive 는 공유하나 의미가 겹치지 않도록 독립 role 로
     // 분리 — 점유 의미가 축 독립 진화 가능.
     (

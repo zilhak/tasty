@@ -199,7 +199,7 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
 - **icon 글리프**: 위젯이 색을 상태별로 정해 `IconPainter` 클로저에 전달(아이콘 시스템은
   호출측 소유 — 본체 `icons::Icon`, 갤러리 mock 모두 동일 인터페이스).
 
-### Motion 계약 (디자인 changelog 2026-06-21-motion-contract)
+### Motion 계약
 rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는 정지상태로 판정.
 상태 사이 트랜지션(hover 틴트 fade)은 **장식** → 즉시모드 **스냅 허용**. 단 **기능적 외형은
 즉시**(focus-ring 가시성, invalid 보더, checked/selected/active) — fade 금지. 터미널 0ms 별개.
@@ -433,9 +433,8 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - ~~알려진 잔차(의도적 비변경)~~ **해소됨 (design-tokens 02 간격 이식)**: 본체 헤더 패널
   하단 6px 는 `spacing_xs`(4) 로, 상단 10px 는 `spacing_md`(12) 로 스냅되어 chrome.jsx
   Sidebar 헤더 padding(space-md _ space-xs)과 정합. 첫 헤더 위 실효 간격 12 = 디자인 12.
-- **근거**: 디자인 changelog `2026-07-01-workspace-categories.md` "2026-07-02 — Category
-  header padding rebalanced + orphaned group divider removed", `chrome.jsx` `CategoryHeader`
-  (padding xs/sm)·`rowList(bottomBorder)`·컨테이너 paddingTop/marginTop. 2026-07-02 반영.
+- **근거**: `chrome.jsx` `CategoryHeader`(padding xs/sm)·`rowList(bottomBorder)`·컨테이너
+  paddingTop/marginTop.
 
 ## preset 편집기 — 정적 specimen 은 존/× hover·crosshair 를 재현 못 한다
 
@@ -451,8 +450,7 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   보여준다. crosshair 커서는 정적에서 표현 불가라 생략(밴드+2px 분할선 시각만 전사). 색·치수는
   본체와 **동일 토큰**(`preset_split_zone_bg/border`, `overlay_active/hover`, 14×14 ×, 22×20 +,
   30% 밴드)이라 구조·토큰 축은 정합하고, 오직 "입력 상태 전이"만 정적↔live 로 갈린다.
-- **근거**: 디자인 changelog `2026-07-02-preset-editor.md`, `gallery/preset_editor.jsx`
-  (`SurfaceBox`/`pickZone`/`AddTabBtn`). preset-edit-03 반영(2026-07-03).
+- **근거**: `gallery/preset_editor.jsx` (`SurfaceBox`/`pickZone`/`AddTabBtn`).
 
 ## explorer GridCell — 아이콘 축소 + 파일명 3줄 wrap 말줄임 (2026-07-09 디자인 확정 반영)
 
@@ -479,10 +477,10 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   여부를 여기서 못 본다 — 실제 렌더 결과는 `galley.rows[].glyphs[].chr` 로 재구성해야 확인된다.
   실 폰트 레이아웃으로 디자인 샘플(src·rust-toolchain.toml·THIRD_PARTY_LICENSES.md) 전부 ≤3행,
   초장문 unbreakable 이름은 3행 클램프 + glyph 에 `…` 삽입을 확인(임시 test, 검증 후 제거).
-- **근거**: 디자인 changelog `2026-07-09-explorer-grid-cell.md`, `gallery/plugins.jsx`
-  `GridCell`(L301)·`ExpGridMini`(L314, 긴 이름 샘플). 본체 `src/adapters/ui/surface/explorer.rs`
-  `grid_cell()`, specimen `crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs`
-  `grid_cell()`(GRID 긴 이름 샘플 + meta `"glyph 16 + 3-line label (…) · fixed height"`). 2026-07-09 반영.
+- **근거**: `gallery/plugins.jsx` `GridCell`(L301)·`ExpGridMini`(L314, 긴 이름 샘플). 본체
+  `src/adapters/ui/surface/explorer.rs` `grid_cell()`, specimen
+  `crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs`
+  `grid_cell()`(GRID 긴 이름 샘플 + meta `"glyph 16 + 3-line label (…) · fixed height"`).
 
 ## PathField — AutoComplete + Go 합성 공용 위젯 (편집/이동/원복 결정 포팅, 2026-07-09)
 
@@ -507,10 +505,10 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   specimen 은 focus 테두리를 못 고정한다. `prim_path_field` 는 idle/editing+list 를 정적 전사(필드
   행 + `autocomplete_dropdown`)하되, 실제 편집·포커스링·키내비·이동/원복은 **라이브 `PathField`
   인스턴스**(context 별 click-to-edit)로 노출한다(gallery-first).
-- **근거**: 디자인 `gallery/plugins.jsx` `PathField`(:59), changelog `2026-07-09-autocomplete.md`
-  "Both address bars integrated: the shared PathField …". 소스 `crates/tasty-ui-widgets/src/path_field.rs`,
-  specimen `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
-  후속 TODO. 2026-07-09 반영.
+- **근거**: 디자인 `gallery/plugins.jsx` `PathField`(:59). 소스
+  `crates/tasty-ui-widgets/src/path_field.rs`, specimen
+  `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
+  후속 TODO.
 
 ## transfer 팝업 — scrim_backdrop 스테이지가 카드보다 짧으면 클러스터가 겹친다 (2026-07-23)
 

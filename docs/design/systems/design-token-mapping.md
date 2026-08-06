@@ -137,7 +137,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 
 디자인 `tokens/components.css` 의 `--tasty-banner-*` Tier-3 블록 + `tokens/primitives.css`
 의 `--tasty-opacity-recessed`. 갤러리 specimen(`widgets/banner.rs`)은 **본체 Theme struct
-증설 없이** changelog 의 semantic 체인을 따라 기존 접근자로 매핑한다. 아래 표의 "갤러리
+증설 없이** 아래 표의 매핑대로 기존 접근자로 대응시킨다. 아래 표의 "갤러리
 매핑" 은 specimen 이 현재 쓰는 값, "banner-03" 은 본체 구현 때 토큰화할 항목.
 
 | 디자인 토큰 | 디자인 체인 | 갤러리 매핑(specimen) | banner-03(본체) |
@@ -241,7 +241,7 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 ## drilldown / listctrl (S13 settings-preset-drilldown 위젯 2종)
 
 디자인 `tokens/components.css` 의 `--tasty-drilldown-*`(8종) + `--tasty-listctrl-*`(17종)
-Tier-3 블록 (changelog `2026-07-09-settings-preset-drilldown`). 위젯
+Tier-3 블록. 위젯
 `crates/tasty-ui-widgets/src/drilldown.rs`(`DrillDown`) + `listctrl.rs`(`ListCtrl`).
 디자인 DTCG export(`tokens/tasty.tokens.json`)에 아직 미반영인 신규 블록이라 로컬 DTCG
 재생성 대신 `theme.rs` 수기 접근자(autocomplete/modhint/md-table 전례)로 전사했다 —

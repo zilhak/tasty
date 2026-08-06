@@ -33,8 +33,8 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
 ];
 
 /// 토큰 census — 492 (104/129/259). semantic 129 = 기존 131 에서
-/// `font-size-prose-h2`·`line-height-prose` 2종 제거 (2026-07-08-tokens 판정,
-/// egui_commonmark 이 헤딩 보간·본문 leading 을 소유해 소비처 소멸 → 은퇴 확정).
+/// `font-size-prose-h2`·`line-height-prose` 2종 제거 — egui_commonmark 이 헤딩 보간·본문
+/// leading 을 소유해 소비처 소멸 → 은퇴 확정.
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {

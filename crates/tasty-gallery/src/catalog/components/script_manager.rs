@@ -2,8 +2,8 @@
 //!
 //! 권위 원본: `ui_kits/terminal/overlays/settings_window.jsx` `ScriptManager` /
 //! `ScriptRow` / `ScriptPath` / `ScriptChangedBadge`. 갤러리 미러:
-//! `gallery/overlays-shared.jsx` `ScriptManagerFrame({ empty })`. changelog:
-//! `changelog/2026-07-01-lua-script-manager.md`. 매핑: `design-gallery-mapping.md`.
+//! `gallery/overlays-shared.jsx` `ScriptManagerFrame({ empty })`. 매핑:
+//! `design-gallery-mapping.md`.
 //!
 //! 정적 specimen 이라 add-card / 인라인 rename / 인라인 remove 같은 상호작용 상태는
 //! 본체(`view/settings/ui/tabs/misc.rs`)가 소유하고, 여기서는 갤러리 프레임과 동일하게

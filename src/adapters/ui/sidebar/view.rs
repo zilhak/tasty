@@ -586,8 +586,8 @@ pub fn draw_full_sidebar_view(
             }
 
             vspace(ui, th.spacing_xs);
-            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 (디자인 changelog
-            // 2026-07-06-sidebar) — 생성은 배경 우클릭 / 카테고리 메뉴 Add workspace 로.
+            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 배경 우클릭 /
+            // 카테고리 메뉴 Add workspace 로 이동했기 때문.
             if props.categories.is_none() {
                 let new_ws_resp =
                     draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
@@ -779,8 +779,8 @@ pub fn draw_collapsed_sidebar_view(
             }
         }
 
-        // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 (디자인 changelog
-        // 2026-07-06-sidebar) — 생성은 rail 카테고리 팝업 Add workspace 로.
+        // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 rail 카테고리
+        // 팝업 Add workspace 로 이동했기 때문.
         if props.categories.is_none() {
             vspace(ui, STRUCT_GAP_2);
             let (rect, resp) =
@@ -1349,8 +1349,7 @@ fn draw_workspace_card(
             } else {
                 // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
                 // dot 은 실행상태 전용 — mirror(원격 origin)는 이름과 subtitle 사이 별도
-                // 줄의 "REMOTE" pill 로 분리(디자인 2026-07-13 workspace-remote-indicator).
-                // sky "remote" fill 제거.
+                // 줄의 "REMOTE" pill 로 분리. sky "remote" fill 제거.
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
@@ -1403,10 +1402,9 @@ fn draw_workspace_card(
             });
         });
 
-        // 디자인 2026-07-13 workspace-remote-indicator: mirror(원격 워크스페이스
-        // 로컬 mirror)는 타이틀 행의 leading glyph 가 아니라 이름과 subtitle 사이
-        // 별도 줄의 sky "REMOTE" pill 로 표시(가시성 강화, changelog 최종 상태).
-        // subtitle 유무와 독립 — subtitle 이 없어도 그린다. collapsed rail 의
+        // mirror(원격 워크스페이스 로컬 mirror)는 타이틀 행의 leading glyph 가
+        // 아니라 이름과 subtitle 사이 별도 줄의 sky "REMOTE" pill 로 표시한다
+        // (가시성 강화). subtitle 유무와 독립 — subtitle 이 없어도 그린다. collapsed rail 의
         // corner chip(이 함수 밖)은 이 변경과 무관, 그대로 유지.
         if ws.is_mirror {
             vspace(ui, STRUCT_GAP_1);
@@ -1726,8 +1724,7 @@ mod tests {
     #[test]
     fn mirror_indicator_renders_full_and_collapsed_without_panic() {
         // is_mirror=true 워크스페이스: full 은 이름과 subtitle 사이 별도 줄의 "REMOTE"
-        // pill, collapsed 는 아바타 우하단 corner chip 을 그린다(디자인 2026-07-13
-        // workspace-remote-indicator). busy+
+        // pill, collapsed 는 아바타 우하단 corner chip 을 그린다. busy+
         // attached+notif 와 공존하는 mirror 행도 섞어 채널 분리 렌더 경로를 no-panic 검증.
         let mut mirror = mock_ws("infra", false);
         mirror.is_mirror = true;
