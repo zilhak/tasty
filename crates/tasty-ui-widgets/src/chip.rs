@@ -256,6 +256,25 @@ pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -
 
 /// Kbd — 키캡 시퀀스. `keys` 는 `"+"` 로 분할(예: `"Ctrl+K"`), 각 키를 키캡으로.
 pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
+    let parts: Vec<&str> = keys.split('+').collect();
+    let owned: Vec<KbdKey<'_>> = parts.into_iter().map(KbdKey::Text).collect();
+    kbd_parts(ui, theme, &owned);
+}
+
+/// [`kbd_parts`] 한 키캡의 콘텐츠 — 텍스트 또는 벡터 아이콘.
+///
+/// macOS modifier 심볼(⌘/⌥/⇧)처럼 egui 폰트 fallback 체인에 없는 glyph 는
+/// 텍스트로 넘기면 tofu box 로 깨진다 — 그런 키는 `Icon` 으로 넘겨 벡터로 그린다
+/// (`tasty_icons::{CMD_KEY,OPTION_KEY,SHIFT_KEY}`).
+pub enum KbdKey<'a> {
+    Text(&'a str),
+    Icon(tasty_icons::Icon),
+}
+
+/// [`kbd`] 의 텍스트+아이콘 혼합 버전 — 시각 기준(패딩·radius·하단 보더 강조)은
+/// [`kbd`] 와 동일하게 공유한다. 아이콘 키는 `icon_glyph_size_sm`(14px, modifier-hint
+/// 키캡 칩 표준 — 12px mono 라벨과 광학적으로 맞춘 크기)로 정사각 키캡 중앙에 그린다.
+pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
     let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
     let border = theme.kbd_border().to_egui();
@@ -263,41 +282,71 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     let fg = theme.kbd_fg().to_egui();
     let plus = theme.text_muted().to_egui(); // 키캡 사이 "+" — muted 텍스트 역할.
     let micro = theme.kbd_font_size().value();
+    let icon_glyph = theme.icon_glyph_size_sm.value();
     let gap = theme.kbd_gap().value();
     let pad_x = theme.kbd_padding_x().value();
     let kbd_h = theme.kbd_size().value();
     let bottom_border = theme.kbd_shadow_depth().value();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
-        let parts: Vec<&str> = keys.split('+').collect();
-        for (i, key) in parts.iter().enumerate() {
+        for (i, key) in keys.iter().enumerate() {
             if i > 0 {
                 ui.label(egui::RichText::new("+").size(micro).color(plus).monospace());
             }
-            let galley = ui.painter().layout_no_wrap(
-                (*key).to_owned(),
-                mono(micro),
-                egui::Color32::PLACEHOLDER,
-            );
-            let w = (galley.rect.width() + 2.0 * pad_x).max(kbd_h);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, kbd_h), egui::Sense::hover());
-            ui.painter().rect_filled(rect, radius, fill);
-            // 키캡 하단 보더 2px 강조 → 윗변은 1px, 아랫변은 2px 로 따로 그린다.
-            ui.painter().rect_stroke(
-                rect,
-                radius,
-                egui::Stroke::new(bw, border),
-                egui::StrokeKind::Inside,
-            );
-            ui.painter().line_segment(
-                [
-                    egui::pos2(rect.left() + radius, rect.bottom() - bw),
-                    egui::pos2(rect.right() - radius, rect.bottom() - bw),
-                ],
-                egui::Stroke::new(bottom_border, border),
-            );
-            let pos = rect.center() - galley.rect.size() * 0.5;
-            ui.painter().galley(pos, galley, fg);
+            match key {
+                KbdKey::Text(text) => {
+                    let galley = ui.painter().layout_no_wrap(
+                        (*text).to_owned(),
+                        mono(micro),
+                        egui::Color32::PLACEHOLDER,
+                    );
+                    let w = (galley.rect.width() + 2.0 * pad_x).max(kbd_h);
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(w, kbd_h), egui::Sense::hover());
+                    draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                    let pos = rect.center() - galley.rect.size() * 0.5;
+                    ui.painter().galley(pos, galley, fg);
+                }
+                KbdKey::Icon(icon) => {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(kbd_h, kbd_h), egui::Sense::hover());
+                    draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                    let irect = egui::Rect::from_center_size(
+                        rect.center(),
+                        egui::vec2(icon_glyph, icon_glyph),
+                    );
+                    icon.image(icon_glyph, fg).paint_at(ui, irect);
+                }
+            }
         }
     });
+}
+
+/// 키캡 배경 + 보더(하단 2px 강조) — [`kbd`]/[`kbd_parts`] 공유. `kbd()`가 원래
+/// 인라인으로 갖고 있던 시각 규칙 그대로, 텍스트/아이콘 두 키 종류가 재사용한다.
+#[allow(clippy::too_many_arguments)]
+fn draw_keycap_box(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    radius: f32,
+    bw: f32,
+    fill: egui::Color32,
+    border: egui::Color32,
+    bottom_border: f32,
+) {
+    ui.painter().rect_filled(rect, radius, fill);
+    // 키캡 하단 보더 2px 강조 → 윗변은 1px, 아랫변은 2px 로 따로 그린다.
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, border),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().line_segment(
+        [
+            egui::pos2(rect.left() + radius, rect.bottom() - bw),
+            egui::pos2(rect.right() - radius, rect.bottom() - bw),
+        ],
+        egui::Stroke::new(bottom_border, border),
+    );
 }

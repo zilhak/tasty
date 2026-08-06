@@ -405,3 +405,25 @@ stroke_icon!(
     "hash",
     r#"<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>"#
 );
+
+// ── Modifier keys (macOS) ──
+// macOS modifier 키 심볼(⌘ U+2318/⌥ U+2325/⇧ U+21E7) 벡터 대체. egui 는 폰트
+// fallback 체인에 등록된 폰트만 쓰는데 U+2325(⌥)를 포함하는 폰트가 하나도 없어
+// tofu box 로 깨진다(design `cmdKey`/`optionKey`/`shiftKey`) — 텍스트로 타이핑하는
+// 대신 이 글리프를 그린다. 기존 COMMAND(범용 "명령" 개념 아이콘, 사각형 안
+// 사각형)와는 별개 — COMMAND 는 ⌘ 키캡의 대체가 아니다.
+stroke_icon!(
+    CMD_KEY,
+    "cmd_key",
+    r#"<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>"#
+);
+stroke_icon!(
+    OPTION_KEY,
+    "option_key",
+    r#"<path d="M3 18h5.5L16 6H21"/><path d="M3 6h5"/>"#
+);
+stroke_icon!(
+    SHIFT_KEY,
+    "shift_key",
+    r#"<path d="M12 3 4 11h4v10h8V11h4z"/>"#
+);

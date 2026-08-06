@@ -261,13 +261,13 @@ language_restart_notice = "言語の変更は再起動後に適用されます�
 alt_display_style_label = "Alt キー表示:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
-alt_display_style_symbol = "⌘"
+alt_display_style_symbol = "シンボル"
 option_display_style_label = "Option キー表示:"
 option_display_style_option = "Option"
-option_display_style_symbol = "⌥"
+option_display_style_symbol = "シンボル"
 shift_display_style_label = "Shift キー表示:"
 shift_display_style_shift = "Shift"
-shift_display_style_symbol = "⇧"
+shift_display_style_symbol = "シンボル"
 
 [settings.terminal]
 heading = "ターミナル"

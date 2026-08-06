@@ -69,6 +69,8 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 
 macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,option,shift}_display_style` 3 개 필드(설정 > 일반 > 표시, mac 전용 UI)로 Alt/Option/Shift 토큰의 화면 표기를 텍스트("Alt"/"Option"/"Shift", 기본값)와 macOS 심볼("⌘"/"⌥"/"⇧") 사이에서 독립적으로 고를 수 있다(`alt` 는 추가로 "Cmd" 텍스트도 선택 가능). `KeybindingSettings::format_display`/`format_display_parts` 가 이 설정을 받아 표시 문자열을 만든다 — 필드는 크로스플랫폼으로 존재하지만(직렬화 단순성), 값을 바꿀 수 있는 UI 는 macOS 에서만 노출된다. 저장 포맷(바인딩 문자열)에는 전혀 영향을 주지 않는다.
 
+**"symbol" 표시가 실제 화면에 그려지는 방식은 위치마다 다르다.** `format_display`/`format_display_parts` 가 만드는 문자열은 "⌘"/"⌥"/"⇧" 을 그대로 담은 텍스트다(커맨드 팔레트·상태바·키바인딩 탭 등에서 소비) — egui 폰트 fallback 체인에 U+2325(⌥) glyph 가 없어 이 경로는 tofu box 로 깨질 수 있는 리스크를 안고 있다(알려진 이슈, 아직 미해결). 반면 설정 > 일반 > 표시 탭의 3 개 드롭다운과 modifier-hint 오버레이의 keycap 칩(`combo_keycap_parts`, `src/adapters/ui/modifier_hint_overlay.rs`)은 "symbol" 스타일을 텍스트로 타이핑하지 않고 벡터 아이콘(`tasty_icons::{CMD_KEY,OPTION_KEY,SHIFT_KEY}`, `tasty_ui_widgets::{KbdKey,kbd_parts}`)으로 그려 이 문제를 원천 차단한다.
+
 ## OS 메뉴 key equivalent
 
 tasty 가 직접 소유하는 OS 메뉴(macOS NSMenu / Windows AcceleratorTable / Linux Wayland 메뉴)의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.

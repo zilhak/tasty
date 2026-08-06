@@ -523,7 +523,7 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Icons ────────────────────────────────────────────────────
-        // 디자인(4) §2.3 — system-rules Section 1개 + 6 job 그룹 Section.
+        // 디자인(4) §2.3 — system-rules Section 1개 + 8 job 그룹 Section.
         // 모든 글리프 24×24, 2px stroke, round, no fill, currentColor.
         Page {
             category: Category::Icons,
@@ -620,6 +620,18 @@ pub fn pages() -> Vec<Page> {
                         "Sidebar footer & global tools",
                         Some("Each anchors a menu or window — tools, settings, plug, rocket"),
                         icons::draw_system,
+                    )],
+                ),
+                section(
+                    "keys",
+                    "Modifier keys (macOS)",
+                    vec![spec(
+                        "keys",
+                        "Command / Option / Shift symbols",
+                        Some(
+                            "Vector replacements for ⌘/⌥/⇧ — the settings display-style dropdowns and the modifier-hint keycap chip",
+                        ),
+                        icons::draw_keys,
                     )],
                 ),
             ],

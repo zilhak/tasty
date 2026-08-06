@@ -275,7 +275,7 @@ use std::time::Duration;
 
 use crate::i18n::t;
 use tasty_settings::Settings;
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd};
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd, kbd_parts};
 
 use crate::adapters::ui::icons;
 
@@ -542,7 +542,7 @@ fn draw_content(
     strip_ui.set_opacity(alpha);
     strip_ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        kbd(ui, theme, &combo_keycaps(held, general));
+        kbd_parts(ui, theme, &combo_keycap_parts(held, general));
         ui.label(
             egui::RichText::new(t("modifier_hint.held"))
                 .size(theme.font_size_caption.value())
@@ -639,7 +639,7 @@ fn draw_section(
     general: &tasty_settings::GeneralSettings,
 ) {
     // ChordHead.
-    kbd(ui, theme, &combo_keys(sec, general));
+    kbd_parts(ui, theme, &combo_key_parts(sec, general));
     ui.add_space(theme.modhint_row_gap().value());
     let w = ui.available_width();
     let (hr, _) = ui.allocate_exact_size(
@@ -780,8 +780,9 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
 /// option: Option/⌥, shift: Shift/⇧)이며, 여기 하드코딩됐던 `cfg!(target_os = "macos")`
 /// alt→"Cmd" 치환은 이 설정으로 대체됐다(기본값 "alt" — 표시 스타일을 만지지 않은
 /// 사용자는 업그레이드 후 Alt/Cmd 표기가 바뀔 수 있음, 설정 > 일반 > 표시에서 다시
-/// 선택 가능). 스트립 헤더(전체 홀드 조합)와 섹션 헤더가 같은 함수를 재사용해 표기를
-/// 일관화한다.
+/// 선택 가능). **JSON 직렬화 경로 전용**(`debug_state_json`) — 화면 렌더링(스트립
+/// 헤더·섹션 헤더)은 tofu box 위험이 있는 심볼 스타일을 텍스트가 아니라 아이콘으로
+/// 그려야 해서 [`combo_keycap_parts`] 로 분리됐다.
 fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if c.ctrl {
@@ -809,9 +810,47 @@ fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String 
     parts.join("+")
 }
 
-/// 섹션 조합 → 키캡 문자열. [`combo_keycaps`] 를 섹션 헤더 draw 경로에서 재사용.
-fn combo_keys(sec: &HintSection, general: &tasty_settings::GeneralSettings) -> String {
-    combo_keycaps(sec.combo, general)
+/// [`combo_keycaps`] 의 화면 렌더링 경로 버전 — `"symbol"` 스타일(⌘/⌥/⇧)은 텍스트가
+/// 아니라 [`icons::CMD_KEY`]/[`OPTION_KEY`]/[`SHIFT_KEY`] 벡터 아이콘으로 대체한다.
+/// [`combo_keycaps`](JSON 직렬화 경로, `debug_state_json`)는 그대로 텍스트를 유지 —
+/// 두 경로가 갈리는 이유는 픽셀을 그리지 않는 JSON 덤프엔 tofu box 위험이 없어서다.
+fn combo_keycap_parts(
+    c: Combo,
+    general: &tasty_settings::GeneralSettings,
+) -> Vec<tasty_ui_widgets::KbdKey<'static>> {
+    use tasty_ui_widgets::KbdKey;
+    let mut parts = Vec::new();
+    if c.ctrl {
+        parts.push(KbdKey::Text("Ctrl"));
+    }
+    if c.alt {
+        match general.alt_display_style.as_str() {
+            "cmd" => parts.push(KbdKey::Text("Cmd")),
+            "symbol" => parts.push(KbdKey::Icon(icons::CMD_KEY)),
+            _ => parts.push(KbdKey::Text("Alt")),
+        }
+    }
+    if c.option {
+        match general.option_display_style.as_str() {
+            "symbol" => parts.push(KbdKey::Icon(icons::OPTION_KEY)),
+            _ => parts.push(KbdKey::Text("Option")),
+        }
+    }
+    if c.shift {
+        match general.shift_display_style.as_str() {
+            "symbol" => parts.push(KbdKey::Icon(icons::SHIFT_KEY)),
+            _ => parts.push(KbdKey::Text("Shift")),
+        }
+    }
+    parts
+}
+
+/// 섹션 조합 → 키캡 파트. [`combo_keycap_parts`] 를 섹션 헤더 draw 경로에서 재사용.
+fn combo_key_parts(
+    sec: &HintSection,
+    general: &tasty_settings::GeneralSettings,
+) -> Vec<tasty_ui_widgets::KbdKey<'static>> {
+    combo_keycap_parts(sec.combo, general)
 }
 
 /// 바인딩 문자열(`"ctrl+shift+t"`) → 키캡 표기(`"Ctrl+Shift+T"`). 세그먼트별 첫 글자 대문자.

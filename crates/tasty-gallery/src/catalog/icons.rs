@@ -1,5 +1,5 @@
 //! Icons 카탈로그 페이지 — 디자인(4) `gallery/icons.jsx` 의 `system-rules` Section
-//! + 6 job 그룹 Section 미러.
+//! + 8 job 그룹 Section 미러.
 //!
 //! 글리프의 canonical 소스는 [`tasty_icons`] 크레이트다 — 이 모듈은 재노출만 하고
 //! (중복 path 정의 제거), 카탈로그 페이지 트리·타일 렌더만 담당한다. specimen 이
@@ -8,7 +8,7 @@
 //! 토큰으로 tint 한다.
 //!
 //! 페이지 트리(Section/Spec 헤딩)는 `catalog.rs` 가, 각 Spec 본문은 여기의 draw
-//! 함수가 그린다 — `draw_system_rules` + 6 그룹 draw(`draw_actions` 등).
+//! 함수가 그린다 — `draw_system_rules` + 8 그룹 draw(`draw_actions` 등).
 
 use std::cell::RefCell;
 
@@ -104,6 +104,12 @@ const SYSTEM: &[Entry] = &[
     (THEME, "theme", "theme toggle (Mocha / Latte)"),
     (SUN, "sun", "empty state / no settings"),
     (HASH, "hash", "number / tab-switch digits"),
+];
+
+const KEYS: &[Entry] = &[
+    (CMD_KEY, "cmdKey", "Command key symbol (⌘)"),
+    (OPTION_KEY, "optionKey", "Option key symbol (⌥)"),
+    (SHIFT_KEY, "shiftKey", "Shift key symbol (⇧)"),
 ];
 
 // ── icongrid 타일 치수 (icons.jsx `.icongrid` / `.icontile`) ──
@@ -216,7 +222,7 @@ pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── 6 job 그룹 Section — 각자 icongrid 만 그린다 ──────────────────────
+// ── 8 job 그룹 Section — 각자 icongrid 만 그린다 ──────────────────────
 
 pub fn draw_actions(ui: &mut egui::Ui, theme: &Theme) {
     icongrid(ui, theme, ACTIONS);
@@ -238,6 +244,9 @@ pub fn draw_status(ui: &mut egui::Ui, theme: &Theme) {
 }
 pub fn draw_system(ui: &mut egui::Ui, theme: &Theme) {
     icongrid(ui, theme, SYSTEM);
+}
+pub fn draw_keys(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, KEYS);
 }
 
 /// 글리프 타일 그리드 — separator 배경 위에 1px gap 으로 panel 셀을 깐다
