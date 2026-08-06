@@ -632,125 +632,150 @@ impl BannerManager {
         // 교체한다(사라진 배너 키는 자동 정리). hover 는 *직전* 프레임 카드 rect 로 판정.
         let mut next_card_rects: HashMap<(BannerScope, BannerKey), egui::Rect> = HashMap::new();
 
-        let layer_id = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer"));
-
-        for slot in &slots {
-            let recessed = self.is_recessed(&slot.scope, visible_max_priority);
-            let opacity = if recessed {
-                theme.opacity_recessed()
-            } else {
-                1.0
-            };
-            // hover/소비 판정은 scope 전체(`slot.zone`, 배치 placeholder)가 아니라 직전
-            // 프레임에 실제 그려진 카드 rect 로 한정한다 — scope 전역을 소비하면 이미
-            // focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막힌다. 카드 rect
-            // 가 아직 없는 첫 프레임엔 hover=false(자연스러움).
-            let card_key = (slot.scope.clone(), slot.key.clone());
-            let banner_hovered = pointer.is_some_and(|p| {
-                self.card_rects
-                    .get(&card_key)
-                    .is_some_and(|r| r.contains(p))
-            });
-            if banner_hovered {
-                hovered_any = true;
-                hovered_ids.push(card_key.clone());
-            }
-
-            // plugin mesh 배너면 content_rect 를 여기로 실어낸다(셸 내부, 우측 affordance 제외).
-            let mut mesh_content_rect: Option<egui::Rect> = None;
-            let mut child = ui_at(ctx, layer_id, slot.zone);
-            let card_rect = draw_shell(&mut child, theme, opacity, |ui| {
-                if let Some((_, _, height)) = &slot.mesh {
-                    // plugin egui-mesh 배너: 셸 내부를 (가용폭 - affordance) × height 로
-                    // 예약하고 그 rect 를 content_rect 로 실어낸다(콘텐츠 자체는 GPU 가 host
-                    // egui pass 후 합성). affordance 열은 비워 두고 아래에서 host 가 그린다.
-                    let aff = theme.item_height_interactive.value();
-                    let w = (ui.available_width() - aff).max(1.0);
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(w, *height), egui::Sense::hover());
-                    mesh_content_rect = Some(rect);
-                } else if let Some(def) = defs::find(slot.id) {
-                    // host 배너 콘텐츠 (id → def 조회). 없으면 id 텍스트만(누락 정의 가시화).
-                    (def.content_fn)(ui, theme);
-                } else {
-                    ui.label(slot.id);
-                }
-                // 우상단 affordance — TTL 카운트다운 ↔ hover 시 X (+ mouse-capture
-                // 배너는 "더보기" ⋯도 같은 열에). mouse-capture 배너는 항상 두 트리거
-                // 몫의 폭을 예약한다 — hover 진입/이탈로 본문 폭이 흔들리면 안 되므로
-                // (`content_mouse_capture` 의 예약폭과 동일해야 함).
-                let show_more = slot.id == defs::BANNER_MOUSE_CAPTURE;
-                let more_active = more_menu_open_for == Some(&slot.scope);
-                let reserve = if show_more {
-                    theme.item_height_interactive.value() * 2.0
-                } else {
-                    theme.item_height_interactive.value()
-                };
-                let avail = ui.max_rect();
-                let corner = egui::Rect::from_min_max(
-                    egui::pos2(avail.right() - reserve, avail.top()),
-                    egui::pos2(
-                        avail.right(),
-                        avail.top() + theme.item_height_interactive.value(),
-                    ),
-                );
-                let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner));
-                corner_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+        // 배너 레이어를 `egui::Area` 로 등록해 `Memory::Areas::order`(z-stack)에
+        // 편입시킨다 — popup(`popup/draw.rs`)이 이미 이 이유로 bare-layer 에서
+        // Area 등록으로 바뀐 것과 동일한 근거(`docs/dev-guide/popup-implementation.md`
+        // "콘텐츠 레이어" 절). Area 미등록 레이어는 같은 `Order` 타이어 안에서 등록된
+        // 레이어보다 항상 나중(=위)에 그려지므로(`egui::layers::GraphicLayers::drain`),
+        // 배너가 Area 밖에 있으면 popup 이 배너보다 먼저 열려 있어도 배너가 항상 그
+        // 위에 그려진다(`docs/architecture/input-layer.md` z-order 정책 위반).
+        // 여러 스코프의 배너가 서로 다른 위치(zone)에 동시에 뜰 수 있으므로 스코프별
+        // 개별 Area 대신 하나의 Area 로 묶고, 그 안에서 스코프별 child Ui(`ui_at`)를
+        // priority 오름차순으로 그려 기존 카드 간 상대 z-order(하위 먼저)를 그대로
+        // 유지한다. `fixed_pos`/크기는 실사용되지 않는다(모든 배치는 child Ui 의
+        // `max_rect`로 직접 지정) — `movable(false)`/`sense(hover)` 는 popup 과 동일하게
+        // 드래그·클릭 브링투프론트를 배제한다.
+        egui::Area::new(egui::Id::new("banner_layer"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(egui::Pos2::ZERO)
+            .movable(false)
+            .interactable(true)
+            .sense(egui::Sense::hover())
+            .constrain(false)
+            .show(ctx, |area_ui| {
+                for slot in &slots {
+                    let recessed = self.is_recessed(&slot.scope, visible_max_priority);
+                    let opacity = if recessed {
+                        theme.opacity_recessed()
+                    } else {
+                        1.0
+                    };
+                    // hover/소비 판정은 scope 전체(`slot.zone`, 배치 placeholder)가 아니라 직전
+                    // 프레임에 실제 그려진 카드 rect 로 한정한다 — scope 전역을 소비하면 이미
+                    // focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막힌다. 카드 rect
+                    // 가 아직 없는 첫 프레임엔 hover=false(자연스러움).
+                    let card_key = (slot.scope.clone(), slot.key.clone());
+                    let banner_hovered = pointer.is_some_and(|p| {
+                        self.card_rects
+                            .get(&card_key)
+                            .is_some_and(|r| r.contains(p))
+                    });
                     if banner_hovered {
-                        // 닫기 affordance — 갤러리 specimen `dismiss_x()` 와 동일한
-                        // Ghost/Sm IconButton + icons::CLOSE(SVG). raw `"✕"`(U+2715)는
-                        // UI 폰트에 글리프가 없어 tofu(□)로 렌더되던 것을 고친다(gallery
-                        // parity). 색은 IconButton 의 해소색(ghost: text-secondary →
-                        // hover text-primary)을 따른다.
-                        if IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                            })
-                            .clicked()
-                        {
-                            close_requests.push(slot.scope.clone());
+                        hovered_any = true;
+                        hovered_ids.push(card_key.clone());
+                    }
+
+                    // plugin mesh 배너면 content_rect 를 여기로 실어낸다(셸 내부, 우측 affordance 제외).
+                    let mut mesh_content_rect: Option<egui::Rect> = None;
+                    let mut child = ui_at(area_ui, slot.zone);
+                    let card_rect = draw_shell(&mut child, theme, opacity, |ui| {
+                        if let Some((_, _, height)) = &slot.mesh {
+                            // plugin egui-mesh 배너: 셸 내부를 (가용폭 - affordance) × height 로
+                            // 예약하고 그 rect 를 content_rect 로 실어낸다(콘텐츠 자체는 GPU 가 host
+                            // egui pass 후 합성). affordance 열은 비워 두고 아래에서 host 가 그린다.
+                            let aff = theme.item_height_interactive.value();
+                            let w = (ui.available_width() - aff).max(1.0);
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(w, *height), egui::Sense::hover());
+                            mesh_content_rect = Some(rect);
+                        } else if let Some(def) = defs::find(slot.id) {
+                            // host 배너 콘텐츠 (id → def 조회). 없으면 id 텍스트만(누락 정의 가시화).
+                            (def.content_fn)(ui, theme);
+                        } else {
+                            ui.label(slot.id);
                         }
-                    } else if let Some(secs) = slot.remaining_seconds {
-                        ui.label(
-                            egui::RichText::new(secs.to_string())
-                                .monospace()
-                                .size(theme.font_size_micro.value())
-                                .color(theme.banner_countdown_fg().to_egui()),
+                        // 우상단 affordance — TTL 카운트다운 ↔ hover 시 X (+ mouse-capture
+                        // 배너는 "더보기" ⋯도 같은 열에). mouse-capture 배너는 항상 두 트리거
+                        // 몫의 폭을 예약한다 — hover 진입/이탈로 본문 폭이 흔들리면 안 되므로
+                        // (`content_mouse_capture` 의 예약폭과 동일해야 함).
+                        let show_more = slot.id == defs::BANNER_MOUSE_CAPTURE;
+                        let more_active = more_menu_open_for == Some(&slot.scope);
+                        let reserve = if show_more {
+                            theme.item_height_interactive.value() * 2.0
+                        } else {
+                            theme.item_height_interactive.value()
+                        };
+                        let avail = ui.max_rect();
+                        let corner = egui::Rect::from_min_max(
+                            egui::pos2(avail.right() - reserve, avail.top()),
+                            egui::pos2(
+                                avail.right(),
+                                avail.top() + theme.item_height_interactive.value(),
+                            ),
                         );
+                        let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner));
+                        corner_ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                                if banner_hovered {
+                                    // 닫기 affordance — 갤러리 specimen `dismiss_x()` 와 동일한
+                                    // Ghost/Sm IconButton + icons::CLOSE(SVG). raw `"✕"`(U+2715)는
+                                    // UI 폰트에 글리프가 없어 tofu(□)로 렌더되던 것을 고친다(gallery
+                                    // parity). 색은 IconButton 의 해소색(ghost: text-secondary →
+                                    // hover text-primary)을 따른다.
+                                    if IconButton::new()
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(ControlSize::Sm)
+                                        .show(ui, theme, &|ui, rect, c| {
+                                            icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                                        })
+                                        .clicked()
+                                    {
+                                        close_requests.push(slot.scope.clone());
+                                    }
+                                } else if let Some(secs) = slot.remaining_seconds {
+                                    ui.label(
+                                        egui::RichText::new(secs.to_string())
+                                            .monospace()
+                                            .size(theme.font_size_micro.value())
+                                            .color(theme.banner_countdown_fg().to_egui()),
+                                    );
+                                }
+                                // "더보기" ⋯ — × 왼쪽(right_to_left 라 × 다음 호출). hover 중이거나
+                                // 이 스코프의 메뉴가 열려 있는 동안(active 강조) 노출된다(디자인
+                                // 확정값 §6-1,6-6 — 재사용은 ⋯ 재클릭).
+                                if show_more && (banner_hovered || more_active) {
+                                    let resp = IconButton::new()
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(ControlSize::Sm)
+                                        .active(more_active)
+                                        .show(ui, theme, &|ui, rect, c| {
+                                            icons::MORE.image(rect.height(), c).paint_at(ui, rect)
+                                        })
+                                        .on_hover_text(crate::i18n::t(
+                                            "banner.mouse_capture.more_button",
+                                        ));
+                                    if resp.clicked() {
+                                        more_clicked = Some((slot.scope.clone(), resp.rect));
+                                    }
+                                }
+                            },
+                        );
+                    });
+                    // plugin mesh 배너면 실측 content_rect 를 합성 슬롯으로 적재.
+                    if let (Some((plugin_id, instance_id, _)), Some(content_rect)) =
+                        (&slot.mesh, mesh_content_rect)
+                    {
+                        mesh_drawn.push(PluginBannerMeshSlot {
+                            plugin_id: plugin_id.clone(),
+                            instance_id: *instance_id,
+                            content_rect,
+                        });
                     }
-                    // "더보기" ⋯ — × 왼쪽(right_to_left 라 × 다음 호출). hover 중이거나
-                    // 이 스코프의 메뉴가 열려 있는 동안(active 강조) 노출된다(디자인
-                    // 확정값 §6-1,6-6 — 재사용은 ⋯ 재클릭).
-                    if show_more && (banner_hovered || more_active) {
-                        let resp = IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .active(more_active)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::MORE.image(rect.height(), c).paint_at(ui, rect)
-                            })
-                            .on_hover_text(crate::i18n::t("banner.mouse_capture.more_button"));
-                        if resp.clicked() {
-                            more_clicked = Some((slot.scope.clone(), resp.rect));
-                        }
-                    }
-                });
+                    next_card_rects.insert(card_key, card_rect);
+                }
             });
-            // plugin mesh 배너면 실측 content_rect 를 합성 슬롯으로 적재.
-            if let (Some((plugin_id, instance_id, _)), Some(content_rect)) =
-                (&slot.mesh, mesh_content_rect)
-            {
-                mesh_drawn.push(PluginBannerMeshSlot {
-                    plugin_id: plugin_id.clone(),
-                    instance_id: *instance_id,
-                    content_rect,
-                });
-            }
-            next_card_rects.insert(card_key, card_rect);
-        }
 
         // 직전 프레임 카드 rect 교체 — 더는 표시되지 않는 배너 키는 자동으로 빠진다.
         self.card_rects = next_card_rects;
@@ -866,13 +891,18 @@ impl BannerManager {
     }
 }
 
-/// 주어진 rect 에 layer painter child Ui 를 만든다 (배너는 다른 UI 위 Foreground).
-fn ui_at(ctx: &egui::Context, layer_id: egui::LayerId, rect: egui::Rect) -> egui::Ui {
-    egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new(("banner_zone", rect.left() as i32, rect.top() as i32)),
-        egui::UiBuilder::new().layer_id(layer_id).max_rect(rect),
-    )
+/// 주어진 rect 에 배너 Area 콘텐츠 ui 의 자식 Ui 를 만든다 — 부모(Area 콘텐츠 ui)와
+/// 같은 레이어를 공유해 `Memory::Areas::order` 편입 상태를 유지한 채, 스코프별로
+/// 서로 다른 위치(zone)에 배치한다. Area 의 기본 clip_rect(화면 전체)를 zone 으로
+/// 좁혀 다른 배너 zone 으로 넘치지 않게 한다.
+fn ui_at(parent: &mut egui::Ui, rect: egui::Rect) -> egui::Ui {
+    let mut child = parent.new_child(
+        egui::UiBuilder::new()
+            .id_salt(("banner_zone", rect.left() as i32, rect.top() as i32))
+            .max_rect(rect),
+    );
+    child.set_clip_rect(rect);
+    child
 }
 
 /// 배너 정적 정의 레지스트리. id → `BannerDef`. 첫 용도(마우스 캡쳐 안내)와
