@@ -543,6 +543,10 @@ impl MainView {
     fn handle_left_button(&mut self, button_state: ElementState) {
         if button_state == ElementState::Pressed {
             self.left_mouse_down = true;
+            // 새 클릭 사이클 진입 — 이전 클릭의 값이 새어 들어가지 않도록 명시적으로
+            // 리셋. 링크가 실제로 열리면 `try_handle_link_click` 이 아래에서 다시 true 로
+            // set 한다.
+            self.link_click_consumed = false;
             // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
             if self.vi_copy.is_some() {
                 self.vi_copy = None;
@@ -608,6 +612,11 @@ impl MainView {
             }
         }
         if let Some(hovered) = self.hovered_link.clone() {
+            // 이 press 는 링크오픈으로 로컬 소비된다 — release 는 tracking 앱에 보고하지
+            // 않는다(handle_left_release 참고, TODO 24). press 를 앱에 보고하지 않으면서
+            // release 만 단독 전달되면 자체 URL-오픈 기능이 있는 TUI 앱이 중복으로 열 수
+            // 있다.
+            self.link_click_consumed = true;
             // 원격(mirror) surface 판별: 클릭한 surface 의 terminal 이 detached
             // mirror(자식 PTY 없음)면 화면 경로가 원격 호스트 경로라 로컬 핸들러로
             // 열 수 없다. ID(hovered.surface_id) 로 직접 판별 — 포커스 독립.
@@ -771,6 +780,8 @@ impl MainView {
 
     /// 좌클릭 release: divider 드래그 확정(resize) 후, 트래킹 ON 이면 앱 보고,
     /// 아니면 로컬 선택 확정(빈 클릭은 커서 이동 + 선택 클리어). bypass 는 앱 보고 스킵.
+    /// press 가 링크오픈으로 소비됐으면(`link_click_consumed`) 마찬가지로 앱 보고 스킵
+    /// (TODO 24 — press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
     fn handle_left_release(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
         if self.dragging_divider.is_some() {
             self.dragging_divider = None;
@@ -785,6 +796,7 @@ impl MainView {
         // 우회 시퀀스(left_select_bypass)면 — dragging 여부와 무관하게(멀티클릭 word/line
         // 은 dragging=false) — 앱 보고를 스킵하고 로컬 선택을 확정한다.
         let bypass = self.left_select_bypass;
+        let link_click_consumed = self.link_click_consumed;
         let report_surface = if bypass {
             None
         } else {
@@ -794,8 +806,10 @@ impl MainView {
                     self.core_state
                         .find_terminal_by_id(*sid)
                         .map(|t| {
-                            self.effective_click_tracking(*sid, t.mouse_tracking())
-                                != tasty_terminal::MouseTrackingMode::None
+                            should_report_release_to_app(
+                                self.effective_click_tracking(*sid, t.mouse_tracking()),
+                                link_click_consumed,
+                            )
                         })
                         .unwrap_or(false)
                 })
@@ -819,6 +833,7 @@ impl MainView {
             }
         }
         self.left_select_bypass = false;
+        self.link_click_consumed = false;
         self.mark_dirty();
     }
 
@@ -1120,6 +1135,19 @@ fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shi
     tracking != tasty_terminal::MouseTrackingMode::None && !shift
 }
 
+/// 좌클릭 release 를 tracking 앱(PTY)에 보고할지 결정한다. 트래킹이 꺼져 있으면 항상
+/// 안 보고. 트래킹이 켜져 있어도 이번 클릭의 press 가 링크오픈으로 로컬 소비됐다면
+/// (`link_click_consumed`) 마찬가지로 안 보고한다 — press 는 tasty 가 로컬 소비(링크
+/// 오픈)했는데 release 만 앱에 단독 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim의
+/// `gx`/netrw, tmux url 플러그인 등)이 이를 클릭으로 해석해 링크를 중복으로 열 수
+/// 있다(TODO 24).
+fn should_report_release_to_app(
+    tracking: tasty_terminal::MouseTrackingMode,
+    link_click_consumed: bool,
+) -> bool {
+    tracking != tasty_terminal::MouseTrackingMode::None && !link_click_consumed
+}
+
 /// 좌클릭을 tasty 로컬 텍스트 선택으로 처리할지(true), 아니면 앱(PTY)에 보고할지(false)
 /// 결정한다. 트래킹 OFF 면 항상 로컬. 트래킹 ON 이면 press 시점 Shift 우회이거나
 /// (`shift`), 이미 우회 시퀀스가 활성(`bypass_active`)일 때만 로컬 — 그 외엔 앱에 보고.
@@ -1368,6 +1396,37 @@ mod left_click_tests {
             MouseTrackingMode::None,
             false,
             true
+        ));
+    }
+}
+
+#[cfg(test)]
+mod link_click_release_tests {
+    use super::should_report_release_to_app;
+
+    #[test]
+    fn release_report_skipped_when_press_consumed_by_link_click() {
+        // tracking ON + 이번 클릭의 press가 링크오픈으로 소비됐다면 release도 보고 안 함
+        assert!(!should_report_release_to_app(
+            tasty_terminal::MouseTrackingMode::Click,
+            true,
+        ));
+    }
+
+    #[test]
+    fn release_report_still_sent_for_normal_click_with_tracking_on() {
+        // 기존 동작 보존: 링크오픈이 아닌 일반 클릭은 tracking ON 이면 그대로 보고
+        assert!(should_report_release_to_app(
+            tasty_terminal::MouseTrackingMode::Click,
+            false,
+        ));
+    }
+
+    #[test]
+    fn release_report_skipped_when_tracking_off_regardless() {
+        assert!(!should_report_release_to_app(
+            tasty_terminal::MouseTrackingMode::None,
+            false,
         ));
     }
 }

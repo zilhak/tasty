@@ -52,6 +52,13 @@ pub struct MainView {
     /// 라우팅하며, 드래그 도중 Shift 를 떼도(또는 멀티클릭으로 dragging=false 여도)
     /// 선택이 깨지지 않는다 (iTerm 동작). press 에서 set, release 에서 clear.
     pub(crate) left_select_bypass: bool,
+    /// 이번 좌클릭 press 가 링크오픈(`try_handle_link_click`)으로 로컬 소비되었는지.
+    /// press 시점에 1회 set 되어 release 까지 유지되고, release 처리 후 리셋된다
+    /// (`left_select_bypass` 와 동일 패턴). true 면 release 를 tracking 앱에 보고하지
+    /// 않는다 — press 를 tasty 가 로컬 소비(링크 오픈)했는데 release 만 앱에 단독
+    /// 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim/tmux 등)이 이를 클릭으로
+    /// 해석해 링크를 중복으로 열 수 있다(TODO 24).
+    pub(crate) link_click_consumed: bool,
     /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 셀 좌표. 드래그 motion 을 셀 단위로만
     /// 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
     pub(crate) last_mouse_report_cell: Option<(usize, usize)>,
@@ -77,6 +84,9 @@ pub struct MainView {
     /// surface 별 마지막으로 webview 에 적용한 HTML 설정 — 변경 시에만 재적용(매 프레임 호출 회피).
     pub(crate) webview_applied_settings:
         std::collections::HashMap<u32, crate::webview::HtmlWebViewSettings>,
+    /// surface 별 마지막으로 webview 에 로드한 URL — `surface.webview_url()` 최신값과 달라지면
+    /// (예: `webview.set_url` IPC) 기존 webview 인스턴스에 재로드를 트리거한다(파괴·재생성 없음).
+    pub(crate) webview_loaded_urls: std::collections::HashMap<u32, String>,
     /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
     pub(crate) hovered_link: Option<HoveredLink>,
     /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
@@ -145,6 +155,7 @@ impl MainView {
             vi_copy: None,
             left_mouse_down: false,
             left_select_bypass: false,
+            link_click_consumed: false,
             last_mouse_report_cell: None,
             last_click_time: None,
             last_click_pos: None,
@@ -155,6 +166,7 @@ impl MainView {
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),
+            webview_loaded_urls: std::collections::HashMap::new(),
             hovered_link: None,
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),

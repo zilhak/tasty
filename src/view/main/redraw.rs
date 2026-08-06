@@ -360,6 +360,7 @@ impl MainView {
                             } else {
                                 wv.load_html(url);
                             }
+                            self.webview_loaded_urls.insert(sid, url.clone());
                         }
                         // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
                         settings.apply(&wv);
@@ -378,6 +379,35 @@ impl MainView {
         }
     }
 
+    /// 이미 생성된 webview 마다 `surface.webview_url()` 최신값과 마지막으로 로드한
+    /// URL(`webview_loaded_urls`)을 비교해, 달라졌으면 기존 인스턴스에 재로드를
+    /// 트리거한다(파괴·재생성 없음). `load_url`/`load_html` 은 호출 즉시 native
+    /// nav_state 를 `Loading` 으로 세팅하므로(각 플랫폼 구현 공통), 이 함수를
+    /// `sync_webviews` 의 reveal 판정(nav_state 기준) 이전에 호출하면 재로드가
+    /// 트리거된 프레임에 곧바로 반영된다 — 이전 페이지가 한 프레임이라도 다시
+    /// 노출되는 일이 없다.
+    fn resync_webview_urls(&mut self, all_html_ids: &[u32]) {
+        for &sid in all_html_ids {
+            let Some(url) = self.find_webview_url(sid) else {
+                continue;
+            };
+            if self.webview_loaded_urls.get(&sid) == Some(&url) {
+                continue;
+            }
+            if let Some(wv) = self.webviews.get(&sid) {
+                if url.starts_with("file://")
+                    || url.starts_with("http://")
+                    || url.starts_with("https://")
+                {
+                    wv.load_url(&url);
+                } else {
+                    wv.load_html(&url);
+                }
+                self.webview_loaded_urls.insert(sid, url);
+            }
+        }
+    }
+
     /// Synchronize native WebView instances with the current state.
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
@@ -385,6 +415,7 @@ impl MainView {
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let (active_html, all_html_ids) = self.collect_html_surfaces(scale_factor);
         self.create_missing_webviews(&all_html_ids, &active_html, scale_factor);
+        self.resync_webview_urls(&all_html_ids);
 
         // When any egui overlay (context menu, popup, dialog) is open,
         // hide all WebViews so they don't cover the overlay.
@@ -409,6 +440,8 @@ impl MainView {
         // Remove webviews for closed Html surfaces
         self.webviews.retain(|sid, _| all_html_ids.contains(sid));
         self.webview_applied_settings
+            .retain(|sid, _| all_html_ids.contains(sid));
+        self.webview_loaded_urls
             .retain(|sid, _| all_html_ids.contains(sid));
 
         // 설정 변경 재적용 — 살아있는 webview 마다 현재 설정을 해석해, 마지막 적용값과
