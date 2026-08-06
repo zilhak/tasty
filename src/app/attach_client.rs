@@ -1680,10 +1680,17 @@ fn merge_survivor_mapping(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            // 서버가 실제 display_name(예: markdown 파일명)을 보내주면 그걸 쓴다.
+            // 필드 자체가 없으면(구버전 서버 등) 기존처럼 kind 로 fallback.
+            let display_name = s
+                .get("display_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| kind.clone());
             mesh_locals.insert(
                 local_id,
                 MirrorMeshInfo {
-                    display_name: kind.clone(),
+                    display_name,
                     kind,
                     plugin_id,
                 },
@@ -3612,5 +3619,45 @@ mod tests {
             to_index: 1,
         };
         assert!(pending_op_focus_for(&op, &[70], &map).is_none());
+    }
+
+    /// 서버가 mesh 디스크립터에 실제 `display_name`(예: markdown 파일명)을 실어보내면
+    /// `MirrorMeshInfo.display_name` 에 그대로 반영돼야 하고, 필드 자체가 없으면
+    /// (구버전 서버 등) 기존처럼 `kind` 로 fallback 해야 한다.
+    #[test]
+    fn merge_survivor_mapping_prefers_server_display_name_and_falls_back_to_kind() {
+        let ids = IdGenerator::new();
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        let surfaces = vec![
+            serde_json::json!({
+                "remote_id": 10,
+                "role": "mesh",
+                "kind": "markdown",
+                "plugin_id": "com.tasty.markdown",
+                "display_name": "README.md",
+            }),
+            serde_json::json!({
+                "remote_id": 11,
+                "role": "mesh",
+                "kind": "image",
+                "plugin_id": "com.tasty.image",
+                // display_name 필드 없음 — fallback 확인용.
+            }),
+        ];
+
+        let (map, _term, mesh, _explorer, _new) =
+            merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine);
+
+        let local_10 = map[&10];
+        let local_11 = map[&11];
+        assert_eq!(mesh[&local_10].display_name, "README.md");
+        assert_eq!(
+            mesh[&local_11].display_name, "image",
+            "display_name 필드가 없으면 kind 로 fallback 해야 한다"
+        );
     }
 }

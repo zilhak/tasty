@@ -516,14 +516,18 @@ impl CoreState {
         class: &AttachSurfaceClass,
     ) -> (serde_json::Value, Vec<serde_json::Value>) {
         let ws = &self.workspaces[idx];
-        // sid → kind (비-터미널 placeholder 라벨용).
+        // sid → kind (비-터미널 placeholder 라벨용) / display_name(mesh 탭 제목용 —
+        // 서버는 이미 `Surface::display_name()` 을 들고 있는데 mesh 디스크립터가
+        // 이를 안 실어보내 client 가 kind 문자열("markdown")로 대체하던 버그).
         let mut kinds: HashMap<u32, &'static str> = HashMap::new();
+        let mut display_names: HashMap<u32, String> = HashMap::new();
         for pane_id in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for tab in &pane.tabs {
                     tab.for_each_surface(&mut |s| {
                         if let Some(id) = s.surface_id() {
                             kinds.insert(id, s.kind());
+                            display_names.insert(id, s.display_name());
                         }
                     });
                 }
@@ -548,11 +552,16 @@ impl CoreState {
             }));
         }
         for (sid, kind, plugin_id) in &mesh_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kind.to_string());
             surfaces.push(serde_json::json!({
                 "remote_id": sid,
                 "role": "mesh",
                 "kind": kind,
                 "plugin_id": plugin_id,
+                "display_name": display_name,
             }));
         }
         // ADR-0059 — explorer 는 placeholder 가 아니라 전용 role. root(활성
@@ -1593,6 +1602,75 @@ mod mesh_mirror_candidate_tests {
         whitelisted_ids.sort_unstable();
         assert_eq!(whitelisted_ids, vec![10, 11, 12]);
         assert_eq!(rejected, vec![13]);
+    }
+}
+
+#[cfg(test)]
+mod mesh_descriptor_display_name_tests {
+    //! mesh 디스크립터(`build_workspace_tree_surfaces`)가 mesh 후보의 실제
+    //! `Surface::display_name()`(예: markdown 파일명)을 `display_name` 필드로
+    //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("markdown")로
+    //! 대체 표시했다.
+    use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
+
+    fn engine_with_mesh_surface(
+        kind: &'static str,
+        plugin_id: &str,
+        display_name: &str,
+    ) -> (crate::core::CoreState, usize) {
+        let term_waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+        let surface: Box<dyn crate::model::Surface> = Box::new(EguiMeshSurface::new(
+            100,
+            kind,
+            plugin_id.to_string(),
+            display_name.to_string(),
+            Some("/docs/README.md".to_string()),
+        ));
+        let pane = crate::model::Pane::new_with_surface(1, 1, display_name.to_string(), surface);
+        let ws = crate::model::Workspace::new_with_pane(1, "ws".to_string(), pane);
+        engine.workspaces.push(ws);
+        let idx = engine.workspaces.len() - 1;
+        (engine, idx)
+    }
+
+    #[test]
+    fn markdown_mesh_descriptor_carries_real_display_name() {
+        let (engine, idx) = engine_with_mesh_surface("markdown", "com.tasty.markdown", "README.md");
+        let class = engine.workspaces[idx].classify_attach_surfaces();
+        let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
+        let mesh = surfaces
+            .iter()
+            .find(|s| s.get("role").and_then(|v| v.as_str()) == Some("mesh"))
+            .expect("mesh surface descriptor 가 있어야 한다");
+        assert_eq!(
+            mesh.get("display_name").and_then(|v| v.as_str()),
+            Some("README.md"),
+            "mesh 디스크립터의 display_name 은 실제 파일명이어야 한다 — kind 문자열(\"markdown\")로 대체되면 안 됨"
+        );
+    }
+
+    /// image/mesh_demo 도 같은 `EguiMeshSurface`/화이트리스트 경로를 타므로 동일하게
+    /// display_name 이 전달돼야 한다(markdown 전용 수정이 아님을 보장 — 회귀 방지).
+    #[test]
+    fn image_and_mesh_demo_mesh_descriptors_also_carry_display_name() {
+        for (kind, plugin_id, name) in [
+            ("image", "com.tasty.image", "screenshot.png"),
+            ("mesh_demo", "com.tasty.mesh-demo", "Demo"),
+        ] {
+            let (engine, idx) = engine_with_mesh_surface(kind, plugin_id, name);
+            let class = engine.workspaces[idx].classify_attach_surfaces();
+            let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
+            let mesh = surfaces
+                .iter()
+                .find(|s| s.get("role").and_then(|v| v.as_str()) == Some("mesh"))
+                .unwrap_or_else(|| panic!("{kind} mesh surface descriptor 가 있어야 한다"));
+            assert_eq!(
+                mesh.get("display_name").and_then(|v| v.as_str()),
+                Some(name),
+                "{kind} mesh 디스크립터도 display_name 을 실어야 한다"
+            );
+        }
     }
 }
 
