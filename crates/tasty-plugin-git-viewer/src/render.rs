@@ -6,7 +6,7 @@
 //! Back / Refresh)은 이 프레임 안에서 [`ViewerState`] 를 직접 mutate 한다 — set_context
 //! 만으로 구동되므로, 갱신된 pane 이 클릭 지점보다 **뒤에** 그려지도록 순서를 잡는다.
 //!
-//! 색 매핑(changelog `2026-06-30-git-viewer.md`): oid·refs·main·hunk = `accent_info`(sky),
+//! 색 매핑: oid·refs·main·hunk = `accent_info`(sky),
 //! current·added·diff `+` = `accent_success`, locked·modified = `accent_warning`,
 //! invalid·deleted·unmerged·diff `-`·error = `accent_danger`, linked·`?` = neutral.
 

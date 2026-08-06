@@ -1,5 +1,6 @@
 //! 작업영역(작업 컬럼) 하단 StatusBar — 디자인 `ui_kits/terminal/work.jsx` 의
-//! `StatusBar` 컴포넌트 대응 (changelog `2026-06-15-status-bar.md`, B8-J4 확정).
+//! `StatusBar` 컴포넌트 대응. 위치·크기·구조(하단 24px 바, 좌/우 클러스터)는 확정이나
+//! 표시 항목은 잠정이다 — 상세 `docs/features/workspace-status-bar/index.md`.
 //!
 //! ## 구성 (디자인 canonical)
 //! - 높이 `theme.status_bar_height`(24), `bg_app` 배경 + 상단 1px `separator`.

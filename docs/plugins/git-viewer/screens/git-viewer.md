@@ -1,7 +1,7 @@
 # Git Viewer popup 화면
 
 - **부모 기획**: [../index.md](../index.md)
-- **시각 소스**: 디자인 `ui_kits/terminal/overlays/git_viewer.jsx` (changelog `2026-06-30-git-viewer.md`).
+- **시각 소스**: 디자인 `ui_kits/terminal/overlays/git_viewer.jsx`.
 
 도구 메뉴/IPC 로 뜨는 git status/log/diff 읽기 전용 popup. **egui-mesh** 로 그린다 — plugin 이
 자기 프로세스 egui Context 에서 콘텐츠를 직접 페인트하고, host 는 셸(scrim/border/Esc/outside-click)만

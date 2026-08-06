@@ -6,9 +6,8 @@
 
 ## Context
 
-디자인 changelog `2026-06-16-appearance.md` #6 은 `Appearance › General` 폰트 설정 목록에
-**ligatures** 항목(프로그래밍 합자 토글)을 포함한다. 즉 디자인 의도상 폰트 설정에 ligatures
-on/off 가 있다.
+디자인은 `Appearance › General` 폰트 설정 목록에 **ligatures** 항목(프로그래밍 합자 토글)을
+포함한다. 즉 디자인 의도상 폰트 설정에 ligatures on/off 가 있다.
 
 그러나 소스의 `FontSettings`(`crates/tasty-settings/src/appearance.rs`)는
 `font_family / font_size / custom_font_path / line_height / font_scale_mode` 만 갖고
@@ -44,8 +43,8 @@ on/off 가 있다.
   근거로 흡수해, "왜 디자인엔 ligatures 가 있는데 설정에 없나" 라는 혼선을 막는다.
 - **잃은 것**: 디자인 #6 의 ligatures 항목이 당장 구현되지 않는다. 합자 글꼴을 쓰는 사용자는
   프로그래밍 합자(`=>` 등)가 칸 단위 그대로 렌더된다.
-- **운영 비용 / 유지 부담**: 없음(필드/UI/렌더 추가 없음). 디자인 changelog #6 의 ligatures
-  항목은 본 ADR 로 **미구현(deferred)** 상태임을 명시한다.
+- **운영 비용 / 유지 부담**: 없음(필드/UI/렌더 추가 없음). 디자인의 ligatures 항목은 본 ADR 로
+  **미구현(deferred)** 상태임을 명시한다.
 
 ## Alternatives Considered
 
@@ -69,7 +68,7 @@ on/off 가 있다.
 
 ## References
 
-- 디자인: changelog `2026-06-16-appearance.md` #6 (General 폰트 설정에 ligatures 포함 — 본 ADR 로 deferred)
+- 디자인: `Appearance › General` 폰트 설정 목록의 ligatures 항목 (본 ADR 로 deferred)
 - 관련 소스: `crates/tasty-settings/src/appearance.rs`(`FontSettings` — ligatures 필드 없음),
   `crates/tasty-font`(cosmic-text shaping, 번들 "D2Coding ligature" 폰트)
 - 관련 ADR: ADR-0008(인라인 그래픽 보류 — 같은 "deferred" 포맷 선례)

@@ -1321,7 +1321,7 @@ impl Theme {
         self.text_secondary()
     }
 
-    // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──
+    // ── Titlebar (CSD) 컴포넌트 색 — 신규 primitive 없이 기존 semantic 접근자 조합으로 구성 ──
     /// 타이틀바 배경 (active/focused). `--tasty-titlebar-bg` → `bg-app`.
     #[inline]
     pub fn titlebar_bg(&self) -> HexColor {
@@ -2109,7 +2109,9 @@ mod tests {
         assert_eq!(t.window_button_size.value(), 24.0);
     }
 
-    /// P1: titlebar 컴포넌트 색 접근자가 changelog 매핑대로 semantic 에 묶이는지 고정.
+    /// P1: titlebar 컴포넌트 색 접근자가 각각의 semantic 접근자(bg_app/bg_sidebar/separator/
+    /// text_secondary/text_muted)에 그대로 위임하는지 고정 — 신규 토큰 없이 조합만으로
+    /// 구성됨을 회귀 방지.
     #[test]
     fn titlebar_color_accessors_map_to_semantics() {
         let th = Theme::with_colors(distinct_colors(), false);

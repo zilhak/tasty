@@ -9,7 +9,7 @@
 //! - **normal** — 2행 header(+context strip) · 섹션 strip · rail(2줄 행) | Changes / Commits.
 //! - **diff** — 파일 선택 시 하단 pane 이 diff well(거터+부호+± tint)로 교체.
 //!
-//! 색 매핑(changelog `2026-06-30-git-viewer.md`): oid·refs·main·hunk = `accent_info`(sky),
+//! 색 매핑: oid·refs·main·hunk = `accent_info`(sky),
 //! current·added·`+` = `accent_success`, locked·modified = `accent_warning`,
 //! invalid·deleted·unmerged·`-` = `accent_danger`, linked·`?` = neutral.
 

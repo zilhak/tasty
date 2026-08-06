@@ -147,7 +147,7 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// 한 테마의 대표 5색 `[bg, surface, accent, accent_alt, success]` 을 `ThemeFile`
-/// 에서 파생한다. 디자인(changelog 2026-06-16 #5, `ThemeSwatch`) 매핑:
+/// 에서 파생한다. 디자인 `ThemeSwatch` 매핑:
 /// bg=`palette.crust`, surface=`palette.base`, accent=`accent.blue`,
 /// accent_alt=`accent.mauve`, success=`accent.green`.
 ///

@@ -10,7 +10,7 @@ use tasty_type_appearance::theme::Theme;
 
 /// 스포트라이트 scrim — `screen` 전체를 scrim-bg 로 덮되 `hole`(마커 rect)만
 /// 밝게 남긴다. hole 을 뺀 4개 밴드(상/하/좌/우)를 채워 진짜 스포트라이트를 만든다
-/// (마커는 scrim 위에서 원래 밝기 유지 — changelog Decision 1).
+/// (마커는 스포트라이트가 강조하는 대상이므로 scrim 을 칠하지 않아 원래 밝기를 유지한다).
 pub fn paint_spotlight_scrim(
     p: &egui::Painter,
     screen: egui::Rect,
