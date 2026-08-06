@@ -9,12 +9,19 @@
 //! `html.open(url, surface)` IPC 가 host 의 `webview.set_url` 로 URL 전달.
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
+use tasty_plugin_sdk::{
+    BusHandle, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult,
+};
 
 const PLUGIN_ID: &str = "com.tasty.html";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-struct HtmlPlugin;
+#[derive(Default)]
+struct HtmlPlugin {
+    /// `on_start`에서 받아 저장 — `create_surface`(host 가 없는 ctx)에서
+    /// `webview.set_url` 을 호출하는 데 재사용한다.
+    host: Option<HostHandle>,
+}
 
 impl Plugin for HtmlPlugin {
     fn id(&self) -> &str {
@@ -25,16 +32,47 @@ impl Plugin for HtmlPlugin {
         PLUGIN_VERSION
     }
 
+    fn on_start(&mut self, host: HostHandle, _bus: BusHandle) {
+        self.host = Some(host);
+    }
+
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // surface create params 의 url 을 display_name 으로. host 의 webview
-        // overlay 가 URL 을 직접 표시한다. 실제 URL 설정은 ctx.host 가 없는 환경
-        // 이라 별도 IPC (html.open) 또는 surface meta 로 처리한다.
-        let url = ctx.params.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        // SDK 는 surface.create 의 전체 envelope 을 ctx.params 로 넘긴다 — 실제 생성
+        // params(url 등)는 params.params 아래에 중첩돼 있다(자매 plugin
+        // markdown 의 surface_param_file 과 동일 계약).
+        let url = surface_param_url(&ctx.params).unwrap_or_default();
+
+        if !url.is_empty() {
+            let file_url = local_path_to_file_uri(&url);
+            match &self.host {
+                Some(host) => {
+                    if let Err(e) = host.call(
+                        "webview.set_url",
+                        json!({
+                            "surface_id": ctx.surface_id,
+                            "url": file_url,
+                        }),
+                    ) {
+                        tracing::warn!(
+                            "create_surface s{}: webview.set_url failed: {e}",
+                            ctx.surface_id
+                        );
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        "create_surface s{}: no host handle (on_start not called yet?) — cannot load {url}",
+                        ctx.surface_id
+                    );
+                }
+            }
+        }
+
         SurfaceResult {
             display_name: Some(if url.is_empty() {
                 "HTML".to_string()
             } else {
-                url.to_string()
+                url
             }),
             snapshot: None,
         }
@@ -46,6 +84,58 @@ impl Plugin for HtmlPlugin {
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+}
+
+/// surface.create envelope 에서 `url` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은
+/// `{surface_id, kind, cwd, params:{url, ...}}` 전체이므로 `params.url` 을 본다(중첩).
+/// flat 으로 온 경우(`url` top-level)도 fallback 으로 받는다.
+fn surface_param_url(envelope: &Value) -> Option<String> {
+    envelope
+        .get("params")
+        .and_then(|p| p.get("url"))
+        .or_else(|| envelope.get("url"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// `http://`/`https://`/`file://` 스킴이 이미 있으면 그대로 통과. 없으면 로컬
+/// 파일시스템 경로로 간주해 `file://` URI 로 변환한다 — host `dispatch.rs` 가
+/// 스킴 없는 원시 경로를 그대로 `url` 파라미터에 담아 보내기 때문(다른
+/// `OpenSurface` 소비자인 markdown 의 `file` 파라미터 계약을 지키기 위해 host
+/// 레벨에서는 변환하지 않는다 — 변환은 이 plugin 이 자기 `url` 파라미터 의미를
+/// 아는 여기서만 한다).
+fn local_path_to_file_uri(raw: &str) -> String {
+    if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("file://") {
+        return raw.to_string();
+    }
+    let normalized = raw.replace('\\', "/");
+    let uri = if let Some(unc) = normalized.strip_prefix("//") {
+        // UNC 경로: \\server\share\path → file://server/share/path
+        format!("file://{unc}")
+    } else if let Some(stripped) = normalized.strip_prefix('/') {
+        // POSIX 절대경로: /home/user/a.html → file:///home/user/a.html
+        format!("file:///{stripped}")
+    } else {
+        // Windows 드라이브 경로: C:/Users/a.html → file:///C:/Users/a.html
+        format!("file:///{normalized}")
+    };
+    percent_encode_uri(&uri)
+}
+
+/// URI 안전 문자(영숫자 + `-_.~/:`) 외 모든 바이트를 `%XX` 로 이스케이프한다.
+/// 공백/`#`/`%`/비-ASCII 문자를 포함한 경로를 다룬다. 스킴/슬래시/콜론은
+/// 안전 문자 집합에 포함돼 있어 그대로 보존된다.
+fn percent_encode_uri(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// `html.open(url, surface)` — host 의 webview.set_url 로 URL 전달.
@@ -83,5 +173,67 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(HtmlPlugin)
+    tasty_plugin_sdk::run(HtmlPlugin::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_param_url_reads_nested_and_flat() {
+        assert_eq!(
+            surface_param_url(&json!({ "params": { "url": "/a/b.html" } })).as_deref(),
+            Some("/a/b.html")
+        );
+        assert_eq!(
+            surface_param_url(&json!({ "url": "/c/d.html" })).as_deref(),
+            Some("/c/d.html")
+        );
+        assert_eq!(surface_param_url(&json!({ "params": {} })), None);
+    }
+
+    #[test]
+    fn local_html_path_gets_file_scheme() {
+        assert_eq!(
+            local_path_to_file_uri("/home/user/project/index.html"),
+            "file:///home/user/project/index.html"
+        );
+    }
+
+    #[test]
+    fn already_schemed_url_passthrough() {
+        assert_eq!(
+            local_path_to_file_uri("https://example.com"),
+            "https://example.com"
+        );
+        assert_eq!(
+            local_path_to_file_uri("file:///already/schemed.html"),
+            "file:///already/schemed.html"
+        );
+    }
+
+    #[test]
+    fn windows_drive_path_gets_file_scheme() {
+        assert_eq!(
+            local_path_to_file_uri("C:\\Users\\a\\index.html"),
+            "file:///C:/Users/a/index.html"
+        );
+    }
+
+    #[test]
+    fn unc_path_gets_file_scheme_with_host() {
+        assert_eq!(
+            local_path_to_file_uri("\\\\server\\share\\index.html"),
+            "file://server/share/index.html"
+        );
+    }
+
+    #[test]
+    fn special_chars_are_percent_encoded() {
+        assert_eq!(
+            local_path_to_file_uri("/home/user/my file #1 100%.html"),
+            "file:///home/user/my%20file%20%231%20100%25.html"
+        );
+    }
 }

@@ -5858,12 +5858,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "serde_json",
  "tasty-plugin-manifest",
  "tasty-plugin-sdk",
+ "tracing",
  "tracing-subscriber",
 ]
 
