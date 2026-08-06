@@ -318,6 +318,23 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
             },
             PopupDef {
+                id: crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
+                title_key: "popup.mouse_capture_banner_menu.title",
+                title_fn: None,
+                default_size: crate::adapters::ui::mouse_capture_menu::menu_default_size(),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                // 마우스 캡처 배너 "더보기" 컨텍스트 메뉴 — tools_menu 와 동일하게
+                // 이동/리사이즈 비활성.
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: crate::adapters::ui::mouse_capture_menu::draw_menu,
+            },
+            PopupDef {
                 id: super::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
                 title_key: "workspace_category.delete_confirm_title",
                 title_fn: Some(super::confirm_delete_category::confirm_delete_category_title),

@@ -71,6 +71,36 @@
 
 (숫자 타이포·크기·정렬, 숫자↔X 전환 표현은 디자인 수령 후 보강.)
 
+## "더보기"(⋯) 컨텍스트 메뉴 — mouse-capture 배너 전용
+
+mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더보기" ⋯ 트리거가
+같은 affordance 열에 나란히 놓인다. 다른 배너 kind 는 이 트리거를 갖지 않는다.
+
+- **노출 조건**: X 와 동일 — 배너 hover 시에만. 단 ⋯ 의 컨텍스트 메뉴가 열려 있는 동안은
+  hover 여부와 무관하게 **계속 표시 + active(강조) 상태 유지** — 재사용하려면 ⋯ 재클릭.
+- **배치**: ⋯ 가 X 왼쪽, 사이 4px gap(`spacing_xs`). 이 배너는 항상 2 슬롯 몫(56px =
+  2×24 + gap 4 + gap 4)을 본문 우측에 예약한다 — hover 진입/이탈로 본문 폭이 흔들리지
+  않도록, hover 전에도 예약 폭은 고정이다(다른 배너는 기존 1 슬롯 28px 그대로).
+- **트리거 아이콘**: 신규 SVG `icons::MORE` — 수평 3-dot(`M5 12h.01M12 12h.01M19 12h.01`).
+- **메뉴**: host `PopupDef` 의 `headless: true` 컨텍스트 메뉴(`popup-implementation.md`).
+  앵커는 트리거 버튼 아래 4px, 우측 정렬 — 뷰포트 하단 공간이 없으면 위로 flip. outside
+  click/Esc 로 닫힘(scrim 없음), ↑↓/Enter/Esc 키보드 내비게이션은 기존 headless 메뉴와 동일.
+  min-width 200px / max-width 288px, 내부 패딩 4px, 배경·보더·radius·그림자는 다른 메뉴
+  (Tools menu 등)와 같은 토큰을 재사용한다.
+- **항목 2개(순서 고정)**, 클릭 시 즉시 실행 + 메뉴 닫힘, 둘 다 neutral 톤(danger 아님 —
+  파괴/유실 없고 Settings 에서 되돌릴 수 있음):
+  1. **"{app}에 대해 이 알림 끄기"**(`icons::BELL`) — `mouse_capture_banner_blacklist` 에
+     foreground 프로그램 이름 추가 + **배너도 즉시 함께 닫힘**.
+  2. **"{app}에 대해 마우스 캡처 비활성화"**(`icons::MOUSE`) — `mouse_capture_blacklist` 에
+     추가. **배너는 남는다** — 캡처가 이미 풀렸음을 사용자가 읽고 직접 닫도록.
+- **라벨 렌더**: 고정 텍스트 + 프로그램 이름(mono, 강조) **두 조각**으로 분리 렌더한다 —
+  하나의 문자열로 합쳐 ellipsis 하면 로케일에 따라(특히 en) 프로그램 이름부터 잘리기
+  때문이다. 고정 텍스트는 줄바꿈/truncate 없음, 프로그램 이름 세그먼트만 축소+ellipsis,
+  전체 이름은 항목 tooltip 으로 보완한다.
+- 두 블랙리스트 모두 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다 — 이 메뉴는
+  그 목록에 진입하는 **두 번째 경로**일 뿐, 저장/매칭 로직은 [ADR-0055](../../adr/0055-mouse-capture-banner-suppress-list.md)
+  그대로다. 근거: [ADR-0061](../../adr/0061-mouse-capture-banner-more-menu-quick-entry.md).
+
 ## TTL (살아있는 시간)
 
 - 배너는 선택적으로 TTL 을 가진다.
@@ -129,7 +159,7 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 
 - **`BannerDef`** — 정적·데이터 지향 정의(고유 id, TTL 유무, 콘텐츠 draw 함수). id 가 곧 kind. `defs::all_defs()`/`defs::find(&str)` 로 조회.
 - **`BannerState`** — 큐/TTL 단위 인스턴스(id, scope, ttl_ms, remaining_ms, `content`). `persistent`/`with_ttl`/`plugin_mesh` 생성자. `content: BannerContentSource { Host, PluginMesh{..} }` 로 콘텐츠 원천만 분기하고(host 정의 `content_fn` vs plugin egui-mesh), 큐/TTL/z-order/위치 생명주기는 host 소유 단일 지점(`BannerManager`)이 공유한다. 동적 plugin 인스턴스는 `BannerKey`(`Host(id)`/`Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다. plugin egui-mesh 배너 채널 전체는 [egui-mesh-channel.md](../../dev-guide/egui-mesh-channel.md) 의 "banner 채널(A3)".
-- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `BannerDrawResult { hovered }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)). **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
+- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `more_menu_open_for: Option<&BannerScope>`(현재 "더보기" 메뉴가 열려 있는 스코프 — 호출자가 popup 시스템에서 조립해 넘긴다, `BannerManager` 자신은 popup 을 모른다)를 받아 `BannerDrawResult { hovered, more_clicked }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)). `more_clicked: Option<(BannerScope, egui::Rect)>` 는 "더보기" 트리거가 클릭된 스코프 + 버튼 rect — 호출자가 이를 받아 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다. **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
 
 모든 배너 문자열은 `t("banner.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)). 모든 색·치수는 Theme 토큰([theme.md](theme.md)).
 

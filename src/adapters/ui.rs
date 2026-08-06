@@ -17,6 +17,7 @@ pub mod font_registry;
 pub(crate) mod info_modal;
 pub mod layout_context;
 pub(crate) mod modifier_hint_overlay;
+pub(crate) mod mouse_capture_menu;
 pub(crate) mod notification;
 pub mod popup;
 pub mod preset;

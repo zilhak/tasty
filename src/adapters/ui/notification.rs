@@ -162,6 +162,38 @@ pub(crate) fn draw_notification_content_inner(
 }
 
 /// Draw all popups via the PopupManager. Called from egui_bridge.
+/// "더보기" 컨텍스트 메뉴가 열려 있는 배너 스코프(없으면 `None`). popup open 여부는
+/// `AppState.popups`, 대상 surface 는 `dialogs` 타깃 필드가 따로 갖고 있어 조립이
+/// 필요하다 — `draw_popups` 본문에 인라인하면 인지 복잡도 예산을 넘어 별도 함수로 뺐다.
+fn mouse_capture_more_menu_open_for(
+    state: &AppState,
+) -> Option<crate::adapters::ui::banner::BannerScope> {
+    if !state
+        .popups
+        .is_open(crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID)
+    {
+        return None;
+    }
+    state
+        .dialogs
+        .mouse_capture_banner_menu_target
+        .map(crate::adapters::ui::banner::BannerScope::Surface)
+}
+
+/// 마우스 캡처 배너 "더보기" 메뉴가 (액션 클릭이든 outside click/Esc 든) 닫혔으면
+/// 대상 surface 필드를 비운다. 매번 확인해도 무해(idempotent) — 다른 popup 의
+/// close 정리 블록(`rename_closed` 등)과 동일 관례.
+fn cleanup_mouse_capture_menu_target(
+    state: &mut AppState,
+    dispatch_closed: &[&'static str],
+    draw_result_closed: &[&'static str],
+) {
+    let id = crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID;
+    if dispatch_closed.contains(&id) || draw_result_closed.contains(&id) {
+        state.dialogs.mouse_capture_banner_menu_target = None;
+    }
+}
+
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut AppState,
@@ -242,6 +274,10 @@ pub fn draw_popups(
     if rename_closed {
         state.dialogs.rename = None;
     }
+
+    // 마우스 캡처 배너 "더보기" 메뉴 — outside click/Esc로 닫히면(액션 클릭이 아니라)
+    // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
+    cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);
 
     // rail_category 팝업 — 닫히면 대상 카테고리 참조 정리.
     let rail_cat_closed = dispatch_closed
@@ -363,10 +399,23 @@ pub fn draw_popups(
         egui::pos2(screen.left(), screen.top() + th.tab_bar_height.value()),
         screen.max,
     ));
-    let banner_result = state
-        .banners
-        .draw(ctx, &draw_ctx, &th, view_placeholder, reduced_motion);
+    // "더보기" 컨텍스트 메뉴가 열려 있는 배너 스코프 — 열려 있는 동안 ⋯ 트리거를
+    // hover 와 무관하게 active 강조 상태로 유지한다(디자인 확정값 §6-1). `BannerManager`
+    // 자신은 popup 시스템을 모르므로 여기서 조립해 넘긴다(helper 로 분리 —
+    // `draw_popups` 의 인지 복잡도 예산).
+    let more_menu_open_for = mouse_capture_more_menu_open_for(state);
+    let banner_result = state.banners.draw(
+        ctx,
+        &draw_ctx,
+        &th,
+        view_placeholder,
+        reduced_motion,
+        more_menu_open_for.as_ref(),
+    );
     state.banner_hovered = banner_result.hovered;
+    if let Some((scope, trigger_rect)) = banner_result.more_clicked {
+        crate::adapters::ui::mouse_capture_menu::open(state, ctx, &scope, trigger_rect);
+    }
 
     // modifier-hint 오버레이 (toast/banner 인접 최상위 레이어). modifier 500ms 홀드 후
     // 표시, 마우스만 소비(키보드 포커스 불가 — 원칙3). 홀드 상태는 winit ModifiersChanged

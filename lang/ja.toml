@@ -779,6 +779,14 @@ bind_failed = "Webhook ポート {} をバインドできませんでした（{}
 [banner.mouse_capture]
 title = "マウス入力をキャプチャ中"
 body = "このアプリがマウスをキャプチャしています。テキスト選択は Shift+ドラッグ、tasty メニューは Shift+右クリックを使用してください。"
+more_button = "その他のオプション"
+
+[popup.mouse_capture_banner_menu]
+title = "マウスキャプチャ通知オプション"
+suppress_prefix = ""
+suppress_suffix = "についてこの通知をオフにする"
+disable_prefix = ""
+disable_suffix = "についてマウスキャプチャを無効にする"
 
 [banner.shell_integration_missing]
 title = "シェル統合が検出されませんでした"

@@ -96,6 +96,28 @@ fn dismiss_x(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
+/// mouse-capture 배너 "더보기"(⋯) 트리거 상태 — Spec 6 (더보기 컨텍스트 메뉴).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MoreTriggerState {
+    /// hover 전 — ⋯/× 둘 다 숨김(폭은 예약된 채 비어 있음).
+    Hidden,
+    /// hover 중 — ⋯ + × 둘 다 노출(⋯가 왼쪽, 4px gap).
+    Hovered,
+    /// 메뉴가 열려 있음 — ⋯ 는 hover 여부와 무관하게 계속 표시 + active 강조.
+    Open,
+}
+
+/// 우상단 "더보기"(⋯) 트리거. sm IconButton, `active` 면 icon-button-bg-active 강조.
+fn more_trigger(ui: &mut egui::Ui, theme: &Theme, active: bool) {
+    IconButton::new()
+        .variant(IconButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .active(active)
+        .show(ui, theme, &|ui, rect, c| {
+            icons::MORE.image(rect.height(), c).paint_at(ui, rect)
+        });
+}
+
 /// 우상단 TTL 카운트다운 숫자 — mono micro(10), text-muted, tabular.
 fn countdown(ui: &mut egui::Ui, theme: &Theme, seconds: u32) {
     ui.label(
@@ -238,9 +260,11 @@ fn faux_scope(
 }
 
 /// 캐노니컬 마우스 캡쳐 배너 본문 — leading mouse 글리프 + 제목 + Shift 우회 힌트.
-/// persistent(action 버튼 없음); 우상단 ×는 hover 시에만(specimen 은 노출 상태로
-/// 그린다). 디자인 `MouseCaptureBannerG`(overlays-shared.jsx) 전사.
-fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme) {
+/// persistent(action 버튼 없음); 우상단 ×는 hover 시에만. `more` 는 "더보기" ⋯
+/// 트리거의 상태(닫힘/hover/열림) — mouse-capture 배너는 ⋯ 몫까지 항상 2 슬롯을
+/// 예약한다(hover 전환으로 본문 폭이 흔들리지 않도록). 디자인
+/// `MouseCaptureBannerG`(overlays-shared.jsx) 전사 + 더보기 확장(design-spec-more-menu).
+fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme, more: MoreTriggerState) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         glyph(
@@ -249,9 +273,9 @@ fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme) {
             theme.icon_glyph_size_md.value(),
             theme.banner_icon_fg().to_egui(),
         );
-        // 본문 컬럼 — 우상단 × 자리(item_height)를 비워두고 남는 폭을 채운다.
+        // 본문 컬럼 — 우상단 ⋯/× 자리(2×item_height)를 비워두고 남는 폭을 채운다.
         let body_w = (ui.available_width()
-            - theme.item_height_interactive.value()
+            - theme.item_height_interactive.value() * 2.0
             - theme.spacing_md.value())
         .max(0.0);
         ui.vertical(|ui| {
@@ -268,7 +292,11 @@ fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-            dismiss_x(ui, theme);
+            ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+            if more != MoreTriggerState::Hidden {
+                dismiss_x(ui, theme);
+                more_trigger(ui, theme, more == MoreTriggerState::Open);
+            }
         });
     });
 }
@@ -278,7 +306,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         faux_scope(ui, theme, theme.measure_lg.value(), 200.0, |ui| {
             banner_shell(ui, theme, 1.0, |ui| {
-                mouse_capture_banner(ui, theme);
+                mouse_capture_banner(ui, theme, MoreTriggerState::Hovered);
             });
         });
     });
@@ -318,7 +346,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "There is no Info/Warning/Error kind — each banner's id is its kind and styles \
          its own leading glyph. The mouse-capture banner is persistent (no TTL / countdown); \
-         its only interactive element is the × that appears on hover.",
+         its interactive elements are the × and the ⋯ \"more\" trigger, both hover-revealed \
+         (see the banner-more-menu spec for the ⋯ context menu).",
     );
 }
 
@@ -336,7 +365,7 @@ pub fn draw_hit_zone(ui: &mut egui::Ui, theme: &Theme) {
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(zone));
         banner_shell(&mut child, theme, 1.0, |ui| {
-            mouse_capture_banner(ui, theme);
+            mouse_capture_banner(ui, theme, MoreTriggerState::Hovered);
         });
     });
 
@@ -711,6 +740,212 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
          the lower one is dimmed to ~40% opacity behind it. The interactive manager lives \
          in the kit specimen ui_kits/terminal/overlays/banner.html.",
     );
+}
+
+// ── Spec 6: "더보기"(⋯) 컨텍스트 메뉴 — trigger 3상태 + 메뉴 ──────────────────
+pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+
+        // 트리거 상태 3종 — 닫힘(hover 전) / hover(⋯+× 둘 다 노출) / 메뉴 열림(active).
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            for (state, caption) in [
+                (MoreTriggerState::Hidden, "closed — hover to reveal"),
+                (MoreTriggerState::Hovered, "hover — ⋯ left of ×, 4px gap"),
+                (MoreTriggerState::Open, "menu open — ⋯ stays + active tint"),
+            ] {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                    caption_label(ui, theme, caption);
+                    ui.scope(|ui| {
+                        ui.set_max_width(theme.measure_md.value());
+                        banner_shell(ui, theme, 1.0, |ui| {
+                            mouse_capture_banner(ui, theme, state);
+                        });
+                    });
+                });
+            }
+        });
+
+        // 인터랙티브 컨텍스트 메뉴 — 실제 앵커(트리거 아래 4px, 우측 정렬)를 근사.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            caption_label(
+                ui,
+                theme,
+                "menu — anchored 4px below the trigger, right-aligned",
+            );
+            mouse_capture_menu(ui, theme, "vim", 240.0);
+        });
+
+        // 가변폭 예시 — min-width(200)에서 긴 프로그램 이름이 ellipsis 되는지.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            caption_label(
+                ui,
+                theme,
+                "min-width (200px) — the app segment ellipsizes, the fixed label text never does",
+            );
+            mouse_capture_menu(ui, theme, "a-very-long-tui-program-name", 200.0);
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("trigger", "24px Ghost IconButton · 3-dot `more` icon"),
+            ("order", "⋯ left of × · 4px gap between"),
+            ("reserve", "56px (2×24 + gap4 + gap4) — always reserved"),
+            (
+                "anchor",
+                "trigger bottom +4px · right-aligned · flips up if clipped",
+            ),
+            ("menu size", "200–288px wide · 4px inner padding"),
+            (
+                "items",
+                "suppress banner (bell) · disable capture (mouse) — both neutral",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "menu-item-bg-hover",
+                "row hover",
+                theme.menu_item_bg_hover().to_egui(),
+            ),
+            TokenChip::new(
+                "icon-button-bg-active",
+                "⋯ active tint",
+                theme.icon_button_bg_active().to_egui(),
+            ),
+            TokenChip::new(
+                "border-strong",
+                "menu edge",
+                theme.border_strong().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "The ⋯ trigger shows on hover (same condition as ×) and stays + active-tints while \
+         its menu is open — re-click ⋯ to reuse. Both menu items run immediately and close \
+         the menu; neither is danger-toned (both are reversible from Settings › Terminal). \
+         Suppressing the banner also closes it immediately; disabling capture leaves it open \
+         so the user can read the confirmation. The program name renders as its own mono \
+         segment so only it ellipsizes — the fixed label text never wraps or truncates.",
+    );
+}
+
+/// 마우스 캡처 배너 "더보기" 컨텍스트 메뉴 카드 — surface-raised + border-strong +
+/// popover shadow (Tools menu 와 동일 셸 토큰). 두 항목 고정(순서 고정): 배너
+/// 억제(bell) / 캡처 비활성화(mouse). `width` 로 min/max 폭 케이스를 시연한다.
+fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
+    egui::Frame::new()
+        .fill(theme.surface_raised().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_strong().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .shadow(theme.shadow_popover().to_egui())
+        .inner_margin(egui::Margin::same(theme.spacing_xs.value() as i8))
+        .show(ui, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            mouse_capture_menu_row(
+                ui,
+                theme,
+                icons::BELL,
+                "Turn off this notification for ",
+                app,
+                "",
+                true,
+            );
+            mouse_capture_menu_row(
+                ui,
+                theme,
+                icons::MOUSE,
+                "Disable mouse capture for ",
+                app,
+                "",
+                false,
+            );
+        });
+}
+
+/// 메뉴 한 줄 — icon + [prefix][app(mono, 강조 + ellipsis)][suffix]. 본체 구현
+/// (`mouse_capture_menu.rs`)과 동일 원칙 — 고정 라벨 텍스트는 줄바꿈/truncate
+/// 없이, 프로그램 이름 세그먼트만 독립적으로 축소+ellipsis 된다.
+fn mouse_capture_menu_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: MockGlyph,
+    prefix: &str,
+    app: &str,
+    suffix: &str,
+    hovered: bool,
+) {
+    let height = theme.menu_item_height().value();
+    let pad_x = theme.menu_item_padding_x().value();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    if hovered {
+        ui.painter().rect_filled(
+            rect,
+            theme.menu_item_radius().value(),
+            theme.menu_item_bg_hover().to_egui_premultiplied(),
+        );
+    }
+    let icon_glyph = theme.icon_glyph_size_md.value();
+    let gap = theme.spacing_sm.value();
+    let mut x = rect.left() + pad_x;
+    let irect = egui::Rect::from_center_size(
+        egui::pos2(x + icon_glyph * 0.5, rect.center().y),
+        egui::vec2(icon_glyph, icon_glyph),
+    );
+    icon.image(icon_glyph, theme.text_muted().to_egui())
+        .paint_at(ui, irect);
+    x += icon_glyph + gap;
+
+    let label_rect = egui::Rect::from_min_max(
+        egui::pos2(x, rect.top()),
+        egui::pos2(rect.right() - pad_x, rect.bottom()),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(label_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = 0.0;
+    let fg = theme.text_primary().to_egui();
+    if !prefix.is_empty() {
+        child.label(
+            egui::RichText::new(prefix)
+                .size(theme.font_size_body.value())
+                .color(fg),
+        );
+    }
+    child.add(
+        egui::Label::new(
+            egui::RichText::new(app)
+                .monospace()
+                .size(theme.font_size_body.value())
+                .color(fg),
+        )
+        .truncate(),
+    );
+    if !suffix.is_empty() {
+        child.label(
+            egui::RichText::new(suffix)
+                .size(theme.font_size_body.value())
+                .color(fg),
+        );
+    }
 }
 
 /// 데모 라벨 — caption(11), text-muted (스테이지 내 상태 주석).

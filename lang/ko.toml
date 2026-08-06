@@ -779,6 +779,14 @@ bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
 body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭을 사용하세요."
+more_button = "더 보기"
+
+[popup.mouse_capture_banner_menu]
+title = "마우스 캡처 알림 옵션"
+suppress_prefix = ""
+suppress_suffix = "에 대해 이 알림 끄기"
+disable_prefix = ""
+disable_suffix = "에 대해 마우스 캡처 비활성화"
 
 [banner.shell_integration_missing]
 title = "셸 통합이 감지되지 않았습니다"

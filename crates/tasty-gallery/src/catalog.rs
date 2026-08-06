@@ -686,6 +686,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             widgets::banner::draw_blacklist,
                         ),
+                        spec(
+                            "banner-more-menu",
+                            "\"More\" (⋯) context menu",
+                            Some(
+                                "⋯ left of × · hover-revealed, stays + active while open · suppress banner / disable capture",
+                            ),
+                            widgets::banner::draw_more_menu,
+                        ),
                     ],
                 ),
                 section(

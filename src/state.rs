@@ -566,6 +566,10 @@ pub enum PendingNativeMenu {
 pub struct DialogState {
     /// Unified rename dialog: target + edit buffer.
     pub(crate) rename: Option<(RenameTarget, String)>,
+    /// 마우스 캡처 배너 "더보기" 컨텍스트 메뉴 대상 surface_id. 메뉴가 어느
+    /// surface 의 배너에 대한 것인지 `mouse_capture_menu` draw_fn 에 전달한다
+    /// (`RenameTarget` 과 동일 패턴 — popup 이 대상 정보를 직접 갖지 않아서).
+    pub(crate) mouse_capture_banner_menu_target: Option<u32>,
     /// Surface convert popup: target surface_id (None = closed)
     pub(crate) convert_popup: Option<u32>,
     /// Keyboard-selected index in the convert popup menu
@@ -679,6 +683,7 @@ impl DialogState {
     pub fn new() -> Self {
         Self {
             rename: None,
+            mouse_capture_banner_menu_target: None,
             convert_popup: None,
             convert_popup_selected: None,
             pending_native_menu: None,

@@ -779,6 +779,14 @@ bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and c
 [banner.mouse_capture]
 title = "Mouse input captured"
 body = "This app is capturing the mouse. Use Shift+drag to select text, Shift+Right-click for the tasty menu."
+more_button = "More options"
+
+[popup.mouse_capture_banner_menu]
+title = "Mouse capture notification options"
+suppress_prefix = "Turn off this notification for "
+suppress_suffix = ""
+disable_prefix = "Disable mouse capture for "
+disable_suffix = ""
 
 [banner.shell_integration_missing]
 title = "Shell integration not detected"

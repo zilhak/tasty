@@ -39,6 +39,7 @@ const ACTIONS: &[Entry] = &[
     (DOWNLOAD, "download", "download / save to disk"),
     (UNDO, "undo", "undo an edit (image paint)"),
     (REDO, "redo", "redo an edit (image paint)"),
+    (MORE, "more", "more actions (banner ⋯ trigger)"),
 ];
 
 const NAV: &[Entry] = &[

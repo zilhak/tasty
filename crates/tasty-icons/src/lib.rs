@@ -115,6 +115,8 @@ stroke_icon!(
 );
 // 방향 전환/교체(design `swap`).
 stroke_icon!(SWAP, "swap", r#"<path d="M7 7h11l-3-3M17 17H6l3 3"/>"#);
+// 수평 3-dot "더보기" 트리거(design `more`, 마우스 캡처 배너 컨텍스트 메뉴 트리거).
+stroke_icon!(MORE, "more", r#"<path d="M5 12h.01M12 12h.01M19 12h.01"/>"#);
 // 디스크로 저장/내려받기(design `download`).
 stroke_icon!(
     DOWNLOAD,

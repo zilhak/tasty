@@ -498,9 +498,14 @@ impl BannerManager {
 
 /// `draw` 결과 — 입력 레이어 배선용. `hovered` 가 true 면 마우스가 배너 위라
 /// 하위 레이어(터미널/divider)로 전파를 막아야 한다(`AppState.banner_hovered`).
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct BannerDrawResult {
     pub hovered: bool,
+    /// 이번 프레임에 "더보기"(⋯) 트리거가 클릭된 배너의 스코프 + 트리거 버튼
+    /// rect(팝업 앵커링용). 클릭이 없으면 `None`. 호출자(`notification::draw_popups`)
+    /// 가 `AppState` 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다 — `BannerManager`
+    /// 자신은 `AppState` 를 모르므로 여기서 요청만 실어낸다.
+    pub more_clicked: Option<(BannerScope, egui::Rect)>,
 }
 
 /// 배너 셸 한 장을 그린다 — surface-raised fill + 1px border-strong + radius-8 +
@@ -541,6 +546,10 @@ impl BannerManager {
     ///
     /// - `view_placeholder`: 현재 View 가 지정한 View-스코프 배너 위치(없으면 View
     ///   배너 미표시). Modal 포함 모든 View 가 자기 플레이스홀더를 제공.
+    /// - `more_menu_open_for`: 현재 "더보기" 컨텍스트 메뉴가 열려 있는 배너의 스코프
+    ///   (없으면 `None`). 호출자가 `AppState.popups`/타깃 필드로 판정해 넘긴다 —
+    ///   `BannerManager` 는 popup 시스템을 모르므로 상태를 직접 조회할 수 없다. 이
+    ///   스코프의 ⋯ 트리거는 hover 여부와 무관하게 계속 표시 + active 강조된다.
     /// - 계층 z-order: 가시 표시 배너를 priority 오름차순으로 그려 상위가 앞에 오게
     ///   하고, 하위(자기보다 높은 가시 배너 존재)는 recessed opacity 로 디밍한다.
     ///
@@ -552,6 +561,7 @@ impl BannerManager {
         theme: &Theme,
         view_placeholder: Option<egui::Rect>,
         _reduced_motion: bool,
+        more_menu_open_for: Option<&BannerScope>,
     ) -> BannerDrawResult {
         // 1) TTL dt 계산 (Instant 기반). 정지 조건은 draw 단계에서 hover/가시성으로
         //    판정하므로, 여기서는 dt 만 구하고 advance 는 hover 결정 후 호출한다.
@@ -613,6 +623,9 @@ impl BannerManager {
         let mut hovered_any = false;
         let mut hovered_ids: Vec<(BannerScope, BannerKey)> = Vec::new();
         let mut close_requests: Vec<BannerScope> = Vec::new();
+        // 이번 프레임 "더보기" 트리거 클릭 (scope, 버튼 rect) — 최대 1건(동시에 여러
+        // 배너의 ⋯를 같은 프레임에 클릭할 수 없음).
+        let mut more_clicked: Option<(BannerScope, egui::Rect)> = None;
         // plugin 배너가 이번 프레임 그린 (plugin_id, instance_id, content_rect).
         let mut mesh_drawn: Vec<PluginBannerMeshSlot> = Vec::new();
         // 이번 프레임 실측 카드 rect — 루프 종료 후 `self.card_rects` 를 이 값으로
@@ -662,13 +675,20 @@ impl BannerManager {
                 } else {
                     ui.label(slot.id);
                 }
-                // 우상단 affordance — TTL 카운트다운 ↔ hover 시 X. 같은 자리.
+                // 우상단 affordance — TTL 카운트다운 ↔ hover 시 X (+ mouse-capture
+                // 배너는 "더보기" ⋯도 같은 열에). mouse-capture 배너는 항상 두 트리거
+                // 몫의 폭을 예약한다 — hover 진입/이탈로 본문 폭이 흔들리면 안 되므로
+                // (`content_mouse_capture` 의 예약폭과 동일해야 함).
+                let show_more = slot.id == defs::BANNER_MOUSE_CAPTURE;
+                let more_active = more_menu_open_for == Some(&slot.scope);
+                let reserve = if show_more {
+                    theme.item_height_interactive.value() * 2.0
+                } else {
+                    theme.item_height_interactive.value()
+                };
                 let avail = ui.max_rect();
                 let corner = egui::Rect::from_min_max(
-                    egui::pos2(
-                        avail.right() - theme.item_height_interactive.value(),
-                        avail.top(),
-                    ),
+                    egui::pos2(avail.right() - reserve, avail.top()),
                     egui::pos2(
                         avail.right(),
                         avail.top() + theme.item_height_interactive.value(),
@@ -676,6 +696,7 @@ impl BannerManager {
                 );
                 let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner));
                 corner_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                     if banner_hovered {
                         // 닫기 affordance — 갤러리 specimen `dismiss_x()` 와 동일한
                         // Ghost/Sm IconButton + icons::CLOSE(SVG). raw `"✕"`(U+2715)는
@@ -699,6 +720,22 @@ impl BannerManager {
                                 .size(theme.font_size_micro.value())
                                 .color(theme.banner_countdown_fg().to_egui()),
                         );
+                    }
+                    // "더보기" ⋯ — × 왼쪽(right_to_left 라 × 다음 호출). hover 중이거나
+                    // 이 스코프의 메뉴가 열려 있는 동안(active 강조) 노출된다(디자인
+                    // 확정값 §6-1,6-6 — 재사용은 ⋯ 재클릭).
+                    if show_more && (banner_hovered || more_active) {
+                        let resp = IconButton::new()
+                            .variant(IconButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .active(more_active)
+                            .show(ui, theme, &|ui, rect, c| {
+                                icons::MORE.image(rect.height(), c).paint_at(ui, rect)
+                            })
+                            .on_hover_text(crate::i18n::t("banner.mouse_capture.more_button"));
+                        if resp.clicked() {
+                            more_clicked = Some((slot.scope.clone(), resp.rect));
+                        }
                     }
                 });
             });
@@ -751,6 +788,7 @@ impl BannerManager {
 
         BannerDrawResult {
             hovered: hovered_any,
+            more_clicked,
         }
     }
 
@@ -861,9 +899,12 @@ pub mod defs {
                 .image(glyph, theme.banner_icon_fg().to_egui())
                 .paint_at(ui, rect);
             ui.vertical(|ui| {
-                // 우상단 × / 카운트다운 affordance 자리를 본문에서 비워둔다.
+                // 우상단 ⋯/× affordance 자리를 본문에서 비워둔다. mouse-capture 배너는
+                // "더보기" 트리거를 위해 항상 2 슬롯 폭을 예약한다(hover 여부와 무관 —
+                // `BannerManager::draw` 의 corner 예약폭과 동일해야 hover 전환 시 본문이
+                // 흔들리지 않는다).
                 ui.set_max_width(
-                    (ui.available_width() - theme.item_height_interactive.value()).max(0.0),
+                    (ui.available_width() - theme.item_height_interactive.value() * 2.0).max(0.0),
                 );
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 ui.label(
