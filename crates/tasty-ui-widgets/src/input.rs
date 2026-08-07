@@ -208,6 +208,12 @@ impl<'a> Input<'a> {
             );
         }
 
+        // 반환 rect 를 outer(테두리가 실제로 그려지는 전체 박스)로 덮어쓴다 — 내부
+        // TextEdit rect(leading icon 만큼 우측으로 밀려 있음)를 그대로 노출하면
+        // `AutoComplete` 같은 소비처가 anchor 로 삼을 때 오프셋이 새어나간다. id/
+        // focus 등 TextEdit 상태는 그대로 유지되고 rect 필드만 바뀐다.
+        let mut resp = resp;
+        resp.rect = outer;
         resp
     }
 }

@@ -11,7 +11,7 @@
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{PathField, PathFieldOutcome};
+use tasty_ui_widgets::{Input, PathField, PathFieldOutcome};
 
 const FILE_PATH: &str = "E:/docs/readme.md";
 
@@ -222,5 +222,60 @@ fn entry_repaint_does_not_reignite_flicker_loop() {
     assert_eq!(
         addr.fetch_recent_calls, 1,
         "recent 캐시 조회는 편집 진입당 1회 계약"
+    );
+}
+
+/// `AutoComplete`(따라서 `PathField`)의 드롭다운 origin 은 트리거 `Input` 이 반환하는
+/// `Response.rect` 를 그대로 anchor 로 쓴다(`autocomplete.rs` `resp.rect.left_bottom()`).
+/// 그 `rect` 가 내부 TextEdit rect(leading icon 만큼 우측으로 밀림)가 아니라 outer(테두리)
+/// rect 여야, explorer/markdown 주소창처럼 항상 leading icon 을 지정하는 호출에서 드롭다운이
+/// 주소 표시줄과 좌우로 어긋나지 않는다. leading icon 유무에 따라 outer rect 가 달라지면
+/// (=내부 TextEdit rect 가 새는 회귀) 이 테스트가 잡는다.
+#[test]
+fn input_outer_rect_unaffected_by_leading_icon() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = egui::Context::default();
+
+    let dot_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        ui.painter().circle_filled(rect.center(), 4.0, c);
+    };
+
+    let mut buf_with_icon = String::new();
+    let mut buf_without_icon = String::new();
+    let mut rect_with_icon = Rect::NOTHING;
+    let mut rect_without_icon = Rect::NOTHING;
+
+    let _out = ctx.run(raw(true, vec![]), |c| {
+        egui::CentralPanel::default().show(c, |ui| {
+            let resp =
+                Input::new()
+                    .icon(&dot_icon)
+                    .width(200.0)
+                    .show(ui, &theme, &mut buf_with_icon);
+            rect_with_icon = resp.rect;
+
+            let resp = Input::new()
+                .width(200.0)
+                .show(ui, &theme, &mut buf_without_icon);
+            rect_without_icon = resp.rect;
+        });
+    });
+
+    assert_eq!(
+        rect_with_icon.width(),
+        200.0,
+        "outer rect 폭은 지정한 width 그대로여야 한다 \
+         (버그: TextEdit 내부 rect 는 icon/padding 만큼 좁았다)"
+    );
+    assert_eq!(
+        rect_with_icon.left(),
+        rect_without_icon.left(),
+        "leading icon 유무와 무관하게 outer rect 좌측 경계는 동일해야 한다 \
+         (버그: icon 이 있으면 TextEdit 내부 rect 만큼 우측으로 밀렸었다)"
+    );
+    assert_eq!(
+        rect_with_icon.height(),
+        rect_without_icon.height(),
+        "outer rect 높이도 icon 유무와 무관하게 동일해야 한다"
     );
 }
