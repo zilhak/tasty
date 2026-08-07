@@ -173,10 +173,22 @@ impl CoreState {
         tracing::debug!("attach: mesh surface {surface_id} -> client {client_id}");
     }
 
+    /// mesh 계열 apply_attached_mesh_* 공용 holder 검증. mesh surface(비-터미널)는
+    /// 단일 surface attach(`self.attach.holder`)로도, workspace 단위 attach(`class.
+    /// mesh_candidates` 를 통해 `acquire_workspace` 의 `members` 로 편입되지만
+    /// `surface_locks` 에는 terminal 만 기록되므로 `workspace_holder_of` 로만 조회됨)
+    /// 로도 점유될 수 있다 — 둘 중 하나라도 이 client 면 점유로 인정한다. 이 체크가
+    /// `self.attach.holder` 만 봤을 때는 workspace 단위로 attach 한 client 의 모든
+    /// MeshContext/MeshInput/MeshFullResendRequest 가 항상 `not_attached` 로 거부됐다.
+    fn mesh_holder_matches(&self, surface_id: SurfaceId, client_id: AttachClientId) -> bool {
+        self.attach.holder(surface_id) == Some(client_id)
+            || self.attach.workspace_holder_of(surface_id) == Some(client_id)
+    }
+
     /// attach client 의 mesh 구독/geometry·theme·focus 갱신 요청을 반영
     /// (`StreamControl::MeshContext`). holder 검증: 이 client 가 이 surface 를 실제로
-    /// 점유 중이어야 한다(단일 surface attach 로 획득한 lock). 반환: 반영 성공 여부
-    /// (false = holder 불일치/미점유 → 호출자는 `MeshError` 회신).
+    /// 점유 중이어야 한다(단일 surface attach 또는 workspace 단위 attach). 반환: 반영
+    /// 성공 여부(false = holder 불일치/미점유 → 호출자는 `MeshError` 회신).
     #[allow(clippy::too_many_arguments)]
     pub fn apply_attached_mesh_context(
         &mut self,
@@ -188,7 +200,7 @@ impl CoreState {
         theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
         focused: bool,
     ) -> bool {
-        if self.attach.holder(surface_id) != Some(client_id) {
+        if !self.mesh_holder_matches(surface_id, client_id) {
             return false;
         }
         self.mesh_mirror.upsert(
@@ -210,7 +222,7 @@ impl CoreState {
         surface_id: SurfaceId,
         client_id: AttachClientId,
     ) -> bool {
-        if self.attach.holder(surface_id) != Some(client_id) {
+        if !self.mesh_holder_matches(surface_id, client_id) {
             return false;
         }
         self.mesh_mirror.request_full_resend(surface_id)
@@ -226,7 +238,7 @@ impl CoreState {
         client_id: AttachClientId,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) -> bool {
-        if self.attach.holder(surface_id) != Some(client_id) {
+        if !self.mesh_holder_matches(surface_id, client_id) {
             return false;
         }
         self.mesh_mirror.push_input(surface_id, input)

@@ -453,12 +453,10 @@ impl OccupancyRegistry {
         self.surface_to_workspace.get(&surface_id).copied()
     }
 
-    /// surface 가 속한 점유 workspace 의 holder(placeholder 표시·force-detach UI 용).
-    ///
-    /// 현재 호출처는 `attach_runtime.rs` 의 테스트뿐(`forward_split_inherits_workspace_occupancy`)
-    /// — non-test 빌드엔 실사용처가 없어 `dead_code` 가 뜬다. placeholder UI / force-detach
-    /// 메뉴 통합 후 본격 사용 예정. 공개 API 이므로 삭제가 아닌 allow 만.
-    #[allow(dead_code)]
+    /// surface 가 속한 점유 workspace 의 holder(placeholder 표시·force-detach UI,
+    /// mesh apply_attached_mesh_* 의 holder 검증 fallback 용 — workspace 단위 attach 로
+    /// 편입된 비-터미널 mesh surface 는 `surface_locks`(=`holder()`) 에는 없고 이 경로로만
+    /// 조회된다).
     pub fn workspace_holder_of(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.workspace_of_surface(surface_id)
             .and_then(|ws| self.workspace_holder(ws))
