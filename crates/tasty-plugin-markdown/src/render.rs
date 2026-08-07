@@ -51,11 +51,46 @@ fn parser_options() -> Options {
 /// Inject the host `Theme` semantic tokens into `ui`'s `Visuals`/text-styles, register the
 /// markdown's link destinations as hooks (so every link is routed to the host instead of the
 /// OS), and render `source` through `egui_commonmark`. Clicks are read afterwards via
-/// [`take_clicked_link`].
-pub fn render(ui: &mut egui::Ui, theme: &Theme, body_px: f32, cache: &mut MdCache, source: &str) {
+/// [`take_clicked_link`]. `base_dir` anchors relative inline image paths (see
+/// [`image_uri_prefix`]) — the same directory `take_clicked_link` resolves relative links
+/// against.
+pub fn render(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    body_px: f32,
+    cache: &mut MdCache,
+    source: &str,
+    base_dir: Option<&Path>,
+) {
     apply_theme(ui, theme, body_px);
     register_link_hooks(cache, source);
-    CommonMarkViewer::new().show(ui, cache, source);
+    let mut viewer = CommonMarkViewer::new();
+    if let Some(prefix) = image_uri_prefix(base_dir) {
+        viewer = viewer.default_implicit_uri_scheme(prefix);
+    }
+    viewer.show(ui, cache, source);
+}
+
+/// Base-URL prefix `egui_commonmark` prepends to any inline image destination that has no
+/// `scheme://` of its own (`![](img.png)` → `file://<base_dir>/img.png`) — the library's own
+/// documented mechanism for exactly this (`CommonMarkViewer::default_implicit_uri_scheme`).
+/// Decoding itself needs the `load-images` `egui_commonmark` feature (`egui_extras`'s `file` +
+/// `image` loaders, registered once by the library via `egui_extras::install_image_loaders`).
+///
+/// Known limitation: an *absolute* local image path (`![](/abs/img.png)`) also lacks a
+/// `scheme://`, so the library prepends this same `base_dir` prefix to it too — producing a
+/// bogus nested path instead of the intended absolute one. Remote (`http(s)://`) destinations
+/// already have a scheme so this prefix skips them, but they still won't load — the `fetch`
+/// feature (`egui_extras/http`) isn't enabled. Both are out of scope for now (base_dir-relative
+/// local images are the completion criterion); egui's file/image loaders report a load error
+/// inline rather than panicking, so both degrade gracefully instead of crashing.
+fn image_uri_prefix(base_dir: Option<&Path>) -> Option<String> {
+    let dir = base_dir?.to_string_lossy().replace('\\', "/");
+    Some(if dir.ends_with('/') {
+        format!("file://{dir}")
+    } else {
+        format!("file://{dir}/")
+    })
 }
 
 /// Map the design tokens onto the `Visuals`/text-style fields the library reads. Every color
@@ -308,5 +343,81 @@ mod tests {
         // consumed → hook back to false, no re-fire.
         assert_eq!(cache.get_link_hook("../sibling.md"), Some(false));
         assert_eq!(take_clicked_link(&mut cache, Some(&b)), None);
+    }
+
+    #[test]
+    fn image_uri_prefix_adds_trailing_slash() {
+        let dir = if cfg!(windows) {
+            PathBuf::from(r"C:\docs\md")
+        } else {
+            PathBuf::from("/docs/md")
+        };
+        let want = if cfg!(windows) {
+            "file://C:/docs/md/"
+        } else {
+            "file:///docs/md/"
+        };
+        assert_eq!(image_uri_prefix(Some(&dir)).as_deref(), Some(want));
+    }
+
+    #[test]
+    fn image_uri_prefix_preserves_existing_trailing_slash() {
+        assert_eq!(
+            image_uri_prefix(Some(Path::new("/docs/md/"))).as_deref(),
+            Some("file:///docs/md/")
+        );
+    }
+
+    #[test]
+    fn image_uri_prefix_none_without_base_dir() {
+        assert_eq!(image_uri_prefix(None), None);
+    }
+
+    /// Regression guard for the actual render path — not just the base_dir prefix string
+    /// (covered above), but the full `load-images` pipeline: `render()` → `egui_commonmark`
+    /// → `egui_extras` file+image loaders → decode → texture upload. A markdown source
+    /// referencing a real on-disk PNG by *relative* path is fed through `render()` inside a
+    /// throwaway `egui::Context` repeatedly (the file loader reads on a background thread, so
+    /// the first frame(s) are `Pending`) until a `[4,4]` texture — the fixture's exact pixel
+    /// size, distinguishing it from the font atlas — appears in the frame's `textures_delta`.
+    #[test]
+    fn relative_image_uploads_a_matching_texture() {
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let img_path = dir.path().join("dot.png");
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([220, 40, 40, 255]))
+            .save(&img_path)
+            .expect("write fixture png");
+
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut cache = MdCache::default();
+        let source = "![dot](dot.png)";
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut got_texture = false;
+        while Instant::now() < deadline {
+            let output = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    render(ui, &theme, 14.0, &mut cache, source, Some(dir.path()));
+                });
+            });
+            if output
+                .textures_delta
+                .set
+                .iter()
+                .any(|(_, delta)| delta.image.size() == [4, 4])
+            {
+                got_texture = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            got_texture,
+            "expected the fixture image to be decoded and uploaded as a [4,4] egui texture \
+             within the polling window"
+        );
     }
 }

@@ -17,6 +17,11 @@
 //!   (md-table-row-bg-zebra)·cell fg(md-table-cell-fg)만 노출 — header 밴드/불투명 base fill/
 //!   per-cell 8·4px 패딩은 라이브러리 Grid 로 도달 불가(heading 보간과 동류의 라이브러리 제약).
 //! - inline bold 는 text-primary(strong) 승격으로 신호(egui 합성 weight 없음).
+//!
+//! **인라인 이미지** (`![alt](path)`) — `egui_commonmark` 의 `load-images` feature +
+//! `render.rs` 의 base_dir 앵커로 상대경로 이미지를 실제로 로드해 그린다
+//! (`docs/plugins/markdown/index.md` "인라인 이미지" 절). 이 specimen 은 파일 I/O 없이
+//! placeholder rect 로 근사한다 — 아래 `image_block`.
 
 use std::cell::RefCell;
 
@@ -257,6 +262,9 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
                 "fn main() {\n    println!(\"hi from tasty\");\n}",
             );
 
+            heading(ui, theme, 3, "Image");
+            image_block(ui, theme, "Referenced with a relative path — resolved against the md file's own directory, e.g. ![alt](./screenshot.png).");
+
             heading(ui, theme, 3, "Table");
             table(ui, theme);
 
@@ -444,6 +452,40 @@ fn task_row(ui: &mut egui::Ui, theme: &Theme, mut done: bool, text: &str) {
         // checkbox 는 라벨까지 그려 주므로 라벨을 직접 넘긴다.
         checkbox(ui, theme, &mut done, text, false);
     });
+}
+
+/// 인라인 이미지 — 라이브러리가 실제로 그리는 raster 를 손으로 근사한다(갤러리는 파일
+/// I/O 를 하지 않는다). 실제 로드 경로: relative dest 는 plugin `render.rs` 가
+/// `CommonMarkViewer::default_implicit_uri_scheme` 로 base_dir 를 앵커해 `file://` URI 를
+/// 만들고, `egui_extras` file+image 로더(egui_commonmark 의 `load-images` feature)가 그
+/// URI 를 읽어 텍스처로 올린다. alt 텍스트는 라이브러리 기본값(`show_alt_text_on_hover`)
+/// 이 hover 툴팁으로 보여주지만, 정적 specimen 에서는 항상 보이는 캡션으로 대신 노출한다.
+fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {
+    let (w, h) = (200.0, 120.0);
+    egui::Frame::new()
+        .fill(theme.surface_raised().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .show(ui, |ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "image",
+                egui::FontId::monospace(theme.font_size_caption.value()),
+                theme.text_muted().to_egui(),
+            );
+        });
+    ui.add_space(theme.spacing_xs.value());
+    ui.label(rich(
+        theme,
+        alt,
+        theme.font_size_caption.value(),
+        theme.text_muted().to_egui(),
+    ));
 }
 
 fn code_block(ui: &mut egui::Ui, theme: &Theme, text: &str) {

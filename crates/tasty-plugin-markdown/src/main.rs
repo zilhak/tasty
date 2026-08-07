@@ -590,6 +590,7 @@ impl MarkdownPlugin {
                 load_error.as_deref(),
                 tr,
                 &file_path,
+                base_dir.as_deref(),
                 addr,
                 focused,
             );
@@ -644,6 +645,7 @@ impl MarkdownPlugin {
         };
         let content = doc.content.clone();
         let load_error = doc.load_error.clone();
+        let base_dir = doc.base_dir.clone();
         let file_path = doc.file_path.clone().unwrap_or_default();
 
         let addr = self.addr.entry(sid).or_default();
@@ -671,6 +673,7 @@ impl MarkdownPlugin {
                 load_error.as_deref(),
                 tr,
                 &file_path,
+                base_dir.as_deref(),
                 addr,
                 focused,
             );
@@ -1168,6 +1171,7 @@ fn draw(
     load_error: Option<&str>,
     tr: &Translator,
     file_path: &str,
+    base_dir: Option<&std::path::Path>,
     addr: &mut AddrState,
     focused: bool,
 ) {
@@ -1214,7 +1218,7 @@ fn draw(
                     state_empty(ui, theme, tr);
                     return;
                 }
-                render::render(ui, theme, body_px, cache, content);
+                render::render(ui, theme, body_px, cache, content, base_dir);
                 // Trailing space so the last line doesn't collide with the bottom margin.
                 vspace(ui, theme.spacing_sm);
             });
@@ -1381,7 +1385,8 @@ fn after_paint_side_effects(
     // 기존 mesh/cache 바인딩 재사용(origin egui_commonmark draw 시그니처: body_px + cache).
     let result = mesh.repaint_last(host, |egui_ctx| {
         draw(
-            egui_ctx, theme, body_px, cache, content, load_error, tr, file_path, addr, focused,
+            egui_ctx, theme, body_px, cache, content, load_error, tr, file_path, base_dir, addr,
+            focused,
         );
     });
     if let Err(e) = result {
