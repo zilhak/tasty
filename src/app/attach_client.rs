@@ -1628,8 +1628,12 @@ fn pending_op_focus_for(
 /// 전의 remote→local 매핑)과 병합한다 — survivor(= `old_map` 에 이미 있던 remote_id)는
 /// **기존 local id 를 재사용**(터미널을 재생성하지 않아 scrollback/grid 보존), 신규는
 /// 로컬 id 발급 + `make_mirror_surface`(터미널만), `old_map` 에는 있었지만 이번
-/// surfaces 에 없는 것은 mirror 터미널을 제거한다. `apply_mirror_structural_delta`(구조
-/// 변경 역반영)와 `reconnect_session`(재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고)이 공유하는 핵심 로직 — 두
+/// surfaces 에 없는 것은 mirror 터미널을 제거한다. survivor 라도 convert 로 kind 자체가
+/// 바뀌었으면(`Surface::kind()` 로 옛 kind 대조) 옛 kind 전용 로컬 리소스(Terminal
+/// 객체·busy state·mesh frame 캐시)를 즉시 정리하고 새 kind 가 terminal 이면
+/// `make_mirror_surface` 로 새로 만든다 — local id 는 그대로 유지한 채 리소스만 새
+/// kind 에 맞춘다. `apply_mirror_structural_delta`(구조 변경 역반영)와 `reconnect_session`
+/// (재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고)이 공유하는 핵심 로직 — 두
 /// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
 /// 구조적으로 동일하다.
 fn merge_survivor_mapping(
@@ -1654,8 +1658,50 @@ fn merge_survivor_mapping(
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let role = s.get("role").and_then(|v| v.as_str());
         let is_terminal = role == Some("terminal");
+        // 이번 delta 가 실어보낸 실제 kind — client 가 그 role 에 대해 실제로 구성할
+        // `Surface::kind()` 값과 1:1 대응(아래 survivor 분기의 "바뀌었는가" 판정 기준).
+        // terminal/explorer 는 role 자체가 kind, mesh 는 서버가 함께 보낸 kind 필드,
+        // 나머지(placeholder — 비-whitelist mesh 포함)는 client 가 `EmptySurface`
+        // ("empty")로 구성한다.
+        let new_kind: &str = if is_terminal {
+            "terminal"
+        } else if role == Some("mesh") {
+            s.get("kind").and_then(|v| v.as_str()).unwrap_or("mesh")
+        } else if role == Some("explorer") {
+            "explorer"
+        } else {
+            "empty"
+        };
         let local_id = match old_map.get(&remote_id) {
-            Some(&l) => l, // survivor — 기존 local id 재사용(터미널/mesh 프레임 캐시 유지).
+            Some(&l) => {
+                // survivor — local id 는 그대로 재사용(터미널/mesh 프레임 캐시 유지).
+                // 단, convert 로 kind 자체가 바뀐 survivor 는 옛 kind 에 종속된 로컬
+                // 리소스가 새 kind 와 안 맞게 된다 — 즉시 정리/생성하지 않으면 이 surface
+                // 가 나중에 닫힐 때까지 orphan Terminal 객체(입력 forwarder 스레드 포함)
+                // 나 stale mesh frame 캐시, busy state 가 그대로 남는다.
+                let old_kind = engine.find_surface_by_id(l).map(|s| s.kind());
+                if old_kind != Some(new_kind) {
+                    if old_kind == Some("terminal") {
+                        // terminal → 다른 kind: 옛 Terminal(+ 입력 forwarder) 과 busy
+                        // state 는 새 kind 와 무관해졌으니 제거.
+                        engine.terminals.remove(l);
+                        engine.forget_mirror_surface_busy(l);
+                    }
+                    // 옛 kind 가 뭐였든, 캐시된 mesh frame 은 새 kind 의 것이 아니므로
+                    // 버린다 — 새 frame 이 도착하기 전까지 옛 kind 의 화면이 잠깐이라도
+                    // 그려지는 걸 막는다.
+                    engine.attach_mesh_frames.remove(l);
+                    if is_terminal {
+                        // 다른 kind → terminal: 이 local_id 는 지금까지 Terminal 객체가
+                        // 없었다(mesh/explorer/placeholder 였으므로) — 새로 만들어야
+                        // 입력 forwarding 이 동작한다(신규 survivor 와 동일한 생성 경로).
+                        let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                        let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+                        make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
+                    }
+                }
+                l
+            }
             None => {
                 let l = ids.next_surface();
                 if is_terminal {
@@ -3658,6 +3704,151 @@ mod tests {
         assert_eq!(
             mesh[&local_11].display_name, "image",
             "display_name 필드가 없으면 kind 로 fallback 해야 한다"
+        );
+    }
+
+    /// convert 로 kind 가 바뀐 survivor(terminal → mesh)는 local id 를 유지하면서도
+    /// 옛 kind 전용 로컬 리소스(Terminal 객체·mesh frame 캐시)를 즉시 정리해야 한다 —
+    /// 안 그러면 surface 가 나중에 닫힐 때까지 orphan 으로 남는다(Gate4 리뷰 판단필요
+    /// 항목).
+    #[test]
+    fn merge_survivor_mapping_cleans_up_stale_terminal_on_convert_to_mesh() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        // engine 이 이미 소비한 id 와 안 겹치도록 engine 자신의 발급기를 공유한다
+        // (production 경로 `apply_mirror_structural_delta` 와 동일 — 독립된
+        // `IdGenerator::new()` 는 기본 workspace 의 default surface id 와 충돌한다).
+        let ids = engine.next_ids.clone();
+        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        // 1차: remote 10 이 terminal 로 mirror 세션에 들어온다.
+        let surfaces_v1 = vec![serde_json::json!({
+            "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
+        })];
+        let (map1, term1, mesh1, explorer1, _new1) =
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+        let local_10 = map1[&10];
+        assert!(
+            engine.terminals.get(local_10).is_some(),
+            "최초 terminal survivor 는 Terminal 을 만들어야 한다"
+        );
+        // 정리가 실제로 동작하는지 확실히 보려고 mesh frame 캐시도 하나 심어둔다.
+        engine
+            .attach_mesh_frames
+            .update(local_10, vec![1, 2, 3], 1, 1, true);
+
+        // production 경로(`apply_mirror_structural_delta`)와 동일하게 트리에 반영해야
+        // 다음 호출의 `find_surface_by_id` 로 "옛 kind" 를 조회할 수 있다.
+        let tree = serde_json::json!({
+            "id": 9, "name": "mirror", "focused_pane": 7,
+            "panes": [ {
+                "id": 7,
+                "tabs": [ {
+                    "id": 3, "name": "Shell", "active": true, "focused_surface": 10,
+                    "layout": { "type": "Leaf", "id": 10, "kind": "terminal" }
+                } ]
+            } ]
+        });
+        let mut ws = build_mirror_workspace(
+            999, "mirror", &tree, &ids, &map1, &term1, &mesh1, &explorer1,
+        );
+        ws.mirror = true;
+        engine.workspaces.push(ws);
+
+        // 2차: 같은 remote_id(10) 가 markdown 으로 convert.
+        let surfaces_v2 = vec![serde_json::json!({
+            "remote_id": 10,
+            "role": "mesh",
+            "kind": "markdown",
+            "plugin_id": "com.tasty.markdown",
+            "display_name": "a.md",
+        })];
+        let (map2, term2, mesh2, _explorer2, new2) =
+            merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+
+        assert_eq!(
+            map2[&10], local_10,
+            "local id 는 convert 후에도 유지돼야 한다"
+        );
+        assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
+        assert!(
+            !term2.contains(&local_10),
+            "markdown 으로 바뀐 뒤에는 더 이상 terminal_locals 에 없어야 한다"
+        );
+        assert!(
+            mesh2.contains_key(&local_10),
+            "mesh_locals 에는 새로 등록돼야 한다"
+        );
+        assert!(
+            engine.terminals.get(local_10).is_none(),
+            "옛 Terminal 객체는 즉시 제거돼야 한다"
+        );
+        assert!(
+            engine.attach_mesh_frames.get(local_10).is_none(),
+            "옛(terminal 시절의 무의미한) mesh frame 캐시도 제거돼야 한다"
+        );
+    }
+
+    /// convert 로 kind 가 바뀐 survivor(mesh → terminal)는 지금까지 Terminal 객체가
+    /// 없었으므로(mesh 였으므로) 새로 만들어야 입력 forwarding 이 동작한다 — 신규
+    /// survivor 와 동일한 생성 경로(`make_mirror_surface`)를 타는지 확인.
+    #[test]
+    fn merge_survivor_mapping_creates_terminal_when_mesh_survivor_converts_to_terminal() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        // 독립된 `IdGenerator::new()` 는 기본 workspace 의 default surface id 와
+        // 충돌한다 — engine 자신의 발급기를 공유한다(production 경로와 동일).
+        let ids = engine.next_ids.clone();
+        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        let surfaces_v1 = vec![serde_json::json!({
+            "remote_id": 20,
+            "role": "mesh",
+            "kind": "markdown",
+            "plugin_id": "com.tasty.markdown",
+            "display_name": "a.md",
+        })];
+        let (map1, term1, mesh1, explorer1, _new1) =
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+        let local_20 = map1[&20];
+        assert!(
+            engine.terminals.get(local_20).is_none(),
+            "mesh survivor 는 애초에 Terminal 이 없어야 한다"
+        );
+
+        let tree = serde_json::json!({
+            "id": 9, "name": "mirror", "focused_pane": 7,
+            "panes": [ {
+                "id": 7,
+                "tabs": [ {
+                    "id": 3, "name": "a.md", "active": true, "focused_surface": 20,
+                    "layout": { "type": "Leaf", "id": 20, "kind": "markdown" }
+                } ]
+            } ]
+        });
+        let mut ws = build_mirror_workspace(
+            999, "mirror", &tree, &ids, &map1, &term1, &mesh1, &explorer1,
+        );
+        ws.mirror = true;
+        engine.workspaces.push(ws);
+
+        let surfaces_v2 = vec![serde_json::json!({
+            "remote_id": 20, "role": "terminal", "cols": 80, "rows": 24,
+        })];
+        let (map2, term2, _mesh2, _explorer2, new2) =
+            merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+
+        assert_eq!(
+            map2[&20], local_20,
+            "local id 는 convert 후에도 유지돼야 한다"
+        );
+        assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
+        assert!(term2.contains(&local_20));
+        assert!(
+            engine.terminals.get(local_20).is_some(),
+            "mesh → terminal convert 는 새 Terminal 을 만들어야 한다(안 그러면 입력이 안 감)"
         );
     }
 }
