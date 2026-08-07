@@ -180,6 +180,10 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - [ ] Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
 - [ ] Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
 - [ ] Given workspace attach 대상에 bundled egui-mesh surface(markdown/image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님).
+  - [x] markdown — `tests/attach_markdown_mesh_mirror_loopback.rs`. workspace-mode attach 로 구독 성립 + `MeshData` 프레임 도달까지만 **프로토콜 레벨**로 검증(raw `TcpStream` client 가 바이트를 재조립·디코드해 primitive 가 비어있지 않음을 확인). 실제 GUI mirror client 가 mirror pane 에 픽셀로 그리는 것(시각적 렌더)은 검증하지 않는다.
+  - [ ] image — 미검증.
+  - [ ] mesh_demo — 미검증.
+  - [ ] 3종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
 - [ ] Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
 - [ ] Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 
