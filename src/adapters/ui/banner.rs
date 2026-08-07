@@ -498,7 +498,7 @@ impl BannerManager {
 
 /// `draw` 결과 — 입력 레이어 배선용. `hovered` 가 true 면 마우스가 배너 위라
 /// 하위 레이어(터미널/divider)로 전파를 막아야 한다(`AppState.banner_hovered`).
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct BannerDrawResult {
     pub hovered: bool,
     /// 이번 프레임에 "더보기"(⋯) 트리거가 클릭된 배너의 스코프 + 트리거 버튼
@@ -506,6 +506,11 @@ pub struct BannerDrawResult {
     /// 가 `AppState` 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다 — `BannerManager`
     /// 자신은 `AppState` 를 모르므로 여기서 요청만 실어낸다.
     pub more_clicked: Option<(BannerScope, egui::Rect)>,
+    /// 이번 프레임에 그린 `banner_layer` Area 의 `LayerId` — 배너가 0개여도 매 프레임
+    /// 무조건 빈 Area 를 그리므로 항상 채워진다. 중앙 집중식 z-order 강제
+    /// (`enforce_foreground_z_order`, `src/gfx/gpu/egui_bridge.rs`)가 `set_sublayer` 로
+    /// status_bar/tab_bar 를 이 레이어 위에 고정할 때 부모로 쓴다.
+    pub layer: egui::LayerId,
 }
 
 /// 배너 셸 한 장을 그린다 — surface-raised fill + 1px border-strong + radius-8 +
@@ -814,6 +819,7 @@ impl BannerManager {
         BannerDrawResult {
             hovered: hovered_any,
             more_clicked,
+            layer: egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer")),
         }
     }
 

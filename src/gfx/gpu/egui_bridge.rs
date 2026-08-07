@@ -23,6 +23,75 @@ pub(super) fn term_font_signature(font: &EffectiveFont, effective_size: f32) -> 
     )
 }
 
+/// Foreground 티어 chrome 레이어의 상대 z-order를 매 프레임 강제한다.
+///
+/// egui 의 `Order` 는 5단 고정 tier 이고, 같은 tier 안에서는
+/// `Memory::Areas::order`(Vec, 안정 정렬)가 실제 그리기 순서를 정한다.
+/// `Context::move_to_top` 은 "이번 프레임엔 맨 위 그룹" 플래그를 세우거나 신규
+/// LayerId 를 등록할 뿐이라, **이미 등록된** 레이어 여러 개에 매 프레임
+/// 반복 호출해도 서로 tie 로 묶여 안정 정렬을 타므로 상대 위치가 바뀌지
+/// 않는다 — 결과적으로 상대 순서는 각 레이어가 세션 중 *최초로* 등록된
+/// 시점(자연 호출 순서)에 영구히 고정된다. 배너가 tab_bar/status_bar 보다
+/// 나중에(`ui::draw_popups` 내부에서) 처음 등록되기 때문에, 단순히 4개
+/// 레이어에 순서대로 `move_to_top` 을 호출하는 것만으로는 배너를 tab_bar/
+/// status_bar 아래로 내릴 수 없다.
+///
+/// 대신 `Context::set_sublayer(parent, child)` — `end_pass` 가 안정 정렬 *이후*
+/// child 를 parent 위치 바로 뒤(=parent 바로 위)로 splice 하는, 등록 시점과
+/// 무관한 강제 인접 배치 — 를 조합해 계층을 만든다. 단, 이 API 는 1단
+/// 들여쓰기만 지원한다(parent 가 다른 sublayer 의 child 이면 동작 unspecified,
+/// egui 소스 주석) — 그래서 아래 두 그룹은 서로 겹치지 않게 나눈다:
+///
+/// - `banner_layer` 를 부모로, `status_bar`/각 pane 의 tab_bar 를 자식으로 묶어
+///   Banner < {status_bar, tab_bar} 를 등록 시점과 무관하게 고정한다.
+/// - `modifier_hint` 가 떠 있으면 그것을 부모로, 열려 있는 모든 popup 레이어를
+///   자식으로 묶어 Modifier-hint < Popup 을 고정한다.
+///
+/// 두 그룹의 부모끼리(`banner_layer` ↔ `modifier_hint`)는 서로를 sublayer로
+/// 엮지 않는다(엮으면 2단 들여쓰기가 되어 위 unspecified 제약에 걸린다). 대신
+/// 자연 등록 순서에 안전하게 의존한다: `banner_layer` 는 배너가 0개여도 매
+/// 프레임 무조건 그려지므로 앱 시작 첫 프레임에 반드시 등록되는 반면,
+/// `modifier_hint` 는 사용자가 modifier 를 처음 누르는 프레임에야 처음
+/// 등록된다 — 항상 banner 보다 늦게 등록되므로 안정 정렬에서 영구히 더 위(늦은
+/// 위치)에 남는다.
+///
+/// 결과: `docs/architecture/input-layer.md` 정책의
+/// Banner(5) < egui위젯(4) < Modifier-hint(2b) < Popup(2) 관계가 그대로
+/// 재현된다. Modal(1) 은 별도 OS 창이라 범위 밖, Divider/Terminal(6/7) 은 다른
+/// `Order` tier 라 범위 밖이다.
+///
+/// `AppState` 전체가 아니라 관련된 3 개 레이어 값만 받는다 — 헤드리스
+/// `egui::Context` + 단정된 레이어 3~4 개만으로 [`tests`] 가 `AppState`/
+/// `CoreState` 구성 없이 정책을 직접 assert 할 수 있게 하기 위한 의도적 축소다.
+fn enforce_foreground_z_order(
+    ctx: &egui::Context,
+    banner_layer: Option<egui::LayerId>,
+    modifier_hint_layer: Option<egui::LayerId>,
+    popup_layers: &[egui::LayerId],
+    pane_rects: &[(u32, PhysicalRect)],
+) {
+    if let Some(banner_layer) = banner_layer {
+        let status_bar_layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("workspace_status_bar"),
+        );
+        ctx.set_sublayer(banner_layer, status_bar_layer);
+        for (pane_id, _) in pane_rects {
+            let tab_bar_layer = egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new(format!("pane_tabs_{pane_id}")),
+            );
+            ctx.set_sublayer(banner_layer, tab_bar_layer);
+        }
+    }
+
+    if let Some(modifier_hint_layer) = modifier_hint_layer {
+        for popup_layer in popup_layers {
+            ctx.set_sublayer(modifier_hint_layer, *popup_layer);
+        }
+    }
+}
+
 impl GpuState {
     #[allow(clippy::too_many_arguments)] // reason: frame context 전체 전달
     pub(super) fn run_egui_frame(
@@ -52,6 +121,13 @@ impl GpuState {
             ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
+            enforce_foreground_z_order(
+                ctx,
+                state.banner_layer,
+                state.modifier_hint_layer,
+                &state.popup_layers,
+                pane_rects,
+            );
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
             crate::plugin_bridge::popup_render::draw_plugin_popups(
                 ctx,
@@ -250,6 +326,157 @@ impl GpuState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_type_geometry::length::PhysicalPx;
+
+    /// 헤드리스 `egui::Context` 에 지정한 rect 로 interactable Foreground Area 를
+    /// 하나 등록한다. `ctx.run(...)` 클로저 안에서 호출해야 한다.
+    fn register_area(ctx: &egui::Context, name: &str, rect: egui::Rect) {
+        egui::Area::new(egui::Id::new(name))
+            .order(egui::Order::Foreground)
+            .fixed_pos(rect.min)
+            .interactable(true)
+            .sense(egui::Sense::hover())
+            .show(ctx, |ui| {
+                ui.allocate_exact_size(rect.size(), egui::Sense::hover());
+            });
+    }
+
+    fn layer_of(name: &str) -> egui::LayerId {
+        egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name))
+    }
+
+    fn dummy_pane_rect(pane_id: u32) -> (u32, PhysicalRect) {
+        (
+            pane_id,
+            PhysicalRect {
+                x: PhysicalPx(0.0),
+                y: PhysicalPx(0.0),
+                width: PhysicalPx(10.0),
+                height: PhysicalPx(10.0),
+            },
+        )
+    }
+
+    /// egui `Areas::order` 의 안정 정렬은 "최초 등록 시점" 순서를 tie-break 로 쓴다
+    /// (본 파일 `enforce_foreground_z_order` 의 doc 참고) — 그래서 실제 앱의 자연
+    /// 호출 순서(status_bar/tab_bar 가 banner 보다 먼저 등록됨, `run_egui_frame`)를
+    /// 그대로 재현해야 이 테스트가 "고치기 전엔 실패했을" 시나리오를 검증한다.
+    /// 순서를 바꿔 등록하면(banner 를 먼저 등록) 우연히 통과해 회귀를 못 잡는다.
+    #[test]
+    fn banner_is_pinned_below_status_bar_and_tab_bar() {
+        let ctx = egui::Context::default();
+        let status_point = egui::pos2(5.0, 5.0);
+        let tab_point = egui::pos2(50.0, 5.0);
+        let status_rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(10.0, 10.0));
+        let tab_rect = egui::Rect::from_min_size(egui::pos2(45.0, 0.0), egui::vec2(10.0, 10.0));
+        // banner 는 화면 전체를 덮는 하나의 zone 이므로 두 지점 모두와 겹친다.
+        let banner_rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 10.0));
+
+        // FullOutput 불필요 — 이 테스트는 order/z-stack 결과만 확인한다.
+        let _ = ctx.run(Default::default(), |ctx| {
+            // 실제 draw 순서(run_egui_frame): tab_bar/status_bar 먼저, banner 는
+            // draw_popups 내부에서 나중에 등록된다.
+            register_area(ctx, "workspace_status_bar", status_rect);
+            register_area(ctx, "pane_tabs_1", tab_rect);
+            register_area(ctx, "banner_layer", banner_rect);
+
+            enforce_foreground_z_order(
+                ctx,
+                Some(layer_of("banner_layer")),
+                None,
+                &[],
+                &[dummy_pane_rect(1)],
+            );
+        });
+
+        assert_eq!(
+            ctx.layer_id_at(status_point),
+            Some(layer_of("workspace_status_bar")),
+            "status_bar 가 banner 위에 그려져야 한다"
+        );
+        assert_eq!(
+            ctx.layer_id_at(tab_point),
+            Some(layer_of("pane_tabs_1")),
+            "tab_bar 가 banner 위에 그려져야 한다"
+        );
+    }
+
+    /// `enforce_foreground_z_order` 를 호출하지 않으면(수정 전 상태와 동일) banner 가
+    /// 자연 등록 순서상 나중이라 위에 그려진다 — 위 테스트가 실제로 이 문제를 잡아내는
+    /// 테스트임을 보여주는 characterization test.
+    #[test]
+    fn without_enforcement_banner_naturally_ends_up_on_top() {
+        let ctx = egui::Context::default();
+        let point = egui::pos2(5.0, 5.0);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(10.0, 10.0));
+
+        // FullOutput 불필요 — 이 테스트는 order/z-stack 결과만 확인한다.
+        let _ = ctx.run(Default::default(), |ctx| {
+            register_area(ctx, "workspace_status_bar", rect);
+            register_area(ctx, "banner_layer", rect);
+            // enforce_foreground_z_order 호출 없음.
+        });
+
+        assert_eq!(
+            ctx.layer_id_at(point),
+            Some(layer_of("banner_layer")),
+            "강제 없이는 나중에 등록된 banner 가 위에 그려진다(수정 전 버그 재현)"
+        );
+    }
+
+    /// popup 을 먼저 열어 두고 그 뒤에 modifier 를 처음 홀드하는 순서 — popup 의
+    /// `LayerId` 가 modifier-hint 보다 먼저 등록되므로, 자연 등록 순서만 믿으면
+    /// modifier-hint 가 popup 위로 올라간다(정책 위반). `set_sublayer` 는 등록
+    /// 시점과 무관하게 강제하므로 이 순서에서도 popup 이 위여야 한다.
+    #[test]
+    fn modifier_hint_is_pinned_below_popup_even_when_popup_registers_first() {
+        let ctx = egui::Context::default();
+        let point = egui::pos2(5.0, 5.0);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(10.0, 10.0));
+
+        // FullOutput 불필요 — 이 테스트는 order/z-stack 결과만 확인한다.
+        let _ = ctx.run(Default::default(), |ctx| {
+            register_area(ctx, "popup_instance", rect);
+            register_area(ctx, "modhint_layer", rect);
+
+            enforce_foreground_z_order(
+                ctx,
+                None,
+                Some(layer_of("modhint_layer")),
+                &[layer_of("popup_instance")],
+                &[],
+            );
+        });
+
+        assert_eq!(
+            ctx.layer_id_at(point),
+            Some(layer_of("popup_instance")),
+            "popup 이 modifier-hint 위에 그려져야 한다(등록 순서가 반대여도)"
+        );
+    }
+
+    /// `enforce_foreground_z_order` 없이는 위 순서(popup 먼저, modifier-hint 나중)에서
+    /// modifier-hint 가 자연스럽게 위로 올라간다 — 위 테스트가 실제로 이 케이스를
+    /// 잡아내는 테스트임을 보여주는 characterization test.
+    #[test]
+    fn without_enforcement_later_popup_registration_order_flips_modifier_hint_on_top() {
+        let ctx = egui::Context::default();
+        let point = egui::pos2(5.0, 5.0);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(10.0, 10.0));
+
+        // FullOutput 불필요 — 이 테스트는 order/z-stack 결과만 확인한다.
+        let _ = ctx.run(Default::default(), |ctx| {
+            register_area(ctx, "popup_instance", rect);
+            register_area(ctx, "modhint_layer", rect);
+            // enforce_foreground_z_order 호출 없음.
+        });
+
+        assert_eq!(
+            ctx.layer_id_at(point),
+            Some(layer_of("modhint_layer")),
+            "강제 없이는 나중에 등록된 modifier-hint 가 popup 위로 올라간다"
+        );
+    }
 
     fn base_font() -> EffectiveFont {
         EffectiveFont {

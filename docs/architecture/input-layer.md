@@ -55,6 +55,86 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 | Terminal | Text |
 | 그 외 surface | None(시스템 기본) |
 
+## 구현 메커니즘 — 렌더링 z-order 가 위 정책과 어긋나지 않으려면
+
+위 표는 **입력 소비** 순서다. 이 순서가 뜻대로 동작하려면 **렌더링** z-order 가 먼저 그 순서와 일치해야 한다(가려진 레이어가 입력을 가로채면 안 되므로). egui 는 CSS `z-index` 같은 임의 값이 없어, 이 절은 tasty 가 렌더링 z-order 를 그 값 없이 어떻게 강제하는지 기술한다.
+
+### (a) `Order` — 5단 고정 tier
+
+egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` / `Debug`, egui 0.31.1 `layers.rs`)으로 그리기 순서를 5단으로 고정한다 — **enum 선언 순서 그대로**, 매 프레임 무조건 그 순서로 그린다. tasty 의 Popup/Modifier-hint/Banner/egui 위젯(사이드바·탭바·상태바)은 전부 `Order::Foreground` 한 tier 안에 있다 — 즉 위 표의 1(모달 제외)·2·2b·4·5 는 **같은 tier 안에서** 상대 순서를 가려야 하는 문제고, `Order` 만으로는 해결되지 않는다. Divider/Terminal(6/7)은 다른 tier(`Middle` 이하)라 애초에 범위 밖이다.
+
+### (b) 같은 tier 안의 순서 — `Areas::order` + `move_to_top`
+
+같은 `Order` tier 안에서는 `Memory::Areas::order: Vec<LayerId>`(egui 내부, `memory/mod.rs`)가 실제 그리는 순서를 정한다 — 이 Vec 의 **뒤쪽일수록 나중에 그려져 위에 보인다**. 이 Vec 에 편입되려면 그 레이어가 **`egui::Area`로 등록**돼야 하고(`.show(ctx, ...)` 호출 시 내부적으로 `move_to_top` 또는 `set_state`가 `order.push`), 등록된 레이어끼리는 매 프레임 `end_pass()`가 `order.sort_by_key(|l| (l.order, wants_to_be_on_top.contains(l)))`(안정 정렬)로 재배치한다. `Context::move_to_top(layer_id)`(`ctx.move_to_top`)를 호출하면 그 프레임에 "맨 위로" 플래그(`wants_to_be_on_top`)가 서고, 이미 등록된 id 면 그 프레임의 정렬에서 플래그 안 선 다른 레이어들보다 뒤(위)로 간다.
+
+**주의 — `move_to_top` 을 여러 레이어에 순서대로 반복 호출해도, 그 여러 레이어 "끼리의" 상대 순서는 바뀌지 않는다.** 안정 정렬은 플래그가 같은(모두 true) 레이어들을 **서로 tie** 로 묶어, 그 tie 안에서는 각 레이어가 세션 중 **최초로 등록된** 시점의 상대 순서를 그대로 유지한다. 즉 "4개 레이어에 A→B→C→D 순서로 `move_to_top` 을 매 프레임 호출하면 A<B<C<D 계층이 만들어진다"는 직관은 **egui 0.31.1 에서 성립하지 않는다** — 실제로 성립하려면 그 레이어들이 서로 다른 `wants_to_be_on_top` 상태(일부만 true)여야 한다.
+
+### (c) 미등록 레이어 함정
+
+`egui::Area` 로 등록되지 **않은** 레이어(`ctx.layer_painter(layer_id)` 로 얻은 raw painter — `Areas::order` 에 전혀 없음)는 `GraphicLayers::drain()` 이 같은 tier 안에서 **등록된 레이어를 전부 그린 다음** 그린다 — 즉 등록 여부와 무관하게, 미등록 레이어는 그 tier 안에서 **항상 최상단**에 고정된다. 원래 배너(`banner.rs`, 커밋 `f51e8caa`)와 이번에 고친 Modifier-hint(`modifier_hint_overlay.rs`)가 각각 이 함정에 걸려 있었다 — 둘 다 `egui::Ui::new(...).layer_id(layer_id)` 로 bare `Ui` 를 직접 만들어 그렸을 뿐 `egui::Area::new(...).show()` 를 거치지 않았다. 두 경우 모두 **호출 순서를 바꿔도 고쳐지지 않는다** — 미등록인 한 항상 위다.
+
+### (d) tasty 의 중앙 집중식 강제 — `enforce_foreground_z_order`
+
+`src/gfx/gpu/egui_bridge.rs::enforce_foreground_z_order`(`run_egui_frame` 안 `ui::draw_popups` 직후, 매 프레임 1회 호출)가 Foreground tier 안 Banner/egui위젯(상태바·탭바)/Modifier-hint/Popup 4 레이어의 상대 순서를 강제한다. (b)의 한계 — `move_to_top` 반복 호출로는 4단 계층을 못 만든다 — 때문에, 실제로는 `Context::set_sublayer(parent, child)`(`end_pass` 가 안정 정렬 *이후* child 를 parent 위치 바로 뒤로 splice — 등록 시점과 무관한 강제 인접 배치, egui 내부적으로 `Window` 안 하위 `Area` 배치에 쓰는 것과 같은 API)를 조합한다:
+
+- `banner_layer` 를 부모로, `status_bar`/각 pane 의 `tab_bar` 를 자식으로 묶어 **Banner < {상태바, 탭바}** 를 등록 시점과 무관하게 고정한다.
+- `modifier_hint` 가 떠 있으면 그것을 부모로, 열려 있는 모든 popup 레이어를 자식으로 묶어 **Modifier-hint < Popup** 을 고정한다.
+- 두 그룹의 부모끼리(`banner_layer` ↔ `modifier_hint`)는 서로를 엮지 않는다 — `set_sublayer` 는 **1단 들여쓰기만** 지원해 parent 가 다른 sublayer 의 child 이면 동작이 egui 문서상 unspecified(실측: `Areas::end_pass` 가 `sublayers` HashMap 을 순회하는 순서에 좌우돼 비결정적으로 깨질 수 있음)이기 때문이다. 대신 자연 등록 순서에 안전하게 의존한다 — `banner_layer` 는 배너가 0개여도 매 프레임 무조건 그려져 앱 시작 첫 프레임에 반드시 등록되는 반면, `modifier_hint` 는 사용자가 modifier 를 처음 누르는 프레임에야 등록된다. 항상 banner 보다 늦게 등록되므로, 안정 정렬에서 영구히 더 위(늦은 위치)에 남는다.
+
+결과적으로 Banner(5) < {상태바·탭바}(4) < Modifier-hint(2b) < Popup(2) 이 재현된다. Modal(1)은 별도 OS 창이라 범위 밖, Divider/Terminal(6/7)은 다른 `Order` tier 라 범위 밖이다.
+
+**실측 확인**(`.claude-workspace/` 임시 debug 인스턴스 + `tasty screenshot` CLI):
+- Popup(`debug.host_popup.open`)과 Modifier-hint(`debug.modifier_hint.hold`)를 창 크기를 줄여 강제로 겹치게 배치 → Popup 이 Modifier-hint 위에 그려짐(가려진 keycap 만 가장자리에 남음).
+- Banner(`debug.banner.show --scope view`)는 View 스코프 플레이스홀더가 탭 행과 겹쳐 뜬다 — 탭 칩(`zilhak@...`)이 배너 카드 위에 온전히 그려짐(A/B 비교: `enforce_foreground_z_order` 호출을 임시로 빼면 탭 칩이 배너에 완전히 가려짐 — 재삽입하면 복구). 상태바도 탭바와 동일한 `set_sublayer(banner_layer, ...)` 관계라 같은 메커니즘이 적용된다. Banner 와 상태바가 **기하적으로 직접 겹치는** 배치는 만들 수 없었다 — Banner 의 zone 은 항상 탭바 하단에서 시작해 화면 끝까지 뻗지만 카드 자체는 zone 상단에 고정 높이로만 그려지고 `set_clip_rect(zone)` 로 그 밖으로 넘치지 않아, 카드가 화면 하단(상태바 행)까지 물리적으로 닿을 방법이 없다(정상 동작 — 버그 아님).
+- Popup 단독 / Banner 단독 / Modifier-hint 단독 회귀 확인 — 셋 다 기존과 동일하게 정상 렌더.
+
+### 레이어별 Order/Area 등록 현황 (조사 결과)
+
+| # | 레이어 | `Order` | `egui::Area` 등록 | 상태 |
+|---|--------|---------|---------------------|------|
+| 1 | 모달/오버레이(`overlay_open`) | 해당없음 | 별도 OS 윈도우 — Area 개념 자체가 적용 안 됨 | **해소됨** — mouse.rs 의 `overlay_open` 정의 차이는 조사 결과 의도된 설계(위 "`overlay_open`" 절)로 결론. rename 다이얼로그는 popup 시스템 경로라 #2 와 동일 |
+| 2 | Popup | Foreground | 등록됨 | 이상 없음(기존부터 정상) |
+| 2 (예외) | `plugin_bridge/popup_render.rs` egui-mesh popup 셸 | Foreground | 미등록(raw `layer_painter`) | **해소됨** — 의도적 예외로 확정(위 "`plugin_bridge/popup_render.rs`" 절), 코드 변경 없음 |
+| 2b | Modifier-hint 오버레이 | Foreground | 미등록 → **등록함** | **해소됨** — `modifier_hint_overlay.rs` 를 `egui::Area` 로 등록하도록 수정 |
+| 4 | egui 위젯(사이드바·탭바·상태바) | 혼재(SidePanel=Background 미등록 / tab_bar·status_bar=Foreground 등록) | — | tab_bar/status_bar 는 이상 없음(기존부터 정상). SidePanel 은 Background tier 라 이번 범위 밖(아래 "Background tier" 절) |
+| 5 | Banner | Foreground | 등록됨(`f51e8caa`, 이번 작업 이전 완료) | `enforce_foreground_z_order` 로 상태바/탭바보다 아래 고정 — **해소됨** |
+| 6 | Divider | Middle | 미등록, raw painter | 범위 밖(다른 tier) — 조사 결과 표의 "6번"은 렌더 레이어 경쟁이 아니라 `mouse.rs` 의 좌표 기반 입력 우선순위로 확인, 변경 불필요 |
+| 7 | Terminal/Surface | 터미널=Order 밖 / 비터미널=Background | 비터미널만 등록 | 범위 밖(다른 tier) |
+
+**순서 불일치 가능성이 있던 3쌍의 결론**:
+
+1. **Popup vs Modifier-hint** — 실측 결과 **불일치 확정 → 이번 작업에서 수정**(Modifier-hint Area 등록 + `enforce_foreground_z_order` 의 `set_sublayer(modifier_hint, popup)`). 수정 후 재실측으로 Popup 이 위에 그려짐을 확인(위 "실측 확인" 절).
+2. **Banner vs status_bar/tab_bar** — 실측 결과 **불일치 확정(A/B 비교로 재현) → 이번 작업에서 수정**(`enforce_foreground_z_order` 의 `set_sublayer(banner_layer, status_bar/tab_bar)`). status_bar 와의 직접 겹침 배치는 못 만들었으나(위 "실측 확인" 절 — zone/clip_rect 구조상 불가능), tab_bar 와는 동일 메커니즘·동일 부모 관계로 실측 완료.
+3. **Background tier(SidePanel bare 배경 vs Explorer/Markdown/Html 등록)** — 조사 결과 **현재는 겹치는 배치가 존재하지 않아 실측 불가/불필요**로 결론(위 "Background tier" 절). 잠재 위험은 남아 있으므로 겹치는 시나리오가 생기면 이 문서의 (b)~(d) 메커니즘을 적용한다.
+
+### Background tier(사이드바 SidePanel·Explorer·Markdown·Html)는?
+
+이번 구현 범위 밖이다. 이 레이어들은 `Order::Background` 라 위 (a)~(d)와 같은 tier 충돌이 없다 — `Background` tier 안에 서로 겹치는 여러 등록 레이어가 동시에 뜨는 시나리오 자체가 현재 없다(SidePanel 은 고정 도킹, Explorer/Markdown/Html 은 각자 자기 pane/tab 영역에만 그려져 서로 겹치지 않는다). 겹치는 시나리오가 생기면(예: plugin 이 Background tier 에 자유 위치 오버레이를 추가) 이 절의 (b)~(d) 메커니즘을 그대로 적용할 수 있다.
+
+### `plugin_bridge/popup_render.rs` — 의도적 예외
+
+`draw_plugin_popups`(egui-mesh popup 셸, `Id::new("plugin_mesh_popup").with(instance_id)`)도 `ctx.layer_painter(layer_id)` 로 그리는 미등록 레이어라 (c)의 대상처럼 보이지만, **의도적으로 Area 등록하지 않는다**:
+
+- 이 popup 은 스크린 전체를 덮는 scrim(`painter.rect_filled(screen_rect, ...)`)을 그려 모달처럼 동작한다 — 열려 있는 동안 Foreground tier 의 다른 무엇보다도 위에 있는 것이 올바른 동작이고, 미등록 상태(= 항상 tier 최상단)가 정확히 그 성질을 공짜로 준다.
+- Area 등록하면서 `enforce_foreground_z_order` 의 4개 대상에 넣지 않으면, 오히려 자연 등록 시점에 따라 이 popup 이 Banner/상태바보다 **아래**로 밀릴 위험이 생긴다(회귀).
+- 인터랙션도 다르다 — egui 위젯 트리가 없고 입력을 raw event 로 모아(`collect_mesh_popup_input`) plugin 프로세스로 forward 할 뿐이라, Area 등록의 원 동기(스크롤/hover 라우팅, `docs/dev-guide/popup-implementation.md`)가 애초에 적용되지 않는다.
+
+### `overlay_open` — 호출부마다 다른 조합, 버그 아님
+
+`src/view/main.rs`(키보드/IME 라우팅)·`src/view/main/keyboard.rs`는 `overlay_open = settings_open || has_input_dialog_open() || popups.has_focused()` 를 쓰는데, `src/view/main/mouse.rs` 의 3개 호출부는 `settings_open` 만 쓴다 — 이름은 같지만 **의미가 다르다**:
+
+- 키보드/IME 경로는 "이 키 이벤트를 egui 로 줄지, 중앙 디스패처(터미널/단축키)로 줄지" 를 결정하는 라우팅 전제 질문이다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가"라는 넓은 정의가 필요하다.
+- 마우스는 `src/view/main.rs` 의 이벤트 분기에서 **항상 무조건** egui 로 먼저 전달되고 `egui_consumed` 로 결과를 받는다 — 라우팅 전제 자체가 없다. Popup 위 클릭은 이미 `egui_consumed`/`popup_hovered`(위치 기반)로 정확히 처리되므로, mouse.rs 의 `overlay_open`(=`settings_open`)은 **모달(별도 OS 창) 전용** 보강 게이트일 뿐이다. `has_input_dialog_open()`(rename, popup 시스템으로 구현됨)과 `popups.has_focused()`는 정책상 Popup 이 비모달이라 위치 밖 클릭까지 막을 이유가 없어 여기 안 들어간다.
+
+부수적으로 발견한 별개 사안(popup 바깥 클릭이 popup 을 닫으면서 그 클릭이 겨냥한 하위 액션도 같은 클릭에서 발생하는 문제 — UX 판단이 필요해 이번 범위에서 분리)은 `.claude-workspace/todo/50-mouse-path-popup-outside-click-double-action.md` 참고.
+
+### 새 Foreground 레이어를 추가할 때 체크리스트
+
+1. `egui::Area::new(...).order(Order::Foreground)...show(ctx, |ui| { ... })` 로 그린다 — bare `Ui::new(...).layer_id(...)` 금지((c) 참고).
+2. 이 레이어가 위 정책 표의 어느 순서에 들어가는지 정하고, `enforce_foreground_z_order` 의 `set_sublayer` 체인에 끼워 넣는다. 기존 두 그룹(Banner↔{상태바,탭바}, Modifier-hint↔Popup) 중 하나에 합류시키거나, 새 그룹을 만들 때는 **1단 들여쓰기 제약**((d) 참고)을 넘지 않게 그룹을 겹치지 않게 나눈다.
+3. 정말 모달처럼 항상 최상단이어야 하는 예외라면(예: 위 plugin popup) Area 미등록을 의도적으로 유지하고 그 이유를 주석/문서로 남긴다.
+4. 겹치는 배치를 만들어 `tasty screenshot` 으로 실측 확인한다(디자인 시나리오만으로 단정하지 않는다, `docs/dev-guide/self-verification.md`).
+
 ## 관련
 
 - [popup 시스템](../design/systems/popup.md) — 팝업 z-order·스코프·포커스

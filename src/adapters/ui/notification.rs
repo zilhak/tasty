@@ -249,6 +249,9 @@ pub fn draw_popups(
 
     // Update input layer state: popup hover blocks mouse events to lower layers
     state.popup_hovered = draw_result.hovered;
+    // `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 이번 프레임 popup
+    // Area 들을 순서대로 최상단으로 올릴 때 읽는다.
+    state.popup_layers = draw_result.layers;
 
     state.popups = popups;
 
@@ -413,6 +416,7 @@ pub fn draw_popups(
         more_menu_open_for.as_ref(),
     );
     state.banner_hovered = banner_result.hovered;
+    state.banner_layer = Some(banner_result.layer);
     if let Some((scope, trigger_rect)) = banner_result.more_clicked {
         crate::adapters::ui::mouse_capture_menu::open(state, ctx, &scope, trigger_rect);
     }
@@ -428,6 +432,7 @@ pub fn draw_popups(
         reduced_motion,
     );
     state.modifier_hint_hovered = hint_result.hovered;
+    state.modifier_hint_layer = hint_result.layer;
 
     // 튜토리얼 오버레이 (마커 오버레이 + 안내 말풍선) — 팝업/toast/banner/modhint 위
     // 최상위 레이어. 마커/scrim 은 hit-transparent, 말풍선만 마우스 소비. 진입·진행은

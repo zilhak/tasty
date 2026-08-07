@@ -83,6 +83,7 @@ impl PopupManager {
         let screen_rect = ctx.screen_rect();
         let mut closed: Vec<PopupId> = Vec::new();
         let mut bring_front: Option<PopupId> = None;
+        let mut layers: Vec<egui::LayerId> = Vec::new();
 
         // Read pointer state once
         let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
@@ -303,6 +304,7 @@ impl PopupManager {
                 egui::Order::Foreground,
                 egui::Id::new("popup").with(popup_id).with(z_idx),
             );
+            layers.push(layer_id);
 
             let painter = ctx.layer_painter(layer_id);
 
@@ -498,6 +500,7 @@ impl PopupManager {
         PopupDrawResult {
             closed,
             hovered: hovered_popup.is_some(),
+            layers,
         }
     }
 

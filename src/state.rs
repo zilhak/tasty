@@ -353,6 +353,22 @@ pub struct AppState {
     /// (원칙3), mouse 핸들러가 이 값으로 click-to-activate/휠/드래그가 하위 surface 로
     /// 새지 않게 막는다. banner_hovered 와 동일 성질(비-gui 빌드도 필드 보유).
     pub(crate) modifier_hint_hovered: bool,
+    /// 이번 프레임에 그려진 각 popup 의 `LayerId`. `PopupManager::draw()` 가 갱신.
+    /// `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 modifier-hint
+    /// 레이어를 부모로 이들을 `set_sublayer` 자식으로 묶을 때 읽는다 — `egui::LayerId`
+    /// 의존이라 gui 전용.
+    #[cfg(feature = "gui")]
+    pub(crate) popup_layers: Vec<egui::LayerId>,
+    /// 이번 프레임에 그려진 `banner_layer` Area 의 `LayerId`(banner 는 매 프레임 항상
+    /// 그려지므로 첫 프레임 이후 항상 `Some`). `BannerManager::draw()` 가 갱신,
+    /// `enforce_foreground_z_order` 가 읽는다.
+    #[cfg(feature = "gui")]
+    pub(crate) banner_layer: Option<egui::LayerId>,
+    /// 이번 프레임에 `modhint_layer` Area 를 실제로 그렸으면 그 `LayerId`(표시 조건
+    /// 미충족이면 `None`). `draw_modifier_hint()` 가 갱신, `enforce_foreground_z_order`
+    /// 가 읽는다.
+    #[cfg(feature = "gui")]
+    pub(crate) modifier_hint_layer: Option<egui::LayerId>,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
@@ -969,6 +985,12 @@ impl AppState {
             popup_hovered: false,
             banner_hovered: false,
             modifier_hint_hovered: false,
+            #[cfg(feature = "gui")]
+            popup_layers: Vec::new(),
+            #[cfg(feature = "gui")]
+            banner_layer: None,
+            #[cfg(feature = "gui")]
+            modifier_hint_layer: None,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
             popups: {

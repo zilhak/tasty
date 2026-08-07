@@ -287,6 +287,10 @@ pub struct HintDrawResult {
     /// 드래그/리사이즈를 놓은 시점의 (pos, size). `Some` 이면 호출자가 `UpdateSettings` 로
     /// 영속한다(사용자 행동 → `from_user_menu`). `None` = 이번 프레임 변경 없음.
     pub persist: Option<((LogicalPx, LogicalPx), (LogicalPx, LogicalPx))>,
+    /// 이번 프레임에 `modhint_layer` Area 를 실제로 그렸으면 그 `LayerId`(안 그렸으면
+    /// `None` — 표시 조건 미충족으로 조기 반환한 프레임). 중앙 집중식 z-order
+    /// 강제(`enforce_foreground_z_order`, `src/gfx/gpu/egui_bridge.rs`)가 쓴다.
+    pub layer: Option<egui::LayerId>,
 }
 
 /// modifier-hint 오버레이를 매 프레임 그린다. `draw_popups` 가 toast/banner 인접에서 호출.
@@ -345,101 +349,122 @@ pub fn draw_modifier_hint(
         .unwrap_or_else(|| rect_from_settings(settings, screen, theme));
     let render_rect = clamp_rect(base, screen);
 
-    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("modhint_layer"));
-    let mut ui = ui_at(ctx, layer, render_rect);
+    // 오버레이를 `egui::Area` 로 등록해 `Memory::Areas::order`(z-stack)에 편입시킨다
+    // — bare layer(`ctx.layer_painter`/미등록 `Ui::new`)는 같은 `Order::Foreground`
+    // 타이어 안에서도 Area 등록 레이어보다 항상 나중(=위)에 그려진다
+    // (`egui::layers::GraphicLayers::drain`) — banner 가 같은 이유로 Area 등록으로
+    // 바뀐 것(`banner.rs`)과 동일 근거. 등록 안 하면 Popup(Area 등록됨)이 먼저 열려
+    // 있어도 이 오버레이가 항상 그 위에 그려져 [입력 계층 정책](../../../docs/architecture/input-layer.md)
+    // (Popup=2 > Modifier-hint=2b) 을 위반한다. 프레임 종료 시점의 중앙 집중식
+    // `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`) 가 이 레이어를 부모로,
+    // 열린 popup 레이어들을 자식으로 `Context::set_sublayer` 로 묶어 Popup 이 항상 이
+    // 레이어 바로 위에 오도록 고정한다(`move_to_top` 반복 호출로는 두 레이어의 상대
+    // 순서를 못 만든다는 이유는 `enforce_foreground_z_order` 자신의 doc 참고).
+    let layer_id = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("modhint_layer"));
+    result.layer = Some(layer_id);
+    egui::Area::new(layer_id.id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::Pos2::ZERO)
+        .movable(false)
+        .interactable(true)
+        .sense(egui::Sense::hover())
+        .constrain(false)
+        .show(ctx, |area_ui| {
+            let mut ui = ui_at(area_ui, render_rect);
 
-    draw_shell(&ui, theme, render_rect, alpha);
-    draw_content(
-        &mut ui,
-        theme,
-        render_rect,
-        held,
-        &sections,
-        alpha,
-        &settings.general,
-    );
-    draw_shell_border(&ui, theme, render_rect, alpha);
+            draw_shell(&ui, theme, render_rect, alpha);
+            draw_content(
+                &mut ui,
+                theme,
+                render_rect,
+                held,
+                &sections,
+                alpha,
+                &settings.general,
+            );
+            draw_shell_border(&ui, theme, render_rect, alpha);
 
-    // ── 인터랙션: 드래그 스트립(이동) · 코너 그립(리사이즈) · X(dismiss) ──
-    let strip_h = theme.modhint_strip_height().value();
-    let x_zone = strip_h; // 우측 X 버튼 폭 만큼 드래그에서 제외.
-    let strip_drag = egui::Rect::from_min_max(
-        render_rect.min,
-        egui::pos2(render_rect.right() - x_zone, render_rect.top() + strip_h),
-    );
-    let move_resp = ui
-        .interact(
-            strip_drag,
-            egui::Id::new("modhint_move"),
-            egui::Sense::drag(),
-        )
-        .on_hover_cursor(egui::CursorIcon::Move);
-    if move_resp.drag_started() {
-        rt.working = Some((render_rect, DragMode::Move));
-    }
-    if move_resp.dragged()
-        && let Some((r, DragMode::Move)) = rt.working.as_mut()
-    {
-        *r = clamp_rect(r.translate(move_resp.drag_delta()), screen);
-    }
+            // ── 인터랙션: 드래그 스트립(이동) · 코너 그립(리사이즈) · X(dismiss) ──
+            let strip_h = theme.modhint_strip_height().value();
+            let x_zone = strip_h; // 우측 X 버튼 폭 만큼 드래그에서 제외.
+            let strip_drag = egui::Rect::from_min_max(
+                render_rect.min,
+                egui::pos2(render_rect.right() - x_zone, render_rect.top() + strip_h),
+            );
+            let move_resp = ui
+                .interact(
+                    strip_drag,
+                    egui::Id::new("modhint_move"),
+                    egui::Sense::drag(),
+                )
+                .on_hover_cursor(egui::CursorIcon::Move);
+            if move_resp.drag_started() {
+                rt.working = Some((render_rect, DragMode::Move));
+            }
+            if move_resp.dragged()
+                && let Some((r, DragMode::Move)) = rt.working.as_mut()
+            {
+                *r = clamp_rect(r.translate(move_resp.drag_delta()), screen);
+            }
 
-    let grip = theme.modhint_grip_size().value();
-    let grip_rect = egui::Rect::from_min_max(
-        egui::pos2(render_rect.right() - grip, render_rect.bottom() - grip),
-        render_rect.max,
-    );
-    let resize_resp = ui
-        .interact(
-            grip_rect,
-            egui::Id::new("modhint_resize"),
-            egui::Sense::drag(),
-        )
-        .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
-    if resize_resp.drag_started() {
-        rt.working = Some((render_rect, DragMode::Resize));
-    }
-    if resize_resp.dragged()
-        && let Some((r, DragMode::Resize)) = rt.working.as_mut()
-    {
-        let resized = resize_to(
-            *r,
-            resize_resp.drag_delta(),
-            theme.modhint_min_width().value(),
-            theme.modhint_min_height().value(),
-        );
-        *r = clamp_rect(resized, screen);
-    }
+            let grip = theme.modhint_grip_size().value();
+            let grip_rect = egui::Rect::from_min_max(
+                egui::pos2(render_rect.right() - grip, render_rect.bottom() - grip),
+                render_rect.max,
+            );
+            let resize_resp = ui
+                .interact(
+                    grip_rect,
+                    egui::Id::new("modhint_resize"),
+                    egui::Sense::drag(),
+                )
+                .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
+            if resize_resp.drag_started() {
+                rt.working = Some((render_rect, DragMode::Resize));
+            }
+            if resize_resp.dragged()
+                && let Some((r, DragMode::Resize)) = rt.working.as_mut()
+            {
+                let resized = resize_to(
+                    *r,
+                    resize_resp.drag_delta(),
+                    theme.modhint_min_width().value(),
+                    theme.modhint_min_height().value(),
+                );
+                *r = clamp_rect(resized, screen);
+            }
 
-    if (move_resp.drag_stopped() || resize_resp.drag_stopped())
-        && let Some((r, _)) = rt.working.take()
-    {
-        let c = clamp_rect(r, screen);
-        result.persist = Some((
-            (LogicalPx(c.left()), LogicalPx(c.top())),
-            (LogicalPx(c.width()), LogicalPx(c.height())),
-        ));
-    }
+            if (move_resp.drag_stopped() || resize_resp.drag_stopped())
+                && let Some((r, _)) = rt.working.take()
+            {
+                let c = clamp_rect(r, screen);
+                result.persist = Some((
+                    (LogicalPx(c.left()), LogicalPx(c.top())),
+                    (LogicalPx(c.width()), LogicalPx(c.height())),
+                ));
+            }
 
-    // X 버튼 — 우상단 strip 안. 클릭 시 이번 홀드 세션 dismiss.
-    let x_rect = egui::Rect::from_min_size(
-        egui::pos2(render_rect.right() - x_zone, render_rect.top()),
-        egui::vec2(x_zone, strip_h),
-    );
-    let mut x_ui = ui.new_child(egui::UiBuilder::new().max_rect(x_rect).layout(
-        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-    ));
-    let x_clicked = IconButton::new()
-        .variant(IconButtonVariant::Ghost)
-        .size(ControlSize::Sm)
-        .show(&mut x_ui, theme, &|ui, r, c| {
-            icons::CLOSE.image(r.height(), c).paint_at(ui, r);
-        })
-        .on_hover_text(t("modifier_hint.hide_tooltip"))
-        .clicked();
-    if x_clicked {
-        rt.dismissed = true;
-        rt.working = None;
-    }
+            // X 버튼 — 우상단 strip 안. 클릭 시 이번 홀드 세션 dismiss.
+            let x_rect = egui::Rect::from_min_size(
+                egui::pos2(render_rect.right() - x_zone, render_rect.top()),
+                egui::vec2(x_zone, strip_h),
+            );
+            let mut x_ui = ui.new_child(egui::UiBuilder::new().max_rect(x_rect).layout(
+                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+            ));
+            let x_clicked = IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(&mut x_ui, theme, &|ui, r, c| {
+                    icons::CLOSE.image(r.height(), c).paint_at(ui, r);
+                })
+                .on_hover_text(t("modifier_hint.hide_tooltip"))
+                .clicked();
+            if x_clicked {
+                rt.dismissed = true;
+                rt.working = None;
+            }
+        });
 
     // hover 판정(입력 레이어). 렌더 rect 전체를 소비 zone 으로.
     result.hovered = ctx
@@ -886,13 +911,17 @@ fn row_label(source: &HintRowSource) -> (String, bool) {
     }
 }
 
-/// 주어진 rect 에 Foreground layer child Ui 를 만든다(오버레이는 다른 UI 위).
-fn ui_at(ctx: &egui::Context, layer_id: egui::LayerId, rect: egui::Rect) -> egui::Ui {
-    egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("modhint_overlay"),
-        egui::UiBuilder::new().layer_id(layer_id).max_rect(rect),
-    )
+/// `modhint_layer` Area 안에 주어진 rect 로 자식 Ui 를 만든다 — `banner.rs::ui_at`
+/// 와 동일 패턴(부모 Area 의 `Memory::Areas::order` 편입을 그대로 물려받는다).
+/// clip_rect 를 rect 로 좁혀 Area 기본 clip(화면 전체) 밖으로 넘치지 않게 한다.
+fn ui_at(parent: &mut egui::Ui, rect: egui::Rect) -> egui::Ui {
+    let mut child = parent.new_child(
+        egui::UiBuilder::new()
+            .id_salt("modhint_overlay")
+            .max_rect(rect),
+    );
+    child.set_clip_rect(rect);
+    child
 }
 
 #[cfg(test)]

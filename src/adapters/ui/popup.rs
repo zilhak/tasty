@@ -74,6 +74,11 @@ pub struct PopupDrawResult {
     pub closed: Vec<PopupId>,
     /// Whether the mouse is currently over any open popup.
     pub hovered: bool,
+    /// 이번 프레임에 그린 각 popup 의 `LayerId`. 중앙 집중식 z-order 강제
+    /// (`enforce_foreground_z_order`, `src/gfx/gpu/egui_bridge.rs`)가 modifier-hint
+    /// 레이어를 부모로 이들을 `Context::set_sublayer` 자식으로 묶어, popup 이 항상
+    /// modifier-hint 바로 위에 오도록 고정할 때 쓴다.
+    pub layers: Vec<egui::LayerId>,
 }
 
 /// Static, data-oriented popup definition. 등록 시점에 불변으로 고정되는 속성과
