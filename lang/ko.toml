@@ -578,6 +578,8 @@ new_image = "새 이미지"
 copy = "복사"
 copy_no_newline = "줄바꿈 없이 복사"
 copy_surface_id = "터미널 ID 복사"
+open_file = "파일 열기"
+open_folder = "폴더 열기"
 
 [surface_context_menu]
 cut = "잘라내기"

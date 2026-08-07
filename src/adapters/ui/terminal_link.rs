@@ -551,6 +551,55 @@ fn append_path_matches(
     }
 }
 
+/// 터미널에서 드래그/더블클릭으로 확정 선택한 텍스트가 실재하는 파일/폴더 경로(또는
+/// 그 접두사)인지 판별한다. `path_regex()`로 재매칭하지 않고 선택 문자열 전체를 그대로
+/// 1차 후보로 쓴다 — regex 로 다시 걸러내면 비-ASCII 후행 문자(예: 슬래시 바로 뒤에
+/// 붙는 한글 조사)가 매치 단계에서 이미 잘려나가, 아래 "`/` 단위로 축약 재검사"가 애초에
+/// 무의미해진다.
+///
+/// 1차 후보가 존재하지 않으면 마지막 `/` 앞까지 잘라 재검사하고, 그래도 없으면 그 앞의
+/// `/`로 계속 반복해 실재하는 가장 긴 접두사를 찾는다. 선택 모드(문자/단어/줄/블록)는
+/// 구분하지 않는다 — 하나의 연결된 드래그 블록이면 `extract_selected_text`가 뽑아준
+/// 문자열을 그대로 쓴다.
+pub fn longest_existing_selection_path(
+    raw_selected_text: &str,
+    cwd: Option<&Path>,
+    mirror: bool,
+) -> Option<PathBuf> {
+    let mut candidate = trim_trailing_punct(raw_selected_text.trim());
+    loop {
+        if candidate.is_empty() {
+            return None;
+        }
+        if let Some(path) = resolve_selection_path_candidate(candidate, cwd, mirror) {
+            return Some(path);
+        }
+        candidate = &candidate[..candidate.rfind('/')?];
+    }
+}
+
+/// `longest_existing_selection_path` 전용 저수준 후보 해석. 절대경로 판별/cwd
+/// join/mirror 시 exists() 스킵 규칙은 `resolve_link_target`과 동일하되, 반환 타입이
+/// 다르고(file:// URI 문자열이 아니라 `PathBuf`) `resolve_link_target` 자체는 기존
+/// hover-link 회귀를 피하기 위해 건드리지 않으므로 별도로 둔다.
+fn resolve_selection_path_candidate(
+    candidate: &str,
+    cwd: Option<&Path>,
+    mirror: bool,
+) -> Option<PathBuf> {
+    let p = Path::new(candidate);
+    let is_abs = p.is_absolute() || (mirror && candidate.starts_with('/'));
+    let abs: PathBuf = if is_abs {
+        p.to_path_buf()
+    } else {
+        cwd?.join(p)
+    };
+    if !mirror && !abs.exists() {
+        return None;
+    }
+    Some(abs)
+}
+
 /// URI를 기본 브라우저/연결 프로그램으로 연다. 크로스 플랫폼.
 /// 성공하면 true, 실패하면 `tracing::warn!`을 남기고 false.
 pub fn open_uri(uri: &str) -> bool {
@@ -758,5 +807,52 @@ mod tests {
             trim_trailing_punct("https://a.com/x?q=1!"),
             "https://a.com/x?q=1"
         );
+    }
+
+    #[test]
+    fn selection_path_full_candidate_used_when_it_exists() {
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let result = longest_existing_selection_path("Cargo.toml", Some(cwd), false);
+        assert_eq!(result, Some(cwd.join("Cargo.toml")));
+    }
+
+    #[test]
+    fn selection_path_trims_back_to_last_slash_when_full_candidate_missing() {
+        // ".claude-workspace/todo" 는 실재하지만 뒤에 실재하지 않는 문자가 슬래시
+        // 없이 붙은 경우(예: 한글 조사).
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let result = longest_existing_selection_path(".claude-workspace/todo/에", Some(cwd), false);
+        assert_eq!(result, Some(cwd.join(".claude-workspace/todo")));
+    }
+
+    #[test]
+    fn selection_path_trims_repeatedly_across_multiple_slash_boundaries() {
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
+        // "src/adapters/ui" 까지는 실재, 그 뒤 세그먼트가 통째로 가짜.
+        let result = longest_existing_selection_path(
+            "src/adapters/ui/totally_bogus_file_xyz",
+            Some(cwd),
+            false,
+        );
+        assert_eq!(result, Some(cwd.join("src/adapters/ui")));
+    }
+
+    #[test]
+    fn selection_path_none_when_no_prefix_exists() {
+        assert!(
+            longest_existing_selection_path(
+                "totally/bogus/path/xyz123",
+                Some(Path::new(".")),
+                false
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn selection_path_mirror_skips_exists_check_like_resolve_link_target() {
+        let cwd = Path::new("/remote/project");
+        let result = longest_existing_selection_path("src/main.rs", Some(cwd), true);
+        assert_eq!(result, Some(cwd.join("src/main.rs")));
     }
 }

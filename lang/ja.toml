@@ -578,6 +578,8 @@ new_image = "新規画像"
 copy = "コピー"
 copy_no_newline = "改行なしでコピー"
 copy_surface_id = "ターミナルIDをコピー"
+open_file = "ファイルを開く"
+open_folder = "フォルダを開く"
 
 [surface_context_menu]
 cut = "切り取り"

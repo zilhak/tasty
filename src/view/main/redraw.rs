@@ -1180,6 +1180,19 @@ impl MainView {
         use crate::platform::native_menu::{MenuItem, show_context_menu};
         // Show copy items only when there is an active (non-empty) selection.
         let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
+        // "경로 열기" 항목은 has_selection 과 별도로, 우클릭한 surface 와 selection 이
+        // 속한 surface 가 같을 때만 노출한다 — surface 별로 독립적인 드래그 상태를
+        // 가질 수 있어 다른 surface 의 선택을 그대로 노출하면 혼동을 유발한다(복사
+        // 항목은 기존부터 surface 무관하게 전역 selection 을 대상으로 동작하는 별개
+        // 관례라 그대로 둔다).
+        let selection_open_path = if has_selection {
+            self.text_selection
+                .as_ref()
+                .filter(|s| s.surface_id == surface_id)
+                .and_then(|s| Self::resolve_selection_open_path(engine, s))
+        } else {
+            None
+        };
         let mut items = Vec::new();
         if has_selection {
             items.push(MenuItem::new(
@@ -1190,6 +1203,16 @@ impl MainView {
                 3,
                 crate::i18n::t("terminal_context_menu.copy_no_newline"),
             ));
+            if let Some(target) = &selection_open_path {
+                items.push(MenuItem::new(
+                    20,
+                    if target.is_dir() {
+                        crate::i18n::t("terminal_context_menu.open_folder")
+                    } else {
+                        crate::i18n::t("terminal_context_menu.open_file")
+                    },
+                ));
+            }
             items.push(MenuItem::separator());
         }
         items.push(MenuItem::new(
@@ -1226,6 +1249,13 @@ impl MainView {
             Some(3) => {
                 self.copy_selection_no_newline();
             }
+            Some(20) => {
+                if let Some(target) = &selection_open_path
+                    && let Err(e) = crate::platform::reveal::open_path(target)
+                {
+                    tracing::warn!("terminal: open selected path failed: {e}");
+                }
+            }
             Some(10) => {
                 // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
                 engine.pending_move_surface = Some(surface_id);
@@ -1244,6 +1274,25 @@ impl MainView {
             _ => {}
         }
         self.mark_dirty();
+    }
+
+    /// selection 이 가리키는 실재 파일/폴더 경로를 찾는다(우클릭 대상과 selection 의
+    /// surface 일치는 호출부가 미리 검사한다). mirror(원격 attach) surface 는 로컬
+    /// 파일 관리자로 원격 경로를 여는 배선이 아직 없어 이번 범위에서 제외한다 — 그
+    /// 배선이 생기면 이 조건을 재검토한다.
+    fn resolve_selection_open_path(
+        engine: &crate::core::CoreState,
+        sel: &crate::selection::TextSelection,
+    ) -> Option<std::path::PathBuf> {
+        let terminal = engine.visible_terminal(sel.surface_id)?;
+        terminal.process_id()?;
+        let raw_text = crate::selection::extract_selected_text(terminal, sel);
+        let cwd = terminal.get_cwd();
+        crate::adapters::ui::terminal_link::longest_existing_selection_path(
+            &raw_text,
+            cwd.as_deref(),
+            false,
+        )
     }
 
     fn handle_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {

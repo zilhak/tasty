@@ -13,7 +13,7 @@
 | [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/screens/work-area.md) |
 | [terminal](terminal/index.md) — 터미널 (PTY·VTE·scrollback·GPU) | 로컬 사용자 · AI Agent · 원격 | GPU 그리드 |
 | [terminal-search](terminal-search/index.md) — 터미널 검색 (스크롤백+화면) | 로컬 사용자 | 검색 바 popup |
-| [terminal-link](terminal-link/index.md) — 링크 hover·클릭 (수식키) | 로컬 사용자 | hover 하이라이트 |
+| [terminal-link](terminal-link/index.md) — 링크 hover·클릭 (수식키) · 드래그선택 우클릭 "경로 열기" | 로컬 사용자 | hover 하이라이트 |
 | [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/screens/workspace-tabs.md) |
 | [workspace-category](workspace-category/index.md) — 워크스페이스 카테고리 (사이드바 폴더) | AI Agent · 로컬 사용자 | 없음 (사이드바 UI 미구현) |
 | [window-chrome](window-chrome/index.md) — 윈도우 크롬 (CSD 타이틀바) | 로컬 사용자 | [화면](window-chrome/screens/window-chrome.md) |
