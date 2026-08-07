@@ -1778,6 +1778,14 @@ impl App {
                 for sid in fd.added_terminals {
                     engine.tap_surface_for_stream(sid, client_id, hub);
                 }
+                // forward 된 ConvertSurface 가 실제 kind 를 바꿨으면, 로컬(비-forward)
+                // 변환 경로의 cascade(`app/dispatch_domain.rs` SurfaceConverted)와 동일하게
+                // egui-mesh stale frame 을 버려 재-bootstrap 을 강제한다.
+                if let Some(sid) = fd.converted_surface
+                    && let Some(mgr) = self.plugin_manager.as_mut()
+                {
+                    mgr.drop_egui_mesh_frame(sid);
+                }
             }
             w.mark_dirty();
             break;

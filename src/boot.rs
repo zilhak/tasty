@@ -416,6 +416,13 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         for sid in fd.added_terminals {
                             engine.tap_surface_for_stream(sid, client_id, &app.stream_hub);
                         }
+                        // forward 된 ConvertSurface 가 실제 kind 를 바꿨으면 egui-mesh stale
+                        // frame 을 버린다(`app/event_handler.rs` 의 동일 처리와 짝).
+                        if let Some(sid) = fd.converted_surface
+                            && let Some(mgr) = app.plugin_manager.as_mut()
+                        {
+                            mgr.drop_egui_mesh_frame(sid);
+                        }
                     }
                 }
                 for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {

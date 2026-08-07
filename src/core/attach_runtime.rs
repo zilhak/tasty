@@ -608,6 +608,14 @@ pub(crate) struct ForwardedDelta {
     /// [`CoreState::tap_surface_for_stream`] 로 tap 을 건다(스냅샷이 client 매핑 생성
     /// 뒤에 도착하도록 delta 다음 순서를 보장).
     pub added_terminals: Vec<SurfaceId>,
+    /// `ConvertSurface` 가 실제로 kind 를 교체한(`replaced=true`) 경우의 대상
+    /// surface_id. egui-mesh(markdown 등) 로 제자리 변환 시 같은 surface_id 에 stale
+    /// frame 이 남는 문제를 막으려면 `PluginManager::drop_egui_mesh_frame` 호출이
+    /// 필요한데, 그건 App(GUI) 레벨 상태라 이 함수(core/state/engine 만 소유)에서
+    /// 직접 못 하고 호출자(`app/event_handler.rs`, `boot.rs`)에 위임한다 — 로컬(비-forward)
+    /// 변환 경로의 동일 처리(`app/dispatch_domain.rs` `SurfaceConverted` cascade)와
+    /// 짝을 맞춘다.
+    pub converted_surface: Option<SurfaceId>,
 }
 
 /// mirror client 가 forward 한 구조 op 를 이 인스턴스(원격 = authoritative)에서
@@ -615,7 +623,11 @@ pub(crate) struct ForwardedDelta {
 /// IPC 핸들러(split / tab.create / tab.close / tab.move / pane.close / surface.close)를
 /// 그대로 재사용해 full cascade(PTY spawn·host event·cleanup)로 처리한다 — 서버측
 /// 워크스페이스는 mirror 가 아니므로 `Core::apply` 의 mirror 가드에 걸리지 않고 실제로
-/// 실행된다.
+/// 실행된다. `ConvertSurface`/`MoveSurface` 는 재사용할 기존 IPC 핸들러가 없어(image/
+/// markdown 처럼 kind 별 전용 핸들러만 있고 generic `surface.convert`/`surface.move`
+/// IPC 는 없음) `Core::apply(DomainIntent)` 를 직접 호출하고, 그 cascade(PTY cleanup /
+/// mesh stale-frame 방지)도 이 함수 안에서(또는 `converted_surface` 를 통해 호출자가)
+/// 직접 재현한다.
 ///
 /// 반환:
 /// - 성공: `Ok(Some(delta))` — anchor 워크스페이스의 실행 **전/후** `all_surface_ids`
@@ -628,10 +640,6 @@ pub(crate) struct ForwardedDelta {
 ///
 /// 호출자(메인루프)가 [`StreamControl::StructuralResult`] 로 회신한 **뒤** delta 를 push
 /// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
-///
-/// `ConvertSurface`/`MoveSurface` 는 재사용할 IPC 핸들러가 없어 아직 forward 대상이
-/// 아니다(client 도 이 둘은 forward 하지 않고 기존 차단 유지) — 방어적으로 거부 사유를
-/// 반환한다.
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
@@ -659,6 +667,10 @@ pub(crate) fn execute_forwarded_structural_op(
 
     // 재사용 핸들러는 응답 id 를 페이로드로만 쓴다(내부 호출 → Null).
     let rid = serde_json::Value::Null;
+    // `ConvertSurface` 성공(kind 실제 교체) 시에만 채워진다 — 호출자가
+    // `PluginManager::drop_egui_mesh_frame` 을 트리거하는 신호(위 `ForwardedDelta` 문서
+    // 참조).
+    let mut converted_surface: Option<SurfaceId> = None;
 
     let resp = match op {
         StructuralOp::SplitSurface {
@@ -749,8 +761,119 @@ pub(crate) fn execute_forwarded_structural_op(
             let p = json!({ "pane_id": pane_id, "from_index": from_index, "to_index": to_index });
             tab::handle_tab_move(core, state, engine, rid, &p)
         }
-        StructuralOp::ConvertSurface { .. } | StructuralOp::MoveSurface { .. } => {
-            return Err("op not forwardable yet".to_string());
+        StructuralOp::ConvertSurface {
+            surface_id,
+            surface_kind,
+            params,
+        } => {
+            // generic `surface.convert` IPC 가 없어 재사용할 핸들러가 없다 —
+            // `image::handle_open` 과 동일한 형태(`Core::apply` 직접 호출 +
+            // `SurfaceConverted{replaced}` 로 성공 판정)를 여기 직접 재현한다. cwd carry
+            // (`ConvertSurfaceTarget::{Terminal,Kind}.cwd`)는 `StructuralOp::ConvertSurface`
+            // 에 필드가 없어 forward 되지 않는다 — markdown.navigate(이 fix 의 주 동기)는
+            // 원래도 cwd:None 을 쓰므로 영향 없고, 그 외 kind 로의 mirror 변환만 로컬 실행과
+            // 달리 cwd carry 를 못 받는다(narrow, 알려진 한계).
+            use crate::core::intent::ConvertSurfaceTarget;
+            let target = if surface_kind == "terminal" {
+                ConvertSurfaceTarget::Terminal { cwd: None }
+            } else {
+                ConvertSurfaceTarget::Kind {
+                    cwd: None,
+                    kind: surface_kind.clone(),
+                    params: params.clone(),
+                }
+            };
+            let intent = crate::core::intent::DomainIntent::ConvertSurface {
+                surface_id: *surface_id,
+                target,
+            };
+            match core.apply(engine, intent) {
+                Ok(events) => {
+                    let replaced = matches!(
+                        events.into_iter().next(),
+                        Some(crate::core::intent::CoreEvent::SurfaceConverted {
+                            replaced: true,
+                            ..
+                        })
+                    );
+                    if replaced {
+                        converted_surface = Some(*surface_id);
+                        tasty_ipc::protocol::JsonRpcResponse::success(
+                            rid.clone(),
+                            json!({ "ok": true, "surface_id": surface_id }),
+                        )
+                    } else {
+                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
+                            rid.clone(),
+                            format!("surface {surface_id} not found"),
+                        )
+                    }
+                }
+                Err(e) => {
+                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
+                }
+            }
+        }
+        StructuralOp::MoveSurface {
+            source_surface_id,
+            target_surface_id,
+        } => {
+            // generic `surface.move` IPC 도 없다(현재 유일한 발행 경로는 우클릭
+            // "잘라내기 → 여기로 이동" GUI, IPC/CLI 미노출) — Convert 와 동일하게
+            // `Core::apply` 를 직접 호출한다. `build_mirror_forward_op` 가 이미
+            // source/target 이 같은 mirror workspace 에 속할 때만 이 op 를 만들어
+            // 보내므로, 여기(서버·authoritative 워크스페이스)서는 두 id 모두 같은
+            // 워크스페이스 안의 실제 surface 로 resolve 된다.
+            let intent = crate::core::intent::DomainIntent::MoveSurface {
+                source_surface_id: *source_surface_id,
+                target_surface_id: *target_surface_id,
+            };
+            match core.apply(engine, intent) {
+                Ok(events) => {
+                    let Some(crate::core::intent::CoreEvent::MoveSurfaceApplied {
+                        moved,
+                        b_cleanup,
+                        cascade_level,
+                        closed_tab_ids,
+                        closed_pane_ids,
+                        workspace_id_purged,
+                        workspaces_now_empty,
+                    }) = events.into_iter().next()
+                    else {
+                        return Err("Core::apply returned no MoveSurfaceApplied event".to_string());
+                    };
+                    if moved {
+                        // B(target) 의 PTY kill + tab/pane/workspace cascade. IPC 는 agent
+                        // 경로라 is_user_close=false(`close_surface_via_intent` 와 동일 근거).
+                        crate::app::dispatch_domain::cascade_surface_closed(
+                            core,
+                            state,
+                            engine,
+                            cascade_level,
+                            b_cleanup.into_iter().collect(),
+                            closed_tab_ids,
+                            closed_pane_ids,
+                            workspace_id_purged,
+                            workspaces_now_empty,
+                            false,
+                        );
+                        tasty_ipc::protocol::JsonRpcResponse::success(
+                            rid.clone(),
+                            json!({ "ok": true }),
+                        )
+                    } else {
+                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
+                            rid.clone(),
+                            format!(
+                                "move failed: source={source_surface_id} target={target_surface_id}"
+                            ),
+                        )
+                    }
+                }
+                Err(e) => {
+                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
+                }
+            }
         }
     };
 
@@ -791,6 +914,7 @@ pub(crate) fn execute_forwarded_structural_op(
     Ok(Some(ForwardedDelta {
         delta,
         added_terminals,
+        converted_surface,
     }))
 }
 
@@ -2154,6 +2278,134 @@ mod forward_exec_tests {
         assert_eq!(engine.terminals.iter().count(), before - 1);
     }
 
+    /// forward 된 ConvertSurface 는 (비-mirror) 서버 워크스페이스에서 실제로
+    /// `Core::apply(DomainIntent::ConvertSurface)` 를 실행해 kind 를 교체한다. Ok +
+    /// delta.converted_surface 에 대상 surface_id 가 실린다(호출자가 egui-mesh
+    /// stale-frame 방지를 트리거하는 신호 — `ForwardedDelta` 문서 참조).
+    #[test]
+    fn forward_convert_surface_executes_and_converts() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let op = StructuralOp::ConvertSurface {
+            surface_id: a,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("convert ok")
+            .expect("convert delta");
+        assert_eq!(
+            fd.converted_surface,
+            Some(a),
+            "converted_surface 는 실제로 교체된 surface_id 를 실어야 한다"
+        );
+        assert!(
+            engine.terminals.get(a).is_some(),
+            "terminal 로의 convert 는 새 Terminal 을 insert 해야 한다"
+        );
+    }
+
+    /// (holder 회귀 방지) ConvertSurface forward 는 hard-occupied 워크스페이스에서도
+    /// 성공해야 한다(`execute_forwarded_structural_op` 는 IPC method-string 가드를
+    /// 우회하는 직접 함수 호출 경로).
+    #[test]
+    fn forward_convert_surface_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+        let op = StructuralOp::ConvertSurface {
+            surface_id: a,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward ConvertSurface 는 hard-occupied 상태에서도 성공해야 한다"
+        );
+    }
+
+    /// forward 된 MoveSurface 는 서버에서 실제로 A(source) 를 B(target) 자리로
+    /// 이동시키고, B 의 PTY 를 `cascade_surface_closed` 로 cleanup 한다 — 이 cascade 를
+    /// 빼먹으면 B 의 PTY 가 리크된다(CloseSurface 의 `close_surface_via_intent` 와 동일
+    /// 근거).
+    #[test]
+    fn forward_move_surface_executes_and_cleans_up_target() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let split_surface = StructuralOp::SplitSurface {
+            surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd =
+            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
+                .expect("split ok")
+                .expect("split delta");
+        let b = fd.added_terminals[0];
+        let before = engine.terminals.iter().count();
+
+        let mv = StructuralOp::MoveSurface {
+            source_surface_id: a,
+            target_surface_id: b,
+        };
+        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv)
+            .expect("move ok")
+            .expect("move delta");
+        assert!(
+            fd.converted_surface.is_none(),
+            "move 는 convert 가 아니다 — mesh stale-frame 처리 대상 아님"
+        );
+        assert_eq!(
+            engine.terminals.iter().count(),
+            before - 1,
+            "B(target) 의 PTY 는 cascade 로 정리돼야 한다(안 하면 리크)"
+        );
+        assert!(
+            engine.terminals.get(a).is_some(),
+            "A(source) 는 살아있어야 한다(PTY 보존 — R1)"
+        );
+    }
+
+    /// (holder 회귀 방지) MoveSurface forward 는 hard-occupied 워크스페이스에서도
+    /// 성공해야 한다.
+    #[test]
+    fn forward_move_surface_succeeds_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let split_surface = StructuralOp::SplitSurface {
+            surface_id: a,
+            direction: SplitAxis::Horizontal,
+            surface_kind: "terminal".to_string(),
+            params: serde_json::json!({}),
+        };
+        let fd =
+            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
+                .expect("split ok")
+                .expect("split delta");
+        let b = fd.added_terminals[0];
+        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        engine
+            .attach
+            .acquire_workspace(ws_id, &all, &all, 7)
+            .expect("workspace 점유 획득");
+        let mv = StructuralOp::MoveSurface {
+            source_surface_id: a,
+            target_surface_id: b,
+        };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv);
+        assert!(
+            r.is_ok(),
+            "holder 의 forward MoveSurface 는 hard-occupied 상태에서도 성공해야 한다"
+        );
+    }
+
     /// 비-holder 경로(`docs/dev-guide/attach-behavior.md` "서버(피점유)측 비-holder
     /// 구조 변경 차단" 절): hard-occupied 워크스페이스에 일반 IPC(`split`/
     /// `tab.create`)로 직접 호출하면 거부되고 트리가 그대로 유지돼야 한다.
@@ -2401,6 +2653,77 @@ mod forward_exec_tests {
             "점유되지 않은 workspace 의 tab.create 는 허용돼야 한다: {:?}",
             resp.error
         );
+    }
+
+    /// hard-occupied 워크스페이스에 대한 비-holder 의 `markdown.navigate`/`image.open`
+    /// (=ConvertSurface 진입점) IPC 도 다른 6종과 동일하게 거부돼야 한다(guard 확장
+    /// 회귀 방지). 가드가 method-string 매치 먼저 걸리므로 `path` 가 실존하지 않아도
+    /// (핸들러 본문의 존재 검증까지 못 감) 점유 에러로 막혀야 한다.
+    #[test]
+    fn dispatch_denies_convert_entrypoints_when_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+
+        for (method, params) in [
+            (
+                "markdown.navigate",
+                serde_json::json!({ "surface_id": a, "path": "/tmp/does-not-matter.md" }),
+            ),
+            (
+                "image.open",
+                serde_json::json!({ "surface_id": a, "path": "/tmp/does-not-matter.png" }),
+            ),
+        ] {
+            let req = ipc_request(method, params);
+            let resp = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &req,
+                &CallerContext::Local,
+            );
+            let err = resp.error.unwrap_or_else(|| {
+                panic!("{method}: hard-occupied 워크스페이스에 대한 비-holder 요청은 거부돼야 한다")
+            });
+            assert!(
+                err.message.to_lowercase().contains("occupied"),
+                "{method}: 에러 메시지에 점유 안내가 있어야 한다 (got: {})",
+                err.message
+            );
+        }
+    }
+
+    /// 점유가 없으면 가드가 오탐하지 않아야 한다(`markdown.navigate` false-positive
+    /// 방지). path 는 실존하지 않아도 되는데, 가드가 먼저 통과시키면 그 다음
+    /// `markdown::handle_navigate` 의 자체 존재 검증(`invalid_params`)에 걸려 에러가
+    /// 나긴 하지만, 그 에러 메시지에는 "occupied" 가 없어야 한다(가드 통과 확인).
+    #[test]
+    fn dispatch_allows_markdown_navigate_when_not_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let req = ipc_request(
+            "markdown.navigate",
+            serde_json::json!({ "surface_id": a, "path": "/tmp/does-not-matter.md" }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+        if let Some(err) = resp.error {
+            assert!(
+                !err.message.to_lowercase().contains("occupied"),
+                "점유되지 않은 workspace 는 가드에 걸리면 안 된다: {}",
+                err.message
+            );
+        }
     }
 }
 

@@ -347,7 +347,17 @@ pub fn record_plugin_rss_samples(
 /// 좁힐 예정 (별도 작업).
 /// hard-occupied workspace 에 대한 **비-holder** 구조 변경 IPC 를 차단한다
 /// (`split`/`tab.create`/`terminal.spawn` 생성 계열, `pane.close`/`tab.close`/
-/// `tab.move`/`surface.close` close·이동 계열).
+/// `tab.move`/`surface.close` close·이동 계열, `markdown.navigate`/`image.open`
+/// convert 계열).
+///
+/// **convert 계열은 이 두 method 만 커버한다(완전하지 않음, 알려진 한계)**:
+/// `ConvertSurface` 를 발행하는 진입점은 kind 별로 흩어져 있고(`markdown.navigate`,
+/// `image.open`, 그리고 host 범용 convert 팝업 — 팝업은 `state.dispatch_intent` 를
+/// 직접 호출해 이 IPC method-string 라우팅 자체를 타지 않는다) 향후 새 kind 가
+/// 자기 전용 convert-진입 method 를 추가하면 이 목록에 없는 한 가드가 적용되지
+/// 않는다. 다른 6종 op 도 GUI 로컬 액션(단축키 등)은 `state.dispatch_intent` 로
+/// 이 라우팅을 우회하므로(동일한 특성), convert 도 그와 동등한 수준(=IPC 경유만
+/// 커버)까지만 맞춘 것으로 범위를 제한했다.
 ///
 /// **`terminal.spawn` 은 예외가 아니다**: 과거엔 "새 리소스를 추가만 하는 생성
 /// 경로는 holder 의 화면을 안 흔드니 차단 대상이 아니다"로 문서화돼 있었으나,
@@ -407,7 +417,7 @@ fn hard_occupied_structural_guard(
             let pane_id = engine.find_pane_for_tab(tab_id)?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
-        "surface.close" => {
+        "surface.close" | "markdown.navigate" | "image.open" => {
             let surface_id = params
                 .get("surface_id")
                 .and_then(|v| v.as_u64())

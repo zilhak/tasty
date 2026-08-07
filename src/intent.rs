@@ -47,7 +47,8 @@ pub fn report_apply_error(state: &mut crate::state::AppState, label: &str, err: 
     if let Some(blocked) = err.downcast_ref::<crate::core::MirrorStructuralBlocked>() {
         // 2단계: forward 로 큐잉된 op 는 원격 실행 결과가 UX 를 결정한다 — 여기서 차단
         // toast 를 띄우지 않는다(성공 무음, 실패 시 App drain 이 forward 실패 toast).
-        // forward 대상이 아닌 op(convert/move-surface)만 기존 차단 toast.
+        // forward 대상이 아닌 op(mirror↔local 경계를 넘는 move-surface 등)만 기존
+        // 차단 toast.
         if !blocked.forwarded {
             #[cfg(feature = "gui")]
             state.toasts.push(

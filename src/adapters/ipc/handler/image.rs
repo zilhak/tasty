@@ -40,7 +40,12 @@ pub fn handle_open(
     };
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        // mirror surface 대상이면 convert 도 forward 되어 `MirrorStructuralBlocked
+        // {forwarded:true}` 로 돌아온다 — 이걸 그냥 `internal_error` 로 뭉개면 실제로는
+        // 원격에 정상 큐잉된 요청을 호출자가 실패로 오인한다. 다른 재사용 핸들러(split
+        // 등)와 동일하게 `structural_apply_error` 로 `forwarded:true` 를 성공 응답으로
+        // 변환한다.
+        Err(e) => return super::structural_apply_error(id, &e),
     };
     let replaced = matches!(
         events.into_iter().next(),

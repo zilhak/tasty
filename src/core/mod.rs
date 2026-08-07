@@ -214,9 +214,11 @@ pub(crate) fn mark_last_forward_user_triggered(
 /// mirror 구조 `DomainIntent` → 원격 forward 할 [`StructuralOp`](crate::ipc::stream::StructuralOp).
 /// anchor 는 **로컬** mirror surface id(App drain 이 세션 매핑으로 원격 id 로 치환).
 /// pane/tab 대상 op 는 그 pane/tab 의 대표 surface(활성 탭의 focused surface)를 anchor 로
-/// 삼아 원격이 자기 트리에서 pane/tab 을 resolve 하게 한다. forward 대상이 아닌
-/// op(convert/move-surface — 재사용할 원격 IPC 핸들러 없음) 또는 anchor 를 못 찾으면
-/// `None`(→ 기존 차단 유지).
+/// 삼아 원격이 자기 트리에서 pane/tab 을 resolve 하게 한다. `MoveSurface` 는 source/target
+/// 이 서로 다른 workspace 에 걸치면(mirror↔local 경계 포함) forward 하지 않는다 — 로컬
+/// 전용 surface_id 를 원격에 그대로 보내면 그 id 가 원격 트리의 무관한 surface 와 우연히
+/// 겹칠 때(둘 다 단순 u32, 네임스페이스 분리 없음) 엉뚱한 surface 가 대상이 될 위험이
+/// 있다. anchor 를 못 찾거나 위 조건에 안 맞으면 `None`(→ 기존 차단 유지).
 fn build_mirror_forward_op(
     engine: &crate::core::CoreState,
     intent: &DomainIntent,
@@ -305,7 +307,39 @@ fn build_mirror_forward_op(
             from_index: *from_index,
             to_index: *to_index,
         }),
-        // convert / move-surface 는 forward 미지원(차단 유지).
+        D::ConvertSurface { surface_id, target } => {
+            use crate::core::intent::ConvertSurfaceTarget;
+            let (surface_kind, params) = match target {
+                ConvertSurfaceTarget::Terminal { .. } => {
+                    ("terminal".to_string(), serde_json::json!({}))
+                }
+                ConvertSurfaceTarget::Kind { kind, params, .. } => (kind.clone(), params.clone()),
+            };
+            Some(StructuralOp::ConvertSurface {
+                surface_id: *surface_id,
+                surface_kind,
+                params,
+            })
+        }
+        D::MoveSurface {
+            source_surface_id,
+            target_surface_id,
+        } => {
+            let src_ws = engine
+                .find_workspace_index_for_surface(*source_surface_id)
+                .map(|(i, _)| i);
+            let tgt_ws = engine
+                .find_workspace_index_for_surface(*target_surface_id)
+                .map(|(i, _)| i);
+            if src_ws.is_some() && src_ws == tgt_ws {
+                Some(StructuralOp::MoveSurface {
+                    source_surface_id: *source_surface_id,
+                    target_surface_id: *target_surface_id,
+                })
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
@@ -4331,10 +4365,11 @@ mod mirror_structural_guard_tests {
         }
     }
 
-    /// convert 는 재사용할 원격 IPC 핸들러가 없어 forward 대상이 아니다 →
-    /// forwarded=false(기존 차단 toast 유지), 큐는 비어있다.
+    /// convert 는 이제 forward 대상이다 — `StructuralOp::ConvertSurface` 로 큐잉되고
+    /// (surface_kind/params 전달), forwarded=true(로컬 차단 유지, 원격에 위임).
     #[test]
-    fn mirror_convert_is_blocked_without_forward() {
+    fn mirror_convert_enqueues_forward_with_local_anchor() {
+        use crate::ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -4343,14 +4378,131 @@ mod mirror_structural_guard_tests {
                 &mut engine,
                 DomainIntent::ConvertSurface {
                     surface_id: a,
-                    target: crate::core::intent::ConvertSurfaceTarget::Terminal { cwd: None },
+                    target: crate::core::intent::ConvertSurfaceTarget::Kind {
+                        cwd: None,
+                        kind: "markdown".to_string(),
+                        params: serde_json::json!({ "file": "/tmp/a.md" }),
+                    },
                 },
             )
-            .expect_err("blocked");
+            .expect_err("blocked locally");
         let blocked = err
             .downcast_ref::<MirrorStructuralBlocked>()
             .expect("MirrorStructuralBlocked");
-        assert!(!blocked.forwarded, "convert 는 forward 대상 아님");
+        assert!(blocked.forwarded, "convert 는 이제 forward 대상이다");
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        match &engine.pending_structural_forward[0].op {
+            StructuralOp::ConvertSurface {
+                surface_id,
+                surface_kind,
+                params,
+            } => {
+                assert_eq!(*surface_id, a, "anchor 는 로컬 surface a");
+                assert_eq!(surface_kind, "markdown");
+                assert_eq!(params, &serde_json::json!({ "file": "/tmp/a.md" }));
+            }
+            other => panic!("expected ConvertSurface, got {other:?}"),
+        }
+    }
+
+    /// MoveSurface 는 source/target 이 같은 mirror workspace 안에 있을 때만
+    /// forward 된다(결정됨 — cross-workspace 는 로컬 전용 id 유출 위험이라 계속 차단).
+    #[test]
+    fn mirror_move_surface_enqueues_forward_when_same_workspace() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        // mirror=true 로 세팅하기 전(=로컬 실행 허용될 때) 실제 split 으로 같은
+        // workspace 안에 형제 surface b 를 만든다.
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect("split ok");
+        let b = match events.into_iter().next() {
+            Some(CoreEvent::SurfaceSplit { new_surface_id, .. }) => new_surface_id,
+            other => panic!("expected SurfaceSplit, got {other:?}"),
+        };
+        engine.workspaces[0].mirror = true;
+
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::MoveSurface {
+                    source_surface_id: a,
+                    target_surface_id: b,
+                },
+            )
+            .expect_err("blocked locally");
+        let blocked = err
+            .downcast_ref::<MirrorStructuralBlocked>()
+            .expect("MirrorStructuralBlocked");
+        assert!(
+            blocked.forwarded,
+            "같은 mirror workspace 안의 move 는 forward 돼야 한다"
+        );
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        match &engine.pending_structural_forward[0].op {
+            StructuralOp::MoveSurface {
+                source_surface_id,
+                target_surface_id,
+            } => {
+                assert_eq!(*source_surface_id, a);
+                assert_eq!(*target_surface_id, b);
+            }
+            other => panic!("expected MoveSurface, got {other:?}"),
+        }
+    }
+
+    /// MoveSurface 가 mirror workspace 와 (다른) 로컬 workspace 경계를 넘으면 forward
+    /// 하지 않고 기존 로컬 차단을 유지한다 — target 이 로컬 전용 id 라 그대로 원격에
+    /// 보내면 원격 트리의 무관한 surface 와 우연히 겹칠 위험이 있다(결정됨 절 참조).
+    #[test]
+    fn mirror_move_surface_blocked_when_crossing_workspace_boundary() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+
+        // 두 번째(비-mirror, 로컬) workspace 를 만들고 그 안의 surface 를 target 으로 쓴다.
+        let ws1_id = engine.next_ids.next_workspace();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        engine
+            .terminals
+            .insert(sid1, Terminal::new_detached(80, 24));
+        let ws1 = crate::model::Workspace::new_with_terminal_marker(
+            ws1_id,
+            "ws1".to_string(),
+            pane1_id,
+            tab1_id,
+            sid1,
+        );
+        engine.workspaces.push(ws1);
+
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::MoveSurface {
+                    source_surface_id: a,
+                    target_surface_id: sid1,
+                },
+            )
+            .expect_err("blocked locally");
+        let blocked = err
+            .downcast_ref::<MirrorStructuralBlocked>()
+            .expect("MirrorStructuralBlocked");
+        assert!(
+            !blocked.forwarded,
+            "workspace 경계를 넘는 move 는 forward 하면 안 된다"
+        );
         assert!(engine.pending_structural_forward.is_empty());
     }
 
@@ -4425,8 +4577,9 @@ mod mirror_structural_guard_tests {
         );
     }
 
-    /// 08 — `forwarded=false`(convert 등 forward 불가 op)면 origin 이 user 여도
-    /// 아무것도 건드리지 않는다(애초에 큐가 비어 있으므로 no-op).
+    /// 08 — `forwarded=false`(workspace 경계를 넘는 MoveSurface 등 forward 불가
+    /// op)면 origin 이 user 여도 아무것도 건드리지 않는다(애초에 큐가 비어 있으므로
+    /// no-op).
     #[test]
     fn mark_last_forward_user_triggered_noop_when_not_forwarded() {
         use crate::intent::{IntentOrigin, UserSource};
@@ -4434,12 +4587,29 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
+
+        let ws1_id = engine.next_ids.next_workspace();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        engine
+            .terminals
+            .insert(sid1, Terminal::new_detached(80, 24));
+        let ws1 = crate::model::Workspace::new_with_terminal_marker(
+            ws1_id,
+            "ws1".to_string(),
+            pane1_id,
+            tab1_id,
+            sid1,
+        );
+        engine.workspaces.push(ws1);
+
         let err = core
             .apply(
                 &mut engine,
-                DomainIntent::ConvertSurface {
-                    surface_id: a,
-                    target: crate::core::intent::ConvertSurfaceTarget::Terminal { cwd: None },
+                DomainIntent::MoveSurface {
+                    source_surface_id: a,
+                    target_surface_id: sid1,
                 },
             )
             .expect_err("blocked");
