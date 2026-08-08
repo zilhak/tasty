@@ -50,7 +50,7 @@
 
 - `src/adapters/ui/tutorial/mod.rs` — `Topic`/`Step`/`MarkerTarget` 컴파일타임 정의,
   `TutorialRuntime`(AppState 필드), `resolve_marker_rect`(순수), `draw_tutorial_overlay`
-  (오케스트레이션 — `draw_popups` 말미 훅).
+  (오케스트레이션 — `src/adapters/ui/overlay.rs::draw_overlays` 말미 훅).
 - `marker.rs` — `paint_marker` / `paint_spotlight_scrim`.
 - `callout.rs` — `place_callout`(edge-avoidance 순수 함수 + 단위테스트) + `draw_callout`.
 - `topic_popup.rs` — `draw_tutorial_topics_popup`(PopupDef draw_fn).

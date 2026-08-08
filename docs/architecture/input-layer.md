@@ -38,7 +38,7 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 ### `popup_hovered` / `banner_hovered` / `modifier_hint_hovered` 프레임 간 전달
 
-`PopupManager::draw()`(`src/adapters/ui/popup/draw.rs`) / `BannerManager::draw()`(`src/adapters/ui/banner.rs`) / `draw_modifier_hint()`(`src/adapters/ui/modifier_hint_overlay.rs`)는 렌더 시점에 호출되고 마우스 이벤트는 이벤트 시점에 처리돼 타이밍이 다르다. 그래서 draw 결과(`PopupDrawResult.hovered` / `BannerDrawResult.hovered` / `HintDrawResult.hovered`)를 `state.popup_hovered` / `state.banner_hovered` / `state.modifier_hint_hovered`(`src/state.rs`)에 프레임 간 상태로 저장해 두고(배너·modifier-hint 는 `src/adapters/ui/notification.rs` 의 draw 패스에서 기록), 마우스 핸들러가 그 값을 참조한다. (상세 모델은 [popup 시스템](../design/systems/popup.md) · [banner 시스템](../design/systems/banner.md).)
+`PopupManager::draw()`(`src/adapters/ui/popup/draw.rs`) / `BannerManager::draw()`(`src/adapters/ui/banner.rs`) / `draw_modifier_hint()`(`src/adapters/ui/modifier_hint_overlay.rs`)는 렌더 시점에 호출되고 마우스 이벤트는 이벤트 시점에 처리돼 타이밍이 다르다. 그래서 draw 결과(`PopupDrawResult.hovered` / `BannerDrawResult.hovered` / `HintDrawResult.hovered`)를 `state.popup_hovered` / `state.banner_hovered` / `state.modifier_hint_hovered`(`src/state.rs`)에 프레임 간 상태로 저장해 두고(popup 은 `src/adapters/ui/popup/frame.rs`, 배너·modifier-hint 는 `src/adapters/ui/overlay.rs` 의 draw 패스에서 기록), 마우스 핸들러가 그 값을 참조한다. (상세 모델은 [popup 시스템](../design/systems/popup.md) · [banner 시스템](../design/systems/banner.md).)
 
 ## 커서 결정
 

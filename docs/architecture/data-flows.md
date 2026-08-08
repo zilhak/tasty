@@ -72,11 +72,11 @@ tasty-cli (또는 외부 프로그램)
   → core 가 이벤트 수집 → store/notification.rs (NotificationStore::add)
       ├── 병합: 같은 소스 coalesce 윈도우 내 → body 합치기
       └── FIFO 상한 초과 시 pop_front
-  → adapters/ui/notification.rs (OS 네이티브 알림, 비활성 view 한정)
   → tasty-hooks (Notification 이벤트 훅)
 
 표시:
-  → adapters/ui/ 사이드바 워크스페이스 배지 + 알림 패널
+  → adapters/ui/ 사이드바 워크스페이스 배지 + 알림 패널(adapters/ui/notification.rs, popup 시스템에
+    등록된 headless popup — 렌더 루프 자체는 adapters/ui/popup/frame.rs)
 ```
 
 알림은 *시스템 조건* 발이라 popup 을 자동으로 띄우지 않는다 — 데이터(Store)만 바꾸고 UI 가 수동 표시([toast/popup 발화 정책](../design/systems/popup.md)).

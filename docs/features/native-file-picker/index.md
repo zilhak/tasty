@@ -222,9 +222,9 @@ doc.
 ## 구현
 
 - Popup: `src/adapters/ui/popup/file_picker.rs`(`FilePickerProps`/`FilePickerAction`/
-  `draw_file_picker_view`/`draw_file_picker`), `src/adapters/ui/popup/defs.rs`(`PopupDef` 등록),
-  `src/adapters/ui/popup.rs`(모듈 선언), `src/adapters/ui/notification.rs`(X/외부 닫기 →
-  `Cancelled` 명시).
+  `draw_file_picker_view`/`draw_file_picker`/`on_close_file_picker` — X 버튼/외부 클릭 등
+  draw_fn 을 거치지 않는 닫힘도 `PopupDef.on_close` 훅으로 `Cancelled` 명시),
+  `src/adapters/ui/popup/defs.rs`(`PopupDef` 등록), `src/adapters/ui/popup.rs`(모듈 선언).
 - 공유 나열: `src/core/fs_list.rs`(`DirEntryInfo`/`read_dir_entries`/`sort_entries`/`human_size`/
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,

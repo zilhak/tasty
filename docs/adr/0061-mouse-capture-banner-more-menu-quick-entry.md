@@ -83,7 +83,7 @@ Settings 하나에서 "Settings + 배너 퀵 엔트리" 둘로 넓히는 것**�
 - 영향 파일: `src/adapters/ui/banner.rs`(`BannerManager::draw()` 우상단 affordance,
   `BannerDrawResult::more_clicked`), `src/adapters/ui/mouse_capture_menu.rs`(headless 메뉴
   draw_fn + 액션 함수), `src/adapters/ui/popup/defs.rs`(`mouse_capture_banner_menu` PopupDef),
-  `src/adapters/ui/notification.rs`(`draw_popups` 의 배너↔popup 조립 지점), `src/state.rs`
+  `src/adapters/ui/overlay.rs`(`draw_overlays` 의 배너↔popup 조립 지점), `src/state.rs`
   (`DialogState::mouse_capture_banner_menu_target`), `crates/tasty-icons/src/lib.rs`(`MORE`
   아이콘), `lang/{ko,en,ja}.toml`(`banner.mouse_capture.more_button` /
   `popup.mouse_capture_banner_menu.*`), `crates/tasty-gallery/src/catalog/widgets/banner.rs`
