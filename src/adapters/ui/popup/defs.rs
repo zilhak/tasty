@@ -220,7 +220,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: true,
                 min_size: Some(egui::vec2(420.0, 320.0)),
                 draw_fn: super::remote_tool::draw_remote_tool_popup,
-                on_close: None,
+                on_close: Some(super::remote_tool::on_close_remote_tool_popup),
             },
             PopupDef {
                 id: super::remote_attach::REMOTE_ATTACH_POPUP_ID,

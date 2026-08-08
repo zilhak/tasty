@@ -193,6 +193,18 @@ fn is_unknown_kind(kind: &str) -> bool {
     !is_builtin_kind(kind) && !KNOWN_TYPES.contains(&kind)
 }
 
+/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 `UiState`(폼 버퍼, detect 워커,
+/// 필터 드래프트)를 drop 한다. `FILTER_MEMORY_ID`(적용된 프로토콜 필터)는 별도
+/// 키라 건드리지 않는다 — session-only 로 popup 재오픈에도 유지되는 것이 의도.
+/// remote_attach 와 동형의 구조적 결함(불변식이 우연에 의존)이었다.
+pub fn on_close_remote_tool_popup(
+    ctx: &egui::Context,
+    _state: &mut AppState,
+    _engine: &mut CoreState,
+) {
+    clear_ui(ctx);
+}
+
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_tool_popup(
     ui: &mut egui::Ui,
@@ -2585,6 +2597,31 @@ mod tests {
 
     fn prof(name: &str, kind: &str) -> RemoteProfile {
         RemoteProfile::new(name, kind)
+    }
+
+    /// `UiState`(폼 버퍼·detect 워커)는 훅 한 번으로 drop 되지만, `FILTER_MEMORY_ID`
+    /// (적용된 프로토콜 필터)는 session-only 로 popup 재오픈에도 유지돼야 하므로
+    /// 건드리지 않는다.
+    #[test]
+    fn on_close_clears_ui_state_but_preserves_filter() {
+        let ctx = egui::Context::default();
+        write_ui(
+            &ctx,
+            UiState {
+                tab: Tab::Attach,
+                ..Default::default()
+            },
+        );
+        write_filter(&ctx, ["ssh".to_string()].into_iter().collect());
+
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        on_close_remote_tool_popup(&ctx, &mut state, &mut engine);
+
+        assert!(
+            ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))
+                .is_none()
+        );
+        assert_eq!(read_filter(&ctx), ["ssh".to_string()].into_iter().collect());
     }
 
     #[test]
