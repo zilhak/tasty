@@ -334,6 +334,31 @@ fn transfer_progress_empty_rows_close_clears_dialog_state() {
     assert!(state.dialogs.transfer_progress.is_none());
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
+/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
+#[test]
+fn transfer_progress_close_intent_now_clears_dialog_state() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.transfer_progress = Some(TransferProgress { rows: vec![] });
+    state
+        .popups
+        .open_at_focused(TRANSFER_PROGRESS_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: TRANSFER_PROGRESS_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(TRANSFER_PROGRESS_POPUP_ID));
+    assert!(state.dialogs.transfer_progress.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.transfer_progress.is_none());
+}
+
 // ──────────────────────────── transfer_error ────────────────────────────
 
 fn xfer_err(name: &str) -> TransferError {

@@ -251,7 +251,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::transfer::draw_transfer_progress,
-                on_close: None,
+                on_close: Some(super::transfer::on_close_transfer_progress),
             },
             // (09) 원격 전송 실패 — scrim 중앙 headless, 기본 dismiss(Esc/scrim). Retry 는
             // 전송 중 실패만(draw_fn 이 판정). danger-fill 버튼 금지.

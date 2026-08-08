@@ -128,6 +128,18 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
 
 // ── draw_fn ────────────────────────────────────────────────────────────────
 
+/// PopupDef::on_close entry point — 진행 상태 정리(backstop; Cancel/완료 경로가
+/// 이미 비웠어도 무해). `src/app/image_upload.rs` 가 같은 정리를 직접 하는 중복이
+/// 있는데, 훅으로 옮겨도 둘 다 `None` 으로 만들 뿐이라 무해하다 — 그 중복 제거는
+/// 별건(open-time defensive reset 제거)이 담당한다.
+pub fn on_close_transfer_progress(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut CoreState,
+) {
+    state.dialogs.transfer_progress = None;
+}
+
 /// 진행 팝업 draw_fn. 헤더(download + "Receiving file" + pct) → 파일 행들(파일명 +
 /// determinate bar + done/total·rate) → ghost Cancel. 행이 없으면 self-close.
 pub fn draw_transfer_progress(
