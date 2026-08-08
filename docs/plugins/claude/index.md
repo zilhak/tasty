@@ -16,7 +16,7 @@
 
 ## 내부 동작
 
-- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합: stop/notification/session-end/prompt-submit/session-start/subagent-stop) · `notify-done`(내부용: spawn/tell 상태 전환 시 caller 에게 알림 전달 + 형제 hook 정리·재무장, 아래).
+- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합, 아래 "Claude Code 훅 통합" 절) · `notify-done`(내부용: spawn/tell 상태 전환 시 caller 에게 알림 전달 + 형제 hook 정리·재무장, 아래).
 - `spawn`/`tell`은 **동기 블록 없이 즉시 반환**한다. 대상(child 또는 tell 대상 surface)이 idle/needs_input 에 도달할 때마다, 그리고 최종적으로 exited 에 도달했을 때 caller surface(spawn/tell을 호출한 surface)에 완료 메시지가 자동으로 주입된다 — `claude-idle`/`needs-input`/`process-exit` 3개의 once(1회성) surface hook을 등록해 구현하며, 그중 하나가 fire되면 `notify-done`이 알림 전송 + 나머지 형제 hook 정리 후, target surface 가 아직 살아있으면(=이번 fire 가 process-exit 가 아니었으면) `surface.locate` 로 확인해 3개 hook 을 다시 등록한다(자기재무장). 이 덕분에 needs-input(되묻기) 같은 일시적 상태 전환을 거쳐도 그 뒤 진짜 완료 시 알림을 놓치지 않는다 — "spawn/tell 당 알림 1회"가 아니라 "child 가 살아있는 동안 상태 전환마다 알림"이다.
 - **ipc_namespace `claude`** — 위 동작의 IPC 표면.
 - **event_subscribe** `surface.closed` — surface 종료를 받아 인스턴스 상태 정리.
@@ -25,6 +25,32 @@
   - **`claude-session-id` meta 가 비어 reboot 가 실패하는 경우**: `no active claude session on surface {id} (claude-session-id meta not set …)` 에러는 hook 미설치가 아니어도 발생할 수 있다 — session-start hook 이 이 meta 를 못 심은 것이 원인. 조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook … || true` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(release stderr + debug 빌드는 `~/.tasty/debug-dev.log`). 수동 복구: `tasty surface-meta set --key claude-session-id --value <세션ID>`.
 - spawn 시 parent 의 살아있는 child 수가 설정 임계치를 넘으면 응답에 `warning` 필드가 실린다 — Settings › Plugin › Claude Code 에서 임계치 조정.
 - **승인 정책 플래그 없음(미확인 상태)** — [codex](../codex/index.md) 플러그인은 `--approval`/`--sandbox`/`--full-auto` 로 자식의 승인/샌드박스 정책을 지정할 수 있지만(비대화형 자동화 흐름에서 승인 프롬프트가 자식을 영구히 멈추는 문제의 해결책), 이 플러그인의 `build_launch_command`(`crates/tasty-plugin-claude/src/handlers.rs`)에는 대응하는 플래그가 없다. Claude Code 는 codex 처럼 기동 시점 CLI 플래그가 아니라 `settings.json`(`permissions`)/`--permission-mode` 기반 권한 모델을 쓰므로 구조가 다르지만, `permissions.defaultMode` 가 승인이 필요한 값일 때 `spawn`/`launch`/`respawn` 으로 띄운 자식이 codex 와 동형으로 승인 프롬프트에서 영구히 멈추는지는 아직 재현·확인되지 않았다. 재현되면 codex 와 동형의 정책 플래그 노출이 필요하다.
+
+### Claude Code 훅 통합
+
+`tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 6개 이벤트를 심는다. 모든 이벤트가 같은 형태의 명령 문자열을 쓴다:
+
+```
+[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook <token> || true
+```
+
+`session_id`/`message` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message` 플래그가 각각 `stdin_field = "session_id"`/`"message"`로 stdin JSON에서 자동 채워진다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+
+| Claude Code 이벤트 | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | 기타 |
+|---|---|---|---|---|---|
+| `Stop` / `SubagentStop` | `stop` / `subagent-stop` | `idle` | `claude-idle` | — | `surface.completion` |
+| `SessionEnd` | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command` **unset** | `surface.completion` |
+| `Notification` | `notification` | `needs_input` | `needs-input` | — | `surface.completion` |
+| `UserPromptSubmit` | `prompt-submit` | `active` | — | — | — |
+| `SessionStart` | `session-start` | `active` | — | `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀) | — |
+
+`UserPromptSubmit`은 child가 2번째 이후 prompt를 받을 때 직전 `Stop` hook이 남긴 `idle=true` 잔재를 지우는 데 필수다 — 미등록 시 실제로는 active인 child를 idle로 오보고하는 상태 버그가 생긴다. hook은 **event 이름만** 받고 툴 이름/`tool_input`은 보지 않으므로, "어떤 툴 때문에 멈췄는지"는 구분하지 않는다 — `needs_input`은 `Notification` 하나에서만 나온다.
+
+**설치 대상은 이 6개뿐이다** — `PreToolUse`/`PostToolUse` 같은 툴 단위 이벤트는 걸지 않는다(레포 안에서 `PreToolUse`가 나오는 곳은 install 회귀 테스트 픽스처뿐).
+
+install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다.
+
+hook이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error` 3개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 3개 키로의 hook 등록도 거부된다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
 ## 인터페이스
 
@@ -41,4 +67,5 @@
 - [ ] Given 플러그인 활성 When `tasty claude launch` Then 새 워크스페이스에서 Claude 가 실행된다.
 - [ ] Given 부모 인스턴스 When `tasty claude spawn` Then 자식 인스턴스가 패인 분할로 생성되고 `children` 에 보인다.
 - [ ] Given 자식 When `tasty claude spawn`(또는 `tell`) 후 자식이 idle/needs_input/exited 에 도달 Then caller surface 에 완료 알림이 주입되고 형제 hook 이 함께 정리된다. 자식이 exited 가 아닌 상태(idle/needs_input)로 도달한 경우엔 형제 hook 이 재등록돼 그 뒤 상태 전환에도 계속 알림이 온다.
+- [ ] Given `~/.claude/settings.json`에 사용자가 직접 추가한 hook entry가 있음 When `tasty claude install` 실행 Then 6개 tasty hook entry가 추가/갱신되고 사용자 entry는 그대로 보존된다.
 </content>
