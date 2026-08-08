@@ -46,11 +46,11 @@
 
 `UserPromptSubmit`은 child가 2번째 이후 prompt를 받을 때 직전 `Stop` hook이 남긴 `idle=true` 잔재를 지우는 데 필수다 — 미등록 시 실제로는 active인 child를 idle로 오보고하는 상태 버그가 생긴다. hook은 **event 이름만** 받고 툴 이름/`tool_input`은 보지 않으므로, "어떤 툴 때문에 멈췄는지"는 구분하지 않는다 — `needs_input`은 `Notification` 하나에서만 나온다.
 
-**설치 대상은 이 6개뿐이다** — `PreToolUse`/`PostToolUse` 같은 툴 단위 이벤트는 걸지 않는다(레포 안에서 `PreToolUse`가 나오는 곳은 install 회귀 테스트 픽스처뿐).
+**설치 대상은 이 6개뿐이다** — `PreToolUse`/`PostToolUse` 같은 툴 단위 이벤트는 걸지 않는다(claude install 코드/테스트 어디에도 `PreToolUse`/`PostToolUse`를 걸지 않는다 — `install.rs`의 `install_preserves_other_hooks` 테스트가 사용자가 직접 추가한 `PreToolUse` entry를 건드리지 않고 그대로 보존함을 검증한다).
 
 install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다.
 
-hook이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error` 3개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 3개 키로의 hook 등록도 거부된다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
+이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error` 3개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 3개 키로의 hook 등록도 거부된다. **이 3개가 전부 위 6개 설치 훅에서 나오는 건 아니다** — `claude-idle`/`needs-input`은 위 `apply_hook`(Stop/SessionEnd → `claude-idle`, Notification → `needs-input`)에서 나오지만, `claude-error`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 발사한다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
 ## 인터페이스
 
