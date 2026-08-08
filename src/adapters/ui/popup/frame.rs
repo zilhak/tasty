@@ -1,24 +1,4 @@
 use crate::state::AppState;
-use crate::theme;
-
-/// Draw all popups via the PopupManager. Called from egui_bridge.
-/// "더보기" 컨텍스트 메뉴가 열려 있는 배너 스코프(없으면 `None`). popup open 여부는
-/// `AppState.popups`, 대상 surface 는 `dialogs` 타깃 필드가 따로 갖고 있어 조립이
-/// 필요하다 — `draw_popups` 본문에 인라인하면 인지 복잡도 예산을 넘어 별도 함수로 뺐다.
-fn mouse_capture_more_menu_open_for(
-    state: &AppState,
-) -> Option<crate::adapters::ui::banner::BannerScope> {
-    if !state
-        .popups
-        .is_open(crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID)
-    {
-        return None;
-    }
-    state
-        .dialogs
-        .mouse_capture_banner_menu_target
-        .map(crate::adapters::ui::banner::BannerScope::Surface)
-}
 
 /// 마우스 캡처 배너 "더보기" 메뉴가 (액션 클릭이든 outside click/Esc 든) 닫혔으면
 /// 대상 surface 필드를 비운다. 매번 확인해도 무해(idempotent) — 다른 popup 의
@@ -95,17 +75,17 @@ fn drain_on_close_hooks_with_lookup(
     }
 }
 
-pub fn draw_popups(
+/// 범용 popup 렌더 루프 — 등록된 모든 `PopupDef` 를 그리고, 6개 close 경로
+/// (draw_fn Close / X버튼·외부클릭 / `ClosePopup`·`TogglePopup` / App 직접 호출 /
+/// debug IPC) 어디로 닫히든 `on_close` 훅을 drain 한다. `draw_ctx` 는 popup 과
+/// 오버레이 체인(`overlay::draw_overlays`)이 같은 프레임에 공유하므로 호출자
+/// (`ui::draw_popups`)가 한 번만 만들어 넘긴다.
+pub(crate) fn draw_popup_layer(
     ctx: &egui::Context,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    pane_rects: &[(u32, crate::model::PhysicalRect)],
-    terminal_rect: crate::model::PhysicalRect,
-    scale_factor: f32,
+    draw_ctx: &crate::adapters::ui::LayoutContext,
 ) {
-    // Build scope context for popup visibility/clamping
-    let draw_ctx = build_layout_context(state, engine, pane_rects, terminal_rect, scale_factor);
-
     // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
     // in-memory caches so this is cheap.
     // intent-exempt: 매 프레임 i18n title / size 재계산은 mutation 이 아닌 draw-prep.
@@ -145,7 +125,7 @@ pub fn draw_popups(
                 dispatch_closed.push(def.id);
             }
         },
-        Some(&draw_ctx),
+        Some(draw_ctx),
     );
 
     // Update input layer state: popup hover blocks mouse events to lower layers
@@ -172,155 +152,8 @@ pub fn draw_popups(
     drain_on_close_hooks(ctx, state, engine);
 
     // 마우스 캡처 배너 "더보기" 메뉴 — outside click/Esc로 닫히면(액션 클릭이 아니라)
-    // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
+    // 대상 필드를 정리한다(`draw_popup_layer` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
     cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);
-
-    // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
-    let reduced_motion = engine.settings.accessibility.reduced_motion;
-    state
-        .toasts
-        .set_lifetime_ms(engine.settings.overlay.toast_duration_ms);
-    state.toasts.draw(ctx, &draw_ctx, reduced_motion);
-
-    // Banner 렌더링 (toast 와 동일 LayoutContext). 배너는 스코프 콘텐츠 최상단(탭바
-    // 아래)에 뜨며 자기 영역의 마우스를 소비한다 — `banner_hovered` 로 하위 레이어
-    // 전파를 막는다(포커스는 받지 않음). View 스코프 배너는 각 View 가 지정한
-    // 플레이스홀더에 뜬다 — 화면 상단(탭바 아래)을 기본 플레이스홀더로 둔다.
-    let th = theme::theme();
-    let screen = ctx.screen_rect();
-    let view_placeholder = Some(egui::Rect::from_min_max(
-        egui::pos2(screen.left(), screen.top() + th.tab_bar_height.value()),
-        screen.max,
-    ));
-    // "더보기" 컨텍스트 메뉴가 열려 있는 배너 스코프 — 열려 있는 동안 ⋯ 트리거를
-    // hover 와 무관하게 active 강조 상태로 유지한다(디자인 확정값 §6-1). `BannerManager`
-    // 자신은 popup 시스템을 모르므로 여기서 조립해 넘긴다(helper 로 분리 —
-    // `draw_popups` 의 인지 복잡도 예산).
-    let more_menu_open_for = mouse_capture_more_menu_open_for(state);
-    let banner_result = state.banners.draw(
-        ctx,
-        &draw_ctx,
-        &th,
-        view_placeholder,
-        reduced_motion,
-        more_menu_open_for.as_ref(),
-    );
-    state.banner_hovered = banner_result.hovered;
-    state.banner_layer = Some(banner_result.layer);
-    if let Some((scope, trigger_rect)) = banner_result.more_clicked {
-        crate::adapters::ui::mouse_capture_menu::open(state, ctx, &scope, trigger_rect);
-    }
-
-    // modifier-hint 오버레이 (toast/banner 인접 최상위 레이어). modifier 500ms 홀드 후
-    // 표시, 마우스만 소비(키보드 포커스 불가 — 원칙3). 홀드 상태는 winit ModifiersChanged
-    // (실사용자 입력)만 반영(원칙1). 놓는 시점의 지오메트리를 UpdateSettings 로 영속한다.
-    let hint_result = crate::adapters::ui::modifier_hint_overlay::draw_modifier_hint(
-        ctx,
-        &mut state.modifier_hint,
-        &engine.settings,
-        &th,
-        reduced_motion,
-    );
-    state.modifier_hint_hovered = hint_result.hovered;
-    state.modifier_hint_layer = hint_result.layer;
-
-    // 튜토리얼 오버레이 (마커 오버레이 + 안내 말풍선) — 팝업/toast/banner/modhint 위
-    // 최상위 레이어. 마커/scrim 은 hit-transparent, 말풍선만 마우스 소비. 진입·진행은
-    // 사용자 클릭으로만(원칙 1). 마커 좌표는 draw_ctx/terminal_rect 로 매 프레임 재해석.
-    let content_area = egui::Rect::from_min_size(
-        egui::pos2(
-            terminal_rect.x.value() / scale_factor,
-            terminal_rect.y.value() / scale_factor,
-        ),
-        egui::vec2(
-            terminal_rect.width.value() / scale_factor,
-            terminal_rect.height.value() / scale_factor,
-        ),
-    );
-    crate::adapters::ui::tutorial::draw_tutorial_overlay(
-        ctx,
-        state,
-        engine,
-        &draw_ctx,
-        content_area,
-        &th,
-    );
-
-    if let Some((pos, size)) = hint_result.persist {
-        // 사용자 드래그/리사이즈 결과 → Settings 영속(사이드바 폭 등과 동일 성질,
-        // 전역 공유 + last-write-wins). from_user_menu = 사용자 직접 조작 origin.
-        let mut new_settings = engine.settings.clone();
-        new_settings.modifier_hint.pos = Some(pos);
-        new_settings.modifier_hint.size = Some(size);
-        state.dispatch_intent(
-            crate::core::intent::DomainIntent::UpdateSettings(new_settings)
-                .from_user_menu("modifier_hint.geometry"),
-        );
-    }
-}
-
-/// Build LayoutContext from current AppState and layout info.
-fn build_layout_context(
-    state: &AppState,
-    engine: &crate::core::CoreState,
-    pane_rects: &[(u32, crate::model::PhysicalRect)],
-    terminal_rect: crate::model::PhysicalRect,
-    scale_factor: f32,
-) -> crate::adapters::ui::LayoutContext {
-    let active_workspace = state.active_workspace;
-
-    // Convert physical pixel pane rects to logical pixel egui rects
-    let pane_rects_logical: Vec<(u32, egui::Rect)> = pane_rects
-        .iter()
-        .map(|(id, r)| {
-            (
-                *id,
-                egui::Rect::from_min_size(
-                    egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
-                    egui::vec2(
-                        r.width.value() / scale_factor,
-                        r.height.value() / scale_factor,
-                    ),
-                ),
-            )
-        })
-        .collect();
-
-    // Compute surface rects using surface_regions
-    let mut surface_rects = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
-        for r in regions {
-            surface_rects.push((
-                r.id,
-                egui::Rect::from_min_size(
-                    egui::pos2(
-                        r.rect.x.value() / scale_factor,
-                        r.rect.y.value() / scale_factor,
-                    ),
-                    egui::vec2(
-                        r.rect.width.value() / scale_factor,
-                        r.rect.height.value() / scale_factor,
-                    ),
-                ),
-            ));
-        }
-    }
-
-    // Collect active tab indices
-    let mut active_tabs = Vec::new();
-    let ws = state.active_workspace(engine);
-    for &pid in &ws.pane_layout().all_pane_ids() {
-        if let Some(pane) = ws.pane_layout().find_pane(pid) {
-            active_tabs.push((pid, pane.active_tab));
-        }
-    }
-
-    crate::adapters::ui::LayoutContext {
-        active_workspace,
-        pane_rects: pane_rects_logical,
-        surface_rects,
-        active_tabs,
-    }
 }
 
 #[cfg(test)]
