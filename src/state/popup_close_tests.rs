@@ -190,9 +190,9 @@ fn convert_surface_outside_click_clears_dialog_state() {
 }
 
 /// `on_close` 훅 이관 후 — 이전엔 못 잡던 `UiIntent::ClosePopup` 경로도 이제
-/// 뒷정리가 돈다(`close_intent_currently_skips_cleanup` 이 고정한 rename 의 옛
-/// 동작과 대조). 인텐트 핸들러 자체는 drain 을 안 하므로, 실제 프레임과 동일하게
-/// 그 뒤에 `run_frame` 을 한 번 더 돌려야 훅이 발화한다.
+/// 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 이 고정한
+/// rename 의 동일 패턴과 대조). 인텐트 핸들러 자체는 drain 을 안 하므로, 실제
+/// 프레임과 동일하게 그 뒤에 `run_frame` 을 한 번 더 돌려야 훅이 발화한다.
 #[test]
 fn convert_surface_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
@@ -615,18 +615,16 @@ fn approval_x_button_close_with_pending_queue_refires_open_popup() {
     );
 }
 
-// ────────────────────── 현재 미커버 경로 (path 3) ──────────────────────
-// `UiIntent::ClosePopup` 로 닫으면 popup 은 닫히지만(`state.popups.close`),
-// draw_popups 의 뒷정리 블록은 전혀 돌지 않는다 — dispatch_closed/draw_result.closed
-// 어느 쪽도 채워지지 않기 때문이다. 이 gap 자체가 현재 동작이며, 후속 TODO(on_close
-// 훅 이관)가 이 테스트를 뒤집는다(뒤집히면 이 테스트 이름 그대로 실패해 이관이
-// 이 경로까지 커버했음을 알려준다).
+// ────────────────────── path 3 (`UiIntent::ClosePopup`) ──────────────────────
+// `rename` 은 on_close 훅으로 이관됐다 — `state.popups.close()` 가 큐에 쌓고,
+// 다음 프레임의 drain(`draw_popups` → `drain_on_close_hooks`)이 훅을 발화한다.
+// 인텐트 핸들러 자체는 drain 하지 않으므로 handle() 직후엔 아직 안 비워진다
+// (큐잉과 drain 이 분리된 설계의 자연스러운 결과 — 버그 아님).
 #[test]
-fn close_intent_currently_skips_cleanup() {
+fn close_intent_now_clears_cleanup_after_next_frame() {
     let (mut state, mut engine) = test_state();
     state.dialogs.rename = Some((RenameTarget::NewCategory, "abc".to_string()));
     state.popups.open_at_focused(RENAME_POPUP_ID, FIXED_POS);
-    let _ = &mut engine; // intent::popup::handle 은 engine 을 쓰지 않는다.
 
     let dispatched = UiIntent::ClosePopup {
         id: RENAME_POPUP_ID,
@@ -635,6 +633,11 @@ fn close_intent_currently_skips_cleanup() {
     crate::intent::popup::handle(&mut state, &dispatched);
 
     assert!(!state.popups.is_open(RENAME_POPUP_ID));
-    // 뒷정리가 돌지 않아 dialog 상태가 그대로 남는다 — 현재 동작의 고정.
+    // handle() 직후 — 아직 drain 전, 큐에만 쌓여 있다.
     assert!(state.dialogs.rename.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    // 다음 프레임의 drain 이 훅을 발화 — 뒷정리 완료.
+    assert!(state.dialogs.rename.is_none());
 }

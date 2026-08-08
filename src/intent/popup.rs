@@ -138,7 +138,7 @@ mod tests {
     /// close 경로 3(`UiIntent::ClosePopup`) — `state.popups.close()` 를 거쳐
     /// `closed_queue` 를 채운다(= `on_close` 훅이 등록돼 있었다면 발화했을 지점).
     /// 이전엔 이 경로가 `notification.rs` 의 뒷정리 블록 어디에도 안 걸렸다
-    /// (`state::popup_close_tests::close_intent_currently_skips_cleanup` 참고).
+    /// (`state::popup_close_tests::close_intent_now_clears_cleanup_after_next_frame` 참고).
     #[test]
     fn close_intent_pushes_to_closed_queue() {
         let mut state = make_state();

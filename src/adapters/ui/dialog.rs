@@ -63,6 +63,15 @@ pub enum RenamePopupAction {
     Confirm(String),
 }
 
+/// PopupDef::on_close entry point — 어떤 경로로 닫히든 rename target/buffer 를 비운다.
+pub fn on_close_rename_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.rename = None;
+}
+
 /// Draw function for the rename popup (PopupDef draw_fn).
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,

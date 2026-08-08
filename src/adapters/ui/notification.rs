@@ -332,13 +332,6 @@ pub fn draw_popups(
     // — 이관은 후속 TODO.
     drain_on_close_hooks(ctx, state, engine);
 
-    // Clean up rename dialog state when closed (X button)
-    let rename_closed =
-        dispatch_closed.contains(&"rename") || draw_result.closed.contains(&"rename");
-    if rename_closed {
-        state.dialogs.rename = None;
-    }
-
     // 마우스 캡처 배너 "더보기" 메뉴 — outside click/Esc로 닫히면(액션 클릭이 아니라)
     // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
     cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);

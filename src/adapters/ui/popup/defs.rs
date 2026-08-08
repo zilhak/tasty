@@ -83,7 +83,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::dialog::draw_rename_popup,
-                on_close: None,
+                on_close: Some(crate::adapters::ui::dialog::on_close_rename_popup),
             },
             PopupDef {
                 id: "search_bar",
