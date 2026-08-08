@@ -411,8 +411,7 @@ fn transfer_error_outside_click_with_single_entry_closes_without_reopen() {
 }
 
 /// 큐에 2건 있을 때 외부 클릭으로 닫으면(= draw_fn 을 거치지 않는 경로) head 만
-/// pop 되고, 남은 실패가 있으므로 팝업이 다시 열린다 — TODO 40 체크리스트의
-/// "transfer_error 재오픈 동작 테스트".
+/// pop 되고, 남은 실패가 있으므로 팝업이 다시 열린다.
 #[test]
 fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
     let (mut state, mut engine) = test_state();
@@ -961,7 +960,7 @@ fn approval_x_button_close_with_empty_queue_does_not_refire() {
 }
 
 /// X 버튼으로 닫혔는데 큐에 응답 대기 항목이 남아 있으면 다음 head 를 위해
-/// OpenPopup intent 가 재발화한다 — TODO 40 체크리스트의 "approval 재발화 테스트".
+/// OpenPopup intent 가 재발화한다.
 #[test]
 fn approval_x_button_close_with_pending_queue_refires_open_popup() {
     let (mut state, mut engine) = test_state();
