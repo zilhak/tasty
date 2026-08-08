@@ -258,12 +258,14 @@ pub struct CoreState {
     /// initial push regardless of the surface's last-seen value.
     pub(crate) last_forwarded_busy: std::collections::HashMap<u32, bool>,
 
-    // ── Surface highlight (attention) state. Producer-neutral shared primitive:
-    // any producer (toast notification, completion IPC/CLI, …) may raise it, and
-    // it is cleared when the surface gains real render-time focus (gpu.rs). Set
-    // membership = highlighted. Consumers: surface border, tab title (yellow),
-    // workspace count badge. Helpers live in `state/highlight.rs`.
-    pub(crate) highlighted_surfaces: std::collections::HashSet<u32>,
+    // ── Surface attention state. Producer-neutral shared primitive: any producer
+    // (toast notification, completion IPC/CLI, OSC 133 command completion, …) may
+    // raise it, and it is cleared when the surface gains real render-time focus
+    // (gpu.rs). Consumers: surface border, tab title (yellow), workspace count
+    // badge. Separate from `notifications` (NotificationStore) — an attention
+    // record is not automatically a panel item. Helpers live in
+    // `state/attention.rs`.
+    pub(crate) attention: attention::AttentionStore,
 
     // ── Mouse-capture blacklist cache. Updated by the same 1Hz BusyPoll using
     // the foreground names already resolved for busy detection (no extra
@@ -601,7 +603,7 @@ impl CoreState {
             busy_surfaces: std::collections::HashSet::new(),
             mirror_busy_surfaces: std::collections::HashSet::new(),
             last_forwarded_busy: std::collections::HashMap::new(),
-            highlighted_surfaces: std::collections::HashSet::new(),
+            attention: attention::AttentionStore::default(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             mouse_capture_banner_suppressed_surfaces: std::collections::HashSet::new(),
             shell_integration_first_output_at: std::collections::HashMap::new(),
@@ -1251,10 +1253,10 @@ fn file_handler_recent_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
 
+mod attention;
 mod busy;
 mod finders;
 mod global_hooks;
-mod highlight;
 mod idle_hooks;
 mod message;
 mod pty;
@@ -1262,6 +1264,7 @@ mod shell_integration_hint;
 mod soft_occupancy;
 mod terminal_finders;
 
+pub(crate) use attention::AttentionKind;
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;

@@ -77,9 +77,10 @@ impl NotificationStore {
         let id = self.next_id;
         self.next_id += 1;
 
-        // NOTE: surface highlight 발동은 이제 producer(호출처)가 담당한다
-        // (`CoreState::raise_surface_highlight`). NotificationStore 는 알림 엔트리
-        // 저장/coalesce 만 책임진다 — highlight 는 producer 중립 공유 상태다.
+        // NOTE: surface attention 발동은 이제 producer(호출처)가 담당한다
+        // (`CoreState::raise_attention`). NotificationStore 는 알림 엔트리
+        // 저장/coalesce 만 책임진다 — attention 은 producer 중립 공유 상태이자
+        // NotificationStore 와 별개 저장소다.
 
         self.notifications.push_back(Notification {
             id,

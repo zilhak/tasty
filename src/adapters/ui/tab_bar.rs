@@ -877,7 +877,7 @@ pub fn draw_pane_tab_bars(
                 .iter()
                 .map(|t| {
                     let sids = t.all_surface_ids();
-                    engine.has_highlight(&sids)
+                    engine.any_attention(&sids)
                 })
                 .collect();
             let tab_is_busy = compute_tab_is_busy(engine, &pane.tabs);

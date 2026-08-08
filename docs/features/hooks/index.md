@@ -49,7 +49,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 - **등록**: `command-completed` = 임의 exit code 매치. `command-completed:<N>` = 그 exit code 만 매치(예: `command-completed:1` 로 실패한 명령만 구독). 실제 발생 이벤트는 항상 특정 exit code 를 담으므로, `None` 등록만 모든 발생과 매치되고 `Some(n)` 등록은 그 값과 일치할 때만 매치된다.
 - **전제 조건**: 셸이 OSC 133 셸 통합 스크립트를 로드해야 한다. 미설치 셸은 D phase 자체가 안 와 이 훅이 절대 발화하지 않는다 — surface 가 출력을 내는데도 일정 시간(10 초) 지나도록 OSC 133 boundary 를 한 번도 못 받으면 "셸 통합 미설치" 안내 배너(`shell-integration-missing`, 마우스 캡처 안내 배너와 동일한 형태 — 자동 조치 없이 설명만)를 surface 스코프로 1 회 띄운다.
-- **surface highlight 자동 연결**: 이 훅 발화와 별개로, cascade(`cascade_terminal_command_completed`)가 exit code 무관하게 항상 `raise_surface_highlight` 도 함께 호출한다(설정 없이 즉시 동작하는 자동 경로) — [surface-highlight](../surface-highlight/index.md) 참고. 이 훅(커스터마이즈 경로)은 그와 독립적으로 동작한다 — 예를 들어 실패한 명령만 알림음을 울리고 싶으면 `command-completed:1` 로 별도 바인딩을 추가로 걸 수 있다(자동 highlight 를 대체하는 게 아니라 그 위에 얹는 것).
+- **surface attention 자동 연결**: 이 훅 발화와 별개로, cascade(`cascade_terminal_command_completed`)가 exit code 무관하게 항상 `raise_attention`(kind=Completion) 도 함께 호출한다(설정 없이 즉시 동작하는 자동 경로) — [surface-highlight](../surface-highlight/index.md) 참고. 이 훅(커스터마이즈 경로)은 그와 독립적으로 동작한다 — 예를 들어 실패한 명령만 알림음을 울리고 싶으면 `command-completed:1` 로 별도 바인딩을 추가로 걸 수 있다(자동 attention 을 대체하는 게 아니라 그 위에 얹는 것).
 - **구현 메모**: termwiz 는 OSC 133("133")을 미리 알려진 코드로 인식해 `Unspecified` 가 아니라 전용 `FinalTermSemanticPrompt` variant 로 구조화해 반환한다(A/C/D 는 항상 이 경로 — B 만 셸이 `cmd=` 등 부가 토큰을 붙이면 termwiz 의 엄격 파서가 실패해 `Unspecified` 로 폴백). `crates/tasty-terminal/src/vte_handler/osc.rs`가 이 variant 를 tasty 공통 `PromptBoundary{phase, payload}` 로 평평하게 변환해 이후 로직(command_index/이 훅)이 phase 문자만 보고 동작한다.
 
 #### 이벤트 키 검증 (내장 + 플러그인 선언)

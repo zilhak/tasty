@@ -1179,9 +1179,9 @@ impl App {
             let title = crate::i18n::t("resume.suspect.title").to_string();
             let body = crate::i18n::t("resume.suspect.body").to_string();
             if engine.notifications.add(ws_id, sid, title, body).is_some() {
-                // toast producer — 신규 알림이면 surface highlight 발동(producer
+                // toast producer — 신규 알림이면 surface attention 발동(producer
                 // 중립 공유 상태로 이전됨, 옛 add() 내부 insert 대체).
-                engine.raise_surface_highlight(sid);
+                engine.raise_attention(sid, crate::core::AttentionKind::Completion);
             }
         }
     }

@@ -207,10 +207,10 @@ pub(crate) enum DomainIntent {
     /// 순회 후 terminal.set_mark() 호출. surface_id 가 None 이면 focused.
     SetTerminalMark { surface_id: u32 },
 
-    // ─── Surface completion (highlight producer) ───
-    /// "이 surface 가 작업을 완료했다" 신호. highlight 를 발동하는 producer
-    /// 중 하나(release 정식 IPC/CLI). cascade 가 surface 보유 engine 의
-    /// `raise_surface_highlight` + redraw. surface_id 필수(포커스 독립 — 불가침
+    // ─── Surface completion (attention producer) ───
+    /// "이 surface 가 작업을 완료했다" 신호. attention(kind=Completion) 을 발동하는
+    /// producer 중 하나(release 정식 IPC/CLI). cascade 가 surface 보유 engine 의
+    /// `raise_attention` + redraw. surface_id 필수(포커스 독립 — 불가침
     /// 원칙 1). 향후 completion 고유 효과가 생기면 cascade 를 확장한다.
     SurfaceCompletion { surface_id: u32 },
 
@@ -427,9 +427,9 @@ pub(crate) enum CoreEvent {
     /// Terminal read mark 설정 요청. cascade 가 surface 보유 engine 에 적용.
     TerminalMarkSet { surface_id: u32 },
 
-    // ─── Surface completion (highlight producer) ───
+    // ─── Surface completion (attention producer) ───
     /// Surface completion 신호 요청. cascade 가 surface 보유 engine 의
-    /// `raise_surface_highlight` + redraw.
+    /// `raise_attention` + redraw.
     SurfaceCompletionRequested { surface_id: u32 },
 
     // ─── Closed items (D.3.C.D.5) ───
@@ -471,9 +471,10 @@ pub(crate) enum CoreEvent {
     TerminalCwdChanged { surface_id: u32 },
 
     /// OSC 133 D phase — 셸 통합이 명령 완료 + exit code 를 보고했다. cascade
-    /// 가 exit code 무관하게 항상 surface highlight 를 발동하고(자동 경로), 동시에
-    /// `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다(커스터마이즈 경로 —
-    /// 두 경로는 상호 배타적이지 않다. 상세: `docs/features/surface-highlight/index.md`).
+    /// 가 exit code 무관하게 항상 surface attention(kind=Completion) 을 발동하고
+    /// (자동 경로), 동시에 `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다
+    /// (커스터마이즈 경로 — 두 경로는 상호 배타적이지 않다. 상세:
+    /// `docs/features/surface-highlight/index.md`).
     TerminalCommandCompleted {
         surface_id: u32,
         exit_code: Option<i32>,

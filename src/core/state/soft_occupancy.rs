@@ -57,8 +57,8 @@ impl CoreState {
     /// focus 지연 청소(ADR-0040 §점유 해제·수명): **실 사용자 포커스**를 얻은 surface 가
     /// soft 점유 중이고 그 주체(`parent`) surface 가 더 이상 live set 에 없으면 그 시점에
     /// 점유 없음으로 청소한다. soft 주체는 연결 기반이 아닐 수 있어 죽음을 즉시 인지하지
-    /// 못하므로, parent 를 기록만 해두고 이 지연 청소로 회수한다. surface-highlight 의
-    /// 실-포커스 해제(`clear_surface_highlight`)와 **같은 자리**에서 호출되어 원칙1(사용자
+    /// 못하므로, parent 를 기록만 해두고 이 지연 청소로 회수한다. surface attention 의
+    /// 실-포커스 해제(`clear_attention`)와 **같은 자리**에서 호출되어 원칙1(사용자
     /// 상태 불가침)에 안전하다. parent 가 살아있으면 점유를 유지한다.
     pub fn reconcile_soft_occupancy_on_focus(&mut self, surface_id: u32) {
         let Some(occ) = self.attach.occupancy_of(surface_id) else {

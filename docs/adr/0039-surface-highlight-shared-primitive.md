@@ -64,3 +64,5 @@ IPC / `tasty surface completion`). completion ≠ highlight — 향후 completio
 - 용어: [`concepts/ubiquitous-language.md`](../concepts/ubiquitous-language.md) (Highlight / Completion / Toast)
 - 불가침 원칙 1(사용자 행동 ↔ 에이전트 행동 분리): [`identity.md`](../identity.md) · [`dev-guide/debug-ipc.md`](../dev-guide/debug-ipc.md)
 - 미러 패턴: `src/core/state/busy.rs` (상태·헬퍼) · `SetTerminalMark`(intent/cascade/IPC/CLI)
+- 후속: [ADR-0062](0062-attention-store-kind-aware-primitive.md) — 본 ADR 의 `HashSet<u32>`
+  자료구조를 kind-aware `AttentionStore`(surface → `{ kind, raised_at }`)로 연장(대체 아님).

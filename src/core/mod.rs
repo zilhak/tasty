@@ -36,7 +36,9 @@ pub(crate) mod state;
 pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 
-pub(crate) use state::{AttachMeshContextForward, CoreState, GuiAttachUserReq, PendingImageUpload};
+pub(crate) use state::{
+    AttachMeshContextForward, AttentionKind, CoreState, GuiAttachUserReq, PendingImageUpload,
+};
 
 use std::sync::{Arc, Mutex, OnceLock};
 

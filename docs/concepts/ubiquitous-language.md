@@ -54,8 +54,9 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 
 ### Surface 주의 환기 (→ [`features/surface-highlight`](../features/surface-highlight/index.md))
 
-- **Highlight** — surface 가 "확인 대기(주의 환기)" 상태임을 나타내는 **producer 중립 공유 상태**(CoreState `highlighted_surfaces`). 효과 3채널: **테두리 강조 + 탭 제목 강조(yellow) + 소속 워크스페이스 우측 개수 배지**. surface 가 **실제 렌더 시점 포커스**를 얻으면 자동 해제(`gpu.rs`, 에이전트 주입 아님 → 불가침 원칙 1 안전). **여러 producer**(toast 알림, completion, 후속 hook/자동감지/plugin)가 발동시킬 수 있다 — 특정 producer 의 소유물이 아니다. Toast(휘발성 View 오버레이)와 별개 개념: highlight 는 surface 에 붙는 지속 상태다.
-- **Completion** — "surface 가 작업을 완료했다"는 이벤트/신호(release 정식 IPC/CLI: `surface.completion` · `tasty surface completion`). **highlight 를 발동하는 producer 중 하나일 뿐**이다 — completion ≠ highlight. 에이전트가 자기 작업 결과를 보고하는 것이라 release 정당(PushNotification 과 동류). 향후 completion 고유 효과가 생기면 cascade 를 확장한다.
+- **Attention** — surface 가 "확인 대기(주의 환기)" 상태임을 나타내는 **producer 중립 공유 상태**(CoreState `attention: AttentionStore`, surface id → `{ kind, raised_at }`). **Notification 과는 별개 개념** — attention 레코드가 곧 알림 패널 아이템은 아니다(패널 노출 여부는 kind 별 정책 `effects_of().panel_item` 이 결정하고, 실제 패널 아이템 생성은 producer 가 `NotificationStore` 를 직접 호출해 만든다). surface 가 **실제 렌더 시점 포커스**를 얻으면 자동 해제(`gpu.rs`, 에이전트 주입 아님 → 불가침 원칙 1 안전). **여러 producer**(toast 알림, completion, Claude hook, OSC 133 명령 완료)가 발동시킬 수 있다 — 특정 producer 의 소유물이 아니다. kind 는 현재 `Completion` 1종(추가 예정: `NeedsInput`).
+- **Highlight** — Attention 이 화면에 투영되는 **View 계층 이름**(effect 3채널: 테두리 강조 + 탭 제목 강조(yellow) + 소속 워크스페이스 우측 개수 배지). 소비처 함수/타입명(`draw_surface_highlights`, `SurfaceHighlightRegion`, `highlight_count` 등)은 이 이름을 그대로 쓴다 — Core 상태 이름(Attention)과 View 표시 이름(Highlight)이 의도적으로 분리돼 있다. Toast(휘발성 View 오버레이)와도 별개 개념: highlight 는 surface 에 붙는 지속 상태다.
+- **Completion** — "surface 가 작업을 완료했다"는 이벤트/신호(release 정식 IPC/CLI: `surface.completion` · `tasty surface completion`). **Attention 의 kind 중 하나(`AttentionKind::Completion`)이자 그것을 발동하는 producer 중 하나일 뿐**이다 — completion ≠ attention. 에이전트가 자기 작업 결과를 보고하는 것이라 release 정당(PushNotification 과 동류). 향후 completion 고유 효과가 생기면 cascade 를 확장한다.
 
 ### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
 

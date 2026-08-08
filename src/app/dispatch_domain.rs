@@ -11,6 +11,7 @@ use tasty_settings::Settings;
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::core::AttentionKind;
 use crate::core::intent::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
@@ -650,8 +651,10 @@ impl App {
 
     /// `TerminalCommandCompleted` cascade — OSC 133 D phase. 두 경로가
     /// 공존한다(상세 `docs/features/surface-highlight/index.md`):
-    /// - **자동 경로**: exit code 무관하게 항상 `raise_surface_highlight` — 설정 없이
-    ///   즉시 동작하는 기본 완료 신호.
+    /// - **자동 경로**: exit code 무관하게 항상 `raise_attention` — 설정 없이
+    ///   즉시 동작하는 기본 완료 신호. `notifications.add()` 를 호출하지 않으므로
+    ///   `AttentionKind::Completion` 의 `effects_of().panel_item == false` 대로
+    ///   알림 패널에는 아이템이 쌓이지 않는다.
     /// - **커스터마이즈 경로**: exit code 필터링 없이 항상 `HookEvent::CommandCompleted`
     ///   로 훅을 발화한다(등록된 패턴이 `None` 이면 임의 exit code 에, `Some(n)` 이면
     ///   그 값에만 매치). Bell/Notification 과 달리 설정 gate 가 없다 — 훅은 사용자가
@@ -688,9 +691,9 @@ impl App {
         tracing::debug!(
             surface_id,
             exit_code = ?exit_code,
-            "command completed — raising surface highlight"
+            "command completed — raising surface attention"
         );
-        engine.raise_surface_highlight(surface_id);
+        engine.raise_attention(surface_id, AttentionKind::Completion);
         engine.mark_layout_dirty();
         // 커스터마이즈 경로 — `HookEvent::CommandCompleted` 발화도 함께 배선되어
         // 있다. 위 자동 highlight 와 상호 배타적이지 않다 — 사용자가
@@ -1350,13 +1353,14 @@ impl App {
     }
 
     /// Surface completion cascade — completion producer(IPC/CLI)가 발동한
-    /// "작업 완료" 신호. surface 를 보유한 engine 의 `raise_surface_highlight` 로
-    /// highlight(주의 환기) 를 발동하고, main window 면 redraw 를 요청해 세 소비처
-    /// (테두리·탭·개수 배지)가 즉시 갱신되게 한다. `cascade_terminal_mark_set` 미러.
+    /// "작업 완료" 신호. surface 를 보유한 engine 의 `raise_attention` 으로 attention
+    /// 을 발동하고, main window 면 redraw 를 요청해 세 소비처(테두리·탭·개수 배지)가
+    /// 즉시 갱신되게 한다. `cascade_terminal_mark_set` 미러.
     fn cascade_surface_completion(&mut self, surface_id: u32) {
         for main in self.main_windows_iter_mut() {
             if main.core_state.has_surface(surface_id) {
-                main.core_state.raise_surface_highlight(surface_id);
+                main.core_state
+                    .raise_attention(surface_id, AttentionKind::Completion);
                 main.core_state.mark_layout_dirty();
                 main.mark_dirty();
                 return;
@@ -1364,7 +1368,7 @@ impl App {
         }
         for (_, engine) in self.parked_states.iter_mut() {
             if engine.has_surface(surface_id) {
-                engine.raise_surface_highlight(surface_id);
+                engine.raise_attention(surface_id, AttentionKind::Completion);
                 engine.mark_layout_dirty();
                 return;
             }
@@ -1539,10 +1543,11 @@ impl App {
                 .notifications
                 .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
-            // toast producer — 신규 알림(coalesce 아님)이면 그 surface 를 highlight.
-            // 옛날엔 NotificationStore.add() 내부 insert 였으나 highlight 가 producer
-            // 중립 공유 상태로 이전되면서 producer 측에서 발동한다.
-            main.core_state.raise_surface_highlight(surface_id);
+            // toast producer — 신규 알림(coalesce 아님)이면 그 surface 에 attention 을
+            // 발동. 옛날엔 NotificationStore.add() 내부 insert 였으나 attention 이
+            // producer 중립 공유 상태로 이전되면서 producer 측에서 발동한다.
+            main.core_state
+                .raise_attention(surface_id, AttentionKind::Completion);
             // sound gate — coalesce 가 묶지 않은 신규 발화일 때만 재생.
             // Bell 경로는 OS 가 \a 처리 시점에 자체 beep 할 수 있어 안전 default
             // 로 skip — 향후 실측 후 정책 완화 가능.

@@ -407,12 +407,12 @@ impl GpuState {
         let (pane_rects, dividers, focused_surface_id) =
             self.prepare_layout(state, engine, terminal_rect);
 
-        // Clear surface highlight on the currently focused surface. `focused_surface_id`
+        // Clear surface attention on the currently focused surface. `focused_surface_id`
         // 는 실제 렌더 시점 포커스(에이전트 주입 아님)라 불가침 원칙 1 에 안전하다.
         if let Some(sid) = focused_surface_id {
-            engine.clear_surface_highlight(sid);
+            engine.clear_attention(sid);
             // soft 점유 지연 청소(ADR-0040 §수명): 실-포커스 surface 의 soft 주체(parent)가
-            // 사라졌으면 이 시점에 점유 해제. highlight clear 와 같은 실-포커스 블록이라
+            // 사라졌으면 이 시점에 점유 해제. attention clear 와 같은 실-포커스 블록이라
             // 원칙1 안전.
             engine.reconcile_soft_occupancy_on_focus(sid);
         }
