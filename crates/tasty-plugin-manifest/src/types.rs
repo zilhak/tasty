@@ -1238,9 +1238,11 @@ pub struct CliArg {
     /// 매핑하려면 `stdin_field = "session_id"`.
     #[serde(default)]
     pub stdin_field: Option<String>,
-    /// path 인자의 의미론적 종류. 현재 `Some("directory")` 만 사용한다 — CLI 가
-    /// 이 인자를 발견하면 호출자 cwd 기준 absolute path 로 정규화 + 디렉토리
-    /// 존재 검증 후 IPC 로 전달. (호스트는 absolute + valid 만 받는다는 contract.)
+    /// path 인자의 의미론적 종류. `Some("directory")` 또는 `Some("file")` 을 쓴다 —
+    /// CLI 가 이 인자를 발견하면 호출자 cwd 기준 absolute path 로 정규화 +
+    /// 존재 검증(directory 는 디렉토리인지, file 은 일반 파일인지) 후 IPC 로 전달.
+    /// (호스트는 absolute + valid 만 받는다는 contract.) 파일 *내용* 검증(예: JSON
+    /// 파싱)은 하지 않는다 — 그 내용을 아는 plugin 핸들러 몫이다.
     #[serde(default)]
     pub path_kind: Option<String>,
 }

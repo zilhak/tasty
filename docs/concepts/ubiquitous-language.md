@@ -13,6 +13,8 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 | 플러그인 | [plugins.md](plugins.md) | 배포/통합 축 · surface_kind · 권한 |
 | attach | [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) | server/client · mirror · lock |
 | 원격 연결 | [`../features/remote-profiles/index.md`](../features/remote-profiles/index.md) | 원격 접속 프로필 · Passkey · kind |
+| 훅 | [`../features/hooks/index.md`](../features/hooks/index.md) | Surface hook · Global hook · hook handler 레지스트리 |
+| Claude plugin | [`../plugins/claude/index.md`](../plugins/claude/index.md) | Claude 세션 프로필 · reboot · spawn/respawn |
 
 ## 용어 한 줄 정의
 
@@ -63,6 +65,12 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **host 내장** — `terminal`(PTY+GPU 셰이더) / `empty` / `explorer`(T11 에서 plugin → host-native 로 역이전).
 - **egui-mesh plugin** — `markdown` / `image` (plugin 이 `rendering=egui-mesh` 선언, plugin 프로세스가 tessellate 한 mesh 를 host 가 합성).
 - **webview plugin** — `html` (`rendering=webview`, host 의 네이티브 WebView 오버레이로 그림).
+
+### Claude plugin (→ [plugins/claude](../plugins/claude/index.md))
+
+- **Claude 세션 프로필(Claude session profile)** — `tasty claude spawn/respawn/launch/reboot` 의 `--profile-file <경로>` 로 지정하는 Claude Code `--settings` JSON 파일. Claude Code 는 훅을 프로세스 기동 시 한 번만 읽으므로, 이미 떠 있는 세션에 새 훅을 걸 유일한 창구가 이 재기동 시점의 `--settings` 주입이다 — **대체가 아니라 추가**로 병합되어 tasty 내장 훅과 함께 발화한다. `reboot` 는 부착한 경로를 surface meta 에 남겨 다음 무인자 reboot 가 승계하고, `--clear-profile` 로 뗀다. 아래 두 용어와 이름만 "프로필"을 공유할 뿐 서로 무관하다:
+  - **원격 접속 프로필**(위 "원격 연결" 절) — SSH/attach 연결 디스크립터. Claude 세션과 무관.
+  - **surface hook / hook handler**(위 "훅" 절) — tasty 가 소유한 이벤트→핸들러 바인딩. Claude 세션 프로필은 그 반대편, 즉 **Claude Code 프로세스 자신**의 훅 설정 파일이다 — tasty 의 hook handler 레지스트리를 거치지 않는다.
 
 ### attach (→ [attach-behavior.md](../dev-guide/attach-behavior.md))
 

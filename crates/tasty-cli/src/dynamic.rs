@@ -177,15 +177,23 @@ pub fn matches_to_request(
     if let Some(g) = group {
         for arg in g.positional.iter().chain(g.flags.iter()) {
             if let Some(v) = extract_value(sub_args, arg) {
-                // `path_kind = "directory"` 가 선언된 string 인자는 CLI process cwd
-                // 기준 absolute path 로 정규화 + dir 존재 검증. 실패 시 즉시 에러.
-                let v = if arg.path_kind.as_deref() == Some("directory")
-                    && matches!(arg.ty, CliArgType::String)
+                // `path_kind = "directory"`/`"file"` 이 선언된 string 인자는 CLI
+                // process cwd 기준 absolute path 로 정규화 + 존재(+종류) 검증.
+                // 실패 시 즉시 에러 — 호스트/plugin 은 절대경로만 받는다는 contract.
+                let v = if matches!(arg.ty, CliArgType::String)
                     && let Some(raw) = v.as_str()
                 {
-                    let normalized = super::cwd_resolve::normalize_cwd_arg(raw)
-                        .map_err(|e| anyhow!("--{}: {e}", arg.name))?;
-                    Value::String(normalized)
+                    match arg.path_kind.as_deref() {
+                        Some("directory") => Value::String(
+                            super::cwd_resolve::normalize_cwd_arg(raw)
+                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                        ),
+                        Some("file") => Value::String(
+                            super::cwd_resolve::normalize_file_arg(raw)
+                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                        ),
+                        _ => v,
+                    }
                 } else {
                     v
                 };

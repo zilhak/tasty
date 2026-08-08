@@ -14,6 +14,15 @@
 //! Ctrl+C 후에도 전경이 baseline(=claude)이면 **아무 텍스트도 보내지 않고 중단**
 //! 한다(살아있는 TUI 입력창 오염 방지). resume 후 전경이 baseline 으로 복귀하지
 //! 않으면 안내 프롬프트도 보내지 않는다(셸에 평문이 명령으로 실행되는 사고 방지).
+//!
+//! **Claude 세션 프로필** — `--profile-file <경로>` 를 주면 resume 명령이
+//! `claude -r <session_id> --settings "<경로>"` 가 된다(Claude Code 는 훅을 프로세스
+//! 기동 시 한 번만 읽으므로, 살아있는 세션에 훅을 걸 유일한 창구는 이 재기동이다).
+//! `--settings` 는 기존 훅을 대체가 아니라 **추가**하므로 tasty 내장 훅은 그대로
+//! 살아 있다. 부착한 경로는 surface meta(`claude-session-profile`)에 남아 다음
+//! 무인자 reboot 가 기본값으로 승계하고, `--clear-profile` 로 뗄 수 있다. 부착/승계된
+//! 경로는 항상 재기동 전에 파일 존재 + JSON 파싱을 동기 검증한다(`resolve_and_apply_profile`)
+//! — 검증 실패는 시퀀스를 아예 시작하지 않고 에러로 반환한다.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -57,6 +66,11 @@ const NOTICE_SNIPPET: &str = "tasty claude reboot";
 /// 재시작된 claude 에게 자동 제출되는 안내 프롬프트.
 const REBOOT_NOTICE: &str = "tasty claude reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (claude -r 로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요.";
 
+/// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필(파일 경로). `--profile-file`
+/// 로 부착하면 여기 기록되고, 인자 없는 다음 reboot 가 이 값을 기본으로 승계한다
+/// (`claude-session-id`, session-start hook 이 기록하는 키와 나란히 reboot 가 관리).
+const PROFILE_META_KEY: &str = "claude-session-profile";
+
 /// `claude.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
 /// 로 넘긴 뒤 즉시 응답한다 — 호출한 claude 가 턴을 마무리할 시간을 준다.
 pub(crate) fn handle_reboot(
@@ -66,6 +80,7 @@ pub(crate) fn handle_reboot(
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface_id(params)?;
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
+    let profile_action = parse_profile_option(params);
 
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
     let session_id = fetch_session_id(host, surface_id)?;
@@ -74,6 +89,11 @@ pub(crate) fn handle_reboot(
             "surface {surface_id} has malformed claude-session-id meta: {session_id:?}"
         )));
     }
+
+    // 부착/승계/해제 판정 + (있으면) 파일 존재+JSON 파싱 동기 검증. 실패 시 여기서
+    // 즉시 반환 — 시퀀스(Ctrl+C 등)를 시작하지 않는다(깨진 프로필로 claude 기동이
+    // 실패해 전경이 baseline 복귀 못 하고 방치되는 사고 방지).
+    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action)?;
 
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(format!(
@@ -105,6 +125,7 @@ pub(crate) fn handle_reboot(
                 &baseline,
                 &thread_session,
                 extra_prompt.as_deref(),
+                profile_file.as_deref(),
             );
             if let Ok(mut set) = thread_inflight.lock() {
                 set.remove(&surface_id);
@@ -140,6 +161,112 @@ pub(crate) fn parse_reboot_options(params: &Value) -> (u64, Option<String>) {
     (delay, extra)
 }
 
+/// `--profile-file` / `--clear-profile` 로 요청된 부착 상태 변경. `Keep` 은 둘 다
+/// 없는 기본 호출 — 기존에 부착된 프로필(있으면)을 그대로 승계한다.
+#[derive(Debug, PartialEq)]
+pub(crate) enum ProfileOption {
+    /// 인자 없음 — surface meta 에 부착된 값을 그대로 승계(없으면 프로필 없음).
+    Keep,
+    /// `--profile-file <path>` — 이 경로를 부착(meta 갱신). path 는 CLI
+    /// `path_kind = "file"` 정규화를 이미 거친 절대경로다.
+    Attach(String),
+    /// `--clear-profile` — 부착된 프로필을 뗀다(meta 삭제).
+    Clear,
+}
+
+/// `--profile-file` / `--clear-profile` 파싱. 둘 다 있으면 `--clear-profile` 우선
+/// (명시적 해제 의도가 새 부착보다 강하다고 본다).
+pub(crate) fn parse_profile_option(params: &Value) -> ProfileOption {
+    let clear = params
+        .get("clear_profile")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if clear {
+        return ProfileOption::Clear;
+    }
+    match params
+        .get("profile_file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        Some(p) => ProfileOption::Attach(p.to_string()),
+        None => ProfileOption::Keep,
+    }
+}
+
+/// `ProfileOption` 을 이번 reboot 에 실제로 쓸 프로필 경로로 해석하고, 필요하면
+/// surface meta 를 갱신한다. `Attach`/`Keep` 으로 도출된 경로가 있으면 파일 존재와
+/// JSON 파싱을 동기로 검증한다 — 새로 지정됐든 승계됐든(전에 유효했던 파일이 그
+/// 사이 지워지거나 깨졌을 수 있다) 동일하게, 실패 시 reboot 시퀀스를 시작하지 않고
+/// 즉시 에러를 반환한다. meta 쓰기는 검증을 통과한 뒤에만 하므로, 깨진
+/// `--profile-file` 인자가 기존에 부착돼 있던 정상 프로필을 덮어쓰지 않는다.
+fn resolve_and_apply_profile(
+    host: &HostHandle,
+    surface_id: u32,
+    action: &ProfileOption,
+) -> Result<Option<String>, IpcMethodError> {
+    let candidate = match action {
+        ProfileOption::Clear => None,
+        ProfileOption::Attach(path) => Some(path.clone()),
+        ProfileOption::Keep => fetch_profile_meta(host, surface_id),
+    };
+
+    if let Some(path) = &candidate {
+        validate_profile_file(path)?;
+    }
+
+    match action {
+        ProfileOption::Attach(path) => set_profile_meta(host, surface_id, path),
+        ProfileOption::Clear => unset_profile_meta(host, surface_id),
+        ProfileOption::Keep => {}
+    }
+
+    Ok(candidate)
+}
+
+/// 프로필 파일이 존재하고 유효한 JSON 인지 동기 검증한다. 이 확인 없이 진행하면
+/// claude 기동 자체가 실패해 전경이 baseline 으로 복귀하지 못하고, 안내 프롬프트도
+/// 없이 시퀀스가 조용히 중단된다(사용자에게는 "reboot 했는데 claude 가 안 돌아왔다"
+/// 로만 보인다) — 그 사고를 시작 전에 막는다.
+fn validate_profile_file(path: &str) -> Result<(), IpcMethodError> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| IpcMethodError::new(format!("profile file '{path}' is not readable: {e}")))?;
+    serde_json::from_str::<Value>(&contents).map_err(|e| {
+        IpcMethodError::new(format!("profile file '{path}' is not valid JSON: {e}"))
+    })?;
+    Ok(())
+}
+
+/// surface meta 에서 부착된 프로필 경로를 읽는다. 없으면 `None`(에러 아님 — 프로필
+/// 없이 reboot 하는 것은 정상 상태).
+fn fetch_profile_meta(host: &HostHandle, surface_id: u32) -> Option<String> {
+    host.call(
+        "surface.meta.get",
+        json!({ "surface_id": surface_id, "key": PROFILE_META_KEY }),
+    )
+    .ok()
+    .and_then(|r| r.get("value").and_then(|v| v.as_str()).map(String::from))
+    .filter(|s| !s.is_empty())
+}
+
+fn set_profile_meta(host: &HostHandle, surface_id: u32, path: &str) {
+    if let Err(e) = host.call(
+        "surface.meta.set",
+        json!({ "surface_id": surface_id, "key": PROFILE_META_KEY, "value": path }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: failed to record attached profile: {e}");
+    }
+}
+
+fn unset_profile_meta(host: &HostHandle, surface_id: u32) {
+    if let Err(e) = host.call(
+        "surface.meta.unset",
+        json!({ "surface_id": surface_id, "key": PROFILE_META_KEY }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: failed to clear attached profile: {e}");
+    }
+}
+
 /// surface meta 에서 claude session id 를 읽는다. 없으면 에러 — hook 미설치이거나
 /// 그 surface 에 살아있는 claude 세션이 없다는 뜻.
 fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMethodError> {
@@ -173,8 +300,16 @@ pub(crate) fn is_safe_session_id(id: &str) -> bool {
 /// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
 /// 동작하는 평문 — inline env prefix 는 붙이지 않는다(PTY env 에 `TASTY_SURFACE_ID`
 /// 가 이미 주입돼 있고, `VAR=x cmd` 문법은 POSIX 전용이라 cmd.exe 에서 깨진다).
-pub(crate) fn resume_command(session_id: &str) -> String {
-    format!("claude -r {session_id}\r")
+///
+/// `profile_file` 이 있으면 `--settings "<path>"` 를 덧붙인다 — **인라인 JSON 이
+/// 아니라 파일 경로**를 큰따옴표로 감싼다(중괄호/따옴표 이스케이프는 셸마다 달라
+/// 인라인 JSON 은 같은 cmd/pwsh/bash 함정에 빠진다; 큰따옴표는 세 셸 모두 경로
+/// 공백을 처리한다). 경로는 CLI `path_kind = "file"` 정규화를 이미 거쳐 절대경로다.
+pub(crate) fn resume_command(session_id: &str, profile_file: Option<&str>) -> String {
+    match profile_file {
+        Some(path) => format!("claude -r {session_id} --settings \"{path}\"\r"),
+        None => format!("claude -r {session_id}\r"),
+    }
 }
 
 /// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
@@ -211,6 +346,7 @@ fn run_reboot_sequence(
     baseline: &str,
     session_id: &str,
     extra_prompt: Option<&str>,
+    profile_file: Option<&str>,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
 
@@ -223,7 +359,7 @@ fn run_reboot_sequence(
         return;
     }
 
-    if !resume_and_wait(host, surface_id, baseline, session_id) {
+    if !resume_and_wait(host, surface_id, baseline, session_id, profile_file) {
         return;
     }
     thread::sleep(TUI_READY_GRACE);
@@ -276,10 +412,16 @@ fn kill_claude_via_ctrlc(host: &HostHandle, surface_id: u32, baseline: &str) -> 
 /// resume 명령 전송 + 전경이 baseline(claude 계열 이름)으로 돌아올 때까지 확인.
 /// 미복귀면 `false` — 안내 프롬프트도 보내지 않는다(셸 프롬프트에 평문이 명령으로
 /// 실행되는 사고 방지).
-fn resume_and_wait(host: &HostHandle, surface_id: u32, baseline: &str, session_id: &str) -> bool {
+fn resume_and_wait(
+    host: &HostHandle,
+    surface_id: u32,
+    baseline: &str,
+    session_id: &str,
+    profile_file: Option<&str>,
+) -> bool {
     if let Err(e) = host.call(
         "surface.send",
-        json!({ "surface_id": surface_id, "text": resume_command(session_id) }),
+        json!({ "surface_id": surface_id, "text": resume_command(session_id, profile_file) }),
     ) {
         tracing::warn!("claude reboot s{surface_id}: resume send failed: {e}");
         return false;
@@ -464,7 +606,69 @@ mod tests {
 
     #[test]
     fn resume_command_is_plain_and_submits() {
-        assert_eq!(resume_command("0e5cbdf4-32a1"), "claude -r 0e5cbdf4-32a1\r");
+        assert_eq!(
+            resume_command("0e5cbdf4-32a1", None),
+            "claude -r 0e5cbdf4-32a1\r"
+        );
+    }
+
+    #[test]
+    fn resume_command_with_profile_appends_quoted_settings_path() {
+        assert_eq!(
+            resume_command("0e5cbdf4-32a1", Some("/home/user/profile.json")),
+            "claude -r 0e5cbdf4-32a1 --settings \"/home/user/profile.json\"\r"
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_defaults_to_keep() {
+        assert_eq!(
+            parse_profile_option(&json!({ "surface_id": 1 })),
+            ProfileOption::Keep
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_attach() {
+        assert_eq!(
+            parse_profile_option(&json!({ "profile_file": "/a/b.json" })),
+            ProfileOption::Attach("/a/b.json".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_clear_wins_over_attach() {
+        assert_eq!(
+            parse_profile_option(&json!({ "profile_file": "/a/b.json", "clear_profile": true })),
+            ProfileOption::Clear
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_empty_profile_file_treated_as_keep() {
+        assert_eq!(
+            parse_profile_option(&json!({ "profile_file": "" })),
+            ProfileOption::Keep
+        );
+    }
+
+    #[test]
+    fn validate_profile_file_accepts_valid_json() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), r#"{"hooks":{}}"#).unwrap();
+        assert!(validate_profile_file(tmp.path().to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn validate_profile_file_rejects_missing_file() {
+        assert!(validate_profile_file("/no/such/tasty-profile-test.json").is_err());
+    }
+
+    #[test]
+    fn validate_profile_file_rejects_broken_json() {
+        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        std::fs::write(tmp.path(), "{not valid json").unwrap();
+        assert!(validate_profile_file(tmp.path().to_str().unwrap()).is_err());
     }
 
     #[test]

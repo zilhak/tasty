@@ -327,6 +327,10 @@ pub(crate) fn handle_launch(
         .get("task")
         .and_then(|v| v.as_str())
         .map(String::from);
+    let profile_file = params
+        .get("profile_file")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
@@ -352,7 +356,7 @@ pub(crate) fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let cmd = build_launch_command(task.as_deref());
+        let cmd = build_launch_command(task.as_deref(), profile_file.as_deref());
         if let Err(e) = host.call(
             "surface.send",
             json!({ "surface_id": sid, "text": format!("{cmd}\r") }),
@@ -372,12 +376,17 @@ pub(crate) fn handle_launch(
     }))
 }
 
-/// `claude` 또는 `claude --task <escaped>`.
-pub(crate) fn build_launch_command(task: Option<&str>) -> String {
+/// `claude` / `claude --task <escaped>` / 뒤에 `--settings "<path>"` 가 붙는 조합.
+/// `profile_file` 은 CLI `path_kind = "file"` 정규화를 이미 거친 절대경로 — 인라인
+/// JSON 이 아니라 파일 경로를 큰따옴표로 감싼다(`reboot::resume_command` 와 동일 규칙).
+pub(crate) fn build_launch_command(task: Option<&str>, profile_file: Option<&str>) -> String {
     let mut cmd = "claude".to_string();
     if let Some(t) = task {
         let escaped = shell_escape::escape(t.into());
         cmd.push_str(&format!(" --task {escaped}"));
+    }
+    if let Some(path) = profile_file {
+        cmd.push_str(&format!(" --settings \"{path}\""));
     }
     cmd
 }
@@ -390,6 +399,10 @@ pub(crate) fn handle_respawn(host: &HostHandle, params: &Value) -> Result<Value,
     let child_index = require_child_index(params)?;
     let prompt = params
         .get("prompt")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let profile_file = params
+        .get("profile_file")
         .and_then(|v| v.as_str())
         .map(String::from);
 
@@ -409,7 +422,12 @@ pub(crate) fn handle_respawn(host: &HostHandle, params: &Value) -> Result<Value,
         })?;
 
     // 2) claude 특화 기동 명령 재전송.
-    start_claude_in_surface(host, child_surface_id, prompt.as_deref());
+    start_claude_in_surface(
+        host,
+        child_surface_id,
+        prompt.as_deref(),
+        profile_file.as_deref(),
+    );
 
     Ok(json!({
         "child_surface_id": child_surface_id,
@@ -424,7 +442,12 @@ pub(crate) fn handle_respawn(host: &HostHandle, params: &Value) -> Result<Value,
 ///   자기 위치 식별 (없으면 hook 이 silent skip → idle/needs_input 미갱신).
 /// - `TASTY_AGENT_ID=claude_s<surface_id>` — 관측/비용 agent 식별.
 /// - `TASTY_SESSION_TOKEN=<hex>` — 신원 검증 토큰(발급 실패 시 생략).
-pub(crate) fn start_claude_in_surface(host: &HostHandle, surface_id: u32, prompt: Option<&str>) {
+pub(crate) fn start_claude_in_surface(
+    host: &HostHandle,
+    surface_id: u32,
+    prompt: Option<&str>,
+    profile_file: Option<&str>,
+) {
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
     let agent_prefix = match session_token {
@@ -434,8 +457,11 @@ pub(crate) fn start_claude_in_surface(host: &HostHandle, surface_id: u32, prompt
         None => format!("TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} "),
     };
     let text = match prompt {
-        Some(p) => claude_launch_command_with_prompt(surface_id, &agent_prefix, p),
-        None => format!("{agent_prefix}claude\r"),
+        Some(p) => claude_launch_command_with_prompt(surface_id, &agent_prefix, p, profile_file),
+        None => match profile_file {
+            Some(path) => format!("{agent_prefix}claude --settings \"{path}\"\r"),
+            None => format!("{agent_prefix}claude\r"),
+        },
     };
 
     if let Err(e) = host.call(
@@ -448,13 +474,25 @@ pub(crate) fn start_claude_in_surface(host: &HostHandle, surface_id: u32, prompt
 
 /// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
 /// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
-fn claude_launch_command_with_prompt(surface_id: u32, agent_prefix: &str, prompt: &str) -> String {
+/// `profile_file` 이 있으면 positional prompt 인자보다 앞에 `--settings "<path>"` 를
+/// 붙인다. 이 함수는 이미 POSIX 전용 env prefix 를 쓰고 있어(`agent_prefix`) 그
+/// 플랫폼 정합은 이 변경의 범위 밖 — 기존 상태를 그대로 따른다.
+fn claude_launch_command_with_prompt(
+    surface_id: u32,
+    agent_prefix: &str,
+    prompt: &str,
+    profile_file: Option<&str>,
+) -> String {
     let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{surface_id}.txt"));
     if let Err(e) = std::fs::write(&prompt_path, prompt) {
         tracing::warn!("Failed to write prompt file: {e}");
     }
+    let settings_flag = match profile_file {
+        Some(path) => format!("--settings \"{path}\" "),
+        None => String::new(),
+    };
     format!(
-        "{agent_prefix}claude \"$(cat '{}')\"\r",
+        "{agent_prefix}claude {settings_flag}\"$(cat '{}')\"\r",
         prompt_path.display()
     )
 }
@@ -499,6 +537,10 @@ pub(crate) fn handle_spawn(host: &HostHandle, params: &Value) -> Result<Value, I
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(String::from);
+    let profile_file = params
+        .get("profile_file")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     // 1) 호스트 registry 에 등록 + 점유 + tab 생성. workspace required.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
@@ -515,7 +557,12 @@ pub(crate) fn handle_spawn(host: &HostHandle, params: &Value) -> Result<Value, I
         })?;
 
     // 2) claude 특화 기동 명령 전송(session token + surface_id inline env 필요).
-    start_claude_in_surface(host, child_surface_id, prompt.as_deref());
+    start_claude_in_surface(
+        host,
+        child_surface_id,
+        prompt.as_deref(),
+        profile_file.as_deref(),
+    );
 
     // claude CLI/auto_wait 는 응답에 parent_surface_id 를 기대한다(호스트 응답엔
     // 없으므로 caller surface 로 채운다). 나머지 필드(child_surface_id/child_index/
@@ -636,20 +683,62 @@ mod tests {
 
     #[test]
     fn build_launch_command_no_task() {
-        assert_eq!(build_launch_command(None), "claude");
+        assert_eq!(build_launch_command(None, None), "claude");
     }
 
     #[test]
     fn build_launch_command_with_simple_task() {
-        assert_eq!(build_launch_command(Some("fix")), "claude --task fix");
+        assert_eq!(build_launch_command(Some("fix"), None), "claude --task fix");
     }
 
     #[test]
     fn build_launch_command_with_spaces_gets_escaped() {
-        let out = build_launch_command(Some("fix the bug"));
+        let out = build_launch_command(Some("fix the bug"), None);
         assert!(out.starts_with("claude --task "), "prefix wrong: {out}");
         assert!(out.contains("fix the bug"), "task body missing: {out}");
         assert_ne!(out, "claude --task fix the bug", "must be escaped");
+    }
+
+    #[test]
+    fn build_launch_command_with_profile_appends_quoted_settings_path() {
+        assert_eq!(
+            build_launch_command(None, Some("/home/user/profile.json")),
+            "claude --settings \"/home/user/profile.json\""
+        );
+    }
+
+    #[test]
+    fn build_launch_command_with_task_and_profile_appends_both() {
+        assert_eq!(
+            build_launch_command(Some("fix"), Some("/home/user/profile.json")),
+            "claude --task fix --settings \"/home/user/profile.json\""
+        );
+    }
+
+    #[test]
+    fn claude_launch_command_with_prompt_no_profile_unchanged() {
+        let out = claude_launch_command_with_prompt(1, "TASTY_SURFACE_ID=1 ", "hello", None);
+        assert!(
+            out.starts_with("TASTY_SURFACE_ID=1 claude \"$(cat '"),
+            "got {out}"
+        );
+        assert!(!out.contains("--settings"), "got {out}");
+    }
+
+    #[test]
+    fn claude_launch_command_with_prompt_and_profile_prepends_settings() {
+        let out = claude_launch_command_with_prompt(
+            2,
+            "TASTY_SURFACE_ID=2 ",
+            "hello",
+            Some("/home/user/profile.json"),
+        );
+        assert!(
+            out.starts_with(
+                "TASTY_SURFACE_ID=2 claude --settings \"/home/user/profile.json\" \"$(cat '"
+            ),
+            "got {out}"
+        );
     }
 
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──

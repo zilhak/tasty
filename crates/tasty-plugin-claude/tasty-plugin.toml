@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.25"
+version = "0.1.26"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -71,6 +71,7 @@ flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"claude\")" },
     { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching claude" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when launching claude" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -82,6 +83,7 @@ flags = [
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when launching the child" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -138,6 +140,7 @@ flags = [
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when relaunching the child" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
@@ -145,6 +148,8 @@ flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Target Claude surface ID (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "delay",   type = "u32",    flag = "--delay",   required = false, help = "Seconds to wait before killing Claude (default: 5)" },
     { name = "prompt",  type = "string", flag = "--prompt",  required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Claude" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile" },
+    { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile before resuming" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
