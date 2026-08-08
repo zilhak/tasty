@@ -237,7 +237,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::remote_attach::draw_remote_attach_popup,
-                on_close: None,
+                on_close: Some(super::remote_attach::on_close_remote_attach_popup),
             },
             // (09) 원격 전송 진행 — scrim 중앙 headless, close_on_outside_click=false
             // (전송 중 실수 dismiss 방지), 모든 행 완료 시 draw_fn 이 self-close.

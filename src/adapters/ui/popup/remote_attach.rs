@@ -233,6 +233,20 @@ fn connect(ctx: &egui::Context, st: &mut UiState, name: String) {
     st.job = Some(spawn_browse(ctx, name));
 }
 
+/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 `UiState`(진행 중 조회 워커 +
+/// 재사용 터널)를 drop 한다. draw_fn 자신의 Escape/Cancel/Connect 경로는 이미
+/// `clear_ui`를 부르지만, 지금까지는 headless(X 버튼 없음) + close_on_outside_click
+/// =false 라 그 경로들 밖에서 닫히는 일이 우연히 없었을 뿐이다 —
+/// `UiIntent::ClosePopup`(디버그 IPC 포함)으로는 지금도 그 경로를 우회할 수 있어
+/// ssh 연결이 살아남을 수 있었다(불변식이 구조가 아니라 우연에 의존).
+pub fn on_close_remote_attach_popup(
+    ctx: &egui::Context,
+    _state: &mut AppState,
+    _engine: &mut CoreState,
+) {
+    clear_ui(ctx);
+}
+
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
@@ -893,4 +907,36 @@ fn badge(
         galley,
         color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `UiState`(진행 중 조회 워커 + 재사용 터널을 쥐고 있는 egui temp memory)가
+    /// 훅 호출 한 번으로 drop 되는지 확인 — draw_fn 을 거치지 않는 닫힘 경로(바깥
+    /// 클릭/`UiIntent::ClosePopup`/디버그 IPC)에서도 이 훅이 정리를 담당한다.
+    #[test]
+    fn on_close_clears_ui_state() {
+        let ctx = egui::Context::default();
+        write_ui(
+            &ctx,
+            UiState {
+                attach_sel: Some("prod".to_string()),
+                ..Default::default()
+            },
+        );
+        assert!(
+            ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))
+                .is_some()
+        );
+
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        on_close_remote_attach_popup(&ctx, &mut state, &mut engine);
+
+        assert!(
+            ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))
+                .is_none()
+        );
+    }
 }
