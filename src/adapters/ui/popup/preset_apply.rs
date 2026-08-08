@@ -57,6 +57,19 @@ pub enum ApplyPresetAction {
     Apply(String),
 }
 
+/// PopupDef::on_close entry point (3개 팝업 공용) — 어떤 경로로 닫히든 선택/대상
+/// 카테고리를 비운다. 이전엔 Cancel 액션 경로에만 이 정리가 있어서, X 버튼/외부
+/// 클릭(`close_on_outside_click: true`)으로 닫으면 두 필드가 그대로 남아 다음에
+/// 열 때 누출되는 버그가 있었다 — 그 버그의 수정.
+pub fn on_close_apply_preset_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.preset_picker_selected = None;
+    state.dialogs.preset_apply_target_category = None;
+}
+
 pub fn draw_apply_workspace_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -122,10 +135,8 @@ fn draw_apply_popup(
     match action {
         ApplyPresetAction::None => PopupAction::None,
         ApplyPresetAction::Cancel => {
-            state.dialogs.preset_picker_selected = None;
-            // 카테고리 헤더 메뉴에서 열었다가 취소한 경우 대상 카테고리가 남아있으면
-            // 안 된다 — 다음에 "+" 버튼/단축키로 같은 팝업을 열 때 누출된다.
-            state.dialogs.preset_apply_target_category = None;
+            // 선택/대상 카테고리 정리는 `on_close_apply_preset_popup` 훅이 닫힘
+            // 경로와 무관하게 담당한다(중복 방지).
             PopupAction::Close
         }
         ApplyPresetAction::Select(name) => {

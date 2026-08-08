@@ -285,7 +285,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_workspace_popup,
-                on_close: None,
+                on_close: Some(super::preset_apply::on_close_apply_preset_popup),
             },
             PopupDef {
                 id: super::preset_apply::APPLY_TAB_POPUP_ID,
@@ -301,7 +301,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_tab_popup,
-                on_close: None,
+                on_close: Some(super::preset_apply::on_close_apply_preset_popup),
             },
             PopupDef {
                 id: super::preset_apply::APPLY_PANE_POPUP_ID,
@@ -317,7 +317,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_pane_popup,
-                on_close: None,
+                on_close: Some(super::preset_apply::on_close_apply_preset_popup),
             },
             PopupDef {
                 id: "tools_menu",

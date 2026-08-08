@@ -47,6 +47,7 @@ use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
+use crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID;
 use crate::adapters::ui::popup::rail_category::RAIL_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::transfer::{
     TRANSFER_ERROR_POPUP_ID, TRANSFER_PROGRESS_POPUP_ID, TransferError, TransferProgress,
@@ -844,4 +845,71 @@ fn close_intent_now_clears_cleanup_after_next_frame() {
 
     // 다음 프레임의 drain 이 훅을 발화 — 뒷정리 완료.
     assert!(state.dialogs.rename.is_none());
+}
+
+// ─────────────────────────── preset_apply (버그 재현) ───────────────────────────
+// X 버튼/외부 클릭(둘 다 draw_fn 의 Cancel 액션을 거치지 않음)으로 닫으면
+// `preset_apply_target_category`/`preset_picker_selected` 가 남는 버그의 재현.
+// 3개 팝업(workspace/tab/pane) 모두 같은 on_close 훅을 쓰므로 대표로
+// APPLY_WORKSPACE_POPUP_ID 하나만 검증한다.
+
+#[test]
+fn preset_apply_x_button_close_clears_selection_and_target_category() {
+    let (mut state, mut engine) = test_state();
+    let cat_id = engine.categories()[0].id;
+    state.dialogs.preset_apply_target_category = Some(cat_id);
+    state.dialogs.preset_picker_selected = Some("my-preset".to_string());
+    state
+        .popups
+        .open_at_focused(APPLY_WORKSPACE_POPUP_ID, FIXED_POS);
+    let (pos, size) = primed_popup_geometry(APPLY_WORKSPACE_POPUP_ID, &mut state, &mut engine);
+
+    run_frame(
+        press_input(close_button_point(pos, size)),
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(!state.popups.is_open(APPLY_WORKSPACE_POPUP_ID));
+    assert!(state.dialogs.preset_apply_target_category.is_none());
+    assert!(state.dialogs.preset_picker_selected.is_none());
+}
+
+#[test]
+fn preset_apply_outside_click_close_clears_selection_and_target_category() {
+    let (mut state, mut engine) = test_state();
+    let cat_id = engine.categories()[0].id;
+    state.dialogs.preset_apply_target_category = Some(cat_id);
+    state.dialogs.preset_picker_selected = Some("my-preset".to_string());
+    state
+        .popups
+        .open_at_focused(APPLY_WORKSPACE_POPUP_ID, FIXED_POS);
+
+    run_frame(
+        press_input(outside_point(FIXED_POS)),
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(!state.popups.is_open(APPLY_WORKSPACE_POPUP_ID));
+    assert!(state.dialogs.preset_apply_target_category.is_none());
+    assert!(state.dialogs.preset_picker_selected.is_none());
+}
+
+/// Cancel 액션 경로 — 훅 이관 전에도 이미 동작하던 경로라 회귀가 없는지 확인.
+#[test]
+fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
+    let (mut state, mut engine) = test_state();
+    let cat_id = engine.categories()[0].id;
+    state.dialogs.preset_apply_target_category = Some(cat_id);
+    state.dialogs.preset_picker_selected = Some("my-preset".to_string());
+    state
+        .popups
+        .open_at_focused(APPLY_WORKSPACE_POPUP_ID, FIXED_POS);
+
+    run_frame(key_input(egui::Key::Escape), &mut state, &mut engine);
+
+    assert!(!state.popups.is_open(APPLY_WORKSPACE_POPUP_ID));
+    assert!(state.dialogs.preset_apply_target_category.is_none());
+    assert!(state.dialogs.preset_picker_selected.is_none());
 }
