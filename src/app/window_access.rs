@@ -81,4 +81,25 @@ impl App {
         }
         None
     }
+
+    /// Workspace 를 (id 또는 표시 이름) 문자열로 여러 window 에 걸쳐 찾는다 —
+    /// `terminal::resolve_workspace_id` 와 동일한 우선순위(숫자 id exact match 우선,
+    /// 실패 시 name exact match)를 단일 engine 이 아니라 **모든 main window** 에
+    /// 걸쳐 적용한다. 라우팅 시점엔 아직 어느 window 대상인지 몰라 engine 하나를
+    /// 먼저 고를 수 없으므로 `resolve_workspace_id(engine, ...)` 를 그대로 못 쓴다.
+    pub(crate) fn find_main_with_workspace_target(&self, target: &str) -> Option<WindowId> {
+        if let Ok(id) = target.parse::<u32>()
+            && let Some(wid) = self.find_main_with_workspace(id)
+        {
+            return Some(wid);
+        }
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && m.core_state.workspaces.iter().any(|ws| ws.name == target)
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
 }
