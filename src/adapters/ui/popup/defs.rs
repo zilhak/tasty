@@ -51,7 +51,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::convert::draw_convert_popup,
-                on_close: None,
+                on_close: Some(super::convert::on_close_convert_popup),
             },
             PopupDef {
                 id: "script_changed_confirm",

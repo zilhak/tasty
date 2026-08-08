@@ -110,6 +110,16 @@ mod size_tests {
     }
 }
 
+/// PopupDef::on_close entry point — 어떤 경로로 닫히든 대상/선택 상태를 비운다.
+pub fn on_close_convert_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.convert_popup = None;
+    state.dialogs.convert_popup_selected = None;
+}
+
 /// PopupDef::draw_fn entry point for the convert surface popup.
 pub fn draw_convert_popup(
     ui: &mut egui::Ui,

@@ -189,6 +189,37 @@ fn convert_surface_outside_click_clears_dialog_state() {
     assert!(state.dialogs.convert_popup_selected.is_none());
 }
 
+/// `on_close` 훅 이관 후 — 이전엔 못 잡던 `UiIntent::ClosePopup` 경로도 이제
+/// 뒷정리가 돈다(`close_intent_currently_skips_cleanup` 이 고정한 rename 의 옛
+/// 동작과 대조). 인텐트 핸들러 자체는 drain 을 안 하므로, 실제 프레임과 동일하게
+/// 그 뒤에 `run_frame` 을 한 번 더 돌려야 훅이 발화한다.
+#[test]
+fn convert_surface_close_intent_now_clears_dialog_state() {
+    let (mut state, mut engine) = test_state();
+    let surface_id = engine.workspaces[0].all_surface_ids()[0];
+    state.dialogs.convert_popup = Some(surface_id);
+    state.dialogs.convert_popup_selected = Some(0);
+    state
+        .popups
+        .open_at_focused(CONVERT_SURFACE_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: CONVERT_SURFACE_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(CONVERT_SURFACE_POPUP_ID));
+    // 인텐트 핸들러 직후엔 아직 drain 전 — 큐에만 쌓여 있다.
+    assert!(state.dialogs.convert_popup.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.convert_popup.is_none());
+    assert!(state.dialogs.convert_popup_selected.is_none());
+}
+
 // ───────────────────────────── rename ─────────────────────────────
 
 #[test]

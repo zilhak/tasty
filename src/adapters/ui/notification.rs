@@ -332,14 +332,6 @@ pub fn draw_popups(
     // — 이관은 후속 TODO.
     drain_on_close_hooks(ctx, state, engine);
 
-    // Clean up convert_surface dialog state when closed
-    let convert_closed = dispatch_closed.contains(&"convert_surface")
-        || draw_result.closed.contains(&"convert_surface");
-    if convert_closed {
-        state.dialogs.convert_popup = None;
-        state.dialogs.convert_popup_selected = None;
-    }
-
     // Clean up rename dialog state when closed (X button)
     let rename_closed =
         dispatch_closed.contains(&"rename") || draw_result.closed.contains(&"rename");
