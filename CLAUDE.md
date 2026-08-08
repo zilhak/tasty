@@ -165,12 +165,14 @@ tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등
 
 상세 (로그 레벨 선택, 의도적 무시 시 주석 규칙): [`docs/dev-guide/error-handling.md`](docs/dev-guide/error-handling.md).
 
-## 소스 주석의 TODO 파일 번호 인용 금지 (필수)
+## 소스 주석의 TODO 파일 및 디자인 changelog 인용 금지 (필수)
 
 `.claude-workspace/todo/`(및 `todo-conductor/`)는 `.gitignore` 대상이라 git에 커밋되지 않고, 완료된 항목은 관례상 파일 자체가 삭제된다 — **로컬 세션에서만 유효한 휘발성 식별자**다. 소스 코드 주석·문자열(UI에 노출되는 텍스트 포함)에서 이 디렉토리의 파일 번호를 "TODO 40", "(TODO18)" 같은 형태로 인용하지 않는다. 저장소를 새로 clone한 사람에게는 그 번호가 가리키는 문서가 존재한 적이 없으므로, 인용 자체가 추적 불가능한 죽은 참조가 된다.
 
-근거가 필요하면 다음 중 하나를 쓴다:
-- **이유가 자명하면**: 번호 대신 이유를 주석에 직접 서술한다.
+Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 금지 대상이다 — changelog는 `.gitignore` 대상 로컬 디렉토리보다 한층 더 휘발적이다: 원격 Claude Design 프로젝트 **내부에만** 존재하며 로컬 파일시스템에는 애초에 흔적조차 남지 않는다. "2026-07-03-spacing-offgrid" 같은 changelog 판정 slug를 소스 주석·문자열에서 인용하지 않는다 — TODO 파일 번호와 완전히 같은 이유(추적 불가능한 죽은 참조)다.
+
+근거가 필요하면 다음 중 하나를 쓴다(TODO/changelog 어느 쪽 인용을 대체하든 동일하게 적용):
+- **이유가 자명하면**: 번호/slug 대신 이유를 주석에 직접 서술한다.
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 

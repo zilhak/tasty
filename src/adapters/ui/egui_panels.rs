@@ -657,8 +657,10 @@ fn draw_occupied_overlays(
     // (`ctx.layer_painter`)로 그린다. `divider.rs`의 `draw_pane_dividers`/
     // `draw_surface_highlights_view`와 동일 패턴: `Areas::layer_id_at`의 순회
     // 대상(interactable 레이어)에 아예 안 잡히므로 점유 surface 위 마우스
-    // 클릭/드래그/휠을 막지 않는다(egui 0.31.1 `memory/mod.rs` 확인 근거는
-    // `.claude-workspace/todo-conductor/2026-07-12-occupied-surface-mouse-drag-fix.md`).
+    // 클릭/드래그/휠을 막지 않는다(egui 0.31.1 `memory/mod.rs`의 `Areas::layer_id_at`
+    // 순회 로직으로 확인) — interactable Area 로 그렸다면 이 장식용 테두리가
+    // 자체적으로 hover/hit-test 를 가로채, 점유 표시와 무관하게 그 위치의 마우스
+    // 입력(surface 조작·인접 divider 드래그)을 부수적으로 막아버렸을 것이다.
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("occupied_overlays_border"),

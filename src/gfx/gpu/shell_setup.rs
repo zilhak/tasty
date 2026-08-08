@@ -8,8 +8,10 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 
 /// 검증 라벨(font-size-11)이 없을 때(valid/미입력) 그 line-box 높이를 예약하는 구조
-/// 상수 — spacing 리듬이 아니라 라벨 높이 미러라 토큰 대신 명명 const 로 둔다
-/// (2026-07-03-spacing-offgrid: (c) structural).
+/// 상수 — spacing 리듬이 아니라 라벨 높이 미러라 토큰 대신 명명 const 로 둔다. 폰트
+/// line-box 높이는 font metric 에서 나오는 값이라 4px 그리드에 맞을 이유가 없다(간격
+/// 리듬 값이 아니므로 그리드 규칙 적용 대상도 아님) — 예약 안 하면 라벨이 나타나고
+/// 사라질 때마다 그 아래 레이아웃이 흔들린다(layout jump 방지).
 const RESERVE_LABEL_H: LogicalPx = LogicalPx(14.0);
 
 impl GpuState {
@@ -182,7 +184,8 @@ impl GpuState {
                                 action = ShellSetupAction::Exit;
                             }
 
-                            // 10→12 스냅 (디자인 Request 3 판정).
+                            // 디자인 버튼 간격 10px 은 off-grid — 4px 그리드의 가장 가까운
+                            // 값인 spacing_md(12)로 snap.
                             hspace(ui, th.spacing_md);
 
                             // OK

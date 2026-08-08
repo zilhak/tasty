@@ -1820,7 +1820,9 @@ fn draw_favorite_row(
 fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        // 48 = spacing_xl × 2 (디자인 Request 3 판정).
+        // 상태 메시지 top offset = space-xl×2(48) 로 통일 — loading/failed/empty 가 각자
+        // 32/40/48 로 제각각이던 것을 하나로 맞춰 상태 전환 시 메시지 위치가 튀지
+        // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
         vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
             ui.add(egui::Spinner::new().size(16.0).color(th.text_muted()));
@@ -1837,8 +1839,9 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
 fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &str) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        // 상태 메시지 top offset = space-xl×2(48) 로 통일 (loading/failed/empty 동일
-        // 위치; 2026-07-03-spacing-offgrid: per-state 32/40/48 드리프트 제거).
+        // 상태 메시지 top offset = space-xl×2(48) 로 통일 — loading/failed/empty 가 각자
+        // 32/40/48 로 제각각이던 것을 하나로 맞춰 상태 전환 시 메시지 위치가 튀지
+        // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
         vspace(ui, th.spacing_xl * 2.0);
         ui.label(
             egui::RichText::new(props.label_failed)

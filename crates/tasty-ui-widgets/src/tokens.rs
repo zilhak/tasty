@@ -32,8 +32,9 @@ pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
 
 // ── 구조 간격 상수 — DTCG primitive 직접 대응 (semantic 부재, Rust-only) ──
 //
-// 디자인은 4px 그리드 spacing 스텝 밖의 미세 구조 간격에는 spacing 스텝이 아니라
-// 구조 primitive `size-1/2/3` 을 직접 쓴다. Rust 에는 대응 semantic 이 없고 `tasty-design-tokens` 의
+// 디자인은 4px 그리드 spacing 스텝 밖의 미세 구조 간격에 primitive `size-1/2/3`
+// 을 직접 쓴다 — 요소 간 간격 리듬이 아니라 컴포넌트 내부 구조를 맞추는 값이라
+// spacing 스텝 체계 밖에 둔 것. Rust 에는 대응 semantic 이 없고 `tasty-design-tokens` 의
 // `generated::primitive` 는 pub(crate) 라, 위젯 레벨 상수로 둔다 (crate 정책:
 // SIZING 에 없는 디자인 값의 단일 위치). `vspace`/`hspace` 헬퍼와 함께 사용.
 
@@ -54,5 +55,7 @@ pub const STRUCT_GAP_3: LogicalPx = LogicalPx(3.0);
 
 /// 구조 간격 4px = DTCG `primitive.size-4`.
 /// control-internal nudge (spacing 리듬 아님) — 예: 다이얼로그 close 버튼 마진 x,
-/// 포트스캐너 검색줄 x nudge (2026-07-03-spacing-offgrid: (c) structural).
+/// 포트스캐너 검색줄 x nudge. 값 자체는 그리드 상(4px)이지만, 다른 `STRUCT_GAP_*`
+/// 처럼 요소 간 간격 리듬으로 반복 사용되는 스케일이 아니라 컨트롤 내부 위치를
+/// 맞추는 1회성 보정값이라 별도 상수로 구분한다.
 pub const STRUCT_GAP_4: LogicalPx = LogicalPx(4.0);

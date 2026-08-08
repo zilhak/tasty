@@ -116,9 +116,10 @@ pub fn draw_command_palette_view(
     }
 
     // design-parity: 디자인 command_palette.jsx 는 컨테이너 패딩 0 + 구역별 패딩
-    // (search 10 / list 6 / footer 8,12). search·list 는 off-grid 라 4px 그리드로
-    // snap(10→8, 6→8/4; 2026-07-03-spacing-offgrid 판정). content_margin 은 command_palette 한정 0
-    // (popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는 Frame 실제 좌표에 그린다.
+    // (search 10 / list 6 / footer 8,12). search·list 는 off-grid 라 4px 그리드의
+    // 가장 가까운 값으로 snap(10→space-sm(8), 6→space-sm/space-xs(8/4)). content_margin
+    // 은 command_palette 한정 0(popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는
+    // Frame 실제 좌표에 그린다.
     let full = ui.max_rect();
     let sep = egui::Stroke::new(theme.border_width.value(), theme.border_strong());
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -164,6 +165,9 @@ pub fn draw_command_palette_view(
     let footer_top = full.bottom() - footer_h;
 
     // ── 리스트 구역 (디자인 padding 6 → space-sm/space-xs(8,4) snap, MenuItem height 28) ──
+    // 같은 6 이 축마다 다른 값으로 snap: x 는 8(spacing_sm) 로 검색 구역 좌우 inset 과
+    // 맞춰 두 구역의 좌측 정렬선을 통일하고, y 는 더 타이트한 4(spacing_xs) 로 둬
+    // 스크롤 리스트 높이가 행 수만큼 불필요하게 늘어나지 않게 한다.
     egui::Frame::NONE
         .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
         .show(ui, |ui| {
