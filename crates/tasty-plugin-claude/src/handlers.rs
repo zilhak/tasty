@@ -18,8 +18,9 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::error_scan::ErrorScanner;
 
-/// `profile_file`(경로, TODO31)과 `profile`(이름 목록, 쉼표 구분, TODO32)
-/// params 를 최종 `--settings` 파일 경로 하나로 해석한다. 둘 다 주어지면
+/// `profile_file`(직접 지정한 경로)과 `profile`(레지스트리에 등록된 이름 목록,
+/// 쉼표 구분 — `profile.rs` 참고) params 를 최종 `--settings` 파일 경로 하나로
+/// 해석한다. 둘 다 주어지면
 /// 어느 쪽이 이기는지 조용히 정하지 않고 즉시 거부한다 — last-wins 함정을
 /// 경로/이름 인자 사이에서도 반복하지 않기 위함.
 pub(crate) fn resolve_profile_file_param(

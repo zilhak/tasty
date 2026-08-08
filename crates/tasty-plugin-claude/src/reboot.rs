@@ -72,7 +72,7 @@ const REBOOT_NOTICE: &str = "tasty claude reboot : 이 세션은 tasty 의 reboo
 /// (`claude-session-id`, session-start hook 이 기록하는 키와 나란히 reboot 가 관리).
 const PROFILE_META_KEY: &str = "claude-session-profile";
 /// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필의 **이름**(쉼표 구분,
-/// TODO32 레지스트리). `PROFILE_META_KEY`(경로)와 상호 배타적으로 관리한다 —
+/// `profile.rs` 레지스트리에 등록된 이름). `PROFILE_META_KEY`(경로)와 상호 배타적으로 관리한다 —
 /// 이름으로 부착하면 여기 기록되고 `PROFILE_META_KEY`는 지운다. 다음 무인자
 /// reboot 는 이 값이 있으면 이름을 **매번 다시 해석**한다(등록 내용이 그 사이
 /// 갱신됐을 수 있으므로 경로를 그대로 캐시하지 않는다).
@@ -189,7 +189,7 @@ pub(crate) enum ProfileOption {
 /// - `--clear-profile` 이 있으면 다른 인자와 무관하게 최우선(명시적 해제 의도가
 ///   새 부착보다 강하다).
 /// - `--profile-file` 과 `--profile` 을 함께 주면 어느 쪽이 이기는지 조용히
-///   정하지 않고 거부한다(TODO32 체크리스트 — 경로/이름 인자 우선순위 결정).
+///   정하지 않고 거부한다(last-wins 를 경로/이름 인자 사이에서도 반복하지 않기 위함).
 pub(crate) fn parse_profile_option(params: &Value) -> Result<ProfileOption, IpcMethodError> {
     let clear = params
         .get("clear_profile")
