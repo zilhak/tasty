@@ -223,6 +223,8 @@ pub fn run_ssh_connect(target: &SshTarget, command: &[String]) -> Result<()> {
         args.push(c.clone());
     }
     // stdio 는 기본 상속(대화형 셸). 종료코드를 그대로 프로세스 exit 로 전파한다.
+    // 이 함수는 항상 콘솔을 가진 CLI 프로세스(`tasty tool ssh`)에서만 호출되므로
+    // hide_console 을 걸지 않는다 — 걸면 상속받아야 할 대화형 stdio 콘솔이 사라진다.
     let status = Command::new(&ssh)
         .args(&args)
         .status()
@@ -411,16 +413,17 @@ fn run_ssh_capture(
     for a in remote_argv {
         args.push((*a).to_string());
     }
-    let output = Command::new(ssh)
-        .args(&args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| {
-            PortDiscoveryError::new(
-                PortDiscoveryFailureKind::SshConnectionFailed,
-                format!("ssh spawn 실패({}): {e}", ssh.display()),
-            )
-        })?;
+    let mut cmd = Command::new(ssh);
+    cmd.args(&args).stdin(Stdio::null());
+    // 호스트 GUI(windows subsystem, 콘솔 없음)가 in-process 로 이 함수를 호출하므로
+    // CREATE_NO_WINDOW 를 걸지 않으면 Windows 가 ssh.exe 용 새 콘솔 창을 띄운다.
+    tasty_utils::process::hide_console(&mut cmd);
+    let output = cmd.output().map_err(|e| {
+        PortDiscoveryError::new(
+            PortDiscoveryFailureKind::SshConnectionFailed,
+            format!("ssh spawn 실패({}): {e}", ssh.display()),
+        )
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let code = output.status.code();
@@ -758,10 +761,13 @@ impl SshTunnel {
         args.push(forward);
         args.push(target.destination.clone());
 
-        let child = Command::new(ssh)
-            .args(&args)
-            .stdin(Stdio::null())
-            // stderr 는 인증/에러 노출용으로 상속(첫 연결 host key/passphrase).
+        let mut cmd = Command::new(ssh);
+        cmd.args(&args).stdin(Stdio::null());
+        // stderr 는 인증/에러 노출용으로 상속(첫 연결 host key/passphrase).
+        // 호스트 GUI(windows subsystem, 콘솔 없음)가 in-process 로 이 함수를 호출하므로
+        // CREATE_NO_WINDOW 를 걸지 않으면 Windows 가 ssh.exe 용 새 콘솔 창을 띄운다.
+        tasty_utils::process::hide_console(&mut cmd);
+        let child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("ssh 터널 spawn 실패({}): {e}", ssh.display()))?;
 
