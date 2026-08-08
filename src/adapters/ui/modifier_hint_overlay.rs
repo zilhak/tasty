@@ -20,7 +20,7 @@
 //! - [`hold_reveal_alpha`] / [`default_rect`] / [`clamp_rect`] / [`resize_to`] — 순수 함수,
 //!   테스트로 고정.
 //! - [`ModifierHintRuntime`] — `AppState` 에 사는 홀드 상태 + 진행 중 드래그 working rect.
-//! - [`draw_modifier_hint`] — 매 프레임 draw. `draw_popups` 가 toast/banner 인접에서 호출한다.
+//! - [`draw_modifier_hint`] — 매 프레임 draw. `overlay::draw_overlays` 가 toast/banner 인접에서 호출한다.
 
 use std::time::Instant;
 
@@ -293,7 +293,7 @@ pub struct HintDrawResult {
     pub layer: Option<egui::LayerId>,
 }
 
-/// modifier-hint 오버레이를 매 프레임 그린다. `draw_popups` 가 toast/banner 인접에서 호출.
+/// modifier-hint 오버레이를 매 프레임 그린다. `overlay::draw_overlays` 가 toast/banner 인접에서 호출.
 ///
 /// 표시 조건: `enabled` && 홀드 중 && 홀드 500ms 경과 && !dismissed && 섹션 비어있지 않음.
 /// 표시 안 하는 프레임엔 필요한 만큼만 `request_repaint(_after)` 를 예약해 유휴 CPU 낭비를

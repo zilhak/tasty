@@ -502,7 +502,7 @@ impl BannerManager {
 pub struct BannerDrawResult {
     pub hovered: bool,
     /// 이번 프레임에 "더보기"(⋯) 트리거가 클릭된 배너의 스코프 + 트리거 버튼
-    /// rect(팝업 앵커링용). 클릭이 없으면 `None`. 호출자(`notification::draw_popups`)
+    /// rect(팝업 앵커링용). 클릭이 없으면 `None`. 호출자(`overlay::draw_overlays`)
     /// 가 `AppState` 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다 — `BannerManager`
     /// 자신은 `AppState` 를 모르므로 여기서 요청만 실어낸다.
     pub more_clicked: Option<(BannerScope, egui::Rect)>,

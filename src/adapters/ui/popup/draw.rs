@@ -189,7 +189,7 @@ impl PopupManager {
 
         // Handle resize move / release. 잡은 엣지만 이동(반대편 고정), min_size 클램프 후
         // scope 경계로 클램프. 사용자 리사이즈가 발생하면 size_user_overridden=true 로
-        // 표시 → sizer 가 크기를 되돌리지 못하게 한다(notification.rs 가드).
+        // 표시 → sizer 가 크기를 되돌리지 못하게 한다(`popup::frame::draw_popup_layer` 가드).
         for popup in &mut self.popups {
             let Some(edges) = popup.resizing else {
                 continue;

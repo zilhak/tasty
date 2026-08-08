@@ -1,6 +1,6 @@
 //! 마우스 캡처 배너 "더보기"(⋯) 컨텍스트 메뉴 — headless `PopupDef`.
 //!
-//! 배너 우상단 ⋯ 트리거(`BannerManager::draw`)가 클릭되면 `notification::draw_popups`
+//! 배너 우상단 ⋯ 트리거(`BannerManager::draw`)가 클릭되면 `overlay::draw_overlays`
 //! 가 [`open`] 을 호출해 이 popup 을 연다. 대상 surface 는 `AppState.dialogs.
 //! mouse_capture_banner_menu_target` 에 실린다(`RenameTarget` 과 동일 패턴 — popup
 //! 자신은 `PopupDef.draw_fn` 시그니처상 대상 정보를 갖지 못한다).

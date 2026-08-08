@@ -128,7 +128,7 @@ pub fn resolve_marker_rect(
     }
 }
 
-/// 튜토리얼 오버레이 렌더 + 상태 전이. 매 프레임 `draw_popups` 말미에서 호출한다
+/// 튜토리얼 오버레이 렌더 + 상태 전이. 매 프레임 `overlay::draw_overlays` 말미에서 호출한다
 /// (팝업/toast/banner/modhint 위 최상위 레이어). 마커/scrim 은 hit-transparent,
 /// 말풍선만 마우스를 소비한다.
 pub fn draw_tutorial_overlay(

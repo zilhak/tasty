@@ -162,7 +162,7 @@ pub fn draw_info_modal(
         PopupAction::Close
     } else {
         // 다음 메시지로 이어진다. popup은 그대로 유지하되 title/size는 다음 프레임에
-        // notification::draw_popups의 refresh 루프가 자동 갱신.
+        // popup::frame::draw_popup_layer의 refresh 루프가 자동 갱신.
         PopupAction::None
     }
 }

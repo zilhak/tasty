@@ -296,14 +296,14 @@ pub struct AppState {
     pub(crate) switch_overlay: Option<crate::adapters::ui::switch_overlay::SwitchOverlayState>,
     /// modifier-hint 오버레이 런타임 상태 — 홀드 시작 시각·anchor modifier·세션 dismiss·
     /// 진행 중 드래그 working rect. `MainView` 의 `ModifiersChanged` 가 `update_hold` 로
-    /// 갱신하고, 창 포커스 상실 시 `clear` 된다. draw 경로(`draw_popups`)가 매 프레임
-    /// `draw_modifier_hint` 로 읽어 500ms 홀드 후 오버레이를 그린다. 지오메트리 영속값은
+    /// 갱신하고, 창 포커스 상실 시 `clear` 된다. draw 경로(`overlay::draw_overlays`)가 매
+    /// 프레임 `draw_modifier_hint` 로 읽어 500ms 홀드 후 오버레이를 그린다. 지오메트리 영속값은
     /// `Settings::modifier_hint`(pos/size), 이 필드는 홀드/드래그 세션 상태만.
     #[cfg(feature = "gui")]
     pub(crate) modifier_hint: crate::adapters::ui::modifier_hint_overlay::ModifierHintRuntime,
     /// 튜토리얼(마커 오버레이) 런타임 상태 — 진행 중 주제/step, 목록 팝업 선택·시작
     /// 큐. GUI 전용(사용자 클릭으로만 진행, IPC/CLI 발화 없음 — 불가침 원칙 1).
-    /// `draw_popups` 말미의 `draw_tutorial_overlay` 가 매 프레임 읽고 전이시킨다.
+    /// `overlay::draw_overlays` 말미의 `draw_tutorial_overlay` 가 매 프레임 읽고 전이시킨다.
     #[cfg(feature = "gui")]
     pub(crate) tutorial: crate::adapters::ui::tutorial::TutorialRuntime,
     /// All transient dialog/popup state.

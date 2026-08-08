@@ -113,7 +113,7 @@ pub struct PopupDef {
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
     /// 닫힘 뒷정리 훅. `PopupManager::close()`(닫는 경로 전부가 거치는 유일한
     /// 지점)를 통해 어떤 경로로 닫히든 정확히 1회 발화한다(`closed_queue` +
-    /// `notification.rs` 의 `drain_on_close_hooks` 참고) — draw_fn 이 `Close` 를 반환하는
+    /// `popup::frame` 의 `drain_on_close_hooks` 참고) — draw_fn 이 `Close` 를 반환하는
     /// 경로나 X 버튼/외부 클릭에만 붙던 기존 뒷정리(`draw_popups`)와 달리
     /// `UiIntent::ClosePopup`/`TogglePopup`/App 직접 호출/debug IPC 경로도 모두
     /// 잡는다. 그리는 게 없으므로 `&mut Ui` 가 아니라 `&egui::Context` 를 받는다
@@ -166,7 +166,7 @@ pub struct PopupState {
     /// 리사이즈 시작 시점의 팝업 rect (드래그 누적 계산 기준).
     resize_start_rect: egui::Rect,
     /// 사용자가 한 번이라도 리사이즈했으면 true. true 동안 sizer 의 size 덮어쓰기를
-    /// 막는다(notification.rs). `close()`에서 리셋되어 다음 open 시 sizer 복원.
+    /// 막는다(`popup::frame::draw_popup_layer`). `close()`에서 리셋되어 다음 open 시 sizer 복원.
     pub size_user_overridden: bool,
 }
 
@@ -562,7 +562,7 @@ impl PopupManager {
         }
     }
 
-    /// `closed_queue` 를 비우고 반환한다. `on_close` 훅 drain(`notification.rs`)이
+    /// `closed_queue` 를 비우고 반환한다. `on_close` 훅 drain(`popup::frame`)이
     /// 프레임당 1회 호출 — 재진입(훅이 다른 popup 을 닫음)을 지원하려면 호출자가
     /// 반환값을 순회하는 동안 `state.popups` 를 다시 만질 수 있어야 하므로, 이 fn
     /// 자체는 순회를 하지 않고 `mem::take` 만 한다.
