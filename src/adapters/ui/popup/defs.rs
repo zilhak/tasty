@@ -115,7 +115,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::info_modal::draw_info_modal,
-                on_close: None,
+                on_close: Some(crate::adapters::ui::info_modal::on_close_info_modal),
             },
             PopupDef {
                 id: super::approval::APPROVAL_POPUP_ID,

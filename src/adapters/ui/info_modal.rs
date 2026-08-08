@@ -84,6 +84,30 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     egui::vec2(DEFAULT_WIDTH, total_h)
 }
 
+/// PopupDef::on_close 진입점 — X 버튼(또는 그 외 draw_fn 을 우회하는 닫힘 경로)로
+/// 닫혔을 때 draw_fn 의 확인 로직을 그대로 미러한다. draw_fn 자신의 pop 경로로
+/// 닫힌 경우엔 이 시점에 큐가 이미 비어 있어(그 경로만 `PopupAction::Close`를
+/// 반환) `pop_front`가 `None`을 돌려주고 즉시 반환 — 이중 pop 은 없다.
+///
+/// X 로 닫으면 head 가 pop 되지 않던 시절엔 남은 큐가 다시 뜨지 않아 부팅 에러
+/// 안내가 조용히 유실됐다 — 그 버그의 수정.
+pub fn on_close_info_modal(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
+        return;
+    };
+    if let InfoModalAction::Exit(code) = modal.on_close {
+        tracing::info!("info modal exit requested (code={code})");
+        std::process::exit(code);
+    }
+    if !state.dialogs.info_modal_queue.is_empty() {
+        state.popups.open_centered_focused(INFO_MODAL_ID);
+    }
+}
+
 /// PopupDef.draw_fn — 큐 head를 보여주고 [확인]/Enter/Escape로 pop.
 pub fn draw_info_modal(
     ui: &mut egui::Ui,

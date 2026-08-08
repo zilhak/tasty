@@ -42,6 +42,7 @@
 //! 전에 입력 없는 "priming" 프레임을 한 번 돌려 `size` 를 확정한 뒤 읽는다.
 
 use super::tests::test_state;
+use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction};
 use crate::adapters::ui::notification::draw_popups;
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
@@ -456,6 +457,67 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
     assert_eq!(state.dialogs.transfer_error.len(), 1);
     assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
+}
+
+// ──────────────────────────── info_modal ────────────────────────────
+
+fn info_modal_entry(body: &str) -> InfoModal {
+    InfoModal {
+        title: "Boot".to_string(),
+        body: body.to_string(),
+        on_close: InfoModalAction::Continue,
+    }
+}
+
+/// `on_close` 훅 — X 버튼(draw_fn 을 거치지 않는 경로)으로 닫으면 head 가 pop 되고,
+/// 남은 안내가 있으므로 팝업이 다시 열린다(transfer_error 의 재진입 패턴과 동형).
+/// 훅 도입 전엔 head 가 pop 되지 않아 남은 큐가 영영 뜨지 않았다 — 그 버그의 회귀 방지.
+#[test]
+fn info_modal_close_intent_now_pops_head_and_reopens() {
+    let (mut state, mut engine) = test_state();
+    state
+        .dialogs
+        .info_modal_queue
+        .push_back(info_modal_entry("a"));
+    state
+        .dialogs
+        .info_modal_queue
+        .push_back(info_modal_entry("b"));
+    state.popups.open_at_focused(INFO_MODAL_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup { id: INFO_MODAL_ID }.from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(INFO_MODAL_ID));
+    // handle() 직후 — 아직 drain 전, 큐엔 여전히 2건.
+    assert_eq!(state.dialogs.info_modal_queue.len(), 2);
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert_eq!(state.dialogs.info_modal_queue.len(), 1);
+    assert_eq!(state.dialogs.info_modal_queue.front().unwrap().body, "b");
+    assert!(state.popups.is_open(INFO_MODAL_ID));
+}
+
+/// 큐에 1건뿐이면 pop 후 비므로 재오픈하지 않는다.
+#[test]
+fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
+    let (mut state, mut engine) = test_state();
+    state
+        .dialogs
+        .info_modal_queue
+        .push_back(info_modal_entry("only"));
+    state.popups.open_at_focused(INFO_MODAL_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup { id: INFO_MODAL_ID }.from_user_menu("test"),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.info_modal_queue.is_empty());
+    assert!(!state.popups.is_open(INFO_MODAL_ID));
 }
 
 // ────────────────────────── confirm_delete_category ──────────────────────────
