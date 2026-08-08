@@ -169,6 +169,27 @@ pub enum SidebarCollapsedAction {
     },
 }
 
+/// [`draw_full_sidebar_view`] 의 반환값 — 사용자 액션 + 가장자리 리사이즈 우선권 판정.
+pub struct SidebarFullDrawResult {
+    pub actions: Vec<SidebarFullAction>,
+    /// 마우스가 사이드바의 실제 클릭 가능 위젯(헤더 접기, Tools/Plugins/Settings,
+    /// 카테고리 헤더, 워크스페이스 카드, New workspace) 위인지. `AppState.resize_edge_widget_hovered`
+    /// 에 OR 로 합성된다 — 서쪽 가장자리 리사이즈 마진이 사이드바 폭 안에 있을 때
+    /// (사이드바가 보이는 상태) 위젯 단위로만 리사이즈를 양보하기 위함. 목록 아래
+    /// 빈 배경의 우클릭 캐처(`Sense::click`, 컨텍스트 메뉴 전용)는 실제 콘텐츠가
+    /// 아니라 의도적으로 제외한다(타이틀바 드래그 rect 와 동일 이유 — 빈 여백은
+    /// 항상 리사이즈 우선).
+    pub resize_priority_hovered: bool,
+}
+
+/// [`draw_collapsed_sidebar_view`] 의 반환값 — [`SidebarFullDrawResult`] 와 동형.
+pub struct SidebarCollapsedDrawResult {
+    pub actions: Vec<SidebarCollapsedAction>,
+    /// [`SidebarFullDrawResult::resize_priority_hovered`] 참고 — collapsed 레일의
+    /// 펼치기 버튼/Tools/Plugins/Settings/카테고리 `---` 버튼/워크스페이스 아바타 위인지.
+    pub resize_priority_hovered: bool,
+}
+
 // Sidebar 의 모든 zoom-sensitive 길이는 Theme 토큰에서 가져온다 (Z-1/Z-2 에서
 // host UI zoom 곱셈이 토큰 자체에 박힘). 아래는 토큰에서 도출하는 헬퍼.
 fn btn_height(th: &Theme) -> f32 {
@@ -295,8 +316,9 @@ fn should_scroll_to_active_workspace(prev: Option<Option<usize>>, current: Optio
 pub fn draw_full_sidebar_view(
     ui: &mut egui::Ui,
     props: &SidebarFullProps<'_>,
-) -> Vec<SidebarFullAction> {
+) -> SidebarFullDrawResult {
     let mut actions: Vec<SidebarFullAction> = Vec::new();
+    let mut resize_priority_hovered = false;
     let th = props.theme;
 
     // 헤더 — 워드마크 `tasty.` + 접기 (ui_kit Sidebar 상단).
@@ -306,7 +328,9 @@ pub fn draw_full_sidebar_view(
         .show_inside(ui, |ui| {
             // 디자인 chrome.jsx Sidebar 헤더 padding-top: space-md (10→12 스냅).
             vspace(ui, th.spacing_md);
-            if draw_sidebar_header(ui, th, props.collapse_label) {
+            let (collapsed, hovered) = draw_sidebar_header(ui, th, props.collapse_label);
+            resize_priority_hovered |= hovered;
+            if collapsed {
                 actions.push(SidebarFullAction::Collapse);
             }
             // 디자인 chrome.jsx Sidebar 헤더 padding-bottom: space-xs (6→4 스냅 — parity-notes 잔차 해소).
@@ -324,6 +348,7 @@ pub fn draw_full_sidebar_view(
 
             // Tools
             let tools_resp = draw_ghost_block_button(ui, th, Some(icons::TOOLS), props.tools_label);
+            resize_priority_hovered |= tools_resp.hovered();
             if tools_resp.clicked() {
                 actions.push(SidebarFullAction::ToolsClicked(tools_resp.rect));
             }
@@ -331,6 +356,7 @@ pub fn draw_full_sidebar_view(
 
             // Plugins (확인 필요 plugin 있으면 우측에 danger 배지)
             let plug_resp = draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
+            resize_priority_hovered |= plug_resp.hovered();
             if plug_resp.clicked() {
                 actions.push(SidebarFullAction::Plugins);
             }
@@ -340,9 +366,10 @@ pub fn draw_full_sidebar_view(
             vspace(ui, STRUCT_GAP_2);
 
             // Settings
-            if draw_ghost_block_button(ui, th, Some(icons::SETTINGS), props.settings_label)
-                .clicked()
-            {
+            let settings_resp =
+                draw_ghost_block_button(ui, th, Some(icons::SETTINGS), props.settings_label);
+            resize_priority_hovered |= settings_resp.hovered();
+            if settings_resp.clicked() {
                 actions.push(SidebarFullAction::Settings);
             }
             vspace(ui, th.spacing_sm);
@@ -385,6 +412,7 @@ pub fn draw_full_sidebar_view(
                         ui.add_space(th.spacing_sm.value());
                     }
                     let header = draw_category_header(ui, th, &section.label, section.collapsed);
+                    resize_priority_hovered |= header.hovered;
                     // 디자인 B: Alt+Shift 홀드 시 헤더 행 **우측 정렬** 키캡(섹션 번호). chevron
                     // 대체 아님 — chevron 은 접힘상태·auto-expand 회전 담당(load-bearing). 11번째+
                     // 카테고리(슬롯 밖)는 키캡 없음. active = 이 섹션이 현재 워크스페이스 소유.
@@ -450,6 +478,7 @@ pub fn draw_full_sidebar_view(
                                 should_scroll_to_active,
                                 &mut actions,
                                 &mut card_rects,
+                                &mut resize_priority_hovered,
                             );
                         }
                         // 하단 보더 없음 — 그룹 경계는 헤더 아래 상단 보더 1줄만
@@ -493,6 +522,7 @@ pub fn draw_full_sidebar_view(
                         should_scroll_to_active,
                         &mut actions,
                         &mut card_rects,
+                        &mut resize_priority_hovered,
                     );
                 }
 
@@ -591,6 +621,7 @@ pub fn draw_full_sidebar_view(
             if props.categories.is_none() {
                 let new_ws_resp =
                     draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
+                resize_priority_hovered |= new_ws_resp.hovered();
                 if new_ws_resp.clicked() {
                     actions.push(SidebarFullAction::NewWorkspace);
                 }
@@ -611,7 +642,9 @@ pub fn draw_full_sidebar_view(
             // 워크스페이스 추가). 그룹·평면 모드 공통(이전엔 그룹 모드 한정이었으나
             // 평면 모드 배경 우클릭에도 원격 추가를 노출하도록 대칭화,
             // `docs/features/workspace-category/index.md` 참고).
-            // 남은 스크롤 영역 전체를 우클릭 감지 영역으로.
+            // 남은 스크롤 영역 전체를 우클릭 감지 영역으로. 이 캐처는 빈 배경이라
+            // resize_priority_hovered 에 넣지 않는다 — 타이틀바 드래그 rect 와 동일 이유
+            // (SidebarFullDrawResult::resize_priority_hovered 문서 참고).
             let remaining = ui.available_size_before_wrap();
             if remaining.y > 1.0 {
                 let (_bg_rect, bg_resp) = ui.allocate_exact_size(
@@ -625,15 +658,19 @@ pub fn draw_full_sidebar_view(
             }
         });
 
-    actions
+    SidebarFullDrawResult {
+        actions,
+        resize_priority_hovered,
+    }
 }
 
 /// Pure view: collapsed sidebar 내부.
 pub fn draw_collapsed_sidebar_view(
     ui: &mut egui::Ui,
     props: &SidebarCollapsedProps<'_>,
-) -> Vec<SidebarCollapsedAction> {
+) -> SidebarCollapsedDrawResult {
     let mut actions: Vec<SidebarCollapsedAction> = Vec::new();
+    let mut resize_priority_hovered = false;
     let th = props.theme;
 
     // 헤더 — 로고 + 펼치기(») 버튼 (ui_kit CollapsedSidebar 상단).
@@ -654,6 +691,7 @@ pub fn draw_collapsed_sidebar_view(
                 vspace(ui, th.spacing_xs);
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+                resize_priority_hovered |= resp.hovered();
                 if resp.hovered() {
                     ui.painter()
                         .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -689,6 +727,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Tools
                 let (tools_btn_rect, tools_resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+                resize_priority_hovered |= tools_resp.hovered();
                 paint_icon_button(ui, th, tools_btn_rect, &tools_resp, icons::TOOLS);
                 let tools_resp = tools_resp.on_hover_text(props.tools_hover);
                 if tools_resp.clicked() {
@@ -699,6 +738,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Plugins (확인 필요 plugin 있으면 우상단에 danger 배지)
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+                resize_priority_hovered |= resp.hovered();
                 paint_icon_button(ui, th, rect, &resp, icons::PLUG);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Plugins);
@@ -711,6 +751,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Settings
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+                resize_priority_hovered |= resp.hovered();
                 paint_icon_button(ui, th, rect, &resp, icons::SETTINGS);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Settings);
@@ -741,7 +782,9 @@ pub fn draw_collapsed_sidebar_view(
                 } else {
                     None
                 };
-                if let Some(anchor) = draw_rail_category_button(ui, th, cat_keycap) {
+                if let Some(anchor) =
+                    draw_rail_category_button(ui, th, cat_keycap, &mut resize_priority_hovered)
+                {
                     actions.push(SidebarCollapsedAction::RailCategoryClicked {
                         cat_id: section.id,
                         anchor,
@@ -763,6 +806,7 @@ pub fn draw_collapsed_sidebar_view(
                             ws,
                             switch_digit,
                             &mut actions,
+                            &mut resize_priority_hovered,
                         );
                     }
                 }
@@ -775,7 +819,15 @@ pub fn draw_collapsed_sidebar_view(
                 } else {
                     None
                 };
-                draw_collapsed_avatar(ui, props, i, ws, switch_digit, &mut actions);
+                draw_collapsed_avatar(
+                    ui,
+                    props,
+                    i,
+                    ws,
+                    switch_digit,
+                    &mut actions,
+                    &mut resize_priority_hovered,
+                );
             }
         }
 
@@ -785,6 +837,7 @@ pub fn draw_collapsed_sidebar_view(
             vspace(ui, STRUCT_GAP_2);
             let (rect, resp) =
                 ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
+            resize_priority_hovered |= resp.hovered();
             paint_icon_button(ui, th, rect, &resp, icons::PLUS);
             if resp.clicked() {
                 actions.push(SidebarCollapsedAction::NewWorkspace);
@@ -803,7 +856,10 @@ pub fn draw_collapsed_sidebar_view(
         }
     });
 
-    actions
+    SidebarCollapsedDrawResult {
+        actions,
+        resize_priority_hovered,
+    }
 }
 
 /// 디자인의 ghost variant block button — 사이드바 좌측 정렬 버튼 공통 (Full
@@ -853,8 +909,11 @@ fn draw_ghost_block_button(
 
 /// ui_kit 사이드바 헤더 — 워드마크 `tasty.` (`.` = 브랜드색) + 접기(«).
 /// collapse 클릭 여부 반환.
-fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> bool {
+/// 헤더의 접기(«) 버튼 hover 여부를 두 번째 값으로 함께 보고한다 — 호출부가
+/// `resize_priority_hovered`(서쪽 가장자리 리사이즈 우선권)에 합성한다.
+fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (bool, bool) {
     let mut collapse = false;
+    let mut hovered = false;
     ui.horizontal(|ui| {
         // 디자인 chrome.jsx Sidebar 헤더 padding-left 12 (패널 좌우 margin 0).
         hspace(ui, th.spacing_md);
@@ -866,6 +925,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
             // 디자인 chrome.jsx Sidebar 헤더 padding-right 12 (패널 좌우 margin 0).
             hspace(ui, th.spacing_md);
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+            hovered = resp.hovered();
             if resp.hovered() {
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -884,7 +944,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
             collapse = resp.clicked();
         });
     });
-    collapse
+    (collapse, hovered)
 }
 
 /// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩. 트래킹 0.07em (=0.7px @ 10px).
@@ -913,6 +973,8 @@ struct HeaderInteraction {
     toggled: bool,
     context: Option<egui::Pos2>,
     rect: egui::Rect,
+    /// 리사이즈 우선권용 hover — `resize_priority_hovered` 참고.
+    hovered: bool,
 }
 
 /// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — chevron + 대문자 캡스
@@ -978,6 +1040,7 @@ fn draw_category_header(
         toggled: resp.clicked(),
         context,
         rect,
+        hovered: resp.hovered(),
     }
 }
 
@@ -999,6 +1062,7 @@ fn draw_ws_row(
     should_scroll_to_active: bool,
     actions: &mut Vec<SidebarFullAction>,
     card_rects: &mut Vec<(usize, egui::Rect)>,
+    resize_priority_hovered: &mut bool,
 ) {
     let th = props.theme;
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
@@ -1026,6 +1090,7 @@ fn draw_ws_row(
         egui::Id::new(("ws_card", global_idx)),
         egui::Sense::click_and_drag(),
     );
+    *resize_priority_hovered |= card_response.hovered();
 
     if card_response.clicked() {
         actions.push(SidebarFullAction::WorkspaceClicked(global_idx));
@@ -1122,10 +1187,12 @@ fn draw_rail_category_button(
     ui: &mut egui::Ui,
     th: &Theme,
     keycap: Option<(&str, bool, f32)>,
+    resize_priority_hovered: &mut bool,
 ) -> Option<egui::Rect> {
     let w = th.sidebar_collapsed_slot_width.value();
     let h = th.spacing_lg.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
+    *resize_priority_hovered |= resp.hovered();
     let radius = th.corner_radius.value();
     if resp.hovered() {
         ui.painter()
@@ -1169,6 +1236,7 @@ fn draw_collapsed_avatar(
     // switch-number overlay 키캡 문자(SC05, 호출부 판단). None 이면 letter avatar 유지.
     switch_digit: Option<&str>,
     actions: &mut Vec<SidebarCollapsedAction>,
+    resize_priority_hovered: &mut bool,
 ) {
     let th = props.theme;
     // 디자인 (chrome.jsx CollapsedSidebar): 워크스페이스 이름 첫 글자 대문자,
@@ -1189,6 +1257,7 @@ fn draw_collapsed_avatar(
     };
 
     let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
+    *resize_priority_hovered |= resp.hovered();
     if ws.is_active {
         ui.painter()
             .rect_filled(rect, 4.0, th.overlay_active().to_egui_premultiplied());
@@ -1617,7 +1686,7 @@ mod tests {
                     workspace_switch_held: switch_held,
                     category_switch_held: false,
                 };
-                out = draw_full_sidebar_view(ui, &props);
+                out = draw_full_sidebar_view(ui, &props).actions;
             });
         }));
         out
@@ -1643,7 +1712,7 @@ mod tests {
                     workspace_switch_held: switch_held,
                     category_switch_held: false,
                 };
-                out = draw_collapsed_sidebar_view(ui, &props);
+                out = draw_collapsed_sidebar_view(ui, &props).actions;
             });
         }));
         out
@@ -1670,7 +1739,7 @@ mod tests {
                     workspace_switch_held: switch_held,
                     category_switch_held: false,
                 };
-                out = draw_collapsed_sidebar_view(ui, &props);
+                out = draw_collapsed_sidebar_view(ui, &props).actions;
             });
         }));
         out
@@ -1833,7 +1902,7 @@ mod tests {
                     workspace_switch_held: switch_held,
                     category_switch_held: false,
                 };
-                out = draw_full_sidebar_view(ui, &props);
+                out = draw_full_sidebar_view(ui, &props).actions;
             });
         }));
         out

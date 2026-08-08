@@ -49,6 +49,7 @@ pub fn draw_collapsed_sidebar(
     };
 
     let mut deferred_actions: Vec<SidebarCollapsedAction> = Vec::new();
+    let mut resize_priority_hovered = false;
 
     // switch-number overlay — 사용자가 workspace_switch_modifier 를 누르고 있으면 rail 의
     // letter avatar 를 숫자 키캡으로 그린다 (full 사이드바·탭과 동일 공통 배선).
@@ -83,8 +84,11 @@ pub fn draw_collapsed_sidebar(
                 workspace_switch_held,
                 category_switch_held,
             };
-            deferred_actions = draw_collapsed_sidebar_view(ui, &props);
+            let result = draw_collapsed_sidebar_view(ui, &props);
+            deferred_actions = result.actions;
+            resize_priority_hovered = result.resize_priority_hovered;
         });
+    state.resize_edge_widget_hovered |= resize_priority_hovered;
 
     // 우측 경계선 (ui_kit border-right) — sidebar_width 기준 (panel rect 는 separator
     // 영역 때문에 더 커서 터미널을 침범한다).

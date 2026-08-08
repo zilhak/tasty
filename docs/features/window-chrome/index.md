@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용 — 윈도우 조작)
 - **ADR**: 없음 (CSD 데코 전략은 attach decision 과 무관, 원칙 4 크로스플랫폼)
-- **코드**: `src/platform/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
+- **코드**: `src/platform/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/adapters/ui/sidebar/` (`view.rs`/`full.rs`/`collapsed.rs`, 리사이즈 위젯 우선권 적재), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
 - **화면**: [screens/window-chrome.md](screens/window-chrome.md)
 
 ## 목적
@@ -39,7 +39,7 @@
 데코 없는 Windows/Linux 창의 가장자리 리사이즈는 **단일 MainView 경로**로 통일된다(`src/view/main/mouse.rs`). 리사이즈는 **가장자리 실제 인터랙티브 위젯 위가 아님 AND 커서가 가장자리 margin 안 AND 비최대화 AND 오버레이/팝업/배너 없음**일 때만 발동한다.
 
 - `egui_consumed`(egui-winit `wants_pointer_input()`)는 **패널/Area 전체의 bounding rect** 단위라 리사이즈 게이트에 쓰지 않는다 — 상시 렌더되는 타이틀바(36px)/상태바(24px) 스트립 전체가 `RESIZE_EDGE_MARGIN`(8px)보다 두꺼워, 그 값을 그대로 쓰면 버튼 없는 빈 여백에서도 리사이즈가 막힌다.
-- 대신 `AppState.resize_edge_widget_hovered`(**위젯 단위**)로 게이트한다. 타이틀바 창 버튼(`titlebar/view.rs::draw_window_buttons`)·Windows 캡션 버튼(`titlebar/caption.rs`)·상태바 클릭 요소(`status_bar.rs`)가 각자 `Response::hovered()` 를 매 프레임 이 필드에 적재(타이틀바가 프레임당 첫 draw 라 리셋, 이후는 OR 누적) — 실제 버튼 위에서만 리사이즈가 양보되고, 빈 여백은 항상 리사이즈로 동작한다.
+- 대신 `AppState.resize_edge_widget_hovered`(**위젯 단위**)로 게이트한다. 타이틀바 창 버튼(`titlebar/view.rs::draw_window_buttons`)·Windows 캡션 버튼(`titlebar/caption.rs`)·상태바 클릭 요소(`status_bar.rs`)·사이드바 클릭 요소(`sidebar/view.rs` — 헤더 접기 버튼, Tools/Plugins/Settings/New Workspace, 카테고리 헤더, 워크스페이스 행/아바타, rail 카테고리 버튼 전부)가 각자 `Response::hovered()` 를 매 프레임 이 필드에 적재(타이틀바가 프레임당 첫 draw 라 리셋, 이후는 OR 누적) — 실제 버튼/행 위에서만 리사이즈가 양보되고, 빈 여백은 항상 리사이즈로 동작한다. 사이드바의 배경 우클릭 캐처(`bg_resp`, 빈 영역에서 컨텍스트 메뉴만 여는 캐처)는 타이틀바 드래그 rect 와 동일한 이유로 의도적으로 미적재 — 빈 시각 공간은 리사이즈에 양보해야 한다.
 - `resize_direction_at` 는 좌표가 가장자리 margin(`RESIZE_EDGE_MARGIN`) 안이면 8방향 `ResizeDirection` 을 돌려주는 순수 함수(OS 무관 컴파일·테스트).
 - `handle_mouse_input` 이 좌클릭 press 에서 hit-test → `Some(dir)` 이면 `drag_resize_window(dir)` 후 early-return.
 - `handle_cursor_moved` 가 hover 방향을 `AppState.pending_resize_cursor` 에 저장하고, egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 ↔ 커서를 적용한다(egui 가 매 프레임 winit 커서를 덮으므로 프레임 내 적용 필수). 이 경로는 `egui_consumed` 대신 `is_using_pointer()` 기반 hover 판정을 쓰므로(egui-winit `CursorMoved` 처리) 애초에 빈 여백에서 리사이즈 커서가 정상적으로 뜬다 — 클릭 게이트만 어긋나 있었다.
@@ -73,7 +73,7 @@
 - CSD 속성: `src/platform/window_chrome.rs` (`apply_csd_attributes`, `resize_direction_at`, `RESIZE_EDGE_MARGIN`).
 - 타이틀바: `src/adapters/ui/titlebar/mod.rs`(wrapper `draw_titlebar`/`top_inset`/`os_controls`/`resize_cursor`), `view.rs`(순수 view + `TitlebarAction`/`WindowButton`/`ControlSide`), `caption.rs`(Windows 캡션).
 - 가장자리 리사이즈: `src/view/main/mouse.rs`(`handle_mouse_input`/`handle_cursor_moved` hit-test), `AppState.pending_resize_cursor`/`resize_edge_widget_hovered`(`src/state.rs`), 커서 적용 `src/gfx/gpu/egui_bridge.rs`, 커서 우선순위 게이트 `src/gfx/gpu.rs`(`pending_resize_cursor.is_none()`).
-- 리사이즈 위젯 우선권 적재: `src/adapters/ui/titlebar/view.rs`(`TitlebarDrawResult::resize_priority_hovered`)·`caption.rs`(`CaptionDrawResult::hovered`, Windows)·`src/adapters/ui/status_bar.rs`(`StatusBarDrawResult::resize_priority_hovered`) → `titlebar::draw_titlebar`/`status_bar::draw_status_bar` 가 `AppState.resize_edge_widget_hovered` 에 적재(리셋/OR).
+- 리사이즈 위젯 우선권 적재: `src/adapters/ui/titlebar/view.rs`(`TitlebarDrawResult::resize_priority_hovered`)·`caption.rs`(`CaptionDrawResult::hovered`, Windows)·`src/adapters/ui/status_bar.rs`(`StatusBarDrawResult::resize_priority_hovered`)·`src/adapters/ui/sidebar/view.rs`(`SidebarFullDrawResult`/`SidebarCollapsedDrawResult::resize_priority_hovered`) → `titlebar::draw_titlebar`/`status_bar::draw_status_bar`/`sidebar::full::draw_full_sidebar`/`sidebar::collapsed::draw_collapsed_sidebar` 가 `AppState.resize_edge_widget_hovered` 에 적재(타이틀바만 리셋, 나머지는 OR).
 
 ## 화면
 

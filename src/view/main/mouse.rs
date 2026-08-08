@@ -1630,6 +1630,18 @@ mod resize_gate_tests {
     }
 
     #[test]
+    fn sidebar_widget_hovered_also_yields_to_content() {
+        // 사이드바(트리 항목/버튼 등)도 타이틀바/상태바와 동일하게 자신의
+        // hover 를 `resize_edge_widget_hovered` 에 적재한다(`sidebar/view.rs`).
+        // 이 함수 입장에서는 "누가" 적재했는지 구분하지 않는 단일 bool 이므로,
+        // 사이드바 위젯 hover 도 다른 chrome 위젯과 동일하게 리사이즈를
+        // 양보시켜야 한다 — 사이드바 커버리지 추가의 회귀 방지용 케이스.
+        assert!(resize_should_yield_to_content(
+            true, false, false, false, false
+        ));
+    }
+
+    #[test]
     fn overlay_popup_banner_maximized_each_yield() {
         assert!(resize_should_yield_to_content(
             false, true, false, false, false

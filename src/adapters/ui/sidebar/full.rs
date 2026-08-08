@@ -116,6 +116,7 @@ pub fn draw_full_sidebar(
     };
 
     let mut deferred_actions: Vec<SidebarFullAction> = Vec::new();
+    let mut resize_priority_hovered = false;
 
     // switch-number overlay — 현재 눌린(사용자 입력) modifier 가 workspace_switch_modifier
     // 와 일치하면 워크스페이스 leading 을 숫자 키캡으로 그린다. P2a 탭과 동일하게 공통
@@ -168,8 +169,11 @@ pub fn draw_full_sidebar(
                 workspace_switch_held,
                 category_switch_held,
             };
-            deferred_actions = draw_full_sidebar_view(ui, &props);
+            let result = draw_full_sidebar_view(ui, &props);
+            deferred_actions = result.actions;
+            resize_priority_hovered = result.resize_priority_hovered;
         });
+    state.resize_edge_widget_hovered |= resize_priority_hovered;
 
     // 우측 경계선 (ui_kit border-right) — 사이드바 안쪽 마지막 px.
     // panel_resp.response.rect.right() 는 exact_width 보다 크다(separator/resize handle
