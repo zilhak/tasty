@@ -336,23 +336,6 @@ pub fn draw_popups(
     // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
     cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);
 
-    // (09) transfer_error 팝업 — draw_fn 은 큐가 빌 때만 Close 를 반환하므로, 여기서
-    // 닫혔는데 큐가 아직 남아 있으면 scrim/외부 클릭으로 닫힌 것 → head 를 dismiss 하고
-    // 남은 실패가 있으면 팝업을 다시 연다(Dismiss 버튼/Esc 는 draw_fn 이 이미 pop).
-    let xfer_err_closed = dispatch_closed
-        .contains(&crate::adapters::ui::popup::transfer::TRANSFER_ERROR_POPUP_ID)
-        || draw_result
-            .closed
-            .contains(&crate::adapters::ui::popup::transfer::TRANSFER_ERROR_POPUP_ID);
-    if xfer_err_closed && !state.dialogs.transfer_error.is_empty() {
-        state.dialogs.transfer_error.pop_front();
-        if !state.dialogs.transfer_error.is_empty() {
-            state.popups.open_centered_focused(
-                crate::adapters::ui::popup::transfer::TRANSFER_ERROR_POPUP_ID,
-            );
-        }
-    }
-
     // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서
     // 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음 head 로 다시 연다.
     let approval_closed = dispatch_closed

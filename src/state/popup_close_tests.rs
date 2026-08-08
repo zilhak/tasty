@@ -426,6 +426,37 @@ fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로로 닫아도(scrim/외부 클릭과
+/// 동일하게 draw_fn 을 거치지 않으므로) 다음 프레임의 drain 이 head 를 dismiss 하고
+/// 재오픈까지 수행한다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일
+/// 패턴 + 재진입 재오픈 확인).
+#[test]
+fn transfer_error_close_intent_now_pops_head_and_reopens() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.transfer_error.push_back(xfer_err("a.txt"));
+    state.dialogs.transfer_error.push_back(xfer_err("b.txt"));
+    state
+        .popups
+        .open_at_focused(TRANSFER_ERROR_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: TRANSFER_ERROR_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
+    // handle() 직후 — 아직 drain 전, 큐엔 여전히 2건.
+    assert_eq!(state.dialogs.transfer_error.len(), 2);
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert_eq!(state.dialogs.transfer_error.len(), 1);
+    assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
+    assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
+}
+
 // ────────────────────────── confirm_delete_category ──────────────────────────
 
 #[test]

@@ -197,6 +197,25 @@ pub fn draw_transfer_progress(
     PopupAction::None
 }
 
+/// PopupDef::on_close entry point — draw_fn 의 Dismiss/Retry 분기는 스스로
+/// `pop_front()` 한 뒤 큐가 비었을 때만 Close 를 반환하므로(그 경우 여기 도달
+/// 시점엔 이미 빈 큐), 이 훅에서 할 일이 남는 경우는 **scrim/외부 클릭처럼
+/// draw_fn 을 거치지 않고 닫힌 경우뿐**이다 — 그때는 큐가 아직 안 비어 있으므로
+/// head 를 여기서 대신 dismiss 하고, 남은 실패가 있으면 팝업을 다시 연다.
+pub fn on_close_transfer_error(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut CoreState,
+) {
+    if state.dialogs.transfer_error.is_empty() {
+        return;
+    }
+    state.dialogs.transfer_error.pop_front();
+    if !state.dialogs.transfer_error.is_empty() {
+        state.popups.open_centered_focused(TRANSFER_ERROR_POPUP_ID);
+    }
+}
+
 /// 실패 팝업 draw_fn. 헤더(warn + "Transfer failed") → prose + reason well → Dismiss
 /// /(전송 중 실패만)Retry. Esc/scrim = Dismiss. 큐가 비면 self-close.
 pub fn draw_transfer_error(

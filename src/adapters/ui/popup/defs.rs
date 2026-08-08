@@ -269,7 +269,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::transfer::draw_transfer_error,
-                on_close: None,
+                on_close: Some(super::transfer::on_close_transfer_error),
             },
             PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
