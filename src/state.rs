@@ -11,6 +11,8 @@ mod layout;
 mod mark;
 mod mouse;
 pub(crate) mod pane;
+#[cfg(test)]
+mod popup_close_tests;
 mod tab;
 #[cfg(test)]
 mod tests;

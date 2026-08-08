@@ -1,7 +1,9 @@
 use super::*;
 use crate::model::SplitDirection;
 
-fn test_state() -> (AppState, crate::core::CoreState) {
+// `pub(super)`: `popup_close_tests`(sibling module)가 동일 구성을 재사용한다 —
+// popup close 뒷정리 회귀 테스트가 여기와 동형의 AppState/CoreState 를 필요로 함.
+pub(super) fn test_state() -> (AppState, crate::core::CoreState) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
     // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 egui-mesh
