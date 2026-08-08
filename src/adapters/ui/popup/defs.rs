@@ -147,7 +147,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_handler_picker::draw_file_handler_picker,
-                on_close: None,
+                on_close: Some(super::file_handler_picker::on_close_file_handler_picker),
             },
             PopupDef {
                 id: super::file_picker::FILE_PICKER_POPUP_ID,

@@ -326,6 +326,22 @@ fn draw_handler_list(
     }
 }
 
+/// PopupDef::on_close entry point — X 버튼/외부 클릭 등 draw_fn 을 거치지 않는
+/// 경로로 닫히면 `result` 가 아직 `None` 일 수 있다(dispatch 로 이미 채워졌으면
+/// 손대지 않는다). 미확정이면 Cancelled 로 명시해 호스트 본체의 result-drain 이
+/// 대기 상태로 남지 않게 한다.
+pub fn on_close_file_handler_picker(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    if let Some(p) = state.dialogs.file_handler_picker.as_mut()
+        && p.result.is_none()
+    {
+        p.result = Some(crate::state::FileHandlerPickerResult::Cancelled);
+    }
+}
+
 /// PopupDef.draw_fn — runtime wrapper. props 추출 + view 호출 + action → mutation.
 pub fn draw_file_handler_picker(
     ui: &mut egui::Ui,

@@ -364,22 +364,6 @@ pub fn draw_popups(
         }
     }
 
-    // file_handler_picker — X 버튼 또는 외부 닫기는 dispatch 없이 닫힘으로 간주.
-    // dispatch 결과는 picker draw_fn 안에서 미리 채워두므로, 여기서는 추가 처리 없음.
-    // 호스트 본체 layer 가 result 를 소비한 뒤 None 으로 리셋한다.
-    let picker_closed = dispatch_closed
-        .contains(&crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID)
-        || draw_result
-            .closed
-            .contains(&crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
-    if picker_closed
-        && let Some(p) = state.dialogs.file_handler_picker.as_mut()
-        && p.result.is_none()
-    {
-        // X 버튼 등 외부 경로로 닫힘 — Cancelled 로 명시.
-        p.result = Some(crate::state::FileHandlerPickerResult::Cancelled);
-    }
-
     // file_picker (04) — file_handler_picker 와 동일 관례: X 버튼/외부 닫기는
     // dispatch 없이 닫힘으로 간주하고 Cancelled 로 명시, 실제 정리는 호스트
     // 본체의 result-drain(`dispatch_pending_file_picker_results`)이 담당.
