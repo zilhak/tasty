@@ -97,6 +97,25 @@ impl ModifierHintRuntime {
         self.dismissed = false;
         self.working = None;
     }
+
+    /// 등록된 단축키가 실제로 소비된 시점에 호출한다. 아직 표시 지연 게이트를 통과하지
+    /// 않은 홀드라면(=패널이 아직 안 뜬 상태) 타이머를 지금부터 다시 잰다 — 단축키를
+    /// 계속 쓰는 동안에는 패널이 뜨지 않게 하기 위함(오버레이의 목적은 발견성이고, 등록
+    /// 단축키를 실제로 실행한 사용자에겐 그 시점에 도움말이 불필요하다).
+    ///
+    /// 이미 게이트를 통과한(=표시 중인) 홀드는 건드리지 않는다 — 뜬 패널을 숨겼다 다시
+    /// 띄우지 않는다. 홀드 중이 아니면(`held`/`hold_since` 가 `None`) no-op — modifier
+    /// 없이 실행된 단축키가 새 홀드를 만들면 안 된다. `dismissed`/`working`/`held` 는
+    /// 건드리지 않는다(전부 리셋 대상 아님).
+    pub fn reset_reveal_timer_if_not_shown(&mut self, theme: &Theme) {
+        let (Some(held), Some(since)) = (self.held, self.hold_since) else {
+            return;
+        };
+        let held_ms = since.elapsed().as_secs_f32() * 1000.0;
+        if held_ms < reveal_delay_ms(held, theme) {
+            self.hold_since = Some(Instant::now());
+        }
+    }
 }
 
 /// Debug 전용 홀드 상태 조작·관찰 — `debug.modifier_hint.*` IPC 표면이 쓴다.
@@ -1045,6 +1064,99 @@ mod tests {
         assert!(rt.held.is_none());
         assert!(rt.hold_since.is_none());
         assert!(!rt.dismissed, "전 modifier release 시 dismiss 리셋");
+    }
+
+    /// 표시 지연 게이트 통과 전(400ms < 500ms delay)에 단축키가 실행되면 타이머가
+    /// 다시 시작돼, 리셋 직후 경과시간 기준으로는 여전히 게이트 미통과(alpha=None)다.
+    #[test]
+    fn reset_reveal_timer_rewinds_before_gate() {
+        let theme = tasty_themes::mocha_fallback();
+        let mut rt = ModifierHintRuntime::default();
+        rt.update_hold(true, false, false, false); // Ctrl 홀드 시작(delay 500ms).
+        rt.debug_backdate(std::time::Duration::from_millis(400));
+
+        rt.reset_reveal_timer_if_not_shown(&theme);
+
+        let (held, elapsed, _) = rt.debug_snapshot();
+        let held = held.expect("held 는 리셋 대상 아님 — 유지돼야 한다");
+        let elapsed_ms = elapsed.expect("홀드 중이므로 Some").as_secs_f32() * 1000.0;
+        let delay = reveal_delay_ms(held, &theme);
+        assert_eq!(
+            hold_reveal_alpha(elapsed_ms, delay, FADE, false),
+            None,
+            "리셋 직후이므로 여전히 지연 게이트 전이어야 한다 (elapsed={elapsed_ms}ms, delay={delay}ms)"
+        );
+    }
+
+    /// 이미 지연 게이트를 통과한(700ms > 500ms delay = 표시 중인) 홀드에서 단축키가
+    /// 실행돼도 타이머는 건드리지 않는다 — 뜬 패널을 숨겼다 다시 띄우지 않는다.
+    #[test]
+    fn reset_reveal_timer_keeps_timer_after_gate() {
+        let theme = tasty_themes::mocha_fallback();
+        let mut rt = ModifierHintRuntime::default();
+        rt.update_hold(true, false, false, false);
+        rt.debug_backdate(std::time::Duration::from_millis(700));
+
+        rt.reset_reveal_timer_if_not_shown(&theme);
+
+        let (held, elapsed, _) = rt.debug_snapshot();
+        let held = held.expect("held 는 리셋 대상 아님");
+        let elapsed_ms = elapsed.expect("홀드 중이므로 Some").as_secs_f32() * 1000.0;
+        let delay = reveal_delay_ms(held, &theme);
+        assert!(
+            hold_reveal_alpha(elapsed_ms, delay, FADE, false).is_some(),
+            "이미 표시 중인 홀드는 리셋되면 안 된다 (elapsed={elapsed_ms}ms, delay={delay}ms)"
+        );
+    }
+
+    /// 홀드 중이 아닐 때(`hold_since`/`held` 가 `None`) 호출되면 아무 것도 하지 않는다 —
+    /// modifier 없이 실행된 단축키가 새 홀드를 만들면 안 된다.
+    #[test]
+    fn reset_reveal_timer_is_noop_without_hold() {
+        let theme = tasty_themes::mocha_fallback();
+        let mut rt = ModifierHintRuntime::default();
+
+        rt.reset_reveal_timer_if_not_shown(&theme);
+
+        assert!(rt.hold_since.is_none());
+        assert!(rt.held.is_none());
+    }
+
+    /// Shift 단독 홀드는 자기 조합의 delay(1200ms) 기준으로 게이트 통과 여부를 판정한다
+    /// — 500ms 는 넘었지만 1200ms 는 아직인 900ms 시점은 여전히 리셋 대상이다.
+    #[test]
+    fn reset_reveal_timer_uses_shift_only_delay() {
+        let theme = tasty_themes::mocha_fallback();
+        let mut rt = ModifierHintRuntime::default();
+        rt.update_hold(false, false, false, true); // Shift 단독(delay 1200ms).
+        rt.debug_backdate(std::time::Duration::from_millis(900));
+
+        rt.reset_reveal_timer_if_not_shown(&theme);
+
+        let (held, elapsed, _) = rt.debug_snapshot();
+        let held = held.expect("held 는 리셋 대상 아님");
+        let elapsed_ms = elapsed.expect("홀드 중이므로 Some").as_secs_f32() * 1000.0;
+        let delay = reveal_delay_ms(held, &theme);
+        assert_eq!(delay, 1200.0, "Shift 단독은 1200ms delay");
+        assert_eq!(
+            hold_reveal_alpha(elapsed_ms, delay, FADE, false),
+            None,
+            "900ms 는 500ms 는 넘지만 Shift 단독 delay(1200ms) 는 아직 — 리셋돼야 한다"
+        );
+    }
+
+    /// X 로 dismiss 된 세션에서 단축키가 실행돼도 `dismissed` 는 건드리지 않는다.
+    #[test]
+    fn reset_reveal_timer_does_not_touch_dismissed() {
+        let theme = tasty_themes::mocha_fallback();
+        let mut rt = ModifierHintRuntime::default();
+        rt.update_hold(true, false, false, false);
+        rt.dismissed = true;
+        rt.debug_backdate(std::time::Duration::from_millis(200));
+
+        rt.reset_reveal_timer_if_not_shown(&theme);
+
+        assert!(rt.dismissed, "dismissed 는 리셋 대상 아님");
     }
 
     #[test]

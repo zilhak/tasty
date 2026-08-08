@@ -124,11 +124,24 @@ impl MainView {
                 self.mark_dirty();
                 return true;
             } else if self.handle_double_tap_shortcut(dt) {
+                self.reset_modifier_hint_reveal_timer();
                 self.mark_dirty();
                 return true;
             }
         }
         false
+    }
+
+    /// 등록된 단축키가 실제로 소비된 시점에 modifier-hint 표시 지연 타이머를 리셋한다
+    /// — 홀드를 유지한 채 단축키를 계속 쓰는 동안에는 도움말 오버레이가 뜨지 않게
+    /// 하기 위함. **키 입력 경로에서만** 호출해야 한다(원칙1) — Command Palette 가
+    /// 공유하는 `dispatch_action_by_id`(`shortcuts/dispatch.rs`) 안에는 이 호출을
+    /// 넣지 않는다. 홀드 중이 아니면 no-op(`ModifierHintRuntime::reset_reveal_timer_if_not_shown`).
+    fn reset_modifier_hint_reveal_timer(&mut self) {
+        let theme = crate::theme::theme();
+        self.state
+            .modifier_hint
+            .reset_reveal_timer_if_not_shown(&theme);
     }
 
     /// 4단계: Escape 로 settings / notifications 팝업 닫기 소비. 소비 시 true.
@@ -159,6 +172,7 @@ impl MainView {
     fn try_consume_shortcut_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
         if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
+            self.reset_modifier_hint_reveal_timer();
             if self.ime_preedit.is_some() {
                 // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
                 // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
