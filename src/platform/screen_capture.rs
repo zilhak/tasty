@@ -76,9 +76,10 @@ fn capture_to_path(path: &Path) -> anyhow::Result<()> {
          $bmp.Save('{path_escaped}', [System.Drawing.Imaging.ImageFormat]::Png); \
          $g.Dispose(); $bmp.Dispose()"
     );
-    let status = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .status()?;
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    tasty_utils::process::hide_console(&mut cmd);
+    let status = cmd.status()?;
     if !status.success() {
         anyhow::bail!("powershell screen capture exited with {status}");
     }
