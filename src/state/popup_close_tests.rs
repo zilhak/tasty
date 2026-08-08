@@ -603,6 +603,34 @@ fn file_picker_x_button_close_marks_cancelled() {
     ));
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
+/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
+#[test]
+fn file_picker_close_intent_now_marks_cancelled() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.file_picker = Some(mk_file_picker_data());
+    state
+        .popups
+        .open_at_focused(FILE_PICKER_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: FILE_PICKER_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(FILE_PICKER_POPUP_ID));
+    assert!(state.dialogs.file_picker.as_ref().unwrap().result.is_none());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(matches!(
+        state.dialogs.file_picker.as_ref().unwrap().result,
+        Some(FilePickerResult::Cancelled)
+    ));
+}
+
 // ──────────────────────────────── approval ────────────────────────────────
 
 fn push_approval(

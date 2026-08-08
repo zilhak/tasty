@@ -163,7 +163,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_picker::draw_file_picker,
-                on_close: None,
+                on_close: Some(super::file_picker::on_close_file_picker),
             },
             PopupDef {
                 id: super::port_scanner::PORT_SCANNER_POPUP_ID,
