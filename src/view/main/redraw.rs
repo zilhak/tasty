@@ -1678,9 +1678,6 @@ impl MainView {
         match result {
             Some(1) => {
                 self.state.dialogs.preset_picker_selected = None;
-                // 방어적 리셋 — 카테고리 헤더 메뉴 경로가 아니므로 이전 값이 남아있지
-                // 않도록 명시(누출 방지, 원인 분석 3 참고).
-                self.state.dialogs.preset_apply_target_category = None;
                 self.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
                         id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
