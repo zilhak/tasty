@@ -295,7 +295,8 @@ impl App {
             if let Some(prog) = main.state.dialogs.transfer_progress.as_mut() {
                 prog.rows.retain(|r| r.id != transfer_id);
                 if prog.rows.is_empty() {
-                    main.state.dialogs.transfer_progress = None;
+                    // `on_close_transfer_progress` 훅이 `dialogs.transfer_progress`
+                    // 정리를 담당 — 여기서 `= None` 을 직접 하면 그 훅과 중복이다.
                     main.state.popups.close(TRANSFER_PROGRESS_POPUP_ID); // intent-exempt: popup lifecycle.
                 }
             }
