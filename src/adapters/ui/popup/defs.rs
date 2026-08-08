@@ -203,7 +203,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::command_palette::draw_command_palette_popup,
-                on_close: None,
+                on_close: Some(super::command_palette::on_close_command_palette_popup),
             },
             PopupDef {
                 id: super::remote_tool::REMOTE_TOOL_POPUP_ID,

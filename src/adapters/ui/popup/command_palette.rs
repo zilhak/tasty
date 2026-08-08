@@ -413,6 +413,20 @@ fn items_from_state(
     (items, ids)
 }
 
+/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 쿼리·선택 인덱스를 리셋한다.
+/// `Close`/`Execute` 경로는 draw_fn 안에서 이미 `reset()`을 부르지만
+/// `command_palette::reset()`은 멱등이라 여기서 다시 불러도 안전하다. 이 훅이
+/// 실제로 의미를 갖는 건 draw_fn 을 거치지 않는 바깥 클릭/`UiIntent::ClosePopup`
+/// 경로 — 지금은 다음 open 시점의 방어적 리셋(`keybinding.rs`/`status_bar.rs`)이
+/// 그 틈을 가려주고 있을 뿐이다(그 마스킹 제거는 별도 후속 작업 담당).
+pub fn on_close_command_palette_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.command_palette.reset();
+}
+
 /// PopupDef.draw_fn — `state.command_palette` 와 `engine.settings` 를 어댑팅하고
 /// view 를 호출한다. props 추출 → view 호출 → action 처리.
 pub fn draw_command_palette_popup(

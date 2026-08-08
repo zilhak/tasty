@@ -45,6 +45,7 @@ use super::tests::test_state;
 use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction};
 use crate::adapters::ui::notification::draw_popups;
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
+use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
@@ -530,6 +531,31 @@ fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
         .as_ref()
         .expect("Run 의 result 는 dispatch 가 소비할 때까지 살아 있어야 한다");
     assert_eq!(pending.result, Some(true));
+}
+
+// ─────────────────────────── command_palette ───────────────────────────
+
+/// 바깥 클릭(`close_on_outside_click: true`, draw_fn 을 거치지 않는 경로)으로
+/// 닫으면 훅이 쿼리·선택 인덱스를 리셋한다 — 이전엔 다음 open 시점 방어적 리셋만
+/// 이 상태를 가려주고 있었다(닫힘 자체는 정리하지 않았다).
+#[test]
+fn command_palette_outside_click_close_resets_query_and_selection() {
+    let (mut state, mut engine) = test_state();
+    state.command_palette.query = "workspace".to_string();
+    state.command_palette.selected = 2;
+    state
+        .popups
+        .open_at_focused(COMMAND_PALETTE_POPUP_ID, FIXED_POS);
+
+    run_frame(
+        press_input(outside_point(FIXED_POS)),
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(!state.popups.is_open(COMMAND_PALETTE_POPUP_ID));
+    assert!(state.command_palette.query.is_empty());
+    assert_eq!(state.command_palette.selected, 0);
 }
 
 // ──────────────────────────── port_scanner ────────────────────────────
