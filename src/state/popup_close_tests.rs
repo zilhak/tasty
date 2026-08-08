@@ -437,6 +437,32 @@ fn confirm_delete_category_outside_click_clears_dialog_state() {
     assert!(state.dialogs.pending_category_delete.is_none());
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
+/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
+#[test]
+fn confirm_delete_category_close_intent_now_clears_dialog_state() {
+    let (mut state, mut engine) = test_state();
+    let cat_id = engine.create_category("Services").unwrap();
+    state.dialogs.pending_category_delete = Some(cat_id);
+    state
+        .popups
+        .open_at_focused(CONFIRM_DELETE_CATEGORY_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: CONFIRM_DELETE_CATEGORY_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(CONFIRM_DELETE_CATEGORY_POPUP_ID));
+    assert!(state.dialogs.pending_category_delete.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.pending_category_delete.is_none());
+}
+
 // ────────────────────────── file_handler_picker ──────────────────────────
 
 fn mk_picker_data() -> FileHandlerPickerData {

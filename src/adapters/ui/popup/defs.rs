@@ -369,7 +369,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::confirm_delete_category::draw_confirm_delete_category,
-                on_close: None,
+                on_close: Some(super::confirm_delete_category::on_close_confirm_delete_category),
             },
             PopupDef {
                 id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,

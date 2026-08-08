@@ -61,6 +61,15 @@ pub fn confirm_delete_category_sizer(
     egui::vec2(WIDTH, popup::content_margin() * 2.0 + content_h)
 }
 
+/// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 삭제 대상을 비운다.
+pub fn on_close_confirm_delete_category(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.pending_category_delete = None;
+}
+
 pub fn draw_confirm_delete_category(
     ui: &mut egui::Ui,
     state: &mut AppState,

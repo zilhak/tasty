@@ -364,16 +364,6 @@ pub fn draw_popups(
         }
     }
 
-    // confirm_delete_category 팝업 — 닫히면(취소/외부/Escape) 삭제 대상 정리.
-    let del_cat_closed = dispatch_closed.contains(
-        &crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
-    ) || draw_result.closed.contains(
-        &crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
-    );
-    if del_cat_closed {
-        state.dialogs.pending_category_delete = None;
-    }
-
     // file_handler_picker — X 버튼 또는 외부 닫기는 dispatch 없이 닫힘으로 간주.
     // dispatch 결과는 picker draw_fn 안에서 미리 채워두므로, 여기서는 추가 처리 없음.
     // 호스트 본체 layer 가 result 를 소비한 뒤 None 으로 리셋한다.
