@@ -67,7 +67,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::script_confirm::draw_script_confirm_popup,
-                on_close: None,
+                on_close: Some(super::script_confirm::on_close_script_confirm_popup),
             },
             PopupDef {
                 id: "rename",

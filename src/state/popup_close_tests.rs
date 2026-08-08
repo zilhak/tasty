@@ -61,12 +61,13 @@ use crate::intent::{Intent, UiIntent};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::state::{
     FileHandlerPickerData, FileHandlerPickerResult, FilePickerData, FilePickerResult, FpLoadState,
-    RenameTarget,
+    PendingScriptConfirm, RenameTarget,
 };
 use tasty_approval::{ApprovalId, ApprovalRequest, Requester, Severity};
 
 const CONVERT_SURFACE_POPUP_ID: PopupId = "convert_surface";
 const RENAME_POPUP_ID: PopupId = "rename";
+const SCRIPT_CHANGED_CONFIRM_POPUP_ID: PopupId = "script_changed_confirm";
 
 /// popup 클램프에 넉넉한 여유를 주는 가상 화면 rect (1920x1080).
 fn term_rect() -> PhysicalRect {
@@ -460,6 +461,75 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
     assert_eq!(state.dialogs.transfer_error.len(), 1);
     assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
+}
+
+// ────────────────────────── script_changed_confirm ──────────────────────────
+
+fn pending_script_confirm(result: Option<bool>) -> PendingScriptConfirm {
+    PendingScriptConfirm {
+        script_id: "on_startup".to_string(),
+        name: "deploy.lua".to_string(),
+        source: "-- lua source".to_string(),
+        new_hash: "deadbeef".to_string(),
+        result,
+    }
+}
+
+/// X 버튼(draw_fn 을 우회하는 경로, `UiIntent::ClosePopup` 로 대신 유도)으로 닫으면
+/// — Run/Cancel 어느 쪽도 거치지 않아 아직 결정이 없는 상태(`result: None`)이므로
+/// — `pending_script_confirm` 이 정리된다. 정리 전엔 이 값이 남아 다음 실행에서
+/// 엉뚱한 보류 팝업이 재등장할 수 있었다.
+#[test]
+fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.pending_script_confirm = Some(pending_script_confirm(None));
+    state
+        .popups
+        .open_at_focused(SCRIPT_CHANGED_CONFIRM_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: SCRIPT_CHANGED_CONFIRM_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(SCRIPT_CHANGED_CONFIRM_POPUP_ID));
+    // handle() 직후 — 아직 drain 전, 훅이 아직 정리하지 않았다.
+    assert!(state.dialogs.pending_script_confirm.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.pending_script_confirm.is_none());
+}
+
+/// Run 버튼은 `result = Some(true)` 를 남기고 닫는다 — 다음 프레임의
+/// `App::dispatch_pending_script_confirm` 이 그 값을 읽고 해시 갱신·워커 실행을
+/// 하므로, 훅은 이미 결정된 `pending_script_confirm` 을 지우면 안 된다. 지웠다면
+/// 이 테스트가 실패해 그 회귀를 잡는다.
+#[test]
+fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.pending_script_confirm = Some(pending_script_confirm(Some(true)));
+    state
+        .popups
+        .open_at_focused(SCRIPT_CHANGED_CONFIRM_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: SCRIPT_CHANGED_CONFIRM_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    let pending = state
+        .dialogs
+        .pending_script_confirm
+        .as_ref()
+        .expect("Run 의 result 는 dispatch 가 소비할 때까지 살아 있어야 한다");
+    assert_eq!(pending.result, Some(true));
 }
 
 // ──────────────────────────── port_scanner ────────────────────────────

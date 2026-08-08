@@ -107,6 +107,24 @@ pub fn draw_script_confirm_view(
     action
 }
 
+/// PopupDef::on_close 진입점 — X 버튼(draw_fn 을 우회하는 닫힘 경로)에서만
+/// 실질적으로 정리할 게 있다. Cancel/Close(Escape) 는 draw_fn 이 이미 `None` 으로
+/// 비워서 여기선 no-op. Run 은 `result = Some(true)` 를 남긴 채 닫히는데, 다음
+/// 프레임의 `App::dispatch_pending_script_confirm` 이 그 값을 읽고 해시 갱신·실행을
+/// 하므로 **여기서 지우면 안 된다** — `result.is_none()` 일 때만(=아직 아무 결정도
+/// 없이 강제로 닫힌 경우) 정리한다.
+pub fn on_close_script_confirm_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    if let Some(pending) = state.dialogs.pending_script_confirm.as_ref()
+        && pending.result.is_none()
+    {
+        state.dialogs.pending_script_confirm = None;
+    }
+}
+
 /// PopupDef::draw_fn entry.
 pub fn draw_script_confirm_popup(
     ui: &mut egui::Ui,
