@@ -284,6 +284,18 @@ pub(super) fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u
         .map(|w| w.id)
 }
 
+/// `resolve_workspace_id` 실패 시 메시지. 표시 이름(사용자가 UI 에서 보는 이름,
+/// 예: "Workspace 1")과 실제 id 는 다를 수 있다(`resolve_workspace_id` 는 숫자 id
+/// exact match 또는 정확한 `name` 필드 match 만 본다) — 표시 이름 매칭은 중복 이름
+/// 시 모호성이 생기므로 추가하지 않고, 혼동을 줄이는 힌트만 덧붙인다.
+fn workspace_not_found_message(workspace_param: &str) -> String {
+    format!(
+        "workspace '{workspace_param}' not found — pass the numeric workspace id \
+         (see `tasty list workspaces`), not a displayed name (a name shown in the UI \
+         may not match the underlying id)"
+    )
+}
+
 /// workspace 내 첫 pane 의 id. spawn 의 `--pane` 미지정 기본 대상.
 fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
     let idx = engine.find_workspace_index_for_id(ws_id)?;
@@ -331,10 +343,7 @@ pub(crate) fn handle_spawn(
     let nickname = optional_str(params, "nickname");
 
     let Some(ws_id) = resolve_workspace_id(engine, &workspace_param) else {
-        return JsonRpcResponse::invalid_params(
-            id,
-            format!("workspace '{workspace_param}' not found"),
-        );
+        return JsonRpcResponse::invalid_params(id, workspace_not_found_message(&workspace_param));
     };
     let pane_id = match pane_override {
         Some(p) => p,
@@ -904,6 +913,16 @@ mod tests {
         assert_eq!(format_index_ranges(&[0, 1, 2, 5, 8, 9]), "0-2, 5, 8-9");
         // kill 로 중간이 빠진 목록을 `0-57` 로 뭉뚱그리지 않는다.
         assert_eq!(format_index_ranges(&[0, 57]), "0, 57");
+    }
+
+    /// workspace not-found 메시지는 표시 이름 대신 숫자 id 를 쓰라는 힌트를 담는다
+    /// — 표시 이름(name) 매칭을 추가하는 대신 택한 최소 침습적 개선.
+    #[test]
+    fn workspace_not_found_message_hints_numeric_id() {
+        let msg = workspace_not_found_message("1");
+        assert!(msg.contains("workspace '1' not found"), "{msg}");
+        assert!(msg.contains("numeric workspace id"), "{msg}");
+        assert!(msg.contains("tasty list workspaces"), "{msg}");
     }
 
     /// surface_id 를 `--child` 에 넣은 흔한 오용 — 같은 부모면 올바른 index 를 짚어준다.
