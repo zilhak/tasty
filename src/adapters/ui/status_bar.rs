@@ -399,7 +399,6 @@ pub fn draw_status_bar(
         match action {
             StatusBarAction::OpenPalette => {
                 use crate::intent::{OpenPopupMode, UiIntent};
-                state.command_palette.reset();
                 state.dispatch_intent(
                     UiIntent::TogglePopup {
                         id: crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,

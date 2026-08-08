@@ -593,7 +593,6 @@ impl MainView {
         mods: ModifiersState,
     ) -> bool {
         if matches_any_binding(&kb.toggle_command_palette, key, mods) {
-            state.command_palette.reset();
             state.dispatch_intent(
                 UiIntent::TogglePopup {
                     id: crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,
