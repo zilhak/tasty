@@ -24,6 +24,14 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 등록된 팝업은 `all_defs()` 가 단일 출처다(예: `notifications`, `convert_surface`, `rename`, `search_bar`, `tools_menu` …). 새 팝업 = 테이블 항목 1개 + draw 함수 하나. 단, plugin 이 소유하는 팝업(예: markdown 파일열기·large-file 확인)은 host `PopupDef` 가 아니라 plugin 매니페스트 `[[contributes.popup]]`(egui-mesh) 로 등록된다.
 
+## 수명 계약 (open → close → 뒷정리)
+
+팝업이 닫히는 경로는 6개다: draw_fn 이 `PopupAction::Close` 반환 / X 버튼·바깥 클릭(`PopupManager::draw` 내장 포인터 처리) / `UiIntent::ClosePopup` / 이미 열린 채로의 `UiIntent::TogglePopup` / App 계층의 직접 `close()` 호출 / debug IPC(`debug.host_popup.close`, 구조적으로 `ClosePopup` 과 동일). 이 6개 전부가 **`PopupManager::close()`** 로 수렴한다 — `PopupState.open` 을 `false` 로 세팅하는 유일한 지점이다.
+
+상태를 가진 팝업(draft 버퍼, 대상 id 등)은 draw_fn 안에서만 정리하면 안 된다 — draw_fn 을 거치지 않는 나머지 5개 경로에서 정리가 샌다. 대신 **`PopupDef.on_close`** 훅을 선언한다: `close()` 가 대상을 `closed_queue` 에 쌓고, `popup::frame::draw_popup_layer` 가 다음 draw 시점에 이 큐를 drain 하며 등록된 훅을 정확히 한 번 호출한다(재진입 지원 — 훅이 다른 popup 을 닫으면 그 close 도 같은 drain 안에서 처리되고, 상호 재오픈 등 논리 오류에 대비해 라운드 상한을 둔다). 상태가 없거나(`notifications`) 남아도 무해하다고 판단했으면(`tutorial_topics`) `on_close: None` 옆에 근거를 남긴다.
+
+절차·필드 상세는 [popup-implementation §닫힘 정리](../../dev-guide/popup-implementation.md#닫힘-정리).
+
 ## 발화 정책 (CRITICAL)
 
 **Popup 은 사용자 행동(키보드 단축키 / 마우스 / 메뉴)에서만 발사된다.** release 의 시스템·에이전트·도메인 cascade 어느 경로도 popup 을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [identity](../../identity.md) 원칙 1).
