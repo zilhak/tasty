@@ -505,7 +505,9 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                     "tasty notify \"$TASTY_HOOK_*\"",
                     &mut st.draft_cmd,
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Align::Min(상단) — 본체 hook_handlers.rs 와 동일 이유(Frame 안
+                // 마지막 요소, Align::Center 는 잔여 세로 공간 전체로 확장됨).
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     let can_add = !st.draft_id.trim().is_empty();
                     if Button::new("Add handler")

@@ -556,7 +556,13 @@ fn draw_add_card(
                         .color(th.accent_danger()),
                 );
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Align::Min(상단) — 이 버튼 행은 Frame 안 마지막 요소라 부모가 세로
+            // 높이를 제약하지 않는다. `Align::Center`로 두면 egui 가 이 ui 의
+            // `min_rect`를 잔여 세로 공간 전체로 확장시켜 행이 깨진다(Frame 안
+            // 마지막 요소로 놓인 RTL(Center) 는 실측상 항상 이렇게 확장됨). 디자인
+            // jsx 도 이 버튼 행을 단순 `justifyContent: "flex-end"`로만 두고 별도
+            // 세로 중앙 정렬을 걸지 않는다.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 // RTL: Add handler(primary, 우측 끝) ← Cancel(ghost).
                 let can_add = !hh.form.id_input.trim().is_empty();

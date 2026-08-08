@@ -268,7 +268,11 @@ fn draw_script_row(
 
         if renaming {
             // 중앙 = Input + Save/Cancel (우측 액션·경로 숨김).
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Align::Min(상단) — 디자인 `ScriptRow`(jsx)는 행 컨테이너가
+            // `alignItems: "flex-start"`라 이 클러스터를 행 상단에 배치한다.
+            // `Align::Center`로 두면 egui 가 `horizontal_top` 안에서 이 ui 의
+            // `min_rect`를 잔여 세로 공간 전체로 확장시켜 행이 깨진다.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 let cancel = Button::new(t("button.cancel"))
                     .variant(ButtonVariant::Ghost)
@@ -295,7 +299,14 @@ fn draw_script_row(
             });
         } else {
             // 우측 클러스터(right-to-left) — 남는 폭을 채우고 우측 정렬.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Align::Min(상단) — 디자인 `ScriptRow`(jsx)의 행 컨테이너가
+            // `alignItems: "flex-start"`라 이 클러스터도 행 상단에 배치되는 게
+            // 맞다(클러스터 자신의 내부 `alignItems: "center"`는 그 안 한 줄짜리
+            // 콘텐츠끼리의 정렬일 뿐, 행 전체 높이 기준 정렬이 아니다). 갤러리 미러
+            // `script_manager.rs`도 이미 `Align::Min`을 쓴다. `Align::Center`로 두면
+            // egui 가 `horizontal_top` 안에서 이 ui 의 `min_rect`를 잔여 세로 공간
+            // 전체로 확장시켜 행이 깨진다.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 if confirming {
                     // Remove? Cancel Remove (danger 톤).
@@ -783,4 +794,76 @@ fn expand_home(path: &str) -> std::path::PathBuf {
         return base.home_dir().join(rest);
     }
     std::path::PathBuf::from(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> tasty_type_appearance::theme::Theme {
+        tasty_themes::mocha_fallback()
+    }
+
+    fn seeded_settings(count: usize) -> Settings {
+        let mut settings = Settings::default();
+        for i in 0..count {
+            settings.scripts.add(
+                format!("script-{i}"),
+                std::path::PathBuf::from(format!("/nonexistent/script-{i}.lua")),
+                String::new(),
+            );
+        }
+        settings
+    }
+
+    /// 회귀 가드 — `draw_script_row` 의 RTL 액션 클러스터가 `Align::Center` 일 때
+    /// egui 가 이 ui 의 `min_rect` 를 패널 잔여 세로 공간 전체로 확장시켜 첫 행이
+    /// 깨지던 문제. 등록 1/2/3 개 모두에서 각 행 높이가 콘텐츠 높이 상당(계측상
+    /// 50px 대)에 머무는지 확인한다 — 수정 전에는 734px(패널 잔여 높이)로 나왔다.
+    #[test]
+    fn script_row_height_does_not_expand_to_panel_remainder() {
+        let th = test_theme();
+        for count in 1..=3usize {
+            let mut settings = seeded_settings(count);
+            let mut st = ScriptsUiState::default();
+            let ids: Vec<String> = settings.scripts.iter().map(|e| e.id.clone()).collect();
+
+            let ctx = egui::Context::default();
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1147.0, 750.0),
+                )),
+                ..Default::default()
+            };
+            let mut heights = Vec::new();
+            drop(ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut goto_keybindings = false;
+                    let mut pending = None;
+                    for id in &ids {
+                        let resp = ui.scope(|ui| {
+                            draw_script_row(
+                                ui,
+                                &th,
+                                &mut settings,
+                                &mut st,
+                                id,
+                                &mut goto_keybindings,
+                                &mut pending,
+                            );
+                        });
+                        heights.push(resp.response.rect.height());
+                    }
+                });
+            }));
+
+            for (i, h) in heights.iter().enumerate() {
+                assert!(
+                    *h < 100.0,
+                    "registered {count}: row {i} height {h} — RTL 클러스터가 패널 잔여 높이로 확장됨"
+                );
+            }
+        }
+    }
 }
