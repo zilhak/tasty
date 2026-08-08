@@ -35,6 +35,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
+                // 상태 미보유 — `engine.notifications` 를 읽기만 하고 자신의 상태를
+                // 갖지 않는다. 닫힘 시 정리할 것이 없다.
                 on_close: None,
             },
             PopupDef {
@@ -99,6 +101,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
+                // 상태 미보유 — `state.search` 는 Escape/X 클릭 경로가 draw_fn 안에서
+                // 이미 `clear()` 한다. headless(X 버튼 없음) + close_on_outside_click
+                // =false 라 그 경로들 밖에서 닫히는 길이 없다(호출부 조사 완료: 다른
+                // 트리거는 전부 `OpenPopup` 만 발화하고 close 는 발화하지 않는다).
                 on_close: None,
             },
             PopupDef {
@@ -338,6 +344,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
+                // 상태 미보유 — `dialogs.pending_open_preset_window` 는 App 이 drain
+                // 하는 1회성 요청 신호지 팝업 수명에 종속된 상태가 아니다.
                 on_close: None,
             },
             PopupDef {
@@ -356,6 +364,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::mouse_capture_menu::draw_menu,
+                // 판단: `dialogs.mouse_capture_banner_menu_target` 는 닫힘 시 지워지지
+                // 않지만 `open()` 이 다음 오픈마다 무조건 덮어쓰므로(방어적 리셋이 아닌
+                // 항상-쓰기) 닫힌 채로 남는 값은 아무도 읽지 않는다 — 훅을 추가하지
+                // 않는다(이 popup 은 원본 전수조사 이후 추가돼 표에는 없었다).
                 on_close: None,
             },
             PopupDef {
@@ -391,6 +403,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tutorial::topic_popup::draw_tutorial_topics_popup,
+                // 판단: `state.tutorial.popup_selected` 는 어떤 경로로 닫혀도 지워지지
+                // 않지만, 남아 있어도 다음 open 시 이전 선택이 미리 강조되는 것뿐이라
+                // 무해하다 — 훅을 추가하지 않는다.
                 on_close: None,
             },
             PopupDef {

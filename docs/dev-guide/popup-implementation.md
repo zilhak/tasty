@@ -153,7 +153,7 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 ## 닫힘 정리
 
-팝업이 닫히면(`PopupManager::draw()` 의 `PopupDrawResult.closed` 에 id 포함) 그 팝업이 쥐고 있던 draft 버퍼/대상 상태를 함께 비운다. 안 비우면 reopen 시 이전 입력이 남는다.
+**새 팝업이 draft 버퍼/대상 id 같은 상태를 가지면 반드시 `PopupDef.on_close` 를 선언한다.** draw_fn 내부에서 Escape/버튼 클릭 시에만 정리하면 X 버튼·바깥 클릭·`UiIntent::ClosePopup`(디버그 IPC 포함)처럼 draw_fn 을 거치지 않는 닫힘 경로에서 정리가 새고, 재오픈 시 이전 상태가 그대로 보이거나(가벼운 경우) 진행 중 워커/네트워크 연결이 살아남는다(무거운 경우 — 예: `remote_attach`/`remote_tool` 의 ssh 터널). `on_close` 는 어떤 닫힘 경로로도 정확히 한 번 호출되는 유일한 지점이므로, 상태 정리는 draw_fn 안에 흩어놓지 말고 여기 모은다. 상태가 전혀 없거나(예: `notifications`) 남아도 무해하다고 **판단**했다면(예: `tutorial_topics` 의 선택 인덱스) `on_close: None` 옆에 근거를 한 줄 남긴다 — `src/adapters/ui/popup/defs.rs` 의 기존 항목들이 그 예시다.
 
 ## 관련
 
