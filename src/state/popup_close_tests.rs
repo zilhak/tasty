@@ -1,4 +1,4 @@
-//! popup 닫힘 뒷정리(현재는 `draw_popups`, `src/adapters/ui/notification.rs:231-347`)의
+//! popup 닫힘 뒷정리(현재는 `draw_popups`, `src/adapters/ui/popup/frame.rs`)의
 //! 현재 동작을 고정하는 회귀 테스트 — **프로덕션 코드는 한 줄도 바꾸지 않는다.**
 //!
 //! 이후 이 뒷정리를 `on_close` 훅으로 이관하는 작업(popup close 리팩터 체인)이
@@ -43,12 +43,12 @@
 
 use super::tests::test_state;
 use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction};
-use crate::adapters::ui::notification::draw_popups;
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
+use crate::adapters::ui::popup::frame::draw_popups;
 use crate::adapters::ui::popup::port_scanner::{
     PORT_SCANNER_POPUP_ID, PortRowView, PortScanState, SourceTag,
 };

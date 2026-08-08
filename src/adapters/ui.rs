@@ -35,7 +35,7 @@ pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use draw::draw_ui;
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
-pub use notification::draw_popups;
+pub use popup::frame::draw_popups;
 pub use popup::{PopupAction, PopupManager};
 pub use status_bar::{draw_status_bar, status_bar_bottom_inset};
 pub use tab_bar::draw_pane_tab_bars;

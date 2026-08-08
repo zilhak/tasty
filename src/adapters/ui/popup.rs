@@ -6,6 +6,7 @@ pub(crate) mod defs;
 mod draw;
 pub(crate) mod file_handler_picker;
 pub(crate) mod file_picker;
+pub(crate) mod frame;
 pub(crate) mod port_scanner;
 pub(crate) mod port_scanner_favorites;
 pub(crate) mod preset_apply;
