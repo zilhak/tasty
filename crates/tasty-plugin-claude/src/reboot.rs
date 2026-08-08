@@ -25,6 +25,7 @@
 //! — 검증 실패는 시퀀스를 아예 시작하지 않고 에러로 반환한다.
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -70,6 +71,12 @@ const REBOOT_NOTICE: &str = "tasty claude reboot : 이 세션은 tasty 의 reboo
 /// 로 부착하면 여기 기록되고, 인자 없는 다음 reboot 가 이 값을 기본으로 승계한다
 /// (`claude-session-id`, session-start hook 이 기록하는 키와 나란히 reboot 가 관리).
 const PROFILE_META_KEY: &str = "claude-session-profile";
+/// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필의 **이름**(쉼표 구분,
+/// TODO32 레지스트리). `PROFILE_META_KEY`(경로)와 상호 배타적으로 관리한다 —
+/// 이름으로 부착하면 여기 기록되고 `PROFILE_META_KEY`는 지운다. 다음 무인자
+/// reboot 는 이 값이 있으면 이름을 **매번 다시 해석**한다(등록 내용이 그 사이
+/// 갱신됐을 수 있으므로 경로를 그대로 캐시하지 않는다).
+const PROFILE_NAMES_META_KEY: &str = "claude-session-profile-names";
 
 /// `claude.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
 /// 로 넘긴 뒤 즉시 응답한다 — 호출한 claude 가 턴을 마무리할 시간을 준다.
@@ -77,10 +84,11 @@ pub(crate) fn handle_reboot(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
     params: &Value,
+    data_dir: Option<&Path>,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface_id(params)?;
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
-    let profile_action = parse_profile_option(params);
+    let profile_action = parse_profile_option(params)?;
 
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
     let session_id = fetch_session_id(host, surface_id)?;
@@ -93,7 +101,7 @@ pub(crate) fn handle_reboot(
     // 부착/승계/해제 판정 + (있으면) 파일 존재+JSON 파싱 동기 검증. 실패 시 여기서
     // 즉시 반환 — 시퀀스(Ctrl+C 등)를 시작하지 않는다(깨진 프로필로 claude 기동이
     // 실패해 전경이 baseline 복귀 못 하고 방치되는 사고 방지).
-    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action)?;
+    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action, data_dir)?;
 
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(format!(
@@ -161,54 +169,77 @@ pub(crate) fn parse_reboot_options(params: &Value) -> (u64, Option<String>) {
     (delay, extra)
 }
 
-/// `--profile-file` / `--clear-profile` 로 요청된 부착 상태 변경. `Keep` 은 둘 다
-/// 없는 기본 호출 — 기존에 부착된 프로필(있으면)을 그대로 승계한다.
+/// `--profile-file` / `--profile` / `--clear-profile` 로 요청된 부착 상태 변경.
+/// `Keep` 은 셋 다 없는 기본 호출 — 기존에 부착된 프로필(있으면)을 그대로 승계한다.
 #[derive(Debug, PartialEq)]
 pub(crate) enum ProfileOption {
     /// 인자 없음 — surface meta 에 부착된 값을 그대로 승계(없으면 프로필 없음).
     Keep,
     /// `--profile-file <path>` — 이 경로를 부착(meta 갱신). path 는 CLI
     /// `path_kind = "file"` 정규화를 이미 거친 절대경로다.
-    Attach(String),
+    AttachPath(String),
+    /// `--profile <name[,name2,...]>` — 레지스트리 이름(들)을 부착. 둘 이상이면
+    /// resolve 시점에 머지된다(`profile::resolve_names`).
+    AttachNames(String),
     /// `--clear-profile` — 부착된 프로필을 뗀다(meta 삭제).
     Clear,
 }
 
-/// `--profile-file` / `--clear-profile` 파싱. 둘 다 있으면 `--clear-profile` 우선
-/// (명시적 해제 의도가 새 부착보다 강하다고 본다).
-pub(crate) fn parse_profile_option(params: &Value) -> ProfileOption {
+/// `--profile-file` / `--profile` / `--clear-profile` 파싱.
+/// - `--clear-profile` 이 있으면 다른 인자와 무관하게 최우선(명시적 해제 의도가
+///   새 부착보다 강하다).
+/// - `--profile-file` 과 `--profile` 을 함께 주면 어느 쪽이 이기는지 조용히
+///   정하지 않고 거부한다(TODO32 체크리스트 — 경로/이름 인자 우선순위 결정).
+pub(crate) fn parse_profile_option(params: &Value) -> Result<ProfileOption, IpcMethodError> {
     let clear = params
         .get("clear_profile")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if clear {
-        return ProfileOption::Clear;
+        return Ok(ProfileOption::Clear);
     }
-    match params
+    let path = params
         .get("profile_file")
         .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        Some(p) => ProfileOption::Attach(p.to_string()),
-        None => ProfileOption::Keep,
+        .filter(|s| !s.is_empty());
+    let names = params
+        .get("profile")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    match (path, names) {
+        (Some(_), Some(_)) => Err(IpcMethodError::new(
+            "--profile-file and --profile are mutually exclusive — specify only one",
+        )),
+        (Some(p), None) => Ok(ProfileOption::AttachPath(p.to_string())),
+        (None, Some(n)) => Ok(ProfileOption::AttachNames(n.to_string())),
+        (None, None) => Ok(ProfileOption::Keep),
     }
 }
 
 /// `ProfileOption` 을 이번 reboot 에 실제로 쓸 프로필 경로로 해석하고, 필요하면
-/// surface meta 를 갱신한다. `Attach`/`Keep` 으로 도출된 경로가 있으면 파일 존재와
-/// JSON 파싱을 동기로 검증한다 — 새로 지정됐든 승계됐든(전에 유효했던 파일이 그
-/// 사이 지워지거나 깨졌을 수 있다) 동일하게, 실패 시 reboot 시퀀스를 시작하지 않고
-/// 즉시 에러를 반환한다. meta 쓰기는 검증을 통과한 뒤에만 하므로, 깨진
-/// `--profile-file` 인자가 기존에 부착돼 있던 정상 프로필을 덮어쓰지 않는다.
+/// surface meta 를 갱신한다. 해석된 경로가 있으면 파일 존재와 JSON 파싱을
+/// 동기로 검증한다 — 새로 지정됐든 승계됐든(전에 유효했던 파일이 그 사이 지워지거나
+/// 깨졌을 수 있다) 동일하게, 실패 시 reboot 시퀀스를 시작하지 않고 즉시 에러를
+/// 반환한다. meta 쓰기는 검증을 통과한 뒤에만 하므로, 깨진 인자가 기존에 부착돼
+/// 있던 정상 프로필을 덮어쓰지 않는다.
+///
+/// 이름 기반 부착(`AttachNames`)은 meta 에 **이름**을 저장하고, `Keep` 승계 시에도
+/// 이름-meta 가 있으면 매번 다시 해석한다(등록 내용이 갱신됐을 수 있으므로 경로를
+/// 캐시하지 않는다) — 경로-meta 는 이름-meta 가 없을 때만 폴백으로 본다.
 fn resolve_and_apply_profile(
     host: &HostHandle,
     surface_id: u32,
     action: &ProfileOption,
+    data_dir: Option<&Path>,
 ) -> Result<Option<String>, IpcMethodError> {
     let candidate = match action {
         ProfileOption::Clear => None,
-        ProfileOption::Attach(path) => Some(path.clone()),
-        ProfileOption::Keep => fetch_profile_meta(host, surface_id),
+        ProfileOption::AttachPath(path) => Some(path.clone()),
+        ProfileOption::AttachNames(names) => Some(resolve_names_to_path(data_dir, names)?),
+        ProfileOption::Keep => match fetch_profile_names_meta(host, surface_id) {
+            Some(names) => Some(resolve_names_to_path(data_dir, &names)?),
+            None => fetch_profile_meta(host, surface_id),
+        },
     };
 
     if let Some(path) = &candidate {
@@ -216,12 +247,28 @@ fn resolve_and_apply_profile(
     }
 
     match action {
-        ProfileOption::Attach(path) => set_profile_meta(host, surface_id, path),
-        ProfileOption::Clear => unset_profile_meta(host, surface_id),
+        ProfileOption::AttachPath(path) => {
+            set_profile_meta(host, surface_id, path);
+            unset_profile_names_meta(host, surface_id);
+        }
+        ProfileOption::AttachNames(names) => {
+            set_profile_names_meta(host, surface_id, names);
+            unset_profile_meta(host, surface_id);
+        }
+        ProfileOption::Clear => {
+            unset_profile_meta(host, surface_id);
+            unset_profile_names_meta(host, surface_id);
+        }
         ProfileOption::Keep => {}
     }
 
     Ok(candidate)
+}
+
+fn resolve_names_to_path(data_dir: Option<&Path>, names: &str) -> Result<String, IpcMethodError> {
+    crate::profile::resolve_names(data_dir, names)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| IpcMethodError::new(format!("profile: {e}")))
 }
 
 /// 프로필 파일이 존재하고 유효한 JSON 인지 동기 검증한다. 이 확인 없이 진행하면
@@ -265,6 +312,53 @@ fn unset_profile_meta(host: &HostHandle, surface_id: u32) {
     ) {
         tracing::warn!("claude reboot s{surface_id}: failed to clear attached profile: {e}");
     }
+}
+
+fn fetch_profile_names_meta(host: &HostHandle, surface_id: u32) -> Option<String> {
+    host.call(
+        "surface.meta.get",
+        json!({ "surface_id": surface_id, "key": PROFILE_NAMES_META_KEY }),
+    )
+    .ok()
+    .and_then(|r| r.get("value").and_then(|v| v.as_str()).map(String::from))
+    .filter(|s| !s.is_empty())
+}
+
+fn set_profile_names_meta(host: &HostHandle, surface_id: u32, names: &str) {
+    if let Err(e) = host.call(
+        "surface.meta.set",
+        json!({ "surface_id": surface_id, "key": PROFILE_NAMES_META_KEY, "value": names }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: failed to record attached profile names: {e}");
+    }
+}
+
+fn unset_profile_names_meta(host: &HostHandle, surface_id: u32) {
+    if let Err(e) = host.call(
+        "surface.meta.unset",
+        json!({ "surface_id": surface_id, "key": PROFILE_NAMES_META_KEY }),
+    ) {
+        tracing::warn!("claude reboot s{surface_id}: failed to clear attached profile names: {e}");
+    }
+}
+
+/// `claude.profile_current` 가 소비하는 "이 surface 에 지금 무엇이 부착돼 있나"
+/// 조회. 이름-meta 를 우선하고(있으면 그게 실제 적용되는 것), 없으면 경로-meta.
+/// 내장 훅은 별개 — `profile::list()` 가 항상 포함하므로 여기서는 세션별로
+/// 달라지는 부착 상태만 다룬다.
+pub(crate) struct AttachedProfile {
+    pub names: Option<String>,
+    pub path: Option<String>,
+}
+
+pub(crate) fn attached_profile_summary(host: &HostHandle, surface_id: u32) -> AttachedProfile {
+    let names = fetch_profile_names_meta(host, surface_id);
+    let path = if names.is_none() {
+        fetch_profile_meta(host, surface_id)
+    } else {
+        None
+    };
+    AttachedProfile { names, path }
 }
 
 /// surface meta 에서 claude session id 를 읽는다. 없으면 에러 — hook 미설치이거나
@@ -623,23 +717,48 @@ mod tests {
     #[test]
     fn parse_profile_option_defaults_to_keep() {
         assert_eq!(
-            parse_profile_option(&json!({ "surface_id": 1 })),
+            parse_profile_option(&json!({ "surface_id": 1 })).unwrap(),
             ProfileOption::Keep
         );
     }
 
     #[test]
-    fn parse_profile_option_attach() {
+    fn parse_profile_option_attach_path() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "/a/b.json" })),
-            ProfileOption::Attach("/a/b.json".to_string())
+            parse_profile_option(&json!({ "profile_file": "/a/b.json" })).unwrap(),
+            ProfileOption::AttachPath("/a/b.json".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_attach_names() {
+        assert_eq!(
+            parse_profile_option(&json!({ "profile": "reviewer,sandbox" })).unwrap(),
+            ProfileOption::AttachNames("reviewer,sandbox".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_path_and_names_together_is_rejected() {
+        assert!(
+            parse_profile_option(&json!({ "profile_file": "/a/b.json", "profile": "reviewer" }))
+                .is_err()
         );
     }
 
     #[test]
     fn parse_profile_option_clear_wins_over_attach() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "/a/b.json", "clear_profile": true })),
+            parse_profile_option(&json!({ "profile_file": "/a/b.json", "clear_profile": true }))
+                .unwrap(),
+            ProfileOption::Clear
+        );
+    }
+
+    #[test]
+    fn parse_profile_option_clear_wins_over_names() {
+        assert_eq!(
+            parse_profile_option(&json!({ "profile": "reviewer", "clear_profile": true })).unwrap(),
             ProfileOption::Clear
         );
     }
@@ -647,7 +766,7 @@ mod tests {
     #[test]
     fn parse_profile_option_empty_profile_file_treated_as_keep() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "" })),
+            parse_profile_option(&json!({ "profile_file": "" })).unwrap(),
             ProfileOption::Keep
         );
     }

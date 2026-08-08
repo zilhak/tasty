@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.27"
+version = "0.1.28"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -64,6 +64,14 @@ subcommands = [
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system." },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
+    # Claude 세션 프로필 레지스트리 (등록 → 이름으로 launch/spawn/respawn/reboot 의
+    # --profile 에 부착). CLI 스키마가 subcommand 1단계만 지원해 `tasty claude profile
+    # <sub>` 형태 대신 `profile-*` 평면 이름을 쓴다(기존 `notify-done` 과 동일 관례).
+    { name = "profile-register",   ipc_method = "claude.profile_register",   args = "profile_register_args",   description = "Register a Claude session profile under a name (copies the file into plugin-private storage; re-registering the same name updates its content)" },
+    { name = "profile-unregister", ipc_method = "claude.profile_unregister", args = "profile_name_args",       description = "Remove a registered Claude session profile" },
+    { name = "profile-list",       ipc_method = "claude.profile_list",       args = "no_args",                 description = "List registered Claude session profiles plus the always-installed built-in hooks" },
+    { name = "profile-show",       ipc_method = "claude.profile_show",       args = "profile_name_args",       description = "Show the raw settings JSON of a registered Claude session profile" },
+    { name = "profile-current",    ipc_method = "claude.profile_current",    args = "profile_current_args",    description = "Show which Claude session profile (if any) is attached to a surface, plus the always-installed built-in hooks" },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -71,7 +79,8 @@ flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"claude\")" },
     { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching claude" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>" },
-    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when launching claude" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching claude. Mutually exclusive with --profile" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -83,7 +92,8 @@ flags = [
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
-    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when launching the child" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -140,7 +150,8 @@ flags = [
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
-    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) injected via --settings when relaunching the child" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
@@ -148,8 +159,9 @@ flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Target Claude surface ID (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "delay",   type = "u32",    flag = "--delay",   required = false, help = "Seconds to wait before killing Claude (default: 5)" },
     { name = "prompt",  type = "string", flag = "--prompt",  required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Claude" },
-    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile" },
-    { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile before resuming" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Persists on the surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
+    { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile (path- or name-based) before resuming" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
@@ -161,6 +173,24 @@ flags = [
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when Claude Code invokes the hook." },
     { name = "message", type = "string", flag = "--message", required = false, stdin_field = "message",    help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'." },
     { name = "notification_type", type = "string", flag = "--notification-type", required = false, stdin_field = "notification_type", help = "Claude Code notification subtype (e.g. permission_prompt, idle_prompt). Auto-populated from stdin JSON 'notification_type'. Used to exclude idle_prompt from the needs_input signal." },
+]
+
+[contributes.cli.arg_groups.profile_register_args]
+positional = [
+    { name = "name", type = "string", required = true, help = "Short name to register the profile under (lowercase letters, digits, '-', max 32 chars)" },
+]
+flags = [
+    { name = "file", type = "string", flag = "--file", required = true, path_kind = "file", help = "Path to the settings JSON file to register (copied into plugin-private storage)" },
+]
+
+[contributes.cli.arg_groups.profile_name_args]
+positional = [
+    { name = "name", type = "string", required = true, help = "Registered profile short name" },
+]
+
+[contributes.cli.arg_groups.profile_current_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID to query (defaults to caller's TASTY_SURFACE_ID)" },
 ]
 
 [contributes.cli.arg_groups.no_args]

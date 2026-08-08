@@ -131,6 +131,11 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
     a = a.required(arg.required);
     a = match arg.ty {
         CliArgType::Bool => a.action(ArgAction::SetTrue),
+        // `reject_repeat`: Set은 반복 지정 시 마지막 값만 조용히 남기고 앞선
+        // 값을 버린다 — occurrence 자체가 유실되어 이후 판별이 불가능하다.
+        // Append로 모든 occurrence를 보존해 두면 extract_value가 개수를 세어
+        // 2개 이상이면 에러로 거부할 수 있다.
+        _ if arg.reject_repeat => a.action(ArgAction::Append),
         _ => a.action(ArgAction::Set),
     };
     if let Some(default) = &arg.default {
@@ -176,7 +181,7 @@ pub fn matches_to_request(
     let mut params = Map::new();
     if let Some(g) = group {
         for arg in g.positional.iter().chain(g.flags.iter()) {
-            if let Some(v) = extract_value(sub_args, arg) {
+            if let Some(v) = extract_value(sub_args, arg)? {
                 // `path_kind = "directory"`/`"file"` 이 선언된 string 인자는 CLI
                 // process cwd 기준 absolute path 로 정규화 + 존재(+종류) 검증.
                 // 실패 시 즉시 에러 — 호스트/plugin 은 절대경로만 받는다는 contract.
@@ -416,8 +421,41 @@ fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdi
     }
 }
 
-fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Option<Value> {
-    match arg.ty {
+fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Result<Option<Value>> {
+    // `reject_repeat` 인자는 build_arg 가 ArgAction::Append 로 등록하므로(모든
+    // occurrence 보존), get_one 대신 get_many 로 개수부터 확인한다 — Set 전용
+    // 접근(get_one)을 Append 인자에 섞으면 clap 내부 불변식과 어긋난다.
+    if arg.reject_repeat {
+        let mut values = matches
+            .get_many::<String>(&arg.name)
+            .map(|it| it.collect::<Vec<_>>())
+            .unwrap_or_default();
+        if values.len() > 1 {
+            return Err(anyhow!(
+                "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)",
+                arg.flag
+                    .as_deref()
+                    .unwrap_or(&arg.name)
+                    .trim_start_matches('-'),
+                values.len()
+            ));
+        }
+        return Ok(match arg.ty {
+            CliArgType::U32 => values
+                .pop()
+                .and_then(|s| s.parse::<u32>().ok())
+                .map(Value::from),
+            CliArgType::I64 => values
+                .pop()
+                .and_then(|s| s.parse::<i64>().ok())
+                .map(Value::from),
+            CliArgType::String => values.pop().map(|s| Value::String(s.clone())),
+            // build_arg는 Bool을 항상 SetTrue로 등록한다(reject_repeat 무관) —
+            // 여기 도달하면 매니페스트 오설정이니 get_flag로 안전하게 처리.
+            CliArgType::Bool => Some(Value::Bool(matches.get_flag(&arg.name))),
+        });
+    }
+    Ok(match arg.ty {
         CliArgType::Bool => Some(Value::Bool(matches.get_flag(&arg.name))),
         CliArgType::U32 => matches
             .get_one::<String>(&arg.name)
@@ -430,7 +468,7 @@ fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Option<Value> {
         CliArgType::String => matches
             .get_one::<String>(&arg.name)
             .map(|s| Value::String(s.clone())),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -468,6 +506,7 @@ mod tests {
                         help: None,
                         stdin_field: None,
                         path_kind: None,
+                        reject_repeat: false,
                     },
                     CliArg {
                         name: "prompt".into(),
@@ -478,6 +517,7 @@ mod tests {
                         help: None,
                         stdin_field: None,
                         path_kind: None,
+                        reject_repeat: false,
                     },
                     CliArg {
                         name: "force".into(),
@@ -488,6 +528,7 @@ mod tests {
                         help: None,
                         stdin_field: None,
                         path_kind: None,
+                        reject_repeat: false,
                     },
                 ],
             },
@@ -504,6 +545,7 @@ mod tests {
                     help: None,
                     stdin_field: None,
                     path_kind: None,
+                    reject_repeat: false,
                 }],
                 flags: vec![CliArg {
                     name: "timeout".into(),
@@ -514,6 +556,7 @@ mod tests {
                     help: None,
                     stdin_field: None,
                     path_kind: None,
+                    reject_repeat: false,
                 }],
             },
         );
@@ -556,6 +599,7 @@ mod tests {
                     help: None,
                     stdin_field: Some("session_id".into()),
                     path_kind: None,
+                    reject_repeat: false,
                 },
                 CliArg {
                     name: "message".into(),
@@ -566,6 +610,7 @@ mod tests {
                     help: None,
                     stdin_field: None,
                     path_kind: None,
+                    reject_repeat: false,
                 },
             ],
         };
@@ -596,6 +641,7 @@ mod tests {
                 help: None,
                 stdin_field: Some("session_id".into()),
                 path_kind: None,
+                reject_repeat: false,
             }],
         };
         let stdin = serde_json::json!({ "session_id": "from-stdin" });
@@ -619,6 +665,7 @@ mod tests {
                 help: None,
                 stdin_field: Some("session_id".into()),
                 path_kind: None,
+                reject_repeat: false,
             }],
         };
         let stdin = serde_json::json!({ "session_id": null });

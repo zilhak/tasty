@@ -1245,6 +1245,12 @@ pub struct CliArg {
     /// 파싱)은 하지 않는다 — 그 내용을 아는 plugin 핸들러 몫이다.
     #[serde(default)]
     pub path_kind: Option<String>,
+    /// `true`면 이 인자가 두 번 이상 지정됐을 때(예: `--profile-file a --profile-file b`)
+    /// clap 기본값인 last-wins(앞선 값이 조용히 사라짐) 대신 에러로 거부한다.
+    /// `--settings`류(단일 슬롯, 반복 지정 시 앞선 값이 통째로 무시됨을 실측 확인)
+    /// 인자에 쓴다 — 나머지 인자는 기존 last-wins 그대로 둔다.
+    #[serde(default)]
+    pub reject_repeat: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

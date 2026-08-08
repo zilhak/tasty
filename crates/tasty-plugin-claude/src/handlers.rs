@@ -10,12 +10,41 @@
 //! - `handle_children` — 호스트 registry 목록에 `surface.foreground_process` 를 덧씌움.
 //! - wall-time 텔레메트리 타이밍(`ClaudeState`) — hook.rs 가 소비.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::error_scan::ErrorScanner;
+
+/// `profile_file`(경로, TODO31)과 `profile`(이름 목록, 쉼표 구분, TODO32)
+/// params 를 최종 `--settings` 파일 경로 하나로 해석한다. 둘 다 주어지면
+/// 어느 쪽이 이기는지 조용히 정하지 않고 즉시 거부한다 — last-wins 함정을
+/// 경로/이름 인자 사이에서도 반복하지 않기 위함.
+pub(crate) fn resolve_profile_file_param(
+    data_dir: Option<&Path>,
+    params: &Value,
+) -> Result<Option<String>, IpcMethodError> {
+    let path = params
+        .get("profile_file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let names = params
+        .get("profile")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    match (path, names) {
+        (Some(_), Some(_)) => Err(IpcMethodError::new(
+            "--profile-file and --profile are mutually exclusive — specify only one",
+        )),
+        (Some(p), None) => Ok(Some(p.to_string())),
+        (None, Some(n)) => crate::profile::resolve_names(data_dir, n)
+            .map(|p| Some(p.to_string_lossy().into_owned()))
+            .map_err(|e| IpcMethodError::new(format!("profile: {e}"))),
+        (None, None) => Ok(None),
+    }
+}
 
 pub(crate) fn require_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
     params
@@ -313,6 +342,7 @@ pub(crate) fn handle_launch(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
+    data_dir: Option<&Path>,
 ) -> Result<Value, IpcMethodError> {
     let workspace_name = params
         .get("workspace")
@@ -327,10 +357,7 @@ pub(crate) fn handle_launch(
         .get("task")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = params
-        .get("profile_file")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let profile_file = resolve_profile_file_param(data_dir, params)?;
 
     // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
@@ -394,17 +421,18 @@ pub(crate) fn build_launch_command(task: Option<&str>, profile_file: Option<&str
 /// 자식 surface 의 PTY 를 갈아끼우고 claude 를 재시작한다. registry 조작(PTY 교체/
 /// Ctrl-C + metadata 갱신 + idle 초기화)은 호스트 `terminal.respawn` 으로 위임하고,
 /// claude 특화 기동 명령만 그 위에 재전송한다. `child_index` → 호스트 `child` 매핑.
-pub(crate) fn handle_respawn(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_respawn(
+    host: &HostHandle,
+    params: &Value,
+    data_dir: Option<&Path>,
+) -> Result<Value, IpcMethodError> {
     let parent_surface_id = require_surface_id(params)?;
     let child_index = require_child_index(params)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = params
-        .get("profile_file")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let profile_file = resolve_profile_file_param(data_dir, params)?;
 
     // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
     //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
@@ -531,16 +559,17 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
 /// 자식 Claude 를 spawn 한다 — 호스트 `terminal.spawn` 으로 registry 등록 + soft
 /// 점유 + tab 생성(command 미전송)한 뒤, 반환된 surface_id 에 claude 특화 기동
 /// 명령을 전송한다(2단계 spawn). 호스트가 index/tab-name/pane/occupancy 를 소유.
-pub(crate) fn handle_spawn(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_spawn(
+    host: &HostHandle,
+    params: &Value,
+    data_dir: Option<&Path>,
+) -> Result<Value, IpcMethodError> {
     let parent_surface_id = require_surface_id(params)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = params
-        .get("profile_file")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let profile_file = resolve_profile_file_param(data_dir, params)?;
 
     // 1) 호스트 registry 에 등록 + 점유 + tab 생성. workspace required.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);

@@ -17,10 +17,13 @@ mod error_scan;
 mod handlers;
 mod hook;
 mod install;
+mod profile;
+mod profile_merge;
 mod reboot;
 mod state;
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -29,7 +32,7 @@ use handlers::*;
 use serde_json::{Value, json};
 use state::ClaudeState;
 use tasty_plugin_sdk::{
-    HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult,
+    HostHandle, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude";
@@ -47,14 +50,19 @@ struct ClaudePlugin {
     scanner: Arc<Mutex<ErrorScanner>>,
     /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
     rebooting: Arc<Mutex<HashSet<u32>>>,
+    /// Claude 세션 프로필 레지스트리·머지 산출물 저장 루트(`TASTY_PLUGIN_DATA_DIR`).
+    /// 호스트가 비정상적으로 주입하지 않았으면 `None` — `profile.rs` 가
+    /// 등록/부착 요청을 명시적 에러로 거부한다(결정 3: 조용히 다른 경로에 쓰지 않음).
+    profile_data_dir: Option<PathBuf>,
 }
 
 impl ClaudePlugin {
-    fn new() -> Self {
+    fn new(profile_data_dir: Option<PathBuf>) -> Self {
         Self {
             state: ClaudeState::new(),
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
             rebooting: Arc::new(Mutex::new(HashSet::new())),
+            profile_data_dir,
         }
     }
 }
@@ -97,10 +105,41 @@ impl Plugin for ClaudePlugin {
             "claude.tell" => handle_tell(&ctx.host, &ctx.params),
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params),
             // launch/respawn/spawn — claude 특화 기동 명령을 host registry 위에 얹는다.
-            "claude.launch" => handle_launch(&self.scanner, &ctx.host, &ctx.params),
-            "claude.respawn" => handle_respawn(&ctx.host, &ctx.params),
-            "claude.spawn" => handle_spawn(&ctx.host, &ctx.params),
-            "claude.reboot" => reboot::handle_reboot(&self.rebooting, &ctx.host, &ctx.params),
+            "claude.launch" => handle_launch(
+                &self.scanner,
+                &ctx.host,
+                &ctx.params,
+                self.profile_data_dir.as_deref(),
+            ),
+            "claude.respawn" => {
+                handle_respawn(&ctx.host, &ctx.params, self.profile_data_dir.as_deref())
+            }
+            "claude.spawn" => {
+                handle_spawn(&ctx.host, &ctx.params, self.profile_data_dir.as_deref())
+            }
+            "claude.reboot" => reboot::handle_reboot(
+                &self.rebooting,
+                &ctx.host,
+                &ctx.params,
+                self.profile_data_dir.as_deref(),
+            ),
+            // Claude 세션 프로필 레지스트리 — 등록/조회/해제/조합-해석. 전부
+            // `TASTY_PLUGIN_DATA_DIR` 하위 저장(profile.rs, 결정 3).
+            "claude.profile_register" => {
+                profile::handle_register(self.profile_data_dir.as_deref(), &ctx.params)
+            }
+            "claude.profile_unregister" => {
+                profile::handle_unregister(self.profile_data_dir.as_deref(), &ctx.params)
+            }
+            "claude.profile_list" => {
+                profile::handle_list(self.profile_data_dir.as_deref(), &ctx.params)
+            }
+            "claude.profile_show" => {
+                profile::handle_show(self.profile_data_dir.as_deref(), &ctx.params)
+            }
+            "claude.profile_current" => {
+                profile::handle_current(self.profile_data_dir.as_deref(), &ctx.host, &ctx.params)
+            }
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -166,5 +205,10 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(ClaudePlugin::new())
+    // `tasty_plugin_sdk::run()` 도 내부적으로 `PluginEnv::load()` 를 호출한다(연결/
+    // 인증용) — 여기서 한 번 더 읽는 것은 단순 env var read 라 부작용 없이 중복
+    // 가능하다. `data_dir` 이 없으면(비정상 기동) `None` 을 그대로 넘겨 profile.rs
+    // 가 등록/부착을 명시적으로 거부하게 한다(결정 3).
+    let profile_data_dir = PluginEnv::load().ok().and_then(|env| env.data_dir);
+    tasty_plugin_sdk::run(ClaudePlugin::new(profile_data_dir))
 }
