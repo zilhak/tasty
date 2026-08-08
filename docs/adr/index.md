@@ -74,3 +74,4 @@
 | 0061 | [마우스 캡처 배너에 "더보기"(⋯) 퀵 엔트리를 추가해 per-app 블랙리스트 진입 경로를 배너 자신으로 확장한다](0061-mouse-capture-banner-more-menu-quick-entry.md) | Accepted | 2026-08-06 | terminal, mouse, mouse-reporting, banner, popup, settings, ux, i18n, gallery, adr-0024, adr-0055 |
 | 0062 | [Surface attention 상태를 kind-aware `AttentionStore` 로 확장한다](0062-attention-store-kind-aware-primitive.md) | Accepted | 2026-08-08 | surface-highlight, attention, notification, state, adr-0039 |
 | 0063 | [Popup 닫힘 뒷정리는 `draw_popups` 가 아니라 `PopupDef.on_close` 훅 + `PopupManager::close()` 단일 관문으로 처리한다](0063-popup-close-hook-single-choke-point.md) | Accepted | 2026-08-08 | ui, popup, lifecycle, close-hook, choke-point, refactor |
+| 0064 | [modifier-hint 표시 지연 타이머는 등록된 단축키가 실제로 소비되면 리셋한다](0064-modifier-hint-reveal-timer-reset-on-shortcut.md) | Accepted | 2026-08-08 | modifier-hint, overlay, reveal-delay, keybindings, discovery, user-agent-separation, adr-0035 |
