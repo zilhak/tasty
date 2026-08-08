@@ -180,6 +180,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: true,
                 min_size: Some(egui::vec2(480.0, 320.0)),
                 draw_fn: super::port_scanner::draw_port_scanner_popup,
+                // 바깥 클릭(headless + close_on_outside_click=true)으로 닫으면
+                // `PortScanState::Loading{rx}`/`Ready{rows}` 가 그대로 남는다 — 의도적
+                // 결정: 재오픈 시 이전 스캔 결과를 그대로 보여준다(초기화하지 않음).
+                // Close 버튼(draw_fn 내부)만 명시적으로 `Idle` 로 되돌린다.
                 on_close: None,
             },
             PopupDef {

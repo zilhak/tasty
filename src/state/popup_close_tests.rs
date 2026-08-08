@@ -48,6 +48,9 @@ use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
+use crate::adapters::ui::popup::port_scanner::{
+    PORT_SCANNER_POPUP_ID, PortRowView, PortScanState, SourceTag,
+};
 use crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID;
 use crate::adapters::ui::popup::rail_category::RAIL_CATEGORY_POPUP_ID;
 use crate::adapters::ui::popup::transfer::{
@@ -457,6 +460,45 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
     assert_eq!(state.dialogs.transfer_error.len(), 1);
     assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
+}
+
+// ──────────────────────────── port_scanner ────────────────────────────
+
+/// 결정 고정: 바깥 클릭(draw_fn 을 거치지 않는 경로)으로 닫아도 스캔 결과를
+/// 초기화하지 않는다 — `on_close: None`(defs.rs 근거 주석). 재오픈 시 이전 결과를
+/// 그대로 보여주는 것이 의도된 동작이다(Close 버튼 경로만 draw_fn 내부에서 명시적
+/// `Idle` 리셋 — 이 팝업은 close_on_outside_click=true 라 outside-click 경로가
+/// 실제로 도달 가능하다).
+#[test]
+fn port_scanner_outside_click_close_preserves_scan_results() {
+    let (mut state, mut engine) = test_state();
+    state.port_scan = PortScanState::Ready {
+        rows: vec![PortRowView {
+            port: 8080,
+            addr_display: "127.0.0.1".to_string(),
+            pid: Some(1234),
+            process_name: Some("node".to_string()),
+            source: SourceTag::External,
+            state: tasty_portscan::PortState::Listen,
+            favorited: false,
+        }],
+        scope: crate::adapters::ui::popup::port_scanner::ScanScope::Tasty,
+    };
+    state
+        .popups
+        .open_at_focused(PORT_SCANNER_POPUP_ID, FIXED_POS);
+
+    run_frame(
+        press_input(outside_point(FIXED_POS)),
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(!state.popups.is_open(PORT_SCANNER_POPUP_ID));
+    match &state.port_scan {
+        PortScanState::Ready { rows, .. } => assert_eq!(rows.len(), 1),
+        _ => panic!("expected Ready to survive close, got a different state variant instead"),
+    }
 }
 
 // ──────────────────────────── info_modal ────────────────────────────
