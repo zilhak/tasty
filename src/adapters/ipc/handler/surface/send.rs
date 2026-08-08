@@ -86,25 +86,51 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// 공용 dispatch — DomainIntent::SendToSurface 발화 후 sent 결과 반환.
+/// [`dispatch_send`] 결과 — hard-occupied(attach 로 잠긴)와 "진짜 없음"을 구분한다.
+/// 둘을 같은 "Surface not found" 메시지로 뭉뚱그리면 attach 로 점유된(하지만
+/// `list`류엔 여전히 보이는) surface 를 존재하지 않는다고 오인하게 된다(Gate4
+/// 판단필요 항목).
+enum SendOutcome {
+    Sent,
+    HardOccupied,
+    NotFound,
+}
+
+/// `SendOutcome::HardOccupied`/`NotFound` 를 각기 다른 메시지로. 호출부 전체가
+/// 공유(문구 일관성).
+fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
+    match outcome {
+        SendOutcome::HardOccupied => format!(
+            "Surface {surface_id} is hard-occupied (remote attach holds it) — \
+             server-local input is blocked while attached"
+        ),
+        _ => format!("Surface {surface_id} not found"),
+    }
+}
+
+/// 공용 dispatch — DomainIntent::SendToSurface 발화 후 결과 반환.
 fn dispatch_send(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     surface_id: u32,
     payload: crate::core::intent::SendPayload,
-) -> bool {
+) -> SendOutcome {
     let intent = crate::core::intent::DomainIntent::SendToSurface {
         surface_id,
         payload,
     };
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
-        Err(_) => return false,
+        Err(_) => return SendOutcome::NotFound,
     };
-    matches!(
-        events.into_iter().next(),
-        Some(crate::core::intent::CoreEvent::SurfaceSent { sent: true, .. })
-    )
+    match events.into_iter().next() {
+        Some(crate::core::intent::CoreEvent::SurfaceSent { sent: true, .. }) => SendOutcome::Sent,
+        Some(crate::core::intent::CoreEvent::SurfaceSent {
+            hard_occupied: true,
+            ..
+        }) => SendOutcome::HardOccupied,
+        _ => SendOutcome::NotFound,
+    }
 }
 
 pub(crate) fn handle_surface_send(
@@ -122,15 +148,16 @@ pub(crate) fn handle_surface_send(
         Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    if dispatch_send(
+    match dispatch_send(
         core,
         engine,
         surface_id,
         crate::core::intent::SendPayload::Text(text),
     ) {
-        JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+        SendOutcome::Sent => {
+            JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+        }
+        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),
     }
 }
 
@@ -183,27 +210,30 @@ pub(crate) fn handle_surface_send_key(
                 combo_bytes
             } else {
                 // 알 수 없는 key 식별자 — raw text 로 fallback (옛 동작).
-                if dispatch_send(
+                match dispatch_send(
                     core,
                     engine,
                     surface_id,
                     crate::core::intent::SendPayload::Text(other.to_string()),
                 ) {
-                    return JsonRpcResponse::success(
-                        id,
-                        json!({ "sent": true, "surface_id": surface_id }),
-                    );
-                } else {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        format!("Surface {} not found", surface_id),
-                    );
+                    SendOutcome::Sent => {
+                        return JsonRpcResponse::success(
+                            id,
+                            json!({ "sent": true, "surface_id": surface_id }),
+                        );
+                    }
+                    outcome => {
+                        return JsonRpcResponse::invalid_params(
+                            id,
+                            send_fail_message(surface_id, &outcome),
+                        );
+                    }
                 }
             }
         }
     };
     // sent 여부와 무관하게 response 는 success — 옛 동작 보존.
-    let _sent = dispatch_send(
+    let _outcome = dispatch_send(
         core,
         engine,
         surface_id,
@@ -287,15 +317,20 @@ pub(crate) fn handle_surface_send_combo(
         bytes_to_send.extend_from_slice(key.as_bytes());
     }
 
-    if dispatch_send(
+    match dispatch_send(
         core,
         engine,
         surface_id,
         crate::core::intent::SendPayload::Bytes(bytes_to_send),
     ) {
-        JsonRpcResponse::success(id, json!({ "sent": true }))
-    } else {
-        JsonRpcResponse::internal_error(id, "No terminal found".to_string())
+        SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
+        SendOutcome::HardOccupied => JsonRpcResponse::invalid_params(
+            id,
+            send_fail_message(surface_id, &SendOutcome::HardOccupied),
+        ),
+        SendOutcome::NotFound => {
+            JsonRpcResponse::internal_error(id, "No terminal found".to_string())
+        }
     }
 }
 
@@ -316,14 +351,13 @@ pub(crate) fn handle_surface_send_to(
         Some(sid) => sid as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
     };
-    if dispatch_send(
+    match dispatch_send(
         core,
         engine,
         surface_id,
         crate::core::intent::SendPayload::Text(text),
     ) {
-        JsonRpcResponse::success(id, json!({ "sent": true }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+        SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
+        outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),
     }
 }

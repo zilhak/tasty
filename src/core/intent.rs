@@ -392,8 +392,12 @@ pub(crate) enum CoreEvent {
         workspace_id_purged: Option<u32>,
         workspaces_now_empty: bool,
     },
-    /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나 없음.
-    SurfaceSent { sent: bool },
+    /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나, 없거나,
+    /// hard-occupied(attach 로 점유) — `hard_occupied` 로 그 중 어느 쪽인지
+    /// 구분한다(Gate4 판단필요: 이 둘을 같은 "not found" 메시지로 뭉뚱그리면
+    /// attach 로 점유된 — `list`류엔 여전히 보이는 — surface 를 존재하지 않는다고
+    /// 오인하게 된다).
+    SurfaceSent { sent: bool, hard_occupied: bool },
     /// terminal respawn 완료. `error` 가 Some 이면 spawn 실패 또는 surface
     /// 가 terminal 이 아님 — handler 가 invalid_params 반환.
     TerminalRespawned {

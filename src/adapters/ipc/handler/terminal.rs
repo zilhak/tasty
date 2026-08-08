@@ -206,22 +206,29 @@ const TELL_SUBMIT_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// 지적된 렌더/IPC 정지 문제가 재발한다.
 const TELL_SUBMIT_EXTRA_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(20);
 
+/// [`send_text_to_surface_with_ack`] 실패 사유 — hard-occupied(다른 attach 가
+/// 이미 점유해 서버측 write 가 막힘)와 surface 미존재는 원인이 달라 호출자가
+/// 서로 다른 에러 메시지를 보여줄 수 있도록 구분한다.
+enum SendTextError {
+    HardOccupied,
+    NotFound,
+}
+
 /// [`send_body_then_submit`] 1단계 — `apply_send_to_surface`(core/mod.rs)와 동일한
 /// attach 점유 체크 + surface 초기화를 거쳐 ack 가능한 방식으로 본문을 큐잉한다.
-/// `None` 은 surface 미존재 또는 hard-occupied(`handle_surface_send` 와 동일하게
-/// 구분하지 않는다).
 fn send_text_to_surface_with_ack(
     engine: &mut CoreState,
     surface_id: u32,
     text: &str,
-) -> Option<tasty_terminal::WriteAck> {
+) -> Result<tasty_terminal::WriteAck, SendTextError> {
     if engine.attach.is_hard_occupied(surface_id) {
-        return None;
+        return Err(SendTextError::HardOccupied);
     }
     engine.ensure_surface_initialized(surface_id);
     engine
         .find_terminal_by_id_mut(surface_id)
         .map(|terminal| terminal.send_key_with_ack(text))
+        .ok_or(SendTextError::NotFound)
 }
 
 /// 본문을 ack 가능한 방식으로 write 하고, 실제 PTY flush 확인(ack) 후에만 제출
@@ -240,12 +247,16 @@ fn send_body_then_submit(
     surface_id: u32,
     body: String,
 ) -> Result<(), JsonRpcResponse> {
-    let Some(ack) = send_text_to_surface_with_ack(engine, surface_id, &body) else {
-        return Err(JsonRpcResponse::invalid_params(
-            id.clone(),
-            format!("Surface {surface_id} not found"),
-        ));
-    };
+    let ack = send_text_to_surface_with_ack(engine, surface_id, &body).map_err(|e| {
+        let msg = match e {
+            SendTextError::HardOccupied => format!(
+                "Surface {surface_id} is attached elsewhere (hard-occupied) — release the \
+                 attach or target a different surface"
+            ),
+            SendTextError::NotFound => format!("Surface {surface_id} not found"),
+        };
+        JsonRpcResponse::invalid_params(id.clone(), msg)
+    })?;
 
     let injector = core.host_ipc_injector_arc().get().cloned();
     std::thread::spawn(move || {
@@ -1162,6 +1173,45 @@ mod tests {
         assert!(resp.error.is_none());
         assert!(e.attach.occupancy_of(c).is_none()); // soft 는 정상 해제
         assert!(e.attach.is_hard_occupied(other)); // 무관한 hard 점유는 그대로
+    }
+
+    /// hard-occupied surface 로의 write 시도는 "not found" 가 아니라 별도
+    /// 사유(attach 점유)로 실패해야 한다 — 둘을 뭉뚱그리면 "존재하는데 왜 못
+    /// 찾지" 라는 오진을 유발한다.
+    #[test]
+    fn send_text_with_ack_distinguishes_hard_occupied_from_not_found() {
+        let mut e = engine();
+        let target = 5801u32;
+        add_extra_surface(&mut e, target);
+        e.attach.acquire(target, 1).unwrap();
+
+        let err = send_text_to_surface_with_ack(&mut e, target, "hi")
+            .err()
+            .expect("hard-occupied surface must fail");
+        assert!(matches!(err, SendTextError::HardOccupied));
+    }
+
+    /// 존재하지 않는 surface 는 `NotFound` 로 구분된다(hard-occupied 아님).
+    #[test]
+    fn send_text_with_ack_reports_not_found_for_missing_surface() {
+        let mut e = engine();
+        let err = send_text_to_surface_with_ack(&mut e, 424_242, "hi")
+            .err()
+            .expect("missing surface must fail");
+        assert!(matches!(err, SendTextError::NotFound));
+    }
+
+    /// 점유 없는 정상 surface 는 성공한다(회귀 방지 — 위 두 실패 케이스와 대비).
+    /// `add_extra_surface` 는 layout 상 placeholder 만 만들 뿐 실제 `Terminal` 을
+    /// `e.terminals` 에 등록하지 않으므로(deferred 아님 → `ensure_surface_initialized`
+    /// 가 스킵), 기본 workspace 가 `CoreState::new` 시점에 이미 실제 PTY 로 spawn 해
+    /// 등록해둔 첫 surface 를 그대로 쓴다.
+    #[test]
+    fn send_text_with_ack_succeeds_for_free_terminal() {
+        let mut e = engine();
+        let target = e.workspaces[0].all_surface_ids()[0];
+
+        assert!(send_text_to_surface_with_ack(&mut e, target, "hi").is_ok());
     }
 
     #[test]

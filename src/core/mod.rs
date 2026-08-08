@@ -1552,7 +1552,10 @@ impl Core {
         // (사용자 GUI 키 / IPC surface.send*) 이 PTY 에 닿지 못한다. client 경유
         // 입력은 단계 4 의 holder-검증 attach 채널로 들어와 이 경로를 우회한다.
         if engine.attach.is_hard_occupied(surface_id) {
-            return CoreEvent::SurfaceSent { sent: false };
+            return CoreEvent::SurfaceSent {
+                sent: false,
+                hard_occupied: true,
+            };
         }
         engine.ensure_surface_initialized(surface_id);
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
@@ -1568,7 +1571,10 @@ impl Core {
         } else {
             false
         };
-        CoreEvent::SurfaceSent { sent }
+        CoreEvent::SurfaceSent {
+            sent,
+            hard_occupied: false,
+        }
     }
 
     /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
@@ -3143,15 +3149,38 @@ mod attach_block_tests {
         let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
 
-        // 점유 → 서버 로컬 입력 차단.
+        // 점유 → 서버 로컬 입력 차단. `hard_occupied: true` 로 명시 구분(Gate4
+        // 판단필요: "진짜 없음" 과 같은 메시지로 뭉뚱그리면 안 된다).
         engine.attach.acquire(sid, 1).unwrap();
         let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
-        assert!(matches!(ev, CoreEvent::SurfaceSent { sent: false, .. }));
+        assert!(matches!(
+            ev,
+            CoreEvent::SurfaceSent {
+                sent: false,
+                hard_occupied: true
+            }
+        ));
 
         // 해제 → 다시 서버 조작 가능.
         engine.attach.release(sid, 1).unwrap();
         let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
+    }
+
+    /// 존재하지 않는 surface 는 `sent: false` 지만 `hard_occupied: false` —
+    /// hard-occupied 와 구분되는 별개 실패 사유임을 확인(위 테스트와 대비쌍).
+    #[test]
+    fn nonexistent_surface_is_not_found_not_hard_occupied() {
+        let mut engine = test_engine();
+        let ev =
+            Core::apply_send_to_surface(&mut engine, 424242, SendPayload::Bytes(b"x".to_vec()));
+        assert!(matches!(
+            ev,
+            CoreEvent::SurfaceSent {
+                sent: false,
+                hard_occupied: false
+            }
+        ));
     }
 
     #[test]
