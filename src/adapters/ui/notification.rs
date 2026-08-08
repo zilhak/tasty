@@ -336,16 +336,6 @@ pub fn draw_popups(
     // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
     cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);
 
-    // rail_category 팝업 — 닫히면 대상 카테고리 참조 정리.
-    let rail_cat_closed = dispatch_closed
-        .contains(&crate::adapters::ui::popup::rail_category::RAIL_CATEGORY_POPUP_ID)
-        || draw_result
-            .closed
-            .contains(&crate::adapters::ui::popup::rail_category::RAIL_CATEGORY_POPUP_ID);
-    if rail_cat_closed {
-        state.dialogs.rail_category_popup = None;
-    }
-
     // (09) transfer_progress 팝업 — 닫히면 진행 상태 정리(backstop; Cancel/완료 경로가
     // 이미 비웠어도 무해).
     let xfer_prog_closed = dispatch_closed

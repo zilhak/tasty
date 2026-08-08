@@ -404,7 +404,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::rail_category::draw_rail_category_popup,
-                on_close: None,
+                on_close: Some(super::rail_category::on_close_rail_category_popup),
             },
         ]
     })

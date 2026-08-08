@@ -270,6 +270,32 @@ fn rail_category_escape_close_clears_dialog_state() {
     assert!(state.dialogs.rail_category_popup.is_none());
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
+/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
+#[test]
+fn rail_category_close_intent_now_clears_dialog_state() {
+    let (mut state, mut engine) = test_state();
+    let cat_id = engine.categories()[0].id;
+    state.dialogs.rail_category_popup = Some(cat_id);
+    state
+        .popups
+        .open_at_focused(RAIL_CATEGORY_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: RAIL_CATEGORY_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(RAIL_CATEGORY_POPUP_ID));
+    assert!(state.dialogs.rail_category_popup.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.rail_category_popup.is_none());
+}
+
 #[test]
 fn rail_category_outside_click_clears_dialog_state() {
     let (mut state, mut engine) = test_state();

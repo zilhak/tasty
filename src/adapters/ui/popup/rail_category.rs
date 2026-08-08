@@ -87,6 +87,15 @@ fn menu_row(
     resp.clicked()
 }
 
+/// PopupDef::on_close entry point — 어떤 경로로 닫히든 대상 카테고리 참조를 비운다.
+pub fn on_close_rail_category_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.rail_category_popup = None;
+}
+
 pub fn draw_rail_category_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
