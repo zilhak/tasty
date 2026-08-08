@@ -68,7 +68,15 @@ impl App {
     /// 루프로는 못 뽑는다(이름일 수 있어서). `"parent"`/`"surface"` 가 같은
     /// request 에 있으면 이미 그쪽에서 찾아졌을 것이므로, 이 폴백은 사실상
     /// 순수 `terminal.spawn` 직접 호출(parent 없이 workspace 만 지정)에만 닿는다.
-    pub(crate) fn find_request_owner(&self, params: &serde_json::Value) -> Option<WindowId> {
+    ///
+    /// `Err`은 workspace 이름이 2개 이상 window 에 걸쳐 모호하게 일치할 때만
+    /// 반환된다(`find_main_with_workspace_target` 참고) — 호출자는 이 경우
+    /// focused window 로 조용히 폴백하지 말고 명확한 에러를 클라이언트에 돌려줘야
+    /// 한다.
+    pub(crate) fn find_request_owner(
+        &self,
+        params: &serde_json::Value,
+    ) -> Result<Option<WindowId>, String> {
         if let Some((_, rid)) = params_resource_id(params) {
             let found = match rid.kind {
                 Kind::Surface => self.find_main_with_surface(rid.id),
@@ -76,10 +84,12 @@ impl App {
                 Kind::Pane => self.find_main_with_pane(rid.id),
             };
             if found.is_some() {
-                return found;
+                return Ok(found);
             }
         }
-        let target = params.get("workspace").and_then(|v| v.as_str())?;
+        let Some(target) = params.get("workspace").and_then(|v| v.as_str()) else {
+            return Ok(None);
+        };
         self.find_main_with_workspace_target(target)
     }
 }

@@ -37,9 +37,17 @@ impl App {
 
         // owner main → focused main → parked owner → parked[0] 순으로 라우팅
         // (CLAUDE.md "포커스 독립" 원칙).
-        let target_id = self
-            .find_request_owner(&cmd.request.params)
-            .or(self.view.focused_view_id);
+        let target_id = match self.find_request_owner(&cmd.request.params) {
+            Ok(id) => id.or(self.view.focused_view_id),
+            Err(msg) => {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(id, msg),
+                );
+                return IpcStep::Handled;
+            }
+        };
         if let Some(id) = target_id {
             let core = &mut self.core;
             let resp_opt = self
