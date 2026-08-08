@@ -31,7 +31,7 @@ pub(crate) enum AttentionKind {
 #[derive(Debug, Clone, Copy)]
 struct AttentionRecord {
     kind: AttentionKind,
-    #[allow(dead_code)] // 확장 여지 — 현재 소비처 없음(설계 결정, TODO36 참고).
+    #[allow(dead_code)] // 확장 여지 — 현재 소비처 없음(향후 kind 별 만료/정렬 정책이 소비할 필드).
     raised_at: Instant,
 }
 
@@ -379,8 +379,9 @@ mod tests {
     }
 
     /// `effects_of` 는 host/cascade 없이 순수하게 kind → 효과를 매핑한다. OSC 133
-    /// 이 이 값(`panel_item == false`)에 의존해 패널 아이템을 만들지 않는다
-    /// (TODO36 핵심 회귀 포인트).
+    /// producer 는 `NotificationStore::add()` 를 호출하지 않으므로, 이 값
+    /// (`panel_item == false`)이 실제로 패널 무관임을 보장하는 것이 이 리팩터의
+    /// 핵심 회귀 포인트다 — 값이 뒤집히면 셸 명령마다 알림 패널이 오염된다.
     #[test]
     fn effects_of_completion_has_no_panel_item() {
         let effects = effects_of(AttentionKind::Completion);

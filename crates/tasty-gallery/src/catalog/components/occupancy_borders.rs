@@ -1,13 +1,18 @@
-//! `surfaces` specimen — Occupancy & completion borders (ADR-0040).
+//! `surfaces` specimen — Occupancy & completion borders (ADR-0040, ADR-0062).
 //!
 //! surface 테두리 = **하나의 시각 채널**. 세 상태가 색으로만 구분된다:
 //! - **occupied · soft**: green 1px(`accent-occupied-soft`). 주체(원격 사용자/AI 에이전트)
 //!   가 점유하나 write 제한 없음(협조 신호). force-detach 없음.
 //! - **occupied · hard**: peach 1px(`accent-occupied-hard`) + readonly(mirror-observe) +
 //!   우상단 force-detach. 기존 remote-attach 테두리 흡수.
-//! - **completed**: blue 2px(`accent-primary`). surface-highlight, 포커스 시 clear.
+//! - **completed**: blue 2px(`accent-primary`). `AttentionStore` 의 `AttentionKind::Completion`
+//!   레코드가 소스 — 포커스 시 clear. 이 문서 시점 kind 는 `Completion` 1종뿐이라 색은
+//!   하나지만, `NeedsInput` kind 추가 시(승인 대기 등) 이 자리에 색이 하나 더 늘어난다
+//!   (우선순위·자리는 이 specimen 구조를 그대로 확장 — cluster 하나 추가).
 //!
 //! 우선순위(소스 규칙, 토큰 아님): 점유 > 완료 — 점유 중 surface 는 완료 테두리 억제.
+//! kind 가 늘어도 이 우선순위 축(점유 vs attention)은 별개로 유지된다 — attention 내부
+//! kind 우선순위(예: NeedsInput > Completion)는 그 아래 층위의 문제.
 //! 본체 렌더는 `egui_panels.rs::draw_occupied_overlays`(soft/hard) +
 //! `divider.rs::draw_surface_highlights_view`(completed). 시각 동기화는 수동.
 
@@ -171,6 +176,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("soft", "green 1px — held, writable"),
             ("hard", "peach 1px — readonly + force-detach"),
             ("completed", "blue 2px — clears on focus"),
+            (
+                "completed kind",
+                "AttentionKind::Completion (1 of N — NeedsInput next)",
+            ),
             ("priority", "occupancy > completion (source rule)"),
         ],
         &[
@@ -198,6 +207,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "세 상태가 하나의 테두리 채널을 색으로만 나눈다 — 얇은 엣지에서도 서로 \
          혼동되지 않아야 한다. blue(완료)는 green(soft)·peach(hard) 사이에서 가장 \
          구분성이 높다(sky 는 1px 에서 green 과 너무 가까워 배제). 점유 중이면 완료 \
-         테두리를 억제해 점유색만 남긴다 — 탭 제목(yellow)·워크스페이스 배지는 불변.",
+         테두리를 억제해 점유색만 남긴다 — 탭 제목(yellow)·워크스페이스 배지는 불변. \
+         completed 클러스터는 `AttentionStore` 의 `AttentionKind::Completion` 레코드를 \
+         그린다 — kind 가 하나뿐인 지금은 이 자리도 하나지만, kind 가 늘면(NeedsInput 등) \
+         같은 자리에 색이 하나 더 늘어나는 형태로 이 specimen 이 확장된다(cut 금지).",
     );
 }
