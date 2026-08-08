@@ -10,6 +10,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use crate::AppEvent;
+use crate::state::AppState;
 use crate::theme;
 use tasty_type_geometry::length::PhysicalPx;
 
@@ -62,7 +63,16 @@ fn os_controls() -> Option<TitlebarControls> {
 ///
 /// Windows 캡션 close 버튼도 `TitlebarAction::Close` 를 보고해 macOS/Linux 와 동일한
 /// proxy(`AppEvent::CloseWindow`) 경로로 라우팅된다.
-pub fn draw_titlebar(ctx: &egui::Context, window: &Window, proxy: &EventLoopProxy<AppEvent>) {
+///
+/// `state.resize_edge_widget_hovered` 를 이 프레임의 타이틀바 버튼 hover 결과로
+/// **덮어쓴다**(OR 아님) — 프레임당 titlebar 가 가장 먼저 그려지므로 여기가 그 값의
+/// 리셋 지점이다(`draw_status_bar` 가 이어서 자신의 결과를 OR 로 누적).
+pub fn draw_titlebar(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    window: &Window,
+    proxy: &EventLoopProxy<AppEvent>,
+) {
     let th = theme::theme();
     // macOS 만 네이티브 신호등 폭만큼 좌측 슬롯을 비운다. 그 외 OS 는 0.
     #[cfg(target_os = "macos")]
@@ -78,7 +88,9 @@ pub fn draw_titlebar(ctx: &egui::Context, window: &Window, proxy: &EventLoopProx
         maximized: window.is_maximized(),
     };
 
-    for action in draw_titlebar_view(ctx, &props) {
+    let result = draw_titlebar_view(ctx, &props);
+    state.resize_edge_widget_hovered = result.resize_priority_hovered;
+    for action in result.actions {
         match action {
             TitlebarAction::StartDrag => {
                 // 드래그 시작 시점(마우스 눌린 상태)에 호출해야 OS 가 윈도우 이동을

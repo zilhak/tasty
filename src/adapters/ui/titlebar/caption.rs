@@ -24,16 +24,25 @@ pub fn cluster_width(theme: &Theme) -> f32 {
     theme.caption_width.value() * 3.0
 }
 
+/// [`draw_caption_buttons`] 의 반환값 — 클릭 액션 + 가장자리 리사이즈 우선권 판정.
+pub struct CaptionDrawResult {
+    pub actions: Vec<TitlebarAction>,
+    /// 마우스가 3버튼(min/max/close) 중 하나 위인지 — `view.rs` 가
+    /// `TitlebarDrawResult::resize_priority_hovered` 로 합성한다.
+    pub hovered: bool,
+}
+
 /// 우측 캡션 슬롯(`rect`)에 3버튼을 그리고 클릭 액션을 보고한다.
 /// `rect.width()` 는 `cluster_width(props.theme)` 와 같다고 가정한다.
 pub fn draw_caption_buttons(
     ui: &egui::Ui,
     rect: egui::Rect,
     props: &TitlebarProps,
-) -> Vec<TitlebarAction> {
+) -> CaptionDrawResult {
     let th = props.theme;
     let w = th.caption_width.value();
     let mut actions = Vec::new();
+    let mut hovered = false;
 
     // 좌→우: minimize, maximize, close.
     for (idx, kind) in [Glyph::Minimize, Glyph::Maximize, Glyph::Close]
@@ -49,25 +58,26 @@ pub fn draw_caption_buttons(
             egui::Id::new(("tasty_caption_btn", idx)),
             egui::Sense::click(),
         );
-        let hovered = resp.hovered();
+        let btn_hovered = resp.hovered();
+        hovered |= btn_hovered;
         let pressed = resp.is_pointer_button_down_on();
         let is_close = matches!(kind, Glyph::Close);
 
         // 배경: close hover 만 시스템 red, 그 외엔 overlay hover/active.
         let painter = ui.painter();
-        if is_close && hovered {
+        if is_close && btn_hovered {
             painter.rect_filled(cell, 0.0, th.accent_window_close().to_egui());
         } else if pressed {
             painter.rect_filled(cell, 0.0, th.overlay_active().to_egui());
-        } else if hovered {
+        } else if btn_hovered {
             painter.rect_filled(cell, 0.0, th.overlay_hover().to_egui());
         }
 
         // 글리프 색: close hover=white, 그 외 hover=text-primary,
         // 평상시=active/inactive 디밍된 titlebar fg.
-        let glyph_color = if is_close && hovered {
+        let glyph_color = if is_close && btn_hovered {
             th.text_on_window_close().to_egui()
-        } else if hovered {
+        } else if btn_hovered {
             th.text_primary().to_egui()
         } else if props.active {
             th.titlebar_fg().to_egui()
@@ -85,7 +95,7 @@ pub fn draw_caption_buttons(
         }
     }
 
-    actions
+    CaptionDrawResult { actions, hovered }
 }
 
 #[derive(Clone, Copy)]

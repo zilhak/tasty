@@ -84,8 +84,9 @@ pub fn draw_status_bar_view(
     th: &Theme,
     rect: egui::Rect,
     data: &StatusBarData,
-) -> Vec<StatusBarAction> {
+) -> StatusBarDrawResult {
     let mut actions = Vec::new();
+    let mut resize_priority_hovered = false;
     let font = egui::FontId::monospace(th.font_size_caption.value());
     let muted: egui::Color32 = th.text_muted().into();
     let hover: egui::Color32 = th.text_secondary().into();
@@ -151,14 +152,15 @@ pub fn draw_status_bar_view(
                                 crate::i18n::t("status_bar.palette")
                             )
                         };
-                        if button_cell(ui, bar_h, &font, muted, hover, &palette_label)
-                            .on_hover_text(crate::i18n::t("status_bar.palette_tooltip"))
-                            .clicked()
-                        {
+                        let palette_resp =
+                            button_cell(ui, bar_h, &font, muted, hover, &palette_label)
+                                .on_hover_text(crate::i18n::t("status_bar.palette_tooltip"));
+                        resize_priority_hovered |= palette_resp.hovered();
+                        if palette_resp.clicked() {
                             actions.push(StatusBarAction::OpenPalette);
                         }
                         // 테마 토글: 점 + 테마명(capitalize).
-                        if dot_button_cell(
+                        let theme_resp = dot_button_cell(
                             ui,
                             bar_h,
                             &font,
@@ -168,16 +170,28 @@ pub fn draw_status_bar_view(
                             &capitalize(&data.theme_id),
                             DOT_SIZE,
                         )
-                        .on_hover_text(crate::i18n::t("status_bar.theme_tooltip"))
-                        .clicked()
-                        {
+                        .on_hover_text(crate::i18n::t("status_bar.theme_tooltip"));
+                        resize_priority_hovered |= theme_resp.hovered();
+                        if theme_resp.clicked() {
                             actions.push(StatusBarAction::ToggleTheme);
                         }
                     });
                 });
         });
 
-    actions
+    StatusBarDrawResult {
+        actions,
+        resize_priority_hovered,
+    }
+}
+
+/// [`draw_status_bar_view`] 의 반환값 — 클릭 액션 + 가장자리 리사이즈 우선권 판정.
+pub struct StatusBarDrawResult {
+    pub actions: Vec<StatusBarAction>,
+    /// 마우스가 상태바의 실제 클릭 가능 요소(팔레트 칩·테마 토글) 위인지.
+    /// `AppState.resize_edge_widget_hovered` 에 OR 로 합성된다(타이틀바 결과에 더해
+    /// — 상태바가 타이틀바 다음에 그려지므로 여기서는 덮어쓰지 않는다).
+    pub resize_priority_hovered: bool,
 }
 
 /// 우측 클러스터(팔레트 칩 + 테마 토글)의 총 너비를 미리 계산(spacer 산정용).
@@ -377,10 +391,11 @@ pub fn draw_status_bar(
     };
 
     // ── view ──
-    let actions = draw_status_bar_view(ctx, &th, rect, &data);
+    let result = draw_status_bar_view(ctx, &th, rect, &data);
+    state.resize_edge_widget_hovered |= result.resize_priority_hovered;
 
     // ── action 적용 ──
-    for action in actions {
+    for action in result.actions {
         match action {
             StatusBarAction::OpenPalette => {
                 use crate::intent::{OpenPopupMode, UiIntent};

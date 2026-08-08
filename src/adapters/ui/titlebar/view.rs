@@ -81,15 +81,27 @@ pub enum TitlebarAction {
     Close,
 }
 
+/// [`draw_titlebar_view`] 의 반환값 — 사용자 액션 + 가장자리 리사이즈 우선권 판정.
+pub struct TitlebarDrawResult {
+    /// wrapper 가 winit window 조작/app 이벤트로 변환할 사용자 의도.
+    pub actions: Vec<TitlebarAction>,
+    /// 마우스가 타이틀바의 실제 인터랙티브 버튼(창 컨트롤·Windows 캡션) 위인지.
+    /// `AppState.resize_edge_widget_hovered` 로 흘러가 `try_begin_os_resize` 가
+    /// 가장자리 margin 안에서 리사이즈를 양보할지 판단할 때 쓰인다 — 버튼이 없는
+    /// 빈 타이틀바 여백은 여기 포함되지 않아 리사이즈가 항상 우선한다.
+    pub resize_priority_hovered: bool,
+}
+
 /// 공통 CSD titlebar 를 `egui::TopBottomPanel::top` 으로 그린다.
 ///
 /// full-width 상단 바 + 배경/하단 보더(active/inactive 디밍) + 드래그/더블클릭 보고.
 /// `controls` 가 있으면 DE 가변 버튼(min·max·close)을 측면에 그리고 그 영역은
 /// 드래그에서 카브-아웃한다(클릭이 드래그로 새지 않게). macOS 신호등 영역은
 /// `left_inset` 으로 카브-아웃한다.
-pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<TitlebarAction> {
+pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> TitlebarDrawResult {
     let th = props.theme;
     let mut actions = Vec::new();
+    let mut resize_priority_hovered = false;
 
     let bg = if props.active {
         th.titlebar_bg()
@@ -110,7 +122,14 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
             if let Some(controls) = &props.controls
                 && !controls.buttons.is_empty()
             {
-                let strip = draw_window_buttons(ui, rect, props, controls, &mut actions);
+                let strip = draw_window_buttons(
+                    ui,
+                    rect,
+                    props,
+                    controls,
+                    &mut actions,
+                    &mut resize_priority_hovered,
+                );
                 match controls.side {
                     ControlSide::Left => left_controls_w = strip,
                     ControlSide::Right => right_controls_w = strip,
@@ -127,11 +146,9 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
                     egui::pos2(rect.right() - caption_w, rect.top()),
                     rect.max,
                 );
-                actions.extend(super::caption::draw_caption_buttons(
-                    ui,
-                    caption_rect,
-                    props,
-                ));
+                let caption_result = super::caption::draw_caption_buttons(ui, caption_rect, props);
+                actions.extend(caption_result.actions);
+                resize_priority_hovered |= caption_result.hovered;
                 // Windows 는 controls=None(위 DE 블록과 배타)이라 사실상 = caption_w.
                 // max 로 합성해 두 경로가 한 변수로 흐르게 한다 (dead-store 경고 방지 겸).
                 right_controls_w = right_controls_w.max(caption_w);
@@ -167,17 +184,22 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
             );
         });
 
-    actions
+    TitlebarDrawResult {
+        actions,
+        resize_priority_hovered,
+    }
 }
 
 /// DE 가변 버튼 클러스터를 측면에 그리고, 차지한 strip 폭(logical px)을 반환한다.
-/// 클릭은 `actions` 로 보고한다.
+/// 클릭은 `actions` 로, 버튼 hover 는 `hovered` 로 보고한다(OR 누적 — 호출부가
+/// 매 프레임 `false` 로 초기화한 값을 넘긴다).
 fn draw_window_buttons(
     ui: &egui::Ui,
     rect: egui::Rect,
     props: &TitlebarProps,
     controls: &TitlebarControls,
     actions: &mut Vec<TitlebarAction>,
+    hovered: &mut bool,
 ) -> f32 {
     let th = props.theme;
     let d = th.window_button_size.value(); // 원형 버튼 지름
@@ -213,6 +235,7 @@ fn draw_window_buttons(
         let resp = ui
             .interact(btn_rect, id, egui::Sense::click())
             .on_hover_text(label);
+        *hovered |= resp.hovered();
 
         let is_close = matches!(button, WindowButton::Close);
         // hover/active 배경: close 는 시스템 red, 그 외는 overlay.

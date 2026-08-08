@@ -278,7 +278,7 @@ impl MainView {
         egui_consumed: bool,
     ) {
         #[cfg(not(target_os = "macos"))]
-        if self.try_begin_os_resize(button, button_state, egui_consumed) {
+        if self.try_begin_os_resize(button, button_state) {
             return;
         }
 
@@ -328,23 +328,26 @@ impl MainView {
         }
     }
 
-    /// OS 가장자리 리사이즈 hit-test (콘텐츠 우선 입력모델). 좌클릭 press 가 창
+    /// OS 가장자리 리사이즈 hit-test (위젯 우선순위 입력모델). 좌클릭 press 가 창
     /// 가장자리 margin 안이면 OS 리사이즈를 시작하고 `true`(클릭 소비). macOS 는
     /// 네이티브 데코라 이 경로를 타지 않는다(호출부 cfg 가드).
+    ///
+    /// `egui_consumed`(패널/Area 전체의 bounding rect 단위)가 아니라
+    /// `state.resize_edge_widget_hovered`(타이틀바/상태바의 실제 인터랙티브 버튼
+    /// 단위)로 게이트한다 — 그러지 않으면 상시 렌더되는 타이틀바(36px)·상태바(24px)
+    /// 스트립 전체가 `RESIZE_EDGE_MARGIN`(8px) 여유를 항상 삼켜, 버튼 없는 빈 여백
+    /// 에서도 리사이즈가 절대 시작되지 않는다(버그 재현 조건).
     #[cfg(not(target_os = "macos"))]
-    fn try_begin_os_resize(
-        &mut self,
-        button: MouseButton,
-        button_state: ElementState,
-        egui_consumed: bool,
-    ) -> bool {
+    fn try_begin_os_resize(&mut self, button: MouseButton, button_state: ElementState) -> bool {
         if button == MouseButton::Left
             && button_state == ElementState::Pressed
-            && !egui_consumed
-            && !self.state.settings_open
-            && !self.state.popup_hovered
-            && !self.state.banner_hovered
-            && !self.base.winit.is_maximized()
+            && !resize_should_yield_to_content(
+                self.state.resize_edge_widget_hovered,
+                self.state.settings_open,
+                self.state.popup_hovered,
+                self.state.banner_hovered,
+                self.base.winit.is_maximized(),
+            )
             && let Some(pos) = self.cursor_position
         {
             let size = self.base.gpu.size();
@@ -1176,6 +1179,34 @@ fn effective_click_tracking_decision(
     }
 }
 
+/// `try_begin_os_resize`(MainView 메서드, `#[cfg(not(target_os = "macos"))]`)가 가장자리
+/// margin 안의 좌클릭 press 에서 OS 리사이즈를 **양보해야 하는지** 뽑아낸 순수 로직.
+/// 참이면 `resize_direction_at`이 방향을 찾아도 리사이즈를 시작하지 않고 일반 클릭
+/// 라우팅으로 넘긴다. `cursor_moved_should_short_circuit`과 동일한 이유로 — `MainView`는
+/// 실제 GPU/winit 컨텍스트 없이 구성할 수 없어 `try_begin_os_resize` 자체를 단위
+/// 테스트로 직접 구동할 수 없다 — 이 조건만 뽑아 단위 테스트한다.
+///
+/// `resize_edge_widget_hovered`(타이틀바/상태바의 실제 인터랙티브 버튼 단위, egui
+/// `Response::hovered()` 로 매 프레임 갱신)가 핵심 변경점이다. 이전에는 `egui_consumed`
+/// (패널/Area 전체의 bounding rect 단위)를 썼는데, 상시 렌더되는 타이틀바(36px)·
+/// 상태바(24px) 스트립이 `RESIZE_EDGE_MARGIN`(8px)보다 항상 두꺼워 버튼 없는 빈 여백
+/// 에서도 이 함수가 참을 반환해(=리사이즈를 항상 양보해) 가장자리 리사이즈가 그
+/// 스트립 전체에서 막혔었다.
+///
+/// macOS 는 네이티브 데코라 `try_begin_os_resize` 자체가 컴파일에서 빠지므로
+/// (호출부 cfg 가드) 그 빌드에서는 미사용이다 — `window_chrome.rs`의
+/// `RESIZE_EDGE_MARGIN`/`resize_direction_at` 과 동일하게 dead_code 를 허용한다.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn resize_should_yield_to_content(
+    resize_edge_widget_hovered: bool,
+    settings_open: bool,
+    popup_hovered: bool,
+    banner_hovered: bool,
+    is_maximized: bool,
+) -> bool {
+    resize_edge_widget_hovered || settings_open || popup_hovered || banner_hovered || is_maximized
+}
+
 /// `handle_cursor_moved`(MainView 메서드)의 early-return 판정을 뽑아낸 순수
 /// 로직. 참이면 이번 프레임은 mesh surface 판정을 건너뛰고 `update_mesh_hover(None)`을
 /// 호출한다 — `MainView`는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어(`GpuState`가
@@ -1566,5 +1597,51 @@ mod cursor_moved_early_return_tests {
         let (next, gone) = mesh_hover_transition(None, None);
         assert_eq!(next, None);
         assert_eq!(gone, None);
+    }
+}
+
+/// `try_begin_os_resize`의 리사이즈-양보 게이트(`resize_should_yield_to_content`)
+/// 단위 테스트. 창 가장자리 리사이즈가 egui-mesh/Windows 실기 없이도 검증 가능한
+/// 유일한 부분 — hit-test 자체(`resize_direction_at`)는 `window_chrome.rs`에 이미
+/// OS 무관 단위 테스트가 있고(4변+4모서리 우선순위), 여기서는 그 결과를 실제로
+/// 리사이즈로 이어줄지 판단하는 이 함수만 검증한다. OS 리사이즈 모달 루프
+/// (`drag_resize_window`가 트리거하는 Windows `WM_NCLBUTTONDOWN`)와 Windows 실기
+/// 재현은 이 세션(Linux)에서 검증 불가 — 별도 수동 확인 필요.
+#[cfg(test)]
+mod resize_gate_tests {
+    use super::resize_should_yield_to_content;
+
+    #[test]
+    fn empty_chrome_yields_nothing_so_resize_wins() {
+        // 타이틀바/상태바의 버튼 없는 빈 여백 — 모든 플래그가 false 여야
+        // 리사이즈가 항상 이긴다(이 TODO 가 고친 버그의 회귀 조건).
+        assert!(!resize_should_yield_to_content(
+            false, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn chrome_widget_hovered_yields_to_content() {
+        // 타이틀바 창 버튼/Windows 캡션/상태바 클릭 요소 위 — egui_consumed 가 아니라
+        // 이 위젯 단위 플래그로만 리사이즈를 양보해야 한다.
+        assert!(resize_should_yield_to_content(
+            true, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn overlay_popup_banner_maximized_each_yield() {
+        assert!(resize_should_yield_to_content(
+            false, true, false, false, false
+        ));
+        assert!(resize_should_yield_to_content(
+            false, false, true, false, false
+        ));
+        assert!(resize_should_yield_to_content(
+            false, false, false, true, false
+        ));
+        assert!(resize_should_yield_to_content(
+            false, false, false, false, true
+        ));
     }
 }

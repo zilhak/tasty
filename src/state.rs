@@ -369,6 +369,14 @@ pub struct AppState {
     /// 가 읽는다.
     #[cfg(feature = "gui")]
     pub(crate) modifier_hint_layer: Option<egui::LayerId>,
+    /// 마우스가 창 가장자리 리사이즈 우선권을 가져야 하는 실제 인터랙티브 chrome
+    /// 위젯(타이틀바 창 버튼·Windows 캡션 버튼·상태바 클릭 요소) 위인지(입력 레이어
+    /// 상태). 각 위젯이 매 프레임 자신의 `Response::hovered()` 로 갱신한다 —
+    /// `egui_consumed`(패널/Area 전체의 bounding rect 단위)와 달리 위젯 단위라
+    /// 빈 여백까지 리사이즈를 막지 않는다. `try_begin_os_resize` 가 가장자리 margin
+    /// 안에서 리사이즈를 양보할지 판단할 때만 쓰인다. popup_hovered 와 동일하게
+    /// 비-gui 빌드도 필드를 갖는다(입력 가드가 공유).
+    pub(crate) resize_edge_widget_hovered: bool,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
@@ -991,6 +999,7 @@ impl AppState {
             banner_layer: None,
             #[cfg(feature = "gui")]
             modifier_hint_layer: None,
+            resize_edge_widget_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
             popups: {

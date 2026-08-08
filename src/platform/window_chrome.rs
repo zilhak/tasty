@@ -60,8 +60,11 @@ pub fn resize_direction_at(
 ///   우측 캡션 버튼을 직접 그리고(P5), 드래그/더블클릭 maximize 는 공통 어댑터가
 ///   처리한다. `with_undecorated_shadow(true)` 로 데코 제거 후에도 드롭 섀도를 복원해
 ///   창 경계가 보이게 한다. 가장자리 리사이즈는 Linux 와 동일한 단일 MainView 경로
-///   (raw hit-test + `egui_consumed` 게이트 + `resize_direction_at` + `drag_resize_window`)로
-///   처리한다 — 별도 egui 오버레이 레이어 없음(콘텐츠 우선 입력모델).
+///   (raw hit-test + `resize_direction_at` + `drag_resize_window`)로 처리한다 —
+///   별도 egui 오버레이 레이어 없음(위젯 우선순위 입력모델: `egui_consumed` 은 패널/Area
+///   전체의 bounding rect 단위라 리사이즈 게이트에 쓰지 않고, 타이틀바/상태바의 실제
+///   인터랙티브 버튼 hover(`AppState.resize_edge_widget_hovered`)만 리사이즈보다
+///   우선한다 — 빈 여백은 항상 리사이즈).
 /// - **그 외 OS**: 변경 없음(네이티브 데코 유지).
 pub fn apply_csd_attributes(attrs: WindowAttributes) -> WindowAttributes {
     #[cfg(target_os = "macos")]
