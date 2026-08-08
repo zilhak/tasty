@@ -326,39 +326,14 @@ pub fn draw_popups(
 
     // `PopupManager::close()` 는 모든 close 경로(draw_fn Close / X버튼·외부클릭 /
     // UiIntent::ClosePopup·TogglePopup / App 직접 호출 / debug IPC)가 거치는
-    // 유일한 지점이므로, 여기서 `on_close` 훅을 drain 하면 기존 뒷정리(아래 9개
-    // 블록, 이 시점 기준 dispatch_closed/draw_result.closed 경로 2개만 커버)가
-    // 놓치던 나머지 경로까지 전부 잡힌다. 현재는 등록된 훅이 0개라 동작 변화 없음
-    // — 이관은 후속 TODO.
+    // 유일한 지점이므로, 여기서 `on_close` 훅을 drain하면 각 popup 모듈이 소유한
+    // 뒷정리가 어떤 경로로 닫히든 돈다 — dispatch_closed/draw_result.closed 두
+    // 경로에만 붙던 옛 방식과 달리 intent/App/debug IPC 경로도 커버한다.
     drain_on_close_hooks(ctx, state, engine);
 
     // 마우스 캡처 배너 "더보기" 메뉴 — outside click/Esc로 닫히면(액션 클릭이 아니라)
     // 대상 필드를 정리한다(`draw_popups` 의 인지 복잡도 예산을 넘지 않도록 helper 로 분리).
     cleanup_mouse_capture_menu_target(state, &dispatch_closed, &draw_result.closed);
-
-    // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서
-    // 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음 head 로 다시 연다.
-    let approval_closed = dispatch_closed
-        .contains(&crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID)
-        || draw_result
-            .closed
-            .contains(&crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID);
-    if approval_closed {
-        state.dialogs.approval_comment_buffer.clear();
-        if !state.dialogs.pending_approval_ids.is_empty() {
-            // 다음 approval head 를 위해 popup 재발화. Intent dedup 이 이미 열려 있을
-            // 때 무시하므로 안전.
-            state.dispatch_intent(
-                crate::intent::UiIntent::OpenPopup {
-                    id: crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID,
-                    mode: crate::intent::OpenPopupMode::WithScope(
-                        crate::adapters::ui::popup::PopupScope::Window,
-                    ),
-                }
-                .from_agent_ipc(),
-            );
-        }
-    }
 
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
     let reduced_motion = engine.settings.accessibility.reduced_motion;

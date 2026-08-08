@@ -242,6 +242,29 @@ fn props_from_record<'a>(
     }
 }
 
+/// PopupDef::on_close entry point — 외부 닫기/X 발생 시 큐 head 만 비운다(정책상
+/// X 는 본문에서 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음
+/// head 를 위해 popup 을 재발화한다. `state.dispatch_intent` 는 즉시 반영이 아니라
+/// 큐잉이므로(dedup: 이미 열려 있으면 무시) 다음 intent 드레인 때 실제로 열린다.
+pub fn on_close_approval_popup(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.dialogs.approval_comment_buffer.clear();
+    if !state.dialogs.pending_approval_ids.is_empty() {
+        state.dispatch_intent(
+            crate::intent::UiIntent::OpenPopup {
+                id: APPROVAL_POPUP_ID,
+                mode: crate::intent::OpenPopupMode::WithScope(
+                    crate::adapters::ui::popup::PopupScope::Window,
+                ),
+            }
+            .from_agent_ipc(),
+        );
+    }
+}
+
 /// PopupDef.draw_fn — 큐 head 의 record 를 렌더링하고 선택지 클릭/숫자 키로 응답.
 ///
 /// AppState/CoreState 어댑터 wrapper: props 추출 → view 호출 → action 처리.

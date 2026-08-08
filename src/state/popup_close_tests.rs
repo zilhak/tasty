@@ -785,6 +785,40 @@ fn approval_x_button_close_with_pending_queue_refires_open_popup() {
     );
 }
 
+/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로로 닫아도(X 버튼과 동일하게
+/// draw_fn 을 거치지 않으므로) 다음 프레임의 drain 이 재발화 intent 를 dispatch
+/// 한다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴 + 재진입
+/// 재발화 확인).
+#[test]
+fn approval_close_intent_now_refires_open_popup() {
+    let (mut state, mut engine) = test_state();
+    push_approval(&mut engine, &mut state, "req-1");
+    push_approval(&mut engine, &mut state, "req-2");
+    state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: APPROVAL_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.popups.is_open(APPROVAL_POPUP_ID));
+    // handle() 직후 — 아직 drain 전, 재발화 intent 도 아직 없다.
+    assert!(state.take_pending_intents().is_empty());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert_eq!(state.dialogs.pending_approval_ids.len(), 2);
+    let pending = state.take_pending_intents();
+    assert!(
+        pending
+            .iter()
+            .any(|d| matches!(&d.body, Intent::Ui(UiIntent::OpenPopup { id, .. }) if *id == APPROVAL_POPUP_ID)),
+        "non-empty queue must refire OpenPopup for the next head"
+    );
+}
+
 // ────────────────────── path 3 (`UiIntent::ClosePopup`) ──────────────────────
 // `rename` 은 on_close 훅으로 이관됐다 — `state.popups.close()` 가 큐에 쌓고,
 // 다음 프레임의 drain(`draw_popups` → `drain_on_close_hooks`)이 훅을 발화한다.
