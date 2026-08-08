@@ -13,19 +13,34 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 /// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
-/// `(claude_event_name, tasty_hook_token)` 형태. 호스트 `MANAGED_HOOKS`와 동일.
+/// `(claude_event_name, tasty_hook_token, matcher)` 3-튜플. 호스트 `MANAGED_HOOKS`와 동일.
 ///
 /// `UserPromptSubmit` 은 child 가 *2 번째 이후 prompt* 를 받을 때 ClaudeState 의
 /// idle=true (직전 Stop hook 잔재) 를 clear 하는 데 필수. 미등록 시 multi-round
 /// 대화에서 idle 상태 조회(`terminal.children` 등)가 *진짜 active 인 child* 를
 /// idle 로 잘못 보고하는 transient state bug 발생 (구현 중 확인됨).
-pub const MANAGED_HOOKS: &[(&str, &str)] = &[
-    ("Stop", "stop"),
-    ("Notification", "notification"),
-    ("SessionEnd", "session-end"),
-    ("SubagentStop", "subagent-stop"),
-    ("SessionStart", "session-start"),
-    ("UserPromptSubmit", "prompt-submit"),
+///
+/// `PreToolUse`/`PostToolUse` 는 matcher `"AskUserQuestion"` 으로 좁혀 그 툴
+/// 호출에만 발화한다(다른 6종은 matcher `""` 로 전부 받는다). 실측(실제 Claude Code
+/// 를 띄워 hook stdin payload 를 덤프해 확인)으로 근거를 얻었다:
+/// - `AskUserQuestion` 답변은 `UserPromptSubmit` 을 발생시키지 않는다(같은 프롬프트
+///   turn 안의 tool 상호작용이라 새 프롬프트로 카운트되지 않음) — 그래서 기존
+///   `UserPromptSubmit`(→active) 만으로는 needs_input 해제 시점을 잡을 수 없다.
+///   `PostToolUse`/`AskUserQuestion` 이 답변 즉시(관찰상 `duration_ms: 0`) 발화해
+///   그 해제 신호를 정확히 제공한다 — 그래서 `PreToolUse` 단독이 아니라 반드시
+///   짝을 이뤄 추가한다.
+/// - `PreToolUse`/`AskUserQuestion` 은 인터랙티브 선택 UI 가 뜨기 **전에** 발화하고
+///   `tool_input.questions` 를 담고 있어, "질문을 막 띄우려는 참"을 구조적으로
+///   (matcher 로 tool 이름 자체를 보증) 정밀하게 잡는다.
+pub const MANAGED_HOOKS: &[(&str, &str, &str)] = &[
+    ("Stop", "stop", ""),
+    ("Notification", "notification", ""),
+    ("SessionEnd", "session-end", ""),
+    ("SubagentStop", "subagent-stop", ""),
+    ("SessionStart", "session-start", ""),
+    ("UserPromptSubmit", "prompt-submit", ""),
+    ("PreToolUse", "pre-tool-use", "AskUserQuestion"),
+    ("PostToolUse", "post-tool-use", "AskUserQuestion"),
 ];
 
 /// `entry_matches_marker`가 식별자로 사용하는 substring.
@@ -111,7 +126,7 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
 
     let mut added: Vec<&'static str> = Vec::new();
 
-    for (event_name, event_token) in MANAGED_HOOKS {
+    for (event_name, event_token, matcher) in MANAGED_HOOKS {
         let marker = tasty_hook_marker(event_token);
         let command = tasty_hook_command(event_token);
 
@@ -121,17 +136,29 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("hooks.{} is not an array", event_name))?;
 
-        // 기존에 marker 가 일치하는 entry 가 있으면, 그 안의 hook 명령 문자열만
-        // canonical 한 새 값으로 갱신한다. 옛 버전이 설치한 잘못된 명령
-        // (예: `tasty claude hook session-start --session ${CLAUDE_SESSION_ID}`)
-        // 이 그대로 남아 hook 이 실패하던 회귀가 다시 재현되지 않게, install 을
-        // 재실행하면 자동으로 최신 형태로 upgrade 된다.
+        // 기존에 marker 가 일치하는 entry 가 있으면, 그 entry 의 matcher 와 그 안의
+        // hook 명령 문자열을 canonical 한 새 값으로 갱신한다. 옛 버전이 설치한 잘못된
+        // 명령(예: `tasty claude hook session-start --session ${CLAUDE_SESSION_ID}`)
+        // 이나 옛 matcher 가 그대로 남아 있어도, install 을 재실행하면 자동으로 최신
+        // 형태로 upgrade 된다(matcher 비교를 넣지 않으면 command 문자열만 최신화되고
+        // matcher 는 옛 값에 고정돼버린다 — `PreToolUse`/`PostToolUse` 처럼 matcher 가
+        // 의미를 갖는 항목의 향후 matcher 변경 시 이 경로가 필요하다).
         let mut upgraded = false;
         for entry in arr.iter_mut() {
             if !entry_matches_marker(entry, &marker) {
                 continue;
             }
             upgraded = true;
+            if let Some(obj) = entry.as_object_mut() {
+                let matcher_needs_update = obj
+                    .get("matcher")
+                    .and_then(|m| m.as_str())
+                    .map(|m| m != *matcher)
+                    .unwrap_or(true);
+                if matcher_needs_update {
+                    obj.insert("matcher".into(), Value::String((*matcher).to_string()));
+                }
+            }
             if let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) {
                 for h in hooks.iter_mut() {
                     let needs_update = h
@@ -150,7 +177,7 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
         }
 
         arr.push(json!({
-            "matcher": "",
+            "matcher": matcher,
             "hooks": [
                 {
                     "type": "command",
@@ -178,7 +205,7 @@ pub fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
 
     let mut removed: Vec<&'static str> = Vec::new();
 
-    for (event_name, event_token) in MANAGED_HOOKS {
+    for (event_name, event_token, _matcher) in MANAGED_HOOKS {
         let marker = tasty_hook_marker(event_token);
 
         let Some(arr) = hooks_obj
@@ -273,7 +300,7 @@ mod tests {
         let mut root = json!({});
         let added = install_hooks_in_value(&mut root).expect("install");
         assert_eq!(added.len(), MANAGED_HOOKS.len());
-        for (event_name, token) in MANAGED_HOOKS {
+        for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
             assert_eq!(
                 count_managed_entries(&root, event_name, &marker),
@@ -324,12 +351,62 @@ mod tests {
     }
 
     #[test]
+    fn install_sets_pre_post_tool_use_matcher_to_ask_user_question() {
+        let mut root = json!({});
+        install_hooks_in_value(&mut root).expect("install");
+        assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "AskUserQuestion");
+        assert_eq!(
+            root["hooks"]["PostToolUse"][0]["matcher"],
+            "AskUserQuestion"
+        );
+        // 기존 6종은 matcher `""` 로 동작 불변 유지.
+        for event_name in [
+            "Stop",
+            "Notification",
+            "SessionEnd",
+            "SubagentStop",
+            "SessionStart",
+            "UserPromptSubmit",
+        ] {
+            assert_eq!(
+                root["hooks"][event_name][0]["matcher"], "",
+                "{event_name} matcher should remain empty"
+            );
+        }
+    }
+
+    #[test]
+    fn install_upgrades_stale_matcher() {
+        // 멱등성 점검: matcher 없이(빈 문자열로) 깔려있던 옛 entry 를 재-install 하면
+        // canonical matcher("AskUserQuestion")로 갱신돼야 한다 — command 문자열만
+        // 비교하던 옛 upgrade 로직이라면 이 매처 드리프트를 감지하지 못했을 것이다.
+        let mut root = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "",
+                        "hooks": [{ "type": "command", "command": tasty_hook_command("pre-tool-use") }]
+                    }
+                ]
+            }
+        });
+        let added = install_hooks_in_value(&mut root).expect("install");
+        assert!(
+            !added.contains(&"PreToolUse"),
+            "in-place upgrade, not a fresh add"
+        );
+        let arr = root["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(arr.len(), 1, "no duplicate entry");
+        assert_eq!(arr[0]["matcher"], "AskUserQuestion");
+    }
+
+    #[test]
     fn install_is_idempotent() {
         let mut root = json!({});
         install_hooks_in_value(&mut root).expect("install 1");
         let added2 = install_hooks_in_value(&mut root).expect("install 2");
         assert!(added2.is_empty(), "second install should add nothing");
-        for (event_name, token) in MANAGED_HOOKS {
+        for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
             assert_eq!(count_managed_entries(&root, event_name, &marker), 1);
         }
@@ -337,6 +414,9 @@ mod tests {
 
     #[test]
     fn install_preserves_other_hooks() {
+        // `PreToolUse` 는 이제 tasty 도 관리하는 event(matcher "AskUserQuestion")라,
+        // 사용자가 그 아래 다른 matcher("Bash")로 넣어둔 entry 와 공존해야 한다 —
+        // tasty entry 는 *추가*될 뿐 사용자 entry 를 건드리거나 대체하지 않는다.
         let mut root = json!({
             "hooks": {
                 "PreToolUse": [
@@ -349,13 +429,14 @@ mod tests {
         });
         install_hooks_in_value(&mut root).expect("install");
 
+        let pretool_arr = root["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(
-            root["hooks"]["PreToolUse"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0),
-            1
+            pretool_arr.len(),
+            2,
+            "user's Bash-matcher entry preserved + tasty's AskUserQuestion-matcher entry added"
         );
+        assert_eq!(pretool_arr[0]["matcher"], "Bash");
+        assert_eq!(pretool_arr[0]["hooks"][0]["command"], "echo user");
         let stop_arr = root["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop_arr.len(), 2);
     }

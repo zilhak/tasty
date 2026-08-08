@@ -73,9 +73,10 @@ pub fn handle_claude_hook(
         .and_then(|v| v.as_str())
         .map(String::from);
     let message = params.get("message").and_then(|v| v.as_str());
+    let notification_type = params.get("notification_type").and_then(|v| v.as_str());
     let now_ms = now_ms();
 
-    let mut calls = apply_hook(event, surface_id, session.as_deref())?;
+    let mut calls = apply_hook(event, surface_id, session.as_deref(), notification_type)?;
     calls.extend(telemetry_for_hook(
         state, event, surface_id, message, now_ms,
     ));
@@ -201,10 +202,19 @@ fn extract_tokens(text: &str) -> Option<u64> {
 /// 순수 함수 — 단위 테스트가 분기 동작을 직접 검증한다. 자식 상태
 /// (idle/needs_input/active)는 호스트 registry 로 주입할 `SetState` HostCall 로
 /// 표현한다(자체 state 미보유).
+///
+/// `notification_type` 은 `"notification"` 이벤트에서만 쓰인다 — Claude Code 의
+/// Notification stdin payload 에 실려오는 `notification_type` 필드(값 예:
+/// `permission_prompt`/`idle_prompt`/`auth_success`/`elicitation_*`, 실측으로
+/// 필드 존재와 `permission_prompt` 값을 확인함). `idle_prompt`(무입력 대기 —
+/// 사용자가 자리를 비웠을 뿐 실제로 응답을 기다리는 질문이 없는 상태)만 배제하고
+/// 그 외(알려지지 않은 값·필드 없음 포함)는 기존과 동일하게 needs_input 을 켠다 —
+/// 알려진 유일한 오탐 케이스만 걷어내고 나머지는 안전하게 넓게 유지하는 deny-list.
 pub fn apply_hook(
     event: &str,
     surface_id: u32,
     session: Option<&str>,
+    notification_type: Option<&str>,
 ) -> Result<Vec<HostCall>, IpcMethodError> {
     let mut calls = Vec::new();
     match event {
@@ -247,6 +257,26 @@ pub fn apply_hook(
             calls.push(HostCall::SurfaceCompletion { surface_id });
         }
         "notification" => {
+            // idle_prompt(무입력 대기)는 실제로 대기 중인 질문이 없는 오탐 케이스라
+            // needs_input 을 켜지 않는다 — 그 외(permission_prompt 등 알려진 값,
+            // 알려지지 않은 값, 필드 자체가 없는 경우)는 기존과 동일하게 켠다.
+            if notification_type != Some("idle_prompt") {
+                calls.push(HostCall::SetState {
+                    surface_id,
+                    state: "needs_input",
+                });
+                calls.push(HostCall::FireHook {
+                    surface_id,
+                    event: "needs-input",
+                });
+                calls.push(HostCall::SurfaceCompletion { surface_id });
+            }
+        }
+        "pre-tool-use" => {
+            // matcher `"AskUserQuestion"` 로 이미 좁혀 등록되므로(install.rs
+            // `MANAGED_HOOKS`) 이 event 가 오면 곧 선택지 UI 가 뜬다는 뜻이다 —
+            // Notification("permission_prompt")과 동일한 효과를 구조적으로 더
+            // 정밀하게(tool 이름 자체가 보증) 낸다.
             calls.push(HostCall::SetState {
                 surface_id,
                 state: "needs_input",
@@ -256,6 +286,17 @@ pub fn apply_hook(
                 event: "needs-input",
             });
             calls.push(HostCall::SurfaceCompletion { surface_id });
+        }
+        "post-tool-use" => {
+            // matcher `"AskUserQuestion"` 로 좁혀 등록 — 사용자가 답변을 제출한
+            // 직후 발화한다(실측: `duration_ms: 0`). `UserPromptSubmit` 은 이 답변에
+            // 대해 발화하지 않으므로(질문/답변이 같은 prompt turn 안의 tool
+            // 상호작용이라 새 프롬프트로 집계되지 않음, 실측 확인) 이 이벤트가
+            // needs_input 해제의 유일한 신호다.
+            calls.push(HostCall::SetState {
+                surface_id,
+                state: "active",
+            });
         }
         "prompt-submit" | "session-start" | "active" => {
             calls.push(HostCall::SetState {
@@ -292,7 +333,7 @@ pub fn apply_hook(
         }
         other => {
             return Err(IpcMethodError::invalid_params(&format!(
-                "unknown hook event '{other}' (expected: stop|subagent-stop|notification|session-end|prompt-submit|session-start|active)"
+                "unknown hook event '{other}' (expected: stop|subagent-stop|notification|session-end|prompt-submit|session-start|active|pre-tool-use|post-tool-use)"
             )));
         }
     }
@@ -366,7 +407,7 @@ mod tests {
 
     #[test]
     fn stop_sets_idle_and_emits_fire_hook() {
-        let calls = apply_hook("stop", 100, None).unwrap();
+        let calls = apply_hook("stop", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -385,7 +426,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_treated_like_stop() {
-        let calls = apply_hook("subagent-stop", 7, None).unwrap();
+        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -404,7 +445,7 @@ mod tests {
 
     #[test]
     fn notification_sets_needs_input_and_fires_needs_input() {
-        let calls = apply_hook("notification", 100, None).unwrap();
+        let calls = apply_hook("notification", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -422,8 +463,100 @@ mod tests {
     }
 
     #[test]
+    fn notification_permission_prompt_sets_needs_input() {
+        let calls = apply_hook("notification", 100, None, Some("permission_prompt")).unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "needs_input",
+                },
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "needs-input",
+                },
+                HostCall::SurfaceCompletion { surface_id: 100 },
+            ]
+        );
+    }
+
+    #[test]
+    fn notification_idle_prompt_does_not_set_needs_input() {
+        // 실측 확인: idle_prompt 는 "사용자가 자리를 비웠다" 는 뜻이지 실제로 대기
+        // 중인 질문이 없다 — needs_input 오탐의 근원이므로 배제한다.
+        let calls = apply_hook("notification", 100, None, Some("idle_prompt")).unwrap();
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn notification_unknown_type_still_sets_needs_input() {
+        // 알려지지 않은 notification_type(또는 향후 신설 값)은 안전하게 기존
+        // 동작(needs_input 켬)을 유지한다 — 오탐이 확실한 idle_prompt 만 배제.
+        let calls = apply_hook("notification", 100, None, Some("auth_success")).unwrap();
+        assert!(!calls.is_empty());
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SetState {
+                state: "needs_input",
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn notification_missing_type_still_sets_needs_input() {
+        // stdin 에 notification_type 자체가 없는 (구버전 Claude Code 등) 경우도
+        // 기존 동작을 유지한다 — 회귀 방지.
+        let calls = apply_hook("notification", 100, None, None).unwrap();
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SetState {
+                state: "needs_input",
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn pre_tool_use_sets_needs_input_and_fires_needs_input() {
+        // matcher "AskUserQuestion" 로 이미 좁혀 등록되므로 이 event 가 오면 곧
+        // 선택지 UI 가 뜬다는 뜻 — Notification 의 needs_input 분기와 동일한 효과.
+        let calls = apply_hook("pre-tool-use", 100, None, None).unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                HostCall::SetState {
+                    surface_id: 100,
+                    state: "needs_input",
+                },
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "needs-input",
+                },
+                HostCall::SurfaceCompletion { surface_id: 100 },
+            ]
+        );
+    }
+
+    #[test]
+    fn post_tool_use_sets_active() {
+        // 실측 확인: AskUserQuestion 답변은 UserPromptSubmit 을 발생시키지 않으므로
+        // PostToolUse 가 needs_input 해제의 유일한 신호. highlight 는 다시 안
+        // 올린다(이미 질문에 답한 것이지 "완료/확인 필요" 신호가 아님).
+        let calls = apply_hook("post-tool-use", 100, None, None).unwrap();
+        assert_eq!(
+            calls,
+            vec![HostCall::SetState {
+                surface_id: 100,
+                state: "active",
+            }]
+        );
+    }
+
+    #[test]
     fn session_end_clears_session_meta_and_fires_idle() {
-        let calls = apply_hook("session-end", 100, None).unwrap();
+        let calls = apply_hook("session-end", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -456,7 +589,7 @@ mod tests {
 
     #[test]
     fn stop_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("stop", 100, None).unwrap();
+        let calls = apply_hook("stop", 100, None, None).unwrap();
         assert!(
             calls
                 .iter()
@@ -466,7 +599,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("subagent-stop", 7, None).unwrap();
+        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
         assert!(
             calls
                 .iter()
@@ -476,7 +609,7 @@ mod tests {
 
     #[test]
     fn session_end_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("session-end", 100, None).unwrap();
+        let calls = apply_hook("session-end", 100, None, None).unwrap();
         assert!(
             calls
                 .iter()
@@ -486,7 +619,7 @@ mod tests {
 
     #[test]
     fn notification_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("notification", 100, None).unwrap();
+        let calls = apply_hook("notification", 100, None, None).unwrap();
         assert!(
             calls
                 .iter()
@@ -499,7 +632,7 @@ mod tests {
         // "작업 시작" 신호는 완료/확인필요가 아니므로 highlight 대상이 아니다 —
         // apply_hook의 "prompt-submit"|"session-start"|"active" 분기는 건드리지 않는다
         // (`docs/features/surface-highlight/index.md` 참고).
-        let calls = apply_hook("prompt-submit", 100, None).unwrap();
+        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
         assert!(
             !calls
                 .iter()
@@ -509,7 +642,7 @@ mod tests {
 
     #[test]
     fn prompt_submit_sets_active_and_no_meta() {
-        let calls = apply_hook("prompt-submit", 100, None).unwrap();
+        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -521,7 +654,7 @@ mod tests {
 
     #[test]
     fn session_start_without_session_id_just_sets_active() {
-        let calls = apply_hook("session-start", 100, None).unwrap();
+        let calls = apply_hook("session-start", 100, None, None).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -533,7 +666,7 @@ mod tests {
 
     #[test]
     fn session_start_with_session_id_emits_meta_set() {
-        let calls = apply_hook("session-start", 100, Some("sess-abc")).unwrap();
+        let calls = apply_hook("session-start", 100, Some("sess-abc"), None).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -557,7 +690,7 @@ mod tests {
 
     #[test]
     fn unknown_event_returns_invalid_params() {
-        let err = apply_hook("bogus", 100, None).unwrap_err();
+        let err = apply_hook("bogus", 100, None, None).unwrap_err();
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("bogus"));
     }
@@ -655,7 +788,14 @@ mod tests {
         for event in ["prompt-submit", "session-start", "active"] {
             assert!(is_new_turn_event(event), "{event} 은 새 턴 신호여야 함");
         }
-        for event in ["stop", "subagent-stop", "notification", "session-end"] {
+        for event in [
+            "stop",
+            "subagent-stop",
+            "notification",
+            "session-end",
+            "pre-tool-use",
+            "post-tool-use",
+        ] {
             assert!(!is_new_turn_event(event), "{event} 은 새 턴 신호가 아님");
         }
     }

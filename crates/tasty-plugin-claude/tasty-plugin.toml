@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.26"
+version = "0.1.27"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -62,7 +62,7 @@ subcommands = [
     { name = "reboot",    ipc_method = "claude.reboot",    args = "reboot_args",    description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off." },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
-    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message) when invoked by Claude Code's hook system." },
+    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system." },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
 ]
 
@@ -154,12 +154,13 @@ flags = [
 
 [contributes.cli.arg_groups.hook_args]
 positional = [
-    { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, notification, session-end, prompt-submit, session-start, subagent-stop)" },
+    { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)" },
 ]
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when Claude Code invokes the hook." },
     { name = "message", type = "string", flag = "--message", required = false, stdin_field = "message",    help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'." },
+    { name = "notification_type", type = "string", flag = "--notification-type", required = false, stdin_field = "notification_type", help = "Claude Code notification subtype (e.g. permission_prompt, idle_prompt). Auto-populated from stdin JSON 'notification_type'. Used to exclude idle_prompt from the needs_input signal." },
 ]
 
 [contributes.cli.arg_groups.no_args]
