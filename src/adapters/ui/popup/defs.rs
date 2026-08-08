@@ -35,6 +35,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
+                on_close: None,
             },
             PopupDef {
                 id: "convert_surface",
@@ -50,6 +51,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::convert::draw_convert_popup,
+                on_close: None,
             },
             PopupDef {
                 id: "script_changed_confirm",
@@ -65,6 +67,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::script_confirm::draw_script_confirm_popup,
+                on_close: None,
             },
             PopupDef {
                 id: "rename",
@@ -80,6 +83,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::dialog::draw_rename_popup,
+                on_close: None,
             },
             PopupDef {
                 id: "search_bar",
@@ -95,6 +99,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
+                on_close: None,
             },
             PopupDef {
                 id: crate::adapters::ui::info_modal::INFO_MODAL_ID,
@@ -110,6 +115,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::info_modal::draw_info_modal,
+                on_close: None,
             },
             PopupDef {
                 id: super::approval::APPROVAL_POPUP_ID,
@@ -125,6 +131,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::approval::draw_approval_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::file_handler_picker::PICKER_POPUP_ID,
@@ -140,6 +147,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_handler_picker::draw_file_handler_picker,
+                on_close: None,
             },
             PopupDef {
                 id: super::file_picker::FILE_PICKER_POPUP_ID,
@@ -155,6 +163,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_picker::draw_file_picker,
+                on_close: None,
             },
             PopupDef {
                 id: super::port_scanner::PORT_SCANNER_POPUP_ID,
@@ -171,6 +180,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: true,
                 min_size: Some(egui::vec2(480.0, 320.0)),
                 draw_fn: super::port_scanner::draw_port_scanner_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::command_palette::COMMAND_PALETTE_POPUP_ID,
@@ -189,6 +199,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::command_palette::draw_command_palette_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::remote_tool::REMOTE_TOOL_POPUP_ID,
@@ -205,6 +216,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: true,
                 min_size: Some(egui::vec2(420.0, 320.0)),
                 draw_fn: super::remote_tool::draw_remote_tool_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::remote_attach::REMOTE_ATTACH_POPUP_ID,
@@ -221,6 +233,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::remote_attach::draw_remote_attach_popup,
+                on_close: None,
             },
             // (09) 원격 전송 진행 — scrim 중앙 headless, close_on_outside_click=false
             // (전송 중 실수 dismiss 방지), 모든 행 완료 시 draw_fn 이 self-close.
@@ -238,6 +251,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::transfer::draw_transfer_progress,
+                on_close: None,
             },
             // (09) 원격 전송 실패 — scrim 중앙 headless, 기본 dismiss(Esc/scrim). Retry 는
             // 전송 중 실패만(draw_fn 이 판정). danger-fill 버튼 금지.
@@ -255,6 +269,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::transfer::draw_transfer_error,
+                on_close: None,
             },
             PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
@@ -270,6 +285,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_workspace_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::preset_apply::APPLY_TAB_POPUP_ID,
@@ -285,6 +301,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_tab_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::preset_apply::APPLY_PANE_POPUP_ID,
@@ -300,6 +317,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::preset_apply::draw_apply_pane_popup,
+                on_close: None,
             },
             PopupDef {
                 id: "tools_menu",
@@ -316,6 +334,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
+                on_close: None,
             },
             PopupDef {
                 id: crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
@@ -333,6 +352,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::mouse_capture_menu::draw_menu,
+                on_close: None,
             },
             PopupDef {
                 id: super::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
@@ -349,6 +369,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::confirm_delete_category::draw_confirm_delete_category,
+                on_close: None,
             },
             PopupDef {
                 id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
@@ -366,6 +387,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tutorial::topic_popup::draw_tutorial_topics_popup,
+                on_close: None,
             },
             PopupDef {
                 id: super::rail_category::RAIL_CATEGORY_POPUP_ID,
@@ -382,6 +404,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: super::rail_category::draw_rail_category_popup,
+                on_close: None,
             },
         ]
     })

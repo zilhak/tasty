@@ -110,6 +110,15 @@ pub struct PopupDef {
     pub min_size: Option<egui::Vec2>,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
+    /// 닫힘 뒷정리 훅. `PopupManager::close()`(닫는 경로 전부가 거치는 유일한
+    /// 지점)를 통해 어떤 경로로 닫히든 정확히 1회 발화한다(`closed_queue` +
+    /// `notification.rs` 의 `drain_on_close_hooks` 참고) — draw_fn 이 `Close` 를 반환하는
+    /// 경로나 X 버튼/외부 클릭에만 붙던 기존 뒷정리(`draw_popups`)와 달리
+    /// `UiIntent::ClosePopup`/`TogglePopup`/App 직접 호출/debug IPC 경로도 모두
+    /// 잡는다. 그리는 게 없으므로 `&mut Ui` 가 아니라 `&egui::Context` 를 받는다
+    /// (`remote_attach`/`remote_tool` 의 `clear_ui(ctx)` 처럼 egui temp memory
+    /// 정리가 필요한 훅이 있어서 — `Ui` 로는 접근 불가).
+    pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
 }
 
 /// State for a single popup instance.
@@ -407,11 +416,17 @@ impl PopupState {
 pub struct PopupManager {
     /// Popups in z-order (last = topmost).
     popups: Vec<PopupState>,
+    /// `close()` 로 실제로 닫힌(= 그 호출 직전엔 열려 있던) popup id 대기열.
+    /// `on_close` 훅 drain 이 프레임당 1회 `take_closed_queue()` 로 비운다.
+    closed_queue: Vec<PopupId>,
 }
 
 impl PopupManager {
     pub fn new() -> Self {
-        Self { popups: Vec::new() }
+        Self {
+            popups: Vec::new(),
+            closed_queue: Vec::new(),
+        }
     }
 
     /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
@@ -525,15 +540,33 @@ impl PopupManager {
     }
 
     /// Close a popup by id.
+    ///
+    /// **모든 close 경로가 거치는 유일한 지점**(`grep "open = false"` 1건) —
+    /// `on_close` 훅 발화 지점이기도 하다. 이미 닫혀 있던 popup 에 다시 호출되면
+    /// (예: 같은 프레임에 여러 경로가 겹치는 경우) 중복 발화를 막기 위해
+    /// `closed_queue` 에 push 하지 않는다 — `p.open` 이 이 호출 **직전** 이미
+    /// `false` 였다면 이번 호출은 실질적인 전이가 아니다.
     pub fn close(&mut self, id: PopupId) {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
+            let was_open = p.open;
             p.open = false;
             p.dragging = false;
             p.focused = false;
             // 리사이즈 상태 리셋 → 다음 open 시 sizer 가 크기를 다시 결정하도록 복원.
             p.resizing = None;
             p.size_user_overridden = false;
+            if was_open {
+                self.closed_queue.push(id);
+            }
         }
+    }
+
+    /// `closed_queue` 를 비우고 반환한다. `on_close` 훅 drain(`notification.rs`)이
+    /// 프레임당 1회 호출 — 재진입(훅이 다른 popup 을 닫음)을 지원하려면 호출자가
+    /// 반환값을 순회하는 동안 `state.popups` 를 다시 만질 수 있어야 하므로, 이 fn
+    /// 자체는 순회를 하지 않고 `mem::take` 만 한다.
+    pub fn take_closed_queue(&mut self) -> Vec<PopupId> {
+        std::mem::take(&mut self.closed_queue)
     }
 
     /// Check if a popup is open.
@@ -577,5 +610,92 @@ impl PopupManager {
     /// Get mutable access to a popup's state.
     pub fn get_mut(&mut self, id: PopupId) -> Option<&mut PopupState> {
         self.popups.iter_mut().find(|p| p.id == id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DUMMY_ID: PopupId = "on_close_hook_test_dummy";
+
+    fn dummy(close_on_outside_click: bool) -> PopupState {
+        PopupState::new(DUMMY_ID, "dummy", egui::vec2(200.0, 100.0))
+            .with_close_on_outside_click(close_on_outside_click)
+    }
+
+    /// `close()` 는 호출 직전 `open` 이었던 popup 만 `closed_queue` 에 push 한다.
+    #[test]
+    fn close_pushes_to_queue_only_when_was_open() {
+        let mut mgr = PopupManager::new();
+        mgr.register(dummy(false));
+
+        // 아직 열지 않은 상태에서 close() — 중복 발화 방지 가드가 push 를 막아야 한다.
+        mgr.close(DUMMY_ID);
+        assert!(mgr.take_closed_queue().is_empty());
+
+        mgr.open(DUMMY_ID);
+        mgr.close(DUMMY_ID);
+        assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);
+    }
+
+    /// 이미 닫힌 popup 에 close() 를 다시 호출해도 큐가 다시 채워지지 않는다
+    /// (같은 프레임에 여러 경로가 겹쳐 호출돼도 훅이 중복 발화하지 않아야 함).
+    #[test]
+    fn close_on_already_closed_popup_does_not_repush() {
+        let mut mgr = PopupManager::new();
+        mgr.register(dummy(false));
+        mgr.open(DUMMY_ID);
+        mgr.close(DUMMY_ID);
+        assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);
+
+        mgr.close(DUMMY_ID); // 이미 닫힌 상태에서 재호출.
+        assert!(mgr.take_closed_queue().is_empty());
+    }
+
+    /// `take_closed_queue()` 는 호출 시점의 큐 내용을 비워서 반환한다 — 연속
+    /// 호출 시 두 번째는 항상 빈 벡터.
+    #[test]
+    fn take_closed_queue_drains() {
+        let mut mgr = PopupManager::new();
+        mgr.register(dummy(false));
+        mgr.open(DUMMY_ID);
+        mgr.close(DUMMY_ID);
+
+        assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);
+        assert!(mgr.take_closed_queue().is_empty());
+    }
+
+    /// close 경로 2(외부 클릭) — `PopupManager::draw()` 자체의 포인터 처리가
+    /// `self.close(id)` 를 거쳐 `closed_queue` 를 채우는지 확인
+    /// (`popup/draw.rs` 의 "Apply close" 블록). 이 경로는 `defs::all_defs()` 나
+    /// draw_fn 과 무관하게 매니저 내부에서만 일어나므로 더미 popup 으로 충분하다.
+    #[test]
+    fn outside_click_close_path_pushes_to_queue() {
+        let mut mgr = PopupManager::new();
+        mgr.register(dummy(true));
+        mgr.open_at_focused(DUMMY_ID, egui::pos2(500.0, 500.0));
+
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1920.0, 1080.0),
+            )),
+            ..Default::default()
+        };
+        // 팝업(rect ≈ [500,500]-[700,600]) 에서 멀리 떨어진 바깥 좌표 클릭.
+        raw.events.push(egui::Event::PointerButton {
+            pos: egui::pos2(10.0, 10.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+
+        drop(ctx.run(raw, |ctx| {
+            mgr.draw(ctx, &mut |_, _| {}, None);
+        }));
+
+        assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);
     }
 }

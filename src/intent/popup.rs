@@ -135,6 +135,37 @@ mod tests {
         assert!(!state.popups.is_open("test_popup"));
     }
 
+    /// close 경로 3(`UiIntent::ClosePopup`) — `state.popups.close()` 를 거쳐
+    /// `closed_queue` 를 채운다(= `on_close` 훅이 등록돼 있었다면 발화했을 지점).
+    /// 이전엔 이 경로가 `notification.rs` 의 뒷정리 블록 어디에도 안 걸렸다
+    /// (`state::popup_close_tests::close_intent_currently_skips_cleanup` 참고).
+    #[test]
+    fn close_intent_pushes_to_closed_queue() {
+        let mut state = make_state();
+        handle(
+            &mut state,
+            &dispatched_open("test_popup", OpenPopupMode::Default),
+        );
+        handle(&mut state, &dispatched_close("test_popup"));
+        assert_eq!(state.popups.take_closed_queue(), vec!["test_popup"]);
+    }
+
+    /// close 경로 4(`UiIntent::TogglePopup` while open) — close 분기도 경로 3 과
+    /// 동일하게 `state.popups.close()` 를 거쳐 `closed_queue` 를 채운다.
+    #[test]
+    fn toggle_close_branch_pushes_to_closed_queue() {
+        let mut state = make_state();
+        let toggle = UiIntent::TogglePopup {
+            id: "test_popup",
+            mode: OpenPopupMode::Default,
+        }
+        .from_user_shortcut("test");
+        handle(&mut state, &toggle); // open 분기 — 큐에 영향 없음.
+        assert!(state.popups.take_closed_queue().is_empty());
+        handle(&mut state, &toggle); // close 분기.
+        assert_eq!(state.popups.take_closed_queue(), vec!["test_popup"]);
+    }
+
     #[test]
     fn open_with_scope_uses_requested_scope() {
         let mut state = make_state();

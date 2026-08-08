@@ -15,7 +15,7 @@ pub(crate) mod pane;
 mod popup_close_tests;
 mod tab;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod workspace;
 
 pub mod command_palette;
