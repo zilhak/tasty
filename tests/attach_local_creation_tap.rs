@@ -1,4 +1,4 @@
-//! (docs/todo-conductor 04) attach 중인 workspace 에서 **로컬** IPC 로 새 tab 을
+//! attach 중인 workspace 에서 **로컬** IPC 로 새 tab 을
 //! 만들 때 그 새 터미널 surface 가 스트림 tap 대상에서 누락되는 회귀를 막는다.
 //!
 //! `tests/attach_list_dir_loopback.rs` 와 동일한 접근: attach client 는 실제 GUI 앱이

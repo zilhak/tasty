@@ -1644,7 +1644,7 @@ impl Core {
         engine.mark_layout_dirty();
 
         // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         let ws_id = engine.workspaces[ws_idx].id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
@@ -1718,7 +1718,7 @@ impl Core {
         engine.mark_layout_dirty();
 
         // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         let ws_id = engine.workspaces[ws_idx].id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
@@ -2679,7 +2679,7 @@ impl Core {
         engine.mark_layout_dirty();
 
         // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
             let ws_id = engine.workspaces[ws_idx].id;
             engine.tap_new_workspace_member(ws_id, surface_id, is_terminal);
@@ -2757,7 +2757,7 @@ impl Core {
         engine.mark_layout_dirty();
 
         // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (docs/todo-conductor 04: 로컬 생성 경로 gap — forward-op 경로와 대칭).
+        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         // adopt-terminal 은 항상 터미널을 승격한다(headless PTY).
         if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
             let ws_id = engine.workspaces[ws_idx].id;
@@ -3838,7 +3838,7 @@ mod mirror_structural_guard_tests {
         );
     }
 
-    /// (docs/todo-conductor 04) attach 로 이미 점유된 workspace 에서 로컬 생성 경로
+    /// attach 로 이미 점유된 workspace 에서 로컬 생성 경로
     /// (create-tab/split-pane/split-surface/adopt-terminal)로 새 터미널 surface 가
     /// 생기면, forward-op 경로(`forward_split_inherits_workspace_occupancy`)와 동형으로
     /// 그 hard 점유를 상속해야 한다 — 등록이 빠지면 attach 클라이언트에 그 새 surface 가

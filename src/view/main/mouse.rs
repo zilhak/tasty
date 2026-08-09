@@ -616,7 +616,7 @@ impl MainView {
         }
         if let Some(hovered) = self.hovered_link.clone() {
             // 이 press 는 링크오픈으로 로컬 소비된다 — release 는 tracking 앱에 보고하지
-            // 않는다(handle_left_release 참고, TODO 24). press 를 앱에 보고하지 않으면서
+            // 않는다(handle_left_release 참고). press 를 앱에 보고하지 않으면서
             // release 만 단독 전달되면 자체 URL-오픈 기능이 있는 TUI 앱이 중복으로 열 수
             // 있다.
             self.link_click_consumed = true;
@@ -784,7 +784,7 @@ impl MainView {
     /// 좌클릭 release: divider 드래그 확정(resize) 후, 트래킹 ON 이면 앱 보고,
     /// 아니면 로컬 선택 확정(빈 클릭은 커서 이동 + 선택 클리어). bypass 는 앱 보고 스킵.
     /// press 가 링크오픈으로 소비됐으면(`link_click_consumed`) 마찬가지로 앱 보고 스킵
-    /// (TODO 24 — press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
+    /// (press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
     fn handle_left_release(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
         if self.dragging_divider.is_some() {
             self.dragging_divider = None;
@@ -1143,7 +1143,7 @@ fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shi
 /// (`link_click_consumed`) 마찬가지로 안 보고한다 — press 는 tasty 가 로컬 소비(링크
 /// 오픈)했는데 release 만 앱에 단독 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim의
 /// `gx`/netrw, tmux url 플러그인 등)이 이를 클릭으로 해석해 링크를 중복으로 열 수
-/// 있다(TODO 24).
+/// 있다.
 fn should_report_release_to_app(
     tracking: tasty_terminal::MouseTrackingMode,
     link_click_consumed: bool,

@@ -57,7 +57,7 @@ pub struct MainView {
     /// (`left_select_bypass` 와 동일 패턴). true 면 release 를 tracking 앱에 보고하지
     /// 않는다 — press 를 tasty 가 로컬 소비(링크 오픈)했는데 release 만 앱에 단독
     /// 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim/tmux 등)이 이를 클릭으로
-    /// 해석해 링크를 중복으로 열 수 있다(TODO 24).
+    /// 해석해 링크를 중복으로 열 수 있다.
     pub(crate) link_click_consumed: bool,
     /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 셀 좌표. 드래그 motion 을 셀 단위로만
     /// 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
