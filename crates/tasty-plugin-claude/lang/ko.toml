@@ -3,6 +3,17 @@ desc = "Claude Code 자식 세션을 관리합니다"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
+"settings.continue_checklist_round_limit" = "continue-checklist 라운드 상한"
+
+[claude.checklist]
+body = """
+턴을 끝내기 전에 아래를 점검해라:
+1. 결과가 실제로 요청한 것을 충족하는가 — 하기 쉬운 것만 하고 넘어가지 않았는가?
+2. 코드나 설정을 바꿨다면 실제로 검증(빌드/테스트/실행)했는가 — 될 거라고 가정만 하지 않았는가?
+3. 후속 작업이 남아 있는가? 남아 있다면 무엇인지 밝혀라. 없다면 없다고 명시적으로 밝혀라.
+
+세 가지 모두 진짜로 충족됐다면 답변 어딘가에 정확히 다음 문자열을 포함해라: [[TASTY-CHECKLIST-DONE]] 그렇지 않다면 계속 작업해라.
+"""
 
 [settings.subtab]
 claude = "Claude Code"

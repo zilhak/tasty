@@ -13,11 +13,13 @@
 //! state 변이/host side effect 계산을 [`apply_hook`]으로 분리해 단위 테스트에서는
 //! host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
+use crate::checklist;
 use crate::error_scan::ErrorScanner;
 use crate::state::ClaudeState;
 
@@ -61,6 +63,7 @@ pub fn handle_claude_hook(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
+    data_dir: Option<&Path>,
 ) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
@@ -87,6 +90,13 @@ pub fn handle_claude_hook(
 
     if is_new_turn_event(event) {
         reset_dedupe_if_enabled(scanner, surface_id);
+    }
+
+    // `continue-checklist` 는 이 hook 이벤트 흐름과 별개 경로(`claude.checklist_hook`)로
+    // 발동하지만, 라운드 상태는 Claude Code 의 session_id 로 키잉되므로 세션 종료를
+    // 아는 이 지점(전역 `session-end`)에서 함께 정리해야 orphan 파일이 남지 않는다.
+    if event == "session-end" {
+        checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
     }
 
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))

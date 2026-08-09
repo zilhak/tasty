@@ -3,6 +3,17 @@ desc = "Claude Code の子セッションを管理します"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
+"settings.continue_checklist_round_limit" = "continue-checklist ラウンド上限"
+
+[claude.checklist]
+body = """
+ターンを終える前に確認せよ:
+1. 結果は本当に依頼内容を満たしているか — 楽な方法で済ませていないか?
+2. コードや設定を変更したなら、実際に検証(ビルド/テスト/実行)したか — 動くはずだと仮定しただけになっていないか?
+3. 残っている作業はあるか? あるなら何か明示せよ。ないなら、ないと明示的に述べよ。
+
+3 つすべてを本当に満たしているなら、返信のどこかに次の文字列をそのまま含めよ: [[TASTY-CHECKLIST-DONE]] そうでなければ作業を続けよ。
+"""
 
 [settings.subtab]
 claude = "Claude Code"

@@ -13,6 +13,7 @@
 //!
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
+mod checklist;
 mod error_scan;
 mod handlers;
 mod hook;
@@ -33,6 +34,7 @@ use serde_json::{Value, json};
 use state::ClaudeState;
 use tasty_plugin_sdk::{
     HostHandle, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
+    i18n::Translator,
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude";
@@ -50,19 +52,26 @@ struct ClaudePlugin {
     scanner: Arc<Mutex<ErrorScanner>>,
     /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
     rebooting: Arc<Mutex<HashSet<u32>>>,
-    /// Claude 세션 프로필 레지스트리·머지 산출물 저장 루트(`TASTY_PLUGIN_DATA_DIR`).
-    /// 호스트가 비정상적으로 주입하지 않았으면 `None` — `profile.rs` 가
-    /// 등록/부착 요청을 명시적 에러로 거부한다(결정 3: 조용히 다른 경로에 쓰지 않음).
-    profile_data_dir: Option<PathBuf>,
+    /// Claude 세션 프로필 레지스트리·머지 산출물(`profile.rs`) + `continue-checklist`
+    /// 라운드 상태·마커 파일(`checklist.rs`)의 공용 저장 루트(`TASTY_PLUGIN_DATA_DIR`).
+    /// 호스트가 비정상적으로 주입하지 않았으면 `None` — 두 모듈 모두 등록/부착/발동
+    /// 요청을 명시적 에러(또는 checklist 는 안전한 통과)로 처리한다(결정 3: 조용히
+    /// 다른 경로에 쓰지 않음).
+    plugin_data_dir: Option<PathBuf>,
+    /// `continue-checklist` 가 block 결정 시 `reason` 으로 주입하는 본문. 활성
+    /// locale 로 이미 해석된 완성 문자열(`main()` 에서 `Translator` 로 1 회 계산) —
+    /// 매 훅 발화마다 lang 파일을 다시 읽지 않는다.
+    checklist_body: String,
 }
 
 impl ClaudePlugin {
-    fn new(profile_data_dir: Option<PathBuf>) -> Self {
+    fn new(plugin_data_dir: Option<PathBuf>, checklist_body: String) -> Self {
         Self {
             state: ClaudeState::new(),
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
             rebooting: Arc::new(Mutex::new(HashSet::new())),
-            profile_data_dir,
+            plugin_data_dir,
+            checklist_body,
         }
     }
 }
@@ -85,9 +94,19 @@ impl Plugin for ClaudePlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            "claude.hook" => {
-                hook::handle_claude_hook(&mut self.state, &self.scanner, &ctx.host, &ctx.params)
-            }
+            "claude.hook" => hook::handle_claude_hook(
+                &mut self.state,
+                &self.scanner,
+                &ctx.host,
+                &ctx.params,
+                self.plugin_data_dir.as_deref(),
+            ),
+            "claude.checklist_hook" => checklist::handle_checklist_hook(
+                &ctx.host,
+                self.plugin_data_dir.as_deref(),
+                &self.checklist_body,
+                &ctx.params,
+            ),
             "claude.install" => match install::run_install() {
                 Ok(added) => Ok(json!({ "installed": added })),
                 Err(e) => Err(IpcMethodError::new(format!("install failed: {e}"))),
@@ -109,36 +128,34 @@ impl Plugin for ClaudePlugin {
                 &self.scanner,
                 &ctx.host,
                 &ctx.params,
-                self.profile_data_dir.as_deref(),
+                self.plugin_data_dir.as_deref(),
             ),
             "claude.respawn" => {
-                handle_respawn(&ctx.host, &ctx.params, self.profile_data_dir.as_deref())
+                handle_respawn(&ctx.host, &ctx.params, self.plugin_data_dir.as_deref())
             }
-            "claude.spawn" => {
-                handle_spawn(&ctx.host, &ctx.params, self.profile_data_dir.as_deref())
-            }
+            "claude.spawn" => handle_spawn(&ctx.host, &ctx.params, self.plugin_data_dir.as_deref()),
             "claude.reboot" => reboot::handle_reboot(
                 &self.rebooting,
                 &ctx.host,
                 &ctx.params,
-                self.profile_data_dir.as_deref(),
+                self.plugin_data_dir.as_deref(),
             ),
             // Claude 세션 프로필 레지스트리 — 등록/조회/해제/조합-해석. 전부
             // `TASTY_PLUGIN_DATA_DIR` 하위 저장(profile.rs, 결정 3).
             "claude.profile_register" => {
-                profile::handle_register(self.profile_data_dir.as_deref(), &ctx.params)
+                profile::handle_register(self.plugin_data_dir.as_deref(), &ctx.params)
             }
             "claude.profile_unregister" => {
-                profile::handle_unregister(self.profile_data_dir.as_deref(), &ctx.params)
+                profile::handle_unregister(self.plugin_data_dir.as_deref(), &ctx.params)
             }
             "claude.profile_list" => {
-                profile::handle_list(self.profile_data_dir.as_deref(), &ctx.params)
+                profile::handle_list(self.plugin_data_dir.as_deref(), &ctx.params)
             }
             "claude.profile_show" => {
-                profile::handle_show(self.profile_data_dir.as_deref(), &ctx.params)
+                profile::handle_show(self.plugin_data_dir.as_deref(), &ctx.params)
             }
             "claude.profile_current" => {
-                profile::handle_current(self.profile_data_dir.as_deref(), &ctx.host, &ctx.params)
+                profile::handle_current(self.plugin_data_dir.as_deref(), &ctx.host, &ctx.params)
             }
             other => Err(IpcMethodError::not_found(other)),
         }
@@ -209,6 +226,17 @@ fn main() -> anyhow::Result<()> {
     // 인증용) — 여기서 한 번 더 읽는 것은 단순 env var read 라 부작용 없이 중복
     // 가능하다. `data_dir` 이 없으면(비정상 기동) `None` 을 그대로 넘겨 profile.rs
     // 가 등록/부착을 명시적으로 거부하게 한다(결정 3).
-    let profile_data_dir = PluginEnv::load().ok().and_then(|env| env.data_dir);
-    tasty_plugin_sdk::run(ClaudePlugin::new(profile_data_dir))
+    let env = PluginEnv::load().ok();
+    let plugin_data_dir = env.as_ref().and_then(|e| e.data_dir.clone());
+    // 활성 locale 로 1 회 해석해 캐시한다 — 매 Stop 훅 발화마다 lang 파일을 다시
+    // 읽지 않는다. `Translator` 자체가 로드 실패 시 안전한 fallback(키 그대로 반환)
+    // 이므로 `env` 부재도 여기서 별도 분기 없이 자연히 처리된다.
+    let checklist_body = env
+        .map(|e| {
+            Translator::from_plugin_env(&e)
+                .t("claude.checklist.body")
+                .to_string()
+        })
+        .unwrap_or_else(|| "claude.checklist.body".to_string());
+    tasty_plugin_sdk::run(ClaudePlugin::new(plugin_data_dir, checklist_body))
 }

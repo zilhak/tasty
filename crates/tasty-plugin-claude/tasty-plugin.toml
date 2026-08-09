@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.28"
+version = "0.1.29"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -63,6 +63,12 @@ subcommands = [
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system." },
+    # `continue-checklist` 세션 프로필 전용 Stop 훅 — `install::MANAGED_HOOKS` 에는
+    # 넣지 않는다(전역 미설치, 프로필로 부착된 세션에서만 등록됨). `hook`
+    # subcommand 와 별개 IPC/파라미터 스키마를 쓴다 — Claude Code Stop 훅 payload
+    # 필드(session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로
+    # 받는다.
+    { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop hook for the continue-checklist session profile. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message)." },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
     # Claude 세션 프로필 레지스트리 (등록 → 이름으로 launch/spawn/respawn/reboot 의
     # --profile 에 부착). CLI 스키마가 subcommand 1단계만 지원해 `tasty claude profile
@@ -175,6 +181,19 @@ flags = [
     { name = "notification_type", type = "string", flag = "--notification-type", required = false, stdin_field = "notification_type", help = "Claude Code notification subtype (e.g. permission_prompt, idle_prompt). Auto-populated from stdin JSON 'notification_type'. Used to exclude idle_prompt from the needs_input signal." },
 ]
 
+[contributes.cli.arg_groups.checklist_hook_args]
+flags = [
+    { name = "session_id", type = "string", flag = "--session-id", required = false, help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id'." },
+    { name = "prompt_id", type = "string", flag = "--prompt-id", required = false, help = "Claude Code prompt/turn ID — changes on each new user turn, stays fixed within a blocked extension chain. Auto-populated from stdin JSON 'prompt_id'." },
+    # `bool` 이 아닌 `string` 인 이유: `CliArgType::Bool` 은 `extract_value` 가
+    # 항상 `Some(Value::Bool(get_flag 결과))` 를 반환해(부재를 표현할 방법이
+    # 없음) `merge_stdin_params` 의 "params 에 이미 키가 있으면 skip" 규칙과
+    # 만나면 stdin JSON 값이 절대 반영되지 않는다(항상 CLI 쪽 기본값 false 로
+    # 덮임). string 으로 받아 핸들러가 "true"/"false" 문자열을 직접 비교한다.
+    { name = "stop_hook_active", type = "string", flag = "--stop-hook-active", required = false, help = "Whether Claude Code's own stop-hook-active flag was set (sanity-check only, not the primary decision signal). Auto-populated from stdin JSON 'stop_hook_active' (\"true\"/\"false\")." },
+    { name = "last_assistant_message", type = "string", flag = "--last-assistant-message", required = false, help = "The assistant's last message text, searched for the completion sentinel. Auto-populated from stdin JSON 'last_assistant_message'." },
+]
+
 [contributes.cli.arg_groups.profile_register_args]
 positional = [
     { name = "name", type = "string", required = true, help = "Short name to register the profile under (lowercase letters, digits, '-', max 32 chars)" },
@@ -230,4 +249,16 @@ id = "spawn_child_warn_threshold"
 label_key = "claude.settings.spawn_child_warn_threshold"
 storage_key = "spawn_child_warn_threshold"
 default = 6.0
+min = 1.0
+
+# `continue-checklist` 라운드 상한(백스톱). Claude Code 자체엔 Stop 훅 block
+# 무한루프를 막는 호스트측 안전장치가 없음이 실측으로 확인됨 — 이 값이 없으면
+# 센티넬을 못 뱉는 세션이 영원히 block 될 수 있다. 기본값 3 은 "마무리 몇 스텝
+# 더 허용"과 "그래도 반드시 끊는다" 사이 절충.
+[[contributes.settings_pages.items]]
+kind = "number"
+id = "continue_checklist_round_limit"
+label_key = "claude.settings.continue_checklist_round_limit"
+storage_key = "continue_checklist_round_limit"
+default = 3.0
 min = 1.0

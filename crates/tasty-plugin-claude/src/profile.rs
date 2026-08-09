@@ -118,6 +118,39 @@ pub struct ProfileSummary {
     pub description: Option<String>,
 }
 
+/// host 가 코드로 내장한, 이름으로 attach 가능한 기본 프로필 — `MANAGED_HOOKS`
+/// listing 항목(조회 전용, 사용자가 attach 할 수 없음)과 달리 실제 attach 대상이
+/// 될 수 있는 `settings.json` 조각을 갖는다. 사용자가 같은 short-name 으로
+/// 등록하면(`registered/<name>.json`) 그쪽이 우선한다 — `resolve_names`/
+/// `show_registered` 모두 registered 파일을 먼저 찾고, 없을 때만 여기로
+/// fallback 한다.
+///
+/// `continue-checklist` — `Stop` 훅으로 `tasty claude checklist-hook` 을 등록한다.
+/// 명령 문자열은 `install::tasty_hook_command` 와 동일 형태(`$TASTY_SURFACE_ID`
+/// 가드 + bare `tasty` 바이너리명)를 그대로 따른다. 체크리스트 본문은 이 JSON
+/// 에 담기지 않는다 — hook 발화 시점에 `Translator` 로 해석된 문자열이 별도로
+/// `reason` 필드에 실린다(`checklist.rs`).
+fn host_default_profile(short_name: &str) -> Option<Value> {
+    match short_name {
+        "continue-checklist" => Some(json!({
+            "hooks": {
+                "Stop": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude checklist-hook || true"
+                    }]
+                }]
+            }
+        })),
+        _ => None,
+    }
+}
+
+/// `host_default_profile` 이 아는 이름 전체 — `list()` 이 attachable host 항목을
+/// 나열할 때 순회한다.
+const HOST_DEFAULT_PROFILE_NAMES: &[&str] = &["continue-checklist"];
+
 fn registered_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("profiles").join("registered")
 }
@@ -209,16 +242,31 @@ pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), Profi
     Ok(())
 }
 
-/// 등록된 프로필 원본 JSON 을 반환한다(`claude profile show`).
-pub fn show_registered(data_dir: Option<&Path>, short_name: &str) -> Result<Value, ProfileError> {
+/// 등록된 프로필 원본 JSON 을 반환한다(`claude profile show`). 반환하는 owner
+/// prefix(`"user"`/`"host"`)는 실제로 어느 출처에서 읽었는지를 그대로 반영한다 —
+/// 사용자 등록이 없어 host 기본값으로 fallback 됐는데도 `"user/..."` 라고 답하면
+/// 호출자가 실체와 다른 id 로 착각한다.
+pub fn show_registered(
+    data_dir: Option<&Path>,
+    short_name: &str,
+) -> Result<(&'static str, Value), ProfileError> {
     let data_dir = require_data_dir(data_dir)?;
     let path = registered_file(data_dir, short_name);
-    let text = std::fs::read_to_string(&path)
-        .map_err(|_| ProfileError::UnknownProfile(format!("user/{short_name}")))?;
-    serde_json::from_str(&text).map_err(|e| ProfileError::Io {
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        // 사용자 등록이 없으면 host 내장 기본 프로필로 fallback(사용자 등록 우선).
+        Err(_) => {
+            if let Some(value) = host_default_profile(short_name) {
+                return Ok(("host", value));
+            }
+            return Err(ProfileError::UnknownProfile(format!("user/{short_name}")));
+        }
+    };
+    let value = serde_json::from_str(&text).map_err(|e| ProfileError::Io {
         path: path.display().to_string(),
         message: e.to_string(),
-    })
+    })?;
+    Ok(("user", value))
 }
 
 /// 등록된 사용자 프로필 전체 + 내장 훅 listing 항목을 함께 나열한다
@@ -240,6 +288,15 @@ pub fn list(data_dir: Option<&Path>) -> Vec<ProfileSummary> {
             }),
         })
         .collect();
+
+    for name in HOST_DEFAULT_PROFILE_NAMES {
+        out.push(ProfileSummary {
+            id: format!("host/{name}"),
+            owner: "host",
+            attachable: true,
+            description: Some("built-in — attach by name like a registered profile".to_string()),
+        });
+    }
 
     if let Some(data_dir) = data_dir {
         let dir = registered_dir(data_dir);
@@ -279,8 +336,14 @@ pub fn resolve_names(data_dir: Option<&Path>, names_csv: &str) -> Result<PathBuf
     for name in &names {
         let path = registered_file(data_dir, name);
         if !path.is_file() {
-            // host/* 항목(내장 훅)은 attachable 하지 않다 — 사용자가 이름을
-            // 착각해 `--profile stop` 처럼 넘기면 "attach 불가" 를 명확히 알린다.
+            // 사용자 등록이 없으면 host 내장 attachable 기본 프로필로 fallback
+            // (예: `continue-checklist`) — 사용자 등록이 항상 우선한다.
+            if let Some(value) = host_default_profile(name) {
+                contents.push((format!("host/{name}"), value));
+                continue;
+            }
+            // host/* listing 전용 항목(내장 훅)은 attachable 하지 않다 — 사용자가
+            // 이름을 착각해 `--profile stop` 처럼 넘기면 "attach 불가" 를 명확히 알린다.
             if MANAGED_HOOKS.iter().any(|(_, token, _)| token == name) {
                 return Err(ProfileError::NotAttachable(format!("host/{name}")));
             }
@@ -383,8 +446,8 @@ pub(crate) fn handle_show(
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
     let name = require_name(params)?;
-    let content = show_registered(data_dir, name).map_err(to_ipc_err)?;
-    Ok(json!({ "id": format!("user/{name}"), "content": content }))
+    let (owner, content) = show_registered(data_dir, name).map_err(to_ipc_err)?;
+    Ok(json!({ "id": format!("{owner}/{name}"), "content": content }))
 }
 
 /// `claude.profile_current` — 이 세션(surface)에 지금 부착된 프로필 + 항상
@@ -424,7 +487,8 @@ mod tests {
         let src = tmp.path().join("src.json");
         std::fs::write(&src, r#"{"env":{"A":"1"}}"#).unwrap();
         register(Some(tmp.path()), "myprofile", &src).unwrap();
-        let shown = show_registered(Some(tmp.path()), "myprofile").unwrap();
+        let (owner, shown) = show_registered(Some(tmp.path()), "myprofile").unwrap();
+        assert_eq!(owner, "user");
         assert_eq!(shown["env"]["A"], "1");
     }
 
@@ -543,5 +607,45 @@ mod tests {
         let second_content: Value =
             serde_json::from_str(&std::fs::read_to_string(&second).unwrap()).unwrap();
         assert_eq!(second_content["env"]["A"], "2");
+    }
+
+    #[test]
+    fn resolve_host_default_profile_by_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = resolve_names(Some(tmp.path()), "continue-checklist").unwrap();
+        let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert!(content["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
+    fn resolve_prefers_user_registration_over_host_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(
+            tmp.path(),
+            "continue-checklist",
+            r#"{"env":{"OVERRIDDEN":"1"}}"#,
+        );
+        let path = resolve_names(Some(tmp.path()), "continue-checklist").unwrap();
+        let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(content["env"]["OVERRIDDEN"], "1");
+        assert!(content["hooks"].is_null());
+    }
+
+    #[test]
+    fn show_registered_falls_back_to_host_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (owner, content) = show_registered(Some(tmp.path()), "continue-checklist").unwrap();
+        assert_eq!(owner, "host");
+        assert!(content["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
+    fn list_includes_attachable_host_default_profile() {
+        let entries = list(None);
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.id == "host/continue-checklist" && e.attachable)
+        );
     }
 }

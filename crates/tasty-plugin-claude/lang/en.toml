@@ -3,6 +3,17 @@ desc = "Manage Claude Code child sessions"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
+"settings.continue_checklist_round_limit" = "continue-checklist round limit"
+
+[claude.checklist]
+body = """
+Before ending this turn, check:
+1. Does the result actually satisfy what was asked, not just what was easiest to do?
+2. If you changed code or config, did you verify it (build/test/run), not just assume it works?
+3. Is there follow-up work left? If so, say what it is. If not, say so explicitly.
+
+If all three are genuinely satisfied, include the exact string [[TASTY-CHECKLIST-DONE]] somewhere in your reply. Otherwise, keep working.
+"""
 
 [settings.subtab]
 claude = "Claude Code"
