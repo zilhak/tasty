@@ -44,7 +44,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag};
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
@@ -280,10 +280,11 @@ fn lexically_normalize(path: &Path) -> PathBuf {
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     let events = Parser::new_ext(source, parser_options())
         .map(rewrite_link_event)
-        .map(rewrite_code_block_event);
+        .map(rewrite_code_block_event)
+        .map(|event| rewrite_alert_blockquote_event(event, tr));
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events);
-    inject_alert_labels(&html, tr)
+    html
 }
 
 fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
@@ -351,16 +352,23 @@ fn sanitize_fence_lang(info: &str) -> String {
 // ── GFM alert blockquotes (`> [!NOTE]` etc) ────────────────────────────────────
 
 /// One of the 5 GitHub-style alert blockquote kinds. With [`Options::ENABLE_GFM`] on,
-/// pulldown-cmark's own `html.rs` recognizes `> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/
+/// pulldown-cmark's parser recognizes `> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/
 /// `[!CAUTION]` (first line of the blockquote, case-insensitive, nothing else on that line —
-/// `scanners.rs::scan_blockquote_tag`) and emits `<blockquote class="markdown-alert-<kind>">` —
-/// but *only* that class attribute; it never generates an icon or a label string (verified by
-/// reading `html.rs`'s `Tag::BlockQuote` match arm). This table fills that gap: [`ALERT_KINDS`]
-/// pairs each of the 5 fixed literal classes with an i18n label key ([`inject_alert_labels`])
-/// and a [`tasty_icons`] glyph + `Theme` accent color ([`alert_css`]).
+/// `scanners.rs::scan_blockquote_tag`) and exposes it as an AST event,
+/// `Event::Start(Tag::BlockQuote(Some(kind)))`. Its own `html.rs` writer would turn that into
+/// `<blockquote class="markdown-alert-<kind>">` and nothing else — no icon, no label string
+/// (verified by reading `html.rs`'s `Tag::BlockQuote` match arm) — but [`rewrite_alert_blockquote_event`]
+/// intercepts the event before that writer ever runs, so the writer's version of this tag never
+/// actually gets produced. This table pairs each kind with an i18n label key
+/// ([`rewrite_alert_blockquote_event`]) and a [`tasty_icons`] glyph + `Theme` accent color
+/// ([`alert_css`]).
 struct AlertKind {
-    /// The exact literal class pulldown-cmark's `html.rs` hardcodes for this kind — matched by
-    /// plain substring replacement in [`inject_alert_labels`], never user-influenced.
+    /// The pulldown-cmark AST kind this entry answers to — matched against the real
+    /// `Tag::BlockQuote(Some(kind))` event, never against rendered HTML text (see
+    /// [`rewrite_alert_blockquote_event`] doc for why that distinction matters).
+    kind: BlockQuoteKind,
+    /// The literal class this kind renders as (mirrors pulldown-cmark's own `html.rs` naming,
+    /// kept identical so existing CSS/snapshots don't need to change).
     class: &'static str,
     /// `Translator` key for the header label — must exist in `lang/{en,ko,ja}.toml`.
     label_key: &'static str,
@@ -378,9 +386,11 @@ struct AlertKind {
 
 /// note=info circle/blue, tip=filled star/green, important=bell/mauve, warning=alert
 /// triangle/yellow, caution=close-x/red. Adding a 6th kind (if pulldown-cmark ever grows one)
-/// means adding one entry here — [`inject_alert_labels`]/[`alert_css`] both just iterate it.
+/// means adding one entry here — [`rewrite_alert_blockquote_event`]/[`alert_css`] both just
+/// iterate it.
 const ALERT_KINDS: &[AlertKind] = &[
     AlertKind {
+        kind: BlockQuoteKind::Note,
         class: "markdown-alert-note",
         label_key: "markdown.alert.note",
         icon_body: tasty_icons::ALERT_CIRCLE.body,
@@ -388,6 +398,7 @@ const ALERT_KINDS: &[AlertKind] = &[
         accent: Theme::accent_primary,
     },
     AlertKind {
+        kind: BlockQuoteKind::Tip,
         class: "markdown-alert-tip",
         label_key: "markdown.alert.tip",
         icon_body: tasty_icons::STAR_FILL.body,
@@ -395,6 +406,7 @@ const ALERT_KINDS: &[AlertKind] = &[
         accent: Theme::accent_success,
     },
     AlertKind {
+        kind: BlockQuoteKind::Important,
         class: "markdown-alert-important",
         label_key: "markdown.alert.important",
         icon_body: tasty_icons::BELL.body,
@@ -402,6 +414,7 @@ const ALERT_KINDS: &[AlertKind] = &[
         accent: Theme::accent_agent,
     },
     AlertKind {
+        kind: BlockQuoteKind::Warning,
         class: "markdown-alert-warning",
         label_key: "markdown.alert.warning",
         icon_body: tasty_icons::ALERT_TRIANGLE.body,
@@ -409,6 +422,7 @@ const ALERT_KINDS: &[AlertKind] = &[
         accent: Theme::accent_warning,
     },
     AlertKind {
+        kind: BlockQuoteKind::Caution,
         class: "markdown-alert-caution",
         label_key: "markdown.alert.caution",
         icon_body: tasty_icons::CLOSE.body,
@@ -417,26 +431,46 @@ const ALERT_KINDS: &[AlertKind] = &[
     },
 ];
 
-/// Inject `data-label="<localized text>"` into every alert blockquote's opening tag (plain
-/// substring replacement — [`ALERT_KINDS`]' classes are the only 5 literal strings
-/// pulldown-cmark ever emits there, never user-controlled, so no HTML parsing is needed). CSS
-/// can't branch on the UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
+/// Rewrites a genuine `Event::Start(Tag::BlockQuote(Some(kind)))` — the AST event
+/// pulldown-cmark's *parser* (not its HTML writer) emits only when `scan_blockquote_tag`
+/// actually recognized a `[!NOTE]`-style tag in the source — directly into the fully-labeled
+/// opening tag, bypassing the library's own class-only writer entirely.
+///
+/// This intentionally does *not* run as a post-pass over the assembled HTML string (that was
+/// the previous, vulnerable design: a plain blockquote — `Tag::BlockQuote(None)` — is left
+/// completely alone, but any *other* Markdown construct that can produce literal
+/// `<blockquote class="markdown-alert-note">` text in the output — namely a raw HTML block/inline,
+/// which pulldown-cmark passes through byte-for-byte as `Event::Html`/`Event::InlineHtml`,
+/// entirely independent of `Tag::BlockQuote` — would have produced an indistinguishable string
+/// for a naive whole-document string search to match, letting a document author forge a
+/// trusted-looking Note/Tip/Warning header around arbitrary content. Matching on the AST event
+/// itself instead of the rendered string closes that gap: raw HTML never surfaces as this event
+/// no matter what text it contains, so it can never receive a `data-label`.
+///
+/// CSS can't branch on the UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
 /// whatever lands in the DOM), so the localized text has to be resolved here, at document
-/// generation time, and carried across the sanitize boundary as this attribute —
-/// [`sanitize_html`]'s `blockquote` allowlist must include `data-label` or this is stripped.
-/// Must run before [`sanitize_html`] (called from [`unsafe_content_html`]).
-fn inject_alert_labels(html: &str, tr: &Translator) -> String {
-    let mut out = html.to_string();
-    for kind in ALERT_KINDS {
-        let from = format!(r#"<blockquote class="{}">"#, kind.class);
-        let to = format!(
-            r#"<blockquote class="{}" data-label="{}">"#,
-            kind.class,
-            attr_escape(tr.t(kind.label_key))
-        );
-        out = out.replace(&from, &to);
+/// generation time — [`sanitize_html`]'s `blockquote` allowlist must include `data-label` or
+/// this is stripped afterward regardless of origin.
+fn rewrite_alert_blockquote_event<'a>(event: Event<'a>, tr: &Translator) -> Event<'a> {
+    match event {
+        Event::Start(Tag::BlockQuote(Some(kind))) => {
+            let Some(alert) = ALERT_KINDS.iter().find(|a| a.kind == kind) else {
+                // All 5 `BlockQuoteKind` variants are covered above; unreachable in practice,
+                // but fall back to the library's own (label-less) class-only rendering rather
+                // than panicking if pulldown-cmark ever adds a 6th kind before this table does.
+                return Event::Start(Tag::BlockQuote(Some(kind)));
+            };
+            Event::Html(
+                format!(
+                    r#"<blockquote class="{}" data-label="{}">"#,
+                    alert.class,
+                    attr_escape(tr.t(alert.label_key))
+                )
+                .into(),
+            )
+        }
+        other => other,
     }
-    out
 }
 
 /// Minimal GFM-sized sanitize allowlist. Strips `<script>`, every inline event handler
@@ -448,14 +482,20 @@ fn inject_alert_labels(html: &str, tr: &Translator) -> String {
 /// (fenced-block language, already normalized to a plain identifier by
 /// [`rewrite_code_block_event`] — [`mermaid_script`] depends on that exact `language-<lang>`
 /// shape surviving sanitize), `sup`/`div` (fixed literal footnote classes the library itself
-/// writes — `footnote-reference`/`footnote-definition`/`footnote-definition-label` — never
-/// user-controlled), and `blockquote` (one of [`ALERT_KINDS`]' 5 fixed literal
-/// `markdown-alert-<kind>` classes, same "library-fixed, not user-controlled" shape). ammonia
-/// does not further validate `class` *values*, but none of these can carry executable content,
-/// so that's fine here. `blockquote` additionally allows `data-label` — [`inject_alert_labels`]'
-/// localized alert header text, read back by `theme_css`'s `content: attr(data-label)`; it's
-/// `attr_escape`d before injection, same escaping every other attribute value in this module
-/// gets.
+/// writes — `footnote-reference`/`footnote-definition`/`footnote-definition-label`), and
+/// `blockquote` (one of [`ALERT_KINDS`]' 5 fixed literal `markdown-alert-<kind>` classes).
+/// ammonia does not validate `class` *values* — a raw HTML block/inline in the source (passed
+/// through byte-for-byte by pulldown-cmark, independent of `Tag::BlockQuote`) can already carry
+/// any of these class strings verbatim, so a document author *can* make an arbitrary blockquote
+/// pick up the alert CSS's background/border/icon purely via `class`, same residual risk the
+/// `code`/`sup`/`div` allowances already accept — none of these carry executable content, so
+/// that's fine here. What the sanitizer's `class` allowlist does *not* by itself make possible
+/// is a forged `data-label` matching one of the real translated alert headers: that attribute is
+/// only ever set by [`rewrite_alert_blockquote_event`] from a genuine
+/// `Tag::BlockQuote(Some(kind))` AST event, never by matching rendered HTML text, so raw-HTML
+/// blockquotes always reach this allowlist with `data-label` absent (see that function's doc for
+/// why the distinction matters). `data-label`'s value is `attr_escape`d before injection, same
+/// escaping every other attribute value in this module gets.
 fn sanitize_html(unsafe_html: &str) -> String {
     use ammonia::Builder;
     use std::collections::{HashMap, HashSet};
@@ -514,8 +554,8 @@ fn sanitize_html(unsafe_html: &str) -> String {
     // footnote 마크업의 고정 리터럴 class(라이브러리 자체가 씀, 사용자 입력 아님).
     tag_attributes.insert("sup", ["class"].into_iter().collect());
     tag_attributes.insert("div", ["class"].into_iter().collect());
-    // alert blockquote — 고정 literal class(markdown-alert-<kind>) + inject_alert_labels 가
-    // 심은 localized data-label(attr_escape 済み).
+    // alert blockquote — 고정 literal class(markdown-alert-<kind>) + rewrite_alert_blockquote_event 가
+    // 진짜 AST 이벤트에서만 심는 localized data-label(attr_escape 済み).
     tag_attributes.insert("blockquote", ["class", "data-label"].into_iter().collect());
 
     Builder::default()
@@ -1394,6 +1434,44 @@ mod tests {
         assert!(out.contains("<blockquote>"), "got: {out}");
         assert!(!out.contains("class="), "got: {out}");
         assert!(!out.contains("data-label"), "got: {out}");
+    }
+
+    #[test]
+    fn raw_html_blockquote_spoofing_an_alert_class_gets_no_data_label() {
+        // Adversarial regression for the vulnerability Gate4 flagged: a document author writes
+        // a *raw HTML* blockquote (CommonMark HTML block type 6 — `blockquote` is one of the
+        // block-level tags eligible for verbatim passthrough) carrying one of the 5 literal
+        // alert classes directly, with no `[!NOTE]`-style tag anywhere. pulldown-cmark passes
+        // this through byte-for-byte as `Event::Html`, entirely bypassing `Tag::BlockQuote` —
+        // it must never be mistaken for a genuine alert and must never receive a `data-label`
+        // (a forged label matching real translated alert text is what makes the spoof
+        // convincing; without it there's no fake header text, just an inert class string).
+        let source = "Intro\n\n\
+<blockquote class=\"markdown-alert-note\">Spoofed trustworthy-looking note</blockquote>\n\n\
+Outro\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(
+            !out.contains("data-label"),
+            "raw HTML blockquote must never receive a data-label, got: {out}"
+        );
+        // The raw HTML itself still passes through verbatim (that's pulldown-cmark's own raw
+        // HTML block behavior, unrelated to this fix) — confirms this is testing the real
+        // spoofing vector and not a source the parser silently dropped.
+        assert!(
+            out.contains(r#"<blockquote class="markdown-alert-note">Spoofed trustworthy-looking note</blockquote>"#),
+            "expected the raw HTML to survive unmodified pre-sanitize, got: {out}"
+        );
+
+        // A genuine alert elsewhere in the *same* document must still be labeled correctly —
+        // proves this isn't a blanket "never label anything" regression, just a refusal to
+        // label anything that didn't come from a real `Tag::BlockQuote(Some(kind))` event.
+        let mixed = format!("{source}\n> [!NOTE]\n> a real one\n");
+        let mixed_out = unsafe_content_html(&mixed, &Translator::default());
+        assert_eq!(
+            mixed_out.matches("data-label").count(),
+            1,
+            "exactly the genuine alert should get a data-label, got: {mixed_out}"
+        );
     }
 
     #[test]
