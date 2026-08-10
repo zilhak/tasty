@@ -473,6 +473,10 @@ impl OccupancyRegistry {
     pub fn force_detach_workspace(&mut self, workspace_id: WorkspaceId) -> Option<AttachClientId> {
         let lock = self.workspace_locks.remove(&workspace_id)?;
         self.clear_workspace_members(workspace_id);
+        tracing::debug!(
+            "attach: force_detach_workspace workspace={workspace_id:?} holder={:?}",
+            lock.holder
+        );
         self.notify_detached(lock.holder, "force_detach_workspace");
         Some(lock.holder)
     }

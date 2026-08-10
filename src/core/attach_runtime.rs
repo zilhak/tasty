@@ -887,6 +887,25 @@ pub(crate) fn execute_forwarded_structural_op(
         return Ok(None);
     };
     let Some(idx_after) = engine.find_workspace_index_for_id(ws_id) else {
+        // workspace 자체가 cascade 로 purge 됐다(예: mirror 의 마지막 surface 를
+        // 닫아 "Case 4: last pane in workspace" 가 워크스페이스를 통째로 지운 경우,
+        // `core::mod::close_case_workspace`). mirror 로 반영할 트리가 더 없으므로
+        // delta 로 되살리려 하지 않고, 이미 있는 강제 detach 통지 경로를 태워 holder
+        // 를 정상적으로 끊는다 — `force_detach_workspace` 가 holder 에게 Control
+        // "force_detached" + `Detach` 프레임을 push 하고 `workspace_locks`/
+        // `surface_locks`/`surface_to_workspace` 를 함께 정리한다(purge 된 workspace
+        // 를 가리키는 stale lock 방지).
+        //
+        // 순서 주의: 이 push 는 호출측(`event_handler.rs`/`boot.rs`)이 아직 보내지
+        // 않은 `StructuralResult{ok:true}` 보다 **먼저** 소켓에 올라간다 — 이 함수가
+        // 반환된 뒤에야 호출측이 회신을 push 하기 때문이다. "result → delta" 로
+        // 문서화된 통상 순서와 다르지만, `StreamTag::Control` 의 "force_detached"
+        // 문자열을 읽는 즉시 reader(`attach_client.rs`)가 disconnected=true 로
+        // 세션을 끊고 그 뒤 프레임(뒤늦게 도착할 StructuralResult 포함)을 읽지
+        // 않으므로 무해하다 — forward 는 holder 본인만 보낼 수 있어(위 호출측의
+        // holder 검증) 자기 op 의 ack 를 못 받는 대신 더 명확한 강제분리 신호를
+        // 즉시 받는 셈이다.
+        engine.attach.force_detach_workspace(ws_id);
         return Ok(None);
     };
     let class = engine.workspaces[idx_after].classify_attach_surfaces();
@@ -2283,6 +2302,62 @@ mod forward_exec_tests {
             "holder 의 forward CloseSurface 는 hard-occupied 상태에서도 성공해야 한다"
         );
         assert_eq!(engine.terminals.iter().count(), before - 1);
+    }
+
+    /// 회귀 가드(mirror desync): workspace 의 마지막 surface 를 forward CloseSurface 로
+    /// 닫으면 `close_case_workspace`("Case 4: last pane in workspace")가 워크스페이스를
+    /// 통째로 purge 한다 — `execute_forwarded_structural_op` 이 실행 후 `ws_id` 로
+    /// 재조회하면 실패하는 지점. 이전에는 그냥 `Ok(None)`(delta 없음)을 반환해 mirror
+    /// client 화면이 갱신되지 않았다(재attach 전까지 존재하지 않는 workspace 를 계속
+    /// 보여줌). 이제는 그 대신 `force_detach_workspace` 를 태워 holder 에게 강제분리
+    /// 통지(Control "force_detached" + `Detach`)를 push 하고 `OccupancyRegistry` 의
+    /// stale lock 도 정리해야 한다.
+    #[test]
+    fn forward_close_last_surface_force_detaches_holder() {
+        use crate::adapters::production::stream_hub::StreamHub;
+        use crate::ipc::stream::StreamTag;
+        use std::time::Duration;
+
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine); // 단일 surface, 형제 없음
+        let ws_id = engine.workspaces[0].id;
+
+        let hub = StreamHub::new();
+        let holder = hub.alloc_id();
+        let rx = hub.register(holder);
+        engine.attach.set_notifier(hub);
+        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        engine
+            .attach
+            .acquire_workspace(ws_id, &all, &all, holder)
+            .expect("workspace 점유 획득");
+
+        let close = StructuralOp::CloseSurface { surface_id: a };
+        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+
+        assert!(
+            r.is_ok(),
+            "마지막 surface close forward 는 에러가 아니어야 한다"
+        );
+        assert!(
+            engine.find_workspace_index_for_id(ws_id).is_none(),
+            "workspace 는 purge 되어야 한다"
+        );
+
+        // recv_timeout — 회귀 시(force_detach_workspace 호출 누락) push 가 아예
+        // 없어 `recv()` 가 무기한 block 되므로, 테스트가 실패 대신 CI 를 통째로
+        // 멈추게 만든다. 동기 in-process 호출이라 프레임은 즉시 도착해야 한다.
+        let f1 = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("force_detached Control 프레임이 와야 한다");
+        assert_eq!(f1.tag, StreamTag::Control);
+        assert!(String::from_utf8_lossy(&f1.payload).contains("force_detached"));
+        let f2 = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Detach 프레임이 와야 한다");
+        assert_eq!(f2.tag, StreamTag::Detach);
+
+        assert_eq!(engine.attach.workspace_holder(ws_id), None);
     }
 
     /// forward 된 ConvertSurface 는 (비-mirror) 서버 워크스페이스에서 실제로
