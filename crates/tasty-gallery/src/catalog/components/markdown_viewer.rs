@@ -1,32 +1,37 @@
-//! `markdown_viewer` specimen — Markdown surface 의 host egui 패널 (Layouts).
+//! `markdown_viewer` specimen — Markdown surface 문서 디자인의 egui 근사 (Layouts).
 //!
-//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md` 참고): `crates/tasty-plugin-markdown` 이 **`egui_commonmark`
-//! 라이브러리**로 마크다운을 그린다(hand-rolled 렌더러 은퇴). 색은 전부 `egui::Visuals` 에서
-//! 읽으므로 plugin 이 Theme 시맨틱 토큰을 `Visuals`/text-style 에 주입해 디자인 토큰이 출력을
-//! 몬다. toolbar·헤더 없이 surface 타일 전체를 본문이 채운다.
+//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md`, [ADR-0065](../../../../../docs/adr/0065-markdown-webview-render-channel.md)
+//! 참고): `crates/tasty-plugin-markdown` 은 Stage B 부터 **native OS webview**(host 가 만드는
+//! overlay — WebKitGTK/WKWebView/WebView2)에 sanitize 된 HTML 문서를 올려 그린다. plugin 이
+//! `pulldown-cmark` 로 HTML 을 생성하고, Theme 에서 캡처한 색·크기·간격을 CSS custom property
+//! 로 주입한 `<style>` 을 문서에 인라인한다(`render.rs::theme_css`) — egui 렌더 채널이 아니므로
+//! host 가 pixel 단위로 관여하지 않는다.
 //!
-//! **library-driven 주석 (이 specimen 은 라이브러리 출력의 근사):** 아래 카탈로그는 갤러리가
-//! `egui_commonmark`/plugin 에 의존하지 않으므로 같은 토큰·계층을 **손으로 전사**한 것이다 —
-//! 라이브러리 실제 출력과 픽셀 동일성은 비목표. 라이브러리가 확정한 디자인 예외(정본
-//! `tokens/semantic.css:137-138,152`):
-//! - **heading 사다리는 라이브러리가 보간**한다 — `Heading`(prose-h1 20 앵커)↔`Body`(13) 사이를
-//!   H2..H6 이 자동 보간(per-H2 픽셀 지정 불가, prose-h2 토큰 제거됨). h2·h3 이 시각적으로
-//!   겹치는 것은 이 보간의 결과다.
-//! - **본문 leading override 불가**(line-height-prose 토큰 제거됨 — 라이브러리 소유).
-//! - **표**는 `Frame::group`+`Grid::striped` 로 그려 grid border(md-table-border, 불투명)·zebra
-//!   (md-table-row-bg-zebra)·cell fg(md-table-cell-fg)만 노출 — header 밴드/불투명 base fill/
-//!   per-cell 8·4px 패딩은 라이브러리 Grid 로 도달 불가(heading 보간과 동류의 라이브러리 제약).
-//! - inline bold 는 text-primary(strong) 승격으로 신호(egui 합성 weight 없음).
+//! **CSS-driven 주석 (이 specimen 은 CSS 출력의 근사):** 갤러리는 실제 webview 를 띄우지
+//! 않으므로(egui 카탈로그), 같은 토큰·계층을 **손으로 전사**한 것이다 — 실제 브라우저 렌더와
+//! 픽셀 동일성은 비목표. CSS 채널이므로 egui_commonmark 시절과 달리 아래는 더 이상 "라이브러리
+//! 제약"이 아니라 **plugin 이 스스로 결정한 디자인**이다:
+//! - **heading 사다리**: `render.rs::heading_sizes_px` 가 `font-size-prose-h1`(h1)↔
+//!   `font-size-body`(h6) 사이를 5단계 선형보간한다 — CSS 라 per-level 픽셀을 자유롭게 override
+//!   할 수 있지만, 현재는 이 선형보간을 디자인으로 채택했다(egui_commonmark 시절의 시각적
+//!   사다리를 유지). h2 근사 계수(0.835)는 이 선형보간의 근사치.
+//! - **본문 leading** 은 CSS `line-height` 로 완전히 제어 가능(라이브러리 제약 없음).
+//! - **표**는 실제 `<table>` — header 밴드(`md-table-header-bg`/`-fg`)·zebra·8/4px 셀 패딩
+//!   전부 CSS 로 직접 달성한다(egui `Grid::striped` 우회가 더 이상 필요 없음). 이 specimen 은
+//!   egui `Frame`+수동 grid 로 같은 시각 결과를 손으로 흉내낸다.
+//! - inline bold 는 CSS `font-weight` 로 실제 굵기 차이가 난다(specimen 은 egui 에 합성
+//!   weight 가 없어 text-primary 승격으로만 신호).
 //!
-//! **인라인 이미지** (`![alt](path)`) — `egui_commonmark` 의 `load-images` feature +
-//! `render.rs` 의 base_dir 앵커로 상대경로 이미지를 실제로 로드해 그린다
-//! (`docs/plugins/markdown/index.md` "인라인 이미지" 절). 이 specimen 은 파일 I/O 없이
-//! placeholder rect 로 근사한다 — 아래 `image_block`.
-
-use std::cell::RefCell;
+//! **주소창**: 더 이상 공유 `PathField` egui 위젯이 아니다 — HTML 문서 자체에 내장된
+//! `<input>`+`<button>`(`render.rs::addr_bar_html`/`nav_script`)이라 host egui 컴포넌트가
+//! 아니게 됐다. 이 specimen 은 그 HTML chrome 의 정적 근사만 그린다(라이브 PathField 소비 아님).
+//!
+//! **인라인 이미지** (`![alt](path)`) — 이제 `<base href="file:///…">` 로 상대경로를 앵커한
+//! 평범한 `<img>` 태그다(`render.rs::file_dir_uri`). 이 specimen 은 파일 I/O 없이 placeholder
+//! rect 로 근사한다 — 아래 `image_block`.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{PathField, Spinner, checkbox};
+use tasty_ui_widgets::{Spinner, checkbox};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -37,27 +42,18 @@ const DOC_W: f32 = 560.0;
 const TILE_W: f32 = 200.0;
 const TILE_H: f32 = 132.0;
 
-/// 주소창 바 폭 (필드/Go 높이는 공용 `PathField` 소유 — 디자인 40 바).
+/// 주소창 바 폭(HTML chrome 정적 근사 — `render.rs::addr_bar_html` 의 디자인 폭).
 const ADDR_BAR_W: f32 = 360.0;
 
-/// 최근 파일 후보(markdown 주소창 데모 — 플러그인 `recent.query` 응답의 근사).
-const MD_RECENT: &[&str] = &[
-    "/docs/readme.md",
-    "/docs/guide.md",
-    "/docs/architecture.md",
-    "~/work/tasty/CHANGELOG.md",
-];
-
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 0. 상단 주소창 chrome (03) — 공용 [`PathField`] 라이브 소비(markdown 컨텍스트: file
-    //    아이콘 + 최근파일 드롭다운). 비포커스=idle(경로 secondary), 클릭=editing(primary +
-    //    후보 드롭다운 + 키내비/이동/원복). idle/editing×explorer/markdown 전 매트릭스는
-    //    `prim_path_field` specimen 이 정적+라이브로 전시 — 여기선 markdown surface 컨텍스트만.
+    // 0. 상단 주소창 chrome — 더 이상 host egui 위젯(PathField)이 아니라 문서 HTML 에 내장된
+    //    `<input>`+`<button>`(`render.rs::addr_bar_html`) 이다. host 컴포넌트가 아니게 됐으므로
+    //    라이브 편집 상태(idle/editing)를 소비하지 않고, 그 HTML chrome 의 정적 근사만 그린다.
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         spec::cluster(
             ui,
             theme,
-            "address bar — shared PathField (click to edit)",
+            "address bar — HTML chrome (in-document)",
             |ui| {
                 address_bar(ui, theme);
             },
@@ -123,17 +119,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("addr bar", "40px · bg-sidebar · shared PathField (03)"),
+            ("addr bar", "40px · bg-sidebar · in-document HTML chrome"),
             (
                 "addr field",
-                "AutoComplete trigger + Go · idle secondary / edit primary",
+                "in-document <input>+<button> · nav-fragment scheme",
             ),
-            ("body", "13 · text-secondary · leading=library-owned"),
+            (
+                "body",
+                "13 · text-secondary · CSS line-height (full control)",
+            ),
             ("h1", "Heading anchor prose-h1 20 · text-primary"),
-            ("h2–h6", "library-interpolated 20→13 · strong"),
-            ("code", "mono · surface-raised · egui_extras highlight"),
-            ("link", "accent-primary · host-routed"),
-            ("table", "grid border + zebra (header band n/a)"),
+            ("h2–h6", "CSS-interpolated 20→13 · strong"),
+            ("code", "mono · surface-raised · language class preserved"),
+            ("link", "accent-primary · nav-fragment intercepted"),
+            ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
         ],
         &[
@@ -186,13 +185,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "A read-only Markdown surface — the plugin renders with egui_commonmark, injecting \
-         Theme tokens into egui Visuals so the colors follow the design. The heading ladder \
-         is interpolated by the library between the Heading anchor (prose-h1 20) and Body \
-         (13); per-level pixel sizes and body leading are library-owned (a confirmed design \
-         exception), and h2/h3 read alike. This specimen hand-transcribes the same tokens as \
-         an approximation of that output. Below the document: the heading type-scale, and the \
-         load-fail / empty / loading chrome that replaces a raw `Error:` body.",
+        "A read-only Markdown surface — the plugin renders sanitized HTML in a native OS \
+         webview (Stage B, ADR-0065), injecting Theme tokens as CSS custom properties so the \
+         colors and type scale follow the design. The heading ladder is a 5-step linear \
+         interpolation between the Heading anchor (prose-h1 20) and Body (13), fully \
+         controlled by the plugin's own CSS generator (no library constraint left) — h2/h3 \
+         still read alike by design choice, not limitation. This specimen hand-transcribes \
+         the same tokens as an approximation of that CSS output (the gallery does not embed \
+         a live webview). Below the document: the heading type-scale, and the load-fail / \
+         empty / loading chrome that replaces a raw `Error:` body.",
     );
 }
 
@@ -289,12 +290,12 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
-/// H2 근사 크기 — egui_commonmark 은 헤딩 사다리를 `Heading` 앵커(`prose-h1`)와 `Body`
-/// 사이에서 보간하며 per-H2 픽셀 토큰(`prose-h2`)은 은퇴했다. specimen 은 라이브러리의
-/// 레벨-1 보간 계수(0.835, `egui_commonmark_backend`)를 미러해 H2 크기를 근사한다.
+/// H2 크기 — `render.rs::heading_sizes_px` 가 `font-size-prose-h1`(h1)↔`font-size-body`(h6)
+/// 사이를 5단계로 선형보간한다(h1..h6, 5개 구간). h2 는 h1 에서 1구간 내려온 지점이므로
+/// 계수는 4/5 = 0.8 — specimen 은 이 계수를 그대로 미러해 H2 크기를 근사한다.
 fn md_h2_size(theme: &Theme) -> f32 {
     let min = theme.font_size_body.value();
-    min + (theme.font_size_prose_h1.value() - min) * 0.835
+    min + (theme.font_size_prose_h1.value() - min) * 0.8
 }
 
 /// heading 한 줄 — level 별 size/color/case (디자인 MD_H 전사).
@@ -454,12 +455,12 @@ fn task_row(ui: &mut egui::Ui, theme: &Theme, mut done: bool, text: &str) {
     });
 }
 
-/// 인라인 이미지 — 라이브러리가 실제로 그리는 raster 를 손으로 근사한다(갤러리는 파일
-/// I/O 를 하지 않는다). 실제 로드 경로: relative dest 는 plugin `render.rs` 가
-/// `CommonMarkViewer::default_implicit_uri_scheme` 로 base_dir 를 앵커해 `file://` URI 를
-/// 만들고, `egui_extras` file+image 로더(egui_commonmark 의 `load-images` feature)가 그
-/// URI 를 읽어 텍스처로 올린다. alt 텍스트는 라이브러리 기본값(`show_alt_text_on_hover`)
-/// 이 hover 툴팁으로 보여주지만, 정적 specimen 에서는 항상 보이는 캡션으로 대신 노출한다.
+/// 인라인 이미지 — webview 가 실제로 그리는 raster 를 손으로 근사한다(갤러리는 파일
+/// I/O 도, live webview 도 갖지 않는다). 실제 로드 경로: 문서 `<head>` 의
+/// `<base href="file:///…/">`(`render.rs::file_dir_uri`)가 상대경로 dest 를 앵커하고,
+/// 나머지는 평범한 `<img src>` 로 브라우저 엔진이 직접 로드한다(host 관여 없음). alt 텍스트는
+/// 표준 `<img alt>` 로 스크린리더/로드실패 fallback 에 쓰이지만, 정적 specimen 에서는 항상
+/// 보이는 캡션으로 대신 노출한다.
 fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {
     let (w, h) = (200.0, 120.0);
     egui::Frame::new()
@@ -791,61 +792,48 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// 주소창 라이브 데모 상태(호출측 소유 — PathField 계약). 갤러리 재-draw 간 유지되도록
-/// thread-local 로 보관한다.
-struct AddrDemo {
-    buf: String,
-    editing: bool,
-    active: Option<usize>,
-}
-
-thread_local! {
-    static ADDR_DEMO: RefCell<Option<AddrDemo>> = const { RefCell::new(None) };
-}
-
-/// 상단 주소창 chrome (03) — 공용 [`PathField`] 라이브 소비(markdown 컨텍스트). 하드롤
-/// 전사(구 `addr_field`/`addr_go`)를 폐기하고 본체 플러그인과 같은 위젯을 그대로 그린다:
-/// file leading/row 아이콘 + arrow-right Go + 최근파일 후보 드롭다운. idle=경로 secondary,
-/// 클릭=editing(primary + 드롭다운 + 키내비). 40px 바는 sidebar 프레임이 소유.
+/// 상단 주소창 chrome — Stage B 부터 host egui 위젯이 아니라 문서 HTML 에 내장된
+/// `<input>`+`<button>`(`render.rs::addr_bar_html`)이라, 더 이상 공유 `PathField` 를
+/// 라이브 소비하지 않는다(그 위젯 자체를 markdown 이 안 쓴다). 이 specimen 은 그 HTML
+/// chrome 을 정적으로 근사한다 — file 아이콘 + 경로 텍스트 + Go 아이콘, idle 상태 하나만.
 fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
-    // 아이콘 주입 — canonical FILE / ARROW_RIGHT 를 위젯이 넘긴 rect 에 그대로 그린다
-    // (색·크기는 위젯이 상태별 토큰으로 호출).
-    let file_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
-        icons::FILE.image(rect.height(), c).paint_at(ui, rect);
-    };
-    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
-        icons::ARROW_RIGHT
-            .image(rect.height(), c)
-            .paint_at(ui, rect);
-    };
-
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
         .show(ui, |ui| {
-            ADDR_DEMO.with(|s| {
-                let mut slot = s.borrow_mut();
-                let st = slot.get_or_insert_with(|| AddrDemo {
-                    buf: "/docs/readme.md".to_string(),
-                    editing: false,
-                    active: None,
-                });
-                PathField::new("md_viewer_addr")
-                    .placeholder("Go to file…")
-                    .empty_label("No recent files")
-                    .width(ADDR_BAR_W - theme.spacing_sm.value() * 2.0)
-                    .leading_icon(&file_icon)
-                    .row_icon(&file_icon)
-                    .go_icon(&go_icon)
-                    .show(
-                        ui,
-                        theme,
-                        &mut st.buf,
-                        &mut st.editing,
-                        &mut st.active,
-                        MD_RECENT,
-                        "/docs/readme.md",
-                    );
+            ui.set_width(ADDR_BAR_W);
+            ui.horizontal_centered(|ui| {
+                egui::Frame::new()
+                    .fill(theme.surface_raised().to_egui())
+                    .stroke(egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.border_default().to_egui(),
+                    ))
+                    .corner_radius(theme.corner_radius.value())
+                    .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 4))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let sz = theme.font_size_caption.value();
+                            let (rect, _) =
+                                ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                            icons::FILE
+                                .image(sz, theme.text_muted().to_egui())
+                                .paint_at(ui, rect);
+                            ui.add_space(theme.spacing_xs.value());
+                            ui.label(rich(
+                                theme,
+                                "/docs/readme.md",
+                                sz,
+                                theme.text_secondary().to_egui(),
+                            ));
+                        });
+                    });
+                ui.add_space(theme.spacing_xs.value());
+                let sz = theme.font_size_caption.value();
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                icons::ARROW_RIGHT
+                    .image(sz, theme.text_muted().to_egui())
+                    .paint_at(ui, rect);
             });
         });
 }
