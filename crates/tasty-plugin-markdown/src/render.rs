@@ -419,14 +419,16 @@ fn sanitize_html(unsafe_html: &str) -> String {
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
-    let surface = theme.surface("markdown");
     format!(
         r#":root{{
 --md-fg:{fg};
 --md-strong:{strong};
 --md-link:{link};
 --md-code-bg:{code_bg};
+--md-code-border:{code_border};
 --md-border:{border};
+--md-quote-bar:{quote_bar};
+--md-rule:{rule};
 --md-zebra:{zebra};
 --md-bg:{bg};
 --md-radius:{radius}px;
@@ -449,13 +451,13 @@ h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md
 a{{color:var(--md-link);}}
 strong{{color:var(--md-strong);font-weight:600;}}
 code{{background:var(--md-code-bg);border-radius:var(--md-radius);padding:0.1em 0.35em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
-pre{{background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
+pre{{background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-code-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
 pre code{{background:none;padding:0;}}
 table{{border-collapse:collapse;}}
 th,td{{border:var(--md-border-w) solid var(--md-border);padding:var(--md-space-xs) var(--md-space-sm);text-align:left;}}
 tr:nth-child(even){{background:var(--md-zebra);}}
-blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-border);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
-hr{{border:none;border-top:var(--md-border-w) solid var(--md-border);margin:var(--md-space-md) 0;}}
+blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
+hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
 img{{max-width:100%;}}
 ul,ol{{padding-left:1.5em;}}
 li input[type=checkbox]{{margin-right:0.4em;}}
@@ -467,9 +469,14 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         strong = theme.text_primary().to_hex(),
         link = theme.accent_primary().to_hex(),
         code_bg = theme.surface_raised().to_hex(),
+        code_border = theme.separator.to_hex(),
         border = theme.md_table_border().to_hex(),
+        quote_bar = theme.border_strong().to_hex(),
+        rule = theme.separator.to_hex(),
         zebra = theme.md_table_row_bg_zebra().to_hex(),
-        bg = surface.focused_bg.to_hex(),
+        // webview 렌더 경로엔 focus 신호가 없다 — surfaces.markdown.focused_bg 대신
+        // bg_app(=crust)을 문서의 유일한 배경으로 쓴다.
+        bg = theme.bg_app().to_hex(),
         radius = theme.corner_radius.value(),
         border_w = theme.border_width.value(),
         space_xs = theme.spacing_xs.value(),

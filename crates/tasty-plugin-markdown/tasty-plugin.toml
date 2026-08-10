@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.43"
+version = "0.1.44"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -71,7 +71,7 @@ derive_cwd = true
 
 # default_colors: F.H schema 데모.
 [surface_kinds.default_colors]
-focused_bg = "#1e1e2e"
+focused_bg = "#11111b"   # = crust, mocha.toml [surfaces.markdown].focused_bg 와 lockstep
 focused_fg = "#cdd6f4"
 unfocused_bg = "#181825"
 unfocused_fg = "#a6adc8"

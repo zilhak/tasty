@@ -40,13 +40,15 @@ Theme 토큰 매핑이다.
 
 | UI 요소 | CSS custom property | 토큰 / 비례 | 비고 |
 |---|---|---|---|
-| 문서 배경/전경 | `--md-bg` / `--md-fg` | surface(markdown).focused_bg · `text-secondary` | |
+| 문서 배경/전경 | `--md-bg` / `--md-fg` | `bg-app`(=crust) · `text-secondary` | webview 렌더 경로엔 focus 신호가 없어 `bg-app` 이 문서의 유일한 배경(`surfaces.markdown.focused_bg` 설정값은 이 경로에서 쓰지 않음) |
 | 주소창 바 | `#tasty-addr-bar` | `bg-sidebar` · 40px sticky top | `<input list>`+native `<datalist>`(최근목록)+Go `<button>` — 전부 문서 HTML |
 | 강조 텍스트 | `--md-strong` | `text-primary` | heading, `<strong>` |
 | 링크 | `--md-link` | `accent-primary` | nav-fragment 로 rewrite 된 `href` |
-| 코드 배경 | `--md-code-bg` | `surface-raised` | 인라인 `<code>` + `<pre>` |
+| 코드 배경/보더 | `--md-code-bg` / `--md-code-border` | `surface-raised` / `separator` | 인라인 `<code>` + `<pre>` |
+| 인용구 좌측 바/본문 | `--md-quote-bar` / (본문은 `--md-fg`) | `border-strong` | `blockquote` |
+| 구분선 | `--md-rule` | `separator` | `hr` |
 | 헤딩 크기 | `--md-h1`..`--md-h6` | `heading_sizes_px` — `font-size-prose-h1`(h1)↔`font-size-body`(h6) 5단계 선형보간 | CSS 라 per-level override 가능(현재는 선형보간을 디자인으로 채택) |
-| 표(GFM) 격자선 | `--md-border` | `md-table-border` | 실제 `<table>` border-collapse |
+| 표(GFM) 격자선 | `--md-border` | `md-table-border`(=`border-strong`) | 실제 `<table>` border-collapse — 문서 코드/인용 보더와는 별개 토큰(값은 같지만 의미상 독립) |
 | 표 zebra | `--md-zebra` | `md-table-row-bg-zebra` | `tr:nth-child(even)` |
 | 상태(에러) 제목 | inline hex(`danger`) | `accent-danger` | `.tasty-state-title` |
 | 상태(에러/빈 문서) 본문 | inline hex(`muted`) | `text-muted` | `.tasty-state-detail` |

@@ -137,6 +137,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "surface", theme.bg_panel().to_egui()),
+            TokenChip::new("bg-app", "document bg (crust)", theme.bg_app().to_egui()),
             TokenChip::new(
                 "text-primary",
                 "h1–h3 · bold",
@@ -201,7 +202,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 /// blockquote + code + hr.
 fn document(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
-        .fill(theme.bg_panel().to_egui())
+        .fill(theme.bg_app().to_egui()) // crust — the webview render path's only background (no focus signal)
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             theme.border_default().to_egui(),

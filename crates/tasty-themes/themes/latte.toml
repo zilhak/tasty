@@ -51,9 +51,9 @@ unfocused_bg = "#eff1f5"   # = base
 unfocused_fg = "#6c6f85"   # = subtext0
 
 [surfaces.markdown]
-focused_bg   = "#ffffff"
+focused_bg   = "#dce0e8"   # = crust (webview 렌더 경로의 유일한 배경 — focus 신호 없음)
 focused_fg   = "#4c4f69"
-unfocused_bg = "#e6e9ef"   # = mantle
+unfocused_bg = "#e6e9ef"   # = mantle (webview 경로에서 미사용, egui 경로 잔존값)
 unfocused_fg = "#6c6f85"
 
 [ansi]

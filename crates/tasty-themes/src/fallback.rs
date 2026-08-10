@@ -93,12 +93,12 @@ fn terminal_surface() -> SurfaceTheme {
     }
 }
 
-/// 빌트인 markdown SurfaceTheme. 검은 배경 + Mocha text/subtext.
-/// unfocused 가 mantle 인 게 terminal 과 다름 — markdown 은 한 단계 더 어두운 톤.
+/// 빌트인 markdown SurfaceTheme. crust 배경(webview 렌더 경로의 유일한 배경) + Mocha text/subtext.
+/// unfocused 가 mantle 인 게 terminal 과 다름 — markdown 은 한 단계 더 어두운 톤(webview 경로 미사용, 잔존값).
 fn markdown_surface() -> SurfaceTheme {
     SurfaceTheme {
-        focused_bg: HexColor::from_rgb(0, 0, 0),            // #000000
-        focused_fg: HexColor::from_rgb(0xcd, 0xd6, 0xf4),   // text
+        focused_bg: HexColor::from_rgb(0x11, 0x11, 0x1b), // crust
+        focused_fg: HexColor::from_rgb(0xcd, 0xd6, 0xf4), // text
         unfocused_bg: HexColor::from_rgb(0x18, 0x18, 0x25), // mantle
         unfocused_fg: HexColor::from_rgb(0xa6, 0xad, 0xc8), // subtext0
     }
