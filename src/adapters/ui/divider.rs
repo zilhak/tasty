@@ -104,7 +104,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
         painter.rect_stroke(
             egui_rect,
             0.0,
-            egui::Stroke::new(2.0, stroke_color),
+            egui::Stroke::new(props.theme.focus_ring_width.value(), stroke_color),
             egui::StrokeKind::Inside,
         );
     }

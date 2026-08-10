@@ -532,9 +532,11 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   notification — 전용 토큰 부재로 accent_warning() 값-보존").
 - **해소**: `NeedsInput` kind 추가로 노랑(`accent_warning`)이 진짜 의미(응답 대기)를 갖는
   전용 색이 되고, `Completion` 은 원래 의도대로 파랑(`accent_primary`)으로 바로잡혔다 —
-  값-보존이 필요 없어졌다(디자인 확정 시안이 이 정정을 명시적으로 지시함,
-  `.claude-workspace/conductor/design-staging/attention-visuals/design-tokens-and-rulings.md`
-  §43 "tab_bar.rs:386-394…Completion이 파랑, NeedsInput이 노랑").
+  값-보존이 필요 없어졌다. 두 kind 가 서로 다른 사용자 행동(완료 확인 vs 즉시 응답)을
+  요구하므로 둘을 구분되는 색으로 분리하는 것이 이번 kind 도입의 목적 자체이며, 노랑은
+  이미 `accent_warning` 으로 존재하던 "주의 필요" 시맨틱과 자연스럽게 맞고 파랑은
+  워크스페이스 배지·로고 등 기존 `accent_primary` 용례(중립적 정보 강조)와 맞아
+  완료 쪽에 배정했다.
 - **근거**: `src/adapters/ui/tab_bar.rs` `text_color` match(`AttentionKind` 분기). 상세는
   [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
   · [design-gallery-mapping §Attention kind](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062).

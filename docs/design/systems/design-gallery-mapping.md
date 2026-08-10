@@ -601,9 +601,10 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 디자인 `components/core/Badge.jsx`(variant `warning`) + `components/feedback/StatusDot.jsx`
 (status `needs-input`/`completion`) ↔ 본체 `src/adapters/ui/{divider,tab_bar,sidebar/view}.rs`
 ↔ 갤러리 `catalog/components/{occupancy_borders,sidebar,tab_bar}.rs`(surfaces 섹션 기존
-specimen 확장 — 신규 파일 없음). 원본 요청문서 `design-request/attention-visual-definitions.md`,
-확정 시안은 `.claude-workspace/conductor/design-staging/attention-visuals/design-tokens-and-rulings.md`
-(로컬 아카이브, 토큰 값은 [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)).
+specimen 확장 — 신규 파일 없음). 요청·확정 절차는 [`ADR-0062`](../../adr/0062-attention-store-kind-aware-primitive.md)
+가 정한 kind-aware 모델을 그대로 따르며, 토큰 값은 [design-token-mapping §attention
+kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
+참조.
 
 | 디자인 컴포넌트/variant | 본체 함수 | 갤러리 함수 | 비고 |
 |---|---|---|---|
