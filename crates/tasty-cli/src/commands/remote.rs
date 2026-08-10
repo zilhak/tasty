@@ -42,7 +42,7 @@ pub enum RemoteCommands {
         /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10. `--profile` 과 상호배타.
         #[arg(long)]
         ssh: Option<String>,
-        /// 저장된 SSH 프로필명으로 원격 attach. `~/.tasty/ssh-profiles.toml` 의 프로필을
+        /// 저장된 프로필명으로 원격 attach. `~/.tasty/remote-profiles.toml` 의 프로필을
         /// resolve 해 user/port/identity/extra-options 를 결선한다. `--ssh` 와 상호배타.
         /// 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필 값으로 대체된다.
         #[arg(long)]
@@ -76,7 +76,7 @@ pub enum RemoteCommands {
         /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10. `--profile` 과 상호배타.
         #[arg(long)]
         ssh: Option<String>,
-        /// 저장된 SSH 프로필명으로 원격 생존 확인. `~/.tasty/ssh-profiles.toml` 의
+        /// 저장된 프로필명으로 원격 생존 확인. `~/.tasty/remote-profiles.toml` 의
         /// 프로필을 resolve 해 user/port/identity/extra-options 를 결선한다.
         /// `--ssh` 와 상호배타. 이 경우 `--remote-tasty`/`--remote-port-mode` 는
         /// 프로필 값으로 대체된다.
