@@ -707,6 +707,62 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn task_create_concurrency_limit_sets_semaphore_metadata() {
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-create",
+            "--workspace-id",
+            "1",
+            "--name",
+            "t",
+            "--command",
+            r#"{"kind":"run","command":["true"]}"#,
+            "--concurrency-limit",
+            "cap2",
+        ]);
+        assert_eq!(r.method, "agent.task_create");
+        assert_eq!(r.params["metadata"]["semaphore"]["name"], "cap2");
+    }
+
+    #[test]
+    fn task_create_without_concurrency_limit_has_no_metadata() {
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-create",
+            "--workspace-id",
+            "1",
+            "--name",
+            "t",
+            "--command",
+            r#"{"kind":"run","command":["true"]}"#,
+        ]);
+        assert!(r.params.get("metadata").is_none());
+    }
+
+    #[test]
+    fn task_create_concurrency_limit_merges_with_existing_metadata() {
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-create",
+            "--workspace-id",
+            "1",
+            "--name",
+            "t",
+            "--command",
+            r#"{"kind":"run","command":["true"]}"#,
+            "--metadata",
+            r#"{"foo":"bar"}"#,
+            "--concurrency-limit",
+            "cap2",
+        ]);
+        assert_eq!(r.params["metadata"]["foo"], "bar");
+        assert_eq!(r.params["metadata"]["semaphore"]["name"], "cap2");
+    }
+
+    #[test]
     fn webhook_register_inline_sequence_maps_to_ipc() {
         let r = req(&[
             "tasty",

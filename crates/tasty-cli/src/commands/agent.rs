@@ -49,6 +49,12 @@ pub enum AgentCommands {
         /// Metadata JSON (free-form, attached to the task).
         #[arg(long)]
         metadata: Option<String>,
+        /// Shorthand for `metadata.semaphore.name` — caps how many tasks tagged
+        /// with the same semaphore name run concurrently (the rest wait as
+        /// `ready` until a permit frees up). Merges into `--metadata` if both
+        /// are given; conflicts if `--metadata` already sets `semaphore`.
+        #[arg(long)]
+        concurrency_limit: Option<String>,
     },
     /// List tasks in a workspace.
     TaskList {

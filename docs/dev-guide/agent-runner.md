@@ -132,6 +132,35 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 **`holder == task.id` 컨벤션(강제)**: holder 가 task.id 와 다르면 *외부 도구가 직접 acquire 한 것* 으로 간주, 호스트 재시작 정화 대상에서 제외. 외부 점유 회수는 외부 도구 책임.
 
+### 동시성 제한 (concurrency limit)
+
+Semaphore 를 이 용도로 쓴다. 로컬 오케스트레이터(예: conductor 처럼 여러 task 를 동시에 굴리는 상위 도구)가 리소스가 약한 환경에서 "동시 실행 개수"에 상한을 두고 싶을 때 쓰는 패턴이다. `agent.rate_limit_*`(IPC dispatcher 미들웨어, 위 "rate_limit 미들웨어" 참조)는 *호출 빈도* 제한이고 `Local` caller 를 면제 대상에서 빼므로 이 목적에 맞지 않는다 — 여기서 쓰는 건 위 표의 `Semaphore` 통합이다.
+
+절차:
+
+1. 세마포어를 원하는 permit 수로 만든다: `agent semaphore-create --workspace-id 1 --name cap2 --permits 2`.
+2. 동시성을 묶고 싶은 task 들을 만들 때 각각 `--metadata '{"semaphore":{"name":"cap2"}}'` 를 붙인다(편의 플래그가 있으면 `--concurrency-limit cap2` 로 대체 가능 — 아래 "CLI 예" 참조).
+3. `metadata.semaphore` 를 안 붙인 task 는 이 제한과 무관하게 즉시 병렬 실행된다 — 세마포어는 **태그가 붙은 task 끼리만** 경쟁한다. 서로 다른 이름의 세마포어를 쓰면 그룹별로 독립된 상한을 걸 수 있다.
+
+동작(dispatch 게이트, 위 참조): permit 이 남아있는 동안은 태그된 task 가 즉시 `Running` 으로 전이하고, permit 이 바닥나면 dispatch 가 `Deferred` 를 반환해 `Ready` 상태를 유지한 채 다음 tick 에 재평가한다 — 큐잉이 자동이라 오케스트레이터가 직접 대기열을 관리할 필요가 없다. task 가 종결(Succeeded/Failed/Cancelled)되면 permit 이 자동 반환되고, 대기 중이던 다음 task 가 같은 tick 이후 자동으로 이어받는다.
+
+라이브 검증 예(2-permit 세마포어에 독립 task 4개, 각 4초 sleep):
+
+```sh
+tasty agent semaphore-create --workspace-id 1 --name cap2 --permits 2
+for i in 1 2 3 4; do
+  tasty agent task-create --workspace-id 1 --name "t$i" \
+    --command '{"kind":"run","command":["sleep","4"]}' \
+    --concurrency-limit cap2   # 또는 --metadata '{"semaphore":{"name":"cap2"}}'
+done
+tasty agent task-run --workspace-id 1 --action start
+tasty agent task-list --workspace-id 1   # 즉시 조회 시 2개만 running, 2개는 ready
+# … 4초 후
+tasty agent task-list --workspace-id 1   # 앞 2개가 끝나며 나머지 2개가 자동으로 running 전환
+tasty agent semaphore-list --workspace-id 1
+# 전부 종결 후 cap2 항목: permits_available == 2, holders: []
+```
+
 ### 호스트 재시작 정화 + 핸들 영속
 
 `held_permits`/`held_handles` 는 in-memory only이라 재시작 시 비지만, store 의 holders/handle 은 영속이라 leak 가능. `purge_and_reload_on_restart`(`src/core/agent/runner_thread.rs`)로 묶여 있고, **runner thread 없이도** 호출 가능하다 — 부팅 경로(위 "재시작 계약")와 `run_loop` 진입부(수동/plugin start) 양쪽이 이 함수 하나를 공유한다:
@@ -160,6 +189,13 @@ tasty agent task-run --workspace-id 1 --action stop      # 중단(자식 프로�
 ```
 
 `--action` 은 `clap::ValueEnum { Start, Stop, Status }` — 오타는 CLI 시점 거부.
+
+```sh
+tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["cargo","build"]}' \
+  --concurrency-limit cap2   # metadata.semaphore.name=cap2 를 자동 조립(위 "동시성 제한" 참조)
+```
+
+`--concurrency-limit` 는 `--metadata` 에 `metadata.semaphore = { name: <값> }` 하나를 채워 넣는 단축일 뿐이다 — `--metadata` 를 이미 쓰고 있으면 그 JSON 객체에 `semaphore` 키를 병합하고(다른 키는 보존), `--metadata` 가 이미 `semaphore` 를 담고 있으면(어느 쪽을 취할지 모호) 에러로 거부한다. `holder` 지정 등 더 세밀한 제어가 필요하면 이 플래그 대신 `--metadata '{"semaphore":{"name":"...","holder":"..."}}'` 를 직접 쓴다.
 
 ```sh
 tasty agent task-delete --workspace-id 1 --id t-...              # 참조 있으면 거부 + 참조자 목록

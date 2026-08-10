@@ -14,6 +14,7 @@ pub(super) fn agent_command_to_method_params(
             depends_on,
             on_failure,
             metadata,
+            concurrency_limit,
         } => {
             let mut command_val = parse_inline_or_file_json(cmd_spec, "--command");
             let warnings = inject_command_workspace_id(&mut command_val, *workspace_id);
@@ -21,6 +22,7 @@ pub(super) fn agent_command_to_method_params(
                 .as_deref()
                 .map(|s| parse_inline_or_file_json(s, "--metadata"))
                 .unwrap_or(serde_json::Value::Null);
+            let metadata_val = apply_concurrency_limit(metadata_val, concurrency_limit.as_deref());
             let on_failure_val = parse_on_failure(on_failure);
 
             let mut p = serde_json::json!({
@@ -404,6 +406,38 @@ fn parse_inline_or_file_json(s: &str, flag: &str) -> serde_json::Value {
             std::process::exit(1);
         }
     }
+}
+
+/// `--concurrency-limit <name>` 를 `metadata.semaphore.name` 으로 병합한다
+/// (`RunnerLoop` dispatch 가 읽는 `task.metadata.semaphore = { name, holder? }`
+/// 컨벤션의 CLI 단축 — 값 자체는 raw `--metadata` 로 넣는 것과 동일하다). `None` 이면
+/// `metadata_val` 그대로 통과. `--metadata` 가 이미 `semaphore` 키를 담고 있으면
+/// 어느 쪽을 취할지 모호하므로 에러로 거부한다.
+fn apply_concurrency_limit(
+    metadata_val: serde_json::Value,
+    concurrency_limit: Option<&str>,
+) -> serde_json::Value {
+    let Some(name) = concurrency_limit else {
+        return metadata_val;
+    };
+    let mut obj = match metadata_val {
+        serde_json::Value::Null => serde_json::Map::new(),
+        serde_json::Value::Object(map) => map,
+        _ => {
+            eprintln!(
+                "Error: --metadata must be a JSON object to combine with --concurrency-limit"
+            );
+            std::process::exit(1);
+        }
+    };
+    if obj.contains_key("semaphore") {
+        eprintln!(
+            "Error: --metadata already sets 'semaphore' — remove it or drop --concurrency-limit"
+        );
+        std::process::exit(1);
+    }
+    obj.insert("semaphore".to_string(), serde_json::json!({ "name": name }));
+    serde_json::Value::Object(obj)
 }
 
 /// `--on-failure` 인자 파싱:
