@@ -15,7 +15,8 @@ pub(super) fn agent_command_to_method_params(
             on_failure,
             metadata,
         } => {
-            let command_val = parse_inline_or_file_json(cmd_spec, "--command");
+            let mut command_val = parse_inline_or_file_json(cmd_spec, "--command");
+            let warnings = inject_command_workspace_id(&mut command_val, *workspace_id);
             let metadata_val = metadata
                 .as_deref()
                 .map(|s| parse_inline_or_file_json(s, "--metadata"))
@@ -38,6 +39,14 @@ pub(super) fn agent_command_to_method_params(
             p["on_failure"] = on_failure_val;
             if !metadata_val.is_null() {
                 p["metadata"] = metadata_val;
+            }
+            if !warnings.is_empty() {
+                p[super::CLI_WARNINGS_PARAMS_KEY] = serde_json::Value::Array(
+                    warnings
+                        .into_iter()
+                        .map(serde_json::Value::String)
+                        .collect(),
+                );
             }
             ("agent.task_create", p)
         }
@@ -341,6 +350,38 @@ fn parse_reducer_strategy(s: &str) -> serde_json::Value {
     } else {
         serde_json::json!({ "kind": s })
     }
+}
+
+/// `--command` JSON 에 `workspace_id` 가 없으면 `--workspace-id` 플래그 값을 채워
+/// 넣고, 이미 있는데 플래그 값과 다르면 플래그 값으로 덮어쓰며 경고 문구를 반환한다
+/// (플래그 값이 항상 우선 — 에러로 거부하지 않음).
+fn inject_command_workspace_id(
+    command_val: &mut serde_json::Value,
+    flag_workspace_id: u32,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let Some(obj) = command_val.as_object_mut() else {
+        return warnings;
+    };
+    match obj.get("workspace_id") {
+        None => {
+            obj.insert(
+                "workspace_id".to_string(),
+                serde_json::json!(flag_workspace_id),
+            );
+        }
+        Some(v) if v.as_u64() == Some(flag_workspace_id as u64) => {}
+        Some(v) => {
+            warnings.push(format!(
+                "--command JSON의 workspace_id({v})가 --workspace-id 플래그 값({flag_workspace_id})과 달라 {flag_workspace_id}로 덮어썼습니다"
+            ));
+            obj.insert(
+                "workspace_id".to_string(),
+                serde_json::json!(flag_workspace_id),
+            );
+        }
+    }
+    warnings
 }
 
 /// `--command` 같은 인자: 인라인 JSON 또는 `@path/to/file.json`.

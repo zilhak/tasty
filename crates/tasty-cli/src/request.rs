@@ -31,6 +31,11 @@ use super::{
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
+/// 서버로 보내지 않는 client-local 경고를 params 에 임시로 실어 나르는 예약 키.
+/// `run_client`(`run.rs`) 가 요청 전송 직전에 떼어내 실제 RPC params 에서 제거하고,
+/// 응답 출력 시 top-level `warnings` 필드로 병합한다.
+pub(crate) const CLI_WARNINGS_PARAMS_KEY: &str = "__cli_warnings";
+
 /// `tasty remote ...` → JsonRpcRequest 매핑. non-force/non-into_gui attach 는
 /// run_client 에서 raw 스트림으로 선처리되므로, 여기 도달하는 remote attach 는
 /// `--into-gui`(원격 GUI mirror 위임) 또는 `--force-detach`(이 서버에 붙은 원격

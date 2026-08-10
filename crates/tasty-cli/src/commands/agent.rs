@@ -30,7 +30,9 @@ pub enum AgentCommands {
         /// Display name.
         #[arg(long)]
         name: String,
-        /// TaskCommand as JSON (e.g. `{"kind":"run","command":["cargo","build"],"workspace_id":1}`).
+        /// TaskCommand as JSON (e.g. `{"kind":"run","command":["cargo","build"]}`).
+        /// `workspace_id` is auto-filled from `--workspace-id` if omitted; if present
+        /// and different, `--workspace-id` wins and a warning is returned.
         /// Accepts inline JSON or `@path/to/file.json`.
         #[arg(long)]
         command: String,

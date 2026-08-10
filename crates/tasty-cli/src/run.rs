@@ -97,6 +97,41 @@ fn line_json(value: &serde_json::Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
 
+/// 요청 params 에서 `request::CLI_WARNINGS_PARAMS_KEY` 예약 키를 떼어낸다 — 서버는
+/// 이 키를 모르므로 전송 전에 제거하고, 값은 응답 출력 시 병합할 수 있게 반환한다.
+fn take_cli_warnings(request: &mut tasty_ipc::protocol::JsonRpcRequest) -> Vec<String> {
+    let Some(obj) = request.params.as_object_mut() else {
+        return Vec::new();
+    };
+    obj.remove(super::request::CLI_WARNINGS_PARAMS_KEY)
+        .and_then(|v| v.as_array().cloned())
+        .map(|arr| {
+            arr.into_iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// client-local 경고를 응답 JSON 의 top-level `warnings` 필드로 병합한다. 응답이
+/// object 가 아니거나 경고가 없으면 아무것도 하지 않는다.
+fn merge_cli_warnings(value: &mut serde_json::Value, warnings: Vec<String>) {
+    if warnings.is_empty() {
+        return;
+    }
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "warnings".to_string(),
+            serde_json::Value::Array(
+                warnings
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+}
+
 /// `claude spawn` / `claude tell` / `codex spawn` / `codex tell` 같이 manifest 가
 /// `auto_wait` 를 선언한 명령. 1 차 IPC 응답을 line-delimited JSON 으로 출력한 뒤,
 /// `--no-wait` 가 아니면 wait IPC 를 chain 호출해 terminal_states 도달까지 block —
@@ -640,11 +675,15 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
 
     let mut conn = IpcConnection::new(stream)?;
 
-    let request = command_to_request(&command);
+    let mut request = command_to_request(&command);
+    let cli_warnings = take_cli_warnings(&mut request);
     let result = conn.send(&request);
 
     match result {
-        Ok(value) => format_output(&command, &value),
+        Ok(mut value) => {
+            merge_cli_warnings(&mut value, cli_warnings);
+            format_output(&command, &value)
+        }
         Err(e) => {
             let msg = e.to_string();
             if let Some(rest) = msg.strip_prefix("Error (") {
