@@ -46,6 +46,10 @@ impl AttachMeshSurface {
 /// 전용 필요라 이 클라이언트 경로에는 해당하지 않는다).
 fn intern_known_kind(kind: &str) -> &'static str {
     match kind {
+        // markdown 은 webview 채널로 전환되어(ADR-0065) `is_egui_mesh_allowed`
+        // 화이트리스트(`src/core/surface_registry/egui_mesh.rs`)에서 이미 빠졌다 —
+        // 서버가 이 값을 내려보내는 경로가 없어 이 분기는 도달하지 않는다. image/
+        // mesh_demo 와 동일 패턴을 유지하고 서버 쪽 문서 근거가 있어 남겨둔다.
         "markdown" => "markdown",
         "image" => "image",
         "mesh_demo" => "mesh_demo",
