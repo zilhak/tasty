@@ -76,12 +76,29 @@ pub enum NavIntent {
 
 /// Parser options mirroring GFM: tables, task lists, strikethrough, footnotes, definition
 /// lists. Shared by [`unsafe_content_html`] and any pre-scan.
+///
+/// - `ENABLE_YAML_STYLE_METADATA_BLOCKS`/`ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS` — hides
+///   leading `---`/`+++` frontmatter (Jekyll/Hugo/Obsidian/Zettlr convention) from the
+///   rendered body instead of letting it fall through to CommonMark's thematic-break/setext-
+///   heading misparse (`---\nkey: value\n---` → a bogus `<h2>key: value</h2>`). This is a
+///   pure hide, not a metadata panel — pulldown-cmark's HTML writer already treats
+///   `Tag::MetadataBlock` as non-writing (`html.rs`'s `in_non_writing_block`), so no extra
+///   event handling is needed here. Only recognized when the block is the very first thing
+///   in the source (CommonMark frontmatter rule) — a `---` later in the document still
+///   parses as an ordinary thematic break.
+/// - `ENABLE_SMART_PUNCTUATION` — always-on typographic substitution (curly quotes, en/em
+///   dash, ellipsis). No settings toggle: this viewer is a general document viewer, not a
+///   spec-literal CommonMark renderer, so the nicer default (matching Obsidian et al.)
+///   outweighs staying byte-identical to GitHub's rendering.
 fn parser_options() -> Options {
     Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_DEFINITION_LIST
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
+        | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS
+        | Options::ENABLE_SMART_PUNCTUATION
 }
 
 /// Everything [`render_document`] needs. A struct (rather than a long parameter list) since
@@ -965,6 +982,69 @@ mod tests {
     fn unsafe_content_html_leaves_anchor_links_untouched() {
         let out = unsafe_content_html("[jump](#section)");
         assert!(out.contains(r##"href="#section""##));
+    }
+
+    #[test]
+    fn yaml_frontmatter_at_document_start_is_hidden() {
+        let out = unsafe_content_html("---\nkey: value\n---\n\n# Body\n");
+        assert!(!out.contains("<hr"));
+        assert!(!out.contains("key: value"));
+        assert!(!out.contains("<h2"));
+        assert!(out.contains("<h1>Body</h1>"));
+    }
+
+    #[test]
+    fn toml_frontmatter_at_document_start_is_hidden() {
+        let out = unsafe_content_html("+++\nkey = \"value\"\n+++\n\n# Body\n");
+        assert!(!out.contains("<hr"));
+        assert!(!out.contains("key = "));
+        assert!(out.contains("<h1>Body</h1>"));
+    }
+
+    #[test]
+    fn thematic_break_mid_document_still_renders_as_hr() {
+        let out = unsafe_content_html("# Title\n\n---\n\nMore text\n");
+        assert!(out.contains("<hr"));
+        assert!(out.contains("<h1>Title</h1>"));
+        assert!(out.contains("More text"));
+    }
+
+    #[test]
+    fn smart_punctuation_converts_quotes_dashes_and_ellipsis() {
+        let out = unsafe_content_html("\"hello\" and 'test'\n");
+        assert!(out.contains('\u{201c}'));
+        assert!(out.contains('\u{201d}'));
+        assert!(out.contains('\u{2018}'));
+        assert!(out.contains('\u{2019}'));
+
+        let out = unsafe_content_html("a -- b and a --- b\n");
+        assert!(out.contains('\u{2013}'));
+        assert!(out.contains('\u{2014}'));
+
+        let out = unsafe_content_html("wait...\n");
+        assert!(out.contains('\u{2026}'));
+    }
+
+    #[test]
+    fn smart_punctuation_does_not_convert_inside_code() {
+        let out = unsafe_content_html("`--` stays literal\n");
+        assert!(out.contains("<code>--</code>"));
+
+        let out = unsafe_content_html("```\n--\n```\n");
+        assert!(out.contains("--\n"));
+        assert!(!out.contains('\u{2013}'));
+        assert!(!out.contains('\u{2014}'));
+    }
+
+    #[test]
+    fn escaped_punctuation_stays_literal() {
+        let out = unsafe_content_html("\\\"hello\\\"\n");
+        assert!(out.contains("\"hello\""));
+        assert!(!out.contains('\u{201c}'));
+
+        let out = unsafe_content_html("a \\-\\- b\n");
+        assert!(out.contains("a -- b"));
+        assert!(!out.contains('\u{2013}'));
     }
 
     #[test]
