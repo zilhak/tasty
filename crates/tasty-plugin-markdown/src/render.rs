@@ -288,9 +288,12 @@ fn lexically_normalize(path: &Path) -> PathBuf {
 /// need its own copy of that rewrite. `rewrite_code_block_event`/`rewrite_alert_blockquote_event`
 /// run first since neither touches `Text`/`Link` events, so their relative order doesn't matter.
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
+    let footnote_ref_totals = footnote_reference_totals(source);
+    let mut footnote_state = FootnoteState::default();
     let events: Vec<Event> = Parser::new_ext(source, parser_options())
         .map(rewrite_code_block_event)
         .map(|event| rewrite_alert_blockquote_event(event, tr))
+        .map(|event| rewrite_footnote_event(event, tr, &footnote_ref_totals, &mut footnote_state))
         .collect();
     let events = autolink_bare_urls(events)
         .into_iter()
@@ -652,6 +655,145 @@ fn rewrite_alert_blockquote_event<'a>(event: Event<'a>, tr: &Translator) -> Even
     }
 }
 
+// ── footnote backlinks + a11y (`[^name]` / `[^name]: ...`) ─────────────────────
+
+/// Per-render mutable state for [`rewrite_footnote_event`], threaded through the whole event
+/// stream via a single `.map()` closure capture (mirrors how [`pulldown_cmark::html`]'s own
+/// writer keeps a `numbers: HashMap<CowStr, usize>` internally — we need our own copy since we
+/// intercept these events *before* that writer ever sees them).
+#[derive(Default)]
+struct FootnoteState {
+    /// `name -> display number`, assigned the first time a name is seen (whichever comes
+    /// first in event order — a reference or the definition itself; footnote definitions can
+    /// legally appear *before* their first reference, so neither event kind can assume it's
+    /// first). Mirrors pulldown-cmark's own `self.numbers.len() + 1` / `or_insert` numbering
+    /// exactly, so the visible `[1]`/`[2]` markers match what the un-rewritten library would
+    /// have shown.
+    numbers: std::collections::HashMap<String, usize>,
+    /// `name -> how many `FootnoteReference` events for this name have been rewritten so far`
+    /// — drives the `fnref-<name>`/`fnref-<name>-2`/... suffix so multiple references to the
+    /// same footnote get distinct, individually-targetable ids.
+    seen_ref_counts: std::collections::HashMap<String, usize>,
+    /// The name of the `FootnoteDefinition` currently open, if any (`TagEnd::FootnoteDefinition`
+    /// carries no name of its own — checked against pulldown-cmark 0.12's `html.rs` — so the
+    /// name has to be stashed here on `Start` and consumed on `End`). Definitions never nest, so
+    /// a single slot is enough.
+    open_definition: Option<String>,
+}
+
+fn footnote_number(state: &mut FootnoteState, name: &str) -> usize {
+    let next = state.numbers.len() + 1;
+    *state.numbers.entry(name.to_string()).or_insert(next)
+}
+
+/// Total reference count per footnote name, computed via a full separate parse pass over `source`
+/// *before* the real rewriting pass runs. Needed because a `FootnoteDefinition`'s closing tag has
+/// to know how many backlinks to emit, but (as [`FootnoteState::open_definition`] documents) a
+/// definition can appear *before* some of its references in the event stream — by the time the
+/// single forward-only rewriting pass reaches `TagEnd::FootnoteDefinition`, later references
+/// simply haven't happened yet. Re-parsing is cheap relative to this plugin's existing
+/// whole-document-re-render-per-keystroke/theme-change architecture (module doc), so a second
+/// pass here is not a new order-of-magnitude cost.
+fn footnote_reference_totals(source: &str) -> std::collections::HashMap<String, usize> {
+    let mut totals = std::collections::HashMap::new();
+    for event in Parser::new_ext(source, parser_options()) {
+        if let Event::FootnoteReference(name) = event {
+            *totals.entry(name.to_string()).or_insert(0) += 1;
+        }
+    }
+    totals
+}
+
+/// Rewrites `Event::FootnoteReference` and the `Tag::FootnoteDefinition` start/end pair, same
+/// "intercept the real AST event, emit finished markup via `Event::Html`" shape as
+/// [`rewrite_alert_blockquote_event`] — chosen for the same reason: matching against fully
+/// rendered HTML text can't distinguish a genuine footnote from a raw-HTML block that merely
+/// looks like one, but matching the AST event can (pulldown-cmark passes raw HTML through as
+/// `Event::Html`/`Event::InlineHtml`, never `FootnoteReference`/`Tag::FootnoteDefinition`).
+///
+/// pulldown-cmark's own default markup (`html.rs`) is a starting point but has two gaps this
+/// closes: no id on the reference itself (so multiple references to one footnote all point at
+/// the same `href`, and a definition has no way to link back to *which* reference), and no
+/// backlink or `aria-label` at all. An **undefined** reference (`[^missing]` with no matching
+/// `[^missing]: ...`) never reaches this function as a `FootnoteReference` event in the first
+/// place — pulldown-cmark's parser only recognizes the construct when a matching definition
+/// exists; otherwise it falls back to plain `[`/`^missing`/`]` text (verified by dumping the
+/// event stream for an unmatched reference), so no special-case handling is needed here for that
+/// case — it degrades to literal text with zero risk of a panic.
+fn rewrite_footnote_event<'a>(
+    event: Event<'a>,
+    tr: &Translator,
+    ref_totals: &std::collections::HashMap<String, usize>,
+    state: &mut FootnoteState,
+) -> Event<'a> {
+    match event {
+        Event::FootnoteReference(name) => {
+            let name = name.to_string();
+            let number = footnote_number(state, &name);
+            let occurrence = {
+                let count = state.seen_ref_counts.entry(name.clone()).or_insert(0);
+                *count += 1;
+                *count
+            };
+            let safe = percent_encode_fragment(&name);
+            let ref_id = if occurrence == 1 {
+                format!("fnref-{safe}")
+            } else {
+                format!("fnref-{safe}-{occurrence}")
+            };
+            let aria = attr_escape(&tr.t_fmt("markdown.footnote.ref_aria", &number.to_string()));
+            Event::Html(
+                format!(
+                    r##"<sup class="footnote-reference" id="{ref_id}"><a href="#fndef-{safe}" aria-label="{aria}">{number}</a></sup>"##
+                )
+                .into(),
+            )
+        }
+        Event::Start(Tag::FootnoteDefinition(name)) => {
+            let name = name.to_string();
+            let number = footnote_number(state, &name);
+            let safe = percent_encode_fragment(&name);
+            state.open_definition = Some(name);
+            Event::Html(
+                format!(
+                    r#"<div class="footnote-definition" id="fndef-{safe}"><sup class="footnote-definition-label">{number}</sup>"#
+                )
+                .into(),
+            )
+        }
+        Event::End(TagEnd::FootnoteDefinition) => {
+            let name = state
+                .open_definition
+                .take()
+                .unwrap_or_else(|| String::from("unknown"));
+            let number = footnote_number(state, &name);
+            let safe = percent_encode_fragment(&name);
+            let total = *ref_totals.get(&name).unwrap_or(&0);
+            let mut backlinks = String::new();
+            for occurrence in 1..=total {
+                let ref_id = if occurrence == 1 {
+                    format!("fnref-{safe}")
+                } else {
+                    format!("fnref-{safe}-{occurrence}")
+                };
+                let aria = if total > 1 {
+                    tr.t("markdown.footnote.backlink_aria_nth")
+                        .replace("{0}", &number.to_string())
+                        .replace("{1}", &occurrence.to_string())
+                } else {
+                    tr.t_fmt("markdown.footnote.backlink_aria", &number.to_string())
+                };
+                backlinks.push_str(&format!(
+                    r##"<a href="#{ref_id}" aria-label="{}">↩</a>"##,
+                    attr_escape(&aria)
+                ));
+            }
+            Event::Html(format!("{backlinks}</div>\n").into())
+        }
+        other => other,
+    }
+}
+
 /// Minimal GFM-sized sanitize allowlist. Strips `<script>`, every inline event handler
 /// (`onerror=`, `onclick=`, …), and any `javascript:`-scheme attribute value — the sanitizer
 /// itself is the primary XSS defense (independent of the `classify_link` guard, which only
@@ -719,7 +861,13 @@ fn sanitize_html(unsafe_html: &str) -> String {
     .collect();
 
     let mut tag_attributes: HashMap<&str, HashSet<&str>> = HashMap::new();
-    tag_attributes.insert("a", ["href", "title", "id"].into_iter().collect());
+    // `aria-label` scoped to `a` only (not `generic_attributes`, which every tag would then
+    // get) — the two consumers are [`rewrite_footnote_event`]'s reference/backlink anchors,
+    // both `attr_escape`d before injection.
+    tag_attributes.insert(
+        "a",
+        ["href", "title", "id", "aria-label"].into_iter().collect(),
+    );
     tag_attributes.insert("img", ["src", "alt", "title"].into_iter().collect());
     tag_attributes.insert(
         "input",
@@ -1335,6 +1483,166 @@ mod tests {
         assert!(out.contains("footnote-reference"), "got: {out}");
         assert!(out.contains("footnote-definition"), "got: {out}");
         assert!(out.contains("A note."), "got: {out}");
+    }
+
+    fn real_translator() -> Translator {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("en.toml"), include_str!("../lang/en.toml")).unwrap();
+        Translator::load(dir.path(), "en")
+    }
+
+    #[test]
+    fn footnote_reference_and_backlink_are_wired_correctly() {
+        let source = "See[^1].\n\n[^1]: A note.\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(
+            out.contains(r#"id="fnref-1""#),
+            "reference should get id=fnref-1, got: {out}"
+        );
+        assert!(
+            out.contains(r##"href="#fndef-1""##),
+            "reference should link to the definition, got: {out}"
+        );
+        assert!(
+            out.contains(r#"id="fndef-1""#),
+            "definition should get id=fndef-1, got: {out}"
+        );
+        assert!(
+            out.contains(r##"href="#fnref-1""##),
+            "definition should carry exactly one backlink to the reference, got: {out}"
+        );
+        assert_eq!(
+            out.matches(r##"href="#fnref-1""##).count(),
+            1,
+            "a single reference should produce exactly one backlink, got: {out}"
+        );
+    }
+
+    #[test]
+    fn footnote_multiple_references_get_distinct_backlinks() {
+        // Same footnote referenced twice — the definition must carry two backlinks, each
+        // targeting its own reference occurrence, with no cross-contamination (e.g. both
+        // pointing at the same id, or the second reference silently reusing the first's id).
+        let source = "First[^a] and second[^a].\n\n[^a]: Shared note.\n";
+        let out = unsafe_content_html(source, &Translator::default());
+
+        assert!(out.contains(r#"id="fnref-a""#), "got: {out}");
+        assert!(out.contains(r#"id="fnref-a-2""#), "got: {out}");
+        assert_ne!(
+            out.matches(r#"id="fnref-a""#).count() + out.matches(r#"id="fnref-a-2""#).count(),
+            0
+        );
+
+        // Both references must point at the same definition.
+        assert_eq!(
+            out.matches(r##"href="#fndef-a""##).count(),
+            2,
+            "both references should link to the shared definition, got: {out}"
+        );
+
+        // The definition must carry exactly one backlink per reference occurrence, each
+        // pointing at its own distinct id.
+        assert_eq!(out.matches(r##"href="#fnref-a""##).count(), 1, "got: {out}");
+        assert_eq!(
+            out.matches(r##"href="#fnref-a-2""##).count(),
+            1,
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn footnote_name_with_special_chars_gets_safe_id() {
+        // Footnote names can contain whitespace/unicode (not valid verbatim in an HTML id) —
+        // percent-encoding (reusing `percent_encode_fragment`, the same helper nav-fragments and
+        // baked icon data URIs already use) keeps it a single-token, ASCII, collision-safe id.
+        let source = "See[^노트 1].\n\n[^노트 1]: Definition.\n";
+        let out = unsafe_content_html(source, &Translator::default());
+
+        // No raw space or raw unicode byte sequence should leak into an id/href attribute value.
+        assert!(
+            !out.contains(r#"id="fnref-노트 1""#),
+            "raw unicode/space must not appear verbatim in an id, got: {out}"
+        );
+        // The percent-encoded form must be internally consistent: whatever id the reference
+        // carries is exactly what the definition's href (and vice versa) target.
+        let safe = percent_encode_fragment("노트 1");
+        assert!(
+            out.contains(&format!(r#"id="fnref-{safe}""#)),
+            "got: {out} (expected safe id fnref-{safe})"
+        );
+        assert!(
+            out.contains(&format!(r##"href="#fndef-{safe}""##)),
+            "got: {out}"
+        );
+        assert!(out.contains(&format!(r#"id="fndef-{safe}""#)), "got: {out}");
+        assert!(
+            out.contains(&format!(r##"href="#fnref-{safe}""##)),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn undefined_footnote_reference_does_not_panic() {
+        // No matching `[^missing]: ...` definition anywhere — pulldown-cmark's parser itself
+        // never emits a `FootnoteReference` event for this (confirmed by dumping the raw event
+        // stream: it falls back to plain `[`/`^missing`/`]` text), so rewrite_footnote_event
+        // never even sees it. This just proves the whole pipeline degrades gracefully rather
+        // than panicking or losing content.
+        let source = "This has an[^missing] undefined reference.\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(!out.contains("footnote-reference"), "got: {out}");
+        assert!(out.contains("^missing"), "got: {out}");
+    }
+
+    #[test]
+    fn footnote_aria_labels_present_in_rendered_html() {
+        let tr = real_translator();
+        let source = "See[^1].\n\n[^1]: A note.\n";
+        let out = unsafe_content_html(source, &tr);
+        assert!(
+            out.contains(r#"aria-label="Jump to footnote 1""#),
+            "got: {out}"
+        );
+        assert!(
+            out.contains(r#"aria-label="Back to footnote 1""#),
+            "got: {out}"
+        );
+
+        // Survives sanitize_html's allowlist (`a` -> aria-label).
+        let sanitized = sanitize_html(&out);
+        assert!(
+            sanitized.contains(r#"aria-label="Jump to footnote 1""#),
+            "got: {sanitized}"
+        );
+        assert!(
+            sanitized.contains(r#"aria-label="Back to footnote 1""#),
+            "got: {sanitized}"
+        );
+    }
+
+    #[test]
+    fn footnote_aria_label_distinguishes_multiple_backlinks() {
+        let tr = real_translator();
+        let source = "First[^a] and second[^a].\n\n[^a]: Shared note.\n";
+        let out = unsafe_content_html(source, &tr);
+        assert!(
+            out.contains(r#"aria-label="Back to footnote 1, reference 1""#),
+            "got: {out}"
+        );
+        assert!(
+            out.contains(r#"aria-label="Back to footnote 1, reference 2""#),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn document_without_footnotes_renders_unaffected() {
+        let source = "# Title\n\nJust a normal paragraph, nothing special.\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(!out.contains("footnote"), "got: {out}");
+        assert!(!out.contains("fnref-"), "got: {out}");
+        assert!(!out.contains("fndef-"), "got: {out}");
+        assert!(out.contains("Just a normal paragraph"), "got: {out}");
     }
 
     #[test]

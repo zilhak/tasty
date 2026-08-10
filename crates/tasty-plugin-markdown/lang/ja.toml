@@ -46,6 +46,12 @@ important = "重要"
 warning = "警告"
 caution = "注意"
 
+# 脚注参照/backlinkアンカーのaria-label — render.rs::rewrite_footnote_event が参照。
+[markdown.footnote]
+ref_aria = "脚注{}へ移動"
+backlink_aria = "脚注{}から本文に戻る"
+backlink_aria_nth = "脚注{0}の{1}番目の参照に戻る"
+
 # プリセットエディタのフィールドラベル (ホストが t() で解決)。
 [preset.field]
 file = "ファイル"

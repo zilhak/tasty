@@ -108,6 +108,36 @@ pass 는 실제 마크업(다른 태그 시작/`SoftBreak` 등)이 끼어들기 
 `rewrite_link_event` 가 명시적 링크와 자동 생성 링크를 구분 없이 동일하게 nav-fragment 로 바꾼다
 (순서는 `unsafe_content_html` 의 주석 참조).
 
+## 각주 backlink · 접근성
+
+`Options::ENABLE_FOOTNOTES`(각주 `[^name]`/`[^name]: ...`)의 `pulldown-cmark` 기본 HTML 라이터는
+참조 지점에서 정의로 가는 링크만 만들고, 정의에서 참조 지점으로 되돌아가는 backlink 나
+`aria-label` 은 전혀 생성하지 않는다. `render.rs::rewrite_footnote_event` 가 실제
+`Event::FootnoteReference`/`Tag::FootnoteDefinition` AST 이벤트를 가로채(GFM alert 의
+`rewrite_alert_blockquote_event` 와 동일한 패턴 — 완성된 HTML 문자열이 아니라 파서 이벤트 자체를
+매칭해야, raw HTML 로 위장한 가짜 각주 마크업과 절대 혼동되지 않는다) 다음을 직접 심는다:
+
+- **참조 지점 고유 id** — `fnref-<safe-name>`(첫 참조), 같은 각주가 여러 번 참조되면
+  `fnref-<safe-name>-2`, `-3`... 순으로 순번이 붙는다. 참조 `<a>` 는 `#fndef-<safe-name>`(정의)로
+  링크한다.
+- **정의 끝 backlink** — 정의 `<div id="fndef-<safe-name>">` 안, 콘텐츠 뒤에 `<a href="#fnref-...">
+  ↩</a>` 를 참조 **횟수만큼** 추가한다(정의 하나에 backlink 하나만 있으면 어느 참조 지점으로
+  되돌아갈지 모호해진다). 총 참조 횟수는 렌더링 실행 전 `footnote_reference_totals` 가 `source` 를
+  한 번 더 파싱해 미리 센다 — 정의가 소스 상 참조보다 **앞에** 올 수 있어(`[^a]: ...`가 `[^a]`
+  참조들보다 먼저 오는 문서도 유효), 단일 순방향 패스만으로는 정의 종료 시점에 최종 참조 횟수를
+  알 수 없기 때문.
+- **`aria-label`** — 참조는 `markdown.footnote.ref_aria`("각주 N으로 이동"), backlink 는 참조가
+  1회면 `markdown.footnote.backlink_aria`("각주 N에서 본문으로 돌아가기"), 2회 이상이면
+  `markdown.footnote.backlink_aria_nth`("각주 N의 M번째 참조로 돌아가기")로 어느 참조인지 구분한다.
+  `lang/{en,ko,ja}.toml` 세 파일에 키가 있다. `sanitize_html` 은 `a` 태그에 한해 `aria-label` 을
+  허용한다(모든 태그가 아니라 실제 필요한 `a` 로 범위를 좁힘).
+- **id 안전화** — 각주 이름의 공백/유니코드는 HTML id 로 그대로 쓸 수 없어
+  `percent_encode_fragment`(nav-fragment/아이콘 data URI 와 동일한 헬퍼)로 인코딩한다 — 충돌 없는
+  단사 함수라 서로 다른 이름이 같은 id 로 뭉개지지 않는다.
+- **미정의 참조**(`[^missing]` 인데 매칭되는 정의가 없음)는 `pulldown-cmark` 파서 자체가
+  `FootnoteReference` 이벤트를 만들지 않고 `[`/`^missing`/`]` 평문으로 그대로 남긴다 — 크래시 없이
+  원본 텍스트로 자연 폴백.
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다

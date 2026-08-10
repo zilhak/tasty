@@ -46,6 +46,12 @@ important = "중요"
 warning = "경고"
 caution = "주의"
 
+# 각주 참조/backlink 앵커의 aria-label — render.rs::rewrite_footnote_event 가 조회.
+[markdown.footnote]
+ref_aria = "각주 {}(으)로 이동"
+backlink_aria = "각주 {}에서 본문으로 돌아가기"
+backlink_aria_nth = "각주 {0}의 {1}번째 참조로 돌아가기"
+
 # 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
 [preset.field]
 file = "파일"
