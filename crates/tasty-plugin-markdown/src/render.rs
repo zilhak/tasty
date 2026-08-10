@@ -34,6 +34,13 @@
 //!    a `<base href="file://<base_dir>/">` tag rather than per-`src` rewriting — simpler than
 //!    the old `image_uri_prefix` prefixing and, unlike it, resolves absolute local paths
 //!    correctly too (`<base>` only affects genuinely relative references).
+//! 5. A fenced ` ```mermaid ` block survives the pipeline above as plain
+//!    `<code class="language-mermaid">` — [`rewrite_code_block_event`]/[`sanitize_fence_lang`]
+//!    normalize the fence language into that exact class shape, and `sanitize_html`'s allowlist
+//!    lets `class` through on `code`. [`mermaid_script`] (trusted, plugin-authored — appended
+//!    after sanitization, like [`nav_script`], so it's never subject to the user-content
+//!    allowlist) then vendors `mermaid.js` inline and calls `mermaid.run` against that selector,
+//!    but only when the document actually has one (see call site in [`render_document`]).
 
 use std::path::{Path, PathBuf};
 
@@ -123,13 +130,22 @@ pub fn render_document(input: DocumentInput) -> String {
         sanitize_html(&unsafe_content_html(source))
     };
 
+    // 3.5MB 번들이라 mermaid 블록이 실제로 있는 문서에서만 삽입한다 — 대다수 문서는
+    // mermaid 를 쓰지 않으므로 매번 inline 하면 순수 낭비다.
+    let mermaid = if body_html.contains("language-mermaid") {
+        mermaid_script(theme.is_light)
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}<div id="tasty-md-body">{body_html}</div><script>{script}</script></body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{mermaid}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
         body_html = body_html,
         script = nav_script(file_path),
+        mermaid = mermaid,
     )
 }
 
@@ -284,12 +300,12 @@ fn rewrite_link_dest(dest: &str) -> String {
 /// into `<pre><code class="language-<lang>">` (pulldown-cmark 0.12 emits the class on `code`,
 /// not `pre` — checked against its `html.rs` source). This is defense-in-depth on top of
 /// `sanitize_html`'s allowlist (which would let *any* value through as long as the `class`
-/// attribute itself is allowed): a future mermaid fenced-code-block integration will key off
-/// this exact `language-<lang>` class, so the value must be predictable — arbitrary characters
-/// from user markdown (`​```rust"><script>…`) are stripped down to a plain identifier rather
-/// than passed through as-is (they can't break out of the attribute either way, since
-/// pulldown-cmark HTML-escapes the info string, but a predictable value matters for the
-/// upcoming consumer, not just for safety).
+/// attribute itself is allowed): [`mermaid_script`]'s `querySelector` keys off this exact
+/// `language-<lang>` class, so the value must be predictable — arbitrary characters from user
+/// markdown (`​```rust"><script>…`) are stripped down to a plain identifier rather than passed
+/// through as-is (they can't break out of the attribute either way, since pulldown-cmark
+/// HTML-escapes the info string, but a predictable value matters for that consumer, not just
+/// for safety).
 fn rewrite_code_block_event(event: Event<'_>) -> Event<'_> {
     match event {
         Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => Event::Start(Tag::CodeBlock(
@@ -319,8 +335,8 @@ fn sanitize_fence_lang(info: &str) -> String {
 ///
 /// `class` is allowed only on the three tags pulldown-cmark actually emits it on: `code`
 /// (fenced-block language, already normalized to a plain identifier by
-/// [`rewrite_code_block_event`] — a future mermaid integration depends on that exact
-/// `language-<lang>` shape surviving sanitize), and `sup`/`div` (fixed literal footnote
+/// [`rewrite_code_block_event`] — [`mermaid_script`] depends on that exact `language-<lang>`
+/// shape surviving sanitize), and `sup`/`div` (fixed literal footnote
 /// classes the library itself writes — `footnote-reference`/`footnote-definition`/
 /// `footnote-definition-label` — never user-controlled). ammonia does not further validate
 /// `class` *values*, but none of these three can carry executable content, so that's fine here.
@@ -551,6 +567,54 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
 }});
 }})();"#,
         file_path_json = serde_json::to_string(file_path).unwrap_or_else(|_| "\"\"".to_string()),
+    )
+}
+
+// ── mermaid ────────────────────────────────────────────────────────────────────
+
+/// Vendored `mermaid.js` UMD-equivalent bundle (see `assets/NOTICE.md` for version/license/
+/// source). Fetched once at packaging time — never over the network at runtime, matching
+/// Tasty's offline-first principle.
+const MERMAID_JS_RAW: &str = include_str!("../assets/mermaid.min.js");
+
+/// [`MERMAID_JS_RAW`] with any literal `</script` neutralized to `<\/script` (memoized — the
+/// source is ~3.5MB and this runs once per process, not per render). Necessary because the
+/// bundle is embedded verbatim inside an HTML `<script>` element: the HTML parser closes a
+/// script element on the first `</script` byte sequence it scans, regardless of JS string/
+/// comment context, so a literal occurrence inside the minified source (e.g. in a string
+/// constant) would truncate the script and break every diagram on the page. `\/` is a valid
+/// escape for `/` in JS string/regex literals, so the substitution is semantics-preserving.
+/// The vendored build has zero occurrences today (grep-verified when it was vendored), but this
+/// guards future re-vendors that might introduce one.
+fn mermaid_js_source() -> &'static str {
+    static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ESCAPED.get_or_init(|| MERMAID_JS_RAW.replace("</script", "<\\/script"))
+}
+
+/// Inline mermaid bundle + init/run script — only called when the document actually has a
+/// `language-mermaid` fenced block (see call site in [`render_document`]).
+///
+/// `mermaid_theme` mirrors mermaid's built-in `dark`/`default` palettes onto the host
+/// `Theme.is_light`. `reload_all_webviews` (`main.rs`) regenerates the whole document from
+/// scratch on `theme.changed`, so a fresh `is_light` gets baked in on every theme flip — no
+/// separate runtime re-theme path is needed.
+///
+/// `mermaid.run` is called with `querySelector: 'code.language-mermaid'` — the DOM already has
+/// every code block at this point (this script tag is emitted after `#tasty-md-body` in document
+/// order, so the HTML parser has already built those elements by the time it executes this
+/// `<script>`). `suppressErrors: true` plus a `.catch()` guard against a broken diagram killing
+/// page script execution: this exact vendored build's `run()` already renders every matched
+/// diagram independently inside an internal loop and only aggregates+rethrows *after* the loop
+/// completes (verified by reading the bundled source) — so a bad diagram never blocks the others
+/// and is simply left as its original unrendered code text; `suppressErrors` just stops that
+/// trailing rethrow from rejecting the returned promise, and `.catch()` is defense-in-depth for
+/// any other failure path (e.g. `mermaid.initialize` itself).
+fn mermaid_script(is_light: bool) -> String {
+    let mermaid_theme = if is_light { "default" } else { "dark" };
+    format!(
+        r#"<script>{js}</script><script>(function(){{try{{mermaid.initialize({{startOnLoad:false,theme:'{mermaid_theme}'}});mermaid.run({{querySelector:'code.language-mermaid',suppressErrors:true}}).catch(function(e){{console.error('mermaid render failed',e);}});}}catch(e){{console.error('mermaid init failed',e);}}}})();</script>"#,
+        js = mermaid_js_source(),
+        mermaid_theme = mermaid_theme,
     )
 }
 
@@ -922,5 +986,63 @@ mod tests {
             recent: &[],
         });
         assert!(html.contains("No such file"));
+    }
+
+    #[test]
+    fn render_document_inlines_mermaid_only_when_block_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let with_mermaid = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/diagram.md",
+            source: "```mermaid\ngraph TD; A-->B;\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(with_mermaid.contains(r#"class="language-mermaid""#));
+        assert!(with_mermaid.contains("mermaid.initialize"));
+        assert!(with_mermaid.contains("mermaid.run"));
+        assert!(with_mermaid.contains("querySelector:'code.language-mermaid'"));
+        assert!(with_mermaid.contains("suppressErrors:true"));
+
+        let without_mermaid = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "```rust\nfn main() {}\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(without_mermaid.contains(r#"class="language-rust""#));
+        assert!(!without_mermaid.contains("mermaid.initialize"));
+        assert!(!without_mermaid.contains("mermaid.run"));
+    }
+
+    #[test]
+    fn mermaid_script_picks_theme_from_is_light() {
+        assert!(mermaid_script(true).contains("theme:'default'"));
+        assert!(mermaid_script(false).contains("theme:'dark'"));
+    }
+
+    #[test]
+    fn mermaid_script_js_source_has_no_premature_script_close() {
+        // The vendored bundle is inlined verbatim inside an HTML <script> element — any literal
+        // `</script` in it (case-sensitive match is what browsers use for the raw-text-element
+        // end tag scan) would truncate the tag early and break the page. `mermaid_js_source`
+        // neutralizes that; this locks the invariant in regardless of what a future re-vendor
+        // introduces.
+        let js = mermaid_js_source();
+        assert!(!js.contains("</script"));
+    }
+
+    #[test]
+    fn mermaid_script_wraps_run_in_try_catch_with_console_error_fallback() {
+        let script = mermaid_script(false);
+        assert!(script.contains("try{"));
+        assert!(script.contains("catch(e){console.error"));
+        assert!(script.contains(".catch(function(e){console.error"));
     }
 }
