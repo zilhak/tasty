@@ -471,9 +471,12 @@ pub fn handle_task_graph(
                 for dep in &t.depends_on {
                     out.push_str(&format!("  \"{}\" -> \"{}\";\n", dep, t.id));
                 }
-                // Fallback.task/Reduce.inputs 도 depends_on 과 같은 암묵적 의존성
-                // 엣지(사이클 검출 대상, `TaskGraph::dfs_cycle`)라 시각화에도 반영한다
-                // — 단, depends_on 과 구분되게 점선/색으로 표시한다.
+                // Reduce.inputs 는 depends_on 과 같은 암묵적 의존성 엣지(사이클 검출
+                // 대상, `TaskGraph::dfs_cycle`)라 시각화에도 반영한다. Fallback.task 는
+                // `referenced_task_ids`(참조 무결성 검증 대상)일 뿐 `dfs_cycle` 이 보는
+                // 엣지가 아니다 — 사이클 검출 커버리지와 무관하게 관측 목적으로만 함께
+                // 그린다(A↔F 상호 fallback 같은 순환도 생성 시점에 막히지 않는다).
+                // depends_on 과 구분되게 점선/색으로 표시한다.
                 if let OnFailure::Fallback {
                     task: Some(fb_id), ..
                 } = &t.on_failure
@@ -516,10 +519,14 @@ pub fn handle_task_graph(
                     })
                 })
                 .collect();
-            // depends_on 외에 Fallback.task/Reduce.inputs 도 암묵적 의존성 엣지다
-            // (`TaskGraph::dfs_cycle` 이 사이클 검출에서 셋 다 순회) — 셋을 한
-            // 엣지 리스트에 합치되 `kind` 로 구분해, depends_on 만 보던 시각화가
-            // fallback/reduce 관계를 놓치지 않게 한다.
+            // depends_on/Fallback.task/Reduce.inputs 는 `referenced_task_ids`(참조
+            // 무결성 검증)가 보는 3종 참조다 — 셋을 한 엣지 리스트에 합치되 `kind` 로
+            // 구분해, depends_on 만 보던 시각화가 fallback/reduce 관계를 놓치지 않게
+            // 한다. 단, 사이클 검출(`TaskGraph::dfs_cycle`)은 이 중 depends_on/
+            // Reduce.inputs 만 순회한다 — Fallback.task 는 순회 대상이 아니라서, 예를
+            // 들어 A→(fallback:F)/F→(fallback:A) 처럼 서로를 fallback 으로 참조하는
+            // 순환은 생성 시점에 거부되지 않고 그대로 저장된다. 이 엣지들은 그 순환을
+            // 관측 가능하게 만들 뿐, 자동으로 막지는 않는다.
             let mut edges: Vec<Value> = Vec::new();
             for t in &tasks {
                 for dep in &t.depends_on {
