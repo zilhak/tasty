@@ -826,7 +826,9 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
 /// 사용자는 업그레이드 후 Alt/Cmd 표기가 바뀔 수 있음, 설정 > 일반 > 표시에서 다시
 /// 선택 가능). **JSON 직렬화 경로 전용**(`debug_state_json`) — 화면 렌더링(스트립
 /// 헤더·섹션 헤더)은 tofu box 위험이 있는 심볼 스타일을 텍스트가 아니라 아이콘으로
-/// 그려야 해서 [`combo_keycap_parts`] 로 분리됐다.
+/// 그려야 해서 [`combo_keycap_parts`] 로 분리됐다. 호출처가 `debug_state_json` 하나뿐이라
+/// release 빌드에는 포함하지 않는다.
+#[cfg(debug_assertions)]
 fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if c.ctrl {
