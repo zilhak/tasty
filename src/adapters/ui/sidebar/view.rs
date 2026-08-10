@@ -427,13 +427,20 @@ pub fn draw_full_sidebar_view(
                 // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
                 // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
                 for (sec_i, section) in sections.iter().enumerate() {
-                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-sm). 헤더 앞에
-                    // 두어 gap 이 이 섹션의 드롭존에 포함된다 (spans 는 end_y 연속 —
-                    // 이전 섹션 end_y 부터가 이 섹션이므로 gap 도 이쪽에 귀속).
+                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-md — 헤더가 밴드로
+                    // 승격되면서 space-sm(8)보다 한 단 넓혀졌다). 헤더 앞에 두어 gap 이 이
+                    // 섹션의 드롭존에 포함된다 (spans 는 end_y 연속 — 이전 섹션 end_y 부터가
+                    // 이 섹션이므로 gap 도 이쪽에 귀속).
                     if sec_i > 0 {
-                        ui.add_space(th.spacing_sm.value());
+                        ui.add_space(th.spacing_md.value());
                     }
-                    let header = draw_category_header(ui, th, &section.label, section.collapsed);
+                    let header = draw_category_header(
+                        ui,
+                        th,
+                        &section.label,
+                        section.collapsed,
+                        section.entries.len(),
+                    );
                     resize_priority_hovered |= header.hovered;
                     // 디자인 B: Alt+Shift 홀드 시 헤더 행 **우측 정렬** 키캡(섹션 번호). chevron
                     // 대체 아님 — chevron 은 접힘상태·auto-expand 회전 담당(load-bearing). 11번째+
@@ -474,8 +481,9 @@ pub fn draw_full_sidebar_view(
                         });
                     }
                     if !section.collapsed && !section.entries.is_empty() {
-                        // 목록 블록 상단 보더.
-                        draw_list_separator(ui, th, 0.0);
+                        // 목록 블록 상단 보더는 그리지 않는다 — 헤더 밴드의 bottom hairline이
+                        // 이미 그 경계를 그린다(이중선 방지, 디자인 "헤더 밑 첫 행의 top border
+                        // 는 그리지 말 것" 규칙).
                         // SC05: 키캡은 **active 카테고리**에서만, 그 카테고리 내 **로컬 인덱스**
                         // 로 표시(전역 인덱스 아님). 비활성 카테고리 행은 키캡 미표시 —
                         // 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(표시=동작).
@@ -999,21 +1007,30 @@ struct HeaderInteraction {
     hovered: bool,
 }
 
-/// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — chevron + 대문자 캡스
-/// 라벨. 접힘 시 chevron 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경.
-/// 좌클릭=접힘 토글, 우클릭=컨텍스트 메뉴 좌표. 라벨 스타일은 `draw_section_heading`
-/// 과 동일(모노 캡스, muted) 하고 좌측에 chevron 만 더한다. 디자인 padding:
-/// 상하=space-xs 대칭, 좌우=space-sm (섹션 간 간격은 헤더가 아니라 그룹 렌더의
-/// 섹션 간 add_space 가 담당).
+/// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — 밴드(bg-app 면 + 상/하
+/// hairline) + chevron + 대문자 캡스 라벨 + 우측 워크스페이스 카운트. 접힘 시 chevron
+/// 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경이 밴드 위에 얹힌다(밴드를
+/// 대체하지 않음). 좌클릭=접힘 토글, 우클릭=컨텍스트 메뉴 좌표. 라벨은 muted 에서
+/// secondary 로 승격됐다(행보다 아래로 읽히던 문제 수정) — egui UI 폰트에 합성 bold 가
+/// 없어(`Theme::sidebar_category_header_fg` 참고) weight 신호는 이 색 승격만으로 낸다.
+/// 디자인 padding: 상하=space-sm 대칭(기존 space-xs 에서 확대), 좌우=space-sm.
+///
+/// `count`(카테고리 소속 워크스페이스 수, 접힘 여부 무관 — 필터링 안 함)는 우측에 상시
+/// 노출한다. 디자인은 이 자리를 hover-reveal `+`(카테고리에 워크스페이스 추가) 버튼과
+/// 공유하고 hover 시 카운트가 페이드아웃하도록 규정하지만, 그 `+` 버튼 자체가 아직 이
+/// 코드베이스에 없어(grep 확인) 페이드아웃할 대상이 없다 — `+` 버튼이 실제로 추가될 때
+/// 이 자리에 hover 교대 로직을 함께 넣는다.
 fn draw_category_header(
     ui: &mut egui::Ui,
     th: &Theme,
     label: &str,
     collapsed: bool,
+    count: usize,
 ) -> HeaderInteraction {
-    let pad_top = th.spacing_xs.value();
-    let pad_bottom = th.spacing_xs.value();
-    let pad_left = th.spacing_sm.value();
+    let pad_top = th.sidebar_category_header_pad_y().value();
+    let pad_bottom = th.sidebar_category_header_pad_y().value();
+    let pad_left = th.sidebar_category_header_pad_x().value();
+    let pad_right = th.sidebar_category_header_pad_x().value();
     let gap = th.spacing_xs.value();
     let label_h = 18.0; // draw_section_heading 헤딩 행 높이와 동일.
     let total_h = pad_top + label_h + pad_bottom;
@@ -1021,12 +1038,26 @@ fn draw_category_header(
         egui::vec2(ui.available_width(), total_h),
         egui::Sense::click(),
     );
+    let border_w = th.border_width.value();
+    ui.painter()
+        .rect_filled(rect, 0.0, th.sidebar_category_header_bg().to_egui());
+    let border = th.sidebar_category_header_border().to_egui();
+    ui.painter().hline(
+        rect.x_range(),
+        rect.min.y,
+        egui::Stroke::new(border_w, border),
+    );
+    ui.painter().hline(
+        rect.x_range(),
+        rect.max.y,
+        egui::Stroke::new(border_w, border),
+    );
     if resp.hovered() {
         ui.painter()
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
     let row_center_y = rect.min.y + pad_top + label_h / 2.0;
-    // chevron 12px, muted. 접힘=우향, 펼침=하향 (디자인 rotate(90deg) 를 아이콘 교체로).
+    // chevron 12px. 접힘=우향, 펼침=하향 (디자인 rotate(90deg) 를 아이콘 교체로).
     let chevron_size = 12.0;
     let chevron_rect = egui::Rect::from_center_size(
         egui::pos2(rect.min.x + pad_left + chevron_size / 2.0, row_center_y),
@@ -1037,9 +1068,10 @@ fn draw_category_header(
     } else {
         icons::CHEVRON_DOWN
     };
-    icon.image(chevron_size, th.text_muted().into())
+    let fg = th.sidebar_category_header_fg();
+    icon.image(chevron_size, fg.into())
         .paint_at(ui, chevron_rect);
-    // 라벨 — 디자인 textTransform:uppercase (카테고리명도 대문자). 모노 캡스 muted.
+    // 라벨 — 디자인 textTransform:uppercase (카테고리명도 대문자). 모노 캡스.
     let text_x = chevron_rect.max.x + gap;
     let mut job = egui::text::LayoutJob::default();
     job.append(
@@ -1048,13 +1080,35 @@ fn draw_category_header(
         egui::TextFormat {
             font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
             extra_letter_spacing: 0.7,
-            color: th.text_muted().into(),
+            color: fg.into(),
             ..Default::default()
         },
     );
     let galley = ui.painter().layout_job(job);
     let pos = egui::pos2(text_x, row_center_y - galley.size().y / 2.0);
-    ui.painter().galley(pos, galley, th.text_muted().into());
+    ui.painter().galley(pos, galley, fg.into());
+    // 우측 워크스페이스 카운트 — 10px mono, text-disabled, 우측 gutter에 pad_right 만큼
+    // 여백을 두고 정렬.
+    let mut count_job = egui::text::LayoutJob::default();
+    count_job.append(
+        &count.to_string(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(th.sidebar_category_header_count_font_size().value()),
+            color: th.sidebar_category_header_count_fg().into(),
+            ..Default::default()
+        },
+    );
+    let count_galley = ui.painter().layout_job(count_job);
+    let count_pos = egui::pos2(
+        rect.max.x - pad_right - count_galley.size().x,
+        row_center_y - count_galley.size().y / 2.0,
+    );
+    ui.painter().galley(
+        count_pos,
+        count_galley,
+        th.sidebar_category_header_count_fg().into(),
+    );
     let context = resp
         .secondary_clicked()
         .then(|| resp.interact_pointer_pos().unwrap_or_default());

@@ -1595,6 +1595,49 @@ impl Theme {
         self.accent_agent()
     }
 
+    // ── 컴포넌트 토큰 (sidebar workspace-category 헤더) — `--tasty-sidebar-category-header-*` ──
+    // 헤더를 "면(band)"으로 승격: bg-app 티어 + 상하 hairline. weight(bold)는 토큰엔
+    // 있지만 egui UI 폰트에 합성 bold 가 등록돼 있지 않아(D2Coding Bold는 터미널 GPU
+    // 글리프 전용, egui font_registry 미등록 — markdown gallery specimen 과 동일 한계)
+    // 별도 접근자 없음 — `text_secondary`(아래 fg)로의 색 승격이 곧 그 신호다.
+    /// 헤더 밴드 배경. `--tasty-sidebar-category-header-bg` → `bg-app`.
+    #[inline]
+    pub fn sidebar_category_header_bg(&self) -> HexColor {
+        self.bg_app()
+    }
+    /// 밴드 상/하 hairline. `--tasty-sidebar-category-header-border` → `separator`.
+    #[inline]
+    pub fn sidebar_category_header_border(&self) -> HexColor {
+        self.separator
+    }
+    /// 라벨/셰브론 색. `--tasty-sidebar-category-header-fg` → `text-secondary`
+    /// (기존 `text-muted`에서 승격 — 행보다 아래로 읽히던 문제 수정).
+    #[inline]
+    pub fn sidebar_category_header_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+    /// 밴드 세로 패딩. `--tasty-sidebar-category-header-pad-y` → `space-sm`(8px).
+    #[inline]
+    pub fn sidebar_category_header_pad_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// 밴드 가로 패딩. `--tasty-sidebar-category-header-pad-x` → `space-sm`(8px).
+    #[inline]
+    pub fn sidebar_category_header_pad_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// 우측 워크스페이스 카운트 색 — hover 시 `+` 버튼에 자리를 내주고 페이드아웃.
+    /// `--tasty-sidebar-category-header-count-fg` → `text-disabled`.
+    #[inline]
+    pub fn sidebar_category_header_count_fg(&self) -> HexColor {
+        self.text_disabled()
+    }
+    /// 카운트 폰트 크기(10px). `--tasty-sidebar-category-header-count-font-size` → `font-size-micro`.
+    #[inline]
+    pub fn sidebar_category_header_count_font_size(&self) -> LogicalPx {
+        self.font_size_micro
+    }
+
     // ── 컴포넌트 토큰 (AutoComplete 후보 드롭다운) — `--tasty-autocomplete-*` ──
     // 자유입력 트리거 + 후보 드롭다운(typeahead). 색·간격·행높이는 전부 기존
     // Input/menu-item/semantic 접근자를 그대로 재사용하므로 여기엔 드롭다운 최대

@@ -464,48 +464,67 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
     let mut y = rect.min.y + pad;
 
     for (i, (label, collapsed, rows)) in CATEGORY_SECTIONS.iter().enumerate() {
-        // 비-첫 섹션 간격 (본체 그룹 렌더의 섹션 간 add_space 와 동일 토큰).
+        // 비-첫 섹션 간격 (본체 그룹 렌더의 섹션 간 add_space 와 동일 토큰 — 헤더가
+        // 밴드로 승격되면서 space-sm(8)→space-md(12)).
         if i > 0 {
-            y += theme.spacing_sm.value();
+            y += theme.spacing_md.value();
         }
-        // ── 카테고리 헤더: chevron(▼/▶) + 대문자 캡스 라벨. 상하 spacing_xs
-        // 대칭 인셋 (본체 draw_category_header 와 동일). ──
+        // ── 카테고리 헤더: 밴드(bg-app + 상/하 hairline) + chevron(▼/▶) + 대문자
+        // 캡스 라벨(secondary) + 우측 워크스페이스 카운트. 상하 space-sm 대칭 인셋
+        // (본체 draw_category_header 와 동일 — 헤더가 밴드로 승격되며 space-xs 에서 확대).
         let chevron = if *collapsed {
             CHEVRON_RIGHT
         } else {
             CHEVRON_DOWN
         };
-        y += theme.spacing_xs.value();
+        let pad_y = theme.sidebar_category_header_pad_y().value();
+        let pad_x = theme.sidebar_category_header_pad_x().value();
         let ch_size = theme.icon_glyph_size_sm.value();
-        let ch_c = egui::pos2(
-            rect.min.x + theme.spacing_sm.value() + ch_size * 0.5,
-            y + ch_size * 0.5,
+        let header_h = pad_y + ch_size + pad_y;
+        let header_rect =
+            egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, header_h));
+        p.rect_filled(
+            header_rect,
+            0.0,
+            theme.sidebar_category_header_bg().to_egui_premultiplied(),
         );
-        paint_icon(
-            ui,
-            chevron,
-            ch_c,
-            ch_size,
-            egui::Color32::from(theme.text_muted()),
+        let border = theme
+            .sidebar_category_header_border()
+            .to_egui_premultiplied();
+        let border_w = theme.border_width.value();
+        p.hline(
+            header_rect.x_range(),
+            header_rect.min.y,
+            egui::Stroke::new(border_w, border),
         );
+        p.hline(
+            header_rect.x_range(),
+            header_rect.max.y,
+            egui::Stroke::new(border_w, border),
+        );
+        y += pad_y;
+        let fg = egui::Color32::from(theme.sidebar_category_header_fg());
+        let ch_c = egui::pos2(rect.min.x + pad_x + ch_size * 0.5, y + ch_size * 0.5);
+        paint_icon(ui, chevron, ch_c, ch_size, fg);
         p.text(
             egui::pos2(ch_c.x + ch_size * 0.5 + theme.spacing_xs.value(), ch_c.y),
             egui::Align2::LEFT_CENTER,
             label,
             egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
-            egui::Color32::from(theme.text_muted()),
+            fg,
         );
-        y += ch_size + theme.spacing_xs.value();
+        p.text(
+            egui::pos2(rect.max.x - pad_x, ch_c.y),
+            egui::Align2::RIGHT_CENTER,
+            rows.len().to_string(),
+            egui::FontId::monospace(theme.sidebar_category_header_count_font_size().value()),
+            egui::Color32::from(theme.sidebar_category_header_count_fg()),
+        );
+        y += ch_size + pad_y;
 
-        // ── 행 (접힘/빈 카테고리는 생략). ──
+        // ── 행 (접힘/빈 카테고리는 생략). 헤더 바로 아래 별도 rule 은 그리지 않는다 —
+        // 헤더 밴드의 bottom hairline이 이미 그 경계를 그린다(이중선 방지). ──
         if !*collapsed && !rows.is_empty() {
-            // 헤더 바로 아래 1px rule (본체 목록 블록 상단 보더 — 하단 보더 없음).
-            let rule = egui::Rect::from_min_size(
-                egui::pos2(rect.min.x, y),
-                egui::vec2(w, theme.border_width.value()),
-            );
-            p.rect_filled(rule, 0.0, theme.separator.to_egui_premultiplied());
-            y += theme.border_width.value();
             for (name, badge, active, mirror) in *rows {
                 let row = egui::Rect::from_min_size(
                     egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
