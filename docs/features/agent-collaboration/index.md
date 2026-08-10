@@ -2,9 +2,9 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (여럿이 한 인스턴스 공유)
-- **ADR**: 없음
+- **ADR**: [ADR-0066](../../adr/0066-task-graph-view-deferred.md)(task-graph 화면은 순서상 유보 — 영구 배제 아님)
 - **코드**: `agent.*` 핸들러(`src/adapters/ipc/handler/agent.rs`), 영속 `tasty-memory`
-- **화면**: 없음 (IPC/CLI 전용) — ADR-0040(에이전트 점유는 로컬 사용자에게 시각적으로 구분돼야 한다)·[human-handoff](../human-handoff/index.md) 의 승인 popup 과 달리, task DAG 상태는 *로컬 사용자의 즉각 승인/개입이 필요한 이벤트*가 아니라 에이전트 간 조율 상태다. 관측이 필요한 순간은 그 조율을 요청한 에이전트(또는 그 뒤의 사용자)가 능동적으로 CLI 로 확인하는 시점뿐이라, 상시 노출되는 화면을 두지 않는다.
+- **화면**: 없음 (IPC/CLI 전용) — 근거·재검토 조건은 [ADR-0066](../../adr/0066-task-graph-view-deferred.md) 참조.
 - **메서드 목록**: [reference/api](../../reference/api.md#에이전트-협업-agent)
 
 ## 목적
@@ -56,3 +56,4 @@ task 는 영속되지만(`Scope::Workspace`) runner thread 는 in-memory 다 —
 - [telemetry](../telemetry/index.md) — rate-limit vs cap 구분 · [human-handoff](../human-handoff/index.md) — approval
 - [design/systems/memory](../../design/systems/memory.md) — 영속 backing store
 - [dev-guide/agent-runner](../../dev-guide/agent-runner.md) — task runner 내부 동작(dispatch/poll, 완료 판정 전략 레지스트리)
+- [ADR-0066](../../adr/0066-task-graph-view-deferred.md) — task-graph 화면 부재의 근거·재검토 조건
