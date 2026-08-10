@@ -52,7 +52,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 **표면 전체 커버리지**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(cwd) target 으로 흡수한다. 하위 위젯이 이미 `action` 을 세웠으면 건너뛰므로 파일/폴더/다중 메뉴는 그대로 이긴다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
-- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`CoreState::explorer_clipboard`, 단일 슬롯·세션 휘발)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백). 잘라내기는 이동 성공 시 클립보드를 비운다.
+- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`CoreState::explorer_clipboard`, 단일 슬롯·세션 휘발)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백). 잘라내기는 이동 성공 시 클립보드를 비운다. 우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다. 붙여넣기 대상은 현재 디렉토리(cwd) 고정(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
 - **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음).
 - **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`.
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`).

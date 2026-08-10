@@ -1493,15 +1493,16 @@ impl MainView {
     }
 
     /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
-    fn explorer_menu_set_clipboard(&mut self, paths: &[std::path::PathBuf], cut: bool) {
+    /// 컨텍스트 메뉴와 키보드 단축키(`handle_explorer_shortcut`) 양쪽에서 공유한다.
+    pub(crate) fn explorer_menu_set_clipboard(&mut self, paths: &[std::path::PathBuf], cut: bool) {
         self.core_state.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
             paths: paths.to_vec(),
             cut,
         });
     }
 
-    /// 붙여넣기 (아이템 12).
-    fn explorer_menu_paste(
+    /// 붙여넣기 (아이템 12). 컨텍스트 메뉴와 키보드 단축키 양쪽에서 공유한다.
+    pub(crate) fn explorer_menu_paste(
         &mut self,
         surface_id: u32,
         paths: &[std::path::PathBuf],

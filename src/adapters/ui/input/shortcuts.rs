@@ -101,13 +101,11 @@ pub(crate) fn focused_workspace_category(
     Some(state.active_workspace(engine).category)
 }
 
-/// 바인딩 목록 중 하나라도 매칭되면 true.
-/// Returns the surface ID of the focused image surface, if any.
-/// Returns the surface ID of the focused Explorer surface, if any.
-fn focused_explorer_surface_id(
+/// 포커스된 surface 가 `ExplorerPanel` 이면 그 참조를 반환한다.
+fn focused_explorer_panel<'a>(
     state: &crate::state::AppState,
-    engine: &crate::core::CoreState,
-) -> Option<u32> {
+    engine: &'a crate::core::CoreState,
+) -> Option<&'a crate::model::ExplorerPanel> {
     let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(pane.active_tab)?;
     let focused = tab.focused_surface;
@@ -115,5 +113,21 @@ fn focused_explorer_surface_id(
     surface
         .as_any()
         .downcast_ref::<crate::model::ExplorerPanel>()
-        .map(|p| p.id)
+}
+
+/// Returns the surface ID of the focused Explorer surface, if any.
+fn focused_explorer_surface_id(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+) -> Option<u32> {
+    focused_explorer_panel(state, engine).map(|p| p.id)
+}
+
+/// 포커스된 Explorer surface 의 현재 디렉토리(`current_root`). 키보드 붙여넣기의
+/// 대상 디렉토리로 쓰인다(컨텍스트 메뉴의 빈 영역 대상 붙여넣기와 동일 정책).
+fn focused_explorer_cwd(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+) -> Option<std::path::PathBuf> {
+    focused_explorer_panel(state, engine).map(|p| p.current_root().to_path_buf())
 }

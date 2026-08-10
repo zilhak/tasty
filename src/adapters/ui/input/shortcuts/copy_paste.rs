@@ -47,10 +47,15 @@ impl MainView {
         false
     }
 
-    /// select-all / copy-path(선택 항목 경로 복사) 단축키. clipboard 차용이 필요하므로
-    /// keybinding free-fn(=clipboard 미접근) 이 아니라 MainView 메서드로 둔다. 포커스가
-    /// copy_path capability 를 가진 kind(예: explorer)가 아니면 false 를 반환해 일반
-    /// 단축키 경로로 흘려보낸다(kind 하드코딩 없음).
+    /// select-all / copy-path(선택 항목 경로 복사) / 파일 복사·잘라내기·붙여넣기 단축키.
+    /// clipboard 차용이 필요하므로 keybinding free-fn(=clipboard 미접근) 이 아니라
+    /// MainView 메서드로 둔다. 포커스가 copy_path capability 를 가진 kind(예: explorer)가
+    /// 아니면 false 를 반환해 일반 단축키 경로로 흘려보낸다(kind 하드코딩 없음).
+    ///
+    /// 파일 복사(`kb.copy`)/잘라내기(`kb.cut`)/붙여넣기(`kb.paste`) 는 우클릭 컨텍스트
+    /// 메뉴(`explorer_menu_set_clipboard`/`explorer_menu_paste`, redraw.rs)와 동일 로직을
+    /// 재사용한다 — fs 동작(충돌 시 (copy) 접미사, 자기 자신/하위 붙여넣기 거부 등)이
+    /// 키보드/마우스 경로에서 갈라지지 않도록.
     pub(super) fn handle_explorer_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         if !self
             .state
@@ -62,7 +67,10 @@ impl MainView {
         let kb = &self.core_state.settings.keybindings;
         let is_select_all = matches_any_binding(&kb.select_all, key, mods);
         let is_copy_path = matches_any_binding(&kb.copy_path, key, mods);
-        if !is_select_all && !is_copy_path {
+        let is_copy_files = matches_any_binding(&kb.copy, key, mods);
+        let is_cut_files = matches_any_binding(&kb.cut, key, mods);
+        let is_paste_files = matches_any_binding(&kb.paste, key, mods);
+        if !is_select_all && !is_copy_path && !is_copy_files && !is_cut_files && !is_paste_files {
             return false;
         }
         let Some(sid) = super::focused_explorer_surface_id(&self.state, &self.core_state) else {
@@ -72,18 +80,34 @@ impl MainView {
             if let Some(view) = self.state.explorer_views.get_mut(sid) {
                 view.select_all();
             }
-        } else if let Some(text) = self
-            .state
-            .explorer_views
-            .get(sid)
-            .and_then(|v| v.selected_paths_text())
-            && let Some(cb) = self.clipboard.as_mut()
+        } else if is_copy_path {
+            if let Some(text) = self
+                .state
+                .explorer_views
+                .get(sid)
+                .and_then(|v| v.selected_paths_text())
+                && let Some(cb) = self.clipboard.as_mut()
+            {
+                cb.set_text(&text);
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.copied_path"),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                );
+            }
+        } else if is_copy_files || is_cut_files {
+            let paths: Vec<std::path::PathBuf> = self
+                .state
+                .explorer_views
+                .get(sid)
+                .map(|v| v.selected.iter().cloned().collect())
+                .unwrap_or_default();
+            if !paths.is_empty() {
+                self.explorer_menu_set_clipboard(&paths, is_cut_files);
+            }
+        } else if is_paste_files
+            && let Some(cwd) = super::focused_explorer_cwd(&self.state, &self.core_state)
         {
-            cb.set_text(&text);
-            self.state.toasts.push_info(
-                crate::i18n::t("toast.copied_path"),
-                crate::adapters::ui::ToastScope::Surface(sid),
-            );
+            self.explorer_menu_paste(sid, &[], &cwd, false);
         }
         self.mark_dirty();
         true
