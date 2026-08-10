@@ -577,18 +577,48 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
 /// Tasty's offline-first principle.
 const MERMAID_JS_RAW: &str = include_str!("../assets/mermaid.min.js");
 
-/// [`MERMAID_JS_RAW`] with any literal `</script` neutralized to `<\/script` (memoized — the
-/// source is ~3.5MB and this runs once per process, not per render). Necessary because the
-/// bundle is embedded verbatim inside an HTML `<script>` element: the HTML parser closes a
-/// script element on the first `</script` byte sequence it scans, regardless of JS string/
-/// comment context, so a literal occurrence inside the minified source (e.g. in a string
-/// constant) would truncate the script and break every diagram on the page. `\/` is a valid
-/// escape for `/` in JS string/regex literals, so the substitution is semantics-preserving.
-/// The vendored build has zero occurrences today (grep-verified when it was vendored), but this
-/// guards future re-vendors that might introduce one.
+/// Neutralize every `</script` occurrence in `s` — **case-insensitively** — by inserting a
+/// backslash between `<` and `/` (`<\/script`, trailing letters' original case preserved).
+/// Necessary because the bundle is embedded verbatim inside an HTML `<script>` element: the
+/// HTML tokenizer's raw-text end-tag scan compares the tag name case-insensitively (`</SCRIPT>`
+/// or `</Script>` closes a `<script>` element exactly like `</script>` does), so a literal
+/// occurrence inside the minified source in *any* case (e.g. in a string constant) would
+/// truncate the script and break every diagram on the page — a plain case-sensitive
+/// `str::replace("</script", ..)` only defuses the all-lowercase form. `\/` is a valid escape
+/// for `/` in JS string/regex literals, so the substitution is semantics-preserving regardless
+/// of case.
+///
+/// Byte-level (not char-level) so multi-byte UTF-8 in the input is never touched except by
+/// copying it through unchanged: `to_ascii_lowercase` only folds ASCII bytes and never changes a
+/// string's byte length, so a match against the lowercased copy at byte offset `i` guarantees
+/// `bytes[i..i+8]` is in-bounds and — since `</script` is pure ASCII — falls on UTF-8
+/// char-boundary-safe split points in the original.
+fn escape_script_close(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let lower = s.to_ascii_lowercase();
+    let lower_bytes = lower.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if lower_bytes[i..].starts_with(b"</script") {
+            out.extend_from_slice(b"<\\/");
+            out.extend_from_slice(&bytes[i + 2..i + 8]);
+            i += 8;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_default()
+}
+
+/// [`MERMAID_JS_RAW`] with [`escape_script_close`] applied (memoized — the source is ~3.5MB and
+/// this runs once per process, not per render). The vendored build has zero `</script`
+/// occurrences in any case today (grep-verified when it was vendored), but this guards future
+/// re-vendors that might introduce one.
 fn mermaid_js_source() -> &'static str {
     static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    ESCAPED.get_or_init(|| MERMAID_JS_RAW.replace("</script", "<\\/script"))
+    ESCAPED.get_or_init(|| escape_script_close(MERMAID_JS_RAW))
 }
 
 /// Inline mermaid bundle + init/run script — only called when the document actually has a
@@ -1030,12 +1060,39 @@ mod tests {
     #[test]
     fn mermaid_script_js_source_has_no_premature_script_close() {
         // The vendored bundle is inlined verbatim inside an HTML <script> element — any literal
-        // `</script` in it (case-sensitive match is what browsers use for the raw-text-element
-        // end tag scan) would truncate the tag early and break the page. `mermaid_js_source`
-        // neutralizes that; this locks the invariant in regardless of what a future re-vendor
-        // introduces.
+        // `</script` in it, in any case (the browser's raw-text-element end tag scan is
+        // case-insensitive), would truncate the tag early and break the page.
+        // `mermaid_js_source` neutralizes that; this locks the invariant in regardless of what a
+        // future re-vendor introduces. The vendored file itself has zero occurrences in any
+        // case, so this only proves the current bundle is clean — see
+        // `escape_script_close_neutralizes_mixed_case_occurrences` for the actual logic test.
         let js = mermaid_js_source();
-        assert!(!js.contains("</script"));
+        assert!(!js.to_ascii_lowercase().contains("</script"));
+    }
+
+    #[test]
+    fn escape_script_close_neutralizes_mixed_case_occurrences() {
+        let input = "a</script>b</SCRIPT>c</Script>d</ScRiPt>e";
+        let escaped = escape_script_close(input);
+        // No case variant of `</script` survives.
+        assert!(!escaped.to_ascii_lowercase().contains("</script"));
+        // Original case of the tag name is preserved, only `</` becomes `<\/`.
+        assert_eq!(escaped, r#"a<\/script>b<\/SCRIPT>c<\/Script>d<\/ScRiPt>e"#);
+    }
+
+    #[test]
+    fn escape_script_close_leaves_unrelated_text_untouched() {
+        assert_eq!(escape_script_close(""), "");
+        assert_eq!(
+            escape_script_close("no closing tags here"),
+            "no closing tags here"
+        );
+        assert_eq!(escape_script_close("</scrip"), "</scrip"); // too short to match
+        // Non-ASCII text around/inside the match must survive intact (UTF-8 char-boundary safety).
+        assert_eq!(
+            escape_script_close("한글</script>한글"),
+            "한글<\\/script>한글"
+        );
     }
 
     #[test]
