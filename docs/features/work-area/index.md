@@ -78,14 +78,14 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 |------|-----------|------|------|------|
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. deferred 가능(아래 `empty`) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(타입 선택 UI). **deferred 터미널 placeholder 도 이 타입** |
-| `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh 합성 | egui-mesh whitelist |
+| `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0065](../../adr/0065-markdown-webview-render-channel.md), 대용량/파일열기 확인 팝업 2개만 egui-mesh |
 | `image` | Image | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** (T11) | egui | host builtin surface |
 | `html` | (plugin 제공) | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
 
 - **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`) 가 부팅 시 등록.
-- **egui-mesh plugin**(`markdown`/`image`)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
-- **webview plugin**(`html`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리하고 plugin 은 `webview.set_url` IPC 로 URL/navigation 만 제어.
+- **egui-mesh plugin**(`image`, 그리고 markdown 의 대용량/파일열기 확인 팝업 2개만)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
+- **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([ADR-0065](../../adr/0065-markdown-webview-render-channel.md)).
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
 - plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 

@@ -20,7 +20,7 @@
 
 ## Decision
 
-**markdown surface 의 `rendering` 을 `"egui-mesh"` 에서 `"webview"` 로 전환한다.** plugin 은 pulldown-cmark(또는 comrak) 의 HTML writer 로 markdown 을 HTML 로 변환하고, 번들 CSS(VSCode 프리뷰 수준 타이포그래피 + mermaid 렌더용 스크립트)를 적용해 host 의 native webview overlay 에 올린다. mermaid fenced block 은 HTML 출력 시 표준 `<div class="mermaid">` 로 변환되어, 별도 plugin 확장 없이 번들 mermaid.js(또는 동등 라이브러리)가 브라우저 엔진 안에서 렌더한다.
+**markdown surface 의 `rendering` 을 `"egui-mesh"` 에서 `"webview"` 로 전환한다.** plugin 은 pulldown-cmark 의 HTML writer 로 markdown 을 HTML 로 변환하고(`ammonia` 로 sanitize), 번들 CSS(VSCode 프리뷰 수준 타이포그래피)를 적용해 host 의 native webview overlay 에 올린다. 실제 구현(Stage B)은 채널 전환과 함께 fenced code block 의 언어 태그(`class="language-<lang>"`)가 sanitize 를 거쳐도 살아남도록 정규화하는 것까지만 포함한다 — 이는 mermaid 를 그 자리에서 바로 렌더하기 위함이 아니라, **향후** mermaid fenced block(`class="language-mermaid"`)을 식별할 수 있는 최소 전제를 마련해 두는 것이다. `<div class="mermaid">` 변환 + 번들 mermaid.js 배선 자체는 이 ADR 의 스코프 밖이며 별도 후속 작업이다.
 
 이 결정은 [ADR-0028](0028-plugin-egui-mesh-render-channel.md) 의 "markdown 은 EguiMesh 마이그레이션의 첫 선례(B1)" 조항과 "최종 채널은 EguiMesh(+image 비트맵의 Canvas) 와 Webview(html) 둘" 조항 중 **markdown 에 한해** 개정한다 — [ADR-0030](0030-image-egui-mesh-bitmap-texture.md) 이 image 의 Canvas-하이브리드 조항만 부분 개정하고 나머지("egui-mesh 채널 일원화, popup/banner, host-rendered 전면 제거 방향")는 그대로 유효하다고 명시한 것과 동일한 패턴이다. ADR-0028 의 popup·banner EguiMesh 방향, image 의 mesh-only 결정(ADR-0030), host-rendered(`Host`/`Remote` UiNode) 전면 제거 방향은 이 ADR 로 바뀌지 않는다 — **surface-kind 렌더 채널 중 markdown 하나만** EguiMesh 군에서 Webview 군으로 이동한다.
 
@@ -28,12 +28,12 @@
 
 - **얻은 것**:
   - VSCode/GitHub 수준 타이포그래피 — line-height·문단 여백을 CSS 로 완전히 제어(라이브러리 제약 소멸).
-  - mermaid 다이어그램 지원 — 별도 요청이었던 기능이 채널 전환의 부수 효과로 해결된다.
+  - mermaid 다이어그램 지원의 전제 조건(HTML/JS 렌더 환경) 확보 — 채널이 EguiMesh 였다면 애초에 불가능했던 방향이 열린다. 실제 mermaid.js 배선은 후속 작업(위 Decision 참고).
   - CommonMark 확장 어휘(footnote, 커스텀 code-block 렌더 등)가 필요해질 때 HTML/CSS/JS 생태계 전체를 재사용 가능 — pulldown-cmark HTML writer 는 egui_commonmark 보다 표준에 더 가깝다.
   - 표·코드 하이라이팅이 오히려 쉬워진다 — CSS 테이블 레이아웃과 웹 기반 syntax highlighter(예: highlight.js)를 그대로 붙일 수 있어, egui `Grid::striped` 로 흉내내던 제약(헤더 밴드·불투명 베이스 fill·셀 패딩 미지원, `render.rs:13-18`)이 사라진다.
 - **잃은 것**:
-  - **주소창 chrome(PathField) 재구현 필요.** webview kind 는 plugin 에 egui-mesh 페인트 채널을 주지 않으므로(`webview_chrome.rs` 는 host 소유 fallback 일 뿐), markdown surface 가 지금 갖고 있는 주소창(`PathField`, 경로 편집·히스토리 드롭다운·Go 버튼, `crates/tasty-plugin-markdown/src/main.rs:1228-1289`)을 그대로 유지하려면 (a) 웹뷰 bounds 를 주소창 높이만큼 줄여 host 가 별도 egui chrome 을 얹거나, (b) 주소창 자체를 HTML 로 재구현해야 한다. 어느 쪽이든 후속 구현 TODO 의 설계 대상이다 — 이 ADR 은 결정만 기록하고 구현 방식을 선택하지 않는다.
-  - **링크 클릭 라우팅 재구현 필요.** 현재 `LinkClick::File`/`External` 판정 로직(`render.rs:36-39`)은 egui_commonmark 의 클릭 콜백을 통해 얻는다. webview 로 전환하면 페이지 내 링크 클릭이 native webview 의 navigation 이벤트로 오므로, file link 를 가로채 host `file_handler.dispatch` 로 보내는 경로를 webview navigation 인터셉트 기반으로 다시 짜야 한다.
+  - **주소창 chrome(PathField) 재구현 필요.** webview kind 는 plugin 에 egui-mesh 페인트 채널을 주지 않으므로(`webview_chrome.rs` 는 host 소유 fallback 일 뿐), markdown surface 가 갖고 있던 주소창(옛 `PathField`, egui 조립)을 그대로는 유지할 수 없다. Stage B 는 (b) 안 — 주소창을 HTML/CSS/최소 JS 로 문서 자체에 내장하는 쪽으로 구현했다(`crates/tasty-plugin-markdown/src/render.rs` `addr_bar_html`/`nav_script`). host 는 bounds 분할을 하지 않는다 — 주소창도 문서의 일부로 sanitize 파이프라인을 그대로 통과한다.
+  - **링크 클릭 라우팅 재구현 필요.** 현재 `LinkClick::File`/`External` 판정 로직(`render.rs` `classify_link`)은 egui_commonmark 의 클릭 콜백을 통해 얻던 것을, webview navigation 인터셉트 기반으로 다시 짰다. pulldown-cmark 이벤트 스트림 단계에서 모든 non-anchor 링크 destination 을 내부 nav-fragment 스킴(`#tasty-nav:link:<encoded>`, 주소창 Go 는 `#tasty-nav:addr:<encoded>`)으로 rewrite 해두고, 같은 문서 안에서의 fragment navigation 은 실제 페이지 전환을 일으키지 않으면서 host 의 `webview.navigation_attempt` 이벤트로는 캡처되는 성질(WebKitGTK 로 실측 검증)을 이용한다 — plugin 은 그 이벤트를 받아 `classify_link`/`parse_nav_fragment` 로 판정한 뒤 file link 는 `file_handler.dispatch`, external link 는 시스템 브라우저로 라우팅한다.
   - **텍스트 선택 방식 변경.** 현재 egui `TextEdit`/CommonMarkViewer 내부 selection 대신 native webview 의 브라우저 텍스트 선택으로 바뀐다 — 선택 상태를 host 가 관찰·제어하던 경로(있었다면)가 사라지고 OS webview 의 selection API 에 의존하게 된다.
   - EguiMesh 채널의 이점(DPI 선명도, 격리된 텍스처 파이프라인 재사용, mesh 프레임 invalidate-only 전송)을 markdown 은 더 이상 누리지 않는다 — 대신 webview 자체의 native 렌더 해상도·리소스 모델을 따른다.
 - **운영 비용 / 유지 부담**:
@@ -59,5 +59,6 @@
 
 - 개정 대상: [ADR-0028](0028-plugin-egui-mesh-render-channel.md) (markdown 을 EguiMesh 첫 선례(B1)로 명시한 조항, 최종 채널 구성 조항).
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md) (image Canvas-하이브리드 조항만 부분 개정하고 나머지는 유효로 남긴 방식).
-- 코드 근거: `crates/tasty-plugin-markdown/src/render.rs:1-18`(현재 egui_commonmark 렌더·library-driven constraint 주석), `crates/tasty-plugin-markdown/Cargo.toml:22-43`(egui_commonmark/pulldown-cmark 버전), `crates/tasty-plugin-markdown/src/main.rs:1228-1289`(PathField 주소창), `crates/tasty-plugin-manifest/src/types.rs:516-536`(`SurfaceKindRendering`), `crates/tasty-plugin-html/src/main.rs`(webview kind IPC 트램폴린 선례), `src/adapters/ui/surface/webview_chrome.rs:1-28`(webview host chrome fallback 정책), `docs/design/systems/design-token-mapping.md:49`(prose-h2/line-height-prose 은퇴 문서화).
+- 코드 근거(결정 당시, EguiMesh 상태): `crates/tasty-plugin-markdown/src/render.rs:1-18`(당시 egui_commonmark 렌더·library-driven constraint 주석), `crates/tasty-plugin-markdown/Cargo.toml:22-43`(egui_commonmark/pulldown-cmark 버전), `crates/tasty-plugin-markdown/src/main.rs:1228-1289`(PathField 주소창) — 이 세 참조는 Stage B 구현으로 대체됐다(아래).
+- 코드 근거(Stage B 구현, 현재 상태): `crates/tasty-plugin-markdown/src/render.rs`(HTML 문서 생성 + `sanitize_html`(ammonia) + `addr_bar_html`/`nav_script` + `classify_link`/`parse_nav_fragment`), `crates/tasty-plugin-markdown/src/main.rs`(`on_webview_navigation_attempt` 핸들러), `crates/tasty-plugin-manifest/src/types.rs:516-536`(`SurfaceKindRendering`), `crates/tasty-plugin-html/src/main.rs`(webview kind IPC 트램폴린 선례), `src/adapters/ui/surface/webview_chrome.rs:1-28`(webview host chrome fallback 정책), `docs/design/systems/design-token-mapping.md`(prose-h2/line-height-prose 은퇴 문서화).
 - 이력 커밋: 950d1bb1(egui_commonmark 최초 도입), 2a030365(plugin 재도입), f91bfd6b(EguiMesh B1 전환), aaec7394/bd35a476(prose-h2/line-height-prose 토큰 은퇴).

@@ -1,9 +1,9 @@
 # Markdown surface 화면
 
 - **부모 기획**: [../index.md](../index.md)
-- **시각 소스**: plugin egui-mesh 자가 렌더 — `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
+- **시각 소스**: plugin 이 생성한 sanitize HTML 문서 — host native OS WebView 가 렌더. `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
 
-[작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 자기 프로세스 egui Context 에서 직접 렌더한 mesh 를 host 가 합성한다(egui-mesh, ADR-0028 B1) — host 가 직접 그리는 게 아니다.
+[작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 `pulldown-cmark`+`ammonia` 로 만든 HTML 문서를 host 의 native OS WebView overlay(WebKitGTK/WKWebView/WebView2)에 올려 렌더한다(webview, [ADR-0065](../../../adr/0065-markdown-webview-render-channel.md)) — host 는 문서의 픽셀에 관여하지 않는다.
 
 ## 트리거
 
@@ -12,53 +12,43 @@
 ## UI 요소 인벤토리
 
 - **렌더된 마크다운 본문** — 제목/문단/목록/코드블록/링크 등.
+- **주소창** — 문서 자체에 내장된 `<input>`+`<button>`(host egui 위젯 아님).
 - 탭 표시명은 파일명.
 
 ## 상태별 시각
 
-- 파일 없음/로드 실패 등은 surface 내 표시.
+- 파일 없음/로드 실패 등은 문서 내 `.tasty-state` div 로 표시.
 
 ## 디자인 토큰 매핑
 
-`crates/tasty-plugin-markdown/src/render.rs::render` 가 `ScrollArea::both`(`main.rs::draw`)
-안에서 `pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose
-렌더러다. 스크롤 영역은 세로+가로 양방향이며, inner ui 의 `max_width` 를 뷰포트 폭으로 고정해
-prose 는 뷰포트에서 wrap 시키고 뷰포트보다 넓은 표(라이브러리가 wrap 없이 Grid 로 그려
-넘침)만 가로로 넘쳐 가로 스크롤로 도달하게 한다(세로 전용이면 표 오른쪽이 클립됨). 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
+`crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
+— `<style>` 안에 Theme 토큰을 CSS custom property 로 주입한 뒤(`theme_css`), 문서 전체(주소창 +
+본문)가 그 property 를 참조한다. host 는 이 문서를 통째로 `webview.set_url` 로 받아 native
+WebView 에 올릴 뿐, 개별 요소를 픽셀 단위로 그리지 않는다 — 아래 표는 CSS custom property ↔
+Theme 토큰 매핑이다.
 
-본문 위에는 얇은 주소창 chrome(`main.rs`)이 있다 — explorer 와 공유하는 `PathField` 위젯
-(`tasty-ui-widgets/src/path_field.rs` — `AutoComplete` 트리거 `Input` + 후보 드롭다운 + 우측
-Go `IconButton`)을 그대로 쓴다. 편집 진입 시 버퍼는 현재 경로를 유지하고(explorer 와 동일 —
-경로가 남아 선택·편집 가능), 최근목록 드롭다운은 그 경로 substring 으로 필터되며 타이핑은
-`MatchMode::Substring` typeahead 필터 + 매치 highlight 로 좁힌다. 아이콘은
-`tasty-icons` 빌드타임 베이크 벡터를 위젯에 painter 로 주입한다([ADR-0036](../../../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
-
-| UI 요소 | 토큰 / 비례 | 비고 |
-|---|---|---|
-| surface 배경 | `bg-panel` | 상단 주소창 바 + 본문이 타일 채움 |
-| 주소창 바 | `bg-sidebar` · 40px | 공유 `PathField`(AutoComplete 트리거 + Go IconButton) |
-| 경로 필드 선두 글리프 | `FILE` glyph · `text-muted` | `AutoComplete` 트리거 leading 아이콘(베이크 벡터) |
-| 경로 필드(트리거) | `Input` — `surface-raised` + 테두리(idle `border-default` / 편집 `border-focus` + focus ring) · 28px · mono caption(11) | 비편집=`text-secondary`, 편집=`text-primary` |
-| 히스토리 드롭다운 | `menu container`(surface-raised · border-default 1px · `shadow-popover` lift) · 필드 폭 · 필드 하단 `space-xs` 오프셋 floating | 편집 진입 시 `recent.query {kind:"markdown"}` 최신순 최대 10개 · 버퍼=현재 경로 유지 후 그 경로 substring 필터 |
-| 드롭다운 후보 행 | `MenuItem` 언어 · 28px · middle-ellipsis 경로 · 매치 구간 highlight · hover=`overlay-hover` / keyboard-active=`surface-active`(2단계 분리) | 행 선두 `FILE` 아이콘 · empty="No recent files"(`text-muted`) |
-| Go 버튼 | `ARROW_RIGHT` glyph · `IconButton`(sm) | `PathField` 우측 · `tasty-icons` 베이크 벡터를 painter 주입(raw `→` 제거) |
-| 본문 텍스트 | `text-secondary` · 본문 leading 은 egui_commonmark 소유 | 헤딩 색은 단계별 차별화. `line-height-prose` override 미노출 → 토큰 은퇴·제거됨 |
-| 헤딩 크기 | `font-size-prose-h1`(20) 을 `Heading` 앵커로, H2~H6 은 egui_commonmark 이 `Heading`↔`Body` 사이 보간 | per-H2 픽셀 토큰(`prose-h2`) 미노출 → 토큰 은퇴·제거됨. 6단계 prose 위계는 라이브러리 보간 |
-| small 캡션 | body × 0.85 · `text-muted` | |
-| 링크 | `accent-primary` | |
-| 코드블록 배경 | `surface-raised` | |
-| 코드 텍스트 | mono · `text-secondary` | markdown 폰트 패밀리 |
-| 표(GFM) 격자선 | `md-table-border`(→ `border-strong`) | 외곽 + 가로 + 세로 컬럼 격자선(세로선은 vline 수동 draw) |
-| 표 헤더 밴드 | `md-table-header-bg`(→ `surface-raised`) · `md-table-header-fg`(→ `text-primary`) | 헤더 신호는 weight 아닌 색+배경 |
-| 표 행 채움 | `md-table-row-bg`(→ `bg-panel`, 불투명 base) · zebra `md-table-row-bg-zebra`(→ `bg-sidebar`) | 첫 본문행=base, 2행째부터 짝수행=zebra |
-| 표 셀 | `md-table-cell-fg`(→ `text-secondary`) · 패딩 `md-table-cell-padding-{x,y}`(8/4) | 값 사다리 mantle<base<surface0<surface1 |
+| UI 요소 | CSS custom property | 토큰 / 비례 | 비고 |
+|---|---|---|---|
+| 문서 배경/전경 | `--md-bg` / `--md-fg` | surface(markdown).focused_bg · `text-secondary` | |
+| 주소창 바 | `#tasty-addr-bar` | `bg-sidebar` · 40px sticky top | `<input list>`+native `<datalist>`(최근목록)+Go `<button>` — 전부 문서 HTML |
+| 강조 텍스트 | `--md-strong` | `text-primary` | heading, `<strong>` |
+| 링크 | `--md-link` | `accent-primary` | nav-fragment 로 rewrite 된 `href` |
+| 코드 배경 | `--md-code-bg` | `surface-raised` | 인라인 `<code>` + `<pre>` |
+| 헤딩 크기 | `--md-h1`..`--md-h6` | `heading_sizes_px` — `font-size-prose-h1`(h1)↔`font-size-body`(h6) 5단계 선형보간 | CSS 라 per-level override 가능(현재는 선형보간을 디자인으로 채택) |
+| 표(GFM) 격자선 | `--md-border` | `md-table-border` | 실제 `<table>` border-collapse |
+| 표 zebra | `--md-zebra` | `md-table-row-bg-zebra` | `tr:nth-child(even)` |
+| 상태(에러) 제목 | inline hex(`danger`) | `accent-danger` | `.tasty-state-title` |
+| 상태(에러/빈 문서) 본문 | inline hex(`muted`) | `text-muted` | `.tasty-state-detail` |
+| 코너 반경/보더 굵기 | `--md-radius` / `--md-border-w` | `corner-radius` / `border-width` | 주소창 입력·코드 블록·표 공용 |
 
 ## 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/markdown_viewer.rs` — Layouts › `Content viewers` ›
-`Markdown surface`. 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션 대표 문서를 같은 토큰·비례로 전사. 3자
-매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
+`Markdown surface`. 갤러리는 live webview 를 띄우지 않으므로, 위 CSS 출력을 egui `Frame`/`Label`
+로 **손으로 근사**한다(픽셀 동일성은 비목표) — 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션
+대표 문서 + 주소창 chrome 의 정적 근사. 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
 
 ## 시각 소스
 
-plugin 이 host 가 forward 한 Theme 토큰으로 자가 렌더. design-system 에 마크다운 디자인이 vendor 되면 링크로 교체.
+plugin 이 host `theme.query` IPC 로 조회한 Theme 토큰을 CSS 로 문서에 주입해 자가 렌더(host 는
+native WebView 로 그 문서를 표시만 함). design-system 에 마크다운 디자인이 vendor 되면 링크로 교체.

@@ -407,13 +407,16 @@ host gallery Tag specimen(prim_chips)에도 노출된다.
 
 ## surface viewers (Plugins)
 
-egui-mesh surface(`markdown`/`image`) + webview chrome(`html`) 의 Plugins 페이지 specimen
-묶음(각 surface 가 독립 Section). plugin crate 비의존 — plugin render 경로의 토큰·구성만
-painter/egui 로 전사.
+egui-mesh surface(`image`) + webview surface/chrome(`markdown`/`html`) 의 Plugins 페이지
+specimen 묶음(각 surface 가 독립 Section). plugin crate 비의존 — plugin render 경로의 토큰·구성만
+painter/egui 로 전사. markdown 은 [ADR-0065](../../adr/0065-markdown-webview-render-channel.md)로
+Stage B 부터 image 와 다른 채널(webview)로 이동했지만, html 과 달리 (콘텐츠가 없는 chrome-only
+specimen 이 아니라) 실제 CSS 출력 내용까지 손으로 전사한다 — plugin 이 아직 host chrome 을 얹지
+않는 대신 문서 자체(주소창 포함)를 통째로 생성하기 때문.
 
 | surface | plugin draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| markdown | `crates/tasty-plugin-markdown/src/render.rs` (`egui_commonmark` 라이브러리, 토큰을 `Visuals`/text-style 로 주입) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20) 앵커, H2~H6 은 라이브러리 보간(`prose-h2`·`line-height-prose` 은퇴) |
+| markdown | `crates/tasty-plugin-markdown/src/render.rs` (`pulldown-cmark` → `ammonia` sanitize → CSS custom property 주입, native OS WebView 가 렌더) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(h1)↔`font-size-body`(h6) CSS 5단계 선형보간(`prose-h2`·`line-height-prose` 은퇴 유지 — CSS custom property `--md-h1`..`--md-h6` 로 대체) |
 | image | `crates/tasty-plugin-image/src/render.rs` | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
 | html | OS native WebView overlay (`engine/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 경계 · `GLOBE` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
 

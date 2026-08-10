@@ -84,8 +84,9 @@ write 하면서 동시에 reader 스레드가 plugin 의 Dirty 를 blocking read
 정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp, theme,
 focused) 를 추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 미paint(bootstrap) ·
 포커스 변화 · plugin 의 `SurfaceInvalidated` 알림** 중 하나일 때만 보낸다. 포커스 변화를
-트리거에 넣는 이유: markdown 등이 focused/unfocused 로 배경을 바꾸므로, 입력 없이
-포커스만 잃는 경우(다른 surface 클릭)에도 재전송돼야 배경이 즉시 전환된다.
+트리거에 넣는 이유: egui 자체가 `ctx.input(|i| i.focused)` 로 커서 블링크·포커스 링 등
+위젯 시각을 바꾸므로, 입력 없이 포커스만 잃는 경우(다른 surface 클릭)에도 재전송돼야
+그 변화가 즉시 반영된다.
 `SurfaceInvalidated`(`MeshForwardState::invalidated`, 단계 06)는 plugin 이 out-of-band
 로 감지한 변경(예: idle 상태에서 외부 파일 수정)을 host 에 알려 **입력 없이도** 재forward
 를 트리거하는 유일한 plugin-발 경로다 — 아래 "idle invalidate" 절 참조. focused 를 안 쓰는
@@ -107,14 +108,16 @@ frame 이 사라지면 다시 bootstrap 한다.
    (`src/app/event_handler.rs`).
 3. 다음 `forward_egui_mesh_context` 게이트에서 `invalidated` 플래그가 (다른 트리거 없이도)
    빈 입력 `set_context` 를 1회 통과시키고, 송신 시 플래그를 소거한다(`src/view/main/egui_mesh.rs`).
-4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태(예: markdown 의
-   `MdDoc::poll_reload`)를 재확인·재-read 한다.
+4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태를 재확인·재-read 한다.
 
-**소비자**: markdown plugin(`crates/tasty-plugin-markdown/src/watch.rs`) — `on_start` 에서
-받은 `HostHandle` 을 별도 스레드로 넘겨 `RELOAD_CHECK_INTERVAL_SECS`(1초) 주기로 열린
-surface 들의 파일 mtime 을 stat 하다가 변경 시 emit 한다. worker 는 **emit 만 하고 read 는
-안 함** — 실제 재-read 는 이 무입력 frame 안에서 기존 `poll_reload` 가 담당해 plugin state
-를 두 곳에서 공유하지 않는다.
+**과거 소비자(현재는 다른 경로로 대체됨)**: markdown plugin 이 egui-mesh 로 본문을 그리던
+시절엔 `crates/tasty-plugin-markdown/src/watch.rs` 의 idle mtime 폴링 worker 가 이
+채널로 `SurfaceInvalidated` 를 emit 해 재-read 를 트리거했다. markdown 이 webview 로
+전환된 뒤([ADR-0065](../adr/0065-markdown-webview-render-channel.md))로는 webview-kind
+surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 무의미해졌다 — 지금
+`watch.rs` 는 mtime 변경 감지 시 이 채널 대신 host 를 왕복해 `markdown.reload` IPC 를
+직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
+유효한 일반 인프라이나, 현재 이를 실제로 쓰는 번들 plugin 은 없다.
 
 ### popup 대응 — `PopupInvalidated` (TODO 15)
 
@@ -160,9 +163,11 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 퇴행한다(markdown 주소창 진동 버그의 원인이었다). 캐시된 theme 은 `last_theme()` 로
 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
 
-소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤,
-그리고 이 문서의 "idle invalidate" 경로가 만든 무입력 frame 뒤). git-viewer 는 모든 상태
-변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다.
+소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤). git-viewer 는 모든 상태
+변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다. (markdown
+은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0065](../adr/0065-markdown-webview-render-channel.md)
+로 본문 surface 가 webview 전환되며 egui-mesh self-repaint 경로 자체를 타지 않게 됐다 —
+`markdown.reload` IPC 는 지금은 host 가 webview 를 직접 재로드하는 별개 경로다.)
 
 ## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용 (TODO 15)
 
@@ -219,12 +224,15 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
 색 집합 `ThemeColors` + `is_light` + UI zoom)이다. egui 의존이 없어 default 빌드에도
 포함된다. plugin 은 `Theme::with_colors_and_zoom` 으로 host 와 동일한 `Theme` 인스턴스를
 재구성해 디자인 토큰대로 그린다(sizing 은 zoom 으로 재도출). 모든 egui-mesh surface 가
-공유하는 generic 필드다 — markdown/git-viewer 등이 같은 경로로 Theme parity 를 얻는다.
+공유하는 generic 필드다 — image/git-viewer 등이 같은 경로로 Theme parity 를 얻는다
+(markdown 은 [ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 본문 surface 가
+webview 전환돼 이 경로 밖 — 대신 `theme.query`/`theme.changed` 를 쓴다. 대용량/파일열기
+확인 팝업 2개는 여전히 이 경로를 탄다).
 테마 변경은 위 송신 정책의 트리거이므로, 사용자가 테마를 바꾸면 입력이 없어도 재forward 된다.
 
 ## 콘텐츠 전달 (surface.create bootstrap)
 
-egui-mesh surface 는 plugin 이 콘텐츠를 소유하므로(예: markdown 의 파일 경로), host 는
+egui-mesh surface 는 plugin 이 콘텐츠를 소유하므로(예: image 의 파일 경로), host 는
 **첫 set_context bootstrap 직전에 `surface.create{params}` 를 plugin 에 1회 보낸다**
 (`MainView::forward_egui_mesh_context` → `send_egui_mesh_surface_create`). 같은 plugin
 req 채널 FIFO 라 create 가 set_context 보다 먼저 도착해, plugin 이 생성 params 를 렌더 전에
@@ -281,11 +289,12 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    `last_seq` 를 전진시키지 않는다(**AcceptedStale**). 그러면 다음 tick 도 체인 단절로 남아
    full 재전송이 계속 무장되고, 유실로 stale 해진 atlas 는 다음 full frame 으로 정합
    복구된다. mesh(기하)는 최신으로 갱신되므로 리사이즈/split 로 폭이 바뀌어 seq 가 튀어도
-   markdown 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
+   mesh-demo 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
    글리프 uv 만 다음 full 까지 stale atlas 를 가리킨다. 참조가 하나라도 미상주(image plugin
    신규 비트맵 등)거나 delta 가 오버런이면 **NeedsFull** — mesh 도 보류하고 full 을
    재요청한다(오버런은 적용 시 egui-wgpu 가 리사이즈 없이 write 해 크래시하므로 보류가
-   방어선이다). markdown 은 참조가 항상 폰트 atlas(상주)라 단절 시 AcceptedStale 경로다.
+   방어선이다). mesh-demo 처럼 텍스처가 없는 순수 위젯 surface 는 참조가 항상 폰트
+   atlas(상주)라 단절 시 AcceptedStale 경로다.
 
 요청 플래그의 흐름: 렌더 prepare 가 `NeedsFull` 또는 `AcceptedStale` 을 판정하면 `GpuState` 의
 요청 대기열에 적재 → redraw 가 drain 해 surface 는 forward 추적 상태
@@ -327,8 +336,10 @@ downcast 판정). 중앙 키 디스패처(`keyboard.rs handle_keyboard_input`)�
 escape 소비를 **먼저** 처리한 뒤, 소비되지 않은 키를 이 forward 로 넘긴다 — 단축키
 선점 순서는 터미널 forward 와 동일하다. IME 는 조합 중 preedit 문자열까지 나르므로
 (commit-only 아님) plugin 의 egui `TextEdit` 이 조합 중간 상태를 인라인 표시한다.
-markdown/image 는 이 forward 로 host egui 를 거치지 않으므로(`main.rs` 의 host-egui 키
-피드에서 제외) host egui 가 그 키/IME 를 삼키지 않는다.
+image/mesh_demo 는 이 forward 로 host egui 를 거치지 않으므로(`main.rs` 의 host-egui 키
+피드에서 제외) host egui 가 그 키/IME 를 삼키지 않는다. (markdown 은 본문 surface 가
+[ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환되어 이
+경로 밖 — 대용량/파일열기 확인 팝업 2개만 여전히 이 forward 대상이다.)
 
 키 wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK(`map_event`)가
 `Key::from_name` 으로 복원한다. winit→egui `Key` 변환은 논리 키 우선·물리 키 폴백
@@ -377,7 +388,10 @@ crash 로 다시 비면 재경고한다. 원인 자체는 여전히 plugin 로�
 
 bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` 이 호스트와 일치할
 때만 등록된다 (epaint 와이어가 host·plugin 동일 컴파일을 강제하는 동안의 보호). 현재
-허용: `(markdown, com.tasty.markdown)`, `(mesh_demo, com.tasty.mesh-demo)`.
+허용: `(image, com.tasty.image)`, `(mesh_demo, com.tasty.mesh-demo)`. (`markdown` 은
+[ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환되며 이
+화이트리스트에서 빠졌다 — 대용량/파일열기 확인 팝업 2개는 이 화이트리스트와 무관하게
+`[[contributes.popup]]` 로 별도 등록된다.)
 
 ## attach mesh mirror 소비 경로
 
@@ -451,7 +465,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   프레임으로 나간다는 점만 다르다.
 - **surface stand-in**: 로컬 `EguiMeshSurface`(`src/plugin_bridge/egui_mesh_surface.rs`)의
   attach 대응은 `AttachMeshSurface`(`crates/tasty-model/src/attach_mesh_surface.rs`) —
-  plugin 콘텐츠(예: markdown 파일 경로)를 소유하지 않는 순수 표시용 stand-in이라 `file` 필드가
+  plugin 콘텐츠(예: image 파일 경로)를 소유하지 않는 순수 표시용 stand-in이라 `file` 필드가
   없다(원격이 이미 콘텐츠를 소유·bootstrap 한 상태이므로 client 가 재전달할 게 없다).
 - **입력 forward 축의 대응 모듈**: `src/view/main/egui_mesh.rs`(로컬) ↔
   `src/view/main/attach_mesh_input.rs`(attach) — 후자는 좌표/modifier 변환 헬퍼

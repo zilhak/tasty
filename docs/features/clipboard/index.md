@@ -38,9 +38,9 @@
 
 ### egui-mesh plugin 의 텍스트 선택 복사 (`egui_copy` capability)
 
-markdown 처럼 host 가 아니라 plugin 자신의 egui `Context` 로 텍스트를 그리는 kind(`rendering = "egui-mesh"`)는, 매니페스트에서 `egui_copy = true` 를 선언하면 copy 단축키(위 `KeybindingSettings` 바인딩)가 그 surface 에 `Copy` wire 이벤트로 forward된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` → `src/view/main/egui_mesh.rs`). host 자신의 top-level egui `Context` 는 plugin 위젯을 갖고 있지 않으므로 대상이 될 수 없다 — 반드시 포커스된 egui-mesh surface 자신에게 보내야 한다.
+host 가 아니라 plugin 자신의 egui `Context` 로 텍스트를 그리는 kind(`rendering = "egui-mesh"`)는, 매니페스트에서 `egui_copy = true` 를 선언하면 copy 단축키(위 `KeybindingSettings` 바인딩)가 그 surface 에 `Copy` wire 이벤트로 forward된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` → `src/view/main/egui_mesh.rs`). host 자신의 top-level egui `Context` 는 plugin 위젯을 갖고 있지 않으므로 대상이 될 수 없다 — 반드시 포커스된 egui-mesh surface 자신에게 보내야 한다.
 
-plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 plugin 이 그 값을 `EguiMeshSurface::take_copied_text()` 로 회수해 **자기 프로세스에서 직접** OS 클립보드에 쓴다([ADR-0009](../../adr/0009-plugin-sandbox-deferred.md) — clipboard-viewer plugin 의 read 선례와 동일한 write 대응, host round-trip 없음). markdown plugin 구현: `crates/tasty-plugin-markdown/src/main.rs`.
+plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 plugin 이 그 값을 `EguiMeshSurface::take_copied_text()` 로 회수해 **자기 프로세스에서 직접** OS 클립보드에 쓴다([ADR-0009](../../adr/0009-plugin-sandbox-deferred.md) — clipboard-viewer plugin 의 read 선례와 동일한 write 대응, host round-trip 없음). 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([ADR-0065](../../adr/0065-markdown-webview-render-channel.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
 
 ### 현재 클립보드 뷰어
 

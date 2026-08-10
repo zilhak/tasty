@@ -8,8 +8,8 @@
 
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
-| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../plugins/image/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
-| **webview surface** | [html](../plugins/html/index.md) | ★ |
+| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../plugins/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
+| **webview surface** | [html](../plugins/html/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings, ADR-0065) | ★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
@@ -81,8 +81,8 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 ### Surface kind — `rendering` 3 종
 
-- **`rendering = "egui-mesh"`** (markdown/image/mesh_demo): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. plugin-content 를 그리는 **유일한 렌더 채널**(ADR-0028). 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
-- **`rendering = "webview"`** (html): host 의 네이티브 WebView 오버레이로 그림. surface 의 URL 을 host 가 동기화.
+- **`rendering = "egui-mesh"`** (image/mesh_demo, 그리고 markdown 의 확인 팝업 2개만): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
+- **`rendering = "webview"`** (html, markdown — [ADR-0065](../adr/0065-markdown-webview-render-channel.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
 surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 함께 실린다 — host 본체에 `if kind == "..."` 를 박지 않기 위한 것들이다:
@@ -94,7 +94,7 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 - **capability flags**(모두 기본 false) — host 의 입력/줌/복사/붙여넣기 게이트를 kind 하드코딩 없이 판정한다:
   - **`consumes_egui_input`** — host 가 이 kind 를 host egui 위젯으로 렌더해 winit 키/IME 를 host egui 로 흘린다(예: explorer). egui-mesh 렌더 kind 는 false(중앙 키 디스패처가 forward).
   - **`zoomable`** — 줌 in/out/reset 단축키로 폰트 크기 override 조절(예: markdown/explorer).
-  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(ADR-0009 — host round-trip 없음, 예: markdown).
+  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(ADR-0009 — host round-trip 없음). markdown 이 webview 로 전환된 뒤([ADR-0065](../adr/0065-markdown-webview-render-channel.md)) 현재 이를 선언하는 번들 plugin 은 없다.
   - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
   - **`egui_paste`** — paste 를 이 kind 가 자체 소비(host 가 terminal paste 로 흘리지 않음, 예: image).
 - **`name_from_param`** — 자동 탭 명명 시 basename 을 파생할 params 키. 선언하면 그 키 값의 basename 을 탭 표시명으로 쓴다(예: markdown/image 는 `"file"`, explorer(builtin)는 `"path"` → `README.md`). 미선언이면 kind 표시명(`display_name_i18n_key`)으로 fallback. host 의 `kind == "markdown"` basename 명명 하드코딩을 대체.
@@ -159,12 +159,14 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ## 4. Plugin UI 렌더 (egui-mesh 채널)
 
-plugin 이 그리는 모든 UI(surface/popup/banner)는 egui-mesh 채널 하나로 통한다 —
+`rendering = "egui-mesh"` surface 와 popup/banner 는 egui-mesh 채널 하나로 통한다 —
 plugin 이 자기 프로세스에서 egui 를 구동해 tessellate 한 `(ClippedPrimitive,
 TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한다. 위젯 어휘
 제한이 없고(egui 전부 사용 가능) 색·간격은 host 가 forward 한 `Theme` 토큰에서
 가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
-[egui-mesh-channel](egui-mesh-channel.md).
+[egui-mesh-channel](egui-mesh-channel.md). (`rendering = "webview"` surface(html/markdown)
+의 본문은 이 채널을 타지 않는다 — host native WebView 가 직접 렌더한다. 단 markdown
+의 대용량/파일열기 확인 팝업 2개는 여전히 egui-mesh 채널을 쓴다.)
 
 **chrome 아이콘**(툴바·주소창 등)은 raw 유니코드 글리프로 그리지 말고 `tasty-icons`
 canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty-icons`(egui off)

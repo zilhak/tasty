@@ -10,7 +10,7 @@
 - **테스트 용이성** — 모델 단위 테스트가 GUI 컨텍스트 없이 가능.
 - **정리 일관성** — View 가 store 에 모이면 surface 닫힘 시 한 곳에서 일괄 해제.
 
-> 적용 대상은 **host 내장 surface**(host 가 egui 로 그리는 surface, 현재 explorer·empty)다. markdown/image 같은 **egui-mesh plugin surface** 와 `html`(webview) 은 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
+> 적용 대상은 **host 내장 surface**(host 가 egui 로 그리는 surface, 현재 explorer·empty)다. `image` 같은 **egui-mesh plugin surface** 와 `html`/`markdown`([ADR-0065](../adr/0065-markdown-webview-render-channel.md)) 같은 **webview plugin surface** 는 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
 
 ## 어디에 무엇을 두나
 
@@ -18,7 +18,7 @@
 |------|------|-----|
 | 식별 정보 | model | `id`, `file_path`, `dir_images`, `current_index` |
 | 직렬화 영속 상태 | model | mtime, 트리 구조 |
-| egui 타입 | view | `egui::ColorImage`, `TextureHandle`, markdown content cache |
+| egui 타입 | view | `egui::ColorImage`, `TextureHandle` |
 | 편집 세션 머신 | view | `EditState`, `DragState`, `ActionHistory` |
 | 휘발성 UI 버퍼 | view | popup 텍스트 버퍼, scroll offset, brush 설정 |
 

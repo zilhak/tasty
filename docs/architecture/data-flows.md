@@ -16,11 +16,11 @@ winit KeyEvent / Ime
       ├── 단축키·vi·escape 매칭 → Intent 발화 (shortcuts → UiIntent/DomainIntent, action-dispatch)
       └── 그 외 키 → 포커스 surface 로 분배:
           ├── Terminal → forward_key_to_terminal → tasty-terminal(send_key) → PTY stdin → 셸
-          └── egui-mesh(markdown/image) → egui_mesh_push_key/text/ime
+          └── egui-mesh(image, 그리고 markdown 의 확인 팝업 2개) → egui_mesh_push_key/text/ime
               → set_context.raw_input forward → plugin egui TextEdit (egui-mesh-channel)
 ```
 
-셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다.
+셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다. (`markdown` 은 [ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환됨 — 본문은 `set_context`/`paint` 를 아예 받지 않고, 네이티브 WebView 가 자체적으로 입력을 처리한다. 위 경로는 markdown 의 대용량/파일열기 확인 팝업 2개에만 해당.)
 
 ---
 

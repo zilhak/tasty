@@ -8,7 +8,7 @@
 - **결정**: [ADR-0028](../../adr/0028-plugin-egui-mesh-render-channel.md)(egui-mesh 채널) · [ADR-0030](../../adr/0030-image-egui-mesh-bitmap-texture.md)(image mesh-only 개정)
 - **화면**: [screens/image.md](screens/image.md)
 
-> **예제로서**: egui-mesh surface 가 **비트맵 텍스처 + chrome 을 함께** 그리는 예제 — plugin 이 자기 egui `Context` 에서 tessellate 한 mesh 를 host 가 합성한다(markdown 은 순수 위젯, image 는 텍스처 포함). 새 egui-mesh surface 시작점 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
+> **예제로서**: egui-mesh surface 가 **비트맵 텍스처 + chrome 을 함께** 그리는 예제 — plugin 이 자기 egui `Context` 에서 tessellate 한 mesh 를 host 가 합성한다(mesh-demo 는 순수 위젯 PoC, image 는 텍스처 포함). 새 egui-mesh surface 시작점 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
 
 ## 목적
 
