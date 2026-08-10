@@ -44,7 +44,9 @@
 
 use std::path::{Path, PathBuf};
 
-use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{
+    BlockQuoteKind, CodeBlockKind, CowStr, Event, LinkType, Options, Parser, Tag, TagEnd,
+};
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
@@ -277,14 +279,191 @@ fn lexically_normalize(path: &Path) -> PathBuf {
 /// Parse `source` and generate (unsanitized) HTML, rewriting every link destination to the
 /// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
 /// target). Images are left untouched; the `<base href>` tag resolves relative `src`.
+///
+/// Pass ordering: [`autolink_bare_urls`] runs *before* [`rewrite_link_event`], and synthesizes
+/// its new `Tag::Link` events with a plain raw `dest_url` (e.g. `https://example.com`) — the
+/// exact same shape an explicit `[text](url)` link has at this point in the pipeline. This way
+/// `rewrite_link_event`, run last over the *whole* (now autolink-expanded) event stream, is the
+/// single place that ever produces the `#tasty-nav:` fragment scheme; the autolink pass doesn't
+/// need its own copy of that rewrite. `rewrite_code_block_event`/`rewrite_alert_blockquote_event`
+/// run first since neither touches `Text`/`Link` events, so their relative order doesn't matter.
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
-    let events = Parser::new_ext(source, parser_options())
-        .map(rewrite_link_event)
+    let events: Vec<Event> = Parser::new_ext(source, parser_options())
         .map(rewrite_code_block_event)
-        .map(|event| rewrite_alert_blockquote_event(event, tr));
+        .map(|event| rewrite_alert_blockquote_event(event, tr))
+        .collect();
+    let events = autolink_bare_urls(events)
+        .into_iter()
+        .map(rewrite_link_event);
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events);
     html
+}
+
+// ── Bare `http(s)://` autolinking ───────────────────────────────────────────────
+
+/// Schemes this pass recognizes for bare-URL autolinking. `www.`-prefixed (schemeless) hosts
+/// and email addresses are out of scope for now (conductor-scoped — a separate TODO if needed).
+const AUTOLINK_SCHEMES: &[&str] = &["https://", "http://"];
+
+/// Trailing characters stripped one at a time from the end of a matched URL run — mirrors GFM's
+/// extended-autolink "trailing punctuation" rule so a URL at the end of a sentence/quote doesn't
+/// swallow the punctuation with it (`https://example.com.` → link stops before the `.`). `)` is
+/// handled separately below via paren-balance, not blanket-stripped, since a balanced trailing
+/// `)` (e.g. a wiki URL) is legitimately part of the URL.
+const TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', '\'', '"', '*', '_', '~'];
+
+/// Splits bare `http(s)://` URLs found in plain text into `Tag::Link` spans.
+///
+/// Must be **stateful**, not a plain per-event `map()` like [`rewrite_link_event`]/
+/// [`rewrite_code_block_event`]: whether a given `Event::Text` is eligible depends on events
+/// *around* it, not just its own content —
+/// - text already inside an explicit `Tag::Link` (`[https://x](https://x)`) must be left alone
+///   (no nested/duplicate link), tracked via `link_depth`;
+/// - text inside a `Tag::CodeBlock` (fenced or indented) must be left alone, tracked via
+///   `code_block_depth`. Inline code doesn't need separate tracking — pulldown-cmark never
+///   represents inline-code content as `Event::Text` in the first place (it's the distinct
+///   `Event::Code` variant), so it's already excluded by construction.
+///
+/// It must also **buffer across event boundaries**: probing pulldown-cmark 0.12.2 directly
+/// showed a single visual URL can arrive as *multiple* `Event::Text` events, because a lone
+/// `*`/`_` inside the URL that doesn't pair up into real emphasis still gets tokenized as its
+/// own one-character `Event::Text` (e.g. `.../foo*bar` → `Text("...foo")`, `Text("*")`,
+/// `Text("bar...")`; `.../Rust_(lang)` splits the same way around the first `_`). This pass
+/// therefore merges every consecutive run of eligible `Event::Text` events into one buffer
+/// before scanning it for URLs — a non-text event (real markup, `SoftBreak`, …) always flushes
+/// the buffer first, so genuine markup boundaries are never stitched across.
+fn autolink_bare_urls(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut link_depth: u32 = 0;
+    let mut code_block_depth: u32 = 0;
+    let mut run = String::new();
+
+    for event in events {
+        match event {
+            Event::Text(ref text) if link_depth == 0 && code_block_depth == 0 => {
+                run.push_str(text);
+            }
+            other => {
+                if !run.is_empty() {
+                    out.extend(split_bare_urls(std::mem::take(&mut run)));
+                }
+                match &other {
+                    Event::Start(Tag::Link { .. }) => link_depth += 1,
+                    Event::End(TagEnd::Link) => link_depth = link_depth.saturating_sub(1),
+                    Event::Start(Tag::CodeBlock(_)) => code_block_depth += 1,
+                    Event::End(TagEnd::CodeBlock) => {
+                        code_block_depth = code_block_depth.saturating_sub(1)
+                    }
+                    _ => {}
+                }
+                out.push(other);
+            }
+        }
+    }
+    if !run.is_empty() {
+        out.extend(split_bare_urls(run));
+    }
+    out
+}
+
+/// Scan one merged plain-text run for bare URLs, emitting alternating `Event::Text` (plain) and
+/// `Event::Start(Tag::Link)`/`Event::Text`/`Event::End(TagEnd::Link)` (matched URL) events.
+/// `dest_url`/inner text are both the raw matched URL — [`rewrite_link_event`] rewrites the
+/// destination into the nav-fragment scheme afterward (see [`unsafe_content_html`] doc).
+///
+/// Any HTML entity in the source markdown (`&amp;` etc) has already been decoded to a literal
+/// character by pulldown-cmark's parser by the time it reaches an `Event::Text` — `push_html`
+/// re-escapes it on the way out identically for autolinked and plain text, so no separate
+/// entity handling is needed here.
+fn split_bare_urls(text: String) -> Vec<Event<'static>> {
+    let mut out = Vec::new();
+    let mut plain_start = 0usize;
+    let mut search_from = 0usize;
+
+    while let Some(scheme_start) = find_scheme_start(&text[search_from..]).map(|i| i + search_from)
+    {
+        let url_end = scan_url_end(&text, scheme_start);
+        if url_end <= scheme_start {
+            // Defensive: a recognized scheme with nothing usable after it (shouldn't happen,
+            // the scheme string itself is always non-whitespace). Skip past it and keep scanning.
+            search_from = scheme_start + 1;
+            continue;
+        }
+
+        if scheme_start > plain_start {
+            out.push(Event::Text(
+                text[plain_start..scheme_start].to_string().into(),
+            ));
+        }
+        let url = text[scheme_start..url_end].to_string();
+        out.push(Event::Start(Tag::Link {
+            link_type: LinkType::Autolink,
+            dest_url: CowStr::from(url.clone()),
+            title: CowStr::from(""),
+            id: CowStr::from(""),
+        }));
+        out.push(Event::Text(CowStr::from(url)));
+        out.push(Event::End(TagEnd::Link));
+
+        plain_start = url_end;
+        search_from = url_end;
+    }
+
+    if plain_start < text.len() {
+        out.push(Event::Text(text[plain_start..].to_string().into()));
+    } else if out.is_empty() {
+        // No URL found at all — return the run untouched as a single Text event rather than
+        // an empty Vec, so callers never lose content.
+        out.push(Event::Text(text.into()));
+    }
+    out
+}
+
+/// Byte offset (relative to `text`) of the earliest recognized [`AUTOLINK_SCHEMES`] occurrence,
+/// or `None` if the text contains none. `https://` can never spuriously contain `http://` as a
+/// substring (the 5th character differs, `s` vs `:`), so checking both independently and taking
+/// the minimum can't double-count a single occurrence.
+fn find_scheme_start(text: &str) -> Option<usize> {
+    AUTOLINK_SCHEMES
+        .iter()
+        .filter_map(|scheme| text.find(scheme))
+        .min()
+}
+
+/// Given confirmed scheme text starting at `scheme_start`, find the byte offset (absolute, in
+/// `text`) where the URL run ends: the first ASCII whitespace or CommonMark autolink delimiter
+/// (`<`/`>`), then trailing punctuation trimmed back per [`TRAILING_PUNCTUATION`] and paren
+/// balance (only parens *within the matched run* count — an enclosing sentence's own `(`/`)`
+/// around the whole URL, e.g. `(https://example.com)`, is irrelevant to this balance check).
+fn scan_url_end(text: &str, scheme_start: usize) -> usize {
+    let rest = &text[scheme_start..];
+    let mut end = rest
+        .char_indices()
+        .find(|(_, c)| c.is_whitespace() || *c == '<' || *c == '>')
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+
+    loop {
+        let candidate = &rest[..end];
+        let Some(last) = candidate.chars().last() else {
+            break;
+        };
+        if TRAILING_PUNCTUATION.contains(&last) {
+            end -= last.len_utf8();
+            continue;
+        }
+        if last == ')' {
+            let opens = candidate.matches('(').count();
+            let closes = candidate.matches(')').count();
+            if closes > opens {
+                end -= 1; // ')' is a single ASCII byte
+                continue;
+            }
+        }
+        break;
+    }
+    scheme_start + end
 }
 
 fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
@@ -1169,6 +1348,68 @@ mod tests {
     fn unsafe_content_html_leaves_anchor_links_untouched() {
         let out = unsafe_content_html("[jump](#section)", &Translator::default());
         assert!(out.contains(r##"href="#section""##));
+    }
+
+    #[test]
+    fn bare_url_becomes_nav_fragment_link() {
+        let out = sanitize_html(&unsafe_content_html(
+            "Visit https://example.com today.",
+            &Translator::default(),
+        ));
+        assert!(out.contains("#tasty-nav:link:"), "got: {out}");
+        assert!(!out.contains(r#"href="https://example.com""#), "got: {out}");
+        assert!(out.contains(">https://example.com</a>"), "got: {out}");
+    }
+
+    #[test]
+    fn bare_url_inside_inline_code_is_not_linked() {
+        let out = unsafe_content_html("`https://example.com` is code.", &Translator::default());
+        assert!(
+            out.contains("<code>https://example.com</code>"),
+            "got: {out}"
+        );
+        assert!(!out.contains("<a "), "got: {out}");
+    }
+
+    #[test]
+    fn bare_url_inside_code_block_is_not_linked() {
+        let out = unsafe_content_html("```\nhttps://example.com\n```\n", &Translator::default());
+        assert!(out.contains("<pre><code>https://example.com"), "got: {out}");
+        assert!(!out.contains("<a "), "got: {out}");
+    }
+
+    #[test]
+    fn already_explicit_link_is_not_double_linked() {
+        let out = unsafe_content_html(
+            "[https://example.com](https://example.com)",
+            &Translator::default(),
+        );
+        assert_eq!(out.matches("<a ").count(), 1, "got: {out}");
+        assert!(out.contains("#tasty-nav:link:"), "got: {out}");
+    }
+
+    #[test]
+    fn bare_url_trailing_sentence_period_stays_outside_link() {
+        let out = unsafe_content_html("Visit https://example.com. Thanks.", &Translator::default());
+        assert!(out.contains(">https://example.com</a>."), "got: {out}");
+    }
+
+    #[test]
+    fn bare_url_with_balanced_parens_keeps_trailing_paren() {
+        let out = unsafe_content_html(
+            "See https://en.wikipedia.org/wiki/Rust_(programming_language) here.",
+            &Translator::default(),
+        );
+        assert!(
+            out.contains(">https://en.wikipedia.org/wiki/Rust_(programming_language)</a>"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn bare_url_wrapped_in_sentence_parens_excludes_outer_paren() {
+        let out = unsafe_content_html("See (https://example.com) here.", &Translator::default());
+        assert!(out.contains(">https://example.com</a>)"), "got: {out}");
     }
 
     #[test]

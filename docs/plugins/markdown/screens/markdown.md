@@ -68,6 +68,46 @@ emit 하지 않는다. `data-label` 은 실제 `Tag::BlockQuote(Some(kind))` AST
 가짜 alert 로 오인되지 않는다(완성된 HTML 문자열을 매칭하는 방식이 아니라 파서 이벤트 자체를
 가로채는 방식이기 때문).
 
+## Bare URL autolink
+
+본문에 `<...>` 꺾쇠나 `[text](url)` 마크다운 문법 없이 그냥 텍스트로 적은 `http://`/`https://` URL 도
+클릭 가능한 링크로 변환된다. `pulldown-cmark` 0.12.2 는 CommonMark 코어의 꺾쇠 autolink 만 지원하고
+GFM 의 확장 autolink(스킴 없는 bare URL 인식 포함)는 구현하지 않으므로(`Options::ENABLE_GFM` 는 alert
+blockquote 태그만 켠다), `render.rs::autolink_bare_urls`/`split_bare_urls` 가 이벤트 스트림에서 직접
+스캔해 `Tag::Link` 로 쪼갠다. **이번 스코프는 `http(s)://` 스킴만이다** — `www.`-prefix(스킴 없는
+호스트)나 이메일 자동링크는 제외(필요성이 확인되면 별도 TODO).
+
+이 pass 는 상태를 가진 스캔이다(단순 무상태 `map()` 이 아님) — 다음을 명시적으로 제외한다:
+
+- 이미 `Tag::Link` 안의 텍스트(`[https://x](https://x)`처럼 이미 명시적으로 링크된 경우) — 중복 링크
+  방지.
+- `Tag::CodeBlock`(펜스드/들여쓰기 코드블록) 내부 텍스트.
+- 인라인 코드는 별도 추적이 필요 없다 — pulldown-cmark 는 인라인 코드 내용을 애초에 `Event::Text`
+  가 아니라 별개의 `Event::Code` variant 로 표현하므로 구조적으로 이미 제외된다.
+
+실측 확인 결과, 하나의 시각적 URL 이 여러 `Event::Text` 조각으로 쪼개져 들어오는 경우가 실제로
+있다 — URL 안에서 진짜 강조(emphasis)로 짝이 맞지 않는 `*`/`_` 하나가 단독 1글자 `Event::Text` 로
+따로 토큰화된다(예: `.../foo*bar` → `Text("...foo")` + `Text("*")` + `Text("bar...")`). 그래서 이
+pass 는 실제 마크업(다른 태그 시작/`SoftBreak` 등)이 끼어들기 전까지 연속된 `Event::Text` 를 하나의
+버퍼로 병합한 뒤 그 위에서 URL 을 스캔한다 — 진짜 마크업 경계는 절대 이어붙이지 않는다.
+
+경계 처리:
+
+- **문장부호 트리밍**: URL 끝의 `.`/`,`/`;`/`:`/`!`/`?`/따옴표/단독 `*`/`_`/`~` 는 한 글자씩 제거해
+  링크 밖으로 뺀다(`https://example.com.` → `.` 는 링크 밖).
+- **괄호 균형**: 매치된 URL **자기 자신 안의** `(`/`)` 개수만 비교한다 — 위키 URL처럼 URL 내부에서
+  괄호가 짝이 맞으면(`Rust_(programming_language)`) 끝의 `)` 를 유지하고, 문장이 URL 을 감싸는
+  괄호(`(https://example.com)`)처럼 URL 자체엔 없던 `)` 만 남으면 링크 밖으로 뺀다.
+- **HTML entity**: `&amp;` 같은 entity 는 pulldown-cmark 파서가 `Event::Text` 에 도달하기 전에 이미
+  실제 문자로 디코드해두므로, autolink 여부와 무관하게 `push_html` 이 나가는 길에 동일하게
+  재이스케이프한다 — 이 pass 에 별도 entity 처리가 필요 없다.
+
+새로 만들어진 `Tag::Link` 의 `dest_url` 은 명시적 마크다운 링크와 동일한 규칙으로
+`#tasty-nav:link:<enc>` 프래그먼트로 재작성된다 — `autolink_bare_urls` 는 원본 URL 을 그대로
+`dest_url` 에 넣은 `Tag::Link` 만 만들고, 이벤트 스트림 전체를 마지막에 한 번 통과하는
+`rewrite_link_event` 가 명시적 링크와 자동 생성 링크를 구분 없이 동일하게 nav-fragment 로 바꾼다
+(순서는 `unsafe_content_html` 의 주석 참조).
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
