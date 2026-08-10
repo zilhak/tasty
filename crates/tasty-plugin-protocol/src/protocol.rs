@@ -211,6 +211,12 @@ pub enum RawInputEventWire {
     /// 끝난 최종 문자열만 나르지만, `Ime` 는 조합 중 preedit 문자열을 라이브로 전달해
     /// plugin 의 `TextEdit` 이 조합 중간 상태를 인라인 표시하게 한다.
     Ime { event: ImeWire },
+    /// 복사 단축키(host keybinding `copy` 매칭). 물리 키가 아니라 host 가 그 키를
+    /// 의미론적으로 해석한 결과 — egui-winit 이 플랫폼 Ctrl+C 를 `Event::Copy` 로
+    /// 변환해 넘기는 것과 동일한 host/platform-integration 역할이다. plugin SDK 가
+    /// `egui::Event::Copy` 로 매핑하면, plugin 자신의 텍스트 선택(selectable label /
+    /// `TextEdit`)이 있을 때 egui 가 `platform_output.copied_text` 를 채운다.
+    Copy,
 }
 
 /// egui `ImeEvent` 미러 — IME 조합 세션의 4단계. `RawInputEventWire::Ime` 에 실린다.

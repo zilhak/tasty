@@ -37,8 +37,8 @@ use std::time::Duration;
 use egui::epaint::textures::{TextureOptions, TexturesDelta};
 use egui::epaint::{ImageData, ImageDelta, TextureId};
 use egui::{
-    Context, Event, ImeEvent, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, Rect,
-    vec2,
+    Context, Event, ImeEvent, Key, Modifiers, MouseWheelUnit, OutputCommand, PointerButton, Pos2,
+    RawInput, Rect, vec2,
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
@@ -88,6 +88,11 @@ struct EguiMeshCore {
     /// 송신 정책"), 이 신호를 누군가 읽어 host 에 재-invalidate 를 요청하지 않으면
     /// 유휴 상태에서 애니메이션이 방치된다([`EguiMeshSurface`]가 소비).
     pending_self_repaint: Option<Duration>,
+    /// 직전 `render()` 의 `platform_output.copied_text` — `Event::Copy` 를 처리한
+    /// frame 에서 plugin 자신의 텍스트 선택(selectable label / `TextEdit`)이 있었을
+    /// 때만 채워진다. 클립보드 기록은 plugin 이 직접 한다(ADR-0009) — 이 필드는 그
+    /// 값을 host round-trip 없이 plugin 코드로 넘겨주는 통로일 뿐이다.
+    last_copied_text: Option<String>,
 }
 
 /// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
@@ -133,6 +138,7 @@ impl EguiMeshCore {
             #[cfg(any(unix, windows))]
             buffer: None,
             pending_self_repaint: None,
+            last_copied_text: None,
         }
     }
 
@@ -199,6 +205,12 @@ impl EguiMeshCore {
         self.pending_self_repaint
     }
 
+    /// 직전 `render()` 가 처리한 `Event::Copy` 로 텍스트 선택이 복사됐다면 그 문자열을
+    /// 1회 소비(take)해 반환한다. 선택이 없었거나 `Event::Copy` 가 없던 frame 이면 `None`.
+    fn take_copied_text(&mut self) -> Option<String> {
+        self.last_copied_text.take()
+    }
+
     /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
     /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
     ///
@@ -212,6 +224,14 @@ impl EguiMeshCore {
         run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
         let full = self.ctx.run(raw, run_ui);
+        // 이번 pass 가 `Event::Copy` 를 처리해 텍스트 선택을 복사했다면 채워진다(egui
+        // 내장 selectable-label/TextEdit 복사 로직 — `OutputCommand::CopyText` 로
+        // 나온다, 옛 `PlatformOutput::copied_text` 필드는 deprecated). 매 render() 마다
+        // 갱신되므로 다음 pass 에 선택이 없으면 자연히 지워진다.
+        self.last_copied_text = full.platform_output.commands.iter().find_map(|c| match c {
+            OutputCommand::CopyText(text) if !text.is_empty() => Some(text.clone()),
+            _ => None,
+        });
         // egui 가 이번 pass 에서 추가 pass 를 요청했는지 읽어둔다 — dedup(아래) 으로
         // 이번 frame 이 송신 생략되더라도 유실되지 않도록 매 render() 마다 갱신한다.
         // egui-mesh 는 단일 ROOT viewport 만 쓴다(`build_raw_input` 이 viewport_id 를
@@ -463,6 +483,14 @@ impl EguiMeshSurface {
     /// 직전 `set_context` 의 theme 스냅샷(재-paint closure 재구성용). 첫 컨텍스트 전 `None`.
     pub fn last_theme(&self) -> Option<&ThemeWire> {
         self.core.last_theme()
+    }
+
+    /// 직전 `run_frame`/`paint` 가 처리한 `RawInputEventWire::Copy` 로 텍스트 선택이
+    /// 복사됐다면 그 문자열을 1회 소비해 반환한다(egui `Event::Copy` → 내장
+    /// selectable-label/`TextEdit` 복사 로직). plugin 은 이 값을 OS 클립보드에 직접
+    /// 쓴다(ADR-0009 — 비-샌드박스 프로세스라 host round-trip 이 필요 없다).
+    pub fn take_copied_text(&mut self) -> Option<String> {
+        self.core.take_copied_text()
     }
 
     /// `set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
@@ -907,6 +935,7 @@ fn map_event(e: &RawInputEventWire) -> Option<Event> {
             ImeWire::Commit { text } => ImeEvent::Commit(text.clone()),
             ImeWire::Disabled => ImeEvent::Disabled,
         }),
+        RawInputEventWire::Copy => Event::Copy,
     })
 }
 
@@ -1499,5 +1528,61 @@ mod tests {
             popup.core.pending_self_repaint().is_some(),
             "popup render() must not drop egui's repaint request either"
         );
+    }
+
+    /// `RawInputEventWire::Copy` 가 `map_event` 를 거쳐 실제 `egui::Event::Copy` 로
+    /// 도착하는지 확인한다 — markdown 복사 회귀의 근본 원인은 host 가 이 이벤트를
+    /// plugin 의 egui `Context` 가 아니라 자기 자신의 top-level `Context` 에 주입하던
+    /// 것이었다. wire → `Event` 매핑 자체가 다시 끊기지 않도록 고정한다.
+    #[test]
+    fn copy_wire_event_maps_to_egui_copy() {
+        assert_eq!(map_event(&RawInputEventWire::Copy), Some(Event::Copy));
+    }
+
+    /// 엔드투엔드 회귀: 텍스트가 선택된 상태에서 `Copy` wire 이벤트를 보내면, egui 의
+    /// 내장 `TextEdit` 선택-복사 로직이 `platform_output.commands` 에 `CopyText` 를
+    /// 채우고 `render()` 가 그 값을 `take_copied_text()` 로 노출해야 한다. 선택이
+    /// 없으면(다음 frame) 값이 남아있지 않아야 한다(1회 소비 + 자연 소거).
+    #[test]
+    fn copy_event_exposes_selected_text_edit_range() {
+        let mut surface = EguiMeshSurface::new(1);
+        let id = egui::Id::new("copy_test");
+        let mut buf = "hello world".to_string();
+
+        // frame 1: TextEdit 에 포커스를 주고, 전체 텍스트를 선택한 상태를 저장한다
+        // (실제 마우스 드래그 대신 `TextEditState` 를 직접 seed — egui 공식 문서의
+        // "새 selection 만들기" 레시피와 동일한 방식).
+        surface.run_frame(&ctx_params(400, 100, 1.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.memory_mut(|m| m.request_focus(id));
+                let mut output = egui::TextEdit::singleline(&mut buf).id(id).show(ui);
+                let range = egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(0),
+                    egui::text::CCursor::new(buf.chars().count()),
+                );
+                output.state.cursor.set_char_range(Some(range));
+                output.state.store(ui.ctx(), output.response.id);
+            });
+        });
+        assert_eq!(
+            surface.take_copied_text(),
+            None,
+            "selecting text alone must not copy anything"
+        );
+
+        // frame 2: 선택은 유지된 채(입력 없는 재-run 이 아니라 같은 UI 를 다시 그려
+        // 포커스+선택을 재현) Copy wire 이벤트만 보낸다.
+        let mut copy_params = ctx_params(400, 100, 1.0);
+        copy_params.raw_input.events = vec![RawInputEventWire::Copy];
+        surface.run_frame(&copy_params, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.memory_mut(|m| m.request_focus(id));
+                ui.add(egui::TextEdit::singleline(&mut buf).id(id));
+            });
+        });
+
+        assert_eq!(surface.take_copied_text().as_deref(), Some("hello world"));
+        // 1회 소비 — 바로 다시 물으면 비어 있다.
+        assert_eq!(surface.take_copied_text(), None);
     }
 }

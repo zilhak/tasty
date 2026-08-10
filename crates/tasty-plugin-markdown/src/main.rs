@@ -598,6 +598,9 @@ impl MarkdownPlugin {
         if let Err(e) = result {
             tracing::warn!("markdown surface {sid} paint failed: {e}");
         }
+        if let Some(text) = mesh.take_copied_text() {
+            write_clipboard_text(text);
+        }
 
         after_paint_side_effects(
             &ctx.host,
@@ -849,6 +852,22 @@ fn format_size(bytes: u64) -> String {
         format!("{mb:.0} MB")
     } else {
         format!("{mb:.1} MB")
+    }
+}
+
+/// Copy 단축키로 얻은 선택 텍스트를 OS 클립보드에 직접 쓴다. 이 plugin 은 host IPC 를
+/// 거치지 않는 비-샌드박스 OS 프로세스라 자기 클립보드에 직접 접근할 수 있다(ADR-0009 —
+/// clipboard-viewer plugin 의 arboard read 선례와 동일한 write 대응). 실패해도 사용자
+/// 입력을 막을 이유가 없으므로 로그만 남긴다.
+#[cfg(any(unix, windows))]
+fn write_clipboard_text(text: String) {
+    match arboard::Clipboard::new() {
+        Ok(mut clip) => {
+            if let Err(e) = clip.set_text(text) {
+                tracing::warn!("markdown copy: clipboard write failed: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("markdown copy: clipboard open failed: {e}"),
     }
 }
 

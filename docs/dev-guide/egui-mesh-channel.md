@@ -309,6 +309,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 키 누름(press-only) | `Key { key: egui Key::name(), … }` | `egui_mesh_push_key` ← `keyboard.rs` `forward_key_to_egui_mesh` |
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
+| 복사 단축키(`egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
 
 `MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
 마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`

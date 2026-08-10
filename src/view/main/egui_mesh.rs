@@ -248,11 +248,22 @@ impl MainView {
         st.events.push(RawInputEventWire::Scroll { x: dx, y: dy });
     }
 
+    /// 복사 단축키(Ctrl+C 등, host keybinding `copy` 매칭)를 egui-mesh surface 에
+    /// 전달 — `egui_copy` capability 를 가진 kind(예: markdown)의 텍스트 선택을
+    /// plugin 자신의 egui `Context` 가 복사하도록 `Copy` wire 이벤트를 누적한다.
+    /// `adapters::ui::input::shortcuts::copy_paste::handle_copy_shortcut` 이
+    /// `view::main` 밖에서 호출하므로 `pub(crate)`.
+    pub(crate) fn egui_mesh_push_copy(&mut self, surface_id: u32) {
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::Copy);
+    }
+
     /// 포커스된 surface 가 egui-mesh(plugin 렌더 markdown/image 등)면 그 surface_id 반환.
     /// terminal·host-egui surface 는 `None` — 키/Text/IME forward 대상 판정에 쓴다.
     /// `downcast` 로 실제 [`EguiMeshSurface`] 인지 확인하므로, 임의 plugin 의 `Kind`
-    /// surface(RemoteSurface 등)로 잘못 forward 되지 않는다.
-    pub(super) fn focused_egui_mesh_surface_id(&self) -> Option<u32> {
+    /// surface(RemoteSurface 등)로 잘못 forward 되지 않는다. `copy_paste.rs` 가
+    /// `view::main` 밖에서도 호출하므로 `pub(crate)`.
+    pub(crate) fn focused_egui_mesh_surface_id(&self) -> Option<u32> {
         let sid = self.state.focused_surface_id(&self.core_state)?;
         let surface = self.core_state.find_surface_by_id(sid)?;
         surface

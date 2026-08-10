@@ -32,13 +32,15 @@ impl MainView {
             return true;
         }
         let st = self.state.focused_surface_type(&self.core_state);
-        // egui_copy capability 를 가진 kind(예: markdown)는 선택 텍스트를 plugin egui 가
-        // 복사하도록 egui Copy 이벤트를 주입한다(kind 하드코딩 없음).
-        if st.kind_capability(&self.core_state, |d| d.egui_copy) {
-            self.base
-                .gpu
-                .egui_ctx
-                .input_mut(|i| i.events.push(egui::Event::Copy));
+        // egui_copy capability 를 가진 kind(예: markdown)는 선택 텍스트를 plugin 자신의
+        // egui Context 가 복사하도록 Copy wire 이벤트를 그 surface 에 forward 한다(kind
+        // 하드코딩 없음). host 자신의 top-level egui_ctx 는 이 plugin 의 위젯을 갖고
+        // 있지 않으므로 대상이 될 수 없다 — 반드시 focused_egui_mesh_surface_id() 로
+        // 찾은 실제 plugin surface 로 보낸다.
+        if st.kind_capability(&self.core_state, |d| d.egui_copy)
+            && let Some(sid) = self.focused_egui_mesh_surface_id()
+        {
+            self.egui_mesh_push_copy(sid);
             self.mark_dirty();
             return true;
         }

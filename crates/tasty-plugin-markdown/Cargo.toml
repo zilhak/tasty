@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.38"
+version = "0.1.39"
 edition = "2024"
 license = "MIT"
 description = "Markdown viewer surface plugin (egui-mesh)"
@@ -41,6 +41,10 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 # 링크 destination pre-scan 전용 (egui_commonmark 도 내부적으로 같은 0.12 를 쓴다).
 pulldown-cmark = { version = "0.12", default-features = false }
+# Copy 단축키로 선택 텍스트를 OS 클립보드에 직접 쓴다 — 이 plugin 은 비-샌드박스 OS
+# 프로세스라 host round-trip 없이 자기 클립보드 접근이 가능하다(ADR-0009,
+# clipboard-viewer plugin 의 read 선례와 동일한 write 대응).
+arboard = "3"
 webbrowser = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
