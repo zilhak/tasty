@@ -546,9 +546,12 @@ impl MainView {
         use crate::settings::PluginSettingValue;
         use crate::webview::{ColorScheme, HtmlWebViewSettings};
 
-        let plugin_id = match self.webview_surface_kind(surface_id) {
-            Some("html") => "com.tasty.html",
-            _ => return HtmlWebViewSettings::default(),
+        let plugin_id = match self
+            .webview_surface_kind(surface_id)
+            .and_then(crate::webview::webview_settings_plugin_id)
+        {
+            Some(id) => id,
+            None => return HtmlWebViewSettings::default(),
         };
         let s = &self.core_state.settings;
         let zoom_percent = match s.plugin_setting(plugin_id, "zoom") {

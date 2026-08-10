@@ -69,6 +69,18 @@ impl Default for HtmlWebViewSettings {
     }
 }
 
+/// webview surface kind 문자열 → 그 kind 가 소비하는 generic `plugin_settings` 슬롯의
+/// plugin_id. 현재는 html(`com.tasty.html`) 만 generic 설정을 갖는다(다른 kind 는 `None` —
+/// 호출자는 default 로 안전 fallback). read 경로(`resolve_webview_settings`)와 write 경로
+/// (zoom 단축키 재배선, `adapters/ui/input/shortcuts/zoom.rs`)가 이 매핑을 공유해 두
+/// 슬롯이 어긋나지 않게 한다.
+pub fn webview_settings_plugin_id(kind: &str) -> Option<&'static str> {
+    match kind {
+        "html" => Some("com.tasty.html"),
+        _ => None,
+    }
+}
+
 impl HtmlWebViewSettings {
     /// 4개 backend 제어 메서드에 적용한다. zoom·JS 는 3 OS 실효. remote 는 3 OS 모두
     /// 실효(macOS=WKContentRuleList / Windows=WebResourceRequested / Linux=decide-policy,
