@@ -38,6 +38,14 @@ placeholder = "Path to markdown file"
 go = "Open (Enter)"
 no_recent = "No recent files"
 
+# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::ALERT_KINDS 가 조회.
+[markdown.alert]
+note = "Note"
+tip = "Tip"
+important = "Important"
+warning = "Warning"
+caution = "Caution"
+
 # 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
 [preset.field]
 file = "File"

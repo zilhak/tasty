@@ -48,6 +48,26 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
 감수한 트레이드오프다. 인라인 코드(`` `--` ``)와 펜스드 코드블록 내부 텍스트, 그리고 백슬래시로
 이스케이프한 문장부호(`\"`, `\-\-`)는 이 치환의 영향을 받지 않고 원문 그대로 남는다.
 
+## GFM alert blockquote
+
+`> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/`[!CAUTION]`(blockquote 의 첫 줄에 태그만 있어야
+인식, 대소문자 무관 — `pulldown-cmark` `Options::ENABLE_GFM`)은 각각 고유 accent 색·아이콘·헤더
+레이블을 가진 alert 로 렌더된다. 헤더 레이블은 `render.rs::ALERT_KINDS` 가 plugin 자신의
+`Translator` 로 UI 언어에 맞게 조회한 뒤(`markdown.alert.{note,tip,important,warning,caution}`,
+`lang/{en,ko,ja}.toml`) `data-label` 속성으로 문서에 심는다 — CSS 는 언어를 분기할 수 없으므로
+`content: attr(data-label)` 로 그 값을 그대로 반영한다. 아이콘은 `tasty-icons` 의 canonical
+글리프(note=`ALERT_CIRCLE`, tip=`STAR_FILL`, important=`BELL`, warning=`ALERT_TRIANGLE`,
+caution=`CLOSE`)를 각 kind 의 accent 색으로 구운 SVG data URI 로 `background-image` 에 심는다
+(`render.rs::alert_icon_data_uri`) — `tasty_icons::Icon` 원본은 `stroke="white"`/`fill="white"`
+고정이라 egui 텍스처 tint 대신 색을 직접 구운 사본을 만든다. 배경은 그 accent 색의 저알파(≈12%,
+`drop_overlay.rs` 관례와 동일 비율) 버전.
+
+일반 blockquote(태그 없는 `>`)는 영향받지 않는다 — pulldown-cmark 는 그 경우 `class` 자체를
+emit 하지 않는다. `data-label` 은 실제 `Tag::BlockQuote(Some(kind))` AST 이벤트에서만 심어지므로,
+문서 본문에 raw HTML 로 `<blockquote class="markdown-alert-note">` 같은 리터럴을 직접 써넣어도
+가짜 alert 로 오인되지 않는다(완성된 HTML 문자열을 매칭하는 방식이 아니라 파서 이벤트 자체를
+가로채는 방식이기 때문).
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
@@ -71,13 +91,16 @@ Theme 토큰 매핑이다.
 | 상태(에러) 제목 | inline hex(`danger`) | `accent-danger` | `.tasty-state-title` |
 | 상태(에러/빈 문서) 본문 | inline hex(`muted`) | `text-muted` | `.tasty-state-detail` |
 | 코너 반경/보더 굵기 | `--md-radius` / `--md-border-w` | `corner-radius` / `border-width` | 주소창 입력·코드 블록·표 공용 |
+| GFM alert 5종 | inline hex(kind 별 accent) | note=`accent-primary` · tip=`accent-success` · important=`accent-agent` · warning=`accent-warning` · caution=`accent-danger` | 전용 alert 토큰 없음 — 기존 semantic accent 재사용(위 "GFM alert blockquote" 절) |
 
 ## 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/markdown_viewer.rs` — Layouts › `Content viewers` ›
 `Markdown surface`. 갤러리는 live webview 를 띄우지 않으므로, 위 CSS 출력을 egui `Frame`/`Label`
 로 **손으로 근사**한다(픽셀 동일성은 비목표) — 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션
-대표 문서 + 주소창 chrome 의 정적 근사. 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
+대표 문서 + 주소창 chrome 의 정적 근사 + GFM alert 5종(accent 배경/보더 + 아이콘 + 굵은 레이블,
+실제 CSS 는 좌측 바만 쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사).
+3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
 
 ## 시각 소스
 

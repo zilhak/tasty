@@ -134,6 +134,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("link", "accent-primary · nav-fragment intercepted"),
             ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
+            (
+                "alerts",
+                "5× GFM `[!NOTE]`.. — accent 12% bg + border + icon/label header",
+            ),
         ],
         &[
             TokenChip::new("bg-panel", "surface", theme.bg_panel().to_egui()),
@@ -153,7 +157,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "h5/h6 · caption",
                 theme.text_muted().to_egui(),
             ),
-            TokenChip::new("accent-primary", "link", theme.accent_primary().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "link · note alert",
+                theme.accent_primary().to_egui(),
+            ),
             TokenChip::new(
                 "surface-raised",
                 "code bg",
@@ -177,8 +185,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-danger",
-                "load failed",
+                "load failed · caution alert",
                 theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-success",
+                "tip alert",
+                theme.accent_success().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "warning alert",
+                theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-agent",
+                "important alert",
+                theme.accent_agent().to_egui(),
             ),
         ],
     );
@@ -191,10 +214,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          colors and type scale follow the design. The heading ladder is a 5-step linear \
          interpolation between the Heading anchor (prose-h1 20) and Body (13), fully \
          controlled by the plugin's own CSS generator (no library constraint left) — h2/h3 \
-         still read alike by design choice, not limitation. This specimen hand-transcribes \
-         the same tokens as an approximation of that CSS output (the gallery does not embed \
-         a live webview). Below the document: the heading type-scale, and the load-fail / \
-         empty / loading chrome that replaces a raw `Error:` body.",
+         still read alike by design choice, not limitation. GFM alert blockquotes \
+         (`> [!NOTE]`/`TIP`/`IMPORTANT`/`WARNING`/`CAUTION`) each get their own accent \
+         color, icon, and localized header label baked into the document at generation time — \
+         CSS alone can't branch on the UI language, so `render.rs` resolves the label via its \
+         own `Translator` and carries it across the sanitize boundary as a `data-label` \
+         attribute the CSS then echoes back with `content: attr(data-label)`. This specimen \
+         hand-transcribes the same tokens as an approximation of that CSS output (the gallery \
+         does not embed a live webview). Below the document: the heading type-scale, and the \
+         load-fail / empty / loading chrome that replaces a raw `Error:` body.",
     );
 }
 
@@ -272,6 +300,9 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
 
             heading(ui, theme, 3, "Blockquote");
             blockquote(ui, theme);
+
+            heading(ui, theme, 3, "Alerts (GFM)");
+            alerts(ui, theme);
 
             // h4/h5/h6 — 작은 계층(secondary → muted → UPPER) 노출.
             heading(ui, theme, 4, "Subsection (h4)");
@@ -687,6 +718,99 @@ fn quote_block(
         0.0,
         theme.border_strong().to_egui(),
     );
+}
+
+/// GitHub 스타일 alert blockquote(`> [!NOTE]` 등) 5종 — `render.rs::ALERT_KINDS`(icon/accent/
+/// label 매핑) 과 `render.rs::alert_css`(배경 12% tint 유도)의 손 근사. 실제 CSS 출력은
+/// 좌측 accent 바만 쓰지만(다른 blockquote 와 동일 `border-left`), 이 specimen 은 egui
+/// `Frame` 의 표준 paint-order 이점(배경이 자식 콘텐츠보다 먼저 그려짐이 보장됨)을 살리려
+/// 4변 보더로 근사한다 — 픽셀 동일성은 애초에 이 파일의 비목표(모듈 doc 참고).
+/// (glyph, accent accessor, label, body) — one [`alerts`] row.
+type AlertSpec = (
+    icons::MockGlyph,
+    fn(&Theme) -> tasty_type_appearance::color::HexColor,
+    &'static str,
+    &'static str,
+);
+
+fn alerts(ui: &mut egui::Ui, theme: &Theme) {
+    let items: [AlertSpec; 5] = [
+        (
+            icons::ALERT_CIRCLE,
+            Theme::accent_primary,
+            "Note",
+            "Highlights information users should take into account, even when skimming.",
+        ),
+        (
+            icons::STAR_FILL,
+            Theme::accent_success,
+            "Tip",
+            "Optional information to help a user be more successful.",
+        ),
+        (
+            icons::BELL,
+            Theme::accent_agent,
+            "Important",
+            "Crucial information necessary for users to succeed.",
+        ),
+        (
+            icons::ALERT_TRIANGLE,
+            Theme::accent_warning,
+            "Warning",
+            "Critical content demanding immediate user attention due to possible risks.",
+        ),
+        (
+            icons::CLOSE,
+            Theme::accent_danger,
+            "Caution",
+            "Negative potential consequences of an action.",
+        ),
+    ];
+    for (icon, accent, label, body) in items {
+        alert_box(ui, theme, icon, accent(theme), label, body);
+        ui.add_space(theme.spacing_xs.value());
+    }
+}
+
+/// accent 12% 배경(`render.rs::alert_css`의 `BG_ALPHA = 31` 과 동일 비율) + accent 보더 +
+/// 아이콘(`tasty_icons`, accent tint)+굵은 label 헤더 + muted 본문.
+fn alert_box(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: icons::MockGlyph,
+    color: tasty_type_appearance::color::HexColor,
+    label: &str,
+    body: &str,
+) {
+    egui::Frame::new()
+        .fill(color.with_alpha(31).to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            color.to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_md.value() as i8,
+            theme.spacing_sm.value() as i8,
+        ))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let sz = theme.font_size_body.value();
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                icon.image(sz, color.to_egui()).paint_at(ui, rect);
+                ui.label(
+                    rich(theme, label, theme.font_size_body.value(), color.to_egui()).strong(),
+                );
+            });
+            ui.add_space(theme.spacing_xs.value() * 0.5);
+            ui.label(rich(
+                theme,
+                body,
+                theme.font_size_body.value(),
+                theme.text_secondary().to_egui(),
+            ));
+        });
 }
 
 fn hr(ui: &mut egui::Ui, theme: &Theme) {

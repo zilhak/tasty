@@ -75,7 +75,9 @@ pub enum NavIntent {
 }
 
 /// Parser options mirroring GFM: tables, task lists, strikethrough, footnotes, definition
-/// lists. Shared by [`unsafe_content_html`] and any pre-scan.
+/// lists, alert blockquotes (`> [!NOTE]` etc — [`Options::ENABLE_GFM`] is the *only* flag
+/// `scan_blockquote_tag` gates on in pulldown-cmark 0.12's `firstpass.rs`, so it touches
+/// nothing else already enabled here). Shared by [`unsafe_content_html`] and any pre-scan.
 ///
 /// - `ENABLE_YAML_STYLE_METADATA_BLOCKS`/`ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS` — hides
 ///   leading `---`/`+++` frontmatter (Jekyll/Hugo/Obsidian/Zettlr convention) from the
@@ -99,6 +101,7 @@ fn parser_options() -> Options {
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
         | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS
         | Options::ENABLE_SMART_PUNCTUATION
+        | Options::ENABLE_GFM
 }
 
 /// Everything [`render_document`] needs. A struct (rather than a long parameter list) since
@@ -144,7 +147,7 @@ pub fn render_document(input: DocumentInput) -> String {
             html_escape(tr.t("markdown.state.empty"))
         )
     } else {
-        sanitize_html(&unsafe_content_html(source))
+        sanitize_html(&unsafe_content_html(source, tr))
     };
 
     // 3.5MB 번들이라 mermaid 블록이 실제로 있는 문서에서만 삽입한다 — 대다수 문서는
@@ -274,13 +277,13 @@ fn lexically_normalize(path: &Path) -> PathBuf {
 /// Parse `source` and generate (unsanitized) HTML, rewriting every link destination to the
 /// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
 /// target). Images are left untouched; the `<base href>` tag resolves relative `src`.
-fn unsafe_content_html(source: &str) -> String {
+fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     let events = Parser::new_ext(source, parser_options())
         .map(rewrite_link_event)
         .map(rewrite_code_block_event);
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events);
-    html
+    inject_alert_labels(&html, tr)
 }
 
 fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
@@ -345,18 +348,114 @@ fn sanitize_fence_lang(info: &str) -> String {
         .collect()
 }
 
+// ── GFM alert blockquotes (`> [!NOTE]` etc) ────────────────────────────────────
+
+/// One of the 5 GitHub-style alert blockquote kinds. With [`Options::ENABLE_GFM`] on,
+/// pulldown-cmark's own `html.rs` recognizes `> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/
+/// `[!CAUTION]` (first line of the blockquote, case-insensitive, nothing else on that line —
+/// `scanners.rs::scan_blockquote_tag`) and emits `<blockquote class="markdown-alert-<kind>">` —
+/// but *only* that class attribute; it never generates an icon or a label string (verified by
+/// reading `html.rs`'s `Tag::BlockQuote` match arm). This table fills that gap: [`ALERT_KINDS`]
+/// pairs each of the 5 fixed literal classes with an i18n label key ([`inject_alert_labels`])
+/// and a [`tasty_icons`] glyph + `Theme` accent color ([`alert_css`]).
+struct AlertKind {
+    /// The exact literal class pulldown-cmark's `html.rs` hardcodes for this kind — matched by
+    /// plain substring replacement in [`inject_alert_labels`], never user-influenced.
+    class: &'static str,
+    /// `Translator` key for the header label — must exist in `lang/{en,ko,ja}.toml`.
+    label_key: &'static str,
+    /// Inner markup of a [`tasty_icons`] glyph (`Icon::body` — no wrapping `<svg>`, no color
+    /// baked in). Fed to [`alert_icon_data_uri`].
+    icon_body: &'static str,
+    /// The glyph's own `Icon::filled` — `true` colors it via `fill`, `false` via `stroke`
+    /// (mirrors how `tasty_icons`' `stroke_icon!`/`fill_icon!` macros built it).
+    icon_filled: bool,
+    /// This kind's `Theme` accent accessor — no dedicated alert design token exists yet, so
+    /// this reuses the closest existing semantic accent (see module-level design note in
+    /// [`alert_css`]).
+    accent: fn(&Theme) -> tasty_type_appearance::color::HexColor,
+}
+
+/// note=info circle/blue, tip=filled star/green, important=bell/mauve, warning=alert
+/// triangle/yellow, caution=close-x/red. Adding a 6th kind (if pulldown-cmark ever grows one)
+/// means adding one entry here — [`inject_alert_labels`]/[`alert_css`] both just iterate it.
+const ALERT_KINDS: &[AlertKind] = &[
+    AlertKind {
+        class: "markdown-alert-note",
+        label_key: "markdown.alert.note",
+        icon_body: tasty_icons::ALERT_CIRCLE.body,
+        icon_filled: tasty_icons::ALERT_CIRCLE.filled,
+        accent: Theme::accent_primary,
+    },
+    AlertKind {
+        class: "markdown-alert-tip",
+        label_key: "markdown.alert.tip",
+        icon_body: tasty_icons::STAR_FILL.body,
+        icon_filled: tasty_icons::STAR_FILL.filled,
+        accent: Theme::accent_success,
+    },
+    AlertKind {
+        class: "markdown-alert-important",
+        label_key: "markdown.alert.important",
+        icon_body: tasty_icons::BELL.body,
+        icon_filled: tasty_icons::BELL.filled,
+        accent: Theme::accent_agent,
+    },
+    AlertKind {
+        class: "markdown-alert-warning",
+        label_key: "markdown.alert.warning",
+        icon_body: tasty_icons::ALERT_TRIANGLE.body,
+        icon_filled: tasty_icons::ALERT_TRIANGLE.filled,
+        accent: Theme::accent_warning,
+    },
+    AlertKind {
+        class: "markdown-alert-caution",
+        label_key: "markdown.alert.caution",
+        icon_body: tasty_icons::CLOSE.body,
+        icon_filled: tasty_icons::CLOSE.filled,
+        accent: Theme::accent_danger,
+    },
+];
+
+/// Inject `data-label="<localized text>"` into every alert blockquote's opening tag (plain
+/// substring replacement — [`ALERT_KINDS`]' classes are the only 5 literal strings
+/// pulldown-cmark ever emits there, never user-controlled, so no HTML parsing is needed). CSS
+/// can't branch on the UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
+/// whatever lands in the DOM), so the localized text has to be resolved here, at document
+/// generation time, and carried across the sanitize boundary as this attribute —
+/// [`sanitize_html`]'s `blockquote` allowlist must include `data-label` or this is stripped.
+/// Must run before [`sanitize_html`] (called from [`unsafe_content_html`]).
+fn inject_alert_labels(html: &str, tr: &Translator) -> String {
+    let mut out = html.to_string();
+    for kind in ALERT_KINDS {
+        let from = format!(r#"<blockquote class="{}">"#, kind.class);
+        let to = format!(
+            r#"<blockquote class="{}" data-label="{}">"#,
+            kind.class,
+            attr_escape(tr.t(kind.label_key))
+        );
+        out = out.replace(&from, &to);
+    }
+    out
+}
+
 /// Minimal GFM-sized sanitize allowlist. Strips `<script>`, every inline event handler
 /// (`onerror=`, `onclick=`, …), and any `javascript:`-scheme attribute value — the sanitizer
 /// itself is the primary XSS defense (independent of the `classify_link` guard, which only
 /// covers destinations this plugin later dispatches).
 ///
-/// `class` is allowed only on the three tags pulldown-cmark actually emits it on: `code`
+/// `class` is allowed only on the tags pulldown-cmark actually emits it on: `code`
 /// (fenced-block language, already normalized to a plain identifier by
 /// [`rewrite_code_block_event`] — [`mermaid_script`] depends on that exact `language-<lang>`
-/// shape surviving sanitize), and `sup`/`div` (fixed literal footnote
-/// classes the library itself writes — `footnote-reference`/`footnote-definition`/
-/// `footnote-definition-label` — never user-controlled). ammonia does not further validate
-/// `class` *values*, but none of these three can carry executable content, so that's fine here.
+/// shape surviving sanitize), `sup`/`div` (fixed literal footnote classes the library itself
+/// writes — `footnote-reference`/`footnote-definition`/`footnote-definition-label` — never
+/// user-controlled), and `blockquote` (one of [`ALERT_KINDS`]' 5 fixed literal
+/// `markdown-alert-<kind>` classes, same "library-fixed, not user-controlled" shape). ammonia
+/// does not further validate `class` *values*, but none of these can carry executable content,
+/// so that's fine here. `blockquote` additionally allows `data-label` — [`inject_alert_labels`]'
+/// localized alert header text, read back by `theme_css`'s `content: attr(data-label)`; it's
+/// `attr_escape`d before injection, same escaping every other attribute value in this module
+/// gets.
 fn sanitize_html(unsafe_html: &str) -> String {
     use ammonia::Builder;
     use std::collections::{HashMap, HashSet};
@@ -415,6 +514,9 @@ fn sanitize_html(unsafe_html: &str) -> String {
     // footnote 마크업의 고정 리터럴 class(라이브러리 자체가 씀, 사용자 입력 아님).
     tag_attributes.insert("sup", ["class"].into_iter().collect());
     tag_attributes.insert("div", ["class"].into_iter().collect());
+    // alert blockquote — 고정 literal class(markdown-alert-<kind>) + inject_alert_labels 가
+    // 심은 localized data-label(attr_escape 済み).
+    tag_attributes.insert("blockquote", ["class", "data-label"].into_iter().collect());
 
     Builder::default()
         .tags(tags)
@@ -474,6 +576,9 @@ table{{border-collapse:collapse;}}
 th,td{{border:var(--md-border-w) solid var(--md-border);padding:var(--md-space-xs) var(--md-space-sm);text-align:left;}}
 tr:nth-child(even){{background:var(--md-zebra);}}
 blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
+blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
+blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
+{alert_rules}
 hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
 img{{max-width:100%;}}
 ul,ol{{padding-left:1.5em;}}
@@ -510,7 +615,49 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         separator = theme.separator.to_hex(),
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
+        alert_rules = alert_css(theme),
     )
+}
+
+/// Per-[`AlertKind`] CSS: border/background from its accent color, plus the icon half of the
+/// shared `::before` header rule declared alongside `blockquote[class^="markdown-alert-"]`
+/// above (the label-text half — `content: attr(data-label)` — is already covered there since
+/// it doesn't vary per kind). No dedicated "alert" design token exists yet, so background is
+/// derived the same way `drop_overlay.rs`/`Theme::preset_split_zone_bg` already do: the same
+/// accent color at low alpha, not a separate token.
+fn alert_css(theme: &Theme) -> String {
+    /// ~12% opacity — same ratio `drop_overlay.rs` uses for `accent_primary().with_alpha(31)`.
+    const BG_ALPHA: u8 = 31;
+    let mut rules = String::new();
+    for kind in ALERT_KINDS {
+        let color = (kind.accent)(theme);
+        let icon_uri = alert_icon_data_uri(kind.icon_body, kind.icon_filled, &color.to_hex());
+        rules.push_str(&format!(
+            ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before{{color:{hex};background-image:url(\"{icon_uri}\");}}\n",
+            class = kind.class,
+            hex = color.to_hex(),
+            bg = color.with_alpha(BG_ALPHA).to_hex(),
+        ));
+    }
+    rules
+}
+
+/// Bakes [`AlertKind::icon_body`] into a complete, `color_hex`-colored `<svg>` and encodes it as
+/// a `data:image/svg+xml,` URI ready for a CSS `background-image`. The `tasty_icons` source is
+/// fixed to `stroke="white"`/`fill="white"` (crate doc: "색을 글리프에 박지 않는다" — consumers
+/// tint it themselves); the `egui` consumer does that post-hoc on the GPU texture
+/// (`Icon::image`'s `tint`), but a CSS background image has no equivalent hook, so this bakes a
+/// separately-colored copy of the markup directly instead.
+fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str) -> String {
+    let (fill, stroke) = if filled {
+        (color_hex, color_hex)
+    } else {
+        ("none", color_hex)
+    };
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{fill}" stroke="{stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{icon_body}</svg>"#,
+    );
+    format!("data:image/svg+xml,{}", percent_encode_fragment(&svg))
 }
 
 /// Per-level heading pixel sizes, linearly interpolated between `font_size_prose_h1` (h1) and
@@ -929,7 +1076,7 @@ mod tests {
     #[test]
     fn sanitize_html_keeps_tables_checkboxes_and_code() {
         let source = "| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n`inline` and:\n\n```\nfenced\n```\n";
-        let out = sanitize_html(&unsafe_content_html(source));
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
         assert!(out.contains("<table"));
         assert!(out.contains("checkbox"));
         assert!(out.contains("<code"));
@@ -939,7 +1086,7 @@ mod tests {
     #[test]
     fn fenced_code_block_language_class_survives_sanitize() {
         let source = "```rust\nfn main() {}\n```\n";
-        let out = sanitize_html(&unsafe_content_html(source));
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
         assert!(
             out.contains(r#"class="language-rust""#),
             "expected language class to survive sanitize, got: {out}"
@@ -965,7 +1112,7 @@ mod tests {
     #[test]
     fn footnote_markup_survives_sanitize() {
         let source = "See[^1].\n\n[^1]: A note.\n";
-        let out = sanitize_html(&unsafe_content_html(source));
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
         assert!(out.contains("footnote-reference"), "got: {out}");
         assert!(out.contains("footnote-definition"), "got: {out}");
         assert!(out.contains("A note."), "got: {out}");
@@ -973,14 +1120,14 @@ mod tests {
 
     #[test]
     fn unsafe_content_html_rewrites_internal_link_hrefs() {
-        let out = unsafe_content_html("[go](./other.md)");
+        let out = unsafe_content_html("[go](./other.md)", &Translator::default());
         assert!(out.contains("#tasty-nav:link:"));
         assert!(!out.contains(r#"href="./other.md""#));
     }
 
     #[test]
     fn unsafe_content_html_leaves_anchor_links_untouched() {
-        let out = unsafe_content_html("[jump](#section)");
+        let out = unsafe_content_html("[jump](#section)", &Translator::default());
         assert!(out.contains(r##"href="#section""##));
     }
 
@@ -1188,5 +1335,127 @@ mod tests {
         assert!(script.contains("try{"));
         assert!(script.contains("catch(e){console.error"));
         assert!(script.contains(".catch(function(e){console.error"));
+    }
+
+    // ── GFM alert blockquotes ────────────────────────────────────────────────
+
+    #[test]
+    fn gfm_alert_tags_render_their_respective_classes() {
+        for (tag, class) in [
+            ("NOTE", "markdown-alert-note"),
+            ("TIP", "markdown-alert-tip"),
+            ("IMPORTANT", "markdown-alert-important"),
+            ("WARNING", "markdown-alert-warning"),
+            ("CAUTION", "markdown-alert-caution"),
+        ] {
+            let source = format!("> [!{tag}]\n> body text\n");
+            let out = unsafe_content_html(&source, &Translator::default());
+            assert!(
+                out.contains(&format!(r#"class="{class}""#)),
+                "[!{tag}] should render class={class}, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn gfm_alert_tag_is_case_insensitive() {
+        for tag in ["[!Note]", "[!NOTE]", "[!note]", "[!nOtE]"] {
+            let source = format!("> {tag}\n> body\n");
+            let out = unsafe_content_html(&source, &Translator::default());
+            assert!(
+                out.contains(r#"class="markdown-alert-note""#),
+                "{tag} should be recognized case-insensitively, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn gfm_alert_tag_requires_nothing_else_on_its_line() {
+        // `scan_blockquote_tag` only recognizes the tag when the rest of that line is blank
+        // (pulldown-cmark `scanners.rs`) — trailing text on the same line falls back to a plain
+        // blockquote whose literal first line is that text, tag brackets included.
+        let out = unsafe_content_html(
+            "> [!NOTE] with trailing text\n> more\n",
+            &Translator::default(),
+        );
+        assert!(
+            !out.contains("markdown-alert-note"),
+            "trailing text on the tag line must suppress alert recognition, got: {out}"
+        );
+        assert!(out.contains("[!NOTE] with trailing text"), "got: {out}");
+    }
+
+    #[test]
+    fn plain_blockquote_without_alert_tag_is_unaffected() {
+        // Regression: an ordinary `>` quote must render exactly as before — no class attribute
+        // at all (pulldown-cmark's `Tag::BlockQuote(None)` emits an empty class_str) and no
+        // `data-label`.
+        let out = unsafe_content_html("> just a quote\n", &Translator::default());
+        assert!(out.contains("<blockquote>"), "got: {out}");
+        assert!(!out.contains("class="), "got: {out}");
+        assert!(!out.contains("data-label"), "got: {out}");
+    }
+
+    #[test]
+    fn gfm_alert_data_label_uses_translator_and_survives_sanitize() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("en.toml"),
+            "[markdown.alert]\nnote = \"Custom Note Label\"\n",
+        )
+        .unwrap();
+        let tr = Translator::load(dir.path(), "en");
+
+        let html = unsafe_content_html("> [!NOTE]\n> body\n", &tr);
+        assert!(
+            html.contains(r#"data-label="Custom Note Label""#),
+            "got: {html}"
+        );
+
+        // Must also survive `sanitize_html`'s allowlist (blockquote now allows data-label).
+        let sanitized = sanitize_html(&html);
+        assert!(
+            sanitized.contains(r#"data-label="Custom Note Label""#),
+            "got: {sanitized}"
+        );
+        assert!(sanitized.contains(r#"class="markdown-alert-note""#));
+    }
+
+    #[test]
+    fn alert_css_produces_distinct_rules_per_kind() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = alert_css(&theme);
+        let mut blocks = Vec::new();
+        for kind in ALERT_KINDS {
+            let needle = format!(".{}{{", kind.class);
+            assert!(
+                css.contains(&needle),
+                "missing rule block for {}, got: {css}",
+                kind.class
+            );
+            assert!(
+                css.contains(&format!(".{}::before{{color:", kind.class)),
+                "missing ::before color rule for {}, got: {css}",
+                kind.class
+            );
+            assert!(
+                css.contains("background-image:url(\"data:image/svg+xml,"),
+                "missing baked icon data URI, got: {css}"
+            );
+            blocks.push(needle);
+        }
+        // 5 distinct kinds → 5 distinct selectors (no accidental collision/reuse).
+        let unique: std::collections::HashSet<_> = blocks.iter().collect();
+        assert_eq!(unique.len(), ALERT_KINDS.len(), "got: {css}");
+    }
+
+    #[test]
+    fn alert_icon_data_uri_bakes_requested_color() {
+        let uri = alert_icon_data_uri(tasty_icons::ALERT_TRIANGLE.body, false, "#ff0000");
+        assert!(uri.starts_with("data:image/svg+xml,"));
+        // percent-encoded `stroke="#ff0000"` — `#` and `"` are both escaped by
+        // percent_encode_fragment, so check the decoded round-trip instead of raw substrings.
+        let decoded = percent_decode(&uri["data:image/svg+xml,".len()..]);
+        assert!(decoded.contains("stroke=\"#ff0000\""), "got: {decoded}");
     }
 }

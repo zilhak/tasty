@@ -38,6 +38,14 @@ placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"
 no_recent = "最近のファイルなし"
 
+# GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render.rs::ALERT_KINDS が参照。
+[markdown.alert]
+note = "メモ"
+tip = "ヒント"
+important = "重要"
+warning = "警告"
+caution = "注意"
+
 # プリセットエディタのフィールドラベル (ホストが t() で解決)。
 [preset.field]
 file = "ファイル"
