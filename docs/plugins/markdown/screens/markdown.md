@@ -11,8 +11,11 @@
 
 ## UI 요소 인벤토리
 
-- **렌더된 마크다운 본문** — 제목/문단/목록/코드블록/링크 등.
+- **렌더된 마크다운 본문** — 제목/문단/목록/코드블록/링크 등. heading 은 전부 GitHub 호환 자동
+  슬러그 `id` 를 받는다(아래 "Heading id + 목차(TOC)" 절).
 - **주소창** — 문서 자체에 내장된 `<input>`+`<button>`(host egui 위젯 아님).
+- **목차(TOC)** — heading 이 하나 이상이면 주소창 바로 아래, 본문 위에 접을 수 있는 `<nav>` 로
+  삽입된다(문서 자체에 내장, host egui 위젯 아님). heading 이 없으면 렌더되지 않는다.
 - 탭 표시명은 파일명.
 
 ## 상태별 시각
@@ -138,6 +141,34 @@ pass 는 실제 마크업(다른 태그 시작/`SoftBreak` 등)이 끼어들기 
   `FootnoteReference` 이벤트를 만들지 않고 `[`/`^missing`/`]` 평문으로 그대로 남긴다 — 크래시 없이
   원본 텍스트로 자연 폴백.
 
+## Heading id + 목차(TOC)
+
+모든 heading(`h1`–`h6`)은 GitHub 호환 방식의 자동 슬러그 `id` 를 받는다 — 명시적 `# 제목 {#custom-id}`
+문법(`Options::ENABLE_HEADING_ATTRIBUTES`)은 지원하지 않는다(스코프를 자동 생성만으로 좁힌 설계
+결정). `render.rs::collect_headings` 가 소스를 한 번 훑어 각 heading 의 순수 텍스트(코드/링크/
+강조/이미지 alt 같은 마크업은 제거하고 텍스트만)를 모으고, `Slugger` 가 이를 소문자화 + 유니코드
+문자/숫자/`-`/`_` 만 유지 + 공백을 `-` 로 치환해 슬러그로 만든다(한글 등 비-ASCII 텍스트는 그대로
+유지 — `char::is_alphanumeric` 가 유니코드 인식). 동일 문서 내 슬러그가 중복되면 `-1`/`-2` 순번을
+붙이고, 전부 특수문자라 슬러그가 비면 `heading` 으로 폴백한다(id 가 절대 빈 문자열이 되지 않게).
+이 결과를 `render.rs::assign_heading_ids` 가 문서를 다시 한번 파싱하며(두 패스 모두 동일 `source`
+를 훑으므로 heading 순서가 항상 일치) 각 heading 이벤트의 `id` 필드에 순서대로 대입한다 —
+pulldown-cmark 의 HTML writer 는 `Tag::Heading::id` 가 있으면 옵션과 무관하게 항상 출력하므로
+`ENABLE_HEADING_ATTRIBUTES` 를 켤 필요가 없다. `sanitize_html` 의 `generic_attributes(["id"])`
+가 이미 모든 허용 태그에 `id` 를 허용하므로 sanitizer 변경도 불필요했다.
+
+heading 이 하나 이상 있으면 문서 최상단(주소창 바로 아래, 본문 위)에 접을 수 있는 `<nav id="tasty-toc">`
+목차가 삽입된다(`render.rs::toc_nav_html`) — sticky 사이드 패널이 아니라 인라인 삽입이다(레이아웃
+CSS/스크롤 동기화 복잡도를 늘리지 않기 위한 설계 결정). 각 항목은 `<a href="#슬러그">` 로, 클릭은
+`rewrite_link_dest` 의 기존 anchor-only 예외 경로(`#` 로 시작하는 dest 는 rewrite 없이 그대로 통과)를
+그대로 태운다 — `#tasty-nav:` 라우팅을 새로 만들지 않는다. 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
+CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(트러스트 스크립트, 사용자
+콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
+토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
+패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 가 40px sticky 이므로, 모든 heading 에
+`scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘 TOC 클릭 이동 시 heading 이 그 바 아래
+가려지지 않게 한다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
+않게 — `render_document` 이 heading 목록이 비면 호출을 아예 건너뜀).
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
@@ -162,14 +193,19 @@ Theme 토큰 매핑이다.
 | 상태(에러/빈 문서) 본문 | inline hex(`muted`) | `text-muted` | `.tasty-state-detail` |
 | 코너 반경/보더 굵기 | `--md-radius` / `--md-border-w` | `corner-radius` / `border-width` | 주소창 입력·코드 블록·표 공용 |
 | GFM alert 5종 | inline hex(kind 별 accent) | note=`accent-primary` · tip=`accent-success` · important=`accent-agent` · warning=`accent-warning` · caution=`accent-danger` | 전용 alert 토큰 없음 — 기존 semantic accent 재사용(위 "GFM alert blockquote" 절) |
+| TOC 패널 배경 | `--md-code-bg` | `surface-raised` | `#tasty-toc` — 코드 블록 배경과 동일 토큰 재사용(전용 토큰 없음) |
+| TOC 들여쓰기 | `--md-space-sm` × (레벨-1) | `spacing-sm` | `.tasty-toc-l1`..`l6` |
+| heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
 
 ## 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/markdown_viewer.rs` — Layouts › `Content viewers` ›
 `Markdown surface`. 갤러리는 live webview 를 띄우지 않으므로, 위 CSS 출력을 egui `Frame`/`Label`
 로 **손으로 근사**한다(픽셀 동일성은 비목표) — 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션
-대표 문서 + 주소창 chrome 의 정적 근사 + GFM alert 5종(accent 배경/보더 + 아이콘 + 굵은 레이블,
-실제 CSS 는 좌측 바만 쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사).
+대표 문서 + 주소창 chrome 의 정적 근사 + TOC chrome 의 정적 근사(`toc_chrome` — 접기/펼치기·클릭
+스크롤 같은 라이브 상태는 없고 항상-펼침 스냅샷 하나, 레벨별 들여쓰기만 CSS `.tasty-toc-l<N>` 과
+동일 비율로 미러) + GFM alert 5종(accent 배경/보더 + 아이콘 + 굵은 레이블, 실제 CSS 는 좌측 바만
+쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사).
 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
 
 ## 시각 소스

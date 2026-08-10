@@ -38,6 +38,10 @@ placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"
 no_recent = "最近のファイルなし"
 
+[markdown.toc]
+label = "目次"
+aria_label = "目次"
+
 # GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render.rs::ALERT_KINDS が参照。
 [markdown.alert]
 note = "メモ"

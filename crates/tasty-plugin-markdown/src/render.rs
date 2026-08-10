@@ -42,10 +42,12 @@
 //!    allowlist) then vendors `mermaid.js` inline and calls `mermaid.run` against that selector,
 //!    but only when the document actually has one (see call site in [`render_document`]).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use pulldown_cmark::{
-    BlockQuoteKind, CodeBlockKind, CowStr, Event, LinkType, Options, Parser, Tag, TagEnd,
+    BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, LinkType, Options, Parser, Tag,
+    TagEnd,
 };
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
@@ -137,19 +139,35 @@ pub fn render_document(input: DocumentInput) -> String {
         .map(|dir| format!(r#"<base href="{}">"#, attr_escape(&file_dir_uri(dir))))
         .unwrap_or_default();
 
-    let body_html = if let Some(err) = load_error {
-        format!(
-            r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div><pre class="tasty-state-detail">{}</pre></div>"#,
-            html_escape(tr.t("markdown.state.failed")),
-            html_escape(err)
+    let (body_html, headings) = if let Some(err) = load_error {
+        (
+            format!(
+                r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div><pre class="tasty-state-detail">{}</pre></div>"#,
+                html_escape(tr.t("markdown.state.failed")),
+                html_escape(err)
+            ),
+            Vec::new(),
         )
     } else if source.trim().is_empty() {
-        format!(
-            r#"<div class="tasty-state">{}</div>"#,
-            html_escape(tr.t("markdown.state.empty"))
+        (
+            format!(
+                r#"<div class="tasty-state">{}</div>"#,
+                html_escape(tr.t("markdown.state.empty"))
+            ),
+            Vec::new(),
         )
     } else {
-        sanitize_html(&unsafe_content_html(source, tr))
+        (
+            sanitize_html(&unsafe_content_html(source, tr)),
+            collect_headings(source),
+        )
+    };
+
+    // heading 이 하나도 없으면 TOC 영역 자체를 렌더하지 않는다(빈 nav 로 깨지지 않게).
+    let toc_html = if headings.is_empty() {
+        String::new()
+    } else {
+        toc_nav_html(tr, &headings)
     };
 
     // 3.5MB 번들이라 mermaid 블록이 실제로 있는 문서에서만 삽입한다 — 대다수 문서는
@@ -161,10 +179,11 @@ pub fn render_document(input: DocumentInput) -> String {
     };
 
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{mermaid}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{mermaid}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
+        toc_html = toc_html,
         body_html = body_html,
         script = nav_script(file_path),
         mermaid = mermaid,
@@ -274,20 +293,188 @@ fn lexically_normalize(path: &Path) -> PathBuf {
     out
 }
 
+// ── heading ids + TOC ───────────────────────────────────────────────────────────
+
+/// One heading captured in document order — its plain text (for slug derivation and TOC label)
+/// and the slug ultimately assigned as its `id` (see [`collect_headings`]/[`assign_heading_ids`]).
+#[derive(Clone, Debug)]
+struct HeadingInfo {
+    level: HeadingLevel,
+    /// Markup-stripped text — exactly what a reader sees as the heading's own text, no
+    /// code/link/emphasis/image-alt syntax (module design decision: no explicit `{#id}`
+    /// syntax, auto slug only).
+    text: String,
+    /// GitHub-compatible slug, deduped against every earlier heading in the same document.
+    slug: String,
+}
+
+/// Pass 1 of the two-pass heading-id pipeline: walks the event stream purely to capture each
+/// heading's plain text and turn it into a per-document-unique slug. pulldown-cmark's flat event
+/// stream doesn't expose a heading's full text until its `TagEnd::Heading` arrives (nested
+/// emphasis/link/code events land as separate stream items in between), so this can't be done in
+/// a single `map()` like [`rewrite_link_event`]/[`rewrite_code_block_event`] — it needs to
+/// buffer. [`assign_heading_ids`] later re-parses the same `source` and pairs this pass's output
+/// back onto each `Tag::Heading` event by document order.
+///
+/// `Event::Text`/`Event::Code` between a heading's `Start`/`End` are concatenated (covers plain
+/// text, inline code, and — since pulldown-cmark emits image alt text as `Event::Text` between
+/// `Tag::Image`'s start/end — image alt text too); every other event (the `Start`/`End` tags of
+/// emphasis/strong/link/image themselves) is ignored, which is exactly "strip the markup, keep
+/// the text" (task requirement).
+fn collect_headings(source: &str) -> Vec<HeadingInfo> {
+    let mut headings = Vec::new();
+    let mut current: Option<(HeadingLevel, String)> = None;
+    let mut slugger = Slugger::default();
+    for event in Parser::new_ext(source, parser_options()) {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => current = Some((level, String::new())),
+            Event::End(TagEnd::Heading(_)) => {
+                if let Some((level, text)) = current.take() {
+                    let slug = slugger.slug(&text);
+                    headings.push(HeadingInfo { level, text, slug });
+                }
+            }
+            Event::Text(t) | Event::Code(t) => {
+                if let Some((_, text)) = current.as_mut() {
+                    text.push_str(&t);
+                }
+            }
+            _ => {}
+        }
+    }
+    headings
+}
+
+/// GitHub-compatible heading slug allocator — one instance per document so the dedup counters
+/// are shared across every heading (`-1`/`-2` suffixes on the 2nd/3rd occurrence of the same
+/// text, matching GitHub's own heading-anchor behavior).
+#[derive(Default)]
+struct Slugger {
+    seen: HashMap<String, u32>,
+}
+
+impl Slugger {
+    /// Lowercase; Unicode letters/digits/`-`/`_` kept (so non-ASCII text like Korean passes
+    /// through untouched — `char::is_alphanumeric` is Unicode-aware, not ASCII-only), runs of
+    /// whitespace collapsed to a single `-`, everything else (ASCII punctuation, markup residue,
+    /// emoji, …) dropped, leading/trailing `-` trimmed. This is a closer-to-intent variant of
+    /// GitHub's own algorithm rather than a byte-exact port (GitHub doesn't collapse/trim) —
+    /// deemed an acceptable, more robust deviation, since "GFM 호환" here means "sane anchors
+    /// GitHub users would recognize", not byte-identical output. Falls back to `"heading"` when
+    /// the input slugifies to nothing at all (an all-punctuation/all-emoji heading) so the `id`
+    /// is never empty.
+    fn slug(&mut self, text: &str) -> String {
+        let mut base = String::with_capacity(text.len());
+        for c in text.chars() {
+            if c.is_whitespace() {
+                if !base.ends_with('-') && !base.is_empty() {
+                    base.push('-');
+                }
+            } else if c.is_alphanumeric() || c == '-' || c == '_' {
+                base.extend(c.to_lowercase());
+            }
+            // else: drop (punctuation/symbols/markup residue).
+        }
+        let base = base.trim_matches('-');
+        let base = if base.is_empty() {
+            "heading".to_string()
+        } else {
+            base.to_string()
+        };
+
+        let count = self.seen.entry(base.clone()).or_insert(0);
+        let slug = if *count == 0 {
+            base
+        } else {
+            format!("{base}-{count}")
+        };
+        *count += 1;
+        slug
+    }
+}
+
+/// Pass 2: rewrites each `Tag::Heading`'s `id` field to the slug [`collect_headings`] computed
+/// for it, matched purely by document order (both passes parse the identical `source`, so
+/// pulldown-cmark yields headings in the same order both times — index-pairing is safe). The
+/// HTML writer honors `Tag::Heading::id` unconditionally whenever it's `Some` (`html.rs`) — this
+/// needs no `Options::ENABLE_HEADING_ATTRIBUTES` (that option only governs the *parser*
+/// recognizing an explicit `{#id}` in the source text, which this module intentionally never
+/// enables — design decision: auto slugs only, no explicit-id syntax).
+fn assign_heading_ids<'a>(
+    events: impl Iterator<Item = Event<'a>> + 'a,
+    headings: &[HeadingInfo],
+) -> impl Iterator<Item = Event<'a>> + 'a {
+    let mut slugs = headings
+        .iter()
+        .map(|h| h.slug.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    events.map(move |event| match event {
+        Event::Start(Tag::Heading {
+            level,
+            id,
+            classes,
+            attrs,
+        }) => {
+            let id = slugs.next().map(Into::into).or(id);
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            })
+        }
+        other => other,
+    })
+}
+
+/// Builds the collapsible in-document TOC `<nav>` (design decision: inline top-of-document, not
+/// a sticky side panel — see module/task doc). Nested indentation is per-level via
+/// `tasty-toc-l<N>` classes ([`theme_css`]'s TOC rules). Caller skips this entirely when there
+/// are no headings (see call site in [`render_document`]) rather than rendering an empty shell.
+fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
+    let items: String = headings
+        .iter()
+        .map(|h| {
+            format!(
+                r##"<li class="tasty-toc-l{level}"><a href="#{slug}">{text}</a></li>"##,
+                level = h.level as u8,
+                slug = attr_escape(&h.slug),
+                text = html_escape(&h.text),
+            )
+        })
+        .collect();
+    format!(
+        r#"<nav id="tasty-toc" aria-label="{aria}"><button id="tasty-toc-toggle" type="button" aria-expanded="true">{label}</button><ul id="tasty-toc-list">{items}</ul></nav>"#,
+        aria = attr_escape(tr.t("markdown.toc.aria_label")),
+        label = html_escape(tr.t("markdown.toc.label")),
+        items = items,
+    )
+}
+
 // ── HTML generation ───────────────────────────────────────────────────────────
 
 /// Parse `source` and generate (unsanitized) HTML, rewriting every link destination to the
 /// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
-/// target). Images are left untouched; the `<base href>` tag resolves relative `src`.
+/// target). Images are left untouched; the `<base href>` tag resolves relative `src`. Headings
+/// get a GitHub-compatible `id` via the [`collect_headings`]/[`assign_heading_ids`] two-pass
+/// pipeline (module doc "heading ids + TOC" section) — this recomputes the heading list itself
+/// (a cheap, HTML-free text-only walk) rather than taking it as a parameter, so this function's
+/// signature — and every existing call site/test — stays unchanged; [`render_document`] computes
+/// its own separate copy for the TOC (same deterministic result, since both walk the identical
+/// `source`).
 ///
 /// Pass ordering: [`autolink_bare_urls`] runs *before* [`rewrite_link_event`], and synthesizes
 /// its new `Tag::Link` events with a plain raw `dest_url` (e.g. `https://example.com`) — the
 /// exact same shape an explicit `[text](url)` link has at this point in the pipeline. This way
 /// `rewrite_link_event`, run last over the *whole* (now autolink-expanded) event stream, is the
 /// single place that ever produces the `#tasty-nav:` fragment scheme; the autolink pass doesn't
-/// need its own copy of that rewrite. `rewrite_code_block_event`/`rewrite_alert_blockquote_event`
-/// run first since neither touches `Text`/`Link` events, so their relative order doesn't matter.
+/// need its own copy of that rewrite. `rewrite_code_block_event`/`rewrite_alert_blockquote_event`/
+/// `rewrite_footnote_event` run first since none of them touch `Text`/`Link` events, so their
+/// relative order doesn't matter. [`assign_heading_ids`] runs last over the fully-rewritten
+/// stream — none of the other passes touch `Tag::Heading`, so its position doesn't matter either.
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
+    let headings = collect_headings(source);
     let footnote_ref_totals = footnote_reference_totals(source);
     let mut footnote_state = FootnoteState::default();
     let events: Vec<Event> = Parser::new_ext(source, parser_options())
@@ -298,6 +485,7 @@ fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     let events = autolink_bare_urls(events)
         .into_iter()
         .map(rewrite_link_event);
+    let events = assign_heading_ids(events, &headings);
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events);
     html
@@ -931,9 +1119,23 @@ body{{background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,Blink
 #tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-md-body{{padding:var(--md-space-sm) var(--md-space-md);}}
-h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;}}
+h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;scroll-margin-top:calc(40px + var(--md-space-sm));}}
 h1{{font-size:var(--md-h1);}}h2{{font-size:var(--md-h2);}}h3{{font-size:var(--md-h3);}}
 h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md-h6);}}
+#tasty-toc{{margin:var(--md-space-sm) var(--md-space-md) 0;padding:var(--md-space-sm) var(--md-space-md);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);}}
+#tasty-toc-toggle{{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:var(--md-space-xs);font-weight:600;font-size:var(--md-font-body);color:var(--md-strong);}}
+#tasty-toc-toggle::before{{content:"\25be";display:inline-block;}}
+#tasty-toc.tasty-toc-collapsed #tasty-toc-toggle::before{{content:"\25b8";}}
+#tasty-toc-list{{list-style:none;margin:var(--md-space-xs) 0 0;padding:0;max-height:280px;overflow-y:auto;}}
+#tasty-toc.tasty-toc-collapsed #tasty-toc-list{{display:none;}}
+#tasty-toc-list a{{display:block;padding:var(--md-space-xs) 0;color:var(--md-link);text-decoration:none;font-size:var(--md-font-body);}}
+#tasty-toc-list a:hover{{text-decoration:underline;}}
+.tasty-toc-l1 a{{padding-left:0;}}
+.tasty-toc-l2 a{{padding-left:var(--md-space-sm);}}
+.tasty-toc-l3 a{{padding-left:calc(var(--md-space-sm) * 2);}}
+.tasty-toc-l4 a{{padding-left:calc(var(--md-space-sm) * 3);}}
+.tasty-toc-l5 a{{padding-left:calc(var(--md-space-sm) * 4);}}
+.tasty-toc-l6 a{{padding-left:calc(var(--md-space-sm) * 5);}}
 a{{color:var(--md-link);}}
 strong{{color:var(--md-strong);font-weight:600;}}
 code{{background:var(--md-code-bg);border-radius:var(--md-radius);padding:0.1em 0.35em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
@@ -1091,6 +1293,14 @@ location.hash='tasty-nav:addr:'+encodeURIComponent(v);
 }}
 if(g)g.addEventListener('click',go);
 if(i)i.addEventListener('keydown',function(e){{if(e.key==='Enter')go();}});
+var toc=document.getElementById('tasty-toc');
+var tocToggle=document.getElementById('tasty-toc-toggle');
+if(toc&&tocToggle){{
+tocToggle.addEventListener('click',function(){{
+var collapsed=toc.classList.toggle('tasty-toc-collapsed');
+tocToggle.setAttribute('aria-expanded',collapsed?'false':'true');
+}});
+}}
 var scrollKey='tasty-md-scroll:'+{file_path_json};
 try{{
 var saved=sessionStorage.getItem(scrollKey);
@@ -1726,7 +1936,8 @@ mod tests {
         assert!(!out.contains("<hr"));
         assert!(!out.contains("key: value"));
         assert!(!out.contains("<h2"));
-        assert!(out.contains("<h1>Body</h1>"));
+        // 이제 heading 은 자동 슬러그 `id` 를 받는다 — "heading ids + TOC" 절.
+        assert!(out.contains(r#"<h1 id="body">Body</h1>"#), "got: {out}");
     }
 
     #[test]
@@ -1737,14 +1948,14 @@ mod tests {
         );
         assert!(!out.contains("<hr"));
         assert!(!out.contains("key = "));
-        assert!(out.contains("<h1>Body</h1>"));
+        assert!(out.contains(r#"<h1 id="body">Body</h1>"#), "got: {out}");
     }
 
     #[test]
     fn thematic_break_mid_document_still_renders_as_hr() {
         let out = unsafe_content_html("# Title\n\n---\n\nMore text\n", &Translator::default());
         assert!(out.contains("<hr"));
-        assert!(out.contains("<h1>Title</h1>"));
+        assert!(out.contains(r#"<h1 id="title">Title</h1>"#), "got: {out}");
         assert!(out.contains("More text"));
     }
 
@@ -2087,5 +2298,141 @@ Outro\n";
         // percent_encode_fragment, so check the decoded round-trip instead of raw substrings.
         let decoded = percent_decode(&uri["data:image/svg+xml,".len()..]);
         assert!(decoded.contains("stroke=\"#ff0000\""), "got: {decoded}");
+    }
+
+    // ── heading ids + TOC ────────────────────────────────────────────────────
+
+    #[test]
+    fn headings_get_unique_ids_across_all_levels() {
+        let source = "# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        for (tag, text) in [
+            ("h1", "One"),
+            ("h2", "Two"),
+            ("h3", "Three"),
+            ("h4", "Four"),
+            ("h5", "Five"),
+            ("h6", "Six"),
+        ] {
+            let expected = format!(r#"<{tag} id="{}">{text}</{tag}>"#, text.to_lowercase());
+            assert!(out.contains(&expected), "expected {expected:?}, got: {out}");
+        }
+    }
+
+    #[test]
+    fn duplicate_heading_text_gets_deduped_ids() {
+        let source = "# Foo\n\n## Foo\n\n### Foo\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(out.contains(r#"<h1 id="foo">Foo</h1>"#), "got: {out}");
+        assert!(out.contains(r#"<h2 id="foo-1">Foo</h2>"#), "got: {out}");
+        assert!(out.contains(r#"<h3 id="foo-2">Foo</h3>"#), "got: {out}");
+    }
+
+    #[test]
+    fn heading_slug_strips_markup_and_uses_plain_text_only() {
+        let source = "# Hello `code` and [a link](x.md) and **bold**\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(
+            out.contains(r#"id="hello-code-and-a-link-and-bold""#),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn non_ascii_heading_gets_a_reasonable_slug() {
+        let source = "# 한글 제목입니다\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(
+            out.contains(r#"<h1 id="한글-제목입니다">한글 제목입니다</h1>"#),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn all_punctuation_heading_falls_back_to_default_slug() {
+        let source = "# !!! ??? ...\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(out.contains(r#"id="heading""#), "got: {out}");
+    }
+
+    #[test]
+    fn heading_id_survives_sanitize() {
+        let html = unsafe_content_html("# Title\n", &Translator::default());
+        let sanitized = sanitize_html(&html);
+        assert!(sanitized.contains(r#"id="title""#), "got: {sanitized}");
+    }
+
+    #[test]
+    fn render_document_omits_toc_when_no_headings() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "Just a paragraph, no headings.\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        // `#tasty-toc{...}` still appears in the static `<style>` block regardless of
+        // headings (theme_css isn't conditional) — assert on the actual `<nav>` element, not
+        // the bare "tasty-toc" substring, or this would spuriously pass/fail on CSS presence.
+        assert!(!html.contains(r#"<nav id="tasty-toc""#), "got: {html}");
+    }
+
+    #[test]
+    fn render_document_includes_toc_with_matching_anchors_when_headings_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Intro\n\nSome text.\n\n## Details\n\nMore text.\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains(r#"id="tasty-toc""#), "got: {html}");
+        assert!(html.contains(r##"href="#intro""##), "got: {html}");
+        assert!(html.contains(r##"href="#details""##), "got: {html}");
+        assert!(html.contains(r#"<h1 id="intro">Intro</h1>"#), "got: {html}");
+        assert!(
+            html.contains(r#"<h2 id="details">Details</h2>"#),
+            "got: {html}"
+        );
+        // toggle button + collapsed-state hook present (collapsibility, task requirement).
+        assert!(html.contains(r#"id="tasty-toc-toggle""#), "got: {html}");
+        assert!(html.contains("tasty-toc-collapsed"), "got: {html}");
+    }
+
+    #[test]
+    fn toc_is_placed_between_addr_bar_and_body() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Intro\n\nSome text.\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        // Match the actual elements, not the bare id substrings — those also appear earlier,
+        // in the static `<style>` block's `#tasty-addr-bar{...}`/`#tasty-md-body{...}`/
+        // `#tasty-toc{...}` selectors, which would corrupt the ordering check.
+        let addr_idx = html
+            .find(r#"<div id="tasty-addr-bar""#)
+            .expect("addr bar present");
+        let toc_idx = html.find(r#"<nav id="tasty-toc""#).expect("toc present");
+        let body_idx = html
+            .find(r#"<div id="tasty-md-body""#)
+            .expect("body present");
+        assert!(
+            addr_idx < toc_idx && toc_idx < body_idx,
+            "expected addr bar < toc < body, got: {html}"
+        );
     }
 }

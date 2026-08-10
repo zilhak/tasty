@@ -38,6 +38,10 @@ placeholder = "마크다운 파일 경로"
 go = "열기 (Enter)"
 no_recent = "최근 파일 없음"
 
+[markdown.toc]
+label = "목차"
+aria_label = "목차"
+
 # GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::ALERT_KINDS 가 조회.
 [markdown.alert]
 note = "참고"

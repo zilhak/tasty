@@ -38,6 +38,10 @@ placeholder = "Path to markdown file"
 go = "Open (Enter)"
 no_recent = "No recent files"
 
+[markdown.toc]
+label = "Table of contents"
+aria_label = "Table of contents"
+
 # GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::ALERT_KINDS 가 조회.
 [markdown.alert]
 note = "Note"

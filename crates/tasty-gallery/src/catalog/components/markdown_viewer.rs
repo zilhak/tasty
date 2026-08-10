@@ -58,6 +58,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 address_bar(ui, theme);
             },
         );
+        spec::cluster(
+            ui,
+            theme,
+            "table of contents — collapsible, in-document (todo42)",
+            |ui| {
+                toc_chrome(ui, theme);
+            },
+        );
     });
 
     // 1. 전체 element catalog 문서.
@@ -130,6 +138,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("h1", "Heading anchor prose-h1 20 · text-primary"),
             ("h2–h6", "CSS-interpolated 20→13 · strong"),
+            (
+                "heading id",
+                "GitHub-compatible auto slug — no explicit {#id} syntax",
+            ),
+            (
+                "toc",
+                "collapsible <nav> · surface-raised · indent = space-sm × level",
+            ),
             ("code", "mono · surface-raised · language class preserved"),
             ("link", "accent-primary · nav-fragment intercepted"),
             ("table", "real <table> — header band + zebra + padding"),
@@ -221,8 +237,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          own `Translator` and carries it across the sanitize boundary as a `data-label` \
          attribute the CSS then echoes back with `content: attr(data-label)`. This specimen \
          hand-transcribes the same tokens as an approximation of that CSS output (the gallery \
-         does not embed a live webview). Below the document: the heading type-scale, and the \
-         load-fail / empty / loading chrome that replaces a raw `Error:` body.",
+         does not embed a live webview). Every heading also gets a GitHub-compatible auto slug \
+         `id` (`render.rs::collect_headings`/`Slugger` — lowercase, Unicode-aware, deduped with \
+         `-1`/`-2` suffixes, no explicit `{#id}` syntax) and a document-top collapsible `<nav>` \
+         TOC is generated from them (`render.rs::toc_nav_html`) — clicking an entry is a plain \
+         same-document anchor jump, reusing the existing anchor-only pass-through rather than \
+         the `#tasty-nav:` interception scheme. Below the document: the heading type-scale, and \
+         the load-fail / empty / loading chrome that replaces a raw `Error:` body.",
     );
 }
 
@@ -961,6 +982,76 @@ fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
                     .paint_at(ui, rect);
             });
         });
+}
+
+/// TOC chrome (`render.rs::toc_nav_html`) — collapsible `<nav>` auto-inserted between the address
+/// bar and the document body, from headings auto-slugged in `render.rs::collect_headings`(no
+/// explicit `{#id}` syntax — module design decision: auto slugs only). Like `address_bar` this
+/// is an in-document HTML element, not a host egui widget, so this specimen is a static
+/// always-expanded approximation (no live collapse/click-scroll state in the gallery) — indent
+/// per level mirrors `theme_css`'s `.tasty-toc-l<N>` rules (`--md-space-sm` × depth). The item
+/// list below mirrors [`document`]'s own headings.
+fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
+    egui::Frame::new()
+        .fill(theme.surface_raised().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_md.value() as i8,
+            theme.spacing_sm.value() as i8,
+        ))
+        .show(ui, |ui| {
+            ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
+            ui.horizontal(|ui| {
+                ui.label(rich(
+                    theme,
+                    "\u{25be}",
+                    theme.font_size_body.value(),
+                    theme.text_primary().to_egui(),
+                ));
+                ui.add_space(theme.spacing_xs.value());
+                ui.label(
+                    rich(
+                        theme,
+                        "Table of contents",
+                        theme.font_size_body.value(),
+                        theme.text_primary().to_egui(),
+                    )
+                    .strong(),
+                );
+            });
+            ui.add_space(theme.spacing_xs.value());
+            for (level, label) in [
+                (1u8, "Markdown surface"),
+                (2, "Headings & emphasis"),
+                (3, "Lists"),
+                (3, "Code block"),
+                (3, "Image"),
+                (3, "Table"),
+                (3, "Blockquote"),
+                (3, "Alerts (GFM)"),
+                (4, "Subsection (h4)"),
+            ] {
+                toc_row(ui, theme, level, label);
+            }
+        });
+}
+
+/// One TOC entry — indent grows by `--md-space-sm` per level below h1 (`theme_css`'s
+/// `.tasty-toc-l<N>` ladder), link-colored label (an in-document `<a href="#slug">`).
+fn toc_row(ui: &mut egui::Ui, theme: &Theme, level: u8, label: &str) {
+    ui.horizontal(|ui| {
+        ui.add_space(level.saturating_sub(1) as f32 * theme.spacing_sm.value());
+        ui.label(rich(
+            theme,
+            label,
+            theme.font_size_body.value(),
+            theme.accent_primary().to_egui(),
+        ));
+    });
 }
 
 /// 지정 size/color 라벨 텍스트.
