@@ -14,10 +14,20 @@
 //! 1종 host-bridged 전략:
 //! - `custom { command }`: 호출 측이 제공한 closure 로 명령 실행. closure 는
 //!   stdin 에 `[result1, result2, ...]` JSON 배열을 받고 stdout 을 결과로 반환.
+//!
+//! 선택적 전처리: [`extract_paths`] — 전략 실행 전에 각 input 의 `output` 에서
+//! JSON Pointer 경로 하나만 뽑아낸다. `Run` task 의 `{pid,stdout,stderr}` 같은
+//! 중첩 구조를 그대로 합성하면(특히 `concat_text`/`merge_json`) 결과가 유효한
+//! JSON 도 아니고 사람이 읽을 텍스트만 뽑히지도 않는다 — 호출자가 이 단계를
+//! 강제하는 게 아니라 opt-in 으로 둔 이유는 `all`/`merge_json` 처럼 구조 자체가
+//! 필요한 용도도 있기 때문.
 
 use serde_json::{Map, Value};
 
-use crate::{AgentError, Result, task::ReducerStrategy};
+use crate::{
+    AgentError, Result,
+    task::{ReducerStrategy, TaskId},
+};
 
 /// 단일 task 결과 — reducer 입력. `output` 만 보고 합성하므로 `exit_code`/`error`
 /// 는 호출자가 별도로 처리 (이 모듈에서는 `output` 만 사용).
@@ -25,8 +35,53 @@ use crate::{AgentError, Result, task::ReducerStrategy};
 pub struct ReducerInput {
     /// 본 task 가 성공했는지 (`first_success` 분기용).
     pub succeeded: bool,
+    /// 이 결과를 만든 task id — `extract_paths` 가 경로 누락 경고 메시지에 쓴다.
+    pub task_id: TaskId,
     /// task 의 `result.output` (없으면 `Value::Null`).
     pub output: Value,
+}
+
+/// `extract_path`(RFC 6901 JSON Pointer, 예: `/stdout/text`)가 지정되면 각
+/// input 의 `output` 에서 그 경로만 뽑아낸 새 `ReducerInput` 목록을 만든다 —
+/// `Run` task 의 `{pid,stdout,stderr}` 구조를 모른 채 통째로 합성하는 대신,
+/// 사람이 읽을 stdout 텍스트 같은 leaf 값만 reducer 전략에 넘기기 위한 전처리
+/// 단계. `extract_path` 가 `None` 이면 입력을 그대로 통과시킨다(하위 호환).
+///
+/// 경로가 없는 input(예: `Run` 이 아닌 다른 kind 의 결과라 구조 자체가 다름)은
+/// reduce 전체를 실패시키지 않는다 — 그 input 만 `output: Null` 로 대체하고,
+/// 조용히 누락되지 않도록 두 번째 반환값(`warnings`)에 사유를 남긴다. 호출자는
+/// 이 경고를 응답에 그대로 실어야 한다.
+pub fn extract_paths(
+    inputs: &[ReducerInput],
+    extract_path: Option<&str>,
+) -> (Vec<ReducerInput>, Vec<String>) {
+    let Some(path) = extract_path else {
+        return (inputs.to_vec(), Vec::new());
+    };
+    let mut warnings = Vec::new();
+    let extracted = inputs
+        .iter()
+        .enumerate()
+        .map(|(i, input)| match input.output.pointer(path) {
+            Some(v) => ReducerInput {
+                succeeded: input.succeeded,
+                task_id: input.task_id.clone(),
+                output: v.clone(),
+            },
+            None => {
+                warnings.push(format!(
+                    "input #{i}(task {})에 경로 '{path}'가 없어 null로 처리했습니다",
+                    input.task_id
+                ));
+                ReducerInput {
+                    succeeded: input.succeeded,
+                    task_id: input.task_id.clone(),
+                    output: Value::Null,
+                }
+            }
+        })
+        .collect();
+    (extracted, warnings)
 }
 
 /// In-process 4종 전략 합성.
@@ -137,7 +192,18 @@ mod tests {
     use serde_json::json;
 
     fn input(succeeded: bool, output: Value) -> ReducerInput {
-        ReducerInput { succeeded, output }
+        // 대부분의 테스트는 task_id 를 들여다보지 않으므로 고정값으로 충분.
+        // 값 자체를 검증해야 하는 케이스(`extract_paths` 경고 메시지)는
+        // `input_with_id` 를 쓴다.
+        input_with_id(succeeded, "t", output)
+    }
+
+    fn input_with_id(succeeded: bool, task_id: &str, output: Value) -> ReducerInput {
+        ReducerInput {
+            succeeded,
+            task_id: task_id.to_string(),
+            output,
+        }
     }
 
     #[test]
@@ -257,5 +323,52 @@ mod tests {
         })
         .unwrap();
         assert_eq!(out, json!(["hi"]));
+    }
+
+    #[test]
+    fn extract_paths_none_passes_through_unchanged() {
+        let inputs = vec![input(true, json!({"stdout": {"text": "out1\n"}}))];
+        let (extracted, warnings) = extract_paths(&inputs, None);
+        assert_eq!(extracted, inputs);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn extract_paths_pulls_leaf_value_from_run_output() {
+        let inputs = vec![
+            input(true, json!({"pid": 1, "stdout": {"text": "out1\n"}})),
+            input(true, json!({"pid": 2, "stdout": {"text": "out2\n"}})),
+        ];
+        let (extracted, warnings) = extract_paths(&inputs, Some("/stdout/text"));
+        assert!(warnings.is_empty());
+        let out = reduce_in_process(&ReducerStrategy::ConcatText, &extracted).unwrap();
+        assert_eq!(out, json!("out1\nout2\n"));
+    }
+
+    #[test]
+    fn extract_paths_missing_path_becomes_null_with_warning() {
+        let inputs = vec![
+            input_with_id(true, "t-run", json!({"stdout": {"text": "out1\n"}})),
+            input_with_id(true, "t-custom", json!({"result": "no stdout here"})),
+        ];
+        let (extracted, warnings) = extract_paths(&inputs, Some("/stdout/text"));
+        assert_eq!(extracted[0].output, json!("out1\n"));
+        assert_eq!(extracted[1].output, Value::Null);
+        assert_eq!(
+            warnings,
+            vec!["input #1(task t-custom)에 경로 '/stdout/text'가 없어 null로 처리했습니다"]
+        );
+        // 나머지 input 들의 reduce 는 정상 진행 — missing input 은 null 로만 반영.
+        let out = reduce_in_process(&ReducerStrategy::ConcatText, &extracted).unwrap();
+        assert_eq!(out, json!("out1\n"));
+    }
+
+    #[test]
+    fn extract_paths_preserves_succeeded_and_task_id() {
+        let inputs = vec![input_with_id(false, "t-1", json!({"a": {"b": 1}}))];
+        let (extracted, _) = extract_paths(&inputs, Some("/a/b"));
+        assert!(!extracted[0].succeeded);
+        assert_eq!(extracted[0].task_id, "t-1");
+        assert_eq!(extracted[0].output, json!(1));
     }
 }

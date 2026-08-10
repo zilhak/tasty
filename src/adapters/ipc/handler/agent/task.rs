@@ -5,7 +5,7 @@ use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId,
-    TaskResult, TaskState, reduce_with_custom,
+    TaskResult, TaskState, extract_paths, reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -609,6 +609,7 @@ pub fn handle_task_reduce(
             return JsonRpcResponse::invalid_params(id, format!("invalid 'strategy': {e}"));
         }
     };
+    let extract_path = params.get("extract_path").and_then(|v| v.as_str());
 
     // 1단계: task 결과 수집 (memory access 안에서). Core 가 lock + store 조립을 담당.
     let collected = match core.task_reduce_collect(engine, workspace_id, &inputs) {
@@ -616,10 +617,17 @@ pub fn handle_task_reduce(
         Ok(v) => v,
     };
 
+    // 1.5단계: `extract_path` 지정 시 각 input 의 output 에서 그 경로만 추출
+    // (예: `/stdout/text`) — `Run` task 의 `{pid,stdout,stderr}` 구조를 모른 채
+    // 그대로 합성하면 concat_text/merge_json 결과가 못 쓸 형태가 된다. 경로가
+    // 없는 input 은 null 로 대체되고 그 사실이 warnings 에 남는다(조용히 누락
+    // 처리하지 않음) — 나머지 input 의 reduce 는 계속 진행한다.
+    let (collected, warnings) = extract_paths(&collected, extract_path);
+
     // 2단계: reducer 실행 (memory lock 바깥에서; custom shell 은 stdin/stdout I/O).
     let result = reduce_with_custom(&strategy, &collected, run_custom_shell);
     match result {
-        Ok(value) => JsonRpcResponse::success(id, json!({ "value": value })),
+        Ok(value) => JsonRpcResponse::success(id, json!({ "value": value, "warnings": warnings })),
         Err(e) => agent_err_to_response(id, e),
     }
 }

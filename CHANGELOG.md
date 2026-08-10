@@ -28,6 +28,7 @@
 - `agent.task_delete`(CLI `tasty agent task-delete`) — task 삭제. 참조(`depends_on`/`Fallback.task`/`Reduce.inputs`) 가 있으면 기본 거부하고 참조자 목록을 `error.data.referenced_by` 에 실어 반환(`-32010`), `--cascade` 는 전이적 참조자까지 함께 삭제, `--force` 는 참조 검사만 우회(상태 제약은 못 뚫음). 삭제 금지 상태는 `running` 하나뿐이며 `--cascade`/`--force` 로도 뚫지 못한다(`-32011`).
 - `agent.task_purge`(CLI `tasty agent task-purge`) — 상태 이름(`--states`)·경과시간(`--older-than-ms`) 필터 기반 일괄 삭제. `agent.task_delete` 와 동일한 참조 안전 검사를 적용해, 후보 집합 밖에서 여전히 참조되는 task 는 자동으로 보존한다. `--dry-run` 으로 실제 삭제 없이 계획만 확인 가능.
 - 부팅 시 정화 경로(`purge_stale_agent_state_on_boot`)에 자동 GC 가 추가됐다 — 상태 무관 + 7일(잠정) 이상 방치된 task 를 `agent.task_purge` 와 동일한 로직으로 정리한다. memory 자체 TTL(`PutOpts.expires_at`) 은 쓰지 않는다.
+- `agent.task_reduce`(CLI `tasty agent task-reduce`)에 `extract_path`(`--extract-path`, RFC 6901 JSON Pointer, 예: `/stdout/text`)가 추가됐다 — 지정하면 reducer 전략 실행 전에 각 input 의 `output` 에서 그 경로만 뽑아낸다. `Run` task 의 `output`(`{pid,stdout:{text,...},stderr:{...}}`)을 구조를 모른 채 `concat_text`/`merge_json` 으로 합성하면 유효한 JSON 도 아니고 뒤 input 이 앞 input 을 통째로 덮어쓰는 문제가 있었는데, 이 옵션으로 leaf 값만 골라 합성할 수 있다. 생략 시 기존 동작(전체 `output`) 유지. 지정된 경로가 없는 input 은 reduce 전체를 실패시키지 않고 `output: null` 로 대체되며, 응답 `warnings` 배열에 사유가 남는다(나머지 input 은 정상 진행).
 
 ### Changed
 

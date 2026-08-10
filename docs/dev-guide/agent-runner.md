@@ -59,6 +59,22 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 - **성공/실패 모두에 담김**: 성공(exit 0)은 `TaskResult.output = {"pid", "stdout": {"text","truncated","dropped_bytes"}, "stderr": {...}}`. 실패(비0 exit)는 `PollOutcome::Failed` 가 문자열 하나만 나르는 계약이라, 캡처한 stdout/stderr tail 을 에러 메시지 본문에 그대로 이어붙인다 — `cargo build` 같은 명령의 컴파일 에러 본문도 이 경로로 드러난다.
 - **알려진 한계**: tail 전용이라 긴 빌드의 *첫* 에러는 놓칠 수 있다(요약/실패 지점은 보통 출력 뒤쪽). ANSI 는 벗기지 않고 보존한다.
 
+### `Run` 결과를 reduce 하기 — `--extract-path`
+
+`agent.task_reduce`(CLI `tasty agent task-reduce`)의 in-process 전략(`concat_text`/`merge_json`/`all`/`first_success`)은 각 input 의 `output` 을 구조 무관하게 통째로 다룬다 — `Run` task 의 `output` 이 위 "출력 캡처" 의 `{pid, stdout:{text,...}, stderr:{...}}` 구조라는 걸 모른 채 `concat_text` 로 이어 붙이면 직렬화된 JSON 조각이 그대로 이어붙어 유효한 JSON 도, 사람이 읽을 텍스트도 아닌 결과가 나온다. `merge_json` 도 같은 구조를 가진 두 `Run` 결과를 merge 하면 `pid`/`stdout`/`stderr` 키가 전부 겹쳐 뒤 input 이 앞 input 을 통째로 덮어쓴다.
+
+`--extract-path <JSON Pointer>`(예: `/stdout/text`)를 주면, reducer 전략을 적용하기 전에 각 input 의 `output` 에서 그 경로(RFC 6901 JSON Pointer)만 뽑아낸다 — `crates/tasty-agent/src/reducer.rs::extract_paths`. 예:
+
+```sh
+tasty agent task-reduce --workspace-id 1 --inputs t-a,t-b \
+  --strategy concat_text --extract-path /stdout/text
+# → {"value": "out1\nout2\n", "warnings": []}
+```
+
+- 생략 시 기존 동작(전체 `output` 그대로) 유지 — 하위 호환.
+- 지정된 경로가 없는 input(예: `Run` 이 아닌 다른 kind 의 결과)은 reduce 전체를 실패시키지 않는다 — 그 input 만 `output: null` 로 취급하고 나머지는 정상 진행하되, 응답의 `warnings` 배열에 `input #<i>(task <id>)에 경로 '<path>'가 없어 null로 처리했습니다` 를 남긴다.
+- DAG 안의 `TaskCommand::Reduce`(위 `HostExecutor 매핑` 표) 는 이 옵션이 없다 — `--extract-path` 는 독립 호출 `agent.task_reduce`/`task-reduce` CLI 전용이다.
+
 ## 완료 판정 전략 레지스트리 (`src/completion_strategy/`)
 
 `Custom.poll` 이름 참조(`PollSpecRef::Named`)와 결정 6(`default_for_methods`) 이 가리키는 대상 — "임의 IPC dispatch 가 끝났는지"를 이름으로 등록해두는 독립 레지스트리다. `src/hook_handler/`(공유 훅 핸들러 레지스트리) 를 정본 템플릿으로 **형태만** 미러링한다 — 3출처 병합(host 내장 TOML + plugin manifest + user config `~/.tasty/completion-strategies.toml`), patch semantics(Host→Plugin→User, `Some` 필드만 override), id 규약(`<owner>/<short>`, `host`/`<plugin_id>`/`user`), 전역 싱글턴 `global()`. `HookHandlerId`(push 형이 참조) 외에는 훅 핸들러의 타입을 import 하지 않는다.

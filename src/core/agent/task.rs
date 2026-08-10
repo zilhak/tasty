@@ -209,7 +209,11 @@ impl Core {
                     .result
                     .and_then(|r| r.output)
                     .unwrap_or(serde_json::Value::Null);
-                out.push(ReducerInput { succeeded, output });
+                out.push(ReducerInput {
+                    succeeded,
+                    task_id: tid.clone(),
+                    output,
+                });
             }
             Ok(out)
         })

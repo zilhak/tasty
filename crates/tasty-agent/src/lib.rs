@@ -24,7 +24,7 @@ use thiserror::Error;
 pub use barrier::{Barrier, BarrierState, BarrierStore};
 pub use lease::{Lease, LeaseMode, LeaseStore};
 pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
-pub use reducer::{ReducerInput, reduce_in_process, reduce_with_custom};
+pub use reducer::{ReducerInput, extract_paths, reduce_in_process, reduce_with_custom};
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{

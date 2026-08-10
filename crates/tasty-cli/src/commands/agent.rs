@@ -298,6 +298,13 @@ pub enum AgentCommands {
         /// Strategy: `first_success` | `all` | `merge_json` | `concat_text` | `custom:<command>`.
         #[arg(long)]
         strategy: String,
+        /// JSON Pointer (e.g. `/stdout/text`) extracted from each input's `output`
+        /// before reducing — recommended when reducing `Run` task results, whose
+        /// `output` is `{pid,stdout:{text,...},stderr:{...}}` rather than a plain
+        /// value. Inputs missing the path are treated as `null` and reported in
+        /// the response's `warnings` (the rest of the reduce still proceeds).
+        #[arg(long)]
+        extract_path: Option<String>,
     },
     /// Configure a rate limit bucket for (agent, metric) — `limit` tokens per `per_ms` ms.
     RateLimitSet {

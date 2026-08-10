@@ -295,20 +295,22 @@ pub(super) fn agent_command_to_method_params(
             workspace_id,
             inputs,
             strategy,
+            extract_path,
         } => {
             if inputs.is_empty() {
                 eprintln!("Error: --inputs must contain at least one task id");
                 std::process::exit(1);
             }
             let strategy_val = parse_reducer_strategy(strategy);
-            (
-                "agent.task_reduce",
-                serde_json::json!({
-                    "workspace_id": *workspace_id,
-                    "inputs": inputs,
-                    "strategy": strategy_val,
-                }),
-            )
+            let mut params = serde_json::json!({
+                "workspace_id": *workspace_id,
+                "inputs": inputs,
+                "strategy": strategy_val,
+            });
+            if let Some(path) = extract_path {
+                params["extract_path"] = serde_json::json!(path);
+            }
+            ("agent.task_reduce", params)
         }
         RateLimitSet {
             agent,
