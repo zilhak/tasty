@@ -471,6 +471,26 @@ pub fn handle_task_graph(
                 for dep in &t.depends_on {
                     out.push_str(&format!("  \"{}\" -> \"{}\";\n", dep, t.id));
                 }
+                // Fallback.task/Reduce.inputs 도 depends_on 과 같은 암묵적 의존성
+                // 엣지(사이클 검출 대상, `TaskGraph::dfs_cycle`)라 시각화에도 반영한다
+                // — 단, depends_on 과 구분되게 점선/색으로 표시한다.
+                if let OnFailure::Fallback {
+                    task: Some(fb_id), ..
+                } = &t.on_failure
+                {
+                    out.push_str(&format!(
+                        "  \"{}\" -> \"{}\" [style=dashed, color=orangered, label=\"fallback\"];\n",
+                        t.id, fb_id
+                    ));
+                }
+                if let TaskCommand::Reduce { inputs, .. } = &t.command {
+                    for input in inputs {
+                        out.push_str(&format!(
+                            "  \"{}\" -> \"{}\" [style=dotted, color=blue, label=\"reduce\"];\n",
+                            input, t.id
+                        ));
+                    }
+                }
             }
             out.push_str("}\n");
             JsonRpcResponse::success(
@@ -491,17 +511,32 @@ pub fn handle_task_graph(
                         "id": t.id,
                         "name": t.name,
                         "state": t.state.name(),
+                        "command_kind": task_command_kind(&t.command),
+                        "on_failure_kind": on_failure_kind(&t.on_failure),
                     })
                 })
                 .collect();
-            let edges: Vec<Value> = tasks
-                .iter()
-                .flat_map(|t| {
-                    t.depends_on
-                        .iter()
-                        .map(move |d| json!({"from": d, "to": t.id}))
-                })
-                .collect();
+            // depends_on 외에 Fallback.task/Reduce.inputs 도 암묵적 의존성 엣지다
+            // (`TaskGraph::dfs_cycle` 이 사이클 검출에서 셋 다 순회) — 셋을 한
+            // 엣지 리스트에 합치되 `kind` 로 구분해, depends_on 만 보던 시각화가
+            // fallback/reduce 관계를 놓치지 않게 한다.
+            let mut edges: Vec<Value> = Vec::new();
+            for t in &tasks {
+                for dep in &t.depends_on {
+                    edges.push(json!({"from": dep, "to": t.id, "kind": "depends_on"}));
+                }
+                if let OnFailure::Fallback {
+                    task: Some(fb_id), ..
+                } = &t.on_failure
+                {
+                    edges.push(json!({"from": t.id, "to": fb_id, "kind": "fallback"}));
+                }
+                if let TaskCommand::Reduce { inputs, .. } = &t.command {
+                    for input in inputs {
+                        edges.push(json!({"from": input, "to": t.id, "kind": "reduce"}));
+                    }
+                }
+            }
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -513,6 +548,23 @@ pub fn handle_task_graph(
                 }),
             )
         }
+    }
+}
+
+fn task_command_kind(command: &TaskCommand) -> &'static str {
+    match command {
+        TaskCommand::Run { .. } => "run",
+        TaskCommand::Custom { .. } => "custom",
+        TaskCommand::Reduce { .. } => "reduce",
+        TaskCommand::WaitBarrier { .. } => "wait_barrier",
+    }
+}
+
+fn on_failure_kind(on_failure: &OnFailure) -> &'static str {
+    match on_failure {
+        OnFailure::Abort => "abort",
+        OnFailure::ContinueDownstream => "continue_downstream",
+        OnFailure::Fallback { .. } => "fallback",
     }
 }
 

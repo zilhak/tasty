@@ -88,6 +88,76 @@ fn format_task_list(result: &serde_json::Value) {
     }
 }
 
+/// `command`(internally-tagged, `{"kind": "...", ...}`) 한 줄 요약. audit 시나리오
+/// (예: "이 task 가 정말 이 dispatch 를 실행하나")를 raw JSON 파싱 없이 확인하기 위함.
+fn format_command_summary(command: &serde_json::Value) -> String {
+    let kind = command.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+    match kind {
+        "run" => {
+            let cmd = command
+                .get("command")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            format!("run: {cmd}")
+        }
+        "custom" => {
+            let method = command
+                .get("ipc_method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("custom: {method}")
+        }
+        "reduce" => {
+            let strategy = command
+                .get("strategy")
+                .and_then(|s| s.get("kind"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let inputs = command
+                .get("inputs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            format!("reduce: strategy={strategy} inputs=[{inputs}]")
+        }
+        "wait_barrier" => {
+            let name = command.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("wait_barrier: {name}")
+        }
+        other => other.to_string(),
+    }
+}
+
+/// `on_failure`(internally-tagged) 한 줄 요약 — audit 시나리오(예: "이 task 가 정말
+/// 저 fallback task 에 게이트돼 있나")를 `tasty memory get` 우회 없이 확인하기 위함.
+fn format_on_failure_summary(on_failure: &serde_json::Value) -> String {
+    let kind = on_failure
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("abort");
+    if kind != "fallback" {
+        return kind.to_string();
+    }
+    if let Some(task) = on_failure.get("task").and_then(|v| v.as_str()) {
+        format!("fallback:{task}")
+    } else if on_failure.get("inline").is_some() {
+        "fallback:inline".to_string()
+    } else {
+        "fallback".to_string()
+    }
+}
+
 fn format_task_get(result: &serde_json::Value) {
     let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
     let name = result.get("name").and_then(|v| v.as_str()).unwrap_or("?");
@@ -112,6 +182,30 @@ fn format_task_get(result: &serde_json::Value) {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         println!("awaiting external signal — wait_key={wait_key}, deadline_ms={deadline_ms}");
+    }
+    if let Some(command) = result.get("command") {
+        println!("command: {}", format_command_summary(command));
+    }
+    if let Some(deps) = result.get("depends_on").and_then(|v| v.as_array())
+        && !deps.is_empty()
+    {
+        let list = deps
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("depends_on: {list}");
+    }
+    if let Some(on_failure) = result.get("on_failure") {
+        println!("on_failure: {}", format_on_failure_summary(on_failure));
+    }
+    if let Some(metadata) = result.get("metadata")
+        && !metadata.is_null()
+    {
+        println!(
+            "metadata: {}",
+            serde_json::to_string_pretty(metadata).unwrap()
+        );
     }
     if let Some(result_val) = result.get("result")
         && !result_val.is_null()
