@@ -66,11 +66,34 @@ pub fn handle_task_create(
         now_ms: now_ms(),
     };
     match core.task_create(engine, opts) {
-        Ok(task) => match serde_json::to_value(task) {
-            Ok(v) => JsonRpcResponse::success(id, v),
+        Ok(task) => match serde_json::to_value(&task) {
+            Ok(mut v) => {
+                if let Some(warnings) = fallback_with_deps_warning(&task)
+                    && let Some(obj) = v.as_object_mut()
+                {
+                    obj.insert("warnings".into(), json!(warnings));
+                }
+                JsonRpcResponse::success(id, v)
+            }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
         },
         Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+/// `on_failure=Fallback` + 비어있지 않은 `depends_on` 조합은 항상 죽은 설정은
+/// 아니지만(이 task 자신이 명령 실행에서 직접 실패하는 Running→Failed 경로에서는
+/// 정상 동작), 의존성 실패로 인한 Waiting→Skipped 전이에는 적용되지 않는다
+/// (`apply_on_failure`가 `Fallback`에 대해 `None`을 반환) — 착각하기 쉬운 조합이라
+/// 생성 자체는 막지 않고 경고만 담아 돌려준다.
+fn fallback_with_deps_warning(task: &tasty_agent::Task) -> Option<Vec<&'static str>> {
+    if matches!(task.on_failure, OnFailure::Fallback { .. }) && !task.depends_on.is_empty() {
+        Some(vec![
+            "on_failure=Fallback only takes effect when this task itself fails (Running -> Failed); \
+             it has no effect on the Waiting -> Skipped transition caused by a failed dependency (depends_on)",
+        ])
+    } else {
+        None
     }
 }
 

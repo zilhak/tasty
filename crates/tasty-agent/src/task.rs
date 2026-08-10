@@ -71,6 +71,24 @@ impl TaskState {
 }
 
 /// Task가 실패했을 때 downstream 처리 정책.
+///
+/// **어느 쪽 task에 설정하느냐에 따라 의미가 반대로 갈린다** — 같은 필드가
+/// 방향이 다른 두 관계를 표현하기 때문이다:
+/// - `Abort`/`ContinueDownstream`은 **의존하는 쪽(downstream)** 자신에 설정해야
+///   한다. `apply_on_failure`가 평가하는 건 실패한 upstream이 아니라, 그
+///   upstream에 의존해 지금 `Skipped`로 전이하려는 downstream 자신의
+///   `on_failure`다(`task/store.rs`의 `cascade_downstream`이
+///   `apply_on_failure(&d_task, ...)`로 downstream을 넘긴다). 실패할 upstream
+///   쪽에 설정하면 아무 효과가 없다.
+/// - `Fallback`은 **실패할 수 있는 쪽(upstream)** 자신에 설정해야 한다.
+///   `set_state`가 그 task 자신이 `Failed`로 전이하는 순간 자기 `on_failure`를
+///   보고 fallback을 승격시킨다. downstream 쪽에 설정하면, downstream이
+///   의존성 실패로 `Skipped`행 판정을 받아도 `apply_on_failure`는 `None`을
+///   반환할 뿐이라(아래) 아무 전이도 일어나지 않고 `Waiting`에 영구히 멈춘다 —
+///   경고 로그조차 남지 않는다.
+///
+/// 정리: Abort/ContinueDownstream → downstream에 설정. Fallback → upstream에
+/// 설정.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[derive(Default)]

@@ -40,6 +40,10 @@ pub enum AgentCommands {
         #[arg(long, value_delimiter = ',')]
         depends_on: Vec<String>,
         /// On-failure policy: abort | continue_downstream | fallback:<task_id> (default: abort).
+        /// Which task you set this on matters: abort/continue_downstream must be
+        /// set on the dependent (downstream) task; fallback must be set on the
+        /// task that may itself fail (upstream) — setting fallback on a
+        /// downstream task has no effect on skip cascades from a failed dependency.
         #[arg(long, default_value = "abort")]
         on_failure: String,
         /// Metadata JSON (free-form, attached to the task).
