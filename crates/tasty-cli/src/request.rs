@@ -217,9 +217,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Unset { command } => unset_command_to_method_params(command),
         Commands::SurfaceMeta { command } => surface_meta_command_to_method_params(command),
         Commands::Surface { command } => match command {
-            SurfaceCommands::Completion { surface } => (
+            SurfaceCommands::Completion { surface, kind } => (
                 "surface.completion",
-                serde_json::json!({ "surface_id": surface }),
+                serde_json::json!({ "surface_id": surface, "kind": kind }),
             ),
         },
         Commands::IsTyping { surface } => (

@@ -120,10 +120,19 @@ fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
 }
 
 /// 워크스페이스 행 우측 개수 배지 — 본체 `paint_workspace_count_badge`(sidebar/view.rs)
-/// 와 동일한 디자인 Badge variant="primary": accent-primary 채움 pill + count(mono,
-/// badge-font-size), text-on-accent. min-width/height=badge-size, padding-x=badge-padding-x,
-/// pill(반경=높이/2). 행 우측에 spacing-sm 인셋으로 앵커.
-fn paint_ws_count_badge(p: &egui::Painter, theme: &Theme, row: egui::Rect, label: &str) {
+/// 와 동일한 디자인 Badge: `fill` 채움 pill + count(mono, badge-font-size),
+/// text-on-accent. min-width/height=badge-size, padding-x=badge-padding-x,
+/// pill(반경=높이/2). `right_edge` 에서 좌측으로(offset 만큼 밀어) 앵커 —
+/// 두 배지를 나란히(NeedsInput 좌·Completion 우) 그릴 때 offset 으로 위치를 뗀다.
+/// 반환값은 이 배지가 차지한 폭(다음 배지의 offset 산정용).
+fn paint_ws_count_badge_at(
+    p: &egui::Painter,
+    theme: &Theme,
+    row: egui::Rect,
+    right_offset: f32,
+    label: &str,
+    fill: egui::Color32,
+) -> f32 {
     let size = theme.badge_size().value();
     let pad_x = theme.badge_padding_x().value();
     let galley = p.layout_no_wrap(
@@ -134,21 +143,59 @@ fn paint_ws_count_badge(p: &egui::Painter, theme: &Theme, row: egui::Rect, label
     let w = (galley.size().x + pad_x * 2.0).max(size);
     let badge_rect = egui::Rect::from_min_size(
         egui::pos2(
-            row.max.x - theme.spacing_sm.value() - w,
+            row.max.x - theme.spacing_sm.value() - right_offset - w,
             row.center().y - size * 0.5,
         ),
         egui::vec2(w, size),
     );
-    p.rect_filled(
-        badge_rect,
-        size / 2.0,
-        egui::Color32::from(theme.accent_primary()),
-    );
+    p.rect_filled(badge_rect, size / 2.0, fill);
     let gp = egui::pos2(
         badge_rect.center().x - galley.size().x / 2.0,
         badge_rect.center().y - galley.size().y / 2.0,
     );
     p.galley(gp, galley, egui::Color32::from(theme.text_on_accent()));
+    w
+}
+
+/// Completion(파랑) 단일 배지 — 기존 데모 행(`WORKSPACES`/`CATEGORY_SECTIONS`)이
+/// 쓰는 단순 형태.
+fn paint_ws_count_badge(p: &egui::Painter, theme: &Theme, row: egui::Rect, label: &str) {
+    paint_ws_count_badge_at(
+        p,
+        theme,
+        row,
+        0.0,
+        label,
+        egui::Color32::from(theme.accent_primary()),
+    );
+}
+
+/// NeedsInput(좌, 노랑) + Completion(우, 파랑) 배지 쌍 — 디자인 확정: 트레일링
+/// 슬롯(우측)은 kind 와 무관하게 유지, 2개면 NeedsInput 이 앞(좌측)·Completion 이
+/// 뒤(우측, 기존 자리), 사이 간격 `badge-group-gap`(=`spacing_xs`).
+fn paint_ws_badge_pair(
+    p: &egui::Painter,
+    theme: &Theme,
+    row: egui::Rect,
+    needs_input_label: &str,
+    completion_label: &str,
+) {
+    let completion_w = paint_ws_count_badge_at(
+        p,
+        theme,
+        row,
+        0.0,
+        completion_label,
+        egui::Color32::from(theme.accent_primary()),
+    );
+    paint_ws_count_badge_at(
+        p,
+        theme,
+        row,
+        completion_w + theme.spacing_xs.value(),
+        needs_input_label,
+        egui::Color32::from(theme.accent_warning()),
+    );
 }
 
 fn full(ui: &mut egui::Ui, theme: &Theme) {
@@ -545,6 +592,109 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
+/// Attention kind 데모 — 워크스페이스 행 배지(NeedsInput 단독 / 배지 2종 공존) +
+/// collapsed rail dot(kind 우선순위: NeedsInput 노랑 > Completion 파랑 > running 초록).
+/// 본체 `sidebar/view.rs::draw_workspace_card`/`draw_collapsed_avatar` 의 kind 분기를
+/// theme 토큰만으로 정적 재현.
+fn attention_demo(ui: &mut egui::Ui, theme: &Theme) {
+    let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
+    let row_h = theme.item_height_interactive.value();
+    let rows = 2.0;
+    let h = row_h * rows + theme.spacing_xs.value() * (rows - 1.0) + theme.spacing_md.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let mut y = rect.min.y + theme.spacing_sm.value();
+    for (name, needs_input, completion) in [
+        ("review-agent", Some("1"), None),
+        ("deploy", Some("2"), Some("3")),
+    ] {
+        let row = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
+            egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
+        );
+        p.text(
+            egui::pos2(row.min.x + theme.spacing_md.value(), row.center().y),
+            egui::Align2::LEFT_CENTER,
+            name,
+            egui::FontId::proportional(theme.font_size_body.value()),
+            egui::Color32::from(theme.text_secondary()),
+        );
+        match (needs_input, completion) {
+            (Some(ni), Some(c)) => paint_ws_badge_pair(&p, theme, row, ni, c),
+            (Some(ni), None) => {
+                paint_ws_count_badge_at(
+                    &p,
+                    theme,
+                    row,
+                    0.0,
+                    ni,
+                    egui::Color32::from(theme.accent_warning()),
+                );
+            }
+            (None, Some(c)) => {
+                paint_ws_count_badge(&p, theme, row, c);
+            }
+            (None, None) => {}
+        }
+        y += row_h + theme.spacing_xs.value();
+    }
+}
+
+/// Collapsed rail avatar dot — kind 우선순위(needs-input > completion > running)
+/// 데모 3종.
+fn attention_rail_demo(ui: &mut egui::Ui, theme: &Theme) {
+    let slot = theme.sidebar_collapsed_slot_width.value();
+    let w = slot * 3.0 + theme.spacing_md.value() * 2.0;
+    let h = theme.sidebar_collapsed_workspace_height.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+    let dot_r = 3.0;
+    let dot_pad = 4.0;
+    for (i, (letter, dot_color)) in [
+        ('N', theme.accent_warning()),
+        ('C', theme.accent_primary()),
+        ('R', theme.accent_success()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cx = rect.min.x
+            + theme.spacing_md.value()
+            + slot * 0.5
+            + (slot + theme.spacing_md.value()) * i as f32;
+        let avatar =
+            egui::Rect::from_center_size(egui::pos2(cx, rect.center().y), egui::vec2(slot, slot));
+        p.text(
+            avatar.center(),
+            egui::Align2::CENTER_CENTER,
+            letter.to_string(),
+            egui::FontId::monospace(theme.font_size_body.value()),
+            egui::Color32::from(theme.text_muted()),
+        );
+        let dot_center = egui::pos2(
+            avatar.max.x - dot_pad - dot_r,
+            avatar.min.y + dot_pad + dot_r,
+        );
+        p.circle_filled(
+            dot_center,
+            dot_r + 1.5,
+            egui::Color32::from(theme.bg_sidebar()),
+        );
+        p.circle_filled(dot_center, dot_r, egui::Color32::from(dot_color));
+    }
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "Full · 212", |ui| full(ui, theme));
@@ -554,6 +704,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
         spec::cluster(ui, theme, "Categories · rail", |ui| {
             rail_categories(ui, theme)
+        });
+        spec::cluster(ui, theme, "Attention badges", |ui| {
+            attention_demo(ui, theme)
+        });
+        spec::cluster(ui, theme, "Attention rail dot", |ui| {
+            attention_rail_demo(ui, theme)
         });
     });
 
@@ -568,6 +724,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("active row", "surface-active + 2px inset accent"),
             ("mirror", "REMOTE pill line / rail corner chip"),
             ("footer", "Tools·Plugins·Settings, border-top"),
+            (
+                "attention badges",
+                "NeedsInput(yellow, left) · Completion(blue, right, 기존 자리)",
+            ),
+            (
+                "attention rail dot",
+                "needs-input > completion > running (kind 우선순위, dot 1개)",
+            ),
         ],
         &[
             TokenChip::new("bg-sidebar", "sidebar fill", theme.bg_sidebar().into()),
@@ -578,8 +742,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-primary",
-                "inset bar + logo",
+                "inset bar + logo + completion badge/dot",
                 theme.accent_primary().into(),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "needs-input badge/dot",
+                theme.accent_warning().into(),
             ),
             TokenChip::new(
                 "workspace-mirror-fg",
@@ -603,6 +772,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          subtitle 사이 별도 줄의 sky \"REMOTE\" pill, rail 은 아바타 우하단 sky corner \
          chip(workspace-mirror-fg)으로 표시(notif 우상단 / attached 둘레 ring 과 채널 분리). \
          카테고리 토글 on 이면 chevron 헤더로 그룹화(빈·접힌 카테고리는 헤더/`---` 만), \
-         레일은 카테고리 경계를 `---` 버튼으로 표시한다.",
+         레일은 카테고리 경계를 `---` 버튼으로 표시한다. attention 배지는 kind 별로 \
+         2개까지 공존한다 — NeedsInput 이 항상 좌측, Completion 이 우측(카운트가 하나뿐일 \
+         때의 기존 자리)이며 사이 간격은 badge-group-gap(=spacing-xs). 접힌 rail 은 dot \
+         하나만 그리므로 kind 우선순위(needs-input > completion > running)로 대표색 \
+         하나를 고른다.",
     );
 }

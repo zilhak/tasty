@@ -19,9 +19,15 @@ pub struct WorkspaceEntryView {
     pub subtitle: String,
     pub description: String,
     pub busy_count: usize,
-    /// 이 워크스페이스에서 highlight(주의 환기) 상태인 surface 개수. full 은 개수
-    /// 숫자 배지, collapsed 는 dot 으로 표현(`> 0` 조건).
-    pub attention_count: usize,
+    /// 이 워크스페이스에서 `Completion` kind 로 attention 중인 surface 개수. full 은
+    /// 우측(기존 자리) 파란 숫자 배지, collapsed 는 dot 으로 표현(`> 0` 조건, 단
+    /// `needs_input_count` 가 dot 색 우선순위에서 이긴다).
+    pub completion_count: usize,
+    /// 이 워크스페이스에서 `NeedsInput` kind 로 attention 중인 surface 개수. full 은
+    /// 좌측(Completion 배지가 있으면 그 왼쪽, 없으면 단독으로 우측) 노란 숫자 배지.
+    /// `Completion` 보다 우선순위가 높다 — collapsed dot 은 이 값이 0 초과면 항상
+    /// 노랑을 택한다.
+    pub needs_input_count: usize,
     /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
     pub attached: bool,
     /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
@@ -238,12 +244,29 @@ fn paint_alert_badge(
     ui.painter()
         .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
 }
-/// 워크스페이스 행 우측 개수 배지 — 디자인 Badge variant="primary"
-/// (accent-primary 채움 pill + count, 99 초과 시 "99+"). Badge specimen 토큰 전사:
+/// 워크스페이스 행 개수 배지의 색 variant — 디자인 Badge variant="primary"(파랑,
+/// Completion)/"warning"(노랑, NeedsInput). 둘 다 전경은 `text-on-accent` 로 동일.
+#[derive(Clone, Copy)]
+enum BadgeVariant {
+    Primary,
+    Warning,
+}
+
+impl BadgeVariant {
+    fn fill(self, th: &Theme) -> egui::Color32 {
+        match self {
+            BadgeVariant::Primary => th.accent_primary().into(),
+            BadgeVariant::Warning => th.accent_warning().into(),
+        }
+    }
+}
+
+/// 워크스페이스 행 개수 배지 — 디자인 Badge variant="primary"/"warning"
+/// (accent 채움 pill + count, 99 초과 시 "99+"). Badge specimen 토큰 전사:
 /// min-width/height=badge-size, padding-x=badge-padding-x, font=mono badge-font-size,
-/// pill(반경=높이/2), 색 accent-primary / text-on-accent. `right_to_left` 레이아웃
-/// 안에서 크기를 allocate 하고 그 자리에 painter 로 그린다.
-fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize) {
+/// pill(반경=높이/2), 전경 text-on-accent. `right_to_left` 레이아웃 안에서 크기를
+/// allocate 하고 그 자리에 painter 로 그린다.
+fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize, variant: BadgeVariant) {
     let label = if count > 99 {
         "99+".to_string()
     } else {
@@ -259,8 +282,7 @@ fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize) {
     let w = (galley.size().x + pad_x * 2.0).max(size);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, size), egui::Sense::hover());
     // pill = 완전 라운드(반경 = 높이/2).
-    ui.painter()
-        .rect_filled(rect, size / 2.0, egui::Color32::from(th.accent_primary()));
+    ui.painter().rect_filled(rect, size / 2.0, variant.fill(th));
     let gp = egui::pos2(
         rect.center().x - galley.size().x / 2.0,
         rect.center().y - galley.size().y / 2.0,
@@ -1302,7 +1324,15 @@ fn draw_collapsed_avatar(
         rect.max.x - dot_pad - dot_radius,
         rect.min.y + dot_pad + dot_radius,
     );
-    if ws.attention_count > 0 {
+    // 우선순위(디자인 확정): NeedsInput(노랑) > Completion(파랑) > running(초록).
+    // 52px 레일에서 dot 2개는 기각됐다 — 최고 랭크 kind 1개만 색으로 표시(카운트는
+    // 확장 사이드바 배지가 담당).
+    if ws.needs_input_count > 0 {
+        ui.painter()
+            .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
+        ui.painter()
+            .circle_filled(dot_center, dot_radius, th.accent_warning());
+    } else if ws.completion_count > 0 {
         // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
@@ -1452,11 +1482,25 @@ fn draw_workspace_card(
             // 디자인 위계: title 13px(font_size_body), 단일 줄 ellipsis. badge 를 먼저
             // 우측에 점유시킨 뒤 남은 좌측 폭을 title 이 채우며 길면 말줄임한다
             // (truncate 가 가용폭을 모두 먹어 badge 를 밀어내지 않도록 reserve-first).
+            //
+            // 디자인 확정: 배지 자리(우측)는 kind 와 무관하게 유지 — kind 1개면 그
+            // 자리 단독 차지, 2개면 NeedsInput(노랑)이 앞(좌측)·Completion(파랑)이
+            // 뒤(우측, 기존 자리), 사이 간격은 badge-group-gap(=spacing_xs). Completion
+            // 을 먼저 그려야 right_to_left 레이아웃에서 가장 오른쪽에 앉는다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ws.attention_count > 0 {
-                    // 디자인 Badge variant="primary" — accent-primary 채움 pill +
-                    // highlight surface 개수(99 초과 시 "99+"). Badge specimen 토큰 전사.
-                    paint_workspace_count_badge(ui, th, ws.attention_count);
+                if ws.completion_count > 0 {
+                    paint_workspace_count_badge(ui, th, ws.completion_count, BadgeVariant::Primary);
+                }
+                if ws.needs_input_count > 0 {
+                    if ws.completion_count > 0 {
+                        ui.add_space(th.spacing_xs.value());
+                    }
+                    paint_workspace_count_badge(
+                        ui,
+                        th,
+                        ws.needs_input_count,
+                        BadgeVariant::Warning,
+                    );
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(
@@ -1585,7 +1629,8 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 0,
-            attention_count: 0,
+            completion_count: 0,
+            needs_input_count: 0,
             attached: false,
             is_mirror: false,
             is_active,
@@ -1800,7 +1845,8 @@ mod tests {
         let mut mirror_busy = mock_ws("data-pipeline", true);
         mirror_busy.is_mirror = true;
         mirror_busy.busy_count = 2;
-        mirror_busy.attention_count = 3;
+        mirror_busy.completion_count = 3;
+        mirror_busy.needs_input_count = 1;
         mirror_busy.attached = true;
         let ws = vec![mock_ws("main", false), mirror, mirror_busy];
         assert!(run_full(ws.clone(), false).is_empty());
@@ -1841,7 +1887,8 @@ mod tests {
                 description: long_desc.into(),
                 busy_count: 0,
                 // 150 → "99+" cap 경로도 함께 no-panic 검증.
-                attention_count: 150,
+                completion_count: 150,
+                needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: true,
@@ -1852,7 +1899,8 @@ mod tests {
                 subtitle: String::new(),
                 description: String::new(),
                 busy_count: 0,
-                attention_count: 0,
+                completion_count: 0,
+                needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1862,7 +1910,8 @@ mod tests {
                 subtitle: String::new(),
                 description: "short desc".into(),
                 busy_count: 0,
-                attention_count: 0,
+                completion_count: 0,
+                needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1987,7 +2036,8 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 3,
-            attention_count: 2,
+            completion_count: 2,
+            needs_input_count: 0,
             attached: true,
             is_mirror: false,
             is_active: true,

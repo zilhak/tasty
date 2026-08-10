@@ -51,11 +51,15 @@ pub enum HostCall {
         value: f64,
         surface_id: u32,
     },
-    /// `surface.completion { surface_id }` — surface highlight(주의 환기) 발동.
+    /// `surface.completion { surface_id, kind }` — surface highlight(주의 환기) 발동.
     /// "Claude가 명령을 끝냈다"/"확인이 필요하다" 신호를
     /// `docs/features/surface-highlight/index.md` 의 producer 중립 highlight API 로
-    /// 연결한다.
-    SurfaceCompletion { surface_id: u32 },
+    /// 연결한다. `kind` ∈ {"completion", "needs_input"} — 호스트의
+    /// `AttentionKind` 를 그대로 미러링한다(`terminal.set_state` 의 `state` 문자열과
+    /// 동형 패턴). stop/subagent-stop/session-end 는 `"completion"`,
+    /// notification(비-idle_prompt)/pre-tool-use(AskUserQuestion) 는
+    /// `"needs_input"`.
+    SurfaceCompletion { surface_id: u32, kind: &'static str },
 }
 
 pub fn handle_claude_hook(
@@ -237,7 +241,10 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
-            calls.push(HostCall::SurfaceCompletion { surface_id });
+            calls.push(HostCall::SurfaceCompletion {
+                surface_id,
+                kind: "completion",
+            });
         }
         "session-end" => {
             // 이 발화가 정상적인 세션 종료인지, 아니면 예상 밖 타이밍(중복
@@ -264,7 +271,10 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
-            calls.push(HostCall::SurfaceCompletion { surface_id });
+            calls.push(HostCall::SurfaceCompletion {
+                surface_id,
+                kind: "completion",
+            });
         }
         "notification" => {
             // idle_prompt(무입력 대기)는 실제로 대기 중인 질문이 없는 오탐 케이스라
@@ -279,7 +289,10 @@ pub fn apply_hook(
                     surface_id,
                     event: "needs-input",
                 });
-                calls.push(HostCall::SurfaceCompletion { surface_id });
+                calls.push(HostCall::SurfaceCompletion {
+                    surface_id,
+                    kind: "needs_input",
+                });
             }
         }
         "pre-tool-use" => {
@@ -295,7 +308,10 @@ pub fn apply_hook(
                 surface_id,
                 event: "needs-input",
             });
-            calls.push(HostCall::SurfaceCompletion { surface_id });
+            calls.push(HostCall::SurfaceCompletion {
+                surface_id,
+                kind: "needs_input",
+            });
         }
         "post-tool-use" => {
             // matcher `"AskUserQuestion"` 로 좁혀 등록 — 사용자가 답변을 제출한
@@ -384,9 +400,10 @@ fn deliver(host: &HostHandle, call: &HostCall) {
                 "tags": { "surface_id": surface_id.to_string() },
             }),
         ),
-        HostCall::SurfaceCompletion { surface_id } => {
-            ("surface.completion", json!({ "surface_id": surface_id }))
-        }
+        HostCall::SurfaceCompletion { surface_id, kind } => (
+            "surface.completion",
+            json!({ "surface_id": surface_id, "kind": kind }),
+        ),
     };
     if let Err(e) = host.call(method, params) {
         tracing::warn!("claude hook host call '{method}' failed: {e}");
@@ -429,7 +446,10 @@ mod tests {
                     surface_id: 100,
                     event: "claude-idle",
                 },
-                HostCall::SurfaceCompletion { surface_id: 100 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 100,
+                    kind: "completion",
+                },
             ]
         );
     }
@@ -448,7 +468,10 @@ mod tests {
                     surface_id: 7,
                     event: "claude-idle",
                 },
-                HostCall::SurfaceCompletion { surface_id: 7 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 7,
+                    kind: "completion",
+                },
             ]
         );
     }
@@ -467,7 +490,10 @@ mod tests {
                     surface_id: 100,
                     event: "needs-input",
                 },
-                HostCall::SurfaceCompletion { surface_id: 100 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 100,
+                    kind: "needs_input",
+                },
             ]
         );
     }
@@ -486,7 +512,10 @@ mod tests {
                     surface_id: 100,
                     event: "needs-input",
                 },
-                HostCall::SurfaceCompletion { surface_id: 100 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 100,
+                    kind: "needs_input",
+                },
             ]
         );
     }
@@ -544,7 +573,10 @@ mod tests {
                     surface_id: 100,
                     event: "needs-input",
                 },
-                HostCall::SurfaceCompletion { surface_id: 100 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 100,
+                    kind: "needs_input",
+                },
             ]
         );
     }
@@ -586,7 +618,10 @@ mod tests {
                     surface_id: 100,
                     event: "claude-idle",
                 },
-                HostCall::SurfaceCompletion { surface_id: 100 },
+                HostCall::SurfaceCompletion {
+                    surface_id: 100,
+                    kind: "completion",
+                },
             ]
         );
     }
@@ -600,41 +635,63 @@ mod tests {
     #[test]
     fn stop_also_raises_surface_completion_highlight() {
         let calls = apply_hook("stop", 100, None, None).unwrap();
-        assert!(
-            calls
-                .iter()
-                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
-        );
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SurfaceCompletion {
+                surface_id: 100,
+                kind: "completion",
+            }
+        )));
     }
 
     #[test]
     fn subagent_stop_also_raises_surface_completion_highlight() {
         let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
-        assert!(
-            calls
-                .iter()
-                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 7 }))
-        );
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SurfaceCompletion {
+                surface_id: 7,
+                kind: "completion",
+            }
+        )));
     }
 
     #[test]
     fn session_end_also_raises_surface_completion_highlight() {
         let calls = apply_hook("session-end", 100, None, None).unwrap();
-        assert!(
-            calls
-                .iter()
-                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
-        );
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SurfaceCompletion {
+                surface_id: 100,
+                kind: "completion",
+            }
+        )));
     }
 
     #[test]
     fn notification_also_raises_surface_completion_highlight() {
         let calls = apply_hook("notification", 100, None, None).unwrap();
-        assert!(
-            calls
-                .iter()
-                .any(|c| matches!(c, HostCall::SurfaceCompletion { surface_id: 100 }))
-        );
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SurfaceCompletion {
+                surface_id: 100,
+                kind: "needs_input",
+            }
+        )));
+    }
+
+    /// pre-tool-use(AskUserQuestion) 도 needs_input kind 로 highlight 를 발동한다 —
+    /// notification 과 동일 계약.
+    #[test]
+    fn pre_tool_use_also_raises_surface_completion_with_needs_input_kind() {
+        let calls = apply_hook("pre-tool-use", 100, None, None).unwrap();
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            HostCall::SurfaceCompletion {
+                surface_id: 100,
+                kind: "needs_input",
+            }
+        )));
     }
 
     #[test]

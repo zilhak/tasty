@@ -208,11 +208,15 @@ pub(crate) enum DomainIntent {
     SetTerminalMark { surface_id: u32 },
 
     // ─── Surface completion (attention producer) ───
-    /// "이 surface 가 작업을 완료했다" 신호. attention(kind=Completion) 을 발동하는
-    /// producer 중 하나(release 정식 IPC/CLI). cascade 가 surface 보유 engine 의
-    /// `raise_attention` + redraw. surface_id 필수(포커스 독립 — 불가침
-    /// 원칙 1). 향후 completion 고유 효과가 생기면 cascade 를 확장한다.
-    SurfaceCompletion { surface_id: u32 },
+    /// "이 surface 에 attention 이 필요하다" 신호. attention 을 발동하는 producer
+    /// 중 하나(release 정식 IPC/CLI, Claude 플러그인 훅). cascade 가 surface 보유
+    /// engine 의 `raise_attention(surface_id, kind)` + redraw. surface_id 필수
+    /// (포커스 독립 — 불가침 원칙 1). `kind` 기본값은 IPC 핸들러가 `Completion`
+    /// 으로 채운다(하위 호환 — 기존 CLI/OSC 133/toast 는 kind 를 모른다).
+    SurfaceCompletion {
+        surface_id: u32,
+        kind: super::AttentionKind,
+    },
 
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
@@ -428,9 +432,12 @@ pub(crate) enum CoreEvent {
     TerminalMarkSet { surface_id: u32 },
 
     // ─── Surface completion (attention producer) ───
-    /// Surface completion 신호 요청. cascade 가 surface 보유 engine 의
-    /// `raise_attention` + redraw.
-    SurfaceCompletionRequested { surface_id: u32 },
+    /// Surface attention 신호 요청. cascade 가 surface 보유 engine 의
+    /// `raise_attention(surface_id, kind)` + redraw.
+    SurfaceCompletionRequested {
+        surface_id: u32,
+        kind: super::AttentionKind,
+    },
 
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items pop + 복원 완료. cascade 가 (Workspace kind 인 경우)

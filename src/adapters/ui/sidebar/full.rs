@@ -24,7 +24,10 @@ pub(super) fn entry_view(
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
         busy_count: engine.busy_count(&surface_ids),
-        attention_count: engine.attention_count(&surface_ids),
+        completion_count: engine
+            .attention_count_of_kind(crate::core::AttentionKind::Completion, &surface_ids),
+        needs_input_count: engine
+            .attention_count_of_kind(crate::core::AttentionKind::NeedsInput, &surface_ids),
         attached: engine.attach.workspace_holder(ws.id).is_some(),
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,

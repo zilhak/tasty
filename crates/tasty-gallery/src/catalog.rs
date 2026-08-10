@@ -1178,8 +1178,10 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "occupancy",
-                            "Occupancy & completion borders",
-                            Some("soft green 1px · hard peach 1px · completed blue 2px"),
+                            "Occupancy & attention borders",
+                            Some(
+                                "needs-input yellow 2px · soft green 1px · hard peach 1px · completed blue 2px",
+                            ),
                             components::occupancy_borders::draw,
                         ),
                     ],

@@ -688,6 +688,22 @@ mod workspace_category_tests {
         let r = req(&["tasty", "surface", "completion", "--surface", "42"]);
         assert_eq!(r.method, "surface.completion");
         assert_eq!(r.params["surface_id"], 42);
+        assert!(r.params["kind"].is_null());
+    }
+
+    #[test]
+    fn surface_completion_carries_kind() {
+        let r = req(&[
+            "tasty",
+            "surface",
+            "completion",
+            "--surface",
+            "42",
+            "--kind",
+            "needs_input",
+        ]);
+        assert_eq!(r.method, "surface.completion");
+        assert_eq!(r.params["kind"], "needs_input");
     }
 
     #[test]

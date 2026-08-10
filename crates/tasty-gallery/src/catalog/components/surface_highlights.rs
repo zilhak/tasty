@@ -8,11 +8,11 @@
 //! fakePane = 헤더(StatusDot + Tag) + 프롬프트(mono + blink 커서 8×15).
 //! 본체 view 변경 시 시각 동기화는 수동 (gallery 는 binary 미의존).
 //!
-//! **focus 와 attention 의 관계** (완료 테두리는 [`occupancy_borders`](super::occupancy_borders)
-//! 참고): surface 가 여기서 그리는 `focused` 상태를 **실제로** 얻으면(에이전트 주입이 아닌
-//! 실 사용자 포커스, `gpu.rs`) `AttentionStore` 의 그 surface 레코드가 kind 무관하게
-//! clear 된다 — `Completion` 이든 향후 `NeedsInput` 이든 이 해제 경로는 kind 를 구분하지
-//! 않는 단일 규칙이다.
+//! **focus 와 attention 의 관계** (완료/응답대기 테두리는
+//! [`occupancy_borders`](super::occupancy_borders) 참고): surface 가 여기서 그리는
+//! `focused` 상태를 **실제로** 얻으면(에이전트 주입이 아닌 실 사용자 포커스, `gpu.rs`)
+//! `AttentionStore` 의 그 surface 레코드가 kind 무관하게 clear 된다 — `Completion` 이든
+//! `NeedsInput` 이든 이 해제 경로는 kind 를 구분하지 않는 단일 규칙이다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -128,7 +128,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("cursor", "blink block 8×15"),
             (
                 "attention on focus",
-                "clear_attention — kind 무관 단일 해제 규칙",
+                "clear_attention — kind(Completion/NeedsInput) 무관 단일 해제 규칙",
             ),
         ],
         &[
@@ -156,8 +156,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "포커스된 surface 만 순흑(#000) — 나머지는 0.92 로 살짝 가라앉혀 \
          '지금 어디에 입력되는가' 를 한눈에 구분한다. agent 점유는 별도 색 dot 으로. \
-         이 focused 전환은 완료 테두리(occupancy_borders specimen 의 completed 클러스터) \
-         해제와도 맞물린다 — surface 가 실 포커스를 얻으면 그 attention 레코드가 kind \
-         (Completion·향후 NeedsInput) 와 무관하게 지워진다.",
+         이 focused 전환은 완료/응답대기 테두리(occupancy_borders specimen 의 \
+         completed·needs-input 클러스터) 해제와도 맞물린다 — surface 가 실 포커스를 \
+         얻으면 그 attention 레코드가 kind(Completion·NeedsInput) 와 무관하게 지워진다.",
     );
 }

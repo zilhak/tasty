@@ -522,3 +522,19 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   공간 확보). file_picker specimen 이 이미 이 관례(card 를 cluster 에 직접) — 동일하게 맞췄다.
 - **근거**: `crates/tasty-gallery/src/catalog/components/transfer.rs`. 캡처 검증(Overlays 페이지
   임시 상단 배치 → `TASTY_GALLERY_SHOT=3` → 겹침 해소 확인).
+
+## tab_bar — attention kind 도입으로 옛 "값-보존" divergence 가 해소됨 (2026-08-10)
+
+- **배경**: kind 가 `Completion` 1종뿐이던 시절, `tab_bar.rs` 의 탭 제목 강조색은 실제로는
+  파랑(`accent-primary`)이어야 할 자리에 노랑(`accent_warning()`)을 쓰고 있었다 — 전용
+  "notification" 토큰이 없어 시맨틱이 다른 `accent_warning` 값을 그대로 재사용한
+  값-보존 divergence였다(주석: "divergence: notif 강조. warning 과 값 동일하나 의미는
+  notification — 전용 토큰 부재로 accent_warning() 값-보존").
+- **해소**: `NeedsInput` kind 추가로 노랑(`accent_warning`)이 진짜 의미(응답 대기)를 갖는
+  전용 색이 되고, `Completion` 은 원래 의도대로 파랑(`accent_primary`)으로 바로잡혔다 —
+  값-보존이 필요 없어졌다(디자인 확정 시안이 이 정정을 명시적으로 지시함,
+  `.claude-workspace/conductor/design-staging/attention-visuals/design-tokens-and-rulings.md`
+  §43 "tab_bar.rs:386-394…Completion이 파랑, NeedsInput이 노랑").
+- **근거**: `src/adapters/ui/tab_bar.rs` `text_color` match(`AttentionKind` 분기). 상세는
+  [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
+  · [design-gallery-mapping §Attention kind](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062).

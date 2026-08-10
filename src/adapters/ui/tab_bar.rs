@@ -17,6 +17,7 @@ use tasty_type_geometry::length::PhysicalPx;
 use tasty_type_geometry::rect::PhysicalRect;
 
 use crate::adapters::ui::icons;
+use crate::core::AttentionKind;
 use crate::state::AppState;
 use crate::theme;
 
@@ -30,8 +31,10 @@ pub struct PaneTabBarView {
     /// 탭별 leading 아이콘. wrapper 가 registry(kind→`SurfaceKindDef.icon`)에서 해석해
     /// 담는다 — view 는 kind 를 모른 채 아이콘만 그린다(엔진 비의존 유지).
     pub tab_icons: Vec<icons::Icon>,
-    /// 탭별 알림(노란 라벨) 여부.
-    pub tab_has_notification: Vec<bool>,
+    /// 탭별 attention kind — 탭에 속한 surface 들의 dominant kind
+    /// (`CoreState::attention_dominant_kind`). `Some(NeedsInput)`=노랑,
+    /// `Some(Completion)`=파랑, `None`=attention 없음(active/평상시 색으로 폴백).
+    pub tab_attention_kind: Vec<Option<AttentionKind>>,
     /// 탭별 busy(녹색 점) 여부.
     pub tab_is_busy: Vec<bool>,
     pub active_tab: usize,
@@ -370,8 +373,7 @@ pub fn draw_pane_tab_bars_view(
                                 }
 
                                 let is_active = i == info.active_tab;
-                                let has_notif =
-                                    info.tab_has_notification.get(i).copied().unwrap_or(false);
+                                let tab_kind = info.tab_attention_kind.get(i).copied().flatten();
                                 let is_busy = info.tab_is_busy.get(i).copied().unwrap_or(false);
                                 // Fill 스타일만 활성 탭 배경을 채운다. Underline/Dot 은
                                 // 배경을 비활성과 동일하게 두고 별도 마커로 표시.
@@ -383,14 +385,15 @@ pub fn draw_pane_tab_bars_view(
                                 } else {
                                     bg
                                 };
-                                let text_color = if is_active {
-                                    th.text_primary()
-                                } else if has_notif {
-                                    // divergence: notif 강조. warning 과 값 동일하나 의미는 notification —
-                                    // 전용 토큰 부재로 accent_warning() 값-보존(§B3).
-                                    th.accent_warning()
-                                } else {
-                                    th.text_muted()
+                                // 탭 제목 색 위계(디자인 확정): NeedsInput → Completion →
+                                // active → 평상시. attention 은 포커스 시 해제되므로
+                                // active 탭이 attention 틴트를 갖는 실제 충돌은 없다
+                                // (방어적 순서일 뿐).
+                                let text_color = match tab_kind {
+                                    Some(AttentionKind::NeedsInput) => th.accent_warning(),
+                                    Some(AttentionKind::Completion) => th.accent_primary(),
+                                    None if is_active => th.text_primary(),
+                                    None => th.text_muted(),
                                 };
 
                                 let tab_rect = egui::Rect::from_min_size(
@@ -872,12 +875,12 @@ pub fn draw_pane_tab_bars(
                 Some(p) => p,
                 None => continue,
             };
-            let tab_has_notification: Vec<bool> = pane
+            let tab_attention_kind: Vec<Option<AttentionKind>> = pane
                 .tabs
                 .iter()
                 .map(|t| {
                     let sids = t.all_surface_ids();
-                    engine.any_attention(&sids)
+                    engine.attention_dominant_kind(&sids)
                 })
                 .collect();
             let tab_is_busy = compute_tab_is_busy(engine, &pane.tabs);
@@ -903,7 +906,7 @@ pub fn draw_pane_tab_bars(
                             .unwrap_or(icons::FILE)
                     })
                     .collect(),
-                tab_has_notification,
+                tab_attention_kind,
                 tab_is_busy,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
@@ -1331,7 +1334,7 @@ mod tests {
             },
             tab_names: names.iter().map(|s| s.to_string()).collect(),
             tab_icons: vec![icons::TERM; n],
-            tab_has_notification: vec![false; n],
+            tab_attention_kind: vec![None; n],
             tab_is_busy: vec![false; n],
             active_tab: active,
             is_focused: focused,

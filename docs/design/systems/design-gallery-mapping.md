@@ -595,3 +595,29 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 실패는 08 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
 `BULK_REJECT_PREFIX`(원격 거부) 면 Dismiss 단독, 아니면 Retry(재큐잉). 상세
 [features/remote-attach](../../features/remote-attach/index.md).
+
+## Attention kind — NeedsInput 배지/dot/테두리/탭 제목 (surfaces, ADR-0062)
+
+디자인 `components/core/Badge.jsx`(variant `warning`) + `components/feedback/StatusDot.jsx`
+(status `needs-input`/`completion`) ↔ 본체 `src/adapters/ui/{divider,tab_bar,sidebar/view}.rs`
+↔ 갤러리 `catalog/components/{occupancy_borders,sidebar,tab_bar}.rs`(surfaces 섹션 기존
+specimen 확장 — 신규 파일 없음). 원본 요청문서 `design-request/attention-visual-definitions.md`,
+확정 시안은 `.claude-workspace/conductor/design-staging/attention-visuals/design-tokens-and-rulings.md`
+(로컬 아카이브, 토큰 값은 [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)).
+
+| 디자인 컴포넌트/variant | 본체 함수 | 갤러리 함수 | 비고 |
+|---|---|---|---|
+| `Badge variant="warning"` | `sidebar/view.rs::paint_workspace_count_badge`(`BadgeVariant::Warning`) | `sidebar.rs::paint_ws_badge_pair`/`paint_ws_count_badge_at` | NeedsInput 개수 배지(좌측 슬롯) |
+| `Badge variant="primary"`(기존) | 동 함수(`BadgeVariant::Primary`) | 동 | Completion 개수 배지(우측, 기존 자리) — 색 로직만 variant 분기로 리팩터, 렌더 값 불변 |
+| `BadgeGroup`(gap) | `right_to_left` 레이아웃 + `ui.add_space(spacing_xs)` | `paint_ws_badge_pair` offset 계산 | `badge-group-gap` 전사, 위젯화하지 않고 인라인 |
+| `StatusDot status="needs-input"` | `sidebar/view.rs::draw_collapsed_avatar` 우상단 dot 분기 | `sidebar.rs::attention_rail_demo` | collapsed rail — kind 우선순위로 대표색 1개 |
+| `StatusDot status="completion"`(기존 notif) | 동 | 동 | 값 불변(파랑), 분기 순서만 needs-input 다음으로 |
+| surface border(occPane 확장) | `divider.rs::highlight_stroke_color`/`regions_from_state` | `occupancy_borders.rs::occ_pane`(`Kind::NeedsInput`) | 우선순위: NeedsInput > 점유 > Completion |
+| 탭 제목 색(위계) | `tab_bar.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | 기존 "divergence: accent_warning 값-보존" 주석 해소(Completion 이 이제 정말 파랑) |
+
+**신규 Theme 필드 0** — 전부 기존 semantic 접근자(`accent_warning`/`accent_primary`/
+`text_on_accent`/`focus_ring_width`/`spacing_xs`)로 해소([design-token-mapping
+§attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
+참조). `AttentionKind`/`AttentionLevel`(host, `src/core/state/attention.rs`)이 색 선택의
+SoT — 갤러리는 binary 비의존이라 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
+attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).

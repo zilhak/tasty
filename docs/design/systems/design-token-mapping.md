@@ -297,3 +297,32 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 > gap(10)·헤더 콘텐츠 높이(20)는 디자인 inline raw 로 `popup/transfer.rs`·specimen module const.
 > reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
+
+## attention kind — NeedsInput/Completion (surface-highlight, ADR-0062)
+
+디자인 `tokens/semantic.css` + `tokens/components.css` + `components/core/Badge.jsx` +
+`components/feedback/StatusDot.jsx`(원본: Claude Design "attention-visuals", 2026-08-10
+확정). 색은 기존 semantic accessor 를 그대로 참조 — **신규 Theme 필드 0**
+([design-parity-notes](design-parity-notes.md) "component-tier 토큰은 신규 필드 안 만듦").
+`--tasty-badge-group-gap` 도 `space-xs` 그대로 별칭이라 accessor 를 추가하지 않고
+`Theme::spacing_xs` 를 직접 참조한다.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
+|---|---|---|---|
+| `--tasty-attention-needs-input` | → `accent-warning` | `Theme::accent_warning()` | NeedsInput 색(노랑) |
+| `--tasty-attention-completion` | → `accent-primary` | `Theme::accent_primary()` | Completion 색(파랑) |
+| `--tasty-attention-needs-input-fg` / `-completion-fg` | → `text-on-accent` | `Theme::text_on_accent()` | 두 배지 공통 전경 |
+| `--tasty-attention-rank-needs-input` | `30`(정수) | `AttentionLevel::NeedsInput`(derive `Ord`) | 재도출 금지 — 소스에 정수 값 주석으로 미러링 |
+| `--tasty-attention-rank-completion` | `10`(정수) | `AttentionLevel::Completion` | 위와 동일 |
+| `--tasty-badge-primary-bg`/`-fg` | = attention-completion(-fg) | `accent_primary()`/`text_on_accent()` | Completion 배지 |
+| `--tasty-badge-warning-bg`/`-fg` | = attention-needs-input(-fg) | `accent_warning()`/`text_on_accent()` | NeedsInput 배지 |
+| `--tasty-badge-group-gap` | → `space-xs`(4px) | `Theme::spacing_xs` | 두 배지 동시 표시 시 간격. accessor 미신설 — 직접 참조 |
+| `--tasty-tab-fg-needs-input`/`-completion` | = attention-* | `accent_warning()`/`accent_primary()` | 탭 제목 색 |
+| `--tasty-surface-highlight-input-border` | = attention-needs-input | `accent_warning()` | surface 테두리 NeedsInput |
+| `--tasty-surface-highlight-input-width` | → `focus-ring-width`(2px) | `Theme::focus_ring_width` | Completion 테두리와 동일 굵기 |
+| `--tasty-surface-highlight-done-border` | = attention-completion | `accent_primary()` | 기존 완료 테두리 — 렌더 색 불변, 경유만 변경 |
+| `--tasty-status-dot-needs-input`/`-completion` | = attention-* | `accent_warning()`/`accent_primary()` | collapsed rail dot |
+
+예약(이번엔 미구현, 토큰만 존재): `error` rank 40 → `accent-danger`, `approval` rank 20 →
+`accent-agent`. Catppuccin 매핑에 추가할 hue 없음 — Latte 는 기존 accent role 을 통해
+자동 상속.

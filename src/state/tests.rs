@@ -685,10 +685,10 @@ fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState)
     state.active_workspace = index;
 }
 
-// ---- occupancy > completion 우선순위 (ADR-0040, 작업 02) ----
+// ---- occupancy > completion 우선순위, NeedsInput > occupancy (ADR-0040, ADR-0062) ----
 
-/// 점유(soft) 중 surface 는 완료 하이라이트가 억제된다: `regions_from_state` 의 해당
-/// region `is_highlighted` 가 false. 점유 없이 attention 만 있으면 true(대조군).
+/// 점유(soft) 중 surface 는 Completion 하이라이트가 억제된다: `regions_from_state` 의
+/// 해당 region `kind` 가 `None`. 점유 없이 attention 만 있으면 `Some(Completion)`(대조군).
 #[test]
 fn occupancy_suppresses_completion_highlight() {
     use crate::adapters::ui::divider::regions_from_state;
@@ -710,23 +710,62 @@ fn occupancy_suppresses_completion_highlight() {
         height: PhysicalPx(600.0),
     };
 
-    // 대조군: attention 만 → is_highlighted true.
+    // 대조군: attention 만 → kind Some(Completion).
     engine.raise_attention(sid, AttentionKind::Completion);
     let regions = regions_from_state(&state, &engine, term_rect);
     assert!(
-        regions.iter().any(|r| r.is_highlighted),
+        regions
+            .iter()
+            .any(|r| r.kind == Some(AttentionKind::Completion)),
         "점유 없이 attention 만이면 완료 테두리가 그려져야 한다"
     );
 
-    // soft 점유 추가 → 억제(is_highlighted false).
+    // soft 점유 추가 → 억제(kind None).
     engine
         .attach
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
     let regions = regions_from_state(&state, &engine, term_rect);
     assert!(
-        regions.iter().all(|r| !r.is_highlighted),
+        regions.iter().all(|r| r.kind.is_none()),
         "점유 중이면 완료 테두리를 억제해야 한다(점유 > 완료)"
+    );
+}
+
+/// NeedsInput 은 점유보다 우선순위가 높아 점유 중에도 억제되지 않는다 — "지금 답하지
+/// 않으면 멈춘다"는 신호를 점유(정상적으로 잡혀 작업 중)가 가리면 안 되기 때문.
+#[test]
+fn needs_input_not_suppressed_by_occupancy() {
+    use crate::adapters::ui::divider::regions_from_state;
+    use crate::core::AttentionKind;
+    use crate::model::{PhysicalPx, PhysicalRect};
+
+    let (state, mut engine) = test_state();
+    let sids = engine
+        .workspaces
+        .get(state.active_workspace)
+        .unwrap()
+        .all_surface_ids();
+    let sid = *sids.first().expect("기본 workspace 에 surface 하나");
+
+    let term_rect = PhysicalRect {
+        x: PhysicalPx(0.0),
+        y: PhysicalPx(0.0),
+        width: PhysicalPx(800.0),
+        height: PhysicalPx(600.0),
+    };
+
+    engine
+        .attach
+        .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
+        .expect("soft 점유 획득");
+    engine.raise_attention(sid, AttentionKind::NeedsInput);
+    let regions = regions_from_state(&state, &engine, term_rect);
+    assert!(
+        regions
+            .iter()
+            .any(|r| r.kind == Some(AttentionKind::NeedsInput)),
+        "점유 중이어도 NeedsInput 테두리는 억제되지 않아야 한다(NeedsInput > 점유)"
     );
 }
 

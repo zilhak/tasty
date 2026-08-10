@@ -17,13 +17,17 @@ use std::time::Instant;
 
 use super::CoreState;
 
-/// Attention 을 유발한 사건의 종류. 이 TODO 범위에서는 `Completion` 1종뿐이다 —
-/// `NeedsInput` 은 `attention-needs-input-visuals` 가 추가한다.
+/// Attention 을 유발한 사건의 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AttentionKind {
     /// 작업 완료 신호 — toast 알림, `surface.completion` IPC/CLI, windows resume
-    /// 알림, OSC 133 명령 완료 4개 producer 가 전부 이 kind 로 이관됐다.
+    /// 알림, OSC 133 명령 완료 producer 가 이 kind 로 발동한다.
     Completion,
+    /// 응답 대기 신호 — Claude 플러그인의 `notification`(비-`idle_prompt`)/
+    /// `pre-tool-use`(AskUserQuestion) 훅이 이 kind 로 발동한다. `Completion` 보다
+    /// 우선순위가 높다(디자인 rank 30 > 10) — 지금 답하지 않으면 진행이 멈추는
+    /// 상태가, 이미 끝난 작업 확인보다 더 급하기 때문.
+    NeedsInput,
 }
 
 /// surface 하나가 가진 attention 레코드. `raised_at` 은 지금은 소비처가 없지만
@@ -35,11 +39,17 @@ struct AttentionRecord {
     raised_at: Instant,
 }
 
-/// 색 우선순위 등급. 지금은 kind 가 1종이라 `Completion` 하나뿐이지만, `NeedsInput`
-/// 추가 시 `NeedsInput > Completion` 순서로 확장된다(전용 소비처는 아직 없다).
+/// 색 우선순위 등급 — 디자인 rank 토큰(`--tasty-attention-rank-*`)을 그대로
+/// 미러링한다(재도출 금지). 선언 순서가 곧 derived `Ord` 순서이므로 값이 낮은
+/// 쪽을 먼저 선언한다. 탭 제목·collapsed rail dot 처럼 여러 surface 를 하나의
+/// 색으로 압축해야 하는 소비처가 이 순서로 대표 kind 를 고른다
+/// (`CoreState::attention_dominant_kind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum AttentionLevel {
+    /// `--tasty-attention-rank-completion` = 10.
     Completion,
+    /// `--tasty-attention-rank-needs-input` = 30.
+    NeedsInput,
 }
 
 /// kind → 효과. `effects_of` 가 이 값을 만들고, 호출부는 그 결과를 집행만 한다.
@@ -68,6 +78,14 @@ pub(crate) fn effects_of(kind: AttentionKind) -> AttentionEffects {
     match kind {
         AttentionKind::Completion => AttentionEffects {
             level: AttentionLevel::Completion,
+            panel_item: false,
+            os_notify: false,
+            sound: false,
+        },
+        AttentionKind::NeedsInput => AttentionEffects {
+            level: AttentionLevel::NeedsInput,
+            // Completion 과 동일 정책 — 이 리포에 panel_item/os_notify/sound 의
+            // 실제 소비처가 아직 없다(ADR-0062). 값이 생기면 그때 분기한다.
             panel_item: false,
             os_notify: false,
             sound: false,
@@ -104,26 +122,22 @@ impl AttentionStore {
         self.records.get(&surface_id).map(|r| r.kind)
     }
 
-    fn contains(&self, surface_id: u32) -> bool {
-        self.records.contains_key(&surface_id)
-    }
-
-    fn any(&self, surface_ids: &[u32]) -> bool {
-        surface_ids.iter().any(|sid| self.records.contains_key(sid))
-    }
-
-    fn count(&self, surface_ids: &[u32]) -> usize {
-        surface_ids
-            .iter()
-            .filter(|sid| self.records.contains_key(sid))
-            .count()
-    }
-
     fn count_of_kind(&self, kind: AttentionKind, surface_ids: &[u32]) -> usize {
         surface_ids
             .iter()
             .filter(|sid| self.records.get(sid).map(|r| r.kind) == Some(kind))
             .count()
+    }
+
+    /// 주어진 surface 목록 중 가장 높은 우선순위(`AttentionLevel`)를 가진 kind.
+    /// 한 surface 는 kind 하나만 갖지만, 목록(탭의 여러 surface, 워크스페이스의
+    /// 여러 surface)에는 서로 다른 kind 가 섞여 있을 수 있다 — 이 값이 그 목록을
+    /// 대표하는 색 하나를 고른다.
+    fn dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
+        surface_ids
+            .iter()
+            .filter_map(|sid| self.records.get(sid).map(|r| r.kind))
+            .max_by_key(|k| effects_of(*k).level)
     }
 }
 
@@ -155,38 +169,27 @@ impl CoreState {
     }
 
     /// The attention kind currently recorded for a surface, if any.
-    #[allow(dead_code)] // 현재 소비처 없음 — kind 조회 API 는 이 TODO 가 인터페이스를
-    // 먼저 맞춰두는 것이고, 실제 kind 분기 소비는 `attention-needs-input-visuals`.
     pub(crate) fn attention_kind(&self, surface_id: u32) -> Option<AttentionKind> {
         self.attention.kind_of(surface_id)
     }
 
-    /// Whether the given surface currently has an attention record.
-    pub fn has_attention(&self, surface_id: u32) -> bool {
-        self.attention.contains(surface_id)
-    }
-
-    /// Whether any surface in the given list has an attention record.
-    pub fn any_attention(&self, surface_ids: &[u32]) -> bool {
-        self.attention.any(surface_ids)
-    }
-
-    /// Number of surfaces with an attention record among the given list.
-    pub fn attention_count(&self, surface_ids: &[u32]) -> usize {
-        self.attention.count(surface_ids)
-    }
-
     /// Number of surfaces with an attention record of the given kind among the
-    /// given list. 이 TODO 는 kind 1종뿐이라 `attention_count` 와 결과가 같지만,
-    /// `attention-needs-input-visuals` 가 kind 별 배지 2종을 셀 때 이 API 를 그대로
-    /// 쓴다.
-    #[allow(dead_code)] // 소비처는 attention-needs-input-visuals — 인터페이스 선행 준비.
+    /// given list. 워크스페이스 행의 kind 별 배지 2종(NeedsInput/Completion)이
+    /// 각각 이 API 를 호출한다(`sidebar/full.rs::entry_view`).
     pub(crate) fn attention_count_of_kind(
         &self,
         kind: AttentionKind,
         surface_ids: &[u32],
     ) -> usize {
         self.attention.count_of_kind(kind, surface_ids)
+    }
+
+    /// 목록(탭/워크스페이스에 속한 surface) 중 가장 높은 우선순위의 attention
+    /// kind — `NeedsInput > Completion` 순서(디자인 rank 토큰 미러링). 탭 제목·
+    /// collapsed rail dot 처럼 "여러 surface 를 하나의 색으로 압축" 해야 하는
+    /// 소비처 전용(`tab_bar.rs`, `sidebar/view.rs` collapsed dot).
+    pub fn attention_dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
+        self.attention.dominant_kind(surface_ids)
     }
 
     /// 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고) — 두 번째 clear producer.
@@ -247,20 +250,22 @@ mod tests {
     #[test]
     fn raise_and_query() {
         let mut s = state();
-        assert!(!s.has_attention(7));
+        assert!(!s.attention_dominant_kind(&[7]).is_some());
         s.raise_attention(7, AttentionKind::Completion);
-        assert!(s.has_attention(7));
+        assert!(s.attention_dominant_kind(&[7]).is_some());
         assert_eq!(s.attention_kind(7), Some(AttentionKind::Completion));
-        assert!(s.any_attention(&[7]));
-        assert!(!s.any_attention(&[8, 9]));
+        assert!(!s.attention_dominant_kind(&[8, 9]).is_some());
     }
 
     #[test]
     fn raise_ignores_zero() {
         let mut s = state();
         s.raise_attention(0, AttentionKind::Completion);
-        assert!(!s.has_attention(0));
-        assert_eq!(s.attention_count(&[0]), 0);
+        assert!(!s.attention_dominant_kind(&[0]).is_some());
+        assert_eq!(
+            s.attention_count_of_kind(AttentionKind::Completion, &[0]),
+            0
+        );
     }
 
     #[test]
@@ -268,7 +273,7 @@ mod tests {
         let mut s = state();
         s.raise_attention(3, AttentionKind::Completion);
         s.clear_attention(3);
-        assert!(!s.has_attention(3));
+        assert!(!s.attention_dominant_kind(&[3]).is_some());
         assert_eq!(s.attention_kind(3), None);
     }
 
@@ -278,11 +283,13 @@ mod tests {
         s.raise_attention(1, AttentionKind::Completion);
         s.raise_attention(2, AttentionKind::Completion);
         s.raise_attention(5, AttentionKind::Completion);
-        assert_eq!(s.attention_count(&[1, 2, 3, 4, 5]), 3);
-        assert_eq!(s.attention_count(&[3, 4]), 0);
         assert_eq!(
             s.attention_count_of_kind(AttentionKind::Completion, &[1, 2, 3, 4, 5]),
             3
+        );
+        assert_eq!(
+            s.attention_count_of_kind(AttentionKind::Completion, &[3, 4]),
+            0
         );
     }
 
@@ -293,11 +300,11 @@ mod tests {
         let mut s = state();
         let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
         s.raise_attention(100, AttentionKind::Completion);
-        assert!(s.has_attention(100));
+        assert!(s.attention_dominant_kind(&[100]).is_some());
 
         s.mark_notification_read(id);
 
-        assert!(!s.has_attention(100));
+        assert!(!s.attention_dominant_kind(&[100]).is_some());
     }
 
     /// 핵심 엣지 케이스(ADR-0039 Reconsideration Triggers 참고) — 같은 surface 에서
@@ -319,13 +326,13 @@ mod tests {
         s.mark_notification_read(id1);
 
         assert!(
-            s.has_attention(100),
+            s.attention_dominant_kind(&[100]).is_some(),
             "다른 알림(id2)이 아직 안읽음이므로 attention 이 유지돼야 한다"
         );
 
         s.mark_notification_read(_id2);
         assert!(
-            !s.has_attention(100),
+            !s.attention_dominant_kind(&[100]).is_some(),
             "마지막 안읽음 알림까지 읽음 처리되면 attention 이 지워져야 한다"
         );
     }
@@ -336,7 +343,7 @@ mod tests {
         let mut s = state();
         s.raise_attention(100, AttentionKind::Completion);
         s.mark_notification_read(9999);
-        assert!(s.has_attention(100));
+        assert!(s.attention_dominant_kind(&[100]).is_some());
     }
 
     /// "모두 읽음"은 엣지 케이스 없이 안읽음이었던 모든 surface 의 attention 을
@@ -352,8 +359,8 @@ mod tests {
 
         s.mark_all_notifications_read();
 
-        assert!(!s.has_attention(100));
-        assert!(!s.has_attention(200));
+        assert!(!s.attention_dominant_kind(&[100]).is_some());
+        assert!(!s.attention_dominant_kind(&[200]).is_some());
     }
 
     /// 회귀 방지 — 이미 읽은 알림만 있는 surface 의 attention 은
@@ -372,10 +379,10 @@ mod tests {
         s.mark_all_notifications_read();
 
         assert!(
-            s.has_attention(100),
+            s.attention_dominant_kind(&[100]).is_some(),
             "100 은 안읽음 알림이 없었으므로 clear 대상이 아니다 — 무관 producer 의 attention 보존"
         );
-        assert!(!s.has_attention(200));
+        assert!(!s.attention_dominant_kind(&[200]).is_some());
     }
 
     /// `effects_of` 는 host/cascade 없이 순수하게 kind → 효과를 매핑한다. OSC 133
@@ -389,5 +396,60 @@ mod tests {
         assert!(!effects.panel_item);
         assert!(!effects.os_notify);
         assert!(!effects.sound);
+    }
+
+    #[test]
+    fn effects_of_needs_input_outranks_completion_and_has_no_panel_item() {
+        let effects = effects_of(AttentionKind::NeedsInput);
+        assert_eq!(effects.level, AttentionLevel::NeedsInput);
+        assert!(effects.level > AttentionLevel::Completion);
+        assert!(!effects.panel_item);
+        assert!(!effects.os_notify);
+        assert!(!effects.sound);
+    }
+
+    /// `dominant_kind` 는 목록에 섞인 kind 중 `NeedsInput` 을 고른다 — 탭 제목·
+    /// collapsed rail dot 이 여러 surface 를 하나의 색으로 압축할 때 쓰는 규칙.
+    #[test]
+    fn dominant_kind_prefers_needs_input_over_completion() {
+        let mut s = state();
+        s.raise_attention(1, AttentionKind::Completion);
+        s.raise_attention(2, AttentionKind::NeedsInput);
+        assert_eq!(
+            s.attention_dominant_kind(&[1, 2]),
+            Some(AttentionKind::NeedsInput)
+        );
+        // 순서를 뒤집어도(NeedsInput 이 먼저 오지 않아도) 동일 — 값 기반 선택.
+        assert_eq!(
+            s.attention_dominant_kind(&[2, 1]),
+            Some(AttentionKind::NeedsInput)
+        );
+    }
+
+    #[test]
+    fn dominant_kind_none_when_no_attention() {
+        let s = state();
+        assert_eq!(s.attention_dominant_kind(&[1, 2, 3]), None);
+    }
+
+    #[test]
+    fn dominant_kind_single_completion() {
+        let mut s = state();
+        s.raise_attention(5, AttentionKind::Completion);
+        assert_eq!(
+            s.attention_dominant_kind(&[5]),
+            Some(AttentionKind::Completion)
+        );
+    }
+
+    /// 같은 surface 에 다시 raise 하면(예: needs_input 이후 completion 재발동)
+    /// 최신 kind 로 완전히 대체된다 — 레코드는 surface 당 1개.
+    #[test]
+    fn raise_again_replaces_kind() {
+        let mut s = state();
+        s.raise_attention(1, AttentionKind::NeedsInput);
+        assert_eq!(s.attention_kind(1), Some(AttentionKind::NeedsInput));
+        s.raise_attention(1, AttentionKind::Completion);
+        assert_eq!(s.attention_kind(1), Some(AttentionKind::Completion));
     }
 }
