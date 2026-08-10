@@ -132,6 +132,42 @@ fn marker_present(data_dir: Option<&Path>) -> bool {
     data_dir.map(|d| marker_file(d).is_file()).unwrap_or(false)
 }
 
+fn no_data_dir_err() -> IpcMethodError {
+    IpcMethodError::new(
+        "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR)",
+    )
+}
+
+fn io_err(e: std::io::Error) -> IpcMethodError {
+    IpcMethodError::new(format!("checklist: {e}"))
+}
+
+/// `claude.checklist_enable` IPC 진입점 — 마커 파일을 만들어 게이트를 켠다(raw
+/// `touch` 대신 제어된 진입점, CLI 배선은 `tasty-plugin.toml` 의
+/// `checklist-enable`, `no_args` 그룹 재사용).
+pub(crate) fn handle_enable(data_dir: Option<&Path>) -> Result<Value, IpcMethodError> {
+    let dir = data_dir.ok_or_else(no_data_dir_err)?;
+    std::fs::create_dir_all(checklist_dir(dir)).map_err(io_err)?;
+    std::fs::write(marker_file(dir), "").map_err(io_err)?;
+    Ok(json!({ "enabled": true }))
+}
+
+/// `claude.checklist_disable` IPC 진입점 — 마커 파일을 지워 게이트를 끈다. 이미
+/// 꺼져 있어도(마커 없음) 성공으로 취급한다(멱등).
+pub(crate) fn handle_disable(data_dir: Option<&Path>) -> Result<Value, IpcMethodError> {
+    let dir = data_dir.ok_or_else(no_data_dir_err)?;
+    match std::fs::remove_file(marker_file(dir)) {
+        Ok(()) => Ok(json!({ "enabled": false })),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({ "enabled": false })),
+        Err(e) => Err(io_err(e)),
+    }
+}
+
+/// `claude.checklist_status` IPC 진입점 — 마커 파일 존재 여부 조회.
+pub(crate) fn handle_status(data_dir: Option<&Path>) -> Result<Value, IpcMethodError> {
+    Ok(json!({ "enabled": marker_present(data_dir) }))
+}
+
 fn read_state(data_dir: &Path, session_id: &str) -> Option<RoundState> {
     let text = std::fs::read_to_string(state_file(data_dir, session_id)).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
@@ -396,6 +432,62 @@ mod tests {
     #[test]
     fn marker_present_false_without_data_dir() {
         assert!(!marker_present(None));
+    }
+
+    // ── handle_enable/handle_disable/handle_status ──
+
+    #[test]
+    fn enable_creates_marker_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!marker_present(Some(tmp.path())));
+        let result = handle_enable(Some(tmp.path())).unwrap();
+        assert_eq!(result, json!({ "enabled": true }));
+        assert!(marker_present(Some(tmp.path())));
+    }
+
+    #[test]
+    fn disable_removes_marker_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_marker(tmp.path());
+        assert!(marker_present(Some(tmp.path())));
+        let result = handle_disable(Some(tmp.path())).unwrap();
+        assert_eq!(result, json!({ "enabled": false }));
+        assert!(!marker_present(Some(tmp.path())));
+    }
+
+    #[test]
+    fn disable_is_idempotent_without_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!marker_present(Some(tmp.path())));
+        let result = handle_disable(Some(tmp.path())).unwrap();
+        assert_eq!(result, json!({ "enabled": false }));
+    }
+
+    #[test]
+    fn status_round_trips_enable_disable() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            handle_status(Some(tmp.path())).unwrap(),
+            json!({ "enabled": false })
+        );
+        handle_enable(Some(tmp.path())).unwrap();
+        assert_eq!(
+            handle_status(Some(tmp.path())).unwrap(),
+            json!({ "enabled": true })
+        );
+        handle_disable(Some(tmp.path())).unwrap();
+        assert_eq!(
+            handle_status(Some(tmp.path())).unwrap(),
+            json!({ "enabled": false })
+        );
+    }
+
+    #[test]
+    fn enable_disable_status_error_without_data_dir() {
+        assert!(handle_enable(None).is_err());
+        assert!(handle_disable(None).is_err());
+        // status 는 marker_present 와 동일하게 안전 폴백(false)이지 에러가 아니다.
+        assert_eq!(handle_status(None).unwrap(), json!({ "enabled": false }));
     }
 
     #[test]

@@ -107,6 +107,11 @@ impl Plugin for ClaudePlugin {
                 &self.checklist_body,
                 &ctx.params,
             ),
+            "claude.checklist_enable" => checklist::handle_enable(self.plugin_data_dir.as_deref()),
+            "claude.checklist_disable" => {
+                checklist::handle_disable(self.plugin_data_dir.as_deref())
+            }
+            "claude.checklist_status" => checklist::handle_status(self.plugin_data_dir.as_deref()),
             "claude.install" => match install::run_install() {
                 Ok(added) => Ok(json!({ "installed": added })),
                 Err(e) => Err(IpcMethodError::new(format!("install failed: {e}"))),

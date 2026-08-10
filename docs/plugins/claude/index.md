@@ -16,7 +16,7 @@
 
 ## 내부 동작
 
-- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합, 아래 "Claude Code 훅 통합" 절) · `checklist-hook`(`continue-checklist` 세션 프로필 전용 `Stop` 훅, 아래 "continue-checklist 세션 프로필" 절) · `notify-done`(내부용: spawn/tell 상태 전환 시 caller 에게 알림 전달 + 형제 hook 정리·재무장, 아래) · `profile-register`/`profile-unregister`/`profile-list`/`profile-show`/`profile-current`(Claude 세션 프로필 레지스트리, 아래 "Claude 세션 프로필 레지스트리" 절).
+- **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 패인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(Claude Code 훅 통합, 아래 "Claude Code 훅 통합" 절) · `checklist-hook`(`continue-checklist` 세션 프로필 전용 `Stop` 훅, 아래 "continue-checklist 세션 프로필" 절) · `checklist-enable`/`checklist-disable`/`checklist-status`(그 게이트 마커 파일을 켜고 끄고 조회, 같은 절) · `notify-done`(내부용: spawn/tell 상태 전환 시 caller 에게 알림 전달 + 형제 hook 정리·재무장, 아래) · `profile-register`/`profile-unregister`/`profile-list`/`profile-show`/`profile-current`(Claude 세션 프로필 레지스트리, 아래 "Claude 세션 프로필 레지스트리" 절).
 - `spawn`/`tell`은 **동기 블록 없이 즉시 반환**한다. 대상(child 또는 tell 대상 surface)이 idle/needs_input 에 도달할 때마다, 그리고 최종적으로 exited 에 도달했을 때 caller surface(spawn/tell을 호출한 surface)에 완료 메시지가 자동으로 주입된다 — `claude-idle`/`needs-input`/`process-exit` 3개의 once(1회성) surface hook을 등록해 구현하며, 그중 하나가 fire되면 `notify-done`이 알림 전송 + 나머지 형제 hook 정리 후, target surface 가 아직 살아있으면(=이번 fire 가 process-exit 가 아니었으면) `surface.locate` 로 확인해 3개 hook 을 다시 등록한다(자기재무장). 이 덕분에 needs-input(되묻기) 같은 일시적 상태 전환을 거쳐도 그 뒤 진짜 완료 시 알림을 놓치지 않는다 — "spawn/tell 당 알림 1회"가 아니라 "child 가 살아있는 동안 상태 전환마다 알림"이다.
 - **ipc_namespace `claude`** — 위 동작의 IPC 표면.
 - **event_subscribe** `surface.closed` — surface 종료를 받아 인스턴스 상태 정리.
@@ -60,9 +60,9 @@
 - **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 센티넬 문자열 `[[TASTY-CHECKLIST-DONE]]` 이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시)과 센티넬 포함 지시로 구성된다.
 - **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 `continue-checklist round limit`(기본 3)로 노출된다.
 - **라운드 상태 저장**: `TASTY_PLUGIN_DATA_DIR/checklist/rounds/<session_id>.json` — Claude Code `session_id` 로 키잉해 동시에 여러 세션이 이 프로필을 부착해도 라운드 카운터가 섞이지 않는다(전역 단일 파일 아님). 해당 세션의 `SessionEnd` 훅(위 "Claude Code 훅 통합" 절의 8종 중 하나, 이 프로필과 무관하게 항상 발화)이 오면 상태 파일을 정리한다.
-- **마커 파일 게이트**: `TASTY_PLUGIN_DATA_DIR/checklist/enabled.marker` — 존재 여부로 발동을 켜고 끈다. 프로필 attach(=훅 등록)는 Claude Code 프로세스 기동 시점에 고정되지만, 마커는 매 훅 발화마다 파일 존재를 새로 확인하므로 재기동 없이 즉시 토글된다.
+- **마커 파일 게이트**: `TASTY_PLUGIN_DATA_DIR/checklist/enabled.marker` — 존재 여부로 발동을 켜고 끈다. 프로필 attach(=훅 등록)는 Claude Code 프로세스 기동 시점에 고정되지만, 마커는 매 훅 발화마다 파일 존재를 새로 확인하므로 재기동 없이 즉시 토글된다. `checklist-enable`/`checklist-disable`/`checklist-status` CLI(및 대응 IPC)가 이 마커 파일을 만들고 지우고 조회하는 제어된 진입점이다 — raw `touch`/`rm` 로 직접 조작할 필요가 없다.
 - **안전한 통과 원칙**: 마커 부재, `session_id`/`prompt_id` 누락, stdin 파싱 실패 등 불확실한 조건은 전부 block 하지 않고 조용히 통과시킨다 — 판단 불가 상태에서 세션을 가두지 않는 것을 우선한다.
-- IPC: `claude.checklist_hook` — `hook_args` 와 별개 파라미터 스키마(`checklist_hook_args`, 전부 stdin 자동 채움). `stop_hook_active` 는 `bool` 이 아니라 `string` 타입으로 선언돼 있다 — `CliArgType::Bool` 은 부재를 표현하지 못해(`extract_value` 가 항상 `Some(false)` 를 반환) `stdin_field` 매핑과 함께 쓰면 stdin 값이 절대 반영되지 않는다(핸들러가 `"true"`/`"false"` 문자열을 직접 비교).
+- IPC: `claude.checklist_hook` — `hook_args` 와 별개 파라미터 스키마(`checklist_hook_args`, 전부 stdin 자동 채움). `stop_hook_active` 는 `bool` 이 아니라 `string` 타입으로 선언돼 있다 — `CliArgType::Bool` 은 부재를 표현하지 못해(`extract_value` 가 항상 `Some(false)` 를 반환) `stdin_field` 매핑과 함께 쓰면 stdin 값이 절대 반영되지 않는다(핸들러가 `"true"`/`"false"` 문자열을 직접 비교). `claude.checklist_enable`/`claude.checklist_disable`/`claude.checklist_status` — 인자 없음(`no_args`), 마커 파일 생성/삭제/조회. `data_dir` 이 없는 비정상 기동이면 enable/disable 은 명시적 에러로 거부하고(profile.rs 결정 3과 동일 방침), status 는 `marker_present` 와 동일하게 `enabled: false` 로 안전 폴백한다(에러 아님 — 조회는 항상 응답 가능해야 한다).
 
 ### Claude Code 훅 통합
 
@@ -94,7 +94,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|profile-register|profile-unregister|profile-list|profile-show|profile-current …`.
+- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current …`.
 - surface/패인 생성 자체는 [work-area](../../features/work-area/index.md) 도메인을 사용.
 
 ## 비-목표
@@ -111,4 +111,5 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 - [ ] Given 유효한 프로필 JSON When `tasty claude reboot --profile-file <경로>` Then 재시작된 Claude 에서 프로필 훅과 tasty 내장 훅이 함께 발화하고, 무인자로 다시 reboot 해도 프로필이 승계된다. `--clear-profile` 후 reboot 하면 프로필 훅이 더 이상 발화하지 않는다. 존재하지 않는 경로/깨진 JSON 은 kill 시퀀스를 시작하지 않고 즉시 에러를 반환한다.
 - [ ] Given 등록된 프로필 둘(각각 다른 마커를 남기는 `SessionStart` 훅) When 이름 둘을 쉼표로 `--profile` 에 함께 부착해 spawn Then **둘 다** 발화한다(머지가 last-wins 로 떨어지지 않는다). `permissions.deny`를 담은 프로필을 부착하면 그 자식에게서 해당 도구가 사라지고(거부 프롬프트가 아니라 툴셋에서 빠짐), `deny` 프로필과 그 도구를 `allow` 하는 프로필을 함께 부착해도 도구는 여전히 없다(deny 가 allow 를 이긴다). `--profile-file` 과 `--profile` 을 함께 주면 즉시 에러.
 - [ ] Given `--profile continue-checklist` 로 부착한 세션 + 마커 파일 존재 When Claude 가 센티넬 없이 응답을 끝내려 함 Then block 되고 체크리스트 본문이 주입되며, 센티넬을 포함해 응답하거나 라운드 상한에 도달하면 정상 종료된다. 프로필을 부착하지 않은 세션은 이 동작에 전혀 영향받지 않는다. 같은 프로필을 부착한 세션 둘을 동시에 진행해도 라운드 카운터가 서로 섞이지 않는다.
+- [ ] Given 마커 파일 부재 When `tasty claude checklist-enable` Then 마커 파일이 생성되고 `checklist-status` 가 `enabled: true` 를 보고한다. When `tasty claude checklist-disable` Then 마커 파일이 삭제되고 `checklist-status` 가 `enabled: false` 를 보고한다 — 마커가 이미 없는 상태에서 다시 `checklist-disable` 을 호출해도 에러 없이 `enabled: false` 를 반환한다(멱등).
 </content>

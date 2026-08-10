@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.30"
+version = "0.1.31"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -69,6 +69,9 @@ subcommands = [
     # 필드(session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로
     # 받는다.
     { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop hook for the continue-checklist session profile. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message)." },
+    { name = "checklist-enable",  ipc_method = "claude.checklist_enable",  args = "no_args", description = "Turn on the continue-checklist Stop-hook gate (creates the enabled marker)" },
+    { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "no_args", description = "Turn off the continue-checklist Stop-hook gate (removes the enabled marker)" },
+    { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "no_args", description = "Show whether the continue-checklist Stop-hook gate is currently on" },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
     # Claude 세션 프로필 레지스트리 (등록 → 이름으로 launch/spawn/respawn/reboot 의
     # --profile 에 부착). CLI 스키마가 subcommand 1단계만 지원해 `tasty claude profile
