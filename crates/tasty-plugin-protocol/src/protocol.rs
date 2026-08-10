@@ -215,7 +215,8 @@ pub enum RawInputEventWire {
     /// 의미론적으로 해석한 결과 — egui-winit 이 플랫폼 Ctrl+C 를 `Event::Copy` 로
     /// 변환해 넘기는 것과 동일한 host/platform-integration 역할이다. plugin SDK 가
     /// `egui::Event::Copy` 로 매핑하면, plugin 자신의 텍스트 선택(selectable label /
-    /// `TextEdit`)이 있을 때 egui 가 `platform_output.copied_text` 를 채운다.
+    /// `TextEdit`)이 있을 때 egui 가 `platform_output.commands` 에 `OutputCommand::CopyText`
+    /// 를 채운다(옛 `PlatformOutput::copied_text` 필드는 deprecated).
     Copy,
 }
 

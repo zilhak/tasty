@@ -346,8 +346,9 @@ set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 
 OS IME candidate 창(조합 후보 목록)의 화면 위치는 host `update_ime_cursor_area` 가
 현재 **터미널 커서** 기준으로만 설정한다 — egui-mesh surface 편집 시 후보 창이 정확한
 필드 위치에 안 뜰 수 있다. 라이브 preedit **인라인 표시**(egui `TextEdit`)는 정상
-동작하며, 후보 창 위치는 별도 과제다. 클립보드(Cut/Copy/Paste)도 아직 wire 에 없어
-egui-mesh 필드에서 Ctrl+C/V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
+동작하며, 후보 창 위치는 별도 과제다. Copy 는 위 표대로 `egui_copy` capability 를
+가진 kind 한정으로 wire 에 있지만, Cut/Paste 는 아직 wire 에 없어 egui-mesh 필드에서
+Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
 
 ## crash 격리
 

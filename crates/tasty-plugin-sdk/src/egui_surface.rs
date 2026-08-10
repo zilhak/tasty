@@ -88,10 +88,11 @@ struct EguiMeshCore {
     /// 송신 정책"), 이 신호를 누군가 읽어 host 에 재-invalidate 를 요청하지 않으면
     /// 유휴 상태에서 애니메이션이 방치된다([`EguiMeshSurface`]가 소비).
     pending_self_repaint: Option<Duration>,
-    /// 직전 `render()` 의 `platform_output.copied_text` — `Event::Copy` 를 처리한
-    /// frame 에서 plugin 자신의 텍스트 선택(selectable label / `TextEdit`)이 있었을
-    /// 때만 채워진다. 클립보드 기록은 plugin 이 직접 한다(ADR-0009) — 이 필드는 그
-    /// 값을 host round-trip 없이 plugin 코드로 넘겨주는 통로일 뿐이다.
+    /// 직전 `render()` 의 `platform_output.commands` 중 `OutputCommand::CopyText` —
+    /// `Event::Copy` 를 처리한 frame 에서 plugin 자신의 텍스트 선택(selectable label /
+    /// `TextEdit`)이 있었을 때만 채워진다. 클립보드 기록은 plugin 이 직접 한다
+    /// (ADR-0009) — 이 필드는 그 값을 host round-trip 없이 plugin 코드로 넘겨주는
+    /// 통로일 뿐이다.
     last_copied_text: Option<String>,
 }
 
