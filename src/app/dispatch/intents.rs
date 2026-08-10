@@ -286,7 +286,7 @@ impl App {
         if let Some(resp) = self.dispatch_list_global(request) {
             return resp;
         }
-        let target_id = match self.find_request_owner(&request.params) {
+        let target_id = match self.find_request_owner(&request.method, &request.params) {
             Ok(id) => id.or(self.view.focused_view_id),
             Err(msg) => {
                 let id = request.id.clone().unwrap_or(serde_json::Value::Null);

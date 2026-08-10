@@ -1175,6 +1175,43 @@ mod tests {
         assert!(e.attach.is_hard_occupied(other)); // 무관한 hard 점유는 그대로
     }
 
+    /// `resolve_parent` 폴백(단일 엔진 내부): parent 가 정확히 1개면 `--surface`
+    /// 생략을 그대로 허용한다(하위 호환). 다중 윈도우 세션의 모호성 자체는
+    /// `App::find_request_owner` 레벨(엔진 하나만으로는 판단 불가)에서 별도로
+    /// 막는다 — `src/app/request_owner.rs` 의
+    /// `ambiguous_parent_fallback_requires_surface` 참고.
+    #[test]
+    fn resolve_parent_omitted_surface_succeeds_with_single_parent() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        add_extra_surface(&mut e, 59010);
+        let idx = e.child_terminals.next_index_for(parent);
+        e.child_terminals.register_child(parent, child(59010, idx));
+
+        let resp = handle_release(&mut e, json!(1), &json!({ "child": idx }));
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+    }
+
+    /// 같은 엔진에 parent 가 2개 이상 등록돼 있는데 `--surface` 를 생략하면,
+    /// `single_parent()` 가 조용히 아무 하나를 고르지 않고 명시적 에러를 낸다.
+    #[test]
+    fn resolve_parent_omitted_surface_errors_with_multiple_parents_in_one_engine() {
+        let mut e = engine();
+        let parent1 = e.workspaces[0].all_surface_ids()[0];
+        let parent2 = 59020u32;
+        add_extra_surface(&mut e, 59030);
+        add_extra_surface(&mut e, 59040);
+        let idx1 = e.child_terminals.next_index_for(parent1);
+        e.child_terminals
+            .register_child(parent1, child(59030, idx1));
+        let idx2 = e.child_terminals.next_index_for(parent2);
+        e.child_terminals
+            .register_child(parent2, child(59040, idx2));
+
+        let resp = handle_release(&mut e, json!(1), &json!({ "child": idx1 }));
+        assert!(resp.error.is_some());
+    }
+
     /// hard-occupied surface 로의 write 시도는 "not found" 가 아니라 별도
     /// 사유(attach 점유)로 실패해야 한다 — 둘을 뭉뚱그리면 "존재하는데 왜 못
     /// 찾지" 라는 오진을 유발한다.

@@ -1198,13 +1198,7 @@ impl App {
             return;
         }
         // MainView 개수 기준으로 판단 (모달은 수에 포함되지 않음)
-        let main_window_count = self
-            .view
-            .views
-            .values()
-            .filter(|w| w.as_main().is_some())
-            .count();
-        if main_window_count > 1 {
+        if self.main_window_count() > 1 {
             // Multiple windows: just close this one
             self.close_main_window(id, tasty_plugin_protocol::LifecycleReason::User);
         } else {

@@ -32,6 +32,18 @@ impl App {
         self.view.views.values_mut().filter_map(|w| w.as_main_mut())
     }
 
+    /// 열려 있는 MainView(모달 제외) 개수 — "다중 윈도우 세션인가"를 판단하는
+    /// 공용 질의. `request_close_window`(event_handler.rs)의 판단과
+    /// [`request_owner::find_request_owner`](super::request_owner) 의 다중 윈도우
+    /// 모호성 판정이 같은 정의를 공유한다.
+    pub(crate) fn main_window_count(&self) -> usize {
+        self.view
+            .views
+            .values()
+            .filter(|w| w.as_main().is_some())
+            .count()
+    }
+
     /// 살아있는 CoreState 중 하나(아무거나)를 참조로 반환. windows main → parked
     /// 순으로 찾는다. 두 번째 main window 생성 시 첫 engine 의 Arc 들 (surface_registry /
     /// file_format / file_handler / preset_store / identify_worker / approval_store /

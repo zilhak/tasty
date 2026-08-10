@@ -37,7 +37,7 @@ impl App {
 
         // owner main → focused main → parked owner → parked[0] 순으로 라우팅
         // (CLAUDE.md "포커스 독립" 원칙).
-        let target_id = match self.find_request_owner(&cmd.request.params) {
+        let target_id = match self.find_request_owner(&cmd.request.method, &cmd.request.params) {
             Ok(id) => id.or(self.view.focused_view_id),
             Err(msg) => {
                 let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);

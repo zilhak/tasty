@@ -47,6 +47,7 @@
 - `tasty remote attach --raw`(및 `tasty attach --raw`): 서버/터널 연결이 끊겨도 `--reconnect`(기본 ON) 백오프 재연결이 전혀 동작하지 않던 결함 수정. raw 브리지가 종료 사유와 무관하게 `process::exit(0)` 으로 프로세스를 죽여 재연결 판단 지점(`AttachExit::Disconnected`)에 도달하지 못했다 — 이제 mirror-dump 와 동일하게 채널 기반으로 종료 사유를 구분해 정상 반환한다.
 - 완료 판정 전략(`[[contributes.completion_strategy]]`)의 `default_for_methods`/`poll_method` namespace 검증이 plugin owner 를 매니페스트의 reverse-DNS id(예: `com.tasty.claude`)로 비교해, 실제 IPC dispatch 접두어(`claude`)와 절대 일치하지 않아 plugin 소유 전략이 등록 시점에 전부 조용히 drop 되던 결함 수정 — 이제 그 plugin 이 실제로 선언한 `ipc_namespace` 접두어와 비교한다.
 - `agent.task_create` 가 `depends_on` 과 달리 `OnFailure::Fallback{task}`/`TaskCommand::Reduce.inputs` 가 가리키는 task id 의 존재를 검증하지 않던 결함 수정. 미존재 fallback 은 main 실패 시 조용히 무시되어 그 main 에 의존하는 downstream 이 영구 `waiting` 에 빠졌고, 미존재 reduce 입력은 dispatch 시점에야 뒤늦게 실패했다. 이제 둘 다 생성 시점에 `-32602` 로 거부된다. 검증 도입 이전에 이미 저장된 dangling 참조는 마이그레이션하지 않는다(신규 생성만 차단) — 그런 참조가 실패 전이를 타면 `tracing::warn!` 을 남긴다.
+- `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast`: `--surface`(parent) 생략 시 host 의 단일-parent 폴백이 "라우팅된 그 window 안에서만" 유일성을 봐서, main window 가 2개 이상 열린 세션에서 focused window 로 조용히 새 엉뚱한 window 의 자식 터미널을 조작할 수 있던 결함 수정. 이제 main window 가 2개 이상이면 이 4개 메서드는 `--surface` 없이 호출될 때 명시적 에러로 거부한다(단일 윈도우 세션은 기존처럼 생략 가능 — 하위 호환).
 
 ## [0.9.7] - 2026-07-15
 
