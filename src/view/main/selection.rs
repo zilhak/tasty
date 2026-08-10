@@ -337,22 +337,19 @@ impl MainView {
 
     /// Copy the current selection to clipboard. Selection is preserved.
     ///
-    /// `text_selection` is a single field independent of focus — it can still point at a
-    /// surface the user has since moved away from (e.g. dragged a selection in terminal A,
-    /// then focused Explorer B). Without the focus check below, a keyboard Ctrl+C in that
-    /// state would silently copy A's stale selection instead of falling through to B's own
-    /// copy handling (`handle_explorer_shortcut` etc.) — no error, no toast, just the wrong
-    /// clipboard content.
+    /// No focus check here — the terminal right-click menu's "copy" item
+    /// (`redraw.rs`, see the comment above its `has_selection` gate) is a long-standing
+    /// convention that operates on the global `text_selection` regardless of which
+    /// surface is focused (right-click doesn't move focus, so "select in A, right-click
+    /// B, copy A's selection" must keep working). The keyboard Ctrl+C path is the one
+    /// exception that needs focus to match — that check lives in its caller,
+    /// `handle_copy_shortcut` (`copy_paste.rs`), via `selection_matches_focus`, not here.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
+        let engine = &mut self.core_state;
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let focused = self.state.focused_surface_id(&self.core_state);
-        if !selection_matches_focus(sel.surface_id, focused) {
-            return false;
-        }
-        let engine = &mut self.core_state;
         let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
@@ -377,10 +374,11 @@ impl MainView {
     /// here we additionally replace each hard `\n` with one space so a multi-line
     /// selection becomes a single space-separated line. Selection is preserved.
     ///
-    /// Unlike `copy_selection_to_clipboard`, this has no focus check: its only caller
-    /// (the terminal right-click menu's "copy, no newline" item) only offers that item
-    /// when the live selection's `surface_id` already equals the right-clicked surface
-    /// (`has_selection` filter in `redraw.rs`), so `sel.surface_id` can't be stale here.
+    /// Same convention as `copy_selection_to_clipboard`: no focus check. This is the
+    /// terminal right-click menu's "copy, no newline" item, which — like "copy" — is
+    /// deliberately surface-independent (`redraw.rs`, comment above the `has_selection`
+    /// gate). This function has no keyboard-shortcut caller, so there's no focus-mismatch
+    /// case to guard against here.
     pub fn copy_selection_no_newline(&mut self) -> bool {
         let engine = &mut self.core_state;
         let sel = match &self.text_selection {
@@ -410,14 +408,33 @@ impl MainView {
 
 /// `text_selection` 이 가리키는 surface 가 지금 포커스된 surface 와 같은지. `focused` 는
 /// 이미 조회된 `AppState::focused_surface_id` 결과를 받는다(이 fn 자체는 조회를 하지
-/// 않는 순수 판정이라 `MainView` 없이 유닛 테스트 가능).
-fn selection_matches_focus(selection_surface_id: u32, focused: Option<u32>) -> bool {
+/// 않는 순수 판정이라 `MainView` 없이 유닛 테스트 가능). 키보드 Ctrl+C 경로
+/// (`handle_copy_shortcut`, `adapters/ui/input/shortcuts/copy_paste.rs`)가
+/// `copy_selection_to_clipboard` 를 부르기 전에 이 fn 으로 포커스 일치를 먼저 확인한다 —
+/// 터미널 우클릭 메뉴 관례(surface 무관 전역 selection)를 건드리지 않기 위해 체크를
+/// 공유 함수가 아니라 키보드 호출부에 둔다.
+pub(crate) fn selection_matches_focus(selection_surface_id: u32, focused: Option<u32>) -> bool {
     focused == Some(selection_surface_id)
+}
+
+/// `handle_copy_shortcut`(`adapters/ui/input/shortcuts/copy_paste.rs`)가 `text_selection`이
+/// 있을 때만 `selection_matches_focus`로 넘기는 `Option` 래핑 판정을 그대로 뽑아낸 순수
+/// 함수. `MainView`를 만들지 않고도 "selection 없음" / "selection은 있지만 포커스가
+/// 다른 surface" 두 케이스를 함께 검증하기 위해 존재한다 — `handle_copy_shortcut` 자체는
+/// clipboard/text_selection 등 `MainView` 필드가 필요해 이 fn 처럼 직접 유닛 테스트할
+/// 헤드리스 하네스가 없다.
+pub(crate) fn should_copy_via_focused_selection(
+    selection_surface_id: Option<u32>,
+    focused: Option<u32>,
+) -> bool {
+    selection_surface_id
+        .map(|sid| selection_matches_focus(sid, focused))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::selection_matches_focus;
+    use super::{selection_matches_focus, should_copy_via_focused_selection};
 
     #[test]
     fn matches_when_focused_surface_owns_the_selection() {
@@ -434,5 +451,25 @@ mod tests {
     #[test]
     fn does_not_match_when_nothing_is_focused() {
         assert!(!selection_matches_focus(5, None));
+    }
+
+    #[test]
+    fn copy_shortcut_uses_selection_when_focus_matches() {
+        assert!(should_copy_via_focused_selection(Some(5), Some(5)));
+    }
+
+    #[test]
+    fn copy_shortcut_skips_stale_selection_after_focus_moves() {
+        // 터미널 A(5) 드래그 선택 → Explorer B(2)로 포커스 이동 → Ctrl+C. handle_copy_shortcut
+        // 은 이 경우 false 를 얻어 copy_selection_to_clipboard 를 호출하지 않고 다음 분기
+        // (Explorer 자신의 copy 처리)로 흘려보내야 한다.
+        assert!(!should_copy_via_focused_selection(Some(5), Some(2)));
+    }
+
+    #[test]
+    fn copy_shortcut_skips_when_no_selection_exists() {
+        // text_selection 이 None 이면 selection_matches_focus 를 호출할 대상 자체가 없다 —
+        // Option 래핑이 이 케이스를 안전하게 false 로 단락시키는지 확인한다.
+        assert!(!should_copy_via_focused_selection(None, Some(2)));
     }
 }

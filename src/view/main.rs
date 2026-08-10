@@ -9,7 +9,7 @@ mod keyboard;
 mod mouse;
 mod preset_actions;
 mod redraw;
-mod selection;
+pub(crate) mod selection;
 pub(crate) mod vi_copy;
 
 pub(crate) mod ime;

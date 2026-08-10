@@ -4,6 +4,7 @@ use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
 use crate::view::main::MainView;
+use crate::view::main::selection::should_copy_via_focused_selection;
 use crate::view::ui::View as _;
 
 impl MainView {
@@ -27,7 +28,16 @@ impl MainView {
             self.mark_dirty();
             return true;
         }
-        if self.copy_selection_to_clipboard() {
+        // 터미널 우클릭 메뉴의 "copy"(surface 무관 전역 selection 관례,
+        // `copy_selection_to_clipboard` 자체엔 포커스 체크 없음)와 달리, 키보드 Ctrl+C는
+        // 여기서 포커스와 selection 의 surface 가 일치할 때만 그 함수를 부른다 — 안 그러면
+        // 다른 surface(예: 드래그 선택했던 터미널)로 포커스를 옮긴 뒤 Ctrl+C 를 눌렀을 때
+        // stale selection 이 조용히 복사되고 이 surface 자신의 copy 처리(예: Explorer 의
+        // `handle_explorer_shortcut`)로 흘러가지 못한다.
+        let sel_surface_id = self.text_selection.as_ref().map(|s| s.surface_id);
+        let focused = self.state.focused_surface_id(&self.core_state);
+        let selection_targets_focus = should_copy_via_focused_selection(sel_surface_id, focused);
+        if selection_targets_focus && self.copy_selection_to_clipboard() {
             self.mark_dirty();
             return true;
         }
