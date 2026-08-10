@@ -115,11 +115,17 @@ pub const MEASURE_SM: LogicalPx = super::primitive::SIZE_300;
 /// `semantic.measure-xl` → `{primitive.size-560}` = 560px
 pub const MEASURE_XL: LogicalPx = super::primitive::SIZE_560;
 
+/// `semantic.motion-hold-reveal` → `{primitive.duration-500}` = 500ms (ms)
+pub const MOTION_HOLD_REVEAL: f32 = super::primitive::DURATION_500;
+
 /// `semantic.motion-term` → `{primitive.duration-0}` = 0ms (ms)
 pub const MOTION_TERM: f32 = super::primitive::DURATION_0;
 
 /// `semantic.motion-ui` → `{primitive.duration-120}` = 120ms (ms)
 pub const MOTION_UI: f32 = super::primitive::DURATION_120;
+
+/// `semantic.motion-ui-fade` → `{primitive.duration-200}` = 200ms (ms)
+pub const MOTION_UI_FADE: f32 = super::primitive::DURATION_200;
 
 /// `semantic.motion-ui-fast` → `{primitive.duration-90}` = 90ms (ms)
 pub const MOTION_UI_FAST: f32 = super::primitive::DURATION_90;

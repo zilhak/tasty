@@ -1,8 +1,10 @@
 //! W3C DTCG 토큰 파서 + alias 해석기 + Rust 코드 생성기.
 //!
-//! vendor 실물(`dtcg/tasty.tokens.json`)은 strict DTCG 가 아니다 — 모든 `$value`
-//! 가 문자열이고(`"1.4"`, `"500"`), dimension 에 `"12px"` / `"0"`(무단위) /
-//! `"0.04em"`(em) 이 혼재하며, shadow/cubicBezier 는 CSS 문자열이다. 파서는 이
+//! vendor 실물(`dtcg/tasty.tokens.json`)은 strict DTCG 가 아니다 — `$value` 는
+//! 보통 문자열이고(`"1.4"`, `"500"`), dimension 에 `"12px"` / `"0"`(무단위) /
+//! `"0.04em"`(em) 이 혼재하며, shadow/cubicBezier 는 CSS 문자열이다. 다만
+//! `$type: "number"` 토큰 일부는 raw JSON number(`0.4`)로 export 되기도 하므로
+//! 파서는 문자열/숫자/불리언 스칼라를 모두 받아 문자열로 정규화한다. 파서는 이
 //! 실물 형식을 기준으로 한다.
 //!
 //! alias 는 `{tier.name}` 문법. 디자인 계약(TOKENS.md)과 달리 실물에는
@@ -189,6 +191,18 @@ pub fn parse(text: &str) -> Result<TokenSet, ParseError> {
     Ok(TokenSet { tokens })
 }
 
+/// `$value`/latte 오버라이드 스칼라를 문자열로 정규화한다. DTCG는 `$type`에 따라
+/// number/boolean 을 raw JSON 스칼라로 export 할 수 있으므로, 문자열 외에도
+/// 받아들인다(예: `$type: "number"` 토큰의 `$value: 0.4`).
+fn json_scalar_to_string(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
 fn collect(
     tier: Tier,
     prefix: &str,
@@ -219,20 +233,18 @@ fn collect(
                 .to_string();
             let value = node
                 .get("$value")
-                .and_then(|v| v.as_str())
+                .and_then(json_scalar_to_string)
                 .ok_or_else(|| {
                     ParseError::Structure(format!(
-                        "{}.{name}: $value is not a string",
+                        "{}.{name}: $value is not a string/number/bool",
                         tier.as_str()
                     ))
-                })?
-                .to_string();
+                })?;
             let latte = node
                 .get("$extensions")
                 .and_then(|e| e.get("com.tasty.mode"))
                 .and_then(|m| m.get("latte"))
-                .and_then(|v| v.as_str())
-                .map(String::from);
+                .and_then(json_scalar_to_string);
             let path = format!("{}.{name}", tier.as_str());
             let token = Token {
                 tier,
@@ -769,6 +781,25 @@ const EXISTING_THEME_ACCESSOR_NAMES: &[&str] = &[
     "titlebar_border",
     "titlebar_fg",
     "titlebar_fg_inactive",
+    "preset_leaf_label_fg",
+    "preset_leaf_value_fg",
+    "modhint_bg",
+    "modhint_border",
+    "modhint_role_bg",
+    "modhint_role_fg",
+    "modhint_empty_fg",
+];
+
+/// [`EXISTING_THEME_ACCESSOR_NAMES`]의 치수(dimension) 버전 — component 치수
+/// 접근자 생성 시에도 동일한 이름 충돌이 발생할 수 있다(예: modifier-hint 크기
+/// 토큰은 theme.rs 에 수기 접근자가 먼저 생겼고, 이후 vendor json 에 대응 component
+/// 토큰이 추가됨).
+const EXISTING_THEME_DIM_ACCESSOR_NAMES: &[&str] = &[
+    "modhint_width",
+    "modhint_height",
+    "modhint_min_width",
+    "modhint_min_height",
+    "modhint_section_gap",
 ];
 
 /// component 토큰 kebab 이름 → snake_case 접근자 함수명 (전체 이름 그대로 —
@@ -853,7 +884,18 @@ fn resolve_color_accessor(set: &TokenSet, token: &Token) -> Result<ColorAccessor
                 format!("{own_path}: `{target_path}` 대응 theme.rs 접근자 없음 — 생성 스킵")
             }),
         Some(target) if target.tier == Tier::Component => {
-            Ok(ColorAccessor::Chain(accessor_fn_name(&target.name)))
+            let fn_name = accessor_fn_name(&target.name);
+            // chain 대상이 EXISTING_THEME_ACCESSOR_NAMES 충돌로 스킵되거나 자기 자신의
+            // alias 해석에 실패하면, 대상 접근자가 실제로 생성되지 않아 이 체인 호출이
+            // dangling self-call 이 된다 — tier 만 보고 낙관적으로 Chain 을 반환하지
+            // 않도록 재귀 검증한다.
+            if EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str()) {
+                Ok(ColorAccessor::Chain(fn_name))
+            } else {
+                resolve_color_accessor(set, target)
+                    .map(|_| ColorAccessor::Chain(fn_name))
+                    .map_err(|e| format!("{own_path}: chain 대상이 스킵됨 → {e}"))
+            }
         }
         Some(_) => Err(format!(
             "{own_path}: primitive 직접 alias — 색 접근자 규칙 밖, 생성 스킵"
@@ -911,10 +953,20 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
 
     for token in set.iter().filter(|t| t.tier == Tier::Component) {
         match token.ty.as_str() {
-            "dimension" => match resolve_dim_accessor(set, token) {
-                Ok(acc) => body.push_str(&emit_dim_accessor(set, token, &acc)),
-                Err(reason) => skips.push(reason),
-            },
+            "dimension" => {
+                let fn_name = accessor_fn_name(&token.name);
+                if EXISTING_THEME_DIM_ACCESSOR_NAMES.contains(&fn_name.as_str()) {
+                    skips.push(format!(
+                        "{}: theme.rs 기존 수기 접근자 `{fn_name}` 과 이름 충돌 — 생성 스킵",
+                        token.path()
+                    ));
+                    continue;
+                }
+                match resolve_dim_accessor(set, token) {
+                    Ok(acc) => body.push_str(&emit_dim_accessor(set, token, &acc)),
+                    Err(reason) => skips.push(reason),
+                }
+            }
             "color" => {
                 let fn_name = accessor_fn_name(&token.name);
                 if EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str()) {

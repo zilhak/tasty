@@ -101,6 +101,25 @@ pub mod checkbox {
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
 }
 
+pub mod explorer {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.explorer-favorites-pin-height` → `{primitive.size-240}` = 240px
+    pub const FAVORITES_PIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.explorer-favorites-pin-min-height` → `{primitive.size-120}` = 120px
+    pub const FAVORITES_PIN_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_120;
+
+    /// `component.explorer-favorites-pin-ratio` = 0.4
+    pub const FAVORITES_PIN_RATIO: f32 = 0.4;
+
+    /// `component.explorer-favorites-pin-threshold` → `{primitive.size-600}` = 600px
+    pub const FAVORITES_PIN_THRESHOLD: LogicalPx = crate::generated::primitive::SIZE_600;
+
+    /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
+    pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
+}
+
 pub mod help_hint {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -184,11 +203,68 @@ pub mod menu {
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
 }
 
+pub mod modhint {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.modhint-fade` → `{semantic.motion-ui-fade}` = 200ms (ms)
+    pub const FADE: f32 = crate::generated::semantic::MOTION_UI_FADE;
+
+    /// `component.modhint-header-height` → `{primitive.size-28}` = 28px
+    pub const HEADER_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_28;
+
+    /// `component.modhint-height` → `{primitive.size-400}` = 400px
+    pub const HEIGHT: LogicalPx = crate::generated::primitive::SIZE_400;
+
+    /// `component.modhint-hold-delay` → `{semantic.motion-hold-reveal}` = 500ms (ms)
+    pub const HOLD_DELAY: f32 = crate::generated::semantic::MOTION_HOLD_REVEAL;
+
+    /// `component.modhint-min-height` → `{primitive.size-240}` = 240px
+    pub const MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.modhint-min-width` → `{primitive.size-180}` = 180px
+    pub const MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
+
+    /// `component.modhint-radius` → `{semantic.radius}` = 4px
+    pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.modhint-section-gap` → `{semantic.space-md}` = 12px
+    pub const SECTION_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.modhint-width` → `{primitive.size-180}` = 180px
+    pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
+}
+
 pub mod plugins_list {
     use tasty_type_geometry::length::LogicalPx;
 
     /// `component.plugins-list-width` → `{primitive.size-288}` = 288px
     pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+}
+
+pub mod port {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.port-favorites-max-height` → `{primitive.size-112}` = 112px
+    pub const FAVORITES_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_112;
+
+    /// `component.port-favorites-row-height` → `{semantic.control-height-tree}` = 22px
+    pub const FAVORITES_ROW_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TREE;
+
+    /// `component.port-star-col-width` → `{primitive.size-28}` = 28px
+    pub const STAR_COL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_28;
+}
+
+pub mod preset {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.preset-leaf-label-font-size` → `{semantic.font-size-micro}` = 10px
+    pub const LEAF_LABEL_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_MICRO;
+
+    /// `component.preset-leaf-summary-gap` → `{semantic.space-xs}` = 4px
+    pub const LEAF_SUMMARY_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.preset-leaf-value-font-size` → `{semantic.font-size-caption}` = 11px
+    pub const LEAF_VALUE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
 }
 
 pub mod remote {
@@ -261,8 +337,8 @@ pub mod sidebar {
 pub mod spinner {
     use tasty_type_geometry::length::LogicalPx;
 
-    /// `component.spinner-duration` → `{primitive.duration-90}` = 90ms (ms)
-    pub const DURATION: f32 = crate::generated::primitive::DURATION_90;
+    /// `component.spinner-duration` → `{primitive.duration-900}` = 900ms (ms)
+    pub const DURATION: f32 = crate::generated::primitive::DURATION_900;
 
     /// `component.spinner-size` → `{primitive.size-16}` = 16px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
@@ -282,6 +358,16 @@ pub mod status_dot {
 
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_8;
+}
+
+pub mod surface {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.surface-highlight-done-width` → `{semantic.focus-ring-width}` = 2px
+    pub const HIGHLIGHT_DONE_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+
+    /// `component.surface-occupied-border-width` → `{semantic.border-width}` = 1px
+    pub const OCCUPIED_BORDER_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
 }
 
 pub mod swatch {

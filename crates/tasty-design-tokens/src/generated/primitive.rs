@@ -20,8 +20,17 @@ pub(crate) const DURATION_150: f32 = 150.0;
 /// `primitive.duration-1600` = 1600ms (ms)
 pub(crate) const DURATION_1600: f32 = 1600.0;
 
+/// `primitive.duration-200` = 200ms (ms)
+pub(crate) const DURATION_200: f32 = 200.0;
+
+/// `primitive.duration-500` = 500ms (ms)
+pub(crate) const DURATION_500: f32 = 500.0;
+
 /// `primitive.duration-90` = 90ms (ms)
 pub(crate) const DURATION_90: f32 = 90.0;
+
+/// `primitive.duration-900` = 900ms (ms)
+pub(crate) const DURATION_900: f32 = 900.0;
 
 /// `primitive.font-size-10` = 10px
 pub(crate) const FONT_SIZE_10: LogicalPx = LogicalPx(10.0);
@@ -116,6 +125,9 @@ pub(crate) const SIZE_112: LogicalPx = LogicalPx(112.0);
 /// `primitive.size-12` = 12px
 pub(crate) const SIZE_12: LogicalPx = LogicalPx(12.0);
 
+/// `primitive.size-120` = 120px
+pub(crate) const SIZE_120: LogicalPx = LogicalPx(120.0);
+
 /// `primitive.size-14` = 14px
 pub(crate) const SIZE_14: LogicalPx = LogicalPx(14.0);
 
@@ -131,6 +143,9 @@ pub(crate) const SIZE_160: LogicalPx = LogicalPx(160.0);
 /// `primitive.size-180` = 180px
 pub(crate) const SIZE_180: LogicalPx = LogicalPx(180.0);
 
+/// `primitive.size-196` = 196px
+pub(crate) const SIZE_196: LogicalPx = LogicalPx(196.0);
+
 /// `primitive.size-2` = 2px
 pub(crate) const SIZE_2: LogicalPx = LogicalPx(2.0);
 
@@ -139,6 +154,9 @@ pub(crate) const SIZE_200: LogicalPx = LogicalPx(200.0);
 
 /// `primitive.size-22` = 22px
 pub(crate) const SIZE_22: LogicalPx = LogicalPx(22.0);
+
+/// `primitive.size-220` = 220px
+pub(crate) const SIZE_220: LogicalPx = LogicalPx(220.0);
 
 /// `primitive.size-24` = 24px
 pub(crate) const SIZE_24: LogicalPx = LogicalPx(24.0);
@@ -181,6 +199,9 @@ pub(crate) const SIZE_460: LogicalPx = LogicalPx(460.0);
 
 /// `primitive.size-560` = 560px
 pub(crate) const SIZE_560: LogicalPx = LogicalPx(560.0);
+
+/// `primitive.size-600` = 600px
+pub(crate) const SIZE_600: LogicalPx = LogicalPx(600.0);
 
 /// `primitive.size-8` = 8px
 pub(crate) const SIZE_8: LogicalPx = LogicalPx(8.0);

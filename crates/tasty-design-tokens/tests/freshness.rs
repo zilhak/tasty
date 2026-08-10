@@ -32,29 +32,30 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 492 (104/129/259). semantic 129 = 기존 131 에서
-/// `font-size-prose-h2`·`line-height-prose` 2종 제거 — egui_commonmark 이 헤딩 보간·본문
-/// leading 을 소유해 소비처 소멸 → 은퇴 확정.
+/// 토큰 census — 542 (111/131/300). markdown surface `focused_bg` crust 확정
+/// (primitive 7종 신규: 이하 참고) + sidebar 카테고리 헤더 밴드+카운트(component 8종 신규,
+/// TOKENS.md 회귀분) + markdown DOCUMENT 블록(component 7종 신규) 반영으로 이전
+/// 492(104/129/259) 에서 증가.
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
     assert_eq!(
         set.tier_count(dtcg::Tier::Primitive),
-        104,
+        111,
         "primitive census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Semantic),
-        129,
+        131,
         "semantic census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        259,
+        300,
         "component census drift"
     );
-    assert_eq!(set.len(), 492, "total census drift");
+    assert_eq!(set.len(), 542, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

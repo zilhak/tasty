@@ -269,6 +269,36 @@ impl crate::theme::Theme {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
 
+    /// `component.explorer-favorites-pin-height` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn explorer_favorites_pin_height(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-favorites-pin-min-height` → `{primitive.size-120}` = 120px
+    #[inline]
+    pub fn explorer_favorites_pin_min_height(&self) -> LogicalPx {
+        LogicalPx((120.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-favorites-pin-threshold` → `{primitive.size-600}` = 600px
+    #[inline]
+    pub fn explorer_favorites_pin_threshold(&self) -> LogicalPx {
+        LogicalPx((600.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
+    #[inline]
+    pub fn explorer_sidebar_width(&self) -> LogicalPx {
+        LogicalPx((196.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-split-border` → `{semantic.separator}`
+    #[inline]
+    pub fn explorer_split_border(&self) -> HexColor {
+        self.separator
+    }
+
     /// `component.help-hint-color` → `{semantic.text-muted}`
     #[inline]
     pub fn help_hint_color(&self) -> HexColor {
@@ -521,10 +551,94 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.modhint-grip-fg` → `{semantic.border-strong}`
+    #[inline]
+    pub fn modhint_grip_fg(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.modhint-header-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn modhint_header_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.modhint-header-height` → `{primitive.size-28}` = 28px
+    #[inline]
+    pub fn modhint_header_height(&self) -> LogicalPx {
+        LogicalPx((28.0 * self.ui_zoom).round())
+    }
+
+    /// `component.modhint-radius` → `{semantic.radius}` = 4px
+    #[inline]
+    pub fn modhint_radius(&self) -> LogicalPx {
+        self.corner_radius
+    }
+
     /// `component.plugins-list-width` → `{primitive.size-288}` = 288px
     #[inline]
     pub fn plugins_list_width(&self) -> LogicalPx {
         LogicalPx((288.0 * self.ui_zoom).round())
+    }
+
+    /// `component.port-favorites-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn port_favorites_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.port-favorites-border` → `{semantic.separator}`
+    #[inline]
+    pub fn port_favorites_border(&self) -> HexColor {
+        self.separator
+    }
+
+    /// `component.port-favorites-max-height` → `{primitive.size-112}` = 112px
+    #[inline]
+    pub fn port_favorites_max_height(&self) -> LogicalPx {
+        LogicalPx((112.0 * self.ui_zoom).round())
+    }
+
+    /// `component.port-favorites-row-height` → `{semantic.control-height-tree}` = 22px
+    #[inline]
+    pub fn port_favorites_row_height(&self) -> LogicalPx {
+        self.item_height_tree
+    }
+
+    /// `component.port-star-col-width` → `{primitive.size-28}` = 28px
+    #[inline]
+    pub fn port_star_col_width(&self) -> LogicalPx {
+        LogicalPx((28.0 * self.ui_zoom).round())
+    }
+
+    /// `component.port-star-off` → `{semantic.text-muted}`
+    #[inline]
+    pub fn port_star_off(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.port-star-on` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn port_star_on(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.preset-leaf-label-font-size` → `{semantic.font-size-micro}` = 10px
+    #[inline]
+    pub fn preset_leaf_label_font_size(&self) -> LogicalPx {
+        self.font_size_micro
+    }
+
+    /// `component.preset-leaf-summary-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn preset_leaf_summary_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.preset-leaf-value-font-size` → `{semantic.font-size-caption}` = 11px
+    #[inline]
+    pub fn preset_leaf_value_font_size(&self) -> LogicalPx {
+        self.font_size_caption
     }
 
     /// `component.remote-label-col` → `{primitive.size-112}` = 112px
@@ -723,6 +837,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn status_dot_warning(&self) -> HexColor {
         self.accent_warning()
+    }
+
+    /// `component.surface-highlight-done-border` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn surface_highlight_done_border(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.surface-highlight-done-width` → `{semantic.focus-ring-width}` = 2px
+    #[inline]
+    pub fn surface_highlight_done_width(&self) -> LogicalPx {
+        self.focus_ring_width
+    }
+
+    /// `component.surface-occupied-border-width` → `{semantic.border-width}` = 1px
+    #[inline]
+    pub fn surface_occupied_border_width(&self) -> LogicalPx {
+        self.border_width
     }
 
     /// `component.swatch-radius` → `{semantic.radius-sm}` = 2px
@@ -1193,10 +1325,10 @@ impl crate::theme::Theme {
         self.surface_raised()
     }
 
-    /// `component.toast-border` → `{semantic.border-default}`
+    /// `component.toast-border` → `{semantic.border-strong}`
     #[inline]
     pub fn toast_border(&self) -> HexColor {
-        self.border_default()
+        self.border_strong()
     }
 
     /// `component.toast-fg` → `{semantic.text-primary}`
