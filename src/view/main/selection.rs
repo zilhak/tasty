@@ -336,12 +336,23 @@ impl MainView {
     }
 
     /// Copy the current selection to clipboard. Selection is preserved.
+    ///
+    /// `text_selection` is a single field independent of focus — it can still point at a
+    /// surface the user has since moved away from (e.g. dragged a selection in terminal A,
+    /// then focused Explorer B). Without the focus check below, a keyboard Ctrl+C in that
+    /// state would silently copy A's stale selection instead of falling through to B's own
+    /// copy handling (`handle_explorer_shortcut` etc.) — no error, no toast, just the wrong
+    /// clipboard content.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
-        let engine = &mut self.core_state;
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
+        let focused = self.state.focused_surface_id(&self.core_state);
+        if !selection_matches_focus(sel.surface_id, focused) {
+            return false;
+        }
+        let engine = &mut self.core_state;
         let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
@@ -365,6 +376,11 @@ impl MainView {
     /// a single space. Soft wraps are already joined by `extract_selected_text`;
     /// here we additionally replace each hard `\n` with one space so a multi-line
     /// selection becomes a single space-separated line. Selection is preserved.
+    ///
+    /// Unlike `copy_selection_to_clipboard`, this has no focus check: its only caller
+    /// (the terminal right-click menu's "copy, no newline" item) only offers that item
+    /// when the live selection's `surface_id` already equals the right-clicked surface
+    /// (`has_selection` filter in `redraw.rs`), so `sel.surface_id` can't be stale here.
     pub fn copy_selection_no_newline(&mut self) -> bool {
         let engine = &mut self.core_state;
         let sel = match &self.text_selection {
@@ -389,5 +405,34 @@ impl MainView {
         );
 
         true
+    }
+}
+
+/// `text_selection` 이 가리키는 surface 가 지금 포커스된 surface 와 같은지. `focused` 는
+/// 이미 조회된 `AppState::focused_surface_id` 결과를 받는다(이 fn 자체는 조회를 하지
+/// 않는 순수 판정이라 `MainView` 없이 유닛 테스트 가능).
+fn selection_matches_focus(selection_surface_id: u32, focused: Option<u32>) -> bool {
+    focused == Some(selection_surface_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selection_matches_focus;
+
+    #[test]
+    fn matches_when_focused_surface_owns_the_selection() {
+        assert!(selection_matches_focus(5, Some(5)));
+    }
+
+    #[test]
+    fn does_not_match_after_focus_moves_to_another_surface() {
+        // 터미널 A(5)에서 드래그 선택 후 Explorer B(2)로 포커스 이동 — A 의 선택은 여전히
+        // `text_selection` 에 남아있지만 더 이상 포커스와 일치하지 않는다.
+        assert!(!selection_matches_focus(5, Some(2)));
+    }
+
+    #[test]
+    fn does_not_match_when_nothing_is_focused() {
+        assert!(!selection_matches_focus(5, None));
     }
 }
