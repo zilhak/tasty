@@ -325,13 +325,58 @@ fn worker_loop_invokes_on_start_once_before_dispatch() {
     accept.join().unwrap();
     let writer = Arc::new(Mutex::new(stream));
 
-    let (tx, rx) = mpsc::channel::<PluginRequest>();
+    let (tx, rx) = mpsc::channel::<WorkerItem>();
     drop(tx); // queue 즉시 닫기 — worker_loop은 on_start 후 iter()로 빠져나간다.
     let join = std::thread::spawn(move || {
         worker_loop(plugin, rx, writer, host);
     });
     join.join().unwrap();
     assert_eq!(*called.lock().unwrap(), 1);
+}
+
+/// self-invoke 는 host 왕복(`ipc.invoke` 프레이밍) 없이 `handle_ipc_method` 로 직접
+/// 라우팅되어야 한다 — plugin 자신의 네임스페이스 메서드를 `HostHandle::call`로
+/// 부르면 host 의 self-call 미forward 정책 때문에 `-32601`이 나는 문제(watch.rs 의
+/// idle auto-reload 회귀)의 재발 방지 테스트. `caller_plugin_id`는 plugin 자신의
+/// id가 채워진다.
+#[test]
+fn worker_loop_self_invoke_routes_to_handle_ipc_method_directly() {
+    let last = Arc::new(Mutex::new(None));
+    let plugin = StubPlugin {
+        last_ctx: last.clone(),
+        behavior: Behavior::Ok(json!({"ok": true})),
+    };
+    let host = dummy_host();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accept = std::thread::spawn(move || {
+        let _accepted = listener.accept();
+    });
+    let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    accept.join().unwrap();
+    let writer = Arc::new(Mutex::new(stream));
+
+    let (tx, rx) = mpsc::channel::<WorkerItem>();
+    tx.send(WorkerItem::SelfInvoke {
+        method: "markdown.reload".to_string(),
+        params: json!({ "surface": 11 }),
+    })
+    .unwrap();
+    drop(tx); // queue 닫기 — worker_loop 이 처리 후 iter()로 빠져나온다.
+
+    let join = std::thread::spawn(move || {
+        worker_loop(plugin, rx, writer, host);
+    });
+    join.join().unwrap();
+
+    let ctx = last
+        .lock()
+        .unwrap()
+        .take()
+        .expect("handle_ipc_method should have been invoked by the self-invoke item");
+    assert_eq!(ctx.method, "markdown.reload");
+    assert_eq!(ctx.params, json!({ "surface": 11 }));
+    assert_eq!(ctx.caller_plugin_id.as_deref(), Some("test.plugin"));
 }
 
 /// popup.open / popup.closed 라우팅과 콜백 호출 검증.

@@ -41,6 +41,17 @@ use crate::plugin::{
     CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceRestoreCtx, SurfaceSnapshotCtx,
 };
 
+/// worker 큐 항목. 호스트발 요청과 plugin 자신의 self-invoke를 함께 다룬다 —
+/// [`crate::host::HostHandle::self_invoke`] 문서 참고.
+pub(crate) enum WorkerItem {
+    /// 호스트로부터 받은 실제 요청. 처리 후 반드시 host로 응답을 보낸다.
+    Host(PluginRequest),
+    /// plugin 자신의 백그라운드 스레드가 자기 네임스페이스 IPC 메서드를 worker
+    /// 스레드(= `&mut plugin` 을 쥔 유일한 스레드)에서 실행시키기 위한 요청.
+    /// host가 보낸 적 없는 call이라 응답을 돌려줄 곳이 없다 — fire-and-forget.
+    SelfInvoke { method: String, params: Value },
+}
+
 /// dispatch 내부에서만 쓰이는 에러. JSON-RPC 에러 코드를 보존한다.
 pub(crate) struct DispatchError {
     pub message: String,
@@ -99,7 +110,10 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let (host, _handle_reader_thread) =
         spawn_handle_reader(host, handle_client, &shared_buffer_fd_pending)?;
 
-    let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
+    let (req_tx, req_rx) = mpsc::channel::<WorkerItem>();
+    // self-invoke 채널을 HostHandle에 실어 보낸다 — 이 시점 이후 host를 클론받는
+    // 모든 plugin 코드(특히 on_start 로 넘어가는 host)가 self_invoke()를 쓸 수 있다.
+    let host = host.with_self_invoke(req_tx.clone());
     let worker_writer = writer.clone();
     let worker_host = host.clone();
     let worker_handle = std::thread::Builder::new()
@@ -140,7 +154,7 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
                     }
                     break;
                 }
-                if req_tx.send(req).is_err() {
+                if req_tx.send(WorkerItem::Host(req)).is_err() {
                     break;
                 }
             }
@@ -373,7 +387,7 @@ fn close_orphan_handle(handle: u64) {
 
 fn worker_loop<P: Plugin>(
     mut plugin: P,
-    req_rx: mpsc::Receiver<PluginRequest>,
+    req_rx: mpsc::Receiver<WorkerItem>,
     writer: Arc<Mutex<TcpStream>>,
     host: HostHandle,
 ) {
@@ -382,12 +396,27 @@ fn worker_loop<P: Plugin>(
     // 루프가 이미 동작 중이므로 ipc.result delivery 가능).
     let bus = crate::bus::BusHandle::new(writer.clone(), plugin.id().to_string());
     plugin.on_start(host.clone(), bus);
-    for req in req_rx.iter() {
-        let result = dispatch(&mut plugin, &req.method, &req.params, &host);
-        let resp = build_response(req.id, result);
-        if let Err(e) = send_response(&writer, &resp) {
-            tracing::warn!("plugin worker send_response failed: {e}");
-            break;
+    for item in req_rx.iter() {
+        match item {
+            WorkerItem::Host(req) => {
+                let result = dispatch(&mut plugin, &req.method, &req.params, &host);
+                let resp = build_response(req.id, result);
+                if let Err(e) = send_response(&writer, &resp) {
+                    tracing::warn!("plugin worker send_response failed: {e}");
+                    break;
+                }
+            }
+            WorkerItem::SelfInvoke { method, params } => {
+                let caller_plugin_id = Some(plugin.id().to_string());
+                if let Err(e) = plugin.handle_ipc_method(IpcMethodCtx {
+                    method: method.clone(),
+                    params,
+                    caller_plugin_id,
+                    host: host.clone(),
+                }) {
+                    tracing::warn!("plugin self-invoke '{method}' failed: {}", e.message);
+                }
+            }
         }
     }
 }

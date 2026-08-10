@@ -73,4 +73,9 @@ pub enum PluginError {
     /// `tasty-shm` 영역 매핑 실패.
     #[error("shared memory error: {0}")]
     Shm(String),
+
+    /// [`crate::host::HostHandle::self_invoke`] 호출 시점에 worker 큐가 아직
+    /// 준비되지 않았거나(비정상 초기화 순서) 이미 종료됨(plugin shutdown 경합).
+    #[error("self-invoke queue unavailable — worker thread not ready or already exited")]
+    SelfInvokeUnavailable,
 }

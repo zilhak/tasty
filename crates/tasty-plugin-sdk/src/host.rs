@@ -52,6 +52,10 @@ pub struct HostHandle {
     handle_writer: Option<Arc<Mutex<HandleClient>>>,
     /// `host.shared_buffer.create` RPC에 대한 fd 도착 알림 맵.
     shared_buffer_fd_pending: SharedBufferFdPending,
+    /// self-invoke 큐 sender. [`Self::self_invoke`] 문서 참고. `run()`이 worker
+    /// 큐를 만든 직후에만 채워지므로, 그 전에 만들어진 `HostHandle`(예: `spawn_handle_reader`
+    /// 내부)에는 없다 — `run()`이 `with_self_invoke`로 마지막에 부착한다.
+    self_invoke_tx: Option<mpsc::Sender<crate::runtime::WorkerItem>>,
 }
 
 impl HostHandle {
@@ -63,6 +67,7 @@ impl HostHandle {
             timeout: Duration::from_secs(60),
             handle_writer: None,
             shared_buffer_fd_pending: Arc::new(Mutex::new(HashMap::new())),
+            self_invoke_tx: None,
         }
     }
 
@@ -75,6 +80,37 @@ impl HostHandle {
         self.handle_writer = Some(handle_writer);
         self.shared_buffer_fd_pending = shared_buffer_fd_pending;
         self
+    }
+
+    /// self-invoke 큐를 등록한다. `run()`이 worker 채널을 만든 직후 호출.
+    pub(crate) fn with_self_invoke(mut self, tx: mpsc::Sender<crate::runtime::WorkerItem>) -> Self {
+        self.self_invoke_tx = Some(tx);
+        self
+    }
+
+    /// plugin 자신의 백그라운드 스레드가 자기 네임스페이스 IPC 메서드(예: 이
+    /// plugin이 등록한 `"markdown.reload"`)를 트리거한다.
+    ///
+    /// [`Self::call`]과 달리 host를 왕복하지 않는다 — 호스트 dispatcher
+    /// (`plugin_ipc.rs`)는 caller가 네임스페이스 owner 자신이면 forward하지 않고
+    /// host-native dispatch로 통과시키는 trampoline 정책이라, plugin 자신의
+    /// 네임스페이스 메서드를 `call()`로 부르면 항상 `-32601 Method not found`로
+    /// 실패한다. 이 메서드는 worker 큐에 직접 enqueue해 `&mut plugin`을 쥔 단일
+    /// worker 스레드에서 `handle_ipc_method`를 바로 실행시킨다 — read/재생성이
+    /// 여전히 같은 함수·같은 스레드로 수렴하므로 레이스가 없다.
+    ///
+    /// fire-and-forget이다 — host가 요청한 적 없는 call이라 돌려줄 응답 대상이
+    /// 없다. 실패는 worker 스레드가 `tracing::warn!`으로 로그만 남긴다.
+    pub fn self_invoke(&self, method: impl Into<String>, params: Value) -> Result<(), PluginError> {
+        let tx = self
+            .self_invoke_tx
+            .as_ref()
+            .ok_or(PluginError::SelfInvokeUnavailable)?;
+        tx.send(crate::runtime::WorkerItem::SelfInvoke {
+            method: method.into(),
+            params,
+        })
+        .map_err(|_| PluginError::SelfInvokeUnavailable)
     }
 
     /// 호스트에 비동기 알림([`PluginEvent`])을 보낸다. 응답을 기다리지 않는다

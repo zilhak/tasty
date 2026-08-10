@@ -29,6 +29,7 @@
 - `agent.task_purge`(CLI `tasty agent task-purge`) — 상태 이름(`--states`)·경과시간(`--older-than-ms`) 필터 기반 일괄 삭제. `agent.task_delete` 와 동일한 참조 안전 검사를 적용해, 후보 집합 밖에서 여전히 참조되는 task 는 자동으로 보존한다. `--dry-run` 으로 실제 삭제 없이 계획만 확인 가능.
 - 부팅 시 정화 경로(`purge_stale_agent_state_on_boot`)에 자동 GC 가 추가됐다 — 상태 무관 + 7일(잠정) 이상 방치된 task 를 `agent.task_purge` 와 동일한 로직으로 정리한다. memory 자체 TTL(`PutOpts.expires_at`) 은 쓰지 않는다.
 - `agent.task_reduce`(CLI `tasty agent task-reduce`)에 `extract_path`(`--extract-path`, RFC 6901 JSON Pointer, 예: `/stdout/text`)가 추가됐다 — 지정하면 reducer 전략 실행 전에 각 input 의 `output` 에서 그 경로만 뽑아낸다. `Run` task 의 `output`(`{pid,stdout:{text,...},stderr:{...}}`)을 구조를 모른 채 `concat_text`/`merge_json` 으로 합성하면 유효한 JSON 도 아니고 뒤 input 이 앞 input 을 통째로 덮어쓰는 문제가 있었는데, 이 옵션으로 leaf 값만 골라 합성할 수 있다. 생략 시 기존 동작(전체 `output`) 유지. 지정된 경로가 없는 input 은 reduce 전체를 실패시키지 않고 `output: null` 로 대체되며, 응답 `warnings` 배열에 사유가 남는다(나머지 input 은 정상 진행).
+- `tasty-plugin-sdk`: `HostHandle::self_invoke(method, params)` — plugin 이 자기 자신의 네임스페이스 IPC 메서드를 host 왕복 없이 트리거하는 API. `HostHandle::call` 은 host 가 그 메서드를 self-call 로 forward 하지 않아(trampoline 정책) plugin 자신의 네임스페이스에는 쓸 수 없었는데, 이 메서드는 `&mut plugin` 을 쥔 worker 스레드의 처리 큐에 직접 enqueue해 우회한다. fire-and-forget(host 가 요청한 적 없는 call 이라 응답 대상이 없음) — 실패는 `tracing::warn!` 로만 로그된다.
 
 ### Changed
 
@@ -46,6 +47,7 @@
 
 ### Fixed
 
+- markdown plugin 의 idle auto-reload(백그라운드 파일 변경 감지)가 항상 `-32601 Method not found: markdown.reload` 로 실패하던 결함 수정 — plugin 이 자기 네임스페이스 IPC 메서드를 `HostHandle::call`(host 왕복)로 부르면, host 의 self-call trampoline 정책(`plugin_ipc.rs`) 때문에 host-native dispatch 로 통과돼 항상 실패했다. `tasty-plugin-sdk` 에 새로 추가된 `HostHandle::self_invoke`(아래 Added)로 우회한다.
 - `tasty remote attach --raw`(및 `tasty attach --raw`): 서버/터널 연결이 끊겨도 `--reconnect`(기본 ON) 백오프 재연결이 전혀 동작하지 않던 결함 수정. raw 브리지가 종료 사유와 무관하게 `process::exit(0)` 으로 프로세스를 죽여 재연결 판단 지점(`AttachExit::Disconnected`)에 도달하지 못했다 — 이제 mirror-dump 와 동일하게 채널 기반으로 종료 사유를 구분해 정상 반환한다.
 - 완료 판정 전략(`[[contributes.completion_strategy]]`)의 `default_for_methods`/`poll_method` namespace 검증이 plugin owner 를 매니페스트의 reverse-DNS id(예: `com.tasty.claude`)로 비교해, 실제 IPC dispatch 접두어(`claude`)와 절대 일치하지 않아 plugin 소유 전략이 등록 시점에 전부 조용히 drop 되던 결함 수정 — 이제 그 plugin 이 실제로 선언한 `ipc_namespace` 접두어와 비교한다.
 - `agent.task_create` 가 `depends_on` 과 달리 `OnFailure::Fallback{task}`/`TaskCommand::Reduce.inputs` 가 가리키는 task id 의 존재를 검증하지 않던 결함 수정. 미존재 fallback 은 main 실패 시 조용히 무시되어 그 main 에 의존하는 downstream 이 영구 `waiting` 에 빠졌고, 미존재 reduce 입력은 dispatch 시점에야 뒤늦게 실패했다. 이제 둘 다 생성 시점에 `-32602` 로 거부된다. 검증 도입 이전에 이미 저장된 dangling 참조는 마이그레이션하지 않는다(신규 생성만 차단) — 그런 참조가 실패 전이를 타면 `tracing::warn!` 을 남긴다.

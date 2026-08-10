@@ -7,12 +7,17 @@
 //! 유일한 자동 갱신 경로다.
 //!
 //! **read 는 이 스레드에서 하지 않는다** — 변경 감지 시 이 plugin이 스스로 소유한
-//! `markdown.reload` IPC 메서드를 host 왕복으로 호출한다(`host.call`). host 는 `markdown`
-//! namespace 를 이 plugin 이 소유한다는 것만 알고 그대로 되돌려 보낸다 — CLI/사용자가
-//! 같은 메서드를 호출하는 것과 동일한 요청이 plugin runtime 의 단일 dispatch 루프에
-//! 직렬로 도착하므로, 실제 read(`MdDoc::force_reload`)와 문서 재생성(`reload_webview`)은
-//! 항상 이 하나의 경로(`MarkdownPlugin::markdown_reload`)만 탄다 — 빠른 연속 편집이 와도
-//! "stale read 가 최신 것을 덮어쓰는" 레이스가 애초에 생기지 않는다(쓰기 경로가 하나뿐).
+//! `markdown.reload` IPC 메서드를 `HostHandle::self_invoke` 로 트리거한다. host 를
+//! 왕복하는 `host.call` 은 여기서 쓸 수 없다 — 호스트 dispatcher(`plugin_ipc.rs`)는
+//! caller가 네임스페이스 owner 자신이면 forward하지 않고 host-native dispatch로
+//! 통과시키므로(trampoline 패턴 지원 목적), plugin이 자기 네임스페이스 메서드를
+//! `call()`로 부르면 host에 동명 메서드가 없어 항상 `-32601 Method not found`가
+//! 떨어진다. `self_invoke` 는 host를 거치지 않고 `&mut plugin` 을 쥔 단일 worker
+//! 스레드의 처리 큐에 직접 enqueue한다 — CLI/사용자가 같은 메서드를 호출하는 것과
+//! 동일하게 그 worker 스레드에 직렬로 도착하므로, 실제 read(`MdDoc::force_reload`)와
+//! 문서 재생성(`reload_webview`)은 항상 이 하나의 경로(`MarkdownPlugin::markdown_reload`)만
+//! 탄다 — 빠른 연속 편집이 와도 "stale read 가 최신 것을 덮어쓰는" 레이스가 애초에
+//! 생기지 않는다(쓰기 경로가 하나뿐).
 
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -51,12 +56,11 @@ pub(crate) fn run(host: HostHandle, rx: mpsc::Receiver<WatchCmd>) {
             return;
         }
         for surface_id in poll_changed(&mut watched) {
-            // host 를 왕복해 이 plugin 자신의 `markdown.reload` 를 호출한다 — 모듈
-            // 문서 참조(실제 read + 문서 재생성은 전부 `MarkdownPlugin::markdown_reload`
-            // 하나로 수렴시켜 레이스를 없앤다).
-            if let Err(e) = host.call("markdown.reload", json!({ "surface": surface_id })) {
+            // worker 큐에 직접 enqueue — 모듈 문서 참조(실제 read + 문서 재생성은
+            // 전부 `MarkdownPlugin::markdown_reload` 하나로 수렴시켜 레이스를 없앤다).
+            if let Err(e) = host.self_invoke("markdown.reload", json!({ "surface": surface_id })) {
                 tracing::warn!(
-                    "markdown watch: markdown.reload call failed for surface {surface_id}: {e}"
+                    "markdown watch: markdown.reload self-invoke failed for surface {surface_id}: {e}"
                 );
             }
         }
