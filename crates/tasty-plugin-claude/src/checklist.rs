@@ -278,6 +278,26 @@ pub(crate) fn handle_checklist_hook(
 mod tests {
     use super::*;
 
+    // ── lang 파일 SENTINEL 크로스체크 ──
+    //
+    // `lang/{en,ko,ja}.toml` 의 `claude.checklist.body` 에는 이 파일의 SENTINEL
+    // 상수와 동일한 리터럴이 손으로 박혀 있다 — 둘 중 하나만 고치면 모델이 실제로
+    // 낼 문자열과 여기서 매칭을 시도하는 문자열이 조용히 어긋난다. 세 lang 파일을
+    // 실제 `Translator` 로 로드해 그 결과가 SENTINEL 을 포함하는지 직접 검증한다.
+
+    #[test]
+    fn checklist_body_contains_sentinel_in_every_locale() {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        for locale in ["en", "ko", "ja"] {
+            let translator = tasty_plugin_sdk::i18n::Translator::load(&lang_dir, locale);
+            let body = translator.t("claude.checklist.body");
+            assert!(
+                body.contains(SENTINEL),
+                "lang/{locale}.toml 의 claude.checklist.body 에 SENTINEL({SENTINEL}) 리터럴이 없음"
+            );
+        }
+    }
+
     fn state(prompt_id: &str, rounds: u32) -> RoundState {
         RoundState {
             prompt_id: prompt_id.to_string(),
