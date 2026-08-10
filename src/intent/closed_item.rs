@@ -11,13 +11,14 @@ use crate::core::Core;
 use crate::core::CoreState;
 use crate::state::AppState;
 
-/// Surface / Tab 복원에 대비해 workspace 확보 (closed top peek). `list()` 는
-/// newest-first 이므로 next() 가 stack top (pop 대상).
+/// Surface / Tab / Pane 복원에 대비해 workspace 확보 (closed top peek). `list()`
+/// 는 newest-first 이므로 next() 가 stack top (pop 대상). Workspace 복원은 새
+/// workspace 를 자체적으로 만들므로 이 사전 확보가 불필요.
 fn ensure_workspace_for_restore(core: &mut Core, state: &mut AppState, engine: &mut CoreState) {
     use crate::model::closed_item::ClosedItem;
     let top_needs_workspace = matches!(
         engine.closed_items.list().next(),
-        Some(ClosedItem::Surface { .. } | ClosedItem::Tab(_))
+        Some(ClosedItem::Surface { .. } | ClosedItem::Tab(_) | ClosedItem::Pane { .. })
     );
     if !top_needs_workspace || !engine.workspaces.is_empty() {
         return;

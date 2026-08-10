@@ -161,6 +161,109 @@ impl PaneNode {
         }
     }
 
+    /// Locate the immediate parent `Split` of the leaf `target_id`, returning
+    /// `(direction, ratio, target_was_first, sibling_anchor_id)` — enough
+    /// geometry to splice a closed pane back in at roughly the same spot via
+    /// [`insert_pane_beside`](Self::insert_pane_beside). `sibling_anchor_id`
+    /// is the first (leftmost/topmost) pane of whichever side did *not*
+    /// contain `target_id`, since that side may itself be a subtree with
+    /// multiple panes — any leaf within it is a valid, still-live anchor to
+    /// re-split against later. Returns `None` if `target_id` is the tree
+    /// root (no parent split) or isn't found.
+    pub fn locate_split_context(
+        &self,
+        target_id: PaneId,
+    ) -> Option<(SplitDirection, f32, bool, PaneId)> {
+        match self {
+            PaneNode::Leaf(_) => None,
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                let first_is_target =
+                    matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+                let second_is_target =
+                    matches!(second.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+                if first_is_target {
+                    let sibling_anchor = second.first_pane()?.id;
+                    return Some((*direction, *ratio, true, sibling_anchor));
+                }
+                if second_is_target {
+                    let sibling_anchor = first.first_pane()?.id;
+                    return Some((*direction, *ratio, false, sibling_anchor));
+                }
+                first
+                    .locate_split_context(target_id)
+                    .or_else(|| second.locate_split_context(target_id))
+            }
+        }
+    }
+
+    /// Reinsert a previously-closed pane next to `target_id`, replicating the
+    /// original split geometry captured at close time by
+    /// [`locate_split_context`](Self::locate_split_context) — unlike
+    /// [`split_pane_in_place`](Self::split_pane_in_place) (always ratio 0.5,
+    /// new pane placed as `second`), this lets the caller pick the exact side
+    /// and ratio, so a close→restore round-trip recreates (approximately) the
+    /// original layout instead of always defaulting to an even 50/50 split.
+    ///
+    /// Returns `Some(new_pane)` if `target_id` was NOT found (caller decides
+    /// fallback), `None` if found and the split was performed.
+    pub fn insert_pane_beside(
+        &mut self,
+        target_id: PaneId,
+        direction: SplitDirection,
+        ratio: f32,
+        new_pane: Pane,
+        new_pane_is_first: bool,
+    ) -> Option<Pane> {
+        let is_target_leaf = matches!(self, PaneNode::Leaf(p) if p.id == target_id);
+        if is_target_leaf {
+            let placeholder = PaneNode::Leaf(Pane {
+                id: 0,
+                tabs: vec![],
+                active_tab: 0,
+                tab_scroll_offset: 0.0,
+            });
+            let original = std::mem::replace(self, placeholder);
+            let (first, second) = if new_pane_is_first {
+                (PaneNode::Leaf(new_pane), original)
+            } else {
+                (original, PaneNode::Leaf(new_pane))
+            };
+            *self = PaneNode::Split {
+                direction,
+                ratio,
+                first: Box::new(first),
+                second: Box::new(second),
+            };
+            return None;
+        }
+        match self {
+            PaneNode::Leaf(_) => Some(new_pane),
+            PaneNode::Split { first, second, .. } => {
+                match first.insert_pane_beside(
+                    target_id,
+                    direction,
+                    ratio,
+                    new_pane,
+                    new_pane_is_first,
+                ) {
+                    Some(pane) => second.insert_pane_beside(
+                        target_id,
+                        direction,
+                        ratio,
+                        pane,
+                        new_pane_is_first,
+                    ),
+                    None => None,
+                }
+            }
+        }
+    }
+
     /// Find a Pane by ID (immutable).
     pub fn find_pane(&self, id: PaneId) -> Option<&Pane> {
         match self {

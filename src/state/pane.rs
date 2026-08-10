@@ -153,6 +153,37 @@ impl AppState {
         }
         let target_id = self.active_workspace(engine).focused_pane;
 
+        // Capture closed-item snapshot (전용 `close_pane` 단축키는 항상 사용자
+        // 행동이라 조건 없이 캡처한다 — `close_active_surface`의 무조건 스냅샷과
+        // 동일 관례). `close_pane`이 트리를 재배치하기 *전*에 split context를
+        // 캡처해야 한다 — 제거 후엔 부모 Split 노드 자체가 사라져 복구할 수 없다.
+        let snapshot_item = {
+            let ws = self.active_workspace(engine);
+            if ws.pane_layout().all_pane_ids().len() > 1
+                && let Some(pane) = ws.pane_layout().find_pane(target_id)
+                && let Some((direction, ratio, was_first, sibling_pane_id)) =
+                    ws.pane_layout().locate_split_context(target_id)
+            {
+                let mut snap_fn =
+                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                let terminals = &engine.terminals;
+                Some(crate::model::ClosedItem::from_pane(
+                    pane,
+                    sibling_pane_id,
+                    direction,
+                    ratio,
+                    was_first,
+                    &mut snap_fn,
+                    &|id| terminals.get(id),
+                ))
+            } else {
+                None
+            }
+        };
+        if let Some(item) = snapshot_item {
+            engine.push_closed_item(item);
+        }
+
         // Collect all (surface_id, persist_id) in the pane being closed for cleanup.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
@@ -336,7 +367,7 @@ impl AppState {
         if self.close_case_tab(engine, &loc, save_snapshot, is_user_close) {
             return true;
         }
-        if self.close_case_pane(engine, &loc, is_user_close) {
+        if self.close_case_pane(engine, &loc, save_snapshot, is_user_close) {
             return true;
         }
         self.close_case_workspace(engine, &loc, save_snapshot, is_user_close)
@@ -449,8 +480,37 @@ impl AppState {
         &mut self,
         engine: &mut CoreState,
         loc: &crate::core::SurfaceCloseLocation,
+        save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
+        // Capture pane snapshot before removing (user actions only). Split
+        // context(sibling/direction/ratio/side)는 `close_pane`이 트리를
+        // 재배치하기 *전*에 캡처해야 한다 — 제거 후엔 부모 Split 노드 자체가
+        // 사라져 복구할 수 없다.
+        if save_snapshot {
+            let ws = &engine.workspaces[loc.ws_idx];
+            if ws.pane_layout().all_pane_ids().len() > 1
+                && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
+                && let Some((direction, ratio, was_first, sibling_pane_id)) =
+                    ws.pane_layout().locate_split_context(loc.pane_id)
+            {
+                let snapshot = {
+                    let mut snap_fn =
+                        crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                    let terminals = &engine.terminals;
+                    crate::model::ClosedItem::from_pane(
+                        pane,
+                        sibling_pane_id,
+                        direction,
+                        ratio,
+                        was_first,
+                        &mut snap_fn,
+                        &|id| terminals.get(id),
+                    )
+                };
+                engine.push_closed_item(snapshot);
+            }
+        }
         // pane 내 모든 tab 의 leaf surface persist_id 수집.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {

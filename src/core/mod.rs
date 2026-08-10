@@ -1420,6 +1420,57 @@ impl Core {
                 }
                 RestoredKind::TabIntoPane
             }
+            ClosedItem::Pane {
+                pane,
+                sibling_pane_id,
+                direction,
+                ratio,
+                was_first,
+            } => {
+                let Some(rebuilt) = restore_rebuild::rebuild_pane(engine, pane) else {
+                    return nothing();
+                };
+                // Surface/Tab 복원과 동일 관례 — 닫힐 당시 워크스페이스가 아니라
+                // 호출 시점 focused pane(=사용자가 지금 보는 워크스페이스)을
+                // "현재 컨텍스트"로 삼는다.
+                let Some(pane_id) = target_pane_id else {
+                    return nothing();
+                };
+                let Some(ws) = engine
+                    .workspaces
+                    .iter_mut()
+                    .find(|ws| ws.pane_layout().find_pane(pane_id).is_some())
+                else {
+                    return nothing();
+                };
+                let restored_pane_id = rebuilt.id;
+                let leftover = ws.pane_layout_mut().insert_pane_beside(
+                    sibling_pane_id,
+                    direction,
+                    ratio,
+                    rebuilt,
+                    was_first,
+                );
+                if let Some(rebuilt) = leftover {
+                    // sibling 이 그 사이 사라졌다(추가로 더 닫혔거나, 원래
+                    // 다른 워크스페이스에 있었다) — 호출 시점 focused pane
+                    // 기준 fallback split. `pane_id` 는 방금 이 workspace 안에서
+                    // 찾았으므로 여기선 항상 성공한다.
+                    if ws
+                        .pane_layout_mut()
+                        .split_pane_in_place(pane_id, direction, rebuilt)
+                        .is_some()
+                    {
+                        tracing::warn!(
+                            "restore pane: fallback split_pane_in_place unexpectedly missed pane {pane_id}"
+                        );
+                        return nothing();
+                    }
+                }
+                RestoredKind::PaneIntoWorkspace {
+                    pane_id: restored_pane_id,
+                }
+            }
             ClosedItem::Workspace {
                 name,
                 subtitle,
@@ -1972,7 +2023,7 @@ impl Core {
         if let Some(ev) = Self::close_case_tab(engine, &loc, surface_id, save_snapshot) {
             return ev;
         }
-        if let Some(ev) = Self::close_case_pane(engine, &loc, surface_id) {
+        if let Some(ev) = Self::close_case_pane(engine, &loc, surface_id, save_snapshot) {
             return ev;
         }
         Self::close_case_workspace(engine, &loc, surface_id, save_snapshot)
@@ -2104,8 +2155,37 @@ impl Core {
         engine: &mut crate::core::CoreState,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
+        save_snapshot: bool,
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
+        // Capture pane snapshot before removing (user actions only). Split
+        // context(sibling/direction/ratio/side)는 `close_pane`이 트리를
+        // 재배치하기 *전*에 캡처해야 한다 — 제거 후엔 부모 Split 노드 자체가
+        // 사라져 복구할 수 없다.
+        if save_snapshot {
+            let ws = &engine.workspaces[loc.ws_idx];
+            if ws.pane_layout().all_pane_ids().len() > 1
+                && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
+                && let Some((direction, ratio, was_first, sibling_pane_id)) =
+                    ws.pane_layout().locate_split_context(loc.pane_id)
+            {
+                let snapshot = {
+                    let mut snap_fn =
+                        crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                    let terminals = &engine.terminals;
+                    crate::model::ClosedItem::from_pane(
+                        pane,
+                        sibling_pane_id,
+                        direction,
+                        ratio,
+                        was_first,
+                        &mut snap_fn,
+                        &|id| terminals.get(id),
+                    )
+                };
+                engine.push_closed_item(snapshot);
+            }
+        }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut closed_tab_ids: Vec<u32> = Vec::new();
         {

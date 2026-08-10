@@ -106,6 +106,22 @@ pub enum ClosedItem {
         tab_name: String,
     },
     Tab(ClosedTab),
+    /// A whole pane (removed via the last-tab-in-pane cascade or the
+    /// dedicated `close_pane` shortcut). `sibling_pane_id`/`direction`/
+    /// `ratio`/`was_first` capture the split geometry at close time — the
+    /// pane itself is always a direct leaf child of some `Split` node (see
+    /// `PaneNode::close_pane`), so this is enough to splice it back in via
+    /// `PaneNode::insert_pane_beside` on restore. `sibling_pane_id` is a
+    /// still-live anchor pane on the *other* side of that split; if it no
+    /// longer exists at restore time, restoration falls back to splitting
+    /// the caller's currently focused pane instead.
+    Pane {
+        pane: ClosedPane,
+        sibling_pane_id: PaneId,
+        direction: SplitDirection,
+        ratio: f32,
+        was_first: bool,
+    },
     Workspace {
         id: WorkspaceId,
         name: String,
@@ -324,6 +340,31 @@ impl ClosedPaneNode {
 }
 
 impl ClosedItem {
+    /// Capture a snapshot of a closed pane, together with the split geometry
+    /// (`sibling_pane_id`/`direction`/`ratio`/`was_first`) needed to splice it
+    /// back into roughly the same tree position on restore. Callers compute
+    /// that geometry via `PaneNode::locate_split_context` *before* removing
+    /// the pane from the tree (the parent `Split` node disappears once
+    /// `PaneNode::close_pane` runs).
+    #[allow(clippy::too_many_arguments)] // reason: 1:1 mirror of locate_split_context's tuple
+    pub fn from_pane(
+        pane: &super::Pane,
+        sibling_pane_id: PaneId,
+        direction: SplitDirection,
+        ratio: f32,
+        was_first: bool,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Self {
+        ClosedItem::Pane {
+            pane: ClosedPane::from_pane(pane, snapshot, terminal_lookup),
+            sibling_pane_id,
+            direction,
+            ratio,
+            was_first,
+        }
+    }
+
     /// Capture a workspace snapshot.
     pub fn from_workspace(
         ws: &super::Workspace,
@@ -355,6 +396,11 @@ pub fn inject_restore_commands(
             surface.restore_command = lookup(surface.id);
         }
         ClosedItem::Tab(tab) => inject_into_panel(&mut tab.panel, lookup),
+        ClosedItem::Pane { pane, .. } => {
+            for tab in &mut pane.tabs {
+                inject_into_panel(&mut tab.panel, lookup);
+            }
+        }
         ClosedItem::Workspace { pane_layout, .. } => {
             inject_into_pane_node(pane_layout, lookup);
         }
@@ -411,6 +457,11 @@ fn visit_surfaces_mut(item: &mut ClosedItem, f: &mut dyn FnMut(&mut ClosedSurfac
     match item {
         ClosedItem::Surface { surface, .. } => f(surface),
         ClosedItem::Tab(tab) => visit_panel_mut(&mut tab.panel, f),
+        ClosedItem::Pane { pane, .. } => {
+            for tab in &mut pane.tabs {
+                visit_panel_mut(&mut tab.panel, f);
+            }
+        }
         ClosedItem::Workspace { pane_layout, .. } => visit_pane_node_mut(pane_layout, f),
     }
 }
@@ -455,6 +506,11 @@ fn visit_surfaces(item: &ClosedItem, f: &mut dyn FnMut(&ClosedSurface)) {
     match item {
         ClosedItem::Surface { surface, .. } => f(surface),
         ClosedItem::Tab(tab) => visit_panel(&tab.panel, f),
+        ClosedItem::Pane { pane, .. } => {
+            for tab in &pane.tabs {
+                visit_panel(&tab.panel, f);
+            }
+        }
         ClosedItem::Workspace { pane_layout, .. } => visit_pane_node(pane_layout, f),
     }
 }

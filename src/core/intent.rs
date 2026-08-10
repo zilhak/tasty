@@ -595,6 +595,10 @@ pub(crate) enum RestoredKind {
     /// cascade 가 별도 mutate 없이 mark_dirty 만 발화 (Core::apply 가 이미
     /// mark_layout_dirty 처리).
     TabIntoPane,
+    /// Pane 이 현재 활성 워크스페이스의 split 트리에 재삽입됨. cascade 가
+    /// 복원된 pane 으로 focus 를 옮긴다 — Workspace 복원이 `active_workspace`
+    /// 를 옮기는 것과 같은 취지(사용자가 복원 결과를 바로 보게 한다).
+    PaneIntoWorkspace { pane_id: u32 },
 }
 
 /// `CoreEvent::SurfaceClosed` 의 cascade 깊이 정보.

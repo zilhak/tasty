@@ -1645,6 +1645,8 @@ pub(crate) fn cascade_workspace_created(
 /// - `Workspace`: `state.active_workspace = new_ws_index` (사용자가 복원한 ws 로
 ///   포커스 이동 — restore 는 사용자 단축키 only 라 origin 분기 불요).
 /// - `TabIntoPane`: 별도 mutate 없음 (engine 안 이미 push 완료).
+/// - `PaneIntoWorkspace`: 복원된 pane 으로 `focused_pane` 이동 — Workspace
+///   케이스와 같은 취지, 대상이 워크스페이스 전체 대신 그 안의 pane 일 뿐.
 /// - `Nothing`: no-op.
 ///
 /// Parked 경로도 동일 함수 호출 — Parked engine 의 `state.active_workspace` 도
@@ -1652,7 +1654,7 @@ pub(crate) fn cascade_workspace_created(
 /// 다른 cascade 와 시그니처 정렬을 위해 Parked 분기 유지).
 pub(crate) fn cascade_closed_item_restored(
     state: &mut crate::state::AppState,
-    _engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::CoreState,
     kind: crate::core::intent::RestoredKind,
 ) {
     use crate::core::intent::RestoredKind;
@@ -1663,6 +1665,9 @@ pub(crate) fn cascade_closed_item_restored(
         }
         RestoredKind::TabIntoPane => {
             // engine 안에서 이미 attach 완료. AppState 측 변경 없음.
+        }
+        RestoredKind::PaneIntoWorkspace { pane_id } => {
+            state.active_workspace_mut(engine).focused_pane = pane_id;
         }
     }
 }

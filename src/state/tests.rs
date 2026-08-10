@@ -237,6 +237,14 @@ fn mirror_close_active_pane_forwards_close_pane() {
         1,
         "mirror pane close 는 로컬 pane 을 제거하면 안 된다"
     );
+    // TODO58 — mirror 는 forward 만 하고 로컬 흔적(스냅샷 포함)을 남기지
+    // 않는다: 새 스냅샷 캡처 블록은 `forward_mirror_structural`의 이른
+    // return **뒤**에 있으므로 mirror 경로에선 애초에 실행되지 않는다.
+    assert_eq!(
+        engine.closed_items.len(),
+        0,
+        "mirror pane close 는 closed_items 스택에 아무것도 남기면 안 된다"
+    );
     match &engine.pending_structural_forward[0].op {
         StructuralOp::ClosePane { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
         other => panic!("expected ClosePane, got {other:?}"),
@@ -401,10 +409,158 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
             assert_eq!(surface.id, sid_a);
         }
         crate::model::ClosedItem::Tab(_) => panic!("expected ClosedItem::Surface, got Tab"),
+        crate::model::ClosedItem::Pane { .. } => {
+            panic!("expected ClosedItem::Surface, got Pane")
+        }
         crate::model::ClosedItem::Workspace { .. } => {
             panic!("expected ClosedItem::Surface, got Workspace")
         }
     }
+}
+
+/// TODO58 — pane 을 전용 `close_pane` 단축키(`close_active_pane`)로 닫으면
+/// closed-item 스냅샷이 남아 `restore_closed`(Ctrl+Shift+T)로 복원 가능해야
+/// 한다. 수정 전에는 `close_case_pane`/`close_active_pane` 어느 경로도
+/// `push_closed_item` 을 호출하지 않아 pane close 가 복원 스택에 아예 기록되지
+/// 않았다(직전에 다른 걸 안 닫았으면 no-op, 닫았으면 엉뚱한 항목이 복원됨).
+#[test]
+fn close_pane_saves_closed_item_snapshot() {
+    let (mut state, mut engine) = test_state();
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        2
+    );
+
+    assert_eq!(engine.closed_items.len(), 0);
+    assert!(state.close_active_pane(&mut engine));
+
+    assert_eq!(
+        engine.closed_items.len(),
+        1,
+        "pane 을 닫으면 ClosedItem 이 하나 쌓여야 한다"
+    );
+    match engine.closed_items.list().next().unwrap() {
+        crate::model::ClosedItem::Pane { pane, .. } => {
+            assert_eq!(pane.tabs.len(), 1, "split 로 만든 새 pane 은 tab 1개");
+        }
+        crate::model::ClosedItem::Surface { .. } => {
+            panic!("expected ClosedItem::Pane, got Surface")
+        }
+        crate::model::ClosedItem::Tab(_) => panic!("expected ClosedItem::Pane, got Tab"),
+        crate::model::ClosedItem::Workspace { .. } => {
+            panic!("expected ClosedItem::Pane, got Workspace")
+        }
+    }
+}
+
+/// TODO58 — pane close → restore 왕복이 실제로 트리에 pane 을 되살리는지
+/// end-to-end 검증(`DomainIntent::RestoreClosedItem` 을 `Core::apply` 로
+/// 디스패치). 트리 재삽입 위치(`insert_pane_beside` + 캡처된 split geometry)가
+/// 합리적인지 — 복원 후 다시 pane 2개가 되고, cascade 이벤트가
+/// `RestoredKind::PaneIntoWorkspace` 인지 — 를 함께 확인한다.
+#[test]
+fn close_pane_then_restore_reinserts_pane() {
+    use crate::core::builder::CoreBuilder;
+    use crate::core::intent::{CoreEvent, DomainIntent, RestoredKind};
+
+    let (mut state, mut engine) = test_state();
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        2
+    );
+    // `close_active_pane`는 *focused* pane(= test_split_pane 이 방금 만든 새
+    // pane)을 닫는다 — target_pane_id 는 그 뒤에 남은(=닫힘 이후 focused) pane
+    // 이어야 한다. 실제 `restore_closed` 흐름(`src/intent/closed_item.rs`)도
+    // 복원 시점에 `state.focused_pane(engine)`을 읽으므로 close *이후* 값이다.
+    assert!(state.close_active_pane(&mut engine));
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        1,
+        "pane close 직후엔 1개여야 한다"
+    );
+    assert_eq!(engine.closed_items.len(), 1);
+    let remaining_pane_id = state.active_workspace(&engine).focused_pane;
+
+    let mut core = CoreBuilder::new()
+        .with_fs(std::sync::Arc::new(
+            crate::adapters::test::mem_fs::MemFileSystem::new(),
+        ))
+        .with_clock(std::sync::Arc::new(
+            crate::adapters::test::fake_clock::FakeClock::default(),
+        ))
+        .with_clipboard(std::sync::Arc::new(
+            crate::adapters::test::mock_clipboard::MockClipboard::default(),
+        ))
+        .with_process(std::sync::Arc::new(
+            crate::adapters::test::mock_process::MockProcessSpawner::default(),
+        ))
+        .with_home(std::sync::Arc::new(
+            crate::adapters::test::tmp_home::TmpHome::new(tempfile::tempdir().expect("tmp").keep()),
+        ))
+        .with_sound_player(std::sync::Arc::new(
+            crate::ports::notification_sound::NoopPlayer,
+        ))
+        .with_memory(std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::testing::InMemoryStorage::new(),
+        )))
+        .with_themes(std::sync::Arc::new(tasty_themes::ThemeStore::new()))
+        .with_preset_store(std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_presets::PresetStore::load_default(),
+        )))
+        .with_settings_storage(std::sync::Arc::new(tasty_settings::FileSettingsStorage))
+        .build()
+        .expect("test Core");
+
+    let events = core
+        .apply(
+            &mut engine,
+            DomainIntent::RestoreClosedItem {
+                target_pane_id: Some(remaining_pane_id),
+            },
+        )
+        .expect("restore should not error");
+
+    assert_eq!(
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
+        2,
+        "restore 후 pane 이 다시 2개여야 한다"
+    );
+    let restored_kind_ok = events.iter().any(|ev| {
+        matches!(
+            ev,
+            CoreEvent::ClosedItemRestored {
+                restored: true,
+                kind: RestoredKind::PaneIntoWorkspace { .. },
+            }
+        )
+    });
+    assert!(
+        restored_kind_ok,
+        "ClosedItemRestored{{restored:true, kind:PaneIntoWorkspace}} 이벤트가 있어야 한다: {events:?}"
+    );
+    assert_eq!(engine.closed_items.len(), 0, "복원 후 스택은 비어야 한다");
 }
 
 /// 09 — pane 레벨 close(`close_active_pane`)는 후보를 계산하지 않는다(로컬도
