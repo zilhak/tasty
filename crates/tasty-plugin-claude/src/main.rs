@@ -62,16 +62,23 @@ struct ClaudePlugin {
     /// locale 로 이미 해석된 완성 문자열(`main()` 에서 `Translator` 로 1 회 계산) —
     /// 매 훅 발화마다 lang 파일을 다시 읽지 않는다.
     checklist_body: String,
+    /// 사람이 읽는 IPC 에러/응답 문자열 번역용. `main()` 에서 1 회 로드해 재사용한다.
+    translator: Translator,
 }
 
 impl ClaudePlugin {
-    fn new(plugin_data_dir: Option<PathBuf>, checklist_body: String) -> Self {
+    fn new(
+        plugin_data_dir: Option<PathBuf>,
+        checklist_body: String,
+        translator: Translator,
+    ) -> Self {
         Self {
             state: ClaudeState::new(),
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
             rebooting: Arc::new(Mutex::new(HashSet::new())),
             plugin_data_dir,
             checklist_body,
+            translator,
         }
     }
 }
@@ -100,6 +107,7 @@ impl Plugin for ClaudePlugin {
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
+                &self.translator,
             ),
             "claude.checklist_hook" => checklist::handle_checklist_hook(
                 &ctx.host,
@@ -107,61 +115,90 @@ impl Plugin for ClaudePlugin {
                 &self.checklist_body,
                 &ctx.params,
             ),
-            "claude.checklist_enable" => checklist::handle_enable(self.plugin_data_dir.as_deref()),
+            "claude.checklist_enable" => {
+                checklist::handle_enable(self.plugin_data_dir.as_deref(), &self.translator)
+            }
             "claude.checklist_disable" => {
-                checklist::handle_disable(self.plugin_data_dir.as_deref())
+                checklist::handle_disable(self.plugin_data_dir.as_deref(), &self.translator)
             }
             "claude.checklist_status" => checklist::handle_status(self.plugin_data_dir.as_deref()),
-            "claude.install" => match install::run_install() {
+            "claude.install" => match install::run_install(&self.translator) {
                 Ok(added) => Ok(json!({ "installed": added })),
-                Err(e) => Err(IpcMethodError::new(format!("install failed: {e}"))),
+                Err(e) => Err(IpcMethodError::new(
+                    self.translator
+                        .t_fmt("claude.install.install_failed", &e.to_string()),
+                )),
             },
-            "claude.uninstall" => match install::run_uninstall() {
+            "claude.uninstall" => match install::run_uninstall(&self.translator) {
                 Ok(removed) => Ok(json!({ "uninstalled": removed })),
-                Err(e) => Err(IpcMethodError::new(format!("uninstall failed: {e}"))),
+                Err(e) => Err(IpcMethodError::new(
+                    self.translator
+                        .t_fmt("claude.install.uninstall_failed", &e.to_string()),
+                )),
             },
             // 자식 관리 명령은 모두 호스트 `terminal.*` 로 위임(handlers.rs).
-            "claude.parent" => handle_parent(&ctx.host, &ctx.params),
-            "claude.state" => handle_state(&ctx.host, &ctx.params),
+            "claude.parent" => handle_parent(&ctx.host, &ctx.params, &self.translator),
+            "claude.state" => handle_state(&ctx.host, &ctx.params, &self.translator),
             "claude.children" => handle_children(&ctx.host, &ctx.params),
-            "claude.kill" => handle_kill(&ctx.host, &ctx.params),
-            "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params),
-            "claude.tell" => handle_tell(&ctx.host, &ctx.params),
-            "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params),
+            "claude.kill" => handle_kill(&ctx.host, &ctx.params, &self.translator),
+            "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params, &self.translator),
+            "claude.tell" => handle_tell(&ctx.host, &ctx.params, &self.translator),
+            "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
             // launch/respawn/spawn — claude 특화 기동 명령을 host registry 위에 얹는다.
             "claude.launch" => handle_launch(
                 &self.scanner,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
+                &self.translator,
             ),
-            "claude.respawn" => {
-                handle_respawn(&ctx.host, &ctx.params, self.plugin_data_dir.as_deref())
-            }
-            "claude.spawn" => handle_spawn(&ctx.host, &ctx.params, self.plugin_data_dir.as_deref()),
+            "claude.respawn" => handle_respawn(
+                &ctx.host,
+                &ctx.params,
+                self.plugin_data_dir.as_deref(),
+                &self.translator,
+            ),
+            "claude.spawn" => handle_spawn(
+                &ctx.host,
+                &ctx.params,
+                self.plugin_data_dir.as_deref(),
+                &self.translator,
+            ),
             "claude.reboot" => reboot::handle_reboot(
                 &self.rebooting,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
+                &self.translator,
             ),
             // Claude 세션 프로필 레지스트리 — 등록/조회/해제/조합-해석. 전부
             // `TASTY_PLUGIN_DATA_DIR` 하위 저장(profile.rs, 결정 3).
-            "claude.profile_register" => {
-                profile::handle_register(self.plugin_data_dir.as_deref(), &ctx.params)
-            }
-            "claude.profile_unregister" => {
-                profile::handle_unregister(self.plugin_data_dir.as_deref(), &ctx.params)
-            }
-            "claude.profile_list" => {
-                profile::handle_list(self.plugin_data_dir.as_deref(), &ctx.params)
-            }
-            "claude.profile_show" => {
-                profile::handle_show(self.plugin_data_dir.as_deref(), &ctx.params)
-            }
-            "claude.profile_current" => {
-                profile::handle_current(self.plugin_data_dir.as_deref(), &ctx.host, &ctx.params)
-            }
+            "claude.profile_register" => profile::handle_register(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.profile_unregister" => profile::handle_unregister(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.profile_list" => profile::handle_list(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.profile_show" => profile::handle_show(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.profile_current" => profile::handle_current(
+                self.plugin_data_dir.as_deref(),
+                &ctx.host,
+                &ctx.params,
+                &self.translator,
+            ),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -233,15 +270,17 @@ fn main() -> anyhow::Result<()> {
     // 가 등록/부착을 명시적으로 거부하게 한다(결정 3).
     let env = PluginEnv::load().ok();
     let plugin_data_dir = env.as_ref().and_then(|e| e.data_dir.clone());
+    // `env` 부재(비정상 기동)에도 `Translator::default()` 로 안전 폴백(키 그대로 반환).
+    let translator = env
+        .as_ref()
+        .map(Translator::from_plugin_env)
+        .unwrap_or_default();
     // 활성 locale 로 1 회 해석해 캐시한다 — 매 Stop 훅 발화마다 lang 파일을 다시
-    // 읽지 않는다. `Translator` 자체가 로드 실패 시 안전한 fallback(키 그대로 반환)
-    // 이므로 `env` 부재도 여기서 별도 분기 없이 자연히 처리된다.
-    let checklist_body = env
-        .map(|e| {
-            Translator::from_plugin_env(&e)
-                .t("claude.checklist.body")
-                .to_string()
-        })
-        .unwrap_or_else(|| "claude.checklist.body".to_string());
-    tasty_plugin_sdk::run(ClaudePlugin::new(plugin_data_dir, checklist_body))
+    // 읽지 않는다.
+    let checklist_body = translator.t("claude.checklist.body").to_string();
+    tasty_plugin_sdk::run(ClaudePlugin::new(
+        plugin_data_dir,
+        checklist_body,
+        translator,
+    ))
 }

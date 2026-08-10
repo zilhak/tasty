@@ -14,6 +14,76 @@ body = """
 
 세 가지 모두 진짜로 충족됐다면 답변 어딘가에 정확히 다음 문자열을 포함해라: [[TASTY-CHECKLIST-DONE]] 그렇지 않다면 계속 작업해라.
 """
+no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — checklist 를 켜거나 끌 수 없다"
+io_error = "checklist marker 파일 입출력 실패: {}"
+
+[claude.params]
+missing_surface_id = "필수 파라미터 'surface'(또는 'surface_id') 누락"
+missing_surface_no_env = "필수 파라미터 'surface_id' 누락(환경변수 TASTY_SURFACE_ID 도 설정돼 있지 않음)"
+missing_child_index = "필수 파라미터 'child'(또는 'child_index') 누락"
+missing_text = "필수 파라미터 'text' 누락"
+missing_message = "필수 파라미터 'message' 누락"
+missing_caller_surface = "필수 파라미터 'caller_surface' 누락"
+missing_target_surface = "필수 파라미터 'target_surface' 누락"
+missing_command = "필수 파라미터 'command' 누락"
+missing_name = "필수 파라미터 'name' 누락"
+missing_file = "필수 파라미터 'file' 누락"
+
+[claude.hook]
+missing_event = "필수 파라미터 'event' 누락"
+unknown_event = "알 수 없는 claude hook 이벤트: '{}'"
+
+[claude.notify]
+done_message = "surface {}: 작업 완료 (호출: {})"
+
+[claude.launch]
+workspace_create_missing_id = "호스트 workspace.create 응답에 'id' 가 없다"
+
+[claude.respawn]
+missing_child_surface_id = "호스트 terminal.respawn 응답에 'child_surface_id' 가 없다: {}"
+
+[claude.spawn]
+missing_child_surface_id = "호스트 terminal.spawn 응답에 'child_surface_id' 가 없다: {}"
+warning_threshold = "이 parent 의 자식이 이제 {}개로, 경고 임계치({})를 넘었다."
+warning_idle_children = " index {} 의 idle 자식은 새로 spawn 하는 대신 respawn 으로 재사용할 수 있다."
+
+[claude.install]
+no_home_dir = "홈 디렉터리를 확인할 수 없다"
+settings_root_not_object = "~/.claude/settings.json 최상위 값이 JSON object 가 아니다"
+hooks_not_object = "~/.claude/settings.json 의 'hooks' 키가 JSON object 가 아니다"
+hooks_event_not_array = "~/.claude/settings.json 의 'hooks.{}' 가 JSON array 가 아니다"
+install_failed = "install 실패: {}"
+uninstall_failed = "uninstall 실패: {}"
+
+[claude.profile]
+no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — 프로필을 등록하거나 부착할 수 없다"
+invalid_short_name = "'{}' 는 유효한 프로필 이름이 아니다(소문자, 숫자, '-' 만, 최대 32자)"
+empty_names = "프로필 이름이 주어지지 않았다"
+unknown_profile = "'{}' 라는 이름으로 등록된 프로필이 없다"
+not_attachable = "'{}' 는 조회 전용 내장 항목이라 이름으로 부착할 수 없다"
+source_not_readable = "프로필 원본 '{}' 을 읽을 수 없다: {}"
+source_not_json_object = "프로필 원본 '{}' 이 JSON object 가 아니다"
+io_error = "'{}': {}"
+error_prefix = "profile: {}"
+mutually_exclusive_file_and_profile = "--profile-file 와 --profile 은 동시에 줄 수 없다 — 하나만 지정해라"
+builtin_always_installed = "내장 — 항상 설치됨 (Claude Code 이벤트: {})"
+builtin_always_installed_with_matcher = "내장 — 항상 설치됨 (Claude Code 이벤트: {}, matcher: {})"
+builtin_attachable = "내장 — 등록된 프로필처럼 이름으로 부착 가능"
+
+[claude.profile_merge]
+not_an_object = "프로필 '{}' 의 최상위 값이 JSON object 가 아니다"
+scalar_conflict = "'{}' 에서 프로필 머지 충돌: {} vs {} — 권한이 조용히 약해지는 것을 막기 위해 거부한다"
+
+[claude.reboot]
+notice = "tasty claude reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (claude -r 로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요."
+malformed_session_id = "surface {} 의 claude-session-id meta 형식이 잘못됐다: {}"
+no_foreground_process = "surface {} 의 foreground 프로세스를 확인할 수 없다"
+lock_poisoned = "reboot in-flight lock 이 poison 됐다: {}"
+already_in_progress = "surface {} 는 이미 reboot 진행 중이다"
+spawn_thread_failed = "reboot 스레드 생성 실패: {}"
+profile_file_not_readable = "프로필 파일 '{}' 을 읽을 수 없다: {}"
+profile_file_not_json = "프로필 파일 '{}' 이 유효한 JSON 이 아니다: {}"
+no_active_session = "surface {} 에 활성 claude 세션이 없다 (claude-session-id meta 미설정 — tasty 훅이 설치돼 있는가? `tasty claude install` 실행 필요)"
 
 [settings.subtab]
 claude = "Claude Code"

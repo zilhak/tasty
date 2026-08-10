@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use serde_json::{Value, json};
+use tasty_plugin_sdk::i18n::Translator;
 
 /// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
 /// `(claude_event_name, tasty_hook_token, matcher)` 3-튜플. 호스트 `MANAGED_HOOKS`와 동일.
@@ -63,9 +64,9 @@ fn tasty_hook_command(event_token: &str) -> String {
     )
 }
 
-pub fn claude_settings_path() -> Result<PathBuf> {
+pub fn claude_settings_path(tr: &Translator) -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        .ok_or_else(|| anyhow::anyhow!(tr.t("claude.install.no_home_dir").to_string()))?;
     Ok(base.home_dir().join(".claude").join("settings.json"))
 }
 
@@ -101,8 +102,8 @@ pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str
 /// 없으면 false. 별도 노출 함수로 만들어졌으나 실사용 소비자가 생긴 적이
 /// 없다 — 삭제 대신 유지, 개별 억제만 부여.
 #[allow(dead_code)]
-pub fn is_tasty_stop_hook_installed() -> Result<bool> {
-    let path = claude_settings_path()?;
+pub fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
+    let path = claude_settings_path(tr)?;
     if !path.exists() {
         return Ok(false);
     }
@@ -113,16 +114,16 @@ pub fn is_tasty_stop_hook_installed() -> Result<bool> {
 }
 
 /// settings.json 루트 값에 hook을 idempotent하게 추가.
-pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
-    let root_obj = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?;
+pub fn install_hooks_in_value(root: &mut Value, tr: &Translator) -> Result<Vec<&'static str>> {
+    let root_obj = root.as_object_mut().ok_or_else(|| {
+        anyhow::anyhow!(tr.t("claude.install.settings_root_not_object").to_string())
+    })?;
 
     let hooks_obj = root_obj
         .entry("hooks")
         .or_insert_with(|| json!({}))
         .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("hooks is not an object"))?;
+        .ok_or_else(|| anyhow::anyhow!(tr.t("claude.install.hooks_not_object").to_string()))?;
 
     let mut added: Vec<&'static str> = Vec::new();
 
@@ -134,7 +135,9 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
             .entry((*event_name).to_string())
             .or_insert_with(|| json!([]))
             .as_array_mut()
-            .ok_or_else(|| anyhow::anyhow!("hooks.{} is not an array", event_name))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(tr.t_fmt("claude.install.hooks_event_not_array", event_name))
+            })?;
 
         // 기존에 marker 가 일치하는 entry 가 있으면, 그 entry 의 matcher 와 그 안의
         // hook 명령 문자열을 canonical 한 새 값으로 갱신한다. 옛 버전이 설치한 잘못된
@@ -236,8 +239,8 @@ pub fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
 }
 
 /// `claude.install` IPC 핸들러. ~/.claude/settings.json을 idempotent하게 갱신.
-pub fn run_install() -> Result<Vec<&'static str>> {
-    let path = claude_settings_path()?;
+pub fn run_install(tr: &Translator) -> Result<Vec<&'static str>> {
+    let path = claude_settings_path(tr)?;
 
     let mut root: Value = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
@@ -246,7 +249,7 @@ pub fn run_install() -> Result<Vec<&'static str>> {
         json!({})
     };
 
-    let added = install_hooks_in_value(&mut root)?;
+    let added = install_hooks_in_value(&mut root, tr)?;
     if added.is_empty() {
         return Ok(added);
     }
@@ -260,8 +263,8 @@ pub fn run_install() -> Result<Vec<&'static str>> {
 }
 
 /// `claude.uninstall` IPC 핸들러. 파일이 없으면 빈 목록 반환.
-pub fn run_uninstall() -> Result<Vec<&'static str>> {
-    let path = claude_settings_path()?;
+pub fn run_uninstall(tr: &Translator) -> Result<Vec<&'static str>> {
+    let path = claude_settings_path(tr)?;
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -282,6 +285,11 @@ pub fn run_uninstall() -> Result<Vec<&'static str>> {
 mod tests {
     use super::*;
 
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
+    }
+
     fn count_managed_entries(root: &Value, event_name: &str, marker: &str) -> usize {
         root.get("hooks")
             .and_then(|h| h.as_object())
@@ -298,7 +306,7 @@ mod tests {
     #[test]
     fn install_in_empty_value_adds_all_events() {
         let mut root = json!({});
-        let added = install_hooks_in_value(&mut root).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
         assert_eq!(added.len(), MANAGED_HOOKS.len());
         for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
@@ -327,7 +335,7 @@ mod tests {
                 ]
             }
         });
-        let added = install_hooks_in_value(&mut root).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
         // 신규 추가가 아니라 in-place upgrade 라서 added 에 SessionStart 는 없다.
         assert!(!added.contains(&"SessionStart"));
         let arr = root["hooks"]["SessionStart"].as_array().unwrap();
@@ -353,7 +361,7 @@ mod tests {
     #[test]
     fn install_sets_pre_post_tool_use_matcher_to_ask_user_question() {
         let mut root = json!({});
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
         assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "AskUserQuestion");
         assert_eq!(
             root["hooks"]["PostToolUse"][0]["matcher"],
@@ -390,7 +398,7 @@ mod tests {
                 ]
             }
         });
-        let added = install_hooks_in_value(&mut root).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
         assert!(
             !added.contains(&"PreToolUse"),
             "in-place upgrade, not a fresh add"
@@ -403,8 +411,8 @@ mod tests {
     #[test]
     fn install_is_idempotent() {
         let mut root = json!({});
-        install_hooks_in_value(&mut root).expect("install 1");
-        let added2 = install_hooks_in_value(&mut root).expect("install 2");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install 1");
+        let added2 = install_hooks_in_value(&mut root, &test_translator()).expect("install 2");
         assert!(added2.is_empty(), "second install should add nothing");
         for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
@@ -427,7 +435,7 @@ mod tests {
                 ]
             }
         });
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
 
         let pretool_arr = root["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(
@@ -444,7 +452,7 @@ mod tests {
     #[test]
     fn uninstall_removes_all() {
         let mut root = json!({});
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
         let removed = uninstall_hooks_from_value(&mut root);
         assert_eq!(removed.len(), MANAGED_HOOKS.len());
         assert!(root.get("hooks").is_none(), "empty hooks should be removed");
@@ -459,7 +467,7 @@ mod tests {
                 ]
             }
         });
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
         // 반환값(제거된 항목 목록)은 다음 assert가 root 구조로 검증하므로 무시.
         uninstall_hooks_from_value(&mut root);
         let stop_arr = root["hooks"]["Stop"].as_array().unwrap();
@@ -480,7 +488,7 @@ mod tests {
         let mut root = json!({});
         let marker = tasty_hook_marker("stop");
         assert!(!is_marker_installed_in_value(&root, "Stop", &marker));
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
         assert!(is_marker_installed_in_value(&root, "Stop", &marker));
     }
 
@@ -508,7 +516,7 @@ mod tests {
     #[test]
     fn session_start_hook_uses_simple_command() {
         let mut root = json!({});
-        install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
         let arr = root["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(arr.len(), 1);
         let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();

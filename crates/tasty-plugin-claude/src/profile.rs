@@ -35,7 +35,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 use tracing::warn;
 
 use crate::install::MANAGED_HOOKS;
@@ -76,31 +76,26 @@ pub enum ProfileError {
     },
 }
 
-impl std::fmt::Display for ProfileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProfileError {
+    pub(crate) fn translate(&self, tr: &Translator) -> String {
         match self {
-            Self::NoDataDir => write!(
-                f,
-                "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot register or attach profiles"
-            ),
-            Self::InvalidShortName(s) => write!(
-                f,
-                "'{s}' is not a valid profile name (lowercase letters, digits, '-' only, max 32 chars)"
-            ),
-            Self::EmptyNames => write!(f, "no profile name given"),
-            Self::UnknownProfile(id) => write!(f, "no registered profile named '{id}'"),
-            Self::NotAttachable(id) => write!(
-                f,
-                "'{id}' is a built-in listing entry and cannot be attached by name"
-            ),
-            Self::SourceNotReadable { path, message } => {
-                write!(f, "cannot read profile source '{path}': {message}")
-            }
+            Self::NoDataDir => tr.t("claude.profile.no_data_dir").to_string(),
+            Self::InvalidShortName(s) => tr.t_fmt("claude.profile.invalid_short_name", s),
+            Self::EmptyNames => tr.t("claude.profile.empty_names").to_string(),
+            Self::UnknownProfile(id) => tr.t_fmt("claude.profile.unknown_profile", id),
+            Self::NotAttachable(id) => tr.t_fmt("claude.profile.not_attachable", id),
+            Self::SourceNotReadable { path, message } => tr
+                .t("claude.profile.source_not_readable")
+                .replacen("{}", path, 1)
+                .replacen("{}", message, 1),
             Self::SourceNotJsonObject { path } => {
-                write!(f, "profile source '{path}' is not a JSON object")
+                tr.t_fmt("claude.profile.source_not_json_object", path)
             }
-            Self::Merge(e) => write!(f, "{e}"),
-            Self::Io { path, message } => write!(f, "'{path}': {message}"),
+            Self::Merge(e) => e.translate(tr),
+            Self::Io { path, message } => tr
+                .t("claude.profile.io_error")
+                .replacen("{}", path, 1)
+                .replacen("{}", message, 1),
         }
     }
 }
@@ -272,7 +267,7 @@ pub fn show_registered(
 /// 등록된 사용자 프로필 전체 + 내장 훅 listing 항목을 함께 나열한다
 /// (`priority` 개념이 필요 없는 단순 목록이라 owner tie-break 없이 owner→id
 /// 순으로만 정렬 — host 를 먼저 보여줘 "항상 켜져 있는 것"이 먼저 눈에 띄게 한다).
-pub fn list(data_dir: Option<&Path>) -> Vec<ProfileSummary> {
+pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
     let mut out: Vec<ProfileSummary> = MANAGED_HOOKS
         .iter()
         .map(|(claude_event, token, matcher)| ProfileSummary {
@@ -280,11 +275,11 @@ pub fn list(data_dir: Option<&Path>) -> Vec<ProfileSummary> {
             owner: "host",
             attachable: false,
             description: Some(if matcher.is_empty() {
-                format!("built-in — always installed (Claude Code event: {claude_event})")
+                tr.t_fmt("claude.profile.builtin_always_installed", claude_event)
             } else {
-                format!(
-                    "built-in — always installed (Claude Code event: {claude_event}, matcher: {matcher})"
-                )
+                tr.t("claude.profile.builtin_always_installed_with_matcher")
+                    .replacen("{}", claude_event, 1)
+                    .replacen("{}", matcher, 1)
             }),
         })
         .collect();
@@ -294,7 +289,7 @@ pub fn list(data_dir: Option<&Path>) -> Vec<ProfileSummary> {
             id: format!("host/{name}"),
             owner: "host",
             attachable: true,
-            description: Some("built-in — attach by name like a registered profile".to_string()),
+            description: Some(tr.t("claude.profile.builtin_attachable").to_string()),
         });
     }
 
@@ -384,16 +379,16 @@ pub fn resolve_names(data_dir: Option<&Path>, names_csv: &str) -> Result<PathBuf
 
 // ── IPC handler (main.rs 배선 대상) ────────────────────────────────────────
 
-fn require_name(params: &Value) -> Result<&str, IpcMethodError> {
+fn require_name<'a>(params: &'a Value, tr: &Translator) -> Result<&'a str, IpcMethodError> {
     params
         .get("name")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'name' parameter"))
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_name")))
 }
 
-fn to_ipc_err(e: ProfileError) -> IpcMethodError {
-    IpcMethodError::new(format!("profile: {e}"))
+pub(crate) fn to_ipc_err(e: ProfileError, tr: &Translator) -> IpcMethodError {
+    IpcMethodError::new(tr.t_fmt("claude.profile.error_prefix", &e.translate(tr)))
 }
 
 fn summary_to_json(s: &ProfileSummary) -> Value {
@@ -410,14 +405,15 @@ fn summary_to_json(s: &ProfileSummary) -> Value {
 pub(crate) fn handle_register(
     data_dir: Option<&Path>,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let name = require_name(params)?;
+    let name = require_name(params, tr)?;
     let file = params
         .get("file")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'file' parameter"))?;
-    register(data_dir, name, Path::new(file)).map_err(to_ipc_err)?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_file")))?;
+    register(data_dir, name, Path::new(file)).map_err(|e| to_ipc_err(e, tr))?;
     Ok(json!({ "id": format!("user/{name}") }))
 }
 
@@ -425,9 +421,10 @@ pub(crate) fn handle_register(
 pub(crate) fn handle_unregister(
     data_dir: Option<&Path>,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let name = require_name(params)?;
-    unregister(data_dir, name).map_err(to_ipc_err)?;
+    let name = require_name(params, tr)?;
+    unregister(data_dir, name).map_err(|e| to_ipc_err(e, tr))?;
     Ok(json!({ "id": format!("user/{name}") }))
 }
 
@@ -435,8 +432,9 @@ pub(crate) fn handle_unregister(
 pub(crate) fn handle_list(
     data_dir: Option<&Path>,
     _params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let entries: Vec<Value> = list(data_dir).iter().map(summary_to_json).collect();
+    let entries: Vec<Value> = list(data_dir, tr).iter().map(summary_to_json).collect();
     Ok(json!({ "profiles": entries }))
 }
 
@@ -444,9 +442,10 @@ pub(crate) fn handle_list(
 pub(crate) fn handle_show(
     data_dir: Option<&Path>,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let name = require_name(params)?;
-    let (owner, content) = show_registered(data_dir, name).map_err(to_ipc_err)?;
+    let name = require_name(params, tr)?;
+    let (owner, content) = show_registered(data_dir, name).map_err(|e| to_ipc_err(e, tr))?;
     Ok(json!({ "id": format!("{owner}/{name}"), "content": content }))
 }
 
@@ -456,10 +455,11 @@ pub(crate) fn handle_current(
     data_dir: Option<&Path>,
     host: &HostHandle,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = crate::handlers::require_surface_id(params)?;
+    let surface_id = crate::handlers::require_surface_id(params, tr)?;
     let attached = crate::reboot::attached_profile_summary(host, surface_id);
-    let builtins: Vec<Value> = list(data_dir)
+    let builtins: Vec<Value> = list(data_dir, tr)
         .iter()
         .filter(|s| !s.attachable)
         .map(summary_to_json)
@@ -479,6 +479,11 @@ mod tests {
     fn write_profile(dir: &Path, name: &str, content: &str) {
         std::fs::create_dir_all(registered_dir(dir)).unwrap();
         std::fs::write(registered_file(dir, name), content).unwrap();
+    }
+
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
     }
 
     #[test]
@@ -532,7 +537,7 @@ mod tests {
     fn list_includes_builtin_hooks_and_user_profiles() {
         let tmp = tempfile::tempdir().unwrap();
         write_profile(tmp.path(), "myprofile", "{}");
-        let entries = list(Some(tmp.path()));
+        let entries = list(Some(tmp.path()), &test_translator());
         assert!(entries.iter().any(|e| e.id == "host/stop" && !e.attachable));
         assert!(
             entries
@@ -543,7 +548,7 @@ mod tests {
 
     #[test]
     fn list_without_data_dir_still_shows_builtins() {
-        let entries = list(None);
+        let entries = list(None, &test_translator());
         assert!(!entries.is_empty());
         assert!(entries.iter().all(|e| e.owner == "host"));
     }
@@ -641,7 +646,7 @@ mod tests {
 
     #[test]
     fn list_includes_attachable_host_default_profile() {
-        let entries = list(None);
+        let entries = list(None, &test_translator());
         assert!(
             entries
                 .iter()

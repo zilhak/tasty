@@ -14,6 +14,7 @@
 //! 에서 제거한다 — deny 가 allow 를 이겨야 조합 시 샌드박스가 풀리지 않는다.
 
 use serde_json::Value;
+use tasty_plugin_sdk::i18n::Translator;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergeError {
@@ -27,20 +28,19 @@ pub enum MergeError {
     },
 }
 
-impl std::fmt::Display for MergeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl MergeError {
+    pub(crate) fn translate(&self, tr: &Translator) -> String {
         match self {
-            Self::NotAnObject(label) => {
-                write!(f, "profile '{label}' top-level value is not a JSON object")
-            }
+            Self::NotAnObject(label) => tr.t_fmt("claude.profile_merge.not_an_object", label),
             Self::ScalarConflict {
                 path,
                 existing,
                 incoming,
-            } => write!(
-                f,
-                "profile merge conflict at '{path}': {existing} vs {incoming} — refusing to silently weaken permissions"
-            ),
+            } => tr
+                .t("claude.profile_merge.scalar_conflict")
+                .replacen("{}", path, 1)
+                .replacen("{}", &existing.to_string(), 1)
+                .replacen("{}", &incoming.to_string(), 1),
         }
     }
 }

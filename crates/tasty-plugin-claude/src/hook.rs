@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::checklist;
 use crate::error_scan::ErrorScanner;
@@ -68,13 +68,14 @@ pub fn handle_claude_hook(
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'event'"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.hook.missing_event")))?;
 
-    let surface_id = resolve_surface_id(params)?;
+    let surface_id = resolve_surface_id(params, tr)?;
     let session = params
         .get("session")
         .and_then(|v| v.as_str())
@@ -83,7 +84,7 @@ pub fn handle_claude_hook(
     let notification_type = params.get("notification_type").and_then(|v| v.as_str());
     let now_ms = now_ms();
 
-    let mut calls = apply_hook(event, surface_id, session.as_deref(), notification_type)?;
+    let mut calls = apply_hook(event, surface_id, session.as_deref(), notification_type, tr)?;
     calls.extend(telemetry_for_hook(
         state, event, surface_id, message, now_ms,
     ));
@@ -229,6 +230,7 @@ pub fn apply_hook(
     surface_id: u32,
     session: Option<&str>,
     notification_type: Option<&str>,
+    tr: &Translator,
 ) -> Result<Vec<HostCall>, IpcMethodError> {
     let mut calls = Vec::new();
     match event {
@@ -358,9 +360,9 @@ pub fn apply_hook(
             }
         }
         other => {
-            return Err(IpcMethodError::invalid_params(&format!(
-                "unknown hook event '{other}' (expected: stop|subagent-stop|notification|session-end|prompt-submit|session-start|active|pre-tool-use|post-tool-use)"
-            )));
+            return Err(IpcMethodError::invalid_params(
+                &tr.t_fmt("claude.hook.unknown_event", other),
+            ));
         }
     }
     Ok(calls)
@@ -410,7 +412,7 @@ fn deliver(host: &HostHandle, call: &HostCall) {
     }
 }
 
-fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
+fn resolve_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     if let Some(sid) = params
         .get("surface")
         .and_then(|v| v.as_u64())
@@ -424,7 +426,7 @@ fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
         return Ok(sid);
     }
     Err(IpcMethodError::invalid_params(
-        "no surface id (pass --surface or set TASTY_SURFACE_ID)",
+        tr.t("claude.params.missing_surface_no_env"),
     ))
 }
 
@@ -432,9 +434,16 @@ fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
 mod tests {
     use super::*;
 
+    /// 실제 crate `lang/` 을 로드한 `Translator` — `checklist.rs` SENTINEL 핀
+    /// 테스트와 동일 패턴(lang 파일 드리프트로부터 assertion 을 고정).
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
+    }
+
     #[test]
     fn stop_sets_idle_and_emits_fire_hook() {
-        let calls = apply_hook("stop", 100, None, None).unwrap();
+        let calls = apply_hook("stop", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -456,7 +465,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_treated_like_stop() {
-        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
+        let calls = apply_hook("subagent-stop", 7, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -478,7 +487,7 @@ mod tests {
 
     #[test]
     fn notification_sets_needs_input_and_fires_needs_input() {
-        let calls = apply_hook("notification", 100, None, None).unwrap();
+        let calls = apply_hook("notification", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -500,7 +509,14 @@ mod tests {
 
     #[test]
     fn notification_permission_prompt_sets_needs_input() {
-        let calls = apply_hook("notification", 100, None, Some("permission_prompt")).unwrap();
+        let calls = apply_hook(
+            "notification",
+            100,
+            None,
+            Some("permission_prompt"),
+            &test_translator(),
+        )
+        .unwrap();
         assert_eq!(
             calls,
             vec![
@@ -524,7 +540,14 @@ mod tests {
     fn notification_idle_prompt_does_not_set_needs_input() {
         // 실측 확인: idle_prompt 는 "사용자가 자리를 비웠다" 는 뜻이지 실제로 대기
         // 중인 질문이 없다 — needs_input 오탐의 근원이므로 배제한다.
-        let calls = apply_hook("notification", 100, None, Some("idle_prompt")).unwrap();
+        let calls = apply_hook(
+            "notification",
+            100,
+            None,
+            Some("idle_prompt"),
+            &test_translator(),
+        )
+        .unwrap();
         assert!(calls.is_empty());
     }
 
@@ -532,7 +555,14 @@ mod tests {
     fn notification_unknown_type_still_sets_needs_input() {
         // 알려지지 않은 notification_type(또는 향후 신설 값)은 안전하게 기존
         // 동작(needs_input 켬)을 유지한다 — 오탐이 확실한 idle_prompt 만 배제.
-        let calls = apply_hook("notification", 100, None, Some("auth_success")).unwrap();
+        let calls = apply_hook(
+            "notification",
+            100,
+            None,
+            Some("auth_success"),
+            &test_translator(),
+        )
+        .unwrap();
         assert!(!calls.is_empty());
         assert!(calls.iter().any(|c| matches!(
             c,
@@ -547,7 +577,7 @@ mod tests {
     fn notification_missing_type_still_sets_needs_input() {
         // stdin 에 notification_type 자체가 없는 (구버전 Claude Code 등) 경우도
         // 기존 동작을 유지한다 — 회귀 방지.
-        let calls = apply_hook("notification", 100, None, None).unwrap();
+        let calls = apply_hook("notification", 100, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SetState {
@@ -561,7 +591,7 @@ mod tests {
     fn pre_tool_use_sets_needs_input_and_fires_needs_input() {
         // matcher "AskUserQuestion" 로 이미 좁혀 등록되므로 이 event 가 오면 곧
         // 선택지 UI 가 뜬다는 뜻 — Notification 의 needs_input 분기와 동일한 효과.
-        let calls = apply_hook("pre-tool-use", 100, None, None).unwrap();
+        let calls = apply_hook("pre-tool-use", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -586,7 +616,7 @@ mod tests {
         // 실측 확인: AskUserQuestion 답변은 UserPromptSubmit 을 발생시키지 않으므로
         // PostToolUse 가 needs_input 해제의 유일한 신호. highlight 는 다시 안
         // 올린다(이미 질문에 답한 것이지 "완료/확인 필요" 신호가 아님).
-        let calls = apply_hook("post-tool-use", 100, None, None).unwrap();
+        let calls = apply_hook("post-tool-use", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -598,7 +628,7 @@ mod tests {
 
     #[test]
     fn session_end_clears_session_meta_and_fires_idle() {
-        let calls = apply_hook("session-end", 100, None, None).unwrap();
+        let calls = apply_hook("session-end", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![
@@ -634,7 +664,7 @@ mod tests {
 
     #[test]
     fn stop_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("stop", 100, None, None).unwrap();
+        let calls = apply_hook("stop", 100, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SurfaceCompletion {
@@ -646,7 +676,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("subagent-stop", 7, None, None).unwrap();
+        let calls = apply_hook("subagent-stop", 7, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SurfaceCompletion {
@@ -658,7 +688,7 @@ mod tests {
 
     #[test]
     fn session_end_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("session-end", 100, None, None).unwrap();
+        let calls = apply_hook("session-end", 100, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SurfaceCompletion {
@@ -670,7 +700,7 @@ mod tests {
 
     #[test]
     fn notification_also_raises_surface_completion_highlight() {
-        let calls = apply_hook("notification", 100, None, None).unwrap();
+        let calls = apply_hook("notification", 100, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SurfaceCompletion {
@@ -684,7 +714,7 @@ mod tests {
     /// notification 과 동일 계약.
     #[test]
     fn pre_tool_use_also_raises_surface_completion_with_needs_input_kind() {
-        let calls = apply_hook("pre-tool-use", 100, None, None).unwrap();
+        let calls = apply_hook("pre-tool-use", 100, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,
             HostCall::SurfaceCompletion {
@@ -699,7 +729,7 @@ mod tests {
         // "작업 시작" 신호는 완료/확인필요가 아니므로 highlight 대상이 아니다 —
         // apply_hook의 "prompt-submit"|"session-start"|"active" 분기는 건드리지 않는다
         // (`docs/features/surface-highlight/index.md` 참고).
-        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
+        let calls = apply_hook("prompt-submit", 100, None, None, &test_translator()).unwrap();
         assert!(
             !calls
                 .iter()
@@ -709,7 +739,7 @@ mod tests {
 
     #[test]
     fn prompt_submit_sets_active_and_no_meta() {
-        let calls = apply_hook("prompt-submit", 100, None, None).unwrap();
+        let calls = apply_hook("prompt-submit", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -721,7 +751,7 @@ mod tests {
 
     #[test]
     fn session_start_without_session_id_just_sets_active() {
-        let calls = apply_hook("session-start", 100, None, None).unwrap();
+        let calls = apply_hook("session-start", 100, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
             vec![HostCall::SetState {
@@ -733,7 +763,14 @@ mod tests {
 
     #[test]
     fn session_start_with_session_id_emits_meta_set() {
-        let calls = apply_hook("session-start", 100, Some("sess-abc"), None).unwrap();
+        let calls = apply_hook(
+            "session-start",
+            100,
+            Some("sess-abc"),
+            None,
+            &test_translator(),
+        )
+        .unwrap();
         assert_eq!(
             calls,
             vec![
@@ -757,15 +794,22 @@ mod tests {
 
     #[test]
     fn unknown_event_returns_invalid_params() {
-        let err = apply_hook("bogus", 100, None, None).unwrap_err();
+        let err = apply_hook("bogus", 100, None, None, &test_translator()).unwrap_err();
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("bogus"));
     }
 
     #[test]
     fn resolve_surface_id_prefers_explicit_param() {
-        assert_eq!(resolve_surface_id(&json!({ "surface": 42 })).unwrap(), 42);
-        assert_eq!(resolve_surface_id(&json!({ "surface_id": 7 })).unwrap(), 7);
+        let tr = test_translator();
+        assert_eq!(
+            resolve_surface_id(&json!({ "surface": 42 }), &tr).unwrap(),
+            42
+        );
+        assert_eq!(
+            resolve_surface_id(&json!({ "surface_id": 7 }), &tr).unwrap(),
+            7
+        );
     }
 
     #[test]
@@ -844,7 +888,7 @@ mod tests {
         if std::env::var("TASTY_SURFACE_ID").is_ok() {
             return;
         }
-        let err = resolve_surface_id(&json!({})).unwrap_err();
+        let err = resolve_surface_id(&json!({}), &test_translator()).unwrap_err();
         assert_eq!(err.code, -32602);
     }
 

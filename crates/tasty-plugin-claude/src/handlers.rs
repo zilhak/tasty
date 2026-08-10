@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::error_scan::ErrorScanner;
 
@@ -26,6 +26,7 @@ use crate::error_scan::ErrorScanner;
 pub(crate) fn resolve_profile_file_param(
     data_dir: Option<&Path>,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Option<String>, IpcMethodError> {
     let path = params
         .get("profile_file")
@@ -37,30 +38,30 @@ pub(crate) fn resolve_profile_file_param(
         .filter(|s| !s.is_empty());
     match (path, names) {
         (Some(_), Some(_)) => Err(IpcMethodError::new(
-            "--profile-file and --profile are mutually exclusive — specify only one",
+            tr.t("claude.profile.mutually_exclusive_file_and_profile"),
         )),
         (Some(p), None) => Ok(Some(p.to_string())),
         (None, Some(n)) => crate::profile::resolve_names(data_dir, n)
             .map(|p| Some(p.to_string_lossy().into_owned()))
-            .map_err(|e| IpcMethodError::new(format!("profile: {e}"))),
+            .map_err(|e| crate::profile::to_ipc_err(e, tr)),
         (None, None) => Ok(None),
     }
 }
 
-pub(crate) fn require_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
+pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     params
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface_id' parameter"))
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
 }
 
-fn require_child_index(params: &Value) -> Result<u32, IpcMethodError> {
+fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     params
         .get("child_index")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'child_index' parameter"))
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_child_index")))
 }
 
 /// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. CLI 인자를
@@ -171,8 +172,12 @@ pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value
 
 /// 자식 Claude 를 종료한다 — 호스트 `terminal.kill` 로 위임(surface.close +
 /// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
-pub(crate) fn handle_kill(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let child_index = require_child_index(params)?;
+pub(crate) fn handle_kill(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let child_index = require_child_index(params, tr)?;
     let mut kp = forward(params, &["surface"]);
     kp.insert("child".into(), json!(child_index));
     // 호스트 terminal.kill 성공 시 { killed_surface_id, child_index } 반환. claude
@@ -184,11 +189,15 @@ pub(crate) fn handle_kill(host: &HostHandle, params: &Value) -> Result<Value, Ip
 
 /// 부모의 모든(또는 role 필터된) 자식에 텍스트를 broadcast — 호스트
 /// `terminal.broadcast` 로 위임.
-pub(crate) fn handle_broadcast(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_broadcast(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'text' parameter"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_text")))?;
     let mut bp = forward(params, &["surface", "role"]);
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
@@ -197,12 +206,16 @@ pub(crate) fn handle_broadcast(host: &HostHandle, params: &Value) -> Result<Valu
 /// 자식 Claude 에 메시지를 보낸다 — 호스트 `terminal.tell` 로 위임. 개행/제출
 /// 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트가 동일하게
 /// 처리하므로 본문 포맷을 재구현하지 않는다.
-pub(crate) fn handle_tell(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface_id(params)?;
+pub(crate) fn handle_tell(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface_id = require_surface_id(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'message' parameter"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
     let resp = host_call(
         host,
         "terminal.tell",
@@ -234,8 +247,10 @@ fn notify_done_command(caller_surface: u32, target_surface: u32, command_name: &
 /// (호출이) 완료됐다는 뜻으로 오독되기 쉬워, conductor 가 실제 작업 완료 알림을
 /// "spawn 접수 확인" 정도로 여기고 계속 무시하는 사고로 이어졌다. `command_name`은
 /// 호출 방식(spawn/tell)일 뿐 완료의 주어가 아니므로 괄호로 분리한다.
-fn notify_done_message(command_name: &str, target_surface: u32) -> String {
-    format!("surface {target_surface} 작업 완료 (호출 방식: {command_name})")
+fn notify_done_message(tr: &Translator, command_name: &str, target_surface: u32) -> String {
+    tr.t("claude.notify.done_message")
+        .replacen("{}", &target_surface.to_string(), 1)
+        .replacen("{}", command_name, 1)
 }
 
 /// spawn/tell 완료 시 caller 에게 1회성으로 알려줄 3개의 형제 hook
@@ -268,24 +283,27 @@ fn register_notify_hooks<H: HostCall>(
 pub(crate) fn handle_notify_done<H: HostCall>(
     host: &H,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let caller_surface = params
         .get("caller_surface")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'caller_surface' parameter"))?
-        as u32;
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_caller_surface"))
+        })? as u32;
     let target_surface = params
         .get("target_surface")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'target_surface' parameter"))?
-        as u32;
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_target_surface"))
+        })? as u32;
     let command_name = params
         .get("command")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'command' parameter"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_command")))?;
 
     // 1) caller 에게 알림 주입.
-    let message = notify_done_message(command_name, target_surface);
+    let message = notify_done_message(tr, command_name, target_surface);
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle
     // 여부와 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔
     // terminal.tell 도 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화
@@ -344,6 +362,7 @@ pub(crate) fn handle_launch(
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let workspace_name = params
         .get("workspace")
@@ -358,7 +377,7 @@ pub(crate) fn handle_launch(
         .get("task")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = resolve_profile_file_param(data_dir, params)?;
+    let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
 
     // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
@@ -377,7 +396,7 @@ pub(crate) fn handle_launch(
         .get("id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::new("workspace.create returned no 'id'"))?;
+        .ok_or_else(|| IpcMethodError::new(tr.t("claude.launch.workspace_create_missing_id")))?;
     let surface_id = ws_resp
         .get("surface_id")
         .and_then(|v| v.as_u64())
@@ -426,14 +445,15 @@ pub(crate) fn handle_respawn(
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params)?;
-    let child_index = require_child_index(params)?;
+    let parent_surface_id = require_surface_id(params, tr)?;
+    let child_index = require_child_index(params, tr)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = resolve_profile_file_param(data_dir, params)?;
+    let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
 
     // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
     //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
@@ -445,9 +465,9 @@ pub(crate) fn handle_respawn(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.respawn response missing 'child_surface_id': {resp}"
-            ))
+            IpcMethodError::new(
+                tr.t_fmt("claude.respawn.missing_child_surface_id", &resp.to_string()),
+            )
         })?;
 
     // 2) claude 특화 기동 명령 재전송.
@@ -564,13 +584,14 @@ pub(crate) fn handle_spawn(
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params)?;
+    let parent_surface_id = require_surface_id(params, tr)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let profile_file = resolve_profile_file_param(data_dir, params)?;
+    let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
 
     // 1) 호스트 registry 에 등록 + 점유 + tab 생성. workspace required.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
@@ -581,9 +602,9 @@ pub(crate) fn handle_spawn(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.spawn response missing 'child_surface_id': {resp}"
-            ))
+            IpcMethodError::new(
+                tr.t_fmt("claude.spawn.missing_child_surface_id", &resp.to_string()),
+            )
         })?;
 
     // 2) claude 특화 기동 명령 전송(session token + surface_id inline env 필요).
@@ -603,7 +624,7 @@ pub(crate) fn handle_spawn(
     }
 
     // 3) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
-    if let Some(warning) = compute_spawn_warning(host, parent_surface_id) {
+    if let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr) {
         if let Some(obj) = out.as_object_mut() {
             obj.insert("warning".into(), json!(warning));
         }
@@ -623,7 +644,11 @@ const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
 /// 여기서 부르는 건 claude 특화 remap 된 `claude.children`(필드명 `child_surface_id`)이
 /// 아니라 **원본** `terminal.children`(필드명 `surface_id`) — `index`/`state` 필드명은
 /// 양쪽 shape 모두 동일하므로 아래 파싱 코드는 원본 응답에 그대로 맞는다.
-fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<String> {
+fn compute_spawn_warning(
+    host: &HostHandle,
+    parent_surface_id: u32,
+    tr: &Translator,
+) -> Option<String> {
     let children_resp = host
         .call("terminal.children", json!({ "surface": parent_surface_id }))
         .ok()?;
@@ -644,33 +669,41 @@ fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<St
         .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
         .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
 
-    build_spawn_warning(total, &idle_indices, threshold)
+    build_spawn_warning(tr, total, &idle_indices, threshold)
 }
 
-/// 순수 함수 — host 호출 없음. 단위 테스트 대상.
-fn build_spawn_warning(total: usize, idle_indices: &[u64], threshold: f64) -> Option<String> {
+/// host 호출은 `tr`(순수 조회) 뿐 — 단위 테스트 대상.
+fn build_spawn_warning(
+    tr: &Translator,
+    total: usize,
+    idle_indices: &[u64],
+    threshold: f64,
+) -> Option<String> {
     if (total as f64) <= threshold {
         return None;
     }
-    let mut msg = format!(
-        "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
-    );
+    let mut msg = tr
+        .t("claude.spawn.warning_threshold")
+        .replacen("{}", &total.to_string(), 1)
+        .replacen("{}", &threshold.to_string(), 1);
     if !idle_indices.is_empty() {
         let idle_list = idle_indices
             .iter()
             .map(u64::to_string)
             .collect::<Vec<_>>()
             .join(", ");
-        msg.push_str(&format!(
-            " Idle children at index [{idle_list}] have already finished their work — consider `respawn` instead of spawning a new one."
-        ));
+        msg.push_str(&tr.t_fmt("claude.spawn.warning_idle_children", &idle_list));
     }
     Some(msg)
 }
 
 /// 자식 surface 의 parent 를 조회 — 호스트 `terminal.parent` 로 위임.
-pub(crate) fn handle_parent(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let surface = require_surface_id(params)?;
+pub(crate) fn handle_parent(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface = require_surface_id(params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -678,8 +711,12 @@ pub(crate) fn handle_parent(host: &HostHandle, params: &Value) -> Result<Value, 
 /// `claude` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `claude.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
-pub(crate) fn handle_state(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let surface = require_surface_id(params)?;
+pub(crate) fn handle_state(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface = require_surface_id(params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
@@ -687,28 +724,40 @@ pub(crate) fn handle_state(host: &HostHandle, params: &Value) -> Result<Value, I
 mod tests {
     use super::*;
 
+    /// 실제 crate `lang/` 을 로드한 `Translator` — 하드코딩 영문 assertion 을
+    /// lang 파일 드리프트로부터 고정한다(`checklist.rs` 의 SENTINEL 핀 테스트와
+    /// 동일 패턴).
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
+    }
+
     #[test]
     fn build_spawn_warning_none_below_threshold() {
-        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+        let tr = test_translator();
+        assert_eq!(build_spawn_warning(&tr, 3, &[], 6.0), None);
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_lists_idle_and_mentions_respawn() {
-        let w = build_spawn_warning(7, &[2, 5], 6.0).unwrap();
+        let tr = test_translator();
+        let w = build_spawn_warning(&tr, 7, &[2, 5], 6.0).unwrap();
         assert!(w.contains("respawn"));
         assert!(w.contains('2') && w.contains('5'));
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_no_idle_has_no_respawn_word() {
-        let w = build_spawn_warning(7, &[], 6.0).unwrap();
+        let tr = test_translator();
+        let w = build_spawn_warning(&tr, 7, &[], 6.0).unwrap();
         assert!(!w.contains("respawn"));
     }
 
     #[test]
     fn build_spawn_warning_respects_custom_threshold() {
-        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
-        assert!(build_spawn_warning(4, &[], 3.0).is_some());
+        let tr = test_translator();
+        assert_eq!(build_spawn_warning(&tr, 3, &[], 6.0), None);
+        assert!(build_spawn_warning(&tr, 4, &[], 3.0).is_some());
     }
 
     #[test]
@@ -772,10 +821,18 @@ mod tests {
     }
 
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
+    // 원래 이 회귀 가드가 겨냥한 한국어 문구는 `lang/ko.toml` 로 옮겨졌으므로,
+    // 그 locale 을 실제로 로드해 동일 속성을 검증한다(하드코딩 복제 대신 lang
+    // 파일을 SoT 로 삼는다 — `checklist.rs` SENTINEL 핀 테스트와 동일 이유).
+    fn test_translator_ko() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "ko")
+    }
 
     #[test]
     fn notify_done_message_leads_with_work_completion() {
-        let msg = notify_done_message("spawn", 42);
+        let tr = test_translator_ko();
+        let msg = notify_done_message(&tr, "spawn", 42);
         assert!(
             msg.contains("작업 완료"),
             "완료 대상이 '작업'임이 드러나야 함: {msg}"
@@ -789,8 +846,9 @@ mod tests {
         // 회귀 방지: 과거 "{command_name} 완료: surface N" 형태는 "spawn 이라는 동작이
         // 완료됐다"로 오독되기 쉬웠다 — command_name 이 더 이상 완료의 주어로 문장
         // 맨 앞에 오지 않아야 한다.
+        let tr = test_translator_ko();
         for command_name in ["spawn", "tell"] {
-            let msg = notify_done_message(command_name, 7);
+            let msg = notify_done_message(&tr, command_name, 7);
             assert!(
                 !msg.starts_with(&format!("{command_name} 완료")),
                 "옛 오독 유발 포맷으로 회귀함: {msg}"
@@ -800,7 +858,8 @@ mod tests {
 
     #[test]
     fn require_child_index_missing_is_invalid_params() {
-        let err = require_child_index(&json!({ "surface_id": 1 })).unwrap_err();
+        let tr = test_translator();
+        let err = require_child_index(&json!({ "surface_id": 1 }), &tr).unwrap_err();
         assert_eq!(err.code, -32602);
     }
 
@@ -1001,11 +1060,14 @@ mod tests {
         register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 3, "최초 3 형제 등록");
 
+        let tr = test_translator();
+
         // 1번째 전환: needs-input(되묻기) — child 는 여전히 살아있다.
         assert_eq!(host.fire(target, "needs-input"), 1);
         handle_notify_done(
             &host,
             &json!({ "caller_surface": caller, "target_surface": target, "command": "tell" }),
+            &tr,
         )
         .unwrap();
         assert_eq!(
@@ -1021,6 +1083,7 @@ mod tests {
         handle_notify_done(
             &host,
             &json!({ "caller_surface": caller, "target_surface": target, "command": "tell" }),
+            &tr,
         )
         .unwrap();
         assert_eq!(
@@ -1041,9 +1104,11 @@ mod tests {
         // surface.locate 가 exists:false 를 돌려주는 상황을 재현.
         assert_eq!(host.fire(target, "process-exit"), 1);
         host.mark_dead(target);
+        let tr = test_translator();
         handle_notify_done(
             &host,
             &json!({ "caller_surface": caller, "target_surface": target, "command": "spawn" }),
+            &tr,
         )
         .unwrap();
 

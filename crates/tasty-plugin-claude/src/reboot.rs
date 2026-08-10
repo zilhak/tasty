@@ -31,7 +31,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::require_surface_id;
 
@@ -64,9 +64,6 @@ const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
 /// 붙어서 렌더된다.
 const NOTICE_SNIPPET: &str = "tasty claude reboot";
 
-/// 재시작된 claude 에게 자동 제출되는 안내 프롬프트.
-const REBOOT_NOTICE: &str = "tasty claude reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (claude -r 로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요.";
-
 /// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필(파일 경로). `--profile-file`
 /// 로 부착하면 여기 기록되고, 인자 없는 다음 reboot 가 이 값을 기본으로 승계한다
 /// (`claude-session-id`, session-start hook 이 기록하는 키와 나란히 reboot 가 관리).
@@ -85,40 +82,50 @@ pub(crate) fn handle_reboot(
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface_id(params)?;
+    let surface_id = require_surface_id(params, tr)?;
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
-    let profile_action = parse_profile_option(params)?;
+    let profile_action = parse_profile_option(params, tr)?;
 
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
-    let session_id = fetch_session_id(host, surface_id)?;
+    let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
-        return Err(IpcMethodError::new(format!(
-            "surface {surface_id} has malformed claude-session-id meta: {session_id:?}"
-        )));
+        return Err(IpcMethodError::new(
+            tr.t("claude.reboot.malformed_session_id")
+                .replacen("{}", &surface_id.to_string(), 1)
+                .replacen("{}", &format!("{session_id:?}"), 1),
+        ));
     }
 
     // 부착/승계/해제 판정 + (있으면) 파일 존재+JSON 파싱 동기 검증. 실패 시 여기서
     // 즉시 반환 — 시퀀스(Ctrl+C 등)를 시작하지 않는다(깨진 프로필로 claude 기동이
     // 실패해 전경이 baseline 복귀 못 하고 방치되는 사고 방지).
-    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action, data_dir)?;
+    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action, data_dir, tr)?;
 
     let Some(baseline) = query_foreground(host, surface_id) else {
-        return Err(IpcMethodError::new(format!(
-            "cannot determine foreground process of surface {surface_id}"
+        return Err(IpcMethodError::new(tr.t_fmt(
+            "claude.reboot.no_foreground_process",
+            &surface_id.to_string(),
         )));
     };
 
     {
-        let mut set = inflight
-            .lock()
-            .map_err(|e| IpcMethodError::new(format!("reboot in-flight lock poisoned: {e}")))?;
+        let mut set = inflight.lock().map_err(|e| {
+            IpcMethodError::new(tr.t_fmt("claude.reboot.lock_poisoned", &e.to_string()))
+        })?;
         if !set.insert(surface_id) {
-            return Err(IpcMethodError::new(format!(
-                "reboot already in progress for surface {surface_id}"
+            return Err(IpcMethodError::new(tr.t_fmt(
+                "claude.reboot.already_in_progress",
+                &surface_id.to_string(),
             )));
         }
     }
+
+    // 안내 프롬프트 본문은 spawn 전에 활성 locale 로 1 회 해석해 소유값으로
+    // 넘긴다 — `Translator` 는 `self` 를 빌려 쓰므로 `'static` 백그라운드
+    // 스레드로 이동할 수 없다.
+    let notice_base = tr.t("claude.reboot.notice").to_string();
 
     let thread_host = host.clone();
     let thread_inflight = inflight.clone();
@@ -134,6 +141,7 @@ pub(crate) fn handle_reboot(
                 &thread_session,
                 extra_prompt.as_deref(),
                 profile_file.as_deref(),
+                &notice_base,
             );
             if let Ok(mut set) = thread_inflight.lock() {
                 set.remove(&surface_id);
@@ -143,9 +151,9 @@ pub(crate) fn handle_reboot(
         if let Ok(mut set) = inflight.lock() {
             set.remove(&surface_id);
         }
-        return Err(IpcMethodError::new(format!(
-            "failed to spawn reboot thread: {e}"
-        )));
+        return Err(IpcMethodError::new(
+            tr.t_fmt("claude.reboot.spawn_thread_failed", &e.to_string()),
+        ));
     }
 
     Ok(json!({
@@ -190,7 +198,10 @@ pub(crate) enum ProfileOption {
 ///   새 부착보다 강하다).
 /// - `--profile-file` 과 `--profile` 을 함께 주면 어느 쪽이 이기는지 조용히
 ///   정하지 않고 거부한다(last-wins 를 경로/이름 인자 사이에서도 반복하지 않기 위함).
-pub(crate) fn parse_profile_option(params: &Value) -> Result<ProfileOption, IpcMethodError> {
+pub(crate) fn parse_profile_option(
+    params: &Value,
+    tr: &Translator,
+) -> Result<ProfileOption, IpcMethodError> {
     let clear = params
         .get("clear_profile")
         .and_then(|v| v.as_bool())
@@ -208,7 +219,7 @@ pub(crate) fn parse_profile_option(params: &Value) -> Result<ProfileOption, IpcM
         .filter(|s| !s.is_empty());
     match (path, names) {
         (Some(_), Some(_)) => Err(IpcMethodError::new(
-            "--profile-file and --profile are mutually exclusive — specify only one",
+            tr.t("claude.profile.mutually_exclusive_file_and_profile"),
         )),
         (Some(p), None) => Ok(ProfileOption::AttachPath(p.to_string())),
         (None, Some(n)) => Ok(ProfileOption::AttachNames(n.to_string())),
@@ -231,19 +242,20 @@ fn resolve_and_apply_profile(
     surface_id: u32,
     action: &ProfileOption,
     data_dir: Option<&Path>,
+    tr: &Translator,
 ) -> Result<Option<String>, IpcMethodError> {
     let candidate = match action {
         ProfileOption::Clear => None,
         ProfileOption::AttachPath(path) => Some(path.clone()),
-        ProfileOption::AttachNames(names) => Some(resolve_names_to_path(data_dir, names)?),
+        ProfileOption::AttachNames(names) => Some(resolve_names_to_path(data_dir, names, tr)?),
         ProfileOption::Keep => match fetch_profile_names_meta(host, surface_id) {
-            Some(names) => Some(resolve_names_to_path(data_dir, &names)?),
+            Some(names) => Some(resolve_names_to_path(data_dir, &names, tr)?),
             None => fetch_profile_meta(host, surface_id),
         },
     };
 
     if let Some(path) = &candidate {
-        validate_profile_file(path)?;
+        validate_profile_file(path, tr)?;
     }
 
     match action {
@@ -265,21 +277,34 @@ fn resolve_and_apply_profile(
     Ok(candidate)
 }
 
-fn resolve_names_to_path(data_dir: Option<&Path>, names: &str) -> Result<String, IpcMethodError> {
+fn resolve_names_to_path(
+    data_dir: Option<&Path>,
+    names: &str,
+    tr: &Translator,
+) -> Result<String, IpcMethodError> {
     crate::profile::resolve_names(data_dir, names)
         .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| IpcMethodError::new(format!("profile: {e}")))
+        .map_err(|e| crate::profile::to_ipc_err(e, tr))
 }
 
 /// 프로필 파일이 존재하고 유효한 JSON 인지 동기 검증한다. 이 확인 없이 진행하면
 /// claude 기동 자체가 실패해 전경이 baseline 으로 복귀하지 못하고, 안내 프롬프트도
 /// 없이 시퀀스가 조용히 중단된다(사용자에게는 "reboot 했는데 claude 가 안 돌아왔다"
 /// 로만 보인다) — 그 사고를 시작 전에 막는다.
-fn validate_profile_file(path: &str) -> Result<(), IpcMethodError> {
-    let contents = std::fs::read_to_string(path)
-        .map_err(|e| IpcMethodError::new(format!("profile file '{path}' is not readable: {e}")))?;
+fn validate_profile_file(path: &str, tr: &Translator) -> Result<(), IpcMethodError> {
+    let contents = std::fs::read_to_string(path).map_err(|e| {
+        IpcMethodError::new(
+            tr.t("claude.reboot.profile_file_not_readable")
+                .replacen("{}", path, 1)
+                .replacen("{}", &e.to_string(), 1),
+        )
+    })?;
     serde_json::from_str::<Value>(&contents).map_err(|e| {
-        IpcMethodError::new(format!("profile file '{path}' is not valid JSON: {e}"))
+        IpcMethodError::new(
+            tr.t("claude.reboot.profile_file_not_json")
+                .replacen("{}", path, 1)
+                .replacen("{}", &e.to_string(), 1),
+        )
     })?;
     Ok(())
 }
@@ -363,7 +388,11 @@ pub(crate) fn attached_profile_summary(host: &HostHandle, surface_id: u32) -> At
 
 /// surface meta 에서 claude session id 를 읽는다. 없으면 에러 — hook 미설치이거나
 /// 그 surface 에 살아있는 claude 세션이 없다는 뜻.
-fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMethodError> {
+fn fetch_session_id(
+    host: &HostHandle,
+    surface_id: u32,
+    tr: &Translator,
+) -> Result<String, IpcMethodError> {
     let resp = host
         .call(
             "surface.meta.get",
@@ -376,9 +405,9 @@ fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMet
         .unwrap_or("")
         .to_string();
     if session_id.is_empty() {
-        return Err(IpcMethodError::new(format!(
-            "no active claude session on surface {surface_id} (claude-session-id meta not set — are tasty hooks installed? run `tasty claude install`)"
-        )));
+        return Err(IpcMethodError::new(
+            tr.t_fmt("claude.reboot.no_active_session", &surface_id.to_string()),
+        ));
     }
     Ok(session_id)
 }
@@ -406,11 +435,13 @@ pub(crate) fn resume_command(session_id: &str, profile_file: Option<&str>) -> St
     }
 }
 
-/// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
-pub(crate) fn build_notice(extra: Option<&str>) -> String {
+/// 안내 프롬프트 본문. `base` 는 활성 locale 로 이미 해석된 고정 문구
+/// (`handle_reboot` 이 spawn 전에 1 회 계산). `--prompt` 추가 텍스트가 있으면
+/// 빈 줄 뒤에 덧붙인다.
+pub(crate) fn build_notice(base: &str, extra: Option<&str>) -> String {
     match extra {
-        Some(t) => format!("{REBOOT_NOTICE}\n\n{t}"),
-        None => REBOOT_NOTICE.to_string(),
+        Some(t) => format!("{base}\n\n{t}"),
+        None => base.to_string(),
     }
 }
 
@@ -433,6 +464,11 @@ pub(crate) fn after_delay_action(current: &str, baseline: &str) -> AfterDelay {
 
 /// 전체 시퀀스 (background thread). 각 단계 실패는 warn 로그 후 중단 —
 /// 살아있는 TUI/셸에 잘못된 텍스트를 흘리지 않는 것이 최우선.
+///
+/// 인자가 많은 건 background thread 진입점이라 `&Translator` 를 넘길 수 없어
+/// (`handle_reboot` 참고) 미리 해석해둔 `notice_base` 를 포함해 필요한 값을
+/// 전부 소유값으로 펼쳐 받기 때문 — 묶을 만한 자연스러운 하위 구조가 없다.
+#[allow(clippy::too_many_arguments)]
 fn run_reboot_sequence(
     host: &HostHandle,
     surface_id: u32,
@@ -441,6 +477,7 @@ fn run_reboot_sequence(
     session_id: &str,
     extra_prompt: Option<&str>,
     profile_file: Option<&str>,
+    notice_base: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
 
@@ -458,7 +495,12 @@ fn run_reboot_sequence(
     }
     thread::sleep(TUI_READY_GRACE);
 
-    if !deliver_notice(host, surface_id, baseline, &build_notice(extra_prompt)) {
+    if !deliver_notice(
+        host,
+        surface_id,
+        baseline,
+        &build_notice(notice_base, extra_prompt),
+    ) {
         tracing::warn!(
             "claude reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
@@ -662,6 +704,11 @@ fn poll_foreground(
 mod tests {
     use super::*;
 
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
+    }
+
     #[test]
     fn parse_defaults_delay_5_and_no_prompt() {
         let (delay, extra) = parse_reboot_options(&json!({ "surface_id": 1 }));
@@ -717,7 +764,7 @@ mod tests {
     #[test]
     fn parse_profile_option_defaults_to_keep() {
         assert_eq!(
-            parse_profile_option(&json!({ "surface_id": 1 })).unwrap(),
+            parse_profile_option(&json!({ "surface_id": 1 }), &test_translator()).unwrap(),
             ProfileOption::Keep
         );
     }
@@ -725,7 +772,8 @@ mod tests {
     #[test]
     fn parse_profile_option_attach_path() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "/a/b.json" })).unwrap(),
+            parse_profile_option(&json!({ "profile_file": "/a/b.json" }), &test_translator())
+                .unwrap(),
             ProfileOption::AttachPath("/a/b.json".to_string())
         );
     }
@@ -733,7 +781,11 @@ mod tests {
     #[test]
     fn parse_profile_option_attach_names() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile": "reviewer,sandbox" })).unwrap(),
+            parse_profile_option(
+                &json!({ "profile": "reviewer,sandbox" }),
+                &test_translator()
+            )
+            .unwrap(),
             ProfileOption::AttachNames("reviewer,sandbox".to_string())
         );
     }
@@ -741,16 +793,22 @@ mod tests {
     #[test]
     fn parse_profile_option_path_and_names_together_is_rejected() {
         assert!(
-            parse_profile_option(&json!({ "profile_file": "/a/b.json", "profile": "reviewer" }))
-                .is_err()
+            parse_profile_option(
+                &json!({ "profile_file": "/a/b.json", "profile": "reviewer" }),
+                &test_translator()
+            )
+            .is_err()
         );
     }
 
     #[test]
     fn parse_profile_option_clear_wins_over_attach() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "/a/b.json", "clear_profile": true }))
-                .unwrap(),
+            parse_profile_option(
+                &json!({ "profile_file": "/a/b.json", "clear_profile": true }),
+                &test_translator()
+            )
+            .unwrap(),
             ProfileOption::Clear
         );
     }
@@ -758,7 +816,11 @@ mod tests {
     #[test]
     fn parse_profile_option_clear_wins_over_names() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile": "reviewer", "clear_profile": true })).unwrap(),
+            parse_profile_option(
+                &json!({ "profile": "reviewer", "clear_profile": true }),
+                &test_translator()
+            )
+            .unwrap(),
             ProfileOption::Clear
         );
     }
@@ -766,7 +828,7 @@ mod tests {
     #[test]
     fn parse_profile_option_empty_profile_file_treated_as_keep() {
         assert_eq!(
-            parse_profile_option(&json!({ "profile_file": "" })).unwrap(),
+            parse_profile_option(&json!({ "profile_file": "" }), &test_translator()).unwrap(),
             ProfileOption::Keep
         );
     }
@@ -775,30 +837,34 @@ mod tests {
     fn validate_profile_file_accepts_valid_json() {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
         std::fs::write(tmp.path(), r#"{"hooks":{}}"#).unwrap();
-        assert!(validate_profile_file(tmp.path().to_str().unwrap()).is_ok());
+        assert!(validate_profile_file(tmp.path().to_str().unwrap(), &test_translator()).is_ok());
     }
 
     #[test]
     fn validate_profile_file_rejects_missing_file() {
-        assert!(validate_profile_file("/no/such/tasty-profile-test.json").is_err());
+        assert!(
+            validate_profile_file("/no/such/tasty-profile-test.json", &test_translator()).is_err()
+        );
     }
 
     #[test]
     fn validate_profile_file_rejects_broken_json() {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
         std::fs::write(tmp.path(), "{not valid json").unwrap();
-        assert!(validate_profile_file(tmp.path().to_str().unwrap()).is_err());
+        assert!(validate_profile_file(tmp.path().to_str().unwrap(), &test_translator()).is_err());
     }
 
     #[test]
     fn notice_without_extra_is_fixed_text() {
-        assert_eq!(build_notice(None), REBOOT_NOTICE);
+        let base = test_translator().t("claude.reboot.notice").to_string();
+        assert_eq!(build_notice(&base, None), base);
     }
 
     #[test]
     fn notice_with_extra_appends_after_blank_line() {
-        let n = build_notice(Some("이어서 soak 돌려"));
-        assert!(n.starts_with(REBOOT_NOTICE));
+        let base = test_translator().t("claude.reboot.notice").to_string();
+        let n = build_notice(&base, Some("이어서 soak 돌려"));
+        assert!(n.starts_with(&base));
         assert!(n.ends_with("\n\n이어서 soak 돌려"));
     }
 

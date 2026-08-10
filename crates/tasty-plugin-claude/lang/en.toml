@@ -14,6 +14,76 @@ Before ending this turn, check:
 
 If all three are genuinely satisfied, include the exact string [[TASTY-CHECKLIST-DONE]] somewhere in your reply. Otherwise, keep working.
 """
+no_data_dir = "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot enable or disable the checklist"
+io_error = "checklist marker I/O failed: {}"
+
+[claude.params]
+missing_surface_id = "Missing required 'surface' (or 'surface_id') parameter"
+missing_surface_no_env = "Missing required 'surface_id' parameter (and TASTY_SURFACE_ID is not set in the environment)"
+missing_child_index = "Missing required 'child' (or 'child_index') parameter"
+missing_text = "Missing required 'text' parameter"
+missing_message = "Missing required 'message' parameter"
+missing_caller_surface = "Missing required 'caller_surface' parameter"
+missing_target_surface = "Missing required 'target_surface' parameter"
+missing_command = "Missing required 'command' parameter"
+missing_name = "Missing required 'name' parameter"
+missing_file = "Missing required 'file' parameter"
+
+[claude.hook]
+missing_event = "Missing required 'event' parameter"
+unknown_event = "unknown claude hook event: '{}'"
+
+[claude.notify]
+done_message = "surface {}: task complete (via {})"
+
+[claude.launch]
+workspace_create_missing_id = "host workspace.create response is missing 'id'"
+
+[claude.respawn]
+missing_child_surface_id = "host terminal.respawn response is missing 'child_surface_id': {}"
+
+[claude.spawn]
+missing_child_surface_id = "host terminal.spawn response is missing 'child_surface_id': {}"
+warning_threshold = "This parent now has {} children, above the warning threshold ({})."
+warning_idle_children = " Idle children at index {} can be reused with respawn instead of spawning a new one."
+
+[claude.install]
+no_home_dir = "cannot determine home directory"
+settings_root_not_object = "~/.claude/settings.json root is not a JSON object"
+hooks_not_object = "~/.claude/settings.json 'hooks' key is not a JSON object"
+hooks_event_not_array = "~/.claude/settings.json 'hooks.{}' is not a JSON array"
+install_failed = "install failed: {}"
+uninstall_failed = "uninstall failed: {}"
+
+[claude.profile]
+no_data_dir = "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot register or attach profiles"
+invalid_short_name = "'{}' is not a valid profile name (lowercase letters, digits, '-' only, max 32 chars)"
+empty_names = "no profile name given"
+unknown_profile = "no registered profile named '{}'"
+not_attachable = "'{}' is a built-in listing entry and cannot be attached by name"
+source_not_readable = "cannot read profile source '{}': {}"
+source_not_json_object = "profile source '{}' is not a JSON object"
+io_error = "'{}': {}"
+error_prefix = "profile: {}"
+mutually_exclusive_file_and_profile = "--profile-file and --profile are mutually exclusive — specify only one"
+builtin_always_installed = "built-in — always installed (Claude Code event: {})"
+builtin_always_installed_with_matcher = "built-in — always installed (Claude Code event: {}, matcher: {})"
+builtin_attachable = "built-in — attach by name like a registered profile"
+
+[claude.profile_merge]
+not_an_object = "profile '{}' top-level value is not a JSON object"
+scalar_conflict = "profile merge conflict at '{}': {} vs {} — refusing to silently weaken permissions"
+
+[claude.reboot]
+notice = "tasty claude reboot: this session was restarted by tasty's reboot feature (claude -r resumes the same session). The previous turn may have been cut off — check the last work state before continuing."
+malformed_session_id = "surface {} has malformed claude-session-id meta: {}"
+no_foreground_process = "cannot determine foreground process of surface {}"
+lock_poisoned = "reboot in-flight lock poisoned: {}"
+already_in_progress = "reboot already in progress for surface {}"
+spawn_thread_failed = "failed to spawn reboot thread: {}"
+profile_file_not_readable = "profile file '{}' is not readable: {}"
+profile_file_not_json = "profile file '{}' is not valid JSON: {}"
+no_active_session = "no active claude session on surface {} (claude-session-id meta not set — are tasty hooks installed? run `tasty claude install`)"
 
 [settings.subtab]
 claude = "Claude Code"
