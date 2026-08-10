@@ -21,7 +21,7 @@ pub struct WorkspaceEntryView {
     pub busy_count: usize,
     /// 이 워크스페이스에서 highlight(주의 환기) 상태인 surface 개수. full 은 개수
     /// 숫자 배지, collapsed 는 dot 으로 표현(`> 0` 조건).
-    pub highlight_count: usize,
+    pub attention_count: usize,
     /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
     pub attached: bool,
     /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
@@ -1302,7 +1302,7 @@ fn draw_collapsed_avatar(
         rect.max.x - dot_pad - dot_radius,
         rect.min.y + dot_pad + dot_radius,
     );
-    if ws.highlight_count > 0 {
+    if ws.attention_count > 0 {
         // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
@@ -1453,10 +1453,10 @@ fn draw_workspace_card(
             // 우측에 점유시킨 뒤 남은 좌측 폭을 title 이 채우며 길면 말줄임한다
             // (truncate 가 가용폭을 모두 먹어 badge 를 밀어내지 않도록 reserve-first).
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ws.highlight_count > 0 {
+                if ws.attention_count > 0 {
                     // 디자인 Badge variant="primary" — accent-primary 채움 pill +
                     // highlight surface 개수(99 초과 시 "99+"). Badge specimen 토큰 전사.
-                    paint_workspace_count_badge(ui, th, ws.highlight_count);
+                    paint_workspace_count_badge(ui, th, ws.attention_count);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(
@@ -1585,7 +1585,7 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 0,
-            highlight_count: 0,
+            attention_count: 0,
             attached: false,
             is_mirror: false,
             is_active,
@@ -1800,7 +1800,7 @@ mod tests {
         let mut mirror_busy = mock_ws("data-pipeline", true);
         mirror_busy.is_mirror = true;
         mirror_busy.busy_count = 2;
-        mirror_busy.highlight_count = 3;
+        mirror_busy.attention_count = 3;
         mirror_busy.attached = true;
         let ws = vec![mock_ws("main", false), mirror, mirror_busy];
         assert!(run_full(ws.clone(), false).is_empty());
@@ -1841,7 +1841,7 @@ mod tests {
                 description: long_desc.into(),
                 busy_count: 0,
                 // 150 → "99+" cap 경로도 함께 no-panic 검증.
-                highlight_count: 150,
+                attention_count: 150,
                 attached: false,
                 is_mirror: false,
                 is_active: true,
@@ -1852,7 +1852,7 @@ mod tests {
                 subtitle: String::new(),
                 description: String::new(),
                 busy_count: 0,
-                highlight_count: 0,
+                attention_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1862,7 +1862,7 @@ mod tests {
                 subtitle: String::new(),
                 description: "short desc".into(),
                 busy_count: 0,
-                highlight_count: 0,
+                attention_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: false,
@@ -1987,7 +1987,7 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 3,
-            highlight_count: 2,
+            attention_count: 2,
             attached: true,
             is_mirror: false,
             is_active: true,

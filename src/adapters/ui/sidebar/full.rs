@@ -24,7 +24,7 @@ pub(super) fn entry_view(
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
         busy_count: engine.busy_count(&surface_ids),
-        highlight_count: engine.attention_count(&surface_ids),
+        attention_count: engine.attention_count(&surface_ids),
         attached: engine.attach.workspace_holder(ws.id).is_some(),
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,
