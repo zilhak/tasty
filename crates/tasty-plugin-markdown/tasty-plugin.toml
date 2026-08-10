@@ -1,8 +1,8 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.39"
-description = "Markdown viewer surface (egui-mesh)"
+version = "0.1.40"
+description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
     "surface.read",
@@ -17,23 +17,29 @@ permissions = [
 # 대용량 파일 감지 시 plugin 이 발행하는 이벤트(→ host fire_popup_triggers → 확인 팝업).
 # 크기 감지는 plugin in-process — host 는 파일 크기를 stat 하지 않는다(크기게이트 plugin 소유).
 event_publish = ["com.tasty.markdown.large_file_confirm"]
+# webview-kind surface 는 `surface.set_context` 를 받지 않아 Theme 변경이 자동으로
+# 밀리지 않는다(host_api/webview.rs::handle_theme_query 문서 참조) — 이 구독으로 색이
+# 바뀔 때마다 문서를 재생성한다.
+event_subscribe = ["theme.changed"]
 lang_dir = "lang"
 
 [entry]
 type = "process"
 command = "tasty-plugin-markdown"
 
-# egui-mesh: plugin 이 자기 프로세스에서 markdown 을 egui 로 tessellate 한 mesh 를
-# host 가 합성한다 (ADR-0028 / B1). host 의 egui-mesh 화이트리스트 + api_version
-# 게이트(src/engine/surface_registry/egui_mesh.rs)를 통과해야 등록된다.
+# webview: host 가 native OS WebView overlay 를 생성해 이 kind 의 surface 를 덮는다
+# (Stage B, ADR-0028 B1 을 대체). plugin 은 markdown → sanitize 된 HTML 문서를 만들어
+# `webview.set_url` 로 전달할 뿐, 실제 픽셀은 host WebView 가 그린다. 대용량 파일/파일열기
+# 확인 팝업만 여전히 egui-mesh 로 자가 렌더(아래 `[[contributes.popup]]`).
 [[surface_kinds]]
 kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
 icon = "markdown"
-rendering = "egui-mesh"
-# capability: 줌 단축키로 폰트 크기 조절, copy 단축키로 egui Copy(선택 텍스트) 주입.
+rendering = "webview"
+# capability: 줌 단축키가 host WebView 의 `HtmlWebViewSettings.zoom_percent` 를 조절한다
+# (src/adapters/ui/input/shortcuts/zoom.rs). `egui_copy` 는 없다 — 선택 텍스트 복사는
+# native WebView 가 Ctrl+C 를 자체 처리한다(egui `Event::Copy` 주입 대상 mesh 가 없다).
 zoomable = true
-egui_copy = true
 # 옛 caller 가 `file_path` 로 넘겨도 host 가 canonical `file` 키로 정규화한다.
 # 본체의 `kind == "markdown"` 정규화 하드코딩을 대체(generic-kind 마이그레이션).
 param_aliases = { file_path = "file" }

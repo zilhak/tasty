@@ -83,6 +83,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("tree", plugin(&[SurfaceRead])),
         // webview — plugin 이 webview-enabled surface 의 URL 설정. SurfaceWrite 권한.
         ("webview.set_url", plugin(&[SurfaceWrite])),
+        // theme.query — 현재 resolved 전역 Theme 스냅샷 조회. webview-kind surface(예:
+        // markdown)는 `set_context` 를 받지 않아 Theme 이 자동 push 되지 않으므로, 문서를
+        // (재)생성할 때마다 이 read-only 조회로 대신한다(ADR-0065). surface 별 데이터가
+        // 아닌 전역 정보라 별도 권한 없이 노출(system.info 와 동형).
+        ("theme.query", plugin(&[])),
         // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
         // 예: explorer 가 root 변경 시 carry 후보 cwd 갱신.
         ("surface.set_cwd", plugin(&[SurfaceWrite])),

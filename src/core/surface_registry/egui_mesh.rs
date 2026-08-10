@@ -42,15 +42,14 @@ fn extract_display_name_and_file(
 
 /// `(kind, plugin_id)` 쌍이 egui-mesh 채널로 허용된 bundled 조합인지 확인.
 ///
-/// ADR-0028 scope 에 따라 markdown(B1)
-/// 을 첫 소비자로 두고, image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh
-/// 로 렌더)가 뒤따른다.
+/// ADR-0028 scope 에 따라 image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh 로
+/// 렌더)를 소비자로 둔다. markdown(B1) 은 Stage B 에서 `rendering = "webview"` 로 이관돼
+/// 더 이상 이 화이트리스트에 없다 — `[[contributes.popup]]` 확인 팝업(large-file/file-open)
+/// 은 여전히 egui-mesh 지만, popup 채널은 이 kind 화이트리스트와 무관한 별도 경로다.
 pub(crate) fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
     matches!(
         (kind, plugin_id),
-        ("markdown", "com.tasty.markdown")
-            | ("image", "com.tasty.image")
-            | ("mesh_demo", "com.tasty.mesh-demo")
+        ("image", "com.tasty.image") | ("mesh_demo", "com.tasty.mesh-demo")
     )
 }
 
@@ -224,10 +223,10 @@ mod tests {
     }
 
     #[test]
-    fn markdown_allowed_for_markdown_plugin() {
-        assert!(is_egui_mesh_allowed("markdown", "com.tasty.markdown"));
-        assert!(!is_egui_mesh_allowed("markdown", "com.example.evil"));
-        assert!(!is_egui_mesh_allowed("image", "com.tasty.markdown"));
+    fn markdown_is_no_longer_egui_mesh_allowed() {
+        // Stage B: markdown 은 webview 로 이관돼 이 화이트리스트에서 빠졌다 — 확인 팝업
+        // (large-file/file-open)은 여전히 egui-mesh 지만 별도 popup 채널이라 무관하다.
+        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.markdown"));
     }
 
     #[test]
@@ -235,8 +234,8 @@ mod tests {
         assert!(is_egui_mesh_allowed("image", "com.tasty.image"));
         // 다른 plugin 이 image kind 를 가로채지 못한다.
         assert!(!is_egui_mesh_allowed("image", "com.example.evil"));
-        // image plugin 이 markdown kind 를 가로채지 못한다 (조합 매칭).
-        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.image"));
+        // image plugin 이 mesh_demo kind 를 가로채지 못한다 (조합 매칭).
+        assert!(!is_egui_mesh_allowed("mesh_demo", "com.tasty.image"));
     }
 
     #[test]
@@ -244,8 +243,8 @@ mod tests {
         assert!(is_egui_mesh_allowed("mesh_demo", "com.tasty.mesh-demo"));
         // 다른 plugin 이 demo kind 를 가로채지 못한다.
         assert!(!is_egui_mesh_allowed("mesh_demo", "com.example.evil"));
-        // demo plugin 이 markdown kind 를 가로채지 못한다 (조합 매칭).
-        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.mesh-demo"));
+        // demo plugin 이 image kind 를 가로채지 못한다 (조합 매칭).
+        assert!(!is_egui_mesh_allowed("image", "com.tasty.mesh-demo"));
     }
 
     #[test]
@@ -254,10 +253,10 @@ mod tests {
         assert!(!register_egui_mesh_kind(
             &reg,
             "com.example.evil",
-            &decl("markdown"),
+            &decl("mesh_demo"),
             HOST_API_VERSION
         ));
-        assert!(!reg.contains("markdown"));
+        assert!(!reg.contains("mesh_demo"));
     }
 
     #[test]
@@ -265,11 +264,11 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(!register_egui_mesh_kind(
             &reg,
-            "com.tasty.markdown",
-            &decl("markdown"),
+            "com.tasty.mesh-demo",
+            &decl("mesh_demo"),
             "999"
         ));
-        assert!(!reg.contains("markdown"));
+        assert!(!reg.contains("mesh_demo"));
     }
 
     #[test]
@@ -277,13 +276,13 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.markdown",
-            &decl("markdown"),
+            "com.tasty.mesh-demo",
+            &decl("mesh_demo"),
             HOST_API_VERSION
         ));
-        let def = reg.get("markdown").unwrap();
+        let def = reg.get("mesh_demo").unwrap();
         let s = (def.create)(5, None, &json!({"display_name": "Readme"})).unwrap();
-        assert_eq!(s.kind(), "markdown");
+        assert_eq!(s.kind(), "mesh_demo");
         assert_eq!(s.type_name(), "EguiMesh");
         assert_eq!(s.surface_id(), Some(5));
         assert_eq!(s.display_name(), "Readme");
@@ -291,7 +290,7 @@ mod tests {
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert_eq!(snap["display_name"], "Readme");
         let restored = (def.restore)(5, &snap).unwrap();
-        assert_eq!(restored.kind(), "markdown");
+        assert_eq!(restored.kind(), "mesh_demo");
         assert_eq!(restored.display_name(), "Readme");
     }
 
@@ -299,7 +298,7 @@ mod tests {
     fn register_forwards_capability_flags() {
         // decl 의 capability flag(zoomable/egui_copy)가 SurfaceKindDef 로 전달되는지.
         let decl: SurfaceKindDecl = serde_json::from_value(json!({
-            "kind": "markdown",
+            "kind": "mesh_demo",
             "display_name_i18n_key": "surface.kind.markdown",
             "rendering": "egui-mesh",
             "zoomable": true,
@@ -309,11 +308,11 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.markdown",
+            "com.tasty.mesh-demo",
             &decl,
             HOST_API_VERSION
         ));
-        let def = reg.get("markdown").unwrap();
+        let def = reg.get("mesh_demo").unwrap();
         assert!(def.zoomable);
         assert!(def.egui_copy);
         assert!(!def.egui_paste);
@@ -325,17 +324,17 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.markdown",
-            &decl("markdown"),
+            "com.tasty.mesh-demo",
+            &decl("mesh_demo"),
             HOST_API_VERSION
         ));
         // 두 번째 호출: registry 에 이미 있으므로 no-op + 성공 반환.
         assert!(register_egui_mesh_kind(
             &reg,
-            "com.tasty.markdown",
-            &decl("markdown"),
+            "com.tasty.mesh-demo",
+            &decl("mesh_demo"),
             HOST_API_VERSION
         ));
-        assert!(reg.contains("markdown"));
+        assert!(reg.contains("mesh_demo"));
     }
 }

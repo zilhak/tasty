@@ -58,6 +58,29 @@ pub fn handle_set_url(
     JsonRpcResponse::error(id, -32000, "surface_id not found")
 }
 
+/// `theme.query()` — 현재 resolved 전역 Theme 을 wire 스냅샷(색 집합+is_light+ui_zoom)으로
+/// 반환한다. egui-mesh kind 는 매 `surface.set_context` 에 Theme 이 실려오지만, webview-kind
+/// surface(예: markdown)는 host 가 mesh 프레임을 합성하지 않으므로 `set_context` 자체를
+/// 받지 않는다 — plugin 이 문서를 (재)생성할 때 이 read-only 조회로 대신한다. 이후 색이
+/// 바뀌면 host 가 발행하는 `theme.changed` Event Bus 이벤트(`event_subscribe`)를 구독해
+/// 재호출하는 것은 plugin 책임.
+pub fn handle_theme_query(
+    _state: &AppState,
+    engine: &crate::core::CoreState,
+    id: Value,
+) -> JsonRpcResponse {
+    let theme = crate::theme::theme();
+    let wire = tasty_plugin_protocol::ThemeWire {
+        colors: theme.to_colors(),
+        is_light: theme.is_light,
+        ui_zoom: engine.settings.appearance.ui_scale_factor(),
+    };
+    match serde_json::to_value(&wire) {
+        Ok(v) => JsonRpcResponse::success(id, v),
+        Err(e) => JsonRpcResponse::error(id, -32000, format!("theme serialize failed: {e}")),
+    }
+}
+
 /// webview 가 네비게이션을 시도한 URL 을 소유 plugin 에 통지(`webview.navigation_attempt`,
 /// host→plugin — `handle_set_url` 의 반대 방향). "원격 http(s) 차단" 판정과 독립적으로,
 /// 차단 여부와 무관하게 시도마다 항상 호출된다(호출부가 native backend 의

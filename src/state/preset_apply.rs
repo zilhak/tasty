@@ -362,7 +362,12 @@ impl AppState {
             .cwd
             .as_ref()
             .map(std::path::PathBuf::from)
-            .or_else(|| derive_cwd_from_fields(&def.preset_fields, &preset.params));
+            .or_else(|| {
+                crate::core::surface_registry::PresetFieldSpec::derive_cwd(
+                    &def.preset_fields,
+                    &preset.params,
+                )
+            });
         engine
             .create_surface_via_registry(&preset.kind, surface_id, cwd.as_deref(), &preset.params)
             .map_err(ApplyError::Other)
@@ -426,36 +431,6 @@ impl AppState {
     }
 }
 
-/// 프리셋 적용 시 cwd 파생 — kind 의 `derive_cwd = true` 인 `file_path` 필드가 있고
-/// 그 `param_key` 로 params 에 경로가 들어 있으면, 경로의 부모 디렉토리를 cwd 로 유도한다.
-///
-/// url/text/dir 은 제외(경로 파생 무의미). 부모가 없는 경로(파일명만·빈 부모)는 파생하지
-/// 않고 다음 필드로 넘어간다. "file" 문자열을 하드코딩하지 않고 선언의 `param_key` 로만
-/// 참조한다.
-fn derive_cwd_from_fields(
-    fields: &[crate::core::surface_registry::PresetFieldSpec],
-    params: &serde_json::Value,
-) -> Option<std::path::PathBuf> {
-    use crate::core::surface_registry::{PresetFieldInput, PresetFieldTarget};
-    for f in fields {
-        if !f.derive_cwd || f.input != PresetFieldInput::FilePath {
-            continue;
-        }
-        let PresetFieldTarget::Params(key) = &f.target else {
-            continue;
-        };
-        let Some(s) = params.get(key).and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if let Some(parent) = std::path::Path::new(s).parent()
-            && !parent.as_os_str().is_empty()
-        {
-            return Some(parent.to_path_buf());
-        }
-    }
-    None
-}
-
 /// preset leaf 의 kind 로부터 자동 탭 이름 도출.
 /// `state/pane.rs::default_tab_name_for_kind` 와 동일 정책이지만 PresetSurfaceLayout
 /// 트리에서 첫 leaf 를 직접 찾는다.
@@ -486,7 +461,7 @@ fn shell_escape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ApplyOptions, derive_cwd_from_fields};
+    use super::ApplyOptions;
     use crate::core::CoreState;
     use crate::core::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
     use serde_json::json;
@@ -511,7 +486,7 @@ mod tests {
     fn derives_parent_of_file_path_field() {
         let fields = vec![file_field("file", true, PresetFieldInput::FilePath)];
         let params = json!({ "file": "/a/b/x.md" });
-        let cwd = derive_cwd_from_fields(&fields, &params).unwrap();
+        let cwd = PresetFieldSpec::derive_cwd(&fields, &params).unwrap();
         assert_eq!(cwd, std::path::PathBuf::from("/a/b"));
     }
 
@@ -520,20 +495,20 @@ mod tests {
         let params = json!({ "file": "/a/b/x.md" });
         // derive_cwd = false → 파생 안 함.
         let off = vec![file_field("file", false, PresetFieldInput::FilePath)];
-        assert!(derive_cwd_from_fields(&off, &params).is_none());
+        assert!(PresetFieldSpec::derive_cwd(&off, &params).is_none());
         // url 은 파생 제외(경로 파생 무의미).
         let url = vec![file_field("url", true, PresetFieldInput::Url)];
         let up = json!({ "url": "https://example.com/x" });
-        assert!(derive_cwd_from_fields(&url, &up).is_none());
+        assert!(PresetFieldSpec::derive_cwd(&url, &up).is_none());
     }
 
     #[test]
     fn no_derive_for_bare_filename_or_missing_param() {
         // 부모 없는 경로(파일명만) → 파생 안 함.
         let fields = vec![file_field("file", true, PresetFieldInput::FilePath)];
-        assert!(derive_cwd_from_fields(&fields, &json!({ "file": "x.md" })).is_none());
+        assert!(PresetFieldSpec::derive_cwd(&fields, &json!({ "file": "x.md" })).is_none());
         // param 부재 → 파생 안 함.
-        assert!(derive_cwd_from_fields(&fields, &json!({})).is_none());
+        assert!(PresetFieldSpec::derive_cwd(&fields, &json!({})).is_none());
     }
 
     // ── apply_workspace_preset: category 지정 ──────────────────────────────

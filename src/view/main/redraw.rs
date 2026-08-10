@@ -558,9 +558,16 @@ impl MainView {
             Some(PluginSettingValue::Number(n)) => *n,
             _ => 100.0,
         };
+        // 기본 sandbox(JS off)는 html plugin 처럼 사용자가 URL 을 직접 골라 임의 원격
+        // 콘텐츠를 여는 경우의 신뢰 경계다. markdown 은 자기 프로세스가 생성한 문서만
+        // 로드하고(사용자가 URL 을 고르지 않음) 그 콘텐츠는 항상 `ammonia` 로 sanitize
+        // 되므로 — 주소창/링크 라우팅에 쓰는 자체 trusted 스크립트(`render.rs` 의
+        // `nav_script`)가 항상 실행돼야 한다. 사용자가 명시적으로 설정을 저장하면
+        // 그 값이 이 기본을 덮는다(다른 kind 와 동일 우선순위).
+        let sandbox_default = plugin_id != "com.tasty.markdown";
         let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
             Some(PluginSettingValue::Bool(b)) => *b,
-            _ => true,
+            _ => sandbox_default,
         };
         let allow_remote_content = match s.plugin_setting(plugin_id, "allow_remote_content") {
             Some(PluginSettingValue::Bool(b)) => *b,

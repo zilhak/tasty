@@ -8,22 +8,39 @@ use crate::model::SplitDirection;
 pub(crate) fn test_state() -> (AppState, crate::core::CoreState) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
-    // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 egui-mesh
-    // whitelist 로 등록한다. 테스트에서는 plugin manager 를 띄우지 않으므로 런타임과
-    // 동형인 egui-mesh stand-in 등록을 직접 수행한다.
+    // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 rendering="webview"
+    // 로 등록한다(Stage B, register_plugin_surface_kinds 의 Webview 분기와 동형) —
+    // register_webview_kind(overlay 플래그) + register_remote_kind(SurfaceKindDef) 둘 다
+    // 필요하다. 테스트에서는 plugin manager 를 띄우지 않으므로 직접 재현한다.
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "markdown",
         "display_name_i18n_key": "surface.kind.markdown",
-        "rendering": "egui-mesh",
+        "rendering": "webview",
+        // 실제 tasty-plugin.toml 의 `[[surface_kinds.preset_fields]]` 와 동형 —
+        // `derive_cwd=true` 가 있어야 markdown 파일의 부모 디렉토리가 cwd 상속
+        // 시발점으로 파생된다(`PresetFieldSpec::derive_cwd`, 이 test 픽스처가 없으면
+        // remote_kind::register_remote_kind 의 create 클로저가 파생할 게 없어
+        // 호출자가 넘긴 일반 inherited-cwd 로 fallback 해버린다).
+        "preset_fields": [{
+            "id": "file",
+            "label_key": "preset.field.file",
+            "param_key": "file",
+            "input_type": "file_path",
+            "required": true,
+            "derive_cwd": true,
+        }],
     }))
     .expect("test SurfaceKindDecl");
-    assert!(
-        crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
-            &engine.surface_registry,
-            "com.tasty.markdown",
-            &decl,
-            crate::plugin::manifest::HOST_API_VERSION,
-        )
+    crate::core::surface_registry::webview_kind::register_webview_kind(
+        "com.tasty.markdown",
+        &decl.kind,
+    );
+    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+    crate::plugin_bridge::remote_kind::register_remote_kind(
+        &engine.surface_registry,
+        "com.tasty.markdown",
+        &decl,
+        host_cmd_tx,
     );
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),

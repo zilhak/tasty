@@ -1711,7 +1711,9 @@ pub(crate) fn mesh_mirror_candidates(
 mod mesh_mirror_candidate_tests {
     //! bundled 화이트리스트에 있는 mesh 후보만
     //! whitelisted 로, 나머지(미등록 kind/plugin_id 조합)는 rejected(=placeholder 유지)로
-    //! 분류되는지.
+    //! 분류되는지. markdown 은 Stage B(webview 전환)로 화이트리스트에서 빠졌으므로
+    //! 여기선 image/mesh_demo 만 whitelisted 로 남고, markdown 은 3rd-party 미등록
+    //! 조합과 동일하게 rejected 로 떨어져야 한다(회귀 방지).
     use super::mesh_mirror_candidates;
     use crate::model::AttachSurfaceClass;
 
@@ -1722,31 +1724,36 @@ mod mesh_mirror_candidate_tests {
             non_terminals: vec![2],
             explorers: vec![],
             mesh_candidates: vec![
-                (10, "markdown".to_string(), "com.tasty.markdown".to_string()),
-                (11, "image".to_string(), "com.tasty.image".to_string()),
+                (10, "image".to_string(), "com.tasty.image".to_string()),
                 (
-                    12,
+                    11,
                     "mesh_demo".to_string(),
                     "com.tasty.mesh-demo".to_string(),
                 ),
                 // 화이트리스트 밖(가상의 3rd-party 조합) — rejected 로 떨어져야 한다.
-                (13, "widget".to_string(), "com.example.widget".to_string()),
+                (12, "widget".to_string(), "com.example.widget".to_string()),
+                // markdown 은 Stage B 이후 egui-mesh 화이트리스트 밖 — rejected.
+                (13, "markdown".to_string(), "com.tasty.markdown".to_string()),
             ],
         };
         let (whitelisted, rejected) = mesh_mirror_candidates(&class);
         let mut whitelisted_ids: Vec<u32> = whitelisted.iter().map(|(sid, _, _)| *sid).collect();
         whitelisted_ids.sort_unstable();
-        assert_eq!(whitelisted_ids, vec![10, 11, 12]);
-        assert_eq!(rejected, vec![13]);
+        let mut rejected_ids = rejected;
+        rejected_ids.sort_unstable();
+        assert_eq!(whitelisted_ids, vec![10, 11]);
+        assert_eq!(rejected_ids, vec![12, 13]);
     }
 }
 
 #[cfg(test)]
 mod mesh_descriptor_display_name_tests {
     //! mesh 디스크립터(`build_workspace_tree_surfaces`)가 mesh 후보의 실제
-    //! `Surface::display_name()`(예: markdown 파일명)을 `display_name` 필드로
-    //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("markdown")로
-    //! 대체 표시했다.
+    //! `Surface::display_name()`(예: image 파일명)을 `display_name` 필드로
+    //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("image")로
+    //! 대체 표시했다. markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서
+    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(non_terminals placeholder
+    //! 로 분류) 여기 fixture 로 쓰지 않는다.
     use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 
     fn engine_with_mesh_surface(
@@ -1771,8 +1778,8 @@ mod mesh_descriptor_display_name_tests {
     }
 
     #[test]
-    fn markdown_mesh_descriptor_carries_real_display_name() {
-        let (engine, idx) = engine_with_mesh_surface("markdown", "com.tasty.markdown", "README.md");
+    fn image_mesh_descriptor_carries_real_display_name() {
+        let (engine, idx) = engine_with_mesh_surface("image", "com.tasty.image", "screenshot.png");
         let class = engine.workspaces[idx].classify_attach_surfaces();
         let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
         let mesh = surfaces
@@ -1781,13 +1788,13 @@ mod mesh_descriptor_display_name_tests {
             .expect("mesh surface descriptor 가 있어야 한다");
         assert_eq!(
             mesh.get("display_name").and_then(|v| v.as_str()),
-            Some("README.md"),
-            "mesh 디스크립터의 display_name 은 실제 파일명이어야 한다 — kind 문자열(\"markdown\")로 대체되면 안 됨"
+            Some("screenshot.png"),
+            "mesh 디스크립터의 display_name 은 실제 파일명이어야 한다 — kind 문자열(\"image\")로 대체되면 안 됨"
         );
     }
 
-    /// image/mesh_demo 도 같은 `EguiMeshSurface`/화이트리스트 경로를 타므로 동일하게
-    /// display_name 이 전달돼야 한다(markdown 전용 수정이 아님을 보장 — 회귀 방지).
+    /// mesh_demo 도 같은 `EguiMeshSurface`/화이트리스트 경로를 타므로 동일하게
+    /// display_name 이 전달돼야 한다(image 전용 수정이 아님을 보장 — 회귀 방지).
     #[test]
     fn image_and_mesh_demo_mesh_descriptors_also_carry_display_name() {
         for (kind, plugin_id, name) in [

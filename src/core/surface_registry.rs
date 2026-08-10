@@ -110,6 +110,35 @@ impl PresetFieldSpec {
     pub fn from_decls(decls: &[crate::plugin::manifest::PresetFieldDecl]) -> Vec<Self> {
         decls.iter().map(Self::from_decl).collect()
     }
+
+    /// `fields` 중 `derive_cwd = true` 인 `file_path` 필드가 있고 그 `param_key` 로
+    /// `params` 에 경로가 들어 있으면, 경로의 부모 디렉토리를 cwd 로 유도한다.
+    ///
+    /// url/text/dir 은 제외(경로 파생 무의미). 부모가 없는 경로(파일명만·빈 부모)는
+    /// 파생하지 않고 다음 필드로 넘어간다. 프리셋 적용(`state/preset_apply.rs`)과
+    /// surface 생성 시 cwd 상속 fallback(`plugin_bridge/remote_kind.rs`) 양쪽이
+    /// 공유하는 단일 소스 — markdown 처럼 `EguiMeshSurface` 시절엔 `Surface::source_cwd()`
+    /// 가 자체 file 필드에서 직접 파생했지만, `RemoteSurface`(remote/webview kind)는
+    /// 그 필드가 없어 창조 시점에 이 파생을 거쳐야 동일 cwd 상속 동작을 유지한다.
+    pub fn derive_cwd(fields: &[Self], params: &serde_json::Value) -> Option<std::path::PathBuf> {
+        for f in fields {
+            if !f.derive_cwd || f.input != PresetFieldInput::FilePath {
+                continue;
+            }
+            let PresetFieldTarget::Params(key) = &f.target else {
+                continue;
+            };
+            let Some(s) = params.get(key).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if let Some(parent) = Path::new(s).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                return Some(parent.to_path_buf());
+            }
+        }
+        None
+    }
 }
 
 /// surface 종류별 메타 + 동작 함수 묶음.

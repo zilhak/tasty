@@ -1,9 +1,9 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.39"
+version = "0.1.40"
 edition = "2024"
 license = "MIT"
-description = "Markdown viewer surface plugin (egui-mesh)"
+description = "Markdown viewer surface plugin (webview)"
 repository = "https://github.com/zilhak/tasty"
 
 [[bin]]
@@ -11,40 +11,24 @@ name = "tasty-plugin-markdown"
 path = "src/main.rs"
 
 [dependencies]
+# 본문 렌더는 host WebView overlay 에 위임한다 — plugin 은 egui 를 그리지 않는다
+# (large-file/file-open 확인 팝업만 egui-mesh 로 남는다).
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
-# Theme parity — host 가 set_context 로 보낸 ThemeWire(색 집합+is_light+zoom)를
-# `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로 그린다. egui-compat
-# (to_egui) 를 켠다 — 이 프로세스는 egui 를 링크하므로.
+# Theme parity — host `theme.query` IPC 로 받은 ThemeWire(색 집합+is_light+zoom)를
+# `Theme::with_colors_and_zoom` 으로 재구성해 CSS 커스텀 프로퍼티로 주입한다. egui-compat
+# (to_egui) 를 켠다 — 확인 팝업들이 여전히 egui 로 그려지므로.
 tasty-type-appearance = { path = "../tasty-type-appearance" }
-# typed 간격 헬퍼 (vspace/margin_all) — git-viewer 선례와 동일하게 공용 위젯 crate 직접 의존.
+# typed 간격 헬퍼(vspace/margin_all) + 확인 팝업의 Button — egui-mesh 팝업 전용.
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
-# egui_commonmark 는 egui 와 **lockstep** (0.20 ↔ egui 0.31). egui(및 egui-wgpu/
-# egui-winit/egui_extras) 를 bump 하기 전에 egui_commonmark 가 그 egui 버전을 지원하는
-# 릴리스를 냈는지 crates.io 에서 먼저 확인할 것 — 없으면 egui 업글 보류. 상세:
-# docs/dev-guide/dep-issues.md. syntect(better_syntax_highlighting) 는 끈다 — 코드
-# 하이라이팅은 egui_extras 내장 경로로 충분. `load-images`(egui_extras 의 file+image
-# 로더)는 켠다 — 인라인 이미지 렌더에 필요(base_dir 상대경로 해석은 render.rs 의
-# `default_implicit_uri_scheme` 주입, 아래 image crate 는 그 로더가 쓰는 디코더).
-egui_commonmark = { version = "0.20.0", default-features = false, features = [
-    "pulldown_cmark",
-    "load-images",
-] }
-# egui_extras 의 image loader(`load-images`)는 `image` crate 를 default-features=false
-# 로 의존해(모든 포맷 디코더가 꺼짐) — Cargo feature unification 이 걸리려면 같은
-# `image` 인스턴스를 이 crate 도 직접 의존해야 한다(별도 바이너리라 다른 plugin 의
-# feature 선언은 여기 안 섞인다). 마크다운 문서에 실제로 쓰이는 두 포맷만 켠다(뷰어
-# 스코프 — 모든 포맷이 필요한 `tasty-plugin-image`(Cargo.toml)와는 다름).
-image = { version = "0.25", default-features = false, features = [
-    "png",
-    "jpeg",
-] }
-# 링크 destination pre-scan 전용 (egui_commonmark 도 내부적으로 같은 0.12 를 쓴다).
-pulldown-cmark = { version = "0.12", default-features = false }
-# Copy 단축키로 선택 텍스트를 OS 클립보드에 직접 쓴다 — 이 plugin 은 비-샌드박스 OS
-# 프로세스라 host round-trip 없이 자기 클립보드 접근이 가능하다(ADR-0009,
-# clipboard-viewer plugin 의 read 선례와 동일한 write 대응).
-arboard = "3"
+# Markdown → HTML 변환 본체. push_html 로 문서를 만들고, 링크 destination 은 이벤트
+# 스트림을 map 해 내부 nav 스킴(`#tasty-nav:link:<enc>`)으로 재작성한다(host WebView
+# 의 실제 navigation 을 절대 일으키지 않기 위함 — docs/dev-guide 참조).
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+# 생성한 HTML 을 렌더 전에 sanitize — GFM 산출물에 필요한 최소 태그/속성만 허용하는
+# 화이트리스트를 이 crate 가 직접 구성한다(render.rs). `<script>`/`on*` 핸들러/
+# `javascript:` scheme 은 전부 제거된다.
+ammonia = "4"
 webbrowser = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
@@ -52,28 +36,28 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 
-# host·SDK·protocol 와 동일 egui 인스턴스로 unify (epaint serde OFF + bytemuck ON).
-# plugin 이 closure 에서 markdown 위젯을 그리려면 SDK 와 같은 egui 타입이 필요하다 —
-# Cargo 가 workspace 전역 0.31 로 통일하므로 mesh 와이어(POD Vertex)가 정합한다.
+# 확인 팝업(large-file/file-open) 전용 — 본문은 더 이상 egui 로 그리지 않지만, 이
+# 두 팝업은 host·SDK·protocol 과 동일 egui 인스턴스로 unify 해야 한다(epaint serde
+# OFF + bytemuck ON). Cargo 가 workspace 전역 0.31 로 통일하므로 mesh 와이어(POD
+# Vertex)가 정합한다.
 egui = { version = "0.31", default-features = false, features = [
     "bytemuck",
     "default_fonts",
 ] }
 
-# 빌드타임 SVG → 벡터 베이크(build.rs). usvg 는 host egui_extras svg feature 가 이미
-# Cargo.lock 에 vendored 한 0.37 을 그대로 쓴다 — build-dep 라 런타임 바이너리 크기 영향 0.
-# tasty-icons 는 canonical SVG 소스 — `default-features=false` 로 egui 를 끈다(build.rs
-# 는 egui 를 링크하지 않는다). host/gallery 런타임 렌더와 바이트 동일한 소스를 베이크.
+# 빌드타임 SVG → 벡터 베이크(build.rs, 확인 팝업의 FILE/FOLDER 아이콘). usvg 는 host
+# egui_extras svg feature 가 이미 Cargo.lock 에 vendored 한 0.37 을 그대로 쓴다 —
+# build-dep 라 런타임 바이너리 크기 영향 0. tasty-icons 는 canonical SVG 소스 —
+# `default-features=false` 로 egui 를 끈다(build.rs 는 egui 를 링크하지 않는다).
 [build-dependencies]
 usvg = "0.37"
 tasty-icons = { path = "../tasty-icons", default-features = false }
 
 [dev-dependencies]
 tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
-# render() 회귀 테스트 전용 — 실제 텍스처 업로드까지 구동하려면 완전한 `ThemeColors` 가
-# 필요한데, 그 타입은 Default 가 없다(98개 필드). `mocha_fallback_colors()` 는 host 가
-# 부팅 시 최후 fallback 으로 이미 쓰는 완성된 빌더라 재사용한다(런타임 바이너리엔
-# 안 들어감 — dev-dependency).
+# render_document() 회귀 테스트 전용 — 완전한 `ThemeColors` 가 필요한데, 그 타입은
+# Default 가 없다(98개 필드). `mocha_fallback_colors()` 는 host 가 부팅 시 최후
+# fallback 으로 이미 쓰는 완성된 빌더라 재사용한다(런타임 바이너리엔 안 들어감).
 tasty-themes = { path = "../tasty-themes" }
 tempfile = "3"
 

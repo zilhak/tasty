@@ -58,6 +58,9 @@ pub fn register_remote_kind(
     let plugin_id_for_restore = plugin_id_owned;
     let tx_create = host_cmd_tx.clone();
     let tx_restore = host_cmd_tx;
+    let preset_fields =
+        crate::core::surface_registry::PresetFieldSpec::from_decls(&decl.preset_fields);
+    let preset_fields_for_create = preset_fields.clone();
 
     registry.register(SurfaceKindDef {
         kind: kind_static,
@@ -71,9 +74,19 @@ pub fn register_remote_kind(
                 .unwrap_or_else(|| kind_static.to_string());
             let surface =
                 RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name);
-            // host 가 carry 한 cwd 를 surface 의 source_cwd() 시발점으로 적재.
-            // 이후 plugin 이 root 변경 시 `surface.set_cwd` 로 갱신.
-            surface.set_cwd(cwd.map(std::path::PathBuf::from));
+            // host 가 carry 한 cwd 보다, kind 가 `derive_cwd` 로 선언한 file_path 필드
+            // (예: markdown 의 `file`)가 params 에 있으면 그 파일의 부모 디렉토리를
+            // 우선한다 — `EguiMeshSurface::source_cwd()`(옛 markdown 등)가 자체 file
+            // 필드에서 직접 파생하던 것과 동일한 "새 터미널 split 시 파일이 있는
+            // 폴더로 cwd 상속" 동작을 remote/webview kind 에도 유지하기 위함
+            // (plugin 에 forward 하는 `HostCmd::RemoteSurfaceCreated.cwd` 는 원래
+            // 값 그대로 — 이 파생은 host 측 `source_cwd()` 북키핑 전용).
+            let surface_cwd = crate::core::surface_registry::PresetFieldSpec::derive_cwd(
+                &preset_fields_for_create,
+                params,
+            )
+            .or_else(|| cwd.map(std::path::PathBuf::from));
+            surface.set_cwd(surface_cwd);
             let handles = surface.handles();
             if let Err(e) = tx_create.send(HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,
@@ -115,9 +128,7 @@ pub fn register_remote_kind(
             let rs = any.downcast_ref::<RemoteSurface>()?;
             rs.snapshot_cache.lock().ok()?.clone()
         }),
-        preset_fields: crate::core::surface_registry::PresetFieldSpec::from_decls(
-            &decl.preset_fields,
-        ),
+        preset_fields,
         param_aliases: decl.param_aliases.clone(),
         default_params: decl.default_params.clone(),
         consumes_egui_input: decl.consumes_egui_input,

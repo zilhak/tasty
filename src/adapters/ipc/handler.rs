@@ -612,6 +612,10 @@ fn route_engine_handler(
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
+        // webview-kind surface(예: markdown) 는 egui-mesh 와 달리 `surface.set_context` 를
+        // 받지 않아 Theme 이 자동으로 밀리지 않는다 — 이 read-only 조회가 그 대체 경로다.
+        #[cfg(feature = "gui")]
+        "theme.query" => webview::handle_theme_query(state, engine, id),
         // tree
         "tree" => handle_tree(state, engine, id),
         // message

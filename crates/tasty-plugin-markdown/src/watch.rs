@@ -1,20 +1,24 @@
-//! idle 상태에서도 markdown 파일 변경을 감지하는 감시 worker (단계 06).
+//! idle 상태에서도 markdown 파일 변경을 감지하는 감시 worker (단계 06, Stage B 갱신).
 //!
 //! `on_start` 이 받은 `HostHandle` 을 이 모듈의 별도 스레드로 넘겨
 //! `RELOAD_CHECK_INTERVAL_SECS` 주기로 등록된 surface 들의 파일 mtime 을 stat 한다.
-//! 기존 `MdDoc::poll_reload` 는 `paint`(=입력 유발 forward) 안에서만 호출돼 idle
-//! surface 는 갱신되지 않았다 — 이 worker 는 paint 에 종속되지 않는 독립 루프라 입력
-//! 없이도 변경을 감지한다.
+//! webview-kind surface 는 (egui-mesh 와 달리) `paint`/`set_context` 를 전혀 받지 않으므로
+//! — 그 경로에 있던 `MdDoc::poll_reload` 도 이제 호출되지 않는다 — idle 감시가 사실상
+//! 유일한 자동 갱신 경로다.
 //!
-//! **read 는 하지 않는다** — 변경 감지 시 host 에 `SurfaceInvalidated` 만 emit 하고,
-//! 실제 내용 재-read 는 host 가 재-forward 한 다음 `set_context` 의 기존
-//! `MdDoc::poll_reload` 가 수행한다(plugin state 를 두 곳에서 공유하지 않기 위함).
+//! **read 는 이 스레드에서 하지 않는다** — 변경 감지 시 이 plugin이 스스로 소유한
+//! `markdown.reload` IPC 메서드를 host 왕복으로 호출한다(`host.call`). host 는 `markdown`
+//! namespace 를 이 plugin 이 소유한다는 것만 알고 그대로 되돌려 보낸다 — CLI/사용자가
+//! 같은 메서드를 호출하는 것과 동일한 요청이 plugin runtime 의 단일 dispatch 루프에
+//! 직렬로 도착하므로, 실제 read(`MdDoc::force_reload`)와 문서 재생성(`reload_webview`)은
+//! 항상 이 하나의 경로(`MarkdownPlugin::markdown_reload`)만 탄다 — 빠른 연속 편집이 와도
+//! "stale read 가 최신 것을 덮어쓰는" 레이스가 애초에 생기지 않는다(쓰기 경로가 하나뿐).
 
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime};
 
-use tasty_plugin_protocol::PluginEvent;
+use serde_json::json;
 use tasty_plugin_sdk::HostHandle;
 
 use crate::RELOAD_CHECK_INTERVAL_SECS;
@@ -47,9 +51,12 @@ pub(crate) fn run(host: HostHandle, rx: mpsc::Receiver<WatchCmd>) {
             return;
         }
         for surface_id in poll_changed(&mut watched) {
-            if let Err(e) = host.notify(&PluginEvent::SurfaceInvalidated { surface_id }) {
+            // host 를 왕복해 이 plugin 자신의 `markdown.reload` 를 호출한다 — 모듈
+            // 문서 참조(실제 read + 문서 재생성은 전부 `MarkdownPlugin::markdown_reload`
+            // 하나로 수렴시켜 레이스를 없앤다).
+            if let Err(e) = host.call("markdown.reload", json!({ "surface": surface_id })) {
                 tracing::warn!(
-                    "markdown watch: SurfaceInvalidated notify failed for surface {surface_id}: {e}"
+                    "markdown watch: markdown.reload call failed for surface {surface_id}: {e}"
                 );
             }
         }

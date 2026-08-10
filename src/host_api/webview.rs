@@ -77,6 +77,7 @@ impl Default for HtmlWebViewSettings {
 pub fn webview_settings_plugin_id(kind: &str) -> Option<&'static str> {
     match kind {
         "html" => Some("com.tasty.html"),
+        "markdown" => Some("com.tasty.markdown"),
         _ => None,
     }
 }

@@ -20,8 +20,10 @@ use super::{
 /// 부팅 시 등록: terminal / empty / **explorer**(T11 host builtin).
 ///
 /// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
-/// - `"image"` / `"markdown"`: 각 plugin 이 hello 시 `rendering = "egui-mesh"`
-///   매니페스트로 egui-mesh 화이트리스트 매칭 후 등록 (`surface_registry/egui_mesh.rs`).
+/// - `"image"`: `rendering = "egui-mesh"` 매니페스트로 egui-mesh 화이트리스트 매칭 후
+///   등록 (`surface_registry/egui_mesh.rs`).
+/// - `"markdown"`: `rendering = "webview"` 매니페스트로 webview overlay 플래그 +
+///   remote kind 로 등록 (`surface_registry/webview_kind.rs`, `plugin_bridge/remote_kind.rs`).
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
