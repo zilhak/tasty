@@ -61,7 +61,8 @@ fn draw_add_input(
         ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
     }
 
-    // 20→16 스냅 (디자인 Request 3 판정 — 폼/행 리듬).
+    // 디자인 폼/행 리듬 간격 20px 은 off-grid — 4px 그리드의 가장 가까운 값인
+    // spacing_lg(16)로 snap.
     vspace(ui, th.spacing_lg);
     ui.separator();
     vspace(ui, th.spacing_md);

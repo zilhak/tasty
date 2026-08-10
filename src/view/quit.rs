@@ -99,7 +99,8 @@ impl View for QuitView {
                     let available_width = ui.available_width() - 32.0;
                     let button_width = available_width / 2.0 - 4.0;
                     ui.horizontal(|ui| {
-                        // 20→16 스냅 (디자인 Request 3 판정 — 버튼 행 좌우 여백, 아래 산술 40→32 연동).
+                        // 디자인 버튼 행 좌우 여백 20px 은 off-grid — 4px 그리드의 가장 가까운
+                        // 값인 spacing_lg(16)로 snap (위 40→32 산술은 이 값의 2배).
                         hspace(ui, th.spacing_lg);
                         if ui
                             .add_sized(
@@ -125,7 +126,8 @@ impl View for QuitView {
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    // 20→24 스냅 (디자인 Request 3 판정 — 모달 상단 region gap).
+                    // 디자인 모달 상단 region gap 20px 은 off-grid — 4px 그리드의 가장 가까운
+                    // 값인 spacing_xl(24)로 snap.
                     vspace(ui, th.spacing_xl);
                     ui.heading(t("quit_modal.title"));
                     vspace(ui, th.spacing_md);

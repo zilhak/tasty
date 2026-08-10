@@ -130,7 +130,8 @@ pub(super) fn draw_attention_tab(
 
 /// 확인 필요 plugin 0 건 — success 톤 빈 상태.
 fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
-    // 48 = spacing_xl × 2 (디자인 Request 3 판정 — 신규 스텝 없이 연산으로 표현).
+    // 48 은 그리드 스텝 밖의 값 — 새 스텝을 추가하는 대신 기존 spacing_xl(24)을
+    // 2배 연산으로 표현.
     vspace(ui, th.spacing_xl * 2.0);
     ui.vertical_centered(|ui| {
         ui.label(
@@ -333,7 +334,7 @@ fn draw_action_bar(
             3.5,
             color,
         );
-        // 11→12 스냅 (디자인 Request 3 판정).
+        // 디자인 값 11px 은 off-grid — 4px 그리드의 가장 가까운 값인 spacing_md(12)로 snap.
         hspace(ui, th.spacing_md);
         ui.label(egui::RichText::new(t(status_key)).size(12.0).color(color));
 

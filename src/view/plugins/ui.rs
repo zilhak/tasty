@@ -227,7 +227,8 @@ pub fn draw_plugins_panel(
         .exact_height(48.0)
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                // 10→12 스냅 (디자인 Request 3 판정 — 헤더 좌 패딩).
+                // 디자인 헤더 좌 패딩 10px 은 off-grid — 4px 그리드의 가장 가까운 값인
+                // spacing_md(12)로 snap.
                 hspace(ui, th.spacing_md);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
