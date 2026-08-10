@@ -47,7 +47,18 @@ fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
     out
 }
 
-/// codex 명령을 PTY로 보낼 문자열을 만든다. prompt가 있으면 shell quote.
+/// codex 명령을 PTY로 보낼 문자열을 만든다. prompt가 있으면 임시 파일에 써서
+/// `"$(cat '<path>')"` 로 주입한다.
+///
+/// prompt 를 직접 커맨드 문자열에 inline 하지 않는 이유: 이 문자열은 `surface.send`
+/// 로 child PTY 에 **문자 그대로 타이핑**되므로, child 셸이 zsh 면 인터랙티브
+/// history expansion 대상이 된다 — `!` 로 시작하는 텍스트(예: 마크다운 콜아웃
+/// `[!NOTE]`)가 있으면 `zsh: event not found: NOTE]` 로 그 줄 자체가 깨지고, 남은
+/// prompt 줄들이 codex 인자가 아니라 개별 셸 명령으로 실행되는 연쇄 실패로
+/// 이어진다(실제 재현됨). zsh 의 history expansion 은 **큰따옴표 안에서도 적용**되므로
+/// escape 로는 막을 수 없다 — 텍스트 자체가 타이핑되는 줄에 아예 나타나지 않게
+/// 해야 한다. claude plugin 의 `claude_launch_command_with_prompt` 와 동일 패턴.
+/// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
 ///
 /// `TASTY_SURFACE_ID={surface_id}` inline env prefix를 항상 박는다. 이게 없으면
 /// codex 프로세스 env에 `TASTY_SURFACE_ID`가 비어, `~/.codex/config.toml`의 hook
@@ -74,8 +85,18 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) 
     };
     match prompt {
         Some(p) if !p.is_empty() => {
-            let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("{prefix}codex --dangerously-bypass-hook-trust{policy_suffix} \"{escaped}\"\r")
+            // claude 쪽(`tasty-prompt-{surface_id}.txt`)과 파일명이 겹치지 않도록
+            // codex 전용 prefix 를 쓴다 — 두 plugin 이 같은 surface_id 로 동시에
+            // 다른 자식(claude/codex)을 spawn 할 수 있다.
+            let prompt_path =
+                std::env::temp_dir().join(format!("tasty-codex-prompt-{surface_id}.txt"));
+            if let Err(e) = std::fs::write(&prompt_path, p) {
+                tracing::warn!("Failed to write codex prompt file: {e}");
+            }
+            format!(
+                "{prefix}codex --dangerously-bypass-hook-trust{policy_suffix} \"$(cat '{}')\"\r",
+                prompt_path.display()
+            )
         }
         _ => format!("{prefix}codex --dangerously-bypass-hook-trust{policy_suffix}\r"),
     }
@@ -945,29 +966,33 @@ mod tests {
     }
 
     #[test]
-    fn make_codex_command_with_plain_prompt() {
-        assert_eq!(
-            make_codex_command(42, Some("hello"), ""),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust \"hello\"\r"
+    fn make_codex_command_with_plain_prompt_uses_tempfile_cat() {
+        let cmd = make_codex_command(9101, Some("hello"), "");
+        assert!(
+            cmd.starts_with(
+                "TASTY_SURFACE_ID=9101 codex --dangerously-bypass-hook-trust \"$(cat '"
+            ),
+            "got {cmd}"
         );
+        assert!(cmd.ends_with("')\"\r"), "got {cmd}");
+        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9101.txt"));
     }
 
     #[test]
-    fn make_codex_command_with_prompt_escapes_quotes() {
-        let cmd = make_codex_command(7, Some(r#"fix "bug" please"#), "");
-        assert_eq!(
-            cmd,
-            "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"fix \\\"bug\\\" please\"\r"
-        );
-    }
-
-    #[test]
-    fn make_codex_command_with_prompt_escapes_backslash() {
-        let cmd = make_codex_command(7, Some(r"path\to\file"), "");
-        assert_eq!(
-            cmd,
-            "TASTY_SURFACE_ID=7 codex --dangerously-bypass-hook-trust \"path\\\\to\\\\file\"\r"
-        );
+    fn make_codex_command_prompt_file_preserves_content_verbatim() {
+        // zsh history expansion(`!`)이나 shell quoting 대상 문자가 섞여도 파일
+        // 쓰기는 셸 파싱을 거치지 않으므로 그대로 보존돼야 한다.
+        let prompt = "fix [!NOTE] \"bug\" in path\\to\\file";
+        let surface_id = 9102;
+        // 반환된 커맨드 문자열 자체는 이 테스트의 관심사가 아니다 — 아래에서 부작용으로
+        // 쓰인 tempfile 내용만 검증한다.
+        let _ = make_codex_command(surface_id, Some(prompt), "");
+        let prompt_path = std::env::temp_dir().join(format!("tasty-codex-prompt-{surface_id}.txt"));
+        let written = std::fs::read_to_string(&prompt_path).expect("prompt file should exist");
+        assert_eq!(written, prompt);
+        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_file(&prompt_path);
     }
 
     #[test]
@@ -980,10 +1005,15 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_policy_args_and_prompt() {
-        assert_eq!(
-            make_codex_command(42, Some("hello"), "-a never"),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust -a never \"hello\"\r"
+        let cmd = make_codex_command(9103, Some("hello"), "-a never");
+        assert!(
+            cmd.starts_with(
+                "TASTY_SURFACE_ID=9103 codex --dangerously-bypass-hook-trust -a never \"$(cat '"
+            ),
+            "got {cmd}"
         );
+        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9103.txt"));
     }
 
     #[test]
