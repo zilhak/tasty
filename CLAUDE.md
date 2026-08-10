@@ -48,7 +48,7 @@ Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs
 
 - 새 기능이 구현되면 [`docs/features/`](docs/features/index.md) 의 해당 카테고리 문서에 추가 (인덱스는 `docs/features/index.md`).
 - 기존 기능이 변경되면 해당 문서 업데이트.
-- [`docs/index.md`](docs/index.md) 의 목차도 갱신.
+- 해당 카테고리의 인덱스(예: [`docs/features/index.md`](docs/features/index.md), [`docs/dev-guide/index.md`](docs/dev-guide/index.md))를 갱신. [`docs/index.md`](docs/index.md) 는 카테고리 진입점 표라, 카테고리 자체가 신설/폐지될 때만 손댄다.
 - 구현 히스토리는 남기지 않는다. **현재 상태만** 기술한다.
 - 결정의 *근거 / 대안 / 재검토 조건* 은 `docs/adr/` 에 ADR 로 박는다. design/ 본문은 결정의 *현재 운영 상태* 만 기술. ADR 작성/수정 시 [`docs/adr/template.md`](docs/adr/template.md) 의 작성규칙을 먼저 읽는다.
 
@@ -82,7 +82,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 ## 빌드
 
-Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
+Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 43 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
 
 - **일상 개발**: `cargo build` 또는 `cargo build --release`.
 - **배포 산출물 빌드 (DMG / MSIX / AppImage 등)**: `cargo build --profile dist`. 일상 빌드에는 사용하지 않는다 (3.5 배 느림).
@@ -182,7 +182,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 
 ## 개발 가이드
 
-전체 목록은 [`docs/index.md`](docs/index.md) 의 "개발 AI 에이전트용" 섹션. 자주 참조하는 항목:
+전체 목록은 [`docs/dev-guide/index.md`](docs/dev-guide/index.md). 자주 참조하는 항목:
 
 - [`docs/dev-guide/self-verification.md`](docs/dev-guide/self-verification.md) — **커밋 전에 직접 검증.** 사용자에게 검증을 떠넘기지 않는다.
 - [`docs/dev-guide/build.md`](docs/dev-guide/build.md) — 워크스페이스 구조, 빌드 프로필
@@ -195,7 +195,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 
 ## 자체 검증
 
-UI / 렌더링 / 환경별 검증 시에는 [`docs/ai-verification/`](docs/ai-verification/) 의 항목별 문서를 반드시 확인. 전체 목록은 `docs/index.md` 의 "AI 자체 검증 지침" 섹션.
+UI / 렌더링 / 환경별 검증 시에는 [`docs/ai-verification/`](docs/ai-verification/) 의 항목별 문서를 반드시 확인. 전체 목록은 [`docs/ai-verification/index.md`](docs/ai-verification/index.md).
 
 UI 변경 시 [`docs/ai-verification/visual-verification.md`](docs/ai-verification/visual-verification.md) 의 체크리스트 + 스크린샷 판단 휴리스틱을 따른다.
 
