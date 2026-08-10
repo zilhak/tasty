@@ -4,7 +4,7 @@
 //! Creates a child HWND inside the parent window, then hosts a WebView2
 //! controller inside it. Requires WebView2 runtime (Edge Chromium).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -31,6 +31,11 @@ pub struct PlatformWebView {
     /// host sync_webviews 가 `nav_state()` 로 read 해 chrome/가시성에 쓴다. 콜백이 전부
     /// controller pump thread(=winit main thread) 발화라 `Rc<Cell>` 로 충분(allow_remote 동일).
     nav_state: Rc<Cell<NavState>>,
+    /// NavigationStarting 이 캡처한, 아직 host 에 통지되지 않은 navigation 시도 URL 큐
+    /// (도착 순서 보존). host `sync_webviews` 가 매 프레임 `take_pending_navigations` 로
+    /// 비우고 plugin 에 forward — "원격 http(s) 차단"(WebResourceRequested, 이 큐와 무관하게
+    /// 독립 동작)과는 별개로 차단 여부와 무관하게 모든 navigation 시도마다 쌓인다.
+    pending_navigations: Rc<RefCell<Vec<String>>>,
 }
 
 impl PlatformWebView {
@@ -186,11 +191,24 @@ impl PlatformWebView {
             // navigation 생명주기 콜백. start→Loading, completed→Done/Failed(IsSuccess out-param).
             // 토큰은 WebResourceRequested 와 동일하게 *mut i64(EventRegistrationToken 아님).
             let nav_state = Rc::new(Cell::new(NavState::Idle));
+            let pending_navigations: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
             let nav_start = nav_state.clone();
+            let pending_nav = pending_navigations.clone();
             let mut tok_start: i64 = 0;
             let h_start = NavigationStartingEventHandler::create(Box::new(
-                move |_sender, _args| -> windows::core::Result<()> {
+                move |_sender, args| -> windows::core::Result<()> {
                     nav_start.set(NavState::Loading);
+                    // navigation 시도 URL 캡처 — 아래 원격 차단(WebResourceRequested)과
+                    // 독립적으로, 차단 여부와 무관하게 항상 기록한다.
+                    if let Some(args) = args {
+                        let mut uri = windows::core::PWSTR::null();
+                        args.Uri(&mut uri)?;
+                        let uri_str = uri.to_string().unwrap_or_default();
+                        // WebView2 가 할당한 URI 문자열은 호출자가 CoTaskMemFree 로 해제해야
+                        // 한다(WebResourceRequested 핸들러와 동일 컨벤션).
+                        CoTaskMemFree(Some(uri.0 as *const c_void));
+                        pending_nav.borrow_mut().push(uri_str);
+                    }
                     Ok(())
                 },
             ));
@@ -231,6 +249,7 @@ impl PlatformWebView {
                 _environment: env,
                 allow_remote,
                 nav_state,
+                pending_navigations,
             })
         }
     }
@@ -281,6 +300,12 @@ impl PlatformWebView {
     /// 현재 navigation 생명주기 상태(NavigationStarting/Completed 핸들러가 갱신).
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
+    }
+
+    /// NavigationStarting 이 캡처한 navigation 시도 URL 을 도착 순서대로 비워서 반환한다.
+    /// host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
+    pub fn take_pending_navigations(&self) -> Vec<String> {
+        std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
     pub fn load_url(&self, url: &str) {

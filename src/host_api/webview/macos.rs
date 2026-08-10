@@ -4,15 +4,16 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use block2::RcBlock;
+use block2::{DynBlock, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView};
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{
-    WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationDelegate,
-    WKUserContentController, WKWebView, WKWebViewConfiguration,
+    WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationAction,
+    WKNavigationActionPolicy, WKNavigationDelegate, WKUserContentController, WKWebView,
+    WKWebViewConfiguration,
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -21,6 +22,12 @@ use super::{NavState, WebViewBounds};
 /// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
 struct NavDelegateIvars {
     nav_state: Rc<Cell<NavState>>,
+    /// decidePolicyForNavigationAction 이 캡처한, 아직 host 에 통지되지 않은 navigation
+    /// 시도 URL 큐(도착 순서 보존). host `sync_webviews` 가 매 프레임
+    /// `take_pending_navigations` 로 비우고 plugin 에 forward — "원격 http(s) 차단"
+    /// (WKContentRuleList, 이 delegate 와 무관하게 독립 동작)과는 별개로 차단 여부와
+    /// 무관하게 모든 navigation 시도마다 쌓인다.
+    pending_navigations: Rc<RefCell<Vec<String>>>,
 }
 
 define_class!(
@@ -76,13 +83,50 @@ define_class!(
             );
             self.ivars().nav_state.set(NavState::Failed);
         }
+
+        /// navigation 시도(사용자 클릭·페이지 이동) URL 캡처용. 차단 여부 판정에는 관여하지
+        /// 않는다 — 원격(http/https) 차단은 `WKContentRuleList`(이 메서드와 완전히 독립,
+        /// `apply_block_state` 참조)가 서브리소스 레벨에서 이미 처리하므로, 여기서는 항상
+        /// `.Allow` 를 돌려준다.
+        #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
+        fn decide_policy(
+            &self,
+            _web_view: &WKWebView,
+            navigation_action: &WKNavigationAction,
+            decision_handler: &DynBlock<dyn Fn(WKNavigationActionPolicy)>,
+        ) {
+            // SAFETY: main thread WebKit delegate 호출(WKNavigationDelegate 는
+            // MainThreadOnly). request()/URL()/absoluteString() 은 이 호출 동안 살아있는
+            // Retained 값을 반환하는 main thread AppKit/Foundation API.
+            let url = unsafe {
+                navigation_action
+                    .request()
+                    .URL()
+                    .and_then(|u| u.absoluteString())
+            };
+            if let Some(url) = url {
+                self.ivars()
+                    .pending_navigations
+                    .borrow_mut()
+                    .push(url.to_string());
+            }
+            decision_handler.call((WKNavigationActionPolicy::Allow,));
+        }
     }
 );
 
 impl NavDelegate {
-    /// main thread 에서 ivar(nav_state 공유 셀)를 담아 delegate 인스턴스를 만든다.
-    fn new(mtm: MainThreadMarker, nav_state: Rc<Cell<NavState>>) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(NavDelegateIvars { nav_state });
+    /// main thread 에서 ivar(nav_state 공유 셀 + pending_navigations 큐)를 담아 delegate
+    /// 인스턴스를 만든다.
+    fn new(
+        mtm: MainThreadMarker,
+        nav_state: Rc<Cell<NavState>>,
+        pending_navigations: Rc<RefCell<Vec<String>>>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(NavDelegateIvars {
+            nav_state,
+            pending_navigations,
+        });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
     }
@@ -101,6 +145,9 @@ pub struct PlatformWebView {
     /// navigation 생명주기 상태(기본 Idle). NavDelegate 콜백이 갱신, host sync_webviews 가
     /// `nav_state()` 로 read. 콜백이 전부 main thread 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
     nav_state: Rc<Cell<NavState>>,
+    /// decidePolicyForNavigationAction 이 캡처한 navigation 시도 URL 큐. NavDelegate 와
+    /// 공유(Rc) — `take_pending_navigations` 로 host 가 매 프레임 비운다.
+    pending_navigations: Rc<RefCell<Vec<String>>>,
     /// WKWebView 는 navigationDelegate 를 weak 참조하므로 delegate 를 여기 보관해 생명주기 유지.
     _nav_delegate: Retained<NavDelegate>,
 }
@@ -146,7 +193,9 @@ impl PlatformWebView {
             // navigation 생명주기 delegate. start→Loading / finish→Done / fail*→Failed.
             // WKWebView 가 weak 참조하므로 Retained 를 struct 필드(_nav_delegate)로 보관.
             let nav_state = Rc::new(Cell::new(NavState::Idle));
-            let nav_delegate = NavDelegate::new(mtm, nav_state.clone());
+            let pending_navigations: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+            let nav_delegate =
+                NavDelegate::new(mtm, nav_state.clone(), pending_navigations.clone());
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
 
@@ -196,6 +245,7 @@ impl PlatformWebView {
                 content_rule_list,
                 block_remote,
                 nav_state,
+                pending_navigations,
                 _nav_delegate: nav_delegate,
             })
         }
@@ -227,6 +277,12 @@ impl PlatformWebView {
     /// 현재 navigation 생명주기 상태(NavDelegate 콜백이 갱신).
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
+    }
+
+    /// decidePolicyForNavigationAction 이 캡처한 navigation 시도 URL 을 도착 순서대로
+    /// 비워서 반환한다. host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
+    pub fn take_pending_navigations(&self) -> Vec<String> {
+        std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
     pub fn load_url(&self, url: &str) {

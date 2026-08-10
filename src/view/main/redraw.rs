@@ -66,7 +66,7 @@ impl MainView {
         }
 
         // Sync webview lifecycle: create/destroy/reposition/visibility
-        self.sync_webviews();
+        self.sync_webviews(plugin_manager);
 
         if self.base.dirty {
             self.base.winit.request_redraw();
@@ -411,7 +411,7 @@ impl MainView {
     /// Synchronize native WebView instances with the current state.
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
-    fn sync_webviews(&mut self) {
+    fn sync_webviews(&mut self, plugin_manager: Option<&PluginManager>) {
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let (active_html, all_html_ids) = self.collect_html_surfaces(scale_factor);
         self.create_missing_webviews(&all_html_ids, &active_html, scale_factor);
@@ -477,6 +477,24 @@ impl MainView {
         }
         if nav_changed {
             self.mark_dirty();
+        }
+
+        // navigation 시도 통지(host→plugin `webview.navigation_attempt`) — native backend
+        // decide-policy/NavigationStarting 콜백이 캡처해 쌓아둔 URL 큐를 매 프레임 drain 해
+        // 소유 plugin 에 forward. "원격 http(s) 차단" 판정(위 native 레벨에서 독립 처리)과
+        // 무관하게 항상 통지한다. `plugin_manager`가 없어도(headless 등) 큐는 그대로
+        // drain 해 무한정 쌓이지 않게 한다.
+        for (sid, wv) in &self.webviews {
+            for url in wv.take_pending_navigations() {
+                if let Some(mgr) = plugin_manager {
+                    crate::adapters::ipc::handler::webview::notify_navigation_attempt(
+                        mgr,
+                        &self.core_state,
+                        *sid,
+                        &url,
+                    );
+                }
+            }
         }
     }
 

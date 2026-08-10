@@ -29,6 +29,7 @@ pub use protocol::{
     PopupClosedParams, PopupOpenParams, PopupOpenResult, PopupSetContextParams, RawInputEventWire,
     RawInputWire, SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams,
     SharedBufferId, SurfaceResult, SurfaceSetContextParams, ThemeWire,
+    WebviewNavigationAttemptParams,
 };
 pub use protocol::{
     METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN, METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE,
@@ -36,5 +37,5 @@ pub use protocol::{
     METHOD_HOST_SHARED_BUFFER_CREATE, METHOD_HOST_SHARED_BUFFER_DIRTY, METHOD_IPC_RESULT,
     METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_OPEN, METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN,
     METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_RESTORE,
-    METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT,
+    METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, METHOD_WEBVIEW_NAVIGATION_ATTEMPT,
 };

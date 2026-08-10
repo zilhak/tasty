@@ -4,7 +4,7 @@
 //! Creates an X11 child window inside the parent, then hosts a GTK window
 //! with a WebKitGTK WebView inside it.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::glib::Cast;
@@ -32,6 +32,11 @@ pub struct PlatformWebView {
     /// host sync_webviews 가 `nav_state()` 로 read. GTK 시그널은 GTK main loop
     /// (=winit main thread) 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
     nav_state: Rc<Cell<NavState>>,
+    /// decide-policy 가 캡처한, 아직 host 에 통지되지 않은 navigation 시도 URL 큐
+    /// (도착 순서 보존). host `sync_webviews` 가 매 프레임 `take_pending_navigations`
+    /// 로 비우고 plugin 에 `webview.navigation_attempt` 로 forward — "원격 http(s)
+    /// 차단" 판정과 독립적으로 차단 여부와 무관하게 쌓인다.
+    pending_navigations: Rc<RefCell<Vec<String>>>,
 }
 
 impl PlatformWebView {
@@ -130,12 +135,11 @@ impl PlatformWebView {
         // 발화하고, 페이지 내 서브리소스(img/css/js)는 잡지 못할 수 있다 — 완전한
         // 서브리소스 차단은 UserContentFilter 바인딩(상위 webkit2gtk)이 필요(후속).
         let block_remote = Rc::new(Cell::new(true));
+        let pending_navigations = Rc::new(RefCell::new(Vec::new()));
         {
             let block = block_remote.clone();
+            let pending_nav = pending_navigations.clone();
             webview.connect_decide_policy(move |_wv, decision, decision_type| {
-                if !block.get() {
-                    return false;
-                }
                 let uri = match decision_type {
                     PolicyDecisionType::Response => decision
                         .downcast_ref::<ResponsePolicyDecision>()
@@ -149,7 +153,20 @@ impl PlatformWebView {
                     }
                     _ => None,
                 };
-                if let Some(uri) = uri {
+                // navigation 시도(사용자 클릭·페이지 이동) 캡처 — Response(서브리소스 정책)
+                // 는 제외, NavigationAction/NewWindowAction 만. 아래 차단 판정과 무관하게
+                // 항상 기록한다("원격 http(s) 차단"과 통지는 독립).
+                if matches!(
+                    decision_type,
+                    PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction
+                ) && let Some(uri) = &uri
+                {
+                    pending_nav.borrow_mut().push(uri.as_str().to_string());
+                }
+                if !block.get() {
+                    return false;
+                }
+                if let Some(uri) = &uri {
                     let s = uri.as_str();
                     if s.starts_with("http://") || s.starts_with("https://") {
                         decision.ignore();
@@ -196,6 +213,7 @@ impl PlatformWebView {
             x11_display: display as _,
             block_remote,
             nav_state,
+            pending_navigations,
         })
     }
 
@@ -243,6 +261,12 @@ impl PlatformWebView {
     /// 현재 navigation 생명주기 상태(load-changed/load-failed 시그널이 갱신).
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
+    }
+
+    /// decide-policy 가 캡처한 navigation 시도 URL 을 도착 순서대로 비워서 반환한다.
+    /// host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
+    pub fn take_pending_navigations(&self) -> Vec<String> {
+        std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
     pub fn load_url(&self, url: &str) {

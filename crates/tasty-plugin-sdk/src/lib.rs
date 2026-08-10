@@ -35,7 +35,7 @@ pub use plugin::{
     BannerClosedCtx, BannerOpenCtx, BannerSetContextCtx, CommandInvokeCtx, EventDispatchCtx,
     ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx,
     PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx, SurfaceRestoreCtx,
-    SurfaceResult, SurfaceSetContextCtx, SurfaceSnapshotCtx,
+    SurfaceResult, SurfaceSetContextCtx, SurfaceSnapshotCtx, WebviewNavigationAttemptCtx,
 };
 pub use runtime::run;
 pub use shared_buffer::SharedBuffer;

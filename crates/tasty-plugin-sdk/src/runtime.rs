@@ -27,9 +27,10 @@ use tasty_plugin_protocol::{
     METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE,
     METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_OPEN,
     METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, PluginEvent,
-    PluginRequest, PluginResponse, PopupClosedParams, PopupOpenParams, PopupSetContextParams,
-    SurfaceSetContextParams,
+    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT,
+    METHOD_WEBVIEW_NAVIGATION_ATTEMPT, PluginEvent, PluginRequest, PluginResponse,
+    PopupClosedParams, PopupOpenParams, PopupSetContextParams, SurfaceSetContextParams,
+    WebviewNavigationAttemptParams,
 };
 
 use crate::connection::Connection;
@@ -579,6 +580,21 @@ pub(crate) fn dispatch<P: Plugin>(
                 envelope: parsed.envelope,
             });
             // 호스트는 응답을 무시한다. fire-and-forget이라 null 반환.
+            Ok(Value::Null)
+        }
+        METHOD_WEBVIEW_NAVIGATION_ATTEMPT => {
+            let parsed: WebviewNavigationAttemptParams = serde_json::from_value(params.clone())
+                .map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid webview.navigation_attempt params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.on_webview_navigation_attempt(crate::plugin::WebviewNavigationAttemptCtx {
+                surface_id: parsed.surface_id,
+                url: parsed.url,
+            });
+            // 호스트는 응답을 무시한다(fire-and-forget). null 반환.
             Ok(Value::Null)
         }
         METHOD_POPUP_OPEN => {

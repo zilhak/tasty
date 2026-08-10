@@ -43,7 +43,7 @@ mod terminal;
 mod tool;
 mod webhook;
 #[cfg(feature = "gui")]
-mod webview;
+pub(crate) mod webview;
 pub(crate) mod workspace;
 pub(crate) mod workspace_category;
 

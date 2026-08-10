@@ -34,6 +34,14 @@ pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,
 /// 변경 결과는 `SurfaceResult` 형태로 응답한다 (display_name/snapshot 갱신).
 pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
+/// host → plugin: webview(`rendering = "webview"`) surface 가 네비게이션을 시도했다
+/// (링크 클릭 등). `webview.set_url`(plugin→host)의 반대 방향 — "원격 http(s) 차단"
+/// 판정과는 독립적으로, 차단 여부와 무관하게 모든 navigation 시도(로컬 파일 링크
+/// 포함)마다 발사되는 fire-and-forget 통지다. 정책 판단(차단 여부)은 host 가 하고,
+/// 그 결과로 열지 말지는 plugin 이 이 URL 을 보고 스스로 라우팅한다(예: 로컬 파일
+/// 링크는 `file_handler.dispatch`로, 외부 URL 은 OS open 으로). params 에
+/// [`WebviewNavigationAttemptParams`]. plugin 은 응답하지 않는다(host 가 무시).
+pub const METHOD_WEBVIEW_NAVIGATION_ATTEMPT: &str = "webview.navigation_attempt";
 /// host → extension plugin: extension의 pre/post hook 호출.
 /// params에 [`ExtensionHookInvokeParams`]. plugin은 mode에 따라 transform/filter/observe
 /// 의미로 [`ExtensionHookResult`]를 반환한다 (PluginResponse.result).
@@ -241,6 +249,13 @@ pub enum ImeWire {
 pub struct CommandInvokeParams {
     pub surface_id: u32,
     pub command_id: String,
+}
+
+/// `webview.navigation_attempt` params — webview surface 가 시도한 navigation 의 URL.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WebviewNavigationAttemptParams {
+    pub surface_id: u32,
+    pub url: String,
 }
 
 /// hook 호출이 이벤트인지 IPC인지 구분.

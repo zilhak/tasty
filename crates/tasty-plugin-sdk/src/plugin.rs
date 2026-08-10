@@ -104,6 +104,16 @@ pub struct CommandInvokeCtx {
     pub command_id: String,
 }
 
+/// `webview.navigation_attempt` 콜백 컨텍스트 — webview(`rendering = "webview"`) surface
+/// 가 navigation 을 시도(링크 클릭 등)함. "원격 http(s) 차단" 판정과는 독립적으로, 호스트가
+/// 차단했는지 여부와 무관하게 모든 시도(로컬 파일 링크 포함)마다 도착한다. fire-and-forget
+/// 이므로 반환값 없음.
+#[derive(Debug, Clone)]
+pub struct WebviewNavigationAttemptCtx {
+    pub surface_id: u32,
+    pub url: String,
+}
+
 /// `popup.open` 콜백 컨텍스트.
 #[derive(Debug, Clone)]
 pub struct PopupOpenCtx {
@@ -364,6 +374,10 @@ pub trait Plugin: Send + 'static {
     /// 이벤트가 fan-out돼 도착했을 때 호출된다. fire-and-forget이라 반환값은 없다.
     /// 기본 구현은 no-op.
     fn on_event(&mut self, _ctx: EventDispatchCtx) {}
+
+    /// `webview.navigation_attempt` — 소유한 webview surface 가 navigation 을 시도함
+    /// (`webview.set_url` 의 반대 방향). fire-and-forget이라 반환값은 없다. 기본 구현은 no-op.
+    fn on_webview_navigation_attempt(&mut self, _ctx: WebviewNavigationAttemptCtx) {}
 
     /// `popup.open` — 매니페스트 `[[contributes.popup]]`로 contribute한 popup의
     /// 새 인스턴스가 열림. 콘텐츠는 egui-mesh 채널(`paint_popup`)로 그린다.

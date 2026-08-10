@@ -282,6 +282,29 @@ impl PluginManager {
         }
     }
 
+    /// webview surface 가 시도한 navigation 의 URL 을 소유 plugin 에 fire-and-forget
+    /// 통지(`webview.navigation_attempt`). `webview.set_url`(plugin→host)의 반대
+    /// 방향. "원격 http(s) 차단" 판정과 독립 — 차단 여부와 무관하게 모든 navigation
+    /// 시도(로컬 파일 링크 포함)마다 발사된다. plugin 은 응답하지 않는다(host 는 응답을
+    /// 기다리지 않고 무시).
+    pub fn send_webview_navigation_attempt(
+        &self,
+        plugin_id: &str,
+        params: &tasty_plugin_protocol::WebviewNavigationAttemptParams,
+    ) {
+        let Some(proc) = self.processes.get(plugin_id) else {
+            return;
+        };
+        let req = crate::protocol::PluginRequest {
+            method: protocol::METHOD_WEBVIEW_NAVIGATION_ATTEMPT.to_string(),
+            params: json!(params),
+            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        };
+        if let Err(e) = proc.req_tx.send(req) {
+            tracing::warn!("plugin '{plugin_id}' webview.navigation_attempt send failed: {e}");
+        }
+    }
+
     /// egui-mesh surface 의 owning plugin 에 `surface.create` 를 fire-and-forget 으로
     /// 보낸다. host 측 surface(`EguiMeshSurface` stand-in)는 tree/handles 가 없어
     /// `RemoteSurfaceEntry` 를 만들지 않으므로 plugin 의 (빈) 응답은 무시된다.

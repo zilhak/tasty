@@ -6,6 +6,7 @@
 
 use serde_json::Value;
 
+use crate::plugin::PluginManager;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -55,4 +56,44 @@ pub fn handle_set_url(
         }
     }
     JsonRpcResponse::error(id, -32000, "surface_id not found")
+}
+
+/// webview 가 네비게이션을 시도한 URL 을 소유 plugin 에 통지(`webview.navigation_attempt`,
+/// host→plugin — `handle_set_url` 의 반대 방향). "원격 http(s) 차단" 판정과 독립적으로,
+/// 차단 여부와 무관하게 시도마다 항상 호출된다(호출부가 native backend 의
+/// decide-policy/NavigationStarting 콜백에서 캡처한 URL 을 매 프레임 poll 해 넘긴다).
+///
+/// surface_id 에 대응하는 webview-enabled `RemoteSurface` 가 없으면 조용히 no-op —
+/// 네비게이션 캡처와 surface 제거 사이에 프레임 경계가 끼어드는 정상적인 레이스다.
+pub fn notify_navigation_attempt(
+    mgr: &PluginManager,
+    engine: &crate::core::CoreState,
+    surface_id: u32,
+    url: &str,
+) {
+    for ws in &engine.workspaces {
+        for &pid in &ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                for tab in &pane.tabs {
+                    let surface = tab.surface();
+                    if surface.surface_id() != Some(surface_id) {
+                        continue;
+                    }
+                    if let Some(rs) = surface
+                        .as_any()
+                        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+                    ) {
+                        mgr.send_webview_navigation_attempt(
+                            &rs.plugin_id,
+                            &tasty_plugin_protocol::WebviewNavigationAttemptParams {
+                                surface_id,
+                                url: url.to_string(),
+                            },
+                        );
+                    }
+                    return;
+                }
+            }
+        }
+    }
 }
