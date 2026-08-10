@@ -1173,7 +1173,7 @@ mod tests {
 
     #[test]
     fn yaml_frontmatter_at_document_start_is_hidden() {
-        let out = unsafe_content_html("---\nkey: value\n---\n\n# Body\n");
+        let out = unsafe_content_html("---\nkey: value\n---\n\n# Body\n", &Translator::default());
         assert!(!out.contains("<hr"));
         assert!(!out.contains("key: value"));
         assert!(!out.contains("<h2"));
@@ -1182,7 +1182,10 @@ mod tests {
 
     #[test]
     fn toml_frontmatter_at_document_start_is_hidden() {
-        let out = unsafe_content_html("+++\nkey = \"value\"\n+++\n\n# Body\n");
+        let out = unsafe_content_html(
+            "+++\nkey = \"value\"\n+++\n\n# Body\n",
+            &Translator::default(),
+        );
         assert!(!out.contains("<hr"));
         assert!(!out.contains("key = "));
         assert!(out.contains("<h1>Body</h1>"));
@@ -1190,7 +1193,7 @@ mod tests {
 
     #[test]
     fn thematic_break_mid_document_still_renders_as_hr() {
-        let out = unsafe_content_html("# Title\n\n---\n\nMore text\n");
+        let out = unsafe_content_html("# Title\n\n---\n\nMore text\n", &Translator::default());
         assert!(out.contains("<hr"));
         assert!(out.contains("<h1>Title</h1>"));
         assert!(out.contains("More text"));
@@ -1198,26 +1201,26 @@ mod tests {
 
     #[test]
     fn smart_punctuation_converts_quotes_dashes_and_ellipsis() {
-        let out = unsafe_content_html("\"hello\" and 'test'\n");
+        let out = unsafe_content_html("\"hello\" and 'test'\n", &Translator::default());
         assert!(out.contains('\u{201c}'));
         assert!(out.contains('\u{201d}'));
         assert!(out.contains('\u{2018}'));
         assert!(out.contains('\u{2019}'));
 
-        let out = unsafe_content_html("a -- b and a --- b\n");
+        let out = unsafe_content_html("a -- b and a --- b\n", &Translator::default());
         assert!(out.contains('\u{2013}'));
         assert!(out.contains('\u{2014}'));
 
-        let out = unsafe_content_html("wait...\n");
+        let out = unsafe_content_html("wait...\n", &Translator::default());
         assert!(out.contains('\u{2026}'));
     }
 
     #[test]
     fn smart_punctuation_does_not_convert_inside_code() {
-        let out = unsafe_content_html("`--` stays literal\n");
+        let out = unsafe_content_html("`--` stays literal\n", &Translator::default());
         assert!(out.contains("<code>--</code>"));
 
-        let out = unsafe_content_html("```\n--\n```\n");
+        let out = unsafe_content_html("```\n--\n```\n", &Translator::default());
         assert!(out.contains("--\n"));
         assert!(!out.contains('\u{2013}'));
         assert!(!out.contains('\u{2014}'));
@@ -1225,11 +1228,11 @@ mod tests {
 
     #[test]
     fn escaped_punctuation_stays_literal() {
-        let out = unsafe_content_html("\\\"hello\\\"\n");
+        let out = unsafe_content_html("\\\"hello\\\"\n", &Translator::default());
         assert!(out.contains("\"hello\""));
         assert!(!out.contains('\u{201c}'));
 
-        let out = unsafe_content_html("a \\-\\- b\n");
+        let out = unsafe_content_html("a \\-\\- b\n", &Translator::default());
         assert!(out.contains("a -- b"));
         assert!(!out.contains('\u{2013}'));
     }
