@@ -400,6 +400,217 @@ fn retry_with_reset_downstream() {
     assert_eq!(b_after.state, TaskState::Waiting);
 }
 
+/// cascade 로 `Skipped` 전이된 downstream 도 `set_state`의 terminal 타임스탬프 기록과
+/// 동일하게 `finished_at`을 받아야 한다 — cascade 는 `set_state`를 거치지 않는 별도
+/// 직접-put 경로이기 때문에 별도로 채워야 한다.
+#[test]
+fn cascade_skip_sets_finished_at() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+    let b_after = store.get(1, &b.id).unwrap().unwrap();
+    assert_eq!(b_after.state, TaskState::Skipped);
+    assert_eq!(
+        b_after.finished_at,
+        Some(3000),
+        "cascade 로 skip 된 downstream 도 upstream 이 종결된 시각을 finished_at 으로 받아야 한다"
+    );
+    assert!(b_after.started_at.is_none());
+}
+
+/// `task-retry --reset-downstream` 로 되돌린 뒤(finished_at 이 지워짐) upstream 이 다시
+/// 실패해 downstream 이 재-skip 되면, `finished_at` 이 새 시각으로 갱신되어야 한다 — 과거
+/// skip 시각이 그대로 남아 있으면 안 된다.
+#[test]
+fn retry_reset_downstream_then_reskip_refreshes_finished_at() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(1, &a.id, TaskState::Failed { error: "e1".into() }, 3000)
+        .unwrap();
+    let b_first_skip = store.get(1, &b.id).unwrap().unwrap();
+    assert_eq!(b_first_skip.state, TaskState::Skipped);
+    assert_eq!(b_first_skip.finished_at, Some(3000));
+
+    // reset — B 는 Waiting 으로, finished_at 도 지워진다.
+    store.retry(1, &a.id, true, 4000).unwrap();
+    let b_reset = store.get(1, &b.id).unwrap().unwrap();
+    assert_eq!(b_reset.state, TaskState::Waiting);
+    assert!(b_reset.finished_at.is_none());
+
+    // A 다시 실패 → B 재-skip, finished_at 이 새 시각(6000)으로 갱신되어야 함(3000 이 아니라).
+    store.set_state(1, &a.id, TaskState::Running, 5000).unwrap();
+    store
+        .set_state(1, &a.id, TaskState::Failed { error: "e2".into() }, 6000)
+        .unwrap();
+    let b_reskip = store.get(1, &b.id).unwrap().unwrap();
+    assert_eq!(b_reskip.state, TaskState::Skipped);
+    assert_eq!(b_reskip.finished_at, Some(6000));
+}
+
+/// `plan_sweep`(→ `task-purge --older-than-ms`)의 나이 판정은 skip 시각(`finished_at`)
+/// 기준이어야 한다 — 오래전에 생성됐지만 방금 skip 된 task 가 생성 시각 기준으로 오판돼
+/// 즉시 지워지면 안 된다.
+#[test]
+fn plan_sweep_ages_skipped_task_from_finish_time_not_creation_time() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    // B 는 생성된 지 오래(now_ms=1000)지만, A 가 한참 뒤(50_000)에야 실패해 그때 skip된다.
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "late".into(),
+            },
+            50_000,
+        )
+        .unwrap();
+    let b_after = store.get(1, &b.id).unwrap().unwrap();
+    assert_eq!(b_after.state, TaskState::Skipped);
+    assert_eq!(b_after.finished_at, Some(50_000));
+
+    // now_ms=55_000, older_than_ms=10_000:
+    // - 생성 시각(1000) 기준이면 age=54_000 >= 10_000 → 후보(버그).
+    // - skip 시각(50_000) 기준이면 age=5_000 < 10_000 → 후보 아님(수정 후 정답).
+    let filter = TaskPurgeFilter {
+        states: Some(vec!["skipped".to_string()]),
+        older_than_ms: Some(10_000),
+        now_ms: 55_000,
+    };
+    let plan = store.plan_sweep(1, &filter).unwrap();
+    assert!(
+        plan.deleted.is_empty() && plan.retained.is_empty(),
+        "방금 skip 된 task 가 생성 시각 기준으로 오판돼 즉시 purge 후보가 되면 안 된다: {plan:?}"
+    );
+}
+
+/// `succeeded`/`failed` 는 원래부터 `set_state` 를 거쳐 `finished_at` 이 채워지던 경로다 —
+/// cascade/retry 쪽을 고치면서 이 기존 동작에 회귀가 없는지 락인.
+#[test]
+fn succeeded_and_failed_still_set_finished_at_via_set_state() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    let (succeeded, _) = store
+        .set_state(1, &a.id, TaskState::Succeeded, 3000)
+        .unwrap();
+    assert_eq!(succeeded.finished_at, Some(3000));
+
+    let b = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    store.set_state(1, &b.id, TaskState::Running, 2000).unwrap();
+    let (failed, _) = store
+        .set_state(
+            1,
+            &b.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3500,
+        )
+        .unwrap();
+    assert_eq!(failed.finished_at, Some(3500));
+}
+
 #[test]
 fn fallback_triggers_when_main_fails() {
     // A -> C (dep). A.on_failure = Fallback{A'}. A 실패 시 A' 가 자동 Ready.

@@ -311,7 +311,7 @@ impl<'a> TaskStore<'a> {
         }
 
         // downstream 재평가
-        transitioned.extend(self.cascade_downstream(workspace_id, id)?);
+        transitioned.extend(self.cascade_downstream(workspace_id, id, now_ms)?);
 
         // terminal 전이 시: 자기를 fallback 으로 지정한 main task 가 있으면 그 main
         // 의 downstream 도 재평가 (main 입장에선 fallback 결과로 effective state 가 정해짐).
@@ -345,7 +345,7 @@ impl<'a> TaskStore<'a> {
                 inline_main_ids.push(main_id.to_string());
             }
             for main_id in parent_main_ids.into_iter().chain(inline_main_ids) {
-                transitioned.extend(self.cascade_downstream(workspace_id, &main_id)?);
+                transitioned.extend(self.cascade_downstream(workspace_id, &main_id, now_ms)?);
             }
         }
         let _ = became; // 이전 state 스냅샷 — 현재 미사용(향후 전이 로그 후보). 값 drop, Result 아님.
@@ -443,10 +443,15 @@ impl<'a> TaskStore<'a> {
 
     /// `task_id`의 모든 transitive downstream에서 `Waiting` 상태인 것들을 평가해
     /// 가능하면 `Ready/Skipped`로 전이. on_failure 정책도 함께 적용.
+    ///
+    /// `now_ms`는 `Skipped`(terminal)로 전이하는 downstream의 `finished_at`을 채우는 데
+    /// 쓰인다 — 이 경로는 `set_state`를 거치지 않고 상태를 직접 갈아끼우므로, `set_state`의
+    /// terminal 타임스탬프 기록을 스스로 재현해야 한다.
     fn cascade_downstream(
         &mut self,
         workspace_id: WorkspaceId,
         task_id: &TaskId,
+        now_ms: u64,
     ) -> Result<Vec<Task>> {
         let all = self.list(workspace_id)?;
         let downstream_ids = {
@@ -473,8 +478,12 @@ impl<'a> TaskStore<'a> {
                 && next != TaskState::Waiting
                 && is_valid_transition(&d_task.state, &next)
             {
+                let is_terminal = next.is_terminal();
                 let mut nt = d_task;
                 nt.state = next;
+                if is_terminal {
+                    nt.finished_at = Some(now_ms);
+                }
                 self.put(&nt)?;
                 updated.push(nt);
             }
@@ -526,16 +535,21 @@ impl<'a> TaskStore<'a> {
         task.started_at = None;
         task.finished_at = None;
         task.result = None;
-        let _ = now_ms; // 향후 retried_at 필드 후보. 현재는 미사용.
         self.put(&task)?;
 
-        // readiness 즉시 평가
+        // readiness 즉시 평가 — deps 가 이미 종결(예: 여전히 실패/skip 상태)이면 이 자리에서
+        // 곧장 Skipped 로 되돌아갈 수 있다. set_state 를 거치지 않는 직접-put 이므로, 그
+        // terminal 타임스탬프 기록을 여기서 재현한다(cascade_downstream 과 동일 이유).
         let all = self.list(workspace_id)?;
         if let Some(next) = TaskGraph::build(&all).evaluate_readiness(id)
             && next != TaskState::Waiting
         {
+            let is_terminal = next.is_terminal();
             let mut nt = task.clone();
             nt.state = next;
+            if is_terminal {
+                nt.finished_at = Some(now_ms);
+            }
             self.put(&nt)?;
             task = nt;
         }
@@ -556,8 +570,9 @@ impl<'a> TaskStore<'a> {
                     self.put(&d)?;
                 }
             }
-            // downstream 모두 갱신했으니 cascade 한번 더
-            self.cascade_downstream(workspace_id, id)?;
+            // downstream 모두 갱신했으니 cascade 한번 더 — 재-skip 되는 downstream 의
+            // finished_at 은 cascade_downstream 이 now_ms 로 다시 채운다.
+            self.cascade_downstream(workspace_id, id, now_ms)?;
         }
 
         Ok(task)
