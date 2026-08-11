@@ -4,7 +4,7 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
-    DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, TaskCommand, TaskGraph, TaskId,
+    DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
     TaskResult, TaskState, extract_paths, reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
@@ -418,6 +418,79 @@ pub fn await_task_blocking(
 // agent.task_graph
 // ============================================================
 
+/// One directed graph edge, as both `handle_task_graph` render branches need it: `from`/`to`
+/// are task ids, `kind` is `"depends_on"`/`"fallback"`/`"reduce"` (also doubles as the dot
+/// edge's `label`).
+struct GraphEdge<'a> {
+    from: &'a TaskId,
+    to: &'a TaskId,
+    kind: &'static str,
+}
+
+/// Collect every edge the dot/json branches of [`handle_task_graph`] render, so the two formats
+/// can never drift out of sync on what counts as an edge (previously each hand-wrote the same
+/// `Fallback{task}` match independently, and — the bug this fn fixes — neither one drew the
+/// `Fallback{inline}` case at all).
+///
+/// `depends_on` / `Fallback{task}` / `Reduce.inputs` mirror `referenced_task_ids` exactly (same
+/// three reference kinds that crate's own creation/deletion integrity checks already treat as
+/// authoritative) — a dangling id among those can't normally occur.
+///
+/// The inline-fallback edge is different: the main task's `on_failure` carries no target id at
+/// all (`Fallback { task: None, inline: Some(_) }` — the target doesn't exist yet at creation
+/// time, it's materialized later on failure), so the only place the relationship is recorded is
+/// on the *fallback* task's own side, as `metadata.fallback_of == main.id`. This is a reverse
+/// lookup `referenced_task_ids` deliberately excludes (see that fn's doc — inline targets aren't
+/// expected to exist at creation time), so it carries no integrity guarantee: if the main task
+/// was since deleted, `fallback_of` can dangle. That's an expected, not exceptional, state here
+/// — silently skip rendering the edge rather than erroring, the same way a still-unmaterialized
+/// (main hasn't failed yet) inline fallback simply has no edge to draw yet.
+fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
+    let mut edges = Vec::new();
+    for t in tasks {
+        for dep in &t.depends_on {
+            edges.push(GraphEdge {
+                from: dep,
+                to: &t.id,
+                kind: "depends_on",
+            });
+        }
+        if let OnFailure::Fallback {
+            task: Some(fb_id), ..
+        } = &t.on_failure
+        {
+            edges.push(GraphEdge {
+                from: &t.id,
+                to: fb_id,
+                kind: "fallback",
+            });
+        }
+        if let TaskCommand::Reduce { inputs, .. } = &t.command {
+            for input in inputs {
+                edges.push(GraphEdge {
+                    from: input,
+                    to: &t.id,
+                    kind: "reduce",
+                });
+            }
+        }
+    }
+    for fb in tasks {
+        let Some(main_id) = fb.metadata.get("fallback_of").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(main) = tasks.iter().find(|t| t.id == main_id) else {
+            continue;
+        };
+        edges.push(GraphEdge {
+            from: &main.id,
+            to: &fb.id,
+            kind: "fallback",
+        });
+    }
+    edges
+}
+
 pub fn handle_task_graph(
     core: &Core,
     _state: &mut AppState,
@@ -467,33 +540,26 @@ pub fn handle_task_graph(
                     color
                 ));
             }
-            for t in &tasks {
-                for dep in &t.depends_on {
-                    out.push_str(&format!("  \"{}\" -> \"{}\";\n", dep, t.id));
-                }
-                // Reduce.inputs 는 depends_on 과 같은 암묵적 의존성 엣지(사이클 검출
-                // 대상, `TaskGraph::dfs_cycle`)라 시각화에도 반영한다. Fallback.task 는
-                // `referenced_task_ids`(참조 무결성 검증 대상)일 뿐 `dfs_cycle` 이 보는
-                // 엣지가 아니다 — 사이클 검출 커버리지와 무관하게 관측 목적으로만 함께
-                // 그린다(A↔F 상호 fallback 같은 순환도 생성 시점에 막히지 않는다).
-                // depends_on 과 구분되게 점선/색으로 표시한다.
-                if let OnFailure::Fallback {
-                    task: Some(fb_id), ..
-                } = &t.on_failure
-                {
-                    out.push_str(&format!(
-                        "  \"{}\" -> \"{}\" [style=dashed, color=orangered, label=\"fallback\"];\n",
-                        t.id, fb_id
-                    ));
-                }
-                if let TaskCommand::Reduce { inputs, .. } = &t.command {
-                    for input in inputs {
-                        out.push_str(&format!(
-                            "  \"{}\" -> \"{}\" [style=dotted, color=blue, label=\"reduce\"];\n",
-                            input, t.id
-                        ));
+            // Reduce.inputs 는 depends_on 과 같은 암묵적 의존성 엣지(사이클 검출 대상,
+            // `TaskGraph::dfs_cycle`)라 시각화에도 반영한다. fallback 엣지(사전 존재
+            // `Fallback{task}` + 동적 생성 `Fallback{inline}`)는 `referenced_task_ids`(참조
+            // 무결성 검증 대상, inline 은 예외)일 뿐 `dfs_cycle` 이 보는 엣지가 아니다 —
+            // 사이클 검출 커버리지와 무관하게 관측 목적으로만 함께 그린다(A↔F 상호 fallback
+            // 같은 순환도 생성 시점에 막히지 않는다). depends_on 과 구분되게 점선/색으로
+            // 표시한다. 수집 규칙은 [`collect_graph_edges`] 하나로 dot/json 양쪽이 공유한다.
+            for edge in collect_graph_edges(&tasks) {
+                let (style, color) = match edge.kind {
+                    "fallback" => ("dashed", "orangered"),
+                    "reduce" => ("dotted", "blue"),
+                    _ => {
+                        out.push_str(&format!("  \"{}\" -> \"{}\";\n", edge.from, edge.to));
+                        continue;
                     }
-                }
+                };
+                out.push_str(&format!(
+                    "  \"{}\" -> \"{}\" [style={}, color={}, label=\"{}\"];\n",
+                    edge.from, edge.to, style, color, edge.kind
+                ));
             }
             out.push_str("}\n");
             JsonRpcResponse::success(
@@ -520,30 +586,20 @@ pub fn handle_task_graph(
                 })
                 .collect();
             // depends_on/Fallback.task/Reduce.inputs 는 `referenced_task_ids`(참조
-            // 무결성 검증)가 보는 3종 참조다 — 셋을 한 엣지 리스트에 합치되 `kind` 로
-            // 구분해, depends_on 만 보던 시각화가 fallback/reduce 관계를 놓치지 않게
-            // 한다. 단, 사이클 검출(`TaskGraph::dfs_cycle`)은 이 중 depends_on/
-            // Reduce.inputs 만 순회한다 — Fallback.task 는 순회 대상이 아니라서, 예를
-            // 들어 A→(fallback:F)/F→(fallback:A) 처럼 서로를 fallback 으로 참조하는
-            // 순환은 생성 시점에 거부되지 않고 그대로 저장된다. 이 엣지들은 그 순환을
-            // 관측 가능하게 만들 뿐, 자동으로 막지는 않는다.
-            let mut edges: Vec<Value> = Vec::new();
-            for t in &tasks {
-                for dep in &t.depends_on {
-                    edges.push(json!({"from": dep, "to": t.id, "kind": "depends_on"}));
-                }
-                if let OnFailure::Fallback {
-                    task: Some(fb_id), ..
-                } = &t.on_failure
-                {
-                    edges.push(json!({"from": t.id, "to": fb_id, "kind": "fallback"}));
-                }
-                if let TaskCommand::Reduce { inputs, .. } = &t.command {
-                    for input in inputs {
-                        edges.push(json!({"from": input, "to": t.id, "kind": "reduce"}));
-                    }
-                }
-            }
+            // 무결성 검증)가 보는 3종 참조고, fallback 엣지에는 동적 생성되는
+            // `Fallback{inline}` 케이스(`metadata.fallback_of` 역참조, 무결성 검증 대상
+            // 아님)도 함께 포함된다 — 넷을 한 엣지 리스트에 합치되 `kind` 로 구분해,
+            // depends_on 만 보던 시각화가 fallback/reduce 관계를 놓치지 않게 한다. 단,
+            // 사이클 검출(`TaskGraph::dfs_cycle`)은 이 중 depends_on/Reduce.inputs 만
+            // 순회한다 — fallback 엣지는 순회 대상이 아니라서, 예를 들어
+            // A→(fallback:F)/F→(fallback:A) 처럼 서로를 fallback 으로 참조하는 순환은
+            // 생성 시점에 거부되지 않고 그대로 저장된다. 이 엣지들은 그 순환을 관측
+            // 가능하게 만들 뿐, 자동으로 막지는 않는다. 수집 규칙은 [`collect_graph_edges`]
+            // 하나로 dot/json 양쪽이 공유한다.
+            let edges: Vec<Value> = collect_graph_edges(&tasks)
+                .into_iter()
+                .map(|edge| json!({"from": edge.from, "to": edge.to, "kind": edge.kind}))
+                .collect();
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -998,5 +1054,162 @@ mod poll_strategy_ref_tests {
             poll: None,
         };
         assert!(validate_poll_strategy_refs(&no_poll_cmd, &OnFailure::Abort).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod graph_edge_tests {
+    use super::*;
+
+    fn task(id: &str, name: &str, state: TaskState) -> Task {
+        Task {
+            id: id.to_string(),
+            workspace_id: 1,
+            name: name.to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".to_string()],
+                workspace_id: 1,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            state,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+            result: None,
+            on_failure: OnFailure::Abort,
+            metadata: Value::Null,
+        }
+    }
+
+    /// Materialized inline fallback: the fallback task's `metadata.fallback_of` names the main
+    /// task. Both `--format dot`/`--format json` render this as a `main -> fallback` edge —
+    /// exercised live against a real runner-driven failure via
+    /// `tasty agent task-graph --workspace-id N --format dot` (see task report), this test locks
+    /// the same shape in at the unit level.
+    #[test]
+    fn inline_fallback_materialized_produces_main_to_fallback_edge() {
+        let main = task(
+            "main",
+            "main-with-inline-fb",
+            TaskState::Failed {
+                error: "boom".to_string(),
+            },
+        );
+        let mut fallback = task("fb", "inline-fallback", TaskState::Succeeded);
+        fallback.metadata = json!({"fallback_of": "main"});
+        let tasks = [main, fallback];
+        let edges = collect_graph_edges(&tasks);
+        assert_eq!(
+            edges.len(),
+            1,
+            "expected exactly one edge, got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+        assert_eq!(edges[0].from, "main");
+        assert_eq!(edges[0].to, "fb");
+        assert_eq!(edges[0].kind, "fallback");
+    }
+
+    /// Before the main task fails, `TaskStore::create` hasn't materialized the fallback task yet
+    /// — it simply doesn't exist in the task list. No edge to draw, and none should appear.
+    #[test]
+    fn inline_fallback_not_yet_materialized_has_no_edge() {
+        let main = task("main", "main-with-inline-fb", TaskState::Ready);
+        let edges = collect_graph_edges(std::slice::from_ref(&main));
+        assert!(
+            edges.is_empty(),
+            "expected no edges, got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+    }
+
+    /// `fallback_of` pointing at a main task id that's no longer in the task list (deleted,
+    /// possible since `referenced_task_ids` — the store's own creation/deletion integrity check
+    /// — deliberately excludes this inline reverse-pointer) must not panic and must simply omit
+    /// the edge.
+    #[test]
+    fn inline_fallback_with_deleted_main_is_skipped_without_panic() {
+        let mut fallback = task("fb", "inline-fallback", TaskState::Succeeded);
+        fallback.metadata = json!({"fallback_of": "main-no-longer-exists"});
+        let tasks = [fallback];
+        let edges = collect_graph_edges(&tasks);
+        assert!(
+            edges.is_empty(),
+            "expected no edges, got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+    }
+
+    /// Regression guard for the three pre-existing edge kinds `collect_graph_edges` also now
+    /// owns (previously hand-duplicated per dot/json branch): `depends_on`, an explicit
+    /// `Fallback{task}`, and `Reduce.inputs`. Also live-verified (see task report) alongside the
+    /// inline-fallback scenario in the same running workspace, confirming no regression.
+    #[test]
+    fn depends_on_explicit_fallback_and_reduce_edges_are_unaffected() {
+        let a = task("a", "dep-a", TaskState::Succeeded);
+        let mut b = task("b", "dep-b", TaskState::Succeeded);
+        b.depends_on = vec!["a".to_string()];
+
+        let fb_target = task("fbtarget", "existing-fb-target", TaskState::Succeeded);
+        let mut main = task(
+            "main2",
+            "main-with-existing-fb",
+            TaskState::Failed {
+                error: "boom".to_string(),
+            },
+        );
+        main.on_failure = OnFailure::Fallback {
+            task: Some("fbtarget".to_string()),
+            inline: None,
+        };
+
+        let mut reducer = task("reduce", "reduce-ab", TaskState::Succeeded);
+        reducer.command = TaskCommand::Reduce {
+            inputs: vec!["a".to_string(), "b".to_string()],
+            strategy: ReducerStrategy::All,
+        };
+
+        let tasks = vec![a, b, fb_target, main, reducer];
+        let edges = collect_graph_edges(&tasks);
+
+        let has = |from: &str, to: &str, kind: &str| {
+            edges
+                .iter()
+                .any(|e| e.from == from && e.to == to && e.kind == kind)
+        };
+        assert!(
+            has("a", "b", "depends_on"),
+            "got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+        assert!(
+            has("main2", "fbtarget", "fallback"),
+            "got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+        assert!(
+            has("a", "reduce", "reduce"),
+            "got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+        assert!(
+            has("b", "reduce", "reduce"),
+            "got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+        assert_eq!(
+            edges.len(),
+            4,
+            "got: {edges:?}",
+            edges = edges_debug(&edges)
+        );
+    }
+
+    fn edges_debug(edges: &[GraphEdge<'_>]) -> Vec<(String, String, &'static str)> {
+        edges
+            .iter()
+            .map(|e| (e.from.clone(), e.to.clone(), e.kind))
+            .collect()
     }
 }
