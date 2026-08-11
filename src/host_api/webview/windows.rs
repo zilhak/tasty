@@ -152,6 +152,32 @@ impl PlatformWebView {
                 .CoreWebView2()
                 .map_err(|e| format!("CoreWebView2 failed: {e}"))?;
 
+            // WebView2 는 기본적으로(`AreBrowserAcceleratorKeysEnabled`=true) Ctrl+F/Ctrl+P/
+            // F3/F5/F12 등 브라우저 accelerator 키 세트를 자체 소비한다 — 예를 들어 Ctrl+F 는
+            // 페이지 JS 에 keydown 이 전달되기도 전에 WebView2 자신의 네이티브 find 바를 띄운다.
+            // tasty 는 임베디드 콘텐츠 뷰어이지 브라우저 chrome 이 아니므로(Linux WebKitGTK/
+            // macOS WKWebView 모두 이런 기본 accelerator 세트 자체가 없음 — 대응 파일 참조)
+            // 이 세트를 통째로 끈다. markdown plugin 의 문서-내 검색(render.rs
+            // `find_in_page_script`)이 스스로 Ctrl+F 를 처리하려면 그 keydown 이 페이지에
+            // 도달해야 하므로 필수. `ICoreWebView2Settings3`(1.0.774+) 캐스트 실패/API 실패는
+            // 치명적이지 않게 로그만(구형 WebView2 런타임 폴백 — accelerator 가로챔이 남지만
+            // 문서 로드 자체는 계속 동작).
+            match webview.Settings() {
+                Ok(settings) => match settings.cast::<ICoreWebView2Settings3>() {
+                    Ok(settings3) => {
+                        if let Err(e) = settings3.SetAreBrowserAcceleratorKeysEnabled(false) {
+                            tracing::warn!(
+                                "WebView2 SetAreBrowserAcceleratorKeysEnabled failed: {e}"
+                            );
+                        }
+                    }
+                    Err(e) => tracing::warn!(
+                        "WebView2 ICoreWebView2Settings3 cast failed (구형 런타임?): {e}"
+                    ),
+                },
+                Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
+            }
+
             // 원격 콘텐츠 차단: 모든 리소스 요청을 WebResourceRequested 로 가로채,
             // allow_remote=false 일 때 http/https URI 면 403 빈 응답으로 대체한다(기본 차단).
             let allow_remote = Rc::new(Cell::new(false));

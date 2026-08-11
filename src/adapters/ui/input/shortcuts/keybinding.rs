@@ -223,6 +223,19 @@ impl MainView {
             // 이 winit 경로는 검색창이 포커스되지 않은 상태(터미널 포커스)에서만 도달한다
             // — 검색창 포커스 상태의 find 는 overlay 게이트에 막혀 egui 경로(search_bar)
             //   가 처리한다. 따라서 여기서는 항상 "검색창으로 포커스 이동"이다.
+            //
+            // `search_bar` popup(run_search)은 `find_terminal_by_id`로만 동작해 터미널이
+            // 아닌 focused surface(예: markdown webview)에서는 항상 0/0으로 뜨는 빈 오버레이가
+            // 된다 — terminal-search 기획(`docs/features/terminal-search/index.md`)도 애초에
+            // "터미널 포커스 + find"만 서술한다. 따라서 focused surface가 Terminal일 때만
+            // 이 popup을 연다; 그 외 kind는 자기 자신의 find-in-page(있다면, 예: markdown
+            // plugin의 트러스트 JS 문서-내 검색)로 넘긴다 — 여기서 소비하지 않고 false 반환.
+            if !matches!(
+                state.focused_surface_type(engine),
+                crate::state::FocusedSurfaceType::Terminal
+            ) {
+                return false;
+            }
             if state.popups.is_open("search_bar") {
                 // 이미 떠 있으면 닫지 않고 포커스만 검색창으로 옮긴다.
                 state.popups.set_focused("search_bar", true);

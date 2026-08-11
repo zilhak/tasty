@@ -211,13 +211,15 @@ pub fn render_document(input: DocumentInput) -> String {
     };
 
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
+        find_bar = find_bar_html(tr),
         toc_html = toc_html,
         body_html = body_html,
         script = nav_script(file_path),
+        find_script = find_in_page_script(tr),
         highlight = highlight,
         mermaid = mermaid,
         copy_buttons = copy_buttons,
@@ -1301,6 +1303,15 @@ body{{background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,Blink
 #tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:40px;padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
 #tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
+#tasty-find-bar{{position:fixed;top:calc(40px + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
+#tasty-find-bar[hidden]{{display:none;}}
+#tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
+#tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
+#tasty-find-count.tasty-find-nomatch{{color:{danger};}}
+.tasty-find-btn{{height:22px;width:22px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);font-size:10px;line-height:1;padding:0;cursor:pointer;}}
+.tasty-find-btn:disabled{{opacity:0.45;cursor:default;}}
+mark.tasty-find-hit{{background:{find_match_bg};color:inherit;border-radius:2px;}}
+mark.tasty-find-hit.tasty-find-current{{background:{find_current_bg};color:{find_current_fg};}}
 #tasty-md-body{{padding:var(--md-space-sm) var(--md-space-md);}}
 h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;scroll-margin-top:calc(40px + var(--md-space-sm));}}
 h1{{font-size:var(--md-h1);}}h2{{font-size:var(--md-h2);}}h3{{font-size:var(--md-h3);}}
@@ -1387,6 +1398,9 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         ),
         alert_rules = alert_css(theme),
         hljs_rules = hljs_css(theme),
+        find_match_bg = theme.accent_warning().with_alpha(90).to_hex(),
+        find_current_bg = theme.accent_primary().to_hex(),
+        find_current_fg = theme.text_on_accent().to_hex(),
     )
 }
 
@@ -1559,6 +1573,197 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
 }});
 }})();"#,
         file_path_json = serde_json::to_string(file_path).unwrap_or_else(|_| "\"\"".to_string()),
+    )
+}
+
+// ── find-in-page (trusted JS, TreeWalker-based text-node highlight) ─────────────
+
+/// The find bar markup: query input + match counter + prev/next + close, `hidden` by default
+/// (toggled by [`find_in_page_script`]). Floats top-right of the document (`position:fixed` in
+/// [`theme_css`]) rather than sitting in normal flow like [`addr_bar_html`], mirroring the
+/// gallery's `search_bar` specimen (`crates/tasty-gallery/src/catalog/components/search_bar.rs`)
+/// — a sticky, non-modal find bar anchored to the top-right of the focused surface.
+///
+/// No case/regex/whole-word toggles (unlike the gallery specimen / terminal `search_bar.rs`) —
+/// out of scope here: this is a literal substring find-on-page, not the terminal's full
+/// `SearchOptions` search.
+fn find_bar_html(tr: &Translator) -> String {
+    format!(
+        r#"<div id="tasty-find-bar" role="search" hidden><input id="tasty-find-input" type="text" placeholder="{placeholder}" autocomplete="off" spellcheck="false"><span id="tasty-find-count">0/0</span><button type="button" id="tasty-find-prev" class="tasty-find-btn" title="{prev}" aria-label="{prev}">&#9650;</button><button type="button" id="tasty-find-next" class="tasty-find-btn" title="{next}" aria-label="{next}">&#9660;</button><button type="button" id="tasty-find-close" class="tasty-find-btn" title="{close}" aria-label="{close}">&times;</button></div>"#,
+        placeholder = attr_escape(tr.t("markdown.find.placeholder")),
+        prev = attr_escape(tr.t("markdown.find.prev_tooltip")),
+        next = attr_escape(tr.t("markdown.find.next_tooltip")),
+        close = attr_escape(tr.t("markdown.find.close_tooltip")),
+    )
+}
+
+/// Trusted, plugin-authored script (never sanitized — [`nav_script`]'s doc comment explains why
+/// this category of script is safe: it never touches user markdown content, only the DOM
+/// structure this same trusted pipeline already built).
+///
+/// Implements the TODO's recommended "trust JS" direction over a native find API
+/// (`WebKitFindController`/`WKWebView.find`/WebView2 `Find`): none of those three engines' native
+/// find surfaces agree on a feature set (regex isn't supported by any of them; whole-word varies),
+/// and getting a live match-count back to the host would need a new bidirectional signal per
+/// backend (WebKitGTK's is async-signal-based, WKWebView's is a completion handler, WebView2's is
+/// an event) for a feature that's markdown-plugin-local anyway — a DOM `TreeWalker` walk is a few
+/// dozen lines and needs zero host API surface.
+///
+/// Algorithm: on each search, first [`clearHighlights`](https://developer.mozilla.org — see
+/// inline) unwraps every previously-inserted `<mark>` back into its original text (via
+/// `Node.normalize()`, merging the split text nodes back together) — this is the "restore DOM on
+/// search end/change" requirement, run before every new search rather than only on close, so
+/// stale highlights never accumulate across keystrokes. Then a `TreeWalker` over `#tasty-md-body`
+/// (`NodeFilter.SHOW_TEXT`) visits every text node, **rejecting** (not just skipping — `TreeWalker`
+/// still descends into a rejected node's siblings) any node whose ancestor chain (up to
+/// `#tasty-md-body`) hits a `<pre>`/`<code>` — the scope-exclusion policy decision: code blocks
+/// are excluded from find-in-page (matching a common find-in-page convention — code samples often
+/// contain the search term as noise, e.g. searching a prose word that also happens to appear in a
+/// fenced shell command). The find bar itself lives outside `#tasty-md-body` (see
+/// [`find_bar_html`]'s placement in `render_document`), so it's naturally excluded without an
+/// explicit check.
+///
+/// The query is escaped as a regex literal (`escapeRegExp`) before being compiled with the `gi`
+/// flags — this is **not** a regex-search feature (out of scope, see [`find_bar_html`]'s doc), it
+/// only reuses `RegExp` as the engine for case-insensitive multi-match-per-node scanning.
+///
+/// IME: `compositionstart`/`compositionend` bracket the input's own `input` event — while
+/// composing, `input` events fire per-keystroke of the *in-progress* (not-yet-committed)
+/// composition and must not trigger a search (matching `docs/ai-verification/ime-testing.md`'s
+/// general IME-safety principle); the debounced search only (re)fires on `compositionend` or on
+/// a post-composition plain `input` event.
+fn find_in_page_script(tr: &Translator) -> String {
+    let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"(function(){{
+var bar=document.getElementById('tasty-find-bar');
+var input=document.getElementById('tasty-find-input');
+var countEl=document.getElementById('tasty-find-count');
+var prevBtn=document.getElementById('tasty-find-prev');
+var nextBtn=document.getElementById('tasty-find-next');
+var closeBtn=document.getElementById('tasty-find-close');
+var body=document.getElementById('tasty-md-body');
+if(!bar||!input||!countEl||!prevBtn||!nextBtn||!closeBtn||!body)return;
+var MATCH_COUNT={match_count};
+var matches=[];
+var current=-1;
+var composing=false;
+var debounceTimer=null;
+function clearHighlights(){{
+matches.forEach(function(m){{
+var parent=m.parentNode;
+if(!parent)return;
+parent.replaceChild(document.createTextNode(m.textContent),m);
+parent.normalize();
+}});
+matches=[];
+current=-1;
+}}
+function escapeRegExp(s){{return s.replace(/[.*+?^${{}}()|[\]\\]/g,'\\$&');}}
+function collectTextNodes(){{
+var nodes=[];
+var walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT,{{
+acceptNode:function(node){{
+if(!node.nodeValue||!node.nodeValue.trim())return NodeFilter.FILTER_REJECT;
+var el=node.parentElement;
+while(el&&el!==body){{
+if(el.tagName==='PRE'||el.tagName==='CODE')return NodeFilter.FILTER_REJECT;
+el=el.parentElement;
+}}
+return NodeFilter.FILTER_ACCEPT;
+}}
+}});
+var n;
+while((n=walker.nextNode()))nodes.push(n);
+return nodes;
+}}
+function updateCount(){{
+var total=matches.length;
+if(total===0){{
+countEl.textContent='0/0';
+}}else{{
+countEl.textContent=MATCH_COUNT.replace('{{current}}',String(current+1)).replace('{{total}}',String(total));
+}}
+countEl.classList.toggle('tasty-find-nomatch',input.value.length>0&&total===0);
+prevBtn.disabled=total===0;
+nextBtn.disabled=total===0;
+}}
+function applyCurrent(){{
+matches.forEach(function(m,i){{
+if(i===current)m.classList.add('tasty-find-current');
+else m.classList.remove('tasty-find-current');
+}});
+if(current>=0)matches[current].scrollIntoView({{block:'center'}});
+}}
+function runSearch(){{
+clearHighlights();
+var query=input.value;
+if(!query){{updateCount();return;}}
+var re=new RegExp(escapeRegExp(query),'gi');
+collectTextNodes().forEach(function(node){{
+var text=node.nodeValue;
+re.lastIndex=0;
+var m;
+var frag=null;
+var lastIndex=0;
+while((m=re.exec(text))){{
+if(!frag)frag=document.createDocumentFragment();
+if(m.index>lastIndex)frag.appendChild(document.createTextNode(text.slice(lastIndex,m.index)));
+var mark=document.createElement('mark');
+mark.className='tasty-find-hit';
+mark.textContent=m[0];
+frag.appendChild(mark);
+matches.push(mark);
+lastIndex=m.index+m[0].length;
+}}
+if(frag){{
+if(lastIndex<text.length)frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+node.parentNode.replaceChild(frag,node);
+}}
+}});
+current=matches.length?0:-1;
+applyCurrent();
+updateCount();
+}}
+function scheduleSearch(){{
+if(composing)return;
+if(debounceTimer)clearTimeout(debounceTimer);
+debounceTimer=setTimeout(runSearch,150);
+}}
+function next(){{if(!matches.length)return;current=(current+1)%matches.length;applyCurrent();updateCount();}}
+function prev(){{if(!matches.length)return;current=(current-1+matches.length)%matches.length;applyCurrent();updateCount();}}
+function openBar(){{
+bar.hidden=false;
+input.focus();
+input.select();
+}}
+function closeBar(){{
+if(bar.hidden)return;
+bar.hidden=true;
+clearHighlights();
+input.value='';
+updateCount();
+}}
+input.addEventListener('compositionstart',function(){{composing=true;}});
+input.addEventListener('compositionend',function(){{composing=false;scheduleSearch();}});
+input.addEventListener('input',scheduleSearch);
+input.addEventListener('keydown',function(e){{
+if(e.key==='Escape'){{e.preventDefault();closeBar();}}
+else if(e.key==='Enter'){{e.preventDefault();if(e.shiftKey)prev();else next();}}
+}});
+prevBtn.addEventListener('click',prev);
+nextBtn.addEventListener('click',next);
+closeBtn.addEventListener('click',closeBar);
+document.addEventListener('keydown',function(e){{
+if((e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='f'||e.key==='F')){{
+e.preventDefault();
+openBar();
+}}else if(e.key==='Escape'&&!bar.hidden){{
+closeBar();
+}}
+}});
+}})();"#,
+        match_count = json_or_empty(tr.t("markdown.find.match_count")),
     )
 }
 
@@ -3373,6 +3578,153 @@ Outro\n";
         assert!(
             addr_idx < toc_idx && toc_idx < body_idx,
             "expected addr bar < toc < body, got: {html}"
+        );
+    }
+
+    // ── find-in-page (find bar + TreeWalker highlight script) ──────────────────
+
+    #[test]
+    fn render_document_always_embeds_find_bar_hidden_by_default() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "Just a plain paragraph, no headings.",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains(r#"id="tasty-find-bar""#), "got: {html}");
+        // hidden by default — the bar only appears on Ctrl+F, never on load.
+        assert!(
+            html.contains(r#"<div id="tasty-find-bar" role="search" hidden>"#),
+            "got: {html}"
+        );
+        assert!(html.contains(r#"id="tasty-find-input""#), "got: {html}");
+        assert!(html.contains(r#"id="tasty-find-count""#), "got: {html}");
+        assert!(html.contains(r#"id="tasty-find-prev""#), "got: {html}");
+        assert!(html.contains(r#"id="tasty-find-next""#), "got: {html}");
+        assert!(html.contains(r#"id="tasty-find-close""#), "got: {html}");
+    }
+
+    #[test]
+    fn find_bar_html_uses_translator_for_placeholder_and_tooltips() {
+        let tr = Translator::default();
+        let html = find_bar_html(&tr);
+        assert!(
+            html.contains(tr.t("markdown.find.placeholder")),
+            "got: {html}"
+        );
+        assert!(
+            html.contains(tr.t("markdown.find.prev_tooltip")),
+            "got: {html}"
+        );
+        assert!(
+            html.contains(tr.t("markdown.find.next_tooltip")),
+            "got: {html}"
+        );
+        assert!(
+            html.contains(tr.t("markdown.find.close_tooltip")),
+            "got: {html}"
+        );
+    }
+
+    #[test]
+    fn find_script_excludes_code_blocks_from_the_tree_walker_scan() {
+        let script = find_in_page_script(&Translator::default());
+        assert!(
+            script.contains("tagName==='PRE'||el.tagName==='CODE'"),
+            "got: {script}"
+        );
+    }
+
+    #[test]
+    fn find_script_restores_dom_before_every_search_not_only_on_close() {
+        let script = find_in_page_script(&Translator::default());
+        // clearHighlights() unwraps every <mark> back to plain text + normalize()s the parent —
+        // called at the top of runSearch() (every keystroke) as well as from closeBar().
+        assert!(
+            script.contains("function clearHighlights()"),
+            "got: {script}"
+        );
+        assert!(script.contains(".normalize()"), "got: {script}");
+        assert!(
+            script.contains("function runSearch(){\nclearHighlights();"),
+            "got: {script}"
+        );
+        assert!(script.contains("function closeBar(){"), "got: {script}");
+    }
+
+    #[test]
+    fn find_script_skips_search_while_ime_composing() {
+        let script = find_in_page_script(&Translator::default());
+        assert!(script.contains("compositionstart"), "got: {script}");
+        assert!(script.contains("compositionend"), "got: {script}");
+        assert!(script.contains("if(composing)return;"), "got: {script}");
+    }
+
+    #[test]
+    fn find_script_handles_escape_enter_and_shift_enter_on_the_input() {
+        let script = find_in_page_script(&Translator::default());
+        assert!(script.contains("e.key==='Escape'"), "got: {script}");
+        assert!(script.contains("e.key==='Enter'"), "got: {script}");
+        assert!(
+            script.contains("if(e.shiftKey)prev();else next();"),
+            "got: {script}"
+        );
+    }
+
+    #[test]
+    fn find_script_debounces_input_before_searching() {
+        let script = find_in_page_script(&Translator::default());
+        assert!(
+            script.contains("setTimeout(runSearch,150)"),
+            "got: {script}"
+        );
+    }
+
+    #[test]
+    fn find_script_opens_on_ctrl_or_meta_f_and_prevents_default() {
+        let script = find_in_page_script(&Translator::default());
+        assert!(
+            script.contains("(e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='f'||e.key==='F')"),
+            "got: {script}"
+        );
+        assert!(
+            script.contains("e.preventDefault();\nopenBar();"),
+            "got: {script}"
+        );
+    }
+
+    #[test]
+    fn find_script_escapes_query_as_a_regex_literal() {
+        // Query is only ever used as a case-insensitive literal substring match — RegExp is
+        // reused as the multi-match engine, not exposed as a user-facing regex feature.
+        let script = find_in_page_script(&Translator::default());
+        assert!(script.contains("function escapeRegExp(s)"), "got: {script}");
+        assert!(
+            script.contains("new RegExp(escapeRegExp(query),'gi')"),
+            "got: {script}"
+        );
+    }
+
+    #[test]
+    fn theme_css_derives_find_highlight_colors_from_theme_not_hardcoded() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = theme_css(&theme);
+        assert!(css.contains("mark.tasty-find-hit{"), "got: {css}");
+        assert!(
+            css.contains(&format!(
+                "background:{};",
+                theme.accent_warning().with_alpha(90).to_hex()
+            )),
+            "got: {css}"
+        );
+        assert!(
+            css.contains(&format!("background:{};", theme.accent_primary().to_hex())),
+            "got: {css}"
         );
     }
 }

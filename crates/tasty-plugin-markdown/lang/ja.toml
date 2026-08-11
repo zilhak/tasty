@@ -41,6 +41,13 @@ placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"
 no_recent = "最近のファイルなし"
 
+[markdown.find]
+placeholder = "文書内を検索"
+match_count = "{current}/{total}"
+prev_tooltip = "前の一致"
+next_tooltip = "次の一致"
+close_tooltip = "閉じる (Esc)"
+
 [markdown.toc]
 label = "目次"
 aria_label = "目次"

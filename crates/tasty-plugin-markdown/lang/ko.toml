@@ -41,6 +41,13 @@ placeholder = "마크다운 파일 경로"
 go = "열기 (Enter)"
 no_recent = "최근 파일 없음"
 
+[markdown.find]
+placeholder = "문서 내 검색"
+match_count = "{current}/{total}"
+prev_tooltip = "이전 매치"
+next_tooltip = "다음 매치"
+close_tooltip = "닫기 (Esc)"
+
 [markdown.toc]
 label = "목차"
 aria_label = "목차"

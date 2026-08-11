@@ -250,17 +250,28 @@ impl MainView {
                 // winit 경로는 검색창 비포커스(터미널 포커스) 상태에서만 도달한다.
                 // 검색창 포커스 상태의 find 는 egui 경로(search_bar)가 처리한다.
                 // 여기서는 항상 "검색창으로 포커스 이동".
-                if state.popups.is_open("search_bar") {
-                    state.popups.set_focused("search_bar", true);
-                } else if let Some(sid) = state.focused_surface_id(engine) {
-                    state.search.surface_id = sid;
-                    state.dispatch_intent(
-                        UiIntent::OpenPopup {
-                            id: "search_bar",
-                            mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
-                        }
-                        .from_user_shortcut("find"),
-                    );
+                //
+                // `keybinding.rs`의 kb.find 분기와 동일한 이유로 Terminal 포커스만 처리한다
+                // — search_bar의 run_search는 find_terminal_by_id로만 동작해 다른 kind에서는
+                // 항상 빈 0/0 오버레이가 된다. Command Palette/자동화로 이 액션 ID를 직접
+                // 호출하는 이 경로도 원시 키 경로와 동일하게 가드해야 같은 버그가 재발하지
+                // 않는다.
+                if matches!(
+                    state.focused_surface_type(engine),
+                    crate::state::FocusedSurfaceType::Terminal
+                ) {
+                    if state.popups.is_open("search_bar") {
+                        state.popups.set_focused("search_bar", true);
+                    } else if let Some(sid) = state.focused_surface_id(engine) {
+                        state.search.surface_id = sid;
+                        state.dispatch_intent(
+                            UiIntent::OpenPopup {
+                                id: "search_bar",
+                                mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
+                            }
+                            .from_user_shortcut("find"),
+                        );
+                    }
                 }
             }
             "open_markdown" => {

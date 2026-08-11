@@ -41,6 +41,13 @@ placeholder = "Path to markdown file"
 go = "Open (Enter)"
 no_recent = "No recent files"
 
+[markdown.find]
+placeholder = "Find in document"
+match_count = "{current}/{total}"
+prev_tooltip = "Previous match"
+next_tooltip = "Next match"
+close_tooltip = "Close (Esc)"
+
 [markdown.toc]
 label = "Table of contents"
 aria_label = "Table of contents"

@@ -16,6 +16,8 @@
 - **주소창** — 문서 자체에 내장된 `<input>`+`<button>`(host egui 위젯 아님).
 - **목차(TOC)** — heading 이 하나 이상이면 주소창 바로 아래, 본문 위에 접을 수 있는 `<nav>` 로
   삽입된다(문서 자체에 내장, host egui 위젯 아님). heading 이 없으면 렌더되지 않는다.
+- **검색 바** — 문서 자체에 내장(host egui 위젯 아님), 기본 숨김. 문서에 포커스가 있을 때
+  `Ctrl+F`/`Cmd+F` 로 우상단에 뜬다(아래 "문서 내 검색(find-in-page)" 절).
 - 탭 표시명은 파일명.
 
 ## 상태별 시각
@@ -315,6 +317,35 @@ image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이
 검증했다. macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — 코드 리뷰로 동일한 표준
 DOM 이벤트(`error`)/`HTMLImageElement` API 기반 구현이라는 점만 확인했다(실기 미검증).
 
+## 문서 내 검색(find-in-page)
+
+문서(webview 콘텐츠)에 실제 키보드 포커스가 있는 상태에서 `Ctrl+F`/`Cmd+F` 를 누르면 문서 내
+텍스트 검색 바가 열린다(`render.rs::find_bar_html`/`find_in_page_script`) — host API 확장 없이
+markdown plugin 문서 자체에 내장된 신뢰 스크립트만으로 동작한다(네이티브 find API
+(`WebKitFindController`/`WKWebView.find`/WebView2 `Find`)는 세 엔진이 정규식/전체단어 지원이
+서로 달라 채택하지 않았고, 매치 카운트를 host 로 되돌려받으려면 백엔드별 비동기 신호 처리가
+추가로 필요해 이 markdown-plugin-local 기능치고는 host API 확장 비용이 과했다).
+
+검색 바(입력창 + `n/m` 카운터 + ▲▼ prev/next + close)는 문서 우상단에 `position:fixed` 로
+떠 있으며(갤러리 `search_bar` specimen 과 동일한 "sticky, non-modal, 우상단" 배치 — scrim 없음),
+기본은 `hidden`. 매치는 DOM `TreeWalker`(`NodeFilter.SHOW_TEXT`)로 `#tasty-md-body` 의 텍스트
+노드를 순회해 찾고, `<mark class="tasty-find-hit">` 로 감싼다 — 현재 매치는
+`tasty-find-current` 클래스가 추가로 붙어 다른 색으로 구분된다. `<pre>`/`<code>` 조상을 가진
+텍스트 노드는 스캔에서 제외된다(코드블록은 검색 범위 밖 — 정책 결정). 매 검색(입력 150ms
+debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문으로 복원(`Node.normalize()`)한
+뒤 다시 스캔하므로 하이라이트가 누적되지 않는다. IME 조합 중(`compositionstart`~`compositionend`)
+에는 검색을 트리거하지 않는다. `Esc` 는 바를 닫고 하이라이트를 완전히 제거(DOM 원상복구),
+`Enter`/`Shift+Enter` 는 다음/이전 매치로 이동(래핑) + `scrollIntoView`.
+
+**기존 터미널 검색(`kb.find`)과의 충돌**: host 의 전역 `find` 키바인딩은 focused surface
+kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup 의 검색 로직
+(`run_search`)은 `find_terminal_by_id` 로만 동작해 markdown(webview) surface 에서는 항상
+빈 `0/0` 오버레이가 된다(실측 확인된 버그). `src/adapters/ui/input/shortcuts/keybinding.rs`
+의 `kb.find` 분기를 focused surface 가 `Terminal` 일 때만 열도록 고쳤다 — 그 외 kind 는
+이 분기를 소비하지 않고(false 반환) 페이지 자신의 find-in-page(있다면)로 넘어간다. 이
+변경으로 markdown 문서가 focus 인 상태에서 `Ctrl+F` 는 항상 이 절의 문서-내 검색으로
+가고, 터미널 전용 오버레이가 뜨지 않는다.
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
@@ -348,6 +379,9 @@ Theme 토큰 매핑이다.
 | 복사 버튼 성공/실패 상태 | inline hex(`success`/`danger`) | `accent-success` / `accent-danger` | `.tasty-copy-btn[data-state="copied"/"failed"]` |
 | 이미지 로드 실패 플레이스홀더 | inline hex(`danger`) + `--md-code-bg`/`--md-radius` | `accent-danger` · `surface-raised` | `.tasty-img-error` — 아이콘은 `tasty_icons::IMAGE` 를 `danger` 로 구운 data URI(`render.rs::alert_icon_data_uri` 재사용) |
 | 이미지 로드 실패 경로 텍스트 | inline hex(`muted`) | `text-muted` | `.tasty-img-error-path` — `.tasty-state-detail` 과 동일 토큰 재사용 |
+| 검색 바 | `#tasty-find-bar` | `bg-sidebar` · `separator` | 우상단 `position:fixed`, 갤러리 `search_bar` specimen 과 동일 배치(위 "문서 내 검색" 절) |
+| 매치 하이라이트 | inline hex(`accent-warning`, alpha) | `accent-warning` | `mark.tasty-find-hit` |
+| 현재 매치 하이라이트 | inline hex(`accent-primary`/`text-on-accent`) | `accent-primary` bg + `text-on-accent` fg | `mark.tasty-find-hit.tasty-find-current` |
 
 ## 갤러리 specimen
 
