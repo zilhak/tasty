@@ -200,6 +200,31 @@ CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_
 가려지지 않게 한다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
 않게 — `render_document` 이 heading 목록이 비면 호출을 아예 건너뜀).
 
+## 이미지 캡션
+
+한 문단에 이미지(`![alt](src "title")`) **하나만** 있으면 그 문단 전체가
+`<figure><img/><figcaption>{alt}</figcaption></figure>` 로 승격된다(`render.rs::
+figurize_solo_image_paragraphs`) — alt 텍스트가 `alt` 속성(이미지가 정상 로드되면 화면에
+보이지 않음) 안에만 머물지 않고 캡션으로 상시 노출된다. **정책: alt 텍스트가 있으면 항상
+자동으로 승격한다 — opt-in 문법 없음.** alt 가 없는 이미지(`![](img.png)`)는 캡션 붙일 게
+없으므로 기존처럼 렌더된다(회귀 없음).
+
+승격 조건은 의도적으로 엄격하다: 그 문단에 이미지 외 다른 인라인 콘텐츠(본문 텍스트, 두 번째
+이미지, 이미지를 감싸는 링크 `[![alt](img.png)](url)` 등)가 조금이라도 섞여 있으면 승격하지
+않고 원래대로(인라인 `<img>` 그대로) 렌더한다. 이유: `Tag::Image` 는 `<p>` 내부의 **inline**
+요소인데, 그 이벤트 하나만 `<figure>`(block 요소)로 감싸면 `<p><figure>...` 처럼 block 이
+inline 컨텍스트에 중첩되는 잘못된 HTML이 되어 브라우저가 `<p>` 를 예측 못한 방식으로 조기
+종료할 수 있다 — 그래서 이미지 하나만 있는 **문단 전체**를 통째로 승격하는 방식을 택했고, 그
+조건이 깨지면 캡션을 포기하는 쪽이 잘못된 HTML을 만드는 것보다 안전하다고 판단했다.
+
+캡션 텍스트는 이미지 alt span 안의 `Text`/`Code` 이벤트만 이어붙인 순수 텍스트다(강조 등
+마크업은 제거 — heading 텍스트 수집(`collect_headings`)과 동일한 방식). 이 텍스트는 일반
+`Event::Text` 로 방출되므로 `push_html` 이 본문 텍스트와 동일하게 HTML-escape 한다 — alt 에
+`<`/`>`/`&` 같은 문자가 있어도 캡션에 안전하게 이스케이프된 채로만 나타난다. `<figure>`/
+`<figcaption>` 자체는 이 파일이 이미 쓰는 "신뢰된 plugin 작성 마크업" 패턴(`Event::Html`,
+`rewrite_alert_blockquote_event` 의 `<blockquote data-label="...">` 삽입과 동일)으로
+주입되므로, `sanitize_html` 화이트리스트에도 별도 속성 없이 bare tag 로 추가했다.
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
@@ -228,6 +253,7 @@ Theme 토큰 매핑이다.
 | TOC 들여쓰기 | `--md-space-sm` × (레벨-1) | `spacing-sm` | `.tasty-toc-l1`..`l6` |
 | heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
 | 코드 syntax 토큰 | inline hex(scope 별) | keyword=`mauve` · title/function=`blue` · string=`green` · number/literal=`peach` · tag/attr=`teal` · variable=`lavender` · built_in=`red` · comment=`text-muted` | 전용 highlight 토큰 없음 — `render.rs::hljs_css`, `.hljs-*` class(위 "코드블록 syntax highlighting" 절) |
+| 이미지 캡션 | `figure`/`figcaption` | `--md-space-sm`/`--md-space-xs`(여백) · `--md-font-body` · `text-muted`(캡션 색) | 전용 캡션 토큰 없음 — `.tasty-state-detail` 과 동일하게 `text-muted` 재사용(위 "이미지 캡션" 절) |
 
 ## 갤러리 specimen
 

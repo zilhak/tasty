@@ -469,23 +469,30 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 
 /// Parse `source` and generate (unsanitized) HTML, rewriting every link destination to the
 /// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
-/// target). Images are left untouched; the `<base href>` tag resolves relative `src`. Headings
-/// get a GitHub-compatible `id` via the [`collect_headings`]/[`assign_heading_ids`] two-pass
-/// pipeline (module doc "heading ids + TOC" section) — this recomputes the heading list itself
-/// (a cheap, HTML-free text-only walk) rather than taking it as a parameter, so this function's
-/// signature — and every existing call site/test — stays unchanged; [`render_document`] computes
-/// its own separate copy for the TOC (same deterministic result, since both walk the identical
-/// `source`).
+/// target). An image alone in its own paragraph gets promoted to a captioned `<figure>`
+/// ([`figurize_solo_image_paragraphs`]) — every other image (mixed into running text, wrapped in
+/// a link, alt-less) passes through untouched, same as before that pass existed. The `<base
+/// href>` tag resolves relative `src`. Headings get a GitHub-compatible `id` via the
+/// [`collect_headings`]/[`assign_heading_ids`] two-pass pipeline (module doc "heading ids + TOC"
+/// section) — this recomputes the heading list itself (a cheap, HTML-free text-only walk) rather
+/// than taking it as a parameter, so this function's signature — and every existing call
+/// site/test — stays unchanged; [`render_document`] computes its own separate copy for the TOC
+/// (same deterministic result, since both walk the identical `source`).
 ///
-/// Pass ordering: [`autolink_bare_urls`] runs *before* [`rewrite_link_event`], and synthesizes
-/// its new `Tag::Link` events with a plain raw `dest_url` (e.g. `https://example.com`) — the
-/// exact same shape an explicit `[text](url)` link has at this point in the pipeline. This way
-/// `rewrite_link_event`, run last over the *whole* (now autolink-expanded) event stream, is the
-/// single place that ever produces the `#tasty-nav:` fragment scheme; the autolink pass doesn't
-/// need its own copy of that rewrite. `rewrite_code_block_event`/`rewrite_alert_blockquote_event`/
-/// `rewrite_footnote_event` run first since none of them touch `Text`/`Link` events, so their
-/// relative order doesn't matter. [`assign_heading_ids`] runs last over the fully-rewritten
-/// stream — none of the other passes touch `Tag::Heading`, so its position doesn't matter either.
+/// Pass ordering: [`figurize_solo_image_paragraphs`] runs before [`autolink_bare_urls`] — it's a
+/// structural (block-level) promotion, decided purely from paragraph shape, so it runs first and
+/// leaves every other inline-text rewrite (autolinking, nav-fragment rewriting) to work on
+/// whatever text/image events actually survive that decision, exactly as if that pass didn't
+/// exist for paragraphs it declines to touch. [`autolink_bare_urls`] itself runs *before*
+/// [`rewrite_link_event`], and synthesizes its new `Tag::Link` events with a plain raw `dest_url`
+/// (e.g. `https://example.com`) — the exact same shape an explicit `[text](url)` link has at this
+/// point in the pipeline. This way `rewrite_link_event`, run last over the *whole* (now
+/// autolink-expanded) event stream, is the single place that ever produces the `#tasty-nav:`
+/// fragment scheme; the autolink pass doesn't need its own copy of that rewrite.
+/// `rewrite_code_block_event`/`rewrite_alert_blockquote_event`/`rewrite_footnote_event` run first
+/// since none of them touch `Text`/`Link`/`Image` events, so their relative order doesn't matter.
+/// [`assign_heading_ids`] runs last over the fully-rewritten stream — none of the other passes
+/// touch `Tag::Heading`, so its position doesn't matter either.
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     let headings = collect_headings(source);
     let footnote_ref_totals = footnote_reference_totals(source);
@@ -495,6 +502,7 @@ fn unsafe_content_html(source: &str, tr: &Translator) -> String {
         .map(|event| rewrite_alert_blockquote_event(event, tr))
         .map(|event| rewrite_footnote_event(event, tr, &footnote_ref_totals, &mut footnote_state))
         .collect();
+    let events = figurize_solo_image_paragraphs(events);
     let events = autolink_bare_urls(events)
         .into_iter()
         .map(rewrite_link_event);
@@ -502,6 +510,142 @@ fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events);
     html
+}
+
+// ── image captions (solo-image paragraphs → <figure>/<figcaption>) ─────────────
+
+/// Promotes a paragraph that consists of **nothing but** a single image to
+/// `<figure><img.../><figcaption>{alt}</figcaption></figure>` — the alt text becomes a visible
+/// caption instead of living only in the invisible `alt` attribute. Policy: this happens
+/// automatically whenever such a paragraph has non-empty alt text, no opt-in syntax required —
+/// alt-less images (`![](img.png)`) are unaffected (nothing to caption).
+///
+/// `Tag::Image` is an *inline* element — pulldown-cmark's own HTML writer only ever emits it
+/// inside a `<p>...</p>` (or another inline context). Wrapping just the `Tag::Image` span itself
+/// in `<figure>` (a block element) would leave `<p><figure>...` in the output — invalid nesting
+/// that browsers "fix" by closing the `<p>` early in unpredictable ways. So this promotes the
+/// *whole paragraph* instead, and only when the image is truly alone in it: any other inline
+/// content in the same paragraph (more text, another image, a link wrapping the image, …)
+/// disqualifies the paragraph and it passes through completely unchanged (original
+/// `<p><img.../></p>`) — safer to skip the caption than to ever risk invalid HTML.
+///
+/// Buffers each `Tag::Paragraph`'s events, mirroring [`collect_headings`]'s "buffer until the
+/// matching end tag, since pulldown-cmark's flat stream doesn't expose a container's full content
+/// until it closes" approach. Paragraphs can't nest (CommonMark block grammar has no paragraph-
+/// inside-paragraph production), so a single non-recursive buffer-until-`TagEnd::Paragraph` is
+/// safe here — unlike a genuinely nestable container (blockquote/list), there's no risk of a
+/// second `Tag::Paragraph` opening before this one closes.
+fn figurize_solo_image_paragraphs(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut iter = events.into_iter();
+    while let Some(event) = iter.next() {
+        match event {
+            Event::Start(Tag::Paragraph) => {
+                let mut buf = Vec::new();
+                for inner in iter.by_ref() {
+                    if matches!(inner, Event::End(TagEnd::Paragraph)) {
+                        break;
+                    }
+                    buf.push(inner);
+                }
+                out.extend(figurize_paragraph_buffer(buf));
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Re-wraps a buffered paragraph's interior events (stripped of its `Tag::Paragraph` start/end by
+/// [`figurize_solo_image_paragraphs`]) back into an ordinary `<p>...</p>` — used by
+/// [`figurize_paragraph_buffer`] on every path that declines to promote.
+fn wrap_as_paragraph(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    let mut out = Vec::with_capacity(buf.len() + 2);
+    out.push(Event::Start(Tag::Paragraph));
+    out.extend(buf);
+    out.push(Event::End(TagEnd::Paragraph));
+    out
+}
+
+/// One buffered paragraph's events → either the `<figure>` promotion or the original paragraph
+/// passed through unchanged.
+fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    // Find at most one top-level `Tag::Image` span, matching its end via nest-counting — the
+    // same generic Start/End balancing algorithm pulldown-cmark's own `html.rs::raw_text()` uses
+    // to build the `alt` attribute, so this locates exactly the span that writer will consume.
+    let mut image_span: Option<(usize, usize)> = None;
+    let mut i = 0;
+    while i < buf.len() {
+        if matches!(buf[i], Event::Start(Tag::Image { .. })) {
+            if image_span.is_some() {
+                return wrap_as_paragraph(buf); // more than one image in this paragraph — bail.
+            }
+            let mut nest = 0i32;
+            let mut end_idx = None;
+            let mut j = i + 1;
+            while j < buf.len() {
+                match &buf[j] {
+                    Event::Start(_) => nest += 1,
+                    Event::End(TagEnd::Image) if nest == 0 => {
+                        end_idx = Some(j);
+                        break;
+                    }
+                    Event::End(_) => nest -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+            let Some(end_idx) = end_idx else {
+                return wrap_as_paragraph(buf); // unmatched — defensive, shouldn't happen.
+            };
+            image_span = Some((i, end_idx));
+            i = end_idx;
+        }
+        i += 1;
+    }
+    let Some((start_idx, end_idx)) = image_span else {
+        return wrap_as_paragraph(buf); // no image at all — an ordinary text paragraph.
+    };
+
+    // Everything outside the image span must be whitespace-only text — any other inline content
+    // (more text, a link wrapping the image, a second image, …) disqualifies promotion.
+    let outside_is_blank = buf.iter().enumerate().all(|(idx, ev)| {
+        (start_idx..=end_idx).contains(&idx) || matches!(ev, Event::Text(t) if t.trim().is_empty())
+    });
+    if !outside_is_blank {
+        return wrap_as_paragraph(buf);
+    }
+
+    // Alt text: markup-stripped concatenation of Text/Code inside the image span — same "keep
+    // the text, drop the markup" collection [`collect_headings`] uses for heading text.
+    let mut alt = String::new();
+    for ev in &buf[start_idx + 1..end_idx] {
+        match ev {
+            Event::Text(t) | Event::Code(t) => alt.push_str(t),
+            _ => {}
+        }
+    }
+    if alt.trim().is_empty() {
+        return wrap_as_paragraph(buf); // no alt text — nothing to caption, leave it as-is.
+    }
+
+    // The image span itself (`Tag::Image` start/inner/end) is kept byte-for-byte as pulldown-cmark
+    // produced it and handed to the HTML writer unchanged, so `<img src=".." alt=".." title="..">`
+    // is still built by the library's own `raw_text()` exactly as it always was — only the
+    // surrounding structure changes. `Event::Html` is this file's established "trusted,
+    // plugin-authored raw markup" escape hatch (mirrors `rewrite_alert_blockquote_event`'s
+    // `<blockquote class=".." data-label="..">` injection) for the `<figure>`/`<figcaption>` tags
+    // themselves; the caption text rides in as a plain `Event::Text`, so `push_html` HTML-escapes
+    // it exactly like any other body text (no separate escaping call needed here).
+    let mut buf = buf;
+    let image_events: Vec<Event<'_>> = buf.drain(start_idx..=end_idx).collect();
+    let mut out = Vec::with_capacity(image_events.len() + 4);
+    out.push(Event::Html("<figure>".into()));
+    out.extend(image_events);
+    out.push(Event::Html("<figcaption>".into()));
+    out.push(Event::Text(alt.into()));
+    out.push(Event::Html("</figcaption></figure>".into()));
+    out
 }
 
 // ── Bare `http(s)://` autolinking ───────────────────────────────────────────────
@@ -1057,6 +1201,10 @@ fn sanitize_html(unsafe_html: &str) -> String {
         "dt",
         "dd",
         "div",
+        // figurize_solo_image_paragraphs()의 <figure>/<figcaption> 래핑 — 둘 다 별도
+        // attribute 없이 bare tag 로만 쓴다(tag_attributes 등록 불필요).
+        "figure",
+        "figcaption",
     ]
     .into_iter()
     .collect();
@@ -1164,6 +1312,8 @@ blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:b
 {hljs_rules}
 hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
 img{{max-width:100%;}}
+figure{{margin:var(--md-space-sm) 0;text-align:center;}}
+figcaption{{margin-top:var(--md-space-xs);font-size:var(--md-font-body);color:{muted};}}
 ul,ol{{padding-left:1.5em;}}
 li input[type=checkbox]{{margin-right:0.4em;}}
 .tasty-state{{padding:var(--md-space-md);color:{muted};}}
@@ -1784,6 +1934,91 @@ mod tests {
         assert_eq!(
             sanitize_fence_lang("mermaid extra-ignored-token"),
             "mermaid"
+        );
+    }
+
+    // ── image captions (solo-image paragraphs → <figure>/<figcaption>) ─────────
+
+    #[test]
+    fn figurize_promotes_solo_image_with_alt_to_figure_caption() {
+        let source = "![A caption](img.png)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(out.contains("<figure>"), "got: {out}");
+        assert!(out.contains("</figure>"), "got: {out}");
+        assert!(
+            out.contains("<figcaption>A caption</figcaption>"),
+            "got: {out}"
+        );
+        assert!(out.contains(r#"src="img.png""#), "got: {out}");
+        assert!(out.contains(r#"alt="A caption""#), "got: {out}");
+        // No leftover empty <p></p> wrapper around the promoted image.
+        assert!(!out.contains("<p>"), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_leaves_alt_less_image_unpromoted() {
+        // alt-less image — nothing to caption, must render exactly as before this feature.
+        let source = "![](img.png)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(!out.contains("<figure>"), "got: {out}");
+        assert!(!out.contains("<figcaption>"), "got: {out}");
+        assert!(out.contains("<p>"), "got: {out}");
+        assert!(out.contains(r#"src="img.png""#), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_does_not_promote_image_mixed_with_text() {
+        let source = "before ![alt](img.png) after\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(!out.contains("<figure>"), "got: {out}");
+        assert!(!out.contains("<figcaption>"), "got: {out}");
+        assert!(out.contains("before"), "got: {out}");
+        assert!(out.contains("after"), "got: {out}");
+        assert!(out.contains(r#"alt="alt""#), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_does_not_promote_link_wrapped_image() {
+        // `[![alt](img.png)](url)` — the image is alone, but wrapped in a link; conservative
+        // policy declines promotion here too (see figurize_paragraph_buffer doc).
+        let source = "[![alt](img.png)](https://example.com)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(!out.contains("<figure>"), "got: {out}");
+        assert!(!out.contains("<figcaption>"), "got: {out}");
+        assert!(out.contains("<a "), "got: {out}");
+        assert!(out.contains(r#"alt="alt""#), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_does_not_promote_paragraph_with_two_images() {
+        let source = "![a](1.png)![b](2.png)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(!out.contains("<figure>"), "got: {out}");
+        assert!(!out.contains("<figcaption>"), "got: {out}");
+        assert!(out.contains(r#"src="1.png""#), "got: {out}");
+        assert!(out.contains(r#"src="2.png""#), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_caption_strips_markup_from_alt_with_emphasis() {
+        let source = "![**bold** caption](img.png)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(
+            out.contains("<figcaption>bold caption</figcaption>"),
+            "got: {out}"
+        );
+        assert!(!out.contains("<strong>"), "got: {out}");
+    }
+
+    #[test]
+    fn figurize_caption_escapes_special_characters_in_alt() {
+        // Spaces around `<`/`>` keep pulldown-cmark from mis-parsing them as inline HTML tags —
+        // they stay literal `Event::Text`, matching how a reader would actually type "1 < 2".
+        let source = "![1 < 2 & 3 > 1](img.png)\n";
+        let out = sanitize_html(&unsafe_content_html(source, &Translator::default()));
+        assert!(
+            out.contains("<figcaption>1 &lt; 2 &amp; 3 &gt; 1</figcaption>"),
+            "got: {out}"
         );
     }
 
