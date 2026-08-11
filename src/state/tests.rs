@@ -237,9 +237,9 @@ fn mirror_close_active_pane_forwards_close_pane() {
         1,
         "mirror pane close 는 로컬 pane 을 제거하면 안 된다"
     );
-    // TODO58 — mirror 는 forward 만 하고 로컬 흔적(스냅샷 포함)을 남기지
-    // 않는다: 새 스냅샷 캡처 블록은 `forward_mirror_structural`의 이른
-    // return **뒤**에 있으므로 mirror 경로에선 애초에 실행되지 않는다.
+    // mirror 는 forward 만 하고 로컬 흔적(스냅샷 포함)을 남기지 않는다:
+    // 스냅샷 캡처 블록은 `forward_mirror_structural`의 이른 return **뒤**에
+    // 있으므로 mirror 경로에선 애초에 실행되지 않는다.
     assert_eq!(
         engine.closed_items.len(),
         0,
@@ -418,11 +418,12 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
     }
 }
 
-/// TODO58 — pane 을 전용 `close_pane` 단축키(`close_active_pane`)로 닫으면
-/// closed-item 스냅샷이 남아 `restore_closed`(Ctrl+Shift+T)로 복원 가능해야
-/// 한다. 수정 전에는 `close_case_pane`/`close_active_pane` 어느 경로도
-/// `push_closed_item` 을 호출하지 않아 pane close 가 복원 스택에 아예 기록되지
-/// 않았다(직전에 다른 걸 안 닫았으면 no-op, 닫았으면 엉뚱한 항목이 복원됨).
+/// pane 을 전용 `close_pane` 단축키(`close_active_pane`)로 닫으면 closed-item
+/// 스냅샷이 남아 `restore_closed`(Ctrl+Shift+T)로 복원 가능해야 한다. 이
+/// 회귀를 잡아내려면 `close_case_pane`/`close_active_pane` 어느 경로도
+/// `push_closed_item` 을 호출하지 않게 되는 상황(둘 다 있었던 실제 버그) —
+/// pane close 가 복원 스택에 아예 기록되지 않아 직전에 다른 걸 안 닫았으면
+/// no-op, 닫았으면 엉뚱한 항목이 복원되는 상황 — 을 구체적으로 검증해야 한다.
 #[test]
 fn close_pane_saves_closed_item_snapshot() {
     let (mut state, mut engine) = test_state();
@@ -460,10 +461,11 @@ fn close_pane_saves_closed_item_snapshot() {
     }
 }
 
-/// TODO58 — pane close → restore 왕복이 실제로 트리에 pane 을 되살리는지
-/// end-to-end 검증(`DomainIntent::RestoreClosedItem` 을 `Core::apply` 로
-/// 디스패치). 트리 재삽입 위치(`insert_pane_beside` + 캡처된 split geometry)가
-/// 합리적인지 — 복원 후 다시 pane 2개가 되고, cascade 이벤트가
+/// 스냅샷이 남는 것만으로는 부족하다 — pane close → restore 왕복이 실제로
+/// 트리에 pane 을 되살리는지까지 end-to-end 검증한다
+/// (`DomainIntent::RestoreClosedItem` 을 `Core::apply` 로 디스패치). 트리
+/// 재삽입 위치(`insert_pane_beside` + 캡처된 split geometry)가 합리적인지 —
+/// 복원 후 다시 pane 2개가 되고, cascade 이벤트가
 /// `RestoredKind::PaneIntoWorkspace` 인지 — 를 함께 확인한다.
 #[test]
 fn close_pane_then_restore_reinserts_pane() {
