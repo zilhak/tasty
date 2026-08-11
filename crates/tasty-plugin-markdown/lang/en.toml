@@ -20,6 +20,9 @@ markdown = "Markdown"
 failed = "Failed to load"
 empty = "This file is empty"
 
+[markdown.image]
+failed = "Failed to load image"
+
 [markdown.large_file]
 title = "Open large file?"
 body = "Over 1 MB — rendering may be slow."

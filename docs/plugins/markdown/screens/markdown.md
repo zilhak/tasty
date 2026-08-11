@@ -269,6 +269,52 @@ inline 컨텍스트에 중첩되는 잘못된 HTML이 되어 브라우저가 `<p
 `rewrite_alert_blockquote_event` 의 `<blockquote data-label="...">` 삽입과 동일)으로
 주입되므로, `sanitize_html` 화이트리스트에도 별도 속성 없이 bare tag 로 추가했다.
 
+## 이미지 로드 실패 상태 UI
+
+경로 오타·파일 이동 등으로 이미지 로드가 실패하면 브라우저 기본 "깨진 이미지" 아이콘 대신
+경로가 보이는 tasty 자체 실패 UI(`.tasty-img-error`)로 교체된다(`render.rs::
+image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이미지 문서) 이 스크립트 자체가
+삽입되지 않는다 — 코드블록 복사 버튼/mermaid/highlight.js 와 동일한 조건부 삽입 절약 패턴.
+
+- **왜 `onerror=` 인라인 핸들러가 아니라 트러스트 스크립트인가**: `sanitize_html` 은 모든 인라인
+  이벤트 핸들러를 무조건 제거한다(XSS 방어의 핵심 축이라 예외를 두지 않음). 대신 코드블록 복사
+  버튼과 동일한 패턴 — sanitize 이후 신뢰된 plugin 코드가 렌더 시점에 `addEventListener('error',
+  ...)` 를 DOM에 직접 부착한다.
+- **이미 실패가 끝난 이미지 보완**: 트러스트 스크립트가 실행되는 시점은 문서 하단이라, 리스너를
+  붙이기 전에 이미 `error` 이벤트가 발생해버린 이미지가 있을 수 있다. 그래서 리스너 부착 직후
+  각 `<img>`에 대해 `img.complete && img.naturalWidth === 0`(로드는 끝났는데 실제 픽셀이 없음 =
+  실패, `![alt]()`처럼 `src` 가 아예 빈 경우도 이 조건으로 자연히 잡힌다)도 함께 검사한다.
+- **표시 경로**: `img.getAttribute('src')`(마크다운에 적힌 원본 상대경로)를 그대로 쓴다.
+  `img.src`(프로퍼티)는 `<base href>`(위 "Mermaid 다이어그램" 절 이전, `render.rs::file_dir_uri`)가
+  이미 절대 `file://` URI로 정규화해버린 값이라 사람이 읽기 나쁘다.
+- **접근성**: 플레이스홀더는 `role="img"`이고, 원본 `alt`가 있으면 그대로 `aria-label`로
+  보존한다(없으면 실패 안내 라벨 자체를 aria-label로 폴백).
+- **원격 이미지 차단 정책과의 관계**: host의 `allow_remote_content` 정책으로 원격 이미지 요청이
+  막히면 그 요청은 실제로 실패하므로 `<img>`의 `error` 이벤트가 정당하게 발생한다 — 오탐이
+  아니라 정확한 실패 표시다. `sanitize_html`의 `url_schemes`가 `http`/`https`/`mailto`만 허용하고
+  `loading` 속성 자체를 허용 attribute 목록에 넣지 않아(위 `sanitize_html` 절) `loading="lazy"`가
+  살아남지 않으므로, 브라우저 네이티브 lazy-loading으로 인한 "아직 로드 시도 전"과 "로드
+  실패"의 혼동 여지도 구조적으로 없다.
+- **중복 부착 방지**: `reload_webview`가 재로드마다 문서 전체를 통째로 교체하는 것은 코드블록
+  복사 버튼과 동일(리스너가 재로드마다 누적될 구조적 경로 없음). 스크립트 자체도 `<img>` 마다
+  `data-tasty-img-checked`(리스너 중복 부착 방지)/`data-tasty-img-failed`(플레이스홀더 교체
+  idempotent화, 리스너 경로와 즉시-검사 경로가 동시에 fire해도 안전) 두 데이터 속성으로
+  방어한다.
+- **테마 연동**: 아이콘은 `tasty_icons::IMAGE` 글리프를 `theme.accent_danger()`로 구운 data URI로
+  심는다(GFM alert 아이콘과 동일한 `render.rs::alert_icon_data_uri` 재사용). 테두리/라벨 색도
+  같은 `danger` 토큰, 경로 텍스트는 `.tasty-state-detail`과 동일한 `muted` 토큰 — 별도 실패 UI
+  전용 토큰 없이 기존 에러 상태 배색을 그대로 재사용한다(위 "디자인 토큰 매핑" 참조).
+
+**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1)**: `render_document`가 실제로
+만든 문서(실재하는 1x1 PNG 하나 + 존재하지 않는 경로 하나, 실제 `file://` base URI)를
+`WebKit2.WebView.load_html`로 로드해 실제 브라우저 fetch가 성공/실패하는 것을 그대로 관찰했다 —
+실재 이미지는 `<img>`로 그대로 남았고(회귀 없음), 존재하지 않는 이미지만 `.tasty-img-error`로
+교체되어 원본 alt가 `aria-label`로, 원본 상대경로(`missing.png`, 정규화된 `file://` URI가 아님)가
+텍스트로 정확히 들어감을 DOM에서 직접 확인했다. 같은 부착 스크립트를 같은 문서에 한 번 더
+수동으로 재주입해도 플레이스홀더 개수가 늘지 않음을 확인해 데이터 속성 가드가 실제로 작동함을
+검증했다. macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — 코드 리뷰로 동일한 표준
+DOM 이벤트(`error`)/`HTMLImageElement` API 기반 구현이라는 점만 확인했다(실기 미검증).
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다
@@ -300,6 +346,8 @@ Theme 토큰 매핑이다.
 | 이미지 캡션 | `figure`/`figcaption` | `--md-space-sm`/`--md-space-xs`(여백) · `--md-font-body` · `text-muted`(캡션 색) | 전용 캡션 토큰 없음 — `.tasty-state-detail` 과 동일하게 `text-muted` 재사용(위 "이미지 캡션" 절) |
 | 코드블록 복사 버튼 | `--md-bg`/`--md-fg`/`--md-border`/`--md-radius` | 기본은 `#tasty-addr-go` 와 동일 톤 | `.tasty-copy-btn` — hover/focus 시에만 `opacity:1` |
 | 복사 버튼 성공/실패 상태 | inline hex(`success`/`danger`) | `accent-success` / `accent-danger` | `.tasty-copy-btn[data-state="copied"/"failed"]` |
+| 이미지 로드 실패 플레이스홀더 | inline hex(`danger`) + `--md-code-bg`/`--md-radius` | `accent-danger` · `surface-raised` | `.tasty-img-error` — 아이콘은 `tasty_icons::IMAGE` 를 `danger` 로 구운 data URI(`render.rs::alert_icon_data_uri` 재사용) |
+| 이미지 로드 실패 경로 텍스트 | inline hex(`muted`) | `text-muted` | `.tasty-img-error-path` — `.tasty-state-detail` 과 동일 토큰 재사용 |
 
 ## 갤러리 specimen
 

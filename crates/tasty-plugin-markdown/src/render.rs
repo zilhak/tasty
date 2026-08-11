@@ -202,8 +202,16 @@ pub fn render_document(input: DocumentInput) -> String {
         String::new()
     };
 
+    // Same convention again — most documents have no images at all, so skip the attach script
+    // entirely when there's nothing for it to watch.
+    let image_errors = if body_html.contains("<img") {
+        image_error_script(tr)
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}{copy_buttons}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
@@ -213,6 +221,7 @@ pub fn render_document(input: DocumentInput) -> String {
         highlight = highlight,
         mermaid = mermaid,
         copy_buttons = copy_buttons,
+        image_errors = image_errors,
     )
 }
 
@@ -1330,6 +1339,10 @@ blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:b
 {hljs_rules}
 hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
 img{{max-width:100%;}}
+.tasty-img-error{{display:inline-flex;align-items:center;gap:var(--md-space-xs);flex-wrap:wrap;max-width:100%;box-sizing:border-box;padding:var(--md-space-xs) var(--md-space-sm);border:var(--md-border-w) dashed {danger};border-radius:var(--md-radius);background:var(--md-code-bg);}}
+.tasty-img-error-icon{{flex:0 0 auto;width:16px;height:16px;background-image:url("{img_error_icon}");background-repeat:no-repeat;background-size:16px 16px;}}
+.tasty-img-error-label{{color:{danger};font-weight:600;}}
+.tasty-img-error-path{{color:{muted};word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
 figure{{margin:var(--md-space-sm) 0;text-align:center;}}
 figcaption{{margin-top:var(--md-space-xs);font-size:var(--md-font-body);color:{muted};}}
 ul,ol{{padding-left:1.5em;}}
@@ -1367,6 +1380,11 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
         success = theme.accent_success().to_hex(),
+        img_error_icon = alert_icon_data_uri(
+            tasty_icons::IMAGE.body,
+            false,
+            &theme.accent_danger().to_hex()
+        ),
         alert_rules = alert_css(theme),
         hljs_rules = hljs_css(theme),
     )
@@ -1754,6 +1772,80 @@ pre.appendChild(btn);
         copy = json_or_empty(tr.t("markdown.copy.label")),
         copied = json_or_empty(tr.t("markdown.copy.copied")),
         failed = json_or_empty(tr.t("markdown.copy.failed")),
+    )
+}
+
+/// Inline an image load-failure watcher — only called when the document actually has at least
+/// one `<img>` (see call site in [`render_document`]). `sanitize_html` strips every inline event
+/// handler (`onerror=` included, its core defense line), so this attaches `error` listeners
+/// programmatically instead — the same trust-script pattern [`copy_button_script`] uses to
+/// post-process sanitized DOM.
+///
+/// Two failure paths, both required: a listener catches images that fail *after* this script
+/// runs, but by the time a script this far down the document executes, some images may have
+/// already finished failing — `img.complete && img.naturalWidth===0` catches those retroactively
+/// (a loaded-with-zero-pixels image is exactly what a failed load looks like; a genuinely empty
+/// `src` also reads as `complete` with no dimensions, so this also naturally covers `![alt]()`).
+/// A `data-tasty-img-failed` guard on the element makes the replacement idempotent in case both
+/// paths fire for the same image (the listener can still be queued when the retroactive check
+/// already ran).
+///
+/// Reads `img.getAttribute('src')` (the literal markdown-authored value), not the `img.src`
+/// property (which `<base href>`, see [`file_dir_uri`], has already normalized into an absolute
+/// `file://` URI) — this is what keeps the placeholder's path human-readable.
+///
+/// A remote image blocked by the host's remote-content policy fails to load for a real reason
+/// (the request never resolves successfully) — the browser's `error` event fires for it exactly
+/// as it would for any other failed fetch, so it correctly lands on the placeholder rather than
+/// silently passing through as a false positive.
+///
+/// Live-verified in the real WebKitGTK engine against a document with one real image and one
+/// genuinely missing path loaded over a real `file://` base (details:
+/// `docs/plugins/markdown/screens/markdown.md`): the real image stayed an `<img>`, the missing
+/// one was replaced with `.tasty-img-error` carrying the original alt as `aria-label` and the
+/// original relative path as its text — and re-running this exact script a second time against
+/// the same DOM left `placeholderCount` at 1, confirming the per-element guards hold.
+fn image_error_script(tr: &Translator) -> String {
+    let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"<script>(function(){{
+var LABEL={label};
+function replaceWithPlaceholder(img){{
+if(img.dataset.tastyImgFailed)return;
+img.dataset.tastyImgFailed='1';
+var src=img.getAttribute('src')||'';
+var alt=img.getAttribute('alt')||'';
+var ph=document.createElement('span');
+ph.className='tasty-img-error';
+ph.setAttribute('role','img');
+ph.setAttribute('aria-label',alt||LABEL);
+var icon=document.createElement('span');
+icon.className='tasty-img-error-icon';
+ph.appendChild(icon);
+var label=document.createElement('span');
+label.className='tasty-img-error-label';
+label.textContent=LABEL;
+ph.appendChild(label);
+if(src){{
+var path=document.createElement('span');
+path.className='tasty-img-error-path';
+path.textContent=src;
+ph.appendChild(path);
+}}
+if(img.parentNode)img.parentNode.replaceChild(ph,img);
+}}
+try{{
+document.querySelectorAll('#tasty-md-body img').forEach(function(img){{
+try{{
+if(img.dataset.tastyImgChecked)return;
+img.dataset.tastyImgChecked='1';
+img.addEventListener('error',function(){{replaceWithPlaceholder(img);}});
+if(img.complete&&img.naturalWidth===0){{replaceWithPlaceholder(img);}}
+}}catch(e){{console.error('image error-check attach failed',e);}}
+}});
+}}catch(e){{console.error('image error-check init failed',e);}}
+}})();</script>"#,
+        label = json_or_empty(tr.t("markdown.image.failed")),
     )
 }
 
@@ -2871,6 +2963,120 @@ mod tests {
         assert_ne!(
             base_css, alt_css,
             "copy button color should follow accent_success, not a fixed palette"
+        );
+    }
+
+    // ── image load failure ───────────────────────────────────────────────────
+
+    #[test]
+    fn render_document_inlines_image_error_script_only_when_image_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let with_image = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/pic.md",
+            source: "![alt text](missing.png)\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(with_image.contains("<img"));
+        assert!(with_image.contains("#tasty-md-body img"));
+
+        let without_image = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "# Just prose\n\nNo images here.",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!without_image.contains("#tasty-md-body img"));
+    }
+
+    #[test]
+    fn render_document_error_state_has_no_image_error_script() {
+        // Error/empty states never render an `<img>` at all, so the gate (`<img` substring on
+        // `body_html`) must not fire for them.
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/broken.md",
+            source: "",
+            load_error: Some("No such file"),
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!html.contains("#tasty-md-body img"));
+    }
+
+    #[test]
+    fn image_error_script_is_scoped_to_body_images_only() {
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("#tasty-md-body img"));
+    }
+
+    #[test]
+    fn image_error_script_checks_both_future_and_already_failed_images() {
+        // Listener attachment alone misses images whose `error` event already fired before this
+        // script ran (it executes near the end of the document) — `complete && naturalWidth===0`
+        // catches those retroactively.
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("addEventListener('error'"));
+        assert!(script.contains("img.complete&&img.naturalWidth===0"));
+    }
+
+    #[test]
+    fn image_error_script_reads_src_attribute_not_property() {
+        // `img.src` (property) is already normalized to an absolute `file://` URI by `<base
+        // href>` — `getAttribute('src')` preserves the original markdown-authored path, which is
+        // what the placeholder should show.
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("img.getAttribute('src')"));
+        assert!(!script.contains("img.src"));
+    }
+
+    #[test]
+    fn image_error_script_preserves_alt_as_aria_label() {
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("img.getAttribute('alt')"));
+        assert!(script.contains("role','img'"));
+        assert!(script.contains("aria-label"));
+    }
+
+    #[test]
+    fn image_error_script_guards_against_duplicate_replacement() {
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("img.dataset.tastyImgChecked"));
+        assert!(script.contains("img.dataset.tastyImgFailed"));
+    }
+
+    #[test]
+    fn image_error_script_wraps_attachment_in_try_catch_with_console_error_fallback() {
+        let script = image_error_script(&Translator::default());
+        assert!(script.contains("try{"));
+        assert!(script.contains("catch(e){console.error"));
+    }
+
+    #[test]
+    fn image_error_css_uses_theme_tokens_not_hardcoded_colors() {
+        let base_colors = tasty_themes::mocha_fallback_colors();
+        let mut alt_colors = base_colors.clone();
+        alt_colors.red =
+            tasty_type_appearance::color::HexColor::from_hex("#00ff00").expect("valid hex literal");
+        let base = Theme::with_colors_and_zoom(base_colors, false, 1.0);
+        let alt = Theme::with_colors_and_zoom(alt_colors, false, 1.0);
+        let base_css = theme_css(&base);
+        let alt_css = theme_css(&alt);
+        assert!(base_css.contains(".tasty-img-error"));
+        assert!(base_css.contains(".tasty-img-error-icon"));
+        assert_ne!(
+            base_css, alt_css,
+            "image error placeholder color should follow accent_danger, not a fixed palette"
         );
     }
 
