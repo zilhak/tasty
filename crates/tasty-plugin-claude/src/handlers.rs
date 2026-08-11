@@ -521,19 +521,42 @@ pub(crate) fn start_claude_in_surface(
     }
 }
 
+/// prompt 임시파일 이름 prefix/suffix — 정리 스윕(`sweep_stale_prompt_files`)이 같은
+/// 패턴으로 자기 파일만 매칭하도록 상수로 뽑아 공유한다.
+const PROMPT_FILE_PREFIX: &str = "tasty-prompt-";
+const PROMPT_FILE_SUFFIX: &str = ".txt";
+
+/// prompt 임시파일이 생성된 뒤 이만큼 지나면 다음 spawn 시점에 청소 대상이 된다.
+/// 자식 셸이 `$(cat '<path>')` 치환을 끝내는 데는 보통 수 ms~수 초면 충분하므로,
+/// 10분이면 그 시간을 넉넉히 넘겨 "아직 안 읽었는데 지워지는" 레이스를 사실상
+/// 배제한다.
+const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
 /// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
 /// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
 /// `profile_file` 이 있으면 positional prompt 인자보다 앞에 `--settings "<path>"` 를
 /// 붙인다. 이 함수는 이미 POSIX 전용 env prefix 를 쓰고 있어(`agent_prefix`) 그
 /// 플랫폼 정합은 이 변경의 범위 밖 — 기존 상태를 그대로 따른다.
+///
+/// 파일 정리 시점: 자식이 `$(cat ...)` 로 이 파일을 다 읽은 순간을 tasty 가 알
+/// 방법이 없다(`surface.send` 는 fire-and-forget 텍스트 주입) — 쓰자마자 지우면
+/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 [`PROMPT_FILE_TTL`] 을 넘긴
+/// 이전 파일들을 먼저 청소한다(`sweep_stale_prompt_files`) — 지연 삭제.
+/// 권한은 생성 시점부터 0600(owner-only, Unix) 으로 좁힌다 — 생성 후 별도
+/// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
+/// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
 fn claude_launch_command_with_prompt(
     surface_id: u32,
     agent_prefix: &str,
     prompt: &str,
     profile_file: Option<&str>,
 ) -> String {
-    let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{surface_id}.txt"));
-    if let Err(e) = std::fs::write(&prompt_path, prompt) {
+    let temp_dir = std::env::temp_dir();
+    sweep_stale_prompt_files(&temp_dir);
+    let prompt_path = temp_dir.join(format!(
+        "{PROMPT_FILE_PREFIX}{surface_id}{PROMPT_FILE_SUFFIX}"
+    ));
+    if let Err(e) = write_prompt_file(&prompt_path, prompt) {
         tracing::warn!("Failed to write prompt file: {e}");
     }
     let settings_flag = match profile_file {
@@ -544,6 +567,76 @@ fn claude_launch_command_with_prompt(
         "{agent_prefix}claude {settings_flag}\"$(cat '{}')\"\r",
         prompt_path.display()
     )
+}
+
+/// `path` 를 owner-only(0600) 권한으로 새로 만들어 `content` 를 쓴다. 같은 경로에
+/// 이전 실행이 남긴 파일이 있으면(과거 버전이 좁히지 않은 권한으로 만들었을 수
+/// 있는 파일 포함) 먼저 지우고 다시 만든다 — `OpenOptions::mode` 는 파일을 실제로
+/// *생성*하는 순간에만 적용되고, 이미 존재하는 파일을 여는 경우엔 기존 권한이
+/// 그대로 유지되기 때문이다(재사용 시 권한이 좁혀지지 않는 구멍을 막는다).
+fn write_prompt_file(path: &Path, content: &str) -> std::io::Result<()> {
+    // 없는 파일을 지우려는 실패(가장 흔한 경우 — 이전 실행 잔재가 없음)를 포함해
+    // 결과를 신경 쓰지 않는다: 존재하든 안 하든 바로 이어지는 `create(true)` 가
+    // 최종적으로 원하는 상태(0600 새 파일)를 만든다.
+    let _ = std::fs::remove_file(path);
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(content.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows 는 Unix mode 개념이 없다 — ACL 기반 권한 좁히기는 이 변경의
+        // 범위 밖(별도 작업 필요), 기존 `std::fs::write` 기본 동작 그대로 둔다.
+        std::fs::write(path, content)
+    }
+}
+
+/// `dir` 안에서 `PROMPT_FILE_PREFIX`/`PROMPT_FILE_SUFFIX` 패턴에 매칭하고
+/// `PROMPT_FILE_TTL` 보다 오래된(mtime 기준) 파일을 best-effort 로 지운다 —
+/// 매 spawn 마다 호출되는 지연 삭제 방식(무기한 누적 방지). 읽기/삭제 실패는
+/// 무시한다: 디렉터리 목록 경합, 동시에 다른 프로세스가 아직 참조 중인 파일 등은
+/// spawn 자체를 막을 이유가 아니다 — 대신 `tracing::debug!` 로 남긴다.
+fn sweep_stale_prompt_files(dir: &Path) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::debug!(
+                "prompt tempfile sweep: read_dir({}) failed: {e}",
+                dir.display()
+            );
+            return;
+        }
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with(PROMPT_FILE_PREFIX) || !name.ends_with(PROMPT_FILE_SUFFIX) {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .and_then(|modified| {
+                now.duration_since(modified)
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            })
+            .is_ok_and(|age| age >= PROMPT_FILE_TTL);
+        if is_stale && let Err(e) = std::fs::remove_file(entry.path()) {
+            tracing::debug!(
+                "prompt tempfile sweep: remove({:?}) failed: {e}",
+                entry.path()
+            );
+        }
+    }
 }
 
 /// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의
@@ -818,6 +911,95 @@ mod tests {
             ),
             "got {out}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_prompt_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-perms.txt");
+        write_prompt_file(&path, "secret").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "got mode {mode:o}");
+        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_prompt_file_narrows_permissions_on_reuse() {
+        // 이전 실행이 넓은 권한으로 만든 파일이 같은 경로에 이미 있어도, 다시 쓸 때
+        // 0600 으로 좁혀져야 한다(재사용 시 구멍 방지 회귀 가드).
+        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-reuse.txt");
+        std::fs::write(&path, "old").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        write_prompt_file(&path, "new").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "got mode {mode:o}");
+        }
+        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn sweep_stale_prompt_files_removes_files_past_ttl() {
+        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-removes-stale");
+        std::fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join(format!("{PROMPT_FILE_PREFIX}old{PROMPT_FILE_SUFFIX}"));
+        std::fs::write(&stale, "x").unwrap();
+        let old_mtime =
+            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
+        std::fs::File::open(&stale)
+            .unwrap()
+            .set_modified(old_mtime)
+            .unwrap();
+
+        sweep_stale_prompt_files(&dir);
+
+        assert!(!stale.exists(), "stale prompt file should have been swept");
+        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sweep_stale_prompt_files_keeps_files_within_ttl() {
+        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-keeps-fresh");
+        std::fs::create_dir_all(&dir).unwrap();
+        let fresh = dir.join(format!("{PROMPT_FILE_PREFIX}new{PROMPT_FILE_SUFFIX}"));
+        std::fs::write(&fresh, "x").unwrap();
+
+        sweep_stale_prompt_files(&dir);
+
+        assert!(fresh.exists(), "fresh prompt file should not be swept");
+        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sweep_stale_prompt_files_ignores_non_matching_names() {
+        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-ignores-unrelated");
+        std::fs::create_dir_all(&dir).unwrap();
+        let unrelated = dir.join("some-other-file.txt");
+        std::fs::write(&unrelated, "x").unwrap();
+        let old_mtime =
+            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
+        std::fs::File::open(&unrelated)
+            .unwrap()
+            .set_modified(old_mtime)
+            .unwrap();
+
+        sweep_stale_prompt_files(&dir);
+
+        assert!(unrelated.exists(), "non-matching file must not be swept");
+        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
