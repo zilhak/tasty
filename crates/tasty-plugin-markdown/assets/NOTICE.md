@@ -48,3 +48,54 @@
   than always rendering GitHub's fixed colors.
 - To update: re-run the same cdnjs fetch against a newer `/<version>/highlight.min.js`, re-verify
   the LICENSE at the matching tag, recompute the sha512, and update the version/hash above.
+
+# katex.min.js / katex.min.css / fonts/KaTeX_*.woff2
+
+- **Source**: `https://cdn.jsdelivr.net/npm/katex@0.18.4/dist/katex.min.js` and
+  `https://cdn.jsdelivr.net/npm/katex@0.18.4/dist/katex.min.css` (npm package `katex`, version
+  `0.18.4`, the latest stable release per `https://data.jsdelivr.com/v1/packages/npm/katex`'s
+  `latest` tag at fetch time).
+  - `katex.min.js`
+    sha512: `c4e62a7a0618e699f6a5d1bdac91eed4cced4b3d79af06afd574b563b71c7cb503f6825c4c88785ce4a8f8f8f906b5af620538e3cb36b355c46688171d038b0b`
+    (computed locally with `sha512sum`; also cross-checked against jsdelivr's own published
+    per-file hash — `https://data.jsdelivr.com/v1/packages/npm/katex@0.18.4`'s file-tree entry
+    for `/dist/katex.min.js`, base64 sha256 `LsWRaUHvQ4PgMU6qvMcSMBsGAB2fto4I11HSuuWieho=` —
+    matches a locally recomputed base64-sha256 of the fetched bytes exactly).
+  - `katex.min.css`
+    sha512: `0a382f21b7d7c21ce3382b4ffb0b9030f189679b84636907678a8f1af8c881f913885767b83985fa8256d81e60963eddece90f3c35fd04cbb88438a8e4c59310`
+    (same cross-check method; jsdelivr's published hash for `/dist/katex.min.css` is base64
+    sha256 `GAwtd9Q019pR1mJcUKlk1P1v29ubyHlqCgFsMMSZMfs=`, matches exactly).
+  - `fonts/KaTeX_*.woff2` (20 files — every font family/weight/style KaTeX 0.18.4 ships, `woff2`
+    variant only; `woff`/`ttf` siblings are legacy-browser fallbacks this webview-embedded engine
+    (evergreen WebKitGTK/WKWebView/WebView2) doesn't need and were not vendored). Verified against
+    jsdelivr's published per-file byte size in the same package file-tree listing — every fetched
+    file's size matches the manifest exactly (e.g. `KaTeX_AMS-Regular.woff2`: 28076 bytes both
+    sides), which is strong evidence of an uncorrupted fetch without pasting 20 individual hashes
+    here.
+- **License**: MIT. Confirmed directly against the `LICENSE` file at the matching upstream tag
+  (`https://github.com/KaTeX/KaTeX/blob/v0.18.4/LICENSE`, copyright 2013-2020 Khan Academy and
+  other contributors) and cross-checked against the npm package's `license` field for the same
+  version — both say `MIT`. The vendored fonts are covered by the same repository-wide MIT
+  license (KaTeX's `LICENSE` file makes no separate font-specific claim).
+- **Fetched once, offline at runtime**: `katex.min.js`/`katex.min.css` are loaded via
+  `include_str!` and each font via `include_bytes!` at compile time — no network access happens
+  when tasty runs. The CDN URLs above are only the one-time source they were pulled from, not a
+  runtime dependency (Tasty's offline-first principle).
+- **Font offline delivery — data URI, not relative `file://` paths**: every other vendored asset
+  in this plugin (mermaid.js/highlight.js, and the whole rendered markdown document itself) is
+  fully self-contained inside the single HTML string handed to the host WebView — there is no
+  on-disk "plugin assets directory" the running document could resolve a relative font URL
+  against at runtime (`include_str!`/`include_bytes!` bake the bytes into the compiled binary;
+  nothing is written back out to disk). The document's only `<base href>` is already claimed by
+  the *user's* markdown file directory (for their own relative image/link paths) and repointing it
+  would break that. So `render.rs::katex_css_with_embedded_fonts` rewrites each `@font-face`'s
+  `src:` list (originally `url(fonts/<name>.woff2) format("woff2"),url(fonts/<name>.woff)
+  format("woff"),url(fonts/<name>.ttf) format("truetype")`) down to a single
+  `url(data:font/woff2;base64,<...>) format("woff2")` entry, base64-encoding the vendored
+  `include_bytes!` font data directly — consistent with every other asset in this plugin already
+  being embedded, not referenced externally. Raw vendored footprint is ~254KB (20 `.woff2` files);
+  base64 inflates that by exactly 4/3 inside the generated CSS (see `docs/plugins/markdown/screens/
+  markdown.md`'s math section for the measured total document/binary impact).
+- To update: re-run the same jsdelivr fetch against a newer `katex@<version>` (JS, CSS, and every
+  file under `dist/fonts/*.woff2`), re-verify the LICENSE at the matching tag, recompute the
+  hashes, and update the version/hashes above.

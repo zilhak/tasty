@@ -35,6 +35,75 @@
 로직 없이 자동 반영된다. 문법이 깨진 다이어그램은 그 블록만 원본 코드 텍스트로 남고, 나머지
 콘텐츠 렌더에는 영향을 주지 않는다.
 
+## 수식(Math/LaTeX) 렌더링
+
+인라인 `$...$`/블록 `$$...$$` 수식은 `pulldown-cmark`의 `Options::ENABLE_MATH`
+(`parser_options()`)가 켜져 있으면 각각 `<span class="math math-inline">`/`<span
+class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 파싱된다 — **이 shape은
+라이브러리 기본 동작 그대로**다(GFM alert/footnote처럼 Rust 쪽에서 별도 AST 이벤트 rewrite를
+할 필요가 없었다). 실제 수식 렌더링은 mermaid와 동일한 클래스의 작업(클라이언트사이드 JS
+라이브러리, 조건부 트러스트 스크립트 삽입)으로
+[KaTeX](https://katex.org)(MIT, 오프라인 vendor —
+`crates/tasty-plugin-markdown/assets/katex.min.{js,css}` + `assets/fonts/KaTeX_*.woff2` +
+`NOTICE.md`)가 수행한다. 문서에 math span이 하나도 없으면 이 스크립트(JS+CSS+폰트 합쳐 약
+1MB)는 아예 삽입되지 않는다 — mermaid/highlight.js와 동일한 조건부 삽입 절약 패턴.
+
+- **sanitizer 확장 방식**: ammonia는 class *값* 단위 화이트리스트를 지원하지 않는다(태그·속성
+  단위만) — `span` 태그 + `class` 속성 전체를 허용하는 쪽을 택했다(`div`+`class`가 이미 이
+  crate에서 같은 방식으로 열려 있다 — `.tasty-state`/`.tasty-state-error` 등). math 이벤트만
+  sanitizer를 우회한 별도 신뢰 HTML로 사후 조립하는 대안도 검토했으나, `class` 값 자체는
+  스크립트를 실행하거나 URL을 열지 못해 사용자가 raw HTML로 `<span class="math
+  math-inline">직접 쓴 LaTeX</span>`를 흉내내도 결과는 "자기 콘텐츠가 KaTeX로 렌더된다"뿐이고,
+  pulldown-cmark 기본 동작을 그대로 통과시킬 수 있어 커스텀 이벤트 rewrite 코드가 전혀
+  필요없다는 점에서 이 방식을 택했다.
+- **폰트 오프라인 포함 — data URI**: 이 plugin의 다른 모든 vendored 자산(mermaid.js/highlight.js,
+  그리고 렌더된 문서 자체)은 host WebView에 넘기는 단일 HTML 문자열 안에 완전히
+  self-contained되어 있다 — 런타임에 상대 폰트 URL이 참조할 수 있는 "plugin assets 디렉토리"가
+  디스크에 따로 존재하지 않는다(`include_str!`/`include_bytes!`가 바이너리에 굽고, 아무것도
+  디스크에 다시 써지지 않는다). 문서의 유일한 `<base href>`는 이미 사용자의 마크다운 파일
+  디렉토리 몫이라 재지정하면 사용자 상대경로 이미지/링크가 깨진다. 그래서
+  `render.rs::katex_css_with_embedded_fonts`가 `katex.min.css`의 각 `@font-face`
+  `src:`(원래 `woff2`/`woff`/`ttf` 3-format 상대경로 리스트)를 vendored `woff2` bytes를
+  base64 인코딩한 단일 `data:font/woff2;base64,...` 엔트리로 치환한다(문자열 치환 — regex
+  의존성 불필요, 폰트 20개 basename이 컴파일타임에 고정). `woff`/`ttf` 형제 파일은 vendor하지
+  않았다 — 이 웹뷰가 임베드하는 엔진(WebKitGTK/WKWebView/WebView2)은 전부 evergreen이라
+  레거시 브라우저 폴백이 불필요하다.
+- **바이너리 크기 실측**: vendored 원본 자산은 KaTeX JS 272KB + CSS 24.7KB + woff2 폰트 20개
+  합계 약 254KB(base64 인코딩은 렌더 시점 런타임에 1회 계산 — `OnceLock` 메모, 바이너리 자체엔
+  raw 폰트 bytes만 들어간다). release 바이너리 크기를 같은 커밋 직전(KaTeX 미포함) 대비 직접
+  비교 측정한 결과 **9.69MB → 10.26MB(+576KB)**.
+- **보안**: `throwOnError: false`(파싱 실패 시 예외 대신 원본 TeX을 에러색으로 렌더 —
+  크래시·빈 화면 없음, 실패 전 span의 원본 escaped 텍스트도 손대지 않으므로 최악의 경우도
+  "원본 텍스트 그대로")와 `trust: false`(`\includegraphics`/`\href`/`\url` 등 LaTeX 매크로를
+  통한 임의 URL/마크업 삽입 차단, `sanitize_html`의 화이트리스트와는 별개의 방어선)를 **명시적으로**
+  설정한다(`katex.render(tex, el, {throwOnError:false, trust:false, displayMode})`) — KaTeX
+  자체 기본값에 기대지 않는다.
+- **텍스트 추출**: `el.textContent`(`innerHTML`이 아님)로 원본 LaTeX을 복원한다 — DOM이
+  `escape_html`이 인코딩한 HTML entity를 자동으로 원래 문자로 되돌려주므로, 저자가 `$...$` 사이에
+  실제로 입력한 문자열을 그대로 얻는다(코드블록 복사 버튼의 `code.textContent` 사용과 동일한
+  근거).
+- **블록/인라인 구분**: `el.classList.contains('math-display')`로 `displayMode`를 결정한다.
+  블록 수식의 가운데 정렬·여백은 KaTeX 자체 CSS(`.katex-display`)가 이미 처리하므로 이 plugin이
+  별도 CSS를 얹지 않는다.
+- **테마 연동**: vendored `katex.min.css`는 색을 하드코딩하지 않는다(`color:currentColor`만
+  존재, 직접 확인) — 수식은 그냥 `body`의 `color:var(--md-fg)`를 상속하므로 다크/라이트 전환
+  시 별도 런타임 재테마 로직 없이 자동으로 본문 텍스트 색을 따라간다(테마 변경 시 문서 전체가
+  재생성되는 것은 다른 모든 요소와 동일).
+- **중복 렌더 방지**: `data-tasty-math-rendered` 속성으로 같은 span에 `katex.render`가 두 번
+  걸리는 것을 막는다(코드블록 복사 버튼/이미지 실패 UI와 동일한 idempotency 관례) — 재로드는
+  항상 문서 전체를 새로 만들므로 구조적으로 필요하진 않지만 방어적으로 넣었다.
+
+**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1)**: 인라인 수식 1개
+(`$E=mc^2$`), 블록 수식 1개(`$$\sum_{i=1}^n i$$`), 의도적으로 깨진 수식 1개(`$\frac{1}$` —
+`\frac`의 두 번째 인자 누락)를 포함한 실제 `render_document()` 출력을
+`WebKit2.WebView.load_html`로 로드해 DOM을 직접 확인했다 — 정상 수식 2개는 실제 KaTeX MathML
+구조(`<math xmlns="http://www.w3.org/1998/Math/MathML">...`)로 렌더됐고, 블록 수식은
+`.katex-display`로 감싸졌으며, 깨진 수식은 크래시·빈 화면 없이 `.katex-error` 요소로
+치환되고 그 텍스트가 원본 TeX 소스(`\frac{1}`)와 정확히 일치함을 확인했다. macOS/Windows는 이
+머신에서 실행 불가 — 코드 리뷰로 KaTeX 자체가 표준 브라우저 API만 쓴다는 점만 확인했다(실기
+미검증, KaTeX는 플랫폼별 분기가 없는 순수 JS 라이브러리라 엔진 차이로 인한 리스크는 낮다고
+판단).
+
 ## 코드블록 syntax highlighting
 
 펜스드 코드블록(` ```rust ` 등)은 `sanitize_fence_lang` 이 언어 토큰을 `[A-Za-z0-9_+-]` 로 정규화한
@@ -380,6 +449,7 @@ Theme 토큰 매핑이다.
 | 이미지 로드 실패 플레이스홀더 | inline hex(`danger`) + `--md-code-bg`/`--md-radius` | `accent-danger` · `surface-raised` | `.tasty-img-error` — 아이콘은 `tasty_icons::IMAGE` 를 `danger` 로 구운 data URI(`render.rs::alert_icon_data_uri` 재사용) |
 | 이미지 로드 실패 경로 텍스트 | inline hex(`muted`) | `text-muted` | `.tasty-img-error-path` — `.tasty-state-detail` 과 동일 토큰 재사용 |
 | 검색 바 | `#tasty-find-bar` | `bg-sidebar` · `separator` | 우상단 `position:fixed`, 갤러리 `search_bar` specimen 과 동일 배치(위 "문서 내 검색" 절) |
+| 수식(KaTeX) 텍스트 색 | 없음(상속) | `body`의 `--md-fg` 를 그대로 상속 | vendored `katex.min.css` 가 `color:currentColor` 만 씀 — 전용 토큰/오버라이드 불필요(위 "수식 렌더링" 절) |
 | 매치 하이라이트 | inline hex(`accent-warning`, alpha) | `accent-warning` | `mark.tasty-find-hit` |
 | 현재 매치 하이라이트 | inline hex(`accent-primary`/`text-on-accent`) | `accent-primary` bg + `text-on-accent` fg | `mark.tasty-find-hit.tasty-find-current` |
 

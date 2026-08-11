@@ -106,6 +106,7 @@ fn parser_options() -> Options {
         | Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS
         | Options::ENABLE_SMART_PUNCTUATION
         | Options::ENABLE_GFM
+        | Options::ENABLE_MATH
 }
 
 /// Everything [`render_document`] needs. A struct (rather than a long parameter list) since
@@ -210,8 +211,18 @@ pub fn render_document(input: DocumentInput) -> String {
         String::new()
     };
 
+    // Same convention again — the KaTeX bundle+fonts are ~1MB embedded, so most documents (no
+    // `$...$`/`$$...$$` math) skip it entirely. `class="math math-` matches both
+    // `math math-inline` and `math math-display` (pulldown-cmark's `ENABLE_MATH` HTML writer's
+    // only two possible class values), so one substring check covers both.
+    let math = if body_html.contains("class=\"math math-") {
+        katex_script()
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
@@ -224,6 +235,7 @@ pub fn render_document(input: DocumentInput) -> String {
         mermaid = mermaid,
         copy_buttons = copy_buttons,
         image_errors = image_errors,
+        math = math,
     )
 }
 
@@ -1229,6 +1241,11 @@ fn sanitize_html(unsafe_html: &str) -> String {
         // attribute 없이 bare tag 로만 쓴다(tag_attributes 등록 불필요).
         "figure",
         "figcaption",
+        // pulldown-cmark 의 ENABLE_MATH 가 InlineMath/DisplayMath 이벤트를 기본으로
+        // `<span class="math math-inline|math-display">{escaped latex}</span>` 로 쓴다(자체
+        // Rust 쪽 이벤트 rewrite 불필요 — 라이브러리 기본 동작 그대로 통과시킨다). 아래
+        // `span`+`class` 화이트리스트 근거는 `tag_attributes` 주석 참조.
+        "span",
     ]
     .into_iter()
     .collect();
@@ -1257,6 +1274,15 @@ fn sanitize_html(unsafe_html: &str) -> String {
     // alert blockquote — 고정 literal class(markdown-alert-<kind>) + rewrite_alert_blockquote_event 가
     // 진짜 AST 이벤트에서만 심는 localized data-label(attr_escape 済み).
     tag_attributes.insert("blockquote", ["class", "data-label"].into_iter().collect());
+    // math span(`math math-inline`/`math math-display`) — ammonia 는 class *값* 단위
+    // 화이트리스트를 지원하지 않는다(태그·속성 단위만) — `div`+`class` 가 이미 이 crate 에서
+    // 같은 방식으로 열려 있다(`.tasty-state`/`.tasty-state-error` 등, 위 참조). class 값
+    // 자체는 스크립트 실행도 URL 도 아니라 사용자가 raw HTML 로 `<span
+    // class="math math-inline">직접 쓴 LaTeX</span>` 를 흉내내도 결과는 "자기 콘텐츠가
+    // KaTeX 로 렌더된다" 뿐 — 별도의 신뢰 HTML 사후조립(sanitizer 우회) 경로 없이 이 방식을
+    // 택했다(스코프상으로도 이 방식이 pulldown-cmark 기본 동작을 그대로 쓰므로 커스텀 이벤트
+    // rewrite 코드가 전혀 필요 없어 더 작다).
+    tag_attributes.insert("span", ["class"].into_iter().collect());
 
     Builder::default()
         .tags(tags)
@@ -2051,6 +2077,196 @@ if(img.complete&&img.naturalWidth===0){{replaceWithPlaceholder(img);}}
 }}catch(e){{console.error('image error-check init failed',e);}}
 }})();</script>"#,
         label = json_or_empty(tr.t("markdown.image.failed")),
+    )
+}
+
+// ── math (KaTeX) ─────────────────────────────────────────────────────────────
+
+/// Vendored `katex.min.js` bundle (see `assets/NOTICE.md` for version/license/source). Fetched
+/// once at packaging time — never over the network at runtime.
+const KATEX_JS_RAW: &str = include_str!("../assets/katex.min.js");
+
+/// Vendored `katex.min.css` — still has its original `@font-face { src: url(fonts/...) }`
+/// relative paths at this point; [`katex_css_with_embedded_fonts`] rewrites those before use.
+const KATEX_CSS_RAW: &str = include_str!("../assets/katex.min.css");
+
+/// Every font KaTeX 0.18.4 ships (`woff2` only — see `assets/NOTICE.md`), paired with the exact
+/// basename [`KATEX_CSS_RAW`]'s `@font-face` rules reference so [`katex_css_with_embedded_fonts`]
+/// can find-and-replace each one directly by string match (no regex dependency needed — the set
+/// of basenames is fixed and known at compile time).
+const KATEX_FONTS: &[(&str, &[u8])] = &[
+    (
+        "KaTeX_AMS-Regular",
+        include_bytes!("../assets/fonts/KaTeX_AMS-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Caligraphic-Bold",
+        include_bytes!("../assets/fonts/KaTeX_Caligraphic-Bold.woff2"),
+    ),
+    (
+        "KaTeX_Caligraphic-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Caligraphic-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Fraktur-Bold",
+        include_bytes!("../assets/fonts/KaTeX_Fraktur-Bold.woff2"),
+    ),
+    (
+        "KaTeX_Fraktur-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Fraktur-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Main-Bold",
+        include_bytes!("../assets/fonts/KaTeX_Main-Bold.woff2"),
+    ),
+    (
+        "KaTeX_Main-BoldItalic",
+        include_bytes!("../assets/fonts/KaTeX_Main-BoldItalic.woff2"),
+    ),
+    (
+        "KaTeX_Main-Italic",
+        include_bytes!("../assets/fonts/KaTeX_Main-Italic.woff2"),
+    ),
+    (
+        "KaTeX_Main-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Main-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Math-BoldItalic",
+        include_bytes!("../assets/fonts/KaTeX_Math-BoldItalic.woff2"),
+    ),
+    (
+        "KaTeX_Math-Italic",
+        include_bytes!("../assets/fonts/KaTeX_Math-Italic.woff2"),
+    ),
+    (
+        "KaTeX_SansSerif-Bold",
+        include_bytes!("../assets/fonts/KaTeX_SansSerif-Bold.woff2"),
+    ),
+    (
+        "KaTeX_SansSerif-Italic",
+        include_bytes!("../assets/fonts/KaTeX_SansSerif-Italic.woff2"),
+    ),
+    (
+        "KaTeX_SansSerif-Regular",
+        include_bytes!("../assets/fonts/KaTeX_SansSerif-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Script-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Script-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Size1-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Size1-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Size2-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Size2-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Size3-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Size3-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Size4-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Size4-Regular.woff2"),
+    ),
+    (
+        "KaTeX_Typewriter-Regular",
+        include_bytes!("../assets/fonts/KaTeX_Typewriter-Regular.woff2"),
+    ),
+];
+
+/// [`KATEX_JS_RAW`] with [`escape_script_close`] applied (memoized, same convention as
+/// [`mermaid_js_source`]/[`highlight_js_source`] — the bundle is inlined verbatim inside an HTML
+/// `<script>` element).
+fn katex_js_source() -> &'static str {
+    static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ESCAPED.get_or_init(|| escape_script_close(KATEX_JS_RAW))
+}
+
+/// [`KATEX_CSS_RAW`] with every `@font-face`'s `src:` list collapsed from three formats
+/// (`woff2`/`woff`/`truetype`, each a relative `fonts/<name>.<ext>` URL) down to a single
+/// `data:font/woff2;base64,<...>` entry built from the matching [`KATEX_FONTS`] bytes. Memoized —
+/// base64-encoding ~254KB of font data is wasted work to repeat on every render.
+///
+/// Data URIs, not relative `file://` paths: see `assets/NOTICE.md`'s "Font offline delivery"
+/// note — there is no on-disk plugin-assets directory a relative URL inside the rendered document
+/// could resolve against at runtime (everything is `include_str!`/`include_bytes!`-baked into the
+/// binary), and the document's one `<base href>` already belongs to the user's own markdown file
+/// directory.
+fn katex_css_with_embedded_fonts() -> &'static str {
+    static EMBEDDED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    EMBEDDED.get_or_init(|| {
+        use base64::Engine;
+        let mut css = KATEX_CSS_RAW.to_string();
+        for (name, bytes) in KATEX_FONTS {
+            let original = format!(
+                r#"url(fonts/{name}.woff2) format("woff2"),url(fonts/{name}.woff) format("woff"),url(fonts/{name}.ttf) format("truetype")"#
+            );
+            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            let replacement = format!(r#"url(data:font/woff2;base64,{b64}) format("woff2")"#);
+            css = css.replace(&original, &replacement);
+        }
+        css
+    })
+}
+
+/// Inline the KaTeX bundle + init script — only called when the document actually has at least
+/// one `math`/`math-display` span (see call site in [`render_document`]). Scoped to
+/// `#tasty-md-body .math-inline, #tasty-md-body .math-display` — the same shape
+/// `pulldown-cmark`'s `Options::ENABLE_MATH` HTML writer emits by default
+/// (`<span class="math math-inline">`/`<span class="math math-display">`, LaTeX source
+/// HTML-escaped as the span's text) — no custom AST event rewrite was needed to produce this
+/// shape (see `sanitize_html`'s `span`+`class` whitelist comment for why that shape is allowed
+/// through sanitization as-is).
+///
+/// Reads `el.textContent` (not `innerHTML`) to recover the literal LaTeX source — the DOM
+/// decodes the HTML entities `escape_html` encoded back into the original characters, so this
+/// gets exactly what the author typed between `$...$`/`$$...$$`.
+///
+/// `throwOnError: false` + `trust: false` are set explicitly (not left as defaults) per this
+/// task's security requirement: `trust: false` blocks LaTeX commands (`\includegraphics`,
+/// `\href`, `\url`, ...) that could otherwise smuggle arbitrary URLs/markup through a macro,
+/// independent of `sanitize_html`'s own allowlist. `throwOnError: false` makes KaTeX render a
+/// parse failure as a visible (originally `errorColor`-tinted) rendering of the original TeX
+/// source instead of throwing — combined with the outer per-element `try/catch` (defense-in-depth
+/// against a non-`ParseError` exception), a broken formula never crashes the page or blanks the
+/// element. Live-verified in the real WebKitGTK engine (details: `docs/plugins/markdown/screens/
+/// markdown.md`): a genuinely broken formula (`\frac{1}` — missing its second argument) produced
+/// a `.katex-error` element whose text is exactly the original TeX source, while two valid
+/// formulas alongside it rendered as real KaTeX MathML output (`.katex`), and the display-mode
+/// one was wrapped in KaTeX's own `.katex-display`.
+///
+/// `color: currentColor` is KaTeX's own default (verified directly in the vendored
+/// `katex.min.css` — zero hardcoded colors) — math already inherits `body`'s `color:var(--md-fg)`
+/// with no extra theme wiring needed, and follows dark/light exactly like every other themed
+/// element (`theme_css`'s whole `<style>` block is regenerated on every theme change/reload,
+/// same as everything else in this document).
+///
+/// `data-tasty-math-rendered` per-span guard mirrors [`copy_button_script`]/
+/// [`image_error_script`]'s idempotency convention — defense-in-depth in case this script somehow
+/// runs twice against the same DOM (structurally it shouldn't: `reload_webview` always replaces
+/// the whole document, never patches it in place). Without the guard, a second `katex.render`
+/// call would try to re-parse the *already-rendered* KaTeX DOM's `textContent` as TeX instead of
+/// the original source.
+fn katex_script() -> String {
+    format!(
+        r#"<style>{css}</style><script>{js}</script><script>(function(){{
+try{{
+document.querySelectorAll('#tasty-md-body .math-inline, #tasty-md-body .math-display').forEach(function(el){{
+try{{
+if(el.dataset.tastyMathRendered)return;
+el.dataset.tastyMathRendered='1';
+var tex=el.textContent;
+var display=el.classList.contains('math-display');
+katex.render(tex,el,{{throwOnError:false,trust:false,displayMode:display}});
+}}catch(e){{console.error('katex render failed',e);}}
+}});
+}}catch(e){{console.error('katex init failed',e);}}
+}})();</script>"#,
+        css = katex_css_with_embedded_fonts(),
+        js = katex_js_source(),
     )
 }
 
@@ -3282,6 +3498,141 @@ mod tests {
         assert_ne!(
             base_css, alt_css,
             "image error placeholder color should follow accent_danger, not a fixed palette"
+        );
+    }
+
+    // ── math (KaTeX) ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn render_document_inlines_katex_only_when_math_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let with_math = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/math.md",
+            source: "Einstein: $E=mc^2$\n\n$$\\sum_{i=1}^n i$$\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(with_math.contains(r#"class="math math-inline""#));
+        assert!(with_math.contains(r#"class="math math-display""#));
+        assert!(with_math.contains("katex.render"));
+
+        let without_math = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "# Just prose\n\nNo math here, and no literal dollar signs either.",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!without_math.contains("katex.render"));
+    }
+
+    #[test]
+    fn render_document_preserves_original_latex_source_in_math_span() {
+        // The HTML writer HTML-escapes the LaTeX source into the span's text content — this
+        // locks in that pulldown-cmark's own default `ENABLE_MATH` output survives
+        // `sanitize_html` unmangled (no custom event rewrite needed for this shape).
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/math.md",
+            source: "$a < b$\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains("a &lt; b"), "got: {html}");
+    }
+
+    #[test]
+    fn render_document_error_state_has_no_katex_script() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/broken.md",
+            source: "",
+            load_error: Some("No such file"),
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!html.contains("katex.render"));
+    }
+
+    #[test]
+    fn katex_script_is_scoped_to_body_math_spans_only() {
+        let script = katex_script();
+        assert!(script.contains("#tasty-md-body .math-inline, #tasty-md-body .math-display"));
+    }
+
+    #[test]
+    fn katex_script_sets_required_security_options_explicitly() {
+        // Task requirement: throwOnError/trust must be explicitly false, not left as defaults.
+        let script = katex_script();
+        assert!(script.contains("throwOnError:false"));
+        assert!(script.contains("trust:false"));
+    }
+
+    #[test]
+    fn katex_script_reads_text_content_not_inner_html() {
+        let script = katex_script();
+        assert!(script.contains("el.textContent"));
+        assert!(!script.contains("el.innerHTML"));
+    }
+
+    #[test]
+    fn katex_script_distinguishes_inline_from_display_mode() {
+        let script = katex_script();
+        assert!(script.contains("el.classList.contains('math-display')"));
+        assert!(script.contains("displayMode:display"));
+    }
+
+    #[test]
+    fn katex_script_guards_against_duplicate_rendering() {
+        let script = katex_script();
+        assert!(script.contains("el.dataset.tastyMathRendered"));
+    }
+
+    #[test]
+    fn katex_script_wraps_render_in_try_catch_with_console_error_fallback() {
+        let script = katex_script();
+        assert!(script.contains("try{"));
+        assert!(script.contains("catch(e){console.error"));
+    }
+
+    #[test]
+    fn katex_js_source_has_no_premature_script_close() {
+        let js = katex_js_source();
+        assert!(!js.to_ascii_lowercase().contains("</script"));
+    }
+
+    #[test]
+    fn katex_css_embeds_every_vendored_font_as_a_data_uri_with_no_leftover_relative_urls() {
+        let css = katex_css_with_embedded_fonts();
+        assert!(!css.contains("url(fonts/"), "leftover relative font url");
+        assert_eq!(
+            css.matches("data:font/woff2;base64,").count(),
+            KATEX_FONTS.len()
+        );
+    }
+
+    #[test]
+    fn katex_css_sets_no_hardcoded_color_so_math_inherits_body_text_color() {
+        // Locks in the "no extra theme wiring needed" claim in `katex_script`'s doc comment —
+        // if a future re-vendor ever introduces a hardcoded `.katex{color:...}` rule, this fails
+        // loudly instead of silently breaking dark/light theme following.
+        let css = KATEX_CSS_RAW;
+        assert!(
+            !css.contains(".katex{color:") && !css.contains(".katex {color:"),
+            "katex.min.css should rely on inherited `currentColor`, not set its own color"
         );
     }
 

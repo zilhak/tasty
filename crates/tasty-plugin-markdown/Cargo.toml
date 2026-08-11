@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.54"
+version = "0.1.55"
 edition = "2024"
 license = "MIT"
 description = "Markdown viewer surface plugin (webview)"
@@ -35,6 +35,9 @@ serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+# KaTeX 웹폰트(woff2)를 render.rs 가 CSS `@font-face src` data URI 로 굽는 데만 쓴다 —
+# 워크스페이스 다른 곳(tasty-host-plugin)도 이미 같은 버전을 쓴다.
+base64 = "0.22"
 
 # 확인 팝업(large-file/file-open) 전용 — 본문은 더 이상 egui 로 그리지 않지만, 이
 # 두 팝업은 host·SDK·protocol 과 동일 egui 인스턴스로 unify 해야 한다(epaint serde
