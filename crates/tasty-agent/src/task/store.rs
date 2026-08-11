@@ -247,6 +247,29 @@ impl<'a> TaskStore<'a> {
         }
 
         self.put(&new_task)?;
+
+        // `Fallback{task}` 대상은 이 main(new_task) 보다 먼저 존재해야 하므로
+        // (위 존재 검증), 그 fallback 자신의 초기 state 는 이 main 이 생기기
+        // *전에* 이미 계산돼 있었다 — 그 시점엔 아직 아무도 그걸 fallback 으로
+        // 참조하지 않았으므로, `depends_on` 이 비어 있으면 곧장 `Ready` 로
+        // 확정된다(`evaluate_readiness`의 dormant 판정은 참조하는 main 이
+        // 존재할 때만 걸린다). 이제 막 그 main 이 생겼으니, fallback 이 아직
+        // dispatch 되지 않고 `Ready` 로 남아 있다면 지금 `Waiting` 으로
+        // 되돌려 "main 실패 전엔 돌지 않는다" 계약을 소급 적용한다. 그 사이
+        // 이미 `Running`/종결로 넘어갔다면(runner 가 그 틈에 tick 했다면)
+        // 되돌릴 방법이 없어 건드리지 않는다 — 두 CLI 호출 사이의 레이스는
+        // 이 fallback task 를 main 보다 먼저 만들어야 하는 생성 순서 제약
+        // 자체의 한계다.
+        if let OnFailure::Fallback {
+            task: Some(fb_id), ..
+        } = &new_task.on_failure
+            && let Some(mut fb) = self.get(workspace_id, fb_id)?
+            && matches!(fb.state, TaskState::Ready)
+        {
+            fb.state = TaskState::Waiting;
+            self.put(&fb)?;
+        }
+
         Ok(new_task)
     }
 
@@ -308,6 +331,32 @@ impl<'a> TaskStore<'a> {
             {
                 transitioned.push(new_fb);
             }
+        }
+
+        // Failed 가 아닌 다른 terminal 로 전이 + on_failure=Fallback(existing) →
+        // 그 fallback 은 다시는 깨어날 일이 없다. `Fallback` 은 "main 이 실패했을
+        // 때만 도는 대체 경로" 계약이라 승격 진입로가 Failed 전이(위 분기) 하나
+        // 뿐인데, main 이 Succeeded/Cancelled/Skipped 로 끝나면 그 진입로 자체가
+        // 영영 열리지 않는다 — dormant 상태 그대로 `Waiting` 에 방치하면
+        // task-graph/task-list/purge 후보 판정에 계속 남으므로 `Skipped` 로
+        // 마감해 종결시킨다. inline fallback 은 Failed 분기에서만 동적
+        // 생성되므로, 여기 도달했다는 건 애초에 만들어진 적이 없다는 뜻이라
+        // 정리할 대상 자체가 없다.
+        if matches!(
+            new_state,
+            TaskState::Succeeded | TaskState::Cancelled | TaskState::Skipped
+        ) && let OnFailure::Fallback {
+            task: Some(fb_id), ..
+        } = task.on_failure.clone()
+            && matches!(
+                self.get(workspace_id, &fb_id)?.map(|t| t.state),
+                Some(TaskState::Waiting)
+            )
+        {
+            let (fb_task, more) =
+                self.set_state(workspace_id, &fb_id, TaskState::Skipped, now_ms)?;
+            transitioned.push(fb_task);
+            transitioned.extend(more);
         }
 
         // downstream 재평가

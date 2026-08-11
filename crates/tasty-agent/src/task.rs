@@ -98,13 +98,21 @@ pub enum OnFailure {
     Abort,
     /// downstream을 정상 진행 (의존성 실패를 성공처럼 취급).
     ContinueDownstream,
-    /// Fallback task 를 실행. 그 fallback 이 Succeed 하면 downstream 이 정상 진행.
+    /// main 이 `Failed` 로 전이해야만 도는 대체 경로. 그 fallback 이 Succeed 하면
+    /// downstream 이 정상 진행.
     ///
     /// 두 형식 지원 (둘 중 정확히 하나):
-    /// - `task`: 사전에 존재하는 task id (기존 동작).
+    /// - `task`: 사전에 존재하는 task id (기존 동작). main 이 `Failed` 가 되기
+    ///   전까지는 **dormant** 하다 — `depends_on` 이 비어 있어도 곧장 `Ready`
+    ///   로 뜨지 않는다(`TaskGraph::evaluate_readiness` 의 dormant 판정,
+    ///   `TaskStore::create` 가 main 생성 시점에 이미 `Ready` 였던 대상을
+    ///   `Waiting` 으로 소급 정정). main 이 `Succeeded`/`Cancelled`/`Skipped`
+    ///   로 끝나 다시는 `Failed` 가 될 일이 없어지면(`set_state`), 그 fallback
+    ///   은 `Waiting` 에 영구 잔류하지 않고 `Skipped` 로 마감된다.
     /// - `inline`: 동적 spec — main 이 Failed 가 되는 set_state 분기에서
     ///   `TaskStore::create` 가 새 fallback task 를 생성. `metadata.fallback_of`
     ///   에 main.id 가 자동 주입되어 idempotency 보장 + downstream 재평가 추적.
+    ///   task 자체가 실패 시점에야 생기므로 dormant 상태를 거치지 않는다.
     Fallback {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         task: Option<TaskId>,

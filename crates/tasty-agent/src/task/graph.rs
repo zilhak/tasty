@@ -119,13 +119,33 @@ impl<'a> TaskGraph<'a> {
         out
     }
 
+    /// `task_id`가 어떤 main task 의 `on_failure = Fallback{task: Some(task_id)}`
+    /// 대상이면서, 그 main 이 아직 `Failed` 로 전이하지 않은 경우 `true`.
+    /// `Fallback` 은 "main 이 실패했을 때만 도는 대체 경로" 계약이므로, main 이
+    /// 실패하기 전(또는 실패 없이 Succeeded/Cancelled/Skipped 로 끝난 뒤)까지는
+    /// 이 fallback 을 `depends_on` 유무와 무관하게 Ready 로 올리면 안 된다 —
+    /// main 이 Failed 로 전이하는 순간의 `advance_existing_fallback` 승격 경로가
+    /// 유일한 정식 진입로다.
+    fn dormant_as_pending_fallback(&self, task_id: &TaskId) -> bool {
+        self.tasks.values().any(|main| {
+            matches!(
+                &main.on_failure,
+                OnFailure::Fallback { task: Some(fb_id), .. } if fb_id == task_id
+            ) && !matches!(main.state, TaskState::Failed { .. })
+        })
+    }
+
     /// `task_id`의 의존성 상태를 평가해 `Ready`로 진행 가능한지 판단.
     /// 반환:
     /// - `Some(TaskState::Ready)` — 모든 dep Succeeded
     /// - `Some(TaskState::Skipped)` — dep 중 Failed/Cancelled/Skipped 존재
-    /// - `None` — 아직 대기 (dep에 미완료가 있음)
+    /// - `None` — 아직 대기 (dep에 미완료가 있음, 또는 dormant fallback)
     pub fn evaluate_readiness(&self, task_id: &TaskId) -> Option<TaskState> {
         let task = self.tasks.get(task_id)?;
+
+        if self.dormant_as_pending_fallback(task_id) {
+            return None;
+        }
 
         // `Reduce.inputs` 는 암묵적 의존성이지만 `depends_on` 과 의미가 다르다:
         // reducer(특히 `all`)는 실패한 입력도 의도적으로 수집하는 것이 계약이므로

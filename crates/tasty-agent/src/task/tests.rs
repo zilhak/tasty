@@ -652,7 +652,11 @@ fn fallback_triggers_when_main_fails() {
             now_ms: 1002,
         })
         .unwrap();
-    // A 실패 시 A_prime 도 이미 Ready 였으므로 변화 없음, C 는 Waiting 유지 (fallback 대기).
+    // A_prime 은 A 가 아직 실패하기 전까지 dormant — depends_on 이 비어 있어도
+    // Ready 로 뜨지 않는다.
+    let a_prime_dormant = store.get(1, &a_prime.id).unwrap().unwrap();
+    assert_eq!(a_prime_dormant.state, TaskState::Waiting);
+    // A 실패 시 A_prime 이 비로소 Ready 로 승격, C 는 Waiting 유지 (fallback 대기).
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
         .set_state(
@@ -802,6 +806,268 @@ fn fallback_failure_also_skips_main_downstream() {
         c_after.state,
         TaskState::Skipped,
         "fallback 도 실패면 C 도 Skip"
+    );
+}
+
+/// main 이 성공하면 그 fallback(existing task 참조)은 한 번도 dispatch 대상
+/// (`Ready`)이 되지 않아야 한다 — "실패했을 때만 도는 대체 경로" 계약. 성공
+/// 직후 fallback 은 `Waiting` 에 영구 잔류하지 않고 `Skipped` 로 마감된다
+/// (다시는 main 이 Failed 될 일이 없으므로).
+#[test]
+fn fallback_task_never_runs_when_main_succeeds() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let fb = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "fallback".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    // fallback 자신을 만드는 시점엔 아직 아무 main 도 이걸 참조하지 않으므로
+    // (Fallback{task} 대상은 반드시 main 보다 먼저 존재해야 한다), 의존성이
+    // 없으면 이 시점엔 정상적으로 Ready 다 — dormant 판정은 참조하는 main 이
+    // 생긴 "다음" 부터 걸린다.
+    assert_eq!(fb.state, TaskState::Ready);
+    let main = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "main".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(fb.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    // main 을 참조하는 순간에도(생성 시점 소급 정정 포함) fallback 은 그대로 dormant.
+    let fb_after_main_create = store.get(1, &fb.id).unwrap().unwrap();
+    assert_eq!(fb_after_main_create.state, TaskState::Waiting);
+
+    store
+        .set_state(1, &main.id, TaskState::Running, 2000)
+        .unwrap();
+    store
+        .set_state(1, &main.id, TaskState::Succeeded, 3000)
+        .unwrap();
+
+    let fb_final = store.get(1, &fb.id).unwrap().unwrap();
+    assert_eq!(
+        fb_final.state,
+        TaskState::Skipped,
+        "main 성공으로 다시는 승격될 일이 없는 fallback 은 waiting 에 잔류하지 \
+         않고 skipped 로 마감돼야 한다"
+    );
+}
+
+/// main 이 실패하면 fallback 이 dormant(`Waiting`) → `Ready` → (러너가 dispatch
+/// 해) `Running` → `Succeeded` 로 진행하고, main 에 의존하던 downstream 도 그
+/// 결과를 받아 정상 진행해야 한다.
+#[test]
+fn fallback_ready_then_run_succeeded_and_downstream_proceeds() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let fb = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "fallback".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let main = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "main".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(fb.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    let downstream = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "downstream".to_string(),
+            command: run_cmd(),
+            depends_on: vec![main.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
+        .unwrap();
+
+    store
+        .set_state(1, &main.id, TaskState::Running, 2000)
+        .unwrap();
+    store
+        .set_state(
+            1,
+            &main.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+    let fb_ready = store.get(1, &fb.id).unwrap().unwrap();
+    assert_eq!(
+        fb_ready.state,
+        TaskState::Ready,
+        "main 실패로 fallback 승격"
+    );
+    let downstream_waiting = store.get(1, &downstream.id).unwrap().unwrap();
+    assert_eq!(
+        downstream_waiting.state,
+        TaskState::Waiting,
+        "fallback 결과가 나오기 전까지 downstream 은 대기"
+    );
+
+    store
+        .set_state(1, &fb.id, TaskState::Running, 3500)
+        .unwrap();
+    store
+        .set_state(1, &fb.id, TaskState::Succeeded, 4000)
+        .unwrap();
+
+    let downstream_after = store.get(1, &downstream.id).unwrap().unwrap();
+    assert_eq!(
+        downstream_after.state,
+        TaskState::Ready,
+        "fallback 성공으로 main 에 의존하던 downstream 이 정상 진행"
+    );
+}
+
+/// main 이 사용자에 의해 `Cancelled` 로 끝나면(실행 한번 못 해보고 취소되는
+/// 경우 포함) 다시는 `Failed` 로 전이할 일이 없다 — 그 fallback 을 `Waiting`
+/// 에 방치하면 안 된다.
+#[test]
+fn fallback_finalized_skipped_when_main_cancelled() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let fb = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "fallback".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let main = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "main".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(fb.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    store.cancel(1, &main.id, 2000).unwrap();
+
+    let fb_after = store.get(1, &fb.id).unwrap().unwrap();
+    assert_eq!(
+        fb_after.state,
+        TaskState::Skipped,
+        "main 이 cancelled 로 끝나 다시 실패할 일이 없는 fallback 은 waiting \
+         에 영구 잔류하지 않아야 한다"
+    );
+}
+
+/// main 자신이 `Skipped` 로 끝나는 경우도 마찬가지로 그 fallback 이 waiting 에
+/// 영구 잔류하면 안 된다. `Fallback` 이 설정된 task 는 자기 의존성이 실패해도
+/// (기존 설계상) 직접 Skipped 로 떨어지지 않으므로(`apply_on_failure` 가
+/// `Fallback` 에는 `None` 을 반환 — downstream 쪽 설정 오용 케이스), 이 상태를
+/// 실제로 관찰하려면 main 자신이 *다른 main* 의 dormant fallback 이어서 그
+/// 상위 main 이 성공/취소로 끝나 Skipped 로 마감되는 체인을 구성해야 한다 —
+/// 그 체인이 main 자신의 fallback 정리 로직까지 재귀적으로 타는지 함께 검증한다.
+#[test]
+fn fallback_finalized_skipped_when_main_ends_skipped_via_chained_fallback() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    // grandparent 가 성공하면 main(= grandparent 의 fallback 대상) 은 다시는
+    // 깨어나지 않으므로 Skipped 로 마감된다.
+    let leaf_fb = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "leaf_fallback".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let main = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "main".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(leaf_fb.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+    let grandparent = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "grandparent".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(main.id.clone()),
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
+        .unwrap();
+
+    store
+        .set_state(1, &grandparent.id, TaskState::Running, 2000)
+        .unwrap();
+    store
+        .set_state(1, &grandparent.id, TaskState::Succeeded, 3000)
+        .unwrap();
+
+    let main_after = store.get(1, &main.id).unwrap().unwrap();
+    assert_eq!(
+        main_after.state,
+        TaskState::Skipped,
+        "grandparent 성공으로 main 은 다시 깨어날 일이 없다"
+    );
+    let leaf_fb_after = store.get(1, &leaf_fb.id).unwrap().unwrap();
+    assert_eq!(
+        leaf_fb_after.state,
+        TaskState::Skipped,
+        "main 이 skipped 로 마감되면 그 자신의 fallback 도 연쇄로 마감돼야 \
+         waiting 에 영구 잔류하지 않는다"
     );
 }
 
