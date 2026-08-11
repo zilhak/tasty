@@ -147,6 +147,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "collapsible <nav> · surface-raised · indent = space-sm × level",
             ),
             ("code", "mono · surface-raised · language class preserved"),
+            (
+                "syntax highlighting",
+                "client-side highlight.js (offline vendor) · hljs-* token colors from Theme hues",
+            ),
             ("link", "accent-primary · nav-fragment intercepted"),
             ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
@@ -219,6 +223,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "important alert",
                 theme.accent_agent().to_egui(),
             ),
+            TokenChip::new("mauve", "hljs-keyword", theme.mauve.to_egui()),
+            TokenChip::new("blue", "hljs-title/function", theme.blue.to_egui()),
+            TokenChip::new("green", "hljs-string", theme.green.to_egui()),
+            TokenChip::new("red", "hljs-built_in", theme.red.to_egui()),
         ],
     );
 
@@ -242,8 +250,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          `-1`/`-2` suffixes, no explicit `{#id}` syntax) and a document-top collapsible `<nav>` \
          TOC is generated from them (`render.rs::toc_nav_html`) — clicking an entry is a plain \
          same-document anchor jump, reusing the existing anchor-only pass-through rather than \
-         the `#tasty-nav:` interception scheme. Below the document: the heading type-scale, and \
-         the load-fail / empty / loading chrome that replaces a raw `Error:` body.",
+         the `#tasty-nav:` interception scheme. Fenced code blocks get client-side syntax \
+         highlighting from a vendored, offline highlight.js bundle (`render.rs::highlight_script` \
+         — inserted only when the document actually has a code block, same conditional pattern as \
+         the mermaid bundle), with `hljs-*` token colors mapped to this plugin's own Catppuccin- \
+         style `Theme` hues (`render.rs::hljs_css`) instead of a fixed vendored theme, so \
+         highlighted code follows the active tasty theme. This specimen's code block hand-tokenizes \
+         the same sample the way highlight.js's `rust` grammar would, to approximate that CSS \
+         output. Below the document: the heading type-scale, and the load-fail / empty / loading \
+         chrome that replaces a raw `Error:` body.",
     );
 }
 
@@ -307,11 +322,7 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
             task_row(ui, theme, false, "Task to do");
 
             heading(ui, theme, 3, "Code block");
-            code_block(
-                ui,
-                theme,
-                "fn main() {\n    println!(\"hi from tasty\");\n}",
-            );
+            code_block(ui, theme, &rust_snippet_tokens());
 
             heading(ui, theme, 3, "Image");
             image_block(ui, theme, "Referenced with a relative path — resolved against the md file's own directory, e.g. ![alt](./screenshot.png).");
@@ -542,19 +553,76 @@ fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {
     ));
 }
 
-fn code_block(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+/// One highlight.js token scope, hand-mapped to the same `Theme` hue `render.rs::hljs_css` uses
+/// (this specimen mirrors that mapping by hand — it doesn't consume it live, the gallery has no
+/// webview to run highlight.js in).
+#[derive(Clone, Copy)]
+enum TokenKind {
+    Plain,
+    Keyword,
+    Title,
+    Builtin,
+    String,
+}
+
+/// One token's text + [`TokenKind`] — a code-block line is a `Vec<CodeToken>`.
+struct CodeToken(&'static str, TokenKind);
+
+/// `fn main() { format!("hi from tasty"); }` tokenized the way highlight.js's `rust` grammar
+/// would split it, each token tagged with the `hljs-*` scope `render.rs::hljs_css` colors it by:
+/// `fn` = keyword (mauve), `main` = title/function (blue), `format!` = built_in (red),
+/// the string literal = string (green), everything else = plain (text-secondary, unchanged).
+fn rust_snippet_tokens() -> [Vec<CodeToken>; 3] {
+    [
+        vec![
+            CodeToken("fn ", TokenKind::Keyword),
+            CodeToken("main", TokenKind::Title),
+            CodeToken("() {", TokenKind::Plain),
+        ],
+        vec![
+            CodeToken("    ", TokenKind::Plain),
+            CodeToken("format!", TokenKind::Builtin),
+            CodeToken("(", TokenKind::Plain),
+            CodeToken("\"hi from tasty\"", TokenKind::String),
+            CodeToken(");", TokenKind::Plain),
+        ],
+        vec![CodeToken("}", TokenKind::Plain)],
+    ]
+}
+
+/// Code block — each line rendered as colored `CodeToken` runs, approximating highlight.js's
+/// `<span class="hljs-*">` output (`render.rs::highlight_script`) painted through
+/// `render.rs::hljs_css`'s Theme-derived token colors, rather than the single flat-color mono
+/// block this specimen used before syntax highlighting existed.
+fn code_block(ui: &mut egui::Ui, theme: &Theme, lines: &[Vec<CodeToken>]) {
+    let body = theme.font_size_body.value();
+    let token_color = |kind: TokenKind| match kind {
+        TokenKind::Plain => theme.text_secondary().to_egui(),
+        TokenKind::Keyword => theme.mauve.to_egui(),
+        TokenKind::Title => theme.blue.to_egui(),
+        TokenKind::Builtin => theme.red.to_egui(),
+        TokenKind::String => theme.green.to_egui(),
+    };
     egui::Frame::new()
         .fill(theme.surface_raised().to_egui())
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width() - theme.spacing_sm.value() * 2.0);
-            ui.label(
-                egui::RichText::new(text)
-                    .monospace()
-                    .size(theme.font_size_body.value())
-                    .color(theme.text_secondary().to_egui()),
-            );
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for line in lines {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for CodeToken(text, kind) in line {
+                        ui.label(
+                            egui::RichText::new(*text)
+                                .monospace()
+                                .size(body)
+                                .color(token_color(*kind)),
+                        );
+                    }
+                });
+            }
         });
 }
 

@@ -178,14 +178,27 @@ pub fn render_document(input: DocumentInput) -> String {
         String::new()
     };
 
+    // 마찬가지로 펜스드 코드블록이 하나도 없는 문서(대다수)에서는 삽입하지 않는다. mermaid
+    // 전용 문서에서도 이 substring 검사는 걸리지만(mermaid 블록도 `class="language-mermaid"`
+    // 라는 같은 모양의 class 를 가짐) — 벤더링한 번들엔 "mermaid" 라는 언어가 없으므로
+    // `highlight_script` 는 아무것도 하이라이팅하지 않고 조용히 끝난다(125KB 낭비는 있지만
+    // mermaid 를 조건에서 정교하게 제외하는 별도 스캐너를 두는 것보다 mermaid_script 와 같은
+    // 수준의 단순한 substring 검사를 유지하는 쪽을 택했다).
+    let highlight = if body_html.contains("class=\"language-") {
+        highlight_script()
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{mermaid}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
         toc_html = toc_html,
         body_html = body_html,
         script = nav_script(file_path),
+        highlight = highlight,
         mermaid = mermaid,
     )
 }
@@ -1148,6 +1161,7 @@ blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-quote-bar);m
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
 blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
 {alert_rules}
+{hljs_rules}
 hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
 img{{max-width:100%;}}
 ul,ol{{padding-left:1.5em;}}
@@ -1185,6 +1199,7 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
         alert_rules = alert_css(theme),
+        hljs_rules = hljs_css(theme),
     )
 }
 
@@ -1227,6 +1242,48 @@ fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str) -> String
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{fill}" stroke="{stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{icon_body}</svg>"#,
     );
     format!("data:image/svg+xml,{}", percent_encode_fragment(&svg))
+}
+
+/// `highlight.js`'s emitted `hljs-*` token classes, colored from this plugin's own Catppuccin-
+/// style hue fields (`Theme::mauve`/`blue`/`green`/... — the same named-hue vocabulary every other
+/// accent in this codebase derives from) instead of a vendored highlight.js theme (`github.css`
+/// etc). That keeps highlighted code following whichever theme (mocha/latte/a user's custom
+/// theme) is active, the same way every other rule in [`theme_css`] does, rather than always
+/// rendering GitHub's fixed palette regardless of the user's actual theme choice. The class
+/// grouping (which scopes share a color) mirrors highlight.js's own shipped themes — only the
+/// colors themselves are swapped for `Theme` tokens, the scope-to-class grouping is highlight.js's
+/// standard convention, not invented here. Always emitted (like [`alert_css`]'s rules) — inert on
+/// documents with no code blocks since nothing has an `hljs-*` class to match.
+fn hljs_css(theme: &Theme) -> String {
+    format!(
+        r#"code.hljs{{background:none;}}
+.hljs-comment,.hljs-quote{{color:{comment};font-style:italic;}}
+.hljs-meta{{color:{comment};}}
+.hljs-keyword,.hljs-selector-tag,.hljs-subst,.hljs-operator{{color:{keyword};}}
+.hljs-number,.hljs-literal{{color:{number};}}
+.hljs-string,.hljs-doctag,.hljs-regexp,.hljs-link{{color:{string};}}
+.hljs-title,.hljs-section,.hljs-selector-id,.hljs-title.function_{{color:{title};}}
+.hljs-type,.hljs-class .hljs-title{{color:{type_};}}
+.hljs-tag,.hljs-name,.hljs-attribute,.hljs-attr{{color:{tag};}}
+.hljs-variable,.hljs-template-variable,.hljs-symbol,.hljs-bullet{{color:{variable};}}
+.hljs-built_in,.hljs-builtin-name{{color:{builtin};}}
+.hljs-deletion{{background:{deletion_bg};}}
+.hljs-addition{{background:{addition_bg};}}
+.hljs-emphasis{{font-style:italic;}}
+.hljs-strong{{font-weight:700;}}
+"#,
+        comment = theme.text_muted().to_hex(),
+        keyword = theme.mauve.to_hex(),
+        number = theme.peach.to_hex(),
+        string = theme.green.to_hex(),
+        title = theme.blue.to_hex(),
+        type_ = theme.yellow.to_hex(),
+        tag = theme.teal.to_hex(),
+        variable = theme.lavender.to_hex(),
+        builtin = theme.red.to_hex(),
+        deletion_bg = theme.accent_danger().with_alpha(31).to_hex(),
+        addition_bg = theme.accent_success().with_alpha(31).to_hex(),
+    )
 }
 
 /// Per-level heading pixel sizes, linearly interpolated between `font_size_prose_h1` (h1) and
@@ -1393,6 +1450,50 @@ fn mermaid_script(is_light: bool) -> String {
         r#"<script>{js}</script><script>(function(){{try{{mermaid.initialize({{startOnLoad:false,theme:'{mermaid_theme}'}});mermaid.run({{querySelector:'code.language-mermaid',suppressErrors:true}}).catch(function(e){{console.error('mermaid render failed',e);}});}}catch(e){{console.error('mermaid init failed',e);}}}})();</script>"#,
         js = mermaid_js_source(),
         mermaid_theme = mermaid_theme,
+    )
+}
+
+// ── syntax highlighting (highlight.js) ──────────────────────────────────────────
+
+/// Vendored `highlight.js` "common" bundle (see `assets/NOTICE.md` for version/license/source/
+/// language coverage). Fetched once at packaging time — never over the network at runtime,
+/// matching Tasty's offline-first principle.
+const HIGHLIGHT_JS_RAW: &str = include_str!("../assets/highlight.min.js");
+
+/// [`HIGHLIGHT_JS_RAW`] with [`escape_script_close`] applied (memoized — ~125KB, cheap, but no
+/// reason to re-scan on every render).
+fn highlight_js_source() -> &'static str {
+    static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ESCAPED.get_or_init(|| escape_script_close(HIGHLIGHT_JS_RAW))
+}
+
+/// Inline the highlight.js bundle + a run-once init script — only called when the document
+/// actually has a fenced code block (see call site in [`render_document`]).
+///
+/// Unlike [`mermaid_script`], this never bakes a light/dark choice into the emitted `<script>`:
+/// highlight.js only tokenizes code into `<span class="hljs-*">` elements, it never picks colors
+/// itself. Coloring those classes is `hljs_css`'s job (in `theme_css`, which — like every other
+/// rule in that stylesheet — is derived straight from `Theme` and regenerated on every
+/// `theme.changed` re-render), so this function has nothing theme-dependent left to do.
+///
+/// For every `<code class="language-<lang>">` under a `<pre>` (the exact shape
+/// [`rewrite_code_block_event`]/[`sanitize_fence_lang`] produce): re-extract `<lang>` from the
+/// class (independently of pulldown-cmark's own already-sanitized value — this only trusts the
+/// same `[A-Za-z0-9_+-]` shape, nothing more), skip it silently via `hljs.getLanguage` if
+/// highlight.js doesn't recognize that identifier (covers both genuinely unsupported languages
+/// and non-code fences like `language-mermaid`), otherwise call `hljs.highlightElement`.
+/// `highlightElement` reads the node's plain-text content and rewrites its `innerHTML` with its
+/// own HTML-escaped token spans — it never reinterprets existing markup, so a code block
+/// containing the literal text `<script>` (already HTML-escaped by `sanitize_html` before this
+/// script ever runs) stays inert text after highlighting too. Each block's own try/catch means an
+/// unexpected highlight.js failure on one block leaves that block as plain unhighlighted text
+/// without aborting the rest of the document (mirrors `mermaid_script`'s `suppressErrors`/`.catch`
+/// per-diagram isolation, just no async promise chain here since `highlightElement` is
+/// synchronous).
+fn highlight_script() -> String {
+    format!(
+        r#"<script>{js}</script><script>(function(){{try{{document.querySelectorAll('pre code[class*="language-"]').forEach(function(el){{try{{var m=/language-([A-Za-z0-9_+-]+)/.exec(el.className);if(!m)return;if(!hljs.getLanguage(m[1]))return;hljs.highlightElement(el);}}catch(e){{console.error('highlight.js block failed',e);}}}});}}catch(e){{console.error('highlight.js init failed',e);}}}})();</script>"#,
+        js = highlight_js_source(),
     )
 }
 
@@ -2138,6 +2239,149 @@ mod tests {
         assert!(script.contains("try{"));
         assert!(script.contains("catch(e){console.error"));
         assert!(script.contains(".catch(function(e){console.error"));
+    }
+
+    // ── syntax highlighting (highlight.js) ──────────────────────────────────
+
+    #[test]
+    fn render_document_inlines_highlight_js_only_when_code_block_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let with_code = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/snippet.md",
+            source: "```rust\nfn main() {}\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(with_code.contains(r#"class="language-rust""#));
+        assert!(with_code.contains("hljs.getLanguage"));
+        assert!(with_code.contains("hljs.highlightElement"));
+
+        let without_code = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "# Just prose\n\nNo fenced blocks here.",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!without_code.contains("hljs.getLanguage"));
+        assert!(!without_code.contains("hljs.highlightElement"));
+    }
+
+    #[test]
+    fn highlight_js_source_has_no_premature_script_close() {
+        // Same invariant as `mermaid_script_js_source_has_no_premature_script_close` — the
+        // bundle is inlined verbatim inside an HTML <script> element.
+        let js = highlight_js_source();
+        assert!(!js.to_ascii_lowercase().contains("</script"));
+    }
+
+    #[test]
+    fn highlight_script_wraps_each_block_in_try_catch_with_console_error_fallback() {
+        let script = highlight_script();
+        assert!(script.contains("try{"));
+        assert!(script.contains("catch(e){console.error('highlight.js block failed'"));
+        assert!(script.contains("catch(e){console.error('highlight.js init failed'"));
+    }
+
+    #[test]
+    fn highlight_script_skips_unsupported_languages_without_erroring() {
+        // `sanitize_fence_lang` lets any `[A-Za-z0-9_+-]` token through as a class (including
+        // languages this vendored bundle doesn't ship, e.g. "brainfuck" isn't in the "common"
+        // bundle, and "mermaid" is a diagram block, not code). The init script must check
+        // `hljs.getLanguage(...)` before calling `highlightElement` so those fall back to plain,
+        // unhighlighted text instead of throwing (`hljs.highlight` throws synchronously on an
+        // unknown language — verified against the vendored bundle directly).
+        let script = highlight_script();
+        assert!(script.contains("if(!hljs.getLanguage(m[1]))return;"));
+    }
+
+    #[test]
+    fn highlight_js_recognizes_every_minimum_required_language() {
+        // Locks in the language-coverage claim in `assets/NOTICE.md`: every language this task
+        // requires (rust/js/ts/python/json/toml/bash/yaml/markdown) is registered in the
+        // vendored bundle. The bundle registers each language by stripping the `grmr_` prefix
+        // off its internal grammar-function key (verified by reading the bundle's own
+        // registration loop — `Ke.registerLanguage(n,Pe[e])` where `n` derives from `grmr_<id>`),
+        // so `grmr_<id>:` is what `hljs.getLanguage(id)` actually resolves against — this is a
+        // more precise signal than grepping for the bare language name, which also appears in
+        // unrelated places (comments, the human-readable `name:"Rust"` field, etc).
+        //
+        // `toml` isn't checked directly: highlight.js registers it only as an *alias* of the
+        // `ini` grammar (`grmr_ini`, `aliases:["toml"]`) — no `grmr_toml` key exists — so it's
+        // asserted separately below via the alias list instead of this loop's naming convention.
+        let js = highlight_js_source();
+        for lang in [
+            "rust",
+            "javascript",
+            "typescript",
+            "python",
+            "json",
+            "bash",
+            "yaml",
+            "markdown",
+        ] {
+            assert!(
+                js.contains(&format!("grmr_{lang}:")),
+                "expected the vendored bundle to register grammar grmr_{lang}"
+            );
+        }
+        assert!(
+            js.contains("grmr_ini:") && js.contains(r#"aliases:["toml"]"#),
+            "expected toml to be covered as an alias of the ini grammar"
+        );
+    }
+
+    #[test]
+    fn code_block_with_literal_script_tag_stays_escaped_text_after_highlight_insertion() {
+        // XSS regression: a code block containing the literal text `<script>alert(1)</script>`
+        // must render as HTML-escaped text — sanitize_html already guarantees this independently
+        // of syntax highlighting (pulldown-cmark HTML-escapes code block content, and
+        // highlight.js's own `highlightElement` reads `textContent`/rewrites `innerHTML` with its
+        // own escaped spans, never reinterpreting existing markup) — this locks in that adding
+        // the (conditional) highlight.js script tag doesn't change that.
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/xss.md",
+            source: "```rust\n<script>alert(1)</script>\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        // The only `<script` occurrences in the whole document must be tasty's own trusted
+        // script tags (nav_script/highlight_script) — never a literal, still-live `<script>`
+        // reconstructed from the user's code block content.
+        assert!(!html.contains("<script>alert(1)</script>"));
+    }
+
+    #[test]
+    fn hljs_css_derives_colors_from_theme_not_a_hardcoded_palette() {
+        let base_colors = tasty_themes::mocha_fallback_colors();
+        let mut alt_colors = base_colors.clone();
+        // Only need one hue field to actually differ to prove `hljs_css` re-derives from
+        // `Theme` on every call rather than baking in a fixed palette (e.g. a vendored
+        // highlight.js theme like github.css would render identically regardless of this).
+        alt_colors.mauve =
+            tasty_type_appearance::color::HexColor::from_hex("#ff00ff").expect("valid hex literal");
+        let base = Theme::with_colors_and_zoom(base_colors, false, 1.0);
+        let alt = Theme::with_colors_and_zoom(alt_colors, false, 1.0);
+        let base_css = hljs_css(&base);
+        let alt_css = hljs_css(&alt);
+        assert!(base_css.contains(".hljs-keyword"));
+        assert_ne!(
+            base_css, alt_css,
+            "hljs token colors should follow the active theme, not a fixed palette"
+        );
+        assert!(alt_css.contains("#ff00ff"));
     }
 
     // ── GFM alert blockquotes ────────────────────────────────────────────────

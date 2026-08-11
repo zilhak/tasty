@@ -33,6 +33,37 @@
 로직 없이 자동 반영된다. 문법이 깨진 다이어그램은 그 블록만 원본 코드 텍스트로 남고, 나머지
 콘텐츠 렌더에는 영향을 주지 않는다.
 
+## 코드블록 syntax highlighting
+
+펜스드 코드블록(` ```rust ` 등)은 `sanitize_fence_lang` 이 언어 토큰을 `[A-Za-z0-9_+-]` 로 정규화한
+`code.language-<lang>` class 를 그대로 유지한 채 렌더되고, 실제 토큰 강조는 **클라이언트사이드**로
+[highlight.js](https://highlightjs.org)(BSD-3-Clause, 오프라인 vendor —
+`crates/tasty-plugin-markdown/assets/highlight.min.js` + `NOTICE.md`, 36개 언어를 포함하는
+"common" 번들)가 수행한다. 서버사이드(syntect 등) 대신 클라이언트사이드를 택한 이유는
+`sanitize_html`(`render.rs`)의 태그/속성 화이트리스트를 건드릴 필요가 없고, mermaid 가 이미
+증명한 "트러스트 wrapper 에 조건부 스크립트 삽입" 패턴을 그대로 재사용할 수 있기 때문이다.
+
+- **조건부 삽입**: 문서에 펜스드 코드블록이 하나도 없으면 highlight.js 스크립트 자체가 삽입되지
+  않는다(mermaid 와 동일한 절약 패턴 — `render_document`).
+- **언어 매핑**: highlight.js 가 인식하는 언어 식별자와 `sanitize_fence_lang` 의 정규화 결과가
+  겹치는 경우(예: `rust`/`javascript`/`typescript`/`python`/`json`/`bash`/`yaml`/`markdown`,
+  그리고 `toml` — highlight.js 에서는 `ini` 문법의 alias 로만 등록되어 있다) 별도 매핑 테이블
+  없이 그대로 통한다. 초기화 스크립트는 각 코드블록의 `language-<lang>` class 에서 `<lang>` 을
+  추출해 `hljs.getLanguage(lang)` 로 지원 여부를 먼저 확인하고, 미지원 언어(또는 애초에 언어가
+  없는 코드블록)는 에러 없이 조용히 무하이라이팅으로 남는다 — `mermaid` 처럼 highlight.js 가
+  모르는 "언어"도 이 경로로 자연히 스킵된다.
+- **XSS 안전성**: highlight.js 의 `highlightElement` 는 요소의 plain-text 내용을 읽어 자체
+  escape 된 `<span class="hljs-*">` 마크업으로 `innerHTML` 을 재작성할 뿐, 기존 마크업을
+  재해석하지 않는다. 코드블록 안의 리터럴 `<script>` 텍스트는 `sanitize_html` 이 이미
+  HTML-escape 해 둔 상태라 하이라이팅을 거쳐도 그대로 비활성 텍스트로 남는다.
+- **테마 연동**: highlight.js 자체 내장 테마(github.css 등)는 vendor 하지 않는다 — 대신
+  `hljs-*` token class 를 이 plugin 이 이미 쓰는 Catppuccin 스타일 `Theme` hue 필드(`mauve`/
+  `blue`/`green`/`peach`/`teal`/`lavender`/`red` 등)에 매핑한 CSS 규칙(`render.rs::hljs_css`,
+  `theme_css` 에 상시 포함)으로 직접 칠한다. highlight.js 는 색을 전혀 모르고 토큰 분류만
+  하므로, mermaid 처럼 라이트/다크를 스크립트에 baked-in 할 필요가 없다 — 테마 전환 시 문서
+  전체가 재생성되며 `theme_css` 가 다시 계산될 뿐이다. vendor 된 고정 팔레트(GitHub 색 등)
+  대신 사용자가 고른 테마(mocha/latte/커스텀)를 그대로 따라가는 쪽을 택했다.
+
 ## Frontmatter 숨김
 
 문서 최상단(첫 줄)에 오는 YAML(`---\n...\n---`) 또는 TOML(`+++\n...\n+++`) frontmatter 는
@@ -196,6 +227,7 @@ Theme 토큰 매핑이다.
 | TOC 패널 배경 | `--md-code-bg` | `surface-raised` | `#tasty-toc` — 코드 블록 배경과 동일 토큰 재사용(전용 토큰 없음) |
 | TOC 들여쓰기 | `--md-space-sm` × (레벨-1) | `spacing-sm` | `.tasty-toc-l1`..`l6` |
 | heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
+| 코드 syntax 토큰 | inline hex(scope 별) | keyword=`mauve` · title/function=`blue` · string=`green` · number/literal=`peach` · tag/attr=`teal` · variable=`lavender` · built_in=`red` · comment=`text-muted` | 전용 highlight 토큰 없음 — `render.rs::hljs_css`, `.hljs-*` class(위 "코드블록 syntax highlighting" 절) |
 
 ## 갤러리 specimen
 
@@ -205,7 +237,10 @@ Theme 토큰 매핑이다.
 대표 문서 + 주소창 chrome 의 정적 근사 + TOC chrome 의 정적 근사(`toc_chrome` — 접기/펼치기·클릭
 스크롤 같은 라이브 상태는 없고 항상-펼침 스냅샷 하나, 레벨별 들여쓰기만 CSS `.tasty-toc-l<N>` 과
 동일 비율로 미러) + GFM alert 5종(accent 배경/보더 + 아이콘 + 굵은 레이블, 실제 CSS 는 좌측 바만
-쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사).
+쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사) + 코드블록(`code_block` —
+`fn main() { format!("hi from tasty"); }` 를 highlight.js 의 rust 문법이 나눌 토큰 그대로 손으로
+분할해 `hljs-*` scope 별 `Theme` hue 색을 입힌 `CodeToken` 런, 라이브 highlight.js 실행 결과의
+정적 근사).
 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
 
 ## 시각 소스
