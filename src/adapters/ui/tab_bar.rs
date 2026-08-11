@@ -1016,20 +1016,7 @@ pub fn apply_tab_bar_actions(
             TabBarAction::OpenSearch { pane_id: _ } => {
                 // 단축키(`find`)와 동일 경로 — 대상 pane 활성 surface 에 검색창을 연다.
                 // focus 는 위에서 이미 대상 pane 으로 이동했다.
-                use crate::adapters::ui::popup::PopupScope;
-                use crate::intent::{OpenPopupMode, UiIntent};
-                if state.popups.is_open("search_bar") {
-                    state.popups.set_focused("search_bar", true);
-                } else if let Some(sid) = state.focused_surface_id(engine) {
-                    state.search.surface_id = sid;
-                    state.dispatch_intent(
-                        UiIntent::OpenPopup {
-                            id: "search_bar",
-                            mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
-                        }
-                        .from_user_shortcut("find"),
-                    );
-                }
+                open_search_for_focused_terminal(state, engine);
             }
             TabBarAction::ScrollLeft { pane_id } => {
                 if let Some(pane) = state
@@ -1108,6 +1095,37 @@ pub fn apply_tab_bar_actions(
                 );
             }
         }
+    }
+}
+
+/// [`TabBarAction::OpenSearch`] 적용 — `apply_tab_bar_actions`의 cognitive complexity 를
+/// 낮추기 위해 분리.
+///
+/// `keybinding.rs`/`dispatch.rs`의 `kb.find` 게이트와 동일한 이유로 focused surface 가
+/// Terminal 일 때만 처리한다 — `search_bar` popup 은 `find_terminal_by_id` 로만 동작해
+/// 다른 kind 에서는 항상 빈 0/0 오버레이가 된다. 이 버튼은 활성 탭의 kind 와 무관하게
+/// 항상 렌더되므로(pane 마다 고정 노출), 단축키 경로만 고치고 이 경로를 놓치면 같은
+/// 버그가 마우스 클릭으로 그대로 재현된다.
+fn open_search_for_focused_terminal(state: &mut AppState, engine: &mut crate::core::CoreState) {
+    use crate::adapters::ui::popup::PopupScope;
+    use crate::intent::{OpenPopupMode, UiIntent};
+    if !matches!(
+        state.focused_surface_type(engine),
+        crate::state::FocusedSurfaceType::Terminal
+    ) {
+        return;
+    }
+    if state.popups.is_open("search_bar") {
+        state.popups.set_focused("search_bar", true);
+    } else if let Some(sid) = state.focused_surface_id(engine) {
+        state.search.surface_id = sid;
+        state.dispatch_intent(
+            UiIntent::OpenPopup {
+                id: "search_bar",
+                mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
+            }
+            .from_user_shortcut("find"),
+        );
     }
 }
 
