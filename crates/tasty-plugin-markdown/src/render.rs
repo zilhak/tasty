@@ -532,10 +532,14 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 /// [`wikilink_events`]). This way `rewrite_link_event`, run last over the *whole* (now
 /// autolink/wikilink-expanded) event stream, is the single place that ever produces the
 /// `#tasty-nav:` fragment scheme; neither pass needs its own copy of that rewrite.
-/// `rewrite_code_block_event`/`rewrite_alert_blockquote_event`/`rewrite_footnote_event` run first
-/// since none of them touch `Text`/`Link`/`Image` events, so their relative order doesn't matter.
-/// [`assign_heading_ids`] runs last over the fully-rewritten stream — none of the other passes
-/// touch `Tag::Heading`, so its position doesn't matter either.
+/// `rewrite_code_block_event`/`rewrite_footnote_event` run first since neither touches
+/// `Text`/`Link`/`Image` events, so their relative order doesn't matter. [`rewrite_callout_events`]
+/// runs right after — it *does* consume `Text` events, but only the ones immediately inside a
+/// blockquote's first paragraph that match a `[!type]` tag line, which no other pass here ever
+/// produces or depends on, so it's still safe before [`figurize_solo_image_paragraphs`]/
+/// [`resolve_wikilinks`]/[`autolink_bare_urls`]/[`rewrite_link_event`]. [`assign_heading_ids`]
+/// runs last over the fully-rewritten stream — none of the other passes touch `Tag::Heading`, so
+/// its position doesn't matter either.
 #[cfg(test)]
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     unsafe_content_html_in_dir(source, tr, None)
@@ -552,9 +556,9 @@ fn unsafe_content_html_in_dir(source: &str, tr: &Translator, base_dir: Option<&P
     let mut footnote_state = FootnoteState::default();
     let events: Vec<Event> = Parser::new_ext(source, parser_options())
         .map(rewrite_code_block_event)
-        .map(|event| rewrite_alert_blockquote_event(event, tr))
         .map(|event| rewrite_footnote_event(event, tr, &footnote_ref_totals, &mut footnote_state))
         .collect();
+    let events = rewrite_callout_events(events, tr);
     let events = figurize_solo_image_paragraphs(events);
     let events = resolve_wikilinks(events, base_dir);
     let events = autolink_bare_urls(events)
@@ -687,7 +691,7 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
     // produced it and handed to the HTML writer unchanged, so `<img src=".." alt=".." title="..">`
     // is still built by the library's own `raw_text()` exactly as it always was — only the
     // surrounding structure changes. `Event::Html` is this file's established "trusted,
-    // plugin-authored raw markup" escape hatch (mirrors `rewrite_alert_blockquote_event`'s
+    // plugin-authored raw markup" escape hatch (mirrors `wrap_static_callout`'s
     // `<blockquote class=".." data-label="..">` injection) for the `<figure>`/`<figcaption>` tags
     // themselves; the caption text rides in as a plain `Event::Text`, so `push_html` HTML-escapes
     // it exactly like any other body text (no separate escaping call needed here).
@@ -1098,28 +1102,32 @@ fn sanitize_fence_lang(info: &str) -> String {
         .collect()
 }
 
-// ── GFM alert blockquotes (`> [!NOTE]` etc) ────────────────────────────────────
+// ── callouts (GFM `> [!NOTE]` alerts + Obsidian-style `> [!type]+ Title`) ──────
 
-/// One of the 5 GitHub-style alert blockquote kinds. With [`Options::ENABLE_GFM`] on,
-/// pulldown-cmark's parser recognizes `> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/
-/// `[!CAUTION]` (first line of the blockquote, case-insensitive, nothing else on that line —
-/// `scanners.rs::scan_blockquote_tag`) and exposes it as an AST event,
-/// `Event::Start(Tag::BlockQuote(Some(kind)))`. Its own `html.rs` writer would turn that into
-/// `<blockquote class="markdown-alert-<kind>">` and nothing else — no icon, no label string
-/// (verified by reading `html.rs`'s `Tag::BlockQuote` match arm) — but [`rewrite_alert_blockquote_event`]
-/// intercepts the event before that writer ever runs, so the writer's version of this tag never
-/// actually gets produced. This table pairs each kind with an i18n label key
-/// ([`rewrite_alert_blockquote_event`]) and a [`tasty_icons`] glyph + `Theme` accent color
-/// ([`alert_css`]).
-struct AlertKind {
-    /// The pulldown-cmark AST kind this entry answers to — matched against the real
-    /// `Tag::BlockQuote(Some(kind))` event, never against rendered HTML text (see
-    /// [`rewrite_alert_blockquote_event`] doc for why that distinction matters).
-    kind: BlockQuoteKind,
-    /// The literal class this kind renders as (mirrors pulldown-cmark's own `html.rs` naming,
-    /// kept identical so existing CSS/snapshots don't need to change).
+/// One callout type — either one of the 5 GitHub-style alert kinds pulldown-cmark's *parser*
+/// itself recognizes with [`Options::ENABLE_GFM`] on, or one of Obsidian's extended types that
+/// the parser never sees as a distinct AST shape (module doc below explains why). Both flavors
+/// render through the exact same class/label/icon/accent machinery — this table (and
+/// [`rewrite_callout_events`]) is the single unified path, not two parallel ones.
+struct CalloutKind {
+    /// `Some` only for the 5 fixed literal tags pulldown-cmark's own `scanners.rs::
+    /// scan_blockquote_tag` recognizes — matched against the real `Tag::BlockQuote(Some(kind))`
+    /// AST event, never against rendered HTML text (see [`rewrite_callout_events`] doc for why
+    /// that distinction matters). `None` for Obsidian-only extended types, which the parser
+    /// always leaves as a plain `Tag::BlockQuote(None)` no matter how they're written — those
+    /// are recognized instead from the buffered blockquote's first line of text
+    /// ([`parse_callout_tag_line`]).
+    gfm_kind: Option<BlockQuoteKind>,
+    /// Lowercase Obsidian tag text this entry answers to (e.g. `"note"`, `"info"`) — matched
+    /// case-insensitively against the `[!type]` token via [`find_callout_kind`]. For the 5 GFM
+    /// kinds this is simply their lowercase name, so a bare `[!note]` and an Obsidian-flavored
+    /// `[!note]+ Title` resolve to the same entry either way.
+    type_key: &'static str,
+    /// The literal class this kind renders as (mirrors pulldown-cmark's own `html.rs` naming
+    /// for the 5 GFM kinds, kept identical so existing CSS/snapshots don't need to change).
     class: &'static str,
-    /// `Translator` key for the header label — must exist in `lang/{en,ko,ja}.toml`.
+    /// `Translator` key for the default header label (used whenever no custom title follows the
+    /// tag) — must exist in `lang/{en,ko,ja}.toml`.
     label_key: &'static str,
     /// Inner markup of a [`tasty_icons`] glyph (`Icon::body` — no wrapping `<svg>`, no color
     /// baked in). Fed to [`alert_icon_data_uri`].
@@ -1127,99 +1135,444 @@ struct AlertKind {
     /// The glyph's own `Icon::filled` — `true` colors it via `fill`, `false` via `stroke`
     /// (mirrors how `tasty_icons`' `stroke_icon!`/`fill_icon!` macros built it).
     icon_filled: bool,
-    /// This kind's `Theme` accent accessor — no dedicated alert design token exists yet, so
-    /// this reuses the closest existing semantic accent (see module-level design note in
-    /// [`alert_css`]).
+    /// This kind's `Theme` accent accessor. No dedicated callout design-token set exists yet, so
+    /// every entry reuses one of the handful of existing generic semantic accents
+    /// (`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/`accent_attention`/
+    /// `accent_danger`/`accent_agent`) rather than inventing new color tokens — with 15 types
+    /// sharing 7 accents, several intentionally double up (distinguished by icon + label text,
+    /// not uniquely by color).
     accent: fn(&Theme) -> tasty_type_appearance::color::HexColor,
 }
 
-/// note=info circle/blue, tip=filled star/green, important=bell/mauve, warning=alert
-/// triangle/yellow, caution=close-x/red. Adding a 6th kind (if pulldown-cmark ever grows one)
-/// means adding one entry here — [`rewrite_alert_blockquote_event`]/[`alert_css`] both just
-/// iterate it.
-const ALERT_KINDS: &[AlertKind] = &[
-    AlertKind {
-        kind: BlockQuoteKind::Note,
+/// The 5 GFM kinds (unchanged from before Obsidian support existed — same class/label/icon/
+/// accent) plus Obsidian's own built-in types confirmed against the official callout
+/// documentation (obsidian.md/help/callouts), minus the 3 Obsidian aliases (`important`,
+/// `caution`, `attention`) that collide with a GFM kind's own name — those keywords keep
+/// resolving to the pre-existing GFM entry instead of being redefined, since "GFM 5종 기존
+/// 유지" is a hard requirement and [`find_callout_kind`] checks canonical `type_key`s (this
+/// table) before consulting [`CALLOUT_ALIASES`]. Non-colliding Obsidian aliases (`hint`,
+/// `summary`/`tldr`, `check`/`done`, `help`/`faq`, `fail`/`missing`, `error`, `cite`) live in
+/// [`CALLOUT_ALIASES`] instead of duplicating entries here.
+const CALLOUT_KINDS: &[CalloutKind] = &[
+    CalloutKind {
+        gfm_kind: Some(BlockQuoteKind::Note),
+        type_key: "note",
         class: "markdown-alert-note",
         label_key: "markdown.alert.note",
         icon_body: tasty_icons::ALERT_CIRCLE.body,
         icon_filled: tasty_icons::ALERT_CIRCLE.filled,
         accent: Theme::accent_primary,
     },
-    AlertKind {
-        kind: BlockQuoteKind::Tip,
+    CalloutKind {
+        gfm_kind: Some(BlockQuoteKind::Tip),
+        type_key: "tip",
         class: "markdown-alert-tip",
         label_key: "markdown.alert.tip",
         icon_body: tasty_icons::STAR_FILL.body,
         icon_filled: tasty_icons::STAR_FILL.filled,
         accent: Theme::accent_success,
     },
-    AlertKind {
-        kind: BlockQuoteKind::Important,
+    CalloutKind {
+        gfm_kind: Some(BlockQuoteKind::Important),
+        type_key: "important",
         class: "markdown-alert-important",
         label_key: "markdown.alert.important",
         icon_body: tasty_icons::BELL.body,
         icon_filled: tasty_icons::BELL.filled,
         accent: Theme::accent_agent,
     },
-    AlertKind {
-        kind: BlockQuoteKind::Warning,
+    CalloutKind {
+        gfm_kind: Some(BlockQuoteKind::Warning),
+        type_key: "warning",
         class: "markdown-alert-warning",
         label_key: "markdown.alert.warning",
         icon_body: tasty_icons::ALERT_TRIANGLE.body,
         icon_filled: tasty_icons::ALERT_TRIANGLE.filled,
         accent: Theme::accent_warning,
     },
-    AlertKind {
-        kind: BlockQuoteKind::Caution,
+    CalloutKind {
+        gfm_kind: Some(BlockQuoteKind::Caution),
+        type_key: "caution",
         class: "markdown-alert-caution",
         label_key: "markdown.alert.caution",
         icon_body: tasty_icons::CLOSE.body,
         icon_filled: tasty_icons::CLOSE.filled,
         accent: Theme::accent_danger,
     },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "abstract",
+        class: "markdown-alert-abstract",
+        label_key: "markdown.alert.abstract",
+        icon_body: tasty_icons::LIST.body,
+        icon_filled: tasty_icons::LIST.filled,
+        accent: Theme::accent_primary,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "info",
+        class: "markdown-alert-info",
+        label_key: "markdown.alert.info",
+        icon_body: tasty_icons::ALERT_CIRCLE.body,
+        icon_filled: tasty_icons::ALERT_CIRCLE.filled,
+        accent: Theme::accent_info,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "todo",
+        class: "markdown-alert-todo",
+        label_key: "markdown.alert.todo",
+        icon_body: tasty_icons::CHECK.body,
+        icon_filled: tasty_icons::CHECK.filled,
+        accent: Theme::accent_info,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "success",
+        class: "markdown-alert-success",
+        label_key: "markdown.alert.success",
+        icon_body: tasty_icons::CHECK.body,
+        icon_filled: tasty_icons::CHECK.filled,
+        accent: Theme::accent_success,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "question",
+        class: "markdown-alert-question",
+        label_key: "markdown.alert.question",
+        icon_body: tasty_icons::HELP_CIRCLE.body,
+        icon_filled: tasty_icons::HELP_CIRCLE.filled,
+        accent: Theme::accent_attention,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "failure",
+        class: "markdown-alert-failure",
+        label_key: "markdown.alert.failure",
+        icon_body: tasty_icons::ALERT_TRIANGLE.body,
+        icon_filled: tasty_icons::ALERT_TRIANGLE.filled,
+        accent: Theme::accent_danger,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "danger",
+        class: "markdown-alert-danger",
+        label_key: "markdown.alert.danger",
+        icon_body: tasty_icons::CLOSE.body,
+        icon_filled: tasty_icons::CLOSE.filled,
+        accent: Theme::accent_danger,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "bug",
+        class: "markdown-alert-bug",
+        label_key: "markdown.alert.bug",
+        icon_body: tasty_icons::CLOSE.body,
+        icon_filled: tasty_icons::CLOSE.filled,
+        accent: Theme::accent_agent,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "example",
+        class: "markdown-alert-example",
+        label_key: "markdown.alert.example",
+        icon_body: tasty_icons::SCRIPT.body,
+        icon_filled: tasty_icons::SCRIPT.filled,
+        accent: Theme::accent_agent,
+    },
+    CalloutKind {
+        gfm_kind: None,
+        type_key: "quote",
+        class: "markdown-alert-quote",
+        label_key: "markdown.alert.quote",
+        icon_body: tasty_icons::TEXT_LEFT.body,
+        icon_filled: tasty_icons::TEXT_LEFT.filled,
+        accent: Theme::accent_primary,
+    },
 ];
 
-/// Rewrites a genuine `Event::Start(Tag::BlockQuote(Some(kind)))` — the AST event
-/// pulldown-cmark's *parser* (not its HTML writer) emits only when `scan_blockquote_tag`
-/// actually recognized a `[!NOTE]`-style tag in the source — directly into the fully-labeled
-/// opening tag, bypassing the library's own class-only writer entirely.
-///
-/// This intentionally does *not* run as a post-pass over the assembled HTML string (that was
-/// the previous, vulnerable design: a plain blockquote — `Tag::BlockQuote(None)` — is left
-/// completely alone, but any *other* Markdown construct that can produce literal
-/// `<blockquote class="markdown-alert-note">` text in the output — namely a raw HTML block/inline,
-/// which pulldown-cmark passes through byte-for-byte as `Event::Html`/`Event::InlineHtml`,
-/// entirely independent of `Tag::BlockQuote` — would have produced an indistinguishable string
-/// for a naive whole-document string search to match, letting a document author forge a
-/// trusted-looking Note/Tip/Warning header around arbitrary content. Matching on the AST event
-/// itself instead of the rendered string closes that gap: raw HTML never surfaces as this event
-/// no matter what text it contains, so it can never receive a `data-label`.
-///
-/// CSS can't branch on the UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
-/// whatever lands in the DOM), so the localized text has to be resolved here, at document
-/// generation time — [`sanitize_html`]'s `blockquote` allowlist must include `data-label` or
-/// this is stripped afterward regardless of origin.
-fn rewrite_alert_blockquote_event<'a>(event: Event<'a>, tr: &Translator) -> Event<'a> {
-    match event {
-        Event::Start(Tag::BlockQuote(Some(kind))) => {
-            let Some(alert) = ALERT_KINDS.iter().find(|a| a.kind == kind) else {
-                // All 5 `BlockQuoteKind` variants are covered above; unreachable in practice,
-                // but fall back to the library's own (label-less) class-only rendering rather
-                // than panicking if pulldown-cmark ever adds a 6th kind before this table does.
-                return Event::Start(Tag::BlockQuote(Some(kind)));
-            };
-            Event::Html(
-                format!(
-                    r#"<blockquote class="{}" data-label="{}">"#,
-                    alert.class,
-                    attr_escape(tr.t(alert.label_key))
-                )
-                .into(),
-            )
-        }
-        other => other,
+/// `(alias, canonical type_key)` pairs for Obsidian's documented type aliases, excluding the 3
+/// that would collide with a GFM kind's own canonical name (`important`, `caution`, `attention`
+/// — see [`CALLOUT_KINDS`] doc). [`find_callout_kind`] only consults this after an exact
+/// [`CALLOUT_KINDS`] `type_key` match fails, so a collision here could never actually shadow a
+/// GFM entry even if one were added by mistake — kept excluded anyway for clarity.
+const CALLOUT_ALIASES: &[(&str, &str)] = &[
+    ("summary", "abstract"),
+    ("tldr", "abstract"),
+    ("hint", "tip"),
+    ("check", "success"),
+    ("done", "success"),
+    ("help", "question"),
+    ("faq", "question"),
+    ("fail", "failure"),
+    ("missing", "failure"),
+    ("error", "danger"),
+    ("cite", "quote"),
+];
+
+/// Resolves a lowercase `[!type]` token (already lowercased by [`parse_callout_tag_line`]) to
+/// its [`CalloutKind`], checking canonical [`CALLOUT_KINDS`] names first and [`CALLOUT_ALIASES`]
+/// second. Types not present in either (e.g. some `[!made-up-type]`) return `None` — per scope,
+/// this plugin only recognizes the Obsidian types the official docs confirm, nothing invented.
+fn find_callout_kind(type_key: &str) -> Option<&'static CalloutKind> {
+    if let Some(found) = CALLOUT_KINDS.iter().find(|k| k.type_key == type_key) {
+        return Some(found);
     }
+    let canonical = CALLOUT_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == type_key)?
+        .1;
+    CALLOUT_KINDS.iter().find(|k| k.type_key == canonical)
+}
+
+/// One parsed `[!type]([+-])?( title)?` tag line — the shape [`parse_callout_tag_line`] extracts
+/// from a plain blockquote's first line of text.
+struct ParsedCalloutTag {
+    /// Lowercased `[!type]` token, looked up via [`find_callout_kind`].
+    type_key: String,
+    /// `Some(true)` = `+` (initially expanded), `Some(false)` = `-` (initially collapsed),
+    /// `None` = no fold marker at all (no `<details>` — matches scope: "마커 없음 = 접기 UI
+    /// 자체 없음").
+    fold: Option<bool>,
+    /// Text following the tag (and fold marker, if any) on the same line, trimmed — `None` if
+    /// empty (fold and title are independent per Obsidian's own docs: a title can appear with or
+    /// without a fold marker).
+    title: Option<String>,
+}
+
+/// Hand-rolled (no `regex` dependency in this crate) parse of `^\[!(\w[\w-]*)\]([+-])?(.*)$`
+/// against a blockquote's first line of raw text. Returns `None` for anything that doesn't match
+/// that exact shape — including a bare `[!NOTE]` line, which never reaches this function at all
+/// (pulldown-cmark's own GFM scanner already consumes those into `Tag::BlockQuote(Some(kind))`
+/// before [`rewrite_callout_events`] ever sees plain-blockquote text; see its module doc).
+fn parse_callout_tag_line(text: &str) -> Option<ParsedCalloutTag> {
+    let rest = text.strip_prefix("[!")?;
+    let close = rest.find(']')?;
+    let type_token = &rest[..close];
+    if type_token.is_empty()
+        || !type_token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    let mut after = &rest[close + 1..];
+    let fold = match after.chars().next() {
+        Some('+') => {
+            after = &after[1..];
+            Some(true)
+        }
+        Some('-') => {
+            after = &after[1..];
+            Some(false)
+        }
+        _ => None,
+    };
+    let title = after.trim();
+    Some(ParsedCalloutTag {
+        type_key: type_token.to_ascii_lowercase(),
+        fold,
+        title: (!title.is_empty()).then(|| title.to_string()),
+    })
+}
+
+/// Unified callout preprocessing: buffers every blockquote (`Start(Tag::BlockQuote(_))` through
+/// its matching `End(TagEnd::BlockQuote)`, nest-counted so a callout containing another callout
+/// buffers only its own span) and decides, in one place, whether it's a genuine GFM alert, an
+/// Obsidian-style callout, or an ordinary quote — replacing the old GFM-only
+/// `rewrite_alert_blockquote_event` entirely rather than running alongside it. Two structurally
+/// different inputs both flow through here (see [`CalloutKind::gfm_kind`] doc):
+///
+/// - `Tag::BlockQuote(Some(kind))` — pulldown-cmark's parser already recognized a bare `[!TYPE]`
+///   line (nothing else on it) as one of the 5 GFM kinds. Grammar-guaranteed: never has a fold
+///   marker or custom title, so this always renders the fixed non-foldable shape — byte-
+///   identical to the pre-Obsidian-support output, which is what keeps every existing GFM alert
+///   test passing unchanged.
+/// - `Tag::BlockQuote(None)` — anything else, including every Obsidian-flavored line (`[!info]`,
+///   `[!note]+ Title`, `[!warning]- `, …): the GFM scanner's `scan_blank_line` requirement makes
+///   it reject *any* trailing content after `]`, so these never reach the parser as a distinct
+///   AST shape no matter which of the 5 names they use. [`rewrite_callout_buffer`] parses the
+///   buffered blockquote's own first line of text instead.
+///
+/// This intentionally still keys off the real parser events for the GFM-recognized half (not a
+/// post-pass over the assembled HTML string) for the same reason the old function did: raw HTML
+/// blocks/inline (`Event::Html`/`Event::InlineHtml`) pass through byte-for-byte independent of
+/// `Tag::BlockQuote`, so a naive string search over rendered output could be spoofed into
+/// labeling attacker content as a trusted alert. Matching the AST event closes that gap; the
+/// Obsidian-only half necessarily reads buffered *text* (there's no AST shape to key off), but
+/// only ever from inside a genuine `Tag::BlockQuote(None)` span — raw HTML still never enters
+/// that buffer, so it still can never manufacture a `data-label`/callout header this way either.
+fn rewrite_callout_events<'a>(events: Vec<Event<'a>>, tr: &Translator) -> Vec<Event<'a>> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut iter = events.into_iter();
+    while let Some(event) = iter.next() {
+        match event {
+            Event::Start(Tag::BlockQuote(kind)) => {
+                let mut buf = Vec::new();
+                let mut nest = 0i32;
+                for inner in iter.by_ref() {
+                    match &inner {
+                        Event::Start(Tag::BlockQuote(_)) => {
+                            nest += 1;
+                            buf.push(inner);
+                        }
+                        Event::End(TagEnd::BlockQuote(_)) => {
+                            if nest == 0 {
+                                break;
+                            }
+                            nest -= 1;
+                            buf.push(inner);
+                        }
+                        _ => buf.push(inner),
+                    }
+                }
+                out.extend(rewrite_callout_buffer(kind, buf, tr));
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// One buffered blockquote's interior events (stripped of its own `Start`/`End` by
+/// [`rewrite_callout_events`]) → either a rendered callout or the original blockquote passed
+/// through unchanged. See [`rewrite_callout_events`] doc for the two input shapes this handles.
+fn rewrite_callout_buffer<'a>(
+    gfm_kind: Option<BlockQuoteKind>,
+    buf: Vec<Event<'a>>,
+    tr: &Translator,
+) -> Vec<Event<'a>> {
+    // Nested callouts get their own detection too, recursively — bounded by actual source
+    // nesting depth, same as any other recursive-descent pass over this event stream. Perfect
+    // styling for deep nesting isn't required (scope), only that nothing crashes or gets lost —
+    // recursing first and then treating the (already-rewritten) result as opaque body content
+    // for the outer wrapper satisfies that with no special-casing.
+    let buf = rewrite_callout_events(buf, tr);
+
+    if let Some(kind) = gfm_kind {
+        let Some(callout) = CALLOUT_KINDS.iter().find(|k| k.gfm_kind == Some(kind)) else {
+            // All 5 GFM `BlockQuoteKind` variants are covered in `CALLOUT_KINDS`; unreachable in
+            // practice, but fall back to a plain blockquote rather than panicking if
+            // pulldown-cmark ever adds a 6th kind before this table does.
+            return wrap_plain_blockquote(Some(kind), buf);
+        };
+        return wrap_static_callout(callout.class, tr.t(callout.label_key), buf);
+    }
+
+    // Plain blockquote — an Obsidian-style tag can only be recognized when the first paragraph's
+    // opening run is plain, untouched `Text` (mirrors `figurize_solo_image_paragraphs`'s "give up
+    // rather than guess" stance for anything more structurally complex, e.g. a tag line starting
+    // with inline emphasis). pulldown-cmark's inline scanner does *not* coalesce a `[...]` run
+    // into one `Text` event even when it isn't a link — `[!note]+ Title` tokenizes as
+    // `Text("["), Text("!note"), Text("]"), Text("+ Title")` (verified against the real 0.12.2
+    // event stream), so every leading `Text` run up to the first non-`Text` event (`SoftBreak` or
+    // `End(Paragraph)`) has to be concatenated before the tag-line grammar can be matched at all.
+    let Some(Event::Start(Tag::Paragraph)) = buf.first() else {
+        return wrap_plain_blockquote(None, buf);
+    };
+    let mut first_line = String::new();
+    let mut text_run_end = 1;
+    while let Some(Event::Text(t)) = buf.get(text_run_end) {
+        first_line.push_str(t);
+        text_run_end += 1;
+    }
+    if text_run_end == 1 {
+        return wrap_plain_blockquote(None, buf); // no leading text at all — nothing to parse.
+    }
+    let Some(parsed) = parse_callout_tag_line(&first_line) else {
+        return wrap_plain_blockquote(None, buf);
+    };
+    let Some(callout) = find_callout_kind(&parsed.type_key) else {
+        return wrap_plain_blockquote(None, buf);
+    };
+
+    let label = parsed
+        .title
+        .clone()
+        .unwrap_or_else(|| tr.t(callout.label_key).to_string());
+
+    // Every `Text` run making up the tag line is consumed (regex is `^...$`-anchored over their
+    // concatenation) — what follows is either the rest of that same first paragraph (a
+    // fold-marker-only line immediately continued on the next physical line, still one
+    // CommonMark paragraph) or the paragraph's own close, in which case the tag line *was* the
+    // entire first paragraph and that now-empty paragraph is dropped rather than emitted as
+    // `<p></p>`.
+    let mut rest: Vec<Event<'a>> = buf[text_run_end..].to_vec();
+    let body: Vec<Event<'a>> = if matches!(rest.first(), Some(Event::End(TagEnd::Paragraph))) {
+        rest.remove(0);
+        rest
+    } else {
+        let mut body = vec![Event::Start(Tag::Paragraph)];
+        body.append(&mut rest);
+        body
+    };
+
+    match parsed.fold {
+        None => wrap_static_callout(callout.class, &label, body),
+        Some(open) => wrap_foldable_callout(callout.class, &label, open, body),
+    }
+}
+
+/// Re-wraps buffered interior events back into an ordinary, untouched
+/// `<blockquote>...</blockquote>` — used by every [`rewrite_callout_buffer`] path that declines
+/// to treat the blockquote as a callout.
+fn wrap_plain_blockquote(kind: Option<BlockQuoteKind>, buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    let mut out = Vec::with_capacity(buf.len() + 2);
+    out.push(Event::Start(Tag::BlockQuote(kind)));
+    out.extend(buf);
+    out.push(Event::End(TagEnd::BlockQuote(kind)));
+    out
+}
+
+/// The non-foldable callout shape — used both for a grammar-guaranteed bare GFM `[!TYPE]` tag
+/// and for an Obsidian tag with a custom title but no fold marker (`[!type] Title`). Identical
+/// `<blockquote class=".." data-label="..">` shape the pre-Obsidian-support GFM alert renderer
+/// used, so [`sanitize_html`]'s existing `blockquote` allowlist needs no changes for this path.
+/// CSS can't branch on UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
+/// whatever lands in the DOM), so the label — default *or* custom title — is resolved here, at
+/// document generation time.
+fn wrap_static_callout<'a>(class: &str, label: &str, body: Vec<Event<'a>>) -> Vec<Event<'a>> {
+    let mut out = Vec::with_capacity(body.len() + 2);
+    out.push(Event::Html(
+        format!(
+            r#"<blockquote class="{class}" data-label="{}">"#,
+            attr_escape(label)
+        )
+        .into(),
+    ));
+    out.extend(body);
+    out.push(Event::Html("</blockquote>".into()));
+    out
+}
+
+/// The foldable callout shape (`+`/`-` marker present) — `<details>`/`<summary>` instead of
+/// `<blockquote>`, per scope: "접기(+/-/마커없음): `<details>/<summary>` 매핑". `open` maps
+/// `+` (initially expanded) and is omitted for `-` (initially collapsed) — native
+/// `<details>`/`<summary>` behavior handles the actual expand/collapse toggle, no script needed.
+/// The label rides in as real `Event::Text` inside `<summary>` (auto-escaped by `push_html`,
+/// unlike the sibling `data-label` attribute trick [`wrap_static_callout`] uses, which needs
+/// `<summary>` itself to carry no data — see [`theme_css`]'s `details[class^="markdown-alert-"]
+/// >summary::before` rule for how the icon still renders without an `attr()`-readable label).
+fn wrap_foldable_callout<'a>(
+    class: &str,
+    label: &str,
+    open: bool,
+    body: Vec<Event<'a>>,
+) -> Vec<Event<'a>> {
+    let mut out = Vec::with_capacity(body.len() + 4);
+    out.push(Event::Html(
+        format!(
+            r#"<details class="{class}"{}>"#,
+            if open { " open" } else { "" }
+        )
+        .into(),
+    ));
+    out.push(Event::Html("<summary>".into()));
+    out.push(Event::Text(label.to_string().into()));
+    out.push(Event::Html("</summary>".into()));
+    out.extend(body);
+    out.push(Event::Html("</details>".into()));
+    out
 }
 
 // ── footnote backlinks + a11y (`[^name]` / `[^name]: ...`) ─────────────────────
@@ -1273,7 +1626,7 @@ fn footnote_reference_totals(source: &str) -> std::collections::HashMap<String, 
 
 /// Rewrites `Event::FootnoteReference` and the `Tag::FootnoteDefinition` start/end pair, same
 /// "intercept the real AST event, emit finished markup via `Event::Html`" shape as
-/// [`rewrite_alert_blockquote_event`] — chosen for the same reason: matching against fully
+/// [`rewrite_callout_events`] — chosen for the same reason: matching against fully
 /// rendered HTML text can't distinguish a genuine footnote from a raw-HTML block that merely
 /// looks like one, but matching the AST event can (pulldown-cmark passes raw HTML through as
 /// `Event::Html`/`Event::InlineHtml`, never `FootnoteReference`/`Tag::FootnoteDefinition`).
@@ -1371,19 +1724,22 @@ fn rewrite_footnote_event<'a>(
 /// [`rewrite_code_block_event`] — [`mermaid_script`] depends on that exact `language-<lang>`
 /// shape surviving sanitize), `sup`/`div` (fixed literal footnote classes the library itself
 /// writes — `footnote-reference`/`footnote-definition`/`footnote-definition-label`), and
-/// `blockquote` (one of [`ALERT_KINDS`]' 5 fixed literal `markdown-alert-<kind>` classes).
-/// ammonia does not validate `class` *values* — a raw HTML block/inline in the source (passed
-/// through byte-for-byte by pulldown-cmark, independent of `Tag::BlockQuote`) can already carry
-/// any of these class strings verbatim, so a document author *can* make an arbitrary blockquote
-/// pick up the alert CSS's background/border/icon purely via `class`, same residual risk the
-/// `code`/`sup`/`div` allowances already accept — none of these carry executable content, so
-/// that's fine here. What the sanitizer's `class` allowlist does *not* by itself make possible
-/// is a forged `data-label` matching one of the real translated alert headers: that attribute is
-/// only ever set by [`rewrite_alert_blockquote_event`] from a genuine
-/// `Tag::BlockQuote(Some(kind))` AST event, never by matching rendered HTML text, so raw-HTML
-/// blockquotes always reach this allowlist with `data-label` absent (see that function's doc for
-/// why the distinction matters). `data-label`'s value is `attr_escape`d before injection, same
-/// escaping every other attribute value in this module gets.
+/// `blockquote`/`details` (one of [`CALLOUT_KINDS`]' fixed literal `markdown-alert-<type>`
+/// classes — `details` additionally allows `open`, the fold-state attribute
+/// [`wrap_foldable_callout`] sets). ammonia does not validate `class` *values* — a raw HTML
+/// block/inline in the source (passed through byte-for-byte by pulldown-cmark, independent of
+/// `Tag::BlockQuote`) can already carry any of these class strings verbatim, so a document author
+/// *can* make an arbitrary blockquote/details pick up the callout CSS's background/border/icon
+/// purely via `class`, same residual risk the `code`/`sup`/`div` allowances already accept — none
+/// of these carry executable content, so that's fine here. What the sanitizer's `class` allowlist
+/// does *not* by itself make possible is a forged `data-label` matching one of the real
+/// translated callout headers: that attribute is only ever set by [`rewrite_callout_events`] from
+/// a genuine `Tag::BlockQuote` event/buffered blockquote text, never by matching rendered HTML
+/// text, so raw-HTML blockquotes always reach this allowlist with `data-label` absent (see that
+/// function's doc for why the distinction matters). A foldable callout's label rides in as plain
+/// `<summary>` text instead of a `data-label` attribute (no sanitizer change needed for that —
+/// `summary` carries no attributes at all). `data-label`'s value is `attr_escape`d before
+/// injection, same escaping every other attribute value in this module gets.
 fn sanitize_html(unsafe_html: &str) -> String {
     use ammonia::Builder;
     use std::collections::{HashMap, HashSet};
@@ -1427,6 +1783,10 @@ fn sanitize_html(unsafe_html: &str) -> String {
         // attribute 없이 bare tag 로만 쓴다(tag_attributes 등록 불필요).
         "figure",
         "figcaption",
+        // wrap_foldable_callout() 의 접기 콜아웃(+/- 마커) — details 는 class+open, summary 는
+        // 별도 attribute 없이 label 텍스트만 담는다(tag_attributes 등록 불필요).
+        "details",
+        "summary",
         // pulldown-cmark 의 ENABLE_MATH 가 InlineMath/DisplayMath 이벤트를 기본으로
         // `<span class="math math-inline|math-display">{escaped latex}</span>` 로 쓴다(자체
         // Rust 쪽 이벤트 rewrite 불필요 — 라이브러리 기본 동작 그대로 통과시킨다). 아래
@@ -1457,9 +1817,12 @@ fn sanitize_html(unsafe_html: &str) -> String {
     // footnote 마크업의 고정 리터럴 class(라이브러리 자체가 씀, 사용자 입력 아님).
     tag_attributes.insert("sup", ["class"].into_iter().collect());
     tag_attributes.insert("div", ["class"].into_iter().collect());
-    // alert blockquote — 고정 literal class(markdown-alert-<kind>) + rewrite_alert_blockquote_event 가
-    // 진짜 AST 이벤트에서만 심는 localized data-label(attr_escape 済み).
+    // callout blockquote — 고정 literal class(markdown-alert-<type>) + rewrite_callout_events 가
+    // 진짜 AST 이벤트/파싱된 태그 라인에서만 심는 localized data-label(attr_escape 済み).
     tag_attributes.insert("blockquote", ["class", "data-label"].into_iter().collect());
+    // 접기 콜아웃(details) — 고정 literal class + fold 상태(open, 마커 유무로만 결정되는
+    // 불리언, 사용자 입력 그대로 반영되지 않음).
+    tag_attributes.insert("details", ["class", "open"].into_iter().collect());
     // math span(`math math-inline`/`math math-display`) — ammonia 는 class *값* 단위
     // 화이트리스트를 지원하지 않는다(태그·속성 단위만) — `div`+`class` 가 이미 이 crate 에서
     // 같은 방식으로 열려 있다(`.tasty-state`/`.tasty-state-error` 등, 위 참조). class 값
@@ -1559,6 +1922,10 @@ tr:nth-child(even){{background:var(--md-zebra);}}
 blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
 blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
+details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:calc(var(--md-border-w) * 3) solid;}}
+details[class^="markdown-alert-"]>summary{{cursor:pointer;font-weight:600;}}
+details[class^="markdown-alert-"]>summary::before{{content:"";display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;background-repeat:no-repeat;background-position:center;background-size:16px 16px;}}
+details[class^="markdown-alert-"][open]>summary{{margin-bottom:var(--md-space-xs);}}
 {alert_rules}
 {hljs_rules}
 hr{{border:none;border-top:var(--md-border-w) solid var(--md-rule);margin:var(--md-space-md) 0;}}
@@ -1617,21 +1984,25 @@ li input[type=checkbox]{{margin-right:0.4em;}}
     )
 }
 
-/// Per-[`AlertKind`] CSS: border/background from its accent color, plus the icon half of the
-/// shared `::before` header rule declared alongside `blockquote[class^="markdown-alert-"]`
-/// above (the label-text half — `content: attr(data-label)` — is already covered there since
-/// it doesn't vary per kind). No dedicated "alert" design token exists yet, so background is
-/// derived the same way `drop_overlay.rs`/`Theme::preset_split_zone_bg` already do: the same
+/// Per-[`CalloutKind`] CSS: border/background from its accent color, plus the icon half of the
+/// shared header rule — for the `<blockquote>` shape, `blockquote[class^="markdown-alert-"]
+/// ::before` above (the label-text half — `content: attr(data-label)` — is already covered there
+/// since it doesn't vary per kind); for the `<details>`/`<summary>` foldable shape, the
+/// `.{class}>summary::before` selector below layers the same icon onto
+/// `details[class^="markdown-alert-"]>summary::before`'s shared sizing rule (that shape's label
+/// is real `<summary>` text, not `attr()`-read, so only the icon needs a per-kind rule there — see
+/// [`wrap_foldable_callout`]). No dedicated "callout" design token set exists yet, so background
+/// is derived the same way `drop_overlay.rs`/`Theme::preset_split_zone_bg` already do: the same
 /// accent color at low alpha, not a separate token.
 fn alert_css(theme: &Theme) -> String {
     /// ~12% opacity — same ratio `drop_overlay.rs` uses for `accent_primary().with_alpha(31)`.
     const BG_ALPHA: u8 = 31;
     let mut rules = String::new();
-    for kind in ALERT_KINDS {
+    for kind in CALLOUT_KINDS {
         let color = (kind.accent)(theme);
         let icon_uri = alert_icon_data_uri(kind.icon_body, kind.icon_filled, &color.to_hex());
         rules.push_str(&format!(
-            ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before{{color:{hex};background-image:url(\"{icon_uri}\");}}\n",
+            ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before,.{class}>summary::before{{color:{hex};background-image:url(\"{icon_uri}\");}}\n",
             class = kind.class,
             hex = color.to_hex(),
             bg = color.with_alpha(BG_ALPHA).to_hex(),
@@ -1640,7 +2011,7 @@ fn alert_css(theme: &Theme) -> String {
     rules
 }
 
-/// Bakes [`AlertKind::icon_body`] into a complete, `color_hex`-colored `<svg>` and encodes it as
+/// Bakes [`CalloutKind::icon_body`] into a complete, `color_hex`-colored `<svg>` and encodes it as
 /// a `data:image/svg+xml,` URI ready for a CSS `background-image`. The `tasty_icons` source is
 /// fixed to `stroke="white"`/`fill="white"` (crate doc: "색을 글리프에 박지 않는다" — consumers
 /// tint it themselves); the `egui` consumer does that post-hoc on the GPU texture
@@ -3934,7 +4305,7 @@ mod tests {
         );
     }
 
-    // ── GFM alert blockquotes ────────────────────────────────────────────────
+    // ── callouts (GFM alerts + Obsidian extensions) ─────────────────────────
 
     #[test]
     fn gfm_alert_tags_render_their_respective_classes() {
@@ -3967,19 +4338,29 @@ mod tests {
     }
 
     #[test]
-    fn gfm_alert_tag_requires_nothing_else_on_its_line() {
-        // `scan_blockquote_tag` only recognizes the tag when the rest of that line is blank
-        // (pulldown-cmark `scanners.rs`) — trailing text on the same line falls back to a plain
-        // blockquote whose literal first line is that text, tag brackets included.
+    fn gfm_tag_with_trailing_text_becomes_an_obsidian_custom_title_callout() {
+        // `scan_blockquote_tag` only recognizes the tag as a genuine GFM AST event when the rest
+        // of that line is blank (pulldown-cmark `scanners.rs`) — trailing text on the same line
+        // makes the parser fall back to a plain blockquote whose literal first line is that text,
+        // tag brackets included. Before Obsidian-style callouts existed, that was the end of the
+        // story (see git history for the old version of this test). Now `rewrite_callout_buffer`
+        // parses that literal first line itself and recognizes it as Obsidian's own documented
+        // "custom title, no fold marker" shape (`[!type] Title`) — this is an intentional
+        // behavior change from Obsidian support, not a regression: the trailing text is real
+        // Obsidian syntax, not malformed GFM syntax.
         let out = unsafe_content_html(
             "> [!NOTE] with trailing text\n> more\n",
             &Translator::default(),
         );
+        assert!(out.contains(r#"class="markdown-alert-note""#), "got: {out}");
         assert!(
-            !out.contains("markdown-alert-note"),
-            "trailing text on the tag line must suppress alert recognition, got: {out}"
+            out.contains(r#"data-label="with trailing text""#),
+            "trailing text after the tag should become the custom title, got: {out}"
         );
-        assert!(out.contains("[!NOTE] with trailing text"), "got: {out}");
+        assert!(
+            !out.contains("[!NOTE] with trailing text"),
+            "the tag line itself must not leak into the body, got: {out}"
+        );
     }
 
     #[test]
@@ -4057,19 +4438,182 @@ Outro\n";
     }
 
     #[test]
+    fn obsidian_extended_types_render_their_classes() {
+        for (tag, class) in [
+            ("info", "markdown-alert-info"),
+            ("abstract", "markdown-alert-abstract"),
+            ("todo", "markdown-alert-todo"),
+            ("success", "markdown-alert-success"),
+            ("question", "markdown-alert-question"),
+            ("failure", "markdown-alert-failure"),
+            ("danger", "markdown-alert-danger"),
+            ("bug", "markdown-alert-bug"),
+            ("example", "markdown-alert-example"),
+            ("quote", "markdown-alert-quote"),
+        ] {
+            // Bare (no fold marker, no title) — pulldown-cmark's own GFM scanner never
+            // recognizes these 10 (not one of its 5 fixed names), so this exercises the
+            // plain-blockquote/first-line-parsing half of `rewrite_callout_buffer`.
+            let source = format!("> [!{tag}]\n> body text\n");
+            let out = unsafe_content_html(&source, &Translator::default());
+            assert!(
+                out.contains(&format!(r#"class="{class}""#)),
+                "[!{tag}] should render class={class}, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn obsidian_documented_aliases_resolve_to_their_canonical_kind() {
+        for (alias, class) in [
+            ("summary", "markdown-alert-abstract"),
+            ("tldr", "markdown-alert-abstract"),
+            ("hint", "markdown-alert-tip"),
+            ("check", "markdown-alert-success"),
+            ("done", "markdown-alert-success"),
+            ("help", "markdown-alert-question"),
+            ("faq", "markdown-alert-question"),
+            ("fail", "markdown-alert-failure"),
+            ("missing", "markdown-alert-failure"),
+            ("error", "markdown-alert-danger"),
+            ("cite", "markdown-alert-quote"),
+        ] {
+            let source = format!("> [!{alias}]\n> body\n");
+            let out = unsafe_content_html(&source, &Translator::default());
+            assert!(
+                out.contains(&format!(r#"class="{class}""#)),
+                "[!{alias}] should alias to class={class}, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn obsidian_aliases_never_shadow_a_gfm_kind_of_the_same_name() {
+        // Obsidian's own docs list `important`/`caution`/`attention` as aliases of
+        // `tip`/`warning`/`warning` respectively — but those 3 keywords are already distinct,
+        // pre-existing GFM kinds in this codebase ("GFM 5종 기존 유지" is a hard requirement), so
+        // they must keep resolving to their own GFM entry, not get redefined into an alias.
+        let important = unsafe_content_html("> [!important]\n> body\n", &Translator::default());
+        assert!(
+            important.contains(r#"class="markdown-alert-important""#),
+            "got: {important}"
+        );
+        let caution = unsafe_content_html("> [!caution]\n> body\n", &Translator::default());
+        assert!(
+            caution.contains(r#"class="markdown-alert-caution""#),
+            "got: {caution}"
+        );
+        // `attention` has no GFM entry of its own and isn't in `CALLOUT_ALIASES` either (kept
+        // out deliberately, see `CALLOUT_KINDS` doc) — an unrecognized type must leave the
+        // blockquote alone, literal tag text and all.
+        let attention = unsafe_content_html("> [!attention]\n> body\n", &Translator::default());
+        assert!(!attention.contains("markdown-alert-"), "got: {attention}");
+        assert!(attention.contains("[!attention]"), "got: {attention}");
+    }
+
+    #[test]
+    fn unrecognized_bracket_tag_is_left_as_a_plain_blockquote() {
+        let out = unsafe_content_html("> [!not-a-real-type]\n> body\n", &Translator::default());
+        assert!(!out.contains("markdown-alert-"), "got: {out}");
+        assert!(!out.contains("<details"), "got: {out}");
+        assert!(out.contains("[!not-a-real-type]"), "got: {out}");
+    }
+
+    #[test]
+    fn fold_marker_plus_renders_initially_open_details() {
+        let out = unsafe_content_html("> [!note]+\n> body\n", &Translator::default());
+        assert!(
+            out.contains("<details class=\"markdown-alert-note\" open>"),
+            "got: {out}"
+        );
+        assert!(out.contains("<summary>"), "got: {out}");
+        // No custom title given — falls back to the default label key (`Translator::default()`
+        // has no loaded strings, so `t()`'s "key itself" miss-fallback is what surfaces here —
+        // `gfm_alert_data_label_uses_translator_and_survives_sanitize` below covers the real,
+        // translated label text via a loaded `Translator`).
+        assert!(out.contains(">markdown.alert.note</summary>"), "got: {out}");
+        assert!(out.contains("body"), "got: {out}");
+    }
+
+    #[test]
+    fn fold_marker_minus_renders_initially_closed_details() {
+        let out = unsafe_content_html("> [!warning]-\n> body\n", &Translator::default());
+        assert!(
+            out.contains("<details class=\"markdown-alert-warning\">"),
+            "collapsed details must omit `open`, got: {out}"
+        );
+        assert!(!out.contains("markdown-alert-warning\" open"), "got: {out}");
+    }
+
+    #[test]
+    fn no_fold_marker_never_uses_details_even_with_a_custom_title() {
+        // Scope: "마커 없음 = 접기 UI 자체 없음" — fold and title are independent (matches
+        // Obsidian's own docs), so a title with no `+`/`-` must still render as a plain
+        // (non-foldable) blockquote, not `<details>`.
+        let out = unsafe_content_html("> [!tip] Custom Title\n> body\n", &Translator::default());
+        assert!(!out.contains("<details"), "got: {out}");
+        assert!(
+            out.contains(r#"class="markdown-alert-tip" data-label="Custom Title""#),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn fold_marker_with_custom_title() {
+        let out = unsafe_content_html(
+            "> [!danger]+ Look out below\n> body\n",
+            &Translator::default(),
+        );
+        assert!(
+            out.contains("<details class=\"markdown-alert-danger\" open>"),
+            "got: {out}"
+        );
+        assert!(out.contains(">Look out below</summary>"), "got: {out}");
+    }
+
+    #[test]
+    fn nested_callouts_do_not_crash_and_keep_all_text() {
+        // Scope: nested callouts don't need perfect styling, only crash/data-loss safety.
+        let source = "> [!note] Outer\n\
+> outer body\n\
+> > [!warning]- Inner\n\
+> > inner body\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(out.contains("markdown-alert-note"), "got: {out}");
+        assert!(out.contains("markdown-alert-warning"), "got: {out}");
+        assert!(out.contains("outer body"), "got: {out}");
+        assert!(out.contains("inner body"), "got: {out}");
+        // Must also survive sanitize + a full render_document() pass without panicking.
+        let _ = sanitize_html(&out);
+    }
+
+    #[test]
+    fn nested_plain_blockquote_inside_a_callout_is_unaffected() {
+        let source = "> [!note]\n> intro\n> > just a nested quote\n";
+        let out = unsafe_content_html(source, &Translator::default());
+        assert!(out.contains("markdown-alert-note"), "got: {out}");
+        assert!(out.contains("just a nested quote"), "got: {out}");
+    }
+
+    #[test]
     fn alert_css_produces_distinct_rules_per_kind() {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let css = alert_css(&theme);
         let mut blocks = Vec::new();
-        for kind in ALERT_KINDS {
+        for kind in CALLOUT_KINDS {
             let needle = format!(".{}{{", kind.class);
             assert!(
                 css.contains(&needle),
                 "missing rule block for {}, got: {css}",
                 kind.class
             );
+            // Icon/color rule covers both the `<blockquote>` shape (`::before`) and the
+            // `<details>`/`<summary>` foldable shape (`>summary::before`) in one selector.
             assert!(
-                css.contains(&format!(".{}::before{{color:", kind.class)),
+                css.contains(&format!(
+                    ".{cls}::before,.{cls}>summary::before{{color:",
+                    cls = kind.class
+                )),
                 "missing ::before color rule for {}, got: {css}",
                 kind.class
             );
@@ -4079,9 +4623,11 @@ Outro\n";
             );
             blocks.push(needle);
         }
-        // 5 distinct kinds → 5 distinct selectors (no accidental collision/reuse).
+        // Every kind (GFM 5 + Obsidian extensions) gets its own distinct selector (no accidental
+        // collision/reuse) — icon/color duplication across kinds is expected and fine (module
+        // doc), only the selector itself must stay unique per class.
         let unique: std::collections::HashSet<_> = blocks.iter().collect();
-        assert_eq!(unique.len(), ALERT_KINDS.len(), "got: {css}");
+        assert_eq!(unique.len(), CALLOUT_KINDS.len(), "got: {css}");
     }
 
     #[test]

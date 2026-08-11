@@ -52,13 +52,24 @@ close_tooltip = "Close (Esc)"
 label = "Table of contents"
 aria_label = "Table of contents"
 
-# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::ALERT_KINDS 가 조회.
+# 콜아웃(GFM alert `> [!NOTE]` 5종 + Obsidian 확장 타입) 기본 헤더 레이블 — render.rs::
+# CALLOUT_KINDS 가 조회. 커스텀 제목(`[!type] Title`)이 있으면 이 값 대신 그 텍스트를 쓴다.
 [markdown.alert]
 note = "Note"
 tip = "Tip"
 important = "Important"
 warning = "Warning"
 caution = "Caution"
+abstract = "Abstract"
+info = "Info"
+todo = "Todo"
+success = "Success"
+question = "Question"
+failure = "Failure"
+danger = "Danger"
+bug = "Bug"
+example = "Example"
+quote = "Quote"
 
 # 각주 참조/backlink 앵커의 aria-label — render.rs::rewrite_footnote_event 가 조회.
 [markdown.footnote]

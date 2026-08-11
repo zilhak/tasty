@@ -197,25 +197,82 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
 감수한 트레이드오프다. 인라인 코드(`` `--` ``)와 펜스드 코드블록 내부 텍스트, 그리고 백슬래시로
 이스케이프한 문장부호(`\"`, `\-\-`)는 이 치환의 영향을 받지 않고 원문 그대로 남는다.
 
-## GFM alert blockquote
+## 콜아웃 (GFM alert + Obsidian 확장 타입)
 
-`> [!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/`[!CAUTION]`(blockquote 의 첫 줄에 태그만 있어야
-인식, 대소문자 무관 — `pulldown-cmark` `Options::ENABLE_GFM`)은 각각 고유 accent 색·아이콘·헤더
-레이블을 가진 alert 로 렌더된다. 헤더 레이블은 `render.rs::ALERT_KINDS` 가 plugin 자신의
-`Translator` 로 UI 언어에 맞게 조회한 뒤(`markdown.alert.{note,tip,important,warning,caution}`,
-`lang/{en,ko,ja}.toml`) `data-label` 속성으로 문서에 심는다 — CSS 는 언어를 분기할 수 없으므로
-`content: attr(data-label)` 로 그 값을 그대로 반영한다. 아이콘은 `tasty-icons` 의 canonical
-글리프(note=`ALERT_CIRCLE`, tip=`STAR_FILL`, important=`BELL`, warning=`ALERT_TRIANGLE`,
-caution=`CLOSE`)를 각 kind 의 accent 색으로 구운 SVG data URI 로 `background-image` 에 심는다
-(`render.rs::alert_icon_data_uri`) — `tasty_icons::Icon` 원본은 `stroke="white"`/`fill="white"`
-고정이라 egui 텍스처 tint 대신 색을 직접 구운 사본을 만든다. 배경은 그 accent 색의 저알파(≈12%,
-`drop_overlay.rs` 관례와 동일 비율) 버전.
+`> [!note]`류 blockquote 태그는 GFM alert 5종과 Obsidian 스타일 확장(타입 확장·접기·커스텀
+제목)이 `render.rs::rewrite_callout_events`/`rewrite_callout_buffer` 하나의 통합 경로로
+처리된다 — 두 문법이 서로 다른 함수로 나뉘어 있지 않다. `pulldown-cmark`의
+`Options::ENABLE_GFM`은 문서 전체에 한 번만 적용되는 파서 옵션이라 GFM 5종만 켜고 Obsidian
+확장만 끄는 식으로 나눌 수 없기 때문에 이렇게 설계했다(전신이었던 GFM 전용
+`rewrite_alert_blockquote_event`를 이 통합 함수가 대체).
 
-일반 blockquote(태그 없는 `>`)는 영향받지 않는다 — pulldown-cmark 는 그 경우 `class` 자체를
-emit 하지 않는다. `data-label` 은 실제 `Tag::BlockQuote(Some(kind))` AST 이벤트에서만 심어지므로,
-문서 본문에 raw HTML 로 `<blockquote class="markdown-alert-note">` 같은 리터럴을 직접 써넣어도
-가짜 alert 로 오인되지 않는다(완성된 HTML 문자열을 매칭하는 방식이 아니라 파서 이벤트 자체를
-가로채는 방식이기 때문).
+### 지원 타입
+
+- **GFM 5종**(기존 동작 그대로 유지): `note`/`tip`/`important`/`warning`/`caution`.
+- **Obsidian 확장 10종**(공식 문서 [obsidian.md/help/callouts](https://obsidian.md/help/callouts)
+  기준으로 확정 — GFM 5종과 겹치지 않는 타입만): `abstract`/`info`/`todo`/`success`/`question`/
+  `failure`/`danger`/`bug`/`example`/`quote`.
+- **Obsidian 문서상의 별칭**(충돌 없는 것만, `render.rs::CALLOUT_ALIASES`): `summary`/`tldr`→
+  abstract, `hint`→tip, `check`/`done`→success, `help`/`faq`→question, `fail`/`missing`→failure,
+  `error`→danger, `cite`→quote.
+- **의도적으로 제외한 별칭**: Obsidian 문서는 `important`/`caution`/`attention`을 각각
+  tip/warning/warning 의 별칭으로 정의하지만, 이 세 키워드는 이미 GFM 5종 고유 타입(각자
+  다른 아이콘·색)으로 존재한다 — "GFM 5종 기존 유지"가 우선이라 이 3개는 별칭 테이블에 넣지
+  않았다. `[!important]`/`[!caution]`은 항상 기존 GFM 엔트리로 해석되고, `[!attention]`은
+  아무 타입에도 매칭되지 않아 일반 blockquote 로 남는다.
+- 목록에 없는 `[!아무거나]`는 콜아웃으로 인식되지 않고 대괄호 텍스트 그대로 일반 blockquote
+  본문에 남는다(공식 문서에 없는 타입은 만들어내지 않는다는 스코프 결정).
+
+### 문법
+
+`[!type]` 뒤에 붙는 `+`/`-`/제목은 서로 독립적이다(Obsidian 공식 문서 확인 — 마커 없이도
+제목만 붙일 수 있고, 제목 없이 마커만 붙일 수도 있다):
+
+- `> [!type]` — 마커/제목 없음. 기본 타입 라벨(번역됨)로 렌더.
+- `> [!type] 제목` — 마커 없이 커스텀 제목만. **접기 UI 자체가 없다**(`<details>`를 아예 쓰지
+  않는다 — GFM alert 와 동일한 `<blockquote>` shape, `data-label` 속성만 제목으로 바뀐다).
+- `> [!type]+ 제목`(제목 생략 가능) — `<details open><summary>...` 로 렌더, 초기 펼침.
+- `> [!type]- 제목`(제목 생략 가능) — `<details><summary>...`(`open` 없음), 초기 접힘.
+
+GFM 5종을 마커/제목 없이 bare 로 쓴 `> [!NOTE]`는 `pulldown-cmark` 파서 자체가
+`Tag::BlockQuote(Some(kind))` AST 이벤트로 이미 인식한 상태로 넘어온다(`scanners.rs::
+scan_blockquote_tag` — 태그 뒤에 공백 외 다른 내용이 있으면 이 인식 자체가 실패해 일반
+blockquote 로 폴백). 이 경우를 포함한 모든 콜아웃 인식·렌더가
+`rewrite_callout_buffer`에서 한 곳에 모여 처리된다. **결과적으로 GFM 5종에 마커/제목이
+붙은 문법(`[!note]+ 제목`처럼)도 Obsidian 문법으로 자연히 인식된다** — 이는 Obsidian 지원을
+추가하며 생긴 의도된 동작 변경이다(과거에는 태그 뒤에 무엇이든 붙으면 그냥 일반 텍스트로
+남았다).
+
+헤더 레이블(기본 타입 라벨 또는 커스텀 제목)은 `render.rs::CALLOUT_KINDS`가 plugin 자신의
+`Translator`로 UI 언어에 맞게 조회한다(`markdown.alert.<type>`, `lang/{en,ko,ja}.toml`) —
+마커 없는 shape 은 CSS 가 언어를 분기할 수 없으므로 `data-label` 속성 + `content:
+attr(data-label)`로 반영하고, `<details>` shape 은 `<summary>` 안의 실제 텍스트 노드로
+반영한다(어느 쪽이든 커스텀 제목이 있으면 그 텍스트가 기본 라벨을 대체). 아이콘은
+`tasty-icons`의 canonical 글리프를 각 kind 의 accent 색으로 구운 SVG data URI 로
+`background-image` 에 심는다(`render.rs::alert_icon_data_uri`, 15개 타입이 7개 기존
+semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/
+`accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
+겹치는 조합은 아이콘·라벨 텍스트로 구분).
+
+일반 blockquote(태그 없는 `>`, 또는 목록에 없는 타입)는 영향받지 않는다. `data-label`/
+`<summary>` 텍스트는 실제 파서 이벤트(`Tag::BlockQuote(Some(kind))`) 또는 버퍼링된
+blockquote 의 첫 줄 텍스트 파싱에서만 심어지므로, 문서 본문에 raw HTML 로
+`<blockquote class="markdown-alert-note">` 같은 리터럴을 직접 써넣어도 가짜 콜아웃으로
+오인되지 않는다(완성된 HTML 문자열을 매칭하는 방식이 아니라 파서 이벤트/버퍼링된 실제
+blockquote 콘텐츠만 신뢰하는 방식이기 때문).
+
+### 중첩
+
+콜아웃 안에 다른 콜아웃/일반 blockquote 가 중첩되면(`> [!note]\n> > [!warning]\n...`)
+`rewrite_callout_events` 가 재귀적으로 안쪽도 동일하게 처리한다 — 완벽한 시각적 스타일링은
+스코프 밖이지만(예: 중첩 깊이별 들여쓰기 조정 없음), 크래시나 텍스트 유실 없이 안쪽 콜아웃도
+자기 타입대로 렌더된다.
+
+### sanitize
+
+`<details>`/`<summary>` 태그가 `sanitize_html` 화이트리스트에 추가됐다 — `details` 는
+`class`+`open`, `summary` 는 별도 속성 없음(제목이 실제 텍스트 노드로 들어가 별도
+attribute 가 필요 없다).
 
 ## Bare URL autolink
 
@@ -311,8 +368,8 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
 `Options::ENABLE_FOOTNOTES`(각주 `[^name]`/`[^name]: ...`)의 `pulldown-cmark` 기본 HTML 라이터는
 참조 지점에서 정의로 가는 링크만 만들고, 정의에서 참조 지점으로 되돌아가는 backlink 나
 `aria-label` 은 전혀 생성하지 않는다. `render.rs::rewrite_footnote_event` 가 실제
-`Event::FootnoteReference`/`Tag::FootnoteDefinition` AST 이벤트를 가로채(GFM alert 의
-`rewrite_alert_blockquote_event` 와 동일한 패턴 — 완성된 HTML 문자열이 아니라 파서 이벤트 자체를
+`Event::FootnoteReference`/`Tag::FootnoteDefinition` AST 이벤트를 가로채(콜아웃의
+`rewrite_callout_events` 와 동일한 패턴 — 완성된 HTML 문자열이 아니라 파서 이벤트 자체를
 매칭해야, raw HTML 로 위장한 가짜 각주 마크업과 절대 혼동되지 않는다) 다음을 직접 심는다:
 
 - **참조 지점 고유 id** — `fnref-<safe-name>`(첫 참조), 같은 각주가 여러 번 참조되면
@@ -386,7 +443,7 @@ inline 컨텍스트에 중첩되는 잘못된 HTML이 되어 브라우저가 `<p
 `Event::Text` 로 방출되므로 `push_html` 이 본문 텍스트와 동일하게 HTML-escape 한다 — alt 에
 `<`/`>`/`&` 같은 문자가 있어도 캡션에 안전하게 이스케이프된 채로만 나타난다. `<figure>`/
 `<figcaption>` 자체는 이 파일이 이미 쓰는 "신뢰된 plugin 작성 마크업" 패턴(`Event::Html`,
-`rewrite_alert_blockquote_event` 의 `<blockquote data-label="...">` 삽입과 동일)으로
+`wrap_static_callout` 의 `<blockquote data-label="...">` 삽입과 동일)으로
 주입되므로, `sanitize_html` 화이트리스트에도 별도 속성 없이 bare tag 로 추가했다.
 
 ## 이미지 로드 실패 상태 UI
@@ -487,7 +544,7 @@ Theme 토큰 매핑이다.
 | 상태(에러) 제목 | inline hex(`danger`) | `accent-danger` | `.tasty-state-title` |
 | 상태(에러/빈 문서) 본문 | inline hex(`muted`) | `text-muted` | `.tasty-state-detail` |
 | 코너 반경/보더 굵기 | `--md-radius` / `--md-border-w` | `corner-radius` / `border-width` | 주소창 입력·코드 블록·표 공용 |
-| GFM alert 5종 | inline hex(kind 별 accent) | note=`accent-primary` · tip=`accent-success` · important=`accent-agent` · warning=`accent-warning` · caution=`accent-danger` | 전용 alert 토큰 없음 — 기존 semantic accent 재사용(위 "GFM alert blockquote" 절) |
+| 콜아웃(GFM 5종+Obsidian 확장 10종) | inline hex(kind 별 accent) | note/todo/abstract/quote=`accent-primary` · tip/success=`accent-success` · important/bug/example=`accent-agent` · warning=`accent-warning` · caution/failure/danger=`accent-danger` · info=`accent-info` · question=`accent-attention` | 전용 콜아웃 토큰 없음 — 기존 7개 semantic accent 재사용, 15종이 나눠 쓰므로 일부 중복(위 "콜아웃" 절) |
 | TOC 패널 배경 | `--md-code-bg` | `surface-raised` | `#tasty-toc` — 코드 블록 배경과 동일 토큰 재사용(전용 토큰 없음) |
 | TOC 들여쓰기 | `--md-space-sm` × (레벨-1) | `spacing-sm` | `.tasty-toc-l1`..`l6` |
 | heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |

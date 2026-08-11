@@ -59,6 +59,16 @@ tip = "ヒント"
 important = "重要"
 warning = "警告"
 caution = "注意"
+abstract = "要約"
+info = "情報"
+todo = "タスク"
+success = "成功"
+question = "質問"
+failure = "失敗"
+danger = "危険"
+bug = "バグ"
+example = "例"
+quote = "引用"
 
 # 脚注参照/backlinkアンカーのaria-label — render.rs::rewrite_footnote_event が参照。
 [markdown.footnote]
