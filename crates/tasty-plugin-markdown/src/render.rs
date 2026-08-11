@@ -159,7 +159,7 @@ pub fn render_document(input: DocumentInput) -> String {
         )
     } else {
         (
-            sanitize_html(&unsafe_content_html(source, tr)),
+            sanitize_html(&unsafe_content_html_in_dir(source, tr, base_dir)),
             collect_headings(source),
         )
     };
@@ -519,17 +519,34 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 /// structural (block-level) promotion, decided purely from paragraph shape, so it runs first and
 /// leaves every other inline-text rewrite (autolinking, nav-fragment rewriting) to work on
 /// whatever text/image events actually survive that decision, exactly as if that pass didn't
-/// exist for paragraphs it declines to touch. [`autolink_bare_urls`] itself runs *before*
-/// [`rewrite_link_event`], and synthesizes its new `Tag::Link` events with a plain raw `dest_url`
-/// (e.g. `https://example.com`) — the exact same shape an explicit `[text](url)` link has at this
-/// point in the pipeline. This way `rewrite_link_event`, run last over the *whole* (now
-/// autolink-expanded) event stream, is the single place that ever produces the `#tasty-nav:`
-/// fragment scheme; the autolink pass doesn't need its own copy of that rewrite.
+/// exist for paragraphs it declines to touch. [`resolve_wikilinks`] runs next, right before
+/// [`autolink_bare_urls`] — both are the same shape of pass (scan merged `Event::Text` runs for a
+/// library-unknown syntax, synthesize `Tag::Link` events with a plain raw `dest_url`), and each
+/// already excludes text inside a link/code-block via its own `link_depth`/`code_block_depth`
+/// tracking, so their relative order can't cause either to double-process the other's output
+/// regardless of which runs first — they're placed adjacently here only because they're
+/// conceptually paired, not because ordering is load-bearing. [`autolink_bare_urls`] itself runs
+/// *before* [`rewrite_link_event`], and synthesizes its new `Tag::Link` events with a plain raw
+/// `dest_url` (e.g. `https://example.com`) — the exact same shape an explicit `[text](url)` link
+/// has at this point in the pipeline (wikilink events have this shape too, see
+/// [`wikilink_events`]). This way `rewrite_link_event`, run last over the *whole* (now
+/// autolink/wikilink-expanded) event stream, is the single place that ever produces the
+/// `#tasty-nav:` fragment scheme; neither pass needs its own copy of that rewrite.
 /// `rewrite_code_block_event`/`rewrite_alert_blockquote_event`/`rewrite_footnote_event` run first
 /// since none of them touch `Text`/`Link`/`Image` events, so their relative order doesn't matter.
 /// [`assign_heading_ids`] runs last over the fully-rewritten stream — none of the other passes
 /// touch `Tag::Heading`, so its position doesn't matter either.
+#[cfg(test)]
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
+    unsafe_content_html_in_dir(source, tr, None)
+}
+
+/// Same as [`unsafe_content_html`], additionally resolving `[[wikilink]]` targets against
+/// `base_dir` ([`resolve_wikilinks`]). Split out under its own name so the large existing block of
+/// regression tests that don't exercise wikilink resolution keep calling the stable 2-arg form
+/// unchanged; [`render_document`] — the only real production caller — uses this one, with its own
+/// `base_dir` threaded straight through.
+fn unsafe_content_html_in_dir(source: &str, tr: &Translator, base_dir: Option<&Path>) -> String {
     let headings = collect_headings(source);
     let footnote_ref_totals = footnote_reference_totals(source);
     let mut footnote_state = FootnoteState::default();
@@ -539,6 +556,7 @@ fn unsafe_content_html(source: &str, tr: &Translator) -> String {
         .map(|event| rewrite_footnote_event(event, tr, &footnote_ref_totals, &mut footnote_state))
         .collect();
     let events = figurize_solo_image_paragraphs(events);
+    let events = resolve_wikilinks(events, base_dir);
     let events = autolink_bare_urls(events)
         .into_iter()
         .map(rewrite_link_event);
@@ -848,6 +866,174 @@ fn scan_url_end(text: &str, scheme_start: usize) -> usize {
         break;
     }
     scheme_start + end
+}
+
+// ── Obsidian-style wikilinks (`[[문서명]]` / `[[문서명|표시텍스트]]`) ────────────
+
+/// Fixed, deliberately narrow scope (see `docs/plugins/markdown/screens/markdown.md` "위키링크"
+/// section for the full rationale): resolution only ever looks for `<name>.md` in the exact same
+/// directory as the current file (`base_dir`) — no vault-wide recursive search, no
+/// case-insensitive matching, no alias handling. `[[name#heading]]` and `![[embed]]` are not
+/// recognized as wikilinks at all (they fail [`parse_wikilink_body`] and pass through as literal
+/// text, same as any other malformed wikilink body).
+struct Wikilink {
+    /// The `.md`-less document name as written inside `[[...]]`, already validated to contain
+    /// neither `/`, `\`, nor `..` (see [`parse_wikilink_body`]).
+    name: String,
+    /// Link text: the `|`-delimited display text if present and non-blank, otherwise `name`.
+    display: String,
+}
+
+/// Parse a `[[...]]` body (the text between the delimiters, not including them) into a
+/// [`Wikilink`], or `None` if it isn't a valid wikilink — in which case the caller must leave the
+/// original `[[...]]` text completely untouched (silent pass-through, no error): a nested `[[`,
+/// an empty name, or a name containing `/`/`\`/`..` (not a single-segment same-directory
+/// reference — path-traversal prevention) all fall through here. This intentionally does NOT
+/// recognize `#heading` anchors — a name containing `#` is still accepted verbatim as a literal
+/// (nonexistent) filename component, matching the explicit out-of-scope decision to not implement
+/// `[[name#heading]]`.
+fn parse_wikilink_body(body: &str) -> Option<Wikilink> {
+    if body.contains("[[") {
+        return None;
+    }
+    let (name_part, display_part) = match body.split_once('|') {
+        Some((n, d)) => (n, Some(d)),
+        None => (body, None),
+    };
+    let name = name_part.trim();
+    if name.is_empty() || name.contains(['/', '\\']) || name.contains("..") {
+        return None;
+    }
+    let display = display_part
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .unwrap_or(name);
+    Some(Wikilink {
+        name: name.to_string(),
+        display: display.to_string(),
+    })
+}
+
+/// Turn one resolved [`Wikilink`] into its event sequence: a normal `Tag::Link` (destination is
+/// the plain relative `<name>.md` — the exact same shape a hand-written `[text](name.md)` link
+/// would have at this point in the pipeline), so [`rewrite_link_event`] rewrites it into the nav
+/// fragment scheme afterward exactly like any other link — no separate resolution machinery.
+///
+/// When the target isn't found under `base_dir` (including when `base_dir` itself is `None` —
+/// same "unresolvable" treatment [`classify_link`] already gives a relative destination with no
+/// base directory), the link is still emitted (clicking it falls through to the existing
+/// nonexistent-file handling), just wrapped in a `.tasty-wikilink-missing` span for the visual
+/// distinction — `span`/`class` are already sanitizer-whitelisted (opened for KaTeX math spans),
+/// so this needs no new [`sanitize_html`] allowance.
+fn wikilink_events(link: Wikilink, base_dir: Option<&Path>) -> Vec<Event<'static>> {
+    let dest = format!("{}.md", link.name);
+    let exists = base_dir.is_some_and(|dir| dir.join(&dest).exists());
+
+    let link_events = [
+        Event::Start(Tag::Link {
+            link_type: LinkType::Shortcut,
+            dest_url: CowStr::from(dest),
+            title: CowStr::from(""),
+            id: CowStr::from(""),
+        }),
+        Event::Text(link.display.into()),
+        Event::End(TagEnd::Link),
+    ];
+
+    if exists {
+        link_events.to_vec()
+    } else {
+        let mut out = vec![Event::Html(CowStr::from(
+            r#"<span class="tasty-wikilink-missing">"#,
+        ))];
+        out.extend(link_events);
+        out.push(Event::Html(CowStr::from("</span>")));
+        out
+    }
+}
+
+/// Scan one merged plain-text run for `[[name]]`/`[[name|display]]` wikilinks, emitting
+/// alternating `Event::Text` (plain) and wikilink-link events ([`wikilink_events`]). A `[[` with
+/// no matching `]]` anywhere later in the run stops the scan (the rest is left as plain text) —
+/// mirrors [`split_bare_urls`]'s structure exactly, substituting the delimiter/validation logic.
+fn split_wikilinks(text: String, base_dir: Option<&Path>) -> Vec<Event<'static>> {
+    let mut out = Vec::new();
+    let mut plain_start = 0usize;
+    let mut search_from = 0usize;
+
+    while let Some(rel_open) = text[search_from..].find("[[") {
+        let open = search_from + rel_open;
+        let Some(rel_close) = text[open + 2..].find("]]") else {
+            break;
+        };
+        let close = open + 2 + rel_close;
+        let body = &text[open + 2..close];
+
+        let Some(link) = parse_wikilink_body(body) else {
+            // Not a valid wikilink body — leave this `[[` untouched and resume right after it,
+            // so a `]]` later on the line can still pair with a *subsequent* `[[`.
+            search_from = open + 2;
+            continue;
+        };
+
+        if open > plain_start {
+            out.push(Event::Text(text[plain_start..open].to_string().into()));
+        }
+        out.extend(wikilink_events(link, base_dir));
+        plain_start = close + 2;
+        search_from = plain_start;
+    }
+
+    if plain_start < text.len() {
+        out.push(Event::Text(text[plain_start..].to_string().into()));
+    } else if out.is_empty() {
+        out.push(Event::Text(text.into()));
+    }
+    out
+}
+
+/// Rewrite `[[...]]` wikilink text into link events, resolved against `base_dir`. Mirrors
+/// [`autolink_bare_urls`]'s architecture exactly (same doc comment reasoning applies here
+/// verbatim): pulldown-cmark has no notion of this syntax, so `[[...]]` only ever reaches this
+/// pass as literal `Event::Text`, buffered across event boundaries and flushed via
+/// [`split_wikilinks`]; the same `link_depth`/`code_block_depth` tracking excludes text already
+/// inside an explicit link or a code block. `Event::FootnoteReference` is a distinct event
+/// variant — never `Event::Text` — so `[^name]` footnote syntax structurally cannot reach this
+/// scanner regardless of pass ordering; `wikilink_does_not_collide_with_footnote_reference` below
+/// confirms this empirically against the real parser output rather than resting on that
+/// structural argument alone.
+fn resolve_wikilinks<'a>(events: Vec<Event<'a>>, base_dir: Option<&Path>) -> Vec<Event<'a>> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut link_depth: u32 = 0;
+    let mut code_block_depth: u32 = 0;
+    let mut run = String::new();
+
+    for event in events {
+        match event {
+            Event::Text(ref text) if link_depth == 0 && code_block_depth == 0 => {
+                run.push_str(text);
+            }
+            other => {
+                if !run.is_empty() {
+                    out.extend(split_wikilinks(std::mem::take(&mut run), base_dir));
+                }
+                match &other {
+                    Event::Start(Tag::Link { .. }) => link_depth += 1,
+                    Event::End(TagEnd::Link) => link_depth = link_depth.saturating_sub(1),
+                    Event::Start(Tag::CodeBlock(_)) => code_block_depth += 1,
+                    Event::End(TagEnd::CodeBlock) => {
+                        code_block_depth = code_block_depth.saturating_sub(1)
+                    }
+                    _ => {}
+                }
+                out.push(other);
+            }
+        }
+    }
+    if !run.is_empty() {
+        out.extend(split_wikilinks(run, base_dir));
+    }
+    out
 }
 
 fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
@@ -1357,6 +1543,7 @@ h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md
 .tasty-toc-l5 a{{padding-left:calc(var(--md-space-sm) * 4);}}
 .tasty-toc-l6 a{{padding-left:calc(var(--md-space-sm) * 5);}}
 a{{color:var(--md-link);}}
+.tasty-wikilink-missing a{{color:{danger};text-decoration:underline dotted;}}
 strong{{color:var(--md-strong);font-weight:600;}}
 code{{background:var(--md-code-bg);border-radius:var(--md-radius);padding:0.1em 0.35em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
 pre{{position:relative;background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-code-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
@@ -2825,6 +3012,117 @@ mod tests {
     fn unsafe_content_html_leaves_anchor_links_untouched() {
         let out = unsafe_content_html("[jump](#section)", &Translator::default());
         assert!(out.contains(r##"href="#section""##));
+    }
+
+    #[test]
+    fn wikilink_to_existing_file_becomes_plain_nav_link() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Other.md"), "content").unwrap();
+        let out = sanitize_html(&unsafe_content_html_in_dir(
+            "See [[Other]] for details.",
+            &Translator::default(),
+            Some(dir.path()),
+        ));
+        assert!(out.contains("#tasty-nav:link:"), "got: {out}");
+        assert!(out.contains(">Other</a>"), "got: {out}");
+        assert!(
+            !out.contains("tasty-wikilink-missing"),
+            "existing target must not get the missing marker, got: {out}"
+        );
+    }
+
+    #[test]
+    fn wikilink_to_missing_file_gets_missing_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = sanitize_html(&unsafe_content_html_in_dir(
+            "See [[Nonexistent]] for details.",
+            &Translator::default(),
+            Some(dir.path()),
+        ));
+        assert!(
+            out.contains("tasty-wikilink-missing"),
+            "missing target should get the visual marker, got: {out}"
+        );
+        // Still a real link (destination present, not stripped) — clicking falls through to
+        // the existing nonexistent-file handling in main.rs::dispatch_file_link.
+        assert!(out.contains("#tasty-nav:link:"), "got: {out}");
+        assert!(out.contains(">Nonexistent</a>"), "got: {out}");
+    }
+
+    #[test]
+    fn wikilink_with_no_base_dir_is_treated_as_missing() {
+        // Same "unresolvable" treatment as classify_link gives an ordinary relative destination
+        // with no base directory — still a link, just visually marked.
+        let out = sanitize_html(&unsafe_content_html_in_dir(
+            "See [[Other]] for details.",
+            &Translator::default(),
+            None,
+        ));
+        assert!(out.contains("tasty-wikilink-missing"), "got: {out}");
+    }
+
+    #[test]
+    fn wikilink_custom_display_text() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Other.md"), "content").unwrap();
+        let out = unsafe_content_html_in_dir(
+            "See [[Other|a different page]] for details.",
+            &Translator::default(),
+            Some(dir.path()),
+        );
+        assert!(out.contains(">a different page</a>"), "got: {out}");
+        assert!(!out.contains(">Other</a>"), "got: {out}");
+    }
+
+    #[test]
+    fn wikilink_inside_code_block_is_not_linked() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Other.md"), "content").unwrap();
+        let out = unsafe_content_html_in_dir(
+            "```\n[[Other]]\n```\n",
+            &Translator::default(),
+            Some(dir.path()),
+        );
+        assert!(!out.contains("<a "), "got: {out}");
+        assert!(out.contains("[[Other]]"), "got: {out}");
+    }
+
+    #[test]
+    fn wikilink_with_path_traversal_is_left_as_literal_text() {
+        let dir = tempfile::tempdir().unwrap();
+        for body in ["[[../secret]]", "[[sub/dir]]", r"[[sub\dir]]"] {
+            let out = unsafe_content_html_in_dir(body, &Translator::default(), Some(dir.path()));
+            assert!(
+                !out.contains("<a "),
+                "{body} must not become a link, got: {out}"
+            );
+            assert!(
+                out.contains(body),
+                "{body} should pass through unchanged, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn wikilink_does_not_collide_with_footnote_reference() {
+        // Empirical confirmation (not just the structural `Event::FootnoteReference` argument in
+        // resolve_wikilinks's doc comment): both syntaxes in the same document, each must resolve
+        // to its own kind of markup with no cross-contamination.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Other.md"), "content").unwrap();
+        let source = "See[^1] and [[Other]].\n\n[^1]: A note.\n";
+        let out = unsafe_content_html_in_dir(source, &Translator::default(), Some(dir.path()));
+        assert!(out.contains("footnote-reference"), "got: {out}");
+        assert!(out.contains(r#"id="fnref-1""#), "got: {out}");
+        assert!(out.contains(">Other</a>"), "got: {out}");
+        assert!(
+            !out.contains("[[Other]]"),
+            "wikilink should have been rewritten, got: {out}"
+        );
+        assert!(
+            !out.contains("[^1]"),
+            "footnote ref should have been rewritten, got: {out}"
+        );
     }
 
     #[test]

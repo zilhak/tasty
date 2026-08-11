@@ -257,6 +257,55 @@ pass 는 실제 마크업(다른 태그 시작/`SoftBreak` 등)이 끼어들기 
 `rewrite_link_event` 가 명시적 링크와 자동 생성 링크를 구분 없이 동일하게 nav-fragment 로 바꾼다
 (순서는 `unsafe_content_html` 의 주석 참조).
 
+## 위키링크
+
+Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인식해 링크로 바꾼다
+(`render.rs::resolve_wikilinks`/`split_wikilinks`/`wikilink_events`). Bare URL autolink(위 절)와
+정확히 같은 아키텍처 — 라이브러리가 모르는 문법이라, `Event::Text` 를 이벤트 경계를 넘어 하나의
+버퍼로 병합한 뒤(`autolink_bare_urls` 와 동일한 이유: 텍스트 하나가 여러 `Event::Text` 조각으로
+쪼개져 들어올 수 있음) 그 위에서 스캔해 `Tag::Link` 로 쪼갠다. `link_depth`/`code_block_depth`
+추적도 동일 — 이미 명시적 링크 안이거나 코드블록 안의 텍스트는 건드리지 않는다. 파이프라인
+위치는 `figurize_solo_image_paragraphs` 다음, `autolink_bare_urls` 바로 앞(`unsafe_content_html`
+주석 참조) — 둘 다 `rewrite_link_event` 이전에 원본 상대경로를 그대로 담은 `Tag::Link` 를 만들어
+넘기므로, nav-fragment(`#tasty-nav:link:<enc>`) 로의 최종 재작성은 마지막에 한 번만 일어난다(위키링크
+전용 재작성 로직 없음).
+
+### 지원하는 스코프
+
+- **파일 해석**: 현재 마크다운 파일과 **정확히 같은 디렉토리**(`base_dir`)에서 `<문서명>.md` 를
+  대소문자까지 정확히 일치하는 파일명으로만 찾는다 — 일반 상대링크(`classify_link`)와 동일한
+  디렉토리 규칙이고, 차이는 위키링크가 확장자 없는 이름만 주므로 `.md` 를 자동으로 붙인다는 점뿐이다.
+  존재 여부는 렌더링 시점에 동기 `std::path::Path::exists()` 한 번으로만 확인한다(이 crate 는 이미
+  `fs.read` 권한을 갖고 있어 별도 권한 확대 없음).
+- **찾은 경우**: 일반 상대링크 `[text](문서명.md)` 와 완전히 동일한 모양의 `Tag::Link` 를 만들어
+  기존 파이프라인에 그대로 흘린다 — 클릭 시 nav-fragment → `main.rs::dispatch_file_link` 로 이어지는
+  기존 파일 열기 경로를 그대로 탄다(위키링크 전용 클릭 처리 없음).
+- **못 찾은 경우**: 링크 자체는 그대로 만든다(destination 을 지우지 않음) — 클릭하면
+  `dispatch_file_link` 의 기존 "존재하지 않는 파일은 로그만 남기고 조용히 무시" 경로를 그대로 탄다.
+  다만 `.tasty-wikilink-missing` 스팬으로 감싸 시각적으로만 구분한다(점선 밑줄 + `accent-danger`
+  색 — 아래 "디자인 토큰 매핑" 참조). `span`/`class` 는 이미 `sanitize_html` 화이트리스트에
+  열려 있어(수식 렌더링 절 참조) 이 기능을 위한 sanitizer 변경은 없다.
+- **`base_dir` 자체가 없는 경우**(저장 안 된 버퍼 등) — 일반 상대링크가 `classify_link` 에서
+  해석 불가로 처리되는 것과 동일하게, 항상 "못 찾음" 취급한다.
+- **표시 텍스트**: `[[문서명|표시텍스트]]` 형태면 `|` 뒤 텍스트를 링크 텍스트로 쓴다(비어 있으면
+  문서명으로 폴백).
+- **경로 순회 방지**: `<문서명>` 부분에 `/`, `\`, `..` 가 하나라도 포함되면(정상적인 단일-세그먼트
+  이름이 아님) 위키링크로 인식하지 않고 원본 `[[...]]` 텍스트를 그대로 남긴다(파싱 실패로
+  조용히 통과 — 에러 없음).
+- **각주(`[^name]`)와의 비충돌**: `Options::ENABLE_FOOTNOTES` 활성 상태에서 각주는 애초에
+  `Event::Text` 가 아니라 별개의 `Event::FootnoteReference`/`Tag::FootnoteDefinition` 이벤트로
+  파서를 나오므로, 이 위키링크 스캐너가 볼 수 있는 대상 자체가 아니다 — 구조적 논거뿐 아니라
+  같은 문서에 각주와 위키링크를 함께 넣어 실제 이벤트 스트림으로 확인한 테스트
+  (`wikilink_does_not_collide_with_footnote_reference`)로도 검증했다.
+
+### 지원하지 않는 것 (명시적 스코프 제외)
+
+- **Vault 전체 재귀 검색** — 같은 디렉토리 밖은 전혀 뒤지지 않는다.
+- **대소문자 무시 매칭 / alias** — 정확히 같은 파일명만 인식한다.
+- **`[[문서명#섹션]]`(heading-anchor 조합)** — TODO42(heading id 자동생성)로 기술적으로는 쉽게
+  구현 가능하지만, 이번 스코프에서 의도적으로 제외했다.
+- **`![[문서명]]`(embed 문법)** — 구현하지 않는다.
+
 ## 각주 backlink · 접근성
 
 `Options::ENABLE_FOOTNOTES`(각주 `[^name]`/`[^name]: ...`)의 `pulldown-cmark` 기본 HTML 라이터는
@@ -450,6 +499,7 @@ Theme 토큰 매핑이다.
 | 이미지 로드 실패 경로 텍스트 | inline hex(`muted`) | `text-muted` | `.tasty-img-error-path` — `.tasty-state-detail` 과 동일 토큰 재사용 |
 | 검색 바 | `#tasty-find-bar` | `bg-sidebar` · `separator` | 우상단 `position:fixed`, 갤러리 `search_bar` specimen 과 동일 배치(위 "문서 내 검색" 절) |
 | 수식(KaTeX) 텍스트 색 | 없음(상속) | `body`의 `--md-fg` 를 그대로 상속 | vendored `katex.min.css` 가 `color:currentColor` 만 씀 — 전용 토큰/오버라이드 불필요(위 "수식 렌더링" 절) |
+| 위키링크(존재하지 않는 대상) | inline hex(`danger`) | `accent-danger` | `.tasty-wikilink-missing a` — 점선 밑줄. 전용 토큰 없음, 기존 에러 상태 배색 재사용(위 "위키링크" 절) |
 | 매치 하이라이트 | inline hex(`accent-warning`, alpha) | `accent-warning` | `mark.tasty-find-hit` |
 | 현재 매치 하이라이트 | inline hex(`accent-primary`/`text-on-accent`) | `accent-primary` bg + `text-on-accent` fg | `mark.tasty-find-hit.tasty-find-current` |
 
