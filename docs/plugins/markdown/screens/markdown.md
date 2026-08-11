@@ -64,6 +64,50 @@
   전체가 재생성되며 `theme_css` 가 다시 계산될 뿐이다. vendor 된 고정 팔레트(GitHub 색 등)
   대신 사용자가 고른 테마(mocha/latte/커스텀)를 그대로 따라가는 쪽을 택했다.
 
+## 코드블록 복사 버튼
+
+`#tasty-md-body pre > code`(본문 코드블록만 — 로드 에러 상세 `.tasty-state-detail` 은 `#tasty-md-body`
+바깥의 별개 `<pre>` 라 대상이 아니다) 각각에 hover 로 노출되는 복사 버튼을 붙인다
+(`render.rs::copy_button_script`). 문서에 `<pre><code` 가 하나도 없으면(대다수 비-코드 문서)
+이 스크립트 자체가 삽입되지 않는다 — mermaid/highlight.js 와 동일한 조건부 삽입 절약 패턴.
+언어 라벨이 없는 코드블록(펜스드 무언어/들여쓰기 블록 — `class` 자체가 없는 `<pre><code>`)도
+대상에 포함된다.
+
+- **mermaid/highlight.js 와의 실행 순서 조율**: `mermaid.run()` 은 비동기(promise 를 await 하지
+  않음, `mermaid_script` 문서 참조)이므로 스크립트 삽입 순서(`nav_script` → `highlight_script` →
+  `mermaid_script` → 이 스크립트, `render_document`)만으로는 진단 시점에 mermaid 의 DOM 치환이
+  이미 끝났다고 보장할 수 없다. 그래서 순서에 기대지 않고 attach 루프 안에서
+  `code.classList.contains('language-mermaid')` 를 직접 검사해 스킵한다 — mermaid 블록은 버튼을
+  받지 않는다(원본 마크다운을 복사하는 대신 아예 버튼을 붙이지 않는 쪽을 택함, 다이어그램으로
+  치환된 뒤의 코드는 어차피 원본과 다른 모양이라 "복사"의 의미가 모호해지기 때문). highlight.js
+  는 반대로 순서 문제가 없다 — `highlightElement` 는 기존 문자를 `<span class="hljs-*">` 로
+  감쌀 뿐 절대 바꾸지 않으므로(실제 vendor 번들을 WebKitGTK 엔진에 로드해 하이라이팅 전/후
+  `textContent` 를 직접 비교 — 아래 "실기 검증" 참조), 클릭 시점에 `code.textContent` 를 읽으면
+  하이라이팅 완료 여부와 무관하게 항상 원본 코드 텍스트가 나온다.
+- **클립보드**: 우선 `navigator.clipboard.writeText()`, 실패(구현 부재 또는 promise reject) 시
+  오프스크린 `<textarea>` + `document.execCommand('copy')` 로 폴백한다.
+- **접근성/터치**: 버튼은 `tabindex="0"`+`aria-label`(`markdown.copy.label`)로 키보드 포커스
+  가능하고, 기본은 `opacity:0` 로 숨겨져 있다가 `pre:hover`/`:focus-visible` 시 나타난다. hover
+  가 없는 터치 환경은 `@media (hover:none)` 로 상시 노출한다.
+- **피드백**: 복사 성공/실패 시 버튼 텍스트가 `markdown.copy.copied`/`markdown.copy.failed` 로
+  바뀌고 `data-state` 속성(CSS 색 변경, "디자인 토큰 매핑" 절 참조)이 붙은 뒤 1.5초 후 원래
+  라벨로 복원된다.
+- **중복 부착 방지**: `reload_webview`(`main.rs`)는 재로드 때마다 `render_document` 를 다시 호출해
+  문서 전체를 통째로 교체한다(부분 DOM 패치가 아님) — 그래서 리스너가 재로드마다 누적될 구조적
+  경로 자체가 없다. attach 루프도 방어적으로 `pre.querySelector('.tasty-copy-btn')` 로 같은
+  `<pre>` 안에 이미 버튼이 있으면 건너뛴다.
+
+**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, `webkit2gtk` crate 가 감싸는 것과 동일한
+libwebkit2gtk-4.1 엔진)**: `render_document` 가 실제로 만든 문서(펜스드 rust 코드블록 포함)를
+`WebKit2.WebView.load_html` 로 그대로 로드한 뒤, 실제 vendor 된 highlight.js 실행 완료 후
+`code.textContent` 를 읽어 원본 소스와 정확히 일치함(하이라이팅으로 인한 변형 없음, `hljs-*`
+span 부착은 확인됨)을 확인했고, 복사 버튼 클릭을 디스패치해 `navigator.clipboard.writeText()` 가
+성공(`data-state` 가 `copied` 로 전이)해 시스템 클립보드에 원본 코드 텍스트가 그대로 들어감을
+GTK 클립보드 readback 으로 직접 확인했다 — 이 백엔드에서는 primary path 가 곧바로 성공해
+`execCommand('copy')` 폴백은 실제로 타지 않았다. macOS(WKWebView)/Windows(WebView2) 는 이
+머신에서 실행이 불가능해 **코드 리뷰로 표준 비동기 Clipboard API 구현 여부만 확인**했다(실기
+미검증).
+
 ## Frontmatter 숨김
 
 문서 최상단(첫 줄)에 오는 YAML(`---\n...\n---`) 또는 TOML(`+++\n...\n+++`) frontmatter 는
@@ -254,6 +298,8 @@ Theme 토큰 매핑이다.
 | heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
 | 코드 syntax 토큰 | inline hex(scope 별) | keyword=`mauve` · title/function=`blue` · string=`green` · number/literal=`peach` · tag/attr=`teal` · variable=`lavender` · built_in=`red` · comment=`text-muted` | 전용 highlight 토큰 없음 — `render.rs::hljs_css`, `.hljs-*` class(위 "코드블록 syntax highlighting" 절) |
 | 이미지 캡션 | `figure`/`figcaption` | `--md-space-sm`/`--md-space-xs`(여백) · `--md-font-body` · `text-muted`(캡션 색) | 전용 캡션 토큰 없음 — `.tasty-state-detail` 과 동일하게 `text-muted` 재사용(위 "이미지 캡션" 절) |
+| 코드블록 복사 버튼 | `--md-bg`/`--md-fg`/`--md-border`/`--md-radius` | 기본은 `#tasty-addr-go` 와 동일 톤 | `.tasty-copy-btn` — hover/focus 시에만 `opacity:1` |
+| 복사 버튼 성공/실패 상태 | inline hex(`success`/`danger`) | `accent-success` / `accent-danger` | `.tasty-copy-btn[data-state="copied"/"failed"]` |
 
 ## 갤러리 specimen
 

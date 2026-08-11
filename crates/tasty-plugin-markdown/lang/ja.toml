@@ -56,6 +56,11 @@ ref_aria = "脚注{}へ移動"
 backlink_aria = "脚注{}から本文に戻る"
 backlink_aria_nth = "脚注{0}の{1}番目の参照に戻る"
 
+[markdown.copy]
+label = "コードをコピー"
+copied = "コピーしました！"
+failed = "コピーに失敗しました"
+
 # プリセットエディタのフィールドラベル (ホストが t() で解決)。
 [preset.field]
 file = "ファイル"

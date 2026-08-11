@@ -56,6 +56,11 @@ ref_aria = "각주 {}(으)로 이동"
 backlink_aria = "각주 {}에서 본문으로 돌아가기"
 backlink_aria_nth = "각주 {0}의 {1}번째 참조로 돌아가기"
 
+[markdown.copy]
+label = "코드 복사"
+copied = "복사됨!"
+failed = "복사 실패"
+
 # 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
 [preset.field]
 file = "파일"

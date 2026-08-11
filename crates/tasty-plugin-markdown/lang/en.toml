@@ -56,6 +56,11 @@ ref_aria = "Jump to footnote {}"
 backlink_aria = "Back to footnote {}"
 backlink_aria_nth = "Back to footnote {0}, reference {1}"
 
+[markdown.copy]
+label = "Copy code"
+copied = "Copied!"
+failed = "Copy failed"
+
 # 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
 [preset.field]
 file = "File"

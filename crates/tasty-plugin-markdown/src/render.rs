@@ -190,8 +190,20 @@ pub fn render_document(input: DocumentInput) -> String {
         String::new()
     };
 
+    // Same "only inline when there's something to act on" convention as mermaid/highlight above
+    // — a document with no code blocks at all (most non-technical documents) skips this too.
+    // `<pre><code` matches both the labeled fenced-block shape (`<pre><code class="language-…">`)
+    // and the unlabeled/indented shape (`<pre><code>`, no class — pulldown-cmark's own
+    // `lang.is_empty()` branch), since the substring check doesn't care what (if anything)
+    // follows `<code`.
+    let copy_buttons = if body_html.contains("<pre><code") {
+        copy_button_script(tr)
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}</body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script>{highlight}{mermaid}{copy_buttons}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent),
@@ -200,6 +212,7 @@ pub fn render_document(input: DocumentInput) -> String {
         script = nav_script(file_path),
         highlight = highlight,
         mermaid = mermaid,
+        copy_buttons = copy_buttons,
     )
 }
 
@@ -1300,8 +1313,13 @@ h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md
 a{{color:var(--md-link);}}
 strong{{color:var(--md-strong);font-weight:600;}}
 code{{background:var(--md-code-bg);border-radius:var(--md-radius);padding:0.1em 0.35em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
-pre{{background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-code-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
+pre{{position:relative;background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-code-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
 pre code{{background:none;padding:0;}}
+.tasty-copy-btn{{position:absolute;top:var(--md-space-xs);right:var(--md-space-xs);height:22px;padding:0 var(--md-space-xs);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-bg);color:var(--md-fg);font-size:calc(var(--md-font-body) * 0.8);line-height:1;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}}
+pre:hover .tasty-copy-btn,.tasty-copy-btn:focus-visible{{opacity:1;}}
+@media (hover:none){{.tasty-copy-btn{{opacity:1;}}}}
+.tasty-copy-btn[data-state="copied"]{{border-color:{success};color:{success};}}
+.tasty-copy-btn[data-state="failed"]{{border-color:{danger};color:{danger};}}
 table{{border-collapse:collapse;}}
 th,td{{border:var(--md-border-w) solid var(--md-border);padding:var(--md-space-xs) var(--md-space-sm);text-align:left;}}
 tr:nth-child(even){{background:var(--md-zebra);}}
@@ -1348,6 +1366,7 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         separator = theme.separator.to_hex(),
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
+        success = theme.accent_success().to_hex(),
         alert_rules = alert_css(theme),
         hljs_rules = hljs_css(theme),
     )
@@ -1644,6 +1663,97 @@ fn highlight_script() -> String {
     format!(
         r#"<script>{js}</script><script>(function(){{try{{document.querySelectorAll('pre code[class*="language-"]').forEach(function(el){{try{{var m=/language-([A-Za-z0-9_+-]+)/.exec(el.className);if(!m)return;if(!hljs.getLanguage(m[1]))return;hljs.highlightElement(el);}}catch(e){{console.error('highlight.js block failed',e);}}}});}}catch(e){{console.error('highlight.js init failed',e);}}}})();</script>"#,
         js = highlight_js_source(),
+    )
+}
+
+// ── copy-to-clipboard button ────────────────────────────────────────────────
+
+/// Inline a copy-to-clipboard button attachment script — only called when the document actually
+/// has at least one `<pre><code>` block (see call site in [`render_document`]).
+///
+/// Selector is scoped to `#tasty-md-body pre > code`, **not** every `<pre>` in the document — the
+/// load-error detail box (`.tasty-state-detail`, also a bare `<pre>`, see [`render_document`]'s
+/// `load_error` branch) lives outside `#tasty-md-body` and never gets a button.
+///
+/// Unconditionally skips `code.language-mermaid`, regardless of execution order relative to
+/// [`mermaid_script`]: `mermaid.run()` is asynchronous (returns a promise it never awaits — see
+/// that function's doc comment), so even placing this script strictly after `mermaid_script` in
+/// document order gives no guarantee the diagram DOM-replacement has already happened by the time
+/// this one runs. The class check is the only race-proof way to never attach a button to a
+/// soon-to-be-replaced mermaid block; script ordering can't substitute for it.
+///
+/// Reads `code.textContent` at click time (not `innerHTML`) — this is why ordering relative to
+/// [`highlight_script`] doesn't matter either: `highlightElement` only wraps existing characters
+/// in `<span class="hljs-*">`, it never changes them. Live-verified against the actual vendored
+/// bundle in the real WebKitGTK engine (details: `docs/plugins/markdown/screens/markdown.md`), so
+/// `textContent` returns the exact original code whether or not highlighting has already run on
+/// that block.
+///
+/// `navigator.clipboard.writeText` falls back to the legacy `document.execCommand('copy')` path
+/// (an offscreen, unfocused-looking `<textarea>`) when the modern API is unavailable or its
+/// promise rejects. Live-verified on Linux/WebKitGTK — the primary `writeText` path succeeded
+/// outright there, so the fallback wasn't exercised on this backend (details:
+/// `docs/plugins/markdown/screens/markdown.md`); the same code path is expected to hold on
+/// WKWebView/WebView2 since both implement the standard async Clipboard API, but that's read-only
+/// verification (no macOS/Windows execution environment here) — noted, not claimed as tested.
+fn copy_button_script(tr: &Translator) -> String {
+    let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"<script>(function(){{
+var COPY={copy},COPIED={copied},FAILED={failed};
+function fallbackCopy(text){{
+try{{
+var ta=document.createElement('textarea');
+ta.value=text;
+ta.setAttribute('readonly','');
+ta.style.position='fixed';
+ta.style.top='-1000px';
+ta.style.opacity='0';
+document.body.appendChild(ta);
+ta.select();
+ta.setSelectionRange(0,text.length);
+var ok=document.execCommand('copy');
+document.body.removeChild(ta);
+return ok;
+}}catch(e){{return false;}}
+}}
+function feedback(btn,ok){{
+if(btn._tastyResetTimer)clearTimeout(btn._tastyResetTimer);
+btn.textContent=ok?COPIED:FAILED;
+btn.setAttribute('data-state',ok?'copied':'failed');
+btn._tastyResetTimer=setTimeout(function(){{
+btn.textContent=COPY;
+btn.removeAttribute('data-state');
+}},1500);
+}}
+try{{
+document.querySelectorAll('#tasty-md-body pre > code').forEach(function(code){{
+try{{
+if(code.classList.contains('language-mermaid'))return;
+var pre=code.parentElement;
+if(!pre||pre.querySelector('.tasty-copy-btn'))return;
+var btn=document.createElement('button');
+btn.type='button';
+btn.className='tasty-copy-btn';
+btn.setAttribute('tabindex','0');
+btn.setAttribute('aria-label',COPY);
+btn.textContent=COPY;
+btn.addEventListener('click',function(){{
+var text=code.textContent;
+if(navigator.clipboard&&navigator.clipboard.writeText){{
+navigator.clipboard.writeText(text).then(function(){{feedback(btn,true);}},function(){{feedback(btn,fallbackCopy(text));}});
+}}else{{
+feedback(btn,fallbackCopy(text));
+}}
+}});
+pre.appendChild(btn);
+}}catch(e){{console.error('copy button attach failed',e);}}
+}});
+}}catch(e){{console.error('copy button init failed',e);}}
+}})();</script>"#,
+        copy = json_or_empty(tr.t("markdown.copy.label")),
+        copied = json_or_empty(tr.t("markdown.copy.copied")),
+        failed = json_or_empty(tr.t("markdown.copy.failed")),
     )
 }
 
@@ -2617,6 +2727,151 @@ mod tests {
             "hljs token colors should follow the active theme, not a fixed palette"
         );
         assert!(alt_css.contains("#ff00ff"));
+    }
+
+    // ── copy button ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn render_document_inlines_copy_button_only_when_code_block_present() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let with_code = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/snippet.md",
+            source: "```rust\nfn main() {}\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        // `.tasty-copy-btn` itself is always in the document (it's a CSS rule in `theme_css`,
+        // emitted unconditionally like every other selector) — the actual conditional signal is
+        // whether the attach *script* (and its selector) got inlined at all.
+        assert!(with_code.contains("#tasty-md-body pre > code"));
+
+        let without_code = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/plain.md",
+            source: "# Just prose\n\nNo fenced blocks here.",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(!without_code.contains("#tasty-md-body pre > code"));
+    }
+
+    #[test]
+    fn render_document_inlines_copy_button_for_unlabeled_code_block() {
+        // No language token → pulldown-cmark emits `<pre><code>` with no `class` at all. The
+        // gate condition (`<pre><code` substring, not `class="language-`) must still catch this
+        // — `highlight`'s gate deliberately doesn't, but the copy button applies regardless of
+        // whether the block has a recognized (or any) language.
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/unlabeled.md",
+            source: "```\nplain text, no language\n```\n",
+            load_error: None,
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains("<pre><code>"));
+        assert!(html.contains("#tasty-md-body pre > code"));
+    }
+
+    #[test]
+    fn render_document_error_state_has_no_copy_button() {
+        // `.tasty-state-detail` is a bare `<pre>` with no `<code>` child, and it lives outside
+        // `#tasty-md-body` — the copy-button gate (`<pre><code` substring on `body_html`) must
+        // not fire for it.
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/broken.md",
+            source: "",
+            load_error: Some("No such file"),
+            base_dir: None,
+            recent: &[],
+        });
+        assert!(html.contains("tasty-state-detail"));
+        assert!(!html.contains("#tasty-md-body pre > code"));
+    }
+
+    #[test]
+    fn copy_button_script_is_scoped_to_body_code_blocks_only() {
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("#tasty-md-body pre > code"));
+    }
+
+    #[test]
+    fn copy_button_script_skips_mermaid_blocks_regardless_of_script_order() {
+        // mermaid.run() is async and unawaited (see `mermaid_script`'s doc comment) — script
+        // *ordering* can't guarantee the diagram DOM-replacement already happened, so the skip
+        // must be an explicit class check inside the attach loop, not implicit via placement.
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("code.classList.contains('language-mermaid')"));
+    }
+
+    #[test]
+    fn copy_button_script_reads_text_content_not_inner_html() {
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("code.textContent"));
+        assert!(!script.contains("code.innerHTML"));
+    }
+
+    #[test]
+    fn copy_button_script_dedups_per_pre_against_repeat_attachment() {
+        // Defense-in-depth against duplicate listeners: even though `reload_webview` always
+        // replaces the whole document (so listeners can't literally accumulate across reloads —
+        // see `render_document`'s module docs), an existing `.tasty-copy-btn` inside the same
+        // `<pre>` still short-circuits the attach loop for that block.
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("pre.querySelector('.tasty-copy-btn')"));
+    }
+
+    #[test]
+    fn copy_button_script_has_clipboard_api_with_exec_command_fallback() {
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("navigator.clipboard"));
+        assert!(script.contains("navigator.clipboard.writeText"));
+        assert!(script.contains("document.execCommand('copy')"));
+    }
+
+    #[test]
+    fn copy_button_script_is_keyboard_focusable_with_aria_label() {
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("tabindex"));
+        assert!(script.contains("aria-label"));
+    }
+
+    #[test]
+    fn copy_button_script_wraps_attachment_in_try_catch_with_console_error_fallback() {
+        let script = copy_button_script(&Translator::default());
+        assert!(script.contains("try{"));
+        assert!(script.contains("catch(e){console.error"));
+    }
+
+    #[test]
+    fn copy_button_css_uses_theme_tokens_not_hardcoded_colors() {
+        let base_colors = tasty_themes::mocha_fallback_colors();
+        let mut alt_colors = base_colors.clone();
+        alt_colors.green =
+            tasty_type_appearance::color::HexColor::from_hex("#00ff00").expect("valid hex literal");
+        let base = Theme::with_colors_and_zoom(base_colors, false, 1.0);
+        let alt = Theme::with_colors_and_zoom(alt_colors, false, 1.0);
+        let base_css = theme_css(&base);
+        let alt_css = theme_css(&alt);
+        assert!(base_css.contains(".tasty-copy-btn"));
+        assert!(base_css.contains(r#".tasty-copy-btn[data-state="copied"]"#));
+        assert_ne!(
+            base_css, alt_css,
+            "copy button color should follow accent_success, not a fixed palette"
+        );
     }
 
     // ── GFM alert blockquotes ────────────────────────────────────────────────
