@@ -1,8 +1,3 @@
-// 이 모듈은 `HexColor` 생성/변환의 본거지이자, egui 와의 변환 헬퍼(`to_egui` 등)
-// 의 정의 위치다. 외부 호출자에게는 차단되는 `HexColor::from_rgb` /
-// `Color32::from_rgba_unmultiplied` 등이 여기 정의 내부에서는 정상적으로 사용된다.
-#![allow(clippy::disallowed_methods)]
-
 //! Appearance color primitives.
 //!
 //! - [`HexColor`] — `#RRGGBB(AA)` 직렬화 색상 (settings/theme 파일에 저장되는 모양)
@@ -126,6 +121,7 @@ impl HexColor {
     /// `default-features = false`로 컴파일하면 이 변환 헬퍼 없이 `HexColor` 자체만
     /// 사용한다.
     #[cfg(feature = "egui-compat")]
+    #[allow(clippy::disallowed_methods)] // reason: HexColor → egui 변환 헬퍼의 정의 본거지
     pub fn to_egui(self) -> egui::Color32 {
         egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
     }
@@ -137,6 +133,7 @@ impl HexColor {
     /// 동일한 결과가 필요할 때(예: 과거 시각 결과를 정확히 재현해야 하는 회귀
     /// 케이스) 사용한다.
     #[cfg(feature = "egui-compat")]
+    #[allow(clippy::disallowed_methods)] // reason: HexColor → egui premultiplied 변환 헬퍼의 정의 본거지
     pub fn to_egui_premultiplied(self) -> egui::Color32 {
         egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
     }
@@ -161,6 +158,7 @@ impl HexColor {
     ///
     /// byte 단위 hex digit 변환 — `u8::from_str_radix` 가 stable const fn 이
     /// 아니므로 직접 작성. 동작은 [`Self::from_hex`] 와 동일.
+    #[allow(clippy::disallowed_methods)] // reason: hex 문자열 파싱 결과를 HexColor 로 조립하는 정의 본거지
     pub const fn from_hex_const(hex: &str) -> Option<Self> {
         let bytes = hex.as_bytes();
         let (off, len) = if !bytes.is_empty() && bytes[0] == b'#' {
@@ -409,6 +407,10 @@ impl GpuRgb {
 
 #[cfg(test)]
 mod tests {
+    // 테스트는 HexColor 생성/변환 round-trip 을 검증하려고 원시 색상값을 직접
+    // 만든다 (UI 색 "디자인" 이 아니라 primitive 자체의 테스트). clippy 의 정상 예외 경로.
+    #![allow(clippy::disallowed_methods)]
+
     use super::*;
 
     // ── HexColor ──

@@ -720,7 +720,7 @@ fn draw_builtin_char(ch: char, bitmap: &mut [u8], w: u32, h: u32) -> bool {
 /// 같은 파일 내 box-drawing match arm 에서 62회 호출되는 private helper.
 /// `(bitmap, w, h)` wrapper 도입 시 호출자 + 그 호출자의 내부 코드까지 도미노 변경이라
 /// (A2) Target wrapper 대신 (C) `#[allow]` 채택. 좌표 4개 + alpha 의미는 graphics primitive 관습.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 62회 호출되는 내부 helper, wrapper 도입 시 호출자 도미노 변경 — graphics primitive 좌표 인자 관습
 fn fill_rect(bitmap: &mut [u8], w: u32, _h: u32, x0: u32, y0: u32, x1: u32, y1: u32, alpha: u8) {
     for y in y0..y1 {
         for x in x0..x1 {

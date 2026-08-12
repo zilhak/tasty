@@ -16,7 +16,7 @@ pub enum MenuItemVariant {
 }
 
 /// 전체폭 메뉴 행. `active` 면 surface-active 배경(현재 선택). 클릭 응답 반환.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 디자인 MenuItem 스펙(icon/label/shortcut/variant/active/enabled) 1:1 매핑, 인위적 그룹핑 불필요
 pub fn menu_item(
     ui: &mut egui::Ui,
     theme: &Theme,

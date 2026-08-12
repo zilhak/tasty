@@ -1,7 +1,3 @@
-// 빌트인 mocha 색 정의. theme 색 디자인의 정당한 출처 중 하나이므로
-// `HexColor::from_rgb` / `from_rgba` 사용이 정당. lint 예외.
-#![allow(clippy::disallowed_methods)]
-
 //! 빌트인 Catppuccin Mocha fallback.
 //!
 //! `~/.tasty/themes/mocha.toml` 로드에 실패해도 이 함수의 결과가 마지막 보루로 적용된다.
@@ -16,6 +12,9 @@ use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::{SurfaceTheme, Theme, ThemeColors};
 
 /// 최후의 fallback 색상 세트. `tasty-themes` 가 mocha.toml 로드에 실패하면 이걸 쓴다.
+// 빌트인 mocha 색 정의. theme 색 디자인의 정당한 출처 중 하나이므로
+// `HexColor::from_rgb` / `from_rgba` 사용이 정당.
+#[allow(clippy::disallowed_methods)] // reason: 빌트인 mocha 색상값 리터럴 정의 본거지
 pub fn mocha_fallback_colors() -> ThemeColors {
     let mut surface_themes = BTreeMap::new();
     surface_themes.insert("terminal".to_string(), terminal_surface());
@@ -84,6 +83,7 @@ pub fn mocha_fallback() -> Theme {
 }
 
 /// 빌트인 terminal SurfaceTheme. 검은 배경 + Mocha text/subtext.
+#[allow(clippy::disallowed_methods)] // reason: 빌트인 mocha 색상값 리터럴 정의
 fn terminal_surface() -> SurfaceTheme {
     SurfaceTheme {
         focused_bg: HexColor::from_rgb(0, 0, 0),            // #000000
@@ -95,6 +95,7 @@ fn terminal_surface() -> SurfaceTheme {
 
 /// 빌트인 markdown SurfaceTheme. crust 배경(webview 렌더 경로의 유일한 배경) + Mocha text/subtext.
 /// unfocused 가 mantle 인 게 terminal 과 다름 — markdown 은 한 단계 더 어두운 톤(webview 경로 미사용, 잔존값).
+#[allow(clippy::disallowed_methods)] // reason: 빌트인 mocha 색상값 리터럴 정의
 fn markdown_surface() -> SurfaceTheme {
     SurfaceTheme {
         focused_bg: HexColor::from_rgb(0x11, 0x11, 0x1b), // crust

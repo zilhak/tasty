@@ -1,8 +1,3 @@
-// 이 모듈은 색상 const fn (`derive_overlays`) 정의의 본거지다.
-// 외부에서는 차단되는 `HexColor::from_rgba` 호출이 여기서는 의도된 사용 —
-// 도출 overlay 정의 자체이므로 lint 예외.
-#![allow(clippy::disallowed_methods)]
-
 //! Theme schema — UI 시각 표현의 데이터 모델.
 //!
 //! ```text
@@ -94,6 +89,7 @@ impl SurfaceTheme {
 /// surface_themes 에 해당 id 가 없을 때 호출자가 쓸 수 있는 안전한 fallback.
 /// 모든 surface 가 검은 배경 + 흰 글자로 동작한다. theme 이 정상 적용된 상태에서는
 /// 절대 도달하지 않으며, 부팅 직후 / 잘못된 plugin 등록 케이스의 마지막 보루.
+#[allow(clippy::disallowed_methods)] // reason: 부팅/오류 최후 보루용 고정 색 리터럴 정의
 pub const FALLBACK_SURFACE: SurfaceTheme = SurfaceTheme {
     focused_bg: HexColor::from_rgb(0, 0, 0),
     focused_fg: HexColor::from_rgb(0xcd, 0xd6, 0xf4),
@@ -107,28 +103,35 @@ pub const FALLBACK_SURFACE: SurfaceTheme = SurfaceTheme {
 
 /// Windows 캡션 close 버튼 hover 시 시스템 red. OS 가 박아둔 리터럴이라 테마와
 /// 무관하게 고정 (`--tasty-color-os-windows-close` = `#c42b1c`). primitive 1곳에만.
+#[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const ACCENT_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xc4, 0x2b, 0x1c);
 
 /// close 버튼 글리프 — 어두운 red 위 흰 글자라 두 테마 모두 white 고정
 /// (`--tasty-text-on-window-close`).
+#[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
 /// light 테마(Latte)에서 accent 위 텍스트색 — DTCG `text-on-accent` 의 Latte remap
 /// 은 절대색 white(`--tasty-color-white`). vivid accent(blue 등) 위 white 대비
 /// ≈4.9:1 로 4.5:1 충족. Mocha 는 `crust` 를 쓰므로 이 리터럴은 light 전용.
+#[allow(clippy::disallowed_methods)] // reason: DTCG 고정 리터럴 색 — 테마 무관
 pub const TEXT_ON_ACCENT_LIGHT: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
 /// macOS 신호등(traffic light) 색. OS 가 인식하는 affordance 라 사용자가 정확한
 /// 시스템 red/amber/green 을 기대한다 — Catppuccin accent 가 아니다. Windows close
 /// 처럼 테마 불변 OS-system 리터럴 (`--tasty-color-os-macos-*`). mocha/latte 동일값.
+#[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const OS_MACOS_CLOSE: HexColor = HexColor::from_rgb(0xec, 0x6a, 0x5e);
 /// macOS 신호등 — minimize (amber).
+#[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const OS_MACOS_MIN: HexColor = HexColor::from_rgb(0xf4, 0xbf, 0x4f);
 /// macOS 신호등 — zoom (green).
+#[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const OS_MACOS_ZOOM: HexColor = HexColor::from_rgb(0x61, 0xc5, 0x54);
 
 /// 워터멜론 브랜드(수박) 마크 색. OS 신호등처럼 테마 불변 브랜드 고정 리터럴
 /// (`--tasty-color-melon-flesh` = `#f25d6b`, primitives.css). mocha/latte 동일값.
+#[allow(clippy::disallowed_methods)] // reason: 브랜드 고정 리터럴 색 — 테마 무관
 pub const BRAND_MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
 
 /// disabled 컨트롤 공통 톤 (`--tasty-opacity-disabled` = 0.5). 모든 위젯이 이 값으로
@@ -933,6 +936,7 @@ pub struct Theme {
 
 /// `is_light` 에 따른 hover/active/separator 도출.
 /// premultiplied sRGB 바이트로 저장 — 변환 시 `to_egui_premultiplied()` 사용.
+#[allow(clippy::disallowed_methods)] // reason: 도출 overlay 색 정의 본거지
 const fn derive_overlays(is_light: bool) -> (HexColor, HexColor, HexColor) {
     if is_light {
         (
@@ -1285,6 +1289,7 @@ impl Theme {
     /// 모달/팝업 뒤 무대를 덮는 scrim 색. design `--tasty-scrim-bg`(black 50%) — 테마
     /// 무관 고정 검정 + [`SCRIM_ALPHA`]. 갤러리 dialog 레시피와 동일 토큰.
     #[inline]
+    #[allow(clippy::disallowed_methods)] // reason: 테마 무관 고정 scrim 색 정의
     pub fn scrim(&self) -> HexColor {
         HexColor::from_rgba(0, 0, 0, SCRIM_ALPHA)
     }
@@ -1834,6 +1839,10 @@ impl Theme {
 
 #[cfg(test)]
 mod tests {
+    // 테스트는 Theme/ThemeColors 병합·도출 로직을 검증하려고 원시 색상값을 직접
+    // 만든다 (UI 색 "디자인" 이 아니라 스키마 동작 자체의 테스트). clippy 의 정상 예외 경로.
+    #![allow(clippy::disallowed_methods)]
+
     use super::*;
 
     /// 모든 필드가 같은 색인 schema-level dummy. 빌트인 테마 색 의존 없이

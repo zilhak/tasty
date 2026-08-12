@@ -245,7 +245,7 @@ fn rail_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
 }
 
 /// 2줄 worktree 행 mock. 다음 y 반환.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
 fn wt_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -366,7 +366,7 @@ fn changes_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
 fn ch_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -448,7 +448,7 @@ fn commits_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
 fn cm_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -603,8 +603,8 @@ enum DiffKind {
 }
 
 // 갤러리 데모 diff 행 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트(ui/theme/rect/커서 등)라
-// context struct 로 묶어봤자 draw 호출부에서 다시 풀어써야 해 의미가 없다. 정책 #2(데모 코드) 허용.
-#[allow(clippy::too_many_arguments)]
+// context struct 로 묶어봤자 draw 호출부에서 다시 풀어써야 해 의미가 없다.
+#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 정책 #2(데모 코드) 허용
 fn diff_line(
     ui: &mut egui::Ui,
     theme: &Theme,
