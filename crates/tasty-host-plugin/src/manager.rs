@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -26,6 +26,19 @@ use crate::protocol::PluginResponse;
 use crate::registry_state::PluginsConfig;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
+
+/// host popup(`PopupManager`)과 plugin popup(`PluginManager::popup_instances`) 사이의
+/// z-order 를 판정하는 유일한 공유 기준. 두 매니저가 서로 다른 크레이트에 있어 자료구조를
+/// 통합하지 않는 대신, 열리거나 클릭/포커스될 때마다 이 전역 단조증가 순번을 하나씩
+/// 받아 각자의 상태(`PopupState.z_seq` / `PopupInstance.z_seq`)에 기록한다 — 값이 큰 쪽이
+/// 나중에 열리거나 클릭된 것이므로 항상 위에 그려진다(`docs/design/systems/popup.md` 규칙 7).
+static NEXT_POPUP_Z_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// 다음 z-order 순번을 발급한다. host popup 오픈/포커스와 plugin popup 오픈/클릭 양쪽에서
+/// 호출된다 — 값 자체의 의미는 없고, 오직 다른 값과의 대소 비교(더 큰 쪽이 위)에만 쓰인다.
+pub fn next_popup_z_seq() -> u64 {
+    NEXT_POPUP_Z_SEQ.fetch_add(1, Ordering::Relaxed)
+}
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
@@ -380,6 +393,9 @@ pub struct PopupInstance {
     pub plugin_id: String,
     pub popup_id: String,
     pub contribute: tasty_plugin_manifest::PopupContribute,
+    /// host↔plugin popup 통합 z-order 순번(`next_popup_z_seq`). open 시 발급되고, 콘텐츠
+    /// 영역 클릭 시(host 쪽 `touch_popup_instance_z`) 갱신된다.
+    pub z_seq: u64,
 }
 
 /// 호스트가 추적 중인 banner 인스턴스 한 건(A3). plugin process가 죽으면 함께 제거된다.

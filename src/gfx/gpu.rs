@@ -431,6 +431,16 @@ impl GpuState {
             &mut self.surface_font_state,
         );
 
+        // host popup(`PopupManager`)과 plugin popup(egui-mesh) 사이의 통합 z-order 판정
+        // (`docs/design/systems/popup.md` 규칙 7) — 셸 등록 순서(`run_egui_frame` 내부)와
+        // GPU 콘텐츠 합성 순서(아래 `render_egui_pass`/`render_egui_mesh_popups`) 양쪽이
+        // 같은 프레임 안에서 같은 결정을 따라야 하므로 한 번만 계산해 재사용한다.
+        let host_top_z_seq = state.popups.max_open_z_seq();
+        let plugin_top_z_seq =
+            plugin_manager.and_then(|m| m.popup_instances().map(|(_, inst)| inst.z_seq).max());
+        let host_popup_on_top =
+            egui_bridge::host_popup_should_render_on_top(host_top_z_seq, plugin_top_z_seq);
+
         // 3. Run egui frame (UI drawing)
         let t0 = std::time::Instant::now();
         let mut full_output = self.run_egui_frame(
@@ -441,6 +451,7 @@ impl GpuState {
             &dividers,
             terminal_rect,
             plugin_manager,
+            host_popup_on_top,
         );
         let egui_frame_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -544,26 +555,20 @@ impl GpuState {
             );
         }
 
+        // egui-mesh popup 합성(A2) + host egui pass — host popup ↔ plugin popup z-order
+        // (`host_popup_on_top`) 에 따라 둘의 순서를 정한다. 상세는
+        // `render_egui_pass_and_mesh_popups` 문서 참고.
         let t0 = std::time::Instant::now();
-        self.render_egui_pass(
+        self.render_egui_pass_and_mesh_popups(
             &view,
             &full_output.textures_delta,
             &paint_jobs,
             &screen_descriptor,
+            state.plugin_mesh_popup_regions.as_slice(),
+            plugin_manager,
+            host_popup_on_top,
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
-
-        // egui-mesh popup 합성 (A2): host egui pass *후* — 셸(scrim/bg/border)을 egui 가
-        // 그린 뒤 content_rect 에 plugin mesh 를 얹는다. `draw_plugin_popups` 가 egui frame
-        // 중 채운 영역을 읽는다. mesh 는 content_rect 로 clip 되어 셸을 덮지 않는다.
-        // regions 가 비어도 잔존 target 이 있으면 호출한다 — 함수 안의 retain-prune 이
-        // 돌아야 마지막 popup 이 닫힌 프레임에 전용 Renderer/텍스처가 해제된다
-        // (surface 게이트의 `|| !egui_mesh_targets.is_empty()` 와 동형. 없으면 다음
-        // popup 이 열릴 때까지 target 1개가 GPU 자원을 쥔 채 상주 — 실측 확인).
-        if let Some(mgr) = plugin_manager {
-            let regions = state.plugin_mesh_popup_regions.clone();
-            self.render_egui_mesh_popups(&view, &regions, mgr);
-        }
 
         // egui-mesh banner 합성 (A3): popup 과 동형 — host egui pass *후* content_rect 에
         // plugin mesh 를 얹는다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner

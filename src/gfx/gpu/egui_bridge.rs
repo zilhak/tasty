@@ -92,6 +92,81 @@ fn enforce_foreground_z_order(
     }
 }
 
+/// host popup(`PopupManager`, `host_popup_layers`)과 plugin egui-mesh popup(`draw_plugin_popups`,
+/// `plugin_popup_layers`) 셸 사이의 상대 순서를 `host_popup_on_top`(z_seq 비교 결과,
+/// `host_popup_should_render_on_top`)에 따라 강제한다.
+///
+/// 두 popup 종류 모두 `ctx.layer_painter(layer_id)` 로 직접 그리는 **raw layer** 다(위
+/// `enforce_foreground_z_order` 의 `egui::Area` 기반 layer 와 다름). raw layer 는
+/// `egui::Area`/`Window` 를 거치지 않으므로 `Memory::Areas::order`(egui 가 "최근에
+/// 상호작용한 Area" 를 추적하는 리스트)에 자동으로 편입되지 않는다 — `end_pass` 의
+/// `GraphicLayers::drain` 은 `order` 에 없는 레이어를 별도의 내부 맵 순회로 덧붙이는데
+/// (egui 소스: "Also draw areas that are missing in `area_order`"), 그 순회 순서는 이
+/// 프레임에서 어떤 함수를 먼저 호출했는지와 무관하다 — 즉 **draw 호출 순서로는 이 둘의
+/// 상대 순서를 제어할 수 없다.** `ctx.set_sublayer(parent, child)` 는 호출 즉시 두
+/// layer 를 `order` 에 강제 등록하고 `end_pass` 에서 child 를 parent 바로 위로 splice 하므로,
+/// 이 관계를 결정론적으로 강제하는 유일한 방법이다.
+///
+/// host popup 이 여러 개, plugin popup 이 여러 개 있으면 모든 조합에 대해 `set_sublayer`
+/// 를 건다(star 패턴: 한쪽 그룹 전체가 다른 쪽 그룹 전체 위/아래) — 두 그룹이 서로
+/// 엇갈리는 세밀한 개별 순서까지는 재현하지 못한다(egui 가 1단 중첩만 지원해 체인 불가,
+/// `host_popup_should_render_on_top` 문서의 "최소 설계" 항목과 동일한 제약).
+/// `modifier_hint_layer` 가 동시에 켜져 있으면 `host_popup_layers` 원소가
+/// `enforce_foreground_z_order` 에서도 자식으로 쓰이므로(한 layer 가 두 부모의 자식이
+/// 되는 셈) 그 조합의 최종 순서는 `sublayers` HashMap 순회 순서에 좌우되는 비결정적
+/// 예외로 남는다 — 실사용에서 드문 조합이라 허용한다.
+fn enforce_host_plugin_popup_z_order(
+    ctx: &egui::Context,
+    host_popup_layers: &[egui::LayerId],
+    plugin_popup_layers: &[egui::LayerId],
+    host_popup_on_top: bool,
+) {
+    if host_popup_on_top {
+        for plugin_layer in plugin_popup_layers {
+            for host_layer in host_popup_layers {
+                ctx.set_sublayer(*plugin_layer, *host_layer);
+            }
+        }
+    } else {
+        for host_layer in host_popup_layers {
+            for plugin_layer in plugin_popup_layers {
+                ctx.set_sublayer(*host_layer, *plugin_layer);
+            }
+        }
+    }
+}
+
+/// host popup(`PopupManager`)과 plugin popup(egui-mesh) 사이의 z-order 를 판정하는 유일한
+/// 기준: 열려 있는 각 쪽의 최대 z_seq(`tasty_host_plugin::next_popup_z_seq` 공유 카운터)를
+/// 비교해 host popup 이 위에 그려져야 하는지 결정한다(규칙 7 "나중에 열리거나 클릭된 것이
+/// 앞", `docs/design/systems/popup.md`). 한쪽이 아예 없으면(`None`) 애초에 겹칠 popup 쌍이
+/// 없으므로 항상 `false`(=현재/기본 순서인 "plugin 이 host 위" 유지) — 이 경우 결과가 어느
+/// 값이든 시각적으로 무관하지만, `false` 고정이 기존 동작(host popup 만 있거나 plugin popup
+/// 만 있는 절대다수 프레임)과 완전히 동일한 코드 경로를 타게 해 회귀 위험을 없앤다.
+///
+/// 셸 등록 순서(`run_egui_frame` 아래)와 GPU 콘텐츠 합성 순서(`gfx/gpu.rs` 의
+/// `render_egui_pass`/`render_egui_mesh_popups`) 양쪽에서 같은 값을 재사용해야 한 프레임
+/// 안에서 셸과 콘텐츠가 서로 다른 결정을 내리지 않는다.
+///
+/// host popup 이 여러 개, plugin popup 이 여러 개 동시에 열려 있는 경우 이 함수는 "그룹
+/// 전체" 단위로만 판정한다(각 그룹의 최댓값끼리 비교) — host popup A(z_seq=1) < plugin
+/// popup(z_seq=2) < host popup B(z_seq=3) 처럼 두 그룹이 서로 엇갈리는 경우까지 완전히
+/// 재현하지는 못한다(egui 의 `set_sublayer` 가 1단 중첩만 지원해 N-way interleave 가
+/// 불가능 — egui 소스 주석 "This currently only supports one level of nesting"). 이는
+/// 의도된 최소 설계다: 실사용 사례가 host popup 1개 vs plugin popup 1개(예: markdown
+/// "Open Markdown File" → Browse → `file_picker`)인 한 정확하고, 3개 이상 동시 존재하는
+/// 드문 케이스는 "그룹 전체가 한 덩어리로 위/아래" 근사로 성능 저하 없이 저하(graceful
+/// degradation)한다.
+pub(super) fn host_popup_should_render_on_top(
+    host_top_z_seq: Option<u64>,
+    plugin_top_z_seq: Option<u64>,
+) -> bool {
+    match (host_top_z_seq, plugin_top_z_seq) {
+        (Some(host), Some(plugin)) => host > plugin,
+        _ => false,
+    }
+}
+
 impl GpuState {
     #[allow(clippy::too_many_arguments)] // reason: frame context 전체 전달
     pub(super) fn run_egui_frame(
@@ -103,6 +178,7 @@ impl GpuState {
         dividers: &[PhysicalRect],
         terminal_rect: PhysicalRect,
         plugin_manager: Option<&crate::plugin::PluginManager>,
+        host_popup_on_top: bool,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
@@ -121,6 +197,13 @@ impl GpuState {
             ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
+            // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
+            crate::plugin_bridge::popup_render::draw_plugin_popups(
+                ctx,
+                state,
+                engine,
+                plugin_manager,
+            );
             enforce_foreground_z_order(
                 ctx,
                 state.banner_layer,
@@ -128,12 +211,16 @@ impl GpuState {
                 &state.popup_layers,
                 pane_rects,
             );
-            // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
-            crate::plugin_bridge::popup_render::draw_plugin_popups(
+            // host popup ↔ plugin popup 셸 순서 — 둘 다 `ctx.layer_painter`로 직접 그리는
+            // raw layer 라 위 두 draw 호출의 순서는 최종 페인트 순서에 영향이 없다(egui
+            // `Areas::order`는 `egui::Area` 기반 위젯만 자동 추적 — 문서는
+            // `enforce_host_plugin_popup_z_order` 참고). `set_sublayer` 로 명시적으로
+            // 관계를 걸어야 한다.
+            enforce_host_plugin_popup_z_order(
                 ctx,
-                state,
-                engine,
-                plugin_manager,
+                &state.popup_layers,
+                &state.plugin_popup_layers,
+                host_popup_on_top,
             );
             // Plugin egui-mesh banner(A3) — banner manager 가 `draw_ui` 중 셸을 그리고
             // content_rect 슬롯을 기록한 뒤, 여기서 content mesh forward + 합성 영역 적재.
@@ -534,5 +621,30 @@ mod tests {
         // 같은 `""` 가 두 번 들어왔을 때 같은 signature 이어야 한다 — 매 frame
         // update_font 호출되던 G2 회귀의 회귀 방지.
         assert_eq!(sig_empty, term_font_signature(&f, 14.0));
+    }
+
+    /// host popup ↔ plugin popup z-order 판정 — `docs/design/systems/popup.md` 규칙 7
+    /// ("나중에 열리거나 클릭된 것이 앞") 재현 대상 시나리오: markdown "Open Markdown
+    /// File"(plugin, 먼저 열림) → Browse → `file_picker`(host, 나중에 열림) 이면
+    /// host 가 위여야 한다.
+    #[test]
+    fn host_popup_on_top_when_host_z_seq_is_higher() {
+        assert!(host_popup_should_render_on_top(Some(2), Some(1)));
+    }
+
+    /// 기본/현재 동작(plugin popup 이 host popup 보다 나중에 열린 경우) — plugin 이 위에
+    /// 남아 있어야 한다(변경 없음).
+    #[test]
+    fn plugin_popup_stays_on_top_when_plugin_z_seq_is_higher() {
+        assert!(!host_popup_should_render_on_top(Some(1), Some(2)));
+    }
+
+    /// 한쪽 종류의 popup 만 열려 있으면(겹칠 대상이 없음) 항상 false — 기존 단일-매니저
+    /// 경로(순서 변경 없음)를 그대로 탄다.
+    #[test]
+    fn no_contention_when_only_one_kind_open() {
+        assert!(!host_popup_should_render_on_top(Some(5), None));
+        assert!(!host_popup_should_render_on_top(None, Some(5)));
+        assert!(!host_popup_should_render_on_top(None, None));
     }
 }

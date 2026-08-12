@@ -163,6 +163,13 @@ pub struct PopupState {
     min_size: egui::Vec2,
     /// 리사이즈 진행 중이면 잡은 엣지 조합. `None`이면 리사이즈 중 아님.
     resizing: Option<ResizeEdges>,
+    /// host↔plugin popup 통합 z-order 순번(`tasty_host_plugin::next_popup_z_seq`).
+    /// open/bring-to-front 시마다 갱신되며, plugin popup(`PopupInstance.z_seq`)과 같은
+    /// 전역 카운터를 공유해 서로 다른 매니저의 popup 을 하나의 순서로 비교할 수 있게
+    /// 한다(`docs/design/systems/popup.md` 규칙 7). `popups: Vec` 안 위치 자체도
+    /// z-order 지만(호스트 popup 끼리는 그것으로 충분) 이 필드는 plugin popup 과의
+    /// cross-manager 비교에만 쓰인다.
+    z_seq: u64,
     /// 리사이즈 시작 시점의 팝업 rect (드래그 누적 계산 기준).
     resize_start_rect: egui::Rect,
     /// 사용자가 한 번이라도 리사이즈했으면 true. true 동안 sizer 의 size 덮어쓰기를
@@ -281,6 +288,7 @@ impl PopupState {
             resizable: false,
             min_size: default_size,
             resizing: None,
+            z_seq: 0,
             resize_start_rect: egui::Rect::ZERO,
             size_user_overridden: false,
         }
@@ -474,6 +482,7 @@ impl PopupManager {
     pub fn open(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -485,6 +494,7 @@ impl PopupManager {
             self.popups[i].open = true;
             self.popups[i].focused = true;
             self.popups[i].request_center = true;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -497,6 +507,7 @@ impl PopupManager {
             self.popups[i].open = true;
             self.popups[i].focused = false;
             self.popups[i].request_center = true;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -509,6 +520,7 @@ impl PopupManager {
             self.popups[i].focused = true;
             self.popups[i].request_center = true;
             self.popups[i].scope = scope;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -523,6 +535,7 @@ impl PopupManager {
             self.popups[i].request_center = false;
             self.popups[i].request_top = true;
             self.popups[i].scope = scope;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -535,6 +548,7 @@ impl PopupManager {
             self.popups[i].focused = true;
             self.popups[i].pos = pos;
             self.popups[i].request_center = false;
+            self.popups[i].z_seq = tasty_host_plugin::next_popup_z_seq();
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -600,12 +614,21 @@ impl PopupManager {
         self.popups.iter().any(|p| p.open)
     }
 
-    /// Bring a popup to the front (topmost z-order).
+    /// Bring a popup to the front (topmost z-order). 클릭에 의한 승격도 open() 계열과
+    /// 같은 전역 순번을 받아야 plugin popup 과의 비교가 정확해진다(규칙 7 "클릭된 것이 앞").
     fn bring_to_front(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
-            let popup = self.popups.remove(i);
+            let mut popup = self.popups.remove(i);
+            popup.z_seq = tasty_host_plugin::next_popup_z_seq();
             self.popups.push(popup);
         }
+    }
+
+    /// 현재 열려 있는 host popup 중 가장 큰 z_seq(=가장 최근에 열리거나 클릭된 것).
+    /// plugin popup 쪽 z_seq 최댓값과 비교해 셸/콘텐츠 렌더 순서를 정하는 데 쓰인다
+    /// (`docs/design/systems/popup.md` 규칙 7, `gfx/gpu/egui_bridge.rs`).
+    pub fn max_open_z_seq(&self) -> Option<u64> {
+        self.popups.iter().filter(|p| p.open).map(|p| p.z_seq).max()
     }
 
     /// Get mutable access to a popup's state.

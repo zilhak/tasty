@@ -41,8 +41,10 @@ pub fn draw_plugin_popups(
     _engine: &mut crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
 ) {
-    // 매 frame mesh 합성 영역을 새로 수집한다 — 이전 frame 잔재가 합성되지 않게.
+    // 매 frame mesh 합성 영역/셸 레이어 목록을 새로 수집한다 — 이전 frame 잔재가
+    // 합성되거나 `enforce_host_plugin_popup_z_order`(egui_bridge.rs)에 남지 않게.
     state.plugin_mesh_popup_regions.clear();
+    state.plugin_popup_layers.clear();
 
     let Some(mgr) = plugin_manager else {
         state.plugin_mesh_popup_geom.clear();
@@ -58,6 +60,7 @@ pub fn draw_plugin_popups(
         anchor: PopupAnchor,
         size: Vec2,
         dismiss_on_outside_click: bool,
+        z_seq: u64,
     }
     let mut mesh_snaps: Vec<MeshSnap> = Vec::new();
     for (id, inst) in mgr.popup_instances() {
@@ -73,9 +76,22 @@ pub fn draw_plugin_popups(
                 anchor: inst.contribute.anchor,
                 size,
                 dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
+                z_seq: inst.z_seq,
             }),
         }
     }
+    // `popup_instances` 는 HashMap 이라 순회 순서가 비결정적 — z_seq 오름차순으로 정렬해야
+    // `plugin_mesh_popup_regions`(GPU 콘텐츠 합성 순서, 뒤에 push된 것이 위)에서 여러
+    // plugin popup 이 동시에 열려 있을 때도 나중에 열리거나 클릭된 것이 콘텐츠 상 위에
+    // 온다. 단, 이 정렬은 **셸(scrim/bg/border) 순서에는 영향이 없다** — 셸은
+    // `ctx.layer_painter`로 직접 그리는 raw layer 라 `egui::Area`(`Areas::order`)를 거치지
+    // 않으므로, 프레임 내 그리기 호출 순서가 최종 페인트 순서를 결정하지 않는다(egui
+    // `GraphicLayers::drain` 소스 — order 밖 레이어는 별도 맵 순회로 덧붙여짐, 순서 보장
+    // 없음). 여러 plugin popup 이 동시에 열렸을 때 그들끼리의 셸 순서까지 정확히
+    // 강제하려면 host↔plugin 관계와 마찬가지로 `set_sublayer` 체인이 필요하지만
+    // egui 는 1단 중첩만 지원해 N>2 개에서는 안전하지 않다 — 최소 설계 범위 밖으로 남긴다
+    // (`gfx/gpu/egui_bridge.rs` 의 `enforce_host_plugin_popup_z_order` 문서 참고).
+    mesh_snaps.sort_by_key(|s| s.z_seq);
 
     // 닫힌 mesh popup 의 geom/bootstrap 추적 정리.
     let live_mesh: HashSet<u64> = mesh_snaps.iter().map(|s| s.instance_id).collect();
@@ -123,16 +139,30 @@ pub fn draw_plugin_popups(
             any_hovered = true;
         }
 
-        // 셸(chrome)은 host 소유: scrim → bg_panel → border. 내용은 plugin mesh 가
-        // content_rect 에 host egui pass 후 합성된다(gpu.render → egui_mesh_prepare).
+        let content_rect = rect.shrink(popup::content_margin());
+
+        // 셸(chrome)은 host 소유: scrim → bg_panel(content_rect 는 hole) → border. 내용은
+        // plugin mesh 가 content_rect 에 합성된다(gpu.render → egui_mesh_prepare). host popup
+        // 이 이 popup 보다 위여야 하는 프레임(z_seq 역전)에는 콘텐츠 합성이 host egui pass
+        // *전*에 실행되므로, bg_panel 이 content_rect 까지 채우면 그 뒤(같은 pass 안, 이
+        // 셸과 함께 그려지는) host popup 유무와 무관하게 방금 합성한 콘텐츠를 덮어버린다.
+        // content_rect 를 비워 두면(hole) 어느 순서로 합성되든 셸이 콘텐츠를 가리지 않는다
+        // (`gfx/gpu.rs` 의 `render_egui_pass`/`render_egui_mesh_popups` 순서 분기 참고).
         let layer_id = egui::LayerId::new(
             Order::Foreground,
             Id::new("plugin_mesh_popup").with(snap.instance_id),
         );
+        state.plugin_popup_layers.push(layer_id);
         let painter = ctx.layer_painter(layer_id);
         let th = crate::theme::theme();
         painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
-        painter.rect_filled(rect, th.corner_radius.value(), th.bg_panel().to_egui());
+        paint_shell_background_excluding_content(
+            &painter,
+            rect,
+            content_rect,
+            th.corner_radius.value(),
+            th.bg_panel().to_egui(),
+        );
         painter.rect_stroke(
             rect,
             th.corner_radius.value(),
@@ -140,7 +170,6 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        let content_rect = rect.shrink(popup::content_margin());
         let raw_input = collect_mesh_popup_input(ctx, content_rect, pointer_pos);
 
         // set_context forward — geom 변경 / 입력 / bootstrap(미paint) 일 때만 (surface 와 동형).
@@ -201,7 +230,8 @@ pub fn draw_plugin_popups(
             );
         }
 
-        // 합성 영역(물리 px) 적재 — gpu.render 가 host egui pass 후 mesh 를 그린다.
+        // 합성 영역(물리 px) 적재 — gpu.render 가 이 popup 의 z_seq 와 현재 열린 host popup
+        // 최대 z_seq 를 비교해 host egui pass 전/후 중 알맞은 시점에 mesh 를 합성한다.
         state.plugin_mesh_popup_regions.push((
             snap.instance_id,
             PhysicalRect {
@@ -211,6 +241,16 @@ pub fn draw_plugin_popups(
                 height: PhysicalPx(content_rect.height() * ppp),
             },
         ));
+
+        // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
+        // `bring_to_front`(click-to-front)와 동형. `mgr` 이 `&PluginManager` 불변
+        // 참조라 여기서 직접 갱신할 수 없어 큐에 적재하고 App 메인 루프가 drain한다.
+        if primary_pressed
+            && let Some(p) = pointer_pos
+            && rect.contains(p)
+        {
+            state.plugin_popup_focus_bumps.push(snap.instance_id);
+        }
 
         if snap.dismiss_on_outside_click
             && primary_pressed
@@ -324,6 +364,58 @@ fn map_button(b: egui::PointerButton) -> Option<PointerButtonWire> {
         egui::PointerButton::Middle => Some(PointerButtonWire::Middle),
         _ => None,
     }
+}
+
+/// `rect` 를 `bg_fill` 로 채우되 `content_rect`(plugin mesh 콘텐츠가 합성될 영역)는 비워
+/// 둔다("hole"). 4개의 축정렬 띠로 분해한다 — 상/하단 띠만 `rect`의 바깥쪽 모서리에 맞춰
+/// 둥근 모서리를 적용하고(원래 단일 `rect_filled(rect, corner_radius, ..)` 와 동일한
+/// 시각 결과), 좌/우 띠는 `content_rect` 상하 범위로 제한되어 둥글릴 모서리가 없다.
+/// `content_margin() >= corner_radius` 라 모서리 곡선이 상/하단 띠 폭 안에 완전히
+/// 들어온다(현재 테마 기본값: 둘 다 4px).
+fn paint_shell_background_excluding_content(
+    painter: &egui::Painter,
+    rect: Rect,
+    content_rect: Rect,
+    corner_radius: f32,
+    bg_fill: egui::Color32,
+) {
+    let cr = corner_radius as u8;
+    painter.rect_filled(
+        Rect::from_min_max(rect.min, Pos2::new(rect.max.x, content_rect.min.y)),
+        egui::CornerRadius {
+            nw: cr,
+            ne: cr,
+            sw: 0,
+            se: 0,
+        },
+        bg_fill,
+    );
+    painter.rect_filled(
+        Rect::from_min_max(Pos2::new(rect.min.x, content_rect.max.y), rect.max),
+        egui::CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: cr,
+            se: cr,
+        },
+        bg_fill,
+    );
+    painter.rect_filled(
+        Rect::from_min_max(
+            Pos2::new(rect.min.x, content_rect.min.y),
+            Pos2::new(content_rect.min.x, content_rect.max.y),
+        ),
+        0.0,
+        bg_fill,
+    );
+    painter.rect_filled(
+        Rect::from_min_max(
+            Pos2::new(content_rect.max.x, content_rect.min.y),
+            Pos2::new(rect.max.x, content_rect.max.y),
+        ),
+        0.0,
+        bg_fill,
+    );
 }
 
 /// 화면 경계 안으로 popup 좌상단을 clamp.

@@ -877,10 +877,13 @@ impl GpuState {
 
     /// egui-mesh popup(A2) 들을 전용 Renderer 로 합성한다.
     ///
-    /// [`GpuState::render`] 가 host egui pass *후* 부른다 — popup 셸(scrim/bg/border)을
-    /// host egui 가 그린 뒤 그 위 content_rect 에 plugin mesh 를 얹는다. mesh 는 content_rect
-    /// 로 clip 되므로 border/close 버튼을 덮지 않는다. surface 와 같은 디코드/합성 헬퍼를
-    /// 쓰되, target 맵을 instance_id 로 키잉하고 frame meta 를 `popup_mesh_frame` 에서 읽는다.
+    /// [`GpuState::render_egui_pass_and_mesh_popups`] 가 host egui pass 와의 호출 순서를
+    /// host↔plugin popup z_seq 비교 결과(`host_popup_on_top`)에 따라 매 프레임 결정한다 —
+    /// host popup 이 더 나중에 열렸으면 이 pass 가 먼저, 아니면(기본) host egui pass 가
+    /// 먼저 그려진다. mesh 는 content_rect 로 clip 되므로 border/close 버튼을 덮지 않고,
+    /// popup 셸도 content_rect 를 제외하고 그려(`paint_shell_background_excluding_content`)
+    /// 어느 순서로 합성되든 자기 mesh 를 스스로 가리지 않는다. surface 와 같은 디코드/합성
+    /// 헬퍼를 쓰되, target 맵을 instance_id 로 키잉하고 frame meta 를 `popup_mesh_frame` 에서 읽는다.
     pub(super) fn render_egui_mesh_popups(
         &mut self,
         view: &wgpu::TextureView,

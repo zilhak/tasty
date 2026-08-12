@@ -1,4 +1,5 @@
 use crate::model::PhysicalRect;
+use crate::plugin::PluginManager;
 use crate::renderer::RenderPreedit;
 use crate::state::AppState;
 
@@ -247,6 +248,46 @@ impl GpuState {
 
         for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);
+        }
+    }
+
+    /// host egui pass(`render_egui_pass`, chrome + host popup 전체 + plugin popup 셸)와
+    /// plugin egui-mesh popup 콘텐츠 합성(`render_egui_mesh_popups`)을 host popup ↔
+    /// plugin popup z-order(`host_popup_on_top`, `gfx/gpu/egui_bridge.rs` 의
+    /// `host_popup_should_render_on_top` 이 계산)에 따라 순서를 정해 실행한다.
+    ///
+    /// 기본(`host_popup_on_top == false`)은 host egui pass *후* mesh 콘텐츠를 얹는
+    /// 기존 동작(plugin popup 이 위) 그대로다. `host_popup_on_top == true` 면 mesh
+    /// 콘텐츠를 *먼저* 그려 넣고, 그 뒤 host egui pass 가 host popup(불투명)을 그 위에
+    /// 덮어 host popup 이 위에 오도록 뒤집는다. plugin popup 자신의 셸은 content_rect 를
+    /// 비워 두므로(hole, `plugin_bridge::popup_render::paint_shell_background_excluding_content`)
+    /// 어느 순서든 자기 콘텐츠를 가리지 않는다.
+    #[allow(clippy::too_many_arguments)] // reason: 두 pass 호출에 필요한 인자 그대로 전달
+    pub(super) fn render_egui_pass_and_mesh_popups(
+        &mut self,
+        view: &wgpu::TextureView,
+        textures_delta: &egui::TexturesDelta,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        mesh_popup_regions: &[(u64, PhysicalRect)],
+        plugin_manager: Option<&PluginManager>,
+        host_popup_on_top: bool,
+    ) {
+        let render_mesh_popups = |this: &mut Self| {
+            if let Some(mgr) = plugin_manager {
+                this.render_egui_mesh_popups(view, mesh_popup_regions, mgr);
+            }
+        };
+        let render_egui = |this: &mut Self| {
+            this.render_egui_pass(view, textures_delta, paint_jobs, screen_descriptor);
+        };
+
+        if host_popup_on_top {
+            render_mesh_popups(self);
+            render_egui(self);
+        } else {
+            render_egui(self);
+            render_mesh_popups(self);
         }
     }
 }

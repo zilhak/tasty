@@ -361,6 +361,18 @@ pub struct AppState {
     /// 의존이라 gui 전용.
     #[cfg(feature = "gui")]
     pub(crate) popup_layers: Vec<egui::LayerId>,
+    /// 이번 프레임에 그려진 각 plugin egui-mesh popup 셸의 `LayerId`.
+    /// `draw_plugin_popups`(`plugin_bridge/popup_render.rs`)가 갱신. host popup
+    /// (`popup_layers`)과 이 목록 사이의 상대 순서를 host↔plugin popup z-order
+    /// (`docs/design/systems/popup.md` 규칙 7)에 따라 `set_sublayer`로 강제할 때 쓴다
+    /// (`gfx/gpu/egui_bridge.rs`) — 두 popup 종류 모두 `ctx.layer_painter`로 직접
+    /// 그리는 raw layer 라 `egui::Area`를 거치지 않고, 따라서 `Areas::order`(Area 기반
+    /// 위젯만 자동 등록됨)에 자연히 편입되지 않는다. 등록 호출 순서는 이 `order`에
+    /// 전혀 반영되지 않으므로(각 프레임 `GraphicLayers::drain`이 `order`에 없는 레이어를
+    /// 별도 맵 순회로 덧붙임 — egui 소스), `set_sublayer`로 명시적으로 관계를 걸지
+    /// 않으면 두 popup 종류 사이의 상대 순서는 사실상 비결정적이다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_layers: Vec<egui::LayerId>,
     /// 이번 프레임에 그려진 `banner_layer` Area 의 `LayerId`(banner 는 매 프레임 항상
     /// 그려지므로 첫 프레임 이후 항상 `Some`). `BannerManager::draw()` 가 갱신,
     /// `enforce_foreground_z_order` 가 읽는다.
@@ -463,6 +475,12 @@ pub struct AppState {
     /// plugin popup 렌더 중 감지된 close 사유 (outside-click / Escape).
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
+
+    /// plugin popup 콘텐츠 영역 내부 클릭으로 z-order 순번 갱신이 필요한 instance_id 큐
+    /// (`docs/design/systems/popup.md` 규칙 7 "클릭된 것이 앞"). 렌더 경로(`draw_plugin_popups`)는
+    /// `&PluginManager` 불변 참조만 가지므로 직접 갱신할 수 없어 여기 적재하고, App 메인
+    /// 루프가 drain해 `PluginManager::touch_popup_instance_z`를 호출한다(close queue 와 동형).
+    pub(crate) plugin_popup_focus_bumps: Vec<u64>,
 
     /// plugin egui-mesh banner(A3) host 측 생명주기(TTL/close X)로 닫힌 사유.
     /// `draw_plugin_banners` 가 적재하고, App 메인 루프가 drain 해
@@ -998,6 +1016,8 @@ impl AppState {
             #[cfg(feature = "gui")]
             popup_layers: Vec::new(),
             #[cfg(feature = "gui")]
+            plugin_popup_layers: Vec::new(),
+            #[cfg(feature = "gui")]
             banner_layer: None,
             #[cfg(feature = "gui")]
             modifier_hint_layer: None,
@@ -1033,6 +1053,7 @@ impl AppState {
             drop_hover: None,
             pending_file_drops: Vec::new(),
             plugin_popup_closes: Vec::new(),
+            plugin_popup_focus_bumps: Vec::new(),
             plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),
             plugin_mesh_popup_geom: std::collections::HashMap::new(),

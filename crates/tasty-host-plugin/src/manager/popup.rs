@@ -63,6 +63,7 @@ impl PluginManager {
                 plugin_id: plugin_id.to_string(),
                 popup_id: popup_id.to_string(),
                 contribute,
+                z_seq: super::next_popup_z_seq(),
             },
         );
         self.send_surface_request(
@@ -155,6 +156,15 @@ impl PluginManager {
     /// 현재 활성 popup 인스턴스 목록. PopupManager 렌더 / debug IPC가 사용.
     pub fn popup_instances(&self) -> impl Iterator<Item = (u64, &PopupInstance)> {
         self.popup_instances.iter().map(|(k, v)| (*k, v))
+    }
+
+    /// popup 콘텐츠 영역 클릭 시 z-order 순번을 갱신해 맨 앞으로 가져온다
+    /// (`docs/design/systems/popup.md` 규칙 7 "클릭된 것이 앞"). 인스턴스가 이미
+    /// 닫혔으면 조용히 무시.
+    pub fn touch_popup_instance_z(&mut self, instance_id: u64) {
+        if let Some(inst) = self.popup_instances.get_mut(&instance_id) {
+            inst.z_seq = super::next_popup_z_seq();
+        }
     }
 
     /// 단계 G: 사용자 단축키 매칭으로 plugin command를 trigger. 응답은

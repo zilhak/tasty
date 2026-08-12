@@ -9,17 +9,23 @@ impl App {
         let mut drained_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)> = Vec::new();
         let mut drained_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)> =
             Vec::new();
+        let mut drained_focus_bumps: Vec<u64> = Vec::new();
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained_closes.append(&mut main.state.plugin_popup_closes);
                 drained_banner_closes.append(&mut main.state.plugin_banner_closes);
+                drained_focus_bumps.append(&mut main.state.plugin_popup_focus_bumps);
             }
         }
         for (s, _engine) in &mut self.parked_states {
             drained_closes.append(&mut s.plugin_popup_closes);
             drained_banner_closes.append(&mut s.plugin_banner_closes);
+            drained_focus_bumps.append(&mut s.plugin_popup_focus_bumps);
         }
-        if drained_closes.is_empty() && drained_banner_closes.is_empty() {
+        if drained_closes.is_empty()
+            && drained_banner_closes.is_empty()
+            && drained_focus_bumps.is_empty()
+        {
             return;
         }
         let Some(mgr) = self.plugin_manager.as_mut() else {
@@ -39,6 +45,11 @@ impl App {
             if seen_banner.insert(instance_id) {
                 mgr.close_banner_instance(instance_id, reason);
             }
+        }
+        // z-order 승격(규칙 7 "클릭된 것이 앞") — 같은 instance 가 여러 번 쌓여도
+        // touch_popup_instance_z 는 멱등(마지막 호출만 z_seq 를 갱신)이라 dedup 불필요.
+        for instance_id in drained_focus_bumps {
+            mgr.touch_popup_instance_z(instance_id);
         }
     }
 }
