@@ -296,8 +296,9 @@ impl App {
                     result,
                     is_reconnect: true,
                 };
-                let _ = tx.send(outcome);
-                let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady);
+                let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
+                // 메인 루프를 깨워 결과를 drain 시킨다(idle 상태에서도 즉시 반영).
+                let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
             });
         }
     }

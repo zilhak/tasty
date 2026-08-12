@@ -677,7 +677,7 @@ fn scenario_cursor(row: u16, col: u16, marker: &str, exit: bool) {
     clear_and_setup(&mut out);
     write!(out, "\x1b[{};{}H{}", row + 1, col + 1, marker).unwrap();
     out.flush().unwrap();
-    let _ = finish(&mut out, "CURSOR_TEST_DONE", exit);
+    let _ = finish(&mut out, "CURSOR_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
 fn scenario_colors(exit: bool) {
@@ -688,7 +688,7 @@ fn scenario_colors(exit: bool) {
     if out.flush().is_err() {
         return;
     }
-    let _ = finish(&mut out, "COLORS_TEST_DONE", exit);
+    let _ = finish(&mut out, "COLORS_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
 fn scenario_attrs(exit: bool) {
@@ -699,7 +699,7 @@ fn scenario_attrs(exit: bool) {
     if out.flush().is_err() {
         return;
     }
-    let _ = finish(&mut out, "ATTRS_TEST_DONE", exit);
+    let _ = finish(&mut out, "ATTRS_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
 fn scenario_altscreen(exit: bool) {
@@ -728,7 +728,7 @@ fn scenario_unicode(exit: bool) {
     if out.flush().is_err() {
         return;
     }
-    let _ = finish(&mut out, "UNICODE_TEST_DONE", exit);
+    let _ = finish(&mut out, "UNICODE_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
 fn scenario_scroll_region(exit: bool) {
@@ -739,5 +739,5 @@ fn scenario_scroll_region(exit: bool) {
     if out.flush().is_err() {
         return;
     }
-    let _ = finish(&mut out, "SCROLL_TEST_DONE", exit);
+    let _ = finish(&mut out, "SCROLL_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
