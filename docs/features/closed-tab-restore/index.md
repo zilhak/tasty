@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (`restore_closed`, 기본 `Ctrl+Shift+T`)
 - **ADR**: 없음 (원칙은 [identity](../../identity.md) §1) — pane 미복원은 원래 스코프 결정이 아니라 `close_case_pane`/`close_active_pane`이 `push_closed_item`을 호출하지 않던 버그였다(`ClosedPane`/`rebuild_pane`은 워크스페이스 복원용으로 이미 존재했으나 pane 단독 복원엔 연결되지 않았음). 새 스코프를 정하는 결정이 아니라 기존 의도를 완성하는 수정이라 신규 ADR 대상이 아니다.
-- **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/state/{pane,tab,workspace}.rs` + `src/core/mod.rs`(`close_case_pane`/`close_case_tab`/`close_case_workspace` cascade), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/mod.rs`(`apply_restore_closed_item`)
+- **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/state/{pane,tab,workspace}.rs` + `src/core/impl_close.rs`(`close_case_pane`/`close_case_tab`/`close_case_workspace` cascade), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/impl_workspace.rs`(`apply_restore_closed_item`)
 - **화면**: 없음 (복원은 focused pane 에 즉시 반영)
 
 ## 목적

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `잘라내기` → `여기로 이동`)
 - **ADR**: 없음
-- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/mod.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 슬롯 `CoreState::pending_move_surface` (`src/core/state.rs`)
+- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 슬롯 `CoreState::pending_move_surface` (`src/core/state.rs`)
 - **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`)
 
 ## 목적
@@ -32,7 +32,7 @@
 
 ### 불변식 / 가드
 
-- **PTY 보존(R1)**: 이동 경로는 source 에 대해 `TerminalStore::remove`/`cleanup_surface` 를 절대 호출하지 않는다. surface_id 가 불변이라 store 가 자동 추종한다. 코어 테스트 `move_surface_tests`(`src/core/mod.rs`)가 이 불변식을 고정한다.
+- **PTY 보존(R1)**: 이동 경로는 source 에 대해 `TerminalStore::remove`/`cleanup_surface` 를 절대 호출하지 않는다. surface_id 가 불변이라 store 가 자동 추종한다. 코어 테스트 `move_surface_tests`(`src/core/impl_move.rs`)가 이 불변식을 고정한다.
 - **포커스 독립성**: 모든 조회는 surface_id 기준(focused_* 미사용). 슬롯·이동은 사용자 우클릭 조작이라 포커스 부수효과는 사용자 맥락 안에서만 발생. release 에 포커스 변경 API 없음.
 - **가드**: self-ref(source==target)·source 무효(이미 닫힘)·target 무효 → no-op(슬롯만 소비). 구조 증명상 B 는 A detach 후에도 항상 생존하므로 missing-B 분기는 방어적 로깅(`tracing::error!`)만 둔다.
 

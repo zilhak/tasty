@@ -50,4 +50,4 @@
 - [features/child-terminal](../features/child-terminal/index.md) — Surface 기반 자식 터미널(대비 대상)
 - [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) — 점유 soft/hard 계층(headless 는 Surface 가 없어 이 계약 밖)
 - [dev-guide/plugin-permissions](../dev-guide/plugin-permissions.md) — 권한 토큰 모델
-- 코드: `src/core/pty_registry.rs` · `src/adapters/ipc/handler/pty.rs` · `src/core/mod.rs`(`apply_adopt_terminal`) · `crates/tasty-terminal/src/lib.rs`(waker 재배선)
+- 코드: `src/core/pty_registry.rs` · `src/adapters/ipc/handler/pty.rs` · `src/core/impl_attach.rs`(`apply_adopt_terminal`) · `crates/tasty-terminal/src/lib.rs`(waker 재배선)

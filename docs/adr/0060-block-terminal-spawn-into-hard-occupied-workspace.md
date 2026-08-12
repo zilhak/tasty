@@ -19,12 +19,12 @@ client) 관점** 만 다뤘다 — 생성만 하니 holder 가 보는 화면엔 
 1. `terminal.spawn`(`handle_spawn`, `src/adapters/ipc/handler/terminal.rs:227`)이
    `tab::handle_tab_create` 를 직접 함수 호출해 새 surface 를 만들고, **성공 응답**
    (`child_surface_id` 포함)을 반환한다.
-2. `apply_create_tab`(`src/core/mod.rs`)의 후처리 `tap_new_workspace_member`
+2. `apply_create_tab`(`src/core/impl_tab.rs`)의 후처리 `tap_new_workspace_member`
    (`src/core/attach_runtime.rs`) → `OccupancyRegistry::add_workspace_member`
    (`src/core/attach.rs`)가 새 surface 를 이미 걸려 있는 workspace lock 에 **즉시 편입**한다 —
    ADR-0040 이 정의한 "점유는 surface 생성 방식과 무관하게 걸린다" 원칙의 정직한 결과다.
 3. 편입 순간부터 그 surface 는 `is_hard_occupied() == true` 다. `apply_send_to_surface`
-   (`src/core/mod.rs`)가 무조건 `sent:false` 를 반환하므로, **spawn 을 호출한 쪽을 포함한 모든
+   (`src/core/impl_attach.rs`)가 무조건 `sent:false` 를 반환하므로, **spawn 을 호출한 쪽을 포함한 모든
    로컬 입력이 거부**된다 — `surface.send`/`terminal.tell` 모두 실패한다.
 4. 그 실패는 "존재하지 않음"과 "존재하지만 점유로 차단됨"을 구분하지 않는
    `"Surface {id} not found"` 로 뭉뚱그려진다(`terminal.rs` `send_body_then_submit`) — 방금
