@@ -1858,7 +1858,12 @@ impl App {
                     &mut self.parked_states,
                     client_id,
                 ) {
-                    Some(engine) => engine.capture_uploads.append(client_id, upload_id, &bytes),
+                    Some(engine) => engine.capture_uploads.append(
+                        client_id,
+                        upload_id,
+                        &bytes,
+                        std::time::Instant::now(),
+                    ),
                     None => tracing::warn!(
                         "capture upload: client {client_id} does not hold a workspace — dropping chunk"
                     ),

@@ -519,7 +519,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                             use base64::Engine as _;
                             match base64::engine::general_purpose::STANDARD.decode(&data_b64) {
                                 Ok(bytes) if engine.attach.client_holds_workspace(client_id) => {
-                                    engine.capture_uploads.append(client_id, upload_id, &bytes);
+                                    engine.capture_uploads.append(
+                                        client_id,
+                                        upload_id,
+                                        &bytes,
+                                        std::time::Instant::now(),
+                                    );
                                 }
                                 Ok(_) => tracing::warn!(
                                     "capture upload: client {client_id} does not hold a workspace — dropping chunk"
