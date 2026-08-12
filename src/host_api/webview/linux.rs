@@ -26,6 +26,12 @@ pub struct PlatformWebView {
     x11_window: std::os::raw::c_ulong,
     xlib: x11_dl::xlib::Xlib,
     x11_display: *mut std::os::raw::c_void,
+    /// `new()`가 이 값을 만든 스레드의 `ThreadId`를 캡처해둔다. raw Xlib 핸들
+    /// (x11_display/x11_window)에 실제로 접근하는 모든 메서드는 진입부에서
+    /// `assert_origin_thread`로 이 값과 현재 스레드를 비교한다. 자연 `!Send`
+    /// (아래 Drop 주석 참조)만으로는 "호출측이 실제로 옮기지 않았다"는 주장을
+    /// 타입 시스템이 강제하지 못하므로, 이 필드가 그 불변식의 런타임 강제 지점이다.
+    origin_thread: std::thread::ThreadId,
     /// 원격(http/https) 차단 여부(기본 true=차단). decide-policy 핸들러가 read.
     block_remote: Rc<Cell<bool>>,
     /// navigation 생명주기 상태(기본 Idle). load-changed/load-failed 시그널이 갱신,
@@ -211,20 +217,38 @@ impl PlatformWebView {
             x11_window,
             xlib,
             x11_display: display as _,
+            origin_thread: std::thread::current().id(),
             block_remote,
             nav_state,
             pending_navigations,
         })
     }
 
+    /// raw Xlib 핸들(x11_display/x11_window)에 접근하는 모든 메서드가 진입부에서
+    /// 호출한다. `new()`가 캡처한 생성 스레드와 다르면 즉시 panic한다 —
+    /// `XInitThreads` 없이 다른 스레드에서 이 핸들을 건드리면 UB이므로, debug에서만
+    /// 잡으면 release 에서 조용히 UB가 난다. 따라서 `debug_assert!`가 아니라
+    /// `assert!`로 release 빌드에서도 유지한다.
+    fn assert_origin_thread(&self) {
+        assert_eq!(
+            std::thread::current().id(),
+            self.origin_thread,
+            "PlatformWebView(X11) accessed from a thread different from its creation \
+             thread; raw Xlib Display*/Window handles require single-thread confinement \
+             (no XInitThreads)"
+        );
+    }
+
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
+        self.assert_origin_thread();
         let x = (bounds.x * scale_factor) as i32;
         let y = (bounds.y * scale_factor) as i32;
         let w = (bounds.width * scale_factor) as i32;
         let h = (bounds.height * scale_factor) as i32;
 
         // SAFETY: self가 살아있으면 x11_display/x11_window 모두 valid (Drop이 정리).
-        // 호출은 main thread (winit event loop) 흐름에서만 일어남.
+        // 호출은 main thread (winit event loop) 흐름에서만 일어남 — 위
+        // assert_origin_thread 가 이를 런타임으로 강제한다.
         unsafe {
             (self.xlib.XMoveResizeWindow)(
                 self.x11_display as _,
@@ -241,15 +265,16 @@ impl PlatformWebView {
     }
 
     pub fn set_visible(&self, visible: bool) {
+        self.assert_origin_thread();
         if visible {
-            // SAFETY: self valid; main thread.
+            // SAFETY: self valid; main thread(위 assert_origin_thread 로 런타임 강제).
             unsafe {
                 (self.xlib.XMapWindow)(self.x11_display as _, self.x11_window);
                 (self.xlib.XFlush)(self.x11_display as _);
             }
             self.gtk_window.show_all();
         } else {
-            // SAFETY: self valid; main thread.
+            // SAFETY: self valid; main thread(위 assert_origin_thread 로 런타임 강제).
             unsafe {
                 (self.xlib.XUnmapWindow)(self.x11_display as _, self.x11_window);
                 (self.xlib.XFlush)(self.x11_display as _);
@@ -310,14 +335,18 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
+        self.assert_origin_thread();
         // SAFETY: Drop은 self가 마지막으로 살아있는 시점. webview.destroy()와
         // XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
         // PlatformWebView가 생성된 main thread에서만 일어난다.
         //
-        // 이 불변식은 더 이상 주석 규율이 아니라 타입 시스템이 강제한다: 본 타입은
-        // x11_display(raw pointer)와 Rc<Cell<_>> 필드로 인해 auto-trait 상 자연
-        // `!Send`이며(macOS/Windows 백엔드와 동일 패턴), 의도적으로 Send를 부여하지
-        // 않는다.
+        // 이 불변식은 두 겹으로 강제된다: (1) 본 타입은 x11_display(raw pointer)와
+        // Rc<Cell<_>> 필드로 인해 auto-trait 상 자연 `!Send`이며(macOS/Windows
+        // 백엔드와 동일 패턴) 의도적으로 Send를 부여하지 않아 안전한 Rust 코드로는
+        // 애초에 다른 스레드로 옮길 수 없다. (2) 그럼에도 unsafe 코드나 향후 회귀로
+        // 이 불변식이 깨질 경우를 대비해, 위 `assert_origin_thread` 가 생성 스레드와
+        // 현재 스레드를 런타임으로 비교해 release 빌드에서도 즉시 panic 시킨다
+        // (X11 핸들 오용은 UB라 debug에서만 잡으면 release 에서 조용히 UB가 난다).
         unsafe {
             self.webview.destroy();
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
