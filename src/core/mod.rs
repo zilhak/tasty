@@ -590,8 +590,13 @@ impl Core {
     /// surface hook 등록. 반환: 새 hook id.
     ///
     /// `binding` 은 공유 훅 핸들러 레지스트리 참조([`HookBinding::Handler`]) 또는
-    /// 하위호환 인라인 셸([`HookBinding::InlineShell`]). 배선/게이트는 IPC 핸들러
-    /// (`hooks.rs`)에서 처리한다.
+    /// 하위호환 인라인 셸([`HookBinding::InlineShell`]). `OutputMatch` 훅은 PTY
+    /// emit 게이트(`sync_output_event_gates`)를 여기서 즉시(eager) 동기화한다 —
+    /// `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용
+    /// parser thread(ADR-0002)가 PTY 바이트 도착 즉시 처리하므로, 게이트를
+    /// "다음 process_surface 호출까지" 지연시키면 그 사이 도착한 매칭 출력이
+    /// 게이트 OFF 상태로 파싱되어 이벤트가 유실된다 — 등록 즉시 게이트를 열어야
+    /// 회귀 없이 fire 된다.
     pub(crate) fn register_surface_hook(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -600,18 +605,23 @@ impl Core {
         binding: tasty_hooks::HookBinding,
         once: bool,
     ) -> u64 {
-        engine
+        let id = engine
             .hook_manager
-            .add_hook(surface_id, event, binding, once)
+            .add_hook(surface_id, event, binding, once);
+        engine.sync_output_event_gates();
+        id
     }
 
-    /// surface hook 해제. 반환: 실제 제거 여부.
+    /// surface hook 해제. 반환: 실제 제거 여부. 게이트 동기화 이유는
+    /// [`Core::register_surface_hook`] 참고.
     pub(crate) fn unregister_surface_hook(
         &mut self,
         engine: &mut crate::core::CoreState,
         hook_id: u64,
     ) -> bool {
-        engine.hook_manager.remove_hook(hook_id)
+        let removed = engine.hook_manager.remove_hook(hook_id);
+        engine.sync_output_event_gates();
+        removed
     }
 
     /// global hook 등록. 반환: 새 hook id.

@@ -34,6 +34,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 - 줄바꿈 없이 끝나는 청크(예: 프롬프트 대기 중 부분 출력)는 매칭 대상이 아니다 — 다음 청크가 도착해 줄이 완성돼야 매칭된다. 패턴이 청크 경계에 걸쳐 있어도(`"partial ERR"` + `"OR\n"` → `"partial ERROR"`) 완성 시점에 합쳐진 전체 줄로 매칭된다.
 - 옵저버(`output.observe`)가 하나도 등록되지 않은 surface 도 OutputMatch 훅만으로 라인 버퍼 게이트가 열린다(`has_output_match_hook`) — 옵저버 등록이 OutputMatch 동작의 전제조건이 아니다.
+- PTY emit 게이트(`sync_output_event_gates`)는 `hook.set`/`hook.unset` 처리 시점에 **즉시(eager)** 동기화된다(`Core::register_surface_hook`/`unregister_surface_hook`) — `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용 parser thread(ADR-0002)가 PTY 바이트 도착 즉시 처리하므로, 게이트를 다음 `process_surface` 호출까지 지연시키면 등록 직후 도착하는 매칭 출력이 게이트 OFF 상태로 파싱되어 이벤트가 유실된다.
 
 #### IdleTimeout — 1Hz 폴링 + epoch 기반 anti-spam
 
