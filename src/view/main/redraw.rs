@@ -1393,18 +1393,29 @@ impl MainView {
             .as_ref()
             .map(|c| !c.paths.is_empty())
             .unwrap_or(false);
+        // (03) mirror(attach 원격 점유) explorer 는 browse-only — 로컬 fs 를 건드리는
+        // 항목(붙여넣기/삭제/이름변경/새탭/시스템에서 열기/잘라내기)은 메뉴에서부터
+        // 숨긴다. 액션별 개별 가드(아래 각 핸들러)는 그대로 유지한다(방어적 이중화 —
+        // 이 native 메뉴가 아닌 다른 경로로 같은 핸들러가 불릴 가능성 대비).
+        let is_mirror = self.core_state.is_mirror_surface(surface_id);
 
-        let items = Self::build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip);
+        let items = Self::build_explorer_context_menu(
+            multi,
+            is_empty_target,
+            is_folder,
+            has_clip,
+            is_mirror,
+        );
         let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
         match result {
             Some(1) => self.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
-            Some(10) => self.explorer_menu_set_clipboard(&paths, false),
-            Some(11) => self.explorer_menu_set_clipboard(&paths, true),
+            Some(10) => self.explorer_menu_set_clipboard(surface_id, &paths, false),
+            Some(11) => self.explorer_menu_set_clipboard(surface_id, &paths, true),
             Some(12) => self.explorer_menu_paste(surface_id, &paths, &cwd, is_folder),
             Some(30) => self.explorer_menu_trash(surface_id, &paths),
-            Some(20) => self.explorer_menu_open_in_system(&paths, &cwd),
+            Some(20) => self.explorer_menu_open_in_system(surface_id, &paths, &cwd),
             Some(40) => self.explorer_menu_rename(surface_id, &paths),
-            Some(50) => self.explorer_menu_add_favorite(&paths, &cwd, is_empty_target),
+            Some(50) => self.explorer_menu_add_favorite(surface_id, &paths, &cwd, is_empty_target),
             Some(60) => self.explorer_menu_open_in_new_tab(surface_id, &paths),
             Some(61) => self.explorer_menu_set_root(surface_id, &paths),
             _ => {}
@@ -1412,12 +1423,16 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// explorer 컨텍스트 메뉴 아이템 목록 구성 (design §3.3).
+    /// explorer 컨텍스트 메뉴 아이템 목록 구성 (design §3.3). `is_mirror` 면 로컬 fs
+    /// 쓰기 항목(붙여넣기/잘라내기/이름변경/삭제/시스템에서 열기/새탭으로 열기)을
+    /// 숨긴다(03) — copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 fs 를 쓰지
+    /// 않거나(즐겨찾기 추가는 클릭 시 별도 가드) 안전해 그대로 노출한다.
     fn build_explorer_context_menu(
         multi: bool,
         is_empty_target: bool,
         is_folder: bool,
         has_clip: bool,
+        is_mirror: bool,
     ) -> Vec<crate::platform::native_menu::MenuItem> {
         use crate::platform::native_menu::MenuItem;
         let copy_path_label = if multi {
@@ -1434,20 +1449,23 @@ impl MainView {
             ));
         }
         // 단일 폴더: 새 탭으로 열기 / 이 폴더로 루트 설정 (빈 영역=cwd 자기
-        // 자신엔 무의미 → 제외).
+        // 자신엔 무의미 → 제외). 새 탭으로 열기는 mirror 에서 숨김(03 — 로컬 전용
+        // 유령 tab 생성 방지). 이 폴더로 루트 설정은 순수 로컬 뷰 이동이라 mirror 에서도 노출.
         if is_folder {
-            items.push(MenuItem::new(
-                60,
-                crate::i18n::t("explorer.context_menu.open_in_new_tab"),
-            ));
+            if !is_mirror {
+                items.push(MenuItem::new(
+                    60,
+                    crate::i18n::t("explorer.context_menu.open_in_new_tab"),
+                ));
+            }
             items.push(MenuItem::new(
                 61,
                 crate::i18n::t("explorer.context_menu.set_as_root"),
             ));
         }
         if is_empty_target {
-            // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
-            if has_clip {
+            // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때, mirror 가 아닐 때).
+            if has_clip && !is_mirror {
                 items.push(MenuItem::separator());
                 items.push(MenuItem::new(
                     12,
@@ -1455,36 +1473,44 @@ impl MainView {
                 ));
             }
         } else {
-            // 파일/폴더/다중: 복사 · 잘라내기.
+            // 파일/폴더/다중: 복사 · 잘라내기. 잘라내기는 mirror 에서 숨김(03 — 원격
+            // 경로가 전역 클립보드에 남아 다른 로컬 explorer 붙여넣기를 오염시킴).
+            // 복사는 fs 접근이 없어 mirror 에서도 안전하게 노출.
             items.push(MenuItem::new(
                 10,
                 crate::i18n::t("explorer.context_menu.copy_files"),
             ));
-            items.push(MenuItem::new(
-                11,
-                crate::i18n::t("explorer.context_menu.cut"),
-            ));
-            if is_folder && has_clip {
+            if !is_mirror {
+                items.push(MenuItem::new(
+                    11,
+                    crate::i18n::t("explorer.context_menu.cut"),
+                ));
+            }
+            if is_folder && has_clip && !is_mirror {
                 items.push(MenuItem::new(
                     12,
                     crate::i18n::t("explorer.context_menu.paste_into"),
                 ));
             }
-            // 이름 변경 (단일 파일/폴더만).
-            if !multi {
+            // 이름 변경 (단일 파일/폴더만, mirror 가 아닐 때).
+            if !multi && !is_mirror {
                 items.push(MenuItem::new(
                     40,
                     crate::i18n::t("explorer.context_menu.rename"),
                 ));
             }
-            items.push(MenuItem::separator());
-            // 휴지통으로 이동 (파일/폴더/다중 공통).
-            items.push(MenuItem::new(
-                30,
-                crate::i18n::t("explorer.context_menu.delete"),
-            ));
-            // "Open in system" 은 단일 폴더에서만 (design §3.3) — 메뉴 끝.
-            if is_folder {
+            // 휴지통으로 이동 (파일/폴더/다중 공통, mirror 가 아닐 때) — 앞선
+            // separator 도 함께 숨겨 mirror 에서 항목 없는 trailing separator 를
+            // 남기지 않는다.
+            if !is_mirror {
+                items.push(MenuItem::separator());
+                items.push(MenuItem::new(
+                    30,
+                    crate::i18n::t("explorer.context_menu.delete"),
+                ));
+            }
+            // "Open in system" 은 단일 폴더 + mirror 가 아닐 때만 (design §3.3) — 메뉴 끝.
+            if is_folder && !is_mirror {
                 items.push(MenuItem::new(
                     20,
                     crate::i18n::t("explorer.context_menu.open_in_system"),
@@ -1492,6 +1518,18 @@ impl MainView {
             }
         }
         items
+    }
+
+    /// (03, ADR-0059) mirror explorer 쓰기 조작 차단 안내 — `apply_explorer_action`
+    /// 의 `OpenFile` mirror 가드(`egui_panels.rs`)와 동일한 toast kind/scope. 컨텍스트
+    /// 메뉴/단축키의 각 쓰기 핸들러(paste/trash/rename/open_in_system/add_favorite/
+    /// open_in_new_tab/cut)가 공유한다.
+    fn toast_remote_write_unsupported(&mut self) {
+        self.state.toasts.push(
+            crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
+            crate::adapters::ui::ToastKind::Info,
+            crate::adapters::ui::ToastScope::Window,
+        );
     }
 
     /// 경로 복사 (아이템 1).
@@ -1522,7 +1560,20 @@ impl MainView {
 
     /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
     /// 컨텍스트 메뉴와 키보드 단축키(`handle_explorer_shortcut`) 양쪽에서 공유한다.
-    pub(crate) fn explorer_menu_set_clipboard(&mut self, paths: &[std::path::PathBuf], cut: bool) {
+    /// (03) 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 전역
+    /// `explorer_clipboard` 에 남으면 이후 무관한 로컬(비-mirror) explorer 에
+    /// 붙여넣을 때 그 원격 경로 문자열이 소스로 쓰인다. 복사(cut=false)는 fs 접근이
+    /// 없어 무해하므로 그대로 둔다.
+    pub(crate) fn explorer_menu_set_clipboard(
+        &mut self,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+        cut: bool,
+    ) {
+        if cut && self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         self.core_state.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
             paths: paths.to_vec(),
             cut,
@@ -1537,6 +1588,13 @@ impl MainView {
         cwd: &std::path::Path,
         is_folder: bool,
     ) {
+        // (03, ADR-0059) mirror explorer 는 browse-only — 표시된 경로는 원격
+        // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
+        // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         let engine = &mut self.core_state;
         let dest = if is_folder {
             paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf())
@@ -1560,6 +1618,11 @@ impl MainView {
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
     fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        // (03, ADR-0059) mirror explorer 는 browse-only.
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         if let Err(e) = trash::delete_all(paths) {
             tracing::warn!("explorer: move to trash failed: {e}");
         }
@@ -1573,9 +1636,15 @@ impl MainView {
     /// 시스템에서 열기 (아이템 20).
     fn explorer_menu_open_in_system(
         &mut self,
+        surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
+        // (03, ADR-0059) mirror explorer 는 browse-only.
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         let target = paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf());
         if let Err(e) = crate::platform::reveal::open_path(&target) {
             tracing::warn!("explorer: open_path failed: {e}");
@@ -1584,6 +1653,13 @@ impl MainView {
 
     /// 이름 변경 (아이템 40).
     fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        // (02/03, ADR-0059) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
+        // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
+        // `path.exists()` 게이트까지 도달하지 않음).
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         if let Some(path) = paths.first().cloned() {
             let current_name = path
                 .file_name()
@@ -1605,10 +1681,20 @@ impl MainView {
     /// 즐겨찾기 추가 (아이템 50) — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
     fn explorer_menu_add_favorite(
         &mut self,
+        surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
         is_empty_target: bool,
     ) {
+        // (02, ADR-0059) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
+        // 무관 즐겨찾기 저장소(`~/.tasty/explorer-favorites.toml`)에 그대로 넣으면
+        // 로컬/다른 호스트 explorer 의 사이드바를 오염시킨다. 팝업을 아예 열지 않고
+        // 여기서 차단한다(`RenameTarget::ExplorerAddFavorite` 이 surface_id 를 갖지
+        // 않아 팝업 쪽에서는 재확인이 불가능 — 이 지점이 유일한 가드).
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         let path = if is_empty_target {
             cwd.to_path_buf()
         } else {
@@ -1632,7 +1718,21 @@ impl MainView {
 
     /// 새 탭으로 열기 (아이템 60) — 대상 폴더를 cwd 로 하는 새 explorer 를
     /// 우클릭 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
+    ///
+    /// (03) mirror 워크스페이스에서는 차단한다: `add_kind_tab_by_owner`
+    /// (`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 `forward_mirror_structural`
+    /// 을 거치지 않고 로컬 pane 을 직접 mutate한다. mirror 트리 동기화
+    /// (`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격
+    /// authoritative 트리 기준 전체 재구성이라, 이렇게 로컬에서만 생긴 탭은 원격
+    /// 트리에 없으므로 다음 구조 델타 수신 시 "사라진 항목"으로 제거된다 — 즉 조용히
+    /// 유령 tab 이 생겼다 사라지는 혼란스러운 UX. 정확한 forward 지원(owner_surface_id
+    /// 를 anchor 로 `StructuralOp::NewTab` forward, 원격 쪽 `find_pane_for_surface`
+    /// 매칭과 의미가 일치함을 확인함)은 스코프가 커 별도 작업으로 남긴다.
     fn explorer_menu_open_in_new_tab(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+        if self.core_state.is_mirror_surface(surface_id) {
+            self.toast_remote_write_unsupported();
+            return;
+        }
         if let Some(folder) = paths.first().cloned() {
             let params = serde_json::json!({ "path": folder.to_string_lossy() });
             let engine = &mut self.core_state;
@@ -1660,33 +1760,52 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        let engine = &mut self.core_state;
         use crate::platform::native_menu::{MenuItem, show_context_menu};
-        let items = [
-            MenuItem::new(60, crate::i18n::t("explorer.context_menu.open_in_new_tab")),
-            MenuItem::new(61, crate::i18n::t("explorer.context_menu.set_as_root")),
-            MenuItem::separator(),
-            MenuItem::new(
-                1,
-                crate::i18n::t("explorer.context_menu.remove_from_favorites"),
-            ),
-        ];
+        // (03) 즐겨찾기 행의 "새 탭으로 열기" 도 `add_kind_tab_by_owner` 를 공유하는
+        // 동일 mirror 문제(`explorer_menu_open_in_new_tab` 주석 참고) — mirror 에서는
+        // 메뉴에서부터 숨긴다. "이 폴더로 루트 설정"/"즐겨찾기에서 제거"는 로컬 뷰
+        // 상태만 바꾸는 안전한 동작이라 그대로 노출.
+        let is_mirror = self.core_state.is_mirror_surface(surface_id);
+        let mut items = Vec::new();
+        if !is_mirror {
+            items.push(MenuItem::new(
+                60,
+                crate::i18n::t("explorer.context_menu.open_in_new_tab"),
+            ));
+        }
+        items.push(MenuItem::new(
+            61,
+            crate::i18n::t("explorer.context_menu.set_as_root"),
+        ));
+        items.push(MenuItem::separator());
+        items.push(MenuItem::new(
+            1,
+            crate::i18n::t("explorer.context_menu.remove_from_favorites"),
+        ));
         let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
         match result {
             Some(60) => {
-                let params = serde_json::json!({ "path": path.to_string_lossy() });
-                if let Err(e) = self
-                    .state
-                    .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
-                {
-                    tracing::warn!("explorer: open favorite in new tab failed: {e}");
+                if is_mirror {
+                    // 메뉴에서 숨겼으므로 정상 경로로는 도달하지 않는다 — 방어적 가드.
+                    self.toast_remote_write_unsupported();
+                } else {
+                    let params = serde_json::json!({ "path": path.to_string_lossy() });
+                    let engine = &mut self.core_state;
+                    if let Err(e) = self
+                        .state
+                        .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                    {
+                        tracing::warn!("explorer: open favorite in new tab failed: {e}");
+                    }
                 }
             }
             Some(61) => {
+                let engine = &mut self.core_state;
                 self.state
                     .set_explorer_cwd(engine, surface_id, path.clone());
             }
             Some(1) => {
+                let engine = &mut self.core_state;
                 // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
                 engine.explorer_favorites.remove(&path);
                 engine.explorer_favorites.save();
@@ -1846,7 +1965,7 @@ mod tests {
         );
     }
 
-    // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip) 의
+    // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip, is_mirror) 의
     // 위치별 메뉴 구성을 id·separator 위치로 고정한다. id: 1=copy_path, 10=copy_files,
     // 11=cut, 12=paste/paste_into, 20=open_in_system, 30=delete, 40=rename,
     // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root. None=separator.
@@ -1856,11 +1975,22 @@ mod tests {
         is_folder: bool,
         has_clip: bool,
     ) -> Vec<Option<u32>> {
+        explorer_menu_shape_mirror(multi, is_empty_target, is_folder, has_clip, false)
+    }
+
+    fn explorer_menu_shape_mirror(
+        multi: bool,
+        is_empty_target: bool,
+        is_folder: bool,
+        has_clip: bool,
+        is_mirror: bool,
+    ) -> Vec<Option<u32>> {
         shape(&super::MainView::build_explorer_context_menu(
             multi,
             is_empty_target,
             is_folder,
             has_clip,
+            is_mirror,
         ))
     }
 
@@ -1948,6 +2078,53 @@ mod tests {
         assert_eq!(
             explorer_menu_shape(true, false, false, true),
             vec![Some(1), Some(10), Some(11), None, Some(30)]
+        );
+    }
+
+    // (03) mirror explorer 는 로컬 fs 쓰기 항목(붙여넣기/잘라내기/이름변경/삭제/
+    // 시스템에서 열기/새탭으로 열기)이 메뉴에서부터 숨는다. copy_path/복사/즐겨찾기
+    // 추가/이 폴더로 루트 설정은 mirror 에서도 그대로 노출된다.
+
+    #[test]
+    fn explorer_menu_mirror_empty_with_clip_hides_paste() {
+        // 빈 영역 + 클립보드 있음 + mirror: 붙여넣기(12)가 통째로 사라진다(비-mirror
+        // 라면 explorer_menu_empty_with_clip 처럼 [1, 50, None, 12] 가 나왔을 것).
+        assert_eq!(
+            explorer_menu_shape_mirror(false, true, false, true, true),
+            vec![Some(1), Some(50)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_mirror_single_file_hides_cut_rename_delete() {
+        // 단일 파일 + mirror: 복사(10)만 남고 잘라내기(11)/이름변경(40)/구분선/휴지통(30)
+        // 이 모두 사라진다(비-mirror 라면 explorer_menu_single_file 처럼
+        // [1, 10, 11, 40, None, 30] 이 나왔을 것).
+        assert_eq!(
+            explorer_menu_shape_mirror(false, false, false, false, true),
+            vec![Some(1), Some(10)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_mirror_single_folder_hides_write_ops() {
+        // 단일 폴더 + 클립보드 있음 + mirror: 새탭(60)/붙여넣기(12)/잘라내기(11)/
+        // 이름변경(40)/구분선/휴지통(30)/시스템열기(20) 모두 사라지고, 즐겨찾기추가(50)·
+        // 루트설정(61)·복사(10)만 남는다(비-mirror 라면 explorer_menu_single_folder_with_clip
+        // 처럼 11 개 항목이 나왔을 것).
+        assert_eq!(
+            explorer_menu_shape_mirror(false, false, true, true, true),
+            vec![Some(1), Some(50), Some(61), Some(10)]
+        );
+    }
+
+    #[test]
+    fn explorer_menu_mirror_multi_hides_cut_delete() {
+        // 다중 선택 + mirror: 복사(10)만 남고 잘라내기(11)/구분선/휴지통(30)이 사라진다
+        // (비-mirror 라면 explorer_menu_multi 처럼 [1, 10, 11, None, 30] 이 나왔을 것).
+        assert_eq!(
+            explorer_menu_shape_mirror(true, false, false, false, true),
+            vec![Some(1), Some(10)]
         );
     }
 }

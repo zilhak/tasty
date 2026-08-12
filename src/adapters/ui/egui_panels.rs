@@ -347,12 +347,7 @@ pub(crate) fn apply_explorer_action(
             // (ADR-0059 Decision 3) 원격 mirror explorer 는 browse-only — 파일 내용
             // fetch(더블클릭 열기)는 스코프 밖이라 트리거하지 않고 toast 로 안내한다.
             // 로컬 surface 는 기존과 동일하게 동작한다.
-            let is_mirror = engine
-                .find_workspace_index_for_surface(sid)
-                .and_then(|(idx, _)| engine.workspaces.get(idx))
-                .map(|ws| ws.mirror)
-                .unwrap_or(false);
-            if is_mirror {
+            if engine.is_mirror_surface(sid) {
                 state.toasts.push(
                     crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
                     crate::adapters::ui::ToastKind::Info,

@@ -148,6 +148,19 @@ impl CoreState {
         self.workspaces.iter().position(|w| w.id == ws_id)
     }
 
+    /// 대상 surface 가 mirror(attach 원격 점유) 워크스페이스에 속해 있는지 조회한다.
+    /// `apply_explorer_action`(`egui_panels.rs`)의 `OpenFile` mirror 가드가 쓰던 조회를
+    /// 재사용 가능한 헬퍼로 뽑아둔 것 — explorer 컨텍스트 메뉴/단축키의 나머지 쓰기
+    /// 액션(paste/trash/rename/open_in_system/add_favorite/open_in_new_tab/cut) 가드가
+    /// 함께 쓴다. surface 를 못 찾으면 `false`(해당 액션은 대상 자체가 없어 다른
+    /// 이유로 이미 no-op).
+    pub fn is_mirror_surface(&self, surface_id: u32) -> bool {
+        self.find_workspace_index_for_surface(surface_id)
+            .and_then(|(idx, _)| self.workspaces.get(idx))
+            .map(|ws| ws.mirror)
+            .unwrap_or(false)
+    }
+
     /// 구조 변경 `DomainIntent` 의 **대상이 mirror 워크스페이스**에 속하면 그
     /// 워크스페이스 인덱스를 반환한다. mirror 워크스페이스는 원격 워크스페이스의
     /// 뷰(원격 attach client)이므로, 그 안의 구조 변경(split·new-tab·close·이동)은

@@ -52,17 +52,27 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 **표면 전체 커버리지**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(cwd) target 으로 흡수한다. 하위 위젯이 이미 `action` 을 세웠으면 건너뛰므로 파일/폴더/다중 메뉴는 그대로 이긴다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
-- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`CoreState::explorer_clipboard`, 단일 슬롯·세션 휘발)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백). 잘라내기는 이동 성공 시 클립보드를 비운다. 우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다. 붙여넣기 대상은 현재 디렉토리(cwd) 고정(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
-- **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음).
-- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`.
-- **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`).
-- **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조.
-- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`AppState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변.
-- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`AppState::set_explorer_cwd` → `ExplorerTab::set_cwd`: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드).
+- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`CoreState::explorer_clipboard`, 단일 슬롯·세션 휘발)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백). 잘라내기는 이동 성공 시 클립보드를 비운다. 우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다. 붙여넣기 대상은 현재 디렉토리(cwd) 고정(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용). **복사(cut=false)** 는 fs 접근이 없어 mirror explorer 에서도 그대로 동작하지만, **잘라내기(cut=true)/붙여넣기**는 mirror 에서 메뉴·단축키 모두 차단된다(아래 "mirror(attach) explorer 의 browse-only 강제" 참고).
+- **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). mirror 에서 차단.
+- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
+- **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.
+- **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
+- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`AppState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 클릭 시에도 차단된다(아래 참고 — `add_kind_tab_by_owner` 는 mirror 구조 변경 forward 를 거치지 않는다).
+- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`AppState::set_explorer_cwd` → `ExplorerTab::set_cwd`: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 순수 로컬 뷰 상태 이동이라 mirror 에서도 그대로 동작.
+
+### mirror(attach) explorer 의 browse-only 강제
+
+ADR-0059 Decision 2("mirror explorer 는 browse-only — rename/delete/새폴더 등은 스코프 밖")는 파일 더블클릭 열기(`OpenFile`)뿐 아니라 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
+
+- **컨텍스트 메뉴에서부터 숨김**: 붙여넣기/잘라내기/이름 변경/휴지통으로 이동/시스템에서 열기/새 탭으로 열기 항목이 `build_explorer_context_menu`(즐겨찾기 행은 `handle_explorer_favorite_native_menu`)에서 아예 노출되지 않는다. copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 그대로 노출된다.
+- **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
+- **rename 팝업의 `path.exists()` 게이트**(`draw_rename_popup`, `src/adapters/ui/dialog.rs`)는 위 가드가 먼저 막기 때문에 mirror 경로에서는 도달하지 않는다 — 이 게이트는 로컬(비-mirror) 시나리오에서 대상이 그 사이 사라진 경우를 위한 안전장치로만 남는다.
+- **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
+- **새 탭으로 열기가 차단되는 이유**: `AppState::add_kind_tab_by_owner`(`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 mirror 구조 변경을 원격으로 forward하는 `forward_mirror_structural` 을 거치지 않고 로컬 pane 을 직접 mutate한다. mirror 트리 동기화(`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격 authoritative 트리 기준 전체 재구성이므로, 이렇게 로컬에서만 생긴 탭은 원격 트리에 없어 다음 구조 델타 수신 시 제거된다 — 즉 조용히 유령 tab 이 생겼다 사라지는 혼란스러운 UX가 된다. 정확한 forward 지원(owner surface 를 anchor 로 한 `StructuralOp::NewTab` forward)은 별도 작업으로 남아 있다.
 
 ### 즐겨찾기 (favorites)
 
-전역(surface 무관)·영속 즐겨찾기. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장되며 부팅 시 `CoreState::explorer_favorites`(`ExplorerFavorites`)로 로드된다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리).
+전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장되며 부팅 시 `CoreState::explorer_favorites`(`ExplorerFavorites`)로 로드된다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 browse-only 강제" 참고).
 
 - **추가**: 컨텍스트 메뉴 "Add to favorites" → rename 팝업과 동일 골격의 입력 팝업(`RenameTarget::ExplorerAddFavorite`, 확정 버튼 라벨만 "Add")으로 라벨을 받아 등록(같은 경로 재등록 시 라벨만 갱신).
 - **표시/이동**: 사이드바 하단 고정(pin) "Favorites" 영역(캡션 **항상 표시**)에 **채운 별(STAR_FILL) + accent-warning(골드)** 행으로 나열, 클릭 시 해당 경로로 이동. 현재 폴더인 즐겨찾기는 surface-active 하이라이트. 이 영역은 위 "사이드바 트리"에 서술한 고정 높이로 항상 화면에 보이며 자체 스크롤된다.

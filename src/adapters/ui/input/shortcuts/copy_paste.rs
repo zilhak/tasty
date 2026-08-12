@@ -112,7 +112,7 @@ impl MainView {
                 .map(|v| v.selected.iter().cloned().collect())
                 .unwrap_or_default();
             if !paths.is_empty() {
-                self.explorer_menu_set_clipboard(&paths, is_cut_files);
+                self.explorer_menu_set_clipboard(sid, &paths, is_cut_files);
             }
         } else if is_paste_files
             && let Some(cwd) = super::focused_explorer_cwd(&self.state, &self.core_state)

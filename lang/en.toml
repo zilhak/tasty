@@ -679,6 +679,7 @@ loading = "Loading…"
 error_conn_timeout = "The remote host did not respond in time."
 remote_listing_truncated = "The remote directory has too many entries to show all of them — the list was truncated."
 remote_open_unsupported = "Opening remote files isn't supported yet."
+remote_write_unsupported = "This action isn't supported in a mirrored remote explorer yet."
 
 [script.confirm]
 title = "Script changed since registration"
