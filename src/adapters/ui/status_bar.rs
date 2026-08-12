@@ -19,7 +19,7 @@
 
 use egui::emath::GuiRounding as _;
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::PhysicalPx;
+use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 
 use crate::state::AppState;
@@ -160,15 +160,18 @@ pub fn draw_status_bar_view(
                             actions.push(StatusBarAction::OpenPalette);
                         }
                         // 테마 토글: 점 + 테마명(capitalize).
+                        let theme_style = DotCellStyle {
+                            color: muted,
+                            hover,
+                            dot: theme_dot,
+                        };
                         let theme_resp = dot_button_cell(
                             ui,
-                            bar_h,
+                            LogicalPx(bar_h),
                             &font,
-                            muted,
-                            hover,
-                            theme_dot,
+                            &theme_style,
                             &capitalize(&data.theme_id),
-                            DOT_SIZE,
+                            LogicalPx(DOT_SIZE),
                         )
                         .on_hover_text(crate::i18n::t("status_bar.theme_tooltip"));
                         resize_priority_hovered |= theme_resp.hovered();
@@ -272,23 +275,34 @@ fn button_cell(
     resp
 }
 
-/// 점 + 텍스트 버튼 셀(클릭 + hover 색 전환). 점 색은 hover 와 무관하게 고정.
-#[allow(clippy::too_many_arguments)] // reason: 점/텍스트/hover 색을 모두 받는 셀
-fn dot_button_cell(
-    ui: &mut egui::Ui,
-    h: f32,
-    font: &egui::FontId,
+/// [`dot_button_cell`] 의 색 3종(점/텍스트/hover). Theme 파생값으로 호출부에서 채운다.
+struct DotCellStyle {
     color: egui::Color32,
     hover: egui::Color32,
     dot: egui::Color32,
+}
+
+/// 점 + 텍스트 버튼 셀(클릭 + hover 색 전환). 점 색은 hover 와 무관하게 고정.
+fn dot_button_cell(
+    ui: &mut egui::Ui,
+    h: LogicalPx,
+    font: &egui::FontId,
+    style: &DotCellStyle,
     text: &str,
-    dot_size: f32,
+    dot_size: LogicalPx,
 ) -> egui::Response {
-    let w = dot_size + CELL_GAP + measure(ui, text, font, color) + CELL_PAD_X * 2.0;
+    let h = h.value();
+    let dot_size = dot_size.value();
+    let w = dot_size + CELL_GAP + measure(ui, text, font, style.color) + CELL_PAD_X * 2.0;
     let (r, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
-    let c = if resp.hovered() { hover } else { color };
+    let c = if resp.hovered() {
+        style.hover
+    } else {
+        style.color
+    };
     let dot_center = egui::pos2(r.left() + CELL_PAD_X + dot_size / 2.0, r.center().y);
-    ui.painter().circle_filled(dot_center, dot_size / 2.0, dot);
+    ui.painter()
+        .circle_filled(dot_center, dot_size / 2.0, style.dot);
     ui.painter().text(
         egui::pos2(r.left() + CELL_PAD_X + dot_size + CELL_GAP, r.center().y),
         egui::Align2::LEFT_CENTER,

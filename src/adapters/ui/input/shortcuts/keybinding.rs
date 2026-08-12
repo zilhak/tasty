@@ -19,6 +19,14 @@ use super::{
     focused_explorer_surface_id, focused_workspace_category, matches_any_binding, send_app_event,
 };
 
+/// [`MainView::handle_keybinding_shortcuts`] 및 하위 `match_*_bindings` 가 공유하는
+/// 셀 크기(physical px) — `terminal_rect` 와 같은 typed-length 계열.
+#[derive(Clone, Copy)]
+pub(super) struct CellGeometry {
+    pub w: crate::model::PhysicalPx,
+    pub h: crate::model::PhysicalPx,
+}
+
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
@@ -28,21 +36,20 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
         terminal_rect: crate::model::PhysicalRect,
-        cell_w: f32,
-        cell_h: f32,
+        cells: CellGeometry,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         // 그룹 호출 순서 = 원본 블록 나열 순서. 순서 변경 금지(단축키 우선순위 영향).
         if Self::match_create_bindings(state, engine, kb, key, mods) {
             return true;
         }
-        if Self::match_split_bindings(state, engine, kb, key, mods, terminal_rect, cell_w, cell_h) {
+        if Self::match_split_bindings(state, engine, kb, key, mods, terminal_rect, cells) {
             return true;
         }
         if Self::match_panel_bindings(state, engine, kb, key, mods, proxy) {
             return true;
         }
-        if Self::match_close_bindings(state, engine, kb, key, mods, terminal_rect, cell_w, cell_h) {
+        if Self::match_close_bindings(state, engine, kb, key, mods, terminal_rect, cells) {
             return true;
         }
         if Self::match_focus_bindings(state, engine, kb, key, mods) {
@@ -58,8 +65,7 @@ impl MainView {
             key,
             mods,
             terminal_rect,
-            cell_w,
-            cell_h,
+            cells,
             proxy,
         ) {
             return true;
@@ -77,8 +83,7 @@ impl MainView {
             key,
             mods,
             terminal_rect,
-            cell_w,
-            cell_h,
+            cells,
             proxy,
         ) {
             return true;
@@ -135,7 +140,6 @@ impl MainView {
     }
 
     /// 분할 계열: split_pane_{vertical,horizontal} / split_surface_{vertical,horizontal}.
-    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_split_bindings(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -143,8 +147,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
         terminal_rect: crate::model::PhysicalRect,
-        cell_w: f32,
-        cell_h: f32,
+        cells: CellGeometry,
     ) -> bool {
         if matches_any_binding(&kb.split_pane_vertical, key, mods) {
             state.dispatch_intent(
@@ -153,7 +156,7 @@ impl MainView {
                 }
                 .from_user_shortcut("split_pane_vertical"),
             );
-            state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             return true;
         }
         if matches_any_binding(&kb.split_pane_horizontal, key, mods) {
@@ -163,7 +166,7 @@ impl MainView {
                 }
                 .from_user_shortcut("split_pane_horizontal"),
             );
-            state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             return true;
         }
         if matches_any_binding(&kb.split_surface_vertical, key, mods) {
@@ -173,7 +176,7 @@ impl MainView {
                 }
                 .from_user_shortcut("split_surface_vertical"),
             );
-            state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             return true;
         }
         if matches_any_binding(&kb.split_surface_horizontal, key, mods) {
@@ -183,7 +186,7 @@ impl MainView {
                 }
                 .from_user_shortcut("split_surface_horizontal"),
             );
-            state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             return true;
         }
         false
@@ -257,7 +260,6 @@ impl MainView {
     }
 
     /// 닫기 계열: close_workspace / close_pane / close_surface.
-    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_close_bindings(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -265,13 +267,12 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
         terminal_rect: crate::model::PhysicalRect,
-        cell_w: f32,
-        cell_h: f32,
+        cells: CellGeometry,
     ) -> bool {
         if matches_any_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace(engine);
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             }
             return true;
         }
@@ -280,7 +281,7 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             }
             return true;
         }
@@ -290,7 +291,7 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             }
             return true;
         }
@@ -362,15 +363,14 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
         terminal_rect: crate::model::PhysicalRect,
-        cell_w: f32,
-        cell_h: f32,
+        cells: CellGeometry,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_any_binding(&kb.restore_closed, key, mods) {
             state.dispatch_intent(
                 crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
             );
-            state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             return true;
         }
         if matches_any_binding(&kb.quit_immediate, key, mods) {
@@ -480,8 +480,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
         terminal_rect: crate::model::PhysicalRect,
-        cell_w: f32,
-        cell_h: f32,
+        cells: CellGeometry,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_any_binding(&kb.new_window, key, mods) {
@@ -493,7 +492,7 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
             }
             return true;
         }

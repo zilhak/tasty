@@ -6,6 +6,7 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
+use super::keybinding::CellGeometry;
 use super::matches_any_binding;
 use super::{focused_explorer_surface_id, focused_workspace_category, send_app_event};
 
@@ -565,6 +566,10 @@ impl MainView {
         }
 
         // Configurable keybinding shortcuts
+        let cells = CellGeometry {
+            w: crate::model::PhysicalPx(cell_w),
+            h: crate::model::PhysicalPx(cell_h),
+        };
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
             &mut self.core_state,
@@ -572,8 +577,7 @@ impl MainView {
             key,
             mods,
             terminal_rect,
-            cell_w,
-            cell_h,
+            cells,
             &self.proxy,
         ) {
             if self.core_state.workspaces.is_empty() {
