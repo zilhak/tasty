@@ -24,6 +24,14 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 등록된 팝업은 `all_defs()` 가 단일 출처다(예: `notifications`, `convert_surface`, `rename`, `search_bar`, `tools_menu` …). 새 팝업 = 테이블 항목 1개 + draw 함수 하나. 단, plugin 이 소유하는 팝업(예: markdown 파일열기·large-file 확인)은 host `PopupDef` 가 아니라 plugin 매니페스트 `[[contributes.popup]]`(egui-mesh) 로 등록된다.
 
+## Host ↔ Plugin popup z-order
+
+Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin_bridge/popup_render.rs`)은 host `PopupManager` 소속이 아니지만 규칙 7 의 "나중에 열리거나 클릭된 것이 앞" 을 host popup 과 함께 지킨다. 양쪽 모두 자신의 open/click 시점에 공유 전역 시퀀스(`tasty_host_plugin::next_popup_z_seq()`)에서 번호를 받아 기록하고(host: `PopupState.z_seq`, plugin: `PopupInstance.z_seq`), 매 프레임 두 진영의 열린 popup 중 최댓값끼리 비교해 이긴 쪽을 위로 강제한다(`src/gfx/gpu/egui_bridge.rs::host_popup_should_render_on_top`).
+
+- **Shell(배경/테두리/제목)**: 둘 다 raw `ctx.layer_painter()` 로 그려 `Areas::order` 에 자연 등록되지 않는다([input-layer.md (c)](../../architecture/input-layer.md) 참고) — `enforce_host_plugin_popup_z_order` 가 진 쪽을 이긴 쪽의 `ctx.set_sublayer()` 자식으로 강제 편입해 순서를 고정한다.
+- **Content(plugin 전용 GPU mesh)**: plugin popup 콘텐츠는 별도 `wgpu::Renderer` pass(`render_egui_mesh_popups`)로 host egui pass(`render_egui_pass`)와 독립 합성된다 — `render_egui_pass_and_mesh_popups`(`src/gfx/gpu/render_pass.rs`)가 같은 승패 결과로 두 pass 의 호출 순서를 뒤바꾼다. plugin popup 은 콘텐츠가 shell 보다 먼저 그려지는 경우에도 자기 shell 이 자기 콘텐츠를 덮지 않도록, shell 배경을 콘텐츠 영역을 제외한 4분할 사각형으로 그린다(`paint_shell_background_excluding_content`).
+- **범위**: host popup 묶음 대 plugin popup 묶음의 2-그룹 비교만 지원한다. plugin popup 이 여러 개 열려 있을 때 그들끼리의 상대 순서는 z_seq 로 정렬돼 콘텐츠(GPU mesh push 순서)에는 반영되지만, shell 레이어끼리는 `set_sublayer` 의 1단 들여쓰기 제약(아래 [input-layer.md (d)](../../architecture/input-layer.md)) 때문에 서로 엮이지 않는다 — host 묶음과의 상대 위치만 보정 대상이다.
+
 ## 수명 계약 (open → close → 뒷정리)
 
 팝업이 닫히는 경로는 6개다: draw_fn 이 `PopupAction::Close` 반환 / X 버튼·바깥 클릭(`PopupManager::draw` 내장 포인터 처리) / `UiIntent::ClosePopup` / 이미 열린 채로의 `UiIntent::TogglePopup` / App 계층의 직접 `close()` 호출 / debug IPC(`debug.host_popup.close`, 구조적으로 `ClosePopup` 과 동일). 이 6개 전부가 **`PopupManager::close()`** 로 수렴한다 — `PopupState.open` 을 `false` 로 세팅하는 유일한 지점이다.

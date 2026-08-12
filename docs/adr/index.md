@@ -78,3 +78,4 @@
 | 0065 | [markdown surface 는 EguiMesh 대신 Webview(HTML+CSS) 로 렌더한다 — ADR-0028 의 markdown B1 선례 조항 개정](0065-markdown-webview-render-channel.md) | Accepted | 2026-08-10 | plugin, render-channel, webview, html, markdown, egui-mesh, typography, mermaid, surface-kind, host-rendered-removal, adr-0028 |
 | 0066 | [task-graph 실시간 화면은 보류한다 (task runner 안정화 전까지)](0066-task-graph-view-deferred.md) | Deferred | 2026-08-10 | agent-collaboration, task-graph, ui, scope, deferred |
 | 0067 | [markdown webview 전환(ADR-0065) Stage B 구현은 mermaid 렌더링을 포함하지 않는다 — 스코프 정정](0067-markdown-webview-stage-b-scope-correction.md) | Accepted | 2026-08-10 | plugin, render-channel, webview, html, markdown, mermaid, sanitize, adr-0065, scope-correction |
+| 0068 | [Host popup ↔ plugin popup z-order — 공유 z_seq + 조건부 GPU pass·sublayer 순서](0068-host-plugin-popup-shared-z-seq.md) | Accepted | 2026-08-12 | popup, plugin, z-order, gpu-rendering, egui |

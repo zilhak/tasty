@@ -94,7 +94,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 |---|--------|---------|---------------------|------|
 | 1 | 모달/오버레이(`overlay_open`) | 해당없음 | 별도 OS 윈도우 — Area 개념 자체가 적용 안 됨 | **해소됨** — mouse.rs 의 `overlay_open` 정의 차이는 조사 결과 의도된 설계(위 "`overlay_open`" 절)로 결론. rename 다이얼로그는 popup 시스템 경로라 #2 와 동일 |
 | 2 | Popup | Foreground | 등록됨 | 이상 없음(기존부터 정상) |
-| 2 (예외) | `plugin_bridge/popup_render.rs` egui-mesh popup 셸 | Foreground | 미등록(raw `layer_painter`) | **해소됨** — 의도적 예외로 확정(위 "`plugin_bridge/popup_render.rs`" 절), 코드 변경 없음 |
+| 2 (예외) | `plugin_bridge/popup_render.rs` egui-mesh popup 셸 | Foreground | 기본 미등록(raw `layer_painter`), host popup 과 z-order 경합 시 `set_sublayer` 로 조건부 등록 | **해소됨** — 의도적 예외를 유지하되 host popup 과의 z_seq 경합 시 조건부로 깨진다(아래 "`plugin_bridge/popup_render.rs`" 절 갱신 참고) |
 | 2b | Modifier-hint 오버레이 | Foreground | 미등록 → **등록함** | **해소됨** — `modifier_hint_overlay.rs` 를 `egui::Area` 로 등록하도록 수정 |
 | 4 | egui 위젯(사이드바·탭바·상태바) | 혼재(SidePanel=Background 미등록 / tab_bar·status_bar=Foreground 등록) | — | tab_bar/status_bar 는 이상 없음(기존부터 정상). SidePanel 은 Background tier 라 이번 범위 밖(아래 "Background tier" 절) |
 | 5 | Banner | Foreground | 등록됨(`f51e8caa`, 이번 작업 이전 완료) | `enforce_foreground_z_order` 로 상태바/탭바보다 아래 고정 — **해소됨** |
@@ -118,6 +118,8 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 - 이 popup 은 스크린 전체를 덮는 scrim(`painter.rect_filled(screen_rect, ...)`)을 그려 모달처럼 동작한다 — 열려 있는 동안 Foreground tier 의 다른 무엇보다도 위에 있는 것이 올바른 동작이고, 미등록 상태(= 항상 tier 최상단)가 정확히 그 성질을 공짜로 준다.
 - Area 등록하면서 `enforce_foreground_z_order` 의 4개 대상에 넣지 않으면, 오히려 자연 등록 시점에 따라 이 popup 이 Banner/상태바보다 **아래**로 밀릴 위험이 생긴다(회귀).
 - 인터랙션도 다르다 — egui 위젯 트리가 없고 입력을 raw event 로 모아(`collect_mesh_popup_input`) plugin 프로세스로 forward 할 뿐이라, Area 등록의 원 동기(스크롤/hover 라우팅, `docs/dev-guide/popup-implementation.md`)가 애초에 적용되지 않는다.
+
+**갱신 — host popup 과의 z-order 도입 이후, "always top" 은 무조건 성립하지 않는다.** host popup(`file_picker` 등)이 이 plugin popup **보다 나중에** 열리거나 클릭되면, `enforce_host_plugin_popup_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 공유 z_seq(`tasty_host_plugin::next_popup_z_seq()`) 비교로 그 host popup 을 `ctx.set_sublayer()` 를 통해 이 레이어 위로 강제한다 — 이 호출이 parent/child 를 모두 `Areas::order` 에 강제 등록하므로, 그 프레임에 한해 이 레이어도 미등록 상태를 벗어난다. host popup 이 열려 있지 않거나 이 plugin popup 보다 먼저 열렸다면(=z_seq 가 더 작으면) 기존과 동일하게 미등록 상태로 tier 최상단에 남는다. 상세 메커니즘은 [popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order).
 
 ### `overlay_open` — 호출부마다 다른 조합, 버그 아님
 
