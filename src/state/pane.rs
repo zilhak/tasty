@@ -325,13 +325,7 @@ impl AppState {
             // *시스템 invariant restorer* 라 host event 발화 불필요.
             match crate::core::apply_create_workspace_inner(
                 engine,
-                None,
-                "terminal".to_string(),
-                serde_json::Value::Null,
-                None,
-                None,
-                None,
-                None,
+                crate::core::WorkspaceCreationParams::terminal(),
             ) {
                 Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
                     self.active_workspace = index;

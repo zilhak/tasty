@@ -845,13 +845,7 @@ fn reify_displayed_surfaces_is_noop_without_deferred() {
 fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
-        None,
-        "terminal".to_string(),
-        serde_json::Value::Null,
-        None,
-        None,
-        None,
-        None,
+        crate::core::WorkspaceCreationParams::terminal(),
     )
     .unwrap();
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {

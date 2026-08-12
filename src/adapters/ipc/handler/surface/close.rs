@@ -49,13 +49,15 @@ fn close_surface_via_intent(
         core,
         state,
         engine,
-        cascade_level,
-        cleanup_targets,
-        closed_tab_ids,
-        closed_pane_ids,
-        workspace_id_purged,
-        workspaces_now_empty,
-        false,
+        crate::app::dispatch_domain::SurfaceCloseCascade {
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_id_purged,
+            workspaces_now_empty,
+            is_user_close: false,
+        },
     );
 
     JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))

@@ -94,13 +94,15 @@ fn new_workspace(
                 state,
                 engine,
                 origin,
-                workspace_id,
-                index,
                 0,
-                surface_id,
-                renamed_name,
-                renamed_subtitle,
-                renamed_description,
+                crate::app::dispatch_domain::WorkspaceCreatedCascade {
+                    workspace_id,
+                    index,
+                    surface_id,
+                    renamed_name,
+                    renamed_subtitle,
+                    renamed_description,
+                },
             );
         }
     }

@@ -7,7 +7,7 @@
 //! — headless 의 IPC 표면이 그 state 를 의존하지 않는다 (popup/toast 등 GUI 객체뿐).
 
 #![cfg(not(feature = "gui"))]
-#![allow(dead_code, clippy::too_many_arguments, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 use crate::core::intent::{CascadeLevel, RestoredKind};
 use crate::core::{Core, CoreState};
@@ -21,17 +21,42 @@ pub(crate) enum DispatchSource {
     Parked(usize),
 }
 
+/// gui 의 `SurfaceCloseCascade` 와 동등 — 필드 구성은 dispatch_domain.rs 와 동일하게 유지.
+pub(crate) struct SurfaceCloseCascade {
+    pub(crate) cascade_level: CascadeLevel,
+    pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
+    pub(crate) closed_tab_ids: Vec<u32>,
+    pub(crate) closed_pane_ids: Vec<u32>,
+    pub(crate) workspace_id_purged: Option<u32>,
+    pub(crate) workspaces_now_empty: bool,
+    pub(crate) is_user_close: bool,
+}
+
+/// gui 의 `PaneSplitCascade` 와 동등.
+pub(crate) struct PaneSplitCascade {
+    pub(crate) workspace_index: usize,
+    pub(crate) original_pane_id: u32,
+    pub(crate) new_pane_id: u32,
+    pub(crate) new_surface_id: u32,
+    pub(crate) direction: crate::model::SplitDirection,
+}
+
+/// gui 의 `WorkspaceCreatedCascade` 와 동등.
+pub(crate) struct WorkspaceCreatedCascade {
+    pub(crate) workspace_id: u32,
+    pub(crate) index: usize,
+    pub(crate) surface_id: Option<u32>,
+    pub(crate) renamed_name: Option<String>,
+    pub(crate) renamed_subtitle: Option<String>,
+    pub(crate) renamed_description: Option<String>,
+}
+
 pub(crate) fn cascade_workspace_created(
     state: &mut AppState,
     engine: &mut CoreState,
     origin: &IntentOrigin,
-    workspace_id: u32,
-    index: usize,
     window_id: u64,
-    surface_id: Option<u32>,
-    renamed_name: Option<String>,
-    renamed_subtitle: Option<String>,
-    renamed_description: Option<String>,
+    c: WorkspaceCreatedCascade,
 ) {
 }
 
@@ -46,30 +71,25 @@ pub(crate) fn cascade_surface_closed(
     core: &mut Core,
     state: &mut AppState,
     engine: &mut CoreState,
-    cascade_level: CascadeLevel,
-    cleanup_targets: Vec<(u32, Option<String>)>,
-    // headless: lifecycle 통지용 인자 — drain 주체가 없어 미사용(_ 접두). 자원 해제만 수행.
-    _closed_tab_ids: Vec<u32>,
-    _closed_pane_ids: Vec<u32>,
-    _workspace_id_purged: Option<u32>,
-    workspaces_now_empty: bool,
-    _is_user_close: bool,
+    c: SurfaceCloseCascade,
 ) {
     // headless: PTY/scrollback/메모리 scope 등 *자원* 만 실제 해제. host event /
     // surface.closed lifecycle 통지는 drain 주체(plugin manager / view)가 없으므로
     // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
-    for (sid, pid) in cleanup_targets {
+    // c.closed_tab_ids / c.closed_pane_ids / c.workspace_id_purged / c.is_user_close:
+    // lifecycle 통지용 필드 — drain 주체가 없어 미사용.
+    for (sid, pid) in c.cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
     }
     // workspaces 가 비지 않도록 invariant 복구 (gui cascade 와 동일). 빈 engine 은
     // 이후 IPC 명령이 active_workspace 를 index out-of-range 로 만들 수 있다.
-    if matches!(cascade_level, CascadeLevel::Workspace)
+    if matches!(c.cascade_level, CascadeLevel::Workspace)
         && state.active_workspace >= engine.workspaces.len()
         && !engine.workspaces.is_empty()
     {
         state.active_workspace = engine.workspaces.len() - 1;
     }
-    if workspaces_now_empty {
+    if c.workspaces_now_empty {
         match core.create_default_workspace(engine) {
             Ok(idx) => state.active_workspace = idx,
             Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
@@ -133,11 +153,7 @@ pub(crate) fn cascade_pane_split(
     state: &mut AppState,
     engine: &mut CoreState,
     origin: &IntentOrigin,
-    workspace_index: usize,
-    original_pane_id: u32,
-    new_pane_id: u32,
-    new_surface_id: u32,
-    direction: crate::model::SplitDirection,
+    c: PaneSplitCascade,
 ) {
 }
 

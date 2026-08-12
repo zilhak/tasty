@@ -60,11 +60,13 @@ fn split(
                 state,
                 engine,
                 origin,
-                workspace_index,
-                original_pane_id,
-                new_pane_id,
-                new_surface_id,
-                direction,
+                crate::app::dispatch_domain::PaneSplitCascade {
+                    workspace_index,
+                    original_pane_id,
+                    new_pane_id,
+                    new_surface_id,
+                    direction,
+                },
             );
         }
     }

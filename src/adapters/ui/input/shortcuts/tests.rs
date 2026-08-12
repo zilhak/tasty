@@ -407,13 +407,7 @@ fn zoom_out_clamps_at_6px() {
 fn add_test_workspace(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
-        None,
-        "terminal".to_string(),
-        serde_json::Value::Null,
-        None,
-        None,
-        None,
-        None,
+        crate::core::WorkspaceCreationParams::terminal(),
     )
     .unwrap();
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {

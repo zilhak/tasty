@@ -1510,13 +1510,7 @@ mod category_tests {
         // 원격 attach 가 만드는 mirror workspace 를 흉내 — 새 ws 를 만들고 mirror 플래그를 세운다.
         let idx = match crate::core::apply_create_workspace_inner(
             &mut e,
-            None,
-            "terminal".to_string(),
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
+            crate::core::WorkspaceCreationParams::terminal(),
         )
         .unwrap()
         {
@@ -1554,13 +1548,10 @@ mod category_tests {
         let cat = e.create_category("Services").unwrap();
         let idx = match crate::core::apply_create_workspace_inner(
             &mut e,
-            None,
-            "terminal".to_string(),
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            Some(cat),
+            crate::core::WorkspaceCreationParams {
+                category: Some(cat),
+                ..crate::core::WorkspaceCreationParams::terminal()
+            },
         )
         .unwrap()
         {
@@ -1572,13 +1563,10 @@ mod category_tests {
         // 존재하지 않는 카테고리 → normal 유지.
         let idx2 = match crate::core::apply_create_workspace_inner(
             &mut e,
-            None,
-            "terminal".to_string(),
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            Some(9999),
+            crate::core::WorkspaceCreationParams {
+                category: Some(9999),
+                ..crate::core::WorkspaceCreationParams::terminal()
+            },
         )
         .unwrap()
         {

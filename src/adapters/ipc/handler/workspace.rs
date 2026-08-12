@@ -248,13 +248,15 @@ pub fn handle_workspace_create(
         state,
         engine,
         &agent_origin,
-        workspace_id,
-        index,
         0,
-        surface_id,
-        renamed_name.clone(),
-        renamed_subtitle.clone(),
-        renamed_description.clone(),
+        crate::app::dispatch_domain::WorkspaceCreatedCascade {
+            workspace_id,
+            index,
+            surface_id,
+            renamed_name: renamed_name.clone(),
+            renamed_subtitle: renamed_subtitle.clone(),
+            renamed_description: renamed_description.clone(),
+        },
     );
 
     // S-WSCAT — 카테고리 소속 설정(있으면). 미지정이면 normal(생성자 기본값) 유지.

@@ -1132,13 +1132,15 @@ impl Core {
                 category,
             } => self.apply_create_workspace(
                 engine,
-                cwd,
-                kind,
-                surface_params,
-                name,
-                subtitle,
-                description,
-                category,
+                WorkspaceCreationParams {
+                    cwd,
+                    kind,
+                    surface_params,
+                    name,
+                    subtitle,
+                    description,
+                    category,
+                },
             ),
             DomainIntent::UpdateWorkspaceMeta {
                 workspace_id,
@@ -2931,28 +2933,12 @@ impl Core {
     /// tab + surface 를 생성하고 `WorkspaceCreated` event 를 반환한다.
     /// host event 발화 (WorkspaceRenamed) + (User origin 이면) active 전환은
     /// cascade (`cascade_workspace_created`) 에서 처리한다.
-    #[allow(clippy::too_many_arguments)] // reason: workspace 생성 도메인 파라미터
     fn apply_create_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,
-        cwd: Option<std::path::PathBuf>,
-        kind: String,
-        surface_params: serde_json::Value,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-        category: Option<crate::model::WorkspaceCategoryId>,
+        params: WorkspaceCreationParams,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        Ok(vec![apply_create_workspace_inner(
-            engine,
-            cwd,
-            kind,
-            surface_params,
-            name,
-            subtitle,
-            description,
-            category,
-        )?])
+        Ok(vec![apply_create_workspace_inner(engine, params)?])
     }
 
     /// 시스템 내부 invariant restorer — bootstrap / close 후 자동 재생성 /
@@ -2968,19 +2954,39 @@ impl Core {
         &mut self,
         engine: &mut crate::core::CoreState,
     ) -> anyhow::Result<usize> {
-        let event = apply_create_workspace_inner(
-            engine,
-            None,
-            "terminal".to_string(),
-            serde_json::Value::Null,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let event = apply_create_workspace_inner(engine, WorkspaceCreationParams::terminal())?;
         match event {
             CoreEvent::WorkspaceCreated { index, .. } => Ok(index),
             _ => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
+        }
+    }
+}
+
+/// `DomainIntent::CreateWorkspace` 가 운반하는 생성 파라미터 — `apply_create_workspace`
+/// / `apply_create_workspace_inner` 양쪽이 개념적으로 하나의 "생성 요청" 을 낱개
+/// 인자로 재나열하지 않도록 묶는다. 필드 구성은 `DomainIntent::CreateWorkspace` 와 1:1.
+pub(crate) struct WorkspaceCreationParams {
+    pub(crate) cwd: Option<std::path::PathBuf>,
+    pub(crate) kind: String,
+    pub(crate) surface_params: serde_json::Value,
+    pub(crate) name: Option<String>,
+    pub(crate) subtitle: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) category: Option<crate::model::WorkspaceCategoryId>,
+}
+
+impl WorkspaceCreationParams {
+    /// 시스템 invariant restorer (`create_default_workspace` 등) 가 쓰는 기본값 —
+    /// cwd 미지정 terminal, 이름/카테고리 자동.
+    pub(crate) fn terminal() -> Self {
+        Self {
+            cwd: None,
+            kind: "terminal".to_string(),
+            surface_params: serde_json::Value::Null,
+            name: None,
+            subtitle: None,
+            description: None,
+            category: None,
         }
     }
 }
@@ -2990,17 +2996,19 @@ impl Core {
 ///
 /// 반환: `CoreEvent::WorkspaceCreated`. host event (WorkspaceRenamed) +
 /// (User origin 이면) active 전환은 호출 측 cascade 책임.
-#[allow(clippy::too_many_arguments)] // reason: workspace 생성 도메인 파라미터
 pub(crate) fn apply_create_workspace_inner(
     engine: &mut crate::core::CoreState,
-    cwd: Option<std::path::PathBuf>,
-    kind: String,
-    surface_params: serde_json::Value,
-    name: Option<String>,
-    subtitle: Option<String>,
-    description: Option<String>,
-    category: Option<crate::model::WorkspaceCategoryId>,
+    params: WorkspaceCreationParams,
 ) -> anyhow::Result<CoreEvent> {
+    let WorkspaceCreationParams {
+        cwd,
+        kind,
+        surface_params,
+        name,
+        subtitle,
+        description,
+        category,
+    } = params;
     if kind == "empty" {
         anyhow::bail!("Cannot create workspace with empty surface kind");
     }

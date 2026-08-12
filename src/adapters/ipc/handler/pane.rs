@@ -261,11 +261,13 @@ pub fn handle_split(
                 state,
                 engine,
                 &agent_origin,
-                workspace_index,
-                original_pane_id,
-                new_pane_id,
-                new_surface_id,
-                direction,
+                crate::app::dispatch_domain::PaneSplitCascade {
+                    workspace_index,
+                    original_pane_id,
+                    new_pane_id,
+                    new_surface_id,
+                    direction,
+                },
             );
 
             apply_meta(state, new_surface_id, meta);

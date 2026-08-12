@@ -849,13 +849,15 @@ pub(crate) fn execute_forwarded_structural_op(
                             core,
                             state,
                             engine,
-                            cascade_level,
-                            b_cleanup.into_iter().collect(),
-                            closed_tab_ids,
-                            closed_pane_ids,
-                            workspace_id_purged,
-                            workspaces_now_empty,
-                            false,
+                            crate::app::dispatch_domain::SurfaceCloseCascade {
+                                cascade_level,
+                                cleanup_targets: b_cleanup.into_iter().collect(),
+                                closed_tab_ids,
+                                closed_pane_ids,
+                                workspace_id_purged,
+                                workspaces_now_empty,
+                                is_user_close: false,
+                            },
                         );
                         tasty_ipc::protocol::JsonRpcResponse::success(
                             rid.clone(),

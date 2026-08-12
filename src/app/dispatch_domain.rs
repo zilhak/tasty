@@ -25,6 +25,38 @@ pub(crate) enum DispatchSource {
     Parked(usize),
 }
 
+/// `CoreEvent::SurfaceClosed` / `MoveSurfaceApplied` 가 공유하는 cascade 결과 —
+/// 하나의 close 판정에서 나온 개념적 단위라 필드를 낱개로 끌고 다니지 않고 묶는다.
+pub(crate) struct SurfaceCloseCascade {
+    pub(crate) cascade_level: crate::core::intent::CascadeLevel,
+    pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
+    pub(crate) closed_tab_ids: Vec<u32>,
+    pub(crate) closed_pane_ids: Vec<u32>,
+    pub(crate) workspace_id_purged: Option<u32>,
+    pub(crate) workspaces_now_empty: bool,
+    pub(crate) is_user_close: bool,
+}
+
+/// `CoreEvent::PaneSplit` 의 cascade 페이로드.
+pub(crate) struct PaneSplitCascade {
+    pub(crate) workspace_index: usize,
+    pub(crate) original_pane_id: u32,
+    pub(crate) new_pane_id: u32,
+    pub(crate) new_surface_id: u32,
+    pub(crate) direction: crate::model::SplitDirection,
+}
+
+/// `CoreEvent::WorkspaceCreated` 의 cascade 페이로드. `window_id` 는 발화
+/// source(Main/Parked)에 따라 dispatcher 가 계산하는 라우팅값이라 별도 인자로 둔다.
+pub(crate) struct WorkspaceCreatedCascade {
+    pub(crate) workspace_id: u32,
+    pub(crate) index: usize,
+    pub(crate) surface_id: Option<u32>,
+    pub(crate) renamed_name: Option<String>,
+    pub(crate) renamed_subtitle: Option<String>,
+    pub(crate) renamed_description: Option<String>,
+}
+
 impl App {
     /// `DomainIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.
     ///
@@ -117,12 +149,14 @@ impl App {
                 self.dispatch_workspace_created_cascade(
                     source,
                     origin,
-                    id,
-                    index,
-                    surface_id,
-                    renamed_name,
-                    renamed_subtitle,
-                    renamed_description,
+                    WorkspaceCreatedCascade {
+                        workspace_id: id,
+                        index,
+                        surface_id,
+                        renamed_name,
+                        renamed_subtitle,
+                        renamed_description,
+                    },
                 );
             }
             CoreEvent::WorkspaceMetaUpdated {
@@ -195,11 +229,13 @@ impl App {
                 self.dispatch_pane_split_cascade(
                     source,
                     origin,
-                    workspace_index,
-                    original_pane_id,
-                    new_pane_id,
-                    new_surface_id,
-                    direction,
+                    PaneSplitCascade {
+                        workspace_index,
+                        original_pane_id,
+                        new_pane_id,
+                        new_surface_id,
+                        direction,
+                    },
                 );
             }
             CoreEvent::SurfaceSplit {
@@ -244,13 +280,15 @@ impl App {
                     let is_user_close = origin.is_user();
                     self.dispatch_surface_closed_cascade(
                         source,
-                        cascade_level,
-                        cleanup_targets,
-                        closed_tab_ids,
-                        closed_pane_ids,
-                        workspace_id_purged,
-                        workspaces_now_empty,
-                        is_user_close,
+                        SurfaceCloseCascade {
+                            cascade_level,
+                            cleanup_targets,
+                            closed_tab_ids,
+                            closed_pane_ids,
+                            workspace_id_purged,
+                            workspaces_now_empty,
+                            is_user_close,
+                        },
                     );
                 }
             }
@@ -294,13 +332,15 @@ impl App {
                         b_cleanup.into_iter().collect();
                     self.dispatch_surface_closed_cascade(
                         source,
-                        cascade_level,
-                        cleanup_targets,
-                        closed_tab_ids,
-                        closed_pane_ids,
-                        workspace_id_purged,
-                        workspaces_now_empty,
-                        is_user_close,
+                        SurfaceCloseCascade {
+                            cascade_level,
+                            cleanup_targets,
+                            closed_tab_ids,
+                            closed_pane_ids,
+                            workspace_id_purged,
+                            workspaces_now_empty,
+                            is_user_close,
+                        },
                     );
                 }
             }
@@ -832,54 +872,21 @@ impl App {
     /// `SurfaceClosed` cascade — cleanup_surface 각각 + (Case 4 면) workspace
     /// memory scope purge + active_workspace 보정 + (workspaces_now_empty 면)
     /// 새 default workspace 자동 생성.
-    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
-    fn dispatch_surface_closed_cascade(
-        &mut self,
-        source: DispatchSource,
-        cascade_level: crate::core::intent::CascadeLevel,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-        closed_tab_ids: Vec<u32>,
-        closed_pane_ids: Vec<u32>,
-        workspace_id_purged: Option<u32>,
-        workspaces_now_empty: bool,
-        is_user_close: bool,
-    ) {
+    fn dispatch_surface_closed_cascade(&mut self, source: DispatchSource, c: SurfaceCloseCascade) {
         let core = &mut self.core;
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
-                cascade_surface_closed(
-                    core,
-                    &mut main.state,
-                    &mut main.core_state,
-                    cascade_level,
-                    cleanup_targets,
-                    closed_tab_ids,
-                    closed_pane_ids,
-                    workspace_id_purged,
-                    workspaces_now_empty,
-                    is_user_close,
-                );
+                cascade_surface_closed(core, &mut main.state, &mut main.core_state, c);
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_surface_closed(
-                    core,
-                    state,
-                    engine,
-                    cascade_level,
-                    cleanup_targets,
-                    closed_tab_ids,
-                    closed_pane_ids,
-                    workspace_id_purged,
-                    workspaces_now_empty,
-                    is_user_close,
-                );
+                cascade_surface_closed(core, state, engine, c);
             }
         }
     }
@@ -925,48 +932,25 @@ impl App {
     }
 
     /// `PaneSplit` cascade — host event 발화 + (User origin 이면) focused_pane 변경.
-    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
     fn dispatch_pane_split_cascade(
         &mut self,
         source: DispatchSource,
         origin: &IntentOrigin,
-        workspace_index: usize,
-        original_pane_id: u32,
-        new_pane_id: u32,
-        new_surface_id: u32,
-        direction: crate::model::SplitDirection,
+        c: PaneSplitCascade,
     ) {
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
-                cascade_pane_split(
-                    &mut main.state,
-                    &mut main.core_state,
-                    origin,
-                    workspace_index,
-                    original_pane_id,
-                    new_pane_id,
-                    new_surface_id,
-                    direction,
-                );
+                cascade_pane_split(&mut main.state, &mut main.core_state, origin, c);
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_pane_split(
-                    state,
-                    engine,
-                    origin,
-                    workspace_index,
-                    original_pane_id,
-                    new_pane_id,
-                    new_surface_id,
-                    direction,
-                );
+                cascade_pane_split(state, engine, origin, c);
             }
         }
     }
@@ -1138,17 +1122,11 @@ impl App {
 
     /// `WorkspaceCreated` cascade 의 source 라우터. main/parked 분기 후
     /// `cascade_workspace_created` (free function) 호출.
-    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
     fn dispatch_workspace_created_cascade(
         &mut self,
         source: DispatchSource,
         origin: &IntentOrigin,
-        workspace_id: u32,
-        index: usize,
-        surface_id: Option<u32>,
-        renamed_name: Option<String>,
-        renamed_subtitle: Option<String>,
-        renamed_description: Option<String>,
+        c: WorkspaceCreatedCascade,
     ) {
         match source {
             DispatchSource::Main(wid) => {
@@ -1160,13 +1138,8 @@ impl App {
                     &mut main.state,
                     &mut main.core_state,
                     origin,
-                    workspace_id,
-                    index,
                     window_id,
-                    surface_id,
-                    renamed_name,
-                    renamed_subtitle,
-                    renamed_description,
+                    c,
                 );
                 main.mark_dirty();
             }
@@ -1174,18 +1147,7 @@ impl App {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_workspace_created(
-                    state,
-                    engine,
-                    origin,
-                    workspace_id,
-                    index,
-                    0,
-                    surface_id,
-                    renamed_name,
-                    renamed_subtitle,
-                    renamed_description,
-                );
+                cascade_workspace_created(state, engine, origin, 0, c);
             }
         }
     }
@@ -1600,44 +1562,38 @@ impl App {
 /// - `origin` 이 User 면 `state.active_workspace = index` 로 active 전환.
 /// - engine 의 `mark_layout_dirty` / `send_fast_init` 는 `Core::apply` 안에서
 ///   이미 처리됐다.
-#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_workspace_created(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
-    workspace_id: u32,
-    index: usize,
     window_id: u64,
-    surface_id: Option<u32>,
-    renamed_name: Option<String>,
-    renamed_subtitle: Option<String>,
-    renamed_description: Option<String>,
+    c: WorkspaceCreatedCascade,
 ) {
     let name = engine
         .workspaces
-        .get(index)
+        .get(c.index)
         .map(|w| w.name.clone())
         .unwrap_or_default();
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
-        workspace_id,
+        workspace_id: c.workspace_id,
         window_id,
         name,
     });
 
-    if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
+    if c.renamed_name.is_some() || c.renamed_subtitle.is_some() || c.renamed_description.is_some() {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id,
-            name: renamed_name,
-            subtitle: renamed_subtitle,
-            description: renamed_description,
+            workspace_id: c.workspace_id,
+            name: c.renamed_name,
+            subtitle: c.renamed_subtitle,
+            description: c.renamed_description,
             user_direct: false,
         });
     }
-    if let Some(surface_id) = surface_id {
+    if let Some(surface_id) = c.surface_id {
         cascade_surface_created(state, engine, surface_id);
     }
     if origin.is_user() {
-        state.active_workspace = index;
+        state.active_workspace = c.index;
     }
 }
 
@@ -1679,35 +1635,28 @@ pub(crate) fn cascade_closed_item_restored(
 ///    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
 /// 3. workspace_id_purged 가 Some 이면 memory scope purge
 /// 4. cascade_level == Workspace 면 active_workspace 보정
-#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_surface_closed(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
-    cascade_level: crate::core::intent::CascadeLevel,
-    cleanup_targets: Vec<(u32, Option<String>)>,
-    closed_tab_ids: Vec<u32>,
-    closed_pane_ids: Vec<u32>,
-    workspace_id_purged: Option<u32>,
-    workspaces_now_empty: bool,
-    is_user_close: bool,
+    c: SurfaceCloseCascade,
 ) {
     // 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
-    cleanup_closed_surfaces(state, engine, cleanup_targets, is_user_close);
+    cleanup_closed_surfaces(state, engine, c.cleanup_targets, c.is_user_close);
 
     // 2. cascade_level 별 host event (`tab.closed` / `pane.closed`) enqueue +
     //    baseline 동기화. `surface.closed` 자체는 별 큐
     //    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
-    enqueue_closed_tab_events(state, &closed_tab_ids, &closed_pane_ids);
-    enqueue_closed_pane_events(state, &closed_pane_ids);
+    enqueue_closed_tab_events(state, &c.closed_tab_ids, &c.closed_pane_ids);
+    enqueue_closed_pane_events(state, &c.closed_pane_ids);
 
     // 3. workspace_id_purged 가 Some 이면 memory scope purge
-    purge_closed_workspace_memory(state, workspace_id_purged);
+    purge_closed_workspace_memory(state, c.workspace_id_purged);
 
     // 4. cascade_level == Workspace 면 active_workspace 보정
-    fix_active_workspace_after_cascade(state, engine, cascade_level);
+    fix_active_workspace_after_cascade(state, engine, c.cascade_level);
 
-    recreate_workspace_if_now_empty(core, state, engine, workspaces_now_empty);
+    recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
 }
 
 /// `cascade_surface_closed` 1 단계: cleanup_targets 의 sibling 들이 plugin
@@ -1850,34 +1799,29 @@ pub(crate) fn cascade_surface_split(
 /// `CoreEvent::PaneSplit` 의 외부 cascade. host events (`pane.split` +
 /// `pane.created`) 발화 + polling baseline 동기화 + (User origin 이면)
 /// workspace 의 focused_pane 을 new_pane_id 로 변경.
-#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_pane_split(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
-    workspace_index: usize,
-    original_pane_id: u32,
-    new_pane_id: u32,
-    new_surface_id: u32,
-    direction: crate::model::SplitDirection,
+    c: PaneSplitCascade,
 ) {
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneSplit {
-        original_pane: original_pane_id,
-        new_pane: new_pane_id,
-        direction,
+        original_pane: c.original_pane_id,
+        new_pane: c.new_pane_id,
+        direction: c.direction,
     });
-    let workspace_id = engine.workspaces.get(workspace_index).map(|w| w.id);
+    let workspace_id = engine.workspaces.get(c.workspace_index).map(|w| w.id);
     if let Some(workspace_id) = workspace_id {
         state.enqueue_host_event(crate::state::PendingHostEvent::PaneCreated {
-            pane_id: new_pane_id,
+            pane_id: c.new_pane_id,
             workspace_id,
         });
     }
-    cascade_surface_created(state, engine, new_surface_id);
+    cascade_surface_created(state, engine, c.new_surface_id);
     if origin.is_user()
-        && let Some(ws) = engine.workspaces.get_mut(workspace_index)
+        && let Some(ws) = engine.workspaces.get_mut(c.workspace_index)
     {
-        ws.focused_pane = new_pane_id;
+        ws.focused_pane = c.new_pane_id;
     }
 }
 

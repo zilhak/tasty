@@ -60,7 +60,19 @@ pub fn handle(
             kind,
             name,
             category,
-        } => apply(core, state, engine, intent, *kind, name, *category),
+        } => apply(
+            core,
+            state,
+            engine,
+            intent,
+            PresetApplyTarget {
+                kind: *kind,
+                name,
+                target_pane_id: None,
+                target_workspace_id: None,
+                category: *category,
+            },
+        ),
         Intent::SavePreset {
             base_name,
             explicit_name,
@@ -71,32 +83,29 @@ pub fn handle(
             state,
             engine,
             intent,
-            base_name,
-            explicit_name.as_deref(),
-            *overwrite,
-            preset,
+            PresetSaveRequest {
+                base_name,
+                explicit_name: explicit_name.as_deref(),
+                overwrite: *overwrite,
+                preset,
+            },
         ),
         _ => {}
     }
 }
 
-#[allow(clippy::too_many_arguments)] // reason: preset apply intent 핸들러 컨텍스트
 fn apply(
     core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
-    kind: PresetKind,
-    name: &str,
-    category: Option<crate::model::WorkspaceCategoryId>,
+    target: PresetApplyTarget,
 ) {
     // P1: focus 정책은 origin 으로 자동 분기.
     let focus = intent.origin.is_user();
     let options = ApplyOptions { focus };
 
-    if let Err(e) = apply_inner(
-        core, state, engine, kind, name, None, None, category, options,
-    ) {
+    if let Err(e) = apply_inner(core, state, engine, target, options) {
         tracing::warn!("preset apply failed: {e}");
         #[cfg(feature = "gui")]
         state.toasts.push(
@@ -107,25 +116,21 @@ fn apply(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // reason: preset save 컨텍스트 전체
 fn save(
     core: &crate::core::Core,
     state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
-    base_name: &str,
-    explicit_name: Option<&str>,
-    overwrite: bool,
-    preset: &ClonedPreset,
+    request: PresetSaveRequest,
 ) {
-    let kind = preset.kind();
+    let kind = request.preset.kind();
     let save_result = save_inner(
         core,
         state,
-        base_name,
-        explicit_name,
-        overwrite,
-        preset.clone(),
+        request.base_name,
+        request.explicit_name,
+        request.overwrite,
+        request.preset.clone(),
     );
 
     let toast_key = match (&save_result, kind) {
@@ -234,45 +239,59 @@ fn clone_preset_from_store(
     Ok(cloned)
 }
 
+/// preset apply 요청 — 무엇을(`kind`/`name`) 어디에(`target_pane_id`/
+/// `target_workspace_id`/`category`) 적용할지의 개념적 단위. `target_pane_id` /
+/// `target_workspace_id` 는 tab/pane apply 시에만, `category` 는 workspace apply
+/// 시에만 의미가 있다(다른 kind 에는 무시된다).
+pub struct PresetApplyTarget<'a> {
+    pub kind: PresetKind,
+    pub name: &'a str,
+    pub target_pane_id: Option<u32>,
+    pub target_workspace_id: Option<u32>,
+    pub category: Option<crate::model::WorkspaceCategoryId>,
+}
+
+/// preset save 요청 — 저장할 preset 과 naming/overwrite 정책의 개념적 단위.
+pub struct PresetSaveRequest<'a> {
+    pub base_name: &'a str,
+    pub explicit_name: Option<&'a str>,
+    pub overwrite: bool,
+    pub preset: &'a ClonedPreset,
+}
+
 /// Preset 적용. store 에서 clone 후 lock 해제하고 본체를 호출한다.
-/// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만, `category`
-/// 는 workspace apply 시에만 의미가 있다(다른 kind 에는 무시된다).
-#[allow(clippy::too_many_arguments)] // reason: preset apply 도메인 파라미터
 pub fn apply_inner(
     core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    kind: PresetKind,
-    name: &str,
-    target_pane_id: Option<u32>,
-    target_workspace_id: Option<u32>,
-    category: Option<crate::model::WorkspaceCategoryId>,
+    target: PresetApplyTarget,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
-    let cloned = clone_preset_from_store(state, core, kind, name)?.ok_or_else(|| {
-        PresetMutationError::NotFound {
-            kind,
-            name: name.to_string(),
-        }
-    })?;
+    let cloned =
+        clone_preset_from_store(state, core, target.kind, target.name)?.ok_or_else(|| {
+            PresetMutationError::NotFound {
+                kind: target.kind,
+                name: target.name.to_string(),
+            }
+        })?;
 
     match cloned {
         ClonedPreset::Workspace(p) => {
             let idx = state
-                .apply_workspace_preset(engine, &p, category, options)
+                .apply_workspace_preset(engine, &p, target.category, options)
                 .map_err(PresetMutationError::Apply)?;
             let workspace_id = engine.workspaces[idx].id;
             Ok(ApplyOutcome::Workspace { workspace_id })
         }
         ClonedPreset::Tab(p) => {
             let tab_id = state
-                .apply_tab_preset(engine, &p, target_pane_id, options)
+                .apply_tab_preset(engine, &p, target.target_pane_id, options)
                 .map_err(PresetMutationError::Apply)?;
             Ok(ApplyOutcome::Tab { tab_id })
         }
         ClonedPreset::Pane(p) => {
             let pane_id = state
-                .apply_pane_preset(engine, &p, target_workspace_id, options)
+                .apply_pane_preset(engine, &p, target.target_workspace_id, options)
                 .map_err(PresetMutationError::Apply)?;
             Ok(ApplyOutcome::Pane { pane_id })
         }
