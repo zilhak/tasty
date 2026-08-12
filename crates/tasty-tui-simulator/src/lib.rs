@@ -409,11 +409,25 @@ fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()>
     Ok(())
 }
 
+/// Consumes an I/O result from a REPL stdout write/flush: a closed peer pipe
+/// (`BrokenPipe`, expected when the surface/test-harness on the other end
+/// goes away mid-command) means "stop the loop quietly", while any other I/O
+/// failure (disk full, permission denied, ...) is a simulator bug and must
+/// keep panicking so it isn't silently swallowed. Returns `true` when the
+/// caller should stop.
+fn should_stop_repl(result: io::Result<()>) -> bool {
+    match result {
+        Ok(()) => false,
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => true,
+        Err(e) => panic!("tasty-tui-sim: unexpected I/O error writing to stdout: {e}"),
+    }
+}
+
 fn interactive_mode() {
     let mut out = io::stdout();
 
     // Signal that REPL is ready. Peer may already be gone — bail quietly.
-    if write!(out, "READY\r\n").is_err() || out.flush().is_err() {
+    if should_stop_repl(write!(out, "READY\r\n").and_then(|()| out.flush())) {
         return;
     }
 
@@ -432,15 +446,18 @@ fn interactive_mode() {
         let cmd = parts[0];
         let args = if parts.len() > 1 { parts[1] } else { "" };
 
-        match handle_command(&mut out, cmd, args) {
-            Ok(()) => {}
-            Err(_) => break, // peer closed mid-write — quiet exit, no panic
+        if should_stop_repl(handle_command(&mut out, cmd, args)) {
+            break;
         }
 
         // Ack after every command so the test can synchronize. The peer may
         // have closed the pipe between the command write above and here —
         // treat that the same as any other write failure.
-        if out.flush().is_err() || write!(out, "OK\r\n").is_err() || out.flush().is_err() {
+        let ack = out
+            .flush()
+            .and_then(|()| write!(out, "OK\r\n"))
+            .and_then(|()| out.flush());
+        if should_stop_repl(ack) {
             break;
         }
     }
