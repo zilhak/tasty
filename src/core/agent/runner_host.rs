@@ -2566,6 +2566,7 @@ mod tests {
             created_at: 0,
             started_at: None,
             finished_at: None,
+            reserved_for_fallback: false,
         };
 
         let handle = match exec.dispatch(&task) {
@@ -2639,6 +2640,7 @@ mod tests {
             created_at: 0,
             started_at: None,
             finished_at: None,
+            reserved_for_fallback: false,
         };
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,
