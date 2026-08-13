@@ -37,6 +37,10 @@ struct ScriptedExec {
     /// dispatch 시점에 핸들을 task_id 와 매핑 (poll 에서 어느 task 의 outcome 인지 알기 위함).
     handle_to_task: HashMap<u32, String>,
     next_pid: u32,
+    /// dispatch 가 실제로 호출된 task_id 를 호출 순서대로 기록 — "이 task 가
+    /// 한 번도 dispatch 되지 않았다"/"이 순서로만 dispatch 됐다" 를 검증하는
+    /// TOCTOU 회귀 테스트가 참조한다.
+    dispatched: Vec<String>,
 }
 
 impl ScriptedExec {
@@ -45,6 +49,7 @@ impl ScriptedExec {
             polls: HashMap::new(),
             handle_to_task: HashMap::new(),
             next_pid: 1,
+            dispatched: Vec::new(),
         }
     }
     fn script(&mut self, task_id: &str, outcomes: Vec<PollOutcome>) {
@@ -58,6 +63,7 @@ impl TaskExecutor for ScriptedExec {
         let pid = self.next_pid;
         self.next_pid += 1;
         self.handle_to_task.insert(pid, task.id.clone());
+        self.dispatched.push(task.id.clone());
         DispatchOutcome::Started(DispatchHandle::ShellProcess { pid })
     }
     fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
@@ -188,6 +194,244 @@ fn two_task_chain_propagates_to_downstream() {
             tasks.iter().find(|t| t.id == b_id).unwrap().state,
             TaskState::Succeeded
         );
+    }
+}
+
+/// TODO62 (`.claude-workspace/todo-conductor/62-agent-fallback-create-order-
+/// toctou-race.md`) 재현 + 회귀 방지: `TaskStore::create_reserved_for_fallback`
+/// 로 만든 fallback 후보는 그걸 참조할 main 이 아직 존재하지 않는 동안 러너가
+/// 몇 번을 tick 해도(두 `task-create` 호출 사이의 임의 지연을 시뮬레이션)
+/// `Ready` 를 거친 적이 없으므로 dispatch 대상이 아니다 — main 이 실제로
+/// `Failed` 로 전이한 뒤에야 비로소 승격 → dispatch → 완료한다. 수정 전에는
+/// (예약 없이 평범한 `create()` 로 fallback 을 만들면) 아직 아무도 참조하지
+/// 않는 시점의 fallback 이 곧장 `Ready` 로 확정돼, 그 사이 tick 이 끼면
+/// main 의 성공/실패와 무관하게 그대로 dispatch 돼 실행됐다.
+#[test]
+fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
+    let (_td, mut mem, seq) = fresh_store();
+
+    let fb_id = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store
+            .create_reserved_for_fallback(TaskCreateOpts {
+                workspace_id: 1,
+                name: "fallback".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 1000,
+            })
+            .unwrap();
+        assert_eq!(
+            fb.state,
+            TaskState::Waiting,
+            "예약된 fallback 은 참조하는 main 이 생기기 전엔 Ready 를 거치지 않는다"
+        );
+        fb.id
+    };
+
+    let mut exec = ScriptedExec::new();
+    exec.script(
+        &fb_id,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+    let mut runner = RunnerLoop::new(exec);
+
+    // main 생성 *전에* 러너가 여러 번 tick 해도 fallback 은 여전히 Waiting.
+    for now in [1500, 2000, 2500] {
+        tick_with_store(&mut runner, &mut mem, &seq, now);
+    }
+    assert!(
+        runner.executor.dispatched.is_empty(),
+        "main 이 생기기도 전에 fallback 이 dispatch 됐다 — TOCTOU 레이스 재발"
+    );
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(fb.state, TaskState::Waiting);
+    }
+
+    // 이제 main 을 생성 — fallback 을 참조(예약 해제 + 정상 dormant 로 전환).
+    let main_id = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let main = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "main".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Fallback {
+                    task: Some(fb_id.clone()),
+                    inline: None,
+                },
+                metadata: serde_json::Value::Null,
+                now_ms: 3000,
+            })
+            .unwrap();
+        main.id
+    };
+    runner
+        .executor
+        .script(&main_id, vec![PollOutcome::Failed("boom".into())]);
+
+    // main dispatch → Running.
+    tick_with_store(&mut runner, &mut mem, &seq, 3500);
+    // main poll → Failed → fallback 이 비로소 승격(Ready).
+    tick_with_store(&mut runner, &mut mem, &seq, 4000);
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(
+            fb.state,
+            TaskState::Ready,
+            "main 이 Failed 로 전이한 뒤에야 fallback 이 승격돼야 한다"
+        );
+    }
+    assert!(
+        !runner.executor.dispatched.contains(&fb_id),
+        "fallback 은 main 이 실패하기 전까지 dispatch 되면 안 된다"
+    );
+
+    // fallback dispatch → Running → poll Done → Succeeded.
+    tick_with_store(&mut runner, &mut mem, &seq, 4500);
+    tick_with_store(&mut runner, &mut mem, &seq, 5000);
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(fb.state, TaskState::Succeeded);
+    }
+    assert_eq!(
+        runner
+            .executor
+            .dispatched
+            .iter()
+            .filter(|id| *id == &fb_id)
+            .count(),
+        1,
+        "fallback 은 main 실패 이후 정확히 한 번만 dispatch 돼야 한다"
+    );
+}
+
+/// 위 테스트의 변형 — 예약된 fallback 이 *자기 자신의* depends_on 을 갖고
+/// 있으면, 그 의존성이 main 생성 전에 먼저 완료돼 `cascade_downstream` 이
+/// fallback 의 readiness 를 재평가할 기회가 생긴다. 예약이 생성 시점 1회성
+/// 오버라이드에 불과했다면 이 재평가가 dormant 판정을 무시하고 fallback 을
+/// Ready 로 올려버렸을 것 — `Task::reserved_for_fallback` 이 영속 필드라
+/// `TaskGraph::dormant_as_pending_fallback` 이 매 평가마다 이를 존중해야
+/// 막힌다.
+#[test]
+fn fallback_reservation_survives_own_dependency_completing_before_main_exists() {
+    let (_td, mut mem, seq) = fresh_store();
+
+    let (x_id, fb_id) = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let x = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "x".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 1000,
+            })
+            .unwrap();
+        let fb = store
+            .create_reserved_for_fallback(TaskCreateOpts {
+                workspace_id: 1,
+                name: "fallback".into(),
+                command: run_cmd(),
+                depends_on: vec![x.id.clone()],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 1001,
+            })
+            .unwrap();
+        assert_eq!(fb.state, TaskState::Waiting);
+        (x.id, fb.id)
+    };
+
+    let mut exec = ScriptedExec::new();
+    exec.script(
+        &x_id,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+    exec.script(
+        &fb_id,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+    let mut runner = RunnerLoop::new(exec);
+
+    // x dispatch → Running → poll Done → Succeeded → cascade_downstream(x)
+    // 가 fb 의 readiness 를 재평가한다. main 은 아직 없다.
+    tick_with_store(&mut runner, &mut mem, &seq, 1500);
+    tick_with_store(&mut runner, &mut mem, &seq, 2000);
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let x = store.get(1, &x_id).unwrap().unwrap();
+        assert_eq!(x.state, TaskState::Succeeded);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(
+            fb.state,
+            TaskState::Waiting,
+            "x 가 끝나도 예약된 fallback 은 main 없이는 Ready 로 새지 않는다"
+        );
+    }
+    // 혹시 새어나갔다면 이 tick 에서 dispatch 됐을 것.
+    tick_with_store(&mut runner, &mut mem, &seq, 2500);
+    assert!(
+        !runner.executor.dispatched.contains(&fb_id),
+        "x 완료로 fallback 이 조기 dispatch 됐다 — 예약이 1회성으로 새고 있다"
+    );
+
+    // main 생성 → 실패 → fallback 승격 → 정상 실행.
+    let main_id = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "main".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Fallback {
+                    task: Some(fb_id.clone()),
+                    inline: None,
+                },
+                metadata: serde_json::Value::Null,
+                now_ms: 3000,
+            })
+            .unwrap()
+            .id
+    };
+    runner
+        .executor
+        .script(&main_id, vec![PollOutcome::Failed("boom".into())]);
+    tick_with_store(&mut runner, &mut mem, &seq, 3500);
+    tick_with_store(&mut runner, &mut mem, &seq, 4000);
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(fb.state, TaskState::Ready);
+    }
+    tick_with_store(&mut runner, &mut mem, &seq, 4500);
+    tick_with_store(&mut runner, &mut mem, &seq, 5000);
+    {
+        let store = TaskStore::new(&mut mem, "_host", &seq);
+        let fb = store.get(1, &fb_id).unwrap().unwrap();
+        assert_eq!(fb.state, TaskState::Succeeded);
     }
 }
 

@@ -126,7 +126,22 @@ impl<'a> TaskGraph<'a> {
     /// 이 fallback 을 `depends_on` 유무와 무관하게 Ready 로 올리면 안 된다 —
     /// main 이 Failed 로 전이하는 순간의 `advance_existing_fallback` 승격 경로가
     /// 유일한 정식 진입로다.
+    ///
+    /// `task.reserved_for_fallback` 이 서 있으면 아직 참조하는 main 이 *존재도
+    /// 하기 전*이라도 dormant 로 취급한다 — `TaskStore::create_reserved_for_fallback`
+    /// 로 만든 fallback 후보가 자기 자신을 참조할 main 이 생기기 전까지 결코
+    /// `Ready` 로 노출되지 않게 하는 것이 이 필드의 존재 이유다(TOCTOU 레이스:
+    /// "fallback 생성" → "main 생성(그 fallback 참조)" 두 `create()` 호출
+    /// 사이에 러너가 tick 해 아직 아무도 참조하지 않는 `Ready` fallback 을
+    /// dispatch 해버리면, main 생성 시점의 소급 정정이 무력화된다).
     fn dormant_as_pending_fallback(&self, task_id: &TaskId) -> bool {
+        if self
+            .tasks
+            .get(task_id)
+            .is_some_and(|t| t.reserved_for_fallback)
+        {
+            return true;
+        }
         self.tasks.values().any(|main| {
             matches!(
                 &main.on_failure,

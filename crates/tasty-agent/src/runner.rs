@@ -338,6 +338,7 @@ mod tests {
             result: None,
             on_failure: Default::default(),
             metadata: Default::default(),
+            reserved_for_fallback: false,
         }
     }
 

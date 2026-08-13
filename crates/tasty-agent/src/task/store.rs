@@ -233,6 +233,7 @@ impl<'a> TaskStore<'a> {
             result: None,
             on_failure,
             metadata,
+            reserved_for_fallback: false,
         };
 
         // 임시로 그래프에 포함시켜 사이클 검출
@@ -257,20 +258,69 @@ impl<'a> TaskStore<'a> {
         // dispatch 되지 않고 `Ready` 로 남아 있다면 지금 `Waiting` 으로
         // 되돌려 "main 실패 전엔 돌지 않는다" 계약을 소급 적용한다. 그 사이
         // 이미 `Running`/종결로 넘어갔다면(runner 가 그 틈에 tick 했다면)
-        // 되돌릴 방법이 없어 건드리지 않는다 — 두 CLI 호출 사이의 레이스는
-        // 이 fallback task 를 main 보다 먼저 만들어야 하는 생성 순서 제약
-        // 자체의 한계다.
+        // 되돌릴 방법이 없어 건드리지 않는다 — 이 잔여 레이스는
+        // `create_reserved_for_fallback`(아래)로 fallback 을 미리 예약
+        // 생성해야 완전히 닫힌다: 예약된 fallback 은 애초에 `Ready` 를 거치지
+        // 않으므로 이 시점에 이미 dispatch 됐을 수가 없다.
+        //
+        // `reserved_for_fallback` 예약도 여기서 함께 해제한다 — 예약 중엔
+        // state 가 `Ready` 를 거치지 않으므로 위 조건(`Ready`)만으론 절대
+        // 걸리지 않는다. 이제 실제 main 이 생겼으니 이후로는 "참조하는 main
+        // 이 존재하고 아직 Failed 가 아니다"라는 정상 dormant 판정이 이어받고,
+        // 예약 플래그는 더 이상 필요 없다(끄지 않으면 main 이 나중에 Failed
+        // 로 전이해도 영구히 dormant 로 남아 fallback 이 결코 승격되지 못한다).
         if let OnFailure::Fallback {
             task: Some(fb_id), ..
         } = &new_task.on_failure
             && let Some(mut fb) = self.get(workspace_id, fb_id)?
-            && matches!(fb.state, TaskState::Ready)
         {
-            fb.state = TaskState::Waiting;
-            self.put(&fb)?;
+            let mut changed = false;
+            if fb.reserved_for_fallback {
+                fb.reserved_for_fallback = false;
+                changed = true;
+            }
+            if matches!(fb.state, TaskState::Ready) {
+                fb.state = TaskState::Waiting;
+                changed = true;
+            }
+            if changed {
+                self.put(&fb)?;
+            }
         }
 
         Ok(new_task)
+    }
+
+    /// [`Self::create`] 와 동일하지만, 생성된 task 를 아직 아무 main 도
+    /// 참조하지 않는 동안에도 `Ready`(또는 `Skipped`)로 노출하지 않고
+    /// `Waiting` 에 묶어둔다(`Task::reserved_for_fallback = true`) — 앞으로
+    /// `OnFailure::Fallback{task: Some(이 id)}` 로 자신을 참조할 main 을
+    /// 곧 만들 계획이라는 걸 호출자가 미리 선언하는 용도다.
+    ///
+    /// 왜 필요한가: 평범한 `create()` 은 아직 아무도 참조하지 않는 fallback
+    /// 후보를 (의존성이 없다면) 곧장 `Ready` 로 확정한다 — 그 시점엔 아직
+    /// "이건 fallback 이다"라는 정보가 store 어디에도 없기 때문이다. 이후
+    /// 그 fallback 을 참조하는 main 을 만드는 별도 `create()` 호출까지
+    /// 러너가 tick 해 이미 dispatch(`Ready`→`Running`) 해버리면, main 생성
+    /// 시점의 소급 정정(`Ready`→`Waiting`)이 무력화돼 fallback 이 main 의
+    /// 성공/실패와 무관하게 실행된다(TOCTOU — 두 CLI 호출 사이의 지연은
+    /// LLM 사고 시간·네트워크 왕복 등으로 임의로 길어질 수 있어 "짧게
+    /// 묶어 부르면 된다"는 낙관이 성립하지 않는다). 이 메서드로 만든
+    /// fallback 은 `state` 가 결코 `Ready` 를 거치지 않으므로, 두 호출
+    /// 사이의 지연이 얼마든 러너가 손댈 수 없다.
+    ///
+    /// 주의: 이렇게 예약한 task 를 참조하는 main 을 끝내 만들지 않으면
+    /// (계획을 접었거나) 이 task 는 `Waiting` 에 영구 잔류한다 — opt-in
+    /// 계약이므로 호출자 책임이다. `delete_checked` 로 정리하고 다시
+    /// 만들면 된다(참조자가 없고 `Running` 도 아니므로 항상 지울 수 있다).
+    pub fn create_reserved_for_fallback(&mut self, opts: TaskCreateOpts) -> Result<Task> {
+        let mut task = self.create(opts)?;
+        if !matches!(task.state, TaskState::Waiting) {
+            task.state = TaskState::Waiting;
+        }
+        task.reserved_for_fallback = true;
+        self.put(&task)?;
+        Ok(task)
     }
 
     /// task의 state를 변경. 변경 규칙은 [`TaskState`] 문서 참조.

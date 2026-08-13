@@ -55,6 +55,16 @@ pub enum AgentCommands {
         /// are given; conflicts if `--metadata` already sets `semaphore`.
         #[arg(long)]
         concurrency_limit: Option<String>,
+        /// Reserve this task as a not-yet-referenced fallback candidate: it
+        /// stays `waiting` (never `ready`, so the runner cannot dispatch it)
+        /// until a later `task-create --on-failure fallback:<this-id>` call
+        /// links a main task to it, however long that takes. Without this
+        /// flag, a bare no-deps task becomes `ready` immediately, and if the
+        /// runner ticks before the linking main is created, it can dispatch
+        /// and run to completion regardless of that main's outcome — closes
+        /// the creation-order race between the two `task-create` calls.
+        #[arg(long, default_value_t = false)]
+        reserved_for_fallback: bool,
     },
     /// List tasks in a workspace.
     TaskList {

@@ -12,16 +12,25 @@ use crate::core::CoreState;
 use crate::core::agent::runner_host::evict_task_side_keys;
 
 impl Core {
-    /// Task 생성 — `TaskStore::create` wrapper.
+    /// Task 생성 — `TaskStore::create`/`create_reserved_for_fallback` wrapper.
+    /// `reserved_for_fallback=true` 면 이 task 를 앞으로 다른 main 의
+    /// `on_failure.fallback.task` 로 참조할 계획이라는 뜻 — 그 main 이 생기기
+    /// 전까지 `Ready` 로 노출되지 않아 러너가 dispatch 할 수 없다(TOCTOU 레이스
+    /// 방지, `crates/tasty-agent/src/task/store.rs::create_reserved_for_fallback`).
     pub(crate) fn task_create(
         &self,
         engine: &CoreState,
         opts: TaskCreateOpts,
+        reserved_for_fallback: bool,
     ) -> Result<Task, AgentError> {
         let seq = engine.agent_seq.clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.create(opts)
+            if reserved_for_fallback {
+                store.create_reserved_for_fallback(opts)
+            } else {
+                store.create(opts)
+            }
         })
     }
 
@@ -342,7 +351,9 @@ mod hook_wait_tests {
             metadata: serde_json::Value::Null,
             now_ms: 1,
         };
-        core.task_create(engine, opts).expect("task_create").id
+        core.task_create(engine, opts, false)
+            .expect("task_create")
+            .id
     }
 
     /// hook_task_wait 전체 생애주기: register → (해당 hook 발화 시뮬레이션인)
@@ -439,6 +450,39 @@ mod hook_wait_tests {
         assert!(matches!(task.state, TaskState::Failed { .. }));
         assert_eq!(task.result.and_then(|r| r.exit_code), Some(1));
     }
+
+    /// TODO62 배선 확인 — `Core::task_create(.., reserved_for_fallback: true)`
+    /// 가 `handle_task_create` 의 `reserved_for_fallback` JSON param 부터
+    /// `TaskStore::create_reserved_for_fallback` 까지 실제로 이어진다.
+    /// 세부 readiness/dormant 로직은 `crates/tasty-agent` 크레이트 테스트가
+    /// 이미 폭넓게 덮으므로, 여기서는 Core 계층 배선만 확인한다.
+    #[test]
+    fn task_create_reserved_for_fallback_wires_through_core_to_waiting_state() {
+        let (core, _home) = core();
+        let engine = engine();
+        let ws = 1;
+        let opts = TaskCreateOpts {
+            workspace_id: ws,
+            name: "fallback".to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".into()],
+                workspace_id: ws,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            on_failure: OnFailure::default(),
+            metadata: serde_json::Value::Null,
+            now_ms: 1,
+        };
+        let task = core
+            .task_create(&engine, opts, true)
+            .expect("task_create reserved");
+        assert_eq!(
+            task.state,
+            TaskState::Waiting,
+            "reserved_for_fallback=true 는 의존성이 없어도 Ready 를 거치지 않아야 한다"
+        );
+    }
 }
 
 /// TODO11 "완료 확인 방법" #3·#4 — host 층(`Core::task_delete`) 이 실제로
@@ -509,7 +553,9 @@ mod task_delete_tests {
             metadata: serde_json::Value::Null,
             now_ms: 1,
         };
-        core.task_create(engine, opts).expect("task_create").id
+        core.task_create(engine, opts, false)
+            .expect("task_create")
+            .id
     }
 
     /// 시나리오 4: terminal 로 마감된 task 를 지우면 `tasty.agent.handle.<id>`/

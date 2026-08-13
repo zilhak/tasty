@@ -15,43 +15,17 @@ pub(super) fn agent_command_to_method_params(
             on_failure,
             metadata,
             concurrency_limit,
-        } => {
-            let mut command_val = parse_inline_or_file_json(cmd_spec, "--command");
-            let warnings = inject_command_workspace_id(&mut command_val, *workspace_id);
-            let metadata_val = metadata
-                .as_deref()
-                .map(|s| parse_inline_or_file_json(s, "--metadata"))
-                .unwrap_or(serde_json::Value::Null);
-            let metadata_val = apply_concurrency_limit(metadata_val, concurrency_limit.as_deref());
-            let on_failure_val = parse_on_failure(on_failure);
-
-            let mut p = serde_json::json!({
-                "workspace_id": *workspace_id,
-                "name": name,
-                "command": command_val,
-            });
-            if !depends_on.is_empty() {
-                p["depends_on"] = serde_json::Value::Array(
-                    depends_on
-                        .iter()
-                        .map(|s| serde_json::Value::String(s.clone()))
-                        .collect(),
-                );
-            }
-            p["on_failure"] = on_failure_val;
-            if !metadata_val.is_null() {
-                p["metadata"] = metadata_val;
-            }
-            if !warnings.is_empty() {
-                p[super::CLI_WARNINGS_PARAMS_KEY] = serde_json::Value::Array(
-                    warnings
-                        .into_iter()
-                        .map(serde_json::Value::String)
-                        .collect(),
-                );
-            }
-            ("agent.task_create", p)
-        }
+            reserved_for_fallback,
+        } => build_task_create_params(
+            *workspace_id,
+            name,
+            cmd_spec,
+            depends_on,
+            on_failure,
+            metadata.as_deref(),
+            concurrency_limit.as_deref(),
+            *reserved_for_fallback,
+        ),
         TaskList {
             workspace_id,
             state,
@@ -343,6 +317,59 @@ pub(super) fn agent_command_to_method_params(
             ("agent.rate_limit_status", p)
         }
     }
+}
+
+/// `TaskCreate` → `agent.task_create` params 조립. `agent_command_to_method_params`
+/// 의 인지 복잡도 상한(20)을 넘기지 않도록 그 큰 match 밖으로 뺀 것 — 로직
+/// 자체는 이전과 동일하다.
+#[allow(clippy::too_many_arguments)] // CLI 인자 하나당 파라미터 하나 — 묶으면 오히려 추적이 어려워짐
+fn build_task_create_params(
+    workspace_id: u32,
+    name: &str,
+    cmd_spec: &str,
+    depends_on: &[String],
+    on_failure: &str,
+    metadata: Option<&str>,
+    concurrency_limit: Option<&str>,
+    reserved_for_fallback: bool,
+) -> (&'static str, serde_json::Value) {
+    let mut command_val = parse_inline_or_file_json(cmd_spec, "--command");
+    let warnings = inject_command_workspace_id(&mut command_val, workspace_id);
+    let metadata_val = metadata
+        .map(|s| parse_inline_or_file_json(s, "--metadata"))
+        .unwrap_or(serde_json::Value::Null);
+    let metadata_val = apply_concurrency_limit(metadata_val, concurrency_limit);
+    let on_failure_val = parse_on_failure(on_failure);
+
+    let mut p = serde_json::json!({
+        "workspace_id": workspace_id,
+        "name": name,
+        "command": command_val,
+    });
+    if !depends_on.is_empty() {
+        p["depends_on"] = serde_json::Value::Array(
+            depends_on
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect(),
+        );
+    }
+    p["on_failure"] = on_failure_val;
+    if !metadata_val.is_null() {
+        p["metadata"] = metadata_val;
+    }
+    if reserved_for_fallback {
+        p["reserved_for_fallback"] = serde_json::Value::Bool(true);
+    }
+    if !warnings.is_empty() {
+        p[super::CLI_WARNINGS_PARAMS_KEY] = serde_json::Value::Array(
+            warnings
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        );
+    }
+    ("agent.task_create", p)
 }
 
 /// `--strategy` 파싱:

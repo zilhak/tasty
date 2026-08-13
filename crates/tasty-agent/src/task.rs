@@ -291,6 +291,17 @@ pub struct Task {
     pub on_failure: OnFailure,
     #[serde(default)]
     pub metadata: serde_json::Value,
+    /// `TaskStore::create_reserved_for_fallback`로 생성된 task 가 아직 어떤
+    /// main 의 `OnFailure::Fallback{task}` 로도 연결되지 않은 동안 `true`.
+    /// `TaskGraph::dormant_as_pending_fallback` 이 이 값을 최우선으로 존중해
+    /// readiness 평가 자체를 보류시킨다 — `Ready` 로 단 한 번도 노출되지
+    /// 않으므로 러너가 dispatch 할 수 없다. main 이 이 task 를 `Fallback{task}`
+    /// 로 참조하는 `create()` 호출의 소급 정정 블록이 그 순간 `false` 로
+    /// 해제하고, 그 뒤로는 (참조하는 main 이 실제로 존재/미종결) 이라는 정상
+    /// dormant 판정이 이어받는다. `#[serde(default)]` 는 이 필드 도입 이전에
+    /// 영속된 task 를 `false`(비예약, 기존 동작 그대로)로 채운다.
+    #[serde(default)]
+    pub reserved_for_fallback: bool,
 }
 
 /// 워크스페이스에 속한 task들의 그래프 뷰. 사이클 검출, downstream 계산용.

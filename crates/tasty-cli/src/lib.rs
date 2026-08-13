@@ -763,6 +763,39 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn task_create_reserved_for_fallback_flag_maps_to_ipc_param() {
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-create",
+            "--workspace-id",
+            "1",
+            "--name",
+            "t",
+            "--command",
+            r#"{"kind":"run","command":["true"]}"#,
+            "--reserved-for-fallback",
+        ]);
+        assert_eq!(r.params["reserved_for_fallback"], true);
+    }
+
+    #[test]
+    fn task_create_without_reserved_for_fallback_omits_param() {
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-create",
+            "--workspace-id",
+            "1",
+            "--name",
+            "t",
+            "--command",
+            r#"{"kind":"run","command":["true"]}"#,
+        ]);
+        assert!(r.params.get("reserved_for_fallback").is_none());
+    }
+
+    #[test]
     fn webhook_register_inline_sequence_maps_to_ipc() {
         let r = req(&[
             "tasty",

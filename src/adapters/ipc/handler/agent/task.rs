@@ -51,6 +51,15 @@ pub fn handle_task_create(
         .map(|v| serde_json::from_value(v.clone()).unwrap_or_default())
         .unwrap_or_default();
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
+    // TOCTOU 예약: 이 task 를 곧 다른 main 의 `on_failure.fallback.task` 로
+    // 참조할 계획이면 `true` 로 넘긴다 — 그 main 을 만드는 별도 `task-create`
+    // 호출 전까지 이 task 가 `Ready`(러너 dispatch 대상)로 노출되지 않고
+    // `Waiting` 에 묶인다(`docs/dev-guide/agent-runner.md` "fallback{task}
+    // 생성 순서 TOCTOU" 참조). 미지정 시 기본 `false`(기존 동작 그대로).
+    let reserved_for_fallback = params
+        .get("reserved_for_fallback")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     if let Err(e) = validate_poll_strategy_refs(&command, &on_failure) {
         return JsonRpcResponse::invalid_params(id, e);
@@ -65,7 +74,7 @@ pub fn handle_task_create(
         metadata,
         now_ms: now_ms(),
     };
-    match core.task_create(engine, opts) {
+    match core.task_create(engine, opts, reserved_for_fallback) {
         Ok(task) => match serde_json::to_value(&task) {
             Ok(mut v) => {
                 if let Some(warnings) = fallback_with_deps_warning(&task)
@@ -1079,6 +1088,7 @@ mod graph_edge_tests {
             result: None,
             on_failure: OnFailure::Abort,
             metadata: Value::Null,
+            reserved_for_fallback: false,
         }
     }
 
