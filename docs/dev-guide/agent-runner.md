@@ -210,6 +210,8 @@ elastic 이 기본이 아닌 이유: fixed 의 자원 배정은 순수 마킹(st
 - `TaskCommand::Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의 `${lease.resource}` 를 치환한다(예: `claude.spawn` 의 `cwd` 파라미터).
 - elastic 으로 새로 합성된 이름이 가리키는 실제 워크트리를 만드는 건(예: `git worktree add`) task 의 Run 커맨드 쪽 자가 프로비저닝 책임이다 — lease primitive 는 포트/임시디렉토리/GPU 슬롯 등에도 쓰이는 범용 도구라 워크트리 특화 side-effect 를 store 안에 넣지 않는다.
 
+**주의 — `cwd` 를 배정된 resource 로 직접 채우는 방식은 elastic 자가 프로비저닝과 함께 쓸 수 없다.** `cwd` 는 프로세스 spawn(`chdir`)이 그 경로로 실제로 이동을 시도하는 시점에 적용되는데, 이 chdir 은 커맨드가 실행되기 **이전에** OS 레벨에서 일어난다 — 아직 디스크에 없는 합성 경로를 `cwd` 로 주면 `Run spawn 'sh': No such file or directory` 로 spawn 자체가 즉시 실패하고, `command` 안에 `mkdir -p` 를 아무리 앞세워도 그 스크립트조차 실행되지 못한다(라이브로 재현 확인). 자가 프로비저닝이 필요하면 `cwd` 는 항상 존재하는 고정 경로(예: `/tmp`, 부모 워크트리 루트)로 지정해 두고, `${lease.resource}` 는 **`command` 인자 쪽**에서 받아 그 안에서 `mkdir -p`/`cd` 를 수행한다(아래 elastic 라이브 검증 예 참조).
+
 **release**: pool 모드로 얻은 자원도 일반 lease 와 동일하게 `release_lease`(task 종결 시 자동 호출)로 반환된다 — `held_leases` 가 이미 "실제로 받은 resource 문자열"만 저장하므로 pool 여부와 무관하게 그대로 동작한다(재설계 불필요).
 
 CLI 편의 플래그(`--concurrency-limit` 대구)는 만들지 않았다 — `--metadata '{"lease":{"candidates":[...],"elastic":{...}}}'` 를 직접 쓰는 것으로 충분하다고 판단(부차적 스코프).
@@ -228,7 +230,21 @@ tasty agent task-list --workspace-id 1   # 3개만 running(서로 다른 cwd), 2
 tasty agent task-get --workspace-id 1 --id t-...   # command.cwd 로 실제 배정된 candidate 확인
 ```
 
-elastic 을 켜면(`--metadata '{"lease":{"candidates":[...],"elastic":{}}}'`) 5개 모두 대기 없이 동시 실행되고, 그중 2개는 `/tmp/wt-3-overflow-1`/`-2` 처럼 합성된 경로를 받는다(디렉터리 자체는 자가 프로비저닝 몫이라 미리 만들지 않으면 `pwd` spawn 이 실패한다 — Run 커맨드에 `mkdir -p ${lease.resource}` 를 앞세우는 식으로 스스로 만들게 한다).
+elastic 을 켜면 5개 모두 대기 없이 동시 실행되고, 그중 2개는 `/tmp/wt-3-overflow-1`/`-2` 처럼 아직 디스크에 없는 합성 경로를 받는다 — 위 "주의" 대로 `cwd` 를 그 합성 경로로 직접 채우면(fill-when-absent) spawn 이 즉시 실패하므로, `cwd` 는 존재하는 고정 경로에 두고 `${lease.resource}` 를 command 인자로 받아 스스로 `mkdir -p`/`cd` 하게 한다:
+
+```sh
+mkdir -p /tmp/wt-1 /tmp/wt-2 /tmp/wt-3
+for i in 1 2 3 4 5; do
+  tasty agent task-create --workspace-id 1 --name "e$i" \
+    --command '{"kind":"run","command":["sh","-c","mkdir -p \"$1\" && cd \"$1\" && pwd","_","${lease.resource}"],"cwd":"/tmp"}' \
+    --metadata '{"lease":{"candidates":["/tmp/wt-1","/tmp/wt-2","/tmp/wt-3"],"elastic":{}}}'
+done
+tasty agent task-run --workspace-id 1 --action start
+tasty agent task-list --workspace-id 1   # 5개 모두 즉시 running, 대기 없음
+tasty agent lease-list --workspace-id 1  # 3개 원본 + wt-3-overflow-1/-2 총 5개 holder
+```
+
+`cwd:"/tmp"` 는 항상 존재하므로 spawn 은 무조건 성공하고, `sh -c '...' _ ${lease.resource}` 에서 `$1` 로 실제 배정된(원본 또는 합성) 경로를 받아 그 안에서 직접 생성·이동한다 — `${lease.resource}` 를 `cwd` 자체에 두는 방식(위 "주의")과 달리 이 패턴은 elastic 로 새로 합성된, 아직 존재하지 않는 경로에도 그대로 쓸 수 있다.
 
 ### 호스트 재시작 정화 + 핸들 영속
 
