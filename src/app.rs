@@ -42,6 +42,8 @@ pub(crate) mod screenshot_capture;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
+pub(crate) mod shutdown_trace;
+#[cfg(feature = "gui")]
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;

@@ -4,8 +4,13 @@
 //! `enqueue_surface_closed` 를 호출하지만, host shutdown 은 event_loop 가 즉시
 //! 빠지므로 `pending_lifecycle_events` 도, plugin 측 cleanup 기회도 없다.
 //! 본 모듈은 그 gap 을 메운다.
+//!
+//! 단계별 계측(S1~S4, `shutdown_total`)은 `target: "tasty::shutdown"` 으로 상시
+//! 발화한다 — 마커 표는 [`docs/architecture/shutdown-sequence.md`].
 
-use crate::app::App;
+use std::time::Instant;
+
+use crate::app::{App, shutdown_trace};
 
 impl App {
     /// 모든 main view + parked state 의 살아있는 surface 에 대해
@@ -13,21 +18,25 @@ impl App {
     ///
     /// drain 은 별도 호출 (`dispatch_pending_surface_lifecycle`). 본 메서드는
     /// state 큐에 push 만 한다 — borrow / 순회 순서 단순화 목적.
-    pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) {
+    ///
+    /// 반환: 큐에 push 한 surface 수 (S3 계측의 `surfaces` 필드).
+    pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) -> usize {
+        let mut closed = 0usize;
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                Self::enqueue_close_for_engine(&mut main.state, &main.core_state);
+                closed += Self::enqueue_close_for_engine(&mut main.state, &main.core_state);
             }
         }
         for (state, engine) in self.parked_states.iter_mut() {
-            Self::enqueue_close_for_engine(state, engine);
+            closed += Self::enqueue_close_for_engine(state, engine);
         }
+        closed
     }
 
     fn enqueue_close_for_engine(
         state: &mut crate::state::AppState,
         engine: &crate::core::CoreState,
-    ) {
+    ) -> usize {
         // 모든 workspace → pane → tab → leaf surface 순회.
         // `Tab::for_each_surface` 가 layout 안의 leaf surface 만 visit 하므로
         // `cascade_surface_closed` 의 `cleanup_targets` walk 와 동일한 단위.
@@ -45,26 +54,66 @@ impl App {
                 }
             }
         }
+        let count = targets.len();
         for (sid, kind) in targets {
             // is_user_close=true — Cmd-Q / quit modal 은 사용자 의지 종료.
             state.enqueue_surface_closed(sid, kind, true);
         }
+        count
     }
 
-    /// `AppEvent::Shutdown` + quit modal 의 quit 분기 공용 종료 시퀀스.
+    /// 종료 시퀀스 진입점 — 세 진입 경로(`AppEvent::Shutdown`, quit modal 즉시
+    /// 종료, `close_behavior=="quit"`)가 **공유**한다.
     ///
-    /// 호출자가 사전에 `flush_layout_persistence(true)` 를 끝낸 상태여야 한다.
-    /// layout.json 은 *살아있는* surface 상태를 기록해야 하므로, surface.closed
-    /// 발화 (= layout 에서 사라지는 의미) 전에 저장이 끝나 있어야 한다.
-    pub(crate) fn shutdown_lifecycle_cascade(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
+    /// 진입점을 하나로 모은 이유는 두 가지다: ① layout 저장(S1)이 반드시 close
+    /// cascade 앞에 와야 한다는 순서 제약을 호출자별로 재현하지 않기 위해,
+    /// ② 계측 t0 이 경로마다 어긋나면 `shutdown_total` 의 의미가 흔들리기 때문.
+    pub(crate) fn begin_shutdown(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        shutdown_trace::mark_start();
+
+        // 단계 1: layout.json 저장. layout 은 *살아있는* surface 상태를 기록해야
+        //         하므로 surface.closed 발화(= layout 에서 사라지는 의미) 전에
+        //         저장이 끝나 있어야 한다.
+        let t_flush = Instant::now();
+        self.flush_layout_persistence(true);
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = shutdown_trace::elapsed_ms(t_flush),
+            "S1 layout_flush (SaveLayoutNow force — main + parked engine)"
+        );
+
+        self.shutdown_lifecycle_cascade(event_loop);
+    }
+
+    /// `begin_shutdown` 후반부 — plugin/surface lifecycle 정리 후 event loop 탈출.
+    fn shutdown_lifecycle_cascade(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let t0 = shutdown_trace::mark_start();
+
         // 단계 0: 부팅 중(WaitingEngine) 종료라면 워커가 spawn 한 plugin 자식
         //         프로세스를 먼저 회수한다 (steady-state 에선 no-op).
+        //         계측은 S2 — 회수가 실제로 일어나는 경로에서만 발화한다.
         self.reclaim_boot_engine_worker_for_exit();
 
         // 단계 1: shutdown initiated 이벤트 발화. plugin 이 cleanup hook 을 돌릴 시간을 준다.
+        self.emit_shutdown_initiated();
+
+        // 단계 2+3: surface close cascade (S3).
+        self.shutdown_close_surfaces();
+
+        // 단계 4: plugin 종료 (S4/S4a).
+        self.shutdown_plugins();
+
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = shutdown_trace::elapsed_ms(t0),
+            "shutdown_total (shutdown enter -> event_loop.exit())"
+        );
+        event_loop.exit();
+    }
+
+    /// 단계 1 — `system.shutdown_initiated` 발화. 계측 없음(채널 send 뿐이라
+    /// 저비용이며, 실측이 이를 뒤집으면 그때 마커를 붙인다).
+    fn emit_shutdown_initiated(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::SystemShutdownInitiated;
@@ -76,23 +125,44 @@ impl App {
                 EventScope::System,
             );
         }
+    }
 
-        // 단계 2: 살아있는 surface 들에 대한 close cascade 큐 push.
-        //         plugin (예: claude / codex) 이 child registry 등 자기 state 를
-        //         정리할 마지막 기회.
-        self.cascade_shutdown_close_all_surfaces();
-
-        // 단계 3: drain — pending_lifecycle_events 를 plugin 으로 broadcast.
-        //         event_loop 가 곧 빠지므로 다음 about_to_wait 가 없어 명시 호출 필요.
+    /// 단계 2+3 — 살아있는 surface 들에 close cascade 큐 push 후 즉시 drain.
+    ///
+    /// 단계 2 는 plugin (예: claude / codex) 이 child registry 등 자기 state 를
+    /// 정리할 마지막 기회이고, 단계 3 은 그 pending 이벤트를 plugin 으로
+    /// broadcast 한다 — event_loop 가 곧 빠져 다음 `about_to_wait` 가 없으므로
+    /// 명시 호출이 필요하다. 두 단계는 "surface 를 닫아 plugin 에 알린다" 는 한
+    /// 덩어리라 S3 하나로 잰다.
+    fn shutdown_close_surfaces(&mut self) {
+        let t_cascade = Instant::now();
+        let surfaces = self.cascade_shutdown_close_all_surfaces();
         self.dispatch_pending_surface_lifecycle();
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = shutdown_trace::elapsed_ms(t_cascade),
+            surfaces,
+            "S3 surface_close_cascade (enqueue + plugin broadcast)"
+        );
+    }
 
-        // 단계 4: plugin 종료 (2s graceful + force kill).
-        //         위 3) 의 event.dispatch 들이 같은 req_tx 채널에 먼저 쌓였으므로
-        //         plugin worker 가 shutdown 처리 전에 surface.closed 들을 순서대로 받음.
+    /// 단계 4 — plugin 종료 (2s graceful + force kill).
+    ///
+    /// 앞선 단계 3 의 event.dispatch 들이 같은 `req_tx` 채널에 먼저 쌓였으므로
+    /// plugin worker 는 shutdown 처리 전에 surface.closed 들을 순서대로 받는다.
+    /// S4 / S4a 마커는 `PluginManager::shutdown_all` 안에서 발화한다.
+    fn shutdown_plugins(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             mgr.shutdown_all();
+        } else {
+            // manager 자체가 없는 경우도 남긴다 — "안 걸렸다" 와 "계측이 안 붙었다"
+            // 를 로그만 보고 구분할 수 있어야 한다.
+            tracing::info!(
+                target: "tasty::shutdown",
+                ms = 0.0,
+                plugins = 0,
+                "S4 plugin_shutdown (no plugin manager)"
+            );
         }
-
-        event_loop.exit();
     }
 }

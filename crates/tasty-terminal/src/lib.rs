@@ -41,6 +41,27 @@ pub use mouse_report::encode_mouse_report;
 pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
 
+/// `PtyBackend::drop` 누적 소요(ns) — [`pty_drop_totals`] 참조.
+static PTY_DROP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// `PtyBackend::drop` 누적 횟수 — [`pty_drop_totals`] 참조.
+static PTY_DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 지금까지 `PtyBackend::drop` 이 소비한 (총 시간, 횟수).
+///
+/// 호스트 종료 계측(`S5b pty_drop`)용이다. surface 가 많으면 이 Drop 이 surface
+/// 수만큼 직렬로 도는데, 그 구간은 `event_loop.exit()` 이후라 화면으로 덮을 수
+/// 없어 사용자 체감에 직결된다. drop 하나하나를 로그로 남기면 surface 수만큼
+/// 줄이 늘어 읽기 어려우므로 프로세스 전역 누적기로 모으고, 호스트가 App drop
+/// **전후 델타**를 찍는다 — 일반 surface 닫기의 drop 도 같이 누적되므로 절대값이
+/// 아니라 델타로만 읽어야 한다.
+pub fn pty_drop_totals() -> (std::time::Duration, u64) {
+    use std::sync::atomic::Ordering;
+    (
+        std::time::Duration::from_nanos(PTY_DROP_NANOS.load(Ordering::Relaxed)),
+        PTY_DROP_COUNT.load(Ordering::Relaxed),
+    )
+}
+
 /// Configuration for creating a new Terminal.
 pub struct TerminalConfig<'a> {
     pub cols: usize,
@@ -122,6 +143,8 @@ impl Drop for PtyBackend {
         let Some(child) = self.child.as_mut() else {
             return;
         };
+        // 종료 Drop tail 계측(S5b) 누적 — 개별 로그 대신 합계를 모은다.
+        let t_drop = std::time::Instant::now();
         if let Err(e) = child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
         }
@@ -156,6 +179,14 @@ impl Drop for PtyBackend {
                     libc::waitpid(pid, &raw mut status, 0);
                 }
             });
+        }
+        {
+            use std::sync::atomic::Ordering;
+            PTY_DROP_NANOS.fetch_add(
+                u64::try_from(t_drop.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                Ordering::Relaxed,
+            );
+            PTY_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
         }
     }
 }

@@ -312,7 +312,10 @@ impl PluginProcess {
             .unwrap_or(Duration::MAX)
     }
 
-    pub fn shutdown(mut self, timeout: Duration) {
+    /// 반환값은 종료 계측(`S4a plugin_shutdown_one`)의 `reason` 필드용이다 —
+    /// 어느 plugin 이 graceful 시간 안에 못 빠졌는지 가리려면 소요 ms 만으로는
+    /// 부족하고 사유가 함께 있어야 한다.
+    pub fn shutdown(mut self, timeout: Duration) -> ShutdownOutcome {
         if let Err(e) = self.req_tx.send(PluginRequest {
             method: "shutdown".into(),
             params: serde_json::json!({}),
@@ -320,16 +323,39 @@ impl PluginProcess {
         }) {
             tracing::trace!("plugin shutdown send dropped (writer exited): {e}");
         }
-        if let Some(child) = self.child.take() {
-            shutdown_child(child, timeout);
+        match self.child.take() {
+            Some(child) => shutdown_child(child, timeout),
+            None => ShutdownOutcome::NoChild,
+        }
+    }
+}
+
+/// `PluginProcess::shutdown` 의 결말 — 종료 계측의 `reason` 필드.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownOutcome {
+    /// 자식이 deadline 안에 스스로 종료했다.
+    Graceful,
+    /// deadline 초과 → `child.kill()` 로 강제 종료했다.
+    Killed,
+    /// 회수할 자식 핸들이 없었다 (이미 이관/종료됨).
+    NoChild,
+}
+
+impl ShutdownOutcome {
+    /// 로그 필드용 표기 — 부팅 계측의 `reason = satisfied|deadline` 과 같은 관례.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Graceful => "graceful",
+            Self::Killed => "killed",
+            Self::NoChild => "no_child",
         }
     }
 }
 
 /// shutdown 메시지 전송 후 자식이 `timeout` 내 스스로 종료하는지 대기, 아니면 강제 kill.
-fn shutdown_child(mut child: Child, timeout: Duration) {
+fn shutdown_child(mut child: Child, timeout: Duration) -> ShutdownOutcome {
     if wait_for_child_exit(&mut child, Instant::now() + timeout) {
-        return;
+        return ShutdownOutcome::Graceful;
     }
     // shutdown 메시지 전송 실패 / 타임아웃 시 강제 종료. kill 실패는 이미
     // 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든 호스트가
@@ -340,6 +366,7 @@ fn shutdown_child(mut child: Child, timeout: Duration) {
     if let Err(e) = child.wait() {
         tracing::trace!("plugin child wait failed: {e}");
     }
+    ShutdownOutcome::Killed
 }
 
 /// `deadline` 까지 폴링하며 자식이 스스로 종료하길 대기. 종료를 관측했으면 true.

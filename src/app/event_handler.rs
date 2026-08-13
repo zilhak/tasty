@@ -68,8 +68,7 @@ impl ApplicationHandler<AppEvent> for App {
                 // 는 silently drop — 본 핸들러는 등록된 view 만 책임진다.
             }
             AppEvent::Shutdown => {
-                self.flush_layout_persistence(true);
-                self.shutdown_lifecycle_cascade(event_loop);
+                self.begin_shutdown(event_loop);
             }
             AppEvent::Minimize => self.handle_minimize(),
             AppEvent::QuitRequested => {

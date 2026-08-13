@@ -76,7 +76,7 @@ ports-and-adapters 배치:
 | 모듈 | 역할 |
 |------|------|
 | `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_dispatch, cli_routing, wiring, locale, trace(부팅 계측) |
-| `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), modal, ipc dispatch, attach, dispatch_domain |
+| `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, dispatch_domain |
 | `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
 | `view/` | **GUI**(gui-gated) — `View` sealed trait 계층 + MainView/SettingsView/QuitView/PluginsView/PresetView. — [multi-window](multi-window.md) |
@@ -100,6 +100,7 @@ ports-and-adapters 배치:
 | 문서 | 설명 |
 |------|------|
 | [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
+| [shutdown-sequence](shutdown-sequence.md) | 종료 cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
 | [multi-window](multi-window.md) | App = Core/Hub/ViewRegistry, Window trait 계층, 모달 불변식, 단일 프로세스 근거 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준) |

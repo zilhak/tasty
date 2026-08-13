@@ -636,6 +636,11 @@ mod notify_cleanup_tests {
 
 impl Drop for TcpIpcServer {
     fn drop(&mut self) {
+        // 종료 Drop tail 계측(S5d). 저비용이지만 **시점**이 중요하다 —
+        // `~/.tasty/tasty.port` 제거는 오직 여기서만 일어나므로, Drop tail 이 길면
+        // 그만큼 stale 포트 파일이 남는 시간이 길어진다. 그 창을 로그로 재는 게
+        // 이 마커의 목적이다.
+        let t_drop = std::time::Instant::now();
         // Signal the accept thread to stop
         self.shutdown.store(true, Ordering::Relaxed);
         // Clean up port file. 파일이 이미 사라졌거나 권한이 없는 케이스도 정상 종료
@@ -646,5 +651,10 @@ impl Drop for TcpIpcServer {
         {
             tracing::trace!("port file {} remove failed: {e}", path.display());
         }
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = t_drop.elapsed().as_secs_f64() * 1000.0,
+            "S5d ipc_server_drop (accept stop + port file 제거)"
+        );
     }
 }

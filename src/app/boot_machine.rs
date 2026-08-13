@@ -380,6 +380,11 @@ impl App {
     ///
     /// 부팅 미완이 아니거나 WaitingEngine 이 아니면 no-op — steady-state 종료
     /// 경로에서 불려도 무해하다.
+    ///
+    /// 계측(`S2 boot_worker_reclaim`)은 **실제로 회수를 시도한 경우에만** 발화한다.
+    /// steady-state 종료에서는 마커가 아예 나오지 않는 것이 정상이며, 그 경우
+    /// 이 구간의 비용은 0 이다. 회수 성공 시 내부 `shutdown_all` 이 S4/S4a 를
+    /// 중첩 발화하므로 그 값들은 S2 안에 포함돼 있다.
     pub(crate) fn reclaim_boot_engine_worker_for_exit(&mut self) {
         let Some(boot) = self.boot.as_mut() else {
             return;
@@ -387,16 +392,25 @@ impl App {
         let BootPhase::WaitingEngine { rx, .. } = &boot.phase else {
             return;
         };
-        match rx.recv_timeout(Duration::from_secs(5)) {
+        let t_reclaim = Instant::now();
+        let reason = match rx.recv_timeout(Duration::from_secs(5)) {
             Ok((engine, mut mgr)) => {
                 drop(engine);
                 mgr.shutdown_all();
+                "reclaimed"
             }
             Err(e) => {
                 // 워커 panic(즉시 Disconnected) 또는 5s 초과 — 더 기다리지 않는다.
                 tracing::warn!("boot engine worker not reclaimed before exit: {e}");
+                "unreclaimed"
             }
-        }
+        };
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = crate::app::shutdown_trace::elapsed_ms(t_reclaim),
+            reason,
+            "S2 boot_worker_reclaim (부팅 중 종료 전용, timeout 5s)"
+        );
     }
 
     /// Ready 합류 — AppState 조립 + IPC server 시작 + `register_window` +

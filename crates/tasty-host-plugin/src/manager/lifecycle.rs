@@ -387,12 +387,36 @@ impl PluginManager {
         }
     }
 
-    /// 메인 루프에서 매 tick 호출. plugin 알림 처리 + 헬스체크 + 비응답 재시작.
+    /// 호스트 종료 시 전 plugin 프로세스 정리 — plugin 하나씩 **순차** graceful
+    /// shutdown(2s) 후 미종료면 force kill.
+    ///
+    /// 계측은 `target: "tasty::shutdown"` 으로 상시 발화한다: plugin 별
+    /// `S4a plugin_shutdown_one`(개별 ms + graceful/killed 사유) + 합계
+    /// `S4 plugin_shutdown`(plugin 수). plugin 이 0개여도 S4 는 `plugins=0` 으로
+    /// 반드시 발화한다 — "안 걸렸다" 와 "계측이 안 붙었다" 를 로그로 구분해야 한다.
+    /// 마커 표는 본체 `docs/architecture/shutdown-sequence.md`.
     pub fn shutdown_all(&mut self) {
-        for (_, proc) in self.processes.drain() {
-            proc.shutdown(Duration::from_secs(2));
+        let t_all = Instant::now();
+        let procs: Vec<_> = self.processes.drain().collect();
+        let plugins = procs.len();
+        for (plugin_id, proc) in procs {
+            let t_one = Instant::now();
+            let outcome = proc.shutdown(Duration::from_secs(2));
+            tracing::info!(
+                target: "tasty::shutdown",
+                ms = t_one.elapsed().as_secs_f64() * 1000.0,
+                plugin_id,
+                reason = outcome.as_str(),
+                "S4a plugin_shutdown_one (graceful deadline 2s)"
+            );
         }
         self.plugin_buffers.clear();
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = t_all.elapsed().as_secs_f64() * 1000.0,
+            plugins,
+            "S4 plugin_shutdown (순차 종료 합계)"
+        );
     }
 
     /// CLI/IPC용 — plugin 활성화. 활성화 즉시 spawn 시도.

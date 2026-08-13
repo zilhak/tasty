@@ -70,6 +70,8 @@ finish_boot (Ready):
   `WaitingEngine` 체류 중이면 워커 결과(최대 5s 대기)를 회수해 그 안의
   `PluginManager` 를 graceful shutdown 한다(잔존 plugin 자식 프로세스 방지).
   WaitingEngine 이 아니거나 부팅 완료 후(steady-state 종료 cascade)에는 no-op.
+  이 구간의 계측은 종료 쪽 마커 `S2 boot_worker_reclaim` 이다 —
+  [shutdown-sequence](shutdown-sequence.md).
 - **AppEvent** 는 종료 계열(Shutdown/QuitRequested)만 즉시 처리하고 나머지는
   `BootState.pending_events` 에 지연 → Ready 후 도착 순서대로 재생한다. 특히
   `TerminalOutput` 을 부팅 중 소비하면 대상 engine 이 아직 views 밖

@@ -803,10 +803,37 @@ impl SshTunnel {
     }
 }
 
+/// `SshTunnel::drop` 누적 소요(ns) — [`tunnel_drop_totals`] 참조.
+static TUNNEL_DROP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// `SshTunnel::drop` 누적 횟수 — [`tunnel_drop_totals`] 참조.
+static TUNNEL_DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 지금까지 `SshTunnel::drop` 이 소비한 (총 시간, 횟수).
+///
+/// 호스트 종료 계측(`S5c ssh_tunnel_drop`)용이다. `child.wait()` 가 블로킹이라
+/// attach 세션 수만큼 직렬로 쌓이고, 그 구간은 `event_loop.exit()` 이후라 화면으로
+/// 덮을 수 없다. 호스트가 App drop **전후 델타**로 읽는다 (평시 browse/attach 해제
+/// 시의 drop 도 함께 누적되므로 절대값은 의미가 없다).
+pub fn tunnel_drop_totals() -> (Duration, u64) {
+    use std::sync::atomic::Ordering;
+    (
+        Duration::from_nanos(TUNNEL_DROP_NANOS.load(Ordering::Relaxed)),
+        TUNNEL_DROP_COUNT.load(Ordering::Relaxed),
+    )
+}
+
 impl Drop for SshTunnel {
     fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+
+        let t_drop = Instant::now();
         let _ = self.child.kill(); // best-effort 자식 종료 — 이미 종료됐을 수 있음, 무시
         let _ = self.child.wait(); // 좀비 방지 reaping — 실패 무시
+        TUNNEL_DROP_NANOS.fetch_add(
+            u64::try_from(t_drop.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        TUNNEL_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 }
 

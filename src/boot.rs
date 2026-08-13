@@ -190,8 +190,85 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
         &serde_json::Value::Null,
     );
     event_loop.run_app(&mut app)?;
+    drop_app_with_trace(app);
 
     Ok(())
+}
+
+/// `event_loop.run_app` 반환 후의 **Drop tail** 계측 (S5 계열).
+///
+/// `app` 을 스코프 끝 암묵 drop 에 맡기면 계측을 끼울 자리가 없어 명시 drop 으로
+/// 전환했다(동작은 동일 — drop 시점이 같은 함수의 몇 줄 앞으로 당겨질 뿐이다).
+///
+/// 이 구간이 중요한 이유: `event_loop.exit()` 시점에 창은 이미 사라졌는데 블로킹
+/// destructor(LuaEngine join / PluginProcess wait / SshTunnel wait / PTY kill)가
+/// 여기서 직렬로 돈다. 즉 **종료 화면으로 덮을 수 없는 체감 시간**이며,
+/// `shutdown_total` 만 재면 통째로 놓친다.
+#[cfg(feature = "gui")]
+fn drop_app_with_trace(app: App) {
+    use std::time::Instant;
+
+    use crate::app::shutdown_trace;
+
+    // Drop tail 내부 세분(S5b/S5c)은 destructor 가 surface·세션 수만큼 반복돼
+    // 개별 로그로는 읽기 어렵다. 크레이트별 전역 누적기의 **전후 델타**로 잰다.
+    let before = DropTailCounters::snapshot();
+
+    let t_drop = Instant::now();
+    drop(app);
+    let drop_ms = shutdown_trace::elapsed_ms(t_drop);
+
+    DropTailCounters::snapshot().log_delta(&before);
+    tracing::info!(
+        target: "tasty::shutdown",
+        ms = drop_ms,
+        "S5 drop_tail (run_app return -> App drop 완료)"
+    );
+    if let Some(t0) = shutdown_trace::started_at() {
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = shutdown_trace::elapsed_ms(t0),
+            "shutdown_total_with_drop (사용자 체감 종료 시간)"
+        );
+    }
+}
+
+/// Drop tail 세분 계측(S5b/S5c)의 스냅샷 — 크레이트별 전역 누적기 값.
+#[cfg(feature = "gui")]
+struct DropTailCounters {
+    pty: (std::time::Duration, u64),
+    ssh: (std::time::Duration, u64),
+}
+
+#[cfg(feature = "gui")]
+impl DropTailCounters {
+    fn snapshot() -> Self {
+        Self {
+            pty: tasty_terminal::pty_drop_totals(),
+            ssh: tasty_cli::ssh::tunnel_drop_totals(),
+        }
+    }
+
+    /// `before` 대비 증가분을 S5b/S5c 로 찍는다.
+    fn log_delta(&self, before: &Self) {
+        use crate::app::shutdown_trace::duration_ms;
+
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = duration_ms(self.pty.0.saturating_sub(before.pty.0)),
+            // 필드명이 S3 의 `surfaces` 와 다른 이유: 여기서 세는 건 **PTY 를 실제로
+            // 가진 backend** 라 layout 상의 surface 수와 일치하지 않는다(child
+            // terminal / headless PTY 는 layout 밖에도 있고, PTY 없는 surface 도 있다).
+            ptys = self.pty.1 - before.pty.1,
+            "S5b pty_drop (PtyBackend::drop 합계)"
+        );
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = duration_ms(self.ssh.0.saturating_sub(before.ssh.0)),
+            tunnels = self.ssh.1 - before.ssh.1,
+            "S5c ssh_tunnel_drop (SshTunnel::drop 합계)"
+        );
+    }
 }
 
 /// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.

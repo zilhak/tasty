@@ -231,8 +231,11 @@ impl LuaEngine {
     }
 }
 
-impl Drop for LuaEngine {
-    fn drop(&mut self) {
+impl LuaEngine {
+    /// Shutdown job 전송 + 워커 join. `Drop` 본문에서 분리한 이유는 계측 로그까지
+    /// 한 함수에 두면 tracing 매크로 전개분까지 합쳐 clippy cognitive complexity
+    /// 상한을 넘기 때문이다 — 동작상 의미는 Drop 본문 그대로다.
+    fn join_worker(&mut self) {
         // 큐가 가득 차 있어도 Shutdown 은 반드시 도달해야 하므로 블로킹 send 사용.
         // 이미 워커가 죽어 disconnect 여도 정상 — 아래 join 이 정리한다.
         if let Err(e) = self.job_tx.send(LuaJob::Shutdown) {
@@ -243,6 +246,22 @@ impl Drop for LuaEngine {
         {
             tracing::warn!(target: "tasty_lua", "lua worker join failed: {e:?}");
         }
+    }
+}
+
+impl Drop for LuaEngine {
+    fn drop(&mut self) {
+        // 호스트 종료 Drop tail 계측(S5a) — 이 Drop 은 `event_loop.exit()` *이후*
+        // 에 도는 블로킹 구간이라 화면으로 덮을 수 없다. 워커가 현재 job 을 끝낼
+        // 때까지 join 이 대기하므로 값이 커질 수 있어, 지배 destructor 를 가리려면
+        // 개별 계측이 필요하다. target 은 호스트 종료 마커와 같은 계열로 맞춘다.
+        let t_join = std::time::Instant::now();
+        self.join_worker();
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = t_join.elapsed().as_secs_f64() * 1000.0,
+            "S5a lua_join (Shutdown send + worker join)"
+        );
     }
 }
 
