@@ -10,6 +10,11 @@
 //! - 본문: 행 단위 클릭 선택(`selectable`), 선택 행은 egui `set_selected` 하이라이트.
 //! - 컬럼 폭/정렬은 [`TableColumn`] 으로 컬럼마다 지정. 본문 셀 내용은 호출자가
 //!   `cell` 클로저로 `(ui, theme, row, col_index)` 를 받아 직접 렌더한다.
+//! - `selectable(true)` 인 표의 본문 셀 서브트리는 `interaction.selectable_labels = false`
+//!   로 고정된다 — 행 전체가 클릭 타겟이라는 계약을 지키기 위해 셀 텍스트의 드래그
+//!   선택/복사를 포기한다 (`docs/adr/0069-table-row-click-over-cell-text-selection.md`).
+//!   헤더 셀은 영향을 받지 않으며, 정렬 클릭은 명시 `Sense::click()` 으로 유지된다.
+//!   `selectable(false)` 인 표는 egui 기본값 그대로라 셀 텍스트를 선택할 수 있다.
 //!
 //! 본체(`tasty`)·갤러리 양쪽에서 동일 위젯을 호출 → 시각 100% 동기화.
 
@@ -243,13 +248,24 @@ impl<'a, K> Table<'a, K> {
                         body.row(row_h, |mut tr| {
                             tr.set_selected(is_selected(row));
                             for (c, col) in columns.iter().enumerate() {
-                                tr.col(|ui| match col.align {
-                                    TableAlign::Left => cell(ui, theme, row, c),
-                                    TableAlign::Right => {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| cell(ui, theme, row, c),
-                                        );
+                                tr.col(|ui| {
+                                    // 행 선택 모드에선 셀 텍스트가 행 클릭을 가로채지 못하게
+                                    // 라벨 선택성을 끈다. egui 기본 `selectable_labels=true` 는
+                                    // `ui.label` 에 `Sense::click_and_drag()` 를 붙이고, 이 라벨은
+                                    // 셀 `Ui` 의 sense 보다 나중에 등록되므로 hit-test 동률에서
+                                    // 앞선다 → 글자 위에서 `tr.response()` 가 클릭을 못 받는다.
+                                    // 셀 서브트리에만 적용되며 헤더(정렬 클릭)에는 닿지 않는다.
+                                    if selectable {
+                                        ui.style_mut().interaction.selectable_labels = false;
+                                    }
+                                    match col.align {
+                                        TableAlign::Left => cell(ui, theme, row, c),
+                                        TableAlign::Right => {
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| cell(ui, theme, row, c),
+                                            );
+                                        }
                                     }
                                 });
                             }

@@ -85,7 +85,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### 행 선택 / 주소 복사
 
-- 행을 클릭하면 선택(강조)되고, 같은 행을 다시 클릭하면 해제된다(`selected_port`, `egui::Memory` 영속).
+- 행을 클릭하면 선택(강조)되고, 같은 행을 다시 클릭하면 해제된다(`selected_port`, `egui::Memory` 영속). 셀 글자(주소·프로세스명 등) 위에서도 동일하게 행 선택이 잡힌다 — 대신 셀 텍스트를 드래그로 선택·복사할 수는 없다([ADR-0069](../../adr/0069-table-row-click-over-cell-text-selection.md), 대체는 아래 `Copy address`).
 - footer `Copy address` 는 선택 행의 `host:port`(IPv6 는 `[..]` bracket)를 클립보드에 복사한다(egui platform-output copy → `handle_platform_output`).
 
 ## 인터페이스
