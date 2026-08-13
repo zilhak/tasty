@@ -59,6 +59,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
         | InvalidTransition { .. } => JsonRpcResponse::invalid_params(id, msg),
         AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, msg),
         LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, msg),
+        LeasePoolExhausted { .. } => JsonRpcResponse::error(id, -32012, msg),
         TaskReferenced { referenced_by, .. } => JsonRpcResponse::error_with_data(
             id,
             -32010,

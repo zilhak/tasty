@@ -15,8 +15,8 @@ use std::time::Duration;
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
 use tasty_agent::{
-    AgentError, BarrierState, BarrierStore, LeaseMode, LeaseStore, ReducerInput, SemaphoreStore,
-    Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
+    AgentError, BarrierState, BarrierStore, ElasticSpec, LeaseMode, LeaseStore, ReducerInput,
+    SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
@@ -208,17 +208,47 @@ impl HostExecutor {
     }
 
     /// `task.metadata.lease` 컨벤션을 읽어 lease 점유 시도.
-    /// metadata 형식: `{ resource: String, holder?: String, ttl_ms?: u64, mode?: "fail"|"block" }`.
-    /// 반환: `Ok(None)` = 미사용, `Ok(Some(true))` = 점유, `Ok(Some(false))` = 충돌 (Block 모드),
-    /// `Err(msg)` = Fail 모드 충돌 또는 store 오류.
+    ///
+    /// metadata 형식(단일 resource — sugar): `{ resource: String, holder?,
+    /// ttl_ms?, mode? }`. `resource: "x"` 는 `candidates: ["x"]` 와 store 상에서
+    /// 동일한 `lease_key` 를 쓰므로 관측적으로 동일하다.
+    ///
+    /// metadata 형식(pool): `{ candidates: [String], holder?, ttl_ms?, mode?,
+    /// elastic?: { max_candidates?: u32, overflow_prefix?: String } }`.
+    /// `elastic` 생략 시 기본 **fixed** — candidates 안에서만 순회하고 전부
+    /// 점유 중이면 대기/실패한다. `elastic` 이 있으면(빈 객체 `{}` 도 포함)
+    /// 소진 시 새 candidate 이름을 자동 합성한다(명시적 opt-in — 문서
+    /// `crates/tasty-agent/src/lease.rs` 모듈 주석 참조).
+    ///
+    /// 반환: `Ok(None)` = 미사용, `Ok(Some(true))` = 점유(실제 받은 자원은
+    /// `self.held_leases` 에 기록 — `dispatch` 가 이걸로 `TaskCommand` 치환),
+    /// `Ok(Some(false))` = 충돌/소진 (Block 모드), `Err(msg)` = Fail 모드
+    /// 충돌/소진 또는 store 오류.
     fn try_acquire_lease(&mut self, task: &Task) -> Result<Option<bool>, String> {
         let Some(meta) = task.metadata.get("lease").and_then(|v| v.as_object()) else {
             return Ok(None);
         };
-        let resource = meta
-            .get("resource")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "lease metadata: missing 'resource'".to_string())?;
+        let candidates: Vec<String> = if let Some(arr) = meta.get("candidates") {
+            let arr = arr
+                .as_array()
+                .ok_or_else(|| "lease metadata: 'candidates' must be an array".to_string())?;
+            arr.iter()
+                .map(|v| {
+                    v.as_str().map(str::to_string).ok_or_else(|| {
+                        "lease metadata: 'candidates' entries must be strings".to_string()
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?
+        } else {
+            let resource = meta
+                .get("resource")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "lease metadata: missing 'resource' or 'candidates'".to_string())?;
+            vec![resource.to_string()]
+        };
+        if candidates.is_empty() {
+            return Err("lease metadata: 'candidates' must be non-empty".to_string());
+        }
         let holder = meta
             .get("holder")
             .and_then(|v| v.as_str())
@@ -234,22 +264,63 @@ impl HostExecutor {
                 ));
             }
         };
-        let resource = resource.to_string();
+        let elastic: Option<ElasticSpec> = match meta.get("elastic") {
+            None => None,
+            Some(v) => {
+                let obj = v
+                    .as_object()
+                    .ok_or_else(|| "lease metadata: 'elastic' must be an object".to_string())?;
+                let max_candidates = match obj.get("max_candidates") {
+                    None => None,
+                    Some(v) => Some(v.as_u64().ok_or_else(|| {
+                        "lease metadata: 'elastic.max_candidates' must be a non-negative integer"
+                            .to_string()
+                    })? as u32),
+                };
+                let overflow_prefix = match obj.get("overflow_prefix") {
+                    None => None,
+                    Some(v) => Some(
+                        v.as_str()
+                            .ok_or_else(|| {
+                                "lease metadata: 'elastic.overflow_prefix' must be a string"
+                                    .to_string()
+                            })?
+                            .to_string(),
+                    ),
+                };
+                Some(ElasticSpec {
+                    max_candidates,
+                    overflow_prefix,
+                })
+            }
+        };
         let holder = holder.to_string();
         let ws = task.workspace_id;
         let now = now_ms();
-        let result: Result<bool, String> = self.ctx.with_memory(|mem| {
+        let result: Result<(bool, Option<String>), String> = self.ctx.with_memory(|mem| {
             let mut store = LeaseStore::new(mem, HOST_OWNER);
-            match store.acquire(ws, &resource, &holder, ttl_ms, mode, now) {
-                Ok(o) => Ok(o.acquired),
+            match store.acquire_any(
+                ws,
+                &candidates,
+                &holder,
+                ttl_ms,
+                mode,
+                elastic.as_ref(),
+                now,
+            ) {
+                Ok(o) => Ok((o.acquired, o.resource)),
                 Err(AgentError::LeaseConflict { resource, holder }) => {
                     Err(format!("lease conflict: '{resource}' held by '{holder}'"))
                 }
+                Err(AgentError::LeasePoolExhausted { candidates, holder }) => Err(format!(
+                    "lease pool exhausted: none of {candidates:?} available for '{holder}'"
+                )),
                 Err(e) => Err(e.to_string()),
             }
         });
-        let acquired = result?;
+        let (acquired, resource) = result?;
         if acquired {
+            let resource = resource.expect("acquire_any: acquired=true implies resource");
             self.held_leases
                 .insert(task.id.clone(), (ws, resource, holder));
         }
@@ -332,6 +403,26 @@ impl HostExecutor {
             tracing::warn!("lease release failed for task {task_id} ({resource}/{holder}): {e}");
         }
     }
+
+    /// lease pool 이 배정한 resource 로 치환된 `task.command` 를 store 에도
+    /// 되써서 task-get/task-list 가 원본(`${lease.resource}`/빈 cwd) 대신 실제
+    /// 배정 값을 보여주게 한다. best-effort — 실패해도 dispatch 자체(진짜
+    /// 실행)는 이미 이 command 로 진행되므로 warn 로그만 남기고 계속한다.
+    fn persist_substituted_command(&mut self, ws: u32, task: &Task) {
+        let seq = self.ctx.agent_seq.clone();
+        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+            use tasty_agent::TaskStore;
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let Some(mut stored) = store.get(ws, &task.id).map_err(|e| e.to_string())? else {
+                return Ok(());
+            };
+            stored.command = task.command.clone();
+            store.put(&stored).map_err(|e| e.to_string())
+        });
+        if let Err(e) = res {
+            tracing::warn!("persist lease-substituted command for {}: {e}", task.id);
+        }
+    }
 }
 
 impl TaskExecutor for HostExecutor {
@@ -357,7 +448,23 @@ impl TaskExecutor for HostExecutor {
                 return DispatchOutcome::PermanentFail(format!("semaphore: {e}"));
             }
         }
-        let result = match self.dispatch_command(task) {
+        // lease 로 획득한 resource 식별자를 dispatch_command 호출 직전 command 에
+        // 주입 — pool 모드에서 dispatch된 task가 실제로 어느 candidate 를
+        // 받았는지 알 방법이 이 치환뿐이다(§ 아래 substitute_lease_resource).
+        // 치환된 command 는 store 에도 되써서 task-get/task-list 조회 시점에
+        // 실제 배정된 자원(예: cwd)이 그대로 드러나게 한다 — 안 그러면 원본
+        // `${lease.resource}`/빈 cwd 만 보여 "어느 candidate 를 받았는지" 를
+        // 외부에서 확인할 방법이 lease-list 뿐이게 된다.
+        let dispatch_result = match self.held_leases.get(&task.id).cloned() {
+            Some((ws, resource, _)) => {
+                let mut substituted = task.clone();
+                substitute_lease_resource(&mut substituted.command, &resource);
+                self.persist_substituted_command(ws, &substituted);
+                self.dispatch_command(&substituted)
+            }
+            None => self.dispatch_command(task),
+        };
+        let result = match dispatch_result {
             Ok(h) => {
                 // S2: Started 직후 영속 — handle 자체에서 ws 식별 불가 (ShellProcess
                 // 에는 workspace_id 가 없음) 라 task.workspace_id 를 직접 전달.
@@ -784,6 +891,69 @@ impl HostExecutor {
             // handle 정리 + release_permit 을 담당한다.
             DispatchHandle::AwaitExternal { .. } => PollOutcome::Active,
         }
+    }
+}
+
+/// dispatch 직전 lease pool 이 배정한 resource 식별자를 command 에 주입하는
+/// placeholder 토큰. `Run.cwd`/`Run.command` 인자/`Custom.params` 어디든 이
+/// 문자열이 나타나면 실제 resource 로 치환된다.
+const LEASE_RESOURCE_PLACEHOLDER: &str = "${lease.resource}";
+
+/// `try_acquire_lease` 가 획득한 resource(`held_leases`)를 실제 실행 파라미터에
+/// 주입한다.
+///
+/// - `Run.command` 의 각 인자 / `Run.cwd`: placeholder 치환. `cwd` 가 애초에
+///   `None` 이면(가장 흔한 pool 사용법 — "이 후보 경로에서 실행해라") 곧장
+///   resource 경로로 채운다.
+/// - `Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의
+///   placeholder 를 치환(예: `claude.spawn` 의 `cwd` 파라미터).
+/// - `Reduce`/`WaitBarrier`: lease 와 무관 — no-op.
+fn substitute_lease_resource(command: &mut TaskCommand, resource: &str) {
+    match command {
+        TaskCommand::Run { command, cwd, .. } => {
+            for arg in command.iter_mut() {
+                if arg.contains(LEASE_RESOURCE_PLACEHOLDER) {
+                    *arg = arg.replace(LEASE_RESOURCE_PLACEHOLDER, resource);
+                }
+            }
+            match cwd {
+                None => *cwd = Some(std::path::PathBuf::from(resource)),
+                Some(existing) => {
+                    if let Some(s) = existing.to_str()
+                        && s.contains(LEASE_RESOURCE_PLACEHOLDER)
+                    {
+                        *cwd = Some(std::path::PathBuf::from(
+                            s.replace(LEASE_RESOURCE_PLACEHOLDER, resource),
+                        ));
+                    }
+                }
+            }
+        }
+        TaskCommand::Custom { params, .. } => {
+            substitute_lease_resource_in_json(params, resource);
+        }
+        TaskCommand::Reduce { .. } | TaskCommand::WaitBarrier { .. } => {}
+    }
+}
+
+fn substitute_lease_resource_in_json(value: &mut serde_json::Value, resource: &str) {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.contains(LEASE_RESOURCE_PLACEHOLDER) {
+                *s = s.replace(LEASE_RESOURCE_PLACEHOLDER, resource);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                substitute_lease_resource_in_json(v, resource);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                substitute_lease_resource_in_json(v, resource);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2136,5 +2306,363 @@ mod tests {
         });
         assert!(!present_after, "evict should remove entry");
         assert!(!exec.held_handles.contains_key(&task_id));
+    }
+
+    // =====================================================================
+    // lease pool 모드 (TODO 08: candidates/elastic) — `try_acquire_lease`
+    // 자체는 실행(dispatch_command)과 독립적이므로 여기 테스트는 실제 process
+    // spawn 없이 private 메서드를 직접 호출해 배정 로직만 검증한다. cwd/params
+    // 치환은 뒤쪽 `dispatch_*` 테스트에서 실제 spawn 으로 end-to-end 확인한다.
+    // =====================================================================
+
+    #[cfg(unix)]
+    #[test]
+    fn try_acquire_lease_pool_fixed_distributes_distinct_resources_and_defers() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let candidates = vec!["wt-1".to_string(), "wt-2".to_string(), "wt-3".to_string()];
+
+        let mut got = Vec::new();
+        for i in 0..3 {
+            let mut task = mk_run_task(&format!("t-pool-{i}"), vec!["true"]);
+            task.metadata = json!({ "lease": { "candidates": candidates } });
+            assert_eq!(
+                exec.try_acquire_lease(&task).unwrap(),
+                Some(true),
+                "task {i} should acquire a distinct slot"
+            );
+            got.push(exec.held_leases.get(&task.id).unwrap().1.clone());
+        }
+        let mut sorted = got.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            3,
+            "expected 3 distinct resources, got {got:?}"
+        );
+
+        // 4번째는 대기(Deferred = Some(false)) — Block 이 기본 mode.
+        let mut task4 = mk_run_task("t-pool-3", vec!["true"]);
+        task4.metadata = json!({ "lease": { "candidates": candidates } });
+        assert_eq!(exec.try_acquire_lease(&task4).unwrap(), Some(false));
+        assert!(!exec.held_leases.contains_key(&task4.id));
+
+        // elastic 미지정 — 새 candidate 이름이 절대 합성되지 않았어야 한다.
+        for (resource, _holder) in exec.held_leases.values().map(|(_, r, h)| (r, h)) {
+            assert!(
+                candidates.contains(resource),
+                "fixed mode must never synthesize, got {resource}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn try_acquire_lease_pool_elastic_unbounded_synthesizes_beyond_candidates() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let candidates = vec!["wt-1".to_string(), "wt-2".to_string(), "wt-3".to_string()];
+
+        let mut got = Vec::new();
+        for i in 0..5 {
+            let mut task = mk_run_task(&format!("t-elastic-{i}"), vec!["true"]);
+            task.metadata = json!({ "lease": { "candidates": candidates, "elastic": {} } });
+            assert_eq!(
+                exec.try_acquire_lease(&task).unwrap(),
+                Some(true),
+                "task {i} must not wait under unbounded elastic"
+            );
+            got.push(exec.held_leases.get(&task.id).unwrap().1.clone());
+        }
+        let mut sorted = got.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            5,
+            "expected 5 distinct resources, got {got:?}"
+        );
+        let synthesized_count = got.iter().filter(|r| !candidates.contains(r)).count();
+        assert_eq!(synthesized_count, 2, "3 fixed + 2 synthesized");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn try_acquire_lease_pool_elastic_max_candidates_caps_synthesis() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let candidates = vec!["wt-1".to_string(), "wt-2".to_string(), "wt-3".to_string()];
+
+        let mut acquired = 0;
+        for i in 0..6 {
+            let mut task = mk_run_task(&format!("t-cap-{i}"), vec!["true"]);
+            task.metadata = json!({
+                "lease": { "candidates": candidates, "elastic": { "max_candidates": 4 } }
+            });
+            if exec.try_acquire_lease(&task).unwrap() == Some(true) {
+                acquired += 1;
+            }
+        }
+        // 3(fixed) + 1(합성 상한) = 4개만 즉시 점유, 나머지 2개는 대기.
+        assert_eq!(acquired, 4);
+    }
+
+    /// sugar 통합: `resource`(단일)와 `candidates`([단일])가 같은 lease key 로
+    /// 충돌 판정되는지 — `try_acquire_lease` 파싱 층까지 포함해 확인.
+    #[cfg(unix)]
+    #[test]
+    fn try_acquire_lease_resource_sugar_conflicts_with_single_candidate_pool() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+
+        let mut task_a = mk_run_task("t-sugar-a", vec!["true"]);
+        task_a.metadata = json!({ "lease": { "resource": "single-path" } });
+        assert_eq!(exec.try_acquire_lease(&task_a).unwrap(), Some(true));
+
+        let mut task_b = mk_run_task("t-sugar-b", vec!["true"]);
+        task_b.metadata = json!({ "lease": { "candidates": ["single-path"] } });
+        assert_eq!(
+            exec.try_acquire_lease(&task_b).unwrap(),
+            Some(false),
+            "candidates:['single-path'] must conflict with resource:'single-path' \
+             on the same lease key"
+        );
+    }
+
+    /// dispatch 치환이 store 에도 되써지는지 — `task-get`/`task-list` 가 원본
+    /// (빈 cwd)이 아니라 실제 배정된 resource 를 보여줘야 한다(완료 확인 방법
+    /// §2). in-memory `Task` 만 바꾸고 store 를 안 건드리면 이 요구를 못
+    /// 만족하므로, 여기선 실제로 `TaskStore` 에 넣은 뒤 dispatch → 다시
+    /// `TaskStore::get` 으로 읽어 확인한다.
+    #[cfg(unix)]
+    #[test]
+    fn dispatch_persists_lease_substituted_cwd_for_task_get() {
+        use tasty_agent::TaskStore;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap().to_string();
+
+        let mut task = mk_run_task("t-persist-cwd", vec!["pwd"]);
+        task.metadata = json!({ "lease": { "resource": dir_path } });
+        ctx.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
+            store.put(&task).unwrap();
+        });
+
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+
+        // dispatch 도중(아직 Running 으로 store 전이되기 전) store 를 직접
+        // 조회해도 이미 치환된 cwd 가 보여야 한다 — RunnerLoop 가 set_state
+        // 를 부르기 전에 이 persist 가 먼저 일어나기 때문.
+        let stored = ctx.with_memory(|mem| {
+            let store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
+            store.get(1, &task.id).unwrap().unwrap()
+        });
+        match stored.command {
+            TaskCommand::Run { cwd, .. } => {
+                assert_eq!(
+                    cwd,
+                    Some(std::path::PathBuf::from(&dir_path)),
+                    "stored task.command.cwd should reflect the acquired lease resource"
+                );
+            }
+            other => panic!("expected Run, got {other:?}"),
+        }
+
+        // 정상 종결도 확인(치환된 cwd 로 실제 spawn 됐는지).
+        match poll_until_terminal(&mut exec, &handle, 40) {
+            PollOutcome::Done(r) => {
+                let stdout_text = r
+                    .output
+                    .as_ref()
+                    .and_then(|o| o.get("stdout"))
+                    .and_then(|s| s.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                assert_eq!(stdout_text.trim(), dir_path);
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// dispatch 치환: `cwd` 가 `None` 이면 획득한 lease resource 로 그대로
+    /// 채워야 한다(완료 확인 방법 §2 — task-get 결과에 어느 자원을 받았는지
+    /// 드러나야 한다는 요구를 `cwd` 로 실증).
+    #[cfg(unix)]
+    #[test]
+    fn dispatch_fills_empty_run_cwd_with_acquired_lease_resource() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap().to_string();
+
+        let mut task = mk_run_task("t-cwd-fill", vec!["pwd"]);
+        task.metadata = json!({ "lease": { "resource": dir_path } });
+
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match poll_until_terminal(&mut exec, &handle, 40) {
+            PollOutcome::Done(r) => {
+                let stdout_text = r
+                    .output
+                    .as_ref()
+                    .and_then(|o| o.get("stdout"))
+                    .and_then(|s| s.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                assert_eq!(
+                    stdout_text.trim(),
+                    dir_path,
+                    "Run.cwd should have been filled with the acquired lease resource"
+                );
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// dispatch 치환: `cwd`/command 인자에 이미 `${lease.resource}` placeholder
+    /// 가 있으면 그 안의 값만 치환(원래 cwd 를 통째로 덮어쓰지 않음).
+    #[cfg(unix)]
+    #[test]
+    fn dispatch_substitutes_lease_placeholder_in_cwd_and_command_args() {
+        use tasty_agent::OnFailure;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap().to_string();
+
+        let task = Task {
+            id: "t-placeholder".to_string(),
+            workspace_id: 1,
+            name: "placeholder".into(),
+            command: TaskCommand::Run {
+                command: vec!["echo".into(), "${lease.resource}".into()],
+                workspace_id: 1,
+                cwd: Some(std::path::PathBuf::from("${lease.resource}")),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: json!({ "lease": { "resource": dir_path } }),
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match poll_until_terminal(&mut exec, &handle, 40) {
+            PollOutcome::Done(r) => {
+                let stdout_text = r
+                    .output
+                    .as_ref()
+                    .and_then(|o| o.get("stdout"))
+                    .and_then(|s| s.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                // spawn 이 성공했다는 사실 자체가 cwd placeholder 가 실제 존재하는
+                // 디렉터리로 치환됐음을 증명한다(치환 실패 시 존재하지 않는
+                // "${lease.resource}" 경로로 spawn 이 실패해 PermanentFail).
+                assert_eq!(
+                    stdout_text.trim(),
+                    dir_path,
+                    "command arg placeholder should also have been substituted"
+                );
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// dispatch 치환: `Custom.params` 안의 placeholder 도 dispatch_plugin 호출
+    /// 전에 치환돼야 한다(예: `claude.spawn` 의 `cwd` 파라미터 시나리오).
+    #[test]
+    fn dispatch_substitutes_lease_placeholder_in_custom_params() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::OnFailure;
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let cmd = rx.recv().expect("recv fake.spawn");
+            assert_eq!(cmd.request.params.get("cwd"), Some(&json!("wt-1")));
+            cmd.response_tx
+                .send(JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    json!({ "ok": true }),
+                ))
+                .expect("send resp");
+        });
+        let task = Task {
+            id: "t-custom-lease".to_string(),
+            workspace_id: 1,
+            name: "custom".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "fake.spawn".into(),
+                params: json!({ "cwd": "${lease.resource}" }),
+                poll: None,
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: json!({ "lease": { "candidates": ["wt-1"] } }),
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        worker.join().unwrap();
+        assert!(matches!(handle, DispatchHandle::CustomImmediate(_)));
+    }
+
+    /// release 경로: pool 모드로 얻은 자원도 `release_permit` 한 번으로 정상
+    /// 반환되고, 그 뒤 다른 holder 가 바로 이어받을 수 있어야 한다.
+    #[cfg(unix)]
+    #[test]
+    fn release_permit_returns_pool_resource_for_next_holder() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let candidates = vec!["wt-1".to_string()];
+
+        let mut task_a = mk_run_task("t-rel-a", vec!["true"]);
+        task_a.metadata = json!({ "lease": { "candidates": candidates } });
+        assert_eq!(exec.try_acquire_lease(&task_a).unwrap(), Some(true));
+
+        let mut task_b = mk_run_task("t-rel-b", vec!["true"]);
+        task_b.metadata = json!({ "lease": { "candidates": candidates } });
+        assert_eq!(exec.try_acquire_lease(&task_b).unwrap(), Some(false));
+
+        exec.release_permit(&task_a.id);
+        assert!(!exec.held_leases.contains_key(&task_a.id));
+
+        assert_eq!(exec.try_acquire_lease(&task_b).unwrap(), Some(true));
+        assert_eq!(
+            exec.held_leases.get(&task_b.id).unwrap().1,
+            "wt-1".to_string()
+        );
     }
 }

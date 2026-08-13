@@ -22,7 +22,7 @@ pub mod task;
 use thiserror::Error;
 
 pub use barrier::{Barrier, BarrierState, BarrierStore};
-pub use lease::{Lease, LeaseMode, LeaseStore};
+pub use lease::{AcquireAnyOutcome, ElasticSpec, Lease, LeaseMode, LeaseStore};
 pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
 pub use reducer::{ReducerInput, extract_paths, reduce_in_process, reduce_with_custom};
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
@@ -49,6 +49,14 @@ pub enum AgentError {
     InvalidArgument(String),
     #[error("lease conflict: '{resource}' held by '{holder}'")]
     LeaseConflict { resource: String, holder: String },
+    /// pool 모드(`LeaseStore::acquire_any`)에서 fixed candidates 가 전부
+    /// 점유 중이거나(elastic 이면) `max_candidates` 상한까지 합성해도 빈
+    /// 자리가 없을 때 `LeaseMode::Fail` 에서 반환.
+    #[error("lease pool exhausted: none of {candidates:?} available for '{holder}'")]
+    LeasePoolExhausted {
+        candidates: Vec<String>,
+        holder: String,
+    },
     /// task 삭제 시 다른 task 가 여전히 참조 중(`depends_on`/`Fallback.task`/
     /// `Reduce.inputs`) — `--cascade`/`--force` 없이는 거부. `referenced_by` 를
     /// 응답 `error.data` 에 실어 호출자가 다음 행동을 정할 수 있게 한다.

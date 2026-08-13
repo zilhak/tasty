@@ -138,7 +138,7 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 | primitive | 통합 위치 | 결합 |
 |-----------|----------|------|
 | `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder? }` |
-| `Lease` | RunnerLoop dispatch | `task.metadata.lease = { resource, holder?, ttl_ms?, mode? }` |
+| `Lease` | RunnerLoop dispatch | `task.metadata.lease = { resource, holder?, ttl_ms?, mode? }` 또는 pool 모드(`candidates`/`elastic` — 아래 "자원 풀 배정") |
 | `Barrier` | dispatch/poll | `WaitBarrier { name }` task(DAG 안 명시 gate) |
 | `RateLimit` | IPC dispatcher 미들웨어 | `(agent, "ipc_calls")` 호출당 1 차감 |
 
@@ -176,6 +176,59 @@ tasty agent task-list --workspace-id 1   # 앞 2개가 끝나며 나머지 2개�
 tasty agent semaphore-list --workspace-id 1
 # 전부 종결 후 cap2 항목: permits_available == 2, holders: []
 ```
+
+### 자원 풀 배정 (lease pool — `candidates`/`elastic`)
+
+`Semaphore`(동시성 제한)는 "몇 개까지"만 표현한다 — 어느 task 가 어느 슬롯을 받았는지는 알 수 없다. `Lease` pool 모드는 "N개 후보(예: `wt-1..wt-N` 워크트리) 중 하나를 배정받고, dispatch된 task 가 실제로 어느 걸 받았는지 알아야" 하는 시나리오(conductor 의 worktree pool 등)를 표현한다. `task.metadata.lease` 를 아래처럼 확장한다:
+
+```jsonc
+{
+  "lease": {
+    "candidates": ["wt-1", "wt-2", "wt-3"],   // resource(단일 문자열) 대신 후보 배열
+    "holder": "...", "ttl_ms": 0, "mode": "block",  // 기존 필드와 동일 의미
+    "elastic": { "max_candidates": 4, "overflow_prefix": "wt-overflow-" }  // 생략하면 fixed
+  }
+}
+```
+
+`resource: "x"` 는 `candidates: ["x"]` 의 sugar 다 — 둘 다 store 안에서 같은 `lease_key`(`crates/tasty-agent/src/lease.rs`) 위치에 쓰기 때문에 관측적으로 동일하다(같은 자원을 가리키면 서로 충돌 판정된다). 별도 코드 경로 통합은 하지 않는다 — `resource` 단일 경로(`LeaseStore::acquire`)는 `agent.lease_acquire` IPC 등 기존 호출자의 `LeaseConflict` 에러 계약을 그대로 유지하려고 독립 구현을 보존한다.
+
+**두 서브모드 — `elastic` 은 반드시 명시적 opt-in, 기본은 fixed다:**
+
+- **fixed**(`elastic` 생략, 기본): `candidates` 안에서만 순회한다. 전부 점유 중이면 `mode` 에 따라 실패(`fail`) 또는 대기(`block` → Deferred, 다음 tick 재시도).
+- **elastic**(`elastic: {...}` — 빈 객체 `{}` 도 opt-in으로 인정): candidates 가 전부 소진되면 `overflow_prefix + N` 형태의 새 후보 이름을 store 가 원자적으로 합성해 즉시 배정한다. `max_candidates` 를 주면 그 상한(고정 candidates 개수 + 합성된 개수)까지만 증설하고, 넘으면 fixed 와 동일하게 대기한다.
+
+elastic 이 기본이 아닌 이유: fixed 의 자원 배정은 순수 마킹(store 안 카운터/키 하나)이지만, elastic 의 증설은 **워크트리 같은 실물 자원을 자동으로 만들어내는 부수효과**를 동반한다. 실행 환경이 강한 서버인지 약한 노트북인지 tasty 는 알 방법이 없으므로, 부수효과를 동반하는 자동 증설을 기본값으로 깔지 않는다 — pool 을 선언하는 쪽(오케스트레이터/사용자)이 매번 명시적으로 켠다.
+
+**원자성**: 새 candidate 이름 합성은 `LeaseStore::acquire_any` 한 호출 안에서(카운터 읽기 → 스캔 → 필요시 카운터 +1 → 새 이름으로 acquire) 순차 수행된다. 이 호출 전체가 `RunnerContext::with_memory` 클로저 하나 안에서 실행되므로(기존 `try_acquire_lease` 관례와 동일), 그 클로저가 프로세스 전역 `Mutex`(`Core::memory`)를 처음부터 끝까지 쥔 채 진행된다 — 워크스페이스마다 runner thread 가 정확히 하나뿐이라 워크스페이스 내부 경쟁이 없고, 워크스페이스 간 경쟁은 그 전역 락 하나로 직렬화된다. 별도 CAS/락 primitive 를 새로 만들지 않는다.
+
+**합성된 candidate 의 재사용**: 카운터는 "지금까지 합성된 개수의 상한"일 뿐 현재 점유 개수가 아니다. 매 `acquire_any` 호출이 `candidates ++ (합성된 이름 전체)`를 다시 스캔하므로, 합성됐다가 release 된 이름은 다음 배정에서 빈 자리로 재발견돼 재사용된다 — 카운터가 오르는 건 그 스캔에서도 빈 자리가 전혀 없었을 때뿐이다.
+
+**dispatch 시점 치환**: 배정된 resource 식별자는 `dispatch_command` 호출 직전 `task.command` 에 주입된다(`substitute_lease_resource`, `src/core/agent/runner_host.rs`).
+
+- `TaskCommand::Run`: `cwd` 가 `None` 이면 곧장 그 resource 경로로 채운다(가장 흔한 용법 — "이 후보에서 실행해라"). `cwd`/`command` 인자 안에 `${lease.resource}` placeholder 가 있으면 그 부분만 실제 resource 로 치환한다(원래 값을 통째로 덮지 않음).
+- `TaskCommand::Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의 `${lease.resource}` 를 치환한다(예: `claude.spawn` 의 `cwd` 파라미터).
+- elastic 으로 새로 합성된 이름이 가리키는 실제 워크트리를 만드는 건(예: `git worktree add`) task 의 Run 커맨드 쪽 자가 프로비저닝 책임이다 — lease primitive 는 포트/임시디렉토리/GPU 슬롯 등에도 쓰이는 범용 도구라 워크트리 특화 side-effect 를 store 안에 넣지 않는다.
+
+**release**: pool 모드로 얻은 자원도 일반 lease 와 동일하게 `release_lease`(task 종결 시 자동 호출)로 반환된다 — `held_leases` 가 이미 "실제로 받은 resource 문자열"만 저장하므로 pool 여부와 무관하게 그대로 동작한다(재설계 불필요).
+
+CLI 편의 플래그(`--concurrency-limit` 대구)는 만들지 않았다 — `--metadata '{"lease":{"candidates":[...],"elastic":{...}}}'` 를 직접 쓰는 것으로 충분하다고 판단(부차적 스코프).
+
+라이브 검증 예(3개 candidates 에 5개 task, fixed):
+
+```sh
+mkdir -p /tmp/wt-1 /tmp/wt-2 /tmp/wt-3
+for i in 1 2 3 4 5; do
+  tasty agent task-create --workspace-id 1 --name "t$i" \
+    --command '{"kind":"run","command":["pwd"]}' \
+    --metadata '{"lease":{"candidates":["/tmp/wt-1","/tmp/wt-2","/tmp/wt-3"]}}'
+done
+tasty agent task-run --workspace-id 1 --action start
+tasty agent task-list --workspace-id 1   # 3개만 running(서로 다른 cwd), 2개는 ready(대기)
+tasty agent task-get --workspace-id 1 --id t-...   # command.cwd 로 실제 배정된 candidate 확인
+```
+
+elastic 을 켜면(`--metadata '{"lease":{"candidates":[...],"elastic":{}}}'`) 5개 모두 대기 없이 동시 실행되고, 그중 2개는 `/tmp/wt-3-overflow-1`/`-2` 처럼 합성된 경로를 받는다(디렉터리 자체는 자가 프로비저닝 몫이라 미리 만들지 않으면 `pwd` spawn 이 실패한다 — Run 커맨드에 `mkdir -p ${lease.resource}` 를 앞세우는 식으로 스스로 만들게 한다).
 
 ### 호스트 재시작 정화 + 핸들 영속
 
