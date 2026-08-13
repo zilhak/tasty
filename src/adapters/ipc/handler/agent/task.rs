@@ -150,6 +150,58 @@ fn validate_command_poll_ref(command: &TaskCommand) -> Result<(), String> {
 // agent.task_list
 // ============================================================
 
+/// state 이름 목록 파라미터를 뽑는다 — `task_list`(`state`) 와
+/// `task_purge`(`states`) 가 공유한다.
+///
+/// 받아들이는 형태는 셋 다 동일하다:
+/// - 배열 `["waiting", "ready"]`
+/// - 콤마 구분 문자열 `"waiting,ready"`
+/// - 단일 문자열 `"waiting"`
+///
+/// 단수/복수 키 이름도 서로 폴백한다(`state` ↔ `states`). 두 명령의 플래그
+/// 이름이 달라서 생기던 혼동 — 콤마 목록을 `task_list --state` 에 넘기면 그
+/// 문자열 전체가 하나의 상태 이름으로 취급돼 매칭이 0 건이 되고, 필터가 조용히
+/// 무력화되던 — 을 IPC 계층에서 없앤다.
+///
+/// 빈 값(빈 배열 / 빈 문자열 / 콤마만 있는 문자열)은 `None` 으로 처리해
+/// "필터 없음" 이 된다.
+fn state_names_param(params: &Value, primary_key: &str) -> Option<Vec<String>> {
+    let alias = if primary_key == "states" {
+        "state"
+    } else {
+        "states"
+    };
+    let raw = params
+        .get(primary_key)
+        .or_else(|| params.get(alias))
+        .filter(|v| !v.is_null())?;
+
+    let names: Vec<String> = match raw {
+        Value::Array(arr) => arr
+            .iter()
+            .filter_map(|x| x.as_str())
+            .flat_map(split_state_names)
+            .collect(),
+        Value::String(s) => split_state_names(s.as_str()),
+        _ => return None,
+    };
+    (!names.is_empty()).then_some(names)
+}
+
+fn split_state_names(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// state 이름 목록으로 task 를 걸러낸다. `None` 이면 필터 없음(전체 유지).
+fn retain_by_state(tasks: &mut Vec<Task>, states: Option<&[String]>) {
+    let Some(states) = states else { return };
+    tasks.retain(|t| states.iter().any(|s| s == t.state.name()));
+}
+
 pub fn handle_task_list(
     core: &Core,
     _state: &mut AppState,
@@ -162,17 +214,12 @@ pub fn handle_task_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    let state_filter = params
-        .get("state")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let state_filter = state_names_param(params, "state");
 
     match core.task_list(engine, workspace_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
-            if let Some(filter) = state_filter {
-                tasks.retain(|t| t.state.name() == filter);
-            }
+            retain_by_state(&mut tasks, state_filter.as_deref());
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -891,11 +938,7 @@ pub fn handle_task_purge(
         Ok(w) => w,
         Err(e) => return e,
     };
-    let states: Option<Vec<String>> = params.get("states").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|x| x.as_str().map(|s| s.to_string()))
-            .collect()
-    });
+    let states = state_names_param(params, "states");
     let older_than_ms = params.get("older_than_ms").and_then(|v| v.as_u64());
     let dry_run = params
         .get("dry_run")
@@ -1221,5 +1264,114 @@ mod graph_edge_tests {
             .iter()
             .map(|e| (e.from.clone(), e.to.clone(), e.kind))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod state_filter_tests {
+    use super::*;
+
+    fn task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: id.to_string(),
+            workspace_id: 1,
+            name: id.to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".to_string()],
+                workspace_id: 1,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            state,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+            result: None,
+            on_failure: OnFailure::Abort,
+            metadata: Value::Null,
+            reserved_for_fallback: false,
+        }
+    }
+
+    fn sample() -> Vec<Task> {
+        vec![
+            task("w", TaskState::Waiting),
+            task("r", TaskState::Ready),
+            task("run", TaskState::Running),
+            task("ok", TaskState::Succeeded),
+        ]
+    }
+
+    fn filtered(params: &Value) -> Vec<String> {
+        let mut tasks = sample();
+        retain_by_state(&mut tasks, state_names_param(params, "state").as_deref());
+        tasks.into_iter().map(|t| t.id).collect()
+    }
+
+    /// 단일 값은 예전 그대로 — 1개짜리 목록으로 취급된다.
+    #[test]
+    fn single_state_string_filters_one_state() {
+        assert_eq!(filtered(&json!({"state": "running"})), vec!["run"]);
+    }
+
+    /// 이 수정의 핵심: 콤마로 이어붙인 여러 state 를 OR 로 매칭한다. 예전에는
+    /// `"waiting,ready,running"` 전체가 하나의 상태 이름으로 비교돼 결과가 항상
+    /// 비었고, "아직 안 끝난 task 가 있는가" 판정이 통째로 무력화됐다.
+    #[test]
+    fn comma_separated_states_match_any() {
+        assert_eq!(
+            filtered(&json!({"state": "waiting,ready,running"})),
+            vec!["w", "r", "run"]
+        );
+        // 공백이 섞여도 동일.
+        assert_eq!(
+            filtered(&json!({"state": " waiting , running "})),
+            vec!["w", "run"]
+        );
+    }
+
+    /// 배열 형태(`task_purge --states` 가 보내는 모양)도 그대로 받는다.
+    #[test]
+    fn array_states_match_any() {
+        assert_eq!(
+            filtered(&json!({"state": ["ready", "succeeded"]})),
+            vec!["r", "ok"]
+        );
+    }
+
+    /// 매칭되는 state 가 하나도 없으면 빈 목록. 필터 없음(전체 반환)과 구분된다.
+    #[test]
+    fn no_match_yields_empty_list() {
+        assert!(filtered(&json!({"state": "failed,cancelled"})).is_empty());
+    }
+
+    /// 필터 미지정 / 빈 값은 "필터 없음" — 전체를 그대로 반환한다.
+    #[test]
+    fn absent_or_empty_filter_keeps_everything() {
+        for params in [
+            json!({}),
+            json!({"state": Value::Null}),
+            json!({"state": ""}),
+            json!({"state": ","}),
+            json!({"state": []}),
+        ] {
+            assert_eq!(filtered(&params).len(), 4, "params: {params}");
+        }
+    }
+
+    /// 단수/복수 키를 서로 폴백한다 — `task_list` 에 `states`, `task_purge` 에
+    /// `state` 를 보내도 같은 필터로 해석된다.
+    #[test]
+    fn singular_and_plural_keys_are_interchangeable() {
+        let p = json!({"states": "ready,running"});
+        assert_eq!(
+            state_names_param(&p, "state"),
+            Some(vec!["ready".to_string(), "running".to_string()])
+        );
+        let p = json!({"state": "succeeded"});
+        assert_eq!(
+            state_names_param(&p, "states"),
+            Some(vec!["succeeded".to_string()])
+        );
     }
 }

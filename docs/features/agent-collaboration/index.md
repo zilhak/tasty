@@ -35,6 +35,7 @@
 ## 인터페이스
 
 - **AI Agent / CLI**: `tasty agent {task-create,task-list,...,barrier-*,semaphore-*,lease-*,task-reduce,rate-limit-*}`. `--command`/`--metadata` 는 인라인 JSON 또는 `@path`. 전체 표 → [reference/api](../../reference/api.md#에이전트-협업-agent).
+- **state 필터는 콤마 다중값** — `task-list --state`(단수) 와 `task-purge --states`(복수)는 플래그 이름만 다를 뿐 같은 파싱을 쓴다: `--state waiting,ready,running` 처럼 여러 state 를 OR 로 매칭하고, 단일값도 그대로 동작한다. "아직 안 끝난 task 가 남았는가" 를 한 번의 조회로 판정하는 완료 감지의 기본 패턴. 예시 → [dev-guide/agent-runner §CLI 예](../../dev-guide/agent-runner.md#cli-예).
 
 ## 재시작 동작
 

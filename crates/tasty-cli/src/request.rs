@@ -967,6 +967,68 @@ mod tests {
         }
     }
 
+    /// `agent task-list --state` 는 콤마 다중값을 받는다(`task-purge --states` 와
+    /// 동일한 파싱). 단일값은 예전처럼 문자열로, 2개 이상이면 배열로 보낸다 —
+    /// 구버전 호스트에 새 CLI 가 붙어도 단일값 필터는 그대로 동작한다.
+    #[test]
+    fn agent_task_list_state_accepts_comma_separated_values() {
+        let single = command_to_request(&cmd_from(&[
+            "tasty",
+            "agent",
+            "task-list",
+            "--workspace-id",
+            "4",
+            "--state",
+            "running",
+        ]));
+        assert_eq!(single.method, "agent.task_list");
+        assert_eq!(
+            single.params.get("state").and_then(|v| v.as_str()),
+            Some("running")
+        );
+
+        let multi = command_to_request(&cmd_from(&[
+            "tasty",
+            "agent",
+            "task-list",
+            "--workspace-id",
+            "4",
+            "--state",
+            "waiting,ready,running",
+        ]));
+        assert_eq!(
+            multi.params.get("state"),
+            Some(&serde_json::json!(["waiting", "ready", "running"]))
+        );
+
+        // 플래그를 여러 번 준 형태도 같은 배열이 된다.
+        let repeated = command_to_request(&cmd_from(&[
+            "tasty",
+            "agent",
+            "task-list",
+            "--workspace-id",
+            "4",
+            "--state",
+            "waiting",
+            "--state",
+            "ready",
+        ]));
+        assert_eq!(
+            repeated.params.get("state"),
+            Some(&serde_json::json!(["waiting", "ready"]))
+        );
+
+        // 미지정이면 state 키 자체가 없다(= 필터 없음).
+        let none = command_to_request(&cmd_from(&[
+            "tasty",
+            "agent",
+            "task-list",
+            "--workspace-id",
+            "4",
+        ]));
+        assert!(none.params.get("state").is_none());
+    }
+
     fn cmd_from(args: &[&str]) -> Commands {
         use clap::Parser;
         crate::Cli::try_parse_from(args)

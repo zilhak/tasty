@@ -31,8 +31,22 @@ pub(super) fn agent_command_to_method_params(
             state,
         } => {
             let mut p = serde_json::json!({ "workspace_id": *workspace_id });
-            if let Some(s) = state {
-                p["state"] = serde_json::Value::String(s.clone());
+            // 단일 값은 예전과 똑같이 문자열로 보낸다 — 다중값을 모르는 구버전
+            // 호스트에 새 CLI 가 붙어도 `--state running` 은 그대로 동작한다.
+            // 2개 이상일 때만 배열로 보낸다(구버전 호스트는 배열을 필터로
+            // 인식하지 못해 필터 없이 전체를 반환하는데, 조용히 빈 목록을
+            // 내놓는 것보다 낫다).
+            match state.len() {
+                0 => {}
+                1 => p["state"] = serde_json::Value::String(state[0].clone()),
+                _ => {
+                    p["state"] = serde_json::Value::Array(
+                        state
+                            .iter()
+                            .map(|s| serde_json::Value::String(s.clone()))
+                            .collect(),
+                    );
+                }
             }
             ("agent.task_list", p)
         }

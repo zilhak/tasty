@@ -70,9 +70,11 @@ pub enum AgentCommands {
     TaskList {
         #[arg(long)]
         workspace_id: u32,
-        /// Filter by state (waiting | ready | running | succeeded | failed | cancelled | skipped | unknown).
-        #[arg(long)]
-        state: Option<String>,
+        /// Filter by state (comma-separated: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown).
+        /// 여러 state 를 주면 그중 하나라도 맞는 task 를 모두 반환한다
+        /// (`--state waiting,ready,running` = "아직 안 끝난 task").
+        #[arg(long = "state", value_delimiter = ',')]
+        state: Vec<String>,
     },
     /// Fetch a single task.
     TaskGet {

@@ -278,6 +278,14 @@ tasty agent task-run --workspace-id 1 --action stop      # 중단(자식 프로�
 `--action` 은 `clap::ValueEnum { Start, Stop, Status }` — 오타는 CLI 시점 거부.
 
 ```sh
+tasty agent task-list --workspace-id 1                                   # 전체
+tasty agent task-list --workspace-id 1 --state running                   # 단일 state
+tasty agent task-list --workspace-id 1 --state waiting,ready,running     # 콤마 다중값 = "아직 안 끝난 task"
+```
+
+`task-list --state` 는 `task-purge --states` 와 **동일한 콤마 다중값 파싱**을 쓴다(플래그 이름만 단수/복수로 다르다 — 하위호환 때문에 유지). 여러 state 는 OR 매칭이고, 단일값은 예전과 같이 동작한다. IPC(`agent.task_list` / `agent.task_purge`)도 배열 `["waiting","ready"]` · 콤마 문자열 `"waiting,ready"` · 단일 문자열을 모두 받고, 단수/복수 키(`state` ↔ `states`)를 서로 폴백한다 — 콤마 목록을 단일값 필터로 넘겨 매칭이 0 건이 되고 "아직 안 끝난 task 가 있는가" 판정이 조용히 무력화되던 함정을 없앤 것. 매칭이 없으면 빈 목록, 필터 미지정이면 전체다.
+
+```sh
 tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["cargo","build"]}' \
   --concurrency-limit cap2   # metadata.semaphore.name=cap2 를 자동 조립(위 "동시성 제한" 참조)
 ```
