@@ -90,17 +90,32 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 ### 원격 포트 발견 실패 진단
 
-포트 발견(`ssh.rs::discover_remote_port`, auto fallback 체인 subcommand→file-unix→file-windows)이 전 단계 실패하면 `PortDiscoveryError` 로 원인을 3분류한다 — **원격 stderr 문자열 매칭에 의존하지 않는다**(원격 로케일에 따라 문자열이 달라져 신뢰 불가, 실측: 한국어 "그런 파일이나 디렉터리가 없습니다" / 영어 "No such file or directory"). 대신 ssh(1) exit code 로 로케일 독립적으로 판정한다:
+포트 발견(`ssh.rs::discover_remote_port`, auto fallback 체인 subcommand→file-unix→file-windows)이 전 단계 실패하면 `PortDiscoveryError` 로 원인을 4분류한다 — **원격 stderr 문자열 매칭에 의존하지 않는다**(원격 로케일에 따라 문자열이 달라져 신뢰 불가, 실측: 한국어 "그런 파일이나 디렉터리가 없습니다" / 영어 "No such file or directory"). 대신 ssh(1) exit code 로 로케일 독립적으로 판정한다:
 
 - **SSH 연결 자체 실패**(exit 255, 시그널 종료, 로컬 ssh spawn 실패) — 네트워크/인증 문제.
 - **원격 인스턴스 미실행**(그 외 비정상 종료 — 원격 명령까지는 도달했다는 확정 신호) — 관례 위치에 포트 파일이 없거나 `tasty port` 가 실패. 이 저장소가 다루는 attach 실패의 대다수를 차지하는 케이스.
 - **포트 파싱 실패**(exit 0, stdout 을 포트 숫자로 못 읽음) — 연결·명령은 성공했지만 출력이 이례적(원격 tasty 버전 불일치 등).
+- **타임아웃**(상한 안에 아무 답도 오지 않음) — 무응답 호스트(패킷이 조용히 버려지는 IP·방화벽 DROP·꺼진 머신), 보이지 않는 프롬프트 대기, 또는 체인 전체 예산 소진. 아래 "연결 시도 상한" 참고. `SshConnectionFailed` 로 접지 않고 따로 두는 이유는 ① 사용자가 취할 조치가 다르고(도달성/회선 점검 vs 인증·호스트키 점검), ② 타임아웃 kill 도 시그널 종료라 접으면 원격발 시그널 종료와 뭉개지기 때문이다.
 
-각 분류는 `lang/{en,ko,ja}.toml` `[ssh.port_discovery]` 의 번역된 문구로만 노출된다 — 원격 raw stderr·내부 명령(`cat`/`type`)·포트 파일 경로는 에러의 `Display` 에 담기지 않고 생성 시점에 `tracing::debug!` 로만 로그된다(`PortDiscoveryError::detail()`). Auto 체인이 전 단계 실패하면 가장 확정적인 분류(SSH 연결 실패 > 인스턴스 미실행 > 파싱 실패 순)를 대표 에러로 고른다 — 마지막 단계 에러만 남기면 정보량이 가장 적은 사유가 노출되던 문제를 막는다. 이 분류는 `ssh::discover_remote_port`/`remote_browse::resolve_endpoint` 를 공유 소비하는 모든 경로(GUI 원격 워크스페이스 추가 팝업, `tasty remote check`/`remote workspaces`/`tool attach`, IPC `remote.workspaces`/`remote.attach`, 자동 재연결)에 동일하게 적용된다.
+각 분류는 `lang/{en,ko,ja}.toml` `[ssh.port_discovery]` 의 번역된 문구로만 노출된다 — 원격 raw stderr·내부 명령(`cat`/`type`)·포트 파일 경로는 에러의 `Display` 에 담기지 않고 생성 시점에 `tracing::debug!` 로만 로그된다(`PortDiscoveryError::detail()`). Auto 체인이 전 단계 실패하면 가장 확정적인 분류(타임아웃 > SSH 연결 실패 > 인스턴스 미실행 > 파싱 실패 순)를 대표 에러로 고른다 — 한 단계가 무응답이면 다른 단계의 "연결 실패" 는 그 타임아웃이 예산을 먹어 굶긴 결과일 수 있어 대표로 삼으면 오도한다 — 마지막 단계 에러만 남기면 정보량이 가장 적은 사유가 노출되던 문제를 막는다. 이 분류는 `ssh::discover_remote_port`/`remote_browse::resolve_endpoint` 를 공유 소비하는 모든 경로(GUI 원격 워크스페이스 추가 팝업, `tasty remote check`/`remote workspaces`/`tool attach`, IPC `remote.workspaces`/`remote.attach`, 자동 재연결)에 동일하게 적용된다.
+
+### 연결 시도 상한 (no-hang)
+
+포트 발견은 **무기한 블록하지 않는다.** 상한이 없으면 무응답 호스트에서 연결 수립이 OS 기본 SYN 재시도(리눅스 `tcp_syn_retries=6` ≈ 127초)에 맡겨지고, auto 체인은 그 대기를 3배로 곱한다. 상수는 `crates/tasty-cli/src/ssh.rs` 에 `pub const` 로 노출되며(소비자가 진행 표시/문구를 같은 값에 맞출 수 있게), 세 겹이 각각 다른 구간을 덮는다 — 근거는 [ADR-0069](../../adr/0069-port-discovery-timeout.md).
+
+| 상수 | 값 | 덮는 구간 |
+|------|-----|-----------|
+| `SSH_CONNECT_TIMEOUT` | 10초 | ssh(1) `-o ConnectTimeout` — 연결 수립(TCP + 배너). ssh 가 홉마다 적용하므로 ProxyJump 다단도 홉별로 이 상한을 받는다. |
+| `PORT_DISCOVERY_STEP_TIMEOUT` | 20초 | ssh 자식 프로세스 1개의 프로세스 레벨 상한. `ConnectTimeout` 이 못 보는 구간(인증 핸드셰이크, 원격 명령 실행, `BatchMode=no` 로 뜬 프롬프트 대기)까지. 넘기면 kill + wait 로 좀비 없이 거둔다. |
+| `PORT_DISCOVERY_TOTAL_TIMEOUT` | 45초 | `discover_remote_port` / `detect_port_mode` **호출 1회 전체**. 각 단계는 `min(단계 상한, 남은 예산)` 만 받고 예산이 소진되면 남은 단계는 ssh 를 띄우지 않고 즉시 타임아웃 — auto 체인(3단계)이나 명시 `port_file`(`cat`→`type` 2회)에서 총 대기가 단계 수만큼 곱해지는 것을 막는다. |
+
+무응답 호스트 실측: auto 체인 ~30초(3 × 연결 상한), 최악 45초. 상한은 **포트 발견/감지 경로를 공유하는 모든 소비자**에 동시에 적용된다 — GUI 원격 워크스페이스 추가 팝업, 도구 메뉴 > Remote connections 재감지, `tasty remote workspaces`/`remote check`/`tool attach`/`tool remote-profile detect`, IPC `remote.workspaces`/`remote.attach`/`remote.profile.detect`, 그리고 매핑 워크스페이스 활성화 시의 자동 attach 워커.
+
+**사용자 지정이 기본값을 이긴다**: 프로필 `extra_options` 에 `ConnectTimeout=<초>` 를 직접 넣으면 그 값이 적용된다(ssh(1) 은 같은 키의 **먼저 나온 값**을 쓰고, tasty 는 기본값을 `extra_options` 뒤에 붙인다). 느린 회선/다단 ProxyJump 에서 상향하는 수단이다. 전체 예산(45초)은 프로필로 조정하지 않는다.
 
 ### 원격 생존 확인
 
-`tasty remote check --ssh|--profile` — 원격 인스턴스가 *지금 살아있는지* 단발 판정. 포트 발견만으론 stale 포트 파일을 오판할 수 있어, 터널 수립 후 가벼운 IPC(`system.info`) 1회 응답까지 확인해야 alive(exit 0). 실패(거부/EOF/타임아웃)는 dead(exit≠0).
+`tasty remote check --ssh|--profile` — 원격 인스턴스가 *지금 살아있는지* 단발 판정. 포트 발견만으론 stale 포트 파일을 오판할 수 있어, 터널 수립 후 가벼운 IPC(`system.info`) 1회 응답까지 확인해야 alive(exit 0). 실패(거부/EOF/타임아웃)는 dead(exit≠0). 세 단계 모두 상한이 있어 무응답 호스트에서도 단발 판정이 성립한다 — ① 포트 발견은 위 "연결 시도 상한", ② 터널 ready-probe 5초, ③ IPC 프로브 5초(`remote_browse::PROBE_TIMEOUT`).
 
 ### 원격 워크스페이스 브라우징 (Browse)
 

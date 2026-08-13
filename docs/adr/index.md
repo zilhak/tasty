@@ -80,3 +80,4 @@
 | 0067 | [markdown webview 전환(ADR-0065) Stage B 구현은 mermaid 렌더링을 포함하지 않는다 — 스코프 정정](0067-markdown-webview-stage-b-scope-correction.md) | Accepted | 2026-08-10 | plugin, render-channel, webview, html, markdown, mermaid, sanitize, adr-0065, scope-correction |
 | 0068 | [Host popup ↔ plugin popup z-order — 공유 z_seq + 조건부 GPU pass·sublayer 순서](0068-host-plugin-popup-shared-z-seq.md) | Accepted | 2026-08-12 | popup, plugin, z-order, gpu-rendering, egui |
 | 0069 | [공용 `Table` 의 `selectable` 표는 셀 텍스트 선택을 포기하고 행 클릭을 보장한다](0069-table-row-click-over-cell-text-selection.md) | Accepted | 2026-08-13 | ui, shared-widgets, table, egui, hit-test, selectable-labels, explorer, port-scanner, gallery |
+| 0070 | [원격 포트 발견에 3중 상한(ssh `ConnectTimeout` + 프로세스 감시 + 호출 전체 예산)을 건다](0070-port-discovery-timeout.md) | Accepted | 2026-08-13 | remote-attach, ssh, port-discovery, timeout, no-hang, i18n, adr-0032, adr-0053 |

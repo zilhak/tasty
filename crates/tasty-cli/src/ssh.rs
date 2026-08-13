@@ -292,11 +292,63 @@ impl PortMode {
     }
 }
 
+/// SSH **연결 수립**(TCP 핸드셰이크 + 배너) 1회의 상한 — ssh(1) `-o ConnectTimeout`.
+///
+/// 이 값이 없으면 연결 수립은 OS 기본 SYN 재시도에 맡겨진다(리눅스 `tcp_syn_retries=6`
+/// = 약 127초). `ServerAliveInterval`/`CountMax` 는 **연결이 수립된 뒤의** keepalive 라
+/// 이 구간을 덮지 않는다. ProxyJump 처럼 홉이 여러 개면 ssh 가 홉마다 이 값을 적용한다.
+pub const SSH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// 포트 발견 **1회**(ssh 자식 프로세스 1개)의 프로세스 레벨 상한.
+///
+/// [`SSH_CONNECT_TIMEOUT`] 이 덮지 못하는 구간 — 인증 핸드셰이크, 원격 명령 실행,
+/// `BatchMode=no` 로 뜬 프롬프트 대기 — 까지 포함해 자식이 이 시간 안에 끝나지 않으면
+/// kill 한다. 연결 상한의 2 배라 2-hop ProxyJump 도 정상 경로로 들어간다.
+pub const PORT_DISCOVERY_STEP_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// [`discover_remote_port`] / [`detect_port_mode`] **호출 1회 전체**의 상한.
+///
+/// auto 체인(3 단계)이나 명시 `port_file`(`cat`→`type` 2 회)처럼 한 호출이 ssh 를 여러 번
+/// 띄우므로, 단계 상한만으로는 총 대기가 단계 수만큼 곱해진다. 이 값이 그 곱을 끊는다 —
+/// 각 단계는 `min(`[`PORT_DISCOVERY_STEP_TIMEOUT`]`, 남은 예산)` 만 받고, 예산이 소진되면
+/// 남은 단계는 ssh 를 띄우지 않고 즉시 타임아웃으로 떨어진다.
+pub const PORT_DISCOVERY_TOTAL_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// 한 번의 포트 발견 호출에 허용된 총 예산의 만료 시각. 체인 각 단계에 남은 예산을
+/// 나눠준다(단계 상한 × 단계 수로 총 대기가 곱해지는 것을 막는다).
+#[derive(Clone, Copy, Debug)]
+struct Deadline {
+    at: Instant,
+}
+
+impl Deadline {
+    fn after(budget: Duration) -> Self {
+        Self {
+            at: Instant::now() + budget,
+        }
+    }
+
+    fn remaining(self) -> Duration {
+        self.at.saturating_duration_since(Instant::now())
+    }
+
+    /// 이번 단계에 줄 상한 — 단계 상한과 전체 잔여 예산 중 작은 쪽.
+    /// `Duration::ZERO` 면 예산 소진(ssh 를 띄우지 않는다).
+    fn step_budget(self) -> Duration {
+        PORT_DISCOVERY_STEP_TIMEOUT.min(self.remaining())
+    }
+}
+
 /// ssh 공통 `-o` 옵션을 인자 벡터에 추가한다.
 ///
 /// - `BatchMode=no`: 첫 연결의 host key/passphrase 프롬프트 허용(무암호면 무영향).
 /// - `ServerAliveInterval`/`CountMax`: 네트워크 단절 감지(~45s 내 ssh 자가 종료).
 /// - `verify` 시 `StrictHostKeyChecking=accept-new`: 자동 검증 한정(평상시 기본 strict 유지).
+/// - `ConnectTimeout`: 연결 수립 상한([`SSH_CONNECT_TIMEOUT`]).
+///
+/// **`ConnectTimeout` 은 사용자 `extra_options` 보다 뒤에 push 한다** — ssh(1) 은 같은 키가
+/// 여러 번 오면 **먼저 나온 값**을 쓰므로, 프로필에 `ConnectTimeout=...` 을 직접 넣은
+/// 사용자의 값이 이긴다(기본값은 미지정 시에만 적용되는 fallback).
 fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
     args.push("-o".into());
     args.push("BatchMode=no".into());
@@ -321,6 +373,9 @@ fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
         args.push("-o".into());
         args.push(opt.clone());
     }
+    // 사용자 지정이 이기도록 마지막에 — 위 doc 주석 참고.
+    args.push("-o".into());
+    args.push(format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT.as_secs()));
 }
 
 /// 원격 포트 발견 실패의 원인 분류(로케일 독립 — exit code 기반).
@@ -337,6 +392,15 @@ pub enum PortDiscoveryFailureKind {
     RemoteInstanceNotRunning,
     /// 명령은 성공했으나(exit 0) stdout 에서 포트 숫자를 파싱하지 못했다.
     PortParseFailed,
+    /// 상한([`PORT_DISCOVERY_STEP_TIMEOUT`] / [`PORT_DISCOVERY_TOTAL_TIMEOUT`]) 안에
+    /// 아무 답도 오지 않았다 — 무응답 호스트(패킷 소멸), 프롬프트 대기, 예산 소진.
+    ///
+    /// [`SshConnectionFailed`](Self::SshConnectionFailed) 로 접지 않고 따로 두는 이유:
+    /// ① 사용자가 취할 조치가 다르다(도달성/회선 점검 vs 인증·호스트키 점검),
+    /// ② [`classify_by_exit_code`] 는 시그널 종료를 `SshConnectionFailed` 로 보는데
+    /// 타임아웃 kill 도 시그널 종료라, 이 자리가 없으면 우리가 죽인 것과 원격발 시그널
+    /// 종료가 같은 분류로 뭉개진다.
+    TimedOut,
 }
 
 impl PortDiscoveryFailureKind {
@@ -348,6 +412,7 @@ impl PortDiscoveryFailureKind {
             Self::SshConnectionFailed => "ssh.port_discovery.connection_failed",
             Self::RemoteInstanceNotRunning => "ssh.port_discovery.instance_not_running",
             Self::PortParseFailed => "ssh.port_discovery.parse_failed",
+            Self::TimedOut => "ssh.port_discovery.timed_out",
         }
     }
 }
@@ -399,13 +464,131 @@ fn classify_by_exit_code(code: Option<i32>) -> PortDiscoveryFailureKind {
     }
 }
 
+/// [`classify_by_exit_code`] 결과를 **소요 시간**으로 한 번 더 좁힌다(순수 함수).
+///
+/// `ConnectTimeout` 이 걸린 뒤로 무응답 호스트의 지배적 결말은 "ssh 가 스스로 상한을 세고
+/// exit 255" 다 — exit code 만 보면 인증 실패와 구분되지 않아 사용자가 엉뚱한 곳(키/호스트키)
+/// 을 뒤지게 된다. ssh 가 [`SSH_CONNECT_TIMEOUT`] 을 다 쓰고 연결 실패로 끝났으면 그건
+/// 시간으로 끊긴 것이므로 [`TimedOut`](PortDiscoveryFailureKind::TimedOut) 으로 본다.
+/// 판정 입력이 exit code + 경과 시간뿐이라 원격 로케일에 의존하지 않는다(이 모듈의
+/// "stderr 문자열 매칭 금지" 원칙 유지).
+fn refine_with_elapsed(
+    kind: PortDiscoveryFailureKind,
+    elapsed: Duration,
+) -> PortDiscoveryFailureKind {
+    if kind == PortDiscoveryFailureKind::SshConnectionFailed && elapsed >= SSH_CONNECT_TIMEOUT {
+        return PortDiscoveryFailureKind::TimedOut;
+    }
+    kind
+}
+
+/// 자식이 `budget` 안에 끝나면 `true`, 상한을 넘겼으면 `false`(kill 은 호출자 책임).
+///
+/// 이 크레이트에는 async 런타임이 없으므로 [`SshTunnel::wait_ready`] 와 같은 `try_wait`
+/// 폴링을 쓴다. 폴링 간격은 5ms 에서 시작해 50ms 까지 배로 늘린다 — 정상 경로(수백 ms)의
+/// 지연을 거의 더하지 않으면서 장기 대기의 wakeup 횟수를 억제한다.
+fn wait_with_timeout(child: &mut Child, budget: Duration) -> bool {
+    let deadline = Instant::now() + budget;
+    let mut nap = Duration::from_millis(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
+            // try_wait 이 실패하면 더 기다려도 상태를 알 수 없다 — 종료로 간주하고
+            // 호출자의 출력 수집이 같은 에러를 다시 만나 분류하게 둔다.
+            Err(e) => {
+                tracing::debug!("ssh try_wait 실패 — 폴링 중단: {e}");
+                return true;
+            }
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        std::thread::sleep(nap.min(left));
+        nap = (nap * 2).min(Duration::from_millis(50));
+    }
+}
+
+/// 타임아웃으로 끊은 자식을 kill + wait 해 좀비를 남기지 않는다
+/// ([`SshTunnel::drop`] 과 같은 패턴 — kill 은 이미 종료된 자식에서 실패할 수 있다).
+fn kill_and_reap(child: &mut Child) {
+    if let Err(e) = child.kill() {
+        tracing::debug!("타임아웃 ssh kill 실패(이미 종료됐을 수 있음): {e}");
+    }
+    if let Err(e) = child.wait() {
+        tracing::debug!("타임아웃 ssh reaping 실패: {e}");
+    }
+}
+
+/// 이미 조립된 ssh `Command` 를 상한 안에서 실행한다(포트 발견용 — 프로세스 레벨 감시).
+///
+/// `Command::output()` 을 쓰지 않는 이유: `output()` 은 자식이 끝날 때까지 무기한 블록하고
+/// `Child` 핸들도 주지 않아 중간에 끊을 수단이 없다. 여기서는 직접 `spawn` 해 핸들을 쥐고
+/// [`wait_with_timeout`] 으로 감시한다.
+///
+/// stdout/stderr 를 파이프로 잡으므로 원격이 파이프 버퍼(수십 KB)를 넘겨 쓰면 자식이
+/// 블록될 수 있는데, 그 경우도 상한에서 kill 되므로 hang 은 아니다(포트 발견 출력은
+/// 한 줄이라 정상 경로에서는 발생하지 않는다).
+fn run_capture_with_budget(
+    mut cmd: Command,
+    budget: Duration,
+    what: &str,
+) -> Result<String, PortDiscoveryError> {
+    if budget.is_zero() {
+        return Err(PortDiscoveryError::new(
+            PortDiscoveryFailureKind::TimedOut,
+            format!("{what}: 포트 발견 전체 예산 소진 — ssh 를 띄우지 않음"),
+        ));
+    }
+    let started = Instant::now();
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            PortDiscoveryError::new(
+                PortDiscoveryFailureKind::SshConnectionFailed,
+                format!("{what}: spawn 실패: {e}"),
+            )
+        })?;
+    if !wait_with_timeout(&mut child, budget) {
+        kill_and_reap(&mut child);
+        return Err(PortDiscoveryError::new(
+            PortDiscoveryFailureKind::TimedOut,
+            format!("{what}: {budget:?} 안에 끝나지 않아 강제 종료"),
+        ));
+    }
+    let output = child.wait_with_output().map_err(|e| {
+        PortDiscoveryError::new(
+            PortDiscoveryFailureKind::SshConnectionFailed,
+            format!("{what}: 출력 수집 실패: {e}"),
+        )
+    })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let code = output.status.code();
+        let elapsed = started.elapsed();
+        return Err(PortDiscoveryError::new(
+            refine_with_elapsed(classify_by_exit_code(code), elapsed),
+            format!("code={code:?} elapsed={elapsed:?}: {}", stderr.trim()),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 /// 원격에서 한 줄 명령을 실행하고 stdout 을 캡처한다(포트 발견용). 실패 원인은
 /// [`classify_by_exit_code`] 로 분류해 [`PortDiscoveryError`] 에 담는다.
+///
+/// `deadline` 은 호출 1회 전체([`PORT_DISCOVERY_TOTAL_TIMEOUT`])의 예산이다 — 이 단계는
+/// 그중 [`Deadline::step_budget`] 만 쓴다.
 fn run_ssh_capture(
     ssh: &Path,
     target: &SshTarget,
     verify: bool,
     remote_argv: &[&str],
+    deadline: Deadline,
 ) -> Result<String, PortDiscoveryError> {
     let mut args: Vec<String> = Vec::new();
     push_common_opts(&mut args, target, verify);
@@ -414,25 +597,13 @@ fn run_ssh_capture(
         args.push((*a).to_string());
     }
     let mut cmd = Command::new(ssh);
-    cmd.args(&args).stdin(Stdio::null());
+    cmd.args(&args);
     // 호스트 GUI(windows subsystem, 콘솔 없음)가 in-process 로 이 함수를 호출하므로
     // CREATE_NO_WINDOW 를 걸지 않으면 Windows 가 ssh.exe 용 새 콘솔 창을 띄운다.
     tasty_utils::process::hide_console(&mut cmd);
-    let output = cmd.output().map_err(|e| {
-        PortDiscoveryError::new(
-            PortDiscoveryFailureKind::SshConnectionFailed,
-            format!("ssh spawn 실패({}): {e}", ssh.display()),
-        )
-    })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let code = output.status.code();
-        return Err(PortDiscoveryError::new(
-            classify_by_exit_code(code),
-            format!("code={code:?}: {}", stderr.trim()),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    // `what` 은 detail(로그 전용)에만 들어간다 — Display 계약상 사용자에게는 안 보인다.
+    let what = format!("ssh({})", ssh.display());
+    run_capture_with_budget(cmd, deadline.step_budget(), &what)
 }
 
 /// stdout 텍스트에서 포트 숫자를 파싱한다(trailing newline/CR 허용).
@@ -463,8 +634,9 @@ fn discover_via_subcommand(
     target: &SshTarget,
     remote_tasty: &str,
     verify: bool,
+    deadline: Deadline,
 ) -> Result<u16, PortDiscoveryError> {
-    let out = run_ssh_capture(ssh, target, verify, &[remote_tasty, "port"])?;
+    let out = run_ssh_capture(ssh, target, verify, &[remote_tasty, "port"], deadline)?;
     parse_port(&out)
 }
 
@@ -483,13 +655,14 @@ fn discover_via_explicit_file(
     target: &SshTarget,
     port_file: &str,
     verify: bool,
+    deadline: Deadline,
 ) -> Result<u16, PortDiscoveryError> {
     let cmds = explicit_file_commands(port_file);
-    match run_ssh_capture(ssh, target, verify, &[&cmds[0]]).and_then(|o| parse_port(&o)) {
+    match run_ssh_capture(ssh, target, verify, &[&cmds[0]], deadline).and_then(|o| parse_port(&o)) {
         Ok(port) => return Ok(port),
         Err(e) => tracing::debug!("port_file `{}` 실패({e}) — 다음 후보 시도", cmds[0]),
     }
-    let out = run_ssh_capture(ssh, target, verify, &[&cmds[1]])?;
+    let out = run_ssh_capture(ssh, target, verify, &[&cmds[1]], deadline)?;
     parse_port(&out)
 }
 
@@ -500,6 +673,7 @@ fn discover_via_file(
     windows: bool,
     verify: bool,
     debug: bool,
+    deadline: Deadline,
 ) -> Result<u16, PortDiscoveryError> {
     let dir = remote_tasty_dir(debug);
     let remote_cmd = if windows {
@@ -507,7 +681,7 @@ fn discover_via_file(
     } else {
         format!("cat ~/{dir}/tasty.port")
     };
-    let out = run_ssh_capture(ssh, target, verify, &[&remote_cmd])?;
+    let out = run_ssh_capture(ssh, target, verify, &[&remote_cmd], deadline)?;
     parse_port(&out)
 }
 
@@ -530,8 +704,13 @@ const AUTO_FALLBACK_CHAIN: [PortMode; 3] = [
 /// SSH 연결 자체 실패(다른 무엇도 알 수 없음) > 인스턴스 미실행(원격 명령까지는 도달해
 /// 얻은 확정적 신호) > 포트 파싱 실패(가장 모호함 — 연결·명령 성공, 출력만 이례적).
 /// 동일 kind 가 여럿이면 체인에서 먼저 시도된 것을 쓴다.
+///
+/// 타임아웃은 그 위에 놓는다 — 아무 답도 못 받은 단계가 하나라도 있으면, 다른 단계가
+/// 낸 "연결 실패/미실행" 은 **그 타임아웃이 전체 예산을 먹어 굶긴 결과**일 수 있어
+/// 대표로 삼으면 오도한다(체크할 곳이 인증이 아니라 도달성이다).
 fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryError {
-    const PRIORITY: [PortDiscoveryFailureKind; 3] = [
+    const PRIORITY: [PortDiscoveryFailureKind; 4] = [
+        PortDiscoveryFailureKind::TimedOut,
         PortDiscoveryFailureKind::SshConnectionFailed,
         PortDiscoveryFailureKind::RemoteInstanceNotRunning,
         PortDiscoveryFailureKind::PortParseFailed,
@@ -553,6 +732,10 @@ fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryEr
 /// 으로 조용히 실패할 수 있는데, 이 경우 [`parse_port`] 가 에러를 내며 다음 단계로
 /// 넘어간다(exit code 만으로는 감지 불가). 전 단계 실패 시 [`pick_most_informative`] 로
 /// 대표 에러를 고른다.
+///
+/// **상한**: 이 호출 전체가 [`PORT_DISCOVERY_TOTAL_TIMEOUT`] 안에 끝난다(각 ssh 실행은
+/// 추가로 [`PORT_DISCOVERY_STEP_TIMEOUT`] 상한). 무응답 호스트에서 무기한 블록하지
+/// 않으므로 워커/재연결 루프가 이 함수에 갇히지 않는다.
 pub fn discover_remote_port(
     ssh: &Path,
     target: &SshTarget,
@@ -562,9 +745,12 @@ pub fn discover_remote_port(
     debug: bool,
     port_file: Option<&str>,
 ) -> Result<u16> {
+    let deadline = Deadline::after(PORT_DISCOVERY_TOTAL_TIMEOUT);
     // 명시 port_file 은 관례 체인보다 최우선 — 비표준 위치의 port 파일도 발견 가능.
     if let Some(pf) = port_file {
-        return Ok(discover_via_explicit_file(ssh, target, pf, verify)?);
+        return Ok(discover_via_explicit_file(
+            ssh, target, pf, verify, deadline,
+        )?);
     }
     if mode != PortMode::Auto {
         return Ok(discover_single_mode(
@@ -574,12 +760,13 @@ pub fn discover_remote_port(
             mode,
             verify,
             debug,
+            deadline,
         )?);
     }
 
     let mut errors = Vec::with_capacity(AUTO_FALLBACK_CHAIN.len());
     for m in AUTO_FALLBACK_CHAIN {
-        match discover_single_mode(ssh, target, remote_tasty, m, verify, debug) {
+        match discover_single_mode(ssh, target, remote_tasty, m, verify, debug, deadline) {
             Ok(port) => return Ok(port),
             Err(e) => {
                 tracing::debug!("{m:?} 포트 발견 실패({e}) — 다음 모드로 fallback");
@@ -598,11 +785,14 @@ fn discover_single_mode(
     mode: PortMode,
     verify: bool,
     debug: bool,
+    deadline: Deadline,
 ) -> Result<u16, PortDiscoveryError> {
     match mode {
-        PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
-        PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
-        PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug),
+        PortMode::Subcommand => {
+            discover_via_subcommand(ssh, target, remote_tasty, verify, deadline)
+        }
+        PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug, deadline),
+        PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug, deadline),
         PortMode::Auto => unreachable!("Auto 는 AUTO_FALLBACK_CHAIN 으로 분해됨"),
     }
 }
@@ -636,6 +826,10 @@ where
 
 /// 원격 셸 자동감지 — 프로브 체인을 실제 SSH 로 1회씩 돌려 첫 성공 모드를 반환한다.
 /// 네트워크 I/O(1~3 왕복)로 수 초 블록될 수 있다 — 호출자가 적절한 스레드에서 실행.
+///
+/// [`discover_remote_port`] 와 같은 상한이 걸린다(체인 전체 [`PORT_DISCOVERY_TOTAL_TIMEOUT`],
+/// ssh 1회 [`PORT_DISCOVERY_STEP_TIMEOUT`]) — 감지 경로도 같은 `run_ssh_capture` 를 타므로
+/// "감지 중" 표시가 무한정 남지 않는다.
 pub fn detect_port_mode(
     ssh: &Path,
     target: &SshTarget,
@@ -643,7 +837,10 @@ pub fn detect_port_mode(
     verify: bool,
     debug: bool,
 ) -> Result<PortMode> {
-    detect_first_success(|m| discover_single_mode(ssh, target, remote_tasty, m, verify, debug))
+    let deadline = Deadline::after(PORT_DISCOVERY_TOTAL_TIMEOUT);
+    detect_first_success(|m| {
+        discover_single_mode(ssh, target, remote_tasty, m, verify, debug, deadline)
+    })
 }
 
 /// ssh 프로필의 `shell` 값으로 **셸 감지 상태(`detect_failed`)** 를 갱신한다(detect-split:
@@ -1029,6 +1226,190 @@ mod tests {
         assert!(
             args.windows(2)
                 .any(|w| w[0] == "-o" && w[1] == "ProxyJump=bastion")
+        );
+    }
+
+    #[test]
+    fn push_common_opts_appends_default_connect_timeout() {
+        // 연결 수립 상한이 없으면 OS SYN 재시도(리눅스 ~127초)에 맡겨진다 — 기본값 회귀 고정.
+        let mut args: Vec<String> = Vec::new();
+        push_common_opts(&mut args, &SshTarget::parse("gx10"), false);
+        let expected = format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT.as_secs());
+        assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == expected));
+    }
+
+    #[test]
+    fn user_connect_timeout_wins_over_default() {
+        // ssh(1) 은 같은 키의 **먼저 나온 값**을 쓴다 — 사용자 extra_options 가 기본값보다
+        // 앞에 와야 프로필 지정이 유효하다(느린 회선/다단 ProxyJump 대응).
+        let mut t = SshTarget::parse("gx10");
+        t.extra_options = vec!["ConnectTimeout=60".into()];
+        let mut args: Vec<String> = Vec::new();
+        push_common_opts(&mut args, &t, false);
+        let user = args
+            .iter()
+            .position(|a| a == "ConnectTimeout=60")
+            .expect("user ConnectTimeout present");
+        let default = args
+            .iter()
+            .position(|a| a == &format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT.as_secs()))
+            .expect("default ConnectTimeout present");
+        assert!(
+            user < default,
+            "사용자 지정이 기본값보다 앞에 와야 이긴다: {args:?}"
+        );
+    }
+
+    /// 시작하면 상한 안에는 절대 끝나지 않는 자식 프로세스(타임아웃 경로 검증용).
+    fn never_returns_command() -> Command {
+        #[cfg(windows)]
+        {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "ping -n 60 127.0.0.1 > nul"]);
+            c
+        }
+        #[cfg(not(windows))]
+        {
+            let mut c = Command::new("sleep");
+            c.arg("60");
+            c
+        }
+    }
+
+    /// 응답하지 않는 대상은 상한 안에 에러로 끝난다(무한 대기 회귀 고정).
+    /// `remote_browse::probe_stale_port_eof_is_error_not_hang` 과 같은 성격의 no-hang 테스트.
+    #[test]
+    fn port_discovery_times_out_instead_of_hanging() {
+        let started = Instant::now();
+        let r = run_capture_with_budget(
+            never_returns_command(),
+            Duration::from_millis(300),
+            "no-hang test",
+        );
+        let err = r.expect_err("상한을 넘긴 자식은 에러여야 한다");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
+        // 상한(300ms) + 폴링/프로세스 spawn 여유. 무한 대기면 여기서 잡힌다.
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "상한 안에 반환되지 않음: {:?}",
+            started.elapsed()
+        );
+        // 타임아웃 detail 은 로그 전용 — 사용자 문구에 내부 사정이 새지 않는다.
+        assert!(!err.to_string().contains("no-hang test"));
+    }
+
+    #[test]
+    fn exhausted_budget_skips_spawning_ssh() {
+        // 전체 예산이 소진되면 남은 체인 단계는 ssh 를 띄우지도 않고 즉시 타임아웃.
+        let started = Instant::now();
+        let err = run_capture_with_budget(never_returns_command(), Duration::ZERO, "exhausted")
+            .expect_err("예산 0 은 에러");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn capture_returns_stdout_within_budget() {
+        // 정상 경로 비회귀: 상한 안에 끝나는 자식의 stdout 은 그대로 캡처된다.
+        #[cfg(windows)]
+        let cmd = {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "echo 45123"]);
+            c
+        };
+        #[cfg(not(windows))]
+        let cmd = {
+            let mut c = Command::new("echo");
+            c.arg("45123");
+            c
+        };
+        let out = run_capture_with_budget(cmd, Duration::from_secs(10), "echo").unwrap();
+        assert_eq!(parse_port(&out).unwrap(), 45123);
+    }
+
+    #[test]
+    fn deadline_step_budget_is_capped_by_remaining_total() {
+        // 남은 예산이 단계 상한보다 크면 단계 상한이 적용된다.
+        let fresh = Deadline::after(PORT_DISCOVERY_TOTAL_TIMEOUT);
+        assert!(fresh.step_budget() <= PORT_DISCOVERY_STEP_TIMEOUT);
+        // 남은 예산이 더 작으면 그쪽이 적용된다(체인 총 대기가 단계 수만큼 곱해지지 않는다).
+        let almost_gone = Deadline::after(Duration::from_millis(50));
+        assert!(almost_gone.step_budget() <= Duration::from_millis(50));
+        // 이미 만료된 데드라인은 0 예산 = ssh 미실행.
+        let expired = Deadline {
+            at: Instant::now() - Duration::from_secs(1),
+        };
+        assert!(expired.step_budget().is_zero());
+    }
+
+    #[test]
+    fn total_timeout_bounds_the_auto_chain() {
+        // auto 체인은 3 단계라 단계 상한만으론 총 대기가 3 배가 된다 — 전체 상한이
+        // 그보다 작아야 곱이 끊긴다(값 선정 회귀 고정).
+        assert!(
+            PORT_DISCOVERY_TOTAL_TIMEOUT
+                < PORT_DISCOVERY_STEP_TIMEOUT * AUTO_FALLBACK_CHAIN.len() as u32
+        );
+        // 단계 상한은 연결 상한보다 커야 ConnectTimeout 실패가 kill 대신 제 분류로 뜬다.
+        assert!(PORT_DISCOVERY_STEP_TIMEOUT > SSH_CONNECT_TIMEOUT);
+    }
+
+    #[test]
+    fn timed_out_display_is_translated_not_raw() {
+        // 타임아웃 경로도 raw detail 비노출 계약(`PortDiscoveryError` doc)을 지킨다.
+        let err = PortDiscoveryError::new(
+            PortDiscoveryFailureKind::TimedOut,
+            "ssh(/usr/bin/ssh): 20s 안에 끝나지 않아 강제 종료",
+        );
+        assert!(!err.to_string().contains("/usr/bin/ssh"));
+        assert!(!err.to_string().contains("강제 종료"));
+        assert!(err.detail().contains("/usr/bin/ssh"));
+    }
+
+    #[test]
+    fn ssh_self_timeout_is_refined_to_timed_out() {
+        // ConnectTimeout 을 다 쓰고 exit 255 로 끝난 건 인증 실패가 아니라 무응답이다 —
+        // 그대로 두면 사용자가 키/호스트키를 뒤지게 되므로 타임아웃으로 좁힌다.
+        assert_eq!(
+            refine_with_elapsed(
+                PortDiscoveryFailureKind::SshConnectionFailed,
+                SSH_CONNECT_TIMEOUT + Duration::from_millis(200),
+            ),
+            PortDiscoveryFailureKind::TimedOut
+        );
+        // 즉답 실패(DNS 실패·연결 거부·인증 거부)는 그대로 연결 실패.
+        assert_eq!(
+            refine_with_elapsed(
+                PortDiscoveryFailureKind::SshConnectionFailed,
+                Duration::from_millis(80),
+            ),
+            PortDiscoveryFailureKind::SshConnectionFailed
+        );
+        // 다른 분류는 시간과 무관하게 불변(원격 명령까지 도달한 확정 신호를 덮지 않는다).
+        for kind in [
+            PortDiscoveryFailureKind::RemoteInstanceNotRunning,
+            PortDiscoveryFailureKind::PortParseFailed,
+        ] {
+            assert_eq!(
+                refine_with_elapsed(kind, SSH_CONNECT_TIMEOUT * 3),
+                kind,
+                "{kind:?} 는 경과 시간으로 재분류하지 않는다"
+            );
+        }
+    }
+
+    #[test]
+    fn pick_most_informative_prefers_timed_out() {
+        // 한 단계가 무응답이면 나머지 단계의 "연결 실패" 는 예산 굶김의 결과일 수 있어
+        // 대표로 삼으면 오도한다 — 타임아웃이 최우선.
+        let errors = vec![
+            PortDiscoveryError::new(PortDiscoveryFailureKind::SshConnectionFailed, "b"),
+            PortDiscoveryError::new(PortDiscoveryFailureKind::TimedOut, "a"),
+            PortDiscoveryError::new(PortDiscoveryFailureKind::RemoteInstanceNotRunning, "c"),
+        ];
+        assert_eq!(
+            pick_most_informative(errors).kind,
+            PortDiscoveryFailureKind::TimedOut
         );
     }
 
