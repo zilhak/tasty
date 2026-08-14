@@ -1,4 +1,4 @@
-# ADR-0069: 원격 포트 발견에 3중 상한(ssh `ConnectTimeout` + 프로세스 감시 + 호출 전체 예산)을 건다
+# ADR-0070: 원격 포트 발견에 3중 상한(ssh `ConnectTimeout` + 프로세스 감시 + 호출 전체 예산)을 건다
 
 - **Status**: Accepted
 - **Date**: 2026-08-13
