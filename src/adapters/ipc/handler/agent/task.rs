@@ -164,8 +164,28 @@ fn validate_command_poll_ref(command: &TaskCommand) -> Result<(), String> {
 /// 무력화되던 — 을 IPC 계층에서 없앤다.
 ///
 /// 빈 값(빈 배열 / 빈 문자열 / 콤마만 있는 문자열)은 `None` 으로 처리해
-/// "필터 없음" 이 된다.
+/// "필터 없음" 이 된다 — 조회 계열(`task_list`)의 의미. 파괴적인
+/// `task_purge` 는 빈 값을 "매칭 없음" 으로 봐야 하므로 이 함수 대신
+/// [`state_names_param_keep_empty`] 를 쓴다.
 fn state_names_param(params: &Value, primary_key: &str) -> Option<Vec<String>> {
+    let names = state_names_param_keep_empty(params, primary_key)?;
+    (!names.is_empty()).then_some(names)
+}
+
+/// [`state_names_param`] 과 같은 파싱을 하되 **키의 존재 여부를 보존한다** —
+/// 키가 아예 없거나 `null` 이면 `None`(= 필터 없음), 키는 있는데 파싱 결과가
+/// 비면 `Some(vec![])`(= 매칭 없음) 이다.
+///
+/// 이 구분이 `task_purge` 에는 필수다. `{"states": []}` 를 `None` 으로 접으면
+/// "상태 필터 없음" 이 되어 `older_than_ms` 만으로 상태 무관 전체가 삭제
+/// 후보가 된다 — "상태를 하나도 안 골랐으니 아무것도 안 지운다" 라는 호출자
+/// 기대와 정반대이고, `Core::task_purge` 의 "둘 다 미지정이면 거부" 가드도
+/// 우회한다. `Some(vec![])` 는 `plan_sweep` 의 `states.iter().any(..)` 가 항상
+/// `false` 라 후보 0 건이 된다.
+///
+/// 값의 타입이 배열/문자열이 아닌 경우(예: 숫자)도 "키는 있으나 이름 0 개" 로
+/// 본다 — 안전한 쪽(아무것도 안 지움)으로 접는다.
+fn state_names_param_keep_empty(params: &Value, primary_key: &str) -> Option<Vec<String>> {
     let alias = if primary_key == "states" {
         "state"
     } else {
@@ -183,9 +203,9 @@ fn state_names_param(params: &Value, primary_key: &str) -> Option<Vec<String>> {
             .flat_map(split_state_names)
             .collect(),
         Value::String(s) => split_state_names(s.as_str()),
-        _ => return None,
+        _ => Vec::new(),
     };
-    (!names.is_empty()).then_some(names)
+    Some(names)
 }
 
 fn split_state_names(raw: &str) -> Vec<String> {
@@ -926,6 +946,23 @@ pub fn handle_task_delete(
 /// 제외를 지킨 것만 실제로 지운다. 둘 다 생략하면 워크스페이스 전체가 후보가
 /// 되어 위험하므로 `core.task_purge` 가 거부한다. `dry_run=true` 면 아무것도
 /// 지우지 않고 계획(`deleted`/`retained`)만 반환한다.
+///
+/// `states` 키가 있는데 이름이 하나도 없으면(`[]` / `""`) "매칭 없음" 이다 —
+/// `task_list` 의 "빈 값 = 필터 없음" 과 의미가 반대다. 파괴적 명령이라
+/// "상태를 하나도 안 골랐다" 를 "상태 무관 전체" 로 승격시키지 않는다.
+/// `task_purge` 요청 파라미터 → [`TaskPurgeFilter`] (순수 함수라 테스트에서
+/// `plan_sweep` 과 직접 조합해 "무엇이 후보가 되는가" 를 확정할 수 있다).
+///
+/// 상태 목록은 빈 값을 "필터 없음" 으로 접지 않는다 — `{"states": []}` 은
+/// "고른 상태가 없음 = 매칭 없음" 이지 "상태 무관 전체" 가 아니다.
+fn purge_filter_from_params(params: &Value, now_ms: u64) -> TaskPurgeFilter {
+    TaskPurgeFilter {
+        states: state_names_param_keep_empty(params, "states"),
+        older_than_ms: params.get("older_than_ms").and_then(|v| v.as_u64()),
+        now_ms,
+    }
+}
+
 pub fn handle_task_purge(
     core: &Core,
     _state: &mut AppState,
@@ -938,17 +975,11 @@ pub fn handle_task_purge(
         Ok(w) => w,
         Err(e) => return e,
     };
-    let states = state_names_param(params, "states");
-    let older_than_ms = params.get("older_than_ms").and_then(|v| v.as_u64());
     let dry_run = params
         .get("dry_run")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let filter = TaskPurgeFilter {
-        states,
-        older_than_ms,
-        now_ms: now_ms(),
-    };
+    let filter = purge_filter_from_params(params, now_ms());
     match core.task_purge(engine, workspace_id, filter, dry_run) {
         Err(e) => agent_err_to_response(id, e),
         Ok(plan) => JsonRpcResponse::success(
@@ -1373,5 +1404,122 @@ mod state_filter_tests {
             state_names_param(&p, "states"),
             Some(vec!["succeeded".to_string()])
         );
+    }
+}
+
+/// `task_purge` 의 상태 필터는 `task_list` 와 "빈 값" 의 의미가 다르다 —
+/// 조회는 빈 값을 "필터 없음"(전체)으로 접어도 무해하지만, 삭제에서 그렇게
+/// 접으면 "상태를 하나도 안 골랐다" 가 "상태 무관 전체 삭제" 로 뒤집힌다.
+/// 여기서 파라미터 파싱(`purge_filter_from_params`) + 후보 선정(`plan_sweep`)
+/// 을 실제로 조합해 그 경계를 락인한다.
+#[cfg(test)]
+mod purge_state_filter_tests {
+    use std::sync::atomic::AtomicU64;
+
+    use tasty_agent::TaskStore;
+    use tasty_agent::task::TaskSweepPlan;
+    use tasty_memory::MemoryStorage;
+
+    use super::*;
+
+    /// Ready task 2 개를 `created_at = 1000` 으로 만들어두고, 주어진 purge
+    /// 파라미터로 (now_ms = 100_000 기준) 후보가 어떻게 잡히는지 계산한다.
+    fn plan(params: &Value) -> TaskSweepPlan {
+        let mut mem = tasty_memory::testing::InMemoryStorage::new();
+        let seq = AtomicU64::new(0);
+        let mem_dyn: &mut dyn MemoryStorage = &mut mem;
+        let mut store = TaskStore::new(mem_dyn, "_host", &seq);
+        for name in ["a", "b"] {
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: name.to_string(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".to_string()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: Vec::new(),
+                    on_failure: OnFailure::Abort,
+                    metadata: Value::Null,
+                    now_ms: 1000,
+                })
+                .expect("create");
+        }
+        let filter = purge_filter_from_params(params, 100_000);
+        store.plan_sweep(1, &filter).expect("plan_sweep")
+    }
+
+    /// 회귀 락인: `{"states": [], "older_than_ms": ...}` 는 아무것도 지우지
+    /// 않는다. 빈 목록을 `None` 으로 접던 회귀에서는 상태 무관 전체가 후보가
+    /// 되어 경과시간만으로 전부 삭제됐다.
+    #[test]
+    fn empty_states_array_purges_nothing() {
+        let p = plan(&json!({"states": [], "older_than_ms": 1000}));
+        assert!(
+            p.deleted.is_empty() && p.retained.is_empty(),
+            "빈 states 는 매칭 0 건이어야 한다: {p:?}"
+        );
+    }
+
+    /// 단수 키의 빈 문자열도 동일 — CLI/plugin 이 상태를 안 고른 채 조립하면
+    /// 이 모양이 나온다.
+    #[test]
+    fn empty_state_string_purges_nothing() {
+        for params in [
+            json!({"state": "", "older_than_ms": 1000}),
+            json!({"state": ",", "older_than_ms": 1000}),
+            json!({"states": [""], "older_than_ms": 1000}),
+        ] {
+            let p = plan(&params);
+            assert!(
+                p.deleted.is_empty() && p.retained.is_empty(),
+                "params: {params} → {p:?}"
+            );
+        }
+    }
+
+    /// 반대편 경계: 키가 아예 없으면 예전대로 "상태 필터 없음" 이라
+    /// `older_than_ms` 만으로 전부 후보가 된다. 위 케이스와의 차이가
+    /// "값이 비었나" 가 아니라 "키가 있나" 임을 확정한다.
+    #[test]
+    fn absent_states_key_still_means_no_state_filter() {
+        let p = plan(&json!({"older_than_ms": 1000}));
+        assert_eq!(p.deleted.len(), 2, "{p:?}");
+    }
+
+    /// 실제 상태 이름이 있으면 평소대로 지운다(필터가 과하게 잠기지 않았는지).
+    #[test]
+    fn named_states_still_purge() {
+        let p = plan(&json!({"states": ["ready"], "older_than_ms": 1000}));
+        assert_eq!(p.deleted.len(), 2, "{p:?}");
+        let p = plan(&json!({"states": ["failed"], "older_than_ms": 1000}));
+        assert!(p.deleted.is_empty() && p.retained.is_empty(), "{p:?}");
+    }
+
+    /// 파싱 계층 자체의 구분 — 키 부재/null 은 `None`, 키가 있는데 이름이 0 개면
+    /// `Some(vec![])`. `task_list` 가 쓰는 `state_names_param` 은 둘 다 `None`
+    /// 으로 접는(= 필터 없음) 기존 동작 그대로다.
+    #[test]
+    fn keep_empty_variant_preserves_key_presence() {
+        assert_eq!(state_names_param_keep_empty(&json!({}), "states"), None);
+        assert_eq!(
+            state_names_param_keep_empty(&json!({"states": Value::Null}), "states"),
+            None
+        );
+        assert_eq!(
+            state_names_param_keep_empty(&json!({"states": []}), "states"),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            state_names_param_keep_empty(&json!({"state": ""}), "states"),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            state_names_param_keep_empty(&json!({"states": ["ready"]}), "states"),
+            Some(vec!["ready".to_string()])
+        );
+        // 조회 경로는 그대로 접는다.
+        assert_eq!(state_names_param(&json!({"states": []}), "state"), None);
     }
 }

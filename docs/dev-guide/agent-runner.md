@@ -285,6 +285,8 @@ tasty agent task-list --workspace-id 1 --state waiting,ready,running     # 콤�
 
 `task-list --state` 는 `task-purge --states` 와 **동일한 콤마 다중값 파싱**을 쓴다(플래그 이름만 단수/복수로 다르다 — 하위호환 때문에 유지). 여러 state 는 OR 매칭이고, 단일값은 예전과 같이 동작한다. IPC(`agent.task_list` / `agent.task_purge`)도 배열 `["waiting","ready"]` · 콤마 문자열 `"waiting,ready"` · 단일 문자열을 모두 받고, 단수/복수 키(`state` ↔ `states`)를 서로 폴백한다 — 콤마 목록을 단일값 필터로 넘겨 매칭이 0 건이 되고 "아직 안 끝난 task 가 있는가" 판정이 조용히 무력화되던 함정을 없앤 것. 매칭이 없으면 빈 목록, 필터 미지정이면 전체다.
 
+**단, "빈 값" 의 의미는 두 커맨드가 다르다.** `task_list` 는 빈 값(`[]` / `""` / 콤마만)을 "필터 없음"(= 전체)으로 접지만, `task_purge` 는 **키가 있는데 이름이 하나도 없으면 "매칭 없음"** 으로 본다 — 즉 `{"states": [], "older_than_ms": ...}` 는 아무것도 지우지 않는다. 상태 목록을 동적으로 조립하는 호출자가 상태를 하나도 안 골랐을 때, 파괴적 명령에서 그걸 "상태 무관 전체 삭제" 로 승격시키지 않기 위해서다. `states` 키가 **아예 없거나 `null`** 이면 그건 그대로 "상태 필터 없음" 이므로 `older_than_ms` 만으로 전체가 후보가 된다(둘 다 미지정이면 `Core::task_purge` 가 거부).
+
 ```sh
 tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["cargo","build"]}' \
   --concurrency-limit cap2   # metadata.semaphore.name=cap2 를 자동 조립(위 "동시성 제한" 참조)
