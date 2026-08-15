@@ -563,14 +563,19 @@ impl MainView {
             );
             return;
         }
-        if button_state == ElementState::Released {
-            // Released 에서 연다(Pressed 아님) — 버튼이 아직 눌려 있는 상태에서
-            // `popup_at_rect` 를 호출하면 GTK 가 팝업을 realize/map 하지 않고
-            // 조용히 no-op 한다(실측 확인: has_window/realized/mapped 모두
-            // false 로 영원히 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청
-            // 자체가 안 나감). 사이드바/탭바 메뉴는 egui `secondary_clicked()`
-            // 가 release 시점에 발화해 원래도 이 문제를 안 겪었다 — 터미널도
-            // 같은 시점으로 맞춘다.
+        // Linux 는 release 에서 연다(Pressed 아님) — 버튼이 아직 눌려 있는
+        // 상태에서 GTK `popup_at_rect` 를 호출하면 팝업을 realize/map 하지
+        // 않고 조용히 no-op 한다(실측 확인: has_window/realized/mapped 모두
+        // false 로 영원히 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청
+        // 자체가 안 나감). 사이드바/탭바 메뉴는 egui `secondary_clicked()` 가
+        // release 시점에 발화해 원래도 이 문제를 안 겪었다. macOS/Windows 는
+        // `MenuOutcome::Ready` 로 항상 동기 처리되어 이 제약이 없으므로 기존
+        // press 시점 동작을 그대로 유지한다(불필요한 플랫폼 공통 동작 변경 방지).
+        #[cfg(target_os = "linux")]
+        let open_button_state = ElementState::Released;
+        #[cfg(not(target_os = "linux"))]
+        let open_button_state = ElementState::Pressed;
+        if button_state == open_button_state {
             let sf = self.base.gpu.scale_factor();
             self.state.dialogs.pending_native_menu =
                 Some(crate::state::PendingNativeMenu::TerminalSurface {
