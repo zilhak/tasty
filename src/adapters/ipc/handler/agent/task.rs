@@ -941,6 +941,20 @@ pub fn handle_task_delete(
 // agent.task_purge
 // ============================================================
 
+/// `task_purge` 요청 파라미터 → [`TaskPurgeFilter`] (순수 함수라 테스트에서
+/// `plan_sweep` 과 직접 조합해 "무엇이 후보가 되는가" 를 확정할 수 있다).
+///
+/// 상태 목록은 빈 값을 "필터 없음" 으로 접지 않는다 — `{"states": []}` 은
+/// "고른 상태가 없음 = 매칭 없음" 이지 "상태 무관 전체" 가 아니다(아래
+/// `handle_task_purge` doc 참조 — `task_list` 와 의미가 반대인 이유).
+fn purge_filter_from_params(params: &Value, now_ms: u64) -> TaskPurgeFilter {
+    TaskPurgeFilter {
+        states: state_names_param_keep_empty(params, "states"),
+        older_than_ms: params.get("older_than_ms").and_then(|v| v.as_u64()),
+        now_ms,
+    }
+}
+
 /// task 일괄 삭제(TODO11 결정 3) — 상태 이름 목록(`states`, `TaskState::name()`
 /// 값들)과 경과시간(`older_than_ms`) 필터로 후보를 고르고, 참조 안전 + `Running`
 /// 제외를 지킨 것만 실제로 지운다. 둘 다 생략하면 워크스페이스 전체가 후보가
@@ -950,19 +964,6 @@ pub fn handle_task_delete(
 /// `states` 키가 있는데 이름이 하나도 없으면(`[]` / `""`) "매칭 없음" 이다 —
 /// `task_list` 의 "빈 값 = 필터 없음" 과 의미가 반대다. 파괴적 명령이라
 /// "상태를 하나도 안 골랐다" 를 "상태 무관 전체" 로 승격시키지 않는다.
-/// `task_purge` 요청 파라미터 → [`TaskPurgeFilter`] (순수 함수라 테스트에서
-/// `plan_sweep` 과 직접 조합해 "무엇이 후보가 되는가" 를 확정할 수 있다).
-///
-/// 상태 목록은 빈 값을 "필터 없음" 으로 접지 않는다 — `{"states": []}` 은
-/// "고른 상태가 없음 = 매칭 없음" 이지 "상태 무관 전체" 가 아니다.
-fn purge_filter_from_params(params: &Value, now_ms: u64) -> TaskPurgeFilter {
-    TaskPurgeFilter {
-        states: state_names_param_keep_empty(params, "states"),
-        older_than_ms: params.get("older_than_ms").and_then(|v| v.as_u64()),
-        now_ms,
-    }
-}
-
 pub fn handle_task_purge(
     core: &Core,
     _state: &mut AppState,
