@@ -266,6 +266,48 @@ impl MainView {
         // Cursor icon is determined in the egui render cycle (gpu/mod.rs)
     }
 
+    /// `handle_event` 진입부 전용 래퍼 — 이 winit 이벤트가 "네이티브 메뉴를 닫는 바깥
+    /// 클릭" 사이클에 속하면 삼킴 상태를 전이하고 egui 에 `PointerGone` 을 넣는다.
+    ///
+    /// 삼키는 이벤트는 egui 입력 큐에 아예 넣지 않으므로 그 사이클의 press/release 쌍이
+    /// 완성되지 않는다 — 안 그러면 다음 프레임에 사이드바 행/탭/explorer 항목이 쌍을
+    /// 보고 `clicked()`(우클릭이면 `secondary_clicked()` → 새 메뉴 큐잉)를 발화해
+    /// 메뉴를 닫으려던 클릭이 그 밑의 위젯까지 실행한다. `PointerGone` 은 그 위에
+    /// hover 잔류/흘러든 press 상태까지 끊는 보강이다.
+    pub(super) fn begin_menu_dismiss_swallow(&mut self, event: &winit::event::WindowEvent) -> bool {
+        let winit::event::WindowEvent::MouseInput {
+            state: button_state,
+            button,
+            ..
+        } = event
+        else {
+            return false;
+        };
+        if !self.take_menu_dismiss_swallow(*button_state, *button) {
+            return false;
+        }
+        self.base.gpu.push_egui_pointer_gone();
+        true
+    }
+
+    /// 이 마우스 버튼 이벤트가 "네이티브 메뉴를 닫는 바깥 클릭" 사이클에 속하는지
+    /// 판정하고 삼킴 상태를 전이한다. `handle_event` 가 **egui feed 보다 먼저**
+    /// 이벤트당 정확히 한 번 부르고, 그 결과를 egui feed 게이트와
+    /// `handle_mouse_input` 이 공유한다.
+    pub(super) fn take_menu_dismiss_swallow(
+        &mut self,
+        button_state: ElementState,
+        button: MouseButton,
+    ) -> bool {
+        let menu_open = self.pending_menu.is_some();
+        menu_dismiss_swallow_step(
+            &mut self.menu_dismiss_swallow,
+            menu_open,
+            button_state,
+            button,
+        )
+    }
+
     /// 마우스 버튼 입력 라우팅 디스패처. 게이트(OS-resize → click-to-activate →
     /// egui/overlay 소비 → egui-mesh) 를 순서대로 태운 뒤 버튼별 핸들러로 위임한다.
     /// 좌표/라우팅 결정 수학은 이미 순수 함수(`resize_direction_at`·`pixel_to_grid`·
@@ -276,14 +318,26 @@ impl MainView {
         button_state: ElementState,
         button: MouseButton,
         egui_consumed: bool,
+        menu_dismiss_swallow: bool,
     ) {
         // 네이티브 컨텍스트 메뉴가 떠 있는 동안 winit 이 press 를 봤다는 것은
         // 그 클릭이 메뉴 바깥이면서 메뉴의 grab 에도 안 잡혔다는 뜻이다(잡혔다면
-        // GTK 가 먼저 소비해 여기까지 오지 않는다). 그 press 를 소비해 메뉴를
-        // 닫는다 — grab 실패 시에도 바깥 클릭 dismiss 가 보장되어 워치독이
-        // 사실상 발화하지 않는다. 실제 결과 회수는 다음 프레임의
-        // `poll_pending_native_menu` 가 한다(완료 경로 단일화).
-        if button_state == ElementState::Pressed && self.dismiss_pending_native_menu() {
+        // GTK 가 먼저 소비해 여기까지 오지 않는다). 그 클릭은 메뉴를 닫는 데만
+        // 쓰이고 **사이클 전체가 삼켜진다** — 판정/상태 전이는 호출부(`view/main.rs`
+        // `handle_event`)가 egui feed 보다 **먼저** 한 번만 수행하고(egui 입력 큐에도
+        // 안 들어간다), 여기서는 그 결정을 그대로 따른다. press 만 막고 release 를
+        // 흘리면 egui 가 다음 프레임에 쌍을 완성해 메뉴 밑 위젯의 `clicked()` 가
+        // 발화한다(`menu_dismiss_swallow_step` 주석 참고).
+        //
+        // grab 실패 시에도 바깥 클릭 dismiss 가 보장되어 워치독이 사실상 발화하지
+        // 않는다. 실제 결과 회수는 다음 프레임의 `poll_pending_native_menu` 가
+        // 한다(완료 경로 단일화).
+        if menu_dismiss_swallow {
+            if button_state == ElementState::Pressed {
+                self.dismiss_pending_native_menu();
+            }
+            // release 는 삼키기만 하면 된다 — 짝이 되는 press 를 라우팅하지 않았으니
+            // 정리할 드래그/선택 상태도 없다.
             return;
         }
 
@@ -1234,6 +1288,48 @@ fn cursor_moved_should_short_circuit(
     egui_consumed || overlay_open || popup_hovered || banner_hovered || modifier_hint_hovered
 }
 
+/// 네이티브 컨텍스트 메뉴를 닫는 바깥 클릭을 **클릭 사이클 단위**로 삼키기 위한 순수
+/// 상태 전이. `swallowed` 는 현재 삼키는 중인 버튼 집합이고, 반환값이 참이면 이번
+/// 이벤트는 egui 입력 큐에도 tasty 라우팅에도 들어가지 않는다.
+///
+/// - press: 메뉴가 떠 있으면 그 버튼을 삼킴 집합에 넣고 참(메뉴 dismiss 로 소비).
+/// - release: 짝이 되는 press 를 삼켰던 버튼이면 집합에서 빼고 참.
+///
+/// **press 만 삼키면 부족하다.** press 를 막아도 release 가 egui 에 들어가면, egui 는
+/// 다음 프레임에 press+release 쌍을 보고 커서 밑 위젯의 `clicked()`(우클릭이면
+/// `secondary_clicked()` → 새 메뉴 큐잉)를 발화시킨다. 즉 메뉴를 닫으려던 클릭이 그
+/// 밑의 사이드바 행/탭/explorer 항목까지 실행한다. 그래서 press 시점에 "이번 사이클은
+/// 삼킨다" 를 기억해 짝이 되는 release 까지 끌고 간다.
+///
+/// release 판정이 `menu_open` 과 무관한 것도 의도다 — press 로 dismiss 를 건 뒤
+/// release 가 오기 전에 `poll_pending_native_menu` 가 메뉴를 회수해 슬롯이 비는 것이
+/// 정상 경로이고, 그때도 release 는 여전히 삼켜져야 한다.
+fn menu_dismiss_swallow_step(
+    swallowed: &mut Vec<MouseButton>,
+    menu_open: bool,
+    button_state: ElementState,
+    button: MouseButton,
+) -> bool {
+    match button_state {
+        ElementState::Pressed => {
+            if !menu_open {
+                return false;
+            }
+            if !swallowed.contains(&button) {
+                swallowed.push(button);
+            }
+            true
+        }
+        ElementState::Released => {
+            let Some(idx) = swallowed.iter().position(|b| *b == button) else {
+                return false;
+            };
+            swallowed.remove(idx);
+            true
+        }
+    }
+}
+
 /// `update_mesh_hover`(MainView 메서드)의 순수 결정 로직. 슬롯의 다음 값과,
 /// `PointerGone` 을 보내야 할 이전 대상(있다면)을 반환한다. 대상이 안 바뀌면(같은
 /// surface 에 머무르거나 계속 `None`) `PointerGone` 을 보내지 않는다.
@@ -1245,6 +1341,187 @@ fn mesh_hover_transition(
         (current, None)
     } else {
         (new, current)
+    }
+}
+
+/// 네이티브 메뉴 dismiss 클릭 삼킴 회귀망.
+///
+/// 두 축을 각각 못 박는다:
+/// 1. `menu_dismiss_swallow_step` — press 로 시작한 삼킴이 **짝이 되는 release 까지**
+///    이어지는지(press 만 삼키던 회귀 재발 방지).
+/// 2. egui 쪽 실제 반응 — 삼킨 사이클의 이벤트를 egui 입력 큐에 넣지 않고 `PointerGone`
+///    만 넣었을 때 위젯이 `clicked()`/`secondary_clicked()` 를 발화하지 **않는지**.
+///    `MainView` 는 GPU/winit 없이 구성할 수 없어(`GpuState` 가 헤드리스 생성자를 주지
+///    않는다) `handle_event` 를 직접 구동할 수 없으므로, 그 자리에서 egui 에 실제로
+///    무엇이 들어가는지를 맨 `egui::Context` 로 재현해 검증한다. 같은 시나리오를 "예전
+///    동작"(press·release 를 그대로 feed)으로 돌리는 대조군이 함께 있어, 이 테스트가
+///    항상 통과하는 무의미한 테스트가 아님을 보장한다.
+#[cfg(test)]
+mod menu_dismiss_tests {
+    use super::menu_dismiss_swallow_step;
+    use winit::event::{ElementState, MouseButton};
+
+    const OPEN: bool = true;
+    const CLOSED: bool = false;
+
+    #[test]
+    fn press_while_menu_open_starts_swallowing_the_cycle() {
+        let mut sw = Vec::new();
+        assert!(menu_dismiss_swallow_step(
+            &mut sw,
+            OPEN,
+            ElementState::Pressed,
+            MouseButton::Left
+        ));
+        assert_eq!(sw, vec![MouseButton::Left]);
+    }
+
+    #[test]
+    fn matching_release_is_swallowed_even_after_menu_slot_cleared() {
+        // press 로 dismiss 를 건 뒤 release 전에 poll 이 메뉴를 회수하는 것이 정상
+        // 경로다. 그래도 짝이 되는 release 는 삼켜져야 egui 가 쌍을 완성하지 못한다.
+        let mut sw = Vec::new();
+        assert!(menu_dismiss_swallow_step(
+            &mut sw,
+            OPEN,
+            ElementState::Pressed,
+            MouseButton::Left
+        ));
+        assert!(menu_dismiss_swallow_step(
+            &mut sw,
+            CLOSED,
+            ElementState::Released,
+            MouseButton::Left
+        ));
+        assert!(sw.is_empty(), "사이클이 끝나면 삼킴 상태가 남지 않는다");
+    }
+
+    #[test]
+    fn release_without_swallowed_press_passes_through() {
+        // 메뉴가 떠 있는 동안 눌린 적 없는 버튼의 release(예: 메뉴가 뜨기 전에
+        // 시작된 드래그의 release)는 정상 라우팅되어야 한다.
+        let mut sw = Vec::new();
+        assert!(!menu_dismiss_swallow_step(
+            &mut sw,
+            OPEN,
+            ElementState::Released,
+            MouseButton::Left
+        ));
+    }
+
+    #[test]
+    fn press_without_menu_passes_through() {
+        let mut sw = Vec::new();
+        assert!(!menu_dismiss_swallow_step(
+            &mut sw,
+            CLOSED,
+            ElementState::Pressed,
+            MouseButton::Left
+        ));
+        assert!(sw.is_empty());
+    }
+
+    #[test]
+    fn other_button_release_does_not_end_the_swallowed_cycle() {
+        let mut sw = Vec::new();
+        assert!(menu_dismiss_swallow_step(
+            &mut sw,
+            OPEN,
+            ElementState::Pressed,
+            MouseButton::Right
+        ));
+        assert!(!menu_dismiss_swallow_step(
+            &mut sw,
+            CLOSED,
+            ElementState::Released,
+            MouseButton::Left
+        ));
+        assert!(menu_dismiss_swallow_step(
+            &mut sw,
+            CLOSED,
+            ElementState::Released,
+            MouseButton::Right
+        ));
+    }
+
+    /// 버튼 하나의 클릭 사이클을 egui 에 흘려 위젯이 클릭으로 인식하는지 본다.
+    /// `swallow=true` 면 `handle_event` 의 삼킴 경로와 동일하게 press/release 를 **넣지
+    /// 않고** `PointerGone` 만 넣는다. 반환값 = (primary clicked, secondary clicked).
+    fn click_cycle_reaches_widget(button: egui::PointerButton, swallow: bool) -> (bool, bool) {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0));
+        let mut center = egui::Pos2::ZERO;
+        let mut primary = false;
+        let mut secondary = false;
+        let frame = |events: Vec<egui::Event>,
+                     center: &mut egui::Pos2,
+                     primary: &mut bool,
+                     secondary: &mut bool| {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            // 프레임 출력(텍스처/셰이프)은 이 테스트의 관심사가 아니다 — 위젯 응답만 본다.
+            let _frame_output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let resp = ui.button("target");
+                    *center = resp.rect.center();
+                    *primary |= resp.clicked();
+                    *secondary |= resp.secondary_clicked();
+                });
+            });
+        };
+        // 1) 레이아웃 확보 → 위젯 rect 를 얻는다. 2) 그 위로 포인터를 올린다.
+        frame(Vec::new(), &mut center, &mut primary, &mut secondary);
+        frame(
+            vec![egui::Event::PointerMoved(center)],
+            &mut center,
+            &mut primary,
+            &mut secondary,
+        );
+        let btn = |pressed: bool| egui::Event::PointerButton {
+            pos: center,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let (press_frame, release_frame) = if swallow {
+            (vec![egui::Event::PointerGone], Vec::new())
+        } else {
+            (vec![btn(true)], vec![btn(false)])
+        };
+        frame(press_frame, &mut center, &mut primary, &mut secondary);
+        frame(release_frame, &mut center, &mut primary, &mut secondary);
+        frame(Vec::new(), &mut center, &mut primary, &mut secondary);
+        (primary, secondary)
+    }
+
+    #[test]
+    fn unswallowed_cycle_does_fire_the_widget() {
+        // 대조군 — 삼키지 않으면 egui 는 쌍을 완성해 클릭을 발화한다.
+        assert_eq!(
+            click_cycle_reaches_widget(egui::PointerButton::Primary, false),
+            (true, false)
+        );
+        assert_eq!(
+            click_cycle_reaches_widget(egui::PointerButton::Secondary, false),
+            (false, true)
+        );
+    }
+
+    #[test]
+    fn swallowed_cycle_never_completes_a_click_in_egui() {
+        // 본 검증 — 메뉴를 닫는 클릭은 그 밑의 위젯을 실행시키지 않는다.
+        assert_eq!(
+            click_cycle_reaches_widget(egui::PointerButton::Primary, true),
+            (false, false)
+        );
+        // 우클릭이 새 컨텍스트 메뉴를 큐에 넣는 경로도 함께 막힌다.
+        assert_eq!(
+            click_cycle_reaches_widget(egui::PointerButton::Secondary, true),
+            (false, false)
+        );
     }
 }
 

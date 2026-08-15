@@ -107,6 +107,12 @@ pub struct MainView {
     /// 가 즉시 `Ready` 로 해소되어 continuation 이 그 자리에서 실행된다).
     /// `redraw.rs::poll_pending_native_menu` 가 매 프레임 폴링해 소비한다.
     pub(crate) pending_menu: Option<PendingNativeMenuSlot>,
+    /// 네이티브 메뉴를 닫느라 삼키는 중인 클릭 사이클의 버튼들. press 에서 담고
+    /// 짝이 되는 release 에서 뺀다 — 그 사이 이벤트는 egui 입력 큐에도, tasty
+    /// 라우팅에도 넣지 않는다(`mouse.rs::menu_dismiss_swallow_step`). press 만
+    /// 막으면 release 가 egui 에 남아 다음 프레임에 위젯이 쌍을 완성해
+    /// `clicked()` 를 발화한다(메뉴를 닫는 클릭이 그 밑의 위젯까지 실행).
+    pub(crate) menu_dismiss_swallow: Vec<winit::event::MouseButton>,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
     /// 실제 우클릭은 `process_pending_native_menu` 가 OS native 팝업으로 소비하므로
     /// (macOS/Windows 는 `TrackPopupMenu` 등 **블로킹 모달**, Linux 는 비블로킹이지만
@@ -186,6 +192,7 @@ impl MainView {
             attach_mesh_input: std::collections::HashMap::new(),
             mesh_pointer_hover: None,
             pending_menu: None,
+            menu_dismiss_swallow: Vec::new(),
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
         }
@@ -319,6 +326,14 @@ impl View for MainView {
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);
 
+        // ── 네이티브 메뉴 dismiss 클릭 삼킴 ──
+        // 메뉴가 떠 있는 동안 winit 이 본 클릭은 "메뉴 바깥 + grab 실패" 를 뜻한다.
+        // 그 클릭은 메뉴를 닫는 데만 쓰이고 **사이클 전체**(press~짝이 되는 release)가
+        // 삼켜져야 한다. 판정/상태 전이는 egui feed 보다 **먼저** 여기 한 번만 일어나고,
+        // 그 결과를 아래 egui feed 게이트와 `handle_mouse_input` 이 함께 쓴다 — 두 경로가
+        // 어긋날 수 없게 단일 출처로 둔다.
+        let menu_dismiss_swallow = self.begin_menu_dismiss_swallow(&event);
+
         let (egui_consumed, egui_repaint) = if is_redraw_event {
             // RedrawRequested를 egui에 전달하면 항상 repaint=true를 반환하여
             // dirty → request_redraw → RedrawRequested 무한 루프가 발생한다.
@@ -334,6 +349,9 @@ impl View for MainView {
         } else if is_modifiers_event {
             let (_, repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
             (false, repaint)
+        } else if menu_dismiss_swallow {
+            // egui 에 먹이지 않는다. 방금 넣은 `PointerGone` 을 반영하도록 repaint 만 요청.
+            (false, true)
         } else {
             self.base.gpu.handle_egui_event(&self.base.winit, &event)
         };
@@ -429,7 +447,7 @@ impl View for MainView {
                 button,
                 ..
             } => {
-                self.handle_mouse_input(button_state, button, egui_consumed);
+                self.handle_mouse_input(button_state, button, egui_consumed, menu_dismiss_swallow);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, egui_consumed);

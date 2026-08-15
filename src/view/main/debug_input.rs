@@ -60,7 +60,11 @@ impl MainView {
                 } else {
                     ElementState::Released
                 };
-                self.handle_mouse_input(state, button, false);
+                // 이 경로는 `handle_event` 를 거치지 않으므로 dismiss 삼킴 판정을 여기서
+                // 직접 태운다(실제 winit 경로와 같은 단일 로직). 주입 테스트가 메뉴가 떠
+                // 있는 상태의 라우팅을 실제와 다르게 관찰하지 않도록.
+                let swallow = self.take_menu_dismiss_swallow(state, button);
+                self.handle_mouse_input(state, button, false, swallow);
                 if let Some(menu) = self.state.dialogs.pending_native_menu.take() {
                     self.debug_captured_menu = Some(menu);
                 }

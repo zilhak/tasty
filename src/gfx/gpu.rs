@@ -330,6 +330,20 @@ impl GpuState {
         (response.consumed, response.repaint)
     }
 
+    /// egui 입력 큐에 `PointerGone` 을 직접 밀어 넣는다.
+    ///
+    /// winit 마우스 이벤트를 egui 에 **먹이지 않고 삼키는** 경로(네이티브 컨텍스트
+    /// 메뉴를 닫는 바깥 클릭 — `view/main/mouse.rs::menu_dismiss_swallow_step`)에서
+    /// 쓴다. feed 를 건너뛰는 것만으로도 그 사이클의 press/release 쌍은 완성되지
+    /// 않지만, 직전 프레임까지 잡혀 있던 hover 하이라이트가 남는 것을 막고 혹시
+    /// 흘러든 press 상태가 있으면 함께 끊는다.
+    pub fn push_egui_pointer_gone(&mut self) {
+        self.egui_state
+            .egui_input_mut()
+            .events
+            .push(egui::Event::PointerGone);
+    }
+
     /// 렌더 prepare 가 적재한 egui-mesh full 재전송 요청(surface_id)을 비우며 가져간다.
     /// MainView 가 render 직후 소비해, 다음 tick 의 forward 에서 해당 surface 에
     /// `need_full_textures` set_context 를 보낸다.
