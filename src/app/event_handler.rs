@@ -395,6 +395,20 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.poll_tray_menu_events();
 
+        // 열려 있는 네이티브 컨텍스트 메뉴를 펌프한다(비블로킹). redraw 경로와
+        // 이중이지만, 메뉴가 떠 있는 동안은 아래 WaitUntil 이 이 경로를 8ms 주기로
+        // 확실히 굴려 준다 — redraw 이벤트가 안 오는 순간에도 폴링이 이어진다.
+        self.poll_pending_native_menus();
+
+        // 아직 안 닫힌 메뉴가 남았으면 다음 폴링 tick 을 예약한다. 이걸 빠뜨리면
+        // 메뉴가 열린 상태에서 아무 이벤트도 안 오는 순간 폴링 자체가 멈춰
+        // 메뉴가 화면에서 얼어붙는다.
+        if let Some(flow) =
+            pending_menu_control_flow(self.any_pending_native_menu(), std::time::Instant::now())
+        {
+            event_loop.set_control_flow(flow);
+        }
+
         // Tick modal shake animation.
         self.tick_modal_shake();
 
@@ -655,9 +669,13 @@ impl App {
     fn poll_tray_menu_events(&mut self) {
         // Pump GTK so the Linux tray (AppIndicator) can dispatch its menu clicks —
         // tasty has no dedicated GTK main loop, so we drive it from the winit loop.
-        // No-op when no tray was created / off Linux.
+        // 열려 있는 네이티브 컨텍스트 메뉴(GTK 팝업)도 같은 GTK main context 를
+        // 쓰므로, tray 가 없더라도 메뉴가 떠 있으면 함께 펌프한다 — redraw 의
+        // `poll_pending_native_menu` 와 이중이지만, redraw 가 뜸한 순간에도
+        // 메뉴가 계속 반응하게 만드는 쪽이라 무해하다(둘 다 non-blocking).
+        // No-op when no tray was created and no menu is open / off Linux.
         #[cfg(target_os = "linux")]
-        if self.tray_icon.is_some() {
+        if self.tray_icon.is_some() || self.any_pending_native_menu() {
             crate::system_tray::pump_gtk_events();
         }
 
@@ -2224,4 +2242,68 @@ fn reply_mesh_error(
         serde_json::to_vec(&reply).unwrap_or_default(),
     );
     let _ = hub.push(client_id, frame); // best-effort 오류 회신 — client 끊김 시 무해.
+}
+
+/// 네이티브 컨텍스트 메뉴가 떠 있는 동안의 폴링 주기 상한. 메뉴 트래킹(하이라이트
+/// 이동 등)이 사람 눈에 끊겨 보이지 않을 만큼 짧고, idle 상태에서 winit 을 계속
+/// 깨우지는 않을 만큼만 짧다.
+const PENDING_MENU_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// pending native menu 유무 → control flow 재예약 결정. `None` 이면 기존 흐름
+/// (`Wait`)을 그대로 둔다. 순수 함수로 뽑아 헤드리스 회귀 테스트가 가능하게 했다 —
+/// 이 재예약을 빠뜨리면 메뉴가 열린 채 프레임이 멈춘다.
+fn pending_menu_control_flow(
+    has_pending: bool,
+    now: std::time::Instant,
+) -> Option<winit::event_loop::ControlFlow> {
+    has_pending.then(|| winit::event_loop::ControlFlow::WaitUntil(now + PENDING_MENU_POLL_INTERVAL))
+}
+
+impl App {
+    /// 결과 미회수 네이티브 컨텍스트 메뉴를 가진 MainView 가 하나라도 있는지.
+    /// 포커스 무관하게 전 창을 순회한다(불가침 원칙 §3).
+    fn any_pending_native_menu(&self) -> bool {
+        self.view
+            .views
+            .values()
+            .any(|w| w.as_main().is_some_and(|m| m.has_pending_native_menu()))
+    }
+
+    /// 열려 있는 네이티브 컨텍스트 메뉴를 전 창에 걸쳐 1회씩 펌프한다.
+    /// 메뉴가 없는 창에서는 no-op.
+    fn poll_pending_native_menus(&mut self) {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                main.poll_pending_native_menu();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PENDING_MENU_POLL_INTERVAL, pending_menu_control_flow};
+    use winit::event_loop::ControlFlow;
+
+    /// 메뉴가 떠 있으면 짧은 WaitUntil 로 다음 폴링 프레임을 반드시 예약한다.
+    #[test]
+    fn pending_menu_reschedules_a_poll_frame() {
+        let now = std::time::Instant::now();
+        match pending_menu_control_flow(true, now) {
+            Some(ControlFlow::WaitUntil(at)) => {
+                assert_eq!(at, now + PENDING_MENU_POLL_INTERVAL);
+                assert!(
+                    PENDING_MENU_POLL_INTERVAL <= std::time::Duration::from_millis(16),
+                    "폴링 주기가 한 프레임(60fps)보다 길면 메뉴 트래킹이 끊겨 보인다"
+                );
+            }
+            other => panic!("expected a WaitUntil reschedule, got {other:?}"),
+        }
+    }
+
+    /// 메뉴가 없으면 기존 control flow 를 건드리지 않는다(상시 wakeup 금지).
+    #[test]
+    fn no_pending_menu_leaves_control_flow_alone() {
+        assert!(pending_menu_control_flow(false, std::time::Instant::now()).is_none());
+    }
 }

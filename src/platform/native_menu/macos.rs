@@ -5,12 +5,25 @@ use objc2_app_kit::{NSMenu, NSMenuItem, NSView};
 use objc2_foundation::NSString;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::MenuItem;
+use super::{MenuItem, MenuOutcome};
 
 /// Show a native context menu at the given position (logical coordinates, top-left origin).
-/// Returns the `id` of the selected item, or `None` if dismissed.
-/// This call is synchronous — it blocks until the user selects or dismisses.
+///
+/// Always resolves to `MenuOutcome::Ready` — NSMenu tracks the popup inside
+/// the run loop the window already owns, so `popUpMenuPositioningItem…`
+/// returns only once the user has selected or dismissed. The `Pending` arm of
+/// the shared contract exists for the Linux/GTK backend and is never taken
+/// here (`docs/adr/0071-native-context-menu-async-contract.md`).
 pub fn show_context_menu(
+    window: &impl HasWindowHandle,
+    x: f64,
+    y: f64,
+    items: &[MenuItem],
+) -> MenuOutcome {
+    MenuOutcome::Ready(show_context_menu_sync(window, x, y, items))
+}
+
+fn show_context_menu_sync(
     window: &impl HasWindowHandle,
     x: f64,
     y: f64,

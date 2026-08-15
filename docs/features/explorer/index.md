@@ -46,7 +46,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 ### 컨텍스트 메뉴 · 파일 조작
 
-우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다. 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback 은 `is_none()` 가드로 이를 건너뛰고 explorer 전용 메뉴가 이긴다. 이후 `MainView::process_pending_native_menu` 가 OS 네이티브 메뉴(`platform::native_menu::show_context_menu`)를 띄우고 선택 id 를 조작으로 번역한다.
+우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다. 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback 은 `is_none()` 가드로 이를 건너뛰고 explorer 전용 메뉴가 이긴다. 이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [ADR-0071](../../adr/0071-native-context-menu-async-contract.md)).
 
 대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → cwd. variant 4종(빈 영역 / 파일 / 폴더 / 다중). 좌측 사이드바 트리 폴더 우클릭도 **단일 폴더 target 을 직접 구성**해(선택집합 미조작) 동일 메뉴를 띄운다.
 

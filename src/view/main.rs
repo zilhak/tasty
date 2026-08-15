@@ -102,16 +102,29 @@ pub struct MainView {
     /// 마지막으로 pointer_moved 를 forward 한 mesh surface — `CursorLeft` 및
     /// surface 전환 시 `PointerGone` 1 회 forward 판정에 쓴다. `mouse.rs::update_mesh_hover`.
     pub(crate) mesh_pointer_hover: Option<MeshHoverTarget>,
+    /// 화면에 떠 있고 아직 결과가 안 나온 네이티브 컨텍스트 메뉴 + 결과를 받을
+    /// continuation. Linux/GTK 만 이 슬롯을 쓴다(macOS/Windows 는 `show_context_menu`
+    /// 가 즉시 `Ready` 로 해소되어 continuation 이 그 자리에서 실행된다).
+    /// `redraw.rs::poll_pending_native_menu` 가 매 프레임 폴링해 소비한다.
+    pub(crate) pending_menu: Option<PendingNativeMenuSlot>,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
-    /// 실제 우클릭은 `process_pending_native_menu` 가 `TrackPopupMenu`(Windows) 등
-    /// **블로킹 모달** 로 즉시 소비하므로, 헤드리스 주입 테스트에서 우클릭 라우팅을
-    /// 관찰하려면 redraw 가 메뉴를 띄우기 전에 가로채야 한다. 주입 핸들러가 실행 직후
-    /// live `pending_native_menu` 를 이 슬롯으로 옮겨 (a) redraw 블로킹을 막고
+    /// 실제 우클릭은 `process_pending_native_menu` 가 OS native 팝업으로 소비하므로
+    /// (macOS/Windows 는 `TrackPopupMenu` 등 **블로킹 모달**, Linux 는 비블로킹이지만
+    /// 팝업이 실제로 뜨는 건 같다), 헤드리스 주입 테스트에서 우클릭 라우팅을 관찰하려면
+    /// redraw 가 메뉴를 띄우기 전에 가로채야 한다. 주입 핸들러가 실행 직후
+    /// live `pending_native_menu` 를 이 슬롯으로 옮겨 (a) 팝업 표시를 막고
     /// (b) `debug.pending_menu` 가 결정적으로 읽게 한다. **주입 경로 전용** — 실제
     /// 사용자 우클릭은 이 경로를 타지 않아 메뉴가 정상 표시된다(원칙 1·3 격리).
     #[cfg(debug_assertions)]
     pub(crate) debug_captured_menu: Option<crate::state::PendingNativeMenu>,
 }
+
+/// 화면에 떠 있는 네이티브 컨텍스트 메뉴 핸들 + 그 결과를 받을 continuation.
+/// `MainView::pending_menu` 슬롯의 내용물.
+pub(crate) type PendingNativeMenuSlot = (
+    crate::platform::native_menu::MenuHandle,
+    Box<dyn FnOnce(&mut MainView, Option<u32>)>,
+);
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
 pub(crate) const PASTE_CTRL_C_COOLDOWN: std::time::Duration = std::time::Duration::from_millis(500);
@@ -172,9 +185,17 @@ impl MainView {
             egui_mesh: std::collections::HashMap::new(),
             attach_mesh_input: std::collections::HashMap::new(),
             mesh_pointer_hover: None,
+            pending_menu: None,
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
         }
+    }
+
+    /// 아직 결과가 안 나온 네이티브 컨텍스트 메뉴가 이 창에 떠 있는지.
+    /// 이벤트 루프가 폴링 주기를 예약할지 판단하는 데 쓴다
+    /// (`app/event_handler.rs::about_to_wait`).
+    pub(crate) fn has_pending_native_menu(&self) -> bool {
+        self.pending_menu.is_some()
     }
 
     /// Request this window to close (will be handled by the event loop).

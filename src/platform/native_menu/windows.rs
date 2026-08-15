@@ -8,9 +8,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::MenuItem;
+use super::{MenuItem, MenuOutcome};
 
+/// Always resolves to `MenuOutcome::Ready` — `TrackPopupMenu` runs its own
+/// modal loop on the message pump the window already owns, so it returns only
+/// once the user has selected or dismissed. The `Pending` arm of the shared
+/// contract exists for the Linux/GTK backend and is never taken here
+/// (`docs/adr/0071-native-context-menu-async-contract.md`).
 pub fn show_context_menu(
+    window: &impl HasWindowHandle,
+    x: f64,
+    y: f64,
+    items: &[MenuItem],
+) -> MenuOutcome {
+    MenuOutcome::Ready(show_context_menu_sync(window, x, y, items))
+}
+
+fn show_context_menu_sync(
     window: &impl HasWindowHandle,
     x: f64,
     y: f64,

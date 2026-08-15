@@ -87,7 +87,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
-`debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 **블로킹** native 팝업(NSMenu 등)으로 소비하므로 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
+`debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
 
 ## CLI 노출
 

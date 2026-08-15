@@ -52,7 +52,8 @@ impl MainView {
             InjectPointer::Button { button, pressed } => {
                 // 이 주입이 세우는 메뉴만 관찰하도록 직전 포획본을 비운 뒤 핸들러 실행,
                 // 실행 직후 live pending_native_menu 를 debug 슬롯으로 가로챈다. redraw 가
-                // 블로킹 모달(TrackPopupMenu 등)로 소비하기 전에 옮겨야 테스트가 멈추지 않는다.
+                // 실제 native 팝업(macOS/Windows 는 블로킹 모달)으로 소비하기 전에
+                // 옮겨야 테스트가 멈추거나 팝업이 뜬 채 남지 않는다.
                 self.debug_captured_menu = None;
                 let state = if pressed {
                     ElementState::Pressed

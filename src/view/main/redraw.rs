@@ -48,6 +48,11 @@ impl MainView {
 
         self.dispatch_pending_command_palette();
 
+        // 열려 있는 네이티브 메뉴를 먼저 펌프한다(비블로킹) — 완료됐으면 그
+        // 프레임에 continuation 을 실행하고, 그래야 아래 새 메뉴 요청 처리가
+        // 방금 닫힌 메뉴에 막히지 않는다.
+        self.poll_pending_native_menu();
+
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
@@ -609,17 +614,87 @@ impl MainView {
         None
     }
 
+    /// 네이티브 컨텍스트 메뉴를 띄우고 결과 처리를 `cont` 로 예약한다.
+    ///
+    /// 해소 타이밍은 플랫폼별로 다르다(`MenuOutcome`): macOS/Windows 는 항상
+    /// `Ready` 라 `cont` 가 이 자리에서 즉시 실행되고(기존 동기 동작과 타이밍
+    /// 동일), Linux/GTK 는 `Pending` 이라 핸들을 슬롯에 두고 매 프레임
+    /// `poll_pending_native_menu` 가 완료를 기다린다. 모든 메뉴 호출은 이
+    /// 헬퍼를 거친다 — 직접 `show_context_menu` 를 부르면 Pending 을 흘린다.
+    fn open_native_menu(
+        &mut self,
+        x: f32,
+        y: f32,
+        items: &[crate::platform::native_menu::MenuItem],
+        cont: impl FnOnce(&mut MainView, Option<u32>) + 'static,
+    ) {
+        use crate::platform::native_menu::{MenuOutcome, show_context_menu};
+        match show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, items) {
+            MenuOutcome::Ready(result) => {
+                cont(self, result);
+                self.mark_dirty();
+            }
+            MenuOutcome::Pending(handle) => {
+                self.pending_menu = Some((handle, Box::new(cont)));
+                // 메뉴가 뜬 프레임을 한 번 그려 둔다. 이후의 폴링 자체는
+                // `about_to_wait` 의 8ms WaitUntil 이 굴리므로, 메뉴가 떠 있는 동안
+                // 매 프레임 GPU 를 다시 태우지는 않는다.
+                self.mark_dirty();
+            }
+        }
+    }
+
+    /// 열려 있는 네이티브 메뉴를 1회 펌프한다(비블로킹). 완료됐으면 슬롯을
+    /// 비우고 예약해 둔 continuation 을 결과와 함께 실행한다.
+    ///
+    /// 두 곳에서 불린다: `handle_redraw`(같은 프레임 안에서 `process_pending_native_menu`
+    /// 보다 먼저 — 방금 닫힌 메뉴의 뒤처리가 다음 메뉴 요청을 막지 않게), 그리고
+    /// `about_to_wait`(메뉴가 떠 있는 동안 8ms 주기로 — redraw 이벤트가 없어도
+    /// 폴링이 이어지게). 아직 열려 있으면 아무 것도 하지 않는다.
+    pub(crate) fn poll_pending_native_menu(&mut self) {
+        let Some((handle, _)) = self.pending_menu.as_mut() else {
+            return;
+        };
+        let Some(result) = handle.poll() else {
+            return;
+        };
+        let Some((_, cont)) = self.pending_menu.take() else {
+            return;
+        };
+        cont(self, result);
+        self.mark_dirty();
+    }
+
+    /// 열려 있는 네이티브 메뉴를 바깥 클릭으로 닫는다(`mouse.rs` 의 winit press
+    /// 경로). grab 이 실패해 GTK 가 그 클릭을 못 받는 경우에도 확실히 dismiss
+    /// 되게 하는 경로 — 실제 결과 회수는 다음 `poll_pending_native_menu` 가
+    /// 한다(완료 경로 단일화). 닫을 메뉴가 있었으면 `true`.
+    pub(crate) fn dismiss_pending_native_menu(&mut self) -> bool {
+        let Some((handle, _)) = self.pending_menu.as_mut() else {
+            return false;
+        };
+        handle.dismiss();
+        self.mark_dirty();
+        true
+    }
+
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
         use crate::state::PendingNativeMenu;
+
+        // 이미 메뉴가 떠 있으면 새로 띄우지 않는다 — 요청은 슬롯에 남겨 두고
+        // (take 하지 않는다) 현재 메뉴가 닫힌 뒤 프레임에 처리한다.
+        if self.pending_menu.is_some() {
+            return;
+        }
 
         let pending = match self.state.dialogs.pending_native_menu.take() {
             Some(p) => p,
             None => return,
         };
 
-        // debug: egui 프레임이 세우는 메뉴(explorer 우클릭 등)를 블로킹 native 팝업
+        // debug: egui 프레임이 세우는 메뉴(explorer 우클릭 등)를 실제 native 팝업
         // 없이 관찰하기 위한 격리 훅. winit 경로(mesh inject)는 핸들러가 즉시 메뉴를
         // 세워 `debug_captured_menu` 로 포획되지만, egui 경로는 이 redraw 프레임에서
         // 메뉴를 세우므로 여기서 가로채야 headless 회귀 테스트가 가능하다. release 미노출.
@@ -678,9 +753,24 @@ impl MainView {
     }
 
     fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
-        use crate::platform::native_menu::show_context_menu;
         let items = self.build_tab_context_menu_items(pane_id, tab_index);
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // continuation 은 메뉴가 닫힌 뒤(플랫폼에 따라 여러 프레임 뒤)
+            // 실행된다 — 그 사이 탭이 닫혔을 수 있으므로 대상을 재확인한다.
+            if this
+                .core_state
+                .find_pane_by_id(pane_id)
+                .is_none_or(|p| tab_index >= p.tabs.len())
+            {
+                return;
+            }
+            this.apply_tab_menu_selection(pane_id, tab_index, result);
+        });
+    }
+
+    /// tab 컨텍스트 메뉴 선택 적용. 대상 유효성은 호출부(continuation)가 미리
+    /// 검사한다.
+    fn apply_tab_menu_selection(&mut self, pane_id: u32, tab_index: usize, result: Option<u32>) {
         match result {
             Some(1) => self.rename_tab(pane_id, tab_index),
             Some(2) => {
@@ -728,7 +818,6 @@ impl MainView {
             }
             _ => {}
         }
-        self.mark_dirty();
     }
 
     /// tab 우클릭 컨텍스트 메뉴 항목 8개 구성. move left/right 는 인접 위치
@@ -827,8 +916,7 @@ impl MainView {
     }
 
     fn handle_pane_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
             MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
@@ -840,7 +928,19 @@ impl MainView {
             MenuItem::new(7, crate::i18n::t("preset.context.apply_tab_preset")),
             MenuItem::new(8, crate::i18n::t("preset.context.apply_pane_preset")),
         ];
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 pane 이 닫혔을 수 있다.
+            if !this.core_state.has_pane(pane_id) {
+                return;
+            }
+            this.apply_pane_menu_selection(pane_id, result);
+        });
+    }
+
+    /// pane 컨텍스트 메뉴 선택 적용. 대상 유효성은 호출부(continuation)가 미리
+    /// 검사한다.
+    fn apply_pane_menu_selection(&mut self, pane_id: u32, result: Option<u32>) {
+        let engine = &mut self.core_state;
         match result {
             Some(1) => {
                 self.state.active_workspace_mut(engine).focused_pane = pane_id;
@@ -910,26 +1010,27 @@ impl MainView {
             }
             _ => {}
         }
-        self.mark_dirty();
     }
 
     fn handle_workspace_native_menu(&mut self, ws_idx: usize, x: f32, y: f32) {
-        use crate::platform::native_menu::show_context_menu;
         let (items, move_targets) = self.build_workspace_context_menu_items(ws_idx);
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        let engine = &mut self.core_state;
-        if ws_idx < engine.workspaces.len() {
+        self.open_native_menu(x, y, &items, move |this, result| {
+            let engine = &mut this.core_state;
+            // 메뉴가 열려 있는 동안 워크스페이스가 닫혀 인덱스가 밀렸을 수 있다.
+            if ws_idx >= engine.workspaces.len() {
+                return;
+            }
             match result {
                 Some(1) => {
                     let name = engine.workspaces[ws_idx].name.clone();
-                    self.open_rename_workspace_dialog(
+                    this.open_rename_workspace_dialog(
                         crate::state::RenameTarget::WorkspaceName { ws_idx },
                         name,
                     );
                 }
                 Some(2) => {
                     let subtitle = engine.workspaces[ws_idx].subtitle.clone();
-                    self.open_rename_workspace_dialog(
+                    this.open_rename_workspace_dialog(
                         crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
                         subtitle,
                     );
@@ -937,19 +1038,19 @@ impl MainView {
                 Some(3) => {
                     // Move Up
                     if ws_idx > 0 {
-                        self.state.move_workspace(engine, ws_idx, ws_idx - 1);
+                        this.state.move_workspace(engine, ws_idx, ws_idx - 1);
                     }
                 }
                 Some(4) => {
                     // Move Down
                     if ws_idx + 1 < engine.workspaces.len() {
-                        self.state.move_workspace(engine, ws_idx, ws_idx + 1);
+                        this.state.move_workspace(engine, ws_idx, ws_idx + 1);
                     }
                 }
                 Some(5) => {
-                    if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
+                    if let Err(e) = this.save_workspace_preset_from_idx(ws_idx) {
                         tracing::warn!("save workspace preset failed: {e}");
-                        self.state.toasts.push(
+                        this.state.toasts.push(
                             crate::i18n::t("preset.toast.save_failed"),
                             crate::adapters::ui::ToastKind::Error,
                             crate::adapters::ui::ToastScope::Window,
@@ -962,24 +1063,23 @@ impl MainView {
                 #[allow(clippy::collapsible_match)]
                 Some(6) => {
                     // Close workspace (모든 surface + closed_item snapshot)
-                    if self.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
+                    if this.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
                     {
-                        self.request_close();
+                        this.request_close();
                     }
                 }
                 Some(100) => {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
-                        &mut self.state,
+                        &mut this.state,
                     );
                 }
                 Some(id) if id >= 200 => {
-                    self.move_workspace_to_category(ws_idx, &move_targets, id);
+                    this.move_workspace_to_category(ws_idx, &move_targets, id);
                 }
                 _ => {}
             }
-        }
-        self.mark_dirty();
+        });
     }
 
     /// workspace 우클릭 컨텍스트 메뉴 항목 구성 + "카테고리로 이동" 대상 목록.
@@ -1103,78 +1203,84 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::show_context_menu;
         // 카테고리 헤더 우클릭 — Add workspace 선두(모든 헤더), 비-normal 만
         // 이름변경/삭제, 공통 새 카테고리 (2026-07-02 디자인 — 조립·순서는
         // `category_header_menu_items` 가 고정). 토글 off 면 애초에 라우팅되지 않음.
-        let is_normal = engine
+        let is_normal = self
+            .core_state
             .categories()
             .iter()
             .find(|c| c.id == cat_id)
             .map(|c| c.is_normal())
             .unwrap_or(true);
         let items = category_header_menu_items(is_normal);
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(3) => {
-                // 이 카테고리 소속으로 새 워크스페이스 — 레일 `---` 팝업의
-                // Add workspace 와 동일 인텐트 (소스 문자열만 구별).
-                self.state.dispatch_intent(
-                    crate::intent::Intent::NewWorkspace {
-                        kind: None,
-                        params: serde_json::Value::Null,
-                        category: Some(cat_id),
-                    }
-                    .from_user_menu("category_header/add_workspace"),
-                );
+        self.open_native_menu(x, y, &items, move |this, result| {
+            let engine = &mut this.core_state;
+            // 메뉴가 열려 있는 동안 카테고리가 삭제됐을 수 있다.
+            if !engine.categories().iter().any(|c| c.id == cat_id) {
+                return;
             }
-            Some(4) => {
-                // 원격 워크스페이스 추가 팝업 — 카테고리 헤더 우클릭 진입(원칙 1).
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
+            match result {
+                Some(3) => {
+                    // 이 카테고리 소속으로 새 워크스페이스 — 레일 `---` 팝업의
+                    // Add workspace 와 동일 인텐트 (소스 문자열만 구별).
+                    this.state.dispatch_intent(
+                        crate::intent::Intent::NewWorkspace {
+                            kind: None,
+                            params: serde_json::Value::Null,
+                            category: Some(cat_id),
+                        }
+                        .from_user_menu("category_header/add_workspace"),
+                    );
+                }
+                Some(4) => {
+                    // 원격 워크스페이스 추가 팝업 — 카테고리 헤더 우클릭 진입(원칙 1).
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(5) => {
+                    // 이 카테고리 소속으로 프리셋 적용 — "+" 버튼 메뉴와 동일 팝업
+                    // (APPLY_WORKSPACE_POPUP_ID) 재사용, 대상 카테고리만 임시 상태로 기억.
+                    this.state.dialogs.preset_apply_target_category = Some(cat_id);
+                    this.state.dialogs.preset_picker_selected = None;
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(1) => {
+                    crate::adapters::ui::category_actions::open_rename_category_dialog(
+                        &mut this.state,
+                        engine,
+                        cat_id,
+                    );
+                }
+                Some(2) => {
+                    crate::adapters::ui::category_actions::open_delete_category_confirm(
+                        &mut this.state,
+                        cat_id,
+                    );
+                }
+                Some(100) => {
+                    crate::adapters::ui::category_actions::open_new_category_dialog(
+                        &mut this.state,
+                    );
+                }
+                _ => {}
             }
-            Some(5) => {
-                // 이 카테고리 소속으로 프리셋 적용 — "+" 버튼 메뉴와 동일 팝업
-                // (APPLY_WORKSPACE_POPUP_ID) 재사용, 대상 카테고리만 임시 상태로 기억.
-                self.state.dialogs.preset_apply_target_category = Some(cat_id);
-                self.state.dialogs.preset_picker_selected = None;
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-            Some(1) => {
-                crate::adapters::ui::category_actions::open_rename_category_dialog(
-                    &mut self.state,
-                    engine,
-                    cat_id,
-                );
-            }
-            Some(2) => {
-                crate::adapters::ui::category_actions::open_delete_category_confirm(
-                    &mut self.state,
-                    cat_id,
-                );
-            }
-            Some(100) => {
-                crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
-            }
-            _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     fn handle_sidebar_background_native_menu(&mut self, x: f32, y: f32) {
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         // 빈 배경 우클릭 — 새 카테고리 · 원격 워크스페이스 추가. 그룹모드 배경(카테고리
         // ON)·flat모드 배경(카테고리 OFF, `docs/features/workspace-category/index.md`
         // 참고) 양쪽에서 이 핸들러로 라우팅되므로
@@ -1184,13 +1290,14 @@ impl MainView {
             MenuItem::separator(),
             MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
         ];
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
+        // 사이드바 배경 메뉴는 특정 대상(탭/pane/워크스페이스)에 매이지 않아
+        // continuation 시점에 재확인할 대상 자체가 없다.
+        self.open_native_menu(x, y, &items, move |this, result| match result {
             Some(100) => {
-                crate::adapters::ui::category_actions::open_new_category_dialog(&mut self.state);
+                crate::adapters::ui::category_actions::open_new_category_dialog(&mut this.state);
             }
             Some(2) => {
-                self.state.dispatch_intent(
+                this.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
                         id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
                         mode: crate::intent::OpenPopupMode::CenteredFocused,
@@ -1199,13 +1306,12 @@ impl MainView {
                 );
             }
             _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     fn handle_terminal_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
         let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         // Show copy items only when there is an active (non-empty) selection.
         let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
         // "경로 열기" 항목은 has_selection 과 별도로, 우클릭한 surface 와 selection 이
@@ -1259,49 +1365,53 @@ impl MainView {
                 crate::i18n::t("surface_context_menu.move_here"),
             ));
         }
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(1) => {
-                let text = surface_id.to_string();
-                if let Some(cb) = &mut self.clipboard {
-                    cb.set_text(&text);
-                }
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.copied"),
-                    crate::adapters::ui::ToastScope::Surface(surface_id),
-                );
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
+            if !this.core_state.has_surface(surface_id) {
+                return;
             }
-            Some(2) => {
-                self.copy_selection_to_clipboard();
-            }
-            Some(3) => {
-                self.copy_selection_no_newline();
-            }
-            Some(20) => {
-                if let Some(target) = &selection_open_path
-                    && let Err(e) = crate::platform::reveal::open_path(target)
-                {
-                    tracing::warn!("terminal: open selected path failed: {e}");
-                }
-            }
-            Some(10) => {
-                // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
-                engine.pending_move_surface = Some(surface_id);
-            }
-            Some(11) => {
-                if let Some(source) = engine.pending_move_surface.take() {
-                    self.state.dispatch_intent(
-                        crate::core::intent::DomainIntent::MoveSurface {
-                            source_surface_id: source,
-                            target_surface_id: surface_id,
-                        }
-                        .from_user_context_menu(),
+            match result {
+                Some(1) => {
+                    let text = surface_id.to_string();
+                    if let Some(cb) = &mut this.clipboard {
+                        cb.set_text(&text);
+                    }
+                    this.state.toasts.push_info(
+                        crate::i18n::t("toast.copied"),
+                        crate::adapters::ui::ToastScope::Surface(surface_id),
                     );
                 }
+                Some(2) => {
+                    this.copy_selection_to_clipboard();
+                }
+                Some(3) => {
+                    this.copy_selection_no_newline();
+                }
+                Some(20) => {
+                    if let Some(target) = &selection_open_path
+                        && let Err(e) = crate::platform::reveal::open_path(target)
+                    {
+                        tracing::warn!("terminal: open selected path failed: {e}");
+                    }
+                }
+                Some(10) => {
+                    // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
+                    this.core_state.pending_move_surface = Some(surface_id);
+                }
+                Some(11) => {
+                    if let Some(source) = this.core_state.pending_move_surface.take() {
+                        this.state.dispatch_intent(
+                            crate::core::intent::DomainIntent::MoveSurface {
+                                source_surface_id: source,
+                                target_surface_id: surface_id,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                }
+                _ => {}
             }
-            _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     /// selection 이 가리키는 실재 파일/폴더 경로를 찾는다(우클릭 대상과 selection 의
@@ -1325,7 +1435,7 @@ impl MainView {
 
     fn handle_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
         let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
         // 잘라내기 / (대기 있을 때) 여기로 이동.
         let mut items = vec![MenuItem::new(
@@ -1343,35 +1453,39 @@ impl MainView {
                 crate::i18n::t("surface_context_menu.move_here"),
             ));
         }
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(1) => {
-                let text = surface_id.to_string();
-                if let Some(cb) = &mut self.clipboard {
-                    cb.set_text(&text);
-                }
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.copied"),
-                    crate::adapters::ui::ToastScope::Surface(surface_id),
-                );
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
+            if !this.core_state.has_surface(surface_id) {
+                return;
             }
-            Some(10) => {
-                engine.pending_move_surface = Some(surface_id);
-            }
-            Some(11) => {
-                if let Some(source) = engine.pending_move_surface.take() {
-                    self.state.dispatch_intent(
-                        crate::core::intent::DomainIntent::MoveSurface {
-                            source_surface_id: source,
-                            target_surface_id: surface_id,
-                        }
-                        .from_user_context_menu(),
+            match result {
+                Some(1) => {
+                    let text = surface_id.to_string();
+                    if let Some(cb) = &mut this.clipboard {
+                        cb.set_text(&text);
+                    }
+                    this.state.toasts.push_info(
+                        crate::i18n::t("toast.copied"),
+                        crate::adapters::ui::ToastScope::Surface(surface_id),
                     );
                 }
+                Some(10) => {
+                    this.core_state.pending_move_surface = Some(surface_id);
+                }
+                Some(11) => {
+                    if let Some(source) = this.core_state.pending_move_surface.take() {
+                        this.state.dispatch_intent(
+                            crate::core::intent::DomainIntent::MoveSurface {
+                                source_surface_id: source,
+                                target_surface_id: surface_id,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                }
+                _ => {}
             }
-            _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     fn handle_explorer_native_menu(
@@ -1383,7 +1497,6 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        use crate::platform::native_menu::show_context_menu;
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
@@ -1406,21 +1519,27 @@ impl MainView {
             has_clip,
             is_mirror,
         );
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(1) => self.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
-            Some(10) => self.explorer_menu_set_clipboard(surface_id, &paths, false),
-            Some(11) => self.explorer_menu_set_clipboard(surface_id, &paths, true),
-            Some(12) => self.explorer_menu_paste(surface_id, &paths, &cwd, is_folder),
-            Some(30) => self.explorer_menu_trash(surface_id, &paths),
-            Some(20) => self.explorer_menu_open_in_system(surface_id, &paths, &cwd),
-            Some(40) => self.explorer_menu_rename(surface_id, &paths),
-            Some(50) => self.explorer_menu_add_favorite(surface_id, &paths, &cwd, is_empty_target),
-            Some(60) => self.explorer_menu_open_in_new_tab(surface_id, &paths),
-            Some(61) => self.explorer_menu_set_root(surface_id, &paths),
-            _ => {}
-        }
-        self.mark_dirty();
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
+            if !this.core_state.has_surface(surface_id) {
+                return;
+            }
+            match result {
+                Some(1) => this.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
+                Some(10) => this.explorer_menu_set_clipboard(surface_id, &paths, false),
+                Some(11) => this.explorer_menu_set_clipboard(surface_id, &paths, true),
+                Some(12) => this.explorer_menu_paste(surface_id, &paths, &cwd, is_folder),
+                Some(30) => this.explorer_menu_trash(surface_id, &paths),
+                Some(20) => this.explorer_menu_open_in_system(surface_id, &paths, &cwd),
+                Some(40) => this.explorer_menu_rename(surface_id, &paths),
+                Some(50) => {
+                    this.explorer_menu_add_favorite(surface_id, &paths, &cwd, is_empty_target)
+                }
+                Some(60) => this.explorer_menu_open_in_new_tab(surface_id, &paths),
+                Some(61) => this.explorer_menu_set_root(surface_id, &paths),
+                _ => {}
+            }
+        });
     }
 
     /// explorer 컨텍스트 메뉴 아이템 목록 구성 (design §3.3). `is_mirror` 면 로컬 fs
@@ -1760,7 +1879,7 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         // (03) 즐겨찾기 행의 "새 탭으로 열기" 도 `add_kind_tab_by_owner` 를 공유하는
         // 동일 mirror 문제(`explorer_menu_open_in_new_tab` 주석 참고) — mirror 에서는
         // 메뉴에서부터 숨긴다. "이 폴더로 루트 설정"/"즐겨찾기에서 제거"는 로컬 뷰
@@ -1782,51 +1901,55 @@ impl MainView {
             1,
             crate::i18n::t("explorer.context_menu.remove_from_favorites"),
         ));
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(60) => {
-                if is_mirror {
-                    // 메뉴에서 숨겼으므로 정상 경로로는 도달하지 않는다 — 방어적 가드.
-                    self.toast_remote_write_unsupported();
-                } else {
-                    let params = serde_json::json!({ "path": path.to_string_lossy() });
-                    let engine = &mut self.core_state;
-                    if let Err(e) = self
-                        .state
-                        .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
-                    {
-                        tracing::warn!("explorer: open favorite in new tab failed: {e}");
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
+            if !this.core_state.has_surface(surface_id) {
+                return;
+            }
+            match result {
+                Some(60) => {
+                    if is_mirror {
+                        // 메뉴에서 숨겼으므로 정상 경로로는 도달하지 않는다 — 방어적 가드.
+                        this.toast_remote_write_unsupported();
+                    } else {
+                        let params = serde_json::json!({ "path": path.to_string_lossy() });
+                        let engine = &mut this.core_state;
+                        if let Err(e) = this
+                            .state
+                            .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                        {
+                            tracing::warn!("explorer: open favorite in new tab failed: {e}");
+                        }
                     }
                 }
+                Some(61) => {
+                    let engine = &mut this.core_state;
+                    this.state
+                        .set_explorer_cwd(engine, surface_id, path.clone());
+                }
+                Some(1) => {
+                    let engine = &mut this.core_state;
+                    // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
+                    engine.explorer_favorites.remove(&path);
+                    engine.explorer_favorites.save();
+                }
+                _ => {}
             }
-            Some(61) => {
-                let engine = &mut self.core_state;
-                self.state
-                    .set_explorer_cwd(engine, surface_id, path.clone());
-            }
-            Some(1) => {
-                let engine = &mut self.core_state;
-                // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                engine.explorer_favorites.remove(&path);
-                engine.explorer_favorites.save();
-            }
-            _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     fn handle_new_workspace_button_native_menu(&mut self, x: f32, y: f32) {
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("preset.context.apply_workspace_preset")),
             MenuItem::separator(),
             MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
         ];
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
+        // 두 항목 모두 특정 대상에 매이지 않는 팝업 열기라 재확인할 대상이 없다.
+        self.open_native_menu(x, y, &items, move |this, result| match result {
             Some(1) => {
-                self.state.dialogs.preset_picker_selected = None;
-                self.state.dispatch_intent(
+                this.state.dialogs.preset_picker_selected = None;
+                this.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
                         id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                         mode: crate::intent::OpenPopupMode::CenteredFocused,
@@ -1835,7 +1958,7 @@ impl MainView {
                 );
             }
             Some(2) => {
-                self.state.dispatch_intent(
+                this.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
                         id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
                         mode: crate::intent::OpenPopupMode::CenteredFocused,
@@ -1844,44 +1967,47 @@ impl MainView {
                 );
             }
             _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 
     fn handle_new_tab_button_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
-        let engine = &mut self.core_state;
-        use crate::platform::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("preset.context.apply_tab_preset")),
             MenuItem::new(2, crate::i18n::t("preset.context.apply_pane_preset")),
         ];
-        let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-        match result {
-            Some(1) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                self.state.dialogs.preset_picker_selected = None;
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
+        self.open_native_menu(x, y, &items, move |this, result| {
+            // 메뉴가 열려 있는 동안 pane 이 닫혔을 수 있다.
+            if !this.core_state.has_pane(pane_id) {
+                return;
             }
-            Some(2) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
-                self.state.dialogs.preset_picker_selected = None;
-                self.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
+            let engine = &mut this.core_state;
+            match result {
+                Some(1) => {
+                    this.state.active_workspace_mut(engine).focused_pane = pane_id;
+                    this.state.dialogs.preset_picker_selected = None;
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(2) => {
+                    this.state.active_workspace_mut(engine).focused_pane = pane_id;
+                    this.state.dialogs.preset_picker_selected = None;
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                _ => {}
             }
-            _ => {}
-        }
-        self.mark_dirty();
+        });
     }
 }
 

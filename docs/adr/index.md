@@ -81,3 +81,4 @@
 | 0068 | [Host popup ↔ plugin popup z-order — 공유 z_seq + 조건부 GPU pass·sublayer 순서](0068-host-plugin-popup-shared-z-seq.md) | Accepted | 2026-08-12 | popup, plugin, z-order, gpu-rendering, egui |
 | 0069 | [공용 `Table` 의 `selectable` 표는 셀 텍스트 선택을 포기하고 행 클릭을 보장한다](0069-table-row-click-over-cell-text-selection.md) | Accepted | 2026-08-13 | ui, shared-widgets, table, egui, hit-test, selectable-labels, explorer, port-scanner, gallery |
 | 0070 | [원격 포트 발견에 3중 상한(ssh `ConnectTimeout` + 프로세스 감시 + 호출 전체 예산)을 건다](0070-port-discovery-timeout.md) | Accepted | 2026-08-13 | remote-attach, ssh, port-discovery, timeout, no-hang, i18n, adr-0032, adr-0053 |
+| 0071 | [네이티브 컨텍스트 메뉴는 "즉시 반환 + 프레임 폴링" 계약으로 바꾸고, 해소 타이밍은 플랫폼별로 다르게 둔다](0071-native-context-menu-async-contract.md) | Accepted | 2026-08-15 | native-menu, context-menu, linux, x11, gtk, winit, event-loop, async, no-hang, cross-platform |

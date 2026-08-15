@@ -277,6 +277,16 @@ impl MainView {
         button: MouseButton,
         egui_consumed: bool,
     ) {
+        // 네이티브 컨텍스트 메뉴가 떠 있는 동안 winit 이 press 를 봤다는 것은
+        // 그 클릭이 메뉴 바깥이면서 메뉴의 grab 에도 안 잡혔다는 뜻이다(잡혔다면
+        // GTK 가 먼저 소비해 여기까지 오지 않는다). 그 press 를 소비해 메뉴를
+        // 닫는다 — grab 실패 시에도 바깥 클릭 dismiss 가 보장되어 워치독이
+        // 사실상 발화하지 않는다. 실제 결과 회수는 다음 프레임의
+        // `poll_pending_native_menu` 가 한다(완료 경로 단일화).
+        if button_state == ElementState::Pressed && self.dismiss_pending_native_menu() {
+            return;
+        }
+
         #[cfg(not(target_os = "macos"))]
         if self.try_begin_os_resize(button, button_state) {
             return;
