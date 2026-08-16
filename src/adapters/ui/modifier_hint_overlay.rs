@@ -1233,14 +1233,10 @@ mod tests {
         // 미할당 조합이라도 패널은 뜬다(이전엔 visible:false 였음).
         assert_eq!(v["visible"], serde_json::json!(true), "dump={v}");
         let sections = v["sections"].as_array().expect("sections 배열");
-        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true. combo_keycaps 는 alt 축을
-        // macOS 에서 물리 Cmd 로 표기하므로(디자인), 기대 라벨은 플랫폼에 따라 다르다.
-        let alt_label = if cfg!(target_os = "macos") {
-            "Cmd"
-        } else {
-            "Alt"
-        };
-        let held_combo = format!("Ctrl+{alt_label}");
+        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true. alt 축 라벨은 타깃 OS 가
+        // 아니라 `general.alt_display_style`(기본 "alt") 이 정하므로, 기본 설정인
+        // 여기서는 모든 플랫폼에서 "Alt" 다.
+        let held_combo = "Ctrl+Alt";
         let ctrl_alt = sections
             .iter()
             .find(|s| s["combo"] == serde_json::json!(held_combo))
