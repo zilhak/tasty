@@ -33,6 +33,11 @@ pub enum MenuOutcome {
     /// The menu is on screen and resolves later. The caller must keep the
     /// handle, [`MenuHandle::poll`] it once per frame, and act on the result
     /// when polling yields one.
+    ///
+    /// Linux 백엔드만 이 variant 를 만든다. 다른 플랫폼 빌드에서는 생성처가
+    /// 없지만, 호출자(`view/main/redraw.rs`)가 플랫폼 분기 없이 하나의 match
+    /// 로 처리하도록 타입에는 남겨 둔다.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Pending(MenuHandle),
 }
 
