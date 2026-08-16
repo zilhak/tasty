@@ -176,11 +176,21 @@ fn all_e2e_tests() {
         // Allow the renderer one frame to apply the SGR before querying cell state.
         std::thread::sleep(Duration::from_millis(200));
 
-        let text = tasty.screen_text_of(sid);
+        // `surface.screen_text` 는 기본(`show_dim:false`)으로 dim 셀을 걸러낸다
+        // (에이전트가 ghost suggestion 을 실제 입력으로 오인하지 않게 하는 기본값).
+        // 여기서 찾는 "D" 가 바로 그 dim 셀이므로 명시적으로 켜서 조회한다.
+        let text = tasty.call(
+            "surface.screen_text",
+            json!({"surface_id": sid, "show_dim": true}),
+        )["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         let row = text
             .lines()
             .position(|l| l.starts_with("DN"))
-            .expect("DN row not found in screen_text") as u64;
+            .unwrap_or_else(|| panic!("DN row not found in screen_text:\n{text}"))
+            as u64;
 
         let dim = tasty.call(
             "debug.cell_info",
