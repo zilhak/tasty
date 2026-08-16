@@ -6,6 +6,21 @@ use super::binding::{matches_binding, parse_binding};
 use super::physical_key_to_logical;
 use crate::view::main::MainView;
 
+/// 바인딩 문자열의 `alt` 토큰이 실제로 요구하는 winit modifier.
+///
+/// modifier 매핑은 위치 기반이라 macOS 에서 바인딩 `alt` 는 Command(winit
+/// `SUPER`) 에, 그 외 플랫폼에서는 Alt 에 대응한다
+/// (`docs/design/policies/key-mapping.md`). 아래 헬퍼를 쓰는 테스트들은 매핑
+/// 자체가 아니라 축 디스패치를 검증하므로, 타깃에 맞는 modifier 를 돌려준다.
+#[cfg(target_os = "macos")]
+const BINDING_ALT: ModifiersState = ModifiersState::SUPER;
+#[cfg(not(target_os = "macos"))]
+const BINDING_ALT: ModifiersState = ModifiersState::ALT;
+
+/// 바인딩 `option` 토큰에 대응하는 modifier — macOS 전용(Option = winit `ALT`).
+#[cfg(target_os = "macos")]
+const BINDING_OPTION: ModifiersState = ModifiersState::ALT;
+
 fn mods_ctrl() -> ModifiersState {
     ModifiersState::CONTROL
 }
@@ -13,16 +28,16 @@ fn mods_ctrl_shift() -> ModifiersState {
     ModifiersState::CONTROL | ModifiersState::SHIFT
 }
 fn mods_alt() -> ModifiersState {
-    ModifiersState::ALT
+    BINDING_ALT
 }
 fn mods_none() -> ModifiersState {
     ModifiersState::empty()
 }
 fn mods_ctrl_alt() -> ModifiersState {
-    ModifiersState::CONTROL | ModifiersState::ALT
+    ModifiersState::CONTROL | BINDING_ALT
 }
 fn mods_alt_shift() -> ModifiersState {
-    ModifiersState::ALT | ModifiersState::SHIFT
+    BINDING_ALT | ModifiersState::SHIFT
 }
 fn k_char(s: &str) -> Key {
     Key::Character(SmolStr::new(s))
@@ -777,7 +792,7 @@ fn individual_category_axis_respects_folders_gate() {
     };
     kb.category_switch_slot_keys[1] = "ctrl+alt+shift+s".to_string(); // 섹션 index 1.
 
-    let mods = ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::SHIFT;
+    let mods = ModifiersState::CONTROL | BINDING_ALT | ModifiersState::SHIFT;
     // folders on → 매칭되어 Services 로 전환.
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
@@ -862,7 +877,11 @@ fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
                 mods |= ModifiersState::SHIFT;
             }
             if p.alt {
-                mods |= ModifiersState::ALT;
+                mods |= BINDING_ALT;
+            }
+            #[cfg(target_os = "macos")]
+            if p.option {
+                mods |= BINDING_OPTION;
             }
             (k_char(p.key), mods)
         })
