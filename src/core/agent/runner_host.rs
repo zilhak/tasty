@@ -2453,6 +2453,16 @@ mod tests {
         let mut exec = HostExecutor::new(ctx.clone());
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_str().unwrap().to_string();
+        // `pwd` 는 getcwd() 가 준 실제 경로를 찍는다. macOS 의 tempdir 은
+        // `/var`(→ `/private/var` 심볼릭 링크) 아래라 원본 문자열과 다르므로,
+        // stdout 비교에는 심볼릭 링크를 푼 경로를 쓴다.
+        let resolved_path = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
 
         let mut task = mk_run_task("t-persist-cwd", vec!["pwd"]);
         task.metadata = json!({ "lease": { "resource": dir_path } });
@@ -2494,7 +2504,7 @@ mod tests {
                     .and_then(|s| s.get("text"))
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
-                assert_eq!(stdout_text.trim(), dir_path);
+                assert_eq!(stdout_text.trim(), resolved_path);
             }
             other => panic!("expected Done, got {other:?}"),
         }
@@ -2510,6 +2520,14 @@ mod tests {
         let mut exec = HostExecutor::new(ctx);
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_str().unwrap().to_string();
+        // 위 테스트와 같은 이유 — `pwd` 출력은 심볼릭 링크가 풀린 경로다.
+        let resolved_path = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
 
         let mut task = mk_run_task("t-cwd-fill", vec!["pwd"]);
         task.metadata = json!({ "lease": { "resource": dir_path } });
@@ -2529,7 +2547,7 @@ mod tests {
                     .unwrap_or("");
                 assert_eq!(
                     stdout_text.trim(),
-                    dir_path,
+                    resolved_path,
                     "Run.cwd should have been filled with the acquired lease resource"
                 );
             }
