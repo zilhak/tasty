@@ -42,7 +42,8 @@ ignore = [
   "RUSTSEC-2024-0418", # gdk-sys
   "RUSTSEC-2024-0419", # gtk3-macros
   "RUSTSEC-2024-0420", # gtk-sys
-  "RUSTSEC-2024-0429", # glib 0.18.5 VariantStrIter unsound — GTK3 라인에 묶여 단독 상향 불가
+  # glib 0.18.5 의 RUSTSEC-2024-0429(VariantStrIter unsound) 는 여기 없다 —
+  # 아래 "unsound 스코프 주의" 참조. GTK3 라인에 묶여 단독 상향은 여전히 불가하다.
 
   # --- 기타 트랜지티브 unmaintained (당장 못 고침, 추적 대상) ---
   "RUSTSEC-2024-0436", # paste 1.0.15 unmaintained
@@ -54,8 +55,23 @@ ignore = [
   # git2 0.20.5 는 crates.io 에 없음(0.20.4 가 최신 호환) → 상향 불가.
   "RUSTSEC-2026-0183", # git2 0.20.4: Remote::list() 잠재 UB
   "RUSTSEC-2026-0184", # git2 0.20.4: BlameHunk Signature 잠재 UB
-  # rand 0.8.5 는 phf_generator 빌드타임 트랜지티브(본체는 이미 rand 0.9) → 단독 상향 불가.
-  "RUSTSEC-2026-0097", # rand 0.8.5: 커스텀 로거 + rand::rng() unsound
+
+  # --- unsound 스코프 주의 (ignore 를 늘리기/줄이기 전에 반드시 읽을 것) ---
+  # cargo-deny 의 `[advisories] unsound` 기본 스코프는 `workspace` 다 — 즉
+  # informational="unsound" advisory 는 워크스페이스 직접 의존에만 보고되고
+  # 트랜지티브 전용 크레이트는 애초에 검출되지 않는다(`unmaintained` 는 기본 `all`
+  # 이라 트랜지티브도 전부 보고된다). 위 git2 2건이 잡히는 이유는 tasty-git-core /
+  # tasty-plugin-git-viewer 가 git2 를 직접 의존하기 때문이다.
+  #
+  # 그래서 다음 2건은 lock 에 취약 버전이 그대로 남아 있는데도 ignore 하지 않는다
+  # (ignore 해두면 영구 미소비 → `advisory-not-detected` 경고만 쌓인다):
+  #  - RUSTSEC-2024-0429 (glib 0.18.5 VariantStrIter unsound) — 직접 의존 없음,
+  #    rfd/트레이 경유 GTK3 트랜지티브.
+  #  - RUSTSEC-2026-0097 (rand 0.8.5 커스텀 로거 + rand::rng() unsound) — 직접
+  #    의존은 rand 0.9 (해소됨), 0.8.5 는 phf_generator 빌드타임 트랜지티브 전용.
+  #
+  # 되돌림 조건: `unsound = "all"` 로 스코프를 넓히면 위 2건이 즉시 에러로 부활한다.
+  # 두 크레이트 모두 상향 경로가 막혀 있으므로 그때는 ignore 를 되살려야 한다.
 ]
 
 [licenses]
