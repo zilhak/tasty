@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use error_scan::ErrorScanner;
+use error_scan::{ErrorScanner, scan_target_is_alive};
 use handlers::*;
 use serde_json::{Value, json};
 use state::ClaudeState;
@@ -41,8 +41,9 @@ const PLUGIN_ID: &str = "com.tasty.claude";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// PTY 에러 폴링 간격. 호스트 메모리 스캔(O(1))과의 정확도 차이를 좁히기 위해
-/// 짧게. 자식 N명에 대해 N IPC/주기지만 N이 10 이하인 일상 시나리오에서는 무시
-/// 가능한 부하 (8 calls/sec @ 10 children).
+/// 짧게. 추적 대상 N개에 대해 주기당 최대 2N IPC(생존 대조 + read_since_mark;
+/// 매치될 때만 fire_hook 이 추가된다)지만, N 이 10 이하인 일상 시나리오에서는
+/// 무시 가능한 부하 (25 calls/sec @ 10 children).
 const ERROR_SCAN_INTERVAL: Duration = Duration::from_millis(800);
 
 struct ClaudePlugin {
@@ -140,7 +141,7 @@ impl Plugin for ClaudePlugin {
             "claude.parent" => handle_parent(&ctx.host, &ctx.params, &self.translator),
             "claude.state" => handle_state(&ctx.host, &ctx.params, &self.translator),
             "claude.children" => handle_children(&ctx.host, &ctx.params),
-            "claude.kill" => handle_kill(&ctx.host, &ctx.params, &self.translator),
+            "claude.kill" => handle_kill(&self.scanner, &ctx.host, &ctx.params, &self.translator),
             "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params, &self.translator),
             "claude.tell" => handle_tell(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
@@ -153,12 +154,14 @@ impl Plugin for ClaudePlugin {
                 &self.translator,
             ),
             "claude.respawn" => handle_respawn(
+                &self.scanner,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
                 &self.translator,
             ),
             "claude.spawn" => handle_spawn(
+                &self.scanner,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
@@ -206,9 +209,9 @@ impl Plugin for ClaudePlugin {
     fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
         // PTY error scan 을 위한 background polling thread 만 띄운다. child registry
         // lifecycle(spawn/kill/reconcile)은 호스트가 소유하므로 여기서 하지 않는다 —
-        // error_scan 은 launch surface 에 대해서만 enable 되며, 그 surface 가 죽으면
-        // 이 스레드 자신이 매 tick `surface.locate` 로 생존을 확인해 disable 한다
-        // (`error_scan_loop` 참조).
+        // error_scan 은 launch surface(top-level)와 spawn/respawn 자식 모두에 대해
+        // enable 되며, 추적 대상이 사라지면 이 스레드 자신이 매 tick 생존을 확인해
+        // disable 한다(`error_scan_loop` / `error_scan::scan_target_is_alive` 참조).
         let scanner = self.scanner.clone();
         std::thread::Builder::new()
             .name("claude-error-scan".into())
@@ -229,11 +232,12 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
                 return;
             }
         };
-        for sid in surfaces {
+        for (sid, target) in surfaces {
             // surface.closed 구독(ef57061d 로 제거됨) 대신, 이미 도는 폴링 주기에
-            // 편승해 생존을 확인한다 — 죽은 surface 는 disable 해 enabled/dedupe
-            // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음).
-            if !surface_is_alive(&host, sid) {
+            // 편승해 생존을 확인한다 — 사라진 대상은 disable 해 enabled/dedupe
+            // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음). 판정 기준은
+            // 등록 경로에 따라 다르다(`ScanTarget` 문서 참조).
+            if !scan_target_is_alive(&host, sid, target) {
                 if let Ok(mut s) = scanner.lock() {
                     s.disable(sid);
                 }
@@ -245,17 +249,6 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
             }
         }
     }
-}
-
-/// `surface_id` 가 host 에 여전히 존재하는지 `surface.locate` 로 확인한다. 조회
-/// 실패(IPC 오류 등)는 "죽었다"로 단정하지 않고 "살아있다"로 폴백한다 — enable 은
-/// launch 시점에만 일어나므로, 일시적 오류로 오인 disable 되면 그 surface 의 에러
-/// 감시가 재활성화 경로 없이 영구적으로 멈춘다(오탐 유지가 오탐 정리보다 안전).
-fn surface_is_alive(host: &HostHandle, surface_id: u32) -> bool {
-    host.call("surface.locate", json!({ "surface_id": surface_id }))
-        .ok()
-        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
-        .unwrap_or(true)
 }
 
 fn main() -> anyhow::Result<()> {

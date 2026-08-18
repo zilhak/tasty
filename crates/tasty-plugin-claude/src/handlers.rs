@@ -6,7 +6,9 @@
 //! SoT). claude **특화**만 여기 남는다:
 //! - `start_claude_in_surface` / `issue_session_token` — session token + agent id +
 //!   TASTY_SURFACE_ID inline env 를 박은 기동 명령 (spawn/respawn 이 소비).
-//! - `build_launch_command` / `handle_launch` — 새 workspace 기동 + error_scan 등록.
+//! - `build_launch_command` / `handle_launch` — 새 workspace 기동 + error_scan 등록
+//!   (top-level). `handle_spawn`/`handle_respawn` 은 자식 surface 를 error_scan 에
+//!   등록하고 `handle_kill` 은 내린다.
 //! - `handle_children` — 호스트 registry 목록에 `surface.foreground_process` 를 덧씌움.
 //! - wall-time 텔레메트리 타이밍(`ClaudeState`) — hook.rs 가 소비.
 
@@ -16,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Map, Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-use crate::error_scan::ErrorScanner;
+use crate::error_scan::{ErrorScanner, ScanTarget};
 
 /// `profile_file`(직접 지정한 경로)과 `profile`(레지스트리에 등록된 이름 목록,
 /// 쉼표 구분 — `profile.rs` 참고) params 를 최종 `--settings` 파일 경로 하나로
@@ -172,7 +174,9 @@ pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value
 
 /// 자식 Claude 를 종료한다 — 호스트 `terminal.kill` 로 위임(surface.close +
 /// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
+/// 종료된 surface 는 error scanner 에서도 즉시 내린다.
 pub(crate) fn handle_kill(
+    scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -183,7 +187,16 @@ pub(crate) fn handle_kill(
     // 호스트 terminal.kill 성공 시 { killed_surface_id, child_index } 반환. claude
     // CLI 는 기존에 { killed: true } 를 기대하므로 성공을 그 shape 으로 변환한다.
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
-    let _ = resp; // 호스트가 close 실패 시 이미 error 를 돌려주므로 여기 도달=성공.
+    // 폴링 루프의 생존 대조가 최대 800ms 뒤 어차피 정리하지만, 여기서 즉시 내리면
+    // 그 사이 마지막 출력에 대고 `claude-error` 를 발화할 여지가 사라진다.
+    if let Some(killed) = resp
+        .get("killed_surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        && let Ok(mut s) = scanner.lock()
+    {
+        s.disable(killed);
+    }
     Ok(json!({ "killed": true }))
 }
 
@@ -412,7 +425,7 @@ pub(crate) fn handle_launch(
         }
 
         if let Ok(mut s) = scanner.lock() {
-            s.enable(sid);
+            s.enable(sid, ScanTarget::TopLevel);
         }
     }
 
@@ -441,7 +454,10 @@ pub(crate) fn build_launch_command(task: Option<&str>, profile_file: Option<&str
 /// 자식 surface 의 PTY 를 갈아끼우고 claude 를 재시작한다. registry 조작(PTY 교체/
 /// Ctrl-C + metadata 갱신 + idle 초기화)은 호스트 `terminal.respawn` 으로 위임하고,
 /// claude 특화 기동 명령만 그 위에 재전송한다. `child_index` → 호스트 `child` 매핑.
+/// error scanner 에는 (재)등록 + dedupe 초기화한다 — surface_id 가 유지되므로 이전
+/// 인스턴스가 남긴 dedupe 스니펫이 재기동 후 같은 에러를 억제할 수 있다.
 pub(crate) fn handle_respawn(
+    scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
@@ -477,6 +493,14 @@ pub(crate) fn handle_respawn(
         prompt.as_deref(),
         profile_file.as_deref(),
     );
+
+    // 3) error scan 대상으로 (재)등록. PTY 가 갈렸으므로 이전 인스턴스의 dedupe
+    //    스니펫은 버린다 — 안 버리면 재기동 후 같은 에러 텍스트가 다시 나도
+    //    `claude-error` 가 억제된다.
+    if let Ok(mut s) = scanner.lock() {
+        s.enable(child_surface_id, ScanTarget::Child);
+        s.reset_dedupe(child_surface_id);
+    }
 
     Ok(json!({
         "child_surface_id": child_surface_id,
@@ -673,7 +697,10 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
 /// 자식 Claude 를 spawn 한다 — 호스트 `terminal.spawn` 으로 registry 등록 + soft
 /// 점유 + tab 생성(command 미전송)한 뒤, 반환된 surface_id 에 claude 특화 기동
 /// 명령을 전송한다(2단계 spawn). 호스트가 index/tab-name/pane/occupancy 를 소유.
+/// 자식 surface 는 error scanner 대상으로 등록한다 — 사람이 보고 있지 않은 자식이야말로
+/// 네트워크/API 에러 감지가 가장 필요한 대상이다.
 pub(crate) fn handle_spawn(
+    scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
     params: &Value,
     data_dir: Option<&Path>,
@@ -707,6 +734,13 @@ pub(crate) fn handle_spawn(
         prompt.as_deref(),
         profile_file.as_deref(),
     );
+
+    // 2-1) error scan 대상 등록. `ScanTarget::Child` 로 넣으면 폴링 루프가
+    //      `terminal.parent` 로 관계 생존을 대조하므로, kill/close 뿐 아니라
+    //      `terminal.release`(surface 는 남기고 관계만 해제)까지 함께 정리된다.
+    if let Ok(mut s) = scanner.lock() {
+        s.enable(child_surface_id, ScanTarget::Child);
+    }
 
     // claude CLI/auto_wait 는 응답에 parent_surface_id 를 기대한다(호스트 응답엔
     // 없으므로 caller surface 로 채운다). 나머지 필드(child_surface_id/child_index/

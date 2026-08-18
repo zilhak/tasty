@@ -115,8 +115,9 @@ fn is_new_turn_event(event: &str) -> bool {
 }
 
 /// scanner 가 이 surface 를 추적 중일 때만 dedupe 를 초기화한다 — error_scan 은
-/// `handle_launch` 가 등록한 surface 만 enable 하므로(`handle_spawn` 자식 등은
-/// 추적 대상이 아님), 추적하지 않는 surface 의 hook 이벤트는 조용히 건너뛴다.
+/// launch/spawn/respawn 이 등록한 surface 만 enable 하므로, 그 밖의(예: 이미
+/// `terminal.release` 로 관계가 끊겨 disable 된) surface 의 hook 이벤트는 조용히
+/// 건너뛴다.
 fn reset_dedupe_if_enabled(scanner: &Arc<Mutex<ErrorScanner>>, surface_id: u32) {
     if let Ok(mut s) = scanner.lock()
         && s.is_enabled(surface_id)
@@ -914,7 +915,10 @@ mod tests {
     #[test]
     fn reset_dedupe_if_enabled_clears_tracked_surface() {
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
-        scanner.lock().unwrap().enable(7);
+        scanner
+            .lock()
+            .unwrap()
+            .enable(7, crate::error_scan::ScanTarget::TopLevel);
         scanner
             .lock()
             .unwrap()
@@ -930,7 +934,7 @@ mod tests {
 
     #[test]
     fn reset_dedupe_if_enabled_skips_untracked_surface() {
-        // handle_spawn 자식처럼 error_scan 이 애초에 enable 하지 않은 surface — hook
+        // release 이후처럼 error_scan 이 더 이상 추적하지 않는 surface — hook
         // 이벤트가 와도 조용히 무시해야 한다. dedupe 상태가 (다른 경로로) 이미
         // 있더라도 is_enabled 가 false 면 건드리지 않아야 함을 직접 확인한다.
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));

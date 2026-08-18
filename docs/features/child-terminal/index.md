@@ -27,6 +27,7 @@
 - **self-heal**: 호스트가 라이브 surface 트리를 직접 소유하므로, 접근 시점마다 라이브 집합과 대조해(reconcile) 죽은 자식을 registry 에서 정리한다(이벤트 구독 없이 동기). 부팅 후 첫 접근이 이전 세션 잔재를 회수한다.
 - **adopt**: `terminal.spawn`(새 탭 생성 시에만 자동)과 달리, 이미 존재하는 임의의 surface(과거에 child였든 아니든)를 지금 시점에 명시적으로 등록한다 — PTY 생성 없이 `handle_spawn`의 관계등록+점유 블록과 동일한 시퀀스를 수행한다. 검증 순서: 대상 존재 → 자기입양 거부(`parent == target`) → 중복 등록 거부(이미 다른 parent 의 child) → hard 점유(원격 attach) 거부 → `occupy_soft` 시도. `occupy_soft` 가 실패하면(다른 parent 가 이미 soft 점유 중) registry 는 전혀 건드리지 않고 즉시 에러를 반환한다(`register_child`+`occupy_soft` 순서가 spawn 과 반대 — "children 목록 = 점유 목록" 동치성 보존).
 - **release**: adopt 의 대칭 — child 관계와 soft 점유만 해제하고 surface(탭)는 닫지 않는다. `handle_kill`과 동일하게 `remove_child`+`save`를 수행하지만, 점유 해제에 tier-무관 `release_occupancy` 대신 주체 검증판 `release_soft_occupancy(child, parent)`를 쓴다 — hard 점유(원격 attach)는 `self.soft` 맵을 보지 않으므로 구조적으로 손대지 않는다. `release_soft_occupancy`가 desync(예: 점유만 먼저 풀린 상태)로 실패해도 `tracing::warn!`만 남기고 registry 관계 제거는 그대로 성공 처리한다. `surface.close` 호출이 없는 것이 kill 과의 유일한 차이.
+- **관계 존재를 소비하는 플러그인 신호**: claude 플러그인의 PTY 에러 스캐너는 자식 surface 의 추적 여부를 `terminal.parent` 조회(관계 존재)로 판정한다 — surface 존재(`surface.locate`)로 판정하면 위 **release** 가 surface 를 남기므로 영원히 정리되지 않는다. 즉 `terminal.release` 는 그 child 에 대한 `claude-error` 발화를 끊는 경계이기도 하다([claude plugin](../../plugins/claude/index.md) "PTY 에러 스캔 범위").
 
 ## 상태 판정 (hook + 관측 융합 — [ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md))
 

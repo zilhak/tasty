@@ -98,6 +98,23 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error` 3개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 3개 키로의 hook 등록도 거부된다. **이 3개가 전부 위 8개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/SubagentStop/SessionEnd)에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 발사한다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
+### PTY 에러 스캔 (`claude-error`) 범위
+
+`error_scan.rs`는 800ms 주기 폴링으로 추적 대상 surface 마다 `surface.read_since_mark`(strip-ansi)를 읽어 알려진 네트워크/API 에러 패턴(`API Error` / `Output blocked by content filtering policy` / `overloaded_error` / `rate_limit_error` / `Internal Server Error` / `network error` / `Bad Request`)을 매칭하고, 매치 시 그 surface 에 `claude-error` 를 fire 한다. 같은 텍스트가 연속 폴링에서 다시 잡히면 발화하지 않으며(dedupe), 새 턴 시작 신호(`prompt-submit`/`session-start`/`active`)에 dedupe 가 풀린다.
+
+추적 대상은 **`claude launch` 로 만든 top-level surface 와 `claude spawn`/`claude respawn` 으로 만든 자식 surface 전부**다. 사람이 화면을 보고 있지 않은 자식이야말로 감지가 가장 필요한 대상이므로 자식을 제외하지 않는다.
+
+정리(추적 해제)는 별도 구독 없이 같은 폴링 주기에 편승하되, **등록 경로에 따라 생존 판정 기준이 다르다**:
+
+| 대상 | 등록 | 생존 판정 |
+|------|------|-----------|
+| top-level (`launch`) | child registry 에 없음 | `surface.locate` 로 surface 존재 확인 |
+| 자식 (`spawn`/`respawn`) | 호스트 child registry | `terminal.parent` 로 **부모-자식 관계** 존재 확인 |
+
+자식을 관계로 판정하는 이유는 [`terminal.release`](../../features/child-terminal/index.md)가 surface 를 닫지 않고 관계·soft 점유만 해제하기 때문이다 — surface 존재만 봤다면 release 후에도 영원히 폴링되며, 더 이상 자식이 아닌 사용자 터미널에 `claude-error` 를 계속 발화한다. 호스트가 관계 조회 전 `reconcile_child_terminals()` 를 돌리므로 이 한 번의 조회가 kill/close 실패로 surface 가 살아남은 케이스까지 함께 걷어낸다. `claude kill` 은 성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 잔여 발화 창까지 없앤다. 조회 자체가 실패(IPC 오류)하면 "죽었다"로 단정하지 않고 추적을 유지한다 — 재활성화 경로가 없어 오탐 정리가 오탐 유지보다 위험하다.
+
+**mark 는 공유 자원이라 감지 사각이 있다.** 스캐너의 `surface.read_since_mark` 는 mark 를 전진시키지 않으므로(`Terminal::read_since_mark` 가 `&self`) 에이전트의 `tasty read since-mark` 결과를 소비하지 않지만, 반대로 에이전트가 `tasty set mark` 로 mark 를 앞으로 옮기면 스캐너가 보는 창도 함께 옮겨간다. 그 이전에 지나간 에러는 스캐너 시야에서 사라진다. 이 결합은 수용한다 — mark 를 스캐너 전용으로 따로 두면 mark 자원이 이중화돼 에이전트의 `set mark` 의미가 흐려진다.
+
 ## 인터페이스
 
 - **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current …`.
