@@ -60,6 +60,23 @@ pub struct ChildTerminalRegistry {
     idle: HashMap<u32, bool>,
     /// child_surface → needs_input 상태
     needs_input: HashMap<u32, bool>,
+    /// child_surface → 이 자식의 상태를 마지막으로 **보고받은** 시각 (unix epoch ms).
+    ///
+    /// `idle`/`needs_input` 두 bool 맵이 "무엇을 보고받았나" 라면 이 맵은 "언제
+    /// 보고받았나" 다 — 별개의 축이다. hook push(`set_idle`/`set_needs_input`)마다
+    /// 갱신되고, `register_child` 가 등록 시각으로 시딩한다(등록 자체가 "이 시점엔
+    /// 이 자식이 막 태어났다" 는 보고이므로, hook 이 한 번도 오지 않은 자식도
+    /// 침묵 경과시간을 잴 기준점을 갖는다).
+    ///
+    /// **이 축이 필요한 이유**: `state_of` 는 hook push 캐시를 되읽을 뿐이라,
+    /// hook 이 유실되면 마지막으로 찍힌 `active` 가 영구히 남는다. "hook 이 N 시간째
+    /// 안 온다" 는 사실은 bool 맵 두 개로는 표현할 수 없다. PTY 무출력 경과시간과
+    /// 달리 **epoch 기반이라 호스트 재시작을 건너 살아남는다**(`Instant` 는 소멸).
+    ///
+    /// 판정 자체는 여기서 하지 않는다 — `state_of` 계약은 불변이고, 이 값을 관측
+    /// 축과 합성하는 것은 `core/state/child_liveness.rs` 의 상위 계층이다.
+    #[serde(default)]
+    last_state_report_at: HashMap<u32, u64>,
     /// 영속화 경로 (load 시 결정, `default()` 는 None → 비영속·테스트용)
     #[serde(skip)]
     path: Option<PathBuf>,
@@ -112,6 +129,8 @@ impl ChildTerminalRegistry {
 
     pub fn register_child(&mut self, parent: u32, child: ChildEntry) {
         self.parent_of.insert(child.child_surface_id, parent);
+        self.last_state_report_at
+            .insert(child.child_surface_id, now_epoch_ms());
         self.children.entry(parent).or_default().push(child);
     }
 
@@ -153,6 +172,7 @@ impl ChildTerminalRegistry {
         self.parent_of.remove(&removed.child_surface_id);
         self.idle.remove(&removed.child_surface_id);
         self.needs_input.remove(&removed.child_surface_id);
+        self.last_state_report_at.remove(&removed.child_surface_id);
         Some(removed)
     }
 
@@ -176,6 +196,7 @@ impl ChildTerminalRegistry {
         self.parent_of.remove(&surface_id);
         self.idle.remove(&surface_id);
         self.needs_input.remove(&surface_id);
+        self.last_state_report_at.remove(&surface_id);
         true
     }
 
@@ -184,10 +205,35 @@ impl ChildTerminalRegistry {
         if !idle {
             self.needs_input.insert(child_surface, false);
         }
+        self.stamp_state_report(child_surface);
     }
 
     pub fn set_needs_input(&mut self, child_surface: u32, val: bool) {
         self.needs_input.insert(child_surface, val);
+        self.stamp_state_report(child_surface);
+    }
+
+    /// hook push 를 받은 시각을 기록한다 — `set_idle`/`set_needs_input` 공통.
+    fn stamp_state_report(&mut self, child_surface: u32) {
+        self.last_state_report_at
+            .insert(child_surface, now_epoch_ms());
+    }
+
+    /// 이 자식의 상태를 마지막으로 보고받은 시각(unix epoch ms). 등록 이력이 없거나
+    /// 업그레이드 전에 영속된 registry 에서 로드된 항목은 `None`.
+    pub fn last_state_report_at(&self, child_surface: u32) -> Option<u64> {
+        self.last_state_report_at.get(&child_surface).copied()
+    }
+
+    /// 마지막 상태 보고 이후 경과 시간 — **hook 침묵 축**. `None` 이면 잴 기준점이
+    /// 없다는 뜻이므로(판정 불가) 호출자는 임의 기본값을 만들지 않는다.
+    ///
+    /// 시계 되감김(NTP 보정·수동 변경)으로 `now_ms < 보고시각` 이 되면 `ZERO` 로
+    /// 클램프한다 — 음수 경과시간이 침묵 판정을 뒤집는 것보다 "방금 보고받았다" 쪽
+    /// 오탐이 안전하다(stale 오탐이 아니라 stale 미탐).
+    pub fn hook_silence(&self, child_surface: u32, now_ms: u64) -> Option<std::time::Duration> {
+        let at = self.last_state_report_at(child_surface)?;
+        Some(std::time::Duration::from_millis(now_ms.saturating_sub(at)))
     }
 
     pub fn state_of(&self, child_surface: u32) -> &'static str {
@@ -249,9 +295,20 @@ impl ChildTerminalRegistry {
         self.parent_of.retain(|sid, _| live.contains(sid));
         self.idle.retain(|sid, _| live.contains(sid));
         self.needs_input.retain(|sid, _| live.contains(sid));
+        self.last_state_report_at
+            .retain(|sid, _| live.contains(sid));
 
         summary
     }
+}
+
+/// 현재 시각(unix epoch ms). registry 는 호스트 재시작을 건너 영속되므로 상태 보고
+/// 시각은 프로세스 로컬한 `Instant` 가 아니라 벽시계여야 한다.
+pub fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn ensure_parent_dir(path: &std::path::Path) {
@@ -347,6 +404,96 @@ mod tests {
         assert_eq!(s.parent_of_child(100), None);
         assert_eq!(s.state_of(100), "active");
         assert!(!s.unregister_child_by_surface(100));
+    }
+
+    #[test]
+    fn register_seeds_state_report_baseline() {
+        let mut s = ChildTerminalRegistry::default();
+        let before = now_epoch_ms();
+        let idx = s.next_index_for(10);
+        s.register_child(10, entry(100, idx));
+        let at = s
+            .last_state_report_at(100)
+            .expect("등록이 기준점을 시딩한다");
+        assert!(at >= before, "{at} >= {before}");
+        assert_eq!(
+            s.last_state_report_at(999),
+            None,
+            "미등록 surface 는 기준점 없음"
+        );
+    }
+
+    #[test]
+    fn hook_push_refreshes_state_report() {
+        let mut s = ChildTerminalRegistry::default();
+        // 등록 없이 hook 만 와도 기준점이 생긴다(adopt 이전 push 등).
+        s.set_idle(50, true);
+        let first = s.last_state_report_at(50).unwrap();
+        s.set_needs_input(50, true);
+        let second = s.last_state_report_at(50).unwrap();
+        assert!(second >= first);
+        // active 로 되돌리는 push 도 축을 갱신한다 — hook 침묵 판정의 반증이다.
+        s.set_idle(50, false);
+        assert!(s.last_state_report_at(50).unwrap() >= second);
+    }
+
+    #[test]
+    fn hook_silence_measures_from_last_report() {
+        let mut s = ChildTerminalRegistry::default();
+        s.set_idle(50, true);
+        let at = s.last_state_report_at(50).unwrap();
+        assert_eq!(
+            s.hook_silence(50, at + 7_000),
+            Some(std::time::Duration::from_secs(7))
+        );
+        assert_eq!(s.hook_silence(999, at), None, "기준점 없으면 판정 불가");
+    }
+
+    #[test]
+    fn hook_silence_clamps_on_clock_rewind() {
+        let mut s = ChildTerminalRegistry::default();
+        s.set_idle(50, true);
+        let at = s.last_state_report_at(50).unwrap();
+        assert_eq!(
+            s.hook_silence(50, at.saturating_sub(60_000)),
+            Some(std::time::Duration::ZERO),
+            "시계 되감김은 stale 오탐이 아니라 미탐 쪽으로 클램프"
+        );
+    }
+
+    #[test]
+    fn state_report_axis_is_cleared_with_the_child() {
+        let mut s = ChildTerminalRegistry::default();
+        let idx = s.next_index_for(10);
+        s.register_child(10, entry(100, idx));
+        s.remove_child(10, idx);
+        assert_eq!(s.last_state_report_at(100), None);
+
+        let idx = s.next_index_for(20);
+        s.register_child(20, entry(200, idx));
+        s.reconcile_with_live_surfaces(&HashSet::new());
+        assert_eq!(s.last_state_report_at(200), None);
+    }
+
+    #[test]
+    fn legacy_persisted_registry_loads_without_state_report_field() {
+        // 이 축 도입 이전에 영속된 파일에는 `last_state_report_at` 키가 없다.
+        let legacy = r#"{
+            "children": { "10": [{ "child_surface_id": 100, "index": 0,
+                                   "cwd": null, "role": null, "nickname": null }] },
+            "parent_of": { "100": 10 },
+            "next_index": { "10": 1 },
+            "idle": {},
+            "needs_input": {}
+        }"#;
+        let s: ChildTerminalRegistry = serde_json::from_str(legacy).expect("하위호환 로드");
+        assert_eq!(s.list_children(10).len(), 1);
+        assert_eq!(s.state_of(100), "active");
+        assert_eq!(
+            s.last_state_report_at(100),
+            None,
+            "기준점 부재는 판정 불가로 표현된다 — 임의값을 지어내지 않는다"
+        );
     }
 
     #[test]

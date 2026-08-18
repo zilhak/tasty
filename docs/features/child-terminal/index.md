@@ -12,7 +12,7 @@
 
 ## 내부 동작 (headless-valid)
 
-- **registry**(`ChildTerminalRegistry`): `parent_surface → 자식 목록`, `child_surface → parent`, parent별 다음 index, child별 idle/needs_input 상태를 보관한다. `~/.tasty/child-terminals.json` 에 영속(등록/제거마다 즉시 save). session token 추적(`session.rs`)·agent shell 서브프로세스 추적(`runner_host` `shell_children`)과는 **다른 서브시스템**이다.
+- **registry**(`ChildTerminalRegistry`): `parent_surface → 자식 목록`, `child_surface → parent`, parent별 다음 index, child별 idle/needs_input 상태, 그리고 그 상태를 **마지막으로 보고받은 시각**(`last_state_report_at`, unix epoch ms)을 보관한다. 앞의 두 bool 맵이 "무엇을 보고받았나"라면 마지막 값은 "언제 보고받았나"로 별개 축이며, hook push(`terminal.set_state`)마다 갱신되고 `register_child` 가 등록 시각으로 시딩한다 — 파생 상태 판정의 **hook 침묵 축**이다(아래 "상태 판정"). epoch 기반이라 호스트 재시작을 건너 살아남는다. `~/.tasty/child-terminals.json` 에 영속(등록/제거마다 즉시 save; 이 필드 도입 이전에 영속된 파일은 `serde(default)` 로 빈 맵이 된다). session token 추적(`session.rs`)·agent shell 서브프로세스 추적(`runner_host` `shell_children`)과는 **다른 서브시스템**이다.
 - **needs_input 이 화면에 표시된다**: `terminal.set_state --state needs_input`(에이전트 hook
   진입점) 자체는 이 registry 만 갱신하고 화면에 아무 효과도 없다 — registry 는 에이전트의
   완료 판정 입력이지 사용자 UI 상태가 아니다(불가침 원칙 1). 화면 표시는 별개 채널인
@@ -28,6 +28,85 @@
 - **adopt**: `terminal.spawn`(새 탭 생성 시에만 자동)과 달리, 이미 존재하는 임의의 surface(과거에 child였든 아니든)를 지금 시점에 명시적으로 등록한다 — PTY 생성 없이 `handle_spawn`의 관계등록+점유 블록과 동일한 시퀀스를 수행한다. 검증 순서: 대상 존재 → 자기입양 거부(`parent == target`) → 중복 등록 거부(이미 다른 parent 의 child) → hard 점유(원격 attach) 거부 → `occupy_soft` 시도. `occupy_soft` 가 실패하면(다른 parent 가 이미 soft 점유 중) registry 는 전혀 건드리지 않고 즉시 에러를 반환한다(`register_child`+`occupy_soft` 순서가 spawn 과 반대 — "children 목록 = 점유 목록" 동치성 보존).
 - **release**: adopt 의 대칭 — child 관계와 soft 점유만 해제하고 surface(탭)는 닫지 않는다. `handle_kill`과 동일하게 `remove_child`+`save`를 수행하지만, 점유 해제에 tier-무관 `release_occupancy` 대신 주체 검증판 `release_soft_occupancy(child, parent)`를 쓴다 — hard 점유(원격 attach)는 `self.soft` 맵을 보지 않으므로 구조적으로 손대지 않는다. `release_soft_occupancy`가 desync(예: 점유만 먼저 풀린 상태)로 실패해도 `tracing::warn!`만 남기고 registry 관계 제거는 그대로 성공 처리한다. `surface.close` 호출이 없는 것이 kill 과의 유일한 차이.
 
+## 상태 판정 (hook + 관측 융합 — [ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md))
+
+`terminal.children` / `terminal.state` 가 보고하는 `state` 는 registry 의 hook push
+캐시를 그대로 되읽은 값이 **아니다**. hook 축과 호스트 관측 축을 합성한 파생 값이며,
+두 IPC 경로가 같은 헬퍼(`CoreState::child_liveness{,_with_live}` —
+`src/core/state/child_liveness.rs`)를 공유한다.
+
+**왜 필요한가**: registry 의 `state_of` 는 `idle`/`needs_input` 두 bool 이 모두 false 면
+`"active"` 를 반환하는데, 그 의미는 "작업 중" 이 아니라 **"idle 이라는 증거가 없음"**
+이다. 상태를 바꾸는 유일한 경로가 hook push 단방향이라, hook 이 유실되거나 자식이
+멈추면 마지막으로 찍힌 `active` 가 영구히 남고 되돌리는 경로가 없다.
+
+### 판정 우선순위
+
+위에서 아래로 먼저 맞는 규칙이 이긴다.
+
+| # | 조건 | `state` | `confidence` | `evidence` |
+|---|---|---|---|---|
+| 1 | surface 가 라이브 트리에 없음 | `exited` | `confirmed` | `surface_gone` |
+| 2 | hook 이 `needs_input` 보고 | `needs_input` | `reported` | `hook_needs_input` |
+| 3 | hook 이 `idle` 보고 | `idle` | `reported` | `hook_idle` |
+| 4 | PTY busy | `active` | `confirmed` | `pty_busy` |
+| 5 | PTY 미기동(deferred) | `active` | `unobserved` | `pty_not_started` |
+| 6 | 전경 프로그램이 셸로 복귀 | `stale` | `confirmed` | `foreground_is_shell` |
+| 7 | 무출력 경과시간 관측 불가(mirror 등) | `active` | `unobserved` | `observation_unavailable` |
+| 8 | 무출력 < 임계값 | `active` | `heuristic` | `recent_output` |
+| 9 | 무출력 ≥ 임계값 && hook 침묵 < 임계값 | `active` | `heuristic` | `recent_hook_report` |
+| 10 | 무출력 ≥ 임계값 && hook 침묵 ≥ 임계값 | `stale` | `heuristic` | `output_and_hook_silent` |
+
+- **2·3 이 관측보다 위**인 것은 의도다 — hook 은 거짓 `idle` 을 만들지 않으므로 관측이
+  이 둘을 덮어쓰지 않는다.
+- **5 가 6~10 보다 위**인 것도 의도다 — deferred terminal 은 출력을 낸 적이 자체가
+  없어, 게이트하지 않으면 spawn 직후 전부 `stale` 로 오판정된다.
+- 임계값: 무출력 `CHILD_OUTPUT_SILENCE` = 120s, hook 침묵 `CHILD_HOOK_SILENCE` = 300s.
+  `BUSY_OUTPUT_WINDOW`(2s)를 그대로 쓸 수 없다 — 그 창은 "지금 화면이 갱신되는 중인가"
+  용도라 사람이 프롬프트를 읽는 몇 초만으로도 넘어간다.
+- hook 침묵 기준점이 없으면(이 기능 도입 전에 영속된 항목) 침묵으로 간주한다 —
+  무출력 축이 이미 임계값을 넘긴 상태라 두 축 모두 반증이 없다.
+
+### 미등록 surface
+
+`terminal.state` 는 registry 에 없는 surface 도 조회를 거부하지 않는다(`state_of` 의
+미등록 fallback 계약 유지). 다만 응답은 registry 원값이 아니라 파생 판정이므로,
+**PTY 가 떠 있고 셸 프롬프트에 머무는** 임의의 live surface 는 `active` 가 아니라
+`stale`(`foreground_is_shell`)로 나온다 — "이 surface 에서 도는 프로그램이 없다" 는
+관측 사실 그대로다. PTY 미기동(deferred) surface 는 게이트에 걸려 `active`
+(`pty_not_started`)로 남는다.
+
+### `stale` 의 의미와 한계
+
+`stale` 은 **`exited` 가 아니다.** surface 는 살아 있고, "이 surface 에서 에이전트
+프로세스가 돌고 있지 않거나, 돌고 있다는 증거가 없다" 는 뜻이다. `terminal.adopt` 로
+들어온 자식은 애초에 에이전트가 아닌 일반 셸일 수 있으므로 종료로 단정해선 안 된다.
+
+무출력 기반 정지 판정은 **원리적으로 휴리스틱**이다 — SIGSTOP 으로 멈춘 프로세스,
+긴 추론 중인 에이전트, 출력이 없는 긴 명령은 관측상 구별되지 않는다. 확정으로 취급
+가능한 관측은 **surface 부재**와 **전경 셸 복귀** 두 가지뿐이며, 나머지는
+`confidence: heuristic` 으로 표시된다. 소비자는 confidence 를 보고 확정 판정만 종결로
+다룰 수 있다.
+
+### 출력 전용
+
+`stale`/`exited` 는 호스트가 관측으로만 만들어내는 값이다. `terminal.set_state` 는
+여전히 `idle`/`needs_input`/`active` 세 값만 받는다 — hook 이 파생 상태를 registry 에
+밀어넣을 수 있으면 관측 축이 다시 push 캐시로 퇴화한다.
+
+### 능동 프로빙 배제
+
+대상 surface 에 입력을 주입해 반응을 보는 능동 프로빙은 사용자 입력 재현이라 release
+금지 대상이고([`docs/identity.md`](../../identity.md) 원칙 1), 자식 에이전트의 프롬프트
+상태도 오염시킨다. 판정은 **수동 관측만** 쓴다.
+
+### 비용
+
+추가 프로세스 스냅샷은 없다. 전경 프로그램 이름은 1Hz 일괄 폴링이 이미 채우는
+`foreground_names` 캐시에서만 읽는다 — 자식마다 `Terminal::foreground_process_info()`
+를 개별 호출하면 O(surfaces × processes) 를 되살리는 회귀다
+(`src/core/state/busy.rs` 폴링 주석).
+
 ## 인터페이스
 
 - **AI Agent (IPC/CLI)** — 모든 대상은 ID 로 직접 지정(포커스 독립, 원칙 3):
@@ -35,11 +114,11 @@
   - `tasty terminal tell "<text>" [--surface]` ↔ `terminal.tell`
   - `tasty terminal children [--surface]` ↔ `terminal.children`
   - `tasty terminal parent --surface <child>` ↔ `terminal.parent`
-  - `tasty terminal state --surface <child>` ↔ `terminal.state` — 자식 단건 상태(`idle`/`needs_input`/`active`/`exited`) 조회. `terminal.children`의 항목별 `state`와 달리, 이미 registry 에서 정리된(reconcile 로 사라진) surface 도 라이브 트리와 직접 대조해 `"exited"`로 판별한다 — `ChildTerminalRegistry::state_of` 자체의 미등록 surface `"active"` fallback 계약은 그대로 둔 채, 이 getter 가 그 위에서 별도로 죽은 surface 를 걸러낸다
+  - `tasty terminal state --surface <child>` ↔ `terminal.state` — 자식 단건 상태(`idle`/`needs_input`/`active`/`stale`/`exited`) 조회. `terminal.children` 의 항목별 `state` 와 **같은 판정 헬퍼**(`CoreState::child_liveness`)를 쓰므로 목록과 단건의 답이 갈리지 않는다. 이미 registry 에서 정리된(reconcile 로 사라진) surface 도 라이브 트리와 직접 대조해 `"exited"` 로 판별한다 — `ChildTerminalRegistry::state_of` 자체의 미등록 surface `"active"` fallback 계약은 그대로 둔 채, 상위 판정 계층이 그 위에서 죽은 surface 를 걸러낸다
   - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill`
   - `tasty terminal respawn [--surface] --child <n> [--cwd] [--command] [--role] [--nickname]` ↔ `terminal.respawn`
   - `tasty terminal broadcast "<text>" [--surface] [--role]` ↔ `terminal.broadcast`
-  - `tasty terminal set-state --surface <child> --state <idle|needs_input|active>` ↔ `terminal.set_state` (에이전트 hook 진입점)
+  - `tasty terminal set-state --surface <child> --state <idle|needs_input|active>` ↔ `terminal.set_state` (에이전트 hook 진입점). **파생 상태(`stale`/`exited`)는 입력으로 받지 않는다** — 출력 전용이다(아래 "상태 판정")
   - `tasty terminal adopt --target <surface> [--surface <parent>] [--cwd] [--role] [--nickname]` ↔ `terminal.adopt` — 새 탭을 만들지 않고, 이미 존재하는 임의의 surface 를 지금 시점에 명시적으로 child 로 등록(soft 점유)한다
   - `tasty terminal release [--surface <parent>] --child <n>` ↔ `terminal.release` — child 관계와 soft 점유만 해제한다. surface(탭) 자체는 닫지 않는다(`terminal.kill`과 달리)
 

@@ -475,6 +475,8 @@ pub(crate) fn handle_children(
         Ok(p) => p,
         Err(e) => return e,
     };
+    // 라이브 집합은 자식마다 다시 순회하지 않도록 여기서 한 번만 계산한다.
+    let live = engine.live_surface_ids();
     let children: Vec<Value> = engine
         .child_terminals
         .list_children(parent)
@@ -485,7 +487,10 @@ pub(crate) fn handle_children(
                 "surface_id": c.child_surface_id,
                 "role": c.role,
                 "nickname": c.nickname,
-                "state": engine.child_terminals.state_of(c.child_surface_id),
+                "state": engine
+                    .child_liveness_with_live(c.child_surface_id, &live)
+                    .state
+                    .as_str(),
                 "cwd": c.cwd,
             })
         })
@@ -498,23 +503,22 @@ pub(crate) fn handle_children(
 /// 독립 — CLAUDE.md 원칙 3).
 ///
 /// **결정 4**: `ChildTerminalRegistry::state_of` 자신은 미등록 surface 에
-/// `"active"` fallback 계약을 그대로 유지한다(`src/core/child_terminal.rs:196-209`
-/// 와 그 테스트는 불변). 이 getter 는 그 위에서 라이브 surface 트리와 별도로
-/// 대조해, 실제로 죽은 surface 만 `"exited"` 로 구분한다 — registry 자체의
-/// self-heal(`reconcile_child_terminals`)이 이미 죽은 항목을 지웠더라도(관계가
-/// 사라져도) 그 surface 가 라이브인지는 독립적으로 판정해야 하므로 reconcile
-/// 결과에 기대지 않고 `live_surface_ids()` 를 직접 대조한다.
+/// `"active"` fallback 계약을 그대로 유지한다(`src/core/child_terminal.rs` 의
+/// `state_of` 와 그 테스트는 불변). 파생 판정은 그 위에서 라이브 surface 트리 ·
+/// PTY 관측과 합성해 만들어진다 — registry 자체의 self-heal
+/// (`reconcile_child_terminals`)이 이미 죽은 항목을 지웠더라도(관계가 사라져도) 그
+/// surface 가 라이브인지는 독립적으로 판정해야 하므로 reconcile 결과에 기대지 않고
+/// `live_surface_ids()` 를 직접 대조한다.
+///
+/// 판정 자체는 `handle_children` 과 **같은** `CoreState::child_liveness*` 헬퍼를
+/// 쓴다 — 두 경로가 갈리면 목록과 단건 조회가 서로 다른 값을 보고한다.
 pub(crate) fn handle_state(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
     let surface_id = match require_u32(params, "surface", &id) {
         Ok(s) => s,
         Err(e) => return e,
     };
-    let state = if engine.live_surface_ids().contains(&surface_id) {
-        engine.child_terminals.state_of(surface_id)
-    } else {
-        "exited"
-    };
+    let state = engine.child_liveness(surface_id).state.as_str();
     JsonRpcResponse::success(id, json!({ "state": state, "surface_id": surface_id }))
 }
 
@@ -861,6 +865,11 @@ pub(crate) fn handle_broadcast(
 
 /// 에이전트 hook 이 idle/needs_input 신호를 넣는 진입점. state ∈ {idle, needs_input,
 /// active}. 05 에서 codex/claude hook 핸들러가 이 method 를 호출한다.
+///
+/// **파생 상태는 입력으로 받지 않는다 (출력 전용)** — `exited`/`stale` 은 호스트가
+/// 라이브 트리·PTY 관측에서만 만들어내는 값이라(`core/state/child_liveness.rs`),
+/// hook 이 그것을 registry 에 밀어넣을 수 있으면 관측 축이 다시 push 캐시로 퇴화한다.
+/// 아래 `other` 분기가 그 두 값을 포함한 모든 비-hook 값을 거부한다.
 pub(crate) fn handle_set_state(
     engine: &mut CoreState,
     id: Value,
