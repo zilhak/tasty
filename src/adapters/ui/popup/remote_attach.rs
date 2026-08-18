@@ -18,7 +18,7 @@
 use std::sync::{Arc, Mutex};
 
 use tasty_cli::remote_browse::{self, RemoteWorkspace};
-use tasty_cli::ssh::SshTunnel;
+use tasty_cli::ssh::{SshCancel, SshTunnel};
 use tasty_remote_profiles::RemoteProfiles;
 use tasty_ui_widgets::{Button, ButtonVariant, StatusKind, status_dot};
 
@@ -67,6 +67,19 @@ struct ReadyConn {
 #[derive(Clone)]
 struct BrowseJob {
     slot: Arc<Mutex<Option<Result<BrowseOk, String>>>>,
+    /// 워커의 포트 발견 자식 ssh 를 kill 하는 핸들(취소 프로토콜의 유일한 신호).
+    cancel: SshCancel,
+}
+
+/// 조회를 중단한다 — 자식 ssh 를 kill 하고 결과 슬롯을 포기한다.
+///
+/// 슬롯을 포기해도 워커는 자기 몫의 `Arc` 를 쥐고 있어 결과를 쓸 수는 있지만, 그 결과는
+/// 아무도 읽지 않고 워커 종료와 함께 drop 된다 — 그때 `BrowseOk.tunnel` 의 `SshTunnel`
+/// 도 함께 drop 되어 kill 되므로 터널이 새지 않는다(반대 방향 누수 방지).
+fn cancel_job(job: Option<BrowseJob>) {
+    if let Some(job) = job {
+        job.cancel.cancel();
+    }
 }
 
 /// 우측 pane 상태 머신.
@@ -165,8 +178,13 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
     let slot: Arc<Mutex<Option<Result<BrowseOk, String>>>> = Arc::new(Mutex::new(None));
     let slot_w = Arc::clone(&slot);
     let ctx_w = ctx.clone();
+    let cancel = SshCancel::new();
+    let cancel_w = cancel.clone();
     let name = profile;
     std::thread::spawn(move || {
+        // 이 스레드의 포트 발견 자식 ssh 를 취소 대상으로 등록한다 — 이게 없으면
+        // `Command` 안에 갇힌 자식을 밖에서 kill 할 방법이 없다.
+        let _scope = cancel_w.scope();
         let res = (|| -> Result<BrowseOk, String> {
             let (target, remote_tasty, port_mode, port_file) =
                 remote_browse::resolve_connection_spec(Some(&name), None, "", "")
@@ -178,6 +196,11 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
                 port_file.as_deref(),
             )
             .map_err(|e| e.to_string())?;
+            // 터널 수립 뒤에 취소가 들어왔으면 여기서 접는다 — `tunnel` 이 이 지점에서
+            // drop 되어 자식 ssh 가 즉시 kill 된다(다음 단계까지 끌고 가지 않는다).
+            if cancel_w.is_cancelled() {
+                return Err(t("remote_attach.error_generic").to_string());
+            }
             let workspaces = remote_browse::browse_via_port(port).map_err(|e| e.to_string())?;
             Ok(BrowseOk {
                 port,
@@ -190,7 +213,7 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
         }
         ctx_w.request_repaint();
     });
-    BrowseJob { slot }
+    BrowseJob { slot, cancel }
 }
 
 /// 워커 완료 폴링 — 완료 시 job → conn(+ready) 전이. 재렌더당 1회.
@@ -226,6 +249,7 @@ fn poll_browse(st: &mut UiState) {
 
 /// 프로필 선택 → 조회 시작(상태 리셋 + 워커 spawn).
 fn connect(ctx: &egui::Context, st: &mut UiState, name: String) {
+    cancel_job(st.job.take()); // 재선택 = 이전 조회 중단(자식 ssh 회수).
     st.attach_sel = Some(name.clone());
     st.ws_sel = None;
     st.ready = None; // 이전 터널 정리(재선택 = 새 연결).
@@ -233,18 +257,27 @@ fn connect(ctx: &egui::Context, st: &mut UiState, name: String) {
     st.job = Some(spawn_browse(ctx, name));
 }
 
-/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 `UiState`(진행 중 조회 워커 +
-/// 재사용 터널)를 drop 한다. draw_fn 자신의 Escape/Cancel/Connect 경로는 이미
-/// `clear_ui`를 부르지만, 지금까지는 headless(X 버튼 없음) + close_on_outside_click
-/// =false 라 그 경로들 밖에서 닫히는 일이 우연히 없었을 뿐이다 —
-/// `UiIntent::ClosePopup`(디버그 IPC 포함)으로는 지금도 그 경로를 우회할 수 있어
-/// ssh 연결이 살아남을 수 있었다(불변식이 구조가 아니라 우연에 의존).
+/// 팝업 정리 — 진행 중 조회 워커의 자식 ssh 를 kill 하고 `UiState` 를 drop 한다.
+///
+/// `clear_ui` 만으로는 부족하다: `UiState` drop 은 슬롯 `Arc` 와 `SshTunnel` 핸들만
+/// 회수하고, 포트 발견 단계의 자식 ssh 는 워커가 `Command` 안에 쥐고 있어 취소 신호를
+/// 보내야만 죽는다. 여러 번 불려도 안전하다(취소는 멱등, 정리된 뒤엔 job 이 없다).
+fn cleanup(ctx: &egui::Context) {
+    cancel_job(read_ui(ctx).job);
+    clear_ui(ctx);
+}
+
+/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 진행 중 조회 워커(자식 ssh 포함)와
+/// 재사용 터널을 정리한다. draw_fn 자신의 Escape/Cancel/Connect 경로도 같은
+/// [`cleanup`] 을 부르지만, headless(X 버튼) + `UiIntent::ClosePopup`(디버그 IPC 포함)
+/// 처럼 draw_fn 을 거치지 않는 닫힘 경로가 있으므로 이 훅이 단일 choke point 다
+/// (ADR-0063).
 pub fn on_close_remote_attach_popup(
     ctx: &egui::Context,
     _state: &mut AppState,
     _engine: &mut CoreState,
 ) {
-    clear_ui(ctx);
+    cleanup(ctx);
 }
 
 /// PopupDef.draw_fn 진입점.
@@ -264,9 +297,9 @@ pub fn draw_remote_attach_popup(
 
     poll_browse(&mut st);
 
-    // Escape: 닫기(진행 중 조회/터널은 clear_ui 로 UiState drop 되며 정리).
+    // Escape: 닫기(진행 중 조회 워커의 자식 ssh + 터널은 cleanup 이 회수).
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        clear_ui(&ctx);
+        cleanup(&ctx);
         return PopupAction::Close;
     }
 
@@ -350,7 +383,7 @@ pub fn draw_remote_attach_popup(
     }
 
     if close {
-        clear_ui(&ctx);
+        cleanup(&ctx);
         PopupAction::Close
     } else {
         write_ui(&ctx, st);
@@ -913,16 +946,50 @@ fn badge(
 mod tests {
     use super::*;
 
+    /// 테스트용 job — 워커 스레드 없이 슬롯/취소 핸들만 갖춘다.
+    fn test_job() -> BrowseJob {
+        BrowseJob {
+            slot: Arc::new(Mutex::new(None)),
+            cancel: SshCancel::new(),
+        }
+    }
+
+    /// 취소된 job 의 결과가 뒤늦게 도착해도 아무도 읽지 않고, 워커 종료와 함께 drop
+    /// 된다 — 그때 `BrowseOk.tunnel` 의 `SshTunnel::drop` 이 자식 ssh 를 kill 하므로
+    /// 터널이 새지 않는다(취소가 반대 방향 누수로 바뀌지 않게 하는 계약).
+    #[test]
+    fn cancelled_job_result_is_discarded_and_tunnel_dropped() {
+        let job = test_job();
+        let worker_slot = Arc::clone(&job.slot); // 워커가 쥐고 있는 몫.
+
+        cancel_job(Some(job));
+
+        // UI 쪽 핸들이 사라져 이제 슬롯을 보는 것은 워커뿐이다.
+        assert_eq!(Arc::strong_count(&worker_slot), 1);
+        // 뒤늦게 도착한 결과 — 읽는 쪽이 없다.
+        *worker_slot.lock().unwrap() = Some(Ok(BrowseOk {
+            port: 1234,
+            tunnel: None,
+            workspaces: Vec::new(),
+        }));
+        // 워커 종료 = 마지막 Arc drop → 결과(그리고 그 안의 터널)도 함께 drop.
+        drop(worker_slot);
+    }
+
     /// `UiState`(진행 중 조회 워커 + 재사용 터널을 쥐고 있는 egui temp memory)가
     /// 훅 호출 한 번으로 drop 되는지 확인 — draw_fn 을 거치지 않는 닫힘 경로(바깥
     /// 클릭/`UiIntent::ClosePopup`/디버그 IPC)에서도 이 훅이 정리를 담당한다.
     #[test]
     fn on_close_clears_ui_state() {
         let ctx = egui::Context::default();
+        let job = test_job();
+        let cancel = job.cancel.clone();
         write_ui(
             &ctx,
             UiState {
                 attach_sel: Some("prod".to_string()),
+                conn: Conn::Connecting,
+                job: Some(job),
                 ..Default::default()
             },
         );
@@ -938,5 +1005,8 @@ mod tests {
             ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))
                 .is_none()
         );
+        // UiState drop 만으로는 포트 발견 자식 ssh 가 회수되지 않는다 — 훅이 취소까지
+        // 책임진다(ADR-0063 단일 choke point).
+        assert!(cancel.is_cancelled(), "닫힘 훅이 진행 중 조회를 취소한다");
     }
 }

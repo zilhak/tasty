@@ -13,9 +13,12 @@
 //! Windows 는 반드시 시스템 OpenSSH 풀경로를 쓴다 — git 번들 ssh 는 윈도우
 //! ssh-agent(named pipe `\\.\pipe\openssh-ssh-agent`) 를 못 봐 무암호 인증이 실패한다.
 
+use std::cell::RefCell;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
@@ -401,6 +404,14 @@ pub enum PortDiscoveryFailureKind {
     /// 타임아웃 kill 도 시그널 종료라, 이 자리가 없으면 우리가 죽인 것과 원격발 시그널
     /// 종료가 같은 분류로 뭉개진다.
     TimedOut,
+    /// 호출자가 [`SshCancel::cancel`] 로 중단했다(자식 ssh 는 kill + reaping 됨).
+    /// 사용자 의도이므로 실패가 아니지만, 진행 중이던 발견 시도를 끊는 신호로 같은
+    /// 에러 타입에 실어 상위로 올린다.
+    ///
+    /// [`TimedOut`](Self::TimedOut) 과 겹치지 않는다: 상한은 **시간**이 끊은 것이고
+    /// 이쪽은 **사용자 의도**로 끊은 것이라, 취소 kill 이 시그널 종료로 관측되어 상한
+    /// 초과처럼 보이더라도 취소가 우선한다([`ChildOwner::finish`]).
+    Cancelled,
 }
 
 impl PortDiscoveryFailureKind {
@@ -413,6 +424,7 @@ impl PortDiscoveryFailureKind {
             Self::RemoteInstanceNotRunning => "ssh.port_discovery.instance_not_running",
             Self::PortParseFailed => "ssh.port_discovery.parse_failed",
             Self::TimedOut => "ssh.port_discovery.timed_out",
+            Self::Cancelled => "ssh.port_discovery.cancelled",
         }
     }
 }
@@ -482,32 +494,118 @@ fn refine_with_elapsed(
     kind
 }
 
-/// 자식이 `budget` 안에 끝나면 `true`, 상한을 넘겼으면 `false`(kill 은 호출자 책임).
+// ════════════════════════════════════════════════════════════════════════
+// 포트 발견 자식 ssh 의 취소(kill) 핸들
+// ════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════
+// 포트 발견 자식 ssh 의 취소(kill) 핸들
+// ════════════════════════════════════════════════════════════════════════
+
+/// 진행 중인 **포트 발견** 자식 ssh 를 다른 스레드에서 중단하기 위한 핸들.
 ///
-/// 이 크레이트에는 async 런타임이 없으므로 [`SshTunnel::wait_ready`] 와 같은 `try_wait`
-/// 폴링을 쓴다. 폴링 간격은 5ms 에서 시작해 50ms 까지 배로 늘린다 — 정상 경로(수백 ms)의
-/// 지연을 거의 더하지 않으면서 장기 대기의 wakeup 횟수를 억제한다.
-fn wait_with_timeout(child: &mut Child, budget: Duration) -> bool {
-    let deadline = Instant::now() + budget;
-    let mut nap = Duration::from_millis(5);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return true,
-            Ok(None) => {}
-            // try_wait 이 실패하면 더 기다려도 상태를 알 수 없다 — 종료로 간주하고
-            // 호출자의 출력 수집이 같은 에러를 다시 만나 분류하게 둔다.
-            Err(e) => {
-                tracing::debug!("ssh try_wait 실패 — 폴링 중단: {e}");
-                return true;
-            }
-        }
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return false;
-        }
-        std::thread::sleep(nap.min(left));
-        nap = (nap * 2).min(Duration::from_millis(50));
+/// 포트 발견은 이미 [`PORT_DISCOVERY_STEP_TIMEOUT`] / [`PORT_DISCOVERY_TOTAL_TIMEOUT`]
+/// 으로 **시간** 상한이 걸려 있지만, 그건 상한이 다 찰 때까지는 아무도 못 끊는다는 뜻도
+/// 된다 — 사용자가 조회를 중단해도 자식 ssh 가 상한까지 살아 있다. 이 핸들이 그 상한
+/// **이전에** 끊는 **사용자 의도** 경로다. 워커 스레드가 [`SshCancel::scope`] 로 자신을
+/// 등록하면, 그 스레드에서 실행되는 모든 포트 발견 자식이 이 핸들에 붙어
+/// [`SshCancel::cancel`] 로 kill + reaping 된다([`SshTunnel`] 이 Drop 으로 자기 자식을
+/// 회수하는 것과 같은 계약을 그 앞단에도 주는 셈이다).
+///
+/// 스레드로컬 스코프를 쓰는 이유: 포트 발견은 `resolve_endpoint` →
+/// `discover_remote_port` → 단계별 프로브로 이어지는 깊은 호출 사슬이고, 취소가 필요한
+/// 것은 그중 GUI/IPC 워커 경로뿐이다. 전 경로에 취소 인자를 흘리는 대신 "이 스레드에서
+/// 도는 발견 작업" 이라는 자연스러운 경계에 붙인다.
+#[derive(Clone, Default)]
+pub struct SshCancel {
+    inner: Arc<CancelInner>,
+}
+
+#[derive(Default)]
+struct CancelInner {
+    cancelled: AtomicBool,
+    /// 지금 실행 중인 포트 발견 자식(단계마다 교체). kill 하는 쪽이 여기서 take 한다 —
+    /// `Child::kill` 이 `&mut self` 를 요구하므로 소유권 이동으로 배타를 만든다.
+    child: Mutex<Option<Child>>,
+}
+
+thread_local! {
+    /// 현재 스레드에 설치된 취소 핸들([`SshCancel::scope`]).
+    static CURRENT_CANCEL: RefCell<Option<SshCancel>> = const { RefCell::new(None) };
+}
+
+impl SshCancel {
+    pub fn new() -> Self {
+        Self::default()
     }
+
+    /// 이 핸들을 **현재 스레드**의 포트 발견 취소 대상으로 설치한다. 반환된 가드가
+    /// drop 될 때 이전 설치 상태로 되돌린다(중첩 안전).
+    pub fn scope(&self) -> SshCancelScope {
+        let prev = CURRENT_CANCEL.with(|c| c.borrow_mut().replace(self.clone()));
+        SshCancelScope { prev }
+    }
+
+    /// 취소를 요청한다 — 등록된 자식 ssh 를 kill + wait(좀비 방지)하고, 이후의 발견
+    /// 시도도 spawn 되지 않게 플래그를 세운다. 여러 번 불러도 안전하다.
+    pub fn cancel(&self) {
+        self.inner.cancelled.store(true, Ordering::SeqCst);
+        let child = lock_slot(&self.inner.child).take();
+        if let Some(mut child) = child {
+            kill_and_reap(&mut child);
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.inner.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// 실행 중 자식을 등록한다. 이미 취소된 뒤라면 등록을 거부하고 자식을 돌려준다
+    /// (호출자가 즉시 kill 한다) — 취소와 spawn 사이의 레이스에서 자식이 새지 않게.
+    fn register(&self, child: Child) -> Result<(), Child> {
+        if self.is_cancelled() {
+            return Err(child);
+        }
+        // 발견 단계는 직렬이라 슬롯이 비어 있어야 정상. 혹시 남아 있으면 이전 단계
+        // 자식이 회수되지 않은 것이므로 여기서 정리한다.
+        if let Some(mut stale) = lock_slot(&self.inner.child).replace(child) {
+            kill_and_reap(&mut stale);
+        }
+        Ok(())
+    }
+
+    /// 자식을 돌려받는다. `None` 이면 [`SshCancel::cancel`] 이 이미 가져가 kill 했다.
+    fn reclaim(&self) -> Option<Child> {
+        lock_slot(&self.inner.child).take()
+    }
+}
+
+/// [`SshCancel::scope`] 의 RAII 가드.
+pub struct SshCancelScope {
+    prev: Option<SshCancel>,
+}
+
+impl Drop for SshCancelScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        CURRENT_CANCEL.with(|c| *c.borrow_mut() = prev);
+    }
+}
+
+/// 현재 스레드에 설치된 취소 핸들.
+fn current_cancel() -> Option<SshCancel> {
+    CURRENT_CANCEL.with(|c| c.borrow().clone())
+}
+
+/// 현재 스레드의 포트 발견이 취소됐는지(스코프가 없으면 false).
+fn cancel_requested() -> bool {
+    current_cancel().is_some_and(|c| c.is_cancelled())
+}
+/// 자식 슬롯 잠금. 이 뮤텍스 안에서 하는 일은 `Option<Child>` 의 take/replace 뿐이라
+/// 패닉 지점이 없다 — poisoned 는 도달 불가지만, 도달하더라도 자식을 회수하지 못해
+/// 프로세스가 새는 쪽이 더 나쁘므로 값을 복구해 계속 진행한다.
+fn lock_slot(m: &Mutex<Option<Child>>) -> std::sync::MutexGuard<'_, Option<Child>> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// 타임아웃으로 끊은 자식을 kill + wait 해 좀비를 남기지 않는다
@@ -521,6 +619,134 @@ fn kill_and_reap(child: &mut Child) {
     }
 }
 
+/// 취소로 끊긴 시도의 에러. `what` 은 detail(로그 전용) 에만 들어간다.
+fn cancelled_error(what: &str) -> PortDiscoveryError {
+    PortDiscoveryError::new(
+        PortDiscoveryFailureKind::Cancelled,
+        format!("{what}: 사용자 취소로 중단"),
+    )
+}
+
+/// [`run_capture_with_budget`] 자식의 소유권 — 취소 스코프가 설치돼 있으면 그쪽에 맡기고
+/// (다른 스레드가 상한 만료 전에 kill 할 수 있다), 없으면 이 함수가 그대로 들고 있는다.
+///
+/// 어느 쪽이든 상한 감시([`wait_with_timeout`])는 이 타입을 통해 `try_wait` 을 돈다 —
+/// 스코프에 맡긴 자식도 폴링마다 잠깐 잠그고 보므로 감시와 취소가 같은 핸들을 공유한다.
+enum ChildOwner {
+    Local(Child),
+    Scoped(SshCancel),
+}
+
+/// [`ChildOwner::try_exited`] 결과.
+enum ChildPoll {
+    /// 자식이 종료했다(또는 `try_wait` 자체가 실패해 더 볼 수 없다).
+    Exited,
+    /// 아직 실행 중.
+    Running,
+    /// 취소가 자식을 가져갔다 — 더 기다릴 대상이 없다.
+    Taken,
+}
+
+impl ChildOwner {
+    fn adopt(child: Child, what: &str) -> Result<Self, PortDiscoveryError> {
+        match current_cancel() {
+            Some(handle) => match handle.register(child) {
+                Ok(()) => Ok(Self::Scoped(handle)),
+                Err(mut rejected) => {
+                    kill_and_reap(&mut rejected);
+                    Err(cancelled_error(what))
+                }
+            },
+            None => Ok(Self::Local(child)),
+        }
+    }
+
+    /// 취소가 요청됐는지(스코프에 맡기지 않은 자식은 취소 대상이 아니라 항상 false).
+    fn is_cancelled(&self) -> bool {
+        match self {
+            Self::Local(_) => false,
+            Self::Scoped(handle) => handle.is_cancelled(),
+        }
+    }
+
+    fn try_exited(&mut self) -> ChildPoll {
+        fn poll(child: &mut Child) -> ChildPoll {
+            match child.try_wait() {
+                Ok(Some(_)) => ChildPoll::Exited,
+                Ok(None) => ChildPoll::Running,
+                // try_wait 이 실패하면 더 기다려도 상태를 알 수 없다 — 종료로 간주하고
+                // 호출자의 출력 수집이 같은 에러를 다시 만나 분류하게 둔다.
+                Err(e) => {
+                    tracing::debug!("ssh try_wait 실패 — 폴링 중단: {e}");
+                    ChildPoll::Exited
+                }
+            }
+        }
+        match self {
+            Self::Local(child) => poll(child),
+            Self::Scoped(handle) => match lock_slot(&handle.inner.child).as_mut() {
+                Some(child) => poll(child),
+                None => ChildPoll::Taken,
+            },
+        }
+    }
+
+    /// 상한 초과로 끊는다 — kill + wait 로 좀비를 남기지 않는다.
+    fn kill_and_reap_now(self) {
+        let child = match self {
+            Self::Local(child) => Some(child),
+            // 취소가 이미 가져갔으면 그쪽이 kill + wait 을 끝냈다.
+            Self::Scoped(handle) => handle.reclaim(),
+        };
+        if let Some(mut child) = child {
+            kill_and_reap(&mut child);
+        }
+    }
+
+    /// 자식을 회수해 출력 수집에 넘긴다. 취소가 가져갔거나 취소 플래그가 선 뒤라면
+    /// 결과 대신 [`PortDiscoveryFailureKind::Cancelled`] 를 돌려준다 — 취소로 죽은
+    /// 자식의 시그널 종료가 다른 사유(연결 실패/상한)로 분류되지 않게 한다.
+    fn finish(self, what: &str) -> Result<Child, PortDiscoveryError> {
+        match self {
+            Self::Local(child) => Ok(child),
+            Self::Scoped(handle) => match handle.reclaim() {
+                // cancel() 이 자식을 가져가 이미 kill + wait 했다.
+                None => Err(cancelled_error(what)),
+                Some(mut child) if handle.is_cancelled() => {
+                    // 회수와 취소가 겹친 경우 — 여기서 마저 정리한다.
+                    kill_and_reap(&mut child);
+                    Err(cancelled_error(what))
+                }
+                Some(child) => Ok(child),
+            },
+        }
+    }
+}
+
+/// 자식이 `budget` 안에 끝나면 `true`, 상한을 넘겼으면 `false`(kill 은 호출자 책임).
+/// 취소가 자식을 가져간 경우도 `true` — 더 기다릴 대상이 없다는 뜻이고, 그 사유는
+/// [`ChildOwner::finish`] 가 [`PortDiscoveryFailureKind::Cancelled`] 로 확정한다.
+///
+/// 이 크레이트에는 async 런타임이 없으므로 [`SshTunnel::wait_ready`] 와 같은 `try_wait`
+/// 폴링을 쓴다. 폴링 간격은 5ms 에서 시작해 50ms 까지 배로 늘린다 — 정상 경로(수백 ms)의
+/// 지연을 거의 더하지 않으면서 장기 대기의 wakeup 횟수를 억제한다.
+fn wait_with_timeout(owner: &mut ChildOwner, budget: Duration) -> bool {
+    let deadline = Instant::now() + budget;
+    let mut nap = Duration::from_millis(5);
+    loop {
+        match owner.try_exited() {
+            ChildPoll::Exited | ChildPoll::Taken => return true,
+            ChildPoll::Running => {}
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        std::thread::sleep(nap.min(left));
+        nap = (nap * 2).min(Duration::from_millis(50));
+    }
+}
+
 /// 이미 조립된 ssh `Command` 를 상한 안에서 실행한다(포트 발견용 — 프로세스 레벨 감시).
 ///
 /// `Command::output()` 을 쓰지 않는 이유: `output()` 은 자식이 끝날 때까지 무기한 블록하고
@@ -530,11 +756,21 @@ fn kill_and_reap(child: &mut Child) {
 /// stdout/stderr 를 파이프로 잡으므로 원격이 파이프 버퍼(수십 KB)를 넘겨 쓰면 자식이
 /// 블록될 수 있는데, 그 경우도 상한에서 kill 되므로 hang 은 아니다(포트 발견 출력은
 /// 한 줄이라 정상 경로에서는 발생하지 않는다).
+///
+/// 상한과 별개로 **취소**(`SshCancel`)가 이 자식을 상한 만료 전에 끊을 수 있다. 두 경로는
+/// 서로를 침범하지 않는다 — 취소가 관여했으면 어느 지점에서 끊겼든
+/// [`PortDiscoveryFailureKind::Cancelled`] 로 나가고, 시간이 끊었을 때만 `TimedOut` 이다.
 fn run_capture_with_budget(
     mut cmd: Command,
     budget: Duration,
     what: &str,
 ) -> Result<String, PortDiscoveryError> {
+    // 예산 소진과 같은 자리의 조기 반환 — 이미 취소된 조회가 새 ssh 를 띄우지 않게 한다.
+    // 취소를 예산보다 **먼저** 본다: 둘 다 해당되면 사용자가 끊었다는 확정 사실이
+    // "시간이 다 됐다" 보다 정확하다.
+    if cancel_requested() {
+        return Err(cancelled_error(what));
+    }
     if budget.is_zero() {
         return Err(PortDiscoveryError::new(
             PortDiscoveryFailureKind::TimedOut,
@@ -542,7 +778,7 @@ fn run_capture_with_budget(
         ));
     }
     let started = Instant::now();
-    let mut child = cmd
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -553,13 +789,24 @@ fn run_capture_with_budget(
                 format!("{what}: spawn 실패: {e}"),
             )
         })?;
-    if !wait_with_timeout(&mut child, budget) {
-        kill_and_reap(&mut child);
-        return Err(PortDiscoveryError::new(
-            PortDiscoveryFailureKind::TimedOut,
-            format!("{what}: {budget:?} 안에 끝나지 않아 강제 종료"),
-        ));
+    // 자식 핸들을 취소 스코프에 맡긴다 — 상한 감시와 외부 취소가 같은 핸들을 공유해야
+    // 둘 중 먼저 오는 쪽이 자식을 끊을 수 있다.
+    let mut owner = ChildOwner::adopt(child, what)?;
+    if !wait_with_timeout(&mut owner, budget) {
+        // 상한과 취소가 겹쳤다면 취소가 이긴다 — 사용자가 끊은 것을 무응답으로 보고하지
+        // 않는다(반대로 취소가 없었으면 순수 타임아웃이다).
+        let cancelled = owner.is_cancelled();
+        owner.kill_and_reap_now();
+        return Err(if cancelled {
+            cancelled_error(what)
+        } else {
+            PortDiscoveryError::new(
+                PortDiscoveryFailureKind::TimedOut,
+                format!("{what}: {budget:?} 안에 끝나지 않아 강제 종료"),
+            )
+        });
     }
+    let child = owner.finish(what)?;
     let output = child.wait_with_output().map_err(|e| {
         PortDiscoveryError::new(
             PortDiscoveryFailureKind::SshConnectionFailed,
@@ -582,7 +829,8 @@ fn run_capture_with_budget(
 /// [`classify_by_exit_code`] 로 분류해 [`PortDiscoveryError`] 에 담는다.
 ///
 /// `deadline` 은 호출 1회 전체([`PORT_DISCOVERY_TOTAL_TIMEOUT`])의 예산이다 — 이 단계는
-/// 그중 [`Deadline::step_budget`] 만 쓴다.
+/// 그중 [`Deadline::step_budget`] 만 쓴다. 상한 감시와 취소(`SshCancel`) 배선은 모두
+/// [`run_capture_with_budget`] 이 담당한다.
 fn run_ssh_capture(
     ssh: &Path,
     target: &SshTarget,
@@ -709,7 +957,10 @@ const AUTO_FALLBACK_CHAIN: [PortMode; 3] = [
 /// 낸 "연결 실패/미실행" 은 **그 타임아웃이 전체 예산을 먹어 굶긴 결과**일 수 있어
 /// 대표로 삼으면 오도한다(체크할 곳이 인증이 아니라 도달성이다).
 fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryError {
-    const PRIORITY: [PortDiscoveryFailureKind; 4] = [
+    // 취소가 타임아웃보다도 위다 — 사용자가 끊었다는 것은 확정 사실이라, 그 때문에
+    // 굶은 다른 단계의 무응답/연결 실패를 대표로 삼으면 오도한다.
+    const PRIORITY: [PortDiscoveryFailureKind; 5] = [
+        PortDiscoveryFailureKind::Cancelled,
         PortDiscoveryFailureKind::TimedOut,
         PortDiscoveryFailureKind::SshConnectionFailed,
         PortDiscoveryFailureKind::RemoteInstanceNotRunning,
@@ -768,6 +1019,9 @@ pub fn discover_remote_port(
     for m in AUTO_FALLBACK_CHAIN {
         match discover_single_mode(ssh, target, remote_tasty, m, verify, debug, deadline) {
             Ok(port) => return Ok(port),
+            // 취소는 fallback 대상이 아니다 — 다음 모드를 시도하면 방금 끊은 조회가
+            // 새 ssh 를 띄운다.
+            Err(e) if e.kind == PortDiscoveryFailureKind::Cancelled => return Err(e.into()),
             Err(e) => {
                 tracing::debug!("{m:?} 포트 발견 실패({e}) — 다음 모드로 fallback");
                 errors.push(e);
@@ -1715,5 +1969,162 @@ mod tests {
         // 해제됐으니 다시 bind 가능해야 함.
         let l = std::net::TcpListener::bind(("127.0.0.1", p));
         assert!(l.is_ok());
+    }
+
+    /// 등록된 자식은 `cancel()` 로 kill + reaping 된다 — 실제 ssh 없이 오래 사는 더미
+    /// 자식(`sleep`)으로 kill+wait 계약만 고정한다. `cancel()` 이 `wait` 까지 하므로
+    /// 테스트가 60초를 기다리지 않고 끝나는 것 자체가 kill 이 먹혔다는 증거다.
+    #[cfg(unix)]
+    #[test]
+    fn cancel_kills_and_reaps_registered_child() {
+        let handle = SshCancel::new();
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .spawn()
+            .expect("sleep spawn");
+        handle.register(child).expect("취소 전이므로 등록 성공");
+
+        let t0 = Instant::now();
+        handle.cancel();
+        assert!(
+            t0.elapsed() < Duration::from_secs(10),
+            "kill 후 즉시 reaping"
+        );
+        assert!(handle.is_cancelled());
+        // cancel 이 자식을 가져가 정리했으므로 회수할 것이 남지 않는다.
+        assert!(handle.reclaim().is_none());
+    }
+
+    /// 취소된 뒤 도착한 자식 등록은 거부되고 호출자에게 돌려준다(자식이 새지 않게).
+    #[cfg(unix)]
+    #[test]
+    fn register_after_cancel_is_rejected() {
+        let handle = SshCancel::new();
+        handle.cancel();
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .spawn()
+            .expect("sleep spawn");
+        let mut rejected = handle.register(child).expect_err("취소 후에는 등록 거부");
+        kill_and_reap(&mut rejected);
+    }
+
+    /// 취소된 스코프에서는 새 ssh 를 **spawn 하지 않는다** — 예산 소진과 같은 자리의
+    /// 조기 반환이고, 사유만 다르다(`Cancelled` vs `TimedOut`). 60초짜리 자식을 주고도
+    /// 즉시 돌아오는 것이 spawn 하지 않았다는 증거다.
+    #[test]
+    fn cancelled_scope_skips_spawn() {
+        let handle = SshCancel::new();
+        let _scope = handle.scope();
+        handle.cancel();
+        let started = Instant::now();
+        let err = run_capture_with_budget(
+            never_returns_command(),
+            Duration::from_secs(10),
+            "cancelled",
+        )
+        .expect_err("취소된 스코프");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    /// 상한이 남아 있어도 **외부 취소**가 진행 중인 자식을 끊는다(사용자 의도 경로).
+    #[cfg(unix)]
+    #[test]
+    fn external_cancel_cuts_child_before_budget() {
+        let handle = SshCancel::new();
+        let _scope = handle.scope();
+        let killer = handle.clone();
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            killer.cancel();
+        });
+        let started = Instant::now();
+        // 예산 10초, 자식은 60초 — 취소가 없으면 10초를 다 쓴다.
+        let err = run_capture_with_budget(
+            never_returns_command(),
+            Duration::from_secs(10),
+            "external cancel",
+        )
+        .expect_err("취소된 조회");
+        t.join().expect("killer 스레드");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "상한 만료 전에 끊겨야 한다: {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// 취소로 죽은 자식은 **타임아웃으로 분류되지 않는다**. 취소 kill 은 시그널 종료라
+    /// exit code 만 보면 상한 초과와 구분되지 않으므로, 소유권 자리에서 확정한다.
+    #[cfg(unix)]
+    #[test]
+    fn cancelled_child_is_not_reported_as_timeout() {
+        let handle = SshCancel::new();
+        let _scope = handle.scope();
+        let child = never_returns_command()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn");
+        let mut owner = ChildOwner::adopt(child, "cancel vs timeout").expect("adopt");
+
+        handle.cancel(); // 자식을 가져가 kill + wait
+
+        // 기다릴 대상이 사라졌으므로 상한 만료가 아니라 즉시 종료로 본다.
+        assert!(wait_with_timeout(&mut owner, Duration::from_secs(5)));
+        let err = owner.finish("cancel vs timeout").expect_err("취소된 자식");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
+    }
+
+    /// 예산 소진과 취소가 둘 다 해당되면 취소가 이긴다(예산 0 은 `TimedOut` 의 자리지만,
+    /// 사용자가 끊었다는 확정 사실이 더 정확하다).
+    #[test]
+    fn cancel_wins_over_exhausted_budget() {
+        let handle = SshCancel::new();
+        let _scope = handle.scope();
+        handle.cancel();
+        let err = run_capture_with_budget(never_returns_command(), Duration::ZERO, "both")
+            .expect_err("취소 + 예산 0");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
+    }
+
+    /// 반대 방향 비회귀: 취소 스코프가 설치돼 있어도 **취소하지 않았으면** 상한 초과는
+    /// 그대로 `TimedOut` 이다(취소 배선이 타임아웃 분류를 가로채지 않는다).
+    #[test]
+    fn uncancelled_scope_still_times_out() {
+        let handle = SshCancel::new();
+        let _scope = handle.scope();
+        let err = run_capture_with_budget(
+            never_returns_command(),
+            Duration::from_millis(300),
+            "still timeout",
+        )
+        .expect_err("상한 초과");
+        assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
+        assert!(!handle.is_cancelled());
+    }
+
+    /// 스코프 가드는 drop 시 이전 설치 상태로 되돌린다(중첩/누수 방지).
+    #[test]
+    fn cancel_scope_restores_previous() {
+        assert!(current_cancel().is_none());
+        let outer = SshCancel::new();
+        {
+            let _g = outer.scope();
+            assert!(current_cancel().is_some());
+            let inner = SshCancel::new();
+            {
+                let _g2 = inner.scope();
+                inner.cancel();
+                assert!(cancel_requested());
+            }
+            assert!(!cancel_requested(), "가드 drop 후 outer 로 복귀");
+        }
+        assert!(current_cancel().is_none());
     }
 }

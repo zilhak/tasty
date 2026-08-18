@@ -1174,6 +1174,7 @@ connection_failed = "SSH connection failed (this may be a network or authenticat
 instance_not_running = "No tasty instance appears to be running on the remote host."
 parse_failed = "Could not parse the port reported by the remote host — the remote tasty version may be unexpected."
 timed_out = "The remote host did not respond in time (it may be unreachable, or the connection may be too slow)."
+cancelled = "The port lookup was stopped."
 
 # CLI output strings. The `tasty-cli` crate reads these through the shared
 # i18n store (initialized on the CLI boot path before `run_client`).

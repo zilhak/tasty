@@ -1166,6 +1166,7 @@ connection_failed = "SSH 연결에 실패했습니다 (네트워크 또는 인�
 instance_not_running = "원격 호스트에 실행 중인 tasty 인스턴스가 없는 것 같습니다."
 parse_failed = "원격 호스트가 보고한 포트를 해석하지 못했습니다 — 원격 tasty 버전이 예상과 다를 수 있습니다."
 timed_out = "원격 호스트가 제한 시간 안에 응답하지 않았습니다 (호스트에 도달할 수 없거나 연결이 너무 느릴 수 있습니다)."
+cancelled = "포트 조회가 중단되었습니다."
 
 # CLI 출력 문자열. `tasty-cli` 크레이트가 공용 i18n 스토어를 통해 읽는다
 # (CLI 부트 경로에서 `run_client` 이전에 초기화됨).
