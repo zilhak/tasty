@@ -16,6 +16,7 @@
 //! release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다(원칙 1②).
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tasty_cli::remote_browse::{self, RemoteWorkspace};
 use tasty_cli::ssh::{SshCancel, SshTunnel};
@@ -49,6 +50,19 @@ const BADGE_H: f32 = 16.0;
 const HEADER_PAD_L: f32 = 14.0;
 const SELECT_BAR_W: f32 = 2.0;
 
+/// 워커가 결과를 채우지 않아도 UI 가 Connecting 을 벗어나는 상한(soft timeout).
+///
+/// 워커 자체에도 상한이 있다(포트 발견 전체 `PORT_DISCOVERY_TOTAL_TIMEOUT` 45초 +
+/// 터널 ready 5초 + IPC 프로브 5초, ADR-0070) — 하지만 그건 최악 ~55초라, 그동안 UI 가
+/// 워커의 완료만 기다리면 사용자는 팝업을 닫는 것 외에 할 수 있는 게 없다. 그래서 **UI 가
+/// 먼저 포기**하고 워커를 취소한다(취소 = 자식 ssh kill, `SshCancel`). 두 상한의 관계는
+/// 의도적으로 **UI 가 먼저**다 — 워커 상한이 먼저 만료되면 UI 는 워커가 만든 정상 에러
+/// 문구를 그대로 받고, UI 가 먼저면 워커를 끊고 이 파일의 타임아웃 문구를 쓴다. 어느
+/// 쪽이든 UI 는 이 시간 안에 조작 가능한 상태로 돌아온다.
+/// 원격 file picker 의 soft timeout(ADR-0053, 8초)과 같은 매 프레임 판정 방식이되,
+/// SSH 연결 수립이 포함되므로 값은 더 길게 잡는다.
+const BROWSE_DEADLINE: Duration = Duration::from_secs(20);
+
 /// 워커가 채우는 browse 결과. 성공 시 터널을 살려 Connect 로 넘긴다.
 struct BrowseOk {
     port: u16,
@@ -67,6 +81,8 @@ struct ReadyConn {
 #[derive(Clone)]
 struct BrowseJob {
     slot: Arc<Mutex<Option<Result<BrowseOk, String>>>>,
+    /// 시작 시각 — UI 가 경과를 재 [`BROWSE_DEADLINE`] 을 판정한다.
+    started_at: Instant,
     /// 워커의 포트 발견 자식 ssh 를 kill 하는 핸들(취소 프로토콜의 유일한 신호).
     cancel: SshCancel,
 }
@@ -213,17 +229,56 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
         }
         ctx_w.request_repaint();
     });
-    BrowseJob { slot, cancel }
+    BrowseJob {
+        slot,
+        started_at: Instant::now(),
+        cancel,
+    }
 }
 
-/// 워커 완료 폴링 — 완료 시 job → conn(+ready) 전이. 재렌더당 1회.
-fn poll_browse(st: &mut UiState) {
-    let done = match &st.job {
-        Some(job) => job.slot.lock().map(|g| g.is_some()).unwrap_or(true),
-        None => false,
-    };
-    if !done {
-        return;
+/// 폴링 판정(순수 함수 — 시간 축 주입 가능).
+///
+/// 워커의 정상 완료(`slot_filled`)에만 의존하지 않는다는 점이 핵심이다. 워커가 늦거나,
+/// 패닉해서 슬롯을 영영 못 채우더라도 경과 시간만으로 Connecting 을 벗어난다.
+#[derive(Debug, PartialEq, Eq)]
+enum PollDecision {
+    /// 아직 대기(상한 이내 + 결과 없음).
+    Wait,
+    /// 결과 도착 — 슬롯을 회수해 전이한다.
+    Take,
+    /// 상한 초과 — 조회를 취소하고 에러로 전이한다.
+    TimedOut,
+}
+
+fn poll_decision(slot_filled: bool, elapsed: Duration, deadline: Duration) -> PollDecision {
+    if slot_filled {
+        PollDecision::Take
+    } else if elapsed >= deadline {
+        PollDecision::TimedOut
+    } else {
+        PollDecision::Wait
+    }
+}
+
+/// 워커 완료/상한 폴링 — 완료 시 job → conn(+ready) 전이. 재렌더당 1회.
+///
+/// Connecting 상태에서는 Spinner 가 매 프레임 repaint 를 요청하므로 경과 시간 판정이
+/// 매 프레임 돈다.
+fn poll_browse(st: &mut UiState, deadline: Duration) {
+    let Some(job) = st.job.as_ref() else { return };
+    // 뮤텍스가 poisoned 면 결과를 못 읽으므로 채워진 것으로 보고 아래에서 에러 전이.
+    let filled = job.slot.lock().map(|g| g.is_some()).unwrap_or(true);
+    match poll_decision(filled, job.started_at.elapsed(), deadline) {
+        PollDecision::Wait => return,
+        PollDecision::TimedOut => {
+            cancel_job(st.job.take());
+            st.conn = Conn::Error(
+                t("remote_attach.timeout").replace("{secs}", &deadline.as_secs().to_string()),
+            );
+            st.ready = None;
+            return;
+        }
+        PollDecision::Take => {}
     }
     let Some(job) = st.job.take() else { return };
     let outcome = job.slot.lock().ok().and_then(|mut g| g.take());
@@ -255,6 +310,15 @@ fn connect(ctx: &egui::Context, st: &mut UiState, name: String) {
     st.ready = None; // 이전 터널 정리(재선택 = 새 연결).
     st.conn = Conn::Connecting;
     st.job = Some(spawn_browse(ctx, name));
+}
+
+/// 조회 중단 — 팝업은 열어둔 채 Initial 로 되돌린다(Connecting 탈출 수단).
+fn cancel_browse(st: &mut UiState) {
+    cancel_job(st.job.take());
+    st.conn = Conn::Initial;
+    st.attach_sel = None;
+    st.ws_sel = None;
+    st.ready = None;
 }
 
 /// 팝업 정리 — 진행 중 조회 워커의 자식 ssh 를 kill 하고 `UiState` 를 drop 한다.
@@ -295,7 +359,7 @@ pub fn draw_remote_attach_popup(
     // 모든 child ui 는 이 root ui 에서 파생되어 스타일을 상속한다.
     ui.style_mut().interaction.selectable_labels = false;
 
-    poll_browse(&mut st);
+    poll_browse(&mut st, BROWSE_DEADLINE);
 
     // Escape: 닫기(진행 중 조회 워커의 자식 ssh + 터널은 cleanup 이 회수).
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -355,7 +419,11 @@ pub fn draw_remote_attach_popup(
 
     // footer(Connect 활성 조건 = loaded && 선택 ws 존재).
     let can_connect = matches!(&st.conn, Conn::Loaded(ws) if !ws.is_empty()) && st.ws_sel.is_some();
-    match draw_footer(ui, &th, footer_rect, can_connect) {
+    let connecting = matches!(&st.conn, Conn::Connecting);
+    match draw_footer(ui, &th, footer_rect, can_connect, connecting) {
+        // 조회 중에는 같은 ghost 버튼이 "중단" 이다 — 팝업을 닫지 않고 조회만 끊어
+        // Initial 로 돌아간다(닫기는 헤더 X / Escape).
+        FooterAction::Cancel if connecting => cancel_browse(&mut st),
         FooterAction::Cancel => close = true,
         FooterAction::Connect => do_connect = true,
         FooterAction::None => {}
@@ -604,7 +672,9 @@ fn draw_right_pane(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, st: &mut UiS
                 CenterKind::Spinner,
                 t("remote_attach.connecting"),
                 th.text_secondary(),
-                &t("remote_attach.connecting_hint").replace("{name}", &sel_name),
+                &t("remote_attach.connecting_hint")
+                    .replace("{name}", &sel_name)
+                    .replace("{secs}", &BROWSE_DEADLINE.as_secs().to_string()),
                 false,
             );
             false
@@ -834,7 +904,15 @@ enum FooterAction {
     Connect,
 }
 
-fn draw_footer(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, can_connect: bool) -> FooterAction {
+/// `connecting` 이면 ghost 버튼이 "닫기용 취소" 가 아니라 **조회 중단**이 된다
+/// (디자인 원본의 요소를 그대로 쓰되 문구만 상태에 맞춘다).
+fn draw_footer(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    rect: egui::Rect,
+    can_connect: bool,
+    connecting: bool,
+) -> FooterAction {
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
@@ -859,7 +937,12 @@ fn draw_footer(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, can_connect: boo
     {
         action = FooterAction::Connect;
     }
-    if Button::new(t("remote_attach.cancel"))
+    let ghost_label = if connecting {
+        t("remote_attach.stop")
+    } else {
+        t("remote_attach.cancel")
+    };
+    if Button::new(ghost_label)
         .variant(ButtonVariant::Ghost)
         .show(&mut child, th)
         .clicked()
@@ -946,12 +1029,77 @@ fn badge(
 mod tests {
     use super::*;
 
-    /// 테스트용 job — 워커 스레드 없이 슬롯/취소 핸들만 갖춘다.
-    fn test_job() -> BrowseJob {
+    /// 테스트용 job — 워커 스레드 없이 슬롯/시작시각/취소 핸들만 갖춘다.
+    fn test_job(started_at: Instant) -> BrowseJob {
         BrowseJob {
             slot: Arc::new(Mutex::new(None)),
+            started_at,
             cancel: SshCancel::new(),
         }
+    }
+
+    /// 워커가 결과를 채우지 않아도 상한 경과 후 Connecting 을 벗어난다(무한 로딩 회귀
+    /// 고정). 판정은 슬롯이 아니라 경과 시간이 만든다.
+    #[test]
+    fn connecting_transitions_out_after_deadline() {
+        // 상한 이내 + 빈 슬롯 → 계속 대기.
+        assert_eq!(
+            poll_decision(false, BROWSE_DEADLINE / 2, BROWSE_DEADLINE),
+            PollDecision::Wait
+        );
+        // 상한 경과 + 빈 슬롯 → 타임아웃.
+        assert_eq!(
+            poll_decision(false, BROWSE_DEADLINE, BROWSE_DEADLINE),
+            PollDecision::TimedOut
+        );
+        // 결과가 있으면 상한을 넘겼어도 결과가 우선(워커가 이겼다).
+        assert_eq!(
+            poll_decision(true, BROWSE_DEADLINE * 2, BROWSE_DEADLINE),
+            PollDecision::Take
+        );
+
+        // 상태 머신 수준: 빈 슬롯 그대로 상한을 넘기면(상한 주입) Error 로 전이하고
+        // job(및 그 자식 ssh)이 취소된다.
+        let job = test_job(Instant::now());
+        let cancel = job.cancel.clone();
+        let mut st = UiState {
+            attach_sel: Some("blackhole-attach".into()),
+            conn: Conn::Connecting,
+            job: Some(job),
+            ..Default::default()
+        };
+        // 상한 이내에는 Connecting 유지.
+        poll_browse(&mut st, BROWSE_DEADLINE);
+        assert!(matches!(st.conn, Conn::Connecting));
+        assert!(st.job.is_some());
+        // 상한 경과(=0 상한 주입) → 워커가 아무것도 안 채웠어도 벗어난다.
+        poll_browse(&mut st, Duration::ZERO);
+        assert!(matches!(st.conn, Conn::Error(_)), "상한 초과 → Error 전이");
+        assert!(st.job.is_none(), "타임아웃 시 job 은 회수된다");
+        assert!(cancel.is_cancelled(), "타임아웃은 워커 취소까지 동반한다");
+    }
+
+    /// 취소는 팝업을 닫지 않고 Initial 로 되돌린다(자식 ssh 취소 포함).
+    #[test]
+    fn cancel_during_connecting_returns_to_initial() {
+        let job = test_job(Instant::now());
+        let cancel = job.cancel.clone();
+        let mut st = UiState {
+            attach_sel: Some("blackhole-attach".into()),
+            conn: Conn::Connecting,
+            job: Some(job),
+            ..Default::default()
+        };
+
+        cancel_browse(&mut st);
+
+        assert!(matches!(st.conn, Conn::Initial), "Initial 로 복귀");
+        assert!(
+            st.attach_sel.is_none(),
+            "선택도 초기화(Initial 문구와 정합)"
+        );
+        assert!(st.job.is_none());
+        assert!(cancel.is_cancelled(), "워커의 자식 ssh 도 함께 취소된다");
     }
 
     /// 취소된 job 의 결과가 뒤늦게 도착해도 아무도 읽지 않고, 워커 종료와 함께 drop
@@ -959,7 +1107,7 @@ mod tests {
     /// 터널이 새지 않는다(취소가 반대 방향 누수로 바뀌지 않게 하는 계약).
     #[test]
     fn cancelled_job_result_is_discarded_and_tunnel_dropped() {
-        let job = test_job();
+        let job = test_job(Instant::now());
         let worker_slot = Arc::clone(&job.slot); // 워커가 쥐고 있는 몫.
 
         cancel_job(Some(job));
@@ -982,7 +1130,7 @@ mod tests {
     #[test]
     fn on_close_clears_ui_state() {
         let ctx = egui::Context::default();
-        let job = test_job();
+        let job = test_job(Instant::now());
         let cancel = job.cancel.clone();
         write_ui(
             &ctx,

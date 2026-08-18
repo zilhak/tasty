@@ -168,7 +168,10 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("initial", "remote glyph + 'Select an attach profile'"),
-            ("connecting", "Spinner + 'Connecting…' + SSH note"),
+            (
+                "connecting",
+                "Spinner + 'Connecting…' + SSH note; footer ghost becomes Stop",
+            ),
             ("error", "danger warn glyph + reason + Retry"),
             (
                 "empty",
@@ -196,6 +199,15 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Model all four states explicitly — the connect (SSH tunnel + list) can take \
          seconds; never leave the right pane blank while it resolves.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Connecting is time-bounded: an unresponsive host would otherwise hold the pane for \
+         minutes, so the lookup gives up after 20s and lands on the error state (with Retry). \
+         The footer ghost button reads Stop while connecting and aborts the lookup back to \
+         initial — it does not close the picker.",
     );
 }
 
@@ -407,7 +419,8 @@ fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState
             true,
             "Connecting…",
             theme.text_secondary(),
-            "Establishing the SSH tunnel to gb10 and listing workspaces. This can take a few seconds.",
+            "Establishing the SSH tunnel to gb10 and listing workspaces. If the host does not \
+             respond, the lookup stops on its own after 20s.",
             false,
         ),
         // 실제 에러 클래스와 동기화(갤러리 완전성 정책) — `PortDiscoveryFailureKind::
@@ -658,7 +671,13 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
         .variant(ButtonVariant::Primary)
         .enabled(state == RaState::Loaded)
         .show(&mut child, theme);
-    Button::new("Cancel")
-        .variant(ButtonVariant::Ghost)
-        .show(&mut child, theme);
+    // 조회 중에는 같은 ghost 버튼이 "조회 중단"이다 — 팝업을 닫지 않고 Connecting 을
+    // 빠져나가는 수단(디자인 원본의 요소를 그대로 쓰되 문구만 상태에 맞춘다).
+    Button::new(if state == RaState::Connecting {
+        "Stop"
+    } else {
+        "Cancel"
+    })
+    .variant(ButtonVariant::Ghost)
+    .show(&mut child, theme);
 }
