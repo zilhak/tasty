@@ -21,7 +21,7 @@ use crate::handle_channel::HandleListener;
 use crate::host_cmd::{HostCmd, SurfaceHandles};
 use crate::ipc_namespace::IpcNamespaceRegistry;
 use crate::listener::HostListener;
-use crate::process::PluginProcess;
+use crate::process::{PluginProcess, ShutdownBatch};
 use crate::protocol::PluginResponse;
 use crate::registry_state::PluginsConfig;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -44,6 +44,10 @@ pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
+/// plugin 하나에 주는 graceful 종료 기회. 초과하면 force kill 한다. 종료 전체
+/// (`shutdown_all`)는 이 값을 plugin 마다 직렬로 더하지 않고 겹쳐서 소비하므로,
+/// plugin 이 몇 개든 총 대기는 이 값으로 수렴한다.
+pub(super) const PLUGIN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 /// H — auto-reload polling 간격. pump tick 안의 자연 debounce — 2초 내
 /// 발생한 연속 mtime 변경은 한 번의 swap 으로 흡수된다.
 pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -385,6 +389,9 @@ pub struct PluginManager {
     /// Windows 는 Job Object 핸들을 여기 보유해야 tasty 수명과 KILL_ON_JOB_CLOSE
     /// 가 연동된다. spawn 경로가 prepare/adopt 를 호출. 상세 [`crate::reaper`].
     pub(super) plugin_reaper: crate::reaper::PluginReaper,
+    /// 진행 중인 종료 대기. `begin_shutdown_all()` 이 채우고 `poll_shutdown_all()`
+    /// 이 비운다. `None` 이면 종료 대기 중이 아니다.
+    pub(super) shutdown_batch: Option<ShutdownBatch>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.

@@ -312,10 +312,15 @@ impl PluginProcess {
             .unwrap_or(Duration::MAX)
     }
 
-    /// 반환값은 종료 계측(`S4a plugin_shutdown_one`)의 `reason` 필드용이다 —
-    /// 어느 plugin 이 graceful 시간 안에 못 빠졌는지 가리려면 소요 ms 만으로는
-    /// 부족하고 사유가 함께 있어야 한다.
-    pub fn shutdown(mut self, timeout: Duration) -> ShutdownOutcome {
+    /// shutdown 요청만 보내고 **대기하지 않고** 즉시 반환한다. 반환된
+    /// [`PendingShutdown`] 이 자식 소유권을 가져가므로(`child.take()`), 남은
+    /// `PluginProcess` 가 이 자리에서 drop 돼도 [`PluginProcess::drop`] 의 즉시
+    /// kill 이 graceful 대기를 앞지르지 않는다.
+    ///
+    /// 요청 전송과 대기를 분리해 두면 호출자가 여러 plugin 의 요청을 먼저 전부
+    /// 뿌린 뒤 대기 구간만 겹칠 수 있다 — 총 소요가 Σ(개별 대기) 가 아니라
+    /// max(개별 대기) 로 수렴한다.
+    pub fn begin_shutdown(mut self, deadline: Instant) -> PendingShutdown {
         if let Err(e) = self.req_tx.send(PluginRequest {
             method: "shutdown".into(),
             params: serde_json::json!({}),
@@ -323,9 +328,184 @@ impl PluginProcess {
         }) {
             tracing::trace!("plugin shutdown send dropped (writer exited): {e}");
         }
-        match self.child.take() {
-            Some(child) => shutdown_child(child, timeout),
-            None => ShutdownOutcome::NoChild,
+        PendingShutdown {
+            plugin_id: std::mem::take(&mut self.plugin_id),
+            child: self.child.take(),
+            deadline,
+            started: Instant::now(),
+        }
+    }
+
+    /// 요청 전송 + 종료 대기를 한 번에 하는 블로킹 형태 — 단건 경로(plugin
+    /// disable / 재시작 / swap)용. 반환 시점에 자식은 회수(exit 관측 또는
+    /// kill+wait 완료)돼 있다.
+    ///
+    /// 반환값은 종료 계측(`S4a plugin_shutdown_one`)의 `reason` 필드용이다 —
+    /// 어느 plugin 이 graceful 시간 안에 못 빠졌는지 가리려면 소요 ms 만으로는
+    /// 부족하고 사유가 함께 있어야 한다.
+    pub fn shutdown(self, timeout: Duration) -> ShutdownOutcome {
+        self.begin_shutdown(Instant::now() + timeout).wait()
+    }
+}
+
+/// 자식 종료를 관측하는 폴링 간격. `try_wait` 는 논블로킹이라 간격이 그대로
+/// 관측 해상도가 된다 — 짧게 하면 종료 감지가 빨라지지만 대기 스레드의 busy
+/// 비율이 오른다.
+pub const CHILD_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// [`PluginProcess::begin_shutdown`] 이 반환하는 종료 대기 핸들.
+///
+/// shutdown 요청 전송은 이미 끝났고 남은 것은 자식 종료 관측뿐이다. `poll` 은
+/// 논블로킹이라 여러 핸들을 번갈아 폴링하면 대기 구간이 서로 겹친다.
+pub struct PendingShutdown {
+    plugin_id: String,
+    /// 아직 회수하지 않은 자식. 종료를 관측했거나 kill 을 마친 순간 `None` 이 된다.
+    child: Option<Child>,
+    /// graceful 종료를 기다려 주는 한계 시각. 초과하면 force kill.
+    deadline: Instant,
+    started: Instant,
+}
+
+impl PendingShutdown {
+    pub fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+
+    /// `begin_shutdown` 이후 경과 — 계측의 개별 plugin 소요(`S4a`)용.
+    pub fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
+
+    /// 논블로킹 폴링. 자식이 아직 살아 있고 deadline 전이면 `None`.
+    /// `Some` 을 한 번 반환한 시점에 자식은 회수 완료 상태다.
+    pub fn poll(&mut self) -> Option<ShutdownOutcome> {
+        let Some(child) = self.child.as_mut() else {
+            return Some(ShutdownOutcome::NoChild);
+        };
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                self.child = None;
+                Some(ShutdownOutcome::Graceful)
+            }
+            Ok(None) if Instant::now() <= self.deadline => None,
+            // deadline 초과. 강제 종료로 넘어간다.
+            Ok(None) => Some(self.force_kill()),
+            // try_wait 자체가 실패하면 더 기다려도 관측할 방법이 없다 — 기존
+            // `wait_for_child_exit` 와 같이 즉시 kill 경로로 보낸다.
+            Err(e) => {
+                tracing::trace!("plugin child try_wait failed: {e}");
+                Some(self.force_kill())
+            }
+        }
+    }
+
+    /// 자식이 회수될 때까지 블로킹. 단건 경로용.
+    pub fn wait(mut self) -> ShutdownOutcome {
+        loop {
+            if let Some(outcome) = self.poll() {
+                return outcome;
+            }
+            std::thread::sleep(CHILD_EXIT_POLL_INTERVAL);
+        }
+    }
+
+    /// kill 실패는 이미 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든
+    /// 호스트가 추가로 할 수 있는 일이 없으므로 trace 로만 흔적을 남긴다.
+    fn force_kill(&mut self) -> ShutdownOutcome {
+        if let Some(mut child) = self.child.take() {
+            if let Err(e) = child.kill() {
+                tracing::trace!("plugin child kill failed (already exited?): {e}");
+            }
+            if let Err(e) = child.wait() {
+                tracing::trace!("plugin child wait failed: {e}");
+            }
+        }
+        ShutdownOutcome::Killed
+    }
+}
+
+impl Drop for PendingShutdown {
+    fn drop(&mut self) {
+        // 폴링을 끝내기 전에 핸들이 버려진 경우에만 남아 있다 — 좀비를 만들지
+        // 않기 위해 여기서 회수한다.
+        if self.child.is_some() {
+            self.force_kill();
+        }
+    }
+}
+
+/// 여러 plugin 의 종료 대기를 **겹쳐서** 진행하는 집합 핸들.
+///
+/// 생성 시점에 이미 모든 대상에 shutdown 요청이 나가 있어야 한다
+/// ([`PluginProcess::begin_shutdown`]). 이후 `poll` 을 반복 호출하면 각 자식의
+/// 대기가 서로 독립적으로 진행되므로 전체 소요는 개별 deadline 의 max 로
+/// 수렴한다.
+///
+/// 스레드를 쓰지 않는 것은 의도다 — 호출자가 프레임 루프 안에서 논블로킹으로
+/// 돌릴 수 있어야 종료 화면 같은 것을 그리면서 대기할 수 있다.
+pub struct ShutdownBatch {
+    pending: Vec<PendingShutdown>,
+    total: usize,
+    started: Instant,
+}
+
+/// plugin 한 개의 종료 결과 — 계측 로그 한 줄에 필요한 값 묶음.
+pub struct ShutdownReport {
+    pub plugin_id: String,
+    pub elapsed: Duration,
+    pub outcome: ShutdownOutcome,
+}
+
+impl ShutdownBatch {
+    pub fn new(pending: Vec<PendingShutdown>) -> Self {
+        let total = pending.len();
+        Self {
+            pending,
+            total,
+            started: Instant::now(),
+        }
+    }
+
+    /// 대기 시작 시점의 대상 수 (완료된 것 포함).
+    pub fn total(&self) -> usize {
+        self.total
+    }
+
+    /// batch 생성 이후 경과 — 계측의 합계(`S4`)용.
+    pub fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// 논블로킹 — 이번 라운드에 종료가 관측된 plugin 들의 결과만 반환한다.
+    pub fn poll(&mut self) -> Vec<ShutdownReport> {
+        let mut done = Vec::new();
+        self.pending.retain_mut(|p| match p.poll() {
+            Some(outcome) => {
+                done.push(ShutdownReport {
+                    plugin_id: p.plugin_id.clone(),
+                    elapsed: p.elapsed(),
+                    outcome,
+                });
+                false
+            }
+            None => true,
+        });
+        done
+    }
+
+    /// 전부 회수될 때까지 블로킹. 반환 시점에 잔존 자식은 없다.
+    pub fn wait(&mut self) -> Vec<ShutdownReport> {
+        let mut all = Vec::new();
+        loop {
+            all.extend(self.poll());
+            if self.is_done() {
+                return all;
+            }
+            std::thread::sleep(CHILD_EXIT_POLL_INTERVAL);
         }
     }
 }
@@ -348,39 +528,6 @@ impl ShutdownOutcome {
             Self::Graceful => "graceful",
             Self::Killed => "killed",
             Self::NoChild => "no_child",
-        }
-    }
-}
-
-/// shutdown 메시지 전송 후 자식이 `timeout` 내 스스로 종료하는지 대기, 아니면 강제 kill.
-fn shutdown_child(mut child: Child, timeout: Duration) -> ShutdownOutcome {
-    if wait_for_child_exit(&mut child, Instant::now() + timeout) {
-        return ShutdownOutcome::Graceful;
-    }
-    // shutdown 메시지 전송 실패 / 타임아웃 시 강제 종료. kill 실패는 이미
-    // 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든 호스트가
-    // 추가로 할 수 있는 일이 없으므로 trace로만 흔적을 남긴다.
-    if let Err(e) = child.kill() {
-        tracing::trace!("plugin child kill failed (already exited?): {e}");
-    }
-    if let Err(e) = child.wait() {
-        tracing::trace!("plugin child wait failed: {e}");
-    }
-    ShutdownOutcome::Killed
-}
-
-/// `deadline` 까지 폴링하며 자식이 스스로 종료하길 대기. 종료를 관측했으면 true.
-fn wait_for_child_exit(child: &mut Child, deadline: Instant) -> bool {
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return true,
-            Ok(None) => {
-                if Instant::now() > deadline {
-                    return false;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => return false,
         }
     }
 }
@@ -860,5 +1007,130 @@ mod tests {
         );
         merge_dirty(&map, id, None);
         assert_eq!(map.lock().unwrap().get(&id).copied(), Some(None));
+    }
+}
+
+/// 종료 대기 겹침 검증. 실제 plugin SDK 없이 "종료가 늦는 자식" 을 직접
+/// spawn 해서, 대기가 직렬이 아니라 겹치는지를 시간으로 관측한다.
+#[cfg(test)]
+#[cfg(any(unix, windows))]
+mod shutdown_tests {
+    use super::*;
+
+    /// `long=true` 면 deadline 을 넘길 만큼 오래 사는 자식, false 면 즉시 종료.
+    /// tasty 는 Unix/Windows 만 지원하므로 두 분기로 충분하다.
+    fn spawn_test_child(long: bool) -> Child {
+        #[cfg(unix)]
+        {
+            Command::new("sleep")
+                .arg(if long { "30" } else { "0" })
+                .spawn()
+                .expect("test child spawn")
+        }
+        #[cfg(windows)]
+        {
+            Command::new("cmd")
+                .args([
+                    "/C",
+                    if long {
+                        "ping -n 30 127.0.0.1 > nul"
+                    } else {
+                        "exit 0"
+                    },
+                ])
+                .spawn()
+                .expect("test child spawn")
+        }
+    }
+
+    fn pending(plugin_id: &str, child: Child, deadline: Instant) -> PendingShutdown {
+        PendingShutdown {
+            plugin_id: plugin_id.to_string(),
+            child: Some(child),
+            deadline,
+            started: Instant::now(),
+        }
+    }
+
+    /// 응답 없는 자식 3개의 deadline 이 겹쳐야 한다 — 직렬이면 3×300ms 이상
+    /// 걸린다. 개별 타임아웃 의미론(각자 deadline 까지 기다린 뒤 force kill)은
+    /// `reason = killed` 로 유지되는지 함께 본다.
+    #[test]
+    fn shutdown_batch_waits_concurrently() {
+        let children: Vec<Child> = (0..3).map(|_| spawn_test_child(true)).collect();
+        let deadline = Instant::now() + Duration::from_millis(300);
+        let handles = children
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| pending(&format!("slow-{i}"), c, deadline))
+            .collect();
+
+        let mut batch = ShutdownBatch::new(handles);
+        assert_eq!(batch.total(), 3);
+
+        let t = Instant::now();
+        let reports = batch.wait();
+        let elapsed = t.elapsed();
+
+        assert!(batch.is_done());
+        assert_eq!(reports.len(), 3);
+        assert!(
+            reports.iter().all(|r| r.outcome == ShutdownOutcome::Killed),
+            "deadline 을 넘긴 자식은 force kill 이어야 한다"
+        );
+        assert!(
+            elapsed < Duration::from_millis(700),
+            "대기가 겹치지 않았다 (직렬이면 900ms 이상): {elapsed:?}"
+        );
+    }
+
+    /// 스스로 종료하는 자식은 deadline 을 소모하지 않고 graceful 로 빠진다.
+    #[test]
+    fn shutdown_batch_reports_graceful_exit() {
+        let children: Vec<Child> = (0..2).map(|_| spawn_test_child(false)).collect();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let handles = children
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| pending(&format!("quick-{i}"), c, deadline))
+            .collect();
+
+        let mut batch = ShutdownBatch::new(handles);
+        let t = Instant::now();
+        let reports = batch.wait();
+
+        assert_eq!(reports.len(), 2);
+        assert!(
+            reports
+                .iter()
+                .all(|r| r.outcome == ShutdownOutcome::Graceful),
+            "스스로 종료한 자식은 graceful 이어야 한다"
+        );
+        assert!(
+            t.elapsed() < Duration::from_secs(1),
+            "graceful 종료가 deadline 을 기다렸다: {:?}",
+            t.elapsed()
+        );
+    }
+
+    /// 폴링을 끝내지 않고 핸들을 버려도 자식은 회수돼야 한다 (좀비 방지).
+    #[test]
+    fn dropping_pending_shutdown_reaps_child() {
+        let child = spawn_test_child(true);
+        #[cfg(unix)]
+        let pid = child.id();
+        let handle = pending("dropped", child, Instant::now() + Duration::from_secs(60));
+        drop(handle);
+
+        // kill + wait 이 Drop 안에서 끝나므로, 반환 시점에 자식은 이미 회수됐다.
+        #[cfg(unix)]
+        {
+            // 이미 wait 했으므로 같은 pid 로 다시 신호를 보내면 실패해야 한다
+            // (좀비로 남아 있다면 신호가 성공한다).
+            // SAFETY: signal 0 은 프로세스를 건드리지 않고 존재 여부만 조회하는
+            // POSIX 표준 용법이다. 인자는 정수 두 개뿐이라 포인터 유효성 요건이 없다.
+            let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+            assert!(!alive, "자식 {pid} 이 회수되지 않았다");
+        }
     }
 }

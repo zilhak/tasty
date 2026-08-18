@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::json;
 
@@ -498,7 +498,7 @@ impl PluginManager {
                 self.emit_host_event("plugin.error", &payload, EventScope::System);
             }
             if let Some(proc) = self.processes.remove(&id) {
-                proc.shutdown(Duration::from_secs(2));
+                proc.shutdown(super::PLUGIN_SHUTDOWN_TIMEOUT);
             }
             self.ipc_namespaces.unregister_plugin(&id);
             // G.D.b — runtime registry 도 mirror 해제. restart 후

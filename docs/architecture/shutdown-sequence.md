@@ -26,7 +26,8 @@ begin_shutdown (src/app/shutdown_cascade.rs)          [t0 확정]
        ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
        │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
        ├─ S4  plugin_manager.shutdown_all()
-       │      └─ S4a plugin 하나씩 **순차** shutdown(2s graceful → 초과 시 force kill)
+       │      전 plugin 에 shutdown 요청을 **먼저 다 뿌린 뒤** 대기를 겹친다
+       │      └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
        ├─ shutdown_total
        └─ event_loop.exit()
 
@@ -48,6 +49,34 @@ run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
 - **정상 종료 경로에 `std::process::exit` 는 없다** — 위 Drop 들은 전부 실행된다.
   (`std::process::exit` 호출부는 초기화 실패/에러 경로 전용이다.)
 
+## plugin 종료 대기의 겹침 (S4)
+
+plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 없다. `shutdown_all`
+은 두 단계로 나뉜다.
+
+1. `begin_shutdown_all()` — 전 plugin 의 `req_tx` 에 shutdown 요청을 넣고 자식
+   핸들만 회수한 뒤 **즉시 반환**한다. 요청을 먼저 전부 뿌리는 것이 대기 겹침의
+   전제다.
+2. `poll_shutdown_all()` — 논블로킹 폴링. 각 자식이 스스로 종료했는지
+   `try_wait` 로 확인하고, 자기 deadline(2s)을 넘긴 자식만 force kill 한다.
+   남은 대상이 없으면 `true`.
+
+`shutdown_all()` 은 이 둘을 묶은 블로킹 형태다. 프레임을 계속 돌려야 하는
+호출자는 두 함수를 직접 조합해 대기 중에도 렌더를 유지할 수 있다.
+
+지켜야 하는 제약:
+
+- **요청 순서 계약** — shutdown 요청은 `dispatch_pending_surface_lifecycle()` 이
+  같은 `req_tx` 에 이미 넣어 둔 `surface.closed` 뒤에 놓인다. plugin 이 cleanup
+  대상 surface 를 모르는 채 종료되면 안 되므로 S3 → S4 순서는 고정이다.
+- **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
+  기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.
+- **잔존 프로세스 없음** — `poll_shutdown_all()` 이 `true` 를 반환한 시점에 모든
+  자식이 회수(exit 관측 또는 kill+wait 완료)돼 있다. 폴링을 끝내지 않고 매니저가
+  drop 되면 남은 자식은 그 자리에서 kill 된다.
+- **단건 경로는 그대로 블로킹** — `plugin disable` / 헬스체크 재시작 / swap 은
+  대상이 하나뿐이라 겹칠 것이 없다. 요청 후 최대 2s 동기 대기를 유지한다.
+
 ## 헤드리스와의 비대칭
 
 헤드리스 빌드(`--no-default-features`)의 `AppEvent::Shutdown` 은 `rx.recv()` 루프를
@@ -68,7 +97,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | S1 layout_flush | `flush_layout_persistence(true)` | — |
 | S2 boot_worker_reclaim | `reclaim_boot_engine_worker_for_exit` (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
 | S3 surface_close_cascade | close 큐 push + plugin broadcast | `surfaces` = 큐에 push 한 surface 수 |
-| S4 plugin_shutdown | `shutdown_all` 전체 | `plugins` = 종료 대상 plugin 수 |
+| S4 plugin_shutdown | `shutdown_all` 전체 (겹친 대기의 합계 = 최댓값) | `plugins` = 종료 대상 plugin 수 |
 | S4a plugin_shutdown_one | plugin 1개 종료 (graceful deadline 2s) | `plugin_id`, `reason = graceful\|killed\|no_child` |
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
@@ -87,6 +116,9 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 - **S4 는 plugin 이 0개여도 `plugins=0` 으로 발화한다.** "안 걸렸다" 와 "계측이 안
   붙었다" 를 로그만으로 구분할 수 있어야 하기 때문이다. plugin manager 자체가
   없으면 `S4 plugin_shutdown (no plugin manager)` 로 구분된다.
+- **S4 는 개별 S4a 의 합이 아니라 최댓값에 수렴한다.** 대기가 겹치므로
+  plugin 이 6개면 S4a 가 각각 ≈2000ms 여도 S4 는 ≈2000ms 다. S4 가 plugin 수에
+  비례해 커졌다면 대기가 다시 직렬화된 것이다.
 - **S3 의 `surfaces` 와 S5b 의 `ptys` 는 세는 대상이 다르다.** 전자는 layout 상의
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.
@@ -107,20 +139,31 @@ IPC 로 종료. 단위 ms.
 
 | | plugins | S1 | S3 | S4 | shutdown_total | S5a | S5b | S5 | **with_drop** |
 |---|---|---|---|---|---|---|---|---|---|
+| 겹친 대기, 정지 0개 | 6 (전부 killed) | — | 0.4 | 2008 | 2009 | — | — | 115 | **2124** |
+| 겹친 대기, SIGSTOP 2개 | 7 (전부 killed) | 0.7 | 0.4 | 2073 | 2074 | — | — | 262 | **2336** |
+| 겹친 대기, SIGSTOP 1개 | 5 (전부 killed) | — | — | 2050 | 2051 | — | — | 286 | **2337** |
+| plugin 0개 | 0 | 0.5 | 0.05 | 0.001 | 0.63 | 0.18 | 101 | 153 | **158** |
+
+참고 — 대기를 겹치기 전(plugin 하나씩 순차 대기)의 같은 환경 실측:
+
+| | plugins | S1 | S3 | S4 | shutdown_total | S5a | S5b | S5 | **with_drop** |
+|---|---|---|---|---|---|---|---|---|---|
 | run 1 | 8 (전부 killed) | 1.8 | 0.07 | 16130 | 16132 | 0.11 | 55 | 518 | **16664** |
 | run 2 | 6 (전부 killed) | 0.6 | 0.06 | 12094 | 12095 | 0.19 | 122 | 335 | **12444** |
 | run 3 | 8 (전부 killed) | 0.6 | 0.04 | 16052 | 16053 | 0.14 | 100 | 149 | **16208** |
-| plugin 0개 | 0 | 0.5 | 0.05 | 0.001 | 0.63 | 0.18 | 101 | 153 | **158** |
 
 이 값들이 말하는 것:
 
-- **S4 가 종료 시간의 99% 다.** plugin 을 전부 disable 하면 체감 종료가 16.2s →
-  0.16s 로 떨어진다. 나머지 단계(S1/S3)는 1ms 미만으로 최적화 여지가 없다.
-- **번들 plugin 은 실측상 하나도 graceful 로 빠지지 않았다** — 전부 2s deadline 을
-  꽉 채우고 force kill 됐다(`reason="killed"`). plugin 로그에는 `plugin received
+- **S4 는 plugin 수와 무관하게 ≈2s 로 평탄하다.** 5/6/7개 모두 2.0~2.1s 이고,
+  일부 plugin 을 `SIGSTOP` 으로 정지시켜 응답을 막아도 값이 움직이지 않는다.
+  순차 대기 시절의 같은 plugin 수(6개=12.1s)와 비교하면 6배다.
+- **S4 는 여전히 종료 시간의 대부분이다.** 나머지 단계(S1/S3)는 1ms 미만이고,
+  체감 종료(with_drop)의 하한은 S4 2s + Drop tail 0.1~0.3s 다.
+- **번들 plugin 은 실측상 하나도 graceful 로 빠지지 않는다** — 전부 2s deadline 을
+  꽉 채우고 force kill 된다(`reason="killed"`). plugin 로그에는 `plugin received
   shutdown` 이 찍혀 있어 **shutdown 요청 자체는 도달**하지만 프로세스가 2s 안에
-  종료되지 않는다. 게다가 순차 종료라 plugin 수 × 2s 로 선형 증가한다.
-- **Drop tail 은 150~520ms** 로 plugin 구간에 가리지만 무시할 크기는 아니다.
+  종료되지 않는다. 즉 남은 2s 는 대기 구조가 아니라 plugin 쪽 종료 지연이다.
+- **Drop tail 은 100~520ms** 로 plugin 구간에 가리지만 무시할 크기는 아니다.
   내역은 S5b(PTY) 55~122ms, S5a(Lua join) 0.2ms 미만이고, 나머지 수십~수백 ms 는
   GPU/egui/View 등 그 밖의 destructor 다. **이 구간은 종료 화면으로 덮을 수 없다** —
   창이 이미 사라진 뒤이므로, 종료 화면을 도입해도 체감 시간의 하한으로 남는다.
@@ -130,9 +173,12 @@ IPC 로 종료. 단위 ms.
 
 실측 시 유의:
 
-- run 2 의 plugin 수가 6인 것은 이 환경에서 일부 plugin 이 spawn 되지 않았기
-  때문이다. plugin 수가 다르면 S4 가 그만큼 달라지므로 비교 시 `plugins` 필드를
-  함께 본다.
+- plugin 수가 run 마다 다른 것은 이 환경에서 일부 plugin 이 spawn 되지 않기
+  때문이다. 순차 대기 시절에는 plugin 수가 S4 를 그대로 좌우했으므로 비교 시
+  `plugins` 필드를 함께 봐야 했다. 겹친 대기에서는 S4 가 plugin 수에 둔감해지는
+  것 자체가 판정 기준이다 — 비례해서 늘어난다면 병렬화가 깨진 것이다.
+- 정지시킨 plugin 개수(0/1/2)를 바꿔도 S4 가 평탄한지가 회귀 확인의 핵심이다.
+  재현은 `pgrep -f tasty-plugin- | head -N | xargs -r kill -STOP` 후 종료.
 - 위 값은 Linux/debug 기준이다. 부팅 계측의 기준치(Windows/7950X3D)와는 환경이
   달라 직접 비교하지 않는다.
 - **S2(부팅 중 종료)와 quit 모달 경로는 자동화로 재현하지 못했다.** 전자는 IPC

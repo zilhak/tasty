@@ -6,18 +6,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tasty_plugin_protocol::host_port::SurfaceRegistry;
 
 use crate::handle_channel::HandleListener;
 use crate::ipc_namespace::IpcNamespaceRegistry;
 use crate::listener::HostListener;
-use crate::process::PluginProcess;
+use crate::process::{CHILD_EXIT_POLL_INTERVAL, PluginProcess, ShutdownBatch};
 use crate::registry_state::PluginsConfig;
 use tasty_plugin_manifest::{Permission, PluginPackage};
 
-use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
+use super::{
+    PLUGIN_SHUTDOWN_TIMEOUT, PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW,
+};
 
 /// 완료 판정 전략 레지스트리의 plugin owner 문자열. `[[contributes.
 /// completion_strategy]]`의 `poll_method`/`default_for_methods` 는 plugin 의
@@ -130,6 +132,7 @@ impl PluginManager {
             completion_strategy: None,
             i18n_registrar: None,
             plugin_reaper,
+            shutdown_batch: None,
         }
     }
 
@@ -387,8 +390,13 @@ impl PluginManager {
         }
     }
 
-    /// 호스트 종료 시 전 plugin 프로세스 정리 — plugin 하나씩 **순차** graceful
-    /// shutdown(2s) 후 미종료면 force kill.
+    /// 호스트 종료 시 전 plugin 프로세스 정리 — **전 plugin 에 shutdown 요청을
+    /// 먼저 뿌린 뒤** 대기를 겹친다. plugin 은 서로 독립 프로세스라 대기가 직렬일
+    /// 이유가 없다: 총 소요는 Σ(개별 2s) 가 아니라 max(2s) 로 수렴한다.
+    ///
+    /// 반환 시점에 모든 자식이 회수(exit 관측 또는 kill+wait 완료)돼 있다.
+    /// 프레임을 계속 돌려야 하는 호출자는 이 블로킹 형태 대신
+    /// [`Self::begin_shutdown_all`] + [`Self::poll_shutdown_all`] 을 직접 조합한다.
     ///
     /// 계측은 `target: "tasty::shutdown"` 으로 상시 발화한다: plugin 별
     /// `S4a plugin_shutdown_one`(개별 ms + graceful/killed 사유) + 합계
@@ -396,27 +404,65 @@ impl PluginManager {
     /// 반드시 발화한다 — "안 걸렸다" 와 "계측이 안 붙었다" 를 로그로 구분해야 한다.
     /// 마커 표는 본체 `docs/architecture/shutdown-sequence.md`.
     pub fn shutdown_all(&mut self) {
-        let t_all = Instant::now();
-        let procs: Vec<_> = self.processes.drain().collect();
-        let plugins = procs.len();
-        for (plugin_id, proc) in procs {
-            let t_one = Instant::now();
-            let outcome = proc.shutdown(Duration::from_secs(2));
+        self.begin_shutdown_all();
+        while !self.poll_shutdown_all() {
+            std::thread::sleep(CHILD_EXIT_POLL_INTERVAL);
+        }
+    }
+
+    /// 전 plugin 에 shutdown 요청을 전송하고 **대기 없이** 즉시 반환한다.
+    ///
+    /// 요청을 먼저 전부 뿌리는 것이 대기 겹침의 전제다. 요청은 각 plugin 의
+    /// `req_tx` 에 들어가므로, 앞서 dispatch 된 `surface.closed` 들보다 뒤에
+    /// 놓인다는 채널 순서 계약(`src/app/shutdown_cascade.rs`)은 그대로 유지된다.
+    ///
+    /// 반환 후에는 [`Self::poll_shutdown_all`] 이 true 를 반환할 때까지 폴링해야
+    /// 자식이 회수된다(폴링 없이 매니저가 drop 되면 남은 자식은 즉시 kill 된다).
+    /// 이미 진행 중이면 no-op.
+    pub fn begin_shutdown_all(&mut self) {
+        if self.shutdown_batch.is_some() {
+            return;
+        }
+        let deadline = Instant::now() + PLUGIN_SHUTDOWN_TIMEOUT;
+        let pending: Vec<_> = self
+            .processes
+            .drain()
+            .map(|(_, proc)| proc.begin_shutdown(deadline))
+            .collect();
+        self.shutdown_batch = Some(ShutdownBatch::new(pending));
+    }
+
+    /// 종료 대기 논블로킹 폴링. 남은 대상이 없으면 `true`(= 모든 자식 회수 완료).
+    /// [`Self::begin_shutdown_all`] 없이 호출하면 기다릴 것이 없으므로 `true`.
+    ///
+    /// 완료된 plugin 마다 `S4a` 를 발화하고, 전부 끝난 라운드에 `S4` 를 발화한다.
+    pub fn poll_shutdown_all(&mut self) -> bool {
+        let Some(batch) = self.shutdown_batch.as_mut() else {
+            return true;
+        };
+        for report in batch.poll() {
             tracing::info!(
                 target: "tasty::shutdown",
-                ms = t_one.elapsed().as_secs_f64() * 1000.0,
-                plugin_id,
-                reason = outcome.as_str(),
+                ms = report.elapsed.as_secs_f64() * 1000.0,
+                plugin_id = report.plugin_id,
+                reason = report.outcome.as_str(),
                 "S4a plugin_shutdown_one (graceful deadline 2s)"
             );
         }
+        if !batch.is_done() {
+            return false;
+        }
+        let ms = batch.elapsed().as_secs_f64() * 1000.0;
+        let plugins = batch.total();
+        self.shutdown_batch = None;
         self.plugin_buffers.clear();
         tracing::info!(
             target: "tasty::shutdown",
-            ms = t_all.elapsed().as_secs_f64() * 1000.0,
+            ms,
             plugins,
-            "S4 plugin_shutdown (순차 종료 합계)"
+            "S4 plugin_shutdown (병렬 대기 합계)"
         );
+        true
     }
 
     /// CLI/IPC용 — plugin 활성화. 활성화 즉시 spawn 시도.
@@ -464,7 +510,7 @@ impl PluginManager {
         self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
-            proc.shutdown(Duration::from_secs(2));
+            proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
         // G.D.b — runtime registry 도 mirror 해제. packages 에서 manifest 재조회
@@ -530,7 +576,7 @@ impl PluginManager {
     /// upgrade_builtins 의 `--restart-running` flag 경로 외에서는 사용 금지.
     pub(crate) fn swap_shutdown_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         if let Some(proc) = self.processes.remove(plugin_id) {
-            proc.shutdown(Duration::from_secs(2));
+            proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
         if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
