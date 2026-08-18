@@ -603,6 +603,46 @@ pub(super) fn handle_debug_switch_tab(
     }
 }
 
+/// 워크스페이스 close — 사용자의 워크스페이스 컨텍스트 메뉴 "Close workspace"
+/// (`src/view/main/redraw.rs` 의 native 메뉴 응답 `Some(6)`) 재현. release 미노출.
+///
+/// release IPC 의 `surface.close` 로는 이 경로에 도달할 수 없다 — cascade close 는
+/// **탭/패인이 하나만 남았을 때만** workspace 단계까지 올라가므로 cleanup 대상이
+/// 항상 surface 1개다. "탭이 많은 워크스페이스를 통째로 닫는" 비용(close 계측
+/// `path="gui"`)은 이 메뉴 항목으로만 발생하고, 그래서 계측 기준선을 잡으려면
+/// 이 항목을 재현할 수단이 필요하다.
+///
+/// 사용자 상태(closed_items undo 스택 / 포커스)를 건드리는 사용자 행동이므로
+/// release 표면에는 두지 않는다 (CLAUDE.md "사용자 행동 ↔ 에이전트 행동 분리").
+pub(super) fn handle_debug_close_workspace(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let index = match params.get("index").and_then(|v| v.as_u64()) {
+        Some(i) => i as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
+    };
+    if index >= engine.workspaces.len() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("Workspace index {index} out of range"),
+        );
+    }
+    // GUI 메뉴 경로는 마지막 workspace 를 닫으면 `request_close()` 로 창까지 닫는다.
+    // debug IPC 는 그 창 종료까지 재현하지 않으므로, workspaces 가 비어 다음 redraw
+    // 의 `active_workspace()` 가 패닉하는 상태를 만들지 않도록 거절한다.
+    if engine.workspaces.len() == 1 {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Refusing to close the last workspace (would leave no workspace)",
+        );
+    }
+    let closed = state.close_workspace_at(engine, index);
+    JsonRpcResponse::success(id, json!({"closed": closed, "index": index}))
+}
+
 /// 워크스페이스 활성 전환 — 사용자의 포커스 조작(워크스페이스 전환) 재현. release 미노출.
 /// `active_workspace` 인덱스 변경뿐이라 OS 의존성 없음.
 pub(super) fn handle_debug_switch_workspace(

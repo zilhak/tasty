@@ -48,6 +48,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
 | `debug.switch_workspace` | `index` (0-based) | 활성 워크스페이스 전환 — 사용자 포커스 조작 재현 † |
+| `debug.close_workspace` | `index` (0-based) | 워크스페이스 컨텍스트 메뉴 "Close workspace" 재현 — 워크스페이스 안 **모든** surface + closed_item 스냅샷까지 한 번에 닫는다. release `surface.close` 는 cascade 특성상 마지막 한 surface 만 정리하므로 "탭 많은 워크스페이스 통째 close" 비용([close-sequence](../architecture/close-sequence.md) `path="gui"`)은 이 메서드로만 재현된다. 마지막 workspace 는 거절(0개가 되면 다음 redraw 가 패닉) |
 | `debug.switch_tab` | `index` (0-based) | 포커스 pane 의 활성 탭 전환 — 사용자 탭 클릭 재현 (egui-mesh 탭 가시성 시나리오 검증 등) † |
 | `debug.tool.list` | `{}` | 도구 메뉴 항목 전체를 표시 순서대로 |
 | `debug.tool.invoke` | `key` (`<plugin_id>/<tool_id>`) | 도구 항목을 사용자 클릭과 동일하게 dispatch |
