@@ -360,16 +360,77 @@ impl Surface for ExplorerPanel {
     }
 }
 
-/// 경로 미지정 복원 시의 안전 fallback root. 홈 디렉토리 해석은 호스트
-/// (`register_explorer` / IPC `tab.rs`) 책임이며, 본 fallback 은 빈 탭 목록으로
-/// 복원되는 엣지 케이스에서만 쓰인다.
+/// explorer root 의 최종 fallback — **항상 절대경로**를 반환한다.
+///
+/// 순서: `$HOME`/`%USERPROFILE%` → (홈 조회 실패 시) 프로세스 cwd 를 *절대경로로
+/// 확정* → 그것도 실패하면 파일시스템 루트.
+///
+/// 상대경로(`"."`)를 root 로 두는 것은 `std::env::current_dir()` 폴백을 지연
+/// 평가하는 것과 동작상 같으면서(모든 항목 경로가 프로세스 cwd 기준으로 해석됨),
+/// 그 문자열이 주소창·경로 복사·attach wire 로 그대로 새어나가므로 더 나쁘다.
+/// 그래서 이 함수는 어떤 경우에도 상대경로를 반환하지 않는다.
+/// 홈 조회가 실패하는 환경(HOME 없는 컨테이너 등)에서 프로세스 cwd 를 쓰는 것은
+/// 최후 수단이며, 그 경우에도 생성 시점에 절대경로로 확정해 외부로 상대경로가
+/// 새지 않게 한다.
+///
+/// 상세: `docs/architecture/invariants/surface-cwd.md` §5.
 pub fn default_root() -> PathBuf {
-    PathBuf::from(".")
+    if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
+        && home.is_absolute()
+    {
+        return home;
+    }
+    if let Ok(cwd) = std::env::current_dir()
+        && cwd.is_absolute()
+    {
+        return cwd;
+    }
+    PathBuf::from(std::path::MAIN_SEPARATOR_STR)
+}
+
+/// 후보 root 를 검증해 확정한다 — 절대경로면 그대로, 없거나 상대경로면
+/// [`default_root`].
+///
+/// 생성(`params["path"]` / carry cwd)·복원(snapshot) 양쪽 경계에서 같은 규칙을
+/// 적용해 "explorer root 는 항상 절대경로" 를 성립시킨다. 상대경로를 프로세스 cwd
+/// 기준으로 절대화하지 *않는* 이유는, 그렇게 하면 불변식이 금지하는 "호스트 시작
+/// cwd 가 root 행세" 가 그대로 되살아나기 때문이다. 이미 `"."` 로 저장된 구
+/// `layout.json` 스냅샷도 이 경로로 홈으로 교정된다.
+pub fn resolve_root(candidate: Option<PathBuf>) -> PathBuf {
+    match candidate {
+        Some(p) if p.is_absolute() => p,
+        _ => default_root(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_root_is_always_absolute() {
+        let r = default_root();
+        assert!(r.is_absolute(), "default_root must be absolute: {r:?}");
+        assert_ne!(r, PathBuf::from("."));
+    }
+
+    #[test]
+    fn resolve_root_keeps_absolute_and_falls_back_otherwise() {
+        assert_eq!(
+            resolve_root(Some(PathBuf::from("/tmp/x"))),
+            PathBuf::from("/tmp/x")
+        );
+        assert_eq!(resolve_root(None), default_root());
+        assert_eq!(resolve_root(Some(PathBuf::from("."))), default_root());
+        assert_eq!(resolve_root(Some(PathBuf::from("a/b"))), default_root());
+    }
+
+    #[test]
+    fn from_tabs_empty_falls_back_to_absolute_root() {
+        let p = ExplorerPanel::from_tabs(1, Vec::new(), 0);
+        assert!(p.cwd().is_absolute());
+        assert_eq!(p.cwd(), default_root().as_path());
+    }
 
     #[test]
     fn navigate_pushes_history() {

@@ -59,9 +59,25 @@ pub struct SurfaceCreateCtx { pub surface_id: u32, pub kind: String, pub cwd: Op
 
 host→plugin IPC `surface.create` payload 의 top-level `cwd` 키로 직렬화. plugin 은 ① `params` 명시 → ② `ctx.cwd` carry → ③ 자체 fallback(예: home) 순으로 결정. 옛 SDK(cwd 키 모름)는 무시 — JSON-RPC 호환.
 
-### 5. Explorer plugin fallback
+### 5. Explorer root fallback (host builtin)
 
-`ctx.params["path"]` → `ctx.cwd` → `$HOME`/`$USERPROFILE` → `"."` 순. **`std::env::current_dir()` 폴백 제거** — 호스트 시작 cwd 가 root 행세 못 하게.
+Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer` — `src/core/surface_registry/builtins.rs`). **root 는 어떤 경로로 생성되든 항상 절대경로다.** 결정 순서:
+
+1. `params["path"]`
+2. `SurfaceKindDef::create` 의 carry cwd (§2)
+3. `$HOME` / `%USERPROFILE%`
+4. (홈 조회 실패 시) 프로세스 cwd 를 **절대경로로 확정**해서
+5. (그것도 실패 시) 파일시스템 루트
+
+1·2 의 값이 **상대경로면 채택하지 않고** 3 단계로 내려간다. 상대 root 를 프로세스 cwd 기준으로 절대화하는 선택지는 이 불변식이 금지한 "호스트 시작 cwd 가 root 행세" 를 그대로 되살리므로 채택하지 않았다. `"."` 를 root 로 두는 것은 `std::env::current_dir()` 폴백을 **지연 평가**하는 것과 동작상 같으면서, 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가므로 더 나쁘다.
+
+4 단계(프로세스 cwd)는 홈 조회가 실패하는 환경(HOME 없는 컨테이너 등)의 최후 수단이다 — 생성 시점에 절대경로로 확정하므로 상대경로가 UI·wire 로 새지 않는다.
+
+같은 규칙이 **snapshot 복원**(`explorer_tab_from_json`)에도 적용된다 — `root` 키가 없거나 값이 상대경로인 구 `layout.json`(과거 폴백이 저장한 `"."` 포함)은 복원 시 홈으로 교정된다. 상대 `cwd` 키는 (이미 절대로 확정된) current 를 따른다.
+
+구현의 단일 진실원천은 `tasty_model::explorer_panel::{default_root, resolve_root}` 이고, 생성(`create`)·복원(`explorer_tab_from_json`)·빈 탭 목록 복원(`ExplorerPanel::from_tabs`) 세 경계가 모두 이를 호출한다.
+
+주의: 이 폴백은 "cwd 가 애초에 주어지지 않았을 때" 의 방어선이지 cwd carry(§2·§3)의 대체가 아니다. carry 할 cwd 가 있는데 전달하지 않아 홈으로 떨어지는 것은 여전히 해당 생성 경로의 버그다.
 
 ## 강제 / 위반 검출
 
@@ -71,8 +87,9 @@ host→plugin IPC `surface.create` payload 의 top-level `cwd` 키로 직렬화.
 | `SurfaceKindDef.create` cwd 인자 | 모든 builtin + plugin 등록자 강제 |
 | `ConvertSurfaceTarget::Kind.cwd` 필드 | 변환 경로 cwd 누락 컴파일 차단 |
 | `StructuralOp::ConvertSurface.cwd` 필드 | mirror forward 경로 cwd 누락 컴파일 차단 |
+| explorer root 회귀 테스트 | `builtins.rs` 의 `explorer_create_*` / `explorer_restore_normalizes_relative_snapshot_root` · `explorer_panel.rs` 의 `default_root_is_always_absolute` / `resolve_root_*` — 상대 root 가 생성·복원 경계를 통과하면 실패 |
 
-검출: `rg 'ConvertSurfaceTarget::Kind \{ cwd: None'` · `rg 'env::current_dir' crates/tasty-plugin-explorer/` · 새 impl 의 source_cwd 누락은 컴파일 실패.
+검출: `rg 'ConvertSurfaceTarget::Kind \{ cwd: None'` · `rg 'PathBuf::from\("\."\)' src/core/surface_registry crates/tasty-model/src/explorer_panel.rs` · 새 impl 의 source_cwd 누락은 컴파일 실패.
 
 ## 관련
 

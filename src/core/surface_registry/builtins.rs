@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::model::{
     EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, SortColumn, SortDir, Surface,
+    resolve_root,
 };
 
 use super::{
@@ -106,7 +107,8 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
 //
 // 본체 내장 파일 관리자 (T11). 과거엔 `com.tasty.explorer` plugin 의 remote kind
 // 였으나 본체 surface 로 승격됐다. create 는 `path` param(없으면 cwd, 그래도 없으면
-// ".")으로 단일 탭 생성. snapshot/restore 는 내부 탭 목록(root + view_mode + 정렬)과
+// 홈 디렉토리)으로 단일 탭 생성 — root 는 항상 절대경로다(`resolve_root`).
+// snapshot/restore 는 내부 탭 목록(root + view_mode + 정렬)과
 // 활성 탭 인덱스를 직렬화한다(결정 3 — 내부 탭은 surface 와 함께 복원). 히스토리
 // (back/forward)는 휘발성이라 직렬화하지 않는다.
 
@@ -116,12 +118,16 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         display_name_i18n_key: "surface.kind.explorer",
         icon: Some("folder".to_string()),
         create: Arc::new(|sid, cwd, params| {
-            let root = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(std::path::PathBuf::from)
-                .or_else(|| cwd.map(std::path::PathBuf::from))
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            // 명시 path > carry cwd > 홈. 어느 단계든 상대경로면 채택하지 않는다 —
+            // 상대 root 는 프로세스 cwd 를 root 로 승격시키고 그 문자열이 주소창·
+            // 경로 복사·attach wire 로 새어나간다(surface-cwd 불변식 §5).
+            let root = resolve_root(
+                params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .map(std::path::PathBuf::from)
+                    .or_else(|| cwd.map(std::path::PathBuf::from)),
+            );
             // host(`create_surface_via_registry`)가 마지막 view mode 를 주입한다.
             // 미지정 시 ExplorerViewMode::from_str 이 detail 로 fallback.
             let view_mode = params
@@ -199,17 +205,21 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
 
 /// snapshot JSON 한 항목 → `ExplorerTab` (히스토리 제외, cwd/current/view_mode/정렬 복원).
 fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
-    // current(현재 폴더). 구 스냅샷은 `root` 만 있다.
-    let current = v
-        .get("root")
-        .and_then(|x| x.as_str())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    // current(현재 폴더). 구 스냅샷은 `root` 만 있다. 키가 없거나 값이 상대경로면
+    // 홈으로 교정한다 — 과거 폴백이 `"."` 를 그대로 저장한 layout.json 이 재시작
+    // 후에도 상대 root 로 되살아나지 않게 한다.
+    let current = resolve_root(
+        v.get("root")
+            .and_then(|x| x.as_str())
+            .map(std::path::PathBuf::from),
+    );
     // cwd(고정 루트). 구 스냅샷 호환: 키 없으면 current 로 cwd·current 동일 설정.
+    // 상대 cwd 도 마찬가지로 (이미 절대경로로 확정된) current 로 맞춘다.
     let cwd = v
         .get("cwd")
         .and_then(|x| x.as_str())
         .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
         .unwrap_or_else(|| current.clone());
     let mut tab = ExplorerTab::with_cwd(cwd, current);
     if let Some(m) = v.get("view_mode").and_then(|x| x.as_str()) {
@@ -359,6 +369,125 @@ mod tests {
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
         assert_eq!(ex.current_root(), cwd.as_path());
+    }
+
+    #[test]
+    fn explorer_create_without_path_or_cwd_falls_back_to_absolute_root() {
+        // path 도 cwd 도 없으면 홈(=`resolve_root` 의 최종 폴백)으로 떨어진다.
+        // 과거엔 `"."` 라 프로세스 cwd 가 root 행세를 하고 그 문자열이 UI·wire 로
+        // 새어나갔다(surface-cwd 불변식 §5).
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let s = (def.create)(1, None, &json!({})).unwrap();
+        let ex = s
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        let root = ex.cwd();
+        assert!(
+            root.is_absolute(),
+            "explorer root must never be relative: {root:?}"
+        );
+        assert_ne!(root, std::path::Path::new("."));
+        assert_eq!(root, crate::model::default_root());
+    }
+
+    #[test]
+    fn explorer_create_rejects_relative_path_and_cwd() {
+        // 명시값이 상대경로여도 채택하지 않는다 — 프로세스 cwd 기준 절대화는
+        // 불변식이 금지한 "호스트 시작 cwd 가 root 행세" 를 되살리므로 폴백한다.
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        for s in [
+            (def.create)(1, None, &json!({"path": "."})).unwrap(),
+            (def.create)(2, None, &json!({"path": "sub/dir"})).unwrap(),
+            (def.create)(3, Some(std::path::Path::new(".")), &json!({})).unwrap(),
+        ] {
+            let root = s
+                .as_any()
+                .downcast_ref::<crate::model::ExplorerPanel>()
+                .unwrap()
+                .cwd()
+                .to_path_buf();
+            assert_eq!(
+                root,
+                crate::model::default_root(),
+                "relative root must fall back"
+            );
+        }
+    }
+
+    #[test]
+    fn explorer_create_preserves_explicit_absolute_priority() {
+        // 폴백 추가가 앞 단계(명시 path > carry cwd)를 가로채지 않아야 한다.
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let s = (def.create)(
+            1,
+            Some(std::path::Path::new("/tmp/carry")),
+            &json!({"path": "/tmp/explicit"}),
+        )
+        .unwrap();
+        let ex = s
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.cwd(), std::path::Path::new("/tmp/explicit"));
+
+        let s = (def.create)(2, Some(std::path::Path::new("/tmp/carry")), &json!({})).unwrap();
+        let ex = s
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.cwd(), std::path::Path::new("/tmp/carry"));
+    }
+
+    #[test]
+    fn explorer_restore_normalizes_relative_snapshot_root() {
+        // 이미 `"."` 로 저장된 기존 layout.json 이 재시작 후에도 상대 root 로
+        // 되살아나지 않아야 한다(마이그레이션 회귀 고정).
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let home = crate::model::default_root();
+
+        // root/cwd 가 모두 "." 인 구 스냅샷.
+        let dotted = json!({"tabs": [{"root": ".", "cwd": "."}], "active": 0});
+        let ex = (def.restore)(1, &dotted).unwrap();
+        let ex = ex
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.cwd(), home.as_path());
+        assert_eq!(ex.current_root(), home.as_path());
+
+        // root 키 자체가 없는 스냅샷.
+        let missing = json!({"tabs": [{"view_mode": "detail"}], "active": 0});
+        let ex = (def.restore)(2, &missing).unwrap();
+        let ex = ex
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert!(ex.cwd().is_absolute());
+        assert_eq!(ex.cwd(), home.as_path());
+
+        // 탭 목록 자체가 빈 스냅샷(엣지) — default_root() 단일 탭.
+        let empty = json!({"tabs": [], "active": 0});
+        let ex = (def.restore)(3, &empty).unwrap();
+        let ex = ex
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert!(ex.cwd().is_absolute());
+
+        // 절대 root + 상대 cwd → cwd 는 (절대인) current 로 맞춘다.
+        let mixed = json!({"tabs": [{"root": "/x/y", "cwd": "."}], "active": 0});
+        let ex = (def.restore)(4, &mixed).unwrap();
+        let ex = ex
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.cwd(), std::path::Path::new("/x/y"));
+        assert_eq!(ex.current_root(), std::path::Path::new("/x/y"));
     }
 
     #[test]

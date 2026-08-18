@@ -5890,6 +5890,7 @@ name = "tasty-model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "directories",
  "serde",
  "serde_json",
  "tasty-terminal",
