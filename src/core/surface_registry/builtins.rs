@@ -271,6 +271,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::abs_path;
 
     fn registry_with_builtins() -> SurfaceKindRegistry {
         let r = SurfaceKindRegistry::new();
@@ -323,28 +324,31 @@ mod tests {
             .get("explorer")
             .expect("explorer is a host builtin kind");
         // create: path param 우선.
-        let s = (def.create)(5, None, &json!({"path": "/tmp/exp"})).unwrap();
+        let root = abs_path("tmp/exp");
+        let root_str = root.to_string_lossy().into_owned();
+        let s = (def.create)(5, None, &json!({ "path": &root_str })).unwrap();
         assert_eq!(s.kind(), "explorer");
         assert_eq!(s.surface_id(), Some(5));
         // snapshot → restore 라운드트립 (탭 cwd/current + 활성 인덱스 보존).
         let snap = (def.snapshot)(s.as_ref()).unwrap();
-        assert_eq!(snap["tabs"][0]["cwd"], "/tmp/exp");
-        assert_eq!(snap["tabs"][0]["root"], "/tmp/exp");
+        assert_eq!(snap["tabs"][0]["cwd"], root_str);
+        assert_eq!(snap["tabs"][0]["root"], root_str);
         let restored = (def.restore)(5, &snap).unwrap();
         assert_eq!(restored.kind(), "explorer");
         let ex = restored
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
-        assert_eq!(ex.current_root().to_string_lossy(), "/tmp/exp");
-        assert_eq!(ex.cwd().to_string_lossy(), "/tmp/exp");
+        assert_eq!(ex.current_root(), root.as_path());
+        assert_eq!(ex.cwd(), root.as_path());
     }
 
     #[test]
     fn explorer_restore_old_snapshot_without_cwd() {
         // 구 스냅샷 호환: `cwd` 키가 없으면 `root` 값으로 cwd·current 를 동일 설정.
+        let root = abs_path("x");
         let old = json!({
-            "tabs": [{"root": "/x", "view_mode": "detail", "sort_column": "name", "sort_dir": "asc"}],
+            "tabs": [{"root": root.to_string_lossy(), "view_mode": "detail", "sort_column": "name", "sort_dir": "asc"}],
             "active": 0,
         });
         let reg = registry_with_builtins();
@@ -354,15 +358,15 @@ mod tests {
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
-        assert_eq!(ex.cwd().to_string_lossy(), "/x");
-        assert_eq!(ex.current_root().to_string_lossy(), "/x");
+        assert_eq!(ex.cwd(), root.as_path());
+        assert_eq!(ex.current_root(), root.as_path());
     }
 
     #[test]
     fn explorer_create_defaults_to_cwd() {
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
-        let cwd = std::path::PathBuf::from("/tmp/cwd-default");
+        let cwd = abs_path("tmp/cwd-default");
         let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
         let ex = s
             .as_any()
@@ -422,24 +426,26 @@ mod tests {
         // 폴백 추가가 앞 단계(명시 path > carry cwd)를 가로채지 않아야 한다.
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
+        let carry = abs_path("tmp/carry");
+        let explicit = abs_path("tmp/explicit");
         let s = (def.create)(
             1,
-            Some(std::path::Path::new("/tmp/carry")),
-            &json!({"path": "/tmp/explicit"}),
+            Some(carry.as_path()),
+            &json!({ "path": explicit.to_string_lossy() }),
         )
         .unwrap();
         let ex = s
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
-        assert_eq!(ex.cwd(), std::path::Path::new("/tmp/explicit"));
+        assert_eq!(ex.cwd(), explicit.as_path());
 
-        let s = (def.create)(2, Some(std::path::Path::new("/tmp/carry")), &json!({})).unwrap();
+        let s = (def.create)(2, Some(carry.as_path()), &json!({})).unwrap();
         let ex = s
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
-        assert_eq!(ex.cwd(), std::path::Path::new("/tmp/carry"));
+        assert_eq!(ex.cwd(), carry.as_path());
     }
 
     #[test]
@@ -480,14 +486,15 @@ mod tests {
         assert!(ex.cwd().is_absolute());
 
         // 절대 root + 상대 cwd → cwd 는 (절대인) current 로 맞춘다.
-        let mixed = json!({"tabs": [{"root": "/x/y", "cwd": "."}], "active": 0});
+        let xy = abs_path("x/y");
+        let mixed = json!({"tabs": [{"root": xy.to_string_lossy(), "cwd": "."}], "active": 0});
         let ex = (def.restore)(4, &mixed).unwrap();
         let ex = ex
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
-        assert_eq!(ex.cwd(), std::path::Path::new("/x/y"));
-        assert_eq!(ex.current_root(), std::path::Path::new("/x/y"));
+        assert_eq!(ex.cwd(), xy.as_path());
+        assert_eq!(ex.current_root(), xy.as_path());
     }
 
     #[test]

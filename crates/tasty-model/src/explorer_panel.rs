@@ -385,6 +385,25 @@ pub fn default_root() -> PathBuf {
     {
         return cwd;
     }
+    filesystem_root()
+}
+
+/// 파일시스템 루트 — 홈·프로세스 cwd 조회가 모두 실패한 환경의 최후 수단.
+///
+/// Windows 에서 `MAIN_SEPARATOR_STR`(`"\"`) 은 "현재 드라이브의 루트" 라 드라이브
+/// 문자가 없어 `Path::is_absolute()` 가 **false** 다. [`default_root`] 의 절대경로
+/// 보장이 이 분기에서 깨지지 않도록 `%SystemDrive%`(없으면 `C:`)를 붙인다.
+#[cfg(windows)]
+fn filesystem_root() -> PathBuf {
+    let drive = std::env::var("SystemDrive").unwrap_or_default();
+    let drive = drive.trim().trim_end_matches(['\\', '/']);
+    let drive = if drive.is_empty() { "C:" } else { drive };
+    PathBuf::from(format!("{drive}\\"))
+}
+
+/// 파일시스템 루트(`/`) — 홈·프로세스 cwd 조회가 모두 실패한 환경의 최후 수단.
+#[cfg(not(windows))]
+fn filesystem_root() -> PathBuf {
     PathBuf::from(std::path::MAIN_SEPARATOR_STR)
 }
 
@@ -414,12 +433,32 @@ mod tests {
         assert_ne!(r, PathBuf::from("."));
     }
 
+    /// 테스트용 절대경로 — 절대경로 형태가 플랫폼마다 다르므로(`/tmp/x` vs
+    /// `C:\tmp\x`) 유닉스 리터럴을 그대로 쓰면 Windows 에서 상대경로로 판정돼
+    /// `resolve_root` 의 기대값이 뒤집힌다.
+    fn abs(rel: &str) -> PathBuf {
+        #[cfg(windows)]
+        {
+            PathBuf::from(format!(r"C:\{}", rel.replace('/', r"\")))
+        }
+        #[cfg(not(windows))]
+        {
+            PathBuf::from(format!("/{rel}"))
+        }
+    }
+
+    #[test]
+    fn filesystem_root_is_absolute() {
+        // 홈·cwd 조회가 모두 실패하는 환경에서만 타는 분기라 `default_root` 테스트
+        // 로는 커버되지 않는다 — 직접 검증한다.
+        let r = filesystem_root();
+        assert!(r.is_absolute(), "filesystem_root must be absolute: {r:?}");
+    }
+
     #[test]
     fn resolve_root_keeps_absolute_and_falls_back_otherwise() {
-        assert_eq!(
-            resolve_root(Some(PathBuf::from("/tmp/x"))),
-            PathBuf::from("/tmp/x")
-        );
+        let abs_x = abs("tmp/x");
+        assert_eq!(resolve_root(Some(abs_x.clone())), abs_x);
         assert_eq!(resolve_root(None), default_root());
         assert_eq!(resolve_root(Some(PathBuf::from("."))), default_root());
         assert_eq!(resolve_root(Some(PathBuf::from("a/b"))), default_root());

@@ -1374,18 +1374,20 @@ fn add_kind_tab_by_owner_opens_explorer_with_folder_cwd() {
     let (mut state, mut engine) = test_state();
     // 초기 pane 의 focused surface(터미널)를 owner 로 지정.
     let owner = state.focused_surface_id(&engine).expect("focused surface");
+    // explorer root 는 절대경로만 채택하므로 경로 리터럴도 플랫폼 절대경로로 만든다.
+    let folder = crate::test_support::abs_path("proj/sub");
     let (_tab, sid) = state
         .add_kind_tab_by_owner(
             &mut engine,
             owner,
             "explorer",
-            &serde_json::json!({ "path": "/proj/sub" }),
+            &serde_json::json!({ "path": folder.to_string_lossy() }),
         )
         .expect("add explorer tab in owner pane");
     let ex = explorer_of(&engine, &state, sid).expect("explorer surface exists");
     // 새 explorer 는 cwd=current=folder (source_cwd 는 model 단위 테스트에서 검증).
-    assert_eq!(ex.cwd(), std::path::Path::new("/proj/sub"));
-    assert_eq!(ex.current_root(), std::path::Path::new("/proj/sub"));
+    assert_eq!(ex.cwd(), folder.as_path());
+    assert_eq!(ex.current_root(), folder.as_path());
 }
 
 #[test]

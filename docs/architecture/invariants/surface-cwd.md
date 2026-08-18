@@ -67,7 +67,7 @@ Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer`
 2. `SurfaceKindDef::create` 의 carry cwd (§2)
 3. `$HOME` / `%USERPROFILE%`
 4. (홈 조회 실패 시) 프로세스 cwd 를 **절대경로로 확정**해서
-5. (그것도 실패 시) 파일시스템 루트
+5. (그것도 실패 시) 파일시스템 루트 — Windows 는 `%SystemDrive%\`(없으면 `C:\`). `"\"` 단독은 드라이브 문자가 없어 `Path::is_absolute()` 가 false 라 절대경로 보장이 깨진다
 
 1·2 의 값이 **상대경로면 채택하지 않고** 3 단계로 내려간다. 상대 root 를 프로세스 cwd 기준으로 절대화하는 선택지는 이 불변식이 금지한 "호스트 시작 cwd 가 root 행세" 를 그대로 되살리므로 채택하지 않았다. `"."` 를 root 로 두는 것은 `std::env::current_dir()` 폴백을 **지연 평가**하는 것과 동작상 같으면서, 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가므로 더 나쁘다.
 
