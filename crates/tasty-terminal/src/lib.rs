@@ -120,7 +120,12 @@ pub struct CellInfo {
 /// 갱신한다 — 메인(winit) 스레드는 파싱을 하지 않는다.
 struct PtyBackend {
     _writer_thread: thread::JoinHandle<()>,
-    pty_master: Box<dyn portable_pty::MasterPty + Send>,
+    /// 살아 있는 동안 항상 `Some`. `Option` 인 이유는 오직 [`PtyBackend::drop`] 이
+    /// **자기 계측 구간 안에서** master 를 해제하기 위해서다 — 필드는 `Drop::drop`
+    /// 본문이 끝난 *뒤* 해제되므로, `take()` 하지 않으면 Windows ConPTY close
+    /// (`ClosePseudoConsole`, 자식 종료를 기다린다)가 `PTY_DROP_NANOS` 밖으로
+    /// 새어나가 종료/close 계측이 실제 비용을 과소평가한다.
+    pty_master: Option<Box<dyn portable_pty::MasterPty + Send>>,
     /// `Some` for a normally-owned PTY (Surface 터미널). `None` only after
     /// [`Terminal::take_child`] hands the waitable child off to an external owner
     /// (headless `pty_registry` exit-watcher, ADR-0050) — Surface 터미널은 절대
@@ -143,7 +148,8 @@ impl Drop for PtyBackend {
         let Some(child) = self.child.as_mut() else {
             return;
         };
-        // 종료 Drop tail 계측(S5b) 누적 — 개별 로그 대신 합계를 모은다.
+        // 종료 Drop tail 계측(S5b) / close 계측(C5b) 누적 — 개별 로그 대신 합계를
+        // 모은다.
         let t_drop = std::time::Instant::now();
         if let Err(e) = child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
@@ -180,6 +186,8 @@ impl Drop for PtyBackend {
                 }
             });
         }
+        // master 해제를 계측 구간 안으로 끌어들인다(위 필드 주석 참조).
+        drop(self.pty_master.take());
         {
             use std::sync::atomic::Ordering;
             PTY_DROP_NANOS.fetch_add(
@@ -838,7 +846,7 @@ impl Terminal {
 
         let pty = PtyBackend {
             _writer_thread: writer_thread,
-            pty_master: pair.master,
+            pty_master: Some(pair.master),
             child: Some(child),
             _parser_thread: parser_thread,
         };

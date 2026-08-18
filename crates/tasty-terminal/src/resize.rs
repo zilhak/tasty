@@ -308,7 +308,8 @@ impl Terminal {
 
         if let Some((cols, rows)) = self.pending_pty_resize.take() {
             if let Some(pty) = self.pty.as_ref()
-                && let Err(e) = pty.pty_master.resize(PtySize {
+                && let Some(master) = pty.pty_master.as_ref()
+                && let Err(e) = master.resize(PtySize {
                     rows: rows as u16,
                     cols: cols as u16,
                     pixel_width: 0,
@@ -333,7 +334,8 @@ impl Terminal {
     pub fn wake_nudge(&mut self) {
         let (cols, rows) = self.cached_dims;
         if let Some(pty) = self.pty.as_ref()
-            && let Err(e) = pty.pty_master.resize(PtySize {
+            && let Some(master) = pty.pty_master.as_ref()
+            && let Err(e) = master.resize(PtySize {
                 rows: rows as u16,
                 cols: cols as u16,
                 pixel_width: 0,
@@ -348,7 +350,8 @@ impl Terminal {
     pub fn force_flush_pty_resize(&mut self) {
         if let Some((cols, rows)) = self.pending_pty_resize.take() {
             if let Some(pty) = self.pty.as_ref()
-                && let Err(e) = pty.pty_master.resize(PtySize {
+                && let Some(master) = pty.pty_master.as_ref()
+                && let Err(e) = master.resize(PtySize {
                     rows: rows as u16,
                     cols: cols as u16,
                     pixel_width: 0,
