@@ -765,20 +765,35 @@ pub(crate) fn execute_forwarded_structural_op(
             surface_id,
             surface_kind,
             params,
+            cwd,
         } => {
             // generic `surface.convert` IPC 가 없어 재사용할 핸들러가 없다 —
             // `image::handle_open` 과 동일한 형태(`Core::apply` 직접 호출 +
-            // `SurfaceConverted{replaced}` 로 성공 판정)를 여기 직접 재현한다. cwd carry
-            // (`ConvertSurfaceTarget::{Terminal,Kind}.cwd`)는 `StructuralOp::ConvertSurface`
-            // 에 필드가 없어 forward 되지 않는다 — markdown.navigate(이 fix 의 주 동기)는
-            // 원래도 cwd:None 을 쓰므로 영향 없고, 그 외 kind 로의 mirror 변환만 로컬 실행과
-            // 달리 cwd carry 를 못 받는다(narrow, 알려진 한계).
+            // `SurfaceConverted{replaced}` 로 성공 판정)를 여기 직접 재현한다.
+            //
+            // cwd carry (`ConvertSurfaceTarget::{Terminal,Kind}.cwd`) 우선순위:
+            // **op 의 `cwd` > 서버 자체 resolve**. 전자는 client 가 source surface
+            // 에서 해석한 값(mirror 터미널은 detached 라 원격 셸의 OSC 7 이 있을 때만
+            // 채워진다), 후자는 `handle_git_query_request` 와 같은 근거로 서버가
+            // **실제 원격 PTY** 기준(`Terminal::get_cwd` — OSC 7 캐시 우선, 없으면
+            // Linux `/proc`·macOS `proc_pidinfo` 폴백)으로 직접 판정한다. 이 순서라
+            // 원격 셸이 OSC 7 을 방출하지 않는 경우까지 커버된다.
+            //
+            // 서버 resolve 는 로컬 convert 와 같은 헬퍼를 써서 `inherit_cwd` 설정
+            // 게이트를 그대로 적용한다 — 실행 주체가 원격 인스턴스이므로 그 인스턴스의
+            // 설정 의미론을 따르는 쪽이 로컬 실행과 대칭이다.
+            // (`docs/architecture/invariants/surface-cwd.md` §3)
             use crate::core::intent::ConvertSurfaceTarget;
+            let carried_cwd = cwd
+                .as_ref()
+                .filter(|s| !s.trim().is_empty())
+                .map(std::path::PathBuf::from)
+                .or_else(|| state.resolve_inherit_cwd_from_surface(engine, *surface_id));
             let target = if surface_kind == "terminal" {
-                ConvertSurfaceTarget::Terminal { cwd: None }
+                ConvertSurfaceTarget::Terminal { cwd: carried_cwd }
             } else {
                 ConvertSurfaceTarget::Kind {
-                    cwd: None,
+                    cwd: carried_cwd,
                     kind: surface_kind.clone(),
                     params: params.clone(),
                 }
@@ -2374,6 +2389,7 @@ mod forward_exec_tests {
             surface_id: a,
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
+            cwd: None,
         };
         let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
             .expect("convert ok")
@@ -2405,12 +2421,93 @@ mod forward_exec_tests {
             surface_id: a,
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
+            cwd: None,
         };
         let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
         assert!(
             r.is_ok(),
             "holder 의 forward ConvertSurface 는 hard-occupied 상태에서도 성공해야 한다"
         );
+    }
+
+    /// 변환 결과 surface 의 explorer root 를 돌려주는 테스트 헬퍼.
+    fn explorer_root(engine: &crate::core::CoreState, surface_id: u32) -> std::path::PathBuf {
+        engine
+            .find_surface_by_id(surface_id)
+            .expect("converted surface")
+            .as_any()
+            .downcast_ref::<tasty_model::ExplorerPanel>()
+            .expect("explorer 로 변환됐어야 한다")
+            .current_root()
+            .to_path_buf()
+    }
+
+    /// op 에 실려 온 cwd(=client 가 source surface 에서 해석한 값)가 변환 결과에
+    /// 적용된다 — 이게 없으면 explorer root 가 상대경로 폴백으로 떨어진다.
+    #[test]
+    fn forward_convert_surface_applies_wire_cwd() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let dir = tempfile::tempdir().expect("test tempdir");
+        let op = StructuralOp::ConvertSurface {
+            surface_id: a,
+            surface_kind: "explorer".to_string(),
+            params: serde_json::json!({}),
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+        };
+        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("convert ok")
+            .expect("convert delta");
+        assert_eq!(explorer_root(&engine, a), dir.path());
+    }
+
+    /// cwd 를 싣지 않은 op(구버전 client / OSC 7 미방출 원격 셸)는 서버가 대상
+    /// surface 의 실제 cwd 를 직접 resolve 해 채운다.
+    #[test]
+    fn forward_convert_surface_resolves_cwd_from_target_surface() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let dir = tempfile::tempdir().expect("test tempdir");
+        engine
+            .terminals
+            .get_mut(a)
+            .expect("seeded terminal")
+            .set_cached_cwd(dir.path().to_path_buf());
+        let op = StructuralOp::ConvertSurface {
+            surface_id: a,
+            surface_kind: "explorer".to_string(),
+            params: serde_json::json!({}),
+            cwd: None,
+        };
+        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("convert ok")
+            .expect("convert delta");
+        assert_eq!(explorer_root(&engine, a), dir.path());
+    }
+
+    /// 서버측 resolve 는 원격 인스턴스의 `inherit_cwd` 설정 게이트를 따른다(로컬
+    /// convert 와 동일 의미론) — 꺼져 있으면 cwd 를 채우지 않는다.
+    #[test]
+    fn forward_convert_surface_respects_inherit_cwd_gate() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let dir = tempfile::tempdir().expect("test tempdir");
+        engine
+            .terminals
+            .get_mut(a)
+            .expect("seeded terminal")
+            .set_cached_cwd(dir.path().to_path_buf());
+        engine.settings.general.inherit_cwd = false;
+        let op = StructuralOp::ConvertSurface {
+            surface_id: a,
+            surface_kind: "explorer".to_string(),
+            params: serde_json::json!({}),
+            cwd: None,
+        };
+        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
+            .expect("convert ok")
+            .expect("convert delta");
+        assert_ne!(explorer_root(&engine, a), dir.path());
     }
 
     /// forward 된 MoveSurface 는 서버에서 실제로 A(source) 를 B(target) 자리로

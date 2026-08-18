@@ -461,6 +461,19 @@ pub enum StructuralOp {
         surface_kind: String,
         #[serde(default)]
         params: serde_json::Value,
+        /// Working directory the new surface should inherit, as resolved by the
+        /// client from the surface being converted. A path **string** (not
+        /// `PathBuf`) because wire encoding must not depend on the sender's
+        /// platform path representation — same convention as the `list_dir`
+        /// family's `dir: String`.
+        ///
+        /// Absent (`None`) whenever the client cannot resolve one — a mirror
+        /// terminal is detached (no PTY), so it only knows a cwd when the remote
+        /// shell emitted OSC 7. The server then resolves the cwd from its own
+        /// authoritative surface, so this field is an optimization, not the only
+        /// source of truth.
+        #[serde(default)]
+        cwd: Option<String>,
     },
     /// Move a live surface onto another surface's slot (both remote ids).
     MoveSurface {
@@ -919,6 +932,7 @@ mod tests {
                 surface_id: 9,
                 surface_kind: "image".to_string(),
                 params: serde_json::json!({}),
+                cwd: Some("/tmp/proj".to_string()),
             },
             StructuralOp::MoveSurface {
                 source_surface_id: 10,
@@ -951,6 +965,24 @@ mod tests {
                 assert_eq!(params, serde_json::Value::Null);
             }
             _ => panic!("expected split_surface"),
+        }
+    }
+
+    /// wire 하위호환: `cwd` 키를 보내지 않는 구버전 client 의 convert op 도
+    /// 그대로 역직렬화되고 `cwd: None` 이 된다(서버가 자체 resolve 로 폴백).
+    #[test]
+    fn convert_surface_without_cwd_key_deserializes_to_none() {
+        let raw =
+            r#"{"kind":"convert_surface","surface_id":7,"surface_kind":"explorer","params":{}}"#;
+        let op: StructuralOp = serde_json::from_str(raw).unwrap();
+        match op {
+            StructuralOp::ConvertSurface {
+                cwd, surface_id, ..
+            } => {
+                assert_eq!(surface_id, 7);
+                assert!(cwd.is_none());
+            }
+            other => panic!("expected convert_surface, got {other:?}"),
         }
     }
 

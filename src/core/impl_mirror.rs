@@ -183,16 +183,24 @@ fn build_mirror_forward_op(
         }),
         D::ConvertSurface { surface_id, target } => {
             use crate::core::intent::ConvertSurfaceTarget;
-            let (surface_kind, params) = match target {
-                ConvertSurfaceTarget::Terminal { .. } => {
-                    ("terminal".to_string(), serde_json::json!({}))
+            // cwd 는 intent handler 가 이미 source surface 에서 carry 해둔 값이다
+            // (`docs/architecture/invariants/surface-cwd.md` §3) — forward 경로에서
+            // 버리지 않고 그대로 실어보낸다. mirror 터미널은 PTY 가 없어 원격 셸이
+            // OSC 7 을 방출한 경우에만 값이 있고, 없으면 `None` 으로 나가 서버가
+            // 자기 트리에서 직접 resolve 한다.
+            let (surface_kind, params, cwd) = match target {
+                ConvertSurfaceTarget::Terminal { cwd } => {
+                    ("terminal".to_string(), serde_json::json!({}), cwd.clone())
                 }
-                ConvertSurfaceTarget::Kind { kind, params, .. } => (kind.clone(), params.clone()),
+                ConvertSurfaceTarget::Kind { kind, params, cwd } => {
+                    (kind.clone(), params.clone(), cwd.clone())
+                }
             };
             Some(StructuralOp::ConvertSurface {
                 surface_id: *surface_id,
                 surface_kind,
                 params,
+                cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
             })
         }
         D::MoveSurface {
@@ -1181,10 +1189,78 @@ mod mirror_structural_guard_tests {
                 surface_id,
                 surface_kind,
                 params,
+                cwd,
             } => {
                 assert_eq!(*surface_id, a, "anchor 는 로컬 surface a");
                 assert_eq!(surface_kind, "markdown");
                 assert_eq!(params, &serde_json::json!({ "file": "/tmp/a.md" }));
+                assert!(
+                    cwd.is_none(),
+                    "cwd 를 지정하지 않은 convert 는 None 으로 나간다"
+                );
+            }
+            other => panic!("expected ConvertSurface, got {other:?}"),
+        }
+    }
+
+    /// intent handler 가 source surface 에서 carry 한 cwd 는 forward op 에 그대로
+    /// 실린다 — mirror 경로에서 cwd 가 유실되면 explorer root 가 상대경로가 된다.
+    #[test]
+    fn mirror_convert_forwards_cwd() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::ConvertSurface {
+                    surface_id: a,
+                    target: crate::core::intent::ConvertSurfaceTarget::Kind {
+                        cwd: Some(std::path::PathBuf::from("/tmp/proj")),
+                        kind: "explorer".to_string(),
+                        params: serde_json::json!({}),
+                    },
+                },
+            )
+            .expect_err("blocked locally");
+        assert!(
+            err.downcast_ref::<MirrorStructuralBlocked>()
+                .expect("MirrorStructuralBlocked")
+                .forwarded
+        );
+        match &engine.pending_structural_forward[0].op {
+            StructuralOp::ConvertSurface { cwd, .. } => {
+                assert_eq!(cwd.as_deref(), Some("/tmp/proj"));
+            }
+            other => panic!("expected ConvertSurface, got {other:?}"),
+        }
+    }
+
+    /// 터미널로 되돌리는 변환(`ConvertSurfaceTarget::Terminal`)도 같은 불변식 대상 —
+    /// 원격 PTY 가 홈이 아니라 source cwd 에서 뜨도록 cwd 를 실어보낸다.
+    #[test]
+    fn mirror_convert_to_terminal_forwards_cwd() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        core.apply(
+            &mut engine,
+            DomainIntent::ConvertSurface {
+                surface_id: a,
+                target: crate::core::intent::ConvertSurfaceTarget::Terminal {
+                    cwd: Some(std::path::PathBuf::from("/tmp/proj")),
+                },
+            },
+        )
+        .expect_err("blocked locally");
+        match &engine.pending_structural_forward[0].op {
+            StructuralOp::ConvertSurface {
+                cwd, surface_kind, ..
+            } => {
+                assert_eq!(surface_kind, "terminal");
+                assert_eq!(cwd.as_deref(), Some("/tmp/proj"));
             }
             other => panic!("expected ConvertSurface, got {other:?}"),
         }

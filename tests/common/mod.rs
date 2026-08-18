@@ -31,7 +31,7 @@ pub struct TastyInstance {
     stderr_drain: Option<JoinHandle<()>>,
 }
 
-fn write_isolated_config(isolated_home: &std::path::Path) {
+fn write_isolated_config(isolated_home: &std::path::Path, inherit_cwd: bool) {
     let tasty_dir = isolated_home.join(".tasty");
     std::fs::create_dir_all(&tasty_dir).expect("failed to create isolated .tasty dir");
 
@@ -54,13 +54,14 @@ language = "en"
 scrollback_lines = 10000
 confirm_close_running = false
 click_to_move_cursor = true
-inherit_cwd = false
+inherit_cwd = {inherit_cwd}
 close_behavior = "ask"
 restore_layout = false
 restore_surface_content = false
 link_click_modifier = "ctrl"
 "#,
-        shell = shell_path
+        shell = shell_path,
+        inherit_cwd = inherit_cwd
     );
     std::fs::write(tasty_dir.join("config.toml"), config)
         .expect("failed to write isolated config.toml");
@@ -79,6 +80,12 @@ fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
 
 impl TastyInstance {
     pub fn spawn() -> Self {
+        Self::spawn_with_inherit_cwd(false)
+    }
+
+    /// `inherit_cwd` 설정만 바꿔 띄우는 변형. 이 설정이 게이트하는 동작(convert /
+    /// split 의 cwd carry)을 실제 서버 프로세스 상대로 검증할 때 쓴다.
+    pub fn spawn_with_inherit_cwd(inherit_cwd: bool) -> Self {
         let unique = format!(
             "{}-{}",
             std::process::id(),
@@ -102,7 +109,7 @@ impl TastyInstance {
         // 격리된 ~/.tasty/config.toml 사전 작성 — shell auto-detect 분기를 결정적으로
         // 차단하여 host /etc/passwd 와 $SHELL 의존을 제거한다. shell_setup_mode 진입
         // 경로를 막아 port file 이 항상 작성되도록 보장한다.
-        write_isolated_config(&isolated_home);
+        write_isolated_config(&isolated_home, inherit_cwd);
 
         let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")

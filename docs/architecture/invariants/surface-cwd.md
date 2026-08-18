@@ -40,6 +40,17 @@ pub(crate) enum ConvertSurfaceTarget {
 
 호출자가 명시 안 하면(`cwd: None`) intent handler(`src/intent/surface.rs::convert`)가 source surface 에서 carry 한다 — **fallback 결정은 항상 intent handler 가 담당**, 호출자가 임의로 `None` 고정 금지.
 
+#### 3-1. mirror(원격 attach) forward 경로도 같은 불변식 대상
+
+mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `StructuralOp::ConvertSurface` 로 원격에 forward 된다([features/remote-attach](../../features/remote-attach/index.md)). 이 경로에서도 cwd 는 손실되지 않는다 — 우선순위는 **op 의 `cwd` > 원격 서버의 자체 resolve** 다.
+
+| 단계 | 담당 | 값 |
+|------|------|----|
+| client → wire | `src/core/impl_mirror.rs` (`build_mirror_forward_op`) | intent handler 가 carry 해둔 cwd 를 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror 터미널은 PTY 없는 detached 라 원격 셸의 OSC 7 이 있을 때만 값이 있다 |
+| 원격 실행 | `src/core/attach_runtime.rs` (`execute_forwarded_structural_op`) | op 의 `cwd` 가 비어 있으면 `AppState::resolve_inherit_cwd_from_surface` 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
+
+서버측 resolve 는 로컬 convert 와 같은 헬퍼를 쓰므로 **원격 인스턴스의 `inherit_cwd` 설정 게이트를 그대로 적용**한다(실행 주체의 설정 의미론을 따르는 쪽이 로컬 실행과 대칭). `cwd` 키가 없는 구버전 client 의 op 도 이 서버측 resolve 로 커버된다.
+
 ### 4. Plugin SDK 계약 — `SurfaceCreateCtx.cwd`
 
 ```rust
@@ -59,6 +70,7 @@ host→plugin IPC `surface.create` payload 의 top-level `cwd` 키로 직렬화.
 | trait default 제거(`source_cwd`) | 새 Surface impl 추가 시 cwd 의미 명시 강제 |
 | `SurfaceKindDef.create` cwd 인자 | 모든 builtin + plugin 등록자 강제 |
 | `ConvertSurfaceTarget::Kind.cwd` 필드 | 변환 경로 cwd 누락 컴파일 차단 |
+| `StructuralOp::ConvertSurface.cwd` 필드 | mirror forward 경로 cwd 누락 컴파일 차단 |
 
 검출: `rg 'ConvertSurfaceTarget::Kind \{ cwd: None'` · `rg 'env::current_dir' crates/tasty-plugin-explorer/` · 새 impl 의 source_cwd 누락은 컴파일 실패.
 
