@@ -764,8 +764,18 @@ impl CoreState {
 
     /// Push a closed item, automatically injecting restore commands from surface metadata.
     /// Plugins write the `restore.command` meta key directly (host stays agent-agnostic).
-    pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
+    ///
+    /// 반환값은 close 계측(`tasty::close` C2)의 세부 소요다. workspace close 경로만
+    /// 이를 로그로 찍고, tab/pane close 는 같은 함수를 타지만 계측 대상이 아니라
+    /// 값을 그대로 버린다 — 여기서 직접 로그를 찍으면 탭 하나 닫을 때마다 info 가
+    /// 나가 close 계측의 신호 대 잡음비가 무너진다.
+    pub fn push_closed_item(
+        &mut self,
+        mut item: crate::model::ClosedItem,
+    ) -> crate::close_trace::PushClosedItemTimings {
+        let mut timings = crate::close_trace::PushClosedItemTimings::default();
         let mem = self.memory.clone();
+        let t_inject = std::time::Instant::now();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
             let mut guard = match mem.lock() {
                 Ok(g) => g,
@@ -773,12 +783,14 @@ impl CoreState {
             };
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
         });
+        timings.restore_inject = t_inject.elapsed();
         // Persist the captured scrollback to disk so the retained closed item
         // holds only a reference (persist_id), not up to 10k lines per surface.
         // A fresh id is used (not the live surface's layout persist_id, which
         // `cleanup_surface` deletes on close), so the two never collide. Stale
         // closed-item files are reclaimed by `gc_orphans` on the next startup,
         // since closed items do not survive a restart.
+        let t_persist = std::time::Instant::now();
         crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |lines| {
             let id = crate::scrollback_store::new_persist_id();
             match crate::scrollback_store::write(&id, lines) {
@@ -789,9 +801,11 @@ impl CoreState {
                 }
             }
         });
+        timings.scrollback_persist = t_persist.elapsed();
         // Evicting the oldest item must release its backing scrollback files,
         // otherwise `~/.tasty/scrollback/*.bin` orphans accumulate for the rest
         // of the session.
+        let t_evict = std::time::Instant::now();
         if let Some(evicted) = self.closed_items.push(item) {
             let mut refs = Vec::new();
             crate::model::closed_item::collect_scrollback_refs(&evicted, &mut refs);
@@ -799,6 +813,8 @@ impl CoreState {
                 crate::scrollback_store::delete(&id);
             }
         }
+        timings.evict = t_evict.elapsed();
+        timings
     }
 
     /// Record that the user typed on the given surface.

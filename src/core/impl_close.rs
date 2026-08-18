@@ -341,8 +341,18 @@ impl Core {
         surface_id: u32,
         save_snapshot: bool,
     ) -> CoreEvent {
+        use crate::close_trace;
         use crate::core::intent::CascadeLevel;
+        use std::time::Instant;
+
+        // cascade 경로의 close_total 기준 시각. 실제 cleanup 은 함수 밖
+        // (`cascade_surface_closed`)에서 벌어지므로 t0 을 close_trace 에 맡긴다.
+        let t_close = Instant::now();
+        crate::close_trace::arm_cascade(t_close, save_snapshot);
+        // C1/C2 — snapshot 은 조건부다(`save_snapshot`). IPC/에이전트 close 는
+        // false 로 들어와 두 단계를 통째로 건너뛴다 — GUI 경로와의 비용 구조 차이다.
         if save_snapshot {
+            let t = Instant::now();
             let item = {
                 let mut snap_fn =
                     crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
@@ -350,8 +360,11 @@ impl Core {
                 let terminals = &engine.terminals;
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
             };
-            engine.push_closed_item(item);
+            close_trace::log_snapshot(t, &item, "cascade");
+            let t = Instant::now();
+            engine.push_closed_item(item).log(t.elapsed(), "cascade");
         }
+        let t_collect = Instant::now();
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut closed_tab_ids: Vec<u32> = Vec::new();
         let mut closed_pane_ids: Vec<u32> = Vec::new();
@@ -367,6 +380,7 @@ impl Core {
                 }
             }
         }
+        close_trace::log_collect(t_collect, targets.len(), "cascade");
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
         let workspaces_now_empty = engine.workspaces.is_empty();

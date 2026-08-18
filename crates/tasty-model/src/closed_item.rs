@@ -581,6 +581,30 @@ pub fn collect_scrollback_refs(item: &ClosedItem, out: &mut Vec<String>) {
     });
 }
 
+/// 스냅샷 규모 — close 계측(`tasty::close` C1)이 "ms 가 무엇에 비례하는가" 를
+/// 판정하려면 surface 수와 스크롤백 라인 수가 함께 필요하다.
+#[derive(Default, Clone, Copy)]
+pub struct SnapshotExtent {
+    /// 스냅샷에 담긴 surface 수.
+    pub surfaces: u64,
+    /// 아직 인라인(메모리)으로 들고 있는 스크롤백 라인 총합. 디스크로 내려간
+    /// (`Persisted`) 뒤에 세면 0 이 되므로 **`persist_closed_scrollback` 전에**
+    /// 호출해야 의미가 있다.
+    pub scrollback_lines: u64,
+}
+
+/// 캡처 직후의 [`ClosedItem`] 규모를 센다.
+pub fn snapshot_extent(item: &ClosedItem) -> SnapshotExtent {
+    let mut out = SnapshotExtent::default();
+    visit_surfaces(item, &mut |s| {
+        out.surfaces += 1;
+        if let ClosedScrollback::Inline(lines) = &s.scrollback {
+            out.scrollback_lines += lines.len() as u64;
+        }
+    });
+    out
+}
+
 /// LIFO store for recently closed items.
 pub struct ClosedItemStore {
     items: VecDeque<ClosedItem>,

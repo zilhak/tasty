@@ -1641,7 +1641,8 @@ pub(crate) fn cascade_surface_closed(
     engine: &mut crate::core::CoreState,
     c: SurfaceCloseCascade,
 ) {
-    // 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
+    // C5 — 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
+    let surfaces = c.cleanup_targets.len();
     cleanup_closed_surfaces(state, engine, c.cleanup_targets, c.is_user_close);
 
     // 2. cascade_level 별 host event (`tab.closed` / `pane.closed`) enqueue +
@@ -1650,13 +1651,20 @@ pub(crate) fn cascade_surface_closed(
     enqueue_closed_tab_events(state, &c.closed_tab_ids, &c.closed_pane_ids);
     enqueue_closed_pane_events(state, &c.closed_pane_ids);
 
-    // 3. workspace_id_purged 가 Some 이면 memory scope purge
+    // C4 — 3. workspace_id_purged 가 Some 이면 memory scope purge
     purge_closed_workspace_memory(state, c.workspace_id_purged);
 
     // 4. cascade_level == Workspace 면 active_workspace 보정
     fix_active_workspace_after_cascade(state, engine, c.cascade_level);
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
+
+    // close_total — workspace level cascade 일 때만. `Core::close_case_workspace`
+    // 가 무장한 t0 을 여기서 소비하므로, tab/pane level cascade 는 무장 자체가
+    // 없어 `None` 으로 빠진다.
+    if let Some((t0, snapshot)) = crate::close_trace::take_cascade() {
+        crate::close_trace::log_total(t0, surfaces, snapshot, "cascade");
+    }
 }
 
 /// `cascade_surface_closed` 1 단계: cleanup_targets 의 sibling 들이 plugin
@@ -1670,11 +1678,14 @@ fn cleanup_closed_surfaces(
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
 ) {
+    let t_loop = std::time::Instant::now();
+    let mut sums = crate::close_trace::CleanupSums::default();
     for (sid, pid) in cleanup_targets {
         let kind = state.surface_kind(engine, sid);
-        state.cleanup_surface(engine, sid, pid);
+        state.cleanup_surface_traced(engine, sid, pid, &mut sums);
         state.enqueue_surface_closed(sid, kind, is_user_close);
     }
+    sums.log(t_loop.elapsed(), "cascade");
 }
 
 /// `cascade_surface_closed` 2 단계 (tab): 닫힌 tab 마다 `tab.closed` host event
@@ -1721,12 +1732,17 @@ fn purge_closed_workspace_memory(
         return;
     };
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
+    let t = std::time::Instant::now();
     let scope = tasty_memory::Scope::Workspace(workspace_id);
-    let mut guard = match state.memory.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
+    let purged = {
+        let mut guard = match state.memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.purge_scope(&scope)
     };
-    match guard.purge_scope(&scope) {
+    crate::close_trace::log_ws_purge(t, "cascade");
+    match purged {
         Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
             workspace_id,
             regular = stats.regular,

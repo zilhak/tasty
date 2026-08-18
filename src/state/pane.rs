@@ -544,13 +544,27 @@ impl AppState {
         save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
-        // Capture workspace snapshot before removing (user actions only)
+        use crate::close_trace;
+        use std::time::Instant;
+
+        /// close 계측의 경로 구분값 — surface→workspace cascade 를 한 함수 안에서
+        /// 끝내는 인라인 디스패처.
+        const PATH: &str = "inline";
+
+        let t_close = Instant::now();
+        // C1/C2 — snapshot 은 조건부다. `save_snapshot=false`(에이전트/PTY exit)면
+        // 두 단계가 통째로 생략되고, 그 사실은 close_total 의 `snapshot` 필드에 남는다.
         if save_snapshot {
+            let t = Instant::now();
             let item = Self::capture_workspace_snapshot(engine, loc.ws_idx);
-            engine.push_closed_item(item);
+            close_trace::log_snapshot(t, &item, PATH);
+            let t = Instant::now();
+            engine.push_closed_item(item).log(t.elapsed(), PATH);
         }
-        // Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
+        // C3 — Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
+        let t = Instant::now();
         let targets = Self::collect_workspace_close_targets(engine, loc.ws_idx);
+        close_trace::log_collect(t, targets.len(), PATH);
         // workspaces.remove 이후엔 surface_kind 조회 불가 → 미리 캡쳐.
         let target_kinds: Vec<Option<&'static str>> = targets
             .iter()
@@ -561,15 +575,20 @@ impl AppState {
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
             self.active_workspace = engine.workspaces.len() - 1;
         }
-        // Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀 workspace 도 사라지는 경로).
+        // C4 — Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀
+        // workspace 도 사라지는 경로).
+        let t = Instant::now();
         self.purge_workspace_memory_scope(workspace_id);
+        close_trace::log_ws_purge(t, PATH);
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
             .zip(target_kinds)
             .map(|((sid, pid), kind)| (sid, pid, kind))
             .collect();
-        self.cleanup_targets(engine, zipped, is_user_close);
+        let surfaces = zipped.len();
+        self.cleanup_targets(engine, zipped, is_user_close, Some(PATH));
         engine.mark_layout_dirty();
+        close_trace::log_total(t_close, surfaces, save_snapshot, PATH);
         true
     }
 }

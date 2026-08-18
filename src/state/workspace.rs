@@ -267,19 +267,34 @@ impl AppState {
     /// Close a specific workspace by index (context menu 등 임의 지정 close).
     /// Cleans up all surfaces + closed_item snapshot + memory scope purge.
     pub fn close_workspace_at(&mut self, engine: &mut CoreState, ws_idx: usize) -> bool {
+        use crate::close_trace;
+        use std::time::Instant;
+
+        /// close 계측의 경로 구분값 — 이 함수는 GUI 트리거 전용이다.
+        const PATH: &str = "gui";
+
         if ws_idx >= engine.workspaces.len() {
             return false;
         }
-        // Capture workspace snapshot before closing
+        let t_close = Instant::now();
+        // C1 — Capture workspace snapshot before closing.
+        let t = Instant::now();
         let snapshot = super::AppState::capture_workspace_snapshot(engine, ws_idx);
-        engine.push_closed_item(snapshot);
-        // Collect all (surface_id, persist_id) for cleanup before removing the workspace.
+        close_trace::log_snapshot(t, &snapshot, PATH);
+        // C2 — restore.command 주입 + 스크롤백 디스크 write + evict.
+        let t = Instant::now();
+        engine.push_closed_item(snapshot).log(t.elapsed(), PATH);
+        // C3 — Collect all (surface_id, persist_id) for cleanup before removing.
+        let t = Instant::now();
         let targets = super::AppState::collect_workspace_close_targets(engine, ws_idx);
+        close_trace::log_collect(t, targets.len(), PATH);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
-        // Workspace scope 의 memory entry 정리. 안의 surface 들은 아래 cleanup_surface
-        // 에서 각자 자기 scope 를 purge 한다.
+        // C4 — Workspace scope 의 memory entry 정리. 안의 surface 들은 아래
+        // cleanup_surface 에서 각자 자기 scope 를 purge 한다.
+        let t = Instant::now();
         self.purge_workspace_memory_scope(workspace_id);
+        close_trace::log_ws_purge(t, PATH);
         // Adjust active workspace index
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
             self.active_workspace = engine.workspaces.len() - 1;
@@ -294,8 +309,10 @@ impl AppState {
                 (sid, pid, kind)
             })
             .collect();
-        self.cleanup_targets(engine, zipped, true);
+        let surfaces = zipped.len();
+        self.cleanup_targets(engine, zipped, true, Some(PATH));
         engine.mark_layout_dirty();
+        close_trace::log_total(t_close, surfaces, true, PATH);
         true
     }
 }

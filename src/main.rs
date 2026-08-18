@@ -8,6 +8,7 @@ mod adapters;
 mod app;
 mod boot;
 mod clipboard;
+mod close_trace;
 mod completion_strategy;
 mod core;
 mod db;

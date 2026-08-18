@@ -1201,11 +1201,37 @@ impl AppState {
         surface_id: u32,
         persist_id: Option<String>,
     ) {
+        let mut sink = crate::close_trace::CleanupSums::default();
+        self.cleanup_surface_traced(engine, surface_id, persist_id, &mut sink);
+    }
+
+    /// `cleanup_surface` 와 같은 일을 하되 단계별 소요를 `sums` 에 누적한다
+    /// (close 계측 C5a~C5e). surface 마다 로그를 찍지 않고 합계만 모으는 이유는
+    /// `crate::close_trace` 모듈 문서 참조.
+    pub(crate) fn cleanup_surface_traced(
+        &mut self,
+        engine: &mut CoreState,
+        surface_id: u32,
+        persist_id: Option<String>,
+        sums: &mut crate::close_trace::CleanupSums,
+    ) {
+        use std::time::Instant;
+        sums.surfaces += 1;
+        let t = Instant::now();
         Self::delete_scrollback_persist(persist_id);
+        sums.scrollback_delete += t.elapsed();
+        let t = Instant::now();
         self.drop_terminal(engine, surface_id);
+        sums.terminal_drop += t.elapsed();
+        let t = Instant::now();
         self.remove_surface_meta(surface_id);
+        sums.meta_remove += t.elapsed();
+        let t = Instant::now();
         self.drop_surface_indices(engine, surface_id);
+        sums.indices_drop += t.elapsed();
+        let t = Instant::now();
         self.purge_surface_memory_scope(surface_id);
+        sums.memory_purge += t.elapsed();
     }
 
     fn delete_scrollback_persist(persist_id: Option<String>) {
@@ -1319,10 +1345,16 @@ impl AppState {
         engine: &mut CoreState,
         targets: Vec<(u32, Option<String>, Option<&'static str>)>,
         is_user_close: bool,
+        trace: Option<&'static str>,
     ) {
+        let t_loop = std::time::Instant::now();
+        let mut sums = crate::close_trace::CleanupSums::default();
         for (sid, pid, kind) in targets {
-            self.cleanup_surface(engine, sid, pid);
+            self.cleanup_surface_traced(engine, sid, pid, &mut sums);
             self.enqueue_surface_closed(sid, kind, is_user_close);
+        }
+        if let Some(path) = trace {
+            sums.log(t_loop.elapsed(), path);
         }
     }
 
