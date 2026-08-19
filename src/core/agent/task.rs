@@ -4,7 +4,10 @@
 use tasty_agent::task::{
     TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
 };
-use tasty_agent::{AgentError, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore};
+use tasty_agent::{
+    AgentError, DagSummary, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore,
+    group_tasks_into_dags,
+};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
@@ -45,6 +48,68 @@ impl Core {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.list(workspace_id)
         })
+    }
+
+    /// 등록된 DAG 목록. `workspace_id` 가 `None` 이면 **지금 살아있는 전 workspace**
+    /// 를 순회한다(원칙 3 — 활성 workspace 에 의존하지 않는다).
+    ///
+    /// 삭제된 workspace 에 남은 고아 task 는 열거하지 않는다 — 영속 scope 를 직접
+    /// 훑으면(`MemoryStore::scopes`) 드러나겠지만, 목록이 보여줄 대상은 사람이 지금
+    /// 조작 가능한 workspace 의 DAG 다. 고아 정리는 부팅 시 자동 GC 의 책임이다
+    /// (`docs/dev-guide/agent-runner.md` "자동 GC").
+    pub(crate) fn dag_list(
+        &self,
+        engine: &CoreState,
+        workspace_id: Option<u32>,
+    ) -> Result<Vec<DagSummary>, AgentError> {
+        let mut out = Vec::new();
+        for wid in self.dag_scan_workspaces(engine, workspace_id) {
+            let tasks = self.task_list(engine, wid)?;
+            out.extend(group_tasks_into_dags(&tasks));
+        }
+        Ok(out)
+    }
+
+    /// DAG 하나 + 그 DAG 에 속한 task 전체. 못 찾으면 `None`.
+    ///
+    /// `workspace_id` 가 `None` 이면 전 workspace 를 오름차순으로 훑어 첫 일치를
+    /// 돌려준다 — explicit id(`d:<metadata.dag>`)는 사용자가 정한 키라 서로 다른
+    /// workspace 가 같은 값을 쓸 수 있으므로, 그 경우를 구분하려면 호출자가
+    /// `workspace_id` 를 함께 준다.
+    pub(crate) fn dag_get(
+        &self,
+        engine: &CoreState,
+        workspace_id: Option<u32>,
+        dag_id: &str,
+    ) -> Result<Option<(DagSummary, Vec<Task>)>, AgentError> {
+        for wid in self.dag_scan_workspaces(engine, workspace_id) {
+            let tasks = self.task_list(engine, wid)?;
+            let Some(dag) = group_tasks_into_dags(&tasks)
+                .into_iter()
+                .find(|d| d.id == dag_id)
+            else {
+                continue;
+            };
+            let subset = tasks
+                .into_iter()
+                .filter(|t| dag.task_ids.contains(&t.id))
+                .collect();
+            return Ok(Some((dag, subset)));
+        }
+        Ok(None)
+    }
+
+    /// DAG 조회가 훑을 workspace id 목록. 순회 순서를 id 오름차순으로 고정해
+    /// `dag_list` 결과가 workspace 생성 순서에 흔들리지 않게 한다.
+    fn dag_scan_workspaces(&self, engine: &CoreState, workspace_id: Option<u32>) -> Vec<u32> {
+        match workspace_id {
+            Some(w) => vec![w],
+            None => {
+                let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+                ids.sort_unstable();
+                ids
+            }
+        }
     }
 
     /// Task 단건 조회.

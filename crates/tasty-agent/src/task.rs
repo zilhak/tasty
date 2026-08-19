@@ -347,9 +347,11 @@ pub(super) fn apply_on_failure(task: &Task, _all: &[Task]) -> Option<TaskState> 
     }
 }
 
+pub mod dag;
 mod graph;
 mod store;
 
+pub use dag::{DagStateCounts, DagSummary, group_tasks_into_dags};
 pub use graph::*;
 pub use store::*;
 

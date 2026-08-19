@@ -2094,3 +2094,254 @@ fn plan_sweep_filters_by_state_name() {
     assert_eq!(plan.deleted, vec![term.id.clone()]);
     assert!(!plan.deleted.contains(&ready.id));
 }
+
+// ============================================================
+// DAG 그룹핑 (`task/dag.rs`)
+// ============================================================
+
+/// 그룹핑은 순수 함수라 store 를 거치지 않는다 — `Task` 를 직접 조립한다.
+fn dag_task(id: &str, depends_on: &[&str], created_at: u64) -> Task {
+    Task {
+        id: id.to_string(),
+        workspace_id: 1,
+        name: id.to_string(),
+        command: run_cmd(),
+        depends_on: depends_on.iter().map(|s| s.to_string()).collect(),
+        state: TaskState::Waiting,
+        created_at,
+        started_at: None,
+        finished_at: None,
+        result: None,
+        on_failure: OnFailure::Abort,
+        metadata: serde_json::Value::Null,
+        reserved_for_fallback: false,
+    }
+}
+
+fn two_disconnected_pairs() -> Vec<Task> {
+    vec![
+        dag_task("t-a", &[], 1000),
+        dag_task("t-b", &["t-a"], 1001),
+        dag_task("t-c", &[], 1002),
+        dag_task("t-d", &["t-c"], 1003),
+    ]
+}
+
+#[test]
+fn groups_disconnected_graphs_into_separate_dags() {
+    let dags = group_tasks_into_dags(&two_disconnected_pairs());
+    assert_eq!(dags.len(), 2);
+    assert!(dags.iter().all(|d| d.task_count == 2));
+    assert!(dags.iter().all(|d| d.source == "derived"));
+    assert!(dags.iter().all(|d| !d.has_cycle));
+    // derived id 는 그룹 내 `(created_at, id)` 최소 task 에서 나온다.
+    let ids: Vec<&str> = dags.iter().map(|d| d.id.as_str()).collect();
+    assert_eq!(ids, vec!["c:t-a", "c:t-c"]);
+    // root 는 그룹 내 다른 task 를 참조하지 않는 쪽.
+    assert_eq!(dags[0].root_task_ids, vec!["t-a".to_string()]);
+    assert_eq!(dags[1].root_task_ids, vec!["t-c".to_string()]);
+}
+
+#[test]
+fn dag_id_is_deterministic_across_calls() {
+    let tasks = two_disconnected_pairs();
+    let a: Vec<String> = group_tasks_into_dags(&tasks)
+        .into_iter()
+        .map(|d| d.id)
+        .collect();
+    let b: Vec<String> = group_tasks_into_dags(&tasks)
+        .into_iter()
+        .map(|d| d.id)
+        .collect();
+    assert_eq!(a, b);
+
+    // 입력 순서가 뒤집혀도 같은 id 집합/순서가 나와야 한다 — store 가 돌려주는
+    // 순서에 화면 선택 상태가 흔들리면 안 된다.
+    let mut reversed = tasks.clone();
+    reversed.reverse();
+    let c: Vec<String> = group_tasks_into_dags(&reversed)
+        .into_iter()
+        .map(|d| d.id)
+        .collect();
+    assert_eq!(a, c);
+}
+
+#[test]
+fn explicit_metadata_dag_overrides_connectivity() {
+    let mut x = dag_task("t-x", &[], 1000);
+    x.metadata = serde_json::json!({ "dag": "build" });
+    let mut y = dag_task("t-y", &[], 1001);
+    y.metadata = serde_json::json!({ "dag": "build" });
+
+    let dags = group_tasks_into_dags(&[x, y]);
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].source, "explicit");
+    assert_eq!(dags[0].id, "d:build");
+    assert_eq!(dags[0].name, "build");
+    assert_eq!(dags[0].task_count, 2);
+}
+
+#[test]
+fn explicit_dag_name_overrides_group_key() {
+    let mut x = dag_task("t-x", &[], 1000);
+    x.metadata = serde_json::json!({ "dag": "build", "dag_name": "Release build" });
+    let dags = group_tasks_into_dags(&[x]);
+    assert_eq!(dags[0].name, "Release build");
+}
+
+#[test]
+fn derived_dag_name_falls_back_to_root_task_name() {
+    let dags = group_tasks_into_dags(&two_disconnected_pairs());
+    assert_eq!(dags[0].name, "t-a");
+}
+
+#[test]
+fn reduce_fallback_and_fallback_of_edges_join_one_dag() {
+    // p -> (reduce r) 로만 이어진 쌍, f 는 m 의 사전 존재 fallback,
+    // i 는 m2 의 inline fallback 으로 동적 생성된 것(metadata.fallback_of).
+    let p = dag_task("t-p", &[], 1000);
+    let mut r = dag_task("t-r", &[], 1001);
+    r.command = reduce_cmd(vec!["t-p".to_string()]);
+
+    let mut m = dag_task("t-m", &[], 1002);
+    m.on_failure = OnFailure::Fallback {
+        task: Some("t-f".to_string()),
+        inline: None,
+    };
+    let f = dag_task("t-f", &[], 1003);
+
+    let m2 = dag_task("t-m2", &[], 1004);
+    let mut i = dag_task("t-i", &[], 1005);
+    i.metadata = serde_json::json!({ "fallback_of": "t-m2" });
+
+    let dags = group_tasks_into_dags(&[p, r, m, f, m2, i]);
+    assert_eq!(dags.len(), 3);
+    let by_id: std::collections::HashMap<&str, &DagSummary> =
+        dags.iter().map(|d| (d.id.as_str(), d)).collect();
+    assert_eq!(by_id["c:t-p"].task_ids, vec!["t-p", "t-r"]);
+    assert_eq!(by_id["c:t-m"].task_ids, vec!["t-m", "t-f"]);
+    assert_eq!(by_id["c:t-m2"].task_ids, vec!["t-m2", "t-i"]);
+}
+
+#[test]
+fn rollup_state_precedence_running_over_failed_over_terminal() {
+    let states = |ss: &[TaskState]| -> &'static str {
+        let tasks: Vec<Task> = ss
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                // 서로 무관한 task 들이지만 explicit 키로 한 DAG 에 묶어 rollup 만 본다.
+                let mut t = dag_task(&format!("t-{i}"), &[], 1000 + i as u64);
+                t.state = s.clone();
+                t.metadata = serde_json::json!({ "dag": "g" });
+                t
+            })
+            .collect();
+        let dags = group_tasks_into_dags(&tasks);
+        assert_eq!(dags.len(), 1);
+        dags[0].rollup_state
+    };
+    let failed = || TaskState::Failed {
+        error: "x".to_string(),
+    };
+
+    // running 이 가장 우선 — failed 가 섞여 있어도 running.
+    assert_eq!(
+        states(&[TaskState::Running, failed(), TaskState::Ready]),
+        "running"
+    );
+    // running 이 없으면 failed.
+    assert_eq!(states(&[failed(), TaskState::Ready]), "failed");
+    // 전부 terminal + 전부 succeeded → succeeded.
+    assert_eq!(
+        states(&[TaskState::Succeeded, TaskState::Succeeded]),
+        "succeeded"
+    );
+    // 전부 terminal 인데 cancelled/skipped 가 섞임 → skipped.
+    assert_eq!(
+        states(&[TaskState::Succeeded, TaskState::Cancelled]),
+        "skipped"
+    );
+    assert_eq!(states(&[TaskState::Skipped]), "skipped");
+    // 미완이 남았고 ready 가 있으면 ready.
+    assert_eq!(states(&[TaskState::Waiting, TaskState::Ready]), "ready");
+    // 그 외는 waiting (unknown 도 미완으로 취급).
+    assert_eq!(states(&[TaskState::Waiting, TaskState::Unknown]), "waiting");
+
+    // state_counts 는 8종 전부를 센다.
+    let tasks: Vec<Task> = [TaskState::Running, TaskState::Running, TaskState::Waiting]
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let mut t = dag_task(&format!("t-{i}"), &[], 1000 + i as u64);
+            t.state = s.clone();
+            t.metadata = serde_json::json!({ "dag": "g" });
+            t
+        })
+        .collect();
+    let dags = group_tasks_into_dags(&tasks);
+    assert_eq!(dags[0].state_counts.running, 2);
+    assert_eq!(dags[0].state_counts.waiting, 1);
+    assert_eq!(dags[0].state_counts.succeeded, 0);
+}
+
+#[test]
+fn dag_timestamps_span_the_group() {
+    let mut a = dag_task("t-a", &[], 1000);
+    a.started_at = Some(1500);
+    a.finished_at = Some(2000);
+    let b = dag_task("t-b", &["t-a"], 1200);
+
+    let dags = group_tasks_into_dags(&[a, b]);
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].created_at, 1000);
+    assert_eq!(dags[0].updated_at, 2000);
+}
+
+#[test]
+fn dags_do_not_span_workspaces() {
+    let mut a = dag_task("t-a", &[], 1000);
+    a.metadata = serde_json::json!({ "dag": "shared" });
+    let mut b = dag_task("t-b", &[], 1001);
+    b.workspace_id = 2;
+    b.metadata = serde_json::json!({ "dag": "shared" });
+
+    let dags = group_tasks_into_dags(&[a, b]);
+    assert_eq!(dags.len(), 2);
+    assert_eq!(dags[0].workspace_id, 1);
+    assert_eq!(dags[1].workspace_id, 2);
+    // 같은 explicit 키라 id 는 같다 — 신원은 (workspace_id, id) 쌍이다.
+    assert_eq!(dags[0].id, dags[1].id);
+}
+
+#[test]
+fn has_cycle_is_scoped_to_the_group() {
+    // t-a <-> t-b 사이클(스토어를 안 거치므로 생성 검증에 막히지 않는다) +
+    // 무관한 정상 그룹 하나.
+    let a = dag_task("t-a", &["t-b"], 1000);
+    let b = dag_task("t-b", &["t-a"], 1001);
+    let c = dag_task("t-c", &[], 1002);
+
+    let dags = group_tasks_into_dags(&[a, b, c]);
+    assert_eq!(dags.len(), 2);
+    let by_id: std::collections::HashMap<&str, &DagSummary> =
+        dags.iter().map(|d| (d.id.as_str(), d)).collect();
+    assert!(by_id["c:t-a"].has_cycle);
+    assert!(!by_id["c:t-c"].has_cycle);
+    // 사이클이면 그룹 내 모든 task 가 서로를 참조하므로 root 는 없다.
+    assert!(by_id["c:t-a"].root_task_ids.is_empty());
+}
+
+#[test]
+fn explicit_group_with_outside_dependency_is_not_a_cycle() {
+    // explicit 그룹 밖의 task 를 depends_on 하면 부분집합 검출에서
+    // `UnknownDependency` 가 나오는데, 그건 사이클이 아니다.
+    let outside = dag_task("t-out", &[], 1000);
+    let mut inside = dag_task("t-in", &["t-out"], 1001);
+    inside.metadata = serde_json::json!({ "dag": "g" });
+
+    let dags = group_tasks_into_dags(&[outside, inside]);
+    let g = dags.iter().find(|d| d.id == "d:g").expect("explicit group");
+    assert!(!g.has_cycle);
+    assert_eq!(g.task_count, 1);
+}

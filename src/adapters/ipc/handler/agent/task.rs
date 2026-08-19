@@ -567,6 +567,89 @@ fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
     edges
 }
 
+/// Graphviz dot 렌더 — `agent.task_graph` 와 `agent.dag_get` 이 공유한다. 노드 색/엣지
+/// 스타일 규칙이 두 벌로 갈라지지 않게 하는 단일 지점이다.
+///
+/// Reduce.inputs 는 depends_on 과 같은 암묵적 의존성 엣지(사이클 검출 대상,
+/// `TaskGraph::dfs_cycle`)라 시각화에도 반영한다. fallback 엣지(사전 존재
+/// `Fallback{task}` + 동적 생성 `Fallback{inline}`)는 `referenced_task_ids`(참조 무결성
+/// 검증 대상, inline 은 예외)일 뿐 `dfs_cycle` 이 보는 엣지가 아니다 — 사이클 검출
+/// 커버리지와 무관하게 관측 목적으로만 함께 그린다(A↔F 상호 fallback 같은 순환도 생성
+/// 시점에 막히지 않는다). depends_on 과 구분되게 점선/색으로 표시한다. 수집 규칙은
+/// [`collect_graph_edges`] 하나로 dot/json 양쪽이 공유한다.
+fn render_graph_dot(tasks: &[Task]) -> String {
+    let mut out = String::from("digraph G {\n  rankdir=LR;\n");
+    for t in tasks {
+        let color = match &t.state {
+            TaskState::Ready => "lightblue",
+            TaskState::Running => "yellow",
+            TaskState::Succeeded => "lightgreen",
+            TaskState::Failed { .. } => "salmon",
+            TaskState::Cancelled => "gray",
+            TaskState::Skipped => "lightgray",
+            TaskState::Waiting => "white",
+            TaskState::Unknown => "orange",
+        };
+        out.push_str(&format!(
+            "  \"{}\" [label=\"{}\\n{}\", style=filled, fillcolor={}];\n",
+            t.id,
+            escape_dot(&t.name),
+            t.state.name(),
+            color
+        ));
+    }
+    for edge in collect_graph_edges(tasks) {
+        let (style, color) = match edge.kind {
+            "fallback" => ("dashed", "orangered"),
+            "reduce" => ("dotted", "blue"),
+            _ => {
+                out.push_str(&format!("  \"{}\" -> \"{}\";\n", edge.from, edge.to));
+                continue;
+            }
+        };
+        out.push_str(&format!(
+            "  \"{}\" -> \"{}\" [style={}, color={}, label=\"{}\"];\n",
+            edge.from, edge.to, style, color, edge.kind
+        ));
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// json 렌더의 `nodes` — `agent.task_graph` 와 `agent.dag_get` 이 공유한다.
+fn render_graph_nodes(tasks: &[Task]) -> Vec<Value> {
+    tasks
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.id,
+                "name": t.name,
+                "state": t.state.name(),
+                "command_kind": task_command_kind(&t.command),
+                "on_failure_kind": on_failure_kind(&t.on_failure),
+            })
+        })
+        .collect()
+}
+
+/// json 렌더의 `edges` — `agent.task_graph` 와 `agent.dag_get` 이 공유한다.
+///
+/// depends_on/Fallback.task/Reduce.inputs 는 `referenced_task_ids`(참조 무결성 검증)가
+/// 보는 3종 참조고, fallback 엣지에는 동적 생성되는 `Fallback{inline}` 케이스
+/// (`metadata.fallback_of` 역참조, 무결성 검증 대상 아님)도 함께 포함된다 — 넷을 한
+/// 엣지 리스트에 합치되 `kind` 로 구분해, depends_on 만 보던 시각화가 fallback/reduce
+/// 관계를 놓치지 않게 한다. 단, 사이클 검출(`TaskGraph::dfs_cycle`)은 이 중
+/// depends_on/Reduce.inputs 만 순회한다 — fallback 엣지는 순회 대상이 아니라서, 예를 들어
+/// A→(fallback:F)/F→(fallback:A) 처럼 서로를 fallback 으로 참조하는 순환은 생성 시점에
+/// 거부되지 않고 그대로 저장된다. 이 엣지들은 그 순환을 관측 가능하게 만들 뿐,
+/// 자동으로 막지는 않는다.
+fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
+    collect_graph_edges(tasks)
+        .into_iter()
+        .map(|edge| json!({"from": edge.from, "to": edge.to, "kind": edge.kind}))
+        .collect()
+}
+
 pub fn handle_task_graph(
     core: &Core,
     _state: &mut AppState,
@@ -595,87 +678,18 @@ pub fn handle_task_graph(
     let runner = runner_status_json(core, engine, workspace_id);
 
     match format.as_str() {
-        "dot" => {
-            let mut out = String::from("digraph G {\n  rankdir=LR;\n");
-            for t in &tasks {
-                let color = match &t.state {
-                    TaskState::Ready => "lightblue",
-                    TaskState::Running => "yellow",
-                    TaskState::Succeeded => "lightgreen",
-                    TaskState::Failed { .. } => "salmon",
-                    TaskState::Cancelled => "gray",
-                    TaskState::Skipped => "lightgray",
-                    TaskState::Waiting => "white",
-                    TaskState::Unknown => "orange",
-                };
-                out.push_str(&format!(
-                    "  \"{}\" [label=\"{}\\n{}\", style=filled, fillcolor={}];\n",
-                    t.id,
-                    escape_dot(&t.name),
-                    t.state.name(),
-                    color
-                ));
-            }
-            // Reduce.inputs 는 depends_on 과 같은 암묵적 의존성 엣지(사이클 검출 대상,
-            // `TaskGraph::dfs_cycle`)라 시각화에도 반영한다. fallback 엣지(사전 존재
-            // `Fallback{task}` + 동적 생성 `Fallback{inline}`)는 `referenced_task_ids`(참조
-            // 무결성 검증 대상, inline 은 예외)일 뿐 `dfs_cycle` 이 보는 엣지가 아니다 —
-            // 사이클 검출 커버리지와 무관하게 관측 목적으로만 함께 그린다(A↔F 상호 fallback
-            // 같은 순환도 생성 시점에 막히지 않는다). depends_on 과 구분되게 점선/색으로
-            // 표시한다. 수집 규칙은 [`collect_graph_edges`] 하나로 dot/json 양쪽이 공유한다.
-            for edge in collect_graph_edges(&tasks) {
-                let (style, color) = match edge.kind {
-                    "fallback" => ("dashed", "orangered"),
-                    "reduce" => ("dotted", "blue"),
-                    _ => {
-                        out.push_str(&format!("  \"{}\" -> \"{}\";\n", edge.from, edge.to));
-                        continue;
-                    }
-                };
-                out.push_str(&format!(
-                    "  \"{}\" -> \"{}\" [style={}, color={}, label=\"{}\"];\n",
-                    edge.from, edge.to, style, color, edge.kind
-                ));
-            }
-            out.push_str("}\n");
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "format": "dot",
-                    "dot": out,
-                    "cycle": cycle.as_ref().map(|e| e.to_string()),
-                    "runner": runner,
-                }),
-            )
-        }
+        "dot" => JsonRpcResponse::success(
+            id,
+            json!({
+                "format": "dot",
+                "dot": render_graph_dot(&tasks),
+                "cycle": cycle.as_ref().map(|e| e.to_string()),
+                "runner": runner,
+            }),
+        ),
         _ => {
-            let nodes: Vec<Value> = tasks
-                .iter()
-                .map(|t| {
-                    json!({
-                        "id": t.id,
-                        "name": t.name,
-                        "state": t.state.name(),
-                        "command_kind": task_command_kind(&t.command),
-                        "on_failure_kind": on_failure_kind(&t.on_failure),
-                    })
-                })
-                .collect();
-            // depends_on/Fallback.task/Reduce.inputs 는 `referenced_task_ids`(참조
-            // 무결성 검증)가 보는 3종 참조고, fallback 엣지에는 동적 생성되는
-            // `Fallback{inline}` 케이스(`metadata.fallback_of` 역참조, 무결성 검증 대상
-            // 아님)도 함께 포함된다 — 넷을 한 엣지 리스트에 합치되 `kind` 로 구분해,
-            // depends_on 만 보던 시각화가 fallback/reduce 관계를 놓치지 않게 한다. 단,
-            // 사이클 검출(`TaskGraph::dfs_cycle`)은 이 중 depends_on/Reduce.inputs 만
-            // 순회한다 — fallback 엣지는 순회 대상이 아니라서, 예를 들어
-            // A→(fallback:F)/F→(fallback:A) 처럼 서로를 fallback 으로 참조하는 순환은
-            // 생성 시점에 거부되지 않고 그대로 저장된다. 이 엣지들은 그 순환을 관측
-            // 가능하게 만들 뿐, 자동으로 막지는 않는다. 수집 규칙은 [`collect_graph_edges`]
-            // 하나로 dot/json 양쪽이 공유한다.
-            let edges: Vec<Value> = collect_graph_edges(&tasks)
-                .into_iter()
-                .map(|edge| json!({"from": edge.from, "to": edge.to, "kind": edge.kind}))
-                .collect();
+            let nodes: Vec<Value> = render_graph_nodes(&tasks);
+            let edges: Vec<Value> = render_graph_edges(&tasks);
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -687,6 +701,136 @@ pub fn handle_task_graph(
                 }),
             )
         }
+    }
+}
+
+// ============================================================
+// agent.dag_list / agent.dag_get
+// ============================================================
+//
+// Tasty 의 영속 모델에 DAG 레코드는 없다 — `tasty_agent::group_tasks_into_dags` 가
+// `metadata.dag`(explicit) + 그래프 연결성(derived)에서 도출한다. 근거·규칙은
+// `crates/tasty-agent/src/task/dag.rs` 모듈 doc.
+
+/// `workspace_id` 는 **선택**이다 — 생략하면 살아있는 전 workspace 를 순회한다
+/// (원칙 3, 포커스 독립성). 잘못된 타입이 오면 조용히 전체 순회로 떨어지지 않고
+/// invalid_params 로 거절한다.
+fn optional_workspace_id_param(params: &Value, id: &Value) -> Result<Option<u32>, JsonRpcResponse> {
+    match params.get("workspace_id") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().map(|w| Some(w as u32)).ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "'workspace_id' must be a number")
+        }),
+    }
+}
+
+/// `include_tasks=false`(기본)면 `task_ids` 를 응답에서 뺀다 — 목록 화면은 요약만
+/// 쓰는데 큰 DAG 의 id 배열을 매 폴링마다 실어 나를 이유가 없다.
+fn dag_summary_json(dag: &tasty_agent::DagSummary, include_tasks: bool) -> Value {
+    let mut v = serde_json::to_value(dag).unwrap_or(Value::Null);
+    if !include_tasks && let Some(obj) = v.as_object_mut() {
+        obj.remove("task_ids");
+    }
+    v
+}
+
+pub fn handle_dag_list(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match optional_workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let include_tasks = params
+        .get("include_tasks")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    match core.dag_list(engine, workspace_id) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok(dags) => {
+            let rendered: Vec<Value> = dags
+                .iter()
+                .map(|d| dag_summary_json(d, include_tasks))
+                .collect();
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "total": rendered.len(),
+                    "dags": rendered,
+                    // 열거 범위를 응답에 박아둔다 — "CLI 로 만든 task 가 왜 목록에
+                    // 없나" 를 나중에 추적 가능하게 하기 위함. 삭제된 workspace 에
+                    // 남은 고아 task 는 뜨지 않는다(부팅 시 자동 GC 의 몫).
+                    "scope": "live_workspaces",
+                }),
+            )
+        }
+    }
+}
+
+pub fn handle_dag_get(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match optional_workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let dag_id = match params.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing required 'id' (dag id)"),
+    };
+    let format = params
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json")
+        .to_string();
+
+    let (dag, tasks) = match core.dag_get(engine, workspace_id, &dag_id) {
+        Err(e) => return agent_err_to_response(id, e),
+        Ok(None) => {
+            return JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}"));
+        }
+        Ok(Some(found)) => found,
+    };
+
+    // 사이클/runner 는 그 DAG 가 사는 workspace 기준. `has_cycle` 은 이미 요약에 있고,
+    // 여기서는 `task_graph` 와 같은 형태의 사람이 읽는 사유 문자열도 함께 낸다.
+    let cycle = TaskGraph::build(&tasks).detect_cycles().err();
+    let runner = runner_status_json(core, engine, dag.workspace_id);
+    let summary = dag_summary_json(&dag, true);
+
+    match format.as_str() {
+        "dot" => JsonRpcResponse::success(
+            id,
+            json!({
+                "format": "dot",
+                "dag": summary,
+                "dot": render_graph_dot(&tasks),
+                "cycle": cycle.as_ref().map(|e| e.to_string()),
+                "runner": runner,
+            }),
+        ),
+        _ => JsonRpcResponse::success(
+            id,
+            json!({
+                "format": "json",
+                "dag": summary,
+                "nodes": render_graph_nodes(&tasks),
+                "edges": render_graph_edges(&tasks),
+                "cycle": cycle.as_ref().map(|e| e.to_string()),
+                "runner": runner,
+            }),
+        ),
     }
 }
 

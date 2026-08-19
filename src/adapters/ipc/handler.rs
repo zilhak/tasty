@@ -890,6 +890,11 @@ fn route_engine_handler(
         "agent.task_graph" => {
             agent::handle_task_graph(core, state, engine, caller, id, &request.params)
         }
+        // agent.dag_* (workspace 안의 flat 한 task 를 무관한 그래프 단위로 쪼갠 뷰)
+        "agent.dag_list" => {
+            agent::handle_dag_list(core, state, engine, caller, id, &request.params)
+        }
+        "agent.dag_get" => agent::handle_dag_get(core, state, engine, caller, id, &request.params),
         // agent.task_set_result (외부 task 완료 신호)
         "agent.task_set_result" => {
             agent::handle_task_set_result(core, state, engine, caller, id, &request.params)

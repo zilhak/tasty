@@ -28,8 +28,9 @@ pub use reducer::{ReducerInput, extract_paths, reduce_in_process, reduce_with_cu
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
-    InlineFallbackSpec, OnFailure, PollSpec, PollSpecRef, ReducerStrategy, Task, TaskCommand,
-    TaskGraph, TaskId, TaskResult, TaskState, TaskStore,
+    DagStateCounts, DagSummary, InlineFallbackSpec, OnFailure, PollSpec, PollSpecRef,
+    ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState, TaskStore,
+    group_tasks_into_dags,
 };
 
 /// 본 크레이트의 공용 에러.

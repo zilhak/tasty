@@ -88,6 +88,27 @@ pub(super) fn agent_command_to_method_params(
             "agent.task_graph",
             serde_json::json!({ "workspace_id": *workspace_id, "format": format }),
         ),
+        DagList {
+            workspace_id,
+            include_tasks,
+        } => {
+            let mut p = serde_json::json!({ "include_tasks": *include_tasks });
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            ("agent.dag_list", p)
+        }
+        DagGet {
+            id,
+            workspace_id,
+            format,
+        } => {
+            let mut p = serde_json::json!({ "id": id, "format": format });
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            ("agent.dag_get", p)
+        }
         TaskRun {
             workspace_id,
             action,

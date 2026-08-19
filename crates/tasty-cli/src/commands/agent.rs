@@ -118,6 +118,33 @@ pub enum AgentCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// List every registered DAG. A DAG is derived, not stored: tasks tagged
+    /// with the same `metadata.dag` string form one explicit group, and the
+    /// rest are grouped by weak connectivity (`depends_on` / `Fallback.task` /
+    /// `Reduce.inputs` / `metadata.fallback_of`). Omit `--workspace-id` to scan
+    /// every live workspace.
+    DagList {
+        /// Restrict to one workspace. Omitted = every live workspace.
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Also include each DAG's task id list (`task_ids`).
+        #[arg(long, default_value_t = false)]
+        include_tasks: bool,
+    },
+    /// Output one DAG (as listed by `dag-list`) as JSON or Graphviz dot —
+    /// the same node/edge shape as `task-graph`, restricted to that DAG.
+    DagGet {
+        /// DAG id from `dag-list` (`d:<metadata.dag>` or `c:<root task id>`).
+        #[arg(long)]
+        id: String,
+        /// Restrict the lookup to one workspace. Explicit ids are user-chosen,
+        /// so two workspaces can carry the same one; pass this to disambiguate.
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Format: json | dot. Default: json.
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
     /// Start/stop/inspect the agent task runner for a workspace.
     /// runner 는 Ready task 를 자동 dispatch + Running task 의 완료를 감지하는
     /// host 측 thread. 같은 workspace 에 두 번 start 호출은 idempotent.

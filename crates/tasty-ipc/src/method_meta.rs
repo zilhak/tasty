@@ -300,6 +300,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.task_cancel", plugin(&[AgentManage])),
         ("agent.task_retry", plugin(&[AgentManage])),
         ("agent.task_graph", plugin(&[AgentManage])),
+        // DAG 그룹 조회 — task_graph 와 같은 읽기 표면이라 같은 권한.
+        ("agent.dag_list", plugin(&[AgentManage])),
+        ("agent.dag_get", plugin(&[AgentManage])),
         // 자동 시작이 없으므로(재시작 정화는 부팅 경로 전용) plugin 이 자기
         // workspace 의 runner 를 스스로 되살릴 수단이 필요하다 — start/stop 은
         // idempotent, status 는 순수 조회.

@@ -295,6 +295,29 @@ tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","
 `--concurrency-limit` 는 `--metadata` 에 `metadata.semaphore = { name: <값> }` 하나를 채워 넣는 단축일 뿐이다 — `--metadata` 를 이미 쓰고 있으면 그 JSON 객체에 `semaphore` 키를 병합하고(다른 키는 보존), `--metadata` 가 이미 `semaphore` 를 담고 있으면(어느 쪽을 취할지 모호) 에러로 거부한다. `holder` 지정 등 더 세밀한 제어가 필요하면 이 플래그 대신 `--metadata '{"semaphore":{"name":"...","holder":"..."}}'` 를 직접 쓴다.
 
 ```sh
+tasty agent dag-list                                   # 살아있는 전 workspace 의 DAG
+tasty agent dag-list --workspace-id 1                  # 한 workspace 로 한정
+tasty agent dag-list --include-tasks                   # 각 DAG 에 task id 목록 동봉
+tasty agent dag-get --id c:t-1716800000123-1           # 그 DAG 만의 nodes/edges
+tasty agent dag-get --id d:build --workspace-id 1 --format dot
+```
+
+DAG 는 영속 레코드가 아니라 `metadata.dag`(explicit, id `d:<값>`) 또는 그래프 연결성
+(derived, id `c:<root task id>`)에서 도출된다 — 같은 task 집합이면 id 가 항상 같다.
+`dag-list` 는 `--workspace-id` 를 생략하면 *살아있는* workspace 전부를 순회하며
+(응답 `scope: "live_workspaces"`), 삭제된 workspace 에 남은 고아 task 는 열거하지
+않는다(그건 아래 "자동 GC" 의 몫). 도출 규칙과 응답 필드는
+[features/agent-collaboration](../features/agent-collaboration/index.md) 의 Task DAG 항목.
+
+한 workspace 안에서 무관한 그래프를 여럿 돌릴 때 그룹을 명시하려면 생성 시
+`metadata` 로 태깅한다:
+
+```sh
+tasty agent task-create --workspace-id 1 --name build --command '{"kind":"run","command":["true"]}' \
+  --metadata '{"dag":"release","dag_name":"Release pipeline"}'
+```
+
+```sh
 tasty agent task-delete --workspace-id 1 --id t-...              # 참조 있으면 거부 + 참조자 목록
 tasty agent task-delete --workspace-id 1 --id t-... --cascade    # 참조자까지 함께 삭제
 tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-ms 604800000 --dry-run
