@@ -618,11 +618,16 @@ fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<St
         .ok()?;
     let children = children_resp.get("children")?.as_array()?;
     let total = children.len();
-    let idle_indices: Vec<u64> = children
-        .iter()
-        .filter(|c| c.get("state").and_then(|s| s.as_str()) == Some("idle"))
-        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
-        .collect();
+    let idle_indices = indices_with(children, |c| state_of(c) == Some("idle"));
+    // `stale` 은 확정(`foreground_is_shell`)인 것만 센다 — `heuristic` stale 은
+    // SIGSTOP·긴 추론·무출력 명령과 관측상 구별되지 않아, 그것까지 "respawn 후보"
+    // 로 부르면 일하는 자식을 재시작하라고 권하게 된다. `docs/dev-guide/
+    // api-conventions.md` 가 같은 이유로 `stale` 을 기본 terminal state 집합에서
+    // 뺀 것과 동일한 판단이다.
+    let stale_indices = indices_with(children, |c| {
+        state_of(c) == Some("stale")
+            && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
+    });
 
     let threshold = host
         .call(
@@ -633,12 +638,43 @@ fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<St
         .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
         .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
 
-    build_spawn_warning(total, &idle_indices, threshold)
+    build_spawn_warning(total, &idle_indices, &stale_indices, threshold)
+}
+
+fn state_of(child: &Value) -> Option<&str> {
+    child.get("state").and_then(|s| s.as_str())
+}
+
+/// 조건에 맞는 child 의 `index` 만 모은다.
+fn indices_with(children: &[Value], pred: impl Fn(&Value) -> bool) -> Vec<u64> {
+    children
+        .iter()
+        .filter(|c| pred(c))
+        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
+        .collect()
+}
+
+fn join_indices(indices: &[u64]) -> String {
+    indices
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// child 개수가 임계치를 넘으면 경고 문구를 만든다(순수 함수, 단위 테스트 대상).
-/// idle child 가 있으면 그 index 목록과 `respawn` 권유 문구를 덧붙인다.
-fn build_spawn_warning(total: usize, idle_indices: &[u64], threshold: f64) -> Option<String> {
+///
+/// 재사용 후보를 **두 목록으로 나눈다.** 둘 다 respawn 대상이지만 근거가 다르다:
+/// `idle` 은 자식이 hook 으로 완료를 직접 보고한 값이고, 확정 `stale` 은 보고가 오지
+/// 않은 채 호스트 관측이 "전경이 셸로 돌아왔다" 를 잡아낸 값이다(hook 유실 —
+/// ADR-0072 가 겨냥한 시나리오). 후자에 "have already finished their work" 를 쓰면
+/// 자식이 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다.
+fn build_spawn_warning(
+    total: usize,
+    idle_indices: &[u64],
+    stale_indices: &[u64],
+    threshold: f64,
+) -> Option<String> {
     if (total as f64) <= threshold {
         return None;
     }
@@ -646,13 +682,15 @@ fn build_spawn_warning(total: usize, idle_indices: &[u64], threshold: f64) -> Op
         "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
     );
     if !idle_indices.is_empty() {
-        let idle_list = idle_indices
-            .iter()
-            .map(u64::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
+        let idle_list = join_indices(idle_indices);
         msg.push_str(&format!(
             " Idle children at index [{idle_list}] have already finished their work — consider `respawn` instead of spawning a new one."
+        ));
+    }
+    if !stale_indices.is_empty() {
+        let stale_list = join_indices(stale_indices);
+        msg.push_str(&format!(
+            " Children at index [{stale_list}] no longer have an agent process running but never reported completion (a lost hook) — they are respawn candidates too."
         ));
     }
     Some(msg)
@@ -1313,27 +1351,85 @@ mod tests {
 
     #[test]
     fn build_spawn_warning_none_below_threshold() {
-        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
+        assert_eq!(build_spawn_warning(3, &[], &[], 6.0), None);
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_lists_idle_and_mentions_respawn() {
-        let w = build_spawn_warning(7, &[2, 5], 6.0).unwrap();
+        let w = build_spawn_warning(7, &[2, 5], &[], 6.0).unwrap();
         assert!(w.contains("respawn"));
         assert!(w.contains('2') && w.contains('5'));
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_no_idle_has_no_respawn_word() {
-        let w = build_spawn_warning(7, &[], 6.0).unwrap();
+        let w = build_spawn_warning(7, &[], &[], 6.0).unwrap();
         assert!(!w.contains("respawn"));
     }
 
     #[test]
     fn build_spawn_warning_respects_custom_threshold() {
         // threshold=6 이면 안 뜨는 3개가, threshold=3 이면 뜬다(설정 override 시나리오).
-        assert_eq!(build_spawn_warning(3, &[], 6.0), None);
-        assert!(build_spawn_warning(4, &[], 3.0).is_some());
+        assert_eq!(build_spawn_warning(3, &[], &[], 6.0), None);
+        assert!(build_spawn_warning(4, &[], &[], 3.0).is_some());
+    }
+
+    /// 확정 stale 자식만 있어도 respawn 을 권해야 한다 — hook 유실로 idle 보고가
+    /// 영영 오지 않는 자식이 정확히 이 경우다(ADR-0072 가 겨냥한 시나리오).
+    #[test]
+    fn build_spawn_warning_lists_stale_children_as_respawn_candidates() {
+        let w = build_spawn_warning(7, &[], &[3], 6.0).unwrap();
+        assert!(w.contains("respawn"), "{w}");
+        assert!(w.contains('3'), "{w}");
+    }
+
+    /// stale 문구는 idle 문구와 분리된다 — 보고받지 않은 자식에 "have already
+    /// finished their work" 를 쓰면 자식이 그렇게 보고한 것처럼 읽힌다.
+    #[test]
+    fn build_spawn_warning_separates_stale_wording_from_idle() {
+        let idle_only = build_spawn_warning(7, &[2], &[], 6.0).unwrap();
+        let stale_only = build_spawn_warning(7, &[], &[3], 6.0).unwrap();
+        assert!(idle_only.contains("have already finished their work"));
+        assert!(
+            !stale_only.contains("have already finished their work"),
+            "{stale_only}"
+        );
+        assert!(
+            stale_only.contains("never reported completion"),
+            "{stale_only}"
+        );
+
+        let both = build_spawn_warning(7, &[2], &[3], 6.0).unwrap();
+        assert!(both.contains("have already finished their work"), "{both}");
+        assert!(both.contains("never reported completion"), "{both}");
+    }
+
+    /// `heuristic` stale 은 제외된다 — SIGSTOP·긴 추론과 구별되지 않아 일하는
+    /// 자식을 respawn 하라고 권하게 된다. 확정(`foreground_is_shell`)만 센다.
+    #[test]
+    fn spawn_warning_counts_only_confirmed_stale() {
+        let children = vec![
+            json!({ "index": 1, "state": "stale", "confidence": "confirmed" }),
+            json!({ "index": 2, "state": "stale", "confidence": "heuristic" }),
+            json!({ "index": 3, "state": "active", "confidence": "confirmed" }),
+        ];
+        let stale = indices_with(&children, |c| {
+            state_of(c) == Some("stale")
+                && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
+        });
+        assert_eq!(stale, vec![1]);
+    }
+
+    /// `confidence` 를 싣지 않는 옛 호스트 응답에서는 stale 이 하나도 안 잡힌다 —
+    /// 경고가 과하게 나가는 것보다 안전한 쪽으로 실패한다(기존 idle 경고는 그대로).
+    #[test]
+    fn spawn_warning_ignores_stale_without_confidence_field() {
+        let children = vec![json!({ "index": 1, "state": "stale" })];
+        let stale = indices_with(&children, |c| {
+            state_of(c) == Some("stale")
+                && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
+        });
+        assert!(stale.is_empty());
     }
 
     fn parse_toml(text: &str) -> toml::Value {
