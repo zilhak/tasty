@@ -4,8 +4,8 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
-    DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
-    TaskResult, TaskState, extract_paths, reduce_with_custom,
+    AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
+    TaskGraph, TaskId, TaskResult, TaskState, extract_paths, reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -773,6 +773,25 @@ pub fn handle_dag_list(
     }
 }
 
+/// DAG 부분집합 그래프에서 **사이클만** 뽑는다.
+///
+/// `detect_cycles()` 는 `depends_on` 이 순회 집합 밖을 가리키면
+/// `UnknownDependency` 를 반환하는데(`crates/tasty-agent/src/task/graph.rs`),
+/// explicit 그룹(`metadata.dag`)은 그룹 밖 task 를 `depends_on` 할 수 있으므로 그건
+/// 이 경로에서 **정상**이다. 그대로 응답 `cycle` 에 실으면 `has_cycle:false` +
+/// `cycle:non-null` 로 응답이 자기모순이 되고, 소비 화면이 멀쩡한 DAG 에 "사이클
+/// 감지" 를 띄운다. `DagSummary::has_cycle`(`task/dag.rs::summarize`)과 같은 기준으로
+/// 좁혀 두 값이 항상 같은 사실을 말하게 한다.
+///
+/// workspace 전체를 넘기는 `handle_task_graph` 는 이 좁힘이 필요 없다 — 그쪽의
+/// `UnknownDependency` 는 진짜 dangling 참조라 그대로 드러내는 게 맞다.
+fn subset_cycle(tasks: &[Task]) -> Option<AgentError> {
+    match TaskGraph::build(tasks).detect_cycles() {
+        Err(e @ AgentError::DependencyCycle(_)) => Some(e),
+        _ => None,
+    }
+}
+
 pub fn handle_dag_get(
     core: &Core,
     _state: &mut AppState,
@@ -803,9 +822,8 @@ pub fn handle_dag_get(
         Ok(Some(found)) => found,
     };
 
-    // 사이클/runner 는 그 DAG 가 사는 workspace 기준. `has_cycle` 은 이미 요약에 있고,
-    // 여기서는 `task_graph` 와 같은 형태의 사람이 읽는 사유 문자열도 함께 낸다.
-    let cycle = TaskGraph::build(&tasks).detect_cycles().err();
+    // `has_cycle` 은 이미 요약에 있고, 여기서는 사람이 읽는 사유 문자열도 함께 낸다.
+    let cycle = subset_cycle(&tasks);
     let runner = runner_status_json(core, engine, dag.workspace_id);
     let summary = dag_summary_json(&dag, true);
 
@@ -1309,6 +1327,39 @@ mod graph_edge_tests {
             metadata: Value::Null,
             reserved_for_fallback: false,
         }
+    }
+
+    /// `agent.dag_get` 은 DAG 부분집합만 그래프로 넘긴다 — explicit 그룹
+    /// (`metadata.dag`)이 그룹 밖 task 를 `depends_on` 하는 정상 케이스에서
+    /// `detect_cycles()` 가 `UnknownDependency` 를 내는데, 그건 사이클이 아니다.
+    /// 이걸 응답 `cycle` 에 실으면 `dag.has_cycle:false` 와 모순되는 응답이 나가
+    /// 소비 화면이 멀쩡한 DAG 에 "사이클 감지" 를 띄운다. 같은 시나리오를
+    /// `crates/tasty-agent/src/task/tests.rs` 의
+    /// `explicit_group_with_outside_dependency_is_not_a_cycle` 가 `has_cycle` 쪽에서
+    /// 못박고 있고, 이 테스트가 응답 `cycle` 쪽 짝을 맞춘다.
+    #[test]
+    fn subset_cycle_ignores_dependency_pointing_outside_the_subset() {
+        let mut inside = task("t-in", "in", TaskState::Waiting);
+        inside.depends_on = vec!["t-out".to_string()];
+        let subset = [inside];
+        // 좁히지 않은 원본은 실제로 에러를 낸다 — 이 테스트가 공회전이 아님을 못박는다.
+        assert!(matches!(
+            TaskGraph::build(&subset).detect_cycles(),
+            Err(AgentError::UnknownDependency(_))
+        ));
+        // `t-out` 은 이 부분집합에 없다(= 다른 DAG 소속) — 사이클이 아니다.
+        assert!(subset_cycle(&subset).is_none());
+    }
+
+    /// 반대로 진짜 사이클은 그대로 실려야 한다.
+    #[test]
+    fn subset_cycle_reports_a_real_cycle() {
+        let mut a = task("t-a", "a", TaskState::Waiting);
+        a.depends_on = vec!["t-b".to_string()];
+        let mut b = task("t-b", "b", TaskState::Waiting);
+        b.depends_on = vec!["t-a".to_string()];
+        let cycle = subset_cycle(&[a, b]).expect("cycle detected");
+        assert!(matches!(cycle, AgentError::DependencyCycle(_)));
     }
 
     /// Materialized inline fallback: the fallback task's `metadata.fallback_of` names the main
