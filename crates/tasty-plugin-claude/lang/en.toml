@@ -35,6 +35,8 @@ unknown_event = "unknown claude hook event: '{}'"
 
 [claude.notify]
 done_message = "surface {}: task complete (via {})"
+stalled_message = "surface {}: no output since an error — the child looks stuck (still active, no completion signal)"
+stalled_hint = " Last error: {}"
 
 [claude.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id'"

@@ -61,6 +61,11 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   conductor 가 이를 spawn 접수 확인 정도로 여기고 실제 완료 알림을 계속 무시하는 사고로
   이어졌다(2026-07-17). 이제 "작업 완료"를 앞세우고 호출 방식은 괄호로 분리한다
   (`notify_done_message`/`notify_caller_message`, `crates/tasty-plugin-{claude,codex}/src/handlers.rs`).
+- **완료 외의 라인**: claude plugin 은 자식이 **에러 후 멈춘** 경우에도 같은 로그에 한 줄을
+  append 한다(`tasty claude notify-error`, `claude-error-stalled` hook). 완료 신호 없이
+  매달린 자식을 부모가 무한정 기다리지 않게 하는 push 경로다 — 판정 기준(무출력 지속 +
+  호스트가 여전히 `active`)과 노이즈 상한은
+  [plugins/claude](../../plugins/claude/index.md) 의 "정지 알림" 절.
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
   `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 truncate 후 라인을 계속
   받는다.

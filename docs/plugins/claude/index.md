@@ -102,7 +102,7 @@ install이 심는 훅은 이 8개뿐이다 — matcher가 지정되지 않은 `P
 
 install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다. `PreToolUse`/`PostToolUse`처럼 matcher가 있는 이벤트는 marker 일치만으로는 matcher 값까지 보증되지 않으므로, install이 matcher도 canonical 값(`AskUserQuestion`)으로 함께 갱신한다.
 
-이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error` 3개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 3개 키로의 hook 등록도 거부된다. **이 3개가 전부 위 8개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/SubagentStop/SessionEnd)에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 발사한다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
+이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-error`/`claude-error-stalled` 4개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 4개 키로의 hook 등록도 거부된다. **이 4개가 전부 위 8개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/SubagentStop/SessionEnd)에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 발사한다(정지 판정은 아래 절). Claude Code의 8개 훅에는 "API 호출이 실패했다"에 대응하는 이벤트가 없고, 특히 요청이 응답 없이 매달리면 턴이 끝나지 않아 `Stop`이 **구조적으로 발화하지 않는다** — PTY에 찍히는 에러 문자열이 그때 얻을 수 있는 유일한 신호다. `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
 ### PTY 에러 스캔 (`claude-error`) 범위
 
@@ -120,6 +120,28 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 자식을 관계로 판정하는 이유는 [`terminal.release`](../../features/child-terminal/index.md)가 surface 를 닫지 않고 관계·soft 점유만 해제하기 때문이다 — surface 존재만 봤다면 release 후에도 영원히 폴링되며, 더 이상 자식이 아닌 사용자 터미널에 `claude-error` 를 계속 발화한다. 호스트가 관계 조회 전 `reconcile_child_terminals()` 를 돌리므로 이 한 번의 조회가 kill/close 실패로 surface 가 살아남은 케이스까지 함께 걷어낸다. `claude kill` 은 성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 잔여 발화 창까지 없앤다. 조회 자체가 실패(IPC 오류)하면 "죽었다"로 단정하지 않고 추적을 유지한다 — 재활성화 경로가 없어 오탐 정리가 오탐 유지보다 위험하다.
 
 **mark 는 공유 자원이라 감지 사각이 있다.** 스캐너의 `surface.read_since_mark` 는 mark 를 전진시키지 않으므로(`Terminal::read_since_mark` 가 `&self`) 에이전트의 `tasty read since-mark` 결과를 소비하지 않지만, 반대로 에이전트가 `tasty set mark` 로 mark 를 앞으로 옮기면 스캐너가 보는 창도 함께 옮겨간다. 그 이전에 지나간 에러는 스캐너 시야에서 사라진다. 이 결합은 수용한다 — mark 를 스캐너 전용으로 따로 두면 mark 자원이 이중화돼 에이전트의 `set mark` 의미가 흐려진다.
+
+### 정지 알림 (`claude-error-stalled` → 부모 completion-log)
+
+`claude-error` 자체는 **부모에게 알리지 않는다.** 패턴에 `overloaded_error`/`rate_limit_error`처럼 Claude Code가 자동 재시도하는 일시적 에러가 포함돼 있어, 그대로 알리면 재시도가 잦은 세션에서 알림이 쏟아진다. 대신 스캐너가 "재시도 중"과 "멈춤"을 가른 뒤 **`claude-error-stalled`** 를 따로 발사하고, 부모 알림은 이쪽만 구독한다.
+
+판정 기준은 두 조건의 **동시** 충족이다(`error_scan.rs`):
+
+| 조건 | 왜 |
+|---|---|
+| 에러 매치 후 PTY 출력이 **30초 이상 전혀 변하지 않음** | 재시도 중에는 시도 횟수·백오프 카운트다운이 계속 그려져 출력이 흐른다. 응답 없이 매달리면 출력이 완전히 멈춘다. 비교는 dedupe 스니펫(앞 200자)이 아니라 **텍스트 전체 지문**으로 한다 — 뒤에 출력이 붙어도 앞 200자는 그대로라, 스니펫으로 보면 재시도를 정지로 오판한다 |
+| `terminal.state`가 여전히 **`active`** | `idle`/`needs_input`/`exited`면 턴이 이미 끝났고 그 사건은 완료 알림 3형제(`claude-idle`/`needs-input`/`process-exit`)가 이미 부모에게 알렸다 — 같은 사건에 알림이 두 번 가지 않게 막는다 |
+
+노이즈 상한: 한 정적 구간당 1회(출력이 재개되면 해제), 그리고 surface당 최소 5분 간격. 새 턴 신호(`prompt-submit`/`session-start`/`active`)는 dedupe와 함께 정적 구간 측정도 리셋하지만 쿨다운은 유지한다(턴을 넘나드는 반복 에러의 빈도 상한이라 턴 경계에서 풀리면 무의미).
+
+**상태 축은 건드리지 않는다.** 이 경로는 `terminal.set_state`를 호출하지 않으므로 `claude children`의 `state`는 변하지 않는다 — 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이고, 파생 상태는 관측 융합의 출력 전용 계약이다([ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md)).
+
+배선(`handlers.rs`)은 완료 알림 3형제와 **분리된 수명**을 갖는다:
+
+- `register_notify_hooks`가 3형제(once)와 함께 `claude-error-stalled` 하나를 **상시 hook**(`once: false`)으로 등록한다. command 문자열이 `tasty claude notify-error --caller-surface … --target-surface …` 로 달라서, 형제 그룹의 `cleanup_sibling_hooks`(command 완전 일치) 정리 대상에 걸리지 않는다.
+- 상시라서 **재무장이 필요 없다** — 3형제의 fire→정리→재무장 사이클과 얽히지 않는다. 발사 빈도 상한은 발신 측(위 쿨다운)이 갖는다.
+- 등록은 멱등하다: spawn 후 tell, 그리고 형제 재무장까지 여러 번 호출되므로 같은 command의 기존 hook을 먼저 걷어내고 새로 단다.
+- `notify-error` 핸들러는 알림 조립 직전 `surface.screen_text`를 읽어 매치된 에러 줄을 힌트로 덧붙인다(codex `notify-caller`와 같은 방식). 알림은 완료 알림과 같은 `<parent_home>/notify/<caller_surface>.log` 한 줄로 나간다([child-completion-notify-log](../../dev-guide/external-interaction/child-completion-notify-log.md)).
 
 ## 인터페이스
 

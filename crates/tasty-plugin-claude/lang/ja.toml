@@ -35,6 +35,8 @@ unknown_event = "不明な claude hook イベント: '{}'"
 
 [claude.notify]
 done_message = "surface {}: 作業完了 ({} 経由)"
+stalled_message = "surface {}: エラー以降 出力が止まっています — 子が停止した可能性があります (まだ active、完了シグナルなし)"
+stalled_hint = " 直近のエラー: {}"
 
 [claude.launch]
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません"

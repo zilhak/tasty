@@ -274,6 +274,11 @@ fn notify_done_message(tr: &Translator, command_name: &str, target_surface: u32)
 /// spawn/tell 완료 시 caller 에게 1회성으로 알려줄 3개의 형제 hook
 /// (claude-idle / needs-input / process-exit) 을 target_surface 에 등록한다.
 /// 등록 자체는 best-effort — 실패해도 spawn/tell 성공 자체를 막지 않는다.
+///
+/// 에러 축([`register_error_notify_hook`])은 이 형제 그룹에 **넣지 않는다** —
+/// 수명이 다르기 때문이다. 상태 전환 hook 은 "전환했으니 알리고 그룹째 정리 후
+/// 재무장" 하는 once 사이클을 도는데, 에러 정지는 그 사이클과 무관하게 반복될 수
+/// 있어 같은 그룹에 끼우면 서로의 정리 대상이 되어 사이클이 꼬인다.
 fn register_notify_hooks<H: HostCall>(
     host: &H,
     caller_surface: u32,
@@ -293,6 +298,41 @@ fn register_notify_hooks<H: HostCall>(
             }),
         );
     }
+    register_error_notify_hook(host, caller_surface, target_surface);
+}
+
+/// 에러 정지 알림 hook 의 command 문자열. 완료 알림([`notify_done_command`])과 **다른**
+/// 문자열이라 `cleanup_sibling_hooks` 의 정리 대상(command 완전 일치)에 걸리지 않는다 —
+/// 형제 그룹이 fire·정리·재무장을 반복해도 이 hook 은 건드려지지 않는다.
+fn notify_error_command(caller_surface: u32, target_surface: u32) -> String {
+    format!(
+        "tasty claude notify-error --caller-surface {caller_surface} --target-surface {target_surface}"
+    )
+}
+
+/// `claude-error-stalled` 를 구독하는 **상시**(once 아님) hook 을 등록한다.
+///
+/// once 가 아닌 이유: 한 번 알리고 사라지면 그 뒤의 정지는 놓치는데, 재무장을 붙이면
+/// 형제 그룹의 once 사이클을 그대로 복제해야 한다. 상시 hook 이면 재무장 자체가
+/// 필요 없고, 발사 빈도 상한은 발신 측(`error_scan.rs` 의 쿨다운·에피소드 1회)이
+/// 이미 갖고 있다.
+///
+/// 등록은 멱등하다 — spawn 후 tell, 그리고 형제 재무장까지 이 함수를 여러 번 부르므로
+/// 같은 command 의 기존 hook 을 먼저 걷어내고 새로 단다. 걷어내지 않으면 같은 정지에
+/// 알림이 등록 횟수만큼 중복된다.
+fn register_error_notify_hook<H: HostCall>(host: &H, caller_surface: u32, target_surface: u32) {
+    let command = notify_error_command(caller_surface, target_surface);
+    cleanup_sibling_hooks(host, target_surface, &command);
+    // best-effort — 등록 실패해도 spawn/tell 자체는 이미 성공했으므로 무시.
+    let _ = host.call(
+        "hook.set",
+        json!({
+            "surface_id": target_surface,
+            "event": crate::error_scan::STALLED_EVENT,
+            "command": command,
+            "once": false,
+        }),
+    );
 }
 
 /// `tasty claude notify-done` — 형제 once-hook 중 하나가 fire 되어 실행되는
@@ -347,6 +387,63 @@ pub(crate) fn handle_notify_done<H: HostCall>(
     rearm_if_still_alive(host, caller_surface, target_surface, command_name);
 
     Ok(json!({}))
+}
+
+/// `tasty claude notify-error` — `claude-error-stalled` 상시 hook 이 fire 되어 실행되는
+/// 커맨드. caller_surface 의 알림 로그에 "자식이 에러 후 멈췄다" 를 append 한다.
+///
+/// 완료 알림(`notify-done`)과 달리 **형제 정리도 재무장도 하지 않는다** — 상시 hook 이라
+/// 그대로 남아 다음 정지도 받는다. 상태 축도 건드리지 않는다(`terminal.set_state` 미호출):
+/// 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이 되고, 파생 상태는 관측 융합의
+/// 출력 전용 계약이다(`docs/adr/0072-child-state-hook-observation-fusion.md`).
+pub(crate) fn handle_notify_error<H: HostCall>(
+    host: &H,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let caller_surface = params
+        .get("caller_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_caller_surface"))
+        })? as u32;
+    let target_surface = params
+        .get("target_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_target_surface"))
+        })? as u32;
+
+    let message = notify_error_message(tr, host, target_surface);
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
+        tracing::warn!("claude notify-error completion-log append failed: {e}");
+    }
+    Ok(json!({}))
+}
+
+/// 정지 알림 문구 — 알림 조립 직전 대상 화면을 읽어 에러 줄을 힌트로 덧붙인다(codex
+/// `notify-caller` 와 같은 방식). 화면 조회는 best-effort 라, 실패하면 힌트 없이
+/// 본문만 보낸다.
+fn notify_error_message<H: HostCall>(tr: &Translator, host: &H, target_surface: u32) -> String {
+    let mut message =
+        tr.t("claude.notify.stalled_message")
+            .replacen("{}", &target_surface.to_string(), 1);
+    let screen = host
+        .call(
+            "surface.screen_text",
+            json!({ "surface_id": target_surface }),
+        )
+        .ok()
+        .and_then(|r| r.get("text").and_then(|t| t.as_str()).map(str::to_string));
+    if let Some(line) = screen
+        .as_deref()
+        .and_then(crate::error_scan::first_error_line)
+    {
+        // 화면 한 줄이 그대로 알림에 실린다 — 로그 한 줄 형식을 깨지 않도록 길이를 자른다.
+        let hint: String = line.chars().take(160).collect();
+        message.push_str(&tr.t("claude.notify.stalled_hint").replacen("{}", &hint, 1));
+    }
+    message
 }
 
 /// `target_surface` 가 host 트리에 여전히 존재하면(=이번 fire 가 process-exit 가
@@ -1177,6 +1274,8 @@ mod tests {
         surface_id: u32,
         command: String,
         event: String,
+        /// once=false 인 상시 hook 은 발화해도 남는다(에러 정지 알림 hook).
+        once: bool,
     }
 
     /// hook.set/list/unset + terminal.tell 을 in-memory 로 시뮬레이션하는 mock 호스트.
@@ -1200,12 +1299,33 @@ mod tests {
         }
 
         /// event 발화 시뮬레이션 — 매칭 once-hook 제거(호스트 `check_and_fire` 의
-        /// retain 과 동일). 발화한 hook 개수를 반환.
+        /// retain 과 동일). 상시 hook(once=false)은 남긴다. 발화한 hook 개수를 반환.
         fn fire(&self, surface_id: u32, event: &str) -> usize {
             let mut hooks = self.hooks.borrow_mut();
-            let before = hooks.len();
-            hooks.retain(|h| !(h.surface_id == surface_id && h.event == event));
-            before - hooks.len()
+            let fired = hooks
+                .iter()
+                .filter(|h| h.surface_id == surface_id && h.event == event)
+                .count();
+            hooks.retain(|h| !(h.surface_id == surface_id && h.event == event && h.once));
+            fired
+        }
+
+        /// 완료 알림(notify-done) 그룹의 command 만 — 에러 정지 알림 hook 은 별개
+        /// 수명이라 형제 사이클 assertion 에서 제외한다.
+        fn done_commands_on(&self, surface_id: u32) -> Vec<String> {
+            self.commands_on(surface_id)
+                .into_iter()
+                .filter(|c| c.contains("notify-done"))
+                .collect()
+        }
+
+        /// 특정 event 로 등록된 hook 개수.
+        fn hooks_for_event(&self, surface_id: u32, event: &str) -> usize {
+            self.hooks
+                .borrow()
+                .iter()
+                .filter(|h| h.surface_id == surface_id && h.event == event)
+                .count()
         }
 
         fn commands_on(&self, surface_id: u32) -> Vec<String> {
@@ -1245,6 +1365,7 @@ mod tests {
                         surface_id: params["surface_id"].as_u64().unwrap() as u32,
                         command: params["command"].as_str().unwrap().to_string(),
                         event: params["event"].as_str().unwrap().to_string(),
+                        once: params["once"].as_bool().unwrap_or(false),
                     });
                     Ok(json!({ "hook_id": hid }))
                 }
@@ -1296,7 +1417,7 @@ mod tests {
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 3, "3 형제 등록");
+        assert_eq!(host.done_commands_on(target).len(), 3, "3 형제 등록");
 
         // needs-input 이 fire(once 제거) → 나머지 형제(claude-idle, process-exit) 정리.
         assert_eq!(host.fire(target, "needs-input"), 1);
@@ -1304,9 +1425,9 @@ mod tests {
         cleanup_sibling_hooks(&host, target, &expected);
 
         assert!(
-            host.commands_on(target).is_empty(),
+            host.done_commands_on(target).is_empty(),
             "형제 hook 이 하나도 남지 않아야 함 — process-exit 좀비 없음: {:?}",
-            host.commands_on(target)
+            host.done_commands_on(target)
         );
     }
 
@@ -1319,14 +1440,21 @@ mod tests {
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "spawn");
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 6, "두 그룹 = 6 hook");
+        assert_eq!(host.done_commands_on(target).len(), 6, "두 그룹 = 6 hook");
+        // 에러 정지 hook 은 command 에 command_name 이 없어 두 그룹이 같은 문자열을
+        // 쓴다 — 멱등 등록이라 두 번 불러도 1 개만 남는다.
+        assert_eq!(
+            host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
+            1,
+            "에러 정지 hook 은 중복 등록되지 않아야 함"
+        );
 
         // spawn 그룹의 claude-idle 이 먼저 fire → spawn 그룹만 정리.
         host.fire(target, "claude-idle");
         let spawn_cmd = notify_done_command(caller, target, "spawn");
         cleanup_sibling_hooks(&host, target, &spawn_cmd);
 
-        let remaining = host.commands_on(target);
+        let remaining = host.done_commands_on(target);
         let tell_cmd = notify_done_command(caller, target, "tell");
         // tell 그룹은 그대로(claude-idle fire 가 tell 의 claude-idle 도 제거했으므로 2개),
         // spawn 그룹은 완전히 사라져야 한다.
@@ -1343,9 +1471,9 @@ mod tests {
         host.fire(target, "needs-input");
         cleanup_sibling_hooks(&host, target, &tell_cmd);
         assert!(
-            host.commands_on(target).is_empty(),
+            host.done_commands_on(target).is_empty(),
             "최종적으로 형제 hook 이 전부 사라져야 함: {:?}",
-            host.commands_on(target)
+            host.done_commands_on(target)
         );
     }
 
@@ -1363,7 +1491,7 @@ mod tests {
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 3, "최초 3 형제 등록");
+        assert_eq!(host.done_commands_on(target).len(), 3, "최초 3 형제 등록");
 
         let tr = test_translator();
 
@@ -1376,7 +1504,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            host.commands_on(target).len(),
+            host.done_commands_on(target).len(),
             3,
             "살아있으면 형제 hook 이 다시 3개로 재무장돼야 함"
         );
@@ -1392,10 +1520,122 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            host.commands_on(target).len(),
+            host.done_commands_on(target).len(),
             3,
             "두 번째 전환에도 계속 재무장돼야 함 — 'spawn/tell 당 1회' 로 되돌아가면 안 됨"
         );
+    }
+
+    // ── 에러 정지 알림 배선 (`claude-error-stalled`) ──
+
+    #[test]
+    fn spawn_tell_wiring_subscribes_the_error_axis() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        register_notify_hooks(&host, caller, target, "spawn");
+        assert_eq!(
+            host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
+            1,
+            "완료 3종과 함께 에러 정지 hook 도 등록돼야 함"
+        );
+        assert!(
+            host.commands_on(target)
+                .iter()
+                .any(|c| c == &notify_error_command(caller, target))
+        );
+    }
+
+    #[test]
+    fn error_hook_survives_the_sibling_fire_cleanup_rearm_cycle() {
+        // 형제 그룹은 fire → 정리 → 재무장 사이클을 도는데, 에러 정지 hook 은 그
+        // 사이클에 휘말리지 않아야 한다(수명이 다르다).
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, caller, target, "tell");
+        let tr = test_translator();
+
+        for _ in 0..3 {
+            assert_eq!(host.fire(target, "needs-input"), 1);
+            handle_notify_done(
+                &host,
+                &json!({ "caller_surface": caller, "target_surface": target, "command": "tell" }),
+                &tr,
+            )
+            .unwrap();
+            assert_eq!(
+                host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
+                1,
+                "재무장 사이클을 돌아도 에러 hook 은 정확히 1개로 유지"
+            );
+            assert_eq!(host.done_commands_on(target).len(), 3, "형제 재무장도 정상");
+        }
+    }
+
+    #[test]
+    fn error_hook_is_standing_so_repeated_stalls_keep_notifying() {
+        // once=true 였다면 첫 발화 후 사라져 두 번째 정지를 놓친다.
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        register_notify_hooks(&host, caller, target, "spawn");
+        assert_eq!(host.fire(target, crate::error_scan::STALLED_EVENT), 1);
+        assert_eq!(
+            host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
+            1,
+            "상시 hook 이라 발화해도 남아야 한다"
+        );
+        assert_eq!(host.fire(target, crate::error_scan::STALLED_EVENT), 1);
+    }
+
+    #[test]
+    fn handle_notify_error_requires_both_surfaces() {
+        let host = MockHost::new();
+        let tr = test_translator();
+        assert_eq!(
+            handle_notify_error(&host, &json!({ "target_surface": 5 }), &tr)
+                .unwrap_err()
+                .code,
+            -32602
+        );
+        assert_eq!(
+            handle_notify_error(&host, &json!({ "caller_surface": 5 }), &tr)
+                .unwrap_err()
+                .code,
+            -32602
+        );
+    }
+
+    #[test]
+    fn notify_error_message_appends_error_line_hint() {
+        // codex `notify-caller` 선례 — 알림 조립 직전 화면을 읽어 실패 원인을 덧붙인다.
+        struct ScreenHost(&'static str);
+        impl HostCall for ScreenHost {
+            fn call(
+                &self,
+                method: &str,
+                _params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                match method {
+                    "surface.screen_text" => Ok(json!({ "text": self.0 })),
+                    other => panic!("unexpected host call: {other}"),
+                }
+            }
+        }
+        let tr = test_translator();
+        let with_hint = notify_error_message(
+            &tr,
+            &ScreenHost("working…\n  API Error: Connection error\n"),
+            42,
+        );
+        assert!(with_hint.contains("42"), "대상 surface 가 문구에 있어야 함");
+        assert!(
+            with_hint.contains("API Error: Connection error"),
+            "에러 줄 힌트: {with_hint}"
+        );
+
+        // 화면에 에러 줄이 없으면 힌트 없이 본문만.
+        let plain = notify_error_message(&tr, &ScreenHost("all good\n"), 42);
+        assert!(!plain.contains("Last error"), "{plain}");
     }
 
     #[test]
@@ -1418,9 +1658,9 @@ mod tests {
         .unwrap();
 
         assert!(
-            host.commands_on(target).is_empty(),
+            host.done_commands_on(target).is_empty(),
             "죽은 surface 에 재무장하면 좀비 hook: {:?}",
-            host.commands_on(target)
+            host.done_commands_on(target)
         );
     }
 }

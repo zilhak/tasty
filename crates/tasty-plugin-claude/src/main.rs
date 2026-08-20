@@ -2,7 +2,7 @@
 
 //! Tasty Claude Code plugin — 외부 plugin.
 //!
-//! `tasty claude launch|spawn|children|parent|tell|broadcast|kill|respawn|install|uninstall|hook|notify-done`
+//! `tasty claude launch|spawn|children|parent|tell|broadcast|kill|respawn|install|uninstall|hook|notify-done|notify-error`
 //! CLI 세트를 제공한다.
 //!
 //! 자식 terminal 관리(registry·spawn·wait·kill·reconcile·soft 점유)는 호스트가
@@ -145,6 +145,7 @@ impl Plugin for ClaudePlugin {
             "claude.broadcast" => handle_broadcast(&ctx.host, &ctx.params, &self.translator),
             "claude.tell" => handle_tell(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
+            "claude.notify_error" => handle_notify_error(&ctx.host, &ctx.params, &self.translator),
             // launch/respawn/spawn — claude 특화 기동 명령을 host registry 위에 얹는다.
             "claude.launch" => handle_launch(
                 &self.scanner,
