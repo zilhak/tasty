@@ -1600,237 +1600,16 @@ impl Theme {
         self.accent_agent()
     }
 
-    // ── 컴포넌트 토큰 (sidebar workspace-category 헤더) — `--tasty-sidebar-category-header-*` ──
-    // 헤더를 "면(band)"으로 승격: bg-app 티어 + 상하 hairline. weight(bold)는 토큰엔
-    // 있지만 egui UI 폰트에 합성 bold 가 등록돼 있지 않아(D2Coding Bold는 터미널 GPU
-    // 글리프 전용, egui font_registry 미등록 — markdown gallery specimen 과 동일 한계)
-    // 별도 접근자 없음 — `text_secondary`(아래 fg)로의 색 승격이 곧 그 신호다.
-    /// 헤더 밴드 배경. `--tasty-sidebar-category-header-bg` → `bg-app`.
-    #[inline]
-    pub fn sidebar_category_header_bg(&self) -> HexColor {
-        self.bg_app()
-    }
-    /// 밴드 상/하 hairline. `--tasty-sidebar-category-header-border` → `separator`.
-    #[inline]
-    pub fn sidebar_category_header_border(&self) -> HexColor {
-        self.separator
-    }
-    /// 라벨/셰브론 색. `--tasty-sidebar-category-header-fg` → `text-secondary`
-    /// (기존 `text-muted`에서 승격 — 행보다 아래로 읽히던 문제 수정).
-    #[inline]
-    pub fn sidebar_category_header_fg(&self) -> HexColor {
-        self.text_secondary()
-    }
-    /// 밴드 세로 패딩. `--tasty-sidebar-category-header-pad-y` → `space-sm`(8px).
-    #[inline]
-    pub fn sidebar_category_header_pad_y(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// 밴드 가로 패딩. `--tasty-sidebar-category-header-pad-x` → `space-sm`(8px).
-    #[inline]
-    pub fn sidebar_category_header_pad_x(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// 우측 워크스페이스 카운트 색 — hover 시 `+` 버튼에 자리를 내주고 페이드아웃.
-    /// `--tasty-sidebar-category-header-count-fg` → `text-disabled`.
-    #[inline]
-    pub fn sidebar_category_header_count_fg(&self) -> HexColor {
-        self.text_disabled()
-    }
-    /// 카운트 폰트 크기(10px). `--tasty-sidebar-category-header-count-font-size` → `font-size-micro`.
-    #[inline]
-    pub fn sidebar_category_header_count_font_size(&self) -> LogicalPx {
-        self.font_size_micro
-    }
-
-    // ── 컴포넌트 토큰 (AutoComplete 후보 드롭다운) — `--tasty-autocomplete-*` ──
-    // 자유입력 트리거 + 후보 드롭다운(typeahead). 색·간격·행높이는 전부 기존
-    // Input/menu-item/semantic 접근자를 그대로 재사용하므로 여기엔 드롭다운 최대
-    // 높이 하나만 둔다(신규 primitive 없음 — 220 은 primitive `size-220`).
-    /// 드롭다운 최대 높이 (220px, ≈7행). 초과 시 리스트 내부 스크롤 + shrink-to-fit.
-    /// `--tasty-autocomplete-max-height` → `--tasty-size-220`.
-    #[inline]
-    pub fn autocomplete_max_height(&self) -> LogicalPx {
-        LogicalPx((220.0 * self.ui_zoom).round())
-    }
-
-    // ── 컴포넌트 토큰 (markdown surface 인라인 표 — grid + zebra) ──
-    // Markdown surface 의 GFM 표 전용 tier-3 토큰. 공용 `Table` 위젯과 별개(읽기 전용·정적).
-    // 모두 기존 semantic 접근자를 가리키는 포인터 — 신규 primitive/hex 없음. 값 사다리
-    // (어두움→밝음): mantle(zebra) < base(행) < surface0(헤더) < surface1(격자선).
-    /// 외곽 + 가로 + 세로 격자선. `--tasty-md-table-border` → `border-strong` (surface1).
-    #[inline]
-    pub fn md_table_border(&self) -> HexColor {
-        self.border_strong()
-    }
-    /// 헤더 밴드 배경 (가장 밝은 채움). `--tasty-md-table-header-bg` → `surface-raised` (surface0).
-    #[inline]
-    pub fn md_table_header_bg(&self) -> HexColor {
-        self.surface_raised()
-    }
-    /// 헤더 텍스트 — 헤더 신호(색·배경, weight 아님). `--tasty-md-table-header-fg` → `text-primary`.
-    #[inline]
-    pub fn md_table_header_fg(&self) -> HexColor {
-        self.text_primary()
-    }
-    /// 홀수 행 + 표 base 채움 (불투명). `--tasty-md-table-row-bg` → `bg-panel` (base).
-    #[inline]
-    pub fn md_table_row_bg(&self) -> HexColor {
-        self.bg_panel()
-    }
-    /// 짝수 행 stripe (미세하게 어둡게). `--tasty-md-table-row-bg-zebra` → `bg-sidebar` (mantle).
-    #[inline]
-    pub fn md_table_row_bg_zebra(&self) -> HexColor {
-        self.bg_sidebar()
-    }
-    /// 셀 본문 텍스트. `--tasty-md-table-cell-fg` → `text-secondary` (subtext1).
-    #[inline]
-    pub fn md_table_cell_fg(&self) -> HexColor {
-        self.text_secondary()
-    }
-    /// 셀 좌우 패딩 (8px). `--tasty-md-table-cell-padding-x` → `space-sm`.
-    #[inline]
-    pub fn md_table_cell_padding_x(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// 셀 상하 패딩 (4px). `--tasty-md-table-cell-padding-y` → `space-xs`.
-    #[inline]
-    pub fn md_table_cell_padding_y(&self) -> LogicalPx {
-        self.spacing_xs
-    }
-
-    // ── 컴포넌트 토큰 (DrillDown — master→detail content-swap) — `--tasty-drilldown-*` ──
-    // 리스트 뷰 ⇄ 디테일 뷰 전면 교체 레이아웃. 디테일 상단에 back bar(← + 제목 +
-    // 우측 actions 슬롯) 밴드. 값은 디자인 `tokens/components.css` 의 alias 체인 그대로.
-    // (title-font-weight semibold 는 egui 폰트 weight 한계로 색 강조 관례로 대체 —
-    // `button.rs` 참조.)
-    /// back bar 밴드 높이 (36px). `--tasty-drilldown-backbar-height` → `size-36`.
-    #[inline]
-    pub fn drilldown_backbar_height(&self) -> LogicalPx {
-        LogicalPx((36.0 * self.ui_zoom).round())
-    }
-    /// back bar 좌우 패딩 (8px) — ← 버튼을 콘텐츠 좌단에 정렬.
-    /// `--tasty-drilldown-backbar-padding-x` → `space-sm`.
-    #[inline]
-    pub fn drilldown_backbar_padding_x(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// back bar 상하 패딩 (4px). `--tasty-drilldown-backbar-padding-y` → `space-xs`.
-    #[inline]
-    pub fn drilldown_backbar_padding_y(&self) -> LogicalPx {
-        self.spacing_xs
-    }
-    /// ← ↔ 제목 ↔ actions 간격 (8px). `--tasty-drilldown-backbar-gap` → `space-sm`.
-    #[inline]
-    pub fn drilldown_backbar_gap(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// back bar 하단 헤어라인. `--tasty-drilldown-backbar-border` → `separator`.
-    #[inline]
-    pub fn drilldown_backbar_border(&self) -> HexColor {
-        self.separator
-    }
-    /// 디테일 제목 폰트 (13px). `--tasty-drilldown-title-font-size` → `font-size-body`.
-    #[inline]
-    pub fn drilldown_title_font_size(&self) -> LogicalPx {
-        self.font_size_body
-    }
-    /// 디테일 제목 색. `--tasty-drilldown-title-fg` → `text-primary`.
-    #[inline]
-    pub fn drilldown_title_fg(&self) -> HexColor {
-        self.text_primary()
-    }
-
-    // ── 컴포넌트 토큰 (ListCtrl — 행 선택형 내비게이션 리스트) — `--tasty-listctrl-*` ──
-    // "하나 골라 진입하는" 풀폭 리스트 (데이터 그리드는 Table). 행 상태 팔레트는
-    // TreeRow/MenuItem/Table 과 동일한 list idiom (hover = overlay-hover, selected =
-    // surface-active + 2px accent 좌측 바). 값은 디자인 `tokens/components.css` 그대로.
-    /// 행 최소 높이 (36px — label + description 수용).
-    /// `--tasty-listctrl-row-min-height` → `size-36`.
-    #[inline]
-    pub fn listctrl_row_min_height(&self) -> LogicalPx {
-        LogicalPx((36.0 * self.ui_zoom).round())
-    }
-    /// 행 좌우 패딩 (12px). `--tasty-listctrl-row-padding-x` → `space-md`.
-    #[inline]
-    pub fn listctrl_row_padding_x(&self) -> LogicalPx {
-        self.spacing_md
-    }
-    /// 행 상하 패딩 (8px). `--tasty-listctrl-row-padding-y` → `space-sm`.
-    #[inline]
-    pub fn listctrl_row_padding_y(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// icon ↔ text ↔ trailing 간격 (8px). `--tasty-listctrl-row-gap` → `space-sm`.
-    #[inline]
-    pub fn listctrl_row_gap(&self) -> LogicalPx {
-        self.spacing_sm
-    }
-    /// 행 corner radius (divided 모드에선 0). `--tasty-listctrl-radius` → `radius-sm`.
-    #[inline]
-    pub fn listctrl_radius(&self) -> LogicalPx {
-        self.corner_radius_sm
-    }
-    /// 라벨 폰트 (13px). `--tasty-listctrl-font-size` → `font-size-body`.
-    #[inline]
-    pub fn listctrl_font_size(&self) -> LogicalPx {
-        self.font_size_body
-    }
-    /// 라벨 기본 색. `--tasty-listctrl-label-fg` → `text-secondary`.
-    #[inline]
-    pub fn listctrl_label_fg(&self) -> HexColor {
-        self.text_secondary()
-    }
-    /// hover/selected 라벨 색. `--tasty-listctrl-label-fg-active` → `text-primary`.
-    #[inline]
-    pub fn listctrl_label_fg_active(&self) -> HexColor {
-        self.text_primary()
-    }
-    /// description(보조 줄) 색. `--tasty-listctrl-desc-fg` → `text-muted`.
-    #[inline]
-    pub fn listctrl_desc_fg(&self) -> HexColor {
-        self.text_muted()
-    }
-    /// description 폰트 (11px). `--tasty-listctrl-desc-font-size` → `font-size-caption`.
-    #[inline]
-    pub fn listctrl_desc_font_size(&self) -> LogicalPx {
-        self.font_size_caption
-    }
-    /// leading 아이콘 색. `--tasty-listctrl-icon-fg` → `text-muted`.
-    #[inline]
-    pub fn listctrl_icon_fg(&self) -> HexColor {
-        self.text_muted()
-    }
-    /// trailing drill-in chevron 색. `--tasty-listctrl-chevron-fg` → `text-muted`.
-    #[inline]
-    pub fn listctrl_chevron_fg(&self) -> HexColor {
-        self.text_muted()
-    }
-    /// hover 행 워시. `--tasty-listctrl-row-bg-hover` → `overlay-hover`.
-    #[inline]
-    pub fn listctrl_row_bg_hover(&self) -> HexColor {
-        self.overlay_hover()
-    }
-    /// selected 행 배경. `--tasty-listctrl-row-bg-selected` → `surface-active`.
-    #[inline]
-    pub fn listctrl_row_bg_selected(&self) -> HexColor {
-        self.surface_active()
-    }
-    /// selected 행 좌측 accent 바 색. `--tasty-listctrl-selected-bar` → `accent-primary`.
-    #[inline]
-    pub fn listctrl_selected_bar(&self) -> HexColor {
-        self.accent_primary()
-    }
-    /// selected 좌측 바 굵기 (2px). `--tasty-listctrl-selected-bar-width` → `size-2`.
-    #[inline]
-    pub fn listctrl_selected_bar_width(&self) -> LogicalPx {
-        LogicalPx((2.0 * self.ui_zoom).round())
-    }
-    /// 행 사이 헤어라인. `--tasty-listctrl-divider` → `separator`.
-    #[inline]
-    pub fn listctrl_divider(&self) -> HexColor {
-        self.separator
-    }
+    // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
+    // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
+    // 접근자는 전부 `generated_component.rs` 에서 생성된다. 디자인 export 에 해당
+    // component 토큰이 들어오기 전까지 여기 수기로 두었던 것들인데, 생성물과 본문이
+    // 완전히 같아 중복 정의가 되므로 제거했다. 값을 고치려면 디자인 CSS → vendor json.
+    //
+    // 토큰은 있으나 접근자가 없는 두 건은 egui 폰트 한계 때문이다:
+    // `--tasty-sidebar-category-header-weight`(bold) · `--tasty-drilldown-title-font-weight`
+    // (semibold) — 합성 bold 가 egui font_registry 에 등록돼 있지 않다(D2Coding Bold 는
+    // 터미널 GPU 글리프 전용). 굵기 대신 색 승격으로 위계를 준다(`button.rs` 참조).
 }
 
 // ============================================================================
@@ -1953,6 +1732,9 @@ mod tests {
         assert_eq!(th.text_muted(), th.subtext0);
         assert_eq!(th.text_disabled(), th.overlay1);
         assert_eq!(th.text_placeholder(), th.placeholder);
+
+        // 상태 표시
+        assert_eq!(th.status_idle(), th.overlay0);
         assert_eq!(th.text_on_accent(), th.crust); // dark(Mocha): neutral-0=crust
         // light(Latte): accent 위 텍스트는 절대색 white 로 role-remap.
         let light = Theme::with_colors(distinct_colors(), true);

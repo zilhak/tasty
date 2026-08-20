@@ -141,6 +141,12 @@ impl crate::theme::Theme {
         self.lavender
     }
 
+    /// `semantic.status-idle` → `{primitive.color-neutral-600}`
+    #[inline]
+    pub fn status_idle(&self) -> HexColor {
+        self.overlay0
+    }
+
     /// `semantic.border-default` → `{primitive.color-neutral-300}`
     #[inline]
     pub fn border_default(&self) -> HexColor {

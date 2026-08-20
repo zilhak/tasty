@@ -10,6 +10,12 @@
 
 use tasty_type_geometry::length::LogicalPx;
 
+/// `semantic.attention-rank-completion` = 10
+pub const ATTENTION_RANK_COMPLETION: f32 = 10.0;
+
+/// `semantic.attention-rank-needs-input` = 30
+pub const ATTENTION_RANK_NEEDS_INPUT: f32 = 30.0;
+
 /// `semantic.border-width` → `{primitive.size-1}` = 1px
 pub const BORDER_WIDTH: LogicalPx = super::primitive::SIZE_1;
 

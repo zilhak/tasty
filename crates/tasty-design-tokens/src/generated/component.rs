@@ -7,6 +7,22 @@
 //!
 //! **zoom 주의**: 런타임 소비는 반드시 `&Theme` 경유 — `semantic.rs` 참조.
 
+pub mod autocomplete {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.autocomplete-max-height` → `{primitive.size-220}` = 220px
+    pub const MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_220;
+
+    /// `component.autocomplete-menu-radius` → `{component.menu-radius}` = 4px
+    pub const MENU_RADIUS: LogicalPx = super::menu::RADIUS;
+
+    /// `component.autocomplete-row-height` → `{component.menu-item-height}` = 28px
+    pub const ROW_HEIGHT: LogicalPx = super::menu::ITEM_HEIGHT;
+
+    /// `component.autocomplete-row-padding-x` → `{component.menu-item-padding-x}` = 12px
+    pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
+}
+
 pub mod badge {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -18,6 +34,9 @@ pub mod badge {
 
     /// `component.badge-font-weight` → `{semantic.font-weight-bold}` = 700
     pub const FONT_WEIGHT: u16 = crate::generated::semantic::FONT_WEIGHT_BOLD;
+
+    /// `component.badge-group-gap` → `{semantic.space-xs}` = 4px
+    pub const GROUP_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.badge-padding-x` → `{semantic.space-xs}` = 4px
     pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_XS;
@@ -46,6 +65,27 @@ pub mod banner {
 
     /// `component.banner-margin` → `{semantic.space-sm}` = 8px
     pub const MARGIN: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.banner-more-column-gap` → `{semantic.space-xs}` = 4px
+    pub const MORE_COLUMN_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.banner-more-menu-max-width` → `{primitive.size-288}` = 288px
+    pub const MORE_MENU_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+
+    /// `component.banner-more-menu-min-width` → `{primitive.size-200}` = 200px
+    pub const MORE_MENU_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
+
+    /// `component.banner-more-menu-offset` → `{semantic.space-xs}` = 4px
+    pub const MORE_MENU_OFFSET: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.banner-more-menu-padding` → `{semantic.space-xs}` = 4px
+    pub const MORE_MENU_PADDING: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.banner-more-menu-radius` → `{component.menu-radius}` = 4px
+    pub const MORE_MENU_RADIUS: LogicalPx = super::menu::RADIUS;
+
+    /// `component.banner-more-reserve` → `{primitive.size-56}` = 56px
+    pub const MORE_RESERVE: LogicalPx = crate::generated::primitive::SIZE_56;
 
     /// `component.banner-padding-x` → `{semantic.space-md}` = 12px
     pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_MD;
@@ -99,6 +139,155 @@ pub mod checkbox {
 
     /// `component.checkbox-size` → `{primitive.size-16}` = 16px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
+}
+
+pub mod dag {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.dag-canvas-dot-gap` → `{primitive.size-16}` = 16px
+    pub const CANVAS_DOT_GAP: LogicalPx = crate::generated::primitive::SIZE_16;
+
+    /// `component.dag-canvas-dot-size` → `{primitive.size-1}` = 1px
+    pub const CANVAS_DOT_SIZE: LogicalPx = crate::generated::primitive::SIZE_1;
+
+    /// `component.dag-canvas-padding` → `{semantic.space-lg}` = 16px
+    pub const CANVAS_PADDING: LogicalPx = crate::generated::semantic::SPACE_LG;
+
+    /// `component.dag-chrome-height` → `{semantic.control-height}` = 28px
+    pub const CHROME_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
+
+    /// `component.dag-chrome-inset` → `{semantic.space-sm}` = 8px
+    pub const CHROME_INSET: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-cycle-height` → `{semantic.control-height}` = 28px
+    pub const CYCLE_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
+
+    /// `component.dag-detail-log-max-height` → `{primitive.size-160}` = 160px
+    pub const DETAIL_LOG_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_160;
+
+    /// `component.dag-detail-out-max-height` → `{primitive.size-112}` = 112px
+    pub const DETAIL_OUT_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_112;
+
+    /// `component.dag-detail-padding` → `{semantic.space-md}` = 12px
+    pub const DETAIL_PADDING: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.dag-detail-sheet-height` → `{primitive.size-220}` = 220px
+    pub const DETAIL_SHEET_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_220;
+
+    /// `component.dag-detail-width` → `{primitive.size-288}` = 288px
+    pub const DETAIL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+
+    /// `component.dag-edge-arrow-size` → `{primitive.size-8}` = 8px
+    pub const EDGE_ARROW_SIZE: LogicalPx = crate::generated::primitive::SIZE_8;
+
+    /// `component.dag-edge-corner-radius` → `{semantic.radius}` = 4px
+    pub const EDGE_CORNER_RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.dag-edge-dim-opacity` → `{primitive.opacity-recessed}` = 0.4
+    pub const EDGE_DIM_OPACITY: f32 = crate::generated::primitive::OPACITY_RECESSED;
+
+    /// `component.dag-edge-width` → `{primitive.size-1}` = 1px
+    pub const EDGE_WIDTH: LogicalPx = crate::generated::primitive::SIZE_1;
+
+    /// `component.dag-layer-gap` → `{primitive.size-32}` = 32px
+    pub const LAYER_GAP: LogicalPx = crate::generated::primitive::SIZE_32;
+
+    /// `component.dag-minimap-height` → `{primitive.size-112}` = 112px
+    pub const MINIMAP_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_112;
+
+    /// `component.dag-minimap-min-surface` → `{primitive.size-560}` = 560px
+    pub const MINIMAP_MIN_SURFACE: LogicalPx = crate::generated::primitive::SIZE_560;
+
+    /// `component.dag-minimap-width` → `{primitive.size-160}` = 160px
+    pub const MINIMAP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_160;
+
+    /// `component.dag-node-bar-width` → `{primitive.size-3}` = 3px
+    pub const NODE_BAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_3;
+
+    /// `component.dag-node-dim-opacity` → `{primitive.opacity-dimmed}` = 0.75
+    pub const NODE_DIM_OPACITY: f32 = crate::generated::primitive::OPACITY_DIMMED;
+
+    /// `component.dag-node-gap` → `{semantic.space-sm}` = 8px
+    pub const NODE_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-node-height` → `{primitive.size-48}` = 48px
+    pub const NODE_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_48;
+
+    /// `component.dag-node-meta-font-size` → `{semantic.font-size-micro}` = 10px
+    pub const NODE_META_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_MICRO;
+
+    /// `component.dag-node-name-font-size` → `{semantic.font-size-body}` = 13px
+    pub const NODE_NAME_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BODY;
+
+    /// `component.dag-node-padding-x` → `{semantic.space-sm}` = 8px
+    pub const NODE_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-node-padding-y` → `{semantic.space-xs}` = 4px
+    pub const NODE_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.dag-node-radius` → `{semantic.radius}` = 4px
+    pub const NODE_RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.dag-node-row-gap` → `{semantic.space-xs}` = 4px
+    pub const NODE_ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.dag-node-selected-ring-width` → `{semantic.focus-ring-width}` = 2px
+    pub const NODE_SELECTED_RING_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+
+    /// `component.dag-node-width` → `{primitive.size-168}` = 168px
+    pub const NODE_WIDTH: LogicalPx = crate::generated::primitive::SIZE_168;
+
+    /// `component.dag-popup-height` → `{primitive.size-460}` = 460px
+    pub const POPUP_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_460;
+
+    /// `component.dag-popup-width` → `{primitive.size-560}` = 560px
+    pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_560;
+
+    /// `component.dag-row-count-font-size` → `{semantic.font-size-caption}` = 11px
+    pub const ROW_COUNT_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.dag-row-height` → `{component.listctrl-row-min-height}` = 36px
+    pub const ROW_HEIGHT: LogicalPx = super::listctrl::ROW_MIN_HEIGHT;
+
+    /// `component.dag-row-summary-gap` → `{semantic.space-sm}` = 8px
+    pub const ROW_SUMMARY_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-runner-gap` → `{semantic.space-sm}` = 8px
+    pub const RUNNER_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-runner-height` → `{semantic.control-height-tree}` = 22px
+    pub const RUNNER_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TREE;
+
+    /// `component.dag-runner-padding-x` → `{semantic.space-sm}` = 8px
+    pub const RUNNER_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.dag-runner-radius` → `{semantic.radius-sm}` = 2px
+    pub const RUNNER_RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
+
+    /// `component.dag-sibling-gap` → `{primitive.size-24}` = 24px
+    pub const SIBLING_GAP: LogicalPx = crate::generated::primitive::SIZE_24;
+}
+
+pub mod drilldown {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.drilldown-backbar-gap` → `{semantic.space-sm}` = 8px
+    pub const BACKBAR_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.drilldown-backbar-height` → `{primitive.size-36}` = 36px
+    pub const BACKBAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_36;
+
+    /// `component.drilldown-backbar-padding-x` → `{semantic.space-sm}` = 8px
+    pub const BACKBAR_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.drilldown-backbar-padding-y` → `{semantic.space-xs}` = 4px
+    pub const BACKBAR_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.drilldown-title-font-size` → `{semantic.font-size-body}` = 13px
+    pub const TITLE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BODY;
+
+    /// `component.drilldown-title-font-weight` → `{semantic.font-weight-semibold}` = 600
+    pub const TITLE_FONT_WEIGHT: u16 = crate::generated::semantic::FONT_WEIGHT_SEMIBOLD;
 }
 
 pub mod explorer {
@@ -184,6 +373,44 @@ pub mod kbd {
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
 }
 
+pub mod listctrl {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.listctrl-desc-font-size` → `{semantic.font-size-caption}` = 11px
+    pub const DESC_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.listctrl-font-size` → `{semantic.font-size-body}` = 13px
+    pub const FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BODY;
+
+    /// `component.listctrl-radius` → `{semantic.radius-sm}` = 2px
+    pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
+
+    /// `component.listctrl-row-gap` → `{semantic.space-sm}` = 8px
+    pub const ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.listctrl-row-min-height` → `{primitive.size-36}` = 36px
+    pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_36;
+
+    /// `component.listctrl-row-padding-x` → `{semantic.space-md}` = 12px
+    pub const ROW_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.listctrl-row-padding-y` → `{semantic.space-sm}` = 8px
+    pub const ROW_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.listctrl-selected-bar-width` → `{primitive.size-2}` = 2px
+    pub const SELECTED_BAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_2;
+}
+
+pub mod md {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.md-table-cell-padding-x` → `{semantic.space-sm}` = 8px
+    pub const TABLE_CELL_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.md-table-cell-padding-y` → `{semantic.space-xs}` = 4px
+    pub const TABLE_CELL_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+}
+
 pub mod menu {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -267,6 +494,16 @@ pub mod preset {
     pub const LEAF_VALUE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
 }
 
+pub mod progress {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.progress-height` → `{primitive.size-4}` = 4px
+    pub const HEIGHT: LogicalPx = crate::generated::primitive::SIZE_4;
+
+    /// `component.progress-radius` → `{semantic.radius-sm}` = 2px
+    pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
+}
+
 pub mod remote {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -311,6 +548,19 @@ pub mod sidebar {
 
     /// `component.sidebar-button-label-font-size` → `{semantic.font-size-caption}` = 11px
     pub const BUTTON_LABEL_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.sidebar-category-header-count-font-size` → `{semantic.font-size-micro}` = 10px
+    pub const CATEGORY_HEADER_COUNT_FONT_SIZE: LogicalPx =
+        crate::generated::semantic::FONT_SIZE_MICRO;
+
+    /// `component.sidebar-category-header-pad-x` → `{semantic.space-sm}` = 8px
+    pub const CATEGORY_HEADER_PAD_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.sidebar-category-header-pad-y` → `{semantic.space-sm}` = 8px
+    pub const CATEGORY_HEADER_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.sidebar-category-header-weight` → `{semantic.font-weight-bold}` = 700
+    pub const CATEGORY_HEADER_WEIGHT: u16 = crate::generated::semantic::FONT_WEIGHT_BOLD;
 
     /// `component.sidebar-collapsed-icon-height` → `{primitive.size-22}` = 22px
     pub const COLLAPSED_ICON_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_22;
@@ -365,6 +615,9 @@ pub mod surface {
 
     /// `component.surface-highlight-done-width` → `{semantic.focus-ring-width}` = 2px
     pub const HIGHLIGHT_DONE_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+
+    /// `component.surface-highlight-input-width` → `{semantic.focus-ring-width}` = 2px
+    pub const HIGHLIGHT_INPUT_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
 
     /// `component.surface-occupied-border-width` → `{semantic.border-width}` = 1px
     pub const OCCUPIED_BORDER_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
@@ -563,6 +816,13 @@ pub mod tooltip {
 
     /// `component.tooltip-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+}
+
+pub mod transfer {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.transfer-popup-width` → `{primitive.size-400}` = 400px
+    pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_400;
 }
 
 pub mod tree_row {

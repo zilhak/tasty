@@ -32,30 +32,31 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 542 (111/131/300). markdown surface `focused_bg` crust 확정
-/// (primitive 7종 신규: 이하 참고) + sidebar 카테고리 헤더 밴드+카운트(component 8종 신규,
-/// TOKENS.md 회귀분) + markdown DOCUMENT 블록(component 7종 신규) 반영으로 이전
-/// 492(104/129/259) 에서 증가.
+/// 토큰 census — 751 (115/137/499). 디자인 측이 `tokens/tasty.tokens.json` export 를
+/// 세 CSS 파일로부터 통째로 재생성해 CSS ↔ JSON parity 를 복구한 결과, 그동안 export
+/// 에만 빠져 있던 209종이 한꺼번에 들어와 이전 542(111/131/300) 에서 증가했다
+/// (primitive 4 · semantic 6 · component 199 — DAG surface 블록 `dag-*` 102종 전부 포함).
+/// 제거·개명은 없다(이전 키 집합은 새 export 의 진부분집합).
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
     assert_eq!(
         set.tier_count(dtcg::Tier::Primitive),
-        111,
+        115,
         "primitive census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Semantic),
-        131,
+        137,
         "semantic census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        300,
+        499,
         "component census drift"
     );
-    assert_eq!(set.len(), 542, "total census drift");
+    assert_eq!(set.len(), 751, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

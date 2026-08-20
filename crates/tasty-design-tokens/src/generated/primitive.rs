@@ -83,6 +83,9 @@ pub(crate) const LINE_HEIGHT_140: f32 = 1.4;
 /// `primitive.line-height-160` = 1.6
 pub(crate) const LINE_HEIGHT_160: f32 = 1.6;
 
+/// `primitive.opacity-dimmed` = 0.75
+pub(crate) const OPACITY_DIMMED: f32 = 0.75;
+
 /// `primitive.opacity-disabled` = 0.5
 pub(crate) const OPACITY_DISABLED: f32 = 0.5;
 
@@ -140,6 +143,9 @@ pub(crate) const SIZE_16: LogicalPx = LogicalPx(16.0);
 /// `primitive.size-160` = 160px
 pub(crate) const SIZE_160: LogicalPx = LogicalPx(160.0);
 
+/// `primitive.size-168` = 168px
+pub(crate) const SIZE_168: LogicalPx = LogicalPx(168.0);
+
 /// `primitive.size-180` = 180px
 pub(crate) const SIZE_180: LogicalPx = LogicalPx(180.0);
 
@@ -196,6 +202,12 @@ pub(crate) const SIZE_46: LogicalPx = LogicalPx(46.0);
 
 /// `primitive.size-460` = 460px
 pub(crate) const SIZE_460: LogicalPx = LogicalPx(460.0);
+
+/// `primitive.size-48` = 48px
+pub(crate) const SIZE_48: LogicalPx = LogicalPx(48.0);
+
+/// `primitive.size-56` = 56px
+pub(crate) const SIZE_56: LogicalPx = LogicalPx(56.0);
 
 /// `primitive.size-560` = 560px
 pub(crate) const SIZE_560: LogicalPx = LogicalPx(560.0);

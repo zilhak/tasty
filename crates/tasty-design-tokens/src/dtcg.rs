@@ -499,10 +499,17 @@ fn emit_const(
         RustKind::Ms(_) => " (ms)",
         _ => "",
     };
-    format!(
-        "{indent}/// {doc}{unit}\n{indent}{vis} const {name}: {ty} = {expr};\n",
-        ty = kind.type_name()
-    )
+    let ty = kind.type_name();
+    // rustfmt(max_width 100) 와 같은 줄바꿈을 생성기가 직접 낸다 — 생성물은 커밋되고
+    // `cargo fmt --check` 게이트를 지나가는데, freshness 테스트가 "생성기 출력 == 커밋된
+    // 텍스트" 를 요구하므로 사후 rustfmt 로 고칠 수 없다(고치면 다음 생성에서 다시 어긋난다).
+    let one_line = format!("{indent}{vis} const {name}: {ty} = {expr};");
+    let decl = if one_line.chars().count() > 100 {
+        format!("{indent}{vis} const {name}: {ty} =\n{indent}    {expr};")
+    } else {
+        one_line
+    };
+    format!("{indent}/// {doc}{unit}\n{decl}\n")
 }
 
 // ============================================================================
@@ -631,16 +638,19 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
 /// 이어붙인다.
 ///
 /// component 색 토큰의 alias 체인이 semantic 홉에서 이 표에 없는 경로를 만나면
-/// (예: `status-idle` — 디자인≠구현이라 theme.rs 에 대응 접근자가 없음) 생성기는
-/// skip + 로그한다. 값을 임의로 새 접근자에 매핑하지 않는다.
+/// 생성기는 skip + 로그한다. 값을 임의로 새 접근자에 매핑하지 않는다 — 대응
+/// 접근자가 실제로 존재하는데 이 표에만 빠져 있으면 여기 한 줄을 추가한다.
 pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-agent", "accent_agent()"),
     ("semantic.accent-attached", "border_attached()"),
+    ("semantic.accent-attention", "accent_attention()"),
     ("semantic.accent-danger", "accent_danger()"),
     ("semantic.accent-info", "accent_info()"),
     ("semantic.accent-macos-close", "accent_macos_close()"),
     ("semantic.accent-macos-min", "accent_macos_min()"),
     ("semantic.accent-macos-zoom", "accent_macos_zoom()"),
+    ("semantic.accent-occupied-hard", "accent_occupied_hard()"),
+    ("semantic.accent-occupied-soft", "accent_occupied_soft()"),
     ("semantic.accent-primary", "accent_primary()"),
     ("semantic.accent-remote", "accent_remote()"),
     ("semantic.accent-success", "accent_success()"),
@@ -655,8 +665,11 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.overlay-active", "overlay_active()"),
     ("semantic.overlay-hover", "overlay_hover()"),
     ("semantic.separator", "separator"),
+    ("semantic.status-idle", "status_idle()"),
     ("semantic.surface-active", "surface_active()"),
+    ("semantic.surface-hover", "surface_hover()"),
     ("semantic.surface-raised", "surface_raised()"),
+    ("semantic.text-disabled", "text_disabled()"),
     ("semantic.text-muted", "text_muted()"),
     ("semantic.text-on-accent", "text_on_accent()"),
     ("semantic.text-on-window-close", "text_on_window_close()"),
@@ -723,6 +736,12 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),
+    // 상태 표시 (status-*)
+    // status-idle: idle/inactive 인디케이터 톤. 값상 text-placeholder 와 같은
+    // neutral-600 이지만 필드는 `overlay0` 로 종착한다 — `placeholder` 는 텍스트
+    // 입력 전용 필드라 사용자가 독립적으로 덮어쓸 수 있고, 인디케이터 도트가 그
+    // 오버라이드를 따라가는 것은 의도가 아니다.
+    ("semantic.status-idle", "status_idle", "overlay0"),
     // 보더 (border-*)
     ("semantic.border-default", "border_default", "surface0"),
     ("semantic.border-strong", "border_strong", "surface1"),
@@ -732,8 +751,8 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
 /// semantic 색 토큰 중 **생성하지 않고 theme.rs 에 수기로 남기는** 접근자 + 사유.
 /// (단순 primitive 필드 alias 가 아니라 분기·도출·합성·리터럴이라 codegen 불가.)
 /// 나머지 semantic 색(ansi-*·surface-terminal/markdown-*·selection/vi/search-*·
-/// status-idle·brand-melon-rind/seed)은 semantic **접근자 자체가 없다** — 터미널
-/// 표면 색 subsystem 또는 미사용 토큰이라 여기 열거하지 않는다.
+/// brand-melon-rind/seed)은 semantic **접근자 자체가 없다** — 터미널 표면 색
+/// subsystem 또는 미사용 토큰이라 여기 열거하지 않는다.
 const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
     (
         "semantic.text-on-accent",
