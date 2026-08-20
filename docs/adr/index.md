@@ -85,3 +85,4 @@
 | 0072 | [child terminal 상태를 hook push 캐시 단독에서 hook+관측 융합 판정으로 바꾼다](0072-child-state-hook-observation-fusion.md) | Accepted | 2026-08-18 | child-terminal, agent-collaboration, liveness, staleness, hook, observation, heuristic, self-heal, ipc |
 | 0073 | [task-graph 화면 보류를 해제하고 host builtin surface + workspace popup 두 표면으로 만든다](0073-task-graph-view-unblock.md) | Accepted | 2026-08-19 | agent-collaboration, task-graph, dag, ui, surface, popup, host-builtin, egui-mesh, adr-0066 |
 | 0074 | [Explorer root 는 항상 절대경로 — 상대 경로는 채택하지 않고 홈으로 폴백한다](0074-explorer-root-always-absolute.md) | Accepted | 2026-08-18 | explorer, surface-cwd, invariant, fallback, attach, path |
+| 0075 | [agent hook 전달 실패를 CLI 로컬 파일에 기록하고, exit code 는 노출하지 않는다](0075-agent-hook-delivery-failure-record.md) | Accepted | 2026-08-20 | agent-hooks, observability, cli, error-handling |

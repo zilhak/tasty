@@ -69,8 +69,14 @@
 `tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 8개 이벤트를 심는다. 모든 이벤트가 같은 형태의 명령 문자열을 쓴다:
 
 ```
-[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook <token> || true
+if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 ```
+
+**가드와 실패 처리는 분리돼 있다.** 바깥 `if` 는 "tasty 밖에서 Claude Code 를 쓰는 환경"(`$TASTY_SURFACE_ID` 미설정)을 **명시적 성공 종료**로 처리해 아무 소음도 내지 않는다. 안쪽 `|| true` 는 오직 `tasty claude hook` 자체의 실패만 담당한다 — 에이전트 턴을 막지 않기 위해 exit 0 을 유지하되, **실패 사실은 버리지 않고** `<tasty_home>/hook-failures.log` 에 한 줄 기록한다([ADR-0075](../../adr/0075-agent-hook-delivery-failure-record.md)). 옛 형태(`[ -n … ] && … || true`)는 두 경우를 한 연산자로 함께 삼켜 상태 push 유실이 무흔적으로 사라졌다.
+
+명령 문자열 생성은 `install.rs::tasty_guarded_command` 한 곳뿐이다 — 세션 프로필(`continue-checklist`)의 hook 명령도 같은 함수를 쓴다(예전엔 `profile.rs` 에 같은 형태가 따로 하드코딩돼 있어 한쪽만 고치는 사고가 났다).
+
+> **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
 `session_id`/`message`/`notification_type` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 

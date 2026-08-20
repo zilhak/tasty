@@ -121,8 +121,9 @@ pub struct ProfileSummary {
 /// fallback 한다.
 ///
 /// `continue-checklist` — `Stop` 훅으로 `tasty claude checklist-hook` 을 등록한다.
-/// 명령 문자열은 `install::tasty_hook_command` 와 동일 형태(`$TASTY_SURFACE_ID`
-/// 가드 + bare `tasty` 바이너리명)를 그대로 따른다. 체크리스트 본문은 이 JSON
+/// 명령 문자열은 하드코딩하지 않고 [`crate::install::tasty_guarded_command`] 로
+/// 만든다 — 예전엔 같은 형태를 이 파일에도 따로 박아두어 `install.rs` 만 고치고
+/// 여기를 빠뜨리면 두 경로의 형태가 갈렸다(그 재발을 구조로 막는다). 체크리스트 본문은 이 JSON
 /// 에 담기지 않는다 — hook 발화 시점에 `Translator` 로 해석된 문자열이 별도로
 /// `reason` 필드에 실린다(`checklist.rs`).
 fn host_default_profile(short_name: &str) -> Option<Value> {
@@ -133,7 +134,7 @@ fn host_default_profile(short_name: &str) -> Option<Value> {
                     "matcher": "",
                     "hooks": [{
                         "type": "command",
-                        "command": "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude checklist-hook || true"
+                        "command": crate::install::tasty_guarded_command("tasty claude checklist-hook")
                     }]
                 }]
             }

@@ -906,10 +906,18 @@ fn hook_command(event_kebab: &str) -> String {
             "if ($env:TASTY_SURFACE_ID) {{ $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID }}"
         )
     }
+    // POSIX: 가드를 `if` 로 올려 "TASTY_SURFACE_ID 미설정" 과 "hook 명령 실패" 를
+    // 분리한다. 옛 형태(`[ -n ... ] && ... || true`)는 둘을 한 `|| true` 로 함께
+    // 삼켜서, 상태 push 가 유실돼도 아무 흔적이 남지 않았다. 안쪽 `|| true` 는
+    // 이제 후자만 담당한다 — codex 턴을 방해하지 않기 위해 exit 0 은 유지하되,
+    // 실패 자체는 CLI(`tasty_cli::hook_failure`)가 IPC 와 무관한 로컬 파일에
+    // 기록한다. Windows(PS) 분기는 원래부터 `|| true` 가 없어 형태만 맞춘다.
+    // `HOOK_MARKER`("tasty codex hook") substring 을 그대로 포함하므로 기존
+    // entry 를 걷어내는 멱등 경로(`merge_install`)는 계속 발동한다.
     #[cfg(not(windows))]
     {
         format!(
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true"
+            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true; fi"
         )
     }
 }
@@ -1347,6 +1355,79 @@ mod tests {
             assert_eq!(arr.len(), 1);
             assert!(matcher_group_has_marker(&arr[0], HOOK_MARKER));
         }
+    }
+
+    /// POSIX hook 명령의 가드는 **`if` 블록**이어야 한다 — 옛 `A && B || true`
+    /// 형태는 "TASTY_SURFACE_ID 미설정"(정당한 침묵)과 "hook 명령 실패"(관측해야 할
+    /// 상태 push 유실)를 한 연산자로 함께 삼킨다. 안쪽 `|| true` 는 codex 턴을
+    /// 막지 않기 위해 유지하되, 실패 기록은 CLI 쪽 `hook_failure` 가 담당한다.
+    #[cfg(not(windows))]
+    #[test]
+    fn posix_hook_command_separates_guard_from_failure_handling() {
+        for (_, kebab, _) in HOOK_EVENTS {
+            let cmd = hook_command(kebab);
+            assert!(
+                cmd.starts_with("if [ -n \"$TASTY_SURFACE_ID\" ]; then "),
+                "가드가 if 블록이 아니다: {cmd}"
+            );
+            assert!(cmd.ends_with("; fi"), "블록이 닫히지 않았다: {cmd}");
+            assert!(
+                !cmd.contains("] && "),
+                "옛 `A && B || true` 형태로 회귀했다: {cmd}"
+            );
+            // marker 를 잃으면 멱등 경로가 깨져 옛 entry 가 남고 hook 이 두 번 발화한다.
+            assert!(cmd.contains(HOOK_MARKER), "marker 를 잃었다: {cmd}");
+        }
+    }
+
+    /// 옛 프로덕션 문자열이 박힌 config.toml 에 install 을 다시 걸어도 entry 수가
+    /// 늘지 않고 명령만 새 형태로 교체된다(`retain` + push 멱등 경로가 계속 발동).
+    #[cfg(not(windows))]
+    #[test]
+    fn merge_install_replaces_legacy_command_without_growing() {
+        let initial = parse_toml(
+            r#"
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TASTY_SURFACE_ID || true"
+"#,
+        );
+        let result = merge_install(initial);
+        let arr = result
+            .get("hooks")
+            .and_then(|v| v.get("Stop"))
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(arr.len(), 1, "중복 entry 가 생기면 hook 이 두 번 발화한다");
+        let cmd = arr[0]
+            .get("hooks")
+            .and_then(|v| v.as_array())
+            .and_then(|a| a[0].get("command"))
+            .and_then(|c| c.as_str())
+            .unwrap();
+        assert_eq!(cmd, hook_command("stop"));
+    }
+
+    /// 가드 동작 회귀 — `$TASTY_SURFACE_ID` 가 없으면 조용히 exit 0(비-tasty 환경
+    /// 무소음). 형태가 아니라 실제 `sh` 실행 결과로 고정한다.
+    #[cfg(unix)]
+    #[test]
+    fn posix_guard_exits_silently_without_surface_id() {
+        let out = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(hook_command("stop"))
+            .env_remove("TASTY_SURFACE_ID")
+            .env("PATH", "/nonexistent")
+            .output()
+            .expect("/bin/sh");
+        assert!(out.status.success());
+        assert!(out.stdout.is_empty());
+        assert!(
+            out.stderr.is_empty(),
+            "stderr 무소음: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     #[test]

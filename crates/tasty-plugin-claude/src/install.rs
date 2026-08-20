@@ -49,19 +49,44 @@ fn tasty_hook_marker(event_token: &str) -> String {
     format!("tasty claude hook {}", event_token)
 }
 
+/// `settings.json` / 세션 프로필에 기록되는 hook 명령의 **단일 출처**.
+///
+/// 형태: `if [ -n "$TASTY_SURFACE_ID" ]; then <argv> || true; fi`
+///
+/// **왜 `A && B || true` 가 아니라 `if` 인가** — 옛 형태에서 `|| true` 는 서로 다른
+/// 두 가지를 동시에 삼켰다:
+/// 1. `$TASTY_SURFACE_ID` 미설정(= tasty 밖에서 Claude Code 를 쓰는 사용자) →
+///    조용히 성공해야 하는 **정당한 경우**.
+/// 2. `tasty claude hook` 자체의 실패 → 상태 push 유실인데 아무 흔적도 안 남는
+///    **문제인 경우**.
+///
+/// 두 경우가 한 연산자에 묶여 있어 분리 없이 `|| true` 를 떼면 1 번이 깨진다.
+/// 가드를 `if` 로 올려 두면 1 번은 블록에 진입조차 하지 않고(가드 자체가 명시적
+/// 성공 종료), 안쪽 `|| true` 는 오직 2 번만 담당한다 — 실패 처리 정책을 바꿀 때
+/// 손댈 지점이 한 군데로 좁혀진다.
+///
+/// **안쪽 `|| true` 를 지금 떼지 않는 이유**: hook 의 비-0 exit 를 Claude Code 가
+/// 어떻게 다루는지(무시/경고/턴 차단)는 외부 도구 런타임 동작이라 이 저장소에서
+/// 확인할 수 없다. 실패의 **기록**은 CLI 쪽(`tasty_cli::hook_failure`)이 IPC 와
+/// 무관한 로컬 파일로 남기므로, exit code 를 노출하지 않아도 관측 가능성 목적은
+/// 달성된다. 노출 여부는 런타임 실측 뒤에 결정한다.
+///
+/// **marker 호환**: [`tasty_hook_marker`] 는 `"tasty claude hook <token>"` substring
+/// 으로 기존 entry 를 찾는다. 이 형태는 그 substring 을 그대로 포함하므로 기존
+/// 설치본의 in-place upgrade 경로가 계속 발동한다(깨지면 옛 entry 가 남은 채 새
+/// entry 가 추가돼 hook 이 두 번 발화한다).
+pub fn tasty_guarded_command(argv: &str) -> String {
+    format!("if [ -n \"$TASTY_SURFACE_ID\" ]; then {argv} || true; fi")
+}
+
 /// settings.json에 실제로 기록되는 명령 문자열.
-/// 호스트 코드와 byte-for-byte 동일해야 사용자가 install/uninstall을 반복해도
-/// 같은 entry가 식별되어 idempotent하게 동작한다.
 ///
 /// `session_id` 와 `message` 등 hook 별 가변 데이터는 Claude Code 가 stdin 으로
 /// 흘려보내는 JSON payload 에서 `tasty claude hook` CLI 가 직접 읽어 채운다
 /// (매니페스트 `stdin_json = true` + `stdin_field` 매핑). 그래서 명령 문자열은
 /// 어느 event 에서도 동일한 형태로 충분하다.
 fn tasty_hook_command(event_token: &str) -> String {
-    format!(
-        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {} || true",
-        event_token
-    )
+    tasty_guarded_command(&format!("tasty claude hook {event_token}"))
 }
 
 pub fn claude_settings_path(tr: &Translator) -> Result<PathBuf> {
@@ -500,15 +525,124 @@ mod tests {
     fn hook_command_matches_host_format() {
         assert_eq!(
             tasty_hook_command("stop"),
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true"
+            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty claude hook stop || true; fi"
         );
         assert_eq!(
             tasty_hook_command("session-start"),
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start || true"
+            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty claude hook session-start || true; fi"
         );
         assert_eq!(
             tasty_hook_command("notification"),
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook notification || true"
+            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty claude hook notification || true; fi"
+        );
+    }
+
+    /// 가드는 **`if` 블록**이어야 한다 — `A && B || true` 형태로 되돌아가면
+    /// "TASTY_SURFACE_ID 미설정"(정당한 침묵)과 "hook 명령 실패"(관측해야 할 유실)가
+    /// 다시 한 연산자에 묶여 실패 처리 정책을 분리할 수 없게 된다.
+    #[test]
+    fn hook_command_separates_guard_from_failure_handling() {
+        for (_, token, _) in MANAGED_HOOKS {
+            let cmd = tasty_hook_command(token);
+            assert!(
+                cmd.starts_with("if [ -n \"$TASTY_SURFACE_ID\" ]; then "),
+                "가드가 if 블록이 아니다: {cmd}"
+            );
+            assert!(cmd.ends_with("; fi"), "블록이 닫히지 않았다: {cmd}");
+            assert!(
+                !cmd.contains("] && "),
+                "옛 `A && B || true` 형태로 회귀했다: {cmd}"
+            );
+        }
+    }
+
+    /// 명령 문자열이 바뀌어도 marker 매칭은 계속 성립해야 한다. 깨지면 기존
+    /// 설치본의 in-place upgrade 경로가 발동하지 않아 **옛 entry 가 남은 채 새
+    /// entry 가 추가되고 hook 이 두 번 발화**한다.
+    #[test]
+    fn new_command_still_contains_marker() {
+        for (_, token, _) in MANAGED_HOOKS {
+            let marker = tasty_hook_marker(token);
+            assert!(
+                tasty_hook_command(token).contains(&marker),
+                "marker '{marker}' 를 잃었다"
+            );
+        }
+    }
+
+    /// 옛 프로덕션 문자열(`[ -n ... ] && tasty claude hook <t> || true`)이 박힌
+    /// settings.json 에 install 을 다시 걸면, entry 가 늘지 않고 command 만 새
+    /// 형태로 **제자리 갱신**된다. 이 저장소가 실제로 배포했던 문자열이라
+    /// 기존 사용자 전원이 통과하는 경로다.
+    #[test]
+    fn install_upgrades_previous_production_command_in_place() {
+        let legacy = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
+        let mut root = json!({
+            "hooks": {
+                "Stop": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "command", "command": legacy }]
+                }]
+            }
+        });
+        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        assert!(
+            !added.contains(&"Stop"),
+            "신규 추가가 아니라 upgrade 여야 한다"
+        );
+
+        let arr = root["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(arr.len(), 1, "중복 entry 가 생기면 hook 이 두 번 발화한다");
+        assert_eq!(
+            arr[0]["hooks"][0]["command"].as_str().unwrap(),
+            tasty_hook_command("stop")
+        );
+
+        // 두 번째 install 도 멱등.
+        install_hooks_in_value(&mut root, &test_translator()).expect("install again");
+        assert_eq!(root["hooks"]["Stop"].as_array().unwrap().len(), 1);
+    }
+
+    /// 가드 동작 회귀 — `$TASTY_SURFACE_ID` 가 없으면 조용히 exit 0 이어야 한다
+    /// (tasty 밖에서 Claude Code 를 쓰는 사용자에게 소음을 내지 않는다).
+    /// 실제 `sh` 로 실행해 형태가 아니라 **동작**을 고정한다.
+    #[cfg(unix)]
+    #[test]
+    fn guard_exits_silently_without_surface_id() {
+        // `tasty` 가 PATH 에 없어도(=실행되면 반드시 실패) 가드가 막아 exit 0.
+        let out = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(tasty_hook_command("stop"))
+            .env_remove("TASTY_SURFACE_ID")
+            .env("PATH", "/nonexistent")
+            .output()
+            .expect("/bin/sh");
+        assert!(out.status.success(), "가드 통과 시 exit 0 이어야 한다");
+        assert!(out.stdout.is_empty(), "stdout 무소음");
+        assert!(
+            out.stderr.is_empty(),
+            "stderr 무소음: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// 반대쪽 — surface id 가 있으면 블록에 진입한다. 안쪽 `|| true` 때문에 최종
+    /// exit 는 여전히 0 이지만(에이전트 턴 방해 금지), 명령이 **실행은 됐다**는 것을
+    /// stderr 로 확인한다(가드가 과하게 막고 있지 않다는 증거).
+    #[cfg(unix)]
+    #[test]
+    fn guard_runs_command_when_surface_id_present() {
+        let out = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(tasty_hook_command("stop"))
+            .env("TASTY_SURFACE_ID", "999")
+            .env("PATH", "/nonexistent")
+            .output()
+            .expect("/bin/sh");
+        assert!(out.status.success(), "hook 실패는 턴을 막지 않는다(exit 0)");
+        assert!(
+            !out.stderr.is_empty(),
+            "블록에 진입해 명령을 시도했어야 한다"
         );
     }
 
