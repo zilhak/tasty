@@ -1,0 +1,13 @@
+[package]
+name = "tasty-dag-layout"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Sugiyama 계열 레이어 레이아웃으로 Tasty task DAG 의 좌표를 계산한다. 순수 계산 crate — UI 의존 없음."
+
+[dependencies]
+rust-sugiyama = "0.4"
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+
+[lints]
+workspace = true

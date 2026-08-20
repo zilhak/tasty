@@ -46,6 +46,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→Figma/갤러리/본체 정합 |
 | [gallery-first](gallery-first.md) | 새 UI 컴포넌트는 디자인→갤러리→본체 순서 (cut 금지) |
 | [popup-implementation](popup-implementation.md) | Popup(`PopupDef` 시스템) |
+| [dag-layout](dag-layout.md) | Task DAG 좌표 계산(`tasty-dag-layout`) — 레이어 배치·엣지 라우팅·어댑터 경계 |
 | [context-menu](context-menu.md) | OS 네이티브 컨텍스트 메뉴 |
 | [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치 |
 | [memory-leak-soak](memory-leak-soak.md) | 메모리 누수 soak 테스트 — 4계층 지표·판정·플랫폼별 attribution |
