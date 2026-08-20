@@ -119,11 +119,8 @@ pub enum ChildStateEvidence {
 }
 
 impl ChildStateEvidence {
-    /// IPC 응답에 싣는 근거 슬러그.
-    // 이유: 판정 축은 완성됐지만 응답 필드 노출은 별도 단계다 — 지금 소비자는
-    // 단위 테스트뿐이다. 슬러그를 판정 열거형과 같은 파일에 두는 편이 나중에
-    // 노출 코드를 붙일 때 값 집합이 갈리지 않는다.
-    #[allow(dead_code)]
+    /// IPC 응답 `evidence` 필드에 싣는 근거 슬러그. 슬러그를 판정 열거형과 같은
+    /// 파일에 두어 값 집합이 판정과 갈리지 않게 한다.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SurfaceGone => "surface_gone",
@@ -156,9 +153,7 @@ pub enum ChildStateConfidence {
 }
 
 impl ChildStateConfidence {
-    /// IPC 응답에 싣는 문자열.
-    // 이유: `ChildStateEvidence::as_str` 와 동일 — 응답 필드 노출 전 단계.
-    #[allow(dead_code)]
+    /// IPC 응답 `confidence` 필드에 싣는 문자열.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Confirmed => "confirmed",
@@ -461,6 +456,104 @@ mod tests {
         let l = derive_child_state("active", &live_active());
         assert_eq!(l.state, ChildState::Active);
         assert_eq!(l.evidence, ChildStateEvidence::RecentOutput);
+    }
+
+    /// `docs/features/child-terminal/index.md` "판정 우선순위" 표 10 행을 **응답에
+    /// 실리는 슬러그 그대로** 고정한다. 위의 개별 테스트들은 열거형 변형을 보는데,
+    /// 소비자가 실제로 읽는 것은 `as_str()` 문자열이라 그 사상이 어긋나면 문서가
+    /// 약속한 조합이 응답에서 재현되지 않는다.
+    #[test]
+    fn priority_table_rows_match_documented_slugs() {
+        let long_output = CHILD_OUTPUT_SILENCE + Duration::from_secs(1);
+        let long_hook = CHILD_HOOK_SILENCE + Duration::from_secs(1);
+        // (문서 행 번호, registry 상태, 관측, 기대 (state, confidence, evidence))
+        let rows: Vec<(u32, &str, ChildObservation, (&str, &str, &str))> = vec![
+            (
+                1,
+                "active",
+                ChildObservation {
+                    surface_live: false,
+                    ..live_active()
+                },
+                ("exited", "confirmed", "surface_gone"),
+            ),
+            (
+                2,
+                "needs_input",
+                live_active(),
+                ("needs_input", "reported", "hook_needs_input"),
+            ),
+            (3, "idle", live_active(), ("idle", "reported", "hook_idle")),
+            (
+                4,
+                "active",
+                ChildObservation {
+                    busy: true,
+                    ..live_active()
+                },
+                ("active", "confirmed", "pty_busy"),
+            ),
+            (
+                5,
+                "active",
+                ChildObservation {
+                    pty_ready: false,
+                    ..live_active()
+                },
+                ("active", "unobserved", "pty_not_started"),
+            ),
+            (
+                6,
+                "active",
+                ChildObservation {
+                    foreground_is_shell: Some(true),
+                    ..live_active()
+                },
+                ("stale", "confirmed", "foreground_is_shell"),
+            ),
+            (
+                7,
+                "active",
+                ChildObservation {
+                    output_silence: None,
+                    ..live_active()
+                },
+                ("active", "unobserved", "observation_unavailable"),
+            ),
+            (
+                8,
+                "active",
+                live_active(),
+                ("active", "heuristic", "recent_output"),
+            ),
+            (
+                9,
+                "active",
+                ChildObservation {
+                    output_silence: Some(long_output),
+                    ..live_active()
+                },
+                ("active", "heuristic", "recent_hook_report"),
+            ),
+            (
+                10,
+                "active",
+                ChildObservation {
+                    output_silence: Some(long_output),
+                    hook_silence: Some(long_hook),
+                    ..live_active()
+                },
+                ("stale", "heuristic", "output_and_hook_silent"),
+            ),
+        ];
+        for (row, registry_state, obs, expected) in rows {
+            let l = derive_child_state(registry_state, &obs);
+            assert_eq!(
+                (l.state.as_str(), l.confidence.as_str(), l.evidence.as_str()),
+                expected,
+                "판정 우선순위표 {row} 행이 문서와 어긋난다"
+            );
+        }
     }
 
     #[test]

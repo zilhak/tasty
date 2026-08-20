@@ -149,6 +149,11 @@ pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value
                 "role": c.get("role").cloned().unwrap_or(Value::Null),
                 "nickname": c.get("nickname").cloned().unwrap_or(Value::Null),
                 "state": c.get("state").cloned().unwrap_or(Value::Null),
+                // remap 이 화이트리스트라 호스트가 실어 보낸 판정 근거 3 축 중
+                // `state` 만 옮기면 나머지 둘이 여기서 잘린다 — `confidence` 가
+                // 없으면 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(ADR-0072).
+                "evidence": c.get("evidence").cloned().unwrap_or(Value::Null),
+                "confidence": c.get("confidence").cloned().unwrap_or(Value::Null),
             })
         })
         .collect();

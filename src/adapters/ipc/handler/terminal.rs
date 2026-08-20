@@ -16,6 +16,7 @@
 use serde_json::{Value, json};
 
 use crate::core::child_terminal::ChildEntry;
+use crate::core::state::child_liveness::ChildLiveness;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -482,20 +483,32 @@ pub(crate) fn handle_children(
         .list_children(parent)
         .iter()
         .map(|c| {
-            json!({
-                "index": c.index,
-                "surface_id": c.child_surface_id,
-                "role": c.role,
-                "nickname": c.nickname,
-                "state": engine
-                    .child_liveness_with_live(c.child_surface_id, &live)
-                    .state
-                    .as_str(),
-                "cwd": c.cwd,
-            })
+            let mut item =
+                liveness_fields(engine.child_liveness_with_live(c.child_surface_id, &live));
+            item.insert("index".into(), json!(c.index));
+            item.insert("surface_id".into(), json!(c.child_surface_id));
+            item.insert("role".into(), json!(c.role));
+            item.insert("nickname".into(), json!(c.nickname));
+            item.insert("cwd".into(), json!(c.cwd));
+            Value::Object(item)
         })
         .collect();
     JsonRpcResponse::success(id, json!({ "children": children }))
+}
+
+/// 파생 판정 3 축(`state`/`evidence`/`confidence`)을 응답 필드로 펴는 **단일 지점**.
+///
+/// `terminal.children` 항목과 `terminal.state` 단건이 둘 다 여기를 거쳐 객체를 만들기
+/// 때문에 키 집합과 값이 구조적으로 일치한다 — ADR-0072 가 판정을 한 헬퍼
+/// (`CoreState::child_liveness*`)로 통일해 둔 것을 직렬화 단계에서 되돌리지 않는다.
+/// 각 필드가 가질 수 있는 값과 조합은 `docs/features/child-terminal/index.md` 의
+/// 판정 우선순위표가 SoT 다.
+fn liveness_fields(liveness: ChildLiveness) -> serde_json::Map<String, Value> {
+    let mut fields = serde_json::Map::new();
+    fields.insert("state".into(), json!(liveness.state.as_str()));
+    fields.insert("evidence".into(), json!(liveness.evidence.as_str()));
+    fields.insert("confidence".into(), json!(liveness.confidence.as_str()));
+    fields
 }
 
 /// 자식 단건 상태 조회. `handle_children`/`handle_parent`
@@ -518,8 +531,9 @@ pub(crate) fn handle_state(engine: &mut CoreState, id: Value, params: &Value) ->
         Ok(s) => s,
         Err(e) => return e,
     };
-    let state = engine.child_liveness(surface_id).state.as_str();
-    JsonRpcResponse::success(id, json!({ "state": state, "surface_id": surface_id }))
+    let mut out = liveness_fields(engine.child_liveness(surface_id));
+    out.insert("surface_id".into(), json!(surface_id));
+    JsonRpcResponse::success(id, Value::Object(out))
 }
 
 pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
@@ -1269,6 +1283,62 @@ mod tests {
         let resp = handle_children(&mut e, json!(1), &json!({ "surface": parent }));
         let n = ok(resp)["children"].as_array().unwrap().len();
         assert_eq!(n, 0);
+    }
+
+    /// `children` 항목은 `state` 뿐 아니라 판정 근거 2 축을 함께 싣는다 — 이게 없으면
+    /// 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(ADR-0072 가 분리해 둔 축이
+    /// 응답 단계에서 사라진다).
+    #[test]
+    fn children_item_carries_evidence_and_confidence() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let target = 5901u32;
+        add_extra_surface(&mut e, target);
+        e.child_terminals.register_child(parent, child(target, 0));
+
+        let resp = ok(handle_children(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent }),
+        ));
+        let item = &resp["children"].as_array().expect("children")[0];
+        for key in ["state", "evidence", "confidence"] {
+            assert!(
+                item.get(key).and_then(|v| v.as_str()).is_some(),
+                "children 항목에 '{key}' 가 문자열로 실려야 한다: {item}"
+            );
+        }
+    }
+
+    /// 목록과 단건이 **같은 판정 3 축**을 보고해야 한다. ADR-0072 가 판정 헬퍼를
+    /// 하나로 합쳤어도 직렬화를 각자 하면 다시 갈릴 수 있어, 두 응답을 직접 대조해
+    /// 고정한다.
+    #[test]
+    fn children_and_state_report_identical_liveness_fields() {
+        let mut e = engine();
+        let parent = e.workspaces[0].all_surface_ids()[0];
+        let target = 5902u32;
+        add_extra_surface(&mut e, target);
+        e.child_terminals.register_child(parent, child(target, 0));
+
+        let list = ok(handle_children(
+            &mut e,
+            json!(1),
+            &json!({ "surface": parent }),
+        ));
+        let item = list["children"].as_array().expect("children")[0].clone();
+        let single = ok(handle_state(
+            &mut e,
+            json!(2),
+            &json!({ "surface": target }),
+        ));
+
+        for key in ["state", "evidence", "confidence"] {
+            assert_eq!(
+                item[key], single[key],
+                "'{key}' 가 목록과 단건에서 갈렸다: list={item}, single={single}"
+            );
+        }
     }
 
     #[test]

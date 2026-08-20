@@ -123,6 +123,35 @@
   - `tasty terminal adopt --target <surface> [--surface <parent>] [--cwd] [--role] [--nickname]` ↔ `terminal.adopt` — 새 탭을 만들지 않고, 이미 존재하는 임의의 surface 를 지금 시점에 명시적으로 child 로 등록(soft 점유)한다
   - `tasty terminal release [--surface <parent>] --child <n>` ↔ `terminal.release` — child 관계와 soft 점유만 해제한다. surface(탭) 자체는 닫지 않는다(`terminal.kill`과 달리)
 
+### 판정 응답 필드
+
+`terminal.children` 의 각 항목과 `terminal.state` 단건 응답은 판정 3 축을 **모두**
+싣는다. 두 경로가 같은 직렬화 지점(`liveness_fields`,
+`src/adapters/ipc/handler/terminal.rs`)을 거치므로 키 집합과 값이 구조적으로 일치한다.
+
+| 필드 | 값 |
+|---|---|
+| `state` | `exited` \| `needs_input` \| `idle` \| `active` \| `stale` |
+| `evidence` | `surface_gone` \| `hook_needs_input` \| `hook_idle` \| `pty_busy` \| `pty_not_started` \| `foreground_is_shell` \| `observation_unavailable` \| `recent_output` \| `recent_hook_report` \| `output_and_hook_silent` |
+| `confidence` | `confirmed` \| `reported` \| `heuristic` \| `unobserved` |
+
+나오는 조합은 위 "판정 우선순위" 표의 행 그대로다 — 임의 조합은 생기지 않는다.
+
+`state` 하나만 보면 **같은 값의 근거가 갈리는 것을 구분할 수 없다.** 예를 들어
+`active` 는 "PTY 가 지금 출력 중"(`pty_busy`/`confirmed`)일 수도 있고 "판정할 관측
+축이 없어서 그대로 둔 것"(`observation_unavailable`/`unobserved`)일 수도 있다.
+소비자는 `confidence` 를 보고 **확정 판정만 종결로 다룰 수 있다** — `heuristic` 인
+`stale` 은 SIGSTOP·긴 추론·무출력 명령과 구별되지 않으므로(위 "`stale` 의 의미와
+한계") 그것만으로 자식을 종결 처리하면 일하는 자식을 죽인다.
+
+원시 관측값(`busy`, 무출력 경과시간 등)은 싣지 않는다 — `evidence` 가 "어느 축이
+판정을 결정했나" 를 이미 알려주므로 목적이 달성되고, 원시값을 계약으로 굳히면
+임계값 조정이 소비자 계약 변경이 된다.
+
+**소비자 정합**: claude plugin 의 `claude.children` remap 은 화이트리스트라 세 필드를
+명시적으로 옮긴다(`crates/tasty-plugin-claude/src/handlers.rs`). codex plugin 의
+`codex.children` 은 passthrough 라 자동 반영된다.
+
 ### `--child <n>` 은 index 지 surface_id 가 아니다
 
 `--child` 는 부모별로 0 부터 발급되는 **child index**(`ChildTerminalRegistry::next_index_for`)를
