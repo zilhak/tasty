@@ -46,6 +46,7 @@ missing_child_surface_id = "host terminal.respawn response is missing 'child_sur
 missing_child_surface_id = "host terminal.spawn response is missing 'child_surface_id': {}"
 warning_threshold = "This parent now has {} children, above the warning threshold ({})."
 warning_idle_children = " Idle children at index {} can be reused with respawn instead of spawning a new one."
+warning_stale_children = " Children at index {} no longer have an agent process running but never reported completion (a lost hook) — they are respawn candidates too."
 
 [claude.install]
 no_home_dir = "cannot determine home directory"

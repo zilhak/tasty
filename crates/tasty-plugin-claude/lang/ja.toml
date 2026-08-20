@@ -46,6 +46,7 @@ missing_child_surface_id = "ホストの terminal.respawn 応答に 'child_surfa
 missing_child_surface_id = "ホストの terminal.spawn 応答に 'child_surface_id' がありません: {}"
 warning_threshold = "この parent の子は現在 {} 個で、警告しきい値({})を超えています。"
 warning_idle_children = " index {} の idle な子は、新規 spawn の代わりに respawn で再利用できます。"
+warning_stale_children = " index {} の子はエージェントプロセスがすでに終了していますが、完了報告が届いていません(hook の欠落)— これらも respawn の対象です。"
 
 [claude.install]
 no_home_dir = "ホームディレクトリを特定できません"
