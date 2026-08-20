@@ -1,6 +1,7 @@
 //! Plugin CLI fallback + client mode runner.
 
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -11,9 +12,31 @@ use super::commands::PluginCommands;
 use super::commands::RemoteCommands;
 use super::dynamic;
 use super::format::format_output;
+use super::hook_failure;
 use super::plugin::run_plugin_logs;
 use super::request::command_to_request;
 use super::transport::IpcConnection;
+
+/// IPC connect 상한. 목적지가 항상 `127.0.0.1` 이라 미리스닝 포트는 즉시 RST 로
+/// 거부되므로 평시엔 이 값에 닿지 않는다 — 로컬 방화벽 DROP 처럼 RST 가 돌아오지
+/// 않는 상황에서 OS 기본 타임아웃(수십 초~분)까지 매달리는 것을 막는 보험이다.
+/// hook 은 에이전트 턴 경계에서 **동기** 실행되므로, 여기서 블록되면 상태 push 가
+/// 늦는 데 그치지 않고 턴 자체가 멈춘다. read/write 쪽 선례는
+/// `remote_browse.rs` 의 `PROBE_TIMEOUT`.
+const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// loopback IPC 포트에 상한을 걸고 연결한다. 실패 메시지는 기존 문구를 그대로
+/// 유지한다(사용자·테스트가 보는 표면 불변).
+fn connect_ipc(port: u16) -> Result<TcpStream> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, IPC_CONNECT_TIMEOUT).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+            port,
+            e
+        )
+    })
+}
 
 pub fn try_run_plugin_cli() -> Option<Result<()>> {
     let plugins_root = tasty_host_plugin::plugin_root()?;
@@ -56,18 +79,31 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     })
 }
 
+/// plugin CLI 단발 요청. **agent hook 이 타는 유일한 경로**다(auto-wait/polling 은
+/// spawn/tell 전용, static CLI 는 plugin 명령이 아니다) — 그래서 실패 기록
+/// ([`crate::hook_failure`])을 여기에만 건다.
+///
+/// 세 실패 지점을 모두 기록한다: 포트 파일 부재(=tasty 미실행, 실사용에서 가장 흔한
+/// 원인) / connect 실패 / JSON-RPC 에러. 셸 래퍼가 exit code 를 버리므로, 기록하지
+/// 않으면 이 셋 중 무엇이 일어났는지 사후에 알 방법이 없다.
 fn run_dynamic_client(
     request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = port_file::read_port_file_from(port_file)?;
-    let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
-        anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
-        )
-    })?;
+    let port = match port_file::read_port_file_from(port_file) {
+        Ok(p) => p,
+        Err(e) => {
+            hook_failure::record(&request.method, &e.to_string());
+            return Err(e);
+        }
+    };
+    let stream = match connect_ipc(port) {
+        Ok(s) => s,
+        Err(e) => {
+            hook_failure::record(&request.method, &e.to_string());
+            return Err(e);
+        }
+    };
     let mut conn = IpcConnection::new(stream)?;
     match conn.send(&request) {
         Ok(value) => {
@@ -79,6 +115,7 @@ fn run_dynamic_client(
         }
         Err(e) => {
             let msg = e.to_string();
+            hook_failure::record(&request.method, &msg);
             if let Some(rest) = msg.strip_prefix("Error (") {
                 eprintln!("Error ({}", rest);
             } else {
@@ -146,13 +183,7 @@ fn run_dynamic_client_with_auto_wait(
 
     // ── 1) 1 차 IPC (spawn / tell) 호출 + 응답 출력.
     let first_value = {
-        let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
-            anyhow::anyhow!(
-                "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-                port,
-                e
-            )
-        })?;
+        let stream = connect_ipc(port)?;
         let mut conn = IpcConnection::new(stream)?;
         match conn.send(&request) {
             Ok(value) => value,
@@ -259,13 +290,7 @@ fn run_dynamic_client_polling(
     #[allow(unused_assignments)]
     let mut last_response: Option<serde_json::Value> = None;
     loop {
-        let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
-            anyhow::anyhow!(
-                "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-                port,
-                e
-            )
-        })?;
+        let stream = connect_ipc(port)?;
         let mut conn = IpcConnection::new(stream)?;
         match conn.send(&request) {
             Ok(value) => {
@@ -665,13 +690,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     }
 
     let port = port_file::read_port_file_from(port_file)?;
-    let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
-        anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
-        )
-    })?;
+    let stream = connect_ipc(port)?;
 
     let mut conn = IpcConnection::new(stream)?;
 

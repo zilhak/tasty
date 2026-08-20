@@ -7,6 +7,7 @@ pub mod cwd_resolve;
 pub mod dynamic;
 pub mod format;
 pub mod help;
+pub mod hook_failure;
 pub mod plugin;
 pub mod remote_browse;
 pub mod request;
