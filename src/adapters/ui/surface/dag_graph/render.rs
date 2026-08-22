@@ -28,8 +28,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
     let surface_width = ui.available_width();
     let now = now_ms();
 
-    let chrome_action =
-        chrome::draw_header(ui, theme, &data, view, *target.direction, surface_width);
+    let chrome_action = chrome::draw_header(ui, theme, &data, surface_width);
 
     if chrome::is_empty(data.current.as_ref()) {
         chrome::draw_empty(ui, theme, &data, target.dag_id.as_deref());
@@ -68,6 +67,8 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
     let wide = surface_width >= NARROW_DETAIL_SHEET.value();
 
     let mut detail_action = None;
+    // 캔버스 위 줌 클러스터에서 나온 조작. 헤더와 동시에 눌릴 수 없어 뒤에서 합친다.
+    let mut canvas_action = None;
     let mut viewport = ui.available_size();
 
     if show_detail && !wide {
@@ -76,7 +77,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
         let canvas_h = (ui.available_height() - sheet_h).max(0.0);
         viewport = egui::vec2(ui.available_width(), canvas_h);
         ui.allocate_ui(viewport, |ui| {
-            canvas(ui, theme, view, &data, &layout, direction, now);
+            canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
         });
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), sheet_h),
@@ -96,7 +97,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
         viewport = egui::vec2(canvas_w, ui.available_height());
         ui.horizontal_top(|ui| {
             ui.allocate_ui(viewport, |ui| {
-                canvas(ui, theme, view, &data, &layout, direction, now);
+                canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
             });
             ui.allocate_ui_with_layout(
                 egui::vec2(panel_w, ui.available_height()),
@@ -111,13 +112,22 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
             );
         });
     } else {
-        canvas(ui, theme, view, &data, &layout, direction, now);
+        canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
     }
 
-    if let Some(DetailAction::Select(id)) = detail_action {
-        view.selected = Some(id);
+    match detail_action {
+        Some(DetailAction::Select(id)) => view.selected = Some(id),
+        Some(DetailAction::Close) => view.selected = None,
+        None => {}
     }
-    apply_chrome(target, view, chrome_action, graph_size, viewport, theme);
+    apply_chrome(
+        target,
+        view,
+        canvas_action.or(chrome_action),
+        graph_size,
+        viewport,
+        theme,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -129,11 +139,9 @@ fn canvas(
     layout: &tasty_dag_layout::GraphLayout,
     direction: tasty_model::DagDirection,
     now: u64,
-) {
-    let Some(graph) = data.current.as_ref() else {
-        return;
-    };
-    super::canvas::draw_canvas(ui, theme, view, graph, layout, direction, now);
+) -> Option<ChromeAction> {
+    let graph = data.current.as_ref()?;
+    super::canvas::draw_canvas(ui, theme, view, graph, layout, direction, now)
 }
 
 fn apply_chrome(
@@ -164,9 +172,13 @@ fn apply_chrome(
             view.fit(graph_size, viewport, theme.dag_canvas_padding().value());
         }
         Some(ChromeAction::Zoom(steps)) => {
-            // 헤더 버튼으로 줌할 때 고정되는 점은 캔버스 한가운데다 — 보고 있던
-            // 부분이 화면 밖으로 밀려나지 않는다.
+            // 버튼으로 줌할 때 고정되는 점은 캔버스 한가운데다 — 보고 있던 부분이
+            // 화면 밖으로 밀려나지 않는다.
             view.zoom_by(steps, viewport / 2.0);
+        }
+        Some(ChromeAction::Refresh) => {
+            // 사용자가 명시적으로 요청했으니 폴링 주기를 기다리지 않는다.
+            view.invalidate_poll();
         }
         None => {}
     }

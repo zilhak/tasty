@@ -1302,14 +1302,15 @@ step_surface_body = "The face inside a pane where the actual terminal or markdow
 
 [dag.header]
 progress = "{} / {} done"
+refresh = "Refresh now"
 no_dag = "No DAG"
 entry = "{} ({} tasks)"
 
 [dag.runner]
-running = "Runner active · {} running"
-idle = "Runner idle"
+running = "Runner · {} running · {} ready"
+idle = "Runner stopped · no work"
 stalled = "Runner stopped · {} ready"
-crashed = "Runner crashed"
+crashed = "Runner crashed · {} ready"
 resume_hint = "Resume with: tasty agent task-run --workspace-id <N> --action start"
 
 [dag.zoom]
@@ -1319,11 +1320,11 @@ fit = "Fit to view"
 direction = "Toggle direction"
 
 [dag.lod]
-compact = "Compact view — zoom in for details"
-block = "Block view — zoom in for names"
+compact = "names only — zoom in for status"
+block = "status blocks — zoom in for names"
 
 [dag.cycle]
-banner = "Dependency cycle — this graph cannot finish: {}"
+lead = "Cycle detected — the runner will not advance {} tasks:"
 
 [dag.empty]
 none = "No tasks in this workspace"
@@ -1364,7 +1365,8 @@ minutes = "{}m {}s"
 hours = "{}h {}m"
 
 [dag.detail]
-kind = "Kind"
+close = "Close details"
+copy = "Copy"
 on_failure = "On failure"
 started = "Started"
 duration = "Duration"

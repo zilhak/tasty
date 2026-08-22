@@ -1295,15 +1295,16 @@ step_surface_title = "サーフェス"
 step_surface_body = "ペイン内で実際にターミナルやマークダウンが描画される面です。"
 
 [dag.header]
+refresh = "今すぐ更新"
 progress = "{} / {} 完了"
 no_dag = "DAG なし"
 entry = "{}（task {} 個）"
 
 [dag.runner]
-running = "ランナー稼働中 · {} 件実行"
-idle = "ランナー待機"
+running = "ランナー · {} 件実行 · 待機 {} 件"
+idle = "ランナー停止 · 作業なし"
 stalled = "ランナー停止 · 待機 {} 件"
-crashed = "ランナー異常終了"
+crashed = "ランナー異常終了 · 待機 {} 件"
 resume_hint = "再開: tasty agent task-run --workspace-id <N> --action start"
 
 [dag.zoom]
@@ -1313,11 +1314,11 @@ fit = "全体表示"
 direction = "方向切替"
 
 [dag.lod]
-compact = "簡易表示 — 拡大すると詳細が見える"
-block = "ブロック表示 — 拡大すると名前が見える"
+compact = "名前のみ表示 — 拡大すると状態が見える"
+block = "状態ブロック表示 — 拡大すると名前が見える"
 
 [dag.cycle]
-banner = "依存サイクル — このグラフは完了できない: {}"
+lead = "サイクル検出 — ランナーは task {} 件を進められない:"
 
 [dag.empty]
 none = "このワークスペースに task がない"
@@ -1358,7 +1359,8 @@ minutes = "{}分 {}秒"
 hours = "{}時間 {}分"
 
 [dag.detail]
-kind = "種類"
+close = "詳細を閉じる"
+copy = "コピー"
 on_failure = "失敗時"
 started = "開始"
 duration = "所要"

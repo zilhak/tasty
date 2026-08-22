@@ -1293,15 +1293,16 @@ step_surface_title = "서피스"
 step_surface_body = "패인 안에서 실제 터미널·마크다운이 그려지는 면입니다."
 
 [dag.header]
+refresh = "지금 새로고침"
 progress = "{} / {} 완료"
 no_dag = "DAG 없음"
 entry = "{} (task {} 개)"
 
 [dag.runner]
-running = "러너 동작 중 · {} 개 실행"
-idle = "러너 대기"
+running = "러너 · {} 개 실행 · 대기 {} 개"
+idle = "러너 정지 · 할 일 없음"
 stalled = "러너 정지 · 대기 {} 개"
-crashed = "러너 비정상 종료"
+crashed = "러너 비정상 종료 · 대기 {} 개"
 resume_hint = "재개: tasty agent task-run --workspace-id <N> --action start"
 
 [dag.zoom]
@@ -1311,11 +1312,11 @@ fit = "전체 맞춤"
 direction = "방향 전환"
 
 [dag.lod]
-compact = "축약 표시 — 확대하면 상세가 보인다"
-block = "블록 표시 — 확대하면 이름이 보인다"
+compact = "이름만 표시 — 확대하면 상태가 보인다"
+block = "상태 블록 표시 — 확대하면 이름이 보인다"
 
 [dag.cycle]
-banner = "의존성 사이클 — 이 그래프는 완주할 수 없다: {}"
+lead = "사이클 감지 — 러너가 task {} 개를 진행하지 못한다:"
 
 [dag.empty]
 none = "이 워크스페이스에 task 가 없다"
@@ -1356,7 +1357,8 @@ minutes = "{}분 {}초"
 hours = "{}시간 {}분"
 
 [dag.detail]
-kind = "종류"
+close = "상세 닫기"
+copy = "복사"
 on_failure = "실패 시"
 started = "시작"
 duration = "소요"

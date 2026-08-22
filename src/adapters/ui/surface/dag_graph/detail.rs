@@ -5,16 +5,19 @@
 //! 화면이 생겨도 **콘텐츠 구현은 이 하나뿐**이어야 두 자리의 내용이 갈리지 않는다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{margin_all, vspace};
+use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, margin_all, tag, vspace};
 
 use super::model::{DagGraphData, DagNodeData, format_clock, kind_label, node_duration};
 use super::node::status_colors;
+use crate::adapters::ui::icons;
 use crate::i18n::{t, t_fmt};
 
 /// 상세 패널에서 나온 사용자 조작.
 pub enum DetailAction {
     /// 의존성 행을 눌러 그 노드로 선택을 옮긴다.
     Select(String),
+    /// 닫기 — 선택을 풀어 패널 자체를 접는다.
+    Close,
 }
 
 /// 상세가 어느 자리에 놓였는가. **콘텐츠가 아니라 자리**의 속성이라
@@ -71,15 +74,11 @@ pub fn draw_detail(
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    header(ui, theme, node);
+                    if header(ui, theme, node) {
+                        action = Some(DetailAction::Close);
+                    }
                     vspace(ui, theme.spacing_sm);
 
-                    row(
-                        ui,
-                        theme,
-                        t("dag.detail.kind"),
-                        kind_label(node.command_kind),
-                    );
                     row(
                         ui,
                         theme,
@@ -103,6 +102,7 @@ pub fn draw_detail(
                         t("dag.detail.command"),
                         &node.command_text,
                         theme.dag_detail_out_max_height().value(),
+                        false,
                     );
 
                     if !node.incoming.is_empty() {
@@ -126,6 +126,7 @@ pub fn draw_detail(
                             t("dag.detail.error"),
                             err,
                             theme.dag_detail_log_max_height().value(),
+                            true,
                         );
                     }
                     if let Some(out) = &node.output_tail {
@@ -136,6 +137,7 @@ pub fn draw_detail(
                             t("dag.detail.output"),
                             out,
                             theme.dag_detail_out_max_height().value(),
+                            true,
                         );
                     }
                 });
@@ -144,13 +146,37 @@ pub fn draw_detail(
     action
 }
 
-fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) {
+/// 이름 + 닫기 · 상태 + 종류 · task id. 닫기가 눌렸으면 `true`.
+///
+/// 종류는 정의 목록의 한 행이 아니라 상태 옆 `Tag` 다 — "무슨 상태인가" 와 "무슨
+/// 종류인가" 는 같은 층위의 분류라 나란히 읽혀야 한다.
+fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) -> bool {
     let (bar, _, label_fg) = status_colors(theme, node.status);
-    ui.label(
-        egui::RichText::new(&node.name)
-            .size(theme.font_size_body.value())
-            .color(theme.text_primary().to_egui()),
-    );
+    let mut close = false;
+    ui.horizontal_top(|ui| {
+        let btn = theme.dag_chrome_height().value();
+        ui.allocate_ui_with_layout(
+            egui::vec2(
+                (ui.available_width() - btn - theme.spacing_sm.value()).max(0.0),
+                btn,
+            ),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(&node.name)
+                        .size(theme.font_size_body.value())
+                        .color(theme.text_primary().to_egui()),
+                );
+            },
+        );
+        close = IconButton::new()
+            .size(ControlSize::Sm)
+            .show(ui, theme, &|ui, rect, c| {
+                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+            })
+            .on_hover_text(t("dag.detail.close"))
+            .clicked();
+    });
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(node.status.glyph())
@@ -162,6 +188,13 @@ fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) {
             egui::RichText::new(node.status.label())
                 .size(theme.font_size_caption.value())
                 .color(label_fg.to_egui()),
+        );
+        tag(
+            ui,
+            theme,
+            kind_label(node.command_kind),
+            TagVariant::Default,
+            false,
         );
     });
     // task id 는 CLI(`tasty agent task-get <id>`)로 이어지는 유일한 손잡이라
@@ -175,6 +208,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) {
         )
         .selectable(true),
     );
+    close
 }
 
 fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
@@ -200,9 +234,37 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, value: &str) {
     });
 }
 
-/// 라벨 + 복사 가능한 mono 블록. `max_h` 를 넘으면 안에서 스크롤한다.
-fn labeled_block(ui: &mut egui::Ui, theme: &Theme, label: &str, body: &str, max_h: f32) {
-    section(ui, theme, label);
+/// 라벨 + mono 블록. `max_h` 를 넘으면 안에서 스크롤한다.
+///
+/// `copy` 는 라벨 행 우측에 복사 버튼을 붙인다. 로그 tail 은 수십 줄이라 드래그
+/// 선택으로 온전히 집기 어렵다 — 그 두 블록만 버튼을 갖는다.
+fn labeled_block(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    body: &str,
+    max_h: f32,
+    copy: bool,
+) {
+    if copy {
+        ui.horizontal(|ui| {
+            section(ui, theme, label);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if IconButton::new()
+                    .size(ControlSize::Sm)
+                    .show(ui, theme, &|ui, rect, c| {
+                        icons::COPY.image(rect.height(), c).paint_at(ui, rect)
+                    })
+                    .on_hover_text(t("dag.detail.copy"))
+                    .clicked()
+                {
+                    ui.ctx().copy_text(body.to_owned());
+                }
+            });
+        });
+    } else {
+        section(ui, theme, label);
+    }
     egui::Frame::NONE
         .fill(theme.dag_detail_log_bg().to_egui())
         .inner_margin(margin_all(theme.spacing_xs))

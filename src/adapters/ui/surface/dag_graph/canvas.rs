@@ -12,6 +12,7 @@ use tasty_design_tokens::generated::component::dag::EDGE_DIM_OPACITY;
 use tasty_model::DagDirection;
 use tasty_type_appearance::theme::Theme;
 
+use super::chrome::ChromeAction;
 use super::model::{DagGraphData, DagRelation};
 use super::node::{NodeVisual, paint_node, paint_selection_ring};
 use super::view::{DagGraphView, Lod};
@@ -36,12 +37,13 @@ impl Transform {
     }
 }
 
-/// 캔버스를 그리고 상호작용을 처리한다.
+/// 캔버스를 그리고 상호작용을 처리한다. 반환값은 캔버스 위 크롬(줌 클러스터)에서
+/// 나온 조작이다.
 ///
 /// 키 단축키는 **여기서 만들지 않는다**. tasty 의 모든 단축키는 `KeybindingSettings`
 /// 를 거쳐야 하고(`docs/design/policies/key-mapping.md`), 이 캔버스가 자체 조합을
 /// 박으면 그 조합이 이미 배정된 전역 액션과 조용히 겹친다. 방향 전환·fit·줌은
-/// 헤더 줌 클러스터의 버튼이 담당한다.
+/// 우하단 줌 클러스터의 버튼이 담당한다.
 pub fn draw_canvas(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -50,7 +52,7 @@ pub fn draw_canvas(
     layout: &GraphLayout,
     direction: DagDirection,
     now_ms: u64,
-) {
+) -> Option<ChromeAction> {
     let (rect, response) =
         ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -63,7 +65,10 @@ pub fn draw_canvas(
         view.fit(graph_size, rect.size(), theme.dag_canvas_padding().value());
     }
 
-    interact(ui, theme, &response, rect, view, graph, layout);
+    // 줌 클러스터는 캔버스 위에 떠 있다 — 그 자리에서 시작한 클릭·드래그는 pan 도
+    // 선택도 아니다. 히트테스트보다 먼저 자리를 알아야 하므로 rect 를 미리 잡는다.
+    let cluster = super::chrome::zoom_cluster_rect(theme, rect);
+    interact(ui, theme, &response, rect, cluster, view, graph, layout);
 
     let tr = Transform {
         origin: rect.min + view.offset,
@@ -94,6 +99,7 @@ pub fn draw_canvas(
 
     let hovered = response
         .hover_pos()
+        .filter(|p| !cluster.contains(*p))
         .and_then(|p| node_at(layout, &tr, theme, p));
 
     for (i, pos) in layout.nodes.iter().enumerate() {
@@ -129,8 +135,7 @@ pub fn draw_canvas(
     // 프레임을 소모하지 않는다.
     ui.ctx().request_repaint_after(view.until_next_poll());
 
-    super::chrome::paint_lod_chip(&painter, theme, rect, lod);
-    super::chrome::paint_minimap(&painter, theme, rect, view, layout, graph_size);
+    super::chrome::draw_canvas_chrome(ui, theme, rect, view, layout, direction, lod)
 }
 
 /// pan / zoom / 선택.
@@ -140,6 +145,7 @@ fn interact(
     theme: &Theme,
     response: &egui::Response,
     rect: egui::Rect,
+    cluster: egui::Rect,
     view: &mut DagGraphView,
     graph: &DagGraphData,
     layout: &GraphLayout,
@@ -150,23 +156,26 @@ fn interact(
         origin: rect.min + view.offset,
         zoom: view.zoom,
     };
+    let on_chrome = response.hover_pos().is_some_and(|p| cluster.contains(p));
     let on_node = response
         .hover_pos()
+        .filter(|_| !on_chrome)
         .and_then(|p| node_at(layout, &tr, theme, p));
-    let panning = response.dragged_by(egui::PointerButton::Middle)
-        || (response.dragged_by(egui::PointerButton::Primary) && on_node.is_none());
+    let panning = !on_chrome
+        && (response.dragged_by(egui::PointerButton::Middle)
+            || (response.dragged_by(egui::PointerButton::Primary) && on_node.is_none()));
     if panning {
         view.offset += response.drag_delta();
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
 
-    if response.clicked() {
+    if response.clicked() && !on_chrome {
         view.selected = on_node
             .and_then(|i| graph.nodes.get(i))
             .map(|n| n.id.clone());
     }
 
-    if !response.hovered() {
+    if !response.hovered() || on_chrome {
         return;
     }
     let (scroll, modifiers) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers));
