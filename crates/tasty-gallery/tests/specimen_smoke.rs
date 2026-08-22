@@ -2,6 +2,7 @@
 //! 패닉(RefCell 이중 borrow·레이아웃 위반) 없이 렌더되는지 회귀 격리한다.
 //! 픽셀 판정은 하지 않는다 — 시각 정합은 갤러리 육안 몫.
 
+use tasty_gallery::catalog::chrome_loading;
 use tasty_gallery::catalog::components::{dag, prim_drilldown, prim_listctrl};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, DrillDown, DrillDownView};
 
@@ -113,6 +114,21 @@ fn dag_rows_와_window_specimen_은_헤드리스로_렌더된다() {
 /// 레이아웃 캐시 불변식의 갤러리 쪽 대응 — 좌표는 id + 의존 엣지 + config 만
 /// 보고 나온다. 상태를 바꿔도 노드 좌표가 한 픽셀도 움직이지 않아야 0.5 초
 /// 폴링이 그래프를 흔들지 않는다.
+/// 부팅/종료 로딩 specimen — 두 화면은 같은 `draw_frame` 을 공유하므로 한 테스트로
+/// 함께 잡는다. 중앙 스택은 `top_pad` 를 음수로 클램프하는 계산에 의존해서, 무대가
+/// 스택보다 낮은 프레임에서 레이아웃이 새기 쉬운 자리다.
+#[test]
+fn loading_specimen_은_헤드리스로_렌더된다() {
+    let theme = tasty_themes::mocha_fallback();
+    run_frames(|ui| chrome_loading::draw_default(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_min(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_phases(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_no_text(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_latte(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_shutdown_default(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_shutdown_phases(ui, &theme));
+}
+
 #[test]
 fn dag_레이아웃은_task_상태에_영향받지_않는다() {
     let theme = tasty_themes::mocha_fallback();

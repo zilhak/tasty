@@ -5,6 +5,11 @@
 //! 빠지므로 `pending_lifecycle_events` 도, plugin 측 cleanup 기회도 없다.
 //! 본 모듈은 그 gap 을 메운다.
 //!
+//! 각 단계의 **본문**이 여기 있고, 호출 순서와 대기는 종료 상태 머신
+//! ([`crate::app::shutdown_machine`])이 프레임 단위로 전개한다 — 종료 대기 동안
+//! 로딩 프레임을 계속 그리기 위해서다. 그래서 이 모듈의 함수들은 모두 **논블로킹**
+//! 이어야 한다(대기가 필요한 단계는 begin/poll 로 갈라져 있다).
+//!
 //! 단계별 계측(S1~S4, `shutdown_total`)은 `target: "tasty::shutdown"` 으로 상시
 //! 발화한다 — 마커 표는 [`docs/architecture/shutdown-sequence.md`].
 
@@ -62,65 +67,9 @@ impl App {
         count
     }
 
-    /// 종료 시퀀스 진입점 — 세 진입 경로(`AppEvent::Shutdown`, quit modal 즉시
-    /// 종료, `close_behavior=="quit"`)가 **공유**한다.
-    ///
-    /// 진입점을 하나로 모은 이유는 두 가지다: ① layout 저장(S1)이 반드시 close
-    /// cascade 앞에 와야 한다는 순서 제약을 호출자별로 재현하지 않기 위해,
-    /// ② 계측 t0 이 경로마다 어긋나면 `shutdown_total` 의 의미가 흔들리기 때문.
-    pub(crate) fn begin_shutdown(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        shutdown_trace::mark_start();
-
-        // 단계 1: layout.json 저장. layout 은 *살아있는* surface 상태를 기록해야
-        //         하므로 surface.closed 발화(= layout 에서 사라지는 의미) 전에
-        //         저장이 끝나 있어야 한다.
-        let t_flush = Instant::now();
-        self.flush_layout_persistence(true);
-        tracing::info!(
-            target: "tasty::shutdown",
-            ms = shutdown_trace::elapsed_ms(t_flush),
-            "S1 layout_flush (SaveLayoutNow force — main + parked engine)"
-        );
-
-        self.shutdown_lifecycle_cascade(event_loop);
-    }
-
-    /// `begin_shutdown` 후반부 — plugin/surface lifecycle 정리 후 event loop 탈출.
-    fn shutdown_lifecycle_cascade(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let t0 = shutdown_trace::mark_start();
-
-        // 단계 0: 부팅 중(WaitingEngine) 종료라면 워커가 spawn 한 plugin 자식
-        //         프로세스를 먼저 회수한다 (steady-state 에선 no-op).
-        //         계측은 S2 — 회수가 실제로 일어나는 경로에서만 발화한다.
-        self.reclaim_boot_engine_worker_for_exit();
-
-        // 단계 1: shutdown initiated 이벤트 발화. plugin 이 cleanup hook 을 돌릴 시간을 준다.
-        self.emit_shutdown_initiated();
-
-        // 단계 2+3: surface close cascade (S3).
-        self.shutdown_close_surfaces();
-
-        // 단계 3.5: surface close 가 뒤로 미뤄둔 observer sink 워커 회수 (S3b).
-        //           close 경로는 렌더 스레드를 막지 않으려고 join 을 미루므로
-        //           (`ObserverRouter::drop_surface`), 프로세스가 끝나기 전에 여기서
-        //           한 번 걷어야 마지막 항목까지 sink 에 남는다. 워커들은 그동안
-        //           병렬로 배수를 끝냈으므로 정상 경로 실측 대기는 0 에 가깝다.
-        self.shutdown_join_observer_sinks();
-
-        // 단계 4: plugin 종료 (S4/S4a).
-        self.shutdown_plugins();
-
-        tracing::info!(
-            target: "tasty::shutdown",
-            ms = shutdown_trace::elapsed_ms(t0),
-            "shutdown_total (shutdown enter -> event_loop.exit())"
-        );
-        event_loop.exit();
-    }
-
     /// 단계 1 — `system.shutdown_initiated` 발화. 계측 없음(채널 send 뿐이라
     /// 저비용이며, 실측이 이를 뒤집으면 그때 마커를 붙인다).
-    fn emit_shutdown_initiated(&mut self) {
+    pub(super) fn emit_shutdown_initiated(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::SystemShutdownInitiated;
@@ -141,7 +90,7 @@ impl App {
     /// broadcast 한다 — event_loop 가 곧 빠져 다음 `about_to_wait` 가 없으므로
     /// 명시 호출이 필요하다. 두 단계는 "surface 를 닫아 plugin 에 알린다" 는 한
     /// 덩어리라 S3 하나로 잰다.
-    fn shutdown_close_surfaces(&mut self) {
+    pub(super) fn shutdown_close_surfaces(&mut self) {
         let t_cascade = Instant::now();
         let surfaces = self.cascade_shutdown_close_all_surfaces();
         self.dispatch_pending_surface_lifecycle();
@@ -159,7 +108,7 @@ impl App {
     /// 자리에서 join 하지 않는다(`ObserverRouter::drop_surface`). 미뤄진 join 을
     /// 프로세스 종료 전에 소화하는 곳이 여기다 — 안 걸면 아직 배수 중인 워커가
     /// 프로세스와 함께 죽어 sink 의 마지막 항목이 잘린다.
-    fn shutdown_join_observer_sinks(&mut self) {
+    pub(super) fn shutdown_join_observer_sinks(&mut self) {
         let t = Instant::now();
         // close cascade 와 같은 범위를 돈다 — 창별 engine + parked engine 전부.
         for w in self.view.views.values_mut() {
@@ -177,14 +126,16 @@ impl App {
         );
     }
 
-    /// 단계 4 — plugin 종료 (2s graceful + force kill).
+    /// 단계 4 전반 — 전 plugin 에 shutdown 요청을 **뿌리기만** 하고 즉시 반환한다.
+    /// 실제 자식 회수는 종료 상태 머신의 `StoppingPlugins` phase 가 폴링한다
+    /// (`poll_shutdown_all`) — 그래야 대기 중에도 종료 프레임이 계속 돈다.
     ///
     /// 앞선 단계 3 의 event.dispatch 들이 같은 `req_tx` 채널에 먼저 쌓였으므로
     /// plugin worker 는 shutdown 처리 전에 surface.closed 들을 순서대로 받는다.
-    /// S4 / S4a 마커는 `PluginManager::shutdown_all` 안에서 발화한다.
-    fn shutdown_plugins(&mut self) {
+    /// S4 / S4a 마커는 `PluginManager::poll_shutdown_all` 안에서 발화한다.
+    pub(super) fn begin_plugin_shutdown(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.shutdown_all();
+            mgr.begin_shutdown_all();
         } else {
             // manager 자체가 없는 경우도 남긴다 — "안 걸렸다" 와 "계측이 안 붙었다"
             // 를 로그만 보고 구분할 수 있어야 한다.

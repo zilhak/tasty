@@ -974,6 +974,12 @@ phase_gpu_init = "グラフィックスを初期化しています…"
 phase_waiting_plugins = "プラグインを読み込んでいます…"
 phase_restoring_layout = "レイアウトを復元しています…"
 
+[shutdown]
+phase_saving_layout = "レイアウトを保存しています…"
+phase_finishing_startup = "起動処理を完了しています…"
+phase_closing_surfaces = "サーフェスを閉じています…"
+phase_stopping_plugins = "プラグインを終了しています…"
+
 [approval.popup]
 title = "承認が必要"
 comment_label = "コメント (任意)"

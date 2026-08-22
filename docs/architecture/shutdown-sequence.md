@@ -1,7 +1,9 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
-사용자 종료(Cmd/Ctrl+Q, quit 모달, 창 닫기)는 **한 콜스택 안 동기 실행**이다. 부팅과
-달리 상태 머신이 없고 프레임 스텝도 돌지 않으므로, 이 구간 내내 창은 얼어 있다.
+사용자 종료(Cmd/Ctrl+Q, quit 모달, 창 닫기)는 부팅과 대칭으로 **상태 머신
+(`ShutdownPhase`)이 프레임 단위로 전개**한다. 대기가 남아 있는 프레임마다 부팅과
+같은 로딩 화면(워드마크 + 회전 스피너 + 단계 문구)을 present 하므로, 종료 대기
+동안 창이 얼어붙지 않는다 — 근거는 [ADR-0077](../adr/0077-shutdown-loading-screen.md).
 
 종료 비용은 두 구간으로 나뉜다. **`event_loop.exit()` 까지**(종료 cascade)와
 **그 이후**(Drop tail)다. 후자는 창이 이미 사라진 뒤에 도는 destructor 구간이라
@@ -15,23 +17,31 @@
   ├─ quit 모달 "종료" → 재진입      (src/app/modal/quit.rs — 모달이 이미 열린 상태)
   └─ close_behavior == "quit"       (src/app/modal/quit.rs)
 
-begin_shutdown (src/app/shutdown_cascade.rs)          [t0 확정]
-  ├─ S1  flush_layout_persistence(true)
-  │      main + parked engine 각각 SaveLayoutNow{force} → layout.json
-  │      (surface.closed 발화 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
-  └─ shutdown_lifecycle_cascade
-       ├─ S2  reclaim_boot_engine_worker_for_exit    (부팅 중 종료 전용, 최대 5s)
-       │      steady-state 종료에서는 no-op — 마커도 발화하지 않는다
-       ├─ ―   system.shutdown_initiated 발화 (plugin cleanup hook 기회)
-       ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
-       │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
-       ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
-       │      surface close 가 뒤로 미뤄둔 output observer sink 워커 회수
-       ├─ S4  plugin_manager.shutdown_all()
-       │      전 plugin 에 shutdown 요청을 **먼저 다 뿌린 뒤** 대기를 겹친다
-       │      └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
-       ├─ shutdown_total
-       └─ event_loop.exit()
+begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
+  ShutdownPhase 상태 머신 설치 → about_to_wait 워치독이 16ms 케이던스로 구동
+  (단계 본문은 src/app/shutdown_cascade.rs, 순서·대기는 상태 머신이 소유)
+
+  SavingLayout
+  └─ S1  flush_layout_persistence(true)
+         main + parked engine 각각 SaveLayoutNow{force} → layout.json
+         (surface.closed 발화 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
+  ReclaimingBootWorker                    (부팅 중 종료 전용 — 아니면 건너뛴다)
+  └─ S2  try_recv 폴링 + deadline 5s → 회수한 PluginManager 를 장착
+  ClosingSurfaces
+  ├─ ―   system.shutdown_initiated 발화 (plugin cleanup hook 기회)
+  ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
+  │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
+  ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
+  │      surface close 가 뒤로 미뤄둔 output observer sink 워커 회수
+  └─ ―   begin_plugin_shutdown() — 전 plugin 에 shutdown 요청을 뿌리기만 한다
+  StoppingPlugins
+  └─ S4  poll_shutdown_all() 폴링 — 대기가 겹친다
+         └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
+  Done
+  ├─ shutdown_total
+  └─ event_loop.exit()
+
+  ※ 대기가 있는 프레임마다 render_loading 으로 종료 화면 present (아래 절)
 
 run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
   drop_app_with_trace(app)
@@ -46,6 +56,11 @@ run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
 - 진입 3경로가 `begin_shutdown` 하나로 수렴하는 것은 계측 요구이자 순서 요구다.
   t0 이 경로마다 어긋나면 `shutdown_total` 의 의미가 흔들리고, S1(layout 저장)이
   S3(close cascade) 앞에 온다는 제약도 호출자마다 재현해야 한다.
+- **중복 진입은 무해하다.** 이미 종료 중이면 `begin_shutdown` 이 즉시 return 하므로,
+  종료 화면이 뜬 상태에서 Cmd/Ctrl+Q 를 다시 눌러도 phase 가 되감기지 않는다.
+- **스텝은 전부 논블로킹이어야 한다.** `shutdown_cascade.rs` 의 각 함수는 프레임
+  안에서 끝나거나(1ms 미만) begin/poll 로 갈라져 있다. 블로킹 호출을 스텝 안에
+  넣으면 그 구간만 다시 얼어붙는다 — 컴파일러가 잡아 주지 않는다.
 - `PluginProcess::drop` 도 Drop tail 에서 블로킹(`child.wait()`)하지만, S4 의
   `shutdown_all` 이 이미 `processes` 를 drain 했다면 남은 대상이 없다.
 - **정상 종료 경로에 `std::process::exit` 는 없다** — 위 Drop 들은 전부 실행된다.
@@ -79,6 +94,40 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
 - **단건 경로는 그대로 블로킹** — `plugin disable` / 헬스체크 재시작 / swap 은
   대상이 하나뿐이라 겹칠 것이 없다. 요청 후 최대 2s 동기 대기를 유지한다.
 
+## 종료 화면
+
+상태 머신이 대기하는 프레임마다 `GpuState::render_loading` 으로 로딩 화면을
+present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 것은 phase 문구뿐이다 —
+`render_loading` 은 phase 타입이 아니라 i18n 키를 받고, 두 상태 머신이 각자의
+매핑을 소유한다(`boot_phase_text_key` / `ShutdownPhase::text_key`).
+
+| phase | 문구 키 | 프레임을 넘기는가 |
+|-------|---------|-------------------|
+| `SavingLayout` | `shutdown.phase_saving_layout` | 아니오 (실측 <1ms) |
+| `ReclaimingBootWorker` | `shutdown.phase_finishing_startup` | 예 (부팅 중 종료 전용) |
+| `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | 아니오 (실측 <1ms) |
+| `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 예 (S4 ≈2s) |
+
+동작 규칙 넷:
+
+- **빠른 종료는 화면을 띄우지 않는다.** `drive_shutdown_frame` 은 한 호출 안에서
+  더 진행할 수 없을 때까지 스텝을 반복하므로, 대기가 없는 종료(plugin 0 개 — 실측
+  0.63ms)는 첫 구동에서 완료에 도달해 **한 프레임도 그리지 않는다.** 최소 표시
+  시간이나 지연 표시 타이머가 필요 없다.
+- **창이 없으면 프레임을 돌리지 않는다.** macOS 최소화(창 파괴 + park)나 트레이
+  hide 상태의 종료는 상태 머신을 설치하지 않고 그 자리에서 끝까지 블로킹으로
+  돈다(= 이 구조 이전과 동일한 동작).
+- **창이 여럿이면 전부 종료 화면으로 바꾼다.** 하나만 그리고 나머지를 먼저 닫으면
+  창이 하나씩 사라지는 것으로 보여 크래시와 구분되지 않는다.
+- **종료 가드** — 종료 진행 중에는 steady-state 파이프라인(IPC 처리 / intent drain /
+  plugin pump)을 태우지 않고 `AppEvent` 는 폐기한다(부팅 가드는 지연 후 재생하지만
+  종료에는 재생할 미래가 없다). 그래서 이 구간의 IPC 연결은 accept 되지만 응답이
+  없고, Drop tail 초반 S5d 에서 서버가 drop 되며 끊긴다. 키/마우스도 core 에 닿지
+  않는다.
+
+갤러리 specimen 은 Chrome 카테고리의 "Shutdown loading screen" — 부팅 specimen 과
+같은 `draw_frame` 을 공유해 두 화면의 동일성을 눈으로 확인하는 자리다.
+
 ## 헤드리스와의 비대칭
 
 헤드리스 빌드(`--no-default-features`)의 `AppEvent::Shutdown` 은 `rx.recv()` 루프를
@@ -97,10 +146,10 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | 마커 | 구간 | 추가 필드 |
 |------|------|-----------|
 | S1 layout_flush | `flush_layout_persistence(true)` | — |
-| S2 boot_worker_reclaim | `reclaim_boot_engine_worker_for_exit` (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
+| S2 boot_worker_reclaim | `ReclaimingBootWorker` phase (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
 | S3 surface_close_cascade | close 큐 push + plugin broadcast | `surfaces` = 큐에 push 한 surface 수 |
 | S3b observer_sink_join | close 경로가 미뤄둔 observer sink 워커 join | — |
-| S4 plugin_shutdown | `shutdown_all` 전체 (겹친 대기의 합계 = 최댓값) | `plugins` = 종료 대상 plugin 수 |
+| S4 plugin_shutdown | `StoppingPlugins` phase 전체 (겹친 대기의 합계 = 최댓값) | `plugins` = 종료 대상 plugin 수 |
 | S4a plugin_shutdown_one | plugin 1개 종료 (graceful deadline 2s) | `plugin_id`, `reason = graceful\|killed\|no_child` |
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
@@ -113,9 +162,10 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 읽는 법:
 
 - **S2 는 마커가 없는 것이 정상이다.** steady-state 종료에서는 회수할 부팅 워커가
-  없어 함수가 즉시 return 하고, 그 구간의 비용은 0 이다. 마커가 보였다면 부팅
-  로딩 화면 상태에서 창을 닫은 것이다. 이 경로에서는 회수한 `PluginManager` 를
-  그 자리에서 `shutdown_all` 하므로 **S4/S4a 가 S2 안에 중첩 발화한다**.
+  없어 상태 머신이 이 phase 를 건너뛴다. 마커가 보였다면 부팅 로딩 화면 상태에서
+  창을 닫은 것이다. 이 경로에서 회수한 `PluginManager` 는 그 자리에서
+  `shutdown_all` 되지 않고 `self.plugin_manager` 에 장착되므로, **S4/S4a 는 S2 에
+  중첩되지 않고 그 뒤에 나란히** 나온다(대기 중에도 종료 화면이 돈다).
 - **S4 는 plugin 이 0개여도 `plugins=0` 으로 발화한다.** "안 걸렸다" 와 "계측이 안
   붙었다" 를 로그만으로 구분할 수 있어야 하기 때문이다. plugin manager 자체가
   없으면 `S4 plugin_shutdown (no plugin manager)` 로 구분된다.
@@ -154,6 +204,21 @@ IPC 로 종료. 단위 ms.
 | 겹친 대기, SIGSTOP 1개 | 5 (전부 killed) | — | — | 2050 | 2051 | — | — | 286 | **2337** |
 | plugin 0개 | 0 | 0.5 | 0.05 | 0.001 | 0.63 | 0.18 | 101 | 153 | **158** |
 
+프레임 구동 상태 머신 도입 후 같은 환경 실측 (창 닫기 / Ctrl+Q 로 종료):
+
+| | plugins | S1 | S2 | S3 | S4 | shutdown_total | S5 | **with_drop** |
+|---|---|---|---|---|---|---|---|---|
+| 창 1개, SIGSTOP 2개 | 8 (전부 killed) | 0.6 | — | 0.2 | 2004 | 2005 | 36 | **2043** |
+| 창 2개, SIGSTOP 2개 | 7 (전부 killed) | 1.2 | — | 0.9 | 2012 | 2015 | 154 | **2179** |
+| 부팅 중 종료 (GpuInit) | 0 (manager 없음) | 0.009 | — | 0.003 | 0 | 0.11 | 37 | **52** |
+| 부팅 중 종료 (WaitingEngine) | 8 (전부 killed) | 0.008 | 594 | 0.005 | 2001 | 2596 | — | — |
+
+- **S2 가 실제로 발화하고, 그 뒤에 S4 가 나란히 온다.** 부팅 로딩 화면 상태에서
+  창을 닫으면 워커 회수(414~626ms)가 끝난 뒤 S4 가 시작된다. 회수 구간 동안 화면
+  문구는 `Finishing startup…`, 그 뒤는 `Stopping plugins…` 로 바뀐다.
+- **종료 화면이 덮는 범위는 `shutdown_total` 까지다.** Drop tail(위 표에서
+  36~154ms)은 창이 사라진 뒤라 덮이지 않는다.
+
 참고 — 대기를 겹치기 전(plugin 하나씩 순차 대기)의 같은 환경 실측:
 
 | | plugins | S1 | S3 | S4 | shutdown_total | S5a | S5b | S5 | **with_drop** |
@@ -191,13 +256,19 @@ IPC 로 종료. 단위 ms.
   재현은 `pgrep -f tasty-plugin- | head -N | xargs -r kill -STOP` 후 종료.
 - 위 값은 Linux/debug 기준이다. 부팅 계측의 기준치(Windows/7950X3D)와는 환경이
   달라 직접 비교하지 않는다.
-- **S2(부팅 중 종료)와 quit 모달 경로는 자동화로 재현하지 못했다.** 전자는 IPC
-  서버가 `finish_boot` 에서야 시작되므로 부팅 중에는 IPC 트리거가 없고, 후자는
-  키 입력/창 닫기가 필요하다(Linux 에는 키 주입 debug IPC 가 없다). 두 경로 모두
-  `begin_shutdown` 이라는 같은 함수로 수렴하므로 마커 세트는 구조적으로 동일하다.
+- **S2(부팅 중 종료)는 X11 에서 `wmctrl -i -c <win>` 로 재현된다.** 창이 뜨자마자
+  닫으면 `GpuInit` 단계라 워커가 아직 없어 S2 가 발화하지 않고, ~0.1s 뒤에 닫으면
+  `WaitingEngine` 단계에 걸려 S2 가 발화한다. quit 모달 경로는 키 입력이 필요한데,
+  `debug.settings.apply` 로 `keybindings.quit` 을 라이브 지정한 뒤 `xdotool key`
+  로 실제 키 이벤트를 보내면 된다(합성 이벤트가 아니라 XTEST 경로여야 한다).
+- **화면이 실제로 도는지는 창 캡처로 판정한다.** `xwd -id <win>` 로 0.25~0.3s 간격
+  3장 이상을 찍어 스피너 각도가 서로 다른지 본다 — 각도가 같으면 프레임이 안 도는
+  것이다(정지 프레임). tasty 자체 `ui.screenshot` IPC 는 종료 중에 처리되지 않으므로
+  (종료 가드) 이 판정에는 쓸 수 없다.
 
 ## 관련
 
 - [boot-sequence](boot-sequence.md) — 대칭 구조인 부팅 상태 머신 + 부팅 계측(T1~T7)
 - [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md) — 로그 레벨 선택 기준
 - [`docs/dev-guide/self-verification.md`](../dev-guide/self-verification.md) — debug 인스턴스로 시나리오 재현
+- [ADR-0077](../adr/0077-shutdown-loading-screen.md) — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정

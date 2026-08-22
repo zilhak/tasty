@@ -10,6 +10,14 @@ use crate::{App, AppEvent};
 impl ApplicationHandler<AppEvent> for App {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit AppEvent 최상위 dispatch — 20여개 variant 대부분이 이미 추출된 핸들러로 1~5줄 위임하는 평면 match, cfg 게이트까지 섞여 있어 더 쪼개면 "이벤트→핸들러" 매치 테이블의 가독성이 오히려 떨어짐
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        // 종료 상태 머신 진행 중 — 모든 AppEvent 를 버린다. 종료는 되돌릴 수 없고
+        // (`begin_shutdown` 은 멱등), 이미 close cascade 로 surface 를 정리한 뒤라
+        // 지금 들어오는 이벤트는 대상이 사라진 상태에서 실행될 뿐이다. 부팅 가드처럼
+        // 미뤄뒀다 재생할 시점도 없다 — 다음은 프로세스 종료다.
+        if self.shutdown.is_some() {
+            return;
+        }
+
         // 부팅 상태 머신 진행 중 — 종료 계열 외 AppEvent 는 부팅 완료 후 재생하도록
         // 지연한다. 구 코드에서 resumed() 가 블로킹하는 동안 winit 큐에 쌓이던 것과
         // 등가이며, 특히 TerminalOutput 을 지금 소비하면 대상 engine 이 아직 views
@@ -206,6 +214,13 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        // 종료 상태 머신 진행 중 — 종료 화면을 그리는 창들의 이벤트를 여기서 전부
+        // 소비한다 (RedrawRequested = 스텝 구동, 그 외 입력은 core 에 닿지 않게 가드).
+        if self.shutdown.is_some() {
+            self.handle_shutdown_window_event(event_loop, id, event);
+            return;
+        }
+
         // 부팅 상태 머신 진행 중 — 부팅 창의 이벤트를 여기서 전부 소비한다
         // (RedrawRequested = 스텝 구동, 그 외 입력은 core 에 닿지 않게 가드).
         if self.boot.is_some() {
@@ -263,6 +278,22 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+        // 종료 상태 머신 구동 — 부팅 가드와 같은 이유로 steady-state 파이프라인보다
+        // 먼저 가로챈다. 여기서 return 하므로 종료 중에는 `process_ipc()` 가 돌지
+        // 않는다 — 외부에서 들어온 명령이 정리 중인 상태를 다시 건드리지 않는다.
+        // WaitUntil 재예약은 부팅과 동일한 워치독 (창이 RedrawRequested 를 못 받아도
+        // 스텝이 진행되도록).
+        if self.shutdown.is_some() {
+            self.drive_shutdown_frame(event_loop);
+            if self.shutdown.is_some() {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    std::time::Instant::now()
+                        + crate::app::shutdown_machine::SHUTDOWN_FRAME_INTERVAL,
+                ));
+            }
+            return;
+        }
 
         // 부팅 상태 머신 구동 — 미완 동안 steady-state 파이프라인(plugin pump /
         // intent drain / IPC 등)은 태우지 않는다 (부팅 가드; IPC 서버는 어차피

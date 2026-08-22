@@ -1,7 +1,7 @@
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
-mod loading;
+pub(crate) mod loading;
 mod render_pass;
 mod screenshot;
 mod shell_setup;

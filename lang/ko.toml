@@ -974,6 +974,12 @@ phase_gpu_init = "그래픽 초기화 중…"
 phase_waiting_plugins = "플러그인 불러오는 중…"
 phase_restoring_layout = "레이아웃 복원 중…"
 
+[shutdown]
+phase_saving_layout = "레이아웃 저장 중…"
+phase_finishing_startup = "시작 마무리 중…"
+phase_closing_surfaces = "서피스 정리 중…"
+phase_stopping_plugins = "플러그인 종료 중…"
+
 [approval.popup]
 title = "승인 필요"
 comment_label = "코멘트 (선택)"

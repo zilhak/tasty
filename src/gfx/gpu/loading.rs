@@ -1,7 +1,12 @@
-//! 부팅 로딩 프레임 — 부팅 상태 머신(`BootPhase`) 동안 매 프레임 present 하는
-//! 화면. 워드마크 + 스피너 + phase 문구 중앙 스택을 그린다. 구조는
-//! `shell_setup.rs` 의 pre-app egui 프레임 선례를 따르되, 배경은 raw 값이 아니라
-//! theme 의 앱 배경 토큰(`bg_app`)에서 유도한다.
+//! 로딩 프레임 — 부팅 상태 머신(`BootPhase`)과 종료 상태 머신(`ShutdownPhase`)이
+//! 대기 동안 매 프레임 present 하는 화면. 워드마크 + 스피너 + phase 문구 중앙
+//! 스택을 그린다. 구조는 `shell_setup.rs` 의 pre-app egui 프레임 선례를 따르되,
+//! 배경은 raw 값이 아니라 theme 의 앱 배경 토큰(`bg_app`)에서 유도한다.
+//!
+//! **부팅과 종료가 같은 락업을 쓴다.** 다른 것은 phase 문구 하나뿐이라
+//! [`GpuState::render_loading`] 은 phase 타입이 아니라 **i18n 키**를 받는다 — 두
+//! 상태 머신이 각자의 phase → 키 매핑을 소유하고, 렌더 스택은 한 벌로 남는다.
+//! 근거는 [`docs/adr/0077-shutdown-loading-screen.md`].
 
 use winit::window::Window;
 
@@ -21,10 +26,10 @@ const SPINNER_SIZE: LogicalPx = LogicalPx(32.0);
 /// 흔들리지 않도록 항상 이 높이만큼 공간을 예약한다.
 const PHASE_SLOT_HEIGHT: LogicalPx = LogicalPx(16.0);
 
-/// phase → i18n 문구 키. `WaitingEngine`(S-7 추가) 은 별도 확정 문구가 없어 선행
-/// 단계 `GpuInit` 과 같은 문구로 묶는다(디자인 확정값 부재 시 가장 가까운 단계로
-/// 근사 — S-17 검증 정정 권고 #2).
-fn phase_text_key(phase: &BootPhase) -> &'static str {
+/// 부팅 phase → i18n 문구 키. `WaitingEngine`(S-7 추가) 은 별도 확정 문구가 없어
+/// 선행 단계 `GpuInit` 과 같은 문구로 묶는다(디자인 확정값 부재 시 가장 가까운
+/// 단계로 근사 — S-17 검증 정정 권고 #2).
+pub fn boot_phase_text_key(phase: &BootPhase) -> &'static str {
     match phase {
         BootPhase::GpuInit | BootPhase::WaitingEngine { .. } => "boot.phase_gpu_init",
         BootPhase::WaitingPlugins { .. } => "boot.phase_waiting_plugins",
@@ -35,10 +40,13 @@ fn phase_text_key(phase: &BootPhase) -> &'static str {
 impl GpuState {
     /// 로딩 프레임 1장 렌더: `get_current_texture` → egui 프레임(워드마크·스피너·
     /// phase 문구 중앙 스택) → theme 배경 clear → present.
+    ///
+    /// `phase_text_key` 는 문구 슬롯에 넣을 i18n 키다 — 부팅은
+    /// [`boot_phase_text_key`], 종료는 `ShutdownPhase::text_key` 가 만든다.
     pub fn render_loading(
         &mut self,
         window: &Window,
-        phase: &BootPhase,
+        phase_text_key: &str,
     ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -82,7 +90,7 @@ impl GpuState {
                         ui.painter().text(
                             slot_rect.center(),
                             egui::Align2::CENTER_CENTER,
-                            crate::i18n::t(phase_text_key(phase)),
+                            crate::i18n::t(phase_text_key),
                             egui::FontId::proportional(th.font_size_body.value()),
                             th.text_muted().to_egui(),
                         );
@@ -107,7 +115,7 @@ impl GpuState {
         let mut update_encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("boot_loading_update"),
+                    label: Some("loading_update"),
                 });
         self.egui_renderer.update_buffers(
             &self.device,
@@ -121,14 +129,14 @@ impl GpuState {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("boot_loading_encoder"),
+                label: Some("loading_encoder"),
             });
         {
             // 배경 clear — theme 앱 배경 토큰에서 유도 (shell_setup 의 raw 값
             // 선례를 따르지 않는다 — theme 규칙).
             let gpu_bg = bg.to_gpu_rgba();
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("boot_loading_pass"),
+                label: Some("loading_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,

@@ -82,4 +82,5 @@
 ## 관련
 
 - [architecture/boot-sequence.md](../../architecture/boot-sequence.md) "로딩 프레임" — 이 창이 표시되기 전, 부팅 상태 머신이 그리는 워드마크+스피너+phase 문구 로딩 화면.
+- [architecture/shutdown-sequence.md](../../architecture/shutdown-sequence.md) "종료 화면" — 창이 사라지기 전, 종료 상태 머신이 같은 락업을 문구만 바꿔 그리는 화면.
 </content>

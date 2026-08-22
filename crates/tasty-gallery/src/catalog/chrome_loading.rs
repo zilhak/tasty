@@ -1,5 +1,9 @@
-//! Chrome · Boot loading screen — 워드마크 + 스피너 + phase 문구 중앙 스택
+//! Chrome · Loading screen — 워드마크 + 스피너 + phase 문구 중앙 스택
 //! (S-17, `guidelines/brand-logo.html` 브랜드 락업).
+//!
+//! **부팅과 종료가 같은 락업을 쓴다.** 실 렌더도 `render_loading` 한 벌이고 phase
+//! 문구만 다르므로, 여기서도 `draw_frame` 을 공유하고 종료 specimen 은 문구만
+//! 바꾼다 — 갤러리가 두 화면의 동일성을 눈으로 확인하는 자리다.
 //!
 //! 실 렌더 경로(`src/gfx/gpu/loading.rs::render_loading`)와 동일한 스택 구성을
 //! egui 로 재현한다. 갤러리는 root 바이너리 크레이트를 의존하지 않으므로
@@ -209,5 +213,62 @@ pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
         ui,
         &latte,
         "GPU clear color reads the resolved theme's bg-app — Latte follows the saved theme, not a hardcoded dark.",
+    );
+}
+
+/// 종료 phase 문구 4종 — `SavingLayout` / `ReclaimingBootWorker` / `ClosingSurfaces`
+/// / `StoppingPlugins` 나란히 비교. 락업은 부팅과 완전히 동일하다(같은 렌더 경로).
+pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        for text in [
+            "Saving layout…",
+            "Finishing startup…",
+            "Closing surfaces…",
+            "Stopping plugins…",
+        ] {
+            draw_frame(ui, theme, egui::vec2(320.0, 240.0), Some(text));
+        }
+    });
+    meta(
+        ui,
+        theme,
+        &[
+            ("SavingLayout", "\"Saving layout…\""),
+            ("ReclaimingBootWorker", "\"Finishing startup…\""),
+            ("ClosingSurfaces", "\"Closing surfaces…\""),
+            ("StoppingPlugins", "\"Stopping plugins…\""),
+        ],
+        &[],
+    );
+    note(
+        ui,
+        theme,
+        "Only the two waiting phases (ReclaimingBootWorker, StoppingPlugins) survive a frame — the other two advance within the frame they enter, so they are rarely seen.",
+    );
+}
+
+/// 종료 화면 기본 — 1280×720, 실측상 거의 유일하게 보이는 문구(`StoppingPlugins`).
+pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
+    draw_frame(
+        ui,
+        theme,
+        egui::vec2(1280.0, 720.0),
+        Some("Stopping plugins…"),
+    );
+    meta(
+        ui,
+        theme,
+        &[
+            ("window", "1280×720 default"),
+            ("phase", "StoppingPlugins"),
+            ("lockup", "identical to boot"),
+        ],
+        &[],
+    );
+    note(
+        ui,
+        theme,
+        "A shutdown with nothing to wait for never renders this frame at all — the state machine reaches Done inside its first drive.",
     );
 }

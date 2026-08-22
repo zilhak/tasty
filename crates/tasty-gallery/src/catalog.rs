@@ -102,9 +102,9 @@ impl Category {
                  its plugin and is themed by the host."
             }
             Category::Chrome => {
-                "Fully assembled app-chrome screens, not single widgets — the boot loading \
-                 screen and its window-size and theme variants. One-to-one with what the host \
-                 renders before the first real frame."
+                "Fully assembled app-chrome screens, not single widgets — the loading screen \
+                 the host shows before the first real frame and again while it shuts down, \
+                 with its window-size, phase-text and theme variants."
             }
         }
     }
@@ -1353,42 +1353,66 @@ pub fn pages() -> Vec<Page> {
         // `gallery/shell.jsx` 의 신규 "Chrome" 그룹 1:1 전사).
         Page {
             category: Category::Chrome,
-            sections: vec![section(
-                "boot-loading",
-                "Boot loading screen",
-                vec![
-                    spec(
-                        "boot-loading-default",
-                        "Default — 1280×720",
-                        Some("Wordmark → spinner → phase text, centered stack"),
-                        chrome_loading::draw_default,
-                    ),
-                    spec(
-                        "boot-loading-min",
-                        "Minimum window — 640×480",
-                        Some("Same stack, size-invariant — no responsive scaling"),
-                        chrome_loading::draw_min,
-                    ),
-                    spec(
-                        "boot-loading-phases",
-                        "Phase text — three variants",
-                        Some("GpuInit / WaitingPlugins / RestoringLayout, side by side"),
-                        chrome_loading::draw_phases,
-                    ),
-                    spec(
-                        "boot-loading-no-text",
-                        "No phase text",
-                        Some("Slot stays reserved and empty — comparison variant"),
-                        chrome_loading::draw_no_text,
-                    ),
-                    spec(
-                        "boot-loading-latte",
-                        "Latte theme",
-                        Some("GPU clear color follows the resolved theme, not a hardcoded dark"),
-                        chrome_loading::draw_latte,
-                    ),
-                ],
-            )],
+            sections: vec![
+                section(
+                    "boot-loading",
+                    "Boot loading screen",
+                    vec![
+                        spec(
+                            "boot-loading-default",
+                            "Default — 1280×720",
+                            Some("Wordmark → spinner → phase text, centered stack"),
+                            chrome_loading::draw_default,
+                        ),
+                        spec(
+                            "boot-loading-min",
+                            "Minimum window — 640×480",
+                            Some("Same stack, size-invariant — no responsive scaling"),
+                            chrome_loading::draw_min,
+                        ),
+                        spec(
+                            "boot-loading-phases",
+                            "Phase text — three variants",
+                            Some("GpuInit / WaitingPlugins / RestoringLayout, side by side"),
+                            chrome_loading::draw_phases,
+                        ),
+                        spec(
+                            "boot-loading-no-text",
+                            "No phase text",
+                            Some("Slot stays reserved and empty — comparison variant"),
+                            chrome_loading::draw_no_text,
+                        ),
+                        spec(
+                            "boot-loading-latte",
+                            "Latte theme",
+                            Some(
+                                "GPU clear color follows the resolved theme, not a hardcoded dark",
+                            ),
+                            chrome_loading::draw_latte,
+                        ),
+                    ],
+                ),
+                section(
+                    "shutdown-loading",
+                    "Shutdown loading screen",
+                    vec![
+                        spec(
+                            "shutdown-loading-default",
+                            "Default — 1280×720",
+                            Some("Same lockup as boot — only the phase text differs"),
+                            chrome_loading::draw_shutdown_default,
+                        ),
+                        spec(
+                            "shutdown-loading-phases",
+                            "Phase text — four variants",
+                            Some(
+                                "SavingLayout / ReclaimingBootWorker / ClosingSurfaces / StoppingPlugins",
+                            ),
+                            chrome_loading::draw_shutdown_phases,
+                        ),
+                    ],
+                ),
+            ],
         },
     ]
 }

@@ -97,8 +97,8 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   16→boot hero), 색 `accent_primary()` 명시 지정(미지정 시 기본은
   `text_muted()`). 부팅 시작 `Instant` 가 아니라 egui `ctx().input(|i| i.time)`
   경과 기반 등속 회전 — 프레임 드랍에도 각도는 시간에 비례한다.
-- **phase 문구** — `BootPhase` → i18n 키 매핑(`GpuInit`/`WaitingEngine` 은 문구
-  공유): `boot.phase_gpu_init`("Initializing graphics…") /
+- **phase 문구** — `BootPhase` → i18n 키 매핑(`boot_phase_text_key`,
+  `GpuInit`/`WaitingEngine` 은 문구 공유): `boot.phase_gpu_init`("Initializing graphics…") /
   `boot.phase_waiting_plugins`("Loading plugins…") /
   `boot.phase_restoring_layout`("Restoring layout…"). 스피너 아래 고정 높이
   슬롯(16px)에 그려 문구 유무와 무관하게 레이아웃이 흔들리지 않는다(첫 설치는
@@ -114,8 +114,12 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
 - **테마** — 하드코딩 다크 없음, `boot_apply_theme()` 가 첫 present 전에 저장된
   테마(Mocha/Latte)를 적용하므로 GPU clear color 도 resolved theme 을 그대로
   따라간다.
+- **종료와 공유한다** — `render_loading` 은 phase 타입이 아니라 i18n 키를 받으므로
+  종료 상태 머신도 같은 함수로 같은 락업을 그린다(문구만 다르다). 종료 쪽은
+  [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0077](../adr/0077-shutdown-loading-screen.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
-  (Chrome 카테고리) — 기본/최소창/phase 문구 3종/문구 없음/Latte 5개 변형.
+  (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
+  종료 2종(기본/phase 문구 4종).
 
 ## 부팅 계측 (target: `tasty::boot`)
 

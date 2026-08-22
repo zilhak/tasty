@@ -42,6 +42,8 @@ pub(crate) mod screenshot_capture;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
+pub(crate) mod shutdown_machine;
+#[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
 #[cfg(feature = "gui")]
 pub(crate) mod window_access;
@@ -117,6 +119,11 @@ pub(crate) struct App {
     /// `finish_boot` 가 take 해 MainView 로 합류한다 (boot_machine.rs).
     #[cfg(feature = "gui")]
     pub(crate) boot: Option<boot_machine::BootState>,
+    /// 종료 상태 머신 (`ShutdownPhase`) — 종료 시작부터 `event_loop.exit()` 직전까지
+    /// `Some`. 부팅과 대칭으로, 대기 단계 동안 매 프레임 종료 로딩 화면을 그린다
+    /// (shutdown_machine.rs).
+    #[cfg(feature = "gui")]
+    pub(crate) shutdown: Option<shutdown_machine::ShutdownState>,
     // Shell setup mode (before terminal is created)
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_mode: bool,
@@ -288,6 +295,7 @@ impl App {
             view: ViewRegistry::new(proxy.clone()),
             parked_states: Vec::new(),
             boot: None,
+            shutdown: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,

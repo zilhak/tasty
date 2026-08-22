@@ -974,6 +974,12 @@ phase_gpu_init = "Initializing graphics…"
 phase_waiting_plugins = "Loading plugins…"
 phase_restoring_layout = "Restoring layout…"
 
+[shutdown]
+phase_saving_layout = "Saving layout…"
+phase_finishing_startup = "Finishing startup…"
+phase_closing_surfaces = "Closing surfaces…"
+phase_stopping_plugins = "Stopping plugins…"
+
 [approval.popup]
 title = "Approval needed"
 comment_label = "Comment (optional)"
