@@ -1310,7 +1310,9 @@ running = "ランナー · {} 件実行 · 待機 {} 件"
 idle = "ランナー停止 · 作業なし"
 stalled = "ランナー停止 · 待機 {} 件"
 crashed = "ランナー異常終了 · 待機 {} 件"
-resume_hint = "再開: tasty agent task-run --workspace-id <N> --action start"
+resume_hint_lead = "再開:"
+# 실제 CLI 명령 — 사용자가 셸에 그대로 붙여 넣는 문자열이라 번역하지 않는다.
+resume_hint_command = "tasty agent task-run --workspace-id <N> --action start"
 
 [dag.zoom]
 in = "拡大"

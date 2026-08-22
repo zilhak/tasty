@@ -284,7 +284,11 @@ fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
     if runner.crashed || stalled {
         // 실행 가능한 복구 수단을 그대로 적는다. 이 화면에는 러너를 켜는 버튼이
         // 없다 — 관찰 전용 surface 라 상태를 바꾸지 않는다.
-        resp.on_hover_text(t("dag.runner.resume_hint"));
+        resp.on_hover_text(format!(
+            "{} {}",
+            t("dag.runner.resume_hint_lead"),
+            t("dag.runner.resume_hint_command")
+        ));
     }
 }
 
@@ -294,11 +298,22 @@ fn resume_hint(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
     if !runner.crashed && !runner.is_stalled() {
         return;
     }
-    ui.label(
-        egui::RichText::new(t("dag.runner.resume_hint"))
+    // 명령만 mono 로 갈라 그린다 — 셸에 그대로 붙여 넣는 문자열이라 문자 폭이
+    // 고정돼야 인자 경계가 눈에 잡힌다(갤러리 specimen 이 전사한 형태).
+    let caption = |ui: &mut egui::Ui, text: String, mono: bool| {
+        let mut rich = egui::RichText::new(text)
             .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
+            .color(theme.text_muted().to_egui());
+        if mono {
+            rich = rich.monospace();
+        }
+        ui.label(rich);
+    };
+    // 이 줄은 오른쪽부터 채워지므로 읽는 순서(lead → 명령)의 **역순**으로 넣는다.
+    // 둘 사이 간격은 줄의 기본 item_spacing(=spacing_sm) 이 그대로 맡는다 —
+    // specimen 이 명시한 값과 같은 토큰이라 따로 벌리지 않는다.
+    caption(ui, t("dag.runner.resume_hint_command").to_string(), true);
+    caption(ui, t("dag.runner.resume_hint_lead").to_string(), false);
     hspace(ui, theme.spacing_sm);
 }
 
