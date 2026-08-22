@@ -61,12 +61,9 @@ impl Core {
         engine: &CoreState,
         workspace_id: Option<u32>,
     ) -> Result<Vec<DagSummary>, AgentError> {
-        let mut out = Vec::new();
-        for wid in self.dag_scan_workspaces(engine, workspace_id) {
-            let tasks = self.task_list(engine, wid)?;
-            out.extend(group_tasks_into_dags(&tasks));
-        }
-        Ok(out)
+        // `task_list` 와 같은 이유로 본체는 free fn 이다 — `Core` 를 손에 쥐지 못하는
+        // 렌더 경로(DAG 목록 popup)가 같은 구현을 쓴다.
+        dag_list_from_state(engine, workspace_id)
     }
 
     /// DAG 하나 + 그 DAG 에 속한 task 전체. 못 찾으면 `None`.
@@ -732,6 +729,29 @@ pub(crate) fn task_list_from_state(
     };
     let store = TaskStore::new(&mut *guard, HOST_OWNER, seq.as_ref());
     store.list(workspace_id)
+}
+
+/// 등록된 DAG 목록 — `CoreState` 만으로 조회한다([`Core::dag_list`] 의 본체).
+///
+/// `workspace_id` 가 `None` 이면 지금 살아있는 전 workspace 를 id 오름차순으로
+/// 순회한다(원칙 3 — 활성 workspace 에 의존하지 않는다).
+pub(crate) fn dag_list_from_state(
+    engine: &CoreState,
+    workspace_id: Option<u32>,
+) -> Result<Vec<DagSummary>, AgentError> {
+    let scan: Vec<u32> = match workspace_id {
+        Some(w) => vec![w],
+        None => {
+            let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+            ids.sort_unstable();
+            ids
+        }
+    };
+    let mut out = Vec::new();
+    for wid in scan {
+        out.extend(group_tasks_into_dags(&task_list_from_state(engine, wid)?));
+    }
+    Ok(out)
 }
 
 /// 러너 스레드의 생사 — `CoreState` 만으로 조회한다.

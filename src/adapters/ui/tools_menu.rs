@@ -37,6 +37,10 @@ enum BuiltinAction {
     OpenPopup(&'static str),
     /// 별도 winit 윈도우 열기. 현재 사용처는 PresetView 하나.
     OpenWindow(WindowKind),
+    /// workspace 스코프 popup 열기. 스코프는 정의가 아니라 **여는 시점**의 활성
+    /// workspace 로 정해지므로 `OpenPopup` 과 분기가 다르다 — 이 창은 그 workspace
+    /// 를 벗어나면 숨고 돌아오면 다시 뜬다.
+    OpenWorkspacePopup(&'static str),
     /// 파일 피커(04) — 단순 `OpenPopup` 과 달리 여는 *전* 활성 workspace 의
     /// mirror 여부로 로컬/원격을 판별해 `state.dialogs.file_picker` 를 채워야 하므로
     /// 별도 분기.
@@ -72,6 +76,10 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         ),
     },
     BuiltinTool {
+        label_key: "dag_list.tools_menu_item",
+        action: BuiltinAction::OpenWorkspacePopup(super::popup::dag_list::DAG_LIST_POPUP_ID),
+    },
+    BuiltinTool {
         label_key: "filepicker.tools_menu_item",
         action: BuiltinAction::OpenFilePicker,
     },
@@ -91,6 +99,7 @@ pub fn draw_tools_menu(
 
     // Built-in entries first.
     let mut open_popup: Option<&'static str> = None;
+    let mut open_workspace_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
     let mut open_file_picker = false;
     for entry in BUILTIN_TOOLS {
@@ -114,6 +123,7 @@ pub fn draw_tools_menu(
         if resp.clicked() {
             match entry.action {
                 BuiltinAction::OpenPopup(id) => open_popup = Some(id),
+                BuiltinAction::OpenWorkspacePopup(id) => open_workspace_popup = Some(id),
                 BuiltinAction::OpenWindow(k) => open_window = Some(k),
                 BuiltinAction::OpenFilePicker => open_file_picker = true,
             }
@@ -121,6 +131,18 @@ pub fn draw_tools_menu(
     }
     if open_file_picker {
         popup::file_picker::open(state, engine, None, Vec::new());
+        return PopupAction::Close;
+    }
+    if let Some(popup_id) = open_workspace_popup {
+        state.dispatch_intent(
+            UiIntent::OpenPopup {
+                id: popup_id,
+                mode: OpenPopupMode::WithScope(popup::PopupScope::Workspace(
+                    state.active_workspace,
+                )),
+            }
+            .from_user_menu("tools_menu"),
+        );
         return PopupAction::Close;
     }
     if let Some(popup_id) = open_popup {

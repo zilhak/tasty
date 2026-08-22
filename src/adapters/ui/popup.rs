@@ -2,6 +2,7 @@ pub(crate) mod approval;
 pub(crate) mod command_palette;
 pub(crate) mod confirm_delete_category;
 pub(crate) mod convert;
+pub(crate) mod dag_list;
 pub(crate) mod defs;
 mod draw;
 pub(crate) mod file_handler_picker;

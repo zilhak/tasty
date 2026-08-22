@@ -222,6 +222,20 @@ impl MainView {
             }
             return true;
         }
+        if matches_any_binding(&kb.toggle_dag_list, key, mods) {
+            // 스코프는 정의가 아니라 **여는 시점**의 활성 workspace 로 정해진다 —
+            // 이 창은 그 workspace 를 벗어나면 숨고 돌아오면 다시 뜬다.
+            state.dispatch_intent(
+                UiIntent::TogglePopup {
+                    id: crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID,
+                    mode: OpenPopupMode::WithScope(
+                        crate::adapters::ui::popup::PopupScope::Workspace(state.active_workspace),
+                    ),
+                }
+                .from_user_shortcut("toggle_dag_list"),
+            );
+            return true;
+        }
         if matches_any_binding(&kb.find, key, mods) {
             // 이 winit 경로는 검색창이 포커스되지 않은 상태(터미널 포커스)에서만 도달한다
             // — 검색창 포커스 상태의 find 는 overlay 게이트에 막혀 egui 경로(search_bar)

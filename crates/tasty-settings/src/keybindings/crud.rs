@@ -35,6 +35,10 @@ impl KeybindingSettings {
             "toggle_notifications",
             "settings.keybindings.toggle_notifications_label",
         ),
+        (
+            "toggle_dag_list",
+            "settings.keybindings.toggle_dag_list_label",
+        ),
         ("close_pane", "settings.keybindings.close_pane_label"),
         ("close_surface", "settings.keybindings.close_surface_label"),
         (
@@ -159,6 +163,7 @@ impl KeybindingSettings {
             "split_surface_horizontal" => self.split_surface_horizontal.as_slice(),
             "toggle_settings" => self.toggle_settings.as_slice(),
             "toggle_notifications" => self.toggle_notifications.as_slice(),
+            "toggle_dag_list" => self.toggle_dag_list.as_slice(),
             "close_pane" => self.close_pane.as_slice(),
             "close_surface" => self.close_surface.as_slice(),
             "close_workspace" => self.close_workspace.as_slice(),
@@ -220,6 +225,7 @@ impl KeybindingSettings {
             "split_surface_horizontal" => &mut self.split_surface_horizontal,
             "toggle_settings" => &mut self.toggle_settings,
             "toggle_notifications" => &mut self.toggle_notifications,
+            "toggle_dag_list" => &mut self.toggle_dag_list,
             "close_pane" => &mut self.close_pane,
             "close_surface" => &mut self.close_surface,
             "close_workspace" => &mut self.close_workspace,

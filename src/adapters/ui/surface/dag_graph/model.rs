@@ -23,6 +23,19 @@ pub enum DagStatus {
 }
 
 impl DagStatus {
+    /// 8 종 전부, 화면에 나열하는 고정 순서(대기 → 실행 → 종료 → 예외).
+    /// 상태 필터 드롭다운처럼 "어휘 전체" 를 보여야 하는 곳이 이 순서를 쓴다.
+    pub const ALL: [DagStatus; 8] = [
+        DagStatus::Waiting,
+        DagStatus::Ready,
+        DagStatus::Running,
+        DagStatus::Succeeded,
+        DagStatus::Failed,
+        DagStatus::Cancelled,
+        DagStatus::Skipped,
+        DagStatus::Unknown,
+    ];
+
     pub fn from_state(state: &TaskState) -> Self {
         match state {
             TaskState::Waiting => DagStatus::Waiting,

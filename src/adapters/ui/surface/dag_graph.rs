@@ -31,4 +31,4 @@ pub mod render;
 pub mod view;
 
 pub use render::draw_dag_graph;
-pub use view::{DagGraphViewStore, DagPollRequest};
+pub use view::{DagGraphViewStore, DagPollRequest, DagTarget};

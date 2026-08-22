@@ -52,6 +52,7 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 |------|-------|-----|---------|-------|
 | toggle_settings | ctrl+, | alt+, | ctrl+, | ctrl+, |
 | toggle_notifications | ctrl+shift+i | alt+shift+i | ctrl+shift+i | ctrl+shift+i |
+| toggle_dag_list | ctrl+shift+g | alt+shift+g | ctrl+shift+g | ctrl+shift+g |
 | toggle_sidebar / _collapse | ctrl+shift+b / ctrl+b | alt+shift+b / alt+b | (ctrl 계열) | (ctrl 계열) |
 | quit | | alt+q | | ctrl+q |
 | quit_minimize | | alt+m | | |

@@ -211,6 +211,31 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::command_palette::draw_command_palette_popup,
                 on_close: Some(super::command_palette::on_close_command_palette_popup),
             },
+            // DAG 목록 — tasty 에서 `PopupScope::Workspace` 를 쓰는 첫 popup.
+            // `default_scope` 를 Window 로 두는 이유: 실제 스코프는 **여는 시점**의
+            // 활성 workspace 로 결정되므로 정의 시점에는 알 수 없다. 열기 경로가
+            // `OpenPopupMode::WithScope` 로 매번 주입한다.
+            PopupDef {
+                id: super::dag_list::DAG_LIST_POPUP_ID,
+                title_key: "dag_list.title",
+                title_fn: None,
+                // sizer 가 매 open 마다 토큰(zoom 반영)에서 다시 읽는다 — 이 값은
+                // sizer 가 없을 때의 폴백일 뿐이라 시안 원치수를 그대로 둔다.
+                default_size: egui::vec2(560.0, 460.0),
+                sizer: Some(super::dag_list::dag_list_sizer),
+                default_scope: PopupScope::Window,
+                // 그래프 pan 드래그가 창 밖에서 끝나는 일이 흔하다 — 바깥 클릭으로
+                // 닫으면 보던 그래프가 사라진다.
+                close_on_outside_click: false,
+                headless: false,
+                sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                // 그래프는 넓을수록 읽기 좋다 — 사용자가 키울 수 있게 둔다.
+                resizable: true,
+                min_size: Some(egui::vec2(360.0, 280.0)),
+                draw_fn: super::dag_list::draw_dag_list_popup,
+                on_close: Some(super::dag_list::on_close_dag_list_popup),
+            },
             PopupDef {
                 id: super::remote_tool::REMOTE_TOOL_POPUP_ID,
                 title_key: "remote_tool.heading",

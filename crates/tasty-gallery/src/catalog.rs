@@ -1186,9 +1186,8 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                // Task DAG — 디자인 `gallery/dag.jsx` 의 9 개 NAV 섹션 중 본체가
-                // 이미 가진 서피스 몫. `rows`(DAG 목록 행)와 워크스페이스 popup 은
-                // 본체에 아직 없어 그 라운드의 gallery-first 단계에서 붙는다.
+                // Task DAG — 디자인 `gallery/dag.jsx` 의 NAV 섹션 전부. 캔버스/노드,
+                // 크롬/상세/서피스, 그리고 목록 행 + 워크스페이스 popup 세 묶음이다.
                 section(
                     "dag-graph",
                     "Task DAG · canvas & nodes",
@@ -1262,6 +1261,26 @@ pub fn pages() -> Vec<Page> {
                             "Full-tab surface — wide and narrow",
                             Some("640 아래에서 헤더 2행 · 미니맵 제거 · 상세는 하단 시트"),
                             components::dag::surface::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "dag-list",
+                    "Task DAG · list rows & workspace popup",
+                    vec![
+                        spec(
+                            "dag-rows",
+                            "DAG list rows",
+                            Some("출처 태그 · rollup 상태 · mono done/total — 진행 막대는 없다"),
+                            components::dag::rows::draw,
+                        ),
+                        spec(
+                            "dag-window",
+                            "Workspace popup — list ⇄ single DAG",
+                            Some(
+                                "560 × 460, DrillDown 전면 교체. 상세는 640 아래라 항상 하단 시트",
+                            ),
+                            components::dag::window::draw,
                         ),
                     ],
                 ),

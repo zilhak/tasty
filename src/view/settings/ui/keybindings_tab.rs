@@ -171,6 +171,11 @@ pub fn draw_keybindings_tab(
                         None,
                     ),
                     (
+                        "toggle_dag_list",
+                        "settings.keybindings.toggle_dag_list_label",
+                        None,
+                    ),
+                    (
                         "restore_closed",
                         "settings.keybindings.restore_closed_label",
                         None,

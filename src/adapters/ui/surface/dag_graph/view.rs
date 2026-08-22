@@ -60,6 +60,20 @@ impl Lod {
     }
 }
 
+/// 그래프 화면이 실제로 필요로 하는 **관찰 대상**.
+///
+/// surface 는 `DagGraphSurface` 의 필드를, workspace popup 은 자기 dialog 상태를
+/// 빌려준다 — 렌더 코드는 자기가 탭 안인지 팝업 안인지 몰라야 두 경로가 같은
+/// 그림을 그린다. 대상 workspace 는 여기 없다: 렌더는 이미 읽어 둔
+/// [`DagGraphView::data`] 만 그리고, workspace 는 그 데이터를 **채울 때**만
+/// 필요하다([`DagGraphView::poll_if_stale`]).
+pub struct DagTarget<'a> {
+    /// 보고 있는 DAG. 헤더 드롭다운 선택이 여기 반영된다.
+    pub dag_id: &'a mut Option<String>,
+    /// 레이어 진행 방향. 방향 토글이 여기 반영된다.
+    pub direction: &'a mut DagDirection,
+}
+
 /// 이번 프레임에 어떤 DAG surface 가 무엇을 보고 있는지 — 렌더 루프 진입 **전에**
 /// 수집해 폴링에 넘긴다(루프 안에서는 `engine` 을 재차입할 수 없다).
 #[derive(Debug, Clone)]
@@ -141,6 +155,42 @@ impl DagGraphView {
         self.last_poll
             .map(|t| POLL_INTERVAL.saturating_sub(t.elapsed()))
             .unwrap_or(Duration::ZERO)
+    }
+
+    /// 폴링 게이트를 지나면 memory store 를 다시 읽는다.
+    ///
+    /// surface 는 [`DagGraphViewStore::poll`] 을 거쳐, popup 은 자기 draw_fn 에서
+    /// 직접 부른다(popup 은 `engine` 을 통째로 받으므로 렌더 루프의 재차입 제약이
+    /// 없다). 주기·실패 처리를 한곳에 두어 두 경로가 갈라지지 않게 한다.
+    pub fn poll_if_stale(
+        &mut self,
+        engine: &crate::core::CoreState,
+        workspace_id: u32,
+        dag_id: Option<&str>,
+    ) {
+        let now = Instant::now();
+        if !self.is_stale(now) {
+            return;
+        }
+        self.last_poll = Some(now);
+        match fetch(engine, workspace_id, dag_id) {
+            Ok(data) => {
+                self.error = None;
+                self.data = Some(data);
+            }
+            Err(e) => {
+                // 데이터는 마지막으로 성공한 것을 그대로 둔다 — 일시적 실패로
+                // 그래프가 사라졌다 나타나면 읽는 사람이 더 혼란스럽다.
+                tracing::warn!(target: "tasty::dag", "dag poll failed: {e}");
+                self.error = Some(e);
+            }
+        }
+    }
+
+    /// 보고 있던 DAG 가 바뀌었으니 다음 프레임에 곧바로 다시 읽는다.
+    /// (popup 의 목록→디테일 진입처럼 500ms 를 기다릴 이유가 없는 전환용.)
+    pub fn invalidate_poll(&mut self) {
+        self.last_poll = None;
     }
 
     /// 현재 데이터에 대한 레이아웃. 그래프 **모양**이 그대로면 캐시를 돌려준다.
@@ -274,36 +324,27 @@ impl DagGraphViewStore {
     /// 렌더 루프 **진입 전에** 호출한다 — 루프 안에서는 `engine` 이 workspace/pane/
     /// tab 에 배타 차용돼 store 를 읽을 수 없다(explorer 의 outbox 패턴과 같은 제약).
     pub fn poll(&mut self, engine: &crate::core::CoreState, requests: &[DagPollRequest]) {
-        let now = Instant::now();
         for req in requests {
-            let view = self.views.entry(req.surface_id).or_default();
-            if !view.is_stale(now) {
-                continue;
-            }
-            view.last_poll = Some(now);
-            match fetch(engine, req) {
-                Ok(data) => {
-                    view.error = None;
-                    view.data = Some(data);
-                }
-                Err(e) => {
-                    // 데이터는 마지막으로 성공한 것을 그대로 둔다 — 일시적 실패로
-                    // 그래프가 사라졌다 나타나면 읽는 사람이 더 혼란스럽다.
-                    tracing::warn!(target: "tasty::dag", "dag surface poll failed: {e}");
-                    view.error = Some(e);
-                }
-            }
+            self.views.entry(req.surface_id).or_default().poll_if_stale(
+                engine,
+                req.workspace_id,
+                req.dag_id.as_deref(),
+            );
         }
         // 이번 프레임에 보이지 않은 surface 의 뷰는 남겨 둔다(줌/선택 유지). 정리는
         // surface 종료 시 `drop_view` 가 한다.
     }
 }
 
-/// 한 surface 분의 데이터를 memory store 에서 읽어 화면 형태로 만든다.
-fn fetch(engine: &crate::core::CoreState, req: &DagPollRequest) -> Result<DagData, String> {
+/// 한 화면 분의 데이터를 memory store 에서 읽어 화면 형태로 만든다.
+fn fetch(
+    engine: &crate::core::CoreState,
+    workspace_id: u32,
+    dag_id: Option<&str>,
+) -> Result<DagData, String> {
     use tasty_agent::{TaskGraph, group_tasks_into_dags};
 
-    let tasks = crate::core::agent::task::task_list_from_state(engine, req.workspace_id)
+    let tasks = crate::core::agent::task::task_list_from_state(engine, workspace_id)
         .map_err(|e| e.to_string())?;
     let summaries = group_tasks_into_dags(&tasks);
 
@@ -317,8 +358,8 @@ fn fetch(engine: &crate::core::CoreState, req: &DagPollRequest) -> Result<DagDat
         })
         .collect();
 
-    let chosen = pick_target(&summaries, req.dag_id.as_deref());
-    let target_missing = req.dag_id.is_some() && chosen.is_none();
+    let chosen = pick_target(&summaries, dag_id);
+    let target_missing = dag_id.is_some() && chosen.is_none();
 
     let current = chosen.map(|summary| {
         let subset: Vec<tasty_agent::Task> = tasks
@@ -342,7 +383,7 @@ fn fetch(engine: &crate::core::CoreState, req: &DagPollRequest) -> Result<DagDat
         graph
     });
 
-    let (running, crashed) = crate::core::agent::task::runner_liveness(engine, req.workspace_id);
+    let (running, crashed) = crate::core::agent::task::runner_liveness(engine, workspace_id);
     let runner = current
         .as_ref()
         .map(|g| RunnerBadgeData {
@@ -366,7 +407,7 @@ fn fetch(engine: &crate::core::CoreState, req: &DagPollRequest) -> Result<DagDat
         });
 
     Ok(DagData {
-        workspace_id: req.workspace_id,
+        workspace_id,
         dags,
         current,
         runner,

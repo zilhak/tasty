@@ -3,14 +3,16 @@
 //! 상세는 넓은 화면에서 우측 고정폭 패널, 좁은 화면에서 하단 시트다. **콘텐츠는
 //! 어느 쪽이든 [`super::detail::draw_detail`] 하나**이고 여기서는 자리만 다르게 준다.
 
-use tasty_model::DagGraphSurface;
-
 use super::chrome::{self, ChromeAction, NARROW_DETAIL_SHEET};
 use super::detail::{DetailAction, DetailDock, dock_divider, draw_detail};
-use super::view::{DagGraphView, layout_config};
+use super::view::{DagGraphView, DagTarget, layout_config};
 
-/// DAG surface 한 개를 그린다.
-pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut DagGraphView) {
+/// 그래프 화면 한 벌 — 헤더 + 캔버스 + (선택 시) 상세.
+///
+/// 대상은 [`DagTarget`] 으로만 받는다. 탭 surface 든 workspace popup 이든 이
+/// 함수가 유일한 그리기 경로이고, 호출자는 대상 필드를 빌려주고 화면 폭을 정할
+/// 뿐이다 — 좁으면(<640) 상세가 자동으로 하단 시트로 내려간다.
+pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGraphView) {
     let th = crate::theme::theme();
     let theme = &th;
     ui.set_min_size(ui.available_size());
@@ -26,12 +28,13 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
     let surface_width = ui.available_width();
     let now = now_ms();
 
-    let chrome_action = chrome::draw_header(ui, theme, &data, view, panel.direction, surface_width);
+    let chrome_action =
+        chrome::draw_header(ui, theme, &data, view, *target.direction, surface_width);
 
     if chrome::is_empty(data.current.as_ref()) {
-        chrome::draw_empty(ui, theme, &data, panel.dag_id.as_deref());
+        chrome::draw_empty(ui, theme, &data, target.dag_id.as_deref());
         apply_chrome(
-            panel,
+            target,
             view,
             chrome_action,
             egui::Vec2::ZERO,
@@ -50,9 +53,10 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
         chrome::draw_cycle_banner(ui, theme, cycle);
     }
 
-    let cfg = layout_config(theme, panel.direction);
+    let direction = *target.direction;
+    let cfg = layout_config(theme, direction);
     // 캐시 조회 — 그래프 모양이 그대로면 좌표를 다시 계산하지 않는다.
-    let layout = view.layout(panel.direction, &cfg);
+    let layout = view.layout(direction, &cfg);
     let graph_size = egui::vec2(layout.width.value(), layout.height.value());
 
     let selected = view
@@ -72,7 +76,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
         let canvas_h = (ui.available_height() - sheet_h).max(0.0);
         viewport = egui::vec2(ui.available_width(), canvas_h);
         ui.allocate_ui(viewport, |ui| {
-            canvas(ui, theme, view, &data, &layout, panel, now);
+            canvas(ui, theme, view, &data, &layout, direction, now);
         });
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), sheet_h),
@@ -92,7 +96,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
         viewport = egui::vec2(canvas_w, ui.available_height());
         ui.horizontal_top(|ui| {
             ui.allocate_ui(viewport, |ui| {
-                canvas(ui, theme, view, &data, &layout, panel, now);
+                canvas(ui, theme, view, &data, &layout, direction, now);
             });
             ui.allocate_ui_with_layout(
                 egui::vec2(panel_w, ui.available_height()),
@@ -107,13 +111,13 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
             );
         });
     } else {
-        canvas(ui, theme, view, &data, &layout, panel, now);
+        canvas(ui, theme, view, &data, &layout, direction, now);
     }
 
     if let Some(DetailAction::Select(id)) = detail_action {
         view.selected = Some(id);
     }
-    apply_chrome(panel, view, chrome_action, graph_size, viewport, theme);
+    apply_chrome(target, view, chrome_action, graph_size, viewport, theme);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -123,17 +127,17 @@ fn canvas(
     view: &mut DagGraphView,
     data: &super::model::DagData,
     layout: &tasty_dag_layout::GraphLayout,
-    panel: &DagGraphSurface,
+    direction: tasty_model::DagDirection,
     now: u64,
 ) {
     let Some(graph) = data.current.as_ref() else {
         return;
     };
-    super::canvas::draw_canvas(ui, theme, view, graph, layout, panel.direction, now);
+    super::canvas::draw_canvas(ui, theme, view, graph, layout, direction, now);
 }
 
 fn apply_chrome(
-    panel: &mut DagGraphSurface,
+    target: DagTarget<'_>,
     view: &mut DagGraphView,
     action: Option<ChromeAction>,
     graph_size: egui::Vec2,
@@ -144,14 +148,17 @@ fn apply_chrome(
         Some(ChromeAction::SelectDag(id)) => {
             // 사용자가 명시적으로 고른 순간부터 대상이 고정된다 — 폴링의 자동 선택이
             // 더 이상 개입하지 않는다.
-            panel.dag_id = Some(id);
+            *target.dag_id = Some(id);
             view.selected = None;
+            // 대상이 바뀌었으니 다음 프레임에 바로 다시 읽는다 — 500ms 를 기다리면
+            // 고른 DAG 대신 이전 그래프가 한 박자 더 남는다.
+            view.invalidate_poll();
         }
         Some(ChromeAction::ToggleDirection) => {
             // 선택은 유지한다 — 같은 그래프를 다른 축으로 다시 그릴 뿐이라, 보던
             // 노드를 놓치게 만들 이유가 없다. auto-fit 키에 방향이 들어 있어 프레이밍
             // 은 다음 프레임에 새로 맞춰진다.
-            panel.direction = panel.direction.toggled();
+            *target.direction = target.direction.toggled();
         }
         Some(ChromeAction::Fit) => {
             view.fit(graph_size, viewport, theme.dag_canvas_padding().value());

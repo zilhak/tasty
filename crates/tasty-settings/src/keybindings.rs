@@ -21,6 +21,8 @@ pub struct KeybindingSettings {
     pub split_surface_horizontal: Vec<String>,
     pub toggle_settings: Vec<String>,
     pub toggle_notifications: Vec<String>,
+    /// DAG 목록 popup 토글. 활성 workspace 스코프로 열린다.
+    pub toggle_dag_list: Vec<String>,
     pub close_pane: Vec<String>,
     pub close_surface: Vec<String>,
     pub close_workspace: Vec<String>,

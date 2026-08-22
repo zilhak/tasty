@@ -630,8 +630,9 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 
 디자인 `gallery/dag.jsx` (카탈로그 페이지) + `ui_kits/terminal/overlays/dag_view.jsx`
 (상태 어휘 · 노드 카드 · 러너 배지 · 크롬 · 빈 상태) + `dag_surfaces.jsx` (캔버스 · 노드
-상세 · 풀탭 서피스) ↔ 본체 `src/adapters/ui/surface/dag_graph/` ↔ 갤러리
-`catalog/components/dag/` (Layouts 페이지 `dag-graph` · `dag-shell` 두 섹션).
+상세 · 풀탭 서피스 · 워크스페이스 popup) ↔ 본체 `src/adapters/ui/surface/dag_graph/` +
+`src/adapters/ui/popup/dag_list.rs` ↔ 갤러리 `catalog/components/dag/` (Layouts 페이지
+`dag-graph` · `dag-shell` · `dag-list` 세 섹션).
 
 | 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
 |---|---|---|
@@ -648,8 +649,8 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 | `DagEmpty` | `chrome::draw_empty` | `dag/chrome.rs::paint_empty` (`dag-states` spec) |
 | `DagDetail` / `DetailRow` / `LogBlock` | `detail::draw_detail` / `row` / `labeled_block` | `dag/detail.rs::draw_body` (`dag-detail` spec) |
 | `DagSurface` | `render::draw_dag_graph` | `dag/surface.rs::paint` (`dag-surface` spec) |
-| `dagRowItems` (DAG 목록 행) | ✗ 본체 미구현 | ✗ 미등록 — popup 라운드의 gallery-first 몫 |
-| `DagWindow` (워크스페이스 popup) | ✗ 본체 미구현 | ✗ 미등록 — 동상 |
+| `dagRowItems` (DAG 목록 행) | `popup::dag_list::draw_row_trailing` | `dag/rows.rs::trailing` (`dag-rows` spec) |
+| `DagWindow` (워크스페이스 popup) | `popup::dag_list::draw_dag_list_popup` | `dag/window.rs::paint` (`dag-window` spec) |
 
 **전사 미러인 이유**: `render::draw_dag_graph` 는 `(ui, &DagGraphSurface, &mut DagGraphView)`
 로 호스트 상태(폴링 스냅샷 · 줌/오프셋 · 선택)에 의존하고, 갤러리는 main 바이너리를 의존할
@@ -671,3 +672,10 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 - **기본 방향**: 시안 기본은 top-down, 본체 기본은 left-right(`DagDirection::LeftRight` —
   `agent.task_graph --format dot` 의 `rankdir=LR` 과 멘탈 모델 일치, 168×48 카드가 가로로
   길어 화면 폭을 아낌). 갤러리 specimen 은 시안대로 top-down 으로 전시한다.
+- **popup 디테일 뷰의 헤더**: 시안 `DagWindow` 의 디테일은 헤더 없이 캔버스 + 시트만 두고
+  러너 배지를 back bar 의 actions 슬롯에 놓는다. 본체는 그래프 화면 한 벌
+  (`render::draw_dag_graph`)을 통째로 재사용하므로 **헤더가 함께 온다** — 러너 배지 · DAG
+  선택 · 줌 클러스터가 그 안에 있고, 중복을 피하려 actions 슬롯은 비운다. 렌더를 두 벌로
+  가르지 않는 쪽을 택한 결과다. 갤러리 `dag-window` specimen 은 시안 구조(헤더 없음)를 그대로
+  전사하므로 이 지점에서 본체와 갈라진다 — 정합은
+  `.claude-workspace/todo/27-dag-graph-visual-parity-fix.md` 가 함께 다룬다.

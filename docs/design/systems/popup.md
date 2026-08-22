@@ -80,6 +80,21 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 `PopupManager::draw()` 가 `LayoutContext` 를 받아 스코프별 가시성 필터 + clamp rect 를 결정한다.
 
+`Workspace` 스코프의 clamp 는 실제로는 윈도우 전체다 — 워크스페이스가 윈도우를 통째로
+차지하므로 둘이 같은 사각형이다. 따라서 이 스코프가 실질적으로 결정하는 것은 **가시성**이다.
+
+**스코프는 `PopupDef` 에 못 박히지 않는다.** `Workspace(usize)` / `Pane(u32)` 처럼 대상을
+런타임에야 아는 스코프는 `default_scope` 에 안전한 기본만 두고, 여는 쪽이
+`OpenPopupMode::WithScope(scope)` 로 실제 값을 주입한다. 현재 소비자:
+
+| 팝업 | 스코프 | 여는 쪽이 주입하는 값 |
+|------|--------|----------------------|
+| [DAG 목록](../../features/agent-collaboration/screens/dag-list-popup.md) (`dag_list`) | Workspace | 여는 시점의 활성 workspace 인덱스 |
+| 변환(`convert_surface`) · 검색바(`search_bar`) | Surface | 포커스 surface id |
+
+`Workspace` 스코프 팝업은 워크스페이스를 옮기면 **그리지 않는다** — 상태는 그대로 남아 있어
+돌아오면 보던 화면이 그대로 복원된다. 그 상태의 수명은 스코프가 아니라 `on_close` 가 정한다.
+
 ## Modal 과의 차이
 
 | 항목 | Popup | Modal |

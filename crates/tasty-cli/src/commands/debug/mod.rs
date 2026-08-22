@@ -265,6 +265,10 @@ pub enum HostPopupDebugCommands {
         /// Host popup id (e.g. "tools_menu", "port_scanner", "command_palette")
         #[arg(long)]
         popup_id: String,
+        /// Open it scoped to the active workspace instead of the window, so the
+        /// scope visibility gate can be exercised (e.g. "dag_list").
+        #[arg(long)]
+        workspace_scope: bool,
     },
     /// Close a host popup by id
     Close {

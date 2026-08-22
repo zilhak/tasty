@@ -36,7 +36,7 @@
 | [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · plugin 트리거) | 로컬 사용자 · plugin | popup (갤러리 specimen) |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [0031](../adr/0031-lua-host-api-only-worker-isolated.md) |
-| [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | [DAG 그래프 surface](agent-collaboration/screens/dag-graph-surface.md) |
+| [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | [DAG 그래프 surface](agent-collaboration/screens/dag-graph-surface.md) · [DAG 목록 popup](agent-collaboration/screens/dag-list-popup.md) |
 | [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
 | [headless-pty](headless-pty/index.md) — Surface 없는 PTY primitive (`tasty pty`, exit-code·승격) | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |

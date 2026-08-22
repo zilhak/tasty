@@ -644,6 +644,11 @@ pub struct DialogState {
     pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
     /// 네이티브 파일 피커(04) popup 의 내비게이션/로딩/선택 상태. `None` 이면 popup 미오픈.
     pub(crate) file_picker: Option<FilePickerData>,
+    /// DAG 목록 popup 의 전 상태(검색/필터/열린 DAG/그래프 뷰). `on_close` 가
+    /// 통째로 기본값으로 되돌린다 — popup 은 surface 가 아니라 snapshot/restore
+    /// 대상이 아니고, 닫힌 뒤에도 남는 상태는 다음 open 을 오염시킨다.
+    #[cfg(feature = "gui")]
+    pub(crate) dag_list: crate::adapters::ui::popup::dag_list::DagListState,
     /// 도구 메뉴 클릭 / preset save 후속 — PresetView 를 열어달라는 요청.
     /// `selection` 이 `Some` 이면 PresetView 가 열린 뒤 해당 preset 을 선택한다.
     /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
@@ -745,6 +750,8 @@ impl DialogState {
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
             file_picker: None,
+            #[cfg(feature = "gui")]
+            dag_list: Default::default(),
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
             preset_picker_selected: None,

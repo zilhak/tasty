@@ -224,7 +224,11 @@ pub fn draw_egui_panels(
         {
             let view = dag_views.get_or_init(dag.id);
             draw_panel_frame_no_margin(ctx, &format!("dag_panel_{}", id_suffix), info, |ui| {
-                crate::adapters::ui::surface::dag_graph::draw_dag_graph(ui, dag, view);
+                let target = crate::adapters::ui::surface::dag_graph::DagTarget {
+                    dag_id: &mut dag.dag_id,
+                    direction: &mut dag.direction,
+                };
+                crate::adapters::ui::surface::dag_graph::draw_dag_graph(ui, target, view);
             });
         } else if let Some(remote) = surface
             .as_any()

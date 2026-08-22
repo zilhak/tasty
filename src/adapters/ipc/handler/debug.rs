@@ -347,14 +347,25 @@ pub(super) fn handle_debug_host_popup_open(
     let Some(def) = crate::adapters::ui::popup::defs::find(popup_id) else {
         return JsonRpcResponse::error(id, -32602, format!("host popup '{popup_id}' not found"));
     };
-    state.dispatch_intent(
-        crate::intent::UiIntent::OpenPopup {
-            id: def.id,
-            mode: crate::intent::OpenPopupMode::CenteredFocused,
-        }
-        .from_agent_ipc(),
-    );
-    JsonRpcResponse::success(id, json!({ "opened": def.id }))
+    // `workspace_scope` 는 런타임 스코프 주입(`OpenPopupMode::WithScope`)을 쓰는
+    // popup 을 위한 것이다 — 그런 popup 은 `CenteredFocused` 로 열면 스코프가
+    // 기본값(`Window`)에 머물러 워크스페이스 가시성 게이트가 아예 발동하지 않는다.
+    let workspace_scope = params
+        .get("workspace_scope")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let mode = if workspace_scope {
+        crate::intent::OpenPopupMode::WithScope(crate::adapters::ui::popup::PopupScope::Workspace(
+            state.active_workspace,
+        ))
+    } else {
+        crate::intent::OpenPopupMode::CenteredFocused
+    };
+    state.dispatch_intent(crate::intent::UiIntent::OpenPopup { id: def.id, mode }.from_agent_ipc());
+    JsonRpcResponse::success(
+        id,
+        json!({ "opened": def.id, "workspace_scope": workspace_scope }),
+    )
 }
 
 /// `debug.host_popup.close` — `{ popup_id }` 로 호스트 빌트인 popup 을 닫는다.

@@ -143,9 +143,12 @@ pub(super) fn host_popup_debug_command_to_method_params(
     use crate::HostPopupDebugCommands;
     match command {
         HostPopupDebugCommands::List => ("debug.host_popup.list", serde_json::json!({})),
-        HostPopupDebugCommands::Open { popup_id } => (
+        HostPopupDebugCommands::Open {
+            popup_id,
+            workspace_scope,
+        } => (
             "debug.host_popup.open",
-            serde_json::json!({ "popup_id": popup_id }),
+            serde_json::json!({ "popup_id": popup_id, "workspace_scope": workspace_scope }),
         ),
         HostPopupDebugCommands::Close { popup_id } => (
             "debug.host_popup.close",

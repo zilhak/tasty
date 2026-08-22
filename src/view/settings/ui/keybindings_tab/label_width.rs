@@ -56,6 +56,7 @@ fn load_lang(toml_str: &str) -> HashMap<String, String> {
 const ENTRY_LABELS: &[&str] = &[
     "settings.keybindings.toggle_settings_label",
     "settings.keybindings.toggle_notifications_label",
+    "settings.keybindings.toggle_dag_list_label",
     "settings.keybindings.restore_closed_label",
     "settings.keybindings.new_window_label",
     "settings.keybindings.quit_label",

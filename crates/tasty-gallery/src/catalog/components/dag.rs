@@ -30,9 +30,11 @@ pub mod chrome;
 pub mod detail;
 pub mod edges;
 pub mod node;
+pub mod rows;
 pub mod runner;
 pub mod states;
 pub mod surface;
+pub mod window;
 
 use tasty_dag_layout::{GraphLayout, LayoutConfig, Orientation, layout_dag};
 use tasty_icons::Icon;
