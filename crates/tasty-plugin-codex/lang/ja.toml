@@ -14,5 +14,10 @@ desc = "Codex CLI 子セッションの管理"
 "settings.sandbox.workspace_write" = "ワークスペース書き込み許可"
 "settings.sandbox.danger_full_access" = "危険：フルアクセス"
 
+[codex.spawn_warning]
+total = "この親の下に現在 {total} 個の子インスタンスが起動している（警告しきい値: {threshold}）。リークした子がないか確認すること。"
+idle = " インデックス [{indices}] の idle な子はすでに担当した作業を終えている — 新しく spawn せず `respawn` を検討すること。"
+stale = " インデックス [{indices}] の子はエージェントプロセスがもう動いていないのに完了報告をしていない（hook の消失） — これらも respawn の候補である。"
+
 [settings.subtab]
 codex = "Codex"

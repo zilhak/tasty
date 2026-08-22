@@ -21,7 +21,10 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
+use tasty_plugin_sdk::{
+    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
+    i18n::Translator,
+};
 
 const PLUGIN_ID: &str = "com.tasty.codex";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -30,6 +33,10 @@ const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 struct CodexPlugin {
     /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
     rebooting: Arc<Mutex<HashSet<u32>>>,
+    /// 사람이 읽는 응답 문자열 번역용(현재 소비자: spawn child 임계치 경고).
+    /// plugin process 는 호스트 i18n 카탈로그에 접근할 수 없으므로 자기 `lang/` 를
+    /// `main()` 에서 1 회 로드해 재사용한다.
+    translator: Translator,
 }
 
 impl Plugin for CodexPlugin {
@@ -57,7 +64,7 @@ impl Plugin for CodexPlugin {
         } = ctx;
         match method.as_str() {
             "codex.launch" => handlers::handle_launch(&host, params),
-            "codex.spawn" => handlers::handle_spawn(&host, params),
+            "codex.spawn" => handlers::handle_spawn(&host, &self.translator, params),
             "codex.children" => handlers::handle_children(&host, params),
             "codex.parent" => handlers::handle_parent(&host, params),
             "codex.state" => handlers::handle_state(&host, params),
@@ -81,5 +88,14 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(CodexPlugin::default())
+    // `env` 부재(비정상 기동)에도 `Translator::default()` 로 안전 폴백(키 그대로 반환).
+    let translator = PluginEnv::load()
+        .ok()
+        .as_ref()
+        .map(Translator::from_plugin_env)
+        .unwrap_or_default();
+    tasty_plugin_sdk::run(CodexPlugin {
+        translator,
+        ..Default::default()
+    })
 }

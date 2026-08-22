@@ -15,7 +15,7 @@
 //! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
 use serde_json::{Map, Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 /// 응답 매핑 헬퍼: HostHandle::call 결과를 IpcMethodError로 변환.
 fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
@@ -375,7 +375,11 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
     Ok(resp)
 }
 
-pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_spawn(
+    host: &HostHandle,
+    tr: &Translator,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
     let parent_surface = require_u32(&params, "surface")?;
     let prompt = optional_str(&params, "prompt");
 
@@ -408,7 +412,7 @@ pub fn handle_spawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethod
 
     // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
     let mut out = resp;
-    if let Some(warning) = compute_spawn_warning(host, parent_surface) {
+    if let Some(warning) = compute_spawn_warning(host, tr, parent_surface) {
         if let Some(obj) = out.as_object_mut() {
             obj.insert("warning".into(), json!(warning));
         }
@@ -612,7 +616,11 @@ const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
 
 /// spawn 직후 parent 의 현재 child 목록/상태를 재조회해 임계치 초과 여부를 판단한다.
 /// host 호출 실패는 경고 생략으로 처리한다(soft 경고이므로 spawn 성공을 막지 않음).
-fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<String> {
+fn compute_spawn_warning(
+    host: &HostHandle,
+    tr: &Translator,
+    parent_surface_id: u32,
+) -> Option<String> {
     let children_resp = host
         .call("terminal.children", json!({ "surface": parent_surface_id }))
         .ok()?;
@@ -638,7 +646,7 @@ fn compute_spawn_warning(host: &HostHandle, parent_surface_id: u32) -> Option<St
         .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
         .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
 
-    build_spawn_warning(total, &idle_indices, &stale_indices, threshold)
+    build_spawn_warning(tr, total, &idle_indices, &stale_indices, threshold)
 }
 
 fn state_of(child: &Value) -> Option<&str> {
@@ -669,7 +677,14 @@ fn join_indices(indices: &[u64]) -> String {
 /// 않은 채 호스트 관측이 "전경이 셸로 돌아왔다" 를 잡아낸 값이다(hook 유실 —
 /// ADR-0072 가 겨냥한 시나리오). 후자에 "have already finished their work" 를 쓰면
 /// 자식이 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다.
+///
+/// 문구 자체는 `lang/{en,ko,ja}.toml` 의 `codex.spawn_warning.*` 에 있다 — 이 문자열은
+/// `tasty codex spawn` 응답에 실려 CLI stdout 으로 그대로 나가는 사람이 읽는 표면이라
+/// `docs/dev-guide/i18n.md` 의 하드코딩 허용 예외 어디에도 해당하지 않는다. plugin
+/// process 는 호스트 카탈로그에 접근할 수 없으므로 SDK `Translator`(자기 `lang/` 로드)를
+/// 쓴다.
 fn build_spawn_warning(
+    tr: &Translator,
     total: usize,
     idle_indices: &[u64],
     stale_indices: &[u64],
@@ -678,19 +693,21 @@ fn build_spawn_warning(
     if (total as f64) <= threshold {
         return None;
     }
-    let mut msg = format!(
-        "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
-    );
+    let mut msg = tr
+        .t_replace("codex.spawn_warning.total", "{total}", &total.to_string())
+        .replace("{threshold}", &threshold.to_string());
     if !idle_indices.is_empty() {
-        let idle_list = join_indices(idle_indices);
-        msg.push_str(&format!(
-            " Idle children at index [{idle_list}] have already finished their work — consider `respawn` instead of spawning a new one."
+        msg.push_str(&tr.t_replace(
+            "codex.spawn_warning.idle",
+            "{indices}",
+            &join_indices(idle_indices),
         ));
     }
     if !stale_indices.is_empty() {
-        let stale_list = join_indices(stale_indices);
-        msg.push_str(&format!(
-            " Children at index [{stale_list}] no longer have an agent process running but never reported completion (a lost hook) — they are respawn candidates too."
+        msg.push_str(&tr.t_replace(
+            "codex.spawn_warning.stale",
+            "{indices}",
+            &join_indices(stale_indices),
         ));
     }
     Some(msg)
@@ -1090,6 +1107,13 @@ fn remove_install(mut value: toml::Value) -> toml::Value {
 mod tests {
     use super::*;
 
+    /// 이 crate 의 `lang/` 를 en 으로 로드한 번역기 — 런타임에 호스트가 주입하는
+    /// `plugin_dir` 없이도 같은 카탈로그를 본다(claude plugin 의 `test_translator` 와 동형).
+    fn test_translator() -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, "en")
+    }
+
     #[test]
     fn make_codex_command_no_prompt() {
         assert_eq!(
@@ -1351,34 +1375,38 @@ mod tests {
 
     #[test]
     fn build_spawn_warning_none_below_threshold() {
-        assert_eq!(build_spawn_warning(3, &[], &[], 6.0), None);
+        assert_eq!(
+            build_spawn_warning(&test_translator(), 3, &[], &[], 6.0),
+            None
+        );
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_lists_idle_and_mentions_respawn() {
-        let w = build_spawn_warning(7, &[2, 5], &[], 6.0).unwrap();
+        let w = build_spawn_warning(&test_translator(), 7, &[2, 5], &[], 6.0).unwrap();
         assert!(w.contains("respawn"));
         assert!(w.contains('2') && w.contains('5'));
     }
 
     #[test]
     fn build_spawn_warning_above_threshold_no_idle_has_no_respawn_word() {
-        let w = build_spawn_warning(7, &[], &[], 6.0).unwrap();
+        let w = build_spawn_warning(&test_translator(), 7, &[], &[], 6.0).unwrap();
         assert!(!w.contains("respawn"));
     }
 
     #[test]
     fn build_spawn_warning_respects_custom_threshold() {
         // threshold=6 이면 안 뜨는 3개가, threshold=3 이면 뜬다(설정 override 시나리오).
-        assert_eq!(build_spawn_warning(3, &[], &[], 6.0), None);
-        assert!(build_spawn_warning(4, &[], &[], 3.0).is_some());
+        let tr = test_translator();
+        assert_eq!(build_spawn_warning(&tr, 3, &[], &[], 6.0), None);
+        assert!(build_spawn_warning(&tr, 4, &[], &[], 3.0).is_some());
     }
 
     /// 확정 stale 자식만 있어도 respawn 을 권해야 한다 — hook 유실로 idle 보고가
     /// 영영 오지 않는 자식이 정확히 이 경우다(ADR-0072 가 겨냥한 시나리오).
     #[test]
     fn build_spawn_warning_lists_stale_children_as_respawn_candidates() {
-        let w = build_spawn_warning(7, &[], &[3], 6.0).unwrap();
+        let w = build_spawn_warning(&test_translator(), 7, &[], &[3], 6.0).unwrap();
         assert!(w.contains("respawn"), "{w}");
         assert!(w.contains('3'), "{w}");
     }
@@ -1387,8 +1415,9 @@ mod tests {
     /// finished their work" 를 쓰면 자식이 그렇게 보고한 것처럼 읽힌다.
     #[test]
     fn build_spawn_warning_separates_stale_wording_from_idle() {
-        let idle_only = build_spawn_warning(7, &[2], &[], 6.0).unwrap();
-        let stale_only = build_spawn_warning(7, &[], &[3], 6.0).unwrap();
+        let tr = test_translator();
+        let idle_only = build_spawn_warning(&tr, 7, &[2], &[], 6.0).unwrap();
+        let stale_only = build_spawn_warning(&tr, 7, &[], &[3], 6.0).unwrap();
         assert!(idle_only.contains("have already finished their work"));
         assert!(
             !stale_only.contains("have already finished their work"),
@@ -1399,9 +1428,89 @@ mod tests {
             "{stale_only}"
         );
 
-        let both = build_spawn_warning(7, &[2], &[3], 6.0).unwrap();
+        let both = build_spawn_warning(&tr, 7, &[2], &[3], 6.0).unwrap();
         assert!(both.contains("have already finished their work"), "{both}");
         assert!(both.contains("never reported completion"), "{both}");
+    }
+
+    /// 완성 문구가 `lang/en.toml` 의 대응 키를 플레이스홀더만 치환한 결과와 정확히
+    /// 같아야 한다 — 문구가 `t()` 를 실제로 거쳤다는 직접 증거(스펙 "확인 절차" 1).
+    #[test]
+    fn build_spawn_warning_matches_lang_catalog_after_substitution() {
+        let tr = test_translator();
+        let expected = tr
+            .t("codex.spawn_warning.total")
+            .replace("{total}", "7")
+            .replace("{threshold}", "6")
+            + &tr
+                .t("codex.spawn_warning.idle")
+                .replace("{indices}", "2, 5")
+            + &tr.t("codex.spawn_warning.stale").replace("{indices}", "3");
+        assert_eq!(
+            build_spawn_warning(&tr, 7, &[2, 5], &[3], 6.0).unwrap(),
+            expected
+        );
+    }
+
+    /// 로케일을 바꾸면 완성 문구가 실제로 바뀐다 — 문구가 `t()` 를 거친다는 사실의
+    /// 행동적 증거(스펙 "확인 절차" 2 의 자동화 대응). 치환된 값(인덱스)은 로케일과
+    /// 무관하게 그대로 실린다.
+    #[test]
+    fn build_spawn_warning_follows_active_locale() {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        let en =
+            build_spawn_warning(&Translator::load(&lang_dir, "en"), 7, &[2], &[3], 6.0).unwrap();
+        let ko =
+            build_spawn_warning(&Translator::load(&lang_dir, "ko"), 7, &[2], &[3], 6.0).unwrap();
+        let ja =
+            build_spawn_warning(&Translator::load(&lang_dir, "ja"), 7, &[2], &[3], 6.0).unwrap();
+        assert_ne!(en, ko);
+        assert_ne!(en, ja);
+        assert_ne!(ko, ja);
+        // 어느 로케일이든 치환 자체는 성공해야 한다(플레이스홀더가 남지 않는다).
+        for (locale, msg) in [("en", &en), ("ko", &ko), ("ja", &ja)] {
+            assert!(!msg.contains("{total}"), "{locale}: {msg}");
+            assert!(!msg.contains("{threshold}"), "{locale}: {msg}");
+            assert!(!msg.contains("{indices}"), "{locale}: {msg}");
+            assert!(
+                msg.contains('7') && msg.contains('2') && msg.contains('3'),
+                "{locale}: {msg}"
+            );
+        }
+    }
+
+    /// 키가 카탈로그에 실제로 존재해야 한다 — `Translator` 는 미스 시 키 자체를
+    /// 돌려주므로, 이 단정이 없으면 오타난 키가 "번역된 것처럼" 통과한다.
+    #[test]
+    fn spawn_warning_keys_exist_in_every_bundled_locale() {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        for locale in ["en", "ko", "ja"] {
+            let tr = Translator::load(&lang_dir, locale);
+            for key in [
+                "codex.spawn_warning.total",
+                "codex.spawn_warning.idle",
+                "codex.spawn_warning.stale",
+            ] {
+                assert_ne!(tr.t(key), key, "{locale}: {key} 누락");
+            }
+            // 플레이스홀더 이름이 로케일마다 어긋나면 치환이 조용히 실패한다.
+            assert!(
+                tr.t("codex.spawn_warning.total").contains("{total}"),
+                "{locale}"
+            );
+            assert!(
+                tr.t("codex.spawn_warning.total").contains("{threshold}"),
+                "{locale}"
+            );
+            assert!(
+                tr.t("codex.spawn_warning.idle").contains("{indices}"),
+                "{locale}"
+            );
+            assert!(
+                tr.t("codex.spawn_warning.stale").contains("{indices}"),
+                "{locale}"
+            );
+        }
     }
 
     /// `heuristic` stale 은 제외된다 — SIGSTOP·긴 추론과 구별되지 않아 일하는

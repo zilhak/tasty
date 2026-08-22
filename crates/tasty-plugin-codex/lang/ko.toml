@@ -14,5 +14,10 @@ desc = "Codex CLI 자식 세션 관리"
 "settings.sandbox.workspace_write" = "워크스페이스 쓰기 허용"
 "settings.sandbox.danger_full_access" = "위험: 전체 접근"
 
+[codex.spawn_warning]
+total = "이 부모 아래에 현재 자식 인스턴스가 {total}개 있다(경고 임계치: {threshold}). 누수된 자식이 없는지 확인하라."
+idle = " 인덱스 [{indices}]의 idle 자식은 이미 맡은 작업을 끝냈다 — 새로 spawn 하는 대신 `respawn` 을 고려하라."
+stale = " 인덱스 [{indices}]의 자식은 에이전트 프로세스가 더 이상 살아 있지 않은데 완료 보고를 한 적이 없다(hook 유실) — 이들도 respawn 후보다."
+
 [settings.subtab]
 codex = "Codex"
