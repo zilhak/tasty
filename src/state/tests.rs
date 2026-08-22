@@ -6,6 +6,19 @@ use crate::model::SplitDirection;
 // 테스트)가 동일 구성을 재사용한다 — popup close 뒷정리/훅 테스트가 여기와
 // 동형의 AppState/CoreState 를 필요로 함.
 pub(crate) fn test_state() -> (AppState, crate::core::CoreState) {
+    let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::testing::InMemoryStorage::new(),
+        ));
+    test_state_with_memory(memory)
+}
+
+/// `test_state` 와 같은 구성이되 memory 백엔드를 호출자가 넘긴다. 호출자가 concrete
+/// `Arc<Mutex<InMemoryStorage>>` 를 따로 들고 있으면 close 이후 mock 의 호출 이력
+/// (`purge_scope_call_count`)을 직접 검사할 수 있다.
+pub(crate) fn test_state_with_memory(
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+) -> (AppState, crate::core::CoreState) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
     // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 rendering="webview"
@@ -45,10 +58,6 @@ pub(crate) fn test_state() -> (AppState, crate::core::CoreState) {
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
-    let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-        std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_memory::testing::InMemoryStorage::new(),
-        ));
     let state = AppState::new(&mut engine, preset_store, memory);
     (state, engine)
 }
@@ -1605,5 +1614,119 @@ fn context_menu_actions_do_not_move_focus() {
         state.active_workspace(&engine).focused_pane,
         pane_b,
         "우클릭 컨텍스트 메뉴는 focus 를 옮기면 안 된다(대상은 pending_native_menu 의 pane_id 로 이미 결정됨)"
+    );
+}
+
+// ── cleanup_surface 의 memory scope purge ──────────────────────────────────
+
+/// `test_state_with_memory` 로 concrete mock 을 들고 AppState 를 만든다.
+/// 반환한 `Arc<Mutex<InMemoryStorage>>` 로 close 이후 호출 이력을 검사한다.
+fn test_state_with_mock_memory() -> (
+    AppState,
+    crate::core::CoreState,
+    std::sync::Arc<std::sync::Mutex<tasty_memory::testing::InMemoryStorage>>,
+) {
+    let mock = std::sync::Arc::new(std::sync::Mutex::new(
+        tasty_memory::testing::InMemoryStorage::new(),
+    ));
+    let (state, engine) = test_state_with_memory(mock.clone());
+    (state, engine, mock)
+}
+
+#[test]
+fn cleanup_surface_purges_surface_scope_exactly_once() {
+    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let sid = collect_surface_ids(&mut state, &mut engine)[0];
+    let scope = tasty_memory::Scope::Surface(sid);
+
+    // seed 단계의 put 은 purge 이력에 잡히지 않는다 — 카운터는 purge_scope 전용.
+    state.with_memory(|m| {
+        crate::surface_meta::SurfaceMetaStore::set(m, sid, "nickname", "before-close").unwrap();
+    });
+    assert_eq!(
+        mock.lock().unwrap().purge_scope_call_count(&scope),
+        0,
+        "close 전에는 purge 가 없어야 한다"
+    );
+
+    state.cleanup_surface(&mut engine, sid, None);
+
+    // 회귀 대상: 과거엔 SurfaceMetaStore::remove 와 purge_surface_memory_scope 가
+    // 같은 인자로 같은 함수를 불러 2였다. purge_scope 는 매 호출 끝에 memory 테이블
+    // 풀스캔을 하므로 이 중복이 그대로 close 비용이 된다.
+    // 락은 한 번만 잡아 지역으로 뽑는다 — 어서션 실패 메시지에서 다시 `mock.lock()`
+    // 하면 첫 guard 가 살아 있는 채로 재진입해 std Mutex 가 데드락한다(성공 경로에선
+    // 포맷 인자가 평가되지 않아 드러나지 않고, 회귀가 났을 때만 멈춘다).
+    let (count, calls) = {
+        let guard = mock.lock().unwrap();
+        (
+            guard.purge_scope_call_count(&scope),
+            guard.purge_scope_calls().to_vec(),
+        )
+    };
+    assert_eq!(
+        count, 1,
+        "surface close 당 purge_scope(Scope::Surface) 는 1회여야 한다 (호출 이력: {calls:?})"
+    );
+}
+
+#[test]
+fn cleanup_surface_still_clears_surface_scope_entries() {
+    let (mut state, mut engine, _mock) = test_state_with_mock_memory();
+    let sid = collect_surface_ids(&mut state, &mut engine)[0];
+
+    state.with_memory(|m| {
+        crate::surface_meta::SurfaceMetaStore::set(m, sid, "nickname", "doomed").unwrap();
+        crate::surface_meta::SurfaceMetaStore::set(m, sid, "restore.command", "claude -r x")
+            .unwrap();
+    });
+    assert_eq!(
+        state
+            .with_memory(|m| crate::surface_meta::SurfaceMetaStore::list(m, sid))
+            .len(),
+        2
+    );
+
+    state.cleanup_surface(&mut engine, sid, None);
+
+    // 중복 제거가 "삭제를 통째로 빼먹는" 형태로 잘못 구현되지 않았는지 — 남은 1회가
+    // 실제로 scope 를 비워야 한다.
+    assert!(
+        state
+            .with_memory(|m| crate::surface_meta::SurfaceMetaStore::list(m, sid))
+            .is_empty(),
+        "close 후 surface scope 에 키가 남으면 안 된다"
+    );
+    assert_eq!(
+        state.with_memory(|m| crate::surface_meta::SurfaceMetaStore::get(m, sid, "nickname")),
+        None
+    );
+}
+
+#[test]
+fn workspace_close_purges_each_surface_scope_once() {
+    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    // 탭을 늘려 N-surface 워크스페이스를 만든다 — 중복이 남아 있으면 2N 이 된다.
+    state.add_tab(&mut engine).expect("add_tab");
+    state.add_tab(&mut engine).expect("add_tab");
+    let sids = collect_surface_ids(&mut state, &mut engine);
+    assert!(sids.len() >= 3, "탭 3개 이상이어야 의미 있다: {sids:?}");
+
+    for sid in &sids {
+        state.cleanup_surface(&mut engine, *sid, None);
+    }
+
+    let guard = mock.lock().unwrap();
+    for sid in &sids {
+        assert_eq!(
+            guard.purge_scope_call_count(&tasty_memory::Scope::Surface(*sid)),
+            1,
+            "surface {sid} 의 purge 가 1회가 아니다"
+        );
+    }
+    assert_eq!(
+        guard.purge_scope_calls().len(),
+        sids.len(),
+        "surface 수만큼만 purge 해야 한다 (2N 이면 중복 회귀)"
     );
 }

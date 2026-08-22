@@ -40,9 +40,8 @@ close 진입
  └─ C5 cleanup_targets     surface 마다 cleanup_surface (합계)
      ├─ C5a scrollback_delete   fs::remove_file
      ├─ C5b terminal_drop       Terminal drop → PTY kill + master 해제
-     ├─ C5c meta_remove         SurfaceMetaStore::remove (sqlite)
-     ├─ C5d indices_drop        host-side per-surface 인덱스 해제 (observer join 포함)
-     └─ C5e memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔
+     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer join 포함)
+     └─ C5d memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔 (surface 당 1회)
 close_total
 ```
 
@@ -59,14 +58,14 @@ close_total
 | C2 push_closed_item | `CoreState::push_closed_item` 전체 | `restore_inject_ms`(C2a) · `scrollback_persist_ms`(C2b) · `evict_ms`(C2c) |
 | C3 collect_targets | `collect_workspace_close_targets` | `surfaces` |
 | C4 ws_memory_purge | `purge_scope(Scope::Workspace)` | — |
-| C5 cleanup_targets | cleanup 루프 전체 | `surfaces` · `scrollback_delete_ms`(C5a) · `terminal_drop_ms`(C5b) · `meta_remove_ms`(C5c) · `indices_drop_ms`(C5d) · `memory_purge_ms`(C5e) |
+| C5 cleanup_targets | cleanup 루프 전체 | `surfaces` · `scrollback_delete_ms`(C5a) · `terminal_drop_ms`(C5b) · `indices_drop_ms`(C5c) · `memory_purge_ms`(C5d) |
 | close_total | close 진입 → 완료 | `surfaces`, `snapshot`(C1/C2 를 탔는지) |
 
 모든 마커는 `path` 필드(`gui`/`inline`/`cascade`)를 함께 찍는다.
 
 읽는 법:
 
-- **C5a~C5e 는 surface 마다가 아니라 합계다.** 종료 계측 S5b(`PtyBackend::drop`
+- **C5a~C5d 는 surface 마다가 아니라 합계다.** 종료 계측 S5b(`PtyBackend::drop`
   누적) 선례와 같다. 탭 30개를 surface 단위로 찍으면 로그 150줄이 close 구간
   *안에서* 발생해 그 write 비용이 측정을 왜곡한다. N 에 대한 선형성은 `surfaces`
   필드와 합계 ms 의 조합으로 판정한다.
@@ -130,15 +129,24 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 단위 ms
 ### memory.db 크기 의존
 
 memory.db 를 24276 엔트리(3.6MB)까지 채우고 탭 10개·스크롤백 없음으로 close 한
-결과(위 표 3행과 비교):
+결과(위 표 3행과 비교). **아래는 surface scope purge 중복을 걷어내기 전 측정이다**
+— 당시엔 `SurfaceMetaStore::remove` 와 `purge_surface_memory_scope` 가 같은
+`purge_scope(Scope::Surface)` 를 surface 당 2회 불러 두 단계로 잡혔다:
 
-| | C4 ws_purge | C5c meta_remove | C5e memory_purge |
+| | C4 ws_purge | (구) C5c meta_remove | (구) C5e memory_purge |
 |---|---|---|---|
 | 기본 상태 | 0.057 | 3.1 | 0.33 |
 | 24k 엔트리 | 3.0 | 23 | 20 |
 
-purge 계열은 db 크기에 비례해 커지지만(50배 이상), 절대값이 C5b(505ms) 대비
-여전히 한 자릿수 %다.
+- purge 계열은 db 크기에 비례해 커지지만(50배 이상), 절대값이 C5b(505ms) 대비
+  여전히 한 자릿수 %다.
+- **두 단계의 비대칭이 중복의 증거다** — 먼저 부른 쪽(구 C5c)만 실제로 행을 지우고,
+  뒤에 부른 쪽(구 C5e)은 0행을 지운 뒤 풀스캔만 한다. 그런데도 20ms(24k 기준
+  10 surface 합계)를 썼다. 즉 그 20ms 는 결과에 기여하지 않는 순수 낭비였다.
+- 중복 제거 후 남는 단계는 하나(현 **C5d memory_purge**)이며, 그 단계가 삭제와
+  풀스캔을 모두 한다 — 비용은 구 C5c 쪽(24k 기준 23ms)에 대응하고, 구 C5e 의
+  20ms 가 사라진다. 위 표는 재측정한 값이 아니라 중복 제거 **전** 측정이므로,
+  현재 값을 알려면 같은 조건으로 다시 재야 한다.
 
 ### `scrollback_disk_swap`
 

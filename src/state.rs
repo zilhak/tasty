@@ -1238,9 +1238,6 @@ impl AppState {
         self.drop_terminal(engine, surface_id);
         sums.terminal_drop += t.elapsed();
         let t = Instant::now();
-        self.remove_surface_meta(surface_id);
-        sums.meta_remove += t.elapsed();
-        let t = Instant::now();
         self.drop_surface_indices(engine, surface_id);
         sums.indices_drop += t.elapsed();
         let t = Instant::now();
@@ -1264,14 +1261,6 @@ impl AppState {
         }
     }
 
-    fn remove_surface_meta(&mut self, surface_id: u32) {
-        let remove_result =
-            self.with_memory(|m| crate::surface_meta::SurfaceMetaStore::remove(m, surface_id));
-        if let Err(e) = remove_result {
-            tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
-        }
-    }
-
     /// per-surface 로 유지되는 host-side 인덱스/게이트를 모두 잊는다 — 미제거 시
     /// surface 마다 영구 누적(누수).
     fn drop_surface_indices(&mut self, engine: &mut CoreState, surface_id: u32) {
@@ -1289,6 +1278,15 @@ impl AppState {
         }
     }
 
+    /// 닫힌 surface 의 memory scope 를 통째로 정리한다 — regular + secret 양쪽.
+    ///
+    /// **surface close 당 `purge_scope(Scope::Surface)` 는 여기 한 번뿐이다.** 과거엔
+    /// `SurfaceMetaStore::remove` 도 같은 인자로 같은 함수를 불러 surface 마다 2회
+    /// 돌았고, `purge_scope` 는 매 호출 끝에 `SELECT SUM(LENGTH(value)) FROM memory`
+    /// 풀스캔을 하므로 탭 N 개 워크스페이스 close 가 풀스캔 2N 회를 렌더 스레드에서
+    /// 직렬로 태웠다. scope 전체 teardown 은 meta 키 네임스페이스 facade 가 아니라
+    /// 이 memory 수명 경로가 소유한다 — `Scope::Surface` 에는 plugin/Lua 가 memory
+    /// API 로 직접 쓴 키도 들어 있어 meta 만의 관심사가 아니기 때문이다.
     fn purge_surface_memory_scope(&mut self, surface_id: u32) {
         let scope = tasty_memory::Scope::Surface(surface_id);
         match self.with_memory(|m| m.purge_scope(&scope)) {

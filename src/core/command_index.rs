@@ -217,7 +217,7 @@ impl CommandIndex {
     }
 
     /// Surface 가 닫힐 때 호출. 인덱서 상태만 비운다 — memory 에 저장된 record 는
-    /// `purge_scope` (`SurfaceMetaStore::remove`) 가 별도로 정리한다.
+    /// `AppState::purge_surface_memory_scope` 의 `purge_scope` 가 별도로 정리한다.
     pub fn drop_surface(&mut self, surface_id: u32) {
         self.surfaces.remove(&surface_id);
         self.counts.remove(&surface_id);

@@ -19,6 +19,12 @@ pub struct InMemoryStorage {
     regular: HashMap<(String, String), MemoryEntry>,
     secret: HashMap<(String, String, String), MemoryEntry>, // (owner, scope, key) → entry
     pending: Vec<MemoryChange>,
+    /// `purge_scope` 가 불린 scope token 을 호출 순서대로 기록한다.
+    ///
+    /// 실제 `MemoryStore::purge_scope` 는 매 호출 끝에 `memory` 테이블 풀스캔을 하므로
+    /// "결과는 같지만 두 번 불린다" 가 그대로 비용이 된다. 결과만 검사하는 테스트는 그
+    /// 중복을 잡지 못하니(두 번째 호출은 0행 삭제라 상태가 동일하다) 호출 자체를 센다.
+    purge_scope_calls: Vec<String>,
 }
 
 impl InMemoryStorage {
@@ -32,7 +38,23 @@ impl InMemoryStorage {
             regular: HashMap::new(),
             secret: HashMap::new(),
             pending: Vec::new(),
+            purge_scope_calls: Vec::new(),
         }
+    }
+
+    /// 지금까지 이 scope 로 `purge_scope` 가 불린 횟수. 삭제된 행 수가 아니라 **호출
+    /// 수** 다 — 중복 호출은 두 번째부터 0행을 지우므로 상태로는 구별되지 않는다.
+    pub fn purge_scope_call_count(&self, scope: &Scope) -> usize {
+        let token = scope.as_token();
+        self.purge_scope_calls
+            .iter()
+            .filter(|t| **t == token)
+            .count()
+    }
+
+    /// `purge_scope` 호출 이력 전체(scope token, 호출 순서).
+    pub fn purge_scope_calls(&self) -> &[String] {
+        &self.purge_scope_calls
     }
 }
 
@@ -210,6 +232,7 @@ impl MemoryStorage for InMemoryStorage {
 
     fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
         let token = scope.as_token();
+        self.purge_scope_calls.push(token.clone());
         let before = self.regular.len();
         self.regular.retain(|(s, _), _| s != &token);
         let removed = (before - self.regular.len()) as u64;

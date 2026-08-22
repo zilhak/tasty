@@ -30,12 +30,12 @@ impl SurfaceMetaStore {
         Ok(())
     }
 
-    /// Surface 닫힘 시 해당 스코프의 모든 key (regular+secret) 삭제.
-    pub fn remove(mem: &mut dyn MemoryStorage, surface_id: u32) -> io::Result<()> {
-        mem.purge_scope(&Scope::Surface(surface_id))
-            .map(|_| ())
-            .map_err(memory_err_to_io)
-    }
+    // Surface 닫힘 시의 scope 전체 삭제는 여기 없다 — `AppState::purge_surface_memory_scope`
+    // (`src/state.rs`) 가 단독으로 소유한다. 여기에도 같은
+    // `purge_scope(Scope::Surface(id))` 래퍼를 두면 close 경로가 같은 풀테이블 스캔을
+    // surface 당 2회 돌린다(실제로 그랬다). 게다가 `Scope::Surface` 에는 plugin/Lua 가
+    // memory API 로 직접 쓴 키도 들어 있어 scope teardown 은 meta 키 네임스페이스
+    // facade 의 관심사가 아니다. **여기에 remove() 를 되살리지 말 것.**
 
     /// 키 set. 값은 `text/plain` UTF-8 문자열로 저장된다.
     pub fn set(
@@ -140,7 +140,8 @@ impl SurfaceMetaStore {
 
     /// `live` 에 없는 모든 `Scope::Surface(id)` 스코프를 purge. 반환: 지운 스코프 수.
     /// 복원으로 확정된 live id 외 죽은 surface 메타(앱 강제 종료 등으로 graceful
-    /// close 의 `remove` 가 호출되지 못한 잔재)를 정리해 무한 누적을 막는다.
+    /// close 의 `AppState::purge_surface_memory_scope` 가 호출되지 못한 잔재)를
+    /// 정리해 무한 누적을 막는다.
     pub fn purge_dead_surfaces(
         mem: &mut dyn MemoryStorage,
         live: &std::collections::HashSet<u32>,

@@ -22,7 +22,7 @@ pub(crate) fn elapsed_ms(since: Instant) -> f64 {
     since.elapsed().as_secs_f64() * 1000.0
 }
 
-/// `Duration` → `ms` 필드 값. 누적 합계(C5a~C5e)용.
+/// `Duration` → `ms` 필드 값. 누적 합계(C5a~C5d)용.
 pub(crate) fn duration_ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
@@ -109,7 +109,7 @@ pub(crate) fn log_total(t0: Instant, surfaces: usize, snapshot: bool, path: &'st
     );
 }
 
-/// `cleanup_surface` 세부(C5a~C5e)의 surface 간 누적기.
+/// `cleanup_surface` 세부(C5a~C5d)의 surface 간 누적기.
 ///
 /// `cleanup_surface` 는 GUI(`cleanup_targets`)/cascade(`cleanup_closed_surfaces`)
 /// 양쪽 루프에서 불리므로 누적은 호출자가 소유하고, `cleanup_surface` 는 여기에
@@ -123,16 +123,16 @@ pub(crate) struct CleanupSums {
     pub(crate) scrollback_delete: Duration,
     /// C5b — `Terminal` drop (PTY kill). 필드 drop 까지 포함한 실제 소요.
     pub(crate) terminal_drop: Duration,
-    /// C5c — `SurfaceMetaStore::remove` (sqlite)
-    pub(crate) meta_remove: Duration,
-    /// C5d — host-side per-surface 인덱스 해제 (observer 워커 join 포함)
+    /// C5c — host-side per-surface 인덱스 해제 (observer 워커 join 포함)
     pub(crate) indices_drop: Duration,
-    /// C5e — `purge_scope(Scope::Surface)` (sqlite 풀스캔)
+    /// C5d — `purge_scope(Scope::Surface)` (sqlite 풀스캔). surface 당 **1회** —
+    /// 과거엔 `SurfaceMetaStore::remove` 가 같은 purge 를 한 번 더 돌려 별도 단계
+    /// (C5c meta_remove)로 잡혔다. 중복을 걷어내면서 그 단계도 함께 사라졌다.
     pub(crate) memory_purge: Duration,
 }
 
 impl CleanupSums {
-    /// C5 + C5a~C5e 를 한 번에 발화한다. `total` 은 cleanup 루프 전체 소요(로그
+    /// C5 + C5a~C5d 를 한 번에 발화한다. `total` 은 cleanup 루프 전체 소요(로그
     /// 자신을 뺀 값) — `total` 과 세부 합의 차이가 크면 미계측 구간(예:
     /// `enqueue_surface_closed`)이 남아 있다는 신호다.
     pub(crate) fn log(&self, total: Duration, path: &'static str) {
@@ -143,10 +143,9 @@ impl CleanupSums {
             path,
             scrollback_delete_ms = duration_ms(self.scrollback_delete),
             terminal_drop_ms = duration_ms(self.terminal_drop),
-            meta_remove_ms = duration_ms(self.meta_remove),
             indices_drop_ms = duration_ms(self.indices_drop),
             memory_purge_ms = duration_ms(self.memory_purge),
-            "C5 cleanup_targets (C5a scrollback_delete / C5b terminal_drop / C5c meta_remove / C5d indices_drop / C5e memory_purge)"
+            "C5 cleanup_targets (C5a scrollback_delete / C5b terminal_drop / C5c indices_drop / C5d memory_purge)"
         );
     }
 }
