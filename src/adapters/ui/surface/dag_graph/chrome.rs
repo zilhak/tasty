@@ -52,9 +52,12 @@ pub fn draw_header(
     let stacked = surface_width < NARROW_DETAIL_SHEET.value();
     let row_h = theme.dag_chrome_height().value();
 
+    // `dag-chrome-*` 는 **줌 클러스터 덩어리**의 토큰이다. 헤더 띠는 surface 의
+    // 상단 띠이므로 sidebar 계열 배경 + `separator` 헤어라인을 쓴다 — 색 값은
+    // 지금 같지만(별칭) 토큰이 갈리는 날 헤더가 클러스터를 따라가면 안 된다.
     egui::Frame::NONE
-        .fill(theme.dag_chrome_bg().to_egui())
-        .inner_margin(margin_sym(theme.dag_chrome_inset(), theme.spacing_xs))
+        .fill(theme.bg_sidebar().to_egui())
+        .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
         .show(ui, |ui| {
             ui.set_height(if stacked { row_h * 2.0 } else { row_h });
             if stacked {
@@ -98,7 +101,8 @@ pub fn draw_header(
             }
         });
 
-    // 헤더 ↔ 캔버스 구분선.
+    // 헤더 ↔ 캔버스 구분선. `separator` 는 알파가 이미 곱해진 색이라
+    // premultiplied 로 읽는다 — `to_egui()` 로 읽으면 한 번 더 곱해져 옅어진다.
     let (sep, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
     ui.painter().hline(
@@ -106,7 +110,7 @@ pub fn draw_header(
         sep.center().y,
         egui::Stroke::new(
             theme.border_width.value(),
-            theme.dag_chrome_border().to_egui(),
+            theme.separator.to_egui_premultiplied(),
         ),
     );
     action
