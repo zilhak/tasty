@@ -672,6 +672,12 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 - **기본 방향**: 시안 기본은 top-down, 본체 기본은 left-right(`DagDirection::LeftRight` —
   `agent.task_graph --format dot` 의 `rankdir=LR` 과 멘탈 모델 일치, 168×48 카드가 가로로
   길어 화면 폭을 아낌). 갤러리 specimen 은 시안대로 top-down 으로 전시한다.
+- **줌 클러스터의 fit / 방향 아이콘**: 시안·specimen 은 `move` 와 `swap` 을 쓰지만 본체는
+  `fit` 과 방향을 그대로 비추는 `arrow-right`/`arrow-down` 을 쓴다. `move` 는 "끌어서
+  옮긴다" 로 읽혀 실제 동작(그래프 전체가 들어오게 배율을 맞춘다)과 어긋나고, `swap` 은
+  방향이 바뀐다는 것만 말할 뿐 **지금** 어느 방향인지를 못 보여준다 — 방향 버튼은 눌러서
+  바뀔 결과가 아니라 현재 상태를 읽는 쪽이 그래프와 대조하기 쉽다. 클러스터의 위치 ·
+  크기 · 셀 구성(`− % + | fit dir`) · 토큰은 시안 그대로다.
 - **popup 디테일 뷰의 헤더**: 시안 `DagWindow` 의 디테일은 헤더 없이 캔버스 + 시트만 두고
   러너 배지를 back bar 의 actions 슬롯에 놓는다. 본체는 그래프 화면 한 벌
   (`render::draw_dag_graph`)을 통째로 재사용하므로 **헤더가 함께 온다** — 러너 배지 · DAG
