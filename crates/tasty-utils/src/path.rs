@@ -46,6 +46,16 @@ pub fn os_home_dir() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
 }
 
+/// 홈 아래 경로를 `~/…` 로 줄여 **표시용** 문자열로 만든다. 홈 밖이거나 홈을 못 찾으면
+/// 원래 경로 그대로. 파일 접근에 쓰라고 만든 값이 아니다 — 표 한 칸을 홈 접두사가
+/// 통째로 잡아먹는 것을 막는 용도다.
+pub fn tilde_abbreviate(p: &Path) -> String {
+    match os_home_dir().and_then(|home| p.strip_prefix(home).ok().map(Path::to_path_buf)) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => p.display().to_string(),
+    }
+}
+
 /// 자식 프로세스·외부 도구에 넘길 경로에서 Windows verbatim(extended-length,
 /// `\\?\`) prefix 를 제거한다.
 ///

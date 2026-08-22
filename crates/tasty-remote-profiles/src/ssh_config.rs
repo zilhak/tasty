@@ -477,7 +477,7 @@ Host bastion jump-*
     HostName jump.example.com
 
 Match exec "test -n \"$WORK\""
-    Host should-not-be-collected
+    Host after-match-host
 
 Include extra.conf
 "#;
@@ -518,12 +518,9 @@ Host gx10
             .map(|h| h.alias)
             .collect();
         // `Host *` 와 `jump-*` 는 패턴이라 제외, 같은 줄의 `bastion` 은 수집.
-        // `should-not-be-collected` 는 Match 블록 뒤에 오지만 ssh(1) 기준 새 무조건
+        // `after-match-host` 는 Match 블록 뒤에 오지만 ssh(1) 기준 새 무조건
         // 블록이라 수집한다([`Scan::parse`] 의 "host" arm 주석 참조).
-        assert_eq!(
-            names,
-            vec!["gx10", "bastion", "should-not-be-collected", "work"]
-        );
+        assert_eq!(names, vec!["gx10", "bastion", "after-match-host", "work"]);
     }
 
     /// `Match` 는 Host 컨텍스트만 끊는다 — 그 안의 설정은 직전 Host 로 새지 않고,

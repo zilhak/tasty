@@ -20,6 +20,8 @@
 │ 프로필 목록         [+ 추가][⤓필터]│  add-bar (필터는 프로필 탭 전용)
 │ ▸ prod-box   user@host:22   [✎][⌫]│  목록 — 편집/삭제
 │ ▸ staging    …                   │
+│ ─── 로컬 SSH config ~/.ssh/config ⟳│  읽기 전용 섹션 (프로필 탭 전용)
+│ ▸ gx10       10.0.0.5:2200     [⤓]│  가져오기 하나뿐
 ├──────────────────────────────────┤
 │ 폼 (추가/편집):                    │
 │  name / host / user / port        │
@@ -39,6 +41,14 @@
   - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto` 면 저장 후 워커가 감지해 채운다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
 - **검증 에러**: 이름 빈 값/중복, host 빈 값, port 형식, 저장 실패 메시지.
+- **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래**): 구분선 + `로컬 SSH config` 헤더 + config 경로(mono 캡션) + 재로드 아이콘. 행 = alias 이름 / `HostName[:Port]` 캡션 / 우측 가져오기 아이콘 하나.
+  - **읽기 전용**이다 — 여기 나열되는 것은 tasty 레코드가 아니라 사용자의 `~/.ssh/config` 라, tasty 가 편집·삭제하지 않는다. 그래서 행 액션이 가져오기 하나뿐이다.
+  - **프로토콜 필터의 영향을 받지 않는다.** 필터는 프로필의 `kind` 집합으로 만들어지는데 ssh config 항목엔 kind 개념이 없다 — 필터로 프로필이 전부 가려져도 이 섹션은 남는다. 프로필이 0건일 때도 마찬가지(빈 상태 문구와 **함께** 보인다).
+  - 캡션의 `HostName`/`Port` 는 그 Host 블록에 직접 적힌 **표시 전용 hint** 다. `Host *`/`Match` 가 실제 접속 시 덮어쓸 수 있어 정확성이 보장되지 않으며 저장에는 쓰지 않는다. `HostName` 이 없으면 ssh 가 alias 를 호스트로 쓰므로 alias 를, 아무 값도 없으면 `—` 를 보인다.
+  - **가져오기** = 프로필 폼을 프리필로 여는 것이다(별도 모달 없음): `kind=ssh` · `name=alias`(바꿀 수 있다) · `host=alias` · `shell=auto`, **user/port 는 공란**. 값을 펼쳐 담으면 ssh config 위임이 깨진다. 저장 경로·이름 중복 검증은 기존 폼 그대로 쓴다(폼 저장이므로 `shell=auto` 감지 프로브도 기존과 동일하게 돈다 — 목록에서 바로 저장되지 않고 사용자가 저장을 누른 뒤다).
+  - 이미 가져온 alias(= `kind=ssh` 프로필의 `fields.host` 가 그 alias)는 `가져옴: <프로필명>` 캡션 + 가져오기 아이콘 **비활성**.
+  - config 파일이 없으면 `ssh config 가 없습니다.`, 있는데 alias 가 0건이면 `ssh config 에 가져올 호스트가 없습니다.` — 섹션 자체를 숨기지 않는다(기능의 존재를 알린다).
+  - **파일 읽기는 popup 을 열 때 1회**다. egui 는 매 프레임 목록을 다시 그리므로 캐시하지 않으면 프레임마다 config + Include 를 통째로 읽는다. 캐시는 `UI_MEMORY_ID` 에 있어 popup 이 닫히면 함께 사라지고, 열려 있는 동안 파일이 바뀌면 재로드 아이콘으로 갱신한다.
 
 ### Attach 탭 (가운데)
 

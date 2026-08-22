@@ -16,13 +16,14 @@ use std::sync::{Arc, Mutex};
 
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
-    is_builtin_kind, is_valid_passkey_name, is_valid_port_mode, is_valid_shell,
+    SshConfigHost, enumerate_hosts, imported_as, is_builtin_kind, is_valid_passkey_name,
+    is_valid_port_mode, is_valid_shell, user_config_path,
 };
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
-use crate::i18n::t;
+use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
@@ -135,6 +136,86 @@ struct UiState {
     /// `FILTER_MEMORY_ID` 의 적용 집합에 반영(Apply-on-confirm). popup 닫힘 시
     /// `clear_ui` 로 함께 사라지는 순수 편집 상태라 여기 둔다.
     filter_draft: HashSet<String>,
+    /// 로컬 ssh config 열거 결과 캐시. **`None` = 아직 안 읽음**.
+    ///
+    /// egui 는 매 프레임 목록을 다시 그리므로 여기 캐시하지 않으면 프레임마다
+    /// `~/.ssh/config` + Include 를 통째로 읽는다. `UI_MEMORY_ID` 에 얹어 두면
+    /// `clear_ui`(popup 닫힘)가 무효화까지 맡아 "열 때마다 1 회" 가 성립한다 —
+    /// 필터(`FILTER_MEMORY_ID`)처럼 재오픈에도 살아남으면 안 되는 값이다.
+    local: Option<LocalSshCache>,
+}
+
+/// 로컬 ssh config 스냅샷. 목록 렌더가 파일 I/O 없이 돌 수 있는 최소 정보다.
+#[derive(Clone, Debug, Default)]
+struct LocalSshCache {
+    hosts: Vec<SshConfigHost>,
+    /// 표시용 config 경로(`~/.ssh/config`).
+    path: String,
+    /// 파일 자체가 있는지. "설정이 없다" 와 "있는데 alias 가 0 건" 은 사용자가 할 일이
+    /// 다르다(권한 등으로 못 읽은 경우는 후자로 합쳐진다 — 열거 코어가 warn 을 남긴다).
+    exists: bool,
+}
+
+/// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 와
+/// "새로고침 아이콘" 둘뿐이다.
+fn load_local_ssh() -> LocalSshCache {
+    let path = user_config_path();
+    LocalSshCache {
+        hosts: enumerate_hosts(),
+        path: path
+            .as_deref()
+            .map(tasty_utils::path::tilde_abbreviate)
+            .unwrap_or_else(|| "~/.ssh/config".into()),
+        exists: path.as_deref().is_some_and(std::path::Path::exists),
+    }
+}
+
+/// 로컬 섹션 행에 붙는 요약 — 그 Host 블록에 **직접 적힌** `HostName[:Port]`.
+///
+/// `Host *` 의 전역 설정이나 `Match` 블록이 실제 접속 시 이 값을 덮어쓸 수 있어
+/// 정확하지 않다. **표시 전용**이며 가져오기에는 alias 만 쓴다.
+fn local_target_hint(h: &SshConfigHost) -> String {
+    match (&h.hostname, h.port) {
+        (Some(host), Some(port)) => format!("{host}:{port}"),
+        (Some(host), None) => host.clone(),
+        // HostName 이 없으면 ssh 가 alias 를 호스트 이름으로 쓴다 — 포트만 보여준다.
+        (None, Some(port)) => format!("{}:{port}", h.alias),
+        (None, None) => "—".into(),
+    }
+}
+
+/// 가져오기 클릭 시 여는 폼의 프리필. **alias 만 `host` 에 넣고 user/port 는 비운다** —
+/// 채우면 ssh config 위임이 깨지고(그 값이 config 를 덮어쓴다) config 수정 시 어긋난다.
+/// 이름은 alias 를 기본값으로 주되 폼에서 바꿀 수 있다.
+fn import_prefill(alias: &str) -> ProfileForm {
+    ProfileForm {
+        kind: "ssh".into(),
+        name: alias.to_string(),
+        host: alias.to_string(),
+        shell: "auto".into(),
+        ..Default::default()
+    }
+}
+
+/// 프로필 섹션의 빈 상태 문구 키. `None` = 프로필 행을 그린다.
+///
+/// 예전에는 두 빈 상태에서 곧바로 `return` 했다 — 로컬 ssh config 섹션이 생긴 뒤로는
+/// 그러면 안 된다. 프로필이 0 건인 사용자야말로 "가져올 호스트가 여기 있다" 를 봐야
+/// 하는 쪽이다.
+fn profile_empty_key(has_non_attach: bool, any_visible: bool) -> Option<&'static str> {
+    match (has_non_attach, any_visible) {
+        (false, _) => Some("remote_tool.profile_empty"),
+        (true, false) => Some("remote_tool.profile_filter_empty"),
+        (true, true) => None,
+    }
+}
+
+/// 로컬 섹션에서 나오는 액션.
+enum LocalRowAction {
+    /// 이 alias 를 프로필 폼 프리필로 연다.
+    Import(String),
+    /// ssh config 를 다시 읽는다(파일이 바뀌었을 때).
+    Reload,
 }
 
 fn read_ui(ctx: &egui::Context) -> UiState {
@@ -589,54 +670,65 @@ fn draw_profile_list(
         .profiles
         .iter()
         .any(|p| p.kind.trim() != ATTACH_KIND);
-    if !has_non_attach {
-        ui.vertical_centered(|ui| {
-            ui.add_space(th.spacing_lg.value());
-            selectable_text(
-                ui,
-                t("remote_tool.profile_empty"),
-                th.text_muted(),
-                th.font_size_body.value(),
-                false,
-                true,
-                TextWrap::None,
-            );
-        });
-        return;
-    }
     // 필터로 전부 가려졌으면 "프로필 없음" 과 구분되는 별도 빈 상태.
     let any_visible = profiles
         .profiles
         .iter()
         .any(|p| p.kind.trim() != ATTACH_KIND && !applied_hidden.contains(p.kind.trim()));
-    if !any_visible {
-        ui.vertical_centered(|ui| {
-            ui.add_space(th.spacing_lg.value());
-            selectable_text(
-                ui,
-                t("remote_tool.profile_filter_empty"),
-                th.text_muted(),
-                th.font_size_body.value(),
-                false,
-                true,
-                TextWrap::None,
-            );
-        });
-        return;
-    }
     let detecting = st.detecting.as_ref().map(|j| j.name.clone());
     let known: Vec<String> = passkeys.passkeys.iter().map(|k| k.name.clone()).collect();
+    // 로컬 ssh config 는 popup 을 열 때 1 회만 읽는다(캐시 주석 참조).
+    if st.local.is_none() {
+        st.local = Some(load_local_ssh());
+    }
+    let local = st.local.clone().unwrap_or_default();
     let mut action: Option<(usize, ProfileRowAction)> = None;
+    let mut local_action: Option<LocalRowAction> = None;
+    // 두 섹션이 한 스크롤을 공유한다 — 로컬 섹션이 프로필 목록 **아래**에 이어지는
+    // 목업 배치라, 스크롤을 나누면 프로필이 길 때 로컬 섹션에 닿을 수 없다.
     egui::ScrollArea::vertical().show(ui, |ui| {
-        for (i, p) in profiles.profiles.iter().enumerate() {
-            if p.kind.trim() == ATTACH_KIND || applied_hidden.contains(p.kind.trim()) {
-                continue;
-            }
-            if let Some(a) = draw_profile_row(ui, th, p, detecting.as_deref(), &known) {
-                action = Some((i, a));
+        if let Some(key) = profile_empty_key(has_non_attach, any_visible) {
+            // 빈 상태에서도 return 하지 않는다 — 로컬 섹션은 계속 보여야 "아직 안 올린
+            // 호스트가 여기 있다" 를 알 수 있다(이 화면의 용건).
+            let msg = t(key);
+            ui.vertical_centered(|ui| {
+                ui.add_space(th.spacing_lg.value());
+                selectable_text(
+                    ui,
+                    msg,
+                    th.text_muted(),
+                    th.font_size_body.value(),
+                    false,
+                    true,
+                    TextWrap::None,
+                );
+                ui.add_space(th.spacing_lg.value());
+            });
+        } else {
+            for (i, p) in profiles.profiles.iter().enumerate() {
+                if p.kind.trim() == ATTACH_KIND || applied_hidden.contains(p.kind.trim()) {
+                    continue;
+                }
+                if let Some(a) = draw_profile_row(ui, th, p, detecting.as_deref(), &known) {
+                    action = Some((i, a));
+                }
             }
         }
+        local_action = draw_local_ssh_section(ui, th, &local, profiles);
     });
+    match local_action {
+        Some(LocalRowAction::Reload) => {
+            st.local = Some(load_local_ssh());
+            return;
+        }
+        Some(LocalRowAction::Import(alias)) => {
+            st.pform = import_prefill(&alias);
+            st.perr = None;
+            st.profile_view = Sub::Form;
+            return;
+        }
+        None => {}
+    }
     if let Some((i, a)) = action {
         let p = &profiles.profiles[i];
         match a {
@@ -655,6 +747,141 @@ fn draw_profile_list(
             }
         }
     }
+}
+
+/// 로컬 ssh config 섹션 — tasty 프로필 목록 **아래**에 구분선으로 갈라 붙인다.
+///
+/// 여기 나열되는 것은 tasty 가 소유한 레코드가 아니라 사용자의 `~/.ssh/config` 다.
+/// 그래서 **읽기 전용**이고 행 액션은 가져오기 하나뿐이다 — 편집/삭제는 사용자 자산을
+/// tasty 가 고치는 일이라 범위 밖이다.
+///
+/// **프로토콜 필터를 적용받지 않는다.** 필터는 프로필의 `kind` 집합으로 만들어지는데
+/// ssh config 항목에는 kind 라는 개념 자체가 없다. 필터로 프로필이 전부 가려진
+/// 상태에서도 이 섹션은 그대로 남는다.
+fn draw_local_ssh_section(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    local: &LocalSshCache,
+    profiles: &RemoteProfiles,
+) -> Option<LocalRowAction> {
+    let mut out = None;
+    hsep(ui, th);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        selectable_label(
+            ui,
+            t("remote_tool.local_ssh_heading"),
+            th.text_secondary(),
+            th.font_size_caption.value(),
+            false,
+        );
+        selectable_label(
+            ui,
+            &local.path,
+            th.text_muted(),
+            th.font_size_caption.value(),
+            true,
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // 프로필 행의 재감지와 같은 글리프지만 하는 일이 다르다(원격 프로브가
+            // 아니라 로컬 파일 재로드) — 툴팁으로 가른다.
+            if ui
+                .add(
+                    egui::ImageButton::new(icons::REFRESH.image(15.0, th.text_muted().into()))
+                        .frame(false),
+                )
+                .on_hover_text(t("remote_tool.local_ssh_refresh"))
+                .clicked()
+            {
+                out = Some(LocalRowAction::Reload);
+            }
+        });
+    });
+    ui.add_space(th.spacing_xs.value());
+    if local.hosts.is_empty() {
+        // 섹션을 통째로 숨기지 않는다 — 문구가 있어야 "가져올 게 없다" 와 "그런 기능이
+        // 없다" 가 구분된다.
+        selectable_text(
+            ui,
+            if local.exists {
+                t("remote_tool.local_ssh_empty")
+            } else {
+                t("remote_tool.local_ssh_missing")
+            },
+            th.text_muted(),
+            th.font_size_caption.value(),
+            false,
+            true,
+            TextWrap::None,
+        );
+        ui.add_space(th.spacing_xs.value());
+        return out;
+    }
+    for h in &local.hosts {
+        if let Some(a) = draw_local_ssh_row(ui, th, h, imported_as(profiles, &h.alias)) {
+            out = Some(a);
+        }
+    }
+    out
+}
+
+/// alias 행 한 줄 — 이름 / hint caption / 우측 가져오기.
+fn draw_local_ssh_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    h: &SshConfigHost,
+    imported: Option<&str>,
+) -> Option<LocalRowAction> {
+    let mut out = None;
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            selectable_label(
+                ui,
+                &h.alias,
+                th.text_primary(),
+                th.font_size_body.value(),
+                false,
+            );
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                selectable_label(
+                    ui,
+                    &local_target_hint(h),
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    true,
+                );
+                if let Some(name) = imported {
+                    selectable_label(
+                        ui,
+                        &t_fmt("remote_tool.local_ssh_imported", name),
+                        th.text_muted(),
+                        th.font_size_caption.value(),
+                        false,
+                    );
+                }
+            });
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+            // 이미 가져온 alias 는 비활성 — 같은 호스트를 두 번 등록하는 사고를 막는다.
+            let btn = ui.add_enabled(
+                imported.is_none(),
+                egui::ImageButton::new(icons::DOWNLOAD.image(15.0, th.text_muted().into()))
+                    .frame(false),
+            );
+            if imported.is_none()
+                && btn
+                    .on_hover_text(t("remote_tool.local_ssh_import"))
+                    .clicked()
+            {
+                out = Some(LocalRowAction::Import(h.alias.clone()));
+            }
+        });
+    });
+    ui.add_space(th.spacing_xs.value());
+    out
 }
 
 /// 프로토콜 필터 버튼(funnel + 라벨). filtered 면 primary(accent), 아니면 secondary.
@@ -2681,6 +2908,180 @@ mod tests {
         let p = prof("x", "ftp");
         let hidden: HashSet<String> = ["ssh".to_string()].into_iter().collect();
         assert!(!hidden.contains(p.kind.trim()));
+    }
+
+    // ── 로컬 ssh config 섹션 ─────────────────────────────────────────
+
+    fn host(alias: &str, hostname: Option<&str>, port: Option<u16>) -> SshConfigHost {
+        SshConfigHost {
+            alias: alias.into(),
+            source: std::path::PathBuf::from("/home/u/.ssh/config"),
+            hostname: hostname.map(str::to_string),
+            user: Some("zilhak".into()),
+            port,
+        }
+    }
+
+    fn cache(hosts: Vec<SshConfigHost>) -> LocalSshCache {
+        LocalSshCache {
+            hosts,
+            path: "~/.ssh/config".into(),
+            exists: true,
+        }
+    }
+
+    /// 한 프레임을 헤드리스로 돌리고 그려진 텍스트를 모은다. "그 섹션이 실제로
+    /// 렌더됐는가" 를 판정하는 유일하게 정직한 관찰점이다.
+    fn painted_text(profiles: &RemoteProfiles, st: &mut UiState, hidden: &[&str]) -> Vec<String> {
+        let ctx = egui::Context::default();
+        write_filter(
+            &ctx,
+            hidden.iter().map(|s| s.to_string()).collect::<HashSet<_>>(),
+        );
+        let th = theme::theme();
+        let passkeys = Passkeys::default();
+        let mut out = Vec::new();
+        // 첫 프레임은 폰트/레이아웃이 확정되지 않아 galley 가 비는 경우가 있어 두 번 돈다.
+        for _ in 0..2 {
+            out.clear();
+            let full = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    draw_profile_list(ui, &th, st, profiles, &passkeys);
+                });
+            });
+            for shape in full.shapes.iter() {
+                collect_text(&shape.shape, &mut out);
+            }
+        }
+        out
+    }
+
+    fn collect_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::epaint::Shape::Vec(v) => {
+                for s in v {
+                    collect_text(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn import_prefill_puts_alias_in_host_and_leaves_user_port_empty() {
+        let f = import_prefill("gx10");
+        assert_eq!(f.kind, "ssh");
+        assert_eq!(f.name, "gx10"); // 기본값 = alias (폼에서 바꿀 수 있다)
+        assert_eq!(f.host, "gx10"); // alias 그대로 — 값 펼치기 없음
+        assert_eq!(f.shell, "auto");
+        // user/port 를 채우면 ssh config 위임이 깨진다.
+        assert!(f.user.is_empty());
+        assert!(f.port.is_empty());
+        assert!(f.label.is_empty());
+        assert!(f.passkey_ref.is_empty());
+        assert!(f.editing_original.is_none());
+    }
+
+    #[test]
+    fn already_imported_alias_is_detected_by_host_field() {
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(RemoteProfile::new("my-gpu", "ssh").with_field("host", "gx10"));
+        profiles.upsert(RemoteProfile::new("other", "smb").with_field("host", "bastion"));
+        assert_eq!(imported_as(&profiles, "gx10"), Some("my-gpu"));
+        // ssh kind 가 아니면 "가져옴" 이 아니다 — 가져오기는 ssh 프로필만 만든다.
+        assert_eq!(imported_as(&profiles, "bastion"), None);
+    }
+
+    #[test]
+    fn local_target_hint_falls_back_to_alias_and_dash() {
+        assert_eq!(
+            local_target_hint(&host("gx10", Some("10.0.0.5"), Some(2200))),
+            "10.0.0.5:2200"
+        );
+        assert_eq!(
+            local_target_hint(&host("gx10", Some("10.0.0.5"), None)),
+            "10.0.0.5"
+        );
+        // HostName 이 없으면 ssh 가 alias 를 호스트로 쓴다.
+        assert_eq!(local_target_hint(&host("gx10", None, Some(22))), "gx10:22");
+        assert_eq!(local_target_hint(&host("gx10", None, None)), "—");
+    }
+
+    #[test]
+    fn profile_empty_key_distinguishes_no_profiles_from_filtered_out() {
+        assert_eq!(
+            profile_empty_key(false, false),
+            Some("remote_tool.profile_empty")
+        );
+        assert_eq!(
+            profile_empty_key(true, false),
+            Some("remote_tool.profile_filter_empty")
+        );
+        assert_eq!(profile_empty_key(true, true), None);
+    }
+
+    #[test]
+    fn protocol_filter_does_not_hide_local_section() {
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(RemoteProfile::new("my-gpu", "ssh").with_field("host", "other"));
+        let mut st = UiState {
+            local: Some(cache(vec![host("gx10", Some("10.0.0.5"), Some(2200))])),
+            ..Default::default()
+        };
+        // ssh 를 필터로 가려 프로필 목록이 통째로 빈 상태가 되게 한다.
+        let texts = painted_text(&profiles, &mut st, &["ssh"]);
+        assert!(
+            texts.iter().any(|s| s.contains("gx10")),
+            "필터가 로컬 섹션까지 가렸다: {texts:?}"
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|s| s == t("remote_tool.profile_filter_empty")),
+            "필터 빈 상태 문구가 없다: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn empty_profiles_still_renders_local_section() {
+        let profiles = RemoteProfiles::default();
+        let mut st = UiState {
+            local: Some(cache(vec![host("gx10", Some("10.0.0.5"), Some(2200))])),
+            ..Default::default()
+        };
+        let texts = painted_text(&profiles, &mut st, &[]);
+        assert!(
+            texts.iter().any(|s| s.contains("gx10")),
+            "프로필 0 건에서 early return 해 로컬 섹션이 사라졌다: {texts:?}"
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|s| s == t("remote_tool.local_ssh_heading")),
+            "섹션 헤더가 없다: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn local_section_shows_empty_note_instead_of_hiding() {
+        let profiles = RemoteProfiles::default();
+        let mut st = UiState {
+            local: Some(LocalSshCache {
+                hosts: Vec::new(),
+                path: "~/.ssh/config".into(),
+                exists: false,
+            }),
+            ..Default::default()
+        };
+        let texts = painted_text(&profiles, &mut st, &[]);
+        // 파일이 없을 때와 있는데 0 건일 때의 문구가 다르다.
+        assert!(
+            texts
+                .iter()
+                .any(|s| s == t("remote_tool.local_ssh_missing")),
+            "{texts:?}"
+        );
     }
 
     #[test]

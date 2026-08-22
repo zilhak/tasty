@@ -538,12 +538,12 @@ fn list_local(json: bool) -> Result<()> {
         match user_config_path().filter(|p| p.exists()) {
             Some(p) => println!(
                 "로컬 ssh config 에 가져올 alias 가 없습니다 ({}).",
-                display_path(&p)
+                tasty_utils::path::tilde_abbreviate(&p)
             ),
             None => println!(
                 "로컬 ssh config 가 없습니다 ({}).",
                 user_config_path()
-                    .map(|p| display_path(&p))
+                    .map(|p| tasty_utils::path::tilde_abbreviate(&p))
                     .unwrap_or_else(|| "~/.ssh/config".into())
             ),
         }
@@ -554,7 +554,7 @@ fn list_local(json: bool) -> Result<()> {
         println!(
             "{:<20} {:<28} {:<20} {}",
             elide(&h.alias, 20),
-            elide(&display_path(&h.source), 28),
+            elide(&tasty_utils::path::tilde_abbreviate(&h.source), 28),
             elide(&target_hint(h), 20),
             imported_as(&profiles, &h.alias).unwrap_or("-"),
         );
@@ -570,18 +570,6 @@ fn target_hint(h: &SshConfigHost) -> String {
         (Some(host), None) => host.clone(),
         (None, Some(port)) => format!(":{port}"),
         (None, None) => "-".into(),
-    }
-}
-
-/// 홈 아래 경로를 `~/…` 로 줄여 출력한다. 표 폭을 잡아먹는 건 대개 홈 접두사다.
-fn display_path(p: &std::path::Path) -> String {
-    let full = p.display().to_string();
-    match tasty_utils::path::os_home_dir() {
-        Some(home) => match p.strip_prefix(&home) {
-            Ok(rest) => format!("~/{}", rest.display()),
-            Err(_) => full,
-        },
-        None => full,
     }
 }
 

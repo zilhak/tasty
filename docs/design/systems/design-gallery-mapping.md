@@ -25,6 +25,7 @@
 | `ProtocolFilter`(드롭다운/팝오버) | `draw_protocol_filter` (체크박스 + Apply-on-confirm) | ✗ 미등록 (remote_tool 예외 동일) |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
+| (디자인 원본 없음 — 로컬 SSH config 섹션) | `draw_local_ssh_section` / `draw_local_ssh_row` | `components/remote.rs` `local_ssh_header` / `local_ssh_row` (`remote` spec) |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
@@ -39,6 +40,10 @@ active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-
 쓴다 — 갤러리 미러가 참조하는 `gallery/overlays-shared.jsx`와 본체가 따르는 `ui_kits` jsx,
 두 디자인 소스 자체가 서로 다른 세그먼트 색을 쓰고 있어 생긴 차이다. 갤러리는 각자의 디자인
 소스를 그대로 전사하므로 이 차이를 임의로 통일하지 않는다.
+
+로컬 SSH config 섹션은 `remote_tool.jsx` 에 대응 컴포넌트가 없다 — 확정 목업이 이 레포에서
+정해진 기존 목록의 확장이라, 기존 행 구조(`ProfileRow` 3행 레이아웃의 축약형) + `hsep` +
+`Theme` 토큰만 조합해 만든다. 갤러리 specimen 은 본체와 같은 모양을 전사한다.
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::

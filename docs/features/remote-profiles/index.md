@@ -26,6 +26,7 @@
   - 열거는 **순수 파일 파싱**이다 — `ssh -G` 를 쓰지 않는다(`Match exec "…"` 를 실제로 실행해 버리고, 애초에 alias *목록* 을 주지도 않는다). 와일드카드·부정 패턴(`Host *` / `jump-*` / `!bad`)은 접속 가능한 이름이 아니라 제외한다.
   - **가져오기는 셸을 감지하지 않는다.** 감지는 실제 SSH 접속이라 목록에서 여러 건을 가져오면 접속이 연쇄로 일어난다 — 가져온 뒤 `tasty tool remote-profile detect --name <n>` 로 사용자가 돌린다(`add-ssh` 와 다른 점).
   - 이름이 겹치면 **거부**한다(덮어쓰기 없음). 없는 alias 를 가리켜도 거부한다.
+  - **GUI** 는 같은 목록을 Remote profiles 탭의 프로필 목록 **아래 별도 섹션**으로 보여준다(읽기 전용 — 행 액션은 가져오기 하나). 프로토콜 필터는 이 섹션에 적용되지 않고(ssh config 항목엔 `kind` 가 없다), 프로필이 0건이어도 섹션은 그대로 뜬다. 가져오기는 프로필 폼을 alias 프리필로 여는 방식이라 이름 변경·중복 검증이 기존 폼 그대로다. 상세: [remote-tool 화면](screens/remote-tool.md).
 - **소비자 분리** — attach 는 **tasty-attach kind** 프로필을 읽는 소비자(ADR-0032). tasty-attach 는 ssh 프로필을 `ssh_ref` 로 참조하거나 인라인 연결을 갖는다. "주소 저장(ssh)"과 "attach 스펙(tasty-attach)"이 분리됐다(→ [remote-attach](../remote-attach/index.md)).
 - **입력 격리** — 팝업이 터미널 위에 떠 있어도 팝업 위 클릭/스크롤은 팝업이 소비하며, 뒤 터미널의 포커스·선택·스크롤을 건드리지 않는다. remote_tool 고유 규칙이 아니라 모든 팝업에 적용되는 입력 레이어 계약(Layer 3 = Popup, "팝업 위면 터미널 무시")을 따른 것이다(→ [input-layer](../../architecture/input-layer.md)).
 
@@ -33,7 +34,7 @@
 
 | 표면 | 진입 |
 |---|---|
-| GUI | 도구 메뉴 > Remote connections (popup `remote_tool`) |
+| GUI | 도구 메뉴 > Remote connections (popup `remote_tool`). Remote profiles 탭에 **로컬 SSH config** 섹션(열거 + 행에서 바로 가져오기) |
 | CLI (프로필 CRUD) | `tasty tool remote-profile list\|show\|add-ssh\|add-attach\|edit\|remove\|detect\|list-local\|import` — ssh + tasty-attach 통합. `list-local [--json]`(로컬 ssh config alias 열거, IMPORTED 열에 이미 가져온 프로필 이름) / `import --from <alias> --name <profile> [--label …]`(alias 만 저장, 셸 감지 없음). `add-ssh`(순수 연결) / `add-attach`(`--ssh-ref` XOR 인라인 + `--remote-tasty`/`--port-mode`/`--port-file`). `--identity` → path passkey 자동 생성. `list --kind ssh\|tasty-attach` 필터 |
 | CLI (접속/attach) | `tasty tool ssh <profile> [--command …]` — ssh 프로필로 대화형 접속 실행 · `tasty tool attach <name> <surface\|--workspace> \| --list` — tasty-attach 프로필로 attach(→ [remote-attach](../remote-attach/index.md)) |
 | CLI (passkey) | `tasty tool passkey add\|list\|show\|remove` (`--path`/`--inline`; list/show 는 값 비노출) |

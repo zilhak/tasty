@@ -65,6 +65,16 @@ const PROFILES: &[Profile] = &[
     },
 ];
 
+/// 로컬 ssh config 항목 — (alias, 표시용 hint, 이미 가져온 프로필 이름).
+///
+/// tasty 레코드가 아니라 사용자의 `~/.ssh/config` 라 행 액션은 가져오기 하나뿐이고,
+/// 이미 가져온 alias 는 비활성 상태로 남는다.
+const LOCAL_HOSTS: &[(&str, &str, &str)] = &[
+    ("gx10", "10.0.0.5:2200", ""),
+    ("bastion", "jump.example.com", ""),
+    ("build-farm", "10.0.0.9", "prod-web"),
+];
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
@@ -123,6 +133,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     profile_row(ui, theme, p);
                 }
             });
+            // 로컬 SSH config 섹션 — 프로필 목록 아래에 구분선으로 갈라 붙는다.
+            kit::hsep(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    local_ssh_header(ui, theme);
+                    for h in LOCAL_HOSTS {
+                        local_ssh_row(ui, theme, h);
+                    }
+                },
+            );
         });
     });
 
@@ -135,6 +158,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row", "name · status Tag · target mono · passkey/detecting"),
             ("detecting", "Spinner 12"),
             ("actions", "IconButton sm ×3 (right)"),
+            ("local ssh", "read-only section · import action only"),
         ],
         &[
             TokenChip::new("bg-sidebar", "tab strip", theme.bg_sidebar().to_egui()),
@@ -150,6 +174,61 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "Tasty has no remote security model of its own — every profile is an SSH \
          target, and identity is delegated to passkeys at that boundary.",
     );
+}
+
+/// 로컬 섹션 헤더 — 라벨 + config 경로 + 재로드.
+fn local_ssh_header(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        ui.label(
+            egui::RichText::new("Local SSH config")
+                .size(theme.font_size_caption.value())
+                .color(theme.text_secondary().to_egui()),
+        );
+        kit::caption(ui, theme, "~/.ssh/config", true);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // 프로필 행의 재감지와 같은 글리프지만 여기서는 **로컬 파일 재로드**다.
+            IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(tasty_ui_widgets::ControlSize::Sm)
+                .show(ui, theme, &|ui, rect, c| {
+                    icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
+                });
+        });
+    });
+}
+
+/// alias 행 — 이름 / hint caption / 우측 가져오기(이미 가져왔으면 비활성 + 캡션).
+fn local_ssh_row(ui: &mut egui::Ui, theme: &Theme, (alias, hint, imported): &(&str, &str, &str)) {
+    kit::region_sym(ui, 0.0, theme.spacing_xs.value(), |ui| {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.label(
+                    egui::RichText::new(*alias)
+                        .size(theme.font_size_body.value())
+                        .color(theme.text_primary().to_egui()),
+                );
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    kit::caption(ui, theme, hint, true);
+                    if !imported.is_empty() {
+                        kit::caption(ui, theme, &format!("imported as {imported}"), false);
+                    }
+                });
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_enabled_ui(imported.is_empty(), |ui| {
+                    IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
+                        .show(ui, theme, &|ui, rect, c| {
+                            icons::DOWNLOAD.image(rect.height(), c).paint_at(ui, rect)
+                        });
+                });
+            });
+        });
+    });
 }
 
 /// 공통 3-탭 바 (bg-sidebar) — `active` = 0 Profiles / 1 Attach / 2 Passkeys.
