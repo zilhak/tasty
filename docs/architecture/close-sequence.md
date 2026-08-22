@@ -40,7 +40,7 @@ close 진입
  └─ C5 cleanup_targets     surface 마다 cleanup_surface (합계)
      ├─ C5a scrollback_delete   fs::remove_file
      ├─ C5b terminal_drop       Terminal drop → PTY kill + master 해제
-     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer join 포함)
+     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b)
      └─ C5d memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔 (surface 당 1회)
 close_total
 ```

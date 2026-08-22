@@ -447,6 +447,12 @@ impl Drop for ObserverRouter {
         for id in ids {
             let _ = self.unregister(id); // best-effort on shutdown
         }
+        // surface close 가 뒤로 미뤄둔 워커도 여기서 확정 회수한다. 종료 시퀀스의
+        // S3b(`shutdown_join_observer_sinks`)가 이미 같은 일을 하지만, 그 호출이
+        // 빠지거나 그 단계를 타지 않는 경로로 라우터가 드롭돼도 sink 파일이 잘리지
+        // 않도록 하는 마지막 방어선이다 — 덕분에 S3b 는 정확성 요건이 아니라
+        // "종료가 늦어지지 않게 미리 걷는" 최적화로 남는다.
+        self.join_retired();
     }
 }
 
@@ -767,6 +773,38 @@ mod tests {
         );
         assert!(
             lines.last().unwrap().contains("/tmp/retire-probe-63"),
+            "마지막 항목까지 기록된다: {:?}",
+            lines.last()
+        );
+    }
+
+    #[test]
+    fn dropping_the_router_reaps_retired_workers_even_without_s3b() {
+        // S3b(`join_retired`)를 부르지 않고 라우터를 드롭해도 sink 가 잘리지 않는다
+        // — `ObserverRouter::drop` 이 마지막 방어선이라 S3b 는 최적화로 남는다.
+        let dir = tempfile::tempdir().unwrap();
+        let sink = dir.path().join("dropped.jsonl");
+        let mut r = ObserverRouter::new();
+        register_file_observer(&mut r, 3, &sink);
+
+        let mut expected = 0usize;
+        for i in 0..64 {
+            r.dispatch_text(3, &format!("/tmp/drop-probe-{i}\n"));
+            expected += 1;
+        }
+
+        r.drop_surface(3);
+        drop(r); // join_retired 를 명시적으로 부르지 않는다.
+
+        let written = std::fs::read_to_string(&sink).unwrap();
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(
+            lines.len(),
+            expected,
+            "라우터 drop 만으로도 수락된 항목이 전부 기록된다"
+        );
+        assert!(
+            lines.last().unwrap().contains("/tmp/drop-probe-63"),
             "마지막 항목까지 기록된다: {:?}",
             lines.last()
         );

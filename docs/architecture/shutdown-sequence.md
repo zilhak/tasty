@@ -125,8 +125,10 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 - **S3b 는 정상 경로에서 0 에 가깝다.** surface close 는 sink 워커를 join 하지 않고
   모아두기만 하므로([ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)),
   여기서 한 번에 회수한다. 워커들이 그동안 병렬로 이미 배수를 끝냈기 때문에 실제
-  대기는 거의 없다. **이 단계를 빼면 아직 배수 중인 워커가 프로세스와 함께 죽어
-  sink 파일의 마지막 항목이 잘린다** — observer 를 쓰지 않으면 항상 0 이다.
+  대기는 거의 없다. observer 를 쓰지 않으면 항상 0 이다.
+  **이 단계는 정확성 요건이 아니라 최적화다** — `ObserverRouter::drop` 이 같은
+  `join_retired` 를 한 번 더 부르므로, S3b 가 빠져도 sink 파일이 잘리지는 않는다.
+  다만 그 회수가 Drop tail(S5) 까지 밀려 종료가 그만큼 늦어진다.
 - **S3 의 `surfaces` 와 S5b 의 `ptys` 는 세는 대상이 다르다.** 전자는 layout 상의
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.

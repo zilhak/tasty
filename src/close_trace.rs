@@ -123,7 +123,8 @@ pub(crate) struct CleanupSums {
     pub(crate) scrollback_delete: Duration,
     /// C5b — `Terminal` drop (PTY kill). 필드 drop 까지 포함한 실제 소요.
     pub(crate) terminal_drop: Duration,
-    /// C5c — host-side per-surface 인덱스 해제 (observer 워커 join 포함)
+    /// C5c — host-side per-surface 인덱스 해제 (observer 워커 sender drop —
+    /// join 은 S3b 로 미룬다, ADR-0076). observer 수에 비례하지 않는다.
     pub(crate) indices_drop: Duration,
     /// C5d — `purge_scope(Scope::Surface)` (sqlite 풀스캔). surface 당 **1회** —
     /// 과거엔 `SurfaceMetaStore::remove` 가 같은 purge 를 한 번 더 돌려 별도 단계

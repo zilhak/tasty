@@ -23,7 +23,7 @@ kill_ms=50.257  spawn_ms=0.157  master_ms=0.067   (12 회 전부 kill_ms 50.2~50
 ```
 
 `portable-pty-0.8.1` 의 `impl ChildKiller for std::process::Child` (unix) 는
-SIGHUP 을 보낸 뒤 자체 유예 루프에서 `try_wait` 를 최대 4 회, 사이사이
+SIGHUP 을 보낸 뒤 자체 유예 루프에서 `try_wait` 를 최대 5 회, 사이사이
 `thread::sleep(50ms)` 로 폴링한다. **첫 `try_wait` 는 SIGHUP 직후라 거의 항상 아직
 안 죽은 상태로 걸리고, 두 번째 `try_wait` 는 성공한다** — 즉 셸이 정상적으로
 곧바로 죽는 경로에서도 매번 50ms 를 통째로 잔다.
@@ -89,7 +89,9 @@ close_total 403ms 의 4% 수준이다.
     전부 drop 된 뒤에도 `Receiver::recv` 가 버퍼를 끝까지 비운 다음에야 `Err` 를
     돌려주고(std mpsc 계약), 파일 sink 는 `File` 에 직접 `writeln!` 하므로
     유저스페이스 버퍼도 없다. 유일한 유실 경로인 "워커가 다 쓰기 전 프로세스 종료"
-    는 종료 시퀀스의 `join_retired`(S3b)가 막는다.
+    는 종료 시퀀스의 `join_retired`(S3b)가 막고, 그 호출을 타지 않는 경로로
+    라우터가 드롭돼도 `ObserverRouter::drop` 이 같은 회수를 한 번 더 한다. 즉
+    S3b 는 정확성 요건이 아니라 회수를 앞당기는 최적화다.
   - 종료 시퀀스에 단계가 하나 늘었다(S3b).
 - **운영 비용 / 유지 부담**:
   - reap 스레드는 여전히 터미널 1 개당 1 개 생성된다. 탭 30 개 close 시 순간

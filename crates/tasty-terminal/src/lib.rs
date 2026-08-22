@@ -153,7 +153,7 @@ impl Drop for PtyBackend {
         let t_drop = std::time::Instant::now();
         // unix: 종료 신호는 여기서 보내되 **기다리지는 않는다**. portable-pty 의
         // `ChildKiller::kill`(unix)은 SIGHUP 을 보낸 뒤 자체 유예 루프에서
-        // `try_wait` 를 최대 4 회, 사이사이 `thread::sleep(50ms)` 로 폴링한다
+        // `try_wait` 를 최대 5 회, 사이사이 `thread::sleep(50ms)` 를 4 회 끼워 폴링한다
         // (portable-pty-0.8.1 `src/lib.rs` 의 `impl ChildKiller for
         // std::process::Child`). 첫 `try_wait` 는 SIGHUP 직후라 거의 항상 아직
         // 안 죽은 상태로 걸려서, **정상 경로에서도 매번 50ms 를 통째로 잔다**
