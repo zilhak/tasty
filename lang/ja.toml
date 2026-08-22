@@ -1199,6 +1199,11 @@ header = "{} のリモートワークスペース (合計{}件):"
 row_free = "  #{} {} (pane={}, busy={}) — 未占有"
 row_attached = "  #{} {} (pane={}, busy={}) — client {} が占有中"
 
+[cli.remote_new_workspace]
+create_failed = "リモートワークスペースの作成に失敗しました (対象={})"
+serialize_failed = "作成したリモートワークスペースのJSONシリアライズに失敗しました"
+created = "リモートワークスペース #{} '{}' を作成しました — {} (index={})"
+
 # `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
 [cli.terminal]
 desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/kill/…)."

@@ -1205,6 +1205,11 @@ header = "Remote workspaces on {} ({} total):"
 row_free = "  #{} {} (panes={}, busy={}) — free"
 row_attached = "  #{} {} (panes={}, busy={}) — attached by client {}"
 
+[cli.remote_new_workspace]
+create_failed = "Failed to create a workspace on remote (target={})"
+serialize_failed = "Failed to serialize the created remote workspace to JSON"
+created = "Created remote workspace #{} '{}' on {} (index={})"
+
 # `tasty terminal` — host-internalized child-terminal management (ADR-0040).
 [cli.terminal]
 desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."

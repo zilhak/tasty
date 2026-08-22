@@ -10,6 +10,7 @@ pub mod help;
 pub mod hook_failure;
 pub mod plugin;
 pub mod remote_browse;
+pub mod remote_create;
 pub mod request;
 pub mod run;
 pub mod ssh;
@@ -337,6 +338,80 @@ mod attach_surface_tests {
         assert_eq!(workspace, Some(2));
         assert!(into_gui);
         assert_eq!(target_port, Some(45123));
+    }
+
+    /// `remote new-workspace` — 원격 mutate 1건(생성). 출력 id 를 `remote attach
+    /// --workspace <id>` 로 넘기는 CLI 복합 경로의 앞단.
+    #[test]
+    fn remote_new_workspace_parses() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "new-workspace",
+            "--profile",
+            "gx10",
+            "--name",
+            "build",
+            "--cwd",
+            "/srv/app",
+            "--json",
+        ])
+        .unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::NewWorkspace {
+                    profile,
+                    ssh,
+                    name,
+                    cwd,
+                    json,
+                    remote_tasty,
+                    remote_port_mode,
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote new-workspace");
+        };
+        assert_eq!(profile.as_deref(), Some("gx10"));
+        assert_eq!(ssh, None);
+        assert_eq!(name.as_deref(), Some("build"));
+        assert_eq!(cwd.as_deref(), Some("/srv/app"));
+        assert!(json);
+        // 기본값은 `remote workspaces` 와 동일해야 한다(같은 포트 발견 체인).
+        assert_eq!(remote_tasty, "tasty");
+        assert_eq!(remote_port_mode, "auto");
+    }
+
+    /// loopback e2e 형태(`--ssh 127.0.0.1:<port>`)와 생성 옵션 전부 생략도 파싱된다.
+    #[test]
+    fn remote_new_workspace_loopback_minimal_parses() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "new-workspace",
+            "--ssh",
+            "127.0.0.1:45123",
+        ])
+        .unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::NewWorkspace {
+                    ssh,
+                    profile,
+                    name,
+                    cwd,
+                    json,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote new-workspace");
+        };
+        assert_eq!(ssh.as_deref(), Some("127.0.0.1:45123"));
+        assert_eq!(profile, None);
+        assert_eq!(name, None);
+        assert_eq!(cwd, None);
+        assert!(!json);
     }
 
     /// top-level `tasty attach` 는 release 표면에서 완전히 제거되었다.

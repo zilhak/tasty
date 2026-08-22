@@ -1197,6 +1197,11 @@ header = "{} 의 원격 워크스페이스 (총 {}개):"
 row_free = "  #{} {} (pane={}, busy={}) — 미점유"
 row_attached = "  #{} {} (pane={}, busy={}) — client {} 점유중"
 
+[cli.remote_new_workspace]
+create_failed = "원격 워크스페이스 생성 실패 (대상={})"
+serialize_failed = "생성된 원격 워크스페이스 JSON 직렬화 실패"
+created = "원격 워크스페이스 #{} '{}' 생성됨 — {} (index={})"
+
 # `tasty terminal` — 호스트 내재화된 child-terminal 관리 (ADR-0040).
 [cli.terminal]
 desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…)."

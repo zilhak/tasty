@@ -120,4 +120,40 @@ pub enum RemoteCommands {
         #[arg(long)]
         json: bool,
     },
+    /// SSH 너머 원격 tasty 인스턴스에 워크스페이스를 **새로 만든다**(원격 mutate).
+    ///
+    /// `remote workspaces`(조회)와 같은 자리의 변경 1건이다. 출력된 id 를 그대로
+    /// `tasty remote attach --workspace <id>` 에 넘기면 "원격에 만들고 그 자리에서
+    /// attach" 가 완성된다 — attach 세션 3갈래 분기(raw/into-gui/force-detach)를
+    /// 건드리지 않으려고 생성을 독립 서브커맨드로 분리했다.
+    ///
+    /// 원격의 활성 워크스페이스는 바뀌지 않는다(IPC = Agent origin, 원칙 1).
+    /// 로컬 IPC 는 `remote.attach` 의 `new_workspace` 옵션이 같은 능력을 노출한다
+    /// (원칙 2 — CLI/IPC 양면, 같은 `remote_create` 코어 공유).
+    NewWorkspace {
+        /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10,
+        /// --ssh 127.0.0.1:45123. `--profile` 과 상호배타.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// 저장된 tasty-attach 프로필명으로 생성. `--ssh` 와 상호배타.
+        /// 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필 값으로 대체된다.
+        #[arg(long)]
+        profile: Option<String>,
+        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계). 기본 "tasty".
+        #[arg(long, default_value = "tasty")]
+        remote_tasty: String,
+        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        #[arg(long, default_value = "auto")]
+        remote_port_mode: String,
+        /// 새 워크스페이스 이름 (미지정 시 원격 기본값).
+        #[arg(long)]
+        name: Option<String>,
+        /// 새 워크스페이스의 작업 디렉토리 — **원격 파일시스템 기준**. 원격에서
+        /// 존재 검증되며 없으면 `cwd does not exist` 로 거절된다.
+        #[arg(long)]
+        cwd: Option<String>,
+        /// 사람이 읽는 텍스트 대신 JSON 객체로 출력(스크립트/에이전트 소비용).
+        #[arg(long)]
+        json: bool,
+    },
 }

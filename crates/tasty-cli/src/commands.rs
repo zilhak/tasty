@@ -21,6 +21,7 @@ pub mod pty;
 pub mod read_unset;
 pub mod remote;
 pub mod remote_check;
+pub mod remote_new_workspace;
 pub mod remote_profile;
 pub mod remote_workspaces;
 pub mod settings;

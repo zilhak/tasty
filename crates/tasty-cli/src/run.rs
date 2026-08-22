@@ -608,6 +608,42 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             *json,
         );
     }
+    // `tasty remote new-workspace` — 원격 tasty 에 워크스페이스 생성(원격 mutate).
+    // `workspaces`(조회)와 같은 SSH 부품·같은 선처리 자리를 쓰되 `workspace.create` 를
+    // 부른다. 로컬 IPC 경로가 아니므로(client 가 원격으로 나감) 일반 디스패치 전에
+    // 선처리한다. 로컬 사용자 상태에 닿지 않는다(원칙 1).
+    if let Commands::Remote {
+        command:
+            RemoteCommands::NewWorkspace {
+                ssh,
+                profile,
+                remote_tasty,
+                remote_port_mode,
+                name,
+                cwd,
+                json,
+            },
+    } = &command
+    {
+        if ssh.is_some() && profile.is_some() {
+            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+        }
+        let (target, rt, pm, pf) = crate::remote_browse::resolve_connection_spec(
+            profile.as_deref(),
+            ssh.as_deref(),
+            remote_tasty,
+            remote_port_mode,
+        )?;
+        return crate::commands::remote_new_workspace::run_remote_new_workspace(
+            target,
+            &rt,
+            &pm,
+            pf.as_deref(),
+            name.as_deref(),
+            cwd.as_deref(),
+            *json,
+        );
+    }
     // `tasty debug attach <id>` (non-force, 로컬 loopback) — 단계 4 raw 스트림. 로컬
     // self-attach 는 사용자 입력 재현 성격이라 debug 빌드 전용으로 격리한다(원칙 1 ②).
     // `--force-detach` 는 일반 JSON-RPC(attach.force_detach)라 fall-through.

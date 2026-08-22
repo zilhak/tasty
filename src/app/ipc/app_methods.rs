@@ -902,45 +902,22 @@ impl App {
     /// CLI `tasty remote workspaces` 와 `tasty_cli::remote_browse::browse` 를 공유한다.
     fn ipc_dispatch_remote_workspaces(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let params = &cmd.request.params;
-        let profile = params
-            .get("profile")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let ssh = params
-            .get("ssh")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let remote_tasty = params
-            .get("remote_tasty")
-            .and_then(|v| v.as_str())
-            .unwrap_or("tasty")
-            .to_string();
-        let remote_port_mode = params
-            .get("remote_port_mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto")
-            .to_string();
-        if profile.is_some() && ssh.is_some() {
-            send_response(
-                &cmd.response_tx,
-                host_ipc::protocol::JsonRpcResponse::invalid_params(
-                    rpc_id,
-                    "'profile' and 'ssh' are mutually exclusive",
-                ),
-            );
-            return;
-        }
-        if profile.is_none() && ssh.is_none() {
-            send_response(
-                &cmd.response_tx,
-                host_ipc::protocol::JsonRpcResponse::invalid_params(
-                    rpc_id,
-                    "one of 'profile' or 'ssh' is required",
-                ),
-            );
-            return;
-        }
+        let conn = match RemoteConnParams::parse(&cmd.request.params) {
+            Ok(c) => c,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, msg),
+                );
+                return;
+            }
+        };
+        let RemoteConnParams {
+            profile,
+            ssh,
+            remote_tasty,
+            remote_port_mode,
+        } = conn;
         let response_tx = cmd.response_tx.clone();
         std::thread::spawn(move || {
             let resp = match tasty_cli::remote_browse::resolve_connection_spec(
@@ -970,22 +947,94 @@ impl App {
         });
     }
 
-    /// `remote.attach` { remote_workspace , profile? , ssh? , remote_tasty? ,
-    /// remote_port_mode? } → 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**.
+    /// `remote.attach` { remote_workspace | new_workspace , profile? , ssh? ,
+    /// remote_tasty? , remote_port_mode? , name? , cwd? } → 원격 워크스페이스를
+    /// **로컬 mirror 로 attach**. `new_workspace: true` 면 원격에 워크스페이스를 **먼저
+    /// 만들고** 그것을 attach 한다(생성+attach 복합 능력의 IPC 면 — CLI 면은
+    /// `tasty remote new-workspace` + `tasty remote attach --workspace <id>`, 양쪽이
+    /// `tasty_cli::remote_create` 코어를 공유한다. 원칙 2).
     ///
     /// **focus 중립(원칙 1 핵심)**: 이 IPC/에이전트 경로는 mirror workspace 를 *생성만*
     /// 하고 focus 를 그 ws 로 옮기지 않는다. mirror 생성 실체(`start_gui_attach`)는
     /// `engine.workspaces.push` 만 하고 `active_workspace` 를 건드리지 않는다(조용한 생성).
     /// 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**다(RA02 팝업에서
     /// 사용자가 확정할 때) — release IPC 에는 focus 변경 API 가 없다(원칙 3).
+    /// 원격측 active 도 바뀌지 않는다(`workspace.create` 는 Agent origin).
     ///
-    /// 블로킹 SSH 터널 수립은 워커 스레드에서 하고(auto-attach 와 동일한 결과 채널 재사용,
-    /// anchor=None), 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로
-    /// 나타난다. 호출자는 `list workspaces`(mirror 플래그)로 결과를 확인한다.
+    /// 블로킹 SSH 터널 수립은 워커 스레드에서 한다(auto-attach 와 동일한 결과 채널 재사용,
+    /// anchor=None).
+    ///
+    /// **회신 계약이 두 갈래인 이유**:
+    /// - 기존 ws attach: 즉시 `{attaching:true}`(fire-and-forget). 호출자가 이미 대상 id
+    ///   를 알고 있으므로 회신에 새 정보가 없고, mirror 는 비동기로 나타난다.
+    /// - `new_workspace`: **생성 완료까지 기다렸다 지연 회신**해 `remote_workspace`(새 id)
+    ///   를 돌려준다. 즉시 회신으로는 ① 호출자가 만들어진 id 를 알 길이 없고 ② 생성 실패
+    ///   (예: 없는 `cwd`)를 통보할 방법이 없기 때문이다. `remote.workspaces` 가 이미 워커
+    ///   완료 후 지연 회신하는 선례다. 지연 구간은 SSH 터널 수립 + IPC 1회 뿐이고
+    ///   attach 자체(mirror 구성)는 기다리지 않는다.
     fn ipc_dispatch_remote_attach(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let params = &cmd.request.params;
-        let remote_ws = params.get("remote_workspace").and_then(|v| v.as_u64());
+        let conn = match RemoteConnParams::parse(&cmd.request.params) {
+            Ok(c) => c,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, msg),
+                );
+                return;
+            }
+        };
+        let target = match RemoteAttachTarget::parse(&cmd.request.params) {
+            Ok(t) => t,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, msg),
+                );
+                return;
+            }
+        };
+
+        let tx = self.auto_attach_tx.clone();
+        let proxy = self.view.proxy.clone();
+        match target {
+            RemoteAttachTarget::Existing(remote_ws) => {
+                std::thread::spawn(move || {
+                    let result = conn.resolve_endpoint();
+                    send_attach_outcome(&tx, &proxy, remote_ws, result);
+                });
+                // 즉시 회신(fire-and-forget). mirror 는 비동기 생성, focus 는 이동하지 않음.
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::success(
+                        rpc_id,
+                        serde_json::json!({ "attaching": true, "remote_workspace": remote_ws }),
+                    ),
+                );
+            }
+            RemoteAttachTarget::Create { name, cwd } => {
+                let response_tx = cmd.response_tx.clone();
+                std::thread::spawn(move || {
+                    remote_attach_create_worker(conn, name, cwd, rpc_id, &response_tx, &tx, &proxy);
+                });
+            }
+        }
+    }
+}
+
+/// `remote.*` 공통 접속 파라미터(`profile` XOR `ssh` + 포트 발견 옵션).
+///
+/// 두 디스패처(`remote.workspaces` / `remote.attach`)가 같은 상호배타 가드를 각자
+/// 재현하면 메시지가 어긋나므로 한 곳에 모은다. CLI 선처리(`run.rs`)의 가드와 같은 규약.
+struct RemoteConnParams {
+    profile: Option<String>,
+    ssh: Option<String>,
+    remote_tasty: String,
+    remote_port_mode: String,
+}
+
+impl RemoteConnParams {
+    fn parse(params: &serde_json::Value) -> Result<Self, &'static str> {
         let profile = params
             .get("profile")
             .and_then(|v| v.as_str())
@@ -994,80 +1043,166 @@ impl App {
             .get("ssh")
             .and_then(|v| v.as_str())
             .map(str::to_string);
-        let remote_tasty = params
-            .get("remote_tasty")
-            .and_then(|v| v.as_str())
-            .unwrap_or("tasty")
-            .to_string();
-        let remote_port_mode = params
-            .get("remote_port_mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto")
-            .to_string();
-
-        let Some(remote_ws) = remote_ws else {
-            send_response(
-                &cmd.response_tx,
-                host_ipc::protocol::JsonRpcResponse::invalid_params(
-                    rpc_id,
-                    "Missing required 'remote_workspace' (u32)",
-                ),
-            );
-            return;
-        };
-        let remote_ws = remote_ws as u32;
         if profile.is_some() && ssh.is_some() {
-            send_response(
-                &cmd.response_tx,
-                host_ipc::protocol::JsonRpcResponse::invalid_params(
-                    rpc_id,
-                    "'profile' and 'ssh' are mutually exclusive",
-                ),
-            );
-            return;
+            return Err("'profile' and 'ssh' are mutually exclusive");
         }
         if profile.is_none() && ssh.is_none() {
+            return Err("one of 'profile' or 'ssh' is required");
+        }
+        Ok(Self {
+            profile,
+            ssh,
+            remote_tasty: params
+                .get("remote_tasty")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tasty")
+                .to_string(),
+            remote_port_mode: params
+                .get("remote_port_mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("auto")
+                .to_string(),
+        })
+    }
+
+    /// 접속 스펙 resolve → 엔드포인트(SSH 터널/loopback). **블로킹** — 워커 전용.
+    fn resolve_endpoint(&self) -> anyhow::Result<(Option<tasty_cli::ssh::SshTunnel>, u16)> {
+        let (target, rt, pm, pf) = tasty_cli::remote_browse::resolve_connection_spec(
+            self.profile.as_deref(),
+            self.ssh.as_deref(),
+            &self.remote_tasty,
+            &self.remote_port_mode,
+        )?;
+        tasty_cli::remote_browse::resolve_endpoint(&target, &rt, &pm, pf.as_deref())
+    }
+}
+
+/// `remote.attach` 의 attach 대상 — 기존 원격 ws 지정 vs 원격에 새로 생성.
+enum RemoteAttachTarget {
+    Existing(u32),
+    Create {
+        name: Option<String>,
+        cwd: Option<String>,
+    },
+}
+
+impl RemoteAttachTarget {
+    fn parse(params: &serde_json::Value) -> Result<Self, String> {
+        let remote_ws = params
+            .get("remote_workspace")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        let new_workspace = params
+            .get("new_workspace")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let cwd = params
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        match (remote_ws, new_workspace) {
+            (Some(_), true) => {
+                Err("'remote_workspace' and 'new_workspace' are mutually exclusive".to_string())
+            }
+            (None, false) => Err(
+                "one of 'remote_workspace' (u32) or 'new_workspace' (bool) is required".to_string(),
+            ),
+            (Some(id), false) => {
+                // 생성 전용 옵션을 조용히 무시하면 "이름을 줬는데 안 붙었다" 로 보인다.
+                if name.is_some() || cwd.is_some() {
+                    return Err(
+                        "'name'/'cwd' require 'new_workspace': true (they describe the workspace to create)"
+                            .to_string(),
+                    );
+                }
+                Ok(Self::Existing(id))
+            }
+            (None, true) => Ok(Self::Create { name, cwd }),
+        }
+    }
+}
+
+/// 해석된 엔드포인트를 auto-attach 결과 채널로 넘기고 메인 루프를 깨운다.
+/// 메인 루프가 drain 해 focus 중립 `start_gui_attach` 를 수행한다.
+fn send_attach_outcome(
+    tx: &std::sync::mpsc::Sender<crate::app::auto_attach::AutoAttachOutcome>,
+    proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
+    remote_ws: u32,
+    result: anyhow::Result<(Option<tasty_cli::ssh::SshTunnel>, u16)>,
+) {
+    let outcome = crate::app::auto_attach::AutoAttachOutcome {
+        anchor_ws_id: None,
+        remote_ws,
+        result,
+        is_reconnect: false,
+    };
+    let _ = tx.send(outcome); // 수신자(메인 루프) drop 시에만 실패 — 무시.
+    let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
+}
+
+/// `new_workspace` 워커 — 엔드포인트 해석 → 원격 `workspace.create` → 지연 회신 →
+/// 생성된 id 로 attach outcome push.
+///
+/// 실패하면 outcome 을 보내지 않고 에러로 회신한다(붙을 대상이 없으므로). 그 경우
+/// 터널 핸들은 여기서 Drop 되어 자식 ssh 가 회수된다(고아 터널 방지).
+fn remote_attach_create_worker(
+    conn: RemoteConnParams,
+    name: Option<String>,
+    cwd: Option<String>,
+    rpc_id: serde_json::Value,
+    response_tx: &std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse>,
+    tx: &std::sync::mpsc::Sender<crate::app::auto_attach::AutoAttachOutcome>,
+    proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
+) {
+    let (tunnel, port) = match conn.resolve_endpoint() {
+        Ok(v) => v,
+        Err(e) => {
             send_response(
-                &cmd.response_tx,
-                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                response_tx,
+                host_ipc::protocol::JsonRpcResponse::error(
                     rpc_id,
-                    "one of 'profile' or 'ssh' is required",
+                    -32050,
+                    // `{e:#}` — anyhow 컨텍스트 체인을 한 줄로 편다. 최상위만 실으면
+                    // 정작 원인(포트 발견 실패/터널 거부)이 호출자에게 안 보인다.
+                    format!("remote endpoint resolve failed: {e:#}"),
                 ),
             );
             return;
         }
-
-        // 워커: 접속 스펙 resolve + 엔드포인트(SSH 터널/loopback) 해석(블로킹). 완료 시
-        // auto-attach 결과 채널로 push → 메인 루프가 drain 해 focus 중립 start_gui_attach.
-        let tx = self.auto_attach_tx.clone();
-        let proxy = self.view.proxy.clone();
-        std::thread::spawn(move || {
-            let result = tasty_cli::remote_browse::resolve_connection_spec(
-                profile.as_deref(),
-                ssh.as_deref(),
-                &remote_tasty,
-                &remote_port_mode,
-            )
-            .and_then(|(target, rt, pm, pf)| {
-                tasty_cli::remote_browse::resolve_endpoint(&target, &rt, &pm, pf.as_deref())
-            });
-            let outcome = crate::app::auto_attach::AutoAttachOutcome {
-                anchor_ws_id: None,
-                remote_ws,
-                result,
-                is_reconnect: false,
-            };
-            let _ = tx.send(outcome); // 수신자(메인 루프) drop 시에만 실패 — 무시.
-            let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
-        });
-
-        // 즉시 회신(fire-and-forget). mirror 는 비동기 생성, focus 는 이동하지 않음.
-        send_response(
-            &cmd.response_tx,
-            host_ipc::protocol::JsonRpcResponse::success(
-                rpc_id,
-                serde_json::json!({ "attaching": true, "remote_workspace": remote_ws }),
-            ),
-        );
-    }
+    };
+    let created =
+        match tasty_cli::remote_create::create_via_port(port, name.as_deref(), cwd.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                // 원격이 `cwd does not exist: …` 같은 invalid_params 를 돌려준 경우도 여기로
+                // 온다 — 원문 메시지를 그대로 실어 호출자가 원인을 알 수 있게 한다.
+                send_response(
+                    response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(
+                        rpc_id,
+                        -32050,
+                        format!("remote workspace.create failed: {e:#}"),
+                    ),
+                );
+                return;
+            }
+        };
+    send_response(
+        response_tx,
+        host_ipc::protocol::JsonRpcResponse::success(
+            rpc_id,
+            serde_json::json!({
+                "attaching": true,
+                "created": true,
+                "remote_workspace": created.id,
+                "name": created.name,
+                "index": created.index,
+            }),
+        ),
+    );
+    send_attach_outcome(tx, proxy, created.id, Ok((tunnel, port)));
 }
