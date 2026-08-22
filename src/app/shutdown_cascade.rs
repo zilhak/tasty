@@ -100,6 +100,13 @@ impl App {
         // 단계 2+3: surface close cascade (S3).
         self.shutdown_close_surfaces();
 
+        // 단계 3.5: surface close 가 뒤로 미뤄둔 observer sink 워커 회수 (S3b).
+        //           close 경로는 렌더 스레드를 막지 않으려고 join 을 미루므로
+        //           (`ObserverRouter::drop_surface`), 프로세스가 끝나기 전에 여기서
+        //           한 번 걷어야 마지막 항목까지 sink 에 남는다. 워커들은 그동안
+        //           병렬로 배수를 끝냈으므로 정상 경로 실측 대기는 0 에 가깝다.
+        self.shutdown_join_observer_sinks();
+
         // 단계 4: plugin 종료 (S4/S4a).
         self.shutdown_plugins();
 
@@ -143,6 +150,30 @@ impl App {
             ms = shutdown_trace::elapsed_ms(t_cascade),
             surfaces,
             "S3 surface_close_cascade (enqueue + plugin broadcast)"
+        );
+    }
+
+    /// 단계 3.5 — close 경로가 미뤄둔 observer sink 워커를 회수한다.
+    ///
+    /// surface close 는 워크스페이스 close 시 leaf surface 수만큼 반복되므로 그
+    /// 자리에서 join 하지 않는다(`ObserverRouter::drop_surface`). 미뤄진 join 을
+    /// 프로세스 종료 전에 소화하는 곳이 여기다 — 안 걸면 아직 배수 중인 워커가
+    /// 프로세스와 함께 죽어 sink 의 마지막 항목이 잘린다.
+    fn shutdown_join_observer_sinks(&mut self) {
+        let t = Instant::now();
+        // close cascade 와 같은 범위를 돈다 — 창별 engine + parked engine 전부.
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                main.core_state.observer_router.join_retired();
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.observer_router.join_retired();
+        }
+        tracing::info!(
+            target: "tasty::shutdown",
+            ms = shutdown_trace::elapsed_ms(t),
+            "S3b observer_sink_join (deferred close-path joins)"
         );
     }
 

@@ -25,6 +25,8 @@ begin_shutdown (src/app/shutdown_cascade.rs)          [t0 확정]
        ├─ ―   system.shutdown_initiated 발화 (plugin cleanup hook 기회)
        ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
        │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
+       ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
+       │      surface close 가 뒤로 미뤄둔 output observer sink 워커 회수
        ├─ S4  plugin_manager.shutdown_all()
        │      전 plugin 에 shutdown 요청을 **먼저 다 뿌린 뒤** 대기를 겹친다
        │      └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
@@ -97,12 +99,13 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | S1 layout_flush | `flush_layout_persistence(true)` | — |
 | S2 boot_worker_reclaim | `reclaim_boot_engine_worker_for_exit` (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
 | S3 surface_close_cascade | close 큐 push + plugin broadcast | `surfaces` = 큐에 push 한 surface 수 |
+| S3b observer_sink_join | close 경로가 미뤄둔 observer sink 워커 join | — |
 | S4 plugin_shutdown | `shutdown_all` 전체 (겹친 대기의 합계 = 최댓값) | `plugins` = 종료 대상 plugin 수 |
 | S4a plugin_shutdown_one | plugin 1개 종료 (graceful deadline 2s) | `plugin_id`, `reason = graceful\|killed\|no_child` |
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
 | S5a lua_join | `LuaEngine::drop` (Shutdown send + 워커 join) | — |
-| S5b pty_drop | `PtyBackend::drop` 합계 | `ptys` = drop 된 PTY 수 |
+| S5b pty_drop | `PtyBackend::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)) | `ptys` = drop 된 PTY 수 |
 | S5c ssh_tunnel_drop | `SshTunnel::drop` 합계 | `tunnels` = drop 된 터널 수 |
 | S5 drop_tail | `run_app` 반환 → `App` drop 완료 | — |
 | shutdown_total_with_drop | 종료 진입 → Drop tail 완료 (**체감 종료 시간**) | — |
@@ -119,6 +122,11 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 - **S4 는 개별 S4a 의 합이 아니라 최댓값에 수렴한다.** 대기가 겹치므로
   plugin 이 6개면 S4a 가 각각 ≈2000ms 여도 S4 는 ≈2000ms 다. S4 가 plugin 수에
   비례해 커졌다면 대기가 다시 직렬화된 것이다.
+- **S3b 는 정상 경로에서 0 에 가깝다.** surface close 는 sink 워커를 join 하지 않고
+  모아두기만 하므로([ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)),
+  여기서 한 번에 회수한다. 워커들이 그동안 병렬로 이미 배수를 끝냈기 때문에 실제
+  대기는 거의 없다. **이 단계를 빼면 아직 배수 중인 워커가 프로세스와 함께 죽어
+  sink 파일의 마지막 항목이 잘린다** — observer 를 쓰지 않으면 항상 0 이다.
 - **S3 의 `surfaces` 와 S5b 의 `ptys` 는 세는 대상이 다르다.** 전자는 layout 상의
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.

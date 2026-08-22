@@ -151,6 +151,44 @@ impl Drop for PtyBackend {
         // 종료 Drop tail 계측(S5b) / close 계측(C5b) 누적 — 개별 로그 대신 합계를
         // 모은다.
         let t_drop = std::time::Instant::now();
+        // unix: 종료 신호는 여기서 보내되 **기다리지는 않는다**. portable-pty 의
+        // `ChildKiller::kill`(unix)은 SIGHUP 을 보낸 뒤 자체 유예 루프에서
+        // `try_wait` 를 최대 4 회, 사이사이 `thread::sleep(50ms)` 로 폴링한다
+        // (portable-pty-0.8.1 `src/lib.rs` 의 `impl ChildKiller for
+        // std::process::Child`). 첫 `try_wait` 는 SIGHUP 직후라 거의 항상 아직
+        // 안 죽은 상태로 걸려서, **정상 경로에서도 매번 50ms 를 통째로 잔다**
+        // (실측: surface 당 50.2~50.4ms 가 고정적으로 발생, 12 탭 워크스페이스
+        // close 의 cleanup 604ms 중 604ms 가 이 sleep). 워크스페이스 close 는 이
+        // Drop 을 leaf surface 수만큼 렌더 스레드에서 직렬 반복하므로 탭 수에
+        // 그대로 비례한다.
+        //
+        // 그 유예/escalation 은 바로 아래 detached reap 스레드가 이미 **더 촘촘하게**
+        // (5ms × 40회 = 같은 200ms 상한) 수행한다. 즉 메인 스레드의 유예 루프는
+        // 순수 중복이라, unix 에서는 SIGHUP 만 직접 보내고 대기는 전부 스레드에
+        // 넘긴다. Windows 경로는 `kill()` 이 `TerminateProcess` 한 방이라 유예
+        // 루프가 없어 그대로 둔다.
+        #[cfg(unix)]
+        let signalled_pid = child.process_id();
+        #[cfg(unix)]
+        match signalled_pid {
+            // SAFETY: kill syscall. 대상은 본 프로세스의 자식 pid 이고, 아직
+            // 회수 전(아래 reap 스레드가 회수한다)이라 pid 재사용이 일어날 수 없다.
+            Some(pid) => unsafe {
+                if libc::kill(pid as i32, libc::SIGHUP) != 0 {
+                    tracing::trace!(
+                        "pty child SIGHUP on drop failed (already exited?): {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
+            },
+            // pid 를 못 얻는 예외 경로에서만 blocking kill 로 폴백한다.
+            None => {
+                if let Err(e) = child.kill() {
+                    tracing::trace!("pty child kill on drop failed (already exited?): {e}");
+                }
+            }
+        }
+        #[cfg(not(unix))]
         if let Err(e) = child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
         }
@@ -161,7 +199,7 @@ impl Drop for PtyBackend {
         // 유예 poll → SIGKILL escalation 으로 reap 한다. 셸은 SIGHUP 후 보통 수 ms
         // 안에 죽으므로 정상 경로 비용은 poll 1~2회다.
         #[cfg(unix)]
-        if let Some(pid) = child.process_id() {
+        if let Some(pid) = signalled_pid {
             std::thread::spawn(move || {
                 let pid = pid as i32;
                 let mut status = 0i32;

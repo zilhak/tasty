@@ -91,6 +91,17 @@ pub struct ObserverRouter {
     observers: HashMap<ObserverId, ObserverEntry>,
     /// surface 별 partial-line 버퍼. `'\n'` 이 들어올 때까지 누적.
     line_buffers: HashMap<u32, LineBuffer>,
+    /// surface close 로 자동 해제된 sink 워커의 join 핸들 — [`ObserverRouter::retire`]
+    /// 참조. 렌더 스레드에서 join 하지 않고 여기 모아뒀다가, 이미 끝난 것만
+    /// 논블로킹으로 걷어내고(`reap_finished`) 남은 것은 앱 종료 시
+    /// [`ObserverRouter::join_retired`] 가 한 번에 회수한다.
+    retired: Vec<RetiredSink>,
+}
+
+/// 해제됐지만 아직 join 하지 않은 sink 워커.
+struct RetiredSink {
+    id: ObserverId,
+    join: JoinHandle<()>,
 }
 
 struct ObserverEntry {
@@ -144,6 +155,7 @@ impl ObserverRouter {
             next_id: 1,
             observers: HashMap::new(),
             line_buffers: HashMap::new(),
+            retired: Vec::new(),
         }
     }
 
@@ -239,6 +251,11 @@ impl ObserverRouter {
         Ok(id)
     }
 
+    /// 명시적 해제(`output.observe_stop`). 호출이 돌아온 시점에 sink 가 닫혀
+    /// 있기를 기대하는 API 라 **여기서는 join 을 유지한다** — 이 경로는 surface
+    /// 수만큼 반복되지 않으므로 per-surface 블로킹 문제와 무관하다. surface close
+    /// 로 인한 자동 해제는 [`ObserverRouter::drop_surface`] → [`Self::retire`] 를
+    /// 탄다.
     pub fn unregister(&mut self, id: ObserverId) -> Result<(), ObserverError> {
         let entry = self
             .observers
@@ -252,6 +269,57 @@ impl ObserverRouter {
             tracing::warn!("observer {id} sink thread panicked: {e:?}");
         }
         Ok(())
+    }
+
+    /// surface close 경로의 해제 — sender 만 떨어뜨리고 join 은 뒤로 미룬다.
+    ///
+    /// **데이터 유실이 없는 이유**: `try_send` 로 채널에 들어간 항목은 sender 가
+    /// 전부 drop 된 뒤에도 `Receiver::recv` 가 버퍼를 끝까지 비운 다음에야
+    /// `Err` 를 돌려준다(std mpsc 계약). 즉 워커는 여기서 join 하지 않아도 남은
+    /// 항목을 모두 sink 에 쓰고 스스로 끝난다. 파일 sink 는 `File` 에 직접
+    /// `writeln!` 하므로(`BufWriter` 없음) 유저스페이스에 붙들린 버퍼도 없다.
+    /// 유일한 유실 경로는 "워커가 다 쓰기 전에 프로세스가 죽는 것" 이라,
+    /// 앱 종료 시 [`Self::join_retired`] 로 반드시 회수한다.
+    fn retire(&mut self, id: ObserverId, entry: ObserverEntry) {
+        // tx drop → worker recv loop 가 남은 버퍼를 비우고 종료한다.
+        drop(entry.tx);
+        if let Some(join) = entry.join {
+            self.retired.push(RetiredSink { id, join });
+        }
+    }
+
+    /// 이미 끝난 retired 워커만 논블로킹으로 걷어낸다. 아직 도는 워커는 그대로
+    /// 남겨두므로 이 호출은 절대 블로킹하지 않는다.
+    fn reap_finished(&mut self) {
+        let mut still_running = Vec::with_capacity(self.retired.len());
+        for r in self.retired.drain(..) {
+            if r.join.is_finished() {
+                if let Err(e) = r.join.join() {
+                    tracing::warn!("observer {} sink thread panicked: {e:?}", r.id);
+                }
+            } else {
+                still_running.push(r);
+            }
+        }
+        self.retired = still_running;
+    }
+
+    /// 남은 retired 워커를 전부 join 한다 — **앱 종료 경로 전용**. surface close 는
+    /// join 을 미루므로, 프로세스가 끝나기 전에 여기서 한 번 회수해야 마지막
+    /// 항목까지 sink 에 남는다. surface 마다 직렬로 기다리던 것과 달리 워커들이
+    /// 그동안 병렬로 이미 배수를 끝냈으므로 여기서의 실제 대기는 거의 0 이다.
+    pub fn join_retired(&mut self) {
+        for r in self.retired.drain(..) {
+            if let Err(e) = r.join.join() {
+                tracing::warn!("observer {} sink thread panicked: {e:?}", r.id);
+            }
+        }
+    }
+
+    /// 아직 join 되지 않은 retired 워커 수 — 테스트/진단용.
+    #[cfg(test)]
+    pub(crate) fn retired_len(&self) -> usize {
+        self.retired.len()
     }
 
     pub fn list(&self) -> Vec<ObserverInfo> {
@@ -343,6 +411,11 @@ impl ObserverRouter {
 
     /// Surface 가 닫혔을 때 호출. 그 surface 에 매인 옵저버 (wildcard 가
     /// 아닌) 는 자동 종료, line buffer 도 정리.
+    ///
+    /// 워크스페이스 close 는 이 함수를 leaf surface 수만큼 렌더 스레드에서 직렬
+    /// 반복하므로 **여기서 워커를 join 하지 않는다** — sender 만 떨어뜨리고
+    /// ([`Self::retire`]) 회수는 뒤로 미룬다. 유실이 없는 근거와 종료 시 회수는
+    /// `retire` / [`Self::join_retired`] 문서 참조.
     pub fn drop_surface(&mut self, surface_id: u32) {
         self.line_buffers.remove(&surface_id);
         let tied: Vec<ObserverId> = self
@@ -352,10 +425,13 @@ impl ObserverRouter {
             .map(|(id, _)| *id)
             .collect();
         for id in tied {
-            if let Err(e) = self.unregister(id) {
-                tracing::warn!("auto-unregister observer {id} for closed surface: {e}");
-            }
+            let Some(entry) = self.observers.remove(&id) else {
+                continue;
+            };
+            self.retire(id, entry);
         }
+        // 이전 close 에서 미뤄둔 워커 중 이미 끝난 것을 여기서 걷는다(논블로킹).
+        self.reap_finished();
     }
 }
 
@@ -617,6 +693,157 @@ mod tests {
         assert!(!r.wants(2), "wildcard removed — surface 2 off again");
         r.unregister(tied).unwrap();
         assert!(!r.wants(1), "all observers removed — gate off");
+    }
+
+    // ── surface close 경로의 지연 join (per-surface 블로킹 제거) ──
+
+    fn mem_store() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().unwrap(),
+        ))
+    }
+
+    fn register_file_observer(
+        r: &mut ObserverRouter,
+        surface_id: u32,
+        path: &std::path::Path,
+    ) -> ObserverId {
+        r.register(
+            ObserverSpec {
+                surface_id: Some(surface_id),
+                parsers: vec!["path".into()],
+                kinds: None,
+                sink: SinkSpec::File {
+                    path: Some(path.to_path_buf()),
+                },
+            },
+            mem_store(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn drop_surface_retires_worker_without_joining() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = ObserverRouter::new();
+        register_file_observer(&mut r, 1, &dir.path().join("a.jsonl"));
+        assert_eq!(r.retired_len(), 0);
+
+        r.drop_surface(1);
+
+        assert!(!r.wants(1), "옵저버는 즉시 등록 해제된다");
+        // 워커가 아직 안 끝났으면 retired 에 남고, 이미 끝났으면 reap_finished 가
+        // 걷어간다 — 어느 쪽이든 drop_surface 는 블로킹하지 않는다.
+        assert!(r.retired_len() <= 1);
+        r.join_retired();
+        assert_eq!(r.retired_len(), 0, "join_retired 가 전부 회수한다");
+    }
+
+    #[test]
+    fn retired_workers_flush_everything_accepted_into_the_channel() {
+        // 지연 join 의 안전성 근거: `try_send` 로 채널에 들어간 항목은 sender 가
+        // 떨어진 뒤에도 워커가 전부 sink 에 쓰고 끝난다(std mpsc 계약).
+        let dir = tempfile::tempdir().unwrap();
+        let sink = dir.path().join("flush.jsonl");
+        let mut r = ObserverRouter::new();
+        register_file_observer(&mut r, 7, &sink);
+
+        // 채널 용량(256)보다 적게 보내 backpressure drop 이 끼지 않게 한다.
+        let mut expected = 0usize;
+        for i in 0..64 {
+            r.dispatch_text(7, &format!("/tmp/retire-probe-{i}\n"));
+            expected += 1;
+        }
+
+        r.drop_surface(7);
+        r.join_retired();
+
+        let written = std::fs::read_to_string(&sink).unwrap();
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(
+            lines.len(),
+            expected,
+            "채널에 수락된 항목은 join 을 미뤄도 하나도 유실되지 않는다"
+        );
+        assert!(
+            lines.last().unwrap().contains("/tmp/retire-probe-63"),
+            "마지막 항목까지 기록된다: {:?}",
+            lines.last()
+        );
+    }
+
+    #[test]
+    fn many_surfaces_retire_and_join_once() {
+        // 워크스페이스 close 재현 — surface 마다 join 하지 않고 모아뒀다가 한 번에
+        // 회수한다. 각 sink 의 마지막 항목이 살아 있어야 한다.
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = ObserverRouter::new();
+        let sids: Vec<u32> = (1..=8).collect();
+        for sid in &sids {
+            register_file_observer(&mut r, *sid, &dir.path().join(format!("s{sid}.jsonl")));
+        }
+        for sid in &sids {
+            for i in 0..16 {
+                r.dispatch_text(*sid, &format!("/tmp/multi-{sid}-{i}\n"));
+            }
+        }
+        for sid in &sids {
+            r.drop_surface(*sid);
+        }
+        r.join_retired();
+
+        for sid in &sids {
+            let body = std::fs::read_to_string(dir.path().join(format!("s{sid}.jsonl"))).unwrap();
+            let lines: Vec<&str> = body.lines().collect();
+            assert_eq!(lines.len(), 16, "surface {sid}");
+            assert!(
+                lines
+                    .last()
+                    .unwrap()
+                    .contains(&format!("/tmp/multi-{sid}-15")),
+                "surface {sid} 마지막 항목 유실"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_unregister_still_joins_synchronously() {
+        // `output.observe_stop` 은 호출이 돌아온 시점에 sink 가 닫혀 있기를 기대하는
+        // API 라 join 을 유지한다 — surface 수만큼 반복되는 경로가 아니다.
+        let dir = tempfile::tempdir().unwrap();
+        let sink = dir.path().join("explicit.jsonl");
+        let mut r = ObserverRouter::new();
+        let id = register_file_observer(&mut r, 3, &sink);
+        r.dispatch_text(3, "/tmp/explicit-1\n");
+
+        r.unregister(id).unwrap();
+
+        assert_eq!(r.retired_len(), 0, "명시 해제는 retired 에 쌓이지 않는다");
+        let body = std::fs::read_to_string(&sink).unwrap();
+        assert!(body.contains("/tmp/explicit-1"), "복귀 시점에 이미 기록됨");
+    }
+
+    #[test]
+    fn drop_surface_leaves_wildcard_observers_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = ObserverRouter::new();
+        let wildcard = r
+            .register(
+                ObserverSpec {
+                    surface_id: None,
+                    parsers: vec!["path".into()],
+                    kinds: None,
+                    sink: SinkSpec::File {
+                        path: Some(dir.path().join("wild.jsonl")),
+                    },
+                },
+                mem_store(),
+            )
+            .unwrap();
+        r.drop_surface(5);
+        assert!(r.wants(9), "wildcard 는 surface close 로 해제되지 않는다");
+        assert_eq!(r.retired_len(), 0);
+        r.unregister(wildcard).unwrap();
     }
 
     #[test]
