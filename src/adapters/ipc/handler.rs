@@ -992,6 +992,9 @@ fn route_engine_handler(
         "remote.profile.add" => remote_profile::handle_add(id, &request.params),
         "remote.profile.detect" => remote_profile::handle_detect(id, &request.params),
         "remote.profile.remove" => remote_profile::handle_remove(id, &request.params),
+        // 로컬 ssh config 열거·가져오기 — 파일 읽기만 한다(ssh 실행 없음).
+        "remote.profile.list_local" => remote_profile::handle_list_local(id),
+        "remote.profile.import" => remote_profile::handle_import(id, &request.params),
         // remote.passkey.* — 자격증명 CRUD (값 마스킹 — 경로/내용 미반환).
         "remote.passkey.list" => passkey::handle_list(id),
         "remote.passkey.get" => passkey::handle_get(id, &request.params),

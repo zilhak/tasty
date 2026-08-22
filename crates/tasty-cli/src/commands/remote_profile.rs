@@ -13,7 +13,8 @@ use anyhow::Result;
 use clap::Subcommand;
 
 use tasty_remote_profiles::{
-    Passkeys, RemoteProfile, RemoteProfiles, is_valid_shell, sanitize_passkey_name,
+    ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost, enumerate_hosts,
+    imported_as, is_valid_shell, prepare_import, sanitize_passkey_name, user_config_path,
 };
 
 #[derive(Subcommand)]
@@ -137,6 +138,23 @@ pub enum RemoteProfileCommands {
     Detect {
         #[arg(long)]
         name: String,
+    },
+    /// 로컬 ssh config(`~/.ssh/config` + Include)의 Host alias 목록. 접속하지 않는다.
+    ListLocal {
+        #[arg(long)]
+        json: bool,
+    },
+    /// 로컬 ssh config alias 를 ssh 프로필로 가져온다(alias 만 저장 — 값 해석은 ssh 몫).
+    Import {
+        /// 가져올 ssh config alias (`list-local` 의 ALIAS 열).
+        #[arg(long)]
+        from: String,
+        /// 새로 만들 프로필 고유 식별자.
+        #[arg(long)]
+        name: String,
+        /// UI 표시용 라벨(옵션).
+        #[arg(long)]
+        label: Option<String>,
     },
 }
 
@@ -467,7 +485,114 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             }
             Ok(())
         }
+        RemoteProfileCommands::ListLocal { json } => list_local(*json),
+        RemoteProfileCommands::Import { from, name, label } => {
+            let mut profiles = RemoteProfiles::load();
+            let p = prepare_import(&profiles, &enumerate_hosts(), from, name, label.clone())
+                .map_err(import_error_message)?;
+            profiles.upsert(p);
+            profiles.save()?;
+            println!("추가: 원격 프로필 '{name}' (ssh config alias '{from}' 참조).");
+            // 셸 감지는 SSH 접속을 발생시키므로 가져오기에 묶지 않는다 — 여러 건을
+            // 가져올 때 접속이 연쇄로 일어난다. 필요할 때 사용자가 직접 돌린다.
+            println!("셸 감지: tasty tool remote-profile detect --name {name}");
+            Ok(())
+        }
     }
+}
+
+/// [`ImportError`] 를 사용자 문구로. 크레이트는 문자열을 갖지 않으므로 여기서 만든다.
+fn import_error_message(e: ImportError) -> anyhow::Error {
+    match e {
+        ImportError::UnknownAlias(a) => anyhow::anyhow!(
+            "ssh config alias '{a}' 을 찾을 수 없습니다. (tasty tool remote-profile list-local)"
+        ),
+        ImportError::NameTaken(n) => anyhow::anyhow!("원격 프로필 '{n}' 이 이미 존재합니다."),
+    }
+}
+
+/// `list-local` — 로컬 ssh config 의 alias 열거. ssh 를 실행하지 않는 순수 파일 읽기다.
+fn list_local(json: bool) -> Result<()> {
+    let hosts = enumerate_hosts();
+    let profiles = RemoteProfiles::load();
+    if json {
+        let arr: Vec<_> = hosts
+            .iter()
+            .map(|h| {
+                serde_json::json!({
+                    "name": h.alias,
+                    "source": h.source.display().to_string(),
+                    "hostname": h.hostname,
+                    "user": h.user,
+                    "port": h.port,
+                    "imported_as": imported_as(&profiles, &h.alias),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr)?);
+        return Ok(());
+    }
+    if hosts.is_empty() {
+        // "파일이 아예 없다" 와 "있는데 alias 가 없다" 는 사용자가 할 일이 다르다.
+        // 권한·비 UTF-8 같은 읽기 실패는 열거 코어가 warn 로그를 남기고 빈 목록이 된다.
+        match user_config_path().filter(|p| p.exists()) {
+            Some(p) => println!(
+                "로컬 ssh config 에 가져올 alias 가 없습니다 ({}).",
+                display_path(&p)
+            ),
+            None => println!(
+                "로컬 ssh config 가 없습니다 ({}).",
+                user_config_path()
+                    .map(|p| display_path(&p))
+                    .unwrap_or_else(|| "~/.ssh/config".into())
+            ),
+        }
+        return Ok(());
+    }
+    println!("{:<20} {:<28} {:<20} IMPORTED", "ALIAS", "SOURCE", "TARGET");
+    for h in &hosts {
+        println!(
+            "{:<20} {:<28} {:<20} {}",
+            elide(&h.alias, 20),
+            elide(&display_path(&h.source), 28),
+            elide(&target_hint(h), 20),
+            imported_as(&profiles, &h.alias).unwrap_or("-"),
+        );
+    }
+    Ok(())
+}
+
+/// 표시용 hint 한 칸 — `HostName[:Port]`(둘 다 없으면 빈 칸). 프로필에는 저장되지
+/// 않는 값이라 "이 alias 가 어디를 가리키나" 를 눈으로 확인하는 용도다.
+fn target_hint(h: &SshConfigHost) -> String {
+    match (&h.hostname, h.port) {
+        (Some(host), Some(port)) => format!("{host}:{port}"),
+        (Some(host), None) => host.clone(),
+        (None, Some(port)) => format!(":{port}"),
+        (None, None) => "-".into(),
+    }
+}
+
+/// 홈 아래 경로를 `~/…` 로 줄여 출력한다. 표 폭을 잡아먹는 건 대개 홈 접두사다.
+fn display_path(p: &std::path::Path) -> String {
+    let full = p.display().to_string();
+    match tasty_utils::path::os_home_dir() {
+        Some(home) => match p.strip_prefix(&home) {
+            Ok(rest) => format!("~/{}", rest.display()),
+            Err(_) => full,
+        },
+        None => full,
+    }
+}
+
+/// 표 한 칸을 넘기는 값은 말줄임한다. alias 는 사용자가 쓴 로컬 파일에서 오므로 길이
+/// 상한이 없다 — 열이 밀려 표가 통째로 어긋나는 것만 막는다(`--json` 은 원본 그대로).
+fn elide(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(width.saturating_sub(1)).collect();
+    format!("{head}…")
 }
 
 /// tasty-attach 프로필의 원격 포트를 실제로 발견해 검증한다(SSH 접속 1회).

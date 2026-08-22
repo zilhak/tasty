@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_remote_profiles::{
-    Passkeys, RemoteProfile, RemoteProfiles, is_valid_shell, sanitize_passkey_name,
-    shell_to_port_mode,
+    ImportError, Passkeys, RemoteProfile, RemoteProfiles, enumerate_hosts, imported_as,
+    is_valid_shell, prepare_import, sanitize_passkey_name, shell_to_port_mode, user_config_path,
 };
 
 fn profile_to_json(p: &RemoteProfile) -> Value {
@@ -175,6 +175,79 @@ fn spawn_detect(name: String) {
         Ok(mode) => tracing::info!("remote profile '{name}' 감지 성공 → {}", mode.as_str()),
         Err(e) => tracing::warn!("remote profile '{name}' 감지 실패(비활성): {e}"),
     });
+}
+
+/// `remote.profile.list_local` → 로컬 ssh config(`~/.ssh/config` + Include)의 Host alias.
+///
+/// 읽기 전용 · 프로세스 spawn 없음(`ssh -G` 는 `Match exec` 를 실제로 실행하므로 쓰지
+/// 않는다). `hostname`/`user`/`port` 는 **표시 전용 hint** 라 프로필 저장에 쓰지 않는다.
+/// `config_exists` 는 "설정이 없다" 와 "있는데 alias 가 0건" 을 구분하기 위한 것이다 —
+/// 권한·비 UTF-8 같은 읽기 실패는 코어가 warn 로그를 남기고 빈 목록으로 떨어진다.
+pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
+    let profiles = RemoteProfiles::load();
+    let aliases: Vec<Value> = enumerate_hosts()
+        .into_iter()
+        .map(|h| {
+            json!({
+                "name": h.alias,
+                "source": h.source.display().to_string(),
+                "hostname": h.hostname,
+                "user": h.user,
+                "port": h.port,
+                "imported_as": imported_as(&profiles, &h.alias),
+            })
+        })
+        .collect();
+    let path = user_config_path();
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "aliases": aliases,
+            "config_path": path.as_ref().map(|p| p.display().to_string()),
+            "config_exists": path.as_ref().is_some_and(|p| p.exists()),
+        }),
+    )
+}
+
+/// `remote.profile.import` { from, name, label? } → ssh config alias 를 프로필로 등록.
+///
+/// alias 문자열만 `host` 에 담는다 — `HostName`/`User`/`Port`/`ProxyJump` 를 펼쳐
+/// 복사하면 ssh config 가 바뀔 때 값이 어긋난다(해석은 접속 시점의 ssh 가 한다).
+/// **`handle_add` 와 달리 셸 자동 감지를 spawn 하지 않는다**: 감지는 실제 SSH 접속이라,
+/// 목록에서 여러 건을 가져오면 접속이 연쇄로 일어난다. 감지는 `remote.profile.detect`.
+pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
+    let Some(from) = params.get("from").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'from' parameter");
+    };
+    let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
+    };
+    let label = params
+        .get("label")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let mut profiles = RemoteProfiles::load();
+    let profile = match prepare_import(&profiles, &enumerate_hosts(), from, name, label) {
+        Ok(p) => p,
+        // alias 부재는 "없는 것을 가리켰다" 라 get/remove 의 not-found 와 같은 -32040,
+        // 이름 충돌은 요청이 잘못된 것이라 invalid_params 로 가른다.
+        Err(ImportError::UnknownAlias(a)) => {
+            return JsonRpcResponse::error(id, -32040, format!("ssh config alias '{a}' not found"));
+        }
+        Err(ImportError::NameTaken(n)) => {
+            return JsonRpcResponse::invalid_params(id, format!("remote profile '{n}' exists"));
+        }
+    };
+    profiles.upsert(profile);
+    match profiles.save() {
+        Ok(()) => JsonRpcResponse::success(
+            id,
+            json!({ "saved": true, "name": name, "from": from, "detecting": false }),
+        ),
+        Err(e) => {
+            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
+        }
+    }
 }
 
 /// `remote.profile.remove` { name } → 제거.

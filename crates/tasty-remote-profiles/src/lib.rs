@@ -27,7 +27,10 @@ mod ssh_config;
 pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,
 };
-pub use ssh_config::{SshConfigHost, enumerate_hosts, enumerate_hosts_at, user_config_path};
+pub use ssh_config::{
+    ImportError, SshConfigHost, enumerate_hosts, enumerate_hosts_at, imported_as, prepare_import,
+    user_config_path,
+};
 
 pub use profile::{
     AttachView, BUILTIN_KINDS, FieldValue, PORT_MODES, RemoteProfile, RemoteProfiles, SHELLS,

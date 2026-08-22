@@ -361,6 +361,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("remote.profile.add", plugin(&[])),
         ("remote.profile.detect", plugin(&[])),
         ("remote.profile.remove", plugin(&[])),
+        // 로컬 ssh config 열거/가져오기. 읽는 파일이 `~/.ssh/config` 로 넓어지지만
+        // 노출하는 것은 alias 이름과 표시용 hint 뿐이고(키·비밀 없음), 같은 OS 유저의
+        // FS read 는 신뢰모델 범위 밖이라 프로필 CRUD 와 같은 메타를 쓴다.
+        ("remote.profile.list_local", plugin(&[])),
+        ("remote.profile.import", plugin(&[])),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
         // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).

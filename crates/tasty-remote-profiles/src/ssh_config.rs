@@ -15,13 +15,17 @@
 //! - **user config 만 읽는다.** `/etc/ssh/ssh_config` 는 관리자가 넣은 전역 설정이라
 //!   "내가 등록한 것" 목록에 섞이면 안 된다.
 //!
-//! 실패(파일 없음 / 권한 없음 / 깨진 UTF-8)는 에러가 아니라 **빈 목록 + warn** 이다 —
-//! ssh config 가 없는 사용자가 다수이고, 그건 고장이 아니라 정상 상태다.
+//! 실패(파일 없음 / 권한 없음 / 깨진 UTF-8)는 에러가 아니라 **빈 목록** 이다 — ssh
+//! config 가 없는 사용자가 다수이고, 그건 고장이 아니라 정상 상태다. "없음" 은 debug,
+//! 진짜 읽기 실패는 warn 로그로 갈린다([`read_text`]); 표면은 파일 존재 여부를 따로
+//! 보고 "설정이 없다" 와 "alias 가 0건" 을 다르게 안내한다.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tasty_utils::path::os_home_dir;
+
+use crate::profile::{RemoteProfile, RemoteProfiles};
 
 /// `Include` 재귀 깊이 상한. OpenSSH 자체 상한(16)과 같은 값을 쓴다 — 그보다 깊은
 /// 설정은 ssh 도 읽지 않으므로 여기서 더 파고들 이유가 없다.
@@ -112,14 +116,8 @@ impl Scan {
             // 순환(a → b → a)이나 같은 파일 중복 Include. 이미 읽었으므로 조용히 끝낸다.
             return;
         }
-        let text = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(e) => {
-                // 없음·권한·비 UTF-8 전부 여기로 온다. 어느 쪽이든 "설정이 없다" 로
-                // 취급하는 게 맞다 — 목록이 비는 것이지 기능이 고장난 게 아니다.
-                tracing::warn!(path = %path.display(), error = %e, "ssh_config: unreadable — skipped");
-                return;
-            }
+        let Some(text) = read_text(path) else {
+            return;
         };
         self.parse(&text, path, depth);
     }
@@ -127,8 +125,6 @@ impl Scan {
     fn parse(&mut self, text: &str, path: &Path, depth: usize) {
         // 현재 Host 블록이 만든 항목들의 인덱스. hint 는 이 항목들에만 붙는다.
         let mut block: Vec<usize> = Vec::new();
-        // `Match` 를 만난 뒤인지. 아래 `Host` 처리의 주석 참조.
-        let mut after_match = false;
 
         for line in text.lines() {
             let Some((keyword, args)) = split_line(line) else {
@@ -136,15 +132,13 @@ impl Scan {
             };
             match keyword.as_str() {
                 "host" => {
+                    // `Match` 블록 뒤에 와도 수집한다 — ssh(1) 이 이 줄을 Match 를
+                    // 끝내는 **새 무조건 블록**으로 읽기 때문이다. 열거에서 빼면 사용자
+                    // 눈에는 "내 호스트가 목록에 없다" 로만 보인다. 잘못 실어도 손해가
+                    // 없다는 점도 근거다: 가져오기는 alias 문자열만 저장하고 최종 해석은
+                    // 접속 시점의 ssh 가 하므로, 목록의 이름은 명령줄에 직접 친 이름과
+                    // 정확히 같은 것을 가리킨다.
                     block.clear();
-                    // `Match` 이후의 `Host` 는 수집하지 않는다. ssh(1) 자체는 이 줄을
-                    // Match 를 끝내는 새 무조건 블록으로 읽지만, 이 모듈은 조건부 영역
-                    // 뒤의 것을 정적으로 확정하지 않는 쪽(보수적 열거)을 택했다 — 없는
-                    // 걸 목록에 올려 사용자가 프로필로 저장하는 편보다, 안 보여주고
-                    // 손으로 추가하게 두는 편이 되돌리기 쉽다.
-                    if after_match {
-                        continue;
-                    }
                     for token in args {
                         if !is_literal_alias(&token) {
                             continue;
@@ -163,9 +157,9 @@ impl Scan {
                     }
                 }
                 "match" => {
-                    // Match 블록의 설정은 어느 Host 소속도 아니다 — 컨텍스트를 끊는다.
+                    // Match 블록의 설정은 어느 Host 소속도 아니다 — 컨텍스트만 끊는다.
+                    // (다음 `Host` 가 새 컨텍스트를 열 때까지 hint 는 갈 곳이 없다.)
                     block.clear();
-                    after_match = true;
                 }
                 "hostname" | "user" | "port" => {
                     let Some(value) = args.into_iter().next() else {
@@ -227,6 +221,26 @@ impl Scan {
             self.base_dir.join(expanded)
         };
         expand_glob(&full)
+    }
+}
+
+/// config 파일 하나를 읽는다. 못 읽으면 `None` — **에러로 올리지 않는다.**
+///
+/// 없음과 진짜 실패는 로그 레벨로 가른다: ssh config 가 없는 사용자가 다수라 그건
+/// 정상 상태이고(warn 을 띄우면 CLI stderr 에 "고장" 처럼 보인다), 권한·비 UTF-8 은
+/// 원인을 남겨야 한다. 표면(CLI/IPC)은 파일 존재 여부를 따로 보고 "설정이 없다" 와
+/// "alias 가 0건" 을 다르게 안내한다.
+fn read_text(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::debug!(path = %path.display(), "ssh_config: no such file — skipped");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "ssh_config: unreadable — skipped");
+            None
+        }
     }
 }
 
@@ -390,6 +404,61 @@ fn split_line(line: &str) -> Option<(String, Vec<String>)> {
     Some((keyword, args))
 }
 
+/// 가져오기가 거부되는 두 경우. 문구는 표면(CLI/IPC)이 각자 만든다 — 이 크레이트는
+/// 사용자 대면 문자열을 갖지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportError {
+    /// 로컬 ssh config 에 그런 alias 가 없다(오타 방지).
+    UnknownAlias(String),
+    /// 같은 이름의 tasty 프로필이 이미 있다. 덮어쓰기는 하지 않는다 — `upsert` 로
+    /// 조용히 갈아엎으면 사용자가 손으로 맞춰둔 프로필이 사라진다.
+    NameTaken(String),
+}
+
+/// ssh config alias 하나를 tasty ssh 프로필로 옮길 준비를 한다(저장은 호출자 몫).
+///
+/// **alias 문자열만 `host` 에 담는다.** `HostName`/`User`/`Port`/`ProxyJump`/
+/// `IdentityFile` 을 펼쳐 복사하지 않는 이유는 두 가지다: (1) ssh 는 `host` 자리의
+/// alias 를 그대로 해석하므로 복사 없이도 접속이 되고, (2) 복사하는 순간 ssh config
+/// 가 바뀔 때마다 값이 어긋난다(drift). [`SshConfigHost`] 의 hint 를 여기에 쓰지
+/// 않는 것도 같은 이유다 — hint 는 목록 표시 전용이다.
+///
+/// `shell` 은 `add-ssh` 의 기본값과 같은 `"auto"` 로 둔다. **셸 감지는 하지 않는다** —
+/// 감지는 실제 SSH 접속을 발생시켜서, 목록에서 여러 건을 가져올 때 예기치 않은 접속이
+/// 연쇄로 일어난다. 감지는 사용자가 `remote-profile detect` 로 따로 돌린다.
+pub fn prepare_import(
+    profiles: &RemoteProfiles,
+    hosts: &[SshConfigHost],
+    alias: &str,
+    name: &str,
+    label: Option<String>,
+) -> Result<RemoteProfile, ImportError> {
+    if !hosts.iter().any(|h| h.alias == alias) {
+        return Err(ImportError::UnknownAlias(alias.to_string()));
+    }
+    if profiles.get(name).is_some() {
+        return Err(ImportError::NameTaken(name.to_string()));
+    }
+    let mut p = RemoteProfile::new(name, "ssh");
+    p.set_field("host", alias.to_string());
+    p.set_field("shell", "auto".to_string());
+    p.label = label;
+    Ok(p)
+}
+
+/// 이 alias 를 이미 참조하는 ssh 프로필 이름(목록의 "IMPORTED" 열).
+///
+/// 판정 기준은 `host` 필드가 alias 와 **글자 그대로 같은가** 하나뿐이다. `user@alias`
+/// 처럼 손으로 변형한 값은 같은 호스트를 가리키더라도 여기서 세지 않는다 — 그 해석은
+/// ssh 의 몫이고, 목록이 추측을 시작하면 "가져왔다" 표시를 믿을 수 없게 된다.
+pub fn imported_as<'a>(profiles: &'a RemoteProfiles, alias: &str) -> Option<&'a str> {
+    profiles
+        .profiles
+        .iter()
+        .find(|p| p.as_ssh().and_then(|v| v.host()) == Some(alias))
+        .map(|p| p.name.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,27 +518,32 @@ Host gx10
             .map(|h| h.alias)
             .collect();
         // `Host *` 와 `jump-*` 는 패턴이라 제외, 같은 줄의 `bastion` 은 수집.
-        assert_eq!(names, vec!["gx10", "bastion", "work"]);
+        // `should-not-be-collected` 는 Match 블록 뒤에 오지만 ssh(1) 기준 새 무조건
+        // 블록이라 수집한다([`Scan::parse`] 의 "host" arm 주석 참조).
+        assert_eq!(
+            names,
+            vec!["gx10", "bastion", "should-not-be-collected", "work"]
+        );
     }
 
-    /// `Match` 뒤의 `Host` 는 수집하지 않는다.
-    ///
-    /// ssh(1) 은 이 줄을 Match 를 끝내는 새 무조건 블록으로 읽으므로 **의도적인
-    /// 차이**다. 이 모듈의 결과는 "가져오기" 후보 목록이고, 조건부 영역 뒤의 이름을
-    /// 확정해 올렸다가 실제로는 다른 설정인 경우보다 안 보여주는 편이 되돌리기 쉽다.
+    /// `Match` 는 Host 컨텍스트만 끊는다 — 그 안의 설정은 직전 Host 로 새지 않고,
+    /// 뒤따르는 `Host` 는 (ssh(1) 과 같이) 새 블록으로 다시 수집된다.
     #[test]
-    fn match_block_ends_host_context_and_suppresses_collection() {
+    fn match_block_ends_host_context_but_not_collection() {
         let dir = tmpdir("match");
         let main = write(
             &dir,
             "config",
-            "Host a\n  HostName ha\nMatch host b\n  User inside\nHost after-match\n",
+            "Host a\n  HostName ha\nMatch host b\n  User inside\nHost after-match\n  User me\n",
         );
         let hosts = enumerate_hosts_at(&main);
-        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts.len(), 2);
         assert_eq!(hosts[0].alias, "a");
         // Match 안의 User 가 직전 Host 블록으로 새지 않는다.
         assert_eq!(hosts[0].user, None);
+        // Match 뒤의 Host 는 살아 있고 자기 블록의 hint 를 갖는다.
+        assert_eq!(hosts[1].alias, "after-match");
+        assert_eq!(hosts[1].user.as_deref(), Some("me"));
     }
 
     #[test]
@@ -588,6 +662,84 @@ Host gx10
         let hosts = enumerate_hosts_at(&main);
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].port, None);
+    }
+
+    /// 스펙 픽스처를 그대로 쓴 열거 결과. 테스트마다 다른 디렉토리 이름을 받는다 —
+    /// [`tmpdir`] 가 시작 시 디렉토리를 비우므로 이름을 공유하면 병렬 실행에서 서로의
+    /// 픽스처를 지운다.
+    fn fixture_hosts(slot: &str) -> Vec<SshConfigHost> {
+        let dir = tmpdir(slot);
+        let main = write(&dir, "config", MAIN);
+        write(&dir, "extra.conf", EXTRA);
+        enumerate_hosts_at(&main)
+    }
+
+    #[test]
+    fn import_stores_alias_in_host_field_only() {
+        let hosts = fixture_hosts("import-fields");
+        let p = prepare_import(&RemoteProfiles::default(), &hosts, "gx10", "my-gpu", None)
+            .expect("import prepared");
+        assert_eq!(p.kind, "ssh");
+        let ssh = p.as_ssh().expect("ssh view");
+        assert_eq!(ssh.host(), Some("gx10"));
+        assert_eq!(ssh.shell(), "auto");
+        // hint(HostName/User/Port)를 펼쳐 담지 않는다 — 해석은 ssh 몫.
+        assert!(!p.fields.contains_key("user"));
+        assert!(!p.fields.contains_key("port"));
+        assert!(!p.fields.contains_key("extra_options"));
+        assert!(p.passkey_ref.is_none());
+        assert_eq!(p.fields.len(), 2, "host + shell 만 저장한다");
+    }
+
+    #[test]
+    fn import_keeps_optional_label() {
+        let hosts = fixture_hosts("import-label");
+        let p = prepare_import(
+            &RemoteProfiles::default(),
+            &hosts,
+            "gx10",
+            "my-gpu",
+            Some("GPU box".into()),
+        )
+        .expect("import prepared");
+        assert_eq!(p.label.as_deref(), Some("GPU box"));
+    }
+
+    #[test]
+    fn import_rejects_unknown_alias() {
+        let hosts = fixture_hosts("import-unknown");
+        let err = prepare_import(&RemoteProfiles::default(), &hosts, "nope", "x", None)
+            .expect_err("unknown alias rejected");
+        assert_eq!(err, ImportError::UnknownAlias("nope".into()));
+    }
+
+    #[test]
+    fn import_rejects_existing_profile_name() {
+        let hosts = fixture_hosts("import-conflict");
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(RemoteProfile::new("my-gpu", "ssh").with_field("host", "other"));
+        let err = prepare_import(&profiles, &hosts, "gx10", "my-gpu", None)
+            .expect_err("name conflict rejected");
+        assert_eq!(err, ImportError::NameTaken("my-gpu".into()));
+        // 거부됐으므로 기존 프로필은 그대로다(덮어쓰기 없음).
+        assert_eq!(
+            profiles
+                .get("my-gpu")
+                .and_then(|p| p.as_ssh())
+                .unwrap()
+                .host(),
+            Some("other")
+        );
+    }
+
+    #[test]
+    fn imported_as_matches_host_field_literally() {
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(RemoteProfile::new("gpu", "ssh").with_field("host", "gx10"));
+        profiles.upsert(RemoteProfile::new("other", "ssh").with_field("host", "zilhak@gx10"));
+        assert_eq!(imported_as(&profiles, "gx10"), Some("gpu"));
+        // 변형된 destination 은 같은 호스트를 가리켜도 "가져옴" 으로 세지 않는다.
+        assert_eq!(imported_as(&profiles, "bastion"), None);
     }
 
     #[test]
