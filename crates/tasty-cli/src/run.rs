@@ -93,14 +93,14 @@ fn run_dynamic_client(
     let port = match port_file::read_port_file_from(port_file) {
         Ok(p) => p,
         Err(e) => {
-            hook_failure::record(&request.method, &e.to_string());
+            hook_failure::record(&request.method, &request.params, &e.to_string());
             return Err(e);
         }
     };
     let stream = match connect_ipc(port) {
         Ok(s) => s,
         Err(e) => {
-            hook_failure::record(&request.method, &e.to_string());
+            hook_failure::record(&request.method, &request.params, &e.to_string());
             return Err(e);
         }
     };
@@ -115,7 +115,7 @@ fn run_dynamic_client(
         }
         Err(e) => {
             let msg = e.to_string();
-            hook_failure::record(&request.method, &msg);
+            hook_failure::record(&request.method, &request.params, &msg);
             if let Some(rest) = msg.strip_prefix("Error (") {
                 eprintln!("Error ({}", rest);
             } else {

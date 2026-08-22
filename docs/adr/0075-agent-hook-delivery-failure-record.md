@@ -30,7 +30,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 - 바깥 `if` — tasty 밖 환경은 블록에 진입조차 하지 않는다(가드 자체가 명시적 성공 종료). 기존의 무소음 동작이 그대로 유지된다.
 - 안쪽 `|| true` — 오직 hook 명령 실패만 담당한다. 실패 처리 정책을 바꿀 때 손댈 지점이 한 군데로 좁혀진다.
-- 기록 — `tasty-cli` 의 `hook_failure::record` 가 포트 파일 부재 / connect 실패 / JSON-RPC 에러 **세 지점 모두**에서 `<tasty_home>/hook-failures.log` 에 `<UTC> method=… surface=… reason=…` 한 줄을 남긴다. best-effort(기록 실패는 무시), 256 KiB 에서 `.log.1` 로 1 단 로테이션.
+- 기록 — `tasty-cli` 의 `hook_failure::record` 가 포트 파일 부재 / connect 실패 / JSON-RPC 에러 **세 지점 모두**에서 `<tasty_home>/hook-failures.log` 에 `<UTC> method=… event=… surface=… reason=…` 한 줄을 남긴다. `event` 는 `params.event`(hook 이벤트 이름)에서 꺼낸다 — `method` 는 `claude.hook` 하나로 고정이라 이게 없으면 `stop` 실패와 `session-end` 실패를 구분할 수 없다. 이벤트 이름을 갖지 않는 hook(`claude.checklist_hook`)은 `event=-`. best-effort(기록 실패는 무시), 256 KiB 에서 `.log.1` 로 1 단 로테이션.
 
 기록 대상은 method 의 마지막 dot 세그먼트가 `hook` 이거나 `_hook` 으로 끝나는 요청으로 좁힌다(`claude.hook` / `codex.hook` / `claude.checklist_hook`). 대화형 CLI 실패는 사용자가 stderr 로 즉시 보므로 무흔적 문제가 없고, 파일만 시끄러워진다.
 
