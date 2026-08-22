@@ -119,7 +119,7 @@ pub fn draw_canvas(
             dimmed: dead[i],
             in_cycle: cycle_nodes.contains(&node.id),
         };
-        paint_node(&painter, theme, r, node, &vis);
+        paint_node(ui, &painter, theme, r, node, &vis);
         if vis.selected {
             paint_selection_ring(&painter, theme, r, view.zoom);
         }
