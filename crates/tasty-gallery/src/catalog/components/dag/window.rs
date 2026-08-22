@@ -311,7 +311,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-separator",
                 "band hairlines",
-                theme.separator.to_egui(),
+                // 칩도 실제로 칠해지는 색을 보여야 한다 — premultiplied 색을
+                // `to_egui()` 로 읽으면 알파가 두 번 곱해져 옆 칩과 다른 톤이 된다.
+                theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "--tasty-drilldown-backbar-border",

@@ -101,6 +101,15 @@ fn dag_surface_specimen_은_헤드리스로_렌더된다() {
     run_frames(|ui| dag::surface::draw(ui, &theme));
 }
 
+#[test]
+fn dag_rows_와_window_specimen_은_헤드리스로_렌더된다() {
+    let theme = tasty_themes::mocha_fallback();
+    run_frames(|ui| dag::rows::draw(ui, &theme));
+    // popup specimen 은 560 폭 창 두 개를 가로로 놓는다 — 무대보다 넓어 남는
+    // 폭이 음수로 새기 쉬운 배치라 여기서 함께 잡는다.
+    run_frames(|ui| dag::window::draw(ui, &theme));
+}
+
 /// 레이아웃 캐시 불변식의 갤러리 쪽 대응 — 좌표는 id + 의존 엣지 + config 만
 /// 보고 나온다. 상태를 바꿔도 노드 좌표가 한 픽셀도 움직이지 않아야 0.5 초
 /// 폴링이 그래프를 흔들지 않는다.
