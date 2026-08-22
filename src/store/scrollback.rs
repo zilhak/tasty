@@ -162,6 +162,101 @@ mod tests {
         assert!(out[1].wrapped);
     }
 
+    /// 닫은 항목 복원 payload 의 전 구간: 살아 있는 터미널 → 캡처
+    /// (`ClosedSurface`) → `persist_closed_scrollback` → 디스크 → `read_in`.
+    ///
+    /// 캡처가 저장 표현(`ScrollbackLine`)을 그대로 넘기도록 바뀌었다(이전에는
+    /// `to_cells()` 로 cell 마다 `String` 을 재할당한 뒤 같은 표현으로 재압축).
+    /// 그 변경이 복원 payload 를 바꾸지 않았음을 두 층위에서 고정한다:
+    ///
+    /// 1. **직렬화 바이트 동일** — 새 캡처 경로와 옛 재압축 경로가 만드는
+    ///    디스크 바이트가 완전히 같다. 표현 변경이 저장물에 새는지를 직접 잡는다.
+    /// 2. **왕복 보존** — 실제 write → read 후 라인 수 / 텍스트 / `wrapped` 가
+    ///    원본과 같다.
+    ///
+    /// 주의: 디스크 포맷(`disk_scrollback::attr_flags`)이 싣는 속성은
+    /// bold/half·italic·underline·strikethrough + fg/bg 뿐이라 `reverse` 등은
+    /// 왕복에서 떨어진다. 이 테스트의 범위 밖(포맷 자체의 선존재 한계이며
+    /// 고치려면 `FORMAT_VERSION` bump 가 필요하다) 이라 속성은 1번의 바이트
+    /// 동일성으로만 확인하고, 2번에서는 포맷이 보장하는 것만 본다.
+    #[test]
+    fn capture_persist_restore_round_trip_preserves_lines() {
+        use tasty_terminal::Terminal;
+
+        let mut t = Terminal::new_detached(20, 4);
+        t.set_scrollback_limit(100_000);
+        for i in 0..40 {
+            t.feed_bytes(format!("plain{i:03}\r\n").as_bytes());
+            t.feed_bytes(b"\x1b[1;31mbold-red\x1b[0m tail\r\n");
+            // 20 컬럼을 넘겨 auto-wrap 을 유발한다 → wrapped=true 라인이 생긴다.
+            t.feed_bytes(b"0123456789012345678901234567890123456789\r\n");
+            t.feed_bytes("\x1b[7m한글한글한글\x1b[0m\r\n".as_bytes());
+        }
+        let total = t.scrollback_len();
+        assert!(total > 100, "스크롤백이 충분히 쌓여야 한다 (len={total})");
+
+        // 캡처 (새 경로) — close 가 실제로 타는 함수.
+        let mut item = crate::model::ClosedItem::Surface {
+            surface: crate::model::closed_item::ClosedSurface::from_surface_id(1, Some(&t)),
+            tab_name: "round-trip".to_string(),
+        };
+
+        // 옛 경로 재현: cell 로 풀었다가 같은 표현으로 재압축.
+        let legacy: Vec<ScrollbackLine> = (0..total)
+            .map(|i| {
+                ScrollbackLine::new(
+                    t.scrollback_line_owned(i).unwrap_or_default(),
+                    t.scrollback_line_wrapped(i).unwrap_or(false),
+                )
+            })
+            .collect();
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut captured = Vec::new();
+        let mut persisted_id = None;
+        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |lines| {
+            captured = lines.to_vec();
+            let id = new_persist_id();
+            write_in(dir.path(), &id, lines).expect("write");
+            persisted_id = Some(id.clone());
+            Some(id)
+        });
+        let id = persisted_id.expect("스크롤백이 디스크로 영속화되어야 한다");
+
+        // 1. 표현 변경이 저장 바이트를 바꾸지 않았다.
+        assert_eq!(
+            serialize_lines(&captured),
+            serialize_lines(&legacy),
+            "새 캡처 경로의 직렬화 결과가 옛 재압축 경로와 다르다"
+        );
+
+        // 2. 실제 왕복에서 라인 수 / 텍스트 / wrapped 가 보존된다.
+        let got = read_in(dir.path(), &id).expect("read");
+        assert_eq!(got.len(), total, "복원 라인 수가 원본과 다르다");
+        for (i, line) in got.iter().enumerate() {
+            let want_cells = t.scrollback_line_owned(i).unwrap_or_default();
+            let want_text: String = want_cells.iter().map(|(g, _)| g.as_str()).collect();
+            let got_text: String = line.to_cells().iter().map(|(g, _)| g.clone()).collect();
+            assert_eq!(got_text, want_text, "line {i} 의 텍스트가 다르다");
+            assert_eq!(
+                line.wrapped,
+                t.scrollback_line_wrapped(i).unwrap_or(false),
+                "line {i} 의 wrapped 가 다르다"
+            );
+        }
+        assert!(
+            (0..total).any(|i| t.scrollback_line_wrapped(i).unwrap_or(false)),
+            "wrapped 라인이 없으면 wrap 보존이 검증되지 않는다"
+        );
+        assert!(
+            captured
+                .iter()
+                .flat_map(|l| l.to_cells())
+                .any(|(_, a)| a != CellAttributes::default()),
+            "비-default 속성이 없으면 1번의 바이트 동일성이 속성을 못 본다"
+        );
+    }
+
     #[test]
     fn read_missing_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");

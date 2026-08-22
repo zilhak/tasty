@@ -61,14 +61,12 @@ pub(super) fn capture_scrollback_to_disk(
 fn collect_capture_lines(
     terminal: &tasty_terminal::Terminal,
 ) -> Vec<tasty_terminal::ScrollbackLine> {
-    let total = terminal.scrollback_len();
     let screen = terminal.screen_snapshot_lines();
-    let mut lines = Vec::with_capacity(total + screen.len());
-    for i in 0..total {
-        if let Some(line) = terminal.scrollback_line_full(i) {
-            lines.push(line);
-        }
-    }
+    // 벌크 회수 — 라인당 `scrollback_line_full` 은 라인마다 terminal state mutex
+    // 를 잡는다. layout 캡처는 살아 있는 surface 전부를 훑으므로 그 비용이 그대로
+    // surface 수만큼 곱해진다.
+    let mut lines = terminal.scrollback_lines_all();
+    lines.reserve(screen.len());
     lines.extend(screen);
     lines
 }

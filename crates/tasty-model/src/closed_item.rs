@@ -170,13 +170,11 @@ impl ClosedSurface {
         // `push_closed_item` persists it to disk (see `persist_closed_scrollback`)
         // and replaces it with a lightweight reference, so the retained closed
         // item does not hold the full scrollback in memory.
-        let scrollback_len = terminal.scrollback_len();
-        let mut scrollback = VecDeque::with_capacity(scrollback_len);
-        for i in 0..scrollback_len {
-            if let Some(line) = terminal.scrollback_line_full(i) {
-                scrollback.push_back(line);
-            }
-        }
+        //
+        // 벌크 API 를 쓴다 — 라인당 `scrollback_line_full` 은 라인마다 terminal
+        // state mutex 를 잡고, 워크스페이스 close 는 그 비용을 (탭 수 x 라인 수)
+        // 만큼 렌더 스레드에서 한 프레임에 치른다.
+        let scrollback: VecDeque<ScrollbackLine> = terminal.scrollback_lines_all().into();
         let scrollback = if scrollback.is_empty() {
             ClosedScrollback::Empty
         } else {
