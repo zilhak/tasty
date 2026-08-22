@@ -363,6 +363,15 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // agent task runner 재시작 정화(결정 2) — 자동 시작은 하지 않는다(결정 1).
     // CoreState 확보 직후, 어떤 client 도 아직 붙기 전에 1 회만 수행.
     app.core.purge_stale_agent_state_on_boot(&engine);
+    // 렌더 경로(DAG surface 러너 배지)가 `Core` 없이도 러너 생사를 물을 수
+    // 있도록 같은 레지스트리 Arc 를 CoreState 에 심는다(memory 주입과 동형).
+    if engine
+        .agent_runner_registry
+        .set(app.core.agent_runner_registry())
+        .is_err()
+    {
+        tracing::warn!("agent runner registry already injected into CoreState");
+    }
     // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록 IPC
     // 서버와 동일한 StreamHub 를 attach registry 에 주입.
     engine.attach.set_notifier(app.stream_hub.clone());

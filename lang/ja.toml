@@ -1042,6 +1042,8 @@ done = "完了"
 saved = "自動保存されます"
 
 [preset.edit]
+dag_id = "DAG ID"
+dag_id_hint = "空欄ならワークスペースの進行中 DAG に追従する"
 kind = "種類"
 cwd = "作業ディレクトリ"
 startup = "起動コマンド"
@@ -1095,6 +1097,7 @@ cancel_button = "キャンセル"
 # Surface kind 表示名（ホスト組み込み）。plugin kind（markdown/image/…）は各 plugin
 # lang ファイルで独自の surface.kind.* キーを登録する。
 [surface.kind]
+dag_graph = "DAG"
 terminal = "ターミナル"
 empty = "空"
 explorer = "エクスプローラー"
@@ -1289,3 +1292,73 @@ step_pane_title = "ペイン"
 step_pane_body = "1つのタブが開くこの矩形領域がペインです。"
 step_surface_title = "サーフェス"
 step_surface_body = "ペイン内で実際にターミナルやマークダウンが描画される面です。"
+
+[dag.header]
+progress = "{} / {} 完了"
+no_dag = "DAG なし"
+entry = "{}（task {} 個）"
+
+[dag.runner]
+running = "ランナー稼働中 · {} 件実行"
+idle = "ランナー待機"
+stalled = "ランナー停止 · 待機 {} 件"
+crashed = "ランナー異常終了"
+resume_hint = "再開: tasty agent task-run --workspace-id <N> --action start"
+
+[dag.zoom]
+in = "拡大"
+out = "縮小"
+fit = "全体表示"
+direction = "方向切替"
+
+[dag.lod]
+compact = "簡易表示 — 拡大すると詳細が見える"
+block = "ブロック表示 — 拡大すると名前が見える"
+
+[dag.cycle]
+banner = "依存サイクル — このグラフは完了できない: {}"
+
+[dag.empty]
+none = "このワークスペースに task がない"
+none_hint = "作成: tasty agent task-create --workspace-id {} ..."
+missing = "DAG が見つからない: {}"
+missing_hint = "削除された可能性がある。ヘッダーから別の DAG を選ぶ。"
+
+[dag.status]
+waiting = "待機"
+ready = "準備"
+running = "実行"
+succeeded = "成功"
+failed = "失敗"
+cancelled = "取消"
+skipped = "スキップ"
+unknown = "不明"
+
+[dag.rel]
+depends_on = "依存"
+fallback = "フォールバック"
+reduce = "reduce 入力"
+
+[dag.kind]
+run = "実行"
+custom = "カスタム"
+reduce = "リデュース"
+wait_barrier = "バリア待機"
+
+[dag.on_failure]
+abort = "中断"
+continue_downstream = "下流継続"
+fallback = "フォールバック"
+
+[dag.detail]
+kind = "種類"
+on_failure = "失敗時"
+started = "開始"
+duration = "所要"
+exit_code = "終了コード"
+command = "コマンド"
+dependencies = "依存関係"
+error = "エラー"
+output = "出力"
+jump_hint = "{} を選択"
+none = "—"

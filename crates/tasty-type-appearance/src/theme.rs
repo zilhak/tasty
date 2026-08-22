@@ -226,6 +226,23 @@ pub const PRESET_SPLIT_ZONE_BG_ALPHA: u8 = 56;
 /// 2px 분할선 알파(55%×255≈140).
 pub const PRESET_SPLIT_ZONE_BORDER_ALPHA: u8 = 140;
 
+/// `color-mix(in srgb, <accent> 45%, transparent)` 의 알파(45%×255≈115). DAG surface
+/// 의 경고/위험 pill 테두리 3 종이 공유한다 — 두 번째 항이 `transparent` 인 합성은
+/// 색을 섞지 않고 알파만 낮추는 것과 같다.
+pub const DAG_MIX_45_ALPHA: u8 = 115;
+
+/// `color-mix(in srgb, <a> <ratio>, <b>)` 의 srgb 채널 보간.
+///
+/// CSS 의 `color-mix` 는 두 색이 모두 불투명할 때 채널을 선형 보간한다. 디자인 토큰이
+/// 쓰는 형태가 정확히 그 케이스(두 항 모두 테마 색)라 같은 계산을 옮긴다. 결과 알파는
+/// 배경(`b`)의 알파를 따른다 — wash 는 그 위에 무엇도 비치지 않는 채움색이다.
+#[allow(clippy::disallowed_methods)] // reason: 디자인 토큰 color-mix 식의 유일한 구현부
+fn mix_srgb(a: HexColor, ratio: f32, b: HexColor) -> HexColor {
+    let t = ratio.clamp(0.0, 1.0);
+    let ch = |x: u8, y: u8| (f32::from(x) * t + f32::from(y) * (1.0 - t)).round() as u8;
+    HexColor::from_rgba(ch(a.r(), b.r()), ch(a.g(), b.g()), ch(a.b(), b.b()), b.a())
+}
+
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
@@ -1310,6 +1327,71 @@ impl Theme {
     pub fn preset_split_zone_border(&self) -> HexColor {
         self.accent_primary()
             .with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
+    }
+
+    // ── DAG surface — color-mix 합성색 9종 ────────────────────────────────────
+    //
+    // `component.dag-*` 토큰 89 종은 생성기가 `Theme` 접근자로 뽑아 두었지만
+    // (`generated_component.rs`), 값이 `color-mix(in srgb, …)` 인 9 종은 참조가
+    // 아니라 *식* 이라 생성기가 건너뛴다. 여기서 같은 식을 [`mix_srgb`] 로 그대로
+    // 옮긴다 — 원본 식은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 의
+    // 대응 `component.dag-*` 항목이다(vendor 재동기화 시 이 9 개도 함께 확인).
+    //
+    // `…-border` 3 종은 두 번째 항이 `transparent` 다. srgb 합성에서 그건 "그 비율
+    // 만큼의 알파" 와 같으므로 알파만 파생한다(색 자체는 accent 유지 — 테마 가변).
+
+    /// `component.dag-status-running-bg` = accent-primary 16% + surface-raised.
+    #[inline]
+    pub fn dag_status_running_bg(&self) -> HexColor {
+        mix_srgb(self.accent_primary(), 0.16, self.surface_raised())
+    }
+
+    /// `component.dag-status-failed-bg` = accent-danger 12% + surface-raised.
+    #[inline]
+    pub fn dag_status_failed_bg(&self) -> HexColor {
+        mix_srgb(self.accent_danger(), 0.12, self.surface_raised())
+    }
+
+    /// `component.dag-status-unknown-bg` = accent-warning 10% + surface-raised.
+    #[inline]
+    pub fn dag_status_unknown_bg(&self) -> HexColor {
+        mix_srgb(self.accent_warning(), 0.10, self.surface_raised())
+    }
+
+    /// `component.dag-cycle-bg` = accent-warning 14% + bg-panel.
+    #[inline]
+    pub fn dag_cycle_bg(&self) -> HexColor {
+        mix_srgb(self.accent_warning(), 0.14, self.bg_panel())
+    }
+
+    /// `component.dag-cycle-border` = accent-warning 45% + transparent.
+    #[inline]
+    pub fn dag_cycle_border(&self) -> HexColor {
+        self.accent_warning().with_alpha(DAG_MIX_45_ALPHA)
+    }
+
+    /// `component.dag-runner-crashed-bg` = accent-danger 12% + surface-raised.
+    #[inline]
+    pub fn dag_runner_crashed_bg(&self) -> HexColor {
+        mix_srgb(self.accent_danger(), 0.12, self.surface_raised())
+    }
+
+    /// `component.dag-runner-crashed-border` = accent-danger 45% + transparent.
+    #[inline]
+    pub fn dag_runner_crashed_border(&self) -> HexColor {
+        self.accent_danger().with_alpha(DAG_MIX_45_ALPHA)
+    }
+
+    /// `component.dag-runner-stalled-bg` = accent-warning 10% + surface-raised.
+    #[inline]
+    pub fn dag_runner_stalled_bg(&self) -> HexColor {
+        mix_srgb(self.accent_warning(), 0.10, self.surface_raised())
+    }
+
+    /// `component.dag-runner-stalled-border` = accent-warning 45% + transparent.
+    #[inline]
+    pub fn dag_runner_stalled_border(&self) -> HexColor {
+        self.accent_warning().with_alpha(DAG_MIX_45_ALPHA)
     }
 
     /// 프리셋 편집기 leaf 미리보기 값 요약의 라벨(소문자 필드 키) 색. design

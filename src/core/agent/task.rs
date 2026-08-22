@@ -43,11 +43,10 @@ impl Core {
         engine: &CoreState,
         workspace_id: u32,
     ) -> Result<Vec<Task>, AgentError> {
-        let seq = engine.agent_seq.clone();
-        self.with_memory(|mem| {
-            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.list(workspace_id)
-        })
+        // `Core::memory` 와 `CoreState::memory` 는 같은 Arc 다(부팅이 전자를 clone 해
+        // 후자에 주입) — 읽기는 어느 쪽으로 들어가도 같은 store 다. 본체를 free fn
+        // 으로 두어 `Core` 를 손에 쥐지 못하는 호출자(렌더 경로)도 같은 구현을 쓴다.
+        task_list_from_state(engine, workspace_id)
     }
 
     /// 등록된 DAG 목록. `workspace_id` 가 `None` 이면 **지금 살아있는 전 workspace**
@@ -713,4 +712,41 @@ mod task_delete_tests {
             "rejected delete must not touch the held permit"
         );
     }
+}
+
+/// `CoreState` 만으로 task 목록을 읽는다.
+///
+/// `Core` 를 인자로 받지 못하는 호출자용 — 특히 egui 렌더 경로(`draw_egui_panels`)
+/// 는 `state`/`engine` 만 받는다. `Core::task_list` 가 이 함수에 위임하므로 읽기
+/// 규칙(owner·시퀀스)이 두 벌로 갈라지지 않는다.
+pub(crate) fn task_list_from_state(
+    engine: &CoreState,
+    workspace_id: u32,
+) -> Result<Vec<Task>, AgentError> {
+    let seq = engine.agent_seq.clone();
+    let mut guard = match engine.memory.lock() {
+        Ok(g) => g,
+        // poison 은 다른 스레드의 패닉 흔적일 뿐 store 자체는 읽을 수 있다 —
+        // `Core::with_memory` 와 같은 처리(거기서 유일한 lock 정책을 정한다).
+        Err(p) => p.into_inner(),
+    };
+    let store = TaskStore::new(&mut *guard, HOST_OWNER, seq.as_ref());
+    store.list(workspace_id)
+}
+
+/// 러너 스레드의 생사 — `CoreState` 만으로 조회한다.
+///
+/// 카운트(ready/running)는 함께 돌려주지 않는다. 호출자(DAG surface)는 **자기가
+/// 보고 있는 DAG 의 부분집합** 을 세야 하는데 러너 레지스트리는 workspace 전체를
+/// 세기 때문이다 — 화면이 12 개짜리 DAG 를 띄워 놓고 옆 DAG 의 ready 를 합산해
+/// 보여주면 배지가 거짓말을 한다.
+///
+/// 반환은 `(running, crashed)`. 레지스트리가 아직 주입되지 않았으면(headless 초기·
+/// 테스트) `(false, false)` — "러너 없음" 으로 읽힌다.
+pub(crate) fn runner_liveness(engine: &CoreState, workspace_id: u32) -> (bool, bool) {
+    engine
+        .agent_runner_registry
+        .get()
+        .map(|registry| registry.liveness(workspace_id))
+        .unwrap_or((false, false))
 }

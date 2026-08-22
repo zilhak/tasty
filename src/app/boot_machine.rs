@@ -444,6 +444,15 @@ impl App {
         // 자동 시작은 하지 않는다(결정 1). 첫 윈도우 등록(= client 노출) 전에
         // 1 회만 수행.
         self.core.purge_stale_agent_state_on_boot(&core_state);
+        // 렌더 경로(DAG surface 러너 배지)가 `Core` 없이도 러너 생사를 물을 수
+        // 있도록 같은 레지스트리 Arc 를 CoreState 에 심는다(memory 주입과 동형).
+        if core_state
+            .agent_runner_registry
+            .set(self.core.agent_runner_registry())
+            .is_err()
+        {
+            tracing::warn!("agent runner registry already injected into CoreState");
+        }
         self.register_window(gpu, state, core_state, window.clone());
         self.emit_startup_complete_event();
 

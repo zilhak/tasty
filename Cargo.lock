@@ -5648,6 +5648,8 @@ dependencies = [
  "tasty-agent",
  "tasty-approval",
  "tasty-cli",
+ "tasty-dag-layout",
+ "tasty-design-tokens",
  "tasty-egui-theme",
  "tasty-font",
  "tasty-git-core",

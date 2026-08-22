@@ -546,6 +546,16 @@ pub struct CoreState {
     /// engine 내부 (SurfaceMetaStore, layout persistence, pty surface init 등)
     /// cascade 없이 직접 영속할 때 사용.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+
+    /// agent task runner 스레드 레지스트리의 Arc clone — Core 가 owner. 부팅이 1 회
+    /// 주입한다(`set_agent_runner_registry`).
+    ///
+    /// `memory` 와 같은 이유의 필드다: 렌더 경로(DAG surface 의 러너 배지)는 `Core`
+    /// 를 손에 쥐지 않은 채 `CoreState` 만 받으므로, 러너가 살아 있는지/죽었는지를
+    /// 물으려면 여기서 같은 인스턴스에 닿아야 한다. 미주입(headless 초기·테스트)
+    /// 이면 "러너 없음" 으로 읽힌다 — 조회 전용이라 그 낙하가 안전하다.
+    pub(crate) agent_runner_registry:
+        std::sync::OnceLock<std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>>,
 }
 
 impl CoreState {
@@ -679,6 +689,7 @@ impl CoreState {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             memory,
+            agent_runner_registry: std::sync::OnceLock::new(),
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게

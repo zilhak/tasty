@@ -431,6 +431,11 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) explorer_views: crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
 
+    /// Per-surface host view state for `DagGraphSurface` (폴링 결과 캐시, 레이아웃
+    /// 캐시, 줌/팬/선택). surface 모델은 "어떤 DAG 를 어느 방향으로" 만 들고 있다.
+    #[cfg(feature = "gui")]
+    pub(crate) dag_graph_views: crate::adapters::ui::surface::dag_graph::DagGraphViewStore,
+
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
@@ -1044,6 +1049,8 @@ impl AppState {
             banners: crate::adapters::ui::BannerManager::new(),
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
+            #[cfg(feature = "gui")]
+            dag_graph_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
             palette_plugin_commands: Vec::new(),
             pending_plugin_command_invokes: Vec::new(),
@@ -1264,6 +1271,7 @@ impl AppState {
         #[cfg(feature = "gui")]
         {
             self.explorer_views.drop_view(surface_id);
+            self.dag_graph_views.drop_view(surface_id);
         }
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);

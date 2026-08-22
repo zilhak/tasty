@@ -23,9 +23,14 @@ struct EguiPanelInfo {
     /// 그 외 surface 는 `None`. fallback 이 explorer 위에서 generic `Surface` 메뉴
     /// 대신 항상 빈영역 explorer 메뉴를 세우게 하는 kind 판별 겸 cwd 운반자다(A-1).
     explorer_cwd: Option<std::path::PathBuf>,
+    /// DAG surface 이면 이번 프레임의 폴링 요청. 렌더 루프 안에서는 `engine` 이
+    /// workspace/pane/tab 에 배타 차용돼 task store 를 읽을 수 없으므로, 첫 패스에서
+    /// "무엇을 읽어야 하는지" 만 캡처해 두 패스 사이에서 읽는다(explorer 스냅샷과
+    /// 같은 이유).
+    dag_poll: Option<crate::adapters::ui::surface::dag_graph::DagPollRequest>,
 }
 
-/// Render egui-based panels (Markdown, Explorer, Html, Empty).
+/// Render egui-based panels (Markdown, Explorer, Html, DAG, Empty).
 /// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
 /// Supports both standalone non-terminal tabs and non-terminal leaves within split tabs.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — panel kind별 렌더 분기, 클로저 중첩이 구조적
@@ -40,6 +45,7 @@ pub fn draw_egui_panels(
     let mut infos = Vec::new();
     {
         let ws = state.active_workspace(engine);
+        let ws_id = ws.id;
         let tab_bar_h = state.tab_bar_height;
         for &(pane_id, pane_rect) in pane_rects {
             let pane = match ws.pane_layout().find_pane(pane_id) {
@@ -78,6 +84,15 @@ pub fn draw_egui_panels(
                     .as_any()
                     .downcast_ref::<crate::model::ExplorerPanel>()
                     .map(|p| p.current_root().to_path_buf());
+                let dag_poll = r
+                    .surface
+                    .as_any()
+                    .downcast_ref::<crate::model::DagGraphSurface>()
+                    .map(|p| {
+                        crate::adapters::ui::surface::dag_graph::DagPollRequest::from_surface(
+                            p, ws_id,
+                        )
+                    });
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
@@ -86,9 +101,21 @@ pub fn draw_egui_panels(
                     logical_w: (r.rect.width.value() / scale_factor).round_ui(),
                     logical_h: (r.rect.height.value() / scale_factor).round_ui(),
                     explorer_cwd,
+                    dag_poll,
                 };
                 infos.push(info);
             }
+        }
+    }
+
+    // 두 패스 사이 — DAG surface 의 데이터를 필요하면 새로 읽는다. 500ms 게이트는
+    // 스토어 쪽에 있어 프레임마다 호출해도 실제 읽기는 그 주기로만 일어난다.
+    {
+        let requests: Vec<_> = infos.iter().filter_map(|i| i.dag_poll.clone()).collect();
+        if !requests.is_empty() {
+            let mut dag_views = std::mem::take(&mut state.dag_graph_views);
+            dag_views.poll(engine, &requests);
+            state.dag_graph_views = dag_views;
         }
     }
 
@@ -107,6 +134,7 @@ pub fn draw_egui_panels(
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
+    let mut dag_views = std::mem::take(&mut state.dag_graph_views);
     // 즐겨찾기는 전역(engine 보유)이라 루프에서 engine 이 가변 차용되는 동안엔
     // 읽을 수 없다 → 프레임당 1회 스냅샷(항목 소수, clone 비용 무시 가능).
     let explorer_favorites = engine.explorer_favorites.items.clone();
@@ -190,6 +218,14 @@ pub fn draw_egui_panels(
             {
                 pending_explorer_action = Some((ex_panel.id, a));
             }
+        } else if let Some(dag) = surface
+            .as_any_mut()
+            .downcast_mut::<crate::model::DagGraphSurface>()
+        {
+            let view = dag_views.get_or_init(dag.id);
+            draw_panel_frame_no_margin(ctx, &format!("dag_panel_{}", id_suffix), info, |ui| {
+                crate::adapters::ui::surface::dag_graph::draw_dag_graph(ui, dag, view);
+            });
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -227,6 +263,7 @@ pub fn draw_egui_panels(
 
     // Restore extracted view stores before any further `state` access below.
     state.explorer_views = explorer_views;
+    state.dag_graph_views = dag_views;
 
     // (ADR-0059) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
     // 옮긴다 — 루프 안에서는 `engine` 이 이미 `ws`/`pane`/`tab`/`surface` 로 배타 차용

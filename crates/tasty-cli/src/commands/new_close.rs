@@ -14,7 +14,7 @@ pub enum NewCommands {
         /// Working directory for the new workspace
         #[arg(long)]
         cwd: Option<String>,
-        /// Surface type: terminal (default), markdown, explorer, html, image
+        /// Surface type: terminal (default), markdown, explorer, html, image, dag_graph
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// File path (for markdown/image type)
@@ -46,7 +46,7 @@ pub enum NewCommands {
         /// Target pane ID (required)
         #[arg(long)]
         pane: u32,
-        /// Surface type: terminal (default), markdown, explorer, html, image
+        /// Surface type: terminal (default), markdown, explorer, html, image, dag_graph
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Working directory (for terminal type)

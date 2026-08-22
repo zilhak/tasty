@@ -1042,6 +1042,8 @@ done = "Done"
 saved = "saved automatically"
 
 [preset.edit]
+dag_id = "DAG ID"
+dag_id_hint = "Leave empty to follow the workspace's active DAG"
 kind = "Kind"
 cwd = "Working dir"
 startup = "Startup command"
@@ -1096,6 +1098,7 @@ cancel_button = "Cancel"
 # Surface kind display names (host builtins). Plugin kinds (markdown/image/…)
 # register their own surface.kind.* keys via plugin lang files.
 [surface.kind]
+dag_graph = "DAG"
 terminal = "Terminal"
 empty = "Empty"
 explorer = "Explorer"
@@ -1295,3 +1298,73 @@ step_pane_title = "Pane"
 step_pane_body = "This rectangle, where a single tab opens, is a pane."
 step_surface_title = "Surface"
 step_surface_body = "The face inside a pane where the actual terminal or markdown is drawn."
+
+[dag.header]
+progress = "{} / {} done"
+no_dag = "No DAG"
+entry = "{} ({} tasks)"
+
+[dag.runner]
+running = "Runner active · {} running"
+idle = "Runner idle"
+stalled = "Runner stopped · {} ready"
+crashed = "Runner crashed"
+resume_hint = "Resume with: tasty agent task-run --workspace-id <N> --action start"
+
+[dag.zoom]
+in = "Zoom in"
+out = "Zoom out"
+fit = "Fit to view"
+direction = "Toggle direction"
+
+[dag.lod]
+compact = "Compact view — zoom in for details"
+block = "Block view — zoom in for names"
+
+[dag.cycle]
+banner = "Dependency cycle — this graph cannot finish: {}"
+
+[dag.empty]
+none = "No tasks in this workspace"
+none_hint = "Create one with: tasty agent task-create --workspace-id {} ..."
+missing = "DAG not found: {}"
+missing_hint = "It may have been deleted. Pick another from the header."
+
+[dag.status]
+waiting = "WAITING"
+ready = "READY"
+running = "RUNNING"
+succeeded = "SUCCEEDED"
+failed = "FAILED"
+cancelled = "CANCELLED"
+skipped = "SKIPPED"
+unknown = "UNKNOWN"
+
+[dag.rel]
+depends_on = "depends on"
+fallback = "fallback"
+reduce = "reduce input"
+
+[dag.kind]
+run = "Run"
+custom = "Custom"
+reduce = "Reduce"
+wait_barrier = "Wait barrier"
+
+[dag.on_failure]
+abort = "Abort"
+continue_downstream = "Continue downstream"
+fallback = "Fallback"
+
+[dag.detail]
+kind = "Kind"
+on_failure = "On failure"
+started = "Started"
+duration = "Duration"
+exit_code = "Exit code"
+command = "Command"
+dependencies = "Dependencies"
+error = "Error"
+output = "Output"
+jump_hint = "Select {}"
+none = "—"

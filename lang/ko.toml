@@ -1042,6 +1042,8 @@ done = "완료"
 saved = "자동 저장됨"
 
 [preset.edit]
+dag_id = "DAG ID"
+dag_id_hint = "비워 두면 워크스페이스의 진행 중인 DAG 를 따라간다"
 kind = "종류"
 cwd = "작업 디렉터리"
 startup = "시작 명령어"
@@ -1095,6 +1097,7 @@ cancel_button = "취소"
 # Surface kind 표시명 (호스트 빌트인). plugin kind(markdown/image/…)는 각 plugin
 # lang 파일에서 자체 surface.kind.* 키를 등록한다.
 [surface.kind]
+dag_graph = "DAG"
 terminal = "터미널"
 empty = "빈 화면"
 explorer = "탐색기"
@@ -1287,3 +1290,73 @@ step_pane_title = "패인"
 step_pane_body = "탭 하나가 열리는 이 사각 영역이 패인입니다."
 step_surface_title = "서피스"
 step_surface_body = "패인 안에서 실제 터미널·마크다운이 그려지는 면입니다."
+
+[dag.header]
+progress = "{} / {} 완료"
+no_dag = "DAG 없음"
+entry = "{} (task {} 개)"
+
+[dag.runner]
+running = "러너 동작 중 · {} 개 실행"
+idle = "러너 대기"
+stalled = "러너 정지 · 대기 {} 개"
+crashed = "러너 비정상 종료"
+resume_hint = "재개: tasty agent task-run --workspace-id <N> --action start"
+
+[dag.zoom]
+in = "확대"
+out = "축소"
+fit = "전체 맞춤"
+direction = "방향 전환"
+
+[dag.lod]
+compact = "축약 표시 — 확대하면 상세가 보인다"
+block = "블록 표시 — 확대하면 이름이 보인다"
+
+[dag.cycle]
+banner = "의존성 사이클 — 이 그래프는 완주할 수 없다: {}"
+
+[dag.empty]
+none = "이 워크스페이스에 task 가 없다"
+none_hint = "생성: tasty agent task-create --workspace-id {} ..."
+missing = "DAG 를 찾을 수 없다: {}"
+missing_hint = "삭제됐을 수 있다. 헤더에서 다른 DAG 를 고른다."
+
+[dag.status]
+waiting = "대기"
+ready = "준비"
+running = "실행"
+succeeded = "성공"
+failed = "실패"
+cancelled = "취소"
+skipped = "건너뜀"
+unknown = "알수없음"
+
+[dag.rel]
+depends_on = "의존"
+fallback = "폴백"
+reduce = "reduce 입력"
+
+[dag.kind]
+run = "실행"
+custom = "커스텀"
+reduce = "리듀스"
+wait_barrier = "배리어 대기"
+
+[dag.on_failure]
+abort = "중단"
+continue_downstream = "하류 계속"
+fallback = "폴백"
+
+[dag.detail]
+kind = "종류"
+on_failure = "실패 시"
+started = "시작"
+duration = "소요"
+exit_code = "종료 코드"
+command = "명령"
+dependencies = "의존성"
+error = "에러"
+output = "출력"
+jump_hint = "{} 선택"
+none = "—"

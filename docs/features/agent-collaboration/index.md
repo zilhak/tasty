@@ -4,7 +4,7 @@
 - **주체**: AI Agent (여럿이 한 인스턴스 공유)
 - **ADR**: [ADR-0073](../../adr/0073-task-graph-view-unblock.md)(task-graph 화면 착수 — host builtin surface + workspace popup 두 표면). 선행 보류 결정 [ADR-0066](../../adr/0066-task-graph-view-deferred.md) 은 ADR-0073 로 supersede 됐다.
 - **코드**: `agent.*` 핸들러(`src/adapters/ipc/handler/agent.rs`), 영속 `tasty-memory`
-- **화면**: 구현 중 — DAG 그래프 surface + workspace 스코프 DAG 목록 popup 을 만드는 중이다([ADR-0073](../../adr/0073-task-graph-view-unblock.md)). 그때까지 관측 수단은 IPC/CLI(`agent.task_list`/`task_graph`/`task_get`).
+- **화면**: [DAG 그래프 surface](screens/dag-graph-surface.md)(`tasty new tab --type dag_graph`) — workspace 의 task DAG 를 관찰. workspace 스코프 DAG 목록 popup 은 아직 구현 중이다([ADR-0073](../../adr/0073-task-graph-view-unblock.md)). IPC/CLI 관측 수단(`agent.task_list`/`task_graph`/`task_get`/`dag_list`/`dag_get`)은 그대로 유효하다.
 - **메서드 목록**: [reference/api](../../reference/api.md#에이전트-협업-agent)
 
 ## 목적

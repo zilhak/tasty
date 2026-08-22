@@ -8,8 +8,8 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use crate::model::{
-    EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, SortColumn, SortDir, Surface,
-    resolve_root,
+    DagDirection, DagGraphSurface, EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode,
+    SortColumn, SortDir, Surface, resolve_root,
 };
 
 use super::{
@@ -18,7 +18,7 @@ use super::{
 
 /// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
 ///
-/// 부팅 시 등록: terminal / empty / **explorer**(T11 host builtin).
+/// 부팅 시 등록: terminal / empty / **explorer**(T11 host builtin) / **dag_graph**.
 ///
 /// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
 /// - `"image"`: `rendering = "egui-mesh"` 매니페스트로 egui-mesh 화이트리스트 매칭 후
@@ -29,6 +29,7 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
     register_explorer(registry);
+    register_dag_graph(registry);
 }
 
 /// 부팅 시 호스트가 직접 소유·등록하는 내장 kind 인지 여부.
@@ -40,7 +41,7 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
 /// 에서 host builtin 으로 승격됐다 — 사용자 `~/.tasty/plugins/` 에 옛 plugin 이
 /// 남아 있어도 native explorer 가 항상 우선한다.
 pub fn is_host_builtin_kind(kind: &str) -> bool {
-    matches!(kind, "terminal" | "empty" | "explorer")
+    matches!(kind, "terminal" | "empty" | "explorer" | "dag_graph")
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -521,4 +522,107 @@ mod tests {
         assert!(!term.zoomable);
         assert!(!term.copy_path);
     }
+}
+
+// ── DAG graph ─────────────────────────────────────────────────────────────
+//
+// Task DAG 관찰 surface. `agent.*` 는 host 소유 도메인이고 host 가 렌더에 필요한
+// 상태(memory store 의 task 레코드)를 전부 in-process 로 들고 있으므로 plugin 이
+// 아니라 host builtin 이다 — plugin 으로 만들면 host 가 이미 가진 데이터를 IPC 로
+// 되받아오는 우회가 된다(`docs/dev-guide/popup-implementation.md` 의 host/plugin
+// 선택 기준). 렌더 본문은 `src/adapters/ui/surface/dag_graph/`.
+//
+// create params: `dag_id`(관찰 대상, 미지정이면 view 가 자동 선택) ·
+// `workspace_id`(미지정이면 소속 workspace) · `direction`(`lr`|`td`, 기본 `lr`).
+// snapshot/restore 는 그 셋을 그대로 실어 재시작 후 같은 DAG·같은 방향으로
+// 돌아온다. 줌/팬/선택은 싣지 않는다 — 재시작 사이에 그래프 모양이 달라질 수
+// 있어 옛 뷰포트 복원은 엉뚱한 빈 곳을 보여준다(복원 직후 auto-fit 이 돈다).
+
+fn register_dag_graph(registry: &SurfaceKindRegistry) {
+    registry.register(SurfaceKindDef {
+        kind: "dag_graph",
+        display_name_i18n_key: "surface.kind.dag_graph",
+        icon: Some("git_tree".to_string()),
+        create: Arc::new(|sid, _cwd, params| {
+            Ok(Box::new(DagGraphSurface::with_target(
+                sid,
+                dag_id_param(params),
+                params.get("workspace_id").and_then(parse_workspace_id),
+                params
+                    .get("direction")
+                    .and_then(|v| v.as_str())
+                    .map(DagDirection::from_str)
+                    .unwrap_or_default(),
+            )) as Box<dyn Surface>)
+        }),
+        restore: Arc::new(|sid, data| {
+            Ok(Box::new(DagGraphSurface::with_target(
+                sid,
+                dag_id_param(data),
+                data.get("workspace_id").and_then(parse_workspace_id),
+                data.get("direction")
+                    .and_then(|v| v.as_str())
+                    .map(DagDirection::from_str)
+                    .unwrap_or_default(),
+            )) as Box<dyn Surface>)
+        }),
+        snapshot: Arc::new(|s: &dyn Surface| {
+            let dag = s.as_any().downcast_ref::<DagGraphSurface>()?;
+            let mut obj = json!({ "direction": dag.direction.as_str() });
+            if let Some(id) = &dag.dag_id {
+                obj["dag_id"] = json!(id);
+            }
+            if let Some(ws) = dag.workspace_id {
+                obj["workspace_id"] = json!(ws);
+            }
+            Some(obj)
+        }),
+        // 프리셋 편집기에는 관찰 대상만 노출한다 — 방향은 화면에서 토글하는 뷰
+        // 설정이지 프리셋이 고정할 값이 아니다.
+        preset_fields: vec![PresetFieldSpec {
+            id: "dag_id".to_string(),
+            label_key: "preset.edit.dag_id".to_string(),
+            target: PresetFieldTarget::Params("dag_id".to_string()),
+            input: PresetFieldInput::Text,
+            required: false,
+            placeholder_key: Some("preset.edit.dag_id_hint".to_string()),
+            default: None,
+            derive_cwd: false,
+        }],
+        // `--meta '{"dag":"…"}'` 축약을 canonical `dag_id` 로 흡수.
+        param_aliases: std::collections::HashMap::from([("dag".to_string(), "dag_id".to_string())]),
+        default_params: std::collections::HashMap::new(),
+        // 캔버스 pan/zoom/선택을 host egui 로 받는다.
+        consumes_egui_input: true,
+        // `zoomable` 은 **UI 폰트 줌**(Ctrl+±)이다. 이 surface 의 Ctrl+휠은 그래프
+        // 줌이라 의미가 다르고, 둘을 겹치면 같은 제스처가 두 가지로 해석된다.
+        zoomable: false,
+        egui_copy: false,
+        copy_path: false,
+        egui_paste: false,
+        // 탭 표시명은 surface 자체 `display_name`(explicit DAG 키) 로 정한다 —
+        // derived id 는 기계 문자열이라 basename 명명이 의미 없다.
+        name_from_param: None,
+        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
+        records_recent: false,
+        // 파일 인자가 없다 — convert 는 즉시 변환.
+        convert_requires_input: false,
+        convert_input_popup: None,
+    });
+}
+
+/// `dag_id` 파라미터 정규화 — 공백만 있는 값은 "미지정" 과 같다.
+fn dag_id_param(v: &Value) -> Option<String> {
+    v.get("dag_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// `workspace_id` 파라미터 — 숫자 또는 숫자 문자열(CLI `--meta` 는 문자열로 오기 쉽다).
+fn parse_workspace_id(v: &Value) -> Option<u32> {
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
+        .and_then(|n| u32::try_from(n).ok())
 }

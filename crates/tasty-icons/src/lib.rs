@@ -153,6 +153,20 @@ stroke_icon!(
     "arrow_right",
     r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#
 );
+// DAG 뷰 방향 토글(아래 방향) — ARROW_RIGHT 의 세로 대응.
+stroke_icon!(
+    ARROW_DOWN,
+    "arrow_down",
+    r#"<path d="M12 5v14M6 13l6 6 6-6"/>"#
+);
+// 줌 축소. PLUS 의 대응.
+stroke_icon!(MINUS, "minus", r#"<path d="M5 12h14"/>"#);
+// 내용 전체가 보이도록 맞춤(zoom-to-fit). 네 모서리를 바깥으로 펴는 형태.
+stroke_icon!(
+    FIT,
+    "fit",
+    r#"<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>"#
+);
 // 4방향 이동/재배치(design `move`).
 stroke_icon!(
     MOVE,

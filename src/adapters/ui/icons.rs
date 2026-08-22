@@ -23,6 +23,7 @@ pub fn from_name(name: &str) -> Icon {
         "image" => IMAGE,
         "html" => HTML,
         "terminal" => TERM,
+        "git_tree" => GIT_TREE,
         "file" => FILE,
         _ => FILE,
     }
@@ -38,6 +39,7 @@ mod tests {
         assert_eq!(from_name("markdown").uri, MD.uri);
         assert_eq!(from_name("folder").uri, FOLDER.uri);
         assert_eq!(from_name("image").uri, IMAGE.uri);
+        assert_eq!(from_name("git_tree").uri, GIT_TREE.uri);
         assert_eq!(from_name("html").uri, HTML.uri);
         assert_eq!(from_name("terminal").uri, TERM.uri);
         assert_eq!(from_name("file").uri, FILE.uri);

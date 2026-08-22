@@ -97,7 +97,7 @@ pub enum Commands {
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
-        /// Surface type: terminal (default), markdown, explorer, html, image
+        /// Surface type: terminal (default), markdown, explorer, html, image, dag_graph
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')

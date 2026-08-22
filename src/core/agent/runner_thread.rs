@@ -107,17 +107,25 @@ impl RunnerRegistry {
         false
     }
 
-    /// 현재 상태 + ready/running task 카운트. task list 는 호출자가 별도 제공
-    /// (Core 측에 의존성 없음).
-    pub fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
+    /// 러너 스레드의 생사만 — `(running, crashed)`. task 카운트는 세지 않는다.
+    ///
+    /// [`Self::status`] 가 workspace 전체를 세는 것과 달리, 부분집합(예: DAG 하나)만
+    /// 세야 하는 호출자는 카운트를 스스로 만들고 생사만 여기서 물어온다.
+    pub fn liveness(&self, workspace_id: u32) -> (bool, bool) {
         let threads = self.threads.lock().expect("RunnerRegistry poisoned");
-        let (running, crashed) = match threads.get(&workspace_id) {
+        match threads.get(&workspace_id) {
             Some(ctrl) => (
                 !ctrl.crashed.load(Ordering::Relaxed),
                 ctrl.crashed.load(Ordering::Relaxed),
             ),
             None => (false, false),
-        };
+        }
+    }
+
+    /// 현재 상태 + ready/running task 카운트. task list 는 호출자가 별도 제공
+    /// (Core 측에 의존성 없음).
+    pub fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
+        let (running, crashed) = self.liveness(workspace_id);
         let (ready_count, running_count) = count_ready_running(ctx, workspace_id);
         RunnerStatus {
             running,

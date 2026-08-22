@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 
 use crate::core::Core;
+use crate::core::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
@@ -494,79 +495,6 @@ pub fn await_task_blocking(
 // agent.task_graph
 // ============================================================
 
-/// One directed graph edge, as both `handle_task_graph` render branches need it: `from`/`to`
-/// are task ids, `kind` is `"depends_on"`/`"fallback"`/`"reduce"` (also doubles as the dot
-/// edge's `label`).
-struct GraphEdge<'a> {
-    from: &'a TaskId,
-    to: &'a TaskId,
-    kind: &'static str,
-}
-
-/// Collect every edge the dot/json branches of [`handle_task_graph`] render, so the two formats
-/// can never drift out of sync on what counts as an edge (previously each hand-wrote the same
-/// `Fallback{task}` match independently, and — the bug this fn fixes — neither one drew the
-/// `Fallback{inline}` case at all).
-///
-/// `depends_on` / `Fallback{task}` / `Reduce.inputs` mirror `referenced_task_ids` exactly (same
-/// three reference kinds that crate's own creation/deletion integrity checks already treat as
-/// authoritative) — a dangling id among those can't normally occur.
-///
-/// The inline-fallback edge is different: the main task's `on_failure` carries no target id at
-/// all (`Fallback { task: None, inline: Some(_) }` — the target doesn't exist yet at creation
-/// time, it's materialized later on failure), so the only place the relationship is recorded is
-/// on the *fallback* task's own side, as `metadata.fallback_of == main.id`. This is a reverse
-/// lookup `referenced_task_ids` deliberately excludes (see that fn's doc — inline targets aren't
-/// expected to exist at creation time), so it carries no integrity guarantee: if the main task
-/// was since deleted, `fallback_of` can dangle. That's an expected, not exceptional, state here
-/// — silently skip rendering the edge rather than erroring, the same way a still-unmaterialized
-/// (main hasn't failed yet) inline fallback simply has no edge to draw yet.
-fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
-    let mut edges = Vec::new();
-    for t in tasks {
-        for dep in &t.depends_on {
-            edges.push(GraphEdge {
-                from: dep,
-                to: &t.id,
-                kind: "depends_on",
-            });
-        }
-        if let OnFailure::Fallback {
-            task: Some(fb_id), ..
-        } = &t.on_failure
-        {
-            edges.push(GraphEdge {
-                from: &t.id,
-                to: fb_id,
-                kind: "fallback",
-            });
-        }
-        if let TaskCommand::Reduce { inputs, .. } = &t.command {
-            for input in inputs {
-                edges.push(GraphEdge {
-                    from: input,
-                    to: &t.id,
-                    kind: "reduce",
-                });
-            }
-        }
-    }
-    for fb in tasks {
-        let Some(main_id) = fb.metadata.get("fallback_of").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(main) = tasks.iter().find(|t| t.id == main_id) else {
-            continue;
-        };
-        edges.push(GraphEdge {
-            from: &main.id,
-            to: &fb.id,
-            kind: "fallback",
-        });
-    }
-    edges
-}
-
 /// Graphviz dot 렌더 — `agent.task_graph` 와 `agent.dag_get` 이 공유한다. 노드 색/엣지
 /// 스타일 규칙이 두 벌로 갈라지지 않게 하는 단일 지점이다.
 ///
@@ -849,23 +777,6 @@ pub fn handle_dag_get(
                 "runner": runner,
             }),
         ),
-    }
-}
-
-fn task_command_kind(command: &TaskCommand) -> &'static str {
-    match command {
-        TaskCommand::Run { .. } => "run",
-        TaskCommand::Custom { .. } => "custom",
-        TaskCommand::Reduce { .. } => "reduce",
-        TaskCommand::WaitBarrier { .. } => "wait_barrier",
-    }
-}
-
-fn on_failure_kind(on_failure: &OnFailure) -> &'static str {
-    match on_failure {
-        OnFailure::Abort => "abort",
-        OnFailure::ContinueDownstream => "continue_downstream",
-        OnFailure::Fallback { .. } => "fallback",
     }
 }
 
@@ -1306,6 +1217,7 @@ mod poll_strategy_ref_tests {
 #[cfg(test)]
 mod graph_edge_tests {
     use super::*;
+    use crate::core::agent::graph_view::GraphEdge;
 
     fn task(id: &str, name: &str, state: TaskState) -> Task {
         Task {
