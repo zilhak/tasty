@@ -252,7 +252,9 @@ fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
         .show(ui, |ui| {
             // 점 + 문구를 **한 번의 exact 할당**으로 배치한다. 중첩 레이아웃을 쓰면
             // 오른쪽 정렬 줄 안에서 알약이 남은 폭을 통째로 삼켜 헤더를 밀어낸다.
-            let font = egui::FontId::proportional(theme.font_size_caption.value());
+            // mono 로 짠다 — running/ready 카운트가 0.5 초마다 바뀌는 자리라
+            // 비례폭이면 숫자가 한 자리 늘 때마다 알약 폭이 출렁인다.
+            let font = egui::FontId::monospace(theme.font_size_caption.value());
             let galley = ui.painter().layout_no_wrap(text, font, fg.to_egui());
             let d = theme.status_dot_size().value();
             let gap = theme.dag_runner_gap().value();
