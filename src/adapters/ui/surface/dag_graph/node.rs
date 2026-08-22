@@ -45,6 +45,17 @@ pub struct NodeVisual {
     pub in_cycle: bool,
 }
 
+/// 상태 바 오른쪽 본문 영역의 모서리 곡률 — 오른쪽 두 개만 카드와 같게 깎는다.
+fn body_corners(radius: f32) -> egui::CornerRadius {
+    let r = radius.round().clamp(0.0, u8::MAX as f32) as u8;
+    egui::CornerRadius {
+        nw: 0,
+        sw: 0,
+        ne: r,
+        se: r,
+    }
+}
+
 /// 상태별 (바 색, 배지 배경, 라벨 색).
 pub fn status_colors(theme: &Theme, status: DagStatus) -> (HexColor, HexColor, HexColor) {
     match status {
@@ -206,8 +217,15 @@ pub fn paint_node(
     // hover wash 는 바를 덮지 않는다 — 상태 바는 hover 중에도 원색이어야 한다.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x + bar_w, rect.min.y), rect.max);
     if vis.hovered {
+        // 오른쪽 두 모서리만 카드와 같은 곡률로 깎는다. 사각으로 칠하면 wash 가
+        // 카드의 둥근 모서리 **밖으로** 삐져나와 hover 중에만 카드가 각져 보인다.
+        // 왼쪽은 바가 덮고 있어 곡률이 필요 없다.
         // overlay 계열 토큰은 알파가 이미 곱해진 색이라 premultiplied 로 읽는다.
-        painter.rect_filled(body, 0.0, theme.dag_node_hover_bg().to_egui_premultiplied());
+        painter.rect_filled(
+            body,
+            body_corners(radius),
+            theme.dag_node_hover_bg().to_egui_premultiplied(),
+        );
     }
 
     let pad_x = theme.dag_node_padding_x().value() * zoom;

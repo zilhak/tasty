@@ -121,8 +121,26 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         egui::pos2(rect.max.x, rect.max.y),
     );
     if vis.hovered {
-        ui.painter()
-            .rect_filled(body, 0.0, tone(theme.dag_node_hover_bg(), dim));
+        // `dag-node-hover-bg` 는 `overlay-hover`(≈8% 알파) 라 알파가 이미 곱해진
+        // 색이다 — `to_egui()` 로 읽으면 한 번 더 곱해져 wash 가 거의 안 보인다.
+        let wash = theme.dag_node_hover_bg().to_egui_premultiplied();
+        // 오른쪽 두 모서리만 카드와 같은 곡률로 깎는다. 사각으로 칠하면 wash 가
+        // 카드의 둥근 모서리 **밖으로** 삐져나온다. 왼쪽은 바가 덮고 있다.
+        let r = radius.clamp(0.0, u8::MAX as f32) as u8;
+        ui.painter().rect_filled(
+            body,
+            egui::CornerRadius {
+                nw: 0,
+                sw: 0,
+                ne: r,
+                se: r,
+            },
+            if dim {
+                wash.gamma_multiply(NODE_DIM_OPACITY)
+            } else {
+                wash
+            },
+        );
     }
     let inner = egui::Rect::from_min_max(
         egui::pos2(body.min.x + pad_x, body.min.y + pad_y),
@@ -488,7 +506,8 @@ pub fn draw_lod(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-dag-node-hover-bg",
                 "hover wash",
-                theme.dag_node_hover_bg().to_egui(),
+                // 칩도 실제로 칠해지는 색을 보여야 한다 — 위 카드와 같은 경로.
+                theme.dag_node_hover_bg().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "--tasty-dag-node-dim-opacity",
