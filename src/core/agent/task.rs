@@ -78,7 +78,7 @@ impl Core {
         workspace_id: Option<u32>,
         dag_id: &str,
     ) -> Result<Option<(DagSummary, Vec<Task>)>, AgentError> {
-        for wid in self.dag_scan_workspaces(engine, workspace_id) {
+        for wid in dag_scan_workspaces(engine, workspace_id) {
             let tasks = self.task_list(engine, wid)?;
             let Some(dag) = group_tasks_into_dags(&tasks)
                 .into_iter()
@@ -93,19 +93,6 @@ impl Core {
             return Ok(Some((dag, subset)));
         }
         Ok(None)
-    }
-
-    /// DAG 조회가 훑을 workspace id 목록. 순회 순서를 id 오름차순으로 고정해
-    /// `dag_list` 결과가 workspace 생성 순서에 흔들리지 않게 한다.
-    fn dag_scan_workspaces(&self, engine: &CoreState, workspace_id: Option<u32>) -> Vec<u32> {
-        match workspace_id {
-            Some(w) => vec![w],
-            None => {
-                let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-                ids.sort_unstable();
-                ids
-            }
-        }
     }
 
     /// Task 단건 조회.
@@ -731,6 +718,22 @@ pub(crate) fn task_list_from_state(
     store.list(workspace_id)
 }
 
+/// DAG 조회가 훑을 workspace id 목록. 순회 순서를 id 오름차순으로 고정해
+/// `dag_list` / `dag_get` 결과가 workspace 생성 순서에 흔들리지 않게 한다.
+///
+/// `Core` 메서드와 `CoreState` 전용 경로가 **같은 순회 규칙**을 써야 한다 — 한쪽만
+/// 고치면 popup 과 CLI 가 같은 질문에 다른 순서로 답한다.
+pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>) -> Vec<u32> {
+    match workspace_id {
+        Some(w) => vec![w],
+        None => {
+            let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+            ids.sort_unstable();
+            ids
+        }
+    }
+}
+
 /// 등록된 DAG 목록 — `CoreState` 만으로 조회한다([`Core::dag_list`] 의 본체).
 ///
 /// `workspace_id` 가 `None` 이면 지금 살아있는 전 workspace 를 id 오름차순으로
@@ -739,16 +742,8 @@ pub(crate) fn dag_list_from_state(
     engine: &CoreState,
     workspace_id: Option<u32>,
 ) -> Result<Vec<DagSummary>, AgentError> {
-    let scan: Vec<u32> = match workspace_id {
-        Some(w) => vec![w],
-        None => {
-            let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-            ids.sort_unstable();
-            ids
-        }
-    };
     let mut out = Vec::new();
-    for wid in scan {
+    for wid in dag_scan_workspaces(engine, workspace_id) {
         out.extend(group_tasks_into_dags(&task_list_from_state(engine, wid)?));
     }
     Ok(out)
