@@ -299,6 +299,27 @@ impl Scrollback {
         }
     }
 
+    /// Get a full line (cells + `wrapped`) by index as an owned
+    /// [`ScrollbackLine`]. Works for both memory and disk-backed lines.
+    ///
+    /// 벌크 캡처(닫은 항목 스냅샷 / layout 영속화)가 라인마다 부르는 경로다.
+    /// `line_owned` + `line_wrapped` 를 따로 부르면 두 배로 비싸진다:
+    /// 메모리 라인은 `to_cells` 가 cell 마다 `String` 을 새로 할당하고
+    /// `CellAttributes` 를 복제한 뒤 곧바로 같은 RLE 표현으로 재압축되고,
+    /// 디스크 라인은 같은 인덱스를 두 번 읽어 `File::open` 이 2배가 된다.
+    /// 저장 표현이 이미 `ScrollbackLine` 이므로 여기서는 그대로 돌려준다 —
+    /// 메모리 라인의 비용은 헤더 3개 복제로 고정된다(cell 수 비례가 아니다).
+    pub fn line_full(&self, index: usize) -> Option<ScrollbackLine> {
+        let disk_count = self.disk.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        if index < disk_count {
+            self.disk
+                .as_ref()
+                .and_then(|ds| ds.read_line(index).ok().flatten())
+        } else {
+            self.lines.get(index - disk_count).cloned()
+        }
+    }
+
     /// Returns `true` if the line at `index` was soft-wrapped (auto-wrap at
     /// the right edge of the terminal), meaning the next line is a logical
     /// continuation rather than a hard newline.
@@ -418,9 +439,25 @@ impl TerminalState {
 
     /// Get a full scrollback line by index (cells + wrapped flag).
     pub fn scrollback_line_full(&self, index: usize) -> Option<crate::ScrollbackLine> {
-        let cells = self.scrollback.line_owned(index)?;
-        let wrapped = self.scrollback.line_wrapped(index).unwrap_or(false);
-        Some(crate::ScrollbackLine::new(cells, wrapped))
+        self.scrollback.line_full(index)
+    }
+
+    /// 스크롤백 전량을 인덱스 순서(0 = 가장 오래된 라인)로 회수한다.
+    ///
+    /// 캡처 전용 벌크 경로다 — 호출자가 `0..scrollback_len()` 을 돌며
+    /// [`scrollback_line_full`](Self::scrollback_line_full) 을 부르는 것과 결과는
+    /// 같지만, `TerminalHandle` 경유 시 라인마다 잡히는 state mutex 를 한 번으로
+    /// 줄인다. 그 mutex 는 PTY 파서 스레드가 `ingest` 로 잡는 것과 같은 것이라,
+    /// 라인당 lock 은 만재 스크롤백에서 파서와 수만 회 경합한다.
+    pub fn scrollback_lines_all(&self) -> Vec<crate::ScrollbackLine> {
+        let total = self.scrollback_len();
+        let mut out = Vec::with_capacity(total);
+        for i in 0..total {
+            if let Some(line) = self.scrollback.line_full(i) {
+                out.push(line);
+            }
+        }
+        out
     }
 
     /// Snapshot the current visible screen as `ScrollbackLine` records.

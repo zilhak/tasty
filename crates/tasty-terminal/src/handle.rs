@@ -170,6 +170,16 @@ impl Terminal {
         self.lock_state().scrollback_line_full(index)
     }
 
+    /// 스크롤백 전량을 **한 번의 lock** 으로 회수한다 (캡처 전용 벌크 경로).
+    ///
+    /// `0..scrollback_len()` 을 돌며 [`scrollback_line_full`](Self::scrollback_line_full)
+    /// 을 부르는 것과 결과는 같지만, 라인마다 잡히던 state mutex 가 1회로 준다.
+    /// 그 mutex 는 파서 스레드가 `ingest` 로 잡는 것과 동일해(ADR-0002), 만재
+    /// 스크롤백을 라인당 lock 으로 캡처하면 파서와 수만 회 경합한다.
+    pub fn scrollback_lines_all(&self) -> Vec<ScrollbackLine> {
+        self.lock_state().scrollback_lines_all()
+    }
+
     pub fn screen_snapshot_lines(&self) -> Vec<ScrollbackLine> {
         self.lock_state().screen_snapshot_lines()
     }
