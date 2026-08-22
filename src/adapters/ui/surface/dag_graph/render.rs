@@ -6,7 +6,7 @@
 use tasty_model::DagGraphSurface;
 
 use super::chrome::{self, ChromeAction, NARROW_DETAIL_SHEET};
-use super::detail::{DetailAction, draw_detail};
+use super::detail::{DetailAction, DetailDock, dock_divider, draw_detail};
 use super::view::{DagGraphView, layout_config};
 
 /// DAG surface 한 개를 그린다.
@@ -26,7 +26,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
     let surface_width = ui.available_width();
     let now = now_ms();
 
-    let mut chrome_action = chrome::draw_header(ui, theme, &data, view, panel.direction);
+    let chrome_action = chrome::draw_header(ui, theme, &data, view, panel.direction, surface_width);
 
     if chrome::is_empty(data.current.as_ref()) {
         chrome::draw_empty(ui, theme, &data, panel.dag_id.as_deref());
@@ -67,70 +67,47 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, panel: &mut DagGraphSurface, view: &mut
     let mut viewport = ui.available_size();
 
     if show_detail && !wide {
-        // 좁은 화면: 캔버스(위) + 하단 시트.
+        // 좁은 화면: 캔버스(위) + 하단 시트. 경계선은 시트 **위쪽 가로선**이다.
         let sheet_h = theme.dag_detail_sheet_height().value();
         let canvas_h = (ui.available_height() - sheet_h).max(0.0);
         viewport = egui::vec2(ui.available_width(), canvas_h);
         ui.allocate_ui(viewport, |ui| {
-            canvas(
-                ui,
-                theme,
-                view,
-                &data,
-                &layout,
-                panel,
-                now,
-                &mut chrome_action,
-            );
+            canvas(ui, theme, view, &data, &layout, panel, now);
         });
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), sheet_h),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
+                let dock = ui.available_rect_before_wrap();
                 if let Some(node) = selected {
                     detail_action = draw_detail(ui, theme, graph, node, now);
                 }
+                dock_divider(ui.painter(), theme, dock, DetailDock::Sheet);
             },
         );
     } else if show_detail {
-        // 넓은 화면: 캔버스 | 우측 패널.
+        // 넓은 화면: 캔버스 | 우측 패널. 경계선은 패널 **왼쪽 세로선**이다.
         let panel_w = theme.dag_detail_width().value();
         let canvas_w = (ui.available_width() - panel_w).max(0.0);
         viewport = egui::vec2(canvas_w, ui.available_height());
         ui.horizontal_top(|ui| {
             ui.allocate_ui(viewport, |ui| {
-                canvas(
-                    ui,
-                    theme,
-                    view,
-                    &data,
-                    &layout,
-                    panel,
-                    now,
-                    &mut chrome_action,
-                );
+                canvas(ui, theme, view, &data, &layout, panel, now);
             });
             ui.allocate_ui_with_layout(
                 egui::vec2(panel_w, ui.available_height()),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
+                    let dock = ui.available_rect_before_wrap();
                     if let Some(node) = selected {
                         detail_action = draw_detail(ui, theme, graph, node, now);
                     }
+                    dock_divider(ui.painter(), theme, dock, DetailDock::Side);
                 },
             );
         });
     } else {
-        canvas(
-            ui,
-            theme,
-            view,
-            &data,
-            &layout,
-            panel,
-            now,
-            &mut chrome_action,
-        );
+        canvas(ui, theme, view, &data, &layout, panel, now);
     }
 
     if let Some(DetailAction::Select(id)) = detail_action {
@@ -148,15 +125,11 @@ fn canvas(
     layout: &tasty_dag_layout::GraphLayout,
     panel: &DagGraphSurface,
     now: u64,
-    chrome_action: &mut Option<ChromeAction>,
 ) {
     let Some(graph) = data.current.as_ref() else {
         return;
     };
-    let out = super::canvas::draw_canvas(ui, theme, view, graph, layout, panel.direction, now);
-    if out.toggle_direction {
-        *chrome_action = Some(ChromeAction::ToggleDirection);
-    }
+    super::canvas::draw_canvas(ui, theme, view, graph, layout, panel.direction, now);
 }
 
 fn apply_chrome(

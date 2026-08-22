@@ -1350,6 +1350,12 @@ abort = "中断"
 continue_downstream = "下流継続"
 fallback = "フォールバック"
 
+[dag.duration]
+sub_ten = "{}.{}秒"
+seconds = "{}秒"
+minutes = "{}分 {}秒"
+hours = "{}時間 {}分"
+
 [dag.detail]
 kind = "種類"
 on_failure = "失敗時"

@@ -409,6 +409,7 @@ pub fn layout_config(theme: &Theme, direction: DagDirection) -> LayoutConfig {
 
 #[cfg(test)]
 mod tests {
+    use super::super::model::{DagEdgeData, DagGraphData, DagNodeData, DagRelation};
     use super::*;
 
     #[test]
@@ -490,6 +491,102 @@ mod tests {
         ];
         assert_eq!(pick_target(&idle, None).unwrap().id, "d:two");
         assert!(pick_target(&[], None).is_none());
+    }
+
+    /// **이 기능의 핵심 불변식.** 캐시 키에 `TaskState` 가 들어가면 0.5 초 폴링에서
+    /// 상태가 바뀔 때마다 좌표가 다시 계산돼 노드가 미세하게 튄다. 노드/엣지가 그대로면
+    /// 어떤 상태 조합이 와도 같은 키여야 한다.
+    #[test]
+    fn shape_key_ignores_task_state() {
+        let cfg = LayoutConfig::default();
+        let mut v = DagGraphView {
+            data: Some(graph_data(&[
+                ("a", DagStatus::Waiting),
+                ("b", DagStatus::Waiting),
+            ])),
+            ..DagGraphView::default()
+        };
+        let waiting = v.shape_key(DagDirection::LeftRight, &cfg);
+
+        // 같은 노드/엣지, 상태만 8 종을 오간다.
+        for state in [
+            DagStatus::Ready,
+            DagStatus::Running,
+            DagStatus::Succeeded,
+            DagStatus::Failed,
+            DagStatus::Cancelled,
+            DagStatus::Skipped,
+            DagStatus::Unknown,
+        ] {
+            v.data = Some(graph_data(&[("a", state), ("b", DagStatus::Running)]));
+            assert_eq!(
+                v.shape_key(DagDirection::LeftRight, &cfg),
+                waiting,
+                "state {state:?} 가 레이아웃 캐시를 무효화했다"
+            );
+        }
+
+        // 반대로 **모양**이 바뀌면 반드시 달라져야 한다 — 노드 추가.
+        v.data = Some(graph_data(&[
+            ("a", DagStatus::Waiting),
+            ("b", DagStatus::Waiting),
+            ("c", DagStatus::Waiting),
+        ]));
+        assert_ne!(v.shape_key(DagDirection::LeftRight, &cfg), waiting);
+
+        // 방향과 치수도 좌표를 바꾸므로 키의 성분이다.
+        v.data = Some(graph_data(&[
+            ("a", DagStatus::Waiting),
+            ("b", DagStatus::Waiting),
+        ]));
+        assert_eq!(v.shape_key(DagDirection::LeftRight, &cfg), waiting);
+        assert_ne!(v.shape_key(DagDirection::TopDown, &cfg), waiting);
+        let wider = LayoutConfig {
+            layer_gap: cfg.layer_gap + tasty_type_geometry::length::LogicalPx(8.0),
+            ..LayoutConfig::default()
+        };
+        assert_ne!(v.shape_key(DagDirection::LeftRight, &wider), waiting);
+    }
+
+    /// `(id, 상태)` 목록 → 앞 노드에서 뒤 노드로 이어지는 사슬 그래프.
+    fn graph_data(nodes: &[(&str, DagStatus)]) -> DagData {
+        let graph = DagGraphData {
+            id: "d:test".to_string(),
+            name: "test".to_string(),
+            nodes: nodes
+                .iter()
+                .map(|(id, status)| DagNodeData {
+                    id: (*id).to_string(),
+                    name: (*id).to_string(),
+                    status: *status,
+                    command_kind: "run",
+                    on_failure_kind: "abort",
+                    command_text: String::new(),
+                    started_at: None,
+                    finished_at: None,
+                    exit_code: None,
+                    error_tail: None,
+                    output_tail: None,
+                    incoming: Vec::new(),
+                })
+                .collect(),
+            edges: (1..nodes.len())
+                .map(|i| DagEdgeData {
+                    from: i - 1,
+                    to: i,
+                    relation: DagRelation::DependsOn,
+                })
+                .collect(),
+            cycle: None,
+            done: 0,
+        };
+        DagData {
+            workspace_id: 1,
+            dags: Vec::new(),
+            current: Some(graph),
+            runner: RunnerBadgeData::default(),
+            target_missing: false,
+        }
     }
 
     fn summary(id: &str, rollup: &'static str, updated_at: u64) -> tasty_agent::DagSummary {

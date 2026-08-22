@@ -1348,6 +1348,12 @@ abort = "중단"
 continue_downstream = "하류 계속"
 fallback = "폴백"
 
+[dag.duration]
+sub_ten = "{}.{}초"
+seconds = "{}초"
+minutes = "{}분 {}초"
+hours = "{}시간 {}분"
+
 [dag.detail]
 kind = "종류"
 on_failure = "실패 시"

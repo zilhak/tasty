@@ -1356,6 +1356,12 @@ abort = "Abort"
 continue_downstream = "Continue downstream"
 fallback = "Fallback"
 
+[dag.duration]
+sub_ten = "{}.{}s"
+seconds = "{}s"
+minutes = "{}m {}s"
+hours = "{}h {}m"
+
 [dag.detail]
 kind = "Kind"
 on_failure = "On failure"

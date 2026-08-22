@@ -6,7 +6,7 @@
 use tasty_agent::{DagSummary, Task, TaskCommand, TaskState};
 
 use crate::core::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
-use crate::i18n::t;
+use crate::i18n::{t, t_fmt, t_fmt2};
 
 /// 노드 상태 8종. 색·글리프·라벨 3 채널을 모두 여기서 결정한다 — 색 단독으로
 /// 상태를 표현하지 않는다는 접근성 규칙의 집행 지점이다.
@@ -373,20 +373,36 @@ pub fn format_clock(epoch_ms: u64) -> String {
     }
 }
 
-/// 밀리초 → `1.2s` / `24s` / `3m 04s` / `1h 02m`.
+/// 밀리초 → `1.2s` / `24s` / `3m 04s` / `1h 02m` (en 기준).
+///
+/// 단위 표기와 자릿수 배치를 통째로 번역 키에 맡긴다 — `s`/`m`/`h` 는 영어 약어라
+/// 로케일마다 관례가 다르고(ja `秒`/`分`, ko `초`/`분`), 어느 단위를 앞세우는지도
+/// 번역자가 정할 수 있어야 한다. 숫자 자체는 여기서 이미 자리를 맞춰 넣는다.
 pub fn format_duration_ms(ms: u64) -> String {
     let secs = ms / 1000;
     if secs < 10 {
         // 10 초 미만은 소수 한 자리 — 짧은 task 가 전부 "0s" 로 뭉개지지 않게.
-        return format!("{}.{}s", secs, (ms % 1000) / 100);
+        return t_fmt2(
+            "dag.duration.sub_ten",
+            &secs.to_string(),
+            &((ms % 1000) / 100).to_string(),
+        );
     }
     if secs < 60 {
-        return format!("{secs}s");
+        return t_fmt("dag.duration.seconds", &secs.to_string());
     }
     if secs < 3600 {
-        return format!("{}m {:02}s", secs / 60, secs % 60);
+        return t_fmt2(
+            "dag.duration.minutes",
+            &(secs / 60).to_string(),
+            &format!("{:02}", secs % 60),
+        );
     }
-    format!("{}h {:02}m", secs / 3600, (secs % 3600) / 60)
+    t_fmt2(
+        "dag.duration.hours",
+        &(secs / 3600).to_string(),
+        &format!("{:02}", (secs % 3600) / 60),
+    )
 }
 
 /// 노드 meta 행에 보일 duration. `running` 은 경과, terminal 은 소요,

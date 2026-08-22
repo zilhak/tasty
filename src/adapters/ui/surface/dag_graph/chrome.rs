@@ -27,46 +27,56 @@ pub enum ChromeAction {
 }
 
 /// 상단 헤더 — DAG 선택 · 진척 · 러너 배지 · 줌 클러스터.
+///
+/// `surface_width` 가 [`NARROW_DETAIL_SHEET`] 미만이면 **2 줄로 접는다**: 첫 줄은
+/// 정체성(어떤 DAG 를, 얼마나, 누가 돌리고 있나), 둘째 줄은 조작(줌/fit/방향).
+/// 한 줄로 밀어 넣으면 좁은 폭에서 줌 클러스터가 picker 를 밀어내 DAG 이름이 먼저
+/// 잘리는데, 그건 이 화면에서 제일 먼저 읽어야 하는 정보다.
 pub fn draw_header(
     ui: &mut egui::Ui,
     theme: &Theme,
     data: &DagData,
     view: &mut DagGraphView,
     direction: DagDirection,
+    surface_width: f32,
 ) -> Option<ChromeAction> {
     let mut action = None;
-    let width = ui.available_width();
+    let stacked = surface_width < NARROW_DETAIL_SHEET.value();
+    let row_h = theme.dag_chrome_height().value();
 
     egui::Frame::NONE
         .fill(theme.dag_chrome_bg().to_egui())
         .inner_margin(margin_sym(theme.dag_chrome_inset(), theme.spacing_xs))
         .show(ui, |ui| {
-            ui.set_height(theme.dag_chrome_height().value());
-            ui.horizontal_centered(|ui| {
-                if let Some(picked) = dag_picker(ui, theme, data) {
-                    action = Some(ChromeAction::SelectDag(picked));
-                }
-                if let Some(graph) = &data.current {
-                    hspace(ui, theme.spacing_sm);
-                    ui.label(
-                        egui::RichText::new(t_fmt2(
-                            "dag.header.progress",
-                            &graph.done.to_string(),
-                            &graph.total().to_string(),
-                        ))
-                        .size(theme.dag_row_count_font_size().value())
-                        .color(theme.dag_row_count_fg().to_egui()),
+            ui.set_height(if stacked { row_h * 2.0 } else { row_h });
+            if stacked {
+                ui.vertical(|ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| identity_group(ui, theme, data, &mut action),
                     );
-                }
-                hspace(ui, theme.spacing_sm);
-                runner_badge(ui, theme, &data.runner);
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(a) = zoom_cluster(ui, theme, view, direction, width) {
-                        action = Some(a);
-                    }
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if let Some(a) = zoom_cluster(ui, theme, view, direction, surface_width)
+                            {
+                                action = Some(a);
+                            }
+                        },
+                    );
                 });
-            });
+            } else {
+                ui.horizontal_centered(|ui| {
+                    identity_group(ui, theme, data, &mut action);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if let Some(a) = zoom_cluster(ui, theme, view, direction, surface_width) {
+                            action = Some(a);
+                        }
+                    });
+                });
+            }
         });
 
     // 헤더 ↔ 캔버스 구분선.
@@ -81,6 +91,32 @@ pub fn draw_header(
         ),
     );
     action
+}
+
+/// 헤더 좌측 그룹 — 어떤 DAG 를, 얼마나, 누가 돌리고 있나.
+fn identity_group(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    data: &DagData,
+    action: &mut Option<ChromeAction>,
+) {
+    if let Some(picked) = dag_picker(ui, theme, data) {
+        *action = Some(ChromeAction::SelectDag(picked));
+    }
+    if let Some(graph) = &data.current {
+        hspace(ui, theme.spacing_sm);
+        ui.label(
+            egui::RichText::new(t_fmt2(
+                "dag.header.progress",
+                &graph.done.to_string(),
+                &graph.total().to_string(),
+            ))
+            .size(theme.dag_row_count_font_size().value())
+            .color(theme.dag_row_count_fg().to_egui()),
+        );
+    }
+    hspace(ui, theme.spacing_sm);
+    runner_badge(ui, theme, &data.runner);
 }
 
 /// DAG 선택 드롭다운. 목록이 하나뿐이면 그냥 이름만 보인다.

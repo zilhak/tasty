@@ -17,6 +17,31 @@ pub enum DetailAction {
     Select(String),
 }
 
+/// 상세가 어느 자리에 놓였는가. **콘텐츠가 아니라 자리**의 속성이라
+/// [`draw_detail`] 이 아니라 자리를 정한 쪽이 들고 있다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DetailDock {
+    /// 캔버스 오른쪽 고정폭 패널 — 캔버스와의 경계는 **왼쪽 세로선**.
+    Side,
+    /// 캔버스 아래 시트 — 경계는 **위쪽 가로선**. 팝오버로 띄울 때도 같다.
+    Sheet,
+}
+
+/// 도킹 자리와 캔버스 사이의 경계선. 도킹을 정한 쪽이 그 자리 rect 로 호출한다.
+pub fn dock_divider(painter: &egui::Painter, theme: &Theme, dock: egui::Rect, side: DetailDock) {
+    let ends = match side {
+        DetailDock::Side => [dock.left_top(), dock.left_bottom()],
+        DetailDock::Sheet => [dock.left_top(), dock.right_top()],
+    };
+    painter.line_segment(
+        ends,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.dag_detail_border().to_egui(),
+        ),
+    );
+}
+
 /// 상세 콘텐츠를 `ui` 안에 채운다.
 pub fn draw_detail(
     ui: &mut egui::Ui,
@@ -28,16 +53,12 @@ pub fn draw_detail(
     let mut action = None;
 
     // 도킹 자리를 통째로 채운다 — 캔버스와의 경계가 색으로 끊겨야 별개 영역으로 읽힌다.
+    // **구분선은 여기서 그리지 않는다**: 어느 변에 그어야 하는지는 이 콘텐츠가 아니라
+    // 자리를 정한 쪽만 안다(우측 패널이면 왼쪽 세로선, 하단 시트면 위쪽 가로선).
+    // 호출자가 [`dock_divider`] 로 긋는다.
     let dock = ui.available_rect_before_wrap();
     ui.painter()
         .rect_filled(dock, 0.0, theme.dag_detail_bg().to_egui());
-    ui.painter().line_segment(
-        [dock.left_top(), dock.left_bottom()],
-        egui::Stroke::new(
-            theme.border_width.value(),
-            theme.dag_detail_border().to_egui(),
-        ),
-    );
 
     egui::Frame::NONE
         .inner_margin(margin_all(theme.dag_detail_padding()))

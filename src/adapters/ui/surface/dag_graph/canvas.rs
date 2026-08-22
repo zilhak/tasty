@@ -36,14 +36,12 @@ impl Transform {
     }
 }
 
-/// 캔버스 한 프레임의 결과 — 호출자가 처리해야 하는 것들.
-#[derive(Default)]
-pub struct CanvasOutput {
-    /// 사용자가 방향 토글을 **캔버스에서** 요청했는지(단축키).
-    pub toggle_direction: bool,
-}
-
 /// 캔버스를 그리고 상호작용을 처리한다.
+///
+/// 키 단축키는 **여기서 만들지 않는다**. tasty 의 모든 단축키는 `KeybindingSettings`
+/// 를 거쳐야 하고(`docs/design/policies/key-mapping.md`), 이 캔버스가 자체 조합을
+/// 박으면 그 조합이 이미 배정된 전역 액션과 조용히 겹친다. 방향 전환·fit·줌은
+/// 헤더 줌 클러스터의 버튼이 담당한다.
 pub fn draw_canvas(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -52,8 +50,7 @@ pub fn draw_canvas(
     layout: &GraphLayout,
     direction: DagDirection,
     now_ms: u64,
-) -> CanvasOutput {
-    let mut out = CanvasOutput::default();
+) {
     let (rect, response) =
         ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -66,7 +63,7 @@ pub fn draw_canvas(
         view.fit(graph_size, rect.size(), theme.dag_canvas_padding().value());
     }
 
-    interact(ui, theme, &response, rect, view, graph, layout, &mut out);
+    interact(ui, theme, &response, rect, view, graph, layout);
 
     let tr = Transform {
         origin: rect.min + view.offset,
@@ -134,10 +131,9 @@ pub fn draw_canvas(
 
     super::chrome::paint_lod_chip(&painter, theme, rect, lod);
     super::chrome::paint_minimap(&painter, theme, rect, view, layout, graph_size);
-    out
 }
 
-/// pan / zoom / 선택 / 단축키.
+/// pan / zoom / 선택.
 #[allow(clippy::too_many_arguments)]
 fn interact(
     ui: &egui::Ui,
@@ -147,7 +143,6 @@ fn interact(
     view: &mut DagGraphView,
     graph: &DagGraphData,
     layout: &GraphLayout,
-    out: &mut CanvasOutput,
 ) {
     // 중클릭 드래그는 노드 위에서도 pan 이다. 좌클릭 드래그는 빈 곳에서만 pan —
     // 노드 위 좌클릭 드래그를 pan 으로 삼으면 "노드를 옮기는 화면" 으로 오독된다.
@@ -188,11 +183,10 @@ fn interact(
             view.offset += scroll;
         }
     }
+    // `Esc` 는 단축키 배정이 아니라 "열린 것을 닫는다" 는 OS 공통 관례라 예외다 —
+    // `KeybindingSettings` 에 노출되는 조합이 아니고 재배정 대상도 아니다.
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         view.selected = None;
-    }
-    if ui.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.alt) {
-        out.toggle_direction = true;
     }
 }
 
