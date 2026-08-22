@@ -641,14 +641,14 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 | `elbow()` | `canvas::orthogonalize` + `round_corners` | `dag/edges.rs::elbow` / `orthogonalize` / `round_corners` |
 | `DagNode` | `node::paint_node` | `dag/node.rs::paint_card` (`dag-node`/`dag-kinds`/`dag-lod` spec) |
 | `DAG_STATUS` / `DAG_KIND` / `DAG_REL` | `model::{DagStatus, DagRelation}` | `dag.rs::{Status, Kind, Rel}` |
-| `RunnerBadge` | `chrome::runner_badge` | `dag/runner.rs::paint_badge` (`dag-runner` spec) |
-| `ZoomCluster` | `chrome::zoom_cluster` (헤더 안) | `dag/chrome.rs::paint_zoom_cluster` (`dag-chrome` spec) |
-| `Minimap` | `chrome::paint_minimap` | `dag/chrome.rs::paint_minimap` (`dag-chrome` spec) |
+| `RunnerBadge` | `chrome::runner_badge` + `resume_hint` (헤더 우측) | `dag/runner.rs::paint_badge` (`dag-runner` spec) |
+| `ZoomCluster` | `chrome::draw_zoom_cluster` (캔버스 우하단 — `draw_canvas_chrome` 안) | `dag/chrome.rs::paint_zoom_cluster` (`dag-chrome` spec) |
+| `Minimap` | `chrome::paint_minimap` (줌 클러스터 바로 위) | `dag/chrome.rs::paint_minimap` (`dag-chrome` spec) |
 | `CycleBanner` | `chrome::draw_cycle_banner` | `dag/chrome.rs::paint_cycle_banner` (`dag-states` spec) |
 | LOD 힌트 칩 | `chrome::paint_lod_chip` | `dag/chrome.rs::paint_lod_chip` (캔버스 안) |
 | `DagEmpty` | `chrome::draw_empty` | `dag/chrome.rs::paint_empty` (`dag-states` spec) |
 | `DagDetail` / `DetailRow` / `LogBlock` | `detail::draw_detail` / `row` / `labeled_block` | `dag/detail.rs::draw_body` (`dag-detail` spec) |
-| `DagSurface` | `render::draw_dag_graph` | `dag/surface.rs::paint` (`dag-surface` spec) |
+| `DagSurface` | `render::draw_dag_graph` (헤더는 `chrome::draw_header`) | `dag/surface.rs::paint` (`dag-surface` spec) |
 | `dagRowItems` (DAG 목록 행) | `popup::dag_list::draw_row_trailing` | `dag/rows.rs::trailing` (`dag-rows` spec) |
 | `DagWindow` (워크스페이스 popup) | `popup::dag_list::draw_dag_list_popup` | `dag/window.rs::paint` (`dag-window` spec) |
 
@@ -675,7 +675,12 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 - **popup 디테일 뷰의 헤더**: 시안 `DagWindow` 의 디테일은 헤더 없이 캔버스 + 시트만 두고
   러너 배지를 back bar 의 actions 슬롯에 놓는다. 본체는 그래프 화면 한 벌
   (`render::draw_dag_graph`)을 통째로 재사용하므로 **헤더가 함께 온다** — 러너 배지 · DAG
-  선택 · 줌 클러스터가 그 안에 있고, 중복을 피하려 actions 슬롯은 비운다. 렌더를 두 벌로
-  가르지 않는 쪽을 택한 결과다. 갤러리 `dag-window` specimen 은 시안 구조(헤더 없음)를 그대로
-  전사하므로 이 지점에서 본체와 갈라진다 — 정합은
-  `.claude-workspace/todo/27-dag-graph-visual-parity-fix.md` 가 함께 다룬다.
+  선택 · 새로고침이 그 안에 있고(줌 클러스터는 캔버스 우하단), 중복을 피하려 actions 슬롯은
+  비운다. 렌더를 두 벌로 가르지 않는 쪽을 택한 결과다.
+
+  갤러리 `dag-window` specimen 은 시안 구조(헤더 없음 · back bar 에 배지)를 그대로 전사하고
+  **그대로 둔다** — 러너 배지의 정합 기준 specimen 은 풀탭 서피스 쪽 `dag-surface`
+  (`dag/surface.rs::paint`) 이고, 그쪽이 본체 헤더(배지 · picker · 새로고침)와 1:1 로 맞는다.
+  `dag-window` 를 본체에 맞춰 고치면 시안 원본을 잃고, 본체를 `dag-window` 에 맞추면 렌더가
+  두 벌로 갈린다. 두 specimen 은 **같은 화면의 두 배치**를 보여주는 것이고, 본체는 그중
+  풀탭 배치 하나만 구현한다.
