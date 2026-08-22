@@ -71,14 +71,20 @@ TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서�
 
 갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요·결정적.
 
-- 형식: `TASTY_GALLERY_SHOT=<idx>:<png>[,<idx>:<png>...]` — **배치**. 콤마로 여러 항목을 주면 **한 인스턴스에서** 순차로 선택→4프레임 settle→캡처하고 마지막에 **자체 종료**한다(콜드스타트 1회. `crates/tasty-gallery/src/main.rs`).
-- `idx` 는 **페이지(Category) index**(0-base, `catalog::pages()` 순서 = Foundations 0 · Components 1 · Icons 2 · Overlays 3 · Layouts 4 · Plugins 5). page>section>spec 리팩터 이후 특정 spec 을 직접 지정할 수 없고 해당 페이지 **최상단**이 찍힌다 — 페이지 중간의 특정 섹션을 검증하려면 `catalog.rs` 의 해당 페이지 sections 맨 앞에 임시 섹션을 꽂아 캡처하고 되돌린다(커밋 금지).
+- 형식: `TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]` — **배치**. 콤마로 여러 항목을 주면 **한 인스턴스에서** 순차로 선택→4프레임 settle→캡처하고 마지막에 **자체 종료**한다(콜드스타트 1회. `crates/tasty-gallery/src/main.rs`).
+- `idx` 는 **페이지(Category) index**(0-base, `catalog::pages()` 순서 = Foundations 0 · Components 1 · Icons 2 · Overlays 3 · Layouts 4 · Plugins 5 · Chrome 6).
+- `@<y>` 는 본문 **스크롤 오프셋(px)** 이다. 한 페이지에 섹션이 여러 개 쌓이면 상단 뷰포트만으로는 아래쪽 specimen 을 찍을 수 없으므로 그 자리로 강제 스크롤한다 — 임시 섹션을 꽂았다 되돌리는 우회가 필요 없다. 정확한 y 를 모르면 여러 오프셋을 한 배치로 훑고 맞는 컷을 고른다.
+- 창 크기는 `TASTY_GALLERY_SIZE=<w>x<h>` 로 덮어쓴다(기본 1100×720). 문서 컬럼이 최대 1080 이라 기본 창에서는 우측이 잘린다 — specimen 전폭을 담으려면 넓혀서 찍는다.
 - 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
 
 ```bash
 B="$PWD/.claude-workspace/temp"
 # 여러 specimen 한 방에 (init 1회): idx 3=Button, 6=Badge·Tag·Kbd, 9=MenuItem·TreeRow
 TASTY_GALLERY_SHOT="3:$B/button.png,6:$B/chips.png,9:$B/nav.png" ./target/debug/tasty-gallery
+
+# 페이지 중간 섹션(Layouts 페이지의 Task DAG)을 전폭으로
+TASTY_GALLERY_SIZE=1360x1000 \
+  TASTY_GALLERY_SHOT="4@5200:$B/dag-canvas.png,4@11000:$B/dag-surface.png" ./target/debug/tasty-gallery
 # 윈도우 1100x720, 1:1(논-레티나) → 좌측 사이드바 ~240px, 우측이 specimen 패널
 ```
 

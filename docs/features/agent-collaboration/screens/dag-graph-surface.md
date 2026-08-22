@@ -118,3 +118,16 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 디자인 시안은 위→아래를 기본 방향으로 그렸지만 구현 기본값은 **좌→우** 다 —
 `agent.task_graph --format dot` 이 `rankdir=LR` 을 내보내 CLI 출력과 멘탈 모델이 일치하고,
 노드 카드가 가로로 긴 형태(168×48)라 LR 이 화면 폭을 아낀다. 방향은 토글로 바꿀 수 있다.
+
+## 갤러리 specimen
+
+`cargo run -p tasty-gallery` → **Layouts** 페이지의 `Task DAG · canvas & nodes` /
+`Task DAG · chrome, detail & surface` 두 섹션. 캔버스 · 노드 8 상태 · 종류 4 · LOD 3 티어 ·
+엣지 3 관계 · 줌 클러스터 + 미니맵 · 러너 배지 5 상태 · 노드 상세 · 빈 상태와 사이클 배너 ·
+풀탭 서피스(넓은/320px) 를 전시한다.
+
+갤러리는 main 바이너리를 의존할 수 없어 이 화면의 specimen 은 **전사 미러**다(좌표 계산만은
+`tasty-dag-layout` 을 직접 불러 본체와 같은 코드를 쓴다). 미러가 본체와 어긋난 지점,
+시안 대비 의도적 차이(글리프 치환 · 재개 힌트 문구 · 기본 방향)는
+[design-gallery-mapping](../../../design/systems/design-gallery-mapping.md#task-dag--surface--canvas--node-layouts)
+의 3자 매핑 표에 기록한다.

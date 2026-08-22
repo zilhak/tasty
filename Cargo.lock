@@ -5796,6 +5796,8 @@ dependencies = [
  "egui_extras",
  "png 0.18.1",
  "pollster",
+ "tasty-dag-layout",
+ "tasty-design-tokens",
  "tasty-egui-theme",
  "tasty-icons",
  "tasty-themes",

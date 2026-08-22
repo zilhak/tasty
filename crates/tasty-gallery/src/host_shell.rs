@@ -70,6 +70,9 @@ pub struct GalleryState {
     pub specs_on: bool,
     /// 다음 frame 에서 visuals/zoom 을 ctx 에 재적용할지.
     pub needs_reapply: bool,
+    /// 배치 스크린샷에서만 쓰는 본문 강제 스크롤 오프셋(px). 사람이 쓰는
+    /// 실행에서는 항상 `None` 이라 스크롤은 평소대로 사용자 것이다.
+    pub shot_scroll: Option<f32>,
     /// 좌상단 brand 로고 텍스처 (앱 아이콘 PNG 디코드 결과, 1회 캐시).
     brand_logo: Option<egui::TextureHandle>,
 }
@@ -85,6 +88,7 @@ impl GalleryState {
             ui_scale: 1.0,
             specs_on: false,
             needs_reapply: true,
+            shot_scroll: None,
             brand_logo: None,
         }
     }
@@ -437,32 +441,35 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
     // 디자인 .g-page 좌우 대칭 패딩 40 (= space-xl 24 + space-lg 16).
     let pad_x = theme.spacing_xl.value() + theme.spacing_lg.value();
 
-    egui::ScrollArea::vertical()
+    let mut main_scroll = egui::ScrollArea::vertical()
         .id_salt("g_main_scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // 좌측 = 중앙정렬 여백(뷰포트 기준) + 페이지 좌패딩 40.
-                ui.add_space(side + pad_x);
-                ui.vertical(|ui| {
-                    // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
-                    // 매우 좁은 창에서 음수가 되지 않도록 0 으로 클램프.
-                    ui.set_max_width((content_w - pad_x * 2.0).max(0.0));
-                    ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
-                    page_head(ui, theme, page.category);
-                    for sec in &page.sections {
-                        crate::catalog::spec::section(ui, theme, sec.title);
-                        for sp in &sec.specs {
-                            crate::catalog::spec::spec(ui, theme, sp.title, sp.when);
-                            // 각 specimen 을 고유 id scope 로 감싼다 — 여러 draw 가
-                            // 같은 페이지에 쌓일 때 내부 위젯/ScrollArea id 충돌 방지.
-                            ui.push_id(sp.id, |ui| (sp.draw)(ui, theme));
-                        }
+        .auto_shrink([false, false]);
+    if let Some(y) = state.shot_scroll {
+        main_scroll = main_scroll.vertical_scroll_offset(y);
+    }
+    main_scroll.show(ui, |ui| {
+        ui.horizontal(|ui| {
+            // 좌측 = 중앙정렬 여백(뷰포트 기준) + 페이지 좌패딩 40.
+            ui.add_space(side + pad_x);
+            ui.vertical(|ui| {
+                // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
+                // 매우 좁은 창에서 음수가 되지 않도록 0 으로 클램프.
+                ui.set_max_width((content_w - pad_x * 2.0).max(0.0));
+                ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
+                page_head(ui, theme, page.category);
+                for sec in &page.sections {
+                    crate::catalog::spec::section(ui, theme, sec.title);
+                    for sp in &sec.specs {
+                        crate::catalog::spec::spec(ui, theme, sp.title, sp.when);
+                        // 각 specimen 을 고유 id scope 로 감싼다 — 여러 draw 가
+                        // 같은 페이지에 쌓일 때 내부 위젯/ScrollArea id 충돌 방지.
+                        ui.push_id(sp.id, |ui| (sp.draw)(ui, theme));
                     }
-                    ui.add_space(theme.spacing_xl.value() * 4.0);
-                });
+                }
+                ui.add_space(theme.spacing_xl.value() * 4.0);
             });
         });
+    });
 }
 
 /// pagehead — h1 + intro + (Foundations 만) HowTo 3컬럼 배너.

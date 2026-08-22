@@ -625,3 +625,49 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 참조). `AttentionKind`/`AttentionLevel`(host, `src/core/state/attention.rs`)이 색 선택의
 SoT — 갤러리는 binary 비의존이라 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
+
+## Task DAG — surface · canvas · node (Layouts)
+
+디자인 `gallery/dag.jsx` (카탈로그 페이지) + `ui_kits/terminal/overlays/dag_view.jsx`
+(상태 어휘 · 노드 카드 · 러너 배지 · 크롬 · 빈 상태) + `dag_surfaces.jsx` (캔버스 · 노드
+상세 · 풀탭 서피스) ↔ 본체 `src/adapters/ui/surface/dag_graph/` ↔ 갤러리
+`catalog/components/dag/` (Layouts 페이지 `dag-graph` · `dag-shell` 두 섹션).
+
+| 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
+|---|---|---|
+| `DagCanvas` | `canvas::draw_canvas` | `dag/canvas.rs::paint` (`dag-canvas` spec, 전사 미러) |
+| `dagLayout()` | `tasty_dag_layout::layout_dag` | 동 crate 직접 호출 (미러 아님 — 아래) |
+| `elbow()` | `canvas::orthogonalize` + `round_corners` | `dag/edges.rs::elbow` / `orthogonalize` / `round_corners` |
+| `DagNode` | `node::paint_node` | `dag/node.rs::paint_card` (`dag-node`/`dag-kinds`/`dag-lod` spec) |
+| `DAG_STATUS` / `DAG_KIND` / `DAG_REL` | `model::{DagStatus, DagRelation}` | `dag.rs::{Status, Kind, Rel}` |
+| `RunnerBadge` | `chrome::runner_badge` | `dag/runner.rs::paint_badge` (`dag-runner` spec) |
+| `ZoomCluster` | `chrome::zoom_cluster` (헤더 안) | `dag/chrome.rs::paint_zoom_cluster` (`dag-chrome` spec) |
+| `Minimap` | `chrome::paint_minimap` | `dag/chrome.rs::paint_minimap` (`dag-chrome` spec) |
+| `CycleBanner` | `chrome::draw_cycle_banner` | `dag/chrome.rs::paint_cycle_banner` (`dag-states` spec) |
+| LOD 힌트 칩 | `chrome::paint_lod_chip` | `dag/chrome.rs::paint_lod_chip` (캔버스 안) |
+| `DagEmpty` | `chrome::draw_empty` | `dag/chrome.rs::paint_empty` (`dag-states` spec) |
+| `DagDetail` / `DetailRow` / `LogBlock` | `detail::draw_detail` / `row` / `labeled_block` | `dag/detail.rs::draw_body` (`dag-detail` spec) |
+| `DagSurface` | `render::draw_dag_graph` | `dag/surface.rs::paint` (`dag-surface` spec) |
+| `dagRowItems` (DAG 목록 행) | ✗ 본체 미구현 | ✗ 미등록 — popup 라운드의 gallery-first 몫 |
+| `DagWindow` (워크스페이스 popup) | ✗ 본체 미구현 | ✗ 미등록 — 동상 |
+
+**전사 미러인 이유**: `render::draw_dag_graph` 는 `(ui, &DagGraphSurface, &mut DagGraphView)`
+로 호스트 상태(폴링 스냅샷 · 줌/오프셋 · 선택)에 의존하고, 갤러리는 main 바이너리를 의존할
+수 없다 — `remote_tool` 컨테이너 미등록 사유와 같다. 다만 DAG 는 **좌표 계산만은 미러가 아니라
+같은 코드**다: `tasty-dag-layout` 이 egui/Theme 를 모르는 순수 계산 crate 라 갤러리가 그대로
+의존한다(`crates/tasty-gallery/Cargo.toml`). 디자인 jsx 의 `dagLayout()` 은 시안용 최단 구현
+(longest-path + 중앙정렬)이라 sugiyama 결과와 좌표가 다르고, 갤러리는 **본체가 실제로 그리는
+좌표**를 보여야 하므로 엔진 쪽을 따른다.
+
+**의도적 디자인 대비 차이 (갤러리·본체 공통)**
+
+- **상태 글리프**: 시안의 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 은 Dingbats 블록이라 UI 비례
+  폰트에서 tofu 로 떨어진다. 본체는 기하 도형(`◦ ▷ ◑ ● × ⊘ ◇ ?`)으로 치환했고
+  `tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 그 블록을 host UI 소스에서
+  금지한다. 갤러리도 같은 치환 세트를 쓴다 — 렌더되지 않는 글자를 전시하면 정합 판정 자체가
+  무의미하기 때문이다.
+- **러너 재개 힌트 문구**: 시안은 `tasty dag runner start` 를 적지만 그런 CLI 는 없다. 본체와
+  갤러리 모두 실제 명령(`tasty agent task-run --workspace-id <N> --action start`)을 쓴다.
+- **기본 방향**: 시안 기본은 top-down, 본체 기본은 left-right(`DagDirection::LeftRight` —
+  `agent.task_graph --format dot` 의 `rankdir=LR` 과 멘탈 모델 일치, 168×48 카드가 가로로
+  길어 화면 폭을 아낌). 갤러리 specimen 은 시안대로 top-down 으로 전시한다.

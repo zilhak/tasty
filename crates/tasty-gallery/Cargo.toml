@@ -18,6 +18,8 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+tasty-dag-layout = { path = "../tasty-dag-layout" }
+tasty-design-tokens = { path = "../tasty-design-tokens" }
 tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-icons = { path = "../tasty-icons", features = ["egui"] }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }

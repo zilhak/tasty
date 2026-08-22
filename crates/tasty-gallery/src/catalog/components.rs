@@ -11,6 +11,7 @@ pub mod category_dialogs;
 pub mod clipboard_viewer;
 pub mod command_palette;
 pub mod convert;
+pub mod dag;
 pub mod explorer_context_menu;
 pub mod explorer_favorite_popup;
 pub mod explorer_rename_popup;

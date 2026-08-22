@@ -1186,6 +1186,85 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                // Task DAG — 디자인 `gallery/dag.jsx` 의 9 개 NAV 섹션 중 본체가
+                // 이미 가진 서피스 몫. `rows`(DAG 목록 행)와 워크스페이스 popup 은
+                // 본체에 아직 없어 그 라운드의 gallery-first 단계에서 붙는다.
+                section(
+                    "dag-graph",
+                    "Task DAG · canvas & nodes",
+                    vec![
+                        spec(
+                            "dag-canvas",
+                            "Task DAG canvas — read-only observation",
+                            Some("레이어 배치 + 직교 엣지. 포트도 드래그 연결도 없다 — 관찰 전용"),
+                            components::dag::canvas::draw,
+                        ),
+                        spec(
+                            "dag-node",
+                            "Task node — every execution state",
+                            Some("바 색 · 글리프 · 철자 라벨 세 채널로 상태를 동시에 표기"),
+                            components::dag::node::draw_states,
+                        ),
+                        spec(
+                            "dag-kinds",
+                            "Task kinds",
+                            Some("run / custom / reduce / wait_barrier — 선행 글리프로 구분"),
+                            components::dag::node::draw_kinds,
+                        ),
+                        spec(
+                            "dag-lod",
+                            "Level of detail · selection · overflow",
+                            Some("full ≥ 0.7 · compact ≥ 0.4 · block < 0.4, 박스 크기는 불변"),
+                            components::dag::node::draw_lod,
+                        ),
+                        spec(
+                            "dag-edges",
+                            "Dependency edges",
+                            Some(
+                                "depends_on 실선 · fallback 6 3 · reduce 2 3, 화살촉은 의존하는 쪽",
+                            ),
+                            components::dag::edges::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "dag-shell",
+                    "Task DAG · chrome, detail & surface",
+                    vec![
+                        spec(
+                            "dag-chrome",
+                            "Zoom cluster + minimap",
+                            Some(
+                                "캔버스 우하단 8px 안쪽 · 미니맵 560 미만에서 제거, 판독창 400 미만에서 제거",
+                            ),
+                            components::dag::chrome::draw,
+                        ),
+                        spec(
+                            "dag-runner",
+                            "Host runner state",
+                            Some("멈춘 러너 + 남은 ready 만 경고 톤 — 끝난 그래프의 정지는 muted"),
+                            components::dag::runner::draw,
+                        ),
+                        spec(
+                            "dag-detail",
+                            "Selected task — side panel · bottom sheet",
+                            Some("288 패널 / 220 시트, 에러 tail 은 경계가 정해진 스크롤 블록"),
+                            components::dag::detail::draw,
+                        ),
+                        spec(
+                            "dag-states",
+                            "Empty states and the cycle warning",
+                            Some("워크스페이스 빈 상태 · 검색 무매치 · 사이클 배너"),
+                            components::dag::states::draw,
+                        ),
+                        spec(
+                            "dag-surface",
+                            "Full-tab surface — wide and narrow",
+                            Some("640 아래에서 헤더 2행 · 미니맵 제거 · 상세는 하단 시트"),
+                            components::dag::surface::draw,
+                        ),
+                    ],
+                ),
             ],
         },
         // ── Plugins ──────────────────────────────────────────────────

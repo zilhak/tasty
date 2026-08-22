@@ -33,13 +33,16 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 배치 스크린샷 계획 — `TASTY_GALLERY_SHOT=<idx>:<png>[,<idx>:<png>...]`.
+/// 배치 스크린샷 계획 — `TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]`.
 /// 지정 카탈로그 항목들을 **한 인스턴스에서** 순차로 선택→settle→캡처하고
 /// 마지막에 종료한다(콜드스타트 1회). 갤러리는 IPC 가 없어 격리 자동 시각검증을
 /// 이 경로로 한다.
+///
+/// `@<y>` 는 본문 스크롤 오프셋(px)이다. 한 페이지에 여러 섹션이 쌓이면 상단
+/// 뷰포트만으로는 아래쪽 specimen 을 찍을 수 없어, 그 자리로 강제 스크롤한다.
 struct ShotPlan {
-    /// (catalog index, png 경로) 목록.
-    items: Vec<(usize, std::path::PathBuf)>,
+    /// (catalog index, 스크롤 오프셋, png 경로) 목록.
+    items: Vec<(usize, f32, std::path::PathBuf)>,
     /// 현재 캡처 중인 항목.
     current: usize,
     /// 현재 항목을 띄운 뒤 지난 프레임 수(settle 카운터).
@@ -48,12 +51,17 @@ struct ShotPlan {
 
 fn parse_shot_env() -> Option<ShotPlan> {
     let raw = std::env::var("TASTY_GALLERY_SHOT").ok()?;
-    let items: Vec<(usize, std::path::PathBuf)> = raw
+    let items: Vec<(usize, f32, std::path::PathBuf)> = raw
         .split(',')
         .filter_map(|entry| {
-            let (idx, path) = entry.split_once(':')?;
+            let (head, path) = entry.split_once(':')?;
+            let (idx, y) = match head.split_once('@') {
+                Some((i, y)) => (i, y.trim().parse().ok()?),
+                None => (head, 0.0),
+            };
             Some((
                 idx.trim().parse().ok()?,
+                y,
                 std::path::PathBuf::from(path.trim()),
             ))
         })
@@ -63,6 +71,24 @@ fn parse_shot_env() -> Option<ShotPlan> {
         current: 0,
         frame: 0,
     })
+}
+
+/// 창 크기 — `TASTY_GALLERY_SIZE=<w>x<h>` 로 덮어쓸 수 있다.
+///
+/// 문서 컬럼은 최대 1080 이라 기본 1100 창에서는 우측이 잘린다. 배치 스크린샷으로
+/// specimen 전폭을 담으려면 창을 넓혀야 해서 열어 둔 손잡이다.
+fn window_size() -> (f64, f64) {
+    const DEFAULT: (f64, f64) = (1100.0, 720.0);
+    let Ok(raw) = std::env::var("TASTY_GALLERY_SIZE") else {
+        return DEFAULT;
+    };
+    let Some((w, h)) = raw.split_once('x') else {
+        return DEFAULT;
+    };
+    match (w.trim().parse(), h.trim().parse()) {
+        (Ok(w), Ok(h)) => (w, h),
+        _ => DEFAULT,
+    }
 }
 
 #[derive(Default)]
@@ -88,17 +114,19 @@ impl ApplicationHandler for App {
         if self.runtime.is_some() {
             return;
         }
+        let (w, h) = window_size();
         let attrs = WindowAttributes::default()
             .with_title("Tasty Gallery")
-            .with_inner_size(winit::dpi::LogicalSize::new(1100.0, 720.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(w, h));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
         // 스크린샷 모드: 첫 페이지를 선택해 둔다 (idx = 페이지 index).
         if let Some(plan) = &self.shot
-            && let Some(&(idx, _)) = plan.items.first()
+            && let Some(&(idx, y, _)) = plan.items.first()
         {
             rt.gallery.select_page(idx);
+            rt.gallery.shot_scroll = Some(y);
         }
         self.runtime = Some(rt);
     }
@@ -132,7 +160,7 @@ impl ApplicationHandler for App {
                 let capture_path = if let Some(plan) = self.shot.as_mut() {
                     plan.frame += 1;
                     (plan.frame >= 4)
-                        .then(|| plan.items.get(plan.current).map(|(_, p)| p.clone()))
+                        .then(|| plan.items.get(plan.current).map(|(_, _, p)| p.clone()))
                         .flatten()
                 } else {
                     None
@@ -147,7 +175,10 @@ impl ApplicationHandler for App {
                     plan.current += 1;
                     plan.frame = 0;
                     match plan.items.get(plan.current) {
-                        Some(&(idx, _)) => rt.gallery.select_page(idx),
+                        Some(&(idx, y, _)) => {
+                            rt.gallery.select_page(idx);
+                            rt.gallery.shot_scroll = Some(y);
+                        }
                         None => event_loop.exit(),
                     }
                 }
