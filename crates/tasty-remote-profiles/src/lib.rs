@@ -12,16 +12,23 @@
 //!   모든 자격증명은 at-rest 에서 **파일 경로 하나로 수렴**한다(inline 입력은
 //!   `~/.tasty/passkeys/<name>` 0600 파일로 materialize). toml 엔 비밀 값이 없다.
 //!
+//! 여기에 더해 [`enumerate_hosts`] 가 사용자의 로컬 `~/.ssh/config` 에 이미 등록된
+//! Host alias 를 **읽기 전용**으로 열거한다 — tasty 프로필로 가져올 후보 목록용이며,
+//! 프로세스를 띄우지 않는 순수 파싱이다.
+//!
 //! 보호는 **암호화가 아니라 OS 파일권한 위임**이다(ADR-0004/0005 와 일관) — 같은 OS
 //! 유저 FS read 는 신뢰모델상 범위 밖. 이 크레이트는 디스크 저장/해석만 하고 SSH 실행·
 //! IPC 표면은 상위(host/CLI)가 맡는다.
 
 mod passkey;
 mod profile;
+mod ssh_config;
 
 pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,
 };
+pub use ssh_config::{SshConfigHost, enumerate_hosts, enumerate_hosts_at, user_config_path};
+
 pub use profile::{
     AttachView, BUILTIN_KINDS, FieldValue, PORT_MODES, RemoteProfile, RemoteProfiles, SHELLS,
     SshView, is_builtin_kind, is_valid_port_mode, is_valid_shell, shell_to_port_mode,

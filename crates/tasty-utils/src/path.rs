@@ -36,6 +36,16 @@ pub fn tasty_home() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().join(dirname))
 }
 
+/// OS 사용자 홈 디렉토리 — **tasty 데이터 루트가 아니다.**
+///
+/// [`tasty_home`] 은 `~/.tasty{-debug}`(또는 `TASTY_HOME` override)를 돌려주므로
+/// 홈 자체가 필요한 경로(`~/.ssh/config` 등 tasty 밖의 규약 경로)에는 쓸 수 없다.
+/// 이 함수는 override 를 보지 않는다 — 다른 프로그램(ssh 등)이 읽는 경로를 계산하는
+/// 용도라, tasty 의 테스트용 루트 이동이 그 프로그램의 홈까지 옮기지는 않기 때문이다.
+pub fn os_home_dir() -> Option<PathBuf> {
+    BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
+}
+
 /// 자식 프로세스·외부 도구에 넘길 경로에서 Windows verbatim(extended-length,
 /// `\\?\`) prefix 를 제거한다.
 ///
