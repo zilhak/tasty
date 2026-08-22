@@ -457,6 +457,80 @@ fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
     )
 }
 
+/// 목록 스크롤 영역 — **스크롤바를 항상 숨기고** 스크롤 여지가 있는 쪽 가장자리에
+/// 배경색 페이드를 그린다.
+///
+/// egui 기본 스크롤바는 콘텐츠 위에 **오버레이**로 뜬다(레이아웃 폭을 미리 빼지 않는다).
+/// 이 팝업의 행은 우측 끝에 아이콘(가져오기·편집·삭제·재감지)을 두므로, 커서를 그 위로
+/// 가져가는 순간 스크롤바가 같은 자리에 나타나 클릭을 먹는다. 스크롤바 폭만큼 콘텐츠를
+/// 비켜 그리는 방식(`port_scanner` 의 `scrollbar_reserve`)은 "커서가 스크롤바 위 =
+/// 클릭 불가" 라는 구조 자체를 남겨 다른 폭·해상도에서 재발한다 — 스크롤바를 아예
+/// 숨기면 이 부류의 버그가 사라진다.
+///
+/// 숨긴 대신 "더 있다" 는 정보는 가장자리 페이드로 보존한다. 스크롤(휠·드래그·키보드)은
+/// 그대로 동작한다 — 숨긴 것은 표시뿐이다.
+fn scroll_list_with_fade<R>(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let out = egui::ScrollArea::vertical()
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, add_contents);
+    let (up, down) = fade_edges(
+        out.state.offset.y,
+        out.content_size.y,
+        out.inner_rect.height(),
+    );
+    if up {
+        paint_edge_fade(ui, th, out.inner_rect, FadeEdge::Top);
+    }
+    if down {
+        paint_edge_fade(ui, th, out.inner_rect, FadeEdge::Bottom);
+    }
+    out.inner
+}
+
+/// `(위쪽 페이드, 아래쪽 페이드)` 판정. 위/아래로 각각 남은 스크롤 여지가 있는지만 본다.
+fn fade_edges(offset: f32, content_h: f32, view_h: f32) -> (bool, bool) {
+    // 부동소수 오차로 끝까지 스크롤한 뒤에도 페이드가 남는 것을 막는 여유값.
+    // 1px 미만 차이는 사람 눈에 "더 있다" 로 읽히지도 않는다.
+    const EPS: f32 = 1.0;
+    let max_offset = (content_h - view_h).max(0.0);
+    (offset > EPS, offset < max_offset - EPS)
+}
+
+/// 페이드를 그릴 가장자리.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FadeEdge {
+    Top,
+    Bottom,
+}
+
+/// 스크롤 가장자리 페이드 — 패널 배경색에서 투명으로 이어지는 세로 그라디언트.
+///
+/// egui 에는 그라디언트 헬퍼가 없어 정점 색이 다른 사각형 메시를 직접 만든다. 여러 겹의
+/// 반투명 사각형을 쌓는 근사보다 단(band)이 지지 않고, 그리는 도형도 하나다.
+/// `Color32` 는 premultiplied 라 불투명 배경색 → `TRANSPARENT`(0,0,0,0) 보간이
+/// 그대로 올바른 페이드가 된다(중간에 검게 뜨지 않는다).
+fn paint_edge_fade(ui: &egui::Ui, th: &Theme, rect: egui::Rect, edge: FadeEdge) {
+    let height = th.spacing_xl.value().min(rect.height());
+    let (solid_y, clear_y) = match edge {
+        FadeEdge::Top => (rect.top(), rect.top() + height),
+        FadeEdge::Bottom => (rect.bottom(), rect.bottom() - height),
+    };
+    let solid: egui::Color32 = th.bg_panel().into();
+    let clear = egui::Color32::TRANSPARENT;
+    let mut mesh = egui::epaint::Mesh::default();
+    mesh.colored_vertex(egui::pos2(rect.left(), solid_y), solid);
+    mesh.colored_vertex(egui::pos2(rect.right(), solid_y), solid);
+    mesh.colored_vertex(egui::pos2(rect.left(), clear_y), clear);
+    mesh.colored_vertex(egui::pos2(rect.right(), clear_y), clear);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(2, 1, 3);
+    ui.painter().add(egui::Shape::mesh(mesh));
+}
+
 /// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
 /// 사실상 비가시 → surface1 색 명시적 hline 으로 그린다.
 fn hsep(ui: &mut egui::Ui, th: &Theme) {
@@ -686,7 +760,7 @@ fn draw_profile_list(
     let mut local_action: Option<LocalRowAction> = None;
     // 두 섹션이 한 스크롤을 공유한다 — 로컬 섹션이 프로필 목록 **아래**에 이어지는
     // 목업 배치라, 스크롤을 나누면 프로필이 길 때 로컬 섹션에 닿을 수 없다.
-    egui::ScrollArea::vertical().show(ui, |ui| {
+    scroll_list_with_fade(ui, th, |ui| {
         if let Some(key) = profile_empty_key(has_non_attach, any_visible) {
             // 빈 상태에서도 return 하지 않는다 — 로컬 섹션은 계속 보여야 "아직 안 올린
             // 호스트가 여기 있다" 를 알 수 있다(이 화면의 용건).
@@ -1701,7 +1775,7 @@ fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &
         return;
     }
     let mut action: Option<(String, AttachRowAction)> = None;
-    egui::ScrollArea::vertical().show(ui, |ui| {
+    scroll_list_with_fade(ui, th, |ui| {
         for p in profiles.profiles.iter().filter(|p| p.kind == ATTACH_KIND) {
             if let Some(a) = draw_attach_row(ui, th, p, profiles) {
                 action = Some((p.name.clone(), a));
@@ -2273,7 +2347,7 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
         return;
     }
     let mut action: Option<(String, PasskeyRowAction)> = None;
-    egui::ScrollArea::vertical().show(ui, |ui| {
+    scroll_list_with_fade(ui, th, |ui| {
         for k in &passkeys.passkeys {
             let revealed = st.revealed.contains(&k.name);
             if let Some(a) = draw_passkey_row(ui, th, k, revealed) {
@@ -2966,6 +3040,83 @@ mod tests {
             }
             _ => {}
         }
+    }
+
+    /// 헤드리스로 목록 스크롤 영역을 한 프레임 그리고, 칠해진 Mesh 개수를 센다.
+    /// 가장자리 페이드는 이 파일에서 Mesh 를 쓰는 유일한 지점이라 개수가 곧 페이드 수다.
+    fn painted_fades(view_h: f32, rows: usize) -> usize {
+        let ctx = egui::Context::default();
+        let th = theme::theme();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(400.0, view_h),
+            )),
+            ..Default::default()
+        };
+        let full = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                scroll_list_with_fade(ui, &th, |ui| {
+                    for i in 0..rows {
+                        ui.label(format!("row {i}"));
+                    }
+                });
+            });
+        });
+        let mut n = 0;
+        for shape in full.shapes.iter() {
+            count_mesh(&shape.shape, &mut n);
+        }
+        n
+    }
+
+    fn count_mesh(shape: &egui::epaint::Shape, n: &mut usize) {
+        match shape {
+            egui::epaint::Shape::Mesh(_) => *n += 1,
+            egui::epaint::Shape::Vec(v) => {
+                for s in v {
+                    count_mesh(s, n);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn fade_edges_none_when_content_fits() {
+        assert_eq!(fade_edges(0.0, 100.0, 200.0), (false, false));
+    }
+
+    #[test]
+    fn fade_edges_bottom_only_at_top_of_overflowing_list() {
+        assert_eq!(fade_edges(0.0, 900.0, 200.0), (false, true));
+    }
+
+    #[test]
+    fn fade_edges_both_when_scrolled_to_middle() {
+        assert_eq!(fade_edges(350.0, 900.0, 200.0), (true, true));
+    }
+
+    #[test]
+    fn fade_edges_top_only_at_bottom_of_list() {
+        assert_eq!(fade_edges(700.0, 900.0, 200.0), (true, false));
+    }
+
+    #[test]
+    fn fade_edges_tolerates_subpixel_overshoot() {
+        // 끝까지 스크롤했는데 0.4px 가 남는 경우 — 아래쪽 페이드를 남기지 않는다.
+        assert_eq!(fade_edges(699.6, 900.0, 200.0), (true, false));
+    }
+
+    #[test]
+    fn short_list_paints_no_fade() {
+        assert_eq!(painted_fades(400.0, 2), 0);
+    }
+
+    #[test]
+    fn overflowing_list_paints_bottom_fade() {
+        // 맨 위에서 시작하므로 아래쪽 하나만.
+        assert_eq!(painted_fades(120.0, 40), 1);
     }
 
     #[test]
