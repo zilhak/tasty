@@ -88,3 +88,4 @@
 | 0075 | [agent hook 전달 실패를 CLI 로컬 파일에 기록하고, exit code 는 노출하지 않는다](0075-agent-hook-delivery-failure-record.md) | Accepted | 2026-08-20 | agent-hooks, observability, cli, error-handling |
 | 0076 | [surface close 정리 루프에서 다른 프로세스/스레드를 기다리는 구간을 걷어낸다](0076-close-path-per-surface-blocking-removal.md) | Accepted | 2026-08-22 | close-sequence, pty, observer, blocking, render-thread, latency, cross-platform, adr-0002 |
 | 0077 | [종료를 프레임 구동 상태 머신으로 전개하고 부팅과 같은 로딩 화면을 씌운다](0077-shutdown-loading-screen.md) | Accepted | 2026-08-23 | shutdown, boot, ui, state-machine, plugin |
+| 0078 | [종료 중 IPC 요청은 무시하지 않고 즉시 거절한다](0078-shutdown-rejects-pending-ipc.md) | Accepted | 2026-08-23 | shutdown, ipc, cli, error-handling, adr-0077 |

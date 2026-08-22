@@ -121,9 +121,17 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
   창이 하나씩 사라지는 것으로 보여 크래시와 구분되지 않는다.
 - **종료 가드** — 종료 진행 중에는 steady-state 파이프라인(IPC 처리 / intent drain /
   plugin pump)을 태우지 않고 `AppEvent` 는 폐기한다(부팅 가드는 지연 후 재생하지만
-  종료에는 재생할 미래가 없다). 그래서 이 구간의 IPC 연결은 accept 되지만 응답이
-  없고, Drop tail 초반 S5d 에서 서버가 drop 되며 끊긴다. 키/마우스도 core 에 닿지
-  않는다.
+  종료에는 재생할 미래가 없다). 키/마우스도 core 에 닿지 않는다.
+  가드는 `event_loop.exit()` **이후에도 유지된다** — winit 은 exit 요청 즉시 루프를
+  끊지 않고 콜백을 한 번 더 돌리며(Linux/X11 실측), 그 패스에서 가드가 풀려 있으면
+  이미 정리가 끝난 상태로 파이프라인이 돈다. 그래서 `finish_shutdown` 은
+  `App.shutdown` 을 비우지 않고 phase 를 `Exited` 로 옮긴다.
+- **IPC 요청은 무시하지 않고 거절한다** — 가드가 `process_ipc()` 를 막으므로 이
+  구간의 요청은 아무도 읽지 않는다. 그냥 드롭하면 클라이언트(우리 자신의 `tasty`
+  CLI 포함)는 무한정 기다린다. 그래서 매 프레임과 `exit()` 직전에 큐를 drain 해
+  핸들러를 태우지 않고 `-32000 "host is shutting down"` 으로 회신한다
+  ([ADR-0078](../adr/0078-shutdown-rejects-pending-ipc.md)). 창 없는 블로킹 경로도
+  같은 루프를 쓰므로 함께 덮인다.
 
 갤러리 specimen 은 Chrome 카테고리의 "Shutdown loading screen" — 부팅 specimen 과
 같은 `draw_frame` 을 공유해 두 화면의 동일성을 눈으로 확인하는 자리다.
@@ -261,6 +269,9 @@ IPC 로 종료. 단위 ms.
   `WaitingEngine` 단계에 걸려 S2 가 발화한다. quit 모달 경로는 키 입력이 필요한데,
   `debug.settings.apply` 로 `keybindings.quit` 을 라이브 지정한 뒤 `xdotool key`
   로 실제 키 이벤트를 보내면 된다(합성 이벤트가 아니라 XTEST 경로여야 한다).
+- **종료 중 IPC 는 즉시 오류로 끝나야 한다.** 종료 대기 중에 아무 메서드나 던져
+  `{"error":{"code":-32000,"message":"host is shutting down"}}` 가 곧바로 오는지
+  본다. 응답이 없거나 클라이언트가 매달리면 회귀다.
 - **화면이 실제로 도는지는 창 캡처로 판정한다.** `xwd -id <win>` 로 0.25~0.3s 간격
   3장 이상을 찍어 스피너 각도가 서로 다른지 본다 — 각도가 같으면 프레임이 안 도는
   것이다(정지 프레임). tasty 자체 `ui.screenshot` IPC 는 종료 중에 처리되지 않으므로

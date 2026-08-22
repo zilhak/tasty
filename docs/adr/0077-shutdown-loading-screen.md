@@ -100,3 +100,4 @@ S5d 에서 서버가 drop 되며 끊긴다.
 - [종료 시퀀스](../architecture/shutdown-sequence.md) — 단계·마커·실측 기준치
 - [부팅 시퀀스](../architecture/boot-sequence.md) — 대칭 대상인 `BootPhase` 상태 머신
 - [ADR-0076](0076-close-path-per-surface-blocking-removal.md) — close 경로에서 per-surface 블로킹을 걷어낸 선행 결정
+- [ADR-0078](0078-shutdown-rejects-pending-ipc.md) — 위 Decision 의 "종료 중 IPC 는 응답이 없다" 절을 개정(무시 대신 즉시 거절 + exit 이후까지 가드 유지)

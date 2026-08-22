@@ -76,6 +76,12 @@ pub(crate) enum ShutdownPhase {
     StoppingPlugins,
     /// 전 단계 완료 — 다음 구동에서 `event_loop.exit()`.
     Done,
+    /// `event_loop.exit()` 를 이미 요청했다. **여기서 `App.shutdown` 을 비우지
+    /// 않는 것이 요점이다** — winit 은 `exit()` 호출 즉시 루프를 끊지 않고 큐에
+    /// 남은 이벤트와 `about_to_wait` 를 한 번 더 돌릴 수 있다. 가드를 여기서
+    /// 풀면 그 한 패스가 **이미 정리가 끝난 상태**로 steady-state 파이프라인
+    /// (IPC 처리 / intent drain / plugin pump)을 타게 된다.
+    Exited,
 }
 
 impl ShutdownPhase {
@@ -87,9 +93,9 @@ impl ShutdownPhase {
             Self::SavingLayout => "shutdown.phase_saving_layout",
             Self::ReclaimingBootWorker { .. } => "shutdown.phase_finishing_startup",
             Self::ClosingSurfaces => "shutdown.phase_closing_surfaces",
-            // Done 은 렌더 대상이 아니지만(즉시 exit) 키를 비워 두면 호출부에
-            // Option 분기가 생긴다 — 마지막 문구를 그대로 유지하는 편이 낫다.
-            Self::StoppingPlugins | Self::Done => "shutdown.phase_stopping_plugins",
+            // Done / Exited 는 렌더 대상이 아니지만(즉시 exit) 키를 비워 두면
+            // 호출부에 Option 분기가 생긴다 — 마지막 문구를 그대로 유지한다.
+            Self::StoppingPlugins | Self::Done | Self::Exited => "shutdown.phase_stopping_plugins",
         }
     }
 }
@@ -140,6 +146,15 @@ impl App {
         }
     }
 
+    /// 아직 종료 프레임을 더 돌려야 하는가 — `about_to_wait` 의 워치독 재예약 판정.
+    /// `Exited` 는 이미 `exit()` 을 요청한 상태라 재예약할 이유가 없다(가드는 그대로
+    /// 유지된다).
+    pub(crate) fn shutdown_needs_frames(&self) -> bool {
+        self.shutdown
+            .as_ref()
+            .is_some_and(|sd| !matches!(sd.phase, ShutdownPhase::Exited))
+    }
+
     /// 종료 화면을 그릴 창이 하나라도 있는가. 부팅 중이면 부팅 창, 아니면 등록된
     /// view 들이 대상이다.
     fn has_shutdown_render_target(&self) -> bool {
@@ -151,6 +166,9 @@ impl App {
     /// 보장이 플랫폼마다 다르므로 구동을 이벤트 루프에 맡기지 않는다.
     fn run_shutdown_blocking(&mut self, event_loop: &ActiveEventLoop) {
         loop {
+            // 프레임 구동 경로와 같은 계약 — 이 루프가 도는 동안에도 IPC 요청은
+            // 쌓이므로 매 회 거절해 클라이언트를 무한 대기에 두지 않는다.
+            self.reject_pending_ipc();
             match self.shutdown_step() {
                 StepOutcome::Advanced => {}
                 StepOutcome::Waiting => std::thread::sleep(HEADLESS_POLL_INTERVAL),
@@ -167,7 +185,16 @@ impl App {
     /// 깜빡이지 않는 이유이자, 대기 phase 사이의 짧은 단계(S1/S3)가 프레임을
     /// 낭비하지 않는 이유다.
     pub(crate) fn drive_shutdown_frame(&mut self, event_loop: &ActiveEventLoop) {
-        if self.shutdown.is_none() {
+        let Some(sd) = self.shutdown.as_ref() else {
+            return;
+        };
+        // 큐잉된 IPC 요청은 상태를 건드리지 않고 즉시 거절한다 — 프레임 시작마다.
+        let exited = matches!(sd.phase, ShutdownPhase::Exited);
+        self.reject_pending_ipc();
+        if exited {
+            // `exit()` 은 이미 요청했다. 가드만 유지한 채 아무것도 하지 않는다 —
+            // 스텝도 렌더도 남아 있지 않고, 여기서 가드를 풀면 steady-state
+            // 파이프라인이 정리 끝난 상태를 다시 건드린다.
             return;
         }
         loop {
@@ -185,8 +212,16 @@ impl App {
 
     /// 마지막 phase 도달 — `shutdown_total` 발화 후 이벤트 루프 탈출. 이 지점
     /// **이후**가 Drop tail 이며 창이 이미 사라져 어떤 화면으로도 덮을 수 없다.
+    ///
+    /// **`App.shutdown` 을 비우지 않는다.** phase 를 [`ShutdownPhase::Exited`] 로
+    /// 옮겨 종료 가드를 프로세스가 실제로 끝날 때까지 유지한다 — 근거는 그 variant
+    /// 의 doc.
     fn finish_shutdown(&mut self, event_loop: &ActiveEventLoop) {
-        self.shutdown = None;
+        // exit() 직전 마지막 순간에 큐잉된 요청까지 거절한다. 이 뒤로는
+        // `TcpIpcServer::drop`(S5d) 이 accept 를 멈출 때까지 새 연결이 받아지는데,
+        // 그 사이 요청은 서버 drop 으로 연결이 끊기며 클라이언트가 EOF 를 본다.
+        self.reject_pending_ipc();
+        self.set_shutdown_phase(ShutdownPhase::Exited);
         if let Some(t0) = shutdown_trace::started_at() {
             tracing::info!(
                 target: "tasty::shutdown",
@@ -195,6 +230,26 @@ impl App {
             );
         }
         event_loop.exit();
+    }
+
+    /// 종료 중 큐잉된 IPC 요청을 **상태를 건드리지 않고** 즉시 거절한다.
+    ///
+    /// 종료 가드가 `process_ipc()` 를 막으므로 이 구간의 요청은 아무도 읽지 않는다.
+    /// 그냥 드롭하면 클라이언트(우리 자신의 `tasty` CLI 포함)는 응답을 무한정
+    /// 기다린다 — 무시는 클라이언트 입장에서 hang 과 구분되지 않는다. 그래서
+    /// **처리하지 않되 답은 한다**: 요청을 drain 해 `host is shutting down` 오류로
+    /// 회신한다. 핸들러를 타지 않으므로 정리 끝난 상태를 다시 건드릴 위험은 없다.
+    fn reject_pending_ipc(&mut self) {
+        let Some(ipc) = self.hub.ipc_server.as_ref() else {
+            return;
+        };
+        while let Ok(cmd) = ipc.try_recv() {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            crate::ipc::server::send_response(
+                &cmd.response_tx,
+                crate::ipc::protocol::JsonRpcResponse::error(id, -32000, "host is shutting down"),
+            );
+        }
     }
 
     /// 현재 phase 1스텝.
@@ -209,7 +264,10 @@ impl App {
             }
             ShutdownPhase::ClosingSurfaces => self.shutdown_step_closing_surfaces(),
             ShutdownPhase::StoppingPlugins => self.shutdown_step_stopping_plugins(),
-            ShutdownPhase::Done => StepOutcome::Finished,
+            // Done 은 exit 요청으로, Exited 는 이미 요청됨으로 둘 다 "더 할 일
+            // 없음". 호출자(drive/blocking)가 Exited 를 먼저 걸러내므로 이 팔은
+            // 방어용이다.
+            ShutdownPhase::Done | ShutdownPhase::Exited => StepOutcome::Finished,
         }
     }
 

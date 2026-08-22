@@ -282,11 +282,18 @@ impl ApplicationHandler<AppEvent> for App {
         // 종료 상태 머신 구동 — 부팅 가드와 같은 이유로 steady-state 파이프라인보다
         // 먼저 가로챈다. 여기서 return 하므로 종료 중에는 `process_ipc()` 가 돌지
         // 않는다 — 외부에서 들어온 명령이 정리 중인 상태를 다시 건드리지 않는다.
+        // 대신 `drive_shutdown_frame` 이 큐잉된 요청을 "host is shutting down" 으로
+        // 회신한다(무시하면 클라이언트가 무한 대기한다).
+        //
+        // 가드는 `event_loop.exit()` **이후**에도 유지된다 — winit 이 exit 요청 뒤에
+        // 이 콜백을 한 번 더 돌릴 수 있고, 그때 가드가 풀려 있으면 이미 정리가 끝난
+        // 상태로 steady-state 파이프라인을 타게 된다.
+        //
         // WaitUntil 재예약은 부팅과 동일한 워치독 (창이 RedrawRequested 를 못 받아도
         // 스텝이 진행되도록).
         if self.shutdown.is_some() {
             self.drive_shutdown_frame(event_loop);
-            if self.shutdown.is_some() {
+            if self.shutdown_needs_frames() {
                 event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
                     std::time::Instant::now()
                         + crate::app::shutdown_machine::SHUTDOWN_FRAME_INTERVAL,
