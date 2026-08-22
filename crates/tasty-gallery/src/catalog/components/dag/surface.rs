@@ -66,7 +66,12 @@ fn header(
     ui.painter().hline(
         rect.x_range(),
         rect.max.y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        // `separator` 는 알파가 이미 곱해진 색이다 — `to_egui()` 로 읽으면 알파가
+        // 한 번 더 곱해져 헤어라인이 옆 specimen 보다 옅게 나온다.
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     let narrow = rows > 1;
@@ -373,7 +378,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-separator",
                 "header hairline",
-                theme.separator.to_egui(),
+                // 칩도 실제로 칠해지는 색을 보여야 한다.
+                theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "--tasty-dag-detail-sheet-height",
