@@ -507,6 +507,15 @@ enum FadeEdge {
     Bottom,
 }
 
+/// 페이드 띠 높이 — 기본은 `space-xl` 이되 **뷰포트 절반**을 넘지 않는다.
+///
+/// 위·아래 페이드는 독립적으로 그려지므로 각각이 뷰포트 절반 이하일 때만 서로 겹치지
+/// 않는다. 뷰포트 높이로만 클램프하면 양방향 스크롤 가능한 좁은 뷰포트(2×`space-xl`
+/// 미만)에서 두 띠가 포개져 콘텐츠가 거의 배경색에 덮인다.
+fn fade_height(max: f32, view_h: f32) -> f32 {
+    max.min(view_h * 0.5)
+}
+
 /// 스크롤 가장자리 페이드 — 패널 배경색에서 투명으로 이어지는 세로 그라디언트.
 ///
 /// egui 에는 그라디언트 헬퍼가 없어 정점 색이 다른 사각형 메시를 직접 만든다. 여러 겹의
@@ -514,7 +523,7 @@ enum FadeEdge {
 /// `Color32` 는 premultiplied 라 불투명 배경색 → `TRANSPARENT`(0,0,0,0) 보간이
 /// 그대로 올바른 페이드가 된다(중간에 검게 뜨지 않는다).
 fn paint_edge_fade(ui: &egui::Ui, th: &Theme, rect: egui::Rect, edge: FadeEdge) {
-    let height = th.spacing_xl.value().min(rect.height());
+    let height = fade_height(th.spacing_xl.value(), rect.height());
     let (solid_y, clear_y) = match edge {
         FadeEdge::Top => (rect.top(), rect.top() + height),
         FadeEdge::Bottom => (rect.bottom(), rect.bottom() - height),
@@ -3100,6 +3109,23 @@ mod tests {
     #[test]
     fn fade_edges_top_only_at_bottom_of_list() {
         assert_eq!(fade_edges(700.0, 900.0, 200.0), (true, false));
+    }
+
+    #[test]
+    fn fade_edges_keeps_both_just_inside_the_epsilon_band() {
+        // 엡실론 **상한** 고정: 끝에서 1.5px 떨어진 지점은 아직 "더 있다" 다.
+        // (위쪽도 같은 이유로 1.5px 만 스크롤된 상태를 함께 잠근다.)
+        assert_eq!(fade_edges(698.5, 900.0, 200.0), (true, true));
+        assert_eq!(fade_edges(1.5, 900.0, 200.0), (true, true));
+    }
+
+    #[test]
+    fn fade_height_is_capped_at_half_the_viewport() {
+        // 넉넉한 뷰포트 — 토큰 값 그대로.
+        assert_eq!(fade_height(24.0, 400.0), 24.0);
+        // 2×토큰보다 낮은 뷰포트 — 위/아래가 만나되 겹치지는 않는다.
+        assert_eq!(fade_height(24.0, 40.0), 20.0);
+        assert_eq!(fade_height(24.0, 0.0), 0.0);
     }
 
     #[test]
