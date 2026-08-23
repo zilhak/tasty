@@ -11,6 +11,7 @@
 
 use anyhow::Result;
 use clap::Subcommand;
+use tasty_i18n::{t, t_args, t_fmt, t_fmt2};
 
 use tasty_remote_profiles::{
     ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost, config_availability,
@@ -182,7 +183,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             label,
         } => {
             if !is_valid_shell(shell) {
-                anyhow::bail!("알 수 없는 --shell '{shell}' (powershell|cmd|bash|zsh|auto)");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.unknown_shell", shell));
             }
             let mut profiles = RemoteProfiles::load();
             let mut passkeys = Passkeys::load();
@@ -208,10 +209,12 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             profiles.upsert(p);
             passkeys.save()?;
             profiles.save()?;
-            println!(
-                "{} ssh 프로필 '{name}' ({host}).",
-                if replaced { "갱신:" } else { "추가:" }
-            );
+            let key = if replaced {
+                "cli.remote_profile.ssh_updated"
+            } else {
+                "cli.remote_profile.ssh_added"
+            };
+            println!("{}", t_fmt2(key, name, host));
             report_detect(name, &detect);
             Ok(())
         }
@@ -229,19 +232,17 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             label,
         } => {
             if ssh_ref.is_some() && host.is_some() {
-                anyhow::bail!(
-                    "--ssh-ref 와 인라인 --host 는 함께 쓸 수 없습니다 (참조 XOR 인라인)."
-                );
+                anyhow::bail!("{}", t("cli.remote_profile.attach_ref_xor_host"));
             }
             if ssh_ref.is_none() && host.is_none() {
-                anyhow::bail!("tasty-attach 는 --ssh-ref <name> 또는 인라인 --host 가 필요합니다.");
+                anyhow::bail!("{}", t("cli.remote_profile.attach_needs_ref_or_host"));
             }
             let mut profiles = RemoteProfiles::load();
             let mut passkeys = Passkeys::load();
             let mut p = RemoteProfile::new(name.clone(), "tasty-attach");
             if let Some(r) = ssh_ref {
                 if profiles.get(r).is_none() {
-                    eprintln!("경고: 참조 ssh 프로필 '{r}' 이 아직 없습니다 (나중에 추가 가능).");
+                    eprintln!("{}", t_fmt("cli.remote_profile.attach_ref_missing", r));
                 }
                 p.set_field("ssh_ref", r.clone());
             } else {
@@ -272,10 +273,12 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             profiles.upsert(p);
             passkeys.save()?;
             profiles.save()?;
-            println!(
-                "{} tasty-attach 프로필 '{name}'.",
-                if replaced { "갱신:" } else { "추가:" }
-            );
+            let key = if replaced {
+                "cli.remote_profile.attach_updated"
+            } else {
+                "cli.remote_profile.attach_added"
+            };
+            println!("{}", t_fmt(key, name));
             Ok(())
         }
         RemoteProfileCommands::List { json, kind } => {
@@ -296,14 +299,11 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                     .filter(|p| matches_kind(p))
                     .collect();
                 if rows.is_empty() {
-                    println!(
-                        "저장된 원격 프로필이 없습니다 (tasty tool remote-profile add-ssh ...)."
-                    );
+                    println!("{}", t("cli.remote_profile.list_empty"));
                 } else {
-                    println!(
-                        "{:<16} {:<13} {:<24} {:<16} STATUS",
-                        "NAME", "TYPE", "HOST/REF", "DETAIL"
-                    );
+                    // 헤더는 컬럼 폭을 언어별로 맞춰야 해서(CJK 는 표시 폭이 2배)
+                    // 패딩까지 포함한 한 줄 전체를 번역 값으로 둔다.
+                    println!("{}", t("cli.remote_profile.list_header"));
                     for p in rows {
                         let (dest, detail) = summarize(p);
                         println!(
@@ -323,7 +323,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             let profiles = RemoteProfiles::load();
             let passkeys = Passkeys::load();
             let Some(p) = profiles.get(name) else {
-                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             };
             if *json {
                 println!("{}", serde_json::to_string_pretty(p)?);
@@ -338,7 +338,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 let status = if passkeys.get(pk).is_some() {
                     ""
                 } else {
-                    "  (passkey 없음)"
+                    t("cli.remote_profile.show_passkey_missing")
                 };
                 println!("passkey       : {pk}{status}");
             }
@@ -353,12 +353,18 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 println!("shell         : {}", v.shell());
                 if v.is_disabled() {
                     println!(
-                        "status        : 감지 실패(비활성) — tasty tool remote-profile detect {name}"
+                        "status        : {}",
+                        t_fmt("cli.remote_profile.show_status_disabled", name)
                     );
                 }
             } else if let Some(a) = p.as_attach() {
                 match a.ssh_ref() {
-                    Some(r) => println!("ssh_ref       : {r} (참조)"),
+                    Some(r) => {
+                        println!(
+                            "ssh_ref       : {r} {}",
+                            t("cli.remote_profile.show_ref_note")
+                        )
+                    }
                     None => {
                         println!("destination   : {}", a.ssh_destination());
                         if let Some(port) = a.port() {
@@ -398,12 +404,12 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             if let Some(s) = shell
                 && !is_valid_shell(s)
             {
-                anyhow::bail!("알 수 없는 --shell '{s}' (powershell|cmd|bash|zsh|auto)");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.unknown_shell", s));
             }
             let mut profiles = RemoteProfiles::load();
             let mut passkeys = Passkeys::load();
             let Some(mut p) = profiles.get(name).cloned() else {
-                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             };
             if let Some(h) = host {
                 p.set_field("host", h.clone());
@@ -449,29 +455,30 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             profiles.upsert(p);
             passkeys.save()?;
             profiles.save()?;
-            println!("갱신: 원격 프로필 '{name}'.");
+            println!("{}", t_fmt("cli.remote_profile.updated", name));
             report_detect(name, &detect);
             Ok(())
         }
         RemoteProfileCommands::Detect { name } => {
             let profiles = RemoteProfiles::load();
             let Some(p) = profiles.get(name).cloned() else {
-                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             };
             if p.as_attach().is_some() {
                 return detect_attach(&profiles, &p);
             }
             // ssh kind(또는 기타): 셸 감지 프로브.
             match crate::ssh::detect_and_persist(name) {
-                Ok(mode) => {
-                    println!(
-                        "재감지 성공: '{name}' → port_mode={} (활성).",
-                        mode.as_str()
-                    )
-                }
+                Ok(mode) => println!(
+                    "{}",
+                    t_fmt2("cli.remote_profile.detect_ok", name, mode.as_str())
+                ),
                 Err(e) => println!(
-                    "재감지 실패: {e}\n  '{name}' 은 비활성 상태입니다 — 원격 환경 확인 후 \
-                     다시 'tasty tool remote-profile detect {name}'."
+                    "{}",
+                    t_args(
+                        "cli.remote_profile.detect_failed",
+                        &[&e.to_string(), name, name]
+                    )
                 ),
             }
             Ok(())
@@ -480,9 +487,9 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             let mut profiles = RemoteProfiles::load();
             if profiles.remove(name) {
                 profiles.save()?;
-                println!("제거: 원격 프로필 '{name}'.");
+                println!("{}", t_fmt("cli.remote_profile.removed", name));
             } else {
-                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             }
             Ok(())
         }
@@ -493,10 +500,10 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 .map_err(import_error_message)?;
             profiles.upsert(p);
             profiles.save()?;
-            println!("추가: 원격 프로필 '{name}' (ssh config alias '{from}' 참조).");
+            println!("{}", t_fmt2("cli.remote_profile.import_added", name, from));
             // 셸 감지는 SSH 접속을 발생시키므로 가져오기에 묶지 않는다 — 여러 건을
             // 가져올 때 접속이 연쇄로 일어난다. 필요할 때 사용자가 직접 돌린다.
-            println!("셸 감지: tasty tool remote-profile detect --name {name}");
+            println!("{}", t_fmt("cli.remote_profile.import_detect_hint", name));
             Ok(())
         }
     }
@@ -505,10 +512,12 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
 /// [`ImportError`] 를 사용자 문구로. 크레이트는 문자열을 갖지 않으므로 여기서 만든다.
 fn import_error_message(e: ImportError) -> anyhow::Error {
     match e {
-        ImportError::UnknownAlias(a) => anyhow::anyhow!(
-            "ssh config alias '{a}' 을 찾을 수 없습니다. (tasty tool remote-profile list-local)"
-        ),
-        ImportError::NameTaken(n) => anyhow::anyhow!("원격 프로필 '{n}' 이 이미 존재합니다."),
+        ImportError::UnknownAlias(a) => {
+            anyhow::anyhow!("{}", t_fmt("cli.remote_profile.import_unknown_alias", &a))
+        }
+        ImportError::NameTaken(n) => {
+            anyhow::anyhow!("{}", t_fmt("cli.remote_profile.import_name_taken", &n))
+        }
     }
 }
 
@@ -542,16 +551,18 @@ fn list_local(json: bool) -> Result<()> {
         let shown = path
             .map(|p| tasty_utils::path::tilde_abbreviate(&p))
             .unwrap_or_else(|| "~/.ssh/config".into());
-        if !avail.exists {
-            println!("로컬 ssh config 가 없습니다 ({shown}).");
+        let key = if !avail.exists {
+            "cli.remote_profile.list_local_no_config"
         } else if !avail.readable {
-            println!("로컬 ssh config 를 읽을 권한이 없습니다 ({shown}).");
+            "cli.remote_profile.list_local_unreadable"
         } else {
-            println!("로컬 ssh config 에 가져올 alias 가 없습니다 ({shown}).");
-        }
+            "cli.remote_profile.list_local_no_alias"
+        };
+        println!("{}", t_fmt(key, &shown));
         return Ok(());
     }
-    println!("{:<20} {:<28} {:<20} IMPORTED", "ALIAS", "SOURCE", "TARGET");
+    // 헤더는 `list` 와 같은 이유로 패딩 포함 한 줄 전체를 번역 값으로 둔다.
+    println!("{}", t("cli.remote_profile.list_local_header"));
     for h in &hosts {
         println!(
             "{:<20} {:<28} {:<20} {}",
@@ -604,12 +615,20 @@ fn detect_attach(profiles: &RemoteProfiles, p: &RemoteProfile) -> Result<()> {
         port_file.as_deref(),
     ) {
         Ok(port) => {
-            println!("포트 검증 성공: '{}' → 원격 포트 {port} 발견.", p.name);
+            println!(
+                "{}",
+                t_fmt2(
+                    "cli.remote_profile.attach_detect_ok",
+                    &p.name,
+                    &port.to_string()
+                )
+            );
             Ok(())
         }
         Err(e) => {
             println!(
-                "포트 검증 실패: {e}\n  원격 tasty 실행 상태·port_file/port_mode 를 확인하세요."
+                "{}",
+                t_fmt("cli.remote_profile.attach_detect_failed", &e.to_string())
             );
             Ok(())
         }
@@ -664,9 +683,9 @@ fn summarize(p: &RemoteProfile) -> (String, String) {
 /// list STATUS 컬럼. 비활성(ssh 감지 실패)·미등록 타입을 표시.
 fn status_of(p: &RemoteProfile) -> &'static str {
     if p.as_ssh().map(|v| v.is_disabled()).unwrap_or(false) {
-        "감지 실패(비활성)"
+        t("cli.remote_profile.status_detect_failed")
     } else if !p.is_builtin_kind() {
-        "미등록 타입"
+        t("cli.remote_profile.status_unknown_kind")
     } else {
         ""
     }
@@ -675,15 +694,16 @@ fn status_of(p: &RemoteProfile) -> &'static str {
 /// `apply_shell_to_profile` 결과를 사용자에게 출력한다. 명시 셸(None)은 조용히 넘어간다.
 fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) {
     match detect {
-        Some(Ok(mode)) => {
-            println!(
-                "자동감지 성공: 원격 환경 → port_mode={} (활성).",
-                mode.as_str()
-            )
-        }
+        Some(Ok(mode)) => println!(
+            "{}",
+            t_fmt("cli.remote_profile.auto_detect_ok", mode.as_str())
+        ),
         Some(Err(e)) => println!(
-            "자동감지 실패: {e}\n  '{name}' 은 비활성 상태로 저장되었습니다 — \
-             'tasty tool remote-profile detect {name}' 로 재시도하세요."
+            "{}",
+            t_args(
+                "cli.remote_profile.auto_detect_failed",
+                &[&e.to_string(), name, name]
+            )
         ),
         None => {}
     }

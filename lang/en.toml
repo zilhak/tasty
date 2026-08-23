@@ -1222,6 +1222,43 @@ create_failed = "Failed to create a workspace on remote (target={})"
 serialize_failed = "Failed to serialize the created remote workspace to JSON"
 created = "Created remote workspace #{} '{}' on {} (index={})"
 
+# `tasty tool remote-profile` — local CRUD for remote connection profiles.
+# `list_header` / `list_local_header` carry their own column padding: CJK glyphs
+# are twice as wide in a terminal, so each language pads its own header line.
+[cli.remote_profile]
+unknown_shell = "Unknown --shell '{}' (powershell|cmd|bash|zsh|auto)"
+ssh_added = "Added: ssh profile '{}' ({})."
+ssh_updated = "Updated: ssh profile '{}' ({})."
+attach_ref_xor_host = "--ssh-ref and an inline --host cannot be used together (reference XOR inline)."
+attach_needs_ref_or_host = "tasty-attach requires --ssh-ref <name> or an inline --host."
+attach_ref_missing = "Warning: the referenced ssh profile '{}' does not exist yet (it can be added later)."
+attach_added = "Added: tasty-attach profile '{}'."
+attach_updated = "Updated: tasty-attach profile '{}'."
+list_empty = "No remote profiles saved (tasty tool remote-profile add-ssh ...)."
+list_header = "NAME             TYPE          HOST/REF                 DETAIL           STATUS"
+not_found = "Remote profile '{}' not found."
+show_passkey_missing = "  (passkey missing)"
+show_status_disabled = "detection failed (disabled) — tasty tool remote-profile detect {}"
+show_ref_note = "(reference)"
+updated = "Updated: remote profile '{}'."
+detect_ok = "Re-detection succeeded: '{}' -> port_mode={} (enabled)."
+detect_failed = "Re-detection failed: {}\n  '{}' stays disabled — check the remote environment, then run 'tasty tool remote-profile detect {}' again."
+removed = "Removed: remote profile '{}'."
+import_added = "Added: remote profile '{}' (references ssh config alias '{}')."
+import_detect_hint = "Shell detection: tasty tool remote-profile detect --name {}"
+import_unknown_alias = "ssh config alias '{}' not found. (tasty tool remote-profile list-local)"
+import_name_taken = "Remote profile '{}' already exists."
+list_local_no_alias = "No alias to import in the local ssh config ({})."
+list_local_no_config = "No local ssh config ({})."
+list_local_unreadable = "Cannot read the local ssh config — permission denied ({})."
+list_local_header = "ALIAS                SOURCE                       TARGET               IMPORTED"
+attach_detect_ok = "Port check succeeded: '{}' -> found remote port {}."
+attach_detect_failed = "Port check failed: {}\n  Verify that remote tasty is running and check port_file/port_mode."
+status_detect_failed = "detect failed (disabled)"
+status_unknown_kind = "unknown type"
+auto_detect_ok = "Auto-detection succeeded: remote environment -> port_mode={} (enabled)."
+auto_detect_failed = "Auto-detection failed: {}\n  '{}' was saved as disabled — retry with 'tasty tool remote-profile detect {}'."
+
 # `tasty terminal` — host-internalized child-terminal management (ADR-0040).
 [cli.terminal]
 desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."

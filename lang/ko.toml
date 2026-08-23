@@ -1214,6 +1214,43 @@ create_failed = "원격 워크스페이스 생성 실패 (대상={})"
 serialize_failed = "생성된 원격 워크스페이스 JSON 직렬화 실패"
 created = "원격 워크스페이스 #{} '{}' 생성됨 — {} (index={})"
 
+# `tasty tool remote-profile` — 원격 접속 프로필 로컬 CRUD.
+# `list_header` / `list_local_header` 는 컬럼 패딩을 값 안에 담는다 — CJK 글자는
+# 터미널 표시 폭이 2배라 언어마다 헤더 한 줄을 각자 맞춰야 정렬이 유지된다.
+[cli.remote_profile]
+unknown_shell = "알 수 없는 --shell '{}' (powershell|cmd|bash|zsh|auto)"
+ssh_added = "추가: ssh 프로필 '{}' ({})."
+ssh_updated = "갱신: ssh 프로필 '{}' ({})."
+attach_ref_xor_host = "--ssh-ref 와 인라인 --host 는 함께 쓸 수 없습니다 (참조 XOR 인라인)."
+attach_needs_ref_or_host = "tasty-attach 는 --ssh-ref <name> 또는 인라인 --host 가 필요합니다."
+attach_ref_missing = "경고: 참조 ssh 프로필 '{}' 이 아직 없습니다 (나중에 추가 가능)."
+attach_added = "추가: tasty-attach 프로필 '{}'."
+attach_updated = "갱신: tasty-attach 프로필 '{}'."
+list_empty = "저장된 원격 프로필이 없습니다 (tasty tool remote-profile add-ssh ...)."
+list_header = "이름             종류          호스트/참조              상세             상태"
+not_found = "원격 프로필 '{}' 을 찾을 수 없습니다."
+show_passkey_missing = "  (passkey 없음)"
+show_status_disabled = "감지 실패(비활성) — tasty tool remote-profile detect {}"
+show_ref_note = "(참조)"
+updated = "갱신: 원격 프로필 '{}'."
+detect_ok = "재감지 성공: '{}' → port_mode={} (활성)."
+detect_failed = "재감지 실패: {}\n  '{}' 은 비활성 상태입니다 — 원격 환경 확인 후 다시 'tasty tool remote-profile detect {}'."
+removed = "제거: 원격 프로필 '{}'."
+import_added = "추가: 원격 프로필 '{}' (ssh config alias '{}' 참조)."
+import_detect_hint = "셸 감지: tasty tool remote-profile detect --name {}"
+import_unknown_alias = "ssh config alias '{}' 을 찾을 수 없습니다. (tasty tool remote-profile list-local)"
+import_name_taken = "원격 프로필 '{}' 이 이미 존재합니다."
+list_local_no_alias = "로컬 ssh config 에 가져올 alias 가 없습니다 ({})."
+list_local_no_config = "로컬 ssh config 가 없습니다 ({})."
+list_local_unreadable = "로컬 ssh config 를 읽을 권한이 없습니다 ({})."
+list_local_header = "별칭                 출처                         대상                 가져옴"
+attach_detect_ok = "포트 검증 성공: '{}' → 원격 포트 {} 발견."
+attach_detect_failed = "포트 검증 실패: {}\n  원격 tasty 실행 상태·port_file/port_mode 를 확인하세요."
+status_detect_failed = "감지 실패(비활성)"
+status_unknown_kind = "미등록 타입"
+auto_detect_ok = "자동감지 성공: 원격 환경 → port_mode={} (활성)."
+auto_detect_failed = "자동감지 실패: {}\n  '{}' 은 비활성 상태로 저장되었습니다 — 'tasty tool remote-profile detect {}' 로 재시도하세요."
+
 # `tasty terminal` — 호스트 내재화된 child-terminal 관리 (ADR-0040).
 [cli.terminal]
 desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…)."

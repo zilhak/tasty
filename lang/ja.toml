@@ -1216,6 +1216,43 @@ create_failed = "リモートワークスペースの作成に失敗しました
 serialize_failed = "作成したリモートワークスペースのJSONシリアライズに失敗しました"
 created = "リモートワークスペース #{} '{}' を作成しました — {} (index={})"
 
+# `tasty tool remote-profile` — リモート接続プロファイルのローカル CRUD。
+# `list_header` / `list_local_header` は列パディングを値に含める — CJK 文字は
+# 端末上の表示幅が 2 倍なので、ヘッダ行は言語ごとに揃える必要がある。
+[cli.remote_profile]
+unknown_shell = "不明な --shell '{}' (powershell|cmd|bash|zsh|auto)"
+ssh_added = "追加: ssh プロファイル '{}' ({})。"
+ssh_updated = "更新: ssh プロファイル '{}' ({})。"
+attach_ref_xor_host = "--ssh-ref とインライン --host は同時に指定できません (参照 XOR インライン)。"
+attach_needs_ref_or_host = "tasty-attach には --ssh-ref <name> かインライン --host が必要です。"
+attach_ref_missing = "警告: 参照先の ssh プロファイル '{}' はまだ存在しません (後から追加できます)。"
+attach_added = "追加: tasty-attach プロファイル '{}'。"
+attach_updated = "更新: tasty-attach プロファイル '{}'。"
+list_empty = "保存されたリモートプロファイルがありません (tasty tool remote-profile add-ssh ...)。"
+list_header = "名前             種類          ホスト/参照              詳細             状態"
+not_found = "リモートプロファイル '{}' が見つかりません。"
+show_passkey_missing = "  (passkey なし)"
+show_status_disabled = "検出失敗(無効) — tasty tool remote-profile detect {}"
+show_ref_note = "(参照)"
+updated = "更新: リモートプロファイル '{}'。"
+detect_ok = "再検出成功: '{}' → port_mode={} (有効)。"
+detect_failed = "再検出失敗: {}\n  '{}' は無効状態です — リモート環境を確認してから 'tasty tool remote-profile detect {}' を再実行してください。"
+removed = "削除: リモートプロファイル '{}'。"
+import_added = "追加: リモートプロファイル '{}' (ssh config alias '{}' を参照)。"
+import_detect_hint = "シェル検出: tasty tool remote-profile detect --name {}"
+import_unknown_alias = "ssh config alias '{}' が見つかりません。(tasty tool remote-profile list-local)"
+import_name_taken = "リモートプロファイル '{}' は既に存在します。"
+list_local_no_alias = "ローカル ssh config に取り込める alias がありません ({})。"
+list_local_no_config = "ローカル ssh config がありません ({})。"
+list_local_unreadable = "ローカル ssh config を読み取る権限がありません ({})。"
+list_local_header = "エイリアス           ソース                       ターゲット           インポート済み"
+attach_detect_ok = "ポート検証成功: '{}' → リモートポート {} を発見。"
+attach_detect_failed = "ポート検証失敗: {}\n  リモート tasty の稼働状態と port_file/port_mode を確認してください。"
+status_detect_failed = "検出失敗(無効)"
+status_unknown_kind = "未登録の種類"
+auto_detect_ok = "自動検出成功: リモート環境 → port_mode={} (有効)。"
+auto_detect_failed = "自動検出失敗: {}\n  '{}' は無効状態で保存されました — 'tasty tool remote-profile detect {}' で再試行してください。"
+
 # `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
 [cli.terminal]
 desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/kill/…)."
