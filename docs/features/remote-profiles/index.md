@@ -40,6 +40,15 @@
 | CLI (passkey) | `tasty tool passkey add\|list\|show\|remove` (`--path`/`--inline`; list/show 는 값 비노출) |
 | IPC | `remote.profile.{list,get,add,detect,remove,list_local,import}`(kind-generic — `kind="tasty-attach"` + `fields` 로 tasty-attach CRUD 도 양면 노출) · `remote.passkey.{list,get,add,remove}` (값 마스킹). `list_local` 은 `{aliases:[{name,source,hostname,user,port,imported_as}], config_path, config_exists, config_readable}`(`aliases` 가 비었을 때 이유를 가른다 — 파일 부재 / 권한 없음 / Host 항목 없음. `config_readable` 은 최상위 config 파일만 판정하고 `Include` 대상은 보지 않는다), `import` 은 `{from,name,label?}` → `{saved,name,from,detecting:false}` (자동 감지 없음). 구 `tool.ssh.*`/`ssh.profile.*` 는 alias 한시 호환 |
 
+## 에러 코드
+
+`remote.profile.*` / `remote.passkey.*` 의 tasty 전용 코드 블록은 `-3204x` 다.
+
+- **`-32040`** (not found) — 없는 프로필/passkey 이름, 또는 `import` 의 `from` 이 ssh config 에 없는 alias.
+- **`-32041`** (name conflict) — `import` 의 `name` 이 이미 있는 프로필과 충돌. 표준 `-32602` 로 뭉뚱그리지 않는다: 요청 자체는 멀쩡하고 **저장소 상태**가 부딪힌 것이라 호출자가 할 일이 다르다(다른 이름을 쓰거나, 덮어쓰려면 upsert 인 `remote.profile.add` 로 간다). 메시지 파싱 없이 코드만으로 분기할 수 있다.
+- **`-32602`** — 필수 파라미터 누락 등 진짜 잘못된 요청.
+- **`-32603`** — 프로필 저장 실패 등 내부 오류.
+
 ## 마이그레이션
 
 없음. 구 `ssh-profiles.toml → remote-profiles.toml` 자동 마이그레이션은 [ADR-0032](../../adr/0032-remote-attach-two-layer-split.md)(하위호환 제거)로 삭제됐다. 기존 프로필에 남은 `remote_tasty`/`port_mode` 필드는 열린 스키마라 무시되며 크래시하지 않는다 — attach 하려면 `tool remote-profile add-attach` 로 tasty-attach 프로필을 새로 만든다.

@@ -14,6 +14,37 @@ use tasty_remote_profiles::{
     user_config_path,
 };
 
+/// 이 네임스페이스(원격 프로필 / passkey)가 쓰는 tasty 전용 에러 코드 블록은 `-3204x` 다.
+/// 지금 쓰이는 건 아래 둘뿐이고 `-32042..-32049` 는 비어 있다.
+///
+/// **가리킨 대상이 없다.** get/remove/import 가 존재하지 않는 이름·alias 를 받았을 때.
+const ERR_NOT_FOUND: i32 = -32040;
+
+/// **이름이 이미 있다.** `import` 가 기존 프로필 이름과 충돌했을 때.
+///
+/// JSON-RPC 표준 `-32602`(invalid params) 가 아니다 — `-32602` 는 "파라미터를 고쳐서
+/// 다시 보내라" 는 뜻이라 호출자가 요청을 뜯어보게 만들지만, 이름 충돌은 요청 자체는
+/// 멀쩡하고 **저장소 상태**가 부딪힌 것이다. 호출자가 할 일도 다르다 — 다른 이름을 쓰거나,
+/// 덮어쓰려면 `remote.profile.add`(upsert) 로 간다. 메시지 문자열을 파싱하지 않고
+/// 코드만으로 이 분기를 잡을 수 있어야 한다.
+const ERR_NAME_CONFLICT: i32 = -32041;
+
+/// [`ImportError`] → 응답. 저장소를 읽지 않는 순수 매핑이라 홈 디렉토리 없이 테스트된다.
+fn import_error_response(id: Value, err: ImportError) -> JsonRpcResponse {
+    match err {
+        ImportError::UnknownAlias(a) => JsonRpcResponse::error(
+            id,
+            ERR_NOT_FOUND,
+            format!("ssh config alias '{a}' not found"),
+        ),
+        ImportError::NameTaken(n) => JsonRpcResponse::error(
+            id,
+            ERR_NAME_CONFLICT,
+            format!("remote profile '{n}' exists"),
+        ),
+    }
+}
+
 fn profile_to_json(p: &RemoteProfile) -> Value {
     serde_json::to_value(p).unwrap_or(Value::Null)
 }
@@ -33,7 +64,11 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     let profiles = RemoteProfiles::load();
     match profiles.get(name) {
         Some(p) => JsonRpcResponse::success(id, json!({ "profile": profile_to_json(p) })),
-        None => JsonRpcResponse::error(id, -32040, format!("remote profile '{name}' not found")),
+        None => JsonRpcResponse::error(
+            id,
+            ERR_NOT_FOUND,
+            format!("remote profile '{name}' not found"),
+        ),
     }
 }
 
@@ -165,7 +200,11 @@ pub(crate) fn handle_detect(id: Value, params: &Value) -> JsonRpcResponse {
     };
     let profiles = RemoteProfiles::load();
     if profiles.get(name).is_none() {
-        return JsonRpcResponse::error(id, -32040, format!("remote profile '{name}' not found"));
+        return JsonRpcResponse::error(
+            id,
+            ERR_NOT_FOUND,
+            format!("remote profile '{name}' not found"),
+        );
     }
     spawn_detect(name.to_string());
     JsonRpcResponse::success(id, json!({ "detecting": true, "name": name }))
@@ -237,14 +276,7 @@ pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
     let mut profiles = RemoteProfiles::load();
     let profile = match prepare_import(&profiles, &enumerate_hosts(), from, name, label) {
         Ok(p) => p,
-        // alias 부재는 "없는 것을 가리켰다" 라 get/remove 의 not-found 와 같은 -32040,
-        // 이름 충돌은 요청이 잘못된 것이라 invalid_params 로 가른다.
-        Err(ImportError::UnknownAlias(a)) => {
-            return JsonRpcResponse::error(id, -32040, format!("ssh config alias '{a}' not found"));
-        }
-        Err(ImportError::NameTaken(n)) => {
-            return JsonRpcResponse::invalid_params(id, format!("remote profile '{n}' exists"));
-        }
+        Err(e) => return import_error_response(id, e),
     };
     profiles.upsert(profile);
     match profiles.save() {
@@ -265,12 +297,34 @@ pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
     };
     let mut profiles = RemoteProfiles::load();
     if !profiles.remove(name) {
-        return JsonRpcResponse::error(id, -32040, format!("remote profile '{name}' not found"));
+        return JsonRpcResponse::error(
+            id,
+            ERR_NOT_FOUND,
+            format!("remote profile '{name}' not found"),
+        );
     }
     match profiles.save() {
         Ok(()) => JsonRpcResponse::success(id, json!({ "removed": true, "name": name })),
         Err(e) => {
             JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 코드값은 계약이다 — 바꾸면 이 테스트가 먼저 깨져야 한다.
+    #[test]
+    fn import_error_codes_are_distinct_and_stable() {
+        let unknown = import_error_response(json!(1), ImportError::UnknownAlias("nope".into()));
+        let taken = import_error_response(json!(2), ImportError::NameTaken("dup".into()));
+        let code = |r: &JsonRpcResponse| r.error.as_ref().expect("error 응답이어야 한다").code;
+        assert_eq!(code(&unknown), -32040);
+        assert_eq!(code(&taken), -32041);
+        // 이름 충돌은 더 이상 표준 invalid_params 로 뭉뚱그리지 않는다.
+        assert_ne!(code(&taken), -32602);
+        assert!(taken.result.is_none());
     }
 }
