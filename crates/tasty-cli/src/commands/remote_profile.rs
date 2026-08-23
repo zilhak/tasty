@@ -13,8 +13,9 @@ use anyhow::Result;
 use clap::Subcommand;
 
 use tasty_remote_profiles::{
-    ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost, enumerate_hosts,
-    imported_as, is_valid_shell, prepare_import, sanitize_passkey_name, user_config_path,
+    ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost, config_availability,
+    enumerate_hosts, imported_as, is_valid_shell, prepare_import, sanitize_passkey_name,
+    user_config_path,
 };
 
 #[derive(Subcommand)]
@@ -533,19 +534,20 @@ fn list_local(json: bool) -> Result<()> {
         return Ok(());
     }
     if hosts.is_empty() {
-        // "파일이 아예 없다" 와 "있는데 alias 가 없다" 는 사용자가 할 일이 다르다.
-        // 권한·비 UTF-8 같은 읽기 실패는 열거 코어가 warn 로그를 남기고 빈 목록이 된다.
-        match user_config_path().filter(|p| p.exists()) {
-            Some(p) => println!(
-                "로컬 ssh config 에 가져올 alias 가 없습니다 ({}).",
-                tasty_utils::path::tilde_abbreviate(&p)
-            ),
-            None => println!(
-                "로컬 ssh config 가 없습니다 ({}).",
-                user_config_path()
-                    .map(|p| tasty_utils::path::tilde_abbreviate(&p))
-                    .unwrap_or_else(|| "~/.ssh/config".into())
-            ),
+        // 빈 목록의 이유는 셋 중 하나고, 사용자가 할 일이 전부 다르다 — 파일을
+        // 만든다 / 권한을 고친다 / Host 항목을 추가한다. IPC 쪽은 같은 구분을
+        // `config_exists`·`config_readable` 로 실어 보낸다.
+        let path = user_config_path();
+        let avail = config_availability(path.as_deref());
+        let shown = path
+            .map(|p| tasty_utils::path::tilde_abbreviate(&p))
+            .unwrap_or_else(|| "~/.ssh/config".into());
+        if !avail.exists {
+            println!("로컬 ssh config 가 없습니다 ({shown}).");
+        } else if !avail.readable {
+            println!("로컬 ssh config 를 읽을 권한이 없습니다 ({shown}).");
+        } else {
+            println!("로컬 ssh config 에 가져올 alias 가 없습니다 ({shown}).");
         }
         return Ok(());
     }

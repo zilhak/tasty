@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_remote_profiles::{
-    ImportError, Passkeys, RemoteProfile, RemoteProfiles, enumerate_hosts, imported_as,
-    is_valid_shell, prepare_import, sanitize_passkey_name, shell_to_port_mode, user_config_path,
+    ImportError, Passkeys, RemoteProfile, RemoteProfiles, config_availability, enumerate_hosts,
+    imported_as, is_valid_shell, prepare_import, sanitize_passkey_name, shell_to_port_mode,
+    user_config_path,
 };
 
 fn profile_to_json(p: &RemoteProfile) -> Value {
@@ -181,8 +182,13 @@ fn spawn_detect(name: String) {
 ///
 /// 읽기 전용 · 프로세스 spawn 없음(`ssh -G` 는 `Match exec` 를 실제로 실행하므로 쓰지
 /// 않는다). `hostname`/`user`/`port` 는 **표시 전용 hint** 라 프로필 저장에 쓰지 않는다.
-/// `config_exists` 는 "설정이 없다" 와 "있는데 alias 가 0건" 을 구분하기 위한 것이다 —
-/// 권한·비 UTF-8 같은 읽기 실패는 코어가 warn 로그를 남기고 빈 목록으로 떨어진다.
+/// `config_exists` / `config_readable` 은 **빈 `aliases` 의 이유**를 가른다. 셋 다 빈
+/// 목록으로 떨어지지만 호출자가 할 일은 전부 다르다: 파일이 없으면(`exists:false`)
+/// 만들라고, 있는데 못 읽으면(`exists:true, readable:false`) 권한을 고치라고, 둘 다
+/// true 인데 비었으면 config 에 Host 가 없다고 안내해야 한다. GUI 는 in-process 라
+/// 파일을 직접 보면 되지만 IPC 호출자에겐 응답에 실려야만 보인다.
+/// `config_readable` 은 **최상위 파일 한정**이다(`Include` 는 검사하지 않는다 —
+/// 못 읽은 include 는 코어가 warn 로그를 남긴다).
 pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
     let profiles = RemoteProfiles::load();
     let aliases: Vec<Value> = enumerate_hosts()
@@ -199,12 +205,14 @@ pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
         })
         .collect();
     let path = user_config_path();
+    let avail = config_availability(path.as_deref());
     JsonRpcResponse::success(
         id,
         json!({
             "aliases": aliases,
             "config_path": path.as_ref().map(|p| p.display().to_string()),
-            "config_exists": path.as_ref().is_some_and(|p| p.exists()),
+            "config_exists": avail.exists,
+            "config_readable": avail.readable,
         }),
     )
 }

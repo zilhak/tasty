@@ -63,6 +63,37 @@ pub fn user_config_path() -> Option<PathBuf> {
     os_home_dir().map(|home| home.join(".ssh").join("config"))
 }
 
+/// 최상위 config 파일의 가용성 — "없다" 와 "있는데 못 읽는다" 를 가른다.
+///
+/// 열거([`enumerate_hosts`])는 두 경우 모두 **빈 목록**으로 떨어져서 결과만 봐서는
+/// 구분이 안 된다. 그런데 호출자가 할 일은 정반대다 — 없으면 만들라고 안내하고,
+/// 못 읽으면 권한을 고치라고 안내해야 한다. in-process 소비자(GUI)는 자기가 파일을
+/// 보면 그만이지만 IPC 호출자에겐 응답에 실려야만 보이는 정보다.
+///
+/// **최상위 파일 한정이다.** `Include` 로 딸려오는 파일까지 권한을 훑지 않는다 —
+/// 열거는 읽히는 것만 모으고 못 읽은 include 는 [`read_text`] 가 warn 을 남긴다.
+/// 실사용에서 권한이 어긋나는 건 대개 최상위 파일 하나다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ConfigAvailability {
+    /// 그 경로에 파일이 있는가.
+    pub exists: bool,
+    /// 실제로 열리는가(`File::open` 성공). `exists` 가 false 면 항상 false 다.
+    pub readable: bool,
+}
+
+/// 주어진 경로의 [`ConfigAvailability`]. `None`(홈을 못 찾음)이면 둘 다 false.
+pub fn config_availability(path: Option<&Path>) -> ConfigAvailability {
+    let Some(p) = path else {
+        return ConfigAvailability::default();
+    };
+    ConfigAvailability {
+        exists: p.exists(),
+        // 존재 여부와 **별개로** 실제 열기를 시도한다 — `exists` 만으로는 권한 실패를
+        // 못 잡는다. 핸들을 즉시 버리므로 내용은 읽지 않는다(열거는 따로 돈다).
+        readable: std::fs::File::open(p).is_ok(),
+    }
+}
+
 /// 기본 user config 에서 alias 를 열거한다. 홈을 못 찾거나 파일이 없으면 빈 목록.
 pub fn enumerate_hosts() -> Vec<SshConfigHost> {
     let Some(path) = user_config_path() else {
@@ -737,6 +768,52 @@ Host gx10
         assert_eq!(imported_as(&profiles, "gx10"), Some("gpu"));
         // 변형된 destination 은 같은 호스트를 가리켜도 "가져옴" 으로 세지 않는다.
         assert_eq!(imported_as(&profiles, "bastion"), None);
+    }
+
+    // ── config_availability (존재 / 권한 / 부재) ──────────────────────
+
+    #[test]
+    fn config_availability_reports_existing_readable_file() {
+        let dir = tmpdir("avail-ok");
+        let p = write(&dir, "config", "Host a\n");
+        let a = config_availability(Some(&p));
+        assert!(a.exists);
+        assert!(a.readable);
+    }
+
+    #[test]
+    fn config_availability_reports_missing_file_and_no_home() {
+        let dir = tmpdir("avail-missing");
+        let a = config_availability(Some(&dir.join("nope")));
+        assert!(!a.exists);
+        // 없는 파일은 열리지도 않는다 — 두 축이 어긋나지 않게 고정한다.
+        assert!(!a.readable);
+        // 홈을 못 찾은 경우(`user_config_path()` 가 None)도 같은 모양이다.
+        assert_eq!(config_availability(None), ConfigAvailability::default());
+    }
+
+    /// 권한 때문에 못 읽는 파일은 **존재하지만 읽을 수 없다** 로 잡혀야 한다 — 이걸
+    /// 못 가르면 IPC 호출자에게 "설정이 없다" 와 똑같이 보인다.
+    #[cfg(unix)]
+    #[test]
+    fn config_availability_separates_unreadable_from_missing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tmpdir("avail-perm");
+        let p = write(&dir, "config", "Host a\n");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
+        // root 는 퍼미션을 무시하고 읽는다 — 그 환경에서는 이 케이스를 만들 수 없으니
+        // 거짓 실패를 내지 않고 건너뛴다(판정 로직이 아니라 픽스처의 한계다).
+        if std::fs::File::open(&p).is_ok() {
+            return;
+        }
+        let a = config_availability(Some(&p));
+        assert!(a.exists, "파일은 그대로 있다");
+        assert!(!a.readable, "권한이 없으면 readable 이 false 여야 한다");
+        // 되돌려 둔다 — 0o000 파일이 남아도 `tmpdir` 이 다음 실행에서 통째로 지우지만,
+        // 사람이 /tmp 를 뒤질 때 읽을 수 있는 편이 낫다.
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644))
+            .expect("소유자라 퍼미션 복구는 실패할 이유가 없다");
     }
 
     #[test]

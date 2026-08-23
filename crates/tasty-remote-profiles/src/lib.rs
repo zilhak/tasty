@@ -28,8 +28,8 @@ pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,
 };
 pub use ssh_config::{
-    ImportError, SshConfigHost, enumerate_hosts, enumerate_hosts_at, imported_as, prepare_import,
-    user_config_path,
+    ConfigAvailability, ImportError, SshConfigHost, config_availability, enumerate_hosts,
+    enumerate_hosts_at, imported_as, prepare_import, user_config_path,
 };
 
 pub use profile::{
