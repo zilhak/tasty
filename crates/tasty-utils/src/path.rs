@@ -206,6 +206,48 @@ mod tests {
         assert_eq!(strip_verbatim_prefix(r"\\?\X"), r"\\?\X");
     }
 
+    // `tilde_abbreviate` 는 홈을 `os_home_dir()` 로 찾는다. 테스트에서 `HOME` 을
+    // 갈아끼우는 대신(edition 2024 의 `set_var` 는 unsafe 이고 병렬 테스트와
+    // 레이스가 난다) 실제 홈을 입력 생성에 그대로 쓴다 — 홈 값 자체가 아니라
+    // "홈 접두사를 `~` 로 바꾼다" 는 규칙만 검증하면 되기 때문이다.
+    #[test]
+    fn tilde_abbreviate_replaces_home_prefix() {
+        let Some(home) = os_home_dir() else {
+            return; // 홈을 못 찾는 환경(컨테이너 등)에서는 검증 대상 자체가 없다.
+        };
+        let expected = format!("~/{}", Path::new("workspace").join("tasty").display());
+        assert_eq!(
+            tilde_abbreviate(&home.join("workspace").join("tasty")),
+            expected
+        );
+    }
+
+    #[test]
+    fn tilde_abbreviate_maps_home_itself_to_bare_tilde() {
+        let Some(home) = os_home_dir() else { return };
+        // strip_prefix 결과가 빈 경로라 `~/` 로 끝난다 — 표시용이라 이 형태로 굳힌다.
+        assert_eq!(tilde_abbreviate(&home), "~/");
+    }
+
+    #[test]
+    fn tilde_abbreviate_leaves_paths_outside_home_untouched() {
+        let Some(home) = os_home_dir() else { return };
+        // 홈의 형제 경로 — 홈 접두사가 아니므로 그대로 나와야 한다. 홈이
+        // 루트 직하가 아닌 실제 환경에서 부모가 존재한다.
+        let outside = home.parent().map_or_else(
+            || PathBuf::from("/definitely-not-home"),
+            |parent| parent.join("__tasty_not_home__"),
+        );
+        assert_eq!(tilde_abbreviate(&outside), outside.display().to_string());
+    }
+
+    #[test]
+    fn tilde_abbreviate_leaves_relative_paths_untouched() {
+        // 상대경로는 어떤 절대 홈으로도 strip 되지 않는다.
+        let rel = Path::new("relative").join("file.txt");
+        assert_eq!(tilde_abbreviate(&rel), rel.display().to_string());
+    }
+
     #[test]
     fn to_slash_replaces_backslash_regardless_of_os() {
         assert_eq!(to_slash(r"src\file\format.rs"), "src/file/format.rs");

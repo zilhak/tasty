@@ -762,11 +762,10 @@ fn draw_profile_list(
         .any(|p| p.kind.trim() != ATTACH_KIND && !applied_hidden.contains(p.kind.trim()));
     let detecting = st.detecting.as_ref().map(|j| j.name.clone());
     let known: Vec<String> = passkeys.passkeys.iter().map(|k| k.name.clone()).collect();
-    // 로컬 ssh config 는 popup 을 열 때 1 회만 읽는다(캐시 주석 참조).
-    if st.local.is_none() {
-        st.local = Some(load_local_ssh());
-    }
-    let local = st.local.clone().unwrap_or_default();
+    // 로컬 ssh config 는 popup 을 열 때 1 회만 읽는다(캐시 주석 참조). 캐시를
+    // 복제하지 않고 빌려 쓴다 — 아래 클로저는 `st` 를 잡지 않으므로 이 대여가
+    // 클로저 밖까지 살아 있을 필요가 없다.
+    let local = st.local.get_or_insert_with(load_local_ssh);
     let mut action: Option<(usize, ProfileRowAction)> = None;
     let mut local_action: Option<LocalRowAction> = None;
     // 두 섹션이 한 스크롤을 공유한다 — 로컬 섹션이 프로필 목록 **아래**에 이어지는
@@ -799,7 +798,7 @@ fn draw_profile_list(
                 }
             }
         }
-        local_action = draw_local_ssh_section(ui, th, &local, profiles);
+        local_action = draw_local_ssh_section(ui, th, local, profiles);
     });
     match local_action {
         Some(LocalRowAction::Reload) => {
