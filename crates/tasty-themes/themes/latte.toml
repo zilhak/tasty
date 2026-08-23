@@ -19,7 +19,11 @@ overlay1 = "#8c8fa1"
 overlay2 = "#7c7f93"
 text     = "#4c4f69"
 subtext1 = "#5c5f77"
-subtext0 = "#6c6f85"
+# upstream catppuccin latte 는 #6c6f85 지만 base(#eff1f5) 와의 대비가 4.37:1 로
+# WCAG AA(4.5:1) 미달이다. subtext0 -> subtext1 램프 위에서 4.5:1 을 넘는 지점으로
+# 내렸다 (base 4.99:1 / mantle 4.64:1). 대비 규칙은 docs/design/systems/theme.md
+# "UI 디자인 규칙" 의 "텍스트 대비" 행.
+subtext0 = "#63667c"
 placeholder = "#9ca0b0"
 
 [accent]
@@ -48,13 +52,13 @@ search_match_active_bg = "#df8e1db3"   # yellow @ ~70% alpha
 focused_bg   = "#ffffff"
 focused_fg   = "#4c4f69"   # = text
 unfocused_bg = "#eff1f5"   # = base
-unfocused_fg = "#6c6f85"   # = subtext0
+unfocused_fg = "#63667c"   # = subtext0
 
 [surfaces.markdown]
 focused_bg   = "#dce0e8"   # = crust (webview 렌더 경로의 유일한 배경 — focus 신호 없음)
 focused_fg   = "#4c4f69"
 unfocused_bg = "#e6e9ef"   # = mantle (webview 경로에서 미사용, egui 경로 잔존값)
-unfocused_fg = "#6c6f85"
+unfocused_fg = "#63667c"
 
 [ansi]
 black   = "#bcc0cc"   # surface1

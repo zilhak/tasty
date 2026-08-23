@@ -52,6 +52,7 @@
 
 - **mocha**: 항상 정본 보장. 임베드 `MOCHA_TOML_TEXT` + `MOCHA_FALLBACK_COLORS` const. 부팅 시 sync 가 누락/파싱 실패/**내용 불일치** 면 임베드로 덮어쓴다. 로드 실패해도 const 가 fallback. unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 강제.
 - **latte**: first-run(themes 폴더가 완전히 빈 경우)에 자동 풀림. 이후엔 **파일이 있으면 임베드와 동기화**, 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
+  - `subtext0` 은 upstream catppuccin latte(`#6c6f85`)가 아니라 `#63667c` 다 — upstream 값은 `base`(`#eff1f5`) 위에서 4.37:1 이라 아래 "텍스트 대비" 4.5:1 규칙을 못 넘긴다. subtext0→subtext1 램프 위에서 내려 `base` 4.99:1 / `mantle` 4.64:1 을 확보한 값이다. mocha 는 같은 토큰이 이미 7.37:1 이라 손대지 않았다.
 - **사용자 테마**: 자동 동기화/복구 없음. 로드 실패 시 mocha fallback.
 - **"사용자 의도 존중" 의 범위 = 파일 삭제(부재)뿐.** 빌트인 파일의 *내용* 은 존중 대상이 아니다 — 사용자가 손으로 고쳐도 다음 부팅에 정본으로 되돌아간다(편집 경로가 아님, 커스터마이징은 `theme_overrides`).
 
