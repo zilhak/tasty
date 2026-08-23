@@ -909,6 +909,7 @@ profile_filter_empty = "選択したプロトコルに一致するプロファ�
 local_ssh_heading = "ローカル SSH config"
 local_ssh_empty = "ssh config に取り込めるホストがありません。"
 local_ssh_missing = "ssh config が見つかりません。"
+local_ssh_unreadable = "ssh config はありますが読み取れません（権限を確認してください）。"
 local_ssh_import = "tasty プロファイルとして取り込む"
 local_ssh_imported = "取り込み済み: {}"
 local_ssh_refresh = "ssh config を再読み込み"

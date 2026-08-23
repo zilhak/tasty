@@ -909,6 +909,7 @@ profile_filter_empty = "No profiles match the selected protocols. Adjust or rese
 local_ssh_heading = "Local SSH config"
 local_ssh_empty = "No hosts found in your ssh config."
 local_ssh_missing = "No ssh config found."
+local_ssh_unreadable = "Your ssh config exists but can't be read (check permissions)."
 local_ssh_import = "Import as tasty profile"
 local_ssh_imported = "imported as {}"
 local_ssh_refresh = "Reload ssh config"

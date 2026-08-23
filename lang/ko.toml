@@ -909,6 +909,7 @@ profile_filter_empty = "선택한 프로토콜에 해당하는 프로필이 없�
 local_ssh_heading = "로컬 SSH config"
 local_ssh_empty = "ssh config 에 가져올 호스트가 없습니다."
 local_ssh_missing = "ssh config 가 없습니다."
+local_ssh_unreadable = "ssh config 는 있지만 읽을 수 없습니다(권한을 확인하세요)."
 local_ssh_import = "tasty 프로필로 가져오기"
 local_ssh_imported = "가져옴: {}"
 local_ssh_refresh = "ssh config 다시 읽기"

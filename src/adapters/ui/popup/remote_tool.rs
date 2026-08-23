@@ -152,8 +152,33 @@ struct LocalSshCache {
     /// 표시용 config 경로(`~/.ssh/config`).
     path: String,
     /// 파일 자체가 있는지. "설정이 없다" 와 "있는데 alias 가 0 건" 은 사용자가 할 일이
-    /// 다르다(권한 등으로 못 읽은 경우는 후자로 합쳐진다 — 열거 코어가 warn 을 남긴다).
+    /// 다르다.
     exists: bool,
+    /// 파일은 있는데 **열 수 없는** 경우(권한 등). `exists && hosts.is_empty()` 만
+    /// 보면 "정말 빈 설정" 과 구분되지 않는데, 사용자가 할 일은 정반대다(전자는
+    /// Host 를 적는 것, 후자는 권한을 고치는 것). 부정형으로 둔 것은 `Default` 가
+    /// "권한 문제 없음" 이 되게 하기 위해서다.
+    unreadable: bool,
+}
+
+/// config 를 **열 수만** 있는지 본다 — 내용은 열거 코어가 따로 읽으므로 핸들은 바로
+/// 버린다. 파일이 없거나 경로 자체를 못 구하면 `true`("없음" 은 별도 문구가 담당).
+fn config_readable(path: Option<&std::path::Path>) -> bool {
+    match path {
+        Some(p) if p.exists() => std::fs::File::open(p).is_ok(),
+        _ => true,
+    }
+}
+
+/// 로컬 섹션의 빈 상태 문구 키 — 원인 3 갈래를 가른다(없음 / 못 읽음 / 정말 0 건).
+fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
+    if !local.exists {
+        "remote_tool.local_ssh_missing"
+    } else if local.unreadable {
+        "remote_tool.local_ssh_unreadable"
+    } else {
+        "remote_tool.local_ssh_empty"
+    }
 }
 
 /// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 와
@@ -167,6 +192,7 @@ fn load_local_ssh() -> LocalSshCache {
             .map(tasty_utils::path::tilde_abbreviate)
             .unwrap_or_else(|| "~/.ssh/config".into()),
         exists: path.as_deref().is_some_and(std::path::Path::exists),
+        unreadable: !config_readable(path.as_deref()),
     }
 }
 
@@ -887,11 +913,7 @@ fn draw_local_ssh_section(
         // 없다" 가 구분된다.
         selectable_text(
             ui,
-            if local.exists {
-                t("remote_tool.local_ssh_empty")
-            } else {
-                t("remote_tool.local_ssh_missing")
-            },
+            t(local_ssh_empty_key(local)),
             th.text_muted(),
             th.font_size_caption.value(),
             false,
@@ -3011,6 +3033,7 @@ mod tests {
             hosts,
             path: "~/.ssh/config".into(),
             exists: true,
+            unreadable: false,
         }
     }
 
@@ -3249,6 +3272,7 @@ mod tests {
                 hosts: Vec::new(),
                 path: "~/.ssh/config".into(),
                 exists: false,
+                unreadable: false,
             }),
             ..Default::default()
         };
@@ -3260,6 +3284,92 @@ mod tests {
                 .any(|s| s == t("remote_tool.local_ssh_missing")),
             "{texts:?}"
         );
+    }
+
+    #[test]
+    fn local_section_distinguishes_unreadable_config_from_empty_one() {
+        let profiles = RemoteProfiles::default();
+        let mut st = UiState {
+            local: Some(LocalSshCache {
+                hosts: Vec::new(),
+                path: "~/.ssh/config".into(),
+                // 파일은 있는데 못 읽었다 — "빈 설정" 과 다른 문구가 나와야 한다.
+                exists: true,
+                unreadable: true,
+            }),
+            ..Default::default()
+        };
+        let texts = painted_text(&profiles, &mut st, &[]);
+        assert!(
+            texts
+                .iter()
+                .any(|s| s == t("remote_tool.local_ssh_unreadable")),
+            "{texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|s| s == t("remote_tool.local_ssh_empty")),
+            "빈 설정 문구가 함께 떴다: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn empty_key_covers_three_causes() {
+        let base = LocalSshCache {
+            hosts: Vec::new(),
+            path: "~/.ssh/config".into(),
+            exists: true,
+            unreadable: false,
+        };
+        assert_eq!(
+            local_ssh_empty_key(&LocalSshCache {
+                exists: false,
+                ..base.clone()
+            }),
+            "remote_tool.local_ssh_missing"
+        );
+        assert_eq!(
+            local_ssh_empty_key(&LocalSshCache {
+                unreadable: true,
+                ..base.clone()
+            }),
+            "remote_tool.local_ssh_unreadable"
+        );
+        assert_eq!(local_ssh_empty_key(&base), "remote_tool.local_ssh_empty");
+    }
+
+    /// 권한 없는 실제 파일(mode 000)로 `config_readable` 이 분기를 태우는지 본다.
+    /// root 는 권한을 무시하므로 그 환경에서는 판정 자체가 성립하지 않아 건너뛴다.
+    #[test]
+    #[cfg(unix)]
+    fn config_readable_is_false_for_mode_000_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("config");
+        std::fs::write(
+            &path, "Host a
+",
+        )
+        .expect("write fixture");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
+
+        if std::fs::File::open(&path).is_ok() {
+            // root(또는 CAP_DAC_OVERRIDE) — mode 000 이어도 열린다.
+            return;
+        }
+        assert!(!config_readable(Some(&path)));
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("restore");
+        assert!(config_readable(Some(&path)));
+    }
+
+    #[test]
+    fn config_readable_is_true_when_path_is_absent() {
+        // 파일 없음 / 경로 미확정은 "권한 문제" 가 아니다 — 별도 문구가 담당한다.
+        assert!(config_readable(None));
+        assert!(config_readable(Some(std::path::Path::new(
+            "/definitely/not/here/config"
+        ))));
     }
 
     #[test]
