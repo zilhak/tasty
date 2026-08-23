@@ -469,6 +469,8 @@ fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
 ///
 /// 숨긴 대신 "더 있다" 는 정보는 가장자리 페이드로 보존한다. 스크롤(휠·드래그·키보드)은
 /// 그대로 동작한다 — 숨긴 것은 표시뿐이다.
+///
+/// 이 방식이 tasty 의 스크롤 어포던스 표준이다 — `docs/adr/0079-scroll-affordance-standard.md`.
 fn scroll_list_with_fade<R>(
     ui: &mut egui::Ui,
     th: &Theme,

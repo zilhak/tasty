@@ -89,3 +89,4 @@
 | 0076 | [surface close 정리 루프에서 다른 프로세스/스레드를 기다리는 구간을 걷어낸다](0076-close-path-per-surface-blocking-removal.md) | Accepted | 2026-08-22 | close-sequence, pty, observer, blocking, render-thread, latency, cross-platform, adr-0002 |
 | 0077 | [종료를 프레임 구동 상태 머신으로 전개하고 부팅과 같은 로딩 화면을 씌운다](0077-shutdown-loading-screen.md) | Accepted | 2026-08-23 | shutdown, boot, ui, state-machine, plugin |
 | 0078 | [종료 중 IPC 요청은 무시하지 않고 즉시 거절한다](0078-shutdown-rejects-pending-ipc.md) | Accepted | 2026-08-23 | shutdown, ipc, cli, error-handling, adr-0077 |
+| 0079 | [스크롤 어포던스 표준은 "스크롤바 숨김 + 가장자리 페이드" — 폭 예약은 예외로만 남긴다](0079-scroll-affordance-standard.md) | Accepted | 2026-08-23 | ui, scroll, egui, affordance, popup, table, remote-tool, port-scanner |

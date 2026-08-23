@@ -1940,6 +1940,11 @@ fn draw_table(
     // 본문 가용폭: 세로 스크롤바 폭 + leading fav 컬럼(28px, ColumnId 밖 — chooser 로
     // 숨길 수 없는 상시 컬럼) 만큼 빼서, 세로 스크롤이 생겨도 가짜 가로 스크롤이 뜨지
     // 않게 하고 나머지 7컬럼 폭 계산은 기존 그대로 둔다.
+    //
+    // 이 폭 예약은 tasty 의 스크롤 어포던스 표준(스크롤바 숨김 + 가장자리 페이드)에 대한
+    // **문서화된 예외**다 — 여기서 빼는 폭은 여백이 아니라 Exact 컬럼 폭과 가로 스크롤
+    // 발생 여부를 함께 정하는 계산 입력이다. 예외 조건과 근거는
+    // `docs/adr/0079-scroll-affordance-standard.md`.
     let scrollbar_reserve = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
     let fav_reserve = FAV_COL_WIDTH + ui.spacing().item_spacing.x;
     let available = (ui.available_width() - scrollbar_reserve - fav_reserve).max(0.0);
