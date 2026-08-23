@@ -27,7 +27,8 @@ use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
 use tasty_ui_widgets::vspace;
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
@@ -36,6 +37,12 @@ pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
+
+/// 행 액션 아이콘(가져오기 / 편집 / 삭제 / 재감지 / reveal) 글리프 크기. 디자인
+/// 확정값 15 는 `icon_glyph_size_sm`(14) 과 `_md`(16) 사이라 대응 토큰이 없다 —
+/// 인라인 리터럴로 흩뿌리는 대신 명명 구조 상수로 한 곳에 고정한다
+/// (`docs/design/systems/theme.md` "UI 디자인 규칙" 의 명명 구조 상수 예외).
+const ROW_ACTION_GLYPH: LogicalPx = LogicalPx(15.0);
 
 /// 프로토콜 필터의 *적용된* hidden(=제외) 집합 저장 키. **`UI_MEMORY_ID` 와 분리** —
 /// `clear_ui` 가 popup 닫힘마다 `UI_MEMORY_ID` 만 지우므로 이 키는 보존되어 popup
@@ -595,7 +602,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         // 디자인 헤더 gap 9 (토큰 아닌 raw — 가장 가까운 토큰 spacing_sm=8 과 1px 차).
         ui.spacing_mut().item_spacing.x = 9.0;
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
-        ui.add(icons::TERMINAL_PROMPT.image(16.0, th.text_muted().into()));
+        ui.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
             egui::RichText::new(t("remote_tool.heading"))
                 .color(th.text_primary())
@@ -605,8 +612,10 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add(
-                    egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::CLOSE.image(th.icon_glyph_size_md.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.close"))
                 .clicked()
@@ -897,8 +906,10 @@ fn draw_local_ssh_section(
             // 아니라 로컬 파일 재로드) — 툴팁으로 가른다.
             if ui
                 .add(
-                    egui::ImageButton::new(icons::REFRESH.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::REFRESH.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.local_ssh_refresh"))
                 .clicked()
@@ -941,7 +952,7 @@ fn draw_local_ssh_row(
     let mut out = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
             selectable_label(
                 ui,
                 &h.alias,
@@ -974,8 +985,10 @@ fn draw_local_ssh_row(
             // 이미 가져온 alias 는 비활성 — 같은 호스트를 두 번 등록하는 사고를 막는다.
             let btn = ui.add_enabled(
                 imported.is_none(),
-                egui::ImageButton::new(icons::DOWNLOAD.image(15.0, th.text_muted().into()))
-                    .frame(false),
+                egui::ImageButton::new(
+                    icons::DOWNLOAD.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                )
+                .frame(false),
             );
             if imported.is_none()
                 && btn
@@ -1009,7 +1022,7 @@ fn filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> 
     };
     ui.add(
         egui::Button::image_and_text(
-            icons::FUNNEL.image(14.0, text_col),
+            icons::FUNNEL.image(th.icon_glyph_size_sm.value(), text_col),
             egui::RichText::new(label)
                 .color(text_col)
                 .size(th.font_size_body.value()),
@@ -1165,7 +1178,7 @@ fn draw_profile_row(
     let detecting_now = detecting == Some(p.name.as_str());
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
             // row1: name + type badge
             ui.horizontal(|ui| {
                 let title = match &p.label {
@@ -1269,8 +1282,10 @@ fn draw_profile_row(
             // right_to_left 이라 추가 순서 = 우→좌. 디자인 우측 끝이 trash.
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::TRASH.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
@@ -1279,8 +1294,10 @@ fn draw_profile_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::EDIT.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
@@ -1291,8 +1308,10 @@ fn draw_profile_row(
                 && ui
                     .add_enabled(
                         !detecting_now,
-                        egui::ImageButton::new(icons::REFRESH.image(15.0, th.text_muted().into()))
-                            .frame(false),
+                        egui::ImageButton::new(
+                            icons::REFRESH.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                        )
+                        .frame(false),
                     )
                     .on_hover_text(t("remote_tool.refresh_tooltip"))
                     .clicked()
@@ -1880,7 +1899,7 @@ fn draw_attach_row(
     let mut out = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
             // row1: name + (label) + mode 태그 + inactive 배지
             ui.horizontal(|ui| {
                 let title = match &p.label {
@@ -1955,8 +1974,10 @@ fn draw_attach_row(
             // 아이콘 버튼 (디자인 IconButton): delete / edit. RTL 이라 우측 끝이 trash.
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::TRASH.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
@@ -1965,8 +1986,10 @@ fn draw_attach_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::EDIT.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
@@ -2430,7 +2453,7 @@ fn draw_passkey_row(
     let mut out = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
             ui.horizontal(|ui| {
                 selectable_label(
                     ui,
@@ -2469,8 +2492,10 @@ fn draw_passkey_row(
             // 아이콘 버튼 (디자인 IconButton): delete / edit / reveal(eye 토글).
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::TRASH.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
@@ -2479,8 +2504,10 @@ fn draw_passkey_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        icons::EDIT.image(ROW_ACTION_GLYPH.value(), th.text_muted().into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
@@ -2495,8 +2522,10 @@ fn draw_passkey_row(
             };
             if ui
                 .add(
-                    egui::ImageButton::new(reveal_icon.image(15.0, reveal_tint.into()))
-                        .frame(false),
+                    egui::ImageButton::new(
+                        reveal_icon.image(ROW_ACTION_GLYPH.value(), reveal_tint.into()),
+                    )
+                    .frame(false),
                 )
                 .on_hover_text(t("remote_tool.reveal_tooltip"))
                 .clicked()
