@@ -191,6 +191,8 @@ kind 소스로 쓴다.
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
+| (디자인 없음 — `icons.json` `fit`/`close` 글리프 조합) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
+| (디자인 없음 — 기존 타이틀바 + `fit` 글리프) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
 ## Layouts — plugins window (1-depth idiom)
 
@@ -218,7 +220,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 |---|---|---|
 | `specimen.rs` | `caption` / `case_title` | 전 prim_* + rename_popup·sidebar |
 | `toast_card.rs` | `accent_color` / `draw_card` (`CardColors`) | toast(components/widgets) |
-| `popup_frame.rs` | `draw` (`ContentInset`) — surface-raised 프레임 + border-strong | approval · convert · file_handler_picker · dialog |
+| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | approval · convert · file_handler_picker · dialog · fullscreen_stage |
 
 ## Primitive 컴포넌트 레이어 (Components)
 

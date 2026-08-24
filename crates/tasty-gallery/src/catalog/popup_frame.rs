@@ -17,6 +17,95 @@ use tasty_type_appearance::theme::Theme;
 pub const TITLE_BAR_HEIGHT: f32 = 28.0;
 /// 본체 popup 상수 — 콘텐츠 상/하 여백.
 pub const CONTENT_MARGIN: f32 = 4.0;
+/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변.
+pub const TITLE_BTN_SIZE: f32 = 20.0;
+/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백.
+pub const TITLE_BTN_EDGE_PAD: f32 = 4.0;
+
+/// 타이틀바 우측 버튼 세트. 본체 `PopupManager` 구성과 같다 — close(X) 는 타이틀바가
+/// 있는 모든 popup 에, fullscreen 은 **전체화면 무대를 선언한 popup** 에만 붙는다
+/// (`PopupDef.fullscreen_stage`).
+#[derive(Clone, Copy, Default)]
+pub struct TitleButtons {
+    /// close 왼쪽의 전체화면 버튼(디자인 `fit` 글리프).
+    pub fullscreen: bool,
+    /// 타이틀바 우측 끝의 X.
+    pub close: bool,
+}
+
+impl TitleButtons {
+    /// 버튼 없음 — 이 헬퍼를 쓰는 기존 popup frame 데모의 기본값.
+    pub const NONE: Self = Self {
+        fullscreen: false,
+        close: false,
+    };
+    /// X 만.
+    pub const CLOSE: Self = Self {
+        fullscreen: false,
+        close: true,
+    };
+    /// 전체화면 + X — 무대를 선언한 popup(현재 `notifications`).
+    pub const FULLSCREEN_AND_CLOSE: Self = Self {
+        fullscreen: true,
+        close: true,
+    };
+}
+
+/// 타이틀바 우측 버튼군을 그린다. 본체가 `ctx.layer_painter` 하나로 타이틀바 전체를
+/// 그리므로(그 구간엔 `Ui` 가 없다) 두 글리프 모두 painter 직선이다 — 형상은
+/// canonical `close`/`fit` 글리프와 같고, SVG `Image` 를 쓸 수 없을 뿐이다.
+///
+/// 반환값은 제목 텍스트가 침범하면 안 되는 **버튼군 좌변** — 제목 elide 가용 폭의
+/// 기준이다(본체 `PopupState::title_buttons_left_x`).
+pub fn draw_title_buttons(
+    painter: &egui::Painter,
+    theme: &Theme,
+    title_rect: egui::Rect,
+    buttons: TitleButtons,
+) -> f32 {
+    let fg: egui::Color32 = theme.text_muted().into();
+    let close_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            title_rect.max.x - TITLE_BTN_SIZE * 0.5 - TITLE_BTN_EDGE_PAD,
+            title_rect.center().y,
+        ),
+        egui::Vec2::splat(TITLE_BTN_SIZE),
+    );
+    let mut left = title_rect.max.x;
+    if buttons.close {
+        let c = close_rect.center();
+        let x = 5.0;
+        let stroke = egui::Stroke::new(1.5, fg);
+        painter.line_segment([c - egui::vec2(x, x), c + egui::vec2(x, x)], stroke);
+        painter.line_segment([c + egui::vec2(-x, x), c + egui::vec2(x, -x)], stroke);
+        left = close_rect.min.x;
+    }
+    if buttons.fullscreen {
+        // close 왼쪽, 4px(space-xs) 간격.
+        let rect = egui::Rect::from_center_size(
+            egui::pos2(
+                close_rect.center().x - TITLE_BTN_SIZE - theme.spacing_xs.value(),
+                close_rect.center().y,
+            ),
+            close_rect.size(),
+        );
+        // 디자인 `fit` — 24 viewBox 안 브래킷 사각형 18, 팔 길이 5.
+        let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
+        let arm = g.width() * (5.0 / 18.0);
+        let stroke = egui::Stroke::new(1.5, fg);
+        for (corner, dx, dy) in [
+            (g.left_top(), 1.0, 1.0),
+            (g.right_top(), -1.0, 1.0),
+            (g.left_bottom(), 1.0, -1.0),
+            (g.right_bottom(), -1.0, -1.0),
+        ] {
+            painter.line_segment([corner, corner + egui::vec2(arm * dx, 0.0)], stroke);
+            painter.line_segment([corner, corner + egui::vec2(0.0, arm * dy)], stroke);
+        }
+        left = rect.min.x;
+    }
+    left
+}
 
 /// 콘텐츠 영역 inset (호출부별 차이를 명시).
 #[derive(Clone, Copy)]
@@ -43,6 +132,7 @@ impl ContentInset {
 /// `total_h` 로 높이를 직접 받아 popup frame 을 그린다 (높이 계산은 호출부 책임).
 ///
 /// `paint` 는 콘텐츠 영역에 묶인 child Ui 를 받는다.
+#[allow(clippy::too_many_arguments)] // reason: popup frame 은 chrome 파라미터가 본래 많다.
 pub fn draw(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -50,6 +140,7 @@ pub fn draw(
     width: f32,
     total_h: f32,
     inset: ContentInset,
+    buttons: TitleButtons,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
     let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
@@ -91,6 +182,7 @@ pub fn draw(
         egui::FontId::proportional(theme.font_size_body.value()),
         text_color,
     );
+    draw_title_buttons(&painter, theme, title_rect, buttons);
 
     let content_top = title_rect.bottom() + CONTENT_MARGIN;
     let content_rect = egui::Rect::from_min_max(

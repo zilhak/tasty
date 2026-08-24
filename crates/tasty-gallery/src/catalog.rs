@@ -655,6 +655,28 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "fullscreen-stage",
+                    "Fullscreen stage — the window-wide surface",
+                    vec![
+                        spec(
+                            "fullscreen-stage",
+                            "Shell: scrim, title, exit button",
+                            Some(
+                                "Separate content in the popup's shape — the original popup stays open behind it",
+                            ),
+                            components::fullscreen_stage::draw,
+                        ),
+                        spec(
+                            "fullscreen-stage-titlebar",
+                            "Entry point — the popup title bar button",
+                            Some(
+                                "Only a popup that declares a stage gets it · 20px square left of the X",
+                            ),
+                            components::fullscreen_stage::draw_titlebar,
+                        ),
+                    ],
+                ),
+                section(
                     "banner",
                     "Banner — the floating top notice",
                     vec![
