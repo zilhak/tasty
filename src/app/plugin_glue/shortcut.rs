@@ -147,7 +147,11 @@ impl App {
         // overlay/popup이 키를 가져갈 상태면 patcher. plugin popup 도 포함한다 —
         // 그 popup 이 키를 받는 동안 surface 단축키가 같은 키를 또 소비하면 이중
         // 처리다(키 게이트와 같은 단일 출처를 쓴다).
-        if main.state.keyboard_overlay_open() {
+        //
+        // 전체화면 무대도 같이 막는다. 이 경로는 `dispatch_window_event_to_view` **이전에**
+        // 호출되므로(`app/event_handler.rs`) `keyboard.rs` 의 0단계 무대 게이트가 아예 도달하지
+        // 못한다 — 무대 중 plugin 단축키 발화는 여기서 직접 막아야 한다.
+        if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return false;
         }
         let focused = crate::plugin_bridge::key_dispatch::focused_plugin_surface(

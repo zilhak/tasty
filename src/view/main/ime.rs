@@ -60,7 +60,11 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     // Enabled/Disabled는 IME 상태 추적용이므로 허용하고, Preedit/Commit만 차단.
     // 키 게이트와 같은 단일 출처 — plugin egui-mesh popup 이 열려 있을 때도 IME
     // Preedit/Commit 이 터미널로 새면 안 된다(그 조합은 popup 이 받아야 한다).
-    let overlay_open = w.state.keyboard_overlay_open();
+    //
+    // 전체화면 무대도 같은 취급이다 — 무대가 뜨면 뒤 터미널은 그려지지도 않는데, 이 항이
+    // 빠지면 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY 로 샌다. 무대만 떠 있고 다른
+    // 오버레이가 없으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막는다.
+    let overlay_open = w.state.keyboard_overlay_open() || w.state.fullscreen_stage_active();
     if overlay_open {
         match event {
             Ime::Enabled => {
