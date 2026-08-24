@@ -11,13 +11,17 @@ use super::{StageAction, StageDef};
 pub fn all_defs() -> &'static [StageDef] {
     static DEFS: OnceLock<Vec<StageDef>> = OnceLock::new();
     DEFS.get_or_init(|| {
-        vec![StageDef {
+        #[allow(unused_mut)] // reason: 테스트 빌드에서만 push 한다.
+        let mut defs = vec![StageDef {
             id: "blank",
             title_key: "fullscreen.blank.title",
             draw_fn: draw_blank_stage,
             // 상태 미보유 — 정리할 것이 없다.
             on_close: None,
-        }]
+        }];
+        #[cfg(test)]
+        defs.push(test_stage_def());
+        defs
     })
 }
 
@@ -35,4 +39,30 @@ fn draw_blank_stage(
     _engine: &mut crate::core::CoreState,
 ) -> StageAction {
     StageAction::None
+}
+
+/// 테스트 전용 두 번째 무대. 무대 **교체**(A 가 정리되고 B 만 남는다) 계약은 정의가 둘
+/// 이상일 때만 실제로 걷힌다 — 테이블이 컴파일 타임 고정이라 테스트가 바깥에서 더미
+/// 무대를 끼워 넣을 방법이 없어, 여기서 `#[cfg(test)]` 로 하나 더 등록한다. release
+/// 빌드에는 존재하지 않는다. `on_close` 가 카운터를 올리므로 훅이 **실제로 발화했는지**
+/// 까지 단정할 수 있다.
+#[cfg(test)]
+pub(crate) const TEST_STAGE_ID: super::StageId = "__test_second";
+
+/// [`TEST_STAGE_ID`] 무대의 `on_close` 발화 횟수. 이 무대를 닫는 테스트가 하나뿐이라
+/// 병렬 실행에서도 델타가 결정적이다.
+#[cfg(test)]
+pub(crate) static TEST_STAGE_CLOSES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+fn test_stage_def() -> StageDef {
+    StageDef {
+        id: TEST_STAGE_ID,
+        title_key: "fullscreen.blank.title",
+        draw_fn: draw_blank_stage,
+        on_close: Some(|_ctx, _state, _engine| {
+            TEST_STAGE_CLOSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }),
+    }
 }

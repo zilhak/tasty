@@ -14,16 +14,16 @@ fn run_stage_frame(state: &mut crate::state::AppState, engine: &mut crate::core:
     let ctx = egui::Context::default();
     // 반환된 `FullOutput` 은 이 헬퍼의 관심사가 아니다 — 여기서 보는 것은 프레임을
     // 돈 뒤의 `state` 뿐이다(그린 shape 를 세는 테스트는 따로 있다).
-    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+    drop(ctx.run(egui::RawInput::default(), |ctx| {
         crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
-    });
+    }));
 }
 
 /// 일반 프레임 경로(무대가 없을 때 도는 쪽)를 한 번 돌린다.
 fn run_normal_frame(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
     let ctx = egui::Context::default();
     // 위와 같은 이유로 `FullOutput` 은 버린다 — 검사 대상은 프레임 후의 `state`.
-    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+    drop(ctx.run(egui::RawInput::default(), |ctx| {
         draw_popups(
             ctx,
             state,
@@ -37,7 +37,7 @@ fn run_normal_frame(state: &mut crate::state::AppState, engine: &mut crate::core
             },
             1.0,
         );
-    });
+    }));
 }
 
 #[test]
@@ -62,18 +62,28 @@ fn unknown_stage_id_is_rejected() {
 
 #[test]
 fn only_one_stage_at_a_time() {
-    let (mut state, _engine) = test_state();
-    // 정적 테이블에 무대가 하나뿐이면 A→B 전환을 실제 id 로 만들 수 없다 — 그 경우
-    // "같은 id 재진입은 no-op" 쪽(아래 테스트)만 성립하고 이 케이스는 vacuous 다.
-    let ids: Vec<_> = fullscreen::defs::all_defs().iter().map(|d| d.id).collect();
-    let (Some(a), Some(b)) = (ids.first().copied(), ids.get(1).copied()) else {
-        return;
-    };
-    assert!(state.open_fullscreen_stage(a));
+    use std::sync::atomic::Ordering;
+
+    let (mut state, mut engine) = test_state();
+    // 교체 계약은 정의가 둘 이상일 때만 실제로 걷힌다. 두 번째 무대는 테이블에
+    // `#[cfg(test)]` 로 등록돼 있다(`fullscreen::defs::TEST_STAGE_ID`).
+    let b = fullscreen::defs::TEST_STAGE_ID;
     assert!(state.open_fullscreen_stage(b));
-    // A 가 정리되고 B 만 남는다 — 거절이 아니라 교체가 계약이다.
-    assert_eq!(state.fullscreen_stage_id(), Some(b));
-    assert_eq!(state.stage_closed_queue, vec![a]);
+    let closes_before = fullscreen::defs::TEST_STAGE_CLOSES.load(Ordering::Relaxed);
+
+    assert!(state.open_fullscreen_stage("blank"));
+    // B 가 정리되고 A 만 남는다 — 거절이 아니라 교체가 계약이다.
+    assert_eq!(state.fullscreen_stage_id(), Some("blank"));
+    assert_eq!(state.stage_closed_queue, vec![b]);
+
+    // 큐에 들어간 것으로 끝이 아니라, 다음 프레임에 훅이 **실제로** 발화해야 한다.
+    run_stage_frame(&mut state, &mut engine);
+    assert!(state.stage_closed_queue.is_empty());
+    assert_eq!(
+        fullscreen::defs::TEST_STAGE_CLOSES.load(Ordering::Relaxed),
+        closes_before + 1,
+        "교체로 밀려난 무대의 on_close 가 발화하지 않았다"
+    );
 }
 
 #[test]

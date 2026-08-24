@@ -178,10 +178,10 @@ fn visit(dir: &Path, f: &mut impl FnMut(&Path, &str)) {
         let p = entry.path();
         if p.is_dir() {
             visit(&p, f);
-        } else if p.extension().is_some_and(|e| e == "rs") {
-            if let Ok(text) = std::fs::read_to_string(&p) {
-                f(&p, &text);
-            }
+        } else if p.extension().is_some_and(|e| e == "rs")
+            && let Ok(text) = std::fs::read_to_string(&p)
+        {
+            f(&p, &text);
         }
     }
 }
