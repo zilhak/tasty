@@ -42,7 +42,8 @@ struct CollectedPluginEvents {
     // SurfaceInvalidated 알림 (단계 06): idle 상태에서 plugin 이 파일 변경 등을 알린
     // surface_id. `App::event_handler` 가 pump 후 `take_invalidated_surfaces` 로 드레인.
     new_invalidated: Vec<u32>,
-    // PopupInvalidated 알림(`docs/dev-guide/egui-mesh-channel.md` "popup 대응"): idle 상태에서 plugin 이 self-repaint(egui
+    // PopupInvalidated 알림(`docs/dev-guide/egui-mesh-channel.md` "popup 대응"):
+    // idle 상태에서 plugin 이 self-repaint(egui
     // viewport_output) 를 요청한 popup instance_id. `App::event_handler` 가 pump 후
     // `take_invalidated_popups` 로 드레인.
     new_invalidated_popups: Vec<u64>,

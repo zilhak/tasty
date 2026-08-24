@@ -354,7 +354,8 @@ pub struct PluginManager {
     /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
     /// `take_invalidated_surfaces` 가 드레인한다.
     pub(super) invalidated_surfaces: Vec<u32>,
-    /// `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup 대응") 로 알려진 popup instance_id 누적 — egui
+    /// `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup 대응") 로
+    /// 알려진 popup instance_id 누적 — egui
     /// `viewport_output` self-repaint 요청(스크롤 스무딩 등) 처럼 무입력 상태에서
     /// plugin 이 재-forward 를 요청한 egui-mesh popup(git-viewer/clipboard-viewer 등).
     /// `pump()` 가 채우고 `take_invalidated_popups` 가 드레인한다.

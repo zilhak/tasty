@@ -1,4 +1,5 @@
-//! attach mesh mirror 클라이언트측 surface (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
+//! attach mesh mirror 클라이언트측 surface
+//! (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
 //!
 //! `EguiMeshSurface`(호스트 모델)는 "로컬 `PluginManager`가 관리하는 실제 plugin"을
 //! 전제하는 `plugin_id` 필드를 갖는다 — attach mirror(로컬에 그 plugin 프로세스가
