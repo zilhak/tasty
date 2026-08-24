@@ -27,6 +27,7 @@ use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
 use tasty_ui_widgets::vspace;
 
@@ -36,6 +37,12 @@ pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
+
+/// 프로토콜 필터 드롭다운의 최소 폭. 대응 `Theme` 토큰이 없는 이 팝업 고유 레이아웃
+/// 치수라 명명 구조 상수로 둔다(같은 파일의 `LABEL_COL_WIDTH` 선례).
+const FILTER_DROPDOWN_MIN_WIDTH: LogicalPx = LogicalPx(216.0);
+/// 프로토콜 필터 목록의 최대 높이 — 넘으면 스크롤. 위와 같은 성격의 구조 상수다.
+const FILTER_DROPDOWN_MAX_HEIGHT: LogicalPx = LogicalPx(168.0);
 
 /// 프로토콜 필터의 *적용된* hidden(=제외) 집합 저장 키. **`UI_MEMORY_ID` 와 분리** —
 /// `clear_ui` 가 popup 닫힘마다 `UI_MEMORY_ID` 만 지우므로 이 키는 보존되어 popup
@@ -669,12 +676,14 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
                 th.text_muted().into()
             },
         );
-        // 활성 탭 하단 2px accent — separator 위에 그려 덮는다.
+        // 활성 탭 하단 accent bar — separator 위에 그려 덮는다. 굵기는 다른 탭
+        // 지표(explorer/preset)와 같은 `tab_indicator_width`, 덮을 separator 두께는
+        // `border_width`. 둘 다 얇은 구조선이라 zoom 을 타지 않는다(값 불변).
         if on {
             ui.painter().hline(
                 rect.x_range(),
-                bar.max.y - 1.0,
-                egui::Stroke::new(2.0, th.accent_primary()),
+                bar.max.y - th.border_width.value(),
+                egui::Stroke::new(th.tab_indicator_width.value(), th.accent_primary()),
             );
         }
         if resp.clicked() && st.tab != tab {
@@ -1063,7 +1072,7 @@ fn draw_protocol_filter(
         egui::AboveOrBelow::Below,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(216.0);
+            ui.set_min_width(FILTER_DROPDOWN_MIN_WIDTH.value());
             selectable_label(
                 ui,
                 t("remote_tool.filter_title"),
@@ -1073,7 +1082,7 @@ fn draw_protocol_filter(
             );
             ui.add_space(th.spacing_xs.value());
             egui::ScrollArea::vertical()
-                .max_height(168.0)
+                .max_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
                 .show(ui, |ui| {
                     for proto in protocols {
                         ui.horizontal(|ui| {
