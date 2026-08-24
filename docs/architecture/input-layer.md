@@ -12,6 +12,7 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 | 순서 | 레이어 | 판정 | 동작 |
 |------|--------|------|------|
+| **0** | **전체화면 무대** | `state.fullscreen_stage_active()` | 활성이면 **1~7 전부를 좌표 판정 없이 무조건 차단**(아래) |
 | 1 | 모달/오버레이 | `overlay_open` | 열려 있으면 터미널 입력 차단 |
 | 2 | Popup | `state.popup_hovered` | 팝업 위면 소비(터미널 무시) |
 | 2b | Modifier-hint 오버레이 | `state.modifier_hint_hovered` | 오버레이 위면 소비 **+ 비활성 surface 전환도 차단**(popup 과 동급) — 드래그/리사이즈/X 클릭이 하위 surface 포커스로 안 샘 |
@@ -28,6 +29,14 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 **진행 중인 divider 드래그는 surface 콘텐츠보다 우선한다(순서 6 > 순서 7).** egui-mesh surface(마크다운·이미지)는 포인터 이동/버튼을 surface-local 로 forward 하고 소비하는 별도 경로(`egui_mesh_target_at`)를 갖는데, 이 forward 는 표의 순서 7(콘텐츠) 성격이므로 **`dragging_divider.is_some()` 일 때는 건너뛴다** — `handle_cursor_moved`(포인터 이동)와 `handle_mouse_input`(버튼)의 egui-mesh forward 가드에 `dragging_divider.is_none()` 조건을 둔다. 없으면 드래그 중 커서가 egui-mesh surface 영역으로 들어갈 때 forward 가 early-return 하여 divider 갱신이 멈추고(멈춤), release 도 forward 로 소비돼 드래그가 확정/해제되지 않는다(sticky). 터미널/explorer surface 는 egui-mesh 가 아니라 이 경로를 타지 않아 원래도 정상.
 
 **Modifier-hint 오버레이**(modifier 홀드 시 뜨는 focus-less 패널)도 마우스를 소비하지만 배너보다 한 단계 강하다: 위 통합 가드(소비·휠·커서)에 더해 **click-to-activate 전환 가드**(`!popup_hovered && !modifier_hint_hovered`)에도 들어가, 오버레이 위 좌클릭이 하위 surface 로 **포커스를 옮기지 못하게** 막는다(popup 과 동급, banner 와 차이). 오버레이 드래그 이동·테두리/코너 리사이즈·X 클릭이 터미널 포커스·selection·마우스 리포트로 새지 않는다 — 키보드 포커스는 애초에 취득하지 않는다(원칙3, [banner 와 동일한 focus-less 성질]). 4지점 배선: `handle_mouse_input` 의 click-to-activate press 가드 + 통합 소비 가드, `handle_mouse_wheel`, `handle_cursor_moved`.
+
+### 순서 0 — 전체화면 무대는 좌표를 묻지 않는다
+
+[전체화면 무대](../design/systems/fullscreen-stage.md)가 활성이면 그 위 어떤 레이어도 뒤 세계의 입력을 받지 못한다. 이 단이 표의 다른 단들과 다른 점은 **hit-test 가 없다**는 것이다 — popup(`popup_hovered`)·배너(`banner_hovered`)는 "포인터가 그 위인가" 를 묻지만, 무대는 화면 전체를 덮으므로 물을 이유가 없고 뒤 위젯은 그려지지도 않은 상태라 그 좌표로 판정하는 것 자체가 유령 입력이다. "투과는 기본이 아니다" 원칙의 최상위 사례다.
+
+배선은 `MainView::mouse_overlay_open()`(= `settings_open || fullscreen_stage_active()`) 한 곳으로 모아, 통합 가드·click-to-activate press 가드·휠·커서 이동·OS 가장자리 리사이즈 양보·링크 hover 계산이 전부 같은 값을 보게 했다. 커서 아이콘도 무대 중에는 `winit_cursor_icon_at` 이 조기 반환한다(무대 프레임의 커서는 egui `platform_output` 이 정한다).
+
+**키보드는 별도 배선이다.** 마우스 계층과 달리 키보드에는 `handle_keyboard_input` 파이프라인의 **0단계 게이트**를 새로 세웠다(double-tap 1~3단계보다 앞). 무대 중 ESC 는 그 자리에서 무대만 닫고 즉시 `return` 하므로 4단계(settings/notifications 닫기)에 도달하지 않는다 — "무대 종료 ESC 는 뒤로 전파되지 않는다" 는 사용자 확정 계약이다. 입력 계약 전체(IME·진입 시 정리·OS 레벨 UI·모달과의 공존)는 [fullscreen-stage.md § 입력 계약](../design/systems/fullscreen-stage.md#입력-계약).
 
 ### 비활성 surface 클릭 = 전환 우선 (click-to-activate swallow)
 
@@ -131,6 +140,8 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 - 마우스는 `src/view/main.rs` 의 이벤트 분기에서 **항상 무조건** egui 로 먼저 전달되고 `egui_consumed` 로 결과를 받는다 — 라우팅 전제 자체가 없다. Popup 위 클릭은 이미 `egui_consumed`/`popup_hovered`(위치 기반)로 정확히 처리되므로, mouse.rs 의 `overlay_open`(=`settings_open`)은 **모달(별도 OS 창) 전용** 보강 게이트일 뿐이다. `has_input_dialog_open()`(rename, popup 시스템으로 구현됨)과 `popups.has_focused()`는 정책상 Popup 이 비모달이라 위치 밖 클릭까지 막을 이유가 없어 여기 안 들어간다.
 
 **plugin egui-mesh popup 의 키보드 계층**: 이 popup 은 host `PopupManager` 소속이 아니라 `popups.has_focused()` 로 잡히지 않지만, 키보드 계층에서는 **focused host popup 과 동급**이다 — 열려 있으면 키/IME 가 egui 로 들어가고 터미널로는 안 간다. 그 키는 `collect_mesh_popup_input` 이 `ctx.input` 에서 긁어 plugin 프로세스로 forward 하므로, 게이트가 닫혀 있으면 forward 소스가 비어 입력이 통째로 터미널로 샌다. 게이트 지점(winit 이벤트 핸들러)은 `PluginManager` 에 접근할 수 없어 `AppState.plugin_popup_open` 캐시를 읽는다 — 마우스 쪽 `popup_hovered` 와 같은 프레임 간 전달 패턴이다(위 "프레임 간 전달" 절). 같은 술어를 IME 라우팅(`view::main::ime`)과 plugin surface 단축키 게이트(`app::plugin_glue::shortcut`)도 공유한다. 예외는 `set_ime_allowed` 판정(`gfx/gpu.rs`) 하나 — plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다. 겹친 popup 중 **누가** 키를 갖는지는 [popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order) 의 Esc 소유권 규칙을 따른다.
+
+**무대는 이 세 정의 중 어느 하나에 얹어도 나머지가 따라오지 않는다.** `AppState::has_egui_overlay_open`(세 번째 정의)에 무대가 들어가 있지만 그 함수의 프로덕션 소비처는 WebView 표시 여부 하나뿐이고, 키보드/IME 경로와 mouse.rs 는 각자의 식을 본다. 그래서 무대는 **세 곳 모두에 명시적으로** 배선했다 — (1) `keyboard.rs` 0단계 게이트(뒤로 안 보냄), (2) `mouse_overlay_open()`(마우스 전 지점), (3) `view/main.rs` 의 egui feed 게이트(무대 콘텐츠로 보냄). (3)만 방향이 반대라는 점에 주의한다: 무대 콘텐츠는 egui 위젯이라 키/IME 가 egui 에 들어가야 살고, 뒤로의 누수는 (1)이 막는다.
 
 알려진 미해소 사안: popup 바깥 클릭이 popup 을 닫으면서, 그 클릭이 겨냥한 하위 액션도 같은 클릭에서 함께 발생한다. 닫힘만 소비하고 액션을 막을지는 UX 판단이 필요해 별개 사안으로 분리돼 있다.
 

@@ -1,9 +1,9 @@
 # 전체화면 무대 (Fullscreen stage)
 
-- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼까지 있다. 키보드 탈출 단축키 · 에이전트(debug IPC) 진입 · 입력 게이트는 아직 없다.
+- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트(ESC 종료 포함)까지 있다. 에이전트(debug IPC) 진입은 아직 없다.
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
-- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs`
+- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs`
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md)
 
 ## 목적
@@ -40,6 +40,12 @@
   보류했다가 무대를 나온 첫 프레임에 1 회 적용한다.
 - **WebView**: 네이티브 자식 뷰라 "안 그린다" 로는 사라지지 않는다. 무대는
   `has_egui_overlay_open()` 에 참여해 popup 과 같은 게이트로 `set_visible(false)` 를 받는다.
+- **입력**: 무대는 입력 계층의 새 최상위 단이다 — 활성이면 뒤 세계의 키보드/마우스가 전부
+  막힌다(좌표 판정 없이). ESC 는 무대만 닫고 **뒤로 전파되지 않는다**(settings 모달·
+  notifications 팝업이 함께 열려 있어도 그것들은 닫히지 않는다). 무대 콘텐츠는 egui 위젯이라
+  키/IME/클릭을 정상적으로 받는다. 진입 시 진행 중이던 IME 조합·드래그·네이티브 메뉴·파일
+  드래그는 확정하지 않고 폐기한다. 계약 전체는
+  [`design/systems/fullscreen-stage.md` § 입력 계약](../../design/systems/fullscreen-stage.md#입력-계약).
 
 ## 인터페이스
 
@@ -51,10 +57,11 @@
 
 ## 아직 없는 것
 
-- **입력 게이트** — 무대는 화면만 갈아끼운다. 키보드/마우스 경로는 무대를 모르므로 무대 중에도
-  키는 터미널로 가고 클릭은 뒤의 위젯 좌표로 판정된다.
-- **키보드 탈출 수단** — 마우스 탈출은 셸이 공통 제공하는 종료 버튼으로 되지만, 무대 프레임은
-  CSD 타이틀바까지 지우므로 그 버튼이 유일한 탈출 수단이다. 단축키는 아직 없다.
+- **종료 키의 설정화** — 지금 무대를 닫는 것은 하드코딩 기본값 ESC 다(판정은
+  `stage_exit_key_matches` 한 곳). `KeybindingSettings` 필드로 노출하는 것은 후속 작업이다
+  (모든 단축키는 설정으로 노출되어야 한다는 정책).
+- **에이전트(debug IPC) 진입** — 무대는 화면 투영이라 release 표면을 두지 않는다. debug 격리
+  표면은 후속 작업이다.
 
 경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
 "아직 없는 것" 절.
@@ -109,3 +116,14 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
 - [ ] Given maximize 창에서 무대 진입 When 무대 종료 Then maximize 로 복귀
 - [ ] Given 이미 OS fullscreen 인 창에서 무대 진입 When 무대 종료 Then fullscreen 유지
 - [ ] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
+- [ ] Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
+- [ ] Given 무대 활성 When 문자 키 주입 Then 뒤 터미널에 그 문자가 들어가지 않는다
+- [ ] Given 무대 활성 When 등록 단축키(사이드바 토글 등) 주입 Then 발화하지 않는다
+- [ ] Given 무대 활성 When 뒤 surface 좌표 클릭 주입 Then 포커스가 이동하지 않는다
+- [ ] Given 무대 활성 When `debug.pending_menu` 조회 Then 대기 중 네이티브 메뉴가 없다
+
+**수동 확인 대상** — IPC 로 재현할 수 없다:
+
+- IME 조합 중 무대 진입 시 조합 문자가 PTY 로 새지 않음(실제 IME 입력 필요)
+- OS 인터랙티브 스크린샷 선택 UI 가 무대 중 뜨지 않음(OS 레벨 UI)
+- 네이티브 파일 드래그가 무대 중 시작되지 않음(OS 레벨 드래그 세션)
