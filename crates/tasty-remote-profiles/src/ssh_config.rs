@@ -75,9 +75,14 @@ pub fn user_config_path() -> Option<PathBuf> {
 /// 실사용에서 권한이 어긋나는 건 대개 최상위 파일 하나다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ConfigAvailability {
-    /// 그 경로에 파일이 있는가.
+    /// 그 경로에 무언가 있는가(정규 파일이 아니어도 true).
     pub exists: bool,
-    /// 실제로 열리는가(`File::open` 성공). `exists` 가 false 면 항상 false 다.
+    /// **읽어서 파싱할 수 있는 정규 파일**인가. `exists` 가 false 면 항상 false 다.
+    ///
+    /// 열리기만 하는 것으로는 부족하다 — linux 에서 디렉토리는 `File::open` 이
+    /// 성공해서, 경로가 디렉토리면 "읽히는데 Host 가 하나도 없다" 로 잘못 보고됐다.
+    /// 그건 사용자에게 "Host 를 적어라" 라는 엉뚱한 안내로 이어진다. 정규 파일이
+    /// 아니면 열거가 애초에 성립하지 않으므로 못 읽는 것으로 친다.
     pub readable: bool,
 }
 
@@ -89,8 +94,10 @@ pub fn config_availability(path: Option<&Path>) -> ConfigAvailability {
     ConfigAvailability {
         exists: p.exists(),
         // 존재 여부와 **별개로** 실제 열기를 시도한다 — `exists` 만으로는 권한 실패를
-        // 못 잡는다. 핸들을 즉시 버리므로 내용은 읽지 않는다(열거는 따로 돈다).
-        readable: std::fs::File::open(p).is_ok(),
+        // 못 잡는다. 여기에 `is_file` 을 겹치는 건 디렉토리 때문이다: linux 는
+        // 디렉토리 열기를 허용해서 open 성공만 보면 readable 이 true 로 샌다.
+        // 심볼릭 링크는 따라간 대상 기준으로 판정된다(dangling 이면 둘 다 false).
+        readable: std::fs::File::open(p).is_ok() && p.is_file(),
     }
 }
 
@@ -814,6 +821,21 @@ Host gx10
         // 사람이 /tmp 를 뒤질 때 읽을 수 있는 편이 낫다.
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644))
             .expect("소유자라 퍼미션 복구는 실패할 이유가 없다");
+    }
+
+    /// 경로가 디렉토리면 linux 에서 `File::open` 이 성공한다 — 그것만 보면
+    /// "읽히는데 Host 가 없다" 로 새서 사용자에게 엉뚱한 안내가 나간다.
+    #[test]
+    fn config_availability_treats_a_directory_as_unreadable() {
+        let dir = tmpdir("avail-dir");
+        let as_config = dir.join("config");
+        std::fs::create_dir(&as_config).expect("디렉토리 생성");
+        let a = config_availability(Some(&as_config));
+        assert!(a.exists, "경로에 무언가 있긴 하다");
+        assert!(
+            !a.readable,
+            "정규 파일이 아니면 읽을 수 있는 것으로 치지 않는다"
+        );
     }
 
     #[test]

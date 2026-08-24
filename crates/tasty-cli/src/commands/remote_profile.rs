@@ -558,8 +558,9 @@ fn list_local(json: bool) -> Result<()> {
     }
     if hosts.is_empty() {
         // 빈 목록의 이유는 셋 중 하나고, 사용자가 할 일이 전부 다르다 — 파일을
-        // 만든다 / 권한을 고친다 / Host 항목을 추가한다. IPC 쪽은 같은 구분을
-        // `config_exists`·`config_readable` 로 실어 보낸다.
+        // 만든다 / 읽을 수 있게 고친다(권한, 또는 경로가 디렉토리인 경우) /
+        // Host 항목을 추가한다. IPC 쪽은 같은 구분을 `config_exists`·
+        // `config_readable` 로 실어 보낸다.
         let path = user_config_path();
         let avail = config_availability(path.as_deref());
         let shown = path

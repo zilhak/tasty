@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
-    SshConfigHost, enumerate_hosts, imported_as, is_builtin_kind, is_valid_passkey_name,
-    is_valid_port_mode, is_valid_shell, user_config_path,
+    SshConfigHost, config_availability, enumerate_hosts, imported_as, is_builtin_kind,
+    is_valid_passkey_name, is_valid_port_mode, is_valid_shell, user_config_path,
 };
 
 use crate::adapters::ui::icons;
@@ -168,15 +168,6 @@ struct LocalSshCache {
     unreadable: bool,
 }
 
-/// config 를 **열 수만** 있는지 본다 — 내용은 열거 코어가 따로 읽으므로 핸들은 바로
-/// 버린다. 파일이 없거나 경로 자체를 못 구하면 `true`("없음" 은 별도 문구가 담당).
-fn config_readable(path: Option<&std::path::Path>) -> bool {
-    match path {
-        Some(p) if p.exists() => std::fs::File::open(p).is_ok(),
-        _ => true,
-    }
-}
-
 /// 로컬 섹션의 빈 상태 문구 키 — 원인 3 갈래를 가른다(없음 / 못 읽음 / 정말 0 건).
 fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
     if !local.exists {
@@ -192,14 +183,18 @@ fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
 /// "새로고침 아이콘" 둘뿐이다.
 fn load_local_ssh() -> LocalSshCache {
     let path = user_config_path();
+    // 판정은 열거 코어와 **같은 함수**를 쓴다 — GUI 가 따로 구현해두면 (디렉토리
+    // 같은) 엣지케이스 수정이 한쪽에만 반영된다. "없음" 은 `exists` 가 담당하므로
+    // 파일이 없을 때는 `unreadable` 을 세우지 않는다.
+    let avail = config_availability(path.as_deref());
     LocalSshCache {
         hosts: enumerate_hosts(),
         path: path
             .as_deref()
             .map(tasty_utils::path::tilde_abbreviate)
             .unwrap_or_else(|| "~/.ssh/config".into()),
-        exists: path.as_deref().is_some_and(std::path::Path::exists),
-        unreadable: !config_readable(path.as_deref()),
+        exists: avail.exists,
+        unreadable: avail.exists && !avail.readable,
     }
 }
 
@@ -3366,7 +3361,7 @@ mod tests {
         assert_eq!(local_ssh_empty_key(&base), "remote_tool.local_ssh_empty");
     }
 
-    /// 권한 없는 실제 파일(mode 000)로 `config_readable` 이 분기를 태우는지 본다.
+    /// 권한 없는 실제 파일(mode 000)로 캐시의 `unreadable` 판정이 분기를 태우는지 본다.
     /// root 는 권한을 무시하므로 그 환경에서는 판정 자체가 성립하지 않아 건너뛴다.
     #[test]
     #[cfg(unix)]
@@ -3386,19 +3381,21 @@ mod tests {
             // root(또는 CAP_DAC_OVERRIDE) — mode 000 이어도 열린다.
             return;
         }
-        assert!(!config_readable(Some(&path)));
+        assert!(!config_availability(Some(&path)).readable);
 
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("restore");
-        assert!(config_readable(Some(&path)));
+        assert!(config_availability(Some(&path)).readable);
     }
 
+    /// 파일 없음 / 경로 미확정은 "권한 문제" 가 아니다 — 별도 문구가 담당하므로
+    /// 캐시의 `unreadable` 이 서면 안 된다.
     #[test]
-    fn config_readable_is_true_when_path_is_absent() {
-        // 파일 없음 / 경로 미확정은 "권한 문제" 가 아니다 — 별도 문구가 담당한다.
-        assert!(config_readable(None));
-        assert!(config_readable(Some(std::path::Path::new(
-            "/definitely/not/here/config"
-        ))));
+    fn unreadable_stays_false_when_path_is_absent() {
+        // 캐시는 `exists && !readable` 일 때만 `unreadable` 을 세우므로 두 경우 다
+        // `exists` 가 false 인 것으로 충분하다.
+        let absent = config_availability(Some(std::path::Path::new("/definitely/not/here/config")));
+        assert!(!absent.exists);
+        assert!(!config_availability(None).exists);
     }
 
     #[test]
