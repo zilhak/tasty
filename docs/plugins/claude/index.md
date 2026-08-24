@@ -25,7 +25,7 @@
   - **`claude-session-id` meta 가 비어 reboot 가 실패하는 경우**: `no active claude session on surface {id} (claude-session-id meta not set …)` 에러는 hook 미설치가 아니어도 발생할 수 있다 — session-start hook 이 이 meta 를 못 심은 것이 원인. 조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook … || true` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(release stderr + debug 빌드는 `~/.tasty/debug-dev.log`). 수동 복구: `tasty surface-meta set --key claude-session-id --value <세션ID>`.
 - **Claude 세션 프로필**(용어 정의: [ubiquitous-language.md](../../concepts/ubiquitous-language.md)) — Claude Code 는 훅을 프로세스 기동 시 한 번만 읽으므로, 살아있는 세션에 훅을 추가하는 유일한 창구가 `reboot`/`spawn`/`respawn`/`launch` 4개 기동 경로다. 프로필을 붙이는 방법은 두 가지고 **상호 배타적**이다(둘 다 주면 즉시 에러):
   - `--profile-file <경로>`(`path_kind = "file"`, CLI 가 호출자 cwd 기준 절대경로로 정규화, **반복 지정 거부** — 아래 "왜 반복 지정을 CLI 가 거부하는가") — 파일 경로를 그대로 쓴다.
-  - `--profile <이름[,이름2,...]>` — 아래 "Claude 세션 프로필 레지스트리"에 등록해 둔 이름으로 부착한다. 이름을 둘 이상 쉼표로 주면 레지스트리가 머지해 만든 파일 하나를 쓴다.
+  - `--profile <이름[,이름2,...]>` — 아래 "Claude 세션 프로필 레지스트리"에 등록해 둔 프로필 이름, 또는 "Stop-훅 게이트 레지스트리"에 등록해 둔 **게이트 이름**으로 부착한다(두 레지스트리는 이름 공간을 공유한다). 이름을 둘 이상 쉼표로 주면 레지스트리가 머지해 만든 파일 하나를 쓴다.
 
   어느 쪽이든 최종적으로 기동 명령에 `--settings "<경로>"` 가 붙는다 — Claude Code 의 `--settings` 는 `~/.claude/settings.json` 의 기존 훅을 **대체가 아니라 병합**하므로 tasty 내장 훅(`claude hook` 경유)도 그대로 발화한다. `reboot` 만 부착 상태를 surface meta 에 기록해 **다음 무인자 reboot 가 기본값으로 승계**한다 — 경로로 부착하면 `claude-session-profile`(경로 그대로), 이름으로 부착하면 `claude-session-profile-names`(이름 문자열)에 기록되고 두 meta 는 상호 배타적으로 관리된다(한쪽을 새로 쓰면 다른 쪽은 지운다). 이름-meta 는 **승계 시점마다 레지스트리에서 다시 해석**한다 — 경로를 캐시하지 않으므로 그 사이 `profile-register` 로 내용이 갱신됐다면 다음 reboot 에 최신 내용이 반영된다. 두 meta 모두 파일 존재 + JSON 파싱을 매 reboot 마다 동기 재검증한다(승계된 프로필이 깨져 있으면 kill 시퀀스를 시작하지 않고 에러 반환). `--clear-profile` 로 둘 다 뗀다. `spawn`/`respawn`/`launch` 는 그 호출 1회의 기동 명령에만 반영하고 meta 를 건드리지 않는다(반복 재기동은 `reboot` 만의 개념).
   - **왜 반복 지정을 CLI 가 거부하는가**: Claude Code 의 `--settings` 는 반복 지정 시 **마지막 값만 남고 앞선 값이 조용히 사라진다**(실측). tasty CLI 인자 자체(`--profile-file`)를 실수로 두 번 주는 경우도 같은 함정에 빠질 수 있어, 매니페스트 `CliArg.reject_repeat = true`(`crates/tasty-cli/src/dynamic.rs`)로 clap 을 `ArgAction::Append` 로 등록해 두 번째 값이 들어오면 조용히 버리지 않고 에러로 거부한다.
@@ -36,8 +36,9 @@
 
 - **등록**: `tasty claude profile-register <이름> --file <경로>` — `<경로>`(JSON object) 를 읽어 `TASTY_PLUGIN_DATA_DIR/profiles/registered/<이름>.json` 에 **복사본**으로 저장한다(원본이 나중에 옮겨지거나 지워져도 레지스트리는 영향받지 않는다). 이미 등록된 이름이면 내용을 덮어쓴다. 이름은 소문자/숫자/`-`, 최대 32자.
 - **해제**: `tasty claude profile-unregister <이름>`.
-- **목록**: `tasty claude profile-list` — 등록된 프로필(`user/<이름>`, attachable) 과 항상 전역 설치돼 있는 내장 훅 8종(`host/<token>`, attachable 아님 — 위 "Claude Code 훅 통합" 절의 `install.rs::MANAGED_HOOKS` 를 그대로 나열, 정의를 복제하지 않는다)을 함께 보여준다.
-- **조회**: `tasty claude profile-show <이름>` — 등록된 원본 JSON 그대로. `tasty claude profile-current [--surface <id>]` — 그 surface 에 지금 부착된 프로필(이름 또는 경로)과 내장 훅 목록을 함께 보여준다("지금 이 세션에 무슨 프로필이 걸려 있나").
+- **목록**: `tasty claude profile-list` — **이름으로 부착 가능한 것 전부**를 보여준다: 등록 프로필(`user/<이름>`, `description` 없음) · 등록 게이트(`user/<이름>`, 게이트임을 알리는 `description`) · host 기본 게이트(`host/continue-checklist`). 여기에 항상 전역 설치돼 있는 내장 훅 8종(`host/<token>`, attachable 아님 — 위 "Claude Code 훅 통합" 절의 `install.rs::MANAGED_HOOKS` 를 그대로 나열, 정의를 복제하지 않는다)이 더해진다. `profile-list` 와 `gate-list` 가 둘 다 게이트를 보여주는 것은 의도된 중복이다 — 전자는 "부착 가능한 것들" 관점, 후자는 "게이트 정의"(본문·센티넬·상한·on/off) 관점.
+- **조회**: `tasty claude profile-show <이름>` — 등록 프로필이면 원본 JSON 그대로, 게이트면 그 게이트를 발동시키는 **생성된 Stop 훅 조각**. `owner` 는 실제 출처를 그대로 반영한다(`user` 등록 프로필/등록 게이트, `host` 기본 게이트). `tasty claude profile-current [--surface <id>]` — 그 surface 에 지금 부착된 것(이름 또는 경로)과 내장 훅 목록을 함께 보여준다("지금 이 세션에 무슨 프로필/게이트가 걸려 있나").
+- **이름 해석 순서**: ① `profiles/registered/<이름>.json` → ② 등록 게이트 → ③ host 기본 게이트 → ④ 내장 훅 토큰이면 "attach 불가" 에러 → ⑤ 그 외 미등록 에러. ①과 ②는 등록 시점에 상호 배제되지만(아래 "Stop-훅 게이트 레지스트리" 의 이름 충돌 거부) 순서는 방어적으로 고정돼 있다.
 - **조합 머지**(`crates/tasty-plugin-claude/src/profile_merge.rs`) — `--settings` 는 슬롯이 하나뿐이라(위 실측) 이름을 둘 이상 주면 등록된 각 파일을 순서대로 접어 하나의 JSON 으로 만들고 `TASTY_PLUGIN_DATA_DIR/profiles/generated/<정렬된-이름들>.json` 에 실체화한다(등록 원본과 별도 하위 디렉토리 — 재생성되는 산출물이 원본을 덮어쓰지 않도록). 매 attach 시점마다 다시 만들어 항상 최신 등록 내용을 반영한다. 키 유형별 규칙:
 
   | 키 유형 | 예 | 규칙 |
@@ -60,6 +61,14 @@
 - **등록**: `tasty claude gate-register <이름> --body-file <경로> [--sentinel <문자열>] [--rounds <n>]` — 본문 파일을 **복사본**으로 저장한다(원본이 옮겨지거나 지워져도 게이트는 살아 있다). 이미 등록된 이름이면 정의와 본문을 둘 다 덮어쓴다. 이름 규칙은 프로필과 동일(소문자/숫자/`-`, 최대 32자).
 - **해제**: `tasty claude gate-unregister <이름>` — 정의와 본문 복사본을 **둘 다** 지운다(본문만 남으면 다음 등록이 옛 본문을 조용히 덮어쓰는 것처럼 보이는 orphan 이 된다). 그 게이트의 **런타임 상태**(`checklist/gates/<이름>/` 의 마커 + 라운드)도 함께 지운다 — 남겨 두면 같은 이름으로 재등록했을 때 과거의 켜짐 상태와 라운드 카운터가 부활해, "지웠다 새로 만든 게이트" 가 이전 상태를 물려받는다. 이 정리는 실패해도 해제 자체를 실패시키지 않는다(경고 로그만 — 레지스트리에서 사라지는 것이 주 목적이고, 남은 상태는 어차피 해석되지 않는다).
 - **목록**: `tasty claude gate-list` — 등록 게이트(`user/<이름>`)와 host 기본 게이트(`host/continue-checklist`)를 함께, 각각의 실효 `sentinel`/`round_limit`, 상한의 출처(`round_limit_source`: `gate` = 정의가 직접 지정 / `settings` = 미지정이라 plugin 설정으로 폴백), 그리고 **마커 on/off**(`enabled`)를 함께 보여준다 — 게이트별 on/off 를 한 번에 보는 경로는 여기다(`checklist-status` 는 게이트 하나씩 답한다). 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만** 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
+- **부착**: `tasty claude launch|spawn|respawn|reboot --profile <게이트이름>` — 게이트 이름은 프로필 이름과 같은 평면이라 `--profile` 로 그대로 부착된다. 부착 시 만들어지는 것은 그 게이트를 지목하는 `Stop` 훅 하나뿐이다:
+
+  ```
+  if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude checklist-hook --gate <이름> || true; fi
+  ```
+
+  게이트의 3요소(본문·센티넬·상한)는 이 명령에 담기지 않는다 — 훅이 발화할 때 `--gate` 로 레지스트리를 다시 읽으므로, 게이트를 재등록해 본문을 고치면 **재부착 없이** 다음 발화에 반영된다. 명령 문자열은 `install.rs::tasty_guarded_command` 한 곳에서만 만들어진다(형태가 두 경로로 갈리는 것을 구조로 막는다). 게이트 이름이 셸 명령에 그대로 들어가는데 안전한 이유는 short-name 규칙(소문자/숫자/`-`)이 셸 메타문자를 원천 배제하기 때문이다 — 이름 규칙을 느슨하게 바꾸려면 인용/이스케이프를 함께 손봐야 한다.
+- **조합**: `--profile gate-a,gate-b` 처럼 게이트 둘, 또는 `--profile mygate,myprofile` 처럼 게이트와 프로필을 섞어 부착하면 `profile_merge` 의 `hooks` concat 규칙에 따라 **Stop 훅이 각각 등록**된다(그래서 라운드 상태·마커가 게이트별이다).
 - **조회**: `tasty claude gate-show <이름>` — 정의(센티넬·상한)와 본문 텍스트를 함께. 사용자 등록이 없으면 host 기본 게이트로 폴백하고, 그때 `owner` 는 실제 출처를 그대로 반영한다(`host`).
 
 **등록 시점 검증**
@@ -102,7 +111,7 @@
 
 ### continue-checklist 세션 프로필
 
-위 레지스트리가 host 출처로 미리 등록해 두는 첫 attachable 기본 프로필이자, 위 게이트 레지스트리의 host 기본 게이트 하나(`host/continue-checklist`)에 대응한다. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 직접 등록한 파일이 있으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook` 을 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 8종)에는 포함되지 않으며, 이 프로필이 부착된 세션에서만 발화한다.
+**게이트 프리미티브 위의 host 기본 인스턴스 하나**다 — 고유명으로 특별 취급되는 기능이 아니라, 위 게이트 레지스트리가 host 출처로 내장한 게이트(`host/continue-checklist`) 이고 부착 경로도 등록 게이트와 완전히 같다. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 프로필을 직접 등록했으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook --gate continue-checklist` 를 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 8종)에는 포함되지 않으며, 부착된 세션에서만 발화한다. 아래 설명은 이 기본 인스턴스의 값(본문·센티넬·상한 폴백)을 기준으로 하며, 등록 게이트는 같은 자리에 자기 값을 쓴다.
 
 - **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 **이 게이트의** 센티넬(host 기본값 `[[TASTY-CHECKLIST-DONE]]`)이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시)과 센티넬 포함 지시로 구성된다.
 - **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 게이트 기본 라운드 상한 항목(기본 3)으로 노출된다 — 게이트가 자체 `--rounds` 를 지정하면 그쪽이 이긴다.
@@ -216,4 +225,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 - [ ] Given 등록 게이트 둘(`gate-a`/`gate-b`) When `checklist-enable --gate gate-a` Then `checklist-status --gate gate-a` 는 `enabled: true`, `--gate gate-b` 는 `enabled: false` 이고 `gate-list` 가 두 상태를 함께 보여준다. 그 세션에서 `gate-a` 훅만 block 을 걸고 `gate-b` 훅은 조용히 통과한다. 미등록 이름으로 `checklist-enable --gate nope` 를 호출하면 에러이고 마커 디렉토리도 생기지 않으며, `checklist-status --gate nope` 는 에러 없이 `enabled: false, registered: false` 를 돌려준다.
 - [ ] Given 켜 두고 라운드가 쌓인 게이트 When `gate-unregister <이름>` 후 같은 이름으로 다시 `gate-register` Then `checklist-status` 가 `enabled: false` 이고 라운드 카운터도 1 부터 시작한다(이전 인스턴스의 상태를 물려받지 않는다).
 - [ ] Given 게이트 축 이전 경로(`checklist/enabled.marker`)에만 마커가 있는 인스턴스 When 아무 진입점(`checklist-status` 또는 훅 발화) Then 마커가 `gates/continue-checklist/enabled.marker` 로 옮겨지고 legacy 파일은 사라지며, 켜져 있던 상태가 그대로 보존된다.
+- [ ] Given `gate-register mygate --sentinel '[[MY-DONE]]' --rounds 2` 로 등록하고 `checklist-enable --gate mygate` 로 켜 둔 게이트 When `spawn --profile mygate` Then 그 자식의 `Stop` 훅으로 `checklist-hook --gate mygate` 가 걸리고, 센티넬 없이 턴을 끝내려 하면 **mygate 의 본문**(host 기본 체크리스트 본문이 아니라)이 주입되며 block 된다. `[[MY-DONE]]` 을 포함해 답하면 통과하고, 포함하지 않은 채 계속하면 **mygate 의 상한 2** 에서 백스톱으로 통과한다. 라운드는 `checklist/gates/mygate/rounds/<session>.json` 에 쌓이고 그 세션이 끝나면 정리된다.
+- [ ] Given 등록 게이트 `mygate` When `profile-list` / `profile-show mygate` / `profile-current --surface <자식>` Then 목록에 `user/mygate`(attachable, 게이트 설명)와 `host/continue-checklist` 가 함께 보이고, show 는 owner `user` 와 생성된 Stop 훅 JSON 을 돌려주며, current 의 `attached_names` 에 `mygate` 가 있다.
+- [ ] Given 게이트 둘 When `--profile mygate,continue-checklist` 로 부착 Then `generated/<정렬된이름>.json` 의 `hooks.Stop` 항목이 2개이고 각각 `--gate mygate` / `--gate continue-checklist` 를 지목한다.
 </content>

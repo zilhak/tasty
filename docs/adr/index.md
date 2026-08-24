@@ -93,6 +93,6 @@
 | 0080 | [latte 중성 램프의 AA 미달을 알려진 예외로 수용한다](0080-latte-neutral-ramp-contrast-exception.md) | Accepted | 2026-08-24 | theme, accessibility, contrast, latte, palette |
 | 0081 | [버튼 없는 hover motion(1003)은 focused surface 에만 보고한다](0081-hover-motion-focused-surface-only.md) | Accepted | 2026-08-24 | mouse, input, tracking, focus, terminal, adr-0019 |
 | 0082 | [전체화면은 기존 요소를 확대하지 않고 **독립 무대**로 만든다](0082-fullscreen-independent-stage.md) | Accepted | 2026-08-24 | fullscreen, stage, ui, render-pipeline, layout, webview, attach, screenshot |
-| 0083 | [Stop-훅 게이트를 이름으로 등록하는 레지스트리로 일반화한다](0083-stop-gate-named-registry.md) | Accepted | 2026-08-24 | claude-plugin, registry, stop-hook, gate, session-profile, cli, ipc, i18n |
+| 0083 | [Stop-훅 게이트를 이름으로 등록하는 레지스트리로 일반화한다](0083-stop-gate-named-registry.md) | Accepted | 2026-08-24 | claude-plugin, registry, stop-hook, gate, session-profile, marker, cli, ipc, i18n |
 | 0084 | [plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다](0084-plugin-triggered-host-popup-ownership.md) | Accepted | 2026-08-24 | popup, plugin, ipc, lifecycle, ownership |
 | 0085 | [IPC 관측 로그는 무한 보존하지 않는다 — 상한을 한 곳에서 관리하고, audit 은 deny 만 남긴다](0085-ipc-log-retention-bounded.md) | Accepted | 2026-08-25 | audit, telemetry, memory-db, retention, observability, cpu |
