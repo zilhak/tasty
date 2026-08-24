@@ -155,6 +155,19 @@ fn os_level_ui_is_suppressed_during_a_stage() {
         "무대 중 네이티브 파일 드래그 억제가 사라졌다."
     );
     // 폴링은 계속 돌아야 한다 — dismiss 의 결과 회수가 그 경로다.
+    only_at(
+        &src,
+        "self.poll_pending_native_menu();",
+        "네이티브 메뉴 폴링",
+    );
+}
+
+/// 네이티브 메뉴 폴링은 렌더 **뒤**다. 무대와 직접 관련은 없지만
+/// [`os_level_ui_is_suppressed_during_a_stage`] 의 "폴링은 계속 돈다" 근거가 이 순서에
+/// 기대고 있어, 순서가 바뀌면 그 계약을 다시 검토해야 한다는 신호로 따로 고정한다.
+#[test]
+fn native_menu_polling_stays_after_render() {
+    let src = read("src/view/main/redraw.rs");
     let poll = only_at(
         &src,
         "self.poll_pending_native_menu();",
@@ -165,6 +178,85 @@ fn os_level_ui_is_suppressed_during_a_stage() {
         render < poll,
         "네이티브 메뉴 폴링 위치가 바뀌었다 — 이 가드는 렌더 뒤 폴링을 전제한다."
     );
+}
+
+/// 진입 엣지 정리 목록을 항목별로 고정한다.
+///
+/// 이 정리는 `MainView`(GPU/winit 필요) 없이는 런타임으로 돌릴 수 없어 단위 테스트가
+/// 없었고, 그래서 한 줄을 지워도 아무 테스트도 깨지지 않았다. 각 줄이 막는 것이 서로
+/// 달라(sticky divider / 유령 선택 / 유령 드래그 / 뒤 좌표 잔재) 하나만 빠져도 다른
+/// 증상이 나오므로, 최소한 **배선의 존재**는 구조로 고정한다. 근거는
+/// `docs/design/systems/fullscreen-stage.md` § 진입 시 정리.
+#[test]
+fn stage_entry_discards_every_in_flight_gesture() {
+    let src = read("src/view/main/redraw.rs");
+    let body = fn_body(&src, "fn sync_fullscreen_stage_transition(&mut self) {");
+    for (line, why) in [
+        (
+            "self.clear_ime_preedit();",
+            "조합 중 IME 가 뒤 PTY 로 확정된다",
+        ),
+        (
+            "self.dragging_divider = None;",
+            "divider 드래그가 sticky 로 남는다",
+        ),
+        (
+            "self.left_mouse_down = false;",
+            "좌클릭 선택 게이트가 눌린 채로 남는다",
+        ),
+        (
+            "self.left_select_bypass = false;",
+            "Shift+클릭 우회 플래그가 남아 다음 클릭 경로가 어긋난다",
+        ),
+        (
+            "self.state.popups.cancel_pointer_interactions();",
+            "popup 이동/리사이즈가 sticky 로 남는다",
+        ),
+        (
+            "self.hovered_link = None;",
+            "뒤 좌표 기반 링크 hover 가 남는다",
+        ),
+        (
+            "self.state.pending_resize_cursor = None;",
+            "뒤 좌표 기반 리사이즈 커서가 남는다",
+        ),
+        (
+            "self.dismiss_pending_native_menu();",
+            "떠 있던 네이티브 메뉴가 무대 위에 남는다",
+        ),
+        (
+            "self.state.dialogs.pending_native_menu = None;",
+            "진입 직전 큐잉된 메뉴 요청이 무대를 나온 뒤 엉뚱한 자리에 뜬다",
+        ),
+        (
+            "self.state.dialogs.pending_file_drag = None;",
+            "아무도 누르고 있지 않은 파일 드래그가 시작된다",
+        ),
+    ] {
+        assert!(
+            body.contains(line),
+            "무대 진입 정리에서 `{line}` 이 사라졌다 — {why}."
+        );
+    }
+}
+
+/// `needle` 로 시작하는 함수의 본문(중괄호 균형 기준).
+fn fn_body<'a>(src: &'a str, signature: &str) -> &'a str {
+    let start = only_at(src, signature, "함수 시그니처") + signature.len();
+    let mut depth = 1usize;
+    for (i, c) in src[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &src[start..start + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("함수 본문의 끝을 찾지 못했다: {signature}");
 }
 
 /// IME 경로가 무대를 안다. 무대 진입은 popup 을 닫으므로 `popups.has_focused()` 가
