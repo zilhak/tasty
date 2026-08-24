@@ -46,7 +46,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | `Reduce { inputs, strategy }` | input 결과 collect → `reduce_with_custom` → `ReduceImmediate`. `inputs` 는 Task DAG 의 암묵적 의존성(`TaskGraph`, `crates/tasty-agent/src/task/graph.rs`)이라 dispatch 시점엔 이미 전부 종결(terminal) 상태다 — `Ready` 로 올라오기 전에 readiness 평가가 그 종결을 강제한다 | 즉시 Done |
 | `WaitBarrier { name }` | `BarrierPoll` | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
 
-> 자식 에이전트 완료 판정(`claude.spawn` / `codex.spawn`)과 셸 명령 완료(`host/command-completed`)가 이 범용 `Custom { poll }` 메커니즘의 실사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링/훅-보고를 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
+> 자식 에이전트 완료 판정(`claude.spawn`/`codex.spawn` · `claude.tell`/`codex.tell`)과 셸 명령 완료(`host/command-completed`)가 이 범용 `Custom { poll }` 메커니즘의 실사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링/훅-보고를 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
 >
 > 훅 보고(push) 예 — 전략을 이름으로 지목한다:
 > ```json
@@ -60,12 +60,16 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 >  "params":{"surface_id":560,"workspace":"wt-11","cwd":"/home/me/work/wt-11",
 >            "prompt":"이 디렉토리의 테스트를 고쳐라"}}
 > ```
-> `params.surface_id` 는 **부모** surface(자식을 매달 대상)이고, spawn 응답의 `child_surface_id` 가 `map_from_response` 로 poll 호출의 파라미터가 된다. `codex.spawn` 도 같은 모양이며, 두 plugin 의 전략 값 차이(poll 파라미터 키 이름 · terminal 상태 목록)는 [features/agent-collaboration §자식 에이전트를 DAG 노드로](../features/agent-collaboration/index.md#자식-에이전트를-dag-노드로) 참조. 해당 plugin 이 비활성이면 전략이 레지스트리에 없으므로 `poll` 생략은 `CustomImmediate`(= dispatch 성공 즉시 Succeeded)로 떨어진다.
+> `params.surface_id` 는 **부모** surface(자식을 매달 대상)이고, spawn 응답의 `child_surface_id` 가 `map_from_response` 로 poll 호출의 파라미터가 된다. `codex.spawn` 도 같은 모양이며, 두 plugin 의 전략 값 차이(poll 파라미터 키 이름 · 상태 목록)는 [features/agent-collaboration §자식 에이전트를 DAG 노드로](../features/agent-collaboration/index.md#자식-에이전트를-dag-노드로) 참조. 해당 plugin 이 비활성이면 전략이 레지스트리에 없으므로 `poll` 생략은 `CustomImmediate`(= dispatch 성공 즉시 Succeeded)로 떨어진다.
 >
-> **현재 되는 것과 안 되는 것.** 자식 하나를 노드 하나로 띄우고 그 완료를 기다리는 것까지는 위 그대로 동작한다. 여러 자식을 하나의 DAG 로 엮으려 할 때 남는 갭은 셋이다:
-> - **노드 간 출력 전달 수단이 없다.** 앞 task 의 `TaskResult.output` 을 뒤 task 의 `params` 에 꽂아 넣는 치환은 없다 — dispatch 시점에 `command` 로 주입되는 placeholder 는 `${lease.resource}` 하나뿐이다(`substitute_lease_resource`). 여러 결과를 한 값으로 합치는 `Reduce` 는 있지만 그 합성 값 역시 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일/memory 키처럼 task 바깥의 매개를 쓴다.
-> - **`claude.tell` / `codex.tell` 에는 완료 전략이 없다.** `default_for_methods` 를 선언한 것은 두 plugin의 `*.spawn` 뿐이라, `tell` 을 `Custom` 노드로 두면 메시지 전송이 성공한 순간 곧바로 Succeeded 가 된다(자식이 그 지시를 끝냈는지와 무관). 즉 "자식을 띄우고 → 이어서 지시를 더 준다" 를 DAG 노드로 직렬화할 수 없다.
-> - **terminal 상태를 구분하지 않는다.** poll 응답의 `state_field` 가 `terminal_states` 중 **아무거나** 맞으면 `PollOutcome::Done` 이다 — 정상 종료와 비정상 종료가 똑같이 task `Succeeded` 로 읽힌다. claude 는 `needs_input` 도 terminal 이라 "입력을 기다리며 멈춘 자식" 까지 성공으로 마감된다. 구분이 필요하면 산출물(`TaskResult.output` = poll 응답 전체)의 `state` 를 downstream 이 직접 본다.
+> 이어서 지시를 주는 노드도 같은 모양이다 — `tell` 에도 기본 전략(`tell-wait`)이 있어 자식이 그 지시를 마칠 때까지 러너가 기다린다. 여기서는 대상이 **자식** surface 다(spawn 노드의 `surface_id` 는 부모였다):
+> ```json
+> {"kind":"custom","ipc_method":"claude.tell",
+>  "params":{"surface_id":561,"message":"방금 고친 테스트를 다시 돌려라"}}
+> ```
+>
+> **현재 되는 것과 안 되는 것.** 자식을 띄우고(spawn) 이어서 지시를 주고(tell) 각각의 완료를 기다리는 것까지 위 그대로 동작하고, 자식이 죽으면 그 노드는 실패한다. 여러 자식을 하나의 DAG 로 엮으려 할 때 남는 갭은 하나다:
+> - **노드 간 출력 전달 수단이 없다.** 앞 task 의 `TaskResult.output` 을 뒤 task 의 `params` 에 꽂아 넣는 치환은 없다 — dispatch 시점에 `command` 로 주입되는 placeholder 는 `${lease.resource}` 하나뿐이다(`substitute_lease_resource`). 여러 결과를 한 값으로 합치는 `Reduce` 는 있지만 그 합성 값 역시 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일/memory 키처럼 task 바깥의 매개를 쓴다. spawn→tell 을 한 DAG 로 이으려면 tell 노드의 `surface_id` 를 사람이 직접 박아야 하는 것도 같은 이유다.
 
 ### `Run` 출력 캡처
 

@@ -30,7 +30,6 @@
     - `dag_list` 응답의 각 원소: `id`/`workspace_id`/`name`/`source`(`explicit`|`derived`)/`task_count`/`state_counts`(8종)/`rollup_state`/`created_at`/`updated_at`/`root_task_ids`/`has_cycle`, 그리고 `include_tasks:true` 일 때만 `task_ids`. `rollup_state` 판정 순서는 `running` > `failed` > 전부 terminal(`succeeded`/`skipped`) > `ready` > `waiting`.
     - **열거 범위**: `workspace_id` 를 생략하면 *지금 살아있는* workspace 전부를 순회한다(포커스 독립 — 활성 workspace 에 의존하지 않는다). 삭제된 workspace 에 남은 고아 task 는 뜨지 않으며, 응답이 `scope: "live_workspaces"` 로 그 사실을 명시한다 — 고아 정리는 부팅 시 자동 GC 의 책임이다.
     - `dag_get` 은 그 DAG 부분집합만으로 `task_graph` 와 **동일한** `nodes`/`edges`(또는 `--format dot`)를 낸다 — 렌더 규칙은 한 벌을 공유하므로 두 표면이 갈라지지 않는다.
-  - **자식 에이전트 노드(`claude.*`/`codex.*`)**: `claude`/`codex` plugin 이 `spawn` 과 `tell` 양쪽에 기본 완료 판정 전략을 번들로 선언한다(`spawn-wait` / `tell-wait`, 둘 다 자기 namespace 의 `<plugin>.state` 를 폴링). 따라서 `{"kind":"custom","ipc_method":"claude.tell","params":{"surface_id":<자식>,"message":"..."}}` 노드는 **자식이 답을 마칠 때까지 `running` 에 머문다** — `poll` 을 직접 쓰지 않아도 된다. 전략 없이 dispatch 하면 메시지 전달 성공만으로 즉시 `succeeded` 가 되어 downstream 이 자식보다 먼저 출발한다. 호스트 `terminal.tell` 은 본문 주입 성공 직후 대상 자식의 `idle`(과 `needs_input`) 플래그를 내리므로, 첫 폴링 tick 이 직전 턴의 상태를 읽고 즉시 완료 처리하는 일이 없다 — `terminal.broadcast` 도 같다. 자식이 죽으면(`exited`) 그 노드는 **`failed`** 다 — 두 plugin 모두 `exited` 를 실패로 분류하므로 자식 에이전트 노드에서도 `on_failure`(abort / continue_downstream / fallback)가 그대로 동작한다. claude 의 `needs_input`(사람 승인 대기)은 성공으로 남는다.
   - **삭제(`task_delete`)/일괄 삭제(`task_purge`)**: 참조(`depends_on` ∪ `Fallback.task` ∪ `Reduce.inputs`)가 있는 task 삭제는 기본 거부하고 참조자 목록을 `error.data.referenced_by` 에 실어 반환(`-32010`) — dangling 참조로 인한 `create()` 실패(`UnknownDependency`)·downstream 영구 `waiting` 을 막기 위함. `cascade:true` 는 전이적 참조자 전부를 함께 지우고, `force:true` 는 참조 검사만 우회한다(dangling 참조는 호출자 책임). 삭제 금지 상태는 `running` 하나뿐이다(`-32011`) — `waiting`/`ready`/종결 상태는 `cascade`/`force` 여부와 무관하게 항상 허용된다. 이 제약이 terminal 로 좁지 않고 `running` 하나뿐인 이유: 방치된 `waiting` task(예: 입력이 끝나지 않는 `Reduce`)를 terminal-only 제약으로는 영원히 못 지우고, 그게 참조로 자기 입력들을 붙잡아 그 입력들도 영영 GC 대상에서 빠지기 때문. `task_purge` 는 상태 이름 목록(`states`)·경과시간(`older_than_ms`) 필터로 후보를 고르되, 후보 집합 밖에서 참조되는 task 는 자동으로 보존(`retained`)한다 — `dry_run:true` 로 실제 삭제 없이 계획만 확인할 수 있다. 삭제가 실제로 이뤄지면 `tasty.agent.handle.<id>`/`tasty.agent.run_result.<id>` side-key 도 함께 정리된다.
 - **Barrier** — N회 signal 모이면 닫히는 게이트. `timeout_ms` 경과 시 `timed_out` 으로 **lazy 전이**(별도 스레드 없음 — signal/state/list 호출 시 도장).
 - **Semaphore** — N permit 동시 점유. 같은 holder 재acquire 는 idempotent(retry-safe), permit 회복은 그 holder 의 release 만. **동시성 제한(concurrency limit) 용도로도 쓴다**: `task.metadata.semaphore = { name }` 를 태그한 task 들은 그 세마포어 permit 수만큼만 동시 `Running`, 초과분은 자동 `Ready` 대기 — `task-create --concurrency-limit <name>` 이 이 태깅을 대신해 준다. 절차·라이브 예시는 [dev-guide/agent-runner §동시성 제한](../../dev-guide/agent-runner.md#동시성-제한-concurrency-limit).
@@ -49,7 +48,7 @@ tasty agent task-create --workspace-id 1 --name spawn-worker \
                         "cwd":"/home/me/work/wt-11","prompt":"이 디렉토리의 테스트를 고쳐라"}}'
 ```
 
-**`poll` 을 주지 않는 것이 요점이다.** 두 plugin 이 자기 매니페스트에 `[[contributes.completion_strategy]]` 를 선언하면서 `default_for_methods` 로 자기 spawn 메서드를 지목해 두었으므로, 러너가 dispatch 시점에 그 전략을 자동으로 집어 폴링 모드로 전이한다. 전략이 없으면(= 해당 plugin 이 비활성이면) `custom` 노드는 dispatch 성공 즉시 `Succeeded` 가 되므로, 자식이 도는 동안 기다려주지 않는다.
+**`poll` 을 주지 않는 것이 요점이다.** 두 plugin 이 자기 매니페스트에 `[[contributes.completion_strategy]]` 를 선언하면서 `default_for_methods` 로 자기 `spawn`/`tell` 메서드를 지목해 두었으므로, 러너가 dispatch 시점에 그 전략을 자동으로 집어 폴링 모드로 전이한다. 전략이 없으면(= 해당 plugin 이 비활성이면) `custom` 노드는 dispatch 성공 즉시 `Succeeded` 가 되므로, 자식이 도는 동안 기다려주지 않는다.
 
 `params.surface_id` 는 자식을 매달 **부모** surface 다. spawn 응답의 `child_surface_id` 가 `map_from_response` 를 타고 poll 호출의 파라미터로 옮겨간다.
 
@@ -57,18 +56,36 @@ tasty agent task-create --workspace-id 1 --name spawn-worker \
 
 | | claude | codex |
 |---|---|---|
-| dispatch 메서드 | `claude.spawn` | `codex.spawn` |
+| dispatch 메서드 | `claude.spawn` · `claude.tell` | `codex.spawn` · `codex.tell` |
 | poll 메서드 | `claude.state` | `codex.state` |
-| `map_from_response` | `child_surface_id` → `surface_id` | `child_surface_id` → `surface` |
-| `terminal_states` | `idle`, `needs_input`, `exited` | `idle`, `exited` |
+| `map_from_response` (spawn) | `child_surface_id` → `surface_id` | `child_surface_id` → `surface` |
+| `map_from_response` (tell) | `surface_id` → `surface_id` | `surface_id` → `surface` |
+| `terminal_states`(성공) | `idle`, `needs_input` | `idle` |
+| `failure_states`(실패) | `exited` | `exited` |
 
-poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구하는 이름이 다르기 때문이고(`surface_id` vs `surface`), codex 의 terminal 목록에 `needs_input` 이 없는 것은 codex 쪽에 그 상태를 세우는 hook 이벤트가 없어 실제로 관측될 일이 없기 때문이다 — 거짓 계약을 만들지 않으려고 뺐다.
+poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구하는 이름이 다르기 때문이고(`surface_id` vs `surface`), codex 의 목록에 `needs_input` 이 없는 것은 codex 쪽에 그 상태를 세우는 hook 이벤트가 없어 실제로 관측될 일이 없기 때문이다 — 거짓 계약을 만들지 않으려고 뺐다. spawn 과 tell 은 소스 키도 다르다: spawn 응답은 `child_surface_id`(새로 만든 자식), tell 응답은 `surface_id`(이미 존재하는 대상)를 싣는다.
 
-**여기까지가 현재 되는 범위다.** 자식 여럿을 하나의 DAG 로 엮으려 할 때 남는 갭이 셋 있다:
+### 이어서 지시 주기 (`tell`)
 
-- **앞 노드의 산출물을 뒤 노드 파라미터로 넘길 수단이 없다.** dispatch 시점 치환은 `${lease.resource}` 하나뿐이고, `Reduce` 로 합성한 값도 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일이나 memory 키처럼 task 바깥의 매개를 쓴다.
-- **`claude.tell` / `codex.tell` 에는 완료 판정 전략이 없다.** `default_for_methods` 를 선언한 것은 두 plugin 의 spawn 뿐이라, `tell` 을 노드로 두면 메시지가 전송된 순간 `Succeeded` 다 — 자식이 그 지시를 끝냈는지와 무관하다. "띄운 뒤 이어서 지시를 준다" 를 DAG 로 직렬화할 수 없다.
-- **terminal 상태를 구분하지 않는다.** `terminal_states` 중 아무거나 맞으면 `Succeeded` 이므로 정상 종료와 비정상 종료(`exited`)가 같게 읽힌다. claude 는 `needs_input` 도 terminal 이라 입력을 기다리며 멈춘 자식까지 성공으로 마감된다. 구분이 필요하면 산출물(`TaskResult.output` = poll 응답 전체)의 `state` 를 downstream 이 직접 본다.
+`tell` 에도 기본 전략(`tell-wait`)이 있어 **자식이 그 지시를 마칠 때까지** 노드가 `running` 에 머문다. spawn 노드와 달리 `surface_id` 는 **자식** surface 다:
+
+```sh
+tasty agent task-create --workspace-id 1 --name tell-worker \
+  --command '{"kind":"custom","ipc_method":"claude.tell",
+              "params":{"surface_id":561,"message":"방금 고친 테스트를 다시 돌려라"}}'
+```
+
+호스트 `terminal.tell` 은 본문 주입에 성공한 직후 대상 자식의 `idle`(과 `needs_input`) 플래그를 내린다 — 그러지 않으면 첫 폴링 tick 이 직전 턴의 상태를 읽고 자식이 답을 시작하기도 전에 노드를 완료 처리한다. `terminal.broadcast` 도 같다.
+
+### 실패 판정
+
+자식이 죽으면(`exited` — 프로세스 사망 또는 surface 소멸) 그 노드는 **`failed`** 다. 두 plugin 모두 `exited` 를 `failure_states` 로 분류하므로, 자식 에이전트 노드에서도 `on_failure`(`abort` / `continue_downstream` / `fallback`)가 그대로 동작한다 — 기본값 `abort` 면 downstream 이 `skipped` 로 cascade 된다. 실패 메시지에는 상태값과 poll 응답 요약이 함께 실린다.
+
+claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. 사람이 승인해주면 이어서 끝나는 상태라 영구 실패가 아니고, 두 plugin 의 spawn/tell 완료 알림이 이미 `idle` 과 동일 취급하는 계약을 깨지 않기 위함이다. 승인 대기를 실패로 보고 싶으면 그 노드에 인라인 `poll` 을 주어 `failure_states` 를 직접 지정한다.
+
+**여기까지가 현재 되는 범위다.** 자식 여럿을 하나의 DAG 로 엮으려 할 때 남는 갭이 하나 있다:
+
+- **앞 노드의 산출물을 뒤 노드 파라미터로 넘길 수단이 없다.** dispatch 시점 치환은 `${lease.resource}` 하나뿐이고, `Reduce` 로 합성한 값도 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일이나 memory 키처럼 task 바깥의 매개를 쓴다. spawn 노드가 만든 자식의 surface id 를 뒤따르는 tell 노드에 넘기는 것도 이 갭에 걸린다 — 지금은 `surface_id` 를 사람이 직접 박아야 한다.
 
 전략 레지스트리·dispatch 배선 상세는 [dev-guide/agent-runner](../../dev-guide/agent-runner.md#hostexecutor-매핑).
 
