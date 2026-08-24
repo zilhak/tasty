@@ -59,12 +59,16 @@ const ALLOWLIST_FILES: &[&str] = &[
 
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
 /// gitignored 로컬 작업 폴더(그 안의 문서는 커밋 대상이 아니라 스캔 의미가 없다).
+///
+/// 로컬 작업 폴더는 worktree 에 **심볼릭 링크**로 걸려 있을 수 있다. `is_dir()` 은
+/// 링크를 따라가므로, 가지치기하지 않으면 순회가 레포 밖 실제 경로까지 새어나간다.
 const PRUNE_DIRS: &[&str] = &[
     "target",
     "dist",
     ".worktree",
     ".git",
     "node_modules",
+    ".claude",
     ".claude-workspace",
 ];
 

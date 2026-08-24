@@ -4,11 +4,13 @@
 *.swo
 *~
 .DS_Store
-.claude/
+.claude
 .idea/
 
 # Plugin manifest 서명 산출물 (빌드 머신 dev key 로 자동 생성)
 crates/tasty-plugin-*/tasty-plugin.toml.sig
 
 # AI 에이전트 작업 공간 (임시 파일, 계획 md, 스크린샷 등 — git 미추적 정책)
-.claude-workspace/
+# 끝에 `/` 를 붙이지 않는다 — 디렉토리 전용 패턴은 같은 이름의 심볼릭 링크를
+# 매칭하지 못해 worktree 에 걸어둔 링크가 `git add -A` 로 딸려 들어간다.
+.claude-workspace
