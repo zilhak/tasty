@@ -40,6 +40,17 @@
   release 표면을 두지 않는다(불가침 원칙 1). debug 격리 표면은 후속 작업에서 붙는다.
 - **사용자 트리거**: 아직 없다(단축키/버튼 미구현).
 
+## 아직 없는 것
+
+- **입력 게이트** — 무대는 화면만 갈아끼운다. 키보드/마우스 경로는 무대를 모르므로 무대 중에도
+  키는 터미널로 가고 클릭은 뒤의 위젯 좌표로 판정된다.
+- **종료 수단** — 무대 프레임은 CSD 타이틀바까지 지운다. 진입 경로를 붙이는 작업은 종료
+  경로를 반드시 같은 범위에서 함께 붙여야 한다(없으면 창을 빠져나올 수 없다).
+- **OS 창 전체화면 전환** — 무대는 현재 창 클라이언트 영역까지만 덮는다.
+
+경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
+"아직 없는 것" 절.
+
 ## 비-목표 (Out of scope)
 
 - 기존 요소(pane/tab/surface)를 뷰포트 크기로 리레이아웃하는 것 — 무대는 확대가 아니다.
@@ -49,10 +60,22 @@
 
 ## Acceptance Criteria
 
+단위 테스트로 상시 검증되는 것:
+
 - [x] Given 정의 테이블에 없는 id When 무대 진입 Then 거부되고 무대가 서지 않는다
-- [x] Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
 - [x] Given 무대 활성 When `has_egui_overlay_open()` 조회 Then true (WebView 숨김 게이트)
-- [x] Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
-- [x] Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다
-- [x] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
-- [x] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널 내용이 찍힌다
+- [x] Given 무대 종료 When 다음 프레임 Then 닫힘 훅이 정확히 1 회 발화한다(무대/일반 프레임 양쪽)
+
+**미검증 — 검증 시점은 무대 진입 경로(debug IPC)가 붙은 뒤다.** 아래는 릴리스 코드에 사용자·
+에이전트 진입 경로가 없어 재현 가능한 자동 검증이 불가능하다. 임시 훅으로 1 회 실측했으나
+그 훅은 커밋되지 않았으므로 회귀를 잡지 못한다 — 진입 경로가 생기면 그 트랙에서 통합
+검증으로 승격한다.
+
+- [ ] Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
+      <!-- 정적 테이블에 무대가 하나뿐이라 현재 테스트는 vacuous 하다 -->
+- [ ] Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
+- [ ] Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다(무대 중 창
+      크기가 바뀌어도)
+- [ ] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
+- [ ] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
+      내용이 찍힌다
