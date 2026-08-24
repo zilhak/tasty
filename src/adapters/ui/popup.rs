@@ -650,6 +650,20 @@ impl PopupManager {
         }
     }
 
+    /// 진행 중인 포인터 제스처(이동 드래그 · 테두리 리사이즈)를 **확정하지 않고**
+    /// 폐기한다. popup 을 닫지 않고 상태도 되돌리지 않는다 — 지금까지 따라온 위치/
+    /// 크기는 그대로 두고 "잡고 있음" 만 푼다.
+    ///
+    /// 전체화면 무대처럼 popup 이 그려지지 않는 프레임으로 전환될 때 필요하다.
+    /// 드래그/리사이즈 해제는 `draw()` 안에서 release 를 보고 일어나는데, 그리지
+    /// 않는 동안에는 그 코드가 돌지 않아 popup 이 커서에 붙어 다니는 상태로 남는다.
+    pub fn cancel_pointer_interactions(&mut self) {
+        for p in &mut self.popups {
+            p.dragging = false;
+            p.resizing = None;
+        }
+    }
+
     /// `closed_queue` 를 비우고 반환한다. `on_close` 훅 drain(`popup::frame`)이
     /// 프레임당 1회 호출 — 재진입(훅이 다른 popup 을 닫음)을 지원하려면 호출자가
     /// 반환값을 순회하는 동안 `state.popups` 를 다시 만질 수 있어야 하므로, 이 fn

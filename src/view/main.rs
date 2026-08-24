@@ -129,6 +129,12 @@ pub struct MainView {
     /// 막으면 release 가 egui 에 남아 다음 프레임에 위젯이 쌍을 완성해
     /// `clicked()` 를 발화한다(메뉴를 닫는 클릭이 그 밑의 위젯까지 실행).
     pub(crate) menu_dismiss_swallow: Vec<winit::event::MouseButton>,
+    /// 직전 프레임의 전체화면 무대 활성 여부. `redraw.rs::sync_fullscreen_stage_transition`
+    /// 이 상승 엣지(무대 진입)를 잡아 뷰 쪽 진행 중 상태(IME 조합·드래그·네이티브 메뉴·
+    /// 파일 드래그)를 정리하는 데 쓴다. 진입 API 자체(`AppState::open_fullscreen_stage`)는
+    /// `&mut AppState` 만 갖고 있어 이 정리를 직접 할 수 없고, 진입 경로가 단축키든
+    /// IPC 든 프레임은 반드시 돌기 때문에 엣지 검출이 유일한 공통 수렴점이다.
+    pub(crate) stage_was_active: bool,
     /// debug 마우스 주입이 세운 컨텍스트 메뉴를 포획해 둔 슬롯 (release 미노출).
     /// 실제 우클릭은 `process_pending_native_menu` 가 OS native 팝업으로 소비하므로
     /// (macOS/Windows 는 `TrackPopupMenu` 등 **블로킹 모달**, Linux 는 비블로킹이지만
@@ -214,6 +220,7 @@ impl MainView {
             mesh_pointer_hover: None,
             pending_menu: None,
             menu_dismiss_swallow: Vec::new(),
+            stage_was_active: false,
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
             stage_saved_window_mode: None,

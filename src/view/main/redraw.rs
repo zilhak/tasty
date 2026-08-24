@@ -14,6 +14,10 @@ impl MainView {
     ) {
         self.dispatch_pending_modal_opens();
 
+        // 무대 진입/종료 엣지 처리 — 아래 어떤 경로보다 먼저 돌아야 이번 프레임이
+        // 정리되지 않은 드래그/조합 상태를 그대로 쓰는 일이 없다.
+        self.sync_fullscreen_stage_transition();
+
         // PTY drain 은 전적으로 AppEvent::TerminalOutput 핸들러 몫이다. 과거의
         // per-frame process_all safety net 은 제거됨 — 코얼레싱 게이트의
         // early-reset(drain 전 게이트 해제)과 reader 의 EOF 최종 wake 가
@@ -76,6 +80,14 @@ impl MainView {
         self.process_pending_file_drops();
 
         // Process pending file drag (after egui frame)
+        //
+        // 무대 중에는 OS 드래그 세션을 시작하지 않고 요청을 **버린다**. 드래그는
+        // 사용자가 마우스를 누른 채 시작하는 제스처인데 무대가 그 마우스 경로를
+        // 이미 끊었으므로(입력 게이트), 큐에 남겨 뒀다가 무대를 나온 뒤 시작하면
+        // 아무도 누르고 있지 않은 드래그가 뜬다.
+        if self.state.fullscreen_stage_active() {
+            self.state.dialogs.pending_file_drag = None;
+        }
         if let Some(paths) = self.state.dialogs.pending_file_drag.take() {
             let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
             if let Err(e) = crate::file::drag::start_file_drag(&*self.base.winit, &path_refs) {
@@ -89,6 +101,64 @@ impl MainView {
         if self.base.dirty {
             self.base.winit.request_redraw();
         }
+    }
+
+    /// 전체화면 무대 진입/종료 엣지를 잡아 **뷰 쪽 진행 중 상태**를 정리한다.
+    ///
+    /// 진입 API(`AppState::open_fullscreen_stage`)는 `&mut AppState` 만 갖고 있어
+    /// `MainView` 의 드래그/IME/네이티브 메뉴 상태에 손을 댈 수 없다. 진입 경로가
+    /// 단축키든 debug IPC 든 그 뒤에 프레임은 반드시 도므로, 엣지 검출이 모든 진입
+    /// 경로가 지나는 유일한 공통 수렴점이다.
+    ///
+    /// **정리 계약 — 진행 중인 것은 확정하지 않고 폐기한다.** 무대가 뜨는 순간
+    /// 마우스 이벤트가 뒤 세계로 가지 않으므로 짝이 되는 release 를 영영 못 받는다.
+    /// 그대로 두면 divider 가 커서를 따라다니거나 popup 이 붙어 다니는 sticky 드래그가
+    /// 남는다(`docs/architecture/input-layer.md` 가 기록한 sticky divider 와 같은 부류).
+    /// release 로 확정하지 않는 이유는 반대편이다 — 사용자가 놓은 적 없는 위치에
+    /// 크기/좌표를 확정하면 무대를 나왔을 때 레이아웃이 임의로 바뀐 것처럼 보인다.
+    ///
+    /// **정리하지 않는 것**: 이미 잡혀 있는 텍스트 선택 범위와 vi copy-mode(`vi_copy`)는
+    /// 그대로 둔다. 둘 다 "진행 중인 포인터 제스처" 가 아니라 무대 진입 전에 이미
+    /// 확정된 사용자 상태이고, 무대의 모델은 뒤 세계를 **진입 시점 그대로** 두는
+    /// 것이다. vi copy-mode 는 키보드 모드라 무대 중 입력이 차단되면 자연히 멈추고,
+    /// 무대를 나오면 있던 그대로 이어진다.
+    fn sync_fullscreen_stage_transition(&mut self) {
+        let active = self.state.fullscreen_stage_active();
+        if active == self.stage_was_active {
+            return;
+        }
+        self.stage_was_active = active;
+        if !active {
+            // 종료 엣지 — 뒤 세계는 진입 시점 그대로 살아 있으므로 되돌릴 것이 없다.
+            // 프레임 자체는 진입/종료를 유발한 경로가 이미 dirty 로 만든다.
+            return;
+        }
+
+        // IME 조합은 **버린다**(확정 전송 아님). 오버레이가 열릴 때의 기존 관례를
+        // 그대로 따른다(`keyboard.rs` 6단계의 popup 분기) — 무대를 띄우는 조작으로
+        // 조합 중이던 문자가 뒤 PTY 에 흘러 들어가면 안 된다.
+        if self.ime_preedit.is_some() {
+            self.clear_ime_preedit();
+        }
+
+        // 진행 중 포인터 제스처 폐기.
+        self.dragging_divider = None;
+        self.left_mouse_down = false;
+        self.left_select_bypass = false;
+        self.state.popups.cancel_pointer_interactions();
+
+        // 뒤 좌표 기반 hover 잔재 — 무대 중에는 갱신도 안 되므로 여기서 비운다.
+        self.hovered_link = None;
+        self.state.pending_resize_cursor = None;
+
+        // OS 레벨 UI 는 무대가 덮지 못한다. 떠 있던 네이티브 메뉴는 닫고, 아직
+        // 세우지 않은 요청은 버린다(`process_pending_native_menu` 가 무대 중 신규
+        // 요청을 막지만, 진입 프레임 이전에 이미 큐에 들어온 것은 여기서 비운다).
+        self.dismiss_pending_native_menu();
+        self.state.dialogs.pending_native_menu = None;
+        self.state.dialogs.pending_file_drag = None;
+
+        self.mark_dirty();
     }
 
     /// settings/plugins 모달 오픈 요청 dispatch. `ui.rs`가 `state.settings_open`/
@@ -721,6 +791,15 @@ impl MainView {
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
         use crate::state::PendingNativeMenu;
+
+        // 무대 중에는 네이티브 메뉴를 세우지 않는다 — OS 팝업은 wgpu 표면 **위**에 떠서
+        // 무대가 덮지 못하고, 입력 게이트와도 무관한 경로로 뜬다. 요청은 슬롯에 남기지
+        // 않고 **버린다**: 좌표가 무대 진입 전 화면 기준이라 무대를 나온 뒤 띄우면
+        // 사용자가 우클릭한 적 없는 자리에 메뉴가 뜬다.
+        if self.state.fullscreen_stage_active() {
+            self.state.dialogs.pending_native_menu = None;
+            return;
+        }
 
         // 이미 메뉴가 떠 있으면 새로 띄우지 않는다 — 요청은 슬롯에 남겨 두고
         // (take 하지 않는다) 현재 메뉴가 닫힌 뒤 프레임에 처리한다.
