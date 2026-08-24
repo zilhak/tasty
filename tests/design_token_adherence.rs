@@ -8,7 +8,7 @@
 //!
 //! **스코프 밖(의도적)**: `const NAME: LogicalPx = LogicalPx(N)` 같은 **명명 구조 상수**는
 //! 금지하지 않는다 — 그게 구조값(사이드바 폭·카드 크기·control nudge)의 *권장* 해결책이다
-//! (2026-07-03-spacing-offgrid: (c) structural 은 magic number 대신 명명 const 로 둔다).
+//! — structural 값은 magic number 대신 명명 const 로 둬야 의미가 이름에 남는다.
 //! 이 가드가 잡는 건 4px 리듬 자리에 박힌 인라인 리터럴뿐이다.
 
 use std::path::{Path, PathBuf};
