@@ -300,6 +300,31 @@ click-to-activate press 가드, OS 가장자리 리사이즈 양보, 링크 hove
 폐기하되 **release 로 확정하지 않는** 이유는 반대편이다 — 사용자가 놓은 적 없는 위치로
 좌표/크기를 확정하면 무대를 나왔을 때 레이아웃이 임의로 바뀐 것처럼 보인다.
 
+#### 정리하지 않는 것 — 알려진 경계 둘
+
+**1. 마우스 트래킹 앱은 release 보고를 못 받는다.** 트래킹 모드(1002/1003) 앱 위에서 버튼을
+누른 채 무대에 진입하면, 그 앱은 press 만 받고 release 를 영영 못 받는다 — 보고 경로가
+`mouse_overlay_open()` 뒤에 있기 때문이다. **호스트 쪽 상태는 안전하다**: 물리적 release 의
+`pop_report_button` 은 `handle_mouse_input` **맨 앞**(모든 게이트보다 앞)에 있어 무대 중에도
+`report_buttons_down` 이 정상적으로 비고, 무대를 나온 뒤 hover 가 드래그로 오인되지 않는다.
+남는 것은 앱 쪽 인식뿐이다.
+
+무대 고유 문제가 아니다 — settings 모달이 드래그 중에 열려도 같은 일이 생긴다
+(`mouse_overlay_open()` 의 다른 항). 합성 release 를 쏘지 않는 이유는 위 표의 "확정하지
+않는다" 와 같다: 사용자가 놓은 적 없는 좌표로 release 를 보고하게 된다. 이 경계를 없애려면
+게이트가 아니라 보고 계층에서 "press 를 보고한 앱에는 release 도 반드시 보고한다" 를
+별도로 세워야 하고, 그건 무대와 독립된 작업이다.
+
+**2. modifier-hint / switch-overlay 홀드는 무대 중에도 갱신된다.** `ModifiersChanged` 는
+`MainView::handle_event` 의 자체 분기에서 처리되어 0단계 키보드 게이트를 지나지 않는다 —
+무대 중에도 `update_switch_overlay` / `modifier_hint.update_hold` 가 계속 돈다. 화면에는
+영향이 없다(렌더 게이트가 host chrome 을 통째로 뺀다). 실제로 보이는 결과는 하나뿐이다:
+modifier 를 누른 채 무대를 나오면 500ms 홀드가 이미 채워져 있어 hint 가 즉시 뜬다. 값은
+다음 `ModifiersChanged` 가 그대로 덮으므로 상태가 어긋난 채 남지는 않는다. modifier 상태는
+"진행 중 제스처" 가 아니라 물리 키의 현재 값이라, double-tap 검출기에 press/release 를 계속
+먹이는 것과 같은 이유로 **끊지 않는 쪽이 맞다** — 끊으면 무대를 나온 순간 물리 상태와
+어긋난다.
+
 ### OS 레벨 UI 는 입력 게이트가 막아주지 않는다
 
 OS 가 직접 띄우는 UI 는 wgpu 표면 **위**에 있어 무대가 덮지 못하고, 입력 라우팅과 무관한
