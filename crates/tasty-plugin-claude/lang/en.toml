@@ -3,7 +3,7 @@ desc = "Manage Claude Code child sessions"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
-"settings.continue_checklist_round_limit" = "continue-checklist round limit"
+"settings.continue_checklist_round_limit" = "Default gate round limit (used when a gate sets none)"
 
 [claude.checklist]
 body = """

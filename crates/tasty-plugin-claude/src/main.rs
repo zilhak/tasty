@@ -60,9 +60,10 @@ struct ClaudePlugin {
     /// 요청을 명시적 에러(또는 checklist 는 안전한 통과)로 처리한다(결정 3: 조용히
     /// 다른 경로에 쓰지 않음).
     plugin_data_dir: Option<PathBuf>,
-    /// `continue-checklist` 가 block 결정 시 `reason` 으로 주입하는 본문. 활성
-    /// locale 로 이미 해석된 완성 문자열(`main()` 에서 `Translator` 로 1 회 계산) —
-    /// 매 훅 발화마다 lang 파일을 다시 읽지 않는다.
+    /// host 기본 게이트(`continue-checklist`)가 block 결정 시 `reason` 으로 주입하는
+    /// 본문. 활성 locale 로 이미 해석된 완성 문자열(`main()` 에서 `Translator` 로 1 회
+    /// 계산) — 매 훅 발화마다 lang 파일을 다시 읽지 않는다. 등록 게이트의 본문은
+    /// 사용자 파일이라 이 캐시를 쓰지 않고 발화마다 읽는다(`checklist.rs`).
     checklist_body: String,
     /// 사람이 읽는 IPC 에러/응답 문자열 번역용. `main()` 에서 1 회 로드해 재사용한다.
     translator: Translator,
@@ -115,6 +116,7 @@ impl Plugin for ClaudePlugin {
                 &ctx.host,
                 self.plugin_data_dir.as_deref(),
                 &self.checklist_body,
+                &self.translator,
                 &ctx.params,
             ),
             "claude.checklist_enable" => {

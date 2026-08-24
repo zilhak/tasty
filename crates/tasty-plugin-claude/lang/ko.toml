@@ -3,7 +3,7 @@ desc = "Claude Code 자식 세션을 관리합니다"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
-"settings.continue_checklist_round_limit" = "continue-checklist 라운드 상한"
+"settings.continue_checklist_round_limit" = "게이트 기본 라운드 상한 (게이트가 자체 값을 지정하지 않았을 때)"
 
 [claude.checklist]
 body = """

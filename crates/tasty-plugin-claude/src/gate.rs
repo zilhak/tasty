@@ -183,7 +183,7 @@ pub struct GateSummary {
 /// 타임에 강제한다(사용자 등록 본문에는 같은 불변식을 [`register`] 가 런타임에 건다).
 pub fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(GateDef, String)> {
     match short_name {
-        "continue-checklist" => Some((
+        DEFAULT_GATE_NAME => Some((
             GateDef {
                 sentinel: SENTINEL.to_string(),
                 round_limit: None,
@@ -194,8 +194,13 @@ pub fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(GateDef, 
     }
 }
 
+/// 게이트를 지정하지 않은 훅 호출이 해석되는 이름 — host 기본 게이트. 매니페스트
+/// `checklist_hook_args` 의 `--gate` 기본값이 이 값과 같아야 하며,
+/// `manifest_gate_flag_default_matches_constant` 테스트가 그 일치를 강제한다.
+pub(crate) const DEFAULT_GATE_NAME: &str = "continue-checklist";
+
 /// [`host_default_gate`] 가 아는 이름 전체 — `list` 이 host 항목을 나열할 때 순회한다.
-const HOST_DEFAULT_GATE_NAMES: &[&str] = &["continue-checklist"];
+const HOST_DEFAULT_GATE_NAMES: &[&str] = &[DEFAULT_GATE_NAME];
 
 fn registered_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("gates").join("registered")

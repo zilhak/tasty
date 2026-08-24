@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.42"
+version = "0.1.43"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -67,12 +67,12 @@ subcommands = [
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system." },
-    # `continue-checklist` 세션 프로필 전용 Stop 훅 — `install::MANAGED_HOOKS` 에는
-    # 넣지 않는다(전역 미설치, 프로필로 부착된 세션에서만 등록됨). `hook`
-    # subcommand 와 별개 IPC/파라미터 스키마를 쓴다 — Claude Code Stop 훅 payload
-    # 필드(session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로
-    # 받는다.
-    { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop hook for the continue-checklist session profile. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message)." },
+    # Stop-훅 게이트 판정 — `install::MANAGED_HOOKS` 에는 넣지 않는다(전역 미설치,
+    # 게이트가 부착된 세션에서만 등록됨). `hook` subcommand 와 별개 IPC/파라미터
+    # 스키마를 쓴다 — Claude Code Stop 훅 payload 필드
+    # (session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로 받고,
+    # 어느 게이트로 판정할지는 `--gate` 로 받는다(stdin 에 없는 유일한 값).
+    { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)." },
     { name = "checklist-enable",  ipc_method = "claude.checklist_enable",  args = "no_args", description = "Turn on the continue-checklist Stop-hook gate (creates the enabled marker)" },
     { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "no_args", description = "Turn off the continue-checklist Stop-hook gate (removes the enabled marker)" },
     { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "no_args", description = "Show whether the continue-checklist Stop-hook gate is currently on" },
@@ -214,6 +214,10 @@ flags = [
     # 덮임). string 으로 받아 핸들러가 "true"/"false" 문자열을 직접 비교한다.
     { name = "stop_hook_active", type = "string", flag = "--stop-hook-active", required = false, help = "Whether Claude Code's own stop-hook-active flag was set (sanity-check only, not the primary decision signal). Auto-populated from stdin JSON 'stop_hook_active' (\"true\"/\"false\")." },
     { name = "last_assistant_message", type = "string", flag = "--last-assistant-message", required = false, help = "The assistant's last message text, searched for the completion sentinel. Auto-populated from stdin JSON 'last_assistant_message'." },
+    # Stop payload 에는 게이트를 식별할 정보가 없으므로, 부착 시점에 훅 명령
+    # 문자열에 박아 전달하는 것이 유일한 경로다. optional + 기본값이라 `--gate`
+    # 없이 이미 설치돼 있는 훅 명령은 host 기본 게이트로 그대로 동작한다.
+    { name = "gate", type = "string", flag = "--gate", required = false, default = "continue-checklist", help = "Name of the Stop-hook gate whose body, sentinel and round limit this hook decides with (see 'claude gate-register'). Defaults to the built-in continue-checklist gate." },
 ]
 
 [contributes.cli.arg_groups.profile_register_args]
