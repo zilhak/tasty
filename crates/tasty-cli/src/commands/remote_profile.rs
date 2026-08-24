@@ -329,6 +329,15 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(p)?);
                 return Ok(());
             }
+            // 왼쪽 라벨 열은 산문이 아니라 **필드 식별자 열**이라 번역하지 않는다.
+            // 등록 kind 는 프로필이 실제로 갖는 필드명을 그대로 찍고(`shell` /
+            // `port_mode` / `remote_tasty` / `ssh_ref` / `extra_options` 는
+            // `[profile.fields]` 의 toml 키 그 자체다), 미등록 kind 는 아래
+            // fallback 이 `p.fields` 의 raw 키를 같은 열에 찍는다. 등록 kind 쪽만
+            // 번역하면 한 명령의 같은 열이 절반은 번역어, 절반은 raw 필드명이 된다.
+            // (`--json` 키와 일치해서가 아니다 — `--json` 은 `kind` 를 내보내고
+            // `destination` / `status` / `label` / `passkey` / `extra_options` 는
+            // 아예 없다. 라벨 옆의 자연어만 번역 대상이다.)
             println!("name          : {}", p.name);
             println!("type          : {}", p.kind);
             if let Some(l) = &p.label {
