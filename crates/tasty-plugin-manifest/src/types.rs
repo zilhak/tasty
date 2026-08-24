@@ -1183,6 +1183,11 @@ pub struct CompletionStrategyDecl {
     pub state_field: String,
     /// terminal 로 간주할 상태값 목록.
     pub terminal_states: Vec<String>,
+    /// **실패**로 간주할 상태값 목록. 적중하면 task 가 `Failed` 로 종결된다
+    /// (`PollSpec.failure_states` 와 동형 — 의미·우선순위 설명은 그쪽 doc 참조).
+    /// 생략 가능 — 이 필드 이전에 작성된 매니페스트가 그대로 로드돼야 한다.
+    #[serde(default)]
+    pub failure_states: Vec<String>,
     /// 폴링 간격 (밀리초). 기본 500ms.
     #[serde(default = "default_polling_interval_ms")]
     pub interval_ms: u64,
@@ -1199,6 +1204,13 @@ impl CompletionStrategyDecl {
     /// 여전히 CLI `--timeout` 오버라이드를 지원). `timeout_ms` 는 이 경로에서
     /// 쓰이지 않는다 — CLI 폴링은 raw ms 데드라인이 아니라 요청 params 조회
     /// 기반이라 표현 형태가 근본적으로 다르다(§ 대표 doc comment 참조).
+    ///
+    /// `failure_states` 도 버린다 — CLI auto_wait 폴링(`crates/tasty-cli/src/run.rs`)
+    /// 은 terminal 도달 시 block 을 풀 뿐 프로세스 exit code 를 가르지 않는다.
+    /// 여기에 실패 축을 흘리면 `tasty claude spawn` 같은 기존 명령이 자식 사망 시
+    /// 비-0 으로 죽게 되어 **CLI 계약이 바뀐다**. 실패/성공 분기는 지금 DAG
+    /// 러너(`PollSpec.failure_states`)만의 관심사이므로 그 경계를 여기서 끊는다 —
+    /// CLI 를 실패로 죽이는 건 그 계약 변경을 의도적으로 결정할 때 별도로 한다.
     pub fn to_polling_decl(&self) -> PollingDecl {
         PollingDecl {
             state_field: self.state_field.clone(),

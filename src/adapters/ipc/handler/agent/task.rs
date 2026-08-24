@@ -1199,6 +1199,7 @@ mod poll_strategy_ref_tests {
                 map_from_request: Default::default(),
                 state_field: "state".into(),
                 terminal_states: vec!["done".into()],
+                failure_states: vec![],
                 interval_ms: 500,
                 timeout_ms: None,
             })),

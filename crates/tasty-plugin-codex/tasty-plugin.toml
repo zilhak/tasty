@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.30"
+version = "0.1.31"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -182,7 +182,11 @@ poll_method = "codex.state"
 # poll params 가 비어 매 tick 실패한다.
 map_from_response = { child_surface_id = "surface" }
 state_field = "state"
-terminal_states = ["idle", "exited"]
+terminal_states = ["idle"]
+# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
+# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
+# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+failure_states = ["exited"]
 
 # 완료 판정 전략 — `codex.tell` 의 기본 완료 판정(결정 6).
 # 이게 없으면 `tell` 노드는 dispatch 응답만 보고 즉시 성공한다 — 자식이 메시지를
@@ -210,7 +214,11 @@ poll_method = "codex.state"
 # `surface` 다(`handlers.rs` 의 `require_u32(&params, "surface")`).
 map_from_response = { surface_id = "surface" }
 state_field = "state"
-terminal_states = ["idle", "exited"]
+terminal_states = ["idle"]
+# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
+# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
+# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+failure_states = ["exited"]
 
 [[contributes.settings_pages]]
 id = "codex"

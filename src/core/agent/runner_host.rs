@@ -708,6 +708,7 @@ impl HostExecutor {
                     poll_params: serde_json::Value::Object(poll_params),
                     state_field: spec.state_field.clone(),
                     terminal_states: spec.terminal_states.clone(),
+                    failure_states: spec.failure_states.clone(),
                     interval_ms: spec.interval_ms,
                     deadline_ms,
                 })
@@ -793,6 +794,7 @@ impl HostExecutor {
                 poll_params,
                 state_field,
                 terminal_states,
+                failure_states,
                 deadline_ms,
                 ..
             } => {
@@ -819,6 +821,19 @@ impl HostExecutor {
                     Err(e) => return PollOutcome::Failed(format!("{poll_method}: {e}")),
                 };
                 let state = resp.get(state_field).and_then(|v| v.as_str()).unwrap_or("");
+                // 실패 목록을 **먼저** 본다. 두 목록에 같은 값이 들어간 선언은
+                // 모순이지만 거부하지 않고 실패 쪽을 채택한다 — 실패를 성공으로
+                // 읽어 downstream 이 없는 산출물을 전제로 진행하는 쪽이, 성공을
+                // 실패로 읽어 멈추는 쪽보다 위험하다.
+                if failure_states.iter().any(|s| s == state) {
+                    // 응답 JSON 전체를 잃지 않게 요약을 메시지에 싣는다 —
+                    // `Run` 이 stdout/stderr tail 을 에러 메시지에 이어붙이는 것과
+                    // 같은 관례(`PollOutcome::Failed` 는 문자열 하나만 나른다).
+                    return PollOutcome::Failed(format!(
+                        "{poll_method}: failure state '{state}' — {}",
+                        summarize_poll_response(&resp)
+                    ));
+                }
                 if terminal_states.iter().any(|s| s == state) {
                     // terminal 도달 → 전체 응답을 산출물로 종결.
                     PollOutcome::Done(TaskResult {
@@ -996,6 +1011,31 @@ impl DrainedStream {
             "dropped_bytes": self.dropped_bytes,
         })
     }
+}
+
+/// 실패로 종결한 poll 응답을 에러 메시지에 실을 때의 상한(바이트).
+/// `Run` 의 [`CAPTURE_TAIL_CAP`] 과 달리 스트림 tail 이 아니라 상태 응답 JSON 이라
+/// 훨씬 작다 — 원인 파악에 필요한 필드가 보이면 충분하다.
+const POLL_FAILURE_SUMMARY_CAP: usize = 2 * 1024;
+
+/// 실패로 종결하는 poll 응답을 에러 메시지에 실을 한 줄로 접는다.
+///
+/// `PollOutcome::Failed` 는 문자열 하나만 나르므로, 응답 JSON 을 통째로 잃으면
+/// "왜 실패했는지" 의 유일한 단서가 상태값 하나로 줄어든다. 컴팩트 JSON 으로
+/// 직렬화하되 [`POLL_FAILURE_SUMMARY_CAP`] 바이트에서 자른다 — task 의 error
+/// 문자열은 memory store 값 하나에 실려 영속되므로 응답이 크면 상한이 필요하다.
+fn summarize_poll_response(resp: &serde_json::Value) -> String {
+    let mut text = resp.to_string();
+    if text.len() > POLL_FAILURE_SUMMARY_CAP {
+        // char boundary 로 내려서 자른다 — 멀티바이트 중간에서 자르면 패닉한다.
+        let mut cut = POLL_FAILURE_SUMMARY_CAP;
+        while cut > 0 && !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
+        text.push_str("...(truncated)");
+    }
+    text
 }
 
 /// 자식 stdout/stderr 파이프를 EOF 까지 계속 읽으면서 마지막 [`CAPTURE_TAIL_CAP`]
@@ -1543,9 +1583,117 @@ mod tests {
             poll_params: json!({}),
             state_field: "state".to_string(),
             terminal_states: vec!["done".to_string()],
+            failure_states: vec![],
             interval_ms: 1,
             deadline_ms: None,
         }
+    }
+
+    /// 폴링 판정 단위 테스트용 fake injector — 주어진 응답을 요청 순서대로 돌려준다.
+    /// `ctx.host_ipc` 를 채우고 워커 스레드 핸들을 반환한다(호출자가 join).
+    fn spawn_fake_injector(
+        ctx: &RunnerContext,
+        responses: Vec<serde_json::Value>,
+    ) -> std::thread::JoinHandle<()> {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_ipc::server::IpcCommand;
+
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        std::thread::spawn(move || {
+            for resp in responses {
+                let cmd = rx.recv().expect("recv poll request");
+                cmd.response_tx
+                    .send(JsonRpcResponse::success(
+                        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                        resp,
+                    ))
+                    .expect("send poll response");
+            }
+        })
+    }
+
+    /// 폴링 판정 단위 테스트용 핸들 — terminal/failure 목록을 직접 지정한다.
+    fn mk_polled_with_states(method: &str, terminal: &[&str], failure: &[&str]) -> DispatchHandle {
+        DispatchHandle::PolledDispatch {
+            workspace_id: 1,
+            poll_method: method.to_string(),
+            poll_params: json!({}),
+            state_field: "state".to_string(),
+            terminal_states: terminal.iter().map(|s| s.to_string()).collect(),
+            failure_states: failure.iter().map(|s| s.to_string()).collect(),
+            interval_ms: 1,
+            deadline_ms: None,
+        }
+    }
+
+    /// `failure_states` 적중은 Done 이 아니라 Failed 다 — 자식이 죽었는데
+    /// downstream 이 그 산출물을 전제로 진행하면 안 된다. 메시지에는 상태값과
+    /// 응답 요약이 함께 실려야 원인을 볼 수 있다.
+    #[test]
+    fn polled_dispatch_failure_state_yields_failed_not_done() {
+        let (_td, ctx) = fresh_ctx();
+        let worker = spawn_fake_injector(&ctx, vec![json!({ "state": "exited", "why": "killed" })]);
+        let mut exec = HostExecutor::new(ctx);
+        let handle = mk_polled_with_states("fake.poll", &["idle"], &["exited"]);
+        match exec.poll(&handle) {
+            PollOutcome::Failed(msg) => {
+                assert!(msg.contains("exited"), "{msg}");
+                assert!(msg.contains("killed"), "response summary missing: {msg}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        worker.join().unwrap();
+    }
+
+    /// terminal 과 failure 에 같은 값이 있으면 failure 우선 — 실패를 성공으로 읽는
+    /// 쪽이 그 반대보다 위험하다.
+    #[test]
+    fn polled_dispatch_failure_states_take_precedence_over_terminal() {
+        let (_td, ctx) = fresh_ctx();
+        let worker = spawn_fake_injector(&ctx, vec![json!({ "state": "exited" })]);
+        let mut exec = HostExecutor::new(ctx);
+        let handle = mk_polled_with_states("fake.poll", &["idle", "exited"], &["exited"]);
+        assert!(matches!(exec.poll(&handle), PollOutcome::Failed(_)));
+        worker.join().unwrap();
+    }
+
+    /// `failure_states` 가 비면 이 필드 도입 전과 완전히 같게 — terminal 도달은
+    /// 전부 성공이다(기존 영속 handle 의 동작 보존).
+    #[test]
+    fn polled_dispatch_without_failure_states_still_succeeds_on_terminal() {
+        let (_td, ctx) = fresh_ctx();
+        let worker = spawn_fake_injector(&ctx, vec![json!({ "state": "exited" })]);
+        let mut exec = HostExecutor::new(ctx);
+        let handle = mk_polled_with_states("fake.poll", &["idle", "exited"], &[]);
+        assert!(matches!(exec.poll(&handle), PollOutcome::Done(_)));
+        worker.join().unwrap();
+    }
+
+    /// 기존 영속 DAG JSON(`failure_states` 없음)이 그대로 역직렬화돼야 한다.
+    #[test]
+    fn poll_spec_without_failure_states_deserializes() {
+        let spec: tasty_agent::PollSpec = serde_json::from_str(
+            r#"{"poll_method":"x","state_field":"state","terminal_states":["idle"]}"#,
+        )
+        .expect("legacy inline PollSpec should still deserialize");
+        assert!(spec.failure_states.is_empty());
+        assert_eq!(spec.interval_ms, 500);
+    }
+
+    /// 실패 메시지 요약은 상한에서 잘리되 멀티바이트 경계에서 패닉하지 않는다.
+    #[test]
+    fn poll_failure_summary_truncates_on_char_boundary() {
+        let big = "가".repeat(POLL_FAILURE_SUMMARY_CAP);
+        let summary = summarize_poll_response(&json!({ "state": "exited", "log": big }));
+        assert!(summary.ends_with("...(truncated)"), "{}", &summary[..80]);
+        assert!(summary.len() <= POLL_FAILURE_SUMMARY_CAP + "...(truncated)".len());
     }
 
     /// K.A.2: injector 미초기화 1회 → Active + grace deadline 세팅.
@@ -1740,6 +1888,7 @@ mod tests {
                     map_from_request,
                     state_field: "state".into(),
                     terminal_states: vec!["done".into()],
+                    failure_states: vec![],
                     interval_ms: 1,
                     timeout_ms: None,
                 })),

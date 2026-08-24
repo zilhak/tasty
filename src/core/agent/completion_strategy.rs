@@ -15,8 +15,8 @@
 use tasty_agent::PollSpec;
 use tasty_plugin_manifest::CompletionStrategyDecl;
 
-/// `CompletionStrategyDecl` → `PollSpec`. 필드는 이름이 다른 `poll_method`/
-/// `state_field`/`terminal_states`/`interval_ms`/`timeout_ms` 를 그대로 옮기고,
+/// `CompletionStrategyDecl` → `PollSpec`. 필드는 이름이 같은 `poll_method`/
+/// `state_field`/`terminal_states`/`failure_states`/`interval_ms`/`timeout_ms` 를 그대로 옮기고,
 /// 두 맵(`map_from_response`/`map_from_request`)도 그대로 복사한다 — 변환에
 /// 실패할 수 있는 조건이 없으므로 `Result` 가 아니라 값을 직접 반환한다.
 pub(crate) fn completion_strategy_to_poll_spec(decl: &CompletionStrategyDecl) -> PollSpec {
@@ -26,6 +26,7 @@ pub(crate) fn completion_strategy_to_poll_spec(decl: &CompletionStrategyDecl) ->
         map_from_request: decl.map_from_request.clone(),
         state_field: decl.state_field.clone(),
         terminal_states: decl.terminal_states.clone(),
+        failure_states: decl.failure_states.clone(),
         interval_ms: decl.interval_ms,
         timeout_ms: decl.timeout_ms,
     }
@@ -41,7 +42,8 @@ mod tests {
             map_from_response = { child_surface_id = "surface_id" }
             map_from_request = { surface = "surface" }
             state_field = "state"
-            terminal_states = ["idle", "needs_input", "exited"]
+            terminal_states = ["idle", "needs_input"]
+            failure_states = ["exited"]
             interval_ms = 250
             timeout_ms = 30000
         "#;
@@ -59,6 +61,7 @@ mod tests {
         assert_eq!(spec.map_from_request, decl.map_from_request);
         assert_eq!(spec.state_field, decl.state_field);
         assert_eq!(spec.terminal_states, decl.terminal_states);
+        assert_eq!(spec.failure_states, decl.failure_states);
         assert_eq!(spec.interval_ms, decl.interval_ms);
         assert_eq!(spec.timeout_ms, decl.timeout_ms);
     }
@@ -74,5 +77,19 @@ mod tests {
         let spec = completion_strategy_to_poll_spec(&decl);
         assert_eq!(spec.interval_ms, 500);
         assert_eq!(spec.timeout_ms, None);
+    }
+
+    /// `failure_states` 를 선언하지 않은 기존 매니페스트가 그대로 로드돼야 한다 —
+    /// 빈 목록이면 폴링 판정은 이 필드 도입 전과 완전히 같게 동작한다.
+    #[test]
+    fn failure_states_default_to_empty_when_omitted() {
+        let toml = r#"
+            poll_method = "claude.wait_by_surface"
+            state_field = "state"
+            terminal_states = ["idle", "exited"]
+        "#;
+        let decl: CompletionStrategyDecl = toml::from_str(toml).expect("valid minimal toml");
+        let spec = completion_strategy_to_poll_spec(&decl);
+        assert!(spec.failure_states.is_empty());
     }
 }

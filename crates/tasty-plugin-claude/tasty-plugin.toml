@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.39"
+version = "0.1.40"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -234,8 +234,8 @@ flags = [
 # 그래서 이 plugin 자신의 `claude.state`(그 위에 얇게 위임하는 wrapper,
 # handlers.rs 참고)를 poll_method 로 둔다. idle/needs_input 을 둘 다 terminal
 # 로 두는 것은 기존 spawn/tell 훅 알림이 이미 이 둘을 "자식이 작업을 멈췄다"로
-# 취급하는 것과 같은 기준이다(위 spawn/tell subcommand 설명 참고). exited 는
-# 결정 4 로 신설된 상태.
+# 취급하는 것과 같은 기준이다(위 spawn/tell subcommand 설명 참고). 결정 4 로
+# 신설된 exited 는 terminal 이 아니라 failure_states 로 간다(아래 참고).
 [[contributes.completion_strategy]]
 id = "spawn-wait"
 priority = 100
@@ -250,7 +250,16 @@ poll_method = "claude.state"
 # 실패한다(handlers.rs 의 `require_surface_id`).
 map_from_response = { child_surface_id = "surface_id" }
 state_field = "state"
-terminal_states = ["idle", "needs_input", "exited"]
+terminal_states = ["idle", "needs_input"]
+# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
+# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
+# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+#
+# `needs_input` 은 성공 쪽에 남긴다. 사람이 승인해주면 이어서 끝나는 상태라 영구
+# 실패가 아니고, 이 plugin 의 spawn/tell 완료 알림도 이미 idle 과 needs_input 을
+# 둘 다 "자식이 작업을 멈췄다" 로 동일 취급한다(위 subcommand 설명 참고) — 그
+# 계약을 깨지 않는다. 실패로 볼지는 사용자가 별도로 결정할 사안이다.
+failure_states = ["exited"]
 
 # 완료 판정 전략 — `claude.tell` 의 기본 완료 판정(결정 6).
 # 이게 없으면 `tell` 노드는 dispatch 응답만 보고 즉시 성공한다 — 자식이 메시지를
@@ -276,7 +285,16 @@ poll_method = "claude.state"
 # 대상 surface 를 싣는다).
 map_from_response = { surface_id = "surface_id" }
 state_field = "state"
-terminal_states = ["idle", "needs_input", "exited"]
+terminal_states = ["idle", "needs_input"]
+# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
+# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
+# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+#
+# `needs_input` 은 성공 쪽에 남긴다. 사람이 승인해주면 이어서 끝나는 상태라 영구
+# 실패가 아니고, 이 plugin 의 spawn/tell 완료 알림도 이미 idle 과 needs_input 을
+# 둘 다 "자식이 작업을 멈췄다" 로 동일 취급한다(위 subcommand 설명 참고) — 그
+# 계약을 깨지 않는다. 실패로 볼지는 사용자가 별도로 결정할 사안이다.
+failure_states = ["exited"]
 
 [[contributes.settings_pages]]
 id = "claude"

@@ -203,9 +203,23 @@ pub struct PollSpec {
     pub map_from_request: HashMap<String, String>,
     /// 응답에서 상태를 읽을 필드명 (예: `"state"`).
     pub state_field: String,
-    /// terminal 로 간주할 상태값 목록 (예: `["idle","needs_input","exited"]`).
+    /// terminal 로 간주할 상태값 목록 (예: `["idle","needs_input"]`).
     /// 비-terminal 상태는 모두 계속 폴링(Active)으로 취급한다.
     pub terminal_states: Vec<String>,
+    /// **실패**로 간주할 상태값 목록 (예: `["exited"]`). 적중하면 task 가
+    /// `Succeeded` 가 아니라 `Failed` 로 종결되어 `OnFailure`(abort /
+    /// continue_downstream / fallback)가 비로소 동작한다 — 이 목록이 비어 있으면
+    /// 폴링 완료 판정은 terminal 도달을 전부 성공으로 읽는다.
+    ///
+    /// `terminal_states` 와 같은 값이 양쪽에 들어가면 **이쪽이 이긴다**(판정은
+    /// `src/core/agent/runner_host.rs`) — 실패를 성공으로 읽는 쪽이 그 반대보다
+    /// 위험하기 때문이다.
+    ///
+    /// 생략 가능하다. 이 필드 도입 이전에 영속된 DAG JSON(`TaskCommand::Custom.poll`
+    /// 의 인라인 `PollSpec`)이 그대로 역직렬화돼야 하므로 필수 필드로 만들지
+    /// 않는다.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failure_states: Vec<String>,
     /// 폴링 간격 (ms). 핸들에 보존된다. 기본 500ms — 생략해도 역직렬화가 실패하지
     /// 않는다(이전에는 필수 필드였다).
     #[serde(default = "default_poll_interval_ms")]

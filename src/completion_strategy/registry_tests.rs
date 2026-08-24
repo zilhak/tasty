@@ -511,6 +511,65 @@ fn bundled_claude_manifest_tell_default_strategy_resolves() {
     }
 }
 
+/// 번들 매니페스트가 `exited` 를 실패로 분류한다 — 성공으로 두면 자식이 죽어도
+/// downstream 이 그 산출물을 전제로 진행하고, 그 노드의 `on_failure` 는 영원히
+/// 도달 불가다. spawn/tell 두 전략 모두에 적용돼야 한다.
+#[test]
+fn bundled_manifests_classify_exited_as_failure() {
+    for (plugin_dir, methods) in [
+        ("tasty-plugin-claude", ["claude.spawn", "claude.tell"]),
+        ("tasty-plugin-codex", ["codex.spawn", "codex.tell"]),
+    ] {
+        let (reg, _) = install_bundled_manifest_strategies(plugin_dir);
+        for method in methods {
+            let winner = reg
+                .resolve_default_for_method(method)
+                .unwrap_or_else(|| panic!("{method} should resolve a default strategy"));
+            match winner.kind {
+                CompletionStrategyKind::Poll(spec) => {
+                    assert!(
+                        spec.failure_states.iter().any(|s| s == "exited"),
+                        "{method}: exited should be a failure state"
+                    );
+                    assert!(
+                        !spec.terminal_states.iter().any(|s| s == "exited"),
+                        "{method}: exited should not also be a success state"
+                    );
+                    assert!(
+                        spec.terminal_states.iter().any(|s| s == "idle"),
+                        "{method}: idle stays a success state"
+                    );
+                }
+                CompletionStrategyKind::Push { .. } => panic!("{method}: expected poll"),
+            }
+        }
+    }
+}
+
+/// `needs_input` 은 claude 쪽에서 성공으로 남는다 — 사람이 승인하면 이어서 끝나는
+/// 상태라 영구 실패가 아니고, spawn/tell 완료 알림이 이미 idle 과 동일 취급한다.
+/// codex 는 대응 hook 이벤트가 없어 애초에 어느 목록에도 없다.
+#[test]
+fn bundled_claude_manifest_keeps_needs_input_as_success() {
+    let (reg, _) = install_bundled_manifest_strategies("tasty-plugin-claude");
+    for method in ["claude.spawn", "claude.tell"] {
+        let winner = reg.resolve_default_for_method(method).expect("resolves");
+        match winner.kind {
+            CompletionStrategyKind::Poll(spec) => {
+                assert!(
+                    spec.terminal_states.iter().any(|s| s == "needs_input"),
+                    "{method}"
+                );
+                assert!(
+                    !spec.failure_states.iter().any(|s| s == "needs_input"),
+                    "{method}"
+                );
+            }
+            CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+        }
+    }
+}
+
 /// codex 는 poll param 키가 `surface` 다 — claude(`surface_id`)와 다르다.
 #[test]
 fn bundled_codex_manifest_tell_default_strategy_maps_surface_key() {
