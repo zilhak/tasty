@@ -302,6 +302,11 @@ pub fn register(
 /// 다음 등록이 조용히 옛 본문을 덮어쓰는 것처럼 보이는 orphan 이 된다. 없으면
 /// `UnknownGate`.
 pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateError> {
+    // 이름이 그대로 파일명이 되므로 삭제도 등록과 같은 관문을 통과해야 한다 —
+    // 검증 없이 경로를 조립하면 `../` 로 data_dir 밖 파일을 지울 수 있다.
+    if !is_valid_short_name(short_name) {
+        return Err(GateError::InvalidShortName(short_name.to_string()));
+    }
     let data_dir = require_data_dir(data_dir)?;
     let def = registered_file(data_dir, short_name);
     if !def.is_file() {
@@ -334,6 +339,11 @@ pub fn show(
     short_name: &str,
     tr: &Translator,
 ) -> Result<(&'static str, GateDef, String), GateError> {
+    // 조회도 같은 관문 — 검증을 건너뛰면 `../` 로 data_dir 밖 파일 내용을 그대로
+    // 돌려주는 읽기 통로가 된다.
+    if !is_valid_short_name(short_name) {
+        return Err(GateError::InvalidShortName(short_name.to_string()));
+    }
     if let Some(data_dir) = data_dir {
         let def_path = registered_file(data_dir, short_name);
         if def_path.is_file() {
@@ -617,6 +627,55 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let src = body_with(tmp.path(), "b.md", &format!("{SENTINEL}\n"));
         let err = register(Some(tmp.path()), "Bad Name!", &src, None, None).unwrap_err();
+        assert!(matches!(err, GateError::InvalidShortName(_)));
+    }
+
+    /// data_dir 밖으로 새는 이름을 만들어 준다 — 게이트 경로가 `data_dir/gates/
+    /// {registered,bodies}/<name>.<ext>` 라, `../` 3개면 tempdir 루트로 빠져나간다.
+    /// 검증이 없으면 그 파일이 실제 대상이 된다는 것이 이 이름이 증명하는 것.
+    fn escaping_name() -> &'static str {
+        "../../../outside"
+    }
+
+    #[test]
+    fn unregister_rejects_path_traversal_name_and_leaves_outside_file_intact() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("data");
+        std::fs::create_dir_all(registered_dir(&data_dir)).unwrap();
+        std::fs::create_dir_all(bodies_dir(&data_dir)).unwrap();
+
+        // 검증이 빠지면 unregister 가 지웠을 바로 그 두 경로.
+        let victim_def = registered_file(&data_dir, escaping_name());
+        let victim_body = body_file(&data_dir, escaping_name());
+        std::fs::write(&victim_def, "{}").unwrap();
+        std::fs::write(&victim_body, "outside body").unwrap();
+
+        let err = unregister(Some(&data_dir), escaping_name()).unwrap_err();
+        assert!(matches!(err, GateError::InvalidShortName(_)));
+        assert!(victim_def.is_file(), "data_dir 밖 정의 파일이 삭제됐다");
+        assert!(victim_body.is_file(), "data_dir 밖 본문 파일이 삭제됐다");
+    }
+
+    #[test]
+    fn show_rejects_path_traversal_name_and_does_not_leak_outside_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data_dir = tmp.path().join("data");
+        std::fs::create_dir_all(registered_dir(&data_dir)).unwrap();
+        std::fs::create_dir_all(bodies_dir(&data_dir)).unwrap();
+
+        // 검증이 빠지면 show 가 읽어 반환했을 바로 그 두 경로.
+        std::fs::write(
+            registered_file(&data_dir, escaping_name()),
+            "{\"sentinel\":\"X\"}",
+        )
+        .unwrap();
+        std::fs::write(body_file(&data_dir, escaping_name()), "SECRET-BODY\n").unwrap();
+
+        let err = show(Some(&data_dir), escaping_name(), &test_translator()).unwrap_err();
+        assert!(matches!(err, GateError::InvalidShortName(_)));
+
+        // data_dir 이 없을 때도 host fallback 으로 새지 않는다.
+        let err = show(None, escaping_name(), &test_translator()).unwrap_err();
         assert!(matches!(err, GateError::InvalidShortName(_)));
     }
 
