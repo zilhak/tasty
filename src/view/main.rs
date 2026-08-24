@@ -47,6 +47,17 @@ pub struct MainView {
     /// vi_copy::handle_vi_key 가 가로채 cursor/visual/yank 등을 처리.
     pub(crate) vi_copy: Option<vi_copy::ViCopyMode>,
     pub(crate) left_mouse_down: bool,
+    /// 앱(트래킹 TUI)에 press 를 **실제로 보고한** `(버튼 코드, 대상 surface)` 스택
+    /// (버튼 0=left/1=middle/2=right). 가장 최근 press 가 마지막이며, 드래그 motion 의
+    /// cb 버튼 비트와 보고 대상이 여기서 나온다.
+    ///
+    /// 로컬 선택 게이트인 [`Self::left_mouse_down`] 과 **의도적으로 분리**한다 — 우/미들
+    /// 버튼은 로컬 선택에 개입하면 안 되고, 반대로 앱에 보고되지 않은 좌클릭
+    /// (Shift 우회·블랙리스트·링크 클릭)은 여기 들어오지 않아야 motion 도 안 나간다.
+    /// 즉 "press 를 보고했으면 motion 도 같은 버튼·같은 surface 로 보고한다" 는 대응이
+    /// 스택 하나로 유지된다. surface 를 함께 담는 것은 우클릭이 click-to-activate 를
+    /// 타지 않아 **비포커스 surface 에 press 가 보고될 수 있기** 때문이다.
+    pub(crate) report_buttons_down: Vec<(u8, u32)>,
     /// 트래킹 ON 에서 Shift+좌클릭으로 시작한 "마우스 리포팅 우회 로컬 선택" 시퀀스인지.
     /// press 시점에 1회만 판정해 release 까지 유지한다 — motion/release 는 이 플래그로
     /// 라우팅하며, 드래그 도중 Shift 를 떼도(또는 멀티클릭으로 dragging=false 여도)
@@ -177,6 +188,7 @@ impl MainView {
             text_selection: None,
             vi_copy: None,
             left_mouse_down: false,
+            report_buttons_down: Vec::new(),
             left_select_bypass: false,
             link_click_consumed: false,
             last_mouse_report_cell: None,

@@ -1304,3 +1304,66 @@ fn hover_motion_never_reaches_a_non_focused_surface() {
     );
     inst.call("surface.close", json!({ "surface_id": other }));
 }
+
+/// (h) 우/미들 드래그도 중간 motion 을 보고하고, cb 의 버튼 비트가 실제 버튼을 담는다.
+/// 좌버튼은 기존 값(0/32/0)을 유지해야 한다(회귀).
+#[test]
+#[ignore]
+fn drag_motion_carries_the_pressed_button() {
+    let inst = shared();
+    inst.focus();
+    let sid = inst.first_surface_id();
+
+    enable_mouse_tracking(&inst, sid, "1002");
+    for (button, press, motion) in [
+        (2_u8, "^[[<2;", "^[[<34;"),
+        (1, "^[[<1;", "^[[<33;"),
+        (0, "^[[<0;", "^[[<32;"),
+    ] {
+        inst.call("surface.set_mark", json!({ "surface_id": sid }));
+        inst.inject_mouse(sid, 0.30, 0.5, "press", button);
+        inst.inject_mouse(sid, 0.45, 0.5, "move", button);
+        inst.inject_mouse(sid, 0.60, 0.5, "move", button);
+        inst.inject_mouse(sid, 0.60, 0.5, "release", button);
+        settle();
+        let out = read_since_mark(&inst, sid);
+        assert!(
+            out.contains(press),
+            "button {button} press should be reported, got: {out:?}"
+        );
+        assert!(
+            out.contains(motion),
+            "button {button} drag should report motion with its own bits, got: {out:?}"
+        );
+    }
+
+    // 트래킹 OFF 에서는 우 드래그가 PTY 로 새지 않고 로컬 선택도 건드리지 않는다.
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "\u{3}" }),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "printf '\\e[?1002l\\e[?1003l'; cat -v\n" }),
+    );
+    std::thread::sleep(Duration::from_millis(400));
+    inst.call("surface.set_mark", json!({ "surface_id": sid }));
+    inst.inject_mouse(sid, 0.30, 0.5, "press", 2);
+    inst.inject_mouse(sid, 0.50, 0.5, "move", 2);
+    inst.inject_mouse(sid, 0.50, 0.5, "release", 2);
+    settle();
+    assert!(
+        !read_since_mark(&inst, sid).contains("^[[<"),
+        "tracking off must not report any mouse bytes"
+    );
+    assert_eq!(
+        inst.debug_selection()["present"],
+        json!(false),
+        "a right drag must not start a local text selection"
+    );
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "\u{3}" }),
+    );
+}

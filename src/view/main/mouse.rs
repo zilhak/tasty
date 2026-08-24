@@ -203,26 +203,35 @@ impl MainView {
             self.mark_dirty();
         }
 
-        // Handle selection drag
-        if self.left_mouse_down && self.dragging_divider.is_none() {
+        // Handle selection drag / 앱 보고 드래그 motion.
+        // 게이트가 둘이다: 로컬 선택은 좌버튼 전용(`left_mouse_down`)이고, 앱 보고는
+        // **보고된 press 가 있는 모든 버튼**(`report_buttons_down`)이다 — 우/미들
+        // 드래그도 1002/1003 규약대로 중간 motion 을 내보내야 한다.
+        let dragging_for_report = !self.report_buttons_down.is_empty();
+        if (self.left_mouse_down || dragging_for_report) && self.dragging_divider.is_none() {
             // Shift+좌클릭 우회 시퀀스(left_select_bypass)면 트래킹 motion 보고를 건너뛰고
             // 곧장 로컬 선택 확장 경로로 떨어진다. 플래그 검사를 트래킹 보고 블록 *이전* 에
             // 두어 early-return 으로 로컬 경로가 막히는 것을 방지한다.
             if !self.left_select_bypass {
                 // 트래킹 ON(CellMotion/AllMotion): 드래그 motion 을 앱에 보고 (셀 바뀔 때만).
                 // 앱이 마우스를 소유하므로 로컬 선택 확장은 하지 않는다.
+                //
+                // 대상은 **press 시점에 고정된 surface** 다 — 커서가 밴드나 이웃 surface
+                // 로 넘어가도 `mouse_cell_for_report` 의 클램프와 함께 원래 surface 기준
+                // 보고가 이어진다.
                 let track = self
-                    .state
-                    .focused_surface_id(&self.core_state)
-                    .and_then(|sid| {
+                    .report_buttons_down
+                    .last()
+                    .copied()
+                    .and_then(|(button, sid)| {
                         self.core_state
                             .find_terminal_by_id(sid)
-                            .map(|t| (sid, t.mouse_tracking()))
+                            .map(|t| (sid, button, t.mouse_tracking()))
                     });
                 // 드래그 motion 은 1002 와 1003 이 **같다** — 둘 다 버튼이 눌린 동안의
                 // 셀 이동을 보고한다. 1003 고유 동작인 버튼 없는 hover 는 이 블록이
                 // 아니라 아래 `report_hover_motion` 이 담당한다.
-                if let Some((sid, mode)) = track
+                if let Some((sid, button, mode)) = track
                     && matches!(
                         self.effective_click_tracking(sid, mode),
                         tasty_terminal::MouseTrackingMode::CellMotion
@@ -231,12 +240,17 @@ impl MainView {
                 {
                     let (col, row) = self.mouse_cell_for_report(sid, x, y);
                     if self.last_mouse_report_cell != Some((sid, col, row)) {
-                        self.report_mouse_event(sid, x, y, 0, true, false);
+                        // 버튼 비트는 실제 눌린 버튼 — 예전엔 0(좌)으로 하드코딩돼
+                        // 어떤 버튼으로 끌든 좌버튼 드래그로 보고됐다.
+                        self.report_mouse_event(sid, x, y, button, true, false);
                     }
                     return;
                 }
             }
-            let is_dragging = self.text_selection.as_ref().is_some_and(|s| s.dragging);
+            // 로컬 선택 확장은 **좌버튼 전용** — 우/미들 드래그가 여기로 새면 트래킹
+            // OFF 에서 무동작이던 계약이 깨진다.
+            let is_dragging =
+                self.left_mouse_down && self.text_selection.as_ref().is_some_and(|s| s.dragging);
             if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
                 if let Some(sel) = &mut self.text_selection {
                     sel.cursor = point;
@@ -343,6 +357,15 @@ impl MainView {
         // grab 실패 시에도 바깥 클릭 dismiss 가 보장되어 워치독이 사실상 발화하지
         // 않는다. 실제 결과 회수는 다음 프레임의 `poll_pending_native_menu` 가
         // 한다(완료 경로 단일화).
+        // 물리적으로 떼진 버튼은 **무조건** 보고 스택에서 내린다 — 아래 어느 분기로
+        // early-return 하든(메뉴 삼킴 / egui 소비 / mesh forward) 눌린 채로 남으면
+        // 그 뒤의 hover 가 영영 드래그로 오인된다.
+        if button_state == ElementState::Released
+            && let Some(code) = report_button_code(button)
+        {
+            pop_report_button(&mut self.report_buttons_down, code);
+        }
+
         if menu_dismiss_swallow {
             if button_state == ElementState::Pressed {
                 self.dismiss_pending_native_menu();
@@ -563,6 +586,9 @@ impl MainView {
             // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, ADR-0022 ②).
             if button_state == ElementState::Pressed {
                 self.report_left_press_capture(surface_id);
+                // Shift+우클릭(ADR-0022)은 이 분기에 들어오지 않으므로 스택에도 안
+                // 오른다 — press 를 안 보낸 드래그의 motion 이 새지 않는다.
+                push_report_button(&mut self.report_buttons_down, 2, surface_id);
             }
             self.report_mouse_event(
                 surface_id,
@@ -624,6 +650,9 @@ impl MainView {
                     false,
                     button_state == ElementState::Released,
                 );
+                if button_state == ElementState::Pressed {
+                    push_report_button(&mut self.report_buttons_down, 1, surface_id);
+                }
             }
         }
     }
@@ -826,6 +855,8 @@ impl MainView {
                 if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
                     self.report_left_press_capture(sid);
                     self.report_mouse_event(sid, x, y, 0, false, false);
+                    // press 를 보고했으니 이후 motion 도 좌버튼으로 보고한다.
+                    push_report_button(&mut self.report_buttons_down, 0, sid);
                 }
             }
         } else if shift {
@@ -1249,6 +1280,30 @@ impl MainView {
 /// 마우스 휠 이벤트를 마우스 리포팅 시퀀스로 인코딩한다. `sgr` 가 true 면 SGR
 /// (`ESC [ < btn ; col ; row M`), 아니면 legacy X10 (`ESC [ M` + 32-offset 3 bytes).
 /// `count` 만큼 반복 발행. `btn` 은 64(up)/65(down), `col`/`row` 는 1-based.
+/// 앱에 press 를 보고한 버튼을 스택 맨 위로 올린다. 이미 있으면 최신 위치로
+/// 옮긴다 — motion cb 는 "가장 최근에 누른 버튼" 을 싣는다(xterm 관례).
+fn push_report_button(stack: &mut Vec<(u8, u32)>, button: u8, surface_id: u32) {
+    stack.retain(|(b, _)| *b != button);
+    stack.push((button, surface_id));
+}
+
+/// 보고 스택에서 버튼을 내린다. 남은 버튼이 있으면 그다음 최근 press 가 motion
+/// 버튼이 된다(여러 버튼을 겹쳐 눌렀다 하나만 뗀 경우).
+fn pop_report_button(stack: &mut Vec<(u8, u32)>, button: u8) {
+    stack.retain(|(b, _)| *b != button);
+}
+
+/// winit 버튼 → 마우스 리포팅 버튼 코드(0=left/1=middle/2=right). 그 외 버튼은
+/// 보고 대상이 아니다.
+fn report_button_code(button: MouseButton) -> Option<u8> {
+    match button {
+        MouseButton::Left => Some(0),
+        MouseButton::Middle => Some(1),
+        MouseButton::Right => Some(2),
+        _ => None,
+    }
+}
+
 /// "버튼 없음" 을 뜻하는 마우스 리포팅 버튼 코드. xterm 규약상 하위 2 비트가 `3` 이면
 /// 버튼이 눌리지 않은 상태이고, motion 비트를 얹으면 `3|32 = 35` 가 된다.
 const MOUSE_BUTTON_NONE: u8 = 3;
@@ -2116,6 +2171,67 @@ mod hover_motion_tests {
             mouse_report_cb(MOUSE_BUTTON_NONE, true, false, false, false),
             35
         );
+        assert_eq!(mouse_report_cb(0, true, false, false, false), 32);
+    }
+}
+
+#[cfg(test)]
+mod drag_button_tests {
+    use super::{mouse_report_cb, pop_report_button, push_report_button, report_button_code};
+    use winit::event::MouseButton;
+
+    /// motion 대상은 "가장 최근에 보고된 press" 다 — 버튼 코드와 surface 를 함께 싣는다.
+    fn target(stack: &[(u8, u32)]) -> Option<(u8, u32)> {
+        stack.last().copied()
+    }
+
+    #[test]
+    fn most_recent_press_owns_the_motion_report() {
+        let mut stack = Vec::new();
+        push_report_button(&mut stack, 0, 7);
+        assert_eq!(target(&stack), Some((0, 7)));
+        // 좌버튼을 누른 채 우버튼을 추가로 누르면 motion 은 우버튼으로 나간다.
+        push_report_button(&mut stack, 2, 7);
+        assert_eq!(target(&stack), Some((2, 7)));
+        // 우버튼만 떼면 아직 눌려 있는 좌버튼이 다시 motion 주인이 된다.
+        pop_report_button(&mut stack, 2);
+        assert_eq!(target(&stack), Some((0, 7)));
+        pop_report_button(&mut stack, 0);
+        assert_eq!(target(&stack), None);
+    }
+
+    /// 우클릭은 click-to-activate 를 타지 않아 비포커스 surface 에 press 가 갈 수 있다 —
+    /// motion 도 그 surface 로 가야 press/motion/release 가 한 앱에서 짝을 이룬다.
+    #[test]
+    fn motion_follows_the_press_time_surface() {
+        let mut stack = Vec::new();
+        push_report_button(&mut stack, 2, 42);
+        assert_eq!(target(&stack), Some((2, 42)));
+    }
+
+    /// 같은 버튼 재press 는 중복 쌓지 않고 최신 surface 로 갱신된다.
+    #[test]
+    fn repeated_press_does_not_stack_up() {
+        let mut stack = Vec::new();
+        push_report_button(&mut stack, 1, 3);
+        push_report_button(&mut stack, 1, 5);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(target(&stack), Some((1, 5)));
+    }
+
+    #[test]
+    fn winit_buttons_map_to_report_codes() {
+        assert_eq!(report_button_code(MouseButton::Left), Some(0));
+        assert_eq!(report_button_code(MouseButton::Middle), Some(1));
+        assert_eq!(report_button_code(MouseButton::Right), Some(2));
+        assert_eq!(report_button_code(MouseButton::Back), None);
+    }
+
+    /// 우 34(`2|32`) / 미들 33(`1|32`) / 좌 32 — 좌버튼 값은 기존과 같아야 한다(회귀).
+    #[test]
+    fn drag_motion_cb_carries_the_button_bits() {
+        assert_eq!(mouse_report_cb(2, true, false, false, false), 34);
+        assert_eq!(mouse_report_cb(1, true, false, false, false), 33);
         assert_eq!(mouse_report_cb(0, true, false, false, false), 32);
     }
 }
