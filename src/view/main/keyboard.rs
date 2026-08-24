@@ -50,6 +50,11 @@ impl MainView {
             return;
         }
 
+        // 0단계: 전체화면 무대가 떠 있으면 여기서 전부 끝난다(1~9단계로 내려가지 않는다).
+        if self.try_consume_fullscreen_stage_key(event) {
+            return;
+        }
+
         if self.try_consume_double_tap_key() {
             return;
         }
@@ -112,6 +117,41 @@ impl MainView {
         } else {
             event.logical_key.clone()
         }
+    }
+
+    /// 0단계: 전체화면 무대가 활성이면 **모든 키를 여기서 소비**한다. 소비 시 true.
+    ///
+    /// 1~3단계(double-tap)보다 앞에 있어야 한다 — 무대는 뒤 세계와 로직상 무관하므로
+    /// 뒤 세계의 어떤 단축키도(double-tap 포함) 무대 중에 발화하면 안 된다. 4단계
+    /// (`try_consume_escape_key`)보다 앞인 것이 ESC 비전파의 실체다: 무대 중 ESC 는
+    /// 여기서 무대만 닫고 `return` 하므로 settings/notifications 닫기 경로에 도달하지
+    /// 않는다. 무대가 없으면 no-op 이라 기존 파이프라인은 그대로다.
+    ///
+    /// 키가 **무대 콘텐츠로 전달되는 경로는 여기가 아니다** — 무대는 egui 프레임 안에
+    /// 그려지므로 `MainView::handle_event` 가 무대 중 키/IME 를 egui 입력 시스템으로
+    /// 먹인다(오버레이와 같은 취급). 이 함수는 그 뒤에 남은 잔여 입력이 뒤로 새지
+    /// 않게 막는 쪽만 담당한다.
+    fn try_consume_fullscreen_stage_key(&mut self, event: &winit::event::KeyEvent) -> bool {
+        match stage_key_decision(self.state.fullscreen_stage_active(), &event.logical_key) {
+            StageKeyDecision::PassThrough => false,
+            StageKeyDecision::ExitStage => {
+                self.discard_pending_double_tap();
+                self.state.close_fullscreen_stage();
+                self.mark_dirty();
+                true
+            }
+            StageKeyDecision::ConsumeForStage => {
+                self.discard_pending_double_tap();
+                true
+            }
+        }
+    }
+
+    /// 무대 중 완성된 double-tap 결과를 버린다. 검출기 자체에는 press/release 를 계속
+    /// 먹인다(물리 상태를 놓치면 무대를 나온 뒤 판정이 어긋난다) — 대신 완성된 결과만
+    /// 여기서 소진해 무대 중에도, 무대를 나온 직후에도 발화하지 않게 한다.
+    fn discard_pending_double_tap(&mut self) {
+        let _discarded = self.double_tap.take();
     }
 
     /// 1~3단계: double-tap modifier 단축키(예: Shift+Shift) 소비. 소비 시 true.
@@ -611,6 +651,39 @@ fn should_forward_text(text: &str, is_cmd: bool, ime_active: bool) -> bool {
     text.chars().all(is_printable_char)
 }
 
+/// 0단계 무대 게이트의 순수 판정([`MainView::try_consume_fullscreen_stage_key`]).
+/// `MainView` 는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어 게이트 메서드 자체를 단위
+/// 테스트로 못 돌린다 — mouse.rs 의 `cursor_moved_should_short_circuit` 과 같은 이유로
+/// 판정만 순수 함수로 떼어 테스트한다.
+#[derive(Debug, PartialEq, Eq)]
+enum StageKeyDecision {
+    /// 무대 없음 — 기존 파이프라인(1단계~)으로 그대로 흘린다.
+    PassThrough,
+    /// 무대 있음 + 종료 키 — 무대를 닫고 소비. 뒤로 전파하지 않는다.
+    ExitStage,
+    /// 무대 있음 + 그 외 키 — 무대 콘텐츠(egui)가 이미 받았다. 뒤로 전파하지 않는다.
+    ConsumeForStage,
+}
+
+fn stage_key_decision(stage_active: bool, key: &Key) -> StageKeyDecision {
+    if !stage_active {
+        return StageKeyDecision::PassThrough;
+    }
+    if stage_exit_key_matches(key) {
+        StageKeyDecision::ExitStage
+    } else {
+        StageKeyDecision::ConsumeForStage
+    }
+}
+
+/// 무대 종료 키 판정 — **바인딩 값을 읽는 단 하나의 지점**. 사용자 확정 계약의 기본값이
+/// ESC 이고, 지금은 `KeybindingSettings` 에 대응 필드가 아직 없다. 필드가 생기면 이 함수
+/// 본문만 그 조회로 바뀌고 게이트 구조·호출부는 그대로다 — 값을 파이프라인 여러 곳에
+/// 흩뿌리지 않으려고 판정을 여기 한 곳으로 모았다.
+fn stage_exit_key_matches(key: &Key) -> bool {
+    key == &Key::Named(NamedKey::Escape)
+}
+
 /// egui-winit `is_printable_char` 미러 — ASCII 제어문자와 유니코드 사설 사용 영역
 /// (일부 플랫폼이 Delete/기능키를 이 영역 문자로 보냄)을 비인쇄로 걸러낸다.
 fn is_printable_char(chr: char) -> bool {
@@ -623,6 +696,61 @@ fn is_printable_char(chr: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn esc() -> Key {
+        Key::Named(NamedKey::Escape)
+    }
+
+    /// 무대 중 ESC 는 0단계에서 끝난다 — 4단계(`try_consume_escape_key`, settings 모달·
+    /// notifications 팝업 닫기)에 **도달하지 않는다**. 0단계가 4단계보다 앞에 있고
+    /// `ExitStage` 가 즉시 `return` 으로 이어진다는 배선은
+    /// `tests/fullscreen_stage_input_gate.rs` 가 구조로 고정한다.
+    #[test]
+    fn stage_gate_blocks_escape_from_reaching_popup_close() {
+        assert_eq!(
+            stage_key_decision(true, &esc()),
+            StageKeyDecision::ExitStage
+        );
+    }
+
+    /// 무대가 없으면 0단계는 no-op — ESC 가 기존 4단계 경로로 그대로 내려간다.
+    #[test]
+    fn stage_gate_is_noop_when_no_stage() {
+        assert_eq!(
+            stage_key_decision(false, &esc()),
+            StageKeyDecision::PassThrough
+        );
+        assert_eq!(
+            stage_key_decision(false, &Key::Character("a".into())),
+            StageKeyDecision::PassThrough
+        );
+    }
+
+    /// 종료 키가 아닌 키는 무대가 소비한다 — 단축키(6단계)·vi(7단계)·터미널
+    /// forward(9단계) 어디로도 내려가지 않는다.
+    #[test]
+    fn stage_swallows_every_other_key() {
+        for key in [
+            Key::Character("a".into()),
+            Key::Named(NamedKey::Enter),
+            Key::Named(NamedKey::Tab),
+            Key::Named(NamedKey::ArrowDown),
+        ] {
+            assert_eq!(
+                stage_key_decision(true, &key),
+                StageKeyDecision::ConsumeForStage,
+                "{key:?} 가 무대를 뚫고 내려갔다"
+            );
+        }
+    }
+
+    /// 종료 키 판정은 한 곳(`stage_exit_key_matches`)에만 있다 — `KeybindingSettings`
+    /// 필드가 생기면 이 함수 본문만 바뀐다.
+    #[test]
+    fn stage_exit_key_is_escape_by_default() {
+        assert!(stage_exit_key_matches(&esc()));
+        assert!(!stage_exit_key_matches(&Key::Named(NamedKey::Enter)));
+    }
 
     fn read_state(option_as_meta: bool) -> KeyboardReadState {
         KeyboardReadState {

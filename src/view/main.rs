@@ -262,6 +262,13 @@ impl MainView {
     }
 
     pub(crate) fn update_ime_cursor_area(&self) {
+        // 무대 중에는 뒤 surface 의 셀 좌표로 IME 후보창 위치를 잡는 것이 무의미하다
+        // (그 surface 는 보이지도 않는다). 진입 시 preedit 은 이미 버려지므로 보통
+        // 아래 `ime_preedit` 가드에 걸리지만, 무대 콘텐츠가 자체 IME 입력을 받는
+        // 경우까지 뒤 좌표를 쓰지 않도록 명시적으로 먼저 끊는다.
+        if self.state.fullscreen_stage_active() {
+            return;
+        }
         let Some(preedit) = &self.ime_preedit else {
             return;
         };
@@ -333,7 +340,13 @@ impl View for MainView {
 
         // 판정은 `AppState::keyboard_overlay_open` 단일 출처 — 아래 터미널 포워딩
         // 게이트(`keyboard.rs`)와 같은 식을 써야 이중 처리/입력 유실이 없다.
-        let overlay_open = self.state.keyboard_overlay_open();
+        //
+        // 전체화면 무대도 여기서는 오버레이와 같은 취급이다 — 무대 콘텐츠는 egui 위젯
+        // 이라 키/IME 가 egui 입력 시스템에 들어가야 클릭·텍스트 입력이 산다. 뒤 세계로의
+        // 누수는 이 게이트가 아니라 `keyboard.rs` 0단계 게이트가 막는다(둘은 방향이 다르다:
+        // 여기는 "무대로 준다", 저기는 "뒤로는 안 준다").
+        let overlay_open =
+            self.state.keyboard_overlay_open() || self.state.fullscreen_stage_active();
 
         // host-egui 위젯(TextEdit 등)으로 렌더되는 surface 만 winit 키/IME 를 egui 입력
         // 시스템으로 직접 넘긴다. markdown/image 는 plugin egui-mesh 로 렌더되므로 host
