@@ -1252,6 +1252,22 @@ status_unknown_kind = "미등록 타입"
 auto_detect_ok = "자동감지 성공: 원격 환경 → port_mode={} (활성)."
 auto_detect_failed = "자동감지 실패: {}\n  '{}' 은 비활성 상태로 저장되었습니다 — 'tasty tool remote-profile detect {}' 로 재시도하세요."
 
+# `tasty tool passkey` — 자격증명 로컬 CRUD. 값은 절대 출력하지 않는다
+# (ADR-0016) — list/show 는 name + kind 만 노출.
+# `list_header` 는 컬럼 패딩을 값 안에 담는다 — CJK 글자는 터미널 표시 폭이
+# 2 배라 언어마다 헤더 한 줄을 각자 맞춰야 정렬이 유지된다.
+[cli.passkey]
+path_xor_inline = "--path 와 --inline 은 함께 쓸 수 없습니다."
+inline_empty = "inline 값이 비어 있습니다 (--value 또는 stdin)."
+needs_path_or_inline = "--path <file> 또는 --inline 중 하나가 필요합니다."
+added = "추가: passkey '{}'."
+updated = "갱신: passkey '{}'."
+list_empty = "저장된 passkey 가 없습니다 (tasty tool passkey add ...)."
+list_header = "이름                     종류"
+not_found = "passkey '{}' 을 찾을 수 없습니다."
+value_masked = "(마스킹 — GUI Reveal 로만 확인)"
+removed = "제거: passkey '{}'."
+
 # `tasty terminal` — 호스트 내재화된 child-terminal 관리 (ADR-0040).
 [cli.terminal]
 desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…)."

@@ -1260,6 +1260,22 @@ status_unknown_kind = "unknown type"
 auto_detect_ok = "Auto-detection succeeded: remote environment -> port_mode={} (enabled)."
 auto_detect_failed = "Auto-detection failed: {}\n  '{}' was saved as disabled — retry with 'tasty tool remote-profile detect {}'."
 
+# `tasty tool passkey` — local CRUD for credentials. Values are never printed
+# (ADR-0016) — list/show expose name + kind only.
+# `list_header` carries its own column padding: CJK glyphs are twice as wide in a
+# terminal, so each language pads its own header line.
+[cli.passkey]
+path_xor_inline = "--path and --inline cannot be used together."
+inline_empty = "The inline value is empty (--value or stdin)."
+needs_path_or_inline = "Either --path <file> or --inline is required."
+added = "Added: passkey '{}'."
+updated = "Updated: passkey '{}'."
+list_empty = "No passkeys saved (tasty tool passkey add ...)."
+list_header = "NAME                     KIND"
+not_found = "passkey '{}' not found."
+value_masked = "(masked — reveal it from the GUI only)"
+removed = "Removed: passkey '{}'."
+
 # `tasty terminal` — host-internalized child-terminal management (ADR-0040).
 [cli.terminal]
 desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."

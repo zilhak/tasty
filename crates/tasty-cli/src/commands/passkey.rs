@@ -9,6 +9,7 @@ use std::io::Read;
 
 use anyhow::Result;
 use clap::Subcommand;
+use tasty_i18n::{t, t_fmt};
 
 use tasty_remote_profiles::Passkeys;
 
@@ -58,7 +59,7 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             value,
         } => {
             if path.is_some() && *inline {
-                anyhow::bail!("--path 와 --inline 은 함께 쓸 수 없습니다.");
+                anyhow::bail!("{}", t("cli.passkey.path_xor_inline"));
             }
             let mut passkeys = Passkeys::load();
             let replaced = passkeys.get(name).is_some();
@@ -81,17 +82,19 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
                     }
                 };
                 if secret.is_empty() {
-                    anyhow::bail!("inline 값이 비어 있습니다 (--value 또는 stdin).");
+                    anyhow::bail!("{}", t("cli.passkey.inline_empty"));
                 }
                 passkeys.upsert_inline(name, &secret)?;
             } else {
-                anyhow::bail!("--path <file> 또는 --inline 중 하나가 필요합니다.");
+                anyhow::bail!("{}", t("cli.passkey.needs_path_or_inline"));
             }
             passkeys.save()?;
-            println!(
-                "{} passkey '{name}'.",
-                if replaced { "갱신:" } else { "추가:" }
-            );
+            let key = if replaced {
+                "cli.passkey.updated"
+            } else {
+                "cli.passkey.added"
+            };
+            println!("{}", t_fmt(key, name));
             Ok(())
         }
         PasskeyCommands::List { json } => {
@@ -105,9 +108,12 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
                     .collect();
                 println!("{}", serde_json::to_string_pretty(&arr)?);
             } else if passkeys.passkeys.is_empty() {
-                println!("저장된 passkey 가 없습니다 (tasty tool passkey add ...).");
+                println!("{}", t("cli.passkey.list_empty"));
             } else {
-                println!("{:<24} KIND", "NAME");
+                // 헤더는 컬럼 패딩까지 값에 담는다 — CJK 는 터미널 표시 폭이 2배라
+                // 코드에서 문자 수로 패딩하면 ko/ja 헤더가 데이터 행과 어긋난다
+                // (`remote_profile.rs` 의 표 헤더와 같은 처리).
+                println!("{}", t("cli.passkey.list_header"));
                 for k in &passkeys.passkeys {
                     println!("{:<24} {}", k.name, k.kind);
                 }
@@ -117,7 +123,7 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
         PasskeyCommands::Show { name, json } => {
             let passkeys = Passkeys::load();
             let Some(k) = passkeys.get(name) else {
-                anyhow::bail!("passkey '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.passkey.not_found", name));
             };
             // 값(경로/내용)은 노출하지 않는다 — name + kind 만.
             if *json {
@@ -130,7 +136,10 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             } else {
                 println!("name : {}", k.name);
                 println!("kind : {}", k.kind);
-                println!("value: (마스킹 — GUI Reveal 로만 확인)");
+                // `name` / `kind` 라벨은 그대로 둔다 — 바로 위 `--json` 분기가
+                // 내보내는 실제 키라 같은 이름이라야 두 출력이 대응된다. 번역
+                // 대상은 그 옆의 자연어(마스킹 안내)뿐이다.
+                println!("value: {}", t("cli.passkey.value_masked"));
             }
             Ok(())
         }
@@ -138,9 +147,9 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             let mut passkeys = Passkeys::load();
             if passkeys.remove(name) {
                 passkeys.save()?;
-                println!("제거: passkey '{name}'.");
+                println!("{}", t_fmt("cli.passkey.removed", name));
             } else {
-                anyhow::bail!("passkey '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("{}", t_fmt("cli.passkey.not_found", name));
             }
             Ok(())
         }

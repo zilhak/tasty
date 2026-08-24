@@ -1254,6 +1254,22 @@ status_unknown_kind = "未登録の種類"
 auto_detect_ok = "自動検出成功: リモート環境 → port_mode={} (有効)。"
 auto_detect_failed = "自動検出失敗: {}\n  '{}' は無効状態で保存されました — 'tasty tool remote-profile detect {}' で再試行してください。"
 
+# `tasty tool passkey` — 資格情報のローカル CRUD。値は決して出力しない
+# (ADR-0016) — list/show は name + kind のみ公開する。
+# `list_header` は列パディングを値に含める — CJK 文字は端末上の表示幅が
+# 2 倍なので、ヘッダ行は言語ごとに揃える必要がある。
+[cli.passkey]
+path_xor_inline = "--path と --inline は同時に指定できません。"
+inline_empty = "inline の値が空です (--value または stdin)。"
+needs_path_or_inline = "--path <file> か --inline のどちらかが必要です。"
+added = "追加: passkey '{}'。"
+updated = "更新: passkey '{}'。"
+list_empty = "保存された passkey がありません (tasty tool passkey add ...)。"
+list_header = "名前                     種類"
+not_found = "passkey '{}' が見つかりません。"
+value_masked = "(マスク済み — GUI の Reveal でのみ確認)"
+removed = "削除: passkey '{}'。"
+
 # `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
 [cli.terminal]
 desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/kill/…)."
