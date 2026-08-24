@@ -81,16 +81,35 @@
 
 - IPC: `claude.gate_register`/`claude.gate_unregister`/`claude.gate_list`/`claude.gate_show` — CLI 서브커맨드와 1:1 대응(원칙 2). GUI 노출은 없다.
 
+### Stop-훅 게이트 판정
+
+등록된 게이트를 실제 `Stop` 훅 발화에서 집행하는 층(`crates/tasty-plugin-claude/src/checklist.rs`). 판정 자체는 4분기 그대로고(아래 continue-checklist 절), 3요소(본문·센티넬·상한)를 **게이트별로** 가져온다.
+
+- **어느 게이트인지는 명령 인자로 온다** — `tasty claude checklist-hook --gate <이름>`. Stop payload(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)에는 게이트를 식별할 정보가 없어서, 부착 시점에 훅 명령 문자열에 박는 것이 유일한 경로다. `--gate` 는 optional 이고 기본값이 `continue-checklist` 라, `--gate` 없이 이미 설치돼 있는 훅 명령도 그대로 host 기본 게이트로 동작한다.
+- **라운드 상태 경로**: `TASTY_PLUGIN_DATA_DIR/checklist/gates/<게이트>/rounds/<session_id>.json`. 키가 (게이트 × 세션)인 이유는 **게이트를 둘 이상 동시에 부착할 수 있기 때문**이다 — `--profile a,b` 의 머지 규칙상 `hooks` 배열은 concat 이라 두 게이트의 Stop 훅이 각각 등록되고 각각 발화한다. 게이트를 구분하지 않으면 둘이 한 카운터를 읽고 써서 서로의 라운드를 깎는다(세션 축을 도입한 것과 같은 이유가 한 축 위로 올라온 것).
+- **라운드 상한 우선순위**: 게이트 정의(`--rounds`) **>** Settings(`continue-checklist round limit`) **>** 3. 명시 지정이 전역 기본값을 이기는 일반 원칙이고, Settings 항목의 storage key 는 이름부터 host 기본 게이트 전용이라 사용자 정의 게이트에 강제할 근거가 없다. host 기본 게이트는 상한을 지정하지 않으므로 폴백이 Settings 로 내려가 **기존 동작이 그대로 보존**된다. Settings 라벨 문구는 "게이트가 자체 값을 지정하지 않았을 때의 기본값" 취지로 다듬었지만 storage key 는 그대로다(조정해 둔 값 유실 방지).
+- **본문 해석**: 등록 게이트 본문은 **매 발화마다 파일에서 읽는다** — 재등록으로 갱신한 본문이 세션 재기동 없이 반영되어야 한다(마커를 매 발화마다 확인하는 것과 같은 취지). host 기본 게이트 본문만 기동 시 1회 해석해 둔 lang 문자열 캐시를 계속 쓴다.
+- **미등록 게이트는 조용히 통과** — 등록이 지워졌는데 훅 명령이 남아 있는 세션은 정상적인 상태다. 여기서 에러를 내면 그 세션이 종료 불가가 되므로, 이 모듈의 기존 "불확실하면 통과" 방침을 그대로 따른다. 상태 파일도 만들지 않고, Settings 조회 IPC 도 하지 않는다.
+- **SessionEnd 정리는 게이트 전체 순회** — 전역 `session-end` 훅은 `MANAGED_HOOKS` 로 항상 설치되고 게이트와 무관하게 발화해서 호출부가 게이트를 알 수 없다. 그래서 `checklist/gates/*/rounds/<session_id>.json` 을 전부 지운다(다른 세션 파일은 건드리지 않는다).
+- **legacy 경로** — 게이트 축 이전의 `checklist/rounds/<session_id>.json` 은 읽지도 쓰지도 않는다. 라운드 상태는 세션 수명과 함께 사라지는 휘발성 데이터라 마이그레이션하지 않지만, 구버전이 남긴 파일이 orphan 으로 남지 않도록 **session-end 정리는 이 경로도 함께 지운다**.
+
+**Stop 훅 여러 개가 동시에 block 할 때 (실측)** — 게이트 둘을 한 세션에 부착하는 시나리오의 체감이 여기 달려 있어 Claude Code 로 직접 재현했다(`Stop` 에 독립 훅 2개를 등록하고 각각 다른 `reason` 으로 block):
+
+- 두 훅은 **매 `Stop` 발화마다 둘 다 발화한다**(발화 횟수가 lockstep 으로 일치).
+- **두 `reason` 이 모두 모델에 전달된다** — 각 훅이 서로 다른 토큰을 최종 답변에 넣으라고 지시했을 때 두 토큰이 모두 답변에 나타났다. 한 훅만 채택되는 방식이 아니다.
+- **하나라도 block 이면 턴이 이어진다** — 상한이 다른 두 훅(1회 / 3회)을 걸면, 먼저 상한에 도달한 쪽이 통과(`{}`)로 돌아선 뒤에도 아직 block 하는 쪽 때문에 세션이 계속됐고, **둘 다 통과한 발화**에서 끝났다.
+- 두 번째 발화부터 두 훅 모두 `stop_hook_active=true` 를 받는다(플러그인은 이 값을 sanity check 로만 쓰고 판정에 쓰지 않는다).
+
 ### continue-checklist 세션 프로필
 
 위 레지스트리가 host 출처로 미리 등록해 두는 첫 attachable 기본 프로필이자, 위 게이트 레지스트리의 host 기본 게이트 하나(`host/continue-checklist`)에 대응한다. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 직접 등록한 파일이 있으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook` 을 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 8종)에는 포함되지 않으며, 이 프로필이 부착된 세션에서만 발화한다.
 
-- **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 센티넬 문자열 `[[TASTY-CHECKLIST-DONE]]` 이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시)과 센티넬 포함 지시로 구성된다.
-- **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 `continue-checklist round limit`(기본 3)로 노출된다.
-- **라운드 상태 저장**: `TASTY_PLUGIN_DATA_DIR/checklist/rounds/<session_id>.json` — Claude Code `session_id` 로 키잉해 동시에 여러 세션이 이 프로필을 부착해도 라운드 카운터가 섞이지 않는다(전역 단일 파일 아님). 해당 세션의 `SessionEnd` 훅(위 "Claude Code 훅 통합" 절의 8종 중 하나, 이 프로필과 무관하게 항상 발화)이 오면 상태 파일을 정리한다.
+- **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 **이 게이트의** 센티넬(host 기본값 `[[TASTY-CHECKLIST-DONE]]`)이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시)과 센티넬 포함 지시로 구성된다.
+- **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 게이트 기본 라운드 상한 항목(기본 3)으로 노출된다 — 게이트가 자체 `--rounds` 를 지정하면 그쪽이 이긴다.
+- **라운드 상태 저장**: `TASTY_PLUGIN_DATA_DIR/checklist/gates/continue-checklist/rounds/<session_id>.json` — (게이트 × 세션)으로 키잉한다(위 "Stop-훅 게이트 판정" 절). 해당 세션의 `SessionEnd` 훅(아래 "Claude Code 훅 통합" 절의 8종 중 하나, 이 프로필과 무관하게 항상 발화)이 오면 상태 파일을 정리한다.
 - **마커 파일 게이트**: `TASTY_PLUGIN_DATA_DIR/checklist/enabled.marker` — 존재 여부로 발동을 켜고 끈다. 프로필 attach(=훅 등록)는 Claude Code 프로세스 기동 시점에 고정되지만, 마커는 매 훅 발화마다 파일 존재를 새로 확인하므로 재기동 없이 즉시 토글된다. `checklist-enable`/`checklist-disable`/`checklist-status` CLI(및 대응 IPC)가 이 마커 파일을 만들고 지우고 조회하는 제어된 진입점이다 — raw `touch`/`rm` 로 직접 조작할 필요가 없다.
 - **안전한 통과 원칙**: 마커 부재, `session_id`/`prompt_id` 누락, stdin 파싱 실패 등 불확실한 조건은 전부 block 하지 않고 조용히 통과시킨다 — 판단 불가 상태에서 세션을 가두지 않는 것을 우선한다.
-- IPC: `claude.checklist_hook` — `hook_args` 와 별개 파라미터 스키마(`checklist_hook_args`, 전부 stdin 자동 채움). `stop_hook_active` 는 `bool` 이 아니라 `string` 타입으로 선언돼 있다 — `CliArgType::Bool` 은 부재를 표현하지 못해(`extract_value` 가 항상 `Some(false)` 를 반환) `stdin_field` 매핑과 함께 쓰면 stdin 값이 절대 반영되지 않는다(핸들러가 `"true"`/`"false"` 문자열을 직접 비교). `claude.checklist_enable`/`claude.checklist_disable`/`claude.checklist_status` — 인자 없음(`no_args`), 마커 파일 생성/삭제/조회. `data_dir` 이 없는 비정상 기동이면 enable/disable 은 명시적 에러로 거부하고(profile.rs 결정 3과 동일 방침), status 는 `marker_present` 와 동일하게 `enabled: false` 로 안전 폴백한다(에러 아님 — 조회는 항상 응답 가능해야 한다).
+- IPC: `claude.checklist_hook` — `hook_args` 와 별개 파라미터 스키마(`checklist_hook_args`). Stop payload 필드는 전부 stdin 자동 채움이고, `gate` 만 stdin 에 없어 명령 인자로 받는다(기본값 `continue-checklist`). `stop_hook_active` 는 `bool` 이 아니라 `string` 타입으로 선언돼 있다 — `CliArgType::Bool` 은 부재를 표현하지 못해(`extract_value` 가 항상 `Some(false)` 를 반환) `stdin_field` 매핑과 함께 쓰면 stdin 값이 절대 반영되지 않는다(핸들러가 `"true"`/`"false"` 문자열을 직접 비교). `claude.checklist_enable`/`claude.checklist_disable`/`claude.checklist_status` — 인자 없음(`no_args`), 마커 파일 생성/삭제/조회. `data_dir` 이 없는 비정상 기동이면 enable/disable 은 명시적 에러로 거부하고(profile.rs 결정 3과 동일 방침), status 는 `marker_present` 와 동일하게 `enabled: false` 로 안전 폴백한다(에러 아님 — 조회는 항상 응답 가능해야 한다).
 
 ### Claude Code 훅 통합
 
