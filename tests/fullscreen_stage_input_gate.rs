@@ -259,15 +259,12 @@ fn fn_body<'a>(src: &'a str, signature: &str) -> &'a str {
     panic!("함수 본문의 끝을 찾지 못했다: {signature}");
 }
 
-/// IME 경로가 무대를 안다. 무대 진입은 popup 을 닫으므로 `popups.has_focused()` 가
-/// 대신 막아 주지 않는다 — 이 항이 빠지면 조합 중이던 IME 의 Commit 이 뒤 터미널로 샌다.
+/// IME 경로가 무대를 안다. 무대만 떠 있으면 `keyboard_overlay_open()` 의 네 항이 전부
+/// false 라 아무도 안 막고, 조합 중이던 IME 의 Commit 이 뒤 터미널로 샌다.
 #[test]
 fn ime_overlay_gate_knows_the_stage() {
     let src = read("src/view/main/ime.rs");
-    let expected = "    let overlay_open = w.state.settings_open\n        \
-                    || w.state.has_input_dialog_open()\n        \
-                    || w.state.popups.has_focused()\n        \
-                    || w.state.fullscreen_stage_active();";
+    let expected = "    let overlay_open = w.state.keyboard_overlay_open() || w.state.fullscreen_stage_active();";
     assert!(
         src.contains(expected),
         "IME 의 `overlay_open` 이 무대를 보지 않는다 — 무대 중 IME Preedit/Commit 이 \
@@ -280,10 +277,8 @@ fn ime_overlay_gate_knows_the_stage() {
 #[test]
 fn plugin_shortcut_gate_knows_the_stage() {
     let src = read("src/app/plugin_glue/shortcut.rs");
-    let expected = "        if main.state.settings_open\n            \
-                    || main.state.has_input_dialog_open()\n            \
-                    || main.state.popups.has_focused()\n            \
-                    || main.state.fullscreen_stage_active()\n        {";
+    let expected =
+        "        if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {";
     assert!(
         src.contains(expected),
         "plugin 단축키 가드가 무대를 보지 않는다 — 무대 중 plugin 단축키가 발화한다. \
@@ -294,12 +289,17 @@ fn plugin_shortcut_gate_knows_the_stage() {
 /// `overlay_open` 모양의 합성 판정이 **새로 생겨도** 무대를 빠뜨리지 못하게 하는 완전성 가드.
 ///
 /// 이 트랙이 처음에 ime.rs 와 plugin shortcut 을 놓친 이유가 정확히 "가드가 아는 지점만
-/// 봤다" 였다. 그래서 특정 지점을 나열하는 대신, `has_input_dialog_open()` 이 들어간
-/// 합성식을 소스에서 **기계적으로 전부 찾아** 각각이 무대를 아는지 확인한다.
+/// 봤다" 였다. 그래서 특정 지점을 나열하는 대신, 키보드 계열 오버레이 판정
+/// (`AppState::keyboard_overlay_open()`)의 **호출부를 소스에서 기계적으로 전부 찾아**
+/// 각각이 무대를 아는지 확인한다. 정의가 하나여도 소비 지점은 넷이고, 그 넷이 무대에
+/// 대해 같은 답을 필요로 하지 않기 때문에 정의 한 곳을 보는 것으로는 부족하다.
 ///
 /// 예외는 `keyboard.rs` 하나뿐이다 — 그 파일은 같은 식 **앞**에 0단계 무대 게이트
 /// (`try_consume_fullscreen_stage_key`)를 따로 두어 이미 무대를 처리한다. 그 게이트가
 /// 사라지면 이 테스트도 함께 깨진다.
+///
+/// 나머지 두 정의(`mouse_overlay_open` / `has_egui_overlay_open`)는 정의 자체에 무대가
+/// 들어가므로 여기서 정의만 확인한다.
 #[test]
 fn every_overlay_open_composite_is_stage_aware() {
     const ALLOWED_WITHOUT_STAGE_TERM: &str = "src/view/main/keyboard.rs";
@@ -312,7 +312,7 @@ fn every_overlay_open_composite_is_stage_aware() {
     let mut seen = Vec::new();
     for rel in &files {
         let src = read(rel);
-        for (i, _) in src.match_indices("has_input_dialog_open()") {
+        for (i, _) in src.match_indices(".keyboard_overlay_open()") {
             let expr = enclosing_expr(&src, i);
             seen.push(rel.clone());
             if rel == ALLOWED_WITHOUT_STAGE_TERM {
@@ -325,10 +325,10 @@ fn every_overlay_open_composite_is_stage_aware() {
             }
             assert!(
                 expr.contains("fullscreen_stage_active()"),
-                "{rel}: `overlay_open` 합성식이 무대를 보지 않는다 — 그 경로로 무대 중 \
-                 입력이 뒤 세계로 샌다. 식에 `|| ...fullscreen_stage_active()` 를 더하거나, \
-                 별도 무대 게이트를 앞에 두고 이 테스트의 예외 목록에 근거와 함께 추가하라.\n\
-                 문제의 식:\n{expr}"
+                "{rel}: `keyboard_overlay_open()` 호출부가 무대를 보지 않는다 — 그 경로로 \
+                 무대 중 입력이 뒤 세계로 샌다. 식에 `|| ...fullscreen_stage_active()` 를 \
+                 더하거나, 별도 무대 게이트를 앞에 두고 이 테스트의 예외 목록에 근거와 함께 \
+                 추가하라.\n문제의 식:\n{expr}"
             );
         }
     }
@@ -342,8 +342,21 @@ fn every_overlay_open_composite_is_stage_aware() {
             "src/view/main/ime.rs".to_string(),
             "src/view/main/keyboard.rs".to_string(),
         ],
-        "`overlay_open` 합성식이 있는 파일 집합이 바뀌었다. 새 지점이 생겼다면 \
+        "`keyboard_overlay_open()` 호출부 집합이 바뀌었다. 새 지점이 생겼다면 \
          docs/architecture/input-layer.md 의 열거도 함께 갱신하라."
+    );
+
+    // 나머지 두 정의는 정의 자체가 무대를 품는다.
+    let mouse = read("src/view/main/mouse.rs");
+    assert!(
+        mouse.contains("self.state.settings_open || self.state.fullscreen_stage_active()"),
+        "`mouse_overlay_open()` 정의에서 무대가 빠졌다 — 마우스 전 경로가 무대를 모르게 된다."
+    );
+    let state = read("src/state.rs");
+    let webview = fn_body(&state, "pub fn has_egui_overlay_open(&self) -> bool {");
+    assert!(
+        webview.contains("self.fullscreen_stage.is_some()"),
+        "`has_egui_overlay_open()` 에서 무대가 빠졌다 — WebView 가 무대를 뚫고 나온다."
     );
 }
 
