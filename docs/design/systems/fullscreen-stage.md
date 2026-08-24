@@ -150,7 +150,7 @@ release IPC/CLI 에 창 전환 API 를 노출하지 않는다 — 전환은 무�
 
 | 플랫폼 | 상태 | 내용 |
 |---|---|---|
-| **Linux / X11 / GNOME** | 확인 | 진입·종료·maximize 복원·사용자 fullscreen 유지·창 2 개 독립성 전부 실측. 전환 시 검은 프레임·잔상 없음. 무대 없이 fullscreen 인 창에서 CSD 타이틀바/캡션 버튼이 정상 렌더 |
+| **Linux / X11 / GNOME** | 확인(1회 수동) | 진입·종료·maximize 복원·사용자 fullscreen 유지·창 2 개 독립성 전부 실측. 전환 시 검은 프레임·잔상 없음. 무대 없이 fullscreen 인 창에서 CSD 타이틀바/캡션 버튼이 정상 렌더. 단 임시(비커밋) 훅을 통한 1 회 수동 실측이며 회귀 커버리지는 없다 — 진입 경로(todo/28) 확보 후 통합 검증으로 승격 필요 |
 | **Linux / Wayland** | **미확인** | 검증 환경이 X11 세션이라 컴포지터 차이를 재현할 수 없다 |
 | **Windows** | **미확인** | undecorated + `undecorated_shadow` 조합의 섀도/보더 잔상, 작업 표시줄 가림 여부. 해당 OS 없음 |
 | **macOS** | **미확인** | 신호등 풀스크린과의 상태 어긋남, 별도 Space 이동 애니메이션, fullscreen 창 위 모달 z-order. 해당 OS 없음. 코드는 `fullscreen()` 조회 분기로 대응해 두었고 위 표의 셋째 줄이 그 계약이다 |
