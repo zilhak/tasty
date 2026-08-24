@@ -791,6 +791,10 @@ impl GpuState {
 
         #[cfg(not(windows))]
         {
+            // plugin egui-mesh popup 은 여기 넣지 않는다 — host egui 에는 대응 위젯이
+            // 없어 `ime_widget_focused` 가 항상 false 라, 포함하면 popup 의 텍스트
+            // 입력에 IME 를 못 쓰게 된다. 조합 문자가 터미널로 새는 것은 IME 라우팅
+            // 게이트(`view::main::ime`)가 막는다.
             let disable_ime = state.popups.has_focused() && !ime_widget_focused;
             window.set_ime_allowed(!disable_ime);
         }

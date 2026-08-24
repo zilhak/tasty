@@ -144,11 +144,10 @@ impl App {
         let Some(main) = w.as_main_mut() else {
             return false;
         };
-        // overlay/popup이 키를 가져갈 상태면 patcher
-        if main.state.settings_open
-            || main.state.has_input_dialog_open()
-            || main.state.popups.has_focused()
-        {
+        // overlay/popup이 키를 가져갈 상태면 patcher. plugin popup 도 포함한다 —
+        // 그 popup 이 키를 받는 동안 surface 단축키가 같은 키를 또 소비하면 이중
+        // 처리다(키 게이트와 같은 단일 출처를 쓴다).
+        if main.state.keyboard_overlay_open() {
             return false;
         }
         let focused = crate::plugin_bridge::key_dispatch::focused_plugin_surface(

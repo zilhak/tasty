@@ -331,9 +331,9 @@ impl View for MainView {
         );
         let is_modifiers_event = matches!(&event, WindowEvent::ModifiersChanged(_));
 
-        let overlay_open = self.state.settings_open
-            || self.state.has_input_dialog_open()
-            || self.state.popups.has_focused();
+        // 판정은 `AppState::keyboard_overlay_open` 단일 출처 — 아래 터미널 포워딩
+        // 게이트(`keyboard.rs`)와 같은 식을 써야 이중 처리/입력 유실이 없다.
+        let overlay_open = self.state.keyboard_overlay_open();
 
         // host-egui 위젯(TextEdit 등)으로 렌더되는 surface 만 winit 키/IME 를 egui 입력
         // 시스템으로 직접 넘긴다. markdown/image 는 plugin egui-mesh 로 렌더되므로 host

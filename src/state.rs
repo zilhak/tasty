@@ -369,6 +369,15 @@ pub struct AppState {
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
     pub(crate) popup_hovered: bool,
+    /// plugin egui-mesh popup 이 하나라도 열려 있는가 (입력 계층 상태).
+    ///
+    /// 키/IME 게이트(`view::main`, `view::main::keyboard`)는 `PluginManager` 에
+    /// 접근할 수 없다 — 그 타입은 `App` 소유이고 게이트가 있는 `handle_event` 로는
+    /// 흘러들지 않는다. 그래서 `popup_hovered` 와 같은 방식으로 렌더 프레임이 채워
+    /// 두는 캐시를 읽는다. 갱신은 `plugin_bridge::popup_render::draw_plugin_popups`
+    /// 최상단 리셋 + popup 이 있을 때 set 이며, popup 이 없다는 두 조기 반환 경로도
+    /// 리셋이 덮는다(stale `true` 는 키보드가 영영 터미널로 못 가는 상태가 된다).
+    pub(crate) plugin_popup_open: bool,
     /// Whether the mouse is currently over a banner (input layer state).
     /// Updated each frame by BannerManager::draw(). 배너는 자기 영역의 마우스를
     /// 소비(뒤로 전파 X)하므로 mouse 핸들러가 이 값으로 하위 레이어 전파를 막는다.
@@ -1076,6 +1085,7 @@ impl AppState {
             last_focused_tab: None,
             last_tab_locations: None,
             popup_hovered: false,
+            plugin_popup_open: false,
             banner_hovered: false,
             modifier_hint_hovered: false,
             #[cfg(feature = "gui")]
@@ -1225,6 +1235,25 @@ impl AppState {
         self.dialogs.has_text_input_open()
     }
 
+    /// 키/IME 를 host egui 로 들여보낼지(그리고 터미널 포워딩을 막을지) 판정한다.
+    ///
+    /// 같은 식을 두 게이트(`view::main` 의 egui feed, `view::main::keyboard` 의 터미널
+    /// 포워딩)가 **각자** 계산하던 것을 단일 출처로 합쳤다 — 한쪽만 바뀌면 "egui 에는
+    /// 먹였는데 터미널로도 갔다"(이중 처리) 또는 "egui 에 안 먹였는데 터미널도
+    /// 차단"(입력 유실)이 된다.
+    pub(crate) fn keyboard_overlay_open(&self) -> bool {
+        #[cfg(feature = "gui")]
+        let host_popup_focused = self.popups.has_focused();
+        #[cfg(not(feature = "gui"))]
+        let host_popup_focused = false;
+        keyboard_overlay_open(
+            self.settings_open,
+            self.has_input_dialog_open(),
+            host_popup_focused,
+            self.plugin_popup_open,
+        )
+    }
+
     /// 이 plugin popup instance 가 연 host popup(자식)이 아직 살아 있는가 (ADR-0082).
     ///
     /// 소유 관계는 자식 쪽(`FilePickerRequester.owner_popup_instance`)에만 기록되므로
@@ -1240,8 +1269,15 @@ impl AppState {
     }
 
     /// Returns true if any egui overlay is visible.
+    ///
+    /// plugin egui-mesh popup 도 센다 — 이 값의 소비처(webview 가리기)는 "네이티브
+    /// 뷰가 egui 오버레이를 덮지 않게" 하는 목적이고, plugin popup 도 같은 wgpu
+    /// 표면 위에 그려지므로 host popup 과 구분할 이유가 없다.
     pub fn has_egui_overlay_open(&self) -> bool {
-        let open = self.settings_open || self.plugins_open || self.dialogs.has_any_overlay();
+        let open = self.settings_open
+            || self.plugins_open
+            || self.dialogs.has_any_overlay()
+            || self.plugin_popup_open;
         // 전체화면 무대도 오버레이로 친다. 이 판정의 소비자 중 하나가 WebView 표시
         // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
@@ -1642,5 +1678,46 @@ fn cwd_from_surface(engine: &CoreState, surface_id: u32) -> Option<std::path::Pa
         engine.terminals.get(surface_id).and_then(|t| t.get_cwd())
     } else {
         surface.source_cwd()
+    }
+}
+
+/// [`AppState::keyboard_overlay_open`] 의 순수 술어 — 상태 접근 없이 단언할 수 있게
+/// 분리했다.
+///
+/// `plugin_popup_open` 이 술어에 들어가는 이유: plugin egui-mesh popup 은 host
+/// `PopupManager` 소속이 아니라 `has_focused()` 로 잡히지 않는데, 그 popup 의 키 입력은
+/// host egui 의 `ctx.input` 을 거쳐 plugin 으로 forward 된다. 게이트가 닫혀 있으면 키가
+/// egui 큐에 아예 안 들어가 forward 소스가 비고, 그 키는 그대로 터미널로 샌다.
+pub(crate) fn keyboard_overlay_open(
+    settings_open: bool,
+    input_dialog_open: bool,
+    host_popup_focused: bool,
+    plugin_popup_open: bool,
+) -> bool {
+    settings_open || input_dialog_open || host_popup_focused || plugin_popup_open
+}
+
+#[cfg(test)]
+mod keyboard_overlay_tests {
+    use super::keyboard_overlay_open;
+
+    /// plugin popup 하나만 열려 있어도 키는 egui 로 가야 한다 — 이 케이스가 빠져 있어
+    /// 팝업 입력창 대신 뒤 터미널에 글자가 찍혔다.
+    #[test]
+    fn plugin_popup_alone_opens_the_gate() {
+        assert!(keyboard_overlay_open(false, false, false, true));
+    }
+
+    #[test]
+    fn nothing_open_keeps_the_gate_closed() {
+        assert!(!keyboard_overlay_open(false, false, false, false));
+    }
+
+    /// 기존 세 술어의 동작은 그대로다(회귀 고정).
+    #[test]
+    fn each_existing_predicate_still_opens_the_gate() {
+        assert!(keyboard_overlay_open(true, false, false, false));
+        assert!(keyboard_overlay_open(false, true, false, false));
+        assert!(keyboard_overlay_open(false, false, true, false));
     }
 }

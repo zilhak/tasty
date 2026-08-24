@@ -58,10 +58,10 @@ impl MainView {
             return;
         }
 
-        // Modals, dialogs, and focused popups block keyboard input to the terminal.
-        let overlay_open = self.state.settings_open
-            || self.state.has_input_dialog_open()
-            || self.state.popups.has_focused();
+        // Modals, dialogs, focused host popups, plugin egui-mesh popups block
+        // keyboard input to the terminal. 판정은 egui feed 게이트(`view::main`)와
+        // 같은 `AppState::keyboard_overlay_open` 을 쓴다.
+        let overlay_open = self.state.keyboard_overlay_open();
 
         if !overlay_open && self.try_consume_shortcut_key(event) {
             return;
@@ -176,7 +176,13 @@ impl MainView {
             if self.ime_preedit.is_some() {
                 // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
                 // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
-                if self.state.popups.has_focused() {
+                // plugin popup 은 이 시점에 아직 캐시에 반영되지 않았다(open 은
+                // `pending_popup_opens` 를 거쳐 다음 tick 에 실행된다) — 그래서 큐가
+                // 비어 있지 않은지로 "방금 이 단축키가 popup 을 요청했는가" 를 본다.
+                if self.state.popups.has_focused()
+                    || self.state.plugin_popup_open
+                    || !self.state.pending_popup_opens.is_empty()
+                {
                     self.clear_ime_preedit();
                 } else {
                     self.flush_ime_preedit();

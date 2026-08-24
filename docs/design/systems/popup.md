@@ -72,6 +72,10 @@ plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host
 
 Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드만** 차단하고, 마우스는 [입력 계층](../../architecture/input-layer.md)에 따라 팝업이 소비한다.
 
+**plugin egui-mesh popup 도 같은 차단을 받는다.** 다만 그 popup 은 host `PopupManager` 소속이 아니라 `has_focused()` 로 잡히지 않으므로, 렌더 프레임이 `AppState.plugin_popup_open` 캐시를 채우고 게이트가 그것을 읽는다(키/IME 게이트가 있는 winit 핸들러는 `PluginManager` 에 접근할 수 없다). 판정은 `AppState::keyboard_overlay_open()` 하나로 모여 있다 — egui 로 키/IME 를 들여보내는 게이트와 터미널 포워딩을 막는 게이트가 같은 식을 각자 계산하면 이중 처리(양쪽 다 처리)나 입력 유실(양쪽 다 안 처리)이 생긴다. IME 라우팅과 plugin surface 단축키 게이트도 같은 술어를 쓴다. 예외는 `set_ime_allowed` 판정 하나로, plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다.
+
+캐시는 렌더 프레임에 갱신되므로 popup 이 열린 **직후 최대 1 프레임** 늦게 반영된다 — 그 프레임에 사용자가 이미 키를 누르고 있을 수는 없어 실사용 영향은 없다.
+
 ### sticky_focus
 
 `true` 면 바깥 클릭에도 키보드 포커스가 유지된다(닫기로만 해제). 마우스는 터미널에 정상 전달. 검색 바처럼 *키보드는 항상 자기가 받되 터미널 마우스 조작(스크롤/선택)은 허용* 해야 하는 오버레이용.

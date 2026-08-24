@@ -46,6 +46,18 @@ pub fn draw_plugin_popups(
     // 합성되거나 `enforce_host_plugin_popup_z_order`(egui_bridge.rs)에 남지 않게.
     state.plugin_mesh_popup_regions.clear();
     state.plugin_popup_layers.clear();
+    // 키/IME 게이트가 읽는 캐시(`AppState.plugin_popup_open`)도 여기서 리셋한다 —
+    // 아래 두 조기 반환(plugin manager 부재 / mesh popup 없음)이 모두 "popup 없음" 을
+    // 뜻하므로 리셋을 이 최상단에 두어야 둘 다 덮인다. stale `true` 가 남으면 키보드가
+    // 영영 터미널로 가지 못한다.
+    //
+    // **open drain 시점에 즉시 세우지 않는 이유**: popup instance 를 실제로 여는 곳은
+    // App 메인 루프의 `pending_popup_opens` drain 인데, 그 직후 같은 tick 에서 렌더
+    // 프레임이 돌아 이 함수가 캐시를 채운다. 반면 popup 이 *닫히는* 경로는 여러 개라
+    // (Esc/outside-click/plugin 요청/host 강제) drain 지점에 set 만 추가하면 리셋
+    // 책임이 두 곳으로 갈라진다. 단일 갱신 지점을 유지하고 최대 1 프레임 지연을
+    // 받아들인다 — popup 이 열린 프레임에 사용자가 이미 키를 누르고 있을 수는 없다.
+    state.plugin_popup_open = false;
     // 히트테스트 rect 도 매 frame 새로 채운다 — 아래 두 조기 반환(plugin manager 부재 /
     // mesh popup 없음) 경로에서도 반드시 비워져야 한다. 남겨두면 이미 닫힌 plugin popup
     // 의 rect 가 host popup 의 outside-click 을 영구히 삼킨다.
@@ -169,6 +181,9 @@ pub fn draw_plugin_popups(
             rect: *r,
             z_seq: s.z_seq,
         }));
+
+    // 열린 mesh popup 이 있다 — 키/IME 를 egui 로 들여보내는 게이트를 연다.
+    state.plugin_popup_open = true;
 
     // Esc 소유권 — 규칙 7 의 키보드 판("최상단 하나만 받는다"). host/plugin 통틀어
     // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0082). host 쪽 대응은
