@@ -28,6 +28,7 @@ missing_target_surface = "Missing required 'target_surface' parameter"
 missing_command = "Missing required 'command' parameter"
 missing_name = "Missing required 'name' parameter"
 missing_file = "Missing required 'file' parameter"
+missing_body_file = "Missing required 'body_file' parameter"
 
 [claude.hook]
 missing_event = "Missing required 'event' parameter"
@@ -64,6 +65,7 @@ invalid_short_name = "'{}' is not a valid profile name (lowercase letters, digit
 empty_names = "no profile name given"
 unknown_profile = "no registered profile named '{}'"
 not_attachable = "'{}' is a built-in listing entry and cannot be attached by name"
+gate_name_conflict = "'{}' is already registered as a Stop-hook gate — gates attach by name too, so pick a different name (or 'claude gate-unregister {}' first)"
 source_not_readable = "cannot read profile source '{}': {}"
 source_not_json_object = "profile source '{}' is not a JSON object"
 io_error = "'{}': {}"
@@ -72,6 +74,18 @@ mutually_exclusive_file_and_profile = "--profile-file and --profile are mutually
 builtin_always_installed = "built-in — always installed (Claude Code event: {})"
 builtin_always_installed_with_matcher = "built-in — always installed (Claude Code event: {}, matcher: {})"
 builtin_attachable = "built-in — attach by name like a registered profile"
+
+[claude.gate]
+no_data_dir = "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot register or unregister gates"
+invalid_short_name = "'{}' is not a valid gate name (lowercase letters, digits, '-' only, max 32 chars)"
+unknown_gate = "no registered gate named '{}'"
+body_not_readable = "cannot read gate body '{}': {}"
+body_missing_sentinel = "the gate body does not contain its sentinel '{}' — without it the model is never told how to declare completion, so the gate degrades into a fixed number of forced extra rounds"
+empty_sentinel = "the sentinel cannot be empty — an empty sentinel matches every message, so the gate would pass on its first round"
+rounds_below_one = "--rounds must be 1 or greater"
+profile_name_conflict = "'{}' is already registered as a session profile — gates attach by name too, so pick a different name (or 'claude profile-unregister {}' first)"
+io_error = "'{}': {}"
+error_prefix = "gate: {}"
 
 [claude.profile_merge]
 not_an_object = "profile '{}' top-level value is not a JSON object"

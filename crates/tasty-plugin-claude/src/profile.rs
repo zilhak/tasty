@@ -62,6 +62,10 @@ pub enum ProfileError {
     UnknownProfile(String),
     /// 조회 전용 항목(내장 훅)은 이름으로 부착할 수 없다.
     NotAttachable(String),
+    /// 동명 Stop-훅 게이트가 이미 등록돼 있다. 게이트도 이름으로 부착되므로
+    /// (`gate.rs` 모듈 doc) 두 레지스트리는 이름 공간을 공유한다 — 같은 이름을
+    /// 양쪽에 두면 조용히 한쪽이 가려지므로 등록 시점에 거부한다.
+    GateNameConflict(String),
     SourceNotReadable {
         path: String,
         message: String,
@@ -84,6 +88,11 @@ impl ProfileError {
             Self::EmptyNames => tr.t("claude.profile.empty_names").to_string(),
             Self::UnknownProfile(id) => tr.t_fmt("claude.profile.unknown_profile", id),
             Self::NotAttachable(id) => tr.t_fmt("claude.profile.not_attachable", id),
+            // 두 자리 placeholder — `t_fmt` 는 첫 하나만 채운다(`gate.rs` 의 대칭 항목과 동일).
+            Self::GateNameConflict(name) => tr
+                .t("claude.profile.gate_name_conflict")
+                .replacen("{}", name, 1)
+                .replacen("{}", name, 1),
             Self::SourceNotReadable { path, message } => tr
                 .t("claude.profile.source_not_readable")
                 .replacen("{}", path, 1)
@@ -163,6 +172,13 @@ fn require_data_dir(data_dir: Option<&Path>) -> Result<&Path, ProfileError> {
     data_dir.ok_or(ProfileError::NoDataDir)
 }
 
+/// 이 이름으로 등록된 사용자 프로필이 있는가 — `gate::register` 가 반대 방향
+/// 충돌을 검사할 때 쓴다(이름 공간이 한 평면이라는 계약의 대칭 절반,
+/// `gate.rs` 모듈 doc 참조).
+pub(crate) fn is_registered(data_dir: Option<&Path>, short_name: &str) -> bool {
+    data_dir.is_some_and(|d| registered_file(d, short_name).is_file())
+}
+
 fn parse_names(names_csv: &str) -> Result<Vec<String>, ProfileError> {
     let names: Vec<String> = names_csv
         .split(',')
@@ -196,6 +212,10 @@ pub fn register(
         return Err(ProfileError::InvalidShortName(short_name.to_string()));
     }
     let data_dir = require_data_dir(data_dir)?;
+    // 이름 공간이 게이트와 한 평면이다 — 조용히 가리지 않고 여기서 거부한다.
+    if crate::gate::is_registered(Some(data_dir), short_name) {
+        return Err(ProfileError::GateNameConflict(short_name.to_string()));
+    }
     let text =
         std::fs::read_to_string(source_path).map_err(|e| ProfileError::SourceNotReadable {
             path: source_path.display().to_string(),

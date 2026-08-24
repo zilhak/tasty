@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.40"
+version = "0.1.41"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -86,6 +86,14 @@ subcommands = [
     { name = "profile-list",       ipc_method = "claude.profile_list",       args = "no_args",                 description = "List registered Claude session profiles plus the always-installed built-in hooks" },
     { name = "profile-show",       ipc_method = "claude.profile_show",       args = "profile_name_args",       description = "Show the raw settings JSON of a registered Claude session profile" },
     { name = "profile-current",    ipc_method = "claude.profile_current",    args = "profile_current_args",    description = "Show which Claude session profile (if any) is attached to a surface, plus the always-installed built-in hooks" },
+    # Stop-훅 게이트 레지스트리 — (본문, 센티넬, 라운드 상한) 3요소를 이름으로
+    # 등록한다. 프로필과 마찬가지로 CLI 스키마가 subcommand 1단계만 지원해
+    # `gate-*` 평면 이름을 쓴다. 게이트 이름은 프로필 이름과 **같은 평면**이라
+    # (게이트도 이름으로 부착된다) 양방향 동명 등록은 거부된다.
+    { name = "gate-register",   ipc_method = "claude.gate_register",   args = "gate_register_args", description = "Register a Stop-hook gate under a name (copies the body file into plugin-private storage; re-registering the same name replaces both the body and the definition)" },
+    { name = "gate-unregister", ipc_method = "claude.gate_unregister", args = "gate_name_args",     description = "Remove a registered Stop-hook gate (deletes both its definition and its body copy)" },
+    { name = "gate-list",       ipc_method = "claude.gate_list",       args = "no_args",            description = "List registered Stop-hook gates plus the built-in ones, with each gate's effective sentinel and round limit" },
+    { name = "gate-show",       ipc_method = "claude.gate_show",       args = "gate_name_args",     description = "Show a Stop-hook gate's definition and body text" },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -224,6 +232,21 @@ positional = [
 [contributes.cli.arg_groups.profile_current_args]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID to query (defaults to caller's TASTY_SURFACE_ID)" },
+]
+
+[contributes.cli.arg_groups.gate_register_args]
+positional = [
+    { name = "name", type = "string", required = true, help = "Short name to register the gate under (lowercase letters, digits, '-', max 32 chars). Shares one namespace with session profile names — registering a name that already exists on the other side is rejected rather than silently shadowed." },
+]
+flags = [
+    { name = "body_file", type = "string", flag = "--body-file", required = true, path_kind = "file", help = "Path to the checklist body (markdown) to register (copied into plugin-private storage). Must contain this gate's effective sentinel — without it the model is never told how to declare completion." },
+    { name = "sentinel",  type = "string", flag = "--sentinel",  required = false, help = "Completion sentinel the model must emit to end the turn. Defaults to the built-in sentinel. Cannot be empty (an empty sentinel matches every message)." },
+    { name = "rounds",    type = "u32",    flag = "--rounds",    required = false, help = "Round-limit backstop for this gate (1 or greater). Omit to fall back to the plugin setting 'continue-checklist round limit'." },
+]
+
+[contributes.cli.arg_groups.gate_name_args]
+positional = [
+    { name = "name", type = "string", required = true, help = "Registered gate short name" },
 ]
 
 [contributes.cli.arg_groups.no_args]

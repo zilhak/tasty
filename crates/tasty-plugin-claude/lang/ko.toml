@@ -28,6 +28,7 @@ missing_target_surface = "필수 파라미터 'target_surface' 누락"
 missing_command = "필수 파라미터 'command' 누락"
 missing_name = "필수 파라미터 'name' 누락"
 missing_file = "필수 파라미터 'file' 누락"
+missing_body_file = "필수 파라미터 'body_file' 이 없다"
 
 [claude.hook]
 missing_event = "필수 파라미터 'event' 누락"
@@ -64,6 +65,7 @@ invalid_short_name = "'{}' 는 유효한 프로필 이름이 아니다(소문자
 empty_names = "프로필 이름이 주어지지 않았다"
 unknown_profile = "'{}' 라는 이름으로 등록된 프로필이 없다"
 not_attachable = "'{}' 는 조회 전용 내장 항목이라 이름으로 부착할 수 없다"
+gate_name_conflict = "'{}' 는 이미 Stop-훅 게이트로 등록돼 있다 — 게이트도 이름으로 부착되므로 다른 이름을 쓰거나 'claude gate-unregister {}' 로 먼저 해제해라"
 source_not_readable = "프로필 원본 '{}' 을 읽을 수 없다: {}"
 source_not_json_object = "프로필 원본 '{}' 이 JSON object 가 아니다"
 io_error = "'{}': {}"
@@ -72,6 +74,18 @@ mutually_exclusive_file_and_profile = "--profile-file 와 --profile 은 동시�
 builtin_always_installed = "내장 — 항상 설치됨 (Claude Code 이벤트: {})"
 builtin_always_installed_with_matcher = "내장 — 항상 설치됨 (Claude Code 이벤트: {}, matcher: {})"
 builtin_attachable = "내장 — 등록된 프로필처럼 이름으로 부착 가능"
+
+[claude.gate]
+no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — 게이트를 등록하거나 해제할 수 없다"
+invalid_short_name = "'{}' 는 유효한 게이트 이름이 아니다(소문자, 숫자, '-' 만, 최대 32자)"
+unknown_gate = "'{}' 라는 이름으로 등록된 게이트가 없다"
+body_not_readable = "게이트 본문 '{}' 을 읽을 수 없다: {}"
+body_missing_sentinel = "게이트 본문에 센티넬 '{}' 이 없다 — 센티넬이 없으면 모델이 종료를 선언할 방법을 안내받지 못해, 게이트가 라운드 상한만큼 무조건 연장하는 장치로 변질된다"
+empty_sentinel = "센티넬은 비워둘 수 없다 — 빈 센티넬은 모든 메시지에 매칭되어 게이트가 첫 라운드에 통과한다"
+rounds_below_one = "--rounds 는 1 이상이어야 한다"
+profile_name_conflict = "'{}' 는 이미 세션 프로필로 등록돼 있다 — 게이트도 이름으로 부착되므로 다른 이름을 쓰거나 'claude profile-unregister {}' 로 먼저 해제해라"
+io_error = "'{}': {}"
+error_prefix = "gate: {}"
 
 [claude.profile_merge]
 not_an_object = "프로필 '{}' 의 최상위 값이 JSON object 가 아니다"

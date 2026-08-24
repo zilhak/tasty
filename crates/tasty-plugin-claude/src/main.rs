@@ -15,6 +15,7 @@
 
 mod checklist;
 mod error_scan;
+mod gate;
 mod handlers;
 mod hook;
 mod install;
@@ -200,6 +201,29 @@ impl Plugin for ClaudePlugin {
             "claude.profile_current" => profile::handle_current(
                 self.plugin_data_dir.as_deref(),
                 &ctx.host,
+                &ctx.params,
+                &self.translator,
+            ),
+            // Stop-훅 게이트 레지스트리 — (본문, 센티넬, 라운드 상한) 3요소를
+            // 이름으로 등록/조회/해제한다. 프로필과 이름 공간을 공유하므로
+            // 양방향 동명 충돌은 등록 시점에 거부된다(gate.rs 모듈 doc).
+            "claude.gate_register" => gate::handle_register(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.gate_unregister" => gate::handle_unregister(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.gate_list" => gate::handle_list(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.gate_show" => gate::handle_show(
+                self.plugin_data_dir.as_deref(),
                 &ctx.params,
                 &self.translator,
             ),
