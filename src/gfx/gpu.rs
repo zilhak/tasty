@@ -92,7 +92,7 @@ pub struct GpuState {
     /// banner 대응 full 재전송 요청 대기열 (instance_id).
     pub(in crate::gfx::gpu) egui_mesh_banner_full_requests: std::collections::HashSet<u64>,
     /// attach mesh mirror surface(`AttachMeshSurface`) local surface_id → 전용
-    /// `egui_wgpu::Renderer` + 디코드 캐시 (`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+    /// `egui_wgpu::Renderer` + 디코드 캐시 (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
     /// `egui_mesh_targets`와 별도 맵인 이유는
     /// [`egui_mesh_prepare::GpuState::render_attach_mesh_surfaces`] 문서 참조.
     pub(in crate::gfx::gpu) attach_mesh_targets:

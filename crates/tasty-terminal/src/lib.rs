@@ -705,8 +705,8 @@ impl TerminalState {
     /// callable from the downstream `tasty` crate's own test suite (a
     /// dependent crate never sees a dependency's test-only items) — lets a
     /// regression test assert a caller registered exactly one tap instead of
-    /// accidentally two (todo-conductor 09 — double-tap duplicated echoed
-    /// input on attach clients).
+    /// accidentally two — a double tap duplicated echoed input on attach
+    /// clients (`docs/dev-guide/attach-behavior.md`).
     pub(crate) fn output_tap_count(&self) -> usize {
         self.output_taps.len()
     }

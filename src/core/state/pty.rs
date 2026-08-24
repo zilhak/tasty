@@ -46,7 +46,7 @@ impl CoreState {
         false
     }
 
-    /// mesh-mirror 후보 판정(단일 surface attach 용, `.claude-workspace/todo/18-attach-server-mesh-context-forward.md`).
+    /// mesh-mirror 후보 판정(단일 surface attach 용 — `docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
     /// `surface_id`가 어느 workspace 든 leaf 로 존재하고 `Surface::attach_mesh_info()`가
     /// `Some`을 반환하면 그 `(kind, plugin_id)`를 돌려준다 — 화이트리스트 검증은
     /// 호출자(`attach_surface_for_stream`)가 `mesh_mirror_candidates`와 동일한

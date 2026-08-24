@@ -7,8 +7,8 @@
 //!
 //! Frame layout: `[tag: u8][len: u32 BE][payload: len bytes]`.
 //!
-//! Step 1 is *transport only* — attach semantics (lock / mirror / placeholder)
-//! arrive in later steps. See `.claude-workspace/conductor/attach-detach/step1/plan.md`.
+//! This layer is *transport only* — attach semantics (lock / mirror /
+//! placeholder) live above it. See `docs/dev-guide/attach-behavior.md`.
 
 use std::io::{self, Read, Write};
 use std::time::Duration;
@@ -57,7 +57,7 @@ pub enum StreamTag {
     /// distinct from [`StreamTag::Data`] (which carries PTY bytes, optionally
     /// surface-muxed) so a mesh consumer never has to disambiguate mesh chunks
     /// from terminal output at the demux layer — attach mesh mirror
-    /// (`.claude-workspace/todo/15-attach-protocol-mesh-messages.md`).
+    /// (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
     MeshData = 4,
 }
 

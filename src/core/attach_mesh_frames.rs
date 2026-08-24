@@ -1,5 +1,5 @@
 //! attach mesh mirror — 클라이언트측 최신 frame 저장소
-//! (`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+//! (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
 //!
 //! 서버(`src/core/mesh_mirror.rs`)의 `MeshMirrorRegistry`가 "누가 무엇을 구독 중인가"
 //! 라면, 이건 그 반대편 — attach client 가 TCP 로 받아 재조립한 mesh 바이트를

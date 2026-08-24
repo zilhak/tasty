@@ -8,7 +8,7 @@
 //! Security (decisions.md #5): the streaming channel carries no token of its own
 //! — trust is delegated to SSH + 127.0.0.1 loopback. No auth layer here.
 //!
-//! See `.claude-workspace/conductor/attach-detach/step1/plan.md` §5, §7.
+//! See `docs/dev-guide/attach-behavior.md` ("SSH 터널", "IPC 표면").
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};

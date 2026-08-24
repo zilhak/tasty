@@ -395,7 +395,7 @@ impl CoreState {
     /// `handle_split`/`handle_tab_create`) 양쪽에서 재사용된다. 로컬 경로는 여기서
     /// 즉시 tap 되는 게 맞지만, forward-op 경로는 호출측(`event_handler.rs`/
     /// `boot.rs`)이 `StructuralDelta` 전송 **후** 별도로 직접 tap 하므로 여기서
-    /// 또 tap 하면 이중 tap(todo-conductor 09)이 된다 — `attach.is_auto_tap_suppressed()`
+    /// 또 tap 하면 이중 tap 이 된다 — `attach.is_auto_tap_suppressed()`
     /// 가 forward-op 실행 구간을 표시해 이 경로만 스킵시킨다.
     ///
     /// workspace 가 점유돼 있지 않으면 `add_workspace_member` 가 no-op(false)이라
@@ -418,7 +418,7 @@ impl CoreState {
         }
         // forward-op 실행 중(`execute_forwarded_structural_op`)이면 호출측이
         // `StructuralDelta` 전송 후 정확한 순서로 직접 tap 한다 — 여기서 또 tap 하면
-        // 이중 tap(문자 중복 echo, todo-conductor 09)이 된다.
+        // 이중 tap(문자 중복 echo)이 된다.
         if self.attach.is_auto_tap_suppressed() {
             return;
         }
@@ -2001,7 +2001,7 @@ mod forward_exec_tests {
         );
     }
 
-    /// 회귀 가드(todo-conductor 09 — 이중 tap 으로 attach client 화면에 타이핑 글자가
+    /// 회귀 가드(이중 tap 으로 attach client 화면에 타이핑 글자가
     /// 중복 렌더링되던 버그). 이전 코드는 `execute_forwarded_structural_op` 내부에서
     /// (재사용 핸들러가 호출하는 `apply_split_pane`/`apply_split_surface`/
     /// `apply_create_tab` 를 통해) 즉시 tap 하고, 호출측(`event_handler.rs`/`boot.rs`)이

@@ -781,7 +781,7 @@ impl GpuState {
     }
 
     /// attach mesh mirror surface(`AttachMeshSurface`)들을 전용 Renderer 로 합성한다
-    /// (`.claude-workspace/todo/19-attach-client-mesh-render.md`).
+    /// (`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
     ///
     /// [`Self::render_egui_mesh_surfaces`]의 attach 대응 — 유일한 차이는 frame 소스다:
     /// 로컬 plugin 은 `PluginManager` + `SharedBuffer`(footer 로 generation 검증)에서

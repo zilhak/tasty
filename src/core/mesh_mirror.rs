@@ -1,7 +1,7 @@
-//! attach mesh mirror — 서버측 구독 상태(`.claude-workspace/todo/18-attach-server-mesh-context-forward.md`).
+//! attach mesh mirror — 서버측 구독 상태(`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
 //!
-//! `CoreState`가 소유한다(`PluginManager`는 `App` 소유라 여기 둘 수 없다 — 17번/20번
-//! TODO의 아키텍처 결정). 이 레지스트리는 "누가 어떤 mesh surface 를 어떤
+//! `CoreState`가 소유한다 — `PluginManager`는 `App` 소유라 여기 둘 수 없다. 이
+//! 레지스트리는 "누가 어떤 mesh surface 를 어떤
 //! geometry/theme/focus 로 구독 중인가" 만 추적하고, 실제 plugin 구동(`surface.set_context`
 //! 송신) 과 mesh 바이트 forward는 `PluginManager` 접근권이 있는 계층
 //! (`src/boot/headless_plugins.rs`)이 이 상태를 읽어 수행한다.

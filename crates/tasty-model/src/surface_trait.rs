@@ -47,7 +47,7 @@ pub trait Surface: Any + Send {
         self.all_surface_ids().contains(&surface_id)
     }
 
-    /// attach mesh mirror 후보 판별(`.claude-workspace/todo/16-attach-surface-classification-mesh.md`).
+    /// attach mesh mirror 후보 판별(`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
     /// `Some((kind, plugin_id))` 를 반환하면 이 surface 는 plugin egui-mesh
     /// surface 라는 뜻 — `Workspace::classify_attach_surfaces` 가 이 신호로
     /// mesh 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)` 조합이

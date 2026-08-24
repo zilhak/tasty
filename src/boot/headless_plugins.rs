@@ -1,5 +1,5 @@
-//! 헤드리스 전용 PluginManager 부트스트랩 + pump (attach mesh mirror 선행조건,
-//! `.claude-workspace/todo/17-attach-headless-plugin-bootstrap.md`).
+//! 헤드리스 전용 PluginManager 부트스트랩 + pump (attach mesh mirror 선행조건 —
+//! `docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
 //!
 //! `App::new_headless` 는 `plugin_manager: None` 으로 뜬다 — 헤드리스는 "GUI 없음"을
 //! 전제한 코드 경로가 넓어 상시 초기화는 회귀 위험이 크다. 대신 attach 세션이 실제로
