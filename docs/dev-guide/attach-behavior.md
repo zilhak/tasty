@@ -108,7 +108,7 @@ bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트�
   그동안(next tick 까지) 이 훅은 캐시된(델타뿐일 수 있는) frame 을 새 구독자에 흘리지 않고
   건너뛴다.
 - **`MeshFullResendRequest` 복구**: 텍스처 델타 체인이 깨졌다고 판단되면(로컬 `EguiMeshRenderTarget` 의 generation 검증 실패 등) client 가 `attach_mesh_full_requests`(`GpuState`)에 surface_id 를 쌓고, `App::dispatch_pending_mesh_full_resend_forwards`가 `MeshFullResendRequest{surface_id}` 를 서버로 forward 한다. 서버는 이를 받으면 `MeshMirrorRegistry::request_full_resend` 로 해당 surface 의 다음 프레임을 풀 텍스처 포함(full_textures=true)으로 강제한다.
-- **`MeshError` — 명시적 단발 실패**: 구독 안 된 surface 로의 `MeshInput`(홀더 불일치 포함, `CoreState::apply_attached_mesh_input` 의 holder 검증) 등은 조용히 drop 하지 않고 `MeshError{surface_id, reason}` 를 1회 회신한다(TODO 15 결정 — 조용한 drop 보다 명시적 실패가 디버깅에 유리). client 측 소비는 현재 로그 레벨 처리만(재시도/toast 없음) — 세션이 정상이면 애초에 발생하지 않는 방어적 경로.
+- **`MeshError` — 명시적 단발 실패**: 구독 안 된 surface 로의 `MeshInput`(홀더 불일치 포함, `CoreState::apply_attached_mesh_input` 의 holder 검증) 등은 조용히 drop 하지 않고 `MeshError{surface_id, reason}` 를 1회 회신한다(결정 — 조용한 drop 보다 명시적 실패가 디버깅에 유리). client 측 소비는 현재 로그 레벨 처리만(재시도/toast 없음) — 세션이 정상이면 애초에 발생하지 않는 방어적 경로.
 - **App/CoreState 경계를 건너는 forward-queue 패턴**: `MainView`(redraw 시점)는 `App.attach_client_sessions`(소켓 writer 보유)에 접근할 수 없다. `forward_attach_mesh_context`/입력 캡처(`mouse.rs`/`keyboard.rs`/`ime.rs`)는 `CoreState.pending_mesh_context_forward`/`pending_mesh_input_forward`/`pending_mesh_full_resend_forward` 에 쌓아두기만 하고, `App::about_to_wait`(`attach_client.rs`)의 `dispatch_pending_mesh_*_forwards` 가 다음 tick 에 drain 해 세션 매핑으로 원격 id 를 치환한 뒤 실제 소켓 write 를 한다 — `pending_resize_forward`/`dispatch_pending_resize_forwards`(ADR-0045)와 동형 패턴을 3개 방향(context/input/full-resend)에 재사용한 것.
 - **gui-as-server 의 살아있는 window 는 attach client 의 입력 역방향 forward 를 아직 로컬 plugin 에 되먹이지 않는다**: 위 "gui-as-server, 살아있는 window" 훅은 mesh 바이트 forward(서버→client)만 구현한다 — `MeshInput` 으로 도착해 `MeshMirrorRegistry::push_input`/`pending_events` 에 쌓인 attach client 의 클릭/키 입력을 로컬 plugin 의 `raw_input` 에 병합하는 배선은 `forward_mesh_frames_for_engine`(`take_pending_events` 소비)에만 있다 — gui 살아있는 window 는 이 함수를 쓰지 않으므로(경합 회피, 위 참조) 후속 작업으로 남는다. **예외**: gui parked engine 은 headless 와 동일하게 `forward_mesh_frames_for_engine` 을 그대로 쓰므로, window 가 최소화돼 있는 동안은 오히려 입력 forward 가 이미 동작한다 — window 복원 후 살아있는 window 로 전환되면 다시 이 제약이 적용된다.
 - **surface 디스크립터의 display_name**: `build_workspace_tree_surfaces` 가 보내는 mesh 디스크립터는 `{remote_id, role:"mesh", kind, plugin_id, display_name}` — `Surface::attach_mesh_info()`(kind/plugin_id 만 반환)와 별개로, 이미 존재하는 `Surface::display_name()`(`EguiMeshSurface` 는 실제 파일명 등을 반환)도 함께 조회해 실어보낸다. client 의 `MirrorMeshInfo` 구성(`merge_survivor_mapping`)은 이 필드를 우선 쓰고, 필드가 없는 경우(구버전 서버 등)에만 `kind` 문자열로 fallback한다 — 과거엔 이 필드 자체가 없어 탭 타이틀이 항상 mesh kind(예: `"image"`)로 뭉뚱그려졌다(image/mesh_demo 전부 동일 증상 — 당시엔 markdown 도 이 경로를 탔으나 Stage B 이후로는 webview 로 이관돼 더 이상 mesh 디스크립터를 타지 않는다).
@@ -216,7 +216,7 @@ workspace 는 사라지는데 서버는 여전히 점유 상태로 남는" 비�
 silent disconnect 정리(`cleanup_mirror_workspace`) 자체는 heartbeat TTL 만료로도 자동 발동한다
 (위 "연결 생존 확인"). anchor(매핑된 로컬 워크스페이스)에 물린 세션이 이렇게 끊기면
 mirror workspace 는 즉시 걷히지 않는다 — 세션이 `SessionState::Reconnecting` 으로 전이해
-"limbo" 상태로 살아남고, 아래 backoff 스케줄이 자동으로 재연결을 시도한다(TODO 27/28).
+"limbo" 상태로 살아남고, 아래 backoff 스케줄이 자동으로 재연결을 시도한다.
 anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대상이 아니라 기존처럼
 즉시 정리된다.
 
@@ -236,7 +236,7 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
     트리거는 즉시 스킵한다(`maybe_trigger_reconnect` 전담 대상). 이 가드가 없으면 두
     트리거가 같은 anchor 에 대해 동시에 `start_gui_attach`/`reconnect_session` 을 각각
     spawn 해 mirror workspace 가 중복 생성될 수 있다.
-- **backoff 재연결 트리거(TODO 27, `maybe_trigger_reconnect`)** — `Reconnecting` 상태인
+- **backoff 재연결 트리거(`maybe_trigger_reconnect`)** — `Reconnecting` 상태인
   세션이 있는 각 anchor 마다 매 프레임 확인한다: ① 사용자가 **지금** 그 anchor
   워크스페이스로 전환해 돌아왔으면(엣지, `current_ws_id == anchor` 로 한정 — 다른
   워크스페이스로의 무관한 전환까지 모든 Reconnecting anchor 를 깨우지 않는다) 즉시, ②
@@ -284,9 +284,9 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
 
 **서버측 점유 해제([ADR-0052](../adr/0052-attach-heartbeat-ttl-hard-occupancy-release.md))와는 독립이다**: 위 backoff 재연결은 순수 **client(GUI mirror)측** 복원력이고, 서버의 `OccupancyRegistry` 해제 타이밍(EOF-or-TTL, 위 "점유 레지스트리" 절)은 전혀 건드리지 않는다 — TTL 만료로 서버가 이미 lock 을 free 로 되돌린 뒤에도 client 는 그저 다시 처음부터 attach 를 재시도할 뿐이고, 재연결 도중 다른 client 가 그 lock 을 먼저 잡으면 `already_attached` 로 거부돼 위 영구 충돌 backoff 로 흡수된다. 서버가 원 client 를 위해 lock 을 더 오래 붙들어주는 "재연결 유예 창구"는 도입하지 않았으므로 ADR-0052 의 Reconsideration Trigger("TTL 기반 해제와 다른 규칙 — 재연결 유예 창구가 필요해질 때")는 충족되지 않는다.
 
-## 재연결 시 세션 상태 보존 (TODO 28)
+## 재연결 시 세션 상태 보존
 
-TODO 27 의 backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mirror workspace/터미널을
+backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mirror workspace/터미널을
 만들면 scrollback 과 local id 가 재연결마다 사라진다. 이를 막기 위해 `reconnect_session`
 (`src/app/attach_client.rs`)은 `resolve_endpoint`/handshake 는 `start_gui_attach` 와 동일하게
 수행하되, 워크스페이스/터미널은 **기존 것을 그대로 재사용**한다:
@@ -307,7 +307,7 @@ TODO 27 의 backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mir
   크로스체크가 지적한 "재연결 후 forwarder 가 죽은 채널을 계속 참조해 survivor 터미널
   입력이 조용히 유실되는" 결함의 수정.
 - **`SessionState`(`Connected`/`Reconnecting`)**: 기존 `cleanup_mirror_workspace` 는
-  disconnect 즉시 mirror workspace/터미널을 통째로 걷어내, TODO 27 의 재연결 트리거가
+  disconnect 즉시 mirror workspace/터미널을 통째로 걷어내, 재연결 트리거가
   발동할 시점엔 survivor-mapping 을 적용할 대상 자체가 남아있지 않았다(Codex 크로스체크
   지적). 이를 막기 위해 anchor 가 있는 세션의 disconnect 는 `cleanup_mirror_workspace`
   를 부르지 않고 `enter_reconnecting`(mirror workspace/터미널을 그대로 둔 채 상태만
@@ -328,7 +328,7 @@ TODO 27 의 backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mir
 client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(hard workspace lock)를 해제해야 한다. 종료 트리거는 두 가지다.
 
 - **원격발 종료(EOF/force-detach/read timeout)**: reader 스레드가 `Detach`/`force_detached`/EOF 를 받거나(위 "연결 생존 확인" 참조) read timeout 으로 소켓 read 가 에러를 반환하면 `disconnected` 플래그가 선다. `apply_attach_client_output` 이 이를 상태별로 분기한다 —
-  - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결(TODO 27)에 맡긴다.
+  - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결에 맡긴다.
   - **anchor 없는 세션(임시 mirror, IPC `remote.attach` 등)**: 기존과 동일하게 세션 제거 + `cleanup_mirror_workspace(sess, from_disconnect=true)`.
   - 이미 `Reconnecting` 상태인 세션(재연결 시도 자체가 실패해 다시 disconnected 로 관측되는 경우)은 이 분기에 다시 들어오지 않는다 — `disconnected && state == Connected` 조건이라 진입 시 이미 걸러진다.
 - **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). 이는 세션이 `Connected`/`Reconnecting` 어느 쪽이어도 동일하다. `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 존재 여부(`find_main_with_workspace`)를 확인해, 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.

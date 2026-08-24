@@ -1,7 +1,7 @@
 # 네이티브 파일 피커 (로컬+원격 겸용)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (Tools 메뉴 트리거) + plugin(`file_picker.trigger` IPC, TODO 21)
+- **주체**: 로컬 사용자 (Tools 메뉴 트리거) + plugin(`file_picker.trigger` IPC)
 - **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0042](../../adr/0042-fs-pick-file-native-dialog-host-delegation.md)(로컬 전용 `fs.pick_file`, 별개 메커니즘으로 계속 유효)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/main.rs`(Browse 버튼 caller)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
@@ -88,7 +88,7 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 Windows 스타일(`C:\Users\alice`, 드라이브 루트
 보존)과 POSIX(`/`)를 구분한다(`is_windows_style_remote_path`).
 
-### plugin 트리거(TODO 21, ADR-0058) — 즉시 ack + 이벤트 push
+### plugin 트리거(ADR-0058) — 즉시 ack + 이벤트 push
 
 markdown plugin 의 "파일 열기" 팝업 Browse 버튼처럼, host 소유 popup 을 열고 사용자가 몇 프레임
 뒤에나 확정/취소할지 모르는 인터랙션을 **plugin 이** 트리거해야 하는 경우의 IPC 경로다.
@@ -128,7 +128,7 @@ doc.
 
 **Origin 태깅**: `file_picker.trigger` 로 연 popup 의 `OpenPopup` intent 는
 `Intent::from_agent_plugin(plugin_id)` 로 발화한다(Tools 메뉴는 `from_user_menu` 그대로) —
-`from_agent_plugin` 은 이 작업 전까지 실사용처가 없던 builder 였다(TODO13 wiring 전 상태,
+`from_agent_plugin` 은 이 작업 전까지 실사용처가 없던 builder 였다(wiring 전 상태,
 `src/intent.rs`).
 
 ## 인터페이스
@@ -138,7 +138,7 @@ doc.
   ESC(취소) / X 버튼(취소).
 - **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
   UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
-  `file_picker.trigger` IPC 로 plugin 에 열려 있다(TODO 21, ADR-0058) — markdown Browse
+  `file_picker.trigger` IPC 로 plugin 에 열려 있다(ADR-0058) — markdown Browse
   버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
   UI 를 사용자에게 대신 띄워준다" 는 위임이라 원칙과 상충하지 않는다(뒤이은 선택/확정은
   여전히 사용자 몫).
@@ -209,7 +209,7 @@ doc.
 > 기록한 것과 동일한 종류의 한계이되, 이번 작업은 실제 서버 프로세스를 상대로 한 프로토콜
 > 왕복까지는 실행 검증했다는 점에서 그 두 문서보다 한 단계 더 나아간 커버리지다.
 >
-> **`file_picker.trigger`(TODO 21) 검증**: 격리된 `TASTY_HOME` 으로 기동한 실제 debug
+> **`file_picker.trigger` 검증**: 격리된 `TASTY_HOME` 으로 기동한 실제 debug
 > `tasty` 인스턴스에 raw `TcpStream` 으로 JSON-RPC(`file_picker.trigger`)를 직접 보내
 > `route_engine_handler` 라우팅 전체(dispatch table → `handle_trigger` → `popup::file_picker::
 > open`)를 실행 검증했다 — 1 차 호출은 `{ request_id: 1 }` 로 성공, popup 이 열린 상태에서의
@@ -229,7 +229,7 @@ doc.
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
   `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
-  트리거, TODO 21/ADR-0058), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
+  트리거, ADR-0058), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
   `FsRead`).
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
   `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면

@@ -116,7 +116,7 @@ text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme �
 
 디자인 `gallery/preset_editor.jsx` (`SurfaceView`/`Pane`/`PaneTree`/`SurfaceBox`) ↔ 갤러리
 `catalog/components/preset_editor.rs` ↔ 본체 `src/adapters/ui/preset/demo_layout.rs`. 저장된
-`Preset*` 트리를 **구조만** 축소 렌더하는 read-only 미리보기(TODO 07 Phase 1). 라이브 surface
+`Preset*` 트리를 **구조만** 축소 렌더하는 read-only 미리보기다. 라이브 surface
 렌더(터미널 GPU/WebView)는 재사용하지 않고 전용 placeholder 위젯으로 그린다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 (`preset_editor.rs`) | 본체 (`demo_layout.rs`) |
@@ -368,19 +368,19 @@ Hint text Section 바로 다음에 `Warning callout` Section 1개.
 디자인 `ui_kits/terminal/overlays/clipboard_viewer.jsx` ↔ plugin
 `crates/tasty-plugin-clipboard-viewer/src/view.rs::draw`(egui-mesh 자가 렌더, B4) ↔ 갤러리
 `catalog/components/clipboard_viewer.rs` (Plugins › `Clipboard viewer popup`). 좌측 rail
-master-detail 레이아웃은 폐기됐다(TODO51) — header→type-bar→body→footer 4단 수직 스택으로
+master-detail 레이아웃은 폐기됐다 — header→type-bar→body→footer 4단 수직 스택으로
 구조 전사. 갤러리는 plugin crate 비의존이라 그 *구성*을 Theme 토큰 painter mock 으로
 전사 — 픽셀 동일성 비목표.
 
 | plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
 | header(아이콘+타이틀+snapshot 뱃지+close) | `text-muted`/`font-size-max`/`tag` Default | `header_row` |
-| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files, TODO52) / `image_type_bar_row`(image, 우측에 meta 텍스트) / `type_bar_row_html`(TODO49, 우측 Pretty print 체크박스) / `other_type_bar_row`(TODO50, Other 뱃지) |
-| body well(text/html) | `bg-app` fill + `separator`+`border-width` + `corner-radius`, mono 스크롤 | `body_row` / `body_row_text`(TODO49, 임의 문자열) |
-| body well(files, TODO52) | 위와 동일 + 아이콘(`text-muted`)+mono 경로 한 줄씩 | `files_body_row` |
-| body well(image, TODO48 — 인라인 렌더 없음) | 위와 동일 fill/border, 콘텐츠는 중앙 정렬(아이콘 30px 고정 + `text-muted` + mono caption 메타 + `text-disabled` italic 안내) | `image_body_row` |
-| body well(other, TODO50) | 위와 동일 fill/border, 포맷 블록마다 이름(`text-secondary` 굵게)+크기(`text-muted`) 같은 줄 + 미리보기(`text-primary`), 블록 사이 `separator` 1px | `other_body_row` |
-| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row`(text) / `footer_row_files`(TODO52) / `image_footer_row`(image, `image/rgba8`) / `footer_row_html`(TODO49, `{mime} · {meta}`) / `other_footer_row`(TODO50, `{n} unrecognized formats` 가 mime 을 대체) |
+| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files) / `image_type_bar_row`(image, 우측에 meta 텍스트) / `type_bar_row_html`(우측 Pretty print 체크박스) / `other_type_bar_row`(Other 뱃지) |
+| body well(text/html) | `bg-app` fill + `separator`+`border-width` + `corner-radius`, mono 스크롤 | `body_row` / `body_row_text`(임의 문자열) |
+| body well(files) | 위와 동일 + 아이콘(`text-muted`)+mono 경로 한 줄씩 | `files_body_row` |
+| body well(image — 인라인 렌더 없음) | 위와 동일 fill/border, 콘텐츠는 중앙 정렬(아이콘 30px 고정 + `text-muted` + mono caption 메타 + `text-disabled` italic 안내) | `image_body_row` |
+| body well(other) | 위와 동일 fill/border, 포맷 블록마다 이름(`text-secondary` 굵게)+크기(`text-muted`) 같은 줄 + 미리보기(`text-primary`), 블록 사이 `separator` 1px | `other_body_row` |
+| footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row`(text) / `footer_row_files` / `image_footer_row`(image, `image/rgba8`) / `footer_row_html`(`{mime} · {meta}`) / `other_footer_row`(`{n} unrecognized formats` 가 mime 을 대체) |
 | CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
 화면 전용 고정값 480×360 은 module const(token-policy §c). 9 상태(data-text/data-files/image/

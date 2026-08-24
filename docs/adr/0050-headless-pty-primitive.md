@@ -40,7 +40,7 @@
 다음 중 하나가 충족되면 본 ADR 을 재검토한다.
 
 - headless PTY 실행을 GUI 에 상시 노출(상태바 카운트 이상의 occupancy 편입)해야 하는 요구가 생겨 Surface 없는 개념과 점유 계약(ADR-0040)의 경계가 모호해질 때.
-- `agent.task` Run 을 pty backend 로 전환(TODO 19)하면서 `runner_host` shell 관리와 `pty_registry` 를 통합하는 게 이득이 될 때.
+- `agent.task` Run 을 pty backend 로 전환하면서 `runner_host` shell 관리와 `pty_registry` 를 통합하는 게 이득이 될 때.
 - 동시 개수 상한/idle TTL 기본값이 실사용(장수명 SSH 세션 등)에서 반복적으로 부적절하다고 드러나 정책 모델 자체(호스트 고정 vs agent-configurable)를 바꿔야 할 때.
 - `TerminalSpawn`/`Write`/`Read` 재사용이 headless 와 Surface-기반 사용을 권한상 구분하지 못해 보안/감사 문제가 될 때.
 

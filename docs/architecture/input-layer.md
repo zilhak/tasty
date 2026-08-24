@@ -130,7 +130,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 - 키보드/IME 경로는 "이 키 이벤트를 egui 로 줄지, 중앙 디스패처(터미널/단축키)로 줄지" 를 결정하는 라우팅 전제 질문이다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가"라는 넓은 정의가 필요하다.
 - 마우스는 `src/view/main.rs` 의 이벤트 분기에서 **항상 무조건** egui 로 먼저 전달되고 `egui_consumed` 로 결과를 받는다 — 라우팅 전제 자체가 없다. Popup 위 클릭은 이미 `egui_consumed`/`popup_hovered`(위치 기반)로 정확히 처리되므로, mouse.rs 의 `overlay_open`(=`settings_open`)은 **모달(별도 OS 창) 전용** 보강 게이트일 뿐이다. `has_input_dialog_open()`(rename, popup 시스템으로 구현됨)과 `popups.has_focused()`는 정책상 Popup 이 비모달이라 위치 밖 클릭까지 막을 이유가 없어 여기 안 들어간다.
 
-부수적으로 발견한 별개 사안(popup 바깥 클릭이 popup 을 닫으면서 그 클릭이 겨냥한 하위 액션도 같은 클릭에서 발생하는 문제 — UX 판단이 필요해 이번 범위에서 분리)은 `.claude-workspace/todo/50-mouse-path-popup-outside-click-double-action.md` 참고.
+알려진 미해소 사안: popup 바깥 클릭이 popup 을 닫으면서, 그 클릭이 겨냥한 하위 액션도 같은 클릭에서 함께 발생한다. 닫힘만 소비하고 액션을 막을지는 UX 판단이 필요해 별개 사안으로 분리돼 있다.
 
 ### 새 Foreground 레이어를 추가할 때 체크리스트
 

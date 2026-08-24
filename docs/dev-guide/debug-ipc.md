@@ -67,7 +67,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 | `tab` | 유효 `subtab` 키 |
 |-------|------------------|
-| `general` | `general` · `notifications` · `accessibility` · `overlay` · `remote_transfer` · `display`(macOS 전용 UI, TODO47 — 키 자체는 크로스플랫폼으로 강제 선택 가능) |
+| `general` | `general` · `notifications` · `accessibility` · `overlay` · `remote_transfer` · `display`(macOS 전용 UI — 키 자체는 크로스플랫폼으로 강제 선택 가능) |
 | `terminal` | `general` · `mouse_capture` · `tui` · `performance` |
 | `appearance` | `theme` · `colors` · `general` · `display` · `tasty` · `terminal` |
 | `keybindings` | `general` · `workspace` · `pane` · `tab` · `surface` · `clipboard` · `zoom` · `image` · `preset` · `plugins` |
