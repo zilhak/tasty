@@ -78,21 +78,7 @@ pub fn handle_open(
     }
 }
 
-/// `debug.popup.close` — `{ instance_id }`로 popup 인스턴스 강제 close.
-pub fn handle_close(
-    mgr: Option<&mut PluginManager>,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let Some(instance_id) = params.get("instance_id").and_then(|v| v.as_u64()) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'instance_id' parameter");
-    };
-    let Some(mgr) = mgr else {
-        return JsonRpcResponse::error(id, -32002, "plugin manager not initialized");
-    };
-    mgr.close_popup_instance(
-        instance_id,
-        tasty_plugin_protocol::PopupCloseReason::PluginRequest,
-    );
-    JsonRpcResponse::success(id, json!({ "closed": instance_id }))
-}
+// `debug.popup.close` 는 여기 없다 — 매니저 직접 close 가 아니라 렌더가 수집하는
+// close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돌기 때문에(ADR-0082)
+// `App::enqueue_plugin_popup_close` 를 거치는 App-level glue 로 옮겼다
+// (`src/app/ipc/debug_methods.rs`, `debug.plugin_banner.*` 와 같은 이유·같은 위치).

@@ -94,11 +94,41 @@ impl App {
                     id,
                     &cmd.request.params,
                 ),
-                "debug.popup.close" => host_ipc::handler::popup::handle_close(
-                    self.plugin_manager.as_mut(),
-                    id,
-                    &cmd.request.params,
-                ),
+                // close 만 App-level glue 를 거친다 — 매니저를 직접 치면 렌더가
+                // 수집하는 close 큐를 건너뛰어 `cancel_child_file_picker` 연쇄
+                // 정리가 안 돈다. debug 강제 close 가 release 경로(plugin 의
+                // `popup.close`)와 다른 코드를 타면 이 표면으로 하는 검증 자체가
+                // 실제 동작을 못 비춘다.
+                "debug.popup.close" => {
+                    match cmd
+                        .request
+                        .params
+                        .get("instance_id")
+                        .and_then(|v| v.as_u64())
+                    {
+                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                            id,
+                            "Missing required 'instance_id' parameter",
+                        ),
+                        Some(instance_id) if self.plugin_manager.is_none() => {
+                            host_ipc::protocol::JsonRpcResponse::error(
+                                id,
+                                -32002,
+                                format!("plugin manager not initialized (instance {instance_id})"),
+                            )
+                        }
+                        Some(instance_id) => {
+                            self.enqueue_plugin_popup_close(
+                                instance_id,
+                                tasty_plugin_protocol::PopupCloseReason::PluginRequest,
+                            );
+                            host_ipc::protocol::JsonRpcResponse::success(
+                                id,
+                                serde_json::json!({ "closed": instance_id }),
+                            )
+                        }
+                    }
+                }
                 other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
             };
             send_response(&cmd.response_tx, response);

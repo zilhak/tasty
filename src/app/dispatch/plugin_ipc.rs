@@ -93,31 +93,33 @@ impl App {
                 match instance_id {
                     None => (None, Some("popup.close: missing 'instance_id'".to_string())),
                     Some(id) => {
-                        let mgr = self.plugin_manager.as_mut();
-                        let owns = mgr
-                            .as_ref()
-                            .and_then(|m| {
-                                m.popup_instances()
-                                    .find(|(iid, _)| *iid == id)
-                                    .map(|(_, inst)| inst.plugin_id == call.plugin_id)
-                            })
-                            .unwrap_or(false);
-                        if !owns {
-                            (
+                        // 소유권 검증만 매니저를 빌려서 하고 곧바로 반납한다 —
+                        // 아래 close 는 `&mut self` 를 다시 잡는다.
+                        let owns = self.plugin_manager.as_ref().map(|m| {
+                            m.popup_instances()
+                                .find(|(iid, _)| *iid == id)
+                                .is_some_and(|(_, inst)| inst.plugin_id == call.plugin_id)
+                        });
+                        match owns {
+                            None => (None, Some("popup.close: plugin manager unavailable".into())),
+                            Some(false) => (
                                 None,
                                 Some(format!(
                                     "popup.close: instance {id} not owned by plugin '{}'",
                                     call.plugin_id
                                 )),
-                            )
-                        } else if let Some(m) = mgr {
-                            m.close_popup_instance(
-                                id,
-                                tasty_plugin_protocol::PopupCloseReason::PluginRequest,
-                            );
-                            (Some(serde_json::Value::Object(Default::default())), None)
-                        } else {
-                            (None, Some("popup.close: plugin manager unavailable".into()))
+                            ),
+                            Some(true) => {
+                                // 매니저를 직접 치지 않는다 — 렌더가 수집하는 close 큐로
+                                // 합류시켜야 `cancel_child_file_picker` 연쇄 정리가 이
+                                // 경로에서도 돈다(ADR-0082 Decision 3). 큐는 같은 tick 의
+                                // `dispatch_plugin_popup_events` 가 drain 하므로 지연 없다.
+                                self.enqueue_plugin_popup_close(
+                                    id,
+                                    tasty_plugin_protocol::PopupCloseReason::PluginRequest,
+                                );
+                                (Some(serde_json::Value::Object(Default::default())), None)
+                            }
                         }
                     }
                 }

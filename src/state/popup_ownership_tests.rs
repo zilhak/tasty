@@ -80,6 +80,12 @@ fn closing_the_owner_cancels_its_child_picker() {
 }
 
 /// 어떤 사유로 닫히든(Escape / 명시적 close) 동일하게 정리된다.
+///
+/// **사유(reason) 무관함일 뿐 경로(path) 커버가 아니다** — 이 테스트는
+/// `cancel_child_file_picker` 를 직접 호출하므로, 어떤 호출처가 이 함수에 아예 닿지
+/// 않는(=`plugin_popup_closes` 큐를 건너뛰고 매니저를 직접 치는) 결함은 못 잡는다.
+/// 실제로 `PluginRequest` 경로가 그랬다. 그 모양은
+/// `tests/plugin_popup_close_chokepoint.rs` 가 소스 수준에서 막는다.
 #[test]
 fn cascade_cleanup_is_independent_of_the_close_reason() {
     for reason in [
@@ -117,6 +123,61 @@ fn cascade_cleanup_does_not_overwrite_a_settled_result() {
         state.dialogs.file_picker.as_ref().unwrap().result,
         Some(FilePickerResult::Confirmed { .. })
     ));
+}
+
+/// 연쇄 정리가 성공하면 부모-자식 링크를 끊는다 — 남겨두면 다음 tick 의 result push 가
+/// "소유 popup 이 사라진 채 결과 도착"(ADR-0082 Decision 4)으로 오인해 경고를 낸다.
+/// 그 경고는 정리가 실패했을 때만 나와야 진단 가치가 있다.
+#[test]
+fn successful_cascade_cleanup_severs_the_owner_link() {
+    let mut state = state_with_picker(Some(OWNER_IID));
+    cancel_child_file_picker(&mut state, &[(OWNER_IID, PopupCloseReason::PluginRequest)]);
+    let req = state
+        .dialogs
+        .file_picker
+        .as_ref()
+        .unwrap()
+        .requester
+        .as_ref()
+        .unwrap();
+    assert_eq!(req.owner_popup_instance, None);
+    // 결과 라우팅에 필요한 나머지는 그대로여야 한다 — 결과는 여전히 정확히 한 번 간다.
+    assert_eq!(req.request_id, 1);
+    assert_eq!(req.plugin_id, "com.example.any");
+}
+
+/// 반대로 사용자가 이미 파일을 확정한 뒤 부모가 죽은 경우엔 링크를 남긴다 — 고른 파일을
+/// 받을 popup 이 사라진 것이라 그 경고가 진짜 신호다.
+#[test]
+fn a_settled_result_keeps_the_owner_link_for_the_loss_warning() {
+    let mut state = state_with_picker(Some(OWNER_IID));
+    state.dialogs.file_picker.as_mut().unwrap().result = Some(FilePickerResult::Confirmed {
+        paths: vec!["/tmp/a.md".to_string()],
+        is_remote: false,
+    });
+    cancel_child_file_picker(&mut state, &[(OWNER_IID, PopupCloseReason::PluginRequest)]);
+    assert_eq!(
+        state
+            .dialogs
+            .file_picker
+            .as_ref()
+            .unwrap()
+            .requester
+            .as_ref()
+            .unwrap()
+            .owner_popup_instance,
+        Some(OWNER_IID)
+    );
+}
+
+/// 링크가 끊긴 뒤에는 그 instance 가 더 이상 "열린 자식을 가진 부모" 가 아니다 —
+/// dismiss 억제(스택 유지)가 죽은 부모 때문에 계속 걸려 있으면 안 된다.
+#[test]
+fn severed_link_stops_reporting_an_open_child() {
+    let mut state = state_with_picker(Some(OWNER_IID));
+    assert!(state.plugin_popup_has_open_child(OWNER_IID));
+    cancel_child_file_picker(&mut state, &[(OWNER_IID, PopupCloseReason::Escape)]);
+    assert!(!state.plugin_popup_has_open_child(OWNER_IID));
 }
 
 /// Tools 메뉴 피커는 plugin popup 이 닫혀도 영향을 받지 않는다(회귀 확인).
