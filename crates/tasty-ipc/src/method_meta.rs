@@ -527,6 +527,11 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.feed_bytes", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
+    // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*
+    // 와 같은 계열이라 같은 debug 격리.
+    ("debug.close_workspace", local_only()),
+    ("debug.switch_workspace", local_only()),
+    ("debug.switch_tab", local_only()),
     // 마우스 라우팅 회귀 안전망용 read-only dump — 관찰 전용(사용자 상태 불변). release 미노출.
     ("debug.selection", local_only()),
     ("debug.pending_menu", local_only()),

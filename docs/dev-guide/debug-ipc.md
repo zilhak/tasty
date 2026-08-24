@@ -113,7 +113,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 1. 핸들러를 `#[cfg(debug_assertions)]` (필요시 `+ feature = "gui"`) 로 감싼다.
 2. `route_debug_handler` match 에 분기 추가 (PluginManager 필요하면 `ipc_step_debug`).
-3. `DEBUG_METHODS` 표에 `(method, local_only())` 등록.
+3. `DEBUG_METHODS` 표에 `(method, local_only())` 등록. 빠뜨리면 `tests/ipc_router_table_parity.rs` 가 잡는다 — 미등재도 plugin 호출자에겐 거부지만(`UnknownMethod`), 표만 봐서는 정책인지 누락인지 구분이 안 되므로 등재는 선택이 아니다([api-conventions](api-conventions.md) "권한 표 등재").
 4. CLI 진입이 필요하면 `DebugCommands` variant 추가.
 5. 본 문서 표에 추가. **`docs/` 의 에이전트용 release 문서에는 쓰지 않는다.**
 
