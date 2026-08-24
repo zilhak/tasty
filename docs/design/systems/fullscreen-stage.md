@@ -31,9 +31,36 @@
 | `PopupManager::close` → `closed_queue` → `on_close` | `AppState::close_fullscreen_stage` → `stage_closed_queue` → `drain_on_close_hooks` |
 | `draw_popup_layer` | `draw_fullscreen_stage` |
 
-`StageDef` 필드: `id`(debug IPC 가 지정하는 이름) · `title_key`(i18n) · `draw_fn` · `on_close`.
+`StageDef` 필드: `id`(진입 경로가 지정하는 이름) · `title_key`(i18n) · `draw_fn` · `on_close`.
 무대 콘텐츠의 **자체 상태**는 popup 관례를 따른다 — 무대 id 로 키를 만든 egui temp memory 에
 두고 `on_close` 에서 지운다. `StageState` 에는 무대 수명 그 자체에 속하는 것만 담는다.
+
+## 셸이 그리는 것 / 콘텐츠가 그리는 것
+
+셸(`draw_fullscreen_stage`)은 **창 전체 scrim + 상단 제목 + 종료 버튼**을 그리고, 그 아래를
+`content_rect`(제목 띠 아래 · 바깥 여백 `space-xl`)로 잘라 `draw_fn` 에 child `Ui` 로 넘긴다.
+콘텐츠는 chrome 위치를 알 필요도, 침범할 수도 없다.
+
+**종료 버튼은 셸이 공통 제공한다** — 콘텐츠 구현자가 빠뜨릴 수 없어야 하기 때문이다. 무대
+프레임은 host chrome 을 통째로 건너뛰어 창 닫기·최소화 버튼(CSD 타이틀바)까지 사라지므로,
+종료 수단이 없는 무대는 창을 빠져나갈 방법이 없는 상태가 된다. `PopupManager` 가 X 버튼을
+중앙 관리하는 것과 같은 구조다.
+
+따라서 popup 형상을 옮겨오는 콘텐츠도 **popup 타이틀바는 다시 그리지 않는다** — 제목과 닫기는
+셸 chrome 의 몫이라 역할이 겹친다. 재사용하는 "형상" 은 프레임(배경/보더)과 콘텐츠다.
+
+## 진입 경로 — popup 타이틀바의 전체화면 버튼
+
+무대를 선언한 popup(`PopupDef.fullscreen_stage = Some(<stage id>)`)은 타이틀바 X 왼쪽에
+전체화면 버튼을 얻는다([popup.md 규칙 2·8](popup.md)). 누르면 그 무대가 뜨고 **원본 popup 은
+열린 채 남는다** — 무대가 덮을 뿐이다. 두 정적 테이블(popup / 무대)의 id 정합은 단위 테스트가
+강제한다.
+
+첫 소비자는 **알림 무대**(`notifications`)다: popup 의 형상 함수
+(`notification::draw_notification_content_inner`)가 `PopupState` 기하에 의존하지 않아 무대가
+그대로 호출할 수 있고, 목록형이라 넓은 화면에서 실익이 있다. 무대의 자체 상태는 목록 스크롤
+위치뿐이며(셸이 콘텐츠 Ui 를 무대 id 로 salt 하므로 popup 쪽과 다른 egui state 를 쓴다),
+`on_close` 가 그것을 지운다.
 
 ## 진입 / 종료
 
@@ -45,7 +72,10 @@
   훅 대기열에 넣고, draw 경로가 `on_close` 를 정확히 1 회 발화한다.
 - 훅 drain 은 **무대 프레임과 일반 프레임 양쪽**에서 돈다. 무대를 나오면 다음 프레임은 일반
   프레임이라 무대 draw 경로가 아예 돌지 않기 때문이다.
-- 진입·종료 뒤에는 프레임이 필요하다. IPC 경로는 라우팅이 이미 `dirty` 를 세운다.
+- 진입·종료 뒤에는 프레임이 필요하다. IPC 경로는 라우팅이 이미 `dirty` 를 세운다. **draw 중에
+  일어나는 진입/종료**(popup 버튼 클릭 · 무대 종료 버튼)는 그 프레임의 dirty 를 이미 소비한
+  뒤라 `ctx.request_repaint()` 로 다음 프레임을 직접 유도한다 — 빠뜨리면 다음 입력이 올
+  때까지 화면이 바뀌지 않는다.
 
 ## 레이어
 
@@ -192,8 +222,8 @@ wgpu 렌더 표면 **위**에 있다. 그리지 않아도 화면에 남으므로
   터미널로 가고 클릭은 뒤의(보이지 않는) 위젯 좌표로 판정된다. 무대에 입력을 주려면 그
   게이트를 처음부터 새로 세워야 하고, 기존 두 식에 무대 조건을 얹을지는 그 작업의 판단이다.
 - **무대 프레임에는 CSD 타이틀바도 없다.** 무대 프레임은 host chrome 을 통째로 건너뛰므로
-  창 닫기·최소화 버튼까지 사라진다. **종료 수단(단축키 등)이 없으면 창을 빠져나올 방법이
-  없다** — 무대에 진입 경로를 붙이는 작업은 종료 경로를 같은 범위에서 함께 붙여야 한다.
+  창 닫기·최소화 버튼까지 사라진다. 마우스 탈출 수단은 셸이 공통 제공하는 종료 버튼 하나뿐이며,
+  **키보드 탈출 수단(단축키)은 아직 없다** — 별도 트랙이 붙인다.
 
 ## headless
 

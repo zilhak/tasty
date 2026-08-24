@@ -1,9 +1,9 @@
 # 전체화면 무대 (Fullscreen stage)
 
-- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트)와 OS 창 전체화면 전환이 있다. 사용자/에이전트 진입 경로(단축키 · debug IPC)는 아직 없다.
+- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼까지 있다. 키보드 탈출 단축키 · 에이전트(debug IPC) 진입 · 입력 게이트는 아직 없다.
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
-- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs`
+- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs`
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md)
 
 ## 목적
@@ -19,6 +19,13 @@
   창이 여럿이면 창마다 독립적으로 가질 수 있다. 영속화하지 않는다.
 - **등록**: 무대에 올릴 수 있는 것은 `fullscreen::defs::all_defs()` 의 `StageDef` 뿐이다
   (`id` · `title_key` · `draw_fn` · `on_close`). 선언되지 않은 id 로 여는 시도는 거부된다.
+  현재 등록된 무대: `blank`(셸 확인용 기준 무대) · `notifications`(알림 무대).
+- **셸 chrome**: scrim + 상단 제목 + **종료 버튼**. 종료 버튼은 콘텐츠가 아니라 셸이 그린다 —
+  무대 프레임에는 창 닫기 버튼(CSD 타이틀바)조차 없어, 콘텐츠 구현자가 빠뜨리면 창을 빠져나갈
+  수 없는 상태가 되기 때문이다. 콘텐츠는 제목 띠 아래로 잘린 child `Ui` 만 받는다.
+- **알림 무대**: popup 의 형상 함수(`notification::draw_notification_content_inner`)를 그대로
+  호출한다 — popup 인스턴스가 아니라 같은 형상의 **별개 콘텐츠**이고, 목록 스크롤 위치는 무대
+  자신의 것이라 popup 쪽과 섞이지 않는다(무대 종료 시 `on_close` 가 지운다).
 - **진입/종료**: `AppState::open_fullscreen_stage(id)` / `close_fullscreen_stage()`. 다른 무대가
   올라와 있으면 그 무대를 닫고 교체하며, 같은 id 재진입은 no-op 이다. 종료는 **모든 닫힘
   경로가 지나는 유일한 지점**이고, 닫힌 id 가 훅 대기열을 거쳐 `on_close` 를 정확히 1 회
@@ -38,14 +45,16 @@
 
 - **AI Agent (IPC/CLI)**: 없다. 무대는 화면 투영이고 진입은 사용자 조작이라, 에이전트가 여는
   release 표면을 두지 않는다(불가침 원칙 1). debug 격리 표면은 후속 작업에서 붙는다.
-- **사용자 트리거**: 아직 없다(단축키/버튼 미구현).
+- **사용자 트리거**: 무대를 선언한 popup(`PopupDef.fullscreen_stage`)의 타이틀바 전체화면
+  버튼 — 현재 알림 popup. 누르면 무대가 뜨고 **원본 popup 은 열린 채 남는다**. 종료는 무대
+  우측 상단의 종료 버튼. 키보드 단축키는 아직 없다.
 
 ## 아직 없는 것
 
 - **입력 게이트** — 무대는 화면만 갈아끼운다. 키보드/마우스 경로는 무대를 모르므로 무대 중에도
   키는 터미널로 가고 클릭은 뒤의 위젯 좌표로 판정된다.
-- **종료 수단** — 무대 프레임은 CSD 타이틀바까지 지운다. 진입 경로를 붙이는 작업은 종료
-  경로를 반드시 같은 범위에서 함께 붙여야 한다(없으면 창을 빠져나올 수 없다).
+- **키보드 탈출 수단** — 마우스 탈출은 셸이 공통 제공하는 종료 버튼으로 되지만, 무대 프레임은
+  CSD 타이틀바까지 지우므로 그 버튼이 유일한 탈출 수단이다. 단축키는 아직 없다.
 
 경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
 "아직 없는 것" 절.
@@ -75,20 +84,25 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
 - [x] Given 정의 테이블에 없는 id When 무대 진입 Then 거부되고 무대가 서지 않는다
 - [x] Given 무대 활성 When `has_egui_overlay_open()` 조회 Then true (WebView 숨김 게이트)
 - [x] Given 무대 종료 When 다음 프레임 Then 닫힘 훅이 정확히 1 회 발화한다(무대/일반 프레임 양쪽)
+- [x] Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
 - [x] Given 진입 시점 창 상태 When 종료 시 복원 동작 결정 Then 일반/maximize 는 되돌리고 사용자 fullscreen 은 유지한다
 - [x] Given fullscreen 단독 When 리사이즈 엣지 판정 Then 잠긴 것으로 본다(maximize 만 보지 않는다)
+- [x] Given 무대를 선언한 popup When 타이틀바 전체화면 버튼 클릭 Then 그 무대가 뜨고 popup 은
+      열린 채 남는다
+- [x] Given 무대를 선언하지 않은 popup When 같은 좌표 클릭 Then 아무 무대도 뜨지 않는다
+- [x] Given 알림 무대 활성 When 무대 종료 Then 무대 자체 상태(목록 스크롤)가 지워진다
+- [x] Given popup 이 선언한 무대 id When 무대 테이블 조회 Then 반드시 존재하고, 그 popup 은
+      headless 가 아니다
 
-**미검증 — 검증 시점은 무대 진입 경로(debug IPC)가 붙은 뒤다.** 아래는 릴리스 코드에 사용자·
-에이전트 진입 경로가 없어 재현 가능한 자동 검증이 불가능하다. 임시 훅으로 1 회 실측했으나
-그 훅은 커밋되지 않았으므로 회귀를 잡지 못한다 — 진입 경로가 생기면 그 트랙에서 통합
-검증으로 승격한다.
+**미검증 — 살아 있는 GUI 가 필요해 자동 회귀가 없다.** 아래는 실제 창·PTY·GPU 가 있어야
+재현되므로 headless 테스트로 고정할 수 없다. 진입 경로가 생겼으므로 실측 자체는 가능하며,
+표시된 항목은 이번 라운드에 실측으로 1 회 확인했다(회귀를 잡지는 못한다).
 
-- [ ] Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
-      <!-- 정적 테이블에 무대가 하나뿐이라 현재 테스트는 vacuous 하다 -->
 - [ ] Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
 - [ ] Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다(무대 중 창
       크기가 바뀌어도)
 - [ ] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
+      <!-- 이번 라운드 실측 확인: 무대 진입 후 window 캡처가 정상 응답 -->
 - [ ] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
       내용이 찍힌다
 - [ ] Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀

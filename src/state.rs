@@ -1210,9 +1210,9 @@ impl AppState {
     ///
     /// 호출부는 이 뒤에 `mark_dirty()` 로 프레임을 유도해야 한다. IPC 경로는
     /// 라우팅이 이미 `dirty` 를 세운다.
-    // 진입 API 자체는 이 트랙이 소유하지만 **사용자/에이전트 진입 경로**(단축키 ·
-    // debug IPC)는 후속 트랙이 붙인다 — 그때까지 호출부가 없어 dead_code 로 잡힌다.
-    #[allow(dead_code)]
+    // 사용자 진입 경로는 popup 타이틀바의 전체화면 버튼
+    // (`popup::frame::draw_popup_layer`)이고, 에이전트 진입 경로(debug IPC)는 후속
+    // 트랙이 붙인다.
     #[cfg(feature = "gui")]
     pub fn open_fullscreen_stage(&mut self, id: &str) -> bool {
         let Some(def) = crate::adapters::ui::fullscreen::defs::find(id) else {

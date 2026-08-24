@@ -71,6 +71,7 @@ PopupDef {
     close_on_outside_click: false,
     headless: false,                 // true = 타이틀바·닫기버튼 없이 콘텐츠만 (컨텍스트 메뉴 스타일)
     sticky_focus: false,             // true = 바깥 클릭해도 키보드 포커스 유지 (검색바 등)
+    fullscreen_stage: None,          // Some(stage_id) = 타이틀바에 전체화면 버튼 노출 (아래 참고)
     draw_fn: super::my_popup::draw_my_popup,
 }
 ```
@@ -102,6 +103,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `drag_handle` | `DragHandle` | 이동(드래그) 핸들 선언. `None`(이동 불가) / `TitleBar`(타이틀바=핸들, 기존 동작; headless 면 핸들 없음) / `Region(fn(&PopupState)->Rect)`(팝업이 pos/size 로부터 **전용 핸들 띠** 계산 — 타이틀바 없는 팝업도 이동 가능). `movable` 여부는 별도 bool 없이 이 값으로 표현 |
 | `resizable` | `bool` | true 면 테두리 8방향 드래그로 크기 조절(min_size·scope 경계 클램프, 엣지별 리사이즈 커서) |
 | `min_size` | `Option<egui::Vec2>` | 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용 |
+| `fullscreen_stage` | `Option<StageId>` | `Some(id)` 면 타이틀바 X 왼쪽에 전체화면 버튼이 붙고, 누르면 그 [무대](../design/systems/fullscreen-stage.md)가 뜬다. 노출 여부와 대상이 한 필드라 "버튼은 있는데 갈 곳이 없는" 상태가 생기지 않는다. 아래 "전체화면 버튼" 참고 |
 | `draw_fn` | `fn(&mut Ui, &mut AppState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
 | `on_close` | `Option<fn(&egui::Context, &mut AppState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 발화(아래 "닫힘 정리" 참고) |
 
@@ -123,11 +125,20 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 
 ## 타이틀 길이 처리 (elide)
 
-타이틀바 텍스트가 길면 우측 상단 close 버튼(`close_btn_rect`)과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — `close_btn_rect`를 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).
+타이틀바 텍스트가 길면 우측 상단 버튼군과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — 버튼군 좌변(`title_buttons_left_x()`: 전체화면 버튼이 있으면 그 좌변, 없으면 `close_btn_rect` 좌변)을 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).
 
 - **개별 popup 은 타이틀 문자열을 미리 축약하지 않는다.** `title_key`/`title_fn`은 원본 텍스트(전체 경로, 원본 문구 등)를 그대로 반환하면 된다 — 문자 수 기준 임의 축약(예: N자 초과 시 `.../parent/name`)을 타이틀 겹침 방지 목적으로 넣지 않는다. 폭 기준 elide 가 아닌 문자 수 기준 축약은 폰트/문자 폭이 다르면 여전히 겹치거나 불필요하게 짧아질 수 있다 (`file_handler_picker.rs`의 `shorten_target()`이 이 실수의 사례였다 — 현재는 헤더 본문 표시 전용으로 역할이 축소됨).
 - **본문(body) 텍스트는 별개**: 타이틀 밖의 본문 라벨(예: "대상: /긴/경로")은 이 elide 로직의 대상이 아니다. 본문이 popup 폭을 넘지 않게 하려면 각 popup 이 자체적으로 축약하거나 `ui.available_width()` 기준 elide를 적용한다(`transfer.rs`의 `elide_mono()` 참고).
 - **새 동적 타이틀(`title_fn`) 추가 시**: 타이틀 길이를 걱정할 필요 없이 원본 문자열을 그대로 반환하면 된다. 다만 극단적으로 긴 문자열이 항상 몇 글자만 보이는 게 UX 상 문제라면(예: 뒷부분이 더 중요한 경로), `title_fn` 쪽에서 표시 우선순위를 조정한 축약 문자열을 넘기는 것은 여전히 가능하다 — 이때도 최종 겹침 방지는 `draw.rs`가 다시 한번 보장한다.
+
+## 전체화면 버튼
+
+`fullscreen_stage: Some(<stage id>)` 하나로 끝난다 — rect 계산·렌더·hit-test·커서·tooltip 은 `PopupManager` 가 공통 처리하고, 클릭은 `popup::frame::draw_popup_layer` 가 `AppState::open_fullscreen_stage` 로 넘긴다.
+
+- **대상 무대는 먼저 존재해야 한다** — `fullscreen::defs::all_defs()` 에 같은 id 의 `StageDef` 를 등록한다(방법: [fullscreen-stage.md](../design/systems/fullscreen-stage.md)). 두 테이블의 정합은 단위 테스트가 강제한다(`popup_declared_stages_exist_and_are_not_headless`).
+- **headless popup 에는 달 수 없다** — 타이틀바가 없어 버튼을 놓을 자리가 없다. 값이 `Some` 이어도 그려지지 않고, 같은 테스트가 그 조합을 금지한다.
+- **원본 popup 은 닫히지 않는다** — 무대가 덮을 뿐이고 나오면 그대로 다시 보인다. 무대 콘텐츠는 이 popup 의 인스턴스가 아니라 **같은 형상의 별개 콘텐츠**이므로, 무대에서 무엇을 하든 popup 상태에 반영되지 않는다.
+- **버튼을 달지 않은 popup 은 타이틀바가 변하지 않는다** — close 버튼 rect 는 전체화면 버튼 유무와 무관하게 타이틀바 우측 끝 고정이고, 제목 elide 기준도 버튼이 없으면 예전과 같은 `close_btn_rect` 좌변이다.
 
 ## 텍스트 입력이 있는 팝업
 

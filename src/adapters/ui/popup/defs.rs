@@ -24,6 +24,12 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "notifications",
                 title_key: "notification_panel.window_title",
+                // 전체화면 무대의 첫 소비자 — 타이틀바에 전체화면 버튼이 붙는다.
+                // 무대에 올라가는 것은 이 popup 이 아니라 같은 형상의 별개 콘텐츠다
+                // (`src/adapters/ui/fullscreen/notifications.rs` 모듈 문서).
+                fullscreen_stage: Some(
+                    crate::adapters::ui::fullscreen::notifications::NOTIFICATIONS_STAGE_ID,
+                ),
                 title_fn: None,
                 default_size: egui::vec2(350.0, 400.0),
                 sizer: None,
@@ -42,6 +48,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "convert_surface",
                 title_key: "convert_popup.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: super::convert::convert_popup_default_size(),
                 sizer: Some(super::convert::convert_popup_sizer),
@@ -58,6 +65,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "script_changed_confirm",
                 title_key: "script.confirm.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(360.0, 150.0),
                 sizer: None,
@@ -74,6 +82,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "rename",
                 title_key: "rename_dialog.tab_heading",
+                fullscreen_stage: None,
                 title_fn: Some(crate::adapters::ui::dialog::rename_popup_title),
                 default_size: crate::adapters::ui::dialog::rename_popup_default_size(),
                 sizer: None,
@@ -90,6 +99,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "search_bar",
                 title_key: "search.placeholder",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(360.0, 28.0),
                 sizer: None,
@@ -110,6 +120,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: crate::adapters::ui::info_modal::INFO_MODAL_ID,
                 title_key: "button.ok",
+                fullscreen_stage: None,
                 title_fn: Some(crate::adapters::ui::info_modal::info_modal_title),
                 default_size: egui::vec2(440.0, 160.0),
                 sizer: Some(crate::adapters::ui::info_modal::info_modal_sizer),
@@ -126,6 +137,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::approval::APPROVAL_POPUP_ID,
                 title_key: "approval.popup.title",
+                fullscreen_stage: None,
                 title_fn: Some(super::approval::approval_popup_title),
                 default_size: egui::vec2(480.0, 240.0),
                 sizer: Some(super::approval::approval_popup_sizer),
@@ -142,6 +154,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::file_handler_picker::PICKER_POPUP_ID,
                 title_key: "file_handler.picker.title",
+                fullscreen_stage: None,
                 title_fn: Some(super::file_handler_picker::picker_title),
                 default_size: egui::vec2(480.0, 320.0),
                 sizer: Some(super::file_handler_picker::picker_sizer),
@@ -158,6 +171,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::file_picker::FILE_PICKER_POPUP_ID,
                 title_key: "filepicker.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(640.0, 480.0),
                 sizer: Some(super::file_picker::picker_sizer),
@@ -174,6 +188,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::port_scanner::PORT_SCANNER_POPUP_ID,
                 title_key: "port_scanner.heading",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(660.0, 520.0),
                 sizer: None,
@@ -195,6 +210,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::command_palette::COMMAND_PALETTE_POPUP_ID,
                 title_key: "command_palette.heading",
+                fullscreen_stage: None,
                 title_fn: None,
                 // 디자인 콘텐츠 높이 ≈ search(49) + list(maxH320 + pad12=332) + footer(31)
                 // = 412. design-parity: list 가 320 꽉 차는 실사용 기준 높이.
@@ -218,6 +234,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::dag_list::DAG_LIST_POPUP_ID,
                 title_key: "dag_list.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 // sizer 가 매 open 마다 토큰(zoom 반영)에서 다시 읽는다 — 이 값은
                 // sizer 가 없을 때의 폴백일 뿐이라 시안 원치수를 그대로 둔다.
@@ -239,6 +256,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::remote_tool::REMOTE_TOOL_POPUP_ID,
                 title_key: "remote_tool.heading",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(520.0, 460.0),
                 sizer: None,
@@ -256,6 +274,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::remote_attach::REMOTE_ATTACH_POPUP_ID,
                 title_key: "remote_attach.heading",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(680.0, 460.0),
                 sizer: None,
@@ -275,6 +294,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::transfer::TRANSFER_PROGRESS_POPUP_ID,
                 title_key: "transfer.progress.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(400.0, 180.0),
                 sizer: Some(super::transfer::transfer_progress_sizer),
@@ -293,6 +313,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::transfer::TRANSFER_ERROR_POPUP_ID,
                 title_key: "transfer.error.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(400.0, 200.0),
                 sizer: Some(super::transfer::transfer_error_sizer),
@@ -309,6 +330,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                 title_key: "preset.popup.apply_workspace_title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(360.0, 320.0),
                 sizer: None,
@@ -325,6 +347,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::preset_apply::APPLY_TAB_POPUP_ID,
                 title_key: "preset.popup.apply_tab_title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(360.0, 320.0),
                 sizer: None,
@@ -341,6 +364,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::preset_apply::APPLY_PANE_POPUP_ID,
                 title_key: "preset.popup.apply_pane_title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: egui::vec2(360.0, 320.0),
                 sizer: None,
@@ -357,6 +381,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: crate::adapters::ui::tools_menu::tools_menu_default_size(),
                 sizer: Some(crate::adapters::ui::tools_menu::tools_menu_sizer),
@@ -376,6 +401,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
                 title_key: "popup.mouse_capture_banner_menu.title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: crate::adapters::ui::mouse_capture_menu::menu_default_size(),
                 sizer: None,
@@ -398,6 +424,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
                 title_key: "workspace_category.delete_confirm_title",
+                fullscreen_stage: None,
                 title_fn: Some(super::confirm_delete_category::confirm_delete_category_title),
                 default_size: egui::vec2(380.0, 150.0),
                 sizer: Some(super::confirm_delete_category::confirm_delete_category_sizer),
@@ -415,6 +442,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
                 title_key: "tutorial.popup_title",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size:
                     crate::adapters::ui::tutorial::topic_popup::tutorial_topics_default_size(),
@@ -436,6 +464,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: super::rail_category::RAIL_CATEGORY_POPUP_ID,
                 title_key: "workspace_category.heading",
+                fullscreen_stage: None,
                 title_fn: None,
                 default_size: super::rail_category::rail_category_default_size(),
                 sizer: Some(super::rail_category::rail_category_sizer),

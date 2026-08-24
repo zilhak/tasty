@@ -68,6 +68,31 @@ fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
     }
 }
 
+/// 전체화면 버튼 글리프 — 디자인 아이콘 `fit`([`tasty_icons::FIT`], 네 모서리
+/// 브래킷)의 형상을 painter 직선으로 그린다.
+///
+/// SVG 아이콘(`Icon::image`)을 쓰지 않는 이유: 타이틀바는 `Ui` 가 아니라
+/// `ctx.layer_painter` 로만 그려지는 구간이고(콘텐츠 `Area` 는 타이틀바 아래에
+/// 따로 열린다), `Image::paint_at` 은 `Ui` 를 요구한다. 바로 옆 close X 도 같은
+/// 이유로 painter 직선이라 두 버튼의 렌더 방식이 일치한다.
+fn paint_fullscreen_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    // 디자인 `fit` 은 24 viewBox 안에서 브래킷 사각형이 3~21(=18), 팔 길이 ≈ 5 다.
+    // 글리프 자체를 아이콘 크기(버튼의 60%, 옆 close X 와 같은 눈크기)로 잡고 그
+    // 안에서 디자인 비례(5/18)를 유지한다 — 버튼 크기가 바뀌어도 형상이 따라간다.
+    let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
+    let arm = g.width() * (5.0 / 18.0);
+    let stroke = egui::Stroke::new(1.5, color);
+    for (corner, dx, dy) in [
+        (g.left_top(), 1.0, 1.0),
+        (g.right_top(), -1.0, 1.0),
+        (g.left_bottom(), 1.0, -1.0),
+        (g.right_bottom(), -1.0, -1.0),
+    ] {
+        painter.line_segment([corner, corner + egui::vec2(arm * dx, 0.0)], stroke);
+        painter.line_segment([corner, corner + egui::vec2(0.0, arm * dy)], stroke);
+    }
+}
+
 impl PopupManager {
     /// Draw all open popups. The `content_fn` callback is invoked for each popup with its id.
     /// `draw_ctx` provides scope context for visibility and boundary clamping.
@@ -83,6 +108,7 @@ impl PopupManager {
         let screen_rect = ctx.screen_rect();
         let mut closed: Vec<PopupId> = Vec::new();
         let mut bring_front: Option<PopupId> = None;
+        let mut fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId> = None;
         let mut layers: Vec<egui::LayerId> = Vec::new();
 
         // Read pointer state once
@@ -101,10 +127,15 @@ impl PopupManager {
             .collect();
 
         // Determine which popup (topmost) the pointer is over.
-        // 우선순위: close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠.
+        // 우선순위: close/전체화면 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠.
+        // 전체화면 버튼은 close 와 **같은 층**이다 — 둘 다 매니저가 직접 페인팅한
+        // 영역이고 둘 다 타이틀바(드래그 핸들) 위에 겹쳐 있으므로, 같은 우선순위로
+        // 핸들보다 먼저 판정해야 버튼을 눌러 끌어도 popup 이 따라오지 않는다.
         let mut hovered_popup: Option<PopupId> = None;
         let mut hovered_handle: Option<PopupId> = None;
         let mut hovered_close: Option<PopupId> = None;
+        let mut hovered_fullscreen: Option<(PopupId, crate::adapters::ui::fullscreen::StageId)> =
+            None;
         let mut hovered_resize: Option<(PopupId, ResizeEdges)> = None;
         if let Some(pos) = pointer_pos {
             // Check in reverse z-order (topmost first) for correct hit-testing
@@ -115,6 +146,11 @@ impl PopupManager {
                     hovered_popup = Some(popup.id);
                     if !popup.headless && popup.close_btn_rect().contains(pos) {
                         hovered_close = Some(popup.id);
+                    } else if let Some((fs_rect, stage)) =
+                        popup.fullscreen_btn_rect().zip(popup.fullscreen_stage)
+                        && fs_rect.contains(pos)
+                    {
+                        hovered_fullscreen = Some((popup.id, stage));
                     } else if popup.resizable
                         && let Some(edges) = resize_edges_at(rect, pos, RESIZE_BAND)
                     {
@@ -144,6 +180,11 @@ impl PopupManager {
         if primary_pressed {
             if let Some(id) = hovered_close {
                 closed.push(id);
+            } else if let Some((_, stage)) = hovered_fullscreen {
+                // 원본 popup 은 **닫지 않는다** — 무대에 올라가는 것은 이 popup 이
+                // 아니라 같은 형상의 별개 콘텐츠이므로, 무대를 나오면 popup 이
+                // 그대로 있어야 한다(fullscreen-stage.md §모델 1·2).
+                fullscreen_requested = Some(stage);
             } else if let Some(id) = hovered_popup {
                 bring_front = Some(id);
                 // Focus this popup, unfocus all others
@@ -276,8 +317,8 @@ impl PopupManager {
             ctx.set_cursor_icon(resize_cursor(edges));
         } else if hovered_handle.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::Grab);
-        } else if hovered_close.is_some() {
-            // close 버튼 hover: pointer(손가락) 커서 (디자인 커서 매트릭스).
+        } else if hovered_close.is_some() || hovered_fullscreen.is_some() {
+            // close / 전체화면 버튼 hover: pointer(손가락) 커서 (디자인 커서 매트릭스).
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         } else if hovered_popup.is_some() {
             // Content area: set default cursor (arrow) to override terminal cursor
@@ -351,6 +392,8 @@ impl PopupManager {
             if !is_headless {
                 let title_rect = popup.title_rect();
                 let close_btn_rect = popup.close_btn_rect();
+                let fullscreen_btn_rect = popup.fullscreen_btn_rect();
+                let buttons_left_x = popup.title_buttons_left_x();
 
                 // Title bar
                 let cr = th.corner_radius.value() as u8;
@@ -372,14 +415,16 @@ impl PopupManager {
                     egui::Stroke::new(th.border_width.value(), th.border_strong()),
                 );
 
-                // Title text — close_btn_rect 를 침범하지 않는 가용 폭 기준으로 elide.
-                // (양쪽에 같은 패딩을 둬 close 버튼과의 간격 + 시각적 대칭을 함께 확보.)
+                // Title text — 우측 버튼군을 침범하지 않는 가용 폭 기준으로 elide.
+                // 기준선은 `title_buttons_left_x()` — 버튼이 close 하나면 그 좌변,
+                // 전체화면 버튼이 붙으면 그쪽 좌변이라 가용 폭이 버튼 폭 + 간격만큼
+                // 줄어든다. (양쪽에 같은 패딩을 둬 버튼과의 간격 + 시각적 대칭 확보.)
                 let title_font = egui::FontId::proportional(th.font_size_body.value());
                 let title_pad = th.spacing_sm.value();
                 let title_avail_rect = egui::Rect::from_min_max(
                     egui::pos2(title_rect.min.x + title_pad, title_rect.min.y),
                     egui::pos2(
-                        (close_btn_rect.min.x - title_pad).max(title_rect.min.x + title_pad),
+                        (buttons_left_x - title_pad).max(title_rect.min.x + title_pad),
                         title_rect.max.y,
                     ),
                 );
@@ -396,6 +441,41 @@ impl PopupManager {
                     title_font,
                     th.text_primary().into(),
                 );
+
+                // Fullscreen button — close 왼쪽. `fullscreen_btn_rect()` 가 None 인
+                // popup(대부분)에서는 이 블록이 통째로 돌지 않으므로 타이틀바 렌더가
+                // 이전과 바이트 단위로 같다.
+                if let Some(rect) = fullscreen_btn_rect {
+                    let hovered = matches!(hovered_fullscreen, Some((id, _)) if id == popup_id);
+                    if hovered {
+                        painter.rect_filled(
+                            rect,
+                            th.corner_radius_sm.value(),
+                            th.hover_overlay.to_egui_premultiplied(),
+                        );
+                    }
+                    paint_fullscreen_glyph(
+                        &painter,
+                        rect,
+                        if hovered {
+                            th.text_primary().into()
+                        } else {
+                            th.text_muted().into()
+                        },
+                    );
+                    if hovered {
+                        // 아이콘만으로는 뜻이 모호하다. close 와 달리 tooltip 을 다는데,
+                        // 매니저가 painter 로 그린 영역이라 `Response::on_hover_text` 가
+                        // 없어 egui 의 명시 tooltip API 를 직접 쓴다.
+                        egui::show_tooltip_at(
+                            ctx,
+                            layer_id,
+                            egui::Id::new("popup.fullscreen_tooltip").with(popup_id),
+                            rect.left_bottom(),
+                            |ui| ui.label(crate::i18n::t("popup.fullscreen_button.tooltip")),
+                        );
+                    }
+                }
 
                 // Close button
                 let is_close_hovered = hovered_close == Some(popup_id);
@@ -501,6 +581,7 @@ impl PopupManager {
             closed,
             hovered: hovered_popup.is_some(),
             layers,
+            fullscreen_requested,
         }
     }
 

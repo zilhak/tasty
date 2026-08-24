@@ -81,6 +81,10 @@ pub struct PopupDrawResult {
     /// 레이어를 부모로 이들을 `Context::set_sublayer` 자식으로 묶어, popup 이 항상
     /// modifier-hint 바로 위에 오도록 고정할 때 쓴다.
     pub layers: Vec<egui::LayerId>,
+    /// 이번 프레임에 타이틀바 전체화면 버튼이 눌린 popup 이 올리려는 무대 id.
+    /// 무대 진입은 `AppState` 소유라 매니저가 직접 열지 않고 호출부
+    /// (`popup::frame::draw_popup_layer`)에 되돌려준다 — close 와 같은 관례.
+    pub fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId>,
 }
 
 /// Static, data-oriented popup definition. 등록 시점에 불변으로 고정되는 속성과
@@ -112,6 +116,16 @@ pub struct PopupDef {
     pub min_size: Option<egui::Vec2>,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
+    /// 이 popup 의 타이틀바에 **전체화면 버튼**을 노출할지 + 눌렀을 때 올릴 무대 id.
+    /// `None`(대부분의 popup)이면 버튼 자체가 없다 — 노출 여부와 대상이 한 필드라
+    /// "버튼은 있는데 갈 곳이 없다" 는 상태를 만들 수 없다.
+    ///
+    /// 무대에 올라가는 것은 이 popup 인스턴스가 **아니라** 같은 형상으로 구성된
+    /// 별개 콘텐츠다(`docs/design/systems/fullscreen-stage.md` §모델). 버튼을 눌러도
+    /// 원본 popup 은 열린 채 남는다 — 무대가 덮으므로 보이지 않을 뿐이다.
+    ///
+    /// headless popup(타이틀바가 없다)은 이 값과 무관하게 버튼이 그려지지 않는다.
+    pub fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
     /// 닫힘 뒷정리 훅. `PopupManager::close()`(닫는 경로 전부가 거치는 유일한
     /// 지점)를 통해 어떤 경로로 닫히든 정확히 1회 발화한다(`closed_queue` +
     /// `popup::frame` 의 `drain_on_close_hooks` 참고) — draw_fn 이 `Close` 를 반환하는
@@ -176,6 +190,9 @@ pub struct PopupState {
     /// 사용자가 한 번이라도 리사이즈했으면 true. true 동안 sizer 의 size 덮어쓰기를
     /// 막는다(`popup::frame::draw_popup_layer`). `close()`에서 리셋되어 다음 open 시 sizer 복원.
     pub size_user_overridden: bool,
+    /// 타이틀바 전체화면 버튼이 올릴 무대 id. `register_def` 가 `PopupDef` 에서
+    /// 전파한다. `None` 이면 버튼 없음.
+    fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
 }
 
 /// Popup 타이틀바 높이 — `Theme.item_height_interactive` (디자인 28px) 의 round_ui.
@@ -192,6 +209,12 @@ pub fn title_bar_height() -> f32 {
 
 /// Popup 콘텐츠 영역 inner margin — `Theme.spacing_xs` (디자인 4px) 의 round_ui.
 pub fn content_margin() -> f32 {
+    use egui::emath::GuiRounding as _;
+    crate::theme::theme().spacing_xs.value().round_ui()
+}
+
+/// 타이틀바 우측 버튼 사이 간격 — `Theme.spacing_xs`(디자인 4px 그리드) 의 round_ui.
+pub fn title_btn_gap() -> f32 {
     use egui::emath::GuiRounding as _;
     crate::theme::theme().spacing_xs.value().round_ui()
 }
@@ -292,6 +315,9 @@ impl PopupState {
             z_seq: 0,
             resize_start_rect: egui::Rect::ZERO,
             size_user_overridden: false,
+            // 기본값 None — `register_def` 미경유로 직접 생성되는 팝업에는 버튼이
+            // 붙지 않는다(기존 타이틀바 렌더 무변경).
+            fullscreen_stage: None,
         }
     }
 
@@ -334,6 +360,15 @@ impl PopupState {
     /// 리사이즈 최소 크기를 설정한다.
     pub fn with_min_size(mut self, sz: egui::Vec2) -> Self {
         self.min_size = sz;
+        self
+    }
+
+    /// 타이틀바 전체화면 버튼이 올릴 무대를 설정한다. `None` 이면 버튼 없음.
+    pub fn with_fullscreen_stage(
+        mut self,
+        stage: Option<crate::adapters::ui::fullscreen::StageId>,
+    ) -> Self {
+        self.fullscreen_stage = stage;
         self
     }
 
@@ -407,6 +442,36 @@ impl PopupState {
         egui::Rect::from_center_size(center, egui::vec2(size, size))
     }
 
+    /// 타이틀바 전체화면 버튼 rect. 버튼이 없으면 `None` — **두 조건 중 하나라도**
+    /// 걸리면 그려지지 않는다: headless(타이틀바 자체가 없다) / 무대 미지정.
+    ///
+    /// close 버튼과 같은 크기로 그 **왼쪽**에 [`title_btn_gap`] 만큼 띄워 놓는다
+    /// (close 는 타이틀바 우측 끝 고정이라 이 rect 가 생겨도 움직이지 않는다 —
+    /// 버튼을 달지 않은 popup 의 타이틀바가 변하지 않는 이유).
+    fn fullscreen_btn_rect(&self) -> Option<egui::Rect> {
+        if self.headless || self.fullscreen_stage.is_none() {
+            return None;
+        }
+        let close = self.close_btn_rect();
+        Some(egui::Rect::from_center_size(
+            egui::pos2(
+                close.center().x - close.width() - title_btn_gap(),
+                close.center().y,
+            ),
+            close.size(),
+        ))
+    }
+
+    /// 제목 텍스트가 침범하면 안 되는 **우측 버튼군의 왼쪽 경계**. 버튼이 하나면
+    /// close 버튼의 좌변, 둘이면 전체화면 버튼의 좌변이다 — 제목 elide 가용 폭이
+    /// 이 값을 기준으로 잡히므로 버튼이 늘면 제목이 그만큼 일찍 줄어든다.
+    fn title_buttons_left_x(&self) -> f32 {
+        self.fullscreen_btn_rect()
+            .unwrap_or_else(|| self.close_btn_rect())
+            .min
+            .x
+    }
+
     /// Clamp position so popup stays within the given screen rect.
     fn clamp_to_screen(&mut self, screen: egui::Rect) {
         self.size.x = self.size.x.min(screen.width());
@@ -468,7 +533,8 @@ impl PopupManager {
             .with_sticky_focus(def.sticky_focus)
             .with_drag_handle(def.drag_handle)
             .with_resizable(def.resizable)
-            .with_min_size(resolved_min);
+            .with_min_size(resolved_min)
+            .with_fullscreen_stage(def.fullscreen_stage);
         self.popups.push(popup);
     }
 
@@ -647,6 +713,56 @@ mod tests {
     fn dummy(close_on_outside_click: bool) -> PopupState {
         PopupState::new(DUMMY_ID, "dummy", egui::vec2(200.0, 100.0))
             .with_close_on_outside_click(close_on_outside_click)
+    }
+
+    /// 타이틀바 전체화면 버튼용 더미 — 크기/위치를 고정해 rect 산술을 단정한다.
+    fn titled(
+        stage: Option<crate::adapters::ui::fullscreen::StageId>,
+        headless: bool,
+    ) -> PopupState {
+        PopupState::new(DUMMY_ID, "dummy", egui::vec2(300.0, 200.0))
+            .with_headless(headless)
+            .with_fullscreen_stage(stage)
+    }
+
+    /// 버튼은 **무대를 선언한 non-headless popup 에만** 그려진다. 플래그가 없으면
+    /// (대부분의 popup) rect 자체가 없어 렌더/hit-test 블록이 통째로 돌지 않는다.
+    #[test]
+    fn fullscreen_button_rect_only_when_flag_set() {
+        assert!(titled(Some("blank"), false).fullscreen_btn_rect().is_some());
+        assert!(titled(None, false).fullscreen_btn_rect().is_none());
+        // headless 는 타이틀바 자체가 없다 — 플래그와 무관하게 버튼 없음.
+        assert!(titled(Some("blank"), true).fullscreen_btn_rect().is_none());
+    }
+
+    /// 버튼이 늘어도 **close 버튼은 움직이지 않는다** — 버튼을 달지 않은 popup 의
+    /// 타이틀바가 이전과 같아야 한다는 요구를 rect 수준에서 고정한다.
+    #[test]
+    fn close_button_rect_is_untouched_by_the_fullscreen_button() {
+        assert_eq!(
+            titled(Some("blank"), false).close_btn_rect(),
+            titled(None, false).close_btn_rect()
+        );
+    }
+
+    /// 제목 elide 기준(우측 버튼군의 좌변)은 버튼이 없으면 close 좌변 그대로이고,
+    /// 버튼이 생기면 정확히 "버튼 폭 + 간격" 만큼 왼쪽으로 이동한다.
+    #[test]
+    fn title_elide_basis_accounts_for_the_fullscreen_button() {
+        let without = titled(None, false);
+        assert_eq!(
+            without.title_buttons_left_x(),
+            without.close_btn_rect().min.x
+        );
+
+        let with = titled(Some("blank"), false);
+        let close = with.close_btn_rect();
+        assert_eq!(
+            with.title_buttons_left_x(),
+            close.min.x - close.width() - title_btn_gap()
+        );
+        // 두 버튼은 겹치지 않는다.
+        assert!(with.fullscreen_btn_rect().unwrap().max.x <= close.min.x);
     }
 
     /// `close()` 는 호출 직전 `open` 이었던 popup 만 `closed_queue` 에 push 한다.

@@ -5,19 +5,19 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 ## 8대 규칙
 
 1. **타이틀 + 콘텐츠** — 상단 타이틀 영역(높이 토큰 고정) + 하단 콘텐츠.
-2. **타이틀바** — 제목 중앙 정렬 + 우측 X(닫기) 버튼(호버 시 빨강). 제목이 close 버튼과 겹칠 만큼 길면 가용 폭 기준으로 말줄임(`…`) 처리(상세 → [popup-implementation §타이틀 길이 처리](../../dev-guide/popup-implementation.md#타이틀-길이-처리-elide)).
+2. **타이틀바** — 제목 중앙 정렬 + 우측 버튼군. 버튼은 항상 X(닫기, 호버 시 빨강)이고, **전체화면 무대를 선언한 popup**(`PopupDef.fullscreen_stage`)에만 그 왼쪽에 전체화면 버튼(디자인 `fit` 글리프, 호버 시 tooltip)이 하나 더 붙는다 — 선언하지 않은 popup 의 타이틀바는 X 위치까지 그대로다. 제목이 버튼군과 겹칠 만큼 길면 **버튼군 좌변** 기준 가용 폭으로 말줄임(`…`) 처리한다(상세 → [popup-implementation §타이틀 길이 처리](../../dev-guide/popup-implementation.md#타이틀-길이-처리-elide)). 전체화면 버튼을 누르면 [무대](fullscreen-stage.md)가 뜨고 **원본 popup 은 열린 채 남는다** — 무대에 올라가는 것은 이 popup 인스턴스가 아니라 같은 형상의 별개 콘텐츠다.
 3. **드래그 이동** — 팝업이 선언한 **드래그 핸들**(`drag_handle`) 영역을 드래그로 팝업 전체 이동. 타이틀바 팝업은 타이틀 영역이 핸들(기본). 타이틀바 없는 headless 패널 팝업(`port_scanner`·`remote_tool`)은 뷰가 렌더 시점의 **실측 헤더 rect(전체폭 × 실제 높이)** 를 매니저에 보고해 헤더 영역 전체를 이동 핸들로 쓴다(정적 `DragHandle::Region` 띠는 open 첫 프레임 폴백). 헤더 텍스트 라벨은 비선택(`selectable_labels=false`)이라 글자 위에서도 드래그가 텍스트 선택으로 새지 않는다. **위젯 우선 중재**(`is_using_pointer`)로 핸들이 위젯(검색 입력·버튼)과 겹쳐도 위젯 클릭이 항상 우선되어 충돌하지 않는다(8번 입력 우선순위 참조).
 4. **커서** — 드래그 핸들 위에서 grab 커서. 리사이즈 가능 팝업의 테두리에서는 엣지별 리사이즈 커서.
 5. **배경 구분** — 팝업 배경은 `surface0`, 타이틀바는 `mantle` — 터미널 focused(검정)/unfocused 배경과 달라 위에 떠 있음이 시각적으로 구분된다.
 6. **경계 제한** — 팝업의 어떤 부분도 스코프 밖으로 못 나간다. 리사이즈 시 자동 재배치.
 7. **다중 + z-order** — 여러 개 동시 가능. 나중에 열리거나 클릭된 것이 앞. 겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다.
-8. **리사이즈 + 입력 우선순위** — `resizable` 팝업은 테두리 8방향 드래그로 크기 조절(`min_size` 하한 + 스코프 경계 클램프). 입력 우선순위는 **(egui)위젯 > close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠**. 이동/리사이즈 START 는 콘텐츠 렌더 뒤 `is_using_pointer()` 게이트로 판정해, 위젯이 프레스를 가져간 프레임에는 발동하지 않는다(이동이 사실상 최후순위). 사용자가 리사이즈한 뒤에는 `sizer` 가 크기를 되돌리지 않는다(close 시 리셋).
+8. **리사이즈 + 입력 우선순위** — `resizable` 팝업은 테두리 8방향 드래그로 크기 조절(`min_size` 하한 + 스코프 경계 클램프). 입력 우선순위는 **(egui)위젯 > close·전체화면 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠** — 두 타이틀바 버튼은 매니저가 직접 페인팅한 같은 층이고, 둘 다 드래그 핸들(타이틀바)과 겹치므로 핸들보다 먼저 판정해야 버튼을 눌러 끌어도 팝업이 따라오지 않는다. 이동/리사이즈 START 는 콘텐츠 렌더 뒤 `is_using_pointer()` 게이트로 판정해, 위젯이 프레스를 가져간 프레임에는 발동하지 않는다(이동이 사실상 최후순위). 사용자가 리사이즈한 뒤에는 `sizer` 가 크기를 되돌리지 않는다(close 시 리셋).
 
 (모든 색·치수는 Theme 토큰 — [theme.md](theme.md).)
 
 ## 구조
 
-- **`PopupDef`** — 정적·데이터 지향 정의(id, title_key/title_fn, default_size/sizer, default_scope, close_on_outside_click, headless, sticky_focus, drag_handle, resizable, min_size, draw_fn). 전부 `src/adapters/ui/popup/defs.rs::all_defs()` 에 모은다. 필드 상세 → [popup-implementation](../../dev-guide/popup-implementation.md).
+- **`PopupDef`** — 정적·데이터 지향 정의(id, title_key/title_fn, default_size/sizer, default_scope, close_on_outside_click, headless, sticky_focus, drag_handle, resizable, min_size, fullscreen_stage, draw_fn). 전부 `src/adapters/ui/popup/defs.rs::all_defs()` 에 모은다. 필드 상세 → [popup-implementation](../../dev-guide/popup-implementation.md).
 - **`PopupManager`** — 공통 동작(z-order, 드래그, 리사이즈, 타이틀바, clamp, 포커스) 중앙 관리. `register_def` / `open*` / `close` / `toggle` / `draw`.
 - **`PopupState`** — 개별 인스턴스 상태(id, title, pos, size, open, focused, scope, dragging/resizing, size_user_overridden).
 - **범용 render 루프** — `src/adapters/ui/popup/frame.rs::draw_popup_layer`(등록된 모든 `PopupDef` 순회 + close 경로별 `on_close` 훅 drain). toast/banner/modifier-hint/tutorial 오버레이 체인은 개념이 다르므로(ADR-0024) `src/adapters/ui/overlay.rs` 로 분리돼 있다. 진입점 `src/adapters/ui.rs::draw_popups` 가 둘을 z-order 순서로 호출한다.
@@ -108,5 +108,6 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 - [toast.md](toast.md) — 휘발성 알림 (별도 시스템)
 - [banner.md](banner.md) — parent 상단 info+action 오버레이 (별도 시스템)
+- [fullscreen-stage.md](fullscreen-stage.md) — 타이틀바 전체화면 버튼이 여는 창 전체 무대 (별도 시스템)
 - [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md) — 팝업 추가 절차
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Window/Modal/Popup/Toast/Banner 구분

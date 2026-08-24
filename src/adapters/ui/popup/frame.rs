@@ -136,6 +136,22 @@ pub(crate) fn draw_popup_layer(
 
     state.popups = popups;
 
+    // 타이틀바 전체화면 버튼 → 무대 진입. popup 은 **열린 채로 둔다**(무대가 덮으므로
+    // 보이지 않을 뿐이고, 무대를 나오면 그대로 다시 보인다). 무대에 올라가는 것은 이
+    // popup 인스턴스가 아니라 같은 형상의 별개 콘텐츠다
+    // (`docs/design/systems/fullscreen-stage.md` §모델).
+    if let Some(stage) = draw_result.fullscreen_requested {
+        if state.open_fullscreen_stage(stage) {
+            // 무대 진입은 **이 프레임 렌더가 이미 시작된 뒤** 상태만 바꾼다 — 화면이
+            // 바뀌려면 프레임이 한 번 더 필요하고, 클릭이 세운 dirty 는 이 프레임에서
+            // 이미 소비됐다. 프레임을 유도하지 않으면 다음 입력이 올 때까지 무대가
+            // 보이지 않는다(실측으로 잡힌 회귀).
+            ctx.request_repaint();
+        } else {
+            tracing::warn!("popup fullscreen button targets unknown stage '{stage}'");
+        }
+    }
+
     // Close popups requested by draw dispatch or X button / outside click.
     // popup self-close (draw_fn 이 Close 반환 / X 버튼 / 외부 클릭) 는 popup 시스템
     // 자체의 lifecycle. Intent 큐를 거치면 시각적 close 가 1프레임 지연되어 X 버튼

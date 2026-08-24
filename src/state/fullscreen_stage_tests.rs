@@ -144,7 +144,32 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
     assert!(painted(&mut state, &mut engine) > 0);
 }
 
-// ── 첫 실콘텐츠 소비자(알림 무대) ────────────────────────────────────────────
+// ── 첫 실콘텐츠 소비자(알림 무대) 배선 ────────────────────────────────────────
+
+/// 화면 rect 를 갖는 일반 프레임 — popup hit-test 가 실제 좌표로 돌아야 하므로
+/// `run_normal_frame` 과 달리 `RawInput` 을 호출자가 채운다.
+fn run_normal_frame_with_input(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    raw: egui::RawInput,
+) {
+    let ctx = egui::Context::default();
+    drop(ctx.run(raw, |ctx| {
+        draw_popups(
+            ctx,
+            state,
+            engine,
+            &[],
+            crate::model::PhysicalRect {
+                x: crate::model::PhysicalPx(0.0),
+                y: crate::model::PhysicalPx(0.0),
+                width: crate::model::PhysicalPx(1920.0),
+                height: crate::model::PhysicalPx(1080.0),
+            },
+            1.0,
+        );
+    }));
+}
 
 fn screen_input() -> egui::RawInput {
     egui::RawInput {
@@ -154,6 +179,78 @@ fn screen_input() -> egui::RawInput {
         )),
         ..Default::default()
     }
+}
+
+/// popup.rs 의 private `close_btn_rect()`/`fullscreen_btn_rect()` 산술 복제 —
+/// `popup_close_tests` 가 X 버튼 좌표를 구하는 방식과 같은 관례다(공개 필드
+/// `pos`/`size` + 공개 함수만 사용).
+fn fullscreen_btn_center(pos: egui::Pos2, size: egui::Vec2) -> egui::Pos2 {
+    let title_h = crate::adapters::ui::popup::title_bar_height();
+    let btn = 20.0;
+    let close_center_x = pos.x + size.x - btn * 0.5 - 4.0;
+    egui::pos2(
+        close_center_x - btn - crate::adapters::ui::popup::title_btn_gap(),
+        pos.y + title_h * 0.5,
+    )
+}
+
+/// 타이틀바 전체화면 버튼 클릭 → 무대 진입. **원본 popup 은 열린 채 남는다** —
+/// 무대에 올라간 것은 이 popup 이 아니라 같은 형상의 별개 콘텐츠이기 때문이다.
+#[test]
+fn clicking_the_popup_fullscreen_button_opens_the_stage_and_keeps_the_popup() {
+    let (mut state, mut engine) = test_state();
+    state
+        .popups
+        .open_at_focused("notifications", egui::pos2(400.0, 300.0)); // intent-exempt: 테스트 하네스.
+
+    // sizer 가 없는 popup 이지만 등록 시 zoom 이 곱해지므로 실제 size 를 읽는다.
+    let (pos, size) = {
+        let p = state.popups.get_mut("notifications").expect("등록된 popup");
+        (p.pos, p.size)
+    };
+
+    let mut raw = screen_input();
+    raw.events.push(egui::Event::PointerButton {
+        pos: fullscreen_btn_center(pos, size),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    run_normal_frame_with_input(&mut state, &mut engine, raw);
+
+    assert_eq!(
+        state.fullscreen_stage_id(),
+        Some(fullscreen::notifications::NOTIFICATIONS_STAGE_ID)
+    );
+    assert!(
+        state.popups.is_open("notifications"),
+        "무대는 popup 을 닫지 않는다 — 덮을 뿐이다"
+    );
+}
+
+/// 버튼을 선언하지 않은 popup 은 같은 좌표를 눌러도 무대가 뜨지 않는다
+/// (플래그가 rect 를 만들지 않으므로 hit-test 자체가 성립하지 않는다).
+#[test]
+fn the_same_click_on_a_popup_without_the_flag_does_nothing() {
+    let (mut state, mut engine) = test_state();
+    state
+        .popups
+        .open_at_focused("rename", egui::pos2(400.0, 300.0)); // intent-exempt: 테스트 하네스.
+    let (pos, size) = {
+        let p = state.popups.get_mut("rename").expect("등록된 popup");
+        (p.pos, p.size)
+    };
+
+    let mut raw = screen_input();
+    raw.events.push(egui::Event::PointerButton {
+        pos: fullscreen_btn_center(pos, size),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    run_normal_frame_with_input(&mut state, &mut engine, raw);
+
+    assert!(!state.fullscreen_stage_active());
 }
 
 /// 알림 무대는 자체 상태(목록 스크롤 위치)를 갖고, 무대가 닫히면 `on_close` 가

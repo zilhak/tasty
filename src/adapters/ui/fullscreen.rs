@@ -226,6 +226,29 @@ mod tests {
         );
     }
 
+    /// popup 이 선언한 무대 id 는 반드시 무대 테이블에 있어야 한다 — 두 정적 테이블이
+    /// 서로 다른 파일이라 한쪽만 고치면 "버튼은 있는데 갈 곳이 없는" popup 이 된다.
+    /// 아울러 headless popup(타이틀바가 없어 버튼을 그릴 자리가 없다)은 무대를 선언하지
+    /// 않아야 한다.
+    #[test]
+    fn popup_declared_stages_exist_and_are_not_headless() {
+        for def in crate::adapters::ui::popup::defs::all_defs() {
+            let Some(stage) = def.fullscreen_stage else {
+                continue;
+            };
+            assert!(
+                defs::find(stage).is_some(),
+                "popup '{}' 이 선언한 무대 '{stage}' 가 무대 테이블에 없다",
+                def.id
+            );
+            assert!(
+                !def.headless,
+                "headless popup '{}' 은 타이틀바가 없어 전체화면 버튼을 그릴 자리가 없다",
+                def.id
+            );
+        }
+    }
+
     #[test]
     fn find_rejects_unknown_ids() {
         assert!(defs::find("no-such-stage").is_none());
