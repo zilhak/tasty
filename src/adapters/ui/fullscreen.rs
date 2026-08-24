@@ -3,7 +3,7 @@
 //! 무대는 기존 Workspace/Pane/Tab/Surface 트리와 **병렬로** 존재한다. 기존 요소를
 //! 확대하는 것이 아니라, 창 전체 rect 를 자기 것으로 쓰는 별개의 표면이다. 그래서
 //! 이 모듈은 레이아웃 계산(`surface_regions` / `compute_rects` / pane rect)을 하나도
-//! 건드리지 않는다 — 근거는 `docs/adr/0080-fullscreen-independent-stage.md`.
+//! 건드리지 않는다 — 근거는 `docs/adr/0082-fullscreen-independent-stage.md`.
 //!
 //! 구조는 popup 시스템과 대칭이다:
 //!

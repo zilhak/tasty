@@ -117,6 +117,43 @@ fn terminal_resize_is_the_gated_one_in_handle_redraw() {
 }
 
 #[test]
+fn window_resize_does_not_touch_the_grid_during_a_stage() {
+    let src = read("src/view/main.rs");
+    let arm_head = "WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {";
+    let start = only_at(&src, arm_head, "resize 이벤트 arm");
+    let rest = &src[start..];
+    let end = rest
+        .find("\n            WindowEvent::")
+        .unwrap_or(rest.len());
+    let arm = &rest[..end];
+
+    let gate = arm
+        .find("if self.state.fullscreen_stage_active() {")
+        .expect(
+            "resize 이벤트 arm 에 무대 게이트가 없다 — 무대 중 창 크기가 바뀌면 grid 가 \
+             즉시 따라가 '진입 시점 값 유지' 계약이 깨진다.",
+        );
+    let gpu_resize = arm
+        .find("self.base.gpu.resize(new_size);")
+        .expect("resize 이벤트 arm 에 gpu.resize 가 없다");
+    assert!(
+        gpu_resize < gate,
+        "gpu.resize 가 무대 게이트 안으로 들어갔다 — GPU 서페이스 크기는 무대 여부와 \
+         무관하게 창을 따라가야 한다."
+    );
+    // 줄바꿈 위치는 rustfmt 소관이라 needle 에 넣지 않는다.
+    for after_gate in ["self.core_state.update_grid_size(", ".resize_all("] {
+        let at = arm
+            .find(after_gate)
+            .unwrap_or_else(|| panic!("resize 이벤트 arm 에 `{after_gate}` 가 없다"));
+        assert!(
+            at > gate,
+            "`{after_gate}` 가 무대 게이트 밖에 있다 — 무대 중에도 grid 가 재계산된다."
+        );
+    }
+}
+
+#[test]
 fn stage_state_is_not_persisted() {
     // 무대는 휘발성이다 — 재시작이 전체화면 상태로 부팅되면 사용자가 창을 조작할 수
     // 없는 상태가 된다. 레이아웃 영속화 코드가 무대를 알면 안 된다.

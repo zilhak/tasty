@@ -382,14 +382,26 @@ impl View for MainView {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.base.gpu.sync_scale_factor(&self.base.winit);
                 let new_size = self.base.winit.inner_size();
+                // GPU 서페이스 크기는 무대 여부와 무관하게 창을 따라가야 한다 —
+                // 안 맞추면 무대 자체가 깨진 크기로 그려진다.
                 self.base.gpu.resize(new_size);
-                let terminal_rect = self.compute_terminal_rect();
-                let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-                self.core_state.update_grid_size(cols, rows);
-                let cell_w = self.base.gpu.cell_width();
-                let cell_h = self.base.gpu.cell_height();
-                self.state
-                    .resize_all(&mut self.core_state, terminal_rect, cell_w, cell_h);
+                if self.state.fullscreen_stage_active() {
+                    // 무대 중 리사이즈에서는 grid 를 건드리지 않는다. 무대는 뒤의 개체를
+                    // **진입 시점 그대로** 두는 것이 모델이고, OS fullscreen 전환 자체가
+                    // 창 크기를 바꾸므로 여기서 따라가면 무대를 나올 때 원본이 다른
+                    // 크기로 리플로우된다. 기본 grid 갱신은 보류했다가 무대를 나온 첫
+                    // 프레임에 `resync_scale_factor` 가 적용하고, 개별 터미널 grid 는 그
+                    // 프레임의 `resize_all_terminals` 가 현재 rect 기준으로 맞춘다.
+                    self.state.stage_deferred_grid_resync = true;
+                } else {
+                    let terminal_rect = self.compute_terminal_rect();
+                    let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
+                    self.core_state.update_grid_size(cols, rows);
+                    let cell_w = self.base.gpu.cell_width();
+                    let cell_h = self.base.gpu.cell_height();
+                    self.state
+                        .resize_all(&mut self.core_state, terminal_rect, cell_w, cell_h);
+                }
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
