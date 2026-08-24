@@ -14,6 +14,7 @@ pub(crate) mod category_actions;
 pub(crate) mod dialog;
 pub(crate) mod drop_overlay;
 pub mod font_registry;
+pub mod fullscreen;
 pub(crate) mod info_modal;
 pub mod layout_context;
 pub(crate) mod modifier_hint_overlay;
@@ -49,6 +50,17 @@ pub use toast::{ToastKind, ToastManager, ToastScope};
 /// (`popup::frame::draw_popup_layer`)와 오버레이 체인(`overlay::draw_overlays`)이
 /// 별도 모듈로 쪼개져 있지만, 화면 겹침 순서는 아래 두 호출의 순서 자체로 여전히
 /// 여기 고정된다 — 순서를 바꾸면 뒤 레이어가 앞 레이어를 가리는 시각적 회귀가 된다.
+/// 전체화면 무대 draw 진입점. **일반 프레임과 별개인 무대 프레임**에서만 호출된다
+/// (`Gpu::render` 의 무대 분기) — 무대가 켜져 있으면 host chrome·popup·오버레이는
+/// 이 프레임에 아예 그려지지 않는다.
+pub fn draw_fullscreen_stage(
+    ctx: &egui::Context,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) {
+    fullscreen::draw_fullscreen_stage(ctx, state, engine);
+}
+
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut crate::state::AppState,
@@ -64,6 +76,10 @@ pub fn draw_popups(
         terminal_rect,
         scale_factor,
     );
+
+    // 무대 닫힘 훅 drain — 무대를 나온 다음 프레임은 일반 프레임이라 무대 draw 경로가
+    // 돌지 않는다. 두 경로 모두에서 drain 해야 훅이 유실되지 않는다.
+    fullscreen::drain_on_close_hooks(ctx, state, engine);
 
     popup::frame::draw_popup_layer(ctx, state, engine, &draw_ctx);
     overlay::draw_overlays(ctx, state, engine, &draw_ctx, terminal_rect, scale_factor);

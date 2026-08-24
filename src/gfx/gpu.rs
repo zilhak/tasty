@@ -396,6 +396,26 @@ impl GpuState {
         // stay coherent for the visible frame that follows.
         self.handle_pending_surface_screenshot(engine);
 
+        // 0-b. 전체화면 무대 분기 — **이 위치가 계약이다.** 위아래로 한 칸씩 밀면
+        // 조용히 죽는 기능이 있다:
+        //
+        // - 더 위(`render()` 최상단, 위 offscreen 캡처 **앞**)로 옮기면
+        //   `ui.screenshot --surface <id>` 요청이 큐에 남아 영구 대기한다. 그건
+        //   release 에이전트 기능이고 포커스 독립이어야 한다
+        //   (`docs/design/policies/focus.md`) — 무대 때문에 죽으면 안 된다.
+        // - 더 위(`MainView::render_if_dirty` 조기 반환)로 옮기면 attach mesh relay 가
+        //   죽는다. 로컬 사용자가 전체화면을 켰다고 원격 사용자 화면이 멈추는 것은
+        //   `docs/identity.md` §동시성(주체 간 비침범) 위반이다.
+        // - 더 아래로 밀면 레이아웃/`resize_all` 이 먼저 돌아 무대 중에도 PTY grid 가
+        //   재계산된다 — "원본은 진입 시점 그대로" 계약이 깨진다.
+        //
+        // 그래서 이것은 "조기 반환" 이 아니라 background live-frame 과 stage frame 의
+        // **분리**다. 무대 경로도 window 캡처 + `present` 는 그대로 수행한다
+        // (`render_fullscreen_stage`). 근거 전체: `docs/design/systems/fullscreen-stage.md`.
+        if state.fullscreen_stage_active() {
+            return self.render_fullscreen_stage(state, engine, window);
+        }
+
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
             LogicalPx(0.0)
@@ -705,6 +725,56 @@ impl GpuState {
     /// (VK_HANGUL) 토글을 가끔 망가뜨린다(다른 앱으로 갔다 오면 풀리는 증상의 원인).
     /// Windows winit은 IME 활성 상태에서도 KeyboardInput과 physical_key를 정상 emit하므로,
     /// popup 단축키 매칭에 IME 비활성화가 필요 없다. 따라서 Windows는 항상 IME를 허용한다.
+    /// 무대 프레임 — 전체화면 무대가 켜져 있을 때 [`Gpu::render`] 대신 도는 경로.
+    ///
+    /// clear pass + 무대 egui 레이어만 그린다. 터미널 글리프 · egui-mesh surface ·
+    /// attach mesh 합성 · host chrome(사이드바/탭바/상태바/popup/오버레이)은 이
+    /// 프레임에 **아예 그려지지 않는다** — 무대가 뒤를 가리고 있으므로 redraw 할
+    /// 이유가 없다는 것이 이 기능의 모델이다.
+    ///
+    /// 반대로 **반드시 유지**하는 것: 마지막의 `pending_screenshot` 캡처 +
+    /// `present`. `ui.screenshot`(window) 은 무대가 제대로 그려졌는지 확인하는 유일한
+    /// 자동 검증 수단이고, 이 구간을 건너뛰면 요청이 영구 대기한다.
+    fn render_fullscreen_stage(
+        &mut self,
+        state: &mut AppState,
+        engine: &mut crate::core::CoreState,
+        window: &Window,
+    ) -> Result<(), wgpu::SurfaceError> {
+        // egui 입력은 무대 프레임에서도 계속 take 한다 — 안 그러면 이벤트가 쌓여
+        // 무대를 나올 때 한꺼번에 밀려든다.
+        let raw_input = self.egui_state.take_egui_input(window);
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            viewport_output: _,
+        } = self.egui_ctx.run(raw_input, |ctx| {
+            crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
+        });
+        self.apply_platform_output(window, state, platform_output);
+
+        let paint_jobs = self.egui_ctx.tessellate(shapes, pixels_per_point);
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.size.width, self.size.height],
+            pixels_per_point,
+        };
+
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_clear_pass(&view, state, engine);
+        self.render_egui_pass(&view, &textures_delta, &paint_jobs, &screen_descriptor);
+
+        if let Some(path) = self.pending_screenshot.take() {
+            self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
+        }
+        output.present();
+        Ok(())
+    }
+
     fn apply_platform_output(
         &mut self,
         window: &Window,

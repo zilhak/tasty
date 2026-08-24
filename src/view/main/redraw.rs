@@ -30,7 +30,13 @@ impl MainView {
         // After structural changes (split, new tab, close pane) the terminal's
         // internal cols/rows may not match the actual rendering area. This call
         // is cheap: terminal.resize() early-returns when cols/rows are unchanged.
-        {
+        //
+        // 전체화면 무대 중에는 건너뛴다 — 무대는 뒤의 개체를 **진입 시점 그대로**
+        // 두는 것이 모델이다. 무대 중 창 크기가 바뀌어도(OS fullscreen 전환 자체가
+        // 창 크기를 바꾼다) 원본 grid 가 따라가면, 무대를 나올 때 원본이 다른 크기로
+        // 리플로우돼 "원본 그대로" 계약이 깨진다. 무대를 나온 다음 프레임에 이
+        // 호출이 다시 돌아 현재 rect 기준으로 한 번에 맞춘다.
+        if !self.state.fullscreen_stage_active() {
             let terminal_rect = self.compute_terminal_rect();
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
@@ -99,17 +105,43 @@ impl MainView {
         if self.base.gpu.sync_scale_factor(&self.base.winit) {
             let new_size = self.base.winit.inner_size();
             self.base.gpu.resize(new_size);
-            let terminal_rect = self.compute_terminal_rect();
-            let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            self.core_state.update_grid_size(cols, rows);
+            // 무대 중 DPI/모니터 전환: swapchain 은 창을 따라가야 하지만(위 resize)
+            // 기본 grid 갱신은 **보류**한다 — "원본은 진입 시점 그대로" 계약. 그냥
+            // 버리면 무대를 나온 뒤에도 기본값이 옛 DPI 에 머무르므로 보류 사실을
+            // 남겼다가 아래에서 한 번 적용한다.
+            if self.state.fullscreen_stage_active() {
+                self.state.stage_deferred_grid_resync = true;
+            } else {
+                self.apply_grid_resync();
+            }
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
+        } else if self.state.stage_deferred_grid_resync && !self.state.fullscreen_stage_active() {
+            // 무대를 나온 첫 프레임 — 보류했던 갱신을 여기서 소진한다.
+            self.state.stage_deferred_grid_resync = false;
+            self.apply_grid_resync();
+            self.base.dirty = true;
         }
+    }
+
+    /// 현재 창/스케일 기준으로 신규 터미널의 기본 grid(cols/rows)를 갱신한다.
+    fn apply_grid_resync(&mut self) {
+        let terminal_rect = self.compute_terminal_rect();
+        let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
+        self.core_state.update_grid_size(cols, rows);
     }
 
     /// `self.base.dirty`일 때만 실제 프레임을 그린다 — egui-mesh forward,
     /// `gpu.render`, full-textures 재전송 요청 drain(로컬 3종 + attach mesh mirror)
     /// 을 한 트랜잭션으로 묶는다.
+    ///
+    /// **전체화면 무대가 이 함수를 조기 반환시키지 않는다 — 의도된 제약이다.**
+    /// 아래 `forward_mesh_to_attach_subscribers` 는 이 GUI 가 attach 서버일 때 원격
+    /// 사용자의 mesh mirror 화면을 중계하는 경로다. 무대는 **로컬** 화면 개념이므로,
+    /// 여기서 끊으면 로컬 사용자가 전체화면을 켰다는 이유로 원격 사용자 화면이
+    /// 멈춘다(`docs/identity.md` §동시성 — 주체 간 비침범 위반). 같은 이유로 무대 중
+    /// `dirty` 를 억제하는 "어차피 안 보이니까" 최적화도 넣지 않는다 — relay 전체가
+    /// `dirty` 프레임에 종속돼 있어 굶는다. 무대 분기는 `Gpu::render` 안에 있다.
     fn render_if_dirty(
         &mut self,
         plugin_manager: Option<&PluginManager>,

@@ -7,6 +7,8 @@
 mod accessors;
 mod detect;
 mod focus;
+#[cfg(test)]
+mod fullscreen_stage_tests;
 mod layout;
 mod mark;
 pub mod mouse;
@@ -313,6 +315,27 @@ pub struct AppState {
     /// Popup manager for internal popups (notification panel, etc.).
     #[cfg(feature = "gui")]
     pub(crate) popups: crate::adapters::ui::PopupManager,
+    /// 활성 전체화면 무대. 창(=`MainView`)당 **최대 하나**라 `Vec` 이 아니라 `Option`
+    /// 이다 — popup 과 달리 z-order·다중 인스턴스 관리가 필요 없다. 창이 여럿이면
+    /// 창마다 독립적으로 무대를 가질 수 있다(각 `MainView` 가 자기 `AppState` 를
+    /// 가지므로 이 필드 배치 자체가 그 계약이다). 영속화 대상이 아니다 — 재시작이
+    /// 무대 상태로 부팅되면 사용자가 창을 조작할 수 없다.
+    #[cfg(feature = "gui")]
+    pub(crate) fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageState>,
+    /// 닫힌 무대의 `on_close` 대기열. 닫는 경로가 무엇이든
+    /// [`AppState::close_fullscreen_stage`] 한 곳을 지나 여기 쌓이고, draw 경로의
+    /// `fullscreen::drain_on_close_hooks` 가 정확히 1 회 발화시킨다(ADR-0063 패턴).
+    #[cfg(feature = "gui")]
+    pub(crate) stage_closed_queue: Vec<crate::adapters::ui::fullscreen::StageId>,
+    /// 무대 중 DPI/모니터 전환으로 **보류된** 기본 grid 갱신이 있는지.
+    ///
+    /// 무대는 "원본은 진입 시점 그대로" 가 계약이라 무대 중에는
+    /// `CoreState::update_grid_size`(신규 터미널의 기본 cols/rows)를 갱신하지 않는다.
+    /// 그대로 버리면 무대를 나온 뒤에도 기본값이 옛 DPI 에 머물므로, 보류 사실을
+    /// 여기 남겼다가 무대를 나온 첫 프레임에 한 번 적용한다
+    /// (`MainView::resync_scale_factor`).
+    #[cfg(feature = "gui")]
+    pub(crate) stage_deferred_grid_resync: bool,
     /// Terminal text search state.
     pub(crate) search: crate::search_state::SearchState,
     /// Listening-port scanner async state machine. Driven by the port scanner
@@ -1044,6 +1067,12 @@ impl AppState {
                 }
                 pm
             },
+            #[cfg(feature = "gui")]
+            fullscreen_stage: None,
+            #[cfg(feature = "gui")]
+            stage_closed_queue: Vec::new(),
+            #[cfg(feature = "gui")]
+            stage_deferred_grid_resync: false,
             search: crate::search_state::SearchState::new(),
             #[cfg(feature = "gui")]
             port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
@@ -1163,9 +1192,77 @@ impl AppState {
     /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
         let open = self.settings_open || self.plugins_open || self.dialogs.has_any_overlay();
+        // 전체화면 무대도 오버레이로 친다. 이 판정의 소비자 중 하나가 WebView 표시
+        // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
+        // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
+        // 반드시 `set_visible(false)` 가 필요하고, 그 게이트가 바로 이 함수다.
         #[cfg(feature = "gui")]
-        let open = open || self.popups.has_any_open();
+        let open = open || self.popups.has_any_open() || self.fullscreen_stage.is_some();
         open
+    }
+
+    /// 전체화면 무대 진입. 정의 테이블에 없는 id 는 거부하고 `false` 를 반환한다
+    /// (선언하지 않은 것은 무대에 올라갈 수 없다).
+    ///
+    /// 이미 다른 무대가 올라와 있으면 **그 무대를 닫고**(닫힘 훅 경유) 새 무대를
+    /// 올린다 — 무대는 창당 하나라는 계약을 호출부가 신경 쓰지 않아도 되게 한다.
+    /// 같은 id 를 다시 열면 no-op 이다(닫았다 여는 것이 아니다).
+    ///
+    /// 호출부는 이 뒤에 `mark_dirty()` 로 프레임을 유도해야 한다. IPC 경로는
+    /// 라우팅이 이미 `dirty` 를 세운다.
+    // 진입 API 자체는 이 트랙이 소유하지만 **사용자/에이전트 진입 경로**(단축키 ·
+    // debug IPC)는 후속 트랙이 붙인다 — 그때까지 호출부가 없어 dead_code 로 잡힌다.
+    #[allow(dead_code)]
+    #[cfg(feature = "gui")]
+    pub fn open_fullscreen_stage(&mut self, id: &str) -> bool {
+        let Some(def) = crate::adapters::ui::fullscreen::defs::find(id) else {
+            return false;
+        };
+        if self
+            .fullscreen_stage
+            .as_ref()
+            .is_some_and(|s| s.id == def.id)
+        {
+            return true;
+        }
+        self.close_fullscreen_stage();
+        self.fullscreen_stage = Some(crate::adapters::ui::fullscreen::StageState { id: def.id });
+        true
+    }
+
+    /// 전체화면 무대 종료 — **닫는 경로 전부가 지나는 유일한 지점**(ADR-0063 패턴).
+    /// 닫힌 무대 id 를 훅 대기열에 넣고, draw 경로가 `on_close` 를 1 회 발화한다.
+    /// 활성 무대가 없었으면 `false`.
+    #[cfg(feature = "gui")]
+    pub fn close_fullscreen_stage(&mut self) -> bool {
+        match self.fullscreen_stage.take() {
+            Some(stage) => {
+                self.stage_closed_queue.push(stage.id);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 지금 올라와 있는 무대 id.
+    #[cfg(feature = "gui")]
+    pub fn fullscreen_stage_id(&self) -> Option<crate::adapters::ui::fullscreen::StageId> {
+        self.fullscreen_stage.as_ref().map(|s| s.id)
+    }
+
+    /// 전체화면 무대가 활성인지. 렌더 파이프라인 게이트가 읽는다.
+    ///
+    /// headless 빌드에는 무대 개념이 없으므로 항상 `false` — 무대는 화면 투영이라
+    /// 대응 도메인이 없다(`docs/identity.md` §2.2).
+    pub fn fullscreen_stage_active(&self) -> bool {
+        #[cfg(feature = "gui")]
+        {
+            self.fullscreen_stage.is_some()
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            false
+        }
     }
 
     /// 닫히는 surface 의 `(surface_id, scrollback_persist_id)` 를 추출. Tab/Pane/Workspace
