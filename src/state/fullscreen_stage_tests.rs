@@ -253,6 +253,97 @@ fn the_same_click_on_a_popup_without_the_flag_does_nothing() {
     assert!(!state.fullscreen_stage_active());
 }
 
+/// "별개 데이터" 를 직접 단정한다 — 무대의 스크롤 상태는 **원본 popup 의 것과 다른
+/// egui 엔트리**다. popup 이 먼저 자기 스크롤 상태를 만든 뒤 같은 `Context` 에서 무대
+/// 프레임을 돌렸을 때 엔트리 수가 1 → 2 로 늘고 무대가 기록한 id 가 살아 있으면,
+/// 무대 id ≠ popup id 다(무대가 popup 의 것을 재사용했다면 수가 그대로 1 이다).
+///
+/// 무대 콘텐츠 Ui 를 `def.id` 로 salt 하는 배선이 사라지는 회귀를 여기서 잡는다.
+#[test]
+fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
+    type ScrollState = egui::containers::scroll_area::State;
+    let scroll_entries = |ctx: &egui::Context| ctx.memory(|m| m.data.count::<ScrollState>());
+
+    let (mut state, mut engine) = test_state();
+    let ctx = egui::Context::default();
+
+    // ① popup 만 열린 일반 프레임 — 알림 목록의 ScrollArea 가 자기 상태를 만든다.
+    state
+        .popups
+        .open_at_focused("notifications", egui::pos2(400.0, 300.0)); // intent-exempt: 테스트 하네스.
+    drop(ctx.run(screen_input(), |ctx| {
+        draw_popups(
+            ctx,
+            &mut state,
+            &mut engine,
+            &[],
+            crate::model::PhysicalRect {
+                x: crate::model::PhysicalPx(0.0),
+                y: crate::model::PhysicalPx(0.0),
+                width: crate::model::PhysicalPx(1920.0),
+                height: crate::model::PhysicalPx(1080.0),
+            },
+            1.0,
+        );
+    }));
+    assert_eq!(
+        scroll_entries(&ctx),
+        1,
+        "popup 이 자기 스크롤 상태를 만들어야 이후 비교가 성립한다"
+    );
+
+    // ② 같은 Context 에서 무대 프레임.
+    assert!(state.open_fullscreen_stage(fullscreen::notifications::NOTIFICATIONS_STAGE_ID));
+    drop(ctx.run(screen_input(), |ctx| {
+        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &mut engine);
+    }));
+    let stage_scroll_id = fullscreen::notifications::recorded_scroll_id(&ctx)
+        .expect("무대 콘텐츠가 자기 스크롤 상태 id 를 기록해야 한다");
+    assert!(
+        ctx.data_mut(|d| d.get_persisted::<ScrollState>(stage_scroll_id))
+            .is_some()
+    );
+    assert_eq!(
+        scroll_entries(&ctx),
+        2,
+        "무대가 popup 의 스크롤 상태를 그대로 쓰고 있다 — 무대에서 목록을 내리면 \
+         원본 popup 의 스크롤까지 따라 움직인다"
+    );
+}
+
+/// 무대 사이의 격리 — 같은 콘텐츠를 **다른 id 로** 올린 두 무대는 서로 다른 스크롤
+/// 상태를 쓴다. 이것이 셸의 `id_salt(def.id)` 가 실제로 하는 일이고, popup 과의 비교로는
+/// 드러나지 않는다(무대와 popup 은 애초에 다른 `Area` 라 salt 없이도 갈린다).
+#[test]
+fn two_stages_with_the_same_content_do_not_share_scroll_state() {
+    let (mut state, mut engine) = test_state();
+    let ctx = egui::Context::default();
+    let draw_stage = |state: &mut crate::state::AppState,
+                      engine: &mut crate::core::CoreState,
+                      id: &'static str| {
+        assert!(state.open_fullscreen_stage(id));
+        drop(ctx.run(screen_input(), |ctx| {
+            crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
+        }));
+        fullscreen::notifications::recorded_scroll_id(&ctx).expect("무대가 id 를 기록해야 한다")
+    };
+
+    let a = draw_stage(
+        &mut state,
+        &mut engine,
+        fullscreen::notifications::NOTIFICATIONS_STAGE_ID,
+    );
+    let b = draw_stage(
+        &mut state,
+        &mut engine,
+        fullscreen::defs::TEST_TWIN_STAGE_ID,
+    );
+    assert_ne!(
+        a, b,
+        "무대 콘텐츠 Ui 의 무대 id salt 가 사라졌다 — 두 무대가 스크롤 위치를 공유한다"
+    );
+}
+
 /// 알림 무대는 자체 상태(목록 스크롤 위치)를 갖고, 무대가 닫히면 `on_close` 가
 /// 그것을 지운다 — 무대 정의 타입의 정리 훅이 **실콘텐츠에서** 도는지 확인.
 #[test]

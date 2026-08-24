@@ -31,6 +31,8 @@ pub fn all_defs() -> &'static [StageDef] {
         ];
         #[cfg(test)]
         defs.push(test_stage_def());
+        #[cfg(test)]
+        defs.push(test_twin_stage_def());
         defs
     })
 }
@@ -74,5 +76,24 @@ fn test_stage_def() -> StageDef {
         on_close: Some(|_ctx, _state, _engine| {
             TEST_STAGE_CLOSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }),
+    }
+}
+
+/// 테스트 전용 세 번째 무대 — **알림 무대와 같은 콘텐츠를 다른 id 로** 올린다.
+///
+/// 무대 콘텐츠 Ui 는 셸이 `def.id` 로 salt 한다(`super::draw_fullscreen_stage`). 그
+/// salt 가 사라져도 무대와 popup 은 서로 다른 `Area` 라 상태가 안 섞이므로 popup 쪽
+/// 비교로는 회귀가 드러나지 않는다 — 같은 콘텐츠를 올린 **두 무대**를 비교해야
+/// 드러난다. release 빌드에는 존재하지 않는다.
+#[cfg(test)]
+pub(crate) const TEST_TWIN_STAGE_ID: super::StageId = "__test_notifications_twin";
+
+#[cfg(test)]
+fn test_twin_stage_def() -> StageDef {
+    StageDef {
+        id: TEST_TWIN_STAGE_ID,
+        title_key: "fullscreen.notifications.title",
+        draw_fn: super::notifications::draw,
+        on_close: Some(super::notifications::on_close),
     }
 }
