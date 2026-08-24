@@ -60,6 +60,7 @@ pub fn run_result_key(task_id: &str) -> String {
 }
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
+use crate::core::agent::task_output_ref;
 use crate::ipc::host_call::HostIpcInjector;
 
 /// Host→plugin dispatch timeout — 자식 프로세스 생성/디스크 I/O 까지 포함할 수 있는
@@ -404,6 +405,45 @@ impl HostExecutor {
         }
     }
 
+    /// command 가 참조하는 upstream task 들의 `result.output` 을 모은다.
+    ///
+    /// `Reduce` dispatch 와 **같은 방식**이다 — memory lock 안에서는 조회만 하고
+    /// (`with_memory` + `TaskStore::get` + `result.output`), 치환 자체는 lock
+    /// 바깥에서 한다. `Core::memory` 는 프로세스 전역 `Mutex` 라 lock 안에서 일을
+    /// 오래 붙들면 러너 전체가 직렬화된다.
+    ///
+    /// 참조가 없으면 store 를 아예 건드리지 않는다(가장 흔한 경로).
+    fn collect_task_outputs(
+        &mut self,
+        task: &Task,
+    ) -> Result<HashMap<TaskId, serde_json::Value>, String> {
+        let ids = task_output_ref::referenced_tasks(&task.command).map_err(|e| e.0)?;
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let ws = task.workspace_id;
+        let seq = self.ctx.agent_seq.clone();
+        self.ctx.with_memory(|mem| {
+            use tasty_agent::TaskStore;
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let mut out = HashMap::with_capacity(ids.len());
+            for tid in ids {
+                let t = store
+                    .get(ws, &tid)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("task output reference '{tid}': task not found"))?;
+                // `result` 가 없으면(아직 안 끝났거나 결과를 안 남긴 상태) 조용히
+                // null 로 두지 않는다 — depends_on 검증을 통과했는데도 여기 오면
+                // 그건 진짜 이상 상황이라 드러나야 한다.
+                let output = t.result.and_then(|r| r.output).ok_or_else(|| {
+                    format!("task output reference '{tid}': upstream task has no result output yet")
+                })?;
+                out.insert(tid, output);
+            }
+            Ok(out)
+        })
+    }
+
     /// lease pool 이 배정한 resource 로 치환된 `task.command` 를 store 에도
     /// 되써서 task-get/task-list 가 원본(`${lease.resource}`/빈 cwd) 대신 실제
     /// 배정 값을 보여주게 한다. best-effort — 실패해도 dispatch 자체(진짜
@@ -455,14 +495,38 @@ impl TaskExecutor for HostExecutor {
         // 실제 배정된 자원(예: cwd)이 그대로 드러나게 한다 — 안 그러면 원본
         // `${lease.resource}`/빈 cwd 만 보여 "어느 candidate 를 받았는지" 를
         // 외부에서 확인할 방법이 lease-list 뿐이게 된다.
-        let dispatch_result = match self.held_leases.get(&task.id).cloned() {
-            Some((ws, resource, _)) => {
-                let mut substituted = task.clone();
-                substitute_lease_resource(&mut substituted.command, &resource);
-                self.persist_substituted_command(ws, &substituted);
+        //
+        // 치환은 **lease 먼저, upstream 출력 나중** 이다. 순서를 뒤집으면 upstream
+        // task 가 만든 문자열 안에 `${lease.resource}` 가 들어 있을 때 그게
+        // lease 치환의 입력이 되어, 자식 에이전트가 만든 데이터가 lease 의미론에
+        // 끼어든다. 지금 순서면 나중에 주입되는 값(런타임 데이터)이 다시 해석되지
+        // 않는다 — 각 치환은 자기 결과를 재훑지 않는 1-pass 다.
+        let mut substituted = task.clone();
+        let leased = self.held_leases.get(&task.id).cloned();
+        if let Some((_, resource, _)) = &leased {
+            substitute_lease_resource(&mut substituted.command, resource);
+        }
+        let outputs_substituted = match self.collect_task_outputs(task) {
+            Ok(outputs) if outputs.is_empty() => Ok(false),
+            Ok(outputs) => substitute_task_outputs(&mut substituted.command, &outputs),
+            Err(e) => Err(e),
+        };
+        let dispatch_result = match outputs_substituted {
+            Ok(changed) => {
+                // 치환된 command 를 store 에 되쓰면 task-get/task-list 가 "실제로
+                // 무엇으로 호출됐는지" 를 보여준다(lease 선례와 같은 이유). 아무것도
+                // 안 바뀌었으면 쓸 이유가 없다 — dispatch 마다 store write 를 더하지
+                // 않는다.
+                if let Some((ws, _, _)) = &leased {
+                    self.persist_substituted_command(*ws, &substituted);
+                } else if changed {
+                    self.persist_substituted_command(task.workspace_id, &substituted);
+                }
                 self.dispatch_command(&substituted)
             }
-            None => self.dispatch_command(task),
+            // 참조 해석 실패는 dispatch 실패다. 조용한 null 로 흘리면 downstream 이
+            // 훨씬 뒤에서, 원인과 먼 자리에서 터진다.
+            Err(e) => Err(format!("task output substitution: {e}")),
         };
         let result = match dispatch_result {
             Ok(h) => {
@@ -970,6 +1034,131 @@ fn substitute_lease_resource_in_json(value: &mut serde_json::Value, resource: &s
         }
         _ => {}
     }
+}
+
+/// dispatch 직전 upstream task 의 `result.output` 을 command 에 주입한다.
+///
+/// 문법 소유자는 [`task_output_ref`](crate::core::agent::task_output_ref) 다 —
+/// 여기서는 해석된 참조를 실제 값으로 바꾸는 일만 한다.
+///
+/// **타입 보존이 이 함수의 핵심이다.** 문자열 값이 *정확히* placeholder 하나뿐이면
+/// 그 자리를 뽑아낸 `Value` 로 **통째 교체**한다. 문자열로 떨어뜨리면 숫자가
+/// `"731"` 이 되어 `claude.spawn` 의 `require_surface_id`(`as_u64`) 같은 타입
+/// 검사가 거부한다. placeholder 가 다른 텍스트에 섞여 있을 때만 문자열 보간이다
+/// (그때는 애초에 문자열이 기대값이다).
+///
+/// 반환값은 "무언가 치환했는가" — 호출자가 store 되쓰기 여부를 정하는 데 쓴다.
+fn substitute_task_outputs(
+    command: &mut TaskCommand,
+    outputs: &HashMap<TaskId, serde_json::Value>,
+) -> Result<bool, String> {
+    let mut changed = false;
+    match command {
+        TaskCommand::Run { command, cwd, .. } => {
+            for arg in command.iter_mut() {
+                if let Some(next) = interpolate_string(arg, outputs)? {
+                    *arg = next;
+                    changed = true;
+                }
+            }
+            if let Some(p) = cwd.as_ref()
+                && let Some(s) = p.to_str()
+                && let Some(next) = interpolate_string(s, outputs)?
+            {
+                *cwd = Some(std::path::PathBuf::from(next));
+                changed = true;
+            }
+        }
+        TaskCommand::Custom { params, .. } => {
+            substitute_task_outputs_in_json(params, outputs, &mut changed)?;
+        }
+        TaskCommand::Reduce { .. } | TaskCommand::WaitBarrier { .. } => {}
+    }
+    Ok(changed)
+}
+
+fn substitute_task_outputs_in_json(
+    value: &mut serde_json::Value,
+    outputs: &HashMap<TaskId, serde_json::Value>,
+    changed: &mut bool,
+) -> Result<(), String> {
+    match value {
+        serde_json::Value::String(s) => {
+            let refs = task_output_ref::parse_refs(s).map_err(|e| e.0)?;
+            if refs.is_empty() {
+                return Ok(());
+            }
+            // 문자열 전체가 placeholder 하나 → 타입 보존 통째 교체.
+            if refs.len() == 1 && refs[0].0.start == 0 && refs[0].0.end == s.len() {
+                *value = resolve(&refs[0].1, outputs)?.clone();
+            } else if let Some(next) = interpolate_string(s, outputs)? {
+                *s = next;
+            }
+            *changed = true;
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                substitute_task_outputs_in_json(v, outputs, changed)?;
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                substitute_task_outputs_in_json(v, outputs, changed)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// 문자열 보간 — placeholder 가 없으면 `None`(원문 유지).
+///
+/// 값이 문자열이면 따옴표 없이 내용만, 그 밖(숫자/불리언/객체/배열/null)은 compact
+/// JSON 으로 떨어뜨린다. **1-pass** 다 — 주입된 값 안에 placeholder 처럼 보이는
+/// 텍스트가 있어도 다시 훑지 않는다(원문에서 찾은 범위만 교체한다).
+fn interpolate_string(
+    s: &str,
+    outputs: &HashMap<TaskId, serde_json::Value>,
+) -> Result<Option<String>, String> {
+    let refs = task_output_ref::parse_refs(s).map_err(|e| e.0)?;
+    if refs.is_empty() {
+        return Ok(None);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut cursor = 0usize;
+    for (range, r) in &refs {
+        out.push_str(&s[cursor..range.start]);
+        let v = resolve(r, outputs)?;
+        match v {
+            serde_json::Value::String(text) => out.push_str(text),
+            other => out.push_str(&other.to_string()),
+        }
+        cursor = range.end;
+    }
+    out.push_str(&s[cursor..]);
+    Ok(Some(out))
+}
+
+/// 참조 하나를 값으로 해석. 조용한 `null` 대신 **에러**다 — 해석 실패를 값으로
+/// 흘리면 downstream 이 한참 뒤에 엉뚱한 자리에서 터진다.
+fn resolve<'a>(
+    r: &task_output_ref::TaskOutputRef,
+    outputs: &'a HashMap<TaskId, serde_json::Value>,
+) -> Result<&'a serde_json::Value, String> {
+    let output = outputs.get(&r.task_id).ok_or_else(|| {
+        format!(
+            "task output reference '{}': upstream task has no result output yet",
+            r.task_id
+        )
+    })?;
+    output.pointer(&r.pointer).ok_or_else(|| {
+        format!(
+            "task output reference '{}': JSON pointer '{}' not found in output {}",
+            r.task_id,
+            if r.pointer.is_empty() { "" } else { &r.pointer },
+            output
+        )
+    })
 }
 
 fn now_ms() -> u64 {
@@ -2656,6 +2845,226 @@ mod tests {
                 assert_eq!(stdout_text.trim(), resolved_path);
             }
             other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    // ── `${task.<id>.output<pointer>}` 치환 ──────────────────────────────
+
+    fn outputs_of(pairs: &[(&str, serde_json::Value)]) -> HashMap<TaskId, serde_json::Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), v.clone()))
+            .collect()
+    }
+
+    fn custom_params(params: serde_json::Value) -> TaskCommand {
+        TaskCommand::Custom {
+            ipc_method: "claude.tell".to_string(),
+            params,
+            poll: None,
+        }
+    }
+
+    /// 문자열 값 전체가 단일 placeholder 면 뽑아낸 Value 로 통째 교체 — 타입 보존.
+    /// 문자열로 떨어지면 `claude.spawn` 의 `require_surface_id`(`as_u64`) 가 거부한다.
+    #[test]
+    fn task_output_substitution_preserves_number_type() {
+        let outputs = outputs_of(&[("t-a", json!({ "child_surface_id": 731 }))]);
+        let mut cmd = custom_params(json!({
+            "surface_id": "${task.t-a.output/child_surface_id}",
+            "message": "hi",
+        }));
+        assert!(substitute_task_outputs(&mut cmd, &outputs).unwrap());
+
+        let TaskCommand::Custom { params, .. } = &cmd else {
+            panic!("expected Custom");
+        };
+        assert_eq!(params["surface_id"], json!(731));
+        assert_ne!(
+            params["surface_id"],
+            json!("731"),
+            "타입이 문자열로 떨어졌다"
+        );
+        assert!(
+            params["surface_id"].as_u64().is_some(),
+            "require_surface_id 의 as_u64() 가 통과해야 한다"
+        );
+        assert_eq!(params["message"], json!("hi"), "무관한 값은 그대로");
+    }
+
+    /// 숫자만이 아니라 객체/배열/불리언도 통째 교체된다 — 빈 포인터는 출력 전체.
+    #[test]
+    fn task_output_substitution_preserves_composite_types() {
+        let outputs = outputs_of(&[(
+            "t-a",
+            json!({ "obj": {"k": 1}, "arr": [1, 2], "flag": true }),
+        )]);
+        let mut cmd = custom_params(json!({
+            "o": "${task.t-a.output/obj}",
+            "a": "${task.t-a.output/arr}",
+            "b": "${task.t-a.output/flag}",
+            "whole": "${task.t-a.output}",
+        }));
+        substitute_task_outputs(&mut cmd, &outputs).unwrap();
+
+        let TaskCommand::Custom { params, .. } = &cmd else {
+            panic!("expected Custom");
+        };
+        assert_eq!(params["o"], json!({"k": 1}));
+        assert_eq!(params["a"], json!([1, 2]));
+        assert_eq!(params["b"], json!(true));
+        assert_eq!(
+            params["whole"],
+            json!({ "obj": {"k": 1}, "arr": [1, 2], "flag": true })
+        );
+    }
+
+    /// 부분 문자열 안에 섞이면 문자열 보간.
+    #[test]
+    fn task_output_substitution_interpolates_within_string() {
+        let outputs = outputs_of(&[("t-a", json!({ "pr_number": 42, "who": "zilhak" }))]);
+        let mut cmd = custom_params(json!({
+            "prompt": "review PR ${task.t-a.output/pr_number}",
+            "two": "${task.t-a.output/who} opened #${task.t-a.output/pr_number}",
+        }));
+        substitute_task_outputs(&mut cmd, &outputs).unwrap();
+
+        let TaskCommand::Custom { params, .. } = &cmd else {
+            panic!("expected Custom");
+        };
+        assert_eq!(params["prompt"], json!("review PR 42"));
+        // 문자열 값은 따옴표 없이 내용만 들어간다.
+        assert_eq!(params["two"], json!("zilhak opened #42"));
+    }
+
+    /// 중첩 구조(배열/객체 안쪽)와 `Run` 인자에도 적용된다.
+    #[test]
+    fn task_output_substitution_reaches_nested_json_and_run_args() {
+        let outputs = outputs_of(&[("t-a", json!({ "id": 7, "dir": "build" }))]);
+        let mut custom = custom_params(json!({ "nested": [{ "deep": "${task.t-a.output/id}" }] }));
+        substitute_task_outputs(&mut custom, &outputs).unwrap();
+        let TaskCommand::Custom { params, .. } = &custom else {
+            panic!("expected Custom");
+        };
+        assert_eq!(params["nested"][0]["deep"], json!(7));
+
+        let mut run = TaskCommand::Run {
+            command: vec!["echo".into(), "id=${task.t-a.output/id}".into()],
+            workspace_id: 1,
+            cwd: Some("/tmp/${task.t-a.output/dir}".into()),
+        };
+        substitute_task_outputs(&mut run, &outputs).unwrap();
+        let TaskCommand::Run { command, cwd, .. } = &run else {
+            panic!("expected Run");
+        };
+        // argv 는 어차피 문자열이라 타입 보존 문제가 없다 — 전부 보간.
+        assert_eq!(command[1], "id=7");
+        assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/tmp/build")));
+    }
+
+    /// 포인터가 출력에 없으면 조용한 null 이 아니라 에러다.
+    #[test]
+    fn task_output_substitution_rejects_pointer_miss() {
+        let outputs = outputs_of(&[("t-a", json!({ "child_surface_id": 731 }))]);
+        let mut cmd = custom_params(json!({ "x": "${task.t-a.output/nope}" }));
+        let err = substitute_task_outputs(&mut cmd, &outputs).unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    /// 주입된 값 안에 placeholder 처럼 보이는 텍스트가 있어도 재치환하지 않는다(1-pass).
+    #[test]
+    fn task_output_substitution_does_not_rescan_injected_values() {
+        let outputs = outputs_of(&[("t-a", json!({ "text": "${task.t-b.output/x}" }))]);
+        let mut cmd = custom_params(json!({ "p": "${task.t-a.output/text}" }));
+        // t-b 는 outputs 에 없다 — 재치환한다면 여기서 에러가 났을 것이다.
+        substitute_task_outputs(&mut cmd, &outputs).unwrap();
+        let TaskCommand::Custom { params, .. } = &cmd else {
+            panic!("expected Custom");
+        };
+        assert_eq!(params["p"], json!("${task.t-b.output/x}"));
+    }
+
+    /// 참조 task 가 아직 결과가 없으면 조용히 null 이 아니라 dispatch 실패.
+    #[test]
+    fn task_output_substitution_missing_result_is_permanent_fail() {
+        use tasty_agent::TaskStore;
+        let (_td, ctx) = fresh_ctx();
+        let seq = ctx.agent_seq.clone();
+        // upstream 은 store 에 있지만 result 가 없다.
+        let mut upstream = mk_run_task("t-up", vec!["true"]);
+        upstream.result = None;
+        ctx.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.put(&upstream).unwrap();
+        });
+
+        let mut exec = HostExecutor::new(ctx);
+        let mut task = mk_run_task("t-down", vec!["true"]);
+        task.command =
+            custom_params(json!({ "surface_id": "${task.t-up.output/child_surface_id}" }));
+        task.depends_on = vec!["t-up".to_string()];
+
+        match exec.dispatch(&task) {
+            DispatchOutcome::PermanentFail(e) => {
+                assert!(e.contains("task output substitution"), "{e}");
+                assert!(e.contains("no result output"), "{e}");
+            }
+            other => panic!("expected PermanentFail, got {other:?}"),
+        }
+    }
+
+    /// 참조 task 가 store 에 아예 없어도 dispatch 실패.
+    #[test]
+    fn task_output_substitution_unknown_task_is_permanent_fail() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let mut task = mk_run_task("t-down", vec!["true"]);
+        task.command = custom_params(json!({ "x": "${task.t-ghost.output/y}" }));
+
+        match exec.dispatch(&task) {
+            DispatchOutcome::PermanentFail(e) => assert!(e.contains("task not found"), "{e}"),
+            other => panic!("expected PermanentFail, got {other:?}"),
+        }
+    }
+
+    /// dispatch 가 치환한 command 를 store 에 되쓴다 — task-get 이 "실제로 무엇으로
+    /// 호출됐는지" 를 보여줘야 한다(lease 치환과 같은 이유).
+    #[cfg(unix)]
+    #[test]
+    fn dispatch_persists_task_output_substituted_command() {
+        use tasty_agent::TaskStore;
+        let (_td, ctx) = fresh_ctx();
+        let seq = ctx.agent_seq.clone();
+        let mut upstream = mk_run_task("t-up", vec!["true"]);
+        upstream.result = Some(TaskResult {
+            exit_code: Some(0),
+            output: Some(json!({ "child_surface_id": 731 })),
+            error: None,
+        });
+        let mut downstream = mk_run_task(
+            "t-down",
+            vec!["echo", "${task.t-up.output/child_surface_id}"],
+        );
+        downstream.depends_on = vec!["t-up".to_string()];
+        ctx.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.put(&upstream).unwrap();
+            store.put(&downstream).unwrap();
+        });
+
+        let mut exec = HostExecutor::new(ctx.clone());
+        match exec.dispatch(&downstream) {
+            DispatchOutcome::Started(_) => {}
+            other => panic!("expected Started, got {other:?}"),
+        }
+
+        let stored = ctx.with_memory(|mem| {
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &"t-down".to_string()).unwrap().unwrap()
+        });
+        match stored.command {
+            TaskCommand::Run { command, .. } => assert_eq!(command[1], "731"),
+            other => panic!("expected Run, got {other:?}"),
         }
     }
 

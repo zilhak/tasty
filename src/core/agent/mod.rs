@@ -19,4 +19,5 @@ pub(crate) mod runner_host;
 pub(crate) mod runner_thread;
 pub(crate) mod semaphore;
 pub(crate) mod task;
+pub(crate) mod task_output_ref;
 pub(crate) mod task_waker;
