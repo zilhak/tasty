@@ -166,3 +166,115 @@ fn os_level_ui_is_suppressed_during_a_stage() {
         "네이티브 메뉴 폴링 위치가 바뀌었다 — 이 가드는 렌더 뒤 폴링을 전제한다."
     );
 }
+
+/// IME 경로가 무대를 안다. 무대 진입은 popup 을 닫으므로 `popups.has_focused()` 가
+/// 대신 막아 주지 않는다 — 이 항이 빠지면 조합 중이던 IME 의 Commit 이 뒤 터미널로 샌다.
+#[test]
+fn ime_overlay_gate_knows_the_stage() {
+    let src = read("src/view/main/ime.rs");
+    let expected = "    let overlay_open = w.state.settings_open\n        \
+                    || w.state.has_input_dialog_open()\n        \
+                    || w.state.popups.has_focused()\n        \
+                    || w.state.fullscreen_stage_active();";
+    assert!(
+        src.contains(expected),
+        "IME 의 `overlay_open` 이 무대를 보지 않는다 — 무대 중 IME Preedit/Commit 이 \
+         뒤 터미널 PTY 로 샌다."
+    );
+}
+
+/// plugin 단축키 경로가 무대를 안다. 이 경로는 `dispatch_window_event_to_view` **이전에**
+/// 호출되므로 `keyboard.rs` 의 0단계 무대 게이트가 도달하지 못한다 — 별도 배선이 필요하다.
+#[test]
+fn plugin_shortcut_gate_knows_the_stage() {
+    let src = read("src/app/plugin_glue/shortcut.rs");
+    let expected = "        if main.state.settings_open\n            \
+                    || main.state.has_input_dialog_open()\n            \
+                    || main.state.popups.has_focused()\n            \
+                    || main.state.fullscreen_stage_active()\n        {";
+    assert!(
+        src.contains(expected),
+        "plugin 단축키 가드가 무대를 보지 않는다 — 무대 중 plugin 단축키가 발화한다. \
+         이 경로는 0단계 키보드 게이트보다 앞서 실행되므로 여기서 직접 막아야 한다."
+    );
+}
+
+/// `overlay_open` 모양의 합성 판정이 **새로 생겨도** 무대를 빠뜨리지 못하게 하는 완전성 가드.
+///
+/// 이 트랙이 처음에 ime.rs 와 plugin shortcut 을 놓친 이유가 정확히 "가드가 아는 지점만
+/// 봤다" 였다. 그래서 특정 지점을 나열하는 대신, `has_input_dialog_open()` 이 들어간
+/// 합성식을 소스에서 **기계적으로 전부 찾아** 각각이 무대를 아는지 확인한다.
+///
+/// 예외는 `keyboard.rs` 하나뿐이다 — 그 파일은 같은 식 **앞**에 0단계 무대 게이트
+/// (`try_consume_fullscreen_stage_key`)를 따로 두어 이미 무대를 처리한다. 그 게이트가
+/// 사라지면 이 테스트도 함께 깨진다.
+#[test]
+fn every_overlay_open_composite_is_stage_aware() {
+    const ALLOWED_WITHOUT_STAGE_TERM: &str = "src/view/main/keyboard.rs";
+    let mut files = Vec::new();
+    collect_rs(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
+
+    let mut seen = Vec::new();
+    for rel in &files {
+        let src = read(rel);
+        for (i, _) in src.match_indices("has_input_dialog_open()") {
+            let expr = enclosing_expr(&src, i);
+            seen.push(rel.clone());
+            if rel == ALLOWED_WITHOUT_STAGE_TERM {
+                assert!(
+                    src.contains("fn try_consume_fullscreen_stage_key")
+                        || src.contains("self.try_consume_fullscreen_stage_key(event)"),
+                    "{rel}: 무대 항 없이 예외로 허용되던 근거(0단계 무대 게이트)가 사라졌다."
+                );
+                continue;
+            }
+            assert!(
+                expr.contains("fullscreen_stage_active()"),
+                "{rel}: `overlay_open` 합성식이 무대를 보지 않는다 — 그 경로로 무대 중 \
+                 입력이 뒤 세계로 샌다. 식에 `|| ...fullscreen_stage_active()` 를 더하거나, \
+                 별도 무대 게이트를 앞에 두고 이 테스트의 예외 목록에 근거와 함께 추가하라.\n\
+                 문제의 식:\n{expr}"
+            );
+        }
+    }
+    seen.sort();
+    seen.dedup();
+    assert_eq!(
+        seen,
+        vec![
+            "src/app/plugin_glue/shortcut.rs".to_string(),
+            "src/view/main.rs".to_string(),
+            "src/view/main/ime.rs".to_string(),
+            "src/view/main/keyboard.rs".to_string(),
+        ],
+        "`overlay_open` 합성식이 있는 파일 집합이 바뀌었다. 새 지점이 생겼다면 \
+         docs/architecture/input-layer.md 의 열거도 함께 갱신하라."
+    );
+}
+
+/// `src/` 아래 `.rs` 파일을 매니페스트 상대 경로로 모은다.
+fn collect_rs(dir: &std::path::Path, out: &mut Vec<String>) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            collect_rs(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            let rel = path.strip_prefix(&root).expect("under manifest dir");
+            out.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+}
+
+/// `at` 을 포함하는 식의 대략적 경계 — 앞뒤로 가장 가까운 `;` / `{` / `}` 까지.
+/// `;{}` 는 ASCII 라 자른 위치는 항상 char 경계다.
+fn enclosing_expr(src: &str, at: usize) -> &str {
+    let start = src[..at].rfind([';', '{', '}']).map_or(0, |i| i + 1);
+    let end = src[at..].find([';', '{']).map_or(src.len(), |i| at + i + 1);
+    &src[start..end]
+}
