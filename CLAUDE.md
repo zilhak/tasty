@@ -176,6 +176,8 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 
+이 금지는 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4) 네 형태를 모두 잡는다. 금지 형태를 담는 것이 본질인 파일(규칙 본문·테스트 픽스처 등)은 그 테스트의 `ALLOWLIST_FILES` 에 등록한다.
+
 로컬 작업을 추적할 목적 자체는 유효하다 — `.claude-workspace/todo/`에 번호 붙은 파일을 쓰는 관례는 그대로 유지한다. 다만 그 번호는 **작업 티켓**일 뿐 **영구 코드 근거 좌표**가 아니므로, 소스에 스며들게 하지 않는다.
 
 # 작업 시 참고 문서
