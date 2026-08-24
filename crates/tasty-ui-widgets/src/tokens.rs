@@ -39,11 +39,14 @@ pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
 // SIZING 에 없는 디자인 값의 단일 위치). `vspace`/`hspace` 헬퍼와 함께 사용.
 //
 // **`STRUCT_GAP_*` 는 host UI zoom 을 타지 않는다** — 평범한 `const` 라
-// `Theme::with_colors_and_zoom` 의 배율 경로에 없다. 의도된 것이다: 이 값들은
-// 요소 크기가 아니라 1~4px 짜리 구조 hairline/nudge 라, 0.85 배를 곱하면
-// 서브픽셀(0.85px)이 되어 렌더가 흐려지기만 하고 얻는 게 없다. 같은 이유로
-// `Theme` 의 `border_width`(1px)도 유일하게 `zoomed()` 를 거치지 않는다.
-// 크기가 zoom 을 따라가야 하는 값이면 `STRUCT_GAP_*` 가 아니라 `Theme` 필드로 둔다.
+// `Theme::with_colors_and_zoom` 의 배율 경로에 없다. 의도된 것이다: 승격해봐야
+// 얻는 게 없기 때문이다. `zoomed()` 는 `(px * z).round()` 라 지원 배율
+// (0.85 / 1.0 / 1.2)에서 1px 는 셋 다 1 로, 2px 는 2/2/2 로 **원값 그대로**
+// 되돌아온다. 3px 는 3/3/4, 4px 는 3/4/5 로 ±1px 만 흔들리는데, 이 값들은 요소
+// 크기가 아니라 구조 hairline/nudge 라 그 ±1px 가 리듬을 개선하지 않는다. 같은
+// 이유로 `Theme` 의 `border_width`(1px)·`tab_indicator_width`(2px)도 `zoomed()`
+// 를 거치지 않는다. 크기가 zoom 을 따라가야 하는 값이면 `STRUCT_GAP_*` 가 아니라
+// `Theme` 필드로 둔다(예: `icon_glyph_size_row_action`).
 
 /// 구조 간격 1px = DTCG `primitive.size-1`.
 /// 예: 사이드바 WorkspaceRow subtitle 의 margin-top (디자인 chrome.jsx
