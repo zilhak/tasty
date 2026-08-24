@@ -72,6 +72,28 @@ fn borderless_for(window: &Window) -> Fullscreen {
     Fullscreen::Borderless(window.current_monitor())
 }
 
+/// 창이 지금 사용자 드래그로 크기를 바꿀 수 없는 상태인가 — maximize **또는** OS
+/// fullscreen.
+///
+/// 리사이즈 엣지 hit-test 가 이 판정을 쓴다. `is_maximized()` 만 보면 fullscreen 인
+/// 창의 가장자리에서 리사이즈 커서가 살아나고 드래그가 먹는다. 무대 중에는 입력
+/// 게이트가 막아주지만, **무대 없이 fullscreen 인 창**(macOS 신호등)이 가능하므로
+/// 게이트에 기대지 않고 여기서 함께 본다.
+// macOS 는 네이티브 데코레이션이라 tasty 가 가장자리 리사이즈를 직접 다루지 않는다 —
+// 호출부 두 곳이 모두 `#[cfg(not(target_os = "macos"))]` 안이라 그 타깃에서는 쓰이지 않는다
+// (`resize_should_yield_to_content` 가 같은 이유로 같은 표기를 쓴다).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub(crate) fn window_size_is_locked(window: &Window) -> bool {
+    size_is_locked(window.is_maximized(), window.fullscreen().is_some())
+}
+
+/// [`window_size_is_locked`] 의 판정만 떼어낸 것. `Window` 는 실제 winit 창 없이
+/// 만들 수 없어 그대로는 단위 테스트가 안 된다.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn size_is_locked(maximized: bool, os_fullscreen: bool) -> bool {
+    maximized || os_fullscreen
+}
+
 /// 창이 덮고 있는 모니터의 신원. 멀티 모니터에서 "그 창이 있던 모니터를 덮었는가" 를
 /// 출력만 보고 판정할 수 있게 하는 값이다.
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +205,17 @@ mod tests {
             was_maximized: true,
         };
         assert_eq!(restore_for(saved), WindowRestore::Exit { maximized: true });
+    }
+
+    /// maximize 든 fullscreen 든 사용자가 가장자리를 끌어 크기를 바꿀 수 없다 —
+    /// 리사이즈 엣지가 살아있으면 안 된다. **fullscreen 단독**이 이 함수 도입 전
+    /// 빠져 있던 축이다(그 전에는 `is_maximized()` 만 봤다).
+    #[test]
+    fn fullscreen_단독으로도_리사이즈가_잠긴다() {
+        assert!(!size_is_locked(false, false));
+        assert!(size_is_locked(true, false));
+        assert!(size_is_locked(false, true));
+        assert!(size_is_locked(true, true));
     }
 
     /// **사용자가 만든 fullscreen 은 무대가 훔치지 않는다.** macOS 신호등으로 이미

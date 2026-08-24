@@ -154,17 +154,18 @@ impl MainView {
         #[cfg(not(target_os = "macos"))]
         {
             let size = self.base.gpu.size();
-            self.state.pending_resize_cursor = if self.base.winit.is_maximized() {
-                None
-            } else {
-                crate::platform::window_chrome::resize_direction_at(
-                    position.x,
-                    position.y,
-                    f64::from(size.width),
-                    f64::from(size.height),
-                    crate::platform::window_chrome::RESIZE_EDGE_MARGIN,
-                )
-            };
+            self.state.pending_resize_cursor =
+                if super::fullscreen_window::window_size_is_locked(&self.base.winit) {
+                    None
+                } else {
+                    crate::platform::window_chrome::resize_direction_at(
+                        position.x,
+                        position.y,
+                        f64::from(size.width),
+                        f64::from(size.height),
+                        crate::platform::window_chrome::RESIZE_EDGE_MARGIN,
+                    )
+                };
         }
 
         let terminal_rect = self.compute_terminal_rect();
@@ -444,7 +445,7 @@ impl MainView {
                 self.state.settings_open,
                 self.state.popup_hovered,
                 self.state.banner_hovered,
-                self.base.winit.is_maximized(),
+                super::fullscreen_window::window_size_is_locked(&self.base.winit),
             )
             && let Some(pos) = self.cursor_position
         {
@@ -1433,9 +1434,13 @@ fn resize_should_yield_to_content(
     settings_open: bool,
     popup_hovered: bool,
     banner_hovered: bool,
-    is_maximized: bool,
+    window_size_locked: bool,
 ) -> bool {
-    resize_edge_widget_hovered || settings_open || popup_hovered || banner_hovered || is_maximized
+    resize_edge_widget_hovered
+        || settings_open
+        || popup_hovered
+        || banner_hovered
+        || window_size_locked
 }
 
 /// `handle_cursor_moved`(MainView 메서드)의 early-return 판정을 뽑아낸 순수
@@ -2096,7 +2101,7 @@ mod resize_gate_tests {
     }
 
     #[test]
-    fn overlay_popup_banner_maximized_each_yield() {
+    fn overlay_popup_banner_size_locked_each_yield() {
         assert!(resize_should_yield_to_content(
             false, true, false, false, false
         ));
