@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
-    SshConfigHost, config_availability, enumerate_hosts, imported_as, is_builtin_kind,
+    SshConfigHost, config_availability, enumerate_hosts_at, imported_as, is_builtin_kind,
     is_valid_passkey_name, is_valid_port_mode, is_valid_shell, user_config_path,
 };
 
@@ -182,18 +182,28 @@ fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
 /// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 와
 /// "새로고침 아이콘" 둘뿐이다.
 fn load_local_ssh() -> LocalSshCache {
-    let path = user_config_path();
-    // 판정은 열거 코어와 **같은 함수**를 쓴다 — GUI 가 따로 구현해두면 (디렉토리
-    // 같은) 엣지케이스 수정이 한쪽에만 반영된다. "없음" 은 `exists` 가 담당하므로
-    // 파일이 없을 때는 `unreadable` 을 세우지 않는다.
+    local_ssh_cache_at(user_config_path())
+}
+
+/// [`load_local_ssh`] 의 경로 주입 버전 — 실제 홈에 의존하지 않아 픽스처로 검증할 수
+/// 있다. 존재/가독 판정은 CLI·IPC 가 쓰는 것과 **같은** 코어 함수
+/// (`tasty_remote_profiles::config_availability`)를 재사용한다. GUI 가 따로
+/// 구현해두면 (그 자리에 디렉토리가 있는 경우 같은) 엣지케이스 수정이 한쪽에만
+/// 반영되고, 세 표면에서 "권한 실패" 의 정의가 조용히 갈라진다.
+fn local_ssh_cache_at(path: Option<std::path::PathBuf>) -> LocalSshCache {
+    if path.is_none() {
+        tracing::warn!("ssh_config: cannot resolve home directory — skipping enumeration");
+    }
     let avail = config_availability(path.as_deref());
     LocalSshCache {
-        hosts: enumerate_hosts(),
+        hosts: path.as_deref().map(enumerate_hosts_at).unwrap_or_default(),
         path: path
             .as_deref()
             .map(tasty_utils::path::tilde_abbreviate)
             .unwrap_or_else(|| "~/.ssh/config".into()),
         exists: avail.exists,
+        // 코어는 부재를 `readable: false` 로 표현한다 — 여기서 필요한 건 "있는데 못
+        // 읽음" 이므로 `exists` 와 함께 봐야 한다(부재는 별도 문구가 담당).
         unreadable: avail.exists && !avail.readable,
     }
 }
@@ -3373,41 +3383,75 @@ mod tests {
         assert_eq!(local_ssh_empty_key(&base), "remote_tool.local_ssh_empty");
     }
 
-    /// 권한 없는 실제 파일(mode 000)로 캐시의 `unreadable` 판정이 분기를 태우는지 본다.
+    /// 권한 없는 실제 파일(mode 000)에서 캐시가 "있는데 못 읽음" 으로 떨어지는지.
     /// root 는 권한을 무시하므로 그 환경에서는 판정 자체가 성립하지 않아 건너뛴다.
     #[test]
     #[cfg(unix)]
-    fn config_readable_is_false_for_mode_000_file() {
+    fn cache_marks_mode_000_config_unreadable() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("config");
-        std::fs::write(
-            &path, "Host a
-",
-        )
-        .expect("write fixture");
+        std::fs::write(&path, "Host a\n").expect("write fixture");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
 
         if std::fs::File::open(&path).is_ok() {
             // root(또는 CAP_DAC_OVERRIDE) — mode 000 이어도 열린다.
             return;
         }
-        assert!(!config_availability(Some(&path)).readable);
+        let cache = local_ssh_cache_at(Some(path.clone()));
+        assert!(cache.exists);
+        assert!(cache.unreadable);
+        assert_eq!(
+            local_ssh_empty_key(&cache),
+            "remote_tool.local_ssh_unreadable"
+        );
 
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("restore");
-        assert!(config_availability(Some(&path)).readable);
+        let cache = local_ssh_cache_at(Some(path));
+        assert!(!cache.unreadable);
+        assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_empty");
     }
 
     /// 파일 없음 / 경로 미확정은 "권한 문제" 가 아니다 — 별도 문구가 담당하므로
     /// 캐시의 `unreadable` 이 서면 안 된다.
     #[test]
-    fn unreadable_stays_false_when_path_is_absent() {
-        // 캐시는 `exists && !readable` 일 때만 `unreadable` 을 세우므로 두 경우 다
-        // `exists` 가 false 인 것으로 충분하다.
-        let absent = config_availability(Some(std::path::Path::new("/definitely/not/here/config")));
-        assert!(!absent.exists);
-        assert!(!config_availability(None).exists);
+    fn cache_marks_absent_config_missing_not_unreadable() {
+        // 부재는 "권한 문제" 가 아니다 — 코어가 부재를 readable:false 로 표현하므로
+        // 이 구분이 실제로 유지되는지 고정한다.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let cache = local_ssh_cache_at(Some(dir.path().join("nope")));
+        assert!(!cache.exists);
+        assert!(!cache.unreadable);
+        assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_missing");
+
+        // 홈 자체를 못 구한 경우도 같은 갈래다.
+        let cache = local_ssh_cache_at(None);
+        assert!(!cache.exists);
+        assert!(!cache.unreadable);
+        assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_missing");
+    }
+
+    /// `~/.ssh/config` 자리에 디렉토리가 있는 경우. linux 는 디렉토리에도
+    /// `File::open` 을 허용하므로 코어가 `is_file()` 을 겹쳐 막는데, 그 수정이
+    /// **GUI 문구까지** 닿는지는 여기서만 확인된다 — 경로 주입 seam 이 없으면
+    /// 쓸 수 없는 테스트다.
+    #[test]
+    fn cache_marks_directory_config_unreadable() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("config");
+        std::fs::create_dir(&path).expect("디렉토리 픽스처");
+
+        let cache = local_ssh_cache_at(Some(path));
+        assert!(cache.exists, "디렉토리도 존재는 한다");
+        assert!(
+            cache.unreadable,
+            "디렉토리를 '읽히는 빈 설정' 으로 오독하면 안 된다"
+        );
+        assert_eq!(
+            local_ssh_empty_key(&cache),
+            "remote_tool.local_ssh_unreadable"
+        );
     }
 
     #[test]
