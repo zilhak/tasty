@@ -52,7 +52,7 @@
 
 - **mocha**: 항상 정본 보장. 임베드 `MOCHA_TOML_TEXT` + `MOCHA_FALLBACK_COLORS` const. 부팅 시 sync 가 누락/파싱 실패/**내용 불일치** 면 임베드로 덮어쓴다. 로드 실패해도 const 가 fallback. unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 강제.
 - **latte**: first-run(themes 폴더가 완전히 빈 경우)에 자동 풀림. 이후엔 **파일이 있으면 임베드와 동기화**, 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
-  - `subtext0` 은 upstream catppuccin latte(`#6c6f85`)가 아니라 `#63667c` 다 — upstream 값은 `base`(`#eff1f5`) 위에서 4.37:1 이라 아래 "텍스트 대비" 4.5:1 규칙을 못 넘긴다. subtext0→subtext1 램프 위에서 내려 `base` 4.99:1 / `mantle` 4.64:1 을 확보한 값이다. mocha 는 같은 토큰이 이미 7.37:1 이라 손대지 않았다.
+  - `subtext0` 은 upstream catppuccin latte(`#6c6f85`)가 아니라 `#63667c` 다 — upstream 값은 `base`(`#eff1f5`) 위에서 4.37:1 이라 아래 "텍스트 대비" 4.5:1 규칙을 못 넘긴다. subtext0→subtext1 램프 위에서 내려 `base` 4.99:1 / `mantle` 4.64:1 을 확보한 값이다. mocha 는 같은 토큰이 이미 7.37:1 이라 손대지 않았다. 남은 미달 조합은 아래 "latte 중성 램프 대비 — 알려진 예외" 참고.
 - **사용자 테마**: 자동 동기화/복구 없음. 로드 실패 시 mocha fallback.
 - **"사용자 의도 존중" 의 범위 = 파일 삭제(부재)뿐.** 빌트인 파일의 *내용* 은 존중 대상이 아니다 — 사용자가 손으로 고쳐도 다음 부팅에 정본으로 되돌아간다(편집 경로가 아님, 커스터마이징은 `theme_overrides`).
 
@@ -143,6 +143,30 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 코드에 하드코딩이 보이면 `Theme` 필드로 옮긴다. 새 시각 규칙은 이 표에 추가 후 `Theme` 에 필드 신설.
 
 표·드롭다운·버튼처럼 이름이 곧 정체성인 보편 컴포넌트는 인라인으로 그리지 말고 공용 위젯으로 추출한다 — [공용 위젯 제작 정책](../policies/shared-widgets.md).
+
+### latte 중성 램프 대비 — 알려진 예외
+
+위 "텍스트 대비" 4.5:1 규칙에 대해 **latte 는 어두운 배경 토큰 위에서 구조적으로 미달**한다. 같은 계산을 반복하지 않도록 WCAG 상대휘도 공식(sRGB→선형, 0.2126/0.7152/0.0722 가중, `(L_hi+0.05)/(L_lo+0.05)`)으로 구한 전 조합을 박아 둔다. `*` 가 통과.
+
+| 전경 \ 배경 | crust `#dce0e8` | mantle `#e6e9ef` | base `#eff1f5` | surface0 `#ccd0da` | surface1 `#bcc0cc` | surface2 `#acb0be` | `#ffffff` |
+|---|---|---|---|---|---|---|---|
+| `subtext0` (text-muted) `#63667c` | 4.26 | 4.64\* | 4.99\* | 3.65 | 3.10 | 2.61 | 5.64\* |
+| `subtext1` (text-secondary) `#5c5f77` | 4.73\* | 5.14\* | 5.53\* | 4.05 | 3.44 | 2.89 | 6.25\* |
+| `text` (text-primary) `#4c4f69` | 6.04\* | 6.57\* | 7.06\* | 5.17\* | 4.39 | 3.69 | 7.99\* |
+
+실제로 미달 조합을 그리는 상시 노출 화면은 둘이다.
+
+- **상태바** — `bg_app`(=crust) 위 `text_muted` = **4.26:1**.
+- **탭바** — 포커스된 pane 의 탭 스트립이 `surface_raised`(=surface0), 비활성 탭 제목이 `text_muted` = **3.65:1**.
+
+**팔레트로는 고칠 수 없다.** 두 경로 모두 막혀 있다.
+
+- `subtext0` 을 crust 통과선(`#5f6279`, 4.52:1)까지 더 내리면 `subtext1`(`#5c5f77`)과의 차가 `(3,3,2)` 로 줄어 text-muted 와 text-secondary 가 사실상 같은 색이 된다 — 3단 텍스트 위계가 latte 에서만 2단으로 붕괴한다. 그러고도 surface0 는 여전히 미달(3.88)이다.
+- surface0 를 통과시키려면 `subtext0` 이 `#555870` 근처여야 하는데 이는 `subtext1` 보다 **어둡다** — 램프 순서가 뒤집힌다.
+
+즉 surface0 위에서 AA 를 넘는 중성 전경은 `text` 하나뿐이고, surface1/surface2 는 `text` 조차 미달이다. 이는 catppuccin latte 의 raised/hover 배경단이 라이트 테마치고 어둡기 때문이며, 고치려면 팔레트 중성 램프 전체를 다시 뜨는 디자인 결정이 필요하다(vendored 팔레트 정체성 + DTCG export 를 함께 갈아야 한다). 컴포넌트별 회피(해당 화면만 `text_secondary`/`text_primary` 로 승격)는 가능하지만 상태바·탭바의 확정 시안을 바꾸는 일이라 디자인 요청 없이 진행하지 않는다.
+
+**새 UI 를 그릴 때는 이 표를 근거로 배경을 고른다** — muted 캡션을 얹을 배경은 `base`/`mantle`/`#ffffff` 로 한정하고, `surface0` 이상 어두운 배경 위에는 `text_primary` 를 쓴다.
 
 ### Host UI zoom
 
