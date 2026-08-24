@@ -3,6 +3,11 @@ use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
 use super::AppState;
 use crate::core::CoreState;
 
+/// divider 히트 판정 밴드의 반폭(px). press 로 드래그를 시작하는 경로, 커서 아이콘
+/// 경로, 트래킹 앱 hover 보고 가드가 **같은 값**을 봐야 "커서는 ↔ 인데 TUI 는 hover 를
+/// 받는" 식의 어긋남이 생기지 않는다. 세 곳에 리터럴로 흩어두면 드리프트한다.
+pub const DIVIDER_HIT_THRESHOLD: f32 = 4.0;
+
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.

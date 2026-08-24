@@ -59,9 +59,13 @@ pub struct MainView {
     /// 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim/tmux 등)이 이를 클릭으로
     /// 해석해 링크를 중복으로 열 수 있다.
     pub(crate) link_click_consumed: bool,
-    /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 셀 좌표. 드래그 motion 을 셀 단위로만
-    /// 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
-    pub(crate) last_mouse_report_cell: Option<(usize, usize)>,
+    /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 `(surface_id, col, row)`. motion 을
+    /// 셀 단위로만 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
+    ///
+    /// **surface 를 키에 포함한다.** 드래그는 한 surface 에 고정되지만 hover(1003)는
+    /// surface 사이를 옮겨 다녀서, 좌표만으로 dedup 하면 A 의 (10,5) 에서 B 의 (10,5)
+    /// 로 넘어갈 때 B 의 첫 hover 가 통째로 삼켜진다.
+    pub(crate) last_mouse_report_cell: Option<(u32, usize, usize)>,
     pub(crate) last_click_time: Option<std::time::Instant>,
     pub(crate) last_click_pos: Option<(usize, usize)>,
     pub(crate) click_count: u8,

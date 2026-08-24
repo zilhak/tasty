@@ -9,7 +9,7 @@ mod detect;
 mod focus;
 mod layout;
 mod mark;
-mod mouse;
+pub mod mouse;
 pub(crate) mod pane;
 #[cfg(test)]
 mod popup_close_tests;

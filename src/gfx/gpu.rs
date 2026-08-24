@@ -671,7 +671,13 @@ impl GpuState {
         {
             let px = pos.x * self.scale_factor;
             let py = pos.y * self.scale_factor;
-            icon = state.winit_cursor_icon_at(engine, px, py, terminal_rect, 4.0);
+            icon = state.winit_cursor_icon_at(
+                engine,
+                px,
+                py,
+                terminal_rect,
+                crate::state::mouse::DIVIDER_HIT_THRESHOLD,
+            );
         }
         // Link hover overrides cursor to pointing-hand (unless on a resize border).
         if link_hover.is_some() && state.pending_resize_cursor.is_none() {

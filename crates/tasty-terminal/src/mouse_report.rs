@@ -83,6 +83,20 @@ mod tests {
         );
     }
 
+    /// 1003 의 버튼 없는 hover: 버튼 코드 3(no button) + motion 32 = 35.
+    #[test]
+    fn hover_motion_uses_button_three() {
+        assert_eq!(
+            encode_mouse_report(true, 35, 12, 4, false),
+            b"\x1b[<35;12;4M"
+        );
+        // X10 폴백: 32+35 = 67 로 255 포화 없이 인코딩된다.
+        assert_eq!(
+            encode_mouse_report(false, 35, 1, 1, false),
+            vec![0x1b, b'[', b'M', 67, 33, 33]
+        );
+    }
+
     #[test]
     fn x10_coordinate_saturates() {
         // col=300 → 32+223 = 255 포화

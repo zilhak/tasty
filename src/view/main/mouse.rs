@@ -94,6 +94,9 @@ impl MainView {
         self.cursor_position = None;
         self.base.winit.set_cursor(CursorIcon::Default);
         self.update_mesh_hover(None);
+        // 창 밖으로 나갔다 같은 셀로 돌아오면 그건 새 hover 다 — dedup 키를 비워
+        // 첫 보고가 삼켜지지 않게 한다.
+        self.last_mouse_report_cell = None;
     }
 
     /// mesh pointer hover 슬롯을 갱신한다(구성 요소는 `docs/dev-guide/egui-mesh-channel.md`
@@ -216,6 +219,9 @@ impl MainView {
                             .find_terminal_by_id(sid)
                             .map(|t| (sid, t.mouse_tracking()))
                     });
+                // 드래그 motion 은 1002 와 1003 이 **같다** — 둘 다 버튼이 눌린 동안의
+                // 셀 이동을 보고한다. 1003 고유 동작인 버튼 없는 hover 는 이 블록이
+                // 아니라 아래 `report_hover_motion` 이 담당한다.
                 if let Some((sid, mode)) = track
                     && matches!(
                         self.effective_click_tracking(sid, mode),
@@ -223,8 +229,8 @@ impl MainView {
                             | tasty_terminal::MouseTrackingMode::AllMotion
                     )
                 {
-                    let cell = self.mouse_cell_for_report(sid, x, y);
-                    if self.last_mouse_report_cell != Some(cell) {
+                    let (col, row) = self.mouse_cell_for_report(sid, x, y);
+                    if self.last_mouse_report_cell != Some((sid, col, row)) {
                         self.report_mouse_event(sid, x, y, 0, true, false);
                     }
                     return;
@@ -237,6 +243,11 @@ impl MainView {
                 }
                 self.mark_dirty();
             }
+        } else {
+            // 버튼을 누르지 않은 이동 — DECSET 1003(AnyEventMouse) 전용 hover 보고.
+            // 드래그 블록과 **배타적**이다: 드래그 중 motion 은 위쪽이 이미 원래
+            // surface 좌표로 보고하며, 그 경로는 아래 가드들에 걸리지 않는다.
+            self.report_hover_motion(x, y, &terminal_rect);
         }
 
         if let Some(drag) = self.dragging_divider {
@@ -742,7 +753,7 @@ impl MainView {
 
     /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
     fn handle_left_press(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
-        let threshold = 4.0;
+        let threshold = crate::state::mouse::DIVIDER_HIT_THRESHOLD;
         let engine = &mut self.core_state;
         let pane_div = self
             .state
@@ -976,6 +987,65 @@ impl MainView {
         )
     }
 
+    /// 버튼 없는 hover motion 보고(DECSET 1003). 셀이 바뀔 때만 `ESC[<35;col;rowM`
+    /// 한 줄이 나간다.
+    ///
+    /// **focused surface 한정이다**(ADR-0062). 커서 아래 surface 가 focused 가 아니거나
+    /// tasty 창 자체가 비포커스면 아무것도 보내지 않고 포커스도 옮기지 않는다 — 마우스가
+    /// 지나가기만 해도 배경 TUI 들에 입력 바이트가 흘러드는 것을 원천 차단한다.
+    /// divider 밴드·OS 리사이즈 가장자리 위에서도 보고하지 않는다(입력 z-order 상
+    /// divider 가 surface 콘텐츠보다 위, `docs/architecture/input-layer.md`).
+    fn report_hover_motion(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+        let Some(sid) = self.state.focused_surface_id(&self.core_state) else {
+            return;
+        };
+        let tracking = self
+            .core_state
+            .find_terminal_by_id(sid)
+            .map(|t| t.mouse_tracking())
+            .unwrap_or(tasty_terminal::MouseTrackingMode::None);
+        // 클릭 축이므로 캡처 블랙리스트·hard 점유 격하를 그대로 태운다(휠만 예외).
+        let tracking = self.effective_click_tracking(sid, tracking);
+        if tracking != tasty_terminal::MouseTrackingMode::AllMotion {
+            // 여기서 끊어야 아래 hit-test 들이 매 프레임 헛돌지 않는다.
+            return;
+        }
+        let threshold = crate::state::mouse::DIVIDER_HIT_THRESHOLD;
+        let on_divider_band = self
+            .state
+            .find_pane_divider_at(&self.core_state, x, y, *terminal_rect, threshold)
+            .or_else(|| {
+                self.state.find_surface_divider_at(
+                    &self.core_state,
+                    x,
+                    y,
+                    *terminal_rect,
+                    threshold,
+                )
+            })
+            .is_some();
+        let over_focused_surface =
+            self.state
+                .surface_id_at_position(&self.core_state, x, y, *terminal_rect)
+                == Some(sid);
+        if !should_report_hover_motion(HoverReportInput {
+            window_focused: self.base.focused,
+            over_focused_surface,
+            on_divider_band,
+            // macOS 는 네이티브 데코가 가장자리를 처리해 이 값이 항상 None 이다 —
+            // 그쪽에서는 이 가드가 무동작이고, 그게 의도한 플랫폼 차이다.
+            resize_edge_active: self.state.pending_resize_cursor.is_some(),
+            dragging_divider: self.dragging_divider.is_some(),
+        }) {
+            return;
+        }
+        let (col, row) = self.mouse_cell_for_report(sid, x, y);
+        if self.last_mouse_report_cell == Some((sid, col, row)) {
+            return;
+        }
+        self.report_mouse_event(sid, x, y, MOUSE_BUTTON_NONE, true, false);
+    }
+
     /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
     /// 1=middle / 2=right, `motion` 드래그 여부, `release` 버튼 떼기. 좌표/SGR 여부는
     /// 보고 시점에 해당 surface 에서 조회한다.
@@ -1004,7 +1074,7 @@ impl MainView {
             }
             .from_user_shortcut("mouse_report"),
         );
-        self.last_mouse_report_cell = Some((col, row));
+        self.last_mouse_report_cell = Some((surface_id, col, row));
     }
 
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
@@ -1179,7 +1249,37 @@ impl MainView {
 /// 마우스 휠 이벤트를 마우스 리포팅 시퀀스로 인코딩한다. `sgr` 가 true 면 SGR
 /// (`ESC [ < btn ; col ; row M`), 아니면 legacy X10 (`ESC [ M` + 32-offset 3 bytes).
 /// `count` 만큼 반복 발행. `btn` 은 64(up)/65(down), `col`/`row` 는 1-based.
-/// winit 버튼(0=left / 1=middle / 2=right) + 드래그/modifier → 마우스 리포팅 `cb` 코드.
+/// "버튼 없음" 을 뜻하는 마우스 리포팅 버튼 코드. xterm 규약상 하위 2 비트가 `3` 이면
+/// 버튼이 눌리지 않은 상태이고, motion 비트를 얹으면 `3|32 = 35` 가 된다.
+const MOUSE_BUTTON_NONE: u8 = 3;
+
+/// [`should_report_hover_motion`] 입력. 트래킹 레벨은 호출 전에 이미 걸러지므로
+/// 여기엔 담지 않는다 — 남는 건 전부 "어디 위에 있는가" 축이다.
+#[derive(Debug, Clone, Copy)]
+struct HoverReportInput {
+    /// tasty 창 자체가 포커스를 갖고 있는가.
+    window_focused: bool,
+    /// 커서 아래 surface 가 focused surface 인가.
+    over_focused_surface: bool,
+    /// divider 히트 밴드(분할선 ±threshold) 안인가.
+    on_divider_band: bool,
+    /// OS 창 리사이즈 가장자리 밴드 안인가.
+    resize_edge_active: bool,
+    /// divider 드래그가 진행 중인가.
+    dragging_divider: bool,
+}
+
+/// 버튼 없는 hover motion 을 앱에 보고할지. 호출자가 트래킹이 `AllMotion` 임을
+/// 확인한 뒤의 위치 판정만 담당한다 — 하나라도 걸리면 보고하지 않는다.
+fn should_report_hover_motion(i: HoverReportInput) -> bool {
+    i.window_focused
+        && i.over_focused_surface
+        && !i.on_divider_band
+        && !i.resize_edge_active
+        && !i.dragging_divider
+}
+
+/// winit 버튼(0=left / 1=middle / 2=right, 3=버튼 없음) + 드래그/modifier → 마우스 리포팅 `cb` 코드.
 /// shift=4 · alt(meta)=8 · ctrl=16, 드래그 motion=32. (xterm 표준 비트)
 fn mouse_report_cb(button: u8, motion: bool, shift: bool, alt: bool, ctrl: bool) -> u8 {
     let mut cb = button;
@@ -1954,5 +2054,68 @@ mod resize_gate_tests {
         assert!(resize_should_yield_to_content(
             false, false, false, false, true
         ));
+    }
+}
+
+#[cfg(test)]
+mod hover_motion_tests {
+    use super::{HoverReportInput, MOUSE_BUTTON_NONE, mouse_report_cb, should_report_hover_motion};
+
+    /// 모든 가드를 통과하는 기본 입력 — 각 테스트는 축 하나씩만 뒤집는다.
+    fn ok() -> HoverReportInput {
+        HoverReportInput {
+            window_focused: true,
+            over_focused_surface: true,
+            on_divider_band: false,
+            resize_edge_active: false,
+            dragging_divider: false,
+        }
+    }
+
+    #[test]
+    fn reports_when_every_guard_passes() {
+        assert!(should_report_hover_motion(ok()));
+    }
+
+    /// 확정 정책: 비포커스 대상에는 어떤 hover 도 보내지 않는다 — 배경 TUI 로 마우스
+    /// 입력이 새지 않게 한다(포커스 전환도 하지 않는다, ADR-0062).
+    #[test]
+    fn never_reports_to_a_non_focused_target() {
+        assert!(!should_report_hover_motion(HoverReportInput {
+            over_focused_surface: false,
+            ..ok()
+        }));
+        assert!(!should_report_hover_motion(HoverReportInput {
+            window_focused: false,
+            ..ok()
+        }));
+    }
+
+    /// 입력 z-order 상 divider(순서 6) 가 surface 콘텐츠(순서 7) 보다 위다 — 밴드
+    /// 안에서는 커서가 ↔/↕ 이므로 그 아래 TUI 가 hover 를 받으면 안 된다.
+    #[test]
+    fn boundary_bands_and_divider_drag_block_hover() {
+        assert!(!should_report_hover_motion(HoverReportInput {
+            on_divider_band: true,
+            ..ok()
+        }));
+        assert!(!should_report_hover_motion(HoverReportInput {
+            resize_edge_active: true,
+            ..ok()
+        }));
+        assert!(!should_report_hover_motion(HoverReportInput {
+            dragging_divider: true,
+            ..ok()
+        }));
+    }
+
+    /// 버튼 없음(3) + motion(32) = 35. 드래그(좌버튼 0)의 32 와 구분된다.
+    #[test]
+    fn hover_cb_is_thirty_five() {
+        assert_eq!(
+            mouse_report_cb(MOUSE_BUTTON_NONE, true, false, false, false),
+            35
+        );
+        assert_eq!(mouse_report_cb(0, true, false, false, false), 32);
     }
 }

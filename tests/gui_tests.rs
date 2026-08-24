@@ -1185,3 +1185,122 @@ fn right_click_explorer_never_falls_back_to_surface_menu() {
         );
     }
 }
+
+/// 트래킹을 켜고 수신 바이트를 화면에 노출시킨다(`cat -v` 로 ESC 가 `^[` 로 보인다).
+/// 셸 프롬프트가 자리를 잡을 시간을 준 뒤 mark 를 찍는 것은 호출자 몫이다.
+#[cfg(test)]
+fn enable_mouse_tracking(inst: &gui_common::GuiTestInstance, sid: u64, mode: &str) {
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": format!("printf '\\e[?{mode}h\\e[?1006h'; cat -v\n") }),
+    );
+    std::thread::sleep(Duration::from_millis(400));
+}
+
+/// mark 이후 그 surface 가 화면에 뱉은 텍스트.
+#[cfg(test)]
+fn read_since_mark(inst: &gui_common::GuiTestInstance, sid: u64) -> String {
+    let res = inst.call(
+        "surface.read_since_mark",
+        json!({ "surface_id": sid, "strip_ansi": true }),
+    );
+    res["text"].as_str().unwrap_or("").to_string()
+}
+
+/// (f) 1003(AnyEventMouse)은 버튼 없는 hover 를 셀 단위로 보고한다(`ESC[<35;col;rowM`).
+/// 1002 는 같은 이동에 아무것도 내보내지 않는다 — 두 모드가 드래그에서만 같고 hover
+/// 에서 갈린다는 계약을 고정한다.
+#[test]
+#[ignore]
+fn hover_motion_reported_only_for_mode_1003() {
+    let inst = shared();
+    inst.focus();
+    let sid = inst.first_surface_id();
+
+    enable_mouse_tracking(&inst, sid, "1003");
+    inst.call("surface.set_mark", json!({ "surface_id": sid }));
+    // 버튼 없이 가로지른다 — 여러 셀을 넘으므로 보고가 여러 번 나가야 한다.
+    for fx in [0.30_f32, 0.45, 0.60, 0.75] {
+        inst.inject_mouse(sid, fx, 0.5, "move", 0);
+    }
+    settle();
+    let out = read_since_mark(&inst, sid);
+    assert!(
+        out.contains("^[[<35;"),
+        "1003 hover should emit cb=35 motion reports, got: {out:?}"
+    );
+
+    // 같은 셀 안에서의 미세 이동은 dedup 으로 삼켜진다.
+    inst.call("surface.set_mark", json!({ "surface_id": sid }));
+    inst.inject_mouse(sid, 0.75, 0.5, "move", 0);
+    settle();
+    assert!(
+        !read_since_mark(&inst, sid).contains("^[[<35;"),
+        "same-cell motion must be deduped"
+    );
+
+    // 1002 로 바꾸면 hover 는 사라진다(드래그 motion 만 남는다).
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "\u{3}" }),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    enable_mouse_tracking(&inst, sid, "1002");
+    inst.call("surface.set_mark", json!({ "surface_id": sid }));
+    for fx in [0.30_f32, 0.45, 0.60] {
+        inst.inject_mouse(sid, fx, 0.5, "move", 0);
+    }
+    settle();
+    let out = read_since_mark(&inst, sid);
+    assert!(
+        !out.contains("^[[<35;"),
+        "1002 must not report button-less hover, got: {out:?}"
+    );
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": sid, "text": "\u{3}" }),
+    );
+}
+
+/// (g) 확정 정책(ADR-0081): hover 는 focused surface 에만 간다. 비포커스 surface 위를
+/// 지나가도 바이트가 나가지 않고 **포커스도 바뀌지 않는다**.
+#[test]
+#[ignore]
+fn hover_motion_never_reaches_a_non_focused_surface() {
+    let inst = shared();
+    inst.focus();
+    let focused = inst
+        .debug_focused_surface()
+        .expect("an initially focused surface");
+
+    let res = inst.call(
+        "split",
+        json!({ "level": "surface", "direction": "vertical", "target_surface": focused }),
+    );
+    let other = res["new_surface_id"].as_u64().expect("new_surface_id");
+    settle();
+
+    // 비활성 surface 에서 1003 을 켠다 — 앱은 트래킹 중이라고 믿는 상태.
+    enable_mouse_tracking(&inst, other, "1003");
+    inst.call("surface.set_mark", json!({ "surface_id": other }));
+    for fx in [0.30_f32, 0.50, 0.70] {
+        inst.inject_mouse(other, fx, 0.5, "move", 0);
+    }
+    settle();
+
+    assert!(
+        !read_since_mark(&inst, other).contains("^[[<35;"),
+        "hover must not leak into a non-focused surface"
+    );
+    assert_eq!(
+        inst.debug_focused_surface(),
+        Some(focused),
+        "hover must not move focus"
+    );
+
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": other, "text": "\u{3}" }),
+    );
+    inst.call("surface.close", json!({ "surface_id": other }));
+}
