@@ -23,8 +23,11 @@ impl MainView {
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
+        // 무대 중에는 링크 hover 를 계산하지 않는다 — 뒤의 터미널 좌표를 hit-test 하는
+        // 유령 판정이고, modifier 홀드(`ModifiersChanged`)는 무대 게이트를 타지 않아
+        // 이 경로가 무대 중에도 계속 불린다.
         let new_link = if !matches_mods
-            || self.state.settings_open
+            || self.mouse_overlay_open()
             || self.state.popup_hovered
             || self.state.banner_hovered
         {
@@ -99,6 +102,18 @@ impl MainView {
         self.last_mouse_report_cell = None;
     }
 
+    /// 마우스 계층의 **최상위 차단 판정**(`docs/architecture/input-layer.md` 표의 1 단
+    /// 위). `handle_cursor_moved` · `handle_mouse_input`(click-to-activate press 가드
+    /// 포함) · `handle_mouse_wheel` 세 핸들러가 같은 값을 봐야 한 지점만 뚫려 입력이
+    /// 새는 일이 없다 — modifier-hint 오버레이가 4 지점 배선으로 해결한 것과 같은 문제다.
+    ///
+    /// 무대는 popup 과 달리 **좌표 hit-test 없이** 무조건 차단한다. 화면 전체를 덮으므로
+    /// "무대 위인가" 를 물을 이유가 없고, 뒤의 위젯은 그려지지도 않은 상태라 그 좌표로
+    /// 판정하는 것 자체가 유령 입력이다.
+    fn mouse_overlay_open(&self) -> bool {
+        self.state.settings_open || self.state.fullscreen_stage_active()
+    }
+
     /// mesh pointer hover 슬롯을 갱신한다(구성 요소는 `docs/dev-guide/egui-mesh-channel.md`
     /// 참고). 대상이 바뀌면(다른 mesh surface
     /// 로 전환되거나 어느 mesh surface 위도 아니게 되면) 이전 대상에 `PointerGone` 을
@@ -121,7 +136,7 @@ impl MainView {
         egui_consumed: bool,
     ) {
         self.cursor_position = Some(position);
-        let overlay_open = self.state.settings_open;
+        let overlay_open = self.mouse_overlay_open();
         if cursor_moved_should_short_circuit(
             egui_consumed,
             overlay_open,
@@ -381,7 +396,7 @@ impl MainView {
             return;
         }
 
-        let overlay_open = self.state.settings_open;
+        let overlay_open = self.mouse_overlay_open();
         if self.try_click_to_activate(button, button_state, overlay_open) {
             return;
         }
@@ -442,7 +457,7 @@ impl MainView {
             && button_state == ElementState::Pressed
             && !resize_should_yield_to_content(
                 self.state.resize_edge_widget_hovered,
-                self.state.settings_open,
+                self.mouse_overlay_open(),
                 self.state.popup_hovered,
                 self.state.banner_hovered,
                 super::fullscreen_window::window_size_is_locked(&self.base.winit),
@@ -1110,7 +1125,7 @@ impl MainView {
     }
 
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
-        let overlay_open = self.state.settings_open;
+        let overlay_open = self.mouse_overlay_open();
         if egui_consumed {
             self.mark_dirty();
         }
@@ -1431,13 +1446,13 @@ fn effective_click_tracking_decision(
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn resize_should_yield_to_content(
     resize_edge_widget_hovered: bool,
-    settings_open: bool,
+    overlay_open: bool,
     popup_hovered: bool,
     banner_hovered: bool,
     window_size_locked: bool,
 ) -> bool {
     resize_edge_widget_hovered
-        || settings_open
+        || overlay_open
         || popup_hovered
         || banner_hovered
         || window_size_locked

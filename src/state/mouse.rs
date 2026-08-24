@@ -20,6 +20,14 @@ impl AppState {
         terminal_rect: PhysicalRect,
         divider_threshold: f32,
     ) -> Option<egui::CursorIcon> {
+        // 전체화면 무대 중에는 뒤의 divider/surface 커서를 절대 돌려주지 않는다.
+        // 무대는 화면 전체를 덮으므로 그 아래 좌표로 커서를 정하는 것은 유령 판정이고,
+        // 무대 프레임에서는 egui 의 `platform_output.cursor_icon` 이 커서를 정한다
+        // (`Gpu::render_fullscreen_stage`). 무대 콘텐츠가 정한 커서를 뒤 세계의 ↔/I-beam
+        // 이 덮어쓰면 안 된다.
+        if self.fullscreen_stage_active() {
+            return None;
+        }
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             return None;
         }
