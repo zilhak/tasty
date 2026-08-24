@@ -42,6 +42,18 @@ Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin
 
 절차·필드 상세는 [popup-implementation §닫힘 정리](../../dev-guide/popup-implementation.md#닫힘-정리).
 
+### plugin popup ↔ host popup 부모-자식
+
+plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md))로 host popup 을 열 때 `owner_popup_instance` 로 **자기 popup instance_id 를 자진 신고**하면, host 는 그 값을 자식 쪽 요청자 기록에 보관해 두 popup 을 스택으로 다룬다([ADR-0081](../../adr/0081-plugin-triggered-host-popup-ownership.md)). 신고하지 않으면(예: popup 밖 surface 위젯에서의 호출, Tools 메뉴 진입) 지금까지처럼 관계 없는 단독 popup 이다.
+
+관계가 성립하면:
+
+- **스택 유지** — 자식이 열려 있는 동안 부모는 outside-click dismiss 대상에서 빠진다. 부모를 모달로 잠그는 것이 아니라 dismiss 목록에서만 제외한다(popup 은 포커스를 독점하지 않으므로).
+- **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 스택이 한 단계 벗겨진다. host 쪽 판정은 `AppState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
+- **연쇄 정리** — 부모가 어떤 경로로 닫히든 자식 피커에 취소 결과가 채워져, 평소 result 경로 그대로 plugin 에 `cancelled: true` 가 전달되고 피커도 닫힌다. 고아 피커와 조용한 결과 유실이 생기지 않는다. 사용자가 이미 확정한 결과는 덮지 않는다.
+
+소유 관계는 자식(요청자 기록) 한 곳에만 있다 — 부모 쪽 사본이 없어 둘이 어긋날 수 없다. host 는 plugin id/kind 를 보지 않는다.
+
 ## 발화 정책 (CRITICAL)
 
 **Popup 은 사용자 행동(키보드 단축키 / 마우스 / 메뉴)에서만 발사된다.** release 의 시스템·에이전트·도메인 cascade 어느 경로도 popup 을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [identity](../../identity.md) 원칙 1).
@@ -56,7 +68,7 @@ Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin
 
 ## 포커스
 
-팝업은 **포커스 상태**를 가진다. 포커스된 팝업이 있으면 키보드 입력이 터미널로 안 간다. 클릭 → 포커스(다른 팝업 언포커스), 바깥 클릭 → 전체 언포커스(터미널 복귀), 닫기 → 자동 언포커스. `PopupManager::has_focused()` 로 확인.
+팝업은 **포커스 상태**를 가진다. 포커스된 팝업이 있으면 키보드 입력이 터미널로 안 간다. 여러 팝업이 겹쳐 있을 때 Esc 를 누가 받는지는 위 [§수명 계약](#plugin-popup--host-popup-부모-자식)의 "Esc 소유권" 을 따른다. 클릭 → 포커스(다른 팝업 언포커스), 바깥 클릭 → 전체 언포커스(터미널 복귀), 닫기 → 자동 언포커스. `PopupManager::has_focused()` 로 확인.
 
 Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드만** 차단하고, 마우스는 [입력 계층](../../architecture/input-layer.md)에 따라 팝업이 소비한다.
 

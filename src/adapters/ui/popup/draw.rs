@@ -626,6 +626,16 @@ impl PopupManager {
     }
 
     /// Check if a popup's scope is currently visible.
+    /// 이번 프레임에 실제로 그려질(open + scope 가시) popup 중 z 가 가장 높은 것.
+    /// Esc 소유권 판정용(ADR-0081) — `draw` 안의 `open_indices` 와 같은 필터다.
+    pub fn topmost_visible_open(&self, draw_ctx: Option<&LayoutContext>) -> Option<(PopupId, u64)> {
+        self.popups
+            .iter()
+            .filter(|p| p.open && Self::is_scope_visible(&p.scope, draw_ctx))
+            .max_by_key(|p| p.z_seq)
+            .map(|p| (p.id, p.z_seq))
+    }
+
     fn is_scope_visible(scope: &PopupScope, ctx: Option<&LayoutContext>) -> bool {
         let Some(ctx) = ctx else { return true };
         match scope {

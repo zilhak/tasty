@@ -170,6 +170,11 @@ pub fn draw_plugin_popups(
             z_seq: s.z_seq,
         }));
 
+    // Esc 소유권 — 규칙 7 의 키보드 판("최상단 하나만 받는다"). host/plugin 통틀어
+    // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0081). host 쪽 대응은
+    // `adapters/ui/popup/frame.rs` 가 `AppState.popup_escape_owner` 로 정한다.
+    let top_z = occluders.iter().map(|o| o.z_seq).max();
+
     let mut any_hovered = false;
 
     // ── egui-mesh popups (A2) ──
@@ -226,13 +231,18 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        // 상위 popup 에 가려진 좌표의 포인터 이벤트는 plugin 으로 forward 하지 않는다
-        // (키/텍스트는 별개 — 키보드 라우팅 중재는 host popup Esc 와 함께 다룬다).
+        // 키보드는 최상단 popup 하나만 갖는다(규칙 7, ADR-0081). 이 게이트가 없으면
+        // 아래 깔린 popup 도 Esc·문자를 받아 자기 UI 로 처리한다 — 실제로 plugin 이
+        // 자체 Esc 처리로 스스로 닫아서, host 쪽 Esc 중재만으로는 "한 번의 Esc 로
+        // 스택 전체가 닫히는" 현상을 못 막는다.
+        let has_key_focus = Some(snap.z_seq) == top_z;
+        // 상위 popup 에 가려진 좌표의 포인터 이벤트도 forward 하지 않는다.
         let raw_input = collect_mesh_popup_input(
             ctx,
             content_rect,
             pointer_pos,
             ownership == Some(PointOwnership::OccludedByHigher),
+            has_key_focus,
         );
 
         // set_context forward — geom 변경 / 입력 / bootstrap(미paint) 일 때만 (surface 와 동형).
@@ -315,7 +325,14 @@ pub fn draw_plugin_popups(
         // outside-click dismiss 는 "모든 popup 바깥" 일 때만. 상위 popup 안을 클릭한
         // 것은 이 popup 의 바깥이긴 해도 "바깥 클릭" 이 아니다 — 그 클릭은 상위 popup
         // 의 것이다.
+        // 자식 host popup 이 열려 있는 동안에는 부모가 바깥 클릭으로 닫히지 않는다
+        // (스택 유지, ADR-0081) — 부모가 먼저 사라지면 자식이 고아가 되고 그 결과가
+        // 조용히 버려진다. popup 은 모달이 아니므로 "부모를 잠그는" 것이 아니라
+        // dismiss 대상에서만 빼는 최소 개입이다.
+        let has_open_child = state.plugin_popup_has_open_child(snap.instance_id);
+
         if snap.dismiss_on_outside_click
+            && !has_open_child
             && primary_pressed
             && ownership == Some(PointOwnership::OutsideAll)
         {
@@ -323,7 +340,7 @@ pub fn draw_plugin_popups(
                 .plugin_popup_closes
                 .push((snap.instance_id, PopupCloseReason::OutsideClick));
         }
-        if escape_pressed {
+        if escape_pressed && has_key_focus {
             state
                 .plugin_popup_closes
                 .push((snap.instance_id, PopupCloseReason::Escape));
@@ -340,13 +357,17 @@ pub fn draw_plugin_popups(
 /// host 가 받은 *실제* 사용자 입력만 forward 한다(identity 원칙 1·3). 포인터 이벤트는
 /// 콘텐츠 영역 안의 것만 보내 — 영역 밖 클릭은 plugin 으로 새지 않고 outside-click
 /// dismiss 로만 처리된다. `pointer_occluded` 면(이 popup 보다 위 popup 이 포인터 좌표를
-/// 덮는다) 콘텐츠 영역 안이라도 포인터 이벤트를 보내지 않는다. 키/텍스트는 popup 이
-/// 포커스를 가진 동안 전달한다.
+/// 덮는다) 콘텐츠 영역 안이라도 포인터 이벤트를 보내지 않는다.
+///
+/// 키/텍스트는 `has_key_focus`(= 이번 프레임 최상단 popup) 일 때만 보낸다 — 아래 깔린
+/// popup 이 Esc 나 문자를 받아 자기 UI 로 처리하면 규칙 7 이 깨진다. 같은 값을 wire 의
+/// `focused` 로도 실어 plugin 쪽 egui 가 커서/포커스 표시를 맞추게 한다.
 fn collect_mesh_popup_input(
     ctx: &Context,
     content_rect: Rect,
     pointer_pos: Option<Pos2>,
     pointer_occluded: bool,
+    has_key_focus: bool,
 ) -> RawInputWire {
     let origin = content_rect.min;
     let pointer_inside = !pointer_occluded && pointer_pos.is_some_and(|p| content_rect.contains(p));
@@ -390,7 +411,7 @@ fn collect_mesh_popup_input(
                     repeat,
                     modifiers: m,
                     ..
-                } => {
+                } if has_key_focus => {
                     events.push(RawInputEventWire::Key {
                         key: key.name().to_string(),
                         pressed: *pressed,
@@ -398,15 +419,18 @@ fn collect_mesh_popup_input(
                         modifiers: map_modifiers(m),
                     });
                 }
-                Event::Text(t) => events.push(RawInputEventWire::Text { text: t.clone() }),
+                Event::Text(t) if has_key_focus => {
+                    events.push(RawInputEventWire::Text { text: t.clone() })
+                }
                 Event::PointerGone => events.push(RawInputEventWire::PointerGone),
                 _ => {}
             }
         }
         RawInputWire {
             time: None,
-            // popup 이 열려 있는 동안 콘텐츠는 포커스를 가진다(키 입력 라우팅).
-            focused: true,
+            // 최상단 popup 만 키 입력을 받는다(규칙 7) — plugin 쪽 egui 가 커서/포커스
+            // 표시를 host 판정과 맞추도록 같은 값을 실어 보낸다.
+            focused: has_key_focus,
             modifiers,
             events,
         }

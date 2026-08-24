@@ -29,12 +29,18 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use crate::state::{AppState, FilePickerRequester};
 
-/// `file_picker.trigger { filters?: string[] }` 요청.
+/// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64 }` 요청.
 #[derive(Deserialize)]
 struct FilePickerTriggerReq {
     /// 확장자 필터(점 없이, 예: `["md", "markdown"]`). 비면 필터 없음.
     #[serde(default)]
     filters: Vec<String>,
+    /// 이 트리거를 낸 **자기 popup instance_id**. plugin 이 자기 popup 안에서
+    /// 피커를 열었다면 반드시 싣는다 — host 는 이 값으로 부모-자식 스택을 세운다
+    /// (부모가 자식보다 먼저 닫히지 않게, 부모가 닫히면 자식을 정리; ADR-0081).
+    /// popup 밖(surface 위젯 등)에서 호출하면 생략한다.
+    #[serde(default)]
+    owner_popup_instance: Option<u64>,
 }
 
 /// `file_picker.trigger` — `file_picker` popup 을 열고 `request_id` 만 즉시
@@ -64,6 +70,7 @@ pub fn handle_trigger(
         CallerContext::Plugin { plugin_id, .. } => Some(FilePickerRequester {
             plugin_id: plugin_id.clone(),
             request_id,
+            owner_popup_instance: req.owner_popup_instance,
         }),
         // Local/Agent 가 직접 호출(예: 디버깅/CLI) — 이벤트를 받을 plugin 이 없다.
         CallerContext::Local | CallerContext::Agent { .. } => None,
@@ -118,6 +125,27 @@ mod tests {
         let req = data.requester.as_ref().expect("requester recorded");
         assert_eq!(req.plugin_id, "com.tasty.markdown");
         assert_eq!(req.request_id, request_id);
+        // 신고하지 않으면 부모 없음 — popup 밖에서의 호출과 같은 취급(ADR-0081).
+        assert_eq!(req.owner_popup_instance, None);
+    }
+
+    /// `owner_popup_instance` 를 실으면 부모-자식 스택이 성립한다(ADR-0081).
+    #[test]
+    fn trigger_records_the_declared_owner_popup_instance() {
+        let (mut state, mut engine) = make_test_state();
+        let resp = handle_trigger(
+            &mut state,
+            &mut engine,
+            &plugin_caller("com.tasty.markdown"),
+            json!(1),
+            &json!({ "owner_popup_instance": 42 }),
+        );
+        assert!(resp.result.is_some());
+        let data = state.dialogs.file_picker.as_ref().expect("popup open");
+        let req = data.requester.as_ref().expect("requester recorded");
+        assert_eq!(req.owner_popup_instance, Some(42));
+        assert!(state.plugin_popup_has_open_child(42));
+        assert!(!state.plugin_popup_has_open_child(43));
     }
 
     #[test]

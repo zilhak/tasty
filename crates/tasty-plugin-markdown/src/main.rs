@@ -609,7 +609,7 @@ impl MarkdownPlugin {
                 // (원격) workspace 에서도 동작한다(native rfd 다이얼로그와 달리 원격
                 // 개념이 있다). 즉시 request_id 만 돌아오고, 실제 선택 결과는 나중에
                 // `on_event` 의 `"file_picker.result"` 로 비동기 도착한다.
-                if let Some(request_id) = trigger_file_picker(&ctx.host) {
+                if let Some(request_id) = trigger_file_picker(&ctx.host, iid) {
                     self.pending_file_picker.insert(request_id, iid);
                 }
             }
@@ -811,11 +811,20 @@ struct FilePickerResultWire {
 /// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
 /// 옛 `fs.pick_file`/rfd 동기 모달과 달리 이 호출 자체는 popup 확정을 기다리지 않고
 /// 곧장 반환된다).
+///
+/// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
+/// 부모-자식 스택으로 다루는 근거다(ADR-0081).
 #[cfg(any(unix, windows))]
-fn trigger_file_picker(host: &HostHandle) -> Option<u64> {
+fn trigger_file_picker(host: &HostHandle, owner_popup_instance: u64) -> Option<u64> {
     match host.call(
         "file_picker.trigger",
-        json!({ "filters": ["md", "markdown"] }),
+        json!({
+            "filters": ["md", "markdown"],
+            // 부모-자식 스택을 host 가 세울 수 있게 자기 popup instance 를 신고한다
+            // (ADR-0081). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
+            // 고른 파일이 조용히 버려진다.
+            "owner_popup_instance": owner_popup_instance,
+        }),
     ) {
         Ok(v) => v.get("request_id").and_then(Value::as_u64),
         Err(e) => {

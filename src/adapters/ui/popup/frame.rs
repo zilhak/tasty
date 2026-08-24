@@ -109,6 +109,19 @@ pub(crate) fn draw_popup_layer(
         }
     }
 
+    // Esc 소유권(규칙 7 의 키보드 판, ADR-0081) — host/plugin 통틀어 최상단인 popup
+    // 하나만 Esc 를 소비한다. plugin popup 이 위면 `None` 이고 그 프레임의 Esc 는
+    // `plugin_bridge::popup_render` 쪽이 가져간다. plugin z 는 1 프레임 stale 이라
+    // (아래 `plugin_occluders` 와 같은 재료) plugin popup 이 막 열린 첫 프레임에는
+    // host 가 소유자로 남을 수 있다 — Esc 는 사용자가 누르는 이산 입력이라 실사용에서
+    // 이 한 프레임에 걸릴 확률이 없다.
+    let plugin_top_z = state.plugin_popup_hittest.iter().map(|o| o.z_seq).max();
+    state.popup_escape_owner = state
+        .popups
+        .topmost_visible_open(Some(draw_ctx))
+        .filter(|(_, z)| plugin_top_z.is_none_or(|pz| *z > pz))
+        .map(|(id, _)| id);
+
     // Temporarily take the popup manager to avoid borrow conflicts with AppState.
     let mut popups = std::mem::replace(&mut state.popups, crate::adapters::ui::PopupManager::new());
 

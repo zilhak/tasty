@@ -87,6 +87,12 @@ impl App {
 /// `requester` 에게 `"file_picker.result"` 를 owner-unicast 로 push. plugin 이 이미
 /// 종료됐으면 `emit_host_event_to_plugin` 이 조용히 폐기한다(정상 — 결과를 받을
 /// 대상이 없을 뿐 에러 아님).
+///
+/// 소유 popup(ADR-0081)이 명시됐는데 그 인스턴스가 이미 사라졌다면 결과가 버려질
+/// 가능성이 높다 — 연쇄 정리(`app::dispatch::plugin_popup_events`)가 제대로 돌았다면
+/// 나오지 않아야 하는 조합이라 **조용히 넘기지 않고 경고를 남긴다.** 이벤트 자체는
+/// 그대로 보낸다 — ADR-0058 의 "모든 트리거는 정확히 하나의 결과를 받는다" 는 popup
+/// 생사와 무관한 계약이고, plugin 이 popup 밖에서 상관관계를 유지하고 있을 수도 있다.
 fn emit_file_picker_result(
     plugin_manager: Option<&mut crate::plugin::PluginManager>,
     requester: &FilePickerRequester,
@@ -96,6 +102,16 @@ fn emit_file_picker_result(
     let Some(mgr) = plugin_manager else {
         return;
     };
+    if let Some(owner) = requester.owner_popup_instance
+        && !mgr.popup_instances().any(|(id, _)| id == owner)
+    {
+        tracing::warn!(
+            "file_picker result for request {} arrives after its owner popup instance {}              is gone — the requesting plugin ({}) may drop it",
+            requester.request_id,
+            owner,
+            requester.plugin_id
+        );
+    }
     mgr.emit_host_event_to_plugin(
         &requester.plugin_id,
         FILE_PICKER_RESULT_EVENT,
