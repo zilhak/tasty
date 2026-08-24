@@ -40,6 +40,8 @@
 | CLI (passkey) | `tasty tool passkey add\|list\|show\|remove` (`--path`/`--inline`; list/show 는 값 비노출) |
 | IPC | `remote.profile.{list,get,add,detect,remove,list_local,import}`(kind-generic — `kind="tasty-attach"` + `fields` 로 tasty-attach CRUD 도 양면 노출) · `remote.passkey.{list,get,add,remove}` (값 마스킹). `list_local` 은 `{aliases:[{name,source,hostname,user,port,imported_as}], config_path, config_exists, config_readable}`(`aliases` 가 비었을 때 이유를 가른다 — 파일 부재 / 권한 없음 / Host 항목 없음. `config_readable` 은 최상위 config 파일만 판정하고 `Include` 대상은 보지 않는다), `import` 은 `{from,name,label?}` → `{saved,name,from,detecting:false}` (자동 감지 없음). 구 `tool.ssh.*`/`ssh.profile.*` 는 alias 한시 호환 |
 
+> **CLI `list-local --json` 과 IPC `list_local` 은 비대칭이다.** IPC 응답만 `config_exists`·`config_readable` 을 싣고, CLI `--json` 은 alias 맨 배열이라 결과가 비었을 때 이유(부재 / 권한 없음 / Host 항목 없음)를 구분할 수 없다. 배열을 객체로 감싸면 기존 스크립트가 깨지므로(breaking change) 일부러 맞추지 않았다 — 그 구분이 필요하면 IPC 를 쓴다. CLI 의 사람이 읽는 출력(`--json` 없이)은 세 갈래를 문장으로 가른다.
+
 ## 에러 코드
 
 `remote.profile.*` / `remote.passkey.*` 의 tasty 전용 코드 블록은 `-3204x` 다.

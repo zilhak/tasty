@@ -535,6 +535,11 @@ fn list_local(json: bool) -> Result<()> {
     let hosts = enumerate_hosts();
     let profiles = RemoteProfiles::load();
     if json {
+        // **IPC 와 비대칭인 지점이다.** `remote.profile.list_local` 은 `config_exists`·
+        // `config_readable` 을 함께 실어 보내지만 여기 `--json` 은 맨 배열이라 빈 결과의
+        // 이유(부재 / 권한 없음 / Host 항목 없음)를 구분하지 못한다. 객체로 감싸면
+        // 기존 스크립트를 깨는 breaking change 라 두 갈래를 일부러 어긋난 채 둔다 —
+        // 그 구분이 필요한 호출자는 IPC 를 쓰면 된다.
         let arr: Vec<_> = hosts
             .iter()
             .map(|h| {
