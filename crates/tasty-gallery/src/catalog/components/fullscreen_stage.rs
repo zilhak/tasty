@@ -8,12 +8,19 @@
 //! - [`draw_titlebar`] — popup 타이틀바: 무대를 선언한 popup 에만 X 왼쪽에 전체화면
 //!   버튼이 붙고, 선언하지 않은 popup 은 이전 그대로다.
 //!
-//! 두 버튼 글리프는 본체와 같은 이유로 painter 직선이다 — 타이틀바/셸 chrome 은
-//! `Ui` 없이 painter 로 그려지는 구간이라 SVG `Image` 를 쓸 수 없다. 형상은 canonical
-//! `close` / `fit` 글리프와 같다.
+//! 두 종료/전체화면 어포던스는 **본체와 같은 렌더 방식**으로 그린다 — 렌더 방식이
+//! 갈리면 specimen 이 본체를 대신 검증하지 못한다(구조 전사 원칙,
+//! `docs/design/systems/design-parity-notes.md`).
+//!
+//! - 무대 셸의 종료 버튼: 본체 `fullscreen.rs::draw_exit_button` 과 같은
+//!   `IconButton`(Ghost/Md) + canonical `close` SVG. 셸에는 `Ui` 가 있다.
+//! - popup 타이틀바 버튼: 본체가 `ctx.layer_painter` 하나로 타이틀바를 그려 그 구간엔
+//!   `Ui` 가 없으므로 양쪽 모두 painter 직선이다(형상은 canonical `close`/`fit` 과 동일).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
+use super::glyph;
 use crate::catalog::popup_frame::{self, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -41,16 +48,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
         // 셸 chrome ② 종료 버튼 (상단 우측). **콘텐츠가 아니라 셸이 그린다** — 무대
         // 프레임에는 CSD 타이틀바가 없어 이 버튼이 유일한 마우스 탈출 수단이다.
-        let side = theme.item_height_interactive.value();
+        // 본체(`fullscreen.rs::draw_exit_button`)와 같은 위젯·같은 글리프를 쓴다:
+        // ghost `IconButton`(md) + canonical `close`. hover 오버레이도 위젯이 낸다.
+        let side = ControlSize::Md.height(theme);
         let exit = egui::Rect::from_min_size(
             egui::pos2(rect.right() - pad - side, rect.top() + pad),
             egui::Vec2::splat(side),
         );
-        let c = exit.center();
-        let x = theme.icon_glyph_size_md.value() * 0.3;
-        let stroke = egui::Stroke::new(1.5, theme.text_muted().to_egui());
-        painter.line_segment([c - egui::vec2(x, x), c + egui::vec2(x, x)], stroke);
-        painter.line_segment([c + egui::vec2(-x, x), c + egui::vec2(x, -x)], stroke);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(exit), |ui| {
+            IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Md)
+                .show(ui, theme, &|ui, rect, c| {
+                    glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                });
+        });
 
         // 콘텐츠 — 무대가 콘텐츠에 주는 rect(제목 띠 아래, 바깥 여백만큼 안쪽).
         let content = egui::Rect::from_min_max(
@@ -101,7 +113,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("shell", "scrim + centered title + exit button"),
-            ("exit", "shell-owned — content cannot omit it"),
+            ("exit", "shell-owned ghost IconButton (md) · close glyph"),
             ("content", "below the title band, inset by space-xl"),
             ("frame", "surface-raised + 1px border-strong"),
             (
