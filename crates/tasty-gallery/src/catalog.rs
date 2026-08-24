@@ -322,8 +322,8 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "forms",
-                            "Select · Checkbox · Switch",
-                            Some("Choice and toggle controls"),
+                            "Select · Multi-select · Checkbox · Switch",
+                            Some("Choice and toggle controls (single + multi choice)"),
                             components::prim_forms::draw,
                         ),
                         spec(
