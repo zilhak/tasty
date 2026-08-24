@@ -295,6 +295,12 @@ pub struct ThemeSizing {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
+    /// 목록 행 우측 액션 아이콘(가져오기 / 편집 / 삭제 / 재감지 / reveal) 글리프 크기.
+    /// `sm`(14) 과 `md`(16) 사이라 DTCG dim 토큰에 대응이 없다 — `corner_radius_lg` /
+    /// `line_height_ui` 처럼 토큰 없이 `Theme` 에만 사는 치수다. 평범한 `const` 가
+    /// 아니라 여기 두는 이유는 zoom 이다: `const` 는 `with_colors_and_zoom` 의 배율을
+    /// 타지 못해 같은 팝업 안에서 헤더 아이콘만 커지고 행 아이콘은 고정된다.
+    pub icon_glyph_size_row_action: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     /// Full sidebar 헤더의 수박 로고 크기.
     pub sidebar_logo_size: LogicalPx,
@@ -400,6 +406,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     icon_glyph_size_xs: LogicalPx(12.0),
     icon_glyph_size_sm: LogicalPx(14.0),
     icon_glyph_size_md: LogicalPx(16.0),
+    icon_glyph_size_row_action: LogicalPx(15.0),
     sidebar_logo_size: LogicalPx(22.0),
     sidebar_logo_collapsed_size: LogicalPx(24.0),
     sidebar_wordmark_font_size: LogicalPx(17.0),
@@ -897,6 +904,12 @@ pub struct Theme {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
+    /// 목록 행 우측 액션 아이콘(가져오기 / 편집 / 삭제 / 재감지 / reveal) 글리프 크기.
+    /// `sm`(14) 과 `md`(16) 사이라 DTCG dim 토큰에 대응이 없다 — `corner_radius_lg` /
+    /// `line_height_ui` 처럼 토큰 없이 `Theme` 에만 사는 치수다. 평범한 `const` 가
+    /// 아니라 여기 두는 이유는 zoom 이다: `const` 는 `with_colors_and_zoom` 의 배율을
+    /// 타지 못해 같은 팝업 안에서 헤더 아이콘만 커지고 행 아이콘은 고정된다.
+    pub icon_glyph_size_row_action: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     pub sidebar_logo_size: LogicalPx,
     pub sidebar_logo_collapsed_size: LogicalPx,
@@ -1066,6 +1079,7 @@ impl Theme {
             icon_glyph_size_xs: zoomed(SIZING.icon_glyph_size_xs),
             icon_glyph_size_sm: zoomed(SIZING.icon_glyph_size_sm),
             icon_glyph_size_md: zoomed(SIZING.icon_glyph_size_md),
+            icon_glyph_size_row_action: zoomed(SIZING.icon_glyph_size_row_action),
             sidebar_logo_size: zoomed(SIZING.sidebar_logo_size),
             sidebar_logo_collapsed_size: zoomed(SIZING.sidebar_logo_collapsed_size),
             sidebar_wordmark_font_size: zoomed(SIZING.sidebar_wordmark_font_size),
@@ -2070,6 +2084,23 @@ mod tests {
         // icon sm/md 정합 확인
         assert_eq!(t.icon_glyph_size_sm.value(), 14.0);
         assert_eq!(t.icon_glyph_size_md.value(), 16.0);
+        assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
+    }
+
+    /// 행 액션 글리프가 zoom 경로에 실제로 들어가 있는지. 평범한 `const` 로 두면
+    /// 같은 팝업의 헤더 아이콘만 커지고 이 아이콘만 고정되므로, 배율이 적용되는지
+    /// 자체를 고정한다(`zoomed` 는 반올림한다).
+    #[test]
+    fn row_action_glyph_follows_ui_zoom() {
+        let at = |z: f32| {
+            Theme::with_colors_and_zoom(dummy_colors(), false, z)
+                .icon_glyph_size_row_action
+                .value()
+        };
+        assert_eq!(at(1.0), 15.0);
+        assert_eq!(at(0.85), (15.0f32 * 0.85).round());
+        assert_eq!(at(1.2), (15.0f32 * 1.2).round());
+        assert!(at(1.2) > at(1.0) && at(1.0) > at(0.85));
     }
 
     /// macOS 신호등 색 + disabled opacity 는 테마 불변 OS/정책 리터럴.
