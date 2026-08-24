@@ -5,8 +5,7 @@
 //! (`draw_rename_popup`) 는 AppState/CoreState 에서 target 유효성 검증 + buffer
 //! 추출 + view 호출 + action 을 mutation (enqueue_host_event + mark_layout_dirty)
 //! 으로 번역한다. gallery 는 같은 view 를 mock 라벨 + 로컬 buffer 로 호출해
-//! 시각 검증한다 — Tier 3 패턴
-//! (`.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
+//! 시각 검증한다 — props 분리 패턴(`docs/dev-guide/gallery-first.md`).
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;

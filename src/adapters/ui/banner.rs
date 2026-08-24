@@ -287,7 +287,7 @@ impl BannerManager {
         {
             // 같은 id 라도 유발한 foreground 인스턴스(origin_generation)가 다르면
             // 재사용하지 않고 교체한다 — 그렇지 않으면 새 TUI 의 배너가 이전 TUI 의
-            // 카운트다운/문맥을 그대로 물려받는다(TODO03: 서로 다른 TUI 간 배너 구분).
+            // 카운트다운/문맥을 그대로 물려받는다(서로 다른 TUI 간 배너 구분).
             // 둘 다 추적 대상이 아닌 배너(`None == None`)는 기존 동작 그대로 유지된다.
             if shown.origin_generation != banner.origin_generation {
                 *shown = banner;
@@ -1173,7 +1173,7 @@ mod tests {
         assert_eq!(p.remaining_seconds(), None);
     }
 
-    /// TODO03: 같은 id 라도 `origin_generation` 이 다르면(다른 TUI 인스턴스가 유발)
+    /// 같은 id 라도 `origin_generation` 이 다르면(다른 TUI 인스턴스가 유발)
     /// 재사용(카운트다운 리셋)이 아니라 교체된다.
     #[test]
     fn push_replaces_shown_when_origin_generation_differs() {

@@ -2,8 +2,8 @@
 
 //! 원격 접속 프로필 + Passkey 저장소.
 //!
-//! 두 개의 deps-free 저장소를 제공한다 (설계: `.claude-workspace/plans/
-//! remote-profiles-redesign.md`):
+//! 두 개의 deps-free 저장소를 제공한다
+//! (설계: `docs/adr/0032-remote-attach-two-layer-split.md`):
 //!
 //! - [`RemoteProfiles`] (`~/.tasty/remote-profiles.toml`) — 타입 태그(열린 string)가
 //!   붙은 **범용 연결 디스크립터**. 비밀을 담지 않고 [`Passkey`] 를 이름으로 참조만 한다.

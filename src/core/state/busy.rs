@@ -347,9 +347,8 @@ mod tests {
         );
     }
 
-    /// TODO02 시나리오: 이전 tick=vim(비-쉘), 이번 tick=bash(쉘) — 이름이 바뀌었으니
-    /// generation 이 올라간다("전이가 감지된다"). 같은 이름이 유지되면 올라가지 않는다
-    /// (TODO03 시나리오).
+    /// 이전 tick=vim(비-쉘), 이번 tick=bash(쉘) — 이름이 바뀌었으니 generation 이
+    /// 올라간다("전이가 감지된다"). 같은 이름이 유지되면 올라가지 않는다.
     #[test]
     fn foreground_generation_bumps_on_name_change_and_holds_when_unchanged() {
         let mut gens = std::collections::HashMap::new();

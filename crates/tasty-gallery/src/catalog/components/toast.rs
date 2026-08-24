@@ -5,7 +5,7 @@
 //! fade) 는 그대로 유지된다 — 갤러리는 미리 계산된 alpha 만 주입.
 //!
 //! 갤러리가 본체 binary 에 의존할 수 없어 ToastKind / Entry / Scope 구조를 로컬
-//! 미러. POC 패턴: `.claude-workspace/conductor/tier-3-props-extraction-pattern.md`.
+//! 미러. props 분리 패턴(`docs/dev-guide/gallery-first.md`).
 //!
 //! 대표 상태 (6 가지):
 //! 1. Single Info (정상)

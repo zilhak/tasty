@@ -3,8 +3,7 @@
 //! 본 모듈은 `AppState` / `CoreState` / winit `Window` / 글로벌 `theme::theme()`
 //! 에 접근하지 않는다. 호출처 wrapper (`titlebar::draw_titlebar`) 가 props 추출 +
 //! action → winit window 조작 매핑을 담당한다. gallery 는 같은 view 를 mock props
-//! 로 호출해 시각 검증한다 — Tier 3 패턴
-//! (`.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
+//! 로 호출해 시각 검증한다 — props 분리 패턴(`docs/dev-guide/gallery-first.md`).
 
 use crate::theme::Theme;
 
