@@ -84,9 +84,7 @@ tasty agent task-create --workspace-id 1 --name tell-worker \
 
 claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. 사람이 승인해주면 이어서 끝나는 상태라 영구 실패가 아니고, 두 plugin 의 spawn/tell 완료 알림이 이미 `idle` 과 동일 취급하는 계약을 깨지 않기 위함이다. 승인 대기를 실패로 보고 싶으면 그 노드에 인라인 `poll` 을 주어 `failure_states` 를 직접 지정한다.
 
-**여기까지가 현재 되는 범위다.** 자식 여럿을 하나의 DAG 로 엮으려 할 때 남는 갭이 하나 있다:
-
-- **앞 노드의 산출물을 뒤 노드 파라미터로 넘길 수단이 없다.** dispatch 시점 치환은 `${lease.resource}` 하나뿐이고, `Reduce` 로 합성한 값도 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일이나 memory 키처럼 task 바깥의 매개를 쓴다. spawn 노드가 만든 자식의 surface id 를 뒤따르는 tell 노드에 넘기는 것도 이 갭에 걸린다 — 지금은 `surface_id` 를 사람이 직접 박아야 한다.
+앞 노드의 산출물을 뒤 노드 파라미터로 넘기는 것(예: spawn 이 만든 자식의 surface id 를 뒤따르는 tell 노드에 넘기기)은 위 "노드 간 데이터 흐름(`${task.<id>.output<pointer>}`)" 이 다룬다.
 
 전략 레지스트리·dispatch 배선 상세는 [dev-guide/agent-runner](../../dev-guide/agent-runner.md#hostexecutor-매핑).
 
