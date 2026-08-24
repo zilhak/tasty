@@ -91,3 +91,4 @@
 | 0078 | [종료 중 IPC 요청은 무시하지 않고 즉시 거절한다](0078-shutdown-rejects-pending-ipc.md) | Accepted | 2026-08-23 | shutdown, ipc, cli, error-handling, adr-0077 |
 | 0079 | [스크롤 어포던스 표준은 "스크롤바 숨김 + 가장자리 페이드" — 폭 예약은 예외로만 남긴다](0079-scroll-affordance-standard.md) | Accepted | 2026-08-23 | ui, scroll, egui, affordance, popup, table, remote-tool, port-scanner |
 | 0080 | [latte 중성 램프의 AA 미달을 알려진 예외로 수용한다](0080-latte-neutral-ramp-contrast-exception.md) | Accepted | 2026-08-24 | theme, accessibility, contrast, latte, palette |
+| 0081 | [버튼 없는 hover motion(1003)은 focused surface 에만 보고한다](0081-hover-motion-focused-surface-only.md) | Accepted | 2026-08-24 | mouse, input, tracking, focus, terminal, adr-0019 |
