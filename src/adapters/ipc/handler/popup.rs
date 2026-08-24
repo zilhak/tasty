@@ -79,6 +79,6 @@ pub fn handle_open(
 }
 
 // `debug.popup.close` 는 여기 없다 — 매니저 직접 close 가 아니라 렌더가 수집하는
-// close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돌기 때문에(ADR-0082)
+// close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돌기 때문에(ADR-0084)
 // `App::enqueue_plugin_popup_close` 를 거치는 App-level glue 로 옮겼다
 // (`src/app/ipc/debug_methods.rs`, `debug.plugin_banner.*` 와 같은 이유·같은 위치).

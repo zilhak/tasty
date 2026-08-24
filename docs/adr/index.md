@@ -94,4 +94,4 @@
 | 0081 | [버튼 없는 hover motion(1003)은 focused surface 에만 보고한다](0081-hover-motion-focused-surface-only.md) | Accepted | 2026-08-24 | mouse, input, tracking, focus, terminal, adr-0019 |
 | 0082 | [전체화면은 기존 요소를 확대하지 않고 **독립 무대**로 만든다](0082-fullscreen-independent-stage.md) | Accepted | 2026-08-24 | fullscreen, stage, ui, render-pipeline, layout, webview, attach, screenshot |
 | 0083 | [Stop-훅 게이트를 이름으로 등록하는 레지스트리로 일반화한다](0083-stop-gate-named-registry.md) | Accepted | 2026-08-24 | claude-plugin, registry, stop-hook, gate, session-profile, cli, ipc, i18n |
-| 0082 | [plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다](0082-plugin-triggered-host-popup-ownership.md) | Accepted | 2026-08-24 | popup, plugin, ipc, lifecycle, ownership |
+| 0084 | [plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다](0084-plugin-triggered-host-popup-ownership.md) | Accepted | 2026-08-24 | popup, plugin, ipc, lifecycle, ownership |

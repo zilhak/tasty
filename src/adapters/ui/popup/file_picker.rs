@@ -85,7 +85,7 @@ pub struct FilePickerProps<'a> {
     /// 선택된 엔트리 이름(현재 디렉토리 기준).
     pub selected: &'a [String],
     pub name_filter_text: &'a str,
-    /// 이 프레임에 Esc 를 소비할 자격이 있는가(규칙 7 의 키보드 판, ADR-0082).
+    /// 이 프레임에 Esc 를 소비할 자격이 있는가(규칙 7 의 키보드 판, ADR-0084).
     /// `false` 면 위에 다른 popup 이 있다는 뜻이라 Esc 를 무시한다 — 한 번의 Esc 로
     /// 스택 전체가 닫히는 것을 막는다. 판정은 `AppState.popup_escape_owner`.
     pub owns_escape: bool,
@@ -545,7 +545,7 @@ pub fn draw_file_picker(
     }
 
     let th = theme::theme();
-    // Esc 소유권은 popup 매니저가 프레임 초입에 정한다(ADR-0082) — 여기서 다시
+    // Esc 소유권은 popup 매니저가 프레임 초입에 정한다(ADR-0084) — 여기서 다시
     // 계산하지 않고 그 판정을 읽기만 한다.
     let owns_escape = state.popup_escape_owner == Some(FILE_PICKER_POPUP_ID);
     let data = state.dialogs.file_picker.as_ref().unwrap();

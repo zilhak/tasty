@@ -813,7 +813,7 @@ struct FilePickerResultWire {
 /// 곧장 반환된다).
 ///
 /// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
-/// 부모-자식 스택으로 다루는 근거다(ADR-0082).
+/// 부모-자식 스택으로 다루는 근거다(ADR-0084).
 #[cfg(any(unix, windows))]
 fn trigger_file_picker(host: &HostHandle, owner_popup_instance: u64) -> Option<u64> {
     match host.call(
@@ -821,7 +821,7 @@ fn trigger_file_picker(host: &HostHandle, owner_popup_instance: u64) -> Option<u
         json!({
             "filters": ["md", "markdown"],
             // 부모-자식 스택을 host 가 세울 수 있게 자기 popup instance 를 신고한다
-            // (ADR-0082). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
+            // (ADR-0084). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
             // 고른 파일이 조용히 버려진다.
             "owner_popup_instance": owner_popup_instance,
         }),

@@ -1,4 +1,4 @@
-//! plugin popup ↔ host popup 부모-자식 소유권(ADR-0082) 회귀 테스트.
+//! plugin popup ↔ host popup 부모-자식 소유권(ADR-0084) 회귀 테스트.
 //!
 //! 커버 범위:
 //! - 소유 관계 조회(`AppState::plugin_popup_has_open_child`) — 자식이 자진 신고한
@@ -126,7 +126,7 @@ fn cascade_cleanup_does_not_overwrite_a_settled_result() {
 }
 
 /// 연쇄 정리가 성공하면 부모-자식 링크를 끊는다 — 남겨두면 다음 tick 의 result push 가
-/// "소유 popup 이 사라진 채 결과 도착"(ADR-0082 Decision 4)으로 오인해 경고를 낸다.
+/// "소유 popup 이 사라진 채 결과 도착"(ADR-0084 Decision 4)으로 오인해 경고를 낸다.
 /// 그 경고는 정리가 실패했을 때만 나와야 진단 가치가 있다.
 #[test]
 fn successful_cascade_cleanup_severs_the_owner_link() {

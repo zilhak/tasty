@@ -44,7 +44,7 @@ Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin
 
 ### plugin popup ↔ host popup 부모-자식
 
-plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md))로 host popup 을 열 때 `owner_popup_instance` 로 **자기 popup instance_id 를 자진 신고**하면, host 는 그 값을 자식 쪽 요청자 기록에 보관해 두 popup 을 스택으로 다룬다([ADR-0082](../../adr/0082-plugin-triggered-host-popup-ownership.md)). 신고하지 않으면(예: popup 밖 surface 위젯에서의 호출, Tools 메뉴 진입) 지금까지처럼 관계 없는 단독 popup 이다.
+plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md))로 host popup 을 열 때 `owner_popup_instance` 로 **자기 popup instance_id 를 자진 신고**하면, host 는 그 값을 자식 쪽 요청자 기록에 보관해 두 popup 을 스택으로 다룬다([ADR-0084](../../adr/0084-plugin-triggered-host-popup-ownership.md)). 신고하지 않으면(예: popup 밖 surface 위젯에서의 호출, Tools 메뉴 진입) 지금까지처럼 관계 없는 단독 popup 이다.
 
 관계가 성립하면:
 

@@ -112,7 +112,7 @@ impl App {
                             Some(true) => {
                                 // 매니저를 직접 치지 않는다 — 렌더가 수집하는 close 큐로
                                 // 합류시켜야 `cancel_child_file_picker` 연쇄 정리가 이
-                                // 경로에서도 돈다(ADR-0082 Decision 3). 큐는 같은 tick 의
+                                // 경로에서도 돈다(ADR-0084 Decision 3). 큐는 같은 tick 의
                                 // `dispatch_plugin_popup_events` 가 drain 하므로 지연 없다.
                                 self.enqueue_plugin_popup_close(
                                     id,

@@ -1,7 +1,7 @@
 //! plugin popup close 단일 초크포인트 가드.
 //!
 //! 배경: plugin popup 이 닫힐 때 자식 host `file_picker` 를 함께 취소하는 연쇄 정리
-//! ([ADR-0082](../docs/adr/0082-plugin-triggered-host-popup-ownership.md) Decision 3)는
+//! ([ADR-0084](../docs/adr/0084-plugin-triggered-host-popup-ownership.md) Decision 3)는
 //! `App::dispatch_plugin_popup_events` 가 `AppState.plugin_popup_closes` 큐를 drain 할 때
 //! `cancel_child_file_picker` 를 태우는 방식으로만 돈다. 그래서 **큐를 거치지 않고
 //! `PluginManager::close_popup_instance` 를 직접 부르는 호출처는 그 정리를 통째로
@@ -86,7 +86,7 @@ fn close_popup_instance_is_only_called_from_the_drain() {
     assert!(
         offenders.is_empty(),
         "`close_popup_instance` 직접 호출은 `{CHOKEPOINT_FILE}` 밖에서 금지다 — \
-         큐를 건너뛰면 `cancel_child_file_picker` 연쇄 정리(ADR-0082)가 안 돌아 자식 \
+         큐를 건너뛰면 `cancel_child_file_picker` 연쇄 정리(ADR-0084)가 안 돌아 자식 \
          `file_picker` 가 고아로 남는다. `App::{GLUE_FN}` 로 바꿔라:\n{}",
         offenders.join("\n")
     );
@@ -124,7 +124,7 @@ fn both_close_entry_points_go_through_the_glue() {
         assert!(
             text.contains(GLUE_FN),
             "{rel} ({what}) 가 `{GLUE_FN}` 을 거치지 않는다 — \
-             매니저를 직접 치면 연쇄 정리를 건너뛴다(ADR-0082)"
+             매니저를 직접 치면 연쇄 정리를 건너뛴다(ADR-0084)"
         );
     }
 }
