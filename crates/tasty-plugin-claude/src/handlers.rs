@@ -43,7 +43,7 @@ pub(crate) fn resolve_profile_file_param(
             tr.t("claude.profile.mutually_exclusive_file_and_profile"),
         )),
         (Some(p), None) => Ok(Some(p.to_string())),
-        (None, Some(n)) => crate::profile::resolve_names(data_dir, n)
+        (None, Some(n)) => crate::profile::resolve_names(data_dir, n, tr)
             .map(|p| Some(p.to_string_lossy().into_owned()))
             .map_err(|e| crate::profile::to_ipc_err(e, tr)),
         (None, None) => Ok(None),

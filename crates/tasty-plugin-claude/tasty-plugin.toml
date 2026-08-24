@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.45"
+version = "0.1.46"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -85,8 +85,8 @@ subcommands = [
     # <sub>` 형태 대신 `profile-*` 평면 이름을 쓴다(기존 `notify-done` 과 동일 관례).
     { name = "profile-register",   ipc_method = "claude.profile_register",   args = "profile_register_args",   description = "Register a Claude session profile under a name (copies the file into plugin-private storage; re-registering the same name updates its content)" },
     { name = "profile-unregister", ipc_method = "claude.profile_unregister", args = "profile_name_args",       description = "Remove a registered Claude session profile" },
-    { name = "profile-list",       ipc_method = "claude.profile_list",       args = "no_args",                 description = "List registered Claude session profiles plus the always-installed built-in hooks" },
-    { name = "profile-show",       ipc_method = "claude.profile_show",       args = "profile_name_args",       description = "Show the raw settings JSON of a registered Claude session profile" },
+    { name = "profile-list",       ipc_method = "claude.profile_list",       args = "no_args",                 description = "List everything attachable by name — registered Claude session profiles and Stop-hook gates — plus the always-installed built-in hooks" },
+    { name = "profile-show",       ipc_method = "claude.profile_show",       args = "profile_name_args",       description = "Show what a name attaches — the raw settings JSON of a registered Claude session profile, or the generated Stop-hook fragment of a gate" },
     { name = "profile-current",    ipc_method = "claude.profile_current",    args = "profile_current_args",    description = "Show which Claude session profile (if any) is attached to a surface, plus the always-installed built-in hooks" },
     # Stop-훅 게이트 레지스트리 — (본문, 센티넬, 라운드 상한) 3요소를 이름으로
     # 등록한다. 프로필과 마찬가지로 CLI 스키마가 subcommand 1단계만 지원해
@@ -104,7 +104,7 @@ flags = [
     { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching claude" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching claude. Mutually exclusive with --profile" },
-    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -117,7 +117,7 @@ flags = [
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile" },
-    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -181,7 +181,7 @@ flags = [
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile" },
-    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Mutually exclusive with --profile-file" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
@@ -190,7 +190,7 @@ flags = [
     { name = "delay",   type = "u32",    flag = "--delay",   required = false, help = "Seconds to wait before killing Claude (default: 5)" },
     { name = "prompt",  type = "string", flag = "--prompt",  required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Claude" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
-    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register'). Persists on the surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile (path- or name-based) before resuming" },
 ]
 

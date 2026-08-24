@@ -73,7 +73,7 @@ error_prefix = "profile: {}"
 mutually_exclusive_file_and_profile = "--profile-file and --profile are mutually exclusive — specify only one"
 builtin_always_installed = "built-in — always installed (Claude Code event: {})"
 builtin_always_installed_with_matcher = "built-in — always installed (Claude Code event: {}, matcher: {})"
-builtin_attachable = "built-in — attach by name like a registered profile"
+gate_attachable = "Stop-hook gate — attach by name like a registered profile (see 'claude gate-show <name>')"
 
 [claude.gate]
 no_data_dir = "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot register or unregister gates"

@@ -282,7 +282,7 @@ fn resolve_names_to_path(
     names: &str,
     tr: &Translator,
 ) -> Result<String, IpcMethodError> {
-    crate::profile::resolve_names(data_dir, names)
+    crate::profile::resolve_names(data_dir, names, tr)
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| crate::profile::to_ipc_err(e, tr))
 }

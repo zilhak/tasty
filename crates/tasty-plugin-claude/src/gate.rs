@@ -245,10 +245,90 @@ pub(crate) fn ensure_known(
     if !is_valid_short_name(short_name) {
         return Err(GateError::InvalidShortName(short_name.to_string()));
     }
-    if is_registered(data_dir, short_name) || host_default_gate(short_name, tr).is_some() {
-        return Ok(());
+    match owner_of(data_dir, short_name, tr) {
+        Some(_) => Ok(()),
+        None => Err(GateError::UnknownGate(format!("user/{short_name}"))),
     }
-    Err(GateError::UnknownGate(format!("user/{short_name}")))
+}
+
+/// 이 이름의 게이트가 어느 출처에서 오는가 — `"user"`(등록 게이트) /
+/// `"host"`(기본 게이트) / `None`(없음). 등록 게이트가 우선한다([`show`] 와 같은
+/// 순서 — 목록/조회/부착이 서로 다른 출처를 가리키면 안 된다).
+///
+/// host 판정을 상수 대신 [`host_default_gate`] 로 하는 이유: 이름 목록과 실제
+/// 정의가 갈리지 않게 SoT 를 하나로 둔다. 그래서 `tr` 이 필요하다(host 기본
+/// 게이트 본문이 locale 별 lang 문자열이라 조회에 Translator 가 든다).
+fn owner_of(data_dir: Option<&Path>, short_name: &str, tr: &Translator) -> Option<&'static str> {
+    if !is_valid_short_name(short_name) {
+        return None;
+    }
+    if is_registered(data_dir, short_name) {
+        return Some("user");
+    }
+    host_default_gate(short_name, tr).map(|_| "host")
+}
+
+/// host 기본 게이트 이름 전체. `profile::list` 이 attachable host 항목을 나열할
+/// 때 순회한다 — 이름 목록의 소유자를 이 모듈 하나로 유지하려고 상수를 그대로
+/// 공개하는 대신 열거 API 로 감싼다.
+pub(crate) fn host_default_names() -> &'static [&'static str] {
+    HOST_DEFAULT_GATE_NAMES
+}
+
+/// 등록된 게이트 이름 전체(정렬). [`list`] 와 `profile::list` 이 함께 쓴다 —
+/// 목록의 출처를 이 모듈 하나로 유지한다.
+pub(crate) fn registered_names(data_dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(registered_dir(data_dir))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_suffix(".json").map(str::to_string)
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// 이 이름의 게이트를 **부착용 Stop 훅 프로필 JSON** 으로 해석한다 —
+/// `--profile <이름>` 경로(`profile::resolve_names`/`show_registered`)가 등록
+/// 프로필을 못 찾았을 때 여기로 온다. 반환하는 owner 는 실제 출처를 그대로
+/// 반영한다(`profile::show_registered` 의 요구사항).
+///
+/// 게이트의 3요소(본문·센티넬·상한)는 이 JSON 에 담기지 않는다 — 훅 발화 시점에
+/// `--gate <이름>` 으로 레지스트리를 다시 읽어 해석한다(`checklist.rs`). 그래서
+/// 등록 내용을 바꿔도 재부착 없이 다음 발화에 반영된다.
+///
+/// **게이트 이름이 셸 명령 문자열에 그대로 삽입된다.** 안전성은 전적으로
+/// [`is_valid_short_name`] 규칙(소문자/숫자/`-`, 최대 32자)에 의존한다 — 공백·
+/// 따옴표·셸 메타문자가 원천 배제되므로 인용이 필요 없다. 그 규칙을 느슨하게
+/// 바꾸려면 여기부터 인용/이스케이프를 함께 손봐야 한다.
+pub(crate) fn attach_profile(
+    data_dir: Option<&Path>,
+    short_name: &str,
+    tr: &Translator,
+) -> Option<(&'static str, Value)> {
+    let owner = owner_of(data_dir, short_name, tr)?;
+    Some((owner, stop_hook_profile(short_name)))
+}
+
+/// 게이트 하나를 발동시키는 `settings.json` 조각. 명령 문자열은 하드코딩하지 않고
+/// [`crate::install::tasty_guarded_command`] 로 만든다 — 형태를 두 곳에 박아 두면
+/// `install.rs` 만 고쳤을 때 두 경로가 조용히 갈린다(`profile.rs` 가 같은 이유로
+/// 이미 그 함수를 쓰고 있었다).
+fn stop_hook_profile(short_name: &str) -> Value {
+    let command = crate::install::tasty_guarded_command(&format!(
+        "tasty claude checklist-hook --gate {short_name}"
+    ));
+    json!({
+        "hooks": {
+            "Stop": [{
+                "matcher": "",
+                "hooks": [{ "type": "command", "command": command }]
+            }]
+        }
+    })
 }
 
 // ── 등록/조회/해제 (user 출처) ────────────────────────────────────────────
@@ -413,19 +493,7 @@ pub fn show(
 /// 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만**
 /// 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
 pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
-    let mut user_names: Vec<String> = Vec::new();
-    if let Some(data_dir) = data_dir {
-        user_names = std::fs::read_dir(registered_dir(data_dir))
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                name.strip_suffix(".json").map(str::to_string)
-            })
-            .collect();
-        user_names.sort();
-    }
+    let user_names: Vec<String> = data_dir.map(registered_names).unwrap_or_default();
 
     let mut out: Vec<GateSummary> = Vec::new();
     for name in HOST_DEFAULT_GATE_NAMES {

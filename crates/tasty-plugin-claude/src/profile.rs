@@ -3,7 +3,8 @@
 //!
 //! `src/hook_handler/registry.rs` 의 형태(patch semantics · priority ↑ → owner
 //! tie-break → id 정렬 · `<owner>/<short>` id)를 **미러링**한다 — 타입은
-//! 공유하지 않는다(이 레포의 확립된 방식, TODO 문서 "레지스트리 선례" 절 참고).
+//! 공유하지 않는다 — plugin 이 host 타입에 묶이면 plugin 을 독립적으로 갱신할 수
+//! 없어지고, 이 레지스트리의 소비자는 이 plugin 하나뿐이라 공유 이득도 없다.
 //!
 //! 실질 2 출처: host(내장 훅 6종을 조회 전용 항목으로 나열 — `install::MANAGED_HOOKS`
 //! 가 유일한 정의처, 여기서 재정의하지 않는다) + user(사용자가 등록한 프로필의
@@ -12,6 +13,18 @@
 //! patch-fold 는 실제로는 단일 contribution 병합으로만 동작하지만, 형태는
 //! 3출처 병합 코드와 동일하게 유지해 나중에 세 번째 출처가 필요해져도 재설계가
 //! 없도록 한다.
+//!
+//! ## 이름으로 부착 가능한 것 — 프로필과 게이트
+//!
+//! 이름 해석은 등록 프로필만 보는 것이 아니다. Stop-훅 게이트([`crate::gate`])가
+//! 같은 이름 평면을 공유하므로, 등록 프로필이 없으면 게이트로 fallback 해 그
+//! 게이트를 발동시키는 `Stop` 훅 조각을 만들어 부착한다
+//! ([`crate::gate::attach_profile`]). `continue-checklist` 도 이 경로를 타는 host
+//! 기본 게이트 하나일 뿐이라, 이 파일에 그 이름이 박히는 자리는 없다.
+//!
+//! 해석 순서는 등록 프로필 → 게이트(등록 → host 기본) → 내장 훅 토큰(부착 불가
+//! 에러) → 미등록 에러. 두 레지스트리가 등록 시점에 동명을 서로 거부하므로 앞의
+//! 둘이 실제로 충돌하지는 않지만, 순서는 방어적으로 고정한다.
 //!
 //! 이 plugin 은 단일 스레드 IPC 디스패치(`ClaudePlugin::handle_ipc_method`)만
 //! 레지스트리를 건드리므로 호스트 레지스트리들과 달리 `RwLock`/`OnceLock`
@@ -122,40 +135,6 @@ pub struct ProfileSummary {
     pub description: Option<String>,
 }
 
-/// host 가 코드로 내장한, 이름으로 attach 가능한 기본 프로필 — `MANAGED_HOOKS`
-/// listing 항목(조회 전용, 사용자가 attach 할 수 없음)과 달리 실제 attach 대상이
-/// 될 수 있는 `settings.json` 조각을 갖는다. 사용자가 같은 short-name 으로
-/// 등록하면(`registered/<name>.json`) 그쪽이 우선한다 — `resolve_names`/
-/// `show_registered` 모두 registered 파일을 먼저 찾고, 없을 때만 여기로
-/// fallback 한다.
-///
-/// `continue-checklist` — `Stop` 훅으로 `tasty claude checklist-hook` 을 등록한다.
-/// 명령 문자열은 하드코딩하지 않고 [`crate::install::tasty_guarded_command`] 로
-/// 만든다 — 예전엔 같은 형태를 이 파일에도 따로 박아두어 `install.rs` 만 고치고
-/// 여기를 빠뜨리면 두 경로의 형태가 갈렸다(그 재발을 구조로 막는다). 체크리스트 본문은 이 JSON
-/// 에 담기지 않는다 — hook 발화 시점에 `Translator` 로 해석된 문자열이 별도로
-/// `reason` 필드에 실린다(`checklist.rs`).
-fn host_default_profile(short_name: &str) -> Option<Value> {
-    match short_name {
-        "continue-checklist" => Some(json!({
-            "hooks": {
-                "Stop": [{
-                    "matcher": "",
-                    "hooks": [{
-                        "type": "command",
-                        "command": crate::install::tasty_guarded_command("tasty claude checklist-hook")
-                    }]
-                }]
-            }
-        })),
-        _ => None,
-    }
-}
-
-/// `host_default_profile` 이 아는 이름 전체 — `list()` 이 attachable host 항목을
-/// 나열할 때 순회한다.
-const HOST_DEFAULT_PROFILE_NAMES: &[&str] = &["continue-checklist"];
-
 fn registered_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("profiles").join("registered")
 }
@@ -265,15 +244,19 @@ pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), Profi
 pub fn show_registered(
     data_dir: Option<&Path>,
     short_name: &str,
+    tr: &Translator,
 ) -> Result<(&'static str, Value), ProfileError> {
     let data_dir = require_data_dir(data_dir)?;
     let path = registered_file(data_dir, short_name);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
-        // 사용자 등록이 없으면 host 내장 기본 프로필로 fallback(사용자 등록 우선).
+        // 등록 프로필이 없으면 게이트로 fallback(등록 프로필 우선). owner 는
+        // 게이트 쪽이 실제 출처(user 등록 게이트 / host 기본 게이트)를 돌려준다.
         Err(_) => {
-            if let Some(value) = host_default_profile(short_name) {
-                return Ok(("host", value));
+            if let Some((owner, value)) =
+                crate::gate::attach_profile(Some(data_dir), short_name, tr)
+            {
+                return Ok((owner, value));
             }
             return Err(ProfileError::UnknownProfile(format!("user/{short_name}")));
         }
@@ -305,28 +288,18 @@ pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
         })
         .collect();
 
-    for name in HOST_DEFAULT_PROFILE_NAMES {
+    for name in crate::gate::host_default_names() {
         out.push(ProfileSummary {
             id: format!("host/{name}"),
             owner: "host",
             attachable: true,
-            description: Some(tr.t("claude.profile.builtin_attachable").to_string()),
+            description: Some(tr.t("claude.profile.gate_attachable").to_string()),
         });
     }
 
     if let Some(data_dir) = data_dir {
-        let dir = registered_dir(data_dir);
-        let mut names: Vec<String> = std::fs::read_dir(&dir)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                name.strip_suffix(".json").map(str::to_string)
-            })
-            .collect();
-        names.sort();
-        for short in names {
+        let profile_names = short_names_in(&registered_dir(data_dir));
+        for short in &profile_names {
             out.push(ProfileSummary {
                 id: format!("user/{short}"),
                 owner: "user",
@@ -334,8 +307,41 @@ pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
                 description: None,
             });
         }
+        // 등록 게이트도 이름으로 부착 가능하므로 함께 나열한다. 등록 프로필과
+        // 구분되도록 설명을 싣는다(등록 프로필은 `description: None`).
+        // `profile-list` 와 `gate-list` 가 둘 다 게이트를 보여주는 것은 의도된
+        // 중복이다 — 전자는 "부착 가능한 것들", 후자는 "게이트 정의" 관점.
+        for short in crate::gate::registered_names(data_dir) {
+            // 두 레지스트리가 동명 등록을 서로 거부하므로 정상적으로는 겹치지
+            // 않지만, 겹친 상태에서는 부착이 프로필을 택하므로 목록도 그 실체를
+            // 따른다(같은 id 가 두 줄로 보이지 않게).
+            if profile_names.contains(&short) {
+                continue;
+            }
+            out.push(ProfileSummary {
+                id: format!("user/{short}"),
+                owner: "user",
+                attachable: true,
+                description: Some(tr.t("claude.profile.gate_attachable").to_string()),
+            });
+        }
     }
     out
+}
+
+/// 디렉토리의 `<이름>.json` 파일 이름을 정렬해 돌려준다.
+fn short_names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_suffix(".json").map(str::to_string)
+        })
+        .collect();
+    names.sort();
+    names
 }
 
 // ── 부착용 해석(조합 머지 포함) ────────────────────────────────────────────
@@ -344,7 +350,11 @@ pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
 /// 머지해 `generated/` 에 실체화한 뒤 그 경로를 반환한다. 이름이 하나뿐이어도
 /// 항상 이 경로를 통해 `generated/` 에 다시 쓴다 — attach 경로가 단수/복수로
 /// 갈라지지 않게 하기 위함(등록 내용이 바뀐 뒤 재부착 시에도 최신 내용 보장).
-pub fn resolve_names(data_dir: Option<&Path>, names_csv: &str) -> Result<PathBuf, ProfileError> {
+pub fn resolve_names(
+    data_dir: Option<&Path>,
+    names_csv: &str,
+    tr: &Translator,
+) -> Result<PathBuf, ProfileError> {
     let data_dir = require_data_dir(data_dir)?;
     let names = parse_names(names_csv)?;
 
@@ -352,10 +362,11 @@ pub fn resolve_names(data_dir: Option<&Path>, names_csv: &str) -> Result<PathBuf
     for name in &names {
         let path = registered_file(data_dir, name);
         if !path.is_file() {
-            // 사용자 등록이 없으면 host 내장 attachable 기본 프로필로 fallback
-            // (예: `continue-checklist`) — 사용자 등록이 항상 우선한다.
-            if let Some(value) = host_default_profile(name) {
-                contents.push((format!("host/{name}"), value));
+            // 등록 프로필이 없으면 게이트로 fallback — 등록 게이트든 host 기본
+            // 게이트(`continue-checklist`)든 같은 Stop 훅 조각으로 해석된다
+            // (모듈 doc "이름으로 부착 가능한 것" 절의 해석 순서).
+            if let Some((owner, value)) = crate::gate::attach_profile(Some(data_dir), name, tr) {
+                contents.push((format!("{owner}/{name}"), value));
                 continue;
             }
             // host/* listing 전용 항목(내장 훅)은 attachable 하지 않다 — 사용자가
@@ -466,7 +477,7 @@ pub(crate) fn handle_show(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let name = require_name(params, tr)?;
-    let (owner, content) = show_registered(data_dir, name).map_err(|e| to_ipc_err(e, tr))?;
+    let (owner, content) = show_registered(data_dir, name, tr).map_err(|e| to_ipc_err(e, tr))?;
     Ok(json!({ "id": format!("{owner}/{name}"), "content": content }))
 }
 
@@ -502,6 +513,32 @@ mod tests {
         std::fs::write(registered_file(dir, name), content).unwrap();
     }
 
+    /// 게이트를 실제 등록 경로로 만든다 — 본문이 센티넬을 포함해야 통과한다.
+    fn register_gate(dir: &Path, name: &str) {
+        let body = dir.join(format!("{name}-body.md"));
+        std::fs::write(&body, format!("{name} 본문\n[[{name}-DONE]]\n")).unwrap();
+        crate::gate::register(
+            Some(dir),
+            name,
+            &body,
+            Some(&format!("[[{name}-DONE]]")),
+            Some(2),
+        )
+        .unwrap();
+    }
+
+    /// 해석 결과 파일에서 Stop 훅 command 문자열들을 뽑는다.
+    fn stop_commands(path: &Path) -> Vec<String> {
+        let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        content["hooks"]["Stop"]
+            .as_array()
+            .expect("Stop 훅 배열")
+            .iter()
+            .flat_map(|entry| entry["hooks"].as_array().cloned().unwrap_or_default())
+            .filter_map(|h| h["command"].as_str().map(str::to_string))
+            .collect()
+    }
+
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
@@ -513,7 +550,8 @@ mod tests {
         let src = tmp.path().join("src.json");
         std::fs::write(&src, r#"{"env":{"A":"1"}}"#).unwrap();
         register(Some(tmp.path()), "myprofile", &src).unwrap();
-        let (owner, shown) = show_registered(Some(tmp.path()), "myprofile").unwrap();
+        let (owner, shown) =
+            show_registered(Some(tmp.path()), "myprofile", &test_translator()).unwrap();
         assert_eq!(owner, "user");
         assert_eq!(shown["env"]["A"], "1");
     }
@@ -578,7 +616,7 @@ mod tests {
     fn resolve_single_name_materializes_generated_file() {
         let tmp = tempfile::tempdir().unwrap();
         write_profile(tmp.path(), "solo", r#"{"env":{"A":"1"}}"#);
-        let path = resolve_names(Some(tmp.path()), "solo").unwrap();
+        let path = resolve_names(Some(tmp.path()), "solo", &test_translator()).unwrap();
         assert!(path.starts_with(generated_dir(tmp.path())));
         let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(content["env"]["A"], "1");
@@ -589,7 +627,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         write_profile(tmp.path(), "one", r#"{"env":{"A":"1"}}"#);
         write_profile(tmp.path(), "two", r#"{"env":{"B":"2"}}"#);
-        let path = resolve_names(Some(tmp.path()), "one,two").unwrap();
+        let path = resolve_names(Some(tmp.path()), "one,two", &test_translator()).unwrap();
         let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(content["env"]["A"], "1");
         assert_eq!(content["env"]["B"], "2");
@@ -600,22 +638,22 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         write_profile(tmp.path(), "one", "{}");
         write_profile(tmp.path(), "two", "{}");
-        let a = resolve_names(Some(tmp.path()), "one,two").unwrap();
-        let b = resolve_names(Some(tmp.path()), "two,one").unwrap();
+        let a = resolve_names(Some(tmp.path()), "one,two", &test_translator()).unwrap();
+        let b = resolve_names(Some(tmp.path()), "two,one", &test_translator()).unwrap();
         assert_eq!(a, b);
     }
 
     #[test]
     fn resolve_unknown_name_errors() {
         let tmp = tempfile::tempdir().unwrap();
-        let err = resolve_names(Some(tmp.path()), "nope").unwrap_err();
+        let err = resolve_names(Some(tmp.path()), "nope", &test_translator()).unwrap_err();
         assert!(matches!(err, ProfileError::UnknownProfile(_)));
     }
 
     #[test]
     fn resolve_builtin_hook_name_is_not_attachable() {
         let tmp = tempfile::tempdir().unwrap();
-        let err = resolve_names(Some(tmp.path()), "stop").unwrap_err();
+        let err = resolve_names(Some(tmp.path()), "stop", &test_translator()).unwrap_err();
         assert!(matches!(err, ProfileError::NotAttachable(_)));
     }
 
@@ -623,13 +661,13 @@ mod tests {
     fn resolve_reflects_latest_registered_content_on_reattach() {
         let tmp = tempfile::tempdir().unwrap();
         write_profile(tmp.path(), "changing", r#"{"env":{"A":"1"}}"#);
-        let first = resolve_names(Some(tmp.path()), "changing").unwrap();
+        let first = resolve_names(Some(tmp.path()), "changing", &test_translator()).unwrap();
         let first_content: Value =
             serde_json::from_str(&std::fs::read_to_string(&first).unwrap()).unwrap();
         assert_eq!(first_content["env"]["A"], "1");
 
         write_profile(tmp.path(), "changing", r#"{"env":{"A":"2"}}"#);
-        let second = resolve_names(Some(tmp.path()), "changing").unwrap();
+        let second = resolve_names(Some(tmp.path()), "changing", &test_translator()).unwrap();
         let second_content: Value =
             serde_json::from_str(&std::fs::read_to_string(&second).unwrap()).unwrap();
         assert_eq!(second_content["env"]["A"], "2");
@@ -638,9 +676,135 @@ mod tests {
     #[test]
     fn resolve_host_default_profile_by_name() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = resolve_names(Some(tmp.path()), "continue-checklist").unwrap();
-        let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let path =
+            resolve_names(Some(tmp.path()), "continue-checklist", &test_translator()).unwrap();
+        let content: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(content["hooks"]["Stop"].is_array());
+        // host 기본 게이트도 다른 게이트와 같은 경로로 부착된다.
+        assert_eq!(
+            stop_commands(&path),
+            vec![crate::install::tasty_guarded_command(
+                "tasty claude checklist-hook --gate continue-checklist"
+            )]
+        );
+    }
+
+    #[test]
+    fn resolve_registered_gate_by_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        let path = resolve_names(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        let content: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            content["hooks"]["Stop"].is_array(),
+            "등록 게이트가 Stop 훅으로 해석되지 않았다: {content}"
+        );
+    }
+
+    #[test]
+    fn generated_hook_command_contains_gate_flag() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        let path = resolve_names(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        let commands = stop_commands(&path);
+        assert_eq!(commands.len(), 1);
+        assert!(
+            commands[0].contains("checklist-hook --gate mygate"),
+            "훅 명령에 게이트 이름이 실리지 않으면 host 기본 게이트로 판정된다: {}",
+            commands[0]
+        );
+    }
+
+    /// 명령 형태를 이 파일에 따로 박아 두면 `install.rs` 만 고쳤을 때 두 경로가
+    /// 갈린다 — 생성 결과가 `tasty_guarded_command` 산출물과 문자 단위로 같은지 본다.
+    #[test]
+    fn generated_hook_command_uses_guarded_form() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        let path = resolve_names(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        assert_eq!(
+            stop_commands(&path),
+            vec![crate::install::tasty_guarded_command(
+                "tasty claude checklist-hook --gate mygate"
+            )]
+        );
+    }
+
+    #[test]
+    fn registered_profile_shadows_gate_of_same_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        // 41 의 상호 배제를 우회해 같은 이름의 등록 프로필을 손으로 만든 상태.
+        write_profile(tmp.path(), "mygate", r#"{"env":{"FROM_PROFILE":"1"}}"#);
+
+        let path = resolve_names(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        let content: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(content["env"]["FROM_PROFILE"], "1");
+        assert!(content["hooks"].is_null(), "게이트가 프로필을 덮었다");
+
+        let (owner, shown) =
+            show_registered(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        assert_eq!(owner, "user");
+        assert_eq!(shown["env"]["FROM_PROFILE"], "1");
+
+        // 목록에도 한 줄로만 나온다.
+        let entries = list(Some(tmp.path()), &test_translator());
+        assert_eq!(entries.iter().filter(|e| e.id == "user/mygate").count(), 1);
+    }
+
+    #[test]
+    fn show_registered_reports_user_owner_for_registered_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        let (owner, content) =
+            show_registered(Some(tmp.path()), "mygate", &test_translator()).unwrap();
+        assert_eq!(owner, "user", "등록 게이트인데 host 로 보고했다");
+        assert!(content["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
+    fn list_shows_registered_gates_as_attachable() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "mygate");
+        write_profile(tmp.path(), "myprofile", "{}");
+        let entries = list(Some(tmp.path()), &test_translator());
+
+        let gate = entries
+            .iter()
+            .find(|e| e.id == "user/mygate")
+            .expect("등록 게이트가 목록에 없다");
+        assert!(gate.attachable);
+        assert!(
+            gate.description.is_some(),
+            "게이트는 등록 프로필과 구분되는 설명을 가져야 한다"
+        );
+        let profile = entries.iter().find(|e| e.id == "user/myprofile").unwrap();
+        assert!(profile.attachable && profile.description.is_none());
+    }
+
+    /// 게이트 둘을 함께 부착하면 Stop 훅이 두 개 등록된다(`profile_merge` 의
+    /// hooks concat) — 42 가 라운드 상태를 게이트별로 쪼갠 전제.
+    #[test]
+    fn resolve_two_gates_registers_two_stop_hooks() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "gate-a");
+        let path = resolve_names(
+            Some(tmp.path()),
+            "gate-a,continue-checklist",
+            &test_translator(),
+        )
+        .unwrap();
+        let commands = stop_commands(&path);
+        assert_eq!(commands.len(), 2, "Stop 훅이 하나로 합쳐졌다: {commands:?}");
+        assert!(commands.iter().any(|c| c.contains("--gate gate-a")));
+        assert!(
+            commands
+                .iter()
+                .any(|c| c.contains("--gate continue-checklist"))
+        );
     }
 
     #[test]
@@ -651,7 +815,8 @@ mod tests {
             "continue-checklist",
             r#"{"env":{"OVERRIDDEN":"1"}}"#,
         );
-        let path = resolve_names(Some(tmp.path()), "continue-checklist").unwrap();
+        let path =
+            resolve_names(Some(tmp.path()), "continue-checklist", &test_translator()).unwrap();
         let content: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(content["env"]["OVERRIDDEN"], "1");
         assert!(content["hooks"].is_null());
@@ -660,7 +825,8 @@ mod tests {
     #[test]
     fn show_registered_falls_back_to_host_default() {
         let tmp = tempfile::tempdir().unwrap();
-        let (owner, content) = show_registered(Some(tmp.path()), "continue-checklist").unwrap();
+        let (owner, content) =
+            show_registered(Some(tmp.path()), "continue-checklist", &test_translator()).unwrap();
         assert_eq!(owner, "host");
         assert!(content["hooks"]["Stop"].is_array());
     }

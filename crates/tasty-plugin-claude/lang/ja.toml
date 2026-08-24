@@ -73,7 +73,7 @@ error_prefix = "profile: {}"
 mutually_exclusive_file_and_profile = "--profile-file と --profile は同時に指定できません — どちらか一方のみ指定してください"
 builtin_always_installed = "内蔵 — 常にインストール済み (Claude Code イベント: {})"
 builtin_always_installed_with_matcher = "内蔵 — 常にインストール済み (Claude Code イベント: {}, matcher: {})"
-builtin_attachable = "内蔵 — 登録済みプロファイルと同様に名前でアタッチ可能"
+gate_attachable = "Stop フックゲート — 登録済みプロファイルと同様に名前でアタッチ可能 ('claude gate-show <名前>' で定義を確認)"
 
 [claude.gate]
 no_data_dir = "plugin data directory を利用できません(ホストが TASTY_PLUGIN_DATA_DIR を注入していません) — ゲートの登録・解除ができません"

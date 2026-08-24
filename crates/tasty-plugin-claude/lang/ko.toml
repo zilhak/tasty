@@ -73,7 +73,7 @@ error_prefix = "profile: {}"
 mutually_exclusive_file_and_profile = "--profile-file 와 --profile 은 동시에 줄 수 없다 — 하나만 지정해라"
 builtin_always_installed = "내장 — 항상 설치됨 (Claude Code 이벤트: {})"
 builtin_always_installed_with_matcher = "내장 — 항상 설치됨 (Claude Code 이벤트: {}, matcher: {})"
-builtin_attachable = "내장 — 등록된 프로필처럼 이름으로 부착 가능"
+gate_attachable = "Stop-훅 게이트 — 등록된 프로필처럼 이름으로 부착 가능 ('claude gate-show <이름>' 으로 정의 확인)"
 
 [claude.gate]
 no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — 게이트를 등록하거나 해제할 수 없다"
