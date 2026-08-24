@@ -62,6 +62,27 @@
 위치뿐이며(셸이 콘텐츠 Ui 를 무대 id 로 salt 하므로 popup 쪽과 다른 egui state 를 쓴다),
 `on_close` 가 그것을 지운다.
 
+## 디자인 소스 — 신규 시안 없이 만든 이유
+
+무대 셸(제목 · 종료 버튼 · 콘텐츠 프레임)과 popup 타이틀바의 진입 버튼에는 대응하는
+**디자인 시안이 없고, 디자인 요청도 발주하지 않았다.** 근거는 "앞선 트랙도 안 했으니
+선례상 불필요" 가 **아니다** — 앞선 트랙들은 필요할 때 실제로 요청문서를 발주했다.
+여기서 발주하지 않은 이유는 이 화면이 **새 시각 결정을 하나도 만들지 않았기** 때문이다:
+
+- **글리프**: canonical `icons.json` 의 `close` / `fit` 를 그대로 쓴다(신규 글리프 없음).
+- **위젯**: 종료 버튼은 기존 `IconButton`(ghost · md) 그대로.
+- **색 · 치수 · 간격**: 전부 확정 토큰의 조합이다 — 바깥 여백 `space-xl`, 제목
+  `font-size-heading`, 배경 `scrim`, 콘텐츠 프레임 `surface-raised` + 1px
+  `border-strong`, painter 전사 글리프 굵기 `icon-stroke-width`.
+
+배치 수치(제목 = 상단 + `space-xl`, 종료 버튼 = 우상단 `space-xl`, 콘텐츠 inset)는
+디자인이 준 값이 아니라 **구현자가 위 토큰을 조합해 정한 것**이다. 토큰 밖의 값을 새로
+만든 곳은 없다.
+
+따라서 무대에 **토큰으로 표현되지 않는 시각 요소**(고유 레이아웃 그리드, 신규 글리프,
+새 색 역할, 무대 전용 chrome 형태)가 필요해지는 순간에는 그때 요청을 발주해야 한다 —
+절차는 [design-change-workflow](../../dev-guide/design-change-workflow.md).
+
 ## 진입 / 종료
 
 - 진입 `AppState::open_fullscreen_stage(id)` — 테이블에 없는 id 는 `false` 로 거부. 다른 무대가
