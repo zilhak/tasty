@@ -694,17 +694,18 @@ pub(crate) fn purge_stale_agent_state_on_boot(ctx: &RunnerContext, workspace_ids
         // reload 결과(되살아난 handle)는 버린다 — 이 시점엔 그걸 넘겨받아
         // poll 할 runner 가 없다. 다음 수동 start 가 다시 reload 한다.
         let _ = purge_and_reload_on_restart(ctx, workspace_id);
-        // TODO11 결정 4: 자동 GC 도 같은 부팅 정화 경로에 얹는다.
+        // 자동 GC 도 같은 부팅 정화 경로에 얹는다.
         gc_stale_tasks(ctx, workspace_id);
     }
 }
 
-/// TODO11 결정 4 — 자동 GC 임계값(잠정치, provisional). 사용자가 수동으로
+/// 자동 GC 임계값(잠정치, provisional). 사용자가 수동으로
 /// 지우지 않은 task 는 보통 며칠 안에 확인한다는 추정으로 7일을 잡았다 — 실사용
 /// 데이터가 쌓이면 재검토 대상(설정 가능하게 노출하는 것도 후보).
 const AGENT_TASK_GC_MIN_AGE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 
-/// TODO11 결정 4 — 부팅 시 정화 경로에 얹는 자동 GC. `PutOpts.expires_at` 류의
+/// 부팅 시 정화 경로에 얹는 자동 GC(`docs/dev-guide/agent-runner.md` "자동 GC").
+/// `PutOpts.expires_at` 류의
 /// memory 자체 TTL 은 쓰지 않는다: task 삭제는 참조 무결성(결정 1)·Running 거부
 /// (결정 2) 검사를 반드시 거쳐야 하는데, TTL 만료는 그 검사를 우회한 채 그냥
 /// 지워버려 dangling 참조/자원 누수를 재도입하기 때문이다 — 그래서 항상 검증된

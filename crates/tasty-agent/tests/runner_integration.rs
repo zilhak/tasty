@@ -197,8 +197,9 @@ fn two_task_chain_propagates_to_downstream() {
     }
 }
 
-/// TODO62 (`.claude-workspace/todo-conductor/62-agent-fallback-create-order-
-/// toctou-race.md`) 재현 + 회귀 방지: `TaskStore::create_reserved_for_fallback`
+/// fallback 생성 순서 TOCTOU 재현 + 회귀 방지
+/// (`docs/features/agent-collaboration/index.md` "생성 순서 TOCTOU 방지"):
+/// `TaskStore::create_reserved_for_fallback`
 /// 로 만든 fallback 후보는 그걸 참조할 main 이 아직 존재하지 않는 동안 러너가
 /// 몇 번을 tick 해도(두 `task-create` 호출 사이의 임의 지연을 시뮬레이션)
 /// `Ready` 를 거친 적이 없으므로 dispatch 대상이 아니다 — main 이 실제로

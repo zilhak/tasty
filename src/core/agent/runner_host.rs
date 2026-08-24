@@ -1379,7 +1379,7 @@ pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: 
 }
 
 /// task 삭제 시 정리해야 할 host 측 side-key 전부 — `tasty.agent.handle.<id>`
-/// + `tasty.agent.run_result.<id>`(TODO11 결정 4: 정상 종료 경로 밖에서 지워지는
+/// + `tasty.agent.run_result.<id>`(정상 종료 경로 밖에서 지워지는
 /// task 도 이 두 키가 orphan 으로 남지 않아야 한다).
 pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     evict_handle_key(ctx, workspace_id, task_id);
@@ -2656,7 +2656,7 @@ mod tests {
     }
 
     // =====================================================================
-    // lease pool 모드 (TODO 08: candidates/elastic) — `try_acquire_lease`
+    // lease pool 모드 (candidates/elastic) — `try_acquire_lease`
     // 자체는 실행(dispatch_command)과 독립적이므로 여기 테스트는 실제 process
     // spawn 없이 private 메서드를 직접 호출해 배정 로직만 검증한다. cwd/params
     // 치환은 뒤쪽 `dispatch_*` 테스트에서 실제 spawn 으로 end-to-end 확인한다.

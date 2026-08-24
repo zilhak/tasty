@@ -1028,7 +1028,7 @@ pub fn handle_task_set_result(
 // agent.task_delete
 // ============================================================
 
-/// task 삭제(TODO11 결정 1·2) — 참조(depends_on/Fallback.task/Reduce.inputs)가
+/// task 삭제 — 참조(depends_on/Fallback.task/Reduce.inputs)가
 /// 있으면 기본 거부하고 참조자 목록을 `error.data.referenced_by` 로 반환한다.
 /// `cascade` 는 전이적 참조자 전부를 함께 지우고, `force` 는 참조 검사만
 /// 우회한다(상태 제약은 못 뚫음 — `Running` 은 항상 거부).
@@ -1085,7 +1085,7 @@ fn purge_filter_from_params(params: &Value, now_ms: u64) -> TaskPurgeFilter {
     }
 }
 
-/// task 일괄 삭제(TODO11 결정 3) — 상태 이름 목록(`states`, `TaskState::name()`
+/// task 일괄 삭제 — 상태 이름 목록(`states`, `TaskState::name()`
 /// 값들)과 경과시간(`older_than_ms`) 필터로 후보를 고르고, 참조 안전 + `Running`
 /// 제외를 지킨 것만 실제로 지운다. 둘 다 생략하면 워크스페이스 전체가 후보가
 /// 되어 위험하므로 `core.task_purge` 가 거부한다. `dry_run=true` 면 아무것도

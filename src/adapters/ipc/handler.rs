@@ -903,7 +903,7 @@ fn route_engine_handler(
         "agent.task_run" => {
             agent::handle_task_run(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_delete / agent.task_purge (TODO11: 참조 검사 + 상태 제약을
+        // agent.task_delete / agent.task_purge (참조 검사 + 상태 제약을
         // 지키는 단건/일괄 삭제)
         "agent.task_delete" => {
             agent::handle_task_delete(core, state, engine, caller, id, &request.params)

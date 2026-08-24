@@ -1325,7 +1325,7 @@ fn fallback_validation_rejects_neither_task_nor_inline() {
 }
 
 // ============================================================
-// TODO14 회귀: Fallback.task / Reduce.inputs 참조 검증
+// 회귀: Fallback.task / Reduce.inputs 참조 검증
 // ============================================================
 
 #[test]
@@ -1599,7 +1599,7 @@ fn legacy_dangling_fallback_target_leaves_downstream_waiting() {
 }
 
 // ============================================================
-// TODO11: delete_checked / plan_sweep / apply_sweep_plan
+// delete_checked / plan_sweep / apply_sweep_plan
 // ============================================================
 
 #[test]
@@ -1733,7 +1733,7 @@ fn delete_checked_rejects_when_referenced_by_reduce_inputs() {
     }
 }
 
-/// 가장 중요한 시나리오(TODO11 문서 "완료 확인 방법" #1): 참조 있는 task 를
+/// 가장 중요한 시나리오: 참조 있는 task 를
 /// cascade 삭제하면 참조자까지 함께 지워지고, 그 뒤 같은 workspace 에 새 task
 /// 를 만드는 게 여전히 성공한다 — raw `delete()` 를 그대로 노출했다면 dangling
 /// `depends_on` 이 남아 이후 모든 `create()` 가 `detect_cycles` 의
@@ -1958,7 +1958,7 @@ fn delete_checked_allows_waiting_ready_and_terminal_states() {
     assert!(store.get(1, &term.id).unwrap().is_none());
 }
 
-/// TODO11 문서 "완료 확인 방법" #5: 자동 GC 가 완전히 얽힌 `Waiting` 그래프를
+/// 자동 GC 가 완전히 얽힌 `Waiting` 그래프를
 /// 실제로 드레인하는지 — 방치된 `Reduce` (X) 가 그 input(Y) 을 참조로 붙잡고
 /// 있어도, `Waiting` 은 금지 상태가 아니므로(결정 2) 후보 집합 안에서 둘 다
 /// 함께 지워져야 한다(terminal 로 제한했다면 영원히 못 지웠을 그래프).

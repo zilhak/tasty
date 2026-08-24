@@ -276,8 +276,8 @@ impl Core {
         })
     }
 
-    /// Task 삭제 — `TaskStore::delete_checked`(참조 무결성 + Running 거부, TODO11
-    /// 결정 1·2)로 지운 뒤, 실제로 지워진 task 마다 host 측 side-key(handle/
+    /// Task 삭제 — `TaskStore::delete_checked`(참조 무결성 + Running 거부)로
+    /// 지운 뒤, 실제로 지워진 task 마다 host 측 side-key(handle/
     /// run_result)도 정리한다. side-key 정리는 memory lock 을 놓은 뒤 별도로
     /// 순회한다 — `with_memory` 안에서 `RunnerContext::with_memory` 를 또 호출하면
     /// 같은 `Arc<Mutex<_>>` 재진입 lock 으로 deadlock.
@@ -300,7 +300,7 @@ impl Core {
         Ok(report)
     }
 
-    /// Task 일괄 정리(TODO11 결정 3) — `filter` 로 선정된 후보를 sweep. 상태/
+    /// Task 일괄 정리 — `filter` 로 선정된 후보를 sweep. 상태/
     /// 경과시간 둘 다 미지정이면 워크스페이스 전체가 후보가 되어버려 위험하므로
     /// 여기서 거부한다(IPC 로 직접 호출되는 경로라 CLI 가드만으로는 부족).
     /// `dry_run=true` 면 계획만 계산하고 아무것도 지우지 않는다 — `plan_sweep`
@@ -499,7 +499,7 @@ mod hook_wait_tests {
         assert_eq!(task.result.and_then(|r| r.exit_code), Some(1));
     }
 
-    /// TODO62 배선 확인 — `Core::task_create(.., reserved_for_fallback: true)`
+    /// `reserved_for_fallback` 배선 확인 — `Core::task_create(.., reserved_for_fallback: true)`
     /// 가 `handle_task_create` 의 `reserved_for_fallback` JSON param 부터
     /// `TaskStore::create_reserved_for_fallback` 까지 실제로 이어진다.
     /// 세부 readiness/dormant 로직은 `crates/tasty-agent` 크레이트 테스트가
@@ -533,7 +533,7 @@ mod hook_wait_tests {
     }
 }
 
-/// TODO11 "완료 확인 방법" #3·#4 — host 층(`Core::task_delete`) 이 실제로
+/// host 층(`Core::task_delete`) 이 실제로
 /// side-key(handle/run_result) 를 정리하고, `Running` 삭제 거부가 자원(세마포어
 /// permit)을 건드리지 않는지 검증. store 층의 참조/상태 검사 자체는
 /// `crates/tasty-agent/src/task/tests.rs` 가 더 폭넓게 덮는다.
