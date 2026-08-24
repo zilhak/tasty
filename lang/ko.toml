@@ -1463,3 +1463,12 @@ empty_filtered_hint = "다른 조건으로 찾아보라."
 # 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "전체화면"
+
+# 무대 셸이 공통 제공하는 종료 버튼 — 무대 프레임에는 CSD 타이틀바가 없어 이 버튼이
+# 유일한 마우스 탈출 수단이다.
+[fullscreen.stage]
+exit_tooltip = "전체화면 종료"
+
+# 알림 무대 — 알림 popup 과 같은 형상의 별개 콘텐츠(popup 인스턴스가 아니다).
+[fullscreen.notifications]
+title = "알림"

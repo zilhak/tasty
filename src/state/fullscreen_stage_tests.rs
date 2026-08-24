@@ -143,3 +143,59 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
     state.open_fullscreen_stage("blank");
     assert!(painted(&mut state, &mut engine) > 0);
 }
+
+// ── 첫 실콘텐츠 소비자(알림 무대) ────────────────────────────────────────────
+
+fn screen_input() -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1920.0, 1080.0),
+        )),
+        ..Default::default()
+    }
+}
+
+/// 알림 무대는 자체 상태(목록 스크롤 위치)를 갖고, 무대가 닫히면 `on_close` 가
+/// 그것을 지운다 — 무대 정의 타입의 정리 훅이 **실콘텐츠에서** 도는지 확인.
+#[test]
+fn notifications_stage_clears_its_own_scroll_state_on_close() {
+    let (mut state, mut engine) = test_state();
+    assert!(state.open_fullscreen_stage(fullscreen::notifications::NOTIFICATIONS_STAGE_ID));
+
+    let ctx = egui::Context::default();
+    drop(ctx.run(screen_input(), |ctx| {
+        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &mut engine);
+    }));
+    let scroll_id = fullscreen::notifications::recorded_scroll_id(&ctx)
+        .expect("무대 콘텐츠가 자기 스크롤 상태 id 를 기록해야 한다");
+    assert!(
+        ctx.data_mut(|d| d.get_persisted::<egui::containers::scroll_area::State>(scroll_id))
+            .is_some(),
+        "ScrollArea 가 실제로 상태를 남겨야 이후 정리 단정이 의미가 있다"
+    );
+
+    assert!(state.close_fullscreen_stage());
+    // 닫은 다음 프레임은 일반 프레임이다 — 그쪽 drain 이 훅을 발화시킨다.
+    drop(ctx.run(screen_input(), |ctx| {
+        crate::adapters::ui::draw_popups(
+            ctx,
+            &mut state,
+            &mut engine,
+            &[],
+            crate::model::PhysicalRect {
+                x: crate::model::PhysicalPx(0.0),
+                y: crate::model::PhysicalPx(0.0),
+                width: crate::model::PhysicalPx(1920.0),
+                height: crate::model::PhysicalPx(1080.0),
+            },
+            1.0,
+        );
+    }));
+    assert!(fullscreen::notifications::recorded_scroll_id(&ctx).is_none());
+    assert!(
+        ctx.data_mut(|d| d.get_persisted::<egui::containers::scroll_area::State>(scroll_id))
+            .is_none(),
+        "무대 자체 상태가 종료 후에도 남아 있다"
+    );
+}

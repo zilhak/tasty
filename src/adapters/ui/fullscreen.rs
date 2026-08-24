@@ -21,6 +21,7 @@
 //! 무대 수명 그 자체에 속하는 것만 담는다.
 
 pub mod defs;
+pub(crate) mod notifications;
 
 use crate::state::AppState;
 
@@ -139,12 +140,73 @@ pub fn draw_fullscreen_stage(
                 egui::FontId::proportional(th.font_size_heading.value()),
                 th.text_primary().to_egui(),
             );
-            action = (def.draw_fn)(ui, state, engine);
+            if draw_exit_button(ui, screen) {
+                action = StageAction::Close;
+            }
+            // 콘텐츠는 셸 chrome(제목·종료 버튼) **아래**로 묶인 child Ui 를 받는다 —
+            // 콘텐츠가 chrome 위치를 알 필요도, 침범할 수도 없다.
+            let mut content = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(content_rect(screen))
+                    .id_salt(def.id),
+            );
+            let content_action = (def.draw_fn)(&mut content, state, engine);
+            if content_action == StageAction::Close {
+                action = StageAction::Close;
+            }
         });
 
     if action == StageAction::Close {
         state.close_fullscreen_stage();
+        // 무대를 나온 화면(일반 프레임)을 그리려면 프레임이 한 번 더 필요하다 —
+        // 진입 때와 같은 이유(`popup::frame::draw_popup_layer` 주석).
+        ctx.request_repaint();
     }
+}
+
+/// 무대 콘텐츠에 주는 rect — 창 전체에서 셸 chrome(상단 제목 띠)과 바깥 여백을 뺀 것.
+///
+/// 종료 버튼도 이 띠 안(우측)에 있으므로 콘텐츠와 겹치지 않는다.
+fn content_rect(screen: egui::Rect) -> egui::Rect {
+    let th = crate::theme::theme();
+    let pad = th.spacing_xl.value();
+    let chrome_h = pad + th.font_size_heading.value() + th.spacing_lg.value();
+    egui::Rect::from_min_max(
+        egui::pos2(screen.left() + pad, screen.top() + chrome_h),
+        egui::pos2(screen.right() - pad, screen.bottom() - pad),
+    )
+}
+
+/// 무대 종료 버튼 — **셸이 공통 제공한다.** 콘텐츠 정의가 빠뜨릴 수 없어야 하기
+/// 때문이다: 무대 프레임에는 CSD 타이틀바(창 닫기/최소화)조차 없으므로, 종료 수단이
+/// 없는 무대는 창을 빠져나갈 방법이 없는 상태가 된다
+/// (`docs/design/systems/fullscreen-stage.md` §아직 없는 것). `PopupManager` 가 X
+/// 버튼을 중앙 관리하는 것과 같은 구조다.
+///
+/// 눌렸으면 `true`.
+fn draw_exit_button(ui: &mut egui::Ui, screen: egui::Rect) -> bool {
+    use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+
+    let th = crate::theme::theme();
+    let pad = th.spacing_xl.value();
+    let side = ControlSize::Md.height(&th);
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(screen.right() - pad - side, screen.top() + pad),
+        egui::vec2(side, side),
+    );
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        IconButton::new()
+            .variant(IconButtonVariant::Ghost)
+            .size(ControlSize::Md)
+            .show(ui, &th, &|ui, rect, c| {
+                crate::adapters::ui::icons::CLOSE
+                    .image(rect.height(), c)
+                    .paint_at(ui, rect);
+            })
+            .on_hover_text(crate::i18n::t("fullscreen.stage.exit_tooltip"))
+            .clicked()
+    })
+    .inner
 }
 
 #[cfg(test)]

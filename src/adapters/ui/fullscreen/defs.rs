@@ -12,13 +12,23 @@ pub fn all_defs() -> &'static [StageDef] {
     static DEFS: OnceLock<Vec<StageDef>> = OnceLock::new();
     DEFS.get_or_init(|| {
         #[allow(unused_mut)] // reason: 테스트 빌드에서만 push 한다.
-        let mut defs = vec![StageDef {
-            id: "blank",
-            title_key: "fullscreen.blank.title",
-            draw_fn: draw_blank_stage,
-            // 상태 미보유 — 정리할 것이 없다.
-            on_close: None,
-        }];
+        let mut defs = vec![
+            StageDef {
+                id: "blank",
+                title_key: "fullscreen.blank.title",
+                draw_fn: draw_blank_stage,
+                // 상태 미보유 — 정리할 것이 없다.
+                on_close: None,
+            },
+            StageDef {
+                id: super::notifications::NOTIFICATIONS_STAGE_ID,
+                title_key: "fullscreen.notifications.title",
+                draw_fn: super::notifications::draw,
+                // 자체 상태(목록 스크롤 위치)를 무대 종료 시 지운다 — 근거는
+                // `super::notifications` 모듈 문서.
+                on_close: Some(super::notifications::on_close),
+            },
+        ];
         #[cfg(test)]
         defs.push(test_stage_def());
         defs
