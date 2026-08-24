@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.43"
+version = "0.1.44"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -73,9 +73,11 @@ subcommands = [
     # (session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로 받고,
     # 어느 게이트로 판정할지는 `--gate` 로 받는다(stdin 에 없는 유일한 값).
     { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)." },
-    { name = "checklist-enable",  ipc_method = "claude.checklist_enable",  args = "no_args", description = "Turn on the continue-checklist Stop-hook gate (creates the enabled marker)" },
-    { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "no_args", description = "Turn off the continue-checklist Stop-hook gate (removes the enabled marker)" },
-    { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "no_args", description = "Show whether the continue-checklist Stop-hook gate is currently on" },
+    # 마커는 게이트별이다 — `--gate` 를 생략하면 host 기본 게이트를 가리키므로
+    # 게이트 축이 생기기 전의 무인자 호출이 그대로 동작한다.
+    { name = "checklist-enable",  ipc_method = "claude.checklist_enable",  args = "checklist_gate_args", description = "Turn on a Stop-hook gate (creates its enabled marker). Defaults to the built-in continue-checklist gate." },
+    { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "checklist_gate_args", description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds even if it was already off." },
+    { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "checklist_gate_args", description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once." },
     { name = "notify-error", ipc_method = "claude.notify_error", args = "notify_error_args", description = "Internal: deliver a 'child stalled after an error' notification to the caller surface (invoked as the hook.set command for claude-error-stalled). Does not touch child state, and does not clean up or re-arm the completion hooks." },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)." },
     # Claude 세션 프로필 레지스트리 (등록 → 이름으로 launch/spawn/respawn/reboot 의
@@ -92,7 +94,7 @@ subcommands = [
     # (게이트도 이름으로 부착된다) 양방향 동명 등록은 거부된다.
     { name = "gate-register",   ipc_method = "claude.gate_register",   args = "gate_register_args", description = "Register a Stop-hook gate under a name (copies the body file into plugin-private storage; re-registering the same name replaces both the body and the definition)" },
     { name = "gate-unregister", ipc_method = "claude.gate_unregister", args = "gate_name_args",     description = "Remove a registered Stop-hook gate (deletes both its definition and its body copy)" },
-    { name = "gate-list",       ipc_method = "claude.gate_list",       args = "no_args",            description = "List registered Stop-hook gates plus the built-in ones, with each gate's effective sentinel and round limit" },
+    { name = "gate-list",       ipc_method = "claude.gate_list",       args = "no_args",            description = "List registered Stop-hook gates plus the built-in ones, with each gate's effective sentinel, round limit and on/off state" },
     { name = "gate-show",       ipc_method = "claude.gate_show",       args = "gate_name_args",     description = "Show a Stop-hook gate's definition and body text" },
 ]
 
@@ -218,6 +220,14 @@ flags = [
     # 문자열에 박아 전달하는 것이 유일한 경로다. optional + 기본값이라 `--gate`
     # 없이 이미 설치돼 있는 훅 명령은 host 기본 게이트로 그대로 동작한다.
     { name = "gate", type = "string", flag = "--gate", required = false, default = "continue-checklist", help = "Name of the Stop-hook gate whose body, sentinel and round limit this hook decides with (see 'claude gate-register'). Defaults to the built-in continue-checklist gate." },
+]
+
+# enable/disable/status 3종이 공유하는 게이트 선택 인자. 훅 쪽
+# (`checklist_hook_args`)의 `--gate` 와 이름·기본값을 맞춘다 — 같은 게이트를
+# 가리키는 두 축(발동/토글)이 서로 다른 이름이면 헷갈린다.
+[contributes.cli.arg_groups.checklist_gate_args]
+flags = [
+    { name = "gate", type = "string", flag = "--gate", required = false, default = "continue-checklist", help = "Name of the Stop-hook gate to turn on/off/query (see 'claude gate-register'). Defaults to the built-in continue-checklist gate." },
 ]
 
 [contributes.cli.arg_groups.profile_register_args]

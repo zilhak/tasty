@@ -45,12 +45,22 @@
 //! 구버전이 남긴 파일이 orphan 으로 남지 않도록 session-end 정리는 그 경로도 함께
 //! 지운다.
 //!
-//! ## 게이트
+//! ## 마커 — 게이트별 on/off
 //!
-//! 마커 파일(`TASTY_PLUGIN_DATA_DIR/checklist/enabled.marker`)이 있어야 발동한다.
-//! 훅 등록 자체(프로필 부착)는 세션 기동 시점 스냅샷이라 세션을 끊지 않고는 뗄 수
-//! 없지만, 마커 파일은 존재 여부만 보므로 `rm`/`touch` 한 번으로 재기동 없이
-//! 즉시 켜고 끌 수 있다.
+//! 마커 파일(`TASTY_PLUGIN_DATA_DIR/checklist/gates/<gate>/enabled.marker`)이
+//! 있어야 발동한다. 훅 등록 자체(프로필 부착)는 세션 기동 시점 스냅샷이라 세션을
+//! 끊지 않고는 뗄 수 없지만, 마커 파일은 존재 여부만 보므로 재기동 없이 즉시 켜고
+//! 끌 수 있다 — 마커의 존재 이유가 이 "즉시 토글" 이다.
+//!
+//! 마커가 게이트별인 이유도 같은 지점이다: 게이트를 여럿 붙여 두고 마커가 하나면
+//! 즉시 토글이 전부-아니면-전무가 되어, 게이트를 나눈 의미가 토글 축에서만
+//! 사라진다. 라운드 상태와 같은 `gates/<gate>/` 아래 두어 게이트 하나의 런타임
+//! 상태가 한 디렉토리에 모이게 한다.
+//!
+//! 게이트 축이 생기기 전의 `checklist/enabled.marker` 는 **1회 이관**한다
+//! ([`migrate_legacy_marker`]) — 라운드 상태와 달리 마커는 사용자가 명시적으로 켜
+//! 둔 설정이라, 업그레이드하면서 조용히 꺼지면 "체크리스트가 안 돈다" 는 회귀로
+//! 보인다.
 
 use std::path::{Path, PathBuf};
 
@@ -144,10 +154,15 @@ fn gates_dir(data_dir: &Path) -> PathBuf {
     checklist_dir(data_dir).join("gates")
 }
 
-/// 호출자는 `gate` 가 [`crate::gate::show`] 를 통과한 이름임을 보장해야 한다 —
-/// 그 관문이 경로 조각으로 안전한 short-name 규칙을 강제한다.
+/// 게이트 하나의 런타임 상태(마커 + 라운드)가 모이는 디렉토리. 호출자는 `gate` 가
+/// [`crate::gate::is_valid_short_name`] 을 통과한 이름임을 보장해야 한다 — 그
+/// 관문이 경로 조각으로 안전한 short-name 규칙을 강제한다.
+fn gate_dir(data_dir: &Path, gate: &str) -> PathBuf {
+    gates_dir(data_dir).join(gate)
+}
+
 fn rounds_dir(data_dir: &Path, gate: &str) -> PathBuf {
-    gates_dir(data_dir).join(gate).join("rounds")
+    gate_dir(data_dir, gate).join("rounds")
 }
 
 fn state_file(data_dir: &Path, gate: &str, session_id: &str) -> PathBuf {
@@ -161,13 +176,67 @@ fn legacy_state_file(data_dir: &Path, session_id: &str) -> PathBuf {
         .join(format!("{session_id}.json"))
 }
 
-fn marker_file(data_dir: &Path) -> PathBuf {
+fn marker_file(data_dir: &Path, gate: &str) -> PathBuf {
+    gate_dir(data_dir, gate).join("enabled.marker")
+}
+
+/// 게이트 축이 생기기 전 경로. [`migrate_legacy_marker`] 만 건드린다.
+fn legacy_marker_file(data_dir: &Path) -> PathBuf {
     checklist_dir(data_dir).join("enabled.marker")
 }
 
-/// 마커 파일 존재 여부 — 게이트. `data_dir` 이 없으면(비정상 기동) 안전하게 미발동.
-fn marker_present(data_dir: Option<&Path>) -> bool {
-    data_dir.map(|d| marker_file(d).is_file()).unwrap_or(false)
+/// 마커 파일 존재 여부 — 발동 게이트. `data_dir` 이 없으면(비정상 기동) 안전하게
+/// 미발동.
+///
+/// 이름 검증을 여기서 한 번 더 하는 이유: 훅 경로는 마커를 **레지스트리 조회보다
+/// 먼저** 본다(꺼진 게이트는 등록 여부조차 볼 필요가 없다). 그래서 이 함수는
+/// `crate::gate::show` 의 관문을 아직 통과하지 않은 이름을 받을 수 있고, 검증 없이
+/// 경로를 조립하면 `../` 로 data_dir 밖 파일의 존재를 떠보는 통로가 된다.
+pub(crate) fn marker_present(data_dir: Option<&Path>, gate: &str) -> bool {
+    if !crate::gate::is_valid_short_name(gate) {
+        return false;
+    }
+    data_dir
+        .map(|d| marker_file(d, gate).is_file())
+        .unwrap_or(false)
+}
+
+/// legacy 마커(`checklist/enabled.marker`)를 host 기본 게이트의 마커로 1회 옮긴다.
+///
+/// 진입점(enable/disable/status/hook)마다 호출한다 — 어느 한 곳에만 두면 그 명령을
+/// 부르지 않은 사용자는 이관되지 않은 채로 남는다(훅만 도는 인스턴스가 대표적).
+/// legacy 파일을 지우고 끝내므로 두 번째 호출부터는 `is_file()` 한 번으로 끝난다.
+///
+/// 실패해도 에러를 올리지 않는다: 이관은 부수 작업이고, 여기서 실패를 전파하면
+/// "조회는 항상 응답 가능해야 한다"(status)는 성질이 깨진다.
+fn migrate_legacy_marker(data_dir: Option<&Path>) {
+    let Some(dir) = data_dir else {
+        return;
+    };
+    let legacy = legacy_marker_file(dir);
+    if !legacy.is_file() {
+        return;
+    }
+    if let Err(e) = move_marker_to_default_gate(dir, &legacy) {
+        warn!(
+            "checklist: failed to migrate the legacy marker {}: {e}",
+            legacy.display()
+        );
+    }
+}
+
+/// legacy 마커를 host 기본 게이트의 마커로 옮긴다. 도중에 실패하면 legacy 파일을
+/// 남긴 채 에러를 돌려준다 — 다음 진입점이 다시 시도한다. 마커는 사용자가 켜 둔
+/// 설정이라, 이관에 실패했는데 legacy 까지 지워 조용히 꺼지는 것이 최악이다.
+fn move_marker_to_default_gate(dir: &Path, legacy: &Path) -> std::io::Result<()> {
+    let gate = crate::gate::DEFAULT_GATE_NAME;
+    std::fs::create_dir_all(gate_dir(dir, gate))?;
+    std::fs::write(marker_file(dir, gate), "")?;
+    match std::fs::remove_file(legacy) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 fn no_data_dir_err(tr: &Translator) -> IpcMethodError {
@@ -178,36 +247,77 @@ fn io_err(tr: &Translator, e: std::io::Error) -> IpcMethodError {
     IpcMethodError::new(tr.t_fmt("claude.checklist.io_error", &e.to_string()))
 }
 
-/// `claude.checklist_enable` IPC 진입점 — 마커 파일을 만들어 게이트를 켠다(raw
+/// 판정/토글 대상 게이트 이름. `--gate` 는 optional 이고 기본값이 매니페스트에
+/// 박혀 있지만, IPC 직접 호출은 그 기본값을 거치지 않으므로 여기서도 같은
+/// 기본값으로 떨어뜨린다 — 훅과 enable/disable/status 가 같은 규칙을 쓴다.
+fn gate_param(params: &Value) -> &str {
+    params
+        .get("gate")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(crate::gate::DEFAULT_GATE_NAME)
+}
+
+/// 마커를 켜고 끄는 쪽은 이름을 엄격하게 본다 — 오타로 만든 게이트 디렉토리가
+/// 조용히 쌓이면 `gate-list` 에도 안 보이는 유령 상태가 된다. 반대로 발동
+/// 경로([`hook_response`])는 미등록 게이트를 조용히 통과시킨다: 등록이 지워졌는데
+/// 훅 명령이 남은 세션에서 에러를 내면 그 세션이 종료 불가가 되기 때문이다.
+fn require_known_gate<'a>(
+    data_dir: Option<&Path>,
+    params: &'a Value,
+    tr: &Translator,
+) -> Result<&'a str, IpcMethodError> {
+    let gate = gate_param(params);
+    crate::gate::ensure_known(data_dir, gate, tr).map_err(|e| crate::gate::to_ipc_err(e, tr))?;
+    Ok(gate)
+}
+
+/// `claude.checklist_enable` IPC 진입점 — 마커 파일을 만들어 그 게이트를 켠다(raw
 /// `touch` 대신 제어된 진입점, CLI 배선은 `tasty-plugin.toml` 의
-/// `checklist-enable`, `no_args` 그룹 재사용).
+/// `checklist-enable` + `checklist_gate_args`).
 pub(crate) fn handle_enable(
     data_dir: Option<&Path>,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    migrate_legacy_marker(data_dir);
+    let gate = require_known_gate(data_dir, params, tr)?;
     let dir = data_dir.ok_or_else(|| no_data_dir_err(tr))?;
-    std::fs::create_dir_all(checklist_dir(dir)).map_err(|e| io_err(tr, e))?;
-    std::fs::write(marker_file(dir), "").map_err(|e| io_err(tr, e))?;
+    std::fs::create_dir_all(gate_dir(dir, gate)).map_err(|e| io_err(tr, e))?;
+    std::fs::write(marker_file(dir, gate), "").map_err(|e| io_err(tr, e))?;
     Ok(json!({ "enabled": true }))
 }
 
-/// `claude.checklist_disable` IPC 진입점 — 마커 파일을 지워 게이트를 끈다. 이미
+/// `claude.checklist_disable` IPC 진입점 — 마커 파일을 지워 그 게이트를 끈다. 이미
 /// 꺼져 있어도(마커 없음) 성공으로 취급한다(멱등).
 pub(crate) fn handle_disable(
     data_dir: Option<&Path>,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
+    migrate_legacy_marker(data_dir);
+    let gate = require_known_gate(data_dir, params, tr)?;
     let dir = data_dir.ok_or_else(|| no_data_dir_err(tr))?;
-    match std::fs::remove_file(marker_file(dir)) {
+    match std::fs::remove_file(marker_file(dir, gate)) {
         Ok(()) => Ok(json!({ "enabled": false })),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({ "enabled": false })),
         Err(e) => Err(io_err(tr, e)),
     }
 }
 
-/// `claude.checklist_status` IPC 진입점 — 마커 파일 존재 여부 조회.
-pub(crate) fn handle_status(data_dir: Option<&Path>) -> Result<Value, IpcMethodError> {
-    Ok(json!({ "enabled": marker_present(data_dir) }))
+/// `claude.checklist_status` IPC 진입점 — 그 게이트의 마커 존재 여부 조회. 응답은
+/// 게이트 축이 생기기 전과 같은 `{ "enabled": bool }` 이다(기존 호출자가 파싱하던
+/// 필드를 그대로 둔다). 전체 게이트의 on/off 는 `gate-list` 가 보여준다.
+///
+/// 조회라서 미등록 게이트도 거부하지 않고 `enabled: false` 로 답한다 —
+/// `data_dir` 이 없어도 에러가 아닌 것과 같은 이유(조회는 항상 응답 가능해야
+/// 한다).
+pub(crate) fn handle_status(
+    data_dir: Option<&Path>,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    migrate_legacy_marker(data_dir);
+    Ok(json!({ "enabled": marker_present(data_dir, gate_param(params)) }))
 }
 
 fn read_state(data_dir: &Path, gate: &str, session_id: &str) -> Option<RoundState> {
@@ -306,7 +416,7 @@ fn resolve_round_limit(gate_limit: Option<u32>, settings_limit: Option<u32>) -> 
 /// 실패 모드는 전부 **조용히 통과**(에러를 반환하지 않고 무출력 `{}`) — 이
 /// 훅이 잘못 block 을 걸면 세션이 종료 불가 상태로 빠지므로, 불확실할 때는
 /// 항상 통과 쪽으로 폴백한다:
-/// - 마커 파일 없음 → 통과(게이트 꺼짐)
+/// - 그 게이트의 마커 파일 없음 → 통과(게이트 꺼짐)
 /// - `session_id` 없음 → 통과(상태를 키잉할 수 없음)
 /// - `prompt_id` 없음 → 통과, 상태도 건드리지 않음(턴 경계를 판단할 수 없어
 ///   기존 라운드 카운터를 섣불리 리셋/증가시키지 않는다 — 별도 판단, 문서에
@@ -337,7 +447,11 @@ fn hook_response(
     params: &Value,
     settings_round_limit: impl Fn() -> Option<u32>,
 ) -> Result<Value, IpcMethodError> {
-    if !marker_present(data_dir) {
+    migrate_legacy_marker(data_dir);
+    // 게이트 이름은 params 만 보면 정해지므로(파일 I/O 없음) 마커보다 먼저 뽑는다 —
+    // 마커 자체가 게이트별이라 이름 없이는 어느 마커를 볼지 알 수 없다.
+    let gate_name = gate_param(params);
+    if !marker_present(data_dir, gate_name) {
         return Ok(json!({}));
     }
     // marker_present(Some(_)) 를 통과했으므로 data_dir 은 반드시 Some 이지만,
@@ -365,13 +479,6 @@ fn hook_response(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    // `--gate` 는 optional 이고 기본값이 매니페스트에 박혀 있지만, IPC 직접 호출은
-    // 그 기본값을 거치지 않으므로 여기서도 같은 기본값으로 떨어뜨린다.
-    let gate_name = params
-        .get("gate")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(crate::gate::DEFAULT_GATE_NAME);
     let Ok((owner, gate_def, gate_body)) = crate::gate::show(Some(data_dir), gate_name, tr) else {
         return Ok(json!({}));
     };
@@ -553,9 +660,22 @@ mod tests {
 
     // ── handle_checklist_hook 통합(파일 I/O 포함) ──
 
-    fn setup_marker(dir: &Path) {
-        std::fs::create_dir_all(checklist_dir(dir)).unwrap();
-        std::fs::write(marker_file(dir), "").unwrap();
+    /// 마커 파일을 직접 만든다 — `handle_enable` 과 달리 게이트 등록 여부를 보지
+    /// 않으므로, "켜 둔 뒤 등록이 지워진 게이트" 같은 상태도 만들 수 있다.
+    fn setup_marker(dir: &Path, gate: &str) {
+        std::fs::create_dir_all(gate_dir(dir, gate)).unwrap();
+        std::fs::write(marker_file(dir, gate), "").unwrap();
+    }
+
+    const G: &str = crate::gate::DEFAULT_GATE_NAME;
+
+    /// `--gate` 없는 (게이트 축 이전) 호출 모양.
+    fn no_gate() -> Value {
+        json!({})
+    }
+
+    fn gate_params(gate: &str) -> Value {
+        json!({ "gate": gate })
     }
 
     // handle_checklist_hook은 host.call("settings.get_plugin_setting", ...)을 쓰므로
@@ -566,19 +686,55 @@ mod tests {
     #[test]
     fn marker_absent_means_not_present() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(!marker_present(Some(tmp.path())));
+        assert!(!marker_present(Some(tmp.path()), G));
     }
 
     #[test]
     fn marker_present_after_touch() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
-        assert!(marker_present(Some(tmp.path())));
+        setup_marker(tmp.path(), G);
+        assert!(marker_present(Some(tmp.path()), G));
     }
 
     #[test]
     fn marker_present_false_without_data_dir() {
-        assert!(!marker_present(None));
+        assert!(!marker_present(None, G));
+    }
+
+    /// 훅 경로는 마커를 레지스트리 조회보다 먼저 보므로, 이름 검증이 이 계층에도
+    /// 있어야 `../` 가 data_dir 밖을 떠보는 통로가 되지 않는다.
+    #[test]
+    fn marker_present_rejects_names_that_are_not_valid_short_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        // data_dir 바깥에 마커와 같은 이름의 파일을 두고 traversal 로 노려본다.
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("enabled.marker"), "").unwrap();
+        let inner = tmp.path().join("data");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert!(!marker_present(Some(&inner), "../../outside"));
+        assert!(!marker_present(Some(&inner), "UPPER"));
+    }
+
+    #[test]
+    fn markers_are_independent_per_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", None);
+        register_gate(tmp.path(), "gate-b", "[[B-DONE]]", None);
+
+        handle_enable(Some(tmp.path()), &gate_params("gate-a"), &test_translator()).unwrap();
+        assert!(marker_present(Some(tmp.path()), "gate-a"));
+        assert!(!marker_present(Some(tmp.path()), "gate-b"));
+        assert!(
+            !marker_present(Some(tmp.path()), G),
+            "host 기본 게이트까지 켜졌다"
+        );
+
+        // 한쪽을 꺼도 다른 쪽은 그대로다.
+        handle_enable(Some(tmp.path()), &gate_params("gate-b"), &test_translator()).unwrap();
+        handle_disable(Some(tmp.path()), &gate_params("gate-a"), &test_translator()).unwrap();
+        assert!(!marker_present(Some(tmp.path()), "gate-a"));
+        assert!(marker_present(Some(tmp.path()), "gate-b"));
     }
 
     // ── handle_enable/handle_disable/handle_status ──
@@ -586,55 +742,162 @@ mod tests {
     #[test]
     fn enable_creates_marker_file() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(!marker_present(Some(tmp.path())));
-        let result = handle_enable(Some(tmp.path()), &test_translator()).unwrap();
+        assert!(!marker_present(Some(tmp.path()), G));
+        // 무인자 호출(게이트 축 이전 형태)은 host 기본 게이트를 켠다.
+        let result = handle_enable(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
         assert_eq!(result, json!({ "enabled": true }));
-        assert!(marker_present(Some(tmp.path())));
+        assert!(marker_present(Some(tmp.path()), G));
     }
 
     #[test]
     fn disable_removes_marker_file() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
-        assert!(marker_present(Some(tmp.path())));
-        let result = handle_disable(Some(tmp.path()), &test_translator()).unwrap();
+        setup_marker(tmp.path(), G);
+        assert!(marker_present(Some(tmp.path()), G));
+        let result = handle_disable(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
         assert_eq!(result, json!({ "enabled": false }));
-        assert!(!marker_present(Some(tmp.path())));
+        assert!(!marker_present(Some(tmp.path()), G));
     }
 
     #[test]
     fn disable_is_idempotent_without_marker() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(!marker_present(Some(tmp.path())));
-        let result = handle_disable(Some(tmp.path()), &test_translator()).unwrap();
+        assert!(!marker_present(Some(tmp.path()), G));
+        let result = handle_disable(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
         assert_eq!(result, json!({ "enabled": false }));
+        // 두 번 더 꺼도 에러가 아니다.
+        handle_disable(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
+        handle_disable(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
     }
 
     #[test]
     fn status_round_trips_enable_disable() {
         let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        // 응답 형태는 게이트 축이 생기기 전과 같은 `{ "enabled": bool }` 이다.
         assert_eq!(
-            handle_status(Some(tmp.path())).unwrap(),
+            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
             json!({ "enabled": false })
         );
-        handle_enable(Some(tmp.path()), &test_translator()).unwrap();
+        handle_enable(Some(tmp.path()), &no_gate(), &tr).unwrap();
         assert_eq!(
-            handle_status(Some(tmp.path())).unwrap(),
+            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
             json!({ "enabled": true })
         );
-        handle_disable(Some(tmp.path()), &test_translator()).unwrap();
+        handle_disable(Some(tmp.path()), &no_gate(), &tr).unwrap();
         assert_eq!(
-            handle_status(Some(tmp.path())).unwrap(),
+            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
             json!({ "enabled": false })
         );
     }
 
     #[test]
     fn enable_disable_status_error_without_data_dir() {
-        assert!(handle_enable(None, &test_translator()).is_err());
-        assert!(handle_disable(None, &test_translator()).is_err());
+        assert!(handle_enable(None, &no_gate(), &test_translator()).is_err());
+        assert!(handle_disable(None, &no_gate(), &test_translator()).is_err());
         // status 는 marker_present 와 동일하게 안전 폴백(false)이지 에러가 아니다.
-        assert_eq!(handle_status(None).unwrap(), json!({ "enabled": false }));
+        assert_eq!(
+            handle_status(None, &no_gate()).unwrap(),
+            json!({ "enabled": false })
+        );
+    }
+
+    #[test]
+    fn enable_and_disable_reject_unknown_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        let params = gate_params("no-such-gate");
+        assert!(handle_enable(Some(tmp.path()), &params, &tr).is_err());
+        assert!(handle_disable(Some(tmp.path()), &params, &tr).is_err());
+        // 오타로 만든 게이트 디렉토리가 남지 않는다.
+        assert!(!gate_dir(tmp.path(), "no-such-gate").exists());
+        // 이름 규칙 위반도 같은 관문에서 걸린다.
+        assert!(handle_enable(Some(tmp.path()), &gate_params("../evil"), &tr).is_err());
+    }
+
+    #[test]
+    fn status_answers_for_unknown_gate_instead_of_failing() {
+        let tmp = tempfile::tempdir().unwrap();
+        // 조회는 관대하다 — 미등록 이름에도 에러가 아니라 `enabled: false`.
+        assert_eq!(
+            handle_status(Some(tmp.path()), &gate_params("no-such-gate")).unwrap(),
+            json!({ "enabled": false })
+        );
+    }
+
+    #[test]
+    fn enable_accepts_a_registered_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", None);
+        let params = gate_params("gate-a");
+        handle_enable(Some(tmp.path()), &params, &test_translator()).unwrap();
+        assert_eq!(
+            handle_status(Some(tmp.path()), &params).unwrap(),
+            json!({ "enabled": true })
+        );
+    }
+
+    // ── legacy 마커 1회 이관 ──
+
+    #[test]
+    fn legacy_marker_migrates_to_continue_checklist_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(checklist_dir(tmp.path())).unwrap();
+        std::fs::write(legacy_marker_file(tmp.path()), "").unwrap();
+
+        // 진입점 하나만 불러도 이관된다(여기서는 조회).
+        assert_eq!(
+            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
+            json!({ "enabled": true }),
+            "업그레이드 전에 켜 둔 마커가 조용히 꺼졌다"
+        );
+        assert!(marker_present(Some(tmp.path()), G));
+        assert!(
+            !legacy_marker_file(tmp.path()).exists(),
+            "legacy 파일이 남아 다시 이관될 수 있다"
+        );
+    }
+
+    #[test]
+    fn legacy_migration_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        std::fs::create_dir_all(checklist_dir(tmp.path())).unwrap();
+        std::fs::write(legacy_marker_file(tmp.path()), "").unwrap();
+
+        migrate_legacy_marker(Some(tmp.path()));
+        migrate_legacy_marker(Some(tmp.path()));
+        assert!(marker_present(Some(tmp.path()), G));
+
+        // 이관 후 껐으면 다시 켜지지 않는다 — 두 번째 이관이 살아나면 사용자가
+        // 끈 게이트가 되살아난다.
+        handle_disable(Some(tmp.path()), &no_gate(), &tr).unwrap();
+        migrate_legacy_marker(Some(tmp.path()));
+        handle_status(Some(tmp.path()), &no_gate()).unwrap();
+        assert!(
+            !marker_present(Some(tmp.path()), G),
+            "꺼 둔 게이트가 되살아났다"
+        );
+    }
+
+    #[test]
+    fn legacy_migration_is_noop_without_legacy_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        migrate_legacy_marker(Some(tmp.path()));
+        migrate_legacy_marker(None);
+        assert!(!marker_present(Some(tmp.path()), G));
+    }
+
+    #[test]
+    fn legacy_marker_migration_does_not_touch_other_gates() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", None);
+        std::fs::create_dir_all(checklist_dir(tmp.path())).unwrap();
+        std::fs::write(legacy_marker_file(tmp.path()), "").unwrap();
+
+        migrate_legacy_marker(Some(tmp.path()));
+        assert!(marker_present(Some(tmp.path()), G));
+        assert!(!marker_present(Some(tmp.path()), "gate-a"));
     }
 
     #[test]
@@ -775,18 +1038,19 @@ mod tests {
     #[test]
     fn unknown_gate_passes_silently() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
-        // 등록된 적 없는 이름이 훅 명령에 박혀 있는 상태(등록이 지워진 세션).
+        // 켜 둔 뒤 등록이 지워진 게이트 — 마커는 남았는데 정의가 없다. 발동
+        // 경로는 여기서 에러를 내면 안 된다(그 세션이 종료 불가가 된다).
+        setup_marker(tmp.path(), "no-such-gate");
         let params = hook_params("no-such-gate", "sess-1", "p1", "아직 작업 중");
         assert_eq!(fire(tmp.path(), &params, Some(3)), json!({}));
-        // 상태 파일도 만들지 않는다.
-        assert!(!gates_dir(tmp.path()).join("no-such-gate").exists());
+        // 라운드 상태 파일도 만들지 않는다.
+        assert!(!rounds_dir(tmp.path(), "no-such-gate").exists());
     }
 
     #[test]
     fn hook_uses_the_gates_own_sentinel_and_body() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
+        setup_marker(tmp.path(), "gate-a");
         register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(2));
 
         // 다른 게이트의 센티넬로는 통과하지 못한다.
@@ -816,7 +1080,7 @@ mod tests {
     #[test]
     fn hook_gate_round_limit_wins_over_settings() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
+        setup_marker(tmp.path(), "gate-a");
         register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(1));
 
         // Settings 가 9 여도 게이트 상한 1 이 이긴다: 1 라운드 block 후 통과.
@@ -842,7 +1106,8 @@ mod tests {
     #[test]
     fn two_gates_in_one_session_keep_independent_counters() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
+        setup_marker(tmp.path(), "gate-a");
+        setup_marker(tmp.path(), "gate-b");
         register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(2));
         register_gate(tmp.path(), "gate-b", "[[B-DONE]]", Some(5));
 
@@ -885,7 +1150,7 @@ mod tests {
     #[test]
     fn host_default_gate_is_used_when_no_gate_param_and_keeps_cached_body() {
         let tmp = tempfile::tempdir().unwrap();
-        setup_marker(tmp.path());
+        setup_marker(tmp.path(), G);
         // `--gate` 가 없는 (게이트 축 이전) 훅 명령 모양.
         let params = json!({
             "session_id": "sess-1",
@@ -914,6 +1179,50 @@ mod tests {
         assert_eq!(passed, json!({}));
     }
 
+    /// 마커가 게이트별이라는 것의 실제 효과 — 한쪽만 켜면 한쪽만 발동한다.
+    #[test]
+    fn only_the_enabled_gate_fires() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(3));
+        register_gate(tmp.path(), "gate-b", "[[B-DONE]]", Some(3));
+        handle_enable(Some(tmp.path()), &gate_params("gate-a"), &test_translator()).unwrap();
+
+        let a = fire(
+            tmp.path(),
+            &hook_params("gate-a", "sess-1", "p1", "진행 중"),
+            None,
+        );
+        let b = fire(
+            tmp.path(),
+            &hook_params("gate-b", "sess-1", "p1", "진행 중"),
+            None,
+        );
+        assert_eq!(a["decision"], "block", "켜 둔 게이트가 발동하지 않았다");
+        assert_eq!(b, json!({}), "꺼 둔 게이트가 발동했다");
+        assert_eq!(read_state(tmp.path(), "gate-b", "sess-1"), None);
+    }
+
+    /// 게이트 축 이전에 켜 둔 마커만 있는 인스턴스에서 `--gate` 없는 훅이 그대로
+    /// 발동해야 한다 — 이관이 훅 경로에서도 일어난다는 회귀 방지.
+    #[test]
+    fn legacy_marker_keeps_the_hook_firing_without_any_command() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(checklist_dir(tmp.path())).unwrap();
+        std::fs::write(legacy_marker_file(tmp.path()), "").unwrap();
+
+        let params = json!({
+            "session_id": "sess-1",
+            "prompt_id": "p1",
+            "last_assistant_message": "아직 작업 중",
+        });
+        let blocked = fire(tmp.path(), &params, Some(3));
+        assert_eq!(
+            blocked["decision"], "block",
+            "legacy 마커만 있는 인스턴스에서 훅이 조용히 꺼졌다"
+        );
+        assert!(!legacy_marker_file(tmp.path()).exists());
+    }
+
     #[test]
     fn marker_off_passes_before_touching_the_gate_registry() {
         let tmp = tempfile::tempdir().unwrap();
@@ -933,9 +1242,19 @@ mod tests {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasty-plugin.toml");
         let text = std::fs::read_to_string(&manifest).unwrap();
         let re = regex::Regex::new(r#"flag = "--gate".*?default = "([^"]+)""#).unwrap();
-        let found = re
-            .captures(&text)
-            .expect("tasty-plugin.toml 에 --gate 인자 선언이 없다");
-        assert_eq!(&found[1], crate::gate::DEFAULT_GATE_NAME);
+        // 선언이 여럿이다(훅 판정용 + enable/disable/status 토글용) — 하나라도
+        // 어긋나면 같은 이름의 게이트를 가리키지 않게 되므로 전부 검사한다.
+        let defaults: Vec<&str> = re
+            .captures_iter(&text)
+            .map(|c| c.extract::<1>().1[0])
+            .collect();
+        assert_eq!(
+            defaults.len(),
+            2,
+            "tasty-plugin.toml 의 --gate 기본값 선언 수가 예상과 다르다: {defaults:?}"
+        );
+        for found in defaults {
+            assert_eq!(found, crate::gate::DEFAULT_GATE_NAME);
+        }
     }
 }

@@ -54,8 +54,9 @@ struct ClaudePlugin {
     scanner: Arc<Mutex<ErrorScanner>>,
     /// reboot 시퀀스 진행 중인 surface 집합 — 같은 surface 중복 reboot 가드.
     rebooting: Arc<Mutex<HashSet<u32>>>,
-    /// Claude 세션 프로필 레지스트리·머지 산출물(`profile.rs`) + `continue-checklist`
-    /// 라운드 상태·마커 파일(`checklist.rs`)의 공용 저장 루트(`TASTY_PLUGIN_DATA_DIR`).
+    /// Claude 세션 프로필 레지스트리·머지 산출물(`profile.rs`) + 게이트 레지스트리
+    /// (`gate.rs`) + 게이트별 라운드 상태·마커 파일(`checklist.rs`)의 공용 저장
+    /// 루트(`TASTY_PLUGIN_DATA_DIR`).
     /// 호스트가 비정상적으로 주입하지 않았으면 `None` — 두 모듈 모두 등록/부착/발동
     /// 요청을 명시적 에러(또는 checklist 는 안전한 통과)로 처리한다(결정 3: 조용히
     /// 다른 경로에 쓰지 않음).
@@ -119,13 +120,19 @@ impl Plugin for ClaudePlugin {
                 &self.translator,
                 &ctx.params,
             ),
-            "claude.checklist_enable" => {
-                checklist::handle_enable(self.plugin_data_dir.as_deref(), &self.translator)
+            "claude.checklist_enable" => checklist::handle_enable(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.checklist_disable" => checklist::handle_disable(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
+            "claude.checklist_status" => {
+                checklist::handle_status(self.plugin_data_dir.as_deref(), &ctx.params)
             }
-            "claude.checklist_disable" => {
-                checklist::handle_disable(self.plugin_data_dir.as_deref(), &self.translator)
-            }
-            "claude.checklist_status" => checklist::handle_status(self.plugin_data_dir.as_deref()),
             "claude.install" => match install::run_install(&self.translator) {
                 Ok(added) => Ok(json!({ "installed": added })),
                 Err(e) => Err(IpcMethodError::new(

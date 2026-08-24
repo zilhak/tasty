@@ -55,7 +55,7 @@ use crate::checklist::SENTINEL;
 /// (소문자/숫자/하이픈, 최대 32자). 두 레지스트리의 이름이 한 평면을 공유하므로
 /// 규칙이 갈리면 한쪽에서만 쓸 수 있는 이름이 생긴다. 파일명으로도 그대로 쓰이므로
 /// 경로 traversal 문자(`/`, `..`)를 원천 배제한다.
-fn is_valid_short_name(s: &str) -> bool {
+pub(crate) fn is_valid_short_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
     }
@@ -171,6 +171,11 @@ pub struct GateSummary {
     pub round_limit: Option<u32>,
     /// `"gate"`(정의가 직접 지정) 또는 `"settings"`(미지정 → Settings 폴백).
     pub round_limit_source: &'static str,
+    /// 이 게이트의 마커가 켜져 있는가(`checklist-enable --gate <name>`). 게이트별
+    /// on/off 를 한 번에 보려면 `checklist-status` 를 게이트 수만큼 호출해야 하므로
+    /// 목록 쪽에 싣는다 — `checklist-status` 응답 형태는 기존 호출자를 위해
+    /// `{ "enabled": bool }` 그대로 둔다.
+    pub enabled: bool,
 }
 
 /// host 가 코드로 내장한 기본 게이트. 사용자가 같은 이름으로 등록하면 그쪽이
@@ -226,6 +231,24 @@ fn require_data_dir(data_dir: Option<&Path>) -> Result<&Path, GateError> {
 /// 충돌을 검사할 때 쓴다(이름 공간이 한 평면이라는 계약의 대칭 절반).
 pub(crate) fn is_registered(data_dir: Option<&Path>, short_name: &str) -> bool {
     data_dir.is_some_and(|d| registered_file(d, short_name).is_file())
+}
+
+/// 이 이름의 게이트가 실재하는가(등록 게이트 또는 host 기본 게이트) — 마커를
+/// 켜고 끄는 진입점이 오타를 거를 때 쓴다. [`show`] 와 달리 본문 파일을 읽지
+/// 않는다: 마커 토글에 본문은 필요 없고, 본문이 읽히지 않는다는 이유로 이미
+/// 켜 둔 게이트를 끄지 못하게 되면 곤란하다.
+pub(crate) fn ensure_known(
+    data_dir: Option<&Path>,
+    short_name: &str,
+    tr: &Translator,
+) -> Result<(), GateError> {
+    if !is_valid_short_name(short_name) {
+        return Err(GateError::InvalidShortName(short_name.to_string()));
+    }
+    if is_registered(data_dir, short_name) || host_default_gate(short_name, tr).is_some() {
+        return Ok(());
+    }
+    Err(GateError::UnknownGate(format!("user/{short_name}")))
 }
 
 // ── 등록/조회/해제 (user 출처) ────────────────────────────────────────────
@@ -400,7 +423,8 @@ pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
             continue;
         }
         if let Some((def, _body)) = host_default_gate(name, tr) {
-            out.push(summary(format!("host/{name}"), "host", def));
+            let enabled = crate::checklist::marker_present(data_dir, name);
+            out.push(summary(format!("host/{name}"), "host", def, enabled));
         }
     }
     for name in &user_names {
@@ -415,12 +439,13 @@ pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
                 sentinel: SENTINEL.to_string(),
                 round_limit: None,
             });
-        out.push(summary(format!("user/{name}"), "user", def));
+        let enabled = crate::checklist::marker_present(data_dir, name);
+        out.push(summary(format!("user/{name}"), "user", def, enabled));
     }
     out
 }
 
-fn summary(id: String, owner: &'static str, def: GateDef) -> GateSummary {
+fn summary(id: String, owner: &'static str, def: GateDef, enabled: bool) -> GateSummary {
     GateSummary {
         id,
         owner,
@@ -431,6 +456,7 @@ fn summary(id: String, owner: &'static str, def: GateDef) -> GateSummary {
         },
         sentinel: def.sentinel,
         round_limit: def.round_limit,
+        enabled,
     }
 }
 
@@ -455,6 +481,7 @@ fn summary_to_json(s: &GateSummary) -> Value {
         "sentinel": s.sentinel,
         "round_limit": s.round_limit,
         "round_limit_source": s.round_limit_source,
+        "enabled": s.enabled,
     })
 }
 
@@ -778,6 +805,40 @@ mod tests {
             .expect("user gate is listed");
         assert_eq!(user.round_limit, Some(5));
         assert_eq!(user.round_limit_source, "gate");
+    }
+
+    /// `gate-list` 가 게이트별 on/off 를 보여준다 — 게이트마다
+    /// `checklist-status` 를 부르지 않고 한 번에 보려면 이 필드가 필요하다.
+    #[test]
+    fn list_reports_each_gates_enabled_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        let src = body_with(tmp.path(), "b.md", &format!("{SENTINEL}\n"));
+        register(Some(tmp.path()), "mygate", &src, None, None).unwrap();
+
+        let off = list(Some(tmp.path()), &tr);
+        assert!(
+            off.iter().all(|e| !e.enabled),
+            "켠 적 없는데 on 으로 보인다"
+        );
+
+        crate::checklist::handle_enable(Some(tmp.path()), &json!({ "gate": "mygate" }), &tr)
+            .unwrap();
+        let on = list(Some(tmp.path()), &tr);
+        assert!(on.iter().find(|e| e.id == "user/mygate").unwrap().enabled);
+        assert!(
+            !on.iter()
+                .find(|e| e.id == "host/continue-checklist")
+                .unwrap()
+                .enabled,
+            "다른 게이트를 켰는데 host 기본 게이트가 on 으로 보인다"
+        );
+    }
+
+    /// 마커 조회가 `data_dir` 없이도 답해야 목록이 host 기본 게이트를 계속 보여준다.
+    #[test]
+    fn list_without_data_dir_reports_gates_as_off() {
+        assert!(list(None, &test_translator()).iter().all(|e| !e.enabled));
     }
 
     #[test]
