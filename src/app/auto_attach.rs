@@ -476,9 +476,12 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
         WorkspaceAttachTarget::Profile { name } => {
             let profiles = RemoteProfiles::load();
             let passkeys = Passkeys::load();
-            let p = profiles
-                .get(name)
-                .ok_or_else(|| anyhow::anyhow!("원격 프로필 '{name}' 을 찾을 수 없습니다"))?;
+            let p = profiles.get(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{}",
+                    crate::i18n::t_fmt("cli.remote_profile.not_found", name)
+                )
+            })?;
             // tasty-attach kind 검증 + 비활성 게이트 + ref/inline resolve 를 한곳에서.
             ssh::resolve_attach_target(p, &profiles, &passkeys)?
         }

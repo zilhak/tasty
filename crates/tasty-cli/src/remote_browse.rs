@@ -70,7 +70,7 @@ pub fn resolve_connection_spec(
             let passkeys = Passkeys::load();
             let p = profiles
                 .get(name)
-                .with_context(|| format!("원격 프로필 '{name}' 을 찾을 수 없습니다"))?;
+                .with_context(|| tasty_i18n::t_fmt("cli.remote_profile.not_found", name))?;
             ssh::resolve_attach_target(p, &profiles, &passkeys)
         }
         None => match ssh {

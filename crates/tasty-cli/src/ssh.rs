@@ -1156,7 +1156,10 @@ pub fn detect_and_persist(name: &str) -> Result<PortMode> {
     let mut profiles = RemoteProfiles::load();
     let passkeys = Passkeys::load();
     let Some(mut p) = profiles.get(name).cloned() else {
-        bail!("원격 프로필 '{name}' 을 찾을 수 없습니다");
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt("cli.remote_profile.not_found", name)
+        );
     };
     let result = detect_for_profile(&p, &passkeys);
     match &result {

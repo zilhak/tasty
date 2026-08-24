@@ -480,7 +480,8 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
                     let passkeys = tasty_remote_profiles::Passkeys::load();
                     let Some(p) = profiles.get(name) else {
                         anyhow::bail!(
-                            "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
+                            "{}",
+                            tasty_i18n::t_fmt("cli.remote_profile.not_found_list_hint", name)
                         );
                     };
                     crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?
@@ -558,7 +559,8 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
                     let passkeys = tasty_remote_profiles::Passkeys::load();
                     let Some(p) = profiles.get(name) else {
                         anyhow::bail!(
-                            "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
+                            "{}",
+                            tasty_i18n::t_fmt("cli.remote_profile.not_found_list_hint", name)
                         );
                     };
                     crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?

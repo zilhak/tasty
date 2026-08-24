@@ -591,14 +591,20 @@ mod attach_surface_tests {
         );
     }
 
-    /// 존재하지 않는 프로필 `remote check --profile nope` → "찾을 수 없습니다".
+    /// 존재하지 않는 프로필 `remote check --profile nope` → 프로필 미발견 거부.
+    ///
+    /// 이 메시지는 i18n 키를 거치므로 원문 리터럴로 매칭할 수 없다. 렌더 결과를
+    /// **같은 키로 만들어** 비교한다 — 이러면 i18n 초기화 여부와 무관하게(미초기화
+    /// 프로세스에서는 `t_fmt` 가 키를 그대로 돌려준다) 성립하고, 다른 키를 쓰도록
+    /// 바뀌면 실패한다.
     #[test]
     fn remote_check_unknown_profile_rejected() {
         let cli =
             Cli::try_parse_from(["tasty", "remote", "check", "--profile", "__nope__"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        let expected = tasty_i18n::t_fmt("cli.remote_profile.not_found_list_hint", "__nope__");
         assert!(
-            err.to_string().contains("찾을 수 없습니다"),
+            err.to_string().contains(&expected),
             "unexpected error: {err}"
         );
     }
