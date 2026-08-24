@@ -468,6 +468,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.remove", local_only()),
         ("plugin.enable", local_only()),
         ("plugin.disable", local_only()),
+        // 번들 plugin 을 실행 중 인스턴스에 재sync — install/remove/enable/disable
+        // 과 같은 lifecycle 계열이라 같은 근거로 닫는다. 호출자는 개발 중 재빌드를
+        // 반영하는 사람이나 dist 업그레이드 경로이지 plugin 자신이 아니고, plugin
+        // 이 자기(또는 남의) 번들 바이너리를 교체할 수 있으면 lifecycle 소유가
+        // 뒤집힌다 — docs/dev-guide/plugin-development.md §9.1.
+        ("plugin.upgrade_builtins", local_only()),
         ("plugin.permissions", local_only()),
         ("plugin.grant", local_only()),
         ("plugin.revoke", local_only()),

@@ -6,10 +6,15 @@
 //! 권한을 재검토하는 쪽에서도. local caller 전용으로 두려는 의도라면
 //! `local_only()` 로 명시 등재해 의도를 표에 남긴다.
 //!
-//! 이 가드가 없던 동안 `agent.task_set_result` 와 `debug.close_workspace` /
-//! `debug.switch_workspace` / `debug.switch_tab` 4 종이 형제 메서드가 전부
-//! 등재된 상태에서 조용히 빠져 있었다. 정책·근거 본문은
-//! [`docs/dev-guide/api-conventions.md`] · [`docs/dev-guide/debug-ipc.md`].
+//! 이 가드가 없던 동안 `agent.task_set_result` · `debug.close_workspace` /
+//! `debug.switch_workspace` / `debug.switch_tab` · `plugin.upgrade_builtins`
+//! 5 종이 형제 메서드가 전부 등재된 상태에서 조용히 빠져 있었다. 정책·근거
+//! 본문은 [`docs/dev-guide/api-conventions.md`] · [`docs/dev-guide/debug-ipc.md`].
+//!
+//! **[`ROUTER_SOURCES`] 에 파일을 빠뜨리면 그만큼 사각지대가 그대로 남는다** —
+//! 실제로 `src/app/` 쪽 3 파일이 처음 목록에서 빠져 `plugin.upgrade_builtins`
+//! 하나가 가드를 통과했다. 새 dispatch match 를 다른 파일에 만들면 여기에
+//! 추가한다.
 //!
 //! release 빌드에서는 `DEBUG_METHODS` 가 설계상 비어 있어(`debug.*` 는 release
 //! IPC 표면에서 완전히 사라진다) 이 대조가 성립하지 않는다. 따라서 debug
@@ -25,6 +30,9 @@ const ROUTER_SOURCES: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/ime.rs",
     "src/adapters/ipc/handler/debug_plugin.rs",
+    "src/app/dispatch/list_global.rs",
+    "src/app/ipc/app_methods.rs",
+    "src/app/ipc/debug_methods.rs",
 ];
 
 /// `    "foo.bar" => ...` 형태의 match 팔에서 메서드 이름만 뽑는다.
