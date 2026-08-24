@@ -314,17 +314,27 @@ pub(super) fn handle_debug_inject_mouse(
 /// 직접 띄워 시각 검증하기 위한 debug 격리 표면.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_list(
-    _state: &AppState,
+    state: &AppState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let items: Vec<_> = crate::adapters::ui::popup::defs::all_defs()
         .iter()
         .map(|def| {
+            // 열려 있는 popup 은 현재 rect 와 z_seq 를 함께 노출한다 — 겹친 popup 의
+            // 마우스 소유권 판정(`popup/occlusion.rs`)을 debug 로 검증할 때 좌표를
+            // 실측 없이 조준하기 위한 관찰면. z_seq 는 plugin popup 과 공유하는 전역
+            // 시퀀스라 `debug.popup.list` 값과 직접 비교된다.
+            let geom = state.popups.open_geometry(def.id);
             json!({
                 "id": def.id,
                 "title_key": def.title_key,
                 "headless": def.headless,
                 "close_on_outside_click": def.close_on_outside_click,
+                "open": geom.is_some(),
+                "z_seq": geom.map(|(z, _)| z),
+                "rect": geom.map(|(_, r)| {
+                    json!({ "x": r.min.x, "y": r.min.y, "w": r.width(), "h": r.height() })
+                }),
             })
         })
         .collect();

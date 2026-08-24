@@ -22,6 +22,7 @@ use tasty_plugin_protocol::{
 };
 
 use crate::adapters::ui::popup;
+use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
@@ -45,6 +46,10 @@ pub fn draw_plugin_popups(
     // 합성되거나 `enforce_host_plugin_popup_z_order`(egui_bridge.rs)에 남지 않게.
     state.plugin_mesh_popup_regions.clear();
     state.plugin_popup_layers.clear();
+    // 히트테스트 rect 도 매 frame 새로 채운다 — 아래 두 조기 반환(plugin manager 부재 /
+    // mesh popup 없음) 경로에서도 반드시 비워져야 한다. 남겨두면 이미 닫힌 plugin popup
+    // 의 rect 가 host popup 의 outside-click 을 영구히 삼킨다.
+    state.plugin_popup_hittest.clear();
 
     let Some(mgr) = plugin_manager else {
         state.plugin_mesh_popup_geom.clear();
@@ -111,6 +116,60 @@ pub fn draw_plugin_popups(
     let primary_pressed = ctx.input(|i| i.pointer.primary_pressed());
     let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
+    // 히트테스트를 하려면 자기 rect 만으로는 부족하다 — "이 좌표를 나보다 위 popup 이
+    // 덮는가"를 물어야 하므로 형제 plugin popup 과 host popup 의 rect 가 함께 필요하다.
+    // 그래서 셸 rect 를 먼저 전부 확정한 뒤 본 루프를 돈다.
+    let placed: Vec<(MeshSnap, Rect)> = mesh_snaps
+        .into_iter()
+        .map(|snap| {
+            let pos = clamp_to_screen(
+                anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos),
+                snap.size,
+                screen_rect,
+            );
+            let rect = Rect::from_min_size(pos, snap.size);
+            (snap, rect)
+        })
+        .collect();
+
+    // 이번 frame 의 occluder 집합. z_seq 는 host/plugin 공용 전역 카운터라
+    // (`tasty_host_plugin::next_popup_z_seq`) 두 종류를 한 배열에서 비교할 수 있다.
+    //
+    // host popup rect 는 같은 frame 의 `ui::draw_popups` 가 이미 채웠으므로 **최신**이다
+    // (프레임 순서는 `gfx/gpu/egui_bridge.rs` 참고). 반대 방향(host 가 보는 plugin rect)만
+    // 1 frame 뒤처진다.
+    let mut occluders: Vec<Occluder> = state
+        .host_popup_hittest
+        .iter()
+        .map(|h| Occluder {
+            rect: h.rect,
+            z_seq: h.z_seq,
+        })
+        .collect();
+    occluders.extend(placed.iter().map(|(s, r)| Occluder {
+        rect: *r,
+        z_seq: s.z_seq,
+    }));
+    // 자기 자신도 배열에 들어있지만 `point_ownership` 은 **엄격히 큰** z_seq 만 가림으로
+    // 보므로 자기 rect 가 자기를 가리는 일은 없다. 형제 plugin popup 도 같은 배열에
+    // 들어가므로 host↔plugin 뿐 아니라 plugin↔plugin 겹침도 같은 판정으로 덮인다.
+    //
+    // **`host_popup_on_top` 2그룹 비교의 제약을 물려받지 않는다**: 이 판정은 popup 쌍마다
+    // z_seq 를 직접 비교하므로 개별 상하 관계를 정확히 표현한다. 반면 셸 렌더 순서는
+    // `gfx/gpu.rs` 의 `host_popup_should_render_on_top(host 최댓값, plugin 최댓값)` 2그룹
+    // 비교라 popup 이 3개 이상 섞여 z 가 교차하면 "그려진 순서" 와 "포인터를 가져가는
+    // 순서" 가 어긋날 수 있다(`docs/design/systems/popup.md` §Host ↔ Plugin popup z-order
+    // "범위"). 현재는 동시에 열리는 egui-mesh popup 이 최대 1개라 교차가 생기지 않는다 —
+    // 셸 순서 쪽이 쌍별 비교로 확장되면 이 주석도 함께 걷어낸다.
+
+    // 다음 frame 의 host popup 판정용으로 이번 frame plugin 셸 rect 를 남긴다.
+    state
+        .plugin_popup_hittest
+        .extend(placed.iter().map(|(s, r)| Occluder {
+            rect: *r,
+            z_seq: s.z_seq,
+        }));
+
     let mut any_hovered = false;
 
     // ── egui-mesh popups (A2) ──
@@ -125,17 +184,14 @@ pub fn draw_plugin_popups(
             ui_zoom: _engine.settings.appearance.ui_scale_factor(),
         }
     };
-    for snap in mesh_snaps {
-        let pos = clamp_to_screen(
-            anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos),
-            snap.size,
-            screen_rect,
-        );
-        let rect = egui::Rect::from_min_size(pos, snap.size);
+    for (snap, rect) in &placed {
+        let snap = snap;
+        let rect = *rect;
+        // 포인터 좌표의 소유권 — 규칙 7("겹친 영역의 마우스 이벤트는 최상단 팝업만
+        // 받는다", `docs/design/systems/popup.md`)을 3-상태로 판정한다.
+        let ownership = pointer_pos.map(|p| point_ownership(rect, snap.z_seq, &occluders, p));
 
-        if let Some(p) = pointer_pos
-            && rect.contains(p)
-        {
+        if ownership == Some(PointOwnership::Mine) {
             any_hovered = true;
         }
 
@@ -170,7 +226,14 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        let raw_input = collect_mesh_popup_input(ctx, content_rect, pointer_pos);
+        // 상위 popup 에 가려진 좌표의 포인터 이벤트는 plugin 으로 forward 하지 않는다
+        // (키/텍스트는 별개 — 키보드 라우팅 중재는 host popup Esc 와 함께 다룬다).
+        let raw_input = collect_mesh_popup_input(
+            ctx,
+            content_rect,
+            pointer_pos,
+            ownership == Some(PointOwnership::OccludedByHigher),
+        );
 
         // set_context forward — geom 변경 / 입력 / bootstrap(미paint) 일 때만 (surface 와 동형).
         // bootstrap 은 1회만: paint frame 이 도착하기 전 매 frame 스팸하면 plugin 이 여러 번
@@ -245,17 +308,16 @@ pub fn draw_plugin_popups(
         // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
         // `bring_to_front`(click-to-front)와 동형. `mgr` 이 `&PluginManager` 불변
         // 참조라 여기서 직접 갱신할 수 없어 큐에 적재하고 App 메인 루프가 drain한다.
-        if primary_pressed
-            && let Some(p) = pointer_pos
-            && rect.contains(p)
-        {
+        if primary_pressed && ownership == Some(PointOwnership::Mine) {
             state.plugin_popup_focus_bumps.push(snap.instance_id);
         }
 
+        // outside-click dismiss 는 "모든 popup 바깥" 일 때만. 상위 popup 안을 클릭한
+        // 것은 이 popup 의 바깥이긴 해도 "바깥 클릭" 이 아니다 — 그 클릭은 상위 popup
+        // 의 것이다.
         if snap.dismiss_on_outside_click
             && primary_pressed
-            && let Some(p) = pointer_pos
-            && !rect.contains(p)
+            && ownership == Some(PointOwnership::OutsideAll)
         {
             state
                 .plugin_popup_closes
@@ -277,20 +339,24 @@ pub fn draw_plugin_popups(
 ///
 /// host 가 받은 *실제* 사용자 입력만 forward 한다(identity 원칙 1·3). 포인터 이벤트는
 /// 콘텐츠 영역 안의 것만 보내 — 영역 밖 클릭은 plugin 으로 새지 않고 outside-click
-/// dismiss 로만 처리된다. 키/텍스트는 popup 이 포커스를 가진 동안 전달한다.
+/// dismiss 로만 처리된다. `pointer_occluded` 면(이 popup 보다 위 popup 이 포인터 좌표를
+/// 덮는다) 콘텐츠 영역 안이라도 포인터 이벤트를 보내지 않는다. 키/텍스트는 popup 이
+/// 포커스를 가진 동안 전달한다.
 fn collect_mesh_popup_input(
     ctx: &Context,
     content_rect: Rect,
     pointer_pos: Option<Pos2>,
+    pointer_occluded: bool,
 ) -> RawInputWire {
     let origin = content_rect.min;
-    let pointer_inside = pointer_pos.is_some_and(|p| content_rect.contains(p));
+    let pointer_inside = !pointer_occluded && pointer_pos.is_some_and(|p| content_rect.contains(p));
+    let accepts_pointer = |p: Pos2| !pointer_occluded && content_rect.contains(p);
     ctx.input(|i| {
         let modifiers = map_modifiers(&i.modifiers);
         let mut events: Vec<RawInputEventWire> = Vec::new();
         for ev in &i.events {
             match ev {
-                Event::PointerMoved(p) if content_rect.contains(*p) => {
+                Event::PointerMoved(p) if accepts_pointer(*p) => {
                     events.push(RawInputEventWire::PointerMoved {
                         x: p.x - origin.x,
                         y: p.y - origin.y,
@@ -301,7 +367,7 @@ fn collect_mesh_popup_input(
                     button,
                     pressed,
                     modifiers: m,
-                } if content_rect.contains(*pos) => {
+                } if accepts_pointer(*pos) => {
                     if let Some(button) = map_button(*button) {
                         events.push(RawInputEventWire::PointerButton {
                             x: pos.x - origin.x,

@@ -8,6 +8,7 @@ mod draw;
 pub(crate) mod file_handler_picker;
 pub(crate) mod file_picker;
 pub(crate) mod frame;
+pub(crate) mod occlusion;
 pub(crate) mod port_scanner;
 pub(crate) mod port_scanner_favorites;
 pub(crate) mod preset_apply;
@@ -85,6 +86,12 @@ pub struct PopupDrawResult {
     /// 무대 진입은 `AppState` 소유라 매니저가 직접 열지 않고 호출부
     /// (`popup::frame::draw_popup_layer`)에 되돌려준다 — close 와 같은 관례.
     pub fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId>,
+    /// 이번 프레임에 **실제로 그려진**(open + scope 가시) popup 들의 히트테스트 rect 와
+    /// z_seq. plugin popup 쪽 판정(`plugin_bridge::popup_render`)이 "내 위에 host popup
+    /// 이 이 좌표를 덮는가" 를 보려면 host 가 그 프레임에 확정한 rect 가 필요하다 —
+    /// scope 로 숨겨진 popup 은 그려지지도 않으므로 여기 담기지 않는다(숨은 popup 이
+    /// 남의 클릭을 가로채는 일이 없다).
+    pub hit_rects: Vec<occlusion::Occluder>,
 }
 
 /// Static, data-oriented popup definition. 등록 시점에 불변으로 고정되는 속성과
@@ -698,6 +705,17 @@ impl PopupManager {
         self.popups.iter().filter(|p| p.open).map(|p| p.z_seq).max()
     }
 
+    /// 열려 있는 popup 의 `(z_seq, 화면 rect)`. 닫혀 있거나 없으면 `None`.
+    ///
+    /// `PopupState` 내부(z_seq / `popup_rect`)를 밖으로 넓히지 않고 debug 관찰면
+    /// (`debug.host_popup.list`)에 필요한 만큼만 내주는 좁은 접근자다.
+    pub fn open_geometry(&self, id: PopupId) -> Option<(u64, egui::Rect)> {
+        self.popups
+            .iter()
+            .find(|p| p.id == id && p.open)
+            .map(|p| (p.z_seq, p.popup_rect()))
+    }
+
     /// Get mutable access to a popup's state.
     pub fn get_mut(&mut self, id: PopupId) -> Option<&mut PopupState> {
         self.popups.iter_mut().find(|p| p.id == id)
@@ -834,7 +852,7 @@ mod tests {
         });
 
         drop(ctx.run(raw, |ctx| {
-            mgr.draw(ctx, &mut |_, _| {}, None);
+            mgr.draw(ctx, &mut |_, _| {}, None, &[]);
         }));
 
         assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);

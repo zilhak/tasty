@@ -112,6 +112,11 @@ pub(crate) fn draw_popup_layer(
     // Temporarily take the popup manager to avoid borrow conflicts with AppState.
     let mut popups = std::mem::replace(&mut state.popups, crate::adapters::ui::PopupManager::new());
 
+    // 규칙 7 — 이 좌표를 나보다 위의 plugin popup 이 덮는가. `content_fn` 이 `state` 를
+    // 가변으로 잡으므로 미리 복사해 둔다(Copy 요소 몇 개짜리 Vec — 비용 무시 가능).
+    let plugin_occluders: Vec<crate::adapters::ui::popup::occlusion::Occluder> =
+        state.plugin_popup_hittest.clone();
+
     let mut dispatch_closed: Vec<&'static str> = Vec::new();
     let draw_result = popups.draw(
         ctx,
@@ -126,6 +131,7 @@ pub(crate) fn draw_popup_layer(
             }
         },
         Some(draw_ctx),
+        &plugin_occluders,
     );
 
     // Update input layer state: popup hover blocks mouse events to lower layers
@@ -133,6 +139,8 @@ pub(crate) fn draw_popup_layer(
     // `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 이번 프레임 popup
     // Area 들을 순서대로 최상단으로 올릴 때 읽는다.
     state.popup_layers = draw_result.layers;
+    // plugin popup 판정이 같은 프레임에 읽는다(`draw_plugin_popups`).
+    state.host_popup_hittest = draw_result.hit_rects;
 
     state.popups = popups;
 

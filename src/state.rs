@@ -396,6 +396,20 @@ pub struct AppState {
     /// 않으면 두 popup 종류 사이의 상대 순서는 사실상 비결정적이다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_layers: Vec<egui::LayerId>,
+    /// 이번 프레임에 그려진 host popup 들의 히트테스트 rect + z_seq
+    /// (`PopupManager::draw` 가 갱신). `draw_plugin_popups` 가 **같은 프레임에** 읽어
+    /// "내 위에 host popup 이 이 좌표를 덮는가" 를 판정한다(규칙 7 — 겹친 영역의
+    /// 마우스 이벤트는 최상단만 받는다). host draw 가 plugin draw 보다 먼저 돌므로
+    /// 이 방향은 stale 이 아니다.
+    #[cfg(feature = "gui")]
+    pub(crate) host_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
+    /// 직전 프레임에 그려진 plugin egui-mesh popup 셸 rect + z_seq
+    /// (`draw_plugin_popups` 가 갱신). host 쪽 히트테스트가 읽는다 — host draw 가
+    /// 먼저 돌기 때문에 **1 프레임 stale** 이다(`popup/draw.rs` 의 outside-click
+    /// 분기 주석 참고). 셸 rect(마진 포함)라 `plugin_mesh_popup_regions`(콘텐츠
+    /// rect, 물리 px)와는 다른 값이다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
     /// 이번 프레임에 그려진 `banner_layer` Area 의 `LayerId`(banner 는 매 프레임 항상
     /// 그려지므로 첫 프레임 이후 항상 `Some`). `BannerManager::draw()` 가 갱신,
     /// `enforce_foreground_z_order` 가 읽는다.
@@ -1052,6 +1066,10 @@ impl AppState {
             popup_layers: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_popup_layers: Vec::new(),
+            #[cfg(feature = "gui")]
+            host_popup_hittest: Vec::new(),
+            #[cfg(feature = "gui")]
+            plugin_popup_hittest: Vec::new(),
             #[cfg(feature = "gui")]
             banner_layer: None,
             #[cfg(feature = "gui")]

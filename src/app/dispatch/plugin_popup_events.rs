@@ -48,6 +48,10 @@ impl App {
         }
         // z-order 승격(규칙 7 "클릭된 것이 앞") — 같은 instance 가 여러 번 쌓여도
         // touch_popup_instance_z 는 멱등(마지막 호출만 z_seq 를 갱신)이라 dedup 불필요.
+        //
+        // 서로 다른 instance 가 **한 클릭으로** 함께 쌓이는 일은 없다 — 겹친 popup 중
+        // 좌표를 소유한 하나만 bump 를 낸다(`adapters/ui/popup/occlusion.rs`). 그래서
+        // 이 순회 순서가 최종 z 순서를 좌우하지 않는다.
         for instance_id in drained_focus_bumps {
             mgr.touch_popup_instance_z(instance_id);
         }

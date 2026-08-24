@@ -37,6 +37,9 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
                 "instance_id": inst_id,
                 "plugin_id": inst.plugin_id,
                 "popup_id": inst.popup_id,
+                // z_seq 는 host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list`
+                // 의 값과 직접 비교할 수 있다 — 겹친 popup 의 상하 관계 관찰면.
+                "z_seq": inst.z_seq,
             })
         })
         .collect();

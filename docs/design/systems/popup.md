@@ -10,7 +10,7 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 4. **커서** — 드래그 핸들 위에서 grab 커서. 리사이즈 가능 팝업의 테두리에서는 엣지별 리사이즈 커서.
 5. **배경 구분** — 팝업 배경은 `surface0`, 타이틀바는 `mantle` — 터미널 focused(검정)/unfocused 배경과 달라 위에 떠 있음이 시각적으로 구분된다.
 6. **경계 제한** — 팝업의 어떤 부분도 스코프 밖으로 못 나간다. 리사이즈 시 자동 재배치.
-7. **다중 + z-order** — 여러 개 동시 가능. 나중에 열리거나 클릭된 것이 앞. 겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다.
+7. **다중 + z-order** — 여러 개 동시 가능. 나중에 열리거나 클릭된 것이 앞. 겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다(판정: [§Host ↔ Plugin popup z-order](#host--plugin-popup-z-order) 의 "마우스 소유권").
 8. **리사이즈 + 입력 우선순위** — `resizable` 팝업은 테두리 8방향 드래그로 크기 조절(`min_size` 하한 + 스코프 경계 클램프). 입력 우선순위는 **(egui)위젯 > close·전체화면 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠** — 두 타이틀바 버튼은 매니저가 직접 페인팅한 같은 층이고, 둘 다 드래그 핸들(타이틀바)과 겹치므로 핸들보다 먼저 판정해야 버튼을 눌러 끌어도 팝업이 따라오지 않는다. 이동/리사이즈 START 는 콘텐츠 렌더 뒤 `is_using_pointer()` 게이트로 판정해, 위젯이 프레스를 가져간 프레임에는 발동하지 않는다(이동이 사실상 최후순위). 사용자가 리사이즈한 뒤에는 `sizer` 가 크기를 되돌리지 않는다(close 시 리셋).
 
 (모든 색·치수는 Theme 토큰 — [theme.md](theme.md).)
@@ -30,6 +30,8 @@ Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin
 
 - **Shell(배경/테두리/제목)**: 둘 다 raw `ctx.layer_painter()` 로 그려 `Areas::order` 에 자연 등록되지 않는다([input-layer.md (c)](../../architecture/input-layer.md) 참고) — `enforce_host_plugin_popup_z_order` 가 진 쪽을 이긴 쪽의 `ctx.set_sublayer()` 자식으로 강제 편입해 순서를 고정한다.
 - **Content(plugin 전용 GPU mesh)**: plugin popup 콘텐츠는 별도 `wgpu::Renderer` pass(`render_egui_mesh_popups`)로 host egui pass(`render_egui_pass`)와 독립 합성된다 — `render_egui_pass_and_mesh_popups`(`src/gfx/gpu/render_pass.rs`)가 같은 승패 결과로 두 pass 의 호출 순서를 뒤바꾼다. plugin popup 은 콘텐츠가 shell 보다 먼저 그려지는 경우에도 자기 shell 이 자기 콘텐츠를 덮지 않도록, shell 배경을 콘텐츠 영역을 제외한 4분할 사각형으로 그린다(`paint_shell_background_excluding_content`).
+- **마우스 소유권(규칙 7 후반)**: "겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다" 는 렌더 순서와 별개로 `src/adapters/ui/popup/occlusion.rs::point_ownership` 가 판정한다. 한 좌표에 대해 `Mine`(내 rect 안 + 위에 아무도 없음) / `OccludedByHigher`(나보다 z 가 높은 popup 이 덮음) / `OutsideAll`(어떤 popup 에도 안 속함) 3-상태를 내고, host/plugin 양쪽이 같은 함수를 쓴다 — click-to-front 는 `Mine` 일 때만, outside-click dismiss 는 `OutsideAll` 일 때만 일어난다. 그래서 위에 열린 popup 안을 클릭해도 아래 popup 이 "바깥 클릭" 으로 닫히거나 앞으로 튀어나오지 않는다. host popup 은 hover/close 버튼/리사이즈/드래그 히트테스트 전체가, plugin popup 은 focus-bump·dismiss·포인터 이벤트 forward 가 이 판정을 거친다. 아래 2-그룹 제약과 달리 이 판정은 **popup 쌍마다 z_seq 를 직접 비교**하므로 host↔plugin·plugin↔plugin 을 모두 정확히 가른다.
+- **판정 재료의 방향별 신선도**: plugin 판정이 보는 host rect 는 같은 프레임 값이다(`draw_popups` 가 `draw_plugin_popups` 보다 먼저 돈다). 반대로 host 판정이 보는 plugin 셸 rect(`AppState.plugin_popup_hittest`)는 **1 프레임 stale** 이다 — 방금 닫힌 plugin popup 이 바깥 클릭 한 번을 더 삼킬 수 있지만, 반대 방향 오판(가려진 popup 이 잘못 닫히는 것)보다 회복이 쉬운 쪽을 택한 결과다.
 - **범위**: host popup 묶음 대 plugin popup 묶음의 2-그룹 비교만 지원한다. plugin popup 이 여러 개 열려 있을 때 그들끼리의 상대 순서는 z_seq 로 정렬돼 콘텐츠(GPU mesh push 순서)에는 반영되지만, shell 레이어끼리는 `set_sublayer` 의 1단 들여쓰기 제약(아래 [input-layer.md (d)](../../architecture/input-layer.md)) 때문에 서로 엮이지 않는다 — host 묶음과의 상대 위치만 보정 대상이다.
 
 ## 수명 계약 (open → close → 뒷정리)

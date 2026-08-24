@@ -761,6 +761,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 }
             },
             None,
+            // settings 모달의 자체 popup 매니저 — plugin popup 과 겹치지 않는다
+            // (모달이 뜬 동안 plugin popup 은 입력을 받지 않는다).
+            &[],
         )
     };
 

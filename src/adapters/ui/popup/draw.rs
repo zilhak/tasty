@@ -3,6 +3,7 @@
 use crate::adapters::ui::LayoutContext;
 use crate::theme;
 
+use super::occlusion::{Occluder, PointOwnership, point_ownership};
 use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 
 /// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
@@ -103,6 +104,7 @@ impl PopupManager {
         ctx: &egui::Context,
         content_fn: &mut dyn FnMut(&str, &mut egui::Ui),
         draw_ctx: Option<&LayoutContext>,
+        plugin_occluders: &[Occluder],
     ) -> PopupDrawResult {
         let th = theme::theme();
         let screen_rect = ctx.screen_rect();
@@ -126,6 +128,17 @@ impl PopupManager {
             .map(|(i, _)| i)
             .collect();
 
+        // 이번 프레임에 실제로 그려지는 popup 들의 히트테스트 rect — plugin popup 쪽
+        // 판정이 같은 프레임에 읽는다(`draw_popups` 가 `draw_plugin_popups` 보다 먼저
+        // 돌기 때문에 stale 이 아니다).
+        let hit_rects: Vec<Occluder> = open_indices
+            .iter()
+            .map(|&i| Occluder {
+                rect: self.popups[i].popup_rect(),
+                z_seq: self.popups[i].z_seq,
+            })
+            .collect();
+
         // Determine which popup (topmost) the pointer is over.
         // 우선순위: close/전체화면 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠.
         // 전체화면 버튼은 close 와 **같은 층**이다 — 둘 다 매니저가 직접 페인팅한
@@ -142,6 +155,16 @@ impl PopupManager {
             for &idx in open_indices.iter().rev() {
                 let popup = &self.popups[idx];
                 let rect = popup.popup_rect();
+                // 규칙 7 — 나보다 위의 plugin popup 이 이 좌표를 덮으면 이 popup 은
+                // 포인터를 받지 않는다(hover / click-to-front / close 버튼 전부).
+                // 아래(더 낮은 z) host popup 이 대신 hover 를 가져갈 수 있으므로
+                // `break` 가 아니라 `continue` 다.
+                if matches!(
+                    point_ownership(rect, popup.z_seq, plugin_occluders, pos),
+                    PointOwnership::OccludedByHigher
+                ) {
+                    continue;
+                }
                 if rect.contains(pos) {
                     hovered_popup = Some(popup.id);
                     if !popup.headless && popup.close_btn_rect().contains(pos) {
@@ -192,8 +215,24 @@ impl PopupManager {
                     popup.focused = popup.id == id;
                 }
             } else {
-                // Clicked outside all popups
+                // Clicked outside all *host* popups. 그 좌표를 나보다 위에 있는 plugin
+                // egui-mesh popup 이 덮고 있으면 이건 "바깥 클릭" 이 아니라 그 popup 의
+                // 클릭이다(규칙 7) — dismiss 도 unfocus 도 하지 않는다.
+                //
+                // **1 프레임 stale**: host draw 는 `draw_plugin_popups` 보다 먼저 돌아
+                // 직전 프레임의 plugin rect 를 본다(반대 방향은 같은 프레임 값이라 정확).
+                // 방금 닫힌 plugin popup 이 outside-click 한 번을 더 삼킬 수 있지만,
+                // 반대(가려진 popup 이 잘못 닫히는 것)보다 회복이 쉬운 쪽을 택했다.
                 for popup in &mut self.popups {
+                    let occluded = pointer_pos.is_some_and(|p| {
+                        matches!(
+                            point_ownership(popup.popup_rect(), popup.z_seq, plugin_occluders, p),
+                            PointOwnership::OccludedByHigher
+                        )
+                    });
+                    if occluded {
+                        continue;
+                    }
                     if popup.open && popup.close_on_outside_click {
                         closed.push(popup.id);
                     }
@@ -582,6 +621,7 @@ impl PopupManager {
             hovered: hovered_popup.is_some(),
             layers,
             fullscreen_requested,
+            hit_rects,
         }
     }
 
