@@ -82,6 +82,85 @@
 **PTY drain 은 계속 돈다.** drain 은 `AppEvent::TerminalOutput` 핸들러 몫이고 redraw 경로와
 분리돼 있어 무대가 건드리지 않는다 — 무대 중에도 스크롤백이 정상적으로 쌓인다.
 
+## OS 창 전환
+
+무대의 경계는 작업영역이 아니라 **OS 창까지**다 — 무대가 서면 창 자체가 모니터를 덮는다.
+브라우저 Fullscreen API 와 같은 모델이다: `requestFullscreen()` 은 새 창을 만들지 않고 **같은
+창**을 OS fullscreen 으로 전환한 뒤 크롬 UI 를 숨긴다. 무대도 새 `View`(별개 OS 창)를 만들지
+않고 그 `MainView` 의 winit 창을 전환한다. 구현은 `src/view/main/fullscreen_window.rs`.
+
+**리컨실러다, 상태 머신이 아니다.** 무대 상태의 단일 수렴점(`open_fullscreen_stage` /
+`close_fullscreen_stage`)은 `AppState` 위에 있고 `AppState` 는 headless 빌드에도 있어 winit
+핸들을 들고 있지 않다. 그래서 전환 호출을 그 두 함수에 박는 대신 `MainView` 가 매 프레임
+`fullscreen_stage_active()` 를 창에 반영한다 — WebView 노출을 `has_egui_overlay_open()` 에
+맞추는 `sync_webviews` 와 같은 관례다. 여닫는 경로가 몇 개로 늘어나도 각 경로가 전환을 기억할
+필요가 없고, 상태와 창이 어긋나면 다음 프레임에 수렴한다. 호출 위치는 `handle_redraw` 의
+**render 뒤**다 — 무대는 자기 draw 안에서 닫힐 수 있어(`StageAction::Close`), 앞에 두면 그
+프레임에 닫힌 무대의 창 복원이 다음 프레임으로 밀린다.
+
+**`Borderless` 를 쓴다.** `Exclusive(VideoMode)` 는 모니터 해상도 자체를 바꾸는 게임용 모드라
+다른 창들의 배치를 흐트러뜨리고 복귀 시 원래 배치가 돌아오지 않는다. 터미널은 해상도를 바꿀
+이유가 없다.
+
+**모니터는 `current_monitor()` 로 명시 지정한다** — 창이 있는 그 모니터를 덮는다. `Borderless(None)`
+의 "현재 모니터" 판정은 winit 이 플랫폼 백엔드에 위임하므로 DE/컴포지터마다 해석이 다를 수
+있다. `current_monitor()` 가 `None` 을 돌려주면 그 값이 그대로 `Borderless(None)` = 백엔드 판정
+폴백이 되므로 별도 분기가 없다.
+
+### 창 상태 복원
+
+진입 **직전**의 창 상태(`was_fullscreen` / `was_maximized`)를 기록해 두고 종료 시 그대로 되돌린다.
+그 기록의 존재 자체가 "이 fullscreen 은 무대가 만든 것" 의 마커를 겸한다.
+
+| 진입 시점 창 | 무대 중 | 종료 후 |
+|---|---|---|
+| 일반 창 | fullscreen | 일반 창(진입 전 크기·위치) |
+| maximize | fullscreen | maximize |
+| **이미 OS fullscreen** | 그대로(재설정하지 않음) | **fullscreen 유지** |
+
+셋째 줄이 핵심이다. macOS 신호등의 풀스크린 버튼처럼 **사용자가 직접 만든** 창 상태를 무대가
+해제하면 "무대를 한 번 열었다 닫았더니 내가 만든 전체화면이 풀렸다" 가 된다. 무대는 자기가
+만든 전환만 되돌린다. 같은 이유로 이미 fullscreen 인 창에는 `set_fullscreen` 을 다시 걸지도
+않는다 — macOS 는 fullscreen 전환이 별도 Space 이동 애니메이션이라 중복 호출이 눈에 보이는
+깜빡임이 된다.
+
+### 리사이즈 잠금은 maximize 만이 아니다
+
+리사이즈 엣지 hit-test(`view/main/mouse.rs`)는 `is_maximized()` 가 아니라 "maximize **또는** OS
+fullscreen" 을 본다(`fullscreen_window::window_size_is_locked`). 무대 중에는 입력 게이트가
+막아주지만 **무대 없이 fullscreen 인 창**(macOS 신호등, 또는 WM 단축키)이 가능하므로 게이트에
+기대지 않는다.
+
+### grid 는 두 전환 모두에서 불변이다
+
+fullscreen 전환은 창 크기를 바꾸므로 `WindowEvent::Resized` 를 두 번 발생시킨다(진입 시 커짐,
+종료 시 작아짐). 위 "무대 중 동결되는 것" 의 grid 동결이 **이 전환에 대해서도** 성립해야
+한다 — 안 그러면 무대 진입만으로 뒤 터미널이 전부 리플로우된다. 종료 쪽은 리컨실러가 무대
+상태를 이미 지운 뒤에 창을 되돌리므로 그 `Resized` 는 정상 경로로 흘러 진입 전 크기 = 진입 전
+grid 로 돌아온다.
+
+### 발화 정책
+
+`set_fullscreen` 은 사용자가 보는 창을 바꾸므로 `docs/identity.md` 원칙 1 의 사용자 상태다.
+release IPC/CLI 에 창 전환 API 를 노출하지 않는다 — 전환은 무대 상태를 따라갈 뿐이고, 무대
+진입 경로 자체가 debug 격리이므로 자연히 그 경로만 탄다. 터미널 이스케이프로 창을 조작하는
+경로도 없다([ADR-0011](../../adr/0011-xtwinops-window-ops-unsupported.md) 의 거부 결정 그대로).
+
+### 플랫폼별 확인 결과
+
+| 플랫폼 | 상태 | 내용 |
+|---|---|---|
+| **Linux / X11 / GNOME** | 확인 | 진입·종료·maximize 복원·사용자 fullscreen 유지·창 2 개 독립성 전부 실측. 전환 시 검은 프레임·잔상 없음. 무대 없이 fullscreen 인 창에서 CSD 타이틀바/캡션 버튼이 정상 렌더 |
+| **Linux / Wayland** | **미확인** | 검증 환경이 X11 세션이라 컴포지터 차이를 재현할 수 없다 |
+| **Windows** | **미확인** | undecorated + `undecorated_shadow` 조합의 섀도/보더 잔상, 작업 표시줄 가림 여부. 해당 OS 없음 |
+| **macOS** | **미확인** | 신호등 풀스크린과의 상태 어긋남, 별도 Space 이동 애니메이션, fullscreen 창 위 모달 z-order. 해당 OS 없음. 코드는 `fullscreen()` 조회 분기로 대응해 두었고 위 표의 셋째 줄이 그 계약이다 |
+| **멀티 모니터** | **미확인** | 단일 모니터 환경이라 "창이 있는 모니터를 덮는가"·"두 모니터를 동시에 덮는가" 를 재현할 수 없다. 판정 수단으로 `MainView::fullscreen_window_report()` 가 덮고 있는 모니터의 이름·위치·크기·배율을 돌려준다 — 무대 조회 IPC 가 이 값을 실으면 출력만 보고 판정할 수 있다 |
+| **DPI 가 다른 모니터로 전환** | **미확인** | 위와 같은 이유. `resync_scale_factor` → `update_grid_size` 경로는 무대 중 보류하도록 이미 배선돼 있다(위 "무대 중 동결되는 것") |
+
+**무대 중 사용자가 창 fullscreen 을 직접 해제하면**(macOS 신호등 등) 무대는 그대로 남고 창만
+작아진다. 무대 rect 는 창 크기를 추종하므로 작아진 창을 그대로 채운다 — 의도한 동작이다.
+무대는 "창을 덮는 표면" 이지 "창을 fullscreen 으로 붙잡아 두는 잠금" 이 아니다.
+
 ## 무대 중 동결되는 것 / 동결되지 않는 것
 
 | 대상 | 무대 중 |

@@ -1,6 +1,6 @@
 # 전체화면 무대 (Fullscreen stage)
 
-- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트)만 있다. 사용자/에이전트 진입 경로(단축키 · debug IPC)와 OS 창 전체화면 전환은 아직 없다.
+- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트)와 OS 창 전체화면 전환이 있다. 사용자/에이전트 진입 경로(단축키 · debug IPC)는 아직 없다.
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
 - **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs`
@@ -46,10 +46,20 @@
   키는 터미널로 가고 클릭은 뒤의 위젯 좌표로 판정된다.
 - **종료 수단** — 무대 프레임은 CSD 타이틀바까지 지운다. 진입 경로를 붙이는 작업은 종료
   경로를 반드시 같은 범위에서 함께 붙여야 한다(없으면 창을 빠져나올 수 없다).
-- **OS 창 전체화면 전환** — 무대는 현재 창 클라이언트 영역까지만 덮는다.
 
 경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
 "아직 없는 것" 절.
+
+## OS 창 전환
+
+무대가 서면 **창 자체가 모니터를 덮는다** — 무대의 경계는 작업영역이 아니라 OS 창까지다
+(브라우저 Fullscreen API 와 같은 모델: 새 창을 만들지 않고 같은 창을 전환한다). 창이 있는
+그 모니터를 덮으며 primary 로 튀지 않는다. 종료하면 진입 직전 창 상태로 되돌아간다 —
+maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었으면 그대로 유지한다**(무대는
+자기가 만든 전환만 되돌린다). 뒤 터미널의 grid 는 두 전환 모두에서 불변이다.
+
+동작 모델·플랫폼별 확인 결과(Wayland/Windows/macOS/멀티 모니터는 **미확인**)는
+[`design/systems/fullscreen-stage.md` §OS 창 전환](../../design/systems/fullscreen-stage.md#os-창-전환).
 
 ## 비-목표 (Out of scope)
 
@@ -65,6 +75,8 @@
 - [x] Given 정의 테이블에 없는 id When 무대 진입 Then 거부되고 무대가 서지 않는다
 - [x] Given 무대 활성 When `has_egui_overlay_open()` 조회 Then true (WebView 숨김 게이트)
 - [x] Given 무대 종료 When 다음 프레임 Then 닫힘 훅이 정확히 1 회 발화한다(무대/일반 프레임 양쪽)
+- [x] Given 진입 시점 창 상태 When 종료 시 복원 동작 결정 Then 일반/maximize 는 되돌리고 사용자 fullscreen 은 유지한다
+- [x] Given fullscreen 단독 When 리사이즈 엣지 판정 Then 잠긴 것으로 본다(maximize 만 보지 않는다)
 
 **미검증 — 검증 시점은 무대 진입 경로(debug IPC)가 붙은 뒤다.** 아래는 릴리스 코드에 사용자·
 에이전트 진입 경로가 없어 재현 가능한 자동 검증이 불가능하다. 임시 훅으로 1 회 실측했으나
@@ -79,3 +91,7 @@
 - [ ] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
 - [ ] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
       내용이 찍힌다
+- [ ] Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀
+- [ ] Given maximize 창에서 무대 진입 When 무대 종료 Then maximize 로 복귀
+- [ ] Given 이미 OS fullscreen 인 창에서 무대 진입 When 무대 종료 Then fullscreen 유지
+- [ ] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
