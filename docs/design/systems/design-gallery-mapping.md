@@ -237,6 +237,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
 | `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
+| `forms/Select` 계열 — 다중선택 (전용 시안 없음 — 단일 Select 트리거 토큰 재사용) | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기) | `prim_forms` | ✓ gallery |
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
@@ -255,7 +256,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 `leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
 Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false).
 
-**시각검증 주**: primitive 14종 전부 시각검증 완료(autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
+**시각검증 주**: primitive 15종 전부 시각검증 완료(multi_select: gallery readback — 닫힘/열림/연속 3토글 후에도 팝업 유지/바깥클릭 닫힘, 요약 라벨 3분기, 트리거 치수가 단일 `select` 와 동일(28×160px)함 확인. autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
 `ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
 (`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
 settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이

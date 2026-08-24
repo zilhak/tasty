@@ -18,7 +18,7 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 
 ## 레이아웃 idiom 카탈로그
 
-이 표는 **layout idiom**(화면 배치 패턴) 함수만 다룬다 — `button`/`select`/`table`/`toggle`/`chip`/`tooltip`/`spinner`/`autocomplete`/`segmented`/`tree_row`/`path_field`/`menu_item`/`icon_button`/`input`/`status_dot`/`warning_callout`/`help_hint` 등 이름으로 식별되는 보편 컴포넌트(아래 "확장 가이드" 1번 카테고리)는 `crates/tasty-ui-widgets/src/`에 각자 파일로 존재하지만 여기 표에는 나열하지 않는다 — 전체 위젯 목록·시각은 [`tasty-gallery`](../dev-guide/gallery-first.md)가 단일 출처다(gallery-completeness 정책상 본체의 모든 컴포넌트가 갤러리에 노출된다).
+이 표는 **layout idiom**(화면 배치 패턴) 함수만 다룬다 — `button`/`select`/`multi_select`/`table`/`toggle`/`chip`/`tooltip`/`spinner`/`autocomplete`/`segmented`/`tree_row`/`path_field`/`menu_item`/`icon_button`/`input`/`status_dot`/`warning_callout`/`help_hint` 등 이름으로 식별되는 보편 컴포넌트(아래 "확장 가이드" 1번 카테고리)는 `crates/tasty-ui-widgets/src/`에 각자 파일로 존재하지만 여기 표에는 나열하지 않는다 — 전체 위젯 목록·시각은 [`tasty-gallery`](../dev-guide/gallery-first.md)가 단일 출처다(gallery-completeness 정책상 본체의 모든 컴포넌트가 갤러리에 노출된다).
 
 | 함수 | 역할 |
 |------|------|
