@@ -5,7 +5,7 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::surface::{Change, CursorVisibility, Position};
 
-use crate::{CursorShape, MouseTrackingMode, TerminalState};
+use crate::{CursorShape, TerminalState};
 
 impl TerminalState {
     pub(crate) fn map_esc(&mut self, esc: Esc) -> Vec<Change> {
@@ -95,7 +95,9 @@ impl TerminalState {
                 self.cursor_visible = true;
                 self.cursor_shape = CursorShape::Default;
                 self.bracketed_paste = false;
-                self.mouse_tracking = MouseTrackingMode::None;
+                // RIS 는 세 레지스터를 모두 클리어한다. (DECSTR 은 xterm 과 마찬가지로
+                // 마우스 모드를 건드리지 않으므로 그쪽에는 대응 코드가 없다.)
+                self.mouse_tracking = Default::default();
                 self.mouse_capture_hint_armed = false;
                 self.sgr_mouse = false;
                 self.focus_tracking = false;

@@ -7,6 +7,37 @@ use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
 use super::{CursorShape, MouseTrackingMode, TerminalState};
 
+/// 1000 / 1002 / 1003 의 **독립 모드 레지스터**.
+///
+/// xterm 에서 셋은 서로 별개의 on/off 비트고, 실효 동작은 켜진 것 중 **가장 넓은 것**
+/// 으로 정해진다(1003 ⊃ 1002 ⊃ 1000). 하나를 끄는 것이 다른 것을 끄지 않는다.
+/// 실효 레벨([`MouseTrackingMode`]) 하나만 저장하면 이 정보가 손실돼서, 앱이
+/// `1003h` 뒤에 `1002l` 을 보내는 것만으로 트래킹이 통째로 꺼진다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct MouseTrackingRegisters {
+    /// 1000 — 버튼 press/release 만.
+    pub(crate) click: bool,
+    /// 1002 — 버튼이 눌린 동안의 셀 이동까지.
+    pub(crate) cell_motion: bool,
+    /// 1003 — 버튼과 무관한 모든 이동까지.
+    pub(crate) any_event: bool,
+}
+
+impl MouseTrackingRegisters {
+    /// 켜진 비트 중 가장 넓은 것 = 실효 트래킹 레벨.
+    pub(crate) fn effective(self) -> MouseTrackingMode {
+        if self.any_event {
+            MouseTrackingMode::AllMotion
+        } else if self.cell_motion {
+            MouseTrackingMode::CellMotion
+        } else if self.click {
+            MouseTrackingMode::Click
+        } else {
+            MouseTrackingMode::None
+        }
+    }
+}
+
 impl TerminalState {
     /// Handle DECSET/DECRST mode changes.
     pub(crate) fn handle_mode(&mut self, mode: &CsiMode) {
@@ -146,27 +177,17 @@ impl TerminalState {
                 self.bracketed_paste = enable;
             }
             DecPrivateModeCode::MouseTracking => {
-                self.set_mouse_tracking(if enable {
-                    MouseTrackingMode::Click
-                } else {
-                    MouseTrackingMode::None
-                });
+                // Mode 1000 — 자기 비트만 건드린다. 1002/1003 이 켜져 있으면 그대로
+                // 유지되고 실효 레벨도 그쪽이 이긴다.
+                self.update_mouse_tracking(|r| r.click = enable);
             }
             DecPrivateModeCode::ButtonEventMouse => {
                 // Mode 1002
-                self.set_mouse_tracking(if enable {
-                    MouseTrackingMode::CellMotion
-                } else {
-                    MouseTrackingMode::None
-                });
+                self.update_mouse_tracking(|r| r.cell_motion = enable);
             }
             DecPrivateModeCode::AnyEventMouse => {
                 // Mode 1003
-                self.set_mouse_tracking(if enable {
-                    MouseTrackingMode::AllMotion
-                } else {
-                    MouseTrackingMode::None
-                });
+                self.update_mouse_tracking(|r| r.any_event = enable);
             }
             DecPrivateModeCode::SGRMouse => {
                 self.sgr_mouse = enable;
@@ -227,23 +248,29 @@ impl TerminalState {
         self.bracketed_paste
     }
 
-    /// Current mouse tracking mode.
+    /// Current mouse tracking mode — 켜진 세 레지스터에서 계산한 **실효 레벨**.
+    ///
+    /// 소비 측은 이 레벨만 보면 되므로 저장 형식이 3 비트로 바뀌어도 시그니처는 그대로다.
     pub fn mouse_tracking(&self) -> MouseTrackingMode {
-        self.mouse_tracking
+        self.mouse_tracking.effective()
     }
 
-    /// 마우스 트래킹 모드를 바꾸며 "첫 마우스 캡처 안내" 플래그를 관리한다.
-    /// `None → ON` 엣지에서만 무장하고(ON→ON 전환, 예 1000→1002 는 재무장 안 함),
-    /// `ON → None`(disable)에서는 disarm 한다 (세션당 1회, ADR-0022 ②).
-    fn set_mouse_tracking(&mut self, mode: MouseTrackingMode) {
-        if mode != MouseTrackingMode::None {
-            if self.mouse_tracking == MouseTrackingMode::None {
-                self.mouse_capture_hint_armed = true;
-            }
-        } else {
+    /// 모드 레지스터 하나를 갱신하며 "첫 마우스 캡처 안내" 플래그를 관리한다.
+    ///
+    /// 무장/해제는 **실효 레벨의 엣지**로 판정한다 — `None → ON` 에서만 무장하고
+    /// (ON→ON 전환, 예 1000→1002 는 재무장 안 함), `ON → None` 에서 disarm 한다
+    /// (세션당 1회, ADR-0022 ②). 실효 레벨이 안 바뀌는 갱신(예 1003 이 켜진 채
+    /// `1002l`)은 무장 상태도 건드리지 않는다 — 예전엔 이런 갱신이 트래킹과 함께
+    /// 무장까지 날려서, 트래킹이 살아 있는데 안내가 다시 안 뜨는 상태가 됐다.
+    fn update_mouse_tracking(&mut self, f: impl FnOnce(&mut MouseTrackingRegisters)) {
+        let before = self.mouse_tracking.effective();
+        f(&mut self.mouse_tracking);
+        let after = self.mouse_tracking.effective();
+        if before == MouseTrackingMode::None && after != MouseTrackingMode::None {
+            self.mouse_capture_hint_armed = true;
+        } else if before != MouseTrackingMode::None && after == MouseTrackingMode::None {
             self.mouse_capture_hint_armed = false;
         }
-        self.mouse_tracking = mode;
     }
 
     /// 무장된 "첫 마우스 캡처 안내" 플래그를 소비한다 — 무장돼 있었으면 `true` 를 반환하고

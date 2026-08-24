@@ -316,8 +316,9 @@ pub(crate) struct TerminalState {
     pub(crate) cursor_shape: CursorShape,
     /// Bracketed paste mode (mode 2004).
     pub(crate) bracketed_paste: bool,
-    /// Mouse tracking mode.
-    pub(crate) mouse_tracking: MouseTrackingMode,
+    /// 마우스 트래킹 — 1000/1002/1003 **각각의** on/off 비트. 실효 레벨은
+    /// `mouse_tracking()` 이 계산해 돌려준다(켜진 것 중 가장 넓은 것).
+    pub(crate) mouse_tracking: modes::MouseTrackingRegisters,
     /// 트래킹 `None → ON` 엣지에서 무장되는 "첫 마우스 캡처 안내 toast" 플래그. 호스트가
     /// `take_mouse_capture_hint()` 로 1회 소비(읽고 disarm)한다. 좌·우 클릭 중 먼저 발생한
     /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (ADR-0022 ②).
@@ -605,7 +606,7 @@ impl TerminalState {
             cursor_visible: true,
             cursor_shape: CursorShape::default(),
             bracketed_paste: false,
-            mouse_tracking: MouseTrackingMode::None,
+            mouse_tracking: modes::MouseTrackingRegisters::default(),
             mouse_capture_hint_armed: false,
             sgr_mouse: false,
             focus_tracking: false,

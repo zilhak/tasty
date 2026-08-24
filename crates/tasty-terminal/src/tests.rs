@@ -172,13 +172,75 @@ fn decset_mouse_tracking() {
     }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
 
+    // 1003 만 껐다 — 1000 은 **아직 켜져 있는 독립 레지스터**라 실효 레벨이 Click 으로
+    // 내려앉을 뿐 트래킹이 꺼지지는 않는다(예전 모델은 여기서 None 이었다).
     let actions = parser.parse_as_vec(b"\x1b[?1003l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
             terminal.lock_state().handle_mode(mode);
         }
     }
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::Click);
+
+    let actions = parser.parse_as_vec(b"\x1b[?1000l");
+    for action in actions {
+        if let Action::CSI(CSI::Mode(ref mode)) = action {
+            terminal.lock_state().handle_mode(mode);
+        }
+    }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
+}
+
+/// 1000/1002/1003 은 서로 독립된 모드 레지스터다 — 하나를 꺼도 나머지는 산다.
+/// 앱이 보내는 바이트 순서만으로 트래킹이 통째로 꺼지던 버그의 회귀 방지선.
+#[test]
+fn mouse_modes_are_independent_registers() {
+    let mut terminal = test_terminal(80, 24);
+    let mut parser = Parser::new();
+    let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
+        for action in parser.parse_as_vec(bytes) {
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                terminal.lock_state().handle_mode(mode);
+            }
+        }
+    };
+
+    apply(&mut terminal, b"\x1b[?1003h");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
+    // 켠 적도 없는 1002 를 끄는 것이 1003 을 건드리면 안 된다.
+    apply(&mut terminal, b"\x1b[?1002l");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
+
+    apply(&mut terminal, b"\x1b[?1003l");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
+
+    // 실효 레벨은 켜진 것 중 가장 넓은 것 — 끄는 순서와 무관하다.
+    apply(&mut terminal, b"\x1b[?1000h\x1b[?1002h");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::CellMotion);
+    apply(&mut terminal, b"\x1b[?1000l");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::CellMotion);
+    apply(&mut terminal, b"\x1b[?1002l");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
+}
+
+/// 실효 레벨이 ON 으로 유지되는 부분 해제는 캡처 안내 무장을 날리지 않는다.
+/// 예전 모델에서는 `1002l` 하나가 트래킹과 무장을 함께 지워서, 트래킹이 살아 있는데도
+/// 안내가 영영 안 뜨는 상태가 됐다.
+#[test]
+fn mouse_capture_hint_survives_partial_disable() {
+    let mut terminal = test_terminal(80, 24);
+    let mut parser = Parser::new();
+    let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
+        for action in parser.parse_as_vec(bytes) {
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                terminal.lock_state().handle_mode(mode);
+            }
+        }
+    };
+
+    apply(&mut terminal, b"\x1b[?1003h\x1b[?1002l");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
+    assert!(terminal.take_mouse_capture_hint(), "무장이 유지돼야 한다");
 }
 
 #[test]
@@ -203,8 +265,9 @@ fn mouse_capture_hint_arms_on_none_to_on_edge() {
     apply(&mut terminal, b"\x1b[?1002h");
     assert!(!terminal.take_mouse_capture_hint());
 
-    // OFF(→None) 후 다시 None → ON: 재무장.
-    apply(&mut terminal, b"\x1b[?1002l");
+    // OFF(→None) 후 다시 None → ON: 재무장. 1000/1002 가 **둘 다** 켜져 있으므로
+    // 실효 레벨을 None 으로 내리려면 둘 다 꺼야 한다(독립 레지스터).
+    apply(&mut terminal, b"\x1b[?1002l\x1b[?1000l");
     apply(&mut terminal, b"\x1b[?1000h");
     assert!(terminal.take_mouse_capture_hint());
 }
