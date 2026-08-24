@@ -21,6 +21,7 @@ mod icon_button;
 mod input;
 mod listctrl;
 mod menu_item;
+mod multi_select;
 mod path_field;
 mod segmented;
 mod select;
@@ -50,6 +51,9 @@ pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
 pub use input::Input;
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use menu_item::{MenuItemVariant, menu_item, menu_separator};
+pub use multi_select::{
+    MultiSelectLabels, multi_select, multi_select_popup_id, multi_select_summary,
+};
 pub use path_field::{PathField, PathFieldOutcome};
 pub use segmented::segmented;
 pub use select::select;

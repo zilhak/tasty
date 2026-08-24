@@ -63,16 +63,8 @@ pub fn select(
         .galley(text_pos, galley, dim(theme.select_fg().to_egui()));
     // chevron (▾) — 우측.
     let cx = rect.right() - chevron_room * 0.5;
-    let cy = rect.center().y;
     let ch = dim(theme.select_chevron_fg().to_egui());
-    ui.painter().add(egui::Shape::line(
-        vec![
-            egui::pos2(cx - 4.0, cy - 2.0),
-            egui::pos2(cx, cy + 2.5),
-            egui::pos2(cx + 4.0, cy - 2.0),
-        ],
-        egui::Stroke::new(1.5, ch),
-    ));
+    paint_chevron(ui.painter(), egui::pos2(cx, rect.center().y), ch, false);
 
     let popup_id = ui.make_persistent_id(("tasty_select", id_salt));
     if enabled && resp.clicked() {
@@ -96,4 +88,39 @@ pub fn select(
         },
     );
     changed
+}
+
+/// Select 계열 트리거의 chevron 글리프 — 꺾은선 2 segment.
+///
+/// 대응 chevron component 토큰이 없어(`select_chevron_room`/`-offset` 은 *자리*,
+/// `select_chevron_fg` 는 *색*만 준다) 글리프 자체의 반폭·깊이·선굵기는 이 함수가
+/// 소유하는 명명 상수다. [`select`] 와 [`crate::multi_select`] 가 공유해, 같은
+/// 계열 트리거의 chevron 이 한 곳에서만 정의되게 한다.
+///
+/// `up = true` 면 위를 향한다(다중선택의 열린 상태 표시). [`select`] 는 네이티브
+/// `<select>` 미러라 항상 아래를 향한다.
+pub(crate) fn paint_chevron(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    color: egui::Color32,
+    up: bool,
+) {
+    /// chevron 반폭(px).
+    const HALF_W: f32 = 4.0;
+    /// 꼭짓점이 중심선에서 내려가는 깊이(px).
+    const DEPTH: f32 = 2.5;
+    /// 양 끝이 중심선에서 올라가는 높이(px).
+    const RISE: f32 = 2.0;
+    /// chevron 선 굵기(px).
+    const STROKE_W: f32 = 1.5;
+
+    let dir = if up { -1.0 } else { 1.0 };
+    painter.add(egui::Shape::line(
+        vec![
+            egui::pos2(center.x - HALF_W, center.y - RISE * dir),
+            egui::pos2(center.x, center.y + DEPTH * dir),
+            egui::pos2(center.x + HALF_W, center.y - RISE * dir),
+        ],
+        egui::Stroke::new(STROKE_W, color),
+    ));
 }
