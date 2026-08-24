@@ -188,7 +188,7 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 
 thread 본문은 `RunnerLoop::tick` + 500ms `recv_timeout`. tick 안 memory lock 은 *짧은 구간* 만(list → release → dispatch/poll(lock 밖) → re-lock for set_state) — 사용자 CLI 동시 호출과 락 경합 최소화.
 
-`agent.task_run`(start/stop/status)은 `METHOD_TABLE` 에 `plugin(&[AgentManage])` 로 등록돼 있다 — 호스트가 재시작 시 runner 를 자동으로 켜지 않으므로(아래 "재시작 계약"), plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수단이 필요하기 때문이다. `task_set_result` 만 여전히 local-only.
+`agent.task_run`(start/stop/status)은 `METHOD_TABLE` 에 `plugin(&[AgentManage])` 로 등록돼 있다 — 호스트가 재시작 시 runner 를 자동으로 켜지 않으므로(아래 "재시작 계약"), plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수단이 필요하기 때문이다. `task_set_result` 는 `local_only()` 로 등재돼 있다 — 러너가 Custom task 의 생명주기를 단독 소유하므로 plugin 이 같은 task 를 별도로 전이시키면 쓰기 주체가 둘이 되어 러너의 완료 판정과 경합한다. plugin 은 완료 판정 전략 선언(아래 "완료 판정 전략 레지스트리")으로 우회한다.
 
 ## 재시작 계약
 

@@ -245,6 +245,18 @@ fn agent_task_await_is_local_only() {
     assert!(!m.plugin_callable);
 }
 
+/// 러너가 Custom task 의 생명주기를 단독 소유한다 — plugin 이 task_set_result
+/// 로 같은 task 를 별도 전이시키면 쓰기 주체가 이중화돼 러너의 완료 판정과
+/// 경합한다. plugin 은 완료 판정 전략 선언으로 우회한다(agent.task_await 와
+/// 같은 이유 계열). 등재 자체는 "누락"과 "의도적 local_only" 를 구분하기 위한
+/// 것이다 — 미등재면 plugin 호출자가 UnknownMethod 로 거부돼, 표를 읽는 쪽이
+/// 정책인지 실수인지 판별할 수 없다.
+#[test]
+fn agent_task_set_result_is_local_only() {
+    let m = method_meta("agent.task_set_result").expect("registered");
+    assert!(!m.plugin_callable);
+}
+
 #[test]
 fn agent_lease_methods_require_agent_manage() {
     for name in [
