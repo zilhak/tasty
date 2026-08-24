@@ -1414,7 +1414,7 @@ mod tests {
         }
     }
 
-    /// TODO 15 회귀 방지: egui 가 `ctx.request_repaint_after` 로 "다음 pass 도
+    /// 회귀 방지: egui 가 `ctx.request_repaint_after` 로 "다음 pass 도
     /// 그려달라"고 요청하면, `render()` 는 그 신호를 버리지 않고
     /// `pending_self_repaint()` 로 노출해야 한다 — 과거에는 `full.viewport_output`
     /// 을 완전히 무시해 이 정보가 유실됐다(markdown 트랙패드 스크롤이 유휴 상태에서
@@ -1500,7 +1500,7 @@ mod tests {
 
     /// [`EguiMeshPopup`] 도 [`EguiMeshCore::pending_self_repaint`] 를 공유한다 — 위
     /// surface 테스트와 동형으로, popup 채널(git-viewer/clipboard-viewer)도 같은
-    /// 정보 유실 없이 self-repaint 요청을 캡처해야 한다(TODO 15 popup 대응,
+    /// 정보 유실 없이 self-repaint 요청을 캡처해야 한다(`docs/dev-guide/egui-mesh-channel.md` "popup 대응",
     /// `PopupInvalidated`).
     #[test]
     fn popup_also_captures_egui_repaint_request() {

@@ -407,7 +407,7 @@ pub enum PluginEvent {
     SurfaceInvalidated { surface_id: u32 },
     /// egui-mesh popup invalidated — [`PluginEvent::SurfaceInvalidated`] 의 popup
     /// 대응. plugin 이 out-of-band 로(예: egui `viewport_output` 의 self-repaint
-    /// 요청, TODO 15) 재-forward 를 요청할 때 쓴다. host 는 다음 tick 에 해당
+    /// 요청) 재-forward 를 요청할 때 쓴다. host 는 다음 tick 에 해당
     /// instance 의 `popup.set_context` 를 무입력으로 1회 재forward 한다.
     PopupInvalidated { instance_id: u64 },
     /// egui-mesh surface: plugin 이 자기 프로세스에서 tessellate→POD 인코드(A1-S2,

@@ -673,7 +673,7 @@ impl App {
         }
     }
 
-    /// `about_to_wait()` 지원 — `PopupInvalidated`(TODO 15): egui-mesh popup
+    /// `about_to_wait()` 지원 — `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup 대응"): egui-mesh popup
     /// (git-viewer/clipboard-viewer 등) plugin 이 egui `viewport_output` self-repaint
     /// 를 요청(예: 스크롤 스무딩이 유휴 상태에서 아직 안 끝남)하면, 다음 프레임에
     /// 무입력으로 재-forward 되도록 예약한다. [`mark_invalidated_surfaces_dirty`] 의

@@ -119,7 +119,7 @@ surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 �
 직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
 유효한 일반 인프라이나, 현재 이를 실제로 쓰는 번들 plugin 은 없다.
 
-### popup 대응 — `PopupInvalidated` (TODO 15)
+### popup 대응 — `PopupInvalidated`
 
 `SurfaceInvalidated` 는 surface 전용이다. egui-mesh popup(git-viewer/clipboard-viewer 등,
 아래 "egui-mesh popup 채널")도 동일하게 무입력 재-forward 가 필요한 경우가 있어(아래
@@ -169,7 +169,7 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 로 본문 surface 가 webview 전환되며 egui-mesh self-repaint 경로 자체를 타지 않게 됐다 —
 `markdown.reload` IPC 는 지금은 host 가 webview 를 직접 재로드하는 별개 경로다.)
 
-## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용 (TODO 15)
+## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용
 
 위 "set_context 송신 정책"의 이벤트 기반 게이팅(host-side 이벤트가 있을 때만 pass 를
 구동)은 **egui 자신의 다중 프레임 애니메이션**(스크롤 스무딩, `ctx.request_repaint_after`
@@ -325,7 +325,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 (egui-mesh·attach mesh mirror 판정 지점)와 `handle_cursor_left`(`WindowEvent::CursorLeft`)가
 매 `CursorMoved`/`CursorLeft` 이벤트마다 `update_mesh_hover(new_target)` 를 거쳐 슬롯을
 갱신하며 — `egui_consumed`/오버레이(설정창)/팝업/배너/modifier-hint hover 로 인한
-early-return 경로도 포함(TODO 37): 이 경로에 진입한 이벤트는 mesh 판정 자체를 건너뛰고
+early-return 경로도 포함: 이 경로에 진입한 이벤트는 mesh 판정 자체를 건너뛰고
 곧장 `update_mesh_hover(None)` 을 호출한다, 즉 "이번 프레임은 mesh surface 위가
 아니다"로 취급 — 대상이 바뀌면(다른 mesh surface 로 전환되거나 `None` 이 되면)
 **이전** 대상에 `PointerGone` 을 1 회 forward 한다. 안 그러면 plugin 쪽 egui 가 마지막
@@ -428,7 +428,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   `forward_mesh_frames_for_engine` 으로 `PluginManager` 를 직접 구동하면 이 로컬
   authoritative loop 와 경합하므로 — attach client 가 요청한 (로컬과 다를 수 있는)
   width_px/height_px 로 재구동해 로컬 화면이 튈 수 있다 — `MainView::forward_mesh_to_attach_subscribers`
-  (`src/view/main/egui_mesh.rs`, TODO 24)는 위 `relay_mesh_frame_if_new` 만 재사용해 **별도
+  (`src/view/main/egui_mesh.rs`)는 위 `relay_mesh_frame_if_new` 만 재사용해 **별도
   `set_context` 를 보내지 않고 이미 만들어진 `EguiMeshFrame` 바이트만 읽어 `StreamTag::MeshData`
   로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도 렌더되지 않는 surface(다른
   탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이 그 surface_id 자체를 모름)인
