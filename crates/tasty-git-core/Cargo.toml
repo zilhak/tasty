@@ -13,9 +13,9 @@ tracing = "0.1"
 git2 = { version = "0.20", default-features = false }
 # Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
 tasty-utils = { path = "../tasty-utils" }
-# 원격 attach git 조회(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`) — host 가
-# wire JSON 으로 회신한 결과를 plugin(별도
-# 프로세스)이 그대로 이 crate 의 타입으로 역직렬화한다(중복 wire DTO 회피).
+# 원격 attach git 조회 — host 가 wire JSON 으로 회신한 결과를 plugin(별도 프로세스)이
+# 그대로 이 crate 의 타입으로 역직렬화한다(중복 wire DTO 회피).
+# 근거: `docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`.
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

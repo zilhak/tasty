@@ -17,12 +17,17 @@
 //! 2. 설계 결정이 크면 — `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
-//! **탐지 패턴 4 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
+//! **탐지 패턴 5 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
 //! - P1 번호 인용 — 대문자 `TODO` + 선택적 공백/하이픈 + 숫자
 //! - P2 conductor 번호 인용 — `todo-conductor`(대소문자 무시) + 선택적 구분자 + 숫자
 //! - P3 경로 인용 — 로컬 작업 폴더 + `todo` / `todo-conductor` / `plans` / `conductor`
 //! - P4 디자인 changelog slug — `YYYY-MM-DD-<소문자-slug>`. 원격 Claude Design
 //!   프로젝트 내부에만 존재해 로컬 파일시스템에 흔적조차 없으므로 더 휘발적이다.
+//! - P5 앵커 슬러그 변형 — 마크다운 앵커(`#...`) 안에 소문자로 굳은 번호
+//!   (`-todo-<숫자>`). 제목에 번호를 달면 그 번호가 앵커의 일부가 되어 링크·주석
+//!   으로 퍼지고, 나중에 제목에서 번호를 떼는 순간 그 참조가 **전부 깨진다**
+//!   (실제로 한 번 발생했다 — 제목 하나를 고치자 링크 1곳과 주석 15줄이 죽은
+//!   좌표가 됐다). 대문자 `TODO` 가 아니라 P1 이 못 잡는 별도 형태다.
 //!
 //! **오탐 회피**: 금지 대상은 로컬 작업 폴더 뒤에 위 4 개 하위 디렉토리가 오는
 //! 경우로 **한정**한다. 임시 파일 위치(`temp/` 하위)와 폴더 자체를 언급하는 것은
@@ -164,6 +169,47 @@ fn find_p4(line: &str) -> Option<String> {
     None
 }
 
+/// 앵커 슬러그 안의 소문자 번호(`todo-<숫자>`)를 찾는다. 슬러그 시작이거나 `-`
+/// 뒤에 와야 한다 — `todo-conductor` 는 뒤가 숫자가 아니라 걸리지 않는다.
+fn slug_todo_number(slug: &str) -> Option<String> {
+    let bytes = slug.as_bytes();
+    let mut from = 0;
+    while let Some(pos) = slug[from..].find("todo-") {
+        let start = from + pos;
+        // `start - 1` 이 멀티바이트 연속 바이트여도 `-`(ASCII) 와는 절대 같지 않다.
+        let at_boundary = start == 0 || bytes[start - 1] == b'-';
+        let digits_start = start + "todo-".len();
+        let mut end = digits_start;
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if at_boundary && end > digits_start {
+            return Some(slug[start..end].to_string());
+        }
+        from = start + "todo-".len();
+    }
+    None
+}
+
+/// P5 — 마크다운 앵커(`#<슬러그>`) 안에 소문자로 굳은 번호.
+fn find_p5(line: &str) -> Option<String> {
+    let mut from = 0;
+    while let Some(pos) = line[from..].find('#') {
+        let start = from + pos;
+        let rest = &line[start + 1..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '`' | ',' | '"' | '\''))
+            .map(|i| start + 1 + i)
+            .unwrap_or(line.len());
+        let slug = &line[start + 1..end];
+        if let Some(hit) = slug_todo_number(slug) {
+            return Some(format!("#{slug} ({hit})"));
+        }
+        from = start + 1;
+    }
+    None
+}
+
 /// 스캔 대상 파일인지 — repo-relative 경로 기준.
 /// `.rs`(`src/` · `tests/` · `crates/*/src/` · `crates/*/tests/`) +
 /// `.toml`(루트 `Cargo.toml`/`deny.toml` · `crates/*/Cargo.toml` · `tasty-plugin.toml` ·
@@ -254,7 +300,8 @@ fn no_todo_file_citation() {
                 .map(|m| ("P1 번호 인용", m))
                 .or_else(|| find_p2(line).map(|m| ("P2 conductor 번호 인용", m)))
                 .or_else(|| find_p3(line).map(|m| ("P3 경로 인용", m)))
-                .or_else(|| find_p4(line).map(|m| ("P4 디자인 changelog slug", m)));
+                .or_else(|| find_p4(line).map(|m| ("P4 디자인 changelog slug", m)))
+                .or_else(|| find_p5(line).map(|m| ("P5 앵커 슬러그 번호", m)));
             if let Some((kind, matched)) = hit {
                 violations.push(format!("  {}:{} — {kind}: `{matched}`", rel, i + 1));
             }
@@ -269,6 +316,8 @@ fn no_todo_file_citation() {
          대체 수단 3 가지 중 하나를 쓸 것: (1) 이유가 자명하면 번호 대신 이유를 직접 서술 \
          (2) 설계 결정이 크면 `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용 \
          (3) 기능 동작 설명이면 `docs/`(dev-guide / features / plugins) 문서를 참조.\n\
+         앵커(P5)면 제목에서 번호를 떼고 그 제목을 가리키던 참조도 함께 고칠 것 — \
+         제목의 번호는 앵커로 굳어 링크·주석으로 퍼진다.\n\
          금지 형태를 담는 것이 본질인 파일이면 ALLOWLIST_FILES 에 추가:\n{}",
         violations.join("\n")
     );

@@ -128,8 +128,7 @@ doc.
 
 **Origin 태깅**: `file_picker.trigger` 로 연 popup 의 `OpenPopup` intent 는
 `Intent::from_agent_plugin(plugin_id)` 로 발화한다(Tools 메뉴는 `from_user_menu` 그대로) —
-`from_agent_plugin` 은 이 작업 전까지 실사용처가 없던 builder 였다(wiring 전 상태,
-`src/intent.rs`).
+`from_agent_plugin` 은 이 배선 전까지 실사용처가 없던 builder 였다(`src/intent.rs`).
 
 ## 인터페이스
 

@@ -1733,9 +1733,9 @@ fn delete_checked_rejects_when_referenced_by_reduce_inputs() {
     }
 }
 
-/// 가장 중요한 시나리오: 참조 있는 task 를
-/// cascade 삭제하면 참조자까지 함께 지워지고, 그 뒤 같은 workspace 에 새 task
-/// 를 만드는 게 여전히 성공한다 — raw `delete()` 를 그대로 노출했다면 dangling
+/// 가장 중요한 시나리오: 참조 있는 task 를 cascade 삭제하면 참조자까지 함께
+/// 지워지고, 그 뒤 같은 workspace 에 새 task 를 만드는 게 여전히 성공한다 —
+/// raw `delete()` 를 그대로 노출했다면 dangling
 /// `depends_on` 이 남아 이후 모든 `create()` 가 `detect_cycles` 의
 /// `UnknownDependency` 로 깨졌을 것.
 #[test]

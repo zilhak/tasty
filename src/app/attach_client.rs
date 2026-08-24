@@ -135,7 +135,7 @@ struct OutFrame {
 /// [`OutFrame`] 을 write 스레드로 보내는 큐 sender. 세션·heartbeat·forwarder 가 공유한다.
 type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 
-/// 재연결(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고) 시 write 스레드/소켓이 통째로 교체돼도, 그보다 수명이 긴 입력
+/// 재연결(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고) 시 write 스레드/소켓이 통째로 교체돼도, 그보다 수명이 긴 입력
 /// forwarder 스레드(터미널 생존 기간 내내 삶)가 최신 `FrameSender` 를 계속 가리킬 수
 /// 있게 하는 교체 가능한 핸들. `AttachClientSession::frame_tx` 와 각 forwarder 가 같은
 /// `Arc` 를 공유(clone)하고, 재연결 성공 시 `reconnect_session` 이 안쪽 값만 새
@@ -144,7 +144,7 @@ type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 /// 필요 없다 — 자신만의 raw `FrameSender` 를 직접 캡처한다.
 type SharedFrameSender = Arc<Mutex<FrameSender>>;
 
-/// mirror 세션의 transport 상태(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고). `Connected` 만 실제 소켓 IO 가 살아있다 —
+/// mirror 세션의 transport 상태(attach-behavior.md#재연결-시-세션-상태-보존 참고). `Connected` 만 실제 소켓 IO 가 살아있다 —
 /// `Reconnecting` 은 mirror workspace/터미널(scrollback 포함)을 살려둔 채 transport 만
 /// 끊긴 상태로, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 재시도를
 /// 담당한다. 세션이 완전히 닫히면(사용자 close 또는 anchor 없는 disconnect) 이 열거형
@@ -179,11 +179,11 @@ pub(crate) struct AttachClientSession {
     /// 원격으로 나가는 모든 프레임(입력 Data / resize·structural Control / Detach)을
     /// 단일 write 스레드로 보내는 큐 sender. 여러 forwarder/heartbeat 가 각자
     /// writer 를 lock 후 직접 쓰던 구조를 대체 — 락 경합/heartbeat 굶김 제거.
-    /// attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 —
+    /// attach-behavior.md#재연결-시-세션-상태-보존 참고 —
     /// 재연결 시 안쪽 sender 만 교체 가능하도록 `Arc<Mutex<_>>` 로 감쌌다(교체 이유는
     /// [`SharedFrameSender`] 문서 참고).
     frame_tx: SharedFrameSender,
-    /// attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — 이 세션의 transport 상태. `apply_attach_client_output` 이 disconnect
+    /// attach-behavior.md#재연결-시-세션-상태-보존 참고 — 이 세션의 transport 상태. `apply_attach_client_output` 이 disconnect
     /// 를 감지하면(anchor 있는 세션 한정) mirror 를 지우는 대신 여기를 `Reconnecting`
     /// 으로 전이시키고, `auto_attach.rs` 의 backoff 스케줄러가 `reconnect_session` 으로
     /// `Connected` 복귀를 시도한다.
@@ -251,7 +251,7 @@ impl AttachClientSession {
     }
 
     /// `frame_tx` 공유 핸들을 lock 해 프레임 하나를 write 큐에 넣는다. 호출부가 매번
-    /// lock/에러 처리를 반복하지 않도록 모은 헬퍼(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `frame_tx` 가
+    /// lock/에러 처리를 반복하지 않도록 모은 헬퍼(attach-behavior.md#재연결-시-세션-상태-보존 참고 — `frame_tx` 가
     /// `Arc<Mutex<_>>` 로 바뀌며 추가). mutex 오염(다른 스레드 panic)은 lock 자체를
     /// 무효화할 이유가 없어 `into_inner`로 복구해 계속 진행한다.
     fn send_frame(
@@ -368,7 +368,7 @@ impl App {
         // push 만 하고, write 스레드 하나가 순차로 소켓에 write_frame 한다 — writer 락
         // 경합/heartbeat 굶김 원천 제거. write half 는 그 스레드가 단독 소유한다.
         let (frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
-        // attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — forwarder 가 재연결 후에도 최신 sender 를 찾을 수 있도록 공유 핸들로
+        // attach-behavior.md#재연결-시-세션-상태-보존 참고 — forwarder 가 재연결 후에도 최신 sender 를 찾을 수 있도록 공유 핸들로
         // 감싼다(교체는 `reconnect_session` 이 담당, 이 Arc 자체는 세션 수명 내내 불변).
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(frame_tx));
 
@@ -433,7 +433,7 @@ impl App {
         );
 
         // 4. heartbeat thread: 서버측 read timeout 갱신용으로 주기적으로 Ping 송신.
-        // heartbeat 는 이 연결 1 회 수명에만 스코프된다(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고) — forwarder 와
+        // heartbeat 는 이 연결 1 회 수명에만 스코프된다(attach-behavior.md#재연결-시-세션-상태-보존 참고) — forwarder 와
         // 달리 재연결을 가로질러 살아남지 않으므로 공유 핸들이 아닌 이 연결의 raw
         // sender 를 직접 잡는다. `disconnected` 도 이 연결 전용 Arc — 재연결 후
         // 새 연결은 별도의 새 heartbeat 스레드(새 raw sender/새 disconnected)를 띈다.
@@ -465,7 +465,7 @@ impl App {
         Ok(local_ws_id)
     }
 
-    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 엔드포인트 해석에
+    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 엔드포인트 해석에
     /// 성공했을 때 호출. `sess_idx` 의 `Reconnecting` 세션을 **새 연결로 재개**한다.
     /// `start_gui_attach` 와 달리 로컬 mirror workspace/터미널을 새로 만들지 않고,
     /// `merge_survivor_mapping`(survivor local id/scrollback 보존) + 이전 focus 복원을
@@ -588,7 +588,7 @@ impl App {
             "(재연결)",
         );
 
-        // 4. heartbeat thread — 이 연결 전용 raw sender(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `make_mirror_surface`
+        // 4. heartbeat thread — 이 연결 전용 raw sender(attach-behavior.md#재연결-시-세션-상태-보존 참고 — `make_mirror_surface`
         //    문서 참고, heartbeat 는 재연결을 가로질러 살아남지 않는다).
         let raw_frame_tx = shared_frame_tx
             .lock()
@@ -679,10 +679,10 @@ impl App {
             // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
             // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
             // 않음) — `Connected` 일 때만 "방금 처음 감지"로 보고 1 회 반응, 이미
-            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고).
+            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(attach-behavior.md#재연결-시-세션-상태-보존 참고).
             if disconnected && state == SessionState::Connected {
                 // anchor(자동 attach 매핑) 가 있으면 재연결 가능 후보 — mirror 를 지우지
-                // 않고 Reconnecting 으로 전이(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고). 없으면(수동/IPC attach) 재연결
+                // 않고 Reconnecting 으로 전이(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고). 없으면(수동/IPC attach) 재연결
                 // 트리거 소스가 없으므로 기존처럼 완전 정리.
                 if anchor_ws_id.is_some() {
                     reconnecting.push(idx);
@@ -700,7 +700,7 @@ impl App {
         }
     }
 
-    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고 — disconnect 가 처음 감지된 anchor-매핑 세션을 mirror workspace/
+    /// attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고 — disconnect 가 처음 감지된 anchor-매핑 세션을 mirror workspace/
     /// 터미널을 살려둔 채 `Reconnecting` 으로 전이시킨다(완전 정리 대신). `auto_attach.rs`
     /// 의 backoff 스케줄러가 이 상태의 세션을 찾아 `reconnect_session` 재시도를 건다.
     fn enter_reconnecting(&mut self, idx: usize) {
@@ -1491,7 +1491,7 @@ fn spawn_attach_reader_thread(
 /// 붙들지 않는다. 활성 입력 트래픽과 무관하게 고정 주기로 보낸다 — Ping 프레임은
 /// 5바이트라 오버헤드가 무시할 만하고, 여러 forwarder 스레드의 "마지막 전송
 /// 시각"을 공유 상태로 조율하는 비용이 더 크다. 이 연결 1 회 수명에만 스코프된다
-/// (attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — heartbeat 는 재연결을
+/// (attach-behavior.md#재연결-시-세션-상태-보존 참고 — heartbeat 는 재연결을
 /// 가로질러 살아남지 않으므로 호출자가 공유 핸들이 아닌 이 연결의 raw sender 를
 /// 직접 잡아 넘긴다). `start_gui_attach`/`reconnect_session` 이 공유.
 fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Arc<AtomicBool>) {
@@ -1540,7 +1540,7 @@ fn make_mirror_surface(
     // 사망하던 결함)해 순차로 write 큐에 push. 단일 forwarder 스레드가 rx 를 FIFO
     // 소비하므로 bracketed paste(\x1b[200~ → text → \x1b[201~) 순서가 보존된다.
     //
-    // attach-behavior.md#재연결-시-세션-상태-보존-todo-28 참고 — `frame_tx` 는 공유 핸들(`SharedFrameSender`)이라 매 전송마다 lock 해
+    // attach-behavior.md#재연결-시-세션-상태-보존 참고 — `frame_tx` 는 공유 핸들(`SharedFrameSender`)이라 매 전송마다 lock 해
     // **그 순간의 최신** sender 를 읽는다. send 실패(transport disconnect 중 — 옛
     // write 스레드가 이미 죽었거나 아직 재연결 전)는 이 청크만 버리고 루프를
     // 계속한다 — 예전엔 `return`(스레드 종료)했지만, 그러면 재연결로 `frame_tx` 내부가
@@ -1633,7 +1633,7 @@ fn pending_op_focus_for(
 /// 객체·busy state·mesh frame 캐시)를 즉시 정리하고 새 kind 가 terminal 이면
 /// `make_mirror_surface` 로 새로 만든다 — local id 는 그대로 유지한 채 리소스만 새
 /// kind 에 맞춘다. `apply_mirror_structural_delta`(구조 변경 역반영)와 `reconnect_session`
-/// (재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존-todo-28 참고)이 공유하는 핵심 로직 — 두
+/// (재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고)이 공유하는 핵심 로직 — 두
 /// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
 /// 구조적으로 동일하다.
 fn merge_survivor_mapping(
