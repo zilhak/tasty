@@ -37,6 +37,40 @@
 - **Reducer** — N task 결과를 단일 값으로 합성. 5전략: `first_success`/`all`/`merge_json`/`concat_text`/`custom`(호스트 shell, stdin 에 결과 배열 JSON). 단발 `agent.task_reduce` 또는 DAG 노드(`TaskCommand::Reduce`, 이 경우 `inputs` 는 암묵적 의존성 — 위 Task DAG 항목 참조).
 - **Rate-limit** — (agent, metric) token bucket(보충률 `limit/per_ms`, 상한 `burst`). `global` scope. 누적 임계인 [telemetry cap](../telemetry/index.md) 과 구분(이쪽은 *시간당 비율*). CRUD + `try_consume` 제공 + IPC dispatcher 미들웨어(`should_rate_limit`)가 매 호출 자동 평가.
 
+## 자식 에이전트를 DAG 노드로
+
+Claude / Codex 자식을 **띄우고 그 완료를 기다리는 일**을 Task DAG 노드 하나로 표현할 수 있다. 전용 command kind 는 없다 — `custom` 노드로 plugin 의 spawn 메서드를 호출하면 된다. 코어는 어떤 에이전트인지 모른 채 IPC dispatch → 폴링만 한다.
+
+```sh
+tasty agent task-create --workspace-id 1 --name spawn-worker \
+  --command '{"kind":"custom","ipc_method":"claude.spawn",
+              "params":{"surface_id":560,"workspace":"wt-11",
+                        "cwd":"/home/me/work/wt-11","prompt":"이 디렉토리의 테스트를 고쳐라"}}'
+```
+
+**`poll` 을 주지 않는 것이 요점이다.** 두 plugin 이 자기 매니페스트에 `[[contributes.completion_strategy]]` 를 선언하면서 `default_for_methods` 로 자기 spawn 메서드를 지목해 두었으므로, 러너가 dispatch 시점에 그 전략을 자동으로 집어 폴링 모드로 전이한다. 전략이 없으면(= 해당 plugin 이 비활성이면) `custom` 노드는 dispatch 성공 즉시 `Succeeded` 가 되므로, 자식이 도는 동안 기다려주지 않는다.
+
+`params.surface_id` 는 자식을 매달 **부모** surface 다. spawn 응답의 `child_surface_id` 가 `map_from_response` 를 타고 poll 호출의 파라미터로 옮겨간다.
+
+두 plugin 의 전략 값이 다르므로 그대로 옮겨 쓰면 안 된다:
+
+| | claude | codex |
+|---|---|---|
+| dispatch 메서드 | `claude.spawn` | `codex.spawn` |
+| poll 메서드 | `claude.state` | `codex.state` |
+| `map_from_response` | `child_surface_id` → `surface_id` | `child_surface_id` → `surface` |
+| `terminal_states` | `idle`, `needs_input`, `exited` | `idle`, `exited` |
+
+poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구하는 이름이 다르기 때문이고(`surface_id` vs `surface`), codex 의 terminal 목록에 `needs_input` 이 없는 것은 codex 쪽에 그 상태를 세우는 hook 이벤트가 없어 실제로 관측될 일이 없기 때문이다 — 거짓 계약을 만들지 않으려고 뺐다.
+
+**여기까지가 현재 되는 범위다.** 자식 여럿을 하나의 DAG 로 엮으려 할 때 남는 갭이 셋 있다:
+
+- **앞 노드의 산출물을 뒤 노드 파라미터로 넘길 수단이 없다.** dispatch 시점 치환은 `${lease.resource}` 하나뿐이고, `Reduce` 로 합성한 값도 다른 task 의 파라미터가 되지는 못한다. 자식에게 앞 단계 결과를 넘기려면 파일이나 memory 키처럼 task 바깥의 매개를 쓴다.
+- **`claude.tell` / `codex.tell` 에는 완료 판정 전략이 없다.** `default_for_methods` 를 선언한 것은 두 plugin 의 spawn 뿐이라, `tell` 을 노드로 두면 메시지가 전송된 순간 `Succeeded` 다 — 자식이 그 지시를 끝냈는지와 무관하다. "띄운 뒤 이어서 지시를 준다" 를 DAG 로 직렬화할 수 없다.
+- **terminal 상태를 구분하지 않는다.** `terminal_states` 중 아무거나 맞으면 `Succeeded` 이므로 정상 종료와 비정상 종료(`exited`)가 같게 읽힌다. claude 는 `needs_input` 도 terminal 이라 입력을 기다리며 멈춘 자식까지 성공으로 마감된다. 구분이 필요하면 산출물(`TaskResult.output` = poll 응답 전체)의 `state` 를 downstream 이 직접 본다.
+
+전략 레지스트리·dispatch 배선 상세는 [dev-guide/agent-runner](../../dev-guide/agent-runner.md#hostexecutor-매핑).
+
 ## 인터페이스
 
 - **AI Agent / CLI**: `tasty agent {task-create,task-list,...,dag-list,dag-get,barrier-*,semaphore-*,lease-*,task-reduce,rate-limit-*}`. `--command`/`--metadata` 는 인라인 JSON 또는 `@path`. 전체 표 → [reference/api](../../reference/api.md#에이전트-협업-agent).
