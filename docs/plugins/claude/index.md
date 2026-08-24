@@ -53,9 +53,37 @@
 - spawn 시 parent 의 살아있는 child 수가 설정 임계치를 넘으면 응답에 `warning` 필드가 실린다 — Settings › Plugin › Claude Code 에서 임계치 조정. 재사용 후보는 근거가 다른 두 목록으로 나뉜다: **`idle`**(자식이 hook 으로 완료를 직접 보고) 과 **확정 `stale`**(`confidence: confirmed` — 보고는 없었지만 전경이 셸로 복귀해 에이전트 프로세스 종료가 관측됨, 즉 hook 유실). `confidence: heuristic` 인 `stale` 은 SIGSTOP·긴 추론과 구별되지 않아 세지 않는다 — 판정 축은 [child-terminal](../../features/child-terminal/index.md) "판정 응답 필드" 참조.
 - **승인 정책 플래그 없음(미확인 상태)** — [codex](../codex/index.md) 플러그인은 `--approval`/`--sandbox`/`--full-auto` 로 자식의 승인/샌드박스 정책을 지정할 수 있지만(비대화형 자동화 흐름에서 승인 프롬프트가 자식을 영구히 멈추는 문제의 해결책), 이 플러그인의 `build_launch_command`(`crates/tasty-plugin-claude/src/handlers.rs`)에는 대응하는 플래그가 없다. Claude Code 는 codex 처럼 기동 시점 CLI 플래그가 아니라 `settings.json`(`permissions`)/`--permission-mode` 기반 권한 모델을 쓰므로 구조가 다르지만, `permissions.defaultMode` 가 승인이 필요한 값일 때 `spawn`/`launch`/`respawn` 으로 띄운 자식이 codex 와 동형으로 승인 프롬프트에서 영구히 멈추는지는 아직 재현·확인되지 않았다. 재현되면 codex 와 동형의 정책 플래그 노출이 필요하다.
 
+### Stop-훅 게이트 레지스트리
+
+세션 종료를 막고 체크리스트를 주입하는 **게이트를 이름으로 등록**하는 계층. 게이트는 3요소로 이뤄진다 — **본문**(block 될 때 `reason` 으로 주입되는 지시), **센티넬**(모델이 종료를 선언하는 문자열), **라운드 상한**(백스톱). 위 세션 프로필 레지스트리(`profile.rs`)의 형태를 미러링하되 타입은 공유하지 않는다(`crates/tasty-plugin-claude/src/gate.rs`). 결정 배경은 [ADR-0083](../../adr/0083-stop-gate-named-registry.md).
+
+- **등록**: `tasty claude gate-register <이름> --body-file <경로> [--sentinel <문자열>] [--rounds <n>]` — 본문 파일을 **복사본**으로 저장한다(원본이 옮겨지거나 지워져도 게이트는 살아 있다). 이미 등록된 이름이면 정의와 본문을 둘 다 덮어쓴다. 이름 규칙은 프로필과 동일(소문자/숫자/`-`, 최대 32자).
+- **해제**: `tasty claude gate-unregister <이름>` — 정의와 본문 복사본을 **둘 다** 지운다(본문만 남으면 다음 등록이 옛 본문을 조용히 덮어쓰는 것처럼 보이는 orphan 이 된다).
+- **목록**: `tasty claude gate-list` — 등록 게이트(`user/<이름>`)와 host 기본 게이트(`host/continue-checklist`)를 함께, 각각의 실효 `sentinel`/`round_limit` 및 상한의 출처(`round_limit_source`: `gate` = 정의가 직접 지정 / `settings` = 미지정이라 plugin 설정으로 폴백)와 함께 보여준다. 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만** 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
+- **조회**: `tasty claude gate-show <이름>` — 정의(센티넬·상한)와 본문 텍스트를 함께. 사용자 등록이 없으면 host 기본 게이트로 폴백하고, 그때 `owner` 는 실제 출처를 그대로 반영한다(`host`).
+
+**등록 시점 검증**
+
+- **본문은 그 게이트의 실효 센티넬을 포함해야 한다.** 없으면 거부 — 센티넬이 본문에 없으면 모델이 종료를 선언할 방법을 안내받지 못해 라운드 상한까지 무조건 도달하고, 게이트가 "N턴 강제 연장" 장치로 변질된다. host 기본 본문에 대해서는 같은 불변식을 로케일별 컴파일 타임 테스트가 강제한다(사용자 본문에는 컴파일 타임 테스트를 걸 수 없어 등록 시점 런타임 검증으로 옮긴 것).
+- **빈 센티넬 거부** — 빈 문자열은 모든 메시지에 매칭되어(`str::contains("")` 는 항상 참) 게이트가 첫 라운드에 통과한다.
+- **`--rounds` 는 1 이상.**
+- **동명 세션 프로필과 충돌하면 거부** — 게이트를 등록하면 동명 프로필로 그대로 부착 가능해지므로 두 레지스트리는 **이름 공간을 공유**한다. 같은 이름이 양쪽에 생기면 조용히 한쪽이 가려지므로 등록 시점에 **양방향으로** 거부한다(`gate-register` 는 동명 registered 프로필을, `profile-register` 는 동명 게이트를).
+- `data_dir` 이 없는 비정상 기동이면 등록/해제는 명시적 에러. **조회(list/show)는 host 기본 게이트만 반환**한다 — 조회는 저장소를 요구하지 않는다.
+
+**저장 위치** — `TASTY_PLUGIN_DATA_DIR` 하위, 프로필 레지스트리와 같은 "사용자 원본 vs tasty 생성물" 분리 방침:
+
+| 경로 | 내용 |
+|---|---|
+| `gates/registered/<이름>.json` | 게이트 정의 — `sentinel`(등록 시 미지정이면 기본 센티넬이 실체화된다: 정의만 보고도 실효값을 알 수 있어야 한다) · `round_limit`(미지정이면 키 자체가 없다) |
+| `gates/bodies/<이름>.md` | 본문 원본의 복사본 |
+
+**host 기본 게이트는 파일이 아니라 코드다** — `continue-checklist` 는 데이터 디렉토리에 실체화되지 않고 조회 함수로만 존재한다(본문 = `claude.checklist.body` 번역 키, 센티넬 = 기본 센티넬, 상한 = 미지정 → 설정 폴백). 실체화하면 사용자가 지웠을 때 되살릴 경로가 없어진다(`install.rs::MANAGED_HOOKS` 와 같은 형태). 사용자가 같은 이름으로 등록하면 그쪽이 이긴다.
+
+- IPC: `claude.gate_register`/`claude.gate_unregister`/`claude.gate_list`/`claude.gate_show` — CLI 서브커맨드와 1:1 대응(원칙 2). GUI 노출은 없다.
+
 ### continue-checklist 세션 프로필
 
-위 레지스트리가 host 출처로 미리 등록해 두는 첫 attachable 기본 프로필. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 직접 등록한 파일이 있으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook` 을 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 8종)에는 포함되지 않으며, 이 프로필이 부착된 세션에서만 발화한다.
+위 레지스트리가 host 출처로 미리 등록해 두는 첫 attachable 기본 프로필이자, 위 게이트 레지스트리의 host 기본 게이트 하나(`host/continue-checklist`)에 대응한다. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 직접 등록한 파일이 있으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook` 을 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 8종)에는 포함되지 않으며, 이 프로필이 부착된 세션에서만 발화한다.
 
 - **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 센티넬 문자열 `[[TASTY-CHECKLIST-DONE]]` 이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시)과 센티넬 포함 지시로 구성된다.
 - **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 `continue-checklist round limit`(기본 3)로 노출된다.
@@ -145,7 +173,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 ## 인터페이스
 
-- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current …`.
+- **AI Agent / 사용자**: `tasty claude launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|checklist-hook|checklist-enable|checklist-disable|checklist-status|profile-register|profile-unregister|profile-list|profile-show|profile-current|gate-register|gate-unregister|gate-list|gate-show …`.
 - surface/패인 생성 자체는 [work-area](../../features/work-area/index.md) 도메인을 사용.
 
 ## 비-목표
