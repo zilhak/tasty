@@ -329,6 +329,12 @@ pub fn register(
 /// `short_name` 등록을 해제한다. 정의와 본문을 **둘 다** 지운다 — 본문만 남으면
 /// 다음 등록이 조용히 옛 본문을 덮어쓰는 것처럼 보이는 orphan 이 된다. 없으면
 /// `UnknownGate`.
+///
+/// 그 게이트의 **런타임 상태**(마커 + 라운드,
+/// [`crate::checklist::remove_gate_runtime_state`])도 함께 지운다 — 남겨 두면
+/// 같은 이름으로 재등록했을 때 과거의 켜짐 상태와 라운드 카운터가 부활해,
+/// "지웠다 새로 만든 게이트" 가 이전 상태를 물려받는 놀라운 동작이 된다. 이
+/// 정리는 실패해도 unregister 자체를 실패시키지 않는다(`warn!` 만).
 pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateError> {
     // 이름이 그대로 파일명이 되므로 삭제도 등록과 같은 관문을 통과해야 한다 —
     // 검증 없이 경로를 조립하면 `../` 로 data_dir 밖 파일을 지울 수 있다.
@@ -344,6 +350,10 @@ pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateE
         path: def.display().to_string(),
         message: e.to_string(),
     })?;
+    // 정의가 사라진 시점이 되돌릴 수 없는 지점이다 — 런타임 상태(마커·라운드)도
+    // 여기서 함께 지운다. 뒤의 본문 삭제가 실패해도 "지웠다 다시 만든 게이트가
+    // 옛 켜짐 상태와 라운드 카운터를 물려받는" 동작은 남지 않아야 한다.
+    crate::checklist::remove_gate_runtime_state(Some(data_dir), short_name);
     let body = body_file(data_dir, short_name);
     // 본문이 이미 없는 상태(수동 삭제 등)는 정상 완료로 본다 — 목표는 "둘 다 없음".
     if body.is_file() {

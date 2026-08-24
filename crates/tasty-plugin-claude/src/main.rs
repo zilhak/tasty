@@ -130,9 +130,11 @@ impl Plugin for ClaudePlugin {
                 &ctx.params,
                 &self.translator,
             ),
-            "claude.checklist_status" => {
-                checklist::handle_status(self.plugin_data_dir.as_deref(), &ctx.params)
-            }
+            "claude.checklist_status" => checklist::handle_status(
+                self.plugin_data_dir.as_deref(),
+                &ctx.params,
+                &self.translator,
+            ),
             "claude.install" => match install::run_install(&self.translator) {
                 Ok(added) => Ok(json!({ "installed": added })),
                 Err(e) => Err(IpcMethodError::new(

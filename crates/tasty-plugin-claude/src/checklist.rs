@@ -311,13 +311,20 @@ pub(crate) fn handle_disable(
 ///
 /// 조회라서 미등록 게이트도 거부하지 않고 `enabled: false` 로 답한다 —
 /// `data_dir` 이 없어도 에러가 아닌 것과 같은 이유(조회는 항상 응답 가능해야
-/// 한다).
+/// 한다). 대신 그 이름의 게이트가 실재하는지를 `registered` 로 함께 실어
+/// 오타를 감지할 수 있게 한다(host 기본 게이트도 실재하므로 `true`) — 기존
+/// 호출자가 읽던 `enabled` 는 그대로다.
 pub(crate) fn handle_status(
     data_dir: Option<&Path>,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     migrate_legacy_marker(data_dir);
-    Ok(json!({ "enabled": marker_present(data_dir, gate_param(params)) }))
+    let gate = gate_param(params);
+    Ok(json!({
+        "enabled": marker_present(data_dir, gate),
+        "registered": crate::gate::ensure_known(data_dir, gate, tr).is_ok(),
+    }))
 }
 
 fn read_state(data_dir: &Path, gate: &str, session_id: &str) -> Option<RoundState> {
@@ -355,6 +362,33 @@ fn remove_state_file(path: &Path) {
     {
         warn!(
             "checklist: failed to remove round state {}: {e}",
+            path.display()
+        );
+    }
+}
+
+/// 게이트 하나의 런타임 상태(마커 + 라운드) 디렉토리를 통째로 지운다 —
+/// [`crate::gate::unregister`] 가 정의·본문을 지울 때 함께 부른다.
+///
+/// 경로 레이아웃을 아는 쪽이 이 모듈이라 정리 함수도 여기 둔다(`gate.rs` 가
+/// `checklist/` 구조를 직접 알지 않게). 실패를 돌려주지 않는 이유: unregister 의
+/// 주 목적은 레지스트리에서 사라지는 것이고, 남은 상태 디렉토리는 어차피
+/// 해석되지 않는다(미등록 게이트는 훅 경로가 조용히 통과시킨다).
+pub(crate) fn remove_gate_runtime_state(data_dir: Option<&Path>, gate: &str) {
+    let Some(dir) = data_dir else {
+        return;
+    };
+    // 호출자가 이미 검증했지만, 경로를 조립하는 쪽에서 한 번 더 막는다 —
+    // `remove_dir_all` 은 되돌릴 수 없어 `../` 가 새면 피해가 크다.
+    if !crate::gate::is_valid_short_name(gate) {
+        return;
+    }
+    let path = gate_dir(dir, gate);
+    if let Err(e) = std::fs::remove_dir_all(&path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        warn!(
+            "checklist: failed to remove gate runtime state {}: {e}",
             path.display()
         );
     }
@@ -711,8 +745,16 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("enabled.marker"), "").unwrap();
         let inner = tmp.path().join("data");
-        std::fs::create_dir_all(&inner).unwrap();
-        assert!(!marker_present(Some(&inner), "../../outside"));
+        // 마커 경로는 `<data_dir>/checklist/gates/<이름>/enabled.marker` 라
+        // 깊이 3 을 거슬러야 outside 에 닿는다. 중간 디렉토리를 실제로 만들어
+        // 두지 않으면 가드가 없어도 `is_file()` 이 false 라 테스트가 공허해진다.
+        std::fs::create_dir_all(gates_dir(&inner)).unwrap();
+        let escape = "../../../outside";
+        assert!(
+            gate_dir(&inner, escape).join("enabled.marker").exists(),
+            "탈출 경로가 실제로 바깥 마커에 닿아야 이 테스트가 가드를 검증한다"
+        );
+        assert!(!marker_present(Some(&inner), escape));
         assert!(!marker_present(Some(&inner), "UPPER"));
     }
 
@@ -776,18 +818,18 @@ mod tests {
         let tr = test_translator();
         // 응답 형태는 게이트 축이 생기기 전과 같은 `{ "enabled": bool }` 이다.
         assert_eq!(
-            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
-            json!({ "enabled": false })
+            handle_status(Some(tmp.path()), &no_gate(), &tr).unwrap()["enabled"],
+            json!(false)
         );
         handle_enable(Some(tmp.path()), &no_gate(), &tr).unwrap();
         assert_eq!(
-            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
-            json!({ "enabled": true })
+            handle_status(Some(tmp.path()), &no_gate(), &tr).unwrap()["enabled"],
+            json!(true)
         );
         handle_disable(Some(tmp.path()), &no_gate(), &tr).unwrap();
         assert_eq!(
-            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
-            json!({ "enabled": false })
+            handle_status(Some(tmp.path()), &no_gate(), &tr).unwrap()["enabled"],
+            json!(false)
         );
     }
 
@@ -797,8 +839,8 @@ mod tests {
         assert!(handle_disable(None, &no_gate(), &test_translator()).is_err());
         // status 는 marker_present 와 동일하게 안전 폴백(false)이지 에러가 아니다.
         assert_eq!(
-            handle_status(None, &no_gate()).unwrap(),
-            json!({ "enabled": false })
+            handle_status(None, &no_gate(), &test_translator()).unwrap()["enabled"],
+            json!(false)
         );
     }
 
@@ -815,13 +857,34 @@ mod tests {
         assert!(handle_enable(Some(tmp.path()), &gate_params("../evil"), &tr).is_err());
     }
 
+    /// 조회는 관대하다 — 미등록 이름에도 에러가 아니라 `enabled: false`. 대신
+    /// `registered: false` 로 오타를 알아볼 수 있게 한다.
     #[test]
-    fn status_answers_for_unknown_gate_instead_of_failing() {
+    fn status_reports_disabled_for_unknown_gate_without_error() {
         let tmp = tempfile::tempdir().unwrap();
-        // 조회는 관대하다 — 미등록 이름에도 에러가 아니라 `enabled: false`.
         assert_eq!(
-            handle_status(Some(tmp.path()), &gate_params("no-such-gate")).unwrap(),
-            json!({ "enabled": false })
+            handle_status(
+                Some(tmp.path()),
+                &gate_params("no-such-gate"),
+                &test_translator()
+            )
+            .unwrap(),
+            json!({ "enabled": false, "registered": false })
+        );
+        // 이름 규칙 위반도 조회는 거부하지 않는다.
+        assert_eq!(
+            handle_status(
+                Some(tmp.path()),
+                &gate_params("../evil"),
+                &test_translator()
+            )
+            .unwrap(),
+            json!({ "enabled": false, "registered": false })
+        );
+        // host 기본 게이트는 실재하므로 registered 다.
+        assert_eq!(
+            handle_status(Some(tmp.path()), &no_gate(), &test_translator()).unwrap(),
+            json!({ "enabled": false, "registered": true })
         );
     }
 
@@ -832,8 +895,8 @@ mod tests {
         let params = gate_params("gate-a");
         handle_enable(Some(tmp.path()), &params, &test_translator()).unwrap();
         assert_eq!(
-            handle_status(Some(tmp.path()), &params).unwrap(),
-            json!({ "enabled": true })
+            handle_status(Some(tmp.path()), &params, &test_translator()).unwrap(),
+            json!({ "enabled": true, "registered": true })
         );
     }
 
@@ -847,8 +910,8 @@ mod tests {
 
         // 진입점 하나만 불러도 이관된다(여기서는 조회).
         assert_eq!(
-            handle_status(Some(tmp.path()), &no_gate()).unwrap(),
-            json!({ "enabled": true }),
+            handle_status(Some(tmp.path()), &no_gate(), &test_translator()).unwrap()["enabled"],
+            json!(true),
             "업그레이드 전에 켜 둔 마커가 조용히 꺼졌다"
         );
         assert!(marker_present(Some(tmp.path()), G));
@@ -873,11 +936,104 @@ mod tests {
         // 끈 게이트가 되살아난다.
         handle_disable(Some(tmp.path()), &no_gate(), &tr).unwrap();
         migrate_legacy_marker(Some(tmp.path()));
-        handle_status(Some(tmp.path()), &no_gate()).unwrap();
+        handle_status(Some(tmp.path()), &no_gate(), &test_translator()).unwrap();
         assert!(
             !marker_present(Some(tmp.path()), G),
             "꺼 둔 게이트가 되살아났다"
         );
+    }
+
+    /// 결정 2.6 — unregister 는 그 게이트의 런타임 상태(마커 + 라운드)도 지운다.
+    #[test]
+    fn unregister_clears_gate_runtime_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(2));
+        handle_enable(Some(tmp.path()), &gate_params("gate-a"), &tr).unwrap();
+        write_state(tmp.path(), "gate-a", "sess-1", &state("p1", 1));
+        assert!(marker_file(tmp.path(), "gate-a").is_file());
+        assert!(state_file(tmp.path(), "gate-a", "sess-1").is_file());
+
+        crate::gate::unregister(Some(tmp.path()), "gate-a").unwrap();
+
+        assert!(
+            !gate_dir(tmp.path(), "gate-a").exists(),
+            "unregister 후에도 런타임 상태 디렉토리가 남았다"
+        );
+        assert!(!marker_present(Some(tmp.path()), "gate-a"));
+        assert_eq!(read_state(tmp.path(), "gate-a", "sess-1"), None);
+    }
+
+    /// 결정 2.6 의 사용자 체감 — 지웠다 같은 이름으로 새로 만든 게이트가 이전
+    /// 인스턴스의 켜짐 상태·라운드 카운터를 물려받지 않는다.
+    #[test]
+    fn reregistered_gate_starts_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(3));
+        handle_enable(Some(tmp.path()), &gate_params("gate-a"), &tr).unwrap();
+        fire(
+            tmp.path(),
+            &hook_params("gate-a", "sess-1", "p1", "진행 중"),
+            None,
+        );
+        assert_eq!(
+            read_state(tmp.path(), "gate-a", "sess-1").unwrap().rounds,
+            1
+        );
+
+        crate::gate::unregister(Some(tmp.path()), "gate-a").unwrap();
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(3));
+
+        assert_eq!(
+            handle_status(Some(tmp.path()), &gate_params("gate-a"), &tr).unwrap(),
+            json!({ "enabled": false, "registered": true }),
+            "재등록한 게이트가 이전 켜짐 상태를 물려받았다"
+        );
+        assert_eq!(
+            read_state(tmp.path(), "gate-a", "sess-1"),
+            None,
+            "재등록한 게이트가 이전 라운드 카운터를 물려받았다"
+        );
+        // 다시 켜서 발화하면 라운드는 1 부터다.
+        handle_enable(Some(tmp.path()), &gate_params("gate-a"), &tr).unwrap();
+        fire(
+            tmp.path(),
+            &hook_params("gate-a", "sess-1", "p1", "진행 중"),
+            None,
+        );
+        assert_eq!(
+            read_state(tmp.path(), "gate-a", "sess-1").unwrap().rounds,
+            1
+        );
+    }
+
+    /// legacy 마커가 남은 채 disable 하면 다음 조회/발화에서 다시 켜진 것으로
+    /// 보인다 — disable 도 이관을 먼저 거치는지 확인한다.
+    #[test]
+    fn legacy_migration_before_disable_does_not_resurrect() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tr = test_translator();
+        std::fs::create_dir_all(checklist_dir(tmp.path())).unwrap();
+        std::fs::write(legacy_marker_file(tmp.path()), "").unwrap();
+
+        handle_disable(Some(tmp.path()), &no_gate(), &tr).unwrap();
+        assert!(!legacy_marker_file(tmp.path()).exists());
+        assert_eq!(
+            handle_status(Some(tmp.path()), &no_gate(), &tr).unwrap()["enabled"],
+            json!(false),
+            "끈 뒤에 legacy 마커가 다시 켜진 것으로 해석됐다"
+        );
+        let after_hook = fire(
+            tmp.path(),
+            &json!({
+                "session_id": "sess-1",
+                "prompt_id": "p1",
+                "last_assistant_message": "진행 중",
+            }),
+            Some(3),
+        );
+        assert_eq!(after_hook, json!({}), "훅이 꺼진 게이트를 발동시켰다");
     }
 
     #[test]
