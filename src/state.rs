@@ -405,7 +405,7 @@ pub struct AppState {
     /// 이 방향은 stale 이 아니다.
     #[cfg(feature = "gui")]
     pub(crate) host_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
-    /// 이번 프레임 Esc 를 소비할 자격이 있는 host popup(규칙 7 의 키보드 판, ADR-0081).
+    /// 이번 프레임 Esc 를 소비할 자격이 있는 host popup(규칙 7 의 키보드 판, ADR-0082).
     /// host/plugin 통틀어 최상단이 host popup 일 때만 `Some` — plugin popup 이 위면
     /// `None` 이고, 그 프레임의 Esc 는 plugin 쪽이 가져간다. popup 의 view 가 Esc 를
     /// 소비하기 전에 이 값을 확인한다.
@@ -912,7 +912,7 @@ pub(crate) struct FilePickerRequester {
     /// `owner_popup_instance` 파라미터로 plugin 이 자진 신고한 값이다 — host 는
     /// popup 밖(surface 위젯 등)에서 호출한 경우를 구분할 수 없으므로 `Option`.
     ///
-    /// 소유 관계의 **유일한 보관처**다(ADR-0081). 별도 레지스트리를 두면 피커
+    /// 소유 관계의 **유일한 보관처**다(ADR-0082). 별도 레지스트리를 두면 피커
     /// 수명과 어긋날 수 있어, 피커 자신이 들고 있게 했다 — 피커가 사라지면 관계도
     /// 같이 사라진다.
     pub(crate) owner_popup_instance: Option<u64>,
@@ -1225,7 +1225,7 @@ impl AppState {
         self.dialogs.has_text_input_open()
     }
 
-    /// 이 plugin popup instance 가 연 host popup(자식)이 아직 살아 있는가 (ADR-0081).
+    /// 이 plugin popup instance 가 연 host popup(자식)이 아직 살아 있는가 (ADR-0082).
     ///
     /// 소유 관계는 자식 쪽(`FilePickerRequester.owner_popup_instance`)에만 기록되므로
     /// 이 조회가 곧 단일 진실이다 — 부모 쪽에 사본을 두지 않아 둘이 어긋날 수 없다.

@@ -1,4 +1,4 @@
-//! plugin popup ↔ host popup 부모-자식 소유권(ADR-0081) 회귀 테스트.
+//! plugin popup ↔ host popup 부모-자식 소유권(ADR-0082) 회귀 테스트.
 //!
 //! 커버 범위:
 //! - 소유 관계 조회(`AppState::plugin_popup_has_open_child`) — 자식이 자진 신고한

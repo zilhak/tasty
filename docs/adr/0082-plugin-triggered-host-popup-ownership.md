@@ -1,4 +1,4 @@
-# ADR-0081: plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다
+# ADR-0082: plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다
 
 - **Status**: Accepted
 - **Date**: 2026-08-24

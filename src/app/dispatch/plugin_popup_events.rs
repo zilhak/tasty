@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::state::{AppState, FilePickerResult};
 
-/// 닫히는 plugin popup 이 부모인 host `file_picker`(자식)를 함께 정리한다(ADR-0081).
+/// 닫히는 plugin popup 이 부모인 host `file_picker`(자식)를 함께 정리한다(ADR-0082).
 ///
 /// 그냥 `dialogs.file_picker = None` 으로 지우지 않고 **취소 결과를 채운다** — 그러면
 /// 기존 result drain(`app::dispatch::file_picker`)이 평소 경로 그대로 돌아 plugin 에

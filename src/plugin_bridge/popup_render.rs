@@ -171,7 +171,7 @@ pub fn draw_plugin_popups(
         }));
 
     // Esc 소유권 — 규칙 7 의 키보드 판("최상단 하나만 받는다"). host/plugin 통틀어
-    // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0081). host 쪽 대응은
+    // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0082). host 쪽 대응은
     // `adapters/ui/popup/frame.rs` 가 `AppState.popup_escape_owner` 로 정한다.
     let top_z = occluders.iter().map(|o| o.z_seq).max();
 
@@ -231,7 +231,7 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        // 키보드는 최상단 popup 하나만 갖는다(규칙 7, ADR-0081). 이 게이트가 없으면
+        // 키보드는 최상단 popup 하나만 갖는다(규칙 7, ADR-0082). 이 게이트가 없으면
         // 아래 깔린 popup 도 Esc·문자를 받아 자기 UI 로 처리한다 — 실제로 plugin 이
         // 자체 Esc 처리로 스스로 닫아서, host 쪽 Esc 중재만으로는 "한 번의 Esc 로
         // 스택 전체가 닫히는" 현상을 못 막는다.
@@ -326,7 +326,7 @@ pub fn draw_plugin_popups(
         // 것은 이 popup 의 바깥이긴 해도 "바깥 클릭" 이 아니다 — 그 클릭은 상위 popup
         // 의 것이다.
         // 자식 host popup 이 열려 있는 동안에는 부모가 바깥 클릭으로 닫히지 않는다
-        // (스택 유지, ADR-0081) — 부모가 먼저 사라지면 자식이 고아가 되고 그 결과가
+        // (스택 유지, ADR-0082) — 부모가 먼저 사라지면 자식이 고아가 되고 그 결과가
         // 조용히 버려진다. popup 은 모달이 아니므로 "부모를 잠그는" 것이 아니라
         // dismiss 대상에서만 빼는 최소 개입이다.
         let has_open_child = state.plugin_popup_has_open_child(snap.instance_id);
