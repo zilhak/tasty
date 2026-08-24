@@ -96,6 +96,62 @@ tasty agent task-reduce --workspace-id 1 --inputs t-a,t-b \
 - 지정된 경로가 없는 input(예: `Run` 이 아닌 다른 kind 의 결과)은 reduce 전체를 실패시키지 않는다 — 그 input 만 `output: null` 로 취급하고 나머지는 정상 진행하되, 응답의 `warnings` 배열에 `input #<i>(task <id>)에 경로 '<path>'가 없어 null로 처리했습니다` 를 남긴다.
 - DAG 안의 `TaskCommand::Reduce`(위 `HostExecutor 매핑` 표) 는 이 옵션이 없다 — `--extract-path` 는 독립 호출 `agent.task_reduce`/`task-reduce` CLI 전용이다.
 
+### 선행 task 출력을 파라미터로 넘기기 — `${task.<id>.output<pointer>}`
+
+`depends_on` 은 실행 **순서**만 묶는다. 선행 task 의 결과를 후행 task 의 **입력**으로
+넘기려면 placeholder 를 쓴다 — dispatch 직전에 upstream 의 `result.output` 에서 값을
+뽑아 `task.command` 에 주입한다(`src/core/agent/task_output_ref.rs` 가 문법 소유자,
+치환은 `runner_host.rs`).
+
+```text
+${task.<task_id>.output<JSON Pointer>}
+```
+
+포인터는 위 `--extract-path` 와 **같은 RFC 6901**(`serde_json::Value::pointer`)이라
+경로 문법을 두 개 외울 필요가 없다. 포인터를 생략하면(`${task.t-a.output}`) 출력 전체다.
+
+`claude.spawn` 의 child surface id 처럼 **런타임에야 정해지는 값**이 주 용도다 —
+`task_create` 시점엔 알 수 없어 정적 params 로는 표현할 수 없다.
+
+```sh
+# A: 자식 spawn → output {"child_surface_id": 3, ...}
+tasty agent task-create --workspace-id 1 --name spawn-child \
+  --command '{"kind":"custom","ipc_method":"claude.spawn",
+              "params":{"surface_id":1,"workspace":"ws","cwd":"/tmp","prompt":"..."}}'
+
+# B: 그 자식에게 tell — A 의 응답을 참조. depends_on 은 필수다(아래).
+tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
+  --command '{"kind":"custom","ipc_method":"claude.tell",
+              "params":{"surface_id":"${task.'"$T_A"'.output/child_surface_id}",
+                        "message":"..."}}'
+```
+
+**타입이 보존된다.** 문자열 값이 *정확히* placeholder 하나뿐이면 뽑아낸 JSON 값으로
+통째 교체된다 — 숫자는 숫자로 남는다. `"3"` 처럼 문자열로 떨어지면 `claude.spawn` 의
+`require_surface_id`(`as_u64`) 같은 타입 검사가 거부한다. 다른 텍스트에 섞여 있으면
+그때만 문자열 보간이다(`"review PR ${task.t-a.output/pr_number}"` → `"review PR 42"`).
+객체/배열/불리언도 통째 교체 대상이다.
+
+적용 자리는 `Custom.params`(JSON 트리 전체) 와 `Run.command` 인자 / `Run.cwd` 다.
+
+- **참조하려면 `depends_on` 에 넣어야 한다.** 없으면 `task_create` 가 `invalid_params`
+  로 거부한다 — 안 그러면 upstream 이 끝나기 전에 dispatch 돼 값이 없는 채로 실패하는
+  race 가 된다. 인정 출처는 `depends_on` ∪ `Reduce.inputs`. 자동으로 엣지를 추가하는
+  대안은 택하지 않았다(선언하지 않은 의존성이 `task_graph` 렌더와 DAG 그룹핑에 조용히
+  나타난다).
+- **해석 실패는 dispatch 실패**(`PermanentFail`)다 — 참조 task 없음 / `result` 없음 /
+  포인터 미스 전부. 조용한 `null` 은 downstream 에서 원인과 먼 자리에서 터진다.
+- **문법이 깨진 참조도 거부**한다(`${task.` 로 시작하는데 형식 불일치). 리터럴로
+  흘리면 프롬프트에 `${task.t-x.ouput/id}` 가 그대로 박혀 나간다. 생성 시점 검증과
+  dispatch 치환이 같은 파서를 쓰므로 둘의 판정이 갈릴 수 없다.
+- **치환된 command 는 store 에 되쓴다** — `task-get`/`task-list` 가 원본 placeholder
+  대신 실제로 호출된 값을 보여준다(lease 치환과 같은 이유).
+- **`${lease.resource}` 와 함께 쓸 수 있다.** 치환은 lease 먼저, 출력 나중이고 각각
+  1-pass 다 — 주입된 값 안의 placeholder 처럼 보이는 텍스트는 다시 해석되지 않는다.
+  순서가 이렇게 고정된 이유는 반대면 upstream 이 만든 문자열 안의 `${lease.resource}`
+  가 lease 치환의 입력이 되어, 자식 에이전트가 만든 데이터가 lease 의미론에 끼어들기
+  때문이다.
+
 ## 완료 판정 전략 레지스트리 (`src/completion_strategy/`)
 
 `Custom.poll` 이름 참조(`PollSpecRef::Named`)와 결정 6(`default_for_methods`) 이 가리키는 대상 — "임의 IPC dispatch 가 끝났는지"를 이름으로 등록해두는 독립 레지스트리다. `src/hook_handler/`(공유 훅 핸들러 레지스트리) 를 정본 템플릿으로 **형태만** 미러링한다 — 3출처 병합(host 내장 TOML + plugin manifest + user config `~/.tasty/completion-strategies.toml`), patch semantics(Host→Plugin→User, `Some` 필드만 override), id 규약(`<owner>/<short>`, `host`/`<plugin_id>`/`user`), 전역 싱글턴 `global()`. `HookHandlerId`(push 형이 참조) 외에는 훅 핸들러의 타입을 import 하지 않는다.
@@ -231,6 +287,7 @@ elastic 이 기본이 아닌 이유: fixed 의 자원 배정은 순수 마킹(st
 
 - `TaskCommand::Run`: `cwd` 가 `None` 이면 곧장 그 resource 경로로 채운다(가장 흔한 용법 — "이 후보에서 실행해라"). `cwd`/`command` 인자 안에 `${lease.resource}` placeholder 가 있으면 그 부분만 실제 resource 로 치환한다(원래 값을 통째로 덮지 않음).
 - `TaskCommand::Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의 `${lease.resource}` 를 치환한다(예: `claude.spawn` 의 `cwd` 파라미터).
+- `${lease.resource}` 는 두 placeholder 중 하나다 — 선행 task 의 출력을 파라미터로 넘기는 `${task.<id>.output<pointer>}` 는 위 "선행 task 출력을 파라미터로 넘기기" 참조. 둘은 같은 dispatch 지점에서 lease → 출력 순으로 적용된다.
 - elastic 으로 새로 합성된 이름이 가리키는 실제 워크트리를 만드는 건(예: `git worktree add`) task 의 Run 커맨드 쪽 자가 프로비저닝 책임이다 — lease primitive 는 포트/임시디렉토리/GPU 슬롯 등에도 쓰이는 범용 도구라 워크트리 특화 side-effect 를 store 안에 넣지 않는다.
 
 **주의 — `cwd` 를 배정된 resource 로 직접 채우는 방식은 elastic 자가 프로비저닝과 함께 쓸 수 없다.** `cwd` 는 프로세스 spawn(`chdir`)이 그 경로로 실제로 이동을 시도하는 시점에 적용되는데, 이 chdir 은 커맨드가 실행되기 **이전에** OS 레벨에서 일어난다 — 아직 디스크에 없는 합성 경로를 `cwd` 로 주면 `Run spawn 'sh': No such file or directory` 로 spawn 자체가 즉시 실패하고, `command` 안에 `mkdir -p` 를 아무리 앞세워도 그 스크립트조차 실행되지 못한다(라이브로 재현 확인). 자가 프로비저닝이 필요하면 `cwd` 는 항상 존재하는 고정 경로(예: `/tmp`, 부모 워크트리 루트)로 지정해 두고, `${lease.resource}` 는 **`command` 인자 쪽**에서 받아 그 안에서 `mkdir -p`/`cd` 를 수행한다(아래 elastic 라이브 검증 예 참조).
