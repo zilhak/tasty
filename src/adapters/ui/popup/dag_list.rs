@@ -81,6 +81,35 @@ pub struct DagRow {
     updated_at: u64,
 }
 
+/// 목록 표시 순서 — **가장 최근에 움직인 DAG 가 위**.
+///
+/// 응답이 오는 순서를 그대로 쓰면 오래된 것이 위로 온다. 목록 응답은 (workspace
+/// 순회 순서, DAG id 오름차순)인데 derived id 가 `c:<root_task_id>` 이고 task id 가
+/// `t-{now_ms}-{seq}` 라, **id 오름차순 = 생성 시각 오름차순**이다. 방금 만든 DAG 가
+/// 스크롤 바닥에 묻히고, workspace 경계가 1차 키라 전역 시간순으로 보이지도 않는다.
+/// 덤으로 `'c' < 'd'` 라 derived 가 전부 explicit 앞에 몰린다.
+///
+/// **응답 순서 자체는 건드리지 않는다.** 그 결정론은 화면이 선택 상태를 id 로 들고
+/// 폴링마다 재계산하기 위한 계약이고 CLI/IPC 소비자도 함께 본다. 표시 순서는 화면의
+/// 관심사이므로 여기서만 다시 세운다.
+///
+/// 정렬 키는 `created_at` 이 아니라 `updated_at` 이다 — 소속 task 의 (`finished_at`
+/// ∪ `started_at` ∪ `created_at`) 최대값이라 "방금 만든 것" 과 "방금 움직인 것" 을
+/// 둘 다 위로 올린다. 목록을 여는 용건이 대개 후자다.
+///
+/// 동률은 `id` 내림차순, 그래도 같으면 `workspace_id` 오름차순으로 끊는다. explicit
+/// id 는 사용자가 정한 키라 workspace 가 다르면 같은 값이 나올 수 있어 `id` 만으로는
+/// 전순서가 아니다 — 세 키를 모두 쓰면 상류 순서에 기대지 않고 순서가 확정되고,
+/// 아무것도 안 움직이는 동안 폴링이 여러 번 돌아도 행이 자리를 바꾸지 않는다.
+fn sort_recent_first(rows: &mut [DagRow]) {
+    rows.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| b.id.cmp(&a.id))
+            .then_with(|| a.workspace_id.cmp(&b.workspace_id))
+    });
+}
+
 /// popup 의 전 상태. `on_close` 가 통째로 되돌린다(`DialogState` 관례).
 #[derive(Default)]
 pub struct DagListState {
@@ -141,6 +170,7 @@ impl DagListState {
                         }
                     })
                     .collect();
+                sort_recent_first(&mut self.rows);
             }
             Err(e) => {
                 // 마지막으로 성공한 목록을 그대로 둔다 — 일시적 실패로 목록이
@@ -514,4 +544,150 @@ pub fn on_close_dag_list_popup(
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.dag_list = DagListState::default();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 정렬이 보는 세 필드만 실제 값으로 채운 행. 나머지는 표시용이라 정렬에
+    /// 영향이 없다.
+    fn row(id: &str, updated_at: u64, workspace_id: u32) -> DagRow {
+        DagRow {
+            workspace_id,
+            workspace_name: String::new(),
+            id: id.to_string(),
+            name: String::new(),
+            derived: id.starts_with("c:"),
+            rollup: DagStatus::Waiting,
+            done: 0,
+            total: 0,
+            updated_at,
+        }
+    }
+
+    fn ids(rows: &[DagRow]) -> Vec<&str> {
+        rows.iter().map(|r| r.id.as_str()).collect()
+    }
+
+    #[test]
+    fn 최근_갱신이_맨_위로_온다() {
+        let mut rows = vec![
+            row("c:t-100", 100, 1),
+            row("c:t-300", 300, 1),
+            row("c:t-200", 200, 1),
+        ];
+        sort_recent_first(&mut rows);
+        assert_eq!(
+            rows.iter().map(|r| r.updated_at).collect::<Vec<_>>(),
+            [300, 200, 100]
+        );
+    }
+
+    /// 동률은 `id` 내림차순으로 끊는다 — 같은 ms 에 만들어진 DAG 가 폴링마다
+    /// 자리를 바꾸면 클릭하려던 행이 발밑에서 움직인다.
+    #[test]
+    fn 갱신시각_동률은_id_내림차순으로_끊는다() {
+        let mut rows = vec![
+            row("c:t-1", 500, 1),
+            row("d:beta", 500, 1),
+            row("c:t-2", 500, 1),
+        ];
+        sort_recent_first(&mut rows);
+        assert_eq!(ids(&rows), ["d:beta", "c:t-2", "c:t-1"]);
+    }
+
+    /// explicit id 는 사용자가 정한 키라 workspace 가 다르면 같은 값이 나올 수
+    /// 있다 — 그때도 순서가 확정돼야 한다.
+    #[test]
+    fn 갱신시각과_id_가_모두_같으면_workspace_로_끊는다() {
+        let mut rows = vec![row("d:same", 500, 7), row("d:same", 500, 2)];
+        sort_recent_first(&mut rows);
+        assert_eq!(
+            rows.iter().map(|r| r.workspace_id).collect::<Vec<_>>(),
+            [2, 7]
+        );
+    }
+
+    /// 같은 입력을 두 번 정렬해도 같은 결과 — 아무것도 안 움직이는 동안 폴링이
+    /// 여러 번 돌아도 목록이 요동하지 않는다.
+    #[test]
+    fn 반복_정렬은_같은_결과를_낸다() {
+        let build = || {
+            vec![
+                row("d:alpha", 500, 3),
+                row("c:t-9", 500, 1),
+                row("c:t-1", 900, 2),
+                row("d:zeta", 100, 1),
+            ]
+        };
+        let mut once = build();
+        sort_recent_first(&mut once);
+        let mut twice = once;
+        sort_recent_first(&mut twice);
+        let mut from_scratch = build();
+        sort_recent_first(&mut from_scratch);
+        assert_eq!(ids(&twice), ids(&from_scratch));
+    }
+
+    /// 정렬 키가 `created_at` 이 아님을 증명한다 — 가장 먼저 만들어졌지만 방금
+    /// 상태가 바뀐 DAG 가 맨 위로 온다. id 가 생성 시각 오름차순이므로 "가장 작은
+    /// id" 가 "가장 먼저 만들어진 것" 이다.
+    #[test]
+    fn 오래_전에_만들어졌어도_방금_움직였으면_맨_위() {
+        let mut rows = vec![
+            row("c:t-1000000000001", 999, 1), // 가장 오래 전 생성, 방금 갱신
+            row("c:t-1000000000002", 200, 1),
+            row("c:t-1000000000003", 300, 1), // 가장 최근 생성
+        ];
+        sort_recent_first(&mut rows);
+        assert_eq!(
+            ids(&rows),
+            [
+                "c:t-1000000000001",
+                "c:t-1000000000003",
+                "c:t-1000000000002"
+            ]
+        );
+    }
+
+    /// `'c' < 'd'` 사전순 편향이 제거됐는지 — 더 최근에 움직인 derived 가 explicit
+    /// 보다 위로 온다(그 반대도 성립한다).
+    #[test]
+    fn derived_와_explicit_이_출처와_무관하게_섞인다() {
+        let mut rows = vec![
+            row("d:old-explicit", 100, 1),
+            row("c:t-new-derived", 900, 1),
+            row("d:new-explicit", 800, 1),
+            row("c:t-old-derived", 200, 1),
+        ];
+        sort_recent_first(&mut rows);
+        assert_eq!(
+            ids(&rows),
+            [
+                "c:t-new-derived",
+                "d:new-explicit",
+                "c:t-old-derived",
+                "d:old-explicit"
+            ]
+        );
+    }
+
+    /// workspace 경계를 넘어 **전역**으로 정렬된다 — workspace 별로 뭉치면 안 된다.
+    #[test]
+    fn workspace_경계를_넘어_전역으로_정렬된다() {
+        let mut rows = vec![
+            row("c:t-a", 100, 1),
+            row("c:t-b", 400, 1),
+            row("c:t-c", 200, 2),
+            row("c:t-d", 300, 2),
+        ];
+        sort_recent_first(&mut rows);
+        assert_eq!(
+            rows.iter()
+                .map(|r| (r.workspace_id, r.updated_at))
+                .collect::<Vec<_>>(),
+            [(1, 400), (2, 300), (2, 200), (1, 100)]
+        );
+    }
 }
