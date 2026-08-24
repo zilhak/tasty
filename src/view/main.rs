@@ -5,6 +5,7 @@ pub(crate) mod debug_input;
 mod divider_drag;
 mod egui_mesh;
 mod file_drop;
+mod fullscreen_window;
 mod keyboard;
 mod mouse;
 mod preset_actions;
@@ -138,6 +139,10 @@ pub struct MainView {
     /// 사용자 우클릭은 이 경로를 타지 않아 메뉴가 정상 표시된다(원칙 1·3 격리).
     #[cfg(debug_assertions)]
     pub(crate) debug_captured_menu: Option<crate::state::PendingNativeMenu>,
+    /// 무대가 이 창을 OS fullscreen 으로 전환하며 저장해 둔 **진입 직전** 창 상태.
+    /// `Some` 이라는 사실 자체가 "이 fullscreen 은 무대가 만든 것" 의 마커다 —
+    /// `fullscreen_window::sync_window_fullscreen` 이 유일한 소유자다.
+    pub(crate) stage_saved_window_mode: Option<fullscreen_window::SavedWindowMode>,
 }
 
 /// 화면에 떠 있는 네이티브 컨텍스트 메뉴 핸들 + 그 결과를 받을 continuation.
@@ -211,6 +216,7 @@ impl MainView {
             menu_dismiss_swallow: Vec::new(),
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
+            stage_saved_window_mode: None,
         }
     }
 

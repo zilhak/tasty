@@ -52,6 +52,13 @@ impl MainView {
         // Render
         self.render_if_dirty(plugin_manager, stream_hub);
 
+        // 무대 상태에 OS 창 fullscreen 을 맞춘다. **render 뒤**인 이유는 무대가
+        // 자기 draw 안에서 닫힐 수 있기 때문이다(`StageAction::Close`) — 앞에 두면
+        // 그 프레임에 닫힌 무대의 창 복원이 다음 프레임으로 밀리고, 그 프레임이
+        // 온다는 보장이 없다. 진입 쪽은 상태를 세운 경로가 이미 `dirty` 를 세우므로
+        // 이 프레임에서 그대로 잡힌다.
+        self.sync_window_fullscreen();
+
         self.dispatch_pending_command_palette();
 
         // 열려 있는 네이티브 메뉴를 먼저 펌프한다(비블로킹) — 완료됐으면 그
