@@ -462,7 +462,41 @@ pub(crate) fn handle_tell(
     if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
         return e;
     }
+    if clear_idle_for_new_prompt(&mut engine.child_terminals, surface_id) {
+        engine.child_terminals.save();
+    }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+}
+
+/// 새 프롬프트를 밀어넣은 직후 대상 자식의 `idle` 플래그를 내린다. 상태가 실제로
+/// 바뀔 수 있는 대상이었으면 `true` — 호출자는 그때만 `save()` 한다.
+///
+/// **왜 필요한가**: 프롬프트를 방금 주입했는데 상태가 `idle` 이라는 건 어느
+/// 소비자 관점에서도 거짓이다. `derive_child_state` 는 registry 가 보고한
+/// `idle`/`needs_input` 을 우선순위 2 에서 그대로 통과시키므로
+/// (`core/state/child_liveness.rs`), 이 플래그가 남아 있으면 `terminal.state` 를
+/// 폴링하는 완료 판정 전략의 첫 tick 이 **직전 턴의 stale `idle`** 을 읽고 자식이
+/// 일을 시작하기도 전에 노드를 완료 처리한다. 에이전트가 `active` 를 다시 밀어
+/// 넣는 경로(hook `prompt-submit` → `terminal.set_state`)는 존재하지만 그게 도는
+/// 데 걸리는 시간이 폴링 간격보다 길 수 있다 — 주입한 쪽이 그 자리에서 내린다.
+///
+/// `set_idle(_, false)` 는 `needs_input` 도 함께 내린다
+/// (`core/child_terminal.rs`) — 프롬프트에 답한 경우까지 한 번에 맞춰진다.
+///
+/// **등록된 자식에만 적용한다**: `set_idle` 은 `HashMap::insert` 라 자식이 아닌
+/// 일반 surface 에도 항목을 만들고, 그 항목은 surface 가 살아있는 한
+/// `reconcile_with_live_surfaces` 도 지우지 않는다. 게다가 미등록 surface 의
+/// `state_of` 는 이미 `"active"` 라 바꿀 상태 자체가 없다 — 남는 건 가짜
+/// `last_state_report_at` 기록뿐이므로 손대지 않는 게 맞다.
+fn clear_idle_for_new_prompt(
+    registry: &mut crate::core::child_terminal::ChildTerminalRegistry,
+    surface_id: u32,
+) -> bool {
+    if registry.parent_of_child(surface_id).is_none() {
+        return false;
+    }
+    registry.set_idle(surface_id, false);
+    true
 }
 
 pub(crate) fn handle_children(
@@ -820,6 +854,42 @@ pub(crate) fn handle_respawn(
     )
 }
 
+/// 자식 하나에 broadcast 본문(+ 선택적 제출 Enter)을 밀어넣는다. 본문 write 가
+/// 성공했으면 `true` — 호출자는 그때만 상태 플래그를 정리한다. 실패는 그 자식만
+/// 건너뛰고 나머지 대상에는 계속 보낸다(부분 성공 허용).
+///
+/// 1) 본문(제출 `\r` 미포함, 멀티라인은 bracketed paste). 2) 호출자가 trailing `\r` 을
+///    넣었을 때만 제출 Enter 를 별도 write 로 분리 — 길이 무관 결정적 제출.
+#[allow(clippy::too_many_arguments)]
+fn send_broadcast_to_child(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    id: &Value,
+    sid: u32,
+    body: &str,
+    submit: bool,
+) -> bool {
+    let body_params = json!({ "surface_id": sid, "text": body });
+    if let Err(e) = unwrap_ok(
+        surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
+        id,
+    ) {
+        tracing::warn!("terminal.broadcast surface.send (sid={sid}) failed: {e:?}");
+        return false;
+    }
+    if submit {
+        let cr_params = json!({ "surface_id": sid, "text": "\r" });
+        if let Err(e) = unwrap_ok(
+            surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
+            id,
+        ) {
+            tracing::warn!("terminal.broadcast submit (sid={sid}) failed: {e:?}");
+        }
+    }
+    true
+}
+
 pub(crate) fn handle_broadcast(
     core: &mut Core,
     state: &mut AppState,
@@ -851,25 +921,17 @@ pub(crate) fn handle_broadcast(
 
     let (body, submit) = build_broadcast_payload(&text);
     let mut sent_ids: Vec<u32> = Vec::new();
+    let mut idle_cleared = false;
     for sid in targets {
-        // 1) 본문(제출 `\r` 미포함, 멀티라인은 bracketed paste). 2) 호출자가 trailing `\r` 을
-        //    넣었을 때만 제출 Enter 를 별도 write 로 분리 — 길이 무관 결정적 제출.
-        let body_params = json!({ "surface_id": sid, "text": body.clone() });
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
-            &id,
-        ) {
-            tracing::warn!("terminal.broadcast surface.send (sid={sid}) failed: {e:?}");
-        } else if submit {
-            let cr_params = json!({ "surface_id": sid, "text": "\r" });
-            if let Err(e) = unwrap_ok(
-                surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
-                &id,
-            ) {
-                tracing::warn!("terminal.broadcast submit (sid={sid}) failed: {e:?}");
-            }
+        if send_broadcast_to_child(core, state, engine, &id, sid, &body, submit) {
+            // tell 과 같은 이유로 여기서도 내린다 — 프롬프트를 밀어넣은 자식이
+            // `idle` 로 남아 있으면 그 상태를 읽는 모든 소비자가 거짓을 본다.
+            idle_cleared |= clear_idle_for_new_prompt(&mut engine.child_terminals, sid);
         }
         sent_ids.push(sid);
+    }
+    if idle_cleared {
+        engine.child_terminals.save();
     }
     JsonRpcResponse::success(
         id,
@@ -997,6 +1059,44 @@ mod tests {
         let reg = crate::core::child_terminal::ChildTerminalRegistry::default();
         let msg = child_not_found_message(&reg, 3157, 0);
         assert!(msg.contains("no children registered"), "{msg}");
+    }
+
+    /// tell 직후 상태가 `idle` 로 남으면, `terminal.state` 를 폴링하는 완료 판정
+    /// 전략의 첫 tick 이 직전 턴의 stale `idle` 을 읽고 자식이 답을 시작하기도
+    /// 전에 노드를 완료 처리한다.
+    #[test]
+    fn tell_clears_idle_flag_on_target_child() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        reg.register_child(10, child(50, 0));
+        reg.set_idle(50, true);
+        assert_eq!(reg.state_of(50), "idle");
+
+        assert!(clear_idle_for_new_prompt(&mut reg, 50));
+        assert_eq!(reg.state_of(50), "active");
+    }
+
+    /// `set_idle(_, false)` 는 `needs_input` 도 함께 내린다 — 권한 프롬프트에 tell
+    /// 로 답한 자식이 계속 `needs_input` 으로 보이면 안 된다.
+    #[test]
+    fn tell_clears_needs_input_too() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        reg.register_child(10, child(50, 0));
+        reg.set_needs_input(50, true);
+        assert_eq!(reg.state_of(50), "needs_input");
+
+        assert!(clear_idle_for_new_prompt(&mut reg, 50));
+        assert_eq!(reg.state_of(50), "active");
+    }
+
+    /// 자식이 아닌 일반 surface 에 tell 하면 registry 를 건드리지 않는다 — 미등록
+    /// surface 는 이미 `"active"` 라 바꿀 상태가 없고, 항목을 만들면 살아있는 동안
+    /// reconcile 도 지우지 않는 가짜 상태 보고 이력만 남는다.
+    #[test]
+    fn tell_does_not_touch_registry_for_non_child_surface() {
+        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        assert!(!clear_idle_for_new_prompt(&mut reg, 777));
+        assert_eq!(reg.state_of(777), "active");
+        assert_eq!(reg.last_state_report_at(777), None);
     }
 
     /// `engine()`의 기본 workspace 는 surface 1개뿐이라, adopt 테스트가 필요로 하는

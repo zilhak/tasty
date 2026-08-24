@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.29"
+version = "0.1.30"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -13,7 +13,7 @@ permissions = [
     "fs.write",
     "notification",
     "ui.settings_page",
-    # `codex.spawn` 기본 완료 전략 선언에 필요.
+    # `codex.spawn`/`codex.tell` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",
 ]
 lang_dir = "lang"
@@ -181,6 +181,34 @@ poll_method = "codex.state"
 # (`handlers.rs` 의 `require_u32(&params, "surface")`). 매핑이 없으면
 # poll params 가 비어 매 tick 실패한다.
 map_from_response = { child_surface_id = "surface" }
+state_field = "state"
+terminal_states = ["idle", "exited"]
+
+# 완료 판정 전략 — `codex.tell` 의 기본 완료 판정(결정 6).
+# 이게 없으면 `tell` 노드는 dispatch 응답만 보고 즉시 성공한다 — 자식이 메시지를
+# 받기만 하면 끝난 것으로 처리돼, 일을 시작하기도 전에 downstream 이 출발한다.
+# spawn-wait 와 같은 이유로 poll_method 는 자기 namespace 의 `codex.state` 이고,
+# 같은 이유로 `needs_input` 은 terminal 목록에 넣지 않는다(대응 hook 이벤트가
+# 없어 registry 에 설정될 일이 없다 — 거짓 계약을 만들지 않는다).
+#
+# spawn 과 달리 tell 은 **이미 존재하는** 자식을 대상으로 하므로 시작 시점의
+# registry 상태가 직전 턴의 `idle` 로 오염돼 있을 수 있다. 호스트 `terminal.tell`
+# 이 본문 주입 성공 직후 그 플래그를 내리므로(`clear_idle_for_new_prompt`,
+# `src/adapters/ipc/handler/terminal.rs`) 첫 tick 이 stale idle 을 읽지 않는다 —
+# 그 호스트 동작이 이 전략의 전제다.
+[[contributes.completion_strategy]]
+id = "tell-wait"
+priority = 100
+default_for_methods = ["codex.tell"]
+
+[contributes.completion_strategy.spec]
+kind = "poll"
+poll_method = "codex.state"
+# `codex.tell` 은 호스트 `terminal.tell` 의 응답을 그대로 돌려주고, 그 응답은
+# `{"sent": true, "surface_id": <n>}` 이다 — spawn 과 달리 소스 키가
+# `child_surface_id` 가 아니라 `surface_id` 다. 대상 키는 claude 와 달리
+# `surface` 다(`handlers.rs` 의 `require_u32(&params, "surface")`).
+map_from_response = { surface_id = "surface" }
 state_field = "state"
 terminal_states = ["idle", "exited"]
 

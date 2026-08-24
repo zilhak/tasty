@@ -487,6 +487,49 @@ fn bundled_codex_manifest_spawn_default_strategy_resolves() {
     }
 }
 
+/// `tell` 에 기본 전략이 없으면 노드가 dispatch 응답만 보고 즉시 성공한다 — 자식이
+/// 일을 시작하기도 전에 downstream 이 출발한다.
+#[test]
+fn bundled_claude_manifest_tell_default_strategy_resolves() {
+    let (reg, owner_id) = install_bundled_manifest_strategies("tasty-plugin-claude");
+    assert_eq!(owner_id, "claude");
+    let winner = reg
+        .resolve_default_for_method("claude.tell")
+        .expect("claude.tell should resolve a default completion strategy (decision 6)");
+    match winner.kind {
+        CompletionStrategyKind::Poll(spec) => {
+            assert_eq!(spec.poll_method, "claude.state");
+            // `claude.tell` 응답은 `{"sent":true,"surface_id":n}` 이고 poll 대상
+            // `claude.state` 의 필수 키도 `surface_id` 다. 이 매핑이 없으면 poll
+            // params 가 비어 매 tick "Missing required 'surface_id'" 로 실패한다.
+            assert_eq!(
+                spec.map_from_response.get("surface_id"),
+                Some(&"surface_id".to_string())
+            );
+        }
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+}
+
+/// codex 는 poll param 키가 `surface` 다 — claude(`surface_id`)와 다르다.
+#[test]
+fn bundled_codex_manifest_tell_default_strategy_maps_surface_key() {
+    let (reg, _) = install_bundled_manifest_strategies("tasty-plugin-codex");
+    let winner = reg
+        .resolve_default_for_method("codex.tell")
+        .expect("codex.tell should resolve a default completion strategy (decision 6)");
+    match winner.kind {
+        CompletionStrategyKind::Poll(spec) => {
+            assert_eq!(spec.poll_method, "codex.state");
+            assert_eq!(
+                spec.map_from_response.get("surface_id"),
+                Some(&"surface".to_string())
+            );
+        }
+        CompletionStrategyKind::Push { .. } => panic!("expected poll"),
+    }
+}
+
 #[test]
 fn user_override_patches_priority_only() {
     let dir = tempfile::tempdir().unwrap();
