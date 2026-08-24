@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.16"
+version = "0.1.17"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -26,7 +26,8 @@ git2 = { version = "0.20", default-features = false }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 serde_json = "1"
-# 원격(mirror) git 조회 응답 wire DTO(TODO 40) 역직렬화 전용 — tasty-git-core 도 동일
+# 원격(mirror) git 조회 응답 wire DTO(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`) 역직렬화
+# 전용 — tasty-git-core 도 동일
 # 이유로 의존한다.
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1"

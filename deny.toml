@@ -3,7 +3,7 @@
 # 목적: RUSTSEC 취약점·라이선스 드리프트·yanked 크레이트·중복/wildcard 의존을
 # 한 파일로 코드화한다. 로컬/CI 에서 `cargo deny check` 로 검증한다.
 #
-# 정책 요지 (근거: .claude-workspace/conductor/R-01/research.md, analysis/03-supply-chain.md):
+# 정책 요지 (각 항목의 구체 근거는 아래 해당 섹션의 인라인 주석):
 #  - advisories: 모든 취약점/unmaintained/unsound 는 기본 deny. 당장 못 고치는
 #    트랜지티브 항목만 근거와 함께 개별 ignore 로 격리한다.
 #  - licenses: 퍼미시브 allowlist. 강한 copyleft 단독 의존은 없음(GPL/LGPL 은

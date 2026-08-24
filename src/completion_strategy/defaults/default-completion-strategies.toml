@@ -1,5 +1,6 @@
-# 호스트 default 완료 판정 전략 정의 (TODO80 §B, 훅 핸들러
-# `default-hook-handlers.toml` 과 나란한 별도 파일 — 섞지 않는다, §B-3).
+# 호스트 default 완료 판정 전략 정의 — 훅 핸들러 `default-hook-handlers.toml` 과
+# 나란한 별도 파일이며 섞지 않는다. 레지스트리 동작은
+# `docs/dev-guide/agent-runner.md` "완료 판정 전략 레지스트리" 참조.
 #
 # 각 전략은 `spec.kind` 로 poll/push 를 구분한다.
 #   - poll : 자체 폴링(`poll_method`/`state_field`/`terminal_states`/`interval_ms`).

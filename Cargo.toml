@@ -38,7 +38,7 @@ let_underscore_must_use = "warn"
 # 위반 6건이 조용히 유입됐던 전례 → deny 로 승격. 예외는 위치 단위
 # `#[allow(clippy::disallowed_methods)]` + 사유 주석 (clippy.toml 의 예외 컨벤션).
 disallowed_methods = "deny"
-# 모든 `pub unsafe fn`에 `# Safety` 문서 절 필수(TODO26). `undocumented_unsafe_blocks`가
+# 모든 `pub unsafe fn`에 `# Safety` 문서 절 필수. `undocumented_unsafe_blocks`가
 # unsafe *블록*의 SAFETY 주석을 강제하는 것과 대칭 — 이건 unsafe *fn 자체*의 호출자 계약
 # 문서화를 강제한다. `tasty_shm::receive`처럼 raw fd/handle 소유권 이전을 요구하는 함수가
 # safe fn 뒤에 숨어 계약이 코드로 강제되지 않는 사고를 막는다.
@@ -264,7 +264,7 @@ semver = "1"
 # File type detection (file_format Deep evaluator — magic bytes + MIME)
 infer = { version = "0.16", default-features = false }
 
-# file_format PathGlob rule 매칭 (표준 glob 문법: *, ?, [...], ** — TODO 58).
+# file_format PathGlob rule 매칭 (표준 glob 문법: *, ?, [...], **).
 # 여러 패턴을 GlobSetBuilder 로 묶어 하나의 자동으로 컴파일해 재사용한다.
 globset = "0.4"
 
@@ -423,7 +423,7 @@ enigo = "0.6"
 tempfile = "3"
 # 메모리 누수 soak 하네스(tests/soak_memory.rs)의 외부 측정용 — 프로세스 트리
 # RSS·자식 프로세스 열거. 본체 의존성 아님(관찰자 효과 0), dev 전용. 텔레메트리
-# RssSurge 이상탐지(TODO 61)의 실제 sampling 코드는 `crates/tasty-host-plugin`
+# RssSurge 이상탐지의 실제 sampling 코드는 `crates/tasty-host-plugin`
 # 이 자기 자신의 production dependency 로 sysinfo 를 별도로 갖는다(host 가
 # `PluginProcess.child` PID 를 그 크레이트 안에서 직접 다루므로) — 본 루트
 # 크레이트는 sysinfo 를 production 경로에서 쓰지 않는다.
