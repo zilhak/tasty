@@ -23,6 +23,7 @@
 | [settings](settings/index.md) — 설정 창 (사이드바 설정 버튼) | 로컬 사용자 | [창](settings/screens/settings.md) |
 | [plugin-system](plugin-system/index.md) — 플러그인 관리 (사이드바 플러그인 버튼) | 로컬 사용자 · AI Agent | [창](plugin-system/screens/plugins-window.md) |
 | [command-palette](command-palette/index.md) — 명령 팔레트 (도구 메뉴 항목) | 로컬 사용자 | [화면](command-palette/screens/command-palette.md) |
+| [fullscreen-stage](fullscreen-stage/index.md) — 전체화면 무대 (창 전체를 독점하는 독립 표면) | 로컬 사용자 | 없음 (무대 자체가 화면) |
 | [tutorial](tutorial/index.md) — 튜토리얼 (마커 오버레이 인앱 투어, 도구 메뉴 항목) | 로컬 사용자 | 마커+말풍선+주제 팝업 |
 | [remote-profiles](remote-profiles/index.md) — 원격 접속 프로필 + Passkey (도구 메뉴 항목) | 로컬 사용자 · AI Agent | [창](remote-profiles/screens/remote-tool.md) |
 | [remote-attach](remote-attach/index.md) — 원격 attach (점유/mirror) | 원격 · AI Agent · 로컬(force-detach) | [GUI mirror](remote-attach/screens/remote-attach.md) |

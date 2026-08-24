@@ -92,3 +92,4 @@
 | 0079 | [스크롤 어포던스 표준은 "스크롤바 숨김 + 가장자리 페이드" — 폭 예약은 예외로만 남긴다](0079-scroll-affordance-standard.md) | Accepted | 2026-08-23 | ui, scroll, egui, affordance, popup, table, remote-tool, port-scanner |
 | 0080 | [latte 중성 램프의 AA 미달을 알려진 예외로 수용한다](0080-latte-neutral-ramp-contrast-exception.md) | Accepted | 2026-08-24 | theme, accessibility, contrast, latte, palette |
 | 0081 | [버튼 없는 hover motion(1003)은 focused surface 에만 보고한다](0081-hover-motion-focused-surface-only.md) | Accepted | 2026-08-24 | mouse, input, tracking, focus, terminal, adr-0019 |
+| 0082 | [전체화면은 기존 요소를 확대하지 않고 **독립 무대**로 만든다](0082-fullscreen-independent-stage.md) | Accepted | 2026-08-24 | fullscreen, stage, ui, render-pipeline, layout, webview, attach, screenshot |

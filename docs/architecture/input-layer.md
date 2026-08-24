@@ -139,9 +139,17 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 3. 정말 모달처럼 항상 최상단이어야 하는 예외라면(예: 위 plugin popup) Area 미등록을 의도적으로 유지하고 그 이유를 주석/문서로 남긴다.
 4. 겹치는 배치를 만들어 `tasty screenshot` 으로 실측 확인한다(디자인 시나리오만으로 단정하지 않는다, `docs/dev-guide/self-verification.md`).
 
+**전체화면 무대는 이 체크리스트의 2 번 대상이 아니다.** 무대(`src/adapters/ui/fullscreen.rs`)는
+1 번대로 등록된 `Area`(`Order::Foreground`)로 그리지만 `enforce_foreground_z_order` 체인에는
+들어가지 않는다 — 무대는 **별개 프레임**에서 그려지고(`Gpu::render` 의 무대 분기) 그 프레임에는
+host chrome·popup·오버레이가 아예 그려지지 않아 같은 tier 안에서 순서를 다툴 상대가 없기
+때문이다. 3 번(Area 미등록으로 최상단을 얻는 예외)에 기대지 않은 것도 같은 이유다. 상세
+[`design/systems/fullscreen-stage.md`](../design/systems/fullscreen-stage.md).
+
 ## 관련
 
 - [popup 시스템](../design/systems/popup.md) — 팝업 z-order·스코프·포커스
+- [전체화면 무대](../design/systems/fullscreen-stage.md) — 별개 프레임으로 그려지는 창 독점 표면
 - [banner 시스템](../design/systems/banner.md) — 배너 마우스 소비·스코프·발화 정책
 - [dev-guide/popup-implementation](../dev-guide/popup-implementation.md) — 팝업 추가 절차
 - [multi-window](multi-window.md) — 윈도우 단위 구조
