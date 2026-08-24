@@ -14,7 +14,7 @@
 
 use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, ThemeMode};
-use tasty_themes::{LATTE_TOML_TEXT, ThemeFile, mocha_fallback_colors};
+use tasty_themes::{LATTE_TOML_TEXT, MOCHA_TOML_TEXT, ThemeFile, mocha_fallback_colors};
 use tasty_type_appearance::color::HexColor;
 
 #[test]
@@ -100,4 +100,45 @@ fn placeholder_matches_overlay0_in_shipped_themes() {
         latte.placeholder, latte.overlay0,
         "latte placeholder != overlay0 — 05b overlay0→text_placeholder 값-보존 결합 깨짐"
     );
+}
+
+/// `[surfaces.<kind>]` 의 전경 두 필드는 팔레트 토큰을 그대로 따라간다 —
+/// `focused_fg == text`, `unfocused_fg == subtext0`. shipped 테마 TOML 에 그렇게
+/// **주석으로만** 적혀 있어(`unfocused_fg = "#63667c"   # = subtext0`) 둘 중 하나만
+/// 바뀌면 조용히 어긋난다. latte 의 `subtext0` 을 대비 때문에 내렸을 때 실제로
+/// 세 곳을 손으로 맞춰야 했던 자리라 가드를 건다.
+///
+/// 배경 두 필드는 가드하지 않는다 — 관계가 kind 마다 다르다(terminal 의
+/// `focused_bg` 는 팔레트 밖 `#000000`, `unfocused_bg` 는 terminal=base /
+/// markdown=mantle). 균일한 관계가 아니면 가드가 아니라 족쇄가 된다.
+#[test]
+fn surface_foregrounds_track_palette_in_shipped_themes() {
+    for (name, toml) in [("mocha", MOCHA_TOML_TEXT), ("latte", LATTE_TOML_TEXT)] {
+        let file = ThemeFile::parse(toml).unwrap_or_else(|e| panic!("{name}.toml: {e}"));
+        let text = file
+            .palette
+            .text
+            .unwrap_or_else(|| panic!("{name}.toml: palette.text 없음"));
+        let subtext0 = file
+            .palette
+            .subtext0
+            .unwrap_or_else(|| panic!("{name}.toml: palette.subtext0 없음"));
+
+        assert!(
+            !file.surfaces.is_empty(),
+            "{name}.toml 에 [surfaces.*] 가 하나도 없다 — 가드가 헛돈다"
+        );
+        for (kind, surface) in &file.surfaces {
+            assert_eq!(
+                surface.focused_fg,
+                Some(text),
+                "{name}.toml [surfaces.{kind}].focused_fg != palette.text ({text:?})"
+            );
+            assert_eq!(
+                surface.unfocused_fg,
+                Some(subtext0),
+                "{name}.toml [surfaces.{kind}].unfocused_fg != palette.subtext0 ({subtext0:?})"
+            );
+        }
+    }
 }
