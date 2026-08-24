@@ -75,7 +75,7 @@ pub fn draw_title_buttons(
     if buttons.close {
         let c = close_rect.center();
         let x = 5.0;
-        let stroke = egui::Stroke::new(1.5, fg);
+        let stroke = egui::Stroke::new(theme.icon_stroke_width.value(), fg);
         painter.line_segment([c - egui::vec2(x, x), c + egui::vec2(x, x)], stroke);
         painter.line_segment([c + egui::vec2(-x, x), c + egui::vec2(x, -x)], stroke);
         left = close_rect.min.x;
@@ -92,7 +92,7 @@ pub fn draw_title_buttons(
         // 디자인 `fit` — 24 viewBox 안 브래킷 사각형 18, 팔 길이 5.
         let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
         let arm = g.width() * (5.0 / 18.0);
-        let stroke = egui::Stroke::new(1.5, fg);
+        let stroke = egui::Stroke::new(theme.icon_stroke_width.value(), fg);
         for (corner, dx, dy) in [
             (g.left_top(), 1.0, 1.0),
             (g.right_top(), -1.0, 1.0),

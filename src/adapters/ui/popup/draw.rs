@@ -81,7 +81,7 @@ fn paint_fullscreen_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui
     // 안에서 디자인 비례(5/18)를 유지한다 — 버튼 크기가 바뀌어도 형상이 따라간다.
     let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
     let arm = g.width() * (5.0 / 18.0);
-    let stroke = egui::Stroke::new(1.5, color);
+    let stroke = egui::Stroke::new(theme::theme().icon_stroke_width.value(), color);
     for (corner, dx, dy) in [
         (g.left_top(), 1.0, 1.0),
         (g.right_top(), -1.0, 1.0),
@@ -498,14 +498,14 @@ impl PopupManager {
                         center - egui::vec2(x_size, x_size),
                         center + egui::vec2(x_size, x_size),
                     ],
-                    egui::Stroke::new(1.5, x_color),
+                    egui::Stroke::new(th.icon_stroke_width.value(), x_color),
                 );
                 painter.line_segment(
                     [
                         center + egui::vec2(-x_size, x_size),
                         center + egui::vec2(x_size, -x_size),
                     ],
-                    egui::Stroke::new(1.5, x_color),
+                    egui::Stroke::new(th.icon_stroke_width.value(), x_color),
                 );
             }
 

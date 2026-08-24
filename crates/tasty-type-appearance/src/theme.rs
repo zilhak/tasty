@@ -273,6 +273,13 @@ pub struct ThemeSizing {
     pub border_width: LogicalPx,
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
+    /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
+    /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
+    /// 스케일해 주지만, `Ui` 가 없어 `Painter::line_segment` 로 같은 형상을 그려야
+    /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
+    /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
+    /// (`icon_glyph_size_row_action` 과 같은 부류).
+    pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
     pub corner_radius_sm: LogicalPx,
@@ -391,6 +398,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_term_lg: LogicalPx(16.0),
     border_width: LogicalPx(1.0),
     focus_ring_width: LogicalPx(2.0),
+    icon_stroke_width: LogicalPx(1.5),
     corner_radius: LogicalPx(4.0),
     corner_radius_sm: LogicalPx(2.0),
     corner_radius_lg: LogicalPx(8.0),
@@ -883,6 +891,13 @@ pub struct Theme {
     pub border_width: LogicalPx,
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
+    /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
+    /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
+    /// 스케일해 주지만, `Ui` 가 없어 `Painter::line_segment` 로 같은 형상을 그려야
+    /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
+    /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
+    /// (`icon_glyph_size_row_action` 과 같은 부류).
+    pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
     pub corner_radius_sm: LogicalPx,
@@ -1064,6 +1079,9 @@ impl Theme {
             font_size_term_lg: SIZING.font_size_term_lg,
             border_width: SIZING.border_width,
             focus_ring_width: zoomed(SIZING.focus_ring_width),
+            // `border_width` 와 같이 zoom 을 타지 않는다 — 이 굵기를 쓰는 타이틀바
+            // 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다.
+            icon_stroke_width: SIZING.icon_stroke_width,
             corner_radius: zoomed(SIZING.corner_radius),
             corner_radius_sm: zoomed(SIZING.corner_radius_sm),
             corner_radius_lg: zoomed(SIZING.corner_radius_lg),
