@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 
 use crate::core::Core;
@@ -65,6 +67,9 @@ pub fn handle_task_create(
     if let Err(e) = validate_poll_strategy_refs(&command, &on_failure) {
         return JsonRpcResponse::invalid_params(id, e);
     }
+    if let Err(e) = validate_task_output_refs(&command, &depends_on, &on_failure) {
+        return JsonRpcResponse::invalid_params(id, e);
+    }
 
     let opts = TaskCreateOpts {
         workspace_id,
@@ -129,6 +134,58 @@ fn validate_poll_strategy_refs(
     {
         validate_command_poll_ref(&spec.command)?;
         validate_poll_strategy_refs(&spec.command, &spec.on_failure)?;
+    }
+    Ok(())
+}
+
+/// `${task.<id>.output<pointer>}` 참조가 **선언된 의존성 안에만** 있는지 생성
+/// 시점에 검증한다.
+///
+/// 참조한 task 가 `depends_on`(또는 `Reduce.inputs`)에 없으면 그 task 가 아직
+/// 끝나기 전에 이 task 가 dispatch 될 수 있다 — 값이 없어 실행 시점에 실패하는
+/// race 가 된다. 그 race 를 만들지 않는 방법은 두 가지였다.
+///
+/// - **거부(채택)**: 사용자가 의존을 명시하게 한다. 그래프가 선언한 그대로 남는다.
+/// - 자동으로 엣지 추가: `referenced_task_ids`(참조 무결성)에 새 출처를 더해야
+///   하고, 선언하지 않은 의존성이 `agent.task_graph` 렌더와 DAG 그룹핑에 조용히
+///   나타난다. 놀라움이 크다.
+///
+/// 거부를 택했으므로 `crates/tasty-agent/src/task/graph.rs` 의 엣지 정의는
+/// 건드리지 않는다 — DAG 도출/그룹핑에 영향이 없다.
+///
+/// 문법 자체가 깨진 참조(`${task.` 로 시작하는데 형식 불일치)도 여기서 걸린다.
+/// 파서는 dispatch 치환과 **같은 모듈**(`core::agent::task_output_ref`)이라 생성
+/// 검증과 실행 치환이 문법을 서로 다르게 볼 수 없다.
+fn validate_task_output_refs(
+    command: &TaskCommand,
+    depends_on: &[TaskId],
+    on_failure: &OnFailure,
+) -> Result<(), String> {
+    use crate::core::agent::task_output_ref;
+
+    let mut available: BTreeSet<&str> = depends_on.iter().map(String::as_str).collect();
+    if let TaskCommand::Reduce { inputs, .. } = command {
+        available.extend(inputs.iter().map(String::as_str));
+    }
+    for tid in task_output_ref::referenced_tasks(command).map_err(|e| e.0)? {
+        if !available.contains(tid.as_str()) {
+            return Err(format!(
+                "task output reference '{tid}' is not in depends_on; add it so this task runs after '{tid}' finishes"
+            ));
+        }
+    }
+    // 인라인 fallback 은 별도 task 로 생성되므로 자기 의존성 기준으로 검증한다 —
+    // `depends_on_override` 가 없으면 main 의 depends_on 을 그대로 물려받는다
+    // (`crates/tasty-agent/src/task/store.rs`).
+    if let OnFailure::Fallback {
+        inline: Some(spec), ..
+    } = on_failure
+    {
+        let inherited: Vec<TaskId> = spec
+            .depends_on_override
+            .clone()
+            .unwrap_or_else(|| depends_on.to_vec());
+        validate_task_output_refs(&spec.command, &inherited, &spec.on_failure)?;
     }
     Ok(())
 }
@@ -1132,6 +1189,117 @@ mod poll_strategy_ref_tests {
                     },
                 })],
             );
+    }
+
+    // ── `${task.<id>.output<pointer>}` 참조의 생성 시점 검증 ────────────────
+
+    fn tell_with(params: serde_json::Value) -> TaskCommand {
+        TaskCommand::Custom {
+            ipc_method: "claude.tell".into(),
+            params,
+            poll: None,
+        }
+    }
+
+    /// depends_on 에 없는 task 를 참조하면 생성 시점에 거부 — 실행 시점 race 를
+    /// 만들지 않는다.
+    #[test]
+    fn task_create_rejects_output_ref_not_in_depends_on() {
+        let command = tell_with(json!({
+            "surface_id": "${task.t-a.output/child_surface_id}",
+        }));
+        let err = validate_task_output_refs(&command, &[], &OnFailure::Abort).unwrap_err();
+        assert!(err.contains("t-a"), "{err}");
+        assert!(err.contains("depends_on"), "{err}");
+    }
+
+    /// depends_on 에 있으면 통과.
+    #[test]
+    fn task_create_accepts_output_ref_declared_in_depends_on() {
+        let command = tell_with(json!({
+            "surface_id": "${task.t-a.output/child_surface_id}",
+        }));
+        assert!(
+            validate_task_output_refs(&command, &["t-a".to_string()], &OnFailure::Abort).is_ok()
+        );
+    }
+
+    /// 여러 참조 중 하나만 빠져도 거부한다 — 부분 통과는 실행 시점 실패로 남는다.
+    #[test]
+    fn task_create_rejects_when_any_referenced_task_is_undeclared() {
+        let command = tell_with(json!({
+            "a": "${task.t-a.output/x}",
+            "b": "${task.t-b.output/y}",
+        }));
+        let err = validate_task_output_refs(&command, &["t-a".to_string()], &OnFailure::Abort)
+            .unwrap_err();
+        assert!(err.contains("t-b"), "{err}");
+    }
+
+    /// `Reduce.inputs` 도 의존성 엣지라 참조 출처로 인정된다.
+    #[test]
+    fn task_create_accepts_output_ref_from_reduce_inputs() {
+        // Reduce 자체엔 치환 자리가 없으므로, 인정 범위가 depends_on 에만 묶여
+        // 있지 않다는 것만 고정한다.
+        let command = TaskCommand::Reduce {
+            inputs: vec!["t-a".to_string()],
+            strategy: tasty_agent::ReducerStrategy::ConcatText,
+        };
+        assert!(validate_task_output_refs(&command, &[], &OnFailure::Abort).is_ok());
+    }
+
+    /// 인라인 fallback 안의 참조도 재귀 검증한다(poll 전략 검증과 같은 취급).
+    #[test]
+    fn task_create_validates_output_refs_inside_inline_fallback() {
+        let inline = tasty_agent::InlineFallbackSpec {
+            name: "fb".into(),
+            command: tell_with(json!({ "surface_id": "${task.t-ghost.output/id}" })),
+            depends_on_override: None,
+            on_failure: OnFailure::Abort,
+            metadata: Value::Null,
+        };
+        let on_failure = OnFailure::Fallback {
+            task: None,
+            inline: Some(Box::new(inline.clone())),
+        };
+        // main 의 depends_on 을 물려받는데 거기 t-ghost 가 없다 → 거부.
+        let err =
+            validate_task_output_refs(&tell_with(Value::Null), &["t-a".to_string()], &on_failure)
+                .unwrap_err();
+        assert!(err.contains("t-ghost"), "{err}");
+
+        // depends_on_override 로 선언하면 통과.
+        let ok_inline = tasty_agent::InlineFallbackSpec {
+            depends_on_override: Some(vec!["t-ghost".to_string()]),
+            ..inline
+        };
+        assert!(
+            validate_task_output_refs(
+                &tell_with(Value::Null),
+                &[],
+                &OnFailure::Fallback {
+                    task: None,
+                    inline: Some(Box::new(ok_inline)),
+                },
+            )
+            .is_ok()
+        );
+    }
+
+    /// 오문법은 참조 검증 단계에서 잡힌다 — dispatch 까지 가지 않는다.
+    #[test]
+    fn task_create_rejects_malformed_output_placeholder() {
+        let command = tell_with(json!({ "x": "${task.t-a.ouput/id}" }));
+        let err = validate_task_output_refs(&command, &["t-a".to_string()], &OnFailure::Abort)
+            .unwrap_err();
+        assert!(err.contains("malformed"), "{err}");
+    }
+
+    /// placeholder 가 없는 흔한 command 는 depends_on 이 비어도 그대로 통과한다.
+    #[test]
+    fn task_create_ignores_commands_without_placeholders() {
+        let command = tell_with(json!({ "surface_id": 3, "message": "hi" }));
+        assert!(validate_task_output_refs(&command, &[], &OnFailure::Abort).is_ok());
     }
 
     #[test]
