@@ -1308,7 +1308,40 @@ impl MemoryStore {
                  SELECT key FROM memory WHERE key LIKE ?1 ESCAPE '\\'
                  ORDER BY key DESC LIMIT 1 OFFSET ?2
              )",
-            params![like, keep_recent as i64],
+            // `keep_recent as i64` 가 음수가 되면 OFFSET 이 무효가 되어 **전량 삭제**로
+            // 돌변한다. 실제로 쓰이는 값은 만 단위지만, 상한을 "사실상 무제한" 으로
+            // 주려는 호출자가 나오면 조용히 로그를 다 지우게 되므로 여기서 막는다.
+            params![like, keep_recent.min(i64::MAX as u64) as i64],
+        )?;
+        if n > 0 {
+            self.regular_used_bytes = Self::scan_regular_used(&self.conn);
+        }
+        Ok(n as u64)
+    }
+
+    /// `prefix` 로 시작하는 regular 로그 키 중 **`{ts:013}` 이 `cutoff_ms` 미만인
+    /// 것**을 조용히 일괄 삭제. [`Self::prune_prefix_keep_recent`] 의 시간 기준
+    /// 짝이며, 같은 전제(키가 `prefix<zero-padded 13자리 ts>...` 라 lexical =
+    /// chronological)에 기댄다 — 그래서 값 역직렬화도, 행 materialize 도 없이
+    /// 키 범위 DELETE 한 번으로 끝난다.
+    ///
+    /// 개수 상한만으로는 "오래됐지만 상한 안" 인 로그가 영원히 남고, 시간 상한만으로는
+    /// 유입이 빠를 때 상한이 무의미해진다. 둘을 함께 걸 수 있게 짝으로 둔다.
+    /// 삭제된 행 수를 반환. `prefix` 의 `_`/`%`/`\` 는 escape.
+    pub fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64> {
+        let like = format!(
+            "{}%",
+            prefix
+                .replace('\\', "\\\\")
+                .replace('_', "\\_")
+                .replace('%', "\\%")
+        );
+        // `prefix{cutoff:013}` 미만 = ts 가 cutoff 미만. 같은 ts 의 행은 뒤에 `.seq`
+        // 등이 붙어 경계 키보다 크므로 남는다(경계 포함 여부는 ms 단위라 무의미).
+        let boundary = format!("{prefix}{cutoff_ms:013}");
+        let n = self.conn.execute(
+            "DELETE FROM memory WHERE key LIKE ?1 ESCAPE '\\' AND key < ?2",
+            params![like, boundary],
         )?;
         if n > 0 {
             self.regular_used_bytes = Self::scan_regular_used(&self.conn);

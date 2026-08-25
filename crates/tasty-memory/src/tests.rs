@@ -430,6 +430,64 @@ fn prune_prefix_keep_recent_caps_logs() {
     // 남은 개수(3) 이하 cap → no-op.
     let deleted2 = s.prune_prefix_keep_recent("tasty.audit.", 5).unwrap();
     assert_eq!(deleted2, 0);
+
+    // 사실상 무제한 cap 도 no-op 이어야 한다 — i64 로 좁힐 때 음수가 되면 OFFSET 이
+    // 무효가 되어 전량 삭제로 돌변한다.
+    assert_eq!(
+        s.prune_prefix_keep_recent("tasty.audit.", u64::MAX)
+            .unwrap(),
+        0
+    );
+    assert!(s.get(&Scope::Global, "tasty.audit.0009").unwrap().is_some());
+}
+
+#[test]
+fn prune_prefix_older_than_cuts_by_timestamp_in_key() {
+    let mut s = store();
+    // audit/telemetry 와 동형인 `{prefix}{ts:013}.{seq:04}` 키.
+    for ts in [1_000u64, 5_000, 9_000] {
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            &format!("tasty.audit.{ts:013}.0000"),
+            &text("x"),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    }
+    // 다른 prefix 는 같은 ts 여도 건드리지 않는다.
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "tasty.telemetry.event.0000000001000.0000",
+        &text("x"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+
+    assert_eq!(s.prune_prefix_older_than("tasty.audit.", 5_000).unwrap(), 1);
+    assert!(
+        s.get(&Scope::Global, "tasty.audit.0000000005000.0000")
+            .unwrap()
+            .is_some(),
+        "cutoff 와 같은 ts 는 만료가 아니다"
+    );
+    assert!(
+        s.get(&Scope::Global, "tasty.audit.0000000001000.0000")
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        s.get(&Scope::Global, "tasty.telemetry.event.0000000001000.0000")
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        s.regular_used_bytes,
+        MemoryStore::scan_regular_used(&s.conn)
+    );
+    // cutoff 0 = 아무것도 만료되지 않음.
+    assert_eq!(s.prune_prefix_older_than("tasty.audit.", 0).unwrap(), 0);
 }
 
 #[test]

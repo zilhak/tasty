@@ -79,6 +79,15 @@ pub trait MemoryStorage: Send {
     fn stats_secret(&self, owner: &str, scope: Option<&Scope>) -> Result<MemoryStats>;
 
     // ─── Maintenance ───
+    /// `prefix` 아래 로그 키 중 최근 `keep_recent` 개만 남기고 삭제(개수 상한).
+    ///
+    /// 로그 retention 이 **부팅 경로와 런타임 경로 양쪽**에서 집행돼야 해서 port 에
+    /// 있다. 부팅만 있으면 재시작 전까지 무제한으로 자라고, 런타임만 있으면 트래픽이
+    /// 끊긴 인스턴스에 이미 쌓인 것이 영원히 남는다. 두 경로가 같은 구현을 부르도록
+    /// 여기에 둔다.
+    fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64>;
+    /// `prefix` 아래 로그 키 중 `{ts:013}` 이 `cutoff_ms` 미만인 것을 삭제(시간 상한).
+    fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64>;
     fn purge_expired(&mut self) -> Result<PurgeStats>;
     fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats>;
     fn take_pending_changes(&mut self) -> Vec<MemoryChange>;

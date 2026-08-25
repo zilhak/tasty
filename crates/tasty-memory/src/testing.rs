@@ -222,6 +222,31 @@ impl MemoryStorage for InMemoryStorage {
         unimplemented!("InMemoryStorage::stats_secret — fill in when first test needs it")
     }
 
+    fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {
+        // 실제 store 와 같은 전제(키가 `prefix<zero-padded ts>...` 라 lexical =
+        // chronological)로, 정렬 후 최근 N 개만 남긴다. scope 무관인 것도 동일하다.
+        let mut keys: Vec<String> = self
+            .regular
+            .values()
+            .filter(|e| e.key.starts_with(prefix))
+            .map(|e| e.key.clone())
+            .collect();
+        keys.sort();
+        let cut = keys.len().saturating_sub(keep_recent as usize);
+        let doomed: Vec<String> = keys.into_iter().take(cut).collect();
+        let n = doomed.len() as u64;
+        self.regular.retain(|(_, k), _| !doomed.contains(k));
+        Ok(n)
+    }
+
+    fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64> {
+        let boundary = format!("{prefix}{cutoff_ms:013}");
+        let before = self.regular.len();
+        self.regular
+            .retain(|(_, k), _| !(k.starts_with(prefix) && k.as_str() < boundary.as_str()));
+        Ok((before - self.regular.len()) as u64)
+    }
+
     fn purge_expired(&mut self) -> Result<PurgeStats> {
         // 본 in-memory mock 은 TTL/expiry 트래킹을 하지 않으므로 no-op 반환.
         Ok(PurgeStats {

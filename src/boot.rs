@@ -34,23 +34,6 @@ pub(crate) mod wiring;
 use crate::App;
 use crate::{cli, hooks};
 
-/// boot 시 1회 memory.db 위생 정리.
-///
-/// audit/telemetry 는 append-only 로그라 `memory` 테이블을 무한 채운다(per-IPC audit
-/// 가 수십만 행 누적). put 은 이제 O(1)(전체 스캔 제거)이라 성능 목적은 아니며, 무한
-/// 누적으로 인한 디스크 증가와 1GB regular quota 도달을 막는 count 기반 retention 이다.
-/// 최근 N 개만 남기고 조용히(이벤트 없이) 삭제 후, 단편화가 크면 1회 VACUUM 으로 회수.
-/// 최초 1회만 대량(수십만 행) 삭제로 ~2s 소요될 수 있고 이후 부팅은 초과분만 정리한다.
-fn prune_one_prefix(store: &mut tasty_memory::MemoryStore, prefix: &str, keep: u64) -> u64 {
-    match store.prune_prefix_keep_recent(prefix, keep) {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::warn!("boot memory maintenance: prune {prefix} failed: {e}");
-            0
-        }
-    }
-}
-
 fn log_vacuum_result(result: tasty_memory::Result<bool>) {
     match result {
         Ok(true) => tracing::info!("boot memory maintenance: vacuumed memory.db"),
@@ -86,21 +69,29 @@ fn truncate_wal(store: &mut tasty_memory::MemoryStore) {
     }
 }
 
+/// boot 시 1회 memory.db 위생 정리.
+///
+/// audit/telemetry 는 append-only 로그라 `memory` 테이블을 무한 채운다(per-IPC audit
+/// 가 수십만 행 누적). put 은 이제 O(1)(전체 스캔 제거)이라 성능 목적은 아니며, 무한
+/// 누적으로 인한 디스크 증가와 1GB regular quota 도달을 막는 retention 이다. 정책은
+/// `adapters::ipc::log_retention` 이 소유하고 런타임 append 경로와 공유한다 — 부팅
+/// 경로만 있으면 재시작 전까지 무제한으로 자란다(그게 원래 상태였다). 조용히(이벤트
+/// 없이) 삭제 후 단편화가 크면 1회 VACUUM 으로 회수하며, 최초 1회만 대량(수십만 행)
+/// 삭제로 ~2s 소요될 수 있고 이후 부팅은 초과분만 정리한다.
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
-    // 로그 키별 보존 개수 상한. audit 은 보안 감사용이라 넉넉히, telemetry 는 짧게.
-    const AUDIT_KEEP: u64 = 50_000;
-    const TELEMETRY_KEEP: u64 = 20_000;
-
+    // 상한 값은 `adapters::ipc::log_retention` 이 단독으로 소유한다 — 런타임 집행
+    // 경로가 같은 테이블을 읽는다. 여기에 숫자를 다시 적으면 두 경로가 갈린다.
     let mut store = match arc.lock() {
         Ok(s) => s,
         Err(p) => p.into_inner(),
     };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     let mut pruned = 0u64;
-    for (prefix, keep) in [
-        (crate::adapters::ipc::audit::AUDIT_KEY_PREFIX, AUDIT_KEEP),
-        (tasty_telemetry::EVENT_KEY_PREFIX, TELEMETRY_KEEP),
-    ] {
-        pruned += prune_one_prefix(&mut store, prefix, keep);
+    for policy in &crate::adapters::ipc::log_retention::ALL {
+        pruned += policy.enforce(&mut *store, now_ms);
     }
     vacuum_if_needed(&mut store, pruned);
     truncate_wal(&mut store);

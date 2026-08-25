@@ -121,6 +121,14 @@ impl MemoryStorage for MemoryStore {
     }
 
     // ─── Maintenance ───
+    fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {
+        MemoryStore::prune_prefix_keep_recent(self, prefix, keep_recent)
+    }
+
+    fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64> {
+        MemoryStore::prune_prefix_older_than(self, prefix, cutoff_ms)
+    }
+
     fn purge_expired(&mut self) -> Result<PurgeStats> {
         MemoryStore::purge_expired(self)
     }
