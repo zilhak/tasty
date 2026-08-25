@@ -87,8 +87,10 @@ ADR-0060 의 결정 자체는 유지된다 — 정책(hard-occupied 워크스페
 - **얻은 것**:
   - 실패 응답과 실제 부작용이 어긋나던 상태가 사라진다. 거부된 spawn 은 forward 큐에 아무것도
     쌓지 않으므로 **원격에 고아 탭이 생기지 않는다.**
-  - 오류가 원인을 말한다. mirror 여부는 어떤 조회 경로에도 노출되지 않아 에이전트가 사전 판별할
-    수단이 없으므로, 호출 지점의 거부 문구가 사실상 유일한 안내 경로다.
+  - 오류가 원인을 말한다. mirror 여부 자체는 `workspace.list`/`tasty list workspaces` 로 사전
+    판별할 수 있지만(`mirror` 필드 · `[mirror]` 행 마커), **사전 판별은 선택이고 거부는 필수다** —
+    묻지 않은 호출자가 원격에 고아를 남기는 것이 이 결정이 막는 것이고, 그 호출자에게는 거부
+    문구가 유일한 안내다.
   - ADR-0060 의 `--pane` 우회가 함께 닫힌다. 그 정책은 지금까지 `workspace` 파라미터를 정직하게
     쓰는 호출자에게만 적용되고 있었다.
   - 응답의 `workspace_id` 가 실제 생성 위치와 일치한다.
@@ -132,8 +134,9 @@ ADR-0060 의 결정 자체는 유지된다 — 정책(hard-occupied 워크스페
 
 - **forward 응답이 생성된 리소스의 id 를 회신하게 된다** — 대안 C 의 전제가 성립하므로, 거부 대신
   mirror 에서도 spawn 을 지원하는 쪽을 다시 검토한다.
-- **mirror 여부가 조회 API 에 노출된다** — 에이전트가 사전 판별할 수 있게 되면, 거부 문구가 유일한
-  안내 경로라는 이 결정의 전제 하나가 약해진다(거부 자체는 여전히 필요하다 — 고아 방지가 본질).
+- **사전 판별이 강제된다**(예: spawn 호출자가 mirror 여부를 반드시 확인하도록 만드는 상위 계약이
+  생긴다) — 지금은 `workspace.list` 로 확인할 수 **있을** 뿐 확인하지 않아도 호출이 성립하므로
+  호스트측 거부가 필요하다. 확인이 강제되면 그 필요가 약해진다(고아 방지라는 본질은 남는다).
 - **id 를 동기로 요구하지 않는 spawn 변종이 생긴다** — method 단위 거부가 과하게 넓어지므로, 판정을
   method 이름이 아니라 "동기 id 를 요구하는가" 라는 성질로 옮기는 것을 검토한다.
 - **`pty.attach_surface` 가 mirror 워크스페이스에서 같은 증상을 보인다** — ADR-0060 이 남긴 갭과
@@ -145,7 +148,8 @@ ADR-0060 의 결정 자체는 유지된다 — 정책(hard-occupied 워크스페
   대칭 결정. 정책은 유지되고 집행 지점만 본 ADR 이 옮긴다.
 - [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) — 점유 모델(유지).
 - [features/remote-attach](../features/remote-attach/index.md) — mirror 구조 변경 forward 설계와
-  거부 대상 서술.
+  거부 대상 서술. mirror 여부의 조회 표면(`workspace.list` 의 `mirror`, `list workspaces` 의
+  `[mirror]` 마커)도 같은 문서에 있다.
 - [dev-guide/attach-behavior](../dev-guide/attach-behavior.md) — 가드 메커니즘 상세.
 - [dev-guide/api-conventions](../dev-guide/api-conventions.md) — mirror forward 응답 계약
   (생성 id 를 담지 않는다).
