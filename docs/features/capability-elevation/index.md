@@ -9,7 +9,7 @@
 
 ## 목적
 
-plugin/agent 가 IPC 호출 시 호스트가 권한을 강제하고, 부족하면 **사용자에게 popup 으로 즉시 elevation** 을 받고, 모든 호출의 allow/deny 를 **audit log 에 영속**한다. 매니페스트 권한([plugin-permissions](../../dev-guide/plugin-permissions.md)) 위에 얹은 런타임 권한 모델이다.
+plugin/agent 가 IPC 호출 시 호스트가 권한을 강제하고, 부족하면 **사용자에게 popup 으로 즉시 elevation** 을 받고, **거부된 호출을 audit log 에 영속**한다. 매니페스트 권한([plugin-permissions](../../dev-guide/plugin-permissions.md)) 위에 얹은 런타임 권한 모델이다.
 
 ## 내부 동작
 
@@ -29,7 +29,13 @@ Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permissi
 
 ### Audit log
 
-레코드: `ts_ms, seq, caller_kind(local/internal/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. 영속 키 `tasty.audit.{ts}.{seq}`(global, 기본 30일 보존, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
+레코드: `ts_ms, seq, caller_kind(local/internal/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. 영속 키 `tasty.audit.{ts}.{seq}`(global, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
+
+**기록되는 것은 deny 뿐이다.** allow 는 method 와 무관하게 저장하지 않는다 — 폴링형 에이전트 워크로드에서 allow 가 초당 14건씩 영구 레코드를 만들어 `memory.db` 의 최대 유입원이 됐기 때문이다(18시간 실행 371,936행, 그중 deny 0건). 그래서 이 로그는 **평시에 사실상 빈 테이블**이고, "agent 가 승인된 권한으로 실제 무엇을 했나" 를 사후에 되짚는 용도는 없다. 반대로 deny 는 어떤 method 든 전부 남으므로 권한 거부 사고 추적은 그대로다. 결정의 근거·대안·재검토 조건은 [ADR-0085](../../adr/0085-ipc-log-retention-bounded.md).
+
+elevation 자체는 이 로그에 의존하지 않는다 — 승인 이력은 `tasty.approval.*` 로 별도 영속되고, elevation 발행 트리거도 deny 경로다.
+
+보존: 관측 로그 3종 공통 정책(`adapters::ipc::log_retention`)을 따른다 — 50시간 + 5만 건 상한이며 부팅과 런타임 양쪽에서 집행된다.
 
 ## 인터페이스
 

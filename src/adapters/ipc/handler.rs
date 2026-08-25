@@ -106,7 +106,7 @@ pub fn handle_with_caller(
         return resp;
     }
 
-    record_telemetry_and_audit_allow(
+    record_telemetry_and_audit(
         core,
         state,
         engine,
@@ -264,9 +264,10 @@ fn check_rate_limit_gate(
 /// `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
 /// 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
 ///
-/// audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
-/// 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
-fn record_telemetry_and_audit_allow(
+/// audit: allow 는 `audit::record` 가 정책에 따라 **버린다**(ADR-0085). 호출을
+/// 남겨두는 이유는 정책이 audit 쪽 한 곳에만 있다는 것을 이 자리에서 읽히게 하고,
+/// 정책이 바뀌면 게이트 통과 지점을 다시 찾아 붙이지 않아도 되게 하기 위해서다.
+fn record_telemetry_and_audit(
     core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,

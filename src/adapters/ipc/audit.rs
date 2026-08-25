@@ -1,7 +1,17 @@
 //! IPC audit log.
 //!
-//! 모든 IPC 호출(allow + deny) 을 `tasty.audit.{ts:013}.{seq:04}` 키로 영속한다.
-//! 권한 거부 사고 추적, agent 행동 감사, capability_elevation 사후 분석에 쓴다.
+//! **거부(deny)된 IPC 호출만** `tasty.audit.{ts:013}.{seq:04}` 키로 영속한다.
+//! method 와 무관하게 모든 deny 를 남기며, allow 는 남기지 않는다 — 폴링형
+//! 에이전트 워크로드에서 allow 가 초당 14건씩 영구 레코드를 만들어 `memory.db`
+//! 최대 유입원이 됐기 때문이다(18시간 실행에서 371,936행, deny 는 0건).
+//! 그 대가로 "agent 가 무엇을 호출했나" 를 사후에 되짚는 용도는 사라졌다.
+//! 결정의 근거·대안·재검토 조건은
+//! [ADR-0085](../../../docs/adr/0085-ipc-log-retention-bounded.md).
+//!
+//! 남은 용도는 권한 거부 사고 추적이다. capability elevation 은 이 로그에 의존하지
+//! 않는다 — 승인 자체는 `tasty.approval.*`(`handler::approval::ApprovalRecord`)로
+//! 별도 영속되고, elevation 발행 트리거도 deny 경로(`app::ipc::caller_gate`)라
+//! 그대로 기록된다.
 //!
 //! 보존 정책은 [`log_retention`](crate::adapters::ipc::log_retention) 이 소유한다 —
 //! audit 만의 값이 아니라 관측 로그 3종이 공유하는 정책이고, 과거 이 모듈이 자체
@@ -345,6 +355,11 @@ fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec
 /// dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
 /// 호출된다.
+///
+/// **`Allow` 는 기록하지 않고 즉시 반환한다** — 그 정책의 근거와 이 선택이 무엇을
+/// 버리는지는 [ADR-0085](../../../docs/adr/0085-ipc-log-retention-bounded.md).
+/// 게이트를 통과한 호출은 전부 여기로 오므로, 기록을 여기서 끊으면 dispatcher 의
+/// 어느 진입점이 늘어나도 다시 새지 않는다.
 pub fn record(
     host: &dyn tasty_ipc::IpcHostFacade,
     caller: &CallerContext,
@@ -355,6 +370,10 @@ pub fn record(
     seq: u64,
 ) {
     use tasty_ipc::{AuditCallerMarker, AuditDecision as ProtoDecision};
+
+    if decision == AuditDecision::Allow {
+        return;
+    }
 
     let ts_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -412,6 +431,67 @@ mod tests {
             reason: None,
             workspace_id: None,
         }
+    }
+
+    /// `record()` 의 정책 게이트. allow 는 store 근처에도 못 가고, deny 는
+    /// **method 와 무관하게** 전부 간다 — 축소 대상은 allow 뿐이라는 것이 계약이다.
+    #[test]
+    fn allow_is_dropped_before_the_store_and_deny_never_is() {
+        use std::sync::Mutex;
+        use tasty_ipc::{IpcHostFacade, SessionResolution};
+
+        #[derive(Default)]
+        struct CountingFacade {
+            recorded: Mutex<Vec<String>>,
+        }
+        impl IpcHostFacade for CountingFacade {
+            fn session_resolve(&self, _token: &str, _now_ms: u64) -> SessionResolution {
+                SessionResolution::NotFound
+            }
+            fn record_audit(
+                &self,
+                _caller: tasty_ipc::AuditCallerMarker,
+                method: &str,
+                _decision: tasty_ipc::AuditDecision,
+                _reason: Option<&str>,
+                _workspace_id: Option<u32>,
+                _seq: u64,
+                _ts_ms: u64,
+            ) {
+                self.recorded.lock().unwrap().push(method.to_string());
+            }
+        }
+
+        let host = CountingFacade::default();
+        let caller = CallerContext::Local;
+        // audit 행의 85% 를 만들던 폴링 4종 — allow 로는 한 건도 남지 않아야 한다.
+        for method in [
+            "terminal.parent",
+            "surface.read_since_mark",
+            "terminal.state",
+            "surface.foreground_process",
+        ] {
+            record(&host, &caller, method, AuditDecision::Allow, None, None, 0);
+        }
+        assert!(
+            host.recorded.lock().unwrap().is_empty(),
+            "allow 는 기록되지 않는다"
+        );
+
+        // 같은 폴링 method 라도 deny 면 기록된다 — 제외 목록이 아니라 decision 기준.
+        record(
+            &host,
+            &caller,
+            "terminal.state",
+            AuditDecision::Deny,
+            Some("permission_denied"),
+            None,
+            1,
+        );
+        assert_eq!(
+            *host.recorded.lock().unwrap(),
+            vec!["terminal.state".to_string()]
+        );
     }
 
     #[test]
