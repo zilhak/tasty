@@ -347,9 +347,14 @@ pub fn record_plugin_rss_samples(
 /// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
 /// 좁힐 예정 (별도 작업).
 /// hard-occupied workspace 에 대한 **비-holder** 구조 변경 IPC 를 차단한다
-/// (`split`/`tab.create`/`terminal.spawn` 생성 계열, `pane.close`/`tab.close`/
-/// `tab.move`/`surface.close` close·이동 계열, `markdown.navigate`/`image.open`
-/// convert 계열).
+/// (`split`/`tab.create` 생성 계열, `pane.close`/`tab.close`/`tab.move`/
+/// `surface.close` close·이동 계열, `markdown.navigate`/`image.open` convert
+/// 계열).
+///
+/// `terminal.spawn` 도 같은 정책의 대상이지만 여기서 걸지 않는다 — 대상이
+/// `workspace` 파라미터가 아니라 `pane` 오버라이드까지 반영된 최종 pane 이라,
+/// 그것을 아는 [`spawn_target_guard`] 에서 집행한다(같은 자리에서 mirror 판정도
+/// 함께 한다). 근거는 그 함수의 doc 과 ADR-0086.
 ///
 /// **convert 계열은 이 두 method 만 커버한다(완전하지 않음, 알려진 한계)**:
 /// `ConvertSurface` 를 발행하는 진입점은 kind 별로 흩어져 있고(`markdown.navigate`,
@@ -365,8 +370,9 @@ pub fn record_plugin_rss_samples(
 /// 그 논거는 holder 관점만 다뤘다 — spawn 을 호출한 로컬 agent 자신이 그 직후
 /// `tap_new_workspace_member`(`core/attach_runtime.rs`)로 새 surface 가 즉시 같은
 /// hard lock 을 상속받아 자기 결과물에 입력을 못 넣게 되는 부작용은 검토되지
-/// 않았다. 이 사각지대 때문에 정책을 뒤집어 `terminal.spawn` 도 차단 대상에
-/// 포함한다(근거: ADR-0060, ADR-0040 은 유지).
+/// 않았다. 이 사각지대 때문에 정책을 뒤집어 `terminal.spawn` 도 차단 대상이
+/// 됐다(근거: ADR-0060, ADR-0040 은 유지). 집행 지점만 위에 적은 대로
+/// [`spawn_target_guard`] 로 옮겼고, 정책 자체는 그대로다.
 ///
 /// **왜 여기(문자열 method dispatch)인가**: `execute_forwarded_structural_op`
 /// (`src/core/attach_runtime.rs`)는 attach 점유 holder 가 forward 한 구조 변경을
@@ -427,23 +433,70 @@ fn hard_occupied_structural_guard(
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
         }
-        "terminal.spawn" => {
-            let workspace_param = params.get("workspace").and_then(|v| v.as_str())?;
-            let ws_id = terminal::resolve_workspace_id(engine, workspace_param)?;
-            engine.find_workspace_index_for_id(ws_id)?
-        }
         _ => return None,
     };
     let ws_id = engine.workspaces.get(ws_idx)?.id;
     if engine.attach.workspace_holder(ws_id).is_some() {
+        return Some(hard_occupied_denial(ws_id, id));
+    }
+    None
+}
+
+/// hard-occupied 거부 응답 — 라우터 가드와 [`spawn_target_guard`] 가 공유한다.
+/// 두 진입점이 같은 정책을 집행하므로 문구도 한 곳에서만 만든다.
+fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
+    JsonRpcResponse::invalid_params(
+        id.clone(),
+        format!(
+            "Workspace {ws_id} is occupied by a remote attach session (hard-occupied) — \
+             structural changes (new tab/split/close/move) must come from that session. \
+             Use a different workspace."
+        ),
+    )
+}
+
+/// `terminal.spawn` 전용 대상 가드 — **최종 확정된 pane 이 실제로 속한 워크스페이스**
+/// 를 기준으로 mirror / hard-occupied 를 함께 판정한다. 거부면 tab/surface 를 하나도
+/// 만들지 않고 `invalid_params` 를 돌려준다.
+///
+/// **왜 라우터 가드가 아니라 여기인가.** `terminal.spawn` 의 대상은 `workspace`
+/// 파라미터가 아니라 `pane` 오버라이드까지 반영해 확정된 pane 이다. 라우터는
+/// `workspace` 문자열만 resolve 할 수 있어 `--workspace <무해한 ws>` +
+/// `--pane <차단 대상 ws 의 pane>` 조합을 통과시킨다. `handle_spawn` 은 그 뒤
+/// `tab::handle_tab_create` 를 **함수로 직접 호출**하므로 라우터를 다시 타지도
+/// 않는다 — 즉 대상을 정확히 아는 유일한 지점이 여기다.
+///
+/// 다른 구조 op 처럼 [`hard_occupied_structural_guard`] 에 두지 않는 이유는
+/// forward 회귀가 없기 때문이다: `execute_forwarded_structural_op`
+/// (`src/core/attach_runtime.rs`)이 재사용하는 6개 핸들러에 `handle_spawn` 은
+/// 포함되지 않는다. 그래서 핸들러 내부에 둬도 holder 본인의 정당한 forward 를
+/// 막지 않는다 — 다른 6종에는 성립하지 않는 조건이다.
+///
+/// **mirror 판정은 `terminal.spawn` 에만 적용된다.** mirror 워크스페이스 안의
+/// 나머지 구조 변경은 원격으로 forward 되는 것이 정상 설계이므로
+/// (`docs/features/remote-attach/index.md`), 라우터 가드에는 mirror 판정을 넣지
+/// 않는다. 근거: ADR-0086.
+fn spawn_target_guard(
+    engine: &crate::core::CoreState,
+    pane_id: u32,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    let ws_idx = engine.find_workspace_index_for_pane(pane_id)?;
+    let ws = engine.workspaces.get(ws_idx)?;
+    let ws_id = ws.id;
+    if ws.mirror {
         return Some(JsonRpcResponse::invalid_params(
             id.clone(),
             format!(
-                "Workspace {ws_id} is occupied by a remote attach session (hard-occupied) — \
-                 structural changes (new tab/split/close/move) must come from that session. \
-                 Use a different workspace."
+                "Workspace {ws_id} is a mirror of a remote attach session — child terminals \
+                 cannot be spawned into it. Structural changes there are forwarded to the \
+                 remote instance and complete asynchronously, so no local child is created. \
+                 Use a different workspace, or spawn from the remote instance directly."
             ),
         ));
+    }
+    if engine.attach.workspace_holder(ws_id).is_some() {
+        return Some(hard_occupied_denial(ws_id, id));
     }
     None
 }

@@ -2813,6 +2813,172 @@ mod forward_exec_tests {
         );
     }
 
+    // ─── mirror(원격 attach client) 워크스페이스 spawn 가드 ──────────────
+    //
+    // ADR-0086. mirror 워크스페이스 안의 구조 변경은 원격으로 forward 되는 것이
+    // 정상 설계지만, `terminal.spawn` 만은 그 응답에서 생성된 surface 를 **동기로**
+    // 꺼내 써야 해서 forward 위에 얹힐 수 없다. 막지 않으면 로컬은 에러를 돌려주는데
+    // 원격에는 탭이 남는 고아가 생긴다.
+
+    /// mirror 워크스페이스로의 `terminal.spawn` 은 거부되고, 원격으로 나갈 구조 op 가
+    /// 큐에 쌓이지 않아야 한다(고아 원격 탭 방지 — 이 테스트의 핵심).
+    #[test]
+    fn dispatch_denies_terminal_spawn_into_mirror_workspace() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        engine.workspaces[0].mirror = true;
+
+        let terminals_before = engine.terminals.iter().count();
+
+        let req = ipc_request(
+            "terminal.spawn",
+            serde_json::json!({ "parent": a, "workspace": ws_id.to_string() }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+
+        let err = resp
+            .error
+            .expect("mirror 워크스페이스 spawn 은 거부돼야 한다");
+        assert!(
+            err.message.to_lowercase().contains("mirror"),
+            "에러 메시지에 mirror 사유가 있어야 한다 (got: {})",
+            err.message
+        );
+        assert!(
+            !err.message.contains("surface_id"),
+            "내부 필드 이름이 노출되면 안 된다 (got: {})",
+            err.message
+        );
+        assert!(
+            engine.pending_structural_forward.is_empty(),
+            "거부된 spawn 은 원격 NewTab 을 forward 하면 안 된다"
+        );
+        assert_eq!(engine.terminals.iter().count(), terminals_before);
+    }
+
+    /// (설계 보존) 같은 mirror 워크스페이스라도 `tab.create` 는 **여전히 forward**
+    /// 돼야 한다 — 가드가 mirror 구조 변경 전체를 막아버리면 attach 의 핵심 기능이
+    /// 회귀한다. 로컬 트리는 그대로고 원격 큐에 `NewTab` 이 쌓인다.
+    #[test]
+    fn dispatch_still_forwards_tab_create_in_mirror_workspace() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        seed(&mut engine);
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        engine.workspaces[0].mirror = true;
+        let terminals_before = engine.terminals.iter().count();
+
+        let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+
+        assert!(
+            resp.error.is_none(),
+            "mirror 구조 변경은 forward success 로 회신돼야 한다: {:?}",
+            resp.error
+        );
+        assert!(
+            matches!(
+                engine.pending_structural_forward.first().map(|p| &p.op),
+                Some(StructuralOp::NewTab { .. })
+            ),
+            "mirror 의 tab.create 는 원격 NewTab 으로 큐잉돼야 한다 (got: {:?})",
+            engine.pending_structural_forward.first().map(|p| &p.op)
+        );
+        assert_eq!(
+            engine.terminals.iter().count(),
+            terminals_before,
+            "forward 된 구조 변경은 로컬 트리를 바꾸지 않는다"
+        );
+    }
+
+    /// `--pane` 오버라이드가 `workspace` 파라미터와 **다른** 워크스페이스를 가리키는
+    /// 경로도 막힌다. 대상 판정을 최종 pane 기준으로 옮기기 전에는 `workspace` 만
+    /// 봤기 때문에, 무해한 워크스페이스를 `workspace` 로 주고 차단 대상 pane 을
+    /// `pane` 으로 주면 mirror 도 hard-occupied(ADR-0060)도 그대로 새어 나갔다.
+    #[test]
+    fn dispatch_denies_terminal_spawn_when_pane_override_targets_blocked_workspace() {
+        for blocked in ["mirror", "hard-occupied"] {
+            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let a = seed(&mut engine);
+            let blocked_ws_id = engine.workspaces[0].id;
+            let blocked_pane = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+
+            // 우회에 쓸 무해한 두 번째 워크스페이스.
+            let create = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &ipc_request("workspace.create", serde_json::json!({ "name": "clean" })),
+                &CallerContext::Local,
+            );
+            assert!(create.error.is_none(), "테스트 준비: {:?}", create.error);
+            let clean_ws_id = engine
+                .workspaces
+                .iter()
+                .find(|w| w.id != blocked_ws_id)
+                .expect("두 번째 워크스페이스")
+                .id;
+
+            match blocked {
+                "mirror" => engine.workspaces[0].mirror = true,
+                _ => {
+                    engine
+                        .attach
+                        .acquire_workspace(blocked_ws_id, &[a], &[a], 7)
+                        .expect("workspace 점유 획득");
+                }
+            }
+
+            let terminals_before = engine.terminals.iter().count();
+            let req = ipc_request(
+                "terminal.spawn",
+                serde_json::json!({
+                    "parent": a,
+                    "workspace": clean_ws_id.to_string(),
+                    "pane": blocked_pane,
+                }),
+            );
+            let resp = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &req,
+                &CallerContext::Local,
+            );
+
+            let err = resp.error.unwrap_or_else(|| {
+                panic!("{blocked}: pane 오버라이드로 차단 대상 워크스페이스에 spawn 되면 안 된다")
+            });
+            let msg = err.message.to_lowercase();
+            assert!(
+                msg.contains("mirror") || msg.contains("occupied"),
+                "{blocked}: 에러 메시지에 사유가 있어야 한다 (got: {})",
+                err.message
+            );
+            assert_eq!(
+                engine.terminals.iter().count(),
+                terminals_before,
+                "{blocked}: 거부된 spawn 은 새 터미널을 만들면 안 된다"
+            );
+            assert!(
+                engine.pending_structural_forward.is_empty(),
+                "{blocked}: 거부된 spawn 은 원격으로 아무것도 보내지 않는다"
+            );
+        }
+    }
+
     /// 점유가 없는 워크스페이스에서는 가드가 오탐하지 않고 정상 통과해야 한다
     /// (false-positive 방지 — 가드가 hard-occupied 가 아닌 workspace 까지 막으면
     /// 일반 사용자의 로컬 작업 자체가 회귀한다).

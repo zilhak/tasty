@@ -281,9 +281,10 @@ fn send_body_then_submit(
 
 /// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭 우선, 아니면 name 매칭.
 ///
-/// `pub(super)`: `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)가
-/// `terminal.spawn` 의 hard-occupied 판정에 동일 로직을 재사용한다.
-pub(super) fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
+/// 라우터 가드가 이 로직을 재사용하던 시절이 있어 `pub(super)` 였으나, 지금은
+/// `terminal.spawn` 의 대상 판정이 최종 pane 기준으로 옮겨가(`spawn_target_guard`)
+/// 이 파일 밖 호출자가 없다.
+fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
     if let Ok(target_id) = target.parse::<u32>()
         && engine.workspaces.iter().any(|w| w.id == target_id)
     {
@@ -369,6 +370,20 @@ pub(crate) fn handle_spawn(
             }
         },
     };
+    // 대상 판정은 **최종 pane 기준**이다. `pane` 오버라이드는 `workspace` 파라미터와
+    // 다른 워크스페이스를 가리킬 수 있고, 실제로 tab 이 생기는 곳은 pane 쪽이다.
+    // 아래 가드가 mirror/hard-occupied 를 여기서 잡아내지 못하면 그 뒤 `tab.create`
+    // 가 원격으로 forward 되어 **로컬은 실패하는데 원격에는 탭이 남는** 고아가 된다.
+    if let Some(denied) = super::spawn_target_guard(engine, pane_id, &id) {
+        return denied;
+    }
+    // 응답의 workspace_id 도 같은 기준으로 맞춘다 — `workspace` 파라미터를 그대로
+    // 돌려주면 오버라이드된 pane 이 다른 워크스페이스일 때 실제 생성 위치와 어긋난다.
+    let ws_id = engine
+        .find_workspace_index_for_pane(pane_id)
+        .and_then(|i| engine.workspaces.get(i))
+        .map(|w| w.id)
+        .unwrap_or(ws_id);
 
     // child index 먼저 확보해 탭 이름을 child{N} 으로 고정.
     let index = engine.child_terminals.next_index_for(parent);
