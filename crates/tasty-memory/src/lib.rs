@@ -1316,9 +1316,6 @@ impl MemoryStore {
         Ok(n as u64)
     }
 
-    /// freelist 가 `min_free_pages` 이상이면 `VACUUM` 으로 파일을 압축해 디스크를
-    /// 회수한다(대량 prune 직후 1회용). VACUUM 은 파일 전체를 재작성하므로 평소엔
-    /// 호출하지 않는다. 압축 수행 시 true.
     /// WAL 내용을 본체로 흡수하고 WAL 파일을 0 바이트로 잘라낸다.
     ///
     /// [`WAL_SIZE_LIMIT_BYTES`] 는 **앞으로** 커지는 것을 막을 뿐, 이미 커진 파일은
@@ -1337,6 +1334,9 @@ impl MemoryStore {
         Ok(busy == 0)
     }
 
+    /// freelist 가 `min_free_pages` 이상이면 `VACUUM` 으로 파일을 압축해 디스크를
+    /// 회수한다(대량 prune 직후 1회용). VACUUM 은 파일 전체를 재작성하므로 평소엔
+    /// 호출하지 않는다. 압축 수행 시 true.
     pub fn vacuum_if_fragmented(&mut self, min_free_pages: i64) -> Result<bool> {
         let free: i64 = self
             .conn
