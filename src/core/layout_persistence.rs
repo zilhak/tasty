@@ -196,7 +196,6 @@ fn write_slot_atomic(dir: &Path, path: &Path, json: &str) -> std::io::Result<()>
 
 // ── 삭제 ──
 
-#[allow(dead_code)]
 fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     let path = slot_path_in(dir, slot);
     if let Err(e) = std::fs::remove_file(&path)
@@ -206,10 +205,8 @@ fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     }
 }
 
-/// 슬롯 파일을 지운다. 없으면 no-op.
-///
-/// 아직 호출자가 없다 — 창을 닫을 때 그 창의 슬롯을 회수하는 후속 작업이 쓴다.
-#[allow(dead_code)]
+/// 슬롯 파일을 지운다. 없으면 no-op — `restore_layout` 이 꺼진 채로 창이 닫힐 때
+/// (`App::retire_main_engine`) 쓴다.
 pub(crate) fn delete_slot(slot: LayoutSlotId) {
     let Some(dir) = layouts_dir() else { return };
     delete_slot_in(&dir, slot);

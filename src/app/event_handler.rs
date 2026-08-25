@@ -1162,23 +1162,48 @@ impl App {
                 .map(|w| w.base().close_requested)
                 .unwrap_or(false);
             if close_requested {
-                if let Some(w) = self.view.views.remove(&id)
-                    && self.view.views.values().all(|w| w.as_main().is_none())
-                    && let Some(main_box) = crate::view::unbox_main(w)
-                {
+                self.close_self_requesting_window(id);
+            }
+        }
+    }
+
+    /// `close_requested` 플래그를 세운 창(마지막 워크스페이스 제거 등)을 실제로
+    /// 치운다. 닫기 버튼 경로(`close_main_window`)와 달리 plugin/Lua 통지를 내지
+    /// 않는 내부 경로다.
+    fn close_self_requesting_window(&mut self, id: WindowId) {
+        // `remove` 결과를 먼저 지역 변수로 받는다 — 조건 체인(`if let ... && ...`)
+        // 안에 두면 중간 조건이 실패했을 때 MainView 가 조건식 안에서 drop 되어
+        // 은퇴 처리를 걸 자리가 없다.
+        if let Some(w) = self.view.views.remove(&id) {
+            let was_last_main = self.view.views.values().all(|w| w.as_main().is_none());
+            match crate::view::unbox_main(w) {
+                // 마지막 main → parking. engine 이 `parked_states` 에 살아 있으므로
+                // 슬롯 점유도 유지된다(나중에 새 창이 그 engine 을 재사용하며 같은
+                // 슬롯을 이어쓴다). 은퇴 처리를 하면 안 된다.
+                Some(main_box) if was_last_main => {
                     tracing::info!("last main window closed via request, parking state");
                     self.parked_states
                         .push((main_box.state, main_box.core_state));
                 }
-                if self.view.focused_view_id == Some(id) {
-                    self.view.focused_view_id = self
-                        .view
-                        .views
-                        .iter()
-                        .find(|(_, w)| w.as_main().is_some())
-                        .map(|(id, _)| *id);
+                // 그 외 → engine 이 여기서 drop 된다.
+                Some(mut main_box) => {
+                    let active_workspace = main_box.state.active_workspace;
+                    Self::retire_main_engine(
+                        &mut self.core,
+                        &mut main_box.core_state,
+                        active_workspace,
+                    );
                 }
+                None => {}
             }
+        }
+        if self.view.focused_view_id == Some(id) {
+            self.view.focused_view_id = self
+                .view
+                .views
+                .iter()
+                .find(|(_, w)| w.as_main().is_some())
+                .map(|(id, _)| *id);
         }
     }
 
@@ -1273,7 +1298,14 @@ impl App {
         id: WindowId,
         reason: tasty_plugin_protocol::LifecycleReason,
     ) {
-        self.view.views.remove(&id);
+        // 은퇴 처리는 아래 `window.closed` / `window.delete.post` 발화 **앞**에서
+        // 끝낸다 — 통지 순서는 기존 그대로 두고, engine 이 drop 되기 전에만
+        // 슬롯을 마무리하면 된다.
+        let removed = self.view.views.remove(&id);
+        if let Some(mut main_box) = removed.and_then(crate::view::unbox_main) {
+            let active_workspace = main_box.state.active_workspace;
+            Self::retire_main_engine(&mut self.core, &mut main_box.core_state, active_workspace);
+        }
         let scripts = self.autofire_scripts();
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
