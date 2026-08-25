@@ -125,7 +125,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 ### 원격 attach (IPC — focus 중립)
 
-로컬 IPC method `remote.attach` { `remote_workspace`, `profile?`/`ssh?` } — 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**(호스트가 워커 스레드에서 SSH 터널을 세우고 mirror 를 재구성). **focus 중립**이 핵심: 이 IPC/에이전트 경로는 mirror workspace 를 *조용히 생성만* 하고 focus 를 그 ws 로 옮기지 않는다(`active_workspace` 불변). 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**(RA02 팝업에서 사용자가 확정할 때)이며, release IPC 에는 focus 변경 API 가 없다(원칙 3). 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로 나타나고 `list workspaces`(mirror 플래그)로 확인한다.
+로컬 IPC method `remote.attach` { `remote_workspace`, `profile?`/`ssh?` } — 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**(호스트가 워커 스레드에서 SSH 터널을 세우고 mirror 를 재구성). **focus 중립**이 핵심: 이 IPC/에이전트 경로는 mirror workspace 를 *조용히 생성만* 하고 focus 를 그 ws 로 옮기지 않는다(`active_workspace` 불변). 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**(RA02 팝업에서 사용자가 확정할 때)이며, release IPC 에는 focus 변경 API 가 없다(원칙 3). 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로 나타나므로 `tasty list workspaces` 로 확인한다: mirror 워크스페이스는 행에 `[mirror]` 가 붙고(`remote-ws (id:7) [mirror] (1 panes)`), `workspace.list` IPC 응답에는 `mirror: true` 로 실린다.
 
 ### 원격 워크스페이스 추가 팝업 (GUI picker — 사용자 경로)
 
