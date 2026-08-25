@@ -237,6 +237,15 @@ impl App {
     }
 
     /// `window.list` / `view.list`: 전 view 순회, main view 만 노출.
+    ///
+    /// `layout_slot` 은 이 창이 점유한 레이아웃 슬롯 번호다 — "새 창을 열면 어떤
+    /// 레이아웃이 뜰지" 를 결정하는 상태라, 관측 수단이 없으면 에이전트가 창 생성
+    /// 결과를 예측·검증할 수 없다. headless engine 은 슬롯을 잡지 않으므로 `null`.
+    ///
+    /// **parked engine 은 여기 섞지 않는다.** 파킹된 engine 도 슬롯을 점유하지만
+    /// 창이 아니라 창 id 가 없고, `{id, focused, title}` 계약이 깨진다. 점유 현황
+    /// 전체(파킹 포함)를 봐야 할 일이 생기면 `layout.slots` 같은 별도 조회
+    /// 메서드로 분리한다.
     fn ipc_handle_window_list(&self, cmd: &IpcCommand) -> IpcStep {
         let focused_id = self.view.focused_view_id;
         let list: Vec<_> = self
@@ -249,6 +258,7 @@ impl App {
                     "id": u64::from(*id),
                     "focused": focused_id == Some(*id),
                     "title": main.state.active_workspace(&main.core_state).name,
+                    "layout_slot": main.core_state.layout_slot,
                 }))
             })
             .collect();

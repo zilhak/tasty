@@ -42,6 +42,21 @@ write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬�
 
 저장도 각 engine 이 자기 슬롯 파일에만 한다 — 종료 시의 일괄 flush 도 창마다 자기 파일로 나뉜다. headless(`--headless`)는 레이아웃 복원을 적용하지 않으므로 슬롯을 점유하지도, 저장하지도 않는다.
 
+#### 점유 조회
+
+어느 창이 어느 슬롯을 쓰는지는 `window.list` IPC(= `tasty list windows`)의 `layout_slot` 필드로 본다. 슬롯 점유는 "새 창을 열면 어떤 레이아웃이 뜰지" 를 결정하는 상태라, 관측 수단이 없으면 에이전트가 창 생성 결과를 예측·검증할 수 없다.
+
+```json
+[
+  { "id": 1, "focused": true,  "title": "Tasty",       "layout_slot": 1 },
+  { "id": 2, "focused": false, "title": "Workspace 1", "layout_slot": 2 }
+]
+```
+
+`layout_slot` 은 슬롯을 잡지 않는 engine 에서 `null` 이다(headless). 순수 read 라 포커스·선택 등 사용자 상태를 건드리지 않는다.
+
+**parked engine 은 이 목록에 없다.** 파킹된 engine 도 슬롯을 점유하지만 창이 아니어서 창 id 가 없고, `window.list` 의 `{id, focused, title}` 계약이 깨진다. 따라서 이 목록의 `layout_slot` 집합은 살아있는 창의 점유일 뿐 **점유 집합 전체가 아니다** — 파킹분까지 봐야 할 일이 생기면 별도 조회 메서드로 분리한다.
+
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
 `general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 **전 슬롯의** `scrollback_ref` 합집합 외 `.bin` 일괄 정리(크래시 잔재) — 슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 `.bin` 을 지운다. 읽을 수 없는 슬롯이 하나라도 있으면 그 부팅에서는 정리 자체를 건너뛴다(모르면 지우지 않는다).
