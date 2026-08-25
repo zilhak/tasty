@@ -23,6 +23,12 @@
 //! 무인자 reboot 가 기본값으로 승계하고, `--clear-profile` 로 뗄 수 있다. 부착/승계된
 //! 경로는 항상 재기동 전에 파일 존재 + JSON 파싱을 동기 검증한다(`resolve_and_apply_profile`)
 //! — 검증 실패는 시퀀스를 아예 시작하지 않고 에러로 반환한다.
+//!
+//! 부착 상태는 surface meta 와 **함께** session id 로 키잉한 부착 기록
+//! ([`crate::profile_attach`])에도 남는다 — surface meta 는 앱 재시작/닫은 탭 복원을
+//! 넘지 못하므로, 복원된 프로세스에 프로필을 다시 붙이려면 meta 바깥의 사본이
+//! 필요하다. 두 저장처가 갈라지지 않도록 갱신은 [`record_update_for`] 한 곳에서
+//! meta 4 분기와 1:1 로 대응시킨다.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -67,13 +73,13 @@ const NOTICE_SNIPPET: &str = "tasty claude reboot";
 /// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필(파일 경로). `--profile-file`
 /// 로 부착하면 여기 기록되고, 인자 없는 다음 reboot 가 이 값을 기본으로 승계한다
 /// (`claude-session-id`, session-start hook 이 기록하는 키와 나란히 reboot 가 관리).
-const PROFILE_META_KEY: &str = "claude-session-profile";
+pub(crate) const PROFILE_META_KEY: &str = "claude-session-profile";
 /// surface meta 키 — 이 surface 에 부착된 Claude 세션 프로필의 **이름**(쉼표 구분,
 /// `profile.rs` 레지스트리에 등록된 이름). `PROFILE_META_KEY`(경로)와 상호 배타적으로 관리한다 —
 /// 이름으로 부착하면 여기 기록되고 `PROFILE_META_KEY`는 지운다. 다음 무인자
 /// reboot 는 이 값이 있으면 이름을 **매번 다시 해석**한다(등록 내용이 그 사이
 /// 갱신됐을 수 있으므로 경로를 그대로 캐시하지 않는다).
-const PROFILE_NAMES_META_KEY: &str = "claude-session-profile-names";
+pub(crate) const PROFILE_NAMES_META_KEY: &str = "claude-session-profile-names";
 
 /// `claude.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
 /// 로 넘긴 뒤 즉시 응답한다 — 호출한 claude 가 턴을 마무리할 시간을 준다.
@@ -101,7 +107,8 @@ pub(crate) fn handle_reboot(
     // 부착/승계/해제 판정 + (있으면) 파일 존재+JSON 파싱 동기 검증. 실패 시 여기서
     // 즉시 반환 — 시퀀스(Ctrl+C 등)를 시작하지 않는다(깨진 프로필로 claude 기동이
     // 실패해 전경이 baseline 복귀 못 하고 방치되는 사고 방지).
-    let profile_file = resolve_and_apply_profile(host, surface_id, &profile_action, data_dir, tr)?;
+    let profile_file =
+        resolve_and_apply_profile(host, surface_id, &session_id, &profile_action, data_dir, tr)?;
 
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_fmt(
@@ -240,6 +247,7 @@ pub(crate) fn parse_profile_option(
 fn resolve_and_apply_profile(
     host: &HostHandle,
     surface_id: u32,
+    session_id: &str,
     action: &ProfileOption,
     data_dir: Option<&Path>,
     tr: &Translator,
@@ -258,6 +266,9 @@ fn resolve_and_apply_profile(
         validate_profile_file(path, tr)?;
     }
 
+    // meta 갱신과 **같은 지점**에서 session id 키 부착 기록도 갱신한다 — 한쪽만
+    // 갱신되는 경로가 생기면 복원 시 meta 와 기록이 다른 프로필을 가리킨다.
+    // 기록은 meta 가 못 넘는 복원 경계를 넘기 위한 사본이다(`profile_attach` 모듈 doc).
     match action {
         ProfileOption::AttachPath(path) => {
             set_profile_meta(host, surface_id, path);
@@ -273,8 +284,41 @@ fn resolve_and_apply_profile(
         }
         ProfileOption::Keep => {}
     }
+    apply_record_update(data_dir, session_id, &record_update_for(action));
 
     Ok(candidate)
+}
+
+/// 부착 기록에 가할 변경. meta 갱신 4 분기와 1:1 로 대응한다 — 판정을 순수 함수로
+/// 떼어내 두 저장처(meta / 기록)가 갈라지지 않는지 단위 테스트로 고정한다.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RecordUpdate {
+    Store(crate::profile_attach::AttachRecord),
+    Remove,
+    /// 승계(`Keep`)는 부착 상태를 바꾸지 않으므로 기록도 그대로 둔다.
+    Keep,
+}
+
+pub(crate) fn record_update_for(action: &ProfileOption) -> RecordUpdate {
+    use crate::profile_attach::AttachRecord;
+    match action {
+        // 이름 부착은 **이름**을 남긴다 — 복원 시점에 다시 해석해야 최신 등록
+        // 내용이 반영된다(경로를 캐시하면 meta 쪽 계약과 어긋난다).
+        ProfileOption::AttachNames(names) => {
+            RecordUpdate::Store(AttachRecord::Names(names.clone()))
+        }
+        ProfileOption::AttachPath(path) => RecordUpdate::Store(AttachRecord::Path(path.clone())),
+        ProfileOption::Clear => RecordUpdate::Remove,
+        ProfileOption::Keep => RecordUpdate::Keep,
+    }
+}
+
+fn apply_record_update(data_dir: Option<&Path>, session_id: &str, update: &RecordUpdate) {
+    match update {
+        RecordUpdate::Store(record) => crate::profile_attach::store(data_dir, session_id, record),
+        RecordUpdate::Remove => crate::profile_attach::remove(data_dir, session_id),
+        RecordUpdate::Keep => {}
+    }
 }
 
 fn resolve_names_to_path(
@@ -291,7 +335,7 @@ fn resolve_names_to_path(
 /// claude 기동 자체가 실패해 전경이 baseline 으로 복귀하지 못하고, 안내 프롬프트도
 /// 없이 시퀀스가 조용히 중단된다(사용자에게는 "reboot 했는데 claude 가 안 돌아왔다"
 /// 로만 보인다) — 그 사고를 시작 전에 막는다.
-fn validate_profile_file(path: &str, tr: &Translator) -> Result<(), IpcMethodError> {
+pub(crate) fn validate_profile_file(path: &str, tr: &Translator) -> Result<(), IpcMethodError> {
     let contents = std::fs::read_to_string(path).map_err(|e| {
         IpcMethodError::new(
             tr.t("claude.reboot.profile_file_not_readable")
@@ -429,9 +473,16 @@ pub(crate) fn is_safe_session_id(id: &str) -> bool {
 /// 인라인 JSON 은 같은 cmd/pwsh/bash 함정에 빠진다; 큰따옴표는 세 셸 모두 경로
 /// 공백을 처리한다). 경로는 CLI `path_kind = "file"` 정규화를 이미 거쳐 절대경로다.
 pub(crate) fn resume_command(session_id: &str, profile_file: Option<&str>) -> String {
+    format!("{}\r", resume_command_line(session_id, profile_file))
+}
+
+/// resume 명령의 **본문**(제출 `\r` 없음). `restore.command` surface meta 도 같은
+/// 문자열을 써야 하므로(복원은 이 meta 를 셸에 그대로 타이핑한다) 포맷의 단일
+/// 소유자를 여기 둔다 — 셸 전송용은 [`resume_command`] 가 `\r` 만 덧붙인다.
+pub(crate) fn resume_command_line(session_id: &str, profile_file: Option<&str>) -> String {
     match profile_file {
-        Some(path) => format!("claude -r {session_id} --settings \"{path}\"\r"),
-        None => format!("claude -r {session_id}\r"),
+        Some(path) => format!("claude -r {session_id} --settings \"{path}\""),
+        None => format!("claude -r {session_id}"),
     }
 }
 
@@ -743,6 +794,71 @@ mod tests {
         assert!(!is_safe_session_id("a b"));
         assert!(!is_safe_session_id("a$(x)"));
         assert!(!is_safe_session_id("a&b"));
+    }
+
+    /// R1 — 부착 4 분기가 meta 와 **같은 값**을 기록에 남기는지. 이름 부착은
+    /// 해석된 경로가 아니라 이름 문자열이 남아야 한다(복원 시 재해석 대상).
+    #[test]
+    fn attach_names_records_the_names_not_a_path() {
+        assert_eq!(
+            record_update_for(&ProfileOption::AttachNames("reviewer".into())),
+            RecordUpdate::Store(crate::profile_attach::AttachRecord::Names(
+                "reviewer".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn attach_path_records_the_path() {
+        assert_eq!(
+            record_update_for(&ProfileOption::AttachPath("/abs/p.json".into())),
+            RecordUpdate::Store(crate::profile_attach::AttachRecord::Path(
+                "/abs/p.json".into()
+            ))
+        );
+    }
+
+    /// R1 — `--clear-profile` 은 meta 두 키와 기록을 **함께** 지운다. meta 쪽
+    /// (`unset_profile_meta`/`unset_profile_names_meta`)은 host 호출이라 여기서
+    /// 직접 검증할 수 없어 실행 시나리오 검증이 담당하고, 이 테스트는 기록 쪽이
+    /// 같은 분기에서 빠지지 않는지를 고정한다.
+    #[test]
+    fn clear_removes_the_record() {
+        assert_eq!(
+            record_update_for(&ProfileOption::Clear),
+            RecordUpdate::Remove
+        );
+    }
+
+    #[test]
+    fn keep_leaves_the_record_untouched() {
+        assert_eq!(record_update_for(&ProfileOption::Keep), RecordUpdate::Keep);
+    }
+
+    /// 기록 갱신이 실제 파일에 반영되는지 — 부착 → 조회 왕복.
+    #[test]
+    fn applying_an_attach_update_round_trips_through_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        apply_record_update(
+            Some(tmp.path()),
+            "sess-1",
+            &record_update_for(&ProfileOption::AttachNames("reviewer".into())),
+        );
+        assert_eq!(
+            crate::profile_attach::load(Some(tmp.path()), "sess-1"),
+            Some(crate::profile_attach::AttachRecord::Names(
+                "reviewer".into()
+            ))
+        );
+        apply_record_update(
+            Some(tmp.path()),
+            "sess-1",
+            &record_update_for(&ProfileOption::Clear),
+        );
+        assert_eq!(
+            crate::profile_attach::load(Some(tmp.path()), "sess-1"),
+            None
+        );
     }
 
     #[test]

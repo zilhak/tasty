@@ -28,7 +28,23 @@
   - `--profile <이름[,이름2,...]>` — 아래 "Claude 세션 프로필 레지스트리"에 등록해 둔 프로필 이름, 또는 "Stop-훅 게이트 레지스트리"에 등록해 둔 **게이트 이름**으로 부착한다(두 레지스트리는 이름 공간을 공유한다). 이름을 둘 이상 쉼표로 주면 레지스트리가 머지해 만든 파일 하나를 쓴다.
 
   어느 쪽이든 최종적으로 기동 명령에 `--settings "<경로>"` 가 붙는다 — Claude Code 의 `--settings` 는 `~/.claude/settings.json` 의 기존 훅을 **대체가 아니라 병합**하므로 tasty 내장 훅(`claude hook` 경유)도 그대로 발화한다. `reboot` 만 부착 상태를 surface meta 에 기록해 **다음 무인자 reboot 가 기본값으로 승계**한다 — 경로로 부착하면 `claude-session-profile`(경로 그대로), 이름으로 부착하면 `claude-session-profile-names`(이름 문자열)에 기록되고 두 meta 는 상호 배타적으로 관리된다(한쪽을 새로 쓰면 다른 쪽은 지운다). 이름-meta 는 **승계 시점마다 레지스트리에서 다시 해석**한다 — 경로를 캐시하지 않으므로 그 사이 `profile-register` 로 내용이 갱신됐다면 다음 reboot 에 최신 내용이 반영된다. 두 meta 모두 파일 존재 + JSON 파싱을 매 reboot 마다 동기 재검증한다(승계된 프로필이 깨져 있으면 kill 시퀀스를 시작하지 않고 에러 반환). `--clear-profile` 로 둘 다 뗀다. `spawn`/`respawn`/`launch` 는 그 호출 1회의 기동 명령에만 반영하고 meta 를 건드리지 않는다(반복 재기동은 `reboot` 만의 개념).
+  - **복원을 건너 프로필이 유지된다** — 아래 "복원을 건너 프로필이 유지되는 방식".
   - **왜 반복 지정을 CLI 가 거부하는가**: Claude Code 의 `--settings` 는 반복 지정 시 **마지막 값만 남고 앞선 값이 조용히 사라진다**(실측). tasty CLI 인자 자체(`--profile-file`)를 실수로 두 번 주는 경우도 같은 함정에 빠질 수 있어, 매니페스트 `CliArg.reject_repeat = true`(`crates/tasty-cli/src/dynamic.rs`)로 clap 을 `ArgAction::Append` 로 등록해 두 번째 값이 들어오면 조용히 버리지 않고 에러로 거부한다.
+
+### 복원을 건너 프로필이 유지되는 방식
+
+앱 재시작(레이아웃 복원)과 닫은 탭 복원(Ctrl+Shift+T)은 **surface meta 를 넘기지 못한다** — 복원은 stale id 와 겹치지 않는 새 surface id 를 발급하고 곧바로 live 아닌 surface meta 를 purge 하기 때문이다. 그래서 부착 상태를 meta 에만 두면 복원된 Claude 는 `claude -r <id>` 로만 떠서 프로필 훅이 발화하지 않는다.
+
+plugin 은 이를 **session id 로 키잉한 부착 기록**으로 해결한다 (host 는 관여하지 않는다 — [layout-persistence](../../features/layout-persistence/index.md) 의 `restore.command` 계약은 그대로 agent-agnostic).
+
+- **기록 위치**: `TASTY_PLUGIN_DATA_DIR/profiles/attachments/<session_id>.json`. 내용은 `{"kind": "names"|"path", "value": …}` — **이름으로 부착한 것은 이름을** 남긴다(복원 시 재해석 대상). data dir 은 설치 디렉터리와 분리돼 있어 `upgrade-builtins`/재설치를 건너 보존된다([plugin-development](../../dev-guide/plugin-development.md) §6 "data dir 수명 계약").
+- **쓰기**: `reboot` 이 프로필을 부착/해제할 때 surface meta 갱신과 같은 지점에서 함께 갱신한다(`--clear-profile` 은 meta 2키와 기록을 함께 지운다).
+- **복구**: `session-start` 훅이 프로필 meta 를 먼저 보고, 비어 있으면(=복원을 건너온 세션) 기록에서 meta 를 되살린다. 그다음 이름을 **매번 다시 해석**해(레지스트리 최신 내용 반영) `restore.command` 를 `claude -r <id> --settings "<경로>"` 로 쓴다. 세션 id 는 `claude -r <id>` 를 건너 보존되므로 기록의 키로 쓸 수 있다 — 이 전제가 깨지면(Claude Code 가 resume 시 새 id 를 발급하면) 프로필만 조용히 빠지므로, 재시작 후 세션 생존 확인을 릴리스 점검에 유지한다.
+- **재기록(re-stamp)**: 프로필이 확정되면 session-start 마다 기록을 다시 쓴다. `reboot` 의 Ctrl+C 는 `SessionEnd` 를 발화시켜 방금 쓴 기록을 지우는데(정리 자체는 정상 동작), 이어지는 session-start 가 프로필 meta 를 근거로 즉시 복구한다 — 이 재기록이 없으면 모든 reboot 이 기록을 영구 소실시킨다.
+- **실패는 조용한 강등**: 부착된 이름이 그 사이 `profile-unregister`/`gate-unregister` 됐거나 경로가 깨졌으면 warn 로그만 남기고 **프로필 없이** 복원한다. 같은 상황에서 `reboot` 은 에러로 시퀀스를 시작조차 하지 않지만(깨진 프로필로 기동이 실패하면 전경이 방치된다), session-start 에는 에러를 돌려줄 상대가 없고 여기서 실패시키면 세션 복원 자체가 깨진다.
+- **수명**: 전역 `session-end` 는 기록을 즉시 지우지 않고 **종료 표시**(`ended_at`)만 하고, 24시간 유예 뒤 sweep 이 회수한다. 즉시 삭제하지 않는 이유는 실측된 닫은 탭 복원 경로 때문이다 — 탭을 닫으면 PTY 가 죽으면서 `SessionEnd` 가 발화하는데 호스트는 아직 살아 있어 훅이 정상 도달한다. 여기서 기록을 지우면 곧바로 이어지는 Ctrl+Shift+T 복원이 프로필 meta 를 되살릴 근거를 잃는다(프로세스 자체는 `restore.command` 덕에 `--settings` 를 달고 뜨지만 `profile-current` 와 무인자 reboot 승계가 깨진다). 기록은 session id 로 키잉되므로 유예 동안 살아 있어도 다른 세션이 읽을 수 없다 — 같은 id 가 다시 나타나는 유일한 경로가 `claude -r`(=복원)이다. 훅이 아예 못 뛴 잔재(강제 종료 등)는 90일 TTL 이 담당하며, 살아있는 세션의 기록은 re-stamp 로 계속 젊어지므로 오탐 여지가 사실상 없다. `--clear-profile` 만은 사용자가 명시적으로 뗀 것이라 유예 없이 즉시 삭제한다.
+- **게이트도 같은 경로**: 프로필과 게이트는 이름 평면을 공유하므로 게이트 이름으로 부착한 것도 그대로 복원된다. 같은 이름이 프로필↔게이트로 재등록됐으면 다음 복원은 **새 정의**로 해석한다(경로를 캐시하지 않는 것의 귀결).
+- **범위 밖**: 레이아웃 프리셋은 세션 복원이 아니라 구조 템플릿이라 `restore_command` 를 저장하지 않는다 — 프리셋 적용으로는 프로필이 붙지 않는다. `spawn`/`launch`/`respawn --profile` 은 부착 기록을 만들지 않는다(반복 재기동은 `reboot` 만의 개념).
 
 ### Claude 세션 프로필 레지스트리
 
@@ -142,10 +158,10 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
 | `Stop` / `SubagentStop` | `""`(전체) | `stop` / `subagent-stop` | `idle` | `claude-idle` | — | `completion` |
-| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command` **unset** | `completion` |
+| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `needs_input`(단 `notification_type`이 `idle_prompt`면 건너뜀 — 무입력 대기 오탐이라 실제 질문 없음) | `needs-input`(동일 조건) | — | `needs_input`(동일 조건) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | — | — |
-| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀) | — |
+| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
 | `PostToolUse` | `AskUserQuestion` | `post-tool-use` | `active` | — | — | — |
 

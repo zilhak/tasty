@@ -20,6 +20,7 @@ mod handlers;
 mod hook;
 mod install;
 mod profile;
+mod profile_attach;
 mod profile_merge;
 mod reboot;
 mod state;

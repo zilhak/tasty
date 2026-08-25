@@ -191,6 +191,8 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 
 `memory.secret` 의 유일한 보장은 **플러그인 간 IPC 격리**다 — 디스크엔 평문. regular vs secret vs keyring 선택은 [plugin-sensitive-data](plugin-sensitive-data.md).
 
+**`TASTY_PLUGIN_DATA_DIR` 수명 계약** — 실경로는 `~/.tasty/plugin-data/<plugin-id>` 로 **설치 디렉터리(`TASTY_PLUGIN_DIR`)와 분리**돼 있고(`crates/tasty-host-plugin/src/process.rs`), 번들 plugin 재동기화(`upgrade-builtins`)는 설치 디렉터리 내용만 mirror 하므로(`crates/tasty-host-plugin/src/builtin.rs`) data dir 을 건드리지 않는다. 즉 §9.1 의 `disable` → `upgrade-builtins` → `enable` 절차나 plugin 업그레이드·재설치를 건너 **data dir 내용은 보존된다** — plugin 을 지우기 전까지 살아 있어야 하는 상태(claude plugin 의 checklist 라운드, 프로필 부착 기록 등)를 여기 두어도 안전하다. 반대로 설치 디렉터리에 쓴 것은 다음 업그레이드에 사라진다.
+
 ## 7. 호스트 런타임 계약 (env · 생명주기 · 핸드셰이크)
 
 플러그인 *작성* 과 별개로, 호스트가 플러그인 프로세스를 어떻게 띄우고 살려두는지 — SDK 가 의존하는 런타임 계약(`crates/tasty-host-plugin/`).

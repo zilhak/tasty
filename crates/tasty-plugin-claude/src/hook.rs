@@ -21,7 +21,13 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::checklist;
 use crate::error_scan::ErrorScanner;
+use crate::profile_attach::{self, AttachRecord};
 use crate::state::ClaudeState;
+
+/// surface meta 키 — 복원이 셸에 그대로 타이핑하는 재기동 명령
+/// (`src/core/layout_persistence/restore.rs`). 값 포맷의 소유자는
+/// [`crate::reboot::resume_command_line`] 다.
+pub(crate) const RESTORE_COMMAND_META_KEY: &str = "restore.command";
 
 /// hook 처리 후 plugin이 호스트에 보낼 IPC 호출 1건.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +91,28 @@ pub fn handle_claude_hook(
     let now_ms = now_ms();
 
     let mut calls = apply_hook(event, surface_id, session.as_deref(), notification_type, tr)?;
+
+    // 부착된 프로필을 복원 명령에 싣는다 — surface meta 는 앱 재시작/닫은 탭 복원을
+    // 넘지 못하므로(`profile_attach` 모듈 doc), 복원된 프로세스에 프로필을 다시
+    // 붙이는 유일한 창구가 이 `restore.command` 문자열이다. `apply_hook` 은
+    // host/data_dir 없는 순수 함수라 여기(둘 다 가진 호출부)에서 처리한다.
+    if event == "session-start"
+        && let Some(session_id) = session.as_deref()
+    {
+        let meta = crate::reboot::attached_profile_summary(host, surface_id);
+        let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
+        apply_session_start_profile(&mut calls, surface_id, session_id, &plan);
+        // 프로필이 확정됐으면 기록을 항상 다시 찍는다(re-stamp). reboot 시퀀스의
+        // Ctrl+C 가 발화시키는 session-end 가 방금 쓴 기록을 지우므로, 이 재기록이
+        // 없으면 **모든 reboot 이 기록을 영구 소실**시킨다(reboot → session-end →
+        // session-start 순서).
+        if let Some(record) = &plan.restamp {
+            profile_attach::store(data_dir, session_id, record);
+        }
+        // 훅이 발화하지 못한 경로(탭 close, 강제 종료)가 남긴 orphan 회수.
+        profile_attach::sweep(data_dir);
+    }
+
     calls.extend(telemetry_for_hook(
         state, event, surface_id, message, now_ms,
     ));
@@ -102,6 +130,12 @@ pub fn handle_claude_hook(
     // 아는 이 지점(전역 `session-end`)에서 함께 정리해야 orphan 파일이 남지 않는다.
     if event == "session-end" {
         checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
+        // 프로필 부착 기록은 여기서 **종료 표시**만 한다 — 즉시 삭제하지 않는 이유는
+        // `profile_attach` 모듈 doc "수명" 절 참고(탭을 닫으면 이 훅이 정상 발화하는데,
+        // 곧바로 이어지는 Ctrl+Shift+T 복원이 기록을 다시 필요로 한다). reboot 중
+        // 발화하는 session-end 도 여기로 들어오지만, 뒤이은 session-start 의 re-stamp 가
+        // 표시를 지운다.
+        profile_attach::mark_ended(data_dir, session.as_deref().unwrap_or(""));
     }
 
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
@@ -268,7 +302,7 @@ pub fn apply_hook(
             });
             calls.push(HostCall::MetaUnset {
                 surface_id,
-                key: "restore.command",
+                key: RESTORE_COMMAND_META_KEY,
             });
             calls.push(HostCall::FireHook {
                 surface_id,
@@ -342,8 +376,11 @@ pub fn apply_hook(
                         });
                         calls.push(HostCall::MetaSet {
                             surface_id,
-                            key: "restore.command",
-                            value: format!("claude -r {session_id}"),
+                            key: RESTORE_COMMAND_META_KEY,
+                            // 프로필이 붙어 있으면 호출부(`handle_claude_hook`)가 이
+                            // 값을 `--settings` 포함 형태로 다시 쓴다 — 여기서는
+                            // host/data_dir 없이 결정 가능한 기본형만 만든다.
+                            value: crate::reboot::resume_command_line(session_id, None),
                         });
                     }
                     None => {
@@ -367,6 +404,130 @@ pub fn apply_hook(
         }
     }
     Ok(calls)
+}
+
+/// session-start 가 복원할 프로필 계획.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct SessionStartProfile {
+    /// 기록에서 되살린 경우 meta 를 되돌리기 위한 호출(meta 가 이미 있었으면 빈 vec).
+    pub meta_calls: Vec<HostCall>,
+    /// 이번 세션에 실제로 실을 프로필 파일 경로. `None` 이면 프로필 없이 진행한다.
+    pub profile_file: Option<String>,
+    /// 다시 찍을 부착 기록 — 프로필이 확정됐을 때만 `Some`.
+    pub restamp: Option<AttachRecord>,
+}
+
+/// "이 세션에 무엇이 붙어 있나" 를 판정한다.
+///
+/// 우선순위는 **surface meta → 부착 기록** 이다. meta 가 있으면 그건 살아있는
+/// 세션의 정상 발화(예: `reboot` 의 resume)라 복구할 것이 없고, meta 가 비어 있을
+/// 때만 복원(새 surface id 발급 + meta purge)을 건넌 것으로 보고 기록에서 되살린다.
+///
+/// 이름은 **매번 다시 해석**한다 — 등록 내용이 그 사이 갱신됐을 수 있고(`profile-register`),
+/// 같은 이름이 프로필에서 게이트로(혹은 그 반대로) 재등록됐을 수도 있으므로 해석
+/// 결과 경로를 캐시하지 않는다(`profile::resolve_names` 의 계약).
+///
+/// **해석 실패는 에러가 아니라 조용한 강등이다** — `reboot` 은 같은 상황에서 에러를
+/// 반환하고 시퀀스를 시작조차 하지 않지만(깨진 프로필로 claude 가 기동 실패해 전경이
+/// 방치되는 사고 방지), 이 경로에는 에러를 돌려줄 상대가 없다. 여기서 실패시키면
+/// `restore.command` 가 아예 기록되지 않아 **복원 자체가 깨진다**. 프로필만 빠뜨리고
+/// 세션 복원은 살리는 쪽이 손실이 작으므로 warn 만 남기고 진행한다.
+pub(crate) fn plan_session_start_profile(
+    session_id: &str,
+    meta: &crate::reboot::AttachedProfile,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) -> SessionStartProfile {
+    let (attached, from_record) = match (&meta.names, &meta.path) {
+        (Some(names), _) => (Some(AttachRecord::Names(names.clone())), false),
+        (None, Some(path)) => (Some(AttachRecord::Path(path.clone())), false),
+        (None, None) => (profile_attach::load(data_dir, session_id), true),
+    };
+    let Some(record) = attached else {
+        return SessionStartProfile::default();
+    };
+
+    let resolved = match &record {
+        AttachRecord::Names(names) => {
+            match crate::profile::resolve_names(data_dir, names, tr) {
+                Ok(path) => Some(path.to_string_lossy().into_owned()),
+                Err(e) => {
+                    // 부착 후 unregister 됐거나 파일이 깨진 경우.
+                    tracing::warn!(
+                        "claude hook session-start {session_id}: profile names {names:?} no longer resolve ({e:?}) — restoring without a profile"
+                    );
+                    None
+                }
+            }
+        }
+        AttachRecord::Path(path) => match crate::reboot::validate_profile_file(path, tr) {
+            Ok(()) => Some(path.clone()),
+            Err(e) => {
+                tracing::warn!(
+                    "claude hook session-start {session_id}: attached profile file {path:?} is unusable ({}) — restoring without a profile",
+                    e.message
+                );
+                None
+            }
+        },
+    };
+
+    let Some(profile_file) = resolved else {
+        // 강등: meta 도 기록도 건드리지 않는다 — 사용자가 이름을 다시 등록하면
+        // 다음 session-start 가 그대로 복구한다.
+        return SessionStartProfile::default();
+    };
+
+    let meta_calls = if from_record {
+        vec![match &record {
+            AttachRecord::Names(names) => HostCall::MetaSet {
+                surface_id: 0,
+                key: crate::reboot::PROFILE_NAMES_META_KEY,
+                value: names.clone(),
+            },
+            AttachRecord::Path(path) => HostCall::MetaSet {
+                surface_id: 0,
+                key: crate::reboot::PROFILE_META_KEY,
+                value: path.clone(),
+            },
+        }]
+    } else {
+        Vec::new()
+    };
+
+    SessionStartProfile {
+        meta_calls,
+        profile_file: Some(profile_file),
+        restamp: Some(record),
+    }
+}
+
+/// 계획을 `apply_hook` 이 만든 호출 목록에 반영한다 — `restore.command` 값을
+/// `--settings` 포함 형태로 다시 쓰고, 기록에서 되살린 meta 를 덧붙인다. 순수 함수.
+pub(crate) fn apply_session_start_profile(
+    calls: &mut Vec<HostCall>,
+    surface_id: u32,
+    session_id: &str,
+    plan: &SessionStartProfile,
+) {
+    if let Some(path) = &plan.profile_file {
+        for call in calls.iter_mut() {
+            if let HostCall::MetaSet { key, value, .. } = call
+                && *key == RESTORE_COMMAND_META_KEY
+            {
+                *value = crate::reboot::resume_command_line(session_id, Some(path));
+            }
+        }
+    }
+    calls.extend(plan.meta_calls.iter().map(|call| match call {
+        // 계획 단계는 surface 를 모른다(순수하게 "무엇을" 만 정한다) — 여기서 채운다.
+        HostCall::MetaSet { key, value, .. } => HostCall::MetaSet {
+            surface_id,
+            key,
+            value: value.clone(),
+        },
+        other => other.clone(),
+    }));
 }
 
 fn deliver(host: &HostHandle, call: &HostCall) {
@@ -791,6 +952,278 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // ── 프로필 복원 (session-start) ──────────────────────────────────────
+
+    fn register_profile(dir: &std::path::Path, name: &str, body: &str) {
+        let src = dir.join(format!("{name}-src.json"));
+        std::fs::write(&src, body).unwrap();
+        crate::profile::register(Some(dir), name, &src).unwrap();
+    }
+
+    fn register_gate(dir: &std::path::Path, name: &str) {
+        let body = dir.join(format!("{name}-body.md"));
+        std::fs::write(&body, format!("{name} 본문\n[[{name}-DONE]]\n")).unwrap();
+        crate::gate::register(
+            Some(dir),
+            name,
+            &body,
+            Some(&format!("[[{name}-DONE]]")),
+            Some(2),
+        )
+        .unwrap();
+    }
+
+    fn no_meta() -> crate::reboot::AttachedProfile {
+        crate::reboot::AttachedProfile {
+            names: None,
+            path: None,
+        }
+    }
+
+    fn names_meta(names: &str) -> crate::reboot::AttachedProfile {
+        crate::reboot::AttachedProfile {
+            names: Some(names.to_string()),
+            path: None,
+        }
+    }
+
+    /// session-start 호출 목록에서 `restore.command` 값을 뽑는다.
+    fn restore_command(calls: &[HostCall]) -> Option<String> {
+        calls.iter().find_map(|c| match c {
+            HostCall::MetaSet { key, value, .. } if *key == RESTORE_COMMAND_META_KEY => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+    }
+
+    /// session-start 전체 경로(순수 부분)를 한 번에 돌린다 — `apply_hook` 산출물에
+    /// 계획을 반영한 최종 호출 목록.
+    fn session_start_calls(
+        surface_id: u32,
+        session_id: &str,
+        meta: &crate::reboot::AttachedProfile,
+        data_dir: &std::path::Path,
+    ) -> (Vec<HostCall>, SessionStartProfile) {
+        let tr = test_translator();
+        let mut calls =
+            apply_hook("session-start", surface_id, Some(session_id), None, &tr).unwrap();
+        let plan = plan_session_start_profile(session_id, meta, Some(data_dir), &tr);
+        apply_session_start_profile(&mut calls, surface_id, session_id, &plan);
+        (calls, plan)
+    }
+
+    /// R2 (3) — meta 는 비었고 기록만 있을 때, 기록으로 프로필을 복구해
+    /// `restore.command` 에 `--settings` 를 싣는다.
+    #[test]
+    fn session_start_restores_the_profile_from_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "reviewer", r#"{"env":{"A":"1"}}"#);
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("reviewer".into()),
+        );
+
+        let (calls, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+
+        let generated = plan.profile_file.expect("프로필이 해석돼야 한다");
+        assert!(
+            generated.ends_with("profiles/generated/reviewer.json"),
+            "{generated}"
+        );
+        assert_eq!(
+            restore_command(&calls).unwrap(),
+            format!("claude -r sess-1 --settings \"{generated}\"")
+        );
+        // meta 도 함께 되살아난다 — 이후 `profile-current` / 무인자 reboot 가 승계한다.
+        assert!(calls.contains(&HostCall::MetaSet {
+            surface_id: 7,
+            key: crate::reboot::PROFILE_NAMES_META_KEY,
+            value: "reviewer".into(),
+        }));
+    }
+
+    /// R2 (4) — meta 가 이미 있으면(살아있는 세션의 정상 발화) 기록을 보지 않는다.
+    /// 기록에 meta 와 다른, **해석 불가능한** 이름을 넣어 두고도 meta 값으로
+    /// 해석되면 기록을 조회하지 않았다는 뜻이다.
+    #[test]
+    fn session_start_prefers_meta_over_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "reviewer", r#"{"env":{"A":"1"}}"#);
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("ghost".into()),
+        );
+
+        let (calls, plan) = session_start_calls(7, "sess-1", &names_meta("reviewer"), tmp.path());
+
+        assert!(plan.profile_file.unwrap().ends_with("reviewer.json"));
+        assert!(restore_command(&calls).unwrap().contains("--settings"));
+        // meta 가 이미 있으므로 meta 복구 호출은 없다.
+        assert!(plan.meta_calls.is_empty());
+        // re-stamp 는 meta 값으로 기록을 덮어써 두 저장처를 다시 맞춘다.
+        assert_eq!(plan.restamp, Some(AttachRecord::Names("reviewer".into())));
+    }
+
+    /// R3 (5) — 부착된 이름이 그 사이 unregister 되면 에러가 아니라 조용한 강등.
+    /// 복원 자체는 살아야 하므로 `restore.command` 는 프로필 없는 형태로 남는다.
+    #[test]
+    fn session_start_degrades_when_the_recorded_name_no_longer_resolves() {
+        let tmp = tempfile::tempdir().unwrap();
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("ghost".into()),
+        );
+
+        let (calls, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+
+        assert_eq!(plan, SessionStartProfile::default());
+        assert_eq!(restore_command(&calls).unwrap(), "claude -r sess-1");
+    }
+
+    /// R3 — 경로 부착도 같은 강등 규칙을 따른다(파일이 사라졌거나 깨진 경우).
+    #[test]
+    fn session_start_degrades_when_the_recorded_path_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Path(tmp.path().join("gone.json").display().to_string()),
+        );
+
+        let (calls, _) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+
+        assert_eq!(restore_command(&calls).unwrap(), "claude -r sess-1");
+    }
+
+    /// R4 (6) — 전역 session-end 는 기록에 **종료 표시**를 하고 유예 뒤 sweep 이
+    /// 회수한다. 즉시 삭제하지 않는 이유는 실측된 닫은 탭 복원 경로 때문이다:
+    /// 탭을 닫으면 이 훅이 정상 발화하는데, 곧바로 Ctrl+Shift+T 로 되살아나는
+    /// 세션이 기록을 다시 필요로 한다(`profile_attach` 모듈 doc "수명").
+    /// 호출부(`handle_claude_hook`)는 checklist 라운드 정리와 같은 자리에서 부른다.
+    #[test]
+    fn session_end_marks_the_record_ended_but_keeps_it_for_a_closed_tab_restore() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "probe", r#"{"env":{"A":"1"}}"#);
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("probe".into()),
+        );
+        profile_attach::mark_ended(Some(tmp.path()), "sess-1");
+
+        // 되살아난 세션의 session-start 가 기록으로 프로필을 복구할 수 있어야 한다.
+        let (calls, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+        assert!(plan.profile_file.is_some());
+        assert!(restore_command(&calls).unwrap().contains("--settings"));
+    }
+
+    /// R2 (7) — 이름은 매번 다시 해석한다. 부착 후 등록 내용을 갱신하면 다음
+    /// session-start 가 만드는 generated 파일이 갱신본이어야 한다.
+    #[test]
+    fn session_start_reresolves_names_against_the_current_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "reviewer", r#"{"env":{"VERSION":"1"}}"#);
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("reviewer".into()),
+        );
+
+        let (_, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+        let generated = std::path::PathBuf::from(plan.profile_file.unwrap());
+        let v1: Value =
+            serde_json::from_str(&std::fs::read_to_string(&generated).unwrap()).unwrap();
+        assert_eq!(v1["env"]["VERSION"], "1");
+
+        register_profile(tmp.path(), "reviewer", r#"{"env":{"VERSION":"2"}}"#);
+        let (_, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+        let generated = std::path::PathBuf::from(plan.profile_file.unwrap());
+        let v2: Value =
+            serde_json::from_str(&std::fs::read_to_string(&generated).unwrap()).unwrap();
+        assert_eq!(v2["env"]["VERSION"], "2");
+    }
+
+    /// R2 보강 (8) — reboot 경쟁 회귀. reboot 이 부착 기록을 쓴 직후 Ctrl+C 가
+    /// session-end 를 발화시켜 그 기록을 지우지만, 이어지는 session-start 의
+    /// re-stamp 가 복구한다. 이 재기록이 없으면 **모든 reboot 이 기록을 영구
+    /// 소실**시켜 다음 앱 재시작에서 프로필이 조용히 빠진다.
+    #[test]
+    fn reboot_then_session_end_then_session_start_keeps_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "reviewer", r#"{"env":{"A":"1"}}"#);
+
+        // 1) reboot 이 meta + 기록을 부착.
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("reviewer".into()),
+        );
+
+        // 2) Ctrl+C 로 죽은 claude 가 session-end 를 발화 — 기록이 지워진다.
+        //    같은 이벤트가 프로필 meta 는 건드리지 않는다는 것도 함께 고정한다.
+        let end_calls =
+            apply_hook("session-end", 7, Some("sess-1"), None, &test_translator()).unwrap();
+        assert!(!end_calls.iter().any(|c| matches!(
+            c,
+            HostCall::MetaUnset { key, .. }
+                if *key == crate::reboot::PROFILE_NAMES_META_KEY
+                    || *key == crate::reboot::PROFILE_META_KEY
+        )));
+        profile_attach::mark_ended(Some(tmp.path()), "sess-1");
+
+        // 3) resume 이 session-start 를 발화 — meta 는 살아 있으므로 그 값으로
+        //    프로필을 확정하고 기록을 다시 찍는다.
+        let (calls, plan) = session_start_calls(7, "sess-1", &names_meta("reviewer"), tmp.path());
+        if let Some(record) = &plan.restamp {
+            profile_attach::store(Some(tmp.path()), "sess-1", record);
+        }
+
+        assert_eq!(
+            profile_attach::load(Some(tmp.path()), "sess-1"),
+            Some(AttachRecord::Names("reviewer".into())),
+            "session-start re-stamp 가 없으면 모든 reboot 이 기록을 영구 소실시킨다"
+        );
+        assert!(restore_command(&calls).unwrap().contains("--settings"));
+    }
+
+    /// (9) — 프로필과 게이트는 이름 평면을 공유한다. 같은 이름이 프로필에서
+    /// 게이트로 재등록되면 다음 복원은 **새 정의**로 재해석해야 한다.
+    #[test]
+    fn session_start_reinterprets_a_name_that_changed_from_profile_to_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        register_profile(tmp.path(), "shared", r#"{"env":{"A":"1"}}"#);
+        profile_attach::store(
+            Some(tmp.path()),
+            "sess-1",
+            &AttachRecord::Names("shared".into()),
+        );
+
+        let (_, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+        let as_profile: Value =
+            serde_json::from_str(&std::fs::read_to_string(plan.profile_file.unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(as_profile["env"]["A"], "1");
+        assert!(as_profile.get("hooks").is_none());
+
+        crate::profile::unregister(Some(tmp.path()), "shared").unwrap();
+        register_gate(tmp.path(), "shared");
+
+        let (calls, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
+        let as_gate: Value =
+            serde_json::from_str(&std::fs::read_to_string(plan.profile_file.unwrap()).unwrap())
+                .unwrap();
+        assert!(
+            as_gate["hooks"]["Stop"].is_array(),
+            "게이트로 재등록됐으면 Stop 훅 조각으로 해석돼야 한다: {as_gate}"
+        );
+        // 게이트 이름으로 부착한 것도 같은 경로로 복원된다.
+        assert!(restore_command(&calls).unwrap().contains("--settings"));
     }
 
     #[test]
