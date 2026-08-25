@@ -3,14 +3,25 @@
 //! ## 책임 범위
 //!
 //! - 도메인 타입 ([`TelemetryEvent`], [`MetricBucket`], [`Op`])
-//! - key 컨벤션 (`event_key`, `bucket_key_1m/1h/1d`, `cap_key`, `anomaly_key`)
+//! - key 컨벤션 (`event_key`, `cap_key`, `anomaly_key`)
 //! - 식별자 검증 (metric / agent_id 형식)
 //! - pure aggregation: events → buckets, summary, top
+//!
+//! ## 조회 모델 — raw event 가 유일한 SoT 다
+//!
+//! [`MetricBucket`] 은 **조회 시점에 만들어지고 버려지는 값**이다. 영속 bucket 도,
+//! 그것을 채우는 주기 rollup task 도 없다. `summary`/`timeseries`/`top` 은 매번
+//! `tasty.telemetry.event.*` 를 prefix scan 해 [`aggregate_into_buckets`] 로 즉석
+//! 집계한다.
+//!
+//! 그래서 **raw event 보존량이 곧 조회 가능 범위**다. 호스트가 개수 상한(최근 2만
+//! 이벤트)으로 잘라내므로, 그보다 오래된 구간은 조회되지 않는다. 근거와 대안(롤업
+//! 신설)은 `docs/adr/0085-ipc-log-retention-bounded.md`.
 //!
 //! ## 비-책임 (호스트가 처리)
 //!
 //! - **영속 IO**: 호스트가 `Core.with_memory` 로 read/write
-//! - **rollup task**: 호스트가 tokio interval 로 주기 호출
+//! - **보존 정책**: 호스트 `adapters::ipc::log_retention` 이 event/anomaly 상한 집행
 //! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
 //! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
 //!
@@ -254,26 +265,11 @@ pub fn event_key(ts: u64, seq: u64) -> String {
     )
 }
 
-/// `tasty.telemetry.bucket.{window}.{metric}.{agent}.{window_start:013}`.
-///
-/// `metric` / `agent` 는 식별자 검증 통과한 상태라야 안전 (점 구분 의존).
-pub fn bucket_key(window: Window, metric: &str, agent: &str, window_start: u64) -> String {
-    format!(
-        "tasty.telemetry.bucket.{w}.{m}.{a}.{ws:013}",
-        w = window.as_str(),
-        m = metric,
-        a = agent,
-        ws = window_start
-    )
-}
-
 /// `tasty.telemetry.event.` — 전체 event 키 prefix.
+///
+/// **bucket 키는 없다.** 집계는 조회 시점에 raw event 를 훑어 만들고 영속하지
+/// 않는다 — 아래 모듈 문서의 "조회 모델" 참고.
 pub const EVENT_KEY_PREFIX: &str = "tasty.telemetry.event.";
-
-/// `tasty.telemetry.bucket.{window}.` — 윈도우별 bucket prefix.
-pub fn bucket_prefix(window: Window) -> String {
-    format!("tasty.telemetry.bucket.{}.", window.as_str())
-}
 
 /// `tasty.telemetry.cap.` — 모든 cap 키 prefix.
 #[derive(Debug, Default)]

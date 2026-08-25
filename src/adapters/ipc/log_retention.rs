@@ -194,6 +194,28 @@ mod tests {
         assert_eq!(policy.enforce(&mut mem, 10_000), 7);
         assert_eq!(rows(&mem, "tasty.audit."), 3);
         assert_eq!(rows(&mem, "tasty.telemetry.event."), 10);
+
+        // 남는 것은 **최신** 쪽이어야 한다. telemetry 조회가 raw event 를 즉석
+        // 집계하므로(영속 bucket 없음), 정리가 최신을 지우면 "방금 것" 이 조회에서
+        // 사라진다 — 상한이 곧 조회 범위라는 계약이 여기서 성립한다.
+        let survivors: Vec<String> = mem
+            .list(
+                &Scope::Global,
+                &tasty_memory::ListOpts {
+                    prefix: Some("tasty.audit.".to_string()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .into_iter()
+            .map(|e| e.key)
+            .collect();
+        for ts in [1_007u64, 1_008, 1_009] {
+            assert!(
+                survivors.contains(&format!("tasty.audit.{ts:013}.0000")),
+                "최신 {ts} 가 지워졌다"
+            );
+        }
     }
 
     /// 시간 상한은 개수 상한 안에 있는 행도 지운다 — 유입이 끊긴 인스턴스에서

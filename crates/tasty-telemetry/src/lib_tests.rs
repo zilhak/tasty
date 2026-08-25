@@ -36,20 +36,6 @@ fn event_key_format() {
 }
 
 #[test]
-fn bucket_key_format() {
-    let k = bucket_key(
-        Window::OneMinute,
-        "input_tokens",
-        "claude_s1",
-        1_700_000_000_000,
-    );
-    assert_eq!(
-        k,
-        "tasty.telemetry.bucket.1m.input_tokens.claude_s1.1700000000000"
-    );
-}
-
-#[test]
 fn op_signed() {
     assert_eq!(Op::Inc.signed(5.0), 5.0);
     assert_eq!(Op::Dec.signed(5.0), -5.0);
