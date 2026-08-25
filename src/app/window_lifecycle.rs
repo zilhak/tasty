@@ -217,7 +217,15 @@ impl App {
             None
         };
 
-        self.assemble_app_state(restored_idx_after_layout)
+        // 복원이 워크스페이스를 하나도 만들지 못한 경우의 안전망. 복원 예정이면
+        // `new_with_ids` 가 기본 워크스페이스를 만들지 않으므로 여기서 메운다.
+        // 복원이 정상이면 no-op.
+        let bootstrapped = match self.core_state.as_mut() {
+            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, engine),
+            None => None,
+        };
+
+        self.assemble_app_state(bootstrapped.or(restored_idx_after_layout))
     }
 
     /// 엔진(CoreState)·plugin manager 의 원자 초기화 — `create_app_state` 선두 절반.
@@ -647,10 +655,36 @@ impl App {
         core_state: &mut crate::core::CoreState,
         state: &mut crate::state::AppState,
     ) {
-        if core_state.workspaces.is_empty() {
-            match self.core.create_default_workspace(core_state) {
-                Ok(idx) => state.active_workspace = idx,
-                Err(e) => tracing::error!("bootstrap workspace failed: {e}"),
+        if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, core_state) {
+            state.active_workspace = idx;
+        }
+    }
+
+    /// 워크스페이스가 하나도 없는 engine 에 기본 워크스페이스를 만든다. 이미 있으면
+    /// no-op 으로 `None` 을 반환하고, 만들었으면 그 인덱스를 반환한다.
+    ///
+    /// **복원 실패 안전망.** `CoreState::new_with_ids` 는 복원 예정이면 기본
+    /// 워크스페이스를 만들지 않는데(만들면 PTY 가 회수 불가로 남는다),
+    /// `SavedLayout::restore` 는 워크스페이스를 하나도 복원하지 못하면
+    /// `engine.workspaces` 를 건드리지 않고 `false` 를 반환한다. 그 경우 워크스페이스
+    /// 0개인 창이 뜨므로, 복원 적용 지점 **양쪽**(동기 `create_app_state`, 부팅 상태
+    /// 머신 `finish_boot`)이 직후에 이걸 부른다.
+    ///
+    /// `&mut self` 가 아니라 `core`/`engine` 을 따로 받는다 — 호출자가
+    /// `self.core_state` 를 빌린 상태에서 `self.core` 를 함께 써야 하기 때문
+    /// (서로 다른 필드라 분리 대여가 필요하다).
+    pub(super) fn bootstrap_workspace_if_empty(
+        core: &mut crate::core::Core,
+        engine: &mut crate::core::CoreState,
+    ) -> Option<usize> {
+        if !engine.workspaces.is_empty() {
+            return None;
+        }
+        match core.create_default_workspace(engine) {
+            Ok(idx) => Some(idx),
+            Err(e) => {
+                tracing::error!("bootstrap workspace failed: {e}");
+                None
             }
         }
     }

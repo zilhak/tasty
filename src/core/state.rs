@@ -727,19 +727,30 @@ impl CoreState {
         // **하나**뿐이라, 그 슬롯의 ref 집합으로 GC 하면 다른 슬롯이 참조하는
         // `.bin` 을 전부 orphan 으로 판정해 지운다. 전 슬롯 union GC 로 부팅 1 회
         // 옮겼다 (`layout_persistence::migrate_and_gc_on_boot`).
-        let mut restored = false;
         if restore_layout
             && let Some(slot) = layout_slot
             && let Some(saved) = crate::core::layout_persistence::load_slot(slot)
         {
             engine.pending_layout_restore = Some(saved);
-            // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
-            // pending_layout_restore가 적용될 때 교체된다.
-            restored = false;
         }
 
-        // Fallback: create default workspace
-        if !restored {
+        // Fallback: 복원할 layout 이 없을 때만 기본 워크스페이스를 만든다.
+        //
+        // 복원 예정이면 여기서 아무것도 만들지 않는다. 예전에는 "첫 화면이 비지
+        // 않도록" 일단 만들어 두고 복원이 교체하게 했는데, `SavedLayout::restore`
+        // 는 `engine.workspaces` 만 통째 교체하고 여기서 spawn 한 PTY 는
+        // `TerminalStore` 에 그대로 남는다. `TerminalStore` 에는 워크스페이스가
+        // 참조하지 않는 터미널을 회수하는 경로가 없어서 engine 하나당 셸 프로세스
+        // 하나가 영구히 누수됐다(창을 열 때마다 하나씩 더).
+        //
+        // "첫 화면이 빈다" 는 전제도 성립하지 않는다 — `AppState`(창의 view 상태)
+        // 는 복원이 **끝난 뒤에** 조립된다(동기 경로 `create_app_state`, 부팅
+        // 상태 머신 `finish_boot`). 그 사이 프레임은 부팅 로딩 화면이 그리므로
+        // 워크스페이스 0개 상태가 렌더 경로에 노출되는 구간이 없다.
+        //
+        // 복원이 실패해 워크스페이스가 하나도 안 생기는 경우의 안전망은 복원 적용
+        // 지점 양쪽에 있다 (`App::bootstrap_workspace_if_empty`).
+        if engine.pending_layout_restore.is_none() {
             let ws_id = engine.next_ids.next_workspace();
             let pane_id = engine.next_ids.next_pane();
             let tab_id = engine.next_ids.next_tab();

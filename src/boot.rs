@@ -364,7 +364,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     //
     // 0-B: 창이 없어 grid 크기를 측정할 수 없으므로 기본 80×24.
     // 0-C: layout 복원은 gui 의 plugin-pump 경로(ApplyPendingLayoutRestore)에
-    //      종속이라 headless 엔 미적용 — 항상 fallback default workspace 로 뜬다.
+    //      종속이라 headless 엔 미적용. 그래서 슬롯을 `None` 으로 넘겨 `load_slot`
+    //      자체를 하지 않고, `pending_layout_restore` 가 `None` 으로 남는다 —
+    //      `new_with_ids` 의 fallback 이 실행되는 조건이 바로 이것이라 headless 는
+    //      항상 default workspace + 터미널 1 개로 뜬다.
     let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
     // gui 의 `begin_boot` 과 같은 부팅 1 회 훅 — 레거시 `layout.json` 마이그레이션 +

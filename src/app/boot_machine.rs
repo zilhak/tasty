@@ -448,7 +448,14 @@ impl App {
             pending_events,
         } = boot;
 
-        let mut state = self.assemble_app_state(restored_idx);
+        // 복원 실패 안전망 — 복원 예정이었으면 `new_with_ids` 가 기본 워크스페이스를
+        // 만들지 않았으므로(PTY 누수 방지), 복원이 하나도 못 만든 경우 여기서 메운다.
+        // 동기 경로(`create_app_state`)와 같은 지점·같은 헬퍼. 복원이 정상이면 no-op.
+        let bootstrapped = match self.core_state.as_mut() {
+            Some(engine) => crate::app::App::bootstrap_workspace_if_empty(&mut self.core, engine),
+            None => None,
+        };
+        let mut state = self.assemble_app_state(bootstrapped.or(restored_idx));
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         self.start_boot_ipc_and_webhooks(&mut state);
 
