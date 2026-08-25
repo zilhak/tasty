@@ -1061,3 +1061,122 @@ fn purge_scope_records_deleted_for_each_regular_key() {
     assert_eq!(changes[1].kind, MemoryChangeKind::Deleted);
     assert_eq!(changes[1].key, "b");
 }
+
+// ---- WAL 크기 상한 ----
+//
+// 아래 세 테스트만 파일 기반 DB 를 쓴다(나머지는 인메모리) — WAL 은 파일이 있어야
+// 존재하고, 이 항목의 회귀는 "파일 크기" 로만 드러나기 때문이다.
+
+fn disk_store(dir: &std::path::Path) -> (MemoryStore, std::path::PathBuf) {
+    let path = dir.join("memory.db");
+    let s = MemoryStore::open(&path).unwrap();
+    (s, path)
+}
+
+fn wal_len(db_path: &std::path::Path) -> u64 {
+    let wal = db_path.with_extension("db-wal");
+    std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0)
+}
+
+/// 커밋 하나가 WAL 에 남기는 양을 키우려고 큰 값을 넣는다 — 기본 4KiB 페이지라
+/// 작은 값으로는 상한(4MiB)에 닿기까지 수천 커밋이 필요하다.
+fn append_rows(s: &mut MemoryStore, scope: &Scope, from: usize, count: usize, bytes: usize) {
+    let blob = "x".repeat(bytes);
+    for i in from..from + count {
+        s.put(
+            PLUGIN_A,
+            scope,
+            &format!("k{i}"),
+            &text(&blob),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn journal_size_limit_is_applied_to_disk_databases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (s, _path) = disk_store(tmp.path());
+    let limit: i64 = s
+        .conn
+        .query_row("PRAGMA journal_size_limit", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(limit, WAL_SIZE_LIMIT_BYTES);
+
+    // 상한이 autocheckpoint 임계(페이지 수 × page_size)와 같은 값이라는 것이
+    // 이 값을 고른 근거 자체다 — SQLite 기본값이 바뀌면 근거가 무너지므로 고정한다.
+    let pages: i64 = s
+        .conn
+        .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
+        .unwrap();
+    let page_size: i64 = s
+        .conn
+        .query_row("PRAGMA page_size", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(pages * page_size, WAL_SIZE_LIMIT_BYTES);
+}
+
+/// 이 항목의 본체 — 한 번 부푼 WAL 이 **다시 줄어드는가**.
+///
+/// "꾸준한 append 로는 안 자란다" 를 단정하면 공허한 테스트가 된다(실측: pragma 를
+/// 빼도 통과한다). autocheckpoint 가 WAL 내부를 순환 재사용하므로 평상시 파일 크기는
+/// pragma 와 무관하게 임계 근처에 머물기 때문이다. 실제로 갈리는 지점은 큰 트랜잭션
+/// 이나 VACUUM 으로 한 번 부푼 **뒤**다 — pragma 가 없으면 그 크기가 프로세스 수명
+/// 내내 고착되고(169MB 사례), 있으면 다음 되감기에서 상한으로 회수된다.
+#[test]
+fn a_ballooned_wal_shrinks_back_under_the_limit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, path) = disk_store(tmp.path());
+    let scope = Scope::Surface(1);
+
+    append_rows(&mut s, &scope, 0, 400, 64 * 1024);
+    for i in 0..350 {
+        s.delete(PLUGIN_A, &scope, &format!("k{i}"), None).unwrap();
+    }
+    // VACUUM 은 DB 를 통째로 다시 쓰므로 WAL 을 상한보다 훨씬 크게 부풀린다 —
+    // 이 항목이 재현하려는 "한 번 커진 WAL" 의 실제 발생 경로 중 하나다.
+    assert!(s.vacuum_if_fragmented(1).unwrap(), "VACUUM 이 돌지 않았다");
+    let ballooned = wal_len(&path);
+    assert!(
+        ballooned > WAL_SIZE_LIMIT_BYTES as u64,
+        "WAL 이 상한을 넘겨 부풀지 않아 회수를 검증할 수 없다: {ballooned}"
+    );
+
+    // 이후의 평범한 커밋 몇 개면 되감기가 일어나고, 그때 상한으로 잘린다.
+    append_rows(&mut s, &scope, 1000, 5, 1024);
+    let after = wal_len(&path);
+    assert!(
+        after <= WAL_SIZE_LIMIT_BYTES as u64,
+        "부푼 WAL 이 회수되지 않고 고착됐다: {ballooned} -> {after}, limit={WAL_SIZE_LIMIT_BYTES}"
+    );
+}
+
+/// 이미 커진 WAL 은 pragma 만으로는 즉시 줄지 않는다 — 부팅 시 되감기를 강제하는
+/// 경로가 그것을 회수하고, 그 과정에서 레코드를 잃지 않는다.
+#[test]
+fn checkpoint_truncate_reclaims_the_wal_without_losing_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, path) = disk_store(tmp.path());
+    let scope = Scope::Surface(1);
+    append_rows(&mut s, &scope, 0, 300, 64 * 1024);
+
+    let before: i64 = s
+        .conn
+        .query_row("SELECT COUNT(*) FROM memory", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(before, 300);
+    assert!(wal_len(&path) > 0, "회수할 WAL 이 애초에 없다");
+
+    assert!(s.checkpoint_truncate().unwrap(), "체크포인트가 busy 였다");
+
+    assert_eq!(wal_len(&path), 0, "truncate 후에도 WAL 이 남아 있다");
+    let after: i64 = s
+        .conn
+        .query_row("SELECT COUNT(*) FROM memory", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(after, before, "체크포인트가 레코드를 훼손했다");
+    // 회수 후에도 정상적으로 읽힌다(본체로 흡수됐는지 값 수준에서 확인).
+    assert!(s.get(&scope, "k0").unwrap().is_some());
+    assert!(s.get(&scope, "k299").unwrap().is_some());
+}

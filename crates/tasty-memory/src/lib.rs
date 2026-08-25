@@ -234,6 +234,33 @@ pub enum MemoryChangeKind {
     Expired,
 }
 
+/// WAL 파일 크기 상한(바이트). 체크포인트가 WAL 을 되감을 때 이 크기를 넘는
+/// 부분이 잘려 나간다.
+///
+/// **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다.** SQLite 는
+/// 체크포인트 후 WAL 파일을 재사용하려고 크기를 그대로 두기 때문이다. 그러면
+/// `wal_autocheckpoint` 임계(1000 페이지)를 **영구히 초과한 상태**가 되어 커밋마다
+/// 체크포인트가 트리거되고, 그 비용은 WAL 크기에 비례한다 — 실제로 169MB 로 고착된
+/// WAL 을 초당 수십 커밋이 매번 훑어 메인 스레드 CPU 를 상시 점유한 사례가 있다.
+///
+/// 값은 `wal_autocheckpoint` 임계와 **정확히 같게** 잡는다. 더 키우면 체크포인트가
+/// 훑는 상한이 그만큼 올라가 원래 문제를 완화만 하게 되고, 더 줄이면 임계에 닿기도
+/// 전에 매번 잘라내 grow/truncate 를 반복한다. 임계와 같은 값이면 정상 흐름에서는
+/// 잘라낼 것이 없고(파일이 임계 근처에서 안정), 큰 트랜잭션이나 리더 때문에 한 번
+/// 부푼 경우에만 되감기 시점에 회수된다.
+///
+/// 두 상수를 곱해 두는 이유는 그 "정확히 같게" 가 눈으로 확인되게 하기 위해서다 —
+/// 4MiB 처럼 적당히 반올림한 값을 쓰면 근거와 값이 조용히 어긋난다(실제로 1000 ×
+/// 4096 = 4,096,000B 이고 4MiB 가 아니다). `journal_size_limit_is_applied_to_disk_databases`
+/// 가 실행 중 SQLite 의 실제 기본값과 이 곱을 대조해 어긋나면 실패한다.
+pub const WAL_SIZE_LIMIT_BYTES: i64 = WAL_AUTOCHECKPOINT_PAGES * DEFAULT_PAGE_SIZE_BYTES;
+
+/// SQLite 의 `wal_autocheckpoint` 기본값(페이지 수).
+const WAL_AUTOCHECKPOINT_PAGES: i64 = 1000;
+
+/// SQLite 의 `page_size` 기본값(바이트).
+const DEFAULT_PAGE_SIZE_BYTES: i64 = 4096;
+
 /// MemoryStore. 디스크 파일을 단독으로 열어 mutex 보호. clone 불가.
 pub struct MemoryStore {
     conn: Connection,
@@ -287,6 +314,15 @@ impl MemoryStore {
         conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
         conn.pragma_update(None, "foreign_keys", "ON").ok();
+        // 기존 세 줄과 달리 실패를 삼키지 않는다 — 이 pragma 가 빠지면 증상이
+        // "조금 느려짐" 이 아니라 WAL 고착(아래 상수 doc)이라, 조용히 없는 것과
+        // 조용히 실패한 것을 구별할 수 없으면 같은 조사를 처음부터 다시 하게 된다.
+        if let Err(e) = conn.pragma_update(None, "journal_size_limit", WAL_SIZE_LIMIT_BYTES) {
+            tracing::warn!(
+                "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
+                path.display()
+            );
+        }
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {
                 MemoryInitError::SchemaMismatch { expected, found }
@@ -1283,6 +1319,24 @@ impl MemoryStore {
     /// freelist 가 `min_free_pages` 이상이면 `VACUUM` 으로 파일을 압축해 디스크를
     /// 회수한다(대량 prune 직후 1회용). VACUUM 은 파일 전체를 재작성하므로 평소엔
     /// 호출하지 않는다. 압축 수행 시 true.
+    /// WAL 내용을 본체로 흡수하고 WAL 파일을 0 바이트로 잘라낸다.
+    ///
+    /// [`WAL_SIZE_LIMIT_BYTES`] 는 **앞으로** 커지는 것을 막을 뿐, 이미 커진 파일은
+    /// 되감기가 일어나야 줄어든다. 이 메서드는 그 되감기를 부팅 시 한 번 강제해
+    /// 기존 인스턴스의 비대한 WAL 을 즉시 회수한다.
+    ///
+    /// 반환값은 체크포인트가 **끝까지** 수행됐는지 여부다. `PRAGMA
+    /// wal_checkpoint(TRUNCATE)` 는 다른 커넥션이 읽는 중이면 busy=1 로 돌아오며,
+    /// 이때 파일은 그대로 남는다 — 실패가 아니라 "이번엔 못 줄였다" 이므로 호출자가
+    /// 로그 수준을 정할 수 있게 에러가 아닌 bool 로 돌려준다.
+    pub fn checkpoint_truncate(&mut self) -> Result<bool> {
+        // (busy, log_pages, checkpointed_pages) 한 행을 돌려준다.
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        Ok(busy == 0)
+    }
+
     pub fn vacuum_if_fragmented(&mut self, min_free_pages: i64) -> Result<bool> {
         let free: i64 = self
             .conn

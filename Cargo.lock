@@ -5921,6 +5921,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-utils",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
 ]
