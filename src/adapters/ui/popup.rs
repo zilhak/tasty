@@ -723,6 +723,9 @@ impl PopupManager {
     ///
     /// `PopupState` 내부(z_seq / `popup_rect`)를 밖으로 넓히지 않고 debug 관찰면
     /// (`debug.host_popup.list`)에 필요한 만큼만 내주는 좁은 접근자다.
+    // 이유: 호출부가 debug.rs(`#[cfg(debug_assertions)]`)뿐이라 release 빌드에서
+    // 미사용으로 잡힌다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn open_geometry(&self, id: PopupId) -> Option<(u64, egui::Rect)> {
         self.popups
             .iter()
