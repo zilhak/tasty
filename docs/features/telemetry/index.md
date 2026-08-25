@@ -40,10 +40,18 @@ Metric(`input_tokens`/`ipc_calls`/…) × Agent(`tasty.<plugin_id>`/`cli.<exe>`/
 | 휴리스틱 | 판정 | 기본값 |
 |---|---|---|
 | `CallBurst` | (agent, method) sliding window 호출 카운트 | 1분 1000회↑ |
-| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복) | 5분 20회↑ |
+| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복) — 이 params-hash 는 **dedup 단위이기도 하다**(아래) | 5분 20회↑ |
 | `RssSurge` | agent 당 최근 5개 RSS 샘플의 **엄격한 단조 증가**(스파이크 1회는 발화 안 함, 추세만) | 5 샘플 |
 
-RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 세 휴리스틱 모두 같은 (agent, kind, subject) 1분 쿨다운 dedup 을 공유하고, 발화는 동일하게 `tasty.telemetry.anomaly.*` 영속 + 알림.
+RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 발화는 셋 다 동일하게 `tasty.telemetry.anomaly.*` 영속 + 알림이고, 1분 쿨다운 dedup 도 공유한다. 다만 **dedup 키가 셋 다 `subject` 인 것은 아니다**:
+
+| 휴리스틱 | dedup 키 | subject |
+|---|---|---|
+| `CallBurst` | `(agent, kind, method)` | `method` — 키와 같다 |
+| `SlowLoop` | `(agent, kind, "{method}#{params_hash:016x}")` | `method` — **키와 다르다** |
+| `RssSurge` | `(agent, kind, "rss_bytes")` | `rss_bytes` — 키와 같다 |
+
+`SlowLoop` 만 dedup 키에 `params_hash` 를 덧붙여, 같은 method 라도 파라미터 조합이 다르면 **독립된 loop 로 취급해 각자 쿨다운을 갖는다**(`params_hash` 는 detail 에도 실린다). 그래서 같은 method 의 발화가 수백 ms 간격으로 연달아 보이는 것은 정상이며 — 조합 수만큼 각자 분당 1건씩 나온다 — 쿨다운 버그가 아니다. surface 마다 파라미터가 다른 폴링에서는 이 배증이 커서, 18시간에 21,102건(≈ 조합 20종 × 1,080분)이 쌓인 실측이 있다. 보존 상한은 [ADR-0085](../../adr/0085-ipc-log-retention-bounded.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
 
 ### 세션 요약
 

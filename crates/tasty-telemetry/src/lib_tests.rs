@@ -314,6 +314,45 @@ fn slow_loop_anomaly_fires_when_identical_params_hash_repeats() {
     assert!(a.detail["count"].as_u64().unwrap() >= SLOW_LOOP_THRESHOLD as u64);
 }
 
+/// `SlowLoop` 의 dedup 키는 subject(=method)가 아니라 `method#params_hash` 다.
+/// 그래서 같은 method 라도 **파라미터 조합마다 독립된 쿨다운**을 갖는다 — 쿨다운
+/// 안에서 두 조합이 각각 발화한다. 이 사실이 문서에서 빠져 있어 폴링 워크로드의
+/// 연속 발화를 쿨다운 버그로 오진한 적이 있어, 계약으로 고정한다.
+/// (`CallBurst`/`RssSurge` 는 dedup 키가 subject 와 같다.)
+#[test]
+fn slow_loop_cooldown_is_per_params_combination_not_per_method() {
+    let d = AnomalyDetector::new();
+    let mut fired: Vec<String> = Vec::new();
+    // 두 파라미터 조합을 번갈아 각각 임계까지 — ts 는 쿨다운(60s) 안에 머문다.
+    for i in 0..(SLOW_LOOP_THRESHOLD * 2) {
+        let params = if i % 2 == 0 {
+            serde_json::json!({ "surface": 1 })
+        } else {
+            serde_json::json!({ "surface": 2 })
+        };
+        for a in d.record_call(
+            "agent_a",
+            "terminal.state",
+            &params,
+            1_000 + i as u64,
+            i as u64,
+        ) {
+            if a.kind == AnomalyKind::SlowLoop {
+                fired.push(a.detail["params_hash"].as_str().unwrap().to_string());
+            }
+        }
+    }
+    assert_eq!(
+        fired.len(),
+        2,
+        "같은 method 의 두 파라미터 조합이 쿨다운 안에서 각각 발화해야 한다: {fired:?}"
+    );
+    assert_ne!(
+        fired[0], fired[1],
+        "발화한 두 건은 서로 다른 params_hash 다"
+    );
+}
+
 #[test]
 fn slow_loop_anomaly_does_not_fire_when_params_vary() {
     let d = AnomalyDetector::new();
