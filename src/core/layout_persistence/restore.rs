@@ -27,9 +27,13 @@ impl SavedLayout {
         kinds.into_iter().collect()
     }
 
-    /// layout.json 안의 모든 `SavedSurface::Terminal { scrollback_ref: Some(_) }` 값을
-    /// 모은다. 앱 시작 시 `scrollback_store::gc_orphans` 의 입력으로 사용 — 이 집합에
-    /// 없는 디스크 파일은 모두 orphan 으로 간주해 삭제된다.
+    /// 이 레이아웃(=슬롯 하나) 안의 모든
+    /// `SavedSurface::Terminal { scrollback_ref: Some(_) }` 값을 모은다.
+    ///
+    /// **이 집합은 삭제 판정의 주체가 아니라 union 의 한 항이다.** scrollback GC 는
+    /// 부팅 1 회, 전 슬롯 집합의 **합집합**으로만 돈다
+    /// (`layout_persistence::gc_scrollback_orphans_all_slots`). 슬롯 하나의 집합으로
+    /// GC 하면 다른 슬롯이 참조하는 `.bin` 을 전부 orphan 으로 판정해 지운다.
     pub fn collect_scrollback_refs(&self) -> std::collections::HashSet<String> {
         let mut refs = std::collections::HashSet::new();
         for ws in &self.workspaces {

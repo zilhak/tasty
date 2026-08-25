@@ -303,6 +303,18 @@ mod slots {
         assert_eq!(list_slots_in(dir), vec![1, 2, 10]);
     }
 
+    /// zero-pad 유무가 다른 두 파일은 같은 슬롯 번호로 접힌다 — 목록에 같은 번호가
+    /// 두 번 나오면 호출자(union GC 등)가 같은 슬롯을 두 번 읽는다.
+    #[test]
+    fn list_slots_folds_padded_and_unpadded_names_into_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        for name in ["1.json", "01.json"] {
+            std::fs::write(dir.join(name), "{}").unwrap();
+        }
+        assert_eq!(list_slots_in(dir), vec![1]);
+    }
+
     #[test]
     fn list_slots_is_empty_when_the_dir_does_not_exist() {
         let tmp = tempfile::tempdir().unwrap();
@@ -352,11 +364,43 @@ mod slots {
         assert!(!slot_path_in(&layouts, 1).exists());
     }
 
+    /// 파일 **실체**의 id — unix inode / windows file index.
+    ///
+    /// 원자적 교체(tmp write → rename)는 디렉터리 엔트리가 새 실체를 가리키게 하므로
+    /// 값이 바뀌고, `fs::write` 직접 호출은 같은 실체를 in-place 로 잘라 쓰므로 값이
+    /// 그대로다. 원자성의 관측 가능한 흔적이 이 차이 하나다 — "덮어쓴 뒤 `.tmp` 가
+    /// 없더라"만으로는 비원자적 write 와 구분되지 않는다.
+    fn file_identity(path: &Path) -> Option<u64> {
+        let meta = std::fs::metadata(path).ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            Some(meta.ino())
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            meta.file_index()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            // 이 플랫폼은 파일 실체 id 를 노출하지 않는다 — metadata 는 쓰지 않고
+            // 버린다(호출자가 `None` 을 받아 단정을 어떻게 다룰지 정한다).
+            let _ = meta;
+            None
+        }
+    }
+
     #[test]
     fn save_slot_is_atomic() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("layouts");
-        write_slot(&dir, 1, &layout_with("a", None));
+        write_slot(&dir, 1, &layout_with("first", None));
+        let path = slot_path_in(&dir, 1);
+        let before = file_identity(&path);
+
+        // 같은 슬롯을 다시 저장 — 이때가 "기존 파일을 교체" 하는 경로다.
+        write_slot(&dir, 1, &layout_with("second", None));
 
         let names: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
@@ -364,7 +408,22 @@ mod slots {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec!["01.json".to_string()], "tmp 잔재가 없어야 한다");
-        assert_eq!(load_slot_in(&dir, 1).unwrap().workspaces[0].name, "a");
+        assert_eq!(load_slot_in(&dir, 1).unwrap().workspaces[0].name, "second");
+
+        // 판별 단정: 교체여야 한다. `.tmp` + rename 을 `fs::write(path, json)` 로
+        // "단순화" 하면 위 두 단정은 그대로 통과하고 여기서만 걸린다.
+        match (before, file_identity(&path)) {
+            (Some(b), Some(a)) => assert_ne!(
+                b, a,
+                "슬롯 덮어쓰기가 in-place 였다 — tmp write → rename 이어야 한다"
+            ),
+            _ => {
+                // unix/windows 는 항상 실체 id 를 노출한다. 못 얻었다면 단정이
+                // 조용히 사라진 것이므로 통과시키지 않는다.
+                #[cfg(any(unix, windows))]
+                panic!("file identity unavailable — atomicity assertion would be vacuous");
+            }
+        }
     }
 
     #[test]

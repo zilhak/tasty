@@ -1,4 +1,4 @@
-//! Layout persistence wire format — `~/.tasty/layout.json` 에 직렬화되는 타입들.
+//! Layout persistence wire format — `~/.tasty/layouts/NN.json` 에 직렬화되는 타입들.
 //!
 //! 모든 신규 surface 종류는 `SavedSurface::Generic { kind, data }` 변종으로 그대로
 //! 거쳐가므로 본 schema 는 surface 추가에 변경되지 않는다.

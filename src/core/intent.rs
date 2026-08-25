@@ -235,7 +235,7 @@ pub(crate) enum DomainIntent {
     UpdateTabName { surface_id: u32, name: String },
 
     // ─── Layout persistence (D.3.C.D.4) ───
-    /// 현재 layout 을 ~/.tasty/layout.json 에 저장.
+    /// 현재 layout 을 ~/.tasty/layouts/NN.json 슬롯 파일에 저장.
     /// - `active_workspace`: 호출자가 결정한 active workspace 인덱스 (AppState 가
     ///   들고 있는 정보이므로 Intent 발화 시 동봉).
     /// - `force=true`: shutdown 경로용. debounce 무시 + `restore_surface_content`
@@ -498,7 +498,7 @@ pub(crate) enum CoreEvent {
     TerminalClipboardSet { surface_id: u32 },
 
     /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
-    /// `osc_title` 은 layout.json 영속 대상 아님 — mark_layout_dirty 호출 안 함.
+    /// `osc_title` 은 레이아웃 영속 대상 아님 — mark_layout_dirty 호출 안 함.
     TabNameUpdated {
         /// `apply_update_tab_name` 의 explicit_name 보존 분기 여부 — production
         /// cascade 는 mark_dirty 만 하고 참조하지 않는다. 테스트 전용 관측 계약

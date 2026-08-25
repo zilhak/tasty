@@ -1,13 +1,18 @@
 //! `~/.tasty/scrollback/<persist_id>.bin` 디스크 영속 저장소.
 //!
-//! `layout.json` 의 `SavedSurface::Terminal { scrollback_ref }` 가 가리키는
+//! 레이아웃 슬롯(`~/.tasty/layouts/NN.json`)의
+//! `SavedSurface::Terminal { scrollback_ref }` 가 가리키는
 //! 파일을 관리한다. 직렬화 포맷은 `tasty_terminal::disk_scrollback::serialize_lines`
 //! 와 동일 (magic + version + line records). lifecycle 은 host 책임:
 //!
 //! - capture: `restore_surface_content` 옵션 on 일 때 `write` 호출
 //! - restore: 파일이 존재하면 `read` 후 inject
 //! - surface close: `delete`
-//! - 앱 시작: `gc_orphans(known_ids)` 로 layout.json 에 없는 파일 정리
+//! - 앱 시작 **1 회**: `gc_orphans(known_ids)` — `known_ids` 는 **전 슬롯**
+//!   `scrollback_ref` 의 합집합이다(`core::layout_persistence::migrate_and_gc_on_boot`).
+//!   슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 파일을 지운다. 읽을 수 없는
+//!   슬롯이 하나라도 있으면 그 부팅에서는 정리를 **전면 스킵**한다 — 무엇을
+//!   참조하는지 모르는 채 지우면 손상은 JSON 하나인데 손실은 scrollback 전체가 된다
 //! - 옵션 ON → OFF 전환: `clear_all()`
 //!
 //! Public API 는 `~/.tasty/scrollback/` 디렉터리를 사용한다. 내부 helper

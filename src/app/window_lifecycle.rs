@@ -114,8 +114,9 @@ fn build_core_state_first_boot(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> crate::core::CoreState {
-    // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 — T2↔T3
-    // 갭의 두 번째 기여자라 별도 계측 (첫 번째는 begin_boot 의 db+theme).
+    // 레이아웃 슬롯 로드 등 디스크 I/O 포함 — T2↔T3 갭의 두 번째 기여자라 별도
+    // 계측 (첫 번째는 begin_boot 의 db+theme). scrollback orphan GC 는 여기 없다 —
+    // 전 슬롯 union 으로 부팅 1 회만 돈다(`begin_boot` 초입).
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
     let mut engine = crate::core::CoreState::new_with_ids(cols, rows, waker, None, memory)
@@ -133,7 +134,7 @@ fn build_core_state_first_boot(
     tracing::info!(
         target: "tasty::boot",
         ms = t_engine.elapsed().as_secs_f64() * 1000.0,
-        "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
+        "T2.6 engine_init (CoreState::new_with_ids + layout slot load)"
     );
     engine
 }
@@ -269,7 +270,9 @@ impl App {
                 next_ids,
             )) = shared
             {
-                // layout.json 로드 + scrollback orphan GC 등 디스크 I/O 포함 (T2.6).
+                // 레이아웃 슬롯 로드 등 디스크 I/O 포함 (T2.6). scrollback orphan GC 는
+                // 여기서 하지 않는다 — 전 슬롯 union 으로 부팅 1 회만 돈다
+                // (`layout_persistence::migrate_and_gc_on_boot`, `begin_boot` 초입).
                 let t_engine = std::time::Instant::now();
                 // IdGenerator 는 CoreState::new 시점에 default workspace 만들면서
                 // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
@@ -299,7 +302,7 @@ impl App {
                 tracing::info!(
                     target: "tasty::boot",
                     ms = t_engine.elapsed().as_secs_f64() * 1000.0,
-                    "T2.6 engine_init (CoreState::new_with_ids + layout.json load)"
+                    "T2.6 engine_init (CoreState::new_with_ids + layout slot load)"
                 );
                 engine
             } else {
@@ -341,7 +344,7 @@ impl App {
                     active_workspace,
                 } = e
                 {
-                    tracing::info!("Layout restored from layout.json (deferred)");
+                    tracing::info!("Layout restored from slot file (deferred)");
                     active_workspace
                 } else {
                     None
@@ -440,7 +443,7 @@ impl App {
     /// 송신 → plugin 응답 round-trip 이 끝날 때까지 대기한다. 이게 끝나야
     /// RemoteSurface 의 snapshot_cache 가 plugin 의 최신 값으로 갱신된
     /// 상태로 main loop 에 진입 — 사용자 동작 race 가 사라진다. carry 값이
-    /// 이미 안전망 역할을 하므로 (1) layout.json 오염은 이 wait 와 무관하게
+    /// 이미 안전망 역할을 하므로 (1) 레이아웃 슬롯 오염은 이 wait 와 무관하게
     /// 차단된 상태이고, 이 wait 는 부팅 직후 사용자 동작이 응답으로 덮어
     /// 씌워지는 깜박임/덮어쓰기를 추가로 방지하는 목적.
     ///
