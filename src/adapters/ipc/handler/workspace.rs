@@ -138,6 +138,10 @@ pub fn handle_workspace_list(
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
+                // 지금 원격을 attach 한 client mirror 인지. `attach_mapping`(활성화 시
+                // attach 할 매핑)과는 다른 축이라 그걸로 유추할 수 없다. GUI 사이드바만
+                // 알던 정보를 에이전트 조회 경로에도 노출한다(원칙 2).
+                "mirror": ws.mirror,
                 "category": ws.category,
                 "category_name": engine.category_name(ws.category),
             })

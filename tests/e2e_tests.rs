@@ -239,6 +239,28 @@ fn all_e2e_tests() {
 
     // ========== Structural mutations ==========
 
+    // workspace.list 는 mirror(원격 attach client 인지) 를 함께 실어야 한다 — GUI
+    // 사이드바만 알던 정보라 에이전트가 조작 전에 판별할 수단이 없었다. 로컬 인스턴스
+    // 에는 mirror 워크스페이스가 없으므로 전부 false 다(true 케이스는 실제 attach 가
+    // 필요해 두 인스턴스 실측으로 확인한다).
+    let ws_rows = tasty
+        .call("workspace.list", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(!ws_rows.is_empty(), "workspace.list 가 비었다");
+    for ws in &ws_rows {
+        assert_eq!(
+            ws.get("mirror").and_then(|v| v.as_bool()),
+            Some(false),
+            "workspace.list 행에 mirror:false 가 없다: {ws:?}"
+        );
+        assert!(
+            ws.get("id").and_then(|v| v.as_u64()).is_some(),
+            "workspace.list 행에 id 가 없다: {ws:?}"
+        );
+    }
+
     // create workspace
     let ws_before = tasty
         .call("workspace.list", json!({}))
