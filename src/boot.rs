@@ -367,6 +367,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     //      종속이라 headless 엔 미적용 — 항상 fallback default workspace 로 뜬다.
     let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
+    // gui 의 `begin_boot` 과 같은 부팅 1 회 훅 — 레거시 `layout.json` 마이그레이션 +
+    // 전 슬롯 union scrollback GC. `new_with_ids` 가 슬롯을 읽기 전이어야 한다.
+    crate::core::layout_persistence::migrate_and_gc_on_boot(boot_settings.general.restore_layout);
     let mut engine =
         crate::core::CoreState::new_with_ids(80, 24, base_waker, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);

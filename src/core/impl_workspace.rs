@@ -300,7 +300,9 @@ impl Core {
         if !should_save {
             return CoreEvent::LayoutSaved;
         }
-        crate::core::layout_persistence::save_to_disk(engine, active_workspace);
+        // 슬롯 1 고정 — 창별 슬롯 배정은 후속 작업이 한다(지금은 창이 몇 개든
+        // 같은 슬롯을 쓰므로 슬롯 도입 전과 동작이 같다).
+        crate::core::layout_persistence::save_slot(engine, active_workspace, 1);
         engine.layout_dirty.clear();
         CoreEvent::LayoutSaved
     }

@@ -3,12 +3,12 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
 - **ADR**: 없음
-- **코드**: `src/engine/layout_persistence/`, `~/.tasty/layout.json` · `~/.tasty/scrollback/<id>.bin`
+- **코드**: `src/engine/layout_persistence/`, `~/.tasty/layouts/NN.json` · `~/.tasty/scrollback/<id>.bin`
 - **화면**: 없음 (앱 시작 시 자동 복원)
 
 ## 목적
 
-`general.restore_layout`(기본 **off**) 활성 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json` 에 저장하고, 앱 시작 시 복원해 이전 세션 창 배치를 재현한다.
+`general.restore_layout`(기본 **off**) 활성 시 워크스페이스/페인/탭/서피스 구조를 **슬롯 파일** `~/.tasty/layouts/NN.json` 에 저장하고, 앱 시작 시 복원해 이전 세션 창 배치를 재현한다.
 
 ## 내부 동작
 
@@ -18,9 +18,17 @@
 
 복원은 앱 시작 1회. 파싱 실패/파일 없음 → 기본 "Workspace 1" 폴백. 개별 서피스 복원 실패 시 그 서피스만 스킵.
 
+### 슬롯 파일
+
+레이아웃은 `~/.tasty/layouts/NN.json` 슬롯 파일 하나 = engine 하나의 전체 상태다(워크스페이스 목록 · 활성 워크스페이스 · 카테고리). 슬롯 목록과 순서는 파일명의 숫자에서 전부 파생되며 별도 인덱스 파일을 두지 않는다 — 인덱스는 실제 파일과 desync 되는 두 번째 진실원이 된다. 번호는 2자리 zero-pad(`01.json`)이고 100 이상은 자연 확장된다.
+
+write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬롯이 여러 개이므로 잘린 JSON 하나가 아래 scrollback 정리를 통해 다른 슬롯의 `.bin` 까지 잃게 만들 수 있다.
+
+단일 파일 시절의 `~/.tasty/layout.json` 은 부팅 1회 `layouts/01.json` 으로 **이동**(rename)된다. `layouts/` 가 이미 있으면 이동하지 않고 남은 레거시 파일을 로그로 알린다.
+
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
-`general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 `layout.json` 의 `scrollback_ref` 집합 외 `.bin` 일괄 정리(크래시 잔재).
+`general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 **전 슬롯의** `scrollback_ref` 합집합 외 `.bin` 일괄 정리(크래시 잔재) — 슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 `.bin` 을 지운다. 읽을 수 없는 슬롯이 하나라도 있으면 그 부팅에서는 정리 자체를 건너뛴다(모르면 지우지 않는다).
 
 ### TUI 세션 복원 (`restore.command`)
 

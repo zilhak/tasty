@@ -69,7 +69,11 @@ fn delete_in(dir: &Path, persist_id: &str) {
     }
 }
 
-fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
+/// `known` 에 없는 `<dir>/*.bin` 을 지운다. `pub(crate)` 인 이유: layout 슬롯
+/// union GC(`core::layout_persistence`)가 tempdir 로 단위 테스트되려면 디렉터리를
+/// 직접 받는 진입점이 필요하다 — process-global `scrollback_dir()` 을 쓰는
+/// [`gc_orphans`] 만으로는 테스트가 실제 홈을 건드린다.
+pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return,

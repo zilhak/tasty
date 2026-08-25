@@ -707,21 +707,19 @@ impl CoreState {
         // PluginManager가 hello를 처리한 후에야 registry에 등록되므로, 여기서 즉시
         // 복원하면 그런 surface가 사라진다. 따라서 layout 복원은 첫 plugin pump 후로
         // 지연한다 (`App::apply_pending_layout_restore`).
+        //
+        // scrollback GC 는 여기서 하지 않는다. engine 하나가 읽는 것은 슬롯
+        // **하나**뿐이라, 그 슬롯의 ref 집합으로 GC 하면 다른 슬롯이 참조하는
+        // `.bin` 을 전부 orphan 으로 판정해 지운다. 전 슬롯 union GC 로 부팅 1 회
+        // 옮겼다 (`layout_persistence::migrate_and_gc_on_boot`).
         let mut restored = false;
         if restore_layout {
-            if let Some(saved) = crate::core::layout_persistence::load_from_disk() {
-                // layout.json 에 남아 있는 scrollback_ref 집합 외의 파일은 모두 orphan.
-                // capture 도중 크래시했거나 옛 surface 의 잔재이므로 삭제해 디스크 leak 방지.
-                let known = saved.collect_scrollback_refs();
-                crate::scrollback_store::gc_orphans(&known);
+            // 슬롯 1 고정 — 창별 슬롯 배정은 후속 작업이 한다.
+            if let Some(saved) = crate::core::layout_persistence::load_slot(1) {
                 engine.pending_layout_restore = Some(saved);
                 // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
                 // pending_layout_restore가 적용될 때 교체된다.
                 restored = false;
-            } else {
-                // layout.json 자체가 없거나 무효면 알려진 ref 없음 → 모두 orphan.
-                let empty: std::collections::HashSet<String> = std::collections::HashSet::new();
-                crate::scrollback_store::gc_orphans(&empty);
             }
         }
 

@@ -104,6 +104,11 @@ impl App {
     ) {
         let (db_init_error, invalid_theme_name) = Self::init_boot_db_and_theme(&mut settings);
 
+        // 레거시 `layout.json` → `layouts/01.json` 마이그레이션 + 전 슬롯 union
+        // scrollback GC. **`spawn_engine_worker` 가 슬롯을 읽기 전**이어야 한다 —
+        // 마이그레이션 결과를 engine 이 봐야 하고, GC 는 부팅 1 회만 돌아야 한다.
+        crate::core::layout_persistence::migrate_and_gc_on_boot(settings.general.restore_layout);
+
         let mut boot = BootState {
             window,
             gpu,
