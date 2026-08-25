@@ -188,6 +188,16 @@ impl Plugin for ClaudePlugin {
                 self.plugin_data_dir.as_deref(),
                 &self.translator,
             ),
+            // 부모 → 자식 지속 프로필 부착. 대상 해석(`--child` → surface id)만
+            // 다르고 그 뒤는 reboot 과 같은 진입점을 타므로 `rebooting` set 도
+            // 그대로 넘긴다 — 같은 자식에 두 명령이 겹치면 뒤엣것이 거부된다.
+            "claude.child_profile" => handle_child_profile(
+                &self.rebooting,
+                &ctx.host,
+                &ctx.params,
+                self.plugin_data_dir.as_deref(),
+                &self.translator,
+            ),
             // Claude 세션 프로필 레지스트리 — 등록/조회/해제/조합-해석. 전부
             // `TASTY_PLUGIN_DATA_DIR` 하위 저장(profile.rs, 결정 3).
             "claude.profile_register" => profile::handle_register(

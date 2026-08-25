@@ -12,6 +12,7 @@
 //! - `handle_children` — 호스트 registry 목록에 `surface.foreground_process` 를 덧씌움.
 //! - wall-time 텔레메트리 타이밍(`ClaudeState`) — hook.rs 가 소비.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -19,6 +20,7 @@ use serde_json::{Map, Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::error_scan::{ErrorScanner, ScanTarget};
+use crate::reboot::reboot_surface;
 
 /// `profile_file`(직접 지정한 경로)과 `profile`(레지스트리에 등록된 이름 목록,
 /// 쉼표 구분 — `profile.rs` 참고) params 를 최종 `--settings` 파일 경로 하나로
@@ -58,12 +60,63 @@ pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32,
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
 }
 
-fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
+pub(crate) fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     params
         .get("child_index")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_child_index")))
+}
+
+/// `--child <index>` 를 그 자식의 **surface id** 로 해석한다.
+///
+/// `kill`/`respawn` 은 index 를 그대로 `terminal.kill`/`terminal.respawn` 에 넘겨
+/// 호스트가 해석하게 두지만, 자식 surface 를 대상으로 다른 명령(예: reboot 경로)을
+/// 태우려면 여기서 직접 id 를 알아야 한다.
+///
+/// **필드명 주의**: 여기서 부르는 것은 claude 특화 remap 된 `claude.children`
+/// (`child_surface_id`)이 아니라 **원본** `terminal.children` 이므로 `surface_id` 를
+/// 읽는다 — `handle_children` 이 remap 하는 쪽과 헷갈리면 항상 `None` 이 나온다
+/// (`compute_spawn_warning` 에도 같은 취지의 경고가 붙어 있다).
+pub(crate) fn resolve_child_surface_id<H: HostCall>(
+    host: &H,
+    parent_surface_id: u32,
+    child_index: u32,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    let resp = host
+        .call("terminal.children", json!({ "surface": parent_surface_id }))
+        .map_err(IpcMethodError::from)?;
+    let children = resp
+        .get("children")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let found = children
+        .iter()
+        .find(|c| c.get("index").and_then(|v| v.as_u64()) == Some(child_index as u64))
+        .and_then(|c| c.get("surface_id").and_then(|v| v.as_u64()))
+        .map(|v| v as u32);
+    found.ok_or_else(|| {
+        // 있는 index 를 함께 보여준다 — "없다" 만으로는 오타인지 자식이 이미
+        // 죽은 것인지 호출자가 구분할 수 없다.
+        let available: Vec<String> = children
+            .iter()
+            .filter_map(|c| c.get("index").and_then(|v| v.as_u64()))
+            .map(|i| i.to_string())
+            .collect();
+        let available = if available.is_empty() {
+            "-".to_string()
+        } else {
+            available.join(", ")
+        };
+        IpcMethodError::invalid_params(
+            &tr.t("claude.child.unknown_index")
+                .replacen("{}", &child_index.to_string(), 1)
+                .replacen("{}", &parent_surface_id.to_string(), 1)
+                .replacen("{}", &available, 1),
+        )
+    })
 }
 
 /// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. CLI 인자를
@@ -279,7 +332,7 @@ fn notify_done_message(tr: &Translator, command_name: &str, target_surface: u32)
 /// 수명이 다르기 때문이다. 상태 전환 hook 은 "전환했으니 알리고 그룹째 정리 후
 /// 재무장" 하는 once 사이클을 도는데, 에러 정지는 그 사이클과 무관하게 반복될 수
 /// 있어 같은 그룹에 끼우면 서로의 정리 대상이 되어 사이클이 꼬인다.
-fn register_notify_hooks<H: HostCall>(
+pub(crate) fn register_notify_hooks<H: HostCall>(
     host: &H,
     caller_surface: u32,
     target_surface: u32,
@@ -608,6 +661,45 @@ pub(crate) fn handle_respawn(
         "child_surface_id": child_surface_id,
         "child_index": child_index,
         "parent_surface_id": parent_surface_id,
+    }))
+}
+
+/// `claude.child_profile` 진입점 — 부모가 **자식**에게 지속 세션 프로필을 붙인다.
+///
+/// 부착 자체는 새로 만들지 않는다: `--child <index>` 를 자식 surface id 로 바꾼 뒤
+/// [`crate::reboot::reboot_surface`] 에 그대로 넘긴다 — 자식이 스스로
+/// `reboot --profile` 을 부른 것과 완전히 같은 경로(프로필 검증 → surface meta 부착
+/// → Ctrl+C → `claude -r <sid> --settings`)를 탄다. 중복 가드(`inflight`)도 reboot
+/// 과 같은 set 을 공유하므로 같은 자식에 두 명령이 겹치면 뒤엣것이 거부된다.
+///
+/// `reboot` 과 다른 점은 둘뿐이다:
+/// - 대상이 자식이므로 **호출자(부모)의 턴은 잘리지 않는다** — reboot 문서의
+///   "턴의 마지막 행동으로 호출하라" 제약은 여기 해당하지 않는다.
+/// - `spawn`/`tell` 과 같은 완료 알림 hook 을 자동으로 건다 — 부모가 자식의
+///   재기동 완료(idle/needs_input/exited)를 기다릴 수 있어야 하기 때문.
+pub(crate) fn handle_child_profile(
+    inflight: &Arc<Mutex<HashSet<u32>>>,
+    host: &HostHandle,
+    params: &Value,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params, tr)?;
+    // `--child` 는 항상 필수다 — 생략을 caller 자신으로 해석하면 `reboot --profile`
+    // 과 창구가 겹친다.
+    let child_index = require_child_index(params, tr)?;
+    let child_surface_id = resolve_child_surface_id(host, parent_surface_id, child_index, tr)?;
+
+    let resp = reboot_surface(inflight, host, child_surface_id, params, data_dir, tr)?;
+
+    register_notify_hooks(host, parent_surface_id, child_surface_id, "child-profile");
+
+    Ok(json!({
+        "child_surface_id": child_surface_id,
+        "child_index": child_index,
+        "parent_surface_id": parent_surface_id,
+        "session_id": resp.get("session_id").cloned().unwrap_or(Value::Null),
+        "reboot_in_secs": resp.get("reboot_in_secs").cloned().unwrap_or(Value::Null),
     }))
 }
 
@@ -1287,6 +1379,10 @@ mod tests {
         hooks: RefCell<Vec<MockHook>>,
         next_id: RefCell<u64>,
         alive: RefCell<std::collections::HashSet<u32>>,
+        /// `terminal.children` 응답의 `children` 배열. 호스트 원본 스키마 그대로
+        /// `surface_id` 필드를 쓴다 — claude 특화 remap(`child_surface_id`)은
+        /// `handle_children` 이 나중에 얹는 것이라 여기 있으면 안 된다.
+        children: RefCell<Vec<Value>>,
     }
 
     impl MockHost {
@@ -1295,7 +1391,12 @@ mod tests {
                 hooks: RefCell::new(Vec::new()),
                 next_id: RefCell::new(1),
                 alive: RefCell::new(std::collections::HashSet::new()),
+                children: RefCell::new(Vec::new()),
             }
+        }
+
+        fn set_children(&self, children: Vec<Value>) {
+            *self.children.borrow_mut() = children;
         }
 
         /// event 발화 시뮬레이션 — 매칭 once-hook 제거(호스트 `check_and_fire` 의
@@ -1392,9 +1493,58 @@ mod tests {
                     let exists = self.alive.borrow().contains(&sid);
                     Ok(json!({ "surface_id": sid, "exists": exists }))
                 }
+                "terminal.children" => Ok(json!({ "children": self.children.borrow().clone() })),
                 _ => Ok(json!({})),
             }
         }
+    }
+
+    // ── `--child <index>` → child surface id 해석 (todo/52 R2) ──
+
+    #[test]
+    fn child_index_resolves_to_the_hosts_surface_id() {
+        let tr = test_translator();
+        let host = MockHost::new();
+        host.set_children(vec![
+            json!({ "index": 0, "surface_id": 7 }),
+            json!({ "index": 1, "surface_id": 9 }),
+        ]);
+        assert_eq!(resolve_child_surface_id(&host, 3, 1, &tr).unwrap(), 9);
+        assert_eq!(resolve_child_surface_id(&host, 3, 0, &tr).unwrap(), 7);
+    }
+
+    #[test]
+    fn child_index_out_of_range_is_invalid_params_and_lists_what_exists() {
+        let tr = test_translator();
+        let host = MockHost::new();
+        host.set_children(vec![
+            json!({ "index": 0, "surface_id": 7 }),
+            json!({ "index": 1, "surface_id": 9 }),
+        ]);
+        let err = resolve_child_surface_id(&host, 3, 99, &tr).unwrap_err();
+        assert_eq!(err.code, -32602);
+        // 오타인지 자식이 죽은 것인지 구분할 수 있게 실제 index 목록이 실린다.
+        assert!(err.message.contains("99"), "{}", err.message);
+        assert!(err.message.contains("0, 1"), "{}", err.message);
+    }
+
+    #[test]
+    fn child_index_with_no_children_at_all_is_rejected() {
+        let tr = test_translator();
+        let host = MockHost::new();
+        let err = resolve_child_surface_id(&host, 3, 0, &tr).unwrap_err();
+        assert_eq!(err.code, -32602);
+    }
+
+    #[test]
+    fn child_index_does_not_read_the_claude_remapped_field() {
+        // `claude.children` 이 쓰는 `child_surface_id` 만 있고 원본 `surface_id` 가
+        // 없으면 해석은 실패해야 한다 — 두 필드를 헷갈린 채 통과하면 엉뚱한
+        // surface 를 재기동시킨다.
+        let tr = test_translator();
+        let host = MockHost::new();
+        host.set_children(vec![json!({ "index": 0, "child_surface_id": 7 })]);
+        assert!(resolve_child_surface_id(&host, 3, 0, &tr).is_err());
     }
 
     #[test]

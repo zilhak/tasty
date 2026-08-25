@@ -42,6 +42,9 @@ stalled_hint = " 마지막 에러: {}"
 [claude.launch]
 workspace_create_missing_id = "호스트 workspace.create 응답에 'id' 가 없다"
 
+[claude.child]
+unknown_index = "index {} 인 자식이 없다 — 부모 surface {} 기준 (사용 가능한 index: {})"
+
 [claude.respawn]
 missing_child_surface_id = "호스트 terminal.respawn 응답에 'child_surface_id' 가 없다: {}"
 

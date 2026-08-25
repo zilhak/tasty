@@ -42,6 +42,9 @@ stalled_hint = " Last error: {}"
 [claude.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id'"
 
+[claude.child]
+unknown_index = "no child at index {} under parent surface {} (available indices: {})"
+
 [claude.respawn]
 missing_child_surface_id = "host terminal.respawn response is missing 'child_surface_id': {}"
 

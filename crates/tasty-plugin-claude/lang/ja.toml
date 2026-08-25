@@ -42,6 +42,9 @@ stalled_hint = " 直近のエラー: {}"
 [claude.launch]
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません"
 
+[claude.child]
+unknown_index = "index {} の子はありません — 親 surface {} 基準(利用可能な index: {})"
+
 [claude.respawn]
 missing_child_surface_id = "ホストの terminal.respawn 応答に 'child_surface_id' がありません: {}"
 

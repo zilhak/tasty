@@ -91,8 +91,29 @@ pub(crate) fn handle_reboot(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface_id(params, tr)?;
+    reboot_surface(inflight, host, surface_id, params, data_dir, tr)
+}
+
+/// 대상 surface 가 이미 정해진 상태의 reboot 본체. `handle_reboot` 은 `--surface`
+/// 를 읽어서, `child-profile`(`handlers::handle_child_profile`)은 `--child` 를
+/// surface id 로 해석해서 각각 여기로 들어온다 — 대상 해석만 다르고 그 뒤의
+/// 검증·캡처·시퀀스는 **한 벌만** 존재한다(부착 경로를 복제하지 않는다).
+///
+/// `inflight` 도 그대로 공유하므로 두 명령이 같은 surface 를 동시에 태우면
+/// 뒤엣것이 `already_in_progress` 로 거부된다.
+pub(crate) fn reboot_surface(
+    inflight: &Arc<Mutex<HashSet<u32>>>,
+    host: &HostHandle,
+    surface_id: u32,
+    params: &Value,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let (delay_secs, extra_prompt) = parse_reboot_options(params);
-    let profile_action = parse_profile_option(params, tr)?;
+    // host 왕복 없이 판정 가능한 프로필 검증(상호배타 · 이름 해석 · 파일 파싱)은
+    // 전부 여기서 끝낸다 — 뒤따르는 어떤 부수효과(meta 갱신 · Ctrl+C 시퀀스)보다
+    // 앞이라, 잘못된 인자로는 대상이 죽지 않는다.
+    let (profile_action, preresolved) = preflight_profile(params, data_dir, tr)?;
 
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
     let session_id = fetch_session_id(host, surface_id, tr)?;
@@ -107,8 +128,15 @@ pub(crate) fn handle_reboot(
     // 부착/승계/해제 판정 + (있으면) 파일 존재+JSON 파싱 동기 검증. 실패 시 여기서
     // 즉시 반환 — 시퀀스(Ctrl+C 등)를 시작하지 않는다(깨진 프로필로 claude 기동이
     // 실패해 전경이 baseline 복귀 못 하고 방치되는 사고 방지).
-    let profile_file =
-        resolve_and_apply_profile(host, surface_id, &session_id, &profile_action, data_dir, tr)?;
+    let profile_file = resolve_and_apply_profile(
+        host,
+        surface_id,
+        &session_id,
+        &profile_action,
+        preresolved,
+        data_dir,
+        tr,
+    )?;
 
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_fmt(
@@ -244,27 +272,57 @@ pub(crate) fn parse_profile_option(
 /// 이름 기반 부착(`AttachNames`)은 meta 에 **이름**을 저장하고, `Keep` 승계 시에도
 /// 이름-meta 가 있으면 매번 다시 해석한다(등록 내용이 갱신됐을 수 있으므로 경로를
 /// 캐시하지 않는다) — 경로-meta 는 이름-meta 가 없을 때만 폴백으로 본다.
+/// 프로필 인자를 **host 를 건드리지 않고** 끝까지 검증한다 — 상호배타 판정
+/// (`parse_profile_option`), 등록 이름 해석, 그리고 결과 파일의 존재+JSON 파싱.
+///
+/// [`reboot_surface`] 가 세션 조회보다도 먼저 이걸 부르는 이유는 실패 지점을
+/// 앞으로 당기기 위해서다: 여기서 거부되면 surface meta 도 안 바뀌고 Ctrl+C 도
+/// 안 나가므로, 오타난 프로필 이름 하나로 멀쩡한 (자식) 세션이 죽는 일이 없다.
+///
+/// `Keep`(무인자 승계)만 surface meta 를 읽어야 해서 여기서 후보를 못 정한다 —
+/// `None` 을 돌려주고 [`resolve_and_apply_profile`] 이 이어서 해석한다.
+pub(crate) fn preflight_profile(
+    params: &Value,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) -> Result<(ProfileOption, Option<String>), IpcMethodError> {
+    let action = parse_profile_option(params, tr)?;
+    let candidate = match &action {
+        ProfileOption::AttachPath(path) => Some(path.clone()),
+        ProfileOption::AttachNames(names) => Some(resolve_names_to_path(data_dir, names, tr)?),
+        ProfileOption::Clear | ProfileOption::Keep => None,
+    };
+    if let Some(path) = &candidate {
+        validate_profile_file(path, tr)?;
+    }
+    Ok((action, candidate))
+}
+
+/// `preflight_profile` 이 이미 정한 후보(`preresolved`)를 받아 meta 부착까지
+/// 마무리한다. `Keep` 일 때만 여기서 후보를 새로 해석한다.
 fn resolve_and_apply_profile(
     host: &HostHandle,
     surface_id: u32,
     session_id: &str,
     action: &ProfileOption,
+    preresolved: Option<String>,
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Option<String>, IpcMethodError> {
     let candidate = match action {
         ProfileOption::Clear => None,
-        ProfileOption::AttachPath(path) => Some(path.clone()),
-        ProfileOption::AttachNames(names) => Some(resolve_names_to_path(data_dir, names, tr)?),
-        ProfileOption::Keep => match fetch_profile_names_meta(host, surface_id) {
-            Some(names) => Some(resolve_names_to_path(data_dir, &names, tr)?),
-            None => fetch_profile_meta(host, surface_id),
-        },
+        ProfileOption::AttachPath(_) | ProfileOption::AttachNames(_) => preresolved,
+        ProfileOption::Keep => {
+            let candidate = match fetch_profile_names_meta(host, surface_id) {
+                Some(names) => Some(resolve_names_to_path(data_dir, &names, tr)?),
+                None => fetch_profile_meta(host, surface_id),
+            };
+            if let Some(path) = &candidate {
+                validate_profile_file(path, tr)?;
+            }
+            candidate
+        }
     };
-
-    if let Some(path) = &candidate {
-        validate_profile_file(path, tr)?;
-    }
 
     // meta 갱신과 **같은 지점**에서 session id 키 부착 기록도 갱신한다 — 한쪽만
     // 갱신되는 경로가 생기면 복원 시 meta 와 기록이 다른 프로필을 가리킨다.
@@ -758,6 +816,63 @@ mod tests {
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    // ── 프로필 인자 preflight (todo/52 확인 절차 3·4번) ──
+    //
+    // `preflight_profile` 은 `host` 를 **인자로 받지 않는다** — 시그니처 자체가
+    // "여기서 거부되면 Ctrl+C 도 meta 갱신도 일어날 수 없다" 는 보증이다.
+    // `reboot_surface` 가 세션 조회보다도 먼저 이 함수를 부른다.
+
+    #[test]
+    fn preflight_rejects_profile_and_profile_file_together() {
+        let tr = test_translator();
+        let dir = tempfile::tempdir().unwrap();
+        let err = preflight_profile(
+            &json!({ "profile": "probe", "profile_file": "/tmp/x.json" }),
+            Some(dir.path()),
+            &tr,
+        )
+        .unwrap_err();
+        assert!(
+            err.message.contains("mutually exclusive"),
+            "{}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn preflight_rejects_an_unregistered_profile_name() {
+        let tr = test_translator();
+        let dir = tempfile::tempdir().unwrap();
+        let err =
+            preflight_profile(&json!({ "profile": "nosuch" }), Some(dir.path()), &tr).unwrap_err();
+        assert!(err.message.contains("nosuch"), "{}", err.message);
+    }
+
+    #[test]
+    fn preflight_resolves_a_registered_profile_name_to_a_real_file() {
+        let tr = test_translator();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.json");
+        std::fs::write(&src, r#"{"hooks":{}}"#).unwrap();
+        crate::profile::register(Some(dir.path()), "probe", &src).unwrap();
+
+        let (action, resolved) =
+            preflight_profile(&json!({ "profile": "probe" }), Some(dir.path()), &tr).unwrap();
+        assert!(matches!(action, ProfileOption::AttachNames(ref n) if n == "probe"));
+        let resolved = resolved.expect("registered name resolves to a merged file");
+        assert!(Path::new(&resolved).is_file(), "{resolved}");
+    }
+
+    #[test]
+    fn preflight_leaves_keep_unresolved_for_the_meta_lookup() {
+        // 무인자 승계는 surface meta 를 읽어야 하므로 여기서 후보를 못 정한다.
+        let tr = test_translator();
+        let dir = tempfile::tempdir().unwrap();
+        let (action, resolved) = preflight_profile(&json!({}), Some(dir.path()), &tr).unwrap();
+        assert!(matches!(action, ProfileOption::Keep));
+        assert_eq!(resolved, None);
     }
 
     #[test]

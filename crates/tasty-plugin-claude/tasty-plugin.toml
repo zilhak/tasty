@@ -64,6 +64,10 @@ subcommands = [
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index" },
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance" },
     { name = "reboot",    ipc_method = "claude.reboot",    args = "reboot_args",    description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off." },
+    # 부모가 자식에게 지속 프로필을 붙이는 전용 창구. 처리는 자식 surface 에 대한
+    # reboot 과 동일 경로다(부착 메커니즘을 새로 만들지 않는다). `--child` 필수 —
+    # 자기 자신 지목은 `reboot --profile` 의 몫이라 여기서 겹치지 않게 막는다.
+    { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits." },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system." },
@@ -192,6 +196,17 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile (path- or name-based) before resuming" },
+]
+
+[contributes.cli.arg_groups.child_profile_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "child_index", type = "u32", flag = "--child", required = true, help = "Child index to attach the profile to (as reported by 'claude children')" },
+    { name = "delay",   type = "u32",    flag = "--delay",   required = false, help = "Seconds to wait before killing the child's Claude (default: 5)" },
+    { name = "prompt",  type = "string", flag = "--prompt",  required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted child" },
+    { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach to the child via --settings on resume. Persists on the child surface and is inherited by its future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
+    { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach to the child, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the child surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
+    { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach the child's previously attached session profile (path- or name-based) before resuming" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
