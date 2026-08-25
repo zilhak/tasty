@@ -71,6 +71,14 @@ tasty memory secret {put|get|delete|list|exists|count|scopes|stats} ...   # secr
 
 `~/.tasty/config.toml` `[memory]` 의 `entry_max_mb`/`secret_quota_mb_per_plugin`/`regular_quota_mb_total` 로 재정의. **eviction 안 함** — 초과 시 명시적 에러(데이터가 말없이 사라지는 surprise 방지). `_host` 도 quota 를 받는다(root 는 owner check 에만 적용, 비대 방지는 동일).
 
+## 파일 위생 — WAL 크기와 부팅 정리
+
+`memory.db` 는 WAL 모드라 `memory.db-wal`(로그) · `memory.db-shm`(WAL-index) 을 함께 갖는다. 이 두 파일은 **가만히 두면 줄지 않는다** — SQLite 는 체크포인트 후에도 재사용을 위해 WAL 파일 크기를 유지하기 때문이다.
+
+- **상한**: `prepare()` 가 `journal_size_limit` 을 `WAL_SIZE_LIMIT_BYTES`(= `wal_autocheckpoint` 임계와 정확히 같은 1000 페이지 × 4096B)로 건다. 상한을 넘긴 WAL 은 다음 되감기에서 잘려 나간다. 이 pragma 가 없으면 큰 트랜잭션이나 VACUUM 으로 한 번 부푼 WAL 이 프로세스 수명 내내 고착되고, `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 **커밋마다 그 크기만큼 WAL-index 를 훑는다**(실측: 169MB WAL 이 메인 스레드 CPU 를 상시 점유).
+- **회수**: 상한은 앞으로 커지는 것만 막으므로, 이미 커진 WAL 은 `MemoryStore::checkpoint_truncate()` 로 되감기를 한 번 강제해야 줄어든다. 부팅 위생 정리(`src/boot.rs::maintain_memory_at_boot`)가 이것을 **VACUUM 뒤에** 1 회 수행한다 — VACUUM 은 DB 를 통째로 다시 쓰므로 그 자체로 WAL 을 크게 부풀린다.
+- 같은 상한이 `state.db` 에도 적용된다 — 두 DB 는 각자의 `prepare` 를 쓰므로 상수만 공유한다([storage](storage.md)).
+
 ## 보안·신뢰 모델
 
 Secret 의 격리 약속은 **"plugin 간 IPC 격리" 하나로 좁혀져 있다.** 자세한 위협 모델·왜 암호화 안 하는가·sandbox 도입 시 미래 경로는 [ADR-0005](../../adr/0005-memory-secret-not-a-vault.md).
