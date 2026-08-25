@@ -44,6 +44,21 @@ impl Db {
         conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
         conn.pragma_update(None, "foreign_keys", "ON").ok();
+        // WAL 크기 상한. state.db 는 memory.db 와 **별개의 prepare** 를 쓰므로
+        // (같은 세 pragma 를 각자 박아 둔 형태) 한쪽만 고치면 다른 쪽은 그대로
+        // 무한히 자란다. 값의 근거는 `tasty_memory::WAL_SIZE_LIMIT_BYTES` doc 참조 —
+        // 두 DB 가 같은 SQLite 기본값(page_size 4096 · wal_autocheckpoint 1000)을
+        // 쓰므로 상한도 같은 값을 공유한다.
+        if let Err(e) = conn.pragma_update(
+            None,
+            "journal_size_limit",
+            tasty_memory::WAL_SIZE_LIMIT_BYTES,
+        ) {
+            tracing::warn!(
+                "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
+                path.display()
+            );
+        }
 
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {
@@ -179,6 +194,20 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `state.db` 는 `memory.db` 와 **다른 `prepare`** 를 쓴다(각 crate 가 같은
+    /// pragma 를 따로 박아 둔 형태). 그래서 한쪽만 고치면 다른 쪽 WAL 은 여전히
+    /// 무한히 자란다 — 두 경로가 같은 상한을 쓰는지 여기서 고정한다.
+    #[test]
+    fn journal_size_limit_matches_the_memory_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("state.db")).unwrap();
+        let limit: i64 = db
+            .conn
+            .query_row("PRAGMA journal_size_limit", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(limit, tasty_memory::WAL_SIZE_LIMIT_BYTES);
+    }
 
     #[test]
     fn classify_sql_busy() {
