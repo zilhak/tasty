@@ -422,14 +422,31 @@ fn render_layout(
     }
 }
 
+/// `list workspaces` 한 행. id 를 함께 찍는 것이 핵심이다 — `terminal.spawn` 의
+/// workspace-not-found 오류가 이 명령을 가리키므로, 여기서 `--workspace` 에 넣을
+/// 값을 바로 얻을 수 있어야 한다. 표기는 `format_tree` 의 `(id:N)` 과 맞춘다.
+///
+/// `[mirror]` 는 이 워크스페이스가 원격을 attach 한 client mirror 라는 뜻이다
+/// (구조 변경이 원격으로 forward 되므로 로컬과 동작이 다르다 —
+/// `docs/features/remote-attach/index.md`). 번역하지 않고 고정 토큰으로 두는 것은
+/// 이 파일의 `list` 계열 구조 출력이 전부 하드코딩 영어라는 컨벤션을 따른 것이다
+/// (`(N panes)` · `Pane {id}` · `[ws:N name]`). 한 행에서 이것만 번역되면 오히려
+/// 어긋나고, 에이전트가 파싱하는 식별 토큰이 로케일에 따라 흔들린다.
+fn format_workspace_row(ws: &serde_json::Value) -> String {
+    let id = ws.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let active = ws.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+    let pane_count = ws.get("pane_count").and_then(|v| v.as_u64()).unwrap_or(0);
+    let mirror = ws.get("mirror").and_then(|v| v.as_bool()).unwrap_or(false);
+    let active_marker = if active { " *" } else { "" };
+    let mirror_marker = if mirror { " [mirror]" } else { "" };
+    format!("{name} (id:{id}){active_marker}{mirror_marker} ({pane_count} panes)")
+}
+
 fn format_workspace_list(result: &serde_json::Value) {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
-            let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-            let active = ws.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
-            let pane_count = ws.get("pane_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            let marker = if active { " *" } else { "" };
-            println!("{}{} ({} panes)", name, marker, pane_count);
+            println!("{}", format_workspace_row(ws));
         }
     }
 }
@@ -482,7 +499,7 @@ fn format_notification_list(result: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_runner_summary, render_layout};
+    use super::{format_runner_summary, format_workspace_row, render_layout};
     use serde_json::json;
 
     #[test]
@@ -521,6 +538,45 @@ mod tests {
             "running": true, "crashed": false, "ready_count": 3, "running_count": 1,
         }));
         assert_eq!(s, "runner: running (ready=3 running=1)");
+    }
+
+    /// `terminal.spawn` 의 workspace-not-found 오류가 이 명령을 가리킨다 — 행에서
+    /// `--workspace` 에 넣을 값을 바로 얻을 수 있어야 한다.
+    #[test]
+    fn workspace_row_includes_id() {
+        let row = format_workspace_row(&json!({
+            "id": 3, "name": "project-a", "active": false, "pane_count": 2, "mirror": false,
+        }));
+        assert_eq!(row, "project-a (id:3) (2 panes)");
+    }
+
+    /// mirror 워크스페이스는 구조 변경이 원격으로 forward 되어 로컬과 동작이 다르다 —
+    /// 에이전트가 조작 전에 판별할 수 있어야 한다.
+    #[test]
+    fn workspace_row_marks_mirror() {
+        let row = format_workspace_row(&json!({
+            "id": 7, "name": "remote-ws", "active": false, "pane_count": 1, "mirror": true,
+        }));
+        assert_eq!(row, "remote-ws (id:7) [mirror] (1 panes)");
+    }
+
+    /// active 표시는 id 뒤, mirror 앞. 둘은 서로 다른 축이라 함께 붙을 수 있다.
+    #[test]
+    fn workspace_row_shows_active_and_mirror_together() {
+        let row = format_workspace_row(&json!({
+            "id": 2, "name": "ws", "active": true, "pane_count": 4, "mirror": true,
+        }));
+        assert_eq!(row, "ws (id:2) * [mirror] (4 panes)");
+    }
+
+    /// 구버전 호스트 응답처럼 `mirror` 가 없으면 없는 것으로 본다(마커 없음) —
+    /// 필드 추가가 구버전 CLI/호스트 조합을 깨지 않는다.
+    #[test]
+    fn workspace_row_without_mirror_field_defaults_to_local() {
+        let row = format_workspace_row(&json!({
+            "id": 1, "name": "Workspace 1", "active": true, "pane_count": 2,
+        }));
+        assert_eq!(row, "Workspace 1 (id:1) * (2 panes)");
     }
 
     #[test]
