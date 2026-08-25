@@ -1057,7 +1057,7 @@ saved = "自動保存されます"
 
 [preset.edit]
 dag_id = "DAG ID"
-dag_id_hint = "空欄ならワークスペースの進行中 DAG に追従する"
+dag_id_hint = "空欄ならワークスペースの進行中 DAG に追従します"
 kind = "種類"
 cwd = "作業ディレクトリ"
 startup = "起動コマンド"
@@ -1388,17 +1388,17 @@ fit = "全体表示"
 direction = "方向切替"
 
 [dag.lod]
-compact = "名前のみ表示 — 拡大すると状態が見える"
-block = "状態ブロック表示 — 拡大すると名前が見える"
+compact = "名前のみ表示 — 拡大すると状態が見えます"
+block = "状態ブロック表示 — 拡大すると名前が見えます"
 
 [dag.cycle]
-lead = "サイクル検出 — ランナーは task {} 件を進められない:"
+lead = "サイクル検出 — ランナーは task {} 件を進められません:"
 
 [dag.empty]
-none = "このワークスペースに task がない"
+none = "このワークスペースに task がありません"
 none_hint = "作成: tasty agent task-create --workspace-id {} ..."
-missing = "DAG が見つからない: {}"
-missing_hint = "削除された可能性がある。ヘッダーから別の DAG を選ぶ。"
+missing = "DAG が見つかりません: {}"
+missing_hint = "削除された可能性があります。ヘッダーから別の DAG を選択してください。"
 
 [dag.status]
 waiting = "待機"
@@ -1458,9 +1458,9 @@ derived = "derived"
 count = "{} / {} DAG"
 close = "閉じる"
 empty_none = "DAG がありません"
-empty_none_hint = "依存関係でまとまったタスクがここに表示される。"
+empty_none_hint = "依存関係でまとまったタスクがここに表示されます。"
 empty_filtered = "一致する DAG がありません"
-empty_filtered_hint = "条件を変えて探してみる。"
+empty_filtered_hint = "条件を変えて探してみてください。"
 
 # 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]

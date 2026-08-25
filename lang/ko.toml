@@ -1057,7 +1057,7 @@ saved = "자동 저장됨"
 
 [preset.edit]
 dag_id = "DAG ID"
-dag_id_hint = "비워 두면 워크스페이스의 진행 중인 DAG 를 따라간다"
+dag_id_hint = "비워 두면 워크스페이스의 진행 중인 DAG 를 따라갑니다"
 kind = "종류"
 cwd = "작업 디렉터리"
 startup = "시작 명령어"
@@ -1386,17 +1386,17 @@ fit = "전체 맞춤"
 direction = "방향 전환"
 
 [dag.lod]
-compact = "이름만 표시 — 확대하면 상태가 보인다"
-block = "상태 블록 표시 — 확대하면 이름이 보인다"
+compact = "이름만 표시 — 확대하면 상태가 보입니다"
+block = "상태 블록 표시 — 확대하면 이름이 보입니다"
 
 [dag.cycle]
-lead = "사이클 감지 — 러너가 task {} 개를 진행하지 못한다:"
+lead = "사이클 감지 — 러너가 task {} 개를 진행하지 못합니다:"
 
 [dag.empty]
-none = "이 워크스페이스에 task 가 없다"
+none = "이 워크스페이스에 task 가 없습니다"
 none_hint = "생성: tasty agent task-create --workspace-id {} ..."
-missing = "DAG 를 찾을 수 없다: {}"
-missing_hint = "삭제됐을 수 있다. 헤더에서 다른 DAG 를 고른다."
+missing = "DAG 를 찾을 수 없습니다: {}"
+missing_hint = "삭제되었을 수 있습니다. 헤더에서 다른 DAG 를 선택하세요."
 
 [dag.status]
 waiting = "대기"
@@ -1456,9 +1456,9 @@ derived = "derived"
 count = "{} / {} DAG"
 close = "닫기"
 empty_none = "DAG 없음"
-empty_none_hint = "의존 관계로 묶인 작업이 여기 나타난다."
+empty_none_hint = "의존 관계로 묶인 작업이 여기에 표시됩니다."
 empty_filtered = "일치하는 DAG 없음"
-empty_filtered_hint = "다른 조건으로 찾아보라."
+empty_filtered_hint = "다른 조건으로 찾아보세요."
 
 # 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
