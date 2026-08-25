@@ -41,8 +41,8 @@
 //! `continue-checklist` 는 파일로 실체화되지 않고 [`host_default_gate`] 조회
 //! 함수로만 존재한다(본문은 lang 의 `claude.checklist.body`, 센티넬은
 //! [`crate::checklist::SENTINEL`], 라운드 상한은 미지정 → Settings 폴백).
-//! `MANAGED_HOOKS` · `HOST_DEFAULT_PROFILE_NAMES` 가 이미 같은 형태이고, host
-//! 기본값을 데이터 디렉토리에 실체화하면 사용자가 지웠을 때 되살릴 경로가 없다.
+//! `MANAGED_HOOKS` · [`host_default_names`] 가 이미 같은 형태이고, host 기본값을
+//! 데이터 디렉토리에 실체화하면 사용자가 지웠을 때 되살릴 경로가 없다.
 
 use std::path::{Path, PathBuf};
 
