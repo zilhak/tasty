@@ -68,6 +68,24 @@ fn vacuum_if_needed(store: &mut tasty_memory::MemoryStore, pruned: u64) {
     log_vacuum_result(store.vacuum_if_fragmented(10_000));
 }
 
+/// 이미 비대해진 WAL 회수 — `journal_size_limit`(`tasty_memory::WAL_SIZE_LIMIT_BYTES`)
+/// 은 앞으로 커지는 것만 막으므로, 기존 인스턴스의 큰 WAL 은 되감기를 한 번
+/// 강제해야 줄어든다.
+///
+/// **VACUUM 뒤에** 부른다: VACUUM 은 DB 전체를 다시 쓰므로 그 자체로 WAL 을 크게
+/// 부풀린다. 순서를 뒤집으면 잘라낸 직후 다시 커진 채로 부팅이 끝난다.
+fn truncate_wal(store: &mut tasty_memory::MemoryStore) {
+    match store.checkpoint_truncate() {
+        Ok(true) => {}
+        // busy — 다른 커넥션이 읽는 중이라 이번엔 못 줄였다. 다음 부팅에 다시 시도되고
+        // 그 사이에도 pragma 가 상한을 지키므로 정보 수준으로만 남긴다.
+        Ok(false) => {
+            tracing::info!("boot memory maintenance: wal checkpoint was busy; wal left as is")
+        }
+        Err(e) => tracing::warn!("boot memory maintenance: wal checkpoint failed: {e}"),
+    }
+}
+
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
     // 로그 키별 보존 개수 상한. audit 은 보안 감사용이라 넉넉히, telemetry 는 짧게.
     const AUDIT_KEEP: u64 = 50_000;
@@ -85,6 +103,7 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
         pruned += prune_one_prefix(&mut store, prefix, keep);
     }
     vacuum_if_needed(&mut store, pruned);
+    truncate_wal(&mut store);
 }
 
 pub(crate) fn run() -> anyhow::Result<()> {
