@@ -44,6 +44,18 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 `attach.*` IPC namespace 는 `tasty attach` 로 노출되지 않고 용도별 CLI 로 갈린다: `tasty remote attach`/`remote check`(release, 원격 SSH), `tasty debug attach`(debug 전용, 로컬 loopback). 근거·동작은 [attach-behavior](attach-behavior.md), 격리는 [debug-ipc](debug-ipc.md).
 
+## 응답 계약 — mirror 워크스페이스로 간 구조 op
+
+대상이 **mirror(원격 attach client) 워크스페이스**인 구조 op(`tab.create`/`split`/`tab.close`/`tab.move`/`pane.close`/`surface.close`/convert 등)는 로컬에서 실행되지 않고 원격으로 forward 된다([remote-attach](../features/remote-attach/index.md#mirror-워크스페이스-내-구조-변경)). 그 응답은 **fire-and-forget success** 다:
+
+```json
+{ "forwarded": true, "workspace_index": 2 }
+```
+
+즉 **생성된 id(surface/tab/pane)를 담지 않는다.** 원격 실행은 비동기라 응답 시점에 아직 아무것도 만들어지지 않았기 때문이다. 결과는 나중에 `StructuralDelta` 역반영으로 mirror 트리에 반영된다.
+
+따라서 **구조 op 의 응답에서 생성된 id 를 동기로 꺼내 쓰는 호출자를 새로 만들지 않는다.** 그런 호출자는 mirror 워크스페이스에서 조용히 깨지고(응답에 필드가 없다), 게다가 forward 큐는 IPC 응답과 무관하게 드레인되므로 **로컬은 실패인데 원격에는 리소스가 남는** 고아를 만든다. 그 id 가 반드시 필요한 method 는 mirror 워크스페이스를 대상으로 **거부**해야 한다 — 실제 선례가 `terminal.spawn` 이며, 그 결정과 배경은 [ADR-0086](../adr/0086-reject-terminal-spawn-into-mirror-workspace.md).
+
 ## 권한 표 등재 (라우터 ↔ METHOD_TABLE)
 
 **IPC 라우터에 dispatch 분기가 있는 메서드는 예외 없이 권한 표에 등재한다** — plugin 에 열 것이면 `plugin(&[..])`, local caller 전용으로 둘 것이면 `local_only()`. 표는 `METHOD_TABLE`(+ debug 빌드 전용 `DEBUG_METHODS`, prefix fallback `PREFIX_RULES`, `crates/tasty-ipc/src/method_meta.rs`).

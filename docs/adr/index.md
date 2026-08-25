@@ -96,3 +96,4 @@
 | 0083 | [Stop-훅 게이트를 이름으로 등록하는 레지스트리로 일반화한다](0083-stop-gate-named-registry.md) | Accepted | 2026-08-24 | claude-plugin, registry, stop-hook, gate, session-profile, marker, cli, ipc, i18n |
 | 0084 | [plugin 이 트리거한 host popup 은 자진 신고한 부모 instance 로 스택을 이룬다](0084-plugin-triggered-host-popup-ownership.md) | Accepted | 2026-08-24 | popup, plugin, ipc, lifecycle, ownership |
 | 0085 | [IPC 관측 로그는 무한 보존하지 않는다 — 상한을 한 곳에서 관리하고, audit 은 deny 만 남긴다](0085-ipc-log-retention-bounded.md) | Accepted | 2026-08-25 | audit, telemetry, memory-db, retention, observability, cpu |
+| 0086 | [mirror 워크스페이스로의 `terminal.spawn` 은 거부하고, 대상 판정을 최종 pane 으로 옮긴다](0086-reject-terminal-spawn-into-mirror-workspace.md) | Accepted | 2026-08-25 | attach, mirror, terminal-spawn, structural-forward, orphan-resource, ipc, adr-0060 |
