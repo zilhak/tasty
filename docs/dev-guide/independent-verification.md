@@ -22,12 +22,12 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 |------|---------|-------|
 | IPC 포트 파일 | `~/.tasty/tasty.port` | `~/.tasty-debug/tasty.port` |
 | scrollback | `~/.tasty/scrollback/` | `~/.tasty-debug/scrollback/` |
-| layout | `~/.tasty/layout.json` | `~/.tasty-debug/layout.json` |
+| layout | `~/.tasty/layouts/NN.json` | `~/.tasty-debug/layouts/NN.json` |
 
 - 파일명은 양쪽 모두 동일(`tasty.port` 등) — 구분은 **루트** 가 한다. (`-debug` 파일명 접미사는 쓰지 않는다.)
 - `target/debug/tasty` (debug 바이너리)는 `~/.tasty-debug/` 루트를 읽으므로 CLI 조작이 **debug 인스턴스에만** 간다. 사용자의 release 인스턴스는 건드리지 않는다.
 - **`TASTY_HOME` env override**: 비어있지 않으면 그 경로를 루트로 강제한다(테스트/샌드박스/다중 인스턴스용) — debug/release 자동 분기보다 우선.
-- 구현(SoT): `crates/tasty-utils/src/path.rs` (`tasty_home()` — `TASTY_HOME` 우선, 없으면 `cfg!(debug_assertions)`→`.tasty-debug`), `crates/tasty-ipc/src/port_file.rs`, `src/store/scrollback.rs`, `src/engine/layout_persistence.rs`.
+- 구현(SoT): `crates/tasty-utils/src/path.rs` (`tasty_home()` — `TASTY_HOME` 우선, 없으면 `cfg!(debug_assertions)`→`.tasty-debug`), `crates/tasty-ipc/src/port_file.rs`, `src/store/scrollback.rs`, `src/core/layout_persistence.rs`.
 
 ## 새 기능 추가 시 적용
 

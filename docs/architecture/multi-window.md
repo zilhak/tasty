@@ -48,6 +48,20 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 모든 윈도우가 닫혀도 PTY 세션을 잃지 않도록, `App.parked_states` 에 `(AppState, CoreState)` 를 보관한다. 새 윈도우 생성 시 옮겨 담거나 IPC 가 직접 쓴다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
 
+파킹은 engine 을 살려 두는 것이므로 아래 레이아웃 슬롯 점유도 함께 유지된다 — 창은 없지만 슬롯은 여전히 그 engine 것이다.
+
+## 레이아웃 슬롯
+
+창 ↔ engine ↔ **레이아웃 슬롯**은 1:1 이다. 각 `CoreState` 는 자기 슬롯 번호(`layout_slot`)를 들고, 자기 슬롯 파일에만 저장한다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
+
+**점유는 살아있는 engine 에서 파생된다.** 별도 레지스트리도, 디스크 기록도 없다. 점유 집합은 그때그때 `views` 의 MainView 들과 `parked_states` 를 훑어 만든다 — 여기에 `App.core_state` 도 포함된다. 갓 만들어진 engine 은 `views` 에 등록되기 전까지 거기 임시로 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
+
+- engine 이 drop 되면(창 닫힘) 그 슬롯은 그 순간 free 가 된다 — 해제 호출이 없으니 해제 누락도 없다.
+- **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
+- 프로세스가 죽으면 점유는 전부 사라진다 — 크래시가 슬롯을 영구 점유로 남기지 않는다.
+
+결정의 근거·대안·재검토 조건은 [ADR-0087](../adr/0087-layout-slot-occupancy-model.md), 배정 규칙과 창 닫힘 정책의 현재 동작은 [layout-persistence](../features/layout-persistence/index.md).
+
 ## 윈도우 간 GPU·통신
 
 - 각 View 는 자체 wgpu surface + egui 컨텍스트 보유(`ViewBase.gpu`). wgpu adapter/device 는 공유.
@@ -70,3 +84,5 @@ Chrome 의 멀티 프로세스 사유(신뢰 불가 웹 코드 보안 격리)는
 - [아키텍처 개요](index.md) — headless `gui` feature 분리
 - [input-layer](input-layer.md) — 윈도우 내부 마우스 입력 계층
 - [concepts/hierarchy](../concepts/hierarchy.md) — 도메인 Window/Workspace/Pane/Tab/Surface
+- [ADR-0087](../adr/0087-layout-slot-occupancy-model.md) — 레이아웃 슬롯 점유 모델의 근거·대안
+- [features/layout-persistence](../features/layout-persistence/index.md) — 슬롯 배정·저장·복원의 현재 동작

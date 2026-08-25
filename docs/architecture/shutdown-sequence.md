@@ -23,7 +23,7 @@ begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
 
   SavingLayout
   └─ S1  flush_layout_persistence(true)
-         main + parked engine 각각 SaveLayoutNow{force} → layout.json
+         main + parked engine 각각 SaveLayoutNow{force} → 자기 슬롯 파일
          (surface.closed 발화 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
   ReclaimingBootWorker                    (부팅 중 종료 전용 — 아니면 건너뛴다)
   └─ S2  try_recv 폴링 + deadline 5s → 회수한 PluginManager 를 장착

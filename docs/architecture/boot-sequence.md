@@ -134,7 +134,7 @@ warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info` 로 �
 | T2.5 db_theme | `begin_boot` 진입 → 첫 로딩 프레임 직전 (db::init + theme apply) |
 | T2.9 window_visible | 부팅 시작 → `set_visible(true)` (첫 로딩 프레임 present 후) |
 | resumed_total | `resumed()` 전체 (T1~T2.5 + 첫 프레임 — 메인 스레드 점유 구간) |
-| T2.6 engine_init | CoreState 생성 + layout.json 로드 (**부팅 워커 스레드**에서 계측) |
+| T2.6 engine_init | CoreState 생성 + 슬롯 파일 로드 (**부팅 워커 스레드**에서 계측) |
 | T3a/T3b | plugin discovery / spawn (T3b 의 total_ms = T3 전체, **부팅 워커 스레드**) |
 | T2.7 engine_wait | `WaitingEngine` 체류 — 메인이 워커 결과를 기다린 시간. `frames` 필드 = 그 동안 돈 로딩 프레임 스텝 수(로딩 프레임이 실제로 갱신됐다는 계측 증거) |
 | T4 layout_wait_plugins | WaitingPlugins 체류 (탈출 사유 satisfied/deadline) |

@@ -92,7 +92,7 @@ in-place 교체라 리플로 0, release 시 원복. 사용자 입력 modifier �
 그 축을 반환하므로(modifier-exclusive, 우선순위 로직 없음) 세 축이 서로 새지 않는다. full 은
 카테고리 헤더 **우측**에 키캡(chevron 은 load-bearing 이라 교체 안 함, status dot 없음), rail 은 `---` 경계
 **중앙**에 키캡. 번호는 reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 없음. 전환 시 접힘이면 자동
-확장(layout.json 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`, 다음/이전
+확장(슬롯 파일 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`, 다음/이전
 카테고리 자체 전환은 `next_category`/`prev_category` 가 이 함수를 재사용). folders 토글 게이트.
 discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 글리프, folders on).
 
