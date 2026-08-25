@@ -433,12 +433,24 @@ fn fetch_settings_round_limit(host: &HostHandle) -> Option<u32> {
 
 /// 라운드 상한 폴백 체인 — 게이트 정의 > Settings > [`DEFAULT_ROUND_LIMIT`].
 ///
+/// **폴백은 게이트 출처(host 기본 / 사용자 등록)를 구분하지 않는다.** 상한을
+/// 지정하지 않은 게이트는 어느 쪽이든 Settings 값으로 내려간다.
+///
 /// 게이트가 이기는 이유: 명시 지정이 전역 기본값을 이기는 것이 일반적인 설정
 /// 우선순위이고, `--rounds 5` 로 등록해 둔 게이트가 Settings 값에 조용히 덮이면
-/// 등록 인자가 무의미해진다. 게다가 Settings 항목의 storage key 는 이름부터
-/// `continue_checklist_round_limit` 으로 host 기본 게이트 전용이라, 그 값을 사용자
-/// 정의 게이트에 강제할 근거가 없다. host 기본 게이트는 `round_limit` 미지정이라
-/// 폴백이 Settings 로 내려가 기존 동작이 그대로 보존된다.
+/// 등록 인자가 무의미해진다.
+///
+/// Settings 값을 모든 게이트에 쓰는 이유: [`ROUND_LIMIT_STORAGE_KEY`] 는 이름이
+/// host 기본 게이트 전용처럼 보이지만, **의미는 전 게이트 공용 기본값으로
+/// 재정의됐다** — 사용자에게 보이는 Settings 라벨이 "게이트가 자체 값을 지정하지
+/// 않았을 때의 기본값" 이라고 그렇게 안내한다(키 자체는 사용자가 조정해 둔 값이
+/// 유실되지 않도록 그대로 둔 것이다). 키 이름대로 좁게 해석해
+/// 사용자 게이트를 곧장 [`DEFAULT_ROUND_LIMIT`] 로 떨어뜨리면, 매 게이트마다
+/// `--rounds` 를 명시하지 않는 한 **사용자 게이트의 기본 상한을 조절할 수단이
+/// 아예 없어진다.** 그래서 그렇게 하지 않는다.
+///
+/// host 기본 게이트도 `round_limit` 미지정이라 같은 폴백을 타고 Settings 로
+/// 내려가므로 기존 동작이 그대로 보존된다.
 fn resolve_round_limit(gate_limit: Option<u32>, settings_limit: Option<u32>) -> u32 {
     gate_limit.or(settings_limit).unwrap_or(DEFAULT_ROUND_LIMIT)
 }
