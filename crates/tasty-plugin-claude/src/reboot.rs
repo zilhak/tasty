@@ -262,16 +262,6 @@ pub(crate) fn parse_profile_option(
     }
 }
 
-/// `ProfileOption` 을 이번 reboot 에 실제로 쓸 프로필 경로로 해석하고, 필요하면
-/// surface meta 를 갱신한다. 해석된 경로가 있으면 파일 존재와 JSON 파싱을
-/// 동기로 검증한다 — 새로 지정됐든 승계됐든(전에 유효했던 파일이 그 사이 지워지거나
-/// 깨졌을 수 있다) 동일하게, 실패 시 reboot 시퀀스를 시작하지 않고 즉시 에러를
-/// 반환한다. meta 쓰기는 검증을 통과한 뒤에만 하므로, 깨진 인자가 기존에 부착돼
-/// 있던 정상 프로필을 덮어쓰지 않는다.
-///
-/// 이름 기반 부착(`AttachNames`)은 meta 에 **이름**을 저장하고, `Keep` 승계 시에도
-/// 이름-meta 가 있으면 매번 다시 해석한다(등록 내용이 갱신됐을 수 있으므로 경로를
-/// 캐시하지 않는다) — 경로-meta 는 이름-meta 가 없을 때만 폴백으로 본다.
 /// 프로필 인자를 **host 를 건드리지 않고** 끝까지 검증한다 — 상호배타 판정
 /// (`parse_profile_option`), 등록 이름 해석, 그리고 결과 파일의 존재+JSON 파싱.
 ///
@@ -298,8 +288,20 @@ pub(crate) fn preflight_profile(
     Ok((action, candidate))
 }
 
-/// `preflight_profile` 이 이미 정한 후보(`preresolved`)를 받아 meta 부착까지
-/// 마무리한다. `Keep` 일 때만 여기서 후보를 새로 해석한다.
+/// `ProfileOption` 을 이번 reboot 에 실제로 쓸 프로필 경로로 해석하고, 필요하면
+/// surface meta 를 갱신한다. 해석된 경로가 있으면 파일 존재와 JSON 파싱을
+/// 동기로 검증한다 — 새로 지정됐든 승계됐든(전에 유효했던 파일이 그 사이 지워지거나
+/// 깨졌을 수 있다) 동일하게, 실패 시 reboot 시퀀스를 시작하지 않고 즉시 에러를
+/// 반환한다. meta 쓰기는 검증을 통과한 뒤에만 하므로, 깨진 인자가 기존에 부착돼
+/// 있던 정상 프로필을 덮어쓰지 않는다.
+///
+/// 명시 부착(`AttachPath`/`AttachNames`)의 해석·검증은 [`preflight_profile`] 이
+/// host 접촉 전에 이미 끝내 `preresolved` 로 넘겨준다 — 여기서 새로 해석·검증하는
+/// 것은 `Keep`(무인자 승계) 뿐이다. 어느 쪽이든 위 보증은 그대로다.
+///
+/// 이름 기반 부착(`AttachNames`)은 meta 에 **이름**을 저장하고, `Keep` 승계 시에도
+/// 이름-meta 가 있으면 매번 다시 해석한다(등록 내용이 갱신됐을 수 있으므로 경로를
+/// 캐시하지 않는다) — 경로-meta 는 이름-meta 가 없을 때만 폴백으로 본다.
 fn resolve_and_apply_profile(
     host: &HostHandle,
     surface_id: u32,
