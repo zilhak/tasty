@@ -371,7 +371,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // 전 슬롯 union scrollback GC. `new_with_ids` 가 슬롯을 읽기 전이어야 한다.
     crate::core::layout_persistence::migrate_and_gc_on_boot(boot_settings.general.restore_layout);
     let mut engine =
-        crate::core::CoreState::new_with_ids(80, 24, base_waker, None, app.core.memory_arc())?;
+        // 슬롯 `None` — headless 는 레이아웃 복원을 적용하지 않으므로(위 "0-C")
+        // 어떤 슬롯도 점유하지 않고 로드·저장 모두 하지 않는다.
+        crate::core::CoreState::new_with_ids(80, 24, base_waker, None, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);
     // agent task runner 재시작 정화(결정 2) — 자동 시작은 하지 않는다(결정 1).
     // CoreState 확보 직후, 어떤 client 도 아직 붙기 전에 1 회만 수행.

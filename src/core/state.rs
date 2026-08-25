@@ -537,6 +537,15 @@ pub struct CoreState {
     /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
     /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
     pub(crate) pending_layout_restore: Option<crate::core::layout_persistence::SavedLayout>,
+    /// 이 engine 이 점유한 레이아웃 슬롯. gui engine 은 항상 `Some`, headless 는
+    /// `None`(복원·저장 모두 하지 않는다).
+    ///
+    /// **휘발성 · 직렬화 대상 아님 · 점유의 단일 진실원.** 슬롯 점유를 디스크나
+    /// 별도 레지스트리로 들지 않는다 — 살아있는 engine 들의 이 필드를 모은 집합이
+    /// 곧 점유 집합이다(`App::occupied_layout_slots`). `src/core/attach.rs` 의
+    /// `OccupancyRegistry` 와 같은 성격이라 재시작 시 전부 free 로 환원된다.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -572,17 +581,22 @@ impl CoreState {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::MemoryStore::open_in_memory()?,
             ));
-        Self::new_with_ids(cols, rows, waker, None, memory)
+        Self::new_with_ids(cols, rows, waker, None, None, memory)
     }
 
     /// 새 CoreState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
     /// multi-window 시 두 번째 main 의 첫 workspace 가 첫 engine 과 ID 충돌하지
     /// 않게 한다. `shared_ids=None` 이면 새 IdGenerator 로 1부터 시작.
+    ///
+    /// `layout_slot` 은 이 engine 이 점유할 레이아웃 슬롯. `Some(slot)` 이고
+    /// `restore_layout` 이 켜져 있을 때만 그 슬롯 파일을 읽는다. headless 는
+    /// `None` — 복원 자체를 적용하지 않으므로 읽지도 않는다.
     pub fn new_with_ids(
         cols: usize,
         rows: usize,
         waker: Waker,
         shared_ids: Option<IdGenerator>,
+        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> anyhow::Result<Self> {
         let settings = Settings::load();
@@ -687,6 +701,7 @@ impl CoreState {
             restored_active_workspace: None,
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
+            layout_slot,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             memory,
@@ -713,14 +728,14 @@ impl CoreState {
         // `.bin` 을 전부 orphan 으로 판정해 지운다. 전 슬롯 union GC 로 부팅 1 회
         // 옮겼다 (`layout_persistence::migrate_and_gc_on_boot`).
         let mut restored = false;
-        if restore_layout {
-            // 슬롯 1 고정 — 창별 슬롯 배정은 후속 작업이 한다.
-            if let Some(saved) = crate::core::layout_persistence::load_slot(1) {
-                engine.pending_layout_restore = Some(saved);
-                // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
-                // pending_layout_restore가 적용될 때 교체된다.
-                restored = false;
-            }
+        if restore_layout
+            && let Some(slot) = layout_slot
+            && let Some(saved) = crate::core::layout_persistence::load_slot(slot)
+        {
+            engine.pending_layout_restore = Some(saved);
+            // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
+            // pending_layout_restore가 적용될 때 교체된다.
+            restored = false;
         }
 
         // Fallback: create default workspace

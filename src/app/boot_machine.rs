@@ -253,6 +253,11 @@ impl App {
                 // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
                 // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
                 // 원인이면 부팅이 정상 진행된다.
+                //
+                // 슬롯: `ensure_engine_and_plugins` 가 스스로 다시 고른다. 워커가
+                // 결과를 못 보냈다는 건 그 engine 이 살아남지 못했다는 뜻이라 점유
+                // 집합은 여전히 비어 있고, 슬롯 파일 목록도 그대로여서 워커가
+                // 골랐던 것과 같은 슬롯으로 수렴한다.
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
                 self.ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width);
                 self.boot_transition_after_engine(boot)
@@ -333,6 +338,11 @@ impl App {
         );
         let proxy = self.view.proxy.clone();
         let memory = self.core.memory_arc();
+        // 슬롯 선택은 `App` 순회(점유 스캔)가 필요하므로 **메인 스레드에서** 정해
+        // 워커로 move 한다. 부팅 시점엔 살아있는 engine 이 없으니 점유는 비어 있고,
+        // 저장된 슬롯이 있으면 그 중 가장 낮은 번호(보통 1), 없으면 1 이 된다 —
+        // 슬롯이 3개 저장돼 있어도 부팅은 창 1개, 슬롯 1개 점유다.
+        let layout_slot = self.claim_free_layout_slot();
         #[cfg(debug_assertions)]
         let input_simulation_enabled = self.input_simulation_enabled;
         let (tx, rx) = std::sync::mpsc::channel();
@@ -345,6 +355,7 @@ impl App {
                     factory,
                     proxy,
                     memory,
+                    layout_slot,
                     #[cfg(debug_assertions)]
                     input_simulation_enabled,
                 );

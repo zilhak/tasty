@@ -3,9 +3,12 @@
 //! IPC / 키보드 라우팅의 일반 대상은 모달이 아닌 `MainView`. 모달 활성 여부와는
 //! 별개로 `view.focused_view_id` 로 추적되는 윈도우만 반환한다.
 
+use std::collections::HashSet;
+
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::core::layout_persistence::LayoutSlotId;
 use crate::view;
 
 impl App {
@@ -55,6 +58,51 @@ impl App {
             }
         }
         self.parked_states.first().map(|(_, e)| e)
+    }
+
+    /// 지금 살아있는 engine 들이 점유한 레이아웃 슬롯 집합.
+    ///
+    /// 점유를 별도 레지스트리로 들지 않는다 — 점유자는 언제나 살아있는 engine 이라
+    /// 각 engine 의 `layout_slot` 을 모으면 그것이 곧 점유 집합이다. 별도 `HashSet`
+    /// 을 유지하면 창 닫힘·parking·drop 경로마다 동기화가 필요해지고 한 군데만
+    /// 빠져도 슬롯이 영구 누수된다.
+    ///
+    /// 순회 대상이 `any_main_engine`(views → parked) 보다 하나 많다 —
+    /// `self.core_state` 도 본다. `ensure_engine_and_plugins` 가 만든 engine 은
+    /// `register_window` 로 `views` 에 들어가기 전까지 거기 임시로 머물기 때문에,
+    /// 그 구간에서 스캔이 놓치면 같은 슬롯이 두 번 배정된다.
+    ///
+    /// 포커스 독립(CLAUDE.md 원칙 3): `focused_view_id` 를 보지 않고 전 engine 을
+    /// 본다.
+    pub(crate) fn occupied_layout_slots(&self) -> HashSet<LayoutSlotId> {
+        let mut occupied = HashSet::new();
+        for w in self.view.views.values() {
+            if let Some(m) = w.as_main()
+                && let Some(slot) = m.core_state.layout_slot
+            {
+                occupied.insert(slot);
+            }
+        }
+        for (_, engine) in &self.parked_states {
+            if let Some(slot) = engine.layout_slot {
+                occupied.insert(slot);
+            }
+        }
+        if let Some(engine) = self.core_state.as_ref()
+            && let Some(slot) = engine.layout_slot
+        {
+            occupied.insert(slot);
+        }
+        occupied
+    }
+
+    /// 새 창(engine)이 쓸 free 슬롯을 고른다. `&self` 만 읽고 아무 것도 mutate 하지
+    /// 않는다 — 점유는 engine 이 실제로 만들어지면서 확정된다.
+    pub(crate) fn claim_free_layout_slot(&self) -> LayoutSlotId {
+        pick_free_slot(
+            &crate::core::layout_persistence::list_slots(),
+            &self.occupied_layout_slots(),
+        )
     }
 
     /// Surface 를 가진 MainView 의 WindowId 를 반환. windows main 순회 후 못 찾으면
@@ -148,6 +196,30 @@ fn find_workspace_by_name<'a>(
     }
 }
 
+/// `claim_free_layout_slot` 의 순수 본문 — 디스크에 실제로 존재하는 슬롯 파일
+/// 번호(`files`, 오름차순)와 지금 점유된 슬롯(`occupied`)만으로 결정한다.
+///
+/// - 기존 슬롯 파일 중 점유되지 않은 **첫 번째**를 쓴다. 번호 공백은 채우지
+///   않는다 — 파일이 `[2, 3]` 이고 점유가 없으면 답은 `1` 이 아니라 `2` 다.
+///   "가장 작은 미점유 정수" 가 아니라 "가장 작은 미점유 **기존 슬롯**" 이며,
+///   저장된 레이아웃을 건너뛰고 빈 창을 띄우지 않기 위한 것이다.
+/// - 기존 슬롯이 전부 점유면 `max(files ∪ occupied) + 1` — 파일 없는 새 슬롯이라
+///   로드 대상이 없고 기본 워크스페이스로 시작한다. `occupied` 까지 함께 보는
+///   이유는 파일 없이 배정된 새 슬롯이 이미 있을 수 있어서다.
+/// - 파일도 점유도 없으면 `1`.
+fn pick_free_slot(files: &[LayoutSlotId], occupied: &HashSet<LayoutSlotId>) -> LayoutSlotId {
+    if let Some(free) = files.iter().find(|s| !occupied.contains(s)) {
+        return *free;
+    }
+    let max = files
+        .iter()
+        .chain(occupied.iter())
+        .copied()
+        .max()
+        .unwrap_or(0);
+    max + 1
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -213,5 +285,41 @@ mod tests {
             find_workspace_by_name([(w1, &e1)].into_iter(), "nonexistent"),
             Ok(None)
         );
+    }
+
+    fn slots(v: &[LayoutSlotId]) -> HashSet<LayoutSlotId> {
+        v.iter().copied().collect()
+    }
+
+    /// 기존 슬롯 파일 중 점유되지 않은 가장 낮은 번호를 쓴다.
+    #[test]
+    fn picks_lowest_free_slot() {
+        assert_eq!(pick_free_slot(&[1, 2, 3], &slots(&[1])), 2);
+    }
+
+    /// 기존 슬롯이 전부 점유면 파일 없는 새 슬롯을 만든다.
+    #[test]
+    fn allocates_new_slot_when_all_occupied() {
+        assert_eq!(pick_free_slot(&[1, 2], &slots(&[1, 2])), 3);
+    }
+
+    /// 첫 설치(슬롯 파일도 점유도 없음)는 1 부터.
+    #[test]
+    fn starts_at_one_when_nothing_exists() {
+        assert_eq!(pick_free_slot(&[], &slots(&[])), 1);
+    }
+
+    /// 파일이 2,3 뿐이고 점유가 없으면 1 이 아니라 2 — 저장된 레이아웃을 건너뛰고
+    /// 빈 슬롯을 새로 만들지 않는다.
+    #[test]
+    fn prefers_existing_slot_file_over_lower_unused_number() {
+        assert_eq!(pick_free_slot(&[2, 3], &slots(&[])), 2);
+    }
+
+    /// 새 슬롯 번호는 파일 집합과 점유 집합 **양쪽**을 넘어야 한다 — 파일 없이
+    /// 배정된 슬롯(5)과 충돌하면 두 창이 같은 파일에 쓴다.
+    #[test]
+    fn new_slot_exceeds_both_files_and_occupancy() {
+        assert_eq!(pick_free_slot(&[1, 2], &slots(&[1, 2, 5])), 6);
     }
 }

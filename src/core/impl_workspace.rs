@@ -300,9 +300,15 @@ impl Core {
         if !should_save {
             return CoreEvent::LayoutSaved;
         }
-        // 슬롯 1 고정 — 창별 슬롯 배정은 후속 작업이 한다(지금은 창이 몇 개든
-        // 같은 슬롯을 쓰므로 슬롯 도입 전과 동작이 같다).
-        crate::core::layout_persistence::save_slot(engine, active_workspace, 1);
+        // engine 이 점유한 슬롯에만 쓴다 — 창(engine)마다 자기 파일이라
+        // `App::flush_layout_persistence` 가 전 engine 을 돌아도 서로 덮어쓰지 않는다.
+        // `None` 은 headless engine — 복원 자체를 적용하지 않으므로 저장도 하지
+        // 않는다. 저장을 건너뛰어도 `LayoutSaved` 는 그대로 반환한다(위쪽
+        // `should_save` 스킵과 같은 의미론).
+        let Some(slot) = engine.layout_slot else {
+            return CoreEvent::LayoutSaved;
+        };
+        crate::core::layout_persistence::save_slot(engine, active_workspace, slot);
         engine.layout_dirty.clear();
         CoreEvent::LayoutSaved
     }

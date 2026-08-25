@@ -88,6 +88,7 @@ pub(super) fn build_engine_and_plugins(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> (crate::core::CoreState, plugin::PluginManager) {
     let engine = build_core_state_first_boot(
@@ -96,6 +97,7 @@ pub(super) fn build_engine_and_plugins(
         factory.clone(),
         proxy,
         memory,
+        layout_slot,
         #[cfg(debug_assertions)]
         input_simulation_enabled,
     );
@@ -112,6 +114,7 @@ fn build_core_state_first_boot(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> crate::core::CoreState {
     // 레이아웃 슬롯 로드 등 디스크 I/O 포함 — T2↔T3 갭의 두 번째 기여자라 별도
@@ -119,8 +122,9 @@ fn build_core_state_first_boot(
     // 전 슬롯 union 으로 부팅 1 회만 돈다(`begin_boot` 초입).
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
-    let mut engine = crate::core::CoreState::new_with_ids(cols, rows, waker, None, memory)
-        .expect("failed to create engine state");
+    let mut engine =
+        crate::core::CoreState::new_with_ids(cols, rows, waker, None, Some(layout_slot), memory)
+            .expect("failed to create engine state");
     engine.waker_factory = Some(factory);
     // 첫 부팅 — identify_worker 는 App proxy 가 필요.
     engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
@@ -233,6 +237,9 @@ impl App {
         let factory: crate::waker::SharedWakerFactory = Arc::new(
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
         );
+        // `claim_free_layout_slot` 은 `&self` 를 빌리므로 `&mut self` 아래에서 쓰기
+        // 전에 값으로 먼저 뽑아둔다. 점유는 아래 engine 생성으로 확정된다.
+        let layout_slot = self.claim_free_layout_slot();
 
         // CoreState를 App 직속에 1회 init.
         if self.core_state.is_none() {
@@ -283,6 +290,7 @@ impl App {
                     rows,
                     waker,
                     Some(next_ids),
+                    Some(layout_slot),
                     self.core.memory_arc(),
                 )
                 .expect("failed to create engine state");
@@ -312,6 +320,7 @@ impl App {
                     factory.clone(),
                     self.view.proxy.clone(),
                     self.core.memory_arc(),
+                    layout_slot,
                     #[cfg(debug_assertions)]
                     self.input_simulation_enabled,
                 )
@@ -615,6 +624,12 @@ impl App {
         // 를 take. create_app_state 가 항상 self.core_state 를 set 하므로
         // 두 번째 main window 생성 시에도 새 engine 이 만들어져 들어와 있음
         // (글로벌 Arc 들은 첫 engine 과 공유 — create_app_state 의 shared 분기 참조).
+        //
+        // parked engine 의 `layout_slot` 은 **재배정하지 않는다**. parked 는 이미
+        // 슬롯을 들고 있던 engine 을 통째로 되살리는 것이라, 새 슬롯을 주면 자기
+        // 레이아웃을 놔두고 남의 슬롯 파일을 덮어쓴다. 위 분기에서 parked 가 있으면
+        // `create_app_state`(→ `ensure_engine_and_plugins`) 자체를 타지 않으므로
+        // 중복 배정도 일어나지 않는다.
         let core_state = match parked_engine {
             Some(e) => e,
             None => self

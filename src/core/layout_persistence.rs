@@ -89,10 +89,10 @@ fn list_slots_in(dir: &Path) -> Vec<LayoutSlotId> {
 
 /// 존재하는 슬롯 번호를 오름차순으로.
 ///
-/// 아직 호출자가 없다 — 창마다 다른 슬롯을 배정하는 후속 작업이 "비어 있는 가장
-/// 작은 번호" 를 고르는 데 쓴다. 슬롯 열거는 저장소 API 의 일부라 여기서 함께
-/// 완성해 둔다(소비자만 나중에 붙는다).
-#[allow(dead_code)]
+/// 창 생성 시 free 슬롯을 고르는 `App::claim_free_layout_slot` 이 소비한다 —
+/// "점유되지 않은 가장 낮은 기존 슬롯" 판정의 후보 집합이다. headless 빌드에는
+/// 창 생성 경로가 없어 호출자가 없다.
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) fn list_slots() -> Vec<LayoutSlotId> {
     match layouts_dir() {
         Some(dir) => list_slots_in(&dir),
