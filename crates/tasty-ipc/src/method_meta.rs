@@ -568,6 +568,12 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.event_bus.publish", local_only()),
     ("debug.event_bus.trace", local_only()),
     ("debug.extension.invoke_hook", local_only()),
+    // 전체화면 무대 강제 진입/종료/조회 — 사용자 조작(popup 타이틀바 전체화면 버튼)
+    // 재현. release 미노출. 자기검증(무대 렌더 스크린샷)의 진입점.
+    ("debug.fullscreen.list", local_only()),
+    ("debug.fullscreen.open", local_only()),
+    ("debug.fullscreen.close", local_only()),
+    ("debug.fullscreen.state", local_only()),
     // 사용자 입력 재현 — 포커스 전환은 단축키/마우스 영역.
     // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
     ("window.focus", local_only()),

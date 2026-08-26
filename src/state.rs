@@ -1294,11 +1294,12 @@ impl AppState {
     /// 올린다 — 무대는 창당 하나라는 계약을 호출부가 신경 쓰지 않아도 되게 한다.
     /// 같은 id 를 다시 열면 no-op 이다(닫았다 여는 것이 아니다).
     ///
-    /// 호출부는 이 뒤에 `mark_dirty()` 로 프레임을 유도해야 한다. IPC 경로는
-    /// 라우팅이 이미 `dirty` 를 세운다.
+    /// 호출부는 이 뒤에 `mark_dirty()` 로 프레임을 유도해야 한다. `AppState` 라우팅을
+    /// 지나는 IPC 경로는 `dirty` 가 이미 서지만, App 레벨 경로
+    /// (`debug.fullscreen.*`)는 직접 세운다.
     // 사용자 진입 경로는 popup 타이틀바의 전체화면 버튼
-    // (`popup::frame::draw_popup_layer`)이고, 에이전트 진입 경로(debug IPC)는 후속
-    // 트랙이 붙인다.
+    // (`popup::frame::draw_popup_layer`), 에이전트 진입 경로는 debug 전용
+    // `debug.fullscreen.open` (`docs/dev-guide/debug-ipc.md`).
     #[cfg(feature = "gui")]
     pub fn open_fullscreen_stage(&mut self, id: &str) -> bool {
         let Some(def) = crate::adapters::ui::fullscreen::defs::find(id) else {

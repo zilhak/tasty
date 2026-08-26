@@ -1,9 +1,9 @@
 # 전체화면 무대 (Fullscreen stage)
 
-- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트(ESC 종료 포함)까지 있다. 에이전트(debug IPC) 진입은 아직 없다.
+- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트(ESC 종료 포함) + 에이전트 진입/조회(debug 전용 IPC/CLI)까지 있다. release 표면은 없다.
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
-- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs`
+- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs` · `src/view/main/fullscreen_window.rs`(OS 창 전환 + 상태 덤프) · `src/app/ipc/debug_methods.rs`(debug IPC)
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md)
 
 ## 목적
@@ -49,8 +49,14 @@
 
 ## 인터페이스
 
-- **AI Agent (IPC/CLI)**: 없다. 무대는 화면 투영이고 진입은 사용자 조작이라, 에이전트가 여는
-  release 표면을 두지 않는다(불가침 원칙 1). debug 격리 표면은 후속 작업에서 붙는다.
+- **AI Agent (IPC/CLI)**: **debug 빌드 전용**. 무대는 화면 투영이고 진입은 사용자 조작이라
+  release 표면을 두지 않는다(불가침 원칙 1) — 대신 자기검증용으로
+  `debug.fullscreen.{list,open,close,state}` 4 종이 `#[cfg(debug_assertions)]` 로 격리되어 있다
+  (CLI: `tasty debug fullscreen {list,open,close,state}`). release 바이너리에서는 아예 없어
+  `method_not_found` 로 떨어진다. 전부 `local_only` 라 plugin caller 는 호출할 수 없다.
+  대상 창은 `window_id` 로 지목하고, 미지정 시 창이 하나면 폴백·여럿이면 에러다(포커스된 창으로
+  조용히 폴백하지 않는다). 파라미터·응답 상세는
+  [`dev-guide/debug-ipc.md`](../../dev-guide/debug-ipc.md).
 - **사용자 트리거**: 무대를 선언한 popup(`PopupDef.fullscreen_stage`)의 타이틀바 전체화면
   버튼 — 현재 알림 popup. 누르면 무대가 뜨고 **원본 popup 은 열린 채 남는다**. 종료는 무대
   우측 상단의 종료 버튼. 키보드 단축키는 아직 없다.
@@ -60,8 +66,6 @@
 - **종료 키의 설정화** — 지금 무대를 닫는 것은 하드코딩 기본값 ESC 다(판정은
   `stage_exit_key_matches` 한 곳). `KeybindingSettings` 필드로 노출하는 것은 후속 작업이다
   (모든 단축키는 설정으로 노출되어야 한다는 정책).
-- **에이전트(debug IPC) 진입** — 무대는 화면 투영이라 release 표면을 두지 않는다. debug 격리
-  표면은 후속 작업이다.
 
 경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
 "아직 없는 것" 절.
@@ -102,20 +106,26 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
       headless 가 아니다
 
 **미검증 — 살아 있는 GUI 가 필요해 자동 회귀가 없다.** 아래는 실제 창·PTY·GPU 가 있어야
-재현되므로 headless 테스트로 고정할 수 없다. 진입 경로가 생겼으므로 실측 자체는 가능하며,
-표시된 항목은 이번 라운드에 실측으로 1 회 확인했다(회귀를 잡지는 못한다).
+재현되므로 headless 테스트로 고정할 수 없다. 다만 `debug.fullscreen.*` 로 진입/조회가
+상시화되어 실측 재현 자체는 언제든 가능하며, 표시된 항목은 실측으로 1 회 확인했다(회귀를
+잡지는 못한다).
 
 - [ ] Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
 - [ ] Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다(무대 중 창
       크기가 바뀌어도)
-- [ ] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
-      <!-- 이번 라운드 실측 확인: 무대 진입 후 window 캡처가 정상 응답 -->
+- [x] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
+      <!-- 실측 확인: debug.fullscreen.open 후 window 캡처에 무대 셸(제목 띠 + 종료 버튼)과
+           콘텐츠만 있고 사이드바/탭바/상태바가 없음 -->
 - [ ] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
       내용이 찍힌다
-- [ ] Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀
+- [x] Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀
+      <!-- 실측 확인: debug.fullscreen.state 의 inner_size 가 1280x720 → 1920x1080 →
+           1280x720, os_fullscreen 이 false → true → false -->
 - [ ] Given maximize 창에서 무대 진입 When 무대 종료 Then maximize 로 복귀
 - [ ] Given 이미 OS fullscreen 인 창에서 무대 진입 When 무대 종료 Then fullscreen 유지
-- [ ] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
+- [x] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
+      <!-- 실측 확인: 창 A=blank / B=notifications 로 각각 진입 후 A 만 close →
+           A 는 stage_id null·os_fullscreen false, B 는 notifications·true 유지 -->
 - [ ] Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
 - [ ] Given 무대 활성 When 문자 키 주입 Then 뒤 터미널에 그 문자가 들어가지 않는다
 - [ ] Given 무대 활성 When 등록 단축키(사이드바 토글 등) 주입 Then 발화하지 않는다

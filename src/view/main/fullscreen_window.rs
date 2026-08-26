@@ -155,12 +155,11 @@ impl MainView {
 
     /// 이 창의 전체화면 상태 + 덮고 있는 모니터 신원.
     ///
-    /// 소비자는 무대에 진입/조회 경로를 붙이는 후속 작업의 debug IPC 다. 멀티
-    /// 모니터 실측은 개발 환경에서 재현할 수 없으므로, 사용자가 이 출력만 보내주면
-    /// 모니터 타겟팅을 판정할 수 있게 하는 것이 이 함수의 목적이다.
-    // 그 IPC 가 붙기 전까지는 호출부가 없다 — 무대 진입 API 자체가 같은 이유로
-    // `AppState::open_fullscreen_stage` 에서 이 표기를 쓰고 있다.
-    #[allow(dead_code)]
+    /// 소비자는 `debug.fullscreen.state` 다. 멀티 모니터 실측은 개발 환경에서
+    /// 재현할 수 없으므로, 사용자가 이 출력만 보내주면 모니터 타겟팅을 판정할 수
+    /// 있게 하는 것이 이 함수의 목적이다.
+    // 그 IPC 가 debug 전용이라 release 빌드에는 호출부가 없다.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub(crate) fn fullscreen_window_report(&self) -> FullscreenWindowReport {
         let size = self.base.winit.inner_size();
         FullscreenWindowReport {

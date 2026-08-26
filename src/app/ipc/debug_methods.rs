@@ -1,4 +1,5 @@
-//! step 3 (debug 빌드 only): debug.event_bus.* / debug.extension.invoke_hook / debug.popup.*.
+//! step 3 (debug 빌드 only): debug.event_bus.* / debug.extension.invoke_hook / debug.popup.* /
+//! debug.fullscreen.*.
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
@@ -187,6 +188,227 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // 전체화면 무대 강제 진입/종료/조회 — 사용자 조작(popup 타이틀바의 전체화면
+        // 버튼) 재현이라 debug 전용.
+        //
+        // `route_debug_handler` 가 아니라 여기 있는 이유: 그 라우터는 `AppState`
+        // (= `MainView` 하나)만 받아 **다른 창을 볼 수 없다.** 무대는 창 단위라
+        // (`docs/design/systems/fullscreen-stage.md`) `window_id` 로 창을 지목하지
+        // 못하면 창 2 개에 각각 무대를 띄우는 시나리오 자체를 구동할 수 없다.
+        // `self.view.views` 순회는 App 레벨에서만 가능하다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method.starts_with("debug.fullscreen.") {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let response = self.ipc_debug_fullscreen(&cmd.request.method, &cmd.request.params, id);
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         IpcStep::NotHandled
+    }
+}
+
+/// `debug.fullscreen.*` — 전체화면 무대의 에이전트 진입/조회 표면.
+///
+/// 무대는 창 하나에 하나(`docs/design/systems/fullscreen-stage.md`)라 모든 메서드가
+/// 창을 대상으로 한다. `window_id` 해석은 `ui.screenshot` 과 동형 —
+/// 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 에러다. 포커스된 창으로
+/// 조용히 폴백하지 않는다(`docs/design/policies/focus.md`).
+#[cfg(feature = "gui")]
+impl App {
+    fn ipc_debug_fullscreen(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+        id: serde_json::Value,
+    ) -> host_ipc::protocol::JsonRpcResponse {
+        match method {
+            "debug.fullscreen.list" => Self::debug_fullscreen_list(id),
+            "debug.fullscreen.open" => self.debug_fullscreen_open(params, id),
+            "debug.fullscreen.close" => self.debug_fullscreen_close(params, id),
+            "debug.fullscreen.state" => self.debug_fullscreen_state(params, id),
+            other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
+        }
+    }
+
+    /// 등록된 무대 정의 전체. 제목은 i18n 키 그대로 — 언어 설정에 따라 값이 흔들리면
+    /// 자동 검증이 로케일에 묶인다.
+    fn debug_fullscreen_list(id: serde_json::Value) -> host_ipc::protocol::JsonRpcResponse {
+        let stages: Vec<_> = crate::adapters::ui::fullscreen::defs::all_defs()
+            .iter()
+            .map(|d| serde_json::json!({ "id": d.id, "title_key": d.title_key }))
+            .collect();
+        host_ipc::protocol::JsonRpcResponse::success(id, serde_json::json!({ "stages": stages }))
+    }
+
+    fn debug_fullscreen_open(
+        &mut self,
+        params: &serde_json::Value,
+        id: serde_json::Value,
+    ) -> host_ipc::protocol::JsonRpcResponse {
+        let Some(stage_id) = params.get("stage_id").and_then(|v| v.as_str()) else {
+            return host_ipc::protocol::JsonRpcResponse::invalid_params(id, "Missing 'stage_id'");
+        };
+        // 창을 고르기 **전에** 무대 id 를 검증한다. 모르는 id 를 조용한 no-op 으로
+        // 흘리면 오타가 "열렸는데 안 보인다" 로 보인다.
+        if crate::adapters::ui::fullscreen::defs::find(stage_id).is_none() {
+            let known: Vec<&str> = crate::adapters::ui::fullscreen::defs::all_defs()
+                .iter()
+                .map(|d| d.id)
+                .collect();
+            return host_ipc::protocol::JsonRpcResponse::invalid_params(
+                id,
+                format!(
+                    "Unknown stage id '{stage_id}'. Known: {}. Use 'debug.fullscreen.list'.",
+                    known.join(", ")
+                ),
+            );
+        }
+        let target = match self.pick_debug_window(params) {
+            Ok(t) => t,
+            Err((code, msg)) => {
+                return host_ipc::protocol::JsonRpcResponse::error(id, code, msg);
+            }
+        };
+        let Some(main) = self
+            .view
+            .views
+            .get_mut(&target)
+            .and_then(|w| w.as_main_mut())
+        else {
+            return host_ipc::protocol::JsonRpcResponse::error(
+                id,
+                -32602,
+                "Target window is not a main view",
+            );
+        };
+        let previous = main.state.fullscreen_stage_id();
+        if !main.state.open_fullscreen_stage(stage_id) {
+            return host_ipc::protocol::JsonRpcResponse::error(
+                id,
+                -32603,
+                format!("Failed to open stage '{stage_id}'"),
+            );
+        }
+        let opened = main.state.fullscreen_stage_id();
+        // App 레벨 경로는 라우팅이 세워주는 dirty 가 없다. 무대 진입은 OS 창 전환
+        // (`sync_window_fullscreen`)까지 프레임 안에서 일어나므로 직접 유도한다.
+        main.base.dirty = true;
+        main.base.winit.request_redraw();
+        host_ipc::protocol::JsonRpcResponse::success(
+            id,
+            serde_json::json!({
+                "window_id": u64::from(target),
+                "stage_id": opened,
+                "previous_stage_id": previous,
+                "replaced": previous.is_some_and(|p| Some(p) != opened),
+            }),
+        )
+    }
+
+    fn debug_fullscreen_close(
+        &mut self,
+        params: &serde_json::Value,
+        id: serde_json::Value,
+    ) -> host_ipc::protocol::JsonRpcResponse {
+        let target = match self.pick_debug_window(params) {
+            Ok(t) => t,
+            Err((code, msg)) => {
+                return host_ipc::protocol::JsonRpcResponse::error(id, code, msg);
+            }
+        };
+        let Some(main) = self
+            .view
+            .views
+            .get_mut(&target)
+            .and_then(|w| w.as_main_mut())
+        else {
+            return host_ipc::protocol::JsonRpcResponse::error(
+                id,
+                -32602,
+                "Target window is not a main view",
+            );
+        };
+        let previous = main.state.fullscreen_stage_id();
+        let closed = main.state.close_fullscreen_stage();
+        main.base.dirty = true;
+        main.base.winit.request_redraw();
+        host_ipc::protocol::JsonRpcResponse::success(
+            id,
+            serde_json::json!({
+                "window_id": u64::from(target),
+                "closed": closed,
+                "stage_id": previous,
+            }),
+        )
+    }
+
+    fn debug_fullscreen_state(
+        &mut self,
+        params: &serde_json::Value,
+        id: serde_json::Value,
+    ) -> host_ipc::protocol::JsonRpcResponse {
+        let target = match self.pick_debug_window(params) {
+            Ok(t) => t,
+            Err((code, msg)) => {
+                return host_ipc::protocol::JsonRpcResponse::error(id, code, msg);
+            }
+        };
+        let Some(main) = self.view.views.get(&target).and_then(|w| w.as_main()) else {
+            return host_ipc::protocol::JsonRpcResponse::error(
+                id,
+                -32602,
+                "Target window is not a main view",
+            );
+        };
+        let report = main.fullscreen_window_report();
+        host_ipc::protocol::JsonRpcResponse::success(
+            id,
+            serde_json::json!({
+                "window_id": u64::from(target),
+                "stage_id": main.state.fullscreen_stage_id(),
+                "stage_active": report.stage_active,
+                "os_fullscreen": report.os_fullscreen,
+                "maximized": report.maximized,
+                "inner_size": { "width": report.inner_size.0, "height": report.inner_size.1 },
+                "monitor": report.monitor.map(|m| serde_json::json!({
+                    "name": m.name,
+                    "position": { "x": m.position.0, "y": m.position.1 },
+                    "size": { "width": m.size.0, "height": m.size.1 },
+                    "scale_factor": m.scale_factor,
+                })),
+            }),
+        )
+    }
+
+    /// `window_id` 파라미터를 실제 창으로 해석한다 (`ui.screenshot` 과 동형).
+    ///
+    /// 실패 시 `(JSON-RPC code, message)`. 미지정 + 창 여럿은 에러이지 폴백이 아니다 —
+    /// "지금 보고 있는 창" 이라는 개념에 기대면 에이전트 명령이 사용자 포커스에
+    /// 의존하게 된다.
+    fn pick_debug_window(
+        &self,
+        params: &serde_json::Value,
+    ) -> Result<winit::window::WindowId, (i32, String)> {
+        let requested = params.get("window_id").and_then(|v| v.as_u64());
+        let mains: Vec<_> = self
+            .view
+            .views
+            .iter()
+            .filter(|(_, w)| w.as_main().is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        match requested {
+            Some(wid) => mains
+                .iter()
+                .copied()
+                .find(|w| u64::from(*w) == wid)
+                .ok_or_else(|| (-32602, format!("Window id {wid} not found"))),
+            None if mains.len() == 1 => Ok(mains[0]),
+            None if mains.is_empty() => Err((-32000, "No main window open".to_string())),
+            None => Err((
+                -32000,
+                "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.".to_string(),
+            )),
+        }
     }
 }

@@ -81,6 +81,40 @@ fn debug_methods_are_local_only() {
     assert!(!m.plugin_callable);
 }
 
+/// 무대 debug IPC 4 종은 전부 plugin 에 노출되지 않는다. 무대는 창 전체를 덮는
+/// 화면 점유라 plugin 이 열 수 있으면 사용자 화면을 가로챌 수 있다.
+#[test]
+#[cfg(debug_assertions)]
+fn fullscreen_debug_methods_are_local_only() {
+    for name in [
+        "debug.fullscreen.list",
+        "debug.fullscreen.open",
+        "debug.fullscreen.close",
+        "debug.fullscreen.state",
+    ] {
+        let m = method_meta(name).unwrap_or_else(|| panic!("{name} registered (debug build)"));
+        assert!(!m.plugin_callable, "{name} must be local_only");
+    }
+}
+
+/// release 에는 무대 debug IPC 가 아예 없어야 한다 — `#[cfg(debug_assertions)]`
+/// 격리가 메타 테이블까지 일관되게 적용됐는지 확인한다.
+#[test]
+#[cfg(not(debug_assertions))]
+fn fullscreen_debug_methods_absent_in_release() {
+    for name in [
+        "debug.fullscreen.list",
+        "debug.fullscreen.open",
+        "debug.fullscreen.close",
+        "debug.fullscreen.state",
+    ] {
+        assert!(
+            method_meta(name).is_none(),
+            "{name} must not exist in release"
+        );
+    }
+}
+
 #[test]
 #[cfg(not(debug_assertions))]
 fn debug_methods_absent_in_release() {

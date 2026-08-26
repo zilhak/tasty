@@ -24,11 +24,13 @@ JsonRpcResponse::method_not_found(id, &request.method)
 
 `route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `method_not_found` 로 떨어진다.
 
-### PluginManager 가 필요한 debug 메서드는 App-level 에서 분기
+### `AppState` 하나로는 부족한 debug 메서드는 App-level 에서 분기
 
 `debug.event_bus.*` / `debug.extension.invoke_hook` / `debug.popup.*` 는 `route_debug_handler` 를 거치지 않는다 — `AppState` 가 `PluginManager` 를 들고 있지 않기 때문이다. 이들은 `App` 레벨의 `ipc_step_debug`(`src/app/ipc/debug_methods.rs`)에서 `plugin_manager` 를 직접 호출한다.
 
-`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 정상 모달 동작과 100% 동일하다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
+`debug.fullscreen.*` 도 같은 곳에서 처리되지만 이유는 또 다르다 — **창을 골라야 하기 때문**이다. `route_debug_handler` 는 `AppState`(=`MainView` 하나)만 받아 다른 창을 볼 수 없는데, 전체화면 무대는 창 단위 상태라([fullscreen-stage](../design/systems/fullscreen-stage.md)) `window_id` 로 대상을 지목하지 못하면 "창 2 개에 각각 무대를 띄운 뒤 한쪽만 닫는다" 같은 시나리오 자체가 구동 불가다. `self.view.views` 순회는 App 레벨에서만 가능하다. `window_id` 해석은 `ui.screenshot` 과 동형 — 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 `-32000` 에러다. 포커스된 창으로 조용히 폴백하지 않는다([focus](../design/policies/focus.md)).
+
+`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 또 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 정상 모달 동작과 100% 동일하다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
 
 ## 메서드 목록
 
@@ -82,6 +84,10 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.event_bus.publish` | `key, payload, scope` | 임의 키로 host envelope 발화 |
 | `debug.event_bus.trace` | `trace_id` | 같은 trace_id envelope 들을 발화 순서로 |
 | `debug.extension.invoke_hook` | `extension_id, kind, phase, mode, target, payload` | 매니페스트 매칭 우회로 extension hook 직접 호출 (fail-open/backoff 우회) |
+| `debug.fullscreen.list` | `{}` | 등록된 전체화면 무대 정의 전체 — `{"stages":[{id,title_key}]}`. 제목은 i18n **키** 그대로라 로케일에 무관하게 단정 가능 |
+| `debug.fullscreen.open` | `stage_id`, `window_id?` | 무대를 창에 강제로 올린다(popup 타이틀바 전체화면 버튼 우회, 시각 검증용). 창당 하나 계약 그대로 — 다른 무대가 올라와 있으면 **교체**(닫힘 훅 발화), 같은 id 면 no-op. 정의 테이블에 없는 `stage_id` 는 창을 고르기 전에 `-32602` 로 **거부**(조용한 no-op 아님). 응답: `window_id`·`stage_id`·`previous_stage_id`·`replaced` |
+| `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |
+| `debug.fullscreen.state` | `window_id?` | 활성 무대 id(없으면 `null`) + 창 상태 덤프: `stage_active`·`os_fullscreen`·`maximized`·`inner_size{width,height}`·`monitor{name,position,size,scale_factor}`. **무대 상태와 OS 창 전환은 별개** — `open` 직후 `stage_id` 는 즉시 서지만 `os_fullscreen` 은 다음 프레임의 `sync_window_fullscreen` 이 반영한다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
 
 † **`debug.inject_mouse` / `debug.inject_key` 는 런타임 추가 게이트가 있다** — `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부.

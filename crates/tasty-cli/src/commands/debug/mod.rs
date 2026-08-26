@@ -123,6 +123,11 @@ pub enum DebugCommands {
     /// remote_tool ...) open without the user-click path, for visual verification.
     #[command(subcommand)]
     HostPopup(HostPopupDebugCommands),
+    /// Fullscreen stage inspection and direct enter/exit (debug builds only).
+    /// Puts a stage on a window without the popup-titlebar click path, and dumps
+    /// the window's fullscreen state, for visual verification of the stage.
+    #[command(subcommand)]
+    Fullscreen(FullscreenDebugCommands),
     /// Banner inspection and direct fire/close (debug builds only).
     /// Fires a banner without the user-action path (banners only fire from user
     /// actions in release), for visual verification of the overlay.
@@ -275,6 +280,37 @@ pub enum HostPopupDebugCommands {
         /// Host popup id
         #[arg(long)]
         popup_id: String,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum FullscreenDebugCommands {
+    /// List all registered fullscreen stages (id + title key)
+    List,
+    /// Put a stage on a window. A different stage already up is replaced; the
+    /// same stage is a no-op.
+    Open {
+        /// Stage id (e.g. "blank", "notifications")
+        #[arg(long)]
+        stage_id: String,
+        /// Target window. Omit only when exactly one window is open — with
+        /// several, the call errors instead of guessing the focused one.
+        #[arg(long)]
+        window_id: Option<u64>,
+    },
+    /// Take the active stage off a window
+    Close {
+        /// Target window (see `open --window-id`)
+        #[arg(long)]
+        window_id: Option<u64>,
+    },
+    /// Dump the active stage id plus the window's fullscreen state (OS
+    /// fullscreen / maximized / inner size / covered monitor)
+    State {
+        /// Target window (see `open --window-id`)
+        #[arg(long)]
+        window_id: Option<u64>,
     },
 }
 
