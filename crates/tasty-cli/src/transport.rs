@@ -17,6 +17,14 @@ impl IpcConnection {
     /// approval 등). 한 값으로 자르면 그 호출들이 정상 동작 중에 끊긴다. 응답 없는
     /// 상대를 감지하는 몫은 [`IpcConnection::send`] 의 EOF 판정이 진다.
     pub fn new(stream: TcpStream) -> Result<Self> {
+        // Nagle 해제 — 요청 한 줄을 보내고 응답을 기다리는 순수 request-response 라
+        // 지연시켜 합칠 뒷 데이터가 애초에 없다. Nagle 이 켜져 있으면 요청 줄이 두
+        // 세그먼트로 쪼개지는 순간(`writeln!` 은 본문과 개행을 나눠 쓴다) 뒷조각이
+        // 상대의 delayed ACK(~40ms)까지 붙잡혀 **모든 CLI 명령**에 그만큼이 얹힌다.
+        // 실패해도 연결 자체는 유효하므로 에러로 올리지 않는다.
+        if let Err(e) = stream.set_nodelay(true) {
+            tracing::warn!("IPC 연결: TCP_NODELAY 설정 실패(지연 증가 가능): {e}");
+        }
         let writer = stream.try_clone()?;
         let reader = BufReader::new(stream);
         Ok(Self { writer, reader })
@@ -25,7 +33,11 @@ impl IpcConnection {
     /// Send a JSON-RPC request and read the response.
     pub fn send(&mut self, request: &JsonRpcRequest) -> Result<serde_json::Value> {
         let json = serde_json::to_string(request)?;
-        writeln!(self.writer, "{}", json)?;
+        // 개행까지 한 버퍼에 담아 **한 번의 write** 로 보낸다 — `writeln!` 은 본문과
+        // 개행을 각각 write 해 세그먼트를 쪼갠다(위 `TCP_NODELAY` 주석 참고).
+        let mut line = json.into_bytes();
+        line.push(b'\n');
+        self.writer.write_all(&line)?;
         self.writer.flush()?;
 
         loop {
