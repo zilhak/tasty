@@ -65,7 +65,12 @@ impl DagStateCounts {
     /// `running` 하나라도 있으면 `running` → `failed` 하나라도 있으면 `failed` →
     /// 전부 terminal 이면 `succeeded`(전부 succeeded) 또는 `skipped`(cancelled/skipped
     /// 섞임) → `ready` 하나라도 있으면 `ready` → 그 외 `waiting`.
-    fn rollup(&self) -> &'static str {
+    ///
+    /// **반환 어휘는 위 여섯 문자열이 전부다** — `"cancelled"` 나 `"unknown"` 을 내는
+    /// 분기가 없다. 화면의 상태 필터가 이 어휘에 맞춘 목록을 따로 들고 있고, 그
+    /// 정합을 테스트가 양방향으로 고정하므로 여기에 분기를 더하면 그 테스트가 먼저
+    /// 깨진다. 공개인 이유가 그 테스트다.
+    pub fn rollup(&self) -> &'static str {
         if self.running > 0 {
             return "running";
         }

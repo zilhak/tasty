@@ -10,7 +10,8 @@ use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, Input, checkbox, hspace, margin_sym, select,
+    Button, ButtonVariant, IconButton, Input, MultiSelectLabels, checkbox, hspace, margin_sym,
+    multi_select,
 };
 
 use super::detail::Dock;
@@ -129,11 +130,24 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
                 .width(search_w)
                 .show(ui, theme, &mut query);
             hspace(ui, theme.spacing_sm);
-            let mut picked = 0usize;
-            let labels: Vec<&str> = std::iter::once("Any status")
-                .chain(super::STATUS_ORDER.iter().map(|s| s.label()))
-                .collect();
-            select(ui, theme, salt, &mut picked, &labels, filter_w, true);
+            // 본체 popup 과 같은 위젯·같은 어휘 — rollup 6 종(취소/알 수 없음 없음).
+            let mut picked = [false; super::ROLLUP_ORDER.len()];
+            let labels: Vec<&str> = super::ROLLUP_ORDER.iter().map(|s| s.label()).collect();
+            let summary = MultiSelectLabels {
+                none: "Any status",
+                some: "{} statuses",
+                all: "All statuses",
+            };
+            multi_select(
+                ui,
+                theme,
+                salt,
+                &mut picked,
+                &labels,
+                &summary,
+                filter_w,
+                true,
+            );
         });
     ui.painter().hline(body.x_range(), filter.max.y, sep);
 

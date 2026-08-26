@@ -33,7 +33,8 @@ use tasty_model::DagDirection;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, DrillDown, DrillDownView, Input, ListCtrl, ListCtrlItem,
-    TagVariant, checkbox, hspace, margin_sym, select, tag,
+    MultiSelectLabels, TagVariant, checkbox, hspace, margin_sym, multi_select,
+    multi_select_popup_id, tag,
 };
 
 use super::PopupAction;
@@ -48,8 +49,8 @@ use crate::state::AppState;
 
 pub const DAG_LIST_POPUP_ID: &str = "dag_list";
 
-/// 상태 필터 드롭다운의 위젯 id salt + 자식 오버레이 레지스트리 키. `select` 가
-/// `("tasty_select", salt)` 로 egui popup id 를 만들므로 둘을 같은 값에서 유도한다.
+/// 상태 필터 드롭다운의 위젯 id salt + 자식 오버레이 레지스트리 키. egui popup id 는
+/// 규약을 복제하지 않고 `multi_select_popup_id(ui, salt)` 로 위젯에게 물어본다.
 const STATUS_SELECT_SALT: &str = "dag_list_status";
 const STATUS_SELECT_OVERLAY_KEY: &str = "dag_list_status";
 
@@ -122,8 +123,9 @@ pub struct DagListState {
     open_dag: Option<String>,
     query: String,
     this_workspace_only: bool,
-    /// 0 = 전체, 그 외는 `DagStatus::ALL` 인덱스 + 1.
-    status_filter: usize,
+    /// 상태 필터 — `DagStatus::ROLLUP_ALL` 과 같은 길이·순서의 on/off 배열.
+    /// 기본값(전부 off)은 "모든 상태" 와 같은 의미로, 필터가 아무것도 거르지 않는다.
+    status_filter: [bool; DagStatus::ROLLUP_ALL.len()],
     direction: DagDirection,
     graph: DagGraphView,
     rows: Vec<DagRow>,
@@ -183,10 +185,6 @@ impl DagListState {
     /// 필터를 통과한 행의 인덱스.
     fn visible(&self, active_workspace_id: Option<u32>) -> Vec<usize> {
         let needle = self.query.trim().to_lowercase();
-        let want = self
-            .status_filter
-            .checked_sub(1)
-            .and_then(|i| DagStatus::ALL.get(i).copied());
         self.rows
             .iter()
             .enumerate()
@@ -194,7 +192,7 @@ impl DagListState {
                 if self.this_workspace_only && active_workspace_id != Some(r.workspace_id) {
                     return false;
                 }
-                if want.is_some_and(|w| w != r.rollup) {
+                if !status_matches(&self.status_filter, r.rollup) {
                     return false;
                 }
                 needle.is_empty()
@@ -204,6 +202,21 @@ impl DagListState {
             .map(|(i, _)| i)
             .collect()
     }
+}
+
+/// 상태 필터 매칭 — `selected` 는 `DagStatus::ROLLUP_ALL` 과 같은 순서의 on/off 배열.
+///
+/// 켜진 게 하나도 없으면 **전체 통과**다(필터 없음 = 기본 상태). 하나 이상 켜져 있으면
+/// 그 중 하나와만 같아도 통과하는 OR 매칭이라, "대기+준비+실행중" 처럼 아직 안 끝난
+/// DAG 를 한 번에 묶을 수 있다.
+fn status_matches(selected: &[bool], rollup: DagStatus) -> bool {
+    if !selected.iter().any(|on| *on) {
+        return true;
+    }
+    DagStatus::ROLLUP_ALL
+        .iter()
+        .zip(selected)
+        .any(|(s, on)| *on && *s == rollup)
 }
 
 /// popup 본문.
@@ -320,22 +333,29 @@ fn draw_list(
                     .width(search_w)
                     .show(ui, theme, &mut dag.query);
                 hspace(ui, theme.spacing_sm);
-                let labels: Vec<&str> = std::iter::once(t("dag_list.status_any"))
-                    .chain(DagStatus::ALL.iter().map(|s| s.label()))
-                    .collect();
-                select(
+                // 나열 어휘는 rollup 6 종. 개별 task 의 8 종(`DagStatus::ALL`)을 쓰면
+                // rollup 이 절대 내지 않는 cancelled/unknown 이 죽은 선택지로 남는다.
+                let labels: Vec<&str> = DagStatus::ROLLUP_ALL.iter().map(|s| s.label()).collect();
+                // 위젯 crate 는 i18n 을 못 쓰므로 요약 문구 3 갈래를 여기서 주입한다.
+                let summary = MultiSelectLabels {
+                    none: t("dag_list.status_any"),
+                    some: t("dag_list.status_some"),
+                    all: t("dag_list.status_all"),
+                };
+                multi_select(
                     ui,
                     theme,
                     STATUS_SELECT_SALT,
                     &mut dag.status_filter,
                     &labels,
+                    &summary,
                     filter_w,
                     true,
                 );
                 // 드롭다운은 egui 자체 오버레이라 popup rect 밖으로 나갈 수 있다 —
                 // 그 위의 클릭·호버가 "팝업 바깥" 으로 오판되지 않도록 실측 rect 를
                 // 매니저에 보고한다(닫혀 있으면 None 으로 정리).
-                let overlay_id = ui.make_persistent_id(("tasty_select", STATUS_SELECT_SALT));
+                let overlay_id = multi_select_popup_id(ui, STATUS_SELECT_SALT);
                 let overlay_rect = ui
                     .memory(|m| m.is_popup_open(overlay_id))
                     .then(|| ui.memory(|m| m.area_rect(overlay_id)))
@@ -689,5 +709,97 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(1, 400), (2, 300), (2, 200), (1, 100)]
         );
+    }
+
+    /// `ROLLUP_ALL` 순서에 맞춘 on/off 배열을 만든다.
+    fn filter(on: &[DagStatus]) -> [bool; DagStatus::ROLLUP_ALL.len()] {
+        let mut f = [false; DagStatus::ROLLUP_ALL.len()];
+        for (i, s) in DagStatus::ROLLUP_ALL.iter().enumerate() {
+            f[i] = on.contains(s);
+        }
+        f
+    }
+
+    /// 켜진 게 하나도 없으면 전체 통과 — 기본 상태가 "모든 상태" 와 같아야 한다.
+    #[test]
+    fn 아무것도_안_켜면_전체_통과() {
+        let none = filter(&[]);
+        for s in DagStatus::ROLLUP_ALL {
+            assert!(status_matches(&none, s), "{s:?} 가 걸러졌다");
+        }
+    }
+
+    /// 하나만 켜면 그 상태만 통과.
+    #[test]
+    fn 하나만_켜면_그것만_통과() {
+        let only_running = filter(&[DagStatus::Running]);
+        assert!(status_matches(&only_running, DagStatus::Running));
+        for s in DagStatus::ROLLUP_ALL {
+            if s != DagStatus::Running {
+                assert!(!status_matches(&only_running, s), "{s:?} 가 통과했다");
+            }
+        }
+    }
+
+    /// 여러 개를 켜면 OR — "아직 안 끝난 DAG" 를 한 번에 묶는 것이 이 변경의 목적이다.
+    #[test]
+    fn 여러_개를_켜면_or_로_통과() {
+        let unfinished = filter(&[DagStatus::Waiting, DagStatus::Ready, DagStatus::Running]);
+        for s in [DagStatus::Waiting, DagStatus::Ready, DagStatus::Running] {
+            assert!(status_matches(&unfinished, s), "{s:?} 가 걸러졌다");
+        }
+        for s in [DagStatus::Succeeded, DagStatus::Failed, DagStatus::Skipped] {
+            assert!(!status_matches(&unfinished, s), "{s:?} 가 통과했다");
+        }
+    }
+
+    /// `rollup()` 은 카운터를 `> 0` / `== 0` 로만 보므로, 8 개 카운터를 각각 0/1 로
+    /// 둔 256 조합이 도달 가능한 분기를 **전부** 훑는다.
+    fn all_rollup_outputs() -> std::collections::BTreeSet<&'static str> {
+        let mut out = std::collections::BTreeSet::new();
+        for bits in 0u32..256 {
+            let c = tasty_agent::DagStateCounts {
+                waiting: usize::from(bits & 1 != 0),
+                ready: usize::from(bits & 2 != 0),
+                running: usize::from(bits & 4 != 0),
+                succeeded: usize::from(bits & 8 != 0),
+                failed: usize::from(bits & 16 != 0),
+                cancelled: usize::from(bits & 32 != 0),
+                skipped: usize::from(bits & 64 != 0),
+                unknown: usize::from(bits & 128 != 0),
+            };
+            out.insert(c.rollup());
+        }
+        out
+    }
+
+    /// 어휘 정합 ①: `rollup()` 이 낼 수 있는 값은 전부 `ROLLUP_ALL` 에 있어야 한다.
+    /// 나중에 `rollup()` 에 분기가 늘면(예: `"cancelled"` 신설) 여기서 먼저 깨져,
+    /// 필터가 그 상태의 DAG 를 조용히 감추는 일이 없다.
+    #[test]
+    fn rollup_이_내는_값은_전부_필터_목록에_있다() {
+        for name in all_rollup_outputs() {
+            let s = DagStatus::from_name(name);
+            assert!(
+                DagStatus::ROLLUP_ALL.contains(&s),
+                "rollup 이 내는 '{name}' 이 ROLLUP_ALL 에 없다"
+            );
+        }
+    }
+
+    /// 어휘 정합 ②: 반대 방향 — `ROLLUP_ALL` 의 각 항목은 `rollup()` 이 실제로 낼 수
+    /// 있는 값이어야 한다. 죽은 선택지(어떤 DAG 와도 일치하지 않는 항목)를 막는다.
+    #[test]
+    fn 필터_목록의_각_항목은_rollup_이_실제로_낸다() {
+        let produced: Vec<DagStatus> = all_rollup_outputs()
+            .into_iter()
+            .map(DagStatus::from_name)
+            .collect();
+        for s in DagStatus::ROLLUP_ALL {
+            assert!(
+                produced.contains(&s),
+                "{s:?} 는 rollup 이 내지 않는 죽은 선택지다"
+            );
+        }
     }
 }

@@ -184,8 +184,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The rollup uses the same eight-state vocabulary as the nodes, so a row and the graph it \
-         opens never disagree. Precedence is running > failed > all-terminal > ready > waiting — \
-         one failure is louder than nine successes.",
+        "The rollup draws from the node vocabulary but reaches only six of it: running > failed > \
+         all-terminal > ready > waiting — one failure is louder than nine successes. Cancelled \
+         folds into skipped and unknown into waiting, so a DAG never rolls up as either; the \
+         status filter lists those six and nothing else.",
     );
 }

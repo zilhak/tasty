@@ -24,7 +24,14 @@ pub enum DagStatus {
 
 impl DagStatus {
     /// 8 종 전부, 화면에 나열하는 고정 순서(대기 → 실행 → 종료 → 예외).
-    /// 상태 필터 드롭다운처럼 "어휘 전체" 를 보여야 하는 곳이 이 순서를 쓴다.
+    /// "어휘 전체" 를 보여야 하는 곳이 이 순서를 쓴다.
+    ///
+    /// 지금은 이 crate 안에 소비자가 없다 — 유일했던 소비자인 DAG 목록 상태 필터가
+    /// 비교 대상(rollup)의 실제 어휘인 [`Self::ROLLUP_ALL`] 로 옮겨갔기 때문이다.
+    /// 그래도 남겨 두는 이유는 이것이 **개별 task 상태의 정본 열거**이고 순서까지
+    /// 고정한 값이라, 8 종을 나열해야 하는 화면(노드 범례 등)이 생길 때 순서를 다시
+    /// 정하지 않기 위함이다. 갤러리 쪽 같은 목록은 별도 타입으로 따로 들고 있다.
+    #[allow(dead_code)]
     pub const ALL: [DagStatus; 8] = [
         DagStatus::Waiting,
         DagStatus::Ready,
@@ -34,6 +41,27 @@ impl DagStatus {
         DagStatus::Cancelled,
         DagStatus::Skipped,
         DagStatus::Unknown,
+    ];
+
+    /// DAG **rollup** 어휘 6 종 — [`Self::ALL`] 과 같은 순서에서 `Cancelled` 와
+    /// `Unknown` 만 빠진 것.
+    ///
+    /// 개별 task 는 8 종 전부가 될 수 있지만 DAG 하나의 대표 상태를 뽑는
+    /// `DagStateCounts::rollup` 은 `"running"` / `"failed"` / `"succeeded"` /
+    /// `"skipped"` / `"ready"` / `"waiting"` **여섯 문자열만** 반환한다 —
+    /// `"cancelled"` 나 `"unknown"` 을 내는 분기가 없다(cancelled 가 섞인 DAG 는
+    /// `"skipped"` 로, unknown 이 남은 DAG 는 `"waiting"` 으로 롤업된다). 그래서
+    /// rollup 값을 비교하는 필터가 [`Self::ALL`] 을 나열하면 그 둘은 어떤 DAG 와도
+    /// 일치하지 않는 죽은 선택지가 된다.
+    ///
+    /// 노드 상태 표기처럼 "어휘 전체" 가 필요한 곳은 계속 [`Self::ALL`] 을 쓴다.
+    pub const ROLLUP_ALL: [DagStatus; 6] = [
+        DagStatus::Waiting,
+        DagStatus::Ready,
+        DagStatus::Running,
+        DagStatus::Succeeded,
+        DagStatus::Failed,
+        DagStatus::Skipped,
     ];
 
     pub fn from_state(state: &TaskState) -> Self {

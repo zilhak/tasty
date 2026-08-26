@@ -66,6 +66,23 @@ pub const STATUS_ORDER: [Status; 8] = [
     Status::Unknown,
 ];
 
+/// DAG **rollup** 어휘 6 종 — [`STATUS_ORDER`] 에서 `Cancelled` 와 `Unknown` 만 빠진 것.
+///
+/// 개별 노드는 8 종 전부가 될 수 있지만, DAG 하나의 대표 상태를 뽑는 호스트의 rollup
+/// 은 waiting / ready / running / succeeded / failed / skipped 여섯만 낸다 —
+/// cancelled 가 섞인 DAG 는 skipped 로, unknown 이 남은 DAG 는 waiting 으로 접힌다.
+/// 그래서 rollup 값을 비교하는 목록 상태 필터는 이 6 종만 나열한다(8 종을 나열하면
+/// 어떤 DAG 와도 일치하지 않는 죽은 선택지가 둘 생긴다). 노드 범례처럼 어휘 전체가
+/// 필요한 곳은 계속 [`STATUS_ORDER`] 를 쓴다.
+pub const ROLLUP_ORDER: [Status; 6] = [
+    Status::Waiting,
+    Status::Ready,
+    Status::Running,
+    Status::Succeeded,
+    Status::Failed,
+    Status::Skipped,
+];
+
 impl Status {
     /// 토큰 접미사 (`--tasty-dag-status-<key>`).
     pub fn key(self) -> &'static str {
