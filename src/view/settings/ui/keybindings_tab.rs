@@ -176,6 +176,11 @@ pub fn draw_keybindings_tab(
                         None,
                     ),
                     (
+                        "fullscreen_stage_exit",
+                        "settings.keybindings.fullscreen_stage_exit_label",
+                        Some("settings.keybindings.fullscreen_stage_exit_desc"),
+                    ),
+                    (
                         "restore_closed",
                         "settings.keybindings.restore_closed_label",
                         None,

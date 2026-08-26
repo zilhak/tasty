@@ -145,6 +145,14 @@ impl MainView {
                     );
                 }
             }
+            "fullscreen_stage_exit" => {
+                // 키 경로는 0단계 무대 게이트(`view::main::keyboard`)가 직접 처리한다.
+                // 여기 arm 이 있는 이유는 `dispatch_action_by_id` 가 field_id 로 액션을
+                // 부르는 **일반 진입점**이기 때문 — 메뉴/CSD 등 다른 호출자가 생겨도
+                // unknown action 경고로 떨어지지 않고 같은 수렴점을 탄다. 무대가 없으면
+                // `close_fullscreen_stage` 가 false 를 반환하는 무해한 no-op 이다.
+                state.close_fullscreen_stage();
+            }
             "toggle_sidebar" => {
                 state.sidebar_visible = !state.sidebar_visible;
             }

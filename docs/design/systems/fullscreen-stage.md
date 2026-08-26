@@ -251,15 +251,22 @@ wgpu 렌더 표면 **위**에 있다. 그리지 않아도 화면에 남으므로
 4단계 앞이 아니라 맨 앞인 이유: 무대는 뒤 세계와 로직상 무관하므로 뒤 세계의 어떤
 단축키도(double-tap 포함) 무대 중에 발화하면 안 된다.
 
-- **ESC 는 무대만 닫는다.** 4단계(`try_consume_escape_key`, settings 모달·notifications
-  팝업 닫기)에 **도달하지 않는다** — 사용자 확정 계약이자 브라우저 Fullscreen API 와
-  같은 동작(UA 가 ESC 를 처리하고 페이지 `keydown` 으로 전파하지 않는다).
+- **종료 키(기본 ESC)는 무대만 닫는다.** 4단계(`try_consume_escape_key`, settings 모달·
+  notifications 팝업 닫기)에 **도달하지 않는다** — 사용자 확정 계약이자 브라우저 Fullscreen
+  API 와 같은 동작(UA 가 ESC 를 처리하고 페이지 `keydown` 으로 전파하지 않는다).
 - 그 외 키는 전부 무대가 소비한다 — 단축키(6단계)·vi copy-mode(7단계)·터미널
   forward(9단계) 어디로도 내려가지 않는다.
 - `record_typing` 도 돌지 않는다. 뒤 surface 에 타이핑이 기록되면 `tasty is-typing`
   판정이 오염된다.
-- 종료 키 판정은 `stage_exit_key_matches` **한 곳**에만 있다. 지금은 기본값 ESC 이고,
-  `KeybindingSettings` 에 대응 필드가 생기면 그 함수 본문만 바뀐다.
+- 종료 키 판정은 `stage_exit_key_matches` **한 곳**에만 있고, 값은
+  `KeybindingSettings.fullscreen_stage_exit`(4 프리셋 공통 기본값 `escape`)에서 읽는다 —
+  코드에 키 리터럴이 없다(CLAUDE.md 단축키 정책).
+- **그 조회는 무대 게이트 안에만 있다.** `stage_key_decision` 이 무대 비활성이면 판정 전에
+  `PassThrough` 로 빠지므로, modifier 없는 기본값 ESC 가 평상시 ESC 동작(settings 모달·
+  notifications 팝업 닫기, 터미널 `\x1b` 전달)을 훔칠 경로가 구조적으로 없다. 조회를 게이트
+  밖으로 옮기면 그 순간 회귀가 되며, `tests/fullscreen_stage_input_gate.rs` 가 위치를 고정한다.
+- 바인딩이 **빈 vec** 이면 항상 불일치라 모든 키가 `ConsumeForStage` 다 — 키보드 종료 수단만
+  사라지고 다른 키가 뒤로 새지는 않는다. 탈출은 셸이 항상 그리는 종료 버튼이 맡는다.
 - double-tap 검출기에는 press/release 를 계속 먹인다(물리 상태를 놓치면 무대를 나온 뒤
   판정이 어긋난다). 완성된 결과만 무대 게이트가 버려 유령 발화를 막는다.
 
@@ -355,9 +362,10 @@ OS 가 직접 띄우는 UI 는 wgpu 표면 **위**에 있어 무대가 덮지 �
 
 - **무대 프레임에는 CSD 타이틀바도 없다.** 무대 프레임은 host chrome 을 통째로 건너뛰므로
   창 닫기·최소화 버튼까지 사라진다. 탈출 수단은 둘이다 — 마우스는 셸이 공통 제공하는 종료
-  버튼, 키보드는 위 입력 계약의 ESC. ESC 값을 `KeybindingSettings` 로 바꿀 수 있게 하는 것은
-  후속 작업이고, 어느 쪽이든 종료 수단을 건드리는 작업은 "창을 빠져나올 방법이 없어지지
-  않는가" 를 반드시 함께 본다.
+  버튼, 키보드는 위 입력 계약의 종료 키(`fullscreen_stage_exit`, 기본 ESC). 키 쪽은 사용자가
+  비울 수 있으므로 **마우스 종료 버튼이 최후의 탈출구**다. 셸이 그 버튼을 무조건 그리는 것이
+  그래서 콘텐츠 구현자 재량이 아니며, 종료 수단을 건드리는 작업은 "창을 빠져나올 방법이
+  없어지지 않는가" 를 반드시 함께 본다.
 
 ## headless
 

@@ -39,16 +39,24 @@ pub enum PaletteCommand {
     },
 }
 
+/// 팔레트 목록에서 제외할 keybinding field_id.
+///
+/// - `toggle_command_palette`: 이미 팔레트 안이므로 자기 자신을 여는 명령은 무의미하다.
+/// - `fullscreen_stage_exit`: 무대가 올라와 있으면 0단계 게이트가 모든 키를 소비해
+///   팔레트를 **열 수 없고**, 무대가 없으면 이 명령은 아무 것도 닫을 게 없는 no-op 이다.
+///   즉 팔레트에서 고를 수 있는 시점과 의미가 있는 시점이 서로 배타적이라 노출하지 않는다.
+const PALETTE_EXCLUDED: &[&str] = &["toggle_command_palette", "fullscreen_stage_exit"];
+
 /// 실행 가능한 명령 전체 목록: 호스트 keybinding 필드 + `plugin_commands`(팔레트에
 /// 노출할 plugin 전역 command snapshot, 이미 비활성 plugin 필터링됨).
 ///
-/// `toggle_command_palette` 자신은 제외한다 (이미 팔레트 안이므로 의미 없음).
+/// [`PALETTE_EXCLUDED`] 의 field_id 는 목록에서 뺀다.
 pub fn all_commands(
     plugin_commands: &[crate::plugin::command_registry::PluginCommandEntry],
 ) -> Vec<PaletteCommand> {
     let mut out: Vec<PaletteCommand> = KeybindingSettings::GENERAL_BINDING_FIELDS
         .iter()
-        .filter(|(id, _)| *id != "toggle_command_palette")
+        .filter(|(id, _)| !PALETTE_EXCLUDED.contains(id))
         .map(|(id, label_key)| PaletteCommand::Host { id, label_key })
         .collect();
     out.extend(plugin_commands.iter().map(|e| PaletteCommand::Plugin {
@@ -166,6 +174,29 @@ mod tests {
             .collect();
         let results = search("", &cmds, &labels);
         assert_eq!(results.len(), cmds.len());
+    }
+
+    /// [`PALETTE_EXCLUDED`] 가 실제로 목록에서 빠지는지. `fullscreen_stage_exit` 은
+    /// 팔레트를 열 수 있는 시점(무대 없음)과 의미가 있는 시점(무대 있음)이 배타적이라
+    /// 노출하지 않는다 — 목록에 되살아나면 아무 것도 하지 않는 명령이 검색에 잡힌다.
+    #[test]
+    fn excluded_ids_are_absent_from_the_palette() {
+        let cmds = all_commands(&[]);
+        for excluded in PALETTE_EXCLUDED {
+            assert!(
+                !cmds
+                    .iter()
+                    .any(|c| matches!(c, PaletteCommand::Host { id, .. } if id == excluded)),
+                "'{excluded}' 가 팔레트 목록에 노출됐다"
+            );
+        }
+        // 제외 목록이 통째로 비면 위 단정이 공허해진다 — 대조군으로 일반 액션 하나를
+        // 확인해 필터가 전부를 걸러내지 않는다는 것도 함께 고정한다.
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, PaletteCommand::Host { id, .. } if *id == "new_tab")),
+            "일반 액션까지 걸러졌다 — 필터가 과하게 잡는다"
+        );
     }
 
     #[test]

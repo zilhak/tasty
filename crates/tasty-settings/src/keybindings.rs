@@ -43,6 +43,16 @@ pub struct KeybindingSettings {
     /// `String::default()`(빈 문자열)로 채워져 매칭이 조용히 죽는다. 전용 default fn 필수.
     #[serde(default = "default_category_switch_modifier")]
     pub category_switch_modifier: String,
+    /// 전체화면 무대(fullscreen stage) 종료. 무대가 올라와 있을 때 **무대 게이트
+    /// 안에서만** 조회된다 — 무대가 없으면 이 바인딩은 아예 매칭되지 않으므로 기본값
+    /// ESC 가 settings/notifications 닫기·터미널 `\x1b` 전달 같은 기존 ESC 동작을
+    /// 가로채지 않는다.
+    ///
+    /// ⚠️ 신규 필드라 구 config 에는 없다 — struct 레벨 `#[serde(default)]` 만으로는
+    /// 기본 바인딩이 조용히 사라질 수 있다. 전용 default fn 필수
+    /// (`screenshot_to_clipboard` 선례).
+    #[serde(default = "default_fullscreen_stage_exit")]
+    pub fullscreen_stage_exit: Vec<String>,
     /// Toggle sidebar visibility (completely hidden/shown).
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
@@ -237,6 +247,12 @@ fn default_category_switch_modifier() -> String {
 /// 않는다(어느 프리셋도 그 조합을 안 씀). 구 config(필드 없음) 로드 시 이 값으로 채워진다.
 fn default_screenshot_to_clipboard() -> Vec<String> {
     vec!["ctrl+alt+s".to_string()]
+}
+
+/// 전체화면 무대 종료 기본 바인딩 `"escape"`. 4 프리셋 공통 — 무대는 플랫폼 관습이
+/// 갈리는 영역이 아니고, "덮은 것을 ESC 로 걷는다" 는 관습이 세 OS 에 공통이다.
+fn default_fullscreen_stage_exit() -> Vec<String> {
+    vec!["escape".to_string()]
 }
 
 impl KeybindingSettings {

@@ -1,9 +1,9 @@
 # 전체화면 무대 (Fullscreen stage)
 
-- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트(ESC 종료 포함) + 에이전트 진입/조회(debug 전용 IPC/CLI)까지 있다. release 표면은 없다.
+- **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트 + 설정 가능한 종료 단축키(`fullscreen_stage_exit`, 기본 ESC) + 에이전트 진입/조회(debug 전용 IPC/CLI)까지 있다. release 표면은 없다.
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
-- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs` · `src/view/main/fullscreen_window.rs`(OS 창 전환 + 상태 덤프) · `src/app/ipc/debug_methods.rs`(debug IPC)
+- **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs` · `src/view/main/fullscreen_window.rs`(OS 창 전환 + 상태 덤프) · `src/app/ipc/debug_methods.rs`(debug IPC) · `crates/tasty-settings/src/keybindings.rs`(종료 바인딩)
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md)
 
 ## 목적
@@ -46,6 +46,12 @@
   키/IME/클릭을 정상적으로 받는다. 진입 시 진행 중이던 IME 조합·드래그·네이티브 메뉴·파일
   드래그는 확정하지 않고 폐기한다. 계약 전체는
   [`design/systems/fullscreen-stage.md` § 입력 계약](../../design/systems/fullscreen-stage.md#입력-계약).
+- **종료 키**: `KeybindingSettings.fullscreen_stage_exit`(4 프리셋 공통 기본값 `escape`). 조회는
+  0단계 무대 게이트 안에서만 일어나므로 무대가 없으면 이 바인딩은 아예 매칭되지 않는다 —
+  평상시 ESC 동작을 가져가지 않는 것이 이 위치의 목적이다. 사용자가 다른 키로 바꾸면 그 키로
+  닫히고 ESC 로는 닫히지 않는다. 빈 값이면 키보드 종료 수단만 사라지고 셸의 종료 버튼이
+  남는다(셸이 항상 그리므로 탈출 불가 상태가 되지 않는다). 프리셋 표는
+  [`design/policies/keybinding-presets.md`](../../design/policies/keybinding-presets.md).
 
 ## 인터페이스
 
@@ -59,15 +65,22 @@
   [`dev-guide/debug-ipc.md`](../../dev-guide/debug-ipc.md).
 - **사용자 트리거**: 무대를 선언한 popup(`PopupDef.fullscreen_stage`)의 타이틀바 전체화면
   버튼 — 현재 알림 popup. 누르면 무대가 뜨고 **원본 popup 은 열린 채 남는다**. 종료는 무대
-  우측 상단의 종료 버튼. 키보드 단축키는 아직 없다.
+  우측 상단의 종료 버튼 또는 `fullscreen_stage_exit` 단축키(기본 ESC). 진입 단축키는 아직
+  없다 — 무대를 여는 것은 popup 타이틀바 버튼뿐이다.
+- **설정 UI**: 설정 > 단축키 > 일반에 "전체화면 무대 종료" 엔트리로 노출된다. 발견성 때문에
+  노출한다 — 무대에는 메뉴도 CSD 타이틀바도 없어 종료 버튼 외에는 이 엔트리가 종료 수단을
+  알 수 있는 유일한 자리다. 다만 녹화 버튼에서 ESC 는 "슬롯 비우기" 로 예약돼 있어 ESC 를
+  다시 지정할 수는 없다(엔트리 툴팁에 명시).
 
 ## 아직 없는 것
 
-- **종료 키의 설정화** — 지금 무대를 닫는 것은 하드코딩 기본값 ESC 다(판정은
-  `stage_exit_key_matches` 한 곳). `KeybindingSettings` 필드로 노출하는 것은 후속 작업이다
-  (모든 단축키는 설정으로 노출되어야 한다는 정책).
+이 기능 자체에 남은 미구현 항목은 없다 — 종료 키의 설정화와 에이전트(debug IPC) 진입이
+모두 붙었다. release 에이전트 표면을 두지 않는 것은 미구현이 아니라 확정된 경계다(무대는
+화면 투영이라 대응 도메인이 없다).
 
-경계 상세는 [`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
+다만 무대 **위에 무언가를 얹을 때** 전제해야 하는 경계(무대 프레임에는 CSD 타이틀바조차
+없다 등)는 그대로다 —
+[`design/systems/fullscreen-stage.md`](../../design/systems/fullscreen-stage.md) 의
 "아직 없는 것" 절.
 
 ## OS 창 전환
@@ -126,7 +139,13 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
 - [x] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
       <!-- 실측 확인: 창 A=blank / B=notifications 로 각각 진입 후 A 만 close →
            A 는 stage_id null·os_fullscreen false, B 는 notifications·true 유지 -->
-- [ ] Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
+- [x] Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
+      <!-- 실측 확인: X11 + xdotool 로 winit 키 경로 재현 — ESC 후 창이 무대 크기에서
+           원래 크기로 돌아오고 `ui.state` 의 notification_panel_open 은 true 유지 -->
+- [x] Given `fullscreen_stage_exit` 를 다른 키로 변경 When 무대 활성 + ESC Then 닫히지 않고,
+      그 새 키를 주입하면 닫힌다
+      <!-- 실측 확인: debug.settings.apply 로 ctrl+alt+q 재바인딩 후 ESC 는 무대 유지,
+           ctrl+alt+q 로 종료. 빈 vec 이면 둘 다 무효고 셸 종료 버튼으로만 닫힘 -->
 - [ ] Given 무대 활성 When 문자 키 주입 Then 뒤 터미널에 그 문자가 들어가지 않는다
 - [ ] Given 무대 활성 When 등록 단축키(사이드바 토글 등) 주입 Then 발화하지 않는다
 - [ ] Given 무대 활성 When 뒤 surface 좌표 클릭 주입 Then 포커스가 이동하지 않는다

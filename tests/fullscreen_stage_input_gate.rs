@@ -71,14 +71,56 @@ fn keyboard_stage_gate_returns_immediately() {
     );
 }
 
-/// 종료 키 판정은 한 곳에만 있다 — `KeybindingSettings` 연동 시 그 한 곳만 바뀐다.
+/// 종료 키 판정은 한 곳에만 있고, 그 한 곳은 `KeybindingSettings` 를 읽는다.
+///
+/// 판정 함수가 실제로 설정을 보는지(= 하드코딩이 아닌지)는 단위 테스트
+/// (`stage_exit_follows_the_configured_binding`)가 값으로 단정한다. 여기서는 **판정
+/// 지점이 하나라는 구조**와 **바인딩 조회가 무대 게이트 안에만 있다는 위치 계약**을
+/// 고정한다 — 조회가 게이트 밖으로 나가면 무대가 없을 때도 기본값 ESC 가 매칭돼
+/// settings/notifications 닫기·터미널 `\x1b` 전달을 훔친다.
 #[test]
 fn stage_exit_key_has_a_single_decision_site() {
     let src = read("src/view/main/keyboard.rs");
     only_at(&src, "fn stage_exit_key_matches(", "무대 종료 키 판정 함수");
     assert!(
-        src.contains("    if stage_exit_key_matches(key) {"),
+        src.contains("    if stage_exit_key_matches(exit_bindings, key, mods) {"),
         "무대 종료 판정이 `stage_key_decision` 안에서 이 함수를 거치지 않는다."
+    );
+    // 값의 출처는 KeybindingSettings 하나뿐이고, 그 조회는 게이트 안에서 한 번만 한다.
+    only_at(
+        &src,
+        "keybindings.fullscreen_stage_exit",
+        "무대 종료 바인딩 조회",
+    );
+    let lookup = only_at(
+        &src,
+        "&self.core_state.settings.keybindings.fullscreen_stage_exit,",
+        "게이트의 바인딩 조회",
+    );
+    let gate_fn = only_at(
+        &src,
+        "fn try_consume_fullscreen_stage_key(&mut self, event: &winit::event::KeyEvent) -> bool {",
+        "0단계 게이트 함수",
+    );
+    let stage_active_guard = only_at(
+        &src,
+        "    if !stage_active {\n        return StageKeyDecision::PassThrough;\n    }",
+        "무대 비활성 조기 반환",
+    );
+    assert!(
+        gate_fn < lookup,
+        "바인딩 조회가 0단계 게이트 밖으로 나갔다 — 무대가 없을 때도 이 바인딩이 \
+         매칭되면 기존 ESC 동작을 훔친다."
+    );
+    let call_site = only_at(
+        &src,
+        "    if stage_exit_key_matches(exit_bindings, key, mods) {",
+        "판정 호출부",
+    );
+    assert!(
+        stage_active_guard < call_site,
+        "`stage_key_decision` 의 무대 비활성 조기 반환이 판정 호출 뒤로 밀렸다 — 무대가 \
+         없을 때도 종료 바인딩이 매칭된다."
     );
 }
 

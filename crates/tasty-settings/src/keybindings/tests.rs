@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 54);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 55);
 }
 
 #[test]
@@ -623,8 +623,8 @@ fn quick_switch_fields_not_in_general_bindings() {
             "{id} 는 콤보가 아닌 raw 키이므로 GENERAL_BINDING_FIELDS 에 없어야 함"
         );
     }
-    // count 는 여전히 54.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 54);
+    // count 는 여전히 55.
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 55);
 }
 
 // ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────
@@ -763,4 +763,87 @@ fn category_next_prev_defaults_do_not_conflict_with_presets() {
             "preset '{name}': category prev combo '{prev_combo}' 충돌"
         );
     }
+}
+
+// ── 전체화면 무대 종료 (fullscreen_stage_exit) ─────────────────────
+
+/// 4 프리셋 전부 기본값이 `escape` 다. 무대는 플랫폼 관습이 갈리는 영역이 아니라
+/// 프리셋별로 다르게 둘 이유가 없다 — 한 프리셋만 빠져도 그 프리셋 사용자에게는
+/// 키보드 종료 수단이 사라진다.
+#[test]
+fn every_preset_binds_fullscreen_exit_to_escape() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(
+            kb.fullscreen_stage_exit,
+            vec!["escape".to_string()],
+            "preset '{name}' 의 fullscreen_stage_exit 기본값이 escape 가 아니다"
+        );
+    }
+}
+
+/// id → slice / id → `&mut` 양방향 매핑이 둘 다 연결돼 있는지.
+///
+/// slice 쪽이 빠지면 `find_conflict` 가 이 바인딩을 못 봐 **중복 등록을 허용**하고,
+/// `&mut` 쪽이 빠지면 설정 UI 녹화가 값을 못 쓴다. 둘은 서로 다른 match 문이라
+/// 한쪽만 추가되는 실수가 실제로 가능하다.
+#[test]
+fn fullscreen_stage_exit_has_both_crud_directions() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    assert_eq!(
+        kb.get_bindings("fullscreen_stage_exit"),
+        Some(&vec!["escape".to_string()][..]),
+        "id → slice 매핑이 없다 — 충돌 검사가 이 바인딩을 못 본다"
+    );
+    assert!(
+        kb.set_field("fullscreen_stage_exit", "ctrl+alt+q"),
+        "id → &mut 매핑이 없다 — 설정 UI 녹화가 값을 쓸 수 없다"
+    );
+    assert_eq!(kb.get_field("fullscreen_stage_exit"), Some("ctrl+alt+q"));
+    assert_eq!(
+        KeybindingSettings::label_key_for("fullscreen_stage_exit"),
+        Some("settings.keybindings.fullscreen_stage_exit_label"),
+        "GENERAL_BINDING_FIELDS 에 없다 — 설정 UI·충돌 검사 순회에서 통째로 빠진다"
+    );
+}
+
+/// 충돌 검사가 이 필드를 **양방향으로** 본다 — 이 필드에 남의 combo 를 넣어도,
+/// 남의 필드에 이 필드의 combo 를 넣어도 충돌로 잡혀야 한다.
+#[test]
+fn fullscreen_stage_exit_participates_in_conflict_detection() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    let new_tab = kb.new_tab.first().cloned().expect("new_tab 기본값");
+    assert_eq!(
+        kb.find_conflict("fullscreen_stage_exit", &new_tab),
+        Some(("new_tab", 0)),
+        "이 필드에 다른 액션의 combo 를 넣었는데 충돌로 잡히지 않았다"
+    );
+    kb.fullscreen_stage_exit = vec!["ctrl+alt+q".to_string()];
+    assert_eq!(
+        kb.find_conflict("new_tab", "ctrl+alt+q"),
+        Some(("fullscreen_stage_exit", 0)),
+        "다른 액션이 이 필드의 combo 를 가져갔는데 충돌로 잡히지 않았다"
+    );
+}
+
+/// 구 config(이 필드 없음) 로드 시 전용 default fn 이 기본 바인딩을 복원한다.
+/// struct 레벨 `#[serde(default)]` 만 믿으면 `Vec::default()`(빈 vec)가 들어와
+/// 키보드 종료 수단이 조용히 사라진다.
+#[test]
+fn missing_fullscreen_stage_exit_falls_back_to_escape() {
+    let toml_str = r#"new_tab = ["ctrl+t"]"#;
+    let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+    assert_eq!(kb.fullscreen_stage_exit, vec!["escape".to_string()]);
+}
+
+/// 사용자가 의도적으로 비운 빈 vec 은 **그대로 보존**된다(기본값으로 되살아나지
+/// 않는다). 탈출 수단은 무대 셸의 종료 버튼이 담당한다.
+#[test]
+fn empty_fullscreen_stage_exit_is_preserved() {
+    let toml_str = r#"
+new_tab = ["ctrl+t"]
+fullscreen_stage_exit = []
+"#;
+    let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+    assert!(kb.fullscreen_stage_exit.is_empty());
 }

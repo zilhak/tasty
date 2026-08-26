@@ -39,6 +39,10 @@ impl KeybindingSettings {
             "toggle_dag_list",
             "settings.keybindings.toggle_dag_list_label",
         ),
+        (
+            "fullscreen_stage_exit",
+            "settings.keybindings.fullscreen_stage_exit_label",
+        ),
         ("close_pane", "settings.keybindings.close_pane_label"),
         ("close_surface", "settings.keybindings.close_surface_label"),
         (
@@ -171,6 +175,7 @@ impl KeybindingSettings {
             "focus_pane_prev" => self.focus_pane_prev.as_slice(),
             "focus_surface_next" => self.focus_surface_next.as_slice(),
             "focus_surface_prev" => self.focus_surface_prev.as_slice(),
+            "fullscreen_stage_exit" => self.fullscreen_stage_exit.as_slice(),
             "toggle_sidebar" => self.toggle_sidebar.as_slice(),
             "toggle_sidebar_collapse" => self.toggle_sidebar_collapse.as_slice(),
             "toggle_categories_collapsed" => self.toggle_categories_collapsed.as_slice(),
@@ -233,6 +238,7 @@ impl KeybindingSettings {
             "focus_pane_prev" => &mut self.focus_pane_prev,
             "focus_surface_next" => &mut self.focus_surface_next,
             "focus_surface_prev" => &mut self.focus_surface_prev,
+            "fullscreen_stage_exit" => &mut self.fullscreen_stage_exit,
             "toggle_sidebar" => &mut self.toggle_sidebar,
             "toggle_sidebar_collapse" => &mut self.toggle_sidebar_collapse,
             "toggle_categories_collapsed" => &mut self.toggle_categories_collapsed,

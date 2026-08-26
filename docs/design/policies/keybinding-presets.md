@@ -54,9 +54,17 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 | toggle_notifications | ctrl+shift+i | alt+shift+i | ctrl+shift+i | ctrl+shift+i |
 | toggle_dag_list | ctrl+shift+g | alt+shift+g | ctrl+shift+g | ctrl+shift+g |
 | toggle_sidebar / _collapse | ctrl+shift+b / ctrl+b | alt+shift+b / alt+b | (ctrl 계열) | (ctrl 계열) |
+| fullscreen_stage_exit | escape | escape | escape | escape |
 | quit | | alt+q | | ctrl+q |
 | quit_minimize | | alt+m | | |
 | convert_surface | alt+' | alt+' | alt+' | alt+' |
+
+> `fullscreen_stage_exit`(전체화면 무대 종료)은 4 프리셋 공통 `escape` 다 — 무대는
+> 플랫폼 관습이 갈리는 영역이 아니고 "덮은 것을 ESC 로 걷는다" 는 관습이 세 OS 에 공통이다.
+> modifier 가 없지만 이 바인딩은 **무대가 올라와 있을 때만** 조회되므로 평상시 ESC 동작
+> (settings 모달·notifications 팝업 닫기, 터미널 `\x1b` 전달)을 가져가지 않는다. 설정 UI 의
+> 녹화 버튼에서는 ESC 가 "슬롯 비우기" 로 예약돼 있어 ESC 를 **다시 지정할 수는 없다** —
+> 기본값으로 되돌리려면 프리셋을 재적용한다([key-mapping](key-mapping.md#바인딩-문자열-문법)).
 
 > `quit_immediate` 는 실수 방지로 전 프리셋 기본값 없음. `apply_*_preset`(레이아웃 프리셋 적용)도 사용자가 직접 배정하도록 기본값 없음. Windows 는 Alt+F4 가 OS 종료라 `quit` 불요.
 

@@ -132,7 +132,17 @@ impl MainView {
     /// 먹인다(오버레이와 같은 취급). 이 함수는 그 뒤에 남은 잔여 입력이 뒤로 새지
     /// 않게 막는 쪽만 담당한다.
     fn try_consume_fullscreen_stage_key(&mut self, event: &winit::event::KeyEvent) -> bool {
-        match stage_key_decision(self.state.fullscreen_stage_active(), &event.logical_key) {
+        // 조회 키는 나머지 파이프라인과 같은 규칙(`shortcut_lookup_key`)으로 고른다 —
+        // 사용자가 종료 키를 modifier 조합으로 바꾸면 그때부터 물리 키 기준 매칭이
+        // 필요해지고, 기본값 ESC 는 modifier 가 없어 어느 규칙이든 같은 값이다.
+        let key = self.shortcut_lookup_key(event);
+        let decision = stage_key_decision(
+            self.state.fullscreen_stage_active(),
+            &self.core_state.settings.keybindings.fullscreen_stage_exit,
+            &key,
+            self.base.modifiers,
+        );
+        match decision {
             StageKeyDecision::PassThrough => false,
             StageKeyDecision::ExitStage => {
                 self.discard_pending_double_tap();
@@ -665,23 +675,35 @@ enum StageKeyDecision {
     ConsumeForStage,
 }
 
-fn stage_key_decision(stage_active: bool, key: &Key) -> StageKeyDecision {
+fn stage_key_decision(
+    stage_active: bool,
+    exit_bindings: &[String],
+    key: &Key,
+    mods: ModifiersState,
+) -> StageKeyDecision {
     if !stage_active {
         return StageKeyDecision::PassThrough;
     }
-    if stage_exit_key_matches(key) {
+    if stage_exit_key_matches(exit_bindings, key, mods) {
         StageKeyDecision::ExitStage
     } else {
         StageKeyDecision::ConsumeForStage
     }
 }
 
-/// 무대 종료 키 판정 — **바인딩 값을 읽는 단 하나의 지점**. 사용자 확정 계약의 기본값이
-/// ESC 이고, 지금은 `KeybindingSettings` 에 대응 필드가 아직 없다. 필드가 생기면 이 함수
-/// 본문만 그 조회로 바뀌고 게이트 구조·호출부는 그대로다 — 값을 파이프라인 여러 곳에
-/// 흩뿌리지 않으려고 판정을 여기 한 곳으로 모았다.
-fn stage_exit_key_matches(key: &Key) -> bool {
-    key == &Key::Named(NamedKey::Escape)
+/// 무대 종료 키 판정 — **바인딩 값을 읽는 단 하나의 지점**. 값 자체는
+/// `KeybindingSettings::fullscreen_stage_exit`(기본 `["escape"]`)에 있고 여기서는
+/// 조회만 한다(CLAUDE.md 단축키 정책: 하드코딩 금지).
+///
+/// 이 조회가 **무대 게이트 안에만** 있는 것이 회귀 방지의 핵심이다 — 무대가 없으면
+/// `stage_key_decision` 이 여기 오기 전에 `PassThrough` 로 빠지므로, 기본값 ESC 가
+/// settings/notifications 닫기나 터미널 `\x1b` 전달을 훔칠 경로가 아예 없다.
+///
+/// 바인딩이 빈 vec 이면 항상 false 다 — 키보드 종료 수단만 사라지고, 무대 셸이 항상
+/// 그리는 종료 버튼(`adapters::ui::fullscreen::draw_fullscreen_stage`)이 남으므로
+/// 탈출 불가 상태가 되지 않는다.
+fn stage_exit_key_matches(exit_bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
+    crate::shortcuts::matches_any_binding(exit_bindings, key, mods)
 }
 
 /// egui-winit `is_printable_char` 미러 — ASCII 제어문자와 유니코드 사설 사용 영역
@@ -701,6 +723,17 @@ mod tests {
         Key::Named(NamedKey::Escape)
     }
 
+    fn no_mods() -> ModifiersState {
+        ModifiersState::empty()
+    }
+
+    /// 게이트가 실제로 조회하는 값과 같은 출처를 쓴다 — 기본 프리셋의
+    /// `fullscreen_stage_exit`. 여기에 리터럴 `["escape"]` 를 쓰면 프리셋이 바뀌어도
+    /// 테스트가 통과해 버린다.
+    fn default_exit_bindings() -> Vec<String> {
+        crate::settings::KeybindingSettings::default().fullscreen_stage_exit
+    }
+
     /// 무대 중 ESC 는 0단계에서 끝난다 — 4단계(`try_consume_escape_key`, settings 모달·
     /// notifications 팝업 닫기)에 **도달하지 않는다**. 0단계가 4단계보다 앞에 있고
     /// `ExitStage` 가 즉시 `return` 으로 이어진다는 배선은
@@ -708,7 +741,7 @@ mod tests {
     #[test]
     fn stage_gate_blocks_escape_from_reaching_popup_close() {
         assert_eq!(
-            stage_key_decision(true, &esc()),
+            stage_key_decision(true, &default_exit_bindings(), &esc(), no_mods()),
             StageKeyDecision::ExitStage
         );
     }
@@ -717,11 +750,16 @@ mod tests {
     #[test]
     fn stage_gate_is_noop_when_no_stage() {
         assert_eq!(
-            stage_key_decision(false, &esc()),
+            stage_key_decision(false, &default_exit_bindings(), &esc(), no_mods()),
             StageKeyDecision::PassThrough
         );
         assert_eq!(
-            stage_key_decision(false, &Key::Character("a".into())),
+            stage_key_decision(
+                false,
+                &default_exit_bindings(),
+                &Key::Character("a".into()),
+                no_mods()
+            ),
             StageKeyDecision::PassThrough
         );
     }
@@ -737,19 +775,55 @@ mod tests {
             Key::Named(NamedKey::ArrowDown),
         ] {
             assert_eq!(
-                stage_key_decision(true, &key),
+                stage_key_decision(true, &default_exit_bindings(), &key, no_mods()),
                 StageKeyDecision::ConsumeForStage,
                 "{key:?} 가 무대를 뚫고 내려갔다"
             );
         }
     }
 
-    /// 종료 키 판정은 한 곳(`stage_exit_key_matches`)에만 있다 — `KeybindingSettings`
-    /// 필드가 생기면 이 함수 본문만 바뀐다.
+    /// 종료 키 판정은 한 곳(`stage_exit_key_matches`)에만 있고, 값은
+    /// `KeybindingSettings` 에서 온다 — 기본 프리셋이 ESC 다.
     #[test]
     fn stage_exit_key_is_escape_by_default() {
-        assert!(stage_exit_key_matches(&esc()));
-        assert!(!stage_exit_key_matches(&Key::Named(NamedKey::Enter)));
+        let kb = default_exit_bindings();
+        assert!(stage_exit_key_matches(&kb, &esc(), no_mods()));
+        assert!(!stage_exit_key_matches(
+            &kb,
+            &Key::Named(NamedKey::Enter),
+            no_mods()
+        ));
+    }
+
+    /// 사용자가 바인딩을 바꾸면 그 키로 닫히고 ESC 로는 안 닫힌다 — 값이 정말
+    /// 설정에서 오는지(하드코딩이 남아 있지 않은지)를 가르는 단정이다.
+    #[test]
+    fn stage_exit_follows_the_configured_binding() {
+        let rebound = vec!["ctrl+alt+q".to_string()];
+        let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
+        assert_eq!(
+            stage_key_decision(true, &rebound, &Key::Character("q".into()), ctrl_alt),
+            StageKeyDecision::ExitStage
+        );
+        assert_eq!(
+            stage_key_decision(true, &rebound, &esc(), no_mods()),
+            StageKeyDecision::ConsumeForStage,
+            "재바인딩 후에도 ESC 가 무대를 닫았다 — 하드코딩이 남아 있다"
+        );
+    }
+
+    /// 바인딩이 비면 키보드 종료 수단만 사라진다 — 다른 키가 뒤로 새지 않는 성질은
+    /// 그대로다. 탈출은 무대 셸이 항상 그리는 종료 버튼이 담당한다.
+    #[test]
+    fn empty_binding_leaves_the_stage_up_without_leaking_keys() {
+        assert_eq!(
+            stage_key_decision(true, &[], &esc(), no_mods()),
+            StageKeyDecision::ConsumeForStage
+        );
+        assert_eq!(
+            stage_key_decision(true, &[], &Key::Named(NamedKey::Enter), no_mods()),
+            StageKeyDecision::ConsumeForStage
+        );
     }
 
     fn read_state(option_as_meta: bool) -> KeyboardReadState {
