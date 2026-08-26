@@ -42,6 +42,15 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 
 한 연결로 N 터미널 출력을 나르므로 workspace 모드 Data 프레임은 **surface-prefixed**(`encode_mux`/`decode_mux`). surface 단위 단일 연결은 prefix 없음. attach 직후 서버가 `attached_workspace` Control 로 트리(분할 방향/비율) + per-surface 디스크립터를 보내고, client 는 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다. per-surface role 은 3종: `{remote_id, role:"terminal", cols, rows}`(mirror 가능) / `{remote_id, role:"mesh", kind, plugin_id}`(bundled egui-mesh 화이트리스트 통과 — mesh mirror, 아래 절) / `{remote_id, role:"placeholder", kind}`(그 외 비-터미널, mirror 불가). 이 role 분류는 `build_workspace_tree_surfaces`(`src/core/attach_runtime.rs`)가 `Surface::attach_mesh_info()` + `is_egui_mesh_allowed` 화이트리스트 재검증으로 만든다.
 
+## 프레임 전송 지연 (Nagle 금지)
+
+attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리사이즈 요청 · 구조 op · 출력 delta)다. 그래서 프레임 단위 전송 지연이 그대로 체감 지연이 된다 — 후속 작업자가 이 두 가지를 되돌리면 왕복 지연이 20 배로 뛴다(실측: loopback 왕복 1.9ms → 43ms).
+
+- **프레임은 한 번의 `write` 로 나간다** — `tasty_ipc::stream::write_frame` 이 `[tag][len][payload]` 를 한 버퍼에 합쳐 `write_all` 1 회로 보낸다. `TcpStream` 은 버퍼링이 없어 헤더/payload 를 나눠 쓰면 그대로 TCP 세그먼트가 쪼개지고, Nagle 이 켜진 소켓은 첫 조각이 unACKed 인 동안 뒷조각을 상대의 delayed ACK(~40ms)까지 붙잡는다. `crates/tasty-ipc` 의 유닛 테스트 `stream::tests::write_frame_emits_one_write_call` 이 write 횟수를 고정한다.
+- **양쪽 소켓 모두 `TCP_NODELAY`** — 서버 `prepare_stream`(`src/adapters/production/tcp_ipc_server.rs`, 일반 JSON-RPC 연결 포함)과 client `StreamConnection::open_with`(`crates/tasty-cli/src/stream.rs`). 위에서 합쳐도 payload 가 MSS 를 넘으면 마지막 조각이 다시 Nagle 에 걸리므로 이중 방어다.
+
+**SSH 터널은 이 지연을 흡수해 주지 않는다.** 터널 너머든 아니든 tasty 소켓의 양 끝은 항상 loopback이고, 위 지연은 그 loopback 구간에서 발생한다. 그리고 mirror 를 다시 mirror 하는 다단 구성(A → B → C)에서는 홉마다 입력·출력 양방향으로 얹히므로 지연이 홉 수에 비례해 누적된다.
+
 ## 갱신 cadence 분리
 
 - **서버측 readonly 뷰**(피점유 — 대상 부하 절약): **3초 polling**(`AttachPoll` tick, `src/app/attach_poll.rs`)으로 self-snapshot 적용.

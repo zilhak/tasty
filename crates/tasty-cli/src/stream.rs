@@ -73,6 +73,13 @@ impl StreamConnection {
         // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
         // 포함)에 적용된다.
         stream.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT))?;
+        // Nagle 해제 — 서버측(`tcp_ipc_server::prepare_stream`)과 대칭. 프레임 하나가
+        // 곧 한 번의 상호작용(키 입력 / 리사이즈 / 구조 op)이라, Nagle 이 켜져 있으면
+        // 세그먼트가 쪼개진 프레임마다 상대의 delayed ACK(~40ms)를 기다리게 된다.
+        // 실패해도 연결 자체는 유효하므로 에러로 올리지 않는다.
+        if let Err(e) = stream.set_nodelay(true) {
+            tracing::warn!("attach stream: TCP_NODELAY 설정 실패(지연 증가 가능): {e}");
+        }
         let writer = stream.try_clone()?;
         let mut reader = BufReader::new(stream);
         let mut writer = writer;

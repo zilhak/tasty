@@ -22,6 +22,9 @@ pub const STREAM_OPEN_METHOD: &str = "stream.open";
 /// Current streaming protocol version.
 pub const STREAM_PROTO: u32 = 1;
 
+/// Frame header length: 1-byte tag + 4-byte big-endian payload length.
+pub const FRAME_HEADER_LEN: usize = 5;
+
 /// Maximum accepted frame payload length (1 MiB). Frames larger than this are
 /// rejected and the connection is closed — guards against malicious or runaway
 /// length prefixes (wezterm issue #7527 OOM lesson).
@@ -562,6 +565,15 @@ fn default_terminal_kind() -> String {
 }
 
 /// Write a single framed message (`[tag][len BE][payload]`), then flush.
+///
+/// 헤더와 payload 를 **한 버퍼로 합쳐 `write_all` 1 회**로 내보낸다. `TcpStream` 은
+/// 버퍼링이 없어 `write_all` 을 3 번 나눠 부르면 그대로 3 개의 TCP 세그먼트가 되고,
+/// Nagle 이 켜진 소켓에서는 첫 1 바이트가 unACKed 인 동안 나머지가 상대의 delayed
+/// ACK(~40ms)까지 붙잡힌다 — attach 스트림은 프레임 하나가 곧 한 번의 상호작용이라
+/// 그 지연이 매 입력·출력마다 그대로 체감된다(실측: loopback 왕복 43ms → 2ms).
+/// 소켓측 `TCP_NODELAY`(`crates/tasty-cli/src/stream.rs`, `tcp_ipc_server.rs`)와
+/// 이중 방어다: 여기서 합쳐도 payload 가 MSS 를 넘으면 마지막 조각이 다시 Nagle 에
+/// 걸릴 수 있으므로 둘 다 필요하다.
 pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::Result<()> {
     let len: u32 = payload
         .len()
@@ -573,9 +585,11 @@ pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::R
             "frame payload exceeds MAX_FRAME_LEN",
         ));
     }
-    w.write_all(&[tag as u8])?;
-    w.write_all(&len.to_be_bytes())?;
-    w.write_all(payload)?;
+    let mut buf = Vec::with_capacity(FRAME_HEADER_LEN + payload.len());
+    buf.push(tag as u8);
+    buf.extend_from_slice(&len.to_be_bytes());
+    buf.extend_from_slice(payload);
+    w.write_all(&buf)?;
     w.flush()
 }
 
@@ -626,6 +640,44 @@ mod tests {
             let frame = read_frame(&mut cur).unwrap();
             assert_eq!(frame.tag, tag);
             assert_eq!(frame.payload, payload);
+        }
+    }
+
+    /// 프레임 하나는 반드시 **1 회의 `write` 로** 나가야 한다. 헤더/payload 를 나눠
+    /// 쓰면 버퍼링 없는 `TcpStream` 에서 세그먼트가 쪼개지고, Nagle 이 켜진 소켓은
+    /// 뒷조각을 상대의 delayed ACK(~40ms)까지 붙잡는다 — attach 의 매 입력·출력에
+    /// 그 지연이 그대로 얹혔던 회귀를 고정한다.
+    #[test]
+    fn write_frame_emits_one_write_call() {
+        struct CountingWriter {
+            writes: usize,
+            buf: Vec<u8>,
+        }
+        impl Write for CountingWriter {
+            fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+                self.writes += 1;
+                self.buf.extend_from_slice(data);
+                Ok(data.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        for payload in [Vec::new(), b"hi".to_vec(), vec![7u8; 4096]] {
+            let mut w = CountingWriter {
+                writes: 0,
+                buf: Vec::new(),
+            };
+            write_frame(&mut w, StreamTag::Data, &payload).unwrap();
+            assert_eq!(
+                w.writes,
+                1,
+                "payload {} 바이트가 {} 번의 write 로 쪼개졌다",
+                payload.len(),
+                w.writes
+            );
+            assert_eq!(w.buf.len(), FRAME_HEADER_LEN + payload.len());
         }
     }
 

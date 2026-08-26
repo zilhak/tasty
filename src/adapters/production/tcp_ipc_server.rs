@@ -178,8 +178,7 @@ impl TcpIpcServer {
         let peer = stream.peer_addr().ok();
         tracing::debug!("IPC client connected from {:?}", peer);
 
-        if let Err(e) = stream.set_nonblocking(false) {
-            tracing::warn!("Failed to set stream to blocking mode: {}", e);
+        if !Self::configure_socket(&stream) {
             return None;
         }
 
@@ -189,6 +188,25 @@ impl TcpIpcServer {
         });
         let writer = stream;
         Some((reader, writer, peer))
+    }
+
+    /// 새 연결 소켓의 옵션을 건다. blocking 전환 실패는 치명적(`false` → 연결 종료),
+    /// `TCP_NODELAY` 실패는 지연만 늘어날 뿐이라 로그만 남기고 계속한다.
+    ///
+    /// Nagle 을 끄는 이유: 이 소켓이 나르는 것은 요청-응답 한 줄 또는 attach 프레임
+    /// 한 개이고, 둘 다 "한 번 보내고 상대 응답을 기다리는" 상호작용 단위다 — Nagle 이
+    /// 켜져 있으면 세그먼트가 쪼개진 순간 상대의 delayed ACK(~40ms)까지 뒷조각이
+    /// 붙잡혀 매 상호작용에 그만큼이 그대로 얹힌다(attach 는 입력·출력 양방향이라
+    /// 왕복당 2 회). 상세: `docs/dev-guide/attach-behavior.md` "프레임 전송 지연".
+    fn configure_socket(stream: &std::net::TcpStream) -> bool {
+        if let Err(e) = stream.set_nonblocking(false) {
+            tracing::warn!("Failed to set stream to blocking mode: {}", e);
+            return false;
+        }
+        if let Err(e) = stream.set_nodelay(true) {
+            tracing::warn!("Failed to set TCP_NODELAY on IPC stream: {}", e);
+        }
+        true
     }
 
     /// 스트리밍 업그레이드 판별을 위해 첫 줄을 수동으로 읽는다 — `BufReader` 가
