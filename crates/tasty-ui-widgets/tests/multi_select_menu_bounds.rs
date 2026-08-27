@@ -96,7 +96,7 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
             egui::CentralPanel::default().show(c, |ui| {
                 let before = ui.cursor().min;
                 multi_select(
-                    ui, theme, salt, selected, options, None, &LABELS, WIDTH, true,
+                    ui, theme, salt, selected, options, None, &LABELS, None, WIDTH, true,
                 );
                 *trigger = Rect::from_min_size(before, vec2(WIDTH, theme.select_height().value()));
                 *popup_id = Some(multi_select_popup_id(ui, salt));

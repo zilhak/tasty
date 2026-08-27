@@ -13,6 +13,10 @@
 //! **요약 문구는 이 crate 가 소유하지 않는다.** 위젯 crate 는 i18n 을 의존하지 않아
 //! 번역을 가질 수 없다 — 호출자가 [`MultiSelectLabels`] 로 세 문구를 주입하고, 어느
 //! 갈래인지 고르는 것만 위젯이 한다([`multi_select_summary`]).
+//!
+//! 메뉴 최상단의 일괄 토글 행([`MultiSelectAllToggle`])은 **opt-in** 이다 — 기본은
+//! 없음이고, 켠 호출부만 "전부 선택 / 전부 해제" 행 하나와 구분선을 얻는다. 문구는
+//! 같은 이유로 호출자가 주입한다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -29,6 +33,24 @@ pub struct MultiSelectLabels<'a> {
     pub some: &'a str,
     /// 전부 선택됐을 때. 개수를 쓰지 않는 별도 문구라 치환 자리가 없다.
     pub all: &'a str,
+}
+
+/// 메뉴 최상단 일괄 토글 행의 문구 2 갈래. 디자인 `MultiSelect` 의 `allToggle` +
+/// `allLabel` / `clearLabel` 세 prop 을 Rust 로 옮긴 것이다.
+///
+/// jsx 는 `allToggle: bool` 과 기본값이 붙은 문구 prop 을 따로 두지만, Rust 에는 기본
+/// 인자가 없어 bool 로 켜면 호출부가 늘 문구 2 개를 함께 넘겨야 한다 — 끄는 쪽(현재
+/// 실 소비처 전부)이 쓰지도 않을 더미 문자열을 지어내게 된다. 그래서 "켬 + 문구" 를
+/// 한 값으로 묶어 [`multi_select`] 가 `Option` 으로 받는다: `None` 이 곧 off 이고,
+/// `Some` 이면 문구가 반드시 있다(둘이 어긋날 수 없다).
+///
+/// 어느 문구를 쓸지 고르는 판정만 위젯이 한다 — [`MultiSelectLabels`] 와 같은 규약.
+#[derive(Clone, Copy, Debug)]
+pub struct MultiSelectAllToggle<'a> {
+    /// 아직 전부 켜지지 않았을 때. 누르면 (토글 가능한) 모든 옵션이 켜진다.
+    pub select_all: &'a str,
+    /// 이미 전부 켜져 있을 때. 누르면 (토글 가능한) 모든 옵션이 꺼진다.
+    pub clear_all: &'a str,
 }
 
 /// 선택 상태 → 트리거에 그릴 요약 문구.
@@ -66,6 +88,98 @@ fn popup_chrome_width(ui: &egui::Ui) -> f32 {
     frame.total_margin().sum().x + 2.0 * frame.stroke.width
 }
 
+/// 행 `i` 가 토글 가능한가 — 마스크가 없거나 짧으면 그 행은 활성이다(호출부가
+/// 마스크를 안 주는 흔한 경우가 곧 "전부 활성").
+fn row_enabled(disabled: Option<&[bool]>, i: usize) -> bool {
+    !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false)
+}
+
+/// 실제로 그려지는 행 개수 — `options` 와 `selected` 중 짧은 쪽이 목록을 끊는다.
+fn row_count(selected: &[bool], options: &[&str]) -> usize {
+    options.len().min(selected.len())
+}
+
+/// 일괄 토글 행이 지금 "전부 해제"(=이미 전부 켜짐) 인가.
+///
+/// **토글 가능한 행만** 센다. jsx 는 disabled 행까지 포함해 판정하지만, 그러면 끌 수
+/// 없는 disabled 행 하나가 꺼져 있는 것만으로 라벨이 영원히 "전부 선택" 에 묶여
+/// 눌러도 아무 일이 없는 상태가 된다. 여기서는 "누르면 실제로 바뀌는 것들" 만 보므로
+/// 라벨이 늘 다음 동작을 정확히 예고한다. 마스크가 없는 보통의 호출부에서는 jsx 와
+/// 결과가 같다.
+fn all_rows_on(selected: &[bool], options: &[&str], disabled: Option<&[bool]>) -> bool {
+    let n = row_count(selected, options);
+    let mut any = false;
+    for (i, on) in selected.iter().enumerate().take(n) {
+        if !row_enabled(disabled, i) {
+            continue;
+        }
+        any = true;
+        if !on {
+            return false;
+        }
+    }
+    any
+}
+
+/// 메뉴 최상단 accent 액션 행. 옵션 행(checkbox)과 **같은 행 높이·같은 폰트**를 써
+/// 리듬을 맞추고, 클릭 어포던스는 hover wash 로 준다(디자인 `.tasty-mselect__all`).
+///
+/// checkbox 가 아니다 — 부분 선택을 나타낼 indeterminate 상태가 이 디자인 시스템에
+/// 없기 때문이다(디자인 판정).
+fn all_toggle_row(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Response {
+    let body = theme.font_size_body.value();
+    let width = ui.available_width();
+    // 옵션 행과 같은 규칙으로 말줄임 — 메뉴 폭이 max-width 에 걸려도 보더를 넘지 않는다.
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        label.to_owned(),
+        egui::FontId::proportional(body),
+        egui::Color32::PLACEHOLDER,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    let galley = ui.fonts(|f| f.layout_job(job));
+    // checkbox 행의 높이 계산과 같다(박스 16 과 글자 중 큰 쪽) — 두 행이 한 리듬으로
+    // 읽혀야 하므로 값을 새로 만들지 않고 같은 식을 쓴다.
+    let height = theme.checkbox_size().value().max(galley.rect.height());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            theme.menu_item_radius().value(),
+            theme.menu_item_bg_hover().to_egui_premultiplied(),
+        );
+    }
+    let pos = egui::pos2(rect.left(), rect.center().y - galley.rect.height() * 0.5);
+    ui.painter()
+        .galley(pos, galley, theme.accent_primary().to_egui());
+    resp
+}
+
+/// 일괄 토글 행이 라벨을 자르지 않고 그리는 데 필요한 폭 — 앞에 박스가 없어 글자
+/// 폭 그대로다(옵션 행의 [`crate::checkbox_width`] 에 대응).
+fn all_toggle_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
+    ui.fonts(|f| {
+        f.layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(theme.font_size_body.value()),
+            egui::Color32::PLACEHOLDER,
+        )
+    })
+    .rect
+    .width()
+}
+
+/// 일괄 토글 행 아래 구분선 — 1px, 위아래 여백은 목록 행 간격(`spacing_xs`)이 준다
+/// (디자인 `.tasty-mselect__sep` 의 `margin: space-xs 0` 과 같은 결과).
+fn all_toggle_separator(ui: &mut egui::Ui, theme: &Theme) {
+    let bw = theme.border_width.value();
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), bw), egui::Sense::hover());
+    // separator 는 도출 overlay(알파 ~8%)라 배경 위에 얹어야 보인다 — 다른 divider
+    // 소비처(`listctrl` / `drilldown`)와 같이 premultiplied 로 칠한다.
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.separator.to_egui_premultiplied());
+}
+
 /// 다중선택 드롭다운. `selected` 는 `options` 와 **같은 길이**의 on/off 배열이다
 /// (짧으면 남는 옵션은 그려지지 않는다 — 호출자가 길이를 맞춰야 한다).
 ///
@@ -77,6 +191,15 @@ fn popup_chrome_width(ui: &egui::Ui) -> f32 {
 /// 컨트롤 전체를 끄는 `enabled` 와는 층이 다르다 — `enabled=false` 면 트리거부터
 /// 죽어 팝업이 열리지 않으므로 `disabled` 마스크는 애초에 관측되지 않는다.
 ///
+/// `all_toggle` 은 메뉴 최상단 일괄 토글 행의 **opt-in** 이다(디자인 `allToggle`,
+/// 기본 off). `None` 이면 액션 행도 구분선도 그려지지 않아 렌더가 예전과 동일하고,
+/// `Some` 이면 accent 액션 행 1 개 + 구분선이 옵션 목록 **위**에 붙는다(목록이
+/// 스크롤돼도 따라 움직이지 않는다). 옵션이 적을 때(디자인 권고: 8 개 미만) 끄는
+/// 판단은 호출자 몫이다 — 위젯은 개수로 스스로 억제하지 않는다.
+///
+/// 일괄 토글은 `disabled` 마스크를 **양방향으로 존중한다** — 켤 때도 끌 때도 비활성
+/// 행은 건드리지 않는다. 클릭해도 안 바뀌는 행이라는 계약이 경로에 따라 깨지면 안 된다.
+///
 /// 선택이 하나라도 바뀌면 `true` 를 반환한다([`crate::select`] 와 대칭).
 #[allow(clippy::too_many_arguments)] // reason: select 와 대칭인 시그니처 + labels 주입. 인위적 그룹핑 불필요
 pub fn multi_select(
@@ -87,6 +210,7 @@ pub fn multi_select(
     options: &[&str],
     disabled: Option<&[bool]>,
     labels: &MultiSelectLabels<'_>,
+    all_toggle: Option<MultiSelectAllToggle<'_>>,
     width: f32,
     enabled: bool,
 ) -> bool {
@@ -174,11 +298,17 @@ pub fn multi_select(
     //
     // 규칙은 디자인 판정 그대로 — min = 트리거 폭, 내용에 맞춰 max-width 까지 확장.
     // CSS 처럼 min 이 max 를 이긴다(트리거가 max 보다 넓으면 트리거를 따른다).
-    let widest_row = options
+    let widest_option = options
         .iter()
         .take(selected.len())
         .map(|opt| crate::checkbox_width(ui, theme, opt))
         .fold(0.0_f32, f32::max);
+    // 액션 행도 메뉴의 내용이다 — 두 문구 중 넓은 쪽까지 재야 라벨이 전환될 때 폭이
+    // 흔들리거나 잘리지 않는다(끄면 0 이라 기존 폭 계산과 완전히 같다).
+    let widest_all_toggle = all_toggle.map_or(0.0, |t| {
+        all_toggle_width(ui, theme, t.select_all).max(all_toggle_width(ui, theme, t.clear_all))
+    });
+    let widest_row = widest_option.max(widest_all_toggle);
     let menu_chrome = popup_chrome_width(ui);
     let menu_min = width;
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
@@ -197,6 +327,23 @@ pub fn multi_select(
             // 행 사이 간격은 메뉴 행 리듬(menu_item)이 아니라 checkbox 목록 리듬을
             // 따른다 — 행 자체가 checkbox 라 spacing_xs 가 디자인 Checkbox 그룹과 같다.
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+            // 일괄 토글 행은 스크롤 영역 **밖**에 둔다 — 최상단에 고정돼야 목록을
+            // 굴려도 사라지지 않는다(디자인에서도 list 의 형제 노드다).
+            if let Some(t) = all_toggle {
+                let all_on = all_rows_on(selected, options, disabled);
+                let label = if all_on { t.clear_all } else { t.select_all };
+                if all_toggle_row(ui, theme, label).clicked() {
+                    // 전부 켜져 있으면 끄고, 아니면 켠다. 비활성 행은 어느 쪽이든 그대로.
+                    let n = row_count(selected, options);
+                    for (i, flag) in selected.iter_mut().enumerate().take(n) {
+                        if row_enabled(disabled, i) && *flag == all_on {
+                            *flag = !all_on;
+                            changed = true;
+                        }
+                    }
+                }
+                all_toggle_separator(ui, theme);
+            }
             // 옵션이 많으면 max-height 에서 멈추고 내부 스크롤(AutoComplete 드롭다운과
             // 같은 규칙·같은 높이). 적으면 shrink-to-fit 이라 짧은 목록은 그대로다.
             egui::ScrollArea::vertical()
@@ -208,11 +355,8 @@ pub fn multi_select(
                         let Some(flag) = selected.get_mut(i) else {
                             break;
                         };
-                        // 마스크가 없거나 짧으면 그 행은 활성 — 호출부가 마스크를
-                        // 안 주는 흔한 경우가 곧 "전부 활성" 이다.
-                        let row_enabled =
-                            !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false);
-                        if crate::checkbox(ui, theme, flag, opt, row_enabled).changed() {
+                        if crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i)).changed()
+                        {
                             changed = true;
                         }
                     }

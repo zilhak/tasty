@@ -8,7 +8,9 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{MultiSelectLabels, checkbox, multi_select, select, switch};
+use tasty_ui_widgets::{
+    MultiSelectAllToggle, MultiSelectLabels, checkbox, multi_select, select, switch,
+};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
@@ -21,6 +23,8 @@ thread_local! {
             multi_long: [false, true, false, false],
             multi_scroll: [false; 20],
             multi_rows: [false, true, false, false, false],
+            multi_all: [true, false, false, true, false, false, false, false, true, false],
+            multi_all_masked: [false, true, true, true, true, true, true, true],
             check_a: true,
             check_b: false,
             switch_a: true,
@@ -40,6 +44,13 @@ struct FormState {
     multi_scroll: [bool; 20],
     /// 행 단위 disabled 케이스용 5종 — 마스크는 [`MULTI_ROW_DISABLED`].
     multi_rows: [bool; 5],
+    /// 일괄 토글(allToggle) 케이스용 10종 — 옵션 목록은 [`MULTI_ALL_OPTIONS`].
+    multi_all: [bool; 10],
+    /// 일괄 토글 × 행 disabled 교차 케이스용 8종 — 마스크는 [`MULTI_ALL_DISABLED`].
+    ///
+    /// 활성 행(2~7)만 전부 켠 채로 시작한다 — 비활성 0 번이 꺼져 있는데도 액션 행이
+    /// "Clear all" 로 서는 판정(토글 가능한 행만 센다)을 열자마자 보여주기 위함이다.
+    multi_all_masked: [bool; 8],
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -78,6 +89,29 @@ const MULTI_SCROLL_OPTIONS: [&str; 20] = [
 /// 첫 행은 **선택 안 된 채** 비활성, 둘째 행은 **선택된 채** 비활성이다 — 두 조합을
 /// 같이 두어야 dim 이 체크마크(accent 채움)에도 걸리는지 한 화면에서 대조된다.
 const MULTI_ROW_DISABLED: [bool; 5] = [true, true, false, false, false];
+
+/// "Multi-select (all toggle)" specimen 의 옵션 목록.
+///
+/// 10 개인 이유는 디자인 권고("옵션 8 개 미만이면 일괄 토글을 끄라") 를 넘기는 최소
+/// 실전 크기이기 때문이다 — 일괄 토글이 실제로 값을 하는 규모에서 보여준다.
+const MULTI_ALL_OPTIONS: [&str; 10] = [
+    "Waiting",
+    "Ready",
+    "Running",
+    "Done",
+    "Failed",
+    "Skipped",
+    "Blocked",
+    "Retrying",
+    "Cancelled",
+    "Unknown",
+];
+
+/// "Multi-select (all toggle + rows disabled)" specimen 의 비활성 마스크.
+///
+/// 첫 행은 꺼진 채, 둘째 행은 켜진 채 비활성 — 일괄 토글이 **양방향 모두** 이 두 행을
+/// 건드리지 않는지(켜기도 끄기도) 한 화면에서 확인된다.
+const MULTI_ALL_DISABLED: [bool; 8] = [true, true, false, false, false, false, false, false];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let field_md = theme.field_width_md.value();
@@ -134,6 +168,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &opts,
                     None,
                     &labels,
+                    None,
                     field_md,
                     true,
                 );
@@ -161,6 +196,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &opts,
                     None,
                     &labels,
+                    None,
                     field_md,
                     true,
                 );
@@ -182,6 +218,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &opts,
                     None,
                     &labels,
+                    None,
                     field_md,
                     false,
                 );
@@ -203,10 +240,69 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &opts,
                     Some(&MULTI_ROW_DISABLED),
                     &labels,
+                    None,
                     field_md,
                     true,
                 );
             });
+            // 일괄 토글(opt-in) — 메뉴 최상단에 accent 액션 행 + 구분선이 붙는다.
+            // 위 specimen 들은 전부 off 라 이 행이 없다(끄면 렌더가 이전과 동일).
+            cluster(ui, theme, "Multi-select (all toggle)", |ui| {
+                let opts = MULTI_ALL_OPTIONS;
+                let labels = MultiSelectLabels {
+                    none: "No status",
+                    some: "{} selected",
+                    all: "All statuses",
+                };
+                // 액션 행 문구도 요약 라벨과 같은 규약으로 호출자가 주입한다.
+                let all_toggle = MultiSelectAllToggle {
+                    select_all: "Select all",
+                    clear_all: "Clear all",
+                };
+                multi_select(
+                    ui,
+                    theme,
+                    "gallery_multi_all",
+                    &mut st.multi_all,
+                    &opts,
+                    None,
+                    &labels,
+                    Some(all_toggle),
+                    field_md,
+                    true,
+                );
+            });
+            // 일괄 토글 × 행 disabled — 액션 행은 **토글 가능한 행만** 보고 판정하고,
+            // 비활성 두 행은 켜기·끄기 어느 쪽으로도 움직이지 않는다.
+            cluster(
+                ui,
+                theme,
+                "Multi-select (all toggle + rows disabled)",
+                |ui| {
+                    let opts = &MULTI_ALL_OPTIONS[..MULTI_ALL_DISABLED.len()];
+                    let labels = MultiSelectLabels {
+                        none: "No status",
+                        some: "{} selected",
+                        all: "All statuses",
+                    };
+                    let all_toggle = MultiSelectAllToggle {
+                        select_all: "Select all",
+                        clear_all: "Clear all",
+                    };
+                    multi_select(
+                        ui,
+                        theme,
+                        "gallery_multi_all_masked",
+                        &mut st.multi_all_masked,
+                        opts,
+                        Some(&MULTI_ALL_DISABLED),
+                        &labels,
+                        Some(all_toggle),
+                        field_md,
+                        true,
+                    );
+                },
+            );
             // 회귀 방지: 옵션이 많은 케이스 — 팝업이 세로로 무한정 늘어나지 않고
             // multiselect-menu-max-height(220 = autocomplete 와 동일) 에서 멈춰
             // 내부 스크롤로 넘어간다.
@@ -225,6 +321,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &opts,
                     None,
                     &labels,
+                    None,
                     field_md,
                     true,
                 );
@@ -247,6 +344,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("height", "28 control-height"),
             ("multi-select", "select trigger + checkbox rows"),
             ("row disabled", "state-disabled-opacity, no toggle"),
+            ("all toggle", "opt-in accent row + separator, top of menu"),
             ("checkbox", "16px square"),
             ("switch", "28×16 track"),
             ("accent", "primary"),
@@ -266,6 +364,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "border-default",
                 "control edge",
                 egui::Color32::from(theme.border_default()),
+            ),
+            TokenChip::new(
+                "separator",
+                "all-toggle divider",
+                egui::Color32::from(theme.separator),
             ),
         ],
     );

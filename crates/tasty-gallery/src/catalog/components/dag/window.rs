@@ -146,6 +146,8 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
                 &labels,
                 None,
                 &summary,
+                // 본체 DAG 목록과 같이 일괄 토글 없음.
+                None,
                 filter_w,
                 true,
             );
