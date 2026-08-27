@@ -62,7 +62,7 @@ pub use spinner::Spinner;
 pub use status_dot::{StatusKind, status_dot};
 pub use tab_content_frame::tab_content_frame;
 pub use table::{Table, TableAlign, TableColumn, TableColumnWidth, TableOutput, TableSortDir};
-pub use toggle::{checkbox, switch};
+pub use toggle::{checkbox, checkbox_width, switch};
 pub use tooltip::{Tooltip, TooltipPlacement};
 pub use tree_row::tree_row;
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};

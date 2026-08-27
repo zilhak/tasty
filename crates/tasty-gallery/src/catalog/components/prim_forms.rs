@@ -19,6 +19,7 @@ thread_local! {
             sel_long: 3,
             multi: [true, true, true, false, false],
             multi_long: [false, true, false, false],
+            multi_scroll: [false; 20],
             check_a: true,
             check_b: false,
             switch_a: true,
@@ -34,11 +35,40 @@ struct FormState {
     multi: [bool; 5],
     /// 긴 라벨 회귀 케이스용 4종.
     multi_long: [bool; 4],
+    /// max-height 스크롤 회귀 케이스용 20종.
+    multi_scroll: [bool; 20],
     check_a: bool,
     check_b: bool,
     switch_a: bool,
     switch_b: bool,
 }
+
+/// "Multi-select (20 options)" specimen 의 옵션 목록. 20 개는 팝업이
+/// multiselect-menu-max-height(220) 를 확실히 넘겨 내부 스크롤을 발동시키는 개수이고,
+/// 첫 줄만 일부러 길게 두어 스크롤 없이 보이는 자리에서 max-width(320) 클램프와
+/// 행 라벨 말줄임까지 같은 화면에 담는다.
+const MULTI_SCROLL_OPTIONS: [&str; 20] = [
+    "Very long column label that overflows the menu max width",
+    "PID",
+    "Port",
+    "Protocol",
+    "State",
+    "Process",
+    "Command",
+    "User",
+    "Started",
+    "CPU",
+    "Memory",
+    "Threads",
+    "Handles",
+    "Parent",
+    "Session",
+    "Container",
+    "Namespace",
+    "Interface",
+    "Address",
+    "Latency",
+];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let field_md = theme.field_width_md.value();
@@ -99,7 +129,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
             // 회귀 방지: 요약 라벨과 팝업 행 라벨 **양쪽**이 가용 폭을 넘는 케이스.
-            // 트리거는 말줄임(truncate_at_width), 팝업은 내용만큼 넓어진다.
+            // 트리거도 팝업 행도 말줄임(truncate_at_width) — 팝업은 내용만큼 넓어지되
+            // multiselect-menu-max-width(320) 에서 멈춘다.
             cluster(ui, theme, "Multi-select (long text)", |ui| {
                 let opts = [
                     "Untrusted (신뢰되지 않은 명령만 승인 요청)",
@@ -141,6 +172,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &labels,
                     field_md,
                     false,
+                );
+            });
+            // 회귀 방지: 옵션이 많은 케이스 — 팝업이 세로로 무한정 늘어나지 않고
+            // multiselect-menu-max-height(220 = autocomplete 와 동일) 에서 멈춰
+            // 내부 스크롤로 넘어간다.
+            cluster(ui, theme, "Multi-select (20 options)", |ui| {
+                let opts = MULTI_SCROLL_OPTIONS;
+                let labels = MultiSelectLabels {
+                    none: "No column",
+                    some: "{} columns",
+                    all: "All columns",
+                };
+                multi_select(
+                    ui,
+                    theme,
+                    "gallery_multi_scroll",
+                    &mut st.multi_scroll,
+                    &opts,
+                    &labels,
+                    field_md,
+                    true,
                 );
             });
             cluster(ui, theme, "Checkbox", |ui| {

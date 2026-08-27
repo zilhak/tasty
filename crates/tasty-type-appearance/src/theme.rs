@@ -1714,6 +1714,25 @@ impl Theme {
         self.accent_agent()
     }
 
+    // ── 컴포넌트 토큰 (MultiSelect 메뉴 크기) — `--tasty-multiselect-menu-*` ──
+    // 디자인 `components/forms/MultiSelect` 가 확정한 메뉴 크기 제약. vendor json
+    // export 에 `multiselect-*` 블록이 아직 들어오지 않아 수기로 둔다(modhint 와 같은
+    // 사정 — export 가 갱신되면 `generated_component.rs` 로 넘어간다).
+    /// 메뉴 최대 높이 (220px). `--tasty-multiselect-menu-max-height` →
+    /// `--tasty-autocomplete-max-height` → `--tasty-size-220`. 값을 새로 만들지 않고
+    /// AutoComplete 드롭다운과 같은 높이를 공유한다(디자인 판정) — 초과 시 내부 스크롤.
+    #[inline]
+    pub fn multiselect_menu_max_height(&self) -> LogicalPx {
+        self.autocomplete_max_height()
+    }
+    /// 메뉴 최대 폭 (320px). `--tasty-multiselect-menu-max-width` → `--tasty-size-320`.
+    /// 체인이 primitive 로 직접 닿으므로 `toast_max_width`(같은 320) 를 빌리지 않는다 —
+    /// 토스트 폭이 재조정되면 무관한 메뉴가 따라 움직이는 가짜 결합이 된다.
+    #[inline]
+    pub fn multiselect_menu_max_width(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
     // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
     // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
     // 접근자는 전부 `generated_component.rs` 에서 생성된다. 디자인 export 에 해당

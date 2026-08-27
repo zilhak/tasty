@@ -326,3 +326,21 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 예약(이번엔 미구현, 토큰만 존재): `error` rank 40 → `accent-danger`, `approval` rank 20 →
 `accent-agent`. Catppuccin 매핑에 추가할 hue 없음 — Latte 는 기존 accent role 을 통해
 자동 상속.
+
+## MultiSelect 메뉴 크기 (forms/MultiSelect)
+
+디자인 `tokens/components.css` 의 `--tasty-multiselect-*` Tier-3 블록 중 **메뉴 크기 두
+건**. DTCG export(`tokens/tasty.tokens.json`)에 아직 반영되지 않은 신규 블록이라
+`theme.rs` 수기 접근자(autocomplete/modhint/drilldown 전례)로 전사했다 — **신규 값 없음**,
+둘 다 기존 primitive/component 종착이다. 나머지 `--tasty-multiselect-*`(트리거 치수·색·행
+리듬)는 디자인 판정이 그대로 `--tasty-select-*` / `--tasty-menu-*` / `--tasty-checkbox-*`
+alias 라 위젯이 그 토큰을 직접 읽는다(별도 접근자 불필요).
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
+|---|---|---|---|
+| `--tasty-multiselect-menu-max-height` | → `autocomplete-max-height` → `size-220` (220px) | `multiselect_menu_max_height()` | AutoComplete 드롭다운과 **같은 값 공유**(디자인 판정). 초과 시 내부 스크롤 |
+| `--tasty-multiselect-menu-max-width` | → `size-320` (320px) | `multiselect_menu_max_width()` | 메뉴 **상자 전체**의 상한. 체인이 primitive 로 직접 닿으므로 같은 320 인 `toast_max_width` 를 빌리지 않는다(토스트 폭 재조정이 메뉴를 끌고 가는 가짜 결합 회피) |
+
+메뉴 폭 규칙은 `min-width: 트리거` + 내용에 맞춰 max 까지 확장이고, CSS 와 같이 min 이
+max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행 라벨이 남는 폭을 넘으면
+`checkbox` 가 말줄임한다(디자인 `.tasty-check__label { flex:1; min-width:0; ellipsis }`).

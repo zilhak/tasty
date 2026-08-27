@@ -9,6 +9,22 @@ use tasty_type_appearance::theme::Theme;
 /// 체크마크 글리프 영역(box 내부). 대응 checkbox component 토큰 없음 → Rust-only.
 const CHECK_GLYPH: f32 = 12.0;
 
+/// `checkbox` 가 라벨을 자르지 않고 그리는 데 필요한 폭 — 박스 + gap + 라벨.
+///
+/// 체크박스 행을 담는 컨테이너가 **자기 폭을 먼저 정해야** 할 때 쓴다(예: MultiSelect
+/// 메뉴는 "가장 넓은 행" 을 재서 min(트리거) ~ max(320) 사이로 클램프한다). 박스·gap·
+/// 폰트 값을 호출측이 다시 조립하면 [`checkbox`] 와 조용히 어긋나므로 여기서 소유한다.
+pub fn checkbox_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
+    let galley = ui.fonts(|f| {
+        f.layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(theme.font_size_body.value()),
+            egui::Color32::PLACEHOLDER,
+        )
+    });
+    theme.checkbox_size().value() + theme.spacing_sm.value() + galley.rect.width()
+}
+
 /// Checkbox — 16px 박스 + 라벨. 클릭 시 토글.
 pub fn checkbox(
     ui: &mut egui::Ui,
@@ -24,11 +40,18 @@ pub fn checkbox(
     let bw = theme.border_width.value();
     let box_sz = theme.checkbox_size().value();
 
-    let galley = ui.painter().layout_no_wrap(
+    // 라벨은 가용 폭(박스+gap 을 뺀 나머지)을 넘으면 말줄임 — 디자인 Checkbox 의
+    // `.tasty-check__label { flex:1; min-width:0; ellipsis }` 규칙. 폭이 넉넉한
+    // 보통의 호출부에서는 잘릴 일이 없고, 폭이 제한된 컨테이너(예: MultiSelect 메뉴)
+    // 안에서만 발동해 라벨이 보더를 넘어 잘려나가는 대신 "…" 로 끝난다.
+    let label_max = (ui.available_width() - box_sz - gap).max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(label_max);
+    let galley = ui.fonts(|f| f.layout_job(job));
     let h = box_sz.max(galley.rect.height());
     let w = box_sz + gap + galley.rect.width();
     let sense = if enabled {
