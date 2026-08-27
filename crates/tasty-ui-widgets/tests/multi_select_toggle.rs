@@ -8,6 +8,7 @@
 //! 2. 팝업 바깥을 클릭하면 닫힌다.
 //! 3. 선택이 바뀐 프레임에서만 `true` 를 반환한다.
 //! 4. 트리거 요약 라벨이 0개 / N개 / 전부 3갈래로 갈린다.
+//! 5. 행 단위 disabled 마스크가 켜진 행은 클릭해도 선택이 바뀌지 않는다.
 //!
 //! headless `egui::Context` 구동 패턴과 실제 `Theme` 사용은 선례
 //! `path_field_focus.rs` / `table_row_click.rs` 를 그대로 따른다.
@@ -68,6 +69,17 @@ struct Frame {
 
 /// 한 프레임 구동. 위젯을 그리고 반환값·팝업 상태·트리거 rect 를 돌려준다.
 fn frame(ctx: &egui::Context, theme: &Theme, selected: &mut [bool], events: Vec<Event>) -> Frame {
+    frame_masked(ctx, theme, selected, None, events)
+}
+
+/// [`frame`] 과 같되 행 단위 disabled 마스크를 함께 넘긴다.
+fn frame_masked(
+    ctx: &egui::Context,
+    theme: &Theme,
+    selected: &mut [bool],
+    disabled: Option<&[bool]>,
+    events: Vec<Event>,
+) -> Frame {
     let mut changed = false;
     let mut trigger = Rect::NOTHING;
     let mut open = false;
@@ -76,7 +88,9 @@ fn frame(ctx: &egui::Context, theme: &Theme, selected: &mut [bool], events: Vec<
     let _out = ctx.run(raw(events), |c| {
         egui::CentralPanel::default().show(c, |ui| {
             let before = ui.cursor().min;
-            changed = multi_select(ui, theme, SALT, selected, OPTIONS, &LABELS, WIDTH, true);
+            changed = multi_select(
+                ui, theme, SALT, selected, OPTIONS, disabled, &LABELS, WIDTH, true,
+            );
             trigger = Rect::from_min_size(before, vec2(WIDTH, theme.select_height().value()));
             open = ui.memory(|m| m.is_popup_open(multi_select_popup_id(ui, SALT)));
         });
@@ -179,6 +193,84 @@ fn unchanged_frames_report_false() {
     let f = frame(&ctx, &theme, &mut selected, click(trigger.center()));
     assert!(f.open);
     assert!(!f.changed, "여는 클릭이 선택 변경으로 보고됐다");
+}
+
+#[test]
+fn disabled_rows_ignore_clicks_while_others_still_toggle() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = egui::Context::default();
+    let mut selected = vec![false, true, false, false];
+    // 0번은 꺼진 채, 1번은 켜진 채 비활성 — 두 조합 모두 클릭이 먹지 않아야 한다.
+    let disabled = [true, true, false, false];
+    let mask = Some(&disabled[..]);
+
+    let f = frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
+    let trigger = f.trigger;
+    let f = frame_masked(&ctx, &theme, &mut selected, mask, click(trigger.center()));
+    assert!(
+        f.open,
+        "트리거는 살아 있어야 한다 — 행 disabled 는 컨트롤 disabled 가 아니다"
+    );
+    frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
+    let margin = popup_margin(&ctx);
+
+    let before = selected.clone();
+    for i in 0..2 {
+        let f = frame_masked(
+            &ctx,
+            &theme,
+            &mut selected,
+            mask,
+            click(row_pos(&theme, trigger, i, margin)),
+        );
+        assert!(!f.changed, "{i}번째 disabled 행 클릭이 변경으로 보고됐다");
+        assert_eq!(
+            selected, before,
+            "{i}번째 disabled 행 클릭으로 선택이 바뀌었다"
+        );
+        assert!(f.open, "disabled 행 클릭은 팝업 안 클릭이라 닫히면 안 된다");
+    }
+
+    // 같은 팝업의 활성 행은 기존과 똑같이 토글된다 — 마스크가 전체를 얼리지 않는다.
+    let f = frame_masked(
+        &ctx,
+        &theme,
+        &mut selected,
+        mask,
+        click(row_pos(&theme, trigger, 2, margin)),
+    );
+    assert!(f.changed, "활성 행 클릭이 변경으로 보고되지 않았다");
+    assert_eq!(selected, vec![false, true, true, false]);
+}
+
+/// 마스크가 옵션보다 짧거나 `None` 이면 그 인덱스는 활성이다 — 마스크 없는 기존
+/// 호출부가 조용히 전부 비활성이 되는 회귀를 막는다.
+#[test]
+fn a_short_mask_leaves_the_remaining_rows_enabled() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = egui::Context::default();
+    let mut selected = vec![false; OPTIONS.len()];
+    let disabled = [true];
+    let mask = Some(&disabled[..]);
+
+    let f = frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
+    let trigger = f.trigger;
+    frame_masked(&ctx, &theme, &mut selected, mask, click(trigger.center()));
+    frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
+    let margin = popup_margin(&ctx);
+
+    let f = frame_masked(
+        &ctx,
+        &theme,
+        &mut selected,
+        mask,
+        click(row_pos(&theme, trigger, 3, margin)),
+    );
+    assert!(f.changed, "마스크 밖 인덱스가 비활성으로 처리됐다");
+    assert!(
+        selected[3],
+        "마스크 밖 인덱스가 토글되지 않았다: {selected:?}"
+    );
 }
 
 #[test]

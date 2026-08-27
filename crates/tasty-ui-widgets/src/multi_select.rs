@@ -69,6 +69,14 @@ fn popup_chrome_width(ui: &egui::Ui) -> f32 {
 /// 다중선택 드롭다운. `selected` 는 `options` 와 **같은 길이**의 on/off 배열이다
 /// (짧으면 남는 옵션은 그려지지 않는다 — 호출자가 길이를 맞춰야 한다).
 ///
+/// `disabled` 는 **행 단위** 비활성 마스크다. `disabled[i]` 가 `true` 면 그 옵션 행은
+/// 보이되 흐려지고(`opacity_disabled`) 클릭해도 토글되지 않는다 — 목록에서 아예
+/// 빼버리는 것과 다르다(고를 수 없다는 사실 자체를 보여준다). `None` 이거나 길이가
+/// 모자라 인덱스가 비면 그 행은 활성이다.
+///
+/// 컨트롤 전체를 끄는 `enabled` 와는 층이 다르다 — `enabled=false` 면 트리거부터
+/// 죽어 팝업이 열리지 않으므로 `disabled` 마스크는 애초에 관측되지 않는다.
+///
 /// 선택이 하나라도 바뀌면 `true` 를 반환한다([`crate::select`] 와 대칭).
 #[allow(clippy::too_many_arguments)] // reason: select 와 대칭인 시그니처 + labels 주입. 인위적 그룹핑 불필요
 pub fn multi_select(
@@ -77,6 +85,7 @@ pub fn multi_select(
     id_salt: &str,
     selected: &mut [bool],
     options: &[&str],
+    disabled: Option<&[bool]>,
     labels: &MultiSelectLabels<'_>,
     width: f32,
     enabled: bool,
@@ -199,7 +208,11 @@ pub fn multi_select(
                         let Some(flag) = selected.get_mut(i) else {
                             break;
                         };
-                        if crate::checkbox(ui, theme, flag, opt, true).changed() {
+                        // 마스크가 없거나 짧으면 그 행은 활성 — 호출부가 마스크를
+                        // 안 주는 흔한 경우가 곧 "전부 활성" 이다.
+                        let row_enabled =
+                            !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false);
+                        if crate::checkbox(ui, theme, flag, opt, row_enabled).changed() {
                             changed = true;
                         }
                     }

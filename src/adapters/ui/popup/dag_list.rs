@@ -348,6 +348,8 @@ fn draw_list(
                     STATUS_SELECT_SALT,
                     &mut dag.status_filter,
                     &labels,
+                    // rollup 6 종은 항상 전부 고를 수 있다 — 행 단위 비활성 없음.
+                    None,
                     &summary,
                     filter_w,
                     true,

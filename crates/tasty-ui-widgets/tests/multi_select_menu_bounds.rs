@@ -95,7 +95,9 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
         let _out = ctx.run(raw(events), |c| {
             egui::CentralPanel::default().show(c, |ui| {
                 let before = ui.cursor().min;
-                multi_select(ui, theme, salt, selected, options, &LABELS, WIDTH, true);
+                multi_select(
+                    ui, theme, salt, selected, options, None, &LABELS, WIDTH, true,
+                );
                 *trigger = Rect::from_min_size(before, vec2(WIDTH, theme.select_height().value()));
                 *popup_id = Some(multi_select_popup_id(ui, salt));
             });

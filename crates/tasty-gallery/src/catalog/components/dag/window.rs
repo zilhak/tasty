@@ -144,6 +144,7 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
                 salt,
                 &mut picked,
                 &labels,
+                None,
                 &summary,
                 filter_w,
                 true,

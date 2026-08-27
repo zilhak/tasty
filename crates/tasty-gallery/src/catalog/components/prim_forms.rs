@@ -20,6 +20,7 @@ thread_local! {
             multi: [true, true, true, false, false],
             multi_long: [false, true, false, false],
             multi_scroll: [false; 20],
+            multi_rows: [false, true, false, false, false],
             check_a: true,
             check_b: false,
             switch_a: true,
@@ -37,6 +38,8 @@ struct FormState {
     multi_long: [bool; 4],
     /// max-height 스크롤 회귀 케이스용 20종.
     multi_scroll: [bool; 20],
+    /// 행 단위 disabled 케이스용 5종 — 마스크는 [`MULTI_ROW_DISABLED`].
+    multi_rows: [bool; 5],
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -69,6 +72,12 @@ const MULTI_SCROLL_OPTIONS: [&str; 20] = [
     "Address",
     "Latency",
 ];
+
+/// "Multi-select (rows disabled)" specimen 의 행 단위 비활성 마스크.
+///
+/// 첫 행은 **선택 안 된 채** 비활성, 둘째 행은 **선택된 채** 비활성이다 — 두 조합을
+/// 같이 두어야 dim 이 체크마크(accent 채움)에도 걸리는지 한 화면에서 대조된다.
+const MULTI_ROW_DISABLED: [bool; 5] = [true, true, false, false, false];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let field_md = theme.field_width_md.value();
@@ -123,6 +132,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "gallery_multi_status",
                     &mut st.multi,
                     &opts,
+                    None,
                     &labels,
                     field_md,
                     true,
@@ -149,6 +159,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "gallery_multi_long",
                     &mut st.multi_long,
                     &opts,
+                    None,
                     &labels,
                     field_md,
                     true,
@@ -169,9 +180,31 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "gallery_multi_disabled",
                     &mut frozen,
                     &opts,
+                    None,
                     &labels,
                     field_md,
                     false,
+                );
+            });
+            // 행 단위 비활성 — 트리거는 살아 있어 팝업이 열리고, 마스크가 켜진 행만
+            // 흐려진 채 클릭이 먹지 않는다. 위 "(disabled)" 와 층이 다른 상태다.
+            cluster(ui, theme, "Multi-select (rows disabled)", |ui| {
+                let opts = ["Waiting", "Ready", "Running", "Done", "Failed"];
+                let labels = MultiSelectLabels {
+                    none: "No status",
+                    some: "{} selected",
+                    all: "All statuses",
+                };
+                multi_select(
+                    ui,
+                    theme,
+                    "gallery_multi_rows_disabled",
+                    &mut st.multi_rows,
+                    &opts,
+                    Some(&MULTI_ROW_DISABLED),
+                    &labels,
+                    field_md,
+                    true,
                 );
             });
             // 회귀 방지: 옵션이 많은 케이스 — 팝업이 세로로 무한정 늘어나지 않고
@@ -190,6 +223,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "gallery_multi_scroll",
                     &mut st.multi_scroll,
                     &opts,
+                    None,
                     &labels,
                     field_md,
                     true,
@@ -212,6 +246,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("height", "28 control-height"),
             ("multi-select", "select trigger + checkbox rows"),
+            ("row disabled", "state-disabled-opacity, no toggle"),
             ("checkbox", "16px square"),
             ("switch", "28×16 track"),
             ("accent", "primary"),
