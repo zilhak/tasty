@@ -239,7 +239,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
 | `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
-| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크) | `prim_forms` | ✓ gallery |
+| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크 + 일괄 선택/해제 액션 행(opt-in, accent + separator, 스크롤 밖 고정)) | `prim_forms` | ✓ gallery |
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
