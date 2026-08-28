@@ -17,6 +17,12 @@
 //! 메뉴 최상단의 일괄 토글 행([`MultiSelectAllToggle`])은 **opt-in** 이다 — 기본은
 //! 없음이고, 켠 호출부만 "전부 선택 / 전부 해제" 행 하나와 구분선을 얻는다. 문구는
 //! 같은 이유로 호출자가 주입한다.
+//!
+//! 마우스 없이도 끝까지 조작된다 — 닫힌 트리거에서 `↓`/`Enter`/`Space` 로 열고,
+//! `↑`/`↓`/`Home`/`End` 로 active 행을 옮기고(비활성 행은 건너뛴다), `Space`/`Enter`
+//! 로 **닫지 않고** 토글하고, `Esc` 로 닫는다(포커스는 트리거에 남는다). `Tab` 은
+//! 닫고 다음 위젯으로 간다. active 행은 hover 워시가 아니라 `surface_active` 배경으로
+//! 표시된다 — 키보드 커서 전용 신호다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -92,6 +98,104 @@ fn popup_chrome_width(ui: &egui::Ui) -> f32 {
 /// 마스크를 안 주는 흔한 경우가 곧 "전부 활성").
 fn row_enabled(disabled: Option<&[bool]>, i: usize) -> bool {
     !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false)
+}
+
+/// 키보드 커서(active 행)의 저장 키 — 팝업 id 에서 파생해 인스턴스마다 독립이다.
+///
+/// 위젯 함수는 상태를 소유하지 않으므로 값은 `Memory::data` 에 둔다(팝업 열림 여부를
+/// `Memory` 에 두는 것과 같은 이유).
+fn active_row_id(popup_id: egui::Id) -> egui::Id {
+    popup_id.with("active_row")
+}
+
+/// 열린 팝업이 이번 프레임에 가져가는 키.
+#[derive(Default, Clone, Copy)]
+struct NavKeys {
+    up: bool,
+    down: bool,
+    home: bool,
+    end: bool,
+    /// `Space` / `Enter` — active 행 토글. 팝업은 닫지 않는다.
+    toggle: bool,
+    /// `Esc` — 닫기.
+    close: bool,
+    /// `Tab` — 닫고 다음 위젯으로.
+    tab: bool,
+}
+
+/// 열린 팝업이 쓸 키를 입력 큐에서 **걷어낸다**. 소비가 핵심이다.
+///
+/// 1. egui 는 포커스된 clickable 위젯의 `Space`/`Enter` 를 클릭으로 승격시킨다
+///    (fake primary click). 남겨두면 "active 행 토글" 이 트리거 클릭 = "팝업 닫기" 로
+///    둔갑하므로, 트리거를 allocate 하기 **전에** 불러야 한다.
+/// 2. `Esc` 는 상위 팝업·모달도 듣고 있다. 여기서 먹지 않으면 드롭다운만 닫히는 대신
+///    부모 창까지 함께 닫힌다.
+///
+/// `Tab` 만 예외로 소비하지 않는다 — 팝업은 닫되 포커스 이동은 egui 기본 동작 몫이다.
+fn take_nav_keys(ui: &egui::Ui) -> NavKeys {
+    let none = egui::Modifiers::NONE;
+    ui.input_mut(|i| NavKeys {
+        up: i.consume_key(none, egui::Key::ArrowUp),
+        down: i.consume_key(none, egui::Key::ArrowDown),
+        home: i.consume_key(none, egui::Key::Home),
+        end: i.consume_key(none, egui::Key::End),
+        // `|` 는 단락 평가가 없다 — 둘 다 반드시 소비해야 한 쪽이 남아 클릭으로 새지 않는다.
+        toggle: i.consume_key(none, egui::Key::Space) | i.consume_key(none, egui::Key::Enter),
+        close: i.consume_key(none, egui::Key::Escape),
+        tab: i.key_pressed(egui::Key::Tab),
+    })
+}
+
+/// 진행 방향의 첫 **토글 가능한** 행. 전부 비활성이거나 목록이 비면 `None`.
+///
+/// `Home`/`End` 의 종착이자, 아직 커서가 없을 때 방향키가 들어오는 자리다.
+fn edge_enabled(n: usize, disabled: Option<&[bool]>, forward: bool) -> Option<usize> {
+    if forward {
+        (0..n).find(|i| row_enabled(disabled, *i))
+    } else {
+        (0..n).rev().find(|i| row_enabled(disabled, *i))
+    }
+}
+
+/// 방향키 한 번의 active 이동 — 비활성 행은 건너뛰고 목록 끝에서 순환한다
+/// ([`crate::AutoComplete`] 키보드 커서와 같은 규약). 짚을 행이 없으면 `None`.
+fn step_active(
+    active: Option<usize>,
+    n: usize,
+    disabled: Option<&[bool]>,
+    forward: bool,
+) -> Option<usize> {
+    if n == 0 {
+        return None;
+    }
+    let Some(start) = active else {
+        return edge_enabled(n, disabled, forward);
+    };
+    let start = start.min(n - 1);
+    // k = n 이면 제자리로 돌아온다 — "활성 행이 자기 하나뿐" 인 경우까지 덮는다.
+    (1..=n)
+        .map(|k| {
+            if forward {
+                (start + k) % n
+            } else {
+                (start + n - k) % n
+            }
+        })
+        .find(|i| row_enabled(disabled, *i))
+}
+
+/// 이번 프레임에 팝업 상자 **안쪽**에서 포인터 press 가 났는가.
+///
+/// egui 는 포커스된 위젯 밖에서 press 가 나면 그 포커스를 회수한다 — 행을 마우스로
+/// 누르는 순간 트리거가 키보드 포커스를 잃어 이후 키 조작이 죽는다. 팝업이 열린 채면
+/// 되찾아 주기 위한 판정이라 행·구분선·스크롤바를 가리지 않는다.
+fn pressed_inside_popup(ui: &egui::Ui, popup_id: egui::Id) -> bool {
+    let Some(rect) = ui.memory(|m| m.area_rect(popup_id)) else {
+        return false;
+    };
+    ui.input(|i| {
+        i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
+    })
 }
 
 /// 실제로 그려지는 행 개수 — `options` 와 `selected` 중 짧은 쪽이 목록을 끊는다.
@@ -200,6 +304,12 @@ fn all_toggle_separator(ui: &mut egui::Ui, theme: &Theme) {
 /// 일괄 토글은 `disabled` 마스크를 **양방향으로 존중한다** — 켤 때도 끌 때도 비활성
 /// 행은 건드리지 않는다. 클릭해도 안 바뀌는 행이라는 계약이 경로에 따라 깨지면 안 된다.
 ///
+/// 키보드로도 완전히 조작된다 — 트리거가 포커스를 가진 채 `↓`/`Enter`/`Space` 면
+/// 열리고, `↑`/`↓`/`Home`/`End` 가 active 행을 옮기며(`disabled` 행은 건너뛴다),
+/// `Space`/`Enter` 가 그 행을 **닫지 않고** 토글하고, `Esc` 가 닫는다(포커스는 트리거에
+/// 남는다). `Tab` 은 닫고 다음 위젯으로 넘어간다. active 행은 열 때마다 초기화된다 —
+/// 목록이 바뀐 뒤 엉뚱한 행이 짚힌 채 열리지 않도록.
+///
 /// 선택이 하나라도 바뀌면 `true` 를 반환한다([`crate::select`] 와 대칭).
 #[allow(clippy::too_many_arguments)] // reason: select 와 대칭인 시그니처 + labels 주입. 인위적 그룹핑 불필요
 pub fn multi_select(
@@ -222,7 +332,53 @@ pub fn multi_select(
     let chevron_room = theme.select_chevron_room().value();
 
     let popup_id = multi_select_popup_id(ui, id_salt);
-    let open = ui.memory(|m| m.is_popup_open(popup_id));
+    let mut open = ui.memory(|m| m.is_popup_open(popup_id));
+
+    // 열려 있는 동안의 키는 이 팝업 것이다 — 트리거를 allocate 하기 **전에** 걷어낸다
+    // ([`take_nav_keys`] 의 두 이유). 팝업은 egui `Memory` 상 한 번에 하나만 열리므로
+    // `open` 이 곧 "이 위젯이 지금 키보드 주인" 이라는 뜻이다.
+    let nav = if open {
+        take_nav_keys(ui)
+    } else {
+        NavKeys::default()
+    };
+
+    let active_id = active_row_id(popup_id);
+    let mut active: Option<usize> = ui
+        .data(|d| d.get_temp::<Option<usize>>(active_id))
+        .flatten();
+    let mut changed = false;
+    // active 가 스크롤 뷰 밖으로 나가면 따라가야 한다 — 키로 움직인 프레임에만 켠다
+    // (마우스 hover 로 목록을 굴리는 동안 화면이 튀면 안 된다).
+    let mut scroll_to_active = false;
+    if open {
+        let n = row_count(selected, options);
+        // 목록·마스크는 프레임마다 바뀔 수 있다 — 갈 곳을 잃은 커서는 버린다.
+        active = active.filter(|i| *i < n && row_enabled(disabled, *i));
+        for (pressed, forward) in [(nav.down, true), (nav.up, false)] {
+            if pressed {
+                active = step_active(active, n, disabled, forward);
+                scroll_to_active = true;
+            }
+        }
+        if nav.home || nav.end {
+            active = edge_enabled(n, disabled, nav.home);
+            scroll_to_active = true;
+        }
+        // 토글은 트리거를 그리기 **전에** 반영한다 — 요약 라벨이 같은 프레임에 갱신된다.
+        if nav.toggle
+            && let Some(flag) = active.and_then(|i| selected.get_mut(i))
+        {
+            *flag = !*flag;
+            changed = true;
+        }
+        if nav.close || nav.tab {
+            // `Tab` 은 여기서 닫기만 한다 — 포커스 이동은 소비하지 않은 그 키로
+            // egui 가 이어서 처리한다.
+            ui.memory_mut(|m| m.close_popup());
+            open = false;
+        }
+    }
 
     let sense = if enabled {
         egui::Sense::click()
@@ -240,9 +396,12 @@ pub fn multi_select(
 
     // 트리거 박스 — select 와 동일. 열려 있는 동안은 focus 보더로 "이 컨트롤이 지금
     // 활성" 을 유지한다(팝업이 트리거를 덮지 않으므로 신호가 남아야 한다).
+    //
+    // 닫혀 있어도 키보드 포커스를 가졌으면 같은 보더다 — `Tab` 으로 짚은 컨트롤이
+    // idle 과 구별되지 않으면 다음 `↓`/`Enter` 가 어디로 갈지 알 수 없다.
     let border = if !enabled {
         theme.select_border()
-    } else if open {
+    } else if open || resp.has_focus() {
         theme.select_border_focus()
     } else if resp.hovered() {
         theme.border_strong()
@@ -286,8 +445,49 @@ pub fn multi_select(
     let ch = dim(theme.select_chevron_fg().to_egui());
     paint_chevron(ui.painter(), egui::pos2(cx, rect.center().y), ch, open);
 
-    if enabled && resp.clicked() {
+    // 닫힌 트리거에서 `↓` 는 "열기" 다. `Enter`/`Space` 는 egui 가 클릭으로 승격시켜
+    // (fake primary click) 아래 `resp.clicked()` 로 들어오므로 따로 읽지 않는다.
+    let open_by_key = enabled
+        && !open
+        && resp.has_focus()
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
+
+    if (enabled && resp.clicked()) || open_by_key {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
+        if ui.memory(|m| m.is_popup_open(popup_id)) {
+            open = true;
+            // 열 때마다 커서를 초기화한다 — 지난 위치를 기억하면 목록이 바뀐 뒤
+            // 엉뚱한 행이 짚힌 채 열린다.
+            active = None;
+            // 클릭으로 열었어도 이어서 키보드로 조작할 수 있어야 한다. egui 는 일반
+            // 위젯에 클릭 포커스를 주지 않으므로 여기서 직접 가져온다.
+            resp.request_focus();
+        } else {
+            open = false;
+        }
+    }
+
+    // 포커스가 있는 동안 `↑`/`↓` 는 포커스 이동이 아니라 이 위젯의 뜻이다(닫혔으면
+    // "열기", 열렸으면 "행 이동"). `Esc` 는 **열려 있을 때만** 가져간다 — 닫힌 상태의
+    // `Esc` 는 상위 화면 것이고, 여기서 잠그면 포커스도 안 풀린다.
+    //
+    // 필터는 **이번 프레임의 최종 열림 상태**로 건다. 이 자리가 여닫기 처리보다 앞서면
+    // 여는 프레임에 `escape: false` 가 박혀, 곧이어 들어온 `Esc` 가 팝업을 닫으면서
+    // 포커스까지 걷어간다(그러면 다음 `↓` 로 다시 열 수 없다). 필터는 다음 프레임
+    // 입력부터 효력이 있으므로 늦게 걸어도 손해가 없다.
+    if resp.has_focus() {
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                resp.id,
+                egui::EventFilter {
+                    // `Tab` 은 넘긴다 — 팝업만 닫고 포커스는 다음 위젯으로 가야 한다.
+                    tab: false,
+                    horizontal_arrows: false,
+                    vertical_arrows: true,
+                    escape: open,
+                },
+            );
+        });
     }
 
     // 메뉴 폭은 팝업을 그리기 **전에** 확정한다. egui 팝업 본문은 justified 세로
@@ -314,7 +514,6 @@ pub fn multi_select(
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
     let menu_width = widest_row.clamp(menu_min, menu_max);
 
-    let mut changed = false;
     egui::popup_below_widget(
         ui,
         popup_id,
@@ -355,13 +554,93 @@ pub fn multi_select(
                         let Some(flag) = selected.get_mut(i) else {
                             break;
                         };
-                        if crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i)).changed()
-                        {
+                        // 키보드 커서 배경은 체크박스 **뒤**에 깔린다. checkbox 가 자기
+                        // rect 를 직접 할당하므로 자리를 먼저 예약해 두고 그린 뒤 채운다
+                        // (행 폭도 checkbox 의 내용 폭이 아니라 메뉴 폭이어야 한다).
+                        let cursor = (active == Some(i))
+                            .then(|| (ui.painter().add(egui::Shape::Noop), ui.available_width()));
+                        let resp = crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i));
+                        if resp.changed() {
                             changed = true;
+                        }
+                        if let Some((slot, row_width)) = cursor {
+                            let row = egui::Rect::from_min_size(
+                                resp.rect.left_top(),
+                                egui::vec2(row_width, resp.rect.height()),
+                            );
+                            ui.painter().set(
+                                slot,
+                                egui::Shape::rect_filled(
+                                    row,
+                                    theme.menu_item_radius().value(),
+                                    theme.surface_active().to_egui(),
+                                ),
+                            );
+                            if scroll_to_active {
+                                ui.scroll_to_rect(row, None);
+                            }
                         }
                     }
                 });
         },
     );
+
+    // 팝업 안을 마우스로 누르면 egui 가 트리거의 포커스를 회수한다. 팝업은 열린 채라
+    // 키보드 조작이 이어져야 하므로 되찾아 준다.
+    if open && pressed_inside_popup(ui, popup_id) {
+        resp.request_focus();
+    }
+    ui.data_mut(|d| d.insert_temp(active_id, active));
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_active_wraps_and_skips_disabled() {
+        // 마스크 없음 — 끝에서 순환.
+        assert_eq!(step_active(None, 3, None, true), Some(0));
+        assert_eq!(step_active(None, 3, None, false), Some(2));
+        assert_eq!(step_active(Some(2), 3, None, true), Some(0));
+        assert_eq!(step_active(Some(0), 3, None, false), Some(2));
+        // 가운데가 비활성이면 건너뛴다(양방향).
+        let d = [false, true, false];
+        assert_eq!(step_active(Some(0), 3, Some(&d), true), Some(2));
+        assert_eq!(step_active(Some(2), 3, Some(&d), false), Some(0));
+        // 아직 커서가 없을 때도 비활성 끝은 피한다.
+        let edges = [true, false, true];
+        assert_eq!(step_active(None, 3, Some(&edges), true), Some(1));
+        assert_eq!(step_active(None, 3, Some(&edges), false), Some(1));
+    }
+
+    #[test]
+    fn step_active_degenerate() {
+        // 목록이 비면 짚을 곳이 없다.
+        assert_eq!(step_active(None, 0, None, true), None);
+        assert_eq!(step_active(Some(0), 0, None, false), None);
+        // 전부 비활성도 마찬가지.
+        let all = [true, true];
+        assert_eq!(step_active(None, 2, Some(&all), true), None);
+        assert_eq!(step_active(Some(0), 2, Some(&all), true), None);
+        // 활성 행이 자기 하나뿐이면 제자리.
+        let one = [false, true];
+        assert_eq!(step_active(Some(0), 2, Some(&one), true), Some(0));
+        assert_eq!(step_active(Some(0), 2, Some(&one), false), Some(0));
+        // 목록이 줄어들어 범위를 벗어난 커서도 마지막 행 기준으로 이어진다.
+        assert_eq!(step_active(Some(9), 2, None, true), Some(0));
+    }
+
+    #[test]
+    fn edge_enabled_finds_the_outermost_toggleable_row() {
+        let d = [true, false, false, true];
+        assert_eq!(edge_enabled(4, Some(&d), true), Some(1));
+        assert_eq!(edge_enabled(4, Some(&d), false), Some(2));
+        assert_eq!(edge_enabled(4, None, true), Some(0));
+        assert_eq!(edge_enabled(4, None, false), Some(3));
+        assert_eq!(edge_enabled(0, None, true), None);
+        let all = [true, true];
+        assert_eq!(edge_enabled(2, Some(&all), false), None);
+    }
 }

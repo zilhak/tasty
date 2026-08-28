@@ -239,7 +239,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
 | `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
-| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크 + 일괄 선택/해제 액션 행(opt-in, accent + separator, 스크롤 밖 고정)) | `prim_forms` | ✓ gallery |
+| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크 + 일괄 선택/해제 액션 행(opt-in, accent + separator, 스크롤 밖 고정) + 키보드 내비(↓/Enter/Space 열기 · ↑↓/Home/End active 행 이동(disabled 건너뜀) · Space/Enter 토글(안 닫힘) · Esc 닫기(포커스 유지) · Tab 닫고 이동, active 행은 `surface_active` 배경)) | `prim_forms` | ✓ gallery |
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
@@ -258,7 +258,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 `leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
 Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false).
 
-**시각검증 주**: primitive 15종 전부 시각검증 완료(multi_select: gallery readback — 닫힘/열림/연속 3토글 후에도 팝업 유지/바깥클릭 닫힘, 요약 라벨 3분기, 트리거 치수가 단일 `select` 와 동일(28×160px)함, 옵션 20종에서 메뉴가 max-height(220)에서 멈추고 긴 라벨이 max-width(320)에서 말줄임됨 확인. autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
+**시각검증 주**: primitive 15종 전부 시각검증 완료(multi_select: gallery readback — 닫힘/열림/연속 3토글 후에도 팝업 유지/바깥클릭 닫힘, 요약 라벨 3분기, 트리거 치수가 단일 `select` 와 동일(28×160px)함, 옵션 20종에서 메뉴가 max-height(220)에서 멈추고 긴 라벨이 max-width(320)에서 말줄임됨 확인. 키보드 내비는 갤러리에 키 주입 경로가 없어 본체 DAG 목록 필터에서 `debug.inject_egui_key` + `ui.screenshot` 으로 검증 — ↓↓ 로 짚은 행 배경이 `surface_active`(rgb 88,91,112) 로 실측되고 메뉴 배경(30,30,46)과 갈림, Space/Enter 토글 뒤에도 팝업 유지 + 트리거 요약 즉시 갱신, Esc 는 드롭다운만 닫고 부모 popup 은 유지하며 트리거 포커스가 남아 곧바로 ↓ 로 다시 열림. autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
 `ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
 (`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
 settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이

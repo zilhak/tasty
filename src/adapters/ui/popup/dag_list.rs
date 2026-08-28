@@ -228,7 +228,14 @@ pub fn draw_dag_list_popup(
     let active_workspace_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
     let dag = &mut state.dialogs.dag_list;
 
-    if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+    // 상태 필터 드롭다운이 열려 있으면 Esc 는 그것만 닫고 창은 유지한다. 닫는 일 자체는
+    // 드롭다운이 **본문을 그리면서** 스스로 하므로(키를 소비하는 쪽도 거기다) 여기서
+    // early-return 으로 본문을 건너뛰면 안 된다 — 건너뛰면 그 프레임에 Esc 를 받을
+    // 주인이 사라져 드롭다운이 영영 안 닫힌다. 이 가드는 창을 닫는 갈래만 양보한다.
+    let esc = ui.ctx().input(|i| i.key_pressed(egui::Key::Escape));
+    let esc_owned_by_dropdown =
+        esc && super::child_overlay_open(ui.ctx(), DAG_LIST_POPUP_ID, STATUS_SELECT_OVERLAY_KEY);
+    if esc && !esc_owned_by_dropdown {
         // 디테일에서는 Esc 가 먼저 목록으로 돌아간다 — 한 번에 창까지 닫으면
         // "뒤로" 한 걸음을 통째로 잃는다.
         if dag.view.is_detail() {

@@ -286,6 +286,26 @@ pub fn report_child_overlay_rect(
     });
 }
 
+/// `popup_id` 소유의 자식 오버레이(`overlay_key`)가 지금 열려 있는가.
+///
+/// Esc 우선순위 판정용이다 — 드롭다운이 열려 있으면 Esc 는 그것만 닫고 부모 popup 은
+/// 유지해야 하는데, 부모의 Esc 가드는 프레임 앞머리(본문을 그리기 전)에서 키를 읽으므로
+/// 드롭다운이 자기 Esc 를 소비할 기회를 얻기 전에 창을 닫아버린다. 레지스트리 등록
+/// 자체가 "지금 열려 있음" 이라 별도 플래그 없이 여기서 양보 여부를 판정할 수 있다
+/// (rect 는 매 프레임 report 되고, 닫히면 `None` 으로 지워진다).
+pub fn child_overlay_open(
+    ctx: &egui::Context,
+    popup_id: PopupId,
+    overlay_key: &'static str,
+) -> bool {
+    let id = child_overlay_registry_id();
+    ctx.memory(|m| {
+        let map: ChildOverlayMap = m.data.get_temp(id).unwrap_or_default();
+        map.get(overlay_key)
+            .is_some_and(|(pid, _)| *pid == popup_id)
+    })
+}
+
 /// `popup_id` 소유의 자식 오버레이 중 `pos` 를 포함하는 것이 있는지 hit-test.
 fn child_overlay_hit(ctx: &egui::Context, popup_id: PopupId, pos: egui::Pos2) -> bool {
     let id = child_overlay_registry_id();

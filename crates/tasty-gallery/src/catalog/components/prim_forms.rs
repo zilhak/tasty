@@ -151,6 +151,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             // 다중선택 — 트리거는 위 Select 와 같은 토큰이고, 팝업만 checkbox 행이다.
             // 나란히 놓아 높이·보더·폰트가 같은 계열로 읽히는지 눈으로 대조한다.
+            //
+            // 아래 multi_select specimen 은 전부 키보드로도 조작된다(트리거 포커스 후
+            // `↓`/`Enter`/`Space` 열기 · `↑↓`/`Home`/`End` 행 이동 · `Space`/`Enter`
+            // 토글 · `Esc` 닫기). active 행 배경(`surface_active`)은 그때만 보인다 —
+            // 갤러리는 키 주입 경로가 없어 배치 스크린샷에는 잡히지 않는다.
             cluster(ui, theme, "Multi-select", |ui| {
                 let opts = ["Waiting", "Ready", "Running", "Done", "Failed"];
                 // 문구는 위젯이 아니라 호출자가 주입한다(위젯 crate 는 i18n 미의존).
