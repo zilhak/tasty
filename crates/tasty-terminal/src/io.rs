@@ -47,11 +47,38 @@ impl WriteAck {
 }
 
 impl TerminalState {
-    /// Route input bytes to the PTY writer (or the detached input sink). With
-    /// neither wired, the bytes are dropped. Always records the input timestamp
-    /// so PTY echo within `INPUT_ECHO_WINDOW` is not counted toward busy state.
+    /// Route user/agent input bytes to the PTY writer (or the detached input
+    /// sink). Records the input timestamp so PTY echo within
+    /// `INPUT_ECHO_WINDOW` is not counted toward busy state.
+    ///
+    /// Only *externally originated* writes (keyboard, `send_bytes`, mouse
+    /// reports) may take this path — the echo-suppression window exists to
+    /// discount a program echoing back what the user just typed. Bytes the
+    /// terminal itself generates are not input and must use
+    /// [`send_terminal_response`](Self::send_terminal_response) instead, which
+    /// enqueues identically but leaves the window alone. See
+    /// `docs/design/policies/busy-indicator.md`.
     pub(crate) fn write_input(&mut self, bytes: Vec<u8>) {
         self.last_input_at = std::time::Instant::now();
+        self.enqueue_to_pty(bytes);
+    }
+
+    /// Reply to a terminal query (DSR / DA / cursor position report). Runs on the
+    /// parser thread during ingest, so it writes back through the same input
+    /// channel.
+    ///
+    /// Deliberately does **not** touch `last_input_at`: this write originates
+    /// from the terminal, not from the user, so counting it as input would let a
+    /// TUI that polls (e.g. `ESC[6n` faster than `INPUT_ECHO_WINDOW`) hold the
+    /// echo-suppression window open forever and stay `busy == false` while it is
+    /// plainly producing output.
+    pub(crate) fn send_terminal_response(&mut self, response: &str) {
+        self.enqueue_to_pty(response.as_bytes().to_vec());
+    }
+
+    /// Hand bytes to the PTY writer (or the detached input sink) without
+    /// classifying their origin. With neither wired, the bytes are dropped.
+    fn enqueue_to_pty(&mut self, bytes: Vec<u8>) {
         if let Some(sink) = self.input_tx.as_ref() {
             if let Err(e) = sink.send(bytes) {
                 tracing::warn!("terminal input channel closed during input: {e}");
@@ -63,13 +90,6 @@ impl TerminalState {
         } else {
             tracing::trace!("terminal input dropped (no sink): {} bytes", bytes.len());
         }
-    }
-
-    /// Reply to a terminal query (DSR / DA / cursor position report). Runs on the
-    /// parser thread during ingest, so it writes back through the same input
-    /// channel.
-    pub(crate) fn send_terminal_response(&mut self, response: &str) {
-        self.write_input(response.as_bytes().to_vec());
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {

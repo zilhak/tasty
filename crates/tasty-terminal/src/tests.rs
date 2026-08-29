@@ -2044,3 +2044,46 @@ fn dec_line_drawing_reset_by_ris() {
     t.feed_bytes(b"q");
     assert_eq!(t.screen_row(0, true), "q");
 }
+
+// ---- busy 판정: 입력 에코 억제 창을 갱신하는 write 의 구분 ----
+
+#[test]
+fn terminal_query_response_does_not_suppress_busy() {
+    // 터미널이 커서 위치 질의에 응답한 직후에 나온 출력은 "사용자 입력 에코" 가 아니다.
+    let mut terminal = Terminal::new_detached(80, 24);
+    terminal.process_bytes(b"\x1b[6n"); // DSR → send_terminal_response 경로
+    terminal.process_bytes(b"x"); // 응답 직후(=억제 창 안)의 프로그램 출력
+
+    let st = terminal.lock_state();
+    assert!(
+        st.last_output_at > st.last_input_at + INPUT_ECHO_WINDOW,
+        "터미널 자체 응답이 입력 에코 억제 창을 갱신하면 안 된다",
+    );
+}
+
+#[test]
+fn user_input_still_suppresses_echo() {
+    // 기존 정책 유지: 사용자 입력 직후 200ms 안의 출력은 에코로 간주해 억제한다.
+    let mut terminal = Terminal::new_detached(80, 24);
+    terminal.send_key("x");
+    terminal.process_bytes(b"x");
+
+    let st = terminal.lock_state();
+    assert!(st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW);
+}
+
+#[test]
+fn terminal_query_response_still_reaches_pty() {
+    // 억제 창에서 분리해도 응답의 실제 write 경로(sink send + enqueued_count)는 그대로다.
+    use std::sync::mpsc;
+    let mut terminal = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    terminal.set_input_sink(tx);
+    terminal.process_bytes(b"\x1b[6n");
+
+    assert_eq!(
+        rx.try_recv().expect("no DSR cursor position response"),
+        b"\x1b[1;1R"
+    );
+    assert_eq!(terminal.lock_state().enqueued_count, 1);
+}

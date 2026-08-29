@@ -14,8 +14,22 @@
 - `vim` 띄워두고 정적이거나 `claude` 가 입력 대기 → (2) 위반 = **idle**.
 - `claude` 프롬프트에 타이핑 중 → (3) 위반 = **idle**(에코만 발생).
 - `cargo build` 출력 흐름·`claude` 응답 토큰 흘림 → **busy**.
+- 마우스 트래킹 TUI 위에서 마우스만 움직이는 중 → 마우스 리포트도 입력이므로 (3) 위반 = **idle**.
+- DSR(`ESC[6n`)·DA·OSC 색상 질의를 반복하는 TUI 가 출력도 내는 중 → 응답은 입력이 아니므로 **busy**.
 
 (2)는 tmux/iTerm2/WezTerm 의 activity-monitor 와 같은 시멘틱("프로세스는 떠 있지만 일하진 않음" 을 걸러냄), (3)은 타이핑 에코를 활동으로 오인 방지. 비-터미널 surface(Markdown/Explorer/Image)는 판정 대상 아님(항상 idle).
+
+### (3) 의 억제 창을 갱신하는 write / 갱신하지 않는 write
+
+PTY 로 나가는 write 는 모두 같은 채널을 타지만, 억제 창(`last_input_at`)을 갱신하는 것은 **터미널 바깥에서 들어온 입력** 뿐이다.
+
+| write | 억제 창 갱신 | 경로 |
+|-------|-------------|------|
+| 키 입력 / `send_key` / `send_bytes` (에이전트 IPC 포함) | **갱신** | `TerminalState::write_input` |
+| 마우스 리포트(`encode_mouse_report`) | **갱신** | 위와 동일 |
+| 터미널 자체 질의 응답 — DSR(커서 위치/상태) · DA/DA2 · DECRPTUI · XTVERSION · OSC 4/10/11 색상 · XTWINOPS 18/19 | **갱신 안 함** | `TerminalState::send_terminal_response` |
+
+터미널 응답은 사용자가 타이핑한 것이 아니므로 에코 억제의 대상이 아니다. 갱신하게 두면 `INPUT_ECHO_WINDOW`(200ms) 보다 짧은 주기로 질의를 쏘는 TUI 가 억제 창을 영구히 열어둬, 출력이 끊임없이 흐르는데도 실행 내내 `busy == false` 가 된다. 두 write 는 타임스탬프만 갈리고 실제 전송 경로(입력 채널 send, `enqueued_count`/`WriteAck` 계약)는 동일하다.
 
 ## 집계 — OR
 
