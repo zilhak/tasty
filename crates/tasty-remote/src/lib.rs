@@ -23,6 +23,8 @@
 //! | [`browse::RemoteWorkspace`] · [`browse::browse`] · [`browse::browse_via_port`] | 본체 · CLI |
 //! | [`browse::resolve_connection_spec`] · [`browse::resolve_endpoint`] | 본체 · CLI |
 //! | [`create::create_via_port`] ([`create::CreatedRemoteWorkspace`] 는 그 반환형) | 본체 · CLI |
+//! | [`browse::probe_method`] | 본체(RA02 팝업 — `create_via_port` 의 범용 에러와 다른
+//! 로컬라이즈된 실패 문구가 필요해 원시 프로브를 직접 씀) |
 //! | [`browse::PROBE_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/adr/0070-port-discovery-timeout.md`) |
 
 pub mod browse;

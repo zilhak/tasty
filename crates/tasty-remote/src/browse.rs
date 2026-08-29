@@ -137,7 +137,12 @@ pub fn resolve_endpoint(
 /// `remote_check` 의 `probe_system_info` 와 같은 이유로 [`tasty_ipc::client::IpcConnection`]
 /// 을 쓰지 않는다 — 그 구현은 빈 줄(EOF)에서 무한 루프에 빠져 stale 포트에서 행이
 /// 걸린다. 여기서는 read/write 타임아웃을 걸고 EOF/빈 응답을 명시적 에러로 변환한다.
-pub(crate) fn probe_method(
+///
+/// 본체도 쓴다 — RA02 "+ 새 워크스페이스" 행(`src/adapters/ui/popup/remote_attach.rs`
+/// `spawn_create`)이 `workspace.create` 응답에서 id 를 못 찾은 경우를 [`create::
+/// create_via_port`] 의 범용 anyhow 에러가 아니라 로컬라이즈된 문구로 구분해 보여주려고
+/// 이 원시 프로브를 직접 쓴다 — `create_via_port` 를 쓰면 그 구분이 사라진다.
+pub fn probe_method(
     port: u16,
     method: &str,
     params: serde_json::Value,
