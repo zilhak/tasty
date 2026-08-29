@@ -466,6 +466,24 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     // 1Hz 안전망으로 편승(주 wake 경로는 TerminalOutput(None)).
                     headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
                 }
+                // TTL 정리 3종 — gui `app/sweeps.rs` 와 동형(엔진 1 개라 순회 불필요).
+                // 접근 시점 lazy 경로를 대체하지 않고 보완한다
+                // (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+                // headless 야말로 이 보완이 가장 필요한 실행 형태다 — GUI 조작이
+                // 아예 없어 lazy 를 굴릴 사용자 접근 자체가 없다.
+                crate::app::timers::Tick::PtySweep => {
+                    // 반환 id 는 쓰지 않는다 — 두 store 회수까지 공용 함수가 끝냈다.
+                    let _ = engine.sweep_idle_ptys(Instant::now());
+                }
+                crate::app::timers::Tick::CaptureSweep => {
+                    engine.capture_uploads.sweep_expired(Instant::now());
+                }
+                crate::app::timers::Tick::LogPrune => {
+                    let now_ms = u64::try_from(app.core.now_unix_millis()).unwrap_or(0);
+                    app.core.with_memory(|mem| {
+                        crate::adapters::ipc::log_retention::maybe_prune(mem, now_ms);
+                    });
+                }
             }
         }
 

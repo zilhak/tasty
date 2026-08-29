@@ -290,9 +290,14 @@ impl PtyRegistry {
 
     /// idle 이 TTL 을 초과한 항목을 제거하고 그 id 들을 반환한다(정리된 순서 미보장).
     /// GUI 안전망이 없는 headless PTY 의 좀비 누적 방지 — 에이전트가 `pty.kill`/`pty.wait`
-    /// 를 잊어도 호스트가 스스로 회수한다. 반환 id 로 18-b 가 실제 자식 kill/Terminal
-    /// 제거를 이어서 처리한다. `reconcile_with_live_surfaces`(child_terminal) 처럼 접근
-    /// 시점 동기 정리로 호출한다.
+    /// 를 잊어도 호스트가 스스로 회수한다. 반환 id 로 호출자가 `TerminalStore` 제거 등
+    /// 나머지 회수를 이어서 처리한다(`CoreState::sweep_idle_ptys`).
+    ///
+    /// **접근 시점 lazy sweep + 주기 타이머 양쪽에서 호출된다.** lazy 만으로는 에이전트가
+    /// 조용해진 순간 — 즉 좀비가 가장 오래 남는 순간 — 에 회수도 함께 멈춘다. 주기
+    /// 경로가 그 사각을 메우고, lazy 는 spawn 상한 판정을 정확히 유지하려고 남는다
+    /// (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점"). 시각을 주입받고
+    /// idempotent 하므로 두 경로가 겹쳐 돌아도 안전하다.
     pub fn sweep_idle(&mut self, now: Instant) -> Vec<u32> {
         let ttl = self.idle_ttl;
         let expired: Vec<u32> = self

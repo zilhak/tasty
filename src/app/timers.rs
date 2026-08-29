@@ -56,6 +56,22 @@ pub(crate) enum Tick {
     /// 깨어나기만 하면 파이프라인의 `poll_auto_attach` 가 판정·발화를 한다.
     #[cfg(feature = "gui")]
     Reconnect(u32),
+    /// 30초. idle TTL 을 넘긴 headless PTY 를 회수한다
+    /// (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+    ///
+    /// 접근 시점 lazy sweep 을 **대체하지 않고 보완한다** — lazy 는 `pty.spawn` 직전에
+    /// 돌아 동시 개수 상한 판정을 정확하게 유지하는 별개 역할이 있다. 이 tick 은
+    /// "에이전트가 조용해져 아무도 `pty.*` 를 부르지 않는" 사각만 메운다.
+    PtySweep,
+    /// 30초. TTL 을 넘긴 캡처 업로드 partial 을 회수한다. `append` 내부 lazy 경로와
+    /// 같은 이유의 보완 — 다음 청크가 와야 이전 stale 이 정리되는 구조라, 업로드가
+    /// 멈춘 순간(= 정리가 가장 필요한 순간) 정리도 멈춘다.
+    CaptureSweep,
+    /// 10분. IPC 관측 로그 3종의 보존 정책을 집행한다(`ADR-0085`). 실제 집행 주기는
+    /// `log_retention::PRUNE_INTERVAL_MS`(1시간) 게이트가 정하므로 이 tick 이 자주
+    /// 와도 무해하다 — tick 은 "append 가 전혀 없는 인스턴스에서도 게이트를 볼
+    /// 기회를 만든다" 는 역할만 한다.
+    LogPrune,
 }
 
 /// busy 재평가 주기. 사용자가 체감하는 indicator 반응 상한이라 1초를 넘기지 않는다.
@@ -89,6 +105,22 @@ pub(crate) const RECONNECT_MIN_BACKOFF: Duration = Duration::from_millis(500);
 #[cfg(feature = "gui")]
 pub(crate) const PENDING_MENU_POLL_INTERVAL: Duration = Duration::from_millis(8);
 
+/// TTL 정리 tick 주기. TTL(5분) 대비 충분히 촘촘해 회수 지연 상한이
+/// `TTL + interval + slack` = 최대 6.5분이다. TTL 자체는 바꾸지 않는다.
+pub(crate) const SWEEP_TICK_INTERVAL: Duration = Duration::from_secs(30);
+
+/// 정리 tick 의 Lax slack. 정리는 사용자가 즉시 체감하는 작업이 아니라 자기 힘으로
+/// 호스트를 깨울 이유가 없다 — 다른 wakeup 에 편승하고, slack 을 넘겨서야 반드시
+/// 깨운다(완전 idle 인 인스턴스에서도 회수가 영영 멈추지는 않게).
+pub(crate) const SWEEP_TICK_SLACK: Duration = Duration::from_secs(60);
+
+/// 로그 prune tick 주기. 집행 자체가 1시간 게이트라 tick 은 성기게 둔다 —
+/// 자주 깨울 이유가 없다.
+pub(crate) const LOG_PRUNE_TICK_INTERVAL: Duration = Duration::from_secs(600);
+
+/// 로그 prune tick 의 Lax slack.
+pub(crate) const LOG_PRUNE_TICK_SLACK: Duration = Duration::from_secs(600);
+
 /// steady-state 주기 작업 등록 — 부팅 시 1회.
 pub(crate) fn register_steady_state(hub: &mut TimerHub<Tick>, now: Instant) {
     hub.every(Tick::Busy, BUSY_TICK_INTERVAL, Precision::Strict, now);
@@ -98,6 +130,39 @@ pub(crate) fn register_steady_state(hub: &mut TimerHub<Tick>, now: Instant) {
         Tick::AttachView,
         ATTACH_POLL_INTERVAL,
         Precision::Strict,
+        now,
+    );
+    // TTL 정리 3종은 전부 `Lax` — 회수가 몇십 초 늦는 것은 무해하지만 그것 때문에
+    // idle 인스턴스를 깨우는 것은 낭비다. 사용자가 뭐라도 하는 프레임에 공짜로
+    // 실행되고, 완전 idle 이면 slack 을 넘길 때 한 번만 깨운다.
+    //
+    // 이 셋은 `once_at`(외부 상태에서 파생한 절대 시각)이 아니라 `every`(고정 주기)
+    // 라서 `arm_derived` 바닥치기가 필요 없다 — 등록이 부팅 1회뿐이라 매 프레임
+    // 재등록되지 않고, 재발화 시각은 `TimerHub` 가 직전 데드라인에 주기를 더해
+    // 스스로 전진시킨다(과거에 고정될 수 없다). 0 주기는 `TimerHub` 의
+    // `normalize()` 가 이미 막는다.
+    hub.every(
+        Tick::PtySweep,
+        SWEEP_TICK_INTERVAL,
+        Precision::Lax {
+            slack: SWEEP_TICK_SLACK,
+        },
+        now,
+    );
+    hub.every(
+        Tick::CaptureSweep,
+        SWEEP_TICK_INTERVAL,
+        Precision::Lax {
+            slack: SWEEP_TICK_SLACK,
+        },
+        now,
+    );
+    hub.every(
+        Tick::LogPrune,
+        LOG_PRUNE_TICK_INTERVAL,
+        Precision::Lax {
+            slack: LOG_PRUNE_TICK_SLACK,
+        },
         now,
     );
 }
@@ -348,6 +413,93 @@ mod tests {
         assert!(
             PENDING_MENU_POLL_INTERVAL <= Duration::from_millis(16),
             "폴링 주기가 한 프레임(60fps)보다 길면 메뉴 트래킹이 끊겨 보인다"
+        );
+    }
+
+    /// TTL 정리 3종은 부팅 시 `Lax` 로 등록된다 — 등록 자체가 빠지면 정리가 접근
+    /// 시점 lazy 로만 도는 옛 상태로 되돌아간다.
+    #[test]
+    fn sweep_ticks_are_registered_at_boot() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        register_steady_state(&mut hub, t0);
+
+        for (key, interval, slack) in [
+            (Tick::PtySweep, SWEEP_TICK_INTERVAL, SWEEP_TICK_SLACK),
+            (Tick::CaptureSweep, SWEEP_TICK_INTERVAL, SWEEP_TICK_SLACK),
+            (
+                Tick::LogPrune,
+                LOG_PRUNE_TICK_INTERVAL,
+                LOG_PRUNE_TICK_SLACK,
+            ),
+        ] {
+            let e = hub
+                .snapshot()
+                .into_iter()
+                .find(|e| e.key == key)
+                .unwrap_or_else(|| panic!("{key:?} 미등록"));
+            assert_eq!(e.interval, Some(interval), "{key:?} 주기");
+            assert_eq!(
+                e.precision,
+                Precision::Lax { slack },
+                "{key:?} 는 Lax 여야 한다 — Strict 면 정리 때문에 idle 인스턴스를 깨운다"
+            );
+            assert_eq!(e.next_due, t0 + interval, "{key:?} 첫 발화");
+        }
+    }
+
+    /// 정리 tick 은 **idle wakeup 을 늘리지 않는다**. `Lax` 라 hard deadline 이
+    /// `next_due + slack` 까지 밀려 있어, 1Hz busy tick 이 이미 잡아둔 데드라인을
+    /// 앞당기지 않는다.
+    #[test]
+    fn sweep_ticks_do_not_advance_the_wakeup_deadline() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        register_steady_state(&mut hub, t0);
+        assert_eq!(
+            hub.next_deadline(),
+            Some(t0 + BUSY_TICK_INTERVAL),
+            "가장 이른 hard deadline 은 여전히 1Hz busy tick"
+        );
+
+        // 정리 tick 만 등록된 허브에서도 slack 경계 전에는 깨우지 않는다.
+        let mut only_sweeps = TimerHub::new();
+        only_sweeps.every(
+            Tick::PtySweep,
+            SWEEP_TICK_INTERVAL,
+            Precision::Lax {
+                slack: SWEEP_TICK_SLACK,
+            },
+            t0,
+        );
+        assert_eq!(
+            only_sweeps.next_deadline(),
+            Some(t0 + SWEEP_TICK_INTERVAL + SWEEP_TICK_SLACK)
+        );
+    }
+
+    /// 주기 tick 은 `every` 라 **`arm_derived` 바닥치기 대상이 아니다** — 발화할
+    /// 때마다 허브가 직전 데드라인에 주기를 더해 스스로 전진시키므로 데드라인이
+    /// 과거에 고정될 수 없다. 파생 절대시각을 매 프레임 재등록하는 `once_at` 계열과
+    /// 다른 점이고, 그래서 스핀 클래스에 해당하지 않는다.
+    #[test]
+    fn repeating_sweep_ticks_advance_on_their_own() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        register_steady_state(&mut hub, t0);
+
+        // 한참(=여러 주기) 뒤에 처음 drain 해도 다음 데드라인은 미래다.
+        let late = t0 + SWEEP_TICK_INTERVAL * 10;
+        assert!(hub.drain_due(late).contains(&Tick::PtySweep));
+        let next = hub
+            .snapshot()
+            .into_iter()
+            .find(|e| e.key == Tick::PtySweep)
+            .expect("still registered")
+            .next_due;
+        assert!(
+            next > late,
+            "{next:?} <= {late:?} 이면 즉시 wake 가 반복된다"
         );
     }
 

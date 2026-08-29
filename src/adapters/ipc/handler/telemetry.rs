@@ -258,7 +258,7 @@ fn persist_event(
         // 1회). audit 이 allow 기록을 그만두면서 audit append 가 희소해졌으므로,
         // **IPC 트래픽마다 확실히 도는 경로**가 이제 여기다. 정리가 유입에 얹혀
         // 돌아야 "쌓는 동안에는 안 지우는" 사각이 생기지 않는다.
-        crate::adapters::ipc::log_retention::maybe_prune_on_append(s, ev.ts);
+        crate::adapters::ipc::log_retention::maybe_prune(s, ev.ts);
         s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts)
     })
     .map_err(|e| format!("memory put failed: {e}"))?;

@@ -354,6 +354,10 @@ impl ApplicationHandler<AppEvent> for App {
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
+                // TTL 정리 3종(`app/sweeps.rs`) — 접근 시점 lazy 경로의 보완.
+                Tick::PtySweep => self.poll_pty_sweep(),
+                Tick::CaptureSweep => self.poll_capture_sweep(),
+                Tick::LogPrune => self.poll_log_prune(),
             }
         }
 

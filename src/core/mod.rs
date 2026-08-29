@@ -196,6 +196,13 @@ impl Core {
         self.clock.now_instant()
     }
 
+    /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이
+    /// monotonic 이 아니라 wall-clock 이라 별도 접근자가 필요하다
+    /// (`log_retention::maybe_prune` 의 주기 게이트 판정).
+    pub(crate) fn now_unix_millis(&self) -> i64 {
+        self.clock.now_unix_millis()
+    }
+
     /// Surface message 전송. 옛 `engine.send_message` 의 Core 진입점.
     pub(crate) fn send_surface_message(
         &mut self,

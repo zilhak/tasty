@@ -58,20 +58,18 @@ fn parse_command(params: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// idle TTL 이 지난 headless PTY 를 두 store 에서 함께 회수한다. `pty.spawn`/`pty.list`
-/// 접근 시점에 lazy 로 호출 — `reconcile_with_live_surfaces`(child_terminal) 와 동형의
-/// "접근 시 self-heal" 패턴. `sweep_idle` 이 registry 에서 제거한 id 들을
-/// `TerminalStore` 에서도 제거해 두 store 를 정합시킨다(Terminal drop → PTY SIGHUP).
+/// `pty.spawn`/`pty.list` 접근 시점의 lazy sweep — `reconcile_with_live_surfaces`
+/// (child_terminal) 와 동형의 "접근 시 self-heal" 패턴.
+///
+/// **주기 타이머(`Tick::PtySweep`)가 생긴 뒤에도 이 lazy 경로는 남는다.** `pty.spawn`
+/// **직전에** 도는 덕분에 동시 개수 상한(기본 8) 판정이 정확해지기 때문이다 — 죽은
+/// 항목을 먼저 치우고 나서 상한을 본다. 주기 타이머로 *대체*하면 "실제로는 idle 인
+/// PTY 때문에 spawn 이 상한 초과로 실패" 하는 회귀가 생긴다. 두 경로가 같은
+/// [`CoreState::sweep_idle_ptys`] 를 부르므로 idempotent 하고 후처리도 동일하다
+/// (`docs/adr/0050-headless-pty-primitive.md`).
 fn lazy_sweep(engine: &mut CoreState) {
-    let expired = engine.pty_registry.sweep_idle(Instant::now());
-    for pty_id in expired {
-        engine.terminals.remove(pty_id);
-        // waker dedup 게이트 제거(pty_id 키) — 미제거 시 sweep 마다 게이트 영구 누적(누수).
-        if let Some(factory) = engine.waker_factory.as_ref() {
-            factory.forget_surface(pty_id);
-        }
-        tracing::debug!("headless pty {pty_id} swept (idle TTL exceeded)");
-    }
+    // 반환 id 는 여기서 쓰지 않는다 — 회수 후처리는 공용 함수가 이미 끝냈다.
+    let _ = engine.sweep_idle_ptys(Instant::now());
 }
 
 // ───── 핸들러 ─────
@@ -380,6 +378,8 @@ pub(crate) fn handle_list(engine: &mut CoreState, id: Value) -> JsonRpcResponse 
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     fn engine() -> CoreState {
@@ -634,6 +634,111 @@ mod tests {
             handle_kill(&mut e, json!(1), &json!({ "id": bogus }))
                 .error
                 .is_some()
+        );
+    }
+
+    // ───── 주기 sweep 경로 (ADR-0050 "좀비 회수 시점") ─────
+
+    /// `forget_surface` 호출을 기록하는 waker factory — 회수 시 waker dedup 게이트가
+    /// 실제로 해제되는지 관측한다(미해제 시 sweep 마다 게이트 영구 누적 = 누수).
+    #[derive(Default)]
+    struct RecordingWakerFactory {
+        forgotten: std::sync::Mutex<Vec<u32>>,
+    }
+
+    impl tasty_terminal::waker_factory::WakerFactory for RecordingWakerFactory {
+        fn make_targeted_waker(&self, _surface_id: u32) -> tasty_terminal::Waker {
+            std::sync::Arc::new(|| {})
+        }
+        fn make_default_waker(&self) -> tasty_terminal::Waker {
+            std::sync::Arc::new(|| {})
+        }
+        fn note_drained(&self, _surface_id: Option<u32>) {}
+        fn forget_surface(&self, surface_id: u32) {
+            self.forgotten
+                .lock()
+                .expect("forgotten poisoned")
+                .push(surface_id);
+        }
+    }
+
+    /// TTL 을 아주 짧게 주입한 registry. 실시간 5분을 기다리지 않고 만료를 재현한다
+    /// (`PtyRegistry::with_limits`).
+    fn short_ttl_registry(max: usize) -> crate::core::pty_registry::PtyRegistry {
+        crate::core::pty_registry::PtyRegistry::with_limits(max, Duration::from_millis(1))
+    }
+
+    /// 주기 경로(`Tick::PtySweep` 실행부)가 부르는 [`CoreState::sweep_idle_ptys`] 가
+    /// **lazy 와 동일한 후처리**를 한다 — 세 가지를 한 묶음으로 정리해야 두 store 정합이
+    /// 깨지지 않는다(ADR-0050: "어느 한 쪽만 지우면 누수/좀비").
+    ///
+    /// 두 경로가 같은 함수를 부르므로 후처리가 갈라질 수 없다는 것이 이 구조의 핵심이고,
+    /// 이 테스트는 그 함수가 실제로 세 가지를 다 하는지를 고정한다.
+    #[test]
+    fn periodic_sweep_clears_registry_terminal_store_and_waker_gate() {
+        let mut e = engine();
+        let (mut c, _home) = core();
+        let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
+        e.waker_factory = Some(recorder.clone());
+        e.pty_registry = short_ttl_registry(8);
+
+        let spawned = ok(handle_spawn(
+            &mut c,
+            &mut e,
+            &CallerContext::Local,
+            json!(1),
+            &json!({}),
+        ));
+        let pty_id = spawned["pty_id"].as_u64().expect("pty_id") as u32;
+        assert!(e.pty_registry.contains(pty_id), "registry entry");
+        assert!(e.terminals.get(pty_id).is_some(), "TerminalStore entry");
+
+        // TTL(1ms) 경과 — 접근(`pty.*`) 없이 주기 경로만 돈다.
+        std::thread::sleep(Duration::from_millis(5));
+        let reaped = e.sweep_idle_ptys(Instant::now());
+
+        assert_eq!(reaped, vec![pty_id], "회수 id");
+        assert!(!e.pty_registry.contains(pty_id), "registry 에서 제거");
+        assert!(
+            e.terminals.get(pty_id).is_none(),
+            "TerminalStore 에서도 제거 — 남으면 자식이 SIGHUP 을 못 받아 좀비가 된다"
+        );
+        assert_eq!(
+            *recorder.forgotten.lock().expect("forgotten poisoned"),
+            vec![pty_id],
+            "waker dedup 게이트 해제 — 미해제 시 회수마다 게이트가 영구 누적된다"
+        );
+    }
+
+    /// **회귀 방어** — 주기 타이머가 생겼다고 lazy 경로를 없애면 안 된다.
+    ///
+    /// `lazy_sweep` 은 `pty.spawn` **직전에** 돌아 동시 개수 상한 판정을 정확하게
+    /// 유지한다. 제거하면 "실제로는 idle 이라 곧 회수될 PTY 때문에 spawn 이 상한 초과로
+    /// 실패" 하는 회귀가 생긴다 — 주기 타이머는 최대 `interval + slack` 뒤에나 도는데
+    /// spawn 은 지금 성공해야 한다.
+    #[test]
+    fn spawn_still_reclaims_idle_slots_before_checking_the_limit() {
+        let mut e = engine();
+        let (mut c, _home) = core();
+        // 상한 1 — 이미 꽉 찼지만 그 항목은 idle 만료 상태다.
+        e.pty_registry = short_ttl_registry(1);
+        e.pty_registry
+            .register(
+                crate::core::pty_registry::PtySpawnSpec {
+                    owner_agent_id: "agent-1".into(),
+                    cwd: None,
+                    command: vec!["sleep".into(), "3600".into()],
+                },
+                Instant::now(),
+            )
+            .expect("첫 등록은 상한 안");
+        std::thread::sleep(Duration::from_millis(5));
+
+        let resp = handle_spawn(&mut c, &mut e, &CallerContext::Local, json!(1), &json!({}));
+        assert!(
+            resp.error.is_none(),
+            "lazy sweep 이 먼저 돌아 슬롯을 회수해야 한다 (상한 초과 실패 = lazy 가 제거된 것): {:?}",
+            resp.error
         );
     }
 }

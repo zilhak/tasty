@@ -11,7 +11,7 @@
 //! ## 두 축을 함께 건다
 //!
 //! - **개수 상한(`keep`)** — DB 크기를 bound 한다. 집행이 주기적이라(아래
-//!   [`APPEND_PRUNE_INTERVAL_MS`]) 그 사이 유입만큼은 상한을 넘을 수 있다 —
+//!   [`PRUNE_INTERVAL_MS`]) 그 사이 유입만큼은 상한을 넘을 수 있다 —
 //!   정상 상태 최대치는 `keep + 1시간치 유입`이고, 집행마다 다시 `keep` 으로
 //!   떨어진다. 유입 속도가 아무리 빨라도 무한히 늘지는 않는다는 것이 이 축의
 //!   보장이다.
@@ -24,8 +24,9 @@
 //! ## 두 경로가 같은 구현을 부른다
 //!
 //! - **부팅**: `boot::maintain_memory_at_boot` 이 [`ALL`] 을 순회.
-//! - **런타임**: 세 로그의 append 경로가 [`maybe_prune_on_append`] 를 호출한다.
-//!   게이트가 프로세스 전역이라 어느 writer 가 먼저 도착하든 주기당 1회만 돈다.
+//! - **런타임**: 세 로그의 append 경로와 주기 타이머(`Tick::LogPrune`)가 모두
+//!   [`maybe_prune`] 를 호출한다. 게이트가 프로세스 전역이라 누가 먼저 도착하든
+//!   주기당 1회만 돈다.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -103,22 +104,29 @@ pub const TELEMETRY_ANOMALY: LogRetention = LogRetention {
 /// 넣지 않으면 정리 경로가 없는 로그가 된다(anomaly 가 정확히 그 상태였다).
 pub const ALL: [LogRetention; 3] = [AUDIT, TELEMETRY_EVENT, TELEMETRY_ANOMALY];
 
-/// append 경로 집행 주기 — 1시간. 스캔이 아니라 인덱스 DELETE 두 방이지만, IPC 마다
+/// 런타임 집행 주기 — 1시간. 스캔이 아니라 인덱스 DELETE 두 방이지만, IPC 마다
 /// 돌 이유는 없으므로 시간으로 상한한다.
-pub const APPEND_PRUNE_INTERVAL_MS: u64 = 60 * 60 * 1_000;
+pub const PRUNE_INTERVAL_MS: u64 = 60 * 60 * 1_000;
 
-/// 마지막 집행 시각(프로세스 전역). 부팅 후 첫 append 에서도 1회 돈다(last=0) —
+/// 마지막 집행 시각(프로세스 전역). 부팅 후 첫 호출에서도 1회 돈다(last=0) —
 /// 이미 쌓여 있던 로그가 재시작 없이도 그 즉시 정리된다.
 static LAST_PRUNE_MS: AtomicU64 = AtomicU64::new(0);
 
-/// 로그 append 직후 호출 — 주기가 찼으면 [`ALL`] 을 집행한다.
+/// 주기가 찼으면 [`ALL`] 을 집행한다. **두 종류의 드라이버가 이 함수 하나를 부른다.**
 ///
-/// 세 로그가 **같은 게이트**를 공유한다. 어느 로그의 append 가 주기를 채우든 셋 다
-/// 정리되므로, "유입이 멈춘 로그는 정리도 멈춘다" 는 사각이 생기지 않는다 — audit 이
-/// allow 기록을 그만두면서 append 자체가 희소해진 지금 이 성질이 특히 중요하다.
-pub fn maybe_prune_on_append(mem: &mut dyn MemoryStorage, now_ms: u64) {
+/// - **append 경로** — 세 로그의 append 직후. 유입이 활발할 때 정리가 유입에 얹혀
+///   돌아 "쌓는 동안에는 안 지우는" 사각이 없다.
+/// - **주기 타이머** — `app/timers.rs` 의 `Tick::LogPrune`. append 경로만 두면 **셋 다
+///   조용한 인스턴스에서는 아무것도 돌지 않는다**(audit 이 allow 기록을 그만두면서
+///   append 자체가 희소해졌다). 재시작 없이 오래 떠 있는 데스크톱 인스턴스가 정확히
+///   그 조건이다.
+///
+/// 세 로그와 두 드라이버가 **같은 게이트([`LAST_PRUNE_MS`])** 를 공유한다. 누가 먼저
+/// 도착하든 주기당 1회만 돌고, 그래서 타이머 tick 이 아무리 자주 와도 무해하다 — 이
+/// 성질이 보완 구조를 안전하게 만든다(새 게이트를 만들지 않는 이유).
+pub fn maybe_prune(mem: &mut dyn MemoryStorage, now_ms: u64) {
     let last = LAST_PRUNE_MS.load(Ordering::Relaxed);
-    if now_ms.saturating_sub(last) < APPEND_PRUNE_INTERVAL_MS {
+    if now_ms.saturating_sub(last) < PRUNE_INTERVAL_MS {
         return;
     }
     if LAST_PRUNE_MS
@@ -132,7 +140,7 @@ pub fn maybe_prune_on_append(mem: &mut dyn MemoryStorage, now_ms: u64) {
         removed += policy.enforce(mem, now_ms);
     }
     if removed > 0 {
-        tracing::debug!("log retention: append-path pruned {removed} rows");
+        tracing::debug!("log retention: pruned {removed} rows");
     }
 }
 

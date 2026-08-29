@@ -1,8 +1,39 @@
+use std::time::Instant;
+
 use tasty_terminal::{Terminal, TerminalEvent};
 
 use super::CoreState;
 
 impl CoreState {
+    /// idle TTL 을 넘긴 headless PTY 를 **두 store 에서 함께** 회수하고 회수한 pty id
+    /// 들을 돌려준다(`docs/adr/0050-headless-pty-primitive.md` "좀비 방지 정책").
+    ///
+    /// 회수는 반드시 세 가지를 한 묶음으로 한다 — 어느 하나만 하면 누수나 좀비가
+    /// 된다(ADR-0050 Consequences "어느 한 쪽만 지우면 누수/좀비"):
+    ///
+    /// 1. `pty_registry` entry 제거(= `sweep_idle`)
+    /// 2. `TerminalStore` 의 `Terminal` 제거 — drop 되면서 PTY master 가 닫히고
+    ///    자식이 SIGHUP 을 받는다. 이걸 빠뜨리면 자식 프로세스가 그대로 남는다.
+    /// 3. waker dedup 게이트 해제 — 빠뜨리면 회수할 때마다 게이트가 영구 누적된다.
+    ///
+    /// **두 호출 경로가 이 함수를 공유한다.** `pty.spawn`/`pty.list` 접근 시점의 lazy
+    /// sweep(`adapters/ipc/handler/pty.rs`)과 주기 타이머(`app/timers.rs` 의
+    /// `Tick::PtySweep`)다. 후처리가 갈라지면 경로마다 다른 잔재가 남으므로 진입점을
+    /// 하나로 묶었다. `sweep_idle` 이 idempotent 하고 시각을 주입받으므로 두 경로가
+    /// 겹쳐 돌아도 안전하다.
+    pub(crate) fn sweep_idle_ptys(&mut self, now: Instant) -> Vec<u32> {
+        let expired = self.pty_registry.sweep_idle(now);
+        for pty_id in &expired {
+            let pty_id = *pty_id;
+            self.terminals.remove(pty_id);
+            if let Some(factory) = self.waker_factory.as_ref() {
+                factory.forget_surface(pty_id);
+            }
+            tracing::debug!("headless pty {pty_id} swept (idle TTL exceeded)");
+        }
+        expired
+    }
+
     pub fn send_fast_init(&mut self, surface_id: u32) {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id) {
             tracing::warn!("surface_meta ensure_created failed for surface {surface_id}: {e}");

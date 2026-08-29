@@ -68,7 +68,7 @@ impl IpcHostFacade for Core {
         let result = self.with_memory(|mem| {
             // append 경로 retention 집행 (관측 로그 3종 공통, 최대 1시간 1회) —
             // query 전용 lazy 만으론 조회가 없는 일반 사용에서 디스크가 무한 축적된다.
-            crate::adapters::ipc::log_retention::maybe_prune_on_append(mem, ts_ms);
+            crate::adapters::ipc::log_retention::maybe_prune(mem, ts_ms);
             let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
             store.append(&record)?;
             Ok::<(), crate::adapters::ipc::audit::AuditError>(())

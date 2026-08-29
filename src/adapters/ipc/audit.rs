@@ -17,7 +17,7 @@
 //! audit 만의 값이 아니라 관측 로그 3종이 공유하는 정책이고, 과거 이 모듈이 자체
 //! 상수를 들고 있다가 부팅 경로와 720배 어긋났던 곳이다. 집행 지점 2개:
 //! 1. load 시 lazy evict — query 가 호출될 때 만료 record 를 함께 삭제.
-//! 2. **append 경로 주기 집행** ([`log_retention::maybe_prune_on_append`], 최대 1시간
+//! 2. **런타임 주기 집행** ([`log_retention::maybe_prune`], append 경로 + 주기 타이머, 최대 1시간
 //!    1회) — query 전용 lazy 만으론 아무도 조회하지 않는 일반 사용에서 디스크가 무한
 //!    축적된다 (macOS soak 실측 ~68.5KB/min, AI 에이전트 워크로드 기준 일 ~100MB).
 //!

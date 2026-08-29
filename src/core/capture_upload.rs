@@ -23,8 +23,11 @@ struct PartialUpload {
 /// 동시에 업로드해도 서로 섞이지 않는다.
 ///
 /// disconnect 시 `clear_client`로 즉시 청소하고, 연결 유지 상태에서 commit이 영원히
-/// 안 오는 극단 케이스는 `append` 호출 시점의 lazy sweep(TTL 초과 partial 제거)이 회수한다
-/// — `PtyRegistry::sweep_idle`("접근 시 self-heal") 패턴과 동형.
+/// 안 오는 극단 케이스는 [`sweep_expired`](CaptureUploadRegistry::sweep_expired)가
+/// 회수한다 — `PtyRegistry::sweep_idle` 과 동형으로 **접근 시점 lazy(`append` 내부) +
+/// 주기 타이머**(`app/timers.rs` 의 `Tick::CaptureSweep`) 양쪽에서 호출된다. lazy 만
+/// 두면 "다음 청크가 와야 이전 stale 이 정리된다" 가 되어, 업로드가 멈춘 순간 정리도
+/// 함께 멈춘다.
 pub(crate) struct CaptureUploadRegistry {
     partials: HashMap<(u32, u64), PartialUpload>,
     ttl: Duration,
@@ -49,8 +52,8 @@ impl CaptureUploadRegistry {
     }
 
     /// 청크 하나를 추가(순서 보존 — TCP 스트림이라 도착 순서 = 전송 순서). 매 호출마다
-    /// TTL 초과 partial 을 먼저 스윕한다("다음 업로드 호출 시 정리" — 별도 스레드/타이머
-    /// 불필요).
+    /// TTL 초과 partial 을 먼저 스윕한다 — 업로드가 활발한 동안은 이 lazy 경로가 곧바로
+    /// 정리하므로 주기 타이머를 기다릴 필요가 없다.
     pub(crate) fn append(&mut self, client_id: u32, upload_id: u64, data: &[u8], now: Instant) {
         self.sweep_expired(now);
         let entry = self
@@ -64,10 +67,11 @@ impl CaptureUploadRegistry {
         entry.last_activity = now;
     }
 
-    /// TTL 을 초과해 방치된 partial 을 제거한다. 반환값 없음 — 호출자(=`append`)가 그
-    /// 결과를 쓰지 않기 때문(commit 이 다시 와도 이미 사라진 upload_id 로 `take` 하면
-    /// `None`, `finalize_capture_upload` 가 그 케이스를 이미 처리한다).
-    fn sweep_expired(&mut self, now: Instant) {
+    /// TTL 을 초과해 방치된 partial 을 제거한다. 반환값 없음 — 두 호출자(`append`
+    /// 내부의 lazy 경로, `Tick::CaptureSweep` 주기 경로) 모두 결과를 쓰지 않기 때문
+    /// (commit 이 다시 와도 이미 사라진 upload_id 로 `take` 하면 `None`,
+    /// `finalize_capture_upload` 가 그 케이스를 이미 처리한다).
+    pub(crate) fn sweep_expired(&mut self, now: Instant) {
         let ttl = self.ttl;
         let before = self.partials.len();
         self.partials
@@ -121,6 +125,26 @@ mod tests {
         assert_eq!(reg.take(1, 1), Some(b"a".to_vec()));
         assert_eq!(reg.take(2, 1), Some(b"b".to_vec()));
         assert_eq!(reg.take(1, 2), Some(b"c".to_vec()));
+    }
+
+    /// 주기 경로(`Tick::CaptureSweep`)는 **다음 청크 없이도** stale partial 을 회수한다.
+    /// lazy 만 있던 시절에는 업로드가 멈춘 순간 정리도 함께 멈췄다 — 그 순간이 정확히
+    /// 정리가 필요한 순간이다.
+    #[test]
+    fn periodic_sweep_reaps_a_stalled_upload_without_a_new_chunk() {
+        let mut reg = CaptureUploadRegistry::new();
+        let t0 = Instant::now();
+        reg.append(1, 100, b"partial", t0);
+        assert_eq!(reg.partials.len(), 1);
+
+        // TTL 안에서는 남는다 — 느린 업로드를 끊어버리면 안 된다.
+        reg.sweep_expired(t0 + DEFAULT_TTL - Duration::from_secs(1));
+        assert_eq!(reg.partials.len(), 1, "TTL 안의 partial 은 보존");
+
+        // TTL 초과 — append 없이 sweep 만으로 회수된다.
+        reg.sweep_expired(t0 + DEFAULT_TTL);
+        assert!(reg.partials.is_empty(), "TTL 초과 partial 회수");
+        assert_eq!(reg.take(1, 100), None);
     }
 
     #[test]

@@ -32,7 +32,7 @@ pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Re
     };
     core.with_memory(|s| {
         // 다른 두 로그와 같은 게이트 — anomaly 만 유입되는 인스턴스에서도 정리가 돈다.
-        crate::adapters::ipc::log_retention::maybe_prune_on_append(s, anomaly.detected_at);
+        crate::adapters::ipc::log_retention::maybe_prune(s, anomaly.detected_at);
         s.put(
             tasty_memory::HOST_OWNER,
             &Scope::Global,

@@ -45,6 +45,8 @@ pub(crate) mod shutdown_cascade;
 pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
+#[cfg(feature = "gui")]
+pub(crate) mod sweeps;
 pub(crate) mod timers;
 #[cfg(feature = "gui")]
 pub(crate) mod window_access;

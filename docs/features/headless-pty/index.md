@@ -13,7 +13,8 @@
 ## 내부 동작 (headless-valid)
 
 - **두 store 정합**: 메타데이터·exit-code cell 은 `engine.pty_registry`(`PtyRegistry`), 실제 headless `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다. pty id 는 `PTY_ID_BASE`(`0x8000_0000`) 이상 disjoint 범위에서 발급해 Surface id(1부터 증가)와 절대 충돌하지 않는다. 어느 한 쪽만 지우면 누수/좀비가 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
-- **좀비 방지 (동시 개수 상한 + idle TTL)**: GUI 안전망(닫기 버튼)이 없으므로 호스트가 스스로 회수한다. 동시 개수 기본 상한 8 — 초과 시 spawn 을 실패시킨다(panic 하지 않음). idle(무 IO 활동) TTL 기본 5분 — `pty.spawn`/`pty.list` 접근 시점에 lazy sweep 으로 만료 항목을 두 store 에서 함께 회수한다(`Terminal` drop → PTY master close → 자식 SIGHUP). read/write/wait 은 idle 타이머를 리셋하므로 활발히 폴링 중인 PTY 는 회수되지 않는다. 상한/TTL 은 기본값을 코드에 박되 override 가능(`rate_limit.rs` 철학).
+- **좀비 방지 (동시 개수 상한 + idle TTL)**: GUI 안전망(닫기 버튼)이 없으므로 호스트가 스스로 회수한다. 동시 개수 기본 상한 8 — 초과 시 spawn 을 실패시킨다(panic 하지 않음). idle(무 IO 활동) TTL 기본 5분 — 만료 항목을 두 store 에서 함께 회수한다(`Terminal` drop → PTY master close → 자식 SIGHUP). read/write/wait 은 idle 타이머를 리셋하므로 활발히 폴링 중인 PTY 는 회수되지 않는다. 상한/TTL 은 기본값을 코드에 박되 override 가능(`rate_limit.rs` 철학).
+- **회수 시점 (두 경로)**: ① `pty.spawn`/`pty.list` **접근 시점 lazy sweep** — `spawn` 직전에 돌아 동시 개수 상한 판정을 정확하게 유지한다(죽은 항목을 먼저 치우고 상한을 본다). ② **주기 타이머** 30초(`Precision::Lax`, slack 60초) — 에이전트가 조용해져 아무도 `pty.*` 를 부르지 않는 사각을 메운다. lazy 만 있으면 "조용해진 순간이 곧 정리가 멈추는 순간" 이 되는데, 그때가 정확히 좀비가 가장 오래 남는 순간이다. 둘은 대체가 아니라 보완 관계이고 같은 함수(`CoreState::sweep_idle_ptys`)를 부르므로 후처리가 동일하다. **회수 지연 상한은 `TTL + 30s + 60s` = 최대 6.5분.**
 - **진짜 exit-code 캡처**: spawn 시 `Terminal` 에서 넘겨받은 `portable_pty::Child` 를 close-over 한 detached watcher 스레드가 `child.wait()` 로 실제 종료코드를 뽑아 entry 의 exit cell 에 채운다(`runner_host.rs` 패턴 이식). `pty.wait` 는 Surface 라이브 여부가 아니라 이 cell 로 판정한다.
 - **owner 귀속**: 각 PTY 는 spawn 한 caller 의 `owner_agent_id` 를 기록한다(cap/telemetry 귀속용, `TASTY_AGENT_ID` 기반 — 위조 가능한 잠정 모델).
 - **승격 (adopt)**: `pty.attach_surface` 는 `AdoptTerminal { pane_id, pty_id }` intent 로 실행한다. 새 surface_id 를 발급하고, headless `Terminal` 을 pty_id → surface_id 로 **re-key**(`TerminalStore` remove→insert)하며 새 surface_id 로 waker 를 재배선한 뒤, pane 트리에 background tab 으로 등록한다(포커스 독립 — active_tab 을 바꾸지 않음). `tab.create` 와 동형 cascade(`tab.created`/`surface.created` host event)를 발화해 GUI 가 렌더하게 한다. 승격 후 그 pty id 는 registry 에서 빠져 `pty.list` 에 더 이상 나타나지 않는다(같은 `Terminal` 인스턴스라 화면 상태 보존).
@@ -29,7 +30,7 @@
 | `tasty pty read --id <n> [--lines <k>] [--show-dim]` | `pty.read` | `TerminalRead` | 현재 화면 텍스트 읽기(옵션 `lines`=하단 N줄). `surface.screen_text` 와 동일 추출. idle 리셋. dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀은 기본 제외 — `--show-dim`/`show_dim:true` 로 포함. |
 | `tasty pty wait --id <n>` | `pty.wait` | `TerminalRead` | 즉시 반환 폴링(blocking 아님). exit cell 조회 → `{exited, exit_code, success}`. idle 리셋. |
 | `tasty pty kill --id <n>` | `pty.kill` | `TerminalWrite` | 프로세스 종료 + 두 store 회수(Surface 를 닫는 게 아님 — headless 라 없음). |
-| `tasty pty list` | `pty.list` | `TerminalRead` | 살아있는 headless PTY 전체 목록(`id`/`owner_agent_id`/`cwd`/`command`/`has_exited`/`exit_code`). 접근 시 idle sweep. |
+| `tasty pty list` | `pty.list` | `TerminalRead` | 살아있는 headless PTY 전체 목록(`id`/`owner_agent_id`/`cwd`/`command`/`has_exited`/`exit_code`). 접근 시 idle sweep(주기 타이머와 별개로 항상 돈다). |
 | `tasty pty attach-surface --pty-id <n> --pane-id <p>` | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | headless PTY 를 Pane `p` 의 실제 Tab 으로 승격(상태 보존). `{pane_id, tab_id, surface_id}` 반환. |
 
 ### headless → 승격 흐름
@@ -48,5 +49,7 @@
 - [x] Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then watcher 가 잡은 실제 exit_code 반환.
 - [x] Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
 - [x] Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 두 store 에서 함께 회수.
+- [x] Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 두 store 에서 함께 회수.
+- [x] Given 상한이 꽉 찼고 그 항목들이 idle 만료 When `pty.spawn` Then lazy sweep 이 먼저 돌아 spawn 이 성공(주기 타이머를 기다리지 않는다).
 - [x] Given 살아있는 headless pty When `pty.attach_surface{pane}` Then Terminal 이 surface_id 로 re-key(상태 보존) + pane tab 등장 + `pty.list` 에서 제거 + `tab.created` cascade.
 - [x] kill/idle-sweep/adopt 각각이 회수/재배선하는 pty_id 의 waker dedup 게이트를 정리(`forget_surface`) — 누수 없음.
