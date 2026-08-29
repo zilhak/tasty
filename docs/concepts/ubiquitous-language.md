@@ -84,6 +84,11 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **SSH 위임(SSH delegation)** — 원격성을 흡수하는 client 측 계층 전체를 가리키는 말. tasty 어휘에서 **"SSH" 는 프로토콜 구현이 아니라 시스템 `ssh` 바이너리에 위임하는 행위**를 뜻한다 — 프로세스 spawn · 터널 수명 · 원격 포트 발견 · 백오프 · 취소가 여기 속한다. 그 계층의 거처가 `tasty-ssh` 크레이트(`crates/tasty-ssh/`)이고, 소비자는 CLI 와 본체 GUI 둘 다다. 터널은 이 계층의 **일부**이지 전부가 아니다(포트 발견·프로필 재감지·대화형 접속은 터널이 아니다).
 - **원격 인스턴스 능력(remote capability)** — SSH 위임 *위에* 얹혀 원격 tasty 인스턴스에 실제로 말을 거는 층 — 워크스페이스 **조회(browse)** 와 **생성(create)**. 거처는 `tasty-remote` 크레이트다. 이름이 비슷한 셋을 구분한다: `tasty-ssh`(어떻게 닿는가) → `tasty-remote`(닿아서 무엇을 하는가) → `tasty-remote-profiles`(어디에 닿을지를 이름으로 저장해 둔 레지스트리, 위 "원격 접속 프로필" 항목).
 
+### CLI 명령 갈래 (→ [`crates/tasty-cli/src/dispatch.rs`](../../crates/tasty-cli/src/dispatch.rs))
+
+- **단발 RPC(one-shot RPC)** — CLI 명령 하나가 JSON-RPC 요청 **하나**로 끝나는 갈래. 보내고 응답을 출력하면 끝이라 client 는 흐름을 주도하지 않는다. 대부분의 명령이 여기 속한다.
+- **클라이언트 주도 실행(client-driven execution)** — 단발 RPC 로 끝나지 않고 **client 가 흐름을 쥐는** 갈래. 로컬 파일·프로세스 조작(`tasty port`, `tool passkey`), raw 스트림(`remote attach`), 폴링 루프(`plugin audit-follow`), SSH 터널 경유 조회(`remote workspaces`)가 전부 여기다. "client" 는 위 attach 절의 그 client 와 같은 뜻이다 — 여기서 강조하는 축은 **주도권**이지 통신 유무가 아니다. 그래서 "로컬(local)" 로 부르지 않는다: 이 갈래의 절반은 IPC 를 (여러 번) 탄다.
+
 ## 기존 터미널과의 대응
 
 Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그래서 분할 정책을 두 레벨로 가진다.
@@ -116,6 +121,7 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 | Popup / Toast / Banner | `PopupDef`+`PopupManager` / `ToastState`+`ToastManager` / `BannerDef`+`BannerManager` |
 | 상태바 | `StatusBar` 계열 (`StatusBarData`/`StatusBarAction`/`draw_status_bar`) |
 | 길이 타입 | `PhysicalPx` / `LogicalPx` (→ [typed-length.md](typed-length.md)) |
+| 단발 RPC / 클라이언트 주도 실행 | `dispatch::Dispatch::Rpc` / `dispatch::Dispatch::ClientDriven`(+`ClientCommand`) |
 
 ## 관련
 

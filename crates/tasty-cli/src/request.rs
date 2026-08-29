@@ -885,9 +885,13 @@ fn surface_meta_command_to_method_params(
 
 fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
     match command {
-        // `tasty tool ssh|remote-profile|attach|passkey ...` 는 run.rs 에서 로컬 처리
-        // (IPC 미경유) — 미도달 arm. 프로필 CRUD 의 에이전트 조작(원칙 2)은 `remote.profile.*`
-        // IPC 로 별도 노출된다(src/adapters/ipc/handler/remote_profile.rs).
+        // `tasty tool ssh|remote-profile|attach|passkey ...` 는 네 갈래 모두
+        // `dispatch::classify` 가 클라이언트 주도 실행으로 잡아가므로 이 함수에는
+        // 도달하지 않는다 — 그래도 arm 을 남긴다: 지우려면 `command_to_request` 의
+        // `Commands::Tool` 갈래를 `unreachable!()` 로 바꿔야 하는데, 컴파일러가
+        // 보장하는 미도달을 런타임 panic 으로 바꾸는 건 손해다. 프로필 CRUD 의
+        // 에이전트 조작(원칙 2)은 `remote.profile.*` IPC 로 별도 노출된다
+        // (src/adapters/ipc/handler/remote_profile.rs).
         ToolCommands::Ssh { .. } => ("tool.ssh.noop", serde_json::json!({})),
         ToolCommands::RemoteProfile { .. } => ("tool.remote_profile.noop", serde_json::json!({})),
         ToolCommands::Attach { .. } => ("tool.attach.noop", serde_json::json!({})),

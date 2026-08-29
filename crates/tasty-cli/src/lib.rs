@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod cwd_resolve;
+pub mod dispatch;
 pub mod dynamic;
 pub mod format;
 pub mod help;
