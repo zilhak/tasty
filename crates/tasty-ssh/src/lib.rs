@@ -16,6 +16,21 @@
 //! 3. [`SshTunnel::establish`] — `ssh -L 127.0.0.1:local:127.0.0.1:remote -N` 백그라운드.
 //! 4. client 가 `127.0.0.1:local` 로 단계 4 attach (commands::attach).
 //!
+//! # 공개 계약
+//!
+//! 크레이트 밖에서 쓰는 것은 아래가 전부다. 나머지 `pub` 이 아닌 항목은 내부
+//! 구현이고, `#[doc(hidden)]` 이 붙은 항목은 `tasty-cli` 커맨드 구현 전용이라
+//! 계약에 포함되지 않는다.
+//!
+//! | 항목 | 소비자 |
+//! |------|--------|
+//! | [`SshTarget`] · [`PortMode`] · [`Backoff`] | 본체 · CLI |
+//! | [`SshTunnel`] · [`SshCancel`] ([`SshCancelScope`] 는 그 반환형) | 본체 · CLI |
+//! | [`resolve_ssh_path`] · [`resolve_attach_target`] · [`discover_remote_port`] | 본체 · CLI |
+//! | [`detect_and_persist`] · [`tunnel_drop_totals`] | 본체 |
+//! | [`SSH_CONNECT_TIMEOUT`] · [`PORT_DISCOVERY_STEP_TIMEOUT`] · [`PORT_DISCOVERY_TOTAL_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/adr/0070-port-discovery-timeout.md`) |
+//! | [`PortDiscoveryError`] · [`PortDiscoveryFailureKind`] | 실패 원인으로 분기하려는 소비자 |
+//!
 //! Windows 는 반드시 시스템 OpenSSH 풀경로를 쓴다 — git 번들 ssh 는 윈도우
 //! ssh-agent(named pipe `\\.\pipe\openssh-ssh-agent`) 를 못 봐 무암호 인증이 실패한다.
 
@@ -222,6 +237,10 @@ pub fn resolve_attach_target(
 /// 프로필의 identity/port/user/extra_options 를 조립해 시스템 ssh 를 그대로 spawn 한다
 /// (stdio 상속 = 대화형). `command` 가 비어있지 않으면 원격에서 그 명령을 1회 실행한다
 /// (`tasty tool ssh gb10 --command hostname`). ssh 종료코드를 그대로 전파한다.
+/// **공개 계약 아님** — `tasty-cli` 의 커맨드 구현만 쓴다. 크레이트 밖 소비자가
+/// 하나뿐이라 `pub(crate)` 로 못 내릴 뿐이며, 새 소비자가 이걸 쓰기 시작하면
+/// 그건 계약 확장이므로 `#[doc(hidden)]` 을 떼고 문서화하는 결정을 먼저 한다.
+#[doc(hidden)]
 pub fn run_ssh_connect(target: &SshTarget, command: &[String]) -> Result<()> {
     let ssh = resolve_ssh_path();
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
@@ -315,7 +334,7 @@ pub const SSH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// kill 한다. 연결 상한의 2 배라 2-hop ProxyJump 도 정상 경로로 들어간다.
 pub const PORT_DISCOVERY_STEP_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// [`discover_remote_port`] / [`detect_port_mode`] **호출 1회 전체**의 상한.
+/// [`discover_remote_port`] / `detect_port_mode` **호출 1회 전체**의 상한.
 ///
 /// auto 체인(3 단계)이나 명시 `port_file`(`cat`→`type` 2 회)처럼 한 호출이 ssh 를 여러 번
 /// 띄우므로, 단계 상한만으로는 총 대기가 단계 수만큼 곱해진다. 이 값이 그 곱을 끊는다 —
@@ -388,6 +407,11 @@ fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
 }
 
 /// 원격 포트 발견 실패의 원인 분류(로케일 독립 — exit code 기반).
+///
+/// [`PortDiscoveryError`] 와 함께 **공개 계약**이다. 포트 발견 결과는 `anyhow` 로
+/// 감싸 나가지만, 소비자가 문구가 아니라 원인으로 분기해야 할 때(재시도할지, 프로필을
+/// 비활성할지) downcast 해 이 `kind` 를 읽는 것이 의도된 경로다 — 그래서 지금 크레이트
+/// 밖 참조가 없어도 노출을 유지한다.
 ///
 /// 원격 stderr 문자열 매칭에 의존하지 않는다 — 원격 로케일에 따라 문자열이 달라져
 /// 신뢰할 수 없다(실측: 한국어 로케일은 "그런 파일이나 디렉터리가 없습니다", 영어는
@@ -587,6 +611,9 @@ impl SshCancel {
 }
 
 /// [`SshCancel::scope`] 의 RAII 가드.
+///
+/// 직접 만들 일은 없지만 `pub` 이어야 한다 — `SshCancel::scope()` 의 반환형이라
+/// 내리면 private-in-public 에 걸린다.
 pub struct SshCancelScope {
     prev: Option<SshCancel>,
 }
@@ -1090,7 +1117,7 @@ where
 /// [`discover_remote_port`] 와 같은 상한이 걸린다(체인 전체 [`PORT_DISCOVERY_TOTAL_TIMEOUT`],
 /// ssh 1회 [`PORT_DISCOVERY_STEP_TIMEOUT`]) — 감지 경로도 같은 `run_ssh_capture` 를 타므로
 /// "감지 중" 표시가 무한정 남지 않는다.
-pub fn detect_port_mode(
+pub(crate) fn detect_port_mode(
     ssh: &Path,
     target: &SshTarget,
     remote_tasty: &str,
@@ -1112,6 +1139,10 @@ pub fn detect_port_mode(
 ///   `detect_failed=true`. 반환 `Some(결과 모드)`(리포트용 — 프로필엔 저장하지 않는다).
 ///
 /// `auto` 분기는 네트워크 I/O 로 수 초 블록될 수 있다 — GUI/host 는 워커 스레드에서 호출.
+/// **공개 계약 아님** — `tasty-cli` 의 커맨드 구현만 쓴다. 크레이트 밖 소비자가
+/// 하나뿐이라 `pub(crate)` 로 못 내릴 뿐이며, 새 소비자가 이걸 쓰기 시작하면
+/// 그건 계약 확장이므로 `#[doc(hidden)]` 을 떼고 문서화하는 결정을 먼저 한다.
+#[doc(hidden)]
 pub fn apply_shell_to_profile(
     profile: &mut RemoteProfile,
     passkeys: &Passkeys,
