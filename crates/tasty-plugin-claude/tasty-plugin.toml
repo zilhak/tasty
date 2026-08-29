@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.49"
+version = "0.1.50"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -20,6 +20,9 @@ permissions = [
     "ui.settings_page",
     # `claude.spawn`/`claude.tell` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",
+    # Stop-훅 게이트가 발화 surface 의 goal(`memory.goal_get`)을 읽어 본문에
+    # 주입한다. 읽기 전용 — goal 은 CLI(`_host`)가 쓰고 이 plugin 은 읽기만 한다.
+    "memory.read",
 ]
 lang_dir = "lang"
 
@@ -222,6 +225,11 @@ flags = [
 
 [contributes.cli.arg_groups.checklist_hook_args]
 flags = [
+    # Stop payload 에는 surface 가 없지만, CLI 층이 `surface`(u32) 인자를 보면
+    # 미지정 시 `TASTY_SURFACE_ID` env 로 채워 준다(`surface`/`surface_id` 두 키
+    # 모두 주입). 덕분에 `--surface` 없이 이미 설치돼 있는 훅 명령 문자열을
+    # 바꾸지 않고도 goal 조회에 쓸 surface id 가 들어온다.
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID." },
     { name = "session_id", type = "string", flag = "--session-id", required = false, help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id'." },
     { name = "prompt_id", type = "string", flag = "--prompt-id", required = false, help = "Claude Code prompt/turn ID — changes on each new user turn, stays fixed within a blocked extension chain. Auto-populated from stdin JSON 'prompt_id'." },
     # `bool` 이 아닌 `string` 인 이유: `CliArgType::Bool` 은 `extract_value` 가

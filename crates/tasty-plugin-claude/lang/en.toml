@@ -12,7 +12,11 @@ Before ending this turn, check:
 2. If you changed code or config, did you verify it (build/test/run), not just assume it works?
 3. Is there follow-up work left? If so, say what it is. If not, say so explicitly.
 
+{{goal}}
 If all three are genuinely satisfied, include the exact string [[TASTY-CHECKLIST-DONE]] somewhere in your reply. Otherwise, keep working.
+"""
+goal_clause = """The goal set for this session: {}
+Judge the follow-up work you just described against that goal. If any of it needs no decision from the user and you can carry it out yourself, do not stop here — go do it. If everything left either needs the user's judgement or falls outside the goal, it is fine to stop.
 """
 no_data_dir = "plugin data directory not available (host did not inject TASTY_PLUGIN_DATA_DIR) — cannot enable or disable the checklist"
 io_error = "checklist marker I/O failed: {}"

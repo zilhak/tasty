@@ -85,6 +85,36 @@ const ROUND_LIMIT_STORAGE_KEY: &str = "continue_checklist_round_limit";
 /// 끝나면 더 도는 것보다 백스톱으로 끊는 편이 안전하다는 판단.
 const DEFAULT_ROUND_LIMIT: u32 = 3;
 
+/// 게이트 본문의 goal 절 placeholder. **본문에 이 토큰이 있을 때만** 훅이 그
+/// 자리를 치환하는 opt-in 규약이다 — 등록 게이트 저자의 본문에 예고 없이 남의
+/// 문장이 append 되는 것을 막으면서(토큰 없는 본문은 바이트 단위로 무변화),
+/// host 기본 게이트만 goal 을 쓸 수 있는 특권화도 피한다.
+const GOAL_TOKEN: &str = "{{goal}}";
+
+/// 게이트 본문의 [`GOAL_TOKEN`] 자리를 goal 절로 치환한다.
+///
+/// - goal 있음 → `claude.checklist.goal_clause` 에 goal 텍스트를 채워 넣는다
+/// - goal 없음 → 토큰이 있던 **줄 자체**를 지운다. 토큰만 빈 문자열로 바꾸면
+///   빈 줄이 하나 남아 goal 부재 시 본문이 기존과 달라진다 — 기존 동작 보존이
+///   이 분기의 요구사항이라 줄 단위로 걷어낸다
+/// - 토큰 미포함 본문 → 입력 그대로(등록 게이트 하위호환)
+///
+/// host 의존이 없는 순수 함수라 goal 유무 3분기를 단위 테스트로 직접 돌린다.
+fn substitute_goal(body: &str, goal: Option<&str>, tr: &Translator) -> String {
+    if !body.contains(GOAL_TOKEN) {
+        return body.to_string();
+    }
+    match goal {
+        Some(goal) => body.replace(GOAL_TOKEN, &tr.t_fmt("claude.checklist.goal_clause", goal)),
+        // 토큰이 단독 줄이면 그 줄의 개행까지, 문장 중간이면 토큰만 걷어낸다.
+        // 사용자가 등록한 본문 파일은 CRLF 일 수 있으므로 두 개행 형태를 모두 본다.
+        None => body
+            .replace(&format!("{GOAL_TOKEN}\r\n"), "")
+            .replace(&format!("{GOAL_TOKEN}\n"), "")
+            .replace(GOAL_TOKEN, ""),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RoundState {
     prompt_id: String,
@@ -431,6 +461,35 @@ fn fetch_settings_round_limit(host: &HostHandle) -> Option<u32> {
     .map(|f| f.max(1.0).round() as u32)
 }
 
+/// 이 훅이 발화한 surface 의 goal 조회. 없거나 조회에 실패하면 `None`.
+///
+/// **실패를 에러로 올리지 않는다** — 이 모듈의 "불확실하면 통과/무시" 방침
+/// ([`handle_checklist_hook`] 의 실패 모드 목록)과 같은 취지다. goal 은 본문을
+/// 풍부하게 하는 부가 정보이고, 호스트 IPC 오류 하나로 게이트 판정 전체가
+/// 무너지면 안 된다. 조회 실패는 goal 부재와 동일하게 취급한다.
+///
+/// goal 은 CLI(`_host`)가 쓰고 이 plugin 은 읽기만 한다 — regular 영역 read 는
+/// caller 무관 전체를 보므로 `memory.read` 권한이면 충분하고, plugin 이 `_host`
+/// 소유 entry 를 쓰려 하면 어차피 `OwnedByOther` 로 거부된다.
+fn fetch_goal(host: &HostHandle, surface_id: u32) -> Option<String> {
+    host.call("memory.goal_get", json!({ "surface_id": surface_id }))
+        .ok()
+        // 미설정이면 응답이 `null` 이라 `value` 키 자체가 없다.
+        .and_then(|v| v.get("value").and_then(|v| v.as_str()).map(str::to_string))
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// 훅이 발화한 surface id. `tasty-plugin.toml` 의 `checklist_hook_args` 에
+/// `surface`(u32, optional) 를 선언해 두면 CLI 층이 미지정 시 `TASTY_SURFACE_ID`
+/// env 로 채우면서 `surface` / `surface_id` 두 키를 모두 주입한다 — 훅 명령
+/// 문자열을 바꾸지 않아도 되는 이유이므로, 두 키를 모두 받아준다.
+fn surface_id_param(params: &Value) -> Option<u32> {
+    ["surface_id", "surface"]
+        .iter()
+        .find_map(|k| params.get(*k).and_then(|v| v.as_u64()))
+        .and_then(|n| u32::try_from(n).ok())
+}
+
 /// 라운드 상한 폴백 체인 — 게이트 정의 > Settings > [`DEFAULT_ROUND_LIMIT`].
 ///
 /// **폴백은 게이트 출처(host 기본 / 사용자 등록)를 구분하지 않는다.** 상한을
@@ -477,9 +536,14 @@ pub(crate) fn handle_checklist_hook(
     tr: &Translator,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    hook_response(data_dir, checklist_body, tr, params, || {
-        fetch_settings_round_limit(host)
-    })
+    hook_response(
+        data_dir,
+        checklist_body,
+        tr,
+        params,
+        || fetch_settings_round_limit(host),
+        || surface_id_param(params).and_then(|sid| fetch_goal(host, sid)),
+    )
 }
 
 /// [`handle_checklist_hook`] 의 host 비의존 본체. Settings 조회만 클로저로 빼서
@@ -492,6 +556,7 @@ fn hook_response(
     tr: &Translator,
     params: &Value,
     settings_round_limit: impl Fn() -> Option<u32>,
+    session_goal: impl Fn() -> Option<String>,
 ) -> Result<Value, IpcMethodError> {
     migrate_legacy_marker(data_dir);
     // 게이트 이름은 params 만 보면 정해지므로(파일 I/O 없음) 마커보다 먼저 뽑는다 —
@@ -585,7 +650,15 @@ fn hook_response(
                     rounds,
                 },
             );
-            Ok(json!({ "decision": "block", "reason": body }))
+            // goal 조회는 **block 이 확정된 뒤, 토큰이 있는 본문에 대해서만**
+            // 한다 — 통과하는 발화와 토큰 없는 등록 게이트는 IPC 를 한 번도 하지
+            // 않는다(Settings 조회를 게이트 상한 미지정일 때만 하는 것과 같은 취지).
+            let reason = if body.contains(GOAL_TOKEN) {
+                substitute_goal(body, session_goal().as_deref(), tr)
+            } else {
+                body.to_string()
+            };
+            Ok(json!({ "decision": "block", "reason": reason }))
         }
     }
 }
@@ -617,6 +690,116 @@ mod tests {
                 "lang/{locale}.toml 의 claude.checklist.body 에 SENTINEL({SENTINEL}) 리터럴이 없음"
             );
         }
+    }
+
+    // ── goal 치환 (순수 함수) ──
+
+    /// host 기본 본문과 같은 모양의 최소 본문 — 토큰이 단독 줄로 들어간 형태.
+    const BODY_WITH_TOKEN: &str = "3. 후속 작업\n\n{{goal}}\n센티넬을 포함해라.\n";
+    const BODY_WITHOUT_TOKEN: &str = "3. 후속 작업\n\n센티넬을 포함해라.\n";
+
+    #[test]
+    fn goal_present_is_substituted_into_the_body() {
+        let out = substitute_goal(
+            BODY_WITH_TOKEN,
+            Some("게이트 배선 완료"),
+            &test_translator(),
+        );
+        assert!(!out.contains(GOAL_TOKEN), "토큰이 남았다: {out}");
+        assert!(
+            out.contains("게이트 배선 완료"),
+            "goal 텍스트가 없다: {out}"
+        );
+        // 3번 항목과 센티넬 지시는 그대로다.
+        assert!(out.contains("3. 후속 작업"));
+        assert!(out.contains("센티넬을 포함해라."));
+    }
+
+    #[test]
+    fn goal_absent_removes_the_token_line_and_leaves_the_rest() {
+        let out = substitute_goal(BODY_WITH_TOKEN, None, &test_translator());
+        assert!(!out.contains(GOAL_TOKEN), "토큰이 남았다: {out}");
+        // 토큰 줄만 사라지고 나머지는 토큰 없는 본문과 바이트 단위로 같다.
+        assert_eq!(out, BODY_WITHOUT_TOKEN);
+    }
+
+    #[test]
+    fn goal_absent_removes_the_token_line_in_crlf_bodies_too() {
+        // 등록 게이트 본문은 사용자 파일이라 CRLF 일 수 있다 — 개행 형태가 달라도
+        // "토큰 줄만 사라진다" 는 결과가 같아야 한다.
+        let crlf = BODY_WITH_TOKEN.replace('\n', "\r\n");
+        let expected = BODY_WITHOUT_TOKEN.replace('\n', "\r\n");
+        assert_eq!(substitute_goal(&crlf, None, &test_translator()), expected);
+    }
+
+    #[test]
+    fn body_without_token_is_untouched_regardless_of_goal() {
+        // 등록 게이트 하위호환 — goal 이 있어도 본문은 입력과 완전히 동일하다.
+        let tr = test_translator();
+        assert_eq!(
+            substitute_goal(BODY_WITHOUT_TOKEN, Some("X"), &tr),
+            BODY_WITHOUT_TOKEN
+        );
+        assert_eq!(
+            substitute_goal(BODY_WITHOUT_TOKEN, None, &tr),
+            BODY_WITHOUT_TOKEN
+        );
+    }
+
+    // ── lang 파일 goal 규약 크로스체크 ──
+    //
+    // 번역자가 토큰이나 `{}` 자리를 떨어뜨리면 그 로케일만 조용히 goal 을 못 받는다
+    // (에러도 경고도 없이 본문에서 goal 절만 사라진다). SENTINEL 크로스체크와 같은
+    // 이유로 세 로케일을 실제 로드해 확인한다.
+
+    #[test]
+    fn checklist_body_contains_goal_token_in_every_locale() {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        for locale in ["en", "ko", "ja"] {
+            let translator = tasty_plugin_sdk::i18n::Translator::load(&lang_dir, locale);
+            let body = translator.t("claude.checklist.body");
+            assert!(
+                body.contains(GOAL_TOKEN),
+                "lang/{locale}.toml 의 claude.checklist.body 에 {GOAL_TOKEN} 토큰이 없음"
+            );
+        }
+    }
+
+    #[test]
+    fn checklist_goal_clause_has_a_slot_in_every_locale() {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        for locale in ["en", "ko", "ja"] {
+            let translator = tasty_plugin_sdk::i18n::Translator::load(&lang_dir, locale);
+            let clause = translator.t("claude.checklist.goal_clause");
+            assert!(
+                clause.contains("{}"),
+                "lang/{locale}.toml 의 claude.checklist.goal_clause 에 goal 을 채울 {{}} 자리가 없음"
+            );
+        }
+    }
+
+    // ── surface id 파라미터 ──
+
+    #[test]
+    fn surface_id_param_accepts_either_key() {
+        assert_eq!(surface_id_param(&json!({ "surface_id": 7 })), Some(7));
+        assert_eq!(surface_id_param(&json!({ "surface": 9 })), Some(9));
+        // 둘 다 있으면 CLI 층이 동기화한 값이라 어느 쪽을 봐도 같다.
+        assert_eq!(
+            surface_id_param(&json!({ "surface": 4, "surface_id": 4 })),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn surface_id_param_rejects_missing_or_out_of_range() {
+        assert_eq!(surface_id_param(&json!({})), None);
+        assert_eq!(surface_id_param(&json!({ "surface_id": "3" })), None);
+        assert_eq!(surface_id_param(&json!({ "surface_id": -1 })), None);
+        assert_eq!(
+            surface_id_param(&json!({ "surface_id": u64::from(u32::MAX) + 1 })),
+            None
+        );
     }
 
     fn state(prompt_id: &str, rounds: u32) -> RoundState {
@@ -1197,9 +1380,24 @@ mod tests {
     }
 
     fn fire(dir: &Path, params: &Value, settings_limit: Option<u32>) -> Value {
-        hook_response(Some(dir), "HOST-BODY", &test_translator(), params, || {
-            settings_limit
-        })
+        fire_with_goal(dir, params, settings_limit, None)
+    }
+
+    /// goal 축까지 지정하는 판. host 없이 goal 조회 결과를 직접 꽂는다.
+    fn fire_with_goal(
+        dir: &Path,
+        params: &Value,
+        settings_limit: Option<u32>,
+        goal: Option<&str>,
+    ) -> Value {
+        hook_response(
+            Some(dir),
+            "HOST-BODY",
+            &test_translator(),
+            params,
+            || settings_limit,
+            || goal.map(str::to_string),
+        )
         .unwrap()
     }
 
@@ -1243,6 +1441,76 @@ mod tests {
             Some(9),
         );
         assert_eq!(passed, json!({}));
+    }
+
+    /// host 본문까지 지정하는 판 — goal 토큰이 든 본문을 그대로 꽂아 넣는다.
+    fn fire_host_body(dir: &Path, params: &Value, host_body: &str, goal: Option<&str>) -> Value {
+        hook_response(
+            Some(dir),
+            host_body,
+            &test_translator(),
+            params,
+            || Some(9),
+            || goal.map(str::to_string),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn host_gate_reason_carries_the_goal_when_one_is_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_marker(tmp.path(), G);
+        let out = fire_host_body(
+            tmp.path(),
+            &hook_params(G, "sess-1", "p1", "진행 중"),
+            BODY_WITH_TOKEN,
+            Some("게이트 배선 완료"),
+        );
+        assert_eq!(out["decision"], "block");
+        let reason = out["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("게이트 배선 완료"),
+            "goal 이 안 실렸다: {reason}"
+        );
+        assert!(!reason.contains(GOAL_TOKEN));
+    }
+
+    #[test]
+    fn host_gate_reason_matches_the_pre_token_body_without_a_goal() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_marker(tmp.path(), G);
+        let out = fire_host_body(
+            tmp.path(),
+            &hook_params(G, "sess-1", "p1", "진행 중"),
+            BODY_WITH_TOKEN,
+            None,
+        );
+        assert_eq!(out["decision"], "block");
+        // goal 이 없으면 토큰 도입 전 본문과 바이트 단위로 같다 = 기존 동작 보존.
+        assert_eq!(out["reason"].as_str().unwrap(), BODY_WITHOUT_TOKEN);
+    }
+
+    #[test]
+    fn registered_gate_body_is_byte_identical_even_when_a_goal_is_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_marker(tmp.path(), "gate-a");
+        register_gate(tmp.path(), "gate-a", "[[A-DONE]]", Some(9));
+        let registered_body =
+            std::fs::read_to_string(tmp.path().join("gates").join("bodies").join("gate-a.md"))
+                .unwrap();
+
+        let out = fire_with_goal(
+            tmp.path(),
+            &hook_params("gate-a", "sess-1", "p1", "진행 중"),
+            Some(9),
+            Some("게이트 배선 완료"),
+        );
+        assert_eq!(out["decision"], "block");
+        assert_eq!(
+            out["reason"].as_str().unwrap(),
+            registered_body,
+            "토큰 없는 등록 게이트 본문이 goal 때문에 바뀌었다"
+        );
     }
 
     #[test]

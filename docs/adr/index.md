@@ -98,3 +98,4 @@
 | 0085 | [IPC 관측 로그는 무한 보존하지 않는다 — 상한을 한 곳에서 관리하고, audit 은 deny 만 남긴다](0085-ipc-log-retention-bounded.md) | Accepted | 2026-08-25 | audit, telemetry, memory-db, retention, observability, cpu |
 | 0086 | [mirror 워크스페이스로의 `terminal.spawn` 은 거부하고, 대상 판정을 최종 pane 으로 옮긴다](0086-reject-terminal-spawn-into-mirror-workspace.md) | Accepted | 2026-08-25 | attach, mirror, terminal-spawn, structural-forward, orphan-resource, ipc, adr-0060 |
 | 0087 | [레이아웃은 창마다 슬롯 파일 하나를 쓰고, 슬롯 점유는 살아있는 engine 에서 파생시킨다](0087-layout-slot-occupancy-model.md) | Accepted | 2026-08-25 | layout-persistence, multi-window, slot, occupancy, storage, boot, scrollback, gc |
+| 0088 | [Stop-훅 게이트는 세션 goal 을 근거로만 자율 계속-진행을 지시한다](0088-stop-gate-goal-aware-continuation.md) | Accepted | 2026-08-30 | claude-plugin, stop-hook, gate, memory, goal, i18n, autonomy |
