@@ -1494,6 +1494,7 @@ tooltip = "全画面で表示"
 [settings.macos_permissions]
 full_disk_access_label = "フルディスクアクセス"
 screen_recording_label = "画面収録"
+accessibility_label = "アクセシビリティ (キー入力の注入)"
 status_granted = "許可済み"
 status_missing = "未許可"
 detection_note = "macOS にはアプリがフルディスクアクセスを持つかを問い合わせる API がないため、この状態は推定であり誤ることがあります。起動時の案内を出すかどうかを決めるだけで、これによって使えなくなる機能はありません。"

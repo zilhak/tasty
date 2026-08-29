@@ -53,4 +53,4 @@
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (창별 슬롯 파일 `layouts/NN.json`·scrollback) | 로컬 사용자 | 없음 |
 | [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |
 | [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
-| [macos-permissions](macos-permissions/index.md) — macOS 권한 (TCC 파일·화면 기록 pre-warm, Full Disk Access 안내) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) 일반 > 권한 |
+| [macos-permissions](macos-permissions/index.md) — macOS 권한 (TCC 파일·화면 기록·손쉬운 사용 pre-warm, Full Disk Access 안내) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) 일반 > 권한 |

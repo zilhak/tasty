@@ -1492,6 +1492,7 @@ tooltip = "전체화면으로 보기"
 [settings.macos_permissions]
 full_disk_access_label = "전체 디스크 접근 권한"
 screen_recording_label = "화면 기록"
+accessibility_label = "손쉬운 사용 (키 주입)"
 status_granted = "허용됨"
 status_missing = "허용 안 됨"
 detection_note = "macOS 에는 앱이 전체 디스크 접근 권한을 가졌는지 묻는 API 가 없어 이 상태는 추정이며 틀릴 수 있습니다. 시작 시 안내를 띄울지만 결정할 뿐, 이 값으로 막히는 기능은 없습니다."

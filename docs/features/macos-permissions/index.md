@@ -1,9 +1,9 @@
 # macOS 권한 (TCC)
 
-- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm, Full Disk Access 추정·안내 구현. 손쉬운 사용은 미구현
+- **Status**: Partial — 파일 계열 + 화면 기록 + 손쉬운 사용 pre-warm, Full Disk Access 추정·안내 구현
 - **주체**: 로컬 사용자 (AI Agent 가 간접 수혜 — 작업 도중 프롬프트로 멈추지 않는다)
 - **ADR**: 없음
-- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
+- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
 - **화면**: 프롬프트는 OS 가 그린다. tasty 쪽 UI 는 부팅 안내 InfoModal + [설정 창](../settings/screens/settings.md) 일반 > 권한 탭
 
 ## 목적
@@ -66,6 +66,20 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 캡처 시점의 소비는 [원격 스크린샷 → 클립보드](../remote-screenshot-clipboard/index.md) 가 담당한다 — `screen_recording_authorized()` 를 캡처 **직전**에 불러 권한 미승인을 사용자 취소와 구분한다. 비-macOS 에는 같은 이름의 함수가 항상 `true` 를 반환해 그쪽 캡처 경로가 기존과 똑같이 동작한다.
 
+### 손쉬운 사용 (Accessibility)
+
+`surface.raw_key` 는 `CGEventPost` 로 시스템에 키 이벤트를 주입한다. 이 API 는 손쉬운 사용(`kTCCServiceAccessibility`) 권한을 요구하며, 권한이 없으면 **이벤트가 조용히 버려진다** — 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다. 이 기능이 release IPC 표면에 있으므로 권한도 release 에서 필요하다.
+
+화면 기록과 마찬가지로 **정식 요청 API 가 있다** — ApplicationServices 의 `AXIsProcessTrusted()`(프롬프트 없는 상태 조회)와 `AXIsProcessTrustedWithOptions()`(`kAXTrustedCheckOptionPrompt: kCFBooleanTrue` 를 넘기면 프롬프트). 새 크레이트 없이 `#[link(name = "ApplicationServices", kind = "framework")]` 로 선언한다. 옵션 딕셔너리는 `CFDictionaryCreate` 에 `kCFTypeDictionaryKeyCallBacks`/`ValueCallBacks` 를 함께 넘겨 만든다 — 콜백을 생략하면 키가 `CFEqual` 이 아니라 포인터 동일성으로 비교돼 옵션이 무시된다.
+
+**시퀀스에서 맨 마지막.** 파일 폴더 → 화면 기록 → 손쉬운 사용 순으로 같은 워커 스레드에서 이어 부른다. 앞의 둘은 그 자리에서 허용/거부가 끝나지만, 손쉬운 사용 프롬프트는 "시스템 설정을 열겠느냐"는 안내여서 **그 자리에서 권한이 켜지지 않고** 사용자를 시스템 설정으로 내보낸다. 그 이탈을 시퀀스 맨 끝에 둬야 앞의 프롬프트들이 묻히지 않는다.
+
+- 이미 승인돼 있으면(`AXIsProcessTrusted()`) 요청하지 않는다.
+- 요청은 **부팅당 1 회**다. 미설정·거부 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
+- 권한을 켜면 실행 중인 프로세스에 즉시 반영되지 않아 **앱 재시작이 필요한 경우가 많다.**
+
+**주입 시점의 소비** — `handle_raw_key` 는 주입 직전에 `AXIsProcessTrusted()` 를 부르고, 미승인이면 `-32001 permission_denied: …` 에러를 돌려준다(권한 계열 거부의 기존 코드·접두사와 같다). 이 조회는 **호출 시점마다** 한다 — 부팅 값을 캐시하면 사용자가 그 사이 시스템 설정에서 켠 것을 반영하지 못한다. 판정 자체(`raw_key_decision`)는 cfg 없는 순수 함수라 전 플랫폼에서 유닛테스트된다.
+
 ### Full Disk Access — 추정과 안내
 
 FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한 **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 대상 앱 디렉터리 단위로 갈라져 pre-warm 이 불가능한 AppData 계열을 없앨 수 있는 유일한 수단이다.
@@ -80,7 +94,7 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 ### 설정 탭 (일반 > 권한)
 
-macOS 에서만 노출된다. FDA·화면 기록의 추정 상태, 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
+macOS 에서만 노출된다. FDA(추정)·화면 기록·손쉬운 사용의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
 
 ### 프롬프트 본문 설명 문구
 
@@ -97,8 +111,6 @@ macOS 에서만 노출된다. FDA·화면 기록의 추정 상태, 추정임을 
 - **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮이며, 그 안내는 위 "Full Disk Access" 절이 담당한다.
 - **다른 앱 제어** (Automation / Apple Events) — 대상 앱 단위. 셸에서 `osascript` 를 쓸 때 발생하며 사전 열거 불가. **FDA 로도 덮이지 않는다** — FDA 는 파일 접근 서비스이고 Automation 은 완전히 별개 서비스라, FDA 를 줘도 대상 앱별 승인은 계속 요구된다. **어떤 방법으로도 사전 일괄 발화가 불가능**하며 tasty 가 할 수 있는 일이 없다. tasty 자신은 Apple Events 를 보내지 않는다.
 
-**이 기능이 다루지 않는 다른 TCC 서비스**: 손쉬운 사용(`surface.raw_key` 의 `CGEventPost` 키 주입). 전용 요청 API 가 있어 파일 pre-warm 과 발화 방식이 다르다.
-
 **해당 없음** (레포 전체 확인): 카메라·마이크·위치(`AVCaptureDevice`/`AVAudioSession`/`CLLocationManager` 미사용), OS 알림 센터(tasty 는 자체 토스트만 쓴다), Local Network(IPC 서버는 loopback bind — 대상 제외), 드래그앤드롭·네이티브 파일 피커(사용자가 그 자리에서 명시적으로 고른 파일이라 macOS 가 별도 동의로 취급, 프롬프트 없음).
 
 ## Acceptance Criteria
@@ -114,3 +126,7 @@ macOS 에서만 노출된다. FDA·화면 기록의 추정 상태, 추정임을 
 - [ ] Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
 - [ ] Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
 - [ ] Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
+- [ ] Given 손쉬운 사용 권한 미결정 When Tasty 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
+- [ ] Given 손쉬운 사용 권한이 이미 승인됨 When Tasty 실행 Then 프롬프트가 뜨지 않는다
+- [ ] Given 손쉬운 사용 권한 미승인 When `surface.raw_key` 호출 Then 성공이 아니라 `permission_denied` 에러가 돌아온다
+- [ ] Given 손쉬운 사용 권한 승인 후 재시작 When `surface.raw_key` 호출 Then 대상에 키가 실제로 입력된다

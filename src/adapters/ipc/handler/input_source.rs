@@ -2,6 +2,8 @@ use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
+use crate::macos_permissions::{RawKeyDecision, accessibility_trusted, raw_key_decision};
+
 /// Switch the macOS input source (e.g. "com.apple.keylayout.ABC" or
 /// "com.apple.inputmethod.Korean.2SetKorean").
 pub fn handle_switch_input_source(
@@ -24,6 +26,12 @@ pub fn handle_switch_input_source(
 
 /// Send a raw physical key code via CGEvent. This goes through the full
 /// macOS IME pipeline (interpretKeyEvents → setMarkedText/insertText).
+///
+/// **손쉬운 사용(Accessibility) 권한이 필요하다.** 승인 없이 `CGEventPost` 를 부르면
+/// 이벤트가 조용히 무시돼, 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을
+/// 본다. 그래서 주입 전에 권한을 확인하고 미승인이면 에러로 답한다. 확인은 **호출
+/// 시점마다** 한다 — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼 경우를 잘못
+/// 판정하고, 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있다.
 pub fn handle_raw_key(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let keycode = match params.get("keycode").and_then(|v| v.as_u64()) {
         Some(k) if k <= u16::MAX as u64 => k as u16,
@@ -33,6 +41,17 @@ pub fn handle_raw_key(id: serde_json::Value, params: &serde_json::Value) -> Json
         .get("direction")
         .and_then(|v| v.as_str())
         .unwrap_or("click");
+
+    if raw_key_decision(accessibility_trusted()) == RawKeyDecision::PermissionDenied {
+        tracing::warn!("surface.raw_key: 손쉬운 사용 권한 미승인 — 키 주입을 건너뛴다");
+        // 권한 계열 거부는 caller.rs 의 권한 게이트와 같은 코드/접두사를 쓴다.
+        return JsonRpcResponse::error(
+            id,
+            -32001,
+            "permission_denied: accessibility (key injection) is not granted — enable Tasty in \
+             System Settings > Privacy & Security > Accessibility, then restart Tasty",
+        );
+    }
 
     match direction {
         "press" => post_key_event(keycode, true),

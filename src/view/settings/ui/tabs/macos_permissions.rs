@@ -1,6 +1,6 @@
 //! macOS 전용 — 권한(TCC) 상태 표시와 시스템 설정 바로가기.
 //!
-//! macOS 권한은 앱이 켤 수 없다. 파일 접근과 화면 기록은 부팅 직후 프롬프트를 미리
+//! macOS 권한은 앱이 켤 수 없다. 파일 접근 · 화면 기록 · 손쉬운 사용은 부팅 직후 프롬프트를 미리
 //! 띄워 두지만(`src/platform/macos_permissions.rs`), Full Disk Access 는 **요청 API
 //! 자체가 없어** 사용자가 시스템 설정에서 직접 추가해야 한다. 이 탭은 그 상태를
 //! 보여주고 해당 패널로 바로 보내는 자리다.
@@ -30,6 +30,12 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.label(t("settings.macos_permissions.screen_recording_label"));
             ui.label(status_text(
                 crate::macos_permissions::screen_recording_authorized(),
+            ));
+            ui.end_row();
+
+            ui.label(t("settings.macos_permissions.accessibility_label"));
+            ui.label(status_text(
+                crate::macos_permissions::accessibility_trusted(),
             ));
             ui.end_row();
         });

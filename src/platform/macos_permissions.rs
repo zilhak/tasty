@@ -1,4 +1,4 @@
-//! macOS 권한 — 파일 TCC · 화면 기록 pre-warm + Full Disk Access 추정/안내.
+//! macOS 권한 — 파일 TCC · 화면 기록 · 손쉬운 사용 pre-warm + Full Disk Access 추정/안내.
 //!
 //! macOS 는 보호 리소스에 **실제로 접근하는 그 순간**에만 권한 프롬프트를 띄운다.
 //! 파일 계열 TCC 서비스에는 "미리 물어보는" API 가 없으므로, 프롬프트 시점을 앞당기는
@@ -159,6 +159,126 @@ fn prewarm_screen_recording() {
     tracing::debug!(granted, "prewarm: 화면 기록 권한 요청 결과");
 }
 
+// ── 손쉬운 사용 (Accessibility) ────────────────────────────────────────────────
+//
+// `surface.raw_key` 가 `CGEventPost` 로 시스템에 키를 주입하는데, 그 API 가
+// `kTCCServiceAccessibility` 를 요구한다. 승인이 없으면 **프롬프트 없이 이벤트가
+// 조용히 무시**돼 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다.
+//
+// 화면 기록과 같은 성격으로 사전 요청 API 가 있다. `AXIsProcessTrusted()` 는 프롬프트
+// 없이 현재 상태만 보고, `AXIsProcessTrustedWithOptions()` 에
+// `kAXTrustedCheckOptionPrompt: true` 를 넘기면 안내를 띄운다.
+//
+// **프롬프트는 그 자리에서 권한을 켜주지 않는다** — "시스템 설정을 열겠느냐" 안내이고,
+// 실제 토글은 사용자가 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서 한다.
+// 켠 뒤에도 실행 중 프로세스에 즉시 반영되지 않아 재시작이 필요한 경우가 많다.
+// 그래서 부팅당 1 회만 요청한다 — 미설정 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
+
+#[cfg(all(target_os = "macos", feature = "gui"))]
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
+    /// 옵션 딕셔너리의 키(`CFStringRef` 전역). 문자열 값을 직접 만들지 않고 프레임워크가
+    /// 내보내는 심볼을 그대로 쓴다 — 값이 바뀌어도 따라간다.
+    static kAXTrustedCheckOptionPrompt: *const std::ffi::c_void;
+}
+
+#[cfg(all(target_os = "macos", feature = "gui"))]
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    static kCFBooleanTrue: *const std::ffi::c_void;
+    /// CFType 표준 콜백. 이걸 넘겨야 딕셔너리가 키를 **CFEqual 로** 비교하고
+    /// retain/release 를 관리한다. null 콜백은 포인터 동일성 비교라 여기선 부적절하다.
+    static kCFTypeDictionaryKeyCallBacks: std::ffi::c_void;
+    static kCFTypeDictionaryValueCallBacks: std::ffi::c_void;
+    fn CFDictionaryCreate(
+        alloc: *const std::ffi::c_void,
+        keys: *const *const std::ffi::c_void,
+        values: *const *const std::ffi::c_void,
+        count: isize,
+        key_callbacks: *const std::ffi::c_void,
+        value_callbacks: *const std::ffi::c_void,
+    ) -> *const std::ffi::c_void;
+    fn CFRelease(cf: *const std::ffi::c_void);
+}
+
+/// 손쉬운 사용 권한이 지금 승인돼 있는가. 프롬프트를 띄우지 않는 순수 조회다.
+///
+/// **호출 시점마다 다시 묻는다** — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼
+/// 경우를 잘못 판정한다. 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있어서
+/// 캐시가 특히 위험하다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn accessibility_trusted() -> bool {
+    // SAFETY: 인자도 반환 포인터도 없는 ApplicationServices C 함수 호출 — 포인터
+    // 수명/해제 책임이 생기지 않는다. 현재 프로세스의 TCC 승인 상태를 묻기만 하고
+    // 프롬프트를 띄우지 않으므로 블록하지 않으며, AppKit 을 건드리지 않아 main
+    // thread 한정이 아니다(IPC 핸들러 스레드에서도 호출된다).
+    unsafe { AXIsProcessTrusted() }
+}
+
+/// 비-macOS / headless — 손쉬운 사용 권한 개념이 없으므로 "승인됨" 으로 답한다.
+/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+pub(crate) fn accessibility_trusted() -> bool {
+    true
+}
+
+/// 권한 판정 결과로 `surface.raw_key` 가 무엇을 할지. 승인 전에는 주입하지 않는다 —
+/// 승인 없이 `CGEventPost` 를 부르면 조용히 무시돼 "성공했다는데 아무 일도 안 일어남"
+/// 이 되고, 호출자가 원인을 알 방법이 없다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RawKeyDecision {
+    /// 승인됨 — 그대로 주입한다.
+    Inject,
+    /// 미승인 — 주입하지 않고 권한 부재를 에러로 돌려준다.
+    PermissionDenied,
+}
+
+/// 위 판정의 **순수** 규칙. FFI 호출과 분리해 두면 macOS 밖에서도 검증된다.
+pub(crate) fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
+    if accessibility_trusted {
+        RawKeyDecision::Inject
+    } else {
+        RawKeyDecision::PermissionDenied
+    }
+}
+
+/// 손쉬운 사용 권한을 **부팅당 1 회** 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+fn prewarm_accessibility() {
+    if accessibility_trusted() {
+        tracing::debug!("prewarm: 손쉬운 사용 권한 이미 승인됨");
+        return;
+    }
+    // SAFETY: `kAXTrustedCheckOptionPrompt: kCFBooleanTrue` 딕셔너리를 만들어 넘기는
+    // 표준 호출 시퀀스다.
+    // - 키/값은 프레임워크가 소유하는 전역 CF 객체라 이쪽에 해제 책임이 없다.
+    // - CFType 표준 콜백을 넘겨 딕셔너리가 키를 CFEqual 로 비교하고 retain 을 관리한다.
+    // - `CFDictionaryCreate` 는 +1 retain 으로 돌아오므로 사용 직후 `CFRelease` 로 짝을
+    //   맞춘다. 그 사이에 조기 반환이나 panic 지점이 없다.
+    // - 프롬프트가 뜨는 동안 블록할 수 있어 워커 스레드에서만 호출한다.
+    // CF 시퀀스가 한 트랜잭션이라 분할하면 retain/release 짝이 흩어진다.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    let granted = unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let options = CFDictionaryCreate(
+            std::ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            &kCFTypeDictionaryKeyCallBacks as *const _ as *const std::ffi::c_void,
+            &kCFTypeDictionaryValueCallBacks as *const _ as *const std::ffi::c_void,
+        );
+        let trusted = AXIsProcessTrustedWithOptions(options);
+        CFRelease(options);
+        trusted
+    };
+    // 프롬프트는 "설정을 열겠느냐" 안내라, 여기서 false 여도 사용자가 이제부터 켤 수 있다.
+    tracing::debug!(granted, "prewarm: 손쉬운 사용 권한 요청 결과");
+}
+
 // ── Full Disk Access ──────────────────────────────────────────────────────────
 //
 // FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한
@@ -268,7 +388,9 @@ fn home_dir() -> Option<PathBuf> {
 /// 시간만큼 부풀려진다.
 ///
 /// **하나의 스레드에서 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다 —
-/// 순차면 앞의 것을 닫아야 다음이 뜬다. 파일 폴더가 먼저고 화면 기록이 마지막이다.
+/// 순차면 앞의 것을 닫아야 다음이 뜬다. 순서는 파일 폴더 → 화면 기록 → 손쉬운 사용:
+/// 앞의 둘은 그 자리에서 허용/거부가 끝나지만 손쉬운 사용 프롬프트는 시스템 설정으로
+/// 사용자를 내보내므로, 그 이탈을 시퀀스 맨 끝에 둔다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub(crate) fn spawn_prewarm() {
     std::thread::spawn(|| {
@@ -285,6 +407,7 @@ pub(crate) fn spawn_prewarm() {
             }
         }
         prewarm_screen_recording();
+        prewarm_accessibility();
     });
 }
 
@@ -338,6 +461,13 @@ mod tests {
             out.reverse();
             out
         }
+    }
+
+    #[test]
+    fn raw_key_injects_only_when_accessibility_is_trusted() {
+        assert_eq!(raw_key_decision(true), RawKeyDecision::Inject);
+        // 미승인 상태에서 주입하면 CGEventPost 가 조용히 무시된다 — 성공으로 답하면 안 된다.
+        assert_eq!(raw_key_decision(false), RawKeyDecision::PermissionDenied);
     }
 
     #[test]

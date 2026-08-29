@@ -1501,6 +1501,7 @@ tooltip = "Show fullscreen"
 [settings.macos_permissions]
 full_disk_access_label = "Full Disk Access"
 screen_recording_label = "Screen recording"
+accessibility_label = "Accessibility (key injection)"
 status_granted = "Granted"
 status_missing = "Not granted"
 detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it."
