@@ -118,3 +118,16 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 ## 크레이트 분리 가이드
 
 본 바이너리의 큰 leaf 모듈을 떼어낼 때 후보 조건: **out-degree 작음**(다른 src/ 모듈 거의 미참조) · **사이클 없음** · **충분히 큼**(1000줄+). 절차: `crates/tasty-<name>/` 생성 → `git mv` → 내부 경로 갱신 → 본 `Cargo.toml` 의존 추가 → `pub use tasty_<name> as <name>` 재수출(backward path 유지) → `cargo check`/`build` 검증. 기존 `crate::model::Foo` 경로가 그대로 동작하는 게 핵심이라 reverse import 갈아끼우기가 불필요하다.
+
+### 의존 방향 규칙 — 본체는 `tasty-cli` 를 참조하지 않는다
+
+`tasty-cli` 는 **바이너리의 진입 계층**(인자 파싱 + 그 파싱 결과로 실행되는 커맨드 구현)이다. GUI 런타임·IPC 핸들러·앱 상태(`src/`)가 그 크레이트 내부를 직접 들여다보면 의존 방향이 뒤집혀, CLI 쪽 타입 변경이 GUI 를 깨고 GUI 재사용 목적의 로직이 CLI 안에 눌러앉는다. 양쪽이 함께 쓰는 코어(ssh · remote browse · stream 등)는 CLI 가 아니라 **별도 크레이트**에 두고 본체는 그쪽을 참조한다.
+
+`src/adapters/cli.rs` 의 `pub use tasty_cli::*;` 는 와일드카드 재수출이라 위반이 컴파일 에러로 잡히지 않는다. 대신 **`tests/layering.rs` 가 `cargo test --workspace`(CI)로 강제**한다. 목록 두 개의 성격이 다르다:
+
+| 상수 | 성격 | 내용 |
+|------|------|------|
+| `ALLOWED_PATHS` | 영구 허용 | `src/main.rs` · `src/boot.rs` · `src/boot/` · `src/adapters/cli.rs` — 바이너리가 CLI 파서를 소유하는 정당한 의존 |
+| `BASELINE_FILES` | 한시 허용 | 이행 중인 기존 위반의 스냅샷. **줄어들기만 한다** — 새 항목 추가 금지이고, 참조를 걷어냈으면 목록에서도 지워야 통과한다(역방향 검사) |
+
+주석 안의 언급도 위반으로 잡는다 — 주석이 옛 경로를 가리키면 그것도 실제 오정보이므로 코드와 함께 갱신한다.
