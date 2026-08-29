@@ -48,6 +48,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [popup-implementation](popup-implementation.md) | Popup(`PopupDef` 시스템) |
 | [dag-layout](dag-layout.md) | Task DAG 좌표 계산(`tasty-dag-layout`) — 레이어 배치·엣지 라우팅·어댑터 경계 |
 | [context-menu](context-menu.md) | OS 네이티브 컨텍스트 메뉴 |
+| [timer-hub](timer-hub.md) | 중앙 타이머 허브 — 메인 루프 시간축 폴링 등록/실행, Strict·Lax, 대기 전략 |
 | [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치 |
 | [memory-leak-soak](memory-leak-soak.md) | 메모리 누수 soak 테스트 — 4계층 지표·판정·플랫폼별 attribution |
 

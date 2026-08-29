@@ -2,7 +2,7 @@
 
 모듈 경계를 넘는 주요 흐름 5종을 파일+함수 기준으로 본다(줄 번호 대신). 호스트 *내부 동작* 이 Intent 큐로 통일된 디스패치 모델은 [action-dispatch](../design/flows/action-dispatch.md) — 본 문서는 입력→PTY→렌더 같은 *런타임 파이프라인* 이다.
 
-메인 이벤트 루프는 `src/boot.rs` 의 `run()` 이 winit 이벤트와 `AppEvent`(`TerminalOutput` / `IpcReady` / `StreamReady`)를 drain 한다.
+메인 이벤트 루프는 `src/boot.rs` 의 `run()` 이 winit 이벤트와 `AppEvent`(`TerminalOutput` / `IpcReady` / `StreamReady`)를 drain 한다. 루프에는 축이 둘이다 — **프레임축**(이벤트가 있었으니 큐를 비운다: 위 drain + `dispatch_pending_*`)과 **시간축**(N ms 마다/뒤에 한 번). 시간축은 전부 중앙 타이머 허브에 키로 등록되고 `about_to_wait`(gui) / `recv_timeout` 루프(headless)가 due 한 키만 실행한다 — 등록·실행·대기 전략은 [timer-hub](../dev-guide/timer-hub.md).
 
 ---
 
