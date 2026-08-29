@@ -19,22 +19,67 @@
 //! 사용자가 캡처를 취소(Esc)하면 파일이 생성되지 않는다 — [`capture_interactive`]는
 //! 프로세스 exit code 가 아니라 **파일 존재 여부**로 성공/취소를 판정한다(도구별로
 //! 취소 시 exit code 관행이 다르므로 이게 유일하게 일관된 신호).
+//!
+//! 다만 파일 존재 여부 **하나로는** 세 경우가 구분되지 않는다 — macOS 에서 화면 기록
+//! 권한이 없으면 `screencapture` 가 아무 파일도 남기지 않아 사용자 취소와 똑같이 보인다.
+//! 그래서 [`CaptureError`] 로 세 상태를 나눈다: 캡처 직전 preflight 로 판정하는
+//! **권한 미승인**, 권한이 있는데 파일이 없는 **사용자 취소**, 도구 실행 자체의 **실패**.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// 인터랙티브 캡처가 파일을 내놓지 못한 이유. "파일이 안 생겼다" 로 뭉뚱그리면 권한
+/// 미승인이 사용자 취소와 구분되지 않아, 사용자에게는 둘 다 "아무 일도 안 일어남" 으로
+/// 보인다.
+#[derive(Debug)]
+pub enum CaptureError {
+    /// 화면 기록 권한 미승인 (macOS). 시스템 설정에서 사용자가 켜야 한다.
+    PermissionDenied,
+    /// 권한은 있는데 결과 파일이 없다 — 사용자가 선택을 취소했다.
+    Cancelled,
+    /// 캡처 도구를 실행하는 것 자체가 실패했다(미설치·spawn 실패·비정상 종료).
+    Tool(anyhow::Error),
+}
+
+impl std::fmt::Display for CaptureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PermissionDenied => {
+                write!(f, "screen recording permission is not granted")
+            }
+            Self::Cancelled => write!(f, "screen capture produced no file (cancelled)"),
+            Self::Tool(err) => write!(f, "screen capture tool failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for CaptureError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Tool(err) => Some(err.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 /// 인터랙티브 화면 캡처를 실행해 `~/.tasty/screenshots/screenshot-<ms>.png` 에 저장하고
-/// 그 경로를 반환한다. 사용자가 취소했거나(파일 미생성) 지원 도구를 못 찾으면 Err.
+/// 그 경로를 반환한다.
 ///
 /// 블로킹(자식 프로세스 대기) — 반드시 백그라운드 스레드에서 호출해야 한다(메인
 /// 루프를 막지 않기 위해). 호출부: `App::poll_screenshot_captures`.
-pub fn capture_interactive() -> anyhow::Result<PathBuf> {
-    let path = next_screenshot_path()?;
+pub fn capture_interactive() -> Result<PathBuf, CaptureError> {
+    // 권한 조회는 캡처 **직전**에 한다 — 부팅 시점 값을 캐시해두면 그 사이 사용자가
+    // 시스템 설정에서 권한을 바꾼 경우를 잘못 판정한다. 비-macOS 는 항상 true.
+    if !crate::macos_permissions::screen_recording_authorized() {
+        return Err(CaptureError::PermissionDenied);
+    }
 
-    capture_to_path(&path)?;
+    let path = next_screenshot_path().map_err(CaptureError::Tool)?;
+
+    capture_to_path(&path).map_err(CaptureError::Tool)?;
 
     if !path.exists() {
-        anyhow::bail!("screen capture produced no file (cancelled?)");
+        return Err(CaptureError::Cancelled);
     }
     Ok(path)
 }

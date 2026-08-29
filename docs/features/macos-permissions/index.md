@@ -1,9 +1,9 @@
 # macOS 권한 (TCC)
 
-- **Status**: Partial — 파일 계열 pre-warm 만 구현. 화면 기록·손쉬운 사용·Full Disk Access 안내는 미구현
+- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm 구현. 손쉬운 사용·Full Disk Access 안내는 미구현
 - **주체**: 로컬 사용자 (AI Agent 가 간접 수혜 — 작업 도중 프롬프트로 멈추지 않는다)
 - **ADR**: 없음
-- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커), 호출부 `src/app/boot_machine.rs::finish_boot`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
+- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics FFI), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
 - **화면**: 없음 — 프롬프트는 OS 가 그린다
 
 ## 목적
@@ -54,6 +54,18 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 따라서 상태 플래그도, 끄는 토글도 두지 않는다. 이 기능은 프롬프트를 없애는 게 아니라 시점을 앞당기는 것이라 끄면 원래의 산발적 프롬프트로 돌아갈 뿐이다.
 
+### 화면 기록 (Screen Recording)
+
+파일 계열과 달리 **미리 요청하는 공개 API 가 있다** — CoreGraphics 의 `CGPreflightScreenCaptureAccess()`(상태 조회, 프롬프트 없음)와 `CGRequestScreenCaptureAccess()`(프롬프트 발화). 리소스를 몰래 건드려 유도할 필요 없이 정식으로 물어본다. 두 함수는 새 크레이트 없이 `#[link(name = "CoreGraphics", kind = "framework")]` 로 직접 선언한다 — `surface.raw_key` 의 CoreGraphics 선언과 같은 방식이다.
+
+파일 폴더를 모두 처리한 **뒤 같은 워커 스레드에서** 이어서 부른다(프롬프트가 겹치지 않게). 절차는 preflight → 미승인일 때만 request **1 회**다:
+
+- 이미 승인돼 있으면 아무것도 하지 않는다(프롬프트 없음).
+- 이미 거부된 상태면 `CGRequestScreenCaptureAccess()` 가 프롬프트 없이 즉시 false 를 반환한다. 그래서 **재시도 루프를 두지 않는다** — 되돌리는 것은 시스템 설정에서 사용자가 할 일이다.
+- 권한을 켜면 앱 재시작이 필요한 경우가 있고, 그 안내는 macOS 가 자체적으로 띄운다.
+
+캡처 시점의 소비는 [원격 스크린샷 → 클립보드](../remote-screenshot-clipboard/index.md) 가 담당한다 — `screen_recording_authorized()` 를 캡처 **직전**에 불러 권한 미승인을 사용자 취소와 구분한다. 비-macOS 에는 같은 이름의 함수가 항상 `true` 를 반환해 그쪽 캡처 경로가 기존과 똑같이 동작한다.
+
 ### 프롬프트 본문 설명 문구
 
 번들 `Info.plist` 의 `NS*UsageDescription` 키가 프롬프트 본문에 그대로 표시된다. 키가 없으면 이유 없는 프롬프트가 뜨고, pre-warm 처럼 여러 개를 연달아 띄우면 그 문제가 커진다. 키 목록과 문구 정책은 [build.md](../../dev-guide/build.md) 의 배포 패키징 절 참조.
@@ -69,7 +81,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 - **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮인다 — FDA 안내는 이 기능 밖.
 - **다른 앱 제어** (Automation / Apple Events) — 대상 앱 단위. 셸에서 `osascript` 를 쓸 때 발생하며 사전 열거 불가. **FDA 로도 덮이지 않는다** — FDA 는 파일 접근 서비스이고 Automation 은 완전히 별개 서비스라, FDA 를 줘도 대상 앱별 승인은 계속 요구된다. **어떤 방법으로도 사전 일괄 발화가 불가능**하며 tasty 가 할 수 있는 일이 없다. tasty 자신은 Apple Events 를 보내지 않는다.
 
-**이 기능이 다루지 않는 다른 TCC 서비스**: 화면 기록(`screencapture -i` 사용), 손쉬운 사용(`surface.raw_key` 의 `CGEventPost` 키 주입). 둘 다 전용 요청 API 가 있어 파일 pre-warm 과 발화 방식이 다르다.
+**이 기능이 다루지 않는 다른 TCC 서비스**: 손쉬운 사용(`surface.raw_key` 의 `CGEventPost` 키 주입). 전용 요청 API 가 있어 파일 pre-warm 과 발화 방식이 다르다.
 
 **해당 없음** (레포 전체 확인): 카메라·마이크·위치(`AVCaptureDevice`/`AVAudioSession`/`CLLocationManager` 미사용), OS 알림 센터(tasty 는 자체 토스트만 쓴다), Local Network(IPC 서버는 loopback bind — 대상 제외), 드래그앤드롭·네이티브 파일 피커(사용자가 그 자리에서 명시적으로 고른 파일이라 macOS 가 별도 동의로 취급, 프롬프트 없음).
 
@@ -80,3 +92,5 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 - [ ] Given 마운트가 하나도 없음 When 목록을 결정 Then 볼륨 항목이 하나도 없다
 - [ ] Given macOS 에서 TCC 승인을 초기화 When Tasty 실행 Then 부팅 직후 프롬프트가 순차로 뜨고, 떠 있는 동안에도 창이 그려지고 클릭·스크롤이 반응한다
 - [ ] Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
+- [ ] Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
+- [ ] Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)

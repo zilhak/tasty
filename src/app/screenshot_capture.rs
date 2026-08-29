@@ -20,16 +20,23 @@
 //! 캡처 자체(OS 프로세스 spawn+대기)는 항상 **로컬**(사용자가 지금 보고 있는 화면)
 //! 에서 일어난다 — mirror 여부는 "찍은 파일을 어디 클립보드에 연결할지"만 가른다.
 
+use winit::window::WindowId;
+
 use crate::app::App;
+use crate::platform::screen_capture::CaptureError;
+use crate::view::ui::View as _;
 
 /// 캡처 워커 스레드 → 메인 루프 결과.
 pub(crate) struct ScreenshotCaptureOutcome {
     /// 트리거 시점에 판별된 대상. `Some(local mirror workspace id)` 면 원격 전송,
     /// `None` 이면 로컬 클립보드.
     pub(crate) mirror_ws_id: Option<u32>,
+    /// 요청이 올라온 윈도우. 실패 안내 토스트를 그 윈도우에 띄우기 위한 것으로,
+    /// 부팅 중/parked 상태의 큐에서 온 요청은 소속 윈도우가 없어 `None`.
+    pub(crate) source_window: Option<WindowId>,
     /// 캡처 성공 시 `(로컬 파일 경로, mirror 케이스에 한해 읽어둔 파일 바이트)`.
     /// 로컬 케이스는 바이트가 필요 없어 `None`(디스크 재읽기/메모리 낭비 방지).
-    pub(crate) result: anyhow::Result<(std::path::PathBuf, Option<Vec<u8>>)>,
+    pub(crate) result: Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError>,
 }
 
 impl App {
@@ -44,23 +51,35 @@ impl App {
     /// drain 해 각 요청마다 캡처 워커 스레드를 spawn 한다(메인 루프 무블록 — OS
     /// 인터랙티브 캡처는 사용자가 선택을 마칠 때까지 블록할 수 있다).
     fn trigger_pending_screenshot_captures(&mut self) {
-        let mut reqs: Vec<Option<u32>> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            reqs.append(&mut main.core_state.pending_screenshot_captures);
+        // 요청과 함께 **어느 윈도우에서 왔는지**를 들고 다닌다 — 실패 안내를 트리거한
+        // 윈도우에 돌려주기 위함(다중 윈도우 세션에서 엉뚱한 창에 뜨지 않게).
+        let mut reqs: Vec<(Option<WindowId>, Option<u32>)> = Vec::new();
+        for (wid, view) in self.view.views.iter_mut() {
+            let Some(main) = view.as_main_mut() else {
+                continue;
+            };
+            for mirror_ws_id in main.core_state.pending_screenshot_captures.drain(..) {
+                reqs.push((Some(*wid), mirror_ws_id));
+            }
         }
         if let Some(e) = self.core_state.as_mut() {
-            reqs.append(&mut e.pending_screenshot_captures);
+            for mirror_ws_id in e.pending_screenshot_captures.drain(..) {
+                reqs.push((None, mirror_ws_id));
+            }
         }
         for (_, engine) in self.parked_states.iter_mut() {
-            reqs.append(&mut engine.pending_screenshot_captures);
+            for mirror_ws_id in engine.pending_screenshot_captures.drain(..) {
+                reqs.push((None, mirror_ws_id));
+            }
         }
-        for mirror_ws_id in reqs {
+        for (source_window, mirror_ws_id) in reqs {
             let tx = self.screenshot_capture_tx.clone();
             let proxy = self.view.proxy.clone();
             std::thread::spawn(move || {
                 let result = capture_and_maybe_read(mirror_ws_id.is_some());
                 let _ = tx.send(ScreenshotCaptureOutcome {
                     mirror_ws_id,
+                    source_window,
                     result,
                 }); // 수신자(메인 루프) drop 시에만 실패 — 무시.
                 let _ = proxy.send_event(crate::AppEvent::ScreenshotCaptureReady); // event loop 종료 시에만 실패 — 무시
@@ -74,12 +93,13 @@ impl App {
         while let Ok(outcome) = self.screenshot_capture_rx.try_recv() {
             let ScreenshotCaptureOutcome {
                 mirror_ws_id,
+                source_window,
                 result,
             } = outcome;
             let (path, bytes) = match result {
                 Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!("screenshot capture failed: {e}");
+                Err(err) => {
+                    self.report_capture_failure(err, source_window);
                     continue;
                 }
             };
@@ -88,6 +108,48 @@ impl App {
                 Some(ws_id) => self.upload_capture_to_mirror(ws_id, &path, bytes),
             }
         }
+    }
+
+    /// 캡처 실패를 사유별로 처리한다 — 취소는 정상 흐름이라 debug 로만, 나머지는
+    /// warn. 권한 미승인은 사용자가 손쓸 수 있는 상태라 안내 토스트까지 띄운다.
+    fn report_capture_failure(&mut self, err: CaptureError, source_window: Option<WindowId>) {
+        // 사용자가 의도적으로 취소한 정상 흐름 — 경고할 일이 아니다.
+        if matches!(err, CaptureError::Cancelled) {
+            tracing::debug!("screenshot capture cancelled by the user");
+            return;
+        }
+        if matches!(err, CaptureError::PermissionDenied) {
+            // 조용히 넘기면 사용자에겐 취소와 똑같이 "아무 일도 안 일어남" 으로 보인다.
+            self.warn_screen_recording_permission(source_window);
+        }
+        tracing::warn!("screenshot capture failed: {err}");
+    }
+
+    /// 화면 기록 권한 미승인을 사용자에게 알린다. 요청이 올라온 윈도우에 띄우고,
+    /// 그 윈도우를 못 찾으면(부팅 중/parked 큐에서 온 요청, 창이 이미 닫힘) 아무
+    /// 메인 윈도우에나 띄운다 — 안내를 통째로 잃는 것보다 낫다.
+    fn warn_screen_recording_permission(&mut self, source_window: Option<WindowId>) {
+        // 대상 결정과 가변 대여를 분리한다 — 두 후보를 한 체인에서 잇으면 `self` 를
+        // 두 번 가변 대여하게 된다.
+        let target = source_window.filter(|wid| {
+            self.view
+                .views
+                .get(wid)
+                .is_some_and(|view| view.as_main().is_some())
+        });
+        let main = match target {
+            Some(wid) => self.view.views.get_mut(&wid).and_then(|v| v.as_main_mut()),
+            None => self.main_windows_iter_mut().next(),
+        };
+        let Some(main) = main else {
+            return; // 띄울 창이 없다 — 위 warn! 로그가 유일한 흔적.
+        };
+        main.state.toasts.push(
+            crate::i18n::t("toast.screen_recording_permission_required"),
+            crate::adapters::ui::ToastKind::Warning,
+            crate::adapters::ui::ToastScope::Window,
+        );
+        main.mark_dirty();
     }
 
     /// 로컬 클립보드에 캡처 파일 경로를 기록한다.
@@ -123,10 +185,11 @@ impl App {
 /// 파일을 읽어둔다.
 fn capture_and_maybe_read(
     needs_bytes: bool,
-) -> anyhow::Result<(std::path::PathBuf, Option<Vec<u8>>)> {
+) -> Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError> {
     let path = crate::platform::screen_capture::capture_interactive()?;
     let bytes = if needs_bytes {
-        Some(std::fs::read(&path)?)
+        // 캡처는 끝났는데 읽기가 실패한 것이라 취소도 권한 문제도 아니다.
+        Some(std::fs::read(&path).map_err(|e| CaptureError::Tool(e.into()))?)
     } else {
         None
     };

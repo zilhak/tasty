@@ -771,6 +771,10 @@ copied_path = "Path copied"
 copied_files = "Files copied"
 cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
+# Shown when an interactive screen capture is requested on macOS but screen
+# recording permission has not been granted. Distinct from the user cancelling
+# the capture, which produces no toast.
+screen_recording_permission_required = "Screen recording permission is required. Turn Tasty on in System Settings > Privacy & Security > Screen & System Audio Recording."
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
 vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"

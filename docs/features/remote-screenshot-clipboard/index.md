@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (단축키 트리거)
 - **ADR**: 없음 (기존 [ADR-0032](../../adr/0032-remote-attach-two-layer-split.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
-- **코드**: `src/platform/screen_capture.rs`(OS 캡처), `src/app/screenshot_capture.rs`(폴링/스레드), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client.rs`(원격 전송), `src/core/capture_upload.rs` + `src/core/attach_runtime.rs`(`finalize_capture_upload`, 서버측 수신), `src/adapters/production/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
+- **코드**: `src/platform/screen_capture.rs`(OS 캡처 + `CaptureError`), `src/platform/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client.rs`(원격 전송), `src/core/capture_upload.rs` + `src/core/attach_runtime.rs`(`finalize_capture_upload`, 서버측 수신), `src/adapters/production/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
 - **화면**: 없음 — 트리거는 단축키, 피드백은 성공/실패 토스트(mirror 케이스만; [remote-attach 토스트](../remote-attach/index.md) 채널 재사용)
 
 ## 목적
@@ -25,6 +25,22 @@
 - **Windows**: 인터랙티브 영역선택에 쓸 만한 OS 표준 동기 CLI 가 없어(Snipping Tool `ms-screenclip:` 은 파일이 아니라 클립보드 이미지로만 출력) PowerShell + `System.Drawing`/`System.Windows.Forms.SystemInformation.VirtualScreen` 로 **전체 가상화면**을 캡처한다(알려진 한계, 인터랙티브 영역선택 아님).
 - 취소/성공 판정은 **종료 코드가 아니라 출력 파일 존재 여부**로 한다 — 도구별로 취소 시 exit code 관례가 다르기 때문.
 - 저장 위치: `~/.tasty/screenshots/screenshot-<epoch_ms>.png`.
+
+### 화면 기록 권한 (macOS)
+
+macOS 에서 `screencapture` 는 **화면 기록(Screen Recording) 권한**을 요구한다. 권한이 없으면 파일을 전혀 남기지 않으므로, "파일 존재 여부" 판정만으로는 **사용자 취소와 구분되지 않는다** — 사용자에겐 둘 다 "아무 일도 안 일어남"으로 보인다.
+
+그래서 캡처 실패를 세 상태로 나눈다(`CaptureError`):
+
+| 상태 | 판정 | 처리 |
+|---|---|---|
+| 권한 미승인 | 캡처 **직전** `CGPreflightScreenCaptureAccess()` 가 false | `toast.screen_recording_permission_required` 안내 토스트 + `warn!` |
+| 사용자 취소 | 권한은 있는데 결과 파일이 없음 | `debug!` 만 (정상 흐름, 토스트 없음) |
+| 도구 실패 | 캡처 도구 실행/파일 읽기 자체가 실패 | `warn!` |
+
+preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서 권한을 바꾼 경우를 잘못 판정한다. 안내 토스트는 요청이 올라온 윈도우에 띄운다(다중 윈도우 세션에서 엉뚱한 창에 뜨지 않게).
+
+권한 프롬프트 자체는 캡처 시점이 아니라 **부팅 직후**에 미리 발화된다 — [macOS 권한](../macos-permissions/index.md) 참조. 비-macOS 는 권한 개념이 없어 preflight 가 항상 "승인됨"이며 동작이 기존과 같다.
 
 ### 로컬 케이스
 
@@ -66,6 +82,7 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 - [x] Given 로컬(비-mirror) surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then OS 인터랙티브 캡처 후 캡처 파일 경로가 로컬 클립보드에 쓰인다.
 - [ ] Given mirror 워크스페이스의 surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then 캡처 파일이 attach 채널로 원격에 전송되고, 원격 인스턴스의 클립보드에 그 원격 경로가 쓰인다(로컬 클립보드는 바뀌지 않는다).
 - [x] Given 캡처가 사용자에 의해 취소됨(Esc 등) Then 로컬/원격 어느 클립보드도 바뀌지 않는다.
+- [ ] Given macOS 에서 화면 기록 권한이 미승인 When 캡처 트리거 Then 취소와 구분되는 권한 안내 토스트가 뜬다(클립보드는 바뀌지 않는다).
 - [x] Given `clipboard.set_text` IPC 호출(text 파라미터 포함) Then 로컬 클립보드가 그 텍스트로 바뀐다.
 - [x] Given plugin 이 `ClipboardWrite` 권한 없이 `clipboard.set_text` 호출 Then permission_denied.
 

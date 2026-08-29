@@ -1,4 +1,4 @@
-//! macOS 파일 TCC 권한 프롬프트 pre-warm.
+//! macOS 권한 프롬프트 pre-warm — 파일 TCC + 화면 기록.
 //!
 //! macOS 는 보호 리소스에 **실제로 접근하는 그 순간**에만 권한 프롬프트를 띄운다.
 //! 파일 계열 TCC 서비스에는 "미리 물어보는" API 가 없으므로, 프롬프트 시점을 앞당기는
@@ -105,20 +105,75 @@ pub(crate) fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<Path
     targets
 }
 
+// CoreGraphics 의 화면 기록 권한 API. 파일 계열 TCC 와 달리 "미리 물어보는" 공개
+// API 가 있어서, 리소스를 몰래 건드려 유도할 필요 없이 정식으로 요청할 수 있다.
+// 새 크레이트를 들이지 않고 두 함수만 직접 선언한다 — `surface.raw_key` 의
+// CoreGraphics 선언(`src/adapters/ipc/handler/input_source.rs`)과 같은 방식.
+//
+// - `CGPreflightScreenCaptureAccess`: 현재 승인 상태만 조회한다. 프롬프트를 띄우지 않는다.
+// - `CGRequestScreenCaptureAccess`: 미결정 상태면 시스템 프롬프트를 띄운다. 이미 거부된
+//   상태면 프롬프트 없이 즉시 false 를 반환한다(사용자가 시스템 설정에서 직접 켜야 한다).
+//
+// 둘 다 macOS 10.15+ 이고 번들의 `LSMinimumSystemVersion` 은 11.0 이라 항상 존재한다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+/// 화면 기록 권한이 지금 승인돼 있는가. 프롬프트를 띄우지 않는 순수 조회다.
+///
+/// **캡처 직전에 부른다** — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서
+/// 권한을 바꾼 경우를 잘못 판정한다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn screen_recording_authorized() -> bool {
+    // SAFETY: 인자도 반환 포인터도 없는 CoreGraphics C 함수 호출 — 포인터 수명/해제
+    // 책임이 발생하지 않고, panic 을 가로지르는 상태도 남기지 않는다. 내부적으로
+    // TCC 데몬에 현재 앱의 승인 상태를 묻기만 하며 AppKit 을 건드리지 않아
+    // main thread 한정이 아니다(캡처 워커 스레드에서도 호출된다).
+    unsafe { CGPreflightScreenCaptureAccess() }
+}
+
+/// 비-macOS / headless — 화면 기록 권한이라는 개념이 없으므로 "승인됨"으로 답한다.
+/// 그래야 캡처 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+pub(crate) fn screen_recording_authorized() -> bool {
+    true
+}
+
+/// 화면 기록 권한을 **부팅당 1 회** 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다.
+///
+/// 거부된 상태에서 다시 불러도 프롬프트는 뜨지 않고 즉시 false 가 돌아오므로, 재시도
+/// 루프를 두지 않는다 — 그 상태를 되돌리는 것은 시스템 설정에서 사용자가 할 일이다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+fn prewarm_screen_recording() {
+    if screen_recording_authorized() {
+        tracing::debug!("prewarm: 화면 기록 권한 이미 승인됨");
+        return;
+    }
+    // SAFETY: `screen_recording_authorized` 의 preflight 호출과 같은 근거 — 인자/반환
+    // 포인터가 없는 CoreGraphics C 함수다. 미결정 상태에서만 프롬프트를 띄우고 사용자
+    // 응답까지 블록할 수 있어 워커 스레드에서만 호출한다(메인 루프를 막지 않는다).
+    let granted = unsafe { CGRequestScreenCaptureAccess() };
+    tracing::debug!(granted, "prewarm: 화면 기록 권한 요청 결과");
+}
+
 /// 홈 디렉터리 — `DirectoriesHome` 과 같은 해석(`directories::BaseDirs`).
 #[cfg(all(target_os = "macos", feature = "gui"))]
 fn home_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
 }
 
-/// 부팅 직후 파일 TCC 프롬프트를 순차로 발화한다. 호출 즉시 반환한다.
+/// 부팅 직후 권한 프롬프트를 순차로 발화한다. 호출 즉시 반환한다.
 ///
-/// **반드시 워커 스레드**다. 프롬프트가 떠 있는 동안 `read_dir` 은 사용자가 응답할
-/// 때까지 리턴하지 않으므로, 메인 스레드(winit 이벤트 루프)에서 호출하면 프롬프트가
-/// 떠 있는 내내 UI 가 얼어붙고 `boot_total` 계측도 사용자 응답 시간만큼 부풀려진다.
+/// **반드시 워커 스레드**다. 프롬프트가 떠 있는 동안 `read_dir`(과 화면 기록 요청)은
+/// 사용자가 응답할 때까지 리턴하지 않으므로, 메인 스레드(winit 이벤트 루프)에서
+/// 호출하면 프롬프트가 떠 있는 내내 UI 가 얼어붙고 `boot_total` 계측도 사용자 응답
+/// 시간만큼 부풀려진다.
 ///
-/// **경로는 한 스레드에서 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐
-/// 뜬다 — 순차면 앞의 것을 닫아야 다음이 뜬다.
+/// **하나의 스레드에서 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다 —
+/// 순차면 앞의 것을 닫아야 다음이 뜬다. 파일 폴더가 먼저고 화면 기록이 마지막이다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub(crate) fn spawn_prewarm() {
     std::thread::spawn(|| {
@@ -134,6 +189,7 @@ pub(crate) fn spawn_prewarm() {
                 }
             }
         }
+        prewarm_screen_recording();
     });
 }
 
