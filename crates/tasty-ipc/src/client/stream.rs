@@ -3,7 +3,7 @@
 //! Upgrades a freshly connected TCP socket into the framed streaming channel by
 //! sending the `stream.open` handshake line, then reading the server's `Control`
 //! ack frame. After that the socket carries length-prefixed binary frames in
-//! both directions (see `tasty_ipc::stream`).
+//! both directions (see [`crate::stream`]).
 //!
 //! Transport only — attach semantics arrive in later steps.
 
@@ -12,8 +12,8 @@ use std::net::TcpStream;
 
 use anyhow::{Result, bail};
 
-use tasty_ipc::protocol::JsonRpcRequest;
-use tasty_ipc::stream::{self, StreamAck, StreamFrame, StreamTag};
+use crate::protocol::JsonRpcRequest;
+use crate::stream::{self, StreamAck, StreamFrame, StreamTag};
 
 /// A streaming-channel connection to a running tasty instance.
 pub struct StreamConnection {

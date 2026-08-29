@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use winit::event_loop::EventLoopProxy;
 
-use tasty_cli::stream::StreamConnection;
+use crate::ipc::client::StreamConnection;
 use tasty_terminal::Terminal;
 
 use crate::AppEvent;

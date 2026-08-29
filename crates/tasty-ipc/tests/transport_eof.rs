@@ -1,17 +1,16 @@
-//! CLI IPC 전송의 EOF 회귀 격리.
+//! 클라이언트 IPC 연결([`tasty_ipc::client::IpcConnection`])의 EOF 회귀 격리.
 //!
-//! **통합 테스트(별도 바이너리)로 둔 이유**: 이 테스트는 ephemeral 포트를 잡는데,
-//! `--lib` 유닛 테스트에도 방금 해제한 ephemeral 포트를 다시 bind 해 보는
-//! 테스트(`ssh::tests::pick_local_port_returns_usable`)가 있어 같은 바이너리에서
-//! 병렬로 돌면 포트를 가로챌 수 있다. cargo 는 테스트 바이너리를 하나씩 돌리므로
-//! 분리하면 그 경합이 사라진다.
+//! **통합 테스트(별도 바이너리)로 둔 이유**: 이 테스트는 ephemeral 포트를 잡고
+//! 소켓에서 블록한다. 같은 바이너리에 방금 해제한 ephemeral 포트를 다시 bind 해
+//! 보는 유닛 테스트가 있으면 병렬 실행 시 서로 포트를 가로챌 수 있다. cargo 는
+//! 테스트 바이너리를 하나씩 돌리므로 분리하면 그 경합이 성립하지 않는다.
 
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use tasty_cli::transport::IpcConnection;
+use tasty_ipc::client::IpcConnection;
 use tasty_ipc::protocol::JsonRpcRequest;
 
 /// 상대가 응답 없이 연결을 닫으면(EOF) **즉시 에러로 끝나야 한다.**

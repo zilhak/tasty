@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde_json::{Map, Value, json};
 
-use crate::transport::IpcConnection;
+use tasty_ipc::client::IpcConnection;
 use tasty_ipc::port_file;
 use tasty_plugin_manifest::Manifest;
 

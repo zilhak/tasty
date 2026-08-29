@@ -134,7 +134,7 @@ pub fn resolve_endpoint(
 
 /// 터널/loopback localport 로 JSON-RPC 1회를 보내 응답 result 를 돌려준다(범용 프로브).
 ///
-/// `remote_check` 의 `probe_system_info` 와 같은 이유로 [`crate::transport::IpcConnection`]
+/// `remote_check` 의 `probe_system_info` 와 같은 이유로 [`tasty_ipc::client::IpcConnection`]
 /// 을 쓰지 않는다 — 그 구현은 빈 줄(EOF)에서 무한 루프에 빠져 stale 포트에서 행이
 /// 걸린다. 여기서는 read/write 타임아웃을 걸고 EOF/빈 응답을 명시적 에러로 변환한다.
 pub fn probe_method(

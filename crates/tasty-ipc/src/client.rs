@@ -1,9 +1,22 @@
+//! 클라이언트 측 IPC 연결 — 실행 중인 tasty 인스턴스에 붙는 쪽.
+//!
+//! 서버 측([`crate::server`] / [`crate::session`])과 wire 프레이밍
+//! ([`crate::protocol`] / [`crate::stream`])이 이 크레이트에 있으므로,
+//! 그 짝인 클라이언트 연결도 같은 곳에 둔다. CLI 와 본체 GUI 가 함께 쓴다.
+//!
+//! - [`IpcConnection`] — BufReader 를 유지하는 JSON-RPC request-response 연결
+//! - [`StreamConnection`] — attach/bulk 스트림 연결
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 use anyhow::Result;
 
-use tasty_ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+
+pub mod stream;
+
+pub use stream::StreamConnection;
 
 /// A reusable IPC connection that keeps a single BufReader across multiple requests.
 pub struct IpcConnection {

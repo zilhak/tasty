@@ -95,7 +95,7 @@ pub fn run_remote_check(
 
 /// 터널 localport 로 `system.info` IPC 1 회를 보내 응답(result)을 돌려준다.
 ///
-/// **EOF/타임아웃을 dead 로 확정**하기 위해 [`crate::transport::IpcConnection`] 을
+/// **EOF/타임아웃을 dead 로 확정**하기 위해 [`tasty_ipc::client::IpcConnection`] 을
 /// 재사용하지 않는다 — 그 구현은 빈 줄(EOF)에서 `continue` 로 무한 루프에 빠지므로
 /// stale 포트(서버가 채널을 닫아 EOF) 케이스에서 행이 걸린다. 여기서는 read 타임아웃을
 /// 걸고 EOF/빈 응답을 명시적 에러로 변환한다.

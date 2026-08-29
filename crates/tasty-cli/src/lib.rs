@@ -1,4 +1,7 @@
-//! Tasty CLI — clap subcommand surface + transport/request/run dispatch.
+//! Tasty CLI — clap subcommand surface + request/run dispatch.
+//!
+//! 클라이언트 IPC 연결(`IpcConnection` / `StreamConnection`)은 서버·프레이밍과
+//! 같은 곳에 있다 — `tasty_ipc::client`.
 //!
 //! 본 바이너리 src/adapters/cli/ 의 전 내용을 흡수했다.
 
@@ -14,8 +17,6 @@ pub mod remote_create;
 pub mod request;
 pub mod run;
 pub mod ssh;
-pub mod stream;
-pub mod transport;
 
 use clap::{Parser, Subcommand};
 

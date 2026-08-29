@@ -3,7 +3,7 @@ name = "tasty-cli"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Tasty CLI — commands/transport/request/run wiring for the `tasty` binary"
+description = "Tasty CLI — commands/request/run wiring for the `tasty` binary"
 repository = "https://github.com/zilhak/zilhak/tasty"
 
 [dependencies]

@@ -50,7 +50,7 @@ type-\* + 다른 도메인-IO 만 의존 가능.
 `tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처) · `tasty-icons`(line/fill 아이콘 SVG 단일 출처 — host/gallery/plugin build-time bake 공유). — [ui-widgets-crate](ui-widgets-crate.md)
 
 ### plugin host (IPC 인프라)
-`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
+`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
 
 ### plugin protocol / SDK (sandbox 경계)
 `tasty-plugin-protocol`(호스트↔plugin 와이어, leaf) · `tasty-plugin-sdk`(외부 plugin 제작 SDK, → protocol/shm) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK)

@@ -26,7 +26,7 @@ use tasty_ipc::stream::{self, STREAM_PROTO, StreamFrame, StreamTag};
 use tasty_terminal::Terminal;
 
 use crate::ssh::{self, Backoff, PortMode, SshTarget, SshTunnel};
-use crate::stream::StreamConnection;
+use tasty_ipc::client::StreamConnection;
 
 /// 한 attach 세션이 끝난 사유(백오프 재연결 판단용 — 단계 5).
 pub(crate) enum AttachExit {

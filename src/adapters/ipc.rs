@@ -8,4 +8,4 @@ pub mod handler;
 pub mod host_call;
 pub mod log_retention;
 
-pub use tasty_ipc::{alias, caller, port_file, protocol, server, session, stream};
+pub use tasty_ipc::{alias, caller, client, port_file, protocol, server, session, stream};

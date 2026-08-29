@@ -571,7 +571,7 @@ fn default_terminal_kind() -> String {
 /// Nagle 이 켜진 소켓에서는 첫 1 바이트가 unACKed 인 동안 나머지가 상대의 delayed
 /// ACK(~40ms)까지 붙잡힌다 — attach 스트림은 프레임 하나가 곧 한 번의 상호작용이라
 /// 그 지연이 매 입력·출력마다 그대로 체감된다(실측: loopback 왕복 43ms → 2ms).
-/// 소켓측 `TCP_NODELAY`(`crates/tasty-cli/src/stream.rs`, `tcp_ipc_server.rs`)와
+/// 소켓측 `TCP_NODELAY`(`crates/tasty-ipc/src/client/stream.rs`, `tcp_ipc_server.rs`)와
 /// 이중 방어다: 여기서 합쳐도 payload 가 MSS 를 넘으면 마지막 조각이 다시 Nagle 에
 /// 걸릴 수 있으므로 둘 다 필요하다.
 pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::Result<()> {

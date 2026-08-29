@@ -15,7 +15,7 @@ use super::format::format_output;
 use super::hook_failure;
 use super::plugin::run_plugin_logs;
 use super::request::command_to_request;
-use super::transport::IpcConnection;
+use tasty_ipc::client::IpcConnection;
 
 /// IPC connect 상한. 목적지가 항상 `127.0.0.1` 이라 미리스닝 포트는 즉시 RST 로
 /// 거부되므로 평시엔 이 값에 닿지 않는다 — 로컬 방화벽 DROP 처럼 RST 가 돌아오지

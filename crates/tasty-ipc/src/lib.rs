@@ -9,6 +9,7 @@
 
 pub mod alias;
 pub mod caller;
+pub mod client;
 pub mod host_port;
 pub mod mesh_stream;
 pub mod method_meta;
