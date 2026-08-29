@@ -8,7 +8,10 @@
 //! 생략(gui 대비, 단계 0 토대 범위):
 //! - plugin namespace forward (plugin_manager 없음)
 //! - caller elevation / audit-on-deny (view 의존; deny 자체는 handle_with_caller 가 회신)
-//! - app_methods / window_required / debug step (창/스크린샷/system.shutdown 등)
+//! - app_methods / window_required / debug step (창/스크린샷/system.shutdown 등).
+//!   예외는 `timer.list` 하나 — 읽는 대상(TimerHub)이 `App` 에 있어 engine handler
+//!   로는 답할 수 없고, 관측이 gui 에서만 되면 headless 인스턴스의 wakeup 원인을
+//!   물어볼 방법이 사라진다.
 //! - dispatch_list_global / find_request_owner / parked fallback (engine 1 개)
 
 #![cfg(not(feature = "gui"))]
@@ -39,7 +42,18 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
                 continue;
             }
         };
-        // 2) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
+        // 2) 허브 관측만 App 층에서 가로챈다 — `timer.list` 가 읽는 TimerHub 는
+        //    `App` 필드(+ plugin manager 자기 허브)라 `CoreState` 만 받는 engine
+        //    handler 에서는 닿지 않는다. gui 의 app_methods step 과 같은 함수를 쓴다.
+        if cmd.request.method == "timer.list" {
+            let resp = crate::ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                app.timer_list_json(std::time::Instant::now()),
+            );
+            send_response(&cmd.response_tx, resp);
+            continue;
+        }
+        // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.
         let resp = crate::ipc::handler::handle_with_caller(
             &mut app.core,

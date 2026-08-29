@@ -2,6 +2,7 @@
 //!
 //! - `system.shutdown` (debug)
 //! - `system.gpu_stats` (read-only GPU 리소스 카운트 — 메모리 누수 soak 검증)
+//! - `timer.list` (read-only 타이머 허브 스냅샷 — 무엇이 인스턴스를 깨우는가)
 //! - `window.create` / `window.close` / `window.focus` / `window.list`
 //! - `plugin.*` (15개 메서드)
 //! - `approval.await` (blocking — worker thread 위임)
@@ -30,6 +31,9 @@ impl App {
         }
         if cmd.request.method == "system.gpu_stats" {
             return self.ipc_handle_system_gpu_stats(cmd);
+        }
+        if cmd.request.method == "timer.list" {
+            return self.ipc_handle_timer_list(cmd);
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
@@ -83,6 +87,24 @@ impl App {
             return IpcStep::Handled;
         }
         IpcStep::NotHandled
+    }
+
+    /// `timer.list` — 중앙 타이머 허브의 read-only 스냅샷.
+    ///
+    /// 일반 IPC 핸들러(`src/adapters/ipc/handler/`)가 아니라 여기 있는 이유: 허브는
+    /// `App` 필드고 plugin manager 는 자기 허브를 따로 소유한다. `CoreState` 만 받는
+    /// 핸들러에서는 둘 중 어느 쪽에도 닿지 못해 "무엇이 깨우고 있는가" 에 답할 수 없다.
+    /// headless 는 같은 이유로 dispatch pump 에서 같은 함수를 부른다.
+    ///
+    /// 순수 조회 — 사용자 상태에 닿지 않고(원칙 1), 대상 지정이 필요 없는 전역
+    /// 스냅샷이라 포커스 독립(원칙 3). local_only — plugin 미노출.
+    fn ipc_handle_timer_list(&self, cmd: &IpcCommand) -> IpcStep {
+        let response = host_ipc::protocol::JsonRpcResponse::success(
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            self.timer_list_json(std::time::Instant::now()),
+        );
+        send_response(&cmd.response_tx, response);
+        IpcStep::Handled
     }
 
     /// `system.gpu_stats` — GPU 리소스 카운트 read-only 조회 (메모리 누수 soak 검증용).

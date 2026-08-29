@@ -392,6 +392,7 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Info => ("system.info", serde_json::json!({})),
         ListCommands::GpuStats => ("system.gpu_stats", serde_json::json!({})),
         ListCommands::Notifications => ("notification.list", serde_json::json!({})),
+        ListCommands::Timers => ("timer.list", serde_json::json!({})),
         // list 는 포커스 독립 — 무필터면 전 워크스페이스를 순회한다. 여기서
         // `resolve_surface_id`(TASTY_SURFACE_ID env fallback)를 쓰면 tasty 터미널
         // 안에서 호출 시 현재 surface 로 암묵 필터링돼 전체 조회가 불가능해지므로,

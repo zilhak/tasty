@@ -365,6 +365,62 @@ dirty 자체는 지우지 않는다. 사용자가 세션 중에 `restore_layout`
    주기(`every`)면 해당 없다(위 "`every` 는 바닥치기 대상이 아니다").
 6. 기존 lazy 경로를 **보완**하는 tick 이면 그 lazy 경로를 지우지 말고, 두 경로가 같은
    함수를 부르게 한다(위 "Lax 사용 사례").
+7. 실행 중 인스턴스에 `tasty list timers` 를 걸어 새 키가 예상 주기 / precision 으로
+   보이는지, 조건부 키면 해제 후 사라지는지 확인한다(아래 "관측").
+
+## 관측 — `timer.list` / `tasty list timers`
+
+허브 상태는 메모리 안에만 있어서, 관측 표면이 없으면 "이 인스턴스가 idle 인데 왜
+계속 깨어나는가" 를 로그를 심어 재빌드하는 방법으로만 답할 수 있다. 그 질문 셋
+(파생 데드라인 스핀 · 파라미터화된 키 누수 · flag off 후 잔존)이 전부 회귀 검증
+항목이라, 조회를 IPC + CLI 양면으로 노출한다.
+
+```
+$ tasty list timers
+key           interval  next_due  precision       last_fired
+Busy          1s        +400ms    strict          600ms ago
+AttachView    3s        +2.1s     strict          900ms ago
+DagGraph(41)  500ms     +200ms    strict          300ms ago
+PluginPing    15s       +7s       strict          8s ago       [plugin hub]
+─ hard deadline: +200ms (DagGraph(41))
+```
+
+**마지막 줄이 요점이다** — 지금 무엇이 이 인스턴스를 깨우고 있는지에 직접 답한다.
+`next_deadline()` 이 min 을 취하는 것과 같은 정의(Strict = `next_due`,
+Lax = `next_due + slack`)를 쓰므로, 여기 지목된 항목이 곧 실제 wakeup 원인이다.
+등록된 타이머가 없으면 `none` 이고, 그건 "무기한 자도 된다" 를 뜻한다.
+
+읽는 법:
+
+| 관측 | 의미 |
+|---|---|
+| `next_due` 가 음수 | 데드라인이 이미 지났다. 매 프레임 재등록되는 파생 데드라인이면 스핀이다(위 "파생 데드라인은 반드시 바닥친다") |
+| 닫은 뷰의 `DagGraph(<sid>)` 가 남아 있음 | 파라미터화된 키 누수(위 "파라미터화된 키는 수명을 반드시 동기화한다") |
+| 요약 라인이 `lax` 항목을 지목 | slack 까지 넘겨 hard deadline 으로 승격됐다는 뜻 — 기아 상태이거나 slack 설정이 틀렸다 |
+| 껐는데도 남아 있는 항목 | flag off 경로가 `cancel` 을 빠뜨렸다(`set_auto_reload_enabled` 가 반례) |
+
+### 조회 전용이다
+
+등록 / 취소 / 강제발화 API 는 만들지 않는다. 외부가 내부 스케줄을 흔들면 회수 지연
+상한 같은 계약이 무너지고, 그건 에이전트가 자기 작업에 필요한 일도 아니다.
+권한은 `local_only()` — plugin 이 호스트 내부 스케줄을 알아야 할 이유가 없다.
+
+### 허브가 여러 개인 것은 `hub` 필드로만 드러난다
+
+대기 계산이 `min_deadline` 으로 하나로 접히는 것과 같은 이유로(위 "계층을 넘는 허브
+합성"), 관측도 하나의 목록으로 합친다. 본체 허브 항목은 표시가 없고, plugin manager
+처럼 자기 허브를 가진 계층의 항목만 `[plugin hub]` 꼬리표가 붙는다.
+`PluginTick` 은 그 크레이트 내부 어휘라 밖으로 나오지 않는다 —
+`PluginManager::timer_snapshot()` 이 표시용 라벨로 옮겨 넘긴다.
+
+### 구현 위치가 일반 IPC 핸들러가 아닌 이유
+
+허브는 `App` 필드다. `CoreState` 만 받는 `src/adapters/ipc/handler/` 계열에서는
+본체 허브에도 plugin manager 허브에도 닿지 못해 "무엇이 깨우고 있는가" 에 답할 수
+없다. 그래서 조립은 `src/app/timer_report.rs` 에 두고, gui 는 `app_methods` step
+(`src/app/ipc/app_methods.rs`), headless 는 dispatch pump
+(`src/boot/headless_dispatch.rs`)에서 같은 함수를 부른다. headless 를 빼면 창 없는
+인스턴스의 wakeup 원인을 물어볼 방법이 사라지므로 양쪽 다 배선한다.
 
 ## 허브 대상이 아닌 것
 

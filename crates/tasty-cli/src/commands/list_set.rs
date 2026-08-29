@@ -26,6 +26,8 @@ pub enum ListCommands {
     GpuStats,
     /// List notifications
     Notifications,
+    /// List registered timers and what is currently waking this instance
+    Timers,
     /// List hooks
     Hooks {
         /// Filter by surface ID

@@ -88,6 +88,29 @@ impl PluginManager {
         self.timers.next_deadline()
     }
 
+    /// 관측용 타이머 스냅샷. 호스트가 자기 허브 스냅샷과 합쳐 `timer.list` 로
+    /// 노출한다(`docs/dev-guide/timer-hub.md` "관측").
+    ///
+    /// [`PluginTick`] 은 이 크레이트 내부 어휘라 밖으로 내보내지 않는다 — 대신
+    /// 표시용 라벨로 옮긴 뒤 넘긴다. 조회 전용이며 등록/취소 경로는 열지 않는다.
+    pub fn timer_snapshot(&self) -> Vec<tasty_timer::TimerSnapshot<&'static str>> {
+        self.timers
+            .snapshot()
+            .into_iter()
+            .map(|s| tasty_timer::TimerSnapshot {
+                key: match s.key {
+                    PluginTick::Ping => "PluginPing",
+                    PluginTick::Rss => "PluginRss",
+                    PluginTick::AutoReload => "PluginAutoReload",
+                },
+                interval: s.interval,
+                next_due: s.next_due,
+                precision: s.precision,
+                last_fired: s.last_fired,
+            })
+            .collect()
+    }
+
     /// 기본 file_format/file_handler stub 으로 초기화 — 내부 unit test 전용.
     /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를 직접
     /// 호출. F.B.11-4 이후, host file 도메인 결합 회피를 위해 test ctor 는

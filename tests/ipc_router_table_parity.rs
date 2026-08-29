@@ -32,6 +32,7 @@ const ROUTER_SOURCES: &[&str] = &[
     "src/adapters/ipc/handler/debug_plugin.rs",
     "src/app/dispatch/list_global.rs",
     "src/app/ipc/app_methods.rs",
+    "src/boot/headless_dispatch.rs",
     "src/app/ipc/debug_methods.rs",
 ];
 

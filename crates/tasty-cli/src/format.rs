@@ -227,6 +227,7 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
         ListCommands::Workspaces => format_workspace_list(result),
         ListCommands::Panes => format_pane_list(result),
         ListCommands::Notifications => format_notification_list(result),
+        ListCommands::Timers => format_timer_list(result),
         _ => {
             println!("{}", serde_json::to_string_pretty(result).unwrap());
         }
@@ -477,6 +478,133 @@ fn format_pane_list(result: &serde_json::Value) {
     }
 }
 
+/// `timer.list` 응답을 표로 렌더한다.
+///
+/// 마지막 줄의 hard deadline 요약이 이 출력의 요점이다 — "지금 무엇이 이 인스턴스를
+/// 깨우고 있는가" 에 직접 답한다. Lax 타이머는 slack 을 넘기기 전까지 이 줄에
+/// 오르지 않으므로, Lax 가 여기 지목되면 그 자체가 회귀 신호다.
+fn format_timer_list(result: &serde_json::Value) {
+    const HEADER: [&str; 5] = ["key", "interval", "next_due", "precision", "last_fired"];
+    let empty = Vec::new();
+    let timers = result
+        .get("timers")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+    let rows: Vec<TimerRowText> = timers.iter().map(timer_row_text).collect();
+
+    let mut widths = HEADER.map(str::len);
+    for row in &rows {
+        for (w, cell) in widths.iter_mut().zip(row.cells.iter()) {
+            *w = (*w).max(cell.chars().count());
+        }
+    }
+
+    let header_cells = HEADER.map(str::to_string);
+    println!("{}", timer_row_line(&header_cells, &widths, ""));
+    for row in &rows {
+        println!("{}", timer_row_line(&row.cells, &widths, row.marker));
+    }
+    println!("{}", timer_hard_deadline_line(result));
+}
+
+/// 한 타이머의 표시용 셀 + 소속 허브 표시.
+struct TimerRowText {
+    cells: [String; 5],
+    marker: &'static str,
+}
+
+fn timer_row_text(t: &serde_json::Value) -> TimerRowText {
+    let key = t
+        .get("key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?")
+        .to_string();
+    // 반복이 아니면(`once_after`/`once_at`) 주기가 없다 — 빈칸 대신 성격을 적는다.
+    let interval = t
+        .get("interval_ms")
+        .and_then(|v| v.as_u64())
+        .map_or_else(|| "once".to_string(), fmt_duration_ms);
+    let next_due = fmt_offset_ms(t.get("next_due_ms").and_then(|v| v.as_i64()).unwrap_or(0));
+    let precision = match t.get("precision").and_then(|v| v.as_str()).unwrap_or("?") {
+        "lax" => {
+            let slack = t.get("slack_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            format!("lax(slack {})", fmt_duration_ms(slack))
+        }
+        other => other.to_string(),
+    };
+    let last_fired = t
+        .get("last_fired_ms_ago")
+        .and_then(|v| v.as_i64())
+        .map_or_else(|| "-".to_string(), fmt_ago_ms);
+    // 본체 허브가 대다수라 그쪽은 표시하지 않고, 별도 허브만 꼬리표를 단다.
+    let marker = match t.get("hub").and_then(|v| v.as_str()) {
+        Some("plugin") => "[plugin hub]",
+        _ => "",
+    };
+    TimerRowText {
+        cells: [key, interval, next_due, precision, last_fired],
+        marker,
+    }
+}
+
+fn timer_row_line(cells: &[String; 5], widths: &[usize; 5], marker: &str) -> String {
+    let mut out = String::new();
+    for (i, (cell, w)) in cells.iter().zip(widths.iter()).enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        out.push_str(cell);
+        for _ in cell.chars().count()..*w {
+            out.push(' ');
+        }
+    }
+    if !marker.is_empty() {
+        out.push_str("  ");
+        out.push_str(marker);
+    }
+    out.trim_end().to_string()
+}
+
+fn timer_hard_deadline_line(result: &serde_json::Value) -> String {
+    let hard = result.get("hard_deadline").filter(|v| !v.is_null());
+    match hard {
+        Some(h) => {
+            let key = h.get("key").and_then(|v| v.as_str()).unwrap_or("?");
+            let in_ms = h.get("in_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+            format!("\u{2500} hard deadline: {} ({key})", fmt_offset_ms(in_ms))
+        }
+        // 등록된 타이머가 없다 = 무기한 자도 된다. 빈 표만 남기면 그 사실이 안 보인다.
+        None => {
+            "\u{2500} hard deadline: none (nothing is scheduled to wake this instance)".to_string()
+        }
+    }
+}
+
+fn fmt_duration_ms(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else if ms % 1000 == 0 {
+        format!("{}s", ms / 1000)
+    } else {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    }
+}
+
+/// 지금 기준 상대 시각. 음수(=이미 지난 데드라인)를 0 으로 접지 않는다 — 밀려 있는
+/// 타이머는 스핀/기아 진단의 1차 단서다.
+fn fmt_offset_ms(ms: i64) -> String {
+    let sign = if ms < 0 { '-' } else { '+' };
+    format!("{sign}{}", fmt_duration_ms(ms.unsigned_abs()))
+}
+
+fn fmt_ago_ms(ms: i64) -> String {
+    if ms < 0 {
+        format!("in {}", fmt_duration_ms(ms.unsigned_abs()))
+    } else {
+        format!("{} ago", fmt_duration_ms(ms.unsigned_abs()))
+    }
+}
+
 fn format_notification_list(result: &serde_json::Value) {
     if let Some(notifs) = result.as_array() {
         if notifs.is_empty() {
@@ -499,8 +627,81 @@ fn format_notification_list(result: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_runner_summary, format_workspace_row, render_layout};
+    use super::{
+        format_runner_summary, format_workspace_row, render_layout, timer_hard_deadline_line,
+        timer_row_line, timer_row_text,
+    };
     use serde_json::json;
+
+    #[test]
+    fn timer_summary_names_what_is_waking_the_instance() {
+        let line = timer_hard_deadline_line(&json!({
+            "hard_deadline": {"key": "DagGraph(41)", "hub": "app", "in_ms": 200},
+        }));
+        assert_eq!(line, "\u{2500} hard deadline: +200ms (DagGraph(41))");
+    }
+
+    #[test]
+    fn timer_summary_says_so_when_nothing_is_scheduled() {
+        let line = timer_hard_deadline_line(&json!({"hard_deadline": null}));
+        assert!(line.contains("none"), "got: {line}");
+    }
+
+    #[test]
+    fn an_overdue_timer_keeps_its_negative_offset_in_the_summary() {
+        let line = timer_hard_deadline_line(&json!({
+            "hard_deadline": {"key": "LayoutFlush", "hub": "app", "in_ms": -1500},
+        }));
+        assert_eq!(line, "\u{2500} hard deadline: -1.5s (LayoutFlush)");
+    }
+
+    #[test]
+    fn a_lax_row_shows_its_slack_and_a_plugin_row_is_tagged() {
+        let row = timer_row_text(&json!({
+            "key": "PluginRss", "hub": "plugin", "interval_ms": 30000,
+            "next_due_ms": 12000, "precision": "lax", "slack_ms": 15000,
+            "last_fired_ms_ago": 18000,
+        }));
+        assert_eq!(
+            row.cells,
+            [
+                "PluginRss".to_string(),
+                "30s".to_string(),
+                "+12s".to_string(),
+                "lax(slack 15s)".to_string(),
+                "18s ago".to_string(),
+            ]
+        );
+        assert_eq!(row.marker, "[plugin hub]");
+    }
+
+    #[test]
+    fn a_one_shot_timer_that_never_fired_renders_placeholders() {
+        let row = timer_row_text(&json!({
+            "key": "NativeMenu", "hub": "app", "interval_ms": null,
+            "next_due_ms": 8, "precision": "strict", "slack_ms": null,
+            "last_fired_ms_ago": null,
+        }));
+        assert_eq!(row.cells[1], "once");
+        assert_eq!(row.cells[4], "-");
+        assert_eq!(row.marker, "");
+    }
+
+    #[test]
+    fn columns_are_padded_to_the_widest_cell() {
+        let cells = [
+            "Busy".to_string(),
+            "1s".to_string(),
+            "+400ms".to_string(),
+            "strict".to_string(),
+            "600ms ago".to_string(),
+        ];
+        let line = timer_row_line(&cells, &[12, 8, 8, 14, 10], "");
+        assert_eq!(
+            line,
+            "Busy          1s        +400ms    strict          600ms ago"
+        );
+    }
 
     #[test]
     fn runner_summary_stopped_with_no_pending_work_has_no_hint() {
