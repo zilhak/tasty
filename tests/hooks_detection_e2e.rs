@@ -6,10 +6,14 @@
 //! `poll_idle_timeout_hooks`)는 이 파일에서만 검증한다. `hook_env_integration.rs`
 //! 는 `surface.fire_hook` 로 **수동** 발화만 확인하므로 이 감지 루프 자체는
 //! 커버하지 않는다.
+//!
+//! 두 테스트가 `common::shared()` 인스턴스 하나를 공유하되 각자 `create_workspace()`
+//! 로 **자기 전용 surface** 를 확보한다. `hook.set` 은 surface 단위라 그것만으로
+//! 격리되고, 특히 idle-timeout 테스트는 대상 surface 에 다른 출력이 생기면 idle
+//! 카운트가 리셋되므로 전용 surface 가 정확성 요건이다.
 
 mod common;
 
-use common::TastyInstance;
 use serde_json::json;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -42,8 +46,10 @@ fn marker_write_command(marker: &Path, content: &str) -> String {
 
 #[test]
 fn output_match_hook_fires_on_real_pty_output() {
-    let tasty = TastyInstance::spawn();
-    let sid = tasty.first_surface_id();
+    let tasty = common::shared();
+    // 자기 전용 surface — 다른 테스트의 출력이 이 훅의 매칭 대상에 섞이지 않게 한다.
+    let sid = tasty.create_workspace("hook-output-match").surface_id;
+    tasty.wait_for_shell(sid);
 
     let unique = format!(
         "{}-{}",
@@ -77,8 +83,12 @@ fn output_match_hook_fires_on_real_pty_output() {
 
 #[test]
 fn idle_timeout_hook_fires_after_no_output() {
-    let tasty = TastyInstance::spawn();
-    let sid = tasty.first_surface_id();
+    let tasty = common::shared();
+    // **전용 surface 가 정확성 요건이다** — 이 surface 에 출력이 생기면 idle 카운트가
+    // 리셋되므로, 다른 테스트가 쓰는 surface 를 재사용하면 훅이 영영 안 fire 될 수
+    // 있다. 프롬프트가 나온 뒤부터 idle 을 세도록 shell 준비까지 기다린다.
+    let sid = tasty.create_workspace("hook-idle-timeout").surface_id;
+    tasty.wait_for_shell(sid);
 
     let unique = format!(
         "{}-{}",

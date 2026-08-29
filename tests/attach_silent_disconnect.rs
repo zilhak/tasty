@@ -6,12 +6,16 @@
 //! attach client 는 `tasty` CLI/GUI 가 아니라 raw `TcpStream` 으로 직접 핸드셰이크한다
 //! — 서버는 transport 를 모르고 항상 loopback 으로 받으므로(`docs/dev-guide/
 //! attach-behavior.md`), 이 test 도 실제 client 구현과 동일한 프로토콜 바이트만
-//! 흉내내면 충분하다. silent disconnect 는 소켓을 닫지 않고(FIN 미전송) 그냥
-//! 아무 프레임도 더 보내지 않는 것으로 재현한다 — heartbeat Ping 을 멈추는 것이
-//! 곧 "조용히 죽음" 이다.
+//! 흉내내면 충분하다(frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 공유).
+//! silent disconnect 는 소켓을 닫지 않고(FIN 미전송) 그냥 아무 프레임도 더 보내지
+//! 않는 것으로 재현한다 — heartbeat Ping 을 멈추는 것이 곧 "조용히 죽음" 이다.
 //!
-//! **이 테스트가 실제로 실행하는 서버 경로**: `common::TastyInstance::spawn()`
-//! 은 `CARGO_BIN_EXE_tasty` 를 `--no-default-features`/`--headless` 없이 그대로
+//! 점유는 **surface 단위**(`stream.open{target}`)라 자기 workspace 의 surface 만
+//! 쓰면 공유 인스턴스 위에서 다른 테스트와 격리된다. TTL 만료를 기다리느라 오래
+//! 걸리는 테스트이므로 인스턴스를 새로 띄우지 않는 편이 특히 이득이다.
+//!
+//! **이 테스트가 실제로 실행하는 서버 경로**: `common::shared()`
+//! 는 `CARGO_BIN_EXE_tasty` 를 `--no-default-features`/`--headless` 없이 그대로
 //! 실행한다 — 즉 `cargo test` 의 기본 feature(`default = ["gui"]`) 로 빌드된
 //! **GUI 이벤트 루프 경로**(`src/app/event_handler.rs` 의 `StreamInbound::Disconnected`
 //! → `release_attach_for_disconnected` → `release_all_for_client`)만 실제로
@@ -30,16 +34,14 @@
 //! 이 확인은 이 test 가 실행 시점에 보장하는 것이 아니라 리뷰 시점의 코드
 //! 검토 결과다 — 회귀가 나면 이 test 는 GUI 경로만 잡아낸다.
 
+mod attach_common;
 mod common;
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
+use attach_common::open_surface_attach;
 use common::TastyInstance;
-use serde_json::{Value, json};
-
-const TAG_CONTROL: u8 = 1;
+use serde_json::json;
 
 // crates/tasty-ipc/src/stream.rs 의 HEARTBEAT_TIMEOUT 과 동일 — 상수를 여기서
 // 재선언하는 대신 값을 하드코딩하면 프로토콜 변경 시 조용히 어긋날 수 있으니,
@@ -47,47 +49,6 @@ const TAG_CONTROL: u8 = 1;
 // 견고하게 만든다.
 const HEARTBEAT_TIMEOUT_HINT: Duration = Duration::from_secs(20);
 const RELEASE_POLL_TIMEOUT: Duration = Duration::from_secs(45);
-
-fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
-    let mut hdr = [0u8; 5];
-    stream.read_exact(&mut hdr).expect("read frame header");
-    let tag = hdr[0];
-    let len = u32::from_be_bytes([hdr[1], hdr[2], hdr[3], hdr[4]]) as usize;
-    let mut payload = vec![0u8; len];
-    if len > 0 {
-        stream.read_exact(&mut payload).expect("read frame payload");
-    }
-    (tag, payload)
-}
-
-/// `stream.open{target}` 핸드셰이크를 열고 (ack, attach 결과) 를 돌려준다.
-/// 연결은 살려서 반환한다 — drop 하면 FIN 이 나가 EOF 케이스가 돼버린다.
-fn open_attach(port: u16, surface_id: u64) -> (TcpStream, Value) {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to server");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(15)))
-        .expect("set read timeout");
-
-    let req = json!({
-        "jsonrpc": "2.0",
-        "method": "stream.open",
-        "params": {"proto": 1, "target": surface_id},
-        "id": 1,
-    });
-    let mut msg = serde_json::to_string(&req).unwrap();
-    msg.push('\n');
-    stream.write_all(msg.as_bytes()).expect("send handshake");
-
-    let (tag, payload) = read_frame(&mut stream);
-    assert_eq!(tag, TAG_CONTROL, "expected control ack frame");
-    let ack: Value = serde_json::from_slice(&payload).unwrap();
-    assert_eq!(ack["ok"], true, "handshake rejected: {ack:?}");
-
-    let (tag, payload) = read_frame(&mut stream);
-    assert_eq!(tag, TAG_CONTROL, "expected attach control frame");
-    let ctrl: Value = serde_json::from_slice(&payload).unwrap();
-    (stream, ctrl)
-}
 
 fn is_attached(instance: &TastyInstance, surface_id: u64) -> bool {
     let surfaces = instance.call("surface.list", json!({}));
@@ -102,25 +63,25 @@ fn is_attached(instance: &TastyInstance, surface_id: u64) -> bool {
 
 #[test]
 fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
-    let server = TastyInstance::spawn();
-    let sid = server.first_surface_id();
+    let server = common::shared();
+    let sid = server.create_workspace("silent-disconnect").surface_id;
 
-    assert!(!is_attached(&server, sid), "surface must start unattached");
+    assert!(!is_attached(server, sid), "surface must start unattached");
 
     // client A: attach 성공 → 점유 lock 획득.
-    let (stale_conn, ctrl) = open_attach(server.port(), sid);
+    let (stale_conn, ctrl) = open_surface_attach(server.port(), sid);
     assert_eq!(
         ctrl["event"].as_str(),
         Some("attached"),
         "attach should succeed: {ctrl:?}"
     );
     assert!(
-        is_attached(&server, sid),
+        is_attached(server, sid),
         "surface must show attached after a successful attach"
     );
 
     // TTL 만료 전: 새 client 는 AlreadyAttached 로 거부돼야 한다.
-    let (_rejected_conn, reject_ctrl) = open_attach(server.port(), sid);
+    let (_rejected_conn, reject_ctrl) = open_surface_attach(server.port(), sid);
     assert_eq!(
         reject_ctrl["event"].as_str(),
         Some("attach_error"),
@@ -140,7 +101,7 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
     let deadline = Instant::now() + RELEASE_POLL_TIMEOUT;
     let mut released = false;
     while Instant::now() < deadline {
-        if !is_attached(&server, sid) {
+        if !is_attached(server, sid) {
             released = true;
             break;
         }
@@ -159,13 +120,13 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
 
     // 재attach: 같은 surface 에 새 client(C)가 성공해야 한다(과거엔
     // AlreadyAttached 로 거부됐을 상황).
-    let (_reattached_conn, reattach_ctrl) = open_attach(server.port(), sid);
+    let (_reattached_conn, reattach_ctrl) = open_surface_attach(server.port(), sid);
     assert_eq!(
         reattach_ctrl["event"].as_str(),
         Some("attached"),
         "re-attach after TTL release should succeed: {reattach_ctrl:?}"
     );
-    assert!(is_attached(&server, sid));
+    assert!(is_attached(server, sid));
 
     drop(stale_conn); // 정리 — 이미 서버측에서 release 됐으므로 이제 닫아도 무해.
 }

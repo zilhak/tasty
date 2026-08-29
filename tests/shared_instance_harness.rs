@@ -43,6 +43,15 @@ fn claim_workspace(name: &str) -> u64 {
         "workspace.list 가 방금 만든 workspace 를 빠뜨림: {listed:?}"
     );
 
+    // 공유 인스턴스에서 만든 workspace 는 결코 `workspace.list[0]` 이 아니다 —
+    // 부팅 시 만들어진 첫 workspace 뒤에 붙기 때문이다. "첫 workspace 를 집는"
+    // 습관이 남아 있으면 남의 격리 단위를 밟게 되므로 그 전제를 못 박아 둔다.
+    assert_ne!(
+        listed.as_array().unwrap()[0]["id"].as_u64(),
+        Some(ws.id),
+        "격리 헬퍼가 만든 workspace 가 목록의 [0] 이면 안 된다: {listed:?}"
+    );
+
     let mut observed = OBSERVED.lock().unwrap();
     for (port, prev_ws) in observed.iter() {
         assert_eq!(

@@ -49,6 +49,8 @@
 
 **workspace 로 격리되지 않는 전역 상태**: headless PTY(`pty.*`), `global_hook.*`, notification 은 전역 목록이라 같은 binary 의 다른 테스트가 만든 항목까지 함께 조회된다. 공유 인스턴스 위의 목록 검증은 "내 것이 있는가"(`any`) 형태로 쓰고 길이나 `[0]` 번째를 assert 하지 않는다. surface hook(`hook.unset`)과 headless PTY(`pty.kill`)는 인스턴스가 test 프로세스와 함께 죽으므로 회수가 필수는 아니지만, 같은 binary 의 후속 테스트를 오염시키지 않도록 만든 테스트가 회수하는 것을 기본으로 한다. workspace 자체는 회수하지 않는다 — `workspace.close` IPC 가 없고 회수할 이유도 없다.
 
+`attach_*` test binary 들이 쓰는 attach 스트림 frame/handshake 헬퍼(`read_frame` / `write_control_frame` / `open_workspace_attach` / `open_surface_attach` / `open_stream_without_attach` / `wait_for_control_event`)는 **`tests/attach_common/mod.rs`** 한 곳에 있다 — `tests/common`(인스턴스 하네스)·`tests/webhook_common`(웹훅 하네스)과 같은 층위의 세 번째 공유 test 모듈이다. 개별 `#[test]` 파일끼리는 서로 `mod` 할 수 없지만 디렉토리 모듈은 여러 test binary 가 각자 `mod attach_common;` 으로 가져갈 수 있으므로, 파일마다 복제하지 않는다. 이 모듈에는 "첫 workspace 를 집는" 헬퍼를 두지 않는다 — 공유 인스턴스 위에서 그 습관이 남으면 남의 격리 단위를 밟는다.
+
 하네스 자체 검증은 `tests/shared_instance_harness.rs` — 공유 재사용(spawn 횟수 1 · 동일 port), workspace id 유일성, 전역 `pty.list` 의 `any` assert 가 병렬/`--test-threads=1` 양쪽에서 통과하는지를 확인한다.
 
 ## 2. Timeout (2단계)
