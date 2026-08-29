@@ -227,15 +227,49 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 
 ### 파생 데드라인은 반드시 바닥친다 — 누수보다 스핀이 비싸다
 
-폴링 데드라인은 "마지막으로 읽은 시각 + 주기" 로 파생한다. 그래서 상류가 낡으면
+파생 데드라인은 전부 "외부 상태의 어떤 시각 + 주기" 꼴이다 — 마지막으로 읽은 시각,
+처음 dirty 가 된 시각, 다음 재시도 시각. 그 외부 상태가 어떤 이유로든 갱신을 멈추면
 값이 **영원히 과거**에 머물고, 그걸 그대로 등록하면 `next_deadline()` 이 과거가 되어
 `WaitUntil(과거)` = 즉시 wake 가 무한 반복된다. 결과는 코어 하나 100% 스핀이다.
 
 등록을 잊는 누수(= 쓸데없이 한 번 더 깨어남)와 stale 데드라인(= 아예 쉬지 못함)은
-실패 비용의 차원이 다르다. 그래서 파생 데드라인은 등록 직전에 항상
-`not_before_next_period(at, now, period)` 를 통과시킨다 — 이미 지난 값이면 `now +
-주기` 로 올려, 상류가 무슨 실수를 하든 최악이 **주기당 1회 wakeup** 으로 묶인다.
-정상(미래) 데드라인은 손대지 않으므로 폴링 위상은 그대로다.
+실패 비용의 차원이 다르다. 그래서 바닥치기는 개별 키의 선택이 아니라 **모듈 규칙**
+이다: `src/app/timers.rs` 의 절대시각 등록은 전부 `arm_derived` 한 곳을 통과하고,
+그 안에서 `not_before_next_period(at, now, period)` 가 이미 지난 값을 `now + 주기` 로
+올린다. 상류가 무슨 실수를 하든 최악이 **주기당 1회 wakeup** 으로 묶이고, 정상
+(미래) 데드라인은 손대지 않으므로 위상은 그대로다.
+
+적용 범위 — 절대시각으로 등록하는 키 **전부**다:
+
+| 키 | 파생식 | 바닥값 |
+|---|---|---|
+| `LayoutFlush` | `dirty_since + 디바운스` | `LAYOUT_FLUSH_DEBOUNCE` |
+| `DagGraph(sid)` | `last_poll + 폴링주기` | `POLL_INTERVAL` |
+| `DagListPopup` | `last_list_poll + 폴링주기` | `POLL_INTERVAL` |
+| `Reconnect(anchor)` | `slot.next_attempt` | `RECONNECT_MIN_BACKOFF` |
+
+`NativeMenu` 만 예외인데, 그건 파생이 아니라 `once_after(주기)` = **상대 지연**이라
+정의상 과거가 될 수 없기 때문이다. 새 키가 절대시각을 쓴다면 예외가 아니다.
+
+이 규칙은 `tests/timer_deadline_hygiene.rs` 가 소스 수준에서 강제한다 — `timers.rs`
+에서 `hub.once_at` 을 직접 부르면 CI 가 fail 한다. 실패 지점이 단위 테스트가 닿지
+않는 **호출부 한 줄**이라 같은 클래스가 두 번 재발했기 때문이다.
+
+### 바닥치기는 2차 방어다 — 스케줄 대상 자체를 좁혀라
+
+바닥치기는 스핀을 막을 뿐 **누수는 남긴다.** 해소되지 않을 상태로 데드라인을 만들면
+주기당 1회씩 영원히 깨어난다. 그래서 애초에 "그 데드라인이 해소될 수 있는가" 를
+등록 전에 판정한다.
+
+레이아웃 flush 가 그 사례다. `restore_layout=false` 이거나 슬롯이 없는 engine 은
+`apply_save_layout_now` 가 저장을 건너뛰면서 `layout_dirty` 를 **clear 하지 않는다**
+— dirty 가 영원히 남는다. 그래서 `App::earliest_layout_dirty_since` 는 dirty 여부만
+보지 않고 `schedulable_dirty_since(restore_layout, has_slot, dirty_since)` 로
+"실제로 저장될 dirty" 만 골라 넘긴다(판정식은 `apply_save_layout_now` 의 저장 조건과
+같은 것이어야 한다 — 어긋나면 그 차이가 그대로 누수/스핀이 된다).
+
+dirty 자체는 지우지 않는다. 사용자가 세션 중에 `restore_layout` 을 다시 켜면 그때까지
+쌓인 변경이 그대로 flush 되어야 하기 때문이다.
 
 > **참고**: 이 두 경로는 원래 egui `request_repaint_after(500ms)` 로 자기 wakeup 을
 > 예약했지만, 호스트는 idle frame loop 를 막으려고 `delay > 0` 인 repaint 요청을

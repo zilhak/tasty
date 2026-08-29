@@ -182,7 +182,7 @@ impl App {
     /// **`auto_attach_reconnect` 맵은 절대 건드리지 않는다.** 타이머 해제와 슬롯
     /// 삭제는 의미가 다르다 — give-up 슬롯을 지우면 즉시 재시도가 재개되는 회귀가
     /// 있었다([`reconnect_wakeup_at`]). 여기서 하는 일은 예약의 등록/해제뿐이다.
-    pub(crate) fn sync_reconnect_timers(&mut self) {
+    pub(crate) fn sync_reconnect_timers(&mut self, now: Instant) {
         let wakeups: Vec<(u32, Instant)> = self
             .attach_client_sessions
             .iter()
@@ -194,7 +194,7 @@ impl App {
                 reconnect_wakeup_at(self.auto_attach_reconnect.get(&anchor)).map(|at| (anchor, at))
             })
             .collect();
-        crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups);
+        crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups, now);
     }
 
     /// 활성 워크스페이스가 매핑 Some & 아직 attach 안 됐으면 워커 스레드로 SSH 터널

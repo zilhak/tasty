@@ -74,8 +74,18 @@ impl App {
         }
     }
 
-    /// 살아있는 engine 중 가장 먼저 dirty 가 된 시각. `None` 이면 저장할 변경이
-    /// 없다 — 호스트가 `Tick::LayoutFlush` 등록을 걷어낸다.
+    /// **flush 로 실제 디스크에 닿을** engine 중 가장 먼저 dirty 가 된 시각.
+    /// `None` 이면 이번 프레임에 저장할 것이 없다 — 호스트가 `Tick::LayoutFlush`
+    /// 등록을 걷어낸다.
+    ///
+    /// dirty 여부만 보지 않는다: `apply_save_layout_now` 가 저장을 건너뛰는 조건
+    /// (`restore_layout` 꺼짐 / 슬롯 없는 engine)에서는 dirty 가 **영원히** 남으므로,
+    /// 그대로 데드라인을 만들면 `dirty_since + debounce` 라는 지난 시각이 매 프레임
+    /// 재등록돼 이벤트 루프가 쉬지 못한다. 저장하지 않을 engine 은 애초에 예약
+    /// 대상이 아니다.
+    ///
+    /// dirty 자체는 지우지 않는다 — 사용자가 세션 중에 `restore_layout` 을 다시
+    /// 켜면 그때까지 쌓인 변경이 그대로 flush 되어야 한다.
     pub(crate) fn earliest_layout_dirty_since(&self) -> Option<std::time::Instant> {
         self.view
             .views
@@ -83,7 +93,13 @@ impl App {
             .filter_map(|w| w.as_main())
             .map(|m| &m.core_state)
             .chain(self.parked_states.iter().map(|(_, e)| e))
-            .filter_map(|e| e.layout_dirty.dirty_since())
+            .filter_map(|e| {
+                schedulable_dirty_since(
+                    e.settings.general.restore_layout,
+                    e.layout_slot.is_some(),
+                    e.layout_dirty.dirty_since(),
+                )
+            })
             .min()
     }
 
@@ -135,5 +151,63 @@ mod tests {
     fn retire_action_follows_restore_layout_setting() {
         assert_eq!(retire_action(true), RetireAction::Flush);
         assert_eq!(retire_action(false), RetireAction::Delete);
+    }
+}
+
+/// flush 데드라인을 걸어도 되는 dirty 인가 — `apply_save_layout_now`(force=false)
+/// 가 **실제로 저장하는 조건**과 같은 판정이다
+/// (`crate::core::impl_workspace::apply_save_layout_now`).
+///
+/// 두 판정이 어긋나면 저장되지 않을 dirty 로 데드라인을 만들게 되고, 그 dirty 는
+/// 영원히 해소되지 않으므로 `dirty_since + debounce` 라는 **지난 시각**이 매 프레임
+/// 재등록돼 이벤트 루프가 쉬지 못한다(`docs/dev-guide/timer-hub.md`).
+pub(crate) fn schedulable_dirty_since(
+    restore_layout: bool,
+    has_slot: bool,
+    dirty_since: Option<std::time::Instant>,
+) -> Option<std::time::Instant> {
+    if restore_layout && has_slot {
+        dirty_since
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod schedulable_dirty_tests {
+    use super::schedulable_dirty_since;
+    use std::time::Instant;
+
+    /// **회귀 방지(gate4-22 2차)** — `restore_layout=false` 는 흔한 사용자 설정이고,
+    /// 그 상태에서 `apply_save_layout_now` 는 저장을 건너뛰면서 dirty 를 clear 하지
+    /// 않는다. 그러니 dirty 가 있어도 예약 대상이 아니다 — 예약하면 스핀한다.
+    #[test]
+    fn a_dirty_engine_that_will_never_save_is_not_schedulable() {
+        let t = Instant::now();
+        assert_eq!(
+            schedulable_dirty_since(false, true, Some(t)),
+            None,
+            "저장 꺼짐"
+        );
+        assert_eq!(
+            schedulable_dirty_since(true, false, Some(t)),
+            None,
+            "슬롯 없음"
+        );
+        assert_eq!(schedulable_dirty_since(false, false, Some(t)), None);
+    }
+
+    /// 저장하는 engine 의 dirty 는 그대로 데드라인이 된다.
+    #[test]
+    fn a_dirty_engine_that_will_save_keeps_its_deadline() {
+        let t = Instant::now();
+        assert_eq!(schedulable_dirty_since(true, true, Some(t)), Some(t));
+    }
+
+    /// dirty 가 없으면 어느 설정에서도 예약 없음.
+    #[test]
+    fn a_clean_engine_is_never_schedulable() {
+        assert_eq!(schedulable_dirty_since(true, true, None), None);
+        assert_eq!(schedulable_dirty_since(false, true, None), None);
     }
 }

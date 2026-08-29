@@ -77,6 +77,12 @@ pub(crate) const LAYOUT_FLUSH_DEBOUNCE: Duration = Duration::from_millis(500);
 #[cfg(feature = "gui")]
 pub(crate) const LAYOUT_FLUSH_SLACK: Duration = Duration::from_millis(500);
 
+/// 재연결 backoff 의 최소 간격(`tasty_ssh::Backoff::new` 의 min 과 같은 값).
+/// 여기서는 stale `next_attempt` 의 바닥값으로만 쓴다 — backoff 자체는
+/// `app/auto_attach.rs` 가 굴린다.
+#[cfg(feature = "gui")]
+pub(crate) const RECONNECT_MIN_BACKOFF: Duration = Duration::from_millis(500);
+
 /// 네이티브 컨텍스트 메뉴가 떠 있는 동안의 폴링 주기 상한. 메뉴 트래킹(하이라이트
 /// 이동 등)이 사람 눈에 끊겨 보이지 않을 만큼 짧고, idle 상태에서 이벤트 루프를
 /// 계속 깨우지는 않을 만큼만 짧다(메뉴가 닫히면 등록 자체가 사라진다).
@@ -109,21 +115,67 @@ pub(crate) fn min_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Ins
     }
 }
 
+/// 이미 지난 파생 데드라인을 한 주기 뒤로 끌어올린다.
+///
+/// 파생 데드라인은 전부 "외부 상태의 어떤 시각 + 주기" 꼴이다(마지막으로 읽은
+/// 시각, 처음 dirty 가 된 시각, 다음 재시도 시각 …). 그 외부 상태가 어떤 이유로든
+/// 갱신을 멈추면 값이 **영원히 과거**에 머문다. 그대로 등록하면 `next_deadline()`
+/// 이 과거가 되어 `WaitUntil(과거)` = 즉시 wake 가 무한 반복되고, 코어 하나가
+/// 100% 로 스핀한다.
+///
+/// 등록을 잊는 누수는 "쓸데없이 한 번 더 깨어남" 이지만 stale 데드라인은 "아예
+/// 쉬지 못함" 이라 실패 비용의 차원이 다르다. 그래서 바닥치기는 개별 키의 선택이
+/// 아니라 **이 모듈의 규칙**이다 — 파생 데드라인은 [`arm_derived`] 를 통해서만
+/// 등록한다.
+#[cfg(feature = "gui")]
+fn not_before_next_period(at: Instant, now: Instant, period: Duration) -> Instant {
+    if at > now { at } else { now + period }
+}
+
+/// 외부 상태에서 파생한 절대 데드라인을 등록하는 **유일한 통로**.
+///
+/// `hub.once_at` 을 이 모듈에서 직접 부르지 않는다 — 새 `Tick` 이 추가될 때
+/// 바닥치기를 빠뜨리는 것이 이 버그 클래스의 재발 경로이기 때문이다.
+/// `tests/timer_deadline_hygiene.rs` 가 이 규칙을 소스 수준에서 강제한다.
+///
+/// `period` 는 그 키의 고유 cadence 다 — 상류가 멈춰도 최악이 "주기당 1회" 로
+/// 묶이도록 그 키가 정상 동작할 때의 간격을 넘겨준다.
+#[cfg(feature = "gui")]
+fn arm_derived(
+    hub: &mut TimerHub<Tick>,
+    key: Tick,
+    at: Instant,
+    now: Instant,
+    period: Duration,
+    precision: Precision,
+) {
+    hub.once_at(key, not_before_next_period(at, now, period), precision);
+}
+
 /// 레이아웃 flush 데드라인 동기화 — 가장 이른 `dirty_since + debounce` 하나로 예약한다.
 ///
 /// engine(창)마다 자기 dirty 상태를 갖지만 flush 는 전 engine 을 한 번에 도는
 /// 함수라 타이머는 하나면 된다. `dirty_since` 는 **처음 dirty 가 된 시각**이라
 /// (뒤 변경이 리셋하지 않는다) 매 프레임 같은 절대 시각으로 재등록해도 위상이 밀리지
-/// 않는다 — `once_at` 을 쓰는 이유다.
+/// 않는다 — 절대 시각으로 등록하는 이유다.
+///
+/// `None` 은 "**이 프레임에 저장할 것이 없다**" 이지 "dirty 가 없다" 가 아니다 —
+/// 저장이 꺼져 있거나(`restore_layout=false`) 슬롯이 없는 engine 은 dirty 여도
+/// 영원히 flush 되지 않으므로 애초에 예약 대상이 아니다
+/// (`App::earliest_layout_dirty_since`).
 #[cfg(feature = "gui")]
 pub(crate) fn sync_layout_flush_timer(
     hub: &mut TimerHub<Tick>,
     earliest_dirty_since: Option<Instant>,
+    now: Instant,
 ) {
     match earliest_dirty_since {
-        Some(since) => hub.once_at(
+        Some(since) => arm_derived(
+            hub,
             Tick::LayoutFlush,
             since + LAYOUT_FLUSH_DEBOUNCE,
+            now,
+            LAYOUT_FLUSH_DEBOUNCE,
             Precision::Lax {
                 slack: LAYOUT_FLUSH_SLACK,
             },
@@ -131,21 +183,6 @@ pub(crate) fn sync_layout_flush_timer(
         // 저장할 변경이 없다 — 등록을 남기면 idle 에서도 깨운다.
         None => hub.cancel(Tick::LayoutFlush),
     }
-}
-
-/// 이미 지난 폴링 데드라인을 한 주기 뒤로 끌어올린다.
-///
-/// 폴링 데드라인은 "마지막으로 읽은 시각 + 주기" 로 파생한다. 그래서 데이터를
-/// 실제로 읽는 렌더 패스가 어떤 이유로든 멈춘 채 데드라인만 계속 재계산되면 값이
-/// 영원히 과거에 머문다. 그대로 등록하면 `next_deadline()` 이 과거가 되어
-/// `WaitUntil(과거)` = 즉시 wake 가 무한 반복되고, 코어 하나가 100% 로 스핀한다.
-///
-/// 등록 누락(=누수)은 "쓸데없이 한 번 더 깨어남" 이지만 stale 데드라인은 "쉬지
-/// 못함" 이라 실패 비용의 차원이 다르다. 그래서 파생 데드라인은 등록 직전에 항상
-/// 이 함수를 통과시켜, 상류가 무슨 실수를 하든 최악이 **주기당 1회** 로 묶이게 한다.
-#[cfg(feature = "gui")]
-fn not_before_next_period(at: Instant, now: Instant, period: Duration) -> Instant {
-    if at > now { at } else { now + period }
 }
 
 /// DAG graph surface 폴링 타이머를 **이번 프레임에 보인 집합**에 맞춘다.
@@ -168,8 +205,14 @@ pub(crate) fn sync_dag_graph_timers(
         _ => false,
     });
     for (sid, at) in active {
-        let at = not_before_next_period(*at, now, DAG_POLL_INTERVAL);
-        hub.once_at(Tick::DagGraph(*sid), at, Precision::Strict);
+        arm_derived(
+            hub,
+            Tick::DagGraph(*sid),
+            *at,
+            now,
+            DAG_POLL_INTERVAL,
+            Precision::Strict,
+        );
     }
 }
 
@@ -182,9 +225,12 @@ pub(crate) fn sync_dag_list_popup_timer(
     now: Instant,
 ) {
     match next_poll {
-        Some(at) => hub.once_at(
+        Some(at) => arm_derived(
+            hub,
             Tick::DagListPopup,
-            not_before_next_period(at, now, DAG_POLL_INTERVAL),
+            at,
+            now,
+            DAG_POLL_INTERVAL,
             Precision::Strict,
         ),
         None => hub.cancel(Tick::DagListPopup),
@@ -198,14 +244,29 @@ pub(crate) fn sync_dag_list_popup_timer(
 /// 사라지고 `ReconnectSlot` 은 그대로 남는다 — 슬롯을 지우면 즉시 재시도가 재개되는
 /// 회귀가 있었다(`app/auto_attach.rs` 의 `reconnect_wakeup_at` 참조). 이 함수는
 /// 허브만 만지고 슬롯 맵에는 접근하지 않는다.
+///
+/// `next_attempt` 도 파생 데드라인이라 [`arm_derived`] 를 통과시킨다 — 재시도
+/// 트리거가 슬롯을 갱신하지 않고 빠지는 경로(매핑이 사라진 anchor 등)에서
+/// `next_attempt` 가 과거에 고정될 수 있다.
 #[cfg(feature = "gui")]
-pub(crate) fn sync_reconnect_timers(hub: &mut TimerHub<Tick>, wakeups: &[(u32, Instant)]) {
+pub(crate) fn sync_reconnect_timers(
+    hub: &mut TimerHub<Tick>,
+    wakeups: &[(u32, Instant)],
+    now: Instant,
+) {
     hub.cancel_if(|key| match key {
         Tick::Reconnect(anchor) => !wakeups.iter().any(|(a, _)| *a == anchor),
         _ => false,
     });
     for (anchor, at) in wakeups {
-        hub.once_at(Tick::Reconnect(*anchor), *at, Precision::Strict);
+        arm_derived(
+            hub,
+            Tick::Reconnect(*anchor),
+            *at,
+            now,
+            RECONNECT_MIN_BACKOFF,
+            Precision::Strict,
+        );
     }
 }
 
@@ -297,11 +358,11 @@ mod tests {
     fn layout_flush_deadline_is_anchored_to_the_first_change() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_layout_flush_timer(&mut hub, Some(t0));
+        sync_layout_flush_timer(&mut hub, Some(t0), t0);
         assert!(hub.is_registered(Tick::LayoutFlush));
 
         // t=400ms 에 또 변경이 일어나도 dirty_since 는 t0 그대로 → 데드라인 불변.
-        sync_layout_flush_timer(&mut hub, Some(t0));
+        sync_layout_flush_timer(&mut hub, Some(t0), t0);
         assert_eq!(hub.snapshot().len(), 1);
         assert!(hub.drain_due(t0 + Duration::from_millis(400)).is_empty());
         assert_eq!(
@@ -319,11 +380,79 @@ mod tests {
     fn layout_flush_does_not_create_its_own_wakeup_before_slack() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_layout_flush_timer(&mut hub, Some(t0));
+        sync_layout_flush_timer(&mut hub, Some(t0), t0);
         assert_eq!(
             hub.next_deadline(),
             Some(t0 + LAYOUT_FLUSH_DEBOUNCE + LAYOUT_FLUSH_SLACK)
         );
+    }
+
+    /// **회귀 방지(gate4-22 2차)** — `restore_layout=false` 처럼 flush 가 영원히
+    /// 일어나지 않는 상태에서는 `dirty_since` 가 계속 남는다. 그 시각에서 파생한
+    /// 데드라인은 매 프레임 **과거**가 되고, 그대로 등록하면 `WaitUntil(과거)` 가
+    /// 즉시 wake 를 무한 반복해 코어 하나가 100% 로 스핀한다(실측 624 ticks/5s vs
+    /// baseline 2). 데드라인은 언제나 `now` 보다 뒤여야 한다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_stale_layout_dirty_since_never_schedules_a_wakeup_in_the_past() {
+        let now = Instant::now();
+        let stale = now - Duration::from_secs(30); // 30초 전에 dirty 가 됐고 그대로
+        let mut hub = TimerHub::new();
+
+        sync_layout_flush_timer(&mut hub, Some(stale), now);
+        let entry = hub.snapshot().into_iter().next().expect("registered");
+        assert!(
+            entry.next_due > now,
+            "과거 데드라인을 그대로 등록하면 루프가 스핀한다: {:?} <= {now:?}",
+            entry.next_due
+        );
+        assert_eq!(
+            entry.next_due,
+            now + LAYOUT_FLUSH_DEBOUNCE,
+            "최악이라도 주기당 1회"
+        );
+
+        // 다음 프레임에도 같은(여전히 낡은) 값이 들어오지만 결과는 동일하다.
+        let later = now + Duration::from_millis(1);
+        sync_layout_flush_timer(&mut hub, Some(stale), later);
+        let entry = hub.snapshot().into_iter().next().expect("registered");
+        assert_eq!(entry.next_due, later + LAYOUT_FLUSH_DEBOUNCE);
+    }
+
+    /// 낡은 재연결 `next_attempt` 도 마찬가지 — 재시도 트리거가 슬롯을 갱신하지
+    /// 않고 빠지는 경로(매핑이 사라진 anchor 등)에서 과거에 고정될 수 있다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_stale_reconnect_attempt_never_schedules_a_wakeup_in_the_past() {
+        let now = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_reconnect_timers(&mut hub, &[(3, now - Duration::from_secs(5))], now);
+        assert_eq!(hub.next_deadline(), Some(now + RECONNECT_MIN_BACKOFF));
+    }
+
+    /// 정상(미래) 데드라인은 바닥치기가 건드리지 않는다 — 위 방어가 위상을
+    /// 밀어버리면 그것대로 회귀다. 파생 데드라인을 쓰는 네 키를 한 번에 본다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn fresh_derived_deadlines_are_scheduled_as_is() {
+        let now = Instant::now();
+        let mut hub = TimerHub::new();
+        let soon = now + Duration::from_millis(120);
+
+        sync_layout_flush_timer(&mut hub, Some(now), now); // dirty_since=now → +500ms
+        sync_dag_graph_timers(&mut hub, &[(7, soon)], now);
+        sync_dag_list_popup_timer(&mut hub, Some(soon), now);
+        sync_reconnect_timers(&mut hub, &[(3, soon)], now);
+
+        let due: std::collections::HashMap<_, _> = hub
+            .snapshot()
+            .into_iter()
+            .map(|e| (format!("{:?}", e.key), e.next_due))
+            .collect();
+        assert_eq!(due["LayoutFlush"], now + LAYOUT_FLUSH_DEBOUNCE);
+        assert_eq!(due["DagGraph(7)"], soon);
+        assert_eq!(due["DagListPopup"], soon);
+        assert_eq!(due["Reconnect(3)"], soon);
     }
 
     /// 저장할 변경이 사라지면 등록을 걷어낸다 — 남겨두면 idle 에서도 깨운다.
@@ -332,8 +461,8 @@ mod tests {
     fn layout_flush_timer_is_cancelled_when_nothing_is_dirty() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_layout_flush_timer(&mut hub, Some(t0));
-        sync_layout_flush_timer(&mut hub, None);
+        sync_layout_flush_timer(&mut hub, Some(t0), t0);
+        sync_layout_flush_timer(&mut hub, None, t0);
         assert!(!hub.is_registered(Tick::LayoutFlush));
         assert!(hub.next_deadline().is_none());
     }
@@ -467,13 +596,13 @@ mod tests {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
         let at = t0 + Duration::from_secs(5);
-        sync_reconnect_timers(&mut hub, &[(3, at), (4, at + Duration::from_secs(1))]);
+        sync_reconnect_timers(&mut hub, &[(3, at), (4, at + Duration::from_secs(1))], t0);
         assert!(hub.is_registered(Tick::Reconnect(3)));
         assert!(hub.is_registered(Tick::Reconnect(4)));
         assert_eq!(hub.next_deadline(), Some(at));
 
         // give-up 하거나 재연결이 끝난 anchor 는 목록에서 빠지고 예약도 사라진다.
-        sync_reconnect_timers(&mut hub, &[(4, at + Duration::from_secs(1))]);
+        sync_reconnect_timers(&mut hub, &[(4, at + Duration::from_secs(1))], t0);
         assert!(!hub.is_registered(Tick::Reconnect(3)));
         assert!(hub.is_registered(Tick::Reconnect(4)));
     }
@@ -486,8 +615,8 @@ mod tests {
         let mut hub = TimerHub::new();
         register_steady_state(&mut hub, t0);
         sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))], t0);
-        sync_reconnect_timers(&mut hub, &[(3, t0 + Duration::from_secs(5))]);
-        sync_reconnect_timers(&mut hub, &[]);
+        sync_reconnect_timers(&mut hub, &[(3, t0 + Duration::from_secs(5))], t0);
+        sync_reconnect_timers(&mut hub, &[], t0);
         assert!(hub.is_registered(Tick::Busy));
         assert!(hub.is_registered(Tick::AttachView));
         assert!(hub.is_registered(Tick::DagGraph(7)));

@@ -491,14 +491,14 @@ impl ApplicationHandler<AppEvent> for App {
         // 레이아웃 flush 는 매 프레임 elapsed 를 재지 않고 디바운스 데드라인을
         // 허브에 걸어 둔다 — 실제 저장은 위 `Tick::LayoutFlush` 실행부가 한다.
         let dirty_since = self.earliest_layout_dirty_since();
-        crate::app::timers::sync_layout_flush_timer(&mut self.timers, dirty_since);
+        crate::app::timers::sync_layout_flush_timer(&mut self.timers, dirty_since, now);
 
         // DAG 뷰/목록 popup 의 다음 폴링 wakeup — 이번 프레임에 실제로 보인 것만
         // 남긴다(닫히거나 배경으로 밀린 뷰의 등록은 여기서 걷힌다).
         self.sync_dag_poll_timers(now);
 
         // 원격 attach 재연결의 backoff 시각 — idle 에서도 그 시각에 깨어난다.
-        self.sync_reconnect_timers();
+        self.sync_reconnect_timers(now);
 
         self.flush_pending_pty_resizes();
 
