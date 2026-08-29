@@ -794,14 +794,24 @@ pub fn pages() -> Vec<Page> {
                             "remote-workspace-attach",
                             "Two-pane picker — loaded",
                             Some(
-                                "680×460 · attach profiles → remote workspace list · mirror on Connect",
+                                "680×460 · attach profiles → remote workspace list · '+ New workspace' first · mirror on Connect",
                             ),
                             components::remote_attach::draw,
                         ),
                         spec(
+                            "remote-workspace-attach-new-row",
+                            "'+ New workspace' row — rest / hover / selected / creating / failed",
+                            Some(
+                                "first row of the loaded list · 34px · create on the remote and mirror that",
+                            ),
+                            components::remote_attach::draw_new_row,
+                        ),
+                        spec(
                             "remote-workspace-attach-states",
                             "Right-pane states — initial / connecting / error / empty",
-                            Some("centered non-list states off the left selection"),
+                            Some(
+                                "centered states off the left selection · empty stays on the list path",
+                            ),
                             components::remote_attach::draw_states,
                         ),
                     ],

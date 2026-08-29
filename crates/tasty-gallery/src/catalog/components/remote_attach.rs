@@ -6,12 +6,18 @@
 //! `ui_kits/terminal/overlays/remote_attach.jsx` `RemoteAttach`. remote_tool 과 같은
 //! shell 언어(headless 헤더 · bg-panel 프레임 · ghost/primary footer).
 //!
-//! - `draw` = loaded 상태(원격 ws 리스트, 대형).
-//! - `draw_states` = 비-list 3+1 상태(initial / connecting / error / empty).
+//! - `draw` = loaded 상태(원격 ws 리스트 + "+ New workspace" 첫 행, 대형).
+//! - `draw_states` = 비-list 3상태(initial / connecting / error) + empty(목록 경로).
+//! - `draw_new_row` = "+ New workspace" 행 5상태(rest / hover / selected / creating / failed).
+//!
+//! 우측 pane 의 loaded 렌더 경로는 **하나**다 — 원격에 ws 가 0개여도 caps 헤더와
+//! "+ New workspace" 행은 그대로 나오고 그 아래 muted 한 줄만 붙는다. 그래서 empty 는
+//! 막다른 center-state 가 아니라 "행이 정확히 하나인 목록"으로 degrade 한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, StatusKind, status_dot,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Spinner, StatusKind,
+    status_dot,
 };
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -29,8 +35,10 @@ const BODY_H: f32 = FRAME_H - HEADER_H - FOOTER_H;
 const PROFILE_ROW_H: f32 = 50.0; // name(2 lines) + padding sm
 const WS_ROW_H: f32 = 34.0;
 const BADGE_H: f32 = 16.0; // design size-16
+const STRIP_W: f32 = 440.0; // 새 행 상태 specimen 의 pane 폭
 
-/// 우측 pane 상태.
+/// 우측 pane 상태. `Loaded` / `Empty` 는 같은 목록 렌더 경로를 타고 ws 목록의
+/// 길이만 다르다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RaState {
     Initial,
@@ -39,6 +47,33 @@ enum RaState {
     Loaded,
     Empty,
 }
+
+/// "+ New workspace" 행의 시각 상태 — 디자인 `RaNewWsRow` 의 `phase`(rest/creating/
+/// failed)에 포인터/선택 상태를 합친 것. 이 행은 버튼이 아니라 **목록 행**이라
+/// 이웃 ws 행과 같은 select-then-confirm 계약을 따른다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewRow {
+    Rest,
+    Hover,
+    Selected,
+    Creating,
+    Failed,
+}
+
+impl NewRow {
+    fn creating(self) -> bool {
+        self == NewRow::Creating
+    }
+    fn failed(self) -> bool {
+        self == NewRow::Failed
+    }
+    fn selected(self) -> bool {
+        self == NewRow::Selected
+    }
+}
+
+/// 생성 실패 시 행 하단에 인라인으로 붙는 원격 메시지(specimen seed).
+const CREATE_ERROR: &str = "The remote refused workspace.create — the instance is read-only.";
 
 struct Prof {
     name: &'static str,
@@ -122,6 +157,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("frame", "680×460 · bg-panel · headless header"),
             ("left", "240px bg-sidebar · attach profiles (single select)"),
             ("right", "flex · 4 states off left selection"),
+            (
+                "new row",
+                "first row · plus glyph in dot slot · accent label · 'on remote'",
+            ),
             ("ws row", "StatusDot · name · panes · busy / in-use badge"),
             ("selected", "surface-active + 2px accent left bar"),
             ("footer", "Connect (primary, conditional) · Cancel (ghost)"),
@@ -135,8 +174,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-primary",
-                "select bar / Connect",
+                "new-row glyph+label / select bar / Connect",
                 theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "separator",
+                "1px rule closing the new-row group",
+                theme.separator.to_egui(),
             ),
             TokenChip::new(
                 "accent-attached",
@@ -152,6 +196,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "The picker consumes the tasty-attach profiles edited in remote_tool — one store, \
          listed here. A remote workspace already attached elsewhere shows a lavender \
          'in use' badge and can't be selected (prevents a double-mirror.)",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "'+ New workspace' is a list row, not a button: it flows through the same \
+         single-select state as every remote workspace, so confirming it goes through the \
+         footer like any other choice. The footer button then reads 'Create & connect' — \
+         it has to say which of the two things it will do. It creates the workspace with \
+         the remote's own default name and cwd; nothing is asked for.",
     );
 }
 
@@ -175,7 +229,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("error", "danger warn glyph + reason + Retry"),
             (
                 "empty",
-                "placeholder glyph + 'No workspaces on this remote'",
+                "list path — caps header + new row (pre-selected) + one muted line",
             ),
             ("center", "flex-centered, gap sm, padding xl/lg"),
         ],
@@ -187,7 +241,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "text-placeholder",
-                "initial/empty glyph",
+                "initial glyph",
                 theme.text_placeholder().to_egui(),
             ),
             TokenChip::new("text-muted", "prompt copy", theme.text_muted().to_egui()),
@@ -209,9 +263,145 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
          The footer ghost button reads Stop while connecting and aborts the lookup back to \
          initial — it does not close the picker.",
     );
+
+    spec::dont(
+        ui,
+        theme,
+        "Don't give the empty remote its own centered state with a create button. That \
+         would make the same action confirm two different ways — a button that fires on \
+         click when the remote is empty, a row that waits for the footer when it isn't — \
+         off a condition the user can't see coming. Empty is the same list with one row in \
+         it, and that row starts selected so the footer is live the moment the pane paints.",
+    );
+}
+
+/// "+ New workspace" 행 5상태 — 440px pane 폭 스트립(디자인 specimen 과 동일 폭).
+pub fn draw_new_row(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for (label, state) in [
+            ("rest", NewRow::Rest),
+            ("hover", NewRow::Hover),
+            ("selected", NewRow::Selected),
+            ("creating", NewRow::Creating),
+            ("failed", NewRow::Failed),
+        ] {
+            spec::cluster(ui, theme, label, |ui| {
+                new_row_strip(ui, theme, state);
+            });
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("box", "34px — the same row as a remote workspace"),
+            (
+                "glyph",
+                "plus 14px centered in a status-dot-width slot (overflows both sides)",
+            ),
+            ("label", "13px / 500 — reads as a peer of the rows below"),
+            (
+                "rest · hover",
+                "accent-primary label on panel / overlay-hover",
+            ),
+            (
+                "selected",
+                "text-primary on surface-active + 2px accent bar",
+            ),
+            (
+                "creating",
+                "Spinner + muted 'Creating workspace…'; list dims",
+            ),
+            ("failed", "danger warn glyph + inline reason + Try again"),
+            ("group", "1px separator below, xs margin above and below"),
+        ],
+        &[
+            TokenChip::new(
+                "accent-primary",
+                "rest/hover glyph + label",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "overlay-hover",
+                "hover fill",
+                theme.overlay_hover().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-active",
+                "selected fill",
+                theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "failed glyph + reason",
+                theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new(
+                "text-muted",
+                "'on remote' caption / creating label",
+                theme.text_muted().to_egui(),
+            ),
+        ],
+    );
+
+    spec::do_(
+        ui,
+        theme,
+        "Keep the glyph inside a status-dot-width slot. The dot the workspace rows draw is \
+         8px and the plus is 14px, so the plus overflows its slot symmetrically and the name \
+         column starts on exactly the same pixel as every row beneath it.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Selected drops the accent label for text-primary. Accent on the active surface \
+         measures 3.17:1 — the row would be least readable at the moment it is chosen. The \
+         row still reads as the odd one out through the glyph, the separator, and the accent \
+         bar, so nothing is lost by letting the label go quiet.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Creating dims the list below it rather than replacing the pane with a spinner — the \
+         round trip is a second or two and the user was reading that list. Failure lands \
+         under the row for the same reason: after a failed create the next move is usually \
+         to pick an existing workspace, so the list has to stay on screen. The remote's \
+         message can be long; it clamps to three lines and carries the rest in a tooltip.",
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════
+/// 새 행 한 상태를 실제 pane 폭(440px)에서 보여주는 스트립 — 아래에 ws 행 하나를
+/// 같이 깔아 두 행의 좌측 정렬선이 픽셀 동일한지 눈으로 확인할 수 있게 한다.
+fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
+    let peek = &WORKSPACES[0];
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .show(ui, |ui| {
+            ui.set_width(STRIP_W);
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            ui.vertical(|ui| {
+                ui.set_width(STRIP_W);
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                new_ws_row(ui, theme, state);
+                // 생성 중에는 아래 목록이 dim + inert 된다.
+                let dim = if state.creating() { 0.5 } else { 1.0 };
+                ui.scope(|ui| {
+                    ui.set_opacity(dim);
+                    ws_row(ui, theme, peek, false);
+                });
+            });
+        });
+}
+
 /// 680×460 카드 한 장.
 fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     egui::Frame::new()
@@ -321,6 +511,7 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
     let sel_name = match state {
         RaState::Error => "legacy-attach",
         RaState::Connecting => "gb10",
+        RaState::Empty => "media-nas",
         _ => "prod-web",
     };
     for p in PROFILES {
@@ -334,10 +525,7 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
-        // inset 2px accent 좌측바.
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(2.0, rect.height()));
-        ui.painter()
-            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        selected_bar(ui, theme, rect);
     }
     let inner = egui::Rect::from_min_max(
         egui::pos2(
@@ -397,7 +585,18 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
 
 fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState) {
     match state {
-        RaState::Loaded => loaded_pane(ui, theme, rect),
+        // loaded / empty 는 같은 경로 — ws 목록의 길이만 다르다. empty 는 새 행을
+        // 미리 선택해 두어 pane 이 뜬 순간부터 footer 가 살아 있다.
+        RaState::Loaded => loaded_pane(
+            ui,
+            theme,
+            rect,
+            "prod-web",
+            NewRow::Rest,
+            WORKSPACES,
+            Some("agents-prod"),
+        ),
+        RaState::Empty => loaded_pane(ui, theme, rect, "media-nas", NewRow::Selected, &[], None),
         RaState::Initial => center_state(
             ui,
             theme,
@@ -438,18 +637,6 @@ fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState
             theme.text_primary(),
             "No tasty instance appears to be running on the remote host.",
             true,
-        ),
-        RaState::Empty => center_state(
-            ui,
-            theme,
-            rect,
-            icons::FOLDER,
-            theme.text_placeholder().to_egui(),
-            false,
-            "No workspaces on this remote",
-            theme.text_muted(),
-            "legacy-box is reachable but has no open workspaces to mirror.",
-            false,
         ),
     }
 }
@@ -503,14 +690,27 @@ fn center_state(
     }
 }
 
-fn loaded_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+/// caps 헤더 + "+ New workspace" 행 + (ws 목록 | empty 한 줄).
+///
+/// 렌더 분기가 하나뿐이라 `ws` 가 비어도 이 경로를 그대로 탄다 — 목록이 비는 것은
+/// "행이 하나인 목록"이지 다른 화면이 아니다.
+fn loaded_pane(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    profile: &str,
+    new_row: NewRow,
+    ws: &[Ws],
+    sel_ws: Option<&str>,
+) {
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    // caps 헤더 — "Remote workspaces · prod-web".
+    // caps 헤더 — "REMOTE WORKSPACES · {profile}". 생성이라는 사실은 행 라벨이 말하므로
+    // 그룹을 설명하는 이 문구는 새 행이 생겨도 그대로다.
     let (hdr, _) = col.allocate_exact_size(egui::vec2(rect.width(), 30.0), egui::Sense::hover());
     let base_x = hdr.left() + theme.spacing_md.value();
     let y = hdr.top() + theme.spacing_md.value();
@@ -525,25 +725,225 @@ fn loaded_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     col.painter().text(
         egui::pos2(base_x + caps_w + theme.spacing_sm.value(), y),
         egui::Align2::LEFT_TOP,
-        "· prod-web",
+        format!("· {profile}"),
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );
-    for w in WORKSPACES {
-        ws_row(&mut col, theme, w);
+    new_ws_row(&mut col, theme, new_row);
+    if ws.is_empty() {
+        empty_line(&mut col, theme, profile);
+    } else {
+        for w in ws {
+            ws_row(&mut col, theme, w, sel_ws == Some(w.name));
+        }
     }
 }
 
-fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
+/// 원격이 닿기는 하는데 ws 가 없을 때 새 행 아래 붙는 muted 한 줄. 이름 열은 위
+/// 행들과 같은 정렬선에서 시작한다(선행 dot 슬롯 폭 스페이서).
+fn empty_line(ui: &mut egui::Ui, theme: &Theme, profile: &str) {
     let width = ui.available_width();
-    let selected = w.name == "agents-prod"; // 디자인: 첫 행 selected.
+    let h = theme.spacing_xs.value() * 2.0 + theme.font_size_caption.value() * theme.line_height_ui;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::hover());
+    let x = rect.left()
+        + theme.spacing_md.value()
+        + theme.status_dot_size().value()
+        + theme.spacing_sm.value();
+    ui.painter().text(
+        egui::pos2(x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        format!("{profile} is reachable but has no workspaces yet."),
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+}
+
+/// "+ New workspace" — loaded 목록의 첫 행. ws 행과 같은 34px 박스이고, 실제 원격
+/// 워크스페이스와는 **세 채널 동시**로 구분된다(글리프 · accent 라벨 · 아래 구분선).
+/// 색 하나로만 구분하지 않는다.
+fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), egui::Sense::hover());
+    if state.selected() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
+        selected_bar(ui, theme, rect);
+    } else if state == NewRow::Hover {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui());
+    }
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + theme.spacing_md.value(), rect.top()),
+        egui::pos2(rect.right() - theme.spacing_md.value(), rect.bottom()),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    let glyph_c = if state.creating() {
+        theme.text_muted()
+    } else if state.failed() {
+        theme.accent_danger()
+    } else {
+        theme.accent_primary()
+    };
+    dot_slot_glyph(&mut child, theme, state, glyph_c.to_egui());
+    // selected 에서만 accent 를 놓는다 — surface-active 위의 accent 는 3.17:1 이라
+    // 고른 순간 가장 안 읽힌다. 구분은 글리프·구분선·accent 바가 계속 진다.
+    let label_c = if state.creating() {
+        theme.text_muted()
+    } else if state.selected() {
+        theme.text_primary()
+    } else {
+        theme.accent_primary()
+    };
+    child.label(
+        egui::RichText::new(if state.creating() {
+            "Creating workspace…"
+        } else {
+            "New workspace"
+        })
+        .size(theme.font_size_body.value())
+        .strong()
+        .color(label_c.to_egui()),
+    );
+    // 우측 슬롯 — status dot·pane 수·배지는 의미상 없는 행이라 캡션 하나뿐.
+    child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if !state.creating() && !state.failed() {
+            ui.label(
+                egui::RichText::new("on remote")
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        }
+    });
+    if state.failed() {
+        new_ws_error(ui, theme);
+    }
+    // 행 아래 1px 구분선 — 새 행 그룹을 닫는다.
+    row_separator(ui, theme);
+}
+
+/// 이름 열 앞의 status-dot 슬롯(8px)을 할당한다. 목록의 **모든** 행이 이 한 함수로
+/// 슬롯을 잡으므로 이름 열의 좌측 정렬선이 픽셀 동일해진다 — 새 행의 14px 글리프는
+/// 슬롯보다 넓지만 좌우로 대칭 overflow 하므로 정렬선을 밀지 않는다.
+fn dot_slot(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
+    let (slot, _) = ui.allocate_exact_size(
+        egui::vec2(
+            theme.status_dot_size().value(),
+            theme.icon_glyph_size_sm.value(),
+        ),
+        egui::Sense::hover(),
+    );
+    slot
+}
+
+/// 새 행의 글리프 — 슬롯 중심에 놓인 14px `plus`(실패 시 `alertTriangle`,
+/// 생성 중이면 Spinner).
+fn dot_slot_glyph(ui: &mut egui::Ui, theme: &Theme, state: NewRow, color: egui::Color32) {
+    let size = theme.icon_glyph_size_sm.value();
+    let g = egui::Rect::from_center_size(dot_slot(ui, theme).center(), egui::vec2(size, size));
+    if state.creating() {
+        let mut c = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(g)
+                .layout(egui::Layout::top_down(egui::Align::Center)),
+        );
+        Spinner::new().size(size).color(color).show(&mut c, theme);
+    } else {
+        let glyph = if state.failed() {
+            icons::ALERT_TRIANGLE
+        } else {
+            icons::PLUS
+        };
+        glyph.image(size, color).paint_at(ui, g);
+    }
+}
+
+/// ws 행의 실행 dot — 같은 슬롯 안에 그린다. `status_dot` 은 라벨이 비어도 dot 뒤에
+/// 자기 gap 을 할당하므로 그대로 부르면 이름 열이 새 행보다 밀린다. 슬롯을 먼저
+/// 잡고 그 안의 child 에 그려서, 위젯이 삼키는 여백이 정렬선에 새지 않게 한다.
+fn dot_slot_status(ui: &mut egui::Ui, theme: &Theme, kind: StatusKind, pulse: bool) {
+    let slot = dot_slot(ui, theme);
+    let mut c = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(slot)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    status_dot(&mut c, theme, kind, "", pulse, false);
+}
+
+/// 생성 실패 — 행 하단 인라인. connect-error center-state 는 "목록 자체를 못 받은"
+/// 경우의 어휘이고, 여기서는 목록을 이미 쥐고 있으므로 가리지 않는다.
+fn new_ws_error(ui: &mut egui::Ui, theme: &Theme) {
+    let width = ui.available_width();
+    let cap_h = theme.font_size_caption.value() * theme.line_height_ui;
+    let btn_h = ControlSize::Sm.height(theme);
+    let h = theme.spacing_xs.value() * 2.0 + cap_h + btn_h + theme.spacing_sm.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::hover());
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(
+            rect.left()
+                + theme.spacing_md.value()
+                + theme.status_dot_size().value()
+                + theme.spacing_sm.value(),
+            rect.top() + theme.spacing_xs.value(),
+        ),
+        egui::pos2(
+            rect.right() - theme.spacing_md.value(),
+            rect.bottom() - theme.spacing_sm.value(),
+        ),
+    );
+    let mut col = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    col.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+    col.label(
+        egui::RichText::new(CREATE_ERROR)
+            .size(theme.font_size_caption.value())
+            .color(theme.accent_danger().to_egui()),
+    );
+    Button::new("Try again")
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
+        .show(&mut col, theme);
+}
+
+/// 행 아래 1px 구분선 + 위/아래 xs 마진.
+fn row_separator(ui: &mut egui::Ui, theme: &Theme) {
+    let width = ui.available_width();
+    let m = theme.spacing_xs.value();
+    let t = theme.border_width.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, m * 2.0 + t), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top() + m + t * 0.5,
+        egui::Stroke::new(t, theme.separator.to_egui()),
+    );
+}
+
+/// 선택 행의 inset accent 좌측바 — listctrl 과 같은 2px 토큰.
+fn selected_bar(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let bar = egui::Rect::from_min_size(
+        rect.min,
+        egui::vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
+    );
+    ui.painter()
+        .rect_filled(bar, 0.0, theme.listctrl_selected_bar().to_egui());
+}
+
+fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
+    let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(2.0, rect.height()));
-        ui.painter()
-            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        selected_bar(ui, theme, rect);
     }
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.top()),
@@ -560,7 +960,7 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws) {
     } else {
         StatusKind::Idle
     };
-    status_dot(&mut child, theme, kind, "", w.busy, false);
+    dot_slot_status(&mut child, theme, kind, w.busy);
     let name_c = if w.attached {
         theme.text_disabled()
     } else if selected {
@@ -666,11 +1066,16 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    // Connect 는 loaded + 선택 ws 있을 때만 활성 (specimen: loaded 에서만 활성).
-    Button::new("Connect")
-        .variant(ButtonVariant::Primary)
-        .enabled(state == RaState::Loaded)
-        .show(&mut child, theme);
+    // Connect 는 목록이 떠 있고 행이 선택됐을 때만 활성. 새 행이 선택된 상태(empty 는
+    // 그 행이 미리 선택돼 있다)에서는 버튼이 둘 중 무엇을 할지 말해야 한다.
+    Button::new(if state == RaState::Empty {
+        "Create & connect"
+    } else {
+        "Connect"
+    })
+    .variant(ButtonVariant::Primary)
+    .enabled(matches!(state, RaState::Loaded | RaState::Empty))
+    .show(&mut child, theme);
     // 조회 중에는 같은 ghost 버튼이 "조회 중단"이다 — 팝업을 닫지 않고 Connecting 을
     // 빠져나가는 수단(디자인 원본의 요소를 그대로 쓰되 문구만 상태에 맞춘다).
     Button::new(if state == RaState::Connecting {

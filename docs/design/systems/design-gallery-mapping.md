@@ -56,6 +56,48 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 상태(`FILTER_POPUP_ID`)에 의존하므로 `(ui, &Theme)` 시그니처로 분리 불가. 컨테이너가 등록 가능해질
 때 함께 등록한다. 검증 경로 동일(`debug.host_popup.open remote_tool` + `ui.screenshot`).
 
+## remote_attach — RA02 "Add remote workspace" (Overlays)
+
+디자인 `ui_kits/terminal/overlays/remote_attach.jsx` `RemoteAttach` (+ 갤러리 미러
+`gallery/overlays-shared.jsx` `RemoteAttachFrame({state})`) ↔ 본체
+`src/adapters/ui/popup/remote_attach.rs`.
+
+| 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/remote_attach.rs`) | 본체 함수 |
+|---|---|---|
+| `RemoteAttach`(container) | `ra_card` (`header`+`body`+`footer`, 680×460 프레임) | `draw_remote_attach_popup` |
+| `RaAttachProfileRow` | `profile_row` (`remote-workspace-attach` spec 좌 pane) | `profile_row` |
+| `RaNewWsRow` | `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | ✗ 미배선 (아래) |
+| `RaRemoteWsRow` | `ws_row` (+ `dot_slot_status`) | `ws_row` |
+| `RaCenterState` | `center_state` (`remote-workspace-attach-states` spec) | `center_state` |
+| `RaInUseBadge` | `badge` | `badge` |
+| loaded 렌더 경로(`conn==="loaded"`) | `loaded_pane` (+ `empty_line`) | `draw_right_pane` 의 `Loaded` 분기 |
+| footer `Connect` / `Create & connect` | `footer` | `draw_footer` |
+
+**"+ New workspace" 행 (RA02).** 우측 목록의 **첫 행**으로, 원격에 워크스페이스를 하나
+만들어 그것을 mirror 하는 경로다(이름/cwd 를 묻지 않는다 — 원격 기본값). 버튼이 아니라
+**목록 행**이라 이웃 ws 행과 같은 select-then-confirm 을 따르고, 확정은 footer 가 한다
+(그때 라벨이 `Create & connect` 로 바뀐다). 실제 ws 행과는 **세 채널 동시**로 구분한다 —
+`plus` 글리프 · accent 라벨 · 행 아래 1px 구분선. 색 하나로만 구분하지 않는다.
+
+- **empty(원격 ws 0개)는 center-state 가 아니다.** loaded 렌더 경로는 **하나**이고, ws 가
+  없으면 caps 헤더 + 새 행 하나 + muted 한 줄로 degrade 한다. 그 행은 **미리 선택**돼 있어
+  pane 이 뜬 순간부터 footer 가 살아 있다. center-state + CTA 버튼 안은 같은 동작의 확정
+  방식이 원격 상태에 따라 둘로 갈리므로 채택하지 않았다.
+- **selected 에서만 라벨이 accent → text-primary 로 바뀐다.** accent 를 `surface-active`
+  위에 남기면 3.17:1 이라 고른 순간 가장 안 읽힌다. 구분은 글리프·구분선·accent 바가 계속
+  진다.
+- **글리프는 status-dot 슬롯(8px) 안에서 center.** 14px `plus` 가 슬롯 좌우로 대칭
+  overflow 하므로 이름 열의 좌측 정렬선이 아래 ws 행들과 픽셀 동일하다. 갤러리에서는 ws
+  행의 dot 도 같은 `dot_slot` 으로 슬롯을 잡는다 — `status_dot` 위젯이 라벨이 비어도 dot
+  뒤에 자기 gap 을 할당해서, 그대로 부르면 두 행의 이름 열이 6px 어긋난다.
+- **생성 중 / 실패는 행 인라인.** 왕복이 1~3초라 pane 을 통째로 바꾸면 사용자가 읽던 목록을
+  버린다(생성 중엔 아래 목록 dim + inert). 실패도 목록을 가리지 않는다 — 실패 후 다음 수가
+  보통 기존 워크스페이스 선택이기 때문. 원격 메시지는 3줄 clamp + 전문은 tooltip.
+
+**본체 미배선**: 갤러리 specimen 이 gallery-first 로 먼저 들어갔고, 본체
+`draw_right_pane`/`draw_ws_list` 배선(+ 원격 `workspace.create` 왕복)은 후속 작업이다
+(ADR-0020, [gallery-first](../../dev-guide/gallery-first.md)).
+
 ## switch_overlay (Overlays)
 
 디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw 는 **P2 예정**
