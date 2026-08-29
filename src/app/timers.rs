@@ -44,6 +44,13 @@ pub(crate) enum Tick {
     /// `DagGraph(u32)` 로 표현할 수 없다 — 같은 뷰를 쓰지만 키가 따로다.
     #[cfg(feature = "gui")]
     DagListPopup,
+    /// 원격 attach 가 끊긴 anchor 워크스페이스의 backoff 재연결 시각.
+    ///
+    /// 담당은 **`due`(시각) 쪽뿐**이다 — 사용자가 그 워크스페이스로 돌아오는 edge
+    /// 트리거는 시각과 무관하므로 기존대로 프레임 검사로 남는다. 실행부도 no-op 이다:
+    /// 깨어나기만 하면 파이프라인의 `poll_auto_attach` 가 판정·발화를 한다.
+    #[cfg(feature = "gui")]
+    Reconnect(u32),
 }
 
 /// busy 재평가 주기. 사용자가 체감하는 indicator 반응 상한이라 1초를 넘기지 않는다.
@@ -144,6 +151,24 @@ pub(crate) fn sync_dag_list_popup_timer(hub: &mut TimerHub<Tick>, next_poll: Opt
     match next_poll {
         Some(at) => hub.once_at(Tick::DagListPopup, at, Precision::Strict),
         None => hub.cancel(Tick::DagListPopup),
+    }
+}
+
+/// backoff 재연결 wakeup 을 `wakeups` 집합에 맞춘다. 목록에 없는 anchor 의
+/// `Reconnect` 키는 취소한다.
+///
+/// **취소는 "재연결 스케줄 삭제" 가 아니다.** give-up 한 anchor 는 여기서 타이머만
+/// 사라지고 `ReconnectSlot` 은 그대로 남는다 — 슬롯을 지우면 즉시 재시도가 재개되는
+/// 회귀가 있었다(`app/auto_attach.rs` 의 `reconnect_wakeup_at` 참조). 이 함수는
+/// 허브만 만지고 슬롯 맵에는 접근하지 않는다.
+#[cfg(feature = "gui")]
+pub(crate) fn sync_reconnect_timers(hub: &mut TimerHub<Tick>, wakeups: &[(u32, Instant)]) {
+    hub.cancel_if(|key| match key {
+        Tick::Reconnect(anchor) => !wakeups.iter().any(|(a, _)| *a == anchor),
+        _ => false,
+    });
+    for (anchor, at) in wakeups {
+        hub.once_at(Tick::Reconnect(*anchor), *at, Precision::Strict);
     }
 }
 
@@ -345,6 +370,39 @@ mod tests {
         assert!(hub.is_registered(Tick::DagListPopup));
         sync_dag_list_popup_timer(&mut hub, None);
         assert!(!hub.is_registered(Tick::DagListPopup));
+    }
+
+    /// anchor 마다 독립적인 backoff wakeup 을 갖고, 목록에서 빠지면 걷힌다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn reconnect_timers_track_the_scheduled_anchors() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        let at = t0 + Duration::from_secs(5);
+        sync_reconnect_timers(&mut hub, &[(3, at), (4, at + Duration::from_secs(1))]);
+        assert!(hub.is_registered(Tick::Reconnect(3)));
+        assert!(hub.is_registered(Tick::Reconnect(4)));
+        assert_eq!(hub.next_deadline(), Some(at));
+
+        // give-up 하거나 재연결이 끝난 anchor 는 목록에서 빠지고 예약도 사라진다.
+        sync_reconnect_timers(&mut hub, &[(4, at + Duration::from_secs(1))]);
+        assert!(!hub.is_registered(Tick::Reconnect(3)));
+        assert!(hub.is_registered(Tick::Reconnect(4)));
+    }
+
+    /// 재연결 정리는 다른 키를 건드리지 않는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn reconnect_sync_leaves_other_ticks_alone() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        register_steady_state(&mut hub, t0);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        sync_reconnect_timers(&mut hub, &[(3, t0 + Duration::from_secs(5))]);
+        sync_reconnect_timers(&mut hub, &[]);
+        assert!(hub.is_registered(Tick::Busy));
+        assert!(hub.is_registered(Tick::AttachView));
+        assert!(hub.is_registered(Tick::DagGraph(7)));
     }
 
     /// 메뉴가 닫히면 등록을 걷어낸다 — 남겨두면 idle 에서도 8ms 마다 깨운다.

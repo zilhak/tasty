@@ -223,6 +223,22 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 > 깨우지 못했고, 다른 이유로 프레임이 돌 때만 갱신됐다. 허브로 옮기면서 의도대로
 > 500ms cadence 가 실제로 동작한다.
 
+## 타이머 취소 ≠ 상태 삭제
+
+원격 attach 재연결(`Tick::Reconnect(anchor)`)이 그 구분이 실제로 문제가 되는 사례다.
+`ReconnectSlot` 에는 give-up 플래그가 있고, **슬롯을 지우면** `reconnect_due(None, _)`
+가 "아직 한 번도 실패하지 않음" 으로 오해해 즉시 재시도가 재개되고 시도 횟수가 0부터
+다시 쌓여 무한히 give-up→재개를 반복하는 회귀가 있었다.
+
+그래서 give-up 한 anchor 는 **타이머만 걷고 슬롯은 남긴다.** 동기화 함수
+(`sync_reconnect_timers`)는 허브만 만지고 슬롯 맵에는 접근하지 않는다 — 취소가
+"스케줄 삭제" 로 새는 경로 자체를 없앤다.
+
+트리거가 둘(시각 `due` / 워크스페이스 재활성화 `edge`)인 것도 그대로다. **타이머는
+`due` 쪽만 담당**한다 — edge 는 시각과 무관해 예약할 것이 없고, 두 트리거의 합류
+판정은 기존대로 프레임에서 한다. 타이머는 "그 시각에 프레임이 돌게 하는" 역할이라
+실행부가 no-op 이다(`Tick::NativeMenu` 와 같은 형태).
+
 ## 가드 중 타이머는 정지한다 (계약)
 
 `about_to_wait` 의 shutdown / boot 가드는 조기 return 한다. **그 동안 `drain_due` 에

@@ -348,6 +348,9 @@ impl ApplicationHandler<AppEvent> for App {
                 // 프레임의 렌더 경로가 `poll_if_stale` 로 실제 재조회를 한다.
                 Tick::DagGraph(sid) => self.mark_dag_graph_window_dirty(sid),
                 Tick::DagListPopup => self.mark_dag_list_popup_windows_dirty(),
+                // 깨어나는 것 자체가 목적 — 판정·발화는 아래 파이프라인의
+                // `poll_auto_attach`(매 프레임) 가 한다.
+                Tick::Reconnect(_) => {}
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
@@ -493,6 +496,9 @@ impl ApplicationHandler<AppEvent> for App {
         // DAG 뷰/목록 popup 의 다음 폴링 wakeup — 이번 프레임에 실제로 보인 것만
         // 남긴다(닫히거나 배경으로 밀린 뷰의 등록은 여기서 걷힌다).
         self.sync_dag_poll_timers(now);
+
+        // 원격 attach 재연결의 backoff 시각 — idle 에서도 그 시각에 깨어난다.
+        self.sync_reconnect_timers();
 
         self.flush_pending_pty_resizes();
 

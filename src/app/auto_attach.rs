@@ -28,7 +28,7 @@
 //! disconnect 로 anchor 세션이 `Reconnecting` 상태(`attach_client.rs`)가 되면, 위
 //! 레벨/엣지 트리거와 **병행해** 아래 backoff 스케줄이 돈다:
 //! ```text
-//! [poll_auto_attach] (매 프레임, 최소 `Tick::AttachView` 3초 backstop 으로 idle 에도 보장)
+//! [poll_auto_attach] (매 프레임 + `Tick::Reconnect(anchor)` 로 idle 에서도 보장)
 //!   ├─ maybe_trigger_auto_attach: anchor 에 Reconnecting 세션이 있으면 스킵(레이스 방지 — 재연결은 아래가 전담)
 //!   ├─ maybe_trigger_reconnect: Reconnecting 세션이 있는 각 anchor 마다
 //!   │     - 사용자가 지금 그 워크스페이스로 전환해왔으면(엣지) 즉시, 아니면
@@ -43,8 +43,12 @@
 //!         왕복하면 여전히 수동으로 재시도된다.
 //! ```
 //! **backoff 는 non-blocking** — `tasty_ssh::Backoff::sleep()`(blocking) 대신
-//! `current()`/`advance()` 로 "다음 시도 시각"만 계산해 [`ReconnectSlot`] 에 저장하고,
-//! 매 프레임 `Instant::now()` 와 비교한다(GUI 메인 스레드를 블록할 수 없어서).
+//! `current()`/`advance()` 로 "다음 시도 시각"만 계산해 [`ReconnectSlot`] 에 저장한다
+//! (GUI 메인 스레드를 블록할 수 없어서). 그 시각에 **깨어나는 것**은 중앙 타이머
+//! 허브의 `Tick::Reconnect(anchor)` 가 맡고([`reconnect_wakeup_at`],
+//! `docs/dev-guide/timer-hub.md`), **due 판정 자체**는 기존대로 [`reconnect_due`] 가
+//! 프레임에서 한다 — 엣지(워크스페이스 재활성화) 트리거는 시각과 무관하므로 시각
+//! 판정만 타이머로 옮기고 두 트리거의 합류점은 그대로 뒀다.
 
 use std::time::Instant;
 
@@ -102,6 +106,23 @@ fn reconnect_due(slot: Option<&ReconnectSlot>, now: Instant) -> bool {
     }
 }
 
+/// 이 anchor 의 backoff 재시도를 위해 호스트를 깨워야 하는 시각.
+///
+/// `None` 은 **"타이머 예약 없음"** 이지 "슬롯 없음" 이 아니다 — 세 경우가 여기로 접힌다:
+/// - 슬롯 없음: 1차 시도는 즉시라 이번 프레임이 이미 처리한다(예약할 미래 시각이 없다).
+/// - `given_up`: 자동 재시도를 멈춘 상태. **타이머만 없애고 슬롯은 그대로 둔다** —
+///   슬롯을 지우면 `reconnect_due(None, _)` 가 "아직 실패한 적 없음" 으로 오해해 즉시
+///   재시도를 재개하는 회귀가 된다([`ReconnectSlot::given_up`] 참조). 재개는 edge
+///   트리거만 할 수 있고, edge 는 시각과 무관하므로 타이머가 필요 없다.
+/// - 그 외: 다음 시도 시각.
+fn reconnect_wakeup_at(slot: Option<&ReconnectSlot>) -> Option<Instant> {
+    match slot {
+        Some(slot) if slot.given_up => None,
+        Some(slot) => Some(slot.next_attempt),
+        None => None,
+    }
+}
+
 /// 버그수정(Gate4) — 실패 횟수가 상한에 도달했는지. `attempts` 는 이번 실패를 반영해
 /// 증가시킨 뒤(1부터 시작) 넘겨받으므로 `>=` 여야 "`MAX_RECONNECT_ATTEMPTS` 회 실패
 /// 후 자동 재시도 중단" 스펙과 일치한다(`>` 는 상한보다 한 번 더 실패해야(21번째)
@@ -153,6 +174,27 @@ impl App {
         self.maybe_trigger_auto_attach(current_ws_id, prev_active);
         self.maybe_trigger_reconnect(current_ws_id, prev_active);
         self.drain_auto_attach_results();
+    }
+
+    /// `Reconnecting` anchor 들의 backoff 시각을 `Tick::Reconnect(anchor)` 에
+    /// 동기화한다. 프레임 말미에 1회.
+    ///
+    /// **`auto_attach_reconnect` 맵은 절대 건드리지 않는다.** 타이머 해제와 슬롯
+    /// 삭제는 의미가 다르다 — give-up 슬롯을 지우면 즉시 재시도가 재개되는 회귀가
+    /// 있었다([`reconnect_wakeup_at`]). 여기서 하는 일은 예약의 등록/해제뿐이다.
+    pub(crate) fn sync_reconnect_timers(&mut self) {
+        let wakeups: Vec<(u32, Instant)> = self
+            .attach_client_sessions
+            .iter()
+            .filter(|s| s.state() == SessionState::Reconnecting)
+            .filter_map(|s| s.anchor_ws_id())
+            // 워커가 이미 떠 있는 anchor 는 결과 이벤트(`AutoAttachReady`)가 깨운다.
+            .filter(|anchor| !self.auto_attach_active.contains(anchor))
+            .filter_map(|anchor| {
+                reconnect_wakeup_at(self.auto_attach_reconnect.get(&anchor)).map(|at| (anchor, at))
+            })
+            .collect();
+        crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups);
     }
 
     /// 활성 워크스페이스가 매핑 Some & 아직 attach 안 됐으면 워커 스레드로 SSH 터널
@@ -566,6 +608,35 @@ fn parse_loopback_port(dest: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// give-up 슬롯은 타이머만 사라지고 **슬롯 자체는 남는다** — 지우면
+    /// `reconnect_due(None, _)` 가 "아직 실패한 적 없음" 으로 오해해 즉시 재시도가
+    /// 재개되는 회귀가 된다(과거 이력).
+    #[test]
+    fn given_up_slot_schedules_no_wakeup_but_survives() {
+        let mut slot = ReconnectSlot::new();
+        slot.next_attempt = Instant::now() + std::time::Duration::from_secs(5);
+        slot.given_up = true;
+        assert_eq!(reconnect_wakeup_at(Some(&slot)), None);
+        // 슬롯은 그대로 살아 있어 due 판정이 "아직 실패한 적 없음" 과 구분된다.
+        assert!(!reconnect_due(Some(&slot), Instant::now()));
+    }
+
+    /// 진행 중인 backoff 는 다음 시도 시각에 깨어나야 한다.
+    #[test]
+    fn active_backoff_schedules_its_next_attempt() {
+        let at = Instant::now() + std::time::Duration::from_secs(5);
+        let mut slot = ReconnectSlot::new();
+        slot.next_attempt = at;
+        assert_eq!(reconnect_wakeup_at(Some(&slot)), Some(at));
+    }
+
+    /// 첫 시도는 즉시라 예약할 미래 시각이 없다(이번 프레임이 처리한다).
+    #[test]
+    fn absent_slot_schedules_no_wakeup_because_it_is_already_due() {
+        assert_eq!(reconnect_wakeup_at(None), None);
+        assert!(reconnect_due(None, Instant::now()));
+    }
 
     #[test]
     fn reactivation_edge_only_on_transition() {
