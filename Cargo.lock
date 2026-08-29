@@ -5671,6 +5671,7 @@ dependencies = [
  "tasty-remote-profiles",
  "tasty-settings",
  "tasty-shm",
+ "tasty-ssh",
  "tasty-telemetry",
  "tasty-terminal",
  "tasty-themes",
@@ -5735,6 +5736,7 @@ dependencies = [
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-remote-profiles",
+ "tasty-ssh",
  "tasty-terminal",
  "tasty-tui-simulator",
  "tasty-utils",
@@ -6201,6 +6203,17 @@ dependencies = [
  "libc",
  "thiserror 1.0.69",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "tasty-ssh"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tasty-i18n",
+ "tasty-remote-profiles",
+ "tasty-utils",
+ "tracing",
 ]
 
 [[package]]

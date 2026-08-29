@@ -191,7 +191,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.
 - **S5b/S5c 는 크레이트 전역 누적기의 전후 델타**다(`tasty_terminal::pty_drop_totals`
-  / `tasty_cli::ssh::tunnel_drop_totals`). destructor 가 개수만큼 반복돼 개별 로그로는
+  / `tasty_ssh::tunnel_drop_totals`). destructor 가 개수만큼 반복돼 개별 로그로는
   읽기 어렵고, 평시(surface 닫기·attach 해제)의 drop 도 같은 누적기에 쌓이므로
   **절대값이 아니라 델타로만** 의미가 있다.
 - `shutdown_total` ≥ S1+S2+S3+S4 이며, 차이가 크면 계측이 덮지 않은 구간이 있다는

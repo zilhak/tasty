@@ -1189,7 +1189,7 @@ no_page = "No page loaded"
 loading = "Loading…"
 error = "Failed to load"
 
-# Remote port discovery failure classification (`crates/tasty-cli/src/ssh.rs`
+# Remote port discovery failure classification (`crates/tasty-ssh/src/lib.rs`
 # `PortDiscoveryError`). Shared by CLI and GUI (remote workspace attach popup),
 # so no `cli.` prefix.
 [ssh.port_discovery]

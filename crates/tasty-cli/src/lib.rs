@@ -16,9 +16,12 @@ pub mod remote_browse;
 pub mod remote_create;
 pub mod request;
 pub mod run;
-pub mod ssh;
 
 use clap::{Parser, Subcommand};
+
+/// SSH 위임 계층은 `tasty-ssh` 크레이트로 분리됐다. 내부 `crate::ssh::` 경로를
+/// 유지하기 위한 재수출 (`docs/dev-guide/build.md` §크레이트 분리 가이드).
+pub use tasty_ssh as ssh;
 
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};

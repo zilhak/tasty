@@ -1182,7 +1182,7 @@ no_page = "ページが読み込まれていません"
 loading = "読み込み中…"
 error = "読み込みに失敗しました"
 
-# リモートポート探索失敗の分類(`crates/tasty-cli/src/ssh.rs` `PortDiscoveryError`)。
+# リモートポート探索失敗の分類(`crates/tasty-ssh/src/lib.rs` `PortDiscoveryError`)。
 # CLI と GUI(リモートワークスペース追加ポップアップ)の両方が共有するため `cli.` prefix
 # を付けない。
 [ssh.port_discovery]

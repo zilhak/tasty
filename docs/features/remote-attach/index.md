@@ -102,7 +102,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 ### 연결 시도 상한 (no-hang)
 
-포트 발견은 **무기한 블록하지 않는다.** 상한이 없으면 무응답 호스트에서 연결 수립이 OS 기본 SYN 재시도(리눅스 `tcp_syn_retries=6` ≈ 127초)에 맡겨지고, auto 체인은 그 대기를 3배로 곱한다. 상수는 `crates/tasty-cli/src/ssh.rs` 에 `pub const` 로 노출되며(소비자가 진행 표시/문구를 같은 값에 맞출 수 있게), 세 겹이 각각 다른 구간을 덮는다 — 근거는 [ADR-0070](../../adr/0070-port-discovery-timeout.md).
+포트 발견은 **무기한 블록하지 않는다.** 상한이 없으면 무응답 호스트에서 연결 수립이 OS 기본 SYN 재시도(리눅스 `tcp_syn_retries=6` ≈ 127초)에 맡겨지고, auto 체인은 그 대기를 3배로 곱한다. 상수는 `crates/tasty-ssh/src/lib.rs` 에 `pub const` 로 노출되며(소비자가 진행 표시/문구를 같은 값에 맞출 수 있게), 세 겹이 각각 다른 구간을 덮는다 — 근거는 [ADR-0070](../../adr/0070-port-discovery-timeout.md).
 
 | 상수 | 값 | 덮는 구간 |
 |------|-----|-----------|
@@ -134,7 +134,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 **Connect 확정 = 사용자 동작 → focus 이동**: 원격 ws 를 골라 Connect 하면 조회에 쓴 SSH 터널을 재사용해 mirror 로 attach 하고, **새 mirror ws 로 focus 가 이동**한다(사용자가 확정한 결과). 이 focus 이동은 IPC/에이전트 경로(위 `remote.attach`, focus 중립)와 분리된 **사용자 입력 전용 큐**(`CoreState.pending_gui_attach_user`)를 통해서만 일어난다 — release IPC 는 이 큐에 push 하지 못한다(원칙 1②). 컨텍스트 메뉴 진입은 `from_user_context_menu()` 로 마킹하고, self(loopback) attach 는 release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다.
 
-**조회 중(connecting) 사용자 조작 + 정리 계약**: connecting 은 **시간 제한**이 있다. 워커 자체 상한(위 "연결 시도 상한" 45초 + 터널 ready 5초 + IPC 프로브 5초)만으로는 최악 ~55초를 아무것도 못 하고 기다려야 하므로, UI 가 **20초**(`BROWSE_DEADLINE`, ADR-0053 원격 file picker 와 같은 매 프레임 경과 판정) 안에 결과가 없으면 **워커보다 먼저** 포기하고(진행 중 조회는 취소) error 상태(+ Retry)로 전이한다 — 워커가 슬롯을 영영 못 채워도(스레드 패닉 등) connecting 에 갇히지 않는다. 그 전에 사용자가 직접 끊을 수도 있다: 조회 중에는 footer 의 ghost 버튼이 **"중단"** 이 되어 팝업을 닫지 않고 조회만 끊고 initial 로 돌아간다(닫기는 헤더 × / Esc). 어느 경로든(중단 · 타임아웃 · 다른 프로필 재선택 · 팝업 닫기) **진행 중 워커의 자식 ssh 를 kill + reaping** 한다 — 포트 발견 단계의 자식은 `SshTunnel` 의 Drop 회수 계약 밖에 있어 별도 취소 핸들(`tasty_cli::ssh::SshCancel`)이 필요하다([`dev-guide/attach-behavior.md`](../../dev-guide/attach-behavior.md) "터널 생명주기"). 취소 뒤 워커가 뒤늦게 채운 결과는 아무도 읽지 않고 워커 종료와 함께 drop 되며, 그때 `BrowseOk.tunnel` 도 함께 drop 되어 터널이 새지 않는다.
+**조회 중(connecting) 사용자 조작 + 정리 계약**: connecting 은 **시간 제한**이 있다. 워커 자체 상한(위 "연결 시도 상한" 45초 + 터널 ready 5초 + IPC 프로브 5초)만으로는 최악 ~55초를 아무것도 못 하고 기다려야 하므로, UI 가 **20초**(`BROWSE_DEADLINE`, ADR-0053 원격 file picker 와 같은 매 프레임 경과 판정) 안에 결과가 없으면 **워커보다 먼저** 포기하고(진행 중 조회는 취소) error 상태(+ Retry)로 전이한다 — 워커가 슬롯을 영영 못 채워도(스레드 패닉 등) connecting 에 갇히지 않는다. 그 전에 사용자가 직접 끊을 수도 있다: 조회 중에는 footer 의 ghost 버튼이 **"중단"** 이 되어 팝업을 닫지 않고 조회만 끊고 initial 로 돌아간다(닫기는 헤더 × / Esc). 어느 경로든(중단 · 타임아웃 · 다른 프로필 재선택 · 팝업 닫기) **진행 중 워커의 자식 ssh 를 kill + reaping** 한다 — 포트 발견 단계의 자식은 `SshTunnel` 의 Drop 회수 계약 밖에 있어 별도 취소 핸들(`tasty_ssh::SshCancel`)이 필요하다([`dev-guide/attach-behavior.md`](../../dev-guide/attach-behavior.md) "터널 생명주기"). 취소 뒤 워커가 뒤늦게 채운 결과는 아무도 읽지 않고 워커 종료와 함께 drop 되며, 그때 `BrowseOk.tunnel` 도 함께 drop 되어 터널이 새지 않는다.
 
 ### mirror workspace 비영속
 

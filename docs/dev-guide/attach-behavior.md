@@ -157,7 +157,7 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab)은 로�
 
 ## SSH 터널 (원격 client 공통)
 
-`crates/tasty-cli/src/ssh.rs` — `remote attach` 와 `remote check` 가 공유.
+`crates/tasty-ssh/src/lib.rs` — `remote attach` 와 `remote check` 가 공유.
 
 - **시스템 ssh 위임**: 자체 암호화 없이 시스템 `ssh` 를 자식 프로세스로 실행. 사용자 `~/.ssh/config`·agent·known_hosts 재사용. **Windows 는 시스템 OpenSSH 풀경로**(`%WINDIR%\System32\OpenSSH\ssh.exe`) 우선 — git 번들 ssh 는 윈도우 ssh-agent(named pipe)를 못 봐 무암호 인증 실패.
 - **원격 포트 발견**: 기본 `auto` = subcommand → file-unix → file-windows 순서로 원격 DefaultShell 4종(PowerShell/cmd/git bash/unix) 커버. `--remote-port-mode` 로 고정, `--remote-tasty <path>` 로 원격 바이너리 경로(기본 `tasty`).
@@ -189,7 +189,7 @@ workspace 는 사라지는데 서버는 여전히 점유 상태로 남는" 비�
 문제는 서버가 자기 소켓에 read timeout 을 걸어 스스로 해소한다(위 절). 아래는 **클라이언트가
 왜 서버보다 먼저 사라지고 있었는가**의 실측 확인 결과다.
 
-- **원인**: SSH 원격 attach(`crates/tasty-cli/src/ssh.rs::push_common_opts`)는 최초 SSH 터널
+- **원인**: SSH 원격 attach(`crates/tasty-ssh/src/lib.rs::push_common_opts`)는 최초 SSH 터널
   구현부터 `ServerAliveInterval=15` + `ServerAliveCountMax=3` 를 걸어왔다. 이는 **로컬 ssh
   자식 프로세스 자신의 keepalive** 다 — 원격 sshd 가 15초
   간격 keepalive 요청에 3회(최대 45초) 응답하지 않으면 로컬 ssh 프로세스가 스스로 종료한다.
@@ -254,7 +254,7 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
   시각이 지났으면(Reconnecting 진입 직후 첫 시도는 슬롯이 없어 즉시). 두 조건 모두
   `auto_attach_active` 게이트를 공유해 중복 attach 를 막는다. anchor 워크스페이스 자체가
   삭제됐거나 `attach_mapping` 이 그 사이 사라지면 스케줄을 정리하고 skip 한다.
-  - **non-blocking 스케줄링**: `tasty_cli::ssh::Backoff::sleep()`(CLI `--ssh` 재연결 루프가
+  - **non-blocking 스케줄링**: `tasty_ssh::Backoff::sleep()`(CLI `--ssh` 재연결 루프가
     쓰는 blocking API)을 GUI 메인 스레드에서 그대로 쓸 수 없어, `current()`/`advance()`
     (peek/advance-only, non-blocking)를 새로 추가해 "다음 시도 시각"만 계산해 두고 매
     프레임 `Instant::now()` 와 비교한다.

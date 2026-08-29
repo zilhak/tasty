@@ -134,4 +134,4 @@ anchor 가 `auto_attach_active` 에 남아 **그 워크스페이스의 신규 at
 - [`docs/adr/0032-remote-attach-two-layer-split.md`](0032-remote-attach-two-layer-split.md) — ssh / tasty-attach 2-레이어 프로필 모델
 - [`docs/adr/0053-native-file-picker-remote-attach-channel.md`](0053-native-file-picker-remote-attach-channel.md) — "무응답은 시간으로 끊는다"(soft timeout 8초) 선례
 - [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md) — 실패를 삼키지 않고 분류/로그하는 규칙
-- `crates/tasty-cli/src/ssh.rs` — `SSH_CONNECT_TIMEOUT` / `PORT_DISCOVERY_STEP_TIMEOUT` / `PORT_DISCOVERY_TOTAL_TIMEOUT`, `run_capture_with_budget`
+- `crates/tasty-ssh/src/lib.rs` — `SSH_CONNECT_TIMEOUT` / `PORT_DISCOVERY_STEP_TIMEOUT` / `PORT_DISCOVERY_TOTAL_TIMEOUT`, `run_capture_with_budget`

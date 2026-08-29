@@ -1,0 +1,22 @@
+[package]
+name = "tasty-ssh"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "System-ssh delegation for Tasty — ssh process spawn, tunnel lifecycle, remote port discovery, backoff and cancellation"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+# Workspace crates
+tasty-remote-profiles = { path = "../tasty-remote-profiles" }
+tasty-utils = { path = "../tasty-utils" }
+tasty-i18n = { path = "../tasty-i18n" }
+
+# Logging
+tracing = "0.1"
+
+# Error handling
+anyhow = "1"
+
+[lints]
+workspace = true

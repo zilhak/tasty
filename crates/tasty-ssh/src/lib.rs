@@ -1,8 +1,14 @@
+#![forbid(unsafe_code)]
+
 //! 시스템 ssh 위임 — SSH 1회성 터널 전송 (attach/detach 단계 5).
 //!
 //! tasty 는 자체 원격 프로토콜/암호화를 만들지 않고 **시스템 ssh 에 위임**한다.
-//! 이 모듈은 CLI(client) 안에만 존재한다 — 호스트(`src/`)·IPC 서버는 SSH 를 전혀
-//! 모르고 loopback(`127.0.0.1`) 만 안다. "원격성" 은 전부 client 가 흡수한다.
+//! 이 크레이트는 attach **client 측**에만 존재한다 — CLI 와 본체 GUI 가 함께 쓰고,
+//! IPC 서버는 SSH 를 전혀 모르고 loopback(`127.0.0.1`) 만 안다. "원격성" 은 전부
+//! client 가 흡수한다 (`docs/adr/0007-attach-targets-remote.md`).
+//!
+//! SSH *프로토콜* 을 구현하지 않는다 — 시스템 `ssh` 바이너리를 프로세스로 띄우고
+//! 그 수명·터널·포트 발견·취소를 관리하는 위임 계층이다.
 //!
 //! 흐름(단계 4 attach 를 SSH 너머로):
 //! 1. [`resolve_ssh_path`] — 시스템 ssh 경로(Windows 는 System32 OpenSSH 풀경로).

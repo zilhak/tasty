@@ -424,7 +424,7 @@ fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState
             false,
         ),
         // 실제 에러 클래스와 동기화(갤러리 완전성 정책) — `PortDiscoveryFailureKind::
-        // RemoteInstanceNotRunning` (`crates/tasty-cli/src/ssh.rs`), 문구는
+        // RemoteInstanceNotRunning` (`crates/tasty-ssh/src/lib.rs`), 문구는
         // `lang/en.toml` `ssh.port_discovery.instance_not_running` 과 동일. 원격
         // stderr/포트 파일 경로 같은 내부 구현은 노출하지 않는다.
         RaState::Error => center_state(

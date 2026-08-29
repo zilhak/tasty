@@ -9,7 +9,7 @@
 tasty 의 원격 attach 는 **원격 tasty 인스턴스를 자체 프레임 프로토콜로 mirror** 하는 구조다([ADR-0032](0032-remote-attach-two-layer-split.md), [ADR-0007](0007-attach-targets-remote.md)). 전송 스택은:
 
 - **베이스**: `127.0.0.1:<local_port>` 로의 평범한 TCP.
-- **원격 암호화**: 그 포트가 `ssh -L 127.0.0.1:local:127.0.0.1:remote -N` 터널의 끝점(`crates/tasty-cli/src/ssh.rs`). SSH 는 **TCP 포트 포워딩만** 제공하고, sftp/scp/exec 같은 SSH 네이티브 채널은 쓰지 않는다.
+- **원격 암호화**: 그 포트가 `ssh -L 127.0.0.1:local:127.0.0.1:remote -N` 터널의 끝점(`crates/tasty-ssh/src/lib.rs`). SSH 는 **TCP 포트 포워딩만** 제공하고, sftp/scp/exec 같은 SSH 네이티브 채널은 쓰지 않는다.
 - **애플리케이션 프로토콜**: tasty 자체 프레이밍(`crates/tasty-ipc/src/stream.rs`) — `[tag u8][len u32 BE][payload]`, `MAX_FRAME_LEN` 1 MiB. `Data`(raw 바이트) / `Control`(JSON) / `Ping` / `Detach` 태그, workspace attach 는 Data 앞에 4바이트 surface_id(`encode_mux`).
 
 보안·인증은 전부 SSH 경계에 위임한다(tasty 자체 보안 계층 없음 — "SSH 로 들어올 수 있으면 attach 자격"). 원격 attach 대상은 **항상 tasty 인스턴스**다.

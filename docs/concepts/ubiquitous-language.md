@@ -81,6 +81,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **server / client** — 점유당하는 쪽(PTY 권위 owner, 항상 loopback 으로만 받음) / 점유하는 쪽(원격성을 흡수). "로컬/원격" 은 **client 측 개념**.
 - **mirror** — client 가 받은 출력으로 PTY 없이 재구성한 복제 화면. GUI mirror = 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 띄운 것.
 - **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0007](../adr/0007-attach-targets-remote.md).)
+- **SSH 위임(SSH delegation)** — 원격성을 흡수하는 client 측 계층 전체를 가리키는 말. tasty 어휘에서 **"SSH" 는 프로토콜 구현이 아니라 시스템 `ssh` 바이너리에 위임하는 행위**를 뜻한다 — 프로세스 spawn · 터널 수명 · 원격 포트 발견 · 백오프 · 취소가 여기 속한다. 그 계층의 거처가 `tasty-ssh` 크레이트(`crates/tasty-ssh/`)이고, 소비자는 CLI 와 본체 GUI 둘 다다. 터널은 이 계층의 **일부**이지 전부가 아니다(포트 발견·프로필 재감지·대화형 접속은 터널이 아니다).
 
 ## 기존 터미널과의 대응
 
