@@ -28,7 +28,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("hook_handler", 3),
     ("image", 7),
     ("markdown", 1),
-    ("memory", 46),
+    ("memory", 49),
     ("message", 4),
     ("notification", 2),
     ("output", 4),

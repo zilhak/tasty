@@ -262,6 +262,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.cache_invalidate", plugin(&[MemoryWrite])),
         ("memory.cache_clear", plugin(&[MemoryWrite])),
         ("memory.cache_list", plugin(&[MemoryRead])),
+        // ── memory: goal (surface-scoped 단일 목표 문장) ──────────────
+        ("memory.goal_set", plugin(&[MemoryWrite])),
+        ("memory.goal_get", plugin(&[MemoryRead])),
+        ("memory.goal_clear", plugin(&[MemoryWrite])),
         // ── approval (휴먼 핸드오프) ──────────────────────────────────
         ("approval.request", plugin(&[Approval])),
         ("approval.respond", plugin(&[Approval])),

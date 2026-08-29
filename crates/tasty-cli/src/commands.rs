@@ -46,7 +46,8 @@ pub use file_handler::FileHandlerCommands;
 pub use hook_handler::HookHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};
 pub use memory::{
-    MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands,
+    MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryGoalCommands, MemoryPlanCommands,
+    MemorySecretCommands,
 };
 pub use move_send::{MoveCommands, SendCommands};
 pub use new_close::{CloseCommands, NewCommands};

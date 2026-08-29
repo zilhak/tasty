@@ -1,6 +1,6 @@
-//! `memory.*` / `memory.secret.*` / `memory.bb.*` / `memory.plan.*` / `memory.cache.*`
-//! IPC 핸들러. 도메인별로 sub-module (bb / plan / cache / secret) 로 분리.
-//! 본 `mod.rs` 는 basic `memory.*` 와 공용 helpers 만 포함.
+//! `memory.*` / `memory.secret.*` / `memory.bb.*` / `memory.plan.*` / `memory.cache.*` /
+//! `memory.goal.*` IPC 핸들러. 도메인별로 sub-module (bb / plan / cache / goal /
+//! secret) 로 분리. 본 `mod.rs` 는 basic `memory.*` 와 공용 helpers 만 포함.
 //!
 //! `owner` 는 [`CallerContext`] 에서 도출하며 plugin 이 인자로 명시할 수 없다.
 
@@ -8,12 +8,14 @@ mod advanced;
 
 pub mod bb;
 pub mod cache;
+pub mod goal;
 pub mod plan;
 pub mod secret;
 
 pub use advanced::{handle_export, handle_gc, handle_import, handle_query};
 pub use bb::*;
 pub use cache::*;
+pub use goal::*;
 pub use plan::*;
 pub use secret::*;
 
@@ -24,6 +26,18 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'workspace_id'")
+        })
+}
+
+/// surface 스코프 오버레이용 명시 인자. 활성 surface 로 폴백하지 않는다 —
+/// 포커스 독립성(`docs/design/policies/focus.md`).
+pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
+    params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'surface_id'")
         })
 }
 

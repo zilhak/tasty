@@ -41,6 +41,7 @@ mod scope;
 
 pub mod blackboard;
 pub mod cache;
+pub mod goal;
 pub mod plan;
 pub mod testing;
 

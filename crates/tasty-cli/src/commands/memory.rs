@@ -1,4 +1,4 @@
-//! Agent memory CLI subcommands — `MemoryCommands` + 4개 sub (Cache / Plan / Bb / Secret).
+//! Agent memory CLI subcommands — `MemoryCommands` + 5개 sub (Cache / Goal / Plan / Bb / Secret).
 //!
 //! Scope formats: `global`, `account:<userid>`, `window:<id>`, `workspace:<id>`, `surface:<id>`.
 //! `--surface <id>` 같은 alias 가 대응 scope 로 정규화된다.
@@ -252,14 +252,21 @@ pub enum MemoryCommands {
         #[command(subcommand)]
         command: MemoryCacheCommands,
     },
+    /// Goal — surface 단위 단일 목표 문장 (`tasty.goal`).
+    Goal {
+        #[command(subcommand)]
+        command: MemoryGoalCommands,
+    },
 }
 
 mod bb;
 mod cache;
+mod goal;
 mod plan;
 mod secret;
 
 pub use bb::MemoryBbCommands;
 pub use cache::MemoryCacheCommands;
+pub use goal::MemoryGoalCommands;
 pub use plan::MemoryPlanCommands;
 pub use secret::MemorySecretCommands;

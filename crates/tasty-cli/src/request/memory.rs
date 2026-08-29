@@ -363,6 +363,7 @@ pub(super) fn memory_command_to_method_params(
         Bb { command } => memory_bb_command_to_method_params(command),
         Plan { command } => memory_plan_command_to_method_params(command),
         Cache { command } => memory_cache_command_to_method_params(command),
+        Goal { command } => memory_goal_command_to_method_params(command),
     }
 }
 
@@ -397,10 +398,12 @@ pub(super) fn require_scope(
 
 mod bb;
 mod cache;
+mod goal;
 mod plan;
 mod secret;
 
 use bb::memory_bb_command_to_method_params;
 use cache::memory_cache_command_to_method_params;
+use goal::memory_goal_command_to_method_params;
 use plan::memory_plan_command_to_method_params;
 use secret::memory_secret_command_to_method_params;

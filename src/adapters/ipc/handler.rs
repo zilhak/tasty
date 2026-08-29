@@ -851,6 +851,16 @@ fn route_engine_handler(
         "memory.cache_list" => {
             memory::handle_cache_list(core, state, engine, caller, id, &request.params)
         }
+        // memory: goal (surface-scoped 단일 목표 문장)
+        "memory.goal_set" => {
+            memory::handle_goal_set(core, state, engine, caller, id, &request.params)
+        }
+        "memory.goal_get" => {
+            memory::handle_goal_get(core, state, engine, caller, id, &request.params)
+        }
+        "memory.goal_clear" => {
+            memory::handle_goal_clear(core, state, engine, caller, id, &request.params)
+        }
         // settings (plugin 이 자기 plugin_settings 값을 read-back)
         "settings.get_plugin_setting" => {
             settings::handle_get_plugin_setting(engine, caller, id, &request.params)

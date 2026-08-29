@@ -53,13 +53,28 @@ read(`get`/`list`/`exists`/`count`/`scopes`/`stats`)는 caller 무관 전체를 
 ```text
 tasty memory {put|get|delete|list|exists|count|scopes|stats} ...          # regular (_host=root)
 tasty memory secret {put|get|delete|list|exists|count|scopes|stats} ...   # secret (_host 자기 영역)
+tasty memory {bb|plan|cache} ... --workspace <id>                         # workspace 스코프 오버레이
+tasty memory goal {set|get|clear} [--surface <id>]                        # surface 스코프 오버레이
 ```
 
 `--owner` 플래그는 없다. 특정 plugin 의 regular entry 만 보려면 응답의 owner 를 grep/jq 로 사후 필터.
 
-## 워크스페이스 스코프 확장 구조
+## 스코프 확장 구조
 
-같은 store 위에 워크스페이스 단위 구조도 IPC 로 제공된다 — **blackboard**(`memory.bb_*`, 키-값 컬렉션), **plan**(`memory.plan_*`, 선언적 work breakdown), **cache**(`memory.cache_*`, TTL 캐시). owner 규칙은 regular 와 동일(`crates/tasty-memory/src/{blackboard,plan,cache}.rs`).
+같은 store 위에 도메인별 구조가 예약 키로 얹혀 IPC 로 제공된다. owner 규칙은 전부 regular 와 동일.
+
+| 오버레이 | IPC | 예약 키 | 스코프 | 카디널리티 | TTL | 구현 |
+|---|---|---|---|---|---|---|
+| blackboard | `memory.bb_*` | `tasty.bb.<name>.*` | workspace | scope 당 다중 | 없음 | `crates/tasty-memory/src/blackboard.rs` |
+| plan | `memory.plan_*` | `tasty.plan.<plan_id>` | workspace | scope 당 다중 | 없음 | `crates/tasty-memory/src/plan.rs` |
+| cache | `memory.cache_*` | `tasty.cache.<key>` | workspace | scope 당 다중 | **필수** | `crates/tasty-memory/src/cache.rs` |
+| goal | `memory.goal_*` | `tasty.goal` | surface | scope 당 **단일** | 없음 | `crates/tasty-memory/src/goal.rs` |
+
+**goal** 은 surface(=에이전트 세션) 단위 단일 목표 문장이다 — 에이전트가 받은 goal 을 소비자(Stop-훅 게이트 등)가 읽을 수 있도록 키를 코드에 고정한 자리. prefix 가 아니라 완전한 단일 키인 것은 surface 당 하나뿐이라는 요구에서 따라온다. 상속은 없다(부모 surface 의 goal 이 자식에 보이지 않는다 — 자식이 자기 subtask 를 끝내고도 부모 goal 을 이유로 계속 도는 것을 막는다). 빈/공백-only goal 은 등록 시점에 거부한다.
+
+goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫힐 때(`purge_surface_memory_scope`) 와 앱 시작 시 복원되지 않은 surface 정리(`purge_dead_surfaces`) 로 scope 통째로 삭제된다. 두 경로 모두 키 필터가 없어 goal 도 자동 포함되므로 **goal 수명 = surface 수명** 이다.
+
+스코프 인자는 IPC params 필수값이다 — 활성 workspace/surface 를 참조하지 않는다([focus](../policies/focus.md)). CLI 의 `tasty memory goal` 만 `--surface` 생략 시 caller 의 `TASTY_SURFACE_ID` env 로 채운다(에이전트가 자기 자신에 대해 호출하는 것이 주 용례).
 
 ## 용량 제한
 
