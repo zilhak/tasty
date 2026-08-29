@@ -110,13 +110,16 @@ pub fn draw_egui_panels(
 
     // 두 패스 사이 — DAG surface 의 데이터를 필요하면 새로 읽는다. 500ms 게이트는
     // 스토어 쪽에 있어 프레임마다 호출해도 실제 읽기는 그 주기로만 일어난다.
+    //
+    // **requests 가 비어도 반드시 호출한다.** 빈 목록은 "이 창에 보이는 DAG 뷰가
+    // 없다" 는 뜻이고, `poll` 이 그때 `visible` 을 비워야 호스트가 폴링 타이머를
+    // 걷는다. 건너뛰면 배경 탭으로 밀린(=닫히지는 않은) surface 의 옛 데드라인이
+    // 계속 남아 이벤트 루프가 쉬지 못한다.
     {
         let requests: Vec<_> = infos.iter().filter_map(|i| i.dag_poll.clone()).collect();
-        if !requests.is_empty() {
-            let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-            dag_views.poll(engine, &requests);
-            state.dag_graph_views = dag_views;
-        }
+        let mut dag_views = std::mem::take(&mut state.dag_graph_views);
+        dag_views.poll(engine, &requests);
+        state.dag_graph_views = dag_views;
     }
 
     // Second pass: render each egui panel.

@@ -209,13 +209,33 @@ hub.cancel_if(|key| matches!(key, Tick::DagGraph(sid) if !active.contains(sid)))
 for (sid, at) in active { hub.once_at(Tick::DagGraph(*sid), *at, Strict); }
 ```
 
-정리 지점이 하나라 `drop_view` 를 어디서 부르든(surface 닫힘 / 배경 탭 전환 /
-창 종료) 누락이 생길 수 없다. 스토어 쪽에서도 `drop_view` 가 `visible` 집합에서
-빼주어야 한다 — 남겨두면 사라진 surface 가 계속 데드라인 목록에 실린다.
+**정리를 보장하는 것은 `drop_view` 가 아니라, 매 프레임 `poll()` 이 `visible` 을
+통째로 교체한다는 사실이다.** `drop_view` 는 surface 가 **닫히는** 경로에만 걸린다 —
+DAG 탭을 닫지 않고 배경 탭으로 밀어두는 흔한 조작은 `drop_view` 를 부르지 않는다.
+그 경로에서 예약이 걷히는 유일한 이유는 그 프레임의 요청 목록에 그 surface 가 없어
+`visible` 에서 빠지기 때문이다.
+
+따라서 호출부는 **요청 목록이 비어 있어도 반드시 `poll()` 을 호출해야 한다.** 빈
+목록은 "이 창에 보이는 DAG 뷰가 없다" 는 정보이고, 그걸 건너뛰면 `visible` 이 옛
+surface id 를 그대로 들고 있게 된다(실제로 `if !requests.is_empty()` 가드 때문에
+배경 탭 전환 시 코어 하나가 100% 로 스핀하는 회귀가 있었다). `drop_view` 도 여전히
+`visible` 에서 빼지만, 그건 닫힘 경로의 보조 수단이지 정리의 주체가 아니다.
 
 DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로 키가 따로다
 (같은 `DagGraphView` 를 쓰지만 수명 주체가 다르다). popup 이 닫히면 `None` 을
 넘겨 취소한다.
+
+### 파생 데드라인은 반드시 바닥친다 — 누수보다 스핀이 비싸다
+
+폴링 데드라인은 "마지막으로 읽은 시각 + 주기" 로 파생한다. 그래서 상류가 낡으면
+값이 **영원히 과거**에 머물고, 그걸 그대로 등록하면 `next_deadline()` 이 과거가 되어
+`WaitUntil(과거)` = 즉시 wake 가 무한 반복된다. 결과는 코어 하나 100% 스핀이다.
+
+등록을 잊는 누수(= 쓸데없이 한 번 더 깨어남)와 stale 데드라인(= 아예 쉬지 못함)은
+실패 비용의 차원이 다르다. 그래서 파생 데드라인은 등록 직전에 항상
+`not_before_next_period(at, now, period)` 를 통과시킨다 — 이미 지난 값이면 `now +
+주기` 로 올려, 상류가 무슨 실수를 하든 최악이 **주기당 1회 wakeup** 으로 묶인다.
+정상(미래) 데드라인은 손대지 않으므로 폴링 위상은 그대로다.
 
 > **참고**: 이 두 경로는 원래 egui `request_repaint_after(500ms)` 로 자기 wakeup 을
 > 예약했지만, 호스트는 idle frame loop 를 막으려고 `delay > 0` 인 repaint 요청을

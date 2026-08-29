@@ -10,6 +10,11 @@ use std::time::Instant;
 use tasty_timer::Precision;
 use tasty_timer::TimerHub;
 
+/// DAG 뷰/popup 이 memory store 를 다시 읽는 주기. 데이터 소유자는 뷰 쪽이라
+/// 상수도 거기 있고, 여기서는 stale 데드라인의 바닥값으로만 쓴다.
+#[cfg(feature = "gui")]
+use crate::adapters::ui::surface::dag_graph::view::POLL_INTERVAL as DAG_POLL_INTERVAL;
+
 /// 메인 루프가 시간축으로 굴리는 주기 작업의 키.
 ///
 /// 키 하나 = "전 엔진 순회 스텝 하나". busy 갱신이 이미 전 window + parked 엔진을
@@ -128,28 +133,60 @@ pub(crate) fn sync_layout_flush_timer(
     }
 }
 
+/// 이미 지난 폴링 데드라인을 한 주기 뒤로 끌어올린다.
+///
+/// 폴링 데드라인은 "마지막으로 읽은 시각 + 주기" 로 파생한다. 그래서 데이터를
+/// 실제로 읽는 렌더 패스가 어떤 이유로든 멈춘 채 데드라인만 계속 재계산되면 값이
+/// 영원히 과거에 머문다. 그대로 등록하면 `next_deadline()` 이 과거가 되어
+/// `WaitUntil(과거)` = 즉시 wake 가 무한 반복되고, 코어 하나가 100% 로 스핀한다.
+///
+/// 등록 누락(=누수)은 "쓸데없이 한 번 더 깨어남" 이지만 stale 데드라인은 "쉬지
+/// 못함" 이라 실패 비용의 차원이 다르다. 그래서 파생 데드라인은 등록 직전에 항상
+/// 이 함수를 통과시켜, 상류가 무슨 실수를 하든 최악이 **주기당 1회** 로 묶이게 한다.
+#[cfg(feature = "gui")]
+fn not_before_next_period(at: Instant, now: Instant, period: Duration) -> Instant {
+    if at > now { at } else { now + period }
+}
+
 /// DAG graph surface 폴링 타이머를 **이번 프레임에 보인 집합**에 맞춘다.
 ///
 /// `active` 에 없는 `DagGraph` 키는 전부 취소한다 — 닫힌 뷰(`drop_view`)든 배경
 /// 탭으로 밀린 뷰든 예약이 남지 않는 것이 이 함수의 존재 이유다. egui
 /// `request_repaint_after` 는 뷰가 그려질 때만 갱신돼 자동 소멸했지만 허브 등록은
 /// 그렇지 않다.
+///
+/// 데드라인은 [`not_before_next_period`] 를 통과시킨다 — `active` 가 어떤 경로로든
+/// 낡은 채로 들어와도 스핀이 아니라 주기당 1회 wakeup 으로 끝난다.
 #[cfg(feature = "gui")]
-pub(crate) fn sync_dag_graph_timers(hub: &mut TimerHub<Tick>, active: &[(u32, Instant)]) {
+pub(crate) fn sync_dag_graph_timers(
+    hub: &mut TimerHub<Tick>,
+    active: &[(u32, Instant)],
+    now: Instant,
+) {
     hub.cancel_if(|key| match key {
         Tick::DagGraph(sid) => !active.iter().any(|(s, _)| *s == sid),
         _ => false,
     });
     for (sid, at) in active {
-        hub.once_at(Tick::DagGraph(*sid), *at, Precision::Strict);
+        let at = not_before_next_period(*at, now, DAG_POLL_INTERVAL);
+        hub.once_at(Tick::DagGraph(*sid), at, Precision::Strict);
     }
 }
 
 /// DAG 목록 popup 폴링 타이머. `None` = popup 이 닫혀 있다(예약 없음).
+/// graph 뷰와 같은 이유로 데드라인을 [`not_before_next_period`] 로 바닥친다.
 #[cfg(feature = "gui")]
-pub(crate) fn sync_dag_list_popup_timer(hub: &mut TimerHub<Tick>, next_poll: Option<Instant>) {
+pub(crate) fn sync_dag_list_popup_timer(
+    hub: &mut TimerHub<Tick>,
+    next_poll: Option<Instant>,
+    now: Instant,
+) {
     match next_poll {
-        Some(at) => hub.once_at(Tick::DagListPopup, at, Precision::Strict),
+        Some(at) => hub.once_at(
+            Tick::DagListPopup,
+            not_before_next_period(at, now, DAG_POLL_INTERVAL),
+            Precision::Strict,
+        ),
         None => hub.cancel(Tick::DagListPopup),
     }
 }
@@ -307,7 +344,7 @@ mod tests {
     fn dag_graph_timers_track_the_visible_set() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))], t0);
         assert!(hub.is_registered(Tick::DagGraph(7)));
         assert_eq!(hub.next_deadline(), Some(t0 + Duration::from_millis(500)));
         assert_eq!(
@@ -323,10 +360,10 @@ mod tests {
     fn closing_a_dag_graph_view_cancels_its_timer() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))], t0);
         assert!(hub.is_registered(Tick::DagGraph(7)));
 
-        sync_dag_graph_timers(&mut hub, &[]);
+        sync_dag_graph_timers(&mut hub, &[], t0);
         assert!(!hub.is_registered(Tick::DagGraph(7)));
         assert!(hub.next_deadline().is_none());
     }
@@ -338,11 +375,11 @@ mod tests {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
         let at = t0 + Duration::from_millis(500);
-        sync_dag_graph_timers(&mut hub, &[(7, at), (9, at)]);
+        sync_dag_graph_timers(&mut hub, &[(7, at), (9, at)], t0);
         assert!(hub.is_registered(Tick::DagGraph(7)));
         assert!(hub.is_registered(Tick::DagGraph(9)));
 
-        sync_dag_graph_timers(&mut hub, &[(9, at)]);
+        sync_dag_graph_timers(&mut hub, &[(9, at)], t0);
         assert!(!hub.is_registered(Tick::DagGraph(7)));
         assert!(hub.is_registered(Tick::DagGraph(9)));
     }
@@ -354,10 +391,61 @@ mod tests {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
         register_steady_state(&mut hub, t0);
-        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
-        sync_dag_graph_timers(&mut hub, &[]);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))], t0);
+        sync_dag_graph_timers(&mut hub, &[], t0);
         assert!(hub.is_registered(Tick::Busy));
         assert!(hub.is_registered(Tick::AttachView));
+    }
+
+    /// **회귀 방지(gate4-22)** — 낡은(이미 지난) 데드라인이 들어와도 이벤트 루프가
+    /// 쉴 수 있어야 한다.
+    ///
+    /// 상류(`pending_poll_deadlines`)는 "마지막으로 읽은 시각 + 500ms" 를 준다.
+    /// 실제 읽기가 멈춘 채 이 값만 계속 재계산되면 값이 영원히 과거에 머무는데,
+    /// 그대로 등록하면 `WaitUntil(과거)` 가 즉시 wake 를 무한 반복해 코어 하나가
+    /// 100% 로 스핀한다(실측 410~449 ticks/5s vs baseline 2). 데드라인은 항상
+    /// `now` 보다 뒤여야 한다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_stale_dag_deadline_never_schedules_a_wakeup_in_the_past() {
+        let now = Instant::now();
+        let stale = now - Duration::from_secs(3); // 3초 전에 읽고 그대로 멈춘 뷰
+        let mut hub = TimerHub::new();
+
+        sync_dag_graph_timers(&mut hub, &[(7, stale)], now);
+        let deadline = hub.next_deadline().expect("registered");
+        assert!(
+            deadline > now,
+            "과거 데드라인을 그대로 등록하면 루프가 스핀한다: {deadline:?} <= {now:?}"
+        );
+        assert_eq!(deadline, now + DAG_POLL_INTERVAL, "최악이라도 주기당 1회");
+
+        // 같은 상황이 다음 프레임에 반복돼도(= 여전히 낡은 값) 결과는 동일하다.
+        let later = now + Duration::from_millis(1);
+        sync_dag_graph_timers(&mut hub, &[(7, stale)], later);
+        assert_eq!(hub.next_deadline(), Some(later + DAG_POLL_INTERVAL));
+    }
+
+    /// 정상(미래) 데드라인은 바닥치기가 건드리지 않는다 — 위 방어가 폴링 위상을
+    /// 밀어버리면 그것대로 회귀다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_fresh_dag_deadline_is_scheduled_as_is() {
+        let now = Instant::now();
+        let at = now + Duration::from_millis(120); // 380ms 전에 읽은 뷰
+        let mut hub = TimerHub::new();
+        sync_dag_graph_timers(&mut hub, &[(7, at)], now);
+        assert_eq!(hub.next_deadline(), Some(at));
+    }
+
+    /// popup 데드라인도 같은 바닥을 갖는다(같은 파생식 → 같은 실패 양상).
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_stale_dag_list_popup_deadline_is_floored_too() {
+        let now = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_dag_list_popup_timer(&mut hub, Some(now - Duration::from_secs(1)), now);
+        assert_eq!(hub.next_deadline(), Some(now + DAG_POLL_INTERVAL));
     }
 
     /// popup 이 닫히면 예약도 사라진다.
@@ -366,9 +454,9 @@ mod tests {
     fn dag_list_popup_timer_follows_the_popup() {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
-        sync_dag_list_popup_timer(&mut hub, Some(t0 + Duration::from_millis(500)));
+        sync_dag_list_popup_timer(&mut hub, Some(t0 + Duration::from_millis(500)), t0);
         assert!(hub.is_registered(Tick::DagListPopup));
-        sync_dag_list_popup_timer(&mut hub, None);
+        sync_dag_list_popup_timer(&mut hub, None, t0);
         assert!(!hub.is_registered(Tick::DagListPopup));
     }
 
@@ -397,7 +485,7 @@ mod tests {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
         register_steady_state(&mut hub, t0);
-        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))], t0);
         sync_reconnect_timers(&mut hub, &[(3, t0 + Duration::from_secs(5))]);
         sync_reconnect_timers(&mut hub, &[]);
         assert!(hub.is_registered(Tick::Busy));

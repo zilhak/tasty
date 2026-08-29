@@ -348,10 +348,7 @@ impl DagGraphViewStore {
     /// 렌더 루프 **진입 전에** 호출한다 — 루프 안에서는 `engine` 이 workspace/pane/
     /// tab 에 배타 차용돼 store 를 읽을 수 없다(explorer 의 outbox 패턴과 같은 제약).
     pub fn poll(&mut self, engine: &crate::core::CoreState, requests: &[DagPollRequest]) {
-        // 이번 프레임에 보인 집합으로 통째로 교체한다 — 배경 탭으로 밀린 surface 는
-        // 여기서 자연히 빠지고, 호스트가 그 타이머를 걷어낸다.
-        self.visible.clear();
-        self.visible.extend(requests.iter().map(|r| r.surface_id));
+        self.note_visible(requests);
         for req in requests {
             self.views.entry(req.surface_id).or_default().poll_if_stale(
                 engine,
@@ -361,6 +358,18 @@ impl DagGraphViewStore {
         }
         // 이번 프레임에 보이지 않은 surface 의 뷰는 남겨 둔다(줌/선택 유지). 정리는
         // surface 종료 시 `drop_view` 가 한다.
+    }
+
+    /// 이번 프레임에 보인 집합으로 `visible` 을 **통째로 교체**한다.
+    ///
+    /// 폴링 타이머의 수명을 결정하는 유일한 지점이다. 배경 탭으로 밀린 surface 는
+    /// (닫히지 않았으므로 `drop_view` 를 타지 않고) 오직 여기서만 빠진다 — 그래서
+    /// 호출부는 `requests` 가 **비어 있어도 반드시** `poll` 을 불러야 한다. 빈
+    /// 프레임을 건너뛰면 옛 id 가 남아 호스트가 지난 데드라인을 매 프레임 재등록하고,
+    /// 이벤트 루프가 쉬지 못한다.
+    fn note_visible(&mut self, requests: &[DagPollRequest]) {
+        self.visible.clear();
+        self.visible.extend(requests.iter().map(|r| r.surface_id));
     }
 }
 
@@ -481,15 +490,22 @@ mod tests {
     use super::super::model::{DagEdgeData, DagGraphData, DagNodeData, DagRelation};
     use super::*;
 
+    fn req(surface_id: SurfaceId) -> DagPollRequest {
+        DagPollRequest {
+            surface_id,
+            workspace_id: 1,
+            dag_id: None,
+        }
+    }
+
     /// 뷰가 닫히면 폴링 데드라인 목록에서도 사라져야 한다 — 남으면 호스트가
     /// 사라진 surface 의 타이머를 계속 재등록해 500ms 마다 영원히 깨어난다.
     #[test]
     fn dropping_a_view_removes_it_from_the_poll_deadlines() {
         let now = Instant::now();
         let mut store = DagGraphViewStore::default();
-        // 렌더가 "보였다" 고 알린 상태를 직접 만든다(poll 은 engine 이 필요).
         store.get_or_init(7);
-        store.visible = vec![7];
+        store.note_visible(&[req(7)]);
         assert_eq!(store.pending_poll_deadlines(now).len(), 1);
 
         store.drop_view(7);
@@ -497,6 +513,44 @@ mod tests {
             store.pending_poll_deadlines(now).is_empty(),
             "닫힌 뷰가 폴링 예약을 남기면 누수가 된다"
         );
+    }
+
+    /// **회귀 방지(gate4-22)** — DAG surface 를 *닫지 않고* 배경 탭으로 보내면
+    /// 그 프레임의 요청 목록이 빈 채로 들어온다. 그때 `visible` 이 비어야 호스트가
+    /// 폴링 타이머를 걷는다. 남으면 지난 데드라인이 매 프레임 재등록돼 스핀한다.
+    ///
+    /// `drop_view` 는 **닫는 경로에만** 걸리므로 이 경로를 대신해 주지 못한다.
+    #[test]
+    fn a_frame_with_no_visible_dag_view_clears_the_poll_deadlines() {
+        let now = Instant::now();
+        let mut store = DagGraphViewStore::default();
+        store.get_or_init(7);
+        store.note_visible(&[req(7)]);
+        assert_eq!(store.pending_poll_deadlines(now).len(), 1);
+
+        // 배경 탭 전환 — 닫지 않았으므로 뷰 상태(줌/선택)는 남지만 예약은 사라진다.
+        store.note_visible(&[]);
+        assert!(store.pending_poll_deadlines(now).is_empty());
+        assert!(
+            store.views.contains_key(&7),
+            "배경으로 밀렸을 뿐 닫힌 게 아니다 — 뷰 상태는 보존한다"
+        );
+    }
+
+    /// 여러 뷰 중 하나만 배경으로 밀리는 경우 — 남은 것만 예약을 유지한다.
+    #[test]
+    fn only_the_views_visible_this_frame_keep_their_deadlines() {
+        let now = Instant::now();
+        let mut store = DagGraphViewStore::default();
+        store.get_or_init(7);
+        store.get_or_init(9);
+        store.note_visible(&[req(7), req(9)]);
+        assert_eq!(store.pending_poll_deadlines(now).len(), 2);
+
+        store.note_visible(&[req(9)]);
+        let due = store.pending_poll_deadlines(now);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].0, 9);
     }
 
     /// 아직 한 번도 안 읽은 뷰는 즉시 읽어야 하고, 읽은 뒤에는 다음 주기로 밀린다.

@@ -2467,8 +2467,8 @@ impl App {
                 popup_next = Some(popup_next.map_or(at, |p: std::time::Instant| p.min(at)));
             }
         }
-        crate::app::timers::sync_dag_graph_timers(&mut self.timers, &active);
-        crate::app::timers::sync_dag_list_popup_timer(&mut self.timers, popup_next);
+        crate::app::timers::sync_dag_graph_timers(&mut self.timers, &active, now);
+        crate::app::timers::sync_dag_list_popup_timer(&mut self.timers, popup_next, now);
     }
 
     /// `Tick::DagGraph` 실행부 — 그 surface 를 보고 있는 창만 dirty 로 표시한다.
