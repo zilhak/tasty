@@ -12,12 +12,15 @@ pub mod format;
 pub mod help;
 pub mod hook_failure;
 pub mod plugin;
-pub mod remote_browse;
-pub mod remote_create;
 pub mod request;
 pub mod run;
 
 use clap::{Parser, Subcommand};
+
+/// 원격 인스턴스 조회/생성 코어는 `tasty-remote` 크레이트로 분리됐다. 내부
+/// `crate::remote_browse::` / `crate::remote_create::` 경로를 유지하기 위한 재수출.
+pub use tasty_remote::browse as remote_browse;
+pub use tasty_remote::create as remote_create;
 
 /// SSH 위임 계층은 `tasty-ssh` 크레이트로 분리됐다. 내부 `crate::ssh::` 경로를
 /// 유지하기 위한 재수출 (`docs/dev-guide/build.md` §크레이트 분리 가이드).

@@ -23,7 +23,7 @@ use anyhow::{Context, Result, bail};
 use tasty_ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
 
-use crate::ssh::{self, PortMode, SshTarget, SshTunnel};
+use tasty_ssh::{self as ssh, PortMode, SshTarget, SshTunnel};
 
 /// 원격 프로브 1회의 읽기/쓰기 타임아웃. 살아있는 서버는 즉시 응답하므로 짧게 잡는다
 /// — stale 포트(EOF 전 행이 걸리는 경우)도 이 안에 끊긴다(no-hang 보장).

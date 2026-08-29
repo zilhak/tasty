@@ -203,6 +203,7 @@ tasty-plugin-claude = { path = "crates/tasty-plugin-claude" }
 tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-cli = { path = "crates/tasty-cli" }
 tasty-model = { path = "crates/tasty-model" }
+tasty-remote = { path = "crates/tasty-remote" }
 tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }
 tasty-presets = { path = "crates/tasty-presets" }
@@ -506,6 +507,8 @@ opt-level = 3
 [profile.dev.package.tasty-plugin-sdk]
 opt-level = 3
 [profile.dev.package.tasty-portscan]
+opt-level = 3
+[profile.dev.package.tasty-remote]
 opt-level = 3
 [profile.dev.package.tasty-presets]
 opt-level = 3

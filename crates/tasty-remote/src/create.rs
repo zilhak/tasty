@@ -1,7 +1,7 @@
 //! 원격 워크스페이스 **생성** 능력 — attach 프로필/ssh 대상에 붙어 원격 tasty
 //! 인스턴스에 워크스페이스를 하나 만든다(`workspace.create` 1회).
 //!
-//! [`crate::remote_browse`] 와 형제 모듈이다. 그쪽이 "client 측 순수 조회" 인 반면
+//! [`crate::browse`] 와 형제 모듈이다. 그쪽이 "client 측 순수 조회" 인 반면
 //! 이 모듈은 **원격 상태를 바꾸는 유일한 client 능력**이라, 조회/변경을 모듈 경계로
 //! 갈라 둔다(browse 라는 이름 아래 mutate 를 숨기지 않는다).
 //!
@@ -18,8 +18,8 @@
 
 use anyhow::{Context, Result};
 
-use crate::remote_browse::{probe_method, resolve_endpoint};
-use crate::ssh::SshTarget;
+use crate::browse::{probe_method, resolve_endpoint};
+use tasty_ssh::SshTarget;
 
 /// 원격에 갓 만들어진 워크스페이스 — `workspace.create` 응답에서 이번 스코프에
 /// 의미 있는 필드만 추린다(그 id 를 attach 대상으로 그대로 넘길 수 있다).

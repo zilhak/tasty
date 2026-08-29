@@ -1,0 +1,24 @@
+[package]
+name = "tasty-remote"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Client-side remote-instance capabilities for Tasty — browse and create workspaces on a remote tasty over SSH or loopback"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+# Workspace crates
+tasty-i18n = { path = "../tasty-i18n" }
+tasty-ipc = { path = "../tasty-ipc" }
+tasty-remote-profiles = { path = "../tasty-remote-profiles" }
+tasty-ssh = { path = "../tasty-ssh" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+
+[lints]
+workspace = true

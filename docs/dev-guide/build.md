@@ -9,7 +9,7 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*` 다수**(현재 44�
 | 레이어 | 예 | 성격 |
 |--------|-----|------|
 | **type-\*** primitive | `tasty-type-geometry`(길이), `tasty-type-appearance`(색·theme schema) | 최하위 schema/primitive |
-| 도메인 leaf (GUI-free) | `tasty-model`, `tasty-i18n`, `tasty-settings`, `tasty-themes`, `tasty-terminal`, `tasty-memory`, `tasty-hooks`, `tasty-ipc`, `tasty-ssh`, `tasty-portscan` 등 | 공용 도메인·IO |
+| 도메인 leaf (GUI-free) | `tasty-model`, `tasty-i18n`, `tasty-settings`, `tasty-themes`, `tasty-terminal`, `tasty-memory`, `tasty-hooks`, `tasty-ipc`, `tasty-ssh`, `tasty-remote`, `tasty-portscan` 등 | 공용 도메인·IO |
 | plugin 인프라 | `tasty-plugin-protocol`, `tasty-plugin-sdk`, `tasty-plugin-manifest`, `tasty-host-plugin` | 호스트↔plugin 와이어·SDK |
 | 번들 plugin | `tasty-plugin-{claude,codex,image,html,markdown,git-viewer,clipboard-viewer,mesh-demo}` | → [`../plugins/`](../plugins/index.md) |
 | CLI / 테스트 | `tasty-cli`, `tasty-tui-simulator` | |
@@ -129,6 +129,8 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 ## 크레이트 분리 가이드
 
 본 바이너리의 큰 leaf 모듈을 떼어낼 때 후보 조건: **out-degree 작음**(다른 src/ 모듈 거의 미참조) · **사이클 없음** · **충분히 큼**(1000줄+). 절차: `crates/tasty-<name>/` 생성 → `git mv` → 내부 경로 갱신 → 본 `Cargo.toml` 의존 추가 → `pub use tasty_<name> as <name>` 재수출(backward path 유지) → `cargo check`/`build` 검증. 기존 `crate::model::Foo` 경로가 그대로 동작하는 게 핵심이라 reverse import 갈아끼우기가 불필요하다.
+
+**세 조건 중 크기는 보조 지표다** — 소비자가 둘 이상이고, 합칠 후보 크레이트에 *그 크레이트가 원래 몰라도 되는 의존* 을 들이게 되는 코드는 1000줄에 못 미쳐도 분리한다(판정은 의존 방향이 우선, [ADR-0089](../adr/0089-crate-split-follows-dependency-direction.md)).
 
 ### 의존 방향 규칙 — 본체는 `tasty-cli` 를 참조하지 않는다
 

@@ -23,6 +23,7 @@ tasty-host-plugin = { path = "../tasty-host-plugin" }
 tasty-approval = { path = "../tasty-approval" }
 tasty-utils = { path = "../tasty-utils" }
 tasty-i18n = { path = "../tasty-i18n" }
+tasty-remote = { path = "../tasty-remote" }
 tasty-remote-profiles = { path = "../tasty-remote-profiles" }
 tasty-ssh = { path = "../tasty-ssh" }
 # debug-only `tasty debug sim` shares the simulator lib; release dead-code-elims it.
