@@ -195,6 +195,34 @@ wakeup 이 늘지 않는다. 그 결과 **비응답 검출 상한은 `60s + 15s 
 이유가 없다. slack 을 넘기면 hard deadline 이 되어 변경이 영영 디스크에 못 닿는 일은
 없다. 종료·창 은퇴 경로는 이 타이머와 무관하게 `force=true` 로 즉시 저장한다.
 
+## 파라미터화된 키는 수명을 반드시 동기화한다
+
+`Tick::DagGraph(surface_id)` 처럼 **키가 대상마다 하나씩 생기는** 타이머는 등록보다
+해제가 어렵다. egui `request_repaint_after` 는 뷰가 그려질 때만 예약이 갱신돼 뷰가
+닫히면 자동 소멸했지만, 허브 등록은 저절로 사라지지 않는다 — 닫힌 뷰 하나가 500ms
+마다 영원히 호스트를 깨우는 누수가 된다.
+
+그래서 매 프레임 **"지금 실제로 보이는 대상" 집합으로 전체를 맞춘다**(선언적 동기화):
+
+```rust
+hub.cancel_if(|key| matches!(key, Tick::DagGraph(sid) if !active.contains(sid)));
+for (sid, at) in active { hub.once_at(Tick::DagGraph(*sid), *at, Strict); }
+```
+
+정리 지점이 하나라 `drop_view` 를 어디서 부르든(surface 닫힘 / 배경 탭 전환 /
+창 종료) 누락이 생길 수 없다. 스토어 쪽에서도 `drop_view` 가 `visible` 집합에서
+빼주어야 한다 — 남겨두면 사라진 surface 가 계속 데드라인 목록에 실린다.
+
+DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로 키가 따로다
+(같은 `DagGraphView` 를 쓰지만 수명 주체가 다르다). popup 이 닫히면 `None` 을
+넘겨 취소한다.
+
+> **참고**: 이 두 경로는 원래 egui `request_repaint_after(500ms)` 로 자기 wakeup 을
+> 예약했지만, 호스트는 idle frame loop 를 막으려고 `delay > 0` 인 repaint 요청을
+> repaint 콜백 단계에서 **drop** 한다(`src/gfx/gpu.rs`). 즉 그 예약은 실제로 루프를
+> 깨우지 못했고, 다른 이유로 프레임이 돌 때만 갱신됐다. 허브로 옮기면서 의도대로
+> 500ms cadence 가 실제로 동작한다.
+
 ## 가드 중 타이머는 정지한다 (계약)
 
 `about_to_wait` 의 shutdown / boot 가드는 조기 return 한다. **그 동안 `drain_due` 에

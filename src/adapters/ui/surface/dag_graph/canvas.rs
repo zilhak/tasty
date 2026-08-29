@@ -131,9 +131,10 @@ pub fn draw_canvas(
         }
     }
 
-    // 다음 폴링 시점에 스스로 깨어난다. **보이는 동안만** 예약하므로 배경 탭은
-    // 프레임을 소모하지 않는다.
-    ui.ctx().request_repaint_after(view.until_next_poll());
+    // 다음 폴링 시점의 wakeup 은 중앙 타이머 허브가 예약한다(`Tick::DagGraph`) —
+    // egui `request_repaint_after` 는 delay > 0 이면 idle frame loop 방지를 위해
+    // repaint 콜백 단계에서 drop 되므로(`gfx/gpu.rs`) 여기서 걸어도 깨어나지 않는다.
+    // **보이는 동안만** 예약되는 성질은 그대로다(`DagGraphViewStore::poll` 참조).
 
     super::chrome::draw_canvas_chrome(ui, theme, rect, view, layout, direction, lod)
 }

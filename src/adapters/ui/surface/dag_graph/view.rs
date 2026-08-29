@@ -6,10 +6,17 @@
 //! # 폴링
 //!
 //! runner 는 별도 스레드(500ms tick)라 그 상태 변화가 egui 렌더 루프를 깨우지
-//! 않는다. 그래서 캔버스는 보이는 동안 스스로 `request_repaint_after` 를 걸고,
-//! 그 프레임에서 [`DagGraphViewStore::poll`] 이 memory store 를 다시 읽는다.
-//! **보이지 않으면 아무것도 예약하지 않는다** — 안 보이는 탭이 유휴 CPU 를 태우지
-//! 않게 하려는 것이다.
+//! 않는다. 그래서 **보이는 동안만** 다음 폴링 시각을 중앙 타이머 허브에 걸어 두고
+//! (`Tick::DagGraph(surface_id)`, `docs/dev-guide/timer-hub.md`), 그 tick 이 창을
+//! dirty 로 표시해 도는 프레임에서 [`DagGraphViewStore::poll`] 이 memory store 를
+//! 다시 읽는다. **보이지 않으면 아무것도 예약하지 않는다** — 안 보이는 탭이 유휴
+//! CPU 를 태우지 않게 하려는 것이다.
+//!
+//! 예약을 스스로 소멸시키던 egui `request_repaint_after`(뷰가 그려질 때만 갱신)와
+//! 달리 허브 등록은 저절로 사라지지 않는다. 그래서 이 스토어는 매 프레임 **이번에
+//! 보인 surface 집합**만 데드라인으로 내보내고([`DagGraphViewStore::pending_poll_deadlines`]),
+//! 호스트가 그 집합에 없는 키를 취소한다 — 닫히거나 가려진 뷰 때문에 영원히
+//! 깨어나는 누수가 구조적으로 불가능해진다.
 //!
 //! # 레이아웃 캐시
 //!
@@ -150,11 +157,10 @@ impl DagGraphView {
             .is_none_or(|t| now.duration_since(t) >= POLL_INTERVAL)
     }
 
-    /// 다음 폴링까지 남은 시간 — 캔버스가 `request_repaint_after` 에 그대로 쓴다.
-    pub fn until_next_poll(&self) -> Duration {
-        self.last_poll
-            .map(|t| POLL_INTERVAL.saturating_sub(t.elapsed()))
-            .unwrap_or(Duration::ZERO)
+    /// 다음 폴링 시각. 아직 한 번도 안 읽었으면 `None`(= 즉시 읽어야 함).
+    /// 호스트가 이 값을 `Tick::DagGraph` 데드라인으로 쓴다.
+    pub fn next_poll_at(&self) -> Option<Instant> {
+        self.last_poll.map(|t| t + POLL_INTERVAL)
     }
 
     /// 폴링 게이트를 지나면 memory store 를 다시 읽는다.
@@ -307,6 +313,9 @@ impl DagGraphView {
 #[derive(Default)]
 pub struct DagGraphViewStore {
     views: HashMap<SurfaceId, DagGraphView>,
+    /// 직전 [`Self::poll`] 이 받은 = **이번 프레임에 실제로 보인** surface 들.
+    /// 폴링 타이머는 이 집합에만 걸린다(보이지 않으면 예약 없음).
+    visible: Vec<SurfaceId>,
 }
 
 impl DagGraphViewStore {
@@ -314,9 +323,24 @@ impl DagGraphViewStore {
         self.views.entry(surface_id).or_default()
     }
 
-    /// surface 가 닫힐 때 호출 — 뷰 상태를 버린다.
+    /// surface 가 닫힐 때 호출 — 뷰 상태를 버린다. `visible` 에서도 빼야 한다:
+    /// 남겨두면 사라진 surface 의 폴링 타이머가 계속 재등록돼 누수가 된다.
     pub fn drop_view(&mut self, surface_id: SurfaceId) {
         self.views.remove(&surface_id);
+        self.visible.retain(|s| *s != surface_id);
+    }
+
+    /// 이번 프레임에 보인 뷰들의 다음 폴링 시각. 호스트가 이 목록 그대로
+    /// `Tick::DagGraph(surface_id)` 를 동기화하고, **목록에 없는 키는 취소**한다.
+    /// 아직 한 번도 안 읽은 뷰는 `now`(= 다음 프레임에 즉시).
+    pub fn pending_poll_deadlines(&self, now: Instant) -> Vec<(SurfaceId, Instant)> {
+        self.visible
+            .iter()
+            .filter_map(|sid| {
+                let v = self.views.get(sid)?;
+                Some((*sid, v.next_poll_at().unwrap_or(now)))
+            })
+            .collect()
     }
 
     /// 이번 프레임에 보이는 DAG surface 들의 데이터를 필요하면 새로 읽는다.
@@ -324,6 +348,10 @@ impl DagGraphViewStore {
     /// 렌더 루프 **진입 전에** 호출한다 — 루프 안에서는 `engine` 이 workspace/pane/
     /// tab 에 배타 차용돼 store 를 읽을 수 없다(explorer 의 outbox 패턴과 같은 제약).
     pub fn poll(&mut self, engine: &crate::core::CoreState, requests: &[DagPollRequest]) {
+        // 이번 프레임에 보인 집합으로 통째로 교체한다 — 배경 탭으로 밀린 surface 는
+        // 여기서 자연히 빠지고, 호스트가 그 타이머를 걷어낸다.
+        self.visible.clear();
+        self.visible.extend(requests.iter().map(|r| r.surface_id));
         for req in requests {
             self.views.entry(req.surface_id).or_default().poll_if_stale(
                 engine,
@@ -452,6 +480,34 @@ pub fn layout_config(theme: &Theme, direction: DagDirection) -> LayoutConfig {
 mod tests {
     use super::super::model::{DagEdgeData, DagGraphData, DagNodeData, DagRelation};
     use super::*;
+
+    /// 뷰가 닫히면 폴링 데드라인 목록에서도 사라져야 한다 — 남으면 호스트가
+    /// 사라진 surface 의 타이머를 계속 재등록해 500ms 마다 영원히 깨어난다.
+    #[test]
+    fn dropping_a_view_removes_it_from_the_poll_deadlines() {
+        let now = Instant::now();
+        let mut store = DagGraphViewStore::default();
+        // 렌더가 "보였다" 고 알린 상태를 직접 만든다(poll 은 engine 이 필요).
+        store.get_or_init(7);
+        store.visible = vec![7];
+        assert_eq!(store.pending_poll_deadlines(now).len(), 1);
+
+        store.drop_view(7);
+        assert!(
+            store.pending_poll_deadlines(now).is_empty(),
+            "닫힌 뷰가 폴링 예약을 남기면 누수가 된다"
+        );
+    }
+
+    /// 아직 한 번도 안 읽은 뷰는 즉시 읽어야 하고, 읽은 뒤에는 다음 주기로 밀린다.
+    #[test]
+    fn poll_deadline_advances_after_a_read() {
+        let now = Instant::now();
+        let mut view = DagGraphView::default();
+        assert_eq!(view.next_poll_at(), None, "미폴링 = 즉시");
+        view.last_poll = Some(now);
+        assert_eq!(view.next_poll_at(), Some(now + POLL_INTERVAL));
+    }
 
     #[test]
     fn lod_tiers_follow_zoom_thresholds() {

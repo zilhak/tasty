@@ -344,6 +344,10 @@ impl ApplicationHandler<AppEvent> for App {
                 Tick::AttachView => self.poll_attach_views(),
                 // 디바운스 만료 — 이 프레임에 슬롯 파일로 flush 한다.
                 Tick::LayoutFlush => self.flush_layout_persistence(false),
+                // runner 진행을 화면에 반영할 시점 — 창을 dirty 로 표시하면 그
+                // 프레임의 렌더 경로가 `poll_if_stale` 로 실제 재조회를 한다.
+                Tick::DagGraph(sid) => self.mark_dag_graph_window_dirty(sid),
+                Tick::DagListPopup => self.mark_dag_list_popup_windows_dirty(),
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
@@ -485,6 +489,10 @@ impl ApplicationHandler<AppEvent> for App {
         // 허브에 걸어 둔다 — 실제 저장은 위 `Tick::LayoutFlush` 실행부가 한다.
         let dirty_since = self.earliest_layout_dirty_since();
         crate::app::timers::sync_layout_flush_timer(&mut self.timers, dirty_since);
+
+        // DAG 뷰/목록 popup 의 다음 폴링 wakeup — 이번 프레임에 실제로 보인 것만
+        // 남긴다(닫히거나 배경으로 밀린 뷰의 등록은 여기서 걷힌다).
+        self.sync_dag_poll_timers(now);
 
         self.flush_pending_pty_resizes();
 
@@ -2431,6 +2439,59 @@ impl App {
             Some(at) => winit::event_loop::ControlFlow::WaitUntil(at),
             None => winit::event_loop::ControlFlow::Wait,
         });
+    }
+
+    /// DAG graph surface / DAG 목록 popup 의 폴링 데드라인을 허브에 동기화한다.
+    ///
+    /// runner 는 별도 스레드라 진행이 렌더 루프를 깨우지 않는다. 예약이 필요한 것은
+    /// **지금 실제로 보이는** 뷰뿐이고, 보이지 않게 된 뷰의 등록은 걷어내야 한다 —
+    /// 그 정리를 한곳에서 선언적으로 한다(`docs/dev-guide/timer-hub.md`).
+    fn sync_dag_poll_timers(&mut self, now: std::time::Instant) {
+        use crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID;
+
+        let mut active: Vec<(u32, std::time::Instant)> = Vec::new();
+        let mut popup_next: Option<std::time::Instant> = None;
+        for w in self.view.views.values() {
+            let Some(main) = w.as_main() else {
+                continue;
+            };
+            active.extend(main.state.dag_graph_views.pending_poll_deadlines(now));
+            if main.state.popups.is_open(DAG_LIST_POPUP_ID) {
+                let at = main.state.dialogs.dag_list.next_poll_at(now);
+                popup_next = Some(popup_next.map_or(at, |p: std::time::Instant| p.min(at)));
+            }
+        }
+        crate::app::timers::sync_dag_graph_timers(&mut self.timers, &active);
+        crate::app::timers::sync_dag_list_popup_timer(&mut self.timers, popup_next);
+    }
+
+    /// `Tick::DagGraph` 실행부 — 그 surface 를 보고 있는 창만 dirty 로 표시한다.
+    fn mark_dag_graph_window_dirty(&mut self, surface_id: u32) {
+        let now = std::time::Instant::now();
+        for w in self.view.views.values_mut() {
+            let showing = w.as_main().is_some_and(|m| {
+                m.state
+                    .dag_graph_views
+                    .pending_poll_deadlines(now)
+                    .iter()
+                    .any(|(sid, _)| *sid == surface_id)
+            });
+            if showing {
+                w.mark_dirty();
+            }
+        }
+    }
+
+    /// `Tick::DagListPopup` 실행부 — popup 이 열려 있는 창만 dirty 로 표시한다.
+    fn mark_dag_list_popup_windows_dirty(&mut self) {
+        use crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID;
+        for w in self.view.views.values_mut() {
+            if w.as_main()
+                .is_some_and(|m| m.state.popups.is_open(DAG_LIST_POPUP_ID))
+            {
+                w.mark_dirty();
+            }
+        }
     }
 
     /// 열려 있는 네이티브 컨텍스트 메뉴를 전 창에 걸쳐 1회씩 펌프한다.

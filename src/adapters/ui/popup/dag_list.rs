@@ -133,6 +133,22 @@ pub struct DagListState {
 }
 
 impl DagListState {
+    /// 열려 있는 동안의 다음 폴링 시각. 호스트가 `Tick::DagListPopup` 데드라인으로
+    /// 쓴다(`docs/dev-guide/timer-hub.md`) — surface 뷰와 달리 popup 은 surface 에
+    /// 매이지 않아 키가 따로다. 아직 한 번도 안 읽었으면 `now`(= 다음 프레임에 즉시).
+    ///
+    /// 디테일이 닫혀 있으면 그래프는 아예 폴링 대상이 아니므로 목록 주기만 본다 —
+    /// 여기서 그래프를 함께 세면 `last_poll` 이 영원히 `None` 이라 매 프레임 즉시
+    /// 데드라인이 되어 spin 한다.
+    pub(crate) fn next_poll_at(&self, now: Instant) -> Instant {
+        let list = self.last_list_poll.map_or(now, |t| t + POLL_INTERVAL);
+        if self.open_workspace.is_some() && self.open_dag.is_some() {
+            list.min(self.graph.next_poll_at().unwrap_or(now))
+        } else {
+            list
+        }
+    }
+
     /// 목록도 그래프와 같은 주기로만 다시 읽는다.
     fn list_is_stale(&self, now: Instant) -> bool {
         self.last_list_poll
@@ -250,10 +266,10 @@ pub fn draw_dag_list_popup(
         dag.graph.poll_if_stale(engine, ws, Some(id.as_str()));
     }
 
-    // 러너는 별도 thread 라 그 진행이 egui 를 깨우지 않는다 — 열려 있는 동안만
-    // 스스로 다음 폴링 시점에 깨어난다. 스코프 밖 workspace 에서는 draw 자체가
-    // 돌지 않으므로 예약도 남지 않는다.
-    ui.ctx().request_repaint_after(POLL_INTERVAL);
+    // 러너는 별도 thread 라 그 진행이 egui 를 깨우지 않는다 — 다음 폴링 시점의
+    // wakeup 은 중앙 타이머 허브가 예약한다(`Tick::DagListPopup`, popup 이 열려
+    // 있는 동안만). egui `request_repaint_after` 는 delay > 0 이면 repaint 콜백
+    // 단계에서 drop 되므로(`gfx/gpu.rs`) 여기서 걸어도 깨어나지 않는다.
 
     let th = crate::theme::theme();
     let theme = &th;

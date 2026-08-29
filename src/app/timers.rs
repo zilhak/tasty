@@ -32,6 +32,18 @@ pub(crate) enum Tick {
     /// 500ms 마다 깨어나는 회귀가 된다.
     #[cfg(feature = "gui")]
     LayoutFlush,
+    /// DAG graph surface 하나의 다음 폴링 wakeup. runner 는 별도 스레드라 진행이
+    /// 렌더 루프를 깨우지 않으므로 보이는 동안만 이 키가 걸린다.
+    ///
+    /// **뷰가 닫히거나 배경으로 밀리면 반드시 취소돼야 한다** — 등록만 하고 잊으면
+    /// 사라진 뷰 때문에 영원히 깨어나는 누수가 된다. 그래서 매 프레임
+    /// `sync_dag_graph_timers` 가 "이번에 보인 surface" 집합으로 전체를 맞춘다.
+    #[cfg(feature = "gui")]
+    DagGraph(u32),
+    /// DAG 목록 popup 의 다음 폴링 wakeup. popup 은 surface 에 매이지 않아
+    /// `DagGraph(u32)` 로 표현할 수 없다 — 같은 뷰를 쓰지만 키가 따로다.
+    #[cfg(feature = "gui")]
+    DagListPopup,
 }
 
 /// busy 재평가 주기. 사용자가 체감하는 indicator 반응 상한이라 1초를 넘기지 않는다.
@@ -106,6 +118,32 @@ pub(crate) fn sync_layout_flush_timer(
         ),
         // 저장할 변경이 없다 — 등록을 남기면 idle 에서도 깨운다.
         None => hub.cancel(Tick::LayoutFlush),
+    }
+}
+
+/// DAG graph surface 폴링 타이머를 **이번 프레임에 보인 집합**에 맞춘다.
+///
+/// `active` 에 없는 `DagGraph` 키는 전부 취소한다 — 닫힌 뷰(`drop_view`)든 배경
+/// 탭으로 밀린 뷰든 예약이 남지 않는 것이 이 함수의 존재 이유다. egui
+/// `request_repaint_after` 는 뷰가 그려질 때만 갱신돼 자동 소멸했지만 허브 등록은
+/// 그렇지 않다.
+#[cfg(feature = "gui")]
+pub(crate) fn sync_dag_graph_timers(hub: &mut TimerHub<Tick>, active: &[(u32, Instant)]) {
+    hub.cancel_if(|key| match key {
+        Tick::DagGraph(sid) => !active.iter().any(|(s, _)| *s == sid),
+        _ => false,
+    });
+    for (sid, at) in active {
+        hub.once_at(Tick::DagGraph(*sid), *at, Precision::Strict);
+    }
+}
+
+/// DAG 목록 popup 폴링 타이머. `None` = popup 이 닫혀 있다(예약 없음).
+#[cfg(feature = "gui")]
+pub(crate) fn sync_dag_list_popup_timer(hub: &mut TimerHub<Tick>, next_poll: Option<Instant>) {
+    match next_poll {
+        Some(at) => hub.once_at(Tick::DagListPopup, at, Precision::Strict),
+        None => hub.cancel(Tick::DagListPopup),
     }
 }
 
@@ -236,6 +274,77 @@ mod tests {
         sync_layout_flush_timer(&mut hub, None);
         assert!(!hub.is_registered(Tick::LayoutFlush));
         assert!(hub.next_deadline().is_none());
+    }
+
+    /// 보이는 DAG 뷰마다 폴링 데드라인이 걸린다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn dag_graph_timers_track_the_visible_set() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        assert!(hub.is_registered(Tick::DagGraph(7)));
+        assert_eq!(hub.next_deadline(), Some(t0 + Duration::from_millis(500)));
+        assert_eq!(
+            hub.drain_due(t0 + Duration::from_millis(500)),
+            vec![Tick::DagGraph(7)]
+        );
+    }
+
+    /// 뷰를 닫으면(= 보인 집합에서 빠지면) 타이머가 사라진다. 이게 없으면 닫힌
+    /// 뷰 때문에 500ms 마다 영원히 깨어나는 누수가 된다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn closing_a_dag_graph_view_cancels_its_timer() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        assert!(hub.is_registered(Tick::DagGraph(7)));
+
+        sync_dag_graph_timers(&mut hub, &[]);
+        assert!(!hub.is_registered(Tick::DagGraph(7)));
+        assert!(hub.next_deadline().is_none());
+    }
+
+    /// 여러 뷰가 동시에 열려 있어도 각자의 키를 갖고, 사라진 것만 걷힌다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn dag_graph_timers_are_independent_per_surface() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        let at = t0 + Duration::from_millis(500);
+        sync_dag_graph_timers(&mut hub, &[(7, at), (9, at)]);
+        assert!(hub.is_registered(Tick::DagGraph(7)));
+        assert!(hub.is_registered(Tick::DagGraph(9)));
+
+        sync_dag_graph_timers(&mut hub, &[(9, at)]);
+        assert!(!hub.is_registered(Tick::DagGraph(7)));
+        assert!(hub.is_registered(Tick::DagGraph(9)));
+    }
+
+    /// DAG 뷰 정리는 다른 키를 건드리지 않는다(`cancel_if` 술어 범위 확인).
+    #[cfg(feature = "gui")]
+    #[test]
+    fn dag_graph_sync_leaves_other_ticks_alone() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        register_steady_state(&mut hub, t0);
+        sync_dag_graph_timers(&mut hub, &[(7, t0 + Duration::from_millis(500))]);
+        sync_dag_graph_timers(&mut hub, &[]);
+        assert!(hub.is_registered(Tick::Busy));
+        assert!(hub.is_registered(Tick::AttachView));
+    }
+
+    /// popup 이 닫히면 예약도 사라진다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn dag_list_popup_timer_follows_the_popup() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_dag_list_popup_timer(&mut hub, Some(t0 + Duration::from_millis(500)));
+        assert!(hub.is_registered(Tick::DagListPopup));
+        sync_dag_list_popup_timer(&mut hub, None);
+        assert!(!hub.is_registered(Tick::DagListPopup));
     }
 
     /// 메뉴가 닫히면 등록을 걷어낸다 — 남겨두면 idle 에서도 8ms 마다 깨운다.
