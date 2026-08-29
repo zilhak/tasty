@@ -16,8 +16,8 @@ use tasty_plugin_manifest::Permission;
 use tasty_plugin_protocol::SharedBufferId;
 
 use super::{
-    AUTO_RELOAD_POLL_INTERVAL, HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall,
-    PendingRequestKind, PluginManager, RSS_SAMPLE_INTERVAL, RemoteSurfaceEntry,
+    HEALTHCHECK_TIMEOUT, PendingPluginCall, PendingRequestKind, PluginManager, PluginTick,
+    RemoteSurfaceEntry,
 };
 
 /// 한 tick 의 plugin→호스트 이벤트 수집 결과.
@@ -59,11 +59,15 @@ struct CollectedPluginEvents {
 impl PluginManager {
     /// 매 tick 호출. plugin 이벤트 처리 + 헬스체크 + 비응답 재시작.
     ///
+    /// `now` 는 호출자(메인 루프)의 프레임 기준시각이다 — 주기 작업은 매니저가
+    /// 소유한 [`TimerHub`](tasty_timer::TimerHub) 가 판정하므로 내부에서
+    /// `Instant::now()` 를 부르지 않는다(테스트가 시간을 주입할 수 있다).
+    ///
     /// 반환: 본 tick 에서 *처음 hello 받은 plugin* 의 `(plugin_id, version)`
     /// 리스트. 호출자 (App) 가 `finalize_plugin_hello` 로 surface_kind registry
     /// 등록 + CoreEvent (PluginLoaded / PluginSurfaceKindRegistered) 발화를
     /// 처리한다 (D.3.C.G.2.e). 비어있으면 finalize 안 호출.
-    pub fn pump(&mut self) -> Vec<(String, String)> {
+    pub fn pump(&mut self, now: Instant) -> Vec<(String, String)> {
         // 1. plugin → 호스트 이벤트 수집 후 일괄 처리 (수집 순서·부수효과 보존).
         let collected = self.collect_plugin_events();
         let hello_pairs = self.apply_collected_events(collected);
@@ -77,17 +81,19 @@ impl PluginManager {
         // 4a. 타임아웃된 extension hook을 fail-open 처리.
         self.sweep_expired_hooks();
 
-        // 2. 주기적 ping
-        self.send_periodic_ping();
-
-        // 3. 헬스체크 — 60초 무응답 시 재시작
-        self.restart_unresponsive_plugins();
-
-        // H.f — auto-reload polling.
-        self.poll_auto_reload();
-
-        // RssSurge 이상탐지 — Plugin 타입 RSS sampling.
-        self.sample_plugin_rss();
+        // 5. 시간축 — due 한 주기 작업만 실행한다(위 이벤트 drain 은 프레임축).
+        for key in self.timers.drain_due(now) {
+            match key {
+                PluginTick::Ping => {
+                    self.send_periodic_ping();
+                    // 헬스체크는 ping 과 같은 tick 에서 본다 — 상세·검출 상한은
+                    // `PluginTick::Ping` 의 doc-comment 참조.
+                    self.restart_unresponsive_plugins();
+                }
+                PluginTick::Rss => self.sample_plugin_rss(),
+                PluginTick::AutoReload => self.poll_auto_reload(),
+            }
+        }
 
         hello_pairs
     }
@@ -107,16 +113,11 @@ impl PluginManager {
         std::mem::take(&mut self.invalidated_popups)
     }
 
-    /// `RSS_SAMPLE_INTERVAL` 경과 시 살아있는 plugin 프로세스 전부의 RSS 를
-    /// sysinfo 로 sampling 해 `pending_rss_samples` 에 누적한다. 검출/영속/알림은
-    /// 이 크레이트가 모르는 `tasty-telemetry`/host 책임이라 여기선 원시 값만 모은다
-    /// (`take_rss_samples` 로 드레인).
+    /// 살아있는 plugin 프로세스 전부의 RSS 를 sysinfo 로 sampling 해
+    /// `pending_rss_samples` 에 누적한다. 주기 판정은 `PluginTick::Rss` 가 한다.
+    /// 검출/영속/알림은 이 크레이트가 모르는 `tasty-telemetry`/host 책임이라
+    /// 여기선 원시 값만 모은다 (`take_rss_samples` 로 드레인).
     fn sample_plugin_rss(&mut self) {
-        if self.last_rss_sample.elapsed() < RSS_SAMPLE_INTERVAL {
-            return;
-        }
-        self.last_rss_sample = Instant::now();
-
         let pids: Vec<(String, sysinfo::Pid)> = self
             .processes
             .iter()
@@ -454,14 +455,11 @@ impl PluginManager {
         hello_pairs
     }
 
-    /// 주기적 ping — `PING_INTERVAL` 경과 시 전 프로세스에 ping 송신.
+    /// 주기적 ping — 전 프로세스에 ping 송신. 주기 판정은 `PluginTick::Ping` 이 한다.
     fn send_periodic_ping(&mut self) {
-        if self.last_ping.elapsed() >= PING_INTERVAL {
-            for proc in self.processes.values() {
-                let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-                proc.ping(id);
-            }
-            self.last_ping = Instant::now();
+        for proc in self.processes.values() {
+            let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+            proc.ping(id);
         }
     }
 
@@ -525,18 +523,13 @@ impl PluginManager {
         }
     }
 
-    /// auto-reload polling. flag off 면 `check_for_updates` 가 즉시 빈 Vec 을
-    /// 반환해 cost 0. flag on 이고 마지막 tick 으로부터 `AUTO_RELOAD_POLL_INTERVAL`
-    /// 경과 시 1회 polling.
+    /// auto-reload polling. 주기 판정은 `PluginTick::AutoReload` 가 하고, 그 타이머는
+    /// flag 가 켜져 있을 때만 등록된다 — flag off 면 여기 도달하지 않는다
+    /// (`check_for_updates` 자체도 flag 를 다시 확인해 이중 안전).
     fn poll_auto_reload(&mut self) {
-        if self.auto_reload_enabled
-            && self.last_auto_reload_check.elapsed() >= AUTO_RELOAD_POLL_INTERVAL
-        {
-            self.last_auto_reload_check = Instant::now();
-            for plugin_id in self.check_for_updates() {
-                if let Err(e) = self.auto_reload_one(&plugin_id) {
-                    tracing::warn!("auto-reload '{plugin_id}' failed: {e}");
-                }
+        for plugin_id in self.check_for_updates() {
+            if let Err(e) = self.auto_reload_one(&plugin_id) {
+                tracing::warn!("auto-reload '{plugin_id}' failed: {e}");
             }
         }
     }

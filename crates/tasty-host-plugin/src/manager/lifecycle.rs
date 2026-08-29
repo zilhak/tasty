@@ -18,7 +18,8 @@ use crate::registry_state::PluginsConfig;
 use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{
-    PLUGIN_SHUTDOWN_TIMEOUT, PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW,
+    AUTO_RELOAD_POLL_INTERVAL, PING_INTERVAL, PLUGIN_SHUTDOWN_TIMEOUT, PluginManager, PluginTick,
+    RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW, RSS_SAMPLE_INTERVAL,
 };
 
 /// 완료 판정 전략 레지스트리의 plugin owner 문자열. `[[contributes.
@@ -41,6 +42,52 @@ fn completion_strategy_owner_id(pkg: &PluginPackage) -> &str {
 }
 
 impl PluginManager {
+    /// 부팅 시 등록하는 plugin 주기 작업. auto-reload 는 flag 가 켜질 때만 등록된다
+    /// ([`PluginManager::set_auto_reload_enabled`]).
+    fn initial_timers(now: Instant) -> tasty_timer::TimerHub<PluginTick> {
+        let mut hub = tasty_timer::TimerHub::new();
+        hub.every(
+            PluginTick::Ping,
+            PING_INTERVAL,
+            tasty_timer::Precision::Strict,
+            now,
+        );
+        // RSS 는 관측용이라 늦어도 무해하다 — 자기 힘으로 호스트를 깨우지 않고
+        // ping wakeup 에 편승한다(slack 이 ping 주기라 최악에도 한 ping 만큼만 밀린다).
+        hub.every(
+            PluginTick::Rss,
+            RSS_SAMPLE_INTERVAL,
+            tasty_timer::Precision::Lax {
+                slack: PING_INTERVAL,
+            },
+            now,
+        );
+        hub
+    }
+
+    /// auto-reload 를 켜고 끈다. **켤 때만 타이머가 등록된다** — 꺼진 기능이
+    /// `next_deadline()` 에 기여하지 않는 것이 이 게이트의 요점이다(개발용 flag 가
+    /// production 의 idle wakeup 을 만들지 않는다).
+    pub(super) fn set_auto_reload_enabled(&mut self, enabled: bool, now: Instant) {
+        self.auto_reload_enabled = enabled;
+        if enabled {
+            self.timers.every(
+                PluginTick::AutoReload,
+                AUTO_RELOAD_POLL_INTERVAL,
+                tasty_timer::Precision::Strict,
+                now,
+            );
+        } else {
+            self.timers.cancel(PluginTick::AutoReload);
+        }
+    }
+
+    /// 이 매니저가 호스트를 깨우기를 요구하는 가장 가까운 시각. 호스트는 자기
+    /// 허브의 데드라인과 `min` 을 취한다(`docs/dev-guide/timer-hub.md`).
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.timers.next_deadline()
+    }
+
     /// 기본 file_format/file_handler stub 으로 초기화 — 내부 unit test 전용.
     /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를 직접
     /// 호출. F.B.11-4 이후, host file 도메인 결합 회피를 위해 test ctor 는
@@ -90,12 +137,11 @@ impl PluginManager {
             handle_listener: None,
             log_dir,
             next_request_id: AtomicU64::new(1),
-            last_ping: Instant::now(),
+            timers: Self::initial_timers(Instant::now()),
             spawn_failures: HashMap::new(),
             auto_disabled: std::collections::HashSet::new(),
             plugin_binary_mtimes: HashMap::new(),
             plugin_manifest_versions: HashMap::new(),
-            last_auto_reload_check: Instant::now(),
             auto_reload_enabled: false,
             surface_registry: None,
             registered_plugins: std::collections::HashSet::new(),
@@ -123,7 +169,6 @@ impl PluginManager {
             banner_mesh_frames: HashMap::new(),
             invalidated_surfaces: Vec::new(),
             invalidated_popups: Vec::new(),
-            last_rss_sample: Instant::now(),
             sys: sysinfo::System::new(),
             pending_rss_samples: Vec::new(),
             file_format,
@@ -188,9 +233,10 @@ impl PluginManager {
     pub fn discover_and_start(&mut self) {
         // H.b — env flag 한 번 평가. TASTY_PLUGIN_AUTO_RELOAD 가 비어있지 않고
         // "0" 이 아니면 enable. 기본 false (production 부작용 0).
-        self.auto_reload_enabled = std::env::var("TASTY_PLUGIN_AUTO_RELOAD")
+        let enabled = std::env::var("TASTY_PLUGIN_AUTO_RELOAD")
             .map(|v| !v.is_empty() && v != "0")
             .unwrap_or(false);
+        self.set_auto_reload_enabled(enabled, Instant::now());
         if self.auto_reload_enabled {
             tracing::info!("plugin auto-reload: enabled (TASTY_PLUGIN_AUTO_RELOAD)");
         }

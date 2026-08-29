@@ -5861,6 +5861,7 @@ dependencies = [
  "tasty-telemetry",
  "tasty-terminal",
  "tasty-themes",
+ "tasty-timer",
  "tasty-type-appearance",
  "tasty-utils",
  "tempfile",

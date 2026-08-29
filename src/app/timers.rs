@@ -56,6 +56,19 @@ pub(crate) fn register_steady_state(hub: &mut TimerHub<Tick>, now: Instant) {
     );
 }
 
+/// 두 허브 데드라인의 합성 — 둘 다 `None` 이면 깨울 이유가 없다.
+///
+/// plugin manager 처럼 본체 타입을 모르는 크레이트는 자기 `TimerHub` 를 따로
+/// 소유한다. 허브가 여러 개여도 **대기 계산은 하나**여야 하므로, 프레임 말미에
+/// 이 함수로 접어 넣는다(`docs/dev-guide/timer-hub.md` "계층을 넘는 허브 합성").
+pub(crate) fn min_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, None) => x,
+        (None, y) => y,
+    }
+}
+
 /// pending native menu 유무 → 다음 폴링 wakeup 예약/취소.
 ///
 /// 순수 함수로 뽑아 헤드리스 회귀 테스트가 가능하게 했다 — 이 재예약을 빠뜨리면
@@ -103,6 +116,23 @@ mod tests {
         assert_eq!(
             hub.drain_due(t0 + ATTACH_POLL_INTERVAL),
             vec![Tick::Busy, Tick::AttachView]
+        );
+    }
+
+    /// 허브가 여럿이어도 대기 계산은 하나 — 가장 이른 데드라인이 이긴다.
+    #[test]
+    fn min_deadline_folds_two_hubs() {
+        let t0 = Instant::now();
+        assert_eq!(min_deadline(None, None), None);
+        assert_eq!(min_deadline(Some(t0), None), Some(t0));
+        assert_eq!(min_deadline(None, Some(t0)), Some(t0));
+        assert_eq!(
+            min_deadline(Some(t0 + Duration::from_secs(3)), Some(t0)),
+            Some(t0)
+        );
+        assert_eq!(
+            min_deadline(Some(t0), Some(t0 + Duration::from_secs(3))),
+            Some(t0)
         );
     }
 

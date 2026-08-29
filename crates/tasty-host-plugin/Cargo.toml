@@ -24,6 +24,9 @@ tasty-telemetry = { path = "../tasty-telemetry" }
 tasty-themes = { path = "../tasty-themes" }
 tasty-settings = { path = "../tasty-settings" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
+# 중앙 타이머 허브 — plugin 주기 작업(ping/RSS/auto-reload)의 스케줄 소유
+# (docs/dev-guide/timer-hub.md "계층을 넘는 허브 합성").
+tasty-timer = { path = "../tasty-timer" }
 semver = "1"
 rand = "0.9"
 hex = "0.4"

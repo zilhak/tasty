@@ -137,6 +137,48 @@ gui/headless 는 **같은 키 집합을 같은 주기로** 굴린다. `Tick::Bus
 attach 가 조용히 멈춘다. `Tick::AttachView` 는 렌더가 없는 headless 에선 등록하지
 않는다(키 자체가 `#[cfg(feature = "gui")]`).
 
+## 계층을 넘는 허브 합성
+
+본체 타입을 모르는 크레이트(`crates/tasty-host-plugin` 등)는 본체 허브에 직접 등록할 수
+없다. 대신 **자기 허브를 소유하고 `next_deadline()` 만 노출**한다.
+
+```rust
+// crates/tasty-host-plugin
+pub struct PluginManager { timers: TimerHub<PluginTick>, … }
+impl PluginManager {
+    pub fn pump(&mut self, now: Instant) -> Vec<(String, String)> {
+        …
+        for key in self.timers.drain_due(now) { /* 실행 */ }
+    }
+    pub fn next_deadline(&self) -> Option<Instant> { self.timers.next_deadline() }
+}
+```
+
+호스트는 프레임 말미에 `min_deadline(self.timers.next_deadline(), mgr.next_deadline())`
+으로 접는다(`src/app/timers.rs`). **허브가 여러 개여도 대기 계산은 하나다** — 이것이
+계층을 넘을 때의 표준 패턴이다. gui(`sync_timer_control_flow`)와
+headless(`recv_timeout` 앞) 양쪽이 같은 합성을 한다.
+
+`pump` 이 `now` 를 인자로 받는 이유도 같다 — 매니저가 내부에서 `Instant::now()` 를
+부르지 않으므로 단위 테스트가 시간을 주입해 "15초 뒤" 를 sleep 없이 재현한다.
+
+### plugin 주기 작업과 healthcheck 검출 상한
+
+| 키 | 주기 | Precision | 비고 |
+|---|---|---|---|
+| `PluginTick::Ping` | 15s | Strict | ping 송신 + **비응답 재시작 판정** |
+| `PluginTick::Rss` | 30s | Lax(slack 15s) | 관측용 — 스스로 wakeup 을 만들지 않고 ping 에 편승 |
+| `PluginTick::AutoReload` | 2s | Strict | **flag on 일 때만 등록** — 꺼진 기능은 데드라인에 기여하지 않는다 |
+
+`HEALTHCHECK_TIMEOUT`(60s)은 인터벌이 아니라 "마지막 pong 이후 경과" **데드라인 비교**라
+아무 tick 에서나 판정할 수 있다. 별도 tick 을 만들지 않고 `Ping` tick 에 합승시켰다 —
+ping 을 보내는 tick 이 곧 응답을 기대하는 tick 이라 판정 시점으로 자연스럽고, 검사 전용
+wakeup 이 늘지 않는다. 그 결과 **비응답 검출 상한은 `60s + 15s = 75s`** 다.
+
+프로세스가 실제로 죽는 경우는 이 경로가 아니다 — plugin 이벤트 채널이 Disconnected 가
+되는 즉시 잡히므로(`collect_plugin_events`) 크래시 검출은 상한의 영향을 받지 않는다.
+이 상한이 적용되는 것은 "프로세스는 살아 있는데 ping 에 응답하지 않는" 행 상태뿐이다.
+
 ## 가드 중 타이머는 정지한다 (계약)
 
 `about_to_wait` 의 shutdown / boot 가드는 조기 return 한다. **그 동안 `drain_due` 에

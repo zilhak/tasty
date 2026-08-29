@@ -219,6 +219,9 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 
 - **부팅**: `~/.tasty/plugins/` 스캔 → enabled 전부 spawn.
 - **헬스체크**: `PING_INTERVAL`(15s)마다 ping, `HEALTHCHECK_TIMEOUT`(60s) 무응답이면 강제 재시작.
+  판정은 ping 을 보내는 tick 에서 함께 하므로 **비응답 검출 상한은 60s + 15s = 75s** 다
+  ([timer-hub](timer-hub.md#계층을-넘는-허브-합성)). 프로세스가 실제로 죽은 경우는 이 경로가
+  아니라 event 채널 Disconnected 로 즉시 잡히므로 이 상한의 영향을 받지 않는다.
 - **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지).
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 

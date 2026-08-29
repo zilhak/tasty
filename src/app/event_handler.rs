@@ -3,7 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::app::timers::Tick;
+use crate::app::timers::{Tick, min_deadline};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
 use crate::{App, AppEvent};
@@ -333,7 +333,8 @@ impl ApplicationHandler<AppEvent> for App {
         // 시간축 — due 한 타이머 키만 실행한다(프레임축 dispatch_* 큐 drain 과 별개).
         // 파이프라인 앞머리에 두어, 여기서 표시한 dirty 와 enqueue 한 host event 가
         // 같은 프레임의 뒤쪽 drain 에 그대로 실린다.
-        for key in self.timers.drain_due(std::time::Instant::now()) {
+        let now = std::time::Instant::now();
+        for key in self.timers.drain_due(now) {
             match key {
                 Tick::Busy => {
                     self.poll_busy_states();
@@ -407,7 +408,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
-            mgr.pump()
+            mgr.pump(now)
         } else {
             Vec::new()
         };
@@ -2407,13 +2408,20 @@ impl App {
             .any(|w| w.as_main().is_some_and(|m| m.has_pending_native_menu()))
     }
 
-    /// 프레임 말미 — 다음 wakeup 시각을 허브 하나로 확정한다.
+    /// 프레임 말미 — 다음 wakeup 시각을 허브들의 데드라인 하나로 확정한다.
+    ///
+    /// plugin manager 는 본체 타입을 모르는 별도 크레이트라 자기 허브를 따로
+    /// 소유한다 — 대기 계산은 그 데드라인과 `min` 으로 합성한다
+    /// (`docs/dev-guide/timer-hub.md` "계층을 넘는 허브 합성").
     ///
     /// 정확성은 waker 스레드가 책임진다(`send_event` 라 창 유무·플랫폼 무관).
     /// `WaitUntil` 은 창이 있을 때 wake 지연을 줄이는 **보조**일 뿐이라, 둘 다
     /// 같은 데드라인을 받는다. 등록이 없으면 `Wait` — 깨울 이유가 없으면 잠든다.
     fn sync_timer_control_flow(&mut self, event_loop: &ActiveEventLoop) {
-        let deadline = self.timers.next_deadline();
+        let deadline = min_deadline(
+            self.timers.next_deadline(),
+            self.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
+        );
         self.timer_waker.set_deadline(deadline);
         event_loop.set_control_flow(match deadline {
             Some(at) => winit::event_loop::ControlFlow::WaitUntil(at),

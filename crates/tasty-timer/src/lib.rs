@@ -111,9 +111,30 @@ impl<K: Copy + Eq> TimerHub<K> {
         });
     }
 
+    /// `at` 시각에 한 번만 발화하는 타이머를 등록한다. 상대 지연이 아니라 **절대
+    /// 시각**이라, 매 프레임 같은 값으로 다시 불러도 위상이 밀리지 않는다 — 외부
+    /// 상태(디바운스 시작 시각, backoff 다음 시도 시각 등)에서 파생한 데드라인을
+    /// 선언적으로 동기화할 때 쓴다.
+    pub fn once_at(&mut self, key: K, at: Instant, precision: Precision) {
+        self.insert(Entry {
+            key,
+            interval: None,
+            next_due: at,
+            precision,
+            last_fired: None,
+        });
+    }
+
     /// 등록을 해제한다. 없는 키면 no-op.
     pub fn cancel(&mut self, key: K) {
         self.entries.retain(|e| e.key != key);
+    }
+
+    /// 술어가 참인 키를 전부 해제한다. 파라미터화된 키(`Kind(id)`)를 살아있는 id
+    /// 집합에 맞춰 정리할 때 쓴다 — 등록만 하고 해제를 잊으면 사라진 대상 때문에
+    /// 영원히 깨어나는 누수가 된다.
+    pub fn cancel_if(&mut self, mut pred: impl FnMut(K) -> bool) {
+        self.entries.retain(|e| !pred(e.key));
     }
 
     pub fn is_registered(&self, key: K) -> bool {
@@ -325,6 +346,33 @@ mod tests {
         );
         assert_eq!(hub.snapshot().len(), 1);
         assert_eq!(hub.next_deadline(), Some(t0 + Duration::from_millis(13)));
+    }
+
+    #[test]
+    fn once_at_registers_an_absolute_deadline() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        hub.once_at(K::Sweep, t0 + secs(5), Precision::Strict);
+        assert_eq!(hub.next_deadline(), Some(t0 + secs(5)));
+        // 같은 절대 시각으로 다시 등록해도 위상이 밀리지 않는다(선언적 동기화).
+        hub.once_at(K::Sweep, t0 + secs(5), Precision::Strict);
+        assert_eq!(hub.snapshot().len(), 1);
+        assert_eq!(hub.next_deadline(), Some(t0 + secs(5)));
+        assert_eq!(hub.drain_due(t0 + secs(5)), vec![K::Sweep]);
+        assert!(!hub.is_registered(K::Sweep));
+    }
+
+    #[test]
+    fn cancel_if_removes_every_matching_key() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        hub.every(K::Busy, secs(1), Precision::Strict, t0);
+        hub.every(K::Sweep, secs(3), Precision::Strict, t0);
+        hub.every(K::Menu, secs(3), Precision::Strict, t0);
+        hub.cancel_if(|k| matches!(k, K::Sweep | K::Menu));
+        assert!(hub.is_registered(K::Busy));
+        assert!(!hub.is_registered(K::Sweep));
+        assert!(!hub.is_registered(K::Menu));
     }
 
     #[test]

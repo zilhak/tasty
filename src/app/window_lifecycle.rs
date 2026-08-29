@@ -444,7 +444,7 @@ impl App {
     /// 반환: 필요 kind 가 전부 등록됐는가 (satisfied).
     pub(super) fn boot_pump_step_plugins_registered(&mut self, needed: &[String]) -> bool {
         let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.pump()
+            mgr.pump(std::time::Instant::now())
         } else {
             Vec::new()
         };
@@ -493,7 +493,7 @@ impl App {
     /// RestoringLayout 스텝이 공유한다. 반환: 더 이상 pending 이 없는가.
     pub(super) fn boot_pump_step_remote_restores_done(&mut self) -> bool {
         let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
-            let hello_pairs = mgr.pump();
+            let hello_pairs = mgr.pump(std::time::Instant::now());
             if !hello_pairs.is_empty() {
                 self.finalize_plugin_hello(hello_pairs);
             }

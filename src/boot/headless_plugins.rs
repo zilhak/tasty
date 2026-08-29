@@ -15,8 +15,10 @@
 //!   을 발화하므로, plugin 이벤트(hello 응답, `PaintFrame` 등)는 이미 이 이벤트로 host 를
 //!   깨운다 — 별도 wake 채널이 필요 없다(18번 TODO 의 "PaintFrame 도착 시 즉시 wake"
 //!   요구도 이 경로가 충족한다).
-//! - 1Hz `Tick::Busy` 타이머에도 안전망으로 편승 — plugin 소켓이 조용해도
-//!   healthcheck/재시작 타이머가 진행되도록.
+//! - plugin 자체 주기 작업(ping/healthcheck/RSS/auto-reload)은 `PluginManager` 가
+//!   소유한 타이머 허브가 스케줄한다 — headless 메인 루프가 그 데드라인을 자기
+//!   대기 계산에 합성하므로(`docs/dev-guide/timer-hub.md`) plugin 소켓이 조용해도
+//!   제때 깨어난다. 1Hz `Tick::Busy` 에 편승하던 안전망은 그래서 더는 필요 없다.
 
 use crate::app::App;
 use crate::core::CoreState;
@@ -67,7 +69,7 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut AppState, engine: &mut Cor
     }
     let hello_pairs = {
         let mgr = app.plugin_manager.as_mut().expect("checked Some above");
-        mgr.pump()
+        mgr.pump(std::time::Instant::now())
     };
     if !hello_pairs.is_empty() {
         finalize_plugin_hello_headless(app, engine, hello_pairs);

@@ -57,6 +57,30 @@ pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// window(`RSS_SURGE_MIN_SAMPLES`)가 실제 급증을 늦게 잡는다.
 pub(super) const RSS_SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
 
+/// plugin manager 가 자기 [`TimerHub`](tasty_timer::TimerHub) 에 등록하는 주기 작업 키.
+///
+/// 이 크레이트는 호스트 `App` 을 모르므로 본체 허브에 직접 등록할 수 없다 — 대신
+/// 자기 허브를 소유하고 [`PluginManager::next_deadline`] 만 노출한다. 호스트는 그
+/// 값을 자기 데드라인과 `min` 으로 합성한다(`docs/dev-guide/timer-hub.md`
+/// "계층을 넘는 허브 합성").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PluginTick {
+    /// `PING_INTERVAL` 주기 ping 송신 + 무응답 plugin 재시작 판정.
+    ///
+    /// healthcheck 를 별도 tick 으로 두지 않고 여기 합승시켰다 — `HEALTHCHECK_TIMEOUT`
+    /// 은 인터벌이 아니라 "마지막 pong 이후 경과" 데드라인 비교라 검사 자체는 아무
+    /// tick 에서나 할 수 있고, ping 을 보내는 tick 이 곧 응답을 기대하는 tick 이라
+    /// 판정 시점으로 자연스럽다. 결과적으로 **비응답 검출 상한은
+    /// `HEALTHCHECK_TIMEOUT + PING_INTERVAL` = 75 초**다(프로세스가 실제로 죽는
+    /// 경우는 이 경로가 아니라 event 채널 Disconnected 로 즉시 잡힌다).
+    Ping,
+    /// `RSS_SAMPLE_INTERVAL` 주기 RSS 샘플링.
+    Rss,
+    /// `AUTO_RELOAD_POLL_INTERVAL` 주기 auto-reload polling. flag off 면 **등록
+    /// 자체를 하지 않는다** — 꺼진 기능이 데드라인에 기여하지 않는다.
+    AutoReload,
+}
+
 /// IPC 응답을 최종적으로 어디로 회신해야 하는지를 식별. 호스트 외부 caller(CLI/사용자)는
 /// `Local`, 다른 plugin이면 `Plugin`.
 pub(super) enum FinalCaller {
@@ -269,7 +293,9 @@ pub struct PluginManager {
     pub(super) handle_listener: Option<HandleListener>,
     pub log_dir: PathBuf,
     pub(super) next_request_id: AtomicU64,
-    pub(super) last_ping: Instant,
+    /// plugin 주기 작업 스케줄. `pump(now)` 가 `drain_due` 로 실행하고, 호스트는
+    /// [`PluginManager::next_deadline`] 로 자기 대기 계산에 합성한다.
+    pub(super) timers: tasty_timer::TimerHub<PluginTick>,
     /// plugin id → 최근 spawn 실패 timestamps. 짧은 시간 내 반복 실패하면 자동 disable.
     pub(super) spawn_failures: HashMap<String, Vec<Instant>>,
     /// 자동 disable되어 사용자가 수동 enable하기 전까지 더 이상 spawn 시도 안 함.
@@ -278,10 +304,8 @@ pub struct PluginManager {
     pub(super) plugin_binary_mtimes: HashMap<String, SystemTime>,
     /// H — auto-reload: plugin id → 마지막 관측한 manifest version.
     pub(super) plugin_manifest_versions: HashMap<String, String>,
-    /// H — auto-reload: 마지막 polling tick 시각.
-    pub(super) last_auto_reload_check: Instant,
     /// H — auto-reload 활성 여부. `TASTY_PLUGIN_AUTO_RELOAD` env 로 결정.
-    /// false 이면 pump 의 gate 가 즉시 종료되어 cost 0.
+    /// false 이면 `PluginTick::AutoReload` 이 등록되지 않아 cost 0.
     pub(super) auto_reload_enabled: bool,
     /// hello 받은 plugin의 surface_kinds를 등록하기 위한 registry 핸들. None이면
     /// registry 등록 동작이 비활성 (헤드리스/테스트).
@@ -360,9 +384,6 @@ pub struct PluginManager {
     /// plugin 이 재-forward 를 요청한 egui-mesh popup(git-viewer/clipboard-viewer 등).
     /// `pump()` 가 채우고 `take_invalidated_popups` 가 드레인한다.
     pub(super) invalidated_popups: Vec<u64>,
-    /// RssSurge 이상탐지 — 마지막 sampling tick 시각. `RSS_SAMPLE_INTERVAL`
-    /// 경과마다 `processes` 의 각 `child_pid()` 를 sysinfo 로 sampling한다.
-    pub(super) last_rss_sample: Instant,
     /// sysinfo 측정 핸들 — tick 마다 새로 만들지 않고 재사용(할당 비용 절감).
     pub(super) sys: sysinfo::System,
     /// 이번 sampling tick 에서 모인 (plugin_id, rss_bytes). `pump()` 가 채우고
@@ -454,6 +475,10 @@ mod tests_namespace_mirror;
 // H — plugin 자동 reload (baseline / check_for_updates / auto_reload_one) 테스트.
 #[cfg(test)]
 mod tests_auto_reload;
+
+// plugin 주기 작업(PluginTick) 스케줄 — pump(now) 시간 주입 검증.
+#[cfg(test)]
+mod tests_timers;
 
 #[cfg(test)]
 mod tests {

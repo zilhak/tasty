@@ -406,7 +406,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
     // 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
     loop {
-        let pending = match app.timers.next_deadline() {
+        // plugin manager 는 자기 허브를 따로 소유한다 — 대기 계산은 min 으로 합성.
+        let deadline = crate::app::timers::min_deadline(
+            app.timers.next_deadline(),
+            app.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
+        );
+        let pending = match deadline {
             Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
                 Ok(ev) => Some(ev),
                 // 데드라인 도달 — 이번 바퀴는 타이머만 돌린다.
