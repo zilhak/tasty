@@ -73,7 +73,7 @@ impl App {
         // remote.workspaces / remote.attach — 원격 워크스페이스 브라우징·attach 능력의
         // 로컬 IPC 노출(원칙 2: 에이전트가 CLI 없이 소켓만으로도 수행 가능). 블로킹 SSH
         // I/O 는 워커 스레드로 돌려 이벤트루프를 막지 않는다. CLI(`remote workspaces`)와
-        // 동일한 `tasty_cli::remote_browse` 코어를 공유한다.
+        // 동일한 `tasty_remote::browse` 코어를 공유한다.
         if cmd.request.method == "remote.workspaces" {
             self.ipc_dispatch_remote_workspaces(cmd);
             return IpcStep::Handled;
@@ -909,7 +909,7 @@ impl App {
     /// 조회하고 완료 시 `response_tx` 로 지연 회신한다(이벤트루프 무블록).
     ///
     /// 순수 조회 — 로컬 사용자 상태(focus/닫은항목 히스토리/선택)에 닿지 않는다(원칙 1).
-    /// CLI `tasty remote workspaces` 와 `tasty_cli::remote_browse::browse` 를 공유한다.
+    /// CLI `tasty remote workspaces` 와 `tasty_remote::browse::browse` 를 공유한다.
     fn ipc_dispatch_remote_workspaces(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let conn = match RemoteConnParams::parse(&cmd.request.params) {
@@ -930,14 +930,14 @@ impl App {
         } = conn;
         let response_tx = cmd.response_tx.clone();
         std::thread::spawn(move || {
-            let resp = match tasty_cli::remote_browse::resolve_connection_spec(
+            let resp = match tasty_remote::browse::resolve_connection_spec(
                 profile.as_deref(),
                 ssh.as_deref(),
                 &remote_tasty,
                 &remote_port_mode,
             ) {
                 Ok((target, rt, pm, pf)) => {
-                    match tasty_cli::remote_browse::browse(&target, &rt, &pm, pf.as_deref()) {
+                    match tasty_remote::browse::browse(&target, &rt, &pm, pf.as_deref()) {
                         Ok(list) => host_ipc::protocol::JsonRpcResponse::success(
                             rpc_id,
                             serde_json::to_value(list).unwrap_or(serde_json::Value::Null),
@@ -962,7 +962,7 @@ impl App {
     /// **로컬 mirror 로 attach**. `new_workspace: true` 면 원격에 워크스페이스를 **먼저
     /// 만들고** 그것을 attach 한다(생성+attach 복합 능력의 IPC 면 — CLI 면은
     /// `tasty remote new-workspace` + `tasty remote attach --workspace <id>`, 양쪽이
-    /// `tasty_cli::remote_create` 코어를 공유한다. 원칙 2).
+    /// `tasty_remote::create` 코어를 공유한다. 원칙 2).
     ///
     /// **focus 중립(원칙 1 핵심)**: 이 IPC/에이전트 경로는 mirror workspace 를 *생성만*
     /// 하고 focus 를 그 ws 로 옮기지 않는다. mirror 생성 실체(`start_gui_attach`)는
@@ -1076,14 +1076,14 @@ impl RemoteConnParams {
     }
 
     /// 접속 스펙 resolve → 엔드포인트(SSH 터널/loopback). **블로킹** — 워커 전용.
-    fn resolve_endpoint(&self) -> anyhow::Result<(Option<tasty_cli::ssh::SshTunnel>, u16)> {
-        let (target, rt, pm, pf) = tasty_cli::remote_browse::resolve_connection_spec(
+    fn resolve_endpoint(&self) -> anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)> {
+        let (target, rt, pm, pf) = tasty_remote::browse::resolve_connection_spec(
             self.profile.as_deref(),
             self.ssh.as_deref(),
             &self.remote_tasty,
             &self.remote_port_mode,
         )?;
-        tasty_cli::remote_browse::resolve_endpoint(&target, &rt, &pm, pf.as_deref())
+        tasty_remote::browse::resolve_endpoint(&target, &rt, &pm, pf.as_deref())
     }
 }
 
@@ -1142,7 +1142,7 @@ fn send_attach_outcome(
     tx: &std::sync::mpsc::Sender<crate::app::auto_attach::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
     remote_ws: u32,
-    result: anyhow::Result<(Option<tasty_cli::ssh::SshTunnel>, u16)>,
+    result: anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)>,
 ) {
     let outcome = crate::app::auto_attach::AutoAttachOutcome {
         anchor_ws_id: None,
@@ -1184,23 +1184,23 @@ fn remote_attach_create_worker(
             return;
         }
     };
-    let created =
-        match tasty_cli::remote_create::create_via_port(port, name.as_deref(), cwd.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                // 원격이 `cwd does not exist: …` 같은 invalid_params 를 돌려준 경우도 여기로
-                // 온다 — 원문 메시지를 그대로 실어 호출자가 원인을 알 수 있게 한다.
-                send_response(
-                    response_tx,
-                    host_ipc::protocol::JsonRpcResponse::error(
-                        rpc_id,
-                        -32050,
-                        format!("remote workspace.create failed: {e:#}"),
-                    ),
-                );
-                return;
-            }
-        };
+    let created = match tasty_remote::create::create_via_port(port, name.as_deref(), cwd.as_deref())
+    {
+        Ok(c) => c,
+        Err(e) => {
+            // 원격이 `cwd does not exist: …` 같은 invalid_params 를 돌려준 경우도 여기로
+            // 온다 — 원문 메시지를 그대로 실어 호출자가 원인을 알 수 있게 한다.
+            send_response(
+                response_tx,
+                host_ipc::protocol::JsonRpcResponse::error(
+                    rpc_id,
+                    -32050,
+                    format!("remote workspace.create failed: {e:#}"),
+                ),
+            );
+            return;
+        }
+    };
     send_response(
         response_tx,
         host_ipc::protocol::JsonRpcResponse::success(

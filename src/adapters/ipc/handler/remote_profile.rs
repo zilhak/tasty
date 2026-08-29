@@ -211,7 +211,7 @@ pub(crate) fn handle_detect(id: Value, params: &Value) -> JsonRpcResponse {
 }
 
 fn spawn_detect(name: String) {
-    std::thread::spawn(move || match tasty_cli::ssh::detect_and_persist(&name) {
+    std::thread::spawn(move || match tasty_ssh::detect_and_persist(&name) {
         Ok(mode) => tracing::info!("remote profile '{name}' 감지 성공 → {}", mode.as_str()),
         Err(e) => tracing::warn!("remote profile '{name}' 감지 실패(비활성): {e}"),
     });

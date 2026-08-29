@@ -202,7 +202,7 @@ pub(crate) struct AttachClientSession {
     /// 단계 7 — 자동 attach 의 SSH 터널 핸들. 세션이 살아있는 동안 보관해 Drop(자식
     /// ssh kill)을 막는다. 수동 트리거(`attach.into_gui`)·loopback 은 None.
     #[allow(dead_code)]
-    tunnel: Option<tasty_cli::ssh::SshTunnel>,
+    tunnel: Option<tasty_ssh::SshTunnel>,
     /// 단계 7 — 이 mirror 를 띄운 매핑된(anchor) 로컬 워크스페이스 id. 세션 정리 시
     /// `auto_attach_active` 에서 제거해 재활성 시 재attach 가능하게 한다. 수동 None.
     anchor_ws_id: Option<u32>,
@@ -356,7 +356,7 @@ impl App {
         &mut self,
         port: u16,
         workspace: u32,
-        tunnel: Option<tasty_cli::ssh::SshTunnel>,
+        tunnel: Option<tasty_ssh::SshTunnel>,
         anchor_ws_id: Option<u32>,
     ) -> anyhow::Result<u32> {
         // 1. 연결 + 핸드셰이크 + 디스크립터 수신.
@@ -476,7 +476,7 @@ impl App {
         &mut self,
         sess_idx: usize,
         port: u16,
-        tunnel: Option<tasty_cli::ssh::SshTunnel>,
+        tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> anyhow::Result<()> {
         let (workspace, local_workspace) = {
             let sess = &self.attach_client_sessions[sess_idx];

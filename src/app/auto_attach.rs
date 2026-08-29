@@ -2,7 +2,7 @@
 //!
 //! 사용자 핵심 요구("워크스페이스1 = a컴퓨터, 워크스페이스2 = b컴퓨터")의 종착점:
 //! 매핑(`Workspace.attach_mapping`)이 있는 로컬 워크스페이스를 **활성화하면** 호스트가
-//! 자동으로 ① 프로필 resolve → ② SSH 터널(`tasty_cli::ssh`) 수립 → ③ 그 `local_port`
+//! 자동으로 ① 프로필 resolve → ② SSH 터널(`tasty_ssh`) 수립 → ③ 그 `local_port`
 //! 를 작업 J 의 [`App::start_gui_attach`] 에 넘겨 원격 워크스페이스를 GUI mirror 로
 //! 띄운다. 터널 핸들은 client 세션에 보관돼 세션 수명 동안 살아있다(Drop 시 자식 ssh
 //! kill — 고아 터널 방지).
@@ -42,14 +42,14 @@
 //!         toast) — `auto_attach_pending_reactivation` 은 남겨 사용자가 워크스페이스를
 //!         왕복하면 여전히 수동으로 재시도된다.
 //! ```
-//! **backoff 는 non-blocking** — `tasty_cli::ssh::Backoff::sleep()`(blocking) 대신
+//! **backoff 는 non-blocking** — `tasty_ssh::Backoff::sleep()`(blocking) 대신
 //! `current()`/`advance()` 로 "다음 시도 시각"만 계산해 [`ReconnectSlot`] 에 저장하고,
 //! 매 프레임 `Instant::now()` 와 비교한다(GUI 메인 스레드를 블록할 수 없어서).
 
 use std::time::Instant;
 
-use tasty_cli::ssh::{self, Backoff, PortMode, SshTarget, SshTunnel};
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
+use tasty_ssh::{self as ssh, Backoff, PortMode, SshTarget, SshTunnel};
 
 use super::attach_client::SessionState;
 use crate::app::App;

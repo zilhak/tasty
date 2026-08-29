@@ -248,7 +248,7 @@ impl DropTailCounters {
     fn snapshot() -> Self {
         Self {
             pty: tasty_terminal::pty_drop_totals(),
-            ssh: tasty_cli::ssh::tunnel_drop_totals(),
+            ssh: tasty_ssh::tunnel_drop_totals(),
         }
     }
 

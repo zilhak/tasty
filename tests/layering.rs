@@ -44,20 +44,15 @@ const ALLOWED_PATHS: &[&str] = &[
     "src/adapters/cli.rs",
 ];
 
-/// **한시 허용** — 이행 중인 기존 위반의 스냅샷. 줄어들기만 한다.
+/// **한시 허용** — 이행 중인 위반의 스냅샷. 줄어들기만 한다.
 ///
-/// 여기 있는 파일들은 재사용 코어(ssh / remote browse / remote create /
-/// stream)를 CLI 크레이트에서 직접 끌어 쓰고 있다. 코어가 별도 크레이트로
-/// 분리되면 각 항목이 하나씩 빠진다. **새 항목을 추가해서는 안 된다.**
-const BASELINE_FILES: &[&str] = &[
-    "src/adapters/ipc/handler/remote_profile.rs",
-    "src/adapters/ui/popup/remote_attach.rs",
-    "src/adapters/ui/popup/remote_tool.rs",
-    "src/app/attach_client.rs",
-    "src/app/auto_attach.rs",
-    "src/app/ipc/app_methods.rs",
-    "src/core/state.rs",
-];
+/// **현재 비어 있다.** 재사용 코어는 전부 별도 크레이트로 분리됐다 —
+/// ssh 위임은 `tasty-ssh`, 원격 조회/생성은 `tasty-remote`, 클라이언트 IPC
+/// 연결은 `tasty_ipc::client`. 본체는 그쪽을 직접 참조한다.
+///
+/// **새 항목을 추가해서는 안 된다.** 여기에 이름을 적어 통과시키는 것은
+/// 위반을 해소한 게 아니라 가드를 끄는 것이다.
+const BASELINE_FILES: &[&str] = &[];
 
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·VCS 가 `src/` 안에
 /// 섞여 들어와도 스캔이 새지 않게 한다.

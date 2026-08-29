@@ -142,7 +142,7 @@ pub struct ExplorerClipboard {
 pub(crate) struct GuiAttachUserReq {
     pub(crate) port: u16,
     pub(crate) workspace: u32,
-    pub(crate) tunnel: Option<tasty_cli::ssh::SshTunnel>,
+    pub(crate) tunnel: Option<tasty_ssh::SshTunnel>,
 }
 
 /// (08) mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에

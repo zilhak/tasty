@@ -2948,7 +2948,7 @@ fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
     let ctx_w = ctx.clone();
     let name_w = name.clone();
     std::thread::spawn(move || {
-        let res = tasty_cli::ssh::detect_and_persist(&name_w)
+        let res = tasty_ssh::detect_and_persist(&name_w)
             .map(|m| m.as_str().to_string())
             .map_err(|e| e.to_string());
         if let Ok(mut g) = slot_w.lock() {
