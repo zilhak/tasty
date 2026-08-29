@@ -6,6 +6,8 @@ mod appearance;
 mod general;
 #[cfg(target_os = "macos")]
 mod general_display;
+#[cfg(target_os = "macos")]
+mod macos_permissions;
 mod misc;
 mod notifications;
 mod overlay;
@@ -19,6 +21,8 @@ pub use appearance::draw_appearance_tab;
 pub use general::draw_general_tab;
 #[cfg(target_os = "macos")]
 pub use general_display::draw_general_display_tab;
+#[cfg(target_os = "macos")]
+pub use macos_permissions::draw_macos_permissions_tab;
 #[cfg(windows)]
 pub use misc::draw_tastyrc_subtab;
 pub use misc::{ScriptsUiState, draw_scripts_subtab};

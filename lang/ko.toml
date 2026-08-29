@@ -107,6 +107,7 @@ notifications = "알림"
 overlay = "오버레이"
 remote_transfer = "원격 전송"
 display = "표시"
+macos_permissions = "권한"
 keybindings = "단축키"
 file_handler = "핸들러"
 misc = "기타"
@@ -1484,3 +1485,31 @@ title = "알림"
 # popup 타이틀바 전체화면 버튼(X 왼쪽) — 아이콘만으로는 뜻이 모호해 tooltip 을 단다.
 [popup.fullscreen_button]
 tooltip = "전체화면으로 보기"
+
+# macOS 전용. 전체 디스크 접근 권한은 앱이 요청할 수 없어 — 사용자가 시스템 설정에서
+# 직접 추가해야 한다 — tasty 가 할 수 있는 건 상태 표시와 패널 바로가기뿐이다.
+# 표시되는 상태는 추정이다(settings.macos_permissions.detection_note 참고).
+[settings.macos_permissions]
+full_disk_access_label = "전체 디스크 접근 권한"
+screen_recording_label = "화면 기록"
+status_granted = "허용됨"
+status_missing = "허용 안 됨"
+detection_note = "macOS 에는 앱이 전체 디스크 접근 권한을 가졌는지 묻는 API 가 없어 이 상태는 추정이며 틀릴 수 있습니다. 시작 시 안내를 띄울지만 결정할 뿐, 이 값으로 막히는 기능은 없습니다."
+open_full_disk_access = "전체 디스크 접근 권한 설정 열기"
+show_boot_notice = "시작할 때 전체 디스크 접근 권한 안내 표시"
+
+# 전체 디스크 접근 권한이 없어 보일 때 1 회 뜨는 시작 안내. 본문이 이 권한의 효과를
+# 과장하면 안 된다 — 파일 접근 프롬프트는 사라지지만, 다른 앱 제어(Automation /
+# Apple Events)·화면 기록·손쉬운 사용은 별개 TCC 서비스라 계속 뜬다.
+[macos_permissions.fda]
+title = "Tasty 에 전체 디스크 접근 권한 주기"
+body = """Tasty 안에서 실행한 명령이 사용자를 대신해 파일을 읽고 쓰며, macOS 는 그 접근을 Tasty 의 것으로 봅니다. 전체 디스크 접근 권한이 없으면 작업 도중에 "Tasty이(가) 다른 앱의 데이터에 접근하려고 합니다" 가 앱 폴더마다 새로 뜹니다.
+
+이 권한을 주면 파일 접근 프롬프트가 사라집니다 — 다른 앱의 데이터, 다운로드, 문서, 데스크탑, 마운트된 볼륨까지 포함합니다. 다만 다른 앱 제어(Automation / Apple Events, 예: osascript)·화면 기록·손쉬운 사용은 포함되지 않습니다. 이들은 별개 권한이라 계속 프롬프트가 뜹니다.
+
+macOS 는 앱이 이 권한을 요청할 방법을 제공하지 않습니다. 시스템 설정 > 개인정보 보호 및 보안 > 전체 디스크 접근 권한에서 Tasty 를 직접 추가해 주세요.
+
+Tasty 를 직접 빌드해 쓴다면 먼저 "Tasty Dev" 인증서로 서명하세요(./scripts/macos-codesign-identity.sh --create). ad-hoc 서명 빌드는 재빌드할 때마다 macOS 에 다른 앱으로 보여서 권한이 매번 초기화됩니다.
+
+이 안내는 한 번만 표시됩니다. 설정 > 일반 > 권한에서 다시 켤 수 있습니다."""
+open_settings = "설정 열기"

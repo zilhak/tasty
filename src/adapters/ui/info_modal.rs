@@ -27,12 +27,35 @@ pub enum InfoModalAction {
     Exit(i32),
 }
 
+/// [확인] 옆에 추가로 붙는 버튼의 동작. 안내 자체로 끝나지 않고 사용자를 어딘가로
+/// 보내야 하는 모달(예: OS 설정 패널로 유도)을 위한 것이다.
+#[derive(Debug, Clone)]
+pub enum InfoModalButtonAction {
+    /// URL/스킴을 OS 기본 핸들러로 연다. 모달은 **열린 채 유지**된다 — 설정 패널을
+    /// 열어둔 채 안내 문구를 다시 읽을 수 있어야 하기 때문.
+    ///
+    /// 현재 유일한 생산자가 macOS 전용 안내(Full Disk Access)라 다른 OS 에서는
+    /// 아무도 만들지 않는다. `GeneralSubTab::Display` 와 동일하게 variant 자체는
+    /// 플랫폼 공통으로 두고 경고만 억제한다 — 그리는 쪽은 어느 OS 에서든 컴파일된다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    OpenExternal(String),
+}
+
+/// [확인] 외에 모달 하단에 함께 그리는 버튼.
+#[derive(Debug, Clone)]
+pub struct InfoModalButton {
+    pub label: String,
+    pub action: InfoModalButtonAction,
+}
+
 /// 큐에 들어가는 단일 메시지.
 #[derive(Debug, Clone)]
 pub struct InfoModal {
     pub title: String,
     pub body: String,
     pub on_close: InfoModalAction,
+    /// [확인] 왼쪽에 그려지는 추가 버튼들. 비어 있으면 [확인] 하나만 나온다.
+    pub extra_buttons: Vec<InfoModalButton>,
 }
 
 pub const INFO_MODAL_ID: &str = "info_modal";
@@ -138,9 +161,20 @@ pub fn draw_info_modal(
 
     ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
         vspace(ui, th.spacing_xs);
-        if ui.button(t("button.ok")).clicked() {
-            confirm = true;
-        }
+        // 오른쪽부터 쌓는다 — 먼저 그린 [확인] 이 가장 오른쪽에 오고 추가 버튼이
+        // 그 왼쪽에 붙는다(dialog/preset 의 버튼 행과 같은 배치).
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button(t("button.ok")).clicked() {
+                confirm = true;
+            }
+            for button in &current.extra_buttons {
+                if ui.button(&button.label).clicked() {
+                    match &button.action {
+                        InfoModalButtonAction::OpenExternal(url) => open_external(url),
+                    }
+                }
+            }
+        });
     });
 
     if !confirm {
@@ -164,5 +198,26 @@ pub fn draw_info_modal(
         // 다음 메시지로 이어진다. popup은 그대로 유지하되 title/size는 다음 프레임에
         // popup::frame::draw_popup_layer의 refresh 루프가 자동 갱신.
         PopupAction::None
+    }
+}
+
+/// URL/스킴을 OS 기본 핸들러로 넘긴다. `reveal::open_path` 와 같은 방식이되 경로가
+/// 아니라 스킴을 넘기는 자리 — `x-apple.systempreferences:` 처럼 브라우저가 아닌
+/// 핸들러가 받는 스킴도 그대로 통과해야 하기 때문이다. 프로세스를 기다리지 않는다
+/// (렌더 경로에서 호출된다).
+fn open_external(url: &str) {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "start", ""]);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+
+    if let Err(err) = cmd.arg(url).spawn() {
+        tracing::warn!(%err, url, "info modal: 외부 링크 열기 실패");
     }
 }

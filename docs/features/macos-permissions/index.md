@@ -1,10 +1,10 @@
 # macOS 권한 (TCC)
 
-- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm 구현. 손쉬운 사용·Full Disk Access 안내는 미구현
+- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm, Full Disk Access 추정·안내 구현. 손쉬운 사용은 미구현
 - **주체**: 로컬 사용자 (AI Agent 가 간접 수혜 — 작업 도중 프롬프트로 멈추지 않는다)
 - **ADR**: 없음
-- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics FFI), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
-- **화면**: 없음 — 프롬프트는 OS 가 그린다
+- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
+- **화면**: 프롬프트는 OS 가 그린다. tasty 쪽 UI 는 부팅 안내 InfoModal + [설정 창](../settings/screens/settings.md) 일반 > 권한 탭
 
 ## 목적
 
@@ -66,6 +66,22 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 캡처 시점의 소비는 [원격 스크린샷 → 클립보드](../remote-screenshot-clipboard/index.md) 가 담당한다 — `screen_recording_authorized()` 를 캡처 **직전**에 불러 권한 미승인을 사용자 취소와 구분한다. 비-macOS 에는 같은 이름의 함수가 항상 `true` 를 반환해 그쪽 캡처 경로가 기존과 똑같이 동작한다.
 
+### Full Disk Access — 추정과 안내
+
+FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한 **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 대상 앱 디렉터리 단위로 갈라져 pre-warm 이 불가능한 AppData 계열을 없앨 수 있는 유일한 수단이다.
+
+**앱이 요청할 수 없다.** 요청 API 가 없고 `tccutil`/TCC.db 조작은 SIP 가 막는다. tasty 가 할 수 있는 것은 (a) 보유 추정과 (b) 해당 패널로 보내는 안내뿐이다.
+
+**추정 방법과 그 한계** — FDA 로만 읽히는 것으로 알려진 경로(`/Library/Application Support/com.apple.TCC/TCC.db`, 보조로 사용자 홈의 같은 경로)를 열어본다. 그 경로는 거부될 때 **프롬프트 없이 조용히** `EPERM` 을 내므로 안전하게 시도할 수 있다. 다만 이는 공개 API 가 아니라 우회 판정이며, macOS 가 그 경로의 보호 정책을 바꾸면 **오탐**이 난다. 그래서 이 값은 **안내를 띄울지 여부에만** 쓰고 어떤 기능도 이 값으로 막지 않는다.
+
+**안내 방식** — 부팅 시 FDA 가 없어 보이면 InfoModal 을 **평생 1 회** 띄우고, 띄운 사실을 `general.macos_fda_notice_shown` 에 즉시 기록한다. 모달에는 시스템 설정의 전체 디스크 접근 권한 패널을 여는 버튼(`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`, `open(1)` 로 실행)이 붙는다. 다시 보려면 설정 > 일반 > 권한의 토글을 켠다 — 오탐으로 안내가 떴을 때의 탈출구이자, 나중에 다시 보고 싶을 때의 경로다.
+
+**안내 문구가 지켜야 할 것** — FDA 는 파일 접근 프롬프트만 없앤다. **Automation(다른 앱 제어) · 화면 기록 · 손쉬운 사용은 FDA 와 별개 TCC 서비스라 그대로 남는다.** 문구가 "모든 프롬프트가 사라진다" 로 읽히면 안 된다. 또 ad-hoc 서명 빌드는 재빌드마다 다른 앱으로 인식돼 FDA 가 초기화되므로, 직접 빌드하는 사용자에게 `Tasty Dev` 인증서 서명이 선행 조건임을 함께 알린다([build.md](../../dev-guide/build.md) 참조).
+
+### 설정 탭 (일반 > 권한)
+
+macOS 에서만 노출된다. FDA·화면 기록의 추정 상태, 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
+
 ### 프롬프트 본문 설명 문구
 
 번들 `Info.plist` 의 `NS*UsageDescription` 키가 프롬프트 본문에 그대로 표시된다. 키가 없으면 이유 없는 프롬프트가 뜨고, pre-warm 처럼 여러 개를 연달아 띄우면 그 문제가 커진다. 키 목록과 문구 정책은 [build.md](../../dev-guide/build.md) 의 배포 패키징 절 참조.
@@ -78,7 +94,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 **pre-warm 이 원천적으로 불가능한 것** — 대상별로 프롬프트가 갈라져 사전 열거가 안 된다:
 
-- **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮인다 — FDA 안내는 이 기능 밖.
+- **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮이며, 그 안내는 위 "Full Disk Access" 절이 담당한다.
 - **다른 앱 제어** (Automation / Apple Events) — 대상 앱 단위. 셸에서 `osascript` 를 쓸 때 발생하며 사전 열거 불가. **FDA 로도 덮이지 않는다** — FDA 는 파일 접근 서비스이고 Automation 은 완전히 별개 서비스라, FDA 를 줘도 대상 앱별 승인은 계속 요구된다. **어떤 방법으로도 사전 일괄 발화가 불가능**하며 tasty 가 할 수 있는 일이 없다. tasty 자신은 Apple Events 를 보내지 않는다.
 
 **이 기능이 다루지 않는 다른 TCC 서비스**: 손쉬운 사용(`surface.raw_key` 의 `CGEventPost` 키 주입). 전용 요청 API 가 있어 파일 pre-warm 과 발화 방식이 다르다.
@@ -94,3 +110,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 - [ ] Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
 - [ ] Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
 - [ ] Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
+- [ ] Given 이미 안내함(`macos_fda_notice_shown` = true) When 부팅 Then FDA 안내를 띄우지 않는다
+- [ ] Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
+- [ ] Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
+- [ ] Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다

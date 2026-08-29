@@ -731,6 +731,7 @@ fn build_db_init_error_modal(
         title: crate::i18n::t("db_error.title").to_string(),
         body,
         on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
+        extra_buttons: Vec::new(),
     }
 }
 
@@ -743,5 +744,6 @@ fn build_theme_fallback_modal(
         title: crate::i18n::t("theme_error.title").to_string(),
         body: crate::i18n::t_fmt("theme_error.body", invalid_theme_name),
         on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
+        extra_buttons: Vec::new(),
     }
 }

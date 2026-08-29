@@ -222,6 +222,11 @@ pub struct GeneralSettings {
     /// 동작을 보존한다(iTerm2 도 기본 off). 다른 OS 에는 Option 키가 없어 노출하지 않는다.
     #[cfg(target_os = "macos")]
     pub option_as_meta: bool,
+    /// macOS 전용 — Full Disk Access 안내를 부팅 시 이미 한 번 띄웠는가. 안내는
+    /// 평생 1 회만 뜨고, 이 값을 다시 false 로 되돌리는 것은 설정 화면의 토글이다.
+    /// 다른 OS 에는 Full Disk Access 개념이 없어 노출하지 않는다.
+    #[cfg(target_os = "macos")]
+    pub macos_fda_notice_shown: bool,
     /// 단축키 표시 시 `alt` 토큰의 텍스트: "alt" | "cmd" | "symbol"(⌘). 저장 포맷은
     /// OS 독립 추상 토큰(`"alt+n"`)을 유지하고(`docs/design/policies/key-mapping.md`
     /// 저장↔표시 분리 원칙), 이 필드는 화면 표시 레이어만 바꾼다
@@ -295,6 +300,8 @@ impl Default for GeneralSettings {
             explorer_view_mode: "detail".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,
+            #[cfg(target_os = "macos")]
+            macos_fda_notice_shown: false,
             alt_display_style: "alt".to_string(),
             option_display_style: "option".to_string(),
             shift_display_style: "shift".to_string(),

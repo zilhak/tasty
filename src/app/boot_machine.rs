@@ -479,6 +479,7 @@ impl App {
         {
             tracing::warn!("agent runner registry already injected into CoreState");
         }
+        Self::report_missing_full_disk_access(&mut state, &mut core_state.settings);
         self.register_window(gpu, state, core_state, window.clone());
         self.emit_startup_complete_event();
 
@@ -531,6 +532,7 @@ impl App {
                     title: crate::i18n::t("db_error.title").to_string(),
                     body,
                     on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
+                    extra_buttons: Vec::new(),
                 },
             );
         }
@@ -543,9 +545,38 @@ impl App {
                     title: crate::i18n::t("theme_error.title").to_string(),
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
                     on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
+                    extra_buttons: Vec::new(),
                 },
             );
         }
+    }
+
+    /// macOS 에서 Full Disk Access 가 없어 보이면 안내 모달을 1 회 심는다.
+    ///
+    /// 파일 pre-warm 이 못 덮는 "다른 앱의 데이터" 프롬프트는 FDA 로만 사라지는데,
+    /// FDA 는 앱이 요청할 수 없어 사용자가 직접 켜야 한다 — 원인을 모르면 계속
+    /// 막히므로 발견성이 중요하다. 다만 성가시지 않도록 **평생 1 회**만 띄우고,
+    /// 띄운 사실을 즉시 설정에 기록한다. 다시 보려면 설정에서 켠다.
+    ///
+    /// FDA 판정은 휴리스틱이라 오탐이 날 수 있다. 그래서 이 결과는 안내 표시
+    /// 여부에만 쓰고 어떤 기능도 막지 않는다. macOS 외에서는 no-op.
+    fn report_missing_full_disk_access(
+        state: &mut crate::state::AppState,
+        settings: &mut crate::settings::Settings,
+    ) {
+        if !crate::macos_permissions::wants_full_disk_access_notice(settings) {
+            return;
+        }
+        crate::adapters::ui::info_modal::show_info_modal(
+            state,
+            crate::adapters::ui::info_modal::InfoModal {
+                title: crate::i18n::t("macos_permissions.fda.title").to_string(),
+                body: crate::i18n::t("macos_permissions.fda.body").to_string(),
+                on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
+                extra_buttons: full_disk_access_notice_buttons(),
+            },
+        );
+        crate::macos_permissions::mark_full_disk_access_notice_shown(settings);
     }
 
     /// IPC/stream 서버 시작 + 웹훅 리스너 init — `finish_boot` 의 첫 윈도우 등록
@@ -633,4 +664,22 @@ impl App {
             _ => {}
         }
     }
+}
+
+/// FDA 안내 모달에 붙는 추가 버튼 — 시스템 설정의 전체 디스크 접근 권한 패널로
+/// 바로 보낸다. 패널 위치를 글로 설명하는 것보다 한 번에 데려가는 편이 확실하다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
+    vec![crate::adapters::ui::info_modal::InfoModalButton {
+        label: crate::i18n::t("macos_permissions.fda.open_settings").to_string(),
+        action: crate::adapters::ui::info_modal::InfoModalButtonAction::OpenExternal(
+            crate::macos_permissions::FULL_DISK_ACCESS_SETTINGS_URL.to_string(),
+        ),
+    }]
+}
+
+/// 비-macOS — 안내 자체가 뜨지 않으므로 버튼도 없다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
+    Vec::new()
 }

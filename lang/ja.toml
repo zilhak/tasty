@@ -107,6 +107,7 @@ notifications = "通知"
 overlay = "オーバーレイ"
 remote_transfer = "リモート転送"
 display = "表示"
+macos_permissions = "権限"
 keybindings = "キーバインド"
 file_handler = "ハンドラ"
 misc = "その他"
@@ -1486,3 +1487,31 @@ title = "通知"
 # popup 타이틀바 전체화면 버튼(X 왼쪽) — 아이콘만으로는 뜻이 모호해 tooltip 을 단다.
 [popup.fullscreen_button]
 tooltip = "全画面で表示"
+
+# macOS 専用。フルディスクアクセスはアプリから要求できず — ユーザーがシステム設定で
+# 自分で追加する必要がある — tasty にできるのは状態表示とパネルへの導線だけ。
+# 表示される状態は推定である(settings.macos_permissions.detection_note 参照)。
+[settings.macos_permissions]
+full_disk_access_label = "フルディスクアクセス"
+screen_recording_label = "画面収録"
+status_granted = "許可済み"
+status_missing = "未許可"
+detection_note = "macOS にはアプリがフルディスクアクセスを持つかを問い合わせる API がないため、この状態は推定であり誤ることがあります。起動時の案内を出すかどうかを決めるだけで、これによって使えなくなる機能はありません。"
+open_full_disk_access = "フルディスクアクセスの設定を開く"
+show_boot_notice = "起動時にフルディスクアクセスの案内を表示"
+
+# フルディスクアクセスがないと見られるときに 1 回だけ出る起動案内。本文がこの権限の
+# 効果を誇張してはならない — ファイルアクセスのダイアログは消えるが、他アプリの制御
+# (Automation / Apple Events)・画面収録・アクセシビリティは別の TCC サービスなので出続ける。
+[macos_permissions.fda]
+title = "Tasty にフルディスクアクセスを許可"
+body = """Tasty で実行したコマンドがユーザーに代わってファイルを読み書きし、macOS はそのアクセスを Tasty のものとして扱います。フルディスクアクセスがないと、作業の途中で「Tasty が他のアプリのデータにアクセスしようとしています」がアプリのフォルダごとに出ます。
+
+この権限を与えるとファイルアクセスのダイアログが出なくなります — 他アプリのデータ、ダウンロード、書類、デスクトップ、マウント済みボリュームまで含みます。ただし他アプリの制御(Automation / Apple Events、例: osascript)・画面収録・アクセシビリティは含まれません。これらは別の権限なので引き続きダイアログが出ます。
+
+macOS はアプリがこの権限を要求する手段を用意していません。システム設定 > プライバシーとセキュリティ > フルディスクアクセスで Tasty を自分で追加してください。
+
+Tasty を自分でビルドして使う場合は、先に "Tasty Dev" 証明書で署名してください(./scripts/macos-codesign-identity.sh --create)。ad-hoc 署名のビルドは再ビルドのたびに macOS から別のアプリに見えるため、権限が毎回リセットされます。
+
+この案内は一度だけ表示されます。設定 > 一般 > 権限から再び有効にできます。"""
+open_settings = "設定を開く"

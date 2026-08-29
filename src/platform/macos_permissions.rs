@@ -1,4 +1,4 @@
-//! macOS 권한 프롬프트 pre-warm — 파일 TCC + 화면 기록.
+//! macOS 권한 — 파일 TCC · 화면 기록 pre-warm + Full Disk Access 추정/안내.
 //!
 //! macOS 는 보호 리소스에 **실제로 접근하는 그 순간**에만 권한 프롬프트를 띄운다.
 //! 파일 계열 TCC 서비스에는 "미리 물어보는" API 가 없으므로, 프롬프트 시점을 앞당기는
@@ -159,6 +159,101 @@ fn prewarm_screen_recording() {
     tracing::debug!(granted, "prewarm: 화면 기록 권한 요청 결과");
 }
 
+// ── Full Disk Access ──────────────────────────────────────────────────────────
+//
+// FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한
+// **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 파일 pre-warm 이 못 덮는
+// AppData 계열을 없앨 수 있는 유일한 수단이다.
+//
+// 앱이 FDA 를 **요청할 방법은 없다** — 사용자가 시스템 설정에서 직접 추가해야 하고
+// `tccutil`/TCC.db 조작은 SIP 가 막는다. 앱이 할 수 있는 건 (a) 보유 추정과
+// (b) 해당 패널로 보내는 안내뿐이다.
+
+/// 시스템 설정의 전체 디스크 접근 권한 패널 딥링크.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) const FULL_DISK_ACCESS_SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+
+/// FDA 보유를 **추정**하는 데 읽어보는 경로들. 앞쪽부터 시도해 하나라도 열리면
+/// 보유로 본다.
+///
+/// FDA 없이는 열리지 않는 것으로 알려진 경로를 읽어보는 우회 판정이다 — 보유 여부를
+/// 묻는 공개 API 자체가 없다. 이 경로들은 거부될 때 **프롬프트를 띄우지 않고 조용히**
+/// `EPERM` 을 내므로 백그라운드에서 안전하게 시도할 수 있다.
+fn fda_probe_paths(home: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = vec![PathBuf::from(
+        "/Library/Application Support/com.apple.TCC/TCC.db",
+    )];
+    // 보조 경로 — 시스템 경로의 보호 정책이 바뀌었을 때의 완화책. 사용자별 TCC 저장소도
+    // 같은 보호를 받으므로 판정 신호로 쓸 수 있다.
+    if let Some(home) = home {
+        paths.push(home.join("Library/Application Support/com.apple.TCC/TCC.db"));
+    }
+    paths
+}
+
+/// 부팅 안내를 띄울지 결정하는 **순수** 규칙 — 아직 안내한 적이 없고 FDA 가 없어
+/// 보일 때만 띄운다.
+///
+/// 추정이 틀릴 수 있으므로(아래 `full_disk_access_likely` 참고) 이 값은 **안내 표시
+/// 여부에만** 쓰고 기능 분기에는 쓰지 않는다. 오탐으로 안내가 떠도 평생 1 회이며,
+/// 설정에서 다시 켤 수 있다.
+fn should_show_fda_notice(already_shown: bool, fda_likely: bool) -> bool {
+    !already_shown && !fda_likely
+}
+
+/// FDA 를 갖고 있는 것으로 **보이는가**. 확정 판정이 아니다 — 공개 API 가 없어
+/// "FDA 로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신하는 휴리스틱이며,
+/// macOS 가 그 경로의 보호 정책을 바꾸면 오탐이 날 수 있다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn full_disk_access_likely() -> bool {
+    fda_probe_paths(home_dir().as_deref())
+        .iter()
+        .any(|p| std::fs::File::open(p).is_ok())
+}
+
+/// 부팅 시 FDA 안내를 띄워야 하는가.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn wants_full_disk_access_notice(settings: &crate::settings::Settings) -> bool {
+    should_show_fda_notice(
+        settings.general.macos_fda_notice_shown,
+        full_disk_access_likely(),
+    )
+}
+
+/// 비-macOS / headless — FDA 개념이 없으므로 안내하지 않는다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+pub(crate) fn wants_full_disk_access_notice(_settings: &crate::settings::Settings) -> bool {
+    false
+}
+
+/// 안내를 띄웠음을 기록하고 즉시 영속화한다 — 다음 부팅부터는 뜨지 않는다.
+/// 저장 실패는 안내를 한 번 더 보게 될 뿐이라 치명적이지 않다(warn 로그).
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn mark_full_disk_access_notice_shown(settings: &mut crate::settings::Settings) {
+    settings.general.macos_fda_notice_shown = true;
+    if let Err(err) = settings.save() {
+        tracing::warn!(%err, "full disk access 안내 표시 기록 저장 실패");
+    }
+}
+
+/// 비-macOS / headless — 기록할 것이 없다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+pub(crate) fn mark_full_disk_access_notice_shown(_settings: &mut crate::settings::Settings) {}
+
+/// 시스템 설정의 전체 디스크 접근 권한 패널을 연다. `open(1)` 로 띄운다 —
+/// `x-apple.systempreferences:` 는 브라우저가 아니라 OS 기본 핸들러가 처리한다.
+/// 프로세스를 기다리지 않는다(렌더 경로에서 호출될 수 있다).
+#[cfg(all(target_os = "macos", feature = "gui"))]
+pub(crate) fn open_full_disk_access_settings() {
+    if let Err(err) = std::process::Command::new("open")
+        .arg(FULL_DISK_ACCESS_SETTINGS_URL)
+        .spawn()
+    {
+        tracing::warn!(%err, "전체 디스크 접근 권한 설정 패널 열기 실패");
+    }
+}
+
 /// 홈 디렉터리 — `DirectoriesHome` 과 같은 해석(`directories::BaseDirs`).
 #[cfg(all(target_os = "macos", feature = "gui"))]
 fn home_dir() -> Option<PathBuf> {
@@ -243,6 +338,38 @@ mod tests {
             out.reverse();
             out
         }
+    }
+
+    #[test]
+    fn fda_notice_shows_only_when_unshown_and_access_missing() {
+        assert!(should_show_fda_notice(false, false));
+        // 이미 안내했으면 다시 띄우지 않는다.
+        assert!(!should_show_fda_notice(true, false));
+        // FDA 가 있어 보이면 안내할 이유가 없다.
+        assert!(!should_show_fda_notice(false, true));
+        assert!(!should_show_fda_notice(true, true));
+    }
+
+    #[test]
+    fn fda_probe_includes_system_store_first_then_user_store() {
+        let paths = fda_probe_paths(Some(Path::new("/Users/t")));
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/Library/Application Support/com.apple.TCC/TCC.db"),
+                PathBuf::from("/Users/t/Library/Application Support/com.apple.TCC/TCC.db"),
+            ]
+        );
+    }
+
+    #[test]
+    fn fda_probe_without_home_keeps_the_system_store() {
+        assert_eq!(
+            fda_probe_paths(None),
+            vec![PathBuf::from(
+                "/Library/Application Support/com.apple.TCC/TCC.db"
+            )]
+        );
     }
 
     #[test]

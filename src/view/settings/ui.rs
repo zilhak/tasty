@@ -121,6 +121,10 @@ pub(crate) enum GeneralSubTab {
     /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Display,
+    /// macOS 권한(TCC) 상태 표시 + 시스템 설정 바로가기. macOS 전용 — 다른 OS 에는
+    /// TCC 라는 개념이 없어 push 하지 않으며, `Display` 와 같은 이유로 variant 만 남긴다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    MacosPermissions,
 }
 
 /// L2 section within the Terminal L1 tab.
@@ -308,6 +312,7 @@ impl SettingsUiState {
                     "overlay" => GeneralSubTab::Overlay,
                     "remote_transfer" | "remote-transfer" => GeneralSubTab::RemoteTransfer,
                     "display" => GeneralSubTab::Display,
+                    "macos_permissions" | "macos-permissions" => GeneralSubTab::MacosPermissions,
                     _ => return false,
                 };
                 true
@@ -841,6 +846,11 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             ];
             #[cfg(target_os = "macos")]
             items.push((GeneralSubTab::Display, t("settings.tab.display")));
+            #[cfg(target_os = "macos")]
+            items.push((
+                GeneralSubTab::MacosPermissions,
+                t("settings.tab.macos_permissions"),
+            ));
             items
                 .into_iter()
                 .map(|(tab, label)| L2Section {
@@ -1532,8 +1542,10 @@ fn draw_active_content(
             GeneralSubTab::RemoteTransfer => draw_remote_transfer_tab(ui, draft),
             #[cfg(target_os = "macos")]
             GeneralSubTab::Display => draw_general_display_tab(ui, draft),
+            #[cfg(target_os = "macos")]
+            GeneralSubTab::MacosPermissions => draw_macos_permissions_tab(ui, draft),
             #[cfg(not(target_os = "macos"))]
-            GeneralSubTab::Display => {
+            GeneralSubTab::Display | GeneralSubTab::MacosPermissions => {
                 let th = crate::theme::theme();
                 ui.vertical_centered(|ui| {
                     vspace(ui, th.spacing_xl);

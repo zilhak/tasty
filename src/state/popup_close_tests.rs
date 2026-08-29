@@ -604,6 +604,7 @@ fn info_modal_entry(body: &str) -> InfoModal {
         title: "Boot".to_string(),
         body: body.to_string(),
         on_close: InfoModalAction::Continue,
+        extra_buttons: Vec::new(),
     }
 }
 

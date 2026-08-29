@@ -107,6 +107,7 @@ notifications = "Notifications"
 overlay = "Overlay"
 remote_transfer = "Remote transfer"
 display = "Display"
+macos_permissions = "Permissions"
 keybindings = "Keybindings"
 file_handler = "Handler"
 misc = "Misc"
@@ -1493,3 +1494,32 @@ title = "Notifications"
 # popup 타이틀바 전체화면 버튼(X 왼쪽) — 아이콘만으로는 뜻이 모호해 tooltip 을 단다.
 [popup.fullscreen_button]
 tooltip = "Show fullscreen"
+
+# macOS-only. Full Disk Access cannot be requested by an app — the user has to add
+# Tasty in System Settings themselves — so all Tasty can do is show the state and
+# link to the panel. The state shown is a guess (see settings.macos_permissions.detection_note).
+[settings.macos_permissions]
+full_disk_access_label = "Full Disk Access"
+screen_recording_label = "Screen recording"
+status_granted = "Granted"
+status_missing = "Not granted"
+detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it."
+open_full_disk_access = "Open Full Disk Access settings"
+show_boot_notice = "Show the Full Disk Access notice at startup"
+
+# Startup notice shown once when Full Disk Access appears to be missing. The body must
+# not overstate what Full Disk Access covers: it removes file-access prompts, but
+# Automation (controlling other apps), screen recording and accessibility are separate
+# TCC services that keep prompting.
+[macos_permissions.fda]
+title = "Grant Tasty Full Disk Access"
+body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without Full Disk Access you keep hitting "Tasty would like to access data from other apps" in the middle of your work, once per app folder.
+
+Granting Full Disk Access removes the file-access prompts — including other apps' data, Downloads, Documents, Desktop and mounted volumes. It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
+
+macOS has no way for an app to ask for this, so add Tasty yourself in System Settings > Privacy & Security > Full Disk Access.
+
+If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./scripts/macos-codesign-identity.sh --create). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
+
+This notice appears only once. You can bring it back under Settings > General > Permissions."""
+open_settings = "Open settings"
