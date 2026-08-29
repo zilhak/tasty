@@ -58,16 +58,14 @@ pub(crate) enum AppEvent {
     /// 한다 (ADR-0017). Windows 전용 — Unix PTY 는 절전에 강건해 불필요하다.
     #[cfg(all(windows, feature = "gui"))]
     SystemResumed,
-    /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
-    BusyPoll,
-    /// attach/detach 작업 J — 3초 간격 ticker. 서버측 readonly 뷰의 display mirror 를
-    /// live grid 스냅샷으로 갱신하고, client mirror 의 누적 출력 버퍼를 적용해 화면을
-    /// 3초 cadence 로 repaint 한다(실시간 stream 이 아니라 polling, plan §4).
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
-    AttachPoll,
+    /// 중앙 타이머 허브(`docs/dev-guide/timer-hub.md`)의 waker 스레드가 다음 데드라인에
+    /// 도달했다는 wake 신호. **이 이벤트 자체는 아무 일도 하지 않는다** — 깨어난
+    /// `about_to_wait` 가 `timers.drain_due` 로 due 한 키를 실행한다. headless 는
+    /// 메인 루프가 `recv_timeout` 으로 직접 데드라인을 지키므로 이 이벤트가 없다.
+    #[cfg(feature = "gui")]
+    TimerTick,
     /// attach/detach 작업 J — client mirror reader thread 가 원격 출력을 받으면 보내는
-    /// 실시간 wake 신호. 서버측 readonly 뷰의 3초 cadence(`AttachPoll`)와 달리, 내가 직접
+    /// 실시간 wake 신호. 서버측 readonly 뷰의 3초 cadence(`Tick::AttachView`)와 달리, 내가 직접
     /// 다루는 client mirror 는 로컬 워크스페이스처럼 데이터가 오는 즉시 적용/repaint 한다.
     /// App 이 누적 출력 버퍼를 drain 해 mirror Terminal 에 feed 한다.
     #[cfg(feature = "gui")]

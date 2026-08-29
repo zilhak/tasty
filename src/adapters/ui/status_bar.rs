@@ -72,7 +72,7 @@ pub fn draw_status_bar(
     // ── 데이터 추출 (immutable read) ──
     let surface_id = state.focused_surface_id(engine);
     // Grid (cols/rows) is a lock-free handle-cache read. The foreground process
-    // name comes from the 1Hz BusyPoll cache (`foreground_name`) rather than a
+    // name comes from the 1Hz Tick::Busy cache (`foreground_name`) rather than a
     // per-frame system snapshot — re-snapshotting every frame both cost ≈6ms on
     // the main thread and made the name flicker while agents churned helpers.
     // The git branch comes from the same 1Hz tick (`status_bar_branch`) for the

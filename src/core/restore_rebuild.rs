@@ -91,7 +91,7 @@ pub(crate) fn rebuild_surface_node(
     let waker = engine.make_waker(surface_id);
 
     // PTY 의 첫 입력으로 cd + restore_command 를 합쳐 한 번에 주입한다. shell 이
-    // stdin 을 처음 read 하는 순간 이 바이트가 들어가므로, GUI redraw / BusyPoll
+    // stdin 을 처음 read 하는 순간 이 바이트가 들어가므로, GUI redraw / busy tick
     // 등 추가 트리거 없이 spawn 과 동시에 실행된다.
     let mut initial = String::new();
     if let Some(dir) = closed.cwd.as_deref() {

@@ -140,7 +140,7 @@ impl GlobalHookManager {
     }
 
     /// Check all hooks and return `(hook_id, command)` pairs that should be
-    /// executed right now. `CoreState::poll_global_hooks` 가 `AppEvent::BusyPoll`
+    /// executed right now. `CoreState::poll_global_hooks` 가 `Tick::Busy`
     /// 1Hz cadence 에 편승해 호출한다.
     pub fn tick(&mut self) -> Vec<(u32, String)> {
         let now = Instant::now();

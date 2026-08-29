@@ -11,7 +11,7 @@
 //!   0). 입력은 `set_input_sink` 로 forward(keyboard.rs 무변경).
 //! - `apply_attach_client_output`: reader thread 가 `AttachClientData` 로 깨울 때마다
 //!   누적된 원격 출력을 mirror 에 적용하고 화면을 repaint. 끊긴(force-detach/EOF) 세션의
-//!   mirror 를 정리. (`AttachPoll` 3초 tick 도 backstop 으로 같은 함수를 호출한다.)
+//!   mirror 를 정리. (`Tick::AttachView` 3초 tick 도 backstop 으로 같은 함수를 호출한다.)
 //!
 //! client mirror 는 내가 직접 다루는 대상이라 로컬 워크스페이스처럼 **데이터가 오는 즉시**
 //! 갱신한다(로컬 PTY 의 TerminalOutput wake 와 동형). 서버측 readonly 뷰(`attach_poll` ①)만
@@ -638,7 +638,7 @@ impl App {
 
     /// `AttachClientData`(reader wake)마다 — 누적 원격 출력을 mirror Terminal 에
     /// 적용(repaint) + 끊긴 세션 정리. client mirror 는 데이터가 오는 즉시 갱신한다
-    /// (로컬 워크스페이스와 동일한 반응성). `AttachPoll` 3초 tick 도 backstop 으로 호출.
+    /// (로컬 워크스페이스와 동일한 반응성). `Tick::AttachView` 3초 tick 도 backstop 으로 호출.
     pub(crate) fn apply_attach_client_output(&mut self) {
         if self.attach_client_sessions.is_empty() {
             return;

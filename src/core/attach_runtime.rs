@@ -488,7 +488,7 @@ impl CoreState {
     /// 계산한 변화분을 실제로 attach client 에 push 한다. gui(`app/busy.rs`, 매 window/
     /// parked engine)와 headless(`boot.rs`, 유일한 engine) 양쪽이 같은 1Hz 캐던스로 호출
     /// 하는 공통 진입점 — resize forwarder(`attach_surface_for_stream`)와 달리 busy 는
-    /// `Terminal` 자체 tap 이 아니라 OS 폴링 기반이라 전용 스레드 대신 기존 BusyPoll
+    /// `Terminal` 자체 tap 이 아니라 OS 폴링 기반이라 전용 스레드 대신 기존 busy tick
     /// 타이머에 편승한다.
     pub fn forward_busy_activity(&mut self, hub: &StreamHub) {
         for (client_id, surface_id, busy) in self.busy_activity_forwards() {

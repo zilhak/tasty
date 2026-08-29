@@ -7,7 +7,7 @@
 //!
 //! 서버는 PTY/grid 권위 owner 라 데이터가 이미 있다. live grid 를 매 프레임 그대로
 //! 그리면 "실시간"이 되어 사용자 확정 UX("3초 polling")와 어긋난다. → 점유 surface
-//! 마다 **display-only mirror**(detached `Terminal`)를 두고, 3초 `AttachPoll` tick 때만
+//! 마다 **display-only mirror**(detached `Terminal`)를 두고, 3초 `Tick::AttachView` tick 때만
 //! live grid 스냅샷을 feed 한다. render_pass 가 is_hard_occupied surface 를 이 mirror 로
 //! 렌더한다(plan §2.3). live Terminal 은 PTY 소유 + 입력 라우팅 전용으로 유지.
 //!

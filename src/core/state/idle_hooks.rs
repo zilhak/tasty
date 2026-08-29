@@ -1,5 +1,5 @@
 //! IdleTimeout 훅(`tasty set hook --event idle-timeout:SECS`) 폴링.
-//! `AppEvent::BusyPoll` 1Hz cadence 에 편승해 호출된다 — `global_hooks.rs`/
+//! 중앙 타이머 허브의 `Tick::Busy` 1Hz cadence 에 편승해 호출된다 — `global_hooks.rs`/
 //! `GlobalHookManager::tick()` 와 동일한 이유로 전용 ticker 스레드를 새로 두지
 //! 않는다.
 

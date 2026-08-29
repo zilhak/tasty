@@ -81,7 +81,7 @@ impl GpuState {
                 // 오버레이가 그린다. client mirror 는 자기 engine 에 lock 이 없어
                 // (is_hard_occupied=false) live terminal 을 정상 렌더한다(G).
                 let is_readonly = engine.attach.is_hard_occupied(region.id);
-                // 첫 AttachPoll tick 전이면 mirror 가 아직 없다 — 다음 tick 에 채워진다.
+                // 첫 attach 뷰 tick 전이면 mirror 가 아직 없다 — 다음 tick 에 채워진다.
                 let Some(terminal) = engine.visible_terminal(region.id) else {
                     continue;
                 };

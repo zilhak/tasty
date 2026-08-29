@@ -1,4 +1,4 @@
-//! StatusBar 의 git 브랜치 캐시 — 1Hz `BusyPoll` 이 갱신하고 StatusBar 가 읽는다.
+//! StatusBar 의 git 브랜치 캐시 — 1Hz `Tick::Busy` 가 갱신하고 StatusBar 가 읽는다.
 //!
 //! ## 왜 캐시인가
 //! 브랜치명은 예전에 `draw_status_bar` 안에서 리페인트마다 `.git/HEAD` 를 새로 열어
@@ -24,7 +24,7 @@
 //! StatusBar 를 그리는 유일한 지점이 `gfx/gpu/egui_bridge.rs` 라
 //! `--no-default-features` 빌드는 이 바를 렌더하지 않는다. 그래서 이 모듈 전체와
 //! `CoreState::branch_cache` 필드는 `gui` feature 게이트이고, `boot.rs` 의
-//! `AppEvent::BusyPoll` arm(headless)에는 갱신을 배선하지 않는다 — 읽는 쪽이 없는
+//! `Tick::Busy` 처리(headless)에는 갱신을 배선하지 않는다 — 읽는 쪽이 없는
 //! 파일 IO 를 초당 한 번 도는 것이 되기 때문이다(의도적 비대칭).
 
 use std::path::{Path, PathBuf};

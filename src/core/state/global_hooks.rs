@@ -1,7 +1,6 @@
 //! 글로벌 훅(`tasty set global-hook`) 조건 평가/발화. `poll_global_hooks` 는
-//! `AppEvent::BusyPoll` 1Hz cadence 에 편승해 호출된다 — busy_tick/attach_tick
-//! 처럼 전용 ticker 스레드를 새로 두지 않고, 이미 모든 gui/headless 부팅 경로에 배선된
-//! 1Hz 이벤트를 그대로 재사용한다.
+//! 중앙 타이머 허브의 `Tick::Busy` 1Hz cadence 에 편승해 호출된다 — 훅 전용 키를
+//! 따로 등록하지 않고, gui/headless 양쪽에 이미 배선된 1Hz tick 을 그대로 재사용한다.
 
 use super::CoreState;
 use crate::host_api::hooks::global::GlobalHookManager;

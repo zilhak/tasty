@@ -1,10 +1,10 @@
-//! `AppEvent::BusyPoll` 처리 — 모든 surface 의 busy 상태 갱신.
+//! `Tick::Busy` 처리 — 모든 surface 의 busy 상태 갱신.
 
 use crate::app::App;
 
 impl App {
     /// Refresh the busy-surface cache for every live AppState. Triggered ~1s
-    /// from the background ticker via `AppEvent::BusyPoll`. Marks any window
+    /// from the central timer hub via `Tick::Busy`. Marks any window
     /// whose set actually changed as dirty so the indicators redraw.
     ///
     /// Also forwards busy transitions to any attach client occupying one of

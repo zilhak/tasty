@@ -3,6 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::app::timers::Tick;
 use crate::view::ui::View;
 use crate::view::{ViewAction, ViewCtx};
 use crate::{App, AppEvent};
@@ -101,16 +102,11 @@ impl ApplicationHandler<AppEvent> for App {
                     self.view.views.len()
                 );
             }
-            AppEvent::BusyPoll => {
-                self.poll_busy_states();
-                self.poll_global_hooks();
-                self.poll_idle_timeout_hooks();
-            }
-            AppEvent::AttachPoll => {
-                self.poll_attach_views();
-            }
+            // 타이머 waker 가 데드라인에 도달했다는 wake 신호일 뿐이다 — 실제 실행은
+            // 이어서 도는 `about_to_wait` 의 `drain_due` 블록이 한다.
+            AppEvent::TimerTick => {}
             // client mirror 실시간 갱신 — reader thread 가 원격 출력을 받을 때마다 깨운다.
-            // 서버 readonly 의 3초 cadence(AttachPoll)와 달리 즉시 적용/repaint.
+            // 서버 readonly 의 3초 cadence(`Tick::AttachView`)와 달리 즉시 적용/repaint.
             AppEvent::AttachClientData => {
                 self.apply_attach_client_output();
             }
@@ -277,7 +273,14 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+        // control flow 는 **말미 `sync_timer_control_flow` 1회**로만 정한다. 여기서
+        // 기본값을 깔고 뒤에서 덮어쓰면 합성 순서에 따라 데드라인이 유실된다.
+        // 아래 shutdown/boot 가드는 조기 return 하는 배타적 경로라 합성 대상이 아니며,
+        // 각자 자기 control flow 를 직접 설정하고 빠져나간다.
+        //
+        // 두 가드가 도는 동안 **steady-state 타이머는 정지한다**(drain_due 에 닿지
+        // 않는다). 종료/부팅 중에는 주기 작업이 정리 중인 상태를 다시 건드리지
+        // 않는다는 계약이다 — `docs/dev-guide/timer-hub.md`.
 
         // 종료 상태 머신 구동 — 부팅 가드와 같은 이유로 steady-state 파이프라인보다
         // 먼저 가로챈다. 여기서 return 하므로 종료 중에는 `process_ipc()` 가 돌지
@@ -293,12 +296,14 @@ impl ApplicationHandler<AppEvent> for App {
         // 스텝이 진행되도록).
         if self.shutdown.is_some() {
             self.drive_shutdown_frame(event_loop);
-            if self.shutdown_needs_frames() {
-                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+            event_loop.set_control_flow(if self.shutdown_needs_frames() {
+                winit::event_loop::ControlFlow::WaitUntil(
                     std::time::Instant::now()
                         + crate::app::shutdown_machine::SHUTDOWN_FRAME_INTERVAL,
-                ));
-            }
+                )
+            } else {
+                winit::event_loop::ControlFlow::Wait
+            });
             return;
         }
 
@@ -308,11 +313,13 @@ impl ApplicationHandler<AppEvent> for App {
         // RedrawRequested 를 못 받는 플랫폼에서도 스텝 진행을 보장하는 워치독.
         if self.boot.is_some() {
             self.drive_boot_frame(event_loop);
-            if self.boot.is_some() {
-                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+            event_loop.set_control_flow(if self.boot.is_some() {
+                winit::event_loop::ControlFlow::WaitUntil(
                     std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL,
-                ));
-            }
+                )
+            } else {
+                winit::event_loop::ControlFlow::Wait
+            });
             return;
         }
 
@@ -320,6 +327,23 @@ impl ApplicationHandler<AppEvent> for App {
         // (완료는 두 checkpoint 를 지나야 반영 — cascade 이벤트가 완료보다 먼저
         // 큐잉되는 창을 닫기 위한 의도된 1 프레임 지연. autofire.rs 참조.)
         self.lua_autofire.checkpoint();
+
+        // 시간축 — due 한 타이머 키만 실행한다(프레임축 dispatch_* 큐 drain 과 별개).
+        // 파이프라인 앞머리에 두어, 여기서 표시한 dirty 와 enqueue 한 host event 가
+        // 같은 프레임의 뒤쪽 drain 에 그대로 실린다.
+        for key in self.timers.drain_due(std::time::Instant::now()) {
+            match key {
+                Tick::Busy => {
+                    self.poll_busy_states();
+                    self.poll_global_hooks();
+                    self.poll_idle_timeout_hooks();
+                }
+                Tick::AttachView => self.poll_attach_views(),
+                // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
+                // `poll_pending_native_menus` 가 매 프레임 수행한다.
+                Tick::NativeMenu => {}
+            }
+        }
 
         if self.process_ipc()
             && let Some(w) = self.focused_window_mut()
@@ -440,12 +464,14 @@ impl ApplicationHandler<AppEvent> for App {
 
         // 아직 안 닫힌 메뉴가 남았으면 다음 폴링 tick 을 예약한다. 이걸 빠뜨리면
         // 메뉴가 열린 상태에서 아무 이벤트도 안 오는 순간 폴링 자체가 멈춰
-        // 메뉴가 화면에서 얼어붙는다.
-        if let Some(flow) =
-            pending_menu_control_flow(self.any_pending_native_menu(), std::time::Instant::now())
-        {
-            event_loop.set_control_flow(flow);
-        }
+        // 메뉴가 화면에서 얼어붙는다. (`Instant::now()` 를 다시 읽는 이유: 프레임
+        // 앞머리 시각을 쓰면 긴 프레임 뒤에 이미 지난 데드라인이 되어 spin 한다.)
+        let has_pending_menu = self.any_pending_native_menu();
+        crate::app::timers::reschedule_pending_menu_poll(
+            &mut self.timers,
+            has_pending_menu,
+            std::time::Instant::now(),
+        );
 
         // Tick modal shake animation.
         self.tick_modal_shake();
@@ -454,6 +480,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.flush_layout_persistence(false);
 
         self.flush_pending_pty_resizes();
+
+        self.sync_timer_control_flow(event_loop);
     }
 }
 
@@ -2315,21 +2343,6 @@ fn reply_mesh_error(
     let _ = hub.push(client_id, frame); // best-effort 오류 회신 — client 끊김 시 무해.
 }
 
-/// 네이티브 컨텍스트 메뉴가 떠 있는 동안의 폴링 주기 상한. 메뉴 트래킹(하이라이트
-/// 이동 등)이 사람 눈에 끊겨 보이지 않을 만큼 짧고, idle 상태에서 winit 을 계속
-/// 깨우지는 않을 만큼만 짧다.
-const PENDING_MENU_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
-
-/// pending native menu 유무 → control flow 재예약 결정. `None` 이면 기존 흐름
-/// (`Wait`)을 그대로 둔다. 순수 함수로 뽑아 헤드리스 회귀 테스트가 가능하게 했다 —
-/// 이 재예약을 빠뜨리면 메뉴가 열린 채 프레임이 멈춘다.
-fn pending_menu_control_flow(
-    has_pending: bool,
-    now: std::time::Instant,
-) -> Option<winit::event_loop::ControlFlow> {
-    has_pending.then(|| winit::event_loop::ControlFlow::WaitUntil(now + PENDING_MENU_POLL_INTERVAL))
-}
-
 impl App {
     /// 결과 미회수 네이티브 컨텍스트 메뉴를 가진 MainView 가 하나라도 있는지.
     /// 포커스 무관하게 전 창을 순회한다(불가침 원칙 §3).
@@ -2340,6 +2353,20 @@ impl App {
             .any(|w| w.as_main().is_some_and(|m| m.has_pending_native_menu()))
     }
 
+    /// 프레임 말미 — 다음 wakeup 시각을 허브 하나로 확정한다.
+    ///
+    /// 정확성은 waker 스레드가 책임진다(`send_event` 라 창 유무·플랫폼 무관).
+    /// `WaitUntil` 은 창이 있을 때 wake 지연을 줄이는 **보조**일 뿐이라, 둘 다
+    /// 같은 데드라인을 받는다. 등록이 없으면 `Wait` — 깨울 이유가 없으면 잠든다.
+    fn sync_timer_control_flow(&mut self, event_loop: &ActiveEventLoop) {
+        let deadline = self.timers.next_deadline();
+        self.timer_waker.set_deadline(deadline);
+        event_loop.set_control_flow(match deadline {
+            Some(at) => winit::event_loop::ControlFlow::WaitUntil(at),
+            None => winit::event_loop::ControlFlow::Wait,
+        });
+    }
+
     /// 열려 있는 네이티브 컨텍스트 메뉴를 전 창에 걸쳐 1회씩 펌프한다.
     /// 메뉴가 없는 창에서는 no-op.
     fn poll_pending_native_menus(&mut self) {
@@ -2348,33 +2375,5 @@ impl App {
                 main.poll_pending_native_menu();
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PENDING_MENU_POLL_INTERVAL, pending_menu_control_flow};
-    use winit::event_loop::ControlFlow;
-
-    /// 메뉴가 떠 있으면 짧은 WaitUntil 로 다음 폴링 프레임을 반드시 예약한다.
-    #[test]
-    fn pending_menu_reschedules_a_poll_frame() {
-        let now = std::time::Instant::now();
-        match pending_menu_control_flow(true, now) {
-            Some(ControlFlow::WaitUntil(at)) => {
-                assert_eq!(at, now + PENDING_MENU_POLL_INTERVAL);
-                assert!(
-                    PENDING_MENU_POLL_INTERVAL <= std::time::Duration::from_millis(16),
-                    "폴링 주기가 한 프레임(60fps)보다 길면 메뉴 트래킹이 끊겨 보인다"
-                );
-            }
-            other => panic!("expected a WaitUntil reschedule, got {other:?}"),
-        }
-    }
-
-    /// 메뉴가 없으면 기존 control flow 를 건드리지 않는다(상시 wakeup 금지).
-    #[test]
-    fn no_pending_menu_leaves_control_flow_alone() {
-        assert!(pending_menu_control_flow(false, std::time::Instant::now()).is_none());
     }
 }

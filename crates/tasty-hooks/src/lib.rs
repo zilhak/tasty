@@ -82,7 +82,7 @@ pub enum HookEvent {
     OutputMatch(String),
     Bell,
     Notification,
-    /// Fire after N seconds of no PTY output. Piggybacks on the existing `BusyPoll` 1Hz
+    /// Fire after N seconds of no PTY output. Piggybacks on the host's existing 1Hz
     /// tick (no separate timer/watcher) — each tick compares elapsed time since
     /// `Terminal::last_output_at()` against the threshold. `SurfaceHook::idle_fired_epoch`
     /// gates re-firing to once per idle epoch (anti-spam) until new output re-arms it.

@@ -28,7 +28,7 @@
 //! disconnect 로 anchor 세션이 `Reconnecting` 상태(`attach_client.rs`)가 되면, 위
 //! 레벨/엣지 트리거와 **병행해** 아래 backoff 스케줄이 돈다:
 //! ```text
-//! [poll_auto_attach] (매 프레임, 최소 AttachPoll 3초 backstop 으로 idle 에도 보장)
+//! [poll_auto_attach] (매 프레임, 최소 `Tick::AttachView` 3초 backstop 으로 idle 에도 보장)
 //!   ├─ maybe_trigger_auto_attach: anchor 에 Reconnecting 세션이 있으면 스킵(레이스 방지 — 재연결은 아래가 전담)
 //!   ├─ maybe_trigger_reconnect: Reconnecting 세션이 있는 각 anchor 마다
 //!   │     - 사용자가 지금 그 워크스페이스로 전환해왔으면(엣지) 즉시, 아니면

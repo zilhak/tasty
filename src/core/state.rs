@@ -233,7 +233,7 @@ pub struct CoreState {
     pub(crate) surface_next_message_id: u32,
     pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
 
-    // ── Busy state cache (foreground process != shell). Updated by BusyPoll.
+    // ── Busy state cache (foreground process != shell). Updated by the Tick::Busy timer.
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
@@ -267,13 +267,13 @@ pub struct CoreState {
     // `state/attention.rs`.
     pub(crate) attention: attention::AttentionStore,
 
-    // ── Mouse-capture blacklist cache. Updated by the same 1Hz BusyPoll using
+    // ── Mouse-capture blacklist cache. Updated by the same 1Hz Tick::Busy using
     // the foreground names already resolved for busy detection (no extra
     // process snapshot). Set membership = that surface's foreground process
     // matches `mouse_capture_blacklist`, so its click/drag capture is disabled.
     pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
 
-    // ── Mouse-capture banner suppression cache. Same 1Hz BusyPoll, independent
+    // ── Mouse-capture banner suppression cache. Same 1Hz Tick::Busy, independent
     // axis from `mouse_capture_disabled_surfaces`: set membership = that
     // surface's foreground process matches `mouse_capture_banner_blacklist`, so
     // the "mouse capture active..." hint banner is suppressed while capture
@@ -294,7 +294,7 @@ pub struct CoreState {
     pub(crate) shell_integration_hint_shown: std::collections::HashSet<u32>,
 
     // ── Foreground process-name cache (surface_id → display name). Updated by
-    // the same 1Hz BusyPoll from the foreground programs it already resolves
+    // the same 1Hz Tick::Busy from the foreground programs it already resolves
     // (no extra process snapshot). The StatusBar reads this every frame instead
     // of re-snapshotting all system processes per frame. Replaced wholesale each
     // tick so names of closed surfaces never linger.
@@ -311,7 +311,7 @@ pub struct CoreState {
     pub(crate) branch_cache: branch::BranchCache,
 
     /// Per-surface foreground "incarnation" generation counter — bumped by the
-    /// same 1Hz BusyPoll whenever the resolved foreground name changes (shell↔TUI
+    /// same 1Hz Tick::Busy whenever the resolved foreground name changes (shell↔TUI
     /// or TUI↔TUI). See `CoreState::foreground_generation` accessor
     /// (`core/state/busy.rs`) for how banners use this to auto-close when the TUI
     /// that triggered them is no longer foreground.
@@ -387,7 +387,7 @@ pub struct CoreState {
     pub(crate) pty_registry: crate::core::pty_registry::PtyRegistry,
 
     /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
-    /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `AttachPoll`
+    /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `Tick::AttachView`
     /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_hard_occupied
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.

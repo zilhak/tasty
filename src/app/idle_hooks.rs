@@ -1,4 +1,4 @@
-//! `AppEvent::BusyPoll` 에 편승한 `IdleTimeout` 훅(`tasty set hook --event
+//! `Tick::Busy` 에 편승한 `IdleTimeout` 훅(`tasty set hook --event
 //! idle-timeout:SECS`) 폴링/발화.
 //!
 //! `CoreState::poll_idle_timeout_hooks` 는 순수 engine 레이어라 발사된 훅의

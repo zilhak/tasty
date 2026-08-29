@@ -251,7 +251,7 @@ impl Core {
     }
 
     /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
-    /// `AppEvent::BusyPoll` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
+    /// `Tick::Busy` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
     /// (window mark_dirty 결정 신호).
     #[cfg(feature = "gui")]
     pub(crate) fn update_busy_surfaces(engine: &mut crate::core::CoreState) -> bool {

@@ -15,7 +15,7 @@
 //!   을 발화하므로, plugin 이벤트(hello 응답, `PaintFrame` 등)는 이미 이 이벤트로 host 를
 //!   깨운다 — 별도 wake 채널이 필요 없다(18번 TODO 의 "PaintFrame 도착 시 즉시 wake"
 //!   요구도 이 경로가 충족한다).
-//! - 1Hz busy ticker(`AppEvent::BusyPoll`)에도 안전망으로 편승 — plugin 소켓이 조용해도
+//! - 1Hz `Tick::Busy` 타이머에도 안전망으로 편승 — plugin 소켓이 조용해도
 //!   healthcheck/재시작 타이머가 진행되도록.
 
 use crate::app::App;

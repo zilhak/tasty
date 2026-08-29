@@ -45,6 +45,7 @@ pub(crate) mod shutdown_cascade;
 pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
+pub(crate) mod timers;
 #[cfg(feature = "gui")]
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
@@ -164,6 +165,15 @@ pub(crate) struct App {
     /// Lua 자동실행 재진입 가드 — 자동실행 스크립트가 유발한 이벤트의 cascade 재점화
     /// 차단. `about_to_wait` 시작 시 [`checkpoint`](crate::hooks::autofire::AutofireGuard::checkpoint) 1회.
     pub(crate) lua_autofire: crate::hooks::autofire::AutofireGuard,
+    /// 중앙 타이머 허브 — 메인 루프의 시간축 주기 작업 전부. gui/headless 실행부가
+    /// 매 프레임 `drain_due` 로 due 한 키만 받아 실행한다
+    /// (`docs/dev-guide/timer-hub.md`).
+    pub(crate) timers: tasty_timer::TimerHub<timers::Tick>,
+    /// 허브 데드라인까지만 자고 이벤트 루프를 깨우는 waker 스레드 핸들. 창이 없는
+    /// 상태(macOS 최소화 / tray 상주)에서도 `send_event` 경로라 타이머가 계속 돈다 —
+    /// `ControlFlow::WaitUntil` 은 창이 있을 때 지연을 줄이는 보조 수단일 뿐이다.
+    #[cfg(feature = "gui")]
+    pub(crate) timer_waker: tasty_timer::TimerWakerHandle,
     /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor view 는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 view 를 만들지 않고
     /// 이 id 의 view 로 포커스만 이동한다.
@@ -191,7 +201,7 @@ pub(crate) struct App {
     #[cfg(all(feature = "gui", debug_assertions))]
     pub(crate) pending_settings_subtab: Option<String>,
     /// attach/detach 작업 J — 호스트가 client 로서 점유한 원격 워크스페이스의 mirror
-    /// 세션들(연결 reader/입력 forwarder 스레드 + remote↔local id 맵). AttachPoll 이
+    /// 세션들(연결 reader/입력 forwarder 스레드 + remote↔local id 맵). `Tick::AttachView` 가
     /// 출력 적용/정리에 순회한다.
     #[cfg(feature = "gui")]
     pub(crate) attach_client_sessions: Vec<attach_client::AttachClientSession>,
@@ -286,6 +296,14 @@ impl App {
         let (screenshot_capture_tx, screenshot_capture_rx) = std::sync::mpsc::channel();
         let (image_upload_tx, image_upload_rx) = std::sync::mpsc::channel();
         let (transfer_progress_tx, transfer_progress_rx) = std::sync::mpsc::channel();
+        let mut timers = tasty_timer::TimerHub::new();
+        timers::register_steady_state(&mut timers, std::time::Instant::now());
+        // 데드라인 waker — 고정 주기 ticker 스레드의 대체. 창 유무·플랫폼과 무관하게
+        // `send_event` 로 깨우므로 최소화/tray 상주 상태에서도 시간축이 살아 있다.
+        let timer_waker = tasty_timer::spawn_timer_waker({
+            let proxy = proxy.clone();
+            move || proxy.send_event(AppEvent::TimerTick).is_ok()
+        });
         Ok(Self {
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
@@ -311,6 +329,8 @@ impl App {
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
+            timers,
+            timer_waker,
             preset_view_id: None,
             pending_settings_plugin_tab: false,
             pending_settings_file_handler_tab: false,
@@ -348,6 +368,8 @@ impl App {
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
+        let mut timers = tasty_timer::TimerHub::new();
+        timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
             core: crate::boot::wiring::build_production_core_headless(memory)?,
             hub: Hub::new(port_file),
@@ -360,6 +382,7 @@ impl App {
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
+            timers,
         })
     }
 

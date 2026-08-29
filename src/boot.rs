@@ -11,10 +11,6 @@
 //!    - `Gui` → i18n init + event loop / background threads / App / event_loop.run_app
 //!      (gui 빌드 + `!cli.headless`) — 또는 `run_headless` (headless 빌드 / `--headless`)
 
-#[cfg(feature = "gui")]
-pub(crate) mod attach_tick;
-#[cfg(feature = "gui")]
-pub(crate) mod busy_tick;
 pub(crate) mod cli_routing;
 #[cfg(feature = "gui")]
 pub(crate) mod event_loop;
@@ -147,9 +143,6 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
 
     let (event_loop, proxy) = event_loop::build()?;
     os::install_macos_delegate(&proxy);
-
-    busy_tick::spawn(proxy.clone());
-    attach_tick::spawn(proxy.clone());
 
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
@@ -288,10 +281,13 @@ impl DropTailCounters {
 /// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
 /// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
 /// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
-/// 5. `rx.recv()` loop — Shutdown / QuitRequested 수신 시 break
+/// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
+///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
+///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
 #[cfg(not(feature = "gui"))]
 fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     use std::sync::mpsc;
+    use std::time::Instant;
 
     use crate::AppEvent;
     use crate::adapters::production::headless_waker::HeadlessWaker;
@@ -301,9 +297,6 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel::<AppEvent>();
     let waker = HeadlessWaker::new(tx);
-    // busy indicator(활동 상태) 갱신 + attach client 로의 forward 를 구동하는 1Hz
-    // ticker. gui 빌드의 `busy_tick::spawn` 을 headless 로 미러링(아래 BusyPoll arm 참조).
-    waker.spawn_busy_ticker();
 
     let boot_settings = crate::settings::Settings::load();
     let memory_config = tasty_memory::MemoryConfig {
@@ -409,7 +402,71 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
-    while let Ok(event) = rx.recv() {
+    // 데드라인 인지 수신 — gui 의 `about_to_wait` 와 대칭이다. gui 는 waker 스레드가
+    // 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
+    // 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
+    loop {
+        let pending = match app.timers.next_deadline() {
+            Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
+                Ok(ev) => Some(ev),
+                // 데드라인 도달 — 이번 바퀴는 타이머만 돌린다.
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            },
+            // 등록된 타이머가 없다 — 깨울 이유가 없으므로 무기한 블로킹.
+            None => match rx.recv() {
+                Ok(ev) => Some(ev),
+                Err(_) => break,
+            },
+        };
+
+        // 시간축 — due 한 타이머 키 실행. gui `about_to_wait` 의 drain 블록과 동형.
+        for key in app.timers.drain_due(Instant::now()) {
+            match key {
+                crate::app::timers::Tick::Busy => {
+                    // 렌더가 없어 로컬 redraw 는 무의미하지만(반환값 무시), attach
+                    // client 로의 busy forward 는 headless 가 원격 attach 의 주
+                    // 시나리오라 필수 — gui `app/busy.rs` 의 `poll_busy_states` 와
+                    // 동형(엔진 1 개라 순회 불필요).
+                    // StatusBar 브랜치 캐시(`core/state/branch.rs`)는 **의도적으로**
+                    // 여기에 배선하지 않는다 — headless 는 StatusBar 를 렌더하지 않아
+                    // 읽는 쪽이 없고(그래서 캐시 자체가 `gui` feature 게이트다), 갱신하면
+                    // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
+                    engine.refresh_busy_surfaces();
+                    engine.forward_busy_activity(&app.stream_hub);
+                    // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
+                    // 동형(엔진 1 개라 순회 불필요).
+                    engine.poll_global_hooks();
+                    // IdleTimeout 훅 — gui `app/idle_hooks.rs` 의
+                    // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요).
+                    // 바인딩 실행 + host event enqueue 는 여기서 직접 한다(엔진
+                    // 레이어는 순수 조회만 함 — `CoreState::poll_idle_timeout_hooks`).
+                    let injector = app.core.host_ipc_injector.get().cloned();
+                    for (surface_id, f) in engine.poll_idle_timeout_hooks() {
+                        crate::hook_handler::trigger::execute_binding(
+                            &f.binding,
+                            injector.as_ref(),
+                            &f.event,
+                            &f.received,
+                            surface_id,
+                        );
+                        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                            hook_id: f.hook_id,
+                            event_kind: "idle-timeout".to_string(),
+                            surface_id,
+                            exit_code: None,
+                        });
+                    }
+                    // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록
+                    // 1Hz 안전망으로 편승(주 wake 경로는 TerminalOutput(None)).
+                    headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
+                }
+            }
+        }
+
+        let Some(event) = pending else {
+            continue;
+        };
         match event {
             AppEvent::Shutdown | AppEvent::QuitRequested => break,
             AppEvent::TerminalOutput(id) => {
@@ -761,50 +818,6 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
                     engine.mesh_mirror.remove_for_client(client_id);
                 }
-            }
-            AppEvent::BusyPoll => {
-                // 1Hz ticker(`spawn_busy_ticker`)에서 발화. 렌더가 없어 로컬 redraw 는
-                // 무의미하지만(반환값 무시), attach client 로의 busy forward 는
-                // headless 가 원격 attach 의 주 시나리오라 필수 — gui `app/busy.rs`
-                // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
-                // StatusBar 브랜치 캐시(`core/state/branch.rs`)는 **의도적으로**
-                // 여기에 배선하지 않는다 — headless 는 StatusBar 를 렌더하지 않아
-                // 읽는 쪽이 없고(그래서 캐시 자체가 `gui` feature 게이트다), 갱신하면
-                // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
-                engine.refresh_busy_surfaces();
-                engine.forward_busy_activity(&app.stream_hub);
-                // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
-                // 동형(엔진 1 개라 순회 불필요).
-                engine.poll_global_hooks();
-                // IdleTimeout 훅 — gui `app/idle_hooks.rs` 의
-                // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요). 바인딩
-                // 실행 + host event enqueue 는 여기서 직접 한다(엔진 레이어는 순수
-                // 조회만 함 — `CoreState::poll_idle_timeout_hooks` 참조).
-                {
-                    let injector = app.core.host_ipc_injector.get().cloned();
-                    for (surface_id, f) in engine.poll_idle_timeout_hooks() {
-                        crate::hook_handler::trigger::execute_binding(
-                            &f.binding,
-                            injector.as_ref(),
-                            &f.event,
-                            &f.received,
-                            surface_id,
-                        );
-                        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                            hook_id: f.hook_id,
-                            event_kind: "idle-timeout".to_string(),
-                            surface_id,
-                            exit_code: None,
-                        });
-                    }
-                }
-                // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록 1Hz
-                // 안전망으로 편승(주 wake 경로는 TerminalOutput(None), 위 참조).
-                headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
-            }
-            AppEvent::AttachPoll => {
-                // headless 는 렌더가 없어 readonly display mirror·client mirror 가
-                // 무의미하다(작업 J 는 GUI 통합). gui 에서만 처리한다.
             }
             AppEvent::RunLuaScript { source, name } => {
                 // gui event_handler 와 동일 처리. headless 발신원은 현재 없지만

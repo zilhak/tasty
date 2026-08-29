@@ -1,4 +1,4 @@
-//! `AppEvent::AttachPoll` 처리 — attach 뷰의 3초 cadence 갱신(작업 J).
+//! `Tick::AttachView` 처리 — attach 뷰의 3초 cadence 갱신(작업 J).
 //!
 //! 사용자 확정 UX: 원격 워크스페이스/surface 의 readonly·mirror 뷰는 **실시간 stream 이
 //! 아니라 3초 polling** 으로 갱신한다(plan §4). 전송(tap forwarder)은 그대로 두고,

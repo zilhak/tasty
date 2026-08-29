@@ -45,25 +45,6 @@ impl HeadlessWaker {
         })
     }
 
-    /// 1초 간격 busy ticker spawn — gui 빌드의 `boot::busy_tick`(winit
-    /// `EventLoopProxy` 기반) 을 headless 로 미러링한다. headless 메인 루프는
-    /// `rx.recv()` 로 이벤트를 기다리기만 할 뿐 자체 타이머가 없으므로, 이 ticker가
-    /// 없으면 `AppEvent::BusyPoll` 이 영원히 발화하지 않아 attach 로 점유된 원격
-    /// surface(원격 attach 의 주 시나리오 — headless 서버)의 busy 상태가 갱신·forward
-    /// 되지 않는다.
-    pub(crate) fn spawn_busy_ticker(&self) {
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_secs(1);
-            loop {
-                std::thread::sleep(interval);
-                if tx.send(AppEvent::BusyPoll).is_err() {
-                    break;
-                }
-            }
-        });
-    }
-
     /// `CoreState` 에 주입할 WakerFactory. targeted/default 양쪽 waker 가 같은
     /// `mpsc::Sender` 로 `TerminalOutput` 을 push 한다.
     pub(crate) fn waker_factory(&self) -> SharedWakerFactory {
