@@ -71,11 +71,10 @@ fn enforce_foreground_z_order(
     pane_rects: &[(u32, PhysicalRect)],
 ) {
     if let Some(banner_layer) = banner_layer {
-        let status_bar_layer = egui::LayerId::new(
-            egui::Order::Foreground,
-            egui::Id::new("workspace_status_bar"),
-        );
-        ctx.set_sublayer(banner_layer, status_bar_layer);
+        // Area Id 는 본체 소유 — `adapters::ui::status_bar` 의 상수를 통해서만 읽는다
+        // (문자열을 여기 하드코딩하면 한쪽만 바뀌어도 컴파일은 통과하고 z-order 만
+        // 조용히 깨진다).
+        ctx.set_sublayer(banner_layer, ui::status_bar::status_bar_layer_id());
         for (pane_id, _) in pane_rects {
             let tab_bar_layer = egui::LayerId::new(
                 egui::Order::Foreground,

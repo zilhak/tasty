@@ -16,6 +16,7 @@
 
 - 위젯의 집·demo=main 구조: [shared-widgets](shared-widgets.md), [architecture/ui-widgets-crate](../../architecture/ui-widgets-crate.md).
 - 본체 view 가 props 분리(view-only)돼 있어야 갤러리가 직접 호출할 수 있다: [dev-guide/model-view-split](../../dev-guide/model-view-split.md). 분리가 안 된 컴포넌트는 분리가 선행 과제이며, 그 전까지도 갤러리에서 빼지 않고 시각 복제 specimen 으로 둔다(본체 의존 0, 로컬 mock props).
+- 본체 binary(`tasty`) 안에만 있는 view 는 props 가 분리돼 있어도 갤러리가 **호출**할 수는 없다 — 물리적 위치를 `crates/tasty-ui-widgets` 로 옮겨야 같은 함수 호출이 성립한다. 끌어올릴 때 crate 로 넘기지 않는 것(Area/z-order · i18n · 글로벌 `theme()`)과 선례는 [gallery-first §이미 본체에만 있는 view 를 갤러리로 끌어올릴 때](../../dev-guide/gallery-first.md).
 
 ## 디자인이 cut 했을 때 — 소스가 아니라 디자인을 고친다
 

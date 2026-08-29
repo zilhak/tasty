@@ -4,6 +4,12 @@
 //! `fn draw_xxx_view(ui, theme, &XxxProps) -> XxxAction` 와 동일한 형태를
 //! 로컬에 재현한다. 갤러리는 본체 binary 에 직접 의존할 수 없어 props 타입과
 //! 시각 layout 을 *복제* 한다 — 본체 update 시 시각 동등성은 수동 검증.
+//!
+//! **예외 — view 가 공용 crate 로 올라간 컴포넌트는 복제하지 않는다.** 본체와
+//! 갤러리가 `tasty-ui-widgets` 의 **같은 함수**를 호출하므로 시각이 자동 동기화되고,
+//! specimen 은 표시 데이터(props)만 준다. 현재 이 경로: [`status_bar`]
+//! (`tasty_ui_widgets::draw_status_bar_view`). 새 bar/패널을 추가할 때는 복제보다
+//! 이 경로를 우선한다 — `docs/dev-guide/gallery-first.md`.
 
 pub mod apply_preset;
 pub mod approval;
@@ -60,6 +66,7 @@ pub mod settings;
 pub mod settings_handler;
 pub mod settings_remote_transfer;
 pub mod sidebar;
+pub mod status_bar;
 pub mod surface_highlights;
 pub mod switch_overlay;
 pub mod tab_bar;

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용)
 - **ADR**: 없음
-- **코드**: `src/adapters/ui/status_bar.rs`
+- **코드**: `crates/tasty-ui-widgets/src/status_bar.rs`(view) · `src/adapters/ui/status_bar.rs`(wrapper)
 - **화면**: [screens/workspace-status-bar.md](screens/workspace-status-bar.md)
 
 > **표시 내용 미확정** — 상태바에 *무엇을* 보여줄지는 아직 확정되지 않았다. 아래 좌측 클러스터(브랜치/surfaceId/셸·그리드)·우측 액션(팔레트·테마)은 **현재 소스에 들어가 있는 잠정 구성**일 뿐이며, 더 알맞은 항목이 정해지면 교체될 수 있다. 확정된 것은 *위치·크기·구조*(하단 24px 바, `bottom_inset`, 좌/우 클러스터 레이아웃)이고, *항목 목록*은 변경 대상이다.
@@ -14,7 +14,9 @@
 
 ## 내부 동작 (headless-valid)
 
-순수 view(`draw_status_bar_view`)가 `StatusBarData` + `Theme` 만 받아 바를 그리고 클릭을 `StatusBarAction` 으로 보고 → wrapper(`draw_status_bar`)가 state/engine 에서 데이터를 추출하고 액션을 적용한다.
+순수 view(`tasty_ui_widgets::draw_status_bar_view`)가 `StatusBarData` + `Theme` 만 받아 주어진 `egui::Ui` 안에 바를 그리고 클릭을 `StatusBarAction` 으로 보고 → wrapper(`draw_status_bar`)가 부유 레이어(`egui::Area`) 생성 · state/engine 데이터 추출 · i18n 라벨 주입 · 액션 적용을 맡는다.
+
+view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 **갤러리 specimen 이 같은 함수를 호출**한다(시각 복제 없음 — [gallery-completeness](../../design/policies/gallery-completeness.md)). Area 와 z-order(`Order::Foreground`, Area Id `workspace_status_bar`)는 본체 정책이라 wrapper 가 소유하며, `gfx/gpu/egui_bridge.rs` 의 배너 z-order 강제가 그 Id 상수를 참조한다.
 
 ### 표시 데이터 (focus surface read)
 
@@ -52,9 +54,10 @@
 
 ## 구현
 
-- view: `src/adapters/ui/status_bar.rs` `draw_status_bar_view`(`StatusBarData`→`Vec<StatusBarAction>`), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
-- wrapper: `draw_status_bar`(focus surface read → 데이터 추출, 액션 적용: 팔레트 intent / 테마 settings).
-- 브랜치: `git_branch`(`.git/HEAD` std::fs 파싱).
+- view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브 4종(text / dot+text / button / dot+button)은 이 모듈 private. 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs`.
+- wrapper(본체): `src/adapters/ui/status_bar.rs` `draw_status_bar`(Area 생성 + focus surface read → 데이터 추출 + i18n 라벨 주입, 액션 적용: 팔레트 intent / 테마 settings), `STATUS_BAR_AREA_ID`/`status_bar_layer_id`(z-order 배선의 단일 진실원), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
+- 브랜치: `git_branch`(`.git/HEAD` std::fs 파싱, wrapper 잔류).
+- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/status_bar.rs`(Layouts → Status bar) — 위 view 를 그대로 호출.
 
 ## 화면
 

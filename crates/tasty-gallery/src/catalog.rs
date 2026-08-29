@@ -1165,6 +1165,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "statusbar",
+                    "Status bar",
+                    vec![spec(
+                        "statusbar",
+                        "Work-column status bar",
+                        Some(
+                            "24px bottom strip · left context cluster / right actions                              (calls the real `tasty_ui_widgets` view)",
+                        ),
+                        components::status_bar::draw,
+                    )],
+                ),
+                section(
                     "depth",
                     "List → detail",
                     vec![

@@ -18,6 +18,16 @@
 ### 2. 본체 반영
 그 후 본체 앱에 넣는다(팝업이면 [popup-implementation](popup-implementation.md) 의 `PopupDef` 3단계). demo=main 이므로 본체와 갤러리가 **같은 view-only 함수**를 호출하도록 props 를 분리한다([model-view-split](model-view-split.md)). 새로 그리지 말고 1 단계에서 만든 함수를 본체에서 호출한다.
 
+## 이미 본체에만 있는 view 를 갤러리로 끌어올릴 때
+
+gallery-first 이전에 만들어져 본체 binary 에만 있는 view 는 갤러리가 복제할 수밖에 없다. 복제를 없애려면 **view 함수를 `crates/tasty-ui-widgets` 로 옮겨** 본체 wrapper 와 갤러리 specimen 이 같은 함수를 호출하게 한다. 이때 crate 로 **넘기지 않는 것**이 정해져 있다:
+
+- **`egui::Area` / `LayerId`** — 부유 배치와 z-order 는 본체 정책이다. crate view 는 넘겨받은 `egui::Ui` 안에 크기를 할당하고 **그 rect 기준**으로만 그린다(화면 절대 좌표 사용 금지 — 갤러리 카드는 임의 위치에 있다).
+- **i18n** — 위젯 crate 는 `tasty-i18n` 을 의존하지 않는다. 라벨·tooltip 은 props 필드로 올려 본체 wrapper 가 주입한다. 그리기와 폭 계산이 **같은 필드**를 읽게 해서 문자열이 두 곳에서 독립 조립되지 않게 한다.
+- **글로벌 `theme()` 접근** — crate 함수는 항상 `&Theme` 을 명시적으로 받는다.
+
+선례: StatusBar(`crates/tasty-ui-widgets/src/status_bar.rs` ↔ `src/adapters/ui/status_bar.rs` ↔ `catalog/components/status_bar.rs`).
+
 ## 왜 이 순서인가
 
 - **검증을 먼저 세운다**: 갤러리는 본체 앱을 다 띄우지 않고 컴포넌트 하나만 격리 렌더한다. 디자인 정합을 빠르게 반복할 검증대를 본체 배선보다 먼저 갖는다.
@@ -31,3 +41,4 @@
 - [design/policies/gallery-completeness](../design/policies/gallery-completeness.md) — 갤러리 완전성 운영 상태.
 - [popup-implementation](popup-implementation.md) — 본체 팝업 추가(`PopupDef`).
 - [design/policies/shared-widgets](../design/policies/shared-widgets.md) · [model-view-split](model-view-split.md) — 부품 단위 공용화 + view 분리.
+- [design/systems/design-gallery-mapping §공용 crate view specimen](../design/systems/design-gallery-mapping.md) — 이미 이 경로로 올라간 항목 목록.

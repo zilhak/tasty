@@ -181,6 +181,21 @@ kind 소스로 쓴다.
 `approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
 
+## 공용 crate view specimen (복제 0 — 본체와 같은 함수 호출)
+
+본체 view 를 `crates/tasty-ui-widgets` 로 올려 **본체 wrapper 와 갤러리 specimen 이 같은
+함수를 호출**하는 항목. 아래 "시각 복제 specimen" 과 달리 레이아웃·색·치수를 갤러리가
+재선언하지 않으므로 시각 동기화가 자동이며 수동 검증이 필요 없다. 새 bar/패널은 복제보다
+이 경로를 우선한다([gallery-first](../../dev-guide/gallery-first.md)).
+
+| 디자인 canonical | 공용 crate view | 본체 wrapper | 갤러리 specimen |
+|---|---|---|---|
+| `ui_kits/terminal/work.jsx` `StatusBar` (하단 24px 바, 좌 컨텍스트 / 우 액션) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
+
+crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::Area` 와 `LayerId`
+(부유 배치·z-order 는 본체 정책), i18n 라벨·tooltip 문자열(위젯 crate 는 `tasty-i18n`
+비의존 — `multi_select` 와 동일 정책), 글로벌 `theme()` 를 읽는 `status_bar_bottom_inset`.
+
 ## Overlay 시각 복제 specimen (본체 의존 0)
 
 본체 view 의 시각만 로컬 mock props 로 복제한 Overlays 항목. 본체 binary crate(`tasty`)에

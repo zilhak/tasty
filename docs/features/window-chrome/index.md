@@ -73,7 +73,7 @@
 - CSD 속성: `src/platform/window_chrome.rs` (`apply_csd_attributes`, `resize_direction_at`, `RESIZE_EDGE_MARGIN`).
 - 타이틀바: `src/adapters/ui/titlebar/mod.rs`(wrapper `draw_titlebar`/`top_inset`/`os_controls`/`resize_cursor`), `view.rs`(순수 view + `TitlebarAction`/`WindowButton`/`ControlSide`), `caption.rs`(Windows 캡션).
 - 가장자리 리사이즈: `src/view/main/mouse.rs`(`handle_mouse_input`/`handle_cursor_moved` hit-test), `AppState.pending_resize_cursor`/`resize_edge_widget_hovered`(`src/state.rs`), 커서 적용 `src/gfx/gpu/egui_bridge.rs`, 커서 우선순위 게이트 `src/gfx/gpu.rs`(`pending_resize_cursor.is_none()`).
-- 리사이즈 위젯 우선권 적재: `src/adapters/ui/titlebar/view.rs`(`TitlebarDrawResult::resize_priority_hovered`)·`caption.rs`(`CaptionDrawResult::hovered`, Windows)·`src/adapters/ui/status_bar.rs`(`StatusBarDrawResult::resize_priority_hovered`)·`src/adapters/ui/sidebar/view.rs`(`SidebarFullDrawResult`/`SidebarCollapsedDrawResult::resize_priority_hovered`) → `titlebar::draw_titlebar`/`status_bar::draw_status_bar`/`sidebar::full::draw_full_sidebar`/`sidebar::collapsed::draw_collapsed_sidebar` 가 `AppState.resize_edge_widget_hovered` 에 적재(타이틀바만 리셋, 나머지는 OR).
+- 리사이즈 위젯 우선권 적재: `src/adapters/ui/titlebar/view.rs`(`TitlebarDrawResult::resize_priority_hovered`)·`caption.rs`(`CaptionDrawResult::hovered`, Windows)·`crates/tasty-ui-widgets/src/status_bar.rs`(`StatusBarDrawResult::resize_priority_hovered`, 본체 wrapper `src/adapters/ui/status_bar.rs` 가 적재)·`src/adapters/ui/sidebar/view.rs`(`SidebarFullDrawResult`/`SidebarCollapsedDrawResult::resize_priority_hovered`) → `titlebar::draw_titlebar`/`status_bar::draw_status_bar`/`sidebar::full::draw_full_sidebar`/`sidebar::collapsed::draw_collapsed_sidebar` 가 `AppState.resize_edge_widget_hovered` 에 적재(타이틀바만 리셋, 나머지는 OR).
 
 ## 화면
 
