@@ -2,6 +2,9 @@
 //!
 //! Launches a single shared tasty GUI instance for all tests.
 //! Each test creates its own workspace for isolation — no state reset needed.
+//! 이 "인스턴스 1 개 + workspace 격리" 원칙 전체는 `docs/dev-guide/e2e-tests.md` §1
+//! (근거는 ADR-0090). IPC 전용 e2e 는 `tests/common/mod.rs` 의 `shared()` 를 쓴다 —
+//! 이쪽이 `MutexGuard` 로 테스트를 직렬화하는 건 실제 데스크톱 입력을 주입하기 때문이다.
 
 // 다중 test binary 가 공유하는 test-support 모듈 — binary 마다 사용하는 부분집합이
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).

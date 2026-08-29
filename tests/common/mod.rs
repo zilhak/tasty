@@ -9,7 +9,9 @@
 //!   달라야 하거나(`spawn_with_inherit_cwd`), 프로세스 전체를 외부에서
 //!   측정해야 할 때(soak) 쓴다.
 //!
-//! 격리 전략과 timeout 정책은 [`docs/dev-guide/e2e-tests.md`].
+//! 인스턴스 공유 원칙(binary 당 1 개 · workspace 격리)·격리 전략·timeout 정책은
+//! [`docs/dev-guide/e2e-tests.md`], 그 결정 근거는 ADR-0090. 원칙 위반은
+//! `tests/e2e_single_instance_guard.rs` 가 CI 에서 잡는다.
 
 // 다중 test binary 가 공유하는 test-support 모듈 — binary 마다 사용하는 부분집합이
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).

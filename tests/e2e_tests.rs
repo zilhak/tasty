@@ -4,8 +4,11 @@ use common::TastyInstance;
 use serde_json::json;
 use std::time::Duration;
 
-/// All e2e tests run on a single shared tasty instance.
-/// This minimizes window spawn/kill (which steals OS focus).
+/// 33 개 시나리오를 `#[test]` 하나에 몰아넣어 tasty 인스턴스를 1 개만 쓴다 — 창
+/// spawn/kill 이 OS 포커스를 훔치기 때문이다. 이 원칙과 그 예외는
+/// `docs/dev-guide/e2e-tests.md` §1(근거는 ADR-0090)에 있고
+/// `tests/e2e_single_instance_guard.rs` 가 강제한다. 새로 쓰는 e2e 는 이 파일처럼
+/// 전용 인스턴스를 띄우는 대신 `common::shared()` + `create_workspace()` 를 쓴다.
 #[test]
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: 순차 e2e 스텝 나열 — 단일 tasty 인스턴스 공유(포커스 도난 최소화) 설계상 한 함수, clippy 과대계상
 fn all_e2e_tests() {

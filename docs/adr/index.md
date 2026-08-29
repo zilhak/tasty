@@ -100,3 +100,4 @@
 | 0087 | [레이아웃은 창마다 슬롯 파일 하나를 쓰고, 슬롯 점유는 살아있는 engine 에서 파생시킨다](0087-layout-slot-occupancy-model.md) | Accepted | 2026-08-25 | layout-persistence, multi-window, slot, occupancy, storage, boot, scrollback, gc |
 | 0088 | [Stop-훅 게이트는 세션 goal 을 근거로만 자율 계속-진행을 지시한다](0088-stop-gate-goal-aware-continuation.md) | Accepted | 2026-08-30 | claude-plugin, stop-hook, gate, memory, goal, i18n, autonomy |
 | 0089 | [크레이트 분리 기준은 줄 수보다 의존 방향이 우선한다](0089-crate-split-follows-dependency-direction.md) | Accepted | 2026-08-30 | build, crate-layout, dependency-direction, remote-attach |
+| 0090 | [e2e 테스트 격리 단위는 프로세스가 아니라 workspace 다](0090-test-isolation-by-workspace-not-process.md) | Accepted | 2026-08-30 | testing, e2e, harness, isolation, workspace, attach, ci |
