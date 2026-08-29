@@ -87,7 +87,7 @@ pub fn resolve_connection_spec(
 
 /// `127.0.0.1:PORT` / `localhost:PORT` / `[::1]:PORT` 면 PORT 를 돌려준다(loopback 직결).
 /// 그 외(원격 호스트/alias)는 None → SSH 터널 경로.
-pub fn parse_loopback_port(dest: &str) -> Option<u16> {
+pub(crate) fn parse_loopback_port(dest: &str) -> Option<u16> {
     let (host, port_str) = if let Some(rest) = dest.strip_prefix("[::1]:") {
         ("::1", rest)
     } else {
@@ -137,7 +137,7 @@ pub fn resolve_endpoint(
 /// `remote_check` 의 `probe_system_info` 와 같은 이유로 [`tasty_ipc::client::IpcConnection`]
 /// 을 쓰지 않는다 — 그 구현은 빈 줄(EOF)에서 무한 루프에 빠져 stale 포트에서 행이
 /// 걸린다. 여기서는 read/write 타임아웃을 걸고 EOF/빈 응답을 명시적 에러로 변환한다.
-pub fn probe_method(
+pub(crate) fn probe_method(
     port: u16,
     method: &str,
     params: serde_json::Value,

@@ -75,6 +75,10 @@ pub fn create_via_port(
 /// 전체 생성 경로: 엔드포인트(터널/loopback) 해석 → `workspace.create`. **블로킹**(SSH).
 /// 터널은 이 함수 반환 시 Drop 된다(단발 생성) — attach 를 이어 붙이려면 호출자가
 /// [`resolve_endpoint`] 를 직접 잡고 [`create_via_port`] 를 쓴다.
+/// **공개 계약 아님** — `tasty-cli` 의 `remote new-workspace` 구현만 쓴다.
+/// 크레이트 밖 소비자가 하나뿐이라 `pub(crate)` 로 못 내릴 뿐이며, 새 소비자가
+/// 이걸 쓰기 시작하면 계약 확장이므로 `#[doc(hidden)]` 을 떼는 결정을 먼저 한다.
+#[doc(hidden)]
 pub fn create(
     target: &SshTarget,
     remote_tasty: &str,
