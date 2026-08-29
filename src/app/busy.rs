@@ -19,7 +19,16 @@ impl App {
         for w in self.view.views.values_mut() {
             let changed = match w.as_main_mut() {
                 Some(main) => {
-                    let changed = crate::core::Core::update_busy_surfaces(&mut main.core_state);
+                    let mut changed = crate::core::Core::update_busy_surfaces(&mut main.core_state);
+                    // StatusBar 브랜치 캐시도 같은 1Hz tick 에 편승한다. 갱신 대상은
+                    // **focus surface 하나뿐** — 전 surface 순회는 surface 수만큼 초당
+                    // IO 를 만드는데 StatusBar 는 focus 하나만 표시한다. focus 는
+                    // `AppState` 소유라 `CoreState` 안에서는 알 수 없어 여기서 넘긴다
+                    // (`core/state/branch.rs`).
+                    let focused = main.state.focused_surface_id(&main.core_state);
+                    // 브랜치 변화도 dirty 조건에 합류시킨다 — 빠뜨리면 `git checkout`
+                    // 후 다음 리페인트 유발 이벤트가 올 때까지 옛 브랜치가 남는다.
+                    changed |= main.core_state.refresh_status_bar_branch(focused);
                     main.core_state.forward_busy_activity(&hub);
                     close_stale_mouse_capture_banners(&mut main.state, &main.core_state);
                     changed
@@ -31,7 +40,8 @@ impl App {
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
-            // parked 는 window 가 없어 redraw 의미가 없다. 반환값은 무시.
+            // parked 는 window 가 없어 redraw 의미가 없다. 반환값은 무시. StatusBar 도
+            // 그려지지 않으므로 브랜치 캐시는 갱신하지 않는다(읽는 쪽이 없다).
             crate::core::Core::update_busy_surfaces(engine);
             engine.forward_busy_activity(&hub);
         }

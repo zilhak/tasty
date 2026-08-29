@@ -300,6 +300,16 @@ pub struct CoreState {
     // tick so names of closed surfaces never linger.
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
 
+    /// StatusBar git-branch cache — the focused surface's branch, refreshed by the
+    /// same 1Hz BusyPoll. Single slot (not a per-surface map) because the
+    /// StatusBar only ever shows the focused surface's branch; that also means a
+    /// closed surface can never leave a stale entry behind. `gui`-only: headless
+    /// never renders the StatusBar, so nothing would read it. Lifetime /
+    /// invalidation rules and the "which surface refreshes" decision live in
+    /// `core/state/branch.rs`.
+    #[cfg(feature = "gui")]
+    pub(crate) branch_cache: branch::BranchCache,
+
     /// Per-surface foreground "incarnation" generation counter — bumped by the
     /// same 1Hz BusyPoll whenever the resolved foreground name changes (shell↔TUI
     /// or TUI↔TUI). See `CoreState::foreground_generation` accessor
@@ -636,6 +646,8 @@ impl CoreState {
             shell_integration_hint_shown: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             foreground_generation: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
+            branch_cache: branch::BranchCache::default(),
             pending_move_surface: None,
             explorer_clipboard: None,
             #[cfg(feature = "gui")]
@@ -1306,6 +1318,8 @@ fn file_handler_recent_path() -> std::path::PathBuf {
 }
 
 mod attention;
+#[cfg(feature = "gui")]
+mod branch;
 mod busy;
 pub mod child_liveness;
 mod finders;

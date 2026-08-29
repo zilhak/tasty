@@ -48,36 +48,6 @@ pub fn status_bar_bottom_inset(scale_factor: f32) -> PhysicalPx {
     theme::theme().status_bar_height.to_physical(scale_factor)
 }
 
-/// focus surface 의 cwd 결정(terminal 은 store 의 `get_cwd()`, 그 외는 trait
-/// `source_cwd()`). state.rs 의 `cwd_from_surface` 와 동일 규칙.
-fn focused_cwd(engine: &crate::core::CoreState, sid: u32) -> Option<std::path::PathBuf> {
-    let surface = engine.find_surface_by_id(sid)?;
-    if surface.kind() == "terminal" {
-        engine.terminals.get(sid).and_then(|t| t.get_cwd())
-    } else {
-        surface.source_cwd()
-    }
-}
-
-/// cwd 기준 git 브랜치명. `.git/HEAD` 를 cwd 부터 상위로 올라가며 찾아 파싱한다
-/// (git 바이너리/libgit2 비의존, std::fs 만 — 크로스플랫폼). repo 가 아니거나
-/// detached HEAD 면 `None`.
-fn git_branch(cwd: &std::path::Path) -> Option<String> {
-    let mut dir = Some(cwd);
-    while let Some(d) = dir {
-        let head = d.join(".git").join("HEAD");
-        if let Ok(content) = std::fs::read_to_string(&head) {
-            let line = content.trim();
-            // "ref: refs/heads/<branch>" → branch. detached(직접 SHA)면 None.
-            return line
-                .strip_prefix("ref: refs/heads/")
-                .map(|b| b.trim().to_owned());
-        }
-        dir = d.parent();
-    }
-    None
-}
-
 /// wrapper — Area 를 띄우고 state/engine 에서 데이터를 추출해 view 를 그린 뒤, view 가
 /// 보고한 클릭 액션을 state mutation(팔레트 오픈 / 테마 토글)으로 변환한다.
 ///
@@ -105,13 +75,14 @@ pub fn draw_status_bar(
     // name comes from the 1Hz BusyPoll cache (`foreground_name`) rather than a
     // per-frame system snapshot — re-snapshotting every frame both cost ≈6ms on
     // the main thread and made the name flicker while agents churned helpers.
+    // The git branch comes from the same 1Hz tick (`status_bar_branch`) for the
+    // same reason — resolving it here re-opened `.git/HEAD` on every repaint
+    // (`core/state/branch.rs`).
     let grid = surface_id
         .and_then(|sid| engine.terminals.get(sid))
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
-    let branch = surface_id
-        .and_then(|sid| focused_cwd(engine, sid))
-        .and_then(|cwd| git_branch(&cwd));
+    let branch = surface_id.and_then(|sid| engine.status_bar_branch(sid).map(str::to_owned));
     let palette_binding = engine
         .settings
         .keybindings

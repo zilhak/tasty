@@ -22,7 +22,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 좌측 클러스터는 **현재 focus surface 를 read** 해 표시한다 — 표시 *대상 결정* 이 focus 에 의존하지만 *동작이 아니라 표시* 라 [포커스 독립성](../../identity.md) 에 위배되지 않는다(허용된 조회 read).
 
-- **브랜치 점 + 이름** — focus surface 의 cwd 기준 git 브랜치(`.git/HEAD` 를 std::fs 로 상위 탐색, git 바이너리 비의존·크로스플랫폼). repo 아니거나 detached 면 미표시.
+- **브랜치 점 + 이름** — focus surface 의 cwd 기준 git 브랜치(`.git` 을 상위로 탐색해 `HEAD` 를 std::fs 로 파싱, git 바이너리/libgit2 비의존·크로스플랫폼). `.git` 이 디렉토리인 일반 repo 와 `gitdir:` 경로를 담은 **파일**인 worktree/submodule 을 모두 지원한다. repo 아니거나 detached 면 미표시. 셸 프로세스명과 마찬가지로 매 프레임 파일 IO 가 아니라 **1Hz busy-poll 캐시**(`CoreState::status_bar_branch`)에서 읽는다 — `git checkout`/`cd` 반영이 최대 1초 늦고(캐시 변화는 redraw 를 유발하므로 터미널을 건드리지 않아도 반영된다), 캐시는 focus surface 한 칸만 갱신한다(headless 는 상태바를 렌더하지 않아 갱신하지 않음).
 - **surfaceId** — focus surface 의 숫자 ID ("Copy Terminal ID" 와 동일 값).
 - **셸 · cols×rows** — terminal 한정(포그라운드 프로세스명 + 그리드 크기). 프로세스명은 매 프레임 OS 조회가 아니라 1Hz busy-poll 캐시(`CoreState::foreground_name`)에서 읽는다(최대 1초 지연). Windows 에선 셸의 *가장 얕은 non-shell 자손*을 표시 — 선택·플랫폼 메커니즘은 [busy-indicator](../../design/policies/busy-indicator.md). 그리드는 lock-free 핸들 캐시 read.
 
@@ -56,7 +56,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 - view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브 4종(text / dot+text / button / dot+button)은 이 모듈 private. 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs`.
 - wrapper(본체): `src/adapters/ui/status_bar.rs` `draw_status_bar`(Area 생성 + focus surface read → 데이터 추출 + i18n 라벨 주입, 액션 적용: 팔레트 intent / 테마 settings), `STATUS_BAR_AREA_ID`/`status_bar_layer_id`(z-order 배선의 단일 진실원), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
-- 브랜치: `git_branch`(`.git/HEAD` std::fs 파싱, wrapper 잔류).
+- 브랜치 캐시: `src/core/state/branch.rs`(`git_branch` 상위 탐색 + worktree `gitdir:` 추적, `refresh_status_bar_branch`/`status_bar_branch`). 갱신 배선은 `src/app/busy.rs` 의 1Hz `poll_busy_states`(focus surface 만, 변화 시 `mark_dirty`).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/status_bar.rs`(Layouts → Status bar) — 위 view 를 그대로 호출.
 
 ## 화면

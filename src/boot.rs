@@ -767,6 +767,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // 무의미하지만(반환값 무시), attach client 로의 busy forward 는
                 // headless 가 원격 attach 의 주 시나리오라 필수 — gui `app/busy.rs`
                 // 의 `poll_busy_states` 와 동형(엔진 1 개라 순회 불필요).
+                // StatusBar 브랜치 캐시(`core/state/branch.rs`)는 **의도적으로**
+                // 여기에 배선하지 않는다 — headless 는 StatusBar 를 렌더하지 않아
+                // 읽는 쪽이 없고(그래서 캐시 자체가 `gui` feature 게이트다), 갱신하면
+                // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
                 engine.refresh_busy_surfaces();
                 engine.forward_busy_activity(&app.stream_hub);
                 // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
