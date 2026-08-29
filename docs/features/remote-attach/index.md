@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 원격 접속 사용자(점유 후 조작) · AI Agent(원격 mirror 를 정당한 행동으로 attach) · 로컬 사용자(force-detach 권한)
 - **ADR**: [ADR-0007](../../adr/0007-attach-targets-remote.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0004](../../adr/0004-ipc-transport-tcp.md) (loopback trust boundary)
-- **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/core/attach_runtime.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/{remote,attach,remote_check,remote_workspaces}.rs`
+- **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/core/attach_runtime.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/{attach,remote_check,remote_workspaces}.rs`(실행)
 - **화면**: [screens/remote-attach.md](screens/remote-attach.md)
 
 ## 목적
@@ -233,7 +233,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - (09) 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `PopupDef.on_close`(`transfer.rs`의 `on_close_transfer_progress`/`on_close_transfer_error`). 진행률 배선: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(06 침범 최소) → 08 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러). 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종). i18n `[transfer.progress]`/`[transfer.error]`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-remote/src/browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - mesh mirror(bundled egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
-- CLI: `crates/tasty-cli/src/commands/remote.rs`(디스패치), `attach.rs`(`run_attach_*` 세션 머신), `remote_check.rs`, `remote_workspaces.rs`(browse 얇은 래퍼), `ssh.rs`(SSH 결선 + `PortDiscoveryError`/`PortDiscoveryFailureKind` 원인 분류, `pick_most_informative` 로 auto 체인 대표 에러 선택).
+- CLI: `crates/tasty-cli/src/commands/remote.rs`(clap 선언), `crates/tasty-cli/src/dispatch.rs`(갈래 판정), `local/attach.rs`(`run_attach_*` 세션 머신), `local/remote_check.rs`, `local/remote_workspaces.rs`(browse 얇은 래퍼), `crates/tasty-ssh/src/lib.rs`(SSH 결선 + `PortDiscoveryError`/`PortDiscoveryFailureKind` 원인 분류, `pick_most_informative` 로 auto 체인 대표 에러 선택).
 
 ## 화면
 

@@ -54,4 +54,4 @@ CLI 도 역할에 맞춰 재편한다: `tool ssh <profile>`(단순 ssh 접속 �
 - [`0007-attach-targets-remote.md`](0007-attach-targets-remote.md) — attach 는 원격 대상(소비자)
 - [`0016-passkey-store-path-convergence.md`](0016-passkey-store-path-convergence.md) — 자격증명 외부화
 - [`../features/remote-profiles/index.md`](../features/remote-profiles/index.md) · [`../features/remote-attach/index.md`](../features/remote-attach/index.md)
-- 코드: `crates/tasty-remote-profiles/src/profile.rs`(`SshView`/`AttachView`) · `crates/tasty-ssh/src/lib.rs`(resolve/discover) · `crates/tasty-cli/src/commands/remote_profile.rs` · `src/adapters/ipc/handler/remote_profile.rs`
+- 코드: `crates/tasty-remote-profiles/src/profile.rs`(`SshView`/`AttachView`) · `crates/tasty-ssh/src/lib.rs`(resolve/discover) · `crates/tasty-cli/src/commands/remote_profile.rs`(clap 선언) · `crates/tasty-cli/src/local/remote_profile.rs`(실행) · `src/adapters/ipc/handler/remote_profile.rs`

@@ -37,4 +37,4 @@
 - [`0016-passkey-store-path-convergence.md`](0016-passkey-store-path-convergence.md) — 자격증명 외부화
 - [`0007-attach-targets-remote.md`](0007-attach-targets-remote.md) — attach 는 원격 대상(소비자)
 - [`concepts/ubiquitous-language.md`](../concepts/ubiquitous-language.md) — Remote profile / Passkey 용어
-- 코드: `crates/tasty-remote-profiles/`(모델·마이그레이션) · `src/adapters/ipc/handler/remote_profile.rs` · `src/adapters/ui/popup/remote_tool.rs` · `crates/tasty-cli/src/commands/remote_profile.rs`(구 `ssh_profile.rs`, ADR-0032 개명)
+- 코드: `crates/tasty-remote-profiles/`(모델·마이그레이션) · `src/adapters/ipc/handler/remote_profile.rs` · `src/adapters/ui/popup/remote_tool.rs` · `crates/tasty-cli/src/commands/remote_profile.rs`(clap 선언, 구 `ssh_profile.rs` — ADR-0032 개명) · `crates/tasty-cli/src/local/remote_profile.rs`(실행)

@@ -57,6 +57,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | 문서 | 내용 |
 |------|------|
 | [api-conventions](api-conventions.md) | CLI/IPC 명명 + 안정성/버전 정책 |
+| [cli-structure](cli-structure.md) | CLI 크레이트 내부 세 갈래(commands/ · request/ · local/)와 `Dispatch` |
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
 | [attach-behavior](attach-behavior.md) | attach(서버=loopback / 로컬-원격=클라이언트) |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive |

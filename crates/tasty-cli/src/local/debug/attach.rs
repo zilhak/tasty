@@ -6,7 +6,7 @@
 //! 정리하면 로컬 attach 가 깨끗이 사라진다(debug 격리 기준선).
 //!
 //! 실제 attach 세션 머신(`run_attach_on_port` / `run_attach_workspace_on_port` 와
-//! 그 하위 mirror/raw/dump)은 `commands/attach.rs` 에 로컬·원격 공용으로 보존된다 —
+//! 그 하위 mirror/raw/dump)은 `local/attach.rs` 에 로컬·원격 공용으로 보존된다 —
 //! 이 모듈은 포트 파일을 읽어 그 공유 머신을 로컬 loopback 으로 호출하는 진입점일 뿐.
 
 #![cfg(debug_assertions)]
@@ -14,7 +14,7 @@
 use anyhow::Result;
 use tasty_ipc::port_file as pf;
 
-use crate::commands::attach::{run_attach_on_port, run_attach_workspace_on_port};
+use crate::local::attach::{run_attach_on_port, run_attach_workspace_on_port};
 
 /// `tasty debug attach <surface>` (로컬 loopback) 진입점. force-detach 는 별도(JSON-RPC).
 pub fn run_attach(

@@ -2,7 +2,6 @@
 
 pub mod agent;
 pub mod approval;
-pub mod attach;
 pub mod clipboard;
 pub mod completion_strategy;
 pub mod debug;
@@ -15,15 +14,11 @@ pub mod new_close;
 pub mod output;
 pub mod passkey;
 pub mod plugin_cmd;
-pub mod port;
 pub mod preset;
 pub mod pty;
 pub mod read_unset;
 pub mod remote;
-pub mod remote_check;
-pub mod remote_new_workspace;
 pub mod remote_profile;
-pub mod remote_workspaces;
 pub mod settings;
 pub mod surface;
 pub mod surface_meta;

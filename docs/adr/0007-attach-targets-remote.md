@@ -49,5 +49,5 @@ attach 의 **server 는 transport 를 모르고 항상 `127.0.0.1` 로만 client
 - [`features/remote-attach/`](../features/remote-attach/index.md) — 원격 attach 동작·CLI 표면
 - [`dev-guide/debug-ipc`](../dev-guide/debug-ipc.md) — debug 격리 정책
 - [`0004-ipc-transport-tcp.md`](0004-ipc-transport-tcp.md) — attach 가 깔고 앉은 loopback trust boundary (SSH 위임 보안)
-- 코드: `crates/tasty-cli/src/commands/remote.rs`(디스패치) · `attach.rs`(`run_attach_*` 공용) · `debug/`(로컬 격리)
+- 코드: `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/attach.rs`(`run_attach_*` 공용) · `crates/tasty-cli/src/local/debug/`(로컬 격리)
 </content>
