@@ -482,6 +482,12 @@ impl App {
         self.register_window(gpu, state, core_state, window.clone());
         self.emit_startup_complete_event();
 
+        // macOS 파일 TCC 프롬프트를 여기서 몰아 띄운다. 첫 윈도우가 등록돼 앱이
+        // foreground 로 활성화된 뒤라야 프롬프트가 사용자에게 보인다 — 윈도우 생성
+        // 전에 부르면 백그라운드로 밀릴 수 있다. 워커 스레드로 나가므로 바로 아래
+        // `boot_total` 계측과 첫 프레임 요청을 붙잡지 않는다. macOS 외에서는 no-op.
+        crate::macos_permissions::spawn_prewarm();
+
         tracing::info!(
             target: "tasty::boot",
             ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
