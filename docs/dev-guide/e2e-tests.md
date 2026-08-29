@@ -1,6 +1,6 @@
 # E2E 테스트 — 격리 + timeout 정책
 
-`tests/e2e_tests.rs` 는 실 tasty 바이너리를 spawn 하여 IPC 로 조작하는 end-to-end 테스트다. `tests/common/mod.rs::TastyInstance::spawn` 이 공통 spawn fixture 다. 자체 검증 절차는 [self-verification.md](self-verification.md), debug 전용 IPC 는 [debug-ipc.md](debug-ipc.md).
+`tests/e2e_tests.rs` 는 실 tasty 바이너리를 spawn 하여 IPC 로 조작하는 end-to-end 테스트다. `tests/common/mod.rs` 가 공통 하네스이며 진입점이 둘이다 — 공유 인스턴스 `common::shared()` 와 전용 인스턴스 `TastyInstance::spawn`. 자체 검증 절차는 [self-verification.md](self-verification.md), debug 전용 IPC 는 [debug-ipc.md](debug-ipc.md).
 
 ## 0. 전제: plugin 바이너리 최신화 (필수)
 
@@ -8,7 +8,7 @@
 
 ## 1. 환경 격리
 
-각 테스트마다 `$TMPDIR/tasty-test-home-{pid}-{nanos}/` 를 새 HOME 으로 만들고, host 환경 누수를 spawn 직전에 차단한다:
+인스턴스마다 `$TMPDIR/tasty-test-home-{pid}-{nanos}/` 를 새 HOME 으로 만들고, host 환경 누수를 spawn 직전에 차단한다:
 
 | env | 처리 | 이유 |
 |-----|------|------|
@@ -27,6 +27,29 @@
 | `.tasty/config.toml` | `shell="/bin/sh"`(POSIX) / Git Bash(Windows) + `restore_layout=false` | `is_shell_valid()` 즉시 true → `detect_bash()`(host `/etc/passwd` 의존) 미호출 → **shell_setup_mode 진입 차단** |
 
 `shell_setup_mode` 에 진입하면 port file 이 영구히 안 써져 spawn 이 timeout panic 한다. config.toml 사전 작성이 이 경로의 *결정적* 차단이다.
+
+## 1-a. 공유 인스턴스 (`common::shared()`)
+
+`common::shared()` 는 **호출한 test binary 하나가 공유하는** tasty 인스턴스를 돌려준다. 첫 호출에서만 프로세스를 띄우고 이후 호출은 같은 `&'static` 핸들을 준다.
+
+| 축 | 정책 | 이유 |
+|----|------|------|
+| 공유 범위 | **test binary 당 1개** (`cargo test` 전체 1개가 아니다) | `OnceLock` 은 프로세스 로컬 정적 상태이고 cargo 는 test 타겟마다 별도 프로세스를 띄운다. 더 줄이려면 test binary 개수 자체를 줄여야 한다 |
+| 직렬화 | **안 한다** — lock 없이 `&'static` 만 공유 | IPC 서버는 연결마다 별도 스레드로 받아 mpsc 로 큐잉하므로 동시 호출이 안전하다. (`gui_common::shared()` 가 `MutexGuard` 로 완전 직렬화하는 건 실제 데스크톱 마우스/포커스를 뺏는 입력 주입을 쓰기 때문이고, 이쪽은 IPC 전용이라 해당 없음) |
+| 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고(원칙 1·3), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
+| 정리 | `Drop` 이 아니라 `atexit` | 정적 저장이라 `Drop` 이 영원히 돌지 않는다. atexit 가 graceful `system.shutdown` → force kill → port file·격리 HOME 삭제를 수행한다. `Drop` 은 전용 인스턴스 경로로 그대로 남는다 |
+| spawn 실패 | 첫 실패 후 **재시도하지 않는다** | `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 미초기화로 남아 다음 테스트가 그대로 재시도한다 — 부팅 timeout 상황에서 테스트 수만큼 GUI 프로세스가 더 뜨는 증폭을 막는다. S1 timeout panic 자체도 이제 자기 child 를 kill 하고 격리 HOME 을 지운다(`Child` 의 Drop 은 kill 하지 않아 그냥 두면 orphan 이 된다) |
+
+격리 헬퍼가 돌려주는 `TestWorkspace` 는 `workspace.create` 응답의 `id` / `index` / `surface_id` 를 그대로 담는다. 공유 경로에서는 `first_surface_id()` / `first_pane_id()`(목록의 `[0]` 번째를 집는다 — 전용 인스턴스 전용) 대신 `first_surface_id_in_workspace()` / `first_pane_id_in_workspace()` 를 쓴다.
+
+**공유 대상이 아닌 경로**:
+
+- `spawn_with_inherit_cwd(true)` — `inherit_cwd` 는 격리 HOME 의 `config.toml` 에 미리 써넣는 *프로세스 기동 시점* 설정이라 런타임 교체가 불가능하다.
+- `tests/soak_memory.rs` — 프로세스 트리 RSS 를 외부에서 측정하므로 전용 프로세스가 맞다.
+
+**workspace 로 격리되지 않는 전역 상태**: headless PTY(`pty.*`), `global_hook.*`, notification 은 전역 목록이라 같은 binary 의 다른 테스트가 만든 항목까지 함께 조회된다. 공유 인스턴스 위의 목록 검증은 "내 것이 있는가"(`any`) 형태로 쓰고 길이나 `[0]` 번째를 assert 하지 않는다. surface hook(`hook.unset`)과 headless PTY(`pty.kill`)는 인스턴스가 test 프로세스와 함께 죽으므로 회수가 필수는 아니지만, 같은 binary 의 후속 테스트를 오염시키지 않도록 만든 테스트가 회수하는 것을 기본으로 한다. workspace 자체는 회수하지 않는다 — `workspace.close` IPC 가 없고 회수할 이유도 없다.
+
+하네스 자체 검증은 `tests/shared_instance_harness.rs` — 공유 재사용(spawn 횟수 1 · 동일 port), workspace id 유일성, 전역 `pty.list` 의 `any` assert 가 병렬/`--test-threads=1` 양쪽에서 통과하는지를 확인한다.
 
 ## 2. Timeout (2단계)
 
