@@ -1,5 +1,5 @@
-//! `scripts/build-macos-dmg.sh` 가 조립하는 `.app` 레이아웃이 실제로 서명 가능한지
-//! 검증한다.
+//! `scripts/build-macos-dmg.sh` 가 조립하는 `.app` 레이아웃이 실제로 서명 가능한지,
+//! 그리고 그 스크립트가 생성하는 번들 `Info.plist` 가 필요한 키를 갖추는지 검증한다.
 //!
 //! 배경: plugin 을 `Contents/MacOS/plugins/<id>/` 에 staging 하던 시절, codesign 은
 //! `Contents/MacOS/` 하위에 실행 파일이 든 디렉터리를 nested code 로 간주해 번들로
@@ -41,6 +41,72 @@ fn staged_plugins_rel_path() -> String {
         return rel.to_string();
     }
     panic!("PLUGINS_DIR 할당을 찾지 못함: {}", script_path.display());
+}
+
+/// 빌드 스크립트가 번들 `Info.plist` 를 생성하는 heredoc 본문을 그대로 뽑는다
+/// (`$VERSION` 등 셸 변수는 치환하지 않은 원문). 키 존재 여부만 보는 검사에는
+/// 치환이 필요 없고, 치환하지 않아야 macOS 밖에서도 그대로 돌아간다.
+fn info_plist_template() -> String {
+    let script_path = repo_root().join("scripts/build-macos-dmg.sh");
+    let script = std::fs::read_to_string(&script_path).expect("build-macos-dmg.sh read 실패");
+    let mut body = String::new();
+    let mut inside = false;
+    for line in script.lines() {
+        if !inside {
+            if line.starts_with("cat > ")
+                && line.contains("Info.plist")
+                && line.ends_with("<< PLIST")
+            {
+                inside = true;
+            }
+            continue;
+        }
+        if line == "PLIST" {
+            return body;
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    panic!(
+        "Info.plist 생성 heredoc 을 찾지 못함: {}",
+        script_path.display()
+    );
+}
+
+/// TCC 보호 리소스에 접근할 때 macOS 가 프롬프트 본문에 띄우는 설명 문구.
+/// 키가 없으면 사용자에게 이유 없는 프롬프트가 뜨고, 일부 서비스는 접근 시도
+/// 자체가 즉시 실패한다. 번들 plist 는 빌드 스크립트가 유일한 정본이라, 누가
+/// heredoc 을 손보다 키를 떨어뜨리면 여기서 잡힌다.
+#[test]
+fn info_plist_declares_tcc_usage_descriptions() {
+    const REQUIRED_KEYS: &[&str] = &[
+        "NSDownloadsFolderUsageDescription",
+        "NSDocumentsFolderUsageDescription",
+        "NSDesktopFolderUsageDescription",
+        "NSRemovableVolumesUsageDescription",
+        "NSNetworkVolumesUsageDescription",
+    ];
+
+    let plist = info_plist_template();
+    let lines: Vec<&str> = plist.lines().map(str::trim).collect();
+    for key in REQUIRED_KEYS {
+        let marker = format!("<key>{key}</key>");
+        let idx = lines
+            .iter()
+            .position(|l| *l == marker)
+            .unwrap_or_else(|| panic!("Info.plist 에 {key} 가 없다"));
+        let value = lines
+            .get(idx + 1)
+            .unwrap_or_else(|| panic!("{key} 뒤에 값이 없다"));
+        let text = value
+            .strip_prefix("<string>")
+            .and_then(|v| v.strip_suffix("</string>"))
+            .unwrap_or_else(|| panic!("{key} 값이 문자열이 아니다: {value}"));
+        assert!(
+            !text.trim().is_empty(),
+            "{key} 설명 문구가 비었다 — 빈 문자열은 프롬프트에 아무것도 띄우지 않는다"
+        );
+    }
 }
 
 /// plugin staging 위치가 `Contents/MacOS/` 밖인지 확인하는 정적 가드.

@@ -98,6 +98,17 @@ just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 ```
 
 - **macOS** `.app` 은 ad-hoc 코드 서명(`codesign --sign -`). 번들 plugin 은 **`Contents/Resources/plugins/<id>/`** 에 staging 한다 — `Contents/MacOS/` 하위에 두면 codesign 이 그 디렉터리를 nested code 로 간주해 번들로 파싱하려다 `bundle format unrecognized` 로 **서명 자체가 실패**한다. `tests/macos_bundle_codesign.rs` 가 이 레이아웃을 강제하고, 런타임 탐색은 `bundle_root()`(`crates/tasty-host-plugin/src/builtin.rs`)가 담당한다.
+- **macOS 번들 `Info.plist` 의 정본은 `scripts/build-macos-dmg.sh` 의 heredoc 하나뿐**이다 (`$VERSION` 이 `Cargo.toml` 에서 치환되고, 스크립트 말미의 `PLIST_VER` 검증이 그 정합을 강제한다). 여기엔 `CFBundle*` 계열 외에 TCC usage description 키가 들어간다 — macOS 는 보호 리소스 접근 프롬프트 **본문에 이 문자열을 그대로 표시**하며, 키가 없으면 이유 없는 프롬프트가 뜨거나 일부 서비스는 접근 시도 자체가 즉시 실패한다.
+
+  | 키 | 언제 뜨는가 |
+  |----|-------------|
+  | `NSDownloadsFolderUsageDescription` | 셸 명령이 `~/Downloads` 에 접근할 때 |
+  | `NSDocumentsFolderUsageDescription` | 셸 명령이 `~/Documents` 에 접근할 때 |
+  | `NSDesktopFolderUsageDescription` | 셸 명령이 `~/Desktop` 에 접근할 때 |
+  | `NSRemovableVolumesUsageDescription` | 마운트된 이동식 볼륨(USB·SD) 접근 시 |
+  | `NSNetworkVolumesUsageDescription` | 마운트된 네트워크 볼륨 접근 시 |
+
+  문구는 "터미널이 사용자가 친 명령을 대신 실행한다" 는 tasty 의 실제 접근 이유를 담는다. `t()` i18n 을 타지 않는다 — plist 문자열은 OS 가 표시하며, 다국어화는 `Contents/Resources/*.lproj/InfoPlist.strings` 라는 별개 메커니즘이 필요하다(현재 미도입, 영어 단일). `NSAppleEventsUsageDescription` 은 넣지 않는다 — tasty 자신은 Apple Events 를 보내지 않고(소스 전체에 `osascript`/`NSAppleScript` 호출 0건), 셸 자식 프로세스가 `osascript` 를 실행할 때 Automation 승인이 tasty 로 귀속되는지는 실기 확인이 필요한 별건이다. 키 누락 회귀는 `tests/macos_bundle_codesign.rs` 의 정적 검사가 막는다(스크립트 heredoc 을 직접 파싱하므로 Linux CI 에서도 돈다).
 - **macOS 개발 중 권한 프롬프트가 매번 다시 뜬다면** — ad-hoc 서명은 designated requirement 가 cdhash 뿐이라 재빌드마다 macOS 가 다른 앱으로 보고 TCC 승인을 버린다. `./scripts/macos-codesign-identity.sh --create` 로 self-signed 인증서(`Tasty Dev`)를 한 번 발급해두면, 이후 `./scripts/install-macos.sh` 가 키체인에서 그것을 자동으로 집어 서명하므로 재빌드해도 승인이 유지된다. DR 이 cdhash 대신 `identifier "com.zilhak.tasty" and certificate leaf` 가 되기 때문이다. 자동 선택은 로컬 설치 빌드(`NO_DMG=1`)에서만 동작한다 — DMG 배포본은 그 인증서를 신뢰하지 않는 머신으로 가므로 ad-hoc 을 유지한다. 다른 identity 를 쓰려면 `TASTY_CODESIGN_IDENTITY` 로 지정한다.
 - **Linux** `.deb`/`.rpm` 은 `cargo-deb` / `cargo-generate-rpm`, `.AppImage` 는 `linuxdeploy`(ELF 의존 라이브러리를 전부 번들 + rpath `$ORIGIN` → distro 무관 동작). 패키지 메타데이터는 `Cargo.toml` 의 `[package.metadata.deb]` / `[package.metadata.generate-rpm]`.
 - **Windows** MSI 는 `cargo-wix` + `wix/main.wxs`. **UpgradeCode GUID 는 절대 변경 금지** — 바뀌면 새 제품으로 인식되어 구버전과 공존.

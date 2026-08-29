@@ -184,6 +184,22 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <!-- TCC usage descriptions. macOS 는 보호 리소스 접근 프롬프트 본문에 이 문자열을
+         그대로 띄운다. 키가 없으면 이유 없는 프롬프트가 뜨고, 일부 서비스는 접근
+         시도 자체가 즉시 실패한다. 터미널은 사용자가 친 명령을 대신 실행하는 것이
+         본업이라, 어느 폴더에 닿을지는 명령에 달려 있다 — 그 사실을 문구에 담는다.
+         (다국어화는 Contents/Resources 의 lang.lproj/InfoPlist.strings 가 필요한 별개
+         메커니즘이라 여기서는 개발 지역 기본값인 영어로 둔다.) -->
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Tasty runs the commands you type in its terminal. Grant access so those commands can read and write files in your Downloads folder.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Tasty runs the commands you type in its terminal. Grant access so those commands can read and write files in your Documents folder.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Tasty runs the commands you type in its terminal. Grant access so those commands can read and write files on your Desktop.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Tasty runs the commands you type in its terminal. Grant access so those commands can read and write files on removable volumes such as USB drives and SD cards.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>Tasty runs the commands you type in its terminal. Grant access so those commands can read and write files on mounted network volumes.</string>
 </dict>
 </plist>
 PLIST
