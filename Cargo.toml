@@ -220,6 +220,8 @@ tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-reaper = { path = "crates/tasty-reaper" }
 tasty-portscan = { path = "crates/tasty-portscan" }
+# 중앙 타이머 허브 — 메인 루프의 시간축 폴링 단일화(docs/dev-guide/timer-hub.md).
+tasty-timer = { path = "crates/tasty-timer" }
 # 원격 attach 세션의 git query 요청(`src/core/attach_runtime.rs::handle_git_query_request`)이
 # tasty-plugin-git-viewer 와 동일한 repo 탐색/status/log/diff 로직을 재사용.
 tasty-git-core = { path = "crates/tasty-git-core" }
@@ -521,6 +523,8 @@ opt-level = 3
 [profile.dev.package.tasty-telemetry]
 opt-level = 3
 [profile.dev.package.tasty-terminal]
+opt-level = 3
+[profile.dev.package.tasty-timer]
 opt-level = 3
 [profile.dev.package.tasty-themes]
 opt-level = 3

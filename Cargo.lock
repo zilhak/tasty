@@ -6272,6 +6272,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-timer"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+]
+
+[[package]]
 name = "tasty-tui-simulator"
 version = "0.1.0"
 dependencies = [

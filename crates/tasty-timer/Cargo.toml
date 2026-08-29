@@ -1,0 +1,12 @@
+[package]
+name = "tasty-timer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Central timer hub for tasty — deadline-driven periodic work on the main loop"
+
+[dependencies]
+tracing = "0.1"
+
+[lints]
+workspace = true
