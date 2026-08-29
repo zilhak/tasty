@@ -197,7 +197,7 @@ impl View for SettingsView {
         if !self.base.dirty {
             return;
         }
-        self.base.dirty = false;
+        self.base.begin_frame();
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let mut settings = self.settings.clone();

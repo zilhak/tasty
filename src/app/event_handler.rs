@@ -5,7 +5,7 @@ use winit::window::WindowId;
 
 use crate::app::timers::Tick;
 use crate::view::ui::View;
-use crate::view::{ViewAction, ViewCtx};
+use crate::view::{RepaintSource, ViewAction, ViewCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
@@ -71,7 +71,9 @@ impl ApplicationHandler<AppEvent> for App {
                 // find() 가 첫 윈도우로만 repaint 를 라우팅해 다른 윈도우(보통 main)의
                 // egui repaint 가 새어나가 렌더가 멈췄다.
                 if let Some(w) = self.view.views.get_mut(&window_id) {
-                    w.mark_dirty();
+                    // egui 애니메이션은 delay 0 즉시 repaint 를 매 프레임 요청할 수
+                    // 있어 그 자체로 자기 유지 프레임 루프가 된다 — 상한 대상.
+                    w.mark_dirty_from(RepaintSource::EguiAnimation);
                 }
                 // 매칭 실패 (shell_setup gpu 등 view 에 등록되지 않은 윈도우가 callback 을 보낸 경우)
                 // 는 silently drop — 본 핸들러는 등록된 view 만 책임진다.
@@ -481,7 +483,17 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.flush_pending_pty_resizes();
 
+        // 타이머 허브 기준 데드라인을 먼저 확정한다 — 그다음 `drive_deferred_repaints`
+        // 가 이 값을 `merge_wakeup` 으로 덮어써 그중 이른 쪽을 남긴다(허브가 모르는
+        // repaint-cap 지연은 허브 등록 대상이 아니므로 별도 병합이 필요하다).
         self.sync_timer_control_flow(event_loop);
+
+        // 상한에 걸려 미뤄둔 리페인트를 만기 시 발화하고, 아직이면 그 시각으로
+        // 깨어나도록 예약한다. **이 패스가 이번 프레임에 dirty 를 세울 수 있는 모든
+        // 경로보다, 그리고 `sync_timer_control_flow` 보다 뒤에 와야** 한다 — 이 함수는
+        // 기존 control flow 를 통째로 덮어쓰지 않고 `merge_wakeup` 으로 병합하므로,
+        // 뒤에 실행되어야 허브 데드라인과 repaint-cap 데드라인 중 이른 쪽이 남는다.
+        self.drive_deferred_repaints(event_loop);
     }
 }
 
@@ -877,7 +889,7 @@ impl App {
                     // 워크스페이스 전환·split·복원)는 각자 dirty 를 설정하므로
                     // 전환 시 최신 grid 가 렌더된다.
                     if main.is_surface_visible(sid) {
-                        main.mark_dirty();
+                        main.mark_dirty_from(RepaintSource::TerminalOutput);
                     }
                     found = true;
                     break;
@@ -903,7 +915,7 @@ impl App {
                         pending.push((DispatchSource::Main(*wid), outcome.events));
                     }
                 }
-                w.mark_dirty();
+                w.mark_dirty_from(RepaintSource::TerminalOutput);
             }
             for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
                 let outcome = core.process_all_pty_output(engine);
@@ -2343,7 +2355,49 @@ fn reply_mesh_error(
     let _ = hub.push(client_id, frame); // best-effort 오류 회신 — client 끊김 시 무해.
 }
 
+/// 이미 예약된 control flow 에 wakeup 시각 하나를 합친다 — **이른 쪽이 이긴다.**
+/// 늦은 쪽을 택하면 그만큼 프레임이나 폴링이 늦게 깨어난다. `Poll` 은 이미 가장
+/// 이른 형태이므로 그대로 둔다.
+///
+/// 원래 네이티브 컨텍스트 메뉴 폴링 재예약과 짝을 이루던 함수였으나, 그 스케줄링은
+/// 중앙 타이머 허브(`crate::app::timers::reschedule_pending_menu_poll`)로 이관됐다.
+/// 이 함수는 `drive_deferred_repaints` 가 허브 데드라인 위에 repaint-cap 지연을
+/// 병합하는 용도로 여전히 쓰인다.
+fn merge_wakeup(
+    current: winit::event_loop::ControlFlow,
+    at: std::time::Instant,
+) -> winit::event_loop::ControlFlow {
+    use winit::event_loop::ControlFlow;
+    match current {
+        ControlFlow::Poll => ControlFlow::Poll,
+        ControlFlow::WaitUntil(cur) if cur <= at => current,
+        _ => ControlFlow::WaitUntil(at),
+    }
+}
+
 impl App {
+    /// 리페인트 상한에 걸려 미뤄둔 요청을 전 창에 걸쳐 구동한다.
+    ///
+    /// 만기된 창은 여기서 `request_redraw()` 로 되살리고, 아직 만기 전인 창이 있으면
+    /// 가장 이른 만기 시각으로 `WaitUntil` 을 예약한다. **이 재예약이 미뤄진 프레임의
+    /// 유일한 복구 경로다** — 빠뜨리면 아무 이벤트도 오지 않는 순간에 그 프레임이
+    /// 영영 오지 않는다(출력이 멈춘 것처럼 보인다).
+    fn drive_deferred_repaints(&mut self, event_loop: &ActiveEventLoop) {
+        let now = std::time::Instant::now();
+        let mut earliest: Option<std::time::Instant> = None;
+        for w in self.view.views.values_mut() {
+            let base = w.base_mut();
+            if base.repaint.take_due(now) {
+                base.winit.request_redraw();
+            } else if let Some(at) = base.repaint.deferred_deadline() {
+                earliest = Some(earliest.map_or(at, |cur: std::time::Instant| cur.min(at)));
+            }
+        }
+        if let Some(at) = earliest {
+            event_loop.set_control_flow(merge_wakeup(event_loop.control_flow(), at));
+        }
+    }
+
     /// 결과 미회수 네이티브 컨텍스트 메뉴를 가진 MainView 가 하나라도 있는지.
     /// 포커스 무관하게 전 창을 순회한다(불가침 원칙 §3).
     fn any_pending_native_menu(&self) -> bool {
@@ -2375,5 +2429,44 @@ impl App {
                 main.poll_pending_native_menu();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_wakeup;
+    use winit::event_loop::ControlFlow;
+
+    /// 두 wakeup 요구가 겹치면 이른 쪽이 이긴다 — 늦은 쪽을 택하면 그만큼 늦게 깬다.
+    #[test]
+    fn merge_wakeup_keeps_the_earlier_deadline() {
+        let now = std::time::Instant::now();
+        let early = now + std::time::Duration::from_millis(5);
+        let late = now + std::time::Duration::from_millis(50);
+        assert_eq!(
+            merge_wakeup(ControlFlow::WaitUntil(late), early),
+            ControlFlow::WaitUntil(early)
+        );
+        assert_eq!(
+            merge_wakeup(ControlFlow::WaitUntil(early), late),
+            ControlFlow::WaitUntil(early)
+        );
+    }
+
+    /// `Wait`(무기한 대기)는 반드시 밀려난다 — 그대로 두면 미뤄둔 프레임이 영영 안 온다.
+    #[test]
+    fn merge_wakeup_overrides_indefinite_wait() {
+        let at = std::time::Instant::now() + std::time::Duration::from_millis(5);
+        assert_eq!(
+            merge_wakeup(ControlFlow::Wait, at),
+            ControlFlow::WaitUntil(at)
+        );
+    }
+
+    /// `Poll` 은 이미 가장 이른 형태라 건드리지 않는다.
+    #[test]
+    fn merge_wakeup_leaves_poll_alone() {
+        let at = std::time::Instant::now() + std::time::Duration::from_millis(5);
+        assert_eq!(merge_wakeup(ControlFlow::Poll, at), ControlFlow::Poll);
     }
 }

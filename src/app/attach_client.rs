@@ -673,7 +673,7 @@ impl App {
                     for ev in drained {
                         apply_one_mirror_event(sess, main, &mut self.plugin_manager, ev);
                     }
-                    main.mark_dirty();
+                    main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
                 }
             }
             // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면

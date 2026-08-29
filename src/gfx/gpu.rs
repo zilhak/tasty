@@ -173,19 +173,28 @@ impl GpuState {
         // 헬퍼를 재사용해 물리 유효 범위를 한 곳에서 보장한다(research §6-2).
         let max_dim = device.limits().max_texture_dimension_2d;
         let (config_width, config_height) = clamp_surface_dims(size.width, size.height, max_dim);
+        // 실제로 어느 present mode 가 선택됐는지는 프레임 상한을 판단할 때 필요한
+        // 정보인데(`src/view/repaint.rs`), 가상 디스플레이 환경에서는 `Fifo` 여도
+        // 하드웨어 vblank 가 없어 상한 역할을 못 할 수 있어 역산이 불가능하다.
+        // 그래서 선택 결과를 그대로 남긴다.
+        let present_mode = if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Mailbox)
+        {
+            wgpu::PresentMode::Mailbox
+        } else {
+            wgpu::PresentMode::Fifo
+        };
+        tracing::info!(
+            "surface present_mode={present_mode:?} (available: {:?})",
+            surface_caps.present_modes
+        );
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: surface_format,
             width: config_width,
             height: config_height,
-            present_mode: if surface_caps
-                .present_modes
-                .contains(&wgpu::PresentMode::Mailbox)
-            {
-                wgpu::PresentMode::Mailbox
-            } else {
-                wgpu::PresentMode::Fifo
-            },
+            present_mode,
             alpha_mode: surface_caps
                 .alpha_modes
                 .first()

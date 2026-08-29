@@ -26,6 +26,7 @@ pub(crate) mod sealed {
 
 use winit::event::WindowEvent;
 
+use crate::view::repaint::RepaintSource;
 use crate::view::{MainView, ViewAction, ViewBase, ViewCtx};
 
 /// 모든 View 타입이 공유하는 최상위 트레잇.
@@ -52,8 +53,25 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 
+    /// 사용자 조작발 리페인트 요청 — 상한 없이 즉시 발화한다.
+    ///
+    /// 출력·애니메이션 계열 유발원은 이 기본형이 아니라 [`Self::mark_dirty_from`] 으로
+    /// 분류해야 상한이 걸린다.
     fn mark_dirty(&mut self) {
-        self.base_mut().dirty = true;
-        self.base().winit.request_redraw();
+        self.mark_dirty_from(RepaintSource::Interactive);
+    }
+
+    /// 유발원을 밝힌 리페인트 요청. 상한 대상이면 `request_redraw()` 발화가 다음
+    /// 프레임 창까지 미뤄진다 — `dirty` 는 그래도 즉시 세워지고, 미뤄진 발화는
+    /// `about_to_wait` 이 `WaitUntil` 로 반드시 되살린다([`crate::view::repaint`]).
+    fn mark_dirty_from(&mut self, source: RepaintSource) {
+        let base = self.base_mut();
+        base.dirty = true;
+        if base
+            .repaint
+            .admit(source, std::time::Instant::now(), &base.winit)
+        {
+            base.winit.request_redraw();
+        }
     }
 }

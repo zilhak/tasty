@@ -227,7 +227,7 @@ impl MainView {
         if !self.base.dirty {
             return;
         }
-        self.base.dirty = false;
+        self.base.begin_frame();
         self.update_ime_cursor_area();
         // egui-mesh surface 에 렌더 컨텍스트(크기/ppp/입력) forward (A1-S7) — 합성
         // (gpu.render) 직전. plugin 이 PaintFrame 으로 회신하면 합성기가 그린다.

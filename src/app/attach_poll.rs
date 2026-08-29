@@ -8,6 +8,7 @@
 //! ② client mirror 의 누적 출력 버퍼를 mirror Terminal 에 적용(J-6).
 
 use crate::app::App;
+use crate::view::RepaintSource;
 
 impl App {
     pub(crate) fn poll_attach_views(&mut self) {
@@ -17,7 +18,7 @@ impl App {
             if let Some(main) = w.as_main_mut()
                 && main.core_state.refresh_readonly_views()
             {
-                w.mark_dirty();
+                w.mark_dirty_from(RepaintSource::AttachMirror);
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
