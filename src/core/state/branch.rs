@@ -60,7 +60,7 @@ impl CoreState {
         changed
     }
 
-    /// 캐시된 git 브랜치명(마지막 `BusyPoll` 이 조회한 값). StatusBar 가 매 프레임
+    /// 캐시된 git 브랜치명(마지막 `Tick::Busy` 가 조회한 값). StatusBar 가 매 프레임
     /// `.git/HEAD` 를 다시 여는 대신 이걸 읽는다. 캐시 대상이 아닌 surface, repo 밖,
     /// detached HEAD, 그리고 첫 tick 전(≤1초)에는 `None`.
     pub fn status_bar_branch(&self, surface_id: u32) -> Option<&str> {

@@ -24,7 +24,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 | `OutputMatch(pattern)` | PTY 출력이 정규식 매칭(등록 시 사전 컴파일) — **완성된 라인 단위로만** 매칭 |
 | `Bell` | BEL 수신 |
 | `Notification` | OSC 알림 수신 |
-| `IdleTimeout(secs)` | N초간 PTY 출력 없음 — **1Hz 해상도**(BusyPoll tick) |
+| `IdleTimeout(secs)` | N초간 PTY 출력 없음 — **1Hz 해상도**(`Tick::Busy`) |
 | `CommandCompleted(Option<i32>)` | OSC 133 D phase — 셸 통합이 개별 명령(`docker build`, `just run` 등)의 종료 + exit code 를 보고 |
 | `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
 
@@ -38,7 +38,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 #### IdleTimeout — 1Hz 폴링 + epoch 기반 anti-spam
 
-`IdleTimeout` 은 별도 타이머/watcher 가 아니라 기존 `BusyPoll`(1Hz) tick 에 얹혀 동작한다. tick 마다 `Terminal::last_output_at()` 로 마지막 출력 시각과의 경과초를 계산해 임계값과 비교한다.
+`IdleTimeout` 은 별도 타이머/watcher 가 아니라 기존 `Tick::Busy`(1Hz) tick 에 얹혀 동작한다. tick 마다 `Terminal::last_output_at()` 로 마지막 출력 시각과의 경과초를 계산해 임계값과 비교한다.
 
 - 최대 1초 지연: PTY 출력 정지 시점과 훅 발화 시점 사이에 최대 1초의 오차가 있다(Global hook 의 `file:` 조건과 동일한 해상도).
 - **epoch 기반 anti-spam**: 한 번 발화하면 그 시점의 `last_output_at` 값(epoch)을 기록해, 같은 epoch 동안은 재발화하지 않는다(persistent 훅이 매 tick 마다 스팸처럼 재발화하는 것을 막음). 새 출력이 들어와 `last_output_at` 이 갱신되면 자동으로 재무장된다.

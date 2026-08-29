@@ -53,7 +53,7 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 
 ## 갱신 cadence 분리
 
-- **서버측 readonly 뷰**(피점유 — 대상 부하 절약): **3초 polling**(`AttachPoll` tick, `src/app/attach_poll.rs`)으로 self-snapshot 적용.
+- **서버측 readonly 뷰**(피점유 — 대상 부하 절약): **3초 polling**(`Tick::AttachView`, `src/app/attach_poll.rs`)으로 self-snapshot 적용.
 - **client mirror**(내가 다루는 대상): 원격 출력이 올 때마다 즉시 갱신, 3초 tick 은 backstop(누락 출력 적용·끊긴 세션 정리)으로만.
 
 ## 리사이즈 전파 (mirror geometry)
@@ -71,8 +71,8 @@ mirror grid 는 **client 가 구동(client-driven)** 한다(ADR-0045) — mirror
 
 사이드바 워크스페이스 리스트의 "실행 중" status dot(`WorkspaceEntryView.busy_count`, `docs/features/remote-attach/index.md` "GUI mirror" 참조)은 surface 의 busy/idle 상태를 본다. mirror(detached) 터미널은 로컬 PTY 가 없어 `CoreState::refresh_busy_surfaces`(foreground-process 폴링, `src/core/state/busy.rs`)가 절대 채울 수 없으므로, **원격이 직접 자기 surface 의 busy 상태를 계산해 client 로 forward** 한다 — resize 의 client-driven 협상과 반대로, busy 는 순수 **server→client** 단방향이다(원격 foreground 프로세스 이름은 애초에 client 에 존재하지 않는 정보라 client 가 요청할 수도 없다).
 
-- **서버측 계산·forward**: 서버는 1Hz busy-poll tick(gui `app/busy.rs` 의 `poll_busy_states`, headless `boot.rs` 의 `AppEvent::BusyPoll` — 아래 참조)마다 `CoreState::forward_busy_activity`(`core/attach_runtime.rs`)를 호출한다. 이 메서드는 `busy_activity_forwards`(`core/state/busy.rs`)가 계산한 **점유 중인 surface 의 busy 값 변화분**만 `StreamControl::Activity{surface_id, busy}` 로 그 workspace/surface 의 holder client 에 push 한다. `last_forwarded_busy` 캐시로 값이 실제로 바뀐 경우에만 forward(중복 억제)하되, surface 가 점유 해제됐다가 재점유되면(다른 client 일 수 있음) 캐시를 버려 값이 이전과 같아도 항상 fresh 하게 1회 다시 push한다 — resize 의 `last_forwarded_resize` dedup 과 동형이나 방향이 반대(client→server 아닌 server→client)다.
-- **headless 는 자체 ticker 필요**: headless 메인 루프(`boot::run_headless`)는 `rx.recv()` 로 이벤트를 기다리기만 할 뿐 자체 타이머가 없다 — gui 의 `boot::busy_tick`(winit `EventLoopProxy` 기반, `#[cfg(feature = "gui")]`)이 없으면 `AppEvent::BusyPoll` 이 영원히 발화하지 않는다. `HeadlessWaker::spawn_busy_ticker`(`adapters/production/headless_waker.rs`)가 같은 1Hz cadence 로 `mpsc::Sender<AppEvent>` 에 `BusyPoll` 을 직접 보내 이를 미러링한다. **원격 attach 의 주 시나리오가 headless 서버**이므로 이 ticker 가 없으면 활동 상태 forward 가 전혀 동작하지 않는다.
+- **서버측 계산·forward**: 서버는 1Hz `Tick::Busy`(gui/headless 공통 — `crates/tasty-timer` 의 중앙 타이머 허브가 발화, [`timer-hub.md`](timer-hub.md) 참조)마다 `CoreState::forward_busy_activity`(`core/attach_runtime.rs`)를 호출한다. 이 메서드는 `busy_activity_forwards`(`core/state/busy.rs`)가 계산한 **점유 중인 surface 의 busy 값 변화분**만 `StreamControl::Activity{surface_id, busy}` 로 그 workspace/surface 의 holder client 에 push 한다. `last_forwarded_busy` 캐시로 값이 실제로 바뀐 경우에만 forward(중복 억제)하되, surface 가 점유 해제됐다가 재점유되면(다른 client 일 수 있음) 캐시를 버려 값이 이전과 같아도 항상 fresh 하게 1회 다시 push한다 — resize 의 `last_forwarded_resize` dedup 과 동형이나 방향이 반대(client→server 아닌 server→client)다.
+- **headless 는 별도 ticker 스레드가 필요 없다**: headless 메인 루프(`boot::run_headless`)가 `rx.recv_timeout(next_deadline)` 로 직접 타이머 허브의 다음 데드라인까지만 대기하다 `Tick::Busy` 를 스스로 드레인한다 — gui 전용 스레드나 이벤트 브리지에 의존하지 않는다([`timer-hub.md`](timer-hub.md) "headless — `run_headless`" 절 참조). **원격 attach 의 주 시나리오가 headless 서버**이므로 이 tick 이 없으면 활동 상태 forward 가 전혀 동작하지 않는다.
 - **client 적용**: reader 스레드가 `Activity` Control 프레임을 `MirrorEvent::Activity(remote_surface_id, busy)` 로 버퍼링하고, `apply_attach_client_output` 이 세션의 `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아 `CoreState::set_mirror_surface_busy` 를 호출한다. 이 값은 **`busy_surfaces`(로컬 폴링 결과)와 분리된 `mirror_busy_surfaces` 별도 집합**에 저장된다 — 같은 집합에 합쳤다면 1Hz `refresh_busy_surfaces` 가 매 tick 로컬 폴링 결과로 집합을 통째로 교체하며 mirror 값을 지워버렸을 것이다. `is_surface_busy`/`any_busy`/`busy_count`(사이드바·상태바·탭 바 busy dot·`surface.list` IPC 가 공유하는 단일 진입점)는 두 집합의 합집합을 본다.
 - **정리**: mirror surface 가 없어지면(`cleanup_mirror_workspace`, `apply_mirror_structural_delta` 의 removed 처리) `CoreState::forget_mirror_surface_busy` 로 `mirror_busy_surfaces` 에서도 제거해, 로컬 id 가 재사용될 때 stale busy 값이 새 surface 에 잘못 붙는 것을 막는다.
 

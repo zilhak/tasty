@@ -301,7 +301,7 @@ pub struct CoreState {
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
 
     /// StatusBar git-branch cache — the focused surface's branch, refreshed by the
-    /// same 1Hz BusyPoll. Single slot (not a per-surface map) because the
+    /// same 1Hz `Tick::Busy`. Single slot (not a per-surface map) because the
     /// StatusBar only ever shows the focused surface's branch; that also means a
     /// closed surface can never leave a stale entry behind. `gui`-only: headless
     /// never renders the StatusBar, so nothing would read it. Lifetime /
