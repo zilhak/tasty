@@ -6,8 +6,8 @@ use crate::core::intent::DomainIntent;
 impl App {
     /// Flush layout persistence — main + parked engine 마다 독립 발화.
     ///
-    /// `force=false`: main loop tick. settings.restore_layout + debounce
-    ///   (`layout_dirty.should_flush()`) 통과 시에만 저장.
+    /// `force=false`: `Tick::LayoutFlush` 타이머 발화. debounce 판정은 타이머가
+    ///   이미 했으므로 여기선 settings.restore_layout + dirty 여부만 본다.
     /// `force=true`: shutdown / quit modal. debounce 무시, `restore_surface_content`
     ///   설정이 켜져 있으면 layout_dirty 가 false 여도 저장.
     ///
@@ -47,8 +47,8 @@ impl App {
     /// 인한 슬롯 영구 누수가 불가능하다는 뜻이다.
     ///
     /// 이 함수가 하는 일은 [`RetireAction`] 한 가지뿐이다. 보존 분기가 `force=true`
-    /// 인 이유는 저장 게이트가 debounce 기반이기 때문이다 — `force=false` 면
-    /// `layout_dirty.should_flush()`(500ms)를 통과해야 쓰므로, 워크스페이스를 추가한
+    /// 인 이유는 저장이 debounce 타이머에 매여 있기 때문이다 — `force=false` 면
+    /// `Tick::LayoutFlush` 데드라인(500ms)이 와야 쓰므로, 워크스페이스를 추가한
     /// 직후 창을 닫으면 그 변경이 슬롯 파일에 도달하지 못한 채 사라진다. 앱 종료
     /// 경로(`shutdown_machine` 의 전 engine force flush)와 대칭을 맞춰야 "보존" 이
     /// 실제로 성립한다.
@@ -72,6 +72,19 @@ impl App {
                 }
             }
         }
+    }
+
+    /// 살아있는 engine 중 가장 먼저 dirty 가 된 시각. `None` 이면 저장할 변경이
+    /// 없다 — 호스트가 `Tick::LayoutFlush` 등록을 걷어낸다.
+    pub(crate) fn earliest_layout_dirty_since(&self) -> Option<std::time::Instant> {
+        self.view
+            .views
+            .values()
+            .filter_map(|w| w.as_main())
+            .map(|m| &m.core_state)
+            .chain(self.parked_states.iter().map(|(_, e)| e))
+            .filter_map(|e| e.layout_dirty.dirty_since())
+            .min()
     }
 
     /// `flush_layout_persistence` 의 공용 루프 바디 — main-view engine 과

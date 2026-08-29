@@ -508,7 +508,7 @@ pub(crate) enum CoreEvent {
     },
 
     // ─── Layout persistence (D.3.C.D.4) ───
-    /// `SaveLayoutNow` 결과 알림 — 저장/skip(설정 off 또는 debounce 미만 + force=false)
+    /// `SaveLayoutNow` 결과 알림 — 저장/skip(설정 off 또는 dirty 아님 + force=false)
     /// 여부와 무관하게 cascade 없음.
     LayoutSaved,
 

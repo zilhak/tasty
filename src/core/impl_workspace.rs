@@ -283,9 +283,13 @@ impl Core {
         }
     }
 
-    /// `DomainIntent::SaveLayoutNow` 본문. settings + debounce + force gate 를
-    /// 통과하면 디스크에 저장 + `layout_dirty.clear()`. 옛 `App::flush_layout_persistence`
+    /// `DomainIntent::SaveLayoutNow` 본문. settings + force gate 를 통과하면
+    /// 디스크에 저장 + `layout_dirty.clear()`. 옛 `App::flush_layout_persistence`
     /// 의 조건 분기 + 옛 `Core::save_layout` wrapper 본문을 흡수.
+    ///
+    /// **debounce 는 여기서 재지 않는다** — `force=false` 호출은 호스트의
+    /// `Tick::LayoutFlush` 타이머가 데드라인에 도달했을 때만 오므로, 이 시점엔
+    /// 이미 debounce 를 통과한 것이다(`docs/dev-guide/timer-hub.md`).
     pub(super) fn apply_save_layout_now(
         engine: &mut crate::core::CoreState,
         active_workspace: usize,
@@ -295,7 +299,7 @@ impl Core {
         let should_save = if force {
             g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_surface_content)
         } else {
-            g.restore_layout && engine.layout_dirty.should_flush()
+            g.restore_layout && engine.layout_dirty.is_dirty()
         };
         if !should_save {
             return CoreEvent::LayoutSaved;

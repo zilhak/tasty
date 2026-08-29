@@ -25,7 +25,6 @@ pub use schema::SavedLayout;
 
 use crate::core::CoreState;
 
-const DEBOUNCE_MS: u128 = 500;
 pub(super) const LAYOUT_VERSION: u32 = 2;
 
 // ── Disk I/O (slot files) ──
@@ -325,6 +324,9 @@ impl LayoutDirtyTracker {
 
 impl LayoutDirtyTracker {
     /// Mark layout as dirty (called on structural changes).
+    ///
+    /// 시각은 **처음 dirty 가 된 순간**만 기록한다(뒤이은 변경으로 리셋하지 않는다)
+    /// — 연속 변경 중에도 첫 변경으로부터 debounce 안에 반드시 한 번 저장된다.
     pub fn mark_dirty(&mut self) {
         if !self.dirty {
             self.dirty = true;
@@ -332,16 +334,11 @@ impl LayoutDirtyTracker {
         }
     }
 
-    /// Check if enough time has elapsed and a flush is needed.
-    /// Returns true if the caller should save now.
-    pub fn should_flush(&self) -> bool {
-        if !self.dirty {
-            return false;
-        }
-        match self.dirty_since {
-            Some(since) => since.elapsed().as_millis() >= DEBOUNCE_MS,
-            None => false,
-        }
+    /// 처음 dirty 가 된 시각. 호스트가 여기에 debounce 를 더해
+    /// `Tick::LayoutFlush` 데드라인을 잡는다(`docs/dev-guide/timer-hub.md`) —
+    /// 주기 판정은 이 타입이 아니라 타이머 허브가 한다.
+    pub fn dirty_since(&self) -> Option<Instant> {
+        self.dirty_since
     }
 
     /// Reset after a successful save.

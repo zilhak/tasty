@@ -179,6 +179,22 @@ wakeup 이 늘지 않는다. 그 결과 **비응답 검출 상한은 `60s + 15s 
 되는 즉시 잡히므로(`collect_plugin_events`) 크래시 검출은 상한의 영향을 받지 않는다.
 이 상한이 적용되는 것은 "프로세스는 살아 있는데 ping 에 응답하지 않는" 행 상태뿐이다.
 
+## 디바운스는 `every` 가 아니라 `once_at` 이다
+
+레이아웃 저장(`Tick::LayoutFlush`)은 "변경이 있고 나서 한 번" 이지 "주기적으로" 가
+아니다. `every` 로 옮기면 변경이 없어도 500ms 마다 깨어나는 회귀가 된다.
+
+호스트는 매 프레임 살아있는 engine 들의 **처음 dirty 가 된 시각**(`dirty_since`)
+중 가장 이른 값을 모아 `once_at(Tick::LayoutFlush, since + 500ms, Lax{500ms})` 로
+동기화하고, 저장할 변경이 없으면 `cancel` 한다(`sync_layout_flush_timer`).
+`dirty_since` 는 뒤이은 변경으로 리셋되지 않으므로 같은 절대 시각으로 매 프레임
+재등록해도 위상이 밀리지 않는다 — `once_after`(상대 지연) 대신 `once_at`(절대 시각)을
+쓰는 이유다. 연속 변경 중에도 **첫 변경으로부터 debounce 안에 반드시 한 번** 저장된다.
+
+`Lax` 인 이유: 저장은 사용자가 즉시 체감하는 작업이 아니라 자기 힘으로 호스트를 깨울
+이유가 없다. slack 을 넘기면 hard deadline 이 되어 변경이 영영 디스크에 못 닿는 일은
+없다. 종료·창 은퇴 경로는 이 타이머와 무관하게 `force=true` 로 즉시 저장한다.
+
 ## 가드 중 타이머는 정지한다 (계약)
 
 `about_to_wait` 의 shutdown / boot 가드는 조기 return 한다. **그 동안 `drain_due` 에

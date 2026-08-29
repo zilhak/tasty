@@ -27,6 +27,11 @@ pub(crate) enum Tick {
     /// 일회성. 네이티브 컨텍스트 메뉴가 떠 있는 동안 다음 폴링 프레임을 예약한다.
     #[cfg(feature = "gui")]
     NativeMenu,
+    /// 일회성 디바운스. 레이아웃이 처음 dirty 가 된 시각 + `LAYOUT_FLUSH_DEBOUNCE`
+    /// 에 슬롯 파일로 flush 한다. **`every` 가 아니다** — 주기로 두면 변경이 없어도
+    /// 500ms 마다 깨어나는 회귀가 된다.
+    #[cfg(feature = "gui")]
+    LayoutFlush,
 }
 
 /// busy 재평가 주기. 사용자가 체감하는 indicator 반응 상한이라 1초를 넘기지 않는다.
@@ -36,6 +41,17 @@ pub(crate) const BUSY_TICK_INTERVAL: Duration = Duration::from_secs(1);
 /// stream 이 아니라 이 cadence 로만 렌더를 갱신한다.
 #[cfg(feature = "gui")]
 pub(crate) const ATTACH_POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+/// 레이아웃이 처음 dirty 가 된 뒤 슬롯 파일에 flush 하기까지의 디바운스.
+/// 분할·이동이 연달아 일어나는 동안 디스크 쓰기를 한 번으로 접는다.
+#[cfg(feature = "gui")]
+pub(crate) const LAYOUT_FLUSH_DEBOUNCE: Duration = Duration::from_millis(500);
+
+/// flush 데드라인의 Lax slack. flush 는 사용자가 즉시 체감하는 작업이 아니라
+/// 자기 힘으로 호스트를 깨울 이유가 없다 — 다른 wakeup(1Hz busy tick 등)에 편승하고,
+/// slack 을 넘기면 그때는 반드시 저장한다(변경이 영영 디스크에 못 닿는 것을 막는다).
+#[cfg(feature = "gui")]
+pub(crate) const LAYOUT_FLUSH_SLACK: Duration = Duration::from_millis(500);
 
 /// 네이티브 컨텍스트 메뉴가 떠 있는 동안의 폴링 주기 상한. 메뉴 트래킹(하이라이트
 /// 이동 등)이 사람 눈에 끊겨 보이지 않을 만큼 짧고, idle 상태에서 이벤트 루프를
@@ -66,6 +82,30 @@ pub(crate) fn min_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Ins
         (Some(x), Some(y)) => Some(x.min(y)),
         (x, None) => x,
         (None, y) => y,
+    }
+}
+
+/// 레이아웃 flush 데드라인 동기화 — 가장 이른 `dirty_since + debounce` 하나로 예약한다.
+///
+/// engine(창)마다 자기 dirty 상태를 갖지만 flush 는 전 engine 을 한 번에 도는
+/// 함수라 타이머는 하나면 된다. `dirty_since` 는 **처음 dirty 가 된 시각**이라
+/// (뒤 변경이 리셋하지 않는다) 매 프레임 같은 절대 시각으로 재등록해도 위상이 밀리지
+/// 않는다 — `once_at` 을 쓰는 이유다.
+#[cfg(feature = "gui")]
+pub(crate) fn sync_layout_flush_timer(
+    hub: &mut TimerHub<Tick>,
+    earliest_dirty_since: Option<Instant>,
+) {
+    match earliest_dirty_since {
+        Some(since) => hub.once_at(
+            Tick::LayoutFlush,
+            since + LAYOUT_FLUSH_DEBOUNCE,
+            Precision::Lax {
+                slack: LAYOUT_FLUSH_SLACK,
+            },
+        ),
+        // 저장할 변경이 없다 — 등록을 남기면 idle 에서도 깨운다.
+        None => hub.cancel(Tick::LayoutFlush),
     }
 }
 
@@ -148,6 +188,54 @@ mod tests {
             PENDING_MENU_POLL_INTERVAL <= Duration::from_millis(16),
             "폴링 주기가 한 프레임(60fps)보다 길면 메뉴 트래킹이 끊겨 보인다"
         );
+    }
+
+    /// 디바운스는 **첫 변경 시각 기준**이다 — 뒤이은 변경이 데드라인을 밀지 않으므로
+    /// 연속 변경 중에도 첫 변경으로부터 debounce 안에 반드시 한 번 저장된다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn layout_flush_deadline_is_anchored_to_the_first_change() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_layout_flush_timer(&mut hub, Some(t0));
+        assert!(hub.is_registered(Tick::LayoutFlush));
+
+        // t=400ms 에 또 변경이 일어나도 dirty_since 는 t0 그대로 → 데드라인 불변.
+        sync_layout_flush_timer(&mut hub, Some(t0));
+        assert_eq!(hub.snapshot().len(), 1);
+        assert!(hub.drain_due(t0 + Duration::from_millis(400)).is_empty());
+        assert_eq!(
+            hub.drain_due(t0 + LAYOUT_FLUSH_DEBOUNCE),
+            vec![Tick::LayoutFlush]
+        );
+        // 일회성이라 발화 후 자동 해제 — 다음 dirty 전이에서 다시 등록된다.
+        assert!(!hub.is_registered(Tick::LayoutFlush));
+    }
+
+    /// flush 는 자기 힘으로 호스트를 깨우지 않는다(Lax) — 다른 wakeup 에 편승하고
+    /// slack 을 넘겨서야 hard deadline 이 된다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn layout_flush_does_not_create_its_own_wakeup_before_slack() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_layout_flush_timer(&mut hub, Some(t0));
+        assert_eq!(
+            hub.next_deadline(),
+            Some(t0 + LAYOUT_FLUSH_DEBOUNCE + LAYOUT_FLUSH_SLACK)
+        );
+    }
+
+    /// 저장할 변경이 사라지면 등록을 걷어낸다 — 남겨두면 idle 에서도 깨운다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn layout_flush_timer_is_cancelled_when_nothing_is_dirty() {
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_layout_flush_timer(&mut hub, Some(t0));
+        sync_layout_flush_timer(&mut hub, None);
+        assert!(!hub.is_registered(Tick::LayoutFlush));
+        assert!(hub.next_deadline().is_none());
     }
 
     /// 메뉴가 닫히면 등록을 걷어낸다 — 남겨두면 idle 에서도 8ms 마다 깨운다.

@@ -342,6 +342,8 @@ impl ApplicationHandler<AppEvent> for App {
                     self.poll_idle_timeout_hooks();
                 }
                 Tick::AttachView => self.poll_attach_views(),
+                // 디바운스 만료 — 이 프레임에 슬롯 파일로 flush 한다.
+                Tick::LayoutFlush => self.flush_layout_persistence(false),
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
@@ -479,8 +481,10 @@ impl ApplicationHandler<AppEvent> for App {
         // Tick modal shake animation.
         self.tick_modal_shake();
 
-        // Flush layout persistence (debounced).
-        self.flush_layout_persistence(false);
+        // 레이아웃 flush 는 매 프레임 elapsed 를 재지 않고 디바운스 데드라인을
+        // 허브에 걸어 둔다 — 실제 저장은 위 `Tick::LayoutFlush` 실행부가 한다.
+        let dirty_since = self.earliest_layout_dirty_since();
+        crate::app::timers::sync_layout_flush_timer(&mut self.timers, dirty_since);
 
         self.flush_pending_pty_resizes();
 
