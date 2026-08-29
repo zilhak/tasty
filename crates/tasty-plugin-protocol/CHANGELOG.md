@@ -13,6 +13,8 @@
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-29
+
 ### Added
 - `PluginEvent::PopupInvalidated { instance_id }` — [`PluginEvent::SurfaceInvalidated`]의 egui-mesh popup 대응. plugin이 out-of-band로(egui `viewport_output`의 self-repaint 요청 등) popup의 무입력 재-forward를 요청할 때 쓴다. `#[serde(other)]` fallback(`PluginEvent::Unknown`) 대상이라 구버전 host는 안전하게 무시한다. (additive, api_version 유지)
 - `PluginEvent::SharedBufferReleased { id }` — plugin 이 자기 측 shared buffer 매핑을 폐기했음을 host 에 알리는 fire-and-forget 이벤트 (egui-mesh buffer 성장 재생성 시 SDK `ensure_buffer` 가 송신). host 는 대응 매핑을 해제한다 — 통지가 없으면 구세대 버퍼가 plugin 수명 내내 host 에 남는다 (soak s6 누수 조사에서 발견). 인스턴스 *닫힘* 경로는 host 가 frame 메타 기반으로 자체 해제하므로 이 이벤트는 생존 중 교체 전용.

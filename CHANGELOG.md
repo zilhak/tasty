@@ -16,6 +16,8 @@
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-29
+
 ### Added
 
 - `terminal.state`(CLI `tasty terminal state --surface <child>`) — 자식 단건 상태(`idle`/`needs_input`/`active`/`exited`) 조회. `terminal.children`의 항목별 조회와 달리, registry에서 이미 정리된 surface 도 라이브 트리와 대조해 `"exited"`로 구분한다.
