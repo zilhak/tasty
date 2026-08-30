@@ -104,6 +104,7 @@ Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
 ```
 
 - `Render phase` 가 `acquire`/`submit`/`present` 면 tasty 로직이 아니라 **GPU 드라이버** 쪽이다(그 호출들에는 애플리케이션 레벨 타임아웃이 없고 취소도 불가능하다). `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
+- **파일은 stall 당 1 개**이고 `Stuck for` 는 최초 탐지 시점(≈5~6 초)의 값이다. 총 지속 시간이 실린 30 초 주기 재보고는 `tracing` 으로만 나가는데(`target: "tasty::stall"`), 그 로그 파일은 프로세스 시작마다 truncate 되므로 행 중에 `tasty` CLI 를 한 번이라도 돌리면 사라진다. 즉 **파일로 남는 증거는 "어디서 멎었나" 까지이고 "얼마나 오래 멎었나" 는 아니다.**
 - **워치독은 복구하지 않는다.** 기록만 남기며 프로세스를 종료하지도, 응답성을 되돌리지도 않는다 — 사용자는 여전히 강제 종료해야 한다. 근거·대안(렌더 스레드 분리 / 자동 종료)의 기각 사유는 [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md).
 - native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 보고 대상에서 빠진다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
 - debug 빌드에서는 `tasty debug gpu-stall --ms N` 으로 재현할 수 있다(다음 프레임의 `present` 직전을 1 회 블로킹).
