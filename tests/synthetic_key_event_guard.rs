@@ -107,3 +107,34 @@ fn double_tap_detectors_reset_on_focus_change() {
         );
     }
 }
+
+/// 판정 함수가 실제로 `is_synthetic` 플래그를 본다.
+///
+/// 위 두 테스트는 **배선 위치**만 고정한다. 그래서 `is_synthetic_key_event` 의 몸통을
+/// 상수 `false` 로 바꿔 게이트를 통째로 무력화해도 둘 다 통과한다 — 수정 전체가 죽은 채
+/// CI 가 초록인 구멍이 생긴다. 이 단정이 그 구멍을 막는다.
+///
+/// 런타임으로 단정할 수 없어 소스 텍스트로 고정한다: winit `KeyEvent` 의
+/// `platform_specific` 필드가 `pub(crate)` 라 크레이트 밖에서는
+/// `WindowEvent::KeyboardInput` 을 구성할 수 없다.
+#[test]
+fn predicate_reads_the_synthetic_flag() {
+    let src = read("src/adapters/ui/input/synthetic.rs");
+    let body = src
+        .split_once("pub fn is_synthetic_key_event")
+        .expect("`is_synthetic_key_event` 정의가 사라졌다")
+        .1;
+    // 아래 `#[cfg(test)]` 모듈은 주석에서 같은 이름을 언급하므로 잘라낸다.
+    let body = body
+        .split("#[cfg(test)]")
+        .next()
+        .expect("split always yields one");
+
+    for needle in ["WindowEvent::KeyboardInput", "is_synthetic: true"] {
+        assert!(
+            body.contains(needle),
+            "is_synthetic_key_event 본문에 `{needle}` 이 없다 — 판정이 합성 플래그를 \
+             보지 않으면 진입부 게이트는 배선만 남고 아무것도 거르지 않는다."
+        );
+    }
+}
