@@ -69,7 +69,7 @@ fn draw_add_input(
 
     if ui.button(t("plugins.add_browse")).clicked() {
         let dialog = rfd::FileDialog::new();
-        if let Some(path) = dialog.pick_folder() {
+        if let Some(path) = crate::stall_watchdog::without_stall_watch(|| dialog.pick_folder()) {
             ui_state.add_path_input = path.to_string_lossy().to_string();
             try_validate_path(ui_state, snapshot);
         }

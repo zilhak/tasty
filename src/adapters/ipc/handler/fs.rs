@@ -64,7 +64,9 @@ pub fn handle_pick_file(id: serde_json::Value, params: &serde_json::Value) -> Js
         dialog = dialog.set_directory(dir);
     }
 
-    let path = dialog.pick_file().map(|p| p.to_string_lossy().into_owned());
+    // 모달이 열려 있는 동안은 이벤트 루프가 멎는 것이 정상이다 — stall 워치독에서 제외한다.
+    let path = crate::stall_watchdog::without_stall_watch(|| dialog.pick_file())
+        .map(|p| p.to_string_lossy().into_owned());
 
     JsonRpcResponse::success(id, json!({ "path": path }))
 }

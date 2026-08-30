@@ -16,6 +16,9 @@
 //! - `~/.tasty/crash-reports/hang-<ts>.log` — stall 당 1 개
 //!   ([`crate::crash_report::write_hang_report`]).
 //!
+//! 메인 스레드를 **의도적으로** 막는 구간(native 모달 등)은 [`without_stall_watch`] 로
+//! 감싸 보고 대상에서 뺀다 — 감싸지 않으면 정상 조작이 행으로 오탐된다.
+//!
 //! 파일 리포트를 따로 쓰는 이유는 두 가지다. (1) 사용자가 "멎었다" 를 겪은 뒤 실제로
 //! 확인하는 곳이 `crash-reports/` 다. (2) 공유 로그는 프로세스 시작마다 truncate 되므로
 //! 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 지워진다 — 리포트 파일은 살아남는다.
@@ -23,7 +26,7 @@
 //! 결정 근거·대안·재검토 조건: [`docs/adr/0091-render-stall-watchdog-observation-only.md`].
 
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// 콜백이 이 시간을 넘겨도 반환하지 않으면 처음 보고한다.
@@ -50,6 +53,8 @@ static ENTERED_NS: AtomicU64 = AtomicU64::new(0);
 static SITE: AtomicU8 = AtomicU8::new(0);
 /// 렌더 세부 단계 ([`Phase`] 의 discriminant).
 static PHASE: AtomicU8 = AtomicU8::new(0);
+/// 의도적 블로킹 구간의 중첩 깊이 ([`without_stall_watch`]). 0 보다 크면 보고하지 않는다.
+static PAUSED: AtomicU32 = AtomicU32::new(0);
 
 /// 관측 대상 winit 콜백.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -128,11 +133,50 @@ pub fn set_phase(phase: Phase) {
     PHASE.store(phase as u8, Ordering::Relaxed);
 }
 
+/// 메인 스레드를 **의도적으로** 오래 막는 구간을 실행한다 — 그 사이 워치독은 보고하지
+/// 않고, 구간이 끝나면 진입 시각을 다시 잡아 거기 쓴 시간이 stall 로 누적되지 않게 한다.
+///
+/// 대상은 native 모달처럼 "돌아오지 않는 것이 정상" 인 동기 호출이다. tasty 의 파일·폴더
+/// 선택(`rfd::FileDialog`)은 macOS 요구사항 때문에 메인 스레드에서 동기로 열리므로
+/// (`adapters/ipc/handler/fs.rs` 참조), 감싸지 않으면 사용자가 선택에 5 초만 써도
+/// `crash-reports/` 에 "GPU driver hang suspected" 리포트가 남는다. 그러면 "그 디렉토리에
+/// 파일이 있다 = 행이 있었다" 라는 이 워치독의 전제가 무너진다.
+///
+/// **메인 스레드를 막는 동기 호출을 새로 추가하면 이 래퍼를 통과시킨다.**
+pub fn without_stall_watch<T>(f: impl FnOnce() -> T) -> T {
+    let _pause = PauseGuard::enter();
+    f()
+}
+
+/// [`without_stall_watch`] 의 RAII 본체. `f` 가 panic 해도 `Drop` 이 구간을 닫는다.
+struct PauseGuard;
+
+impl PauseGuard {
+    fn enter() -> Self {
+        PAUSED.fetch_add(1, Ordering::Release);
+        PauseGuard
+    }
+}
+
+impl Drop for PauseGuard {
+    fn drop(&mut self) {
+        // 블로킹에 쓴 시간은 stall 이 아니다 — 남은 콜백을 지금부터 다시 잰다.
+        ENTERED_NS.store(ORIGIN.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        // seq 를 2 만큼 올린다: 홀짝(= 콜백 안)은 유지하면서 ① 진행 중인 표본을 무효화하고
+        // ② 재보고 추적이 이 이후를 별개 구간으로 보게 한다.
+        SEQ.fetch_add(2, Ordering::Release);
+        // 시각을 갱신한 뒤에 푼다 — 반대 순서면 낡은 진입 시각이 잠깐 노출된다.
+        PAUSED.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// 관측 스냅샷 — 보고 판정을 순수 함수로 떼어내기 위한 값 묶음.
 #[derive(Clone, Copy, Debug)]
 struct Snapshot {
     seq: u64,
     stuck: Duration,
+    /// 표본 시점에 의도적 블로킹 구간([`without_stall_watch`]) 안이었나.
+    paused: bool,
 }
 
 /// 직전 보고 상태.
@@ -147,6 +191,9 @@ struct Reported {
 fn should_report(snap: Snapshot, reported: Option<Reported>) -> Option<bool> {
     if snap.seq.is_multiple_of(2) {
         return None; // 콜백 바깥 — 정상
+    }
+    if snap.paused {
+        return None; // 의도적 블로킹(native 모달 등) — 행이 아니다
     }
     if snap.stuck < REPORT_AFTER {
         return None;
@@ -175,10 +222,11 @@ pub fn spawn() {
 /// 이벤트 루프 상태를 한 번 읽는다. 읽는 도중 콜백이 교체되면 `None`(그 표본은 버린다).
 fn sample() -> Option<Snapshot> {
     let seq = SEQ.load(Ordering::Acquire);
+    let paused = PAUSED.load(Ordering::Acquire) > 0;
     let entered = Duration::from_nanos(ENTERED_NS.load(Ordering::Relaxed));
     let stuck = ORIGIN.elapsed().checked_sub(entered)?;
-    // 읽는 사이에 콜백이 끝났으면 위 값들은 과거 것이다.
-    (SEQ.load(Ordering::Acquire) == seq).then_some(Snapshot { seq, stuck })
+    // 읽는 사이에 콜백이 끝났거나 블로킹 구간이 닫혔으면(seq += 2) 위 값들은 과거 것이다.
+    (SEQ.load(Ordering::Acquire) == seq).then_some(Snapshot { seq, stuck, paused })
 }
 
 /// stall 1 건 보고. `first` 면 파일 리포트까지 남긴다(재보고는 로그만 — 파일 폭주 방지).
@@ -263,12 +311,26 @@ pub fn take_debug_stall() {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// `SEQ` / `PAUSED` 는 프로세스 전역이라, 그것을 실제로 건드리는 테스트끼리는
+    /// 직렬화해야 한다(테스트는 기본적으로 병렬 실행된다).
+    static GLOBALS: Mutex<()> = Mutex::new(());
 
     fn snap(seq: u64, secs: u64) -> Snapshot {
         Snapshot {
             seq,
             stuck: Duration::from_secs(secs),
+            paused: false,
+        }
+    }
+
+    fn paused_snap(seq: u64, secs: u64) -> Snapshot {
+        Snapshot {
+            paused: true,
+            ..snap(seq, secs)
         }
     }
 
@@ -309,7 +371,38 @@ mod tests {
     }
 
     #[test]
+    fn intentional_block_is_not_reported() {
+        // 콜백 안(홀수) + 임계 초과지만 의도적 블로킹 구간이면 보고하지 않는다.
+        assert_eq!(should_report(paused_snap(3, 600), None), None);
+    }
+
+    #[test]
+    fn pause_keeps_parity_and_invalidates_the_sample() {
+        let _lock = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = Guard::enter(Site::UserEvent);
+        let inside = SEQ.load(Ordering::Acquire);
+        assert!(!inside.is_multiple_of(2), "가드 안 = 홀수");
+
+        without_stall_watch(|| {
+            assert!(PAUSED.load(Ordering::Acquire) > 0, "구간 안 = paused");
+        });
+
+        assert_eq!(PAUSED.load(Ordering::Acquire), 0, "구간을 벗어나면 풀린다");
+        let after = SEQ.load(Ordering::Acquire);
+        assert_eq!(
+            after,
+            inside + 2,
+            "seq 는 2 만큼 올라 홀짝(콜백 안)을 유지한다"
+        );
+        assert!(
+            sample().is_none_or(|s| s.stuck < REPORT_AFTER),
+            "구간이 끝나면 진입 시각이 다시 잡힌다"
+        );
+    }
+
+    #[test]
     fn guard_toggles_seq_parity() {
+        let _lock = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
         let before = SEQ.load(Ordering::Acquire);
         {
             let _g = Guard::enter(Site::Redraw);

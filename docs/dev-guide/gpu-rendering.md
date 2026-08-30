@@ -116,4 +116,5 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 - 프레임 타이밍 계측은 `src/gfx/perf.rs` / redraw 경로. `tracing::warn!` 은 임계값 초과 시만.
 - 셀 색이 의심되면 debug 의 `debug.glyph_color`(렌더러가 push 하는 실제 RGBA) — [debug-ipc.md](debug-ipc.md).
 - **이벤트 루프 stall 워치독** (`src/platform/stall_watchdog.rs`, 전 빌드) — winit 콜백이 5 초 안에 반환하지 않으면 `tracing::error!(target: "tasty::stall")` 과 `~/.tasty/crash-reports/hang-<ts>.log` 에 "어느 콜백(`redraw` 등)의 어느 GPU 단계(`acquire`/`submit`/`present`)에서 몇 ms 째 멎었는가"를 남긴다. 같은 stall 은 30 초마다 재보고하되 파일은 stall 당 1 개다. 복구는 하지 않는다. 재현은 debug 전용 `tasty debug gpu-stall --ms N` — 다음 프레임의 `present` 직전을 1 회 블로킹한다([debug-ipc.md](debug-ipc.md)).
+  - **메인 스레드를 의도적으로 막는 동기 호출은 `stall_watchdog::without_stall_watch(..)` 로 감싼다.** native 파일 다이얼로그(`rfd`)처럼 "돌아오지 않는 것이 정상" 인 구간을 감싸지 않으면, 사용자가 선택에 5 초만 써도 `crash-reports/` 에 오탐 리포트가 남아 그 디렉토리가 신호를 잃는다.
 - 리페인트 유발원별 요청 수 / 지연 수 / 실제 present 수는 1 초 창 dump: `TASTY_LOG=tasty::view::repaint=info`(dev 빌드는 `~/.tasty-debug/debug-dev.log` 에 그냥 남는다). 요청이 많아도 실제 렌더가 합쳐졌는지를 이 한 줄로 구분한다.

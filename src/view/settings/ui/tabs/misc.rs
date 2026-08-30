@@ -658,9 +658,11 @@ fn draw_add_card(
                         })
                         .show(ui, th)
                         .clicked()
-                        && let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Lua", &["lua"])
-                            .pick_file()
+                        && let Some(path) = crate::stall_watchdog::without_stall_watch(|| {
+                            rfd::FileDialog::new()
+                                .add_filter("Lua", &["lua"])
+                                .pick_file()
+                        })
                     {
                         if st.draft_name.trim().is_empty()
                             && let Some(stem) = path.file_stem()

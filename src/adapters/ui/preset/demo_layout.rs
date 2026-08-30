@@ -2194,11 +2194,11 @@ fn field_value(leaf: &Leaf, target: &PresetFieldTarget) -> String {
 
 /// file_path → 파일 선택, dir → 폴더 선택 다이얼로그. 취소/기타면 None.
 fn pick_path(input: PresetFieldInput) -> Option<String> {
-    let picked = match input {
+    let picked = crate::stall_watchdog::without_stall_watch(|| match input {
         PresetFieldInput::Dir => rfd::FileDialog::new().pick_folder(),
         PresetFieldInput::FilePath => rfd::FileDialog::new().pick_file(),
         _ => None,
-    }?;
+    })?;
     Some(picked.to_string_lossy().into_owned())
 }
 

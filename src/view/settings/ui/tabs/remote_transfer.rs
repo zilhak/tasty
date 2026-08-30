@@ -48,7 +48,9 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 })
                 .show(ui, &th)
                 .clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_folder()
+                && let Some(path) = crate::stall_watchdog::without_stall_watch(|| {
+                    rfd::FileDialog::new().pick_folder()
+                })
             {
                 settings.remote_transfer.dir = path.to_string_lossy().into_owned();
             }
