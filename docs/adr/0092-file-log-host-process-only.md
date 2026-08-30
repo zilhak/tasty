@@ -28,7 +28,7 @@ panic hook 설치와 stderr tracing 초기화는 **위치를 옮기지 않는다
 ## Consequences
 
 - **얻은 것**: host 로그가 CLI 실행에 지워지지 않는다. CLI 프로세스의 로그가 host 로그에 섞이지도, NUL 구멍을 만들지도 않는다. 파일 로그를 사후 진단 수단으로 안내하는 문서들이 실제로 성립한다.
-- **잃은 것**: CLI 클라이언트의 tracing 은 파일에 남지 않는다(stderr 전용). 다만 대화형 CLI 실패는 사용자가 stderr 로 즉시 보고, 아무도 안 보는 곳에서 발화하는 agent hook 은 이미 전용 append-only 채널(`hook-failures.log`, `crates/tasty-cli/src/hook_failure.rs`)을 가진다 — 공유 로그가 그 역할을 대신하고 있던 것이 아니다.
+- **잃은 것**: CLI 클라이언트의 tracing 은 파일에 남지 않는다(stderr 전용). 대화형 CLI 실패는 사용자가 stderr 로 즉시 본다. 아무도 안 보는 곳에서 발화하는 agent hook 은 전용 append-only 채널(`hook-failures.log`, `crates/tasty-cli/src/hook_failure.rs`)을 가지지만 **그 채널이 덮는 범위는 전달 실패뿐이다** — `hook_failure::record` 는 IPC 전송/응답이 실패한 경로(`crates/tasty-cli/src/run.rs`)에서만 불린다. IPC 는 성공했는데 CLI 프로세스가 warn 을 찍는 경우(예: `crates/tasty-cli/src/dynamic.rs` 의 `read_stdin_json` — stdin payload 가 비어 hook params 가 덜 채워지는 상황)는 그 파일에도, 공유 로그에도 남지 않고 stderr 로만 나간다. 수정 전에도 이 경로가 실질적으로 보존된 적은 없다 — hook 은 턴당 여러 번 발화하고 매 발화가 파일을 truncate 했으므로 "마지막 한 번의 몇 줄" 만 남기면서 host 로그를 파괴했다. 즉 순수 손실이 아니라 **보존된 적 없는 것이 명시적으로 없어진 것**이지만, 사각지대인 것은 사실이므로 아래 재검토 트리거로 등록해 둔다.
 - **운영 비용 / 유지 부담**: `enable_host_file_log()` 호출은 host 진입 경로 한 곳뿐이다. 새 host 진입 경로가 생기면 그때 함께 불러야 한다(빠뜨리면 파일 로그가 조용히 비는 것으로 드러난다 — 크래시나 오염은 없다). CLI 프로세스에서도 파일 레이어의 필터는 여전히 평가되지만, 통과한 이벤트는 포맷 후 버려질 뿐이라 수명이 짧은 CLI 에서 무시할 수 있는 비용이다.
 
 ## Alternatives Considered
