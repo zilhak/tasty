@@ -83,9 +83,34 @@ Error loop detected! The following error repeated 100 times in 1s:
 
 **release 에서 backtrace 가 주소만 나올 때**: `RUST_BACKTRACE=full tasty` 로 강화하되, strip 된 상태에선 한계가 있다 — 정확한 함수명이 필요하면 dev 빌드로 재현한다.
 
-## panic 없이 멈춤 (무한루프 / 데드락)
+## panic 없이 멈춤 (이벤트 루프 stall / 무한루프 / 데드락)
 
-panic 이 아니라 hang 이면 **crash report 가 생기지 않는다.** 외부 도구로 붙는다:
+panic 이 아니라 hang 이면 **panic hook 이 발동하지 않으므로 `crash-*.log` 는 생기지 않는다.** 다만 그중 한 부류 — winit 이벤트 루프 콜백이 반환하지 않는 stall — 은 워치독이 별도로 잡아 `hang-*.log` 를 남긴다.
+
+### 이벤트 루프 stall — `hang-*.log` (모든 빌드, 자동)
+
+콜백(`resumed` / `window_event` / `redraw` / `user_event` / `about_to_wait`)이 **5 초** 안에 반환하지 않으면, 독립 워치독 스레드가 `~/.tasty/crash-reports/hang-<YYYY-MM-DDTHH-MM-SS>.log` 를 남긴다. 창이 클릭·키입력·IPC 에 전혀 반응하지 않는 증상 — GPU 드라이버 행이 대표적이다 — 이 여기 해당한다.
+
+```
+=== Tasty Hang Report ===
+Timestamp: 2026:08:30 01:24:09
+Version: 0.10.2
+OS: linux aarch64
+
+=== Stall ===
+Callback: redraw                    ← 어느 winit 콜백이 안 돌아왔나
+Render phase: present               ← none / acquire / submit / present
+Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
+```
+
+- `Render phase` 가 `acquire`/`submit`/`present` 면 tasty 로직이 아니라 **GPU 드라이버** 쪽이다(그 호출들에는 애플리케이션 레벨 타임아웃이 없고 취소도 불가능하다). `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
+- **워치독은 복구하지 않는다.** 기록만 남기며 프로세스를 종료하지도, 응답성을 되돌리지도 않는다 — 사용자는 여전히 강제 종료해야 한다. 근거·대안(렌더 스레드 분리 / 자동 종료)의 기각 사유는 [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md).
+- native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 보고 대상에서 빠진다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
+- debug 빌드에서는 `tasty debug gpu-stall --ms N` 으로 재현할 수 있다(다음 프레임의 `present` 직전을 1 회 블로킹).
+
+### 그 밖의 hang (무한루프 / 데드락)
+
+이벤트 루프 콜백 바깥에서 멎었거나 `Render phase: none` 이면 외부 도구로 붙는다:
 
 ```bash
 # 멈춘 프로세스
@@ -107,6 +132,7 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 | 파일 / 경로 | 빌드 | 내용 |
 |-------------|------|------|
 | `~/.tasty/crash-reports/crash-*.log` | 모두 | panic 시 자동(버전·OS·위치·메시지·backtrace) |
+| `~/.tasty/crash-reports/hang-*.log` | 모두 | 이벤트 루프 stall 시 자동(어느 콜백·어느 GPU 단계에서 멎었나). stall 당 1 개, 복구는 하지 않음 |
 | `~/.tasty/debug-dev.log` | dev 만 | 전체 debug tracing(매 실행 truncate) |
 | `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(매 실행 truncate) |
 | stderr | 모두 | panic 메시지 + backtrace, `TASTY_LOG` 레벨의 tracing |
@@ -116,4 +142,5 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 - [build.md](build.md) — release(`strip = true`) / dev / dist 프로필
 - [error-handling.md](error-handling.md) — `Result` 처리·로그 레벨 정책 (애초에 crash 를 줄이는 쪽)
 - [self-verification.md](self-verification.md) · [e2e-tests.md](e2e-tests.md) — 재현·검증
+- [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md) · [gpu-rendering.md](gpu-rendering.md) — 이벤트 루프 stall 워치독의 결정 근거와 렌더 구조
 - [memory-leak-soak.md](memory-leak-soak.md) — 죽음/멈춤이 아니라 **메모리가 새는** 증상일 때 (soak 테스트 + 계층별 판정)
