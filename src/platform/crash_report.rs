@@ -278,16 +278,35 @@ fn init_tracing() {
 /// host 는 데이터 루트당 하나이므로 시작 시 truncate 를 유지한다(rotation 불필요).
 /// 실패하면 stderr-only 로 자연스럽게 폴백한다.
 ///
+/// **재호출은 무해하다(no-op).** 파일을 열기 *전에* 먼저 걸러낸다 — `File::create` 는
+/// 그 자체로 truncate 라, 열고 나서 `OnceLock::set` 실패로 되돌리면 이미 늦는다. 먼저
+/// 설치된 핸들이 원래 오프셋에 계속 쓰면서 파일 앞부분이 NUL 구멍이 되는, 본 ADR 이
+/// 고친 바로 그 손상이 축소판으로 재현된다.
+///
 /// [ADR-0092]: ../../docs/adr/0092-file-log-host-process-only.md
 pub fn enable_host_file_log() {
-    match open_host_log_file() {
-        Ok(file) => {
-            if LOG_FILE.set(Mutex::new(file)).is_err() {
-                tracing::warn!("file logging already enabled; ignoring repeat call");
-            }
-        }
-        Err(reason) => tracing::warn!("file logging disabled: {reason}"),
+    if let Some(reason) = install_host_log_file() {
+        tracing::warn!("{reason}");
     }
+}
+
+/// 파일을 열어 [`LOG_FILE`] 에 넣는다. 로그로 남길 사유가 있으면 문자열로 돌려준다 —
+/// `open_host_log_file` 과 같은 방식으로, warn 호출을 호출자 한 곳에 모은다.
+fn install_host_log_file() -> Option<String> {
+    // 파일을 열기 전에 판정한다 — 순서를 뒤집으면 재호출이 파일을 잘라먹는다(위 참조).
+    if LOG_FILE.get().is_some() {
+        return Some("file logging already enabled; ignoring repeat call".to_string());
+    }
+    let file = match open_host_log_file() {
+        Ok(file) => file,
+        Err(reason) => return Some(format!("file logging disabled: {reason}")),
+    };
+    if LOG_FILE.set(Mutex::new(file)).is_err() {
+        // 위 검사와 이 사이에 다른 스레드가 먼저 넣은 경우(정상 부팅 경로에는 없지만
+        // `pub` 이라 배제할 수 없다). 우리가 연 핸들은 그대로 버려진다.
+        return Some("file logging enabled concurrently; dropping this handle".to_string());
+    }
+    None
 }
 
 /// 로그 파일을 연다(truncate). 실패 사유는 문자열로 올려보내 로그를 호출자 한 곳에서만
