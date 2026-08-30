@@ -160,6 +160,13 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
 /// 파일 레이어는 여기서 *설치*만 되고 파일은 열지 않는다. 실제 파일을 여는 것은 host
 /// 프로세스(GUI / headless)가 부르는 [`enable_host_file_log`] 뿐이다 — 근거는
 /// [ADR-0092](../../docs/adr/0092-file-log-host-process-only.md).
+///
+/// **한계**: 그래서 이 함수와 [`enable_host_file_log`] 사이의 구간
+/// (`boot::run()` 의 `attach_windows_console_if_needed()` + `cli_routing::parse_or_route()`)
+/// 에서 발생한 로그는 host 프로세스에서도 **파일에 남지 않는다** — stderr 로만 나간다.
+/// 현재 그 구간에는 tracing 호출이 없어 실제 유실은 없지만, 라우팅 이전에 로그를
+/// 추가하면 파일 로그에서 조용히 빠진다. 파일에 반드시 남아야 하는 진단이라면 라우팅
+/// 이후로 옮기거나 전용 파일(`crash-*.log` / `hang-*.log` / `hook-failures.log`)을 쓴다.
 pub fn init() {
     // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
