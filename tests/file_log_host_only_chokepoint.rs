@@ -13,11 +13,15 @@
 
 use std::path::{Path, PathBuf};
 
-/// 파일을 실제로 여는 함수의 정의 위치.
+/// 파일을 실제로 여는 함수의 정의 위치. 이 파일에서도 **정의 함수 본문 안** 만 허용한다
+/// — 파일 통째로 봐주면 `init()`(= 모든 프로세스가 탄다) 에서 부르는 것을 못 잡는다.
 const IMPL_FILE: &str = "src/platform/crash_report.rs";
-/// 얇은 boot 래퍼(호출이 아니라 정의).
+/// 얇은 boot 래퍼. 여기도 위임 래퍼 함수 본문 안만 허용한다 — 파일 통째로 스킵하면
+/// 모든 프로세스가 타는 `init_crash_report()` 안에 호출 한 줄을 넣는 것만으로
+/// ADR-0092 이전 버그가 부활하는데 가드가 초록으로 남는다.
 const WRAPPER_FILE: &str = "src/boot/os.rs";
-/// 유일한 호출처 — host 확정(`Routed::Gui`) 이후.
+/// 유일한 호출처 — host 확정(`Routed::Gui`) 이후. 이 파일은
+/// [`the_call_site_sits_inside_the_host_arm`] 가 **분기 블록 내부인지**로 따로 검사한다.
 const CALL_SITE_FILE: &str = "src/boot.rs";
 
 const OPEN_FN: &str = "enable_host_file_log";
@@ -30,6 +34,46 @@ fn repo_root() -> PathBuf {
 fn is_comment_line(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("//") || t.starts_with('*')
+}
+
+/// 줄 끝 `//` 주석을 잘라낸다 — 중괄호 세기가 주석 속 괄호에 흔들리지 않게.
+fn strip_line_comment(line: &str) -> &str {
+    match line.find("//") {
+        Some(i) => &line[..i],
+        None => line,
+    }
+}
+
+/// `header` 를 포함하는 첫 코드 줄부터 중괄호가 균형을 이루는 줄까지의 포함 범위.
+///
+/// 텍스트 위치 비교(`call > gui_arm`) 대신 이걸 쓴다 — 위치 비교는 `run()` 아래에
+/// 정의된 **어떤** 함수(CLI 경로인 `run_subcommand` 포함)에 호출을 옮겨도 통과한다.
+fn span_of(lines: &[&str], header: &str) -> Option<(usize, usize)> {
+    let start = lines
+        .iter()
+        .position(|l| !is_comment_line(l) && l.contains(header))?;
+    let (mut depth, mut opened) = (0i32, false);
+    for (i, line) in lines.iter().enumerate().skip(start) {
+        for ch in strip_line_comment(line).chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    opened = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        if opened && depth <= 0 {
+            return Some((start, i));
+        }
+    }
+    None
+}
+
+/// `fn <name>(` 의 정의 본문 범위.
+fn fn_span(lines: &[&str], name: &str) -> Option<(usize, usize)> {
+    span_of(lines, &format!("fn {name}("))
 }
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -63,16 +107,32 @@ fn log_file_is_opened_from_the_host_path_only() {
             .unwrap_or(file)
             .to_string_lossy()
             .replace('\\', "/");
-        if rel == IMPL_FILE || rel == WRAPPER_FILE || rel == CALL_SITE_FILE {
+        // 호출처 파일은 `the_call_site_sits_inside_the_host_arm` 이 더 강한 조건
+        // (분기 블록 내부)으로 따로 본다.
+        if rel == CALL_SITE_FILE {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
-        for (i, line) in text.lines().enumerate() {
-            if line.contains(OPEN_FN) && !is_comment_line(line) {
-                offenders.push(format!("{rel}:{}: {}", i + 1, line.trim()));
+        let lines: Vec<&str> = text.lines().collect();
+        // 정의 파일 / 래퍼 파일은 **정의 함수 본문 안** 만 봐준다. 나머지 파일은 어떤
+        // 등장도 허용하지 않는다.
+        let allowed = if rel == IMPL_FILE || rel == WRAPPER_FILE {
+            Some(fn_span(&lines, OPEN_FN).unwrap_or_else(|| {
+                panic!("`{rel}` 에서 `fn {OPEN_FN}` 정의 범위를 못 찾았다 — 가드를 갱신한다")
+            }))
+        } else {
+            None
+        };
+        for (i, line) in lines.iter().enumerate() {
+            if !line.contains(OPEN_FN) || is_comment_line(line) {
+                continue;
             }
+            if allowed.is_some_and(|(start, end)| i >= start && i <= end) {
+                continue;
+            }
+            offenders.push(format!("{rel}:{}: {}", i + 1, line.trim()));
         }
     }
 
@@ -86,34 +146,38 @@ fn log_file_is_opened_from_the_host_path_only() {
 }
 
 #[test]
-fn the_call_site_sits_after_the_role_decision() {
+fn the_call_site_sits_inside_the_host_arm() {
     let text = std::fs::read_to_string(repo_root().join(CALL_SITE_FILE))
         .expect("호출처 파일을 읽을 수 있어야 한다");
-    let code: Vec<&str> = text
-        .lines()
-        .filter(|l| !is_comment_line(l))
-        .collect::<Vec<_>>();
+    let lines: Vec<&str> = text.lines().collect();
 
-    let call = code
-        .iter()
-        .position(|l| l.contains(&format!("{OPEN_FN}()")))
-        .unwrap_or_else(|| panic!("`{CALL_SITE_FILE}` 에 `{OPEN_FN}()` 호출이 없다"));
-    let gui_arm = code
-        .iter()
-        .position(|l| l.contains("Routed::Gui(cli) =>"))
-        .expect("`Routed::Gui` 분기를 못 찾았다 — 라우팅 형태가 바뀌었으면 가드도 갱신한다");
+    let (arm_start, arm_end) = span_of(&lines, "Routed::Gui(cli) =>")
+        .expect("`Routed::Gui` 분기 블록을 못 찾았다 — 라우팅 형태가 바뀌었으면 가드도 갱신한다");
 
-    assert!(
-        call > gui_arm,
-        "`{OPEN_FN}()` 이 `Routed::Gui` 분기(= host 확정) 앞에 있다 — \
-         CLI 프로세스도 파일을 열게 되어 ADR-0092 의 결정이 무너진다"
-    );
+    let calls: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !is_comment_line(l) && l.contains(&format!("{OPEN_FN}()")))
+        .map(|(i, _)| i)
+        .collect();
+
     assert_eq!(
-        code.iter()
-            .filter(|l| l.contains(&format!("{OPEN_FN}()")))
-            .count(),
+        calls.len(),
         1,
-        "`{OPEN_FN}()` 호출은 host 경로 한 곳뿐이어야 한다"
+        "`{OPEN_FN}()` 호출은 host 경로 한 곳뿐이어야 한다 — 찾은 줄: {:?}",
+        calls.iter().map(|i| i + 1).collect::<Vec<_>>()
+    );
+
+    let call = calls[0];
+    assert!(
+        call > arm_start && call <= arm_end,
+        "`{OPEN_FN}()` 이 `Routed::Gui` 분기 블록({}~{} 줄) 밖의 {} 줄에 있다 — \
+         `run()` 아래 아무 함수(CLI 경로인 `run_subcommand` 포함)로 옮겨도 단순 위치 \
+         비교는 통과하므로, 블록 내부인지로 본다. 밖에서 부르면 CLI 프로세스도 파일을 \
+         열게 되어 ADR-0092 의 결정이 무너진다",
+        arm_start + 1,
+        arm_end + 1,
+        call + 1
     );
 }
 
