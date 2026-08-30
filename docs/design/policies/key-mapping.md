@@ -144,12 +144,24 @@ macOS·Wayland 에서는 합성하지 않는다.
 지점별로 막지 않는 이유는 유입 경로가 두 축이기 때문이다.
 
 - **직접 해석 경로** — `WindowEvent::KeyboardInput` 을 패턴 매칭해 단축키·PTY·녹화로
-  보내는 곳.
+  보내는 곳. **결함이 실제로 재현되는 축이다.** 게이트가 없으면 포커스 획득 시 합성 `F4`
+  가 `rename_tab` 팝업을 열고, `Escape` 를 누른 채 종료 확인 창에 포커스를 넘기면 그 창이
+  저절로 닫힌다(`src/view/quit.rs` 의 `Escape` 처리). X11 대조군 실측에서 게이트 전에는
+  둘 다 재현되고 게이트 후에는 발생하지 않으며, 창 안에서 직접 누른 같은 키는 그대로
+  동작한다.
 - **egui feed 경로** — 키 이벤트를 해석하지 않고 `handle_egui_event` 로 통째로 넘기는 곳.
   `WindowEvent::KeyboardInput` grep 으로 **잡히지 않는다.** View 5 종
   (`MainView`/`SettingsView`/`PresetView`/`PluginsView`/`QuitView`)이 전부 이 경로를 갖고,
-  `PresetView`·`PluginsView` 는 이 경로**뿐**이다. 합성 `Enter`/`Space` 가 종료 확인
-  창의 버튼을 누르거나 `TextEdit` 에 문자를 주입할 수 있다.
+  `PresetView`·`PluginsView` 는 이 경로**뿐**이다.
+
+  이 축은 tasty 게이트가 없어도 합성 `Pressed` 에 한해 **우연히** 막혀 있다 — `egui-winit`
+  이 `is_synthetic && state == Pressed` 인 `KeyboardInput` 을 egui 에 넘기기 전에 스스로
+  버리기 때문이다(0.31.1 기준). 그래서 "합성 `Enter` 가 종료 확인 창의 확인 버튼을 누른다"
+  는 실제로는 발생하지 않는다 — 그 버튼에 egui 키보드 포커스가 살아 있어도 그렇다(egui 는
+  창이 blur 돼도 위젯 키보드 포커스를 놓지 않으므로, 안전의 근거는 위젯 포커스가 아니라
+  이 필터다). 다만 이건 상위 의존성의 구현 세부이지 계약이 아니고, 같은 필터가 합성
+  `Released` 는 걸러내지 않는다. 버전이 바뀌면 조용히 사라질 보호막이므로 tasty 는 이 축도
+  자기 진입부에서 직접 끊는다.
 
 진입부 한 곳에서 버리면 두 축이 동시에 덮이고, View 가 새로 늘어도 자동으로 덮인다.
 배선 위치는 `tests/synthetic_key_event_guard.rs` 가 강제한다.
