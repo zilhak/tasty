@@ -2,13 +2,14 @@
 //!
 //! `run()` 이 단일 진입점. 내부 단계 순서:
 //!
-//! 1. OS 보정 (Windows console attach, crash_report::init)
+//! 1. OS 보정 (Windows console attach, crash_report::init — panic hook + stderr tracing)
 //! 2. CLI 라우팅 결정 (`cli_routing::parse_or_route`)
 //! 3. 결정에 따라 mode helper 호출:
 //!    - `AlreadyHandled` → Ok(())
 //!    - `Subcommand` → i18n init + `cli::run_client`
 //!    - `AugmentedHelp` → i18n init + `cli::print_augmented_help`
-//!    - `Gui` → i18n init + event loop / background threads / App / event_loop.run_app
+//!    - `Gui` → 공유 로그 파일 개방(`os::enable_host_file_log`) + i18n init +
+//!      event loop / background threads / App / event_loop.run_app
 //!      (gui 빌드 + `!cli.headless`) — 또는 `run_headless` (headless 빌드 / `--headless`)
 
 pub(crate) mod cli_routing;
@@ -102,6 +103,10 @@ pub(crate) fn run() -> anyhow::Result<()> {
         cli_routing::Routed::Subcommand(cmd, port_file) => run_subcommand(cmd, port_file),
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
+            // 공유 로그 파일은 host 만 연다(= 여기서 연다). CLI 클라이언트도 같은
+            // 바이너리라, 역할 판정 전에 열면 CLI 를 한 번 돌릴 때마다 실행 중인
+            // host 의 로그가 truncate 된다.
+            os::enable_host_file_log();
             // 호스트(터미널·plugin 을 spawn 하는 프로세스)에서만 자식 결박 job 을 생성한다.
             // CLI client / augmented-help 경로는 터미널을 띄우지 않으므로 제외. 이 job 이
             // tasty 프로세스 사망 시 자식 셸 트리를 함께 정리한다(비-Windows 는 no-op).

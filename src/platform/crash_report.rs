@@ -2,9 +2,10 @@
 
 use std::backtrace::Backtrace;
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::panic;
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::SystemTime;
 
 use tracing_subscriber::EnvFilter;
@@ -105,8 +106,8 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
 /// 들여다보는 곳이 거기다. 행(hang)은 panic 이 아니라 hook 이 발동하지 않으므로, 그
 /// 디렉토리가 비어 있으면 "아무 일도 없었다" 로 오독된다.
 ///
-/// 공유 로그(`debug.log`)가 아니라 별도 파일인 이유: 그 로그는 프로세스마다 시작 시
-/// truncate 되므로, 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 증거가 지워진다.
+/// 공유 로그(`debug.log`)가 아니라 별도 파일인 이유: 그 로그는 host 프로세스가 뜰 때마다
+/// truncate 되므로, 행을 겪고 강제 종료 후 다시 띄우는 순간 증거가 지워진다.
 pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathBuf> {
     let dir = crash_report_dir()?;
     fs::create_dir_all(&dir).ok()?;
@@ -155,6 +156,10 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
 /// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.
 ///   Initializes tracing with stderr output, plus a file layer under `~/.tasty/` (independent of
 ///   the stderr `TASTY_LOG` filter — see `init_tracing`).
+///
+/// 파일 레이어는 여기서 *설치*만 되고 파일은 열지 않는다. 실제 파일을 여는 것은 host
+/// 프로세스(GUI / headless)가 부르는 [`enable_host_file_log`] 뿐이다 — 근거는
+/// [ADR-0092](../../docs/adr/0092-file-log-host-process-only.md).
 pub fn init() {
     // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
@@ -178,53 +183,121 @@ fn make_env_filter() -> EnvFilter {
     })
 }
 
+/// 파일 로그 싱크. host 프로세스가 [`enable_host_file_log`] 로 열어 넣기 전까지 비어
+/// 있고, 그동안 파일 레이어가 만든 출력은 버려진다.
+static LOG_FILE: OnceLock<Mutex<fs::File>> = OnceLock::new();
+
+/// 파일 레이어의 writer 팩토리. `LOG_FILE` 이 채워진 프로세스에서만 실제로 쓴다.
+struct HostLogWriter;
+
+/// 이벤트 한 건을 쓰는 동안 파일 락을 잡는다 — `Mutex<File>` 의 기본 `MakeWriter` 구현과
+/// 같은 원자성(한 줄이 다른 줄 사이에 끼어들지 않는다). 파일이 없으면 조용히 버린다.
+enum HostLogSink {
+    File(MutexGuard<'static, fs::File>),
+    Discard,
+}
+
+impl io::Write for HostLogSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::File(file) => file.write(buf),
+            Self::Discard => Ok(buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::File(file) => file.flush(),
+            Self::Discard => Ok(()),
+        }
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for HostLogWriter {
+    type Writer = HostLogSink;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        match LOG_FILE.get().map(Mutex::lock) {
+            Some(Ok(guard)) => HostLogSink::File(guard),
+            // 아직 안 열렸거나(= CLI 프로세스), 쓰는 도중 다른 스레드가 panic 해 poison
+            // 된 경우. 로그 한 줄 때문에 여기서 다시 panic 하지 않는다.
+            Some(Err(_)) | None => HostLogSink::Discard,
+        }
+    }
+}
+
+/// 파일 로그 파일명. dev 와 release 는 필터가 달라 파일도 나눈다.
+fn log_file_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug-dev.log"
+    } else {
+        "debug.log"
+    }
+}
+
+/// 파일 레이어 필터. stderr 의 `TASTY_LOG` 와 독립적으로 고정된다 — dev 는
+/// `debug` 레벨(기존 동작 유지), release/dist 는 `warn` 이상만(디스크 사용량 제한 —
+/// attach disconnect 같은 진단 가치가 있는 로그만 release 사용자 환경에 보존하는 게
+/// 목적이라 전체 debug 상시 로깅까진 필요 없다).
+fn file_env_filter() -> EnvFilter {
+    if cfg!(debug_assertions) {
+        EnvFilter::new("debug,wgpu_hal=warn,wgpu_core=warn,naga=warn")
+    } else {
+        EnvFilter::new("warn,wgpu_hal=warn,wgpu_core=warn,naga=warn")
+    }
+}
+
 /// stderr + file tracing, all build modes. stderr 필터는 `make_env_filter()`
-/// (`TASTY_LOG`, 기본 warn) 를 따르지만, 파일 필터는 그와 독립적으로 고정된다 —
-/// dev 는 `debug-dev.log` 에 `debug` 레벨(기존 동작 유지), release/dist 는
-/// `debug.log` 에 `warn` 이상만 남긴다(디스크 사용량 제한 — attach disconnect 같은
-/// 진단 가치가 있는 로그만 release 사용자 환경에 보존하는 게 목적이라 전체 debug
-/// 상시 로깅까진 필요 없다). 두 모드 모두 매 실행마다 파일을 truncate 한다(기존
-/// dev 동작과 동일 — rotation 은 이번 스코프 밖).
+/// (`TASTY_LOG`, 기본 warn) 를, 파일 필터는 `file_env_filter()` 를 따른다.
+///
+/// 두 레이어 모두 **모든 프로세스**에 설치되지만, 파일 레이어의 출력은
+/// [`enable_host_file_log`] 를 부른 프로세스에서만 파일에 닿는다. 그래서 이 함수는
+/// CLI/GUI 판정 이전(= 프로세스 역할을 모르는 시점)에 불려도 안전하다 — stderr 로그는
+/// 부팅 첫 순간부터 나가고, 공유 로그 파일은 건드리지 않는다.
 fn init_tracing() {
     use tracing_subscriber::Layer as _;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
     let stderr_layer = tracing_subscriber::fmt::layer().with_filter(make_env_filter());
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(HostLogWriter)
+        .with_ansi(false)
+        .with_filter(file_env_filter());
 
-    let registry = tracing_subscriber::registry().with(stderr_layer);
+    tracing_subscriber::registry()
+        .with(stderr_layer)
+        .with(file_layer)
+        .init();
+}
 
-    // Try to set up file logging; fall back to stderr-only if it fails
-    if let Some(dir) = tasty_home() {
-        // 로거 초기화 이전이라 tracing 사용 불가. 디렉토리 생성 실패는 아래
-        // fs::File::create가 실패하면서 자연스럽게 fall back 경로로 진입한다.
-        if let Err(e) = fs::create_dir_all(&dir) {
-            eprintln!("tasty: failed to create log dir {}: {e}", dir.display());
+/// 공유 로그 파일(`$TASTY_HOME/debug{-dev}.log`)을 열어 파일 레이어를 활성화한다.
+/// **host 프로세스(GUI / headless)만** 부른다 — CLI 클라이언트도 같은 바이너리라
+/// 무조건 열면 실행할 때마다 host 가 쌓아둔 로그를 truncate 한다([ADR-0092]).
+///
+/// host 는 데이터 루트당 하나이므로 시작 시 truncate 를 유지한다(rotation 불필요).
+/// 실패하면 stderr-only 로 자연스럽게 폴백한다.
+///
+/// [ADR-0092]: ../../docs/adr/0092-file-log-host-process-only.md
+pub fn enable_host_file_log() {
+    match open_host_log_file() {
+        Ok(file) => {
+            if LOG_FILE.set(Mutex::new(file)).is_err() {
+                tracing::warn!("file logging already enabled; ignoring repeat call");
+            }
         }
-        let (log_filename, file_filter) = if cfg!(debug_assertions) {
-            (
-                "debug-dev.log",
-                EnvFilter::new("debug,wgpu_hal=warn,wgpu_core=warn,naga=warn"),
-            )
-        } else {
-            (
-                "debug.log",
-                EnvFilter::new("warn,wgpu_hal=warn,wgpu_core=warn,naga=warn"),
-            )
-        };
-        let log_path = dir.join(log_filename);
-        if let Ok(file) = fs::File::create(&log_path) {
-            let file_layer = tracing_subscriber::fmt::layer()
-                .with_writer(std::sync::Mutex::new(file))
-                .with_ansi(false)
-                .with_filter(file_filter);
-
-            registry.with(file_layer).init();
-            return;
-        }
+        Err(reason) => tracing::warn!("file logging disabled: {reason}"),
     }
+}
 
-    registry.init();
+/// 로그 파일을 연다(truncate). 실패 사유는 문자열로 올려보내 로그를 호출자 한 곳에서만
+/// 남긴다 — 실패해도 stderr-only 로 도는 것이 정상 폴백이라 에러 타입까진 필요 없다.
+fn open_host_log_file() -> Result<fs::File, String> {
+    let dir = tasty_home().ok_or_else(|| "could not resolve tasty home".to_string())?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("cannot create log dir {}: {e}", dir.display()))?;
+    let path = dir.join(log_file_name());
+    fs::File::create(&path).map_err(|e| format!("cannot open log file {}: {e}", path.display()))
 }
 
 // =============================================================================

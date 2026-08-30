@@ -1,7 +1,8 @@
 //! OS 별 부팅 보정.
 //!
 //! - Windows: `AttachConsole` 로 부모 콘솔에 붙어 stdout 보임 (release only).
-//! - 전 플랫폼: `crash_report::init` 으로 패닉 → 로그 파일 핸들러 등록.
+//! - 전 플랫폼: `crash_report::init` 으로 패닉 → 로그 파일 핸들러 등록 + stderr tracing.
+//! - host 경로 한정: `enable_host_file_log` 로 공유 로그 파일 개방 (CLI 는 열지 않는다).
 //! - macOS: `macos_delegate::store_proxy` 로 NSApplicationDelegate 에 event loop proxy 보관.
 
 #[cfg(feature = "gui")]
@@ -24,9 +25,20 @@ pub(crate) fn attach_windows_console_if_needed() {
     }
 }
 
-/// 패닉 → crash log 파일 핸들러 등록. 전 플랫폼.
+/// 패닉 → crash log 파일 핸들러 등록 + tracing(stderr) 초기화. 전 플랫폼.
+///
+/// 공유 로그 **파일**은 여기서 열지 않는다 — [`enable_host_file_log`] 참고.
 pub(crate) fn init_crash_report() {
     crate::crash_report::init();
+}
+
+/// 공유 로그 파일(`$TASTY_HOME/debug{-dev}.log`)을 열어 파일 tracing 을 켠다.
+///
+/// **host(GUI / headless) 경로에서만** 부른다. CLI 클라이언트도 같은 바이너리라,
+/// 역할 판정 전에 열면 CLI 를 한 번 돌릴 때마다 실행 중인 host 의 로그가 truncate 된다
+/// (`docs/adr/0092-file-log-host-process-only.md`).
+pub(crate) fn enable_host_file_log() {
+    crate::crash_report::enable_host_file_log();
 }
 
 /// macOS NSApplicationDelegate 가 dock click 등에서 본 app 으로 이벤트를 보낼 수 있도록
