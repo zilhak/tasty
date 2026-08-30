@@ -3,3 +3,4 @@
 pub mod click_cursor;
 pub mod double_tap;
 pub mod shortcuts;
+pub mod synthetic;

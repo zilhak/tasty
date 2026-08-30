@@ -122,10 +122,67 @@ Plugin 이 `[[contributes.commands]]` 로 선언한 단축키(`CommandDecl`)는 
   `action` 유무·대상 surface 유무와 무관하게 매칭될 때마다 항상 발사되는
   informational 통지다.
 
+## 합성 키 이벤트 (winit)
+
+winit 은 창이 포커스를 **얻는** 순간 그때 물리적으로 눌려 있던 모든 키에 대해 `Pressed`
+이벤트를, **잃는** 순간 같은 키들에 대해 `Released` 이벤트를 합성해 보낸다
+(`WindowEvent::KeyboardInput { is_synthetic: true, .. }`). X11 과 Windows 에서만 동작하며
+macOS·Wayland 에서는 합성하지 않는다.
+
+**tasty 는 합성 키 이벤트를 사용자 입력으로 취급하지 않고 전부 버린다.** 사용자가 그 창
+안에서 누른 적이 없는 키이기 때문이다. 예: 다른 앱을 `Alt+F4` 로 닫으면 그 앱과 함께
+`F4` 의 keyup 이 배달될 곳을 잃어 OS 키보드 상태에 눌린 채 남고, 이어서 tasty 가 포커스를
+받는 순간 합성 `F4` Pressed 가 들어와 `rename_tab` 바인딩이 저절로 발화한다.
+
+### 차단 지점 — 이벤트 진입부 단 한 곳
+
+판정은 `is_synthetic_key_event`, 게이트는 `App::window_event` 진입부다. shell setup /
+종료 / 부팅 / 모달 / plugin 단축키 가로채기 / View 위임보다 **앞**에 둔다 — 이 분기들은
+전부 조기 return 하는 배타적 경로라, 하나라도 게이트보다 앞서면 그 모드에서만 합성 키가
+새는 부분 회귀가 된다.
+
+지점별로 막지 않는 이유는 유입 경로가 두 축이기 때문이다.
+
+- **직접 해석 경로** — `WindowEvent::KeyboardInput` 을 패턴 매칭해 단축키·PTY·녹화로
+  보내는 곳.
+- **egui feed 경로** — 키 이벤트를 해석하지 않고 `handle_egui_event` 로 통째로 넘기는 곳.
+  `WindowEvent::KeyboardInput` grep 으로 **잡히지 않는다.** View 5 종
+  (`MainView`/`SettingsView`/`PresetView`/`PluginsView`/`QuitView`)이 전부 이 경로를 갖고,
+  `PresetView`·`PluginsView` 는 이 경로**뿐**이다. 합성 `Enter`/`Space` 가 종료 확인
+  창의 버튼을 누르거나 `TextEdit` 에 문자를 주입할 수 있다.
+
+진입부 한 곳에서 버리면 두 축이 동시에 덮이고, View 가 새로 늘어도 자동으로 덮인다.
+배선 위치는 `tests/synthetic_key_event_guard.rs` 가 강제한다.
+
+### 버려도 modifier 상태가 깨지지 않는 이유
+
+양쪽 백엔드 모두 합성 키와 **별개로** `ModifiersChanged` 를 보낸다 — X11 은 포커스 획득
+처리 말미의 `update_mods_from_query`, Windows 는 `gain_active_focus` 의 `update_modifiers`
+가 담당한다. 따라서 합성 modifier Pressed 를 버려도 포커스 획득 직후의 modifier 조합
+단축키는 정상 매칭된다.
+
+### double-tap detector 는 포커스 전환마다 초기화한다
+
+합성 이벤트를 버리면 modifier 의 down/up 짝이 포커스 경계를 넘을 때 완결되지 않는다.
+`Alt+Tab` 으로 빠져나가면 `Alt` 의 press 만 들어오고 짝이 되는 release 는 합성이라
+버려지므로, 그대로 두면 돌아와서 `Alt` 를 떼는 것이 "clean release" 로 오인돼 first tap
+으로 기록되고 다음 실제 탭 한 번에 double-tap 이 오발화한다. `DoubleTapDetector::reset`
+을 `WindowEvent::Focused` 양방향에서 호출한다. `MainView` 와 `SettingsView` 는 **별개
+인스턴스**라 두 곳 모두 배선한다.
+
+### `#[cfg]` 분기를 두지 않는 이유
+
+`is_synthetic` 은 플랫폼 중립 필드고 발현 원인도 winit 의 공통 계약이다. 합성을 하지 않는
+macOS·Wayland 에서는 항상 `false` 로 들어와 동작이 바뀌지 않으므로, OS 별 근본 원인이
+다를 때 요구되는 분기 케이스가 아니다.
+
 ## 코드 위치
 
 - `KeybindingSettings`(바인딩 필드·`format_display`), 캡처/매칭 레이어, 프리셋 기본 바인딩.
 - OS 메뉴 배선: macOS NSMenu / Windows AcceleratorTable.
+- 합성 키 차단: `src/adapters/ui/input/synthetic.rs`(`is_synthetic_key_event`),
+  `src/app/event_handler.rs`(`App::window_event` 진입부 게이트),
+  `src/adapters/ui/input/double_tap.rs`(`DoubleTapDetector::reset`).
 - Plugin 커맨드: `crates/tasty-host-plugin/src/command_registry.rs`(`PluginCommandRegistry`,
   `effective_binding`), `src/plugin_bridge/key_dispatch.rs`(`match_plugin_shortcut`/
   `match_global_shortcut`/`dispatch_plugin_command`), `src/app/plugin_glue/shortcut.rs`

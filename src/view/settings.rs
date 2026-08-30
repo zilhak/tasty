@@ -156,6 +156,11 @@ impl View for SettingsView {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.modifiers = modifiers.state();
             }
+            WindowEvent::Focused(_) => {
+                // MainView 와 **별개 인스턴스**의 detector 라 여기서도 따로 지운다.
+                // 이유는 `DoubleTapDetector::reset` 주석 참조.
+                self.double_tap.reset();
+            }
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
 

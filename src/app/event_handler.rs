@@ -3,6 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
@@ -206,6 +207,22 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // ── 합성 키 이벤트 차단 (모든 창 · 모든 모드 공통, 최상위) ──
+        // winit 은 창이 포커스를 얻/잃는 순간 그 시점에 물리적으로 눌려 있던 모든 키에
+        // 대해 Pressed/Released 를 합성해 보낸다. 사용자가 이 창 안에서 누른 적 없는
+        // 키이므로 단축키·PTY·egui 어디에도 닿아선 안 된다 — 다른 앱을 `Alt+F4` 로 닫은
+        // 직후 포커스를 받으면 눌린 채 남은 `F4` 가 `rename_tab` 으로 발화하던 문제.
+        //
+        // 게이트를 **여기 한 곳**에 두는 이유: 아래 모든 분기(shell setup / 종료 / 부팅 /
+        // 모달 / plugin 단축키 / View 5 종)가 이 함수를 지난다. 특히 View 들은
+        // `KeyboardInput` 을 패턴 매칭하지 않고 `handle_egui_event` 로 통째로 흘려보내는
+        // 경로도 갖고 있어(PresetView·PluginsView 는 그 경로뿐), 개별 지점을 막는
+        // 방식으로는 누락이 생긴다. 진입부에서 한 번 버리면 새 View 가 늘어도 자동으로
+        // 덮인다. 정책: `docs/design/policies/key-mapping.md`.
+        if is_synthetic_key_event(&event) {
+            return;
+        }
+
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             self.handle_shell_setup_window_event(event_loop, event);

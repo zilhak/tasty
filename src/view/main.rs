@@ -432,6 +432,11 @@ impl View for MainView {
             }
             WindowEvent::Focused(focused) => {
                 self.base.focused = focused;
+                // modifier 의 down/up 짝이 포커스 경계를 넘으면 완결되지 않는다 —
+                // 짝이 되는 쪽은 winit 합성 이벤트로 오고 그건 진입부에서 버려진다.
+                // 진행 중인 탭 추적을 지우지 않으면 다음 실제 탭 한 번에 double-tap 이
+                // 오발화한다 (`DoubleTapDetector::reset` 주석 참조).
+                self.double_tap.reset();
                 if !focused {
                     if self.ime_preedit.is_some() {
                         self.flush_ime_preedit();
