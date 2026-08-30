@@ -9,6 +9,24 @@
 3. **egui-mesh pass** — plugin 이 자기 프로세스에서 tessellate 한 mesh 를 surface 영역에 합성 (host chrome 아래 layer). 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md)
 4. **egui pass** — 사이드바·탭바·팝업 등 UI 오버레이
 
+## 렌더는 이벤트 루프 스레드에서 돈다 (제약)
+
+winit `ApplicationHandler` 콜백은 전부 **하나의 스레드**에서 동기 실행되고, GPU 렌더는 그중 `WindowEvent::RedrawRequested` 처리 안에서 돈다. IPC 도 같은 스레드다 — IPC 서버 스레드는 요청을 메인 스레드로 넘기고 응답을 기다린다(`TcpIpcServer::dispatch_and_await` → `AppEvent::IpcReady` → `process_ipc`).
+
+따라서 **GPU 호출 하나가 반환하지 않으면 키·마우스·IPC 가 전부 함께 멎는다.** 이건 렌더만 느려지는 게 아니라 창이 통째로 무응답이 되는 것이고, panic 이 아니므로 crash report 도 남지 않는다.
+
+wgpu 24 기준으로 호출별 상한은 다음과 같다:
+
+| 호출 | 상한 |
+|------|------|
+| `surface.get_current_texture()` | **있음** — wgpu-core 가 1 초(`FRAME_TIMEOUT_MS`)를 걸고 초과 시 `SurfaceError::Timeout` 반환 |
+| `queue.submit(...)` | **없음** |
+| `SurfaceTexture::present()` | **없음** |
+
+상한이 없는 두 호출에는 wgpu 가 취소·타임아웃 API 를 제공하지 않는다. 그래서 tasty 는 이 상황을 *막지* 못하고 **관측만** 한다 — 아래 "진단" 의 stall 워치독. 렌더 스레드 분리를 채택하지 않은 근거와 재검토 조건은 [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md).
+
+`redraw.rs` 의 `SurfaceError` 분기(`Lost`/`Outdated` 재시도 등)는 전부 **호출이 반환됐을 때만** 도는 경로다. 반환하지 않는 상황은 그 분기가 다루지 못한다.
+
 ## 터미널 렌더 = 누적 후 1회 flush, 단일 패스 (필수 모델)
 
 여러 터미널을 *각각 submit* 하지 않는다. 한 프레임의 모든 surface 인스턴스를 Vec 에 **누적**하고, 버퍼에 **한 번** 쓰고, **단일 render pass** 에서 surface 별 scissor + 인스턴스 range 로 그린다.
@@ -97,4 +115,5 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 - `draw_call_count()` / `active_surface_count()` — 프레임의 bg/glyph draw 수, 활성 surface 수.
 - 프레임 타이밍 계측은 `src/gfx/perf.rs` / redraw 경로. `tracing::warn!` 은 임계값 초과 시만.
 - 셀 색이 의심되면 debug 의 `debug.glyph_color`(렌더러가 push 하는 실제 RGBA) — [debug-ipc.md](debug-ipc.md).
+- **이벤트 루프 stall 워치독** (`src/platform/stall_watchdog.rs`, 전 빌드) — winit 콜백이 5 초 안에 반환하지 않으면 `tracing::error!(target: "tasty::stall")` 과 `~/.tasty/crash-reports/hang-<ts>.log` 에 "어느 콜백(`redraw` 등)의 어느 GPU 단계(`acquire`/`submit`/`present`)에서 몇 ms 째 멎었는가"를 남긴다. 같은 stall 은 30 초마다 재보고하되 파일은 stall 당 1 개다. 복구는 하지 않는다. 재현은 debug 전용 `tasty debug gpu-stall --ms N` — 다음 프레임의 `present` 직전을 1 회 블로킹한다([debug-ipc.md](debug-ipc.md)).
 - 리페인트 유발원별 요청 수 / 지연 수 / 실제 present 수는 1 초 창 dump: `TASTY_LOG=tasty::view::repaint=info`(dev 빌드는 `~/.tasty-debug/debug-dev.log` 에 그냥 남는다). 요청이 많아도 실제 렌더가 합쳐졌는지를 이 한 줄로 구분한다.

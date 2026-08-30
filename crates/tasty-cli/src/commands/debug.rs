@@ -35,6 +35,13 @@ pub enum DebugCommands {
     },
     /// Show debug info from the running tasty instance
     Info,
+    /// 다음 프레임의 GPU present 를 인위적으로 블로킹해 이벤트 루프 stall 을 재현한다
+    /// (stall 워치독 검증용 — debug 빌드 전용).
+    GpuStall {
+        /// 블로킹할 시간 (밀리초)
+        #[arg(long, default_value_t = 8000)]
+        ms: u64,
+    },
     /// Enable IME composition mode
     ImeEnable,
     /// Disable IME composition mode and clear preedit

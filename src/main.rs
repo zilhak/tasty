@@ -93,6 +93,8 @@ pub(crate) use platform::jump_list;
 pub(crate) use platform::macos_delegate;
 #[cfg(feature = "gui")]
 pub(crate) use platform::macos_permissions;
+#[cfg(feature = "gui")]
+pub(crate) use platform::stall_watchdog;
 #[cfg(all(
     any(windows, target_os = "macos", target_os = "linux"),
     feature = "gui"

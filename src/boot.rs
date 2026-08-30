@@ -192,6 +192,8 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
         "tasty.startup.post",
         &serde_json::Value::Null,
     );
+    // 이벤트 루프 stall 관측 시작 — 펌프가 멎으면 이 스레드만 살아남아 로그를 남긴다.
+    crate::stall_watchdog::spawn();
     event_loop.run_app(&mut app)?;
     drop_app_with_trace(app);
 

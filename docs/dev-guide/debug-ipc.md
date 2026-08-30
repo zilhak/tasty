@@ -44,6 +44,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |
 | `debug.glyph_color` | `surface_id, row, col, bg_mode?` | GPU 렌더러가 실제로 push 하는 글리프 bg/fg RGBA (renderer 색 해석 검증) |
 | `debug.feed_bytes` | `surface_id, bytes(hex)` 또는 `text` | VTE 바이트를 PTY 우회로 터미널에 직접 주입(파서/렌더 테스트) |
+| `debug.gpu.stall` | `ms` | 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹(1 회). 이벤트 루프 stall 재현 — CLI 는 `tasty debug gpu-stall --ms N` |
 | `debug.inject_mouse` | `surface_id, row, col, button?, event_type?` | SGR mouse(1006) 시퀀스로 마우스 이벤트 주입 † |
 | `debug.inject_key` | `surface_id, bytes(hex)` 또는 `text` | 키 이벤트 주입 † |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |

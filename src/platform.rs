@@ -21,6 +21,8 @@ pub mod power_windows;
 pub mod reveal;
 #[cfg(feature = "gui")]
 pub mod screen_capture;
+#[cfg(feature = "gui")]
+pub mod stall_watchdog;
 #[cfg(all(
     any(windows, target_os = "macos", target_os = "linux"),
     feature = "gui"

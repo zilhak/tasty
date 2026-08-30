@@ -99,6 +99,57 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
     Some(path)
 }
 
+/// 이벤트 루프 stall 리포트를 `~/.tasty/crash-reports/hang-<ts>.log` 로 남기고 경로를 돌려준다.
+///
+/// panic 리포트와 같은 디렉토리를 쓰는 이유: 사용자가 "앱이 멎었다" 를 겪은 뒤 실제로
+/// 들여다보는 곳이 거기다. 행(hang)은 panic 이 아니라 hook 이 발동하지 않으므로, 그
+/// 디렉토리가 비어 있으면 "아무 일도 없었다" 로 오독된다.
+///
+/// 공유 로그(`debug.log`)가 아니라 별도 파일인 이유: 그 로그는 프로세스마다 시작 시
+/// truncate 되므로, 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 증거가 지워진다.
+pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathBuf> {
+    let dir = crash_report_dir()?;
+    fs::create_dir_all(&dir).ok()?;
+
+    let timestamp = format_timestamp(SystemTime::now());
+    let path = dir.join(format!("hang-{timestamp}.log"));
+    let mut file = fs::File::create(&path).ok()?;
+
+    writeln!(file, "=== Tasty Hang Report ===").ok();
+    writeln!(
+        file,
+        "Timestamp: {}",
+        timestamp.replace('T', " ").replace('-', ":")
+    )
+    .ok();
+    writeln!(file, "Version: {}", env!("CARGO_PKG_VERSION")).ok();
+    writeln!(
+        file,
+        "OS: {} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+    .ok();
+    writeln!(file).ok();
+
+    writeln!(file, "=== Stall ===").ok();
+    writeln!(file, "Callback: {site}").ok();
+    writeln!(file, "Render phase: {phase}").ok();
+    writeln!(file, "Stuck for: {stuck_ms} ms").ok();
+    writeln!(file).ok();
+    writeln!(
+        file,
+        "The winit event-loop callback above did not return within the watchdog threshold.\n\
+         While it is blocked, keyboard, mouse and IPC are all unprocessed — the window looks\n\
+         frozen even though the process is alive and no panic occurred.\n\
+         A render phase of `present`/`submit`/`acquire` points at the GPU driver, not at tasty\n\
+         logic: those calls have no application-level timeout and cannot be cancelled."
+    )
+    .ok();
+
+    Some(path)
+}
+
 /// Initialize crash reporting and tracing.
 ///
 /// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.

@@ -5,6 +5,7 @@ use winit::window::WindowId;
 
 use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
+use crate::stall_watchdog::{self, Site};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
 use crate::{App, AppEvent};
@@ -12,6 +13,7 @@ use crate::{App, AppEvent};
 impl ApplicationHandler<AppEvent> for App {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: winit AppEvent 최상위 dispatch — 20여개 variant 대부분이 이미 추출된 핸들러로 1~5줄 위임하는 평면 match, cfg 게이트까지 섞여 있어 더 쪼개면 "이벤트→핸들러" 매치 테이블의 가독성이 오히려 떨어짐
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        let _stall_guard = stall_watchdog::Guard::enter(Site::UserEvent);
         // 종료 상태 머신 진행 중 — 모든 AppEvent 를 버린다. 종료는 되돌릴 수 없고
         // (`begin_shutdown` 은 멱등), 이미 close cascade 로 surface 를 정리한 뒤라
         // 지금 들어오는 이벤트는 대상이 사라진 상태에서 실행될 뿐이다. 부팅 가드처럼
@@ -150,6 +152,7 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let _stall_guard = stall_watchdog::Guard::enter(Site::Resumed);
         // 재진입 가드 — macOS 등은 resumed() 를 재호출할 수 있다. 부팅 상태 머신
         // 진행 중(boot Some)에는 views 가 아직 비어 있으므로 boot 조건이 없으면
         // 창이 중복 생성된다.
@@ -207,6 +210,14 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // GPU 렌더는 `RedrawRequested` 안에서 이 스레드로 돌기 때문에, stall 관측에서
+        // 그 경로만 따로 구분한다 — 어느 콜백이 안 돌아왔는지가 진단의 핵심이다.
+        let _stall_guard =
+            stall_watchdog::Guard::enter(if matches!(event, WindowEvent::RedrawRequested) {
+                Site::Redraw
+            } else {
+                Site::WindowEvent
+            });
         // ── 합성 키 이벤트 차단 (모든 창 · 모든 모드 공통, 최상위) ──
         // winit 은 창이 포커스를 얻/잃는 순간 그 시점에 물리적으로 눌려 있던 모든 키에
         // 대해 Pressed/Released 를 합성해 보낸다. 사용자가 이 창 안에서 누른 적 없는
@@ -292,6 +303,7 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let _stall_guard = stall_watchdog::Guard::enter(Site::AboutToWait);
         // control flow 는 **말미 `sync_timer_control_flow` 1회**로만 정한다. 여기서
         // 기본값을 깔고 뒤에서 덮어쓰면 합성 순서에 따라 데드라인이 유실된다.
         // 아래 shutdown/boot 가드는 조기 return 하는 배타적 경로라 합성 대상이 아니며,

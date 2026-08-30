@@ -18,6 +18,7 @@ use crate::gfx::perf::{FrameSample, PerfAggregator};
 use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
+use crate::stall_watchdog;
 use crate::state::AppState;
 
 pub struct ImePreeditState {
@@ -539,7 +540,9 @@ impl GpuState {
         // 5. GPU render
         let t0 = std::time::Instant::now();
         let regions = state.surface_regions(engine, terminal_rect);
+        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
         let output = self.surface.get_current_texture()?;
+        stall_watchdog::set_phase(stall_watchdog::Phase::Submit);
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -627,6 +630,9 @@ impl GpuState {
         if let Some(path) = self.pending_screenshot.take() {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
+        stall_watchdog::set_phase(stall_watchdog::Phase::Present);
+        // debug 결함 주입 지점 — release 는 no-op.
+        stall_watchdog::take_debug_stall();
         output.present();
         let present_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -770,7 +776,9 @@ impl GpuState {
             pixels_per_point,
         };
 
+        stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
         let output = self.surface.get_current_texture()?;
+        stall_watchdog::set_phase(stall_watchdog::Phase::Submit);
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -780,6 +788,7 @@ impl GpuState {
         if let Some(path) = self.pending_screenshot.take() {
             self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
         }
+        stall_watchdog::set_phase(stall_watchdog::Phase::Present);
         output.present();
         Ok(())
     }

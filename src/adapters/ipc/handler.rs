@@ -1068,6 +1068,19 @@ fn route_engine_handler(
     })
 }
 
+/// `debug.gpu.stall` — 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹하도록 예약한다.
+///
+/// 실제 GPU 드라이버 행을 결정적으로 재현할 수 없으므로, 같은 구조(이벤트 루프 스레드
+/// 안에서 반환하지 않는 GPU 호출)를 인위적으로 만들어 stall 워치독을 검증한다.
+#[cfg(feature = "gui")]
+fn handle_debug_gpu_stall(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let Some(ms) = params.get("ms").and_then(serde_json::Value::as_u64) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'ms' parameter (u64)");
+    };
+    crate::stall_watchdog::arm_debug_stall(ms);
+    JsonRpcResponse::success(id, serde_json::json!({ "armed_ms": ms }))
+}
+
 #[cfg(debug_assertions)]
 fn route_debug_handler(
     state: &mut AppState,
@@ -1080,6 +1093,10 @@ fn route_debug_handler(
         // settings cascade 는 headless 에서도 유효 — gui 게이트 없이 둔다 (ui.state 선례).
         // 핸들러는 handler.rs 에 직접 둔다 (debug 서브모듈은 gui 게이트라 headless 에서 사라짐).
         "debug.settings.apply" => handle_debug_settings_apply(state, engine, id, &request.params),
+        // GPU 결함 주입 — 다음 프레임의 present 를 인위적으로 블로킹해 "이벤트 펌프가
+        // 통째로 멎는다" 는 구조와 stall 워치독 발화를 재현 검증한다. release 미노출.
+        #[cfg(feature = "gui")]
+        "debug.gpu.stall" => handle_debug_gpu_stall(id, &request.params),
         #[cfg(feature = "gui")]
         "debug.cell_info" => debug::handle_debug_cell_info(state, engine, id, &request.params),
         #[cfg(feature = "gui")]

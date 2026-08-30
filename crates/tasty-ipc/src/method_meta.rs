@@ -541,6 +541,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.screen_attrs", local_only()),
     ("debug.glyph_color", local_only()),
     ("debug.feed_bytes", local_only()),
+    // GPU 결함 주입 — 이벤트 루프를 실제로 멎게 만드는 파괴적 표면이라 plugin 미노출.
+    ("debug.gpu.stall", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*

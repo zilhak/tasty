@@ -36,6 +36,7 @@ pub(super) fn debug_command_to_method_params(
             }
         }
         DebugCommands::Info => ("debug.info", serde_json::json!({})),
+        DebugCommands::GpuStall { ms } => ("debug.gpu.stall", serde_json::json!({ "ms": ms })),
         DebugCommands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
         DebugCommands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),
         DebugCommands::ImePreedit { text, cursor } => (
