@@ -1,6 +1,6 @@
 # 크래시 & 에러 진단
 
-tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 모드(release / dev)에 따라 어떤 추가 정보를 어디서 얻는지를 정리한다. 메커니즘은 `src/platform/crash_report.rs`, 부팅 1단계(`boot.rs` → `os::init_n` → `crash_report::init`)에서 설치된다.
+tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 모드(release / dev)에 따라 어떤 추가 정보를 어디서 얻는지를 정리한다. 메커니즘은 `src/platform/crash_report.rs`, 부팅 1단계(`boot.rs` → `os::init_crash_report` → `crash_report::init`)에서 설치된다(공유 로그 **파일**만 host 확정 후 `os::enable_host_file_log` 에서 열린다 — 아래 "파일 로그를 쓰는 프로세스는 host 뿐이다").
 
 ## panic 발생 시 (모든 빌드)
 
@@ -48,16 +48,23 @@ tracing 출력처는 **모든 빌드 모드에서 stderr + 파일**이다. 파�
 | 빌드 | tracing 출력 | 파일 경로 | 파일 필터 |
 |------|--------------|-----------|-----------|
 | **release / dist** | stderr + 파일 | `~/.tasty/debug.log` | `warn,wgpu_hal=warn,wgpu_core=warn,naga=warn` |
-| **dev** | stderr + 파일 | `~/.tasty/debug-dev.log` | `debug,wgpu_hal=warn,wgpu_core=warn,naga=warn` |
+| **dev** | stderr + 파일 | `~/.tasty-debug/debug-dev.log` | `debug,wgpu_hal=warn,wgpu_core=warn,naga=warn` |
 
-release 파일 필터가 `warn` 이상으로 제한된 이유는 상시 전체 debug 로깅에 따른 디스크 사용량을 피하면서도, attach disconnect 같은 진단 가치가 있는 로그는 release 실사용자 환경에서도 사후 확인 가능하게 하기 위함이다(dist 도 동일). 두 파일 모두 ANSI 없음, **매 실행 시 새로 truncate**(rotation 없음). 디렉토리 생성/파일 생성 실패 시 stderr-only 로 자동 폴백.
+release 파일 필터가 `warn` 이상으로 제한된 이유는 상시 전체 debug 로깅에 따른 디스크 사용량을 피하면서도, attach disconnect 같은 진단 가치가 있는 로그는 release 실사용자 환경에서도 사후 확인 가능하게 하기 위함이다(dist 도 동일). 두 파일 모두 ANSI 없음, **host 프로세스가 뜰 때마다 새로 truncate**(rotation 없음). 디렉토리 생성/파일 생성 실패 시 stderr-only 로 자동 폴백.
+
+### 파일 로그를 쓰는 프로세스는 host 뿐이다
+
+`tasty` 바이너리는 GUI(host)와 CLI 클라이언트를 겸한다. **파일 로그는 host(GUI / headless)만 연다** — `tasty list info` 같은 CLI 서브커맨드는 stderr 로만 로깅하고 공유 로그 파일을 건드리지 않는다. 그래서 에이전트가 CLI 를 아무리 자주 호출해도 실행 중인 host 의 로그는 그대로 남는다. 근거·대안은 [ADR-0092](../adr/0092-file-log-host-process-only.md).
+
+- **CLI 프로세스의 진단**은 stderr(대화형 실패는 사용자가 즉시 본다)와, agent hook 전달 실패 전용 append-only 기록 `$TASTY_HOME/hook-failures.log` 로 한다. 공유 로그에서 찾지 않는다.
+- 파일에 남는 host 로그는 여전히 **직전 host 실행분**이다(host 가 뜰 때 truncate). tasty 를 재시작하면 이전 실행의 로그는 사라지므로, 재시작을 넘겨 보존해야 하는 증거는 전용 파일(`crash-*.log` / `hang-*.log` / `hook-failures.log`)로 남긴다.
 
 ```bash
-cargo run                          # dev
-cat ~/.tasty/debug-dev.log         # 직전 실행의 전체 debug 로그
+cargo run                          # dev (host)
+cat ~/.tasty-debug/debug-dev.log   # 직전 host 실행의 전체 debug 로그
 
 cargo build --release && ./target/release/tasty
-cat ~/.tasty/debug.log             # 직전 실행의 warn 이상 로그
+cat ~/.tasty/debug.log             # 직전 host 실행의 warn 이상 로그
 ```
 
 ## 에러 루프 자동 감지 (dev 전용)
@@ -104,7 +111,7 @@ Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
 ```
 
 - `Render phase` 가 `acquire`/`submit`/`present` 면 tasty 로직이 아니라 **GPU 드라이버** 쪽이다(그 호출들에는 애플리케이션 레벨 타임아웃이 없고 취소도 불가능하다). `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
-- **파일은 stall 당 1 개**이고 `Stuck for` 는 최초 탐지 시점(≈5~6 초)의 값이다. 총 지속 시간이 실린 30 초 주기 재보고는 `tracing` 으로만 나가는데(`target: "tasty::stall"`), 그 로그 파일은 프로세스 시작마다 truncate 되므로 행 중에 `tasty` CLI 를 한 번이라도 돌리면 사라진다. 즉 **파일로 남는 증거는 "어디서 멎었나" 까지이고 "얼마나 오래 멎었나" 는 아니다.**
+- **파일은 stall 당 1 개**이고 `Stuck for` 는 최초 탐지 시점(≈5~6 초)의 값이다. 총 지속 시간이 실린 30 초 주기 재보고는 `tracing` 으로만 나가는데(`target: "tasty::stall"`), 그 로그 파일은 host 가 뜰 때마다 truncate 되므로 행을 겪고 강제 종료 후 다시 띄우면 사라진다. 즉 **재시작을 넘겨 남는 증거는 "어디서 멎었나" 까지이고 "얼마나 오래 멎었나" 는 아니다**(행이 진행되는 동안에는 파일에서 읽을 수 있다 — CLI 실행이 지우지는 않는다).
 - **워치독은 복구하지 않는다.** 기록만 남기며 프로세스를 종료하지도, 응답성을 되돌리지도 않는다 — 사용자는 여전히 강제 종료해야 한다. 근거·대안(렌더 스레드 분리 / 자동 종료)의 기각 사유는 [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md).
 - native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 보고 대상에서 빠진다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
 - debug 빌드에서는 `tasty debug gpu-stall --ms N` 으로 재현할 수 있다(다음 프레임의 `present` 직전을 1 회 블로킹).
@@ -134,12 +141,14 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 |-------------|------|------|
 | `~/.tasty/crash-reports/crash-*.log` | 모두 | panic 시 자동(버전·OS·위치·메시지·backtrace) |
 | `~/.tasty/crash-reports/hang-*.log` | 모두 | 이벤트 루프 stall 시 자동(어느 콜백·어느 GPU 단계에서 멎었나). stall 당 1 개, 복구는 하지 않음 |
-| `~/.tasty/debug-dev.log` | dev 만 | 전체 debug tracing(매 실행 truncate) |
-| `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(매 실행 truncate) |
-| stderr | 모두 | panic 메시지 + backtrace, `TASTY_LOG` 레벨의 tracing |
+| `~/.tasty-debug/debug-dev.log` | dev 만 | 전체 debug tracing(host 프로세스 전용, host 시작 시 truncate) |
+| `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(host 프로세스 전용, host 시작 시 truncate) |
+| `~/.tasty/hook-failures.log` | 모두 | agent hook 전달 실패(CLI 프로세스가 tasty 에 닿지 못한 기록). append-only + 256KB 회전 |
+| stderr | 모두 | panic 메시지 + backtrace, `TASTY_LOG` 레벨의 tracing (CLI 프로세스는 이쪽만) |
 
 ## 관련
 
+- [ADR-0092](../adr/0092-file-log-host-process-only.md) — 파일 로그를 host 프로세스로 한정한 결정
 - [build.md](build.md) — release(`strip = true`) / dev / dist 프로필
 - [error-handling.md](error-handling.md) — `Result` 처리·로그 레벨 정책 (애초에 crash 를 줄이는 쪽)
 - [self-verification.md](self-verification.md) · [e2e-tests.md](e2e-tests.md) — 재현·검증

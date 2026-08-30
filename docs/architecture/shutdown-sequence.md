@@ -196,9 +196,9 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   **절대값이 아니라 델타로만** 의미가 있다.
 - `shutdown_total` ≥ S1+S2+S3+S4 이며, 차이가 크면 계측이 덮지 않은 구간이 있다는
   뜻이다. 마찬가지로 `shutdown_total_with_drop` − `shutdown_total` = S5 다.
-- **마지막 줄은 유실되지 않는다.** file layer 는 `Mutex<File>` 을 writer 로 직접 쓰고
-  (`src/platform/crash_report.rs`) BufWriter 를 끼우지 않아, 프로세스가 곧 죽는
-  Drop tail 구간에서도 이벤트마다 write 가 완료된다.
+- **마지막 줄은 유실되지 않는다.** file layer 는 host 프로세스가 연 `Mutex<File>` 을
+  writer 로 직접 쓰고 (`src/platform/crash_report.rs`) BufWriter 를 끼우지 않아,
+  프로세스가 곧 죽는 Drop tail 구간에서도 이벤트마다 write 가 완료된다.
 
 ## 실측 기준치
 
