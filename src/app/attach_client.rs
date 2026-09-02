@@ -749,40 +749,46 @@ impl App {
     /// 대기" 의미가 없어(사용자 스스로 걷어낸 것) 게이팅 대상이 아니다.
     fn cleanup_mirror_workspace(&mut self, sess: &AttachClientSession, from_disconnect: bool) {
         log_mirror_cleanup(sess, from_disconnect);
+        // 창이 있는 engine(MainView) → parked engine 순으로 찾는다. parked 도
+        // 순회하는 이유: 마지막 창을 닫거나(macOS 는 최소화도) engine 이 `parked_states`
+        // 로 옮겨가도 mirror 워크스페이스와 그 터미널·busy·mesh 엔트리는 그 engine 안에
+        // 그대로 살아 있다. main 만 훑으면 정리가 통째로 스킵돼 나중에 그 engine 이
+        // 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
+        // 이 순회 범위는 `mirror_workspace_engine_alive`(고아 판정)과 **같아야** 한다 —
+        // 판정이 "살아 있다"고 본 곳을 정리가 못 찾으면 잔류가 생긴다.
+        let mut removed = false;
         for main in self.main_windows_iter_mut() {
-            let engine = &mut main.core_state;
-            let Some(pos) = engine
-                .workspaces
-                .iter()
-                .position(|ws| ws.id == sess.local_workspace)
-            else {
-                continue;
-            };
-            for &local in sess.remote_to_local.values() {
-                engine.terminals.remove(local);
-                engine.forget_mirror_surface_busy(local);
-                engine.attach_mesh_frames.remove(local);
+            if remove_mirror_workspace_from_engine(
+                &mut main.core_state,
+                &mut main.state,
+                sess.local_workspace,
+                &sess.remote_to_local,
+            ) {
+                // 원격발 disconnect(EOF/force-detach/heartbeat TTL/ write 실패 승격)로 mirror
+                // 가 정리될 때만 사용자에게 통지한다. 사용자가 mirror ws 를 직접
+                // 닫은 경로(from_disconnect=false)는 스스로 걷어낸 것이라 toast 하지 않는다.
+                if from_disconnect {
+                    main.state.toasts.push(
+                        crate::i18n::t("attach.toast.mirror_disconnected").to_string(),
+                        crate::adapters::ui::ToastKind::Warning,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+                main.mark_dirty();
+                removed = true;
+                break;
             }
-            engine.workspaces.remove(pos);
-            // active_workspace 인덱스 클램프(제거로 out-of-range 방지).
-            let len = engine.workspaces.len().max(1);
-            if main.state.active_workspace >= len {
-                main.state.active_workspace = len - 1;
-            } else if pos < main.state.active_workspace {
-                main.state.active_workspace -= 1;
-            }
-            // 원격발 disconnect(EOF/force-detach/heartbeat TTL/ write 실패 승격)로 mirror
-            // 가 정리될 때만 사용자에게 통지한다. 사용자가 mirror ws 를 직접
-            // 닫은 경로(from_disconnect=false)는 스스로 걷어낸 것이라 toast 하지 않는다.
-            if from_disconnect {
-                main.state.toasts.push(
-                    crate::i18n::t("attach.toast.mirror_disconnected").to_string(),
-                    crate::adapters::ui::ToastKind::Warning,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-            }
-            main.mark_dirty();
-            break;
+        }
+        if !removed {
+            // parked engine 에는 창이 없어 toast 를 띄울 표면이 없다. 토스트는 수명이
+            // wall-clock 기준이라 창 복원 시점엔 이미 만료돼 보이지도 않으므로 쌓지
+            // 않는다(`mark_dirty` 도 대상 창이 없어 불필요) — 그래서 main 루프와 달리
+            // 순회 전체를 순수 헬퍼로 뺄 수 있다.
+            remove_mirror_workspace_from_parked(
+                &mut self.parked_states,
+                sess.local_workspace,
+                &sess.remote_to_local,
+            );
         }
         // 원격발 disconnect 로 mirror 가 사라지면, 그 순간 진행 중이던
         // git-viewer 원격 요청은 응답이 영영 오지 않아 popup 이 "Loading…" 에 무한정
@@ -819,24 +825,30 @@ impl App {
     /// (context menu / 단축키 `close_workspace`) 로컬 워크스페이스는 즉시 사라지지만
     /// 그 워크스페이스를 mirror 하던 attach 세션은 남는다. 세션 소켓이 열린 채라
     /// 원격에 `Detach` 가 전달되지 않고 원격의 hard workspace 점유가 해제되지 않아
-    /// 재연결 시 "사용 중"으로 남는다. 세션의 `local_workspace` 가 어느 창에도 없으면
-    /// 고아로 보고 `cleanup_mirror_workspace` 로 정리한다 — `Detach` 통지 → 원격이
-    /// `Disconnected` 로 점유 해제 + anchor 게이트 해제 + 터널 kill. disconnected
-    /// (EOF/force-detach) 정리와 동형이되, 트리거가 **로컬 사용자 close** 인 경로다.
+    /// 재연결 시 "사용 중"으로 남는다. 세션의 `local_workspace` 를 들고 있는 engine 이
+    /// **하나도 살아 있지 않으면**(`mirror_workspace_engine_alive`) 고아로 보고
+    /// `cleanup_mirror_workspace` 로 정리한다 — `Detach` 통지 → 원격이 `Disconnected`
+    /// 로 점유 해제 + anchor 게이트 해제 + 터널 kill. disconnected (EOF/force-detach)
+    /// 정리와 동형이되, 트리거가 **로컬 사용자 close** 인 경로다.
     /// 세션 push 는 항상 mirror workspace 생성(같은 동기 함수) 뒤라 attach 셋업 중
     /// false-positive 고아는 발생하지 않는다.
+    ///
+    /// 판정 기준은 "창이 있는가"가 아니라 "engine 이 살아 있는가"다 — 창이 하나도 없는
+    /// parked 상태(마지막 창 닫기 / macOS 최소화)는 engine 이 `parked_states` 에 그대로
+    /// 살아 있으므로 고아가 아니다. 창 유무로 판정하면 사용자가 창을 최소화했을 뿐인데
+    /// 원격 attach 점유가 조용히 풀린다.
     pub(crate) fn detach_orphaned_mirror_sessions(&mut self) {
         if self.attach_client_sessions.is_empty() {
             return;
         }
         // (idx, local_workspace) 를 먼저 수집한 뒤 존재 여부를 조회 — iter 대여를
-        // 들고 find_main_with_workspace(&self) 를 부르지 않도록 분리.
+        // 들고 mirror_workspace_engine_alive(&self) 를 부르지 않도록 분리.
         let orphaned: Vec<usize> = self
             .attach_client_sessions
             .iter()
             .enumerate()
             .map(|(idx, s)| (idx, s.local_workspace))
-            .filter(|&(_, ws)| self.find_main_with_workspace(ws).is_none())
+            .filter(|&(_, ws)| !self.mirror_workspace_engine_alive(ws))
             .map(|(idx, _)| idx)
             .collect();
         for &idx in orphaned.iter().rev() {
@@ -1299,6 +1311,64 @@ fn attach_handshake(
     let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
     let write_half = conn.try_clone_writer()?;
     Ok((conn, client_id, write_half, name, surfaces, tree))
+}
+
+/// 한 engine 에서 mirror 워크스페이스의 흔적을 통째로 걷어낸다 — mirror 터미널,
+/// mirror busy 엔트리, mesh 프레임 캐시, 그리고 워크스페이스 행. 워크스페이스를
+/// 제거했으면 짝인 `AppState.active_workspace` 인덱스도 클램프한다(제거로
+/// out-of-range 가 되는 것을 막는다).
+///
+/// 이 engine 이 그 워크스페이스를 들고 있지 않으면 아무것도 하지 않고 `false`.
+/// `cleanup_mirror_workspace` 가 창 있는 engine 과 parked engine 양쪽에 **같은**
+/// 정리를 적용하기 위해 쓰는 공용 본문이라, 소켓을 들고 있는 `AttachClientSession`
+/// 의존 없이 단위 테스트할 수 있도록 원시 값만 받는다.
+fn remove_mirror_workspace_from_engine(
+    engine: &mut crate::core::CoreState,
+    state: &mut crate::state::AppState,
+    local_workspace: u32,
+    remote_to_local: &HashMap<u32, u32>,
+) -> bool {
+    let Some(pos) = engine
+        .workspaces
+        .iter()
+        .position(|ws| ws.id == local_workspace)
+    else {
+        return false;
+    };
+    for &local in remote_to_local.values() {
+        engine.terminals.remove(local);
+        engine.forget_mirror_surface_busy(local);
+        engine.attach_mesh_frames.remove(local);
+    }
+    engine.workspaces.remove(pos);
+    // active_workspace 인덱스 클램프(제거로 out-of-range 방지).
+    let len = engine.workspaces.len().max(1);
+    if state.active_workspace >= len {
+        state.active_workspace = len - 1;
+    } else if pos < state.active_workspace {
+        state.active_workspace -= 1;
+    }
+    true
+}
+
+/// `cleanup_mirror_workspace` 의 **parked 순회** — `App.parked_states` 를 앞에서부터
+/// 훑어 그 mirror 워크스페이스를 들고 있는 첫 engine 에서 정리를 수행하고 `true`.
+/// 어느 parked engine 에도 없으면 `false`(아무것도 건드리지 않는다).
+///
+/// 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫 항목에서 멈추면 안 된다.
+/// `App`(GUI 의존) 없이 `parked_states` 와 같은 타입을 그대로 받아, 이 순회 자체가
+/// 단위 테스트로 덮이게 한다.
+fn remove_mirror_workspace_from_parked(
+    parked: &mut [(crate::state::AppState, crate::core::CoreState)],
+    local_workspace: u32,
+    remote_to_local: &HashMap<u32, u32>,
+) -> bool {
+    for (state, engine) in parked.iter_mut() {
+        if remove_mirror_workspace_from_engine(engine, state, local_workspace, remote_to_local) {
+            return true;
+        }
+    }
+    false
 }
 
 /// `cleanup_mirror_workspace` 진입 시 세션 식별 정보를 로깅한다 — anchor 없는
@@ -3007,6 +3077,164 @@ mod tests {
     use super::*;
     use crate::core::state::IdGenerator;
     use crate::ipc::stream::SplitAxis;
+
+    /// 창이 없는(parked) engine 이든 창이 있는 engine 이든, mirror 워크스페이스
+    /// 정리는 워크스페이스 행 하나만 지우는 게 아니라 그 세션이 만든 mirror
+    /// 터미널·mirror busy 엔트리·mesh 프레임 캐시를 **함께** 걷어내야 한다.
+    /// `cleanup_mirror_workspace` 가 main/parked 양쪽에 그대로 쓰는 공용 본문이라
+    /// 이 함수만 검증하면 두 경로가 같이 커버된다.
+    #[test]
+    fn remove_mirror_workspace_clears_terminal_busy_and_mesh() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let ws_id = 9_000u32;
+        let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
+        let remote_surface = 42u32;
+
+        let mut mirror_ws = Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            pane_id,
+            tab_id,
+            local_surface,
+        );
+        mirror_ws.mirror = true;
+        engine.workspaces.push(mirror_ws);
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        engine.set_mirror_surface_busy(local_surface, true);
+        engine
+            .attach_mesh_frames
+            .update(local_surface, vec![1, 2, 3], 0, 0, true);
+        // mirror 워크스페이스가 활성인 상태에서 정리 → 인덱스 클램프까지 확인.
+        state.active_workspace = engine.workspaces.len() - 1;
+
+        let remote_to_local = HashMap::from([(remote_surface, local_surface)]);
+        assert!(remove_mirror_workspace_from_engine(
+            &mut engine,
+            &mut state,
+            ws_id,
+            &remote_to_local
+        ));
+
+        assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
+        assert!(
+            !engine.terminals.contains(local_surface),
+            "mirror 터미널 제거"
+        );
+        assert!(
+            !engine.is_surface_busy(local_surface),
+            "mirror busy 엔트리 제거"
+        );
+        assert!(
+            engine.attach_mesh_frames.get(local_surface).is_none(),
+            "mesh 프레임 캐시 제거"
+        );
+        assert_eq!(
+            state.active_workspace,
+            engine.workspaces.len() - 1,
+            "제거로 out-of-range 가 된 active_workspace 클램프"
+        );
+    }
+
+    /// 그 워크스페이스를 들고 있지 않은 engine 은 건드리지 않는다 — main → parked
+    /// 순회에서 매칭되지 않은 engine 의 터미널을 잘못 지우면 안 된다.
+    #[test]
+    fn remove_mirror_workspace_leaves_unrelated_engine_untouched() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let local_surface = 9_003u32;
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        let before = engine.workspaces.len();
+
+        let remote_to_local = HashMap::from([(42u32, local_surface)]);
+        assert!(!remove_mirror_workspace_from_engine(
+            &mut engine,
+            &mut state,
+            9_000,
+            &remote_to_local
+        ));
+        assert_eq!(engine.workspaces.len(), before);
+        assert!(engine.terminals.contains(local_surface));
+    }
+
+    /// `parked_states` 순회 자체의 회귀 가드 — mirror 워크스페이스를 들고 있는
+    /// parked engine 이 **첫 항목이 아니어도** 찾아 정리해야 하고, 무관한 parked
+    /// engine 은 건드리지 않아야 한다. 창을 여럿 닫으면 parked engine 이 여럿 쌓인다.
+    #[test]
+    fn cleanup_scans_all_parked_engines_for_the_mirror_workspace() {
+        let ws_id = 9_000u32;
+        let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
+        let remote_to_local = HashMap::from([(42u32, local_surface)]);
+
+        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
+            (0..2).map(|_| crate::state::tests::test_state()).collect();
+        let untouched_ws_count = parked[0].1.workspaces.len();
+
+        // mirror 는 **두 번째** parked engine 에만 심는다.
+        let mut mirror_ws = Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            pane_id,
+            tab_id,
+            local_surface,
+        );
+        mirror_ws.mirror = true;
+        {
+            let (state, engine) = &mut parked[1];
+            engine.workspaces.push(mirror_ws);
+            engine
+                .terminals
+                .insert(local_surface, Terminal::new_detached(80, 24));
+            engine.set_mirror_surface_busy(local_surface, true);
+            engine
+                .attach_mesh_frames
+                .update(local_surface, vec![1, 2, 3], 0, 0, true);
+            state.active_workspace = engine.workspaces.len() - 1;
+        }
+
+        assert!(remove_mirror_workspace_from_parked(
+            &mut parked,
+            ws_id,
+            &remote_to_local
+        ));
+
+        let (state, engine) = &parked[1];
+        assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
+        assert!(
+            !engine.terminals.contains(local_surface),
+            "mirror 터미널 제거"
+        );
+        assert!(
+            !engine.is_surface_busy(local_surface),
+            "mirror busy 엔트리 제거"
+        );
+        assert!(
+            engine.attach_mesh_frames.get(local_surface).is_none(),
+            "mesh 프레임 캐시 제거"
+        );
+        assert_eq!(state.active_workspace, engine.workspaces.len() - 1);
+        assert_eq!(
+            parked[0].1.workspaces.len(),
+            untouched_ws_count,
+            "무관한 parked engine 은 건드리지 않는다"
+        );
+    }
+
+    /// 어느 parked engine 에도 그 워크스페이스가 없으면 `false` — 호출부가 창 있는
+    /// engine 에서 이미 정리했거나(2차 순회 불필요) 사용자가 직접 닫은 경우다.
+    #[test]
+    fn cleanup_parked_scan_reports_false_when_absent() {
+        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
+            (0..2).map(|_| crate::state::tests::test_state()).collect();
+        let remote_to_local = HashMap::from([(42u32, 9_003u32)]);
+        assert!(!remove_mirror_workspace_from_parked(
+            &mut parked,
+            9_000,
+            &remote_to_local
+        ));
+    }
 
     /// (06) bulk 청킹/시퀀스/헤더 인코딩 라운드트립: 각 프레임이 올바른
     /// transfer_id·seq 를 달고, 파트를 순서대로 이으면 원본과 바이트 동일해야 한다.

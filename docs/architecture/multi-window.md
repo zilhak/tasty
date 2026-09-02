@@ -50,6 +50,8 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 파킹은 engine 을 살려 두는 것이므로 아래 레이아웃 슬롯 점유도 함께 유지된다 — 창은 없지만 슬롯은 여전히 그 engine 것이다.
 
+**"engine 이 살아 있는가"를 묻는 판정은 `views` 와 `parked_states` 를 함께 봐야 한다.** 창 유무로 대신 판정하면 파킹이 곧 소멸로 오인된다. 원격 attach 세션의 고아 판정이 그 사례다 — mirror 워크스페이스를 들고 있는 engine 이 parked 라는 이유로 세션을 끊으면 사용자가 창을 최소화했을 뿐인데 원격 점유가 풀린다([remote-attach — 창 없는 상태(parked)에서의 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)).
+
 ## 레이아웃 슬롯
 
 창 ↔ engine ↔ **레이아웃 슬롯**은 1:1 이다. 각 `CoreState` 는 자기 슬롯 번호(`layout_slot`)를 들고, 자기 슬롯 파일에만 저장한다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.

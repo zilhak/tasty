@@ -286,7 +286,7 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
   `cleanup_mirror_workspace(sess, from_disconnect=true)`)과
   `detach_orphaned_mirror_sessions`(사용자가 mirror ws 자체를 닫은 고아 세션 정리,
   `from_disconnect=false`)는 서로 다른 세션 식별 기준(전자는 `disconnected` 플래그, 후자는
-  `local_workspace` 가 어느 창에도 없음)으로 동작하고, 둘 다 단일 스레드 메인루프에서
+  `local_workspace` 를 들고 있는 engine 이 창 있는 쪽·parked 쪽 어디에도 없음)으로 동작하고, 둘 다 단일 스레드 메인루프에서
   순차 실행돼(레이스 없음) 겹치는 세션이 있어도 먼저 처리한 쪽이 세션을 vec 에서 제거해
   뒤쪽은 자연히 skip 한다. `from_disconnect` 플래그가 두 경로를 구분해 사용자가 mirror ws 를
   직접 닫은 경우는 `auto_attach_pending_reactivation`/`auto_attach_reconnect` 에 들어가지
@@ -341,8 +341,8 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결에 맡긴다.
   - **anchor 없는 세션(임시 mirror, IPC `remote.attach` 등)**: 기존과 동일하게 세션 제거 + `cleanup_mirror_workspace(sess, from_disconnect=true)`.
   - 이미 `Reconnecting` 상태인 세션(재연결 시도 자체가 실패해 다시 disconnected 로 관측되는 경우)은 이 분기에 다시 들어오지 않는다 — `disconnected && state == Connected` 조건이라 진입 시 이미 걸러진다.
-- **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). 이는 세션이 `Connected`/`Reconnecting` 어느 쪽이어도 동일하다. `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 존재 여부(`find_main_with_workspace`)를 확인해, 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
-- **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널 제거(이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발, anchor 없는 세션 한정)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 그 항목과 `auto_attach_reconnect` 스케줄 모두 명시적으로 제거해 이미 걷어낸 세션에 대한 재연결 시도를 남기지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
+- **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). 이는 세션이 `Connected`/`Reconnecting` 어느 쪽이어도 동일하다. `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 를 들고 있는 engine 이 살아 있는지(`mirror_workspace_engine_alive`)를 확인해, 하나도 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 판정 대상은 **창 있는 engine + parked engine** 이다 — 창이 하나도 없는 parked 상태(마지막 창 닫기 / macOS 최소화)에서도 engine 과 mirror 워크스페이스는 살아 있으므로 고아가 아니다(→ [remote-attach 기능 문서 "창 없는 상태(parked)에서의 세션 수명"](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)). 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
+- **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널·mirror busy 엔트리·mesh 프레임 캐시 제거(창 있는 engine → parked engine 순으로 찾는다. 고아 판정과 순회 범위가 같아야 잔류가 없다. 이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발, anchor 없는 세션 한정)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 그 항목과 `auto_attach_reconnect` 스케줄 모두 명시적으로 제거해 이미 걷어낸 세션에 대한 재연결 시도를 남기지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
 
 ## force-detach
 

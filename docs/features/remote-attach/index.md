@@ -153,6 +153,15 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 원격 attach 로 생긴 mirror workspace(`Workspace.mirror`)는 **원격 점유가 살아있는 세션 동안만** 유효하다. 슬롯 파일에 저장하면 재시작 시 원격 없는 **죽은 일반 workspace** 로 복원되므로, `SavedLayout::capture`(`src/core/layout_persistence/capture.rs`)가 캡처 순회에서 mirror workspace 를 **제외**하고 `active_workspace` 인덱스도 필터 후 위치로 remap 한다(자동 attach mirror·GUI picker mirror 공통). 팝업 세션 상태(선택 프로필/조회 결과/선택 행/생성 워커)도 egui temp 메모리(비영속)라 tasty 종료 시 함께 사라진다.
 
+### 창 없는 상태(parked)에서의 세션 수명
+
+attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `parked_states` 에 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0087](../../adr/0087-layout-slot-occupancy-model.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
+
+- **parking 만으로는 세션이 끊기지 않는다.** 고아 판정(`detach_orphaned_mirror_sessions`)이 묻는 것은 "창이 있는가"가 아니라 **"그 mirror 워크스페이스를 들고 있는 engine 이 살아 있는가"** 다 — 창 있는 engine 과 parked engine 을 함께 본다. 창 유무로 판정하면 사용자가 창을 최소화했을 뿐인데 원격에 `Detach` 가 나가 점유가 조용히 풀린다.
+- **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.
+- **정리는 parked engine 에도 동일하게 적용된다.** mirror 워크스페이스 행뿐 아니라 mirror 터미널·mirror busy 엔트리·mesh 프레임 캐시를 함께 걷어내고 `active_workspace` 인덱스를 클램프한다. 판정과 정리의 순회 범위는 **같아야** 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면, 그 engine 이 나중에 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
+- parked engine 에는 창이 없으므로 정리 시 toast 를 쌓지 않는다(토스트 수명이 wall-clock 기준이라 창 복원 시점엔 이미 만료된다).
+
 ## 인터페이스
 
 - **AI Agent / 원격 (CLI)**:

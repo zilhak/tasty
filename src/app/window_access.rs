@@ -130,6 +130,41 @@ impl App {
         None
     }
 
+    /// mirror 워크스페이스를 들고 있는 engine 이 아직 살아 있는가 — attach 세션의
+    /// **고아 판정 전용** 술어(`detach_orphaned_mirror_sessions`).
+    ///
+    /// `find_main_with_workspace` 를 쓰지 않는 이유: 그 헬퍼는 *창(WindowId)* 을
+    /// 찾는 것이 본질이라 `self.view.views` 만 본다. 하지만 마지막 창을 닫거나
+    /// (macOS 는 최소화도) engine 은 사라지지 않고 `parked_states` 로 옮겨가 그대로
+    /// 살아 있다(ADR-0087 — parked engine 은 레이아웃 슬롯 점유를 유지한다). 창
+    /// 유무로 고아를 판정하면 사용자가 창을 최소화했을 뿐인데 원격 attach 점유가
+    /// 조용히 풀린다. 여기서 묻는 것은 "창이 있는가"가 아니라 "그 워크스페이스를
+    /// 들고 있는 engine 이 살아 있는가"다.
+    ///
+    /// 순회 범위는 `attach_client::cleanup_mirror_workspace` 와 **같아야** 한다 —
+    /// 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생긴다.
+    ///
+    /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
+    /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로
+    /// 머무는 곳)까지 보지만, 여기서는 보지 않는다. 이유는 두 가지다 — ① mirror
+    /// 워크스페이스는 `attach_client::start_gui_attach` 가 `focused_window_mut()` 의
+    /// engine 에만 push 하므로 그 임시 engine 에는 애초에 들어갈 수 없다(= 지금 이
+    /// 판정으로 도달 가능한 상태가 아니다). ② 그 자리에는 짝이 되는 `AppState` 가
+    /// 없어 정리 쪽의 `active_workspace` 클램프를 대칭으로 맞출 수 없다. 판정과 정리의
+    /// 순회 범위는 같아야 하므로 양쪽에서 함께 뺀다. mirror 워크스페이스가 그 임시
+    /// engine 에도 만들어질 수 있게 바뀐다면 이 제외와 정리 쪽 순회를 함께 손봐야 한다.
+    pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
+        any_engine_has_workspace(
+            self.view
+                .views
+                .values()
+                .filter_map(|w| w.as_main())
+                .map(|m| &m.core_state),
+            &self.parked_states,
+            workspace_id,
+        )
+    }
+
     /// Pane 을 가진 MainView 의 WindowId 를 반환.
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.views {
@@ -194,6 +229,23 @@ fn find_workspace_by_name<'a>(
             "workspace name '{target}' matches {n} windows, use --surface/--workspace-id instead"
         )),
     }
+}
+
+/// `mirror_workspace_engine_alive` 의 순수 본문 — 창 있는 engine(`main`)과 창 없는
+/// parked engine(`parked`) 중 어느 하나라도 그 워크스페이스를 들고 있으면 `true`.
+/// 두 컬렉션을 별도 인자로 받는 이유는 "parked 도 본다"는 것이 이 술어의 요점이라
+/// 단위 테스트에서 두 축을 독립적으로 세울 수 있어야 하기 때문이다.
+///
+/// `parked` 는 `App.parked_states` 와 **같은 타입**(`&[(AppState, CoreState)]`)으로
+/// 받는다 — 호출부가 `.map(|(_, e)| e)` 같은 어댑터를 끼우지 않고 필드를 그대로
+/// 넘기므로, 이 함수를 검증하는 테스트가 실제 배선까지 함께 덮는다.
+fn any_engine_has_workspace<'a>(
+    main: impl Iterator<Item = &'a crate::core::CoreState>,
+    parked: &'a [(crate::state::AppState, crate::core::CoreState)],
+    workspace_id: u32,
+) -> bool {
+    main.chain(parked.iter().map(|(_, e)| e))
+        .any(|e| e.has_workspace(workspace_id))
 }
 
 /// `claim_free_layout_slot` 의 순수 본문 — 디스크에 실제로 존재하는 슬롯 파일
@@ -285,6 +337,67 @@ mod tests {
             find_workspace_by_name([(w1, &e1)].into_iter(), "nonexistent"),
             Ok(None)
         );
+    }
+
+    /// `App.parked_states` 와 같은 모양의 parked 목록을 만든다 — 판정 헬퍼가 실제로
+    /// 받는 타입 그대로 넘겨야 배선까지 함께 검증된다.
+    fn parked(names: &[&str]) -> Vec<(crate::state::AppState, crate::core::CoreState)> {
+        names
+            .iter()
+            .map(|name| {
+                let (state, mut engine) = crate::state::tests::test_state();
+                engine.workspaces[0].name = (*name).to_string();
+                (state, engine)
+            })
+            .collect()
+    }
+
+    /// 워크스페이스가 **창 있는** engine 에 있으면 고아가 아니다(기존 동작 회귀).
+    #[test]
+    fn workspace_in_windowed_engine_is_not_orphaned() {
+        let windowed = engine_with_workspace_name("mirror");
+        let ws = windowed.workspaces[0].id;
+        assert!(any_engine_has_workspace([&windowed].into_iter(), &[], ws));
+    }
+
+    /// 워크스페이스가 **parked engine 에만** 있어도 고아가 아니다 — 창이 없을 뿐
+    /// engine 은 살아 있다(마지막 창 닫기 / macOS 최소화). 창만 보던 옛 판정은
+    /// 여기서 고아로 오판해 attach 세션을 끊었다.
+    #[test]
+    fn workspace_only_in_parked_engine_is_not_orphaned() {
+        let parked = parked(&["mirror"]);
+        let ws = parked[0].1.workspaces[0].id;
+        assert!(any_engine_has_workspace(std::iter::empty(), &parked, ws));
+    }
+
+    /// 첫 parked 엔트리에서 멈추지 않고 **`parked_states` 전체를 순회**해야 한다 —
+    /// 창을 여럿 닫으면 parked engine 도 여럿 쌓이고, mirror 를 들고 있는 것이
+    /// 첫 항목이라는 보장이 없다.
+    #[test]
+    fn workspace_in_later_parked_engine_is_not_orphaned() {
+        let mut parked = parked(&["first", "second"]);
+        // 두 번째 parked engine 에만 있는 워크스페이스 id 를 만든다(첫 항목과 충돌 회피).
+        let target = parked[0].1.workspaces[0].id + 5_000;
+        parked[1].1.workspaces[0].id = target;
+        assert!(any_engine_has_workspace(
+            std::iter::empty(),
+            &parked,
+            target
+        ));
+    }
+
+    /// 어느 engine 에도 없으면(사용자가 mirror 워크스페이스를 직접 닫음) 고아다 —
+    /// 이 경우에만 세션을 정리하고 원격 점유를 푼다.
+    #[test]
+    fn workspace_in_no_engine_is_orphaned() {
+        let windowed = engine_with_workspace_name("local");
+        let parked = parked(&["other"]);
+        let missing = windowed.workspaces[0].id + parked[0].1.workspaces[0].id + 1_000;
+        assert!(!any_engine_has_workspace(
+            [&windowed].into_iter(),
+            &parked,
+            missing
+        ));
     }
 
     fn slots(v: &[LayoutSlotId]) -> HashSet<LayoutSlotId> {
