@@ -689,17 +689,23 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
 
     // 우 cluster: time + author (우측 정렬). author 가 길면 egui Label 은 자체적으로
     // wrap/clip 하지 않고 폭 제한 없이 그려지므로(참고: `ch_row` 의 path clip 과 동일
-    // 이유), oid 영역을 덮어쓰지 않도록 `set_clip_rect` 로 명시적 상한을 건다 — 넘치는
-    // 부분은 summary/pill 과 동일하게 픽셀 단위로 잘릴 뿐 ellipsis 는 없다.
+    // 이유), oid 영역을 덮어쓰지 않도록 명시적 상한을 건다 — 넘치는 부분은
+    // summary/pill 과 동일하게 픽셀 단위로 잘릴 뿐 ellipsis 는 없다.
+    //
+    // clip 은 반드시 `shrink_clip_rect`(부모 clip 과 교집합)로 좁힌다 —
+    // `set_clip_rect` 는 부모 clip 을 덮어쓴다. 이 행은 ScrollArea 안에서 그려지고
+    // `rect` 는 스크롤된 가상 콘텐츠 좌표라, 덮어쓰면 뷰포트 밖으로 밀려난 행의
+    // 라벨이 pane 경계를 넘어 그려진다.
     let mut right = ui.new_child(
         UiBuilder::new()
             .max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
     );
-    right.set_clip_rect(Rect::from_min_max(
+    let right_clip = Rect::from_min_max(
         egui::pos2(right_clip_left, rect.top()),
         egui::pos2(content.right(), rect.bottom()),
-    ));
+    );
+    right.shrink_clip_rect(right_clip);
     right.spacing_mut().item_spacing.x = gap;
     right.label(
         egui::RichText::new(&entry.time)

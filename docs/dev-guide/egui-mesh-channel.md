@@ -485,6 +485,33 @@ SDK 를 `features = ["egui-mesh"]` 로 받아 `EguiMeshSurface::paint(&ctx.host,
 &ctx.params, |egui_ctx| { ... })` 를 `Plugin::paint_surface` 에서 호출하면 된다.
 코덱/송신은 SDK 가 은닉한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`.
 
+## plugin 콘텐츠의 clip 규약 (surface·popup·banner 공통)
+
+**적용 범위는 plugin 이 자기 mesh 안에 그리는 콘텐츠뿐이다.** plugin 은 host 가 잡아준
+영역(surface rect / popup content_rect / banner content_rect) 안에서만 그리고, 그 영역
+자체를 정하는 것은 host 다. 그래서 plugin 쪽 clip 조작은 **항상 "더 좁히기" 방향**이며,
+부모 clip 과 교집합하는 API 만 쓴다.
+
+| 목적 | API | 시맨틱 |
+|---|---|---|
+| `Ui` 수준 clip 좁히기 | `Ui::shrink_clip_rect(rect)` | 현재 clip 과 **교집합** |
+| 단발 그리기 clip | `Painter::with_clip_rect(rect)` | 현재 clip 과 **교집합** |
+| plugin 콘텐츠에서 금지 | `Ui::set_clip_rect` / `Painter::set_clip_rect` | 부모 clip **덮어쓰기** |
+
+`set_clip_rect` 계열은 부모가 걸어둔 clip 을 파기한다. `ScrollArea` 안에서 행 단위로
+쓰면 특히 위험하다 — 행 rect 는 **스크롤된 가상 콘텐츠 좌표**라, 뷰포트 밖으로 밀려난
+행의 clip 이 그대로 유효해져 pane 경계를 넘어 다른 pane 위에 그려진다. 가로 상한만
+의도했더라도 세로까지 함께 풀린다.
+
+교집합 API 는 "부모가 허용한 범위 안에서만 더 좁힌다" 는 의미라 이 실수가 구조적으로
+불가능하다. 갤러리 specimen 은 보통 `ScrollArea` 없이 고정 목록을 그리므로 이 결함을
+재현하지 못한다 — clip 회귀는 본체 popup 에서 스크롤시켜 확인해야 한다.
+
+> **host 셸 코드에는 적용되지 않는다.** host 는 팝업 Area 처럼 *경계를 새로 세우는* 쪽이라
+> `set_clip_rect(content_rect)` 로 clip 을 **확정**하는 것이 오히려 필수다 — 근거와 절차는
+> [popup-implementation.md](popup-implementation.md) 의 "콘텐츠 레이어 — `egui::Area`
+> 등록" 절.
+
 ## egui-mesh popup 채널 (A2)
 
 surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. surface
