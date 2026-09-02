@@ -84,13 +84,30 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 | `TASTY_HOOK_EVENT` | 훅 트리거: 등록 이벤트 표시 문자열(`bell` / `process-exit` / `output-match:<pattern>` / 플러그인 커스텀 키 등). `hook_handler.dispatch` 수동 발화: 핸들러 id |
 | `TASTY_HOOK_SOURCE` | `hook`(내부 이벤트 트리거) 또는 `dispatch`(`hook_handler.dispatch` 수동 발화). 셸은 webhook 바인딩이 구조적으로 불가하므로 `webhook` 값은 존재하지 않는다 |
 | `TASTY_HOOK_SURFACE_ID` | 훅 트리거의 발생 surface id. 수동 발화(surface 무관)에는 설정되지 않음 |
-| `TASTY_HOOK_<UPPER_SNAKE_KEY>` | payload(`hook_handler.dispatch` 의 `body`)가 object 면 최상위 key 각각. 훅 트리거에는 HTTP 페이로드가 없어 현재 미설정(IpcSequence 의 빈 치환 컨텍스트와 대칭) |
+| `TASTY_HOOK_<UPPER_SNAKE_KEY>` | payload 가 object 면 최상위 key 각각. 훅 트리거의 payload 는 아래 [트리거 payload](#트리거-payload-이벤트별-key) 가 이벤트별로 채우고, `hook_handler.dispatch` 수동 발화는 params 의 `body` 를 그대로 쓴다 |
 
-- **key 정규화**: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 겹치거나 위 예약 변수와 겹치면 **먼저 온 값이 이기고** 나머지는 warn 후 무시. 영숫자가 없는 key 는 건너뜀.
+- **key 정규화**: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 겹치거나 위 예약 변수와 겹치면 **먼저 온 값이 이기고** 나머지는 무시한다. payload 안에서 서로 다른 원본 key 가 정규화 후 충돌하는 경우(예: `pr-id` vs `pr_id`)만 warn 하고, 예약 변수와의 충돌은 조용히 무시한다(`surface_id` 처럼 매 발화마다 생기는 정상 경로). 영숫자가 없는 key 는 건너뜀.
 - **값**: 문자열은 그대로, 그 외 JSON 은 compact 표현. NUL 문자는 제거(플랫폼 env 제약), 값당 4096 바이트 초과분은 절단(Windows env 블록 상한 보호).
 - **데이터/흐름 분리**: env 는 값 전달 전용 — 실행할 명령(command/args)은 레지스트리 owner 가 고정하므로 payload 가 실행 대상을 바꿀 수 없다.
 
 참조 대상 핸들러 레지스트리는 [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서도 조회·편집할 수 있다(user 매핑은 `~/.tasty/hook-handlers.toml` 영속).
+
+##### 트리거 payload (이벤트별 key)
+
+훅 트리거의 payload 는 `src/hook_handler/trigger.rs` 의 `trigger_payload` 가 조립한다 — 셸 env(`TASTY_HOOK_*`)와 IpcSequence 값슬롯(`${body.*}`)이 같은 소스에서 파생되는 단일 지점이다. 값은 **등록 패턴이 아니라 실제 관측된 이벤트**에서 채운다(예: `output-match:ERR.*` 로 등록해도 `matched_text` 는 실제로 매칭된 줄).
+
+| 이벤트 | payload key | 셸 env | 값 |
+|--------|-------------|--------|-----|
+| (전 이벤트 공통) | `surface_id` | `TASTY_HOOK_SURFACE_ID` | 발화 surface id |
+| `OutputMatch` | `matched_text` | `TASTY_HOOK_MATCHED_TEXT` | 매칭된 **완성 라인 전문**(정규식이 소비한 부분만이 아니다) |
+| `CommandCompleted` | `exit_code` | `TASTY_HOOK_EXIT_CODE` | OSC 133 D phase 가 보고한 관측 exit code. D phase 가 코드를 안 실었거나 정수로 파싱되지 않으면 payload 는 JSON `null` 이고 셸은 문자열 `null` 을 받는다(`command-completed` 와일드카드 등록이 이 경우와도 매치된다) |
+| `IdleTimeout` | `idle_elapsed_secs` | `TASTY_HOOK_IDLE_ELAPSED_SECS` | 마지막 PTY 출력 이후 경과초(1Hz 해상도라 등록 임계값 이상) |
+| `Custom` | `custom_event` | `TASTY_HOOK_CUSTOM_EVENT` | 발화된 커스텀 이벤트 식별자 |
+| `ProcessExit` / `Bell` / `Notification` | 공통 key 뿐 | — | 이벤트 고유 값 없음 |
+
+- `surface_id` 는 예약 변수 `TASTY_HOOK_SURFACE_ID` 와 이름·값이 그대로 겹친다 — 같은 출처의 중복이라 첫 값이 유지되고 변수가 늘지 않는다(warn 도 내지 않는다). payload 에 담는 이유는 IpcSequence 가 `${body.surface_id}` 로 같은 값을 읽게 하기 위해서다.
+- 이벤트별 key 는 위 표가 전부다 — 새 key 를 늘리는 지점도 `trigger_payload` 한 곳이다.
+- 위 payload 는 `surface.fire_hook`(IPC 로 이벤트를 직접 발화 — 플러그인이 커스텀 이벤트를 쏘는 경로) 로 발화해도 그대로 적용된다. 같은 `trigger_payload` 를 타므로 `command-completed:1` 발화는 `TASTY_HOOK_EXIT_CODE=1` 을 그대로 내보내고, `TASTY_HOOK_SOURCE` 도 `hook` 이다(`dispatch` 는 `hook_handler.dispatch` 경로 전용).
 
 ### Global hook (조건)
 
