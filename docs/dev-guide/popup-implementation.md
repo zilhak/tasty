@@ -163,6 +163,20 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 > 즉 popup `draw_fn` 안에서는 일반 egui 위젯/`ScrollArea`/`Table` 을 그냥 쓰면 된다 — 스크롤·클립·레이어 등록은 `PopupManager::draw` 가 콘텐츠를 감싼 Area 가 처리한다.
 
+### `ScrollArea` 안에서 clip 을 좁힐 때 — `shrink_clip_rect`
+
+`ScrollArea` 내부의 행이 자기 rect 로 clip 을 좁힐 때는 `Ui::shrink_clip_rect(rect)` 를
+쓴다. **`set_clip_rect` 는 부모 clip 과의 교집합이 아니라 덮어쓰기**라, 행 rect(=스크롤
+가상 콘텐츠 좌표)로 호출하면 `ScrollArea` 가 걸어둔 뷰포트 clip 이 사라져 뷰포트 밖으로
+밀려난 행의 라벨·pill·상태 dot 이 리스트 경계 밖(팝업 바깥까지)에 그려진다. 목록이 짧아
+스크롤이 생기지 않는 동안은 증상이 없어 늦게 발견된다.
+
+- 적용 예: `src/adapters/ui/popup/remote_attach.rs` 의 프로필/워크스페이스 행 — 가로
+  truncate 가드 목적으로 좁히되 뷰포트 clip 은 그대로 남는다.
+- `ScrollArea` **를 감싸는** 컨테이너 `Ui` 에 컨테이너 rect 를 그대로 거는 것은 이 함정이
+  아니다 — 그 rect 는 부모 clip 안이고, `ScrollArea` 가 그 안에서 자기 뷰포트로 다시
+  좁힌다.
+
 ## 닫힘 정리
 
 **새 팝업이 draft 버퍼/대상 id 같은 상태를 가지면 반드시 `PopupDef.on_close` 를 선언한다.** draw_fn 내부에서 Escape/버튼 클릭 시에만 정리하면 X 버튼·바깥 클릭·`UiIntent::ClosePopup`(디버그 IPC 포함)처럼 draw_fn 을 거치지 않는 닫힘 경로에서 정리가 새고, 재오픈 시 이전 상태가 그대로 보이거나(가벼운 경우) 진행 중 워커/네트워크 연결이 살아남는다(무거운 경우 — 예: `remote_attach`/`remote_tool` 의 ssh 터널). `on_close` 는 어떤 닫힘 경로로도 정확히 한 번 호출되는 유일한 지점이므로, 상태 정리는 draw_fn 안에 흩어놓지 말고 여기 모은다. 상태가 전혀 없거나(예: `notifications`) 남아도 무해하다고 **판단**했다면(예: `tutorial_topics` 의 선택 인덱스) `on_close: None` 옆에 근거를 한 줄 남긴다 — `src/adapters/ui/popup/defs.rs` 의 기존 항목들이 그 예시다.

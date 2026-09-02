@@ -796,7 +796,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
     // 클립은 가로만(truncate 오버플로 가드) — 세로는 행 전체 높이로 둔다. inner 는
     // 상하 spacing_sm 를 깎아 두 줄(name+target)을 담기엔 낮아, inner 로 세로까지
     // 클립하면 둘째 줄(target) 하단 descender 가 잘린다.
-    child.set_clip_rect(egui::Rect::from_min_max(
+    child.shrink_clip_rect(egui::Rect::from_min_max(
         egui::pos2(inner.left(), rect.top()),
         egui::pos2(inner.right(), rect.bottom()),
     ));
@@ -1067,7 +1067,7 @@ fn new_ws_row(
             .max_rect(inner)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    child.set_clip_rect(inner);
+    child.shrink_clip_rect(inner);
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
     let glyph_c: egui::Color32 = if creating {
         th.text_muted().into()
@@ -1210,7 +1210,7 @@ fn new_ws_error(ui: &mut egui::Ui, th: &Theme, msg: &str) -> bool {
             .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    col.set_clip_rect(inner);
+    col.shrink_clip_rect(inner);
     col.spacing_mut().item_spacing.y = th.spacing_xs.value();
     col.add(
         egui::Label::new(
@@ -1268,7 +1268,7 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
             .max_rect(inner)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    child.set_clip_rect(inner);
+    child.shrink_clip_rect(inner);
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
     let kind = if w.busy_count > 0 {
         StatusKind::Running
